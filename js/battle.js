@@ -101,12 +101,12 @@ function showGateOpen(callback) {
 
   // 横ライン（上）
   const lineTop = document.createElement('div');
-  lineTop.style.cssText = 'position:absolute;top:38%;left:0;right:0;height:2px;background:linear-gradient(90deg, transparent, #00fbff, transparent);animation:gateLineExpand 1.5s ease forwards;transform:scaleX(0);';
+  lineTop.style.cssText = 'position:absolute;top:30%;left:0;right:0;height:2px;background:linear-gradient(90deg, transparent, #00fbff, transparent);animation:gateLineExpand 1.5s ease forwards;transform:scaleX(0);';
   overlay.appendChild(lineTop);
 
   // 横ライン（下）
   const lineBottom = document.createElement('div');
-  lineBottom.style.cssText = 'position:absolute;top:62%;left:0;right:0;height:2px;background:linear-gradient(90deg, transparent, #00fbff, transparent);animation:gateLineExpand 1.5s ease 0.1s forwards;transform:scaleX(0);';
+  lineBottom.style.cssText = 'position:absolute;top:70%;left:0;right:0;height:2px;background:linear-gradient(90deg, transparent, #00fbff, transparent);animation:gateLineExpand 1.5s ease 0.1s forwards;transform:scaleX(0);';
   overlay.appendChild(lineBottom);
 
   // メインテキスト
@@ -836,13 +836,20 @@ function execPhase(phase) {
       doDraw('player', 'ドロー', () => { setTimeout(() => startPhase('breed'), 300); });
     } else { addLog('⚠ デッキ切れ！'); battleDefeat(); return; }
   } else if (phase === 'breed') {
+    // デジタマデッキなし＆育成エリアに移動可能カードなし → 自動スキップ
+    const hasTama = bs.player.tamaDeck && bs.player.tamaDeck.length > 0;
+    const canMove = bs.player.ikusei && bs.player.ikusei.level !== '2';
+    if (!hasTama && !canMove) {
+      addLog('🥚 育成フェイズ スキップ（デジタマなし）');
+      setTimeout(() => startPhase('main'), 300);
+      return;
+    }
     addLog('🥚 育成フェイズ');
     const actionBar = document.getElementById('breed-action-bar');
     if (actionBar) actionBar.style.display = 'block';
     const ikuEl = document.getElementById('pl-iku-slot');
     if (ikuEl) ikuEl.classList.add('breed-hover-active');
     updateActionBtns(); renderAll();
-    // 孵化・移動イベントは renderIkusei 内で自動設定される
   } else if (phase === 'main') {
     exitBreedPhase();
     addLog('⚡ メインフェイズ');
@@ -1536,7 +1543,20 @@ function getSecurityAttackCount(card) {
 function resolveSecurityCheck(atk, atkIdx) {
   const totalChecks = getSecurityAttackCount(atk);
   let checksRemaining = totalChecks;
+  let checkNumber = 0;
   if (totalChecks > 1) addLog('⚔ セキュリティチェック x' + totalChecks + '！');
+
+  function showCheckAnnounce(callback) {
+    checkNumber++;
+    if (totalChecks <= 1) { callback(); return; }
+    // 「N枚チェック！」「1枚目！！」表示
+    const text = checkNumber === 1 ? totalChecks + '枚チェック！' : checkNumber + '枚目！！';
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);z-index:60000;pointer-events:none;font-size:clamp(1.5rem,7vw,2.5rem);font-weight:900;color:#ff4444;text-shadow:0 0 20px #ff0000,0 0 40px #ff0000;animation:dpChangePopup 1.2s ease forwards;';
+    el.innerText = text;
+    document.body.appendChild(el);
+    setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); callback(); }, 1000);
+  }
 
   function doNextCheck() {
     checksRemaining--;
@@ -1550,6 +1570,7 @@ function resolveSecurityCheck(atk, atkIdx) {
     }
 
     const sec = bs.ai.security.splice(0,1)[0];
+    showCheckAnnounce(() => {
     showSecurityCheck(sec, atk, () => {
       console.log('[SEC-REVEAL] name:', sec.name, 'type:', sec.type, 'securityEffect:', sec.securityEffect, 'effect:', sec.effect?.substring(0,40));
       if(sec.type==='デジモン') {
@@ -1623,6 +1644,7 @@ function resolveSecurityCheck(atk, atkIdx) {
       if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
       else { checkAttackEnd(atk, atkIdx); }
     });
+    }); // showCheckAnnounce
   }
 
   // 最初のチェック
@@ -2274,10 +2296,10 @@ function showGameEndOverlay(text, type, callback) {
 
   // 横ライン
   const lineTop = document.createElement('div');
-  lineTop.style.cssText = 'position:absolute;top:35%;left:0;right:0;height:3px;background:linear-gradient(90deg, transparent, '+color+', transparent);transform:scaleX(0);animation:gateLineExpand 1s ease 0.3s forwards;';
+  lineTop.style.cssText = 'position:absolute;top:28%;left:0;right:0;height:3px;background:linear-gradient(90deg, transparent, '+color+', transparent);transform:scaleX(0);animation:gateLineExpand 1s ease 0.3s forwards;';
   overlay.appendChild(lineTop);
   const lineBottom = document.createElement('div');
-  lineBottom.style.cssText = 'position:absolute;top:65%;left:0;right:0;height:3px;background:linear-gradient(90deg, transparent, '+color+', transparent);transform:scaleX(0);animation:gateLineExpand 1s ease 0.4s forwards;';
+  lineBottom.style.cssText = 'position:absolute;top:72%;left:0;right:0;height:3px;background:linear-gradient(90deg, transparent, '+color+', transparent);transform:scaleX(0);animation:gateLineExpand 1s ease 0.4s forwards;';
   overlay.appendChild(lineBottom);
 
   // メインテキスト
@@ -2502,10 +2524,13 @@ function renderBattleRows() {
         const src=cardImg(card);
         let stackInfo='';
         if(isPlayer&&card.stack&&card.stack.length>0) stackInfo=`<div style="position:absolute; top:1px; right:2px; background:rgba(0,0,0,0.8); color:#ffaa00; font-size:6px; padding:1px 2px; border-radius:2px;">${card.stack.length}枚</div>`;
+        // Sアタック+表示
+        const saCount = getSecurityAttackCount(card);
+        const saInfo = saCount > 1 ? `<div style="position:absolute; top:1px; left:2px; background:rgba(255,0,0,0.8); color:#fff; font-size:6px; padding:1px 3px; border-radius:2px;">チェック+${saCount-1}</div>` : '';
         sl.innerHTML=(src?`<img src="${src}">`:`<div style="font-size:8px;color:${isPlayer?'#00fbff':'#ff00fb'};padding:3px;">${card.name}</div>`)
           +`<div class="s-name">${card.name}</div>`
           +`<div class="s-dp">${card.baseDp||card.dp}${card.dpModifier>0?`<span style="color:#00ff88;font-size:6px;"> +${card.dpModifier}</span>`:card.dpModifier<0?`<span style="color:#ff4444;font-size:6px;"> ${card.dpModifier}</span>`:''}</div>`
-          +stackInfo;
+          +stackInfo+saInfo;
 
         if(isPlayer) {
           sl.onclick=((idx) => e => {
@@ -2574,7 +2599,13 @@ function renderIkusei() {
         attachIkuDrag(iku);
       }
     } else {
-      iku.innerHTML=tamaBackUrl?`<img src="${tamaBackUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:3px;">`:'';
+      const hasTamaDeck = isPlayer ? (bs.player.tamaDeck && bs.player.tamaDeck.length > 0) : (bs.ai.tamaDeck && bs.ai.tamaDeck.length > 0);
+      // デジタマデッキがあれば裏面表示、なければ空表示
+      if (hasTamaDeck) {
+        iku.innerHTML=tamaBackUrl?`<img src="${tamaBackUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:3px;">`:'';
+      } else {
+        iku.innerHTML='<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:8px;color:#333;">空</div>';
+      }
       iku.classList.remove('occupied');
       if(info) info.innerText='';
       // 育成フェーズ中＋プレイヤー＋孵化可能 → タップイベント

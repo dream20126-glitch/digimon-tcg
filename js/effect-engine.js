@@ -1673,12 +1673,15 @@ function addBuffDirect(card, type, value, duration, ctx) {
 }
 
 function recalcDp(card) {
-  if (card.baseDp === undefined || card.baseDp === null) card.baseDp = card.dp || 0;
+  // baseDpは初回のみ設定。以降は変更しない
+  if (card.baseDp === undefined || card.baseDp === null) {
+    card.baseDp = parseInt(card.dp) || 0;
+  }
   let mod = 0;
   if (card.buffs) {
     card.buffs.forEach(b => {
-      if (b.type === 'dp_plus') mod += b.value;
-      if (b.type === 'dp_minus') mod -= b.value;
+      if (b.type === 'dp_plus') mod += (parseInt(b.value) || 0);
+      if (b.type === 'dp_minus') mod -= (parseInt(b.value) || 0);
     });
   }
   card.dpModifier = mod;

@@ -1819,7 +1819,9 @@ export function applyPermanentEffects(bs, side, context) {
       if (!block.trigger || !['during_own_turn', 'during_opp_turn', 'during_any_turn'].includes(block.trigger.code)) return;
       if (block.trigger.code === 'during_own_turn' && side !== turnSide) return;
       if (block.trigger.code === 'during_opp_turn' && side === turnSide) return;
-      if (!checkConditions(block.conditions, card)) return;
+      console.log('[PERM-MAIN] card:', card.name, 'trigger:', block.trigger.code, 'conditions:', JSON.stringify(block.conditions), 'actions:', JSON.stringify(block.actions));
+      if (!checkConditions(block.conditions, card)) { console.log('[PERM-MAIN] → 条件不一致でスキップ'); return; }
+      console.log('[PERM-MAIN] → 条件一致！適用');
 
       block.actions.forEach(action => {
         if (action.code === 'dp_plus') {
@@ -1850,7 +1852,9 @@ export function applyPermanentEffects(bs, side, context) {
           if (block.trigger.code === 'during_own_turn' && side !== turnSide) return;
           if (block.trigger.code === 'during_opp_turn' && side === turnSide) return;
           if (!['during_own_turn', 'during_opp_turn', 'during_any_turn'].includes(block.trigger.code)) return;
-          if (!checkConditions(block.conditions, card)) return;
+          console.log('[PERM-EVO] card:', card.name, 'evoCard:', evoCard.name, 'conditions:', JSON.stringify(block.conditions), 'stackLen:', card.stack.length, 'actions:', JSON.stringify(block.actions));
+          if (!checkConditions(block.conditions, card)) { console.log('[PERM-EVO] → 条件不一致でスキップ'); return; }
+          console.log('[PERM-EVO] → 条件一致！DP+適用');
           block.actions.forEach(action => {
             if (action.code === 'dp_plus') {
               if (!card.buffs) card.buffs = [];

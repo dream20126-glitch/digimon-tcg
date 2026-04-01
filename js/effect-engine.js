@@ -1181,9 +1181,9 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
       + '</div>';
     innerBox.appendChild(confirmDiv);
 
-    // BCDの背景クリックで貫通しないように
-    const stopClick = (e) => e.stopPropagation();
-    bcd.addEventListener('click', stopClick, true);
+    // BCD自体のクリックでBCDが閉じないようにする（元のonclickを一時無効化）
+    const origBcdClick = bcd.onclick;
+    bcd.onclick = (e) => e.stopPropagation();
 
     function cleanupConfirm() {
       // 追加した確認ボタンを削除
@@ -1194,15 +1194,15 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
       // BCD非表示 & z-index復元
       bcd.style.display = 'none';
       bcd.style.zIndex = '50000';
-      bcd.removeEventListener('click', stopClick, true);
+      bcd.onclick = origBcdClick;
     }
 
-    document.getElementById('_target-yes').onclick = (e) => {
+    document.getElementById('_target-yes').addEventListener('click', (e) => {
       e.stopPropagation();
       cleanupConfirm();
       setTimeout(() => onResult(true), 50);
-    };
-    document.getElementById('_target-no').onclick = (e) => {
+    });
+    document.getElementById('_target-no').addEventListener('click', (e) => {
       e.stopPropagation();
       cleanupConfirm();
       // 選択イベントを再登録
@@ -1210,8 +1210,8 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
         document.addEventListener('click', onSelect, true);
         document.addEventListener('touchend', onSelect, true);
       }, 100);
-      onResult(false);
-    };
+      setTimeout(() => onResult(false), 50);
+    });
   }
 
   function cleanup() {

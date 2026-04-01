@@ -430,7 +430,7 @@ function executeQueueEntry(entry, context, callback) {
   const { card, block, side } = entry;
   // sideを実際のplayer/aiに変換
   const actualSide = entry.actualSide || (side === 'turnPlayer' ? (context.bs.isPlayerTurn ? 'player' : 'ai') : (context.bs.isPlayerTurn ? 'ai' : 'player'));
-  const ctx = { ...context, card, side: actualSide, block };
+  const ctx = { ...context, card, side: actualSide, block, _parentContext: context };
 
   // 効果発動 → カード&効果テキストを数秒表示してから実行
   function executeWithAnnounce() {
@@ -747,6 +747,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // メモリー超過チェック（効果処理は完了させてからターン終了）
       if (ctx.side === 'player' && ctx.bs.memory < 0) {
         ctx._memoryOverflow = true;
+        if (ctx._parentContext) ctx._parentContext._memoryOverflow = true;
       }
       callback();
       break;
@@ -1147,54 +1148,53 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
     }
   }
 
-  // 対象確認ダイアログ（既存のBCDカード詳細画面を流用）
+  // 対象確認ダイアログ（カード詳細＋確認ボタン）
   function showTargetConfirm(card, idx, borderColor, onResult) {
     // イベントを一時停止
     document.removeEventListener('click', onSelect, true);
     document.removeEventListener('touchend', onSelect, true);
 
-    // BCD（カード詳細画面）を表示
-    const bcd = document.getElementById('b-card-detail');
-    if (window.showBCD) {
-      // showBCDでカード詳細を描画（sourceはダミー）
-      window.showBCD(card, 'targetConfirm');
+    const overlay = document.createElement('div');
+    overlay.id = '_target-confirm-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;';
+
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#0a0a0a;border:1px solid '+borderColor+';border-radius:12px;padding:20px;max-width:320px;width:100%;text-align:center;';
+
+    // カード画像
+    const imgSrc = card ? (card.imgSrc || getCardImageUrl(card) || card.imageUrl || '') : '';
+    box.innerHTML = (imgSrc ? '<img src="'+imgSrc+'" style="width:160px;border-radius:8px;margin-bottom:12px;border:1px solid '+borderColor+';">' : '')
+      + '<div style="color:#fff;font-weight:bold;font-size:14px;margin-bottom:8px;">'+(card.name||'不明')+' ('+(card.cardNo||'')+')</div>'
+      + '<div style="font-size:12px;color:'+borderColor+';margin-bottom:10px;">Lv.'+(card.level||'?')+' ／ DP:'+(card.dp||'?')+' ／ コスト:'+(card.cost||card.playCost||'?')+'</div>';
+
+    // 効果
+    if (card.effect && card.effect !== 'なし') {
+      box.innerHTML += '<div style="font-size:11px;color:#ddd;line-height:1.7;margin-bottom:10px;text-align:left;background:#111;padding:10px;border-radius:6px;border:1px solid #333;">'
+        + '<div style="color:'+borderColor+';font-size:10px;margin-bottom:4px;font-weight:bold;">効果</div>' + card.effect + '</div>';
+    }
+    // 進化元効果
+    if (card.evoSourceEffect && card.evoSourceEffect !== 'なし') {
+      box.innerHTML += '<div style="font-size:11px;color:#aaa;line-height:1.7;margin-bottom:10px;text-align:left;background:#0a0a0a;padding:10px;border-radius:6px;border:1px solid #222;">'
+        + '<div style="color:#ffaa00;font-size:10px;margin-bottom:4px;font-weight:bold;">進化元効果</div>' + card.evoSourceEffect + '</div>';
     }
 
-    // BCDの「閉じる」ボタンと効果発動ボタンを非表示
-    const closeBtn = bcd.querySelector('.menu-btn');
-    if (closeBtn) closeBtn.style.display = 'none';
-    const effectBtn = document.getElementById('bcd-effect-btn');
-    if (effectBtn) effectBtn.style.display = 'none';
-
-    // BCDのz-indexを対象選択より上に
-    bcd.style.zIndex = '65000';
-
-    // 確認ボタンをBCDの中に追加
-    const innerBox = bcd.querySelector('div');
-    const confirmDiv = document.createElement('div');
-    confirmDiv.id = '_target-confirm-btns';
-    confirmDiv.innerHTML =
-      '<div style="color:'+borderColor+';font-size:14px;font-weight:bold;margin:16px 0 12px;text-align:center;">このカードでいいですか？</div>'
+    // 確認ボタン
+    box.innerHTML += '<div style="color:'+borderColor+';font-size:14px;font-weight:bold;margin:16px 0 12px;">このカードでいいですか？</div>'
       + '<div style="display:flex;gap:10px;justify-content:center;">'
       + '<button id="_target-yes" style="background:'+borderColor+';color:#000;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
       + '<button id="_target-no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
       + '</div>';
-    innerBox.appendChild(confirmDiv);
 
-    // BCD自体のクリックでBCDが閉じないようにする（元のonclickを一時無効化）
-    const origBcdClick = bcd.onclick;
-    bcd.onclick = (e) => e.stopPropagation();
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    // 背景クリックでは何もしない（ボタンのみ反応）
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) e.stopPropagation();
+    });
 
     function cleanupConfirm() {
-      // 追加した確認ボタンを削除
-      const btns = document.getElementById('_target-confirm-btns');
-      if (btns && btns.parentNode) btns.parentNode.removeChild(btns);
-      // 閉じるボタンを復元
-      if (closeBtn) closeBtn.style.display = '';
-      // BCD非表示 & z-index復元
-      bcd.style.display = 'none';
-      bcd.style.zIndex = '50000';
-      bcd.onclick = origBcdClick;
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     }
 
     document.getElementById('_target-yes').addEventListener('click', (e) => {
@@ -1205,7 +1205,6 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
     document.getElementById('_target-no').addEventListener('click', (e) => {
       e.stopPropagation();
       cleanupConfirm();
-      // 選択イベントを再登録
       setTimeout(() => {
         document.addEventListener('click', onSelect, true);
         document.addEventListener('touchend', onSelect, true);

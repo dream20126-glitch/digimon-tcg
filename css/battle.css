@@ -428,12 +428,12 @@
   50% { box-shadow: 0 0 30px #ff4466, 0 0 60px #ff2244, 0 0 120px #ff006688; }
 }
 
-/* 効果不発スライドメッセージ（右→左） */
+/* 効果不発スライドメッセージ（右→左・ゆっくり） */
 @keyframes effectFizzleSlide {
   0% { transform: translateX(100vw); opacity: 0; }
-  10% { opacity: 1; }
-  30% { transform: translateX(0); opacity: 1; }
-  70% { transform: translateX(0); opacity: 1; }
+  8% { opacity: 1; }
+  20% { transform: translateX(0); opacity: 1; }
+  75% { transform: translateX(0); opacity: 1; }
   100% { transform: translateX(-100vw); opacity: 0; }
 }
 

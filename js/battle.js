@@ -1566,7 +1566,7 @@ function resolveSecurityCheck(atk, atkIdx) {
     if (old && old.parentNode) old.parentNode.removeChild(old);
     const el = document.createElement('div');
     el.id = '_sec-check-count-label';
-    el.style.cssText = 'position:fixed;top:10%;left:50%;transform:translateX(-50%);z-index:60001;pointer-events:none;font-size:clamp(1.5rem,7vw,2.5rem);font-weight:900;color:#fff;background:rgba(255,0,0,0.85);padding:10px 28px;border-radius:12px;border:2px solid #ff4444;box-shadow:0 0 30px rgba(255,0,0,0.5);text-align:center;animation:secCheckLabel 2.5s ease forwards;';
+    el.style.cssText = 'position:fixed;top:10%;left:50%;transform:translateX(-50%);z-index:60001;pointer-events:none;font-size:clamp(0.9rem,4vw,1.3rem);font-weight:700;color:#fff;background:rgba(0,0,0,0.7);padding:6px 18px;border-radius:8px;border:1px solid #aaa;text-align:center;animation:secCheckLabel 2.5s ease forwards;';
     el.innerText = text;
     document.body.appendChild(el);
     setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); }, 2800);
@@ -1600,14 +1600,10 @@ function resolveSecurityCheck(atk, atkIdx) {
     }
 
     const sec = bs.ai.security.splice(0,1)[0];
-    // VS画面上にチェック数ラベルを表示
+    // VS画面上にチェック数ラベルを表示（「1枚目」「2枚目」…）
     const afterOpen = () => {
       if (totalChecks <= 1) return;
-      if (checkNumber === 1) {
-        showCheckLabelOnOverlay('⚔ ' + totalChecks + '枚チェック！');
-      } else {
-        showCheckLabelOnOverlay('🛡 ' + checkNumber + '枚目！！');
-      }
+      showCheckLabelOnOverlay(checkNumber + '枚目');
     };
     showSecurityCheck(sec, atk, () => {
       console.log('[SEC-REVEAL] name:', sec.name, 'type:', sec.type, 'securityEffect:', sec.securityEffect, 'effect:', sec.effect?.substring(0,40));

@@ -1970,10 +1970,20 @@ function showEffectAnnounce(card, effectText, side, callback) {
 
 function showEffectFailed(message, callback) {
   const el = document.createElement('div');
-  el.style.cssText = 'position:fixed;top:45%;left:0;z-index:60000;pointer-events:none;font-size:clamp(0.85rem,3.5vw,1.1rem);font-weight:700;color:#aaa;background:rgba(30,30,40,0.85);padding:10px 28px;border-radius:20px;border:1px solid #555;box-shadow:0 2px 12px rgba(0,0,0,0.4);white-space:nowrap;animation:effectFizzleSlide 2.2s cubic-bezier(0.25,1,0.5,1) forwards;';
+  el.style.cssText = 'position:fixed;top:45%;left:0;z-index:60000;font-size:clamp(0.85rem,3.5vw,1.1rem);font-weight:700;color:#aaa;background:rgba(30,30,40,0.85);padding:10px 28px;border-radius:20px;border:1px solid #555;box-shadow:0 2px 12px rgba(0,0,0,0.4);white-space:nowrap;cursor:pointer;animation:effectFizzleSlide 3.5s cubic-bezier(0.25,1,0.5,1) forwards;';
   el.innerText = '💨 対象がいないため、効果発動できませんでした';
   document.body.appendChild(el);
-  setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); callback && callback(); }, 2200);
+  let done = false;
+  function finish() {
+    if (done) return;
+    done = true;
+    if (el.parentNode) el.parentNode.removeChild(el);
+    callback && callback();
+  }
+  // タップでスキップ
+  el.addEventListener('click', finish);
+  el.addEventListener('touchend', finish);
+  setTimeout(finish, 3500);
 }
 
 // ===== 確認ダイアログ =====

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
+  <title>デジカ デッキビルダー</title>
+  <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" href="css/menu.css">
+  <link rel="stylesheet" href="css/builder.css">
+  <link rel="stylesheet" href="css/battle.css">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+
+<!-- ===== ログイン画面 ===== -->
+<div id="login-screen" class="screen active">
+<div class="page-wrap">
+  <img id="card-back-img-login" src="" style="width:80px; border-radius:8px; margin-bottom:8px; box-shadow: 0 0 15px rgba(0,251,255,0.3);">
+  <h1 class="game-title">デジモンカードゲーム</h1>
+
+  <div class="main-card">
+    <p style="color:#aaa; font-size:13px; margin-bottom:20px;">
+      プレイヤー名とパスワードを入力してください
+    </p>
+    <input class="login-input" type="text" id="login-name-input" placeholder="プレイヤー名を入力">
+    <input class="login-input" type="password" id="login-password-input" placeholder="パスワードを入力">
+    <p class="sub-text" style="margin-bottom:20px;">
+      パスワードはデッキの保存・読み込みに使用します。<br>
+      必ず毎回同じものをご利用ください。<br>
+      <span style="font-size:0.5rem;">※違うパスワードをご利用されると保存したデッキを利用できなくなります</span>
+    </p>
+    <button class="action-btn action-btn-primary" onclick="doLogin()">ログイン</button>
+    <button class="action-btn action-btn-orange" style="font-size:0.85rem; padding:12px; margin-top:20px; opacity:0.8;"
+      onclick="showScreen('管理画面-screen')">管理者ページ</button>
+  </div>
+</div>
+</div>
+
+<!-- ===== トップメニュー画面 ===== -->
+<div id="top-menu-screen" class="screen">
+<div class="page-wrap-wide">
+  <img id="card-back-img-top" src="" style="width:80px; border-radius:8px; margin-bottom:8px; box-shadow: 0 0 15px rgba(0,251,255,0.3);">
+  <h1 class="game-title">デジモンカードゲーム</h1>
+  <div class="player-bar">
+    <div class="player-bar-info">
+      <div class="player-bar-label" style="color:var(--main-cyan); font-size:11px;">ログイン中</div>
+      <div class="player-bar-name" id="display-player-name"></div>
+    </div>
+    <button class="logout-btn" onclick="doLogout()">ログアウト</button>
+  </div>
+
+  <div class="top-grid">
+    <div class="top-card-wide" onclick="showScreen('tutorial-screen'); loadTutorialScreen();">
+      <div class="top-card-wide-icon">📖</div>
+      <div>
+        <div class="top-card-label" style="font-size:1rem;">チュートリアル</div>
+        <div class="top-card-wide-sub">はじめての方はこちら！<br>デジモンカードの基本を学ぼう</div>
+      </div>
+    </div>
+    <div class="top-card" onclick="initBuilder()">
+      <div class="top-card-icon">🃏</div>
+      <div class="top-card-label">デッキ作成</div>
+      <div class="top-card-sub">カードを選んで<br>デッキを組もう</div>
+    </div>
+    <div class="top-card" onclick="showScreen('deck-list-screen'); loadSavedDecks();">
+      <div class="top-card-icon">📋</div>
+      <div class="top-card-label">マイデッキ</div>
+      <div class="top-card-sub">作ったデッキを<br>確認・管理しよう</div>
+    </div>
+    <div class="top-card-wide" onclick="showScreen('room-entrance-screen')">
+      <div class="top-card-wide-icon">⚔️</div>
+      <div>
+        <div class="top-card-label" style="font-size:1rem;">オンライン対戦</div>
+        <div class="top-card-wide-sub">ルームを作って<br>友達と対戦しよう！</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ===== 各画面のコンテナ（ページごとに1つ） ===== -->
+<div id="page-builder"></div>
+<div id="page-deck-list"></div>
+<div id="page-online"></div>
+<div id="page-battle"></div>
+<div id="page-tutorial"></div>
+<div id="page-admin"></div>
+
+<!-- JS モジュール -->
+<script type="module" src="js/app.js"></script>
+<script type="module" src="js/deck-builder.js"></script>
+<script type="module" src="js/deck-list.js"></script>
+<script type="module" src="js/online.js"></script>
+<script type="module" src="js/effect-engine.js"></script>
+<script type="module" src="js/battle.js"></script>
+<script type="module" src="js/tutorial.js"></script>
+<script type="module" src="js/admin.js"></script>
+
+<!-- 各画面のHTMLを動的に読み込み -->
+<script type="module">
+async function loadPage(url, containerId) {
+  try {
+    const res = await fetch(url);
+    const html = await res.text();
+    document.getElementById(containerId).innerHTML = html;
+  } catch(e) {
+    console.error(`Failed to load ${url}:`, e);
+  }
+}
+
+// 全画面のHTMLを読み込み（innerHTMLで安全に挿入）
+await Promise.all([
+  loadPage('pages/builder.html', 'page-builder'),
+  loadPage('pages/deck-list.html', 'page-deck-list'),
+  loadPage('pages/online.html', 'page-online'),
+  loadPage('pages/battle.html', 'page-battle'),
+  loadPage('pages/tutorial.html', 'page-tutorial'),
+  loadPage('pages/admin.html', 'page-admin'),
+]);
+
+console.log('All pages loaded');
+</script>
+
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!-- ===== 管理画面 ===== -->
+<div id="管理画面-screen" class="screen">
+  <div style="max-width:700px; margin:auto; padding:30px 20px;">
+    <h1 style="color:var(--main-cyan); text-align:center; font-size:1.5rem; margin-bottom:24px;">管理画面</h1>
+    <div id="admin-login-area">
+      <div style="max-width:320px; margin:40px auto; text-align:center;">
+        <p style="color:#aaa; font-size:13px; margin-bottom:20px;">管理者用パスワードを入力してください</p>
+        <input type="password" id="admin-pass-input" placeholder="Admin Password" style="text-align:center;">
+        <div style="display:flex; justify-content:center; gap:10px; margin-top:10px;">
+          <button id="admin-login-btn" class="admin-btn-sm" onclick="tryAdminLogin()">ログイン</button>
+          <button class="admin-btn-sm" onclick="showScreen('login-screen')">戻る</button>
+        </div>
+      </div>
+    </div>
+    <div id="admin-content-area" style="display:none;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; background:#111; padding:12px 16px; border-radius:8px; border:1px solid #333;">
+        <span style="color:#aaa; font-size:13px;">管理者ログイン中</span>
+        <button class="admin-btn-sm" onclick="adminLogout()">ログアウト</button>
+      </div>
+      <button class="admin-btn-lg" onclick="showScreen('tutorial-menu-screen')">
+        📚 チュートリアルデッキ登録
+        <span class="btn-sub">チュートリアル用のデッキを作成・管理します</span>
+      </button>
+      <button class="admin-btn-lg" onclick="showAdminDeckList()">
+        📋 デッキ一覧管理
+        <span class="btn-sub">ユーザーが保存したデッキの確認・管理を行います</span>
+      </button>
+      <button class="admin-btn-lg" onclick="showAdminRestrict()" style="opacity:0.6; cursor:not-allowed;">
+        🚫 禁止・制限カード管理
+        <span class="btn-sub">現在準備中です</span>
+      </button>
+      <div style="text-align:center; margin-top:10px;">
+        <button class="admin-btn-sm" onclick="showScreen('login-screen')">ログイン画面へ戻る</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- チュートリアルメニュー -->
+<div id="tutorial-menu-screen" class="screen">
+  <div style="max-width:500px; margin:auto; padding:40px 20px;">
+    <h2 style="color:var(--main-cyan); text-align:center; margin-bottom:30px;">📚 チュートリアルデッキ登録</h2>
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <button class="admin-btn-lg" onclick="initTutorialBuilder()">✏️ 新規作成する<span class="btn-sub">新しいチュートリアルデッキを作成します</span></button>
+      <button class="admin-btn-lg" onclick="showScreen('tutorial-list-screen'); loadTutorialList();">📋 デッキ一覧を見る<span class="btn-sub">登録済みのチュートリアルデッキを確認・編集・削除します</span></button>
+      <button class="admin-btn-sm" onclick="showScreen('管理画面-screen')" style="border-color:#555; color:#555; width:100%; text-align:center;">管理画面へ戻る</button>
+    </div>
+  </div>
+</div>
+
+<!-- チュートリアルデッキ一覧 -->
+<div id="tutorial-list-screen" class="screen">
+  <div style="max-width:900px; margin:auto; padding:24px 20px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+      <h2 style="color:var(--main-cyan); margin:0; font-size:1.2rem;">📚 チュートリアルデッキ一覧</h2>
+      <div>
+        <button class="admin-btn-sm" onclick="initTutorialBuilder()">＋ 新規作成</button>
+        <button class="admin-btn-sm" onclick="showScreen('tutorial-menu-screen')" style="border-color:#555; color:#555;">戻る</button>
+      </div>
+    </div>
+    <div id="tutorial-deck-list"><p style="color:#555; text-align:center; padding:40px;">読み込み中...</p></div>
+  </div>
+</div>
+
+<!-- チュートリアル保存画面 -->
+<div id="tutorial-save-screen" class="screen">
+  <div class="tsave-wrap">
+    <h2 style="color:var(--main-cyan); text-align:center; margin-bottom:6px;" id="tsave-title">チュートリアルデッキ登録</h2>
+    <p style="color:#aaa; text-align:center; font-size:12px; margin-bottom:20px;">デッキの情報とカバー画像を設定してください</p>
+    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:10px; padding:20px; margin-bottom:16px;">
+      <div class="tsave-field"><label>チュートリアル名 <span style="color:#ff4444;">*</span></label><input type="text" id="tsave-tutorial-name" placeholder="例：はじめてのデジモン"></div>
+      <div class="tsave-field"><label>デッキ名 <span style="color:#ff4444;">*</span></label><input type="text" id="tsave-deck-name" placeholder="例：アグモン入門デッキ"></div>
+      <div class="tsave-field">
+        <label>難易度</label>
+        <div class="tdiff-select" id="tsave-diff-btns">
+          <div class="tdiff-btn" onclick="tsaveSelectDiff(1)">⭐<br><span style="font-size:10px;">かんたん</span></div>
+          <div class="tdiff-btn" onclick="tsaveSelectDiff(2)">⭐⭐<br><span style="font-size:10px;">ふつう</span></div>
+          <div class="tdiff-btn" onclick="tsaveSelectDiff(3)">⭐⭐⭐<br><span style="font-size:10px;">むずかしい</span></div>
+        </div>
+      </div>
+      <div class="tsave-field">
+        <label>対象プレイヤー</label>
+        <select id="tsave-target">
+          <option value="初心者向け">初心者向け</option><option value="中級者向け">中級者向け</option>
+          <option value="上級者向け">上級者向け</option><option value="全員向け">全員向け</option>
+        </select>
+      </div>
+      <div class="tsave-field"><label>導入メッセージ</label><textarea id="tsave-message" placeholder="このデッキの説明や使い方のポイントを入力..."></textarea></div>
+    </div>
+    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:10px; padding:16px; margin-bottom:16px;">
+      <p style="color:var(--main-cyan); font-size:12px; font-weight:bold; margin:0 0 10px;">代表画像を選択 <span style="color:#ff4444;">*</span></p>
+      <div id="tsave-cover-area" style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; max-height:220px; overflow-y:auto;"></div>
+    </div>
+    <button class="menu-btn primary" id="tsave-confirm-btn" onclick="executeTutorialSave()">保存を確定する</button>
+    <button class="menu-btn" onclick="showScreen('deck-make-screen')" style="margin-top:8px;">デッキ編集に戻る</button>
+  </div>
+</div>
+
+<!-- デッキ一覧管理 -->
+<div id="admin-deck-list-screen" class="screen">
+  <div style="max-width:960px; margin:auto; padding:24px 20px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+      <h2 style="color:var(--main-cyan); margin:0; font-size:1.2rem;">📋 デッキ一覧管理</h2>
+      <div>
+        <span style="font-size:12px; color:#aaa; margin-right:12px;">総デッキ数: <b id="admin-deck-count" style="color:var(--main-cyan);">0</b></span>
+        <span style="font-size:12px; color:#aaa; margin-right:16px;">登録中: <b id="admin-registered-count" style="color:#00ff88;">0</b></span>
+        <button class="admin-btn-sm" onclick="loadAdminDeckData()">更新</button>
+        <button class="admin-btn-sm" onclick="showScreen('管理画面-screen')" style="border-color:#555; color:#555;">管理画面へ戻る</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="admin-table">
+        <thead><tr><th style="width:120px;">保存日時</th><th style="width:150px;">デッキ名</th><th style="width:100px;">PW</th><th>カードリスト</th><th style="width:80px;">状態</th></tr></thead>
+        <tbody id="admin-table-body"><tr><td colspan="5" style="text-align:center; color:#555; padding:40px;">データを読み込んでいます...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>

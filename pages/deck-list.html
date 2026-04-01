@@ -1,0 +1,114 @@
+<!-- ===== マイデッキ一覧 ===== -->
+<div id="deck-list-screen" class="screen">
+<style>
+.deck-row {
+  display: flex;
+  align-items: center;
+  background: #0a0a0a;
+  padding: 15px;
+  border-radius: 12px;
+  border: 1px solid var(--border-col);
+  margin-bottom: 12px;
+  position: relative;
+  transition: all 0.3s;
+}
+.deck-row:hover {
+  background: rgba(0,251,255,0.04);
+  border-color: var(--main-cyan);
+}
+.deck-row img {
+  width: 60px;
+  height: 85px;
+  border-radius: 8px;
+  margin-right: 15px;
+  object-fit: cover;
+  background: #333;
+  border: 1px solid #333;
+}
+.reg-badge {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  background: #00ff88;
+  color: #000;
+  font-size: 14px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  box-shadow: 0 0 10px #00ff88;
+  z-index: 10;
+  border: 1px solid #000;
+}
+.deck-action-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s;
+  border: 1px solid;
+}
+.deck-action-btn-check {
+  background: linear-gradient(135deg, #003333, #001a1a);
+  border-color: var(--main-cyan);
+  color: var(--main-cyan);
+}
+.deck-action-btn-check:hover {
+  background: var(--btn-hover);
+  box-shadow: 0 0 10px rgba(0,251,255,0.3);
+}
+.deck-action-btn-edit {
+  background: linear-gradient(135deg, #1a1000, #0d0800);
+  border-color: #ffaa00;
+  color: #ffaa00;
+}
+.deck-action-btn-edit:hover {
+  background: #2a1a00;
+  box-shadow: 0 0 10px rgba(255,170,0,0.3);
+}
+</style>
+
+<div style="max-width:500px; margin:auto; padding:40px 20px; text-align:center;">
+  <div style="font-size:2rem; margin-bottom:8px;">📋</div>
+  <h1 class="main-title" style="font-size:1.6rem; margin-bottom:8px;">マイデッキ一覧</h1>
+  <p style="color:#aaa; font-size:12px; margin-bottom:24px;">デッキを確認・編集・削除できます</p>
+
+  <div id="saved-decks-container">
+    <p style="color:#555;">読み込み中...</p>
+  </div>
+
+  <div style="margin-top:20px; display:flex; flex-direction:column; gap:10px;">
+    <button class="menu-btn primary" onclick="initBuilder()">新しく作成する</button>
+    <button class="menu-btn" onclick="backToTop()">TOPへ戻る</button>
+  </div>
+</div>
+</div>
+
+<!-- ===== 対戦登録完了 ===== -->
+<div id="battle-register-screen" class="screen">
+<div class="menu-container">
+  <div style="font-size:3rem; margin-bottom:16px;">🎉</div>
+  <h2 style="color:var(--main-cyan); margin-bottom:20px;">対戦準備完了！</h2>
+  <div style="background:#0a0a0a; border:1px solid var(--border-col); border-radius:15px; padding:30px; margin:20px 0; text-align:center;">
+    <p style="font-size:1rem; color:#fff; line-height:1.8;">
+      対戦で使えるデッキに登録しました。<br>
+      <span style="color:#aaa; font-size:12px;">「オンライン対戦」から選択可能です。</span>
+    </p>
+  </div>
+  <button class="menu-btn primary" onclick="backToTop()">トップへ戻る</button>
+</div>
+</div>
+
+<!-- ===== デッキ詳細モーダル ===== -->
+<div id="deck-view-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:20000; padding:20px; overflow-y:auto;">
+<div style="max-width:600px; margin:auto;">
+  <h2 id="view-title" style="text-align:center; color:var(--main-cyan); margin-bottom:20px;"></h2>
+  <div id="view-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(75px, 1fr)); gap:8px; margin-bottom:24px;"></div>
+  <div id="modal-action-area" style="margin-bottom:12px;"></div>
+  <button class="menu-btn" onclick="document.getElementById('deck-view-modal').style.display='none'">閉じる</button>
+</div>
+</div>

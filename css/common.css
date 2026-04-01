@@ -1,0 +1,162 @@
+/* ===== CSS変数・共通スタイル ===== */
+:root {
+  --main-cyan: #00fbff;
+  --bg-dark: #000;
+  --panel-bg: rgba(0, 15, 25, 0.98);
+  --border-col: #00fbff66;
+  --btn-grad: linear-gradient(135deg, #003333 0%, #001a1a 100%);
+  --btn-hover: #004d4d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg-dark);
+  color: var(--main-cyan);
+  font-family: 'Helvetica Neue', 'Meiryo', sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  height: 100vh;
+}
+
+/* ===== 画面切り替え ===== */
+.screen { display: none; width: 100%; min-height: 100vh; flex-direction: column; }
+.active { display: flex !important; }
+
+/* ===== 共通ボタン ===== */
+.menu-btn {
+  background: var(--btn-grad);
+  color: var(--main-cyan);
+  border: 1px solid var(--main-cyan);
+  padding: 18px;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-decoration: none;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  box-shadow: 0 0 10px rgba(0, 251, 255, 0.2);
+}
+.menu-btn:hover {
+  background: var(--btn-hover);
+  box-shadow: 0 0 20px rgba(0, 251, 255, 0.4);
+  transform: translateY(-2px);
+}
+
+.ctrl-btn {
+  background: var(--btn-grad);
+  color: var(--main-cyan);
+  border: 1px solid var(--main-cyan);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+.ctrl-btn:hover { background: var(--btn-hover); }
+.ctrl-btn.del { border-color: #ff4444; color: #ff4444; }
+.ctrl-btn.del:hover { background: #330000; }
+
+/* ===== 共通アクションボタン ===== */
+.action-btn {
+  width: 100%;
+  padding: 16px;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-sizing: border-box;
+  display: block;
+  text-align: center;
+  margin-bottom: 10px;
+}
+.action-btn-primary {
+  background: var(--btn-grad);
+  border: 1px solid var(--main-cyan);
+  color: var(--main-cyan);
+  box-shadow: 0 0 12px rgba(0,251,255,0.2);
+}
+.action-btn-primary:hover {
+  background: var(--btn-hover);
+  box-shadow: 0 0 22px rgba(0,251,255,0.45);
+  transform: translateY(-2px);
+}
+.action-btn-cyan {
+  background: var(--btn-grad);
+  border: 1px solid var(--main-cyan);
+  color: var(--main-cyan);
+  box-shadow: 0 0 10px rgba(0,251,255,0.15);
+}
+.action-btn-cyan:hover {
+  background: var(--btn-hover);
+  box-shadow: 0 0 22px rgba(0,251,255,0.4);
+  transform: translateY(-2px);
+}
+.action-btn-orange {
+  background: linear-gradient(135deg, #1a1a1a, #0a0a0a);
+  border: 1px solid #555;
+  color: #888;
+  box-shadow: 0 0 10px rgba(255,255,255,0.05);
+}
+.action-btn-orange:hover {
+  background: #222;
+  box-shadow: 0 0 14px rgba(255,255,255,0.1);
+  transform: translateY(-2px);
+}
+.action-btn:active { transform: translateY(0px) !important; }
+
+/* ===== インプット ===== */
+input[type="text"], input[type="password"], select {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 15px;
+  background: #111;
+  border: 1px solid var(--border-col);
+  color: #fff;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.login-input {
+  width: 100%;
+  padding: 13px 16px;
+  margin-bottom: 12px;
+  background: #0a0a0a;
+  border: 1px solid var(--border-col);
+  color: #fff;
+  border-radius: 10px;
+  box-sizing: border-box;
+  font-size: 14px;
+  transition: border-color 0.3s;
+}
+.login-input:focus {
+  outline: none;
+  border-color: var(--main-cyan);
+  box-shadow: 0 0 10px rgba(0,251,255,0.2);
+}
+
+/* ===== 注意書き ===== */
+.sub-text {
+  color: #ff9900;
+  font-size: 0.7rem;
+  margin-bottom: 20px;
+  line-height: 1.5;
+  text-align: left;
+  display: inline-block;
+}
+
+/* ===== フィルターラベル ===== */
+.filter-label {
+  color: var(--main-cyan);
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  display: block;
+  margin-bottom: 6px;
+}

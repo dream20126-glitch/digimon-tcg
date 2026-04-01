@@ -1,0 +1,45 @@
+/* ===== 管理画面 ===== */
+.admin-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px; }
+.admin-table th { background: var(--main-cyan); color: #000; padding: 8px; text-align: left; }
+.admin-table td { border-bottom: 1px solid #222; padding: 8px; color: #ccc; vertical-align: top; word-break: break-all; }
+.admin-table tr:hover td { background: #0a1a1a; }
+.status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: bold; }
+.status-registered { background: #00ff88; color: #000; }
+.status-none { background: #333; color: #aaa; }
+
+.admin-btn-lg {
+  display: block; width: 100%; background: var(--btn-grad); color: var(--main-cyan);
+  border: 1px solid var(--main-cyan); padding: 20px; border-radius: 8px;
+  font-size: 1.05rem; font-weight: bold; cursor: pointer; transition: all 0.3s;
+  margin-bottom: 16px; box-shadow: 0 0 10px rgba(0, 251, 255, 0.15); text-align: left;
+}
+.admin-btn-lg:hover { background: var(--btn-hover); box-shadow: 0 0 20px rgba(0, 251, 255, 0.35); transform: translateY(-2px); }
+.admin-btn-lg .btn-sub { display: block; font-size: 11px; color: #aaa; font-weight: normal; margin-top: 4px; }
+
+.admin-btn-sm {
+  background: var(--btn-grad); color: var(--main-cyan); border: 1px solid var(--main-cyan);
+  padding: 8px 16px; border-radius: 6px; font-size: 0.82rem; font-weight: bold;
+  cursor: pointer; transition: all 0.3s; display: inline-block; margin: 3px;
+}
+.admin-btn-sm:hover { background: var(--btn-hover); }
+
+.admin-btn-danger {
+  background: #1a0000; color: #ff4444; border: 1px solid #ff4444;
+  padding: 5px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; margin: 2px;
+}
+.admin-btn-danger:hover { background: #330000; }
+
+/* チュートリアル保存画面 */
+.tsave-wrap { max-width: 460px; margin: auto; padding: 24px 20px; }
+.tsave-field label { display: block; color: #aaa; font-size: 12px; margin-bottom: 4px; margin-top: 14px; }
+.tsave-field input, .tsave-field select, .tsave-field textarea {
+  width: 100%; padding: 10px; background: #111; border: 1px solid var(--border-col);
+  color: #fff; border-radius: 4px; box-sizing: border-box; font-size: 13px;
+}
+.tsave-field textarea { resize: vertical; min-height: 70px; }
+.tdiff-select { display: flex; gap: 8px; margin-top: 4px; }
+.tdiff-btn {
+  flex: 1; padding: 10px 4px; background: #111; border: 1px solid #444; color: #555;
+  border-radius: 4px; cursor: pointer; text-align: center; font-size: 13px; line-height: 1.4;
+}
+.tdiff-btn.selected { border-color: var(--main-cyan); color: var(--main-cyan); background: rgba(0, 251, 255, 0.08); }

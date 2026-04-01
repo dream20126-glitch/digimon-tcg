@@ -1,0 +1,333 @@
+<!-- ===== バトル画面 ===== -->
+<div id="battle-screen" class="screen">
+  <div class="battle-wrap">
+    <!-- AIゾーン -->
+    <div class="battle-zone ai-zone">
+      <span class="zone-label">🤖 デジモンマスター</span>
+      <div style="display:flex; align-items:flex-start; gap:6px;">
+        <div style="display:flex; flex-direction:column; gap:3px; flex-shrink:0; align-items:center;">
+          <span class="zone-label" style="margin:0;">📚</span>
+          <div id="ai-deck-img" style="width:36px; height:50px; background:#1a001a; border:1px solid #ff00fb44; border-radius:5px; overflow:hidden; position:relative;">
+            <img id="ai-deck-back" src="" style="width:100%; height:100%; object-fit:cover; border-radius:4px;">
+            <span style="position:absolute; bottom:1px; right:2px; font-size:8px; color:#fff; font-weight:bold; background:rgba(0,0,0,0.7); padding:1px 3px; border-radius:2px;" id="ai-deck-count">0</span>
+          </div>
+          <span class="zone-label" style="margin:2px 0 0;">🗑</span>
+          <div onclick="showTrash('ai')" style="width:36px; height:50px; background:#1a000a; border:1px solid #ff00fb44; border-radius:5px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.borderColor='#ff00fb'" onmouseout="this.style.borderColor='#ff00fb44'">
+            <span style="font-size:9px; color:#ff00fb; font-weight:bold;" id="ai-trash-count">0</span>
+          </div>
+        </div>
+        <div style="flex:1; min-width:0;">
+          <div id="ai-battle-row" style="display:flex; gap:4px; overflow-x:auto; -webkit-overflow-scrolling:touch;"></div>
+          <!-- AIテイマー/オプションエリア -->
+          <div style="margin-top:4px; border-top:1px dashed #ffaa0033; padding-top:3px;">
+            <span style="font-size:7px; color:#ffaa0066; letter-spacing:1px;">TAMER</span>
+            <div id="ai-tamer-row" style="display:flex; gap:4px; flex-wrap:wrap; min-height:20px;"></div>
+          </div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px; flex-shrink:0; align-items:center;">
+          <span class="zone-label" style="margin:0;">🛡 <span id="ai-sec-count">0</span></span>
+          <div id="ai-sec-area" style="display:flex; flex-direction:row; gap:3px; flex-wrap:wrap; justify-content:flex-end;"></div>
+          <div class="iku-slot" id="ai-iku-slot" style="position:relative; overflow:hidden; margin-top:4px;">
+            <img id="ai-tama-back" src="" style="width:100%; height:100%; object-fit:cover; border-radius:3px; position:absolute; inset:0;">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- メモリーゲージ -->
+    <div class="memory-wrap">
+      <div class="memory-row" id="memory-gauge-row"></div>
+      <div class="memory-info">
+        <span id="m-turn-lbl" class="m-turn-label pl">あなたのターン</span>
+        <span style="color:#444;">|</span>
+        <span style="color:#666; font-size:9px;">メモリー: <b id="m-val" style="color:#fff;">0</b></span>
+        <span style="color:#444;">|</span>
+        <span style="color:#666; font-size:9px;">ターン <b id="t-count" style="color:#aaa;">1</b></span>
+      </div>
+    </div>
+
+    <!-- プレイヤーゾーン -->
+    <div class="battle-zone player-zone">
+      <div style="display:flex; align-items:flex-start; gap:6px;">
+        <div style="display:flex; flex-direction:column; gap:3px; flex-shrink:0; align-items:center;">
+          <span class="zone-label" style="margin:0;">🛡 <span id="pl-sec-count">0</span></span>
+          <div id="pl-sec-area" style="display:flex; flex-direction:row; gap:3px; flex-wrap:wrap;"></div>
+          <div class="iku-slot" id="pl-iku-slot" style="position:relative; overflow:hidden; margin-top:4px;">
+            <img id="pl-tama-back" src="" style="width:100%; height:100%; object-fit:cover; border-radius:3px; position:absolute; inset:0;">
+          </div>
+          <span id="pl-iku-info" style="font-size:8px; color:#aaa; text-align:center; max-width:48px;"></span>
+        </div>
+        <div style="flex:1; min-width:0;">
+          <div id="pl-battle-row" style="display:flex; gap:4px; overflow-x:auto; -webkit-overflow-scrolling:touch;"></div>
+          <!-- プレイヤーテイマー/オプションエリア -->
+          <div style="margin-top:4px; border-top:1px dashed #ffaa0033; padding-top:3px;">
+            <span style="font-size:7px; color:#ffaa0066; letter-spacing:1px;">TAMER</span>
+            <div id="pl-tamer-row" style="display:flex; gap:4px; flex-wrap:wrap; min-height:20px;"></div>
+          </div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:3px; flex-shrink:0; align-items:center;">
+          <span class="zone-label" style="margin:0;">📚</span>
+          <div style="display:flex; flex-direction:row; align-items:flex-end; gap:4px;">
+            <div id="pl-deck-img" style="width:36px; height:50px; background:#001a2a; border:2px solid #00fbff44; border-radius:5px; overflow:hidden; position:relative; cursor:pointer; transition:all 0.2s;">
+              <img id="pl-deck-back" src="" style="width:100%; height:100%; object-fit:cover; border-radius:4px;">
+              <span style="position:absolute; bottom:1px; right:2px; font-size:8px; color:#fff; font-weight:bold; background:rgba(0,0,0,0.7); padding:1px 3px; border-radius:2px;" id="pl-deck-count">0</span>
+            </div>
+          </div>
+          <span class="zone-label" style="margin:2px 0 0;">🗑</span>
+          <div onclick="showTrash('player')" style="width:36px; height:50px; background:#1a0a00; border:1px solid #ff440044; border-radius:5px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.borderColor='#ff4444'" onmouseout="this.style.borderColor='#ff440044'">
+            <span style="font-size:9px; color:#ff4444; font-weight:bold;" id="pl-trash-count">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 長押しアクション選択メニュー -->
+    <div id="longpress-action-menu" style="display:none; position:fixed; z-index:26000; background:rgba(0,15,25,0.98); border:1px solid var(--main-cyan); border-radius:10px; padding:6px; box-shadow:0 0 20px rgba(0,251,255,0.4); min-width:110px;">
+      <div id="longpress-action-buttons" style="display:flex; flex-direction:column; gap:5px;"></div>
+    </div>
+    <div id="longpress-backdrop" style="display:none; position:fixed; inset:0; z-index:25500;"></div>
+
+    <!-- フェーズバー -->
+    <div class="phase-bar">
+      <span class="phase-badge" id="phase-badge">準備中</span>
+      <div class="phase-info-row">
+        <span>手札:<b id="pl-hand-count" style="color:#aaa;">0</b></span>
+        <span>タマ:<b id="pl-tama-count" style="color:#aaa;">0</b></span>
+        <span>トラッシュ:<b id="pl-trash-count2" style="color:#aaa;">0</b></span>
+      </div>
+    </div>
+
+    <!-- 育成フェーズ操作バー -->
+    <div id="breed-action-bar" style="display:none; padding:6px 8px; background:#050505; border-top:1px solid #111; text-align:center;">
+      <button class="a-btn a-btn-cyan" onclick="skipBreedPhase()" style="width:100%;">何もしない → メインフェイズへ</button>
+    </div>
+
+    <!-- 手札 -->
+    <div class="hand-wrap" id="hand-wrap"></div>
+
+    <!-- ゲートを出るボタン -->
+    <div style="text-align:center; padding:6px 0; background:#020202; border-top:1px solid #111;">
+      <button onclick="confirmExitGate()" style="background:none; border:1px solid #ff444444; color:#ff444488; font-size:10px; padding:4px 16px; border-radius:6px; cursor:pointer;">ゲートを出る</button>
+    </div>
+
+    <!-- チュートリアルガイド（矢印＋メッセージ） -->
+    <div id="tutorial-guide" style="display:none; position:absolute; inset:0; pointer-events:none; z-index:7000;">
+      <!-- 矢印 -->
+      <div id="guide-arrow" style="position:absolute; font-size:28px; color:#ff9900; filter:drop-shadow(0 0 8px rgba(255,153,0,0.8)); animation:guideArrowBounce 0.8s ease-in-out infinite alternate;"></div>
+      <!-- メッセージ -->
+      <div id="guide-msg" style="position:absolute; background:rgba(255,153,0,0.95); color:#000; font-size:13px; font-weight:bold; padding:8px 14px; border-radius:10px; white-space:nowrap; box-shadow:0 2px 12px rgba(255,153,0,0.4);"></div>
+    </div>
+
+    <style>
+      @keyframes guideArrowBounce {
+        from { transform: translateY(0px); }
+        to { transform: translateY(-10px); }
+      }
+      @keyframes guideCardGlow {
+        from { box-shadow: 0 0 8px rgba(255,153,0,0.4); }
+        to { box-shadow: 0 0 20px rgba(255,153,0,0.9); }
+      }
+      .guide-highlight {
+        border: 2px solid #ff9900 !important;
+        animation: guideCardGlow 0.8s ease-in-out infinite alternate;
+        position: relative;
+        z-index: 10;
+      }
+    </style>
+
+    <!-- バトルヒントメッセージ -->
+    <div id="battle-hint-msg" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(255,68,68,0.92); color:#fff; font-size:13px; font-weight:bold; padding:12px 18px; border-radius:10px; text-align:center; white-space:pre-line; z-index:6000; pointer-events:none; line-height:1.6;"></div>
+
+    <!-- コスト・効果表示オーバーレイ -->
+    <div id="cost-effect-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:46000; align-items:center; justify-content:center; flex-direction:column; gap:12px;">
+      <div id="ce-cost" style="font-size:2rem; font-weight:bold; color:#ffaa00; text-shadow:0 0 20px rgba(255,170,0,0.8);"></div>
+      <div id="ce-name" style="font-size:1.2rem; color:#fff; font-weight:bold;"></div>
+      <div id="ce-effect" style="display:none; font-size:12px; color:#aaa; max-width:300px; text-align:center; line-height:1.8; background:rgba(0,0,0,0.5); padding:12px 16px; border-radius:8px; border:1px solid #333; white-space:pre-line;"></div>
+    </div>
+
+    <!-- 進化演出オーバーレイ -->
+    <div id="evolve-overlay" style="display:none; position:fixed; inset:0; z-index:47000; align-items:center; justify-content:center; flex-direction:column; gap:12px; background:rgba(0,0,0,0.95);">
+      <div id="evo-flash" style="position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; transition:opacity 0.15s;"></div>
+      <div id="evo-label" style="font-size:0.9rem; color:#00ff88; letter-spacing:3px; opacity:0; transition:opacity 0.3s;">DIGITAL EVOLUTION</div>
+      <div id="evo-card-img" style="width:130px; height:182px; border-radius:10px; overflow:hidden; border:2px solid #00ff88; box-shadow:0 0 40px rgba(0,255,136,0.8); opacity:0; transform:scale(0.7); transition:opacity 0.4s, transform 0.4s;"></div>
+      <div id="evo-card-name" style="font-size:1.4rem; font-weight:bold; color:#fff; letter-spacing:2px; opacity:0; transition:opacity 0.3s;"></div>
+      <div id="evo-cost-text" style="font-size:2.2rem; font-weight:bold; color:#00ff88; text-shadow:0 0 20px rgba(0,255,136,0.8); opacity:0; transform:scale(0.5); transition:opacity 0.3s, transform 0.3s; letter-spacing:2px;"></div>
+      <div id="evo-effect-text" style="display:none; font-size:11px; color:#aaa; max-width:280px; text-align:center; line-height:1.8; background:rgba(0,0,0,0.5); padding:10px 14px; border-radius:8px; border:1px solid #333; white-space:pre-line; opacity:0; transition:opacity 0.3s;"></div>
+    </div>
+
+    <!-- アクションバー -->
+    <div class="action-bar" id="action-bar">
+      <button class="a-btn a-btn-end" onclick="onEndTurn()" style="width:100%;">⏭ ターン終了</button>
+    </div>
+  </div>
+</div>
+
+<!-- ターン演出（超派手） -->
+<div id="your-turn-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:45000; align-items:center; justify-content:center; flex-direction:column; overflow:hidden;">
+  <div class="turn-flash-bg" id="turn-flash-bg"></div>
+  <div class="turn-line turn-line-top" id="turn-line-top"></div>
+  <div id="your-turn-text" style="font-size:2.2rem; font-weight:bold; letter-spacing:6px; animation: turnPulse 0.5s ease-in-out infinite alternate; position:relative; z-index:1;"></div>
+  <div id="your-turn-sub" style="font-size:0.9rem; color:#aaa; letter-spacing:3px; margin-top:8px; opacity:0; transition:opacity 0.3s; position:relative; z-index:1;"></div>
+  <div class="turn-line turn-line-bottom" id="turn-line-bottom"></div>
+</div>
+
+<!-- フェーズ名演出（ハイライト帯付き） -->
+<div id="phase-announce-overlay" style="display:none; position:fixed; inset:0; z-index:44000; align-items:center; justify-content:center; pointer-events:none; background:rgba(0,0,0,0.5);">
+  <div style="position:relative; display:flex; align-items:center; justify-content:center;">
+    <div class="phase-highlight-bar" id="phase-highlight-bar"></div>
+    <div id="phase-announce-text" style="font-size:1.8rem; font-weight:bold; letter-spacing:5px; opacity:0; position:relative; z-index:1;"></div>
+  </div>
+</div>
+
+<!-- スキップメッセージ演出（小さめ・流れる） -->
+<div id="skip-announce-overlay" style="display:none; position:fixed; inset:0; z-index:43000; align-items:center; justify-content:center; pointer-events:none;">
+  <div id="skip-announce-text" style="font-size:1.1rem; font-weight:bold; color:#888; letter-spacing:2px; opacity:0; transform:translateY(20px);"></div>
+</div>
+
+<!-- 孵化演出オーバーレイ -->
+<div id="hatch-overlay" style="display:none; position:fixed; inset:0; z-index:47000; align-items:center; justify-content:center; flex-direction:column; gap:14px; background:rgba(0,0,0,0.92);">
+  <div id="hatch-flash" style="position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; transition:opacity 0.15s;"></div>
+  <div id="hatch-label" style="font-size:0.9rem; color:#ff9900; letter-spacing:3px; opacity:0; transition:opacity 0.3s;">DIGITAMA HATCH!</div>
+  <div id="hatch-card-img" style="width:120px; height:168px; border-radius:10px; overflow:hidden; border:2px solid #ff9900; box-shadow:0 0 40px rgba(255,153,0,0.8); opacity:0; transform:scale(0.5) rotate(-10deg); transition:opacity 0.4s, transform 0.5s;"></div>
+  <div id="hatch-card-name" style="font-size:1.5rem; font-weight:bold; color:#fff; letter-spacing:2px; opacity:0; transition:opacity 0.3s;"></div>
+  <div id="hatch-sub-text" style="font-size:1.8rem; font-weight:bold; color:#ff9900; text-shadow:0 0 15px rgba(255,153,0,0.7); opacity:0; transform:scale(0.5); transition:opacity 0.3s, transform 0.3s;">孵化！</div>
+</div>
+
+<!-- フェーズ説明オーバーレイ（先攻1ターン目のみ） -->
+<div id="phase-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.88); z-index:30000; align-items:center; justify-content:center; padding:20px;">
+  <div style="background:var(--panel-bg); border:1px solid var(--main-cyan); border-radius:16px; padding:28px 22px; max-width:340px; width:100%; text-align:center;">
+    <div id="pp-icon" style="font-size:2.4rem; margin-bottom:8px;"></div>
+    <div id="pp-title" style="font-size:1.1rem; font-weight:bold; color:#fff; margin-bottom:10px;"></div>
+    <div id="pp-desc" style="font-size:12px; color:#aaa; line-height:1.8; margin-bottom:18px; white-space:pre-line;"></div>
+    <button class="menu-btn primary" onclick="closePhaseOverlay()">OK、わかった！</button>
+  </div>
+</div>
+
+<!-- マリガンオーバーレイ -->
+<div id="mulligan-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:40000; align-items:center; justify-content:center; flex-direction:column; gap:16px;">
+  <div style="font-size:1.1rem; font-weight:bold; color:#fff; letter-spacing:2px; margin-bottom:4px;" id="mulligan-title">手札を確認</div>
+  <p style="font-size:11px; color:#aaa; line-height:1.6; text-align:center; margin:0;">
+    気に入らない場合は1回だけ引き直せます
+  </p>
+  <div id="mulligan-hand-preview" style="display:flex; gap:8px; justify-content:center; margin:10px 0; overflow-x:auto; padding:10px 0;"></div>
+  <div style="display:flex; gap:10px; max-width:340px; width:100%;">
+    <button class="menu-btn primary" onclick="acceptHand()" style="flex:1; padding:14px;">ゲーム開始</button>
+    <button class="menu-btn" id="mulligan-btn" onclick="doMulligan()" style="flex:1; padding:14px; border-color:#ffaa00; color:#ffaa00;">引き直す</button>
+  </div>
+</div>
+
+<!-- バトルログ -->
+<div id="battle-log" style="display:none; position:fixed; bottom:160px; left:50%; transform:translateX(-50%); width:calc(100% - 24px); max-width:560px; background:rgba(0,0,0,0.8); border:1px solid #333; border-radius:8px; padding:6px 12px; font-size:11px; color:#aaa; pointer-events:none; z-index:1000; text-align:center;"></div>
+
+<!-- カード詳細（拡大画像＋効果＋進化元効果） -->
+<div id="b-card-detail" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:50000; align-items:center; justify-content:center; padding:20px; overflow-y:auto;">
+  <div style="background:#0a0a0a; border:1px solid var(--main-cyan); border-radius:12px; padding:20px; max-width:320px; width:100%; text-align:center;">
+    <img id="bcd-img" src="" style="width:160px; border-radius:8px; margin-bottom:12px; border:1px solid var(--main-cyan);">
+    <div id="bcd-name" style="color:#fff; font-weight:bold; font-size:14px; margin-bottom:8px;"></div>
+    <div id="bcd-stats" style="font-size:12px; color:var(--main-cyan); margin-bottom:10px;"></div>
+    <div id="bcd-effect" style="font-size:11px; color:#ddd; line-height:1.7; margin-bottom:10px; text-align:left; background:#111; padding:10px; border-radius:6px; border:1px solid #333;"></div>
+    <div id="bcd-evo-source" style="display:none; font-size:11px; color:#aaa; line-height:1.7; margin-bottom:10px; text-align:left; background:#0a0a0a; padding:10px; border-radius:6px; border:1px solid #222;"></div>
+    <button id="bcd-effect-btn" class="card-action-btn card-action-btn-effect" style="display:none; margin-bottom:10px;" onclick="onBCDEffectActivate()">⚡ 効果発動</button>
+    <button class="menu-btn" onclick="closeBCD()">閉じる</button>
+  </div>
+</div>
+
+<!-- カードアクションメニュー（タップ時に表示） -->
+<div id="card-action-menu" style="display:none; position:fixed; z-index:26000; background:var(--panel-bg); border:1px solid var(--main-cyan); border-radius:10px; padding:8px; box-shadow:0 0 20px rgba(0,251,255,0.3); min-width:100px;">
+  <div id="card-action-buttons" style="display:flex; flex-direction:column; gap:6px;"></div>
+</div>
+<!-- タップ外クリックで閉じる用 -->
+<div id="card-action-backdrop" style="display:none; position:fixed; inset:0; z-index:25500;" onclick="hideCardActionMenu()"></div>
+
+<!-- ドローカード表示演出 -->
+<div id="draw-overlay" style="display:none; position:fixed; inset:0; z-index:46000; align-items:center; justify-content:center; flex-direction:column; gap:12px; pointer-events:none; overflow:hidden;">
+  <!-- 前兆演出用 -->
+  <div id="draw-premonition" style="position:absolute; inset:0; display:none;">
+    <div id="draw-shake-layer" style="position:absolute; inset:0;"></div>
+    <div id="draw-light-streak1" style="position:absolute; top:30%; left:0; width:60%; height:3px; background:linear-gradient(90deg,transparent,#ff00fb,#fff,#ff00fb,transparent); opacity:0; transform:rotate(-30deg);"></div>
+    <div id="draw-light-streak2" style="position:absolute; top:55%; left:0; width:40%; height:2px; background:linear-gradient(90deg,transparent,#aa66ff,#fff,#aa66ff,transparent); opacity:0; transform:rotate(-20deg);"></div>
+    <div id="draw-premonition-text" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:1rem; color:#ff00fb; font-weight:bold; letter-spacing:4px; opacity:0; text-shadow:0 0 20px #ff00fb; transition:opacity 0.3s;">...!?</div>
+    <div id="draw-pulse-ring" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); border:2px solid #ff00fb; border-radius:50%; opacity:0;"></div>
+  </div>
+  <!-- カード表示 -->
+  <div id="draw-card-img" style="width:100px; height:140px; border-radius:8px; overflow:hidden; border:2px solid #00ff88; box-shadow:0 0 30px rgba(0,255,136,0.6); opacity:0; transform:translateY(40px); transition:opacity 0.3s, transform 0.4s;"></div>
+  <div id="draw-card-name" style="font-size:1rem; font-weight:bold; color:#fff; opacity:0; transition:opacity 0.3s;"></div>
+  <div id="draw-label" style="font-size:0.8rem; color:#00ff88; letter-spacing:2px; opacity:0; transition:opacity 0.3s;">DRAW!</div>
+</div>
+
+<!-- バトル結果演出 (Win/Lost) -->
+<div id="battle-result-overlay" style="display:none; position:fixed; inset:0; z-index:48000; align-items:center; justify-content:center; flex-direction:column; gap:8px; pointer-events:none;">
+  <div id="battle-result-text" style="font-size:3rem; font-weight:bold; letter-spacing:6px; opacity:0; transform:scale(0.5); transition:opacity 0.3s, transform 0.3s;"></div>
+  <div id="battle-result-sub" style="font-size:0.9rem; color:#aaa; opacity:0; transition:opacity 0.3s;"></div>
+</div>
+
+<!-- セキュリティチェック演出（アタック側+セキュリティ側を並べて大きく表示） -->
+<div id="security-check-overlay" style="display:none; position:fixed; inset:0; z-index:47500; align-items:center; justify-content:center; flex-direction:column; gap:16px; background:rgba(0,0,0,0.95);">
+  <div id="sec-check-label" style="font-size:1.2rem; color:#ff4444; letter-spacing:4px; font-weight:bold; opacity:0; transition:opacity 0.3s; text-shadow:0 0 20px rgba(255,68,68,0.6);">SECURITY CHECK!</div>
+  <div style="display:flex; gap:20px; align-items:center;">
+    <!-- アタック側 -->
+    <div style="text-align:center;">
+      <div id="sec-atk-card-img" style="width:110px; height:154px; border-radius:10px; overflow:hidden; border:2px solid #00fbff; box-shadow:0 0 25px rgba(0,251,255,0.5); opacity:0; transition:opacity 0.3s;"></div>
+      <div id="sec-atk-name" style="font-size:11px; color:#00fbff; margin-top:6px; font-weight:bold; opacity:0; transition:opacity 0.3s;"></div>
+      <div id="sec-atk-dp" style="font-size:10px; color:#aaa; opacity:0; transition:opacity 0.3s;"></div>
+    </div>
+    <div style="font-size:2rem; font-weight:bold; color:#ff4444; text-shadow:0 0 15px #ff4444;">VS</div>
+    <!-- セキュリティ側 -->
+    <div style="text-align:center;">
+      <div id="sec-check-card-img" style="width:110px; height:154px; border-radius:10px; overflow:hidden; border:2px solid #ff4444; box-shadow:0 0 25px rgba(255,68,68,0.5); opacity:0; transform:rotateY(180deg); transition:opacity 0.4s, transform 0.6s;"></div>
+      <div id="sec-check-card-name" style="font-size:11px; color:#ff4444; margin-top:6px; font-weight:bold; opacity:0; transition:opacity 0.3s;"></div>
+      <div id="sec-check-type" style="font-size:10px; color:#aaa; opacity:0; transition:opacity 0.3s;"></div>
+    </div>
+  </div>
+  <div id="sec-check-result" style="font-size:2rem; font-weight:bold; opacity:0; transform:scale(0.5); transition:opacity 0.3s, transform 0.3s; text-shadow:0 0 20px currentColor;"></div>
+</div>
+
+<!-- 消滅演出オーバーレイ -->
+<div id="destroy-overlay" style="display:none; position:fixed; inset:0; z-index:48500; align-items:center; justify-content:center; flex-direction:column; gap:10px; background:rgba(0,0,0,0.85); pointer-events:none;">
+  <div id="destroy-flash" style="position:absolute; inset:0; background:radial-gradient(circle, #fff 0%, transparent 70%); opacity:0; pointer-events:none;"></div>
+  <div id="destroy-card-img" style="width:110px; height:154px; border-radius:10px; overflow:hidden; border:2px solid #ff4444; opacity:0; position:relative; z-index:1;"></div>
+  <div id="destroy-particles" style="position:absolute; inset:0; pointer-events:none; z-index:2;"></div>
+  <div id="destroy-card-name" style="font-size:1.3rem; font-weight:bold; color:#ff4444; opacity:0; position:relative; z-index:1;"></div>
+  <div id="destroy-label" style="font-size:1.8rem; font-weight:bold; color:#fff; text-shadow:0 0 20px #ff4444, 0 0 40px #ff0000, 0 0 60px #ff4444; opacity:0; position:relative; z-index:1; letter-spacing:4px;">DESTROYED</div>
+</div>
+
+<!-- アタック対象選択 (矢印インジケータ) -->
+<div id="attack-arrow" style="display:none; position:fixed; z-index:8000; pointer-events:none;">
+  <svg width="40" height="80" viewBox="0 0 40 80">
+    <defs><linearGradient id="arrow-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff4444"/><stop offset="100%" stop-color="#ff0000"/></linearGradient></defs>
+    <path d="M20 0 L20 55 L8 55 L20 80 L32 55 L20 55" fill="url(#arrow-grad)" opacity="0.9"/>
+  </svg>
+</div>
+
+<!-- オプション使用演出 -->
+<div id="option-overlay" style="display:none; position:fixed; inset:0; z-index:47000; align-items:center; justify-content:center; flex-direction:column; gap:12px; background:rgba(0,0,0,0.93);">
+  <div id="option-flash" style="position:absolute; inset:0; background:radial-gradient(circle, #aa66ff44 0%, transparent 70%); opacity:0; transition:opacity 0.2s;"></div>
+  <div id="option-particles" style="position:absolute; inset:0; pointer-events:none;"></div>
+  <div id="option-label" style="font-size:1rem; color:#aa66ff; letter-spacing:4px; font-weight:bold; opacity:0; transition:opacity 0.3s; text-shadow:0 0 20px #aa66ff; position:relative; z-index:1;">OPTION ACTIVATE</div>
+  <div id="option-card-img" style="width:120px; height:168px; border-radius:10px; overflow:hidden; border:2px solid #aa66ff; opacity:0; transform:scale(0.7); transition:opacity 0.4s, transform 0.4s; position:relative; z-index:1;"></div>
+  <div id="option-card-name" style="font-size:1.3rem; font-weight:bold; color:#fff; letter-spacing:2px; opacity:0; transition:opacity 0.3s; position:relative; z-index:1;"></div>
+  <div id="option-cost-text" style="font-size:1.5rem; font-weight:bold; color:#aa66ff; text-shadow:0 0 15px #aa66ff; opacity:0; transition:opacity 0.3s; position:relative; z-index:1;"></div>
+</div>
+
+<!-- トラッシュ確認モーダル -->
+<div id="trash-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:26000; padding:20px; overflow-y:auto;">
+  <div style="max-width:400px; margin:auto;">
+    <h3 id="trash-modal-title" style="color:var(--main-cyan); text-align:center; margin-bottom:12px;"></h3>
+    <div id="trash-modal-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(65px, 1fr)); gap:6px; margin-bottom:16px;"></div>
+    <button class="menu-btn" onclick="document.getElementById('trash-modal').style.display='none'">閉じる</button>
+  </div>
+</div>
+
+<!-- 効果発動確認 -->
+<div id="effect-confirm-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:27000; align-items:center; justify-content:center; padding:20px;">
+  <div style="background:var(--panel-bg); border:1px solid var(--main-cyan); border-radius:14px; padding:24px; max-width:300px; width:100%; text-align:center;">
+    <div style="font-size:1.5rem; margin-bottom:10px;">⚡</div>
+    <div id="effect-confirm-name" style="font-size:1rem; font-weight:bold; color:#fff; margin-bottom:8px;"></div>
+    <div id="effect-confirm-text" style="font-size:12px; color:#aaa; line-height:1.7; margin-bottom:16px; text-align:left; background:#111; padding:10px; border-radius:6px; white-space:pre-line;"></div>
+    <p style="color:var(--main-cyan); font-size:14px; font-weight:bold; margin-bottom:16px;">効果を発動しますか？</p>
+    <div style="display:flex; gap:10px;">
+      <button class="menu-btn primary" style="flex:1;" onclick="confirmEffect(true)">はい</button>
+      <button class="menu-btn" style="flex:1; border-color:#555; color:#555;" onclick="confirmEffect(false)">いいえ</button>
+    </div>
+  </div>
+</div>

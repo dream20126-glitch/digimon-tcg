@@ -1,0 +1,111 @@
+<!-- ===== デッキビルダー ===== -->
+<div id="deck-make-screen" class="screen">
+  <div class="builder-main">
+    <div class="side-panel-left">
+      <span class="filter-label">SEARCH MODE</span>
+      <div class="search-mode-box">
+        <div id="mode-name" class="mode-btn active" onclick="setSearchMode('name')">名称/No</div>
+        <div id="mode-effect" class="mode-btn" onclick="setSearchMode('effect')">記述検索</div>
+      </div>
+      <input type="text" id="s-input" oninput="filterCards()" placeholder="キーワードを入力...">
+      <span class="filter-label">LEVEL</span>
+      <div class="btn-grid">
+        <div class="filter-btn" onclick="toggleFilter(this, 'levels', '2')">2</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'levels', '3')">3</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'levels', '4')">4</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'levels', '5')">5</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'levels', '6')">6</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'levels', '7')">7</div>
+      </div>
+      <span class="filter-label">CARD TYPE</span>
+      <div class="btn-grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="filter-btn" onclick="toggleFilter(this, 'types', 'デジタマ')">デジタマ</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'types', 'デジモン')">デジモン</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'types', 'オプション')">オプション</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'types', 'テイマー')">テイマー</div>
+      </div>
+      <span class="filter-label">COLOR</span>
+      <div class="btn-grid">
+        <div class="filter-btn" onclick="toggleFilter(this, 'colors', '赤')">赤</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'colors', '黄')">黄</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'colors', '青')">青</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'colors', '紫')">紫</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'colors', '緑')">緑</div>
+        <div class="filter-btn" onclick="toggleFilter(this, 'colors', '黒')">黒</div>
+      </div>
+      <span class="filter-label">FEATURE (特徴)</span>
+      <input type="text" id="s-feature" oninput="filterCards()" placeholder="特徴を入力...">
+      <button class="menu-btn" style="margin-top:10px; border-color:#555; color:#555;"
+        onclick="isTutorialMode ? (confirm('作成を中止して管理画面へ戻りますか？') && (isTutorialMode=false, showScreen('管理画面-screen'))) : backToTop()">
+        <span id="back-btn-label">TOPへ戻る</span>
+      </button>
+    </div>
+
+    <div class="center-panel">
+      <div id="loading-overlay"
+        style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.8); z-index:100; align-items:center; justify-content:center;">
+        LOADING...</div>
+      <div id="search-results"></div>
+    </div>
+
+    <div class="side-panel-right">
+      <div class="count-display">
+        <span>MAIN: <b id="main-count">0</b>/50</span>
+        <span style="color:#ff00fb;">TAMA: <b id="tama-count">0</b>/5</span>
+      </div>
+      <div id="deck-list-area"></div>
+      <button class="menu-btn primary" onclick="isTutorialMode ? showTutorialSaveScreen() : showSaveScreen()">デッキを保存する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== カードプレビュー（オーバーレイ） ===== -->
+<div id="card-preview-window">
+  <button class="close-preview-btn" onclick="hidePreview()">×</button>
+  <div class="preview-flex">
+    <div class="preview-left">
+      <img id="preview-img" onclick="toggleZoom(this)">
+    </div>
+    <div class="preview-right">
+      <h3 id="preview-title" style="margin:0 0 15px 0; font-size:1.2rem;"></h3>
+      <div style="background:#111; padding:15px; border: 1px solid var(--main-cyan); border-radius:10px; margin-bottom:20px;">
+        <span class="filter-label" style="border:none; padding:0; color:var(--main-cyan)">DECK ADDITION (枚数追加)</span>
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:10px;" id="qty-area"></div>
+        <p id="current-qty-msg" style="font-size:13px; margin-top:10px; font-weight:bold;"></p>
+      </div>
+      <span class="filter-label">KEYWORD EFFECT</span>
+      <div id="keyword-preview-area" style="margin-top:10px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 保存設定 ===== -->
+<div id="save-settings-screen" class="screen">
+  <div style="width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch;">
+    <div style="min-width:360px; max-width:500px; margin:auto; padding:20px; text-align:center; box-sizing:border-box;">
+      <h2 style="color:var(--main-cyan)">DECK SAVE</h2>
+      <input type="text" id="deck-name-input" placeholder="デッキ名を入力..."
+        style="width:100%; padding:12px; margin-bottom:15px; background:#111; border:1px solid var(--border-col); color:#fff; border-radius:4px; box-sizing:border-box;">
+      <div id="cover-select-area"
+        style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-height:50vh; overflow-y:auto; border:1px solid #333; padding:10px; margin-bottom:15px; background:#050505; width:100%; box-sizing:border-box;">
+      </div>
+      <button class="menu-btn primary" id="save-confirm-btn" onclick="handleSaveRequest()"
+        style="width:100%; box-sizing:border-box; margin-bottom:10px;">保存を確定する</button>
+      <button class="menu-btn" onclick="showScreen('deck-make-screen')"
+        style="width:100%; box-sizing:border-box;">編集に戻る</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 保存完了 ===== -->
+<div id="save-finish-screen" class="screen">
+  <div class="menu-container">
+    <h2 id="finish-status-title" style="color:#fff">デッキの保存が完了しました</h2>
+    <div style="background:#111; border:1px solid var(--main-cyan); border-radius:15px; padding:30px; margin:20px 0; text-align:center;">
+      <p id="finish-deck-name" style="font-size:1.4rem; font-weight:bold;"></p>
+      <img id="finish-cover-img" style="width:140px; border-radius:8px; border:1px solid var(--main-cyan); margin-top:15px;">
+    </div>
+    <button class="menu-btn primary" onclick="goToDeckListDirect()">マイデッキ</button>
+    <button class="menu-btn" onclick="backToTop()">トップへ戻る</button>
+  </div>
+</div>

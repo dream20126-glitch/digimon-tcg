@@ -1,0 +1,88 @@
+<!-- ===== ルーム入室 ===== -->
+<div id="room-entrance-screen" class="screen">
+  <div class="menu-container">
+    <h2 style="color:var(--main-cyan)">DIGITAL GATE CONNECTION</h2>
+    <div style="background:#0a1a1a; border:1px solid var(--border-col); border-radius:8px; padding:10px 15px; margin-bottom:20px; font-size:13px; text-align:left;">
+      <b id="room-player-label" style="color:#fff;"></b>
+      <span style="color:#aaa; margin-left:8px; font-size:11px;">（ログイン中）</span>
+    </div>
+    <p style="color:#fff; font-size:14px; margin-bottom:20px;">ルームIDを入力してください</p>
+    <input type="text" id="room-id-input" placeholder="ルームID（例：DGM123）" style="max-width:300px; margin: 0 auto 15px; display:block;">
+    <button class="menu-btn primary" onclick="joinRoom()" style="max-width:300px; margin:auto; display:block;">ゲートへ接続</button>
+    <button class="menu-btn" onclick="backToTop()" style="max-width:300px; margin:20px auto 0; display:block;">戻る</button>
+  </div>
+</div>
+
+<!-- ===== バトルロビー ===== -->
+<div id="battle-lobby-screen" class="screen">
+  <div class="menu-container">
+    <h2 id="lobby-status" style="color:var(--main-cyan)">CONNECTING...</h2>
+    <div id="lobby-info" style="background:#111; border:1px solid var(--main-cyan); padding:20px; border-radius:15px; margin:20px 0;">
+      <div id="player-names-display" style="display:flex; justify-content:space-around; margin-bottom:15px; font-weight:bold; color:#fff;">
+        <div>P1: 待機中...</div>
+        <div>P2: 待機中...</div>
+      </div>
+      <p id="player-count-msg" style="color:#ccc; font-size:12px; margin-bottom:15px;">通信を確立しています...</p>
+
+      <div id="deck-select-area" style="margin-top:15px; border-top:1px solid #333; padding-top:15px;">
+        <p style="color:#fff; font-size:14px; margin-bottom:10px;">対戦に使用するデッキを選択</p>
+        <select id="battle-deck-select" style="width:100%; padding:12px; margin-bottom:15px; background:#222; color:#fff; border:1px solid var(--main-cyan); border-radius:5px;">
+          <option value="">デッキを読み込み中...</option>
+        </select>
+        <button id="ready-btn" class="menu-btn primary" onclick="setPlayerReady()" style="width:100%;">デッキを確定して準備完了</button>
+      </div>
+
+      <div id="dice-area" style="display:none; border-top:1px solid #333; margin-top:15px; padding-top:15px;">
+        <div style="display:flex; gap:12px; margin-bottom:16px;">
+          <div id="d-box-p1" style="flex:1; background:#0a1a1a; border:1px solid #00fbff44; border-radius:12px; padding:16px; text-align:center;">
+            <div style="font-size:11px; color:#aaa; margin-bottom:10px;" id="d-name-p1">P1</div>
+            <div id="d-num-p1" class="dice-face" style="width:70px;height:70px;background:#fff;border-radius:10px;position:relative;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:8px;box-sizing:border-box;box-shadow:0 0 10px #00fbff44;"></div>
+            <div id="d-lbl-p1" style="font-size:11px; color:#555; margin-top:8px;">待機中</div>
+          </div>
+          <div style="display:flex; align-items:center; font-size:16px; color:#333; font-weight:bold;">VS</div>
+          <div id="d-box-p2" style="flex:1; background:#0a1a1a; border:1px solid #00fbff44; border-radius:12px; padding:16px; text-align:center;">
+            <div style="font-size:11px; color:#aaa; margin-bottom:10px;" id="d-name-p2">P2</div>
+            <div id="d-num-p2" class="dice-face" style="width:70px;height:70px;background:#fff;border-radius:10px;position:relative;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:8px;box-sizing:border-box;box-shadow:0 0 10px #00fbff44;"></div>
+            <div id="d-lbl-p2" style="font-size:11px; color:#555; margin-top:8px;">待機中</div>
+          </div>
+        </div>
+        <div id="dice-msg" style="text-align:center; font-size:14px; font-weight:bold; color:var(--main-cyan); min-height:20px; margin-bottom:14px;"></div>
+        <button id="roll-btn" class="menu-btn primary" onclick="rollDice()" style="width:100%;">サイコロを振る</button>
+      </div>
+    </div>
+
+    <div id="action-area"></div>
+    <button class="menu-btn danger" onclick="leaveRoom()" style="margin-top:20px; width:100%;">退室する</button>
+  </div>
+</div>
+
+<!-- ===== 3Dサイコロ オーバーレイ ===== -->
+<style>
+  #dice-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.82); z-index:50000; align-items:center; justify-content:center; flex-direction:column; gap:20px; }
+  #dice-overlay.show { display:flex; }
+  #dice-scene { perspective:600px; width:120px; height:120px; }
+  #dice { width:100px; height:100px; position:relative; transform-style:preserve-3d; transform:rotateX(0deg) rotateY(0deg); transition:transform 1.5s cubic-bezier(0.2, 0.8, 0.2, 1); margin:40px auto; box-shadow:0 20px 40px rgba(0,0,0,0.6); }
+  .face { position:absolute; width:100px; height:100px; background:white; border:2px solid #333; border-radius:12px; box-sizing:border-box; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); padding:10px; }
+  .dot { width:12px; height:12px; background:#111; border-radius:50%; justify-self:center; align-self:center; }
+  .front  { transform:translateZ(50px); }
+  .back   { transform:rotateY(180deg) translateZ(50px); }
+  .right  { transform:rotateY(90deg) translateZ(50px); }
+  .left   { transform:rotateY(-90deg) translateZ(50px); }
+  .top    { transform:rotateX(90deg) translateZ(50px); }
+  .bottom { transform:rotateX(-90deg) translateZ(50px); }
+  #dice-result-label { font-size:2.5rem; color:var(--main-cyan); font-weight:bold; text-shadow:0 0 20px var(--main-cyan); min-height:3rem; letter-spacing:4px; }
+</style>
+
+<div id="dice-overlay">
+  <div id="dice-scene">
+    <div id="dice">
+      <div class="face front"  id="face-1"></div>
+      <div class="face back"   id="face-6"></div>
+      <div class="face right"  id="face-3"></div>
+      <div class="face left"   id="face-4"></div>
+      <div class="face top"    id="face-2"></div>
+      <div class="face bottom" id="face-5"></div>
+    </div>
+  </div>
+  <div id="dice-result-label"></div>
+</div>

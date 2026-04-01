@@ -1,0 +1,132 @@
+/* ===== ログイン・トップメニュー ===== */
+.menu-container { max-width: 500px; margin: auto; padding: 60px 20px; text-align: center; }
+.main-title { font-size: 2rem; color: #fff; text-shadow: 0 0 15px var(--main-cyan); margin-bottom: 40px; }
+
+.page-wrap {
+  max-width: 460px;
+  margin: auto;
+  padding: 50px 20px;
+  text-align: center;
+}
+.page-wrap-wide {
+  max-width: 460px;
+  margin: auto;
+  padding: 50px 20px;
+  text-align: center;
+}
+.main-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-col);
+  border-radius: 18px;
+  padding: 32px 28px;
+  box-shadow: 0 0 30px rgba(0,251,255,0.08);
+}
+.game-title {
+  font-size: 1.8rem;
+  color: #fff;
+  text-shadow: 0 0 15px var(--main-cyan);
+  margin-bottom: 6px;
+  font-weight: bold;
+}
+.game-subtitle {
+  font-size: 11px;
+  color: #aaa;
+  margin-bottom: 28px;
+  letter-spacing: 2px;
+}
+
+/* トップメニューグリッド */
+.top-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 20px;
+}
+.top-card {
+  background: #0a0a0a;
+  border: 1px solid var(--border-col);
+  border-radius: 14px;
+  padding: 22px 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.top-card:hover {
+  background: var(--btn-hover);
+  border-color: var(--main-cyan);
+  box-shadow: 0 0 22px rgba(0,251,255,0.4);
+  transform: translateY(-3px);
+}
+.top-card:active { transform: translateY(0px); }
+.top-card-wide {
+  background: #0a0a0a;
+  border: 1px solid var(--border-col);
+  border-radius: 14px;
+  padding: 22px 20px;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  grid-column: 1 / -1;
+}
+.top-card-wide:hover {
+  background: var(--btn-hover);
+  border-color: var(--main-cyan);
+  box-shadow: 0 0 22px rgba(0,251,255,0.4);
+  transform: translateY(-3px);
+}
+.top-card-wide:active { transform: translateY(0px); }
+.top-card-icon { font-size: 2rem; line-height: 1; }
+.top-card-wide-icon { font-size: 2.4rem; line-height: 1; }
+.top-card-label { font-size: 0.9rem; font-weight: bold; color: #fff; }
+.top-card-sub { font-size: 10px; color: #aaa; line-height: 1.4; text-align: center; }
+.top-card-wide-sub { font-size: 10px; color: #aaa; line-height: 1.4; text-align: left; }
+
+/* プレイヤーバー */
+.player-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #0a0a0a;
+  border: 1px solid #1a1a1a;
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 4px;
+}
+.player-bar-info { text-align: left; }
+.player-bar-label { font-size: 10px; color: #555; margin-bottom: 2px; }
+.player-bar-name { font-size: 1.1rem; font-weight: bold; color: #fff; }
+.logout-btn {
+  background: linear-gradient(135deg, #2a1500, #1a0d00);
+  border: 1px solid #ff9900;
+  color: #ff9900;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: bold;
+  transition: all 0.3s;
+}
+.logout-btn:hover {
+  background: #3a1f00;
+  border-color: #ffbb33;
+  color: #ffbb33;
+  box-shadow: 0 0 14px rgba(255,153,0,0.4);
+  transform: translateY(-2px);
+}
+.logout-btn:active { transform: translateY(0px); }
+
+.admin-link-btn {
+  font-size: 0.85rem !important;
+  padding: 10px !important;
+  margin-top: 40px;
+  opacity: 0.7;
+}
+.admin-link-btn:hover { opacity: 1; }
+
+.large-btn { padding: 22px !important; font-size: 1.2rem; }
+.menu-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }

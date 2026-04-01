@@ -468,12 +468,12 @@ function executeCostAndActions(block, ctx, callback) {
   // アクションが空 → 効果不発
   if (!block.actions || block.actions.length === 0) {
     ctx.addLog('⚠ 効果が発動しませんでした');
-    callback && callback();
+    showEffectFailed('効果を発動できませんでした', callback);
     return;
   }
   if (block.cost && block.cost.length > 0) {
     runActionList(block.cost, block.costTarget, ctx, (success) => {
-      if (success === false) { ctx.addLog('⚠ コスト条件を満たせず効果不発'); callback && callback(); return; }
+      if (success === false) { ctx.addLog('⚠ コスト条件を満たせず効果不発'); showEffectFailed('効果を発動できませんでした', callback); return; }
       runActionList(block.actions, block.target, ctx, callback);
     });
   } else {
@@ -754,7 +754,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'destroy': {
       const destroyTargets = [];
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) destroyTargets.push(i); }
-      if(destroyTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); callback(); break; }
+      if(destroyTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
       // 枠色を辞書から取得
       const borderColor = uiColor;
       if(ctx.side === 'ai') {
@@ -776,7 +776,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'bounce': {
       const bounceTargets = [];
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) bounceTargets.push(i); }
-      if(bounceTargets.length === 0) { callback(); break; }
+      if(bounceTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
       const bounceColor = uiColor;
       if(ctx.side === 'ai') {
         doBounce(opponent, bounceTargets[0], ctx);
@@ -867,7 +867,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 対象が相手デジモンの場合
       const restTargets = [];
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i] && !opponent.battleArea[i].suspended) restTargets.push(i); }
-      if(restTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); callback(); break; }
+      if(restTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
       const restColor = uiColor;
       if(ctx.side === 'ai') {
         opponent.battleArea[restTargets[0]].suspended = true;
@@ -1943,6 +1943,16 @@ function showEffectAnnounce(card, effectText, side, callback) {
 
   // タップで早送り
   overlay.addEventListener('click', finish, { once: true });
+}
+
+// ===== 効果不発ポップアップ =====
+
+function showEffectFailed(message, callback) {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);z-index:60000;pointer-events:none;font-size:clamp(1rem,5vw,1.5rem);font-weight:900;color:#ff6666;background:rgba(0,0,0,0.9);padding:14px 32px;border-radius:12px;border:2px solid #ff4444;box-shadow:0 0 30px rgba(255,68,68,0.5);text-align:center;animation:dpChangePopup 1.5s ease forwards;';
+  el.innerText = message || '効果を発動できませんでした';
+  document.body.appendChild(el);
+  setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); callback && callback(); }, 1500);
 }
 
 // ===== 確認ダイアログ =====

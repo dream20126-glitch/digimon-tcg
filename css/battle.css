@@ -408,6 +408,13 @@
   100% { opacity: 0; transform: translateY(-25px) scale(0.8); }
 }
 
+@keyframes secCheckLabel {
+  0% { opacity: 0; transform: translateX(-50%) scale(0.5); }
+  15% { opacity: 1; transform: translateX(-50%) scale(1.1); }
+  80% { opacity: 1; transform: translateX(-50%) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) scale(0.9); }
+}
+
 /* 孵化ヒント */
 @keyframes hatchPulse {
   from { box-shadow: 0 0 10px rgba(255, 153, 0, 0.4), inset 0 0 5px rgba(255, 153, 0, 0.1); }

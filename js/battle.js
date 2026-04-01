@@ -661,7 +661,7 @@ function showDestroyEffect(card, callback) {
 }
 
 // セキュリティチェック演出
-function showSecurityCheck(secCard, atkCard, callback, customLabel) {
+function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpen) {
   const overlay=document.getElementById('security-check-overlay'); if(!overlay){callback&&callback();return;}
   const label=document.getElementById('sec-check-label');
   const atkImgEl=document.getElementById('sec-atk-card-img');
@@ -695,6 +695,7 @@ function showSecurityCheck(secCard, atkCard, callback, customLabel) {
 
   label.innerText = customLabel || 'SECURITY CHECK!';
   overlay.style.display='flex';
+  if (onOpen) onOpen();
   setTimeout(() => { label.style.opacity='1'; },100);
   setTimeout(() => { atkImgEl.style.opacity='1'; atkNameEl.style.opacity='1'; atkDpEl.style.opacity='1'; },300);
   setTimeout(() => { imgEl.style.opacity='1'; imgEl.style.transform='rotateY(0deg)'; },700);
@@ -1547,20 +1548,22 @@ function resolveSecurityCheck(atk, atkIdx) {
   let checkNumber = 0;
   if (totalChecks > 1) addLog('⚔ セキュリティチェック x' + totalChecks + '！');
 
-  function showCheckAnnounce(callback) {
-    checkNumber++;
-    if (totalChecks <= 1) { callback(); return; }
-    // 「N枚チェック！」「1枚目！！」表示
-    const text = checkNumber === 1 ? '⚔ ' + totalChecks + '枚チェック！' : '🛡 ' + checkNumber + '枚目！！';
+  // セキュリティチェック画面上にラベルを大きく表示
+  function showCheckLabelOnOverlay(text) {
+    // 既存のラベルがあれば削除
+    const old = document.getElementById('_sec-check-count-label');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
     const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);z-index:60000;pointer-events:none;font-size:clamp(1.5rem,7vw,2.5rem);font-weight:900;color:#fff;background:rgba(255,0,0,0.85);padding:10px 28px;border-radius:12px;border:2px solid #ff4444;box-shadow:0 0 30px rgba(255,0,0,0.5);animation:dpChangePopup 1.2s ease forwards;';
+    el.id = '_sec-check-count-label';
+    el.style.cssText = 'position:fixed;top:10%;left:50%;transform:translateX(-50%);z-index:60001;pointer-events:none;font-size:clamp(1.5rem,7vw,2.5rem);font-weight:900;color:#fff;background:rgba(255,0,0,0.85);padding:10px 28px;border-radius:12px;border:2px solid #ff4444;box-shadow:0 0 30px rgba(255,0,0,0.5);text-align:center;animation:secCheckLabel 2.5s ease forwards;';
     el.innerText = text;
     document.body.appendChild(el);
-    setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); callback(); }, 1000);
+    setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); }, 2800);
   }
 
   function doNextCheck() {
     checksRemaining--;
+    checkNumber++;
     // アタッカーが消滅していたら終了
     if (!bs.player.battleArea[atkIdx]) { checkAttackEnd(atk, atkIdx); return; }
     // セキュリティが0なら → チェック終了（ダイレクトアタックにはならない。次のアタックが必要）
@@ -1571,7 +1574,15 @@ function resolveSecurityCheck(atk, atkIdx) {
     }
 
     const sec = bs.ai.security.splice(0,1)[0];
-    showCheckAnnounce(() => {
+    // VS画面上にチェック数ラベルを表示
+    const afterOpen = () => {
+      if (totalChecks <= 1) return;
+      if (checkNumber === 1) {
+        showCheckLabelOnOverlay('⚔ ' + totalChecks + '枚チェック！');
+      } else {
+        showCheckLabelOnOverlay('🛡 ' + checkNumber + '枚目！！');
+      }
+    };
     showSecurityCheck(sec, atk, () => {
       console.log('[SEC-REVEAL] name:', sec.name, 'type:', sec.type, 'securityEffect:', sec.securityEffect, 'effect:', sec.effect?.substring(0,40));
       if(sec.type==='デジモン') {
@@ -1644,11 +1655,10 @@ function resolveSecurityCheck(atk, atkIdx) {
       // まだチェック回数が残っていれば続ける
       if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
       else { checkAttackEnd(atk, atkIdx); }
-    });
-    }); // showCheckAnnounce
+    }, null, afterOpen);
   }
 
-  // 最初のチェック
+  // 最初のチェック開始（ラベルはVS画面上に表示される）
   if(bs.ai.security.length > 0) {
     doNextCheck();
   } else {
@@ -1883,10 +1893,16 @@ function showBlockConfirm(blocker, attacker, callback) {
   if(!overlay) { callback(false); return; }
   document.getElementById('effect-confirm-name').innerText = '⚠ アタック中！！ ⚠';
   document.getElementById('effect-confirm-text').innerText =
-    '相手の「'+attacker.name+'」(DP:'+attacker.dp+')がアタックしてきました。\nブロックしますか？';
+    '相手の「'+attacker.name+'」(DP:'+attacker.dp+')がアタックしてきました。';
+  const questionEl = document.getElementById('effect-confirm-question');
+  if (questionEl) questionEl.innerText = 'ブロックしますか？';
   document.body.appendChild(overlay);
   overlay.style.display = 'flex';
-  window._effectConfirmCallback = callback;
+  window._effectConfirmCallback = function(result) {
+    // 質問テキストを元に戻す
+    if (questionEl) questionEl.innerText = '効果を発動しますか？';
+    callback(result);
+  };
 }
 
 // ブロッカー選択UI（複数ブロッカーがいる場合）

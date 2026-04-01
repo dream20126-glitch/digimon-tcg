@@ -415,6 +415,28 @@
   100% { opacity: 0; transform: translateX(-50%) scale(0.9); }
 }
 
+/* Sアタック+N 演出（斜め上から中央→ゆっくり拡大） */
+@keyframes sAttackPlusSlam {
+  0% { opacity: 0; transform: translate(-120%, -80%) scale(0.6) rotate(-8deg); }
+  25% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+  50% { transform: translate(-50%, -50%) scale(1.05) rotate(0deg); }
+  75% { transform: translate(-50%, -50%) scale(1.18) rotate(0deg); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.25) rotate(0deg); opacity: 0; }
+}
+@keyframes sAttackPlusGlow {
+  0%, 100% { box-shadow: 0 0 20px #ff2244, 0 0 40px #ff2244, 0 0 80px #ff004488; }
+  50% { box-shadow: 0 0 30px #ff4466, 0 0 60px #ff2244, 0 0 120px #ff006688; }
+}
+
+/* 効果不発スライドメッセージ（右→左） */
+@keyframes effectFizzleSlide {
+  0% { transform: translateX(100vw); opacity: 0; }
+  10% { opacity: 1; }
+  30% { transform: translateX(0); opacity: 1; }
+  70% { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(-100vw); opacity: 0; }
+}
+
 /* 孵化ヒント */
 @keyframes hatchPulse {
   from { box-shadow: 0 0 10px rgba(255, 153, 0, 0.4), inset 0 0 5px rgba(255, 153, 0, 0.1); }

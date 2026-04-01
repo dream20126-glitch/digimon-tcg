@@ -1542,6 +1542,17 @@ function getSecurityAttackCount(card) {
   return 1 + extra;
 }
 
+function showSAttackPlusAnnounce(n, callback) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:61000;display:flex;align-items:center;justify-content:center;pointer-events:none;';
+  const el = document.createElement('div');
+  el.style.cssText = 'position:absolute;top:50%;left:50%;font-size:clamp(1.8rem,8vw,3rem);font-weight:900;color:#ff2255;text-shadow:0 0 10px #ff2255,0 0 30px #ff4466,0 0 60px #ff0044,0 0 100px #ff006688;letter-spacing:3px;white-space:nowrap;padding:16px 36px;border:3px solid #ff3366;border-radius:14px;background:linear-gradient(135deg,rgba(40,0,10,0.95),rgba(80,0,20,0.95));animation:sAttackPlusSlam 2s cubic-bezier(0.22,1,0.36,1) forwards, sAttackPlusGlow 0.6s ease-in-out 0.25s 2;';
+  el.innerText = '⚔ セキュリティアタック+' + n + '！！';
+  overlay.appendChild(el);
+  document.body.appendChild(overlay);
+  setTimeout(() => { if(overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2200);
+}
+
 function resolveSecurityCheck(atk, atkIdx) {
   const totalChecks = getSecurityAttackCount(atk);
   let checksRemaining = totalChecks;
@@ -1559,6 +1570,21 @@ function resolveSecurityCheck(atk, atkIdx) {
     el.innerText = text;
     document.body.appendChild(el);
     setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); }, 2800);
+  }
+
+  function startChecks() {
+    if(bs.ai.security.length > 0) {
+      doNextCheck();
+    } else {
+      showDirectAttack(atk, 'player', () => { battleVictory(); });
+    }
+  }
+
+  // Sアタック+N の場合、VS画面前に大きく演出表示
+  if (totalChecks > 1) {
+    showSAttackPlusAnnounce(totalChecks - 1, () => { startChecks(); });
+  } else {
+    startChecks();
   }
 
   function doNextCheck() {
@@ -1658,13 +1684,7 @@ function resolveSecurityCheck(atk, atkIdx) {
     }, null, afterOpen);
   }
 
-  // 最初のチェック開始（ラベルはVS画面上に表示される）
-  if(bs.ai.security.length > 0) {
-    doNextCheck();
-  } else {
-    // セキュリティ0 → ダイレクトアタック演出 → 勝利
-    showDirectAttack(atk, 'player', () => { battleVictory(); });
-  }
+  // ※startChecks() で開始済み（Sアタック+演出後に呼ばれる）
 }
 
 function checkAttackEnd(atk, atkIdx) {
@@ -1891,15 +1911,22 @@ function aiAttackPhase(callback) {
 function showBlockConfirm(blocker, attacker, callback) {
   const overlay = document.getElementById('effect-confirm-overlay');
   if(!overlay) { callback(false); return; }
-  document.getElementById('effect-confirm-name').innerText = '⚠ アタック中！！ ⚠';
+  const nameEl = document.getElementById('effect-confirm-name');
+  nameEl.innerText = '🚨💥 アタック中！！ 💥🚨';
+  nameEl.style.color = '#ff2222';
+  nameEl.style.textShadow = '0 0 10px #ff0000, 0 0 20px #ff000088';
+  nameEl.style.fontSize = '1.2rem';
   document.getElementById('effect-confirm-text').innerText =
-    '相手の「'+attacker.name+'」(DP:'+attacker.dp+')がアタックしてきました。';
+    '相手の「'+attacker.name+'」(DP:'+attacker.dp+')がアタックしてきました！';
   const questionEl = document.getElementById('effect-confirm-question');
   if (questionEl) questionEl.innerText = 'ブロックしますか？';
   document.body.appendChild(overlay);
   overlay.style.display = 'flex';
   window._effectConfirmCallback = function(result) {
-    // 質問テキストを元に戻す
+    // スタイルを元に戻す
+    nameEl.style.color = '#fff';
+    nameEl.style.textShadow = '';
+    nameEl.style.fontSize = '1rem';
     if (questionEl) questionEl.innerText = '効果を発動しますか？';
     callback(result);
   };

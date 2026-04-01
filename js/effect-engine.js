@@ -1160,15 +1160,22 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
     box.style.cssText = 'background:#0a0a1a;border:2px solid '+borderColor+';border-radius:12px;padding:20px;text-align:center;max-width:280px;width:90%;';
 
     // カード画像
-    const imgSrc = card ? (card.imgSrc || card.imageUrl || '') : '';
+    const imgSrc = card ? (card.imgSrc || getCardImageUrl(card) || card.imageUrl || '') : '';
     if (imgSrc) {
-      box.innerHTML += '<div style="margin-bottom:12px;"><img src="'+imgSrc+'" style="width:80px;height:112px;object-fit:cover;border-radius:6px;border:2px solid '+borderColor+';"></div>';
+      box.innerHTML += '<div style="margin-bottom:12px;"><img src="'+imgSrc+'" style="width:100px;height:140px;object-fit:cover;border-radius:8px;border:2px solid '+borderColor+';box-shadow:0 0 20px '+borderColor+'44;"></div>';
     }
-    // カード名＋DP
+    // カード名＋DP＋タイプ
     const name = card ? card.name : '不明';
-    const dp = card ? (card.dp || '?') : '?';
-    box.innerHTML += '<div style="color:#fff;font-size:14px;font-weight:bold;margin-bottom:4px;">'+name+'</div>';
-    box.innerHTML += '<div style="color:#aaa;font-size:11px;margin-bottom:16px;">DP: '+dp+'</div>';
+    const dp = card ? (card.dp || '-') : '-';
+    const cardType = card ? (card.type || '') : '';
+    box.innerHTML += '<div style="color:#fff;font-size:15px;font-weight:bold;margin-bottom:4px;">'+name+'</div>';
+    box.innerHTML += '<div style="color:#aaa;font-size:11px;margin-bottom:4px;">'+cardType+(dp !== '-' ? ' ｜ DP: '+dp : '')+'</div>';
+    if (card && card.effect && card.effect !== 'なし') {
+      const effectPreview = card.effect.length > 60 ? card.effect.substring(0,60)+'…' : card.effect;
+      box.innerHTML += '<div style="color:#888;font-size:9px;margin-bottom:12px;line-height:1.3;max-height:36px;overflow:hidden;">'+effectPreview+'</div>';
+    } else {
+      box.innerHTML += '<div style="margin-bottom:12px;"></div>';
+    }
     box.innerHTML += '<div style="color:'+borderColor+';font-size:13px;font-weight:bold;margin-bottom:16px;">このカードでいいですか？</div>';
     box.innerHTML += '<div style="display:flex;gap:10px;justify-content:center;">'
       + '<button id="_target-yes" style="background:'+borderColor+';color:#000;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
@@ -1949,10 +1956,10 @@ function showEffectAnnounce(card, effectText, side, callback) {
 
 function showEffectFailed(message, callback) {
   const el = document.createElement('div');
-  el.style.cssText = 'position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);z-index:60000;pointer-events:none;font-size:clamp(1rem,5vw,1.5rem);font-weight:900;color:#ff6666;background:rgba(0,0,0,0.9);padding:14px 32px;border-radius:12px;border:2px solid #ff4444;box-shadow:0 0 30px rgba(255,68,68,0.5);text-align:center;animation:dpChangePopup 1.5s ease forwards;';
-  el.innerText = message || '効果を発動できませんでした';
+  el.style.cssText = 'position:fixed;top:45%;left:0;z-index:60000;pointer-events:none;font-size:clamp(0.85rem,3.5vw,1.1rem);font-weight:700;color:#aaa;background:rgba(30,30,40,0.85);padding:10px 28px;border-radius:20px;border:1px solid #555;box-shadow:0 2px 12px rgba(0,0,0,0.4);white-space:nowrap;animation:effectFizzleSlide 2.2s cubic-bezier(0.25,1,0.5,1) forwards;';
+  el.innerText = '💨 対象がいないため、効果発動できませんでした';
   document.body.appendChild(el);
-  setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); callback && callback(); }, 1500);
+  setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); callback && callback(); }, 2200);
 }
 
 // ===== 確認ダイアログ =====

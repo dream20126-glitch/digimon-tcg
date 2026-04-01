@@ -716,6 +716,7 @@ function showSecurityCheck(secCard, atkCard, callback, customLabel) {
 // ===== 効果発動確認 =====
 // 効果コンテキスト生成
 function makeEffectContext(card, side) {
+  window._lastBattleState = bs; // 対象選択の確認ダイアログ用
   return {
     card, side, bs, addLog, renderAll, updateMemGauge, doDraw, showYourTurn, aiTurn,
     // 演出関数
@@ -1550,9 +1551,9 @@ function resolveSecurityCheck(atk, atkIdx) {
     checkNumber++;
     if (totalChecks <= 1) { callback(); return; }
     // 「N枚チェック！」「1枚目！！」表示
-    const text = checkNumber === 1 ? totalChecks + '枚チェック！' : checkNumber + '枚目！！';
+    const text = checkNumber === 1 ? '⚔ ' + totalChecks + '枚チェック！' : '🛡 ' + checkNumber + '枚目！！';
     const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);z-index:60000;pointer-events:none;font-size:clamp(1.5rem,7vw,2.5rem);font-weight:900;color:#ff4444;text-shadow:0 0 20px #ff0000,0 0 40px #ff0000;animation:dpChangePopup 1.2s ease forwards;';
+    el.style.cssText = 'position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);z-index:60000;pointer-events:none;font-size:clamp(1.5rem,7vw,2.5rem);font-weight:900;color:#fff;background:rgba(255,0,0,0.85);padding:10px 28px;border-radius:12px;border:2px solid #ff4444;box-shadow:0 0 30px rgba(255,0,0,0.5);animation:dpChangePopup 1.2s ease forwards;';
     el.innerText = text;
     document.body.appendChild(el);
     setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); callback(); }, 1000);
@@ -1880,9 +1881,9 @@ function aiAttackPhase(callback) {
 function showBlockConfirm(blocker, attacker, callback) {
   const overlay = document.getElementById('effect-confirm-overlay');
   if(!overlay) { callback(false); return; }
-  document.getElementById('effect-confirm-name').innerText = blocker.name + '（ブロッカー）';
+  document.getElementById('effect-confirm-name').innerText = '⚠ アタック中！！ ⚠';
   document.getElementById('effect-confirm-text').innerText =
-    '相手の「'+attacker.name+'」(DP:'+attacker.dp+')がアタックしてきました。\n\n「'+blocker.name+'」(DP:'+blocker.dp+')でブロックしますか？';
+    '相手の「'+attacker.name+'」(DP:'+attacker.dp+')がアタックしてきました。\nブロックしますか？';
   document.body.appendChild(overlay);
   overlay.style.display = 'flex';
   window._effectConfirmCallback = callback;

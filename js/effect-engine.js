@@ -465,9 +465,15 @@ function executeAfterActions(block, ctx, callback) {
 }
 
 function executeCostAndActions(block, ctx, callback) {
+  // アクションが空 → 効果不発
+  if (!block.actions || block.actions.length === 0) {
+    ctx.addLog('⚠ 効果が発動しませんでした');
+    callback && callback();
+    return;
+  }
   if (block.cost && block.cost.length > 0) {
     runActionList(block.cost, block.costTarget, ctx, (success) => {
-      if (success === false) { callback && callback(); return; }
+      if (success === false) { ctx.addLog('⚠ コスト条件を満たせず効果不発'); callback && callback(); return; }
       runActionList(block.actions, block.target, ctx, callback);
     });
   } else {
@@ -1126,9 +1132,65 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
     });
 
     if (selectedIdx !== null) {
-      cleanup();
-      callback(selectedIdx);
+      // 対象カードの情報を取得
+      const bs = window._lastBattleState;
+      const area = targetSide === 'ai' ? (bs ? bs.ai.battleArea : []) : (bs ? bs.player.battleArea : []);
+      const card = area[selectedIdx];
+      // 確認ダイアログ表示
+      showTargetConfirm(card, selectedIdx, color, (confirmed) => {
+        if (confirmed) {
+          cleanup();
+          callback(selectedIdx);
+        }
+        // いいえ → 選択に戻る（何もしない）
+      });
     }
+  }
+
+  // 対象確認ダイアログ
+  function showTargetConfirm(card, idx, borderColor, onResult) {
+    // イベントを一時停止
+    document.removeEventListener('click', onSelect, true);
+    document.removeEventListener('touchend', onSelect, true);
+
+    const confirmOverlay = document.createElement('div');
+    confirmOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:65000;display:flex;align-items:center;justify-content:center;';
+
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#0a0a1a;border:2px solid '+borderColor+';border-radius:12px;padding:20px;text-align:center;max-width:280px;width:90%;';
+
+    // カード画像
+    const imgSrc = card ? (card.imgSrc || card.imageUrl || '') : '';
+    if (imgSrc) {
+      box.innerHTML += '<div style="margin-bottom:12px;"><img src="'+imgSrc+'" style="width:80px;height:112px;object-fit:cover;border-radius:6px;border:2px solid '+borderColor+';"></div>';
+    }
+    // カード名＋DP
+    const name = card ? card.name : '不明';
+    const dp = card ? (card.dp || '?') : '?';
+    box.innerHTML += '<div style="color:#fff;font-size:14px;font-weight:bold;margin-bottom:4px;">'+name+'</div>';
+    box.innerHTML += '<div style="color:#aaa;font-size:11px;margin-bottom:16px;">DP: '+dp+'</div>';
+    box.innerHTML += '<div style="color:'+borderColor+';font-size:13px;font-weight:bold;margin-bottom:16px;">このカードでいいですか？</div>';
+    box.innerHTML += '<div style="display:flex;gap:10px;justify-content:center;">'
+      + '<button id="_target-yes" style="background:'+borderColor+';color:#000;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
+      + '<button id="_target-no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 24px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
+      + '</div>';
+
+    confirmOverlay.appendChild(box);
+    document.body.appendChild(confirmOverlay);
+
+    document.getElementById('_target-yes').onclick = () => {
+      if (confirmOverlay.parentNode) confirmOverlay.parentNode.removeChild(confirmOverlay);
+      onResult(true);
+    };
+    document.getElementById('_target-no').onclick = () => {
+      if (confirmOverlay.parentNode) confirmOverlay.parentNode.removeChild(confirmOverlay);
+      // 選択イベントを再登録
+      setTimeout(() => {
+        document.addEventListener('click', onSelect, true);
+        document.addEventListener('touchend', onSelect, true);
+      }, 100);
+      onResult(false);
+    };
   }
 
   function cleanup() {

@@ -1,3 +1,27 @@
+/* スクロールバーのカスタマイズ */
+#pl-battle-row::-webkit-scrollbar,
+#ai-battle-row::-webkit-scrollbar,
+.hand-wrap::-webkit-scrollbar {
+  height: 4px;
+}
+#pl-battle-row::-webkit-scrollbar-track,
+#ai-battle-row::-webkit-scrollbar-track,
+.hand-wrap::-webkit-scrollbar-track {
+  background: #111;
+  border-radius: 2px;
+}
+#pl-battle-row::-webkit-scrollbar-thumb,
+#ai-battle-row::-webkit-scrollbar-thumb,
+.hand-wrap::-webkit-scrollbar-thumb {
+  background: #00fbff44;
+  border-radius: 2px;
+}
+#pl-battle-row::-webkit-scrollbar-thumb:hover,
+#ai-battle-row::-webkit-scrollbar-thumb:hover,
+.hand-wrap::-webkit-scrollbar-thumb:hover {
+  background: #00fbff88;
+}
+
 /* ===== バトル画面 ===== */
 #battle-screen {
   background: #000;

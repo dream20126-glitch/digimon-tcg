@@ -1147,53 +1147,64 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
     }
   }
 
-  // 対象確認ダイアログ
+  // 対象確認ダイアログ（既存のBCDカード詳細画面を流用）
   function showTargetConfirm(card, idx, borderColor, onResult) {
     // イベントを一時停止
     document.removeEventListener('click', onSelect, true);
     document.removeEventListener('touchend', onSelect, true);
 
-    const confirmOverlay = document.createElement('div');
-    confirmOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:65000;display:flex;align-items:center;justify-content:center;';
-    confirmOverlay.onclick = (e) => e.stopPropagation();
-
-    const box = document.createElement('div');
-    box.style.cssText = 'background:#0a0a1a;border:2px solid '+borderColor+';border-radius:12px;padding:20px;text-align:center;max-width:280px;width:90%;';
-
-    // カード画像
-    const imgSrc = card ? (card.imgSrc || getCardImageUrl(card) || card.imageUrl || '') : '';
-    if (imgSrc) {
-      box.innerHTML += '<div style="margin-bottom:12px;"><img src="'+imgSrc+'" style="width:100px;height:140px;object-fit:cover;border-radius:8px;border:2px solid '+borderColor+';box-shadow:0 0 20px '+borderColor+'44;"></div>';
+    // BCD（カード詳細画面）を表示
+    const bcd = document.getElementById('b-card-detail');
+    if (window.showBCD) {
+      // showBCDでカード詳細を描画（sourceはダミー）
+      window.showBCD(card, 'targetConfirm');
     }
-    // カード名＋DP＋タイプ
-    const name = card ? card.name : '不明';
-    const dp = card ? (card.dp || '-') : '-';
-    const cardType = card ? (card.type || '') : '';
-    box.innerHTML += '<div style="color:#fff;font-size:15px;font-weight:bold;margin-bottom:4px;">'+name+'</div>';
-    box.innerHTML += '<div style="color:#aaa;font-size:11px;margin-bottom:4px;">'+cardType+(dp !== '-' ? ' ｜ DP: '+dp : '')+'</div>';
-    if (card && card.effect && card.effect !== 'なし') {
-      const effectPreview = card.effect.length > 60 ? card.effect.substring(0,60)+'…' : card.effect;
-      box.innerHTML += '<div style="color:#888;font-size:9px;margin-bottom:12px;line-height:1.3;max-height:36px;overflow:hidden;">'+effectPreview+'</div>';
-    } else {
-      box.innerHTML += '<div style="margin-bottom:12px;"></div>';
-    }
-    box.innerHTML += '<div style="color:'+borderColor+';font-size:13px;font-weight:bold;margin-bottom:16px;">このカードでいいですか？</div>';
-    box.innerHTML += '<div style="display:flex;gap:10px;justify-content:center;">'
-      + '<button id="_target-yes" style="background:'+borderColor+';color:#000;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
-      + '<button id="_target-no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 24px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
+
+    // BCDの「閉じる」ボタンと効果発動ボタンを非表示
+    const closeBtn = bcd.querySelector('.menu-btn');
+    if (closeBtn) closeBtn.style.display = 'none';
+    const effectBtn = document.getElementById('bcd-effect-btn');
+    if (effectBtn) effectBtn.style.display = 'none';
+
+    // BCDのz-indexを対象選択より上に
+    bcd.style.zIndex = '65000';
+
+    // 確認ボタンをBCDの中に追加
+    const innerBox = bcd.querySelector('div');
+    const confirmDiv = document.createElement('div');
+    confirmDiv.id = '_target-confirm-btns';
+    confirmDiv.innerHTML =
+      '<div style="color:'+borderColor+';font-size:14px;font-weight:bold;margin:16px 0 12px;text-align:center;">このカードでいいですか？</div>'
+      + '<div style="display:flex;gap:10px;justify-content:center;">'
+      + '<button id="_target-yes" style="background:'+borderColor+';color:#000;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
+      + '<button id="_target-no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
       + '</div>';
+    innerBox.appendChild(confirmDiv);
 
-    confirmOverlay.appendChild(box);
-    document.body.appendChild(confirmOverlay);
+    // BCDの背景クリックで貫通しないように
+    const stopClick = (e) => e.stopPropagation();
+    bcd.addEventListener('click', stopClick, true);
+
+    function cleanupConfirm() {
+      // 追加した確認ボタンを削除
+      const btns = document.getElementById('_target-confirm-btns');
+      if (btns && btns.parentNode) btns.parentNode.removeChild(btns);
+      // 閉じるボタンを復元
+      if (closeBtn) closeBtn.style.display = '';
+      // BCD非表示 & z-index復元
+      bcd.style.display = 'none';
+      bcd.style.zIndex = '50000';
+      bcd.removeEventListener('click', stopClick, true);
+    }
 
     document.getElementById('_target-yes').onclick = (e) => {
       e.stopPropagation();
-      if (confirmOverlay.parentNode) confirmOverlay.parentNode.removeChild(confirmOverlay);
+      cleanupConfirm();
       setTimeout(() => onResult(true), 50);
     };
     document.getElementById('_target-no').onclick = (e) => {
       e.stopPropagation();
-      if (confirmOverlay.parentNode) confirmOverlay.parentNode.removeChild(confirmOverlay);
+      cleanupConfirm();
       // 選択イベントを再登録
       setTimeout(() => {
         document.addEventListener('click', onSelect, true);

@@ -1155,6 +1155,7 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
 
     const confirmOverlay = document.createElement('div');
     confirmOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:65000;display:flex;align-items:center;justify-content:center;';
+    confirmOverlay.onclick = (e) => e.stopPropagation();
 
     const box = document.createElement('div');
     box.style.cssText = 'background:#0a0a1a;border:2px solid '+borderColor+';border-radius:12px;padding:20px;text-align:center;max-width:280px;width:90%;';
@@ -1185,11 +1186,13 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
     confirmOverlay.appendChild(box);
     document.body.appendChild(confirmOverlay);
 
-    document.getElementById('_target-yes').onclick = () => {
+    document.getElementById('_target-yes').onclick = (e) => {
+      e.stopPropagation();
       if (confirmOverlay.parentNode) confirmOverlay.parentNode.removeChild(confirmOverlay);
-      onResult(true);
+      setTimeout(() => onResult(true), 50);
     };
-    document.getElementById('_target-no').onclick = () => {
+    document.getElementById('_target-no').onclick = (e) => {
+      e.stopPropagation();
       if (confirmOverlay.parentNode) confirmOverlay.parentNode.removeChild(confirmOverlay);
       // 選択イベントを再登録
       setTimeout(() => {

@@ -139,9 +139,8 @@ function onRemoteCommand(cmd) {
     }
 
     case 'breed_move': {
-      const moveCard = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '' };
-      addLog('🎮 相手が「' + moveCard.name + '」をバトルエリアへ移動！');
-      showPlayEffect(moveCard, () => {});
+      addLog('🎮 相手が「' + (cmd.cardName||'???') + '」をバトルエリアへ移動！');
+      showPhaseAnnounce('🐾 ' + (cmd.cardName||'') + ' → バトルエリア', '#00fbff', () => {});
       break;
     }
 
@@ -233,7 +232,8 @@ function onRemoteCommand(cmd) {
       openRow.style.cssText = 'display:flex;gap:10px;justify-content:center;padding:12px 20px;background:rgba(0,15,25,0.9);border:1px solid #ffaa0044;border-radius:12px;';
       cmd.cards.forEach(c => {
         const wrap = document.createElement('div');
-        wrap.style.cssText = 'text-align:center;';
+        wrap.dataset.cardname = c.name;
+        wrap.style.cssText = 'text-align:center;transition:opacity 0.5s;';
         wrap.innerHTML = (c.imgSrc ? '<img src="'+c.imgSrc+'" style="width:55px;height:77px;object-fit:cover;border-radius:4px;border:1px solid #ffaa00;">' : '')
           + '<div style="color:#fff;font-size:9px;margin-top:2px;">'+c.name+'</div>';
         openRow.appendChild(wrap);
@@ -255,13 +255,13 @@ function onRemoteCommand(cmd) {
       setTimeout(() => { if(toast.parentNode) toast.parentNode.removeChild(toast); }, 2500);
       // オープンUI上の該当カードをフェードアウト
       if (window._remoteDeckOpenOverlay) {
-        const imgs = window._remoteDeckOpenOverlay.querySelectorAll('div[style*="text-align:center"]');
-        imgs.forEach(el => {
-          if (el.textContent.includes(cmd.cardName) && el.style.opacity !== '0.2') {
+        const cards = window._remoteDeckOpenOverlay.querySelectorAll('[data-cardname]');
+        for (const el of cards) {
+          if (el.dataset.cardname === cmd.cardName && el.style.opacity !== '0.2') {
             el.style.opacity = '0.2';
-            el.style.transition = 'opacity 0.5s';
+            break; // 1枚だけ消す
           }
-        });
+        }
       }
       break;
     }
@@ -1584,6 +1584,7 @@ function setupLongpressGesture(el, slotIdx) {
 
   function triggerMenu() {
     if(bs.phase!=='main') return;
+    if(_onlineMode && !bs.isPlayerTurn) return; // オンライン: 相手ターン中は操作不可
     const card=bs.player.battleArea[slotIdx]; if(!card) return;
     _wasAlreadySuspended = card.suspended;
     if(!card.suspended) {

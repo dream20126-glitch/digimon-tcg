@@ -1873,6 +1873,9 @@ export function applyPermanentEffects(bs, side, context) {
       if (!block.trigger || !['during_own_turn', 'during_opp_turn', 'during_any_turn'].includes(block.trigger.code)) return;
       if (block.trigger.code === 'during_own_turn' && side !== turnSide) return;
       if (block.trigger.code === 'during_opp_turn' && side === turnSide) return;
+      // 「〜とき」を含む効果は誘発型（永続適用ではなくイベント発生時に適用）なのでスキップ
+      const rawBody = block.raw || '';
+      if (rawBody.includes('されたとき') || rawBody.includes('したとき') || rawBody.includes('なったとき')) return;
       if (!checkConditions(block.conditions, card, bs, side)) return;
 
       block.actions.forEach(action => {
@@ -1909,6 +1912,9 @@ export function applyPermanentEffects(bs, side, context) {
           if (block.trigger.code === 'during_own_turn' && side !== turnSide) return;
           if (block.trigger.code === 'during_opp_turn' && side === turnSide) return;
           if (!['during_own_turn', 'during_opp_turn', 'during_any_turn'].includes(block.trigger.code)) return;
+          // 「〜とき」を含む効果は誘発型なのでスキップ
+          const evoRaw = block.raw || '';
+          if (evoRaw.includes('されたとき') || evoRaw.includes('したとき') || evoRaw.includes('なったとき')) return;
           if (!checkConditions(block.conditions, card, bs, side)) return;
           block.actions.forEach(action => {
             if (action.code === 'dp_plus') {

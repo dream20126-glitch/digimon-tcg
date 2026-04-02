@@ -433,9 +433,10 @@ function executeQueueEntry(entry, context, callback) {
   function executeWithAnnounce() {
     ctx.addLog('⚡ 「' + card.name + '」の効果発動');
     showEffectAnnounce(card, block.raw, actualSide, () => {
-      // 効果完了時に相手のオーバーレイを閉じるコールバック
+      // 効果完了時に相手のオーバーレイを閉じるコールバック（対象選択で既に閉じた場合は不要だが安全のため送る）
       const wrappedCallback = () => {
         if (window._isOnlineMode && window._isOnlineMode() && actualSide === 'player') {
+          // 残っていれば閉じる（対象選択で既にcleanupから送信済みの場合はDOMが無いので影響なし）
           window._onlineSendCommand({ type: 'fx_effectClose' });
         }
         callback();
@@ -1282,6 +1283,10 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
 
   function cleanup() {
     _targetSelecting = false;
+    // 対象選択完了 → 相手の効果内容オーバーレイを閉じる
+    if (window._isOnlineMode && window._isOnlineMode()) {
+      window._onlineSendCommand({ type: 'fx_effectClose' });
+    }
     if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl);
     validIndices.forEach(idx => {
       const slot = slots[idx];

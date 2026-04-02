@@ -1352,7 +1352,8 @@ function makeEffectContext(card, side) {
   return {
     card, side, bs, addLog, renderAll, updateMemGauge, doDraw, showYourTurn, aiTurn,
     // 演出関数
-    showDestroyEffect, showDrawEffect, showDpPopup: null, // DPポップアップはeffect-engine内
+    showPlayEffect, showEvolveEffect, showDestroyEffect, showDrawEffect,
+    showDpPopup: null, // DPポップアップはeffect-engine内
     showSecurityCheck, showBattleResult
   };
 }
@@ -3447,6 +3448,8 @@ function showGameEndOverlay(text, type, callback) {
 
 // ===== カード詳細 =====
 window.showBCD = function(idxOrCard, source) {
+  // 対象選択中はカード詳細を開かない（選択タップと干渉するため）
+  if (isTargetSelecting()) return;
   let card;
   if(typeof idxOrCard==='object') card=idxOrCard;
   else if(source==='hand') card=bs.player.hand[idxOrCard];

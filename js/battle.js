@@ -105,8 +105,9 @@ function onRemoteCommand(cmd) {
 
     case 'endTurn': {
       // 相手がターン終了 → 自分のターン開始
-      bs.memory = 3;
-      bs.isFirstTurn = false; // 相手が1ターン終えたので先攻1ターン目は終了
+      // メモリーを反転（相手の-2は自分の+2）
+      bs.memory = cmd.memory !== undefined ? -cmd.memory : 3;
+      bs.isFirstTurn = false;
       updateMemGauge();
       expireBuffs(bs, 'dur_this_turn');
       renderAll();
@@ -1267,6 +1268,7 @@ window.confirmEffect = function(yes) {
     return;
   }
   document.getElementById('effect-confirm-overlay').style.display = 'none';
+  if (_onlineMode) sendCommand({ type: 'fx_confirmClose', accepted: yes });
   if (yes && _pendingEffectCard) {
     addLog('⚡ 「' + _pendingEffectCard.name + '」の効果を発動！');
     if (_onlineMode) sendCommand({ type: 'effect_start', cardName: _pendingEffectCard.name, effectText: (_pendingEffectCard.effect||'').substring(0,150), cardImg: _pendingEffectCard.imgSrc||'' });
@@ -1826,6 +1828,8 @@ window.activateEffect = function(slotIdx, effectSource) {
   document.getElementById('effect-confirm-name').innerText = effectName;
   document.getElementById('effect-confirm-text').innerText = effectText;
   document.getElementById('effect-confirm-overlay').style.display = 'flex';
+  // オンライン: 確認ダイアログ表示を相手に送信
+  if (_onlineMode) sendCommand({ type: 'fx_confirmShow', cardName: effectName, effectText: (effectText||'').substring(0,200) });
 };
 
 // ===== アタックモード（ドラッグで対象選択） =====
@@ -2032,7 +2036,7 @@ function checkPendingTurnEnd() {
     addLog('💾 メモリーが相手側へ → ' + (_onlineMode ? '相手のターン' : 'AIのターン'));
     showYourTurn('自分のターン終了', '', '#555555', () => {
       if (_onlineMode) {
-        sendCommand({ type: 'endTurn' });
+        sendCommand({ type: 'endTurn', memory: bs.memory });
         showYourTurn('相手のターン','🎮 相手の操作を待っています...','#ff00fb', () => {});
       } else {
         setTimeout(() => aiTurn(), 500);
@@ -2266,7 +2270,7 @@ window.onEndTurn = function() {
   if(!bs.isPlayerTurn) return;
   exitBreedPhase();
   if (_onlineMode) {
-    sendCommand({ type: 'endTurn' });
+    sendCommand({ type: 'endTurn', memory: bs.memory });
     // オンライン: 自分のターン終了 → 相手ターン（相手の操作を待つ）
     bs.memory = -3;
     updateMemGauge();
@@ -2327,7 +2331,7 @@ function spendMemory(cost) {
     checkTurnEndEffects(() => {
       showYourTurn('自分のターン終了','','#555555', () => {
         if (_onlineMode) {
-          sendCommand({ type: 'endTurn' });
+          sendCommand({ type: 'endTurn', memory: bs.memory });
           showYourTurn('相手のターン','🎮 相手の操作を待っています...','#ff00fb', () => {});
         } else {
           setTimeout(() => aiTurn(),500);

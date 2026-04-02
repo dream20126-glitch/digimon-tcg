@@ -14,6 +14,7 @@ const DOT_POSITIONS = {
 
 let diceRolling = false;
 let diceJudged = false;
+let _battleStarted = false;
 
 function initDiceFaces() {
   for (let n = 1; n <= 6; n++) {
@@ -140,37 +141,11 @@ function showBattleStartButton() {
   document.getElementById('action-area').innerHTML = `<button class="menu-btn primary" onclick="enterBattle()">ゲートへ入る</button>`;
 }
 
-window.enterBattle = async function() {
+window.enterBattle = function() {
+  // Firebaseに「ゲートへ入る」フラグを立てる（両方揃ったらupdateLobbyUIでバトル開始）
+  update(ref(rtdb, `rooms/${currentRoomId}/${myPlayerKey}`), { enterBattle: true });
   update(ref(rtdb, `rooms/${currentRoomId}`), { phase: 'battle' });
-  try {
-    // ルーム情報からデッキ名を取得
-    const roomSnap = await new Promise(resolve => {
-      onValue(ref(rtdb, `rooms/${currentRoomId}`), resolve, { onlyOnce: true });
-    });
-    const roomData = roomSnap.val();
-    const myDeckName = roomData[myPlayerKey]?.deckName;
-    const oppKey = myPlayerKey === 'player1' ? 'player2' : 'player1';
-    const oppDeckName = roomData[oppKey]?.deckName;
-
-    // Firebaseからデッキリストを取得（準備完了時に保存済み）
-    const myDeckList = roomData[myPlayerKey]?.deckList;
-    const oppDeckList = roomData[oppKey]?.deckList;
-
-    if (!myDeckList) { alert('自分のデッキデータが見つかりません'); return; }
-    if (!oppDeckList) { alert('相手のデッキデータが見つかりません'); return; }
-
-    // 先攻判定
-    const playerFirst = roomData.diceResult?.winner === myPlayerKey;
-
-    // バトル開始
-    showScreen('battle-screen');
-    if (typeof startBattleGame === 'function') {
-      startBattleGame({ list: myDeckList }, { list: oppDeckList }, playerFirst);
-    }
-  } catch(e) {
-    console.error('バトル開始エラー:', e);
-    alert('バトル開始に失敗しました: ' + e.message);
-  }
+  document.getElementById('action-area').innerHTML = '<p style="color:#ffaa00;font-size:13px;">相手を待っています...</p>';
 };
 
 window.joinRoom = function() {
@@ -243,12 +218,24 @@ function updateLobbyUI(data) {
   const d1 = p1.dice || 0, d2 = p2.dice || 0;
   if (d1 > 0 && d2 > 0 && !diceJudged) { diceJudged = true; playDiceAnimation(d1, d2, data); }
   if (data.phase === 'result' && data.diceResult) {
-    console.log('[DICE] phase=result, winner:', data.diceResult.winner, 'myKey:', myPlayerKey);
     const msg = document.getElementById('dice-msg');
     if (msg) { msg.style.color = '#00ff88'; msg.innerText = data.diceResult.winner === myPlayerKey ? '🎉 あなたが先攻です！' : '相手が先攻です'; }
     showBattleStartButton();
   }
-  console.log('[LOBBY] phase:', data.phase, 'diceResult:', JSON.stringify(data.diceResult || null));
+  // 両方が「ゲートへ入る」を押したらバトル開始
+  if (data.phase === 'battle' && p1.enterBattle && p2.enterBattle && !_battleStarted) {
+    _battleStarted = true;
+    const playerFirst = data.diceResult?.winner === myPlayerKey;
+    const myList = data[myPlayerKey]?.deckList;
+    const oppKey = myPlayerKey === 'player1' ? 'player2' : 'player1';
+    const oppList = data[oppKey]?.deckList;
+    if (myList && oppList) {
+      showScreen('battle-screen');
+      if (typeof startBattleGame === 'function') {
+        startBattleGame({ list: myList }, { list: oppList }, playerFirst);
+      }
+    }
+  }
 }
 
 window.startGame = function() { update(ref(rtdb, `rooms/${currentRoomId}`), { gameStarted: true }); };

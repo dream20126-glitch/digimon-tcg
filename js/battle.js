@@ -1789,6 +1789,7 @@ function aiSpendMemory(cost) {
 
 // ===== AI =====
 function aiTurn() {
+  if (bs._battleAborted) return;
   bs.turn++;
   showYourTurn('相手のターン開始','🤖 デジモンマスター','#ff00fb', () => {
     checkTurnStartEffects('ai', () => {
@@ -1878,6 +1879,7 @@ function aiPhaseMain() {
 
 // AIアタック（アクティブなカードで順番にアタック）
 function aiAttackPhase(callback) {
+  if (bs._battleAborted) return;
   // デジモンタイプのみアタック可能（テイマー・オプションはアタック不可）
   const atkIdx = bs.ai.battleArea.findIndex(c => c && c.type==='デジモン' && !c.suspended && !c.summonedThisTurn);
   if(atkIdx === -1) { callback(); return; }
@@ -2260,6 +2262,8 @@ window.confirmExitGate = function() {
 
   document.getElementById('exit-yes-btn').onclick = () => {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    // バトル関連のオーバーレイをすべて閉じる
+    cleanupBattle();
     showScreen('tutorial-screen');
   };
   document.getElementById('exit-no-btn').onclick = () => {
@@ -2267,11 +2271,32 @@ window.confirmExitGate = function() {
   };
 };
 
+// バトル中のオーバーレイ・タイマーを全てクリーンアップ
+function cleanupBattle() {
+  // AI処理を停止（フラグで制御）
+  bs._battleAborted = true;
+  // バトル関連のオーバーレイを全て非表示
+  const overlayIds = [
+    'your-turn-overlay', 'phase-announce-overlay', 'skip-announce-overlay',
+    'security-check-overlay', 'battle-result-overlay', 'draw-overlay',
+    'effect-confirm-overlay', 'b-card-detail', 'card-action-menu',
+    'card-action-backdrop', 'longpress-action-menu', 'longpress-backdrop'
+  ];
+  overlayIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  // 動的に追加されたオーバーレイを除去
+  document.querySelectorAll('[id^="_target-confirm"], [id^="_sec-check-count"]').forEach(el => {
+    if (el.parentNode) el.parentNode.removeChild(el);
+  });
+}
+
 function battleVictory() {
-  showGameEndOverlay('🎉 勝利！', 'victory', () => { showScreen('tutorial-screen'); });
+  showGameEndOverlay('🎉 勝利！', 'victory', () => { cleanupBattle(); showScreen('tutorial-screen'); });
 }
 function battleDefeat() {
-  showGameEndOverlay('😢 敗北...', 'defeat', () => { showScreen('tutorial-screen'); });
+  showGameEndOverlay('😢 敗北...', 'defeat', () => { cleanupBattle(); showScreen('tutorial-screen'); });
 }
 
 // ===== ダイレクトアタック演出（セキュリティチェックと同じレイアウト） =====
@@ -2577,6 +2602,19 @@ function renderSecurity() {
     if(sec.length>0) el.innerHTML=`<div style="position:relative; width:36px; height:${28+(sec.length-1)*10}px;">`+sec.map((_,i) => `<div class="sec-card ${side==='ai'?'ai-sec':'pl-sec'}" style="position:absolute; top:${i*10}px; left:0; width:36px; height:28px;">${backHtml}</div>`).join('')+'</div>';
     else el.innerHTML='<div class="sec-card empty">0</div>';
     if(cnt) cnt.innerText=sec.length;
+    // セキュリティバフ表示
+    const buffs = bs._securityBuffs;
+    if (buffs && buffs.length > 0 && sec.length > 0) {
+      let totalPlus = 0;
+      buffs.forEach(b => { if (b.type === 'dp_plus') totalPlus += (parseInt(b.value) || 0); });
+      if (totalPlus > 0) {
+        const badge = document.createElement('div');
+        badge.style.cssText = 'position:absolute;bottom:-2px;left:50%;transform:translateX(-50%);background:rgba(0,255,136,0.9);color:#000;font-size:7px;font-weight:900;padding:1px 4px;border-radius:3px;white-space:nowrap;z-index:1;box-shadow:0 0 6px rgba(0,255,136,0.5);';
+        badge.innerText = 'DP+' + totalPlus;
+        el.style.position = 'relative';
+        el.appendChild(badge);
+      }
+    }
   });
 }
 

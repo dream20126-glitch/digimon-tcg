@@ -1980,6 +1980,9 @@ function checkPendingDestroys(ctx) {
 // ===== 効果発動アナウンス（カード画像＋効果テキストを数秒表示） =====
 
 function showEffectAnnounce(card, effectText, side, callback) {
+  if (window._isOnlineMode && window._isOnlineMode() && side === 'player') {
+    window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: card.name, cardImg: card.imgSrc || getCardImageUrl(card) || '', effectText: (effectText||'').substring(0,100) });
+  }
   const imgSrc = getCardImageUrl(card) || card.imgSrc || card.imageUrl || '';
   const sideLabel = side === 'player' ? '自分' : '相手';
   const sideColor = side === 'player' ? '#00fbff' : '#ff00fb';

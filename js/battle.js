@@ -44,6 +44,10 @@ function sendStateSync() {
   sendCommand({ type: 'state_sync', state });
 }
 
+// オンライン状態を公開（effect-engine等から参照用）
+window._isOnlineMode = () => _onlineMode;
+window._onlineSendCommand = (cmd) => sendCommand(cmd);
+
 // コマンド送信（自分の操作を相手に伝える）
 function sendCommand(cmd) {
   if (!_onlineMode || !_onlineRoomId) return;
@@ -184,6 +188,38 @@ function onRemoteCommand(cmd) {
       renderAll();
       break;
     }
+    // ===== 演出コマンド（fx_） =====
+    case 'fx_battleResult': {
+      showBattleResult(cmd.text, cmd.color, cmd.sub, () => {});
+      break;
+    }
+    case 'fx_destroy': {
+      showDestroyEffect({ name: cmd.cardName, imgSrc: cmd.cardImg }, () => {});
+      break;
+    }
+    case 'fx_securityCheck': {
+      const secCard = { name: cmd.secName, imgSrc: cmd.secImg, dp: cmd.secDp, type: cmd.secType };
+      const atkCard = { name: cmd.atkName, imgSrc: cmd.atkImg, dp: cmd.atkDp };
+      showSecurityCheck(secCard, atkCard, () => {}, cmd.customLabel || null);
+      break;
+    }
+    case 'fx_directAttack': {
+      showDirectAttack({ name: cmd.atkName, imgSrc: cmd.atkImg }, cmd.side, () => {});
+      break;
+    }
+    case 'fx_option': {
+      showOptionEffect({ name: cmd.cardName, imgSrc: cmd.cardImg }, () => {});
+      break;
+    }
+    case 'fx_sAttackPlus': {
+      showSAttackPlusAnnounce(cmd.n, () => {});
+      break;
+    }
+    case 'fx_effectAnnounce': {
+      showPhaseAnnounce('⚡ 相手: ' + cmd.cardName, '#ffaa00', () => {});
+      break;
+    }
+
     case 'phase': {
       // 相手のフェイズ演出を表示
       const phaseInfo = PHASE_NAMES[cmd.phase];
@@ -879,6 +915,7 @@ function showEvolveEffect(cost, baseName, baseCard, evolvedCard, onDone) {
 // 登場演出
 // オプション使用演出（魔法エフェクト）
 function showOptionEffect(card, onDone) {
+  if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_option', cardName: card.name, cardImg: cardImg(card) });
   const overlay=document.getElementById('option-overlay'); if(!overlay){onDone&&onDone();return;}
   const flash=document.getElementById('option-flash');
   const particles=document.getElementById('option-particles');
@@ -954,6 +991,7 @@ function showPlayEffect(card, onDone) {
 
 // バトル結果演出 (Win/Lost)
 function showBattleResult(text, color, sub, callback) {
+  if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_battleResult', text, color, sub });
   const overlay=document.getElementById('battle-result-overlay'); if(!overlay){callback&&callback();return;}
   const textEl=document.getElementById('battle-result-text');
   const subEl=document.getElementById('battle-result-sub');
@@ -970,6 +1008,7 @@ function showBattleResult(text, color, sub, callback) {
 
 // 消滅演出（白い光＋パーティクル＋カード割れ弾ける）
 function showDestroyEffect(card, callback) {
+  if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_destroy', cardName: card.name, cardImg: cardImg(card) });
   const overlay=document.getElementById('destroy-overlay'); if(!overlay){callback&&callback();return;}
   const imgEl=document.getElementById('destroy-card-img');
   const nameEl=document.getElementById('destroy-card-name');
@@ -1022,6 +1061,7 @@ function showDestroyEffect(card, callback) {
 
 // セキュリティチェック演出
 function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpen) {
+  if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_securityCheck', secName: secCard.name, secImg: cardImg(secCard), secDp: secCard.dp, secType: secCard.type, atkName: atkCard.name, atkImg: cardImg(atkCard), atkDp: atkCard.dp, customLabel: customLabel||'' });
   const overlay=document.getElementById('security-check-overlay'); if(!overlay){callback&&callback();return;}
   const label=document.getElementById('sec-check-label');
   const atkImgEl=document.getElementById('sec-atk-card-img');
@@ -1962,6 +2002,7 @@ function getSecurityAttackCount(card) {
 }
 
 function showSAttackPlusAnnounce(n, callback) {
+  if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_sAttackPlus', n });
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:61000;display:flex;align-items:center;justify-content:center;pointer-events:none;';
   const el = document.createElement('div');
@@ -2821,6 +2862,7 @@ function battleDefeat() {
 
 // ===== ダイレクトアタック演出（セキュリティチェックと同じレイアウト） =====
 function showDirectAttack(atkCard, side, callback) {
+  if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_directAttack', atkName: atkCard.name, atkImg: cardImg(atkCard), side });
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:35000;display:flex;align-items:center;justify-content:center;flex-direction:column;';
 

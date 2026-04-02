@@ -295,13 +295,14 @@ export function parseCardEffect(card, effectField) {
   if (!text || text === 'なし') return [];
 
   const blocks = [];
-  // 【ターンに1回】【ターンに一回】はトリガーではなく制限修飾子なので、分割前に統合
-  const normalized = text.replace(/【ターンに[1一]回】/g, '〔ターンに1回〕');
+  // キーワード効果・制限修飾子の【】はトリガーではないので、分割前にエスケープ
+  const keywordBrackets = /【(ターンに[1一]回|ブロッカー|速攻|突進|貫通|ジャミング|再起動|Sアタック\+\d+|セキュリティアタック\+\d+)】/g;
+  const normalized = text.replace(keywordBrackets, (m, p1) => '〔' + p1 + '〕');
   // 【】で始まるブロックに分割
   const parts = normalized.split(/(?=【)/);
   for (const part of parts) {
-    // 〔〕を【】に戻す
-    const restored = part.replace(/〔ターンに1回〕/g, '【ターンに1回】');
+    // エスケープを元に戻す
+    const restored = part.replace(/〔([^〕]+)〕/g, '【$1】');
     const trimmed = restored.trim();
     if (!trimmed) continue;
     const block = analyzeBlock(trimmed);
@@ -355,7 +356,7 @@ function analyzeBlock(text) {
     target: mainTarget,
     conditions: findConditions(body),
     duration: findDuration(body),
-    limit: findLimit(body),
+    limit: findLimit(text),
     afterActions: afterText ? findActions(afterText) : [],
     afterTarget: afterText ? findTarget(afterText) : null,
   };

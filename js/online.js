@@ -140,9 +140,39 @@ function showBattleStartButton() {
   document.getElementById('action-area').innerHTML = `<button class="menu-btn primary" onclick="enterBattle()">ゲートへ入る</button>`;
 }
 
-window.enterBattle = function() {
+window.enterBattle = async function() {
   update(ref(rtdb, `rooms/${currentRoomId}`), { phase: 'battle' });
-  alert('ここでバトル画面へ遷移（未実装）');
+  try {
+    // ルーム情報からデッキ名を取得
+    const roomSnap = await new Promise(resolve => {
+      onValue(ref(rtdb, `rooms/${currentRoomId}`), resolve, { onlyOnce: true });
+    });
+    const roomData = roomSnap.val();
+    const myDeckName = roomData[myPlayerKey]?.deckName;
+    const oppKey = myPlayerKey === 'player1' ? 'player2' : 'player1';
+    const oppDeckName = roomData[oppKey]?.deckName;
+
+    // デッキリストをGAS APIから取得
+    const [myDeck, oppDeck] = await Promise.all([
+      gasGet('getDeckCards', { deckName: myDeckName, pw: currentSessionPassword }),
+      gasGet('getDeckCards', { deckName: oppDeckName, pw: currentSessionPassword })
+    ]);
+
+    if (!myDeck || !myDeck.list) { alert('自分のデッキ取得に失敗しました'); return; }
+    if (!oppDeck || !oppDeck.list) { alert('相手のデッキ取得に失敗しました'); return; }
+
+    // 先攻判定
+    const playerFirst = roomData.diceResult?.winner === myPlayerKey;
+
+    // バトル開始
+    showScreen('battle-screen');
+    if (typeof startBattleGame === 'function') {
+      startBattleGame({ list: myDeck.list }, { list: oppDeck.list }, playerFirst);
+    }
+  } catch(e) {
+    console.error('バトル開始エラー:', e);
+    alert('バトル開始に失敗しました: ' + e.message);
+  }
 };
 
 window.joinRoom = function() {

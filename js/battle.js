@@ -51,6 +51,32 @@ function sendStateSync() {
   sendCommand({ type: 'state_sync', state });
 }
 
+// オンライン用: 相手の効果発動演出（showEffectAnnounceと同じ見た目）
+function showEffectAnnounceRemote(card, effectText, callback) {
+  const sideColor = '#ff00fb'; // 相手は紫
+  const imgSrc = card.imgSrc || '';
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:55000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+  const box = document.createElement('div');
+  box.style.cssText = 'display:flex;gap:16px;align-items:center;max-width:90%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid '+sideColor+';border-radius:12px;box-shadow:0 0 30px '+sideColor+'44;';
+  const imgWrap = document.createElement('div');
+  imgWrap.style.cssText = 'flex-shrink:0;width:90px;height:126px;border-radius:6px;overflow:hidden;border:2px solid '+sideColor+';';
+  imgWrap.innerHTML = imgSrc ? '<img src="'+imgSrc+'" style="width:100%;height:100%;object-fit:cover;">' : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#112;color:#aaa;font-size:10px;">'+card.name+'</div>';
+  box.appendChild(imgWrap);
+  const textWrap = document.createElement('div');
+  textWrap.style.cssText = 'flex:1;min-width:0;';
+  textWrap.innerHTML = '<div style="color:'+sideColor+';font-size:14px;font-weight:bold;margin-bottom:6px;text-shadow:0 0 8px '+sideColor+';">⚡ '+card.name+' — 効果発動</div>'
+    + '<div style="color:#888;font-size:10px;margin-bottom:8px;">相手のカード</div>'
+    + '<div style="color:#ddd;font-size:11px;line-height:1.6;">'+effectText+'</div>';
+  box.appendChild(textWrap);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  let done = false;
+  function finish() { if(done)return; done=true; if(overlay.parentNode)overlay.parentNode.removeChild(overlay); callback&&callback(); }
+  setTimeout(finish, 2500);
+  overlay.onclick = finish;
+}
+
 // オンライン状態を公開（effect-engine等から参照用）
 window._isOnlineMode = () => _onlineMode;
 window._onlineSendCommand = (cmd) => sendCommand(cmd);
@@ -126,16 +152,8 @@ function onRemoteCommand(cmd) {
 
     case 'effect_confirm': window.confirmEffect(cmd.yes); break;
     case 'effect_start': {
+      // fx_effectAnnounce で表示されるのでログのみ
       addLog('🎮 相手が「' + cmd.cardName + '」の効果を発動！');
-      const efOv = document.createElement('div');
-      efOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:55000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
-      const efBx = document.createElement('div');
-      efBx.style.cssText = 'max-width:85%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid #ffaa00;border-radius:12px;box-shadow:0 0 30px #ffaa0044;text-align:center;';
-      efBx.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;margin-bottom:8px;">⚡ '+cmd.cardName+' の効果発動！</div><div style="color:#ddd;font-size:11px;line-height:1.6;text-align:left;">'+(cmd.effectText||'')+'</div>';
-      efOv.appendChild(efBx);
-      document.body.appendChild(efOv);
-      setTimeout(() => { if(efOv.parentNode) efOv.parentNode.removeChild(efOv); }, 3000);
-      efOv.onclick = () => { if(efOv.parentNode) efOv.parentNode.removeChild(efOv); };
       break;
     }
 
@@ -251,7 +269,9 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_effectAnnounce': {
-      showPhaseAnnounce('⚡ 相手: ' + cmd.cardName, '#ffaa00', () => {});
+      // Aと同じ効果発動演出をBにも表示
+      const dummyCard = { name: cmd.cardName, imgSrc: cmd.cardImg || '' };
+      showEffectAnnounceRemote(dummyCard, cmd.effectText || '', () => {});
       break;
     }
     case 'fx_deckOpen': {

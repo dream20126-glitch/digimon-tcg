@@ -191,6 +191,15 @@ function onRemoteCommand(cmd) {
       }
       break;
     }
+    case 'phase': {
+      // 相手のフェイズ演出を表示
+      const phaseInfo = PHASE_NAMES[cmd.phase];
+      if (phaseInfo) {
+        const colors = { unsuspend:'#00fbff', draw:'#00ff88', breed:'#ff9900', main:'#ff00fb' };
+        showPhaseAnnounce(`${phaseInfo.icon} 相手: ${phaseInfo.name}`, colors[cmd.phase], () => {});
+      }
+      break;
+    }
   }
 }
 
@@ -1162,6 +1171,7 @@ function checkTurnEndEffects(callback) {
 // ===== フェーズ進行 =====
 function startPhase(phase) {
   bs.phase = phase;
+  if (_onlineMode) sendCommand({ type: 'phase', phase });
   const info = PHASE_NAMES[phase];
   if (!info) { execPhase(phase); return; }
   const colors = { unsuspend:'#00fbff', draw:'#00ff88', breed:'#ff9900', main:'#ff00fb' };

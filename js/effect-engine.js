@@ -395,23 +395,15 @@ function processQueue(context, onComplete) {
   if (!next) {
     clearQueue();
     checkPendingDestroys(context);
-    // メモリー超過でターン終了（効果処理完了後）
+    // メモリー超過チェック
     if (context._memoryOverflow) {
       context._memoryOverflow = false;
-      const over = Math.abs(context.bs.memory);
-      context.bs.memory = over;
-      context.bs.isPlayerTurn = false;
-      expireBuffs(context.bs, 'dur_this_turn');
-      expireBuffs(context.bs, 'permanent', 'player');
+      if (context._parentContext) context._parentContext._memoryOverflow = false;
+      // アタック中の場合はバトル完了後にターン終了する（フラグだけ立てる）
+      context.bs._pendingTurnEnd = true;
+      context.addLog('💾 メモリーが相手側へ（アタック終了後にターン終了）');
       context.updateMemGauge();
-      context.renderAll(true);
-      context.addLog('💾 メモリー' + over + 'でAI側へ → AIのターン');
-      if (context.showYourTurn) {
-        context.showYourTurn('自分のターン終了', '', '#555555', () => {
-          if (context.aiTurn) context.aiTurn();
-        });
-      }
-      return;
+      // コールバックは実行する（バトル/セキュリティチェックを続行）
     }
     onComplete && onComplete();
     return;

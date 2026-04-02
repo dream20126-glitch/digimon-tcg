@@ -1477,7 +1477,7 @@ function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
       destroyDef(); destroyAtk(); renderAll();
       showDestroyEffect(def, () => {
         showDestroyEffect(atk, () => {
-          showBattleResult('Lost...', '#ff4444', '両者消滅！', () => { addLog('💥 両者消滅！'); renderAll(); });
+          showBattleResult('Lost...', '#ff4444', '両者消滅！', () => { addLog('💥 両者消滅！'); checkPendingTurnEnd(); });
         });
       });
     } else if(atk.dp > def.dp) {
@@ -1488,10 +1488,27 @@ function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
     } else {
       destroyAtk(); renderAll();
       showDestroyEffect(atk, () => {
-        showBattleResult('Lost...', '#ff4444', '「'+atk.name+'」が撃破された', () => { addLog('💥 「'+atk.name+'」が撃破された...'); renderAll(); });
+        showBattleResult('Lost...', '#ff4444', '「'+atk.name+'」が撃破された', () => { addLog('💥 「'+atk.name+'」が撃破された...'); checkPendingTurnEnd(); });
       });
     }
   }, 'BATTLE!');
+}
+
+// アタック時効果でのメモリー超過によるターン終了（バトル後に呼ぶ）
+function checkPendingTurnEnd() {
+  renderAll();
+  if (bs._pendingTurnEnd) {
+    bs._pendingTurnEnd = false;
+    bs.isPlayerTurn = false;
+    expireBuffs(bs, 'dur_this_turn');
+    expireBuffs(bs, 'permanent', 'player');
+    updateMemGauge();
+    renderAll(true);
+    addLog('💾 メモリーが相手側へ → AIのターン');
+    showYourTurn('自分のターン終了', '', '#555555', () => {
+      setTimeout(() => aiTurn(), 500);
+    });
+  }
 }
 
 // セキュリティアタック+Nの値を取得
@@ -1632,7 +1649,7 @@ function resolveSecurityCheck(atk, atkIdx) {
           if(atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
           renderAll();
           showDestroyEffect(sec, () => { showDestroyEffect(atk, () => {
-            showBattleResult('Lost...','#ff4444','両者消滅！', () => { addLog('💥 両者消滅！'); renderAll(); });
+            showBattleResult('Lost...','#ff4444','両者消滅！', () => { addLog('💥 両者消滅！'); checkPendingTurnEnd(); });
           }); });
           return;
         } else if(atk.dp > sec.dp) {
@@ -1654,7 +1671,7 @@ function resolveSecurityCheck(atk, atkIdx) {
           if(atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
           bs.ai.trash.push(sec); renderAll();
           showDestroyEffect(atk, () => {
-            showBattleResult('Lost...','#ff4444','「'+atk.name+'」が撃破された', () => { addLog('✗ セキュリティに敗北'); renderAll(); });
+            showBattleResult('Lost...','#ff4444','「'+atk.name+'」が撃破された', () => { addLog('✗ セキュリティに敗北'); checkPendingTurnEnd(); });
           });
           return;
         }
@@ -1703,8 +1720,8 @@ function resolveSecurityCheck(atk, atkIdx) {
 
 function checkAttackEnd(atk, atkIdx) {
   if(hasKeyword(atk, '【アタック終了時】') && bs.player.battleArea[atkIdx]) {
-    checkAndTriggerEffect(atk, '【アタック終了時】', () => renderAll());
-  } else { renderAll(); }
+    checkAndTriggerEffect(atk, '【アタック終了時】', () => checkPendingTurnEnd());
+  } else { checkPendingTurnEnd(); }
 }
 
 // ===== パス・ターン終了 =====

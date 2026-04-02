@@ -194,16 +194,17 @@ function resolveSecurityCheckOnline(atk, atkIdx) {
 // Firebaseコマンドリスナー開始
 function startOnlineListener() {
   if (_onlineCmdListener) _onlineCmdListener();
-  let lastSeq = 0;
+  const startTime = Date.now(); // リスナー開始時刻
   _onlineCmdListener = onValue(ref(rtdb, `rooms/${_onlineRoomId}/commands`), (snap) => {
     const cmds = snap.val();
     if (!cmds) return;
-    // 新しいコマンドのみ処理
     Object.values(cmds).sort((a,b) => a.seq - b.seq).forEach(cmd => {
-      if (cmd.seq > lastSeq && cmd.from !== _onlineMyKey) {
-        lastSeq = cmd.seq;
-        onRemoteCommand(cmd);
-      }
+      // 自分のコマンド、処理済みコマンド、古いコマンドは無視
+      if (cmd.from === _onlineMyKey) return;
+      if (cmd.seq <= _onlineCmdSeq) return;
+      if (cmd.time && cmd.time < startTime) return; // リスナー開始前のコマンドは無視
+      _onlineCmdSeq = cmd.seq;
+      onRemoteCommand(cmd);
     });
   });
 }
@@ -214,6 +215,8 @@ window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFir
   _onlineRoomId = roomId;
   _onlineMyKey = myKey;
   _onlineCmdSeq = 0;
+  // 前回のコマンドをクリア
+  await set(ref(rtdb, `rooms/${_onlineRoomId}/commands`), null);
   await startBattleGame(playerDeckData, oppDeckData, playerFirst);
   // 相手の名前を表示
   const oppLabel = document.getElementById('opponent-name-label');

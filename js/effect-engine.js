@@ -1296,6 +1296,11 @@ function showDeckOpenUI(openedCards, ctx, callback) {
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:40000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;';
   document.body.appendChild(overlay);
 
+  // オンライン: オープンしたカード一覧を送信
+  if (window._isOnlineMode && window._isOnlineMode()) {
+    window._onlineSendCommand({ type: 'fx_deckOpen', cards: openedCards.map(c => ({ name: c.name, imgSrc: c.imgSrc || getCardImageUrl(c) || '' })) });
+  }
+
   // タイトル
   const titleEl = document.createElement('div');
   titleEl.style.cssText = 'font-size:1.1rem;font-weight:bold;color:#fff;letter-spacing:2px;margin-bottom:4px;text-shadow:0 0 10px #00fbff;';
@@ -1360,6 +1365,10 @@ function showDeckOpenUI(openedCards, ctx, callback) {
       }
     }
     ctx.addLog(msg);
+    // オンライン: カード移動を送信
+    if (window._isOnlineMode && window._isOnlineMode()) {
+      window._onlineSendCommand({ type: 'fx_cardPlace', cardName: card.name, zone, msg });
+    }
     if (cardEl && cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
     remaining--;
     updateCount();

@@ -219,6 +219,40 @@ function onRemoteCommand(cmd) {
       showPhaseAnnounce('⚡ 相手: ' + cmd.cardName, '#ffaa00', () => {});
       break;
     }
+    case 'fx_deckOpen': {
+      // 相手のデッキオープン: めくれたカード一覧を表示
+      if (!cmd.cards || cmd.cards.length === 0) break;
+      const openOverlay = document.createElement('div');
+      openOverlay.id = '_remote-deck-open';
+      openOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:55000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;pointer-events:none;';
+      const openTitle = document.createElement('div');
+      openTitle.style.cssText = 'font-size:1rem;font-weight:bold;color:#ffaa00;letter-spacing:2px;text-shadow:0 0 10px #ffaa00;';
+      openTitle.innerText = '📖 相手: DECK OPEN';
+      openOverlay.appendChild(openTitle);
+      const openRow = document.createElement('div');
+      openRow.style.cssText = 'display:flex;gap:10px;justify-content:center;padding:12px 20px;background:rgba(0,15,25,0.9);border:1px solid #ffaa0044;border-radius:12px;';
+      cmd.cards.forEach(c => {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'text-align:center;';
+        wrap.innerHTML = (c.imgSrc ? '<img src="'+c.imgSrc+'" style="width:55px;height:77px;object-fit:cover;border-radius:4px;border:1px solid #ffaa00;">' : '')
+          + '<div style="color:#fff;font-size:9px;margin-top:2px;">'+c.name+'</div>';
+        openRow.appendChild(wrap);
+      });
+      openOverlay.appendChild(openRow);
+      document.body.appendChild(openOverlay);
+      // 自動で消す（カード配置コマンドが来たら更新される）
+      setTimeout(() => { if(openOverlay.parentNode) openOverlay.parentNode.removeChild(openOverlay); }, 8000);
+      break;
+    }
+    case 'fx_cardPlace': {
+      // 相手がカードを配置した: トーストで表示 + オープンUIを更新
+      const toast = document.createElement('div');
+      toast.innerText = '🎮 ' + (cmd.msg || cmd.cardName + ' → ' + cmd.zone);
+      toast.style.cssText = 'position:fixed;bottom:20%;left:50%;transform:translateX(-50%);z-index:95000;background:rgba(255,170,0,0.15);border:1px solid #ffaa00;color:#fff;font-size:13px;font-weight:bold;padding:10px 20px;border-radius:10px;text-align:center;pointer-events:none;box-shadow:0 0 15px rgba(255,170,0,0.3);animation:dpChangePopup 1.5s ease forwards;';
+      document.body.appendChild(toast);
+      setTimeout(() => { if(toast.parentNode) toast.parentNode.removeChild(toast); }, 1500);
+      break;
+    }
 
     case 'phase': {
       // 相手のフェイズ演出を表示

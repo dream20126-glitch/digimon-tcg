@@ -76,7 +76,9 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   bs.ai.deck=aiCards.filter(c => c.level!=='2');
   bs.player.hand=bs.player.deck.splice(0,5);
   // AI側デッキ: シャッフルせず理想的な順番に並べ直す
-  bs.ai.deck = sortAiDeck(bs.ai.deck);
+  // セキュリティ用カードを先頭に、次に初手5枚、残りデッキの順
+  bs.ai.deck = sortAiDeckWithSecurity(bs.ai.deck);
+  // 先頭5枚はセキュリティ用（acceptHandで取られる）、次の5枚が初手
   bs.ai.hand=bs.ai.deck.splice(0,5);
   bs.player.battleArea=[]; bs.ai.battleArea=[];
   bs.player.tamerArea=[]; bs.ai.tamerArea=[];
@@ -220,37 +222,59 @@ function parseDeck(deckData) {
 
 function shuffle(a) { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
 
-// AIデッキの並び順を最適化（初手→中盤→終盤の理想順）
-function sortAiDeck(cards) {
-  const lv3 = cards.filter(c => c.type==='デジモン' && parseInt(c.level)===3);
-  const lv4 = cards.filter(c => c.type==='デジモン' && parseInt(c.level)===4);
-  const lv5 = cards.filter(c => c.type==='デジモン' && parseInt(c.level)===5);
-  const lv6 = cards.filter(c => c.type==='デジモン' && parseInt(c.level)>=6);
-  const tamers = cards.filter(c => c.type==='テイマー');
-  const options = cards.filter(c => c.type==='オプション');
+// AIデッキの並び順を最適化（セキュリティ5枚→初手5枚→残りデッキ）
+function sortAiDeckWithSecurity(cards) {
+  // カードをタイプ別に分類
+  const pool = [...cards];
+  const grab = (filter, n) => {
+    const result = [];
+    for (let i = 0; i < n; i++) {
+      const idx = pool.findIndex(filter);
+      if (idx === -1) break;
+      result.push(pool.splice(idx, 1)[0]);
+    }
+    return result;
+  };
 
-  // 初手5枚: Lv3 x2, Lv4 x1, テイマー x1, Lv3 x1
-  const hand = [];
-  const pick = (arr, n) => { for(let i=0;i<n&&arr.length>0;i++) hand.push(arr.shift()); };
-  pick(lv3, 2);
-  pick(lv4, 1);
-  pick(tamers, 1);
-  pick(lv3, 1);
-  // 足りなければ残りから補充
-  while(hand.length < 5) {
-    if(lv3.length>0) hand.push(lv3.shift());
-    else if(lv4.length>0) hand.push(lv4.shift());
-    else if(options.length>0) hand.push(options.shift());
-    else if(tamers.length>0) hand.push(tamers.shift());
-    else if(lv5.length>0) hand.push(lv5.shift());
-    else if(lv6.length>0) hand.push(lv6.shift());
-    else break;
+  // ① セキュリティ5枚: ギガデストロイヤー1, ガイアフォース1, デジモンLv4x2, デジモンLv3x1
+  const sec = [
+    ...grab(c => c.cardNo === 'ST1-15', 1),  // ギガデストロイヤー
+    ...grab(c => c.cardNo === 'ST1-16', 1),  // ガイアフォース
+    ...grab(c => c.type==='デジモン' && parseInt(c.level)===4, 2),
+    ...grab(c => c.type==='デジモン' && parseInt(c.level)===3, 1),
+  ];
+  // 足りなければ補充
+  while (sec.length < 5 && pool.length > 0) sec.push(pool.shift());
+
+  // ② 初手5枚: Lv3x2, Lv4x1, テイマーx1, Lv3x1
+  const hand = [
+    ...grab(c => c.type==='デジモン' && parseInt(c.level)===3, 2),
+    ...grab(c => c.type==='デジモン' && parseInt(c.level)===4, 1),
+    ...grab(c => c.type==='テイマー', 1),
+    ...grab(c => c.type==='デジモン' && parseInt(c.level)===3, 1),
+  ];
+  while (hand.length < 5 && pool.length > 0) {
+    const idx = pool.findIndex(c => c.type==='デジモン' && parseInt(c.level)===3)
+      || pool.findIndex(c => c.type==='デジモン' && parseInt(c.level)===4);
+    if (idx > 0) hand.push(pool.splice(idx, 1)[0]);
+    else hand.push(pool.shift());
   }
 
-  // 残りデッキ: Lv4→Lv3→Lv5→テイマー→オプション→Lv6 の順
-  const rest = [...lv4, ...lv3, ...lv5, ...tamers, ...options, ...lv6];
+  // ③ 残り: Lv4→Lv3→Lv5→テイマー→オプション→Lv6 の順
+  pool.sort((a, b) => {
+    const order = c => {
+      if (c.type==='デジモン' && parseInt(c.level)===4) return 0;
+      if (c.type==='デジモン' && parseInt(c.level)===3) return 1;
+      if (c.type==='デジモン' && parseInt(c.level)===5) return 2;
+      if (c.type==='テイマー') return 3;
+      if (c.type==='オプション') return 4;
+      if (c.type==='デジモン' && parseInt(c.level)>=6) return 5;
+      return 6;
+    };
+    return order(a) - order(b);
+  });
 
-  return [...hand, ...rest];
+  return [...sec, ...hand, ...pool];
 }
 
 // ===== 効果判定ヘルパー =====

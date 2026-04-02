@@ -1880,25 +1880,40 @@ function aiPhaseDraw() {
 
 // AI育成フェイズ
 function aiPhaseBreed() {
+  // 育成エリアにLv3以上がいれば → バトルエリアへ移動
+  if(bs.ai.ikusei && parseInt(bs.ai.ikusei.level) >= 3) {
+    let slot = bs.ai.battleArea.findIndex(s => s===null);
+    if(slot === -1) { slot = bs.ai.battleArea.length; bs.ai.battleArea.push(null); }
+    showPhaseAnnounce('🥚 育成フェイズ', '#ff9900', () => {
+      const moved = bs.ai.ikusei;
+      bs.ai.battleArea[slot] = moved; bs.ai.ikusei = null;
+      addLog('🤖 AIが「' + moved.name + '」を育成エリアからバトルエリアへ移動');
+      renderAll();
+      // 登場時効果をトリガー
+      checkAndTriggerEffect(moved, '【登場時】', () => {
+        // 育成エリアが空になったので孵化も試みる
+        if (!bs.ai.ikusei && bs.ai.tamaDeck && bs.ai.tamaDeck.length > 0) {
+          const c = bs.ai.tamaDeck.splice(0,1)[0];
+          bs.ai.ikusei = c;
+          addLog('🤖 AIがデジタマを孵化！');
+          showHatchEffect(c, () => { renderAll(); setTimeout(() => aiPhaseMain(), 500); });
+        } else {
+          setTimeout(() => aiPhaseMain(), 500);
+        }
+      }, 'ai');
+    });
+  }
   // 育成エリアが空でデジタマがあれば孵化
-  if(!bs.ai.ikusei && bs.ai.tamaDeck && bs.ai.tamaDeck.length > 0) {
+  else if(!bs.ai.ikusei && bs.ai.tamaDeck && bs.ai.tamaDeck.length > 0) {
     const c = bs.ai.tamaDeck.splice(0,1)[0];
     bs.ai.ikusei = c;
     showPhaseAnnounce('🥚 育成フェイズ', '#ff9900', () => {
       addLog('🤖 AIがデジタマを孵化！');
       showHatchEffect(c, () => { renderAll(); setTimeout(() => aiPhaseMain(), 500); });
     });
-  } else if(bs.ai.ikusei && bs.ai.ikusei.level !== '2') {
-    // 育成エリアのデジモンをバトルエリアへ移動
-    let slot = bs.ai.battleArea.findIndex(s => s===null);
-    if(slot === -1) { slot = bs.ai.battleArea.length; bs.ai.battleArea.push(null); }
-    showPhaseAnnounce('🥚 育成フェイズ', '#ff9900', () => {
-      bs.ai.battleArea[slot] = bs.ai.ikusei; bs.ai.ikusei = null;
-      addLog('🤖 AIが育成エリアからバトルエリアへ移動');
-      renderAll();
-      setTimeout(() => aiPhaseMain(), 500);
-    });
-  } else {
+  }
+  // 育成エリアにLv2がいる（進化はメインフェイズで処理）
+  else {
     showSkipAnnounce('🥚 育成フェイズ スキップ！', () => { setTimeout(() => aiPhaseMain(), 300); });
   }
 }
@@ -2243,15 +2258,93 @@ function aiPlayScript(cardNames, callback) {
   }
 }
 
-// 自動行動
+// 自動行動（進化 → オプション/テイマー → 登場 の優先順で行動）
 function aiPlayAuto(callback) {
   if(!aiCanAct()) { callback(); return; }
 
+  // ① 育成エリアで進化を試みる
+  if (bs.ai.ikusei && bs.ai.ikusei.type === 'デジモン') {
+    const ikuseiLv = parseInt(bs.ai.ikusei.level) || 0;
+    const evoCandidate = bs.ai.hand.find(c =>
+      c.type === 'デジモン' && parseInt(c.level) === ikuseiLv + 1 &&
+      c.evolveCost !== null && c.evolveCost <= aiAvailableMemory()
+    );
+    if (evoCandidate) {
+      const handIdx = bs.ai.hand.indexOf(evoCandidate);
+      bs.ai.hand.splice(handIdx, 1);
+      const oldCard = bs.ai.ikusei;
+      evoCandidate.stack = [...(oldCard.stack || []), oldCard];
+      evoCandidate.summonedThisTurn = false;
+      evoCandidate.suspended = oldCard.suspended;
+      evoCandidate.baseDp = parseInt(evoCandidate.dp) || 0;
+      evoCandidate.dpModifier = 0;
+      evoCandidate.buffs = [];
+      bs.ai.ikusei = evoCandidate;
+      addLog('🤖 AIが育成エリアで「' + oldCard.name + '」→「' + evoCandidate.name + '」に進化！');
+      const turnEnded = aiSpendMemory(evoCandidate.evolveCost);
+      renderAll();
+      if (turnEnded) { setTimeout(() => callback(), 500); return; }
+      setTimeout(() => aiPlayAuto(callback), 600);
+      return;
+    }
+  }
+
+  // ② バトルエリアで進化を試みる
+  for (let i = 0; i < bs.ai.battleArea.length; i++) {
+    const base = bs.ai.battleArea[i];
+    if (!base || base.type !== 'デジモン') continue;
+    const baseLv = parseInt(base.level) || 0;
+    const evoCandidate = bs.ai.hand.find(c =>
+      c.type === 'デジモン' && parseInt(c.level) === baseLv + 1 &&
+      c.evolveCost !== null && c.evolveCost <= aiAvailableMemory()
+    );
+    if (evoCandidate) {
+      const handIdx = bs.ai.hand.indexOf(evoCandidate);
+      bs.ai.hand.splice(handIdx, 1);
+      evoCandidate.stack = [...(base.stack || []), base];
+      evoCandidate.summonedThisTurn = false;
+      evoCandidate.suspended = base.suspended;
+      evoCandidate.baseDp = parseInt(evoCandidate.dp) || 0;
+      evoCandidate.dpModifier = 0;
+      evoCandidate.buffs = [];
+      bs.ai.battleArea[i] = evoCandidate;
+      addLog('🤖 AIが「' + base.name + '」→「' + evoCandidate.name + '」に進化！');
+      const turnEnded = aiSpendMemory(evoCandidate.evolveCost);
+      renderAll();
+      // 進化時効果をトリガー
+      checkAndTriggerEffect(evoCandidate, '【進化時】', () => {
+        applyPermanentEffects(bs, 'ai', makeEffectContext(evoCandidate, 'ai'));
+        renderAll();
+        if (turnEnded) { setTimeout(() => callback(), 500); return; }
+        setTimeout(() => aiPlayAuto(callback), 600);
+      }, 'ai');
+      return;
+    }
+  }
+
   const available = aiAvailableMemory();
-  const playable = bs.ai.hand.filter(c => c.level!=='2' && c.playCost!==null && c.playCost <= available);
+
+  // ③ オプション/テイマーを使用
+  const optionOrTamer = bs.ai.hand.find(c =>
+    (c.type === 'オプション' || c.type === 'テイマー') &&
+    c.playCost !== null && c.playCost <= available
+  );
+  if (optionOrTamer) {
+    const handIdx = bs.ai.hand.indexOf(optionOrTamer);
+    aiPlayCard(optionOrTamer, handIdx, (turnEnded) => {
+      if (turnEnded) { setTimeout(() => callback(), 500); return; }
+      setTimeout(() => aiPlayAuto(callback), 500);
+    });
+    return;
+  }
+
+  // ④ デジモンを登場（コスト内で一番レベルの高いものを優先）
+  const playable = bs.ai.hand.filter(c =>
+    c.type === 'デジモン' && c.level !== '2' && c.playCost !== null && c.playCost <= available
+  );
 
   if(playable.length > 0) {
-    playable.sort((a,b) => b.playCost - a.playCost);
+    playable.sort((a,b) => (parseInt(b.level)||0) - (parseInt(a.level)||0) || b.playCost - a.playCost);
     const c = playable[0];
     const handIdx = bs.ai.hand.indexOf(c);
     aiPlayCard(c, handIdx, (turnEnded) => {

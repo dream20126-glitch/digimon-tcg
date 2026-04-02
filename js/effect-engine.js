@@ -2094,10 +2094,18 @@ function showConfirmDialog(card, effectText, callback) {
   document.body.appendChild(overlay);
   overlay.style.display = 'flex';
   window._effectConfirmCallback = callback;
+  // オンライン: 確認ダイアログを相手にも表示
+  if (window._isOnlineMode && window._isOnlineMode()) {
+    window._onlineSendCommand({ type: 'fx_confirmShow', cardName: card.name, effectText: (effectText||'').substring(0,200) });
+  }
 }
 
 window._effectEngineConfirm = function(yes) {
   document.getElementById('effect-confirm-overlay').style.display = 'none';
+  // オンライン: 確認ダイアログを相手側で閉じる
+  if (window._isOnlineMode && window._isOnlineMode()) {
+    window._onlineSendCommand({ type: 'fx_confirmClose', accepted: yes });
+  }
   if (window._effectConfirmCallback) {
     window._effectConfirmCallback(yes);
     window._effectConfirmCallback = null;

@@ -1555,6 +1555,8 @@ function applySecurityBuffs(sec, ownerSide) {
   if (sec._origDp === undefined) sec._origDp = parseInt(sec.dp) || 0;
   let bonus = 0;
   buffs.forEach(b => {
+    // オーナーが一致するバフのみ適用
+    if (b.owner && b.owner !== ownerSide) return;
     if (b.type === 'dp_plus') bonus += (parseInt(b.value) || 0);
     if (b.type === 'dp_minus') bonus -= (parseInt(b.value) || 0);
   });
@@ -2739,11 +2741,12 @@ function renderSecurity() {
     if(sec.length>0) el.innerHTML=`<div style="position:relative; width:36px; height:${28+(sec.length-1)*10}px;">`+sec.map((_,i) => `<div class="sec-card ${side==='ai'?'ai-sec':'pl-sec'}" style="position:absolute; top:${i*10}px; left:0; width:36px; height:28px;">${backHtml}</div>`).join('')+'</div>';
     else el.innerHTML='<div class="sec-card empty">0</div>';
     if(cnt) cnt.innerText=sec.length;
-    // セキュリティバフ表示
+    // セキュリティバフ表示（そのsideのオーナーのバフのみ）
+    const buffOwner = side === 'pl' ? 'player' : 'ai';
     const buffs = bs._securityBuffs;
     if (buffs && buffs.length > 0 && sec.length > 0) {
       let totalPlus = 0;
-      buffs.forEach(b => { if (b.type === 'dp_plus') totalPlus += (parseInt(b.value) || 0); });
+      buffs.forEach(b => { if (b.type === 'dp_plus' && b.owner === buffOwner) totalPlus += (parseInt(b.value) || 0); });
       if (totalPlus > 0) {
         const badge = document.createElement('div');
         badge.style.cssText = 'position:absolute;bottom:-2px;left:50%;transform:translateX(-50%);background:rgba(0,255,136,0.9);color:#000;font-size:7px;font-weight:900;padding:1px 4px;border-radius:3px;white-space:nowrap;z-index:1;box-shadow:0 0 6px rgba(0,255,136,0.5);';

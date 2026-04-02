@@ -1754,7 +1754,7 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
   } else if (target.code === 'target_all_own_security') {
     // セキュリティバフを記録（セキュリティチェック時に参照）
     if (!ctx.bs._securityBuffs) ctx.bs._securityBuffs = [];
-    ctx.bs._securityBuffs.push({ type, value: val, duration: dur, source: ctx.card ? ctx.card.cardNo : '' });
+    ctx.bs._securityBuffs.push({ type, value: val, duration: dur, source: ctx.card ? ctx.card.cardNo : '', owner: ctx.side });
     ctx.addLog(label + 'セキュリティデジモン全体 DP' + sign + val + '（' + dur + '）');
     showDpPopup(isPlus ? val : -val);
     ctx.renderAll(); callback && callback();
@@ -1923,6 +1923,7 @@ function checkConditions(conditions, card, bs, side) {
         const otherConds = conditions.filter(c => c.code !== 'cond_exists' && c.code !== 'per_count');
         const hasMatch = oppArea.some(c => {
           if (!c) return false;
+          if (c.type !== 'デジモン') return false; // デジモンのみ対象
           if (otherConds.length === 0) return true; // 条件なし＝相手デジモンがいればOK
           return otherConds.every(oc => {
             switch (oc.code) {

@@ -130,9 +130,8 @@ function onRemoteCommand(cmd) {
       const efOv = document.createElement('div');
       efOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:55000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
       const efBx = document.createElement('div');
-      efBx.style.cssText = 'display:flex;gap:16px;align-items:center;max-width:90%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid #ffaa00;border-radius:12px;box-shadow:0 0 30px #ffaa0044;';
-      if (cmd.cardImg) efBx.innerHTML += '<img src="'+cmd.cardImg+'" style="width:70px;height:98px;object-fit:cover;border-radius:6px;border:2px solid #ffaa00;flex-shrink:0;">';
-      efBx.innerHTML += '<div><div style="color:#ffaa00;font-size:14px;font-weight:bold;margin-bottom:6px;">⚡ '+cmd.cardName+' の効果発動！</div><div style="color:#ddd;font-size:11px;line-height:1.6;">'+(cmd.effectText||'')+'</div></div>';
+      efBx.style.cssText = 'max-width:85%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid #ffaa00;border-radius:12px;box-shadow:0 0 30px #ffaa0044;text-align:center;';
+      efBx.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;margin-bottom:8px;">⚡ '+cmd.cardName+' の効果発動！</div><div style="color:#ddd;font-size:11px;line-height:1.6;text-align:left;">'+(cmd.effectText||'')+'</div>';
       efOv.appendChild(efBx);
       document.body.appendChild(efOv);
       setTimeout(() => { if(efOv.parentNode) efOv.parentNode.removeChild(efOv); }, 3000);

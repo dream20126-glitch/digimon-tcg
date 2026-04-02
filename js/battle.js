@@ -32,6 +32,7 @@ function sendStateSync() {
     };
   };
   const state = {
+    // 自分の状態（相手から見たbs.ai）
     battleArea: bs.player.battleArea.map(serializeCard),
     tamerArea: bs.player.tamerArea.map(serializeCard),
     ikusei: serializeCard(bs.player.ikusei),
@@ -39,6 +40,12 @@ function sendStateSync() {
     deckCount: bs.player.deck.length,
     trashCount: bs.player.trash.length,
     securityCount: bs.player.security.length,
+    // 相手の状態（相手から見たbs.player）— セキュリティ等の変化を反映
+    oppSecurityCount: bs.ai.security.length,
+    oppDeckCount: bs.ai.deck.length,
+    oppTrashCount: bs.ai.trash.length,
+    oppBattleArea: bs.ai.battleArea.map(serializeCard),
+    oppTamerArea: bs.ai.tamerArea.map(serializeCard),
     memory: bs.memory
   };
   sendCommand({ type: 'state_sync', state });
@@ -120,7 +127,16 @@ function onRemoteCommand(cmd) {
     case 'effect_confirm': window.confirmEffect(cmd.yes); break;
     case 'effect_start': {
       addLog('🎮 相手が「' + cmd.cardName + '」の効果を発動！');
-      showPhaseAnnounce('⚡ 相手: ' + cmd.cardName + ' 効果発動！', '#ffaa00', () => {});
+      const efOv = document.createElement('div');
+      efOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:55000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+      const efBx = document.createElement('div');
+      efBx.style.cssText = 'display:flex;gap:16px;align-items:center;max-width:90%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid #ffaa00;border-radius:12px;box-shadow:0 0 30px #ffaa0044;';
+      if (cmd.cardImg) efBx.innerHTML += '<img src="'+cmd.cardImg+'" style="width:70px;height:98px;object-fit:cover;border-radius:6px;border:2px solid #ffaa00;flex-shrink:0;">';
+      efBx.innerHTML += '<div><div style="color:#ffaa00;font-size:14px;font-weight:bold;margin-bottom:6px;">⚡ '+cmd.cardName+' の効果発動！</div><div style="color:#ddd;font-size:11px;line-height:1.6;">'+(cmd.effectText||'')+'</div></div>';
+      efOv.appendChild(efBx);
+      document.body.appendChild(efOv);
+      setTimeout(() => { if(efOv.parentNode) efOv.parentNode.removeChild(efOv); }, 3000);
+      efOv.onclick = () => { if(efOv.parentNode) efOv.parentNode.removeChild(efOv); };
       break;
     }
 
@@ -189,26 +205,21 @@ function onRemoteCommand(cmd) {
         if (!data) return null;
         return { ...data, buffs: data.buffs || [], stack: (data.stack || []).map(restoreCard) };
       };
+      // 相手の状態を bs.ai に反映
       if (st.battleArea) bs.ai.battleArea = st.battleArea.map(restoreCard);
       if (st.tamerArea) bs.ai.tamerArea = st.tamerArea.map(restoreCard);
       bs.ai.ikusei = st.ikusei ? restoreCard(st.ikusei) : bs.ai.ikusei;
-      // デッキ・手札・トラッシュ・セキュリティの枚数を合わせる
-      if (st.deckCount !== undefined) {
-        while (bs.ai.deck.length > st.deckCount) bs.ai.deck.pop();
-        while (bs.ai.deck.length < st.deckCount) bs.ai.deck.push({ name:'?', type:'不明', dp:0 });
-      }
-      if (st.handCount !== undefined) {
-        while (bs.ai.hand.length > st.handCount) bs.ai.hand.pop();
-        while (bs.ai.hand.length < st.handCount) bs.ai.hand.push({ name:'?', type:'不明', dp:0 });
-      }
-      if (st.trashCount !== undefined) {
-        while (bs.ai.trash.length > st.trashCount) bs.ai.trash.pop();
-        while (bs.ai.trash.length < st.trashCount) bs.ai.trash.push({ name:'?', type:'不明', dp:0 });
-      }
-      if (st.securityCount !== undefined) {
-        while (bs.ai.security.length > st.securityCount) bs.ai.security.pop();
-        while (bs.ai.security.length < st.securityCount) bs.ai.security.push({ name:'?', type:'不明', dp:0 });
-      }
+      const adjustArr = (arr, count) => { while(arr.length>count)arr.pop(); while(arr.length<count)arr.push({name:'?',type:'不明',dp:0}); };
+      if (st.deckCount !== undefined) adjustArr(bs.ai.deck, st.deckCount);
+      if (st.handCount !== undefined) adjustArr(bs.ai.hand, st.handCount);
+      if (st.trashCount !== undefined) adjustArr(bs.ai.trash, st.trashCount);
+      if (st.securityCount !== undefined) adjustArr(bs.ai.security, st.securityCount);
+      // 自分の状態も相手の操作で変わった分を反映（セキュリティ・デッキ等）
+      if (st.oppSecurityCount !== undefined) adjustArr(bs.player.security, st.oppSecurityCount);
+      if (st.oppDeckCount !== undefined) adjustArr(bs.player.deck, st.oppDeckCount);
+      if (st.oppTrashCount !== undefined) adjustArr(bs.player.trash, st.oppTrashCount);
+      if (st.oppBattleArea) bs.player.battleArea = st.oppBattleArea.map(restoreCard);
+      if (st.oppTamerArea) bs.player.tamerArea = st.oppTamerArea.map(restoreCard);
       if (st.memory !== undefined) { bs.memory = st.memory; updateMemGauge(); }
       renderAll();
       break;
@@ -1239,7 +1250,7 @@ window.confirmEffect = function(yes) {
   document.getElementById('effect-confirm-overlay').style.display = 'none';
   if (yes && _pendingEffectCard) {
     addLog('⚡ 「' + _pendingEffectCard.name + '」の効果を発動！');
-    if (_onlineMode) sendCommand({ type: 'effect_start', cardName: _pendingEffectCard.name });
+    if (_onlineMode) sendCommand({ type: 'effect_start', cardName: _pendingEffectCard.name, effectText: (_pendingEffectCard.effect||'').substring(0,150), cardImg: _pendingEffectCard.imgSrc||'' });
     const origCb = _pendingEffectCallback;
     _pendingEffectCard = null; _pendingEffectCallback = null;
     const wrappedCb = () => { if (origCb) origCb(); sendStateSync(); };

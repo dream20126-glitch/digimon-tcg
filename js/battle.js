@@ -94,6 +94,16 @@ function onRemoteCommand(cmd) {
       showYourTurn('⚔ 相手アタック！', '「' + atkName + '」→ セキュリティ', '#ff4444', () => {});
       break;
     }
+    case 'security_remove': {
+      // 自分のセキュリティが相手の攻撃で減った
+      if (bs.player.security.length > 0) {
+        const removed = bs.player.security.splice(0,1)[0];
+        bs.player.trash.push(removed);
+        addLog('🛡 セキュリティが減少（残り' + bs.player.security.length + '枚）');
+        renderAll();
+      }
+      break;
+    }
 
     case 'attack_digimon': {
       const atkName2 = cmd.atkName || bs.ai.battleArea[cmd.atkIdx]?.name || '???';
@@ -225,12 +235,8 @@ function onRemoteCommand(cmd) {
       if (st.handCount !== undefined) adjustArr(bs.ai.hand, st.handCount);
       if (st.trashCount !== undefined) adjustArr(bs.ai.trash, st.trashCount);
       if (st.securityCount !== undefined) adjustArr(bs.ai.security, st.securityCount);
-      // 自分の状態も相手の操作で変わった分を反映（セキュリティ・デッキ等）
-      if (st.oppSecurityCount !== undefined) adjustArr(bs.player.security, st.oppSecurityCount);
-      if (st.oppDeckCount !== undefined) adjustArr(bs.player.deck, st.oppDeckCount);
-      if (st.oppTrashCount !== undefined) adjustArr(bs.player.trash, st.oppTrashCount);
-      if (st.oppBattleArea) bs.player.battleArea = st.oppBattleArea.map(restoreCard);
-      if (st.oppTamerArea) bs.player.tamerArea = st.oppTamerArea.map(restoreCard);
+      // 自分の状態: セキュリティ等はstate_syncで上書きしない（ズレの原因になる）
+      // 代わりにアタック等の個別コマンドで同期する
       if (st.memory !== undefined) { bs.memory = st.memory; updateMemGauge(); }
       renderAll();
       break;
@@ -2175,6 +2181,7 @@ function resolveSecurityCheck(atk, atkIdx) {
     }
 
     const sec = bs.ai.security.splice(0,1)[0];
+    if (_onlineMode) sendCommand({ type: 'security_remove', secName: sec.name, secType: sec.type, remaining: bs.ai.security.length });
     applySecurityBuffs(sec, 'ai');
     // VS画面上にチェック数ラベルを表示（「1枚目」「2枚目」…）
     const afterOpen = () => {

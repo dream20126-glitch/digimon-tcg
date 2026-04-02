@@ -230,8 +230,8 @@ function updateLobbyUI(data) {
       const oppList = data[oppKey2]?.deckList;
       if (myList && oppList) {
         showScreen('battle-screen');
-        if (typeof startBattleGame === 'function') {
-          startBattleGame({ list: myList }, { list: oppList }, playerFirst);
+        if (typeof startOnlineBattle === 'function') {
+          startOnlineBattle({ list: myList }, { list: oppList }, playerFirst, currentRoomId, myPlayerKey);
         }
       }
     } else if (myEntered && !oppEntered) {

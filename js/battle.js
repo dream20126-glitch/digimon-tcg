@@ -1,6 +1,136 @@
 // バトル画面ロジック（battle-controls.md 準拠）
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
 import { loadAllDictionaries, triggerEffect, cardHasKeyword, expireBuffs, applyPermanentEffects, isTargetSelecting, calcPerCountValue } from './effect-engine.js';
+import { rtdb, ref, set, update, onValue } from './firebase-config.js';
+
+// ===== オンライン同期 =====
+let _onlineMode = false;    // オンラインバトル中か
+let _onlineRoomId = null;    // ルームID
+let _onlineMyKey = null;     // 'player1' or 'player2'
+let _onlineCmdListener = null; // Firebaseリスナー解除用
+let _onlineCmdSeq = 0;       // コマンド連番
+
+// コマンド送信（自分の操作を相手に伝える）
+function sendCommand(cmd) {
+  if (!_onlineMode || !_onlineRoomId) return;
+  _onlineCmdSeq++;
+  const path = `rooms/${_onlineRoomId}/commands/${_onlineCmdSeq}`;
+  set(ref(rtdb, path), { ...cmd, from: _onlineMyKey, seq: _onlineCmdSeq, time: Date.now() });
+}
+
+// コマンド受信（相手の操作を再現）
+function onRemoteCommand(cmd) {
+  if (!cmd || cmd.from === _onlineMyKey) return; // 自分のコマンドは無視
+  console.log('[ONLINE] 受信:', cmd.type, cmd);
+
+  switch (cmd.type) {
+    case 'mulligan': doMulligan(); break;
+    case 'acceptHand': window.acceptHand(); break;
+    case 'play': doPlay(bs.ai.hand[cmd.handIdx], cmd.handIdx, cmd.slotIdx); break;
+    case 'evolve': doEvolve(bs.ai.hand[cmd.handIdx], cmd.handIdx, cmd.slotIdx); break;
+    case 'attack_security': {
+      const atk = bs.ai.battleArea[cmd.atkIdx];
+      if (atk) { atk.suspended = true; renderAll(); afterAtkEffect(atk, cmd.atkIdx, () => resolveSecurityCheck(atk, cmd.atkIdx)); }
+      break;
+    }
+    case 'attack_digimon': {
+      const atk = bs.ai.battleArea[cmd.atkIdx];
+      const def = bs.player.battleArea[cmd.defIdx];
+      if (atk && def) { atk.suspended = true; renderAll(); afterAtkEffect(atk, cmd.atkIdx, () => resolveBattle(atk, cmd.atkIdx, def, cmd.defIdx, 'player')); }
+      break;
+    }
+    case 'endTurn': {
+      // 相手がターン終了 → 自分のターン開始
+      bs.memory = 3;
+      updateMemGauge();
+      expireBuffs(bs, 'dur_this_turn');
+      renderAll();
+      showYourTurn('相手のターン終了','','#555555', () => {
+        bs.isPlayerTurn = true;
+        showYourTurn('自分のターン開始','','#00fbff', () => {
+          checkTurnStartEffects('player', () => {
+            applyPermanentEffects(bs, 'player', makeEffectContext(null,'player'));
+            applyPermanentEffects(bs, 'ai', makeEffectContext(null,'ai'));
+            renderAll();
+            setTimeout(() => startPhase('unsuspend'), 300);
+          });
+        });
+      });
+      break;
+    }
+    case 'effect_confirm': window.confirmEffect(cmd.yes); break;
+    case 'hatch': {
+      // 相手が孵化
+      if (bs.ai.tamaDeck.length > 0) {
+        const c = bs.ai.tamaDeck.splice(0,1)[0];
+        bs.ai.ikusei = c;
+        addLog('🤖 相手がデジタマを孵化');
+        renderAll();
+      }
+      break;
+    }
+    case 'breed_evolve': {
+      // 相手が育成エリアで進化
+      const evoCard = bs.ai.hand[cmd.handIdx];
+      if (evoCard && bs.ai.ikusei) {
+        bs.ai.hand.splice(cmd.handIdx, 1);
+        const old = bs.ai.ikusei;
+        evoCard.stack = [...(old.stack||[]), old];
+        evoCard.suspended = old.suspended;
+        evoCard.baseDp = parseInt(evoCard.dp)||0;
+        evoCard.dpModifier = 0; evoCard.buffs = [];
+        bs.ai.ikusei = evoCard;
+        addLog('🤖 相手が育成で進化: ' + evoCard.name);
+        renderAll();
+      }
+      break;
+    }
+    case 'breed_move': {
+      // 相手が育成→バトルエリアへ移動
+      if (bs.ai.ikusei) {
+        let slot = bs.ai.battleArea.findIndex(s => s===null);
+        if (slot===-1) { slot=bs.ai.battleArea.length; bs.ai.battleArea.push(null); }
+        bs.ai.battleArea[slot] = bs.ai.ikusei;
+        addLog('🤖 相手がバトルエリアへ移動: ' + bs.ai.ikusei.name);
+        bs.ai.ikusei = null;
+        renderAll();
+      }
+      break;
+    }
+    case 'activate_effect': {
+      const card = bs.ai.battleArea[cmd.slotIdx];
+      if (card) checkAndTriggerEffect(card, '【メイン】', () => renderAll(), 'ai', true);
+      break;
+    }
+  }
+}
+
+// Firebaseコマンドリスナー開始
+function startOnlineListener() {
+  if (_onlineCmdListener) _onlineCmdListener();
+  let lastSeq = 0;
+  _onlineCmdListener = onValue(ref(rtdb, `rooms/${_onlineRoomId}/commands`), (snap) => {
+    const cmds = snap.val();
+    if (!cmds) return;
+    // 新しいコマンドのみ処理
+    Object.values(cmds).sort((a,b) => a.seq - b.seq).forEach(cmd => {
+      if (cmd.seq > lastSeq && cmd.from !== _onlineMyKey) {
+        lastSeq = cmd.seq;
+        onRemoteCommand(cmd);
+      }
+    });
+  });
+}
+
+// オンラインバトル開始用
+window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFirst, roomId, myKey) {
+  _onlineMode = true;
+  _onlineRoomId = roomId;
+  _onlineMyKey = myKey;
+  _onlineCmdSeq = 0;
+  await startBattleGame(playerDeckData, oppDeckData, playerFirst);
+  startOnlineListener();
+};
 
 const MEM_MIN = -10, MEM_MAX = 10;
 const PHASE_NAMES = {
@@ -72,13 +202,13 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   const plCards=parseDeck(playerDeckData), aiCards=parseDeck(aiDeckData);
   bs.player.tamaDeck=shuffle(plCards.filter(c => c.level==='2'));
   bs.player.deck=shuffle(plCards.filter(c => c.level!=='2'));
-  bs.ai.tamaDeck=aiCards.filter(c => c.level==='2');
-  bs.ai.deck=aiCards.filter(c => c.level!=='2');
+  bs.ai.tamaDeck=_onlineMode ? shuffle(aiCards.filter(c => c.level==='2')) : aiCards.filter(c => c.level==='2');
+  bs.ai.deck=_onlineMode ? shuffle(aiCards.filter(c => c.level!=='2')) : aiCards.filter(c => c.level!=='2');
   bs.player.hand=bs.player.deck.splice(0,5);
-  // AI側デッキ: シャッフルせず理想的な順番に並べ直す
-  // セキュリティ用カードを先頭に、次に初手5枚、残りデッキの順
-  bs.ai.deck = sortAiDeckWithSecurity(bs.ai.deck);
-  // 先頭5枚はセキュリティ用（acceptHandで取られる）、次の5枚が初手
+  if (!_onlineMode) {
+    // AI側デッキ: シャッフルせず理想的な順番に並べ直す
+    bs.ai.deck = sortAiDeckWithSecurity(bs.ai.deck);
+  }
   bs.ai.hand=bs.ai.deck.splice(0,5);
   bs.player.battleArea=[]; bs.ai.battleArea=[];
   bs.player.tamerArea=[]; bs.ai.tamerArea=[];
@@ -973,6 +1103,7 @@ window.skipBreedPhase = function() {
 function doPlay(card, handIdx, slotIdx) {
   if(bs.phase!=='main') return;
   if(card.level==='2'){addLog('🚨 デジタマはバトルエリアに出せません');return;}
+  if (_onlineMode) sendCommand({ type: 'play', handIdx, slotIdx });
   if(card.playCost===null){addLog('🚨 「'+card.name+'」は進化専用カードです');return;}
 
   // オプションカード → 使用（バトルエリアに残らない）→ 必ずトラッシュへ
@@ -1080,6 +1211,7 @@ function canEvolveOnto(evoCard, baseCard) {
 
 function doEvolve(card, handIdx, slotIdx) {
   if(bs.phase!=='main') return;
+  if (_onlineMode) sendCommand({ type: 'evolve', handIdx, slotIdx });
   const base=bs.player.battleArea[slotIdx]; if(!base) return;
   if(card.evolveCost===null){addLog('🚨 「'+card.name+'」は進化できません‼');return;}
   // 進化条件チェック
@@ -1482,6 +1614,7 @@ function resolveAttackDrop(cx, cy) {
     if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom) {
       if(!def.suspended&&!canHitActive) { addLog('🚨 アクティブ状態のデジモンにはアタックできません'); cancelAttack(); resolved=true; return; }
       resolved=true; _atkState=null;
+      if (_onlineMode) sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: i });
       const blockerIdx=bs.ai.battleArea.findIndex(c=>c&&c!==def&&!c.suspended&&hasEvoKeyword(c,'【ブロッカー】'));
       if(blockerIdx!==-1) { const bl=bs.ai.battleArea[blockerIdx]; bl.suspended=true; addLog('🛡 「'+bl.name+'」がブロック！'); renderAll();
         afterAtkEffect(atkCard,atkSlotIdx,()=>resolveBattle(atkCard,atkSlotIdx,bl,blockerIdx,'ai'));
@@ -1493,7 +1626,7 @@ function resolveAttackDrop(cx, cy) {
   if(!resolved) {
     const secArea=document.getElementById('ai-sec-area');
     if(secArea) { const r=secArea.getBoundingClientRect();
-      if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom) { resolved=true; _atkState=null; afterAtkEffect(atkCard,atkSlotIdx,()=>resolveSecurityCheck(atkCard,atkSlotIdx)); }
+      if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom) { resolved=true; _atkState=null; if(_onlineMode)sendCommand({type:'attack_security',atkIdx:atkSlotIdx}); afterAtkEffect(atkCard,atkSlotIdx,()=>resolveSecurityCheck(atkCard,atkSlotIdx)); }
     }
   }
 
@@ -1831,12 +1964,28 @@ function checkAttackEnd(atk, atkIdx) {
 window.onEndTurn = function() {
   if(!bs.isPlayerTurn) return;
   exitBreedPhase();
-  checkTurnEndEffects(() => {
-    // プレイヤーが自発的にターン終了 → AI側3にメモリ移動
+  if (_onlineMode) {
+    sendCommand({ type: 'endTurn' });
+    // オンライン: 自分のターン終了 → 相手ターン（相手の操作を待つ）
     bs.memory = -3;
     updateMemGauge();
-    expireBuffs(bs, 'dur_this_turn'); // このターン限定バフリセット
-    expireBuffs(bs, 'permanent', 'player'); // プレイヤーの永続効果リセット
+    expireBuffs(bs, 'dur_this_turn');
+    expireBuffs(bs, 'permanent', 'player');
+    renderAll();
+    showYourTurn('自分のターン終了','','#555555', () => {
+      bs.isPlayerTurn = false;
+      showYourTurn('相手のターン','🎮 相手の操作を待っています...','#ff00fb', () => {
+        addLog('⏳ 相手のターン（操作待ち）');
+      });
+    });
+    return;
+  }
+  checkTurnEndEffects(() => {
+    // AI対戦: ターン終了 → AI側3にメモリ移動
+    bs.memory = -3;
+    updateMemGauge();
+    expireBuffs(bs, 'dur_this_turn');
+    expireBuffs(bs, 'permanent', 'player');
     renderAll();
     showYourTurn('自分のターン終了','','#555555', () => {
       bs.isPlayerTurn=false;

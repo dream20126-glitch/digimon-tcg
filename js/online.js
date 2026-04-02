@@ -152,14 +152,15 @@ window.enterBattle = async function() {
     const oppKey = myPlayerKey === 'player1' ? 'player2' : 'player1';
     const oppDeckName = roomData[oppKey]?.deckName;
 
-    // デッキリストをGAS APIから取得
-    const [myDeck, oppDeck] = await Promise.all([
-      gasGet('getDeckCards', { deckName: myDeckName, pw: currentSessionPassword }),
-      gasGet('getDeckCards', { deckName: oppDeckName, pw: currentSessionPassword })
-    ]);
+    // 既存のgetDecks APIでデッキ一覧を取得し、名前で検索
+    const allDecks = await gasGet('getDecks', { pw: currentSessionPassword });
+    if (!allDecks || !Array.isArray(allDecks)) { alert('デッキ一覧の取得に失敗しました'); return; }
 
-    if (!myDeck || !myDeck.list) { alert('自分のデッキ取得に失敗しました'); return; }
-    if (!oppDeck || !oppDeck.list) { alert('相手のデッキ取得に失敗しました'); return; }
+    const myDeck = allDecks.find(d => d.name === myDeckName);
+    const oppDeck = allDecks.find(d => d.name === oppDeckName);
+
+    if (!myDeck || !myDeck.list) { alert('自分のデッキが見つかりません: ' + myDeckName); return; }
+    if (!oppDeck || !oppDeck.list) { alert('相手のデッキが見つかりません: ' + oppDeckName); return; }
 
     // 先攻判定
     const playerFirst = roomData.diceResult?.winner === myPlayerKey;

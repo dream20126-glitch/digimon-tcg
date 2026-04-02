@@ -228,15 +228,10 @@ function updateLobbyUI(data) {
       const playerFirst = data.diceResult?.winner === myPlayerKey;
       const myList = data[myPlayerKey]?.deckList;
       const oppList = data[oppKey2]?.deckList;
-      alert('バトル開始判定: first=' + playerFirst + ' myList=' + !!myList + ' oppList=' + !!oppList + ' onlineFn=' + (typeof startOnlineBattle));
       if (myList && oppList) {
         showScreen('battle-screen');
         if (typeof startOnlineBattle === 'function') {
           startOnlineBattle({ list: myList }, { list: oppList }, playerFirst, currentRoomId, myPlayerKey);
-        } else if (typeof startBattleGame === 'function') {
-          // フォールバック: startOnlineBattleが見つからない場合
-          alert('startOnlineBattle未定義、startBattleGameで代用');
-          startBattleGame({ list: myList }, { list: oppList }, playerFirst);
         }
       }
     } else if (myEntered && !oppEntered) {

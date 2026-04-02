@@ -125,6 +125,7 @@ function startOnlineListener() {
 // オンラインバトル開始用
 window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFirst, roomId, myKey) {
   console.log('[ONLINE-START] playerFirst:', playerFirst, 'roomId:', roomId, 'myKey:', myKey);
+  alert('オンライン開始: ' + (playerFirst ? '先攻' : '後攻') + ' / key=' + myKey);
   _onlineMode = true;
   _onlineRoomId = roomId;
   _onlineMyKey = myKey;

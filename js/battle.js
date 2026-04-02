@@ -91,19 +91,17 @@ function onRemoteCommand(cmd) {
     }
 
     case 'attack_security': {
-      // 相手がセキュリティにアタック（演出のみ、結果はstate_syncで反映）
       const atkName = bs.ai.battleArea[cmd.atkIdx]?.name || '???';
       addLog('🎮 相手の「' + atkName + '」でセキュリティアタック！');
-      showPhaseAnnounce('⚔ 相手アタック！', '#ff4444', () => {});
+      showYourTurn('⚔ 相手アタック！', '「' + atkName + '」→ セキュリティ', '#ff4444', () => {});
       break;
     }
 
     case 'attack_digimon': {
-      // 相手がデジモンにアタック（演出のみ、結果はstate_syncで反映）
       const atkName2 = bs.ai.battleArea[cmd.atkIdx]?.name || '???';
       const defName = bs.player.battleArea[cmd.defIdx]?.name || '???';
       addLog('🎮 相手の「' + atkName2 + '」が「' + defName + '」にアタック！');
-      showPhaseAnnounce('⚔ 相手アタック！', '#ff4444', () => {});
+      showYourTurn('⚔ 相手アタック！', '「' + atkName2 + '」→「' + defName + '」', '#ff4444', () => {});
       break;
     }
 
@@ -130,22 +128,25 @@ function onRemoteCommand(cmd) {
     case 'effect_confirm': window.confirmEffect(cmd.yes); break;
     case 'effect_start': {
       addLog('🎮 相手が「' + cmd.cardName + '」の効果を発動！');
+      showPhaseAnnounce('⚡ 相手: ' + cmd.cardName + ' 効果発動！', '#ffaa00', () => {});
       break;
     }
 
     case 'hatch': {
       addLog('🎮 相手がデジタマを孵化');
-      // 状態はstate_syncで反映
+      showPhaseAnnounce('🥚 相手が孵化！', '#ff9900', () => {});
       break;
     }
 
     case 'breed_evolve': {
       addLog('🎮 相手が育成エリアで進化');
+      showPhaseAnnounce('⬆ 相手が育成で進化！', '#00ff88', () => {});
       break;
     }
 
     case 'breed_move': {
       addLog('🎮 相手がバトルエリアへ移動');
+      showPhaseAnnounce('🐾 相手がバトルエリアへ移動！', '#00fbff', () => {});
       break;
     }
 
@@ -171,6 +172,23 @@ function onRemoteCommand(cmd) {
       if (st.battleArea) bs.ai.battleArea = st.battleArea.map(restoreCard);
       if (st.tamerArea) bs.ai.tamerArea = st.tamerArea.map(restoreCard);
       bs.ai.ikusei = st.ikusei ? restoreCard(st.ikusei) : bs.ai.ikusei;
+      // デッキ・手札・トラッシュ・セキュリティの枚数を合わせる
+      if (st.deckCount !== undefined) {
+        while (bs.ai.deck.length > st.deckCount) bs.ai.deck.pop();
+        while (bs.ai.deck.length < st.deckCount) bs.ai.deck.push({ name:'?', type:'不明', dp:0 });
+      }
+      if (st.handCount !== undefined) {
+        while (bs.ai.hand.length > st.handCount) bs.ai.hand.pop();
+        while (bs.ai.hand.length < st.handCount) bs.ai.hand.push({ name:'?', type:'不明', dp:0 });
+      }
+      if (st.trashCount !== undefined) {
+        while (bs.ai.trash.length > st.trashCount) bs.ai.trash.pop();
+        while (bs.ai.trash.length < st.trashCount) bs.ai.trash.push({ name:'?', type:'不明', dp:0 });
+      }
+      if (st.securityCount !== undefined) {
+        while (bs.ai.security.length > st.securityCount) bs.ai.security.pop();
+        while (bs.ai.security.length < st.securityCount) bs.ai.security.push({ name:'?', type:'不明', dp:0 });
+      }
       if (st.memory !== undefined) { bs.memory = st.memory; updateMemGauge(); }
       renderAll();
       break;

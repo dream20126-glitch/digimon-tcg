@@ -428,7 +428,13 @@ function executeQueueEntry(entry, context, callback) {
   function executeWithAnnounce() {
     ctx.addLog('⚡ 「' + card.name + '」の効果発動');
     showEffectAnnounce(card, block.raw, actualSide, () => {
-      executeCostAndActions(block, ctx, () => executeAfterActions(block, ctx, callback));
+      // レシピがあればレシピ実行、なければ従来処理
+      const recipe = getRecipeForTrigger(card, block.trigger ? block.trigger.code : null);
+      if (recipe) {
+        runRecipe(recipe, ctx, callback);
+      } else {
+        executeCostAndActions(block, ctx, () => executeAfterActions(block, ctx, callback));
+      }
     });
   }
 
@@ -2144,6 +2150,266 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
   }
 
   sortQueue();
+}
+
+// ===== レシピ実行エンジン =====
+
+// カードからトリガーに対応するレシピを取得
+function getRecipeForTrigger(card, triggerCode) {
+  if (!card.recipe) return null;
+  try {
+    const recipes = typeof card.recipe === 'string' ? JSON.parse(card.recipe) : card.recipe;
+    // { "main": [...], "on_attack": [...] } 形式
+    if (recipes[triggerCode]) return recipes[triggerCode];
+    // セキュリティ効果でuse_main_effectの場合、mainレシピを返す
+    if (triggerCode === 'security' && recipes['main']) {
+      // セキュリティ効果テキストに「メイン効果を発揮」があるか確認
+      const secText = card.securityEffect || '';
+      if (secText.includes('メイン効果を発揮')) return recipes['main'];
+    }
+    return null;
+  } catch(e) { return null; }
+}
+
+// レシピを順次実行
+function runRecipe(steps, ctx, callback) {
+  const store = {}; // ステップ間データ受け渡し用
+  let idx = 0;
+
+  function nextStep() {
+    if (idx >= steps.length) { ctx.renderAll(); callback && callback(); return; }
+    const step = steps[idx++];
+    executeRecipeStep(step, ctx, store, nextStep);
+  }
+  nextStep();
+}
+
+// レシピの1ステップを実行
+function executeRecipeStep(step, ctx, store, callback) {
+  const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+  const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
+
+  switch (step.action) {
+
+    // === 対象選択（自分のデジモン） ===
+    case 'select': {
+      if (step.target === 'own') {
+        const valid = [];
+        for (let i = 0; i < player.battleArea.length; i++) {
+          if (player.battleArea[i]) valid.push(i);
+        }
+        if (valid.length === 0) { showEffectFailed(null, callback); return; }
+        const rowId = ctx.side === 'player' ? 'pl' : 'ai';
+        showTargetSelection(rowId, valid, null, '#00fbff', (selectedIdx) => {
+          if (selectedIdx !== null) {
+            store[step.store] = { idx: selectedIdx, card: player.battleArea[selectedIdx] };
+          }
+          callback();
+        });
+      } else if (step.target === 'opponent') {
+        const valid = [];
+        for (let i = 0; i < opponent.battleArea.length; i++) {
+          const c = opponent.battleArea[i];
+          if (!c) continue;
+          // 条件フィルタ
+          if (step.condition) {
+            const [condType, condVal] = step.condition.split(':');
+            if (condType === 'dp_le' && c.dp > parseInt(condVal)) continue;
+            if (condType === 'dp_ge' && c.dp < parseInt(condVal)) continue;
+            if (condType === 'lv_le' && parseInt(c.level) > parseInt(condVal)) continue;
+          }
+          valid.push(i);
+        }
+        if (valid.length === 0) { showEffectFailed(null, callback); return; }
+        const rowId = ctx.side === 'player' ? 'ai' : 'pl';
+        showTargetSelection(rowId, valid, null, '#ff4444', (selectedIdx) => {
+          if (selectedIdx !== null) {
+            store[step.store] = { idx: selectedIdx, card: opponent.battleArea[selectedIdx] };
+          }
+          callback();
+        });
+      } else {
+        callback();
+      }
+      break;
+    }
+
+    // === 複数体選択（最大N体） ===
+    case 'select_multi': {
+      const maxCount = step.count || 1;
+      let remaining = maxCount;
+      const selected = [];
+
+      function selectNext() {
+        if (remaining <= 0) { callback(); return; }
+        const valid = [];
+        for (let i = 0; i < opponent.battleArea.length; i++) {
+          const c = opponent.battleArea[i];
+          if (!c || selected.includes(i)) continue;
+          if (step.condition) {
+            const [condType, condVal] = step.condition.split(':');
+            if (condType === 'dp_le' && c.dp > parseInt(condVal)) continue;
+          }
+          valid.push(i);
+        }
+        if (valid.length === 0) { callback(); return; }
+        const rowId = ctx.side === 'player' ? 'ai' : 'pl';
+        ctx.addLog('🎯 対象を選んでください（残り' + remaining + '体）');
+        showTargetSelection(rowId, valid, null, '#ff4444', (selectedIdx) => {
+          if (selectedIdx !== null) {
+            selected.push(selectedIdx);
+            if (step.store) {
+              if (!store[step.store]) store[step.store] = [];
+              store[step.store].push({ idx: selectedIdx, card: opponent.battleArea[selectedIdx] });
+            }
+            remaining--;
+            // 続けて選ぶか確認（残りがあり、対象もある場合）
+            if (remaining > 0) {
+              const moreValid = valid.filter(i => !selected.includes(i));
+              if (moreValid.length > 0) {
+                selectNext();
+                return;
+              }
+            }
+          }
+          callback();
+        });
+      }
+      selectNext();
+      break;
+    }
+
+    // === 進化元カードを選択 ===
+    case 'select_evo_source': {
+      const fromData = store[step.from];
+      if (!fromData || !fromData.card || !fromData.card.stack || fromData.card.stack.length === 0) {
+        ctx.addLog('⚠ 進化元がありません');
+        showEffectFailed(null, callback);
+        return;
+      }
+      const parentCard = fromData.card;
+      const evoCards = parentCard.stack.filter(s => {
+        if (step.filter && step.filter === 'デジモン') return s.type === 'デジモン';
+        return true;
+      });
+      if (evoCards.length === 0) {
+        ctx.addLog('⚠ 条件を満たす進化元がありません');
+        showEffectFailed(null, callback);
+        return;
+      }
+      // 進化元カードを選択するUI
+      showEvoSourceSelection(parentCard, evoCards, step.filter, (selectedEvoCard) => {
+        if (selectedEvoCard && step.store) {
+          store[step.store] = { card: selectedEvoCard, parentCard: parentCard };
+        }
+        callback();
+      });
+      break;
+    }
+
+    // === コスト無し登場 ===
+    case 'summon': {
+      const srcData = store[step.card];
+      if (!srcData || !srcData.card) { callback(); return; }
+      const cardToSummon = srcData.card;
+      // 進化元から抜く
+      if (srcData.parentCard && srcData.parentCard.stack) {
+        const stackIdx = srcData.parentCard.stack.indexOf(cardToSummon);
+        if (stackIdx !== -1) srcData.parentCard.stack.splice(stackIdx, 1);
+      }
+      // バトルエリアの空きスロットに登場
+      const emptyIdx = player.battleArea.indexOf(null);
+      if (emptyIdx !== -1) {
+        player.battleArea[emptyIdx] = cardToSummon;
+      } else {
+        player.battleArea.push(cardToSummon);
+      }
+      cardToSummon.summonedThisTurn = true;
+      cardToSummon.suspended = false;
+      cardToSummon.buffs = [];
+      cardToSummon.stack = [];
+      cardToSummon.dpModifier = 0;
+      cardToSummon.baseDp = parseInt(cardToSummon.dp) || 0;
+      ctx.addLog('🌟 「' + cardToSummon.name + '」をコスト無しで登場！');
+      ctx.renderAll();
+      callback();
+      break;
+    }
+
+    // === 消滅 ===
+    case 'destroy': {
+      const targetData = step.card ? store[step.card] : null;
+      if (targetData) {
+        // store から取得（単体 or 複数）
+        const targets = Array.isArray(targetData) ? targetData : [targetData];
+        targets.forEach(t => {
+          const c = opponent.battleArea[t.idx];
+          if (c) {
+            opponent.battleArea[t.idx] = null;
+            opponent.trash.push(c);
+            if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
+            ctx.addLog('💥 「' + c.name + '」を消滅させた！');
+          }
+        });
+        ctx.renderAll();
+      }
+      callback();
+      break;
+    }
+
+    // === その他のアクション（既存エンジンに委譲） ===
+    default: {
+      // 既存のrunOneAction形式に変換して実行
+      const action = { code: step.action, value: step.value || null };
+      const target = step.target ? { code: 'target_' + step.target } : null;
+      runOneAction(action, target, ctx, callback);
+      break;
+    }
+  }
+}
+
+// 進化元カード選択UI
+function showEvoSourceSelection(parentCard, evoCards, filter, callback) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;margin-bottom:16px;';
+  title.innerText = '🔍 「' + parentCard.name + '」の進化元から選択';
+  overlay.appendChild(title);
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;';
+
+  evoCards.forEach((evoCard, i) => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'text-align:center;cursor:pointer;border:2px solid #333;border-radius:8px;padding:6px;transition:all 0.2s;';
+    const imgSrc = evoCard.imgSrc || evoCard.imageUrl || '';
+    wrap.innerHTML = (imgSrc ? '<img src="' + imgSrc + '" style="width:70px;height:98px;object-fit:cover;border-radius:4px;">' : '')
+      + '<div style="color:#fff;font-size:10px;margin-top:4px;">' + evoCard.name + '</div>'
+      + '<div style="color:#aaa;font-size:9px;">Lv.' + (evoCard.level || '?') + ' DP:' + (evoCard.dp || '?') + '</div>';
+    wrap.onmouseenter = () => { wrap.style.borderColor = '#00fbff'; wrap.style.boxShadow = '0 0 12px #00fbff44'; };
+    wrap.onmouseleave = () => { wrap.style.borderColor = '#333'; wrap.style.boxShadow = ''; };
+    wrap.onclick = () => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      callback(evoCard);
+    };
+    row.appendChild(wrap);
+  });
+
+  overlay.appendChild(row);
+
+  // キャンセルボタン
+  const cancelBtn = document.createElement('button');
+  cancelBtn.style.cssText = 'margin-top:16px;background:#333;color:#fff;border:1px solid #666;padding:8px 20px;border-radius:8px;font-size:12px;cursor:pointer;';
+  cancelBtn.innerText = 'キャンセル';
+  cancelBtn.onclick = () => {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    callback(null);
+  };
+  overlay.appendChild(cancelBtn);
+
+  document.body.appendChild(overlay);
 }
 
 // ===== 公開API =====

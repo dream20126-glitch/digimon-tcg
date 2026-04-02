@@ -171,7 +171,7 @@ function parseDeck(deckData) {
       evolveCost: hasEvolve ? parseInt(evolveCost) : null,
       evolveCond: obj["進化条件"]||'',
       cost: hasPlay ? parseInt(playCost) : hasEvolve ? parseInt(evolveCost) : 0,
-      effect: obj["効果"]||'', evoSourceEffect: obj["進化元効果"]||'', securityEffect: obj["セキュリティ効果"]||'',
+      effect: obj["効果"]||'', evoSourceEffect: obj["進化元効果"]||'', securityEffect: obj["セキュリティ効果"]||'', recipe: obj["効果レシピ"]||null,
       imageUrl: obj["ImageURL"]||'', imgSrc: getCardImageUrl(obj)||'',
       type: obj["タイプ"]||'', color: obj["色"]||'',
       feature: obj["特徴"]||'',
@@ -179,6 +179,23 @@ function parseDeck(deckData) {
       cantBeActive: false, cantAttack: false, cantBlock: false,
       summonedThisTurn: false, _pendingDestroy: false
     });
+  });
+  // レシピ未設定カードにデフォルトレシピを注入（スプレッドシート対応前の暫定）
+  const defaultRecipes = {
+    'ST2-15': { "main": [
+      {"action": "select", "target": "own", "store": "A"},
+      {"action": "select_evo_source", "from": "A", "filter": "デジモン", "store": "B"},
+      {"action": "summon", "card": "B"}
+    ]},
+    'ST1-15': { "main": [
+      {"action": "select_multi", "target": "opponent", "condition": "dp_le:4000", "count": 2, "store": "T"},
+      {"action": "destroy", "card": "T"}
+    ]}
+  };
+  out.forEach(card => {
+    if (!card.recipe && defaultRecipes[card.cardNo]) {
+      card.recipe = defaultRecipes[card.cardNo];
+    }
   });
   return out;
 }

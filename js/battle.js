@@ -10,6 +10,38 @@ let _onlineMyKey = null;     // 'player1' or 'player2'
 let _onlineCmdListener = null; // Firebaseリスナー解除用
 let _onlineCmdSeq = 0;       // コマンド連番
 
+// 状態同期（効果解決後に自分のカード状態を相手に送信）
+function sendStateSync() {
+  if (!_onlineMode) return;
+  // カードを軽量化（循環参照を避ける）
+  const serializeCard = (c) => {
+    if (!c) return null;
+    return {
+      cardNo: c.cardNo, name: c.name, type: c.type, level: c.level,
+      dp: c.dp, baseDp: c.baseDp, dpModifier: c.dpModifier,
+      cost: c.cost, playCost: c.playCost, evolveCost: c.evolveCost,
+      effect: c.effect, evoSourceEffect: c.evoSourceEffect, securityEffect: c.securityEffect,
+      suspended: c.suspended, summonedThisTurn: c.summonedThisTurn,
+      imgSrc: c.imgSrc, imageUrl: c.imageUrl, color: c.color, feature: c.feature,
+      evolveCond: c.evolveCond, buffs: c.buffs || [],
+      stack: (c.stack || []).map(serializeCard),
+      _permEffects: c._permEffects || {},
+      _usedEffects: c._usedEffects || []
+    };
+  };
+  const state = {
+    battleArea: bs.player.battleArea.map(serializeCard),
+    tamerArea: bs.player.tamerArea.map(serializeCard),
+    ikusei: serializeCard(bs.player.ikusei),
+    handCount: bs.player.hand.length,
+    deckCount: bs.player.deck.length,
+    trashCount: bs.player.trash.length,
+    securityCount: bs.player.security.length,
+    memory: bs.memory
+  };
+  sendCommand({ type: 'state_sync', state });
+}
+
 // コマンド送信（自分の操作を相手に伝える）
 function sendCommand(cmd) {
   if (!_onlineMode || !_onlineRoomId) return;
@@ -133,6 +165,10 @@ function onRemoteCommand(cmd) {
     }
 
     case 'effect_confirm': window.confirmEffect(cmd.yes); break;
+    case 'effect_start': {
+      addLog('🎮 相手が「' + cmd.cardName + '」の効果を発動！');
+      break;
+    }
 
     case 'hatch': {
       if (bs.ai.tamaDeck.length > 0) {
@@ -189,6 +225,25 @@ function onRemoteCommand(cmd) {
         addLog('🎮 相手がテイマー「' + tamer.name + '」の効果を発動！');
         checkAndTriggerEffect(tamer, '【メイン】', () => renderAll(), 'ai', true);
       }
+      break;
+    }
+    case 'state_sync': {
+      // 相手の状態を bs.ai に反映
+      const st = cmd.state;
+      if (!st) break;
+      // カードデータを復元（imgSrc等を保持）
+      const restoreCard = (data) => {
+        if (!data) return null;
+        const c = { ...data, dp: data.dp, buffs: data.buffs || [], stack: (data.stack || []).map(restoreCard) };
+        return c;
+      };
+      bs.ai.battleArea = st.battleArea.map(restoreCard);
+      bs.ai.tamerArea = st.tamerArea.map(restoreCard);
+      bs.ai.ikusei = restoreCard(st.ikusei);
+      // 手札・デッキ・トラッシュはカウントのみ更新（中身は見えない）
+      bs.memory = st.memory;
+      updateMemGauge();
+      renderAll();
       break;
     }
     case 'phase': {
@@ -1124,17 +1179,12 @@ window.confirmEffect = function(yes) {
   }
   document.getElementById('effect-confirm-overlay').style.display = 'none';
   if (yes && _pendingEffectCard) {
-    // オンライン: 確認後にコマンド送信
-    if (_onlineMode) {
-      const slotIdx = bs.player.battleArea.indexOf(_pendingEffectCard);
-      const tamerIdx = bs.player.tamerArea.indexOf(_pendingEffectCard);
-      if (slotIdx !== -1) sendCommand({ type: 'activate_effect', slotIdx });
-      else if (tamerIdx !== -1) sendCommand({ type: 'activate_tamer_effect', tamerIdx });
-    }
     addLog('⚡ 「' + _pendingEffectCard.name + '」の効果を発動！');
-    const cb = _pendingEffectCallback;
+    if (_onlineMode) sendCommand({ type: 'effect_start', cardName: _pendingEffectCard.name });
+    const origCb = _pendingEffectCallback;
     _pendingEffectCard = null; _pendingEffectCallback = null;
-    if (cb) cb();
+    const wrappedCb = () => { if (origCb) origCb(); sendStateSync(); };
+    if (wrappedCb) wrappedCb();
   } else {
     // 「いいえ」→ 効果発動せず、レスト状態維持でゲーム続行
     if (_pendingEffectCard) {
@@ -1178,7 +1228,7 @@ function checkTurnEndEffects(callback) {
 // ===== フェーズ進行 =====
 function startPhase(phase) {
   bs.phase = phase;
-  if (_onlineMode) sendCommand({ type: 'phase', phase });
+  if (_onlineMode) { sendStateSync(); sendCommand({ type: 'phase', phase }); }
   const info = PHASE_NAMES[phase];
   if (!info) { execPhase(phase); return; }
   const colors = { unsuspend:'#00fbff', draw:'#00ff88', breed:'#ff9900', main:'#ff00fb' };
@@ -1255,7 +1305,7 @@ window.skipBreedPhase = function() {
 function doPlay(card, handIdx, slotIdx) {
   if(bs.phase!=='main') return;
   if(card.level==='2'){addLog('🚨 デジタマはバトルエリアに出せません');return;}
-  if (_onlineMode) sendCommand({ type: 'play', handIdx, slotIdx });
+  if (_onlineMode) { sendCommand({ type: 'play', handIdx, slotIdx }); setTimeout(sendStateSync, 1000); }
   if(card.playCost===null){addLog('🚨 「'+card.name+'」は進化専用カードです');return;}
 
   // オプションカード → 使用（バトルエリアに残らない）→ 必ずトラッシュへ
@@ -1363,7 +1413,7 @@ function canEvolveOnto(evoCard, baseCard) {
 
 function doEvolve(card, handIdx, slotIdx) {
   if(bs.phase!=='main') return;
-  if (_onlineMode) sendCommand({ type: 'evolve', handIdx, slotIdx });
+  if (_onlineMode) { sendCommand({ type: 'evolve', handIdx, slotIdx }); setTimeout(sendStateSync, 1000); }
   const base=bs.player.battleArea[slotIdx]; if(!base) return;
   if(card.evolveCost===null){addLog('🚨 「'+card.name+'」は進化できません‼');return;}
   // 進化条件チェック

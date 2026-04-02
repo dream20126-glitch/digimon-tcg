@@ -67,7 +67,7 @@ function onRemoteCommand(cmd) {
 
     case 'play': {
       const cardName = cmd.cardName || '???';
-      const dummyCard = { name: cardName, imgSrc: cmd.cardImg || '', type: cmd.cardType || '' };
+      const dummyCard = { name: cardName, imgSrc: cmd.cardImg || '', type: cmd.cardType || '', playCost: cmd.playCost || 0 };
       addLog('🎮 相手が「' + cardName + '」を' + (cmd.cardType === 'オプション' ? '使用！' : '登場！'));
       showPlayEffect(dummyCard, () => {});
       break;
@@ -240,17 +240,37 @@ function onRemoteCommand(cmd) {
       });
       openOverlay.appendChild(openRow);
       document.body.appendChild(openOverlay);
-      // 自動で消す（カード配置コマンドが来たら更新される）
-      setTimeout(() => { if(openOverlay.parentNode) openOverlay.parentNode.removeChild(openOverlay); }, 8000);
+      // fx_deckOpenClose が来るまで表示し続ける（フォールバック30秒で自動消去）
+      window._remoteDeckOpenOverlay = openOverlay;
+      setTimeout(() => { if(openOverlay.parentNode) openOverlay.parentNode.removeChild(openOverlay); }, 30000);
       break;
     }
     case 'fx_cardPlace': {
-      // 相手がカードを配置した: トーストで表示 + オープンUIを更新
+      // 相手がカードを配置: トースト + オープンUI上のカードをフェードアウト
+      const placeMsg = cmd.msg || (cmd.cardName + ' → ' + cmd.zone);
       const toast = document.createElement('div');
-      toast.innerText = '🎮 ' + (cmd.msg || cmd.cardName + ' → ' + cmd.zone);
-      toast.style.cssText = 'position:fixed;bottom:20%;left:50%;transform:translateX(-50%);z-index:95000;background:rgba(255,170,0,0.15);border:1px solid #ffaa00;color:#fff;font-size:13px;font-weight:bold;padding:10px 20px;border-radius:10px;text-align:center;pointer-events:none;box-shadow:0 0 15px rgba(255,170,0,0.3);animation:dpChangePopup 1.5s ease forwards;';
+      toast.innerText = '🎮 ' + placeMsg;
+      toast.style.cssText = 'position:fixed;bottom:25%;left:50%;transform:translateX(-50%);z-index:95000;background:rgba(255,170,0,0.2);border:1px solid #ffaa00;color:#fff;font-size:14px;font-weight:bold;padding:12px 24px;border-radius:10px;text-align:center;pointer-events:none;box-shadow:0 0 15px rgba(255,170,0,0.4);';
       document.body.appendChild(toast);
-      setTimeout(() => { if(toast.parentNode) toast.parentNode.removeChild(toast); }, 1500);
+      setTimeout(() => { if(toast.parentNode) toast.parentNode.removeChild(toast); }, 2500);
+      // オープンUI上の該当カードをフェードアウト
+      if (window._remoteDeckOpenOverlay) {
+        const imgs = window._remoteDeckOpenOverlay.querySelectorAll('div[style*="text-align:center"]');
+        imgs.forEach(el => {
+          if (el.textContent.includes(cmd.cardName) && el.style.opacity !== '0.2') {
+            el.style.opacity = '0.2';
+            el.style.transition = 'opacity 0.5s';
+          }
+        });
+      }
+      break;
+    }
+    case 'fx_deckOpenClose': {
+      // 相手のデッキオープンUI終了
+      if (window._remoteDeckOpenOverlay && window._remoteDeckOpenOverlay.parentNode) {
+        window._remoteDeckOpenOverlay.parentNode.removeChild(window._remoteDeckOpenOverlay);
+        window._remoteDeckOpenOverlay = null;
+      }
       break;
     }
 
@@ -1267,10 +1287,10 @@ function execPhase(phase) {
       });
     }
   } else if (phase === 'draw') {
-    if (bs.isFirstTurn && bs.isPlayerTurn) {
+    if (bs.isFirstTurn && bs.turn <= 1) {
+      bs.isFirstTurn = false;
       showSkipAnnounce('🃏 ドローフェイズ スキップ！（先攻1ターン目）', () => {
         addLog('🃏 先攻1ターン目：ドローなし');
-        bs.isFirstTurn = false;
         setTimeout(() => startPhase('breed'), 300);
       });
     } else if (bs.player.deck.length > 0) {
@@ -1318,7 +1338,7 @@ window.skipBreedPhase = function() {
 function doPlay(card, handIdx, slotIdx) {
   if(bs.phase!=='main') return;
   if(card.level==='2'){addLog('🚨 デジタマはバトルエリアに出せません');return;}
-  if (_onlineMode) { sendCommand({ type: 'play', handIdx, slotIdx, cardName: card.name, cardType: card.type, cardImg: card.imgSrc||'' }); }
+  if (_onlineMode) { sendCommand({ type: 'play', handIdx, slotIdx, cardName: card.name, cardType: card.type, cardImg: card.imgSrc||'', playCost: card.playCost||0 }); }
   if(card.playCost===null){addLog('🚨 「'+card.name+'」は進化専用カードです');return;}
 
   // オプションカード → 使用（バトルエリアに残らない）→ 必ずトラッシュへ

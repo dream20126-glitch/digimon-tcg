@@ -1682,6 +1682,10 @@ function showDeckOpenUI(openedCards, ctx, callback) {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     clearHighlight();
     clearDropHints();
+    // オンライン: デッキオープン終了を送信
+    if (window._isOnlineMode && window._isOnlineMode()) {
+      window._onlineSendCommand({ type: 'fx_deckOpenClose' });
+    }
   }
 }
 

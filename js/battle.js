@@ -1316,8 +1316,9 @@ window.confirmEffect = function(yes) {
     const wrappedCb = () => { if (origCb) origCb(); sendStateSync(); };
     if (wrappedCb) wrappedCb();
   } else {
-    // 「いいえ」→ 効果発動せず、レスト状態維持でゲーム続行
+    // 「いいえ」→ 効果発動せず、レスト解除してゲーム続行
     if (_pendingEffectCard) {
+      _pendingEffectCard.suspended = false;
       addLog('💤 「' + _pendingEffectCard.name + '」の効果を発動しなかった');
     }
     _pendingEffectCard = null; _pendingEffectCallback = null;
@@ -2350,7 +2351,9 @@ function updateMemGauge() {
   const displayMem = isOnlineSecond ? -bs.memory : bs.memory;
   for(let i=MEM_MAX;i>=MEM_MIN;i--){
     const el=document.createElement('div'); el.className='m-cell'; el.innerText=i===0?'0':Math.abs(i);
-    if(i===0) el.classList.add('m-zero'); else if(i>0) el.classList.add('m-pl'); else el.classList.add('m-ai');
+    if(i===0) el.classList.add('m-zero');
+    else if(isOnlineSecond) { if(i>0) el.classList.add('m-ai'); else el.classList.add('m-pl'); } // 後攻: 左=赤(自分)、右=青(相手)
+    else { if(i>0) el.classList.add('m-pl'); else el.classList.add('m-ai'); }
     if(i===displayMem) el.classList.add('m-active');
     row.appendChild(el);
   }
@@ -3033,6 +3036,13 @@ function cleanupBattle() {
   // バトル画面自体を強制非表示
   const battleScreen = document.getElementById('battle-screen');
   if (battleScreen) battleScreen.classList.remove('active');
+  // オンライン: Firebaseリスナー解除 + ルームデータクリア
+  if (_onlineCmdListener) { _onlineCmdListener(); _onlineCmdListener = null; }
+  if (_onlineMode && _onlineRoomId) {
+    import('./firebase-config.js').then(({ rtdb, ref, remove }) => {
+      remove(ref(rtdb, `rooms/${_onlineRoomId}`));
+    }).catch(() => {});
+  }
 }
 
 function battleVictory() {

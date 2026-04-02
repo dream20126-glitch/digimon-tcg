@@ -874,7 +874,12 @@ function showYourTurn(text, sub, color, callback) {
   const flashBg=document.getElementById('turn-flash-bg');
   const lineTop=document.getElementById('turn-line-top');
   const lineBottom=document.getElementById('turn-line-bottom');
-  const c=color||'var(--main-cyan)';
+  // オンライン: ターンテキストに応じて色を自動決定
+  let c = color || 'var(--main-cyan)';
+  if (_onlineMode) {
+    if (text.includes('自分のターン開始')) c = getMyTurnColor();
+    else if (text.includes('相手のターン') && !text.includes('終了')) c = getOppTurnColor();
+  }
   textEl.innerText=text; textEl.style.color=c;
   textEl.style.textShadow=`0 0 30px ${c}, 0 0 60px ${c}, 0 0 100px ${c}`;
   if(sub){subEl.innerText=sub;subEl.style.opacity='1';}else{subEl.innerText='';subEl.style.opacity='0';}
@@ -2350,8 +2355,24 @@ function updateMemGauge() {
     row.appendChild(el);
   }
   const lbl=document.getElementById('m-turn-lbl');
-  if(lbl){lbl.innerText=bs.isPlayerTurn?'あなたのターン':(_onlineMode?'相手のターン':'AIのターン');lbl.className='m-turn-label '+(bs.isPlayerTurn?'pl':'ai');}
+  if(lbl){
+    lbl.innerText=bs.isPlayerTurn?'あなたのターン':(_onlineMode?'相手のターン':'AIのターン');
+    if (_onlineMode) {
+      lbl.style.color = bs.isPlayerTurn ? getMyTurnColor() : getOppTurnColor();
+    }
+    lbl.className='m-turn-label '+(bs.isPlayerTurn?'pl':'ai');
+  }
   document.getElementById('t-count')&&(document.getElementById('t-count').innerText=bs.turn);
+}
+
+// オンライン: 自分/相手のターン色を取得
+function getMyTurnColor() {
+  if (!_onlineMode) return '#00fbff'; // AI対戦: 常に青
+  return _onlineMyKey === 'player1' ? '#00fbff' : '#ff4444'; // 先攻=青、後攻=赤
+}
+function getOppTurnColor() {
+  if (!_onlineMode) return '#ff00fb'; // AI対戦: 常にピンク
+  return _onlineMyKey === 'player1' ? '#ff4444' : '#00fbff'; // 先攻の相手=赤、後攻の相手=青
 }
 
 // プレイヤーがコスト消費（メモリーが相手側へ動く）

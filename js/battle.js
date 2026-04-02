@@ -2370,12 +2370,12 @@ function updateMemGauge() {
 
 // オンライン: 自分/相手のターン色を取得
 function getMyTurnColor() {
-  if (!_onlineMode) return '#00fbff'; // AI対戦: 常に青
-  return _onlineMyKey === 'player1' ? '#00fbff' : '#ff4444'; // 先攻=青、後攻=赤
+  if (!_onlineMode) return '#00fbff';
+  return _onlineMyKey === 'player1' ? '#00fbff' : '#ff00fb'; // 先攻=青、後攻=ピンク
 }
 function getOppTurnColor() {
-  if (!_onlineMode) return '#ff00fb'; // AI対戦: 常にピンク
-  return _onlineMyKey === 'player1' ? '#ff4444' : '#00fbff'; // 先攻の相手=赤、後攻の相手=青
+  if (!_onlineMode) return '#ff00fb';
+  return _onlineMyKey === 'player1' ? '#ff00fb' : '#00fbff'; // 先攻の相手=ピンク、後攻の相手=青
 }
 
 // プレイヤーがコスト消費（メモリーが相手側へ動く）

@@ -183,6 +183,14 @@ function onRemoteCommand(cmd) {
       }
       break;
     }
+    case 'activate_tamer_effect': {
+      const tamer = bs.ai.tamerArea[cmd.tamerIdx];
+      if (tamer) {
+        addLog('🎮 相手がテイマー「' + tamer.name + '」の効果を発動！');
+        checkAndTriggerEffect(tamer, '【メイン】', () => renderAll(), 'ai', true);
+      }
+      break;
+    }
   }
 }
 
@@ -657,7 +665,12 @@ window.doMulligan = function() {
   if(mulliganUsed) return;
   mulliganUsed=true;
   bs.player.deck=bs.player.deck.concat(bs.player.hand);
-  bs.player.hand=[]; bs.player.deck=shuffle(bs.player.deck);
+  bs.player.hand=[];
+  if (_onlineMode) {
+    bs.player.deck = seededShuffle(bs.player.deck, strToSeed(_onlineRoomId + '_mulligan_' + _onlineMyKey));
+  } else {
+    bs.player.deck = shuffle(bs.player.deck);
+  }
   bs.player.hand=bs.player.deck.splice(0,5);
   const btn=document.getElementById('mulligan-btn');
   if(btn){btn.disabled=true;btn.style.opacity='0.3';btn.innerText='引き直し済み';}
@@ -1357,6 +1370,7 @@ function doEvolve(card, handIdx, slotIdx) {
 
 function doEvolveIku(card, handIdx) {
   if(bs.phase!=='main') return;
+  if (_onlineMode) sendCommand({ type: 'breed_evolve', handIdx });
   const base=bs.player.ikusei; if(!base) return;
   if(card.evolveCost===null){addLog('🚨 「'+card.name+'」は進化できません‼');return;}
   if(!canEvolveOnto(card, base)){addLog('🚨 進化条件を満たしていません‼（'+card.evolveCond+'）');return;}
@@ -1593,6 +1607,7 @@ function showTamerMenu(card, tamerIdx, el) {
 window.activateTamerEffect = function(tamerIdx) {
   hideLongpressMenu();
   const card=bs.player.tamerArea[tamerIdx]; if(!card) return;
+  if (_onlineMode) sendCommand({ type: 'activate_tamer_effect', tamerIdx });
   _pendingEffectCard=card;
   _pendingEffectCallback=() => renderAll();
   document.getElementById('effect-confirm-name').innerText=card.name;
@@ -1627,6 +1642,7 @@ window.cancelLongpress = function(slotIdx) {
 window.activateEffect = function(slotIdx, effectSource) {
   hideLongpressMenu();
   const card=bs.player.battleArea[slotIdx]; if(!card) return;
+  if (_onlineMode) sendCommand({ type: 'activate_effect', slotIdx, effectSource });
   if (!card._usedEffects) card._usedEffects = [];
 
   // 効果テキストとカード名を決定
@@ -3228,6 +3244,7 @@ function renderIkusei() {
           const nc=bs.player.tamaDeck.splice(0,1)[0];
           bs.player.ikusei=nc;
           addLog('🥚 「'+nc.name+'」を孵化！');
+          if (_onlineMode) sendCommand({ type: 'hatch' });
           renderAll();
           showHatchEffect(nc, () => breedActionDone());
         };
@@ -3247,6 +3264,7 @@ function attachIkuDrag(iku) {
     if(slot===-1) { slot=bs.player.battleArea.length; bs.player.battleArea.push(null); }
     bs.player.battleArea[slot]=bs.player.ikusei; bs.player.ikusei=null;
     addLog('🐾 「'+bs.player.battleArea[slot].name+'」をバトルエリアへ移動！');
+    if (_onlineMode) sendCommand({ type: 'breed_move' });
     applyPermanentEffects(bs, 'player', makeEffectContext(null, 'player'));
     breedActionDone();
   }

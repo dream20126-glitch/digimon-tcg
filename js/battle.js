@@ -116,7 +116,7 @@ function onRemoteCommand(cmd) {
     case 'endTurn': {
       // 相手がターン終了 → 自分のターン開始
       // メモリーを反転（相手の-2は自分の+2）
-      bs.memory = cmd.memory !== undefined ? -cmd.memory : 3;
+      bs.memory = cmd.memory !== undefined ? cmd.memory : 3;
       bs.isFirstTurn = false;
       updateMemGauge();
       expireBuffs(bs, 'dur_this_turn');
@@ -161,10 +161,30 @@ function onRemoteCommand(cmd) {
     }
     case 'game_end': {
       if (cmd.result === 'defeat') {
-        showGameEndOverlay('😢 敗北...', 'defeat', () => { cleanupBattle(); showScreen(_onlineMode ? 'room-entrance-screen' : 'tutorial-screen'); });
+        showGameEndOverlay('😢 敗北...', 'defeat', () => { cleanupBattle(); showScreen(_onlineMode ? 'room-entrance-screen' : 'tutorial-screen'); _onlineMode=false; });
       } else {
-        showGameEndOverlay('🎉 勝利！', 'victory', () => { cleanupBattle(); showScreen(_onlineMode ? 'room-entrance-screen' : 'tutorial-screen'); });
+        showGameEndOverlay('🎉 勝利！', 'victory', () => { cleanupBattle(); showScreen(_onlineMode ? 'room-entrance-screen' : 'tutorial-screen'); _onlineMode=false; });
       }
+      break;
+    }
+    case 'player_exit': {
+      // 相手が途中退室
+      const exitName = cmd.playerName || '相手';
+      const exitOv = document.createElement('div');
+      exitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:60000;display:flex;align-items:center;justify-content:center;';
+      const exitBox = document.createElement('div');
+      exitBox.style.cssText = 'background:#0a0a1a;border:2px solid #ff4444;border-radius:12px;padding:24px;text-align:center;max-width:300px;width:90%;';
+      exitBox.innerHTML = '<div style="color:#ff4444;font-size:16px;font-weight:bold;margin-bottom:12px;">⚠ 途中退室</div>'
+        + '<div style="color:#ccc;font-size:13px;margin-bottom:20px;">「' + exitName + '」が途中退室しました。<br>バトルは続行できません。</div>'
+        + '<button id="_exit-return-btn" style="background:#ff4444;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">ゲートを出る</button>';
+      exitOv.appendChild(exitBox);
+      document.body.appendChild(exitOv);
+      document.getElementById('_exit-return-btn').onclick = () => {
+        if (exitOv.parentNode) exitOv.parentNode.removeChild(exitOv);
+        cleanupBattle();
+        showScreen('room-entrance-screen');
+        _onlineMode = false;
+      };
       break;
     }
 
@@ -244,7 +264,7 @@ function onRemoteCommand(cmd) {
       if (st.securityCount !== undefined) adjustArr(bs.ai.security, st.securityCount);
       // 自分の状態: セキュリティ等はstate_syncで上書きしない（ズレの原因になる）
       // 代わりにアタック等の個別コマンドで同期する
-      if (st.memory !== undefined) { bs.memory = -st.memory; updateMemGauge(); }
+      if (st.memory !== undefined) { bs.memory = st.memory; updateMemGauge(); }
       renderAll();
       break;
     }
@@ -2285,9 +2305,10 @@ window.onEndTurn = function() {
   if(!bs.isPlayerTurn) return;
   exitBreedPhase();
   if (_onlineMode) {
+    // オンライン: メモリーを相手側3に設定してからコマンド送信
+    const isSecond = _onlineMyKey === 'player2';
+    bs.memory = isSecond ? -3 : 3; // 先攻終了→+3(後攻側)、後攻終了→-3(先攻側)
     sendCommand({ type: 'endTurn', memory: bs.memory });
-    // オンライン: 自分のターン終了 → 相手ターン（相手の操作を待つ）
-    bs.memory = -3;
     updateMemGauge();
     expireBuffs(bs, 'dur_this_turn');
     expireBuffs(bs, 'permanent', 'player');
@@ -2319,25 +2340,33 @@ window.onEndTurn = function() {
 function updateMemGauge() {
   const row=document.getElementById('memory-gauge-row'); if(!row) return;
   row.innerHTML='';
+  // オンライン後攻: 表示上の左右を反転（自分=赤側、相手=青側）
+  const isOnlineSecond = _onlineMode && _onlineMyKey === 'player2';
+  const displayMem = isOnlineSecond ? -bs.memory : bs.memory;
   for(let i=MEM_MAX;i>=MEM_MIN;i--){
     const el=document.createElement('div'); el.className='m-cell'; el.innerText=i===0?'0':Math.abs(i);
     if(i===0) el.classList.add('m-zero'); else if(i>0) el.classList.add('m-pl'); else el.classList.add('m-ai');
-    if(i===bs.memory) el.classList.add('m-active');
+    if(i===displayMem) el.classList.add('m-active');
     row.appendChild(el);
   }
   const lbl=document.getElementById('m-turn-lbl');
   if(lbl){lbl.innerText=bs.isPlayerTurn?'あなたのターン':(_onlineMode?'相手のターン':'AIのターン');lbl.className='m-turn-label '+(bs.isPlayerTurn?'pl':'ai');}
-  const mValEl = document.getElementById('m-val'); if(mValEl) mValEl.style.display='none';
   document.getElementById('t-count')&&(document.getElementById('t-count').innerText=bs.turn);
 }
 
-// プレイヤーがコスト消費（メモリーが左=AI側へ動く）
+// プレイヤーがコスト消費（メモリーが相手側へ動く）
 function spendMemory(cost) {
   if(cost===0) { updateMemGauge(); return false; }
-  bs.memory -= cost;
+  const isOnlineSecond = _onlineMode && _onlineMyKey === 'player2';
+  if (isOnlineSecond) {
+    bs.memory += cost; // 後攻: 正方向（先攻側）へ動く
+  } else {
+    bs.memory -= cost; // 先攻/AI対戦: 負方向（相手側）へ動く
+  }
   updateMemGauge();
-  // メモリーがAI側(負)に入ったらターン終了
-  if(bs.memory < 0){
+  // メモリーが相手側に入ったらターン終了
+  const overflowed = isOnlineSecond ? bs.memory > 0 : bs.memory < 0;
+  if(overflowed){
     addLog('💾 メモリー'+Math.abs(bs.memory)+'で相手側へ');
     bs.isPlayerTurn=false;
     expireBuffs(bs, 'dur_this_turn');
@@ -2948,9 +2977,11 @@ window.confirmExitGate = function() {
 
   document.getElementById('exit-yes-btn').onclick = () => {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    // バトル関連のオーバーレイをすべて閉じる
+    // オンライン: 退室通知を送信
+    if (_onlineMode) sendCommand({ type: 'player_exit', playerName: currentPlayerName || '相手' });
     cleanupBattle();
-    showScreen('tutorial-screen');
+    showScreen(_onlineMode ? 'room-entrance-screen' : 'tutorial-screen');
+    _onlineMode = false;
   };
   document.getElementById('exit-no-btn').onclick = () => {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);

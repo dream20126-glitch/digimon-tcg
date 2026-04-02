@@ -144,7 +144,6 @@ function showBattleStartButton() {
 window.enterBattle = function() {
   // Firebaseに「ゲートへ入る」フラグを立てる（両方揃ったらupdateLobbyUIでバトル開始）
   update(ref(rtdb, `rooms/${currentRoomId}/${myPlayerKey}`), { enterBattle: true });
-  update(ref(rtdb, `rooms/${currentRoomId}`), { phase: 'battle' });
   document.getElementById('action-area').innerHTML = '<p style="color:#ffaa00;font-size:13px;">相手を待っています...</p>';
 };
 
@@ -217,23 +216,28 @@ function updateLobbyUI(data) {
   if (myData && myData.dice > 0 && !diceRolling) { const btn = document.getElementById('roll-btn'); if (btn) { btn.disabled = true; btn.style.opacity = '0.35'; } }
   const d1 = p1.dice || 0, d2 = p2.dice || 0;
   if (d1 > 0 && d2 > 0 && !diceJudged) { diceJudged = true; playDiceAnimation(d1, d2, data); }
-  if (data.phase === 'result' && data.diceResult) {
+  if ((data.phase === 'result' || data.phase === 'battle') && data.diceResult) {
     const msg = document.getElementById('dice-msg');
     if (msg) { msg.style.color = '#00ff88'; msg.innerText = data.diceResult.winner === myPlayerKey ? '🎉 あなたが先攻です！' : '相手が先攻です'; }
-    showBattleStartButton();
-  }
-  // 両方が「ゲートへ入る」を押したらバトル開始
-  if (data.phase === 'battle' && p1.enterBattle && p2.enterBattle && !_battleStarted) {
-    _battleStarted = true;
-    const playerFirst = data.diceResult?.winner === myPlayerKey;
-    const myList = data[myPlayerKey]?.deckList;
-    const oppKey = myPlayerKey === 'player1' ? 'player2' : 'player1';
-    const oppList = data[oppKey]?.deckList;
-    if (myList && oppList) {
-      showScreen('battle-screen');
-      if (typeof startBattleGame === 'function') {
-        startBattleGame({ list: myList }, { list: oppList }, playerFirst);
+    const myEntered = data[myPlayerKey]?.enterBattle;
+    const oppKey2 = myPlayerKey === 'player1' ? 'player2' : 'player1';
+    const oppEntered = data[oppKey2]?.enterBattle;
+    // 両方揃ったらバトル開始
+    if (myEntered && oppEntered && !_battleStarted) {
+      _battleStarted = true;
+      const playerFirst = data.diceResult?.winner === myPlayerKey;
+      const myList = data[myPlayerKey]?.deckList;
+      const oppList = data[oppKey2]?.deckList;
+      if (myList && oppList) {
+        showScreen('battle-screen');
+        if (typeof startBattleGame === 'function') {
+          startBattleGame({ list: myList }, { list: oppList }, playerFirst);
+        }
       }
+    } else if (myEntered && !oppEntered) {
+      actionArea.innerHTML = '<p style="color:#ffaa00;font-size:13px;">相手を待っています...</p>';
+    } else if (!myEntered) {
+      showBattleStartButton();
     }
   }
 }

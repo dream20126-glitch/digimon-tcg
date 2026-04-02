@@ -89,7 +89,7 @@ function fuzzyIndexOf(effectText, searchKey) {
 function findActions(effectText) {
   const results = [];
   for (const entry of _actionDict) {
-    const code = entry['アクションコード'];
+    const code = (entry['アクションコード']||'').trim();
     if (!code) continue;
     // アクション以外（対象・条件・持続・判定）はスキップ
     if (NON_ACTION_PREFIXES.some(p => code.startsWith(p))) continue;
@@ -140,7 +140,7 @@ function findTarget(effectText) {
       if (fuzzyIndexOf(effectText, trimmed) !== -1) {
         const m = effectText.match(new RegExp(trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d*)'));
         const count = m && m[1] ? parseInt(m[1]) : null;
-        return { code: entry['アクションコード'], count, entry };
+        return { code: (entry['アクションコード']||'').trim(), count, entry };
       }
     }
   }
@@ -153,7 +153,7 @@ function findConditions(effectText) {
 
   // 効果アクション辞書から条件系を検索
   for (const entry of _actionDict) {
-    const code = entry['アクションコード'];
+    const code = (entry['アクションコード']||'').trim();
     if (!code || !code.startsWith('cond_')) continue;
     const found = matchConditionEntry(effectText, code, String(entry['アクション名']), entry);
     if (found) results.push(found);
@@ -222,11 +222,11 @@ function detectPerCountSource(effectText, entry) {
 // 効果テキストから持続を検索
 function findDuration(effectText) {
   for (const entry of _actionDict) {
-    if (entry['アクションコード'] && entry['アクションコード'].startsWith('dur_')) {
+    if ((entry['アクションコード']||'').trim() && (entry['アクションコード']||'').trim().startsWith('dur_')) {
       const keywords = String(entry['アクション名']).split(',');
       for (const kw of keywords) {
         if (effectText.includes(kw.trim())) {
-          return { code: entry['アクションコード'], entry };
+          return { code: (entry['アクションコード']||'').trim(), entry };
         }
       }
     }
@@ -237,7 +237,7 @@ function findDuration(effectText) {
 // 効果テキストから回数制限を検索
 function findLimit(effectText) {
   for (const entry of _actionDict) {
-    if (entry['アクションコード'] === 'limit_once_per_turn') {
+    if ((entry['アクションコード']||'').trim() === 'limit_once_per_turn') {
       const keywords = String(entry['アクション名']).split(',');
       for (const kw of keywords) {
         if (effectText.includes(kw.trim())) return true;
@@ -250,7 +250,7 @@ function findLimit(effectText) {
 // 任意効果かチェック
 function isOptional(effectText) {
   for (const entry of _actionDict) {
-    if (entry['アクションコード'] === 'judge_optional') {
+    if ((entry['アクションコード']||'').trim() === 'judge_optional') {
       const keywords = String(entry['アクション名']).split(',');
       for (const kw of keywords) {
         if (effectText.includes(kw.trim())) return true;
@@ -263,7 +263,7 @@ function isOptional(effectText) {
 // 「その後」で分割
 function splitAfter(effectText) {
   for (const entry of _actionDict) {
-    if (entry['アクションコード'] === 'judge_after') {
+    if ((entry['アクションコード']||'').trim() === 'judge_after') {
       const keywords = String(entry['アクション名']).split(',');
       for (const kw of keywords) {
         const idx = effectText.indexOf(kw.trim());
@@ -282,7 +282,7 @@ function splitAfter(effectText) {
 // アクションコードからUI情報を取得
 function getActionUI(actionCode) {
   for (const entry of _actionDict) {
-    if (entry['アクションコード'] === actionCode) return entry;
+    if ((entry['アクションコード']||'').trim() === actionCode) return entry;
   }
   return null;
 }
@@ -295,10 +295,14 @@ export function parseCardEffect(card, effectField) {
   if (!text || text === 'なし') return [];
 
   const blocks = [];
+  // 【ターンに1回】【ターンに一回】はトリガーではなく制限修飾子なので、分割前に統合
+  const normalized = text.replace(/【ターンに[1一]回】/g, '〔ターンに1回〕');
   // 【】で始まるブロックに分割
-  const parts = text.split(/(?=【)/);
+  const parts = normalized.split(/(?=【)/);
   for (const part of parts) {
-    const trimmed = part.trim();
+    // 〔〕を【】に戻す
+    const restored = part.replace(/〔ターンに1回〕/g, '【ターンに1回】');
+    const trimmed = restored.trim();
     if (!trimmed) continue;
     const block = analyzeBlock(trimmed);
     if (block) blocks.push(block);

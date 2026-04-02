@@ -774,6 +774,8 @@ window.confirmEffect = function(yes) {
 
 // ターン開始時効果チェック
 function checkTurnStartEffects(side, callback) {
+  // ターンに1回制限をリセット
+  bs._usedLimits = {};
   const p = side==='player' ? bs.player : bs.ai;
   const area = [...p.battleArea, ...(p.tamerArea || [])];
   const trigger = side==='player' ? '【自分のターン開始時】' : '【相手のターン開始時】';
@@ -1572,6 +1574,10 @@ function getSecurityAttackCount(card) {
         calcFromText(s.effect, '進化元メイン[' + i + ']' + s.name);
       }
     });
+  }
+  // 永続効果から付与されたSアタック+（cond_exists条件付き等）
+  if (card._permEffects && card._permEffects.securityAttackPlus) {
+    extra += card._permEffects.securityAttackPlus;
   }
   return 1 + extra;
 }

@@ -432,6 +432,18 @@ function executeQueueEntry(entry, context, callback) {
     });
   }
 
+  // ターンに1回制限チェック
+  if (block.limit) {
+    if (!context.bs._usedLimits) context.bs._usedLimits = {};
+    const limitKey = (card.cardNo || card.name) + '_' + (block.trigger ? block.trigger.code : 'unknown');
+    if (context.bs._usedLimits[limitKey]) {
+      ctx.addLog('⚠ 「' + card.name + '」はこのターン既に発動済み');
+      callback();
+      return;
+    }
+    context.bs._usedLimits[limitKey] = true;
+  }
+
   // 強制効果 or 既に確認済み → 即実行
   if (!block.isOptional || context.alreadyConfirmed) {
     executeWithAnnounce();
@@ -844,8 +856,16 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
     case 'use_main_effect': {
-      ctx.addLog('✦ メイン効果を発揮');
-      callback();
+      // このカードの【メイン】効果を再パースして実行
+      const mainBlocks = parseCardEffect(ctx.card);
+      const mainBlock = mainBlocks.find(b => b.trigger && b.trigger.code === 'main');
+      if (mainBlock && mainBlock.actions && mainBlock.actions.length > 0) {
+        ctx.addLog('✦ 「' + ctx.card.name + '」の【メイン】効果を発揮！');
+        runActionList(mainBlock.actions, mainBlock.target, ctx, callback);
+      } else {
+        ctx.addLog('⚠ メイン効果が見つかりません');
+        callback();
+      }
       break;
     }
 
@@ -1806,9 +1826,9 @@ export function applyPermanentEffects(bs, side, context) {
 
   // ① まず全カードの永続バフをクリア（対象side + そのsideのバフを受けている相手sideも）
   [...bs[side].battleArea, ...(bs[side].tamerArea || [])].forEach(card => {
-    if (!card || !card.buffs) return;
-    card.buffs = card.buffs.filter(b => b.duration !== 'permanent');
-    recalcDp(card);
+    if (!card) return;
+    if (card.buffs) { card.buffs = card.buffs.filter(b => b.duration !== 'permanent'); recalcDp(card); }
+    if (card._permEffects) card._permEffects = {};
   });
 
   // ② 永続効果を全て再適用
@@ -1821,13 +1841,11 @@ export function applyPermanentEffects(bs, side, context) {
       if (!block.trigger || !['during_own_turn', 'during_opp_turn', 'during_any_turn'].includes(block.trigger.code)) return;
       if (block.trigger.code === 'during_own_turn' && side !== turnSide) return;
       if (block.trigger.code === 'during_opp_turn' && side === turnSide) return;
-      console.log('[PERM-MAIN] card:', card.name, 'trigger:', block.trigger.code, 'conditions:', JSON.stringify(block.conditions), 'actions:', JSON.stringify(block.actions));
-      if (!checkConditions(block.conditions, card)) { console.log('[PERM-MAIN] → 条件不一致でスキップ'); return; }
-      console.log('[PERM-MAIN] → 条件一致！適用');
+      if (!checkConditions(block.conditions, card, bs, side)) return;
 
       block.actions.forEach(action => {
+        const target = block.target || { code: 'target_self' };
         if (action.code === 'dp_plus') {
-          const target = block.target || { code: 'target_self' };
           if (target.code === 'target_all_own') {
             bs[side].battleArea.forEach(tgt => {
               if (!tgt) return;
@@ -1840,6 +1858,11 @@ export function applyPermanentEffects(bs, side, context) {
             card.buffs.push({ type: 'dp_plus', value: action.value, duration: 'permanent', source: 'perm' });
             recalcDp(card);
           }
+        } else if (action.code === 'security_attack_plus') {
+          // Sアタック+を永続フラグとして記録（getSecurityAttackCountで参照される）
+          const tgt = (target.code === 'target_self') ? card : card;
+          if (!tgt._permEffects) tgt._permEffects = {};
+          tgt._permEffects.securityAttackPlus = (tgt._permEffects.securityAttackPlus || 0) + (action.value || 1);
         }
       });
     });
@@ -1854,14 +1877,15 @@ export function applyPermanentEffects(bs, side, context) {
           if (block.trigger.code === 'during_own_turn' && side !== turnSide) return;
           if (block.trigger.code === 'during_opp_turn' && side === turnSide) return;
           if (!['during_own_turn', 'during_opp_turn', 'during_any_turn'].includes(block.trigger.code)) return;
-          console.log('[PERM-EVO] card:', card.name, 'evoCard:', evoCard.name, 'conditions:', JSON.stringify(block.conditions), 'stackLen:', card.stack.length, 'actions:', JSON.stringify(block.actions));
-          if (!checkConditions(block.conditions, card)) { console.log('[PERM-EVO] → 条件不一致でスキップ'); return; }
-          console.log('[PERM-EVO] → 条件一致！DP+適用');
+          if (!checkConditions(block.conditions, card, bs, side)) return;
           block.actions.forEach(action => {
             if (action.code === 'dp_plus') {
               if (!card.buffs) card.buffs = [];
               card.buffs.push({ type: 'dp_plus', value: action.value, duration: 'permanent', source: 'evo_perm' });
               recalcDp(card);
+            } else if (action.code === 'security_attack_plus') {
+              if (!card._permEffects) card._permEffects = {};
+              card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (action.value || 1);
             }
           });
         });
@@ -1872,7 +1896,7 @@ export function applyPermanentEffects(bs, side, context) {
 
 // ===== 条件チェック =====
 
-function checkConditions(conditions, card) {
+function checkConditions(conditions, card, bs, side) {
   if (!conditions || conditions.length === 0) return true;
   for (const cond of conditions) {
     switch (cond.code) {
@@ -1884,6 +1908,32 @@ function checkConditions(conditions, card) {
       case 'cond_lv_ge': if (parseInt(card.level) < (cond.value || 0)) return false; break;
       case 'cond_cost_le': if ((card.playCost || card.cost || 0) > (cond.value || 0)) return false; break;
       case 'cond_cost_ge': if ((card.playCost || card.cost || 0) < (cond.value || 0)) return false; break;
+      case 'cond_exists': {
+        // 「～がいるとき」「～がいる間」→ 相手バトルエリアに条件を満たすカードがいるか
+        if (!bs) break; // bsがない場合はスキップ（後方互換）
+        const oppSide = side === 'player' ? 'ai' : 'player';
+        const oppArea = bs[oppSide].battleArea;
+        // 同じconditions内の他の条件（cond_no_evo, cond_dp_le等）を相手カードに適用
+        const otherConds = conditions.filter(c => c.code !== 'cond_exists' && c.code !== 'per_count');
+        const hasMatch = oppArea.some(c => {
+          if (!c) return false;
+          if (otherConds.length === 0) return true; // 条件なし＝相手デジモンがいればOK
+          return otherConds.every(oc => {
+            switch (oc.code) {
+              case 'cond_no_evo': return !c.stack || c.stack.length === 0;
+              case 'cond_has_evo': return c.stack && c.stack.length >= (oc.value || 0);
+              case 'cond_dp_le': return c.dp <= (oc.value || 0);
+              case 'cond_dp_ge': return c.dp >= (oc.value || 0);
+              case 'cond_lv_le': return parseInt(c.level) <= (oc.value || 0);
+              case 'cond_lv_ge': return parseInt(c.level) >= (oc.value || 0);
+              default: return true;
+            }
+          });
+        });
+        if (!hasMatch) return false;
+        // cond_existsで使った他の条件はスキップ（二重チェック防止）
+        return true;
+      }
     }
   }
   return true;

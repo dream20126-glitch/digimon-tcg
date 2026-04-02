@@ -438,6 +438,14 @@ function executeQueueEntry(entry, context, callback) {
     });
   }
 
+  // 条件チェック（cond_exists等）
+  if (block.conditions && block.conditions.length > 0) {
+    if (!checkConditions(block.conditions, card, context.bs, actualSide)) {
+      callback();
+      return;
+    }
+  }
+
   // ターンに1回制限チェック
   if (block.limit) {
     if (!context.bs._usedLimits) context.bs._usedLimits = {};

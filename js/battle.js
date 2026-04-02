@@ -1521,7 +1521,10 @@ function cancelAttack() {
 }
 
 function afterAtkEffect(atkCard, atkSlotIdx, callback) {
-  if(hasKeyword(atkCard, '【アタック時】')) { checkAndTriggerEffect(atkCard, '【アタック時】', callback); }
+  // カード自身 or 進化元に【アタック時】があればトリガー
+  const hasAtk = hasKeyword(atkCard, '【アタック時】') ||
+    (atkCard.stack && atkCard.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【アタック時】')));
+  if(hasAtk) { checkAndTriggerEffect(atkCard, '【アタック時】', callback); }
   else callback();
 }
 
@@ -2005,6 +2008,13 @@ function aiAttackPhase(callback) {
   renderAll();
 
   showPhaseAnnounce('⚔ AIアタック！', '#ff4444', () => {
+    // AIアタック時効果をトリガー
+    const doAfterAtkEffect = (cb) => {
+      if (hasKeyword(atk, '【アタック時】') || (atk.stack && atk.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【アタック時】')))) {
+        checkAndTriggerEffect(atk, '【アタック時】', cb, 'ai');
+      } else { cb(); }
+    };
+    doAfterAtkEffect(() => {
     // ブロッカーチェック：プレイヤーのアクティブなブロッカー持ち全てを取得
     const blockerIndices = [];
     bs.player.battleArea.forEach((c, i) => {
@@ -2052,6 +2062,7 @@ function aiAttackPhase(callback) {
 
     // ブロッカーなし → セキュリティチェック
     doAiSecurityCheck(atk, atkIdx, callback);
+    }); // doAfterAtkEffect
   });
 }
 
@@ -2344,8 +2355,10 @@ function aiPlayAuto(callback) {
       addLog('🤖 AIが育成エリアで「' + oldCard.name + '」→「' + evoCandidate.name + '」に進化！');
       const turnEnded = aiSpendMemory(evoCandidate.evolveCost);
       renderAll();
-      if (turnEnded) { setTimeout(() => callback(), 500); return; }
-      setTimeout(() => aiPlayAuto(callback), 600);
+      showEvolveEffect(evoCandidate.evolveCost, oldCard.name, oldCard, evoCandidate, () => {
+        if (turnEnded) { setTimeout(() => callback(), 500); return; }
+        setTimeout(() => aiPlayAuto(callback), 600);
+      });
       return;
     }
   }
@@ -2372,13 +2385,15 @@ function aiPlayAuto(callback) {
       addLog('🤖 AIが「' + base.name + '」→「' + evoCandidate.name + '」に進化！');
       const turnEnded = aiSpendMemory(evoCandidate.evolveCost);
       renderAll();
-      // 進化時効果をトリガー
-      checkAndTriggerEffect(evoCandidate, '【進化時】', () => {
-        applyPermanentEffects(bs, 'ai', makeEffectContext(evoCandidate, 'ai'));
-        renderAll();
-        if (turnEnded) { setTimeout(() => callback(), 500); return; }
-        setTimeout(() => aiPlayAuto(callback), 600);
-      }, 'ai');
+      showEvolveEffect(evoCandidate.evolveCost, base.name, base, evoCandidate, () => {
+        // 進化時効果をトリガー
+        checkAndTriggerEffect(evoCandidate, '【進化時】', () => {
+          applyPermanentEffects(bs, 'ai', makeEffectContext(evoCandidate, 'ai'));
+          renderAll();
+          if (turnEnded) { setTimeout(() => callback(), 500); return; }
+          setTimeout(() => aiPlayAuto(callback), 600);
+        }, 'ai');
+      });
       return;
     }
   }

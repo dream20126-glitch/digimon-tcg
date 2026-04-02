@@ -209,13 +209,15 @@ function startOnlineListener() {
 }
 
 // オンラインバトル開始用
-window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFirst, roomId, myKey) {
-  console.log('[ONLINE-START] playerFirst:', playerFirst, 'roomId:', roomId, 'myKey:', myKey);
+window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFirst, roomId, myKey, oppName) {
   _onlineMode = true;
   _onlineRoomId = roomId;
   _onlineMyKey = myKey;
   _onlineCmdSeq = 0;
   await startBattleGame(playerDeckData, oppDeckData, playerFirst);
+  // 相手の名前を表示
+  const oppLabel = document.getElementById('opponent-name-label');
+  if (oppLabel) oppLabel.innerText = '🎮 ' + (oppName || '相手プレイヤー');
   startOnlineListener();
 };
 
@@ -286,6 +288,8 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   bs.turn=1; bs.memory=0; bs.isPlayerTurn=playerFirst; bs.isFirstTurn=true;
   bs.selHand=null; bs.selSlot=null; bs.attackingSlot=null;
   bs._battleAborted=false; bs._pendingTurnEnd=false; bs._usedLimits={}; bs._securityBuffs=[];
+  const oppLabel = document.getElementById('opponent-name-label');
+  if (oppLabel) oppLabel.innerText = _onlineMode ? '🎮 相手プレイヤー' : '🤖 デジモンマスター';
   const plCards=parseDeck(playerDeckData), aiCards=parseDeck(aiDeckData);
   bs.player.tamaDeck=shuffle(plCards.filter(c => c.level==='2'));
   bs.player.deck=shuffle(plCards.filter(c => c.level!=='2'));

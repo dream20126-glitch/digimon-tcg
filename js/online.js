@@ -231,7 +231,8 @@ function updateLobbyUI(data) {
       if (myList && oppList) {
         showScreen('battle-screen');
         if (typeof startOnlineBattle === 'function') {
-          startOnlineBattle({ list: myList }, { list: oppList }, playerFirst, currentRoomId, myPlayerKey);
+          const oppName = data[oppKey2]?.name || '相手プレイヤー';
+          startOnlineBattle({ list: myList }, { list: oppList }, playerFirst, currentRoomId, myPlayerKey, oppName);
         }
       }
     } else if (myEntered && !oppEntered) {

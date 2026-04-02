@@ -1733,10 +1733,17 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
     ctx.addLog(label + '全デジモン DP' + sign + val);
     showDpPopup(isPlus ? val : -val);
     ctx.renderAll(); callback && callback();
+  } else if (target.code === 'target_all_own_security') {
+    // セキュリティバフを記録（セキュリティチェック時に参照）
+    if (!ctx.bs._securityBuffs) ctx.bs._securityBuffs = [];
+    ctx.bs._securityBuffs.push({ type, value: val, duration: dur, source: ctx.card ? ctx.card.cardNo : '' });
+    ctx.addLog(label + 'セキュリティデジモン全体 DP' + sign + val + '（' + dur + '）');
+    showDpPopup(isPlus ? val : -val);
+    ctx.renderAll(); callback && callback();
   } else if (target.code === 'target_own') {
     const validTargets = [];
     for(let i=0;i<player.battleArea.length;i++) { if(player.battleArea[i]) validTargets.push(i); }
-    if(validTargets.length === 0) { callback && callback(); return; }
+    if(validTargets.length === 0) { showEffectFailed(null, callback); return; }
     if(ctx.side === 'ai') { applyAndLog(player.battleArea[validTargets[0]]); ctx.renderAll(); callback && callback(); return; }
     ctx.addLog('🎯 DP' + sign + val + 'の対象を選んでください');
     showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', validTargets, null, isPlus ? '#00ff88' : '#ff4444', (idx) => {
@@ -1794,6 +1801,10 @@ export function expireBuffs(bs, timing, ownerSide) {
       if (!card.buffs.some(b => b.type === 'cant_evolve')) card.cantEvolve = false;
     });
   });
+  // セキュリティバフも同じtimingで期限切れ除去
+  if (bs._securityBuffs && bs._securityBuffs.length > 0) {
+    bs._securityBuffs = bs._securityBuffs.filter(b => b.duration !== timing);
+  }
 }
 
 // ===== 永続効果適用 =====

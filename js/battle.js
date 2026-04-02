@@ -1495,6 +1495,23 @@ function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
 }
 
 // セキュリティアタック+Nの値を取得
+// セキュリティバフをカードに適用（チェック前に呼ぶ）
+function applySecurityBuffs(sec, ownerSide) {
+  const buffs = bs._securityBuffs;
+  if (!buffs || buffs.length === 0 || sec.type !== 'デジモン') return;
+  // 元のDPを保存
+  if (sec._origDp === undefined) sec._origDp = parseInt(sec.dp) || 0;
+  let bonus = 0;
+  buffs.forEach(b => {
+    if (b.type === 'dp_plus') bonus += (parseInt(b.value) || 0);
+    if (b.type === 'dp_minus') bonus -= (parseInt(b.value) || 0);
+  });
+  if (bonus !== 0) {
+    sec.dp = sec._origDp + bonus;
+    addLog('🛡 セキュリティバフ適用: 「' + sec.name + '」DP ' + sec._origDp + ' → ' + sec.dp);
+  }
+}
+
 function getSecurityAttackCount(card) {
   let extra = 0;
   const side = bs.isPlayerTurn ? 'player' : 'ai';
@@ -1600,6 +1617,7 @@ function resolveSecurityCheck(atk, atkIdx) {
     }
 
     const sec = bs.ai.security.splice(0,1)[0];
+    applySecurityBuffs(sec, 'ai');
     // VS画面上にチェック数ラベルを表示（「1枚目」「2枚目」…）
     const afterOpen = () => {
       if (totalChecks <= 1) return;
@@ -2023,6 +2041,7 @@ function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
 function doAiSecurityCheck(atk, atkIdx, callback) {
     if(bs.player.security.length > 0) {
       const sec = bs.player.security.splice(0,1)[0];
+      applySecurityBuffs(sec, 'player');
       showSecurityCheck(sec, atk, () => {
         if(sec.type === 'デジモン') {
           if(atk.dp === sec.dp) {
@@ -2189,6 +2208,7 @@ function aiPlayAuto(callback) {
 function endAiTurn() {
   // AIターン終了時バフリセット
   expireBuffs(bs, 'dur_this_turn');
+  expireBuffs(bs, 'dur_next_opp_turn'); // 「次の相手ターン終了時まで」のバフを除去
   expireBuffs(bs, 'permanent', 'ai'); // AIの永続効果リセット
   renderAll();
   // プレイヤー側3にメモリ移動

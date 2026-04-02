@@ -14,16 +14,18 @@ let _onlineCmdSeq = 0;       // コマンド連番
 function sendStateSync() {
   if (!_onlineMode) return;
   // カードを軽量化（循環参照を避ける）
+  const safeNum = (v) => (v === undefined || v === null || isNaN(v)) ? 0 : v;
   const serializeCard = (c) => {
     if (!c) return null;
     return {
-      cardNo: c.cardNo, name: c.name, type: c.type, level: c.level,
-      dp: c.dp, baseDp: c.baseDp, dpModifier: c.dpModifier,
-      cost: c.cost, playCost: c.playCost, evolveCost: c.evolveCost,
-      effect: c.effect, evoSourceEffect: c.evoSourceEffect, securityEffect: c.securityEffect,
-      suspended: c.suspended, summonedThisTurn: c.summonedThisTurn,
-      imgSrc: c.imgSrc, imageUrl: c.imageUrl, color: c.color, feature: c.feature,
-      evolveCond: c.evolveCond, buffs: c.buffs || [],
+      cardNo: c.cardNo || '', name: c.name || '', type: c.type || '', level: c.level || '',
+      dp: safeNum(c.dp), baseDp: safeNum(c.baseDp), dpModifier: safeNum(c.dpModifier),
+      cost: safeNum(c.cost), playCost: c.playCost !== null ? safeNum(c.playCost) : null,
+      evolveCost: c.evolveCost !== null ? safeNum(c.evolveCost) : null,
+      effect: c.effect || '', evoSourceEffect: c.evoSourceEffect || '', securityEffect: c.securityEffect || '',
+      suspended: !!c.suspended, summonedThisTurn: !!c.summonedThisTurn,
+      imgSrc: c.imgSrc || '', imageUrl: c.imageUrl || '', color: c.color || '', feature: c.feature || '',
+      evolveCond: c.evolveCond || '', buffs: c.buffs || [],
       stack: (c.stack || []).map(serializeCard),
       _permEffects: c._permEffects || {},
       _usedEffects: c._usedEffects || []
@@ -162,18 +164,14 @@ function onRemoteCommand(cmd) {
       // 相手の状態を bs.ai に反映
       const st = cmd.state;
       if (!st) break;
-      // カードデータを復元（imgSrc等を保持）
       const restoreCard = (data) => {
         if (!data) return null;
-        const c = { ...data, dp: data.dp, buffs: data.buffs || [], stack: (data.stack || []).map(restoreCard) };
-        return c;
+        return { ...data, buffs: data.buffs || [], stack: (data.stack || []).map(restoreCard) };
       };
-      bs.ai.battleArea = st.battleArea.map(restoreCard);
-      bs.ai.tamerArea = st.tamerArea.map(restoreCard);
-      bs.ai.ikusei = restoreCard(st.ikusei);
-      // 手札・デッキ・トラッシュはカウントのみ更新（中身は見えない）
-      bs.memory = st.memory;
-      updateMemGauge();
+      if (st.battleArea) bs.ai.battleArea = st.battleArea.map(restoreCard);
+      if (st.tamerArea) bs.ai.tamerArea = st.tamerArea.map(restoreCard);
+      bs.ai.ikusei = st.ikusei ? restoreCard(st.ikusei) : bs.ai.ikusei;
+      if (st.memory !== undefined) { bs.memory = st.memory; updateMemGauge(); }
       renderAll();
       break;
     }

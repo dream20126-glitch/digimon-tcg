@@ -190,7 +190,22 @@ function parseDeck(deckData) {
     'ST1-15': { "main": [
       {"action": "select_multi", "target": "opponent", "condition": "dp_le:4000", "count": 2, "store": "T"},
       {"action": "destroy", "card": "T"}
-    ]}
+    ]},
+    'AD1-007': {
+      "on_evolve": [
+        {"action": "select_from_hand_trash", "filter_name": "ガンマモン", "filter_type": "デジモン", "count": 3, "store": "G"},
+        {"action": "add_to_evo_source", "card": "G", "target": "self"},
+        {"action": "destroy_by_dp"}
+      ],
+      "on_attack": [
+        {"action": "select_from_hand_trash", "filter_name": "ガンマモン", "filter_type": "デジモン", "count": 3, "store": "G"},
+        {"action": "add_to_evo_source", "card": "G", "target": "self"},
+        {"action": "destroy_by_dp"}
+      ],
+      "on_own_turn_end": [
+        {"action": "enable_attack_without_rest", "require": {"evo_count": 5}}
+      ]
+    }
   };
   out.forEach(card => {
     if (!card.recipe && defaultRecipes[card.cardNo]) {
@@ -1144,7 +1159,7 @@ function setupLongpressGesture(el, slotIdx) {
     const card=bs.player.battleArea[slotIdx]; if(!card) return;
     _wasAlreadySuspended = card.suspended;
     if(!card.suspended) {
-      const noRest = hasKeyword(card, 'レストせずアタックできる');
+      const noRest = hasKeyword(card, 'レストせずアタックできる') || card._attackWithoutRest;
       if(!noRest) card.suspended = true;
       renderAll();
     }
@@ -1289,7 +1304,7 @@ window.cancelLongpress = function(slotIdx) {
   hideLongpressMenu();
   const card=bs.player.battleArea[slotIdx];
   // 長押し前にレスト済みだった場合はアクティブに戻さない
-  if(card && !_wasAlreadySuspended && !hasKeyword(card, 'レストせずアタックできる')) {
+  if(card && !_wasAlreadySuspended && !hasKeyword(card, 'レストせずアタックできる') && !card._attackWithoutRest) {
     card.suspended=false;
   }
   renderAll();
@@ -1439,7 +1454,7 @@ function resolveAttackDrop(cx, cy) {
 function cancelAttack() {
   if(_atkState) {
     const card=_atkState.card;
-    if(card&&!hasKeyword(card,'レストせずアタックできる')) card.suspended=false;
+    if(card&&!hasKeyword(card,'レストせずアタックできる')&&!card._attackWithoutRest) card.suspended=false;
     _atkState=null; renderAll();
     addLog('⚠ アタックをキャンセルしました');
   }

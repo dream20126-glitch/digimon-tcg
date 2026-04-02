@@ -2176,7 +2176,9 @@ function runRecipe(steps, ctx, callback) {
   const store = {}; // ステップ間データ受け渡し用
   let idx = 0;
 
-  function nextStep() {
+  function nextStep(success) {
+    // コスト不足等で効果不発
+    if (success === false) { ctx.renderAll(); callback && callback(); return; }
     if (idx >= steps.length) { ctx.renderAll(); callback && callback(); return; }
     const step = steps[idx++];
     executeRecipeStep(step, ctx, store, nextStep);
@@ -2188,6 +2190,15 @@ function runRecipe(steps, ctx, callback) {
 function executeRecipeStep(step, ctx, store, callback) {
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
+
+  // 条件チェック（stepにconditionがあれば事前判定）
+  if (step.require) {
+    const req = step.require;
+    if (req.evo_count && (!ctx.card.stack || ctx.card.stack.length < req.evo_count)) {
+      callback();
+      return;
+    }
+  }
 
   switch (step.action) {
 
@@ -2357,6 +2368,115 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === 手札/トラッシュからカード選択 ===
+    case 'select_from_hand_trash': {
+      const count = step.count || 1;
+      const filterName = step.filter_name || null; // カード名フィルタ（部分一致）
+      const filterType = step.filter_type || null; // タイプフィルタ
+
+      // 手札とトラッシュから条件に合うカードを収集
+      const candidates = [];
+      player.hand.forEach((c, i) => {
+        if (!c) return;
+        if (filterName && !c.name.includes(filterName)) return;
+        if (filterType && c.type !== filterType) return;
+        candidates.push({ card: c, source: 'hand', idx: i });
+      });
+      player.trash.forEach((c, i) => {
+        if (!c) return;
+        if (filterName && !c.name.includes(filterName)) return;
+        if (filterType && c.type !== filterType) return;
+        candidates.push({ card: c, source: 'trash', idx: i });
+      });
+
+      if (candidates.length < count) {
+        ctx.addLog('⚠ 条件を満たすカードが足りません');
+        showEffectFailed(null, callback);
+        return;
+      }
+
+      // 選択UI
+      const selected = [];
+      function selectNextCard() {
+        if (selected.length >= count) {
+          if (step.store) store[step.store] = selected;
+          callback();
+          return;
+        }
+        const remaining = candidates.filter(c => !selected.includes(c));
+        showHandTrashSelection(remaining, count - selected.length, filterName, (choice) => {
+          if (choice) {
+            selected.push(choice);
+            selectNextCard();
+          } else {
+            // キャンセル → 効果不発（コスト）
+            if (step.store) store[step.store] = null;
+            callback(false);
+          }
+        });
+      }
+      selectNextCard();
+      break;
+    }
+
+    // === 進化元に追加 ===
+    case 'add_to_evo_source': {
+      const cards = store[step.card];
+      if (!cards || !Array.isArray(cards) || cards.length === 0) { callback(); return; }
+      const targetCard = (step.target === 'self') ? ctx.card : ctx.card;
+      cards.forEach(entry => {
+        // 元の場所（手札/トラッシュ）から除去
+        if (entry.source === 'hand') {
+          const hi = player.hand.indexOf(entry.card);
+          if (hi !== -1) player.hand.splice(hi, 1);
+        } else if (entry.source === 'trash') {
+          const ti = player.trash.indexOf(entry.card);
+          if (ti !== -1) player.trash.splice(ti, 1);
+        }
+        // 進化元に追加
+        if (!targetCard.stack) targetCard.stack = [];
+        targetCard.stack.push(entry.card);
+        ctx.addLog('📥 「' + entry.card.name + '」を進化元に追加');
+      });
+      ctx.renderAll();
+      callback();
+      break;
+    }
+
+    // === 自分のDP以下の相手を消滅 ===
+    case 'destroy_by_dp': {
+      const myDp = ctx.card ? ctx.card.dp : 0;
+      const valid = [];
+      for (let i = 0; i < opponent.battleArea.length; i++) {
+        const c = opponent.battleArea[i];
+        if (c && c.dp <= myDp) valid.push(i);
+      }
+      if (valid.length === 0) { showEffectFailed(null, callback); return; }
+      const rowId = ctx.side === 'player' ? 'ai' : 'pl';
+      showTargetSelection(rowId, valid, null, '#ff4444', (selectedIdx) => {
+        if (selectedIdx !== null) {
+          const c = opponent.battleArea[selectedIdx];
+          opponent.battleArea[selectedIdx] = null;
+          opponent.trash.push(c);
+          if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
+          ctx.addLog('💥 「' + c.name + '」(DP' + c.dp + ')を消滅させた！');
+          ctx.renderAll();
+        }
+        callback();
+      });
+      break;
+    }
+
+    // === レストせずアタック可能にする ===
+    case 'enable_attack_without_rest': {
+      if (ctx.card) {
+        ctx.card._attackWithoutRest = true;
+        ctx.addLog('⚔ 「' + ctx.card.name + '」はレストせずにアタックできる！');
+      }
+      callback();
+      break;
+    }
+
     // === その他のアクション（既存エンジンに委譲） ===
     default: {
       // 既存のrunOneAction形式に変換して実行
@@ -2409,6 +2529,60 @@ function showEvoSourceSelection(parentCard, evoCards, filter, callback) {
   };
   overlay.appendChild(cancelBtn);
 
+  document.body.appendChild(overlay);
+}
+
+// 手札/トラッシュからカード選択UI
+function showHandTrashSelection(candidates, remaining, filterName, callback) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;overflow-y:auto;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#ffaa00;font-size:14px;font-weight:bold;margin-bottom:12px;';
+  title.innerText = '🔍 ' + (filterName ? '「' + filterName + '」を' : 'カードを') + '選択（残り' + remaining + '枚）';
+  overlay.appendChild(title);
+
+  // 手札セクション
+  const handCards = candidates.filter(c => c.source === 'hand');
+  const trashCards = candidates.filter(c => c.source === 'trash');
+
+  function addSection(label, cards) {
+    if (cards.length === 0) return;
+    const secLabel = document.createElement('div');
+    secLabel.style.cssText = 'color:#aaa;font-size:11px;margin:8px 0 4px;';
+    secLabel.innerText = label + '（' + cards.length + '枚）';
+    overlay.appendChild(secLabel);
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:8px;';
+    cards.forEach(entry => {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'text-align:center;cursor:pointer;border:2px solid #333;border-radius:8px;padding:4px;transition:all 0.2s;';
+      const imgSrc = entry.card.imgSrc || entry.card.imageUrl || '';
+      wrap.innerHTML = (imgSrc ? '<img src="' + imgSrc + '" style="width:55px;height:77px;object-fit:cover;border-radius:4px;">' : '')
+        + '<div style="color:#fff;font-size:9px;margin-top:2px;">' + entry.card.name + '</div>';
+      wrap.onmouseenter = () => { wrap.style.borderColor = '#ffaa00'; };
+      wrap.onmouseleave = () => { wrap.style.borderColor = '#333'; };
+      wrap.onclick = () => {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        callback(entry);
+      };
+      row.appendChild(wrap);
+    });
+    overlay.appendChild(row);
+  }
+
+  addSection('📋 手札', handCards);
+  addSection('🗑 トラッシュ', trashCards);
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.style.cssText = 'margin-top:12px;background:#333;color:#fff;border:1px solid #666;padding:8px 20px;border-radius:8px;font-size:12px;cursor:pointer;';
+  cancelBtn.innerText = 'キャンセル';
+  cancelBtn.onclick = () => {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    callback(null);
+  };
+  overlay.appendChild(cancelBtn);
   document.body.appendChild(overlay);
 }
 

@@ -253,7 +253,8 @@ function onRemoteCommand(cmd) {
     case 'fx_securityCheck': {
       const secCard = { name: cmd.secName, imgSrc: cmd.secImg, dp: cmd.secDp, type: cmd.secType };
       const atkCard = { name: cmd.atkName, imgSrc: cmd.atkImg, dp: cmd.atkDp };
-      showSecurityCheck(secCard, atkCard, () => {}, cmd.customLabel || null);
+      // VS演出を表示しつつ、セキュリティカウントも更新
+      showSecurityCheck(secCard, atkCard, () => { renderAll(); }, cmd.customLabel || null);
       break;
     }
     case 'fx_directAttack': {

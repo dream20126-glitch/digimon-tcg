@@ -2275,7 +2275,7 @@ window.confirmExitGate = function() {
 function cleanupBattle() {
   // AI処理を停止（フラグで制御）
   bs._battleAborted = true;
-  // バトル関連のオーバーレイを全て非表示
+  // バトル画面内の全オーバーレイを非表示
   const overlayIds = [
     'your-turn-overlay', 'phase-announce-overlay', 'skip-announce-overlay',
     'security-check-overlay', 'battle-result-overlay', 'draw-overlay',
@@ -2286,10 +2286,15 @@ function cleanupBattle() {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
-  // 動的に追加されたオーバーレイを除去
-  document.querySelectorAll('[id^="_target-confirm"], [id^="_sec-check-count"]').forEach(el => {
+  // body直下に動的追加されたオーバーレイを全て除去（position:fixedのもの）
+  document.querySelectorAll('body > div[style*="position:fixed"], body > div[style*="position: fixed"]').forEach(el => {
+    // battle-screenやscreen要素は除外
+    if (el.classList.contains('screen') || el.id === 'battle-screen') return;
     if (el.parentNode) el.parentNode.removeChild(el);
   });
+  // バトル画面自体を強制非表示
+  const battleScreen = document.getElementById('battle-screen');
+  if (battleScreen) battleScreen.classList.remove('active');
 }
 
 function battleVictory() {

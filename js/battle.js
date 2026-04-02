@@ -24,21 +24,94 @@ function onRemoteCommand(cmd) {
   console.log('[ONLINE] 受信:', cmd.type, cmd);
 
   switch (cmd.type) {
-    case 'mulligan': doMulligan(); break;
-    case 'acceptHand': window.acceptHand(); break;
-    case 'play': doPlay(bs.ai.hand[cmd.handIdx], cmd.handIdx, cmd.slotIdx); break;
-    case 'evolve': doEvolve(bs.ai.hand[cmd.handIdx], cmd.handIdx, cmd.slotIdx); break;
-    case 'attack_security': {
-      const atk = bs.ai.battleArea[cmd.atkIdx];
-      if (atk) { atk.suspended = true; renderAll(); afterAtkEffect(atk, cmd.atkIdx, () => resolveSecurityCheck(atk, cmd.atkIdx)); }
+    case 'mulligan': break; // 相手のマリガンは自分側に影響なし
+    case 'acceptHand': break; // 相手の手札確定も影響なし
+
+    case 'play': {
+      // 相手がカードを登場
+      const c = bs.ai.hand[cmd.handIdx];
+      if (!c) break;
+      if (c.type === 'オプション') {
+        bs.ai.hand.splice(cmd.handIdx, 1);
+        addLog('🎮 相手が「' + c.name + '」を使用！');
+        renderAll();
+        showPlayEffect(c, () => {
+          aiSpendMemory(c.playCost);
+          checkAndTriggerEffect(c, '【メイン】', () => { bs.ai.trash.push(c); renderAll(); }, 'ai');
+        });
+      } else if (c.type === 'テイマー') {
+        bs.ai.hand.splice(cmd.handIdx, 1);
+        bs.ai.tamerArea.push(c);
+        addLog('🎮 相手が「' + c.name + '」を登場！');
+        renderAll();
+        showPlayEffect(c, () => { aiSpendMemory(c.playCost); renderAll(); });
+      } else {
+        let slot = cmd.slotIdx;
+        if (slot === undefined || slot === null) { slot = bs.ai.battleArea.findIndex(s => s===null); if(slot===-1){slot=bs.ai.battleArea.length;bs.ai.battleArea.push(null);} }
+        c.summonedThisTurn = true;
+        bs.ai.battleArea[slot] = c;
+        bs.ai.hand.splice(cmd.handIdx, 1);
+        addLog('🎮 相手が「' + c.name + '」を登場！');
+        renderAll();
+        showPlayEffect(c, () => {
+          aiSpendMemory(c.playCost);
+          checkAndTriggerEffect(c, '【登場時】', () => renderAll(), 'ai');
+        });
+      }
       break;
     }
+
+    case 'evolve': {
+      // 相手がバトルエリアで進化
+      const evoCard = bs.ai.hand[cmd.handIdx];
+      const base = bs.ai.battleArea[cmd.slotIdx];
+      if (!evoCard || !base) break;
+      bs.ai.hand.splice(cmd.handIdx, 1);
+      evoCard.stack = [...(base.stack||[]), base];
+      evoCard.summonedThisTurn = false;
+      evoCard.suspended = base.suspended;
+      evoCard.baseDp = parseInt(evoCard.dp)||0;
+      evoCard.dpModifier = 0; evoCard.buffs = [];
+      bs.ai.battleArea[cmd.slotIdx] = evoCard;
+      addLog('🎮 相手が「' + base.name + '」→「' + evoCard.name + '」に進化！');
+      renderAll();
+      showEvolveEffect(evoCard.evolveCost, base.name, base, evoCard, () => {
+        aiSpendMemory(evoCard.evolveCost);
+        checkAndTriggerEffect(evoCard, '【進化時】', () => { renderAll(); }, 'ai');
+      });
+      break;
+    }
+
+    case 'attack_security': {
+      const atk = bs.ai.battleArea[cmd.atkIdx];
+      if (!atk) break;
+      atk.suspended = true;
+      addLog('🎮 相手の「' + atk.name + '」でアタック！');
+      renderAll();
+      showPhaseAnnounce('⚔ 相手アタック！', '#ff4444', () => {
+        // アタック時効果
+        const hasAtk = hasKeyword(atk,'【アタック時】') || (atk.stack && atk.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【アタック時】')));
+        const doEffect = (cb) => hasAtk ? checkAndTriggerEffect(atk,'【アタック時】',cb,'ai') : cb();
+        doEffect(() => resolveSecurityCheckOnline(atk, cmd.atkIdx));
+      });
+      break;
+    }
+
     case 'attack_digimon': {
       const atk = bs.ai.battleArea[cmd.atkIdx];
       const def = bs.player.battleArea[cmd.defIdx];
-      if (atk && def) { atk.suspended = true; renderAll(); afterAtkEffect(atk, cmd.atkIdx, () => resolveBattle(atk, cmd.atkIdx, def, cmd.defIdx, 'player')); }
+      if (!atk || !def) break;
+      atk.suspended = true;
+      addLog('🎮 相手の「' + atk.name + '」が「' + def.name + '」にアタック！');
+      renderAll();
+      showPhaseAnnounce('⚔ 相手アタック！', '#ff4444', () => {
+        const hasAtk = hasKeyword(atk,'【アタック時】') || (atk.stack && atk.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【アタック時】')));
+        const doEffect = (cb) => hasAtk ? checkAndTriggerEffect(atk,'【アタック時】',cb,'ai') : cb();
+        doEffect(() => resolveBattle(atk, cmd.atkIdx, def, cmd.defIdx, 'player'));
+      });
       break;
     }
+
     case 'endTurn': {
       // 相手がターン終了 → 自分のターン開始
       bs.memory = 3;
@@ -58,19 +131,20 @@ function onRemoteCommand(cmd) {
       });
       break;
     }
+
     case 'effect_confirm': window.confirmEffect(cmd.yes); break;
+
     case 'hatch': {
-      // 相手が孵化
       if (bs.ai.tamaDeck.length > 0) {
         const c = bs.ai.tamaDeck.splice(0,1)[0];
         bs.ai.ikusei = c;
-        addLog('🤖 相手がデジタマを孵化');
-        renderAll();
+        addLog('🎮 相手がデジタマを孵化');
+        showHatchEffect(c, () => renderAll());
       }
       break;
     }
+
     case 'breed_evolve': {
-      // 相手が育成エリアで進化
       const evoCard = bs.ai.hand[cmd.handIdx];
       if (evoCard && bs.ai.ikusei) {
         bs.ai.hand.splice(cmd.handIdx, 1);
@@ -80,29 +154,41 @@ function onRemoteCommand(cmd) {
         evoCard.baseDp = parseInt(evoCard.dp)||0;
         evoCard.dpModifier = 0; evoCard.buffs = [];
         bs.ai.ikusei = evoCard;
-        addLog('🤖 相手が育成で進化: ' + evoCard.name);
+        addLog('🎮 相手が育成で「' + old.name + '」→「' + evoCard.name + '」に進化！');
         renderAll();
+        showEvolveEffect(evoCard.evolveCost, old.name, old, evoCard, () => renderAll());
       }
       break;
     }
+
     case 'breed_move': {
-      // 相手が育成→バトルエリアへ移動
       if (bs.ai.ikusei) {
         let slot = bs.ai.battleArea.findIndex(s => s===null);
         if (slot===-1) { slot=bs.ai.battleArea.length; bs.ai.battleArea.push(null); }
-        bs.ai.battleArea[slot] = bs.ai.ikusei;
-        addLog('🤖 相手がバトルエリアへ移動: ' + bs.ai.ikusei.name);
+        const moved = bs.ai.ikusei;
+        bs.ai.battleArea[slot] = moved;
         bs.ai.ikusei = null;
+        addLog('🎮 相手が「' + moved.name + '」をバトルエリアへ移動');
         renderAll();
+        showPlayEffect(moved, () => renderAll());
       }
       break;
     }
+
     case 'activate_effect': {
       const card = bs.ai.battleArea[cmd.slotIdx];
-      if (card) checkAndTriggerEffect(card, '【メイン】', () => renderAll(), 'ai', true);
+      if (card) {
+        addLog('🎮 相手が「' + card.name + '」の効果を発動！');
+        checkAndTriggerEffect(card, '【メイン】', () => renderAll(), 'ai', true);
+      }
       break;
     }
   }
+}
+
+// オンライン用: 相手がプレイヤーのセキュリティをチェック
+function resolveSecurityCheckOnline(atk, atkIdx) {
+  doAiSecurityCheck(atk, atkIdx, () => { renderAll(); });
 }
 
 // Firebaseコマンドリスナー開始

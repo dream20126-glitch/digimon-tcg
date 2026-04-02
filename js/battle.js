@@ -68,6 +68,7 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
 
   bs.turn=1; bs.memory=0; bs.isPlayerTurn=playerFirst; bs.isFirstTurn=true;
   bs.selHand=null; bs.selSlot=null; bs.attackingSlot=null;
+  bs._battleAborted=false; bs._pendingTurnEnd=false; bs._usedLimits={}; bs._securityBuffs=[];
   const plCards=parseDeck(playerDeckData), aiCards=parseDeck(aiDeckData);
   bs.player.tamaDeck=shuffle(plCards.filter(c => c.level==='2'));
   bs.player.deck=shuffle(plCards.filter(c => c.level!=='2'));

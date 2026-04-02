@@ -433,12 +433,19 @@ function executeQueueEntry(entry, context, callback) {
   function executeWithAnnounce() {
     ctx.addLog('⚡ 「' + card.name + '」の効果発動');
     showEffectAnnounce(card, block.raw, actualSide, () => {
+      // 効果完了時に相手のオーバーレイを閉じるコールバック
+      const wrappedCallback = () => {
+        if (window._isOnlineMode && window._isOnlineMode() && actualSide === 'player') {
+          window._onlineSendCommand({ type: 'fx_effectClose' });
+        }
+        callback();
+      };
       // レシピがあればレシピ実行、なければ従来処理
       const recipe = getRecipeForTrigger(card, block.trigger ? block.trigger.code : null);
       if (recipe) {
-        runRecipe(recipe, ctx, callback);
+        runRecipe(recipe, ctx, wrappedCallback);
       } else {
-        executeCostAndActions(block, ctx, () => executeAfterActions(block, ctx, callback));
+        executeCostAndActions(block, ctx, () => executeAfterActions(block, ctx, wrappedCallback));
       }
     });
   }
@@ -470,10 +477,16 @@ function executeQueueEntry(entry, context, callback) {
   }
 
   // 任意効果 → 確認ダイアログ
+  // B画面: fx_confirmShow → Aが「はい」→ fx_confirmClose → fx_effectAnnounce（処理中表示）
+  //                        → Aが「いいえ」→ fx_confirmClose(accepted:false) → 「発動しませんでした」
   showConfirmDialog(card, block.raw, (accepted) => {
     if (accepted) {
       executeWithAnnounce();
     } else {
+      // 「いいえ」→ 相手に「効果を発動しませんでした」を通知
+      if (window._isOnlineMode && window._isOnlineMode() && actualSide === 'player') {
+        window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: card.name });
+      }
       executeAfterActions(block, ctx, callback);
     }
   });
@@ -502,6 +515,22 @@ function executeCostAndActions(block, ctx, callback) {
   } else {
     runActionList(block.actions, block.target, ctx, callback);
   }
+}
+
+// ===== オンライン効果結果通知 =====
+// 選択効果の結果（カード画像＋アクション）を相手に送信
+function sendEffectResult(card, actionType, ctx) {
+  if (!window._isOnlineMode || !window._isOnlineMode()) return;
+  if (ctx.side !== 'player') return; // 自分の効果のみ送信
+  const imgSrc = card ? (card.imgSrc || getCardImageUrl(card) || '') : '';
+  const labels = { summon: '登場！', destroy: '消滅！', bounce: '手札に戻す！', rest: 'レスト！', active: 'アクティブ！', evolve: '進化！', recover: 'リカバリー！', dp_plus: 'DP強化！', dp_minus: 'DP弱体化！' };
+  window._onlineSendCommand({
+    type: 'fx_effectResult',
+    cardName: card ? card.name : '',
+    cardImg: imgSrc,
+    actionType: actionType,
+    actionLabel: labels[actionType] || actionType
+  });
 }
 
 // ===== アクション実行 =====
@@ -743,6 +772,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       showTargetSelection('ai', dpTargets, null, uiColor, (selectedIdx) => {
         if(selectedIdx !== null) {
           const tgt = opponent.battleArea[selectedIdx];
+          sendEffectResult(tgt, 'dp_minus', ctx);
           addBuff(tgt, 'dp_minus', val, ctx);
           ctx.addLog('💥 ' + tgt.name + ' DP-' + val + ' → ' + tgt.dp);
           playEffect(action.code, { value: -val, ctx }, () => {});
@@ -758,6 +788,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       if (ctx.side === 'player') ctx.bs.memory += val; else ctx.bs.memory -= val;
       ctx.addLog('💎 ' + sideLabel + 'のメモリー+' + val);
       ctx.updateMemGauge();
+      if (window._sendMemoryUpdate) window._sendMemoryUpdate(); // 相手に即時通知
       ctx.renderAll();
       callback();
       break;
@@ -767,6 +798,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       if (ctx.side === 'player') ctx.bs.memory -= val; else ctx.bs.memory += val;
       ctx.addLog('💎 ' + sideLabel + 'のメモリー-' + val);
       ctx.updateMemGauge();
+      if (window._sendMemoryUpdate) window._sendMemoryUpdate(); // 相手に即時通知
       // メモリー超過チェック（効果処理は完了させてからターン終了）
       if (ctx.side === 'player' && ctx.bs.memory < 0) {
         ctx._memoryOverflow = true;
@@ -792,7 +824,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if(selectedIdx !== null) {
           const card = opponent.battleArea[selectedIdx];
           doDestroy(opponent, selectedIdx, ctx);
-          playEffect(action.code, { card, ctx }, callback);
+          playEffect(action.code, { card, ctx }, callback); // → showDestroyEffect → fx_destroy送信
         } else { callback(); }
       });
       break;
@@ -808,7 +840,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       ctx.addLog('🎯 手札に戻す対象を選んでください');
       showTargetSelection('ai', bounceTargets, null, bounceColor, (selectedIdx) => {
-        if(selectedIdx !== null) doBounce(opponent, selectedIdx, ctx);
+        if(selectedIdx !== null) {
+          sendEffectResult(opponent.battleArea[selectedIdx], 'bounce', ctx);
+          doBounce(opponent, selectedIdx, ctx);
+        }
         callback();
       });
       break;
@@ -909,6 +944,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       ctx.addLog('🎯 レストさせる対象を選んでください');
       showTargetSelection('ai', restTargets, null, restColor, (selectedIdx) => {
         if(selectedIdx !== null) {
+          sendEffectResult(opponent.battleArea[selectedIdx], 'rest', ctx);
           opponent.battleArea[selectedIdx].suspended = true;
           ctx.addLog('💤 「' + opponent.battleArea[selectedIdx].name + '」をレスト');
         }
@@ -1999,49 +2035,29 @@ function checkPendingDestroys(ctx) {
 // ===== 効果発動アナウンス（カード画像＋効果テキストを数秒表示） =====
 
 function showEffectAnnounce(card, effectText, side, callback) {
+  // effectTextが空の場合、カードの効果テキスト全文をフォールバック
+  const displayText = effectText || card.effect || '';
   if (window._isOnlineMode && window._isOnlineMode() && side === 'player') {
-    window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: card.name, cardImg: card.imgSrc || getCardImageUrl(card) || '', effectText: (effectText||'').substring(0,100) });
+    window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: card.name, effectText: displayText.substring(0,300) });
   }
-  const imgSrc = getCardImageUrl(card) || card.imgSrc || card.imageUrl || '';
-  const sideLabel = side === 'player' ? '自分' : '相手';
   const sideColor = side === 'player' ? '#00fbff' : '#ff00fb';
 
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:55000;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease;';
 
   const box = document.createElement('div');
-  box.style.cssText = 'display:flex;gap:16px;align-items:center;max-width:90%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid ' + sideColor + ';border-radius:12px;box-shadow:0 0 30px ' + sideColor + '44;';
-
-  // カード画像
-  const imgWrap = document.createElement('div');
-  imgWrap.style.cssText = 'flex-shrink:0;width:90px;height:126px;border-radius:6px;overflow:hidden;border:2px solid ' + sideColor + ';';
-  if (imgSrc) {
-    imgWrap.innerHTML = '<img src="' + imgSrc + '" style="width:100%;height:100%;object-fit:cover;">';
-  } else {
-    imgWrap.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#112;color:#aaa;font-size:10px;padding:4px;">' + card.name + '</div>';
-  }
-  box.appendChild(imgWrap);
-
-  // テキスト部分
-  const textWrap = document.createElement('div');
-  textWrap.style.cssText = 'flex:1;min-width:0;';
+  box.style.cssText = 'max-width:85%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid ' + sideColor + ';border-radius:12px;box-shadow:0 0 30px ' + sideColor + '44;text-align:center;';
 
   const nameEl = document.createElement('div');
-  nameEl.style.cssText = 'color:' + sideColor + ';font-size:14px;font-weight:bold;margin-bottom:6px;text-shadow:0 0 8px ' + sideColor + ';';
+  nameEl.style.cssText = 'color:' + sideColor + ';font-size:14px;font-weight:bold;margin-bottom:10px;text-shadow:0 0 8px ' + sideColor + ';';
   nameEl.innerText = '⚡ ' + card.name + ' — 効果発動';
-  textWrap.appendChild(nameEl);
-
-  const sideEl = document.createElement('div');
-  sideEl.style.cssText = 'color:#888;font-size:10px;margin-bottom:8px;';
-  sideEl.innerText = sideLabel + 'のカード';
-  textWrap.appendChild(sideEl);
+  box.appendChild(nameEl);
 
   const effectEl = document.createElement('div');
-  effectEl.style.cssText = 'color:#ddd;font-size:11px;line-height:1.6;max-height:80px;overflow-y:auto;';
-  effectEl.innerText = effectText;
-  textWrap.appendChild(effectEl);
+  effectEl.style.cssText = 'color:#ddd;font-size:11px;line-height:1.6;max-height:100px;overflow-y:auto;text-align:left;';
+  effectEl.innerText = displayText;
+  box.appendChild(effectEl);
 
-  box.appendChild(textWrap);
   overlay.appendChild(box);
   document.body.appendChild(overlay);
 
@@ -2054,7 +2070,7 @@ function showEffectAnnounce(card, effectText, side, callback) {
     callback();
   }
 
-  // 2.5秒後に自動で消えてcallback
+  // 2.5秒後に自動で消えてcallback（ローカル表示のみ）
   setTimeout(() => {
     overlay.style.animation = 'fadeOut 0.3s ease forwards';
     setTimeout(finish, 300);
@@ -2387,7 +2403,14 @@ function executeRecipeStep(step, ctx, store, callback) {
       cardToSummon.baseDp = parseInt(cardToSummon.dp) || 0;
       ctx.addLog('🌟 「' + cardToSummon.name + '」をコスト無しで登場！');
       ctx.renderAll();
-      callback();
+      // 登場演出（ローカル＋相手に送信）
+      if (ctx.showPlayEffect) {
+        const dummyPlay = { name: cardToSummon.name, imgSrc: cardToSummon.imgSrc || getCardImageUrl(cardToSummon) || '', playCost: 0, type: cardToSummon.type || 'デジモン' };
+        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+          window._onlineSendCommand({ type: 'play', cardName: cardToSummon.name, cardImg: dummyPlay.imgSrc, cardType: cardToSummon.type, playCost: 0 });
+        }
+        ctx.showPlayEffect(dummyPlay, callback);
+      } else { callback(); }
       break;
     }
 
@@ -2395,11 +2418,12 @@ function executeRecipeStep(step, ctx, store, callback) {
     case 'destroy': {
       const targetData = step.card ? store[step.card] : null;
       if (targetData) {
-        // store から取得（単体 or 複数）
         const targets = Array.isArray(targetData) ? targetData : [targetData];
+        const destroyedCards = [];
         targets.forEach(t => {
           const c = opponent.battleArea[t.idx];
           if (c) {
+            destroyedCards.push(c);
             opponent.battleArea[t.idx] = null;
             opponent.trash.push(c);
             if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
@@ -2407,6 +2431,16 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
         });
         ctx.renderAll();
+        // 消滅演出を順番に再生（ローカル＋相手）
+        if (ctx.showDestroyEffect && destroyedCards.length > 0) {
+          let di = 0;
+          function nextDestroy() {
+            if (di >= destroyedCards.length) { callback(); return; }
+            ctx.showDestroyEffect(destroyedCards[di++], nextDestroy);
+          }
+          nextDestroy();
+          return;
+        }
       }
       callback();
       break;

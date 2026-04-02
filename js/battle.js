@@ -9,6 +9,8 @@ let _onlineRoomId = null;    // ルームID
 let _onlineMyKey = null;     // 'player1' or 'player2'
 let _onlineCmdListener = null; // Firebaseリスナー解除用
 let _onlineCmdSeq = 0;       // コマンド連番
+let _pendingBlockCallback = null; // ブロック応答待ちコールバック
+let _pendingBlockResponse = null; // ブロック応答（コールバック前に届いた場合）
 
 // 状態同期（効果解決後に自分のカード状態を相手に送信）
 function sendStateSync() {
@@ -55,6 +57,13 @@ function sendStateSync() {
 window._isOnlineMode = () => _onlineMode;
 window._onlineSendCommand = (cmd) => sendCommand(cmd);
 
+// メモリー即時同期（コスト消費・効果発動時に即座に相手へ通知）
+function sendMemoryUpdate() {
+  if (!_onlineMode) return;
+  sendCommand({ type: 'memory_update', memory: bs.memory });
+}
+window._sendMemoryUpdate = () => sendMemoryUpdate();
+
 // コマンド送信（自分の操作を相手に伝える）
 function sendCommand(cmd) {
   if (!_onlineMode || !_onlineRoomId) return;
@@ -63,14 +72,39 @@ function sendCommand(cmd) {
   set(ref(rtdb, path), { ...cmd, from: _onlineMyKey, seq: _onlineCmdSeq, time: Date.now() });
 }
 
+// 相手の効果内容オーバーレイ（全効果共通デザイン）
+// cardName: カード名, effectText: 効果テキスト, overlayId: DOM ID
+function showRemoteEffectOverlay(cardName, effectText, overlayId) {
+  const existing = document.getElementById(overlayId);
+  if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+  const ov = document.createElement('div');
+  ov.id = overlayId;
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:55000;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease;';
+  const bx = document.createElement('div');
+  bx.style.cssText = 'max-width:85%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid #ff00fb;border-radius:12px;box-shadow:0 0 30px #ff00fb44;text-align:center;';
+  bx.innerHTML = '<div style="color:#ff00fb;font-size:14px;font-weight:bold;margin-bottom:10px;text-shadow:0 0 8px #ff00fb;">⚡ 相手: ' + cardName + '</div>'
+    + '<div style="color:#ddd;font-size:11px;line-height:1.6;text-align:left;margin-bottom:12px;max-height:100px;overflow-y:auto;">' + (effectText || '') + '</div>'
+    + '<div style="color:#888;font-size:10px;">相手が効果を処理中...</div>';
+  ov.appendChild(bx);
+  document.body.appendChild(ov);
+  // フォールバック: 15秒で自動消去
+  setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 15000);
+}
+
 // コマンド受信（相手の操作を再現）
 function onRemoteCommand(cmd) {
   if (!cmd || cmd.from === _onlineMyKey) return; // 自分のコマンドは無視
   console.log('[ONLINE] 受信:', cmd.type, cmd);
 
   switch (cmd.type) {
-    case 'mulligan': break; // 相手のマリガンは自分側に影響なし
-    case 'acceptHand': break; // 相手の手札確定も影響なし
+    case 'mulligan': break;
+    case 'acceptHand': break;
+
+    case 'memory_update': {
+      // 相手のメモリー変更を即時反映（符号反転）
+      if (cmd.memory !== undefined) { bs.memory = -cmd.memory; updateMemGauge(); }
+      break;
+    }
 
     case 'play': {
       const cardName = cmd.cardName || '???';
@@ -91,7 +125,9 @@ function onRemoteCommand(cmd) {
     case 'attack_security': {
       const atkName = cmd.atkName || bs.ai.battleArea[cmd.atkIdx]?.name || '???';
       addLog('🎮 相手の「' + atkName + '」でセキュリティアタック！');
-      showYourTurn('⚔ 相手アタック！', '「' + atkName + '」→ セキュリティ', '#ff4444', () => {});
+      showYourTurn('⚔ 相手アタック！', '「' + atkName + '」→ セキュリティ', '#ff4444', () => {
+        checkOnlineBlock(cmd);
+      });
       break;
     }
     case 'security_remove': {
@@ -109,14 +145,16 @@ function onRemoteCommand(cmd) {
       const atkName2 = cmd.atkName || bs.ai.battleArea[cmd.atkIdx]?.name || '???';
       const defName2 = cmd.defName || bs.player.battleArea[cmd.defIdx]?.name || '???';
       addLog('🎮 相手の「' + atkName2 + '」が「' + defName2 + '」にアタック！');
-      showYourTurn('⚔ 相手アタック！', '「' + atkName2 + '」→「' + defName2 + '」', '#ff4444', () => {});
+      showYourTurn('⚔ 相手アタック！', '「' + atkName2 + '」→「' + defName2 + '」', '#ff4444', () => {
+        checkOnlineBlock(cmd);
+      });
       break;
     }
 
     case 'endTurn': {
       // 相手がターン終了 → 自分のターン開始
-      // メモリーを反転（相手の-2は自分の+2）
-      bs.memory = cmd.memory !== undefined ? cmd.memory : 3;
+      // メモリーを反転（相手の-3は自分の+3）
+      bs.memory = cmd.memory !== undefined ? -cmd.memory : 3;
       bs.isFirstTurn = false;
       updateMemGauge();
       expireBuffs(bs, 'dur_this_turn');
@@ -136,27 +174,51 @@ function onRemoteCommand(cmd) {
     }
 
     case 'effect_confirm': window.confirmEffect(cmd.yes); break;
+
+    case 'block_response': {
+      // 相手のブロック応答を受信（攻撃側で処理）
+      if (cmd.blocked) {
+        // ブロックされた → 攻撃側のカードを更新
+        const atkIdx = cmd.atkIdx;
+        const atk = bs.player.battleArea[atkIdx];
+        if (atk && (cmd.atkResult === 'destroyed' || cmd.atkResult === 'both_destroyed')) {
+          bs.player.battleArea[atkIdx] = null;
+          bs.player.trash.push(atk);
+          if (atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
+          renderAll();
+        }
+      }
+      if (_pendingBlockCallback) {
+        const cb = _pendingBlockCallback;
+        _pendingBlockCallback = null;
+        cb(cmd);
+      } else {
+        _pendingBlockResponse = cmd;
+      }
+      break;
+    }
+
     case 'effect_start': {
       addLog('🎮 相手が「' + cmd.cardName + '」の効果を発動！');
+      if (cmd.effectText) showRemoteEffectOverlay(cmd.cardName, cmd.effectText, '_remote-effect-announce');
       break;
     }
     case 'fx_confirmShow': {
-      // 相手が効果確認ダイアログを開いた → 効果内容を表示
-      const cOv = document.createElement('div');
-      cOv.id = '_remote-confirm-overlay';
-      cOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:55000;display:flex;align-items:center;justify-content:center;';
-      const cBx = document.createElement('div');
-      cBx.style.cssText = 'max-width:85%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid #ff00fb;border-radius:12px;box-shadow:0 0 30px #ff00fb44;text-align:center;';
-      cBx.innerHTML = '<div style="color:#ff00fb;font-size:14px;font-weight:bold;margin-bottom:8px;">⚡ 相手: ' + cmd.cardName + '</div>'
-        + '<div style="color:#ddd;font-size:11px;line-height:1.6;text-align:left;margin-bottom:12px;">' + (cmd.effectText||'') + '</div>'
-        + '<div style="color:#888;font-size:10px;">相手が効果を選択中...</div>';
-      cOv.appendChild(cBx);
-      document.body.appendChild(cOv);
+      showRemoteEffectOverlay(cmd.cardName, cmd.effectText || '', '_remote-confirm-overlay');
       break;
     }
     case 'fx_confirmClose': {
       const remOv = document.getElementById('_remote-confirm-overlay');
       if (remOv && remOv.parentNode) remOv.parentNode.removeChild(remOv);
+      break;
+    }
+    case 'fx_effectDeclined': {
+      // 相手が任意効果を「いいえ」→ 発動しなかった旨を表示
+      const decOv = document.createElement('div');
+      decOv.style.cssText = 'position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);z-index:56000;background:rgba(30,30,40,0.9);border:1px solid #888;border-radius:10px;padding:12px 24px;color:#aaa;font-size:13px;font-weight:bold;text-align:center;pointer-events:none;animation:fadeIn 0.2s ease;';
+      decOv.innerText = '💨 相手は「' + (cmd.cardName || '') + '」の効果を発動しませんでした';
+      document.body.appendChild(decOv);
+      setTimeout(() => { if (decOv.parentNode) { decOv.style.animation = 'fadeOut 0.5s ease forwards'; setTimeout(() => { if (decOv.parentNode) decOv.parentNode.removeChild(decOv); }, 500); } }, 2000);
       break;
     }
     case 'game_end': {
@@ -264,7 +326,7 @@ function onRemoteCommand(cmd) {
       if (st.securityCount !== undefined) adjustArr(bs.ai.security, st.securityCount);
       // 自分の状態: セキュリティ等はstate_syncで上書きしない（ズレの原因になる）
       // 代わりにアタック等の個別コマンドで同期する
-      if (st.memory !== undefined) { bs.memory = st.memory; updateMemGauge(); }
+      if (st.memory !== undefined) { bs.memory = -st.memory; updateMemGauge(); }
       renderAll();
       break;
     }
@@ -297,16 +359,12 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_effectAnnounce': {
-      // 効果処理開始の演出（画像なし）
-      const efOv2 = document.createElement('div');
-      efOv2.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:55000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
-      const efBx2 = document.createElement('div');
-      efBx2.style.cssText = 'max-width:85%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid #ff00fb;border-radius:12px;box-shadow:0 0 30px #ff00fb44;text-align:center;';
-      efBx2.innerHTML = '<div style="color:#ff00fb;font-size:14px;font-weight:bold;">⚡ ' + cmd.cardName + ' — 効果発動！</div>';
-      efOv2.appendChild(efBx2);
-      document.body.appendChild(efOv2);
-      setTimeout(() => { if(efOv2.parentNode) efOv2.parentNode.removeChild(efOv2); }, 2000);
-      efOv2.onclick = () => { if(efOv2.parentNode) efOv2.parentNode.removeChild(efOv2); };
+      showRemoteEffectOverlay(cmd.cardName, cmd.effectText || '', '_remote-effect-announce');
+      break;
+    }
+    case 'fx_effectClose': {
+      const ea = document.getElementById('_remote-effect-announce');
+      if (ea && ea.parentNode) ea.parentNode.removeChild(ea);
       break;
     }
     case 'fx_deckOpen': {
@@ -362,6 +420,29 @@ function onRemoteCommand(cmd) {
         window._remoteDeckOpenOverlay.parentNode.removeChild(window._remoteDeckOpenOverlay);
         window._remoteDeckOpenOverlay = null;
       }
+      break;
+    }
+    case 'fx_effectResult': {
+      // 相手の効果結果（選択カード画像＋アクション）を表示
+      const erOv = document.createElement('div');
+      erOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:55500;display:flex;align-items:center;justify-content:center;cursor:pointer;animation:fadeIn 0.2s ease;';
+      const erBx = document.createElement('div');
+      erBx.style.cssText = 'text-align:center;max-width:85%;';
+      // カード画像
+      if (cmd.cardImg) {
+        erBx.innerHTML += '<div style="margin-bottom:12px;"><img src="' + cmd.cardImg + '" style="width:100px;height:140px;object-fit:cover;border-radius:8px;border:2px solid #ff00fb;box-shadow:0 0 20px #ff00fb44;"></div>';
+      }
+      // カード名＋アクション
+      const actionColors = { '登場！':'#ffaa00', '消滅！':'#ff4444', '手札に戻す！':'#00fbff', 'レスト！':'#ff9900', 'アクティブ！':'#00ff88', '進化！':'#aa66ff', 'リカバリー！':'#00ff88', 'DP強化！':'#00ff88', 'DP弱体化！':'#ff4444' };
+      const labelColor = actionColors[cmd.actionLabel] || '#ff00fb';
+      erBx.innerHTML += '<div style="color:#fff;font-size:14px;font-weight:bold;margin-bottom:8px;">「' + (cmd.cardName||'') + '」</div>';
+      erBx.innerHTML += '<div style="color:' + labelColor + ';font-size:18px;font-weight:bold;text-shadow:0 0 15px ' + labelColor + ';letter-spacing:3px;">' + (cmd.actionLabel||'') + '</div>';
+      erOv.appendChild(erBx);
+      document.body.appendChild(erOv);
+      let erDone = false;
+      function erFinish() { if (erDone) return; erDone = true; if (erOv.parentNode) erOv.parentNode.removeChild(erOv); }
+      setTimeout(() => { erOv.style.animation = 'fadeOut 0.3s ease forwards'; setTimeout(erFinish, 300); }, 2500);
+      erOv.onclick = erFinish;
       break;
     }
 
@@ -1448,6 +1529,7 @@ function doPlay(card, handIdx, slotIdx) {
       // メモリー消費（ターン終了判定はしない）
       bs.memory -= card.playCost;
       updateMemGauge();
+      sendMemoryUpdate(); // 相手に即時通知
       // メイン効果を発動
       checkAndTriggerEffect(card, '【メイン】', () => {
         bs.player.trash.push(card);
@@ -1455,11 +1537,21 @@ function doPlay(card, handIdx, slotIdx) {
         renderAll();
         // 効果完了後にターン終了判定
         if(bs.memory < 0) {
-          const over = Math.abs(bs.memory);
-          bs.memory = over; bs.isPlayerTurn = false;
-          updateMemGauge();
-          addLog('💾 メモリー'+over+'でAI側へ');
-          showYourTurn('自分のターン終了','','#555555', () => { setTimeout(() => aiTurn(),500); });
+          if (_onlineMode) {
+            bs.isPlayerTurn = false;
+            addLog('💾 メモリー'+Math.abs(bs.memory)+'で相手側へ');
+            updateMemGauge(); renderAll(true);
+            sendCommand({ type: 'endTurn', memory: bs.memory });
+            showYourTurn('自分のターン終了','','#555555', () => {
+              showYourTurn('相手のターン','🎮 相手の操作を待っています...','#ff00fb', () => {});
+            });
+          } else {
+            const over = Math.abs(bs.memory);
+            bs.memory = over; bs.isPlayerTurn = false;
+            updateMemGauge();
+            addLog('💾 メモリー'+over+'でAI側へ');
+            showYourTurn('自分のターン終了','','#555555', () => { setTimeout(() => aiTurn(),500); });
+          }
         }
       }, 'player');
     });
@@ -1953,11 +2045,22 @@ function resolveAttackDrop(cx, cy) {
     if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom) {
       if(!def.suspended&&!canHitActive) { addLog('🚨 アクティブ状態のデジモンにはアタックできません'); cancelAttack(); resolved=true; return; }
       resolved=true; _atkState=null;
-      if (_onlineMode) { sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: i, atkName: atkCard.name, defName: def.name }); }
-      const blockerIdx=bs.ai.battleArea.findIndex(c=>c&&c!==def&&!c.suspended&&hasEvoKeyword(c,'【ブロッカー】'));
-      if(blockerIdx!==-1) { const bl=bs.ai.battleArea[blockerIdx]; bl.suspended=true; addLog('🛡 「'+bl.name+'」がブロック！'); renderAll();
-        afterAtkEffect(atkCard,atkSlotIdx,()=>resolveBattle(atkCard,atkSlotIdx,bl,blockerIdx,'ai'));
-      } else { afterAtkEffect(atkCard,atkSlotIdx,()=>resolveBattle(atkCard,atkSlotIdx,def,i,'ai')); }
+      if (_onlineMode) {
+        sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: i, atkName: atkCard.name, defName: def.name, atkDp: atkCard.dp, atkImg: cardImg(atkCard) });
+        afterAtkEffect(atkCard, atkSlotIdx, () => {
+          waitForBlockResponse((resp) => {
+            if (!resp.blocked) {
+              resolveBattle(atkCard, atkSlotIdx, def, i, 'ai');
+            }
+            // blocked → defender handles battle, state_sync will update
+          });
+        });
+      } else {
+        const blockerIdx=bs.ai.battleArea.findIndex(c=>c&&c!==def&&!c.suspended&&hasEvoKeyword(c,'【ブロッカー】'));
+        if(blockerIdx!==-1) { const bl=bs.ai.battleArea[blockerIdx]; bl.suspended=true; addLog('🛡 「'+bl.name+'」がブロック！'); renderAll();
+          afterAtkEffect(atkCard,atkSlotIdx,()=>resolveBattle(atkCard,atkSlotIdx,bl,blockerIdx,'ai'));
+        } else { afterAtkEffect(atkCard,atkSlotIdx,()=>resolveBattle(atkCard,atkSlotIdx,def,i,'ai')); }
+      }
     }
   });
 
@@ -1965,7 +2068,19 @@ function resolveAttackDrop(cx, cy) {
   if(!resolved) {
     const secArea=document.getElementById('ai-sec-area');
     if(secArea) { const r=secArea.getBoundingClientRect();
-      if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom) { resolved=true; _atkState=null; if(_onlineMode){sendCommand({type:'attack_security',atkIdx:atkSlotIdx,atkName:atkCard.name});} afterAtkEffect(atkCard,atkSlotIdx,()=>{resolveSecurityCheck(atkCard,atkSlotIdx);}); }
+      if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom) {
+        resolved=true; _atkState=null;
+        if(_onlineMode){
+          sendCommand({type:'attack_security', atkIdx:atkSlotIdx, atkName:atkCard.name, atkDp:atkCard.dp, atkImg:cardImg(atkCard)});
+          afterAtkEffect(atkCard,atkSlotIdx,()=>{
+            waitForBlockResponse((resp) => {
+              if (!resp.blocked) { resolveSecurityCheck(atkCard,atkSlotIdx); }
+            });
+          });
+        } else {
+          afterAtkEffect(atkCard,atkSlotIdx,()=>{resolveSecurityCheck(atkCard,atkSlotIdx);});
+        }
+      }
     }
   }
 
@@ -1974,7 +2089,18 @@ function resolveAttackDrop(cx, cy) {
     const aiZone=document.querySelector('.ai-zone');
     if(aiZone) { const r=aiZone.getBoundingClientRect();
       if(cy>=r.top&&cy<=r.bottom) { resolved=true;
-        if(!bs.ai.battleArea.some(c=>c!==null)) { _atkState=null; afterAtkEffect(atkCard,atkSlotIdx,()=>resolveSecurityCheck(atkCard,atkSlotIdx)); }
+        if(!bs.ai.battleArea.some(c=>c!==null)) { _atkState=null;
+          if(_onlineMode){
+            sendCommand({type:'attack_security', atkIdx:atkSlotIdx, atkName:atkCard.name, atkDp:atkCard.dp, atkImg:cardImg(atkCard)});
+            afterAtkEffect(atkCard,atkSlotIdx,()=>{
+              waitForBlockResponse((resp) => {
+                if (!resp.blocked) { resolveSecurityCheck(atkCard,atkSlotIdx); }
+              });
+            });
+          } else {
+            afterAtkEffect(atkCard,atkSlotIdx,()=>resolveSecurityCheck(atkCard,atkSlotIdx));
+          }
+        }
         else { cancelAttack(); }
       }
     }
@@ -2312,8 +2438,7 @@ window.onEndTurn = function() {
   exitBreedPhase();
   if (_onlineMode) {
     // オンライン: メモリーを相手側3に設定してからコマンド送信
-    const isSecond = _onlineMyKey === 'player2';
-    bs.memory = isSecond ? -3 : 3; // 先攻終了→+3(後攻側)、後攻終了→-3(先攻側)
+    bs.memory = -3; // 相手側の3（負=相手側）
     sendCommand({ type: 'endTurn', memory: bs.memory });
     updateMemGauge();
     expireBuffs(bs, 'dur_this_turn');
@@ -2342,19 +2467,20 @@ window.onEndTurn = function() {
 };
 
 // ===== メモリー =====
-// bs.memory はゲージ上の位置。正(+)=プレイヤー側、負(-)=AI側、0=中立
+// bs.memory: 正(+)=自分側(左)、負(-)=相手側(右)、0=中立（全プレイヤー共通）
 function updateMemGauge() {
   const row=document.getElementById('memory-gauge-row'); if(!row) return;
   row.innerHTML='';
-  // オンライン後攻: 表示上の左右を反転（自分=赤側、相手=青側）
-  const isOnlineSecond = _onlineMode && _onlineMyKey === 'player2';
-  const displayMem = isOnlineSecond ? -bs.memory : bs.memory;
+  // 先攻=青(cyan/m-pl)、後攻=赤(magenta/m-ai)
+  // 先攻画面: 左=青(自分), 右=赤(相手) → 左=m-pl, 右=m-ai
+  // 後攻画面: 左=赤(自分), 右=青(相手) → 左=m-ai, 右=m-pl（クラス反転）
+  const isFirst = !_onlineMode || _onlineMyKey === 'player1';
   for(let i=MEM_MAX;i>=MEM_MIN;i--){
     const el=document.createElement('div'); el.className='m-cell'; el.innerText=i===0?'0':Math.abs(i);
     if(i===0) el.classList.add('m-zero');
-    else if(isOnlineSecond) { if(i>0) el.classList.add('m-ai'); else el.classList.add('m-pl'); } // 後攻: 左=赤(自分)、右=青(相手)
-    else { if(i>0) el.classList.add('m-pl'); else el.classList.add('m-ai'); }
-    if(i===displayMem) el.classList.add('m-active');
+    else if(i>0) el.classList.add(isFirst ? 'm-pl' : 'm-ai'); // 自分側（左）
+    else el.classList.add(isFirst ? 'm-ai' : 'm-pl'); // 相手側（右）
+    if(i===bs.memory) el.classList.add('m-active');
     row.appendChild(el);
   }
   const lbl=document.getElementById('m-turn-lbl');
@@ -2378,18 +2504,14 @@ function getOppTurnColor() {
   return _onlineMyKey === 'player1' ? '#ff00fb' : '#00fbff'; // 先攻の相手=ピンク、後攻の相手=青
 }
 
-// プレイヤーがコスト消費（メモリーが相手側へ動く）
+// プレイヤーがコスト消費（メモリーが右=相手側へ動く）
 function spendMemory(cost) {
   if(cost===0) { updateMemGauge(); return false; }
-  const isOnlineSecond = _onlineMode && _onlineMyKey === 'player2';
-  if (isOnlineSecond) {
-    bs.memory += cost; // 後攻: 正方向（先攻側）へ動く
-  } else {
-    bs.memory -= cost; // 先攻/AI対戦: 負方向（相手側）へ動く
-  }
+  bs.memory -= cost; // 常に負方向（相手側=右）へ動く
   updateMemGauge();
-  // メモリーが相手側に入ったらターン終了
-  const overflowed = isOnlineSecond ? bs.memory > 0 : bs.memory < 0;
+  sendMemoryUpdate(); // 相手に即時通知
+  // メモリーが相手側（負）に入ったらターン終了
+  const overflowed = bs.memory < 0;
   if(overflowed){
     addLog('💾 メモリー'+Math.abs(bs.memory)+'で相手側へ');
     bs.isPlayerTurn=false;
@@ -2595,6 +2717,144 @@ function aiAttackPhase(callback) {
     doAiSecurityCheck(atk, atkIdx, callback);
     }); // doAfterAtkEffect
   });
+}
+
+// ===== オンラインブロッカー処理 =====
+
+// 攻撃側: 相手のブロック応答を待つ
+function waitForBlockResponse(callback) {
+  const waitOv = document.createElement('div');
+  waitOv.id = '_block-wait-overlay';
+  waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
+  waitOv.innerHTML = '<div style="color:#ff00fb;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ff00fb;">⏳ 相手のブロック確認中...</div>';
+  document.body.appendChild(waitOv);
+
+  function onResponse(resp) {
+    if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
+    callback(resp);
+  }
+
+  if (_pendingBlockResponse !== null) {
+    const resp = _pendingBlockResponse;
+    _pendingBlockResponse = null;
+    onResponse(resp);
+  } else {
+    _pendingBlockCallback = onResponse;
+  }
+
+  // タイムアウト（30秒）
+  setTimeout(() => {
+    if (_pendingBlockCallback === onResponse) {
+      _pendingBlockCallback = null;
+      onResponse({ blocked: false });
+    }
+  }, 30000);
+}
+
+// 防御側: ブロッカーチェック（オンラインでアタックを受けた時）
+function checkOnlineBlock(cmd) {
+  if (!_onlineMode) return;
+  const blockerIndices = [];
+  bs.player.battleArea.forEach((c, i) => {
+    if (c && !c.suspended && (hasKeyword(c,'【ブロッカー】') || hasEvoKeyword(c,'【ブロッカー】'))) {
+      blockerIndices.push(i);
+    }
+  });
+
+  if (blockerIndices.length === 0) {
+    sendCommand({ type: 'block_response', blocked: false });
+    return;
+  }
+
+  const attacker = { name: cmd.atkName || '???', dp: cmd.atkDp || 0, imgSrc: cmd.atkImg || '' };
+
+  showBlockConfirm(bs.player.battleArea[blockerIndices[0]], attacker, (doBlock) => {
+    if (!doBlock) {
+      sendCommand({ type: 'block_response', blocked: false });
+      return;
+    }
+    if (blockerIndices.length === 1) {
+      resolveOnlineBlock(blockerIndices[0], cmd);
+    } else {
+      showBlockerSelection(blockerIndices, attacker, (selectedIdx) => {
+        if (selectedIdx !== null) {
+          resolveOnlineBlock(selectedIdx, cmd);
+        } else {
+          sendCommand({ type: 'block_response', blocked: false });
+        }
+      });
+    }
+  });
+}
+
+// 防御側: ブロックバトル解決
+function resolveOnlineBlock(blockerIdx, cmd) {
+  const blocker = bs.player.battleArea[blockerIdx];
+  const atkIdx = cmd.atkIdx;
+  const atk = bs.ai.battleArea[atkIdx];
+  if (!blocker || !atk) {
+    sendCommand({ type: 'block_response', blocked: false });
+    return;
+  }
+
+  blocker.suspended = true;
+  addLog('🛡 「' + blocker.name + '」でブロック！');
+  renderAll();
+
+  // バトル解決
+  addLog('⚔ 「' + atk.name + '」(' + atk.dp + 'DP) vs 「' + blocker.name + '」(' + blocker.dp + 'DP)');
+
+  // 攻撃側にもVS演出を送信
+  sendCommand({ type: 'fx_securityCheck', secName: blocker.name, secImg: cardImg(blocker), secDp: blocker.dp, secType: 'デジモン', atkName: atk.name, atkImg: cardImg(atk), atkDp: atk.dp, customLabel: 'BLOCK!' });
+
+  showSecurityCheck(blocker, atk, () => {
+    let atkResult = 'survived';
+    if (atk.dp === blocker.dp) {
+      // 両者消滅
+      atkResult = 'both_destroyed';
+      bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+      bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
+      renderAll();
+      sendCommand({ type: 'fx_destroy', cardName: blocker.name, cardImg: cardImg(blocker) });
+      sendCommand({ type: 'fx_destroy', cardName: atk.name, cardImg: cardImg(atk) });
+      sendCommand({ type: 'fx_battleResult', text: 'Win!!', color: '#00ff88', sub: '両者消滅！' });
+      showDestroyEffect(blocker, () => { showDestroyEffect(atk, () => {
+        showBattleResult('Lost...', '#ff4444', '両者消滅！', () => {
+          addLog('💥 両者消滅！');
+          sendCommand({ type: 'block_response', blocked: true, atkIdx: atkIdx, atkResult: atkResult });
+          sendStateSync();
+        });
+      }); });
+    } else if (atk.dp > blocker.dp) {
+      // ブロッカー撃破（攻撃者生存）
+      atkResult = 'survived';
+      bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
+      renderAll();
+      sendCommand({ type: 'fx_destroy', cardName: blocker.name, cardImg: cardImg(blocker) });
+      sendCommand({ type: 'fx_battleResult', text: 'Win!!', color: '#00ff88', sub: '「' + blocker.name + '」が撃破された' });
+      showDestroyEffect(blocker, () => {
+        showBattleResult('Lost...', '#ff4444', '「' + blocker.name + '」が撃破された', () => {
+          addLog('💥 「' + blocker.name + '」が撃破された');
+          sendCommand({ type: 'block_response', blocked: true, atkIdx: atkIdx, atkResult: atkResult });
+          sendStateSync();
+        });
+      });
+    } else {
+      // 攻撃者撃破
+      atkResult = 'destroyed';
+      bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+      renderAll();
+      sendCommand({ type: 'fx_destroy', cardName: atk.name, cardImg: cardImg(atk) });
+      sendCommand({ type: 'fx_battleResult', text: 'Lost...', color: '#ff4444', sub: '「' + atk.name + '」を撃破！' });
+      showDestroyEffect(atk, () => {
+        showBattleResult('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => {
+          addLog('💥 「' + atk.name + '」を撃破！');
+          sendCommand({ type: 'block_response', blocked: true, atkIdx: atkIdx, atkResult: atkResult });
+          sendStateSync();
+        });
+      });
+    }
+  }, 'BLOCK!');
 }
 
 // ブロック確認ダイアログ

@@ -72,9 +72,11 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   const plCards=parseDeck(playerDeckData), aiCards=parseDeck(aiDeckData);
   bs.player.tamaDeck=shuffle(plCards.filter(c => c.level==='2'));
   bs.player.deck=shuffle(plCards.filter(c => c.level!=='2'));
-  bs.ai.tamaDeck=shuffle(aiCards.filter(c => c.level==='2'));
-  bs.ai.deck=shuffle(aiCards.filter(c => c.level!=='2'));
+  bs.ai.tamaDeck=aiCards.filter(c => c.level==='2');
+  bs.ai.deck=aiCards.filter(c => c.level!=='2');
   bs.player.hand=bs.player.deck.splice(0,5);
+  // AI側デッキ: シャッフルせず理想的な順番に並べ直す
+  bs.ai.deck = sortAiDeck(bs.ai.deck);
   bs.ai.hand=bs.ai.deck.splice(0,5);
   bs.player.battleArea=[]; bs.ai.battleArea=[];
   bs.player.tamerArea=[]; bs.ai.tamerArea=[];
@@ -217,6 +219,39 @@ function parseDeck(deckData) {
 }
 
 function shuffle(a) { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+
+// AIデッキの並び順を最適化（初手→中盤→終盤の理想順）
+function sortAiDeck(cards) {
+  const lv3 = cards.filter(c => c.type==='デジモン' && parseInt(c.level)===3);
+  const lv4 = cards.filter(c => c.type==='デジモン' && parseInt(c.level)===4);
+  const lv5 = cards.filter(c => c.type==='デジモン' && parseInt(c.level)===5);
+  const lv6 = cards.filter(c => c.type==='デジモン' && parseInt(c.level)>=6);
+  const tamers = cards.filter(c => c.type==='テイマー');
+  const options = cards.filter(c => c.type==='オプション');
+
+  // 初手5枚: Lv3 x2, Lv4 x1, テイマー x1, Lv3 x1
+  const hand = [];
+  const pick = (arr, n) => { for(let i=0;i<n&&arr.length>0;i++) hand.push(arr.shift()); };
+  pick(lv3, 2);
+  pick(lv4, 1);
+  pick(tamers, 1);
+  pick(lv3, 1);
+  // 足りなければ残りから補充
+  while(hand.length < 5) {
+    if(lv3.length>0) hand.push(lv3.shift());
+    else if(lv4.length>0) hand.push(lv4.shift());
+    else if(options.length>0) hand.push(options.shift());
+    else if(tamers.length>0) hand.push(tamers.shift());
+    else if(lv5.length>0) hand.push(lv5.shift());
+    else if(lv6.length>0) hand.push(lv6.shift());
+    else break;
+  }
+
+  // 残りデッキ: Lv4→Lv3→Lv5→テイマー→オプション→Lv6 の順
+  const rest = [...lv4, ...lv3, ...lv5, ...tamers, ...options, ...lv6];
+
+  return [...hand, ...rest];
+}
 
 // ===== 効果判定ヘルパー =====
 function hasKeyword(card, keyword) { return card && card.effect && card.effect.includes(keyword); }

@@ -1124,6 +1124,13 @@ window.confirmEffect = function(yes) {
   }
   document.getElementById('effect-confirm-overlay').style.display = 'none';
   if (yes && _pendingEffectCard) {
+    // オンライン: 確認後にコマンド送信
+    if (_onlineMode) {
+      const slotIdx = bs.player.battleArea.indexOf(_pendingEffectCard);
+      const tamerIdx = bs.player.tamerArea.indexOf(_pendingEffectCard);
+      if (slotIdx !== -1) sendCommand({ type: 'activate_effect', slotIdx });
+      else if (tamerIdx !== -1) sendCommand({ type: 'activate_tamer_effect', tamerIdx });
+    }
     addLog('⚡ 「' + _pendingEffectCard.name + '」の効果を発動！');
     const cb = _pendingEffectCallback;
     _pendingEffectCard = null; _pendingEffectCallback = null;
@@ -1617,7 +1624,7 @@ function showTamerMenu(card, tamerIdx, el) {
 window.activateTamerEffect = function(tamerIdx) {
   hideLongpressMenu();
   const card=bs.player.tamerArea[tamerIdx]; if(!card) return;
-  if (_onlineMode) sendCommand({ type: 'activate_tamer_effect', tamerIdx });
+  // オンライン: 確認後に送信するので、ここでは送信しない
   _pendingEffectCard=card;
   _pendingEffectCallback=() => renderAll();
   document.getElementById('effect-confirm-name').innerText=card.name;
@@ -1652,7 +1659,7 @@ window.cancelLongpress = function(slotIdx) {
 window.activateEffect = function(slotIdx, effectSource) {
   hideLongpressMenu();
   const card=bs.player.battleArea[slotIdx]; if(!card) return;
-  if (_onlineMode) sendCommand({ type: 'activate_effect', slotIdx, effectSource });
+  // オンライン: 確認後に送信するので、ここでは送信しない
   if (!card._usedEffects) card._usedEffects = [];
 
   // 効果テキストとカード名を決定

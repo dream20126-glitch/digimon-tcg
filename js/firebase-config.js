@@ -28,7 +28,7 @@ export async function gasGet(action, params = {}) {
   const url = new URL(GAS_URL);
   url.searchParams.set('action', action);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString());
+  const res = await fetch(url.toString(), { redirect: 'follow' });
   return res.json();
 }
 
@@ -36,6 +36,7 @@ export async function gasGet(action, params = {}) {
 export async function gasPost(action, body = {}) {
   const res = await fetch(GAS_URL, {
     method: 'POST',
+    redirect: 'follow',
     headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({ action, ...body })
   });

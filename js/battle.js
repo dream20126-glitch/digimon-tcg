@@ -62,46 +62,33 @@ function onRemoteCommand(cmd) {
     case 'acceptHand': break; // 相手の手札確定も影響なし
 
     case 'play': {
-      // 相手がカードを登場（演出のみ、効果処理はstate_syncで反映）
-      const c = bs.ai.hand[cmd.handIdx];
-      if (!c) break;
-      const cardName = c.name;
-      const cardType = c.type;
-      if (cardType === 'オプション') {
-        addLog('🎮 相手が「' + cardName + '」を使用！');
-        showPlayEffect(c, () => {}); // 演出のみ。状態はstate_syncで反映
-      } else if (cardType === 'テイマー') {
-        addLog('🎮 相手が「' + cardName + '」を登場！');
-        showPlayEffect(c, () => {});
-      } else {
-        addLog('🎮 相手が「' + cardName + '」を登場！');
-        showPlayEffect(c, () => {});
-      }
+      const cardName = cmd.cardName || '???';
+      const dummyCard = { name: cardName, imgSrc: cmd.cardImg || '', type: cmd.cardType || '' };
+      addLog('🎮 相手が「' + cardName + '」を' + (cmd.cardType === 'オプション' ? '使用！' : '登場！'));
+      showPlayEffect(dummyCard, () => {});
       break;
     }
 
     case 'evolve': {
-      // 相手がバトルエリアで進化（演出のみ）
-      const evoCard = bs.ai.hand[cmd.handIdx];
-      const base = bs.ai.battleArea[cmd.slotIdx];
-      if (!evoCard || !base) break;
-      addLog('🎮 相手が「' + base.name + '」→「' + evoCard.name + '」に進化！');
-      showEvolveEffect(evoCard.evolveCost || 0, base.name, base, evoCard, () => {});
+      const dummyEvolved = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '', level: '', dp: 0 };
+      const dummyBase = { name: cmd.baseName || '???', imgSrc: '' };
+      addLog('🎮 相手が「' + cmd.baseName + '」→「' + cmd.cardName + '」に進化！');
+      showEvolveEffect(cmd.evolveCost || 0, cmd.baseName || '', dummyBase, dummyEvolved, () => {});
       break;
     }
 
     case 'attack_security': {
-      const atkName = bs.ai.battleArea[cmd.atkIdx]?.name || '???';
+      const atkName = cmd.atkName || bs.ai.battleArea[cmd.atkIdx]?.name || '???';
       addLog('🎮 相手の「' + atkName + '」でセキュリティアタック！');
       showYourTurn('⚔ 相手アタック！', '「' + atkName + '」→ セキュリティ', '#ff4444', () => {});
       break;
     }
 
     case 'attack_digimon': {
-      const atkName2 = bs.ai.battleArea[cmd.atkIdx]?.name || '???';
-      const defName = bs.player.battleArea[cmd.defIdx]?.name || '???';
-      addLog('🎮 相手の「' + atkName2 + '」が「' + defName + '」にアタック！');
-      showYourTurn('⚔ 相手アタック！', '「' + atkName2 + '」→「' + defName + '」', '#ff4444', () => {});
+      const atkName2 = cmd.atkName || bs.ai.battleArea[cmd.atkIdx]?.name || '???';
+      const defName2 = cmd.defName || bs.player.battleArea[cmd.defIdx]?.name || '???';
+      addLog('🎮 相手の「' + atkName2 + '」が「' + defName2 + '」にアタック！');
+      showYourTurn('⚔ 相手アタック！', '「' + atkName2 + '」→「' + defName2 + '」', '#ff4444', () => {});
       break;
     }
 
@@ -133,20 +120,24 @@ function onRemoteCommand(cmd) {
     }
 
     case 'hatch': {
-      addLog('🎮 相手がデジタマを孵化');
-      showPhaseAnnounce('🥚 相手が孵化！', '#ff9900', () => {});
+      const hatchCard = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '' };
+      addLog('🎮 相手が「' + hatchCard.name + '」を孵化！');
+      showHatchEffect(hatchCard, () => {});
       break;
     }
 
     case 'breed_evolve': {
-      addLog('🎮 相手が育成エリアで進化');
-      showPhaseAnnounce('⬆ 相手が育成で進化！', '#00ff88', () => {});
+      const dummyEvo = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '', level: '', dp: 0 };
+      const dummyOld = { name: cmd.baseName || '???', imgSrc: '' };
+      addLog('🎮 相手が育成で「' + cmd.baseName + '」→「' + cmd.cardName + '」に進化！');
+      showEvolveEffect(cmd.evolveCost || 0, cmd.baseName || '', dummyOld, dummyEvo, () => {});
       break;
     }
 
     case 'breed_move': {
-      addLog('🎮 相手がバトルエリアへ移動');
-      showPhaseAnnounce('🐾 相手がバトルエリアへ移動！', '#00fbff', () => {});
+      const moveCard = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '' };
+      addLog('🎮 相手が「' + moveCard.name + '」をバトルエリアへ移動！');
+      showPlayEffect(moveCard, () => {});
       break;
     }
 
@@ -1253,7 +1244,7 @@ window.skipBreedPhase = function() {
 function doPlay(card, handIdx, slotIdx) {
   if(bs.phase!=='main') return;
   if(card.level==='2'){addLog('🚨 デジタマはバトルエリアに出せません');return;}
-  if (_onlineMode) { sendCommand({ type: 'play', handIdx, slotIdx }); setTimeout(sendStateSync, 1000); }
+  if (_onlineMode) { sendCommand({ type: 'play', handIdx, slotIdx, cardName: card.name, cardType: card.type, cardImg: card.imgSrc||'' }); }
   if(card.playCost===null){addLog('🚨 「'+card.name+'」は進化専用カードです');return;}
 
   // オプションカード → 使用（バトルエリアに残らない）→ 必ずトラッシュへ
@@ -1361,7 +1352,7 @@ function canEvolveOnto(evoCard, baseCard) {
 
 function doEvolve(card, handIdx, slotIdx) {
   if(bs.phase!=='main') return;
-  if (_onlineMode) { sendCommand({ type: 'evolve', handIdx, slotIdx }); setTimeout(sendStateSync, 1000); }
+  if (_onlineMode) { sendCommand({ type: 'evolve', handIdx, slotIdx, cardName: card.name, baseName: bs.player.battleArea[slotIdx]?.name||'', cardImg: card.imgSrc||'', evolveCost: card.evolveCost||0 }); }
   const base=bs.player.battleArea[slotIdx]; if(!base) return;
   if(card.evolveCost===null){addLog('🚨 「'+card.name+'」は進化できません‼');return;}
   // 進化条件チェック
@@ -1385,7 +1376,7 @@ function doEvolve(card, handIdx, slotIdx) {
 
 function doEvolveIku(card, handIdx) {
   if(bs.phase!=='main') return;
-  if (_onlineMode) { sendCommand({ type: 'breed_evolve', handIdx }); setTimeout(sendStateSync, 1000); }
+  if (_onlineMode) { sendCommand({ type: 'breed_evolve', handIdx, cardName: card.name, baseName: bs.player.ikusei?.name||'', cardImg: card.imgSrc||'', evolveCost: card.evolveCost||0 }); }
   const base=bs.player.ikusei; if(!base) return;
   if(card.evolveCost===null){addLog('🚨 「'+card.name+'」は進化できません‼');return;}
   if(!canEvolveOnto(card, base)){addLog('🚨 進化条件を満たしていません‼（'+card.evolveCond+'）');return;}
@@ -1767,7 +1758,7 @@ function resolveAttackDrop(cx, cy) {
     if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom) {
       if(!def.suspended&&!canHitActive) { addLog('🚨 アクティブ状態のデジモンにはアタックできません'); cancelAttack(); resolved=true; return; }
       resolved=true; _atkState=null;
-      if (_onlineMode) { sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: i }); setTimeout(sendStateSync, 3000); }
+      if (_onlineMode) { sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: i, atkName: atkCard.name, defName: def.name }); }
       const blockerIdx=bs.ai.battleArea.findIndex(c=>c&&c!==def&&!c.suspended&&hasEvoKeyword(c,'【ブロッカー】'));
       if(blockerIdx!==-1) { const bl=bs.ai.battleArea[blockerIdx]; bl.suspended=true; addLog('🛡 「'+bl.name+'」がブロック！'); renderAll();
         afterAtkEffect(atkCard,atkSlotIdx,()=>resolveBattle(atkCard,atkSlotIdx,bl,blockerIdx,'ai'));
@@ -1779,7 +1770,7 @@ function resolveAttackDrop(cx, cy) {
   if(!resolved) {
     const secArea=document.getElementById('ai-sec-area');
     if(secArea) { const r=secArea.getBoundingClientRect();
-      if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom) { resolved=true; _atkState=null; if(_onlineMode){sendCommand({type:'attack_security',atkIdx:atkSlotIdx});} afterAtkEffect(atkCard,atkSlotIdx,()=>{resolveSecurityCheck(atkCard,atkSlotIdx); if(_onlineMode)setTimeout(sendStateSync,2000);}); }
+      if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom) { resolved=true; _atkState=null; if(_onlineMode){sendCommand({type:'attack_security',atkIdx:atkSlotIdx,atkName:atkCard.name});} afterAtkEffect(atkCard,atkSlotIdx,()=>{resolveSecurityCheck(atkCard,atkSlotIdx);}); }
     }
   }
 
@@ -3116,10 +3107,16 @@ function applyBackImages() {
   if(!bs.player.ikusei) s('pl-tama-back',tamaBackUrl);
 }
 
+let _syncTimer = null;
 function renderAll(force) {
   // 対象選択中は再描画を抑制（枠が消えるのを防ぐ）。forceで強制可能
   if (!force && isTargetSelecting()) return;
   renderSecurity(); renderBattleRows(); renderTamerRows(); renderIkusei(); renderHand(); updateCounts(); updateActionBtns(); updateMemGauge(); updatePhaseBadge(); applyBackImages();
+  // オンライン: 自分のターン中は定期的に状態同期（デバウンス）
+  if (_onlineMode && bs.isPlayerTurn) {
+    if (_syncTimer) clearTimeout(_syncTimer);
+    _syncTimer = setTimeout(sendStateSync, 500);
+  }
 }
 
 function renderSecurity() {
@@ -3259,7 +3256,7 @@ function renderIkusei() {
           const nc=bs.player.tamaDeck.splice(0,1)[0];
           bs.player.ikusei=nc;
           addLog('🥚 「'+nc.name+'」を孵化！');
-          if (_onlineMode) { sendCommand({ type: 'hatch' }); setTimeout(sendStateSync, 500); }
+          if (_onlineMode) { sendCommand({ type: 'hatch', cardName: nc.name, cardImg: nc.imgSrc||'' }); }
           renderAll();
           showHatchEffect(nc, () => breedActionDone());
         };
@@ -3279,7 +3276,7 @@ function attachIkuDrag(iku) {
     if(slot===-1) { slot=bs.player.battleArea.length; bs.player.battleArea.push(null); }
     bs.player.battleArea[slot]=bs.player.ikusei; bs.player.ikusei=null;
     addLog('🐾 「'+bs.player.battleArea[slot].name+'」をバトルエリアへ移動！');
-    if (_onlineMode) { sendCommand({ type: 'breed_move' }); setTimeout(sendStateSync, 500); }
+    if (_onlineMode) { sendCommand({ type: 'breed_move', cardName: bs.player.battleArea[slot]?.name||'', cardImg: bs.player.battleArea[slot]?.imgSrc||'' }); }
     applyPermanentEffects(bs, 'player', makeEffectContext(null, 'player'));
     breedActionDone();
   }

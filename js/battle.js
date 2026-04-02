@@ -296,13 +296,14 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   if (oppLabel) oppLabel.innerText = _onlineMode ? '🎮 相手プレイヤー' : '🤖 デジモンマスター';
   const plCards=parseDeck(playerDeckData), aiCards=parseDeck(aiDeckData);
   if (_onlineMode) {
-    // オンライン: ルームIDをシードにして両クライアントで同じ結果にする
-    const seed1 = strToSeed(_onlineRoomId + '_pl');
-    const seed2 = strToSeed(_onlineRoomId + '_ai');
-    bs.player.tamaDeck = seededShuffle(plCards.filter(c => c.level==='2'), seed1);
-    bs.player.deck = seededShuffle(plCards.filter(c => c.level!=='2'), seed1 + 1);
-    bs.ai.tamaDeck = seededShuffle(aiCards.filter(c => c.level==='2'), seed2);
-    bs.ai.deck = seededShuffle(aiCards.filter(c => c.level!=='2'), seed2 + 1);
+    // オンライン: デッキ所有者のキーでシードを生成（両クライアントで同じ順番に）
+    const oppKey = _onlineMyKey === 'player1' ? 'player2' : 'player1';
+    const mySeed = strToSeed(_onlineRoomId + '_' + _onlineMyKey);
+    const oppSeed = strToSeed(_onlineRoomId + '_' + oppKey);
+    bs.player.tamaDeck = seededShuffle(plCards.filter(c => c.level==='2'), mySeed);
+    bs.player.deck = seededShuffle(plCards.filter(c => c.level!=='2'), mySeed + 1);
+    bs.ai.tamaDeck = seededShuffle(aiCards.filter(c => c.level==='2'), oppSeed);
+    bs.ai.deck = seededShuffle(aiCards.filter(c => c.level!=='2'), oppSeed + 1);
   } else {
     bs.player.tamaDeck = shuffle(plCards.filter(c => c.level==='2'));
     bs.player.deck = shuffle(plCards.filter(c => c.level!=='2'));

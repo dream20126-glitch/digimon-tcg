@@ -99,6 +99,7 @@ function onRemoteCommand(cmd) {
     case 'endTurn': {
       // 相手がターン終了 → 自分のターン開始
       bs.memory = 3;
+      bs.isFirstTurn = false; // 相手が1ターン終えたので先攻1ターン目は終了
       updateMemGauge();
       expireBuffs(bs, 'dur_this_turn');
       renderAll();
@@ -124,6 +125,11 @@ function onRemoteCommand(cmd) {
     }
 
     case 'hatch': {
+      // 育成エリアに即反映
+      if (bs.ai.tamaDeck.length > 0) {
+        bs.ai.ikusei = bs.ai.tamaDeck.splice(0,1)[0];
+      }
+      renderAll();
       const hatchCard = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '' };
       addLog('🎮 相手が「' + hatchCard.name + '」を孵化！');
       showHatchEffect(hatchCard, () => {});
@@ -131,6 +137,18 @@ function onRemoteCommand(cmd) {
     }
 
     case 'breed_evolve': {
+      // 育成エリアで即反映
+      const evoCard = bs.ai.hand[cmd.handIdx];
+      if (evoCard && bs.ai.ikusei) {
+        bs.ai.hand.splice(cmd.handIdx, 1);
+        const old = bs.ai.ikusei;
+        evoCard.stack = [...(old.stack||[]), old];
+        evoCard.suspended = old.suspended;
+        evoCard.baseDp = parseInt(evoCard.dp)||0;
+        evoCard.dpModifier = 0; evoCard.buffs = [];
+        bs.ai.ikusei = evoCard;
+      }
+      renderAll();
       const dummyEvo = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '', level: '', dp: 0 };
       const dummyOld = { name: cmd.baseName || '???', imgSrc: '' };
       addLog('🎮 相手が育成で「' + cmd.baseName + '」→「' + cmd.cardName + '」に進化！');
@@ -139,8 +157,16 @@ function onRemoteCommand(cmd) {
     }
 
     case 'breed_move': {
+      // 育成エリアをクリアしてバトルエリアに追加（state_sync前に即反映）
+      if (bs.ai.ikusei) {
+        let slot = bs.ai.battleArea.findIndex(s => s===null);
+        if (slot===-1) { slot=bs.ai.battleArea.length; bs.ai.battleArea.push(null); }
+        bs.ai.battleArea[slot] = bs.ai.ikusei;
+        bs.ai.ikusei = null;
+      }
+      renderAll();
       addLog('🎮 相手が「' + (cmd.cardName||'???') + '」をバトルエリアへ移動！');
-      showPhaseAnnounce('🐾 ' + (cmd.cardName||'') + ' → バトルエリア', '#00fbff', () => {});
+      showYourTurn('🐾 バトルエリアへ移動', cmd.cardName||'', '#00fbff', () => {});
       break;
     }
 
@@ -2252,7 +2278,7 @@ function updateMemGauge() {
   }
   const lbl=document.getElementById('m-turn-lbl');
   if(lbl){lbl.innerText=bs.isPlayerTurn?'あなたのターン':(_onlineMode?'相手のターン':'AIのターン');lbl.className='m-turn-label '+(bs.isPlayerTurn?'pl':'ai');}
-  document.getElementById('m-val')&&(document.getElementById('m-val').innerText=bs.memory);
+  const mValEl = document.getElementById('m-val'); if(mValEl) mValEl.style.display='none';
   document.getElementById('t-count')&&(document.getElementById('t-count').innerText=bs.turn);
 }
 

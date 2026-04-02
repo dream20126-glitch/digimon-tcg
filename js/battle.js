@@ -475,9 +475,18 @@ window.acceptHand = function() {
   // セキュリティ配置演出
   animateSecuritySet(() => {
     addLog('🛡 セキュリティセット完了！');
-    showYourTurn('自分のターン開始', '【先攻プレイヤー】', '#00fbff', () => {
-      checkTurnStartEffects('player', () => { applyPermanentEffects(bs, 'player', makeEffectContext(null,'player')); applyPermanentEffects(bs, 'ai', makeEffectContext(null,'ai')); renderAll(); setTimeout(() => startPhase('unsuspend'), 300); });
-    });
+    if (_onlineMode && !bs.isPlayerTurn) {
+      // オンライン後攻: 相手のターンを待つ
+      showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {
+        addLog('⏳ 相手のターン（操作待ち）');
+        renderAll();
+      });
+    } else {
+      // 先攻 or AI対戦: 自分のターン開始
+      showYourTurn('自分のターン開始', '【先攻プレイヤー】', '#00fbff', () => {
+        checkTurnStartEffects('player', () => { applyPermanentEffects(bs, 'player', makeEffectContext(null,'player')); applyPermanentEffects(bs, 'ai', makeEffectContext(null,'ai')); renderAll(); setTimeout(() => startPhase('unsuspend'), 300); });
+      });
+    }
   });
 };
 

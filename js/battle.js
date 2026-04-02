@@ -155,9 +155,16 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_confirmClose': {
-      // 相手が確認ダイアログを閉じた → 表示を消す
       const remOv = document.getElementById('_remote-confirm-overlay');
       if (remOv && remOv.parentNode) remOv.parentNode.removeChild(remOv);
+      break;
+    }
+    case 'game_end': {
+      if (cmd.result === 'defeat') {
+        showGameEndOverlay('😢 敗北...', 'defeat', () => { cleanupBattle(); showScreen(_onlineMode ? 'room-entrance-screen' : 'tutorial-screen'); });
+      } else {
+        showGameEndOverlay('🎉 勝利！', 'victory', () => { cleanupBattle(); showScreen(_onlineMode ? 'room-entrance-screen' : 'tutorial-screen'); });
+      }
       break;
     }
 
@@ -237,7 +244,7 @@ function onRemoteCommand(cmd) {
       if (st.securityCount !== undefined) adjustArr(bs.ai.security, st.securityCount);
       // 自分の状態: セキュリティ等はstate_syncで上書きしない（ズレの原因になる）
       // 代わりにアタック等の個別コマンドで同期する
-      if (st.memory !== undefined) { bs.memory = st.memory; updateMemGauge(); }
+      if (st.memory !== undefined) { bs.memory = -st.memory; updateMemGauge(); }
       renderAll();
       break;
     }
@@ -2977,10 +2984,12 @@ function cleanupBattle() {
 }
 
 function battleVictory() {
-  showGameEndOverlay('🎉 勝利！', 'victory', () => { cleanupBattle(); showScreen('tutorial-screen'); });
+  if (_onlineMode) sendCommand({ type: 'game_end', result: 'defeat' }); // 相手は敗北
+  showGameEndOverlay('🎉 勝利！', 'victory', () => { cleanupBattle(); showScreen(_onlineMode ? 'room-entrance-screen' : 'tutorial-screen'); });
 }
 function battleDefeat() {
-  showGameEndOverlay('😢 敗北...', 'defeat', () => { cleanupBattle(); showScreen('tutorial-screen'); });
+  if (_onlineMode) sendCommand({ type: 'game_end', result: 'victory' }); // 相手は勝利
+  showGameEndOverlay('😢 敗北...', 'defeat', () => { cleanupBattle(); showScreen(_onlineMode ? 'room-entrance-screen' : 'tutorial-screen'); });
 }
 
 // ===== ダイレクトアタック演出（セキュリティチェックと同じレイアウト） =====

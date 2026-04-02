@@ -2344,7 +2344,7 @@ function aiPlayAuto(callback) {
   );
 
   if(playable.length > 0) {
-    playable.sort((a,b) => (parseInt(b.level)||0) - (parseInt(a.level)||0) || b.playCost - a.playCost);
+    playable.sort((a,b) => a.playCost - b.playCost);
     const c = playable[0];
     const handIdx = bs.ai.hand.indexOf(c);
     aiPlayCard(c, handIdx, (turnEnded) => {

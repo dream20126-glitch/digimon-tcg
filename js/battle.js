@@ -100,6 +100,15 @@ function onRemoteCommand(cmd) {
     case 'mulligan': break;
     case 'acceptHand': break;
 
+    case 'waiting_close': {
+      // 相手側の待機系オーバーレイをすべて閉じる（ブロック確認中、効果処理中など）
+      ['_block-wait-overlay', '_remote-effect-announce', '_remote-confirm-overlay'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+      });
+      break;
+    }
+
     case 'memory_update': {
       // 相手のメモリー変更を即時反映（符号反転）
       if (cmd.memory !== undefined) { bs.memory = -cmd.memory; updateMemGauge(); }
@@ -2801,6 +2810,9 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   blocker.suspended = true;
   addLog('🛡 「' + blocker.name + '」でブロック！');
   renderAll();
+
+  // 攻撃側の「ブロック確認中」表示を即座に消す
+  sendCommand({ type: 'waiting_close' });
 
   // バトル解決
   addLog('⚔ 「' + atk.name + '」(' + atk.dp + 'DP) vs 「' + blocker.name + '」(' + blocker.dp + 'DP)');

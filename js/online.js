@@ -152,15 +152,12 @@ window.enterBattle = async function() {
     const oppKey = myPlayerKey === 'player1' ? 'player2' : 'player1';
     const oppDeckName = roomData[oppKey]?.deckName;
 
-    // 既存のgetDecks APIでデッキ一覧を取得し、名前で検索
-    const allDecks = await gasGet('getDecks', { pw: currentSessionPassword });
-    if (!allDecks || !Array.isArray(allDecks)) { alert('デッキ一覧の取得に失敗しました'); return; }
+    // Firebaseからデッキリストを取得（準備完了時に保存済み）
+    const myDeckList = roomData[myPlayerKey]?.deckList;
+    const oppDeckList = roomData[oppKey]?.deckList;
 
-    const myDeck = allDecks.find(d => d.name === myDeckName);
-    const oppDeck = allDecks.find(d => d.name === oppDeckName);
-
-    if (!myDeck || !myDeck.list) { alert('自分のデッキが見つかりません: ' + myDeckName); return; }
-    if (!oppDeck || !oppDeck.list) { alert('相手のデッキが見つかりません: ' + oppDeckName); return; }
+    if (!myDeckList) { alert('自分のデッキデータが見つかりません'); return; }
+    if (!oppDeckList) { alert('相手のデッキデータが見つかりません'); return; }
 
     // 先攻判定
     const playerFirst = roomData.diceResult?.winner === myPlayerKey;
@@ -168,7 +165,7 @@ window.enterBattle = async function() {
     // バトル開始
     showScreen('battle-screen');
     if (typeof startBattleGame === 'function') {
-      startBattleGame({ list: myDeck.list }, { list: oppDeck.list }, playerFirst);
+      startBattleGame({ list: myDeckList }, { list: oppDeckList }, playerFirst);
     }
   } catch(e) {
     console.error('バトル開始エラー:', e);
@@ -271,11 +268,17 @@ async function loadDeckList() {
   } catch (e) { select.innerHTML = '<option value="">デッキ読み込み失敗</option>'; console.error(e); }
 }
 
-window.setPlayerReady = function() {
+window.setPlayerReady = async function() {
   const deckName = document.getElementById('battle-deck-select').value;
   if (!deckName) return alert('デッキを選択してください');
-  update(ref(rtdb, `rooms/${currentRoomId}/${myPlayerKey}`), { ready: true, deckName });
-  document.getElementById('deck-select-area').innerHTML = `<p style="color:var(--main-cyan); font-weight:bold; margin:0;">デッキ確定: ${deckName}</p><p style="color:#aaa; font-size:12px; margin-top:8px;">相手の準備を待っています...</p>`;
+  // デッキのカードリストを取得してFirebaseに保存
+  try {
+    const decks = await gasGet('getDecks', { pw: currentSessionPassword });
+    const deck = decks.find(d => d.name === deckName);
+    if (!deck || !deck.list) { alert('デッキデータの取得に失敗しました'); return; }
+    update(ref(rtdb, `rooms/${currentRoomId}/${myPlayerKey}`), { ready: true, deckName, deckList: deck.list });
+    document.getElementById('deck-select-area').innerHTML = `<p style="color:var(--main-cyan); font-weight:bold; margin:0;">デッキ確定: ${deckName}</p><p style="color:#aaa; font-size:12px; margin-top:8px;">相手の準備を待っています...</p>`;
+  } catch(e) { alert('エラー: ' + e.message); }
 };
 
 window.leaveRoom = function() {

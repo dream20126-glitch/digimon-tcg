@@ -243,10 +243,12 @@ function updateLobbyUI(data) {
   const d1 = p1.dice || 0, d2 = p2.dice || 0;
   if (d1 > 0 && d2 > 0 && !diceJudged) { diceJudged = true; playDiceAnimation(d1, d2, data); }
   if (data.phase === 'result' && data.diceResult) {
+    console.log('[DICE] phase=result, winner:', data.diceResult.winner, 'myKey:', myPlayerKey);
     const msg = document.getElementById('dice-msg');
     if (msg) { msg.style.color = '#00ff88'; msg.innerText = data.diceResult.winner === myPlayerKey ? '🎉 あなたが先攻です！' : '相手が先攻です'; }
     showBattleStartButton();
   }
+  console.log('[LOBBY] phase:', data.phase, 'diceResult:', JSON.stringify(data.diceResult || null));
 }
 
 window.startGame = function() { update(ref(rtdb, `rooms/${currentRoomId}`), { gameStarted: true }); };

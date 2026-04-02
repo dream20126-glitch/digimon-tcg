@@ -124,6 +124,7 @@ function startOnlineListener() {
 
 // オンラインバトル開始用
 window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFirst, roomId, myKey) {
+  console.log('[ONLINE-START] playerFirst:', playerFirst, 'roomId:', roomId, 'myKey:', myKey);
   _onlineMode = true;
   _onlineRoomId = roomId;
   _onlineMyKey = myKey;
@@ -468,6 +469,7 @@ function renderMulliganPreview(animate) {
 }
 
 window.acceptHand = function() {
+  console.log('[ACCEPT] _onlineMode:', _onlineMode, 'isPlayerTurn:', bs.isPlayerTurn, 'myKey:', _onlineMyKey);
   document.getElementById('mulligan-overlay').style.display='none';
   bs.player.security=bs.player.deck.splice(0,5);
   bs.ai.security=bs.ai.deck.splice(0,5);

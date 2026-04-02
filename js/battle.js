@@ -291,10 +291,20 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   const oppLabel = document.getElementById('opponent-name-label');
   if (oppLabel) oppLabel.innerText = _onlineMode ? '🎮 相手プレイヤー' : '🤖 デジモンマスター';
   const plCards=parseDeck(playerDeckData), aiCards=parseDeck(aiDeckData);
-  bs.player.tamaDeck=shuffle(plCards.filter(c => c.level==='2'));
-  bs.player.deck=shuffle(plCards.filter(c => c.level!=='2'));
-  bs.ai.tamaDeck=_onlineMode ? shuffle(aiCards.filter(c => c.level==='2')) : aiCards.filter(c => c.level==='2');
-  bs.ai.deck=_onlineMode ? shuffle(aiCards.filter(c => c.level!=='2')) : aiCards.filter(c => c.level!=='2');
+  if (_onlineMode) {
+    // オンライン: ルームIDをシードにして両クライアントで同じ結果にする
+    const seed1 = strToSeed(_onlineRoomId + '_pl');
+    const seed2 = strToSeed(_onlineRoomId + '_ai');
+    bs.player.tamaDeck = seededShuffle(plCards.filter(c => c.level==='2'), seed1);
+    bs.player.deck = seededShuffle(plCards.filter(c => c.level!=='2'), seed1 + 1);
+    bs.ai.tamaDeck = seededShuffle(aiCards.filter(c => c.level==='2'), seed2);
+    bs.ai.deck = seededShuffle(aiCards.filter(c => c.level!=='2'), seed2 + 1);
+  } else {
+    bs.player.tamaDeck = shuffle(plCards.filter(c => c.level==='2'));
+    bs.player.deck = shuffle(plCards.filter(c => c.level!=='2'));
+    bs.ai.tamaDeck = aiCards.filter(c => c.level==='2');
+    bs.ai.deck = aiCards.filter(c => c.level!=='2');
+  }
   bs.player.hand=bs.player.deck.splice(0,5);
   if (!_onlineMode) {
     // AI側デッキ: シャッフルせず理想的な順番に並べ直す
@@ -442,6 +452,15 @@ function parseDeck(deckData) {
 }
 
 function shuffle(a) { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+
+// シード付きシャッフル（オンライン用: 同じシードなら同じ結果）
+function seededShuffle(a, seed) {
+  let s = Math.abs(seed) || 1;
+  function rand() { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(rand()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+function strToSeed(str) { let h=0; for(let i=0;i<str.length;i++){h=((h<<5)-h)+str.charCodeAt(i); h|=0;} return h; }
 
 // AIデッキの並び順を最適化（セキュリティ5枚→初手5枚→残りデッキ）
 function sortAiDeckWithSecurity(cards) {
@@ -1834,9 +1853,14 @@ function checkPendingTurnEnd() {
     expireBuffs(bs, 'permanent', 'player');
     updateMemGauge();
     renderAll(true);
-    addLog('💾 メモリーが相手側へ → AIのターン');
+    addLog('💾 メモリーが相手側へ → ' + (_onlineMode ? '相手のターン' : 'AIのターン'));
     showYourTurn('自分のターン終了', '', '#555555', () => {
-      setTimeout(() => aiTurn(), 500);
+      if (_onlineMode) {
+        sendCommand({ type: 'endTurn' });
+        showYourTurn('相手のターン','🎮 相手の操作を待っています...','#ff00fb', () => {});
+      } else {
+        setTimeout(() => aiTurn(), 500);
+      }
     });
   }
 }
@@ -2106,7 +2130,7 @@ function updateMemGauge() {
     row.appendChild(el);
   }
   const lbl=document.getElementById('m-turn-lbl');
-  if(lbl){lbl.innerText=bs.isPlayerTurn?'あなたのターン':'AIのターン';lbl.className='m-turn-label '+(bs.isPlayerTurn?'pl':'ai');}
+  if(lbl){lbl.innerText=bs.isPlayerTurn?'あなたのターン':(_onlineMode?'相手のターン':'AIのターン');lbl.className='m-turn-label '+(bs.isPlayerTurn?'pl':'ai');}
   document.getElementById('m-val')&&(document.getElementById('m-val').innerText=bs.memory);
   document.getElementById('t-count')&&(document.getElementById('t-count').innerText=bs.turn);
 }
@@ -2118,13 +2142,20 @@ function spendMemory(cost) {
   updateMemGauge();
   // メモリーがAI側(負)に入ったらターン終了
   if(bs.memory < 0){
-    addLog('💾 メモリー'+Math.abs(bs.memory)+'でAI側へ → AIのターン');
+    addLog('💾 メモリー'+Math.abs(bs.memory)+'で相手側へ');
     bs.isPlayerTurn=false;
     expireBuffs(bs, 'dur_this_turn');
     expireBuffs(bs, 'permanent', 'player');
     renderAll(true);
     checkTurnEndEffects(() => {
-      showYourTurn('自分のターン終了','','#555555', () => { setTimeout(() => aiTurn(),500); });
+      showYourTurn('自分のターン終了','','#555555', () => {
+        if (_onlineMode) {
+          sendCommand({ type: 'endTurn' });
+          showYourTurn('相手のターン','🎮 相手の操作を待っています...','#ff00fb', () => {});
+        } else {
+          setTimeout(() => aiTurn(),500);
+        }
+      });
     });
     return true;
   }
@@ -2142,6 +2173,7 @@ function aiSpendMemory(cost) {
 // ===== AI =====
 function aiTurn() {
   if (bs._battleAborted) return;
+  if (_onlineMode) return; // オンライン時はAI不使用（相手プレイヤーの操作を待つ）
   bs.turn++;
   showYourTurn('相手のターン開始','🤖 デジモンマスター','#ff00fb', () => {
     checkTurnStartEffects('ai', () => {
@@ -2247,6 +2279,7 @@ function aiPhaseMain() {
 // AIアタック（アクティブなカードで順番にアタック）
 function aiAttackPhase(callback) {
   if (bs._battleAborted) return;
+  if (_onlineMode) { callback && callback(); return; } // オンライン時はAI不使用
   // デジモンタイプのみアタック可能（テイマー・オプションはアタック不可）
   const atkIdx = bs.ai.battleArea.findIndex(c => c && c.type==='デジモン' && !c.suspended && !c.summonedThisTurn);
   if(atkIdx === -1) { callback(); return; }

@@ -194,7 +194,7 @@ function updateLobbyUI(data) {
   namesDisplay.innerHTML = `<div style="color:var(--main-cyan)">P1: ${p1.name} ${p1.ready?'<span style="color:#00ff88; font-size:10px;"> ✓ 準備完了</span>':'<span style="color:#ff6600; font-size:10px;"> 準備中...</span>'}</div><div style="color:var(--main-cyan)">P2: ${p2.name} ${p2.ready?'<span style="color:#00ff88; font-size:10px;"> ✓ 準備完了</span>':'<span style="color:#ff6600; font-size:10px;"> 準備中...</span>'}</div>`;
   if (!(p1.ready && p2.ready)) { statusEl.innerText = 'WAITING FOR READY...'; actionArea.innerHTML = ''; diceArea.style.display = 'none'; return; }
   if (!data.gameStarted) { statusEl.innerText = 'READY'; actionArea.innerHTML = `<button class="menu-btn primary" onclick="startGame()" style="width:100%;">デジタルゲートオープン（対戦開始）</button>`; diceArea.style.display = 'none'; return; }
-  statusEl.innerText = 'GATE OPEN!'; actionArea.innerHTML = '';
+  statusEl.innerText = 'GATE OPEN!';
   if (diceArea.style.display !== 'block') {
     diceArea.style.display = 'block';
     const n1 = document.getElementById('d-name-p1'), n2 = document.getElementById('d-name-p2');

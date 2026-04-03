@@ -1871,9 +1871,12 @@ export function expireBuffs(bs, timing, ownerSide) {
       if (!card || !card.buffs || card.buffs.length === 0) return;
       const before = card.buffs.length;
       if (timing === 'permanent') {
-        // permanent バフを全消し（ownerSide指定があればそのside由来のみ）
+        // permanent バフを全消し（ownerSide指定時: そのsideのカードのバフのみ）
         if (ownerSide) {
-          card.buffs = card.buffs.filter(b => !(b.duration === 'permanent' && b.source && b.source.includes(ownerSide)));
+          // ownerSideのカードに付いているpermanentバフのみ消す
+          if (side === ownerSide) {
+            card.buffs = card.buffs.filter(b => b.duration !== 'permanent');
+          }
         } else {
           card.buffs = card.buffs.filter(b => b.duration !== 'permanent');
         }

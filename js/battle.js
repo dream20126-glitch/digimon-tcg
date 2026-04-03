@@ -41,6 +41,7 @@ function sendStateSync() {
     handCount: bs.player.hand.length,
     deckCount: bs.player.deck.length,
     trashCount: bs.player.trash.length,
+    trashCards: bs.player.trash.map(serializeCard),
     securityCount: bs.player.security.length,
     // 相手の状態（相手から見たbs.player）— セキュリティ等の変化を反映
     oppSecurityCount: bs.ai.security.length,
@@ -331,7 +332,8 @@ function onRemoteCommand(cmd) {
       bs.ai.ikusei = st.ikusei ? restoreCard(st.ikusei) : bs.ai.ikusei;
       if (st.deckCount !== undefined) adjustArr(bs.ai.deck, st.deckCount);
       if (st.handCount !== undefined) adjustArr(bs.ai.hand, st.handCount);
-      if (st.trashCount !== undefined) adjustArr(bs.ai.trash, st.trashCount);
+      if (st.trashCards) bs.ai.trash = st.trashCards.map(restoreCard);
+      else if (st.trashCount !== undefined) adjustArr(bs.ai.trash, st.trashCount);
       if (st.securityCount !== undefined) adjustArr(bs.ai.security, st.securityCount);
 
       // 自分の状態も相手の視点で同期（効果で消滅されたカード等を反映）
@@ -2400,17 +2402,16 @@ function resolveSecurityCheck(atk, atkIdx) {
           bs.ai.trash.push(sec);
           bs.player.battleArea[atkIdx]=null; bs.player.trash.push(atk);
           if(atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
-          renderAll();
+          renderAll(); sendStateSync();
           showDestroyEffect(sec, () => { showDestroyEffect(atk, () => {
             showBattleResult('Lost...','#ff4444','両者消滅！', () => { addLog('💥 両者消滅！'); checkPendingTurnEnd(); });
           }); });
           return;
         } else if(atk.dp > sec.dp) {
-          bs.ai.trash.push(sec); renderAll();
+          bs.ai.trash.push(sec); renderAll(); sendStateSync();
           showDestroyEffect(sec, () => {
             showBattleResult('Win!!','#00ff88','セキュリティ突破！', () => {
               addLog('✓ セキュリティ突破');
-              // セキュリティが0になったらチェック終了（ダイレクトアタックは次のアタックで）
               if (bs.ai.security.length <= 0) {
                 addLog('🛡 相手のセキュリティが0枚になった');
                 checkAttackEnd(atk, atkIdx);
@@ -2422,7 +2423,7 @@ function resolveSecurityCheck(atk, atkIdx) {
         } else {
           bs.player.battleArea[atkIdx]=null; bs.player.trash.push(atk);
           if(atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
-          bs.ai.trash.push(sec); renderAll();
+          bs.ai.trash.push(sec); renderAll(); sendStateSync();
           showDestroyEffect(atk, () => {
             showBattleResult('Lost...','#ff4444','「'+atk.name+'」が撃破された', () => { addLog('✗ セキュリティに敗北'); checkPendingTurnEnd(); });
           });
@@ -2435,31 +2436,30 @@ function resolveSecurityCheck(atk, atkIdx) {
         else { checkAttackEnd(atk, atkIdx); }
         return;
       } else {
-        // オプション等 → セキュリティ効果を発動
+        // オプション等 → セキュリティ効果を発動（VS演出完了後に処理）
         addLog('✦ セキュリティ効果：「'+sec.name+'」');
-        console.log('[SEC] card:', sec.name, 'type:', sec.type, 'securityEffect:', sec.securityEffect?.substring(0,30), 'effect:', sec.effect?.substring(0,30));
-        // securityEffect列があればそれを使う、なければeffect列から【セキュリティ】を探す
         const hasSecField = sec.securityEffect && sec.securityEffect.trim() && sec.securityEffect !== 'なし';
         const hasSecInEffect = sec.effect && sec.effect.includes('【セキュリティ】');
-        console.log('[SEC] hasSecField:', hasSecField, 'hasSecInEffect:', hasSecInEffect);
-        if (hasSecField || hasSecInEffect) {
-          // securityEffect列にプレフィックスがなければ追加してからエンジンに渡す
-          const secText = hasSecField ? sec.securityEffect : sec.effect;
-          const originalEffect = sec.effect;
-          if (hasSecField && !secText.includes('【セキュリティ】')) {
-            sec.effect = '【セキュリティ】' + secText;
-          }
-          checkAndTriggerEffect(sec, '【セキュリティ】', () => {
-            sec.effect = originalEffect; // 元に戻す
+        // セキュリティ効果の処理を少し遅延（VS演出の完了を確実に待つ）
+        setTimeout(() => {
+          if (hasSecField || hasSecInEffect) {
+            const secText = hasSecField ? sec.securityEffect : sec.effect;
+            const originalEffect = sec.effect;
+            if (hasSecField && !secText.includes('【セキュリティ】')) {
+              sec.effect = '【セキュリティ】' + secText;
+            }
+            checkAndTriggerEffect(sec, '【セキュリティ】', () => {
+              sec.effect = originalEffect;
+              bs.ai.trash.push(sec); renderAll(); sendStateSync();
+              if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
+              else { checkAttackEnd(atk, atkIdx); }
+            }, 'ai');
+          } else {
             bs.ai.trash.push(sec); renderAll();
             if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
             else { checkAttackEnd(atk, atkIdx); }
-          }, 'ai');
-        } else {
-          bs.ai.trash.push(sec); renderAll();
-          if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
-          else { checkAttackEnd(atk, atkIdx); }
-        }
+          }
+        }, 500);
         return;
       }
       // まだチェック回数が残っていれば続ける

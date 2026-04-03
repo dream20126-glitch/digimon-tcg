@@ -346,7 +346,11 @@ function onRemoteCommand(cmd) {
       const adjustArr = (arr, count) => { while(arr.length>count)arr.pop(); while(arr.length<count)arr.push({name:'?',type:'不明',dp:0}); };
 
       // 相手の状態を bs.ai に反映
-      if (st.battleArea) bs.ai.battleArea = st.battleArea.map(restoreCard);
+      if (st.battleArea) {
+        const newAi = st.battleArea.map(restoreCard);
+        console.log('[SYNC] bs.ai.battleArea更新:', newAi.map(c=>c?.name||'null'));
+        bs.ai.battleArea = newAi;
+      }
       if (st.tamerArea) bs.ai.tamerArea = st.tamerArea.map(restoreCard);
       bs.ai.ikusei = st.ikusei ? restoreCard(st.ikusei) : bs.ai.ikusei;
       if (st.deckCount !== undefined) adjustArr(bs.ai.deck, st.deckCount);
@@ -2424,9 +2428,10 @@ function resolveSecurityCheck(atk, atkIdx) {
           bs.ai.trash.push(sec);
           bs.player.battleArea[atkIdx]=null; bs.player.trash.push(atk);
           if(atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
+          console.log('[SEC-DESTROY] 両者消滅 atkIdx:', atkIdx, 'bs.player.battleArea:', bs.player.battleArea.map(c=>c?.name||'null'));
           renderAll(); sendStateSync();
           showDestroyEffect(sec, () => { showDestroyEffect(atk, () => {
-            showBattleResult('Lost...','#ff4444','両者消滅！', () => { addLog('💥 両者消滅！'); checkPendingTurnEnd(); });
+            showBattleResult('Lost...','#ff4444','両者消滅！', () => { addLog('💥 両者消滅！'); sendStateSync(); checkPendingTurnEnd(); });
           }); });
           return;
         } else if(atk.dp > sec.dp) {
@@ -2445,9 +2450,11 @@ function resolveSecurityCheck(atk, atkIdx) {
         } else {
           bs.player.battleArea[atkIdx]=null; bs.player.trash.push(atk);
           if(atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
-          bs.ai.trash.push(sec); renderAll(); sendStateSync();
+          bs.ai.trash.push(sec);
+          console.log('[SEC-DESTROY] 敗北 atkIdx:', atkIdx, 'bs.player.battleArea:', bs.player.battleArea.map(c=>c?.name||'null'));
+          renderAll(); sendStateSync();
           showDestroyEffect(atk, () => {
-            showBattleResult('Lost...','#ff4444','「'+atk.name+'」が撃破された', () => { addLog('✗ セキュリティに敗北'); checkPendingTurnEnd(); });
+            showBattleResult('Lost...','#ff4444','「'+atk.name+'」が撃破された', () => { addLog('✗ セキュリティに敗北'); sendStateSync(); checkPendingTurnEnd(); });
           });
           return;
         }

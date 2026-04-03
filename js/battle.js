@@ -1301,7 +1301,7 @@ function showDestroyEffect(card, callback) {
 
 // セキュリティチェック演出
 function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpen) {
-  if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_securityCheck', secName: secCard.name, secImg: cardImg(secCard), secDp: secCard.dp, secType: secCard.type, atkName: atkCard.name, atkImg: cardImg(atkCard), atkDp: atkCard.dp, customLabel: customLabel||'' });
+  if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_securityCheck', secName: secCard.name||'', secImg: cardImg(secCard), secDp: parseInt(secCard.dp)||0, secType: secCard.type||'', atkName: atkCard.name||'', atkImg: cardImg(atkCard), atkDp: parseInt(atkCard.dp)||0, customLabel: customLabel||'' });
   const overlay=document.getElementById('security-check-overlay'); if(!overlay){callback&&callback();return;}
   const label=document.getElementById('sec-check-label');
   const atkImgEl=document.getElementById('sec-atk-card-img');

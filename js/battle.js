@@ -101,6 +101,25 @@ function onRemoteCommand(cmd) {
     case 'mulligan': break;
     case 'acceptHand': break;
 
+    case 'card_removed': {
+      // 相手が自分のカードを除去（消滅/バウンス等）→ 自分のフィールドから即除去
+      if (cmd.zone === 'battle' && cmd.slotIdx !== undefined) {
+        const card = bs.player.battleArea[cmd.slotIdx];
+        if (card) {
+          bs.player.battleArea[cmd.slotIdx] = null;
+          if (cmd.reason === 'bounce') {
+            bs.player.hand.push(card);
+            if (card.stack) card.stack.forEach(s => bs.player.trash.push(s));
+          } else {
+            bs.player.trash.push(card);
+            if (card.stack) card.stack.forEach(s => bs.player.trash.push(s));
+          }
+          renderAll();
+        }
+      }
+      break;
+    }
+
     case 'waiting_close': {
       // 相手側の待機系オーバーレイをすべて閉じる（ブロック確認中、効果処理中など）
       ['_block-wait-overlay', '_remote-effect-announce', '_remote-confirm-overlay'].forEach(id => {
@@ -2206,7 +2225,10 @@ function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
   addLog('⚔ 「'+atk.name+'」('+atk.dp+'DP) vs 「'+def.name+'」('+def.dp+'DP)');
 
   function destroyDef() {
-    if(defSide==='ai') { bs.ai.battleArea[defIdx]=null; bs.ai.trash.push(def); if(def.stack) def.stack.forEach(s => bs.ai.trash.push(s)); }
+    if(defSide==='ai') {
+      bs.ai.battleArea[defIdx]=null; bs.ai.trash.push(def); if(def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
+      if(_onlineMode) sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: defIdx, reason: 'destroy' });
+    }
   }
   function destroyAtk() {
     bs.player.battleArea[atkIdx]=null; bs.player.trash.push(atk); if(atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));

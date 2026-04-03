@@ -1142,6 +1142,10 @@ function doDestroy(targetSide, slotIdx, ctx) {
   targetSide.trash.push(destroyed);
   if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));
   ctx.addLog('💀 「' + destroyed.name + '」を消滅');
+  // オンライン: 相手のカードを消滅させた場合、直接通知
+  if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+    window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'destroy' });
+  }
   ctx.renderAll();
 }
 
@@ -1152,6 +1156,10 @@ function doBounce(targetSide, slotIdx, ctx) {
   targetSide.hand.push(bounced);
   if (bounced.stack) bounced.stack.forEach(s => targetSide.trash.push(s));
   ctx.addLog('↩ 「' + bounced.name + '」を手札に戻した');
+  // オンライン: 相手のカードをバウンスした場合、直接通知
+  if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+    window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'bounce' });
+  }
   ctx.renderAll();
 }
 

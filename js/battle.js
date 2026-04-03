@@ -317,24 +317,58 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'state_sync': {
-      // 相手の状態を bs.ai に反映
       const st = cmd.state;
       if (!st) break;
       const restoreCard = (data) => {
         if (!data) return null;
         return { ...data, buffs: data.buffs || [], stack: (data.stack || []).map(restoreCard) };
       };
+      const adjustArr = (arr, count) => { while(arr.length>count)arr.pop(); while(arr.length<count)arr.push({name:'?',type:'不明',dp:0}); };
+
       // 相手の状態を bs.ai に反映
       if (st.battleArea) bs.ai.battleArea = st.battleArea.map(restoreCard);
       if (st.tamerArea) bs.ai.tamerArea = st.tamerArea.map(restoreCard);
       bs.ai.ikusei = st.ikusei ? restoreCard(st.ikusei) : bs.ai.ikusei;
-      const adjustArr = (arr, count) => { while(arr.length>count)arr.pop(); while(arr.length<count)arr.push({name:'?',type:'不明',dp:0}); };
       if (st.deckCount !== undefined) adjustArr(bs.ai.deck, st.deckCount);
       if (st.handCount !== undefined) adjustArr(bs.ai.hand, st.handCount);
       if (st.trashCount !== undefined) adjustArr(bs.ai.trash, st.trashCount);
       if (st.securityCount !== undefined) adjustArr(bs.ai.security, st.securityCount);
-      // 自分の状態: セキュリティ等はstate_syncで上書きしない（ズレの原因になる）
-      // 代わりにアタック等の個別コマンドで同期する
+
+      // 自分の状態も相手の視点で同期（効果で消滅されたカード等を反映）
+      if (st.oppBattleArea) {
+        const oppView = st.oppBattleArea.map(restoreCard);
+        // 相手がnullにしたスロット（消滅/バウンス等）を自分にも反映
+        for (let i = 0; i < oppView.length && i < bs.player.battleArea.length; i++) {
+          if (oppView[i] === null && bs.player.battleArea[i] !== null) {
+            // 相手が消した → 自分のフィールドからも除去してトラッシュへ
+            const removed = bs.player.battleArea[i];
+            bs.player.battleArea[i] = null;
+            bs.player.trash.push(removed);
+            if (removed.stack) removed.stack.forEach(s => bs.player.trash.push(s));
+          }
+        }
+      }
+      if (st.oppTamerArea) {
+        const oppTView = st.oppTamerArea.map(restoreCard);
+        // テイマーも同様
+        for (let i = 0; i < oppTView.length && i < bs.player.tamerArea.length; i++) {
+          if (oppTView[i] === null && bs.player.tamerArea[i] !== null) {
+            const removed = bs.player.tamerArea[i];
+            bs.player.tamerArea[i] = null;
+            bs.player.trash.push(removed);
+          }
+        }
+      }
+      if (st.oppSecurityCount !== undefined && st.oppSecurityCount < bs.player.security.length) {
+        // セキュリティが減っている → 差分をトラッシュへ
+        const diff = bs.player.security.length - st.oppSecurityCount;
+        for (let i = 0; i < diff; i++) {
+          if (bs.player.security.length > 0) {
+            bs.player.trash.push(bs.player.security.splice(0, 1)[0]);
+          }
+        }
+      }
+
       if (st.memory !== undefined) { bs.memory = -st.memory; updateMemGauge(); }
       renderAll();
       break;
@@ -2244,6 +2278,7 @@ function applySecurityBuffs(sec, ownerSide) {
 function getSecurityAttackCount(card) {
   let extra = 0;
   const side = bs.isPlayerTurn ? 'player' : 'ai';
+  console.log('[SA-CHECK]', card.name, 'effect:', card.effect?.substring(0,50), 'stack:', card.stack?.length, 'permEffects:', JSON.stringify(card._permEffects||{}));
 
   function calcFromText(text, source) {
     if (!text || text === 'なし') return;

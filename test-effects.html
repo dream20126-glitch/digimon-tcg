@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>演出テスト</title>
+<link rel="stylesheet" href="css/battle.css">
+<style>
+  body { background: #0a0a1a; color: #fff; font-family: sans-serif; margin: 0; padding: 16px; }
+  h1 { font-size: 18px; color: #00fbff; margin-bottom: 16px; }
+  .test-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+  .test-btn { padding: 12px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 12px; cursor: pointer; text-align: center; transition: all 0.2s; }
+  .test-btn:hover { border-color: #00fbff; background: #1a2a3a; }
+  .section-title { grid-column: 1 / -1; color: #888; font-size: 11px; margin-top: 12px; border-top: 1px solid #333; padding-top: 8px; }
+
+  /* バトル画面の演出用オーバーレイ（battle.cssから必要なものだけ） */
+  #evolve-overlay, #destroy-overlay, #security-check-overlay { display:none; position:fixed; inset:0; z-index:50000; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; flex-direction:column; }
+  #evo-flash, #destroy-flash { position:fixed; inset:0; z-index:50001; pointer-events:none; background:#fff; opacity:0; }
+  #evo-card-img, #destroy-card-img { width:120px; height:168px; border-radius:8px; overflow:hidden; border:3px solid #ffaa00; position:relative; z-index:2; }
+  #evo-label, #destroy-label { font-size:1.2rem; font-weight:bold; letter-spacing:4px; margin-bottom:12px; }
+  #evo-card-name, #destroy-card-name { font-size:1rem; font-weight:bold; margin-top:10px; }
+  #evo-cost-text { font-size:0.9rem; margin-top:6px; }
+  #evo-effect-text { font-size:0.75rem; color:#aaa; margin-top:8px; max-width:280px; text-align:center; display:none; }
+  #destroy-particles { position:fixed; inset:0; z-index:50002; pointer-events:none; }
+  #sec-check-label { font-size:1.5rem; font-weight:bold; letter-spacing:6px; margin-bottom:16px; }
+  .sec-card-wrap { width:100px; height:140px; border-radius:8px; overflow:hidden; border:2px solid #fff; }
+  #sec-vs-text { font-size:2rem; font-weight:900; margin:0 16px; }
+  #sec-atk-card-name, #sec-def-card-name { font-size:0.8rem; margin-top:4px; }
+  #battle-result-overlay { display:none; position:fixed; inset:0; z-index:51000; background:rgba(0,0,0,0.9); align-items:center; justify-content:center; flex-direction:column; }
+  #battle-result-text { font-size:2rem; font-weight:900; letter-spacing:6px; }
+  #battle-result-sub { font-size:0.9rem; margin-top:8px; color:#aaa; }
+
+  @keyframes destroyShake { 0%,100%{transform:translate(0)} 20%{transform:translate(-8px,4px)} 40%{transform:translate(8px,-4px)} 60%{transform:translate(-6px,6px)} 80%{transform:translate(6px,-2px)} }
+  @keyframes destroyExplode { 0%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.3)} 100%{opacity:0;transform:scale(2)} }
+  @keyframes destroyFlash { 0%{opacity:0} 30%{opacity:0.9} 100%{opacity:0} }
+  @keyframes destroyParticle { 0%{transform:translate(0,0) scale(1);opacity:1} 100%{transform:translate(var(--px),var(--py)) scale(0);opacity:0} }
+  @keyframes dpChangePopup { 0%{opacity:0;transform:translate(-50%,-50%) scale(0.5)} 20%{opacity:1;transform:translate(-50%,-50%) scale(1.2)} 40%{transform:translate(-50%,-50%) scale(1)} 100%{opacity:0;transform:translate(-50%,-80%) scale(0.8)} }
+  @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+  @keyframes fadeOut { from{opacity:1} to{opacity:0} }
+</style>
+</head>
+<body>
+
+<h1>🎬 演出テスト</h1>
+
+<div class="test-grid">
+  <div class="section-title">効果演出（辞書で管理）</div>
+  <div class="test-btn" onclick="testDestroy()">💀 消滅演出</div>
+  <div class="test-btn" onclick="testDpPopup(3000)">💚 DP +3000</div>
+  <div class="test-btn" onclick="testDpPopup(-3000)">❤ DP -3000</div>
+  <div class="test-btn" onclick="testMemory(2)">💎 メモリー +2</div>
+  <div class="test-btn" onclick="testMemory(-2)">💎 メモリー -2</div>
+  <div class="test-btn" onclick="testDeckOpen()">📖 デッキオープン</div>
+  <div class="test-btn" onclick="testTextDisplay()">📝 テキスト表示</div>
+
+  <div class="section-title">共通演出（コードで直接指定）</div>
+  <div class="test-btn" onclick="testPlay()">🌟 登場演出</div>
+  <div class="test-btn" onclick="testEvolve()">⬆ 進化演出</div>
+  <div class="test-btn" onclick="testSecurityCheck()">⚔ セキュリティチェック</div>
+  <div class="test-btn" onclick="testBattleResult('Win!!','#00ff88','撃破！')">🏆 バトル結果(Win)</div>
+  <div class="test-btn" onclick="testBattleResult('Lost...','#ff4444','撃破された...')">😢 バトル結果(Lost)</div>
+
+  <div class="section-title">オンライン相手画面</div>
+  <div class="test-btn" onclick="testEffectOverlay()">⚡ 効果内容オーバーレイ</div>
+  <div class="test-btn" onclick="testEffectDeclined()">💨 効果不発動通知</div>
+  <div class="test-btn" onclick="testEffectResult()">🎯 カード名+結果表示</div>
+</div>
+
+<!-- 演出用のDOM要素 -->
+<div id="evolve-overlay">
+  <div id="evo-flash"></div>
+  <div id="evo-label"></div>
+  <div id="evo-card-img"></div>
+  <div id="evo-card-name"></div>
+  <div id="evo-cost-text"></div>
+  <div id="evo-effect-text"></div>
+</div>
+
+<div id="destroy-overlay">
+  <div id="destroy-flash"></div>
+  <div id="destroy-label">DESTROYED</div>
+  <div id="destroy-card-img"></div>
+  <div id="destroy-card-name"></div>
+  <div id="destroy-particles"></div>
+</div>
+
+<div id="security-check-overlay" style="flex-direction:column;">
+  <div id="sec-check-label"></div>
+  <div style="display:flex;align-items:center;justify-content:center;">
+    <div style="text-align:center;">
+      <div class="sec-card-wrap" id="sec-def-card-img" style="background:#222;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:10px;">SEC</div>
+      <div id="sec-def-card-name"></div>
+    </div>
+    <div id="sec-vs-text" style="color:#ff4444;">VS</div>
+    <div style="text-align:center;">
+      <div class="sec-card-wrap" id="sec-atk-card-img" style="background:#222;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:10px;">ATK</div>
+      <div id="sec-atk-card-name"></div>
+    </div>
+  </div>
+</div>
+
+<div id="battle-result-overlay">
+  <div id="battle-result-text"></div>
+  <div id="battle-result-sub"></div>
+</div>
+
+<script>
+// ===== 演出関数 =====
+
+function testDestroy() {
+  const overlay = document.getElementById('destroy-overlay');
+  const imgEl = document.getElementById('destroy-card-img');
+  const nameEl = document.getElementById('destroy-card-name');
+  const labelEl = document.getElementById('destroy-label');
+  const flashEl = document.getElementById('destroy-flash');
+  const particlesEl = document.getElementById('destroy-particles');
+
+  imgEl.style.opacity='0'; imgEl.style.animation='';
+  nameEl.style.opacity='0'; labelEl.style.opacity='0';
+  flashEl.style.opacity='0'; flashEl.style.animation='';
+  particlesEl.innerHTML='';
+  imgEl.innerHTML='<div style="width:120px;height:168px;background:#333;display:flex;align-items:center;justify-content:center;color:#ff4444;font-size:12px;">グレイモン</div>';
+  nameEl.innerText='グレイモン';
+  overlay.style.display='flex';
+
+  setTimeout(() => { imgEl.style.opacity='1'; imgEl.style.animation='destroyShake 0.6s ease'; },50);
+  setTimeout(() => {
+    flashEl.style.animation='destroyFlash 0.8s ease forwards';
+    const colors = ['#fff','#fff','#ff4444','#ff8800','#ffcc00','#fff','#ff6666'];
+    for(let i=0;i<30;i++){
+      const p=document.createElement('div');
+      const angle=Math.random()*Math.PI*2, dist=60+Math.random()*180;
+      const px=Math.cos(angle)*dist, py=Math.sin(angle)*dist;
+      const size=3+Math.random()*10, color=colors[Math.floor(Math.random()*colors.length)];
+      p.style.cssText='position:absolute;left:50%;top:45%;width:'+size+'px;height:'+size+'px;background:'+color+';border-radius:'+(Math.random()>0.5?'50%':'2px')+';box-shadow:0 0 '+size+'px '+color+';--px:'+px+'px;--py:'+py+'px;animation:destroyParticle '+(0.5+Math.random()*0.5)+'s ease-out '+(Math.random()*0.15)+'s forwards;opacity:0;';
+      setTimeout(() => { p.style.opacity='1'; }, Math.random()*150);
+      particlesEl.appendChild(p);
+    }
+    nameEl.style.opacity='1'; labelEl.style.opacity='1'; labelEl.style.color='#ff4444';
+    imgEl.style.animation='destroyExplode 0.8s ease forwards';
+  },700);
+  setTimeout(() => { overlay.style.display='none'; imgEl.style.animation=''; flashEl.style.animation=''; },1900);
+}
+
+function testPlay() {
+  const overlay = document.getElementById('evolve-overlay');
+  const flash = document.getElementById('evo-flash');
+  const label = document.getElementById('evo-label');
+  const imgEl = document.getElementById('evo-card-img');
+  const nameEl = document.getElementById('evo-card-name');
+  const costEl = document.getElementById('evo-cost-text');
+  const effectEl = document.getElementById('evo-effect-text');
+
+  label.style.opacity='0'; imgEl.style.opacity='0'; imgEl.style.transform='scale(0.7)';
+  nameEl.style.opacity='0'; costEl.style.opacity='0'; costEl.style.transform='scale(0.5)';
+  effectEl.style.opacity='0'; effectEl.style.display='none'; flash.style.opacity='0';
+  imgEl.innerHTML='<div style="width:120px;height:168px;background:#333;display:flex;align-items:center;justify-content:center;color:#ffaa00;font-size:12px;">アグモン</div>';
+  nameEl.innerText='アグモン';
+  costEl.innerText='3 コストで登場！！';
+  imgEl.style.borderColor='#ffaa00'; imgEl.style.boxShadow='0 0 40px rgba(255,170,0,0.8)';
+  costEl.style.color='#ffaa00'; costEl.style.textShadow='0 0 20px rgba(255,170,0,0.8)';
+  label.style.color='#ffaa00'; label.innerText='DIGITAL APPEAR';
+  overlay.style.display='flex';
+
+  setTimeout(() => { flash.style.transition='opacity 0.1s'; flash.style.opacity='0.9';
+    setTimeout(() => { flash.style.transition='opacity 0.3s'; flash.style.opacity='0'; label.style.opacity='1'; imgEl.style.opacity='1'; imgEl.style.transform='scale(1)'; nameEl.style.opacity='1';
+      setTimeout(() => { costEl.style.opacity='1'; costEl.style.transform='scale(1)'; },300);
+    },150);
+  },50);
+  setTimeout(() => { overlay.style.display='none'; },2500);
+}
+
+function testEvolve() {
+  const overlay = document.getElementById('evolve-overlay');
+  const flash = document.getElementById('evo-flash');
+  const label = document.getElementById('evo-label');
+  const imgEl = document.getElementById('evo-card-img');
+  const nameEl = document.getElementById('evo-card-name');
+  const costEl = document.getElementById('evo-cost-text');
+  const effectEl = document.getElementById('evo-effect-text');
+
+  label.style.opacity='0'; imgEl.style.opacity='0'; imgEl.style.transform='scale(0.7) rotate(-10deg)';
+  nameEl.style.opacity='0'; costEl.style.opacity='0'; costEl.style.transform='scale(0.5)';
+  effectEl.style.opacity='0'; effectEl.style.display='none'; flash.style.opacity='0';
+  imgEl.innerHTML='<div style="width:120px;height:168px;background:#333;display:flex;align-items:center;justify-content:center;color:#aa66ff;font-size:12px;">グレイモン</div>';
+  nameEl.innerText='アグモン → グレイモン';
+  costEl.innerText='進化コスト 2';
+  imgEl.style.borderColor='#aa66ff'; imgEl.style.boxShadow='0 0 40px rgba(170,102,255,0.8)';
+  costEl.style.color='#aa66ff'; costEl.style.textShadow='0 0 20px rgba(170,102,255,0.8)';
+  label.style.color='#aa66ff'; label.innerText='EVOLUTION';
+  overlay.style.display='flex';
+
+  setTimeout(() => { flash.style.transition='opacity 0.1s'; flash.style.opacity='0.9';
+    setTimeout(() => { flash.style.transition='opacity 0.3s'; flash.style.opacity='0'; label.style.opacity='1'; imgEl.style.opacity='1'; imgEl.style.transform='scale(1) rotate(0deg)'; nameEl.style.opacity='1';
+      setTimeout(() => { costEl.style.opacity='1'; costEl.style.transform='scale(1)'; },300);
+    },150);
+  },50);
+  setTimeout(() => { overlay.style.display='none'; },2800);
+}
+
+function testDpPopup(value) {
+  const isPlus = value > 0;
+  const el = document.createElement('div');
+  el.innerText = (isPlus ? '+' : '') + value;
+  el.style.cssText = 'position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);font-size:2rem;font-weight:bold;z-index:60000;pointer-events:none;color:'+(isPlus?'#00ff88':'#ff4444')+';text-shadow:0 0 15px '+(isPlus?'#00ff88':'#ff4444')+';animation:dpChangePopup 1s ease forwards;';
+  document.body.appendChild(el);
+  setTimeout(() => { if(el.parentNode) el.remove(); }, 1100);
+}
+
+function testMemory(change) {
+  const color = change > 0 ? '#00ff88' : '#ff4444';
+  const el = document.createElement('div');
+  el.innerText = 'メモリー ' + (change > 0 ? '+' : '') + change;
+  el.style.cssText = 'position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);font-size:1.5rem;font-weight:bold;z-index:60000;pointer-events:none;color:'+color+';text-shadow:0 0 15px '+color+';animation:dpChangePopup 1.2s ease forwards;';
+  document.body.appendChild(el);
+  setTimeout(() => { if(el.parentNode) el.remove(); }, 1300);
+}
+
+function testDeckOpen() {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:55000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;cursor:pointer;';
+  ov.innerHTML = '<div style="font-size:1rem;font-weight:bold;color:#ffaa00;letter-spacing:2px;text-shadow:0 0 10px #ffaa00;">📖 DECK OPEN</div>'
+    + '<div style="display:flex;gap:10px;padding:12px 20px;background:rgba(0,15,25,0.9);border:1px solid #ffaa0044;border-radius:12px;">'
+    + [1,2,3].map(i => '<div style="width:55px;height:77px;background:#333;border-radius:4px;border:1px solid #ffaa00;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;">カード'+i+'</div>').join('')
+    + '</div><div style="color:#888;font-size:10px;">タップで閉じる</div>';
+  ov.onclick = () => ov.remove();
+  document.body.appendChild(ov);
+}
+
+function testSecurityCheck() {
+  const overlay = document.getElementById('security-check-overlay');
+  const label = document.getElementById('sec-check-label');
+  const atkName = document.getElementById('sec-atk-card-name');
+  const defName = document.getElementById('sec-def-card-name');
+  const vsText = document.getElementById('sec-vs-text');
+
+  label.innerText = 'BATTLE!'; label.style.color = '#ff4444';
+  atkName.innerText = 'アタッカー (DP:7000)'; atkName.style.color = '#00fbff';
+  defName.innerText = 'ブロッカー (DP:5000)'; defName.style.color = '#ff00fb';
+  vsText.style.color = '#ff4444';
+  overlay.style.display = 'flex';
+  setTimeout(() => { overlay.style.display = 'none'; }, 2500);
+}
+
+function testBattleResult(text, color, sub) {
+  const overlay = document.getElementById('battle-result-overlay');
+  document.getElementById('battle-result-text').innerText = text;
+  document.getElementById('battle-result-text').style.color = color;
+  document.getElementById('battle-result-sub').innerText = sub;
+  overlay.style.display = 'flex';
+  overlay.onclick = () => { overlay.style.display = 'none'; overlay.onclick = null; };
+  setTimeout(() => { overlay.style.display = 'none'; }, 3000);
+}
+
+function testEffectOverlay() {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:55000;display:flex;align-items:center;justify-content:center;cursor:pointer;animation:fadeIn 0.2s ease;';
+  const bx = document.createElement('div');
+  bx.style.cssText = 'max-width:85%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid #ff00fb;border-radius:12px;box-shadow:0 0 30px #ff00fb44;text-align:center;';
+  bx.innerHTML = '<div style="color:#ff00fb;font-size:14px;font-weight:bold;margin-bottom:10px;text-shadow:0 0 8px #ff00fb;">⚡ 相手: グレイモン</div>'
+    + '<div style="color:#ddd;font-size:11px;line-height:1.6;text-align:left;margin-bottom:12px;">【進化時】相手のデジモン1体を消滅させる。</div>'
+    + '<div style="color:#888;font-size:10px;">相手が効果を処理中...</div>';
+  ov.appendChild(bx);
+  ov.onclick = () => ov.remove();
+  document.body.appendChild(ov);
+}
+
+function testEffectDeclined() {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);z-index:56000;background:rgba(30,30,40,0.9);border:1px solid #888;border-radius:10px;padding:12px 24px;color:#aaa;font-size:13px;font-weight:bold;text-align:center;pointer-events:none;animation:fadeIn 0.2s ease;';
+  el.innerText = '💨 相手は「グレイモン」の効果を発動しませんでした';
+  document.body.appendChild(el);
+  setTimeout(() => { if(el.parentNode) el.remove(); }, 2500);
+}
+
+function testEffectResult() {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:55500;display:flex;align-items:center;justify-content:center;cursor:pointer;animation:fadeIn 0.2s ease;';
+  ov.innerHTML = '<div style="text-align:center;">'
+    + '<div style="color:#fff;font-size:14px;font-weight:bold;margin-bottom:8px;">「グレイモン」</div>'
+    + '<div style="color:#ff4444;font-size:18px;font-weight:bold;text-shadow:0 0 15px #ff4444;letter-spacing:3px;">消滅！</div>'
+    + '</div>';
+  ov.onclick = () => ov.remove();
+  document.body.appendChild(ov);
+}
+</script>
+
+</body>
+</html>

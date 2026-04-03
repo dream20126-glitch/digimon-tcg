@@ -65,6 +65,26 @@ function sendMemoryUpdate() {
 }
 window._sendMemoryUpdate = () => sendMemoryUpdate();
 
+// 自分のカードをバトルエリアから除去（消滅/撃破時）→ 相手にも通知
+function removeOwnCard(slotIdx, reason) {
+  const card = bs.player.battleArea[slotIdx];
+  if (!card) return;
+  bs.player.battleArea[slotIdx] = null;
+  bs.player.trash.push(card);
+  if (card.stack) card.stack.forEach(s => bs.player.trash.push(s));
+  if (_onlineMode) sendCommand({ type: 'own_card_removed', slotIdx, reason: reason || 'destroy' });
+}
+
+// 相手のカードをバトルエリアから除去 → 相手にも通知
+function removeOpponentCard(slotIdx, reason) {
+  const card = bs.ai.battleArea[slotIdx];
+  if (!card) return;
+  bs.ai.battleArea[slotIdx] = null;
+  bs.ai.trash.push(card);
+  if (card.stack) card.stack.forEach(s => bs.ai.trash.push(s));
+  if (_onlineMode) sendCommand({ type: 'card_removed', zone: 'battle', slotIdx, reason: reason || 'destroy' });
+}
+
 // コマンド送信（自分の操作を相手に伝える）
 function sendCommand(cmd) {
   if (!_onlineMode || !_onlineRoomId) return;
@@ -100,6 +120,20 @@ function onRemoteCommand(cmd) {
   switch (cmd.type) {
     case 'mulligan': break;
     case 'acceptHand': break;
+
+    case 'own_card_removed': {
+      // 相手が自分のカードを除去した（自発的消滅）→ bs.aiから除去
+      if (cmd.slotIdx !== undefined) {
+        const card = bs.ai.battleArea[cmd.slotIdx];
+        if (card) {
+          bs.ai.battleArea[cmd.slotIdx] = null;
+          bs.ai.trash.push(card);
+          if (card.stack) card.stack.forEach(s => bs.ai.trash.push(s));
+          renderAll();
+        }
+      }
+      break;
+    }
 
     case 'card_removed': {
       // 相手が自分のカードを除去（消滅/バウンス等）→ 自分のフィールドから即除去
@@ -2235,7 +2269,7 @@ function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
     }
   }
   function destroyAtk() {
-    bs.player.battleArea[atkIdx]=null; bs.player.trash.push(atk); if(atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
+    removeOwnCard(atkIdx, 'destroy');
   }
 
   // VS演出（2枚並べて大きく BATTLE! 表示）
@@ -2426,9 +2460,7 @@ function resolveSecurityCheck(atk, atkIdx) {
       if(sec.type==='デジモン') {
         if(atk.dp === sec.dp) {
           bs.ai.trash.push(sec);
-          bs.player.battleArea[atkIdx]=null; bs.player.trash.push(atk);
-          if(atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
-          console.log('[SEC-DESTROY] 両者消滅 atkIdx:', atkIdx, 'bs.player.battleArea:', bs.player.battleArea.map(c=>c?.name||'null'));
+          removeOwnCard(atkIdx, 'destroy');
           renderAll(); sendStateSync();
           showDestroyEffect(sec, () => { showDestroyEffect(atk, () => {
             showBattleResult('Lost...','#ff4444','両者消滅！', () => { addLog('💥 両者消滅！'); sendStateSync(); checkPendingTurnEnd(); });
@@ -2448,10 +2480,8 @@ function resolveSecurityCheck(atk, atkIdx) {
           });
           return;
         } else {
-          bs.player.battleArea[atkIdx]=null; bs.player.trash.push(atk);
-          if(atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
+          removeOwnCard(atkIdx, 'destroy');
           bs.ai.trash.push(sec);
-          console.log('[SEC-DESTROY] 敗北 atkIdx:', atkIdx, 'bs.player.battleArea:', bs.player.battleArea.map(c=>c?.name||'null'));
           renderAll(); sendStateSync();
           showDestroyEffect(atk, () => {
             showBattleResult('Lost...','#ff4444','「'+atk.name+'」が撃破された', () => { addLog('✗ セキュリティに敗北'); sendStateSync(); checkPendingTurnEnd(); });
@@ -2889,8 +2919,8 @@ function resolveOnlineBlock(blockerIdx, cmd) {
     if (atk.dp === blocker.dp) {
       // 両者消滅
       atkResult = 'both_destroyed';
-      bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-      bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
+      removeOpponentCard(atkIdx, 'destroy');
+      removeOwnCard(blockerIdx, 'destroy');
       renderAll();
       sendCommand({ type: 'fx_destroy', cardName: blocker.name, cardImg: cardImg(blocker) });
       sendCommand({ type: 'fx_destroy', cardName: atk.name, cardImg: cardImg(atk) });
@@ -2905,7 +2935,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
     } else if (atk.dp > blocker.dp) {
       // ブロッカー撃破（攻撃者生存）
       atkResult = 'survived';
-      bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
+      removeOwnCard(blockerIdx, 'destroy');
       renderAll();
       sendCommand({ type: 'fx_destroy', cardName: blocker.name, cardImg: cardImg(blocker) });
       sendCommand({ type: 'fx_battleResult', text: 'Win!!', color: '#00ff88', sub: '「' + blocker.name + '」が撃破された' });
@@ -2919,7 +2949,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
     } else {
       // 攻撃者撃破
       atkResult = 'destroyed';
-      bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+      removeOpponentCard(atkIdx, 'destroy');
       renderAll();
       sendCommand({ type: 'fx_destroy', cardName: atk.name, cardImg: cardImg(atk) });
       sendCommand({ type: 'fx_battleResult', text: 'Lost...', color: '#ff4444', sub: '「' + atk.name + '」を撃破！' });

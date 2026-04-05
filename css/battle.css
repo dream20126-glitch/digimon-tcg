@@ -151,13 +151,16 @@
   color: var(--main-cyan); width: 24px; height: 40px;
   font-size: 14px; font-weight: bold; cursor: pointer;
   border-radius: 4px; z-index: 100; padding: 0;
-  display: flex; align-items: center; justify-content: center;
+  display: none; align-items: center; justify-content: center;
   box-shadow: 0 0 10px rgba(0, 251, 255, 0.3);
   opacity: 0.7; transition: opacity 0.15s;
 }
 .scroll-arrow:hover, .scroll-arrow:active { opacity: 1; }
 .scroll-arrow-left { left: 2px; }
 .scroll-arrow-right { right: 2px; }
+/* スクロール可能状態のときだけ矢印を表示 */
+.scroll-wrap.can-scroll-left > .scroll-arrow-left,
+.scroll-wrap.can-scroll-right > .scroll-arrow-right { display: flex; }
 .h-card {
   width: 52px; height: 72px; flex-shrink: 0; border-radius: 5px;
   border: 1px solid #2a2a2a; background: #0a0a0a; cursor: pointer;

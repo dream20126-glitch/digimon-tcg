@@ -660,7 +660,7 @@ function getRefSourceCountDirect(refSource, card, bs, side) {
 const EFFECT_RUNNERS = {
   // 数値ポップアップ（DP増減など）: 画面中央に+N/-Nを表示
   "数値ポップアップ": function(opts, cb) {
-    showDpPopup(opts.value || 0);
+    showDpPopup(opts.value || 0, opts.label || (opts.card && opts.card.name) || null);
     cb();
   },
 
@@ -819,7 +819,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const tgt = opponent.battleArea[dpTargets[0]];
         addBuff(tgt, 'dp_minus', val, ctx);
         ctx.addLog('💥 ' + tgt.name + ' DP-' + val + ' → ' + tgt.dp);
-        playEffect(action.code, { value: -val, ctx }, () => {});
+        playEffect(action.code, { value: -val, ctx, label: tgt.name }, () => {});
         if(tgt.dp <= 0) tgt._pendingDestroy = true;
         ctx.renderAll(); callback(); break;
       }
@@ -830,7 +830,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           sendEffectResult(tgt, 'dp_minus', ctx);
           addBuff(tgt, 'dp_minus', val, ctx);
           ctx.addLog('💥 ' + tgt.name + ' DP-' + val + ' → ' + tgt.dp);
-          playEffect(action.code, { value: -val, ctx }, () => {});
+          playEffect(action.code, { value: -val, ctx, label: tgt.name }, () => {});
           if(tgt.dp <= 0) tgt._pendingDestroy = true;
           ctx.renderAll();
         }
@@ -1945,7 +1945,7 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
   function applyAndLog(card) {
     addBuffDirect(card, type, val, dur, ctx);
     ctx.addLog(label + card.name + ' DP' + sign + val + ' → ' + card.dp);
-    showDpPopup(isPlus ? val : -val);
+    showDpPopup(isPlus ? val : -val, card.name);
   }
 
   if (target.code === 'target_self' && ctx.card) {
@@ -1954,14 +1954,14 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
   } else if (target.code === 'target_all_own') {
     player.battleArea.forEach(c => { if (c) addBuffDirect(c, type, val, dur, ctx); });
     ctx.addLog(label + '全デジモン DP' + sign + val);
-    showDpPopup(isPlus ? val : -val);
+    showDpPopup(isPlus ? val : -val, '自分のデジモン全て');
     ctx.renderAll(); callback && callback();
   } else if (target.code === 'target_all_own_security') {
     // セキュリティバフを記録（セキュリティチェック時に参照）
     if (!ctx.bs._securityBuffs) ctx.bs._securityBuffs = [];
     ctx.bs._securityBuffs.push({ type, value: val, duration: dur, source: ctx.card ? ctx.card.cardNo : '', owner: ctx.side });
     ctx.addLog(label + 'セキュリティデジモン全体 DP' + sign + val + '（' + dur + '）');
-    showDpPopup(isPlus ? val : -val);
+    showDpPopup(isPlus ? val : -val, 'セキュリティ全て');
     ctx.renderAll();
     // オンライン: セキュリティバフを即時同期（debounce待ちで相手側の表示が遅れるのを防ぐ）
     if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
@@ -2300,11 +2300,18 @@ window._effectEngineConfirm = function(yes) {
 
 // ===== DP変化ポップアップ =====
 
-function showDpPopup(value) {
+function showDpPopup(value, label) {
   const isPlus = value > 0;
   const popup = document.createElement('div');
-  popup.innerText = (isPlus ? '+' : '') + value;
-  popup.style.cssText = `position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);font-size:2rem;font-weight:bold;z-index:60000;pointer-events:none;color:${isPlus ? '#00ff88' : '#ff4444'};text-shadow:0 0 15px ${isPlus ? '#00ff88' : '#ff4444'};animation:dpChangePopup 1s ease forwards;`;
+  const color = isPlus ? '#00ff88' : '#ff4444';
+  const sign = isPlus ? '+' : '';
+  if (label) {
+    popup.innerHTML = `<div style="font-size:1rem;color:#fff;text-shadow:0 0 10px ${color};margin-bottom:4px;">${label}</div>`
+      + `<div>DP${sign}${value}</div>`;
+  } else {
+    popup.innerText = 'DP' + sign + value;
+  }
+  popup.style.cssText = `position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);font-size:2rem;font-weight:bold;z-index:60000;pointer-events:none;color:${color};text-shadow:0 0 15px ${color};animation:dpChangePopup 1s ease forwards;text-align:center;white-space:nowrap;`;
   document.body.appendChild(popup);
   setTimeout(() => { if (popup.parentNode) popup.parentNode.removeChild(popup); }, 1100);
 }

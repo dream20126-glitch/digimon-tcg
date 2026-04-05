@@ -17,7 +17,7 @@
           </div>
         </div>
         <div style="flex:1; min-width:0;">
-          <div style="position:relative;">
+          <div class="scroll-wrap" data-scroll-target="ai-battle-row" style="position:relative;">
             <div id="ai-battle-row" style="display:flex; gap:4px; overflow-x:auto; -webkit-overflow-scrolling:touch;"></div>
             <button class="scroll-arrow scroll-arrow-left" onclick="scrollBattleRow('ai',-1)" aria-label="相手バトルを左へ">◀</button>
             <button class="scroll-arrow scroll-arrow-right" onclick="scrollBattleRow('ai',1)" aria-label="相手バトルを右へ">▶</button>
@@ -60,7 +60,7 @@
           <span id="pl-iku-info" style="font-size:8px; color:#aaa; text-align:center; max-width:48px;"></span>
         </div>
         <div style="flex:1; min-width:0;">
-          <div style="position:relative;">
+          <div class="scroll-wrap" data-scroll-target="pl-battle-row" style="position:relative;">
             <div id="pl-battle-row" style="display:flex; gap:4px; overflow-x:auto; -webkit-overflow-scrolling:touch;"></div>
             <button class="scroll-arrow scroll-arrow-left" onclick="scrollBattleRow('pl',-1)" aria-label="自分バトルを左へ">◀</button>
             <button class="scroll-arrow scroll-arrow-right" onclick="scrollBattleRow('pl',1)" aria-label="自分バトルを右へ">▶</button>
@@ -109,7 +109,7 @@
     </div>
 
     <!-- 手札 -->
-    <div style="position:relative;">
+    <div class="scroll-wrap" data-scroll-target="hand-wrap" style="position:relative;">
       <div class="hand-wrap" id="hand-wrap"></div>
       <button class="scroll-arrow scroll-arrow-left" onclick="scrollHand(-1)" aria-label="手札を左へ">◀</button>
       <button class="scroll-arrow scroll-arrow-right" onclick="scrollHand(1)" aria-label="手札を右へ">▶</button>

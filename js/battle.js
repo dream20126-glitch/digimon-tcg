@@ -73,6 +73,32 @@ window.scrollBattleRow = function(side, direction) {
   el.scrollBy({ left: direction * 80, behavior: 'smooth' });
 };
 
+// スクロール可能性を監視して、矢印ボタンを表示/非表示切替
+function updateScrollArrows() {
+  document.querySelectorAll('.scroll-wrap').forEach(wrap => {
+    const targetId = wrap.dataset.scrollTarget;
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const hasOverflow = target.scrollWidth > target.clientWidth + 1;
+    const canLeft = hasOverflow && target.scrollLeft > 0;
+    const canRight = hasOverflow && target.scrollLeft + target.clientWidth < target.scrollWidth - 1;
+    wrap.classList.toggle('can-scroll-left', canLeft);
+    wrap.classList.toggle('can-scroll-right', canRight);
+  });
+}
+// scrollイベント・リサイズ・レンダー後に呼ぶ
+window.addEventListener('resize', updateScrollArrows);
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    document.querySelectorAll('.scroll-wrap').forEach(wrap => {
+      const targetId = wrap.dataset.scrollTarget;
+      const target = document.getElementById(targetId);
+      if (target) target.addEventListener('scroll', updateScrollArrows);
+    });
+    updateScrollArrows();
+  }, 500);
+});
+
 // メモリー即時同期（コスト消費・効果発動時に即座に相手へ通知）
 function sendMemoryUpdate() {
   if (!_onlineMode) return;
@@ -3849,6 +3875,8 @@ function renderAll(force) {
   // 対象選択中は再描画を抑制（枠が消えるのを防ぐ）。forceで強制可能
   if (!force && isTargetSelecting()) return;
   renderSecurity(); renderBattleRows(); renderTamerRows(); renderIkusei(); renderHand(); updateCounts(); updateActionBtns(); updateMemGauge(); updatePhaseBadge(); applyBackImages();
+  // スクロール矢印の表示状態を更新
+  if (typeof updateScrollArrows === 'function') setTimeout(updateScrollArrows, 0);
   // オンライン: 自分のターン中は定期的に状態同期（デバウンス）
   if (_onlineMode && bs.isPlayerTurn) {
     if (_syncTimer) clearTimeout(_syncTimer);

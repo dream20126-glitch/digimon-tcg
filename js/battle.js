@@ -156,7 +156,6 @@ function showRemoteEffectOverlay(cardName, effectText, overlayId) {
 // コマンド受信（相手の操作を再現）
 function onRemoteCommand(cmd) {
   if (!cmd || cmd.from === _onlineMyKey) return; // 自分のコマンドは無視
-  console.log('[ONLINE] 受信:', cmd.type, cmd);
 
   switch (cmd.type) {
     case 'mulligan': break;
@@ -423,9 +422,7 @@ function onRemoteCommand(cmd) {
 
       // 相手の状態を bs.ai に反映
       if (st.battleArea) {
-        const newAi = st.battleArea.map(restoreCard);
-        console.log('[SYNC] bs.ai.battleArea更新:', newAi.map(c=>c?.name||'null'));
-        bs.ai.battleArea = newAi;
+        bs.ai.battleArea = st.battleArea.map(restoreCard);
       }
       if (st.tamerArea) bs.ai.tamerArea = st.tamerArea.map(restoreCard);
       bs.ai.ikusei = st.ikusei ? restoreCard(st.ikusei) : bs.ai.ikusei;
@@ -1544,7 +1541,6 @@ function checkAndTriggerEffect(card, triggerType, callback, side, alreadyConfirm
   const hasInMain = card.effect && card.effect.includes(triggerType);
   const hasInEvo = card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes(triggerType));
   const hasTrigger = hasInMain || hasInEvo;
-  console.log('[TRIGGER]', triggerType, 'card:', card?.name, 'main:', hasInMain, 'evo:', hasInEvo);
   if (!hasTrigger) { callback&&callback(); return; }
   if (!side) {
     const inPlayer = bs.player.battleArea.includes(card) || bs.player.tamerArea.includes(card) || bs.player.hand.includes(card);
@@ -2449,7 +2445,6 @@ function getSecurityAttackCount(card) {
   // 永続効果をリアルタイム再計算（相手の盤面変化で条件付きSアタック+が変動するため）
   applyPermanentEffects(bs, 'player', makeEffectContext(null, 'player'));
   applyPermanentEffects(bs, 'ai', makeEffectContext(null, 'ai'));
-  console.log('[SA-CHECK]', card.name, 'effect:', card.effect?.substring(0,50), 'stack:', card.stack?.length, 'permEffects:', JSON.stringify(card._permEffects||{}));
 
   function calcFromText(text, source) {
     if (!text || text === 'なし') return;
@@ -2578,7 +2573,6 @@ function resolveSecurityCheck(atk, atkIdx) {
       showCheckLabelOnOverlay(checkNumber + '枚目');
     };
     showSecurityCheck(sec, atk, () => {
-      console.log('[SEC-REVEAL] name:', sec.name, 'type:', sec.type, 'securityEffect:', sec.securityEffect, 'effect:', sec.effect?.substring(0,40));
       if(sec.type==='デジモン') {
         if(atk.dp === sec.dp) {
           bs.ai.trash.push(sec);
@@ -3784,28 +3778,10 @@ window.showBCD = function(idxOrCard, source) {
     secEl.style.display = 'none';
   }
 
-  // メイン効果発動ボタン：詳細画面からは廃止（長押しメニューから発動する）
-  const effectBtn = document.getElementById('bcd-effect-btn');
-  if (effectBtn) {
-    effectBtn.style.display = 'none';
-    window._bcdEffectCard = null;
-  }
-
   const bcd=document.getElementById('b-card-detail');
   // bodyの末尾に移動して最前面に表示（stacking context問題回避）
   document.body.appendChild(bcd);
   bcd.style.display = 'flex';
-};
-
-window.onBCDEffectActivate = function() {
-  closeBCD();
-  const card = window._bcdEffectCard;
-  if (!card) return;
-  _pendingEffectCard = card;
-  _pendingEffectCallback = () => renderAll();
-  document.getElementById('effect-confirm-name').innerText = card.name;
-  document.getElementById('effect-confirm-text').innerText = card.effect;
-  document.getElementById('effect-confirm-overlay').style.display = 'flex';
 };
 
 window.closeBCD = function() { document.getElementById('b-card-detail').style.display = 'none'; };

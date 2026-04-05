@@ -1351,8 +1351,11 @@ function showPlayEffect(card, onDone) {
 }
 
 // バトル結果演出 (Win/Lost)
-function showBattleResult(text, color, sub, callback) {
-  if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_battleResult', text, color, sub });
+function showBattleResult(text, color, sub, callback, oppText, oppColor) {
+  // オンライン: 相手には反転したテキスト/色を送信（Win↔Lose の視点反転）
+  if (_onlineMode && bs.isPlayerTurn) {
+    sendCommand({ type: 'fx_battleResult', text: oppText || text, color: oppColor || color, sub });
+  }
   const overlay=document.getElementById('battle-result-overlay'); if(!overlay){callback&&callback();return;}
   const textEl=document.getElementById('battle-result-text');
   const subEl=document.getElementById('battle-result-sub');
@@ -1463,21 +1466,10 @@ function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpen, isDe
   setTimeout(() => { nameEl.style.opacity='1'; typeEl.style.opacity='1'; },1100);
 
   let resultText='', resultColor='';
-  if(isDigimon) {
-    if(atkCard.dp===secCard.dp) { resultText='両者消滅...'; resultColor='#ff4444'; }
-    else if(atkCard.dp>secCard.dp) {
-      // 防御側視点では「Lose...」（自分のセキュリティが突破された）
-      resultText = isDefenderView ? 'Lose...' : 'Win!!';
-      resultColor = isDefenderView ? '#ff4444' : '#00ff88';
-    }
-    else {
-      // 防御側視点では「Win!!」（相手のアタッカーが撃破された）
-      resultText = isDefenderView ? 'Win!!' : 'Lost...';
-      resultColor = isDefenderView ? '#00ff88' : '#ff4444';
-    }
-  } else if(isOption) { resultText='セキュリティ効果発動'; resultColor='#ffaa00'; }
+  // デジモン同士のバトル結果はここでは表示しない（showBattleResult側で表示）
+  if(isOption) { resultText='セキュリティ効果発動'; resultColor='#ffaa00'; }
   else if(isTamer) { resultText='テイマー登場'; resultColor='#00fbff'; }
-  else { resultText='トラッシュへ'; resultColor='#888'; }
+  else if(!isDigimon) { resultText='トラッシュへ'; resultColor='#888'; }
   setTimeout(() => { resultEl.innerText=resultText; resultEl.style.color=resultColor; resultEl.style.textShadow=`0 0 20px ${resultColor}`;
     resultEl.style.opacity='1'; resultEl.style.transform='scale(1)'; },1500);
   setTimeout(() => {overlay.style.display='none';callback&&callback();},2800);
@@ -2323,21 +2315,24 @@ function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
   showSecurityCheck(def, atk, () => {
     if(atk.dp === def.dp) {
       destroyDef(); destroyAtk(); renderAll();
-      showDestroyEffect(def, () => {
-        showDestroyEffect(atk, () => {
-          showBattleResult('Lost...', '#ff4444', '両者消滅！', () => { addLog('💥 両者消滅！'); checkPendingTurnEnd(); });
-        });
-      });
+      // 結果表示 → 消滅演出
+      showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
+        showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
+          addLog('💥 両者消滅！'); checkPendingTurnEnd();
+        }); });
+      }, '両者消滅', '#ff4444');
     } else if(atk.dp > def.dp) {
       destroyDef(); renderAll();
-      showDestroyEffect(def, () => {
-        showBattleResult('Win!!', '#00ff88', '「'+def.name+'」を撃破！', () => { addLog('💥 「'+def.name+'」を撃破！'); checkAttackEnd(atk, atkIdx); });
-      });
+      // 攻撃側勝ち: 攻撃側=Win, 防御側=Lose → 結果表示 → 消滅演出
+      showBattleResult('Win!!', '#00ff88', '「'+def.name+'」を撃破！', () => {
+        showDestroyEffect(def, () => { addLog('💥 「'+def.name+'」を撃破！'); checkAttackEnd(atk, atkIdx); });
+      }, 'Lose...', '#ff4444');
     } else {
       destroyAtk(); renderAll();
-      showDestroyEffect(atk, () => {
-        showBattleResult('Lost...', '#ff4444', '「'+atk.name+'」が撃破された', () => { addLog('💥 「'+atk.name+'」が撃破された...'); checkPendingTurnEnd(); });
-      });
+      // 攻撃側負け: 攻撃側=Lost, 防御側=Win → 結果表示 → 消滅演出
+      showBattleResult('Lost...', '#ff4444', '「'+atk.name+'」が撃破された', () => {
+        showDestroyEffect(atk, () => { addLog('💥 「'+atk.name+'」が撃破された...'); checkPendingTurnEnd(); });
+      }, 'Win!!', '#00ff88');
     }
   }, 'BATTLE!');
 }
@@ -2511,14 +2506,18 @@ function resolveSecurityCheck(atk, atkIdx) {
           bs.ai.trash.push(sec);
           removeOwnCard(atkIdx, 'destroy');
           renderAll(); sendStateSync();
-          showDestroyEffect(sec, () => { showDestroyEffect(atk, () => {
-            showBattleResult('Lost...','#ff4444','両者消滅！', () => { addLog('💥 両者消滅！'); sendStateSync(); checkPendingTurnEnd(); });
-          }); });
+          // 結果表示 → 消滅演出 の順
+          showBattleResult('両者消滅','#ff4444','両者消滅！', () => {
+            showDestroyEffect(sec, () => { showDestroyEffect(atk, () => {
+              addLog('💥 両者消滅！'); sendStateSync(); checkPendingTurnEnd();
+            }); });
+          }, '両者消滅', '#ff4444');
           return;
         } else if(atk.dp > sec.dp) {
           bs.ai.trash.push(sec); renderAll(); sendStateSync();
-          showDestroyEffect(sec, () => {
-            showBattleResult('Win!!','#00ff88','セキュリティ突破！', () => {
+          // 攻撃側の勝ち: 攻撃側=Win, 防御側=Lose → 結果表示 → 消滅演出
+          showBattleResult('Win!!','#00ff88','セキュリティ突破！', () => {
+            showDestroyEffect(sec, () => {
               addLog('✓ セキュリティ突破');
               if (bs.ai.security.length <= 0) {
                 addLog('🛡 相手のセキュリティが0枚になった');
@@ -2526,15 +2525,18 @@ function resolveSecurityCheck(atk, atkIdx) {
               } else if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
               else { checkAttackEnd(atk, atkIdx); }
             });
-          });
+          }, 'Lose...', '#ff4444');
           return;
         } else {
           removeOwnCard(atkIdx, 'destroy');
           bs.ai.trash.push(sec);
           renderAll(); sendStateSync();
-          showDestroyEffect(atk, () => {
-            showBattleResult('Lost...','#ff4444','「'+atk.name+'」が撃破された', () => { addLog('✗ セキュリティに敗北'); sendStateSync(); checkPendingTurnEnd(); });
-          });
+          // 攻撃側の負け: 攻撃側=Lost, 防御側=Win → 結果表示 → 消滅演出
+          showBattleResult('Lost...','#ff4444','「'+atk.name+'」が撃破された', () => {
+            showDestroyEffect(atk, () => {
+              addLog('✗ セキュリティに敗北'); sendStateSync(); checkPendingTurnEnd();
+            });
+          }, 'Win!!', '#00ff88');
           return;
         }
       } else if(sec.type==='テイマー') {
@@ -2973,37 +2975,38 @@ function resolveOnlineBlock(blockerIdx, cmd) {
       renderAll();
       sendCommand({ type: 'fx_destroy', cardName: blocker.name, cardImg: cardImg(blocker) });
       sendCommand({ type: 'fx_destroy', cardName: atk.name, cardImg: cardImg(atk) });
-      sendCommand({ type: 'fx_battleResult', text: 'Win!!', color: '#00ff88', sub: '両者消滅！' });
-      showDestroyEffect(blocker, () => { showDestroyEffect(atk, () => {
-        showBattleResult('Lost...', '#ff4444', '両者消滅！', () => {
+      // 両者消滅: 両画面同じ表示 → 結果表示 → 消滅演出
+      sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '両者消滅！' });
+      showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
+        showDestroyEffect(blocker, () => { showDestroyEffect(atk, () => {
           addLog('💥 両者消滅！');
           sendCommand({ type: 'block_response', blocked: true, atkIdx: atkIdx, atkResult: atkResult });
           sendStateSync();
-        });
-      }); });
+        }); });
+      });
     } else if (atk.dp > blocker.dp) {
-      // ブロッカー撃破（攻撃者生存）
+      // ブロッカー撃破（攻撃者生存）: 攻撃側=Win, 防御側(ブロッカー)=Lost
       atkResult = 'survived';
       removeOwnCard(blockerIdx, 'destroy');
       renderAll();
       sendCommand({ type: 'fx_destroy', cardName: blocker.name, cardImg: cardImg(blocker) });
-      sendCommand({ type: 'fx_battleResult', text: 'Win!!', color: '#00ff88', sub: '「' + blocker.name + '」が撃破された' });
-      showDestroyEffect(blocker, () => {
-        showBattleResult('Lost...', '#ff4444', '「' + blocker.name + '」が撃破された', () => {
+      sendCommand({ type: 'fx_battleResult', text: 'Win!!', color: '#00ff88', sub: '「' + blocker.name + '」を撃破！' });
+      showBattleResult('Lost...', '#ff4444', '「' + blocker.name + '」が撃破された', () => {
+        showDestroyEffect(blocker, () => {
           addLog('💥 「' + blocker.name + '」が撃破された');
           sendCommand({ type: 'block_response', blocked: true, atkIdx: atkIdx, atkResult: atkResult });
           sendStateSync();
         });
       });
     } else {
-      // 攻撃者撃破
+      // 攻撃者撃破: 攻撃側=Lost, 防御側(ブロッカー)=Win
       atkResult = 'destroyed';
       removeOpponentCard(atkIdx, 'destroy');
       renderAll();
       sendCommand({ type: 'fx_destroy', cardName: atk.name, cardImg: cardImg(atk) });
-      sendCommand({ type: 'fx_battleResult', text: 'Lost...', color: '#ff4444', sub: '「' + atk.name + '」を撃破！' });
-      showDestroyEffect(atk, () => {
-        showBattleResult('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => {
+      sendCommand({ type: 'fx_battleResult', text: 'Lost...', color: '#ff4444', sub: '「' + atk.name + '」が撃破された' });
+      showBattleResult('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => {
+        showDestroyEffect(atk, () => {
           addLog('💥 「' + atk.name + '」を撃破！');
           sendCommand({ type: 'block_response', blocked: true, atkIdx: atkIdx, atkResult: atkResult });
           sendStateSync();

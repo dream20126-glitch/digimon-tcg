@@ -395,7 +395,12 @@ function onRemoteCommand(cmd) {
       if (st.handCount !== undefined) adjustArr(bs.ai.hand, st.handCount);
       if (st.trashCards) bs.ai.trash = st.trashCards.map(restoreCard);
       else if (st.trashCount !== undefined) adjustArr(bs.ai.trash, st.trashCount);
-      if (st.securityCount !== undefined) adjustArr(bs.ai.security, st.securityCount);
+      // セキュリティは seededShuffle でローカルに実データ保持しているため、
+      // マリガン中のcount=0による実カード消去を防止。
+      // 実カードがある場合はcountが正の値で減ってきた時のみ先頭から削る
+      if (st.securityCount !== undefined && st.securityCount > 0 && st.securityCount < bs.ai.security.length) {
+        while (bs.ai.security.length > st.securityCount) bs.ai.security.shift();
+      }
 
       // 自分の状態も相手の視点で同期（効果で消滅されたカード等を反映）
       if (st.oppBattleArea) {
@@ -455,8 +460,8 @@ function onRemoteCommand(cmd) {
     case 'fx_securityCheck': {
       const secCard = { name: cmd.secName, imgSrc: cmd.secImg, cardNo: cmd.secCardNo || '', dp: cmd.secDp, type: cmd.secType };
       const atkCard = { name: cmd.atkName, imgSrc: cmd.atkImg, cardNo: cmd.atkCardNo || '', dp: cmd.atkDp };
-      // VS演出を表示しつつ、セキュリティカウントも更新
-      showSecurityCheck(secCard, atkCard, () => { renderAll(); }, cmd.customLabel || null);
+      // VS演出を表示しつつ、セキュリティカウントも更新（防御側視点で結果ラベルを反転）
+      showSecurityCheck(secCard, atkCard, () => { renderAll(); }, cmd.customLabel || null, null, true);
       break;
     }
     case 'fx_directAttack': {
@@ -1416,7 +1421,7 @@ function showDestroyEffect(card, callback) {
 }
 
 // セキュリティチェック演出
-function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpen) {
+function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpen, isDefenderView) {
   if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_securityCheck', secName: secCard.name||'', secImg: cardImg(secCard), secCardNo: secCard.cardNo||'', secDp: parseInt(secCard.dp)||0, secType: secCard.type||'', atkName: atkCard.name||'', atkImg: cardImg(atkCard), atkCardNo: atkCard.cardNo||'', atkDp: parseInt(atkCard.dp)||0, customLabel: customLabel||'' });
   const overlay=document.getElementById('security-check-overlay'); if(!overlay){callback&&callback();return;}
   const label=document.getElementById('sec-check-label');
@@ -1460,8 +1465,16 @@ function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpen) {
   let resultText='', resultColor='';
   if(isDigimon) {
     if(atkCard.dp===secCard.dp) { resultText='両者消滅...'; resultColor='#ff4444'; }
-    else if(atkCard.dp>secCard.dp) { resultText='Win!!'; resultColor='#00ff88'; }
-    else { resultText='Lost...'; resultColor='#ff4444'; }
+    else if(atkCard.dp>secCard.dp) {
+      // 防御側視点では「Lose...」（自分のセキュリティが突破された）
+      resultText = isDefenderView ? 'Lose...' : 'Win!!';
+      resultColor = isDefenderView ? '#ff4444' : '#00ff88';
+    }
+    else {
+      // 防御側視点では「Win!!」（相手のアタッカーが撃破された）
+      resultText = isDefenderView ? 'Win!!' : 'Lost...';
+      resultColor = isDefenderView ? '#00ff88' : '#ff4444';
+    }
   } else if(isOption) { resultText='セキュリティ効果発動'; resultColor='#ffaa00'; }
   else if(isTamer) { resultText='テイマー登場'; resultColor='#00fbff'; }
   else { resultText='トラッシュへ'; resultColor='#888'; }

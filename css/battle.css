@@ -109,12 +109,18 @@
   flex-shrink: 0; padding: 5px 8px; background: #030303;
   border-top: 1px solid #111; border-bottom: 1px solid #111;
 }
-.memory-row { display: flex; align-items: center; justify-content: center; gap: 2px; margin-bottom: 3px; }
+.memory-row { display: flex; align-items: center; justify-content: center; gap: 2px; margin-bottom: 3px; padding: 0 4px; }
 .m-cell {
   width: 20px; height: 20px; border-radius: 3px;
   display: flex; align-items: center; justify-content: center;
   font-size: 8px; font-weight: bold; border: 1px solid #1a1a1a;
-  transition: all 0.25s; flex-shrink: 0;
+  transition: all 0.25s; flex-shrink: 1; min-width: 0;
+}
+/* 画面が狭い端末では-10〜+10すべて表示できるようセルを縮小 */
+@media (max-width: 480px) {
+  .memory-row { gap: 1px; padding: 0 2px; }
+  .m-cell { width: calc((100vw - 10px) / 21); max-width: 20px; height: 18px; font-size: 7px; }
+  .m-cell.m-zero { font-size: 8px; }
 }
 .m-cell.m-zero { background: #1a1a1a; border-color: #444; color: #fff; font-size: 9px; }
 .m-cell.m-pl { background: rgba(0, 251, 255, 0.12); border-color: #00fbff44; color: #00fbff; }

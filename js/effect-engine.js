@@ -1832,7 +1832,12 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
     ctx.bs._securityBuffs.push({ type, value: val, duration: dur, source: ctx.card ? ctx.card.cardNo : '', owner: ctx.side });
     ctx.addLog(label + 'セキュリティデジモン全体 DP' + sign + val + '（' + dur + '）');
     showDpPopup(isPlus ? val : -val);
-    ctx.renderAll(); callback && callback();
+    ctx.renderAll();
+    // オンライン: セキュリティバフを即時同期（debounce待ちで相手側の表示が遅れるのを防ぐ）
+    if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
+      window._onlineSendStateSync();
+    }
+    callback && callback();
   } else if (target.code === 'target_own') {
     const validTargets = [];
     for(let i=0;i<player.battleArea.length;i++) { if(player.battleArea[i]) validTargets.push(i); }

@@ -132,12 +132,17 @@
 .m-turn-label.ai { color: #ff00fb; }
 
 .hand-wrap {
-  flex-shrink: 0; height: 92px; overflow: hidden;
+  flex-shrink: 0; height: 92px; overflow-x: auto; overflow-y: hidden;
   background: #020202;
   display: flex; align-items: flex-end; padding: 4px 8px;
   border-top: 1px solid #111;
-  justify-content: center;
+  justify-content: flex-start;
+  -webkit-overflow-scrolling: touch;
 }
+#hand-wrap::-webkit-scrollbar { height: 4px; }
+#hand-wrap::-webkit-scrollbar-track { background: #111; border-radius: 2px; }
+#hand-wrap::-webkit-scrollbar-thumb { background: #00fbff44; border-radius: 2px; }
+#hand-wrap::-webkit-scrollbar-thumb:hover { background: #00fbff88; }
 .h-card {
   width: 52px; height: 72px; flex-shrink: 0; border-radius: 5px;
   border: 1px solid #2a2a2a; background: #0a0a0a; cursor: pointer;

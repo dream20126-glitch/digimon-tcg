@@ -1789,9 +1789,15 @@ function doEvolve(card, handIdx, slotIdx) {
   showEvolveEffect(cost, base.name, base, evolved, () => {
     // 進化時1ドロー（演出付き）
     doDraw('player', '進化ドロー', () => {
-      const turnEnded = spendMemory(cost);
-      if(!turnEnded && hasKeyword(evolved, '【進化時】')) {
-        checkAndTriggerEffect(evolved, '【進化時】', () => renderAll());
+      // 先に進化時効果を発動してからメモリ消費（登場時と同じ順序）
+      // これにより、メモリ超過でターン終了する場合でも進化時効果が確実に発揮される
+      if (hasKeyword(evolved, '【進化時】')) {
+        checkAndTriggerEffect(evolved, '【進化時】', () => {
+          renderAll(true);
+          spendMemory(cost);
+        });
+      } else {
+        spendMemory(cost);
       }
     });
   });
@@ -1812,9 +1818,14 @@ function doEvolveIku(card, handIdx) {
   showEvolveEffect(cost, base.name, base, evolved, () => {
     // 進化時1ドロー（演出付き）
     doDraw('player', '進化ドロー', () => {
-      const turnEnded = spendMemory(cost);
-      if(!turnEnded && evolved.effect && evolved.effect.includes('＜育成＞') && hasKeyword(evolved, '【進化時】')) {
-        checkAndTriggerEffect(evolved, '【進化時】', () => renderAll());
+      // 先に進化時効果（＜育成＞時のみ）を発動してからメモリ消費
+      if (evolved.effect && evolved.effect.includes('＜育成＞') && hasKeyword(evolved, '【進化時】')) {
+        checkAndTriggerEffect(evolved, '【進化時】', () => {
+          renderAll(true);
+          spendMemory(cost);
+        });
+      } else {
+        spendMemory(cost);
       }
     });
   });
@@ -3433,9 +3444,11 @@ function cleanupBattle() {
     if (el) el.style.display = 'none';
   });
   // body直下に動的追加されたオーバーレイを全て除去（position:fixedのもの）
+  // ただし、battle.htmlに元から定義されたオーバーレイ（showBCD等でbody直下に移動されたもの）は保持
+  const preserveIds = new Set(overlayIds); // 上で定義済みのIDは削除せず表示オフのみ
   document.querySelectorAll('body > div[style*="position:fixed"], body > div[style*="position: fixed"]').forEach(el => {
-    // battle-screenやscreen要素は除外
     if (el.classList.contains('screen') || el.id === 'battle-screen') return;
+    if (el.id && preserveIds.has(el.id)) return; // 再利用するオーバーレイは消さない
     if (el.parentNode) el.parentNode.removeChild(el);
   });
   // バトル画面自体を強制非表示
@@ -4001,22 +4014,13 @@ function attachIkuDrag(iku) {
 function renderHand() {
   const hw=document.getElementById('hand-wrap'); if(!hw) return;
   hw.innerHTML='';
-  const handCount = bs.player.hand.length;
-  const containerWidth = hw.offsetWidth - 16; // padding分引く
-  const cardWidth = 52;
-  // 重なり計算: カードが多いほど重なる（最小マージン: -30px）
-  let marginLeft = 4; // 通常のgap
-  if (handCount > 0) {
-    const totalNeeded = handCount * cardWidth + (handCount - 1) * 4;
-    if (totalNeeded > containerWidth && handCount > 1) {
-      marginLeft = Math.max(-30, (containerWidth - cardWidth) / (handCount - 1) - cardWidth);
-    }
-  }
+  // カードを重ねず等間隔で並べ、はみ出したら横スクロール（バトルエリアと同じ挙動）
+  const marginLeft = 4;
 
   bs.player.hand.forEach((c,i) => {
     const el=document.createElement('div');
     el.className='h-card'+(bs.selHand===i?' h-selected':'');
-    el.style.zIndex = i; // 後ろのカードが上に重なる
+    el.style.zIndex = i;
     if (i > 0) el.style.marginLeft = marginLeft + 'px';
     let costLabel='';
     if(c.playCost!==null&&c.evolveCost!==null) costLabel=`<span style="color:#ffaa00;">${c.playCost}</span><span style="color:#555;font-size:6px;">/</span><span style="color:#00ff88;font-size:7px;">進${c.evolveCost}</span>`;

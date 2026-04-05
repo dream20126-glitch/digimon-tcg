@@ -49,7 +49,9 @@ function sendStateSync() {
     oppTrashCount: bs.ai.trash.length,
     oppBattleArea: bs.ai.battleArea.map(serializeCard),
     oppTamerArea: bs.ai.tamerArea.map(serializeCard),
-    memory: bs.memory
+    memory: bs.memory,
+    // セキュリティバフ同期（自分のバフのみ送信）
+    securityBuffs: (bs._securityBuffs || []).filter(b => b.owner === 'player')
   };
   sendCommand({ type: 'state_sync', state });
 }
@@ -57,6 +59,7 @@ function sendStateSync() {
 // オンライン状態を公開（effect-engine等から参照用）
 window._isOnlineMode = () => _onlineMode;
 window._onlineSendCommand = (cmd) => sendCommand(cmd);
+window._onlineSendStateSync = () => sendStateSync();
 
 // メモリー即時同期（コスト消費・効果発動時に即座に相手へ通知）
 function sendMemoryUpdate() {
@@ -221,6 +224,7 @@ function onRemoteCommand(cmd) {
       bs.isFirstTurn = false;
       updateMemGauge();
       expireBuffs(bs, 'dur_this_turn');
+      expireBuffs(bs, 'dur_next_opp_turn'); // 「相手ターン終了まで」のバフを除去
       renderAll();
       showYourTurn('相手のターン終了','','#555555', () => {
         bs.isPlayerTurn = true;
@@ -426,6 +430,13 @@ function onRemoteCommand(cmd) {
             bs.player.trash.push(bs.player.security.splice(0, 1)[0]);
           }
         }
+      }
+
+      // セキュリティバフ同期（相手のバフを受信、ownerを反転して適用）
+      if (st.securityBuffs) {
+        const myBuffs = (bs._securityBuffs || []).filter(b => b.owner === 'player');
+        const oppBuffs = st.securityBuffs.map(b => ({ ...b, owner: 'ai' }));
+        bs._securityBuffs = [...myBuffs, ...oppBuffs];
       }
 
       if (st.memory !== undefined) { bs.memory = -st.memory; updateMemGauge(); }
@@ -3846,6 +3857,8 @@ function renderIkusei() {
         attachIkuDrag(iku);
       }
     } else {
+      // 育成エリアが空になったらドラッグフラグをリセット
+      if (isPlayer) iku._ikuDragAttached = false;
       const hasTamaDeck = isPlayer ? (bs.player.tamaDeck && bs.player.tamaDeck.length > 0) : (bs.ai.tamaDeck && bs.ai.tamaDeck.length > 0);
       // デジタマデッキがあれば裏面表示、なければ空表示
       if (hasTamaDeck) {
@@ -3872,6 +3885,10 @@ function renderIkusei() {
 
 // 育成エリアドラッグ移動（renderIkuseiから呼ばれる）— ゴースト＋ドロップ方式
 function attachIkuDrag(iku) {
+  // 重複リスナー防止: 既に登録済みなら再登録しない
+  if (iku._ikuDragAttached) return;
+  iku._ikuDragAttached = true;
+
   iku.style.border='2px solid #00ff88'; iku.style.boxShadow='0 0 15px rgba(0,255,136,0.4)';
   iku.style.cursor='grab';
 
@@ -3881,8 +3898,13 @@ function attachIkuDrag(iku) {
     if(slot===-1) { slot=bs.player.battleArea.length; bs.player.battleArea.push(null); }
     bs.player.battleArea[slot]=bs.player.ikusei; bs.player.ikusei=null;
     addLog('🐾 「'+bs.player.battleArea[slot].name+'」をバトルエリアへ移動！');
-    if (_onlineMode) { sendCommand({ type: 'breed_move', cardName: bs.player.battleArea[slot]?.name||'', cardImg: bs.player.battleArea[slot]?.imgSrc||'' }); }
+    if (_onlineMode) {
+      sendCommand({ type: 'breed_move', cardName: bs.player.battleArea[slot]?.name||'', cardImg: bs.player.battleArea[slot]?.imgSrc||'' });
+      sendStateSync(); // 即時同期（育成エリアクリアを確実に反映）
+    }
     applyPermanentEffects(bs, 'player', makeEffectContext(null, 'player'));
+    // ドラッグフラグをリセット（次の育成フェーズで再登録可能に）
+    iku._ikuDragAttached = false;
     breedActionDone();
   }
 

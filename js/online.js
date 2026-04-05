@@ -151,6 +151,10 @@ window.joinRoom = function() {
   const roomId = document.getElementById('room-id-input').value.trim();
   const playerName = currentPlayerName || '名無しさん';
   if (!roomId) return alert('ルームIDを入力してください');
+  // 前回バトルのフラグをリセット（連戦対応）
+  _battleStarted = false;
+  diceJudged = false;
+  diceRolling = false;
   onValue(ref(rtdb, 'rooms/' + roomId), (snapshot) => {
     const data = snapshot.val();
     let assignedKey = null;
@@ -160,8 +164,8 @@ window.joinRoom = function() {
     myPlayerKey = assignedKey; currentRoomId = roomId;
     const myRef = ref(rtdb, `rooms/${roomId}/${myPlayerKey}`);
     onDisconnect(myRef).remove();
-    set(myRef, { name: playerName, active: true, dice: 0, ready: false, deckName: '' });
-    update(ref(rtdb, `rooms/${roomId}`), { phase: 'dice' }).then(() => {
+    set(myRef, { name: playerName, active: true, dice: 0, ready: false, deckName: '', enterBattle: false });
+    update(ref(rtdb, `rooms/${roomId}`), { phase: 'dice', gameStarted: false, diceResult: null }).then(() => {
       showScreen('battle-lobby-screen'); dResetAll();
       document.getElementById('deck-select-area').innerHTML = `
         <p style="color:#fff; font-size:14px; margin-bottom:10px;">対戦に使用するデッキを選択</p>

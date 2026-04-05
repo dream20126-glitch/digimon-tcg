@@ -2033,6 +2033,7 @@ function checkConditions(conditions, card, bs, side) {
 // ===== 消滅チェック =====
 
 function checkPendingDestroys(ctx) {
+  let destroyed = false;
   ['player', 'ai'].forEach(side => {
     const area = ctx.bs[side].battleArea;
     for (let i = 0; i < area.length; i++) {
@@ -2042,10 +2043,23 @@ function checkPendingDestroys(ctx) {
         ctx.bs[side].trash.push(card);
         if (card.stack) card.stack.forEach(s => ctx.bs[side].trash.push(s));
         ctx.addLog('💀 「' + card.name + '」消滅');
+        destroyed = true;
+        // オンライン: DP0消滅を即時通知（state_sync遅延による復活を防止）
+        if (window._isOnlineMode && window._isOnlineMode()) {
+          if (side === 'ai') {
+            window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: i, reason: 'destroy' });
+          } else if (side === 'player') {
+            window._onlineSendCommand({ type: 'own_card_removed', slotIdx: i, reason: 'destroy' });
+          }
+        }
       }
     }
   });
   ctx.renderAll();
+  // 消滅があった場合は即時state_sync（デバウンスを待たず確実に同期）
+  if (destroyed && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
+    window._onlineSendStateSync();
+  }
 }
 
 // ===== 効果発動アナウンス（カード画像＋効果テキストを数秒表示） =====

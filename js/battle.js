@@ -1,7 +1,7 @@
 // バトル画面ロジック（battle-controls.md 準拠）
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
 import { loadAllDictionaries, triggerEffect, cardHasKeyword, expireBuffs, applyPermanentEffects, isTargetSelecting, calcPerCountValue } from './effect-engine.js';
-import { rtdb, ref, set, update, onValue } from './firebase-config.js';
+import { rtdb, ref, set, update, onValue, remove } from './firebase-config.js';
 
 // ===== オンライン同期 =====
 let _onlineMode = false;    // オンラインバトル中か
@@ -453,8 +453,8 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_securityCheck': {
-      const secCard = { name: cmd.secName, imgSrc: cmd.secImg, dp: cmd.secDp, type: cmd.secType };
-      const atkCard = { name: cmd.atkName, imgSrc: cmd.atkImg, dp: cmd.atkDp };
+      const secCard = { name: cmd.secName, imgSrc: cmd.secImg, cardNo: cmd.secCardNo || '', dp: cmd.secDp, type: cmd.secType };
+      const atkCard = { name: cmd.atkName, imgSrc: cmd.atkImg, cardNo: cmd.atkCardNo || '', dp: cmd.atkDp };
       // VS演出を表示しつつ、セキュリティカウントも更新
       showSecurityCheck(secCard, atkCard, () => { renderAll(); }, cmd.customLabel || null);
       break;
@@ -469,6 +469,18 @@ function onRemoteCommand(cmd) {
     }
     case 'fx_sAttackPlus': {
       showSAttackPlusAnnounce(cmd.n, () => {});
+      break;
+    }
+    case 'fx_secCheckLabel': {
+      // 相手画面にも「1枚目」「2枚目」等のラベルを表示
+      const old = document.getElementById('_sec-check-count-label');
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      const el = document.createElement('div');
+      el.id = '_sec-check-count-label';
+      el.style.cssText = 'position:fixed;top:10%;left:50%;transform:translateX(-50%);z-index:60001;pointer-events:none;font-size:clamp(0.9rem,4vw,1.3rem);font-weight:700;color:#fff;background:rgba(0,0,0,0.7);padding:6px 18px;border-radius:8px;border:1px solid #aaa;text-align:center;animation:secCheckLabel 2.5s ease forwards;';
+      el.innerText = cmd.text || '';
+      document.body.appendChild(el);
+      setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); }, 2800);
       break;
     }
     case 'fx_effectAnnounce': {
@@ -1405,7 +1417,7 @@ function showDestroyEffect(card, callback) {
 
 // セキュリティチェック演出
 function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpen) {
-  if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_securityCheck', secName: secCard.name||'', secImg: cardImg(secCard), secDp: parseInt(secCard.dp)||0, secType: secCard.type||'', atkName: atkCard.name||'', atkImg: cardImg(atkCard), atkDp: parseInt(atkCard.dp)||0, customLabel: customLabel||'' });
+  if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_securityCheck', secName: secCard.name||'', secImg: cardImg(secCard), secCardNo: secCard.cardNo||'', secDp: parseInt(secCard.dp)||0, secType: secCard.type||'', atkName: atkCard.name||'', atkImg: cardImg(atkCard), atkCardNo: atkCard.cardNo||'', atkDp: parseInt(atkCard.dp)||0, customLabel: customLabel||'' });
   const overlay=document.getElementById('security-check-overlay'); if(!overlay){callback&&callback();return;}
   const label=document.getElementById('sec-check-label');
   const atkImgEl=document.getElementById('sec-atk-card-img');
@@ -2420,6 +2432,8 @@ function resolveSecurityCheck(atk, atkIdx) {
 
   // セキュリティチェック画面上にラベルを大きく表示
   function showCheckLabelOnOverlay(text) {
+    // オンライン: 相手にもラベルを表示
+    if (_onlineMode && bs.isPlayerTurn) sendCommand({ type: 'fx_secCheckLabel', text });
     // 既存のラベルがあれば削除
     const old = document.getElementById('_sec-check-count-label');
     if (old && old.parentNode) old.parentNode.removeChild(old);
@@ -3417,9 +3431,9 @@ function cleanupBattle() {
   // オンライン: Firebaseリスナー解除 + ルームデータクリア
   if (_onlineCmdListener) { _onlineCmdListener(); _onlineCmdListener = null; }
   if (_onlineMode && _onlineRoomId) {
-    import('./firebase-config.js').then(({ rtdb, ref, remove }) => {
-      remove(ref(rtdb, `rooms/${_onlineRoomId}`));
-    }).catch(() => {});
+    // 同期的にルーム削除（動的importによる非同期遅延でのレース回避）
+    try { remove(ref(rtdb, `rooms/${_onlineRoomId}`)); } catch(e) {}
+    _onlineRoomId = null;
   }
 }
 

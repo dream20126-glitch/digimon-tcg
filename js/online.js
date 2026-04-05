@@ -228,11 +228,12 @@ function updateLobbyUI(data) {
     const oppEntered = data[oppKey2]?.enterBattle;
     // 両方揃ったらバトル開始
     if (myEntered && oppEntered && !_battleStarted) {
-      _battleStarted = true;
       const playerFirst = data.diceResult?.winner === myPlayerKey;
       const myList = data[myPlayerKey]?.deckList;
       const oppList = data[oppKey2]?.deckList;
+      // デッキリストが両方揃っている場合のみバトル開始（早期に_battleStartedを立てて止まるのを防ぐ）
       if (myList && oppList) {
+        _battleStarted = true;
         showScreen('battle-screen');
         if (typeof startOnlineBattle === 'function') {
           const oppName = data[oppKey2]?.name || '相手プレイヤー';

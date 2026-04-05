@@ -83,6 +83,23 @@ function fuzzyIndexOf(effectText, searchKey) {
     }
   }
 
+  // 5. 助詞挿入許容: 「Xを[動詞]」パターンで間に他の語句が入っても両方が順序通りに出現すればヒット
+  //    「進化元を破棄」→「相手の進化元を選んで破棄する」でもヒット
+  //    「手札を捨てる」→「手札を1枚捨てる」等でもヒット
+  const particleSplit = searchKey.match(/^(.{2,}?)(を|に|で|から|まで|へ)(.{2,})$/);
+  if (particleSplit) {
+    const before = particleSplit[1];
+    const after = particleSplit[3];
+    const beforeIdx = effectText.indexOf(before);
+    if (beforeIdx !== -1) {
+      const afterIdx = effectText.indexOf(after, beforeIdx + before.length);
+      // 間に挟まる文字数が20文字以内なら同一効果と判断
+      if (afterIdx !== -1 && (afterIdx - beforeIdx - before.length) <= 20) {
+        return beforeIdx;
+      }
+    }
+  }
+
   return -1;
 }
 
@@ -225,11 +242,22 @@ function findDuration(effectText) {
     if ((entry['アクションコード']||'').trim() && (entry['アクションコード']||'').trim().startsWith('dur_')) {
       const keywords = String(entry['アクション名']).split(',');
       for (const kw of keywords) {
-        if (effectText.includes(kw.trim())) {
+        if (fuzzyIndexOf(effectText, kw.trim()) !== -1) {
           return { code: (entry['アクションコード']||'').trim(), entry };
         }
       }
     }
+  }
+  // 持続キーワードのハードコード救済（辞書の表記ゆれ対応）
+  // スプレッドシート側の表記に依存せず、よくある言い回しを直接検出
+  if (/次の自分(の)?ターン(終了時|終了|の終わり)まで/.test(effectText)) {
+    return { code: 'dur_next_own_turn', entry: {} };
+  }
+  if (/次の相手(の)?ターン(終了時|終了|の終わり)まで/.test(effectText)) {
+    return { code: 'dur_next_opp_turn', entry: {} };
+  }
+  if (/(このターンの間|ターン終了(時)?まで|ターンの終わりまで)/.test(effectText)) {
+    return { code: 'dur_this_turn', entry: {} };
   }
   return null;
 }
@@ -295,9 +323,12 @@ export function parseCardEffect(card, effectField) {
   if (!text || text === 'なし') return [];
 
   const blocks = [];
+  // 自己参照（「このカードの【メイン】効果」等）の【】は分割対象にしない
+  // → 先に【】を外して通常の文字列化し、findActionsで「メイン効果を発揮」等とマッチさせる
+  let preproc = text.replace(/このカードの【メイン】効果/g, 'このカードのメイン効果');
   // キーワード効果・制限修飾子の【】はトリガーではないので、分割前にエスケープ
   const keywordBrackets = /【(ターンに[1一]回|ブロッカー|速攻|突進|貫通|ジャミング|再起動|Sアタック\+\d+|セキュリティアタック\+\d+)】/g;
-  const normalized = text.replace(keywordBrackets, (m, p1) => '〔' + p1 + '〕');
+  const normalized = preproc.replace(keywordBrackets, (m, p1) => '〔' + p1 + '〕');
   // 【】で始まるブロックに分割
   const parts = normalized.split(/(?=【)/);
   for (const part of parts) {
@@ -943,6 +974,29 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         ctx.addLog('⚠ メイン効果が見つかりません');
         callback();
       }
+      break;
+    }
+
+    case 'security_attack_plus': {
+      // 期間付きでSアタック+Nを付与（対象デジモンのbuffsに追加）
+      const saVal = action.value || 1;
+      const saDur = (block.duration && block.duration.code) || 'dur_this_turn';
+      const saTarget = defaultTarget || { code: 'target_all_own' };
+      const applySA = (tgt) => {
+        if (!tgt) return;
+        if (!tgt.buffs) tgt.buffs = [];
+        tgt.buffs.push({ type: 'security_attack_plus', value: saVal, duration: saDur, source: ctx.card ? ctx.card.cardNo : '' });
+        ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + saVal + '（' + saDur + '）');
+      };
+      if (saTarget.code === 'target_all_own') {
+        player.battleArea.forEach(c => { if (c) applySA(c); });
+      } else if (saTarget.code === 'target_self' && ctx.card) {
+        applySA(ctx.card);
+      } else {
+        player.battleArea.forEach(c => { if (c) applySA(c); });
+      }
+      ctx.renderAll();
+      callback && callback();
       break;
     }
 

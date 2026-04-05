@@ -2429,6 +2429,12 @@ function getSecurityAttackCount(card) {
   if (card._permEffects && card._permEffects.securityAttackPlus) {
     extra += card._permEffects.securityAttackPlus;
   }
+  // 期間付きバフから付与されたSアタック+（セキュリティ効果等）
+  if (card.buffs && card.buffs.length > 0) {
+    card.buffs.forEach(b => {
+      if (b.type === 'security_attack_plus') extra += (parseInt(b.value) || 0);
+    });
+  }
   return 1 + extra;
 }
 

@@ -942,10 +942,41 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
     case 'cant_attack_block': {
-      const tgt = opponent.battleArea.find(c => c !== null);
-      if (tgt) { tgt.cantAttack = true; tgt.cantBlock = true; ctx.addLog('🔒 「' + tgt.name + '」アタック・ブロック不可'); }
-      ctx.renderAll();
-      callback();
+      // 持続時間
+      const cabDur = (block && block.duration && block.duration.code) || 'dur_this_turn';
+      // 条件: 進化元を持たない 等
+      const cabHasNoEvoCond = block && block.conditions && block.conditions.some(c => c.code === 'cond_no_evo');
+      const cabTargets = [];
+      for (let i = 0; i < opponent.battleArea.length; i++) {
+        const c = opponent.battleArea[i];
+        if (!c) continue;
+        if (cabHasNoEvoCond && c.stack && c.stack.length > 0) continue; // 進化元を持つカードは除外
+        cabTargets.push(i);
+      }
+      if (cabTargets.length === 0) {
+        ctx.addLog('⚠ 対象がいません');
+        showEffectFailed('効果を発動できませんでした', callback);
+        break;
+      }
+      const applyCab = (tgt) => {
+        tgt.cantAttack = true; tgt.cantBlock = true;
+        addBuffDirect(tgt, 'cant_attack_block', 0, cabDur, ctx);
+        ctx.addLog('🔒 「' + tgt.name + '」アタック・ブロック不可（' + cabDur + '）');
+      };
+      if (ctx.side === 'ai') {
+        applyCab(opponent.battleArea[cabTargets[0]]);
+        ctx.renderAll();
+        callback();
+        break;
+      }
+      ctx.addLog('🎯 アタック・ブロック不可にする対象を選んでください');
+      showTargetSelection('ai', cabTargets, null, uiColor, (selectedIdx) => {
+        if (selectedIdx !== null) {
+          applyCab(opponent.battleArea[selectedIdx]);
+        }
+        ctx.renderAll();
+        callback();
+      });
       break;
     }
     case 'cost_discard': {

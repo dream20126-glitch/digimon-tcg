@@ -2383,6 +2383,9 @@ function applySecurityBuffs(sec, ownerSide) {
 function getSecurityAttackCount(card) {
   let extra = 0;
   const side = bs.isPlayerTurn ? 'player' : 'ai';
+  // 永続効果をリアルタイム再計算（相手の盤面変化で条件付きSアタック+が変動するため）
+  applyPermanentEffects(bs, 'player', makeEffectContext(null, 'player'));
+  applyPermanentEffects(bs, 'ai', makeEffectContext(null, 'ai'));
   console.log('[SA-CHECK]', card.name, 'effect:', card.effect?.substring(0,50), 'stack:', card.stack?.length, 'permEffects:', JSON.stringify(card._permEffects||{}));
 
   function calcFromText(text, source) {

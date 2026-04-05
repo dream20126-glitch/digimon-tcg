@@ -191,6 +191,22 @@ function findConditions(effectText) {
     }
   }
 
+  // 辞書の表記ゆれ救済（ひらがな/漢字・類義語）
+  const hasCode = (c) => results.some(r => r.code === c);
+  // 進化元を持たない / 進化元をもたない
+  if (!hasCode('cond_no_evo') && /進化元を(持|も)たない/.test(effectText)) {
+    results.push({ code: 'cond_no_evo', keyword: '進化元をもたない', value: null });
+  }
+  // 進化元を N 枚以上持つ / もつ
+  if (!hasCode('cond_has_evo') && /進化元を(\d+)枚以上(持|も)つ/.test(effectText)) {
+    const m = effectText.match(/進化元を(\d+)枚以上(持|も)つ/);
+    results.push({ code: 'cond_has_evo', keyword: '進化元を持つ', value: m ? parseInt(m[1]) : 1 });
+  }
+  // 「～がいるとき / ～がいる間 / ～がいる場合」 → cond_exists
+  if (!hasCode('cond_exists') && /(いるとき|いる間|がいる(?![ぁ-ん])|いる場合)/.test(effectText)) {
+    results.push({ code: 'cond_exists', keyword: 'いる間', value: null });
+  }
+
   return results;
 }
 
@@ -2100,7 +2116,12 @@ export function applyPermanentEffects(bs, side, context) {
 
 function checkConditions(conditions, card, bs, side) {
   if (!conditions || conditions.length === 0) return true;
-  for (const cond of conditions) {
+  // cond_existsがある場合は先に評価（他の条件は相手カード側に適用される）
+  const hasExists = conditions.some(c => c.code === 'cond_exists');
+  const orderedConds = hasExists
+    ? [conditions.find(c => c.code === 'cond_exists'), ...conditions.filter(c => c.code !== 'cond_exists')]
+    : conditions;
+  for (const cond of orderedConds) {
     switch (cond.code) {
       case 'cond_has_evo': if (!card.stack || card.stack.length < (cond.value || 0)) return false; break;
       case 'cond_no_evo': if (card.stack && card.stack.length > 0) return false; break;

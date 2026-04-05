@@ -875,17 +875,39 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
     case 'evo_discard':
     case 'evo_discard_bottom': {
-      const tgt = opponent.battleArea.find(c => c && c.stack && c.stack.length > 0);
-      if (tgt) {
-        const n = action.value || 1;
+      // 進化元を持つ相手デジモンを列挙
+      const evoTargets = [];
+      for (let i = 0; i < opponent.battleArea.length; i++) {
+        if (opponent.battleArea[i] && opponent.battleArea[i].stack && opponent.battleArea[i].stack.length > 0) evoTargets.push(i);
+      }
+      if (evoTargets.length === 0) {
+        ctx.addLog('⚠ 進化元を持つ対象がいません');
+        showEffectFailed('効果を発動できませんでした', callback);
+        break;
+      }
+      const n = action.value || 1;
+      const discardFromTarget = (tgt) => {
         for (let i = 0; i < n && tgt.stack.length > 0; i++) {
           const removed = action.code === 'evo_discard_bottom' ? tgt.stack.pop() : tgt.stack.shift();
           opponent.trash.push(removed);
           ctx.addLog('📤 「' + tgt.name + '」の進化元を破棄');
         }
+      };
+      // AIは自動選択、プレイヤーは対象選択UI
+      if (ctx.side === 'ai') {
+        discardFromTarget(opponent.battleArea[evoTargets[0]]);
+        ctx.renderAll();
+        callback();
+        break;
       }
-      ctx.renderAll();
-      callback();
+      ctx.addLog('🎯 進化元を破棄する対象を選んでください');
+      showTargetSelection('ai', evoTargets, null, uiColor, (selectedIdx) => {
+        if (selectedIdx !== null) {
+          discardFromTarget(opponent.battleArea[selectedIdx]);
+          ctx.renderAll();
+        }
+        callback();
+      });
       break;
     }
     case 'cant_attack_block': {

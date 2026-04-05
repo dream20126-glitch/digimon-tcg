@@ -1501,6 +1501,7 @@ const TRIGGER_CODE_MAP = {
 function checkAndTriggerEffect(card, triggerType, callback, side, alreadyConfirmed) {
   if (!card || !card.effect) { callback&&callback(); return; }
   const hasTrigger = card.effect.includes(triggerType);
+  console.log('[TRIGGER]', triggerType, 'card:', card?.name, 'effect:', (card?.effect||'').substring(0,100), 'hasTrigger:', hasTrigger);
   if (!hasTrigger) { callback&&callback(); return; }
   if (!side) {
     const inPlayer = bs.player.battleArea.includes(card) || bs.player.tamerArea.includes(card) || bs.player.hand.includes(card);
@@ -2554,16 +2555,30 @@ function resolveSecurityCheck(atk, atkIdx) {
         setTimeout(() => {
           if (hasSecField || hasSecInEffect) {
             const secText = hasSecField ? sec.securityEffect : sec.effect;
-            const originalEffect = sec.effect;
-            if (hasSecField && !secText.includes('【セキュリティ】')) {
-              sec.effect = '【セキュリティ】' + secText;
+            const originalEffect = sec.effect || '';
+            // 元の効果を保持したままセキュリティ効果を追加（上書きせず連結）
+            if (hasSecField) {
+              const secBlock = secText.includes('【セキュリティ】') ? secText : '【セキュリティ】' + secText;
+              sec.effect = originalEffect + (originalEffect ? '\n' : '') + secBlock;
             }
-            checkAndTriggerEffect(sec, '【セキュリティ】', () => {
-              sec.effect = originalEffect;
-              bs.ai.trash.push(sec); renderAll(); sendStateSync();
-              if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
-              else { checkAttackEnd(atk, atkIdx); }
-            }, 'ai');
+            const afterSecEffect = () => {
+              // 「このカードの【メイン】効果を発揮する」パターン → 元の効果の【メイン】を発動
+              const mentionsMainEffect = /このカードの\s*【メイン】\s*効果/.test(secText);
+              const doFinish = () => {
+                sec.effect = originalEffect;
+                bs.ai.trash.push(sec); renderAll(); sendStateSync();
+                if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
+                else { checkAttackEnd(atk, atkIdx); }
+              };
+              if (mentionsMainEffect && originalEffect.includes('【メイン】')) {
+                // 【メイン】効果を処理するため、effectを一時的に元のまま使用
+                sec.effect = originalEffect;
+                checkAndTriggerEffect(sec, '【メイン】', doFinish, 'ai');
+              } else {
+                doFinish();
+              }
+            };
+            checkAndTriggerEffect(sec, '【セキュリティ】', afterSecEffect, 'ai');
           } else {
             bs.ai.trash.push(sec); renderAll();
             if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
@@ -3169,15 +3184,27 @@ function doAiSecurityCheck(atk, atkIdx, callback) {
           const hasSecInEffect2 = sec.effect && sec.effect.includes('【セキュリティ】');
           if (hasSecField2 || hasSecInEffect2) {
             const secText2 = hasSecField2 ? sec.securityEffect : sec.effect;
-            const originalEffect2 = sec.effect;
-            if (hasSecField2 && !secText2.includes('【セキュリティ】')) {
-              sec.effect = '【セキュリティ】' + secText2;
+            const originalEffect2 = sec.effect || '';
+            // 元の効果を保持したままセキュリティ効果を追加（上書きせず連結）
+            if (hasSecField2) {
+              const secBlock2 = secText2.includes('【セキュリティ】') ? secText2 : '【セキュリティ】' + secText2;
+              sec.effect = originalEffect2 + (originalEffect2 ? '\n' : '') + secBlock2;
             }
-            checkAndTriggerEffect(sec, '【セキュリティ】', () => {
-              sec.effect = originalEffect2;
-              bs.player.trash.push(sec); renderAll();
-              setTimeout(() => aiAttackPhase(callback),800);
-            }, 'player');
+            const afterSec2 = () => {
+              const mentionsMain2 = /このカードの\s*【メイン】\s*効果/.test(secText2);
+              const doFinish2 = () => {
+                sec.effect = originalEffect2;
+                bs.player.trash.push(sec); renderAll();
+                setTimeout(() => aiAttackPhase(callback),800);
+              };
+              if (mentionsMain2 && originalEffect2.includes('【メイン】')) {
+                sec.effect = originalEffect2;
+                checkAndTriggerEffect(sec, '【メイン】', doFinish2, 'player');
+              } else {
+                doFinish2();
+              }
+            };
+            checkAndTriggerEffect(sec, '【セキュリティ】', afterSec2, 'player');
           } else {
             bs.player.trash.push(sec);
             renderAll(); setTimeout(() => aiAttackPhase(callback),800);

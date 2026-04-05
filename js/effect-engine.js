@@ -982,9 +982,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
     case 'cant_attack_block': {
       // 持続時間
-      const cabDur = (block && block.duration && block.duration.code) || 'dur_this_turn';
+      const cabDur = (ctx.block && ctx.block.duration && ctx.block.duration.code) || 'dur_this_turn';
       // 条件: 進化元を持たない 等
-      const cabHasNoEvoCond = block && block.conditions && block.conditions.some(c => c.code === 'cond_no_evo');
+      const cabHasNoEvoCond = ctx.block && ctx.block.conditions && ctx.block.conditions.some(c => c.code === 'cond_no_evo');
       const cabTargets = [];
       for (let i = 0; i < opponent.battleArea.length; i++) {
         const c = opponent.battleArea[i];
@@ -1050,7 +1050,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'security_attack_plus': {
       // 期間付きでSアタック+Nを付与（対象デジモンのbuffsに追加）
       const saVal = action.value || 1;
-      const saDur = (block.duration && block.duration.code) || 'dur_this_turn';
+      const saDur = (ctx.block && ctx.block.duration && ctx.block.duration.code) || 'dur_this_turn';
       const saTarget = defaultTarget || { code: 'target_all_own' };
       const applySA = (tgt) => {
         if (!tgt) return;

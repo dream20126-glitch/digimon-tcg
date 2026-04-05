@@ -143,6 +143,21 @@
 #hand-wrap::-webkit-scrollbar-track { background: #111; border-radius: 2px; }
 #hand-wrap::-webkit-scrollbar-thumb { background: #00fbff44; border-radius: 2px; }
 #hand-wrap::-webkit-scrollbar-thumb:hover { background: #00fbff88; }
+
+/* 横スクロール矢印ボタン（手札・バトルエリア共通） */
+.scroll-arrow {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  background: rgba(0, 15, 25, 0.85); border: 1px solid var(--main-cyan);
+  color: var(--main-cyan); width: 24px; height: 40px;
+  font-size: 14px; font-weight: bold; cursor: pointer;
+  border-radius: 4px; z-index: 100; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 10px rgba(0, 251, 255, 0.3);
+  opacity: 0.7; transition: opacity 0.15s;
+}
+.scroll-arrow:hover, .scroll-arrow:active { opacity: 1; }
+.scroll-arrow-left { left: 2px; }
+.scroll-arrow-right { right: 2px; }
 .h-card {
   width: 52px; height: 72px; flex-shrink: 0; border-radius: 5px;
   border: 1px solid #2a2a2a; background: #0a0a0a; cursor: pointer;

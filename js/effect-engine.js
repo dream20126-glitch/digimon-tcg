@@ -31,9 +31,16 @@ function findTrigger(effectText) {
     const keywords = String(entry['キーワード']).split(',');
     for (const kw of keywords) {
       if (effectText.includes(kw.trim())) {
-        return { keyword: kw.trim(), code: entry['処理コード'], duration: entry['持続時間'], entry };
+        return { keyword: kw.trim(), code: (entry['処理コード']||'').trim(), duration: entry['持続時間'], entry };
       }
     }
+  }
+  // 辞書に無いトリガーのハードコード救済
+  if (/【?ブロックされた(時|とき)】?/.test(effectText)) {
+    return { keyword: 'ブロックされた時', code: 'when_blocked', duration: '即時', entry: {} };
+  }
+  if (/【?アタックされた(時|とき)】?/.test(effectText)) {
+    return { keyword: 'アタックされた時', code: 'when_attacked', duration: '即時', entry: {} };
   }
   return null;
 }

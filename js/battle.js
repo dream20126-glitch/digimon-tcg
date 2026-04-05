@@ -61,6 +61,18 @@ window._isOnlineMode = () => _onlineMode;
 window._onlineSendCommand = (cmd) => sendCommand(cmd);
 window._onlineSendStateSync = () => sendStateSync();
 
+// ===== 横スクロール矢印ボタン =====
+window.scrollHand = function(direction) {
+  const el = document.getElementById('hand-wrap');
+  if (!el) return;
+  el.scrollBy({ left: direction * 80, behavior: 'smooth' });
+};
+window.scrollBattleRow = function(side, direction) {
+  const el = document.getElementById(side + '-battle-row');
+  if (!el) return;
+  el.scrollBy({ left: direction * 80, behavior: 'smooth' });
+};
+
 // メモリー即時同期（コスト消費・効果発動時に即座に相手へ通知）
 function sendMemoryUpdate() {
   if (!_onlineMode) return;
@@ -1496,12 +1508,17 @@ const TRIGGER_CODE_MAP = {
   '【相手のターン開始時】': 'on_opp_turn_start', '【相手のターン終了時】': 'on_opp_turn_end',
   '【消滅時】': 'on_destroy', '【セキュリティ】': 'security',
   '【レストしたとき】': 'when_rest', '【アタックされたとき】': 'when_attacked',
+  '【ブロックされたとき】': 'when_blocked', 'ブロックされた時': 'when_blocked', 'ブロックされたとき': 'when_blocked',
+  'アタックされた時': 'when_attacked',
 };
 
 function checkAndTriggerEffect(card, triggerType, callback, side, alreadyConfirmed) {
-  if (!card || !card.effect) { callback&&callback(); return; }
-  const hasTrigger = card.effect.includes(triggerType);
-  console.log('[TRIGGER]', triggerType, 'card:', card?.name, 'effect:', (card?.effect||'').substring(0,100), 'hasTrigger:', hasTrigger);
+  if (!card) { callback&&callback(); return; }
+  // メイン効果 or 進化元効果のいずれかにトリガーが含まれていればOK
+  const hasInMain = card.effect && card.effect.includes(triggerType);
+  const hasInEvo = card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes(triggerType));
+  const hasTrigger = hasInMain || hasInEvo;
+  console.log('[TRIGGER]', triggerType, 'card:', card?.name, 'main:', hasInMain, 'evo:', hasInEvo);
   if (!hasTrigger) { callback&&callback(); return; }
   if (!side) {
     const inPlayer = bs.player.battleArea.includes(card) || bs.player.tamerArea.includes(card) || bs.player.hand.includes(card);
@@ -2194,14 +2211,19 @@ function resolveAttackDrop(cx, cy) {
           waitForBlockResponse((resp) => {
             if (!resp.blocked) {
               resolveBattle(atkCard, atkSlotIdx, def, i, 'ai');
+            } else {
+              // ブロックされた時効果を発動
+              afterBlockedEffect(atkCard, atkSlotIdx, 'player', () => {});
+              // 戦闘自体は防御側が処理し、state_syncで反映される
             }
-            // blocked → defender handles battle, state_sync will update
           });
         });
       } else {
         const blockerIdx=bs.ai.battleArea.findIndex(c=>c&&c!==def&&!c.suspended&&hasEvoKeyword(c,'【ブロッカー】'));
         if(blockerIdx!==-1) { const bl=bs.ai.battleArea[blockerIdx]; bl.suspended=true; addLog('🛡 「'+bl.name+'」がブロック！'); renderAll();
-          afterAtkEffect(atkCard,atkSlotIdx,()=>resolveBattle(atkCard,atkSlotIdx,bl,blockerIdx,'ai'));
+          afterAtkEffect(atkCard,atkSlotIdx,()=>{
+            afterBlockedEffect(atkCard, atkSlotIdx, 'player', () => resolveBattle(atkCard,atkSlotIdx,bl,blockerIdx,'ai'));
+          });
         } else { afterAtkEffect(atkCard,atkSlotIdx,()=>resolveBattle(atkCard,atkSlotIdx,def,i,'ai')); }
       }
     }
@@ -2218,6 +2240,7 @@ function resolveAttackDrop(cx, cy) {
           afterAtkEffect(atkCard,atkSlotIdx,()=>{
             waitForBlockResponse((resp) => {
               if (!resp.blocked) { resolveSecurityCheck(atkCard,atkSlotIdx); }
+              else { afterBlockedEffect(atkCard, atkSlotIdx, 'player', () => {}); }
             });
           });
         } else {
@@ -2238,6 +2261,7 @@ function resolveAttackDrop(cx, cy) {
             afterAtkEffect(atkCard,atkSlotIdx,()=>{
               waitForBlockResponse((resp) => {
                 if (!resp.blocked) { resolveSecurityCheck(atkCard,atkSlotIdx); }
+                else { afterBlockedEffect(atkCard, atkSlotIdx, 'player', () => {}); }
               });
             });
           } else {
@@ -2267,6 +2291,19 @@ function afterAtkEffect(atkCard, atkSlotIdx, callback) {
     (atkCard.stack && atkCard.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【アタック時】')));
   if(hasAtk) { checkAndTriggerEffect(atkCard, '【アタック時】', callback); }
   else callback();
+}
+
+// ブロックされた時の効果（アタッカー側で発動）
+function afterBlockedEffect(atkCard, atkSlotIdx, side, callback) {
+  if (!atkCard) { callback(); return; }
+  const blockedRegex = /ブロックされた時|【ブロックされたとき】|ブロックされたとき/;
+  const hasInMain = atkCard.effect && blockedRegex.test(atkCard.effect);
+  const hasInEvo = atkCard.stack && atkCard.stack.some(s => s.evoSourceEffect && blockedRegex.test(s.evoSourceEffect));
+  if (!hasInMain && !hasInEvo) { callback(); return; }
+  addLog('⚡ 「' + atkCard.name + '」のブロックされた時効果！');
+  // triggerEffectを直接呼び出し（side指定）
+  const context = makeEffectContext(atkCard, side || 'player');
+  triggerEffect('when_blocked', atkCard, side || 'player', context, callback);
 }
 
 function highlightAttackTargets(on, atkCard) {
@@ -2865,8 +2902,11 @@ function aiAttackPhase(callback) {
             blocker.suspended = true;
             addLog('🛡 「'+blocker.name+'」でブロック！');
             renderAll();
-            resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
-              setTimeout(() => aiAttackPhase(callback), 800);
+            // AIの「ブロックされた時」効果を発動してからバトル
+            afterBlockedEffect(atk, atkIdx, 'ai', () => {
+              resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
+                setTimeout(() => aiAttackPhase(callback), 800);
+              });
             });
           } else {
             // ブロッカー複数 → 選択UI
@@ -2876,8 +2916,10 @@ function aiAttackPhase(callback) {
                 blocker.suspended = true;
                 addLog('🛡 「'+blocker.name+'」でブロック！');
                 renderAll();
-                resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {
-                  setTimeout(() => aiAttackPhase(callback), 800);
+                afterBlockedEffect(atk, atkIdx, 'ai', () => {
+                  resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {
+                    setTimeout(() => aiAttackPhase(callback), 800);
+                  });
                 });
               } else {
                 // キャンセル → ブロックしない

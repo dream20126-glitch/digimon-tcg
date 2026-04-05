@@ -112,11 +112,27 @@ function fuzzyIndexOf(effectText, searchKey) {
 
 function findActions(effectText) {
   const results = [];
+  // 先に特殊パターンを検出（辞書の単純マッチでは取れない語順・表記ゆれ対応）
+  // 「進化元を下からN枚破棄」→ evo_discard_bottom N
+  // 「進化元を上からN枚破棄」/「進化元をN枚破棄」→ evo_discard N
+  const evoBottomMatch = effectText.match(/進化元を?(?:の)?下から(\d+)?枚?破棄/);
+  const evoTopMatch = effectText.match(/進化元を?(?:の)?上から(\d+)?枚?破棄/);
+  const evoAnyMatch = effectText.match(/進化元を(\d+)?枚?破棄/);
+  if (evoBottomMatch) {
+    results.push({ keyword: '進化元の下から破棄', code: 'evo_discard_bottom', value: parseInt(evoBottomMatch[1] || '1'), index: effectText.indexOf('進化元') });
+  } else if (evoTopMatch) {
+    results.push({ keyword: '進化元を破棄', code: 'evo_discard', value: parseInt(evoTopMatch[1] || '1'), index: effectText.indexOf('進化元') });
+  } else if (evoAnyMatch && !effectText.includes('進化元を持たない') && !effectText.includes('進化元をもたない')) {
+    results.push({ keyword: '進化元を破棄', code: 'evo_discard', value: parseInt(evoAnyMatch[1] || '1'), index: effectText.indexOf('進化元') });
+  }
   for (const entry of _actionDict) {
     const code = (entry['アクションコード']||'').trim();
     if (!code) continue;
     // アクション以外（対象・条件・持続・判定）はスキップ
     if (NON_ACTION_PREFIXES.some(p => code.startsWith(p))) continue;
+    // evo_discard系は既に上でハードコード検出済みならスキップ（重複防止）
+    if ((code === 'evo_discard' || code === 'evo_discard_bottom') &&
+        results.some(r => r.code === 'evo_discard' || r.code === 'evo_discard_bottom')) continue;
     const keywords = String(entry['アクション名']).split(',');
     for (const kw of keywords) {
       const trimmed = kw.trim();
@@ -2323,6 +2339,9 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
 
   // 起動効果（main等）はソースカードのみ処理。盤面スキャン不要
   const isActivated = ['main'].includes(triggerCode);
+  // ソースカード限定のイベント系トリガー（そのカード固有のイベント）
+  // これらは盤面全体をスキャンすると関係ない他カードの効果まで誘発してしまう
+  const isSourceOnly = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked'].includes(triggerCode);
 
   if (isActivated) {
     // 起動効果: ソースカードだけキューに追加
@@ -2335,6 +2354,32 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
           );
         }
       });
+    }
+  } else if (isSourceOnly) {
+    // ソースカード限定イベント: ソースカード本体＋その進化元効果のみ処理
+    if (sourceCard) {
+      const blocks = parseCardEffect(sourceCard);
+      blocks.forEach(block => {
+        if (block.trigger && block.trigger.code === triggerCode) {
+          addToQueue(sourceCard, block,
+            sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
+          );
+        }
+      });
+      // ソースカードの進化元効果もスキャン
+      if (sourceCard.stack) {
+        sourceCard.stack.forEach(evoCard => {
+          if (!evoCard.evoSourceEffect || evoCard.evoSourceEffect === 'なし') return;
+          const evoBlocks = parseCardEffect(evoCard, evoCard.evoSourceEffect);
+          evoBlocks.forEach(block => {
+            if (block.trigger && block.trigger.code === triggerCode) {
+              addToQueue(sourceCard, block,
+                sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
+              );
+            }
+          });
+        });
+      }
     }
   } else {
     // 誘発効果: 盤面全体をスキャン

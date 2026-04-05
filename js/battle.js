@@ -2453,6 +2453,11 @@ function getSecurityAttackCount(card) {
 
   function calcFromText(text, source) {
     if (!text || text === 'なし') return;
+    // 条件付きトリガー（【自分のターン】等）が含まれるテキストは、
+    // applyPermanentEffects側で条件評価して_permEffectsに反映されるので、ここでは直接抽出しない
+    if (/【(自分のターン|相手のターン|お互いのターン)】/.test(text)) return;
+    // 条件キーワード（いる間/いる時/場合）が含まれる場合もスキップ（applyPermanentEffectsに任せる）
+    if (/(いる間|いるとき|いる場合|がいる(?![ぁ-ん]))/.test(text)) return;
     // 「～ごとに」パターン（進化元/手札/トラッシュ/セキュリティ N枚ごとに）
     if (text.includes('ごとに') && (text.includes('Sアタック') || text.includes('セキュリティアタック'))) {
       // Sアタック+NのNを取得（デフォルト1）

@@ -40,7 +40,7 @@
   position: relative;
   overflow: hidden;
 }
-.battle-zone { padding: 6px 8px; flex-shrink: 0; }
+.battle-zone { padding: 6px 8px; flex-shrink: 0; overflow: visible; }
 .zone-label { font-size: 9px; letter-spacing: 1px; margin-bottom: 3px; display: block; }
 .ai-zone { background: rgba(255, 0, 251, 0.04); border-bottom: 1px solid #ff00fb22; }
 .ai-zone .zone-label { color: #ff00fb88; }
@@ -64,10 +64,11 @@
   position: relative; overflow: hidden; flex-shrink: 0;
 }
 .b-slot:hover { border-color: #444; }
+.battle-row { overflow: visible !important; }
 .b-slot.pl-card { border: 1px solid #00fbff44; background: #001a1a; }
 .b-slot.ai-card { border: 1px solid #ff00fb44; background: #1a001a; }
 .b-slot.selected-slot { border: 2px solid var(--main-cyan) !important; box-shadow: 0 0 8px rgba(0, 251, 255, 0.5); }
-.b-slot.suspended { transform: rotate(90deg); }
+.b-slot.suspended { transform: rotate(90deg); transform-origin: center center; }
 .b-slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
 .b-slot .s-dp {
   position: absolute; bottom: 1px; right: 2px;

@@ -245,73 +245,101 @@ function startAttackModeUI(slotIdx) {
   const aiRow = document.getElementById('ai-battle-row');
   if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, i) => {
     const def = bs.ai.battleArea[i]; if (!def) return;
-    if (def.suspended || canHitActive) s.style.boxShadow = '0 0 10px #ff444488';
+    if (def.suspended || canHitActive) { s.style.boxShadow = '0 0 10px #ff444488'; s.style.cursor = 'pointer'; }
   });
   const secArea = document.getElementById('ai-sec-area');
-  if (secArea && bs.ai.security.length > 0) secArea.style.boxShadow = '0 0 10px #ff444488';
+  if (secArea && bs.ai.security.length > 0) { secArea.style.boxShadow = '0 0 10px #ff444488'; secArea.style.cursor = 'pointer'; }
+
+  // 透明な操作レイヤー（クリック/タッチ/ドラッグを全て受け取る）
+  const inputLayer = document.createElement('div');
+  inputLayer.style.cssText = 'position:fixed;inset:0;z-index:99997;cursor:crosshair;';
+  document.body.appendChild(inputLayer);
 
   function onMove(e) {
     const t = e.touches ? e.touches[0] : e;
     const line = document.getElementById('atk-arrow-line');
     if (line) { line.setAttribute('x2', t.clientX); line.setAttribute('y2', t.clientY); }
+    // ホバー効果
+    if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, i) => {
+      const def = bs.ai.battleArea[i]; if (!def) return;
+      const r = s.getBoundingClientRect();
+      const hit = t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
+      s.style.transform = hit ? 'translateY(-4px) scale(1.05)' : '';
+    });
+    if (secArea) {
+      const r = secArea.getBoundingClientRect();
+      const hit = t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
+      secArea.style.transform = hit ? 'translateY(-2px) scale(1.02)' : '';
+    }
     if (e.preventDefault) e.preventDefault();
   }
-  function onEnd(e) {
-    const t = e.changedTouches ? e.changedTouches[0] : e;
-    document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onEnd);
-    document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onEnd);
-    arrowSvg.style.display = 'none';
-    // ハイライト解除
-    if (aiRow) aiRow.querySelectorAll('.b-slot').forEach(s => { s.style.boxShadow = ''; });
-    if (secArea) secArea.style.boxShadow = '';
 
-    const cx = t.clientX, cy = t.clientY;
+  function cleanup() {
+    if (inputLayer.parentNode) inputLayer.parentNode.removeChild(inputLayer);
+    inputLayer.removeEventListener('mousemove', onMove);
+    inputLayer.removeEventListener('touchmove', onMove);
+    inputLayer.removeEventListener('mouseup', onEnd);
+    inputLayer.removeEventListener('touchend', onEnd);
+    inputLayer.removeEventListener('click', onClick);
+    arrowSvg.style.display = 'none';
+    if (aiRow) aiRow.querySelectorAll('.b-slot').forEach(s => { s.style.boxShadow = ''; s.style.cursor = ''; s.style.transform = ''; });
+    if (secArea) { secArea.style.boxShadow = ''; secArea.style.cursor = ''; secArea.style.transform = ''; }
+  }
+
+  function resolveTarget(cx, cy) {
     let resolved = false;
-    // 相手デジモンにドロップ
+    // 相手デジモン
     if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, di) => {
       if (resolved) return;
       const def = bs.ai.battleArea[di]; if (!def) return;
       const r = s.getBoundingClientRect();
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
         resolved = true;
-        if (window.startAttack && window.startAttack(card, slotIdx)) {
-          window.resolveAttackTarget('digimon', di);
-        }
+        if (window.startAttack && window.startAttack(card, slotIdx)) window.resolveAttackTarget('digimon', di);
       }
     });
-    // セキュリティにドロップ
+    // セキュリティ
     if (!resolved && secArea) {
       const r = secArea.getBoundingClientRect();
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
         resolved = true;
-        if (window.startAttack && window.startAttack(card, slotIdx)) {
-          window.resolveAttackTarget('security');
-        }
+        if (window.startAttack && window.startAttack(card, slotIdx)) window.resolveAttackTarget('security');
       }
     }
-    // 上方向（相手エリア全体）→ セキュリティ
+    // 上方向全体 → セキュリティ
     if (!resolved) {
       const aiZone = document.querySelector('.ai-zone');
       if (aiZone) {
         const r = aiZone.getBoundingClientRect();
         if (cy >= r.top && cy <= r.bottom) {
           resolved = true;
-          if (window.startAttack && window.startAttack(card, slotIdx)) {
-            window.resolveAttackTarget('security');
-          }
+          if (window.startAttack && window.startAttack(card, slotIdx)) window.resolveAttackTarget('security');
         }
       }
     }
-    // 何もなし → レスト解除
     if (!resolved) {
       if (!_wasAlreadySuspended) card.suspended = false;
       renderAll();
     }
   }
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onEnd);
-  document.addEventListener('touchmove', onMove, { passive: false });
-  document.addEventListener('touchend', onEnd);
+
+  function onEnd(e) {
+    const t = e.changedTouches ? e.changedTouches[0] : e;
+    cleanup();
+    resolveTarget(t.clientX, t.clientY);
+  }
+
+  function onClick(e) {
+    cleanup();
+    resolveTarget(e.clientX, e.clientY);
+  }
+
+  inputLayer.addEventListener('mousemove', onMove);
+  inputLayer.addEventListener('touchmove', onMove, { passive: false });
+  inputLayer.addEventListener('mouseup', onEnd);
+  inputLayer.addEventListener('touchend', onEnd);
+  // クリックでも発動可能（メニューから遷移した直後のクリック対応）
+  inputLayer.addEventListener('click', onClick);
 }
 
 // window公開（HTMLのonclickから呼ばれる）
@@ -775,6 +803,7 @@ export function showBCD(idxOrCard, source) {
     });
   }
   evoEl.innerHTML = evoHtml;
+  evoEl.style.display = evoHtml ? 'block' : 'none';
 
   // セキュリティ効果
   let secEl = document.getElementById('bcd-security-effect');

@@ -275,6 +275,7 @@ function getOppTurnColor() {
 
 export function startPlayerTurn() {
   bs.isPlayerTurn = true;
+  bs.turn++;
   showYourTurn('自分のターン開始', '', '#00fbff', () => {
     _hooks.checkTurnStartEffects('player', () => {
       // 両サイドの永続効果を再計算

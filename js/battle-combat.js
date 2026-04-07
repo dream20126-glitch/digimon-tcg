@@ -55,6 +55,24 @@ export function setCombatOnlineHandlers(online, myKey, handlers = {}) {
 function sendStateSync() { if (_onlineMode && _sendStateSync) _sendStateSync(); }
 function sendMemoryUpdate() { if (_onlineMode && _sendMemoryUpdate) _sendMemoryUpdate(); }
 
+// ===== 戦闘演出背景（ちらつき防止） =====
+
+function showCombatBackdrop() {
+  let bd = document.getElementById('_combat-backdrop');
+  if (!bd) {
+    bd = document.createElement('div');
+    bd.id = '_combat-backdrop';
+    bd.style.cssText = 'position:fixed;inset:0;background:#000;z-index:47000;';
+    document.body.appendChild(bd);
+  }
+  bd.style.display = 'block';
+}
+
+function hideCombatBackdrop() {
+  const bd = document.getElementById('_combat-backdrop');
+  if (bd) bd.style.display = 'none';
+}
+
 // ===== キーワード判定ヘルパー =====
 
 function hasKeyword(card, kw) { return _hooks.hasKeyword(card, kw); }
@@ -368,6 +386,7 @@ function checkAttackEnd(atk, atkIdx) {
 // ===== セキュリティチェック =====
 
 export function resolveSecurityCheck(atk, atkIdx) {
+  showCombatBackdrop();
   const totalChecks = getSecurityAttackCount(atk);
   let checksRemaining = totalChecks;
   let checkNumber = 0;
@@ -546,6 +565,7 @@ function applySecurityBuffs(sec, ownerSide) {
 // ===== バトル解決（プレイヤー → AI デジモン） =====
 
 export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
+  showCombatBackdrop();
   addLog('⚔ 「' + atk.name + '」(' + atk.dp + 'DP) vs 「' + def.name + '」(' + def.dp + 'DP)');
 
   function destroyDef() {
@@ -583,6 +603,9 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
 // ===== バトル解決（AI → プレイヤー ブロッカー戦） =====
 
 export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
+  showCombatBackdrop();
+  const origCb = callback;
+  callback = () => { hideCombatBackdrop(); origCb(); };
   addLog('⚔ 「' + atk.name + '」(' + atk.dp + 'DP) vs 「' + def.name + '」(' + def.dp + 'DP)');
   showSecurityCheck(def, atk, () => {
     if (atk.dp === def.dp) {
@@ -695,6 +718,7 @@ export function showBlockerSelection(blockerIndices, attacker, callback) {
 // ===== AIアタックフェーズ =====
 
 export function aiAttackPhase(callback) {
+  hideCombatBackdrop();
   if (bs._battleAborted) return;
   if (_onlineMode) { callback && callback(); return; }
 
@@ -767,6 +791,7 @@ export function aiAttackPhase(callback) {
 // ===== AIセキュリティチェック =====
 
 export function doAiSecurityCheck(atk, atkIdx, callback) {
+  showCombatBackdrop();
   if (bs.player.security.length > 0) {
     const sec = bs.player.security.splice(0, 1)[0];
     applySecurityBuffs(sec, 'player');
@@ -1002,6 +1027,7 @@ function aiPlayAuto(callback) {
 // ===== ターン終了チェック =====
 
 export function checkPendingTurnEnd() {
+  hideCombatBackdrop();
   renderAll();
   if (bs._pendingTurnEnd) {
     bs._pendingTurnEnd = false;

@@ -673,62 +673,37 @@ function getRefSourceCountDirect(refSource, card, bs, side) {
 //   options: { card, value, color, ctx, targets } — アクションごとに必要な情報を渡す
 //   callback: 演出完了後に呼ぶ
 
+// キー名はスプシ「効果アクション辞書」の「演出タイプ」列と完全一致させる
+// battle-fx.js の registerFxRunners() で実装に上書きされる
 const EFFECT_RUNNERS = {
-  // 数値ポップアップ（DP増減など）: 画面中央に+N/-Nを表示
   "数値ポップアップ": function(opts, cb) {
     showDpPopup(opts.value || 0, opts.label || (opts.card && opts.card.name) || null);
     cb();
   },
-
-  // 消滅演出: シェイク→フラッシュ→パーティクル→DESTROYED
   "消滅演出": function(opts, cb) {
-    if (opts.ctx && opts.ctx.showDestroyEffect && opts.card) {
-      opts.ctx.showDestroyEffect(opts.card, cb);
-    } else { cb(); }
+    if (opts.ctx && opts.ctx.showDestroyEffect && opts.card) { opts.ctx.showDestroyEffect(opts.card, cb); } else { cb(); }
   },
-
-  // カード表示演出: ドローしたカードを表示（Lv6+は前兆演出付き）
-  "カード表示演出": function(opts, cb) {
+  "ドロー演出": function(opts, cb) {
     if (opts.ctx && opts.ctx.showDrawEffect && opts.cards && opts.cards.length > 0) {
       let idx = 0;
-      function showNext() {
-        if (idx >= opts.cards.length) { cb(); return; }
-        const c = opts.cards[idx++];
-        const isLv6 = parseInt(c.level) >= 6;
-        opts.ctx.showDrawEffect(c, isLv6, showNext);
-      }
+      function showNext() { if (idx >= opts.cards.length) { cb(); return; } const c = opts.cards[idx++]; opts.ctx.showDrawEffect(c, parseInt(c.level) >= 6, showNext); }
       showNext();
     } else { cb(); }
   },
-
-  // 移動演出: カードが目的地に飛ぶ（簡易）
-  "移動演出": function(opts, cb) { cb(); },
-
-  // 回転演出: カードが回転（レスト/アクティブ）
-  "回転演出": function(opts, cb) { cb(); },
-
-  // シールド演出: ブロッカーのシールドエフェクト
-  "シールド演出": function(opts, cb) { cb(); },
-
-  // 状態付与演出: 🔒/❌マーク表示
+  "カード移動": function(opts, cb) { cb(); },
+  "カード登場": function(opts, cb) { cb(); },
+  "カード進化": function(opts, cb) { cb(); },
+  "VS画面": function(opts, cb) { cb(); },
+  "対象選択UI": function(opts, cb) { cb(); },
+  "効果確認ダイアログ": function(opts, cb) { cb(); },
   "状態付与演出": function(opts, cb) { cb(); },
-
-  // ゲージ移動: メモリーゲージのアニメーション
-  "ゲージ移動": function(opts, cb) {
-    if (opts.ctx && opts.ctx.updateMemGauge) opts.ctx.updateMemGauge();
-    cb();
-  },
-
-  // ダイアログ: 確認ダイアログ表示
-  "ダイアログ": function(opts, cb) { cb(); },
-
-  // セキュリティ追加演出: カードがセキュリティに飛ぶ
-  "セキュリティ追加演出": function(opts, cb) { cb(); },
-
-  // セキュリティ除去演出: セキュリティからトラッシュへ
-  "セキュリティ除去演出": function(opts, cb) { cb(); },
-
-  // テキスト表示: 画面中央にテキスト表示
+  "オープン演出": function(opts, cb) { cb(); },
+  "アプ合体": function(opts, cb) { cb(); },
+  "リンク演出": function(opts, cb) { cb(); },
+  "文字ポップアップ": function(opts, cb) { cb(); },
+  "ブロックダイアログ": function(opts, cb) { cb(); },
+  "Sアタック+": function(opts, cb) { cb(); },
+  "ジョグレス進化": function(opts, cb) { cb(); },
   "テキスト表示": function(opts, cb) {
     if (opts.text) {
       const el = document.createElement('div');
@@ -739,22 +714,22 @@ const EFFECT_RUNNERS = {
     }
     cb();
   },
-
-  // バリア演出: ジャミングのバリア表示
-  "バリア演出": function(opts, cb) { cb(); },
-
-  // カードめくり演出: 裏面で配布→一斉にフリップ（deck_open用）
-  "カードめくり演出": function(opts, cb) {
-    // showDeckOpenUI内で使用される — deck_openのrunOneActionから直接呼ばれる
+  "ゲージ移動": function(opts, cb) {
+    if (opts.ctx && opts.ctx.updateMemGauge) opts.ctx.updateMemGauge();
     cb();
   },
-
-  // セキュリティチェック演出: VS表示
-  "セキュリティチェック演出": function(opts, cb) { cb(); },
-
-  // 登場演出: DIGITAL APPEAR
-  "登場演出": function(opts, cb) { cb(); },
 };
+
+/**
+ * battle-fx.js の演出ランナーで EFFECT_RUNNERS を上書き
+ * @param {Object} runners - getFxRunners() の戻り値
+ */
+export function registerFxRunners(runners) {
+  if (!runners) return;
+  Object.keys(runners).forEach(key => {
+    EFFECT_RUNNERS[key] = runners[key];
+  });
+}
 
 // アクションコードから辞書のUI情報を使って演出を実行
 // 戻り値: true=演出実行した, false=演出なし
@@ -766,7 +741,13 @@ function playEffect(actionCode, options, callback) {
   const runner = EFFECT_RUNNERS[typeName];
   if (!runner) { callback(); return false; }
 
-  // 辞書から枠色を取得してoptionsに追加
+  // 辞書の各列をoptionsに自動セット
+  options.actionCode = actionCode;
+
+  const fxCode = ui['演出コード'] || '';
+  if (fxCode && fxCode !== 'なし') options.fxCode = fxCode;
+
+  // 枠色
   if (ui['枠色'] && ui['枠色'] !== 'なし') {
     const colorMap = { '赤': '#ff4444', '緑': '#00ff88', 'シアン': '#00fbff', 'オレンジ': '#ff9900', '黄': '#ffaa00', '紫': '#aa66ff' };
     options.color = colorMap[ui['枠色']] || ui['枠色'];
@@ -927,20 +908,24 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
     case 'recover': {
       const n = action.value || 1;
+      const recoverCard = player.deck.length > 0 ? player.deck[0] : null;
       for (let i = 0; i < n; i++) {
         if (player.deck.length > 0) { player.security.push(player.deck.splice(0, 1)[0]); ctx.addLog('🛡 セキュリティ+1'); }
       }
       ctx.renderAll();
-      callback();
+      // 辞書の演出パラメータ1=デッキ, パラメータ2=セキュリティ で自動決定
+      playEffect(action.code, { card: recoverCard, ctx }, () => { callback(); });
       break;
     }
     case 'security_trash_top': {
       const n = action.value || 1;
+      const trashCard = opponent.security.length > 0 ? opponent.security[0] : null;
       for (let i = 0; i < n; i++) {
         if (opponent.security.length > 0) { opponent.trash.push(opponent.security.shift()); ctx.addLog('🛡 セキュリティ破棄'); }
       }
       ctx.renderAll();
-      callback();
+      // 辞書の演出パラメータ1=セキュリティ, パラメータ2=トラッシュ で自動決定
+      playEffect(action.code, { card: trashCard, ctx }, () => { callback(); });
       break;
     }
     case 'evo_discard':
@@ -1208,14 +1193,19 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'return_deck_top': {
       if(ctx._remainingOpenCards && ctx._remainingOpenCards.length > 0) {
         const isTop = action.code === 'return_deck_top';
+        const returnedCard = ctx._remainingOpenCards[0]; // 演出用に1枚目を記録
         ctx._remainingOpenCards.forEach(c => {
           if (isTop) player.deck.unshift(c);
           else player.deck.push(c);
           ctx.addLog('📥 「' + c.name + '」をデッキの' + (isTop ? '上' : '下') + 'に戻した');
         });
         ctx._remainingOpenCards = [];
+        ctx.renderAll();
+        // 移動元は getCardZone で自動判定、移動先は辞書のパラメータ2
+        playEffect(action.code, { card: returnedCard, ctx }, () => { callback(); });
+      } else {
+        ctx.renderAll(); callback();
       }
-      ctx.renderAll(); callback();
       break;
     }
 

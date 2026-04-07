@@ -741,10 +741,14 @@ export function aiAttackPhase(callback) {
       // ブロッカーチェック
       const blockerIndices = [];
       bs.player.battleArea.forEach((c, i) => {
-        if (c && !c.suspended && (hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】'))) {
+        if (!c) return;
+        const hasBlocker = hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】');
+        console.log('[ブロッカーチェック]', c.name, 'effect:', (c.effect||'').substring(0,20), 'suspended:', c.suspended, 'hasBlocker:', hasBlocker);
+        if (!c.suspended && hasBlocker) {
           blockerIndices.push(i);
         }
       });
+      console.log('[ブロッカー結果]', blockerIndices.length, '体検出');
 
       if (blockerIndices.length > 0) {
         showBlockConfirm(bs.player.battleArea[blockerIndices[0]], atk, (doBlock) => {

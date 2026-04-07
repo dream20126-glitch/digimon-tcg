@@ -25,6 +25,13 @@ import { initOnline, startOnlineListener, sendCommand, sendStateSync, sendMemory
 // ===== デッキパーサー =====
 function parseDeck(deckData) {
   if (!deckData || !deckData.list) return [];
+  // デバッグ: GAS APIのカードデータ列名を確認
+  if (allCards.length > 0 && !window._cardKeysLogged) {
+    window._cardKeysLogged = true;
+    console.log('[parseDeck] カードデータ列名:', Object.keys(allCards[0]).join(', '));
+    const sample = allCards.find(c => c["名前"] === 'アグモン') || allCards[0];
+    console.log('[parseDeck] サンプル:', JSON.stringify(sample).substring(0, 300));
+  }
   const out = [];
   deckData.list.split(',').forEach(line => {
     const m = line.match(/(.+)\((.+)\)x(\d+)/);

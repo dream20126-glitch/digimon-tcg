@@ -2335,13 +2335,18 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
 
   if (isActivated) {
     // 起動効果: ソースカードだけキューに追加
+    // レシピがある場合は最初のブロック1つだけ（レシピが全アクションをカバー）
     if (sourceCard) {
       const blocks = parseCardEffect(sourceCard);
+      const hasRecipe = !!getRecipeForTrigger(sourceCard, triggerCode);
+      let added = false;
       blocks.forEach(block => {
         if (block.trigger && block.trigger.code === triggerCode) {
+          if (hasRecipe && added) return; // レシピありは1ブロックのみ
           addToQueue(sourceCard, block,
             sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
           );
+          added = true;
         }
       });
     }
@@ -2349,11 +2354,15 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
     // ソースカード限定イベント: ソースカード本体＋その進化元効果のみ処理
     if (sourceCard) {
       const blocks = parseCardEffect(sourceCard);
+      const hasRecipe = !!getRecipeForTrigger(sourceCard, triggerCode);
+      let added = false;
       blocks.forEach(block => {
         if (block.trigger && block.trigger.code === triggerCode) {
+          if (hasRecipe && added) return;
           addToQueue(sourceCard, block,
             sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
           );
+          added = true;
         }
       });
       // ソースカードの進化元効果もスキャン

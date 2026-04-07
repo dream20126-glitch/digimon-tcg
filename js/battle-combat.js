@@ -609,10 +609,64 @@ function applySecurityBuffs(sec, ownerSide) {
   }
 }
 
+// ===== バトル中バフ一時適用 =====
+// レシピの when:"cond_in_battle" や効果テキストの「バトルしている間」をバトル解決時に適用
+
+function applyBattleBuffs(atk, def) {
+  const applied = [];
+  [atk, def].forEach(card => {
+    if (!card || !card.stack) return;
+    // 進化元効果から「バトルしている間」を検索
+    card.stack.forEach(s => {
+      const evoText = s.evoSourceEffect || '';
+      if (!evoText.includes('バトルしている間')) return;
+      // 条件チェック（進化元を持たない相手とバトル）
+      const opponent = card === atk ? def : atk;
+      if (evoText.includes('進化元を持たない') && opponent.stack && opponent.stack.length > 0) return;
+      // DP+N を抽出
+      const dpMatch = evoText.match(/DPを?\+(\d+)/);
+      if (dpMatch) {
+        const val = parseInt(dpMatch[1]);
+        card.dp += val;
+        applied.push({ card, value: val });
+        addLog('⚔ バトル中効果: 「' + card.name + '」DP+' + val + '（' + s.name + '）');
+      }
+    });
+    // レシピの when:"cond_in_battle" もチェック
+    if (card.recipe) {
+      try {
+        const recipes = typeof card.recipe === 'string' ? JSON.parse(card.recipe) : card.recipe;
+        const durKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
+        durKeys.forEach(key => {
+          if (!recipes[key]) return;
+          recipes[key].forEach(step => {
+            if (step.when !== 'cond_in_battle') return;
+            if (step.action !== 'dp_plus') return;
+            const opponent = card === atk ? def : atk;
+            if (step.condition === 'cond_no_evo' && opponent.stack && opponent.stack.length > 0) return;
+            const val = step.value || 0;
+            card.dp += val;
+            applied.push({ card, value: val });
+            addLog('⚔ バトル中効果: 「' + card.name + '」DP+' + val);
+          });
+        });
+      } catch (_) {}
+    }
+  });
+  return applied;
+}
+
+function removeBattleBuffs(applied) {
+  applied.forEach(({ card, value }) => {
+    card.dp -= value;
+  });
+}
+
 // ===== バトル解決（プレイヤー → AI デジモン） =====
 
 export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
   showCombatBackdrop();
+  const battleBuffs = applyBattleBuffs(atk, def);
   addLog('⚔ 「' + atk.name + '」(' + atk.dp + 'DP) vs 「' + def.name + '」(' + def.dp + 'DP)');
 
   function destroyDef() {
@@ -626,6 +680,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
   function destroyAtk() { removeOwnCard(atkIdx, 'destroy'); }
 
   showSecurityCheck(def, atk, () => {
+    removeBattleBuffs(battleBuffs);
     if (atk.dp === def.dp) {
       destroyDef(); destroyAtk(); renderAll();
       showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
@@ -653,8 +708,10 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
   showCombatBackdrop();
   const origCb = callback;
   callback = () => { hideCombatBackdrop(); origCb(); };
+  const battleBuffs = applyBattleBuffs(atk, def);
   addLog('⚔ 「' + atk.name + '」(' + atk.dp + 'DP) vs 「' + def.name + '」(' + def.dp + 'DP)');
   showSecurityCheck(def, atk, () => {
+    removeBattleBuffs(battleBuffs);
     if (atk.dp === def.dp) {
       bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
       if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));

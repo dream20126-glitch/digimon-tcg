@@ -2062,9 +2062,13 @@ export function applyPermanentEffects(bs, side, context) {
       // 「〜とき」を含む効果は誘発型（永続適用ではなくイベント発生時に適用）なのでスキップ
       const rawBody = block.raw || '';
       if (rawBody.includes('されたとき') || rawBody.includes('したとき') || rawBody.includes('なったとき')) return;
+      // 「バトルしている間」はバトル解決時にのみ適用（永続適用しない）
+      if (rawBody.includes('バトルしている間')) return;
       if (!checkConditions(block.conditions, card, bs, side)) return;
 
+      // レシピの when:"cond_in_battle" もスキップ（バトル解決時に適用）
       block.actions.forEach(action => {
+        if (action.when === 'cond_in_battle') return;
         const target = block.target || { code: 'target_self' };
         if (action.code === 'dp_plus') {
           if (target.code === 'target_all_own') {

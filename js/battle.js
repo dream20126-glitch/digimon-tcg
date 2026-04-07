@@ -159,6 +159,9 @@ function renderMulliganPreview(animate) {
       <div style="position:absolute;inset:0;backface-visibility:hidden;">${backUrl ? `<img src="${backUrl}" style="width:100%;height:100%;object-fit:cover;">` : '<div style="width:100%;height:100%;background:#1a1a3a;border-radius:4px;"></div>'}</div>
       <div style="position:absolute;inset:0;backface-visibility:hidden;transform:rotateY(180deg);">${src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="font-size:7px;color:#aaa;padding:3px;">${c.name}</div>`}</div>
     </div>`;
+    // タップでカード詳細
+    div.onclick = ((idx) => () => { if (window.showBCD) window.showBCD(idx, 'mulliganHand'); })(i);
+    div.style.cursor = 'pointer';
     if (animate) div.style.animation = `mulliganDeal 0.4s ease ${i * 0.15}s forwards`;
     else { div.style.opacity = '1'; const inner = div.querySelector('.mulligan-card-inner'); if (inner) inner.style.transform = 'rotateY(180deg)'; }
     area.appendChild(div);

@@ -768,6 +768,7 @@ export function showBCD(idxOrCard, source) {
   let card;
   if (typeof idxOrCard === 'object') card = idxOrCard;
   else if (source === 'hand') card = bs.player.hand[idxOrCard];
+  else if (source === 'mulliganHand') card = bs.player.hand[idxOrCard];
   else if (source === 'plBattle') card = bs.player.battleArea[idxOrCard];
   else if (source === 'aiBattle') card = bs.ai.battleArea[idxOrCard];
   else card = idxOrCard;
@@ -802,8 +803,9 @@ export function showBCD(idxOrCard, source) {
       }
     });
   }
+  if (!evoHtml) evoHtml = '<div style="color:#555;font-size:10px;">進化元効果なし</div>';
   evoEl.innerHTML = evoHtml;
-  evoEl.style.display = evoHtml ? 'block' : 'none';
+  evoEl.style.display = 'block';
 
   // セキュリティ効果
   let secEl = document.getElementById('bcd-security-effect');

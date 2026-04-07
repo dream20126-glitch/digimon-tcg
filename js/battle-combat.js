@@ -290,8 +290,8 @@ let _atkState = null; // { card, slotIdx }
 
 export function startAttack(card, slotIdx) {
   if (bs.phase !== 'main') return false;
-  if (!card || card.suspended || card.summonedThisTurn) return false;
-  if (card.type !== 'デジモン') return false;
+  if (!card) return false;
+  // suspended チェックは行わない（長押しメニューで既にレスト済み）
   if (card.cantAttack) return false;
 
   card.suspended = true;

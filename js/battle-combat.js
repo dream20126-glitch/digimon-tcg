@@ -689,7 +689,10 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
       bs.ai.battleArea[defIdx] = null;
       bs.ai.trash.push(def);
       if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
-      if (_onlineMode && _sendCommand) _sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: defIdx, reason: 'destroy' });
+      if (_onlineMode && _sendCommand) {
+        _sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: defIdx, reason: 'destroy' });
+        if (window._markDestroyed) window._markDestroyed('ai', defIdx);
+      }
     }
   }
   function destroyAtk() { removeOwnCard(atkIdx, 'destroy'); }
@@ -1268,7 +1271,7 @@ export function showEvolveEffect(cost, baseName, baseCard, evolvedCard, onDone) 
 // ----- オプション使用演出 -----
 
 export function showOptionEffect(card, onDone) {
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'fx_option', cardName: card.name, cardImg: cardImg(card) });
+  if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_option', cardName: card.name, cardImg: cardImg(card) });
   const overlay = document.getElementById('option-overlay');
   if (!overlay) { onDone && onDone(); return; }
   const flash = document.getElementById('option-flash');
@@ -1314,7 +1317,7 @@ export function showOptionEffect(card, onDone) {
 // ----- セキュリティチェック演出 -----
 
 export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpen) {
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'fx_securityCheck', secName: secCard.name || '', secImg: cardImg(secCard), secCardNo: secCard.cardNo || '', secDp: parseInt(secCard.dp) || 0, secType: secCard.type || '', atkName: atkCard.name || '', atkImg: cardImg(atkCard), atkCardNo: atkCard.cardNo || '', atkDp: parseInt(atkCard.dp) || 0, customLabel: customLabel || '' });
+  if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_securityCheck', secName: secCard.name || '', secImg: cardImg(secCard), secCardNo: secCard.cardNo || '', secDp: parseInt(secCard.dp) || 0, secType: secCard.type || '', atkName: atkCard.name || '', atkImg: cardImg(atkCard), atkCardNo: atkCard.cardNo || '', atkDp: parseInt(atkCard.dp) || 0, customLabel: customLabel || '' });
   const overlay = document.getElementById('security-check-overlay');
   if (!overlay) { callback && callback(); return; }
 
@@ -1366,7 +1369,7 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
 // ----- バトル結果演出 -----
 
 export function showBattleResult(text, color, sub, callback, oppText, oppColor) {
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'fx_battleResult', text: oppText || text, color: oppColor || color, sub });
+  if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_battleResult', text: oppText || text, color: oppColor || color, sub });
   const overlay = document.getElementById('battle-result-overlay');
   if (!overlay) { callback && callback(); return; }
   const textEl = document.getElementById('battle-result-text');
@@ -1383,7 +1386,7 @@ export function showBattleResult(text, color, sub, callback, oppText, oppColor) 
 // ----- 消滅演出 -----
 
 export function showDestroyEffect(card, callback) {
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'fx_destroy', cardName: card.name, cardImg: cardImg(card) });
+  if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_destroy', cardName: card.name, cardImg: cardImg(card) });
   const overlay = document.getElementById('destroy-overlay');
   if (!overlay) { callback && callback(); return; }
   const imgEl = document.getElementById('destroy-card-img');
@@ -1431,7 +1434,7 @@ export function showDestroyEffect(card, callback) {
 // ----- ダイレクトアタック演出 -----
 
 export function showDirectAttack(atkCard, side, callback) {
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'fx_directAttack', atkName: atkCard.name, atkImg: cardImg(atkCard), side });
+  if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_directAttack', atkName: atkCard.name, atkImg: cardImg(atkCard), side });
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:35000;display:flex;align-items:center;justify-content:center;flex-direction:column;';
 

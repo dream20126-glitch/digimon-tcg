@@ -46,7 +46,8 @@ export function renderAll(force) {
   applyBackImages();
   setTimeout(updateScrollArrows, 0);
   // オンライン: 自分のターン中は定期的に状態同期（デバウンス500ms）
-  if (_onlineMode && bs.isPlayerTurn && window._onlineSendStateSync) {
+  // 戦闘演出中は同期しない（バチバチ防止）
+  if (_onlineMode && bs.isPlayerTurn && window._onlineSendStateSync && !isCombatAnimating()) {
     if (_syncTimer) clearTimeout(_syncTimer);
     _syncTimer = setTimeout(() => window._onlineSendStateSync(), 500);
   }

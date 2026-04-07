@@ -115,14 +115,15 @@ function findActions(effectText) {
   // 先に特殊パターンを検出（辞書の単純マッチでは取れない語順・表記ゆれ対応）
   // 「進化元を下からN枚破棄」→ evo_discard_bottom N
   // 「進化元を上からN枚破棄」/「進化元をN枚破棄」→ evo_discard N
-  const evoBottomMatch = effectText.match(/進化元を?(?:の)?下から(\d+)?枚?破棄/);
-  const evoTopMatch = effectText.match(/進化元を?(?:の)?上から(\d+)?枚?破棄/);
+  const evoBottomMatch = effectText.match(/進化元[をの]?(?:の)?下から(\d+)?枚?破棄/);
+  const evoTopMatch = effectText.match(/進化元[をの]?(?:の)?上から(\d+)?枚?破棄/);
   const evoAnyMatch = effectText.match(/進化元を(\d+)?枚?破棄/);
   if (evoBottomMatch) {
     results.push({ keyword: '進化元の下から破棄', code: 'evo_discard_bottom', value: parseInt(evoBottomMatch[1] || '1'), index: effectText.indexOf('進化元') });
   } else if (evoTopMatch) {
-    results.push({ keyword: '進化元を破棄', code: 'evo_discard', value: parseInt(evoTopMatch[1] || '1'), index: effectText.indexOf('進化元') });
+    results.push({ keyword: '進化元を上から破棄', code: 'evo_discard_top', value: parseInt(evoTopMatch[1] || '1'), index: effectText.indexOf('進化元') });
   } else if (evoAnyMatch && !effectText.includes('進化元を持たない') && !effectText.includes('進化元をもたない')) {
+    // 方向指定なし = デフォルトで下から（公式ルール準拠）
     results.push({ keyword: '進化元を破棄', code: 'evo_discard', value: parseInt(evoAnyMatch[1] || '1'), index: effectText.indexOf('進化元') });
   }
   for (const entry of _actionDict) {
@@ -131,8 +132,8 @@ function findActions(effectText) {
     // アクション以外（対象・条件・持続・判定）はスキップ
     if (NON_ACTION_PREFIXES.some(p => code.startsWith(p))) continue;
     // evo_discard系は既に上でハードコード検出済みならスキップ（重複防止）
-    if ((code === 'evo_discard' || code === 'evo_discard_bottom') &&
-        results.some(r => r.code === 'evo_discard' || r.code === 'evo_discard_bottom')) continue;
+    if ((code === 'evo_discard' || code === 'evo_discard_bottom' || code === 'evo_discard_top') &&
+        results.some(r => r.code === 'evo_discard' || r.code === 'evo_discard_bottom' || r.code === 'evo_discard_top')) continue;
     const keywords = String(entry['アクション名']).split(',');
     for (const kw of keywords) {
       const trimmed = kw.trim();
@@ -440,10 +441,14 @@ function clearQueue() { _effectQueue = []; }
 // キューにエントリを追加
 function addToQueue(card, block, side, priority, actualSide) {
   const triggerCode = block.trigger?.code;
-  // 同じカード+同じトリガーが既にキューにあればスキップ（参照 or カード名+番号で判定）
+  // 同じカード+同じトリガー+同じ効果テキストが既にキューにあればスキップ
+  // 注意: 進化元効果は異なるカード由来でも同じ親カードで登録されるため、
+  //        blockのraw(効果テキスト)も比較して区別する
+  const blockRaw = block.raw || '';
   const isDuplicate = _effectQueue.some(e =>
     e.block.trigger?.code === triggerCode &&
-    (e.card === card || (e.card.name === card.name && e.card.cardNo === card.cardNo))
+    (e.card === card || (e.card.name === card.name && e.card.cardNo === card.cardNo)) &&
+    (e.block.raw || '') === blockRaw
   );
   if (isDuplicate) {
     return;
@@ -775,6 +780,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
   const effectTypeName = ui ? ui['演出タイプ'] : null;
   // 枠色を辞書から取得（スプシの「枠色」列）
   const uiColor = getUIColor(action.code, '#ff4444');
+  // 対象選択UIに渡すサイド（opponent側のDOM行ID用: 'ai' or 'pl'）
+  const opponentRowSide = ctx.side === 'player' ? 'ai' : 'pl';
 
   switch (action.code) {
     case 'draw': {
@@ -814,7 +821,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         ctx.renderAll(); callback(); break;
       }
       ctx.addLog('🎯 DP-' + val + 'の対象を選んでください');
-      showTargetSelection('ai', dpTargets, null, uiColor, (selectedIdx) => {
+      showTargetSelection(opponentRowSide, dpTargets, null, uiColor, (selectedIdx) => {
         if(selectedIdx !== null) {
           const tgt = opponent.battleArea[selectedIdx];
           sendEffectResult(tgt, 'dp_minus', ctx);
@@ -865,7 +872,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         break;
       }
       ctx.addLog('🎯 消滅させる対象を選んでください');
-      showTargetSelection('ai', destroyTargets, null, borderColor, (selectedIdx) => {
+      showTargetSelection(opponentRowSide, destroyTargets, null, borderColor, (selectedIdx) => {
         if(selectedIdx !== null) {
           const card = opponent.battleArea[selectedIdx];
           doDestroy(opponent, selectedIdx, ctx);
@@ -884,7 +891,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         callback(); break;
       }
       ctx.addLog('🎯 手札に戻す対象を選んでください');
-      showTargetSelection('ai', bounceTargets, null, bounceColor, (selectedIdx) => {
+      showTargetSelection(opponentRowSide, bounceTargets, null, bounceColor, (selectedIdx) => {
         if(selectedIdx !== null) {
           sendEffectResult(opponent.battleArea[selectedIdx], 'bounce', ctx);
           doBounce(opponent, selectedIdx, ctx);
@@ -922,7 +929,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
     case 'evo_discard':
-    case 'evo_discard_bottom': {
+    case 'evo_discard_bottom':
+    case 'evo_discard_top': {
       // 進化元を持つ相手デジモンを列挙
       const evoTargets = [];
       for (let i = 0; i < opponent.battleArea.length; i++) {
@@ -936,7 +944,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const n = action.value || 1;
       const discardFromTarget = (tgt) => {
         for (let i = 0; i < n && tgt.stack.length > 0; i++) {
-          const removed = action.code === 'evo_discard_bottom' ? tgt.stack.pop() : tgt.stack.shift();
+          // 公式ルール: 「進化元を破棄」はデフォルトで下から。上からは明示指定時のみ
+          const fromTop = action.code === 'evo_discard_top';
+          const removed = fromTop ? tgt.stack.shift() : tgt.stack.pop();
           opponent.trash.push(removed);
           ctx.addLog('📤 「' + tgt.name + '」の進化元を破棄');
         }
@@ -949,7 +959,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         break;
       }
       ctx.addLog('🎯 進化元を破棄する対象を選んでください');
-      showTargetSelection('ai', evoTargets, null, uiColor, (selectedIdx) => {
+      showTargetSelection(opponentRowSide, evoTargets, null, uiColor, (selectedIdx) => {
         if (selectedIdx !== null) {
           discardFromTarget(opponent.battleArea[selectedIdx]);
           ctx.renderAll();
@@ -987,7 +997,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         break;
       }
       ctx.addLog('🎯 アタック・ブロック不可にする対象を選んでください');
-      showTargetSelection('ai', cabTargets, null, uiColor, (selectedIdx) => {
+      showTargetSelection(opponentRowSide, cabTargets, null, uiColor, (selectedIdx) => {
         if (selectedIdx !== null) {
           applyCab(opponent.battleArea[selectedIdx]);
         }
@@ -1067,7 +1077,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         ctx.renderAll(); callback(); break;
       }
       ctx.addLog('🎯 レストさせる対象を選んでください');
-      showTargetSelection('ai', restTargets, null, restColor, (selectedIdx) => {
+      showTargetSelection(opponentRowSide, restTargets, null, restColor, (selectedIdx) => {
         if(selectedIdx !== null) {
           sendEffectResult(opponent.battleArea[selectedIdx], 'rest', ctx);
           opponent.battleArea[selectedIdx].suspended = true;
@@ -1097,7 +1107,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         ctx.renderAll(); callback(); break;
       }
       ctx.addLog('🎯 アタック不可の対象を選んでください');
-      showTargetSelection('ai', caTargets, null, uiColor, (selectedIdx) => {
+      showTargetSelection(opponentRowSide, caTargets, null, uiColor, (selectedIdx) => {
         if(selectedIdx !== null) {
           opponent.battleArea[selectedIdx].cantAttack = true;
           addBuffDirect(opponent.battleArea[selectedIdx], 'cant_attack', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
@@ -1120,7 +1130,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         ctx.renderAll(); callback(); break;
       }
       ctx.addLog('🎯 ブロック不可の対象を選んでください');
-      showTargetSelection('ai', cbTargets, null, uiColor, (selectedIdx) => {
+      showTargetSelection(opponentRowSide, cbTargets, null, uiColor, (selectedIdx) => {
         if(selectedIdx !== null) {
           opponent.battleArea[selectedIdx].cantBlock = true;
           addBuffDirect(opponent.battleArea[selectedIdx], 'cant_block', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
@@ -1143,7 +1153,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         ctx.renderAll(); callback(); break;
       }
       ctx.addLog('🎯 進化不可の対象を選んでください');
-      showTargetSelection('ai', ceTargets, null, uiColor, (selectedIdx) => {
+      showTargetSelection(opponentRowSide, ceTargets, null, uiColor, (selectedIdx) => {
         if(selectedIdx !== null) {
           opponent.battleArea[selectedIdx].cantEvolve = true;
           addBuffDirect(opponent.battleArea[selectedIdx], 'cant_evolve', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
@@ -1271,9 +1281,10 @@ function doDestroy(targetSide, slotIdx, ctx) {
   targetSide.trash.push(destroyed);
   if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));
   ctx.addLog('💀 「' + destroyed.name + '」を消滅');
-  // オンライン: 相手のカードを消滅させた場合、直接通知
+  // オンライン: 相手のカードを消滅させた場合、直接通知 + 復活防止マーク
   if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
     window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'destroy' });
+    if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
   }
   ctx.renderAll();
 }
@@ -1285,9 +1296,10 @@ function doBounce(targetSide, slotIdx, ctx) {
   targetSide.hand.push(bounced);
   if (bounced.stack) bounced.stack.forEach(s => targetSide.trash.push(s));
   ctx.addLog('↩ 「' + bounced.name + '」を手札に戻した');
-  // オンライン: 相手のカードをバウンスした場合、直接通知
+  // オンライン: 相手のカードをバウンスした場合、直接通知 + 復活防止マーク
   if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
     window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'bounce' });
+    if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
   }
   ctx.renderAll();
 }
@@ -2191,6 +2203,7 @@ function checkPendingDestroys(ctx) {
         if (window._isOnlineMode && window._isOnlineMode()) {
           if (side === 'ai') {
             window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: i, reason: 'destroy' });
+            if (window._markDestroyed) window._markDestroyed('ai', i);
           } else if (side === 'player') {
             window._onlineSendCommand({ type: 'own_card_removed', slotIdx: i, reason: 'destroy' });
           }
@@ -2256,9 +2269,14 @@ function showEffectAnnounce(card, effectText, side, callback) {
 // ===== 効果不発ポップアップ =====
 
 function showEffectFailed(message, callback) {
+  const text = message || '💨 対象がいないため、効果発動できませんでした';
+  // オンライン: 相手にも不発メッセージを送信
+  if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand && !window._suppressFxSend) {
+    window._onlineSendCommand({ type: 'fx_effectFailed', text });
+  }
   const el = document.createElement('div');
   el.style.cssText = 'position:fixed;top:45%;left:0;z-index:60000;font-size:clamp(0.85rem,3.5vw,1.1rem);font-weight:700;color:#aaa;background:rgba(30,30,40,0.85);padding:10px 28px;border-radius:20px;border:1px solid #555;box-shadow:0 2px 12px rgba(0,0,0,0.4);white-space:nowrap;cursor:pointer;animation:effectFizzleSlide 3.5s cubic-bezier(0.25,1,0.5,1) forwards;';
-  el.innerText = '💨 対象がいないため、効果発動できませんでした';
+  el.innerText = text;
   document.body.appendChild(el);
   let done = false;
   function finish() {
@@ -2774,6 +2792,38 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === storeの対象にバフ/状態を直接適用 ===
+    case 'cant_attack_block':
+    case 'cant_attack':
+    case 'cant_block':
+    case 'cant_evolve': {
+      const dur = step.duration || (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn');
+      const storedData = step.card ? store[step.card] : null;
+      const targets = storedData ? (Array.isArray(storedData) ? storedData : [storedData]) : null;
+      if (targets && targets.length > 0) {
+        targets.forEach(t => {
+          const c = opponent.battleArea[t.idx];
+          if (!c) return;
+          if (step.action === 'cant_attack_block' || step.action === 'cant_attack') c.cantAttack = true;
+          if (step.action === 'cant_attack_block' || step.action === 'cant_block') c.cantBlock = true;
+          if (step.action === 'cant_evolve') c.cantEvolve = true;
+          addBuffDirect(c, step.action, 0, dur, ctx);
+          ctx.addLog('🔒 「' + c.name + '」' + (step.action === 'cant_attack_block' ? 'アタック・ブロック不可' : step.action === 'cant_attack' ? 'アタック不可' : step.action === 'cant_block' ? 'ブロック不可' : '進化不可'));
+        });
+        ctx.renderAll();
+        callback();
+      } else {
+        // storeが無い場合は既存エンジンに委譲
+        const action = { code: step.action, value: step.value || null };
+        if (step.duration) {
+          if (!ctx.block) ctx.block = {};
+          ctx.block.duration = { code: step.duration };
+        }
+        runOneAction(action, null, ctx, callback);
+      }
+      break;
+    }
+
     // === その他のアクション（既存エンジンに委譲） ===
     default: {
       // レシピのtarget形式 → runOneAction形式に変換
@@ -2800,7 +2850,20 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (!ctx.block) ctx.block = {};
         if (!ctx.block.conditions) ctx.block.conditions = [];
       }
-      runOneAction(action, target, ctx, callback);
+      // storeから対象を引ける場合は直接指定
+      if (step.card && store[step.card]) {
+        const storedData = store[step.card];
+        const targets = Array.isArray(storedData) ? storedData : [storedData];
+        targets.forEach(t => {
+          const tgt = opponent.battleArea[t.idx];
+          if (tgt) {
+            runOneAction(action, null, { ...ctx, _preSelectedTarget: tgt, _preSelectedIdx: t.idx }, () => {});
+          }
+        });
+        callback();
+      } else {
+        runOneAction(action, target, ctx, callback);
+      }
       break;
     }
   }

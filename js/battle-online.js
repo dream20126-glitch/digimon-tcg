@@ -19,6 +19,21 @@ let _onlineCmdSeq = 0;         // コマンド連番
 let _pendingBlockCallback = null;
 let _pendingBlockResponse = null;
 
+// 最近消滅したスロットの追跡（state_syncによるカード復活を防止）
+// { side: 'ai'|'player', slotIdx: number, time: number }
+let _recentlyDestroyed = [];
+const DESTROY_COOLDOWN = 5000; // 5秒間はstate_syncでの復活を無視
+
+function markDestroyed(side, slotIdx) {
+  _recentlyDestroyed.push({ side, slotIdx, time: Date.now() });
+  // 古いエントリを削除
+  _recentlyDestroyed = _recentlyDestroyed.filter(d => Date.now() - d.time < DESTROY_COOLDOWN);
+}
+
+function isRecentlyDestroyed(side, slotIdx) {
+  return _recentlyDestroyed.some(d => d.side === side && d.slotIdx === slotIdx && Date.now() - d.time < DESTROY_COOLDOWN);
+}
+
 // ===== 外部モジュール参照（battle.jsから注入） =====
 let _modules = {
   showYourTurn: null,
@@ -47,6 +62,24 @@ let _modules = {
  */
 export function setOnlineModules(modules) {
   Object.assign(_modules, modules);
+}
+
+// ===== 演出キュー（受信側で演出が並列起動してバチバチするのを防止） =====
+let _fxQueue = [];
+let _fxRunning = false;
+
+function enqueueFx(fn) {
+  _fxQueue.push(fn);
+  if (!_fxRunning) drainFxQueue();
+}
+
+function drainFxQueue() {
+  if (_fxQueue.length === 0) { _fxRunning = false; return; }
+  _fxRunning = true;
+  const fn = _fxQueue.shift();
+  // 受信側の演出実行中はfxコマンド送信を抑制（ping-pong防止）
+  window._suppressFxSend = true;
+  fn(() => { window._suppressFxSend = false; drainFxQueue(); });
 }
 
 // ===== 状態アクセサ =====
@@ -135,6 +168,9 @@ export async function initOnline(roomId, myKey) {
   _onlineCmdSeq = 0;
   _pendingBlockCallback = null;
   _pendingBlockResponse = null;
+  _recentlyDestroyed = [];
+  _fxQueue = [];
+  _fxRunning = false;
   await set(ref(rtdb, `rooms/${_onlineRoomId}/commands`), null);
 }
 
@@ -156,6 +192,7 @@ function onRemoteCommand(cmd) {
           bs.ai.battleArea[cmd.slotIdx] = null;
           bs.ai.trash.push(card);
           if (card.stack) card.stack.forEach(s => bs.ai.trash.push(s));
+          markDestroyed('ai', cmd.slotIdx);
           renderAll();
         }
       }
@@ -172,6 +209,7 @@ function onRemoteCommand(cmd) {
             bs.player.trash.push(card);
           }
           if (card.stack) card.stack.forEach(s => bs.player.trash.push(s));
+          markDestroyed('player', cmd.slotIdx);
           renderAll();
         }
       }
@@ -308,6 +346,7 @@ function onRemoteCommand(cmd) {
           bs.player.battleArea[atkIdx] = null;
           bs.player.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
+          markDestroyed('player', atkIdx);
           renderAll();
         }
       }
@@ -389,76 +428,77 @@ function onRemoteCommand(cmd) {
         return { ...data, buffs: data.buffs || [], stack: (data.stack || []).map(restoreCard) };
       };
       const adjustArr = (arr, count) => { while (arr.length > count) arr.pop(); while (arr.length < count) arr.push({ name: '?', type: '不明', dp: 0 }); };
+      // Firebaseはnull要素を含む配列をObjectとして保存するため安全に変換
+      // 例: [null, {card}, null] → Firebase → {"1": {card}} → 復元時にインデックスを維持
+      const toArray = (v) => {
+        if (Array.isArray(v)) return v;
+        if (v && typeof v === 'object') {
+          const keys = Object.keys(v).map(Number).filter(k => !isNaN(k));
+          if (keys.length === 0) return [];
+          const maxIdx = Math.max(...keys);
+          const arr = new Array(maxIdx + 1).fill(null);
+          keys.forEach(k => { arr[k] = v[k]; });
+          return arr;
+        }
+        return [];
+      };
 
-      if (st.battleArea) bs.ai.battleArea = st.battleArea.map(restoreCard);
-      if (st.tamerArea) bs.ai.tamerArea = st.tamerArea.map(restoreCard);
+      if (st.battleArea) {
+        const newArea = toArray(st.battleArea).map(restoreCard);
+        // 最近消滅したスロットにカードが復活するのを防止
+        for (let i = 0; i < newArea.length; i++) {
+          if (newArea[i] && isRecentlyDestroyed('ai', i)) {
+            newArea[i] = null;
+          }
+        }
+        bs.ai.battleArea = newArea;
+      }
+      if (st.tamerArea) bs.ai.tamerArea = toArray(st.tamerArea).map(restoreCard);
       bs.ai.ikusei = st.ikusei ? restoreCard(st.ikusei) : bs.ai.ikusei;
       if (st.deckCount !== undefined) adjustArr(bs.ai.deck, st.deckCount);
       if (st.handCount !== undefined) adjustArr(bs.ai.hand, st.handCount);
-      if (st.trashCards) bs.ai.trash = st.trashCards.map(restoreCard);
+      if (st.trashCards) bs.ai.trash = toArray(st.trashCards).map(restoreCard);
       else if (st.trashCount !== undefined) adjustArr(bs.ai.trash, st.trashCount);
       if (st.securityCount !== undefined && st.securityCount > 0 && st.securityCount < bs.ai.security.length) {
         while (bs.ai.security.length > st.securityCount) bs.ai.security.shift();
       }
-      // 自分の状態も相手の視点で同期
-      if (st.oppBattleArea) {
-        const oppView = st.oppBattleArea.map(restoreCard);
-        for (let i = 0; i < oppView.length && i < bs.player.battleArea.length; i++) {
-          if (oppView[i] === null && bs.player.battleArea[i] !== null) {
-            const removed = bs.player.battleArea[i];
-            bs.player.battleArea[i] = null;
-            bs.player.trash.push(removed);
-            if (removed.stack) removed.stack.forEach(s => bs.player.trash.push(s));
-          }
-        }
-      }
-      if (st.oppTamerArea) {
-        const oppTView = st.oppTamerArea.map(restoreCard);
-        for (let i = 0; i < oppTView.length && i < bs.player.tamerArea.length; i++) {
-          if (oppTView[i] === null && bs.player.tamerArea[i] !== null) {
-            const removed = bs.player.tamerArea[i];
-            bs.player.tamerArea[i] = null;
-            bs.player.trash.push(removed);
-          }
-        }
-      }
-      if (st.oppSecurityCount !== undefined && st.oppSecurityCount < bs.player.security.length) {
-        const diff = bs.player.security.length - st.oppSecurityCount;
-        for (let i = 0; i < diff; i++) {
-          if (bs.player.security.length > 0) bs.player.trash.push(bs.player.security.splice(0, 1)[0]);
-        }
-      }
+      // 注意: oppBattleArea/oppTamerArea による自分の状態の強制上書きは削除
+      // 理由: タイムラグで古い情報に基づき自分のカードが誤削除されるため
+      // カード除去は own_card_removed / card_removed コマンドで個別に同期する
       if (st.securityBuffs) {
         const myBuffs = (bs._securityBuffs || []).filter(b => b.owner === 'player');
         const oppBuffs = st.securityBuffs.map(b => ({ ...b, owner: 'ai' }));
         bs._securityBuffs = [...myBuffs, ...oppBuffs];
       }
-      if (st.memory !== undefined) { bs.memory = -st.memory; updateMemGauge(); }
+      // メモリーはmemory_update/endTurnで個別同期する（state_syncは古い値で上書きするリスクがあるため除外）
       renderAll();
       break;
     }
 
-    // --- 演出コマンド ---
+    // --- 演出コマンド（キュー経由で順次再生、並列起動によるバチバチを防止） ---
     case 'fx_battleResult': {
-      if (m.showBattleResult) m.showBattleResult(cmd.text, cmd.color, cmd.sub, () => {});
+      if (m.showBattleResult) enqueueFx((done) => m.showBattleResult(cmd.text, cmd.color, cmd.sub, done));
       break;
     }
     case 'fx_destroy': {
-      if (m.showDestroyEffect) m.showDestroyEffect({ name: cmd.cardName, imgSrc: cmd.cardImg }, () => {});
+      if (m.showDestroyEffect) enqueueFx((done) => m.showDestroyEffect({ name: cmd.cardName, imgSrc: cmd.cardImg }, done));
       break;
     }
     case 'fx_securityCheck': {
+      // ブロック待ちオーバーレイがあれば先に消す（BLOCK!演出が見えるように）
+      const blockWait = document.getElementById('_block-wait-overlay');
+      if (blockWait && blockWait.parentNode) blockWait.parentNode.removeChild(blockWait);
       const secCard = { name: cmd.secName, imgSrc: cmd.secImg, cardNo: cmd.secCardNo || '', dp: cmd.secDp, type: cmd.secType };
       const atkCard = { name: cmd.atkName, imgSrc: cmd.atkImg, cardNo: cmd.atkCardNo || '', dp: cmd.atkDp };
-      if (m.showSecurityCheck) m.showSecurityCheck(secCard, atkCard, () => { renderAll(); }, cmd.customLabel || null);
+      if (m.showSecurityCheck) enqueueFx((done) => m.showSecurityCheck(secCard, atkCard, () => { renderAll(); done(); }, cmd.customLabel || null));
       break;
     }
     case 'fx_directAttack': {
-      if (m.showDirectAttack) m.showDirectAttack({ name: cmd.atkName, imgSrc: cmd.atkImg }, cmd.side, () => {});
+      if (m.showDirectAttack) enqueueFx((done) => m.showDirectAttack({ name: cmd.atkName, imgSrc: cmd.atkImg }, cmd.side, done));
       break;
     }
     case 'fx_option': {
-      if (m.showOptionEffect) m.showOptionEffect({ name: cmd.cardName, imgSrc: cmd.cardImg }, () => {});
+      if (m.showOptionEffect) enqueueFx((done) => m.showOptionEffect({ name: cmd.cardName, imgSrc: cmd.cardImg }, done));
       break;
     }
     case 'fx_sAttackPlus': {
@@ -546,6 +586,15 @@ function onRemoteCommand(cmd) {
     }
 
     case 'effect_confirm': window.confirmEffect(cmd.yes); break;
+
+    case 'fx_effectFailed': {
+      const el = document.createElement('div');
+      el.style.cssText = 'position:fixed;top:45%;left:0;z-index:60000;font-size:clamp(0.85rem,3.5vw,1.1rem);font-weight:700;color:#aaa;background:rgba(30,30,40,0.85);padding:10px 28px;border-radius:20px;border:1px solid #555;box-shadow:0 2px 12px rgba(0,0,0,0.4);white-space:nowrap;pointer-events:none;animation:effectFizzleSlide 3.5s cubic-bezier(0.25,1,0.5,1) forwards;';
+      el.innerText = cmd.text || '💨 効果発動できませんでした';
+      document.body.appendChild(el);
+      setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 3500);
+      break;
+    }
   }
 }
 
@@ -596,8 +645,14 @@ function checkOnlineBlock(cmd) {
           if (selectedIdx !== null) resolveOnlineBlock(selectedIdx, cmd);
           else sendCommand({ type: 'block_response', blocked: false });
         });
+      } else {
+        // ブロッカー選択UIがない場合、最初のブロッカーで自動ブロック
+        resolveOnlineBlock(blockerIndices[0], cmd);
       }
     });
+  } else {
+    // ブロック確認UIがない場合、ブロックなしとして応答
+    sendCommand({ type: 'block_response', blocked: false });
   }
 }
 
@@ -611,6 +666,12 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   renderAll();
   sendCommand({ type: 'waiting_close' });
 
+  // ★ ブロック決定を即座に通知（攻撃側がセキュリティチェックに進まないようにする）
+  // 演出完了後にバトル結果（atkResult）を別コマンドで送信
+  let atkResult = 'survived';
+  if (atk.dp <= blocker.dp) atkResult = atk.dp === blocker.dp ? 'both_destroyed' : 'destroyed';
+  sendCommand({ type: 'block_response', blocked: true, atkIdx: cmd.atkIdx, atkResult });
+
   // VS演出を相手にも送信
   sendCommand({ type: 'fx_securityCheck', secName: blocker.name, secImg: cardImg(blocker), secDp: blocker.dp, secType: 'デジモン', atkName: atk.name, atkImg: cardImg(atk), atkDp: atk.dp, customLabel: 'BLOCK!' });
 
@@ -619,38 +680,34 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   const showDE = _modules.showDestroyEffect || ((a, cb) => cb());
 
   showSC(blocker, atk, () => {
-    let atkResult = 'survived';
     if (atk.dp === blocker.dp) {
-      atkResult = 'both_destroyed';
       bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
       bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
+      sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
       renderAll();
       sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '両者消滅！' });
       showBR('両者消滅', '#ff4444', '両者消滅！', () => {
         showDE(blocker, () => { showDE(atk, () => {
-          addLog('💥 両者消滅！');
-          sendCommand({ type: 'block_response', blocked: true, atkIdx: cmd.atkIdx, atkResult }); sendStateSync();
+          addLog('💥 両者消滅！'); sendStateSync();
         }); });
       });
     } else if (atk.dp > blocker.dp) {
       bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
+      sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
       renderAll();
       sendCommand({ type: 'fx_battleResult', text: 'Win!!', color: '#00ff88', sub: '「' + blocker.name + '」を撃破！' });
       showBR('Lost...', '#ff4444', '「' + blocker.name + '」が撃破された', () => {
         showDE(blocker, () => {
-          addLog('💥 「' + blocker.name + '」が撃破された');
-          sendCommand({ type: 'block_response', blocked: true, atkIdx: cmd.atkIdx, atkResult: 'survived' }); sendStateSync();
+          addLog('💥 「' + blocker.name + '」が撃破された'); sendStateSync();
         });
       });
     } else {
-      atkResult = 'destroyed';
       bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
       renderAll();
       sendCommand({ type: 'fx_battleResult', text: 'Lost...', color: '#ff4444', sub: '「' + atk.name + '」が撃破された' });
       showBR('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => {
         showDE(atk, () => {
-          addLog('💥 「' + atk.name + '」を撃破！');
-          sendCommand({ type: 'block_response', blocked: true, atkIdx: cmd.atkIdx, atkResult }); sendStateSync();
+          addLog('💥 「' + atk.name + '」を撃破！'); sendStateSync();
         });
       });
     }
@@ -689,6 +746,7 @@ window._onlineSendStateSync = () => sendStateSync();
 window._sendMemoryUpdate = () => sendMemoryUpdate();
 window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
 window._clearPendingBlock = () => { _pendingBlockCallback = null; _pendingBlockResponse = null; };
+window._markDestroyed = (side, slotIdx) => markDestroyed(side, slotIdx);
 
 // battle-combat.jsの戦闘演出中フラグをwindow経由で公開
 import { isCombatAnimating } from './battle-combat.js';

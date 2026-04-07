@@ -340,7 +340,19 @@ export function resolveAttackTarget(target, targetIdx) {
 
   if (target === 'security') {
     // セキュリティアタック
-    afterAtkEffect(atk, atkSlotIdx, () => resolveSecurityCheck(atk, atkSlotIdx));
+    if (_onlineMode && _sendCommand) {
+      _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkImg: cardImg(atk) });
+      afterAtkEffect(atk, atkSlotIdx, () => {
+        // オンライン: 相手のブロック応答を待つ
+        if (typeof window._waitForBlockResponse === 'function') {
+          window._waitForBlockResponse((resp) => {
+            if (!resp.blocked) { resolveSecurityCheck(atk, atkSlotIdx); }
+          });
+        } else { resolveSecurityCheck(atk, atkSlotIdx); }
+      });
+    } else {
+      afterAtkEffect(atk, atkSlotIdx, () => resolveSecurityCheck(atk, atkSlotIdx));
+    }
   } else if (target === 'digimon') {
     // デジモンアタック
     const def = bs.ai.battleArea[targetIdx];
@@ -351,7 +363,18 @@ export function resolveAttackTarget(target, targetIdx) {
       atk.suspended = false; renderAll();
       return;
     }
-    afterAtkEffect(atk, atkSlotIdx, () => resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai'));
+    if (_onlineMode && _sendCommand) {
+      _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkImg: cardImg(atk) });
+      afterAtkEffect(atk, atkSlotIdx, () => {
+        if (typeof window._waitForBlockResponse === 'function') {
+          window._waitForBlockResponse((resp) => {
+            if (!resp.blocked) { resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai'); }
+          });
+        } else { resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai'); }
+      });
+    } else {
+      afterAtkEffect(atk, atkSlotIdx, () => resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai'));
+    }
   }
 }
 
@@ -741,14 +764,10 @@ export function aiAttackPhase(callback) {
       // ブロッカーチェック
       const blockerIndices = [];
       bs.player.battleArea.forEach((c, i) => {
-        if (!c) return;
-        const hasBlocker = hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】');
-        console.log('[ブロッカーチェック]', c.name, 'effect:', (c.effect||'').substring(0,20), 'suspended:', c.suspended, 'hasBlocker:', hasBlocker);
-        if (!c.suspended && hasBlocker) {
+        if (c && !c.suspended && (hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】'))) {
           blockerIndices.push(i);
         }
       });
-      console.log('[ブロッカー結果]', blockerIndices.length, '体検出');
 
       if (blockerIndices.length > 0) {
         showBlockConfirm(bs.player.battleArea[blockerIndices[0]], atk, (doBlock) => {

@@ -687,3 +687,4 @@ window._isOnlineMode = () => _onlineMode;
 window._onlineSendCommand = (cmd) => sendCommand(cmd);
 window._onlineSendStateSync = () => sendStateSync();
 window._sendMemoryUpdate = () => sendMemoryUpdate();
+window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);

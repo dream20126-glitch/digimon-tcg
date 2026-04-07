@@ -54,6 +54,9 @@ export async function loadCardAndKeywordData() {
       if (!card["効果"] && card["効果テキスト"]) card["効果"] = card["効果テキスト"];
       if (!card["進化元効果"] && card["進化元テキスト"]) card["進化元効果"] = card["進化元テキスト"];
       if (!card["セキュリティ効果"] && card["セキュリティテキスト"]) card["セキュリティ効果"] = card["セキュリティテキスト"];
+      // レシピの制御文字除去（スプシのセル内改行対策）
+      if (card["レシピ"] && typeof card["レシピ"] === 'string') card["レシピ"] = card["レシピ"].replace(/[\x00-\x1F\x7F]/g, '');
+      if (card["効果レシピ"] && typeof card["効果レシピ"] === 'string') card["効果レシピ"] = card["効果レシピ"].replace(/[\x00-\x1F\x7F]/g, '');
       if (!card["効果レシピ"] && card["レシピ"]) card["効果レシピ"] = card["レシピ"];
       // 旧列名 → 新列名にもコピー（逆方向の互換性）
       if (!card["効果テキスト"] && card["効果"]) card["効果テキスト"] = card["効果"];

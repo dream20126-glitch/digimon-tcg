@@ -2436,7 +2436,8 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
 function getRecipeForTrigger(card, triggerCode) {
   if (!card.recipe) return null;
   try {
-    const recipes = typeof card.recipe === 'string' ? JSON.parse(card.recipe) : card.recipe;
+    const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]/g, '') : card.recipe;
+    const recipes = typeof raw === 'string' ? JSON.parse(raw) : raw;
     // { "main": [...], "on_attack": [...] } 形式
     if (recipes[triggerCode]) return recipes[triggerCode];
     // セキュリティ効果でuse_main_effectの場合、mainレシピを返す

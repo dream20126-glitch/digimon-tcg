@@ -261,14 +261,19 @@ export function showDrawEffect(card, isLv6Plus, callback) {
 
 // ===== オンラインターン色 =====
 
+// 先攻=シアン、後攻=ピンク（_isFirstPlayer はゲーム開始時に設定）
+let _isFirstPlayer = true;
+
+export function setFirstPlayer(isFirst) { _isFirstPlayer = isFirst; }
+
 export function getMyTurnColor() {
   if (!_onlineMode) return '#00fbff';
-  return _onlineMyKey === 'player1' ? '#00fbff' : '#ff00fb';
+  return _isFirstPlayer ? '#00fbff' : '#ff00fb';
 }
 
 export function getOppTurnColor() {
   if (!_onlineMode) return '#ff00fb';
-  return _onlineMyKey === 'player1' ? '#ff00fb' : '#00fbff';
+  return _isFirstPlayer ? '#ff00fb' : '#00fbff';
 }
 
 // ===== プレイヤーターン開始 =====

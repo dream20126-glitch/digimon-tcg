@@ -12,7 +12,7 @@ import { bs, resetBattleState, drawCards } from './battle-state.js';
 import { addLog, showConfirm, showScreen } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, cardImg, updateMemGauge, setOnlineInfo, setIkuCallbacks } from './battle-render.js';
 // Phase 3: フェーズ進行
-import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers } from './battle-phase.js';
+import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers, setFirstPlayer } from './battle-phase.js';
 // Phase 4: 戦闘
 import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, setCombatHooks, setCombatOnlineHandlers } from './battle-combat.js';
 // Phase 5: 演出
@@ -497,6 +497,9 @@ window.scrollBattleRow = function(side, direction) {
 // ===== オンラインバトル開始 =====
 window.startOnlineBattle = async function(playerDeckData, oppDeckData, playerFirst, roomId, myKey, oppName) {
   await initOnline(roomId, myKey);
+  // 先攻/後攻を設定（色分けに使用）
+  setFirstPlayer(playerFirst);
+  window._isFirstPlayer = playerFirst;
   // Phase 3/4 のオンラインハンドラーを有効化
   setOnlineHandlers(true, myKey, { sendCommand, sendStateSync, sendMemoryUpdate });
   setCombatOnlineHandlers(true, myKey, { sendCommand, sendStateSync, sendMemoryUpdate });

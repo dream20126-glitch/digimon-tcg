@@ -724,7 +724,7 @@ export function updateMemGauge() {
   if (!row) return;
   row.innerHTML = '';
 
-  const isFirst = !_onlineMode || _onlineMyKey === 'player1';
+  const isFirst = !_onlineMode || !!window._isFirstPlayer;
 
   for (let i = MEM_MAX; i >= MEM_MIN; i--) {
     const el = document.createElement('div');
@@ -741,9 +741,10 @@ export function updateMemGauge() {
   if (lbl) {
     lbl.innerText = bs.isPlayerTurn ? 'あなたのターン' : (_onlineMode ? '相手のターン' : 'AIのターン');
     lbl.className = 'm-turn-label ' + (bs.isPlayerTurn ? 'pl' : 'ai');
-    // 先攻=シアン、後攻=ピンクでターンラベル色を設定
-    const myColor = (!_onlineMode || _onlineMyKey === 'player1') ? '#00fbff' : '#ff00fb';
-    const oppColor = (!_onlineMode || _onlineMyKey === 'player1') ? '#ff00fb' : '#00fbff';
+    // 先攻=シアン、後攻=ピンク（bs.isPlayerTurnとisFirstで判定）
+    const isFirst = !_onlineMode || bs.isPlayerTurn === (bs.turn <= 1 || _onlineMyKey === null);
+    const myColor = (!_onlineMode || window._isFirstPlayer) ? '#00fbff' : '#ff00fb';
+    const oppColor = (!_onlineMode || window._isFirstPlayer) ? '#ff00fb' : '#00fbff';
     lbl.style.color = bs.isPlayerTurn ? myColor : oppColor;
   }
   const tCount = document.getElementById('t-count');

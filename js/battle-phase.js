@@ -261,12 +261,12 @@ export function showDrawEffect(card, isLv6Plus, callback) {
 
 // ===== オンラインターン色 =====
 
-function getMyTurnColor() {
+export function getMyTurnColor() {
   if (!_onlineMode) return '#00fbff';
   return _onlineMyKey === 'player1' ? '#00fbff' : '#ff00fb';
 }
 
-function getOppTurnColor() {
+export function getOppTurnColor() {
   if (!_onlineMode) return '#ff00fb';
   return _onlineMyKey === 'player1' ? '#ff00fb' : '#00fbff';
 }

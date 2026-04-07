@@ -57,7 +57,11 @@ function sendMemoryUpdate() { if (_onlineMode && _sendMemoryUpdate) _sendMemoryU
 
 // ===== 戦闘演出背景（ちらつき防止） =====
 
+let _combatAnimating = false;
+export function isCombatAnimating() { return _combatAnimating; }
+
 function showCombatBackdrop() {
+  _combatAnimating = true;
   let bd = document.getElementById('_combat-backdrop');
   if (!bd) {
     bd = document.createElement('div');
@@ -69,6 +73,7 @@ function showCombatBackdrop() {
 }
 
 function hideCombatBackdrop() {
+  _combatAnimating = false;
   const bd = document.getElementById('_combat-backdrop');
   if (bd) bd.style.display = 'none';
 }
@@ -342,6 +347,8 @@ export function getAttackState() { return _atkState; }
 export function resolveAttackTarget(target, targetIdx) {
   if (!_atkState) return;
   _attackInProgress = true;
+  // 前回のブロック応答をクリア
+  if (window._clearPendingBlock) window._clearPendingBlock();
   const atk = _atkState.card;
   const atkSlotIdx = _atkState.slotIdx;
   _atkState = null;

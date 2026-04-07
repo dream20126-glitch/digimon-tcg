@@ -688,3 +688,8 @@ window._onlineSendCommand = (cmd) => sendCommand(cmd);
 window._onlineSendStateSync = () => sendStateSync();
 window._sendMemoryUpdate = () => sendMemoryUpdate();
 window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
+window._clearPendingBlock = () => { _pendingBlockCallback = null; _pendingBlockResponse = null; };
+
+// battle-combat.jsの戦闘演出中フラグをwindow経由で公開
+import { isCombatAnimating } from './battle-combat.js';
+window._isCombatAnimating = isCombatAnimating;

@@ -10,6 +10,9 @@ import { updateScrollArrows, addLog } from './battle-ui.js';
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
 import { isTargetSelecting } from './effect-engine.js';
 
+// 戦闘演出中フラグ（battle-combat.jsから参照）
+function isCombatAnimating() { return window._isCombatAnimating ? window._isCombatAnimating() : false; }
+
 // ===== カード画像ヘルパー =====
 const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
 const tamaBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1-Os-ZfmgLlQeYGkTU1uUXrt7iowy0FLD/view');
@@ -30,8 +33,8 @@ export function setOnlineInfo(online, myKey) {
 // ===== メイン描画 =====
 let _syncTimer = null;
 export function renderAll(force) {
-  // 対象選択中は再描画しない（UIが壊れるため）
-  if (!force && isTargetSelecting()) return;
+  // 対象選択中/戦闘演出中は再描画しない（UIが壊れる/ちらつくため）
+  if (!force && (isTargetSelecting() || isCombatAnimating())) return;
   renderSecurity();
   renderBattleRows();
   renderTamerRows();

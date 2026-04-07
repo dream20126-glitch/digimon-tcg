@@ -62,7 +62,7 @@ function showCombatBackdrop() {
   if (!bd) {
     bd = document.createElement('div');
     bd.id = '_combat-backdrop';
-    bd.style.cssText = 'position:fixed;inset:0;background:#000;z-index:47000;';
+    bd.style.cssText = 'position:fixed;inset:0;background:#000;z-index:47499;';
     document.body.appendChild(bd);
   }
   bd.style.display = 'block';

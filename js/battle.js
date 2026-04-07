@@ -286,9 +286,9 @@ setCombatHooks({
   makeEffectContext,
   hasKeyword: (card, kw) => card && card.effect && card.effect.includes(kw),
   hasEvoKeyword: (card, kw) => card && card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes(kw)),
-  applyPermanentEffects: (side) => { try { _applyPermanentEE(bs, side, makeEffectContext(null, side)); } catch (_) {} },
-  expireBuffs: (timing, side) => { try { _expireBuffsEE(bs, timing, side); } catch (_) {} },
-  triggerEffect: (code, card, side, ctx, cb) => { try { _triggerEffectEE(code, card, side, ctx, cb); } catch (_) { cb && cb(); } },
+  applyPermanentEffects: (side) => { try { _applyPermanentEE(bs, side, makeEffectContext(null, side)); } catch (e) { console.error('[applyPermanentEffects]', e); } },
+  expireBuffs: (timing, side) => { try { _expireBuffsEE(bs, timing, side); } catch (e) { console.error('[expireBuffs]', e); } },
+  triggerEffect: (code, card, side, ctx, cb) => { try { _triggerEffectEE(code, card, side, ctx, cb); } catch (e) { console.error('[triggerEffect]', e); cb && cb(); } },
 });
 
 // Phase 3→効果エンジン接続（ターン開始/終了時効果）

@@ -28,6 +28,7 @@ export function setOnlineInfo(online, myKey) {
 }
 
 // ===== メイン描画 =====
+let _syncTimer = null;
 export function renderAll(force) {
   // 対象選択中は再描画しない（UIが壊れるため）
   if (!force && isTargetSelecting()) return;
@@ -41,6 +42,11 @@ export function renderAll(force) {
   updatePhaseBadge();
   applyBackImages();
   setTimeout(updateScrollArrows, 0);
+  // オンライン: 自分のターン中は定期的に状態同期（デバウンス500ms）
+  if (_onlineMode && bs.isPlayerTurn && window._onlineSendStateSync) {
+    if (_syncTimer) clearTimeout(_syncTimer);
+    _syncTimer = setTimeout(() => window._onlineSendStateSync(), 500);
+  }
 }
 
 // ===== セキュリティ描画 =====

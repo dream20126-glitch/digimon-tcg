@@ -765,13 +765,6 @@ function getUIColor(actionCode, fallback) {
   return colorMap[ui['枠色']] || fallback || '#ff4444';
 }
 
-// 後方互換: getEffectType（既存のbattle.jsからの参照用）
-function getEffectType(actionCode) {
-  const ui = getActionUI(actionCode);
-  if (!ui) return null;
-  const typeName = ui['演出タイプ'];
-  return typeName && typeName !== 'なし' ? typeName : null;
-}
 
 function runOneAction(action, defaultTarget, ctx, callback) {
   const ui = getActionUI(action.code);

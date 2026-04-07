@@ -299,6 +299,7 @@ setPhaseHooks({
     const area = [...p.battleArea, ...(p.tamerArea || [])];
     const trigger = side === 'player' ? '【自分のターン開始時】' : '【相手のターン開始時】';
     const cardsWithEffect = area.filter(c => c && c.effect && c.effect.includes(trigger));
+    console.log('[checkTurnStartEffects]', side, 'trigger:', trigger, 'found:', cardsWithEffect.map(c => c.name + ':' + (c.effect||'').substring(0,30)));
     if (cardsWithEffect.length === 0) { cb(); return; }
     let idx = 0;
     function next() {

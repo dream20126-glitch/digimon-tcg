@@ -86,7 +86,7 @@ function removeOwnCard(slotIdx, reason) {
   bs.player.battleArea[slotIdx] = null;
   bs.player.trash.push(card);
   if (card.stack) card.stack.forEach(s => bs.player.trash.push(s));
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'card_removed', zone: 'battle', slotIdx, reason });
+  if (_onlineMode && _sendCommand) _sendCommand({ type: 'own_card_removed', slotIdx, reason: reason || 'destroy' });
 }
 
 // ===== 進化条件チェック =====
@@ -442,6 +442,20 @@ export function resolveSecurityCheck(atk, atkIdx) {
     const sec = bs.ai.security.splice(0, 1)[0];
     if (_onlineMode && _sendCommand) _sendCommand({ type: 'security_remove', secName: sec.name, secType: sec.type, remaining: bs.ai.security.length });
     applySecurityBuffs(sec, 'ai');
+
+    // Sアタック+のチェック枚数ラベル表示
+    if (totalChecks > 1) {
+      const labelText = checkNumber + '枚目';
+      if (_onlineMode && _sendCommand) _sendCommand({ type: 'fx_secCheckLabel', text: labelText });
+      const old = document.getElementById('_sec-check-count-label');
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      const el = document.createElement('div');
+      el.id = '_sec-check-count-label';
+      el.style.cssText = 'position:fixed;top:10%;left:50%;transform:translateX(-50%);z-index:60001;pointer-events:none;font-size:clamp(0.9rem,4vw,1.3rem);font-weight:700;color:#fff;background:rgba(0,0,0,0.7);padding:6px 18px;border-radius:8px;border:1px solid #aaa;text-align:center;animation:secCheckLabel 2.5s ease forwards;';
+      el.innerText = labelText;
+      document.body.appendChild(el);
+      setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 2800);
+    }
 
     showSecurityCheck(sec, atk, () => {
       // ----- セキュリティがデジモン -----

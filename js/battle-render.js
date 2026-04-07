@@ -33,8 +33,8 @@ export function setOnlineInfo(online, myKey) {
 // ===== メイン描画 =====
 let _syncTimer = null;
 export function renderAll(force) {
-  // 対象選択中/戦闘演出中は再描画しない（UIが壊れる/ちらつくため）
-  if (!force && (isTargetSelecting() || isCombatAnimating())) return;
+  // 対象選択中は再描画しない（UIが壊れるため）
+  if (!force && isTargetSelecting()) return;
   renderSecurity();
   renderBattleRows();
   renderTamerRows();

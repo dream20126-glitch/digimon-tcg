@@ -121,6 +121,7 @@ export function canEvolveOnto(evoCard, baseCard) {
 
 export function doPlay(card, handIdx, slotIdx) {
   if (bs.phase !== 'main') return;
+  if (_attackInProgress) return;
   if (card.level === '2') { addLog('🚨 デジタマはバトルエリアに出せません'); return; }
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'play', handIdx, slotIdx, cardName: card.name, cardType: card.type, cardImg: card.imgSrc || '', playCost: card.playCost || 0 });
   if (card.playCost === null) { addLog('🚨 「' + card.name + '」は進化専用カードです'); return; }
@@ -188,6 +189,7 @@ export function doPlay(card, handIdx, slotIdx) {
 
 export function doEvolve(card, handIdx, slotIdx) {
   if (bs.phase !== 'main') return;
+  if (_attackInProgress) return;
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'evolve', handIdx, slotIdx, cardName: card.name, baseName: bs.player.battleArea[slotIdx]?.name || '', cardImg: card.imgSrc || '', evolveCost: card.evolveCost || 0 });
   const base = bs.player.battleArea[slotIdx];
   if (!base) return;
@@ -225,6 +227,7 @@ export function doEvolve(card, handIdx, slotIdx) {
 
 export function doEvolveIku(card, handIdx) {
   if (bs.phase !== 'main') return;
+  if (_attackInProgress) return;
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'breed_evolve', handIdx, cardName: card.name, baseName: bs.player.ikusei?.name || '', cardImg: card.imgSrc || '', evolveCost: card.evolveCost || 0 });
   const base = bs.player.ikusei;
   if (!base) return;
@@ -305,10 +308,14 @@ function handleAutoTurnEnd() {
 // ===== アタック状態管理 =====
 
 let _atkState = null; // { card, slotIdx }
+let _attackInProgress = false; // アタック処理中フラグ（操作ロック用）
+
+export function isAttackInProgress() { return _attackInProgress; }
 
 export function startAttack(card, slotIdx) {
   if (bs.phase !== 'main') return false;
   if (!card) return false;
+  if (_attackInProgress) return false;
   // suspended チェックは行わない（長押しメニューで既にレスト済み）
   if (card.cantAttack) return false;
 
@@ -334,6 +341,7 @@ export function getAttackState() { return _atkState; }
 
 export function resolveAttackTarget(target, targetIdx) {
   if (!_atkState) return;
+  _attackInProgress = true;
   const atk = _atkState.card;
   const atkSlotIdx = _atkState.slotIdx;
   _atkState = null;
@@ -1131,6 +1139,7 @@ function aiPlayAuto(callback) {
 // ===== ターン終了チェック =====
 
 export function checkPendingTurnEnd() {
+  _attackInProgress = false;
   hideCombatBackdrop();
   renderAll();
   if (bs._pendingTurnEnd) {

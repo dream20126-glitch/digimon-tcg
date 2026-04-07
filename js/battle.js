@@ -10,11 +10,11 @@ import { getCardImageUrl } from './cards.js';
 import { bs, resetBattleState, drawCards } from './battle-state.js';
 // Phase 2: UI・描画
 import { addLog, showConfirm, showScreen } from './battle-ui.js';
-import { renderAll, showBCD, closeBCD, showTrash, cardImg, setOnlineInfo, setIkuCallbacks } from './battle-render.js';
+import { renderAll, showBCD, closeBCD, showTrash, cardImg, updateMemGauge, setOnlineInfo, setIkuCallbacks } from './battle-render.js';
 // Phase 3: フェーズ進行
 import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers } from './battle-phase.js';
 // Phase 4: 戦闘
-import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, setCombatOnlineHandlers } from './battle-combat.js';
+import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, setCombatHooks, setCombatOnlineHandlers } from './battle-combat.js';
 // Phase 5: 演出
 import { loadAllDictionaries, registerFxRunners } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose } from './battle-fx.js';
@@ -111,7 +111,7 @@ window.battleDefeat = battleDefeat;
 window._triggerMainEffect = function(card, callback) {
   const inPlayer = bs.player.battleArea.includes(card) || bs.player.tamerArea.includes(card);
   const side = inPlayer ? 'player' : 'ai';
-  try { _triggerEffectEE('main', card, side, { card, side, bs, addLog, renderAll, updateMemGauge: () => { import('./battle-render.js').then(m => m.updateMemGauge()); } }, callback); }
+  try { _triggerEffectEE('main', card, side, makeEffectContext(card, side), callback); }
   catch (_) { callback && callback(); }
 };
 
@@ -237,11 +237,87 @@ window.doMulligan = function() {
   addLog('🔄 マリガン！手札を引き直しました');
 };
 
-// Phase 3 ↔ Phase 4 フック接続
+// Phase 3 フック（aiMainPhase/aiAttackPhase/onDeckOut は先に設定、ターン効果は後で上書き）
 setPhaseHooks({
   aiMainPhase: aiMainPhase,
   aiAttackPhase: aiAttackPhase,
   onDeckOut: () => { addLog('⚠ デッキ切れ！'); battleDefeat(); },
+});
+
+// Phase 4→効果エンジン接続
+const TRIGGER_CODE_MAP = {
+  '【登場時】': 'on_play', '【進化時】': 'on_evolve', '【アタック時】': 'on_attack',
+  '【アタック終了時】': 'on_attack_end', '【自分のターン開始時】': 'on_own_turn_start',
+  '【自分のターン終了時】': 'on_own_turn_end', '【メイン】': 'main',
+  '【相手のターン開始時】': 'on_opp_turn_start', '【相手のターン終了時】': 'on_opp_turn_end',
+  '【消滅時】': 'on_destroy', '【セキュリティ】': 'security',
+  '【レストしたとき】': 'when_rest', '【アタックされたとき】': 'when_attacked',
+  '【ブロックされたとき】': 'when_blocked', 'ブロックされた時': 'when_blocked',
+  'アタックされた時': 'when_attacked',
+};
+
+function makeEffectContext(card, side) {
+  window._lastBattleState = bs;
+  return {
+    card, side, bs, addLog, renderAll, updateMemGauge,
+    doDraw, showYourTurn, aiTurn,
+    showPlayEffect, showEvolveEffect, showDestroyEffect,
+    showSecurityCheck, showBattleResult,
+  };
+}
+
+function checkAndTriggerEffect(card, triggerType, callback, side, alreadyConfirmed) {
+  if (!card) { callback && callback(); return; }
+  const hasInMain = card.effect && card.effect.includes(triggerType);
+  const hasInEvo = card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes(triggerType));
+  if (!hasInMain && !hasInEvo) { callback && callback(); return; }
+  if (!side) {
+    const inPlayer = bs.player.battleArea.includes(card) || bs.player.tamerArea.includes(card) || bs.player.hand.includes(card);
+    side = inPlayer ? 'player' : 'ai';
+  }
+  const triggerCode = TRIGGER_CODE_MAP[triggerType] || triggerType;
+  const context = makeEffectContext(card, side);
+  if (alreadyConfirmed) context.alreadyConfirmed = true;
+  _triggerEffectEE(triggerCode, card, side, context, callback);
+}
+
+setCombatHooks({
+  checkAndTriggerEffect,
+  makeEffectContext,
+  hasKeyword: (card, kw) => card && card.effect && card.effect.includes(kw),
+  hasEvoKeyword: (card, kw) => card && card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes(kw)),
+  applyPermanentEffects: (side) => { try { _applyPermanentEE(bs, side, makeEffectContext(null, side)); } catch (_) {} },
+  expireBuffs: (timing, side) => { try { _expireBuffsEE(bs, timing, side); } catch (_) {} },
+  triggerEffect: (code, card, side, ctx, cb) => { try { _triggerEffectEE(code, card, side, ctx, cb); } catch (_) { cb && cb(); } },
+});
+
+// Phase 3→効果エンジン接続（ターン開始/終了時効果）
+setPhaseHooks({
+  checkTurnStartEffects: (side, cb) => {
+    bs._usedLimits = {};
+    const p = side === 'player' ? bs.player : bs.ai;
+    const area = [...p.battleArea, ...(p.tamerArea || [])];
+    const trigger = side === 'player' ? '【自分のターン開始時】' : '【相手のターン開始時】';
+    const cardsWithEffect = area.filter(c => c && c.effect && c.effect.includes(trigger));
+    if (cardsWithEffect.length === 0) { cb(); return; }
+    let idx = 0;
+    function next() {
+      if (idx >= cardsWithEffect.length) { cb(); return; }
+      checkAndTriggerEffect(cardsWithEffect[idx++], trigger, next);
+    }
+    next();
+  },
+  checkTurnEndEffects: (cb) => {
+    const allCards = [...bs.player.battleArea, ...(bs.player.tamerArea || [])];
+    const cardsWithEffect = allCards.filter(c => c && c.effect && c.effect.includes('【自分のターン終了時】'));
+    if (cardsWithEffect.length === 0) { cb(); return; }
+    let idx = 0;
+    function next() {
+      if (idx >= cardsWithEffect.length) { cb(); return; }
+      checkAndTriggerEffect(cardsWithEffect[idx++], '【自分のターン終了時】', next);
+    }
+    next();
+  },
 });
 
 // Phase 5: 演出エンジン接続

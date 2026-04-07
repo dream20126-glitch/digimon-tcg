@@ -48,6 +48,20 @@ export async function loadCardAndKeywordData() {
     keywords = data.keywords || [];
     masterKeywords = keywords;
 
+    // 列名の正規化（新旧スプシ両対応）
+    allCards.forEach(card => {
+      // 新列名 → 旧列名にコピー（parseDeckや他のコードが旧名を参照するため）
+      if (!card["効果"] && card["効果テキスト"]) card["効果"] = card["効果テキスト"];
+      if (!card["進化元効果"] && card["進化元テキスト"]) card["進化元効果"] = card["進化元テキスト"];
+      if (!card["セキュリティ効果"] && card["セキュリティテキスト"]) card["セキュリティ効果"] = card["セキュリティテキスト"];
+      if (!card["効果レシピ"] && card["レシピ"]) card["効果レシピ"] = card["レシピ"];
+      // 旧列名 → 新列名にもコピー（逆方向の互換性）
+      if (!card["効果テキスト"] && card["効果"]) card["効果テキスト"] = card["効果"];
+      if (!card["進化元テキスト"] && card["進化元効果"]) card["進化元テキスト"] = card["進化元効果"];
+      if (!card["セキュリティテキスト"] && card["セキュリティ効果"]) card["セキュリティテキスト"] = card["セキュリティ効果"];
+      if (!card["レシピ"] && card["効果レシピ"]) card["レシピ"] = card["効果レシピ"];
+    });
+
     // 画像URLをキャッシュ
     allCards.forEach(card => {
       const url = card["ImageURL"] || '';

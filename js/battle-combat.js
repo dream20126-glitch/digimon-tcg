@@ -343,10 +343,15 @@ export function resolveAttackTarget(target, targetIdx) {
     if (_onlineMode && _sendCommand) {
       _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkImg: cardImg(atk) });
       afterAtkEffect(atk, atkSlotIdx, () => {
-        // オンライン: 相手のブロック応答を待つ
         if (typeof window._waitForBlockResponse === 'function') {
           window._waitForBlockResponse((resp) => {
-            if (!resp.blocked) { resolveSecurityCheck(atk, atkSlotIdx); }
+            if (!resp.blocked) {
+              resolveSecurityCheck(atk, atkSlotIdx);
+            } else {
+              // ブロックされた → 相手側でバトル解決済み。攻撃側は結果を反映
+              renderAll();
+              checkPendingTurnEnd();
+            }
           });
         } else { resolveSecurityCheck(atk, atkSlotIdx); }
       });
@@ -368,7 +373,12 @@ export function resolveAttackTarget(target, targetIdx) {
       afterAtkEffect(atk, atkSlotIdx, () => {
         if (typeof window._waitForBlockResponse === 'function') {
           window._waitForBlockResponse((resp) => {
-            if (!resp.blocked) { resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai'); }
+            if (!resp.blocked) {
+              resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai');
+            } else {
+              renderAll();
+              checkPendingTurnEnd();
+            }
           });
         } else { resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai'); }
       });

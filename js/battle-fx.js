@@ -707,6 +707,43 @@ export function fxVsBattle(card1, card2, opts, callback) {
 //  15. シールド演出（ブロッカー）— 旧コード準拠
 // =====================================================
 
+// =====================================================
+//  孵化演出 — 旧コード showHatchEffect 準拠
+// =====================================================
+
+export function fxHatchEffect(card, callback) {
+  const overlay = document.getElementById('hatch-overlay');
+  if (!overlay) { callback && callback(); return; }
+  const flash = document.getElementById('hatch-flash');
+  const label = document.getElementById('hatch-label');
+  const imgEl = document.getElementById('hatch-card-img');
+  const nameEl = document.getElementById('hatch-card-name');
+  const subEl = document.getElementById('hatch-sub-text');
+
+  flash.style.opacity = '0'; label.style.opacity = '0';
+  imgEl.style.opacity = '0'; imgEl.style.transform = 'scale(0.5) rotate(-10deg)';
+  nameEl.style.opacity = '0'; subEl.style.opacity = '0'; subEl.style.transform = 'scale(0.5)';
+
+  const src = card ? cardImg(card) : '';
+  imgEl.innerHTML = src
+    ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">`
+    : `<div style="color:#ff9900;font-size:10px;padding:8px;">${card?.name || '?'}</div>`;
+  nameEl.innerText = card?.name || '?';
+  overlay.style.display = 'flex';
+
+  setTimeout(() => {
+    flash.style.transition = 'opacity 0.1s'; flash.style.opacity = '0.8';
+    setTimeout(() => {
+      flash.style.transition = 'opacity 0.25s'; flash.style.opacity = '0';
+      label.style.opacity = '1'; imgEl.style.opacity = '1'; imgEl.style.transform = 'scale(1) rotate(0deg)';
+      setTimeout(() => { nameEl.style.opacity = '1'; subEl.style.opacity = '1'; subEl.style.transform = 'scale(1)'; }, 200);
+    }, 150);
+  }, 100);
+
+  clearTimeout(window._hatchTimer);
+  window._hatchTimer = setTimeout(() => { overlay.style.display = 'none'; callback && callback(); }, 2000);
+}
+
 /**
  * ブロッカー演出 — 旧コード showBlockConfirm 準拠
  * effect-confirm-overlay を使用した確認ダイアログ

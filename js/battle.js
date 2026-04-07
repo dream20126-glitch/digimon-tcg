@@ -17,7 +17,7 @@ import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone,
 import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, setCombatOnlineHandlers } from './battle-combat.js';
 // Phase 5: 演出
 import { loadAllDictionaries, registerFxRunners } from './effect-engine.js';
-import { getFxRunners, fxSAttackPlus, fxRemoteEffect, fxRemoteEffectClose } from './battle-fx.js';
+import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose } from './battle-fx.js';
 import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE } from './effect-engine.js';
 // Phase 6: オンライン
 import { initOnline, startOnlineListener, sendCommand, sendStateSync, sendMemoryUpdate, cleanupOnline, isOnlineMode, setOnlineModules } from './battle-online.js';
@@ -262,7 +262,7 @@ setIkuCallbacks({
   onHatch: (card) => {
     if (isOnlineMode()) sendCommand({ type: 'hatch', cardName: card.name, cardImg: card.imgSrc || '' });
     renderAll();
-    breedActionDone();
+    fxHatchEffect(card, () => breedActionDone());
   },
   onBreedMove: (card) => {
     if (isOnlineMode()) {

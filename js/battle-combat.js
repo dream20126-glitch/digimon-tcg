@@ -615,13 +615,32 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
 // ===== ブロック確認UI =====
 
 export function showBlockConfirm(blocker, attacker, callback) {
-  showConfirm({
-    title: '🚨💥 アタック中！！ 💥🚨',
-    message: '相手の「' + attacker.name + '」(DP:' + attacker.dp + ')がアタックしてきました！\nブロックしますか？',
-    yesText: 'ブロック',
-    noText: 'スルー',
-    color: '#ff4444',
-  }).then(result => callback(result));
+  // 旧コード準拠: effect-confirm-overlay を使用
+  const overlay = document.getElementById('effect-confirm-overlay');
+  if (!overlay) { callback(false); return; }
+  const nameEl = document.getElementById('effect-confirm-name');
+  const textEl = document.getElementById('effect-confirm-text');
+  const questionEl = document.getElementById('effect-confirm-question');
+  const imgEl = document.getElementById('effect-confirm-img');
+
+  nameEl.innerText = '🚨💥 アタック中！！ 💥🚨';
+  nameEl.style.color = '#ff2222';
+  nameEl.style.textShadow = '0 0 10px #ff0000, 0 0 20px #ff000088';
+  nameEl.style.fontSize = '1.2rem';
+  textEl.innerText = '相手の「' + (attacker ? attacker.name : '???') + '」(DP:' + (attacker ? attacker.dp : '?') + ')がアタックしてきました！';
+  if (questionEl) questionEl.innerText = 'ブロックしますか？';
+  if (imgEl) imgEl.style.display = 'none';
+  overlay.style.display = 'flex';
+
+  window._effectConfirmCallback = function(result) {
+    nameEl.style.color = '#fff';
+    nameEl.style.textShadow = '';
+    nameEl.style.fontSize = '1rem';
+    if (questionEl) questionEl.innerText = '効果を発動しますか？';
+    if (imgEl) imgEl.style.display = '';
+    overlay.style.display = 'none';
+    callback(result);
+  };
 }
 
 // ===== ブロッカー選択UI =====

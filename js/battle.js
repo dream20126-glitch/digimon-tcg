@@ -42,7 +42,7 @@ function parseDeck(deckData) {
       evolveCond: obj["進化条件"] || '',
       cost: hasPlay ? parseInt(playCost) : hasEvolve ? parseInt(evolveCost) : 0,
       effect: obj["効果"] || '', evoSourceEffect: obj["進化元効果"] || '',
-      securityEffect: obj["セキュリティ効果"] || '', recipe: obj["効果レシピ"] || null,
+      securityEffect: obj["セキュリティ効果"] || '', recipe: obj["レシピ"] || obj["効果レシピ"] || null,
       imageUrl: obj["ImageURL"] || '', imgSrc: getCardImageUrl(obj) || '',
       type: obj["タイプ"] || '', color: obj["色"] || '', feature: obj["特徴"] || '',
       stack: [], suspended: false, buffs: [],

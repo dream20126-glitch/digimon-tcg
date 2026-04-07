@@ -2776,9 +2776,30 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === その他のアクション（既存エンジンに委譲） ===
     default: {
-      // 既存のrunOneAction形式に変換して実行
+      // レシピのtarget形式 → runOneAction形式に変換
       const action = { code: step.action, value: step.value || null };
-      const target = step.target ? { code: 'target_' + step.target } : null;
+      let target = null;
+      if (step.target) {
+        const t = step.target;
+        if (t === 'self') target = { code: 'target_self' };
+        else if (t === 'own:all') target = { code: 'target_all_own' };
+        else if (t === 'opponent:all') target = { code: 'target_all_opponent' };
+        else if (t === 'own_security:all') target = { code: 'target_all_own_security' };
+        else if (t.startsWith('own:')) target = { code: 'target_own', count: parseInt(t.split(':')[1]) || 1 };
+        else if (t.startsWith('opponent:')) target = { code: 'target_opponent', count: parseInt(t.split(':')[1]) || 1 };
+        else if (t.startsWith('other_own:')) target = { code: 'target_other_own', count: parseInt(t.split(':')[1]) || 1 };
+        else target = { code: 'target_' + t };
+      }
+      // 持続期間をctx.blockに設定（runOneAction内のapplyDpBuff等で参照）
+      if (step.duration) {
+        if (!ctx.block) ctx.block = {};
+        ctx.block.duration = { code: step.duration };
+      }
+      // 条件
+      if (step.condition) {
+        if (!ctx.block) ctx.block = {};
+        if (!ctx.block.conditions) ctx.block.conditions = [];
+      }
       runOneAction(action, target, ctx, callback);
       break;
     }

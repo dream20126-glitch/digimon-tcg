@@ -103,10 +103,29 @@ function renderBattleRows() {
         const src = cardImg(card);
         let html = src
           ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:4px;">`
-          : `<div style="font-size:8px;color:#aaa;padding:4px;height:100%;display:flex;align-items:center;justify-content:center;">${card.name}</div>`;
+          : `<div style="font-size:8px;color:${isPlayer ? '#00fbff' : '#ff00fb'};padding:3px;">${card.name}</div>`;
 
-        // DP表示
-        html += `<div class="b-dp">${card.dp}</div>`;
+        // DP表示（baseDp + dpModifier内訳）
+        const dpMod = card.dpModifier || 0;
+        let dpHtml = `${card.baseDp || card.dp}`;
+        if (dpMod > 0) dpHtml += `<span style="color:#00ff88;font-size:6px;"> +${dpMod}</span>`;
+        else if (dpMod < 0) dpHtml += `<span style="color:#ff4444;font-size:6px;"> ${dpMod}</span>`;
+        html += `<div class="s-dp">${dpHtml}</div>`;
+
+        // 進化元枚数（右上）
+        if (card.stack && card.stack.length > 0) {
+          html += `<div style="position:absolute;top:1px;right:2px;background:rgba(0,0,0,0.8);color:#ffaa00;font-size:6px;padding:1px 2px;border-radius:2px;">${card.stack.length}枚</div>`;
+        }
+
+        // Sアタック+表示（左上）— 進化元効果/バフからSアタック+を算出
+        let saExtra = 0;
+        if (card.effect) { const m = card.effect.matchAll(/(?:Sアタック|セキュリティアタック)\+(\d+)/g); for (const r of m) saExtra += parseInt(r[1]); }
+        if (card.stack) card.stack.forEach(s => { if (s.evoSourceEffect) { const m = s.evoSourceEffect.matchAll(/(?:Sアタック|セキュリティアタック)\+(\d+)/g); for (const r of m) saExtra += parseInt(r[1]); } });
+        if (card._permEffects && card._permEffects.securityAttackPlus) saExtra += card._permEffects.securityAttackPlus;
+        if (card.buffs) card.buffs.forEach(b => { if (b.type === 'security_attack_plus') saExtra += (parseInt(b.value) || 0); });
+        if (saExtra > 0) {
+          html += `<div style="position:absolute;top:1px;left:2px;background:rgba(255,0,0,0.8);color:#fff;font-size:6px;padding:1px 3px;border-radius:2px;">チェック+${saExtra}</div>`;
+        }
 
         // バフ表示（状態異常マーク）
         if (card.cantAttack || card.cantBlock) {
@@ -114,16 +133,14 @@ function renderBattleRows() {
           if (card.cantAttack && card.cantBlock) mark = '⚔🛡✖';
           else if (card.cantAttack) mark = '⚔✖';
           else if (card.cantBlock) mark = '🛡✖';
-          html += `<div style="position:absolute;top:1px;right:1px;background:#9933ff;color:#fff;font-size:7px;padding:1px 3px;border-radius:3px;">${mark}</div>`;
+          html += `<div style="position:absolute;bottom:14px;right:1px;background:#9933ff;color:#fff;font-size:7px;padding:1px 3px;border-radius:3px;">${mark}</div>`;
         }
         if (card.cantEvolve) {
-          html += `<div style="position:absolute;top:14px;right:1px;background:#ff4444;color:#fff;font-size:7px;padding:1px 3px;border-radius:3px;">進❌</div>`;
+          html += `<div style="position:absolute;bottom:1px;right:1px;background:#ff4444;color:#fff;font-size:7px;padding:1px 3px;border-radius:3px;">進❌</div>`;
         }
 
-        // 進化元枚数
-        if (card.stack && card.stack.length > 0) {
-          html += `<div style="position:absolute;bottom:14px;left:1px;background:rgba(0,0,0,0.8);color:#ffaa00;font-size:7px;padding:1px 3px;border-radius:2px;">×${card.stack.length}</div>`;
-        }
+        // カード名
+        html += `<div class="s-name">${card.name}</div>`;
 
         sl.innerHTML = html;
 
@@ -392,12 +409,13 @@ function renderTamerRows() {
     tamers.forEach((card, i) => {
       if (!card) return;
       const sl = document.createElement('div');
-      sl.className = 'b-slot' + (isPlayer ? ' pl-card' : ' ai-card');
-      sl.style.cssText = 'width:40px;height:56px;';
+      sl.className = 'tamer-slot';
+      if (card.suspended) sl.style.transform = 'rotate(90deg)';
       const src = cardImg(card);
-      sl.innerHTML = src
+      sl.innerHTML = (src
         ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:3px;">`
-        : `<div style="font-size:7px;color:#ffaa00;padding:2px;">${card.name}</div>`;
+        : `<div style="font-size:7px;color:#ffaa00;padding:2px;">${card.name}</div>`)
+        + `<div class="s-name">${card.name}</div>`;
 
       sl.onclick = () => window.showBCD && window.showBCD(card, isPlayer ? 'plTamer' : 'aiTamer');
 

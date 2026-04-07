@@ -8,6 +8,7 @@
 import { bs, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { updateScrollArrows, addLog } from './battle-ui.js';
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
+import { isTargetSelecting } from './effect-engine.js';
 
 // ===== カード画像ヘルパー =====
 const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
@@ -28,6 +29,8 @@ export function setOnlineInfo(online, myKey) {
 
 // ===== メイン描画 =====
 export function renderAll(force) {
+  // 対象選択中は再描画しない（UIが壊れるため）
+  if (!force && isTargetSelecting()) return;
   renderSecurity();
   renderBattleRows();
   renderTamerRows();
@@ -787,6 +790,8 @@ function applyBackImages() {
 
 // ===== カード詳細画面 =====
 export function showBCD(idxOrCard, source) {
+  // 対象選択中はカード詳細を開かない（タップ干渉防止）
+  if (isTargetSelecting()) return;
   let card;
   if (typeof idxOrCard === 'object') card = idxOrCard;
   else if (source === 'hand') card = bs.player.hand[idxOrCard];

@@ -132,12 +132,225 @@ function renderBattleRows() {
           const idx = i;
           return () => window.showBCD && window.showBCD(idx, isPlayer ? 'plBattle' : 'aiBattle');
         })();
+
+        // プレイヤーのデジモン → 長押し/スワイプでアクションメニュー
+        if (isPlayer && card.type === 'デジモン') {
+          setupLongpress(sl, i, card);
+        }
       }
 
       row.appendChild(sl);
     }
   });
 }
+
+// ===== 長押し/スワイプメニュー（バトルエリアカード） =====
+let _longpressSlotIdx = null;
+let _wasAlreadySuspended = false;
+
+function setupLongpress(el, slotIdx, card) {
+  let lpt = null, touchStartX = 0, touchStartY = 0, swiped = false;
+
+  function triggerMenu() {
+    if (bs.phase !== 'main' || !bs.isPlayerTurn) return;
+    const c = bs.player.battleArea[slotIdx]; if (!c) return;
+    _wasAlreadySuspended = c.suspended;
+    if (!c.suspended) {
+      const noRest = (c.effect && c.effect.includes('レストせずアタックできる')) || c._attackWithoutRest;
+      if (!noRest) c.suspended = true;
+      renderAll();
+    }
+    _longpressSlotIdx = slotIdx;
+    requestAnimationFrame(() => {
+      const updatedEl = document.getElementById('pl-battle-row')?.querySelectorAll('.b-slot')[slotIdx];
+      showLongpressMenu(c, slotIdx, updatedEl || el);
+    });
+  }
+  // タッチ: 左スワイプ
+  el.addEventListener('touchstart', e => { const t = e.touches[0]; touchStartX = t.clientX; touchStartY = t.clientY; swiped = false; }, { passive: true });
+  el.addEventListener('touchmove', e => { const t = e.touches[0]; const dx = touchStartX - t.clientX; if (dx > 20 && dx > Math.abs(t.clientY - touchStartY) && !swiped) { swiped = true; triggerMenu(); } }, { passive: true });
+  // マウス: 長押し(400ms)
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    lpt = setTimeout(() => triggerMenu(), 400);
+    const cancel = () => { clearTimeout(lpt); document.removeEventListener('mouseup', cancel); };
+    document.addEventListener('mouseup', cancel);
+  });
+}
+
+function showLongpressMenu(card, slotIdx, el) {
+  const menu = document.getElementById('longpress-action-menu');
+  const btns = document.getElementById('longpress-action-buttons');
+  const backdrop = document.getElementById('longpress-backdrop');
+  if (!menu || !btns) return;
+
+  let html = '';
+  const canAtk = card.type === 'デジモン';
+  const hasEvoSpeed = card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【速攻】'));
+  const notSick = !card.summonedThisTurn || hasEvoSpeed;
+  if (canAtk && notSick) {
+    if (_wasAlreadySuspended) {
+      html += '<button class="lp-action-btn lp-atk-btn" disabled style="opacity:0.3;cursor:not-allowed;">⚔ アタック（レスト中）</button>';
+    } else {
+      html += `<button class="lp-action-btn lp-atk-btn" onclick="startAttackMode(${slotIdx})">⚔ アタック</button>`;
+    }
+  }
+  if (!card._usedEffects) card._usedEffects = [];
+  if (card.effect && card.effect.includes('【メイン】')) {
+    const used = card._usedEffects.includes('self');
+    html += used
+      ? '<button class="lp-action-btn lp-effect-btn" disabled style="opacity:0.3;">⚡ 効果（使用済み）</button>'
+      : `<button class="lp-action-btn lp-effect-btn" onclick="activateEffect(${slotIdx},'self')">⚡ 効果</button>`;
+  }
+  html += `<button class="lp-action-btn lp-cancel-btn" onclick="cancelLongpress(${slotIdx})">✕ キャンセル</button>`;
+  btns.innerHTML = html;
+
+  menu.style.visibility = 'hidden'; menu.style.display = 'block';
+  const menuH = menu.offsetHeight, menuW = menu.offsetWidth;
+  menu.style.visibility = ''; menu.style.display = 'none';
+  const rect = el.getBoundingClientRect();
+  menu.style.left = Math.max(4, Math.min(rect.left + rect.width / 2 - menuW / 2, window.innerWidth - menuW - 4)) + 'px';
+  menu.style.top = Math.max(4, rect.top - menuH - 6) + 'px';
+  backdrop.style.display = 'block'; menu.style.display = 'block';
+}
+
+function hideLongpressMenu() {
+  const menu = document.getElementById('longpress-action-menu');
+  const backdrop = document.getElementById('longpress-backdrop');
+  if (menu) menu.style.display = 'none';
+  if (backdrop) backdrop.style.display = 'none';
+}
+
+// ===== アタック矢印UI =====
+function startAttackModeUI(slotIdx) {
+  hideLongpressMenu();
+  const card = bs.player.battleArea[slotIdx]; if (!card) return;
+  addLog('⚔ 「' + card.name + '」でアタック！ → 対象を選んでください');
+
+  let arrowSvg = document.getElementById('attack-arrow-svg');
+  if (!arrowSvg) {
+    arrowSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    arrowSvg.id = 'attack-arrow-svg';
+    arrowSvg.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:99998;pointer-events:none;';
+    document.body.appendChild(arrowSvg);
+  }
+  const slotEl = document.getElementById('pl-battle-row')?.querySelectorAll('.b-slot')[slotIdx];
+  const slotRect = slotEl ? slotEl.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
+  const sx = slotRect.left + slotRect.width / 2, sy = slotRect.top;
+  arrowSvg.innerHTML = `<defs><marker id="atkArrowHead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#00fbff"/></marker></defs><line id="atk-arrow-line" x1="${sx}" y1="${sy}" x2="${sx}" y2="${sy}" stroke="#00fbff" stroke-width="3" stroke-dasharray="8,4" marker-end="url(#atkArrowHead)" opacity="0.9"/>`;
+  arrowSvg.style.display = 'block';
+
+  // アタック対象ハイライト
+  const canHitActive = (card.effect && card.effect.includes('アクティブ状態のデジモンにもアタックできる')) || (card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【突進】')));
+  const aiRow = document.getElementById('ai-battle-row');
+  if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, i) => {
+    const def = bs.ai.battleArea[i]; if (!def) return;
+    if (def.suspended || canHitActive) s.style.boxShadow = '0 0 10px #ff444488';
+  });
+  const secArea = document.getElementById('ai-sec-area');
+  if (secArea && bs.ai.security.length > 0) secArea.style.boxShadow = '0 0 10px #ff444488';
+
+  function onMove(e) {
+    const t = e.touches ? e.touches[0] : e;
+    const line = document.getElementById('atk-arrow-line');
+    if (line) { line.setAttribute('x2', t.clientX); line.setAttribute('y2', t.clientY); }
+    if (e.preventDefault) e.preventDefault();
+  }
+  function onEnd(e) {
+    const t = e.changedTouches ? e.changedTouches[0] : e;
+    document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onEnd);
+    document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onEnd);
+    arrowSvg.style.display = 'none';
+    // ハイライト解除
+    if (aiRow) aiRow.querySelectorAll('.b-slot').forEach(s => { s.style.boxShadow = ''; });
+    if (secArea) secArea.style.boxShadow = '';
+
+    const cx = t.clientX, cy = t.clientY;
+    let resolved = false;
+    // 相手デジモンにドロップ
+    if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, di) => {
+      if (resolved) return;
+      const def = bs.ai.battleArea[di]; if (!def) return;
+      const r = s.getBoundingClientRect();
+      if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+        resolved = true;
+        if (window.startAttack && window.startAttack(card, slotIdx)) {
+          window.resolveAttackTarget('digimon', di);
+        }
+      }
+    });
+    // セキュリティにドロップ
+    if (!resolved && secArea) {
+      const r = secArea.getBoundingClientRect();
+      if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+        resolved = true;
+        if (window.startAttack && window.startAttack(card, slotIdx)) {
+          window.resolveAttackTarget('security');
+        }
+      }
+    }
+    // 上方向（相手エリア全体）→ セキュリティ
+    if (!resolved) {
+      const aiZone = document.querySelector('.ai-zone');
+      if (aiZone) {
+        const r = aiZone.getBoundingClientRect();
+        if (cy >= r.top && cy <= r.bottom) {
+          resolved = true;
+          if (window.startAttack && window.startAttack(card, slotIdx)) {
+            window.resolveAttackTarget('security');
+          }
+        }
+      }
+    }
+    // 何もなし → レスト解除
+    if (!resolved) {
+      if (!_wasAlreadySuspended) card.suspended = false;
+      renderAll();
+    }
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onEnd);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('touchend', onEnd);
+}
+
+// window公開（HTMLのonclickから呼ばれる）
+window.startAttackMode = startAttackModeUI;
+window.hideLongpressMenu = hideLongpressMenu;
+window.cancelLongpress = function(slotIdx) {
+  hideLongpressMenu();
+  const card = bs.player.battleArea[slotIdx];
+  if (card && !_wasAlreadySuspended) card.suspended = false;
+  renderAll();
+};
+window.activateEffect = function(slotIdx, effectSource) {
+  hideLongpressMenu();
+  const card = bs.player.battleArea[slotIdx]; if (!card) return;
+  if (!card._usedEffects) card._usedEffects = [];
+  let effectText = card.effect, effectName = card.name;
+  if (effectSource && effectSource.startsWith('evo-')) {
+    const evoIdx = parseInt(effectSource.split('-')[1]);
+    const evoCard = card.stack && card.stack[evoIdx];
+    if (evoCard && evoCard.evoSourceEffect) { effectText = evoCard.evoSourceEffect; effectName = evoCard.name + '（進化元効果）'; }
+  }
+  renderAll();
+  document.getElementById('effect-confirm-name').innerText = effectName;
+  document.getElementById('effect-confirm-text').innerText = effectText;
+  document.getElementById('effect-confirm-overlay').style.display = 'flex';
+  // confirmEffect のコールバックで効果エンジンを呼ぶ
+  window._effectConfirmCallback = function(yes) {
+    document.getElementById('effect-confirm-overlay').style.display = 'none';
+    if (!yes) {
+      if (!_wasAlreadySuspended) card.suspended = false;
+      renderAll();
+      return;
+    }
+    card._usedEffects.push(effectSource || 'self');
+    // effect-engine の checkAndTriggerEffect を window 経由で呼ぶ
+    if (window._triggerMainEffect) window._triggerMainEffect(card, () => renderAll());
+    else renderAll();
+  };
+};
 
 // ===== テイマーエリア描画 =====
 function renderTamerRows() {
@@ -159,10 +372,73 @@ function renderTamerRows() {
         : `<div style="font-size:7px;color:#ffaa00;padding:2px;">${card.name}</div>`;
 
       sl.onclick = () => window.showBCD && window.showBCD(card, isPlayer ? 'plTamer' : 'aiTamer');
+
+      // プレイヤーテイマー → 長押し/スワイプで効果発動メニュー
+      if (isPlayer && card.effect && card.effect.trim() && card.effect !== 'なし') {
+        let touchSX = 0, swiped = false;
+        sl.addEventListener('touchstart', e => { touchSX = e.touches[0].clientX; swiped = false; }, { passive: true });
+        sl.addEventListener('touchmove', e => {
+          if (touchSX - e.touches[0].clientX > 20 && !swiped) { swiped = true; showTamerMenu(card, i, sl); }
+        }, { passive: true });
+        sl.addEventListener('mousedown', e => {
+          if (e.button !== 0) return;
+          const t = setTimeout(() => showTamerMenu(card, i, sl), 400);
+          const cancel = () => { clearTimeout(t); document.removeEventListener('mouseup', cancel); };
+          document.addEventListener('mouseup', cancel);
+        });
+      }
+
       row.appendChild(sl);
     });
   });
 }
+
+// テイマー効果メニュー
+function showTamerMenu(card, tamerIdx, el) {
+  if (bs.phase !== 'main' || !bs.isPlayerTurn) return;
+  if (!card.suspended) card.suspended = true;
+  renderAll();
+  const tamerRow = document.getElementById('pl-tamer-row');
+  const updatedEl = tamerRow ? tamerRow.querySelectorAll('.b-slot')[tamerIdx] : el;
+  el = updatedEl || el;
+
+  const menu = document.getElementById('longpress-action-menu');
+  const btns = document.getElementById('longpress-action-buttons');
+  const backdrop = document.getElementById('longpress-backdrop');
+  if (!menu || !btns) return;
+
+  let html = `<button class="lp-action-btn lp-effect-btn" onclick="activateTamerEffect(${tamerIdx})">⚡ 効果</button>`;
+  html += `<button class="lp-action-btn lp-cancel-btn" onclick="cancelTamerLongpress(${tamerIdx})">✕ キャンセル</button>`;
+  btns.innerHTML = html;
+
+  menu.style.visibility = 'hidden'; menu.style.display = 'block';
+  const menuH = menu.offsetHeight, menuW = menu.offsetWidth;
+  menu.style.visibility = ''; menu.style.display = 'none';
+  const rect = el.getBoundingClientRect();
+  menu.style.left = Math.max(4, Math.min(rect.left + rect.width / 2 - menuW / 2, window.innerWidth - menuW - 4)) + 'px';
+  menu.style.top = Math.max(4, rect.top - menuH - 6) + 'px';
+  backdrop.style.display = 'block'; menu.style.display = 'block';
+}
+
+window.activateTamerEffect = function(tamerIdx) {
+  hideLongpressMenu();
+  const card = bs.player.tamerArea[tamerIdx]; if (!card) return;
+  document.getElementById('effect-confirm-name').innerText = card.name;
+  document.getElementById('effect-confirm-text').innerText = card.effect;
+  document.getElementById('effect-confirm-overlay').style.display = 'flex';
+  window._effectConfirmCallback = function(yes) {
+    document.getElementById('effect-confirm-overlay').style.display = 'none';
+    if (!yes) { card.suspended = false; renderAll(); return; }
+    if (window._triggerMainEffect) window._triggerMainEffect(card, () => renderAll());
+    else renderAll();
+  };
+};
+window.cancelTamerLongpress = function(tamerIdx) {
+  hideLongpressMenu();
+  const card = bs.player.tamerArea[tamerIdx];
+  if (card) card.suspended = false;
+  renderAll();
+};
 
 // ===== 育成エリア描画 =====
 // 育成操作コールバック（battle.jsから注入）
@@ -307,8 +583,10 @@ export function renderHand() {
       : `<div style="font-size:8px;color:#aaa;padding:4px;height:100%;display:flex;align-items:center;justify-content:center;">${c.name}</div>`)
       + `<div class="h-cost">${costLabel}</div>`;
 
-    // タップ → 選択 + 詳細
+    // ドラッグ＆ドロップ + タップ
+    let _dragDone = false;
     el.onclick = ((card, idx) => e => {
+      if (_dragDone) return;
       e.stopPropagation();
       bs.selHand = (bs.selHand === idx) ? null : idx;
       renderHand();
@@ -318,7 +596,76 @@ export function renderHand() {
     el.draggable = false;
     el.addEventListener('dragstart', e => e.preventDefault());
 
+    // 手札ドラッグ開始
+    const attachDrag = ((card, idx, cardEl) => {
+      let isDragging = false, startX = 0, startY = 0;
+
+      function onStart(e) {
+        if (bs.phase !== 'main' || !bs.isPlayerTurn) return;
+        if (e.type === 'mousedown') e.preventDefault();
+        const t = e.touches ? e.touches[0] : e;
+        startX = t.clientX; startY = t.clientY; isDragging = false;
+        const moveH = ev => onMove(ev);
+        const upH = ev => { onEnd(ev); document.removeEventListener('mousemove', moveH); document.removeEventListener('mouseup', upH); document.removeEventListener('touchmove', moveH); document.removeEventListener('touchend', upH); };
+        document.addEventListener(e.touches ? 'touchmove' : 'mousemove', moveH, { passive: false });
+        document.addEventListener(e.touches ? 'touchend' : 'mouseup', upH);
+      }
+      function onMove(ev) {
+        const t = ev.touches ? ev.touches[0] : ev;
+        if (!isDragging && (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10)) {
+          isDragging = true;
+          highlightDropZones(true);
+          cardEl.style.position = 'fixed'; cardEl.style.zIndex = '99999';
+          cardEl.style.pointerEvents = 'none'; cardEl.style.transform = 'scale(1.1)'; cardEl.style.transition = 'none';
+        }
+        if (isDragging) { cardEl.style.left = (t.clientX - 26) + 'px'; cardEl.style.top = (t.clientY - 36) + 'px'; }
+        if (ev.preventDefault) ev.preventDefault();
+      }
+      function onEnd(ev) {
+        const wasDrag = isDragging;
+        const t = ev.changedTouches ? ev.changedTouches[0] : ev;
+        cardEl.style.position = ''; cardEl.style.zIndex = ''; cardEl.style.left = ''; cardEl.style.top = '';
+        cardEl.style.transform = ''; cardEl.style.pointerEvents = ''; cardEl.style.transition = '';
+        highlightDropZones(false);
+        if (!wasDrag) return;
+        _dragDone = true; setTimeout(() => { _dragDone = false; }, 50);
+        const cx = t.clientX, cy = t.clientY;
+        let dropped = false;
+        // 育成エリアに進化
+        const ikuEl = document.getElementById('pl-iku-slot');
+        if (!dropped && ikuEl && bs.player.ikusei) {
+          const r = ikuEl.getBoundingClientRect(), pad = 20;
+          if (cx >= r.left - pad && cx <= r.right + pad && cy >= r.top - pad && cy <= r.bottom + pad) {
+            if (window.doEvolveIku) window.doEvolveIku(card, idx); dropped = true;
+          }
+        }
+        // バトルエリアに登場 or 進化
+        if (!dropped) {
+          const plRow = document.getElementById('pl-battle-row');
+          if (plRow) plRow.querySelectorAll('.b-slot').forEach((slot, si) => {
+            if (dropped) return;
+            const r = slot.getBoundingClientRect();
+            if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+              if (bs.player.battleArea[si]) { if (window.doEvolve) window.doEvolve(card, idx, si); }
+              else { if (window.doPlay) window.doPlay(card, idx, si); }
+              dropped = true;
+            }
+          });
+        }
+      }
+      cardEl.addEventListener('mousedown', onStart);
+      cardEl.addEventListener('touchstart', onStart, { passive: true });
+    })(c, i, el);
+
     hw.appendChild(el);
+  });
+}
+
+// ドロップゾーンハイライト
+function highlightDropZones(on) {
+  document.querySelectorAll('#pl-battle-row .b-slot').forEach(s => {
+    s.style.borderColor = on ? '#ffffff55' : '';
+    s.style.background = on ? '#1a1a1a' : '';
   });
 }
 
@@ -454,19 +801,22 @@ export function closeBCD() {
 
 // ===== トラッシュ表示 =====
 export function showTrash(side) {
-  const trash = side === 'player' ? bs.player.trash : bs.ai.trash;
-  const title = side === 'player' ? '自分のトラッシュ' : '相手のトラッシュ';
+  // 'ai' も 'player' 以外もAI側として扱う
+  const isPlayer = (side === 'player' || side === 'pl');
+  const trash = isPlayer ? bs.player.trash : bs.ai.trash;
+  const title = isPlayer ? '自分のトラッシュ' : '相手のトラッシュ';
   const modal = document.getElementById('trash-modal');
   const titleEl = document.getElementById('trash-modal-title');
   const grid = document.getElementById('trash-modal-grid');
   if (!modal) return;
+  window._trashSide = side;
   titleEl.innerText = `🗑 ${title}（${trash.length}枚）`;
   if (trash.length === 0) {
     grid.innerHTML = '<div style="color:#555;text-align:center;padding:20px;">カードがありません</div>';
   } else {
     grid.innerHTML = trash.map((c, i) => {
       const src = cardImg(c);
-      return `<div style="text-align:center;cursor:pointer;padding:3px;border:2px solid transparent;border-radius:6px;" onclick="showBCD(${i},'trash')">
+      return `<div id="trash-card-${i}" style="text-align:center;cursor:pointer;padding:3px;border:2px solid transparent;border-radius:6px;transition:all 0.2s;" onclick="selectTrashCard('${side}',${i})" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 4px 12px rgba(0,251,255,0.3)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
         ${src ? `<img src="${src}" style="width:100%;border-radius:4px;">` : `<div style="height:60px;background:#111;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#aaa;">${c.name}</div>`}
         <div style="font-size:7px;color:#888;margin-top:2px;">${c.name}</div>
       </div>`;
@@ -474,3 +824,17 @@ export function showTrash(side) {
   }
   modal.style.display = 'block';
 }
+
+// トラッシュカード選択
+window.selectTrashCard = function(side, idx) {
+  const isPlayer = (side === 'player' || side === 'pl');
+  const trash = isPlayer ? bs.player.trash : bs.ai.trash;
+  for (let i = 0; i < trash.length; i++) {
+    const el = document.getElementById('trash-card-' + i);
+    if (el) el.style.borderColor = (i === idx) ? 'var(--main-cyan)' : 'transparent';
+  }
+  setTimeout(() => {
+    const card = trash[idx];
+    if (card && window.showBCD) window.showBCD(card, 'trash');
+  }, 200);
+};

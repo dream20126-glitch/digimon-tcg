@@ -10,7 +10,7 @@ import { getCardImageUrl } from './cards.js';
 import { bs, resetBattleState, drawCards } from './battle-state.js';
 // Phase 2: UI・描画
 import { addLog, showConfirm, showScreen } from './battle-ui.js';
-import { renderAll, showBCD, closeBCD, showTrash, setOnlineInfo, setIkuCallbacks } from './battle-render.js';
+import { renderAll, showBCD, closeBCD, showTrash, cardImg, setOnlineInfo, setIkuCallbacks } from './battle-render.js';
 // Phase 3: フェーズ進行
 import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers } from './battle-phase.js';
 // Phase 4: 戦闘
@@ -18,7 +18,7 @@ import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack
 // Phase 5: 演出
 import { loadAllDictionaries, registerFxRunners } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxRemoteEffect, fxRemoteEffectClose } from './battle-fx.js';
-import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE } from './effect-engine.js';
+import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE } from './effect-engine.js';
 // Phase 6: オンライン
 import { initOnline, startOnlineListener, sendCommand, sendStateSync, sendMemoryUpdate, cleanupOnline, isOnlineMode, setOnlineModules } from './battle-online.js';
 
@@ -107,6 +107,14 @@ window.resolveAttackTarget = resolveAttackTarget;
 window.battleVictory = battleVictory;
 window.battleDefeat = battleDefeat;
 
+// 効果エンジン連携（battle-render.jsのactivateEffectから使用）
+window._triggerMainEffect = function(card, callback) {
+  const inPlayer = bs.player.battleArea.includes(card) || bs.player.tamerArea.includes(card);
+  const side = inPlayer ? 'player' : 'ai';
+  try { _triggerEffectEE('main', card, side, { card, side, bs, addLog, renderAll, updateMemGauge: () => { import('./battle-render.js').then(m => m.updateMemGauge()); } }, callback); }
+  catch (_) { callback && callback(); }
+};
+
 // HTML onclick から呼ばれる補助関数
 window.confirmExitGate = function() {
   showConfirm({ title: '⚠ 退室確認', message: 'ゲートを出ますか？\nバトルの進行状況は失われます。', yesText: 'はい', noText: 'いいえ', color: '#ff4444' }).then(yes => {
@@ -126,13 +134,104 @@ window.closePhaseOverlay = function() {
   const el = document.getElementById('phase-desc-overlay');
   if (el) el.style.display = 'none';
 };
-// マリガン（Phase 8 で本実装予定、現在はスタブ）
+// ===== マリガン =====
+let _mulliganUsed = false;
+
+function showMulliganOverlay() {
+  _mulliganUsed = false;
+  const btn = document.getElementById('mulligan-btn');
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.innerText = '引き直す'; }
+  document.getElementById('mulligan-overlay').style.display = 'flex';
+  renderMulliganPreview(true);
+}
+
+function renderMulliganPreview(animate) {
+  const area = document.getElementById('mulligan-hand-preview'); if (!area) return;
+  const backUrl = 'https://drive.google.com/thumbnail?id=1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9&sz=w200';
+  area.innerHTML = '';
+  const cards = [];
+  bs.player.hand.forEach((c, i) => {
+    const src = cardImg(c);
+    const div = document.createElement('div');
+    div.className = 'mulligan-card';
+    div.style.perspective = '200px';
+    div.innerHTML = `<div class="mulligan-card-inner" style="width:100%;height:100%;position:relative;transition:transform 0.5s;transform-style:preserve-3d;">
+      <div style="position:absolute;inset:0;backface-visibility:hidden;">${backUrl ? `<img src="${backUrl}" style="width:100%;height:100%;object-fit:cover;">` : '<div style="width:100%;height:100%;background:#1a1a3a;border-radius:4px;"></div>'}</div>
+      <div style="position:absolute;inset:0;backface-visibility:hidden;transform:rotateY(180deg);">${src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="font-size:7px;color:#aaa;padding:3px;">${c.name}</div>`}</div>
+    </div>`;
+    if (animate) div.style.animation = `mulliganDeal 0.4s ease ${i * 0.15}s forwards`;
+    else { div.style.opacity = '1'; const inner = div.querySelector('.mulligan-card-inner'); if (inner) inner.style.transform = 'rotateY(180deg)'; }
+    area.appendChild(div);
+    cards.push(div);
+  });
+  if (animate) {
+    const flipDelay = 5 * 150 + 400 + 200;
+    setTimeout(() => {
+      cards.forEach((div, i) => {
+        const inner = div.querySelector('.mulligan-card-inner');
+        if (inner) { inner.style.transition = `transform 0.5s ease ${i * 0.08}s`; inner.style.transform = 'rotateY(180deg)'; }
+      });
+    }, flipDelay);
+  }
+}
+
+function animateSecuritySet(callback) {
+  const tempPlSec = bs.player.security;
+  const tempAiSec = bs.ai.security;
+  bs.player.security = []; bs.ai.security = [];
+  renderAll();
+  let count = 0;
+  const total = tempPlSec.length;
+  function placeNext() {
+    if (count >= total) { setTimeout(callback, 400); return; }
+    bs.player.security.push(tempPlSec[count]);
+    bs.ai.security.push(tempAiSec[count]);
+    count++;
+    renderAll();
+    // セキュリティエリアにアニメーション
+    ['pl', 'ai'].forEach(side => {
+      const area = document.getElementById(side + '-sec-area'); if (!area) return;
+      const cards = area.querySelectorAll('.sec-card');
+      const last = cards[cards.length - 1]; if (!last) return;
+      last.style.transition = 'none'; last.style.opacity = '0'; last.style.transform = 'translateX(60px) scale(0.5)';
+      requestAnimationFrame(() => {
+        last.style.transition = 'all 0.3s cubic-bezier(0.2,0.8,0.2,1)';
+        last.style.opacity = '1'; last.style.transform = 'translateX(0) scale(1)';
+      });
+    });
+    setTimeout(placeNext, 250);
+  }
+  setTimeout(placeNext, 300);
+}
+
 window.acceptHand = function() {
-  const el = document.getElementById('mulligan-overlay');
-  if (el) el.style.display = 'none';
+  document.getElementById('mulligan-overlay').style.display = 'none';
+  bs.player.security = bs.player.deck.splice(0, 5);
+  bs.ai.security = bs.ai.deck.splice(0, 5);
+  addLog('🛡 セキュリティをセットしています...');
+  animateSecuritySet(() => {
+    addLog('🛡 セキュリティセット完了！');
+    if (isOnlineMode() && !bs.isPlayerTurn) {
+      showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {
+        addLog('⏳ 相手のターン（操作待ち）'); renderAll();
+      });
+    } else {
+      startFirstTurn();
+    }
+  });
 };
+
 window.doMulligan = function() {
-  addLog('🔄 マリガン（未実装）');
+  if (_mulliganUsed) return;
+  _mulliganUsed = true;
+  bs.player.deck = bs.player.deck.concat(bs.player.hand);
+  bs.player.hand = [];
+  bs.player.deck = shuffle(bs.player.deck);
+  drawCards('player', 5);
+  const btn = document.getElementById('mulligan-btn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.3'; btn.innerText = '引き直し済み'; }
+  renderMulliganPreview(true);
+  addLog('🔄 マリガン！手札を引き直しました');
 };
 
 // Phase 3 ↔ Phase 4 フック接続
@@ -203,12 +302,7 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   drawCards('player', 5);
   drawCards('ai', 5);
 
-  // セキュリティ5枚セット
-  bs.player.security = bs.player.deck.splice(0, 5);
-  bs.ai.security = bs.ai.deck.splice(0, 5);
-
   addLog('🃏 手札: ' + bs.player.hand.length + '枚 / デッキ: ' + bs.player.deck.length + '枚');
-  addLog('🛡 セキュリティ: ' + bs.player.security.length + '枚');
 
   // 画面描画
   showScreen('battle-screen');
@@ -216,13 +310,8 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
 
   addLog('✅ バトル画面描画完了');
 
-  // ターン開始
-  if (playerFirst) {
-    setTimeout(() => startFirstTurn(), 500);
-  } else {
-    // 後攻: AI先攻
-    setTimeout(() => aiTurn(), 500);
-  }
+  // マリガン画面を表示 → acceptHand でセキュリティ配置 → ターン開始
+  showMulliganOverlay();
 };
 
 // ===== デモ用: ダミーデッキでバトル開始 =====

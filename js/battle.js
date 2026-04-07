@@ -278,7 +278,11 @@ function checkAndTriggerEffect(card, triggerType, callback, side, alreadyConfirm
   const triggerCode = TRIGGER_CODE_MAP[triggerType] || triggerType;
   const context = makeEffectContext(card, side);
   if (alreadyConfirmed) context.alreadyConfirmed = true;
-  _triggerEffectEE(triggerCode, card, side, context, callback);
+  _triggerEffectEE(triggerCode, card, side, context, () => {
+    // 効果処理完了後にオンライン同期（進化元破棄等を相手に反映）
+    if (isOnlineMode()) sendStateSync();
+    callback && callback();
+  });
 }
 
 setCombatHooks({
@@ -349,6 +353,9 @@ setIkuCallbacks({
       sendCommand({ type: 'breed_move', cardName: card.name, cardImg: card.imgSrc || '' });
       sendStateSync();
     }
+    // 永続効果を再計算（八神太一のDP+1000等を新カードにも適用）
+    try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch (_) {}
+    renderAll();
     breedActionDone();
   },
 });

@@ -277,8 +277,72 @@ setIkuCallbacks({
 setOnlineHandlers(false, null, { sendCommand, sendStateSync, sendMemoryUpdate });
 setCombatOnlineHandlers(false, null, { sendCommand, sendStateSync, sendMemoryUpdate });
 
-// ===== ゲーム開始（デッキデータから初期化 → 描画テスト） =====
+// ===== ローディング＆ゲートオープン演出 =====
+
+function showLoading() {
+  const ov = document.createElement('div');
+  ov.id = '_loading-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:50000;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;overflow:hidden;';
+  ov.innerHTML = '<div style="position:absolute;inset:0;opacity:0;background:#ffaa00;animation:turnFlash 2s ease infinite;"></div>'
+    + '<div style="position:absolute;top:38%;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#ffaa00,transparent);animation:turnLineExpand 2s ease infinite;"></div>'
+    + '<div style="position:absolute;top:62%;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#ffaa00,transparent);animation:turnLineExpand 2s ease 0.1s infinite;"></div>'
+    + '<div style="position:relative;z-index:1;font-size:1.5rem;font-weight:900;color:#ffaa00;letter-spacing:4px;text-shadow:0 0 30px #ffaa00,0 0 60px #ffaa00,0 0 100px #ffaa00;">Loading...</div>'
+    + '<div style="position:relative;z-index:1;font-size:0.8rem;color:#ffffff66;margin-top:8px;">データを読み込み中</div>';
+  document.body.appendChild(ov);
+  return ov;
+}
+
+function showGateOpen(callback) {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:45000;display:flex;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,0.95);overflow:hidden;';
+
+  // 背景（放射状の光）
+  ov.innerHTML = '<div style="position:absolute;inset:0;background:radial-gradient(circle at center,rgba(0,251,255,0.15) 0%,rgba(0,0,0,0) 70%);animation:gateGlow 2s ease-in-out;"></div>';
+
+  // 横ライン
+  const lt = document.createElement('div');
+  lt.style.cssText = 'position:absolute;top:30%;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#00fbff,transparent);animation:gateLineExpand 1.5s ease forwards;transform:scaleX(0);';
+  ov.appendChild(lt);
+  const lb = document.createElement('div');
+  lb.style.cssText = 'position:absolute;top:70%;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#00fbff,transparent);animation:gateLineExpand 1.5s ease 0.1s forwards;transform:scaleX(0);';
+  ov.appendChild(lb);
+
+  // メインテキスト
+  const txt = document.createElement('div');
+  txt.style.cssText = 'position:relative;z-index:1;font-size:clamp(1.8rem,9vw,3.5rem);font-weight:900;color:#00fbff;letter-spacing:clamp(3px,2vw,10px);text-shadow:0 0 30px #00fbff,0 0 60px #00fbff,0 0 100px #00fbff,0 0 150px rgba(0,251,255,0.3);opacity:0;animation:gateTextAppear 1.8s ease 0.3s forwards;text-align:center;padding:0 12px;line-height:1.4;';
+  txt.innerHTML = 'デジタルゲート<br>オープン！';
+  ov.appendChild(txt);
+
+  // サブテキスト
+  const sub = document.createElement('div');
+  sub.style.cssText = 'position:relative;z-index:1;font-size:clamp(0.7rem,3vw,0.9rem);color:#ffffff88;letter-spacing:clamp(1px,1vw,3px);margin-top:12px;opacity:0;animation:gateTextAppear 1.5s ease 0.8s forwards;text-align:center;';
+  sub.innerText = '— デジタルワールドへようこそ —';
+  ov.appendChild(sub);
+
+  // パーティクル
+  for (let i = 0; i < 20; i++) {
+    const p = document.createElement('div');
+    const x = Math.random() * 100, y = Math.random() * 100, sz = 2 + Math.random() * 4, del = Math.random() * 1.5;
+    p.style.cssText = `position:absolute;left:${x}%;top:${y}%;width:${sz}px;height:${sz}px;background:#00fbff;border-radius:50%;opacity:0;animation:gateParticle 2s ease ${del}s forwards;box-shadow:0 0 ${sz * 3}px #00fbff;`;
+    ov.appendChild(p);
+  }
+
+  document.body.appendChild(ov);
+  let called = false;
+  function finish() {
+    if (called) return; called = true;
+    ov.style.transition = 'opacity 0.5s ease'; ov.style.opacity = '0';
+    setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); callback(); }, 500);
+  }
+  setTimeout(finish, 5000);
+  ov.addEventListener('click', finish, { once: true });
+}
+
+// ===== ゲーム開始 =====
 window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst) {
+  // ローディング表示
+  const loadingOv = showLoading();
+
   addLog('🎮 バトル開始');
 
   // 辞書読み込み
@@ -304,14 +368,15 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
 
   addLog('🃏 手札: ' + bs.player.hand.length + '枚 / デッキ: ' + bs.player.deck.length + '枚');
 
-  // 画面描画
-  showScreen('battle-screen');
-  renderAll();
-
-  addLog('✅ バトル画面描画完了');
-
-  // マリガン画面を表示 → acceptHand でセキュリティ配置 → ターン開始
-  showMulliganOverlay();
+  // ローディング消去 → ゲートオープン演出
+  if (loadingOv.parentNode) loadingOv.parentNode.removeChild(loadingOv);
+  showGateOpen(() => {
+    // 演出終了後にバトル画面 → マリガン
+    showScreen('battle-screen');
+    renderAll();
+    addLog('✅ バトル画面描画完了');
+    setTimeout(() => showMulliganOverlay(), 400);
+  });
 };
 
 // ===== デモ用: ダミーデッキでバトル開始 =====

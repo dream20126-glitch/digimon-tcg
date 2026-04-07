@@ -165,6 +165,13 @@ function renderTamerRows() {
 }
 
 // ===== 育成エリア描画 =====
+// 育成操作コールバック（battle.jsから注入）
+let _ikuCallbacks = {
+  onHatch: null,        // (card) => {} 孵化時
+  onBreedMove: null,    // (card) => {} バトルエリア移動時
+};
+export function setIkuCallbacks(callbacks) { Object.assign(_ikuCallbacks, callbacks); }
+
 function renderIkusei() {
   ['pl', 'ai'].forEach(side => {
     const isPlayer = side === 'pl';
@@ -180,7 +187,13 @@ function renderIkusei() {
         : `<div style="font-size:8px;color:${isPlayer ? '#00ff88' : '#ff00fb'};padding:2px;">${c.name}</div>`;
       iku.classList.add('occupied');
       if (info) info.innerText = c.name;
+
+      // 育成フェーズ中 + プレイヤー + Lv3以上 → ドラッグ移動イベント
+      if (isPlayer && bs.phase === 'breed' && c.level !== '2') {
+        attachIkuDrag(iku);
+      }
     } else {
+      if (isPlayer) iku._ikuDragAttached = false;
       const hasTamaDeck = isPlayer
         ? (bs.player.tamaDeck && bs.player.tamaDeck.length > 0)
         : (bs.ai.tamaDeck && bs.ai.tamaDeck.length > 0);
@@ -193,8 +206,78 @@ function renderIkusei() {
       }
       iku.classList.remove('occupied');
       if (info) info.innerText = '';
+
+      // 育成フェーズ中 + プレイヤー + デジタマあり → タップで孵化
+      if (isPlayer && bs.phase === 'breed' && bs.player.tamaDeck && bs.player.tamaDeck.length > 0) {
+        iku.onclick = () => {
+          const nc = bs.player.tamaDeck.splice(0, 1)[0];
+          bs.player.ikusei = nc;
+          addLog('🥚 「' + nc.name + '」を孵化！');
+          if (_ikuCallbacks.onHatch) _ikuCallbacks.onHatch(nc);
+        };
+      }
     }
   });
+}
+
+// 育成エリアドラッグ移動
+function attachIkuDrag(iku) {
+  if (iku._ikuDragAttached) return;
+  iku._ikuDragAttached = true;
+  iku.style.border = '2px solid #00ff88';
+  iku.style.boxShadow = '0 0 15px rgba(0,255,136,0.4)';
+  iku.style.cursor = 'grab';
+
+  function doIkuMove() {
+    if (!bs.player.ikusei) return;
+    let slot = bs.player.battleArea.findIndex(s => s === null);
+    if (slot === -1) { slot = bs.player.battleArea.length; bs.player.battleArea.push(null); }
+    const moved = bs.player.ikusei;
+    bs.player.battleArea[slot] = moved;
+    bs.player.ikusei = null;
+    addLog('🐾 「' + moved.name + '」をバトルエリアへ移動！');
+    iku._ikuDragAttached = false;
+    if (_ikuCallbacks.onBreedMove) _ikuCallbacks.onBreedMove(moved);
+  }
+
+  let ghostEl = null, dragging = false;
+  function startDrag(cx, cy) {
+    dragging = true;
+    const card = bs.player.ikusei; if (!card) return;
+    ghostEl = document.createElement('div');
+    ghostEl.style.cssText = 'position:fixed;width:48px;height:66px;border-radius:5px;overflow:hidden;z-index:99999;pointer-events:none;opacity:0.85;border:2px solid #00ff88;box-shadow:0 0 15px rgba(0,255,136,0.5);';
+    const src = cardImg(card);
+    ghostEl.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#00ff88;font-size:7px;padding:4px;">${card.name}</div>`;
+    document.body.appendChild(ghostEl);
+    ghostEl.style.left = (cx - 24) + 'px'; ghostEl.style.top = (cy - 33) + 'px';
+  }
+  function moveDrag(cx, cy) { if (ghostEl) { ghostEl.style.left = (cx - 24) + 'px'; ghostEl.style.top = (cy - 33) + 'px'; } }
+  function endDrag(cx, cy) {
+    if (!dragging) return;
+    dragging = false;
+    if (ghostEl && ghostEl.parentNode) document.body.removeChild(ghostEl);
+    ghostEl = null;
+    const plRow = document.getElementById('pl-battle-row');
+    if (plRow) {
+      let dropped = false;
+      plRow.querySelectorAll('.b-slot').forEach((slot, i) => {
+        if (dropped || bs.player.battleArea[i]) return;
+        const r = slot.getBoundingClientRect();
+        if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) { dropped = true; doIkuMove(); }
+      });
+      if (!dropped) {
+        const startRect = iku.getBoundingClientRect();
+        const dist = Math.sqrt(Math.pow(cx - startRect.left - startRect.width / 2, 2) + Math.pow(cy - startRect.top - startRect.height / 2, 2));
+        if (dist > 50) doIkuMove();
+      }
+    }
+  }
+  iku.addEventListener('touchstart', e => { startDrag(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+  iku.addEventListener('touchmove', e => { if (dragging) { moveDrag(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
+  iku.addEventListener('touchend', e => { if (dragging) endDrag(e.changedTouches[0].clientX, e.changedTouches[0].clientY); });
+  iku.addEventListener('mousedown', e => { if (e.button !== 0) return; startDrag(e.clientX, e.clientY); });
+  document.addEventListener('mousemove', e => { if (dragging) moveDrag(e.clientX, e.clientY); });
+  document.addEventListener('mouseup', e => { if (dragging) endDrag(e.clientX, e.clientY); });
 }
 
 // ===== 手札描画 =====

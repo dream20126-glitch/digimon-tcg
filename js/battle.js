@@ -10,9 +10,9 @@ import { getCardImageUrl } from './cards.js';
 import { bs, resetBattleState, drawCards } from './battle-state.js';
 // Phase 2: UI・描画
 import { addLog, showConfirm, showScreen } from './battle-ui.js';
-import { renderAll, showBCD, closeBCD, showTrash, setOnlineInfo } from './battle-render.js';
+import { renderAll, showBCD, closeBCD, showTrash, setOnlineInfo, setIkuCallbacks } from './battle-render.js';
 // Phase 3: フェーズ進行
-import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers } from './battle-phase.js';
+import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers } from './battle-phase.js';
 // Phase 4: 戦闘
 import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, setCombatOnlineHandlers } from './battle-combat.js';
 // Phase 5: 演出
@@ -156,6 +156,22 @@ setOnlineModules({
   checkTurnStartEffects: (side, cb) => cb(), // Phase 3 のフック経由
   applyPermanentEffects: (side) => { try { _applyPermanentEE(bs, side, { bs, side }); } catch (_) {} },
   expireBuffs: (timing, side) => { try { _expireBuffsEE(bs, timing, side); } catch (_) {} },
+});
+
+// 育成エリア操作コールバック
+setIkuCallbacks({
+  onHatch: (card) => {
+    if (isOnlineMode()) sendCommand({ type: 'hatch', cardName: card.name, cardImg: card.imgSrc || '' });
+    renderAll();
+    breedActionDone();
+  },
+  onBreedMove: (card) => {
+    if (isOnlineMode()) {
+      sendCommand({ type: 'breed_move', cardName: card.name, cardImg: card.imgSrc || '' });
+      sendStateSync();
+    }
+    breedActionDone();
+  },
 });
 
 // Phase 3/4 にオンラインハンドラーを接続

@@ -214,8 +214,8 @@ window.acceptHand = function() {
   bs.player.security = bs.player.deck.splice(0, 5);
   bs.ai.security = bs.ai.deck.splice(0, 5);
 
-  // === デバッグ: セキュリティの先頭にテイマーを仕込む ===
-  if (window._DEBUG_TAMER_IN_SECURITY) {
+  // === デバッグ: セキュリティの先頭にテイマーを仕込む（テスト中：常に有効） ===
+  {
     [bs.player, bs.ai].forEach(side => {
       // デッキ・手札・セキュリティからテイマーを探す
       const allCards = [...side.deck, ...side.hand, ...side.security];

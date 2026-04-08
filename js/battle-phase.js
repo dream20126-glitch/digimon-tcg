@@ -389,12 +389,7 @@ function execBreed() {
   addLog('🥚 育成フェイズ');
   const actionBar = document.getElementById('breed-action-bar');
   if (actionBar) {
-    let btns = '';
-    if (canMove) {
-      btns += '<button class="a-btn" onclick="window.doIkuMove && window.doIkuMove()" style="width:100%;background:#00ff88;color:#000;font-weight:bold;margin-bottom:4px;">🐾 バトルエリアへ移動</button>';
-    }
-    btns += '<button class="a-btn a-btn-cyan" onclick="skipBreedPhase()" style="width:100%;">何もしない → メインフェイズへ</button>';
-    actionBar.innerHTML = btns;
+    actionBar.innerHTML = '<button class="a-btn a-btn-cyan" onclick="skipBreedPhase()" style="width:100%;">何もしない → メインフェイズへ</button>';
     actionBar.style.display = 'block';
   }
   const ikuEl = document.getElementById('pl-iku-slot');

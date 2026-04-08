@@ -782,6 +782,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
   const uiColor = getUIColor(action.code, '#ff4444');
   // 対象選択UIに渡すサイド（opponent側のDOM行ID用: 'ai' or 'pl'）
   const opponentRowSide = ctx.side === 'player' ? 'ai' : 'pl';
+  // store経由で対象が確定済みの場合、AI自動選択と同じパスを通す
+  const autoSelect = ctx._forceTargetIdx !== undefined;
+  const effectiveSide = autoSelect ? 'ai' : ctx.side;
 
   switch (action.code) {
     case 'draw': {
@@ -812,8 +815,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const dpTargets = [];
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) dpTargets.push(i); }
       if(dpTargets.length === 0) { callback(); break; }
-      if(ctx.side === 'ai') {
-        const tgt = opponent.battleArea[dpTargets[0]];
+      if(effectiveSide === 'ai') {
+        const tgt = opponent.battleArea[ctx._forceTargetIdx ?? dpTargets[0]];
         addBuff(tgt, 'dp_minus', val, ctx);
         ctx.addLog('💥 ' + tgt.name + ' DP-' + val + ' → ' + tgt.dp);
         playEffect(action.code, { value: -val, ctx, label: tgt.name }, () => {});
@@ -865,9 +868,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       if(destroyTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
       // 枠色を辞書から取得
       const borderColor = uiColor;
-      if(ctx.side === 'ai') {
-        const card = opponent.battleArea[destroyTargets[0]];
-        doDestroy(opponent, destroyTargets[0], ctx);
+      if(effectiveSide === 'ai') {
+        const di = ctx._forceTargetIdx ?? destroyTargets[0];
+        const card = opponent.battleArea[di];
+        doDestroy(opponent, di, ctx);
         playEffect(action.code, { card, ctx }, callback);
         break;
       }
@@ -886,8 +890,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) bounceTargets.push(i); }
       if(bounceTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
       const bounceColor = uiColor;
-      if(ctx.side === 'ai') {
-        doBounce(opponent, bounceTargets[0], ctx);
+      if(effectiveSide === 'ai') {
+        doBounce(opponent, ctx._forceTargetIdx ?? bounceTargets[0], ctx);
         callback(); break;
       }
       ctx.addLog('🎯 手札に戻す対象を選んでください');
@@ -952,8 +956,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         }
       };
       // AIは自動選択、プレイヤーは対象選択UI
-      if (ctx.side === 'ai') {
-        discardFromTarget(opponent.battleArea[evoTargets[0]]);
+      if (effectiveSide === 'ai') {
+        discardFromTarget(opponent.battleArea[ctx._forceTargetIdx ?? evoTargets[0]]);
         ctx.renderAll();
         callback();
         break;
@@ -990,8 +994,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         addBuffDirect(tgt, 'cant_attack_block', 0, cabDur, ctx);
         ctx.addLog('🔒 「' + tgt.name + '」アタック・ブロック不可（' + cabDur + '）');
       };
-      if (ctx.side === 'ai') {
-        applyCab(opponent.battleArea[cabTargets[0]]);
+      if (effectiveSide === 'ai') {
+        applyCab(opponent.battleArea[ctx._forceTargetIdx ?? cabTargets[0]]);
         ctx.renderAll();
         callback();
         break;
@@ -1071,9 +1075,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i] && !opponent.battleArea[i].suspended) restTargets.push(i); }
       if(restTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
       const restColor = uiColor;
-      if(ctx.side === 'ai') {
-        opponent.battleArea[restTargets[0]].suspended = true;
-        ctx.addLog('💤 「' + opponent.battleArea[restTargets[0]].name + '」をレスト');
+      if(effectiveSide === 'ai') {
+        const ri = ctx._forceTargetIdx ?? restTargets[0];
+        opponent.battleArea[ri].suspended = true;
+        ctx.addLog('💤 「' + opponent.battleArea[ri].name + '」をレスト');
         ctx.renderAll(); callback(); break;
       }
       ctx.addLog('🎯 レストさせる対象を選んでください');
@@ -1100,10 +1105,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const caTargets = [];
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) caTargets.push(i); }
       if(caTargets.length === 0) { callback(); break; }
-      if(ctx.side === 'ai') {
-        opponent.battleArea[caTargets[0]].cantAttack = true;
-        addBuffDirect(opponent.battleArea[caTargets[0]], 'cant_attack', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
-        ctx.addLog('🔒 「' + opponent.battleArea[caTargets[0]].name + '」アタック不可');
+      if(effectiveSide === 'ai') {
+        const cai = ctx._forceTargetIdx ?? caTargets[0];
+        opponent.battleArea[cai].cantAttack = true;
+        addBuffDirect(opponent.battleArea[cai], 'cant_attack', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
+        ctx.addLog('🔒 「' + opponent.battleArea[cai].name + '」アタック不可');
         ctx.renderAll(); callback(); break;
       }
       ctx.addLog('🎯 アタック不可の対象を選んでください');
@@ -1123,10 +1129,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const cbTargets = [];
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) cbTargets.push(i); }
       if(cbTargets.length === 0) { callback(); break; }
-      if(ctx.side === 'ai') {
-        opponent.battleArea[cbTargets[0]].cantBlock = true;
-        addBuffDirect(opponent.battleArea[cbTargets[0]], 'cant_block', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
-        ctx.addLog('🔒 「' + opponent.battleArea[cbTargets[0]].name + '」ブロック不可');
+      if(effectiveSide === 'ai') {
+        const cbi = ctx._forceTargetIdx ?? cbTargets[0];
+        opponent.battleArea[cbi].cantBlock = true;
+        addBuffDirect(opponent.battleArea[cbi], 'cant_block', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
+        ctx.addLog('🔒 「' + opponent.battleArea[cbi].name + '」ブロック不可');
         ctx.renderAll(); callback(); break;
       }
       ctx.addLog('🎯 ブロック不可の対象を選んでください');
@@ -1146,10 +1153,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const ceTargets = [];
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) ceTargets.push(i); }
       if(ceTargets.length === 0) { callback(); break; }
-      if(ctx.side === 'ai') {
-        opponent.battleArea[ceTargets[0]].cantEvolve = true;
-        addBuffDirect(opponent.battleArea[ceTargets[0]], 'cant_evolve', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
-        ctx.addLog('❌ 「' + opponent.battleArea[ceTargets[0]].name + '」進化不可');
+      if(effectiveSide === 'ai') {
+        const cei = ctx._forceTargetIdx ?? ceTargets[0];
+        opponent.battleArea[cei].cantEvolve = true;
+        addBuffDirect(opponent.battleArea[cei], 'cant_evolve', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
+        ctx.addLog('❌ 「' + opponent.battleArea[cei].name + '」進化不可');
         ctx.renderAll(); callback(); break;
       }
       ctx.addLog('🎯 進化不可の対象を選んでください');
@@ -2850,17 +2858,18 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (!ctx.block) ctx.block = {};
         if (!ctx.block.conditions) ctx.block.conditions = [];
       }
-      // storeから対象を引ける場合は直接指定
+      // storeから対象を引ける場合は対象選択をスキップして直接適用
       if (step.card && store[step.card]) {
         const storedData = store[step.card];
         const targets = Array.isArray(storedData) ? storedData : [storedData];
-        targets.forEach(t => {
-          const tgt = opponent.battleArea[t.idx];
-          if (tgt) {
-            runOneAction(action, null, { ...ctx, _preSelectedTarget: tgt, _preSelectedIdx: t.idx }, () => {});
-          }
-        });
-        callback();
+        let ti = 0;
+        function nextStoredTarget() {
+          if (ti >= targets.length) { callback(); return; }
+          const t = targets[ti++];
+          // _forceTargetIdxを設定して対象選択UIをスキップさせる
+          runOneAction(action, null, { ...ctx, _forceTargetIdx: t.idx }, nextStoredTarget);
+        }
+        nextStoredTarget();
       } else {
         runOneAction(action, target, ctx, callback);
       }

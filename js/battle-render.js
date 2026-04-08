@@ -622,7 +622,11 @@ function attachIkuDrag(iku) {
     dragging = false;
     if (ghostEl && ghostEl.parentNode) document.body.removeChild(ghostEl);
     ghostEl = null;
-    if (!dragMoved) return; // タップ → onclickに任せる（DOM未変更なのでclick発火する）
+    // タップ（移動なし）→ カード詳細表示（onclickが発火しないデバイスもあるため直接呼ぶ）
+    if (!dragMoved) {
+      if (window.showBCD && bs.player.ikusei) window.showBCD(null, 'plIkusei');
+      return;
+    }
     const plRow = document.getElementById('pl-battle-row');
     if (plRow) {
       let dropped = false;

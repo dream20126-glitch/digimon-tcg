@@ -1171,13 +1171,21 @@ export function checkPendingTurnEnd() {
 export function battleVictory() {
   const wasOnline = _onlineMode;
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'game_end', result: 'defeat' });
-  showGameEndOverlay('🎉 勝利！', 'victory', () => { cleanupBattle(); showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen'); });
+  showGameEndOverlay('🎉 勝利！', 'victory', () => {
+    cleanupBattle();
+    if (wasOnline && window._cleanupOnline) window._cleanupOnline();
+    showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen');
+  });
 }
 
 export function battleDefeat() {
   const wasOnline = _onlineMode;
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'game_end', result: 'victory' });
-  showGameEndOverlay('😢 敗北...', 'defeat', () => { cleanupBattle(); showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen'); });
+  showGameEndOverlay('😢 敗北...', 'defeat', () => {
+    cleanupBattle();
+    if (wasOnline && window._cleanupOnline) window._cleanupOnline();
+    showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen');
+  });
 }
 
 function cleanupBattle() {

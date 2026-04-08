@@ -434,12 +434,17 @@ function onRemoteCommand(cmd) {
     // --- ゲーム終了 ---
     case 'game_end': {
       if (m.showGameEndOverlay) {
+        // fxキューをクリアして演出を即停止
+        _fxQueue = [];
+        _fxRunning = false;
+        window._suppressFxSend = false;
+        // ダイレクトアタック等の残留オーバーレイを消す
+        document.querySelectorAll('body > div[style*="position:fixed"]').forEach(el => {
+          if (!el.classList.contains('screen')) el.remove();
+        });
         const isWin = cmd.result === 'victory';
         m.showGameEndOverlay(isWin ? '🎉 勝利！' : '😢 敗北...', isWin ? 'victory' : 'defeat', () => {
           cleanupOnline();
-          document.querySelectorAll('body > div[style*="position:fixed"]').forEach(el => {
-            if (!el.classList.contains('screen')) el.remove();
-          });
           if (window._onGameEnd) { window._onGameEnd(); return; }
           showScreen('room-entrance-screen');
         });

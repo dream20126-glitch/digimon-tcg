@@ -99,7 +99,11 @@ window._triggerMainEffect = function(card, callback) {
 
 // テスト画面用: 勝敗後にシナリオ画面に戻る
 function backToScenarioScreen() {
-  cleanupOnline();
+  // cleanupOnlineは呼び出し元(battleVictory/battleDefeat/game_endハンドラ)で実行済み
+  // 残留オーバーレイを念のため消す
+  document.querySelectorAll('body > div[style*="position:fixed"]').forEach(el => {
+    if (!el.classList.contains('screen')) el.remove();
+  });
   document.getElementById('battle-screen').style.display = 'none';
   document.getElementById('battle-screen').classList.remove('active');
   document.getElementById('scenario-screen').style.display = 'flex';
@@ -112,6 +116,7 @@ window._cleanupOnline = cleanupOnline;
 window.confirmExitGate = function() {
   showConfirm({ title: '退室確認', message: 'テストを終了しますか？', yesText: 'はい', noText: 'いいえ', color: '#ff4444' }).then(yes => {
     if (!yes) return;
+    cleanupOnline();
     backToScenarioScreen();
   });
 };

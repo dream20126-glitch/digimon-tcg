@@ -1,0 +1,487 @@
+/**
+ * test-battle.js — エフェクトテスト用エントリポイント
+ *
+ * battle.js と同様に全バトルモジュールをimportし、
+ * シナリオベースで盤面を構築してオンライン同期付きでテストする
+ */
+
+import { getCardImageUrl, loadCardAndKeywordData } from './cards.js';
+// Phase 1: 状態管理
+import { bs, resetBattleState, drawCards } from './battle-state.js';
+// Phase 2: UI・描画
+import { addLog, showConfirm, showScreen } from './battle-ui.js';
+import { renderAll, showBCD, closeBCD, showTrash, cardImg, updateMemGauge, setOnlineInfo, setIkuCallbacks, doIkuMove } from './battle-render.js';
+// Phase 3: フェーズ進行
+import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers, setFirstPlayer } from './battle-phase.js';
+// Phase 4: 戦闘
+import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, showGameEndOverlay, setCombatHooks, setCombatOnlineHandlers } from './battle-combat.js';
+// Phase 5: 演出
+import { loadAllDictionaries, registerFxRunners } from './effect-engine.js';
+import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose } from './battle-fx.js';
+import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE } from './effect-engine.js';
+// Phase 6: オンライン
+import { initOnline, startOnlineListener, sendCommand, sendStateSync, sendMemoryUpdate, cleanupOnline, isOnlineMode, setOnlineModules } from './battle-online.js';
+
+// ===== シナリオ定義 =====
+const SCENARIOS = {
+  'giga-destroyer': {
+    name: 'ギガデストロイヤーテスト',
+    description: '自分の手札: ギガデストロイヤー\n自分のバトルエリア: アグモン(Lv3, DP3000)\n相手のバトルエリア: グリズモン(Lv4, DP7000), ガブモン(Lv3, DP2000)\nメモリー: 5',
+    memory: 5,
+    player: {
+      hand: ['ギガデストロイヤー'],
+      battleArea: ['アグモン'],
+      tamerArea: [],
+      security: 5,
+      deckSize: 20,
+    },
+    ai: {
+      hand: [],
+      battleArea: ['グリズモン', 'ガブモン'],
+      tamerArea: [],
+      security: 5,
+      deckSize: 20,
+    },
+  },
+  'sorrow-blue': {
+    name: 'ソローブルーテスト',
+    description: '自分の手札: ソローブルー\n自分のバトルエリア: グレイモン(Lv4, DP5000)\n相手のバトルエリア: ガルルモン(Lv4, DP5000)\nメモリー: 3',
+    memory: 3,
+    player: {
+      hand: ['ソローブルー'],
+      battleArea: ['グレイモン'],
+      tamerArea: [],
+      security: 5,
+      deckSize: 20,
+    },
+    ai: {
+      hand: [],
+      battleArea: ['ガルルモン'],
+      tamerArea: [],
+      security: 5,
+      deckSize: 20,
+    },
+  },
+};
+
+// ===== window公開（HTML onclick等から呼べるように） =====
+window.showBCD = showBCD;
+window.closeBCD = closeBCD;
+window.showTrash = showTrash;
+window.renderAll = renderAll;
+
+// Phase 3: フェーズ進行
+window.onEndTurn = onEndTurn;
+window.skipBreedPhase = skipBreedPhase;
+window.doIkuMove = () => { doIkuMove(); breedActionDone(); };
+window.showYourTurn = showYourTurn;
+window.showPhaseAnnounce = showPhaseAnnounce;
+window.showSkipAnnounce = showSkipAnnounce;
+
+// Phase 4: 戦闘
+window.doPlay = doPlay;
+window.doEvolve = doEvolve;
+window.doEvolveIku = doEvolveIku;
+window.canEvolveOnto = canEvolveOnto;
+window.startAttack = startAttack;
+window.cancelAttack = cancelAttack;
+window.resolveAttackTarget = resolveAttackTarget;
+window.battleVictory = battleVictory;
+window.battleDefeat = battleDefeat;
+
+// 効果エンジン連携
+window._triggerMainEffect = function(card, callback) {
+  const inPlayer = bs.player.battleArea.includes(card) || bs.player.tamerArea.includes(card);
+  const side = inPlayer ? 'player' : 'ai';
+  try { _triggerEffectEE('main', card, side, makeEffectContext(card, side), callback); }
+  catch (_) { callback && callback(); }
+};
+
+// HTML onclick から呼ばれる補助関数
+window.confirmExitGate = function() {
+  showConfirm({ title: '退室確認', message: 'テストを終了しますか？', yesText: 'はい', noText: 'いいえ', color: '#ff4444' }).then(yes => {
+    if (!yes) return;
+    cleanupOnline();
+    document.getElementById('battle-screen').style.display = 'none';
+    document.getElementById('scenario-screen').style.display = 'flex';
+  });
+};
+window.hideCardActionMenu = function() {
+  const menu = document.getElementById('card-action-menu');
+  const backdrop = document.getElementById('card-action-backdrop');
+  if (menu) menu.style.display = 'none';
+  if (backdrop) backdrop.style.display = 'none';
+};
+window.closePhaseOverlay = function() {
+  const el = document.getElementById('phase-desc-overlay');
+  if (el) el.style.display = 'none';
+};
+
+// スクロールボタン
+window.scrollHand = function(direction) {
+  const el = document.getElementById('hand-wrap');
+  if (el) el.scrollBy({ left: direction * 80, behavior: 'smooth' });
+};
+window.scrollBattleRow = function(side, direction) {
+  const el = document.getElementById(side + '-battle-row');
+  if (el) el.scrollBy({ left: direction * 80, behavior: 'smooth' });
+};
+
+// ===== 効果エンジン接続（battle.jsと同じ） =====
+const TRIGGER_CODE_MAP = {
+  '【登場時】': 'on_play', '【進化時】': 'on_evolve', '【アタック時】': 'on_attack',
+  '【アタック終了時】': 'on_attack_end', '【自分のターン開始時】': 'on_own_turn_start',
+  '【自分のターン終了時】': 'on_own_turn_end', '【メイン】': 'main',
+  '【相手のターン開始時】': 'on_opp_turn_start', '【相手のターン終了時】': 'on_opp_turn_end',
+  '【消滅時】': 'on_destroy', '【セキュリティ】': 'security',
+  '【レストしたとき】': 'when_rest', '【アタックされたとき】': 'when_attacked',
+  '【ブロックされたとき】': 'when_blocked', 'ブロックされた時': 'when_blocked',
+  'アタックされた時': 'when_attacked',
+};
+
+function makeEffectContext(card, side) {
+  window._lastBattleState = bs;
+  return {
+    card, side, bs, addLog, renderAll, updateMemGauge,
+    doDraw, showYourTurn, aiTurn,
+    showPlayEffect, showEvolveEffect, showDestroyEffect,
+    showSecurityCheck, showBattleResult,
+  };
+}
+
+function checkAndTriggerEffect(card, triggerType, callback, side, alreadyConfirmed) {
+  if (!card) { callback && callback(); return; }
+  const hasInMain = card.effect && card.effect.includes(triggerType);
+  const hasInEvo = card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes(triggerType));
+  if (!hasInMain && !hasInEvo) { callback && callback(); return; }
+  if (!side) {
+    const inPlayer = bs.player.battleArea.includes(card) || bs.player.tamerArea.includes(card) || bs.player.hand.includes(card);
+    side = inPlayer ? 'player' : 'ai';
+  }
+  const triggerCode = TRIGGER_CODE_MAP[triggerType] || triggerType;
+  const context = makeEffectContext(card, side);
+  if (alreadyConfirmed) context.alreadyConfirmed = true;
+  _triggerEffectEE(triggerCode, card, side, context, () => {
+    if (isOnlineMode()) sendStateSync();
+    callback && callback();
+  });
+}
+
+// Phase 3 フック
+setPhaseHooks({
+  aiMainPhase: aiMainPhase,
+  aiAttackPhase: aiAttackPhase,
+  onDeckOut: () => { addLog('デッキ切れ！'); battleDefeat(); },
+});
+
+// Phase 4→効果エンジン接続
+setCombatHooks({
+  checkAndTriggerEffect,
+  makeEffectContext,
+  hasKeyword: (card, kw) => card && card.effect && card.effect.includes(kw),
+  hasEvoKeyword: (card, kw) => card && card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes(kw)),
+  applyPermanentEffects: (side) => { try { _applyPermanentEE(bs, side, makeEffectContext(null, side)); } catch (e) { console.error('[applyPermanentEffects]', e); } },
+  expireBuffs: (timing, side) => { try { _expireBuffsEE(bs, timing, side); } catch (e) { console.error('[expireBuffs]', e); } },
+  triggerEffect: (code, card, side, ctx, cb) => { try { _triggerEffectEE(code, card, side, ctx, cb); } catch (e) { console.error('[triggerEffect]', e); cb && cb(); } },
+});
+
+// Phase 3→効果エンジン接続（ターン開始/終了時効果）
+setPhaseHooks({
+  checkTurnStartEffects: (side, cb) => {
+    bs._usedLimits = {};
+    const p = side === 'player' ? bs.player : bs.ai;
+    const area = [...p.battleArea, ...(p.tamerArea || [])];
+    const trigger = side === 'player' ? '【自分のターン開始時】' : '【相手のターン開始時】';
+    const cardsWithEffect = area.filter(c => c && c.effect && c.effect.includes(trigger));
+    if (cardsWithEffect.length === 0) { cb(); return; }
+    let idx = 0;
+    function next() {
+      if (idx >= cardsWithEffect.length) { cb(); return; }
+      checkAndTriggerEffect(cardsWithEffect[idx++], trigger, next);
+    }
+    next();
+  },
+  checkTurnEndEffects: (cb) => {
+    const allCards = [...bs.player.battleArea, ...(bs.player.tamerArea || [])];
+    const cardsWithEffect = allCards.filter(c => c && c.effect && c.effect.includes('【自分のターン終了時】'));
+    if (cardsWithEffect.length === 0) { cb(); return; }
+    let idx = 0;
+    function next() {
+      if (idx >= cardsWithEffect.length) { cb(); return; }
+      checkAndTriggerEffect(cardsWithEffect[idx++], '【自分のターン終了時】', next);
+    }
+    next();
+  },
+});
+
+// Phase 5: 演出エンジン接続
+registerFxRunners(getFxRunners());
+
+// Phase 6: オンラインモジュールに各演出/フェーズ関数を注入
+setOnlineModules({
+  showYourTurn, showPhaseAnnounce, startPhase,
+  showPlayEffect, showEvolveEffect, showSecurityCheck, showBattleResult,
+  showDestroyEffect, showDirectAttack, showOptionEffect,
+  showBlockConfirm, showBlockerSelection,
+  showGameEndOverlay,
+  fxSAttackPlus, fxRemoteEffect, fxRemoteEffectClose,
+  checkTurnStartEffects: (side, cb) => cb(),
+  applyPermanentEffects: (side) => { try { _applyPermanentEE(bs, side, { bs, side }); } catch (_) {} },
+  expireBuffs: (timing, side) => { try { _expireBuffsEE(bs, timing, side); } catch (_) {} },
+});
+
+// 育成エリア操作コールバック
+setIkuCallbacks({
+  onHatch: (card) => {
+    if (isOnlineMode()) sendCommand({ type: 'hatch', cardName: card.name, cardImg: card.imgSrc || '' });
+    renderAll();
+    fxHatchEffect(card, () => breedActionDone());
+  },
+  onBreedMove: (card) => {
+    if (isOnlineMode()) {
+      sendCommand({ type: 'breed_move', cardName: card.name, cardImg: card.imgSrc || '' });
+      sendStateSync();
+    }
+    try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch (_) {}
+    renderAll();
+    breedActionDone();
+  },
+});
+
+// Phase 3/4 にオンラインハンドラーを接続（初期はオフライン、テスト開始時にオンに）
+setOnlineHandlers(false, null, { sendCommand, sendStateSync, sendMemoryUpdate });
+setCombatOnlineHandlers(false, null, { sendCommand, sendStateSync, sendMemoryUpdate });
+
+// ===== カードDBからカードを名前で検索してカードオブジェクトを構築 =====
+function findCardByName(name) {
+  const card = window.allCards.find(c => c['名前'] === name);
+  if (!card) {
+    console.warn(`[test] カード "${name}" がDBに見つかりません`);
+    return null;
+  }
+  const playCost = card['登場コスト'];
+  const evolveCost = card['進化コスト'];
+  const hasPlay = playCost !== undefined && playCost !== '' && playCost !== null;
+  const hasEvolve = evolveCost !== undefined && evolveCost !== '' && evolveCost !== null;
+  return {
+    name: card['名前'] || name,
+    cardNo: card['カードNo'] || '',
+    level: String(card['レベル'] || '?'),
+    dp: parseInt(card['DP'] || 0),
+    baseDp: parseInt(card['DP'] || 0),
+    dpModifier: 0,
+    playCost: hasPlay ? parseInt(playCost) : null,
+    evolveCost: hasEvolve ? parseInt(evolveCost) : null,
+    evolveCond: card['進化条件'] || '',
+    cost: hasPlay ? parseInt(playCost) : hasEvolve ? parseInt(evolveCost) : 0,
+    effect: card['効果テキスト'] || card['効果'] || '',
+    evoSourceEffect: card['進化元テキスト'] || card['進化元効果'] || '',
+    securityEffect: card['セキュリティテキスト'] || card['セキュリティ効果'] || '',
+    recipe: card['レシピ'] || card['効果レシピ'] || null,
+    imageUrl: card['ImageURL'] || '',
+    imgSrc: getCardImageUrl(card) || '',
+    type: card['タイプ'] || '',
+    color: card['色'] || '',
+    feature: card['特徴'] || '',
+    stack: [],
+    suspended: false,
+    buffs: [],
+    cantBeActive: false,
+    cantAttack: false,
+    cantBlock: false,
+    summonedThisTurn: false,
+    _pendingDestroy: false,
+  };
+}
+
+// ダミーカードを生成（デッキ/セキュリティ充填用）
+function makeDummyCard(index) {
+  return {
+    name: `ダミーカード${index}`, cardNo: `DUMMY-${index}`, level: '3',
+    dp: 1000, baseDp: 1000, dpModifier: 0,
+    playCost: 3, evolveCost: null, evolveCond: '',
+    cost: 3, effect: '', evoSourceEffect: '', securityEffect: '',
+    recipe: null, imageUrl: '', imgSrc: '', type: 'デジモン',
+    color: '赤', feature: '', stack: [], suspended: false, buffs: [],
+    cantBeActive: false, cantAttack: false, cantBlock: false,
+    summonedThisTurn: false, _pendingDestroy: false,
+  };
+}
+
+// ===== シナリオから盤面を構築 =====
+function buildBoardFromScenario(scenario) {
+  const sc = SCENARIOS[scenario];
+  if (!sc) { console.error('不明なシナリオ:', scenario); return false; }
+
+  // 状態リセット（先攻で開始）
+  resetBattleState(true);
+  bs.phase = 'main';
+  bs.isFirstTurn = false;
+  bs.memory = sc.memory;
+
+  // --- プレイヤー側 ---
+  // 手札
+  sc.player.hand.forEach(name => {
+    const card = findCardByName(name);
+    if (card) bs.player.hand.push(card);
+  });
+
+  // バトルエリア
+  sc.player.battleArea.forEach(name => {
+    const card = findCardByName(name);
+    if (card) bs.player.battleArea.push(card);
+  });
+
+  // テイマーエリア
+  (sc.player.tamerArea || []).forEach(name => {
+    const card = findCardByName(name);
+    if (card) bs.player.tamerArea.push(card);
+  });
+
+  // セキュリティ（ダミー）
+  for (let i = 0; i < (sc.player.security || 5); i++) {
+    bs.player.security.push(makeDummyCard(100 + i));
+  }
+
+  // デッキ（ダミー）
+  for (let i = 0; i < (sc.player.deckSize || 20); i++) {
+    bs.player.deck.push(makeDummyCard(200 + i));
+  }
+
+  // --- AI（相手）側 ---
+  // 手札
+  (sc.ai.hand || []).forEach(name => {
+    const card = findCardByName(name);
+    if (card) bs.ai.hand.push(card);
+  });
+
+  // バトルエリア
+  sc.ai.battleArea.forEach(name => {
+    const card = findCardByName(name);
+    if (card) bs.ai.battleArea.push(card);
+  });
+
+  // テイマーエリア
+  (sc.ai.tamerArea || []).forEach(name => {
+    const card = findCardByName(name);
+    if (card) bs.ai.tamerArea.push(card);
+  });
+
+  // セキュリティ（ダミー）
+  for (let i = 0; i < (sc.ai.security || 5); i++) {
+    bs.ai.security.push(makeDummyCard(300 + i));
+  }
+
+  // デッキ（ダミー）
+  for (let i = 0; i < (sc.ai.deckSize || 20); i++) {
+    bs.ai.deck.push(makeDummyCard(400 + i));
+  }
+
+  addLog(`[TEST] シナリオ "${sc.name}" を読み込みました`);
+  addLog(`[TEST] メモリー: ${bs.memory} / 手札: ${bs.player.hand.length}枚 / バトルエリア: ${bs.player.battleArea.length}体`);
+  addLog(`[TEST] 相手バトルエリア: ${bs.ai.battleArea.length}体`);
+
+  return true;
+}
+
+// ===== シナリオ選択UI =====
+let _selectedPlayer = 'player1';
+
+window.selectPlayer = function(player) {
+  _selectedPlayer = player;
+  document.getElementById('btn-p1').classList.toggle('selected', player === 'player1');
+  document.getElementById('btn-p2').classList.toggle('selected', player === 'player2');
+};
+
+window.updateScenarioDesc = function() {
+  const sel = document.getElementById('scenario-select');
+  const sc = SCENARIOS[sel.value];
+  const descEl = document.getElementById('scenario-desc');
+  if (sc && descEl) descEl.innerText = sc.description;
+};
+
+// 初期表示
+window.updateScenarioDesc();
+
+// ===== テスト開始 =====
+window.startTest = async function() {
+  const statusEl = document.getElementById('test-status');
+  const startBtn = document.getElementById('start-test-btn');
+  startBtn.disabled = true;
+  statusEl.innerText = 'カードデータを読み込み中...';
+
+  try {
+    // カードデータ読み込み
+    await loadCardAndKeywordData();
+    statusEl.innerText = `カード ${window.allCards.length} 件読み込み完了。辞書を読み込み中...`;
+
+    // 効果辞書読み込み
+    await loadAllDictionaries();
+    statusEl.innerText = 'オンライン接続中...';
+
+    // オンライン接続
+    const roomId = document.getElementById('room-id-input').value.trim();
+    if (!roomId) { statusEl.innerText = 'ルームIDを入力してください'; startBtn.disabled = false; return; }
+
+    const myKey = _selectedPlayer;
+    const isFirst = _selectedPlayer === 'player1';
+
+    await initOnline(roomId, myKey);
+    setFirstPlayer(isFirst);
+    window._isFirstPlayer = isFirst;
+
+    // オンラインハンドラー有効化
+    setOnlineHandlers(true, myKey, { sendCommand, sendStateSync, sendMemoryUpdate });
+    setCombatOnlineHandlers(true, myKey, { sendCommand, sendStateSync, sendMemoryUpdate });
+    setOnlineInfo(true, myKey);
+
+    statusEl.innerText = 'シナリオを構築中...';
+
+    // シナリオ選択
+    const scenario = document.getElementById('scenario-select').value;
+    const ok = buildBoardFromScenario(scenario);
+    if (!ok) { statusEl.innerText = 'シナリオの構築に失敗しました'; startBtn.disabled = false; return; }
+
+    // 画面切り替え
+    document.getElementById('scenario-screen').style.display = 'none';
+    document.getElementById('battle-screen').style.display = 'block';
+    document.getElementById('battle-screen').classList.add('active');
+
+    // 描画
+    renderAll();
+    updateMemGauge();
+
+    // ターン開始演出
+    if (isFirst) {
+      showYourTurn('あなたのターン', 'メインフェイズ - カードをプレイしよう', '#00fbff', () => {
+        addLog('[TEST] メインフェイズ開始 - カードをプレイしてテストしてください');
+        renderAll();
+      });
+    } else {
+      showYourTurn('相手のターン', '相手の操作を待っています...', '#ff00fb', () => {
+        addLog('[TEST] 相手のターンです（操作待ち）');
+        renderAll();
+      });
+    }
+
+    // 相手プレイヤーの名前表示
+    const oppLabel = document.getElementById('opponent-name-label');
+    if (oppLabel) oppLabel.innerText = isFirst ? 'Player 2' : 'Player 1';
+
+    // リスナー開始
+    startOnlineListener();
+
+    // 状態同期を送信
+    sendStateSync();
+
+    addLog('[TEST] テスト開始！オンライン同期有効');
+
+  } catch (e) {
+    console.error('[test] エラー:', e);
+    statusEl.innerText = 'エラー: ' + e.message;
+    startBtn.disabled = false;
+  }
+};
+
+// ===== 初期化 =====
+console.log('[test-battle.js] エフェクトテスト用モジュール読み込み完了');

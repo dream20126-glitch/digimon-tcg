@@ -466,7 +466,11 @@ export function resolveSecurityCheck(atk, atkIdx) {
     }
 
     const sec = bs.ai.security.splice(0, 1)[0];
-    if (_onlineMode && _sendCommand) _sendCommand({ type: 'security_remove', secName: sec.name, secType: sec.type, remaining: bs.ai.security.length });
+    console.log('[SEC CHECK] めくったカード:', sec.name, 'type:', sec.type, 'dp:', sec.dp);
+    // security_removeはテイマー以外で送信（テイマーはsecurity_tamer_playで処理）
+    if (_onlineMode && _sendCommand && sec.type !== 'テイマー') {
+      _sendCommand({ type: 'security_remove', secName: sec.name, secType: sec.type, remaining: bs.ai.security.length });
+    }
     applySecurityBuffs(sec, 'ai');
 
     // Sアタック+のチェック枚数ラベル表示

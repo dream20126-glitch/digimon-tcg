@@ -306,8 +306,17 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'security_tamer_play': {
-      // 相手がセキュリティからテイマーをめくった → 自分のテイマーエリアに登場
-      const tamer = {
+      // 相手がセキュリティからテイマーをめくった → セキュリティから除去してテイマーエリアに登場
+      // セキュリティから該当テイマーを探して除去（見つからなければ先頭を除去）
+      let tamerFromSec = null;
+      const tIdx = bs.player.security.findIndex(c => c.name === cmd.cardName || c.cardNo === cmd.cardNo);
+      if (tIdx !== -1) {
+        tamerFromSec = bs.player.security.splice(tIdx, 1)[0];
+      } else if (bs.player.security.length > 0) {
+        tamerFromSec = bs.player.security.splice(0, 1)[0];
+      }
+      // テイマーカード（セキュリティの実データ or コマンドから復元）
+      const tamer = tamerFromSec || {
         name: cmd.cardName || '???', cardNo: cmd.cardNo || '', type: 'テイマー',
         effect: cmd.effect || '', securityEffect: cmd.securityEffect || '',
         dp: cmd.dp || 0, level: cmd.level || '', color: cmd.color || '',

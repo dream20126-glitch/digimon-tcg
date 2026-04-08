@@ -349,7 +349,7 @@ function buildBoardFromScenario(scenario, isPlayer1) {
     const card = findCardByName(name);
     if (card) bs.player.trash.push(card);
   });
-  for (let i = 0; i < (mySc.security || 5); i++) bs.player.security.push(makeDummyCard(100 + i));
+  for (let i = 0; i < (mySc.security ?? 5); i++) bs.player.security.push(makeDummyCard(100 + i));
   for (let i = 0; i < (mySc.deckSize || 20); i++) bs.player.deck.push(makeDummyCard(200 + i));
 
   // --- 相手側 ---
@@ -376,7 +376,7 @@ function buildBoardFromScenario(scenario, isPlayer1) {
     const card = findCardByName(name);
     if (card) bs.ai.trash.push(card);
   });
-  for (let i = 0; i < (oppSc.security || 5); i++) bs.ai.security.push(makeDummyCard(300 + i));
+  for (let i = 0; i < (oppSc.security ?? 5); i++) bs.ai.security.push(makeDummyCard(300 + i));
   for (let i = 0; i < (oppSc.deckSize || 20); i++) bs.ai.deck.push(makeDummyCard(400 + i));
 
   addLog(`[TEST] シナリオ "${sc.name}" を読み込みました（${isPlayer1 ? 'Player1' : 'Player2'}）`);

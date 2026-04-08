@@ -209,6 +209,21 @@
       </div>
       <div style="color:#555; font-size:9px; margin-top:4px;">※ 進化元はバトルエリアの1体目のデジモンに積まれます（下から順に）</div>
 
+      <!-- 保存/読み込み -->
+      <div style="border-top:1px solid #333; margin-top:12px; padding-top:10px;">
+        <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
+          <input type="text" id="save-name-input" placeholder="シナリオ名を入力" style="flex:1; padding:6px 8px; background:#111; border:1px solid #333; border-radius:6px; color:#fff; font-size:11px;">
+          <button onclick="saveScenario()" style="padding:6px 12px; background:#00ff88; color:#000; border:none; border-radius:6px; font-weight:bold; font-size:11px; cursor:pointer;">💾 保存</button>
+        </div>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <select id="saved-scenario-select" style="flex:1; padding:6px; background:#111; border:1px solid #333; border-radius:6px; color:#fff; font-size:11px;">
+            <option value="">-- 保存済みシナリオ --</option>
+          </select>
+          <button onclick="loadScenario()" style="padding:6px 10px; background:#ffaa00; color:#000; border:none; border-radius:6px; font-weight:bold; font-size:11px; cursor:pointer;">📂</button>
+          <button onclick="deleteScenario()" style="padding:6px 10px; background:#ff4444; color:#fff; border:none; border-radius:6px; font-weight:bold; font-size:11px; cursor:pointer;">🗑</button>
+        </div>
+      </div>
+
       <div style="display:flex; gap:12px; align-items:center; margin-top:8px; flex-wrap:wrap;">
         <div style="display:flex; gap:4px; align-items:center;">
           <span style="color:#888; font-size:11px;">メモリー:</span>

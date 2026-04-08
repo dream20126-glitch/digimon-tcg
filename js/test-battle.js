@@ -471,7 +471,70 @@ function renderCustomCards() {
   });
 }
 
+// ===== シナリオ保存/読み込み（localStorage） =====
+const STORAGE_KEY = 'digimon-test-scenarios';
+
+function getSavedScenarios() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
+}
+
+function refreshSavedList() {
+  const sel = document.getElementById('saved-scenario-select');
+  if (!sel) return;
+  const saved = getSavedScenarios();
+  sel.innerHTML = '<option value="">-- 保存済みシナリオ --</option>';
+  Object.keys(saved).forEach(name => {
+    sel.innerHTML += `<option value="${name}">${name}</option>`;
+  });
+}
+
+window.saveScenario = function() {
+  const name = document.getElementById('save-name-input').value.trim();
+  if (!name) { alert('シナリオ名を入力してください'); return; }
+  const data = {
+    cards: JSON.parse(JSON.stringify(_customCards)),
+    memory: parseInt(document.getElementById('custom-memory').value) || 5,
+    p1Sec: parseInt(document.getElementById('custom-p1-sec').value) || 0,
+    p2Sec: parseInt(document.getElementById('custom-p2-sec').value) || 0,
+  };
+  const saved = getSavedScenarios();
+  saved[name] = data;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+  refreshSavedList();
+  document.getElementById('test-status').innerText = `✅「${name}」を保存しました`;
+};
+
+window.loadScenario = function() {
+  const sel = document.getElementById('saved-scenario-select');
+  const name = sel.value;
+  if (!name) { alert('読み込むシナリオを選択してください'); return; }
+  const saved = getSavedScenarios();
+  const data = saved[name];
+  if (!data) return;
+  // カード配置を復元
+  Object.keys(data.cards).forEach(zone => { _customCards[zone] = data.cards[zone] || []; });
+  document.getElementById('custom-memory').value = data.memory || 5;
+  document.getElementById('custom-p1-sec').value = data.p1Sec ?? 5;
+  document.getElementById('custom-p2-sec').value = data.p2Sec ?? 0;
+  document.getElementById('save-name-input').value = name;
+  renderCustomCards();
+  document.getElementById('test-status').innerText = `📂「${name}」を読み込みました`;
+};
+
+window.deleteScenario = function() {
+  const sel = document.getElementById('saved-scenario-select');
+  const name = sel.value;
+  if (!name) { alert('削除するシナリオを選択してください'); return; }
+  if (!confirm(`「${name}」を削除しますか？`)) return;
+  const saved = getSavedScenarios();
+  delete saved[name];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+  refreshSavedList();
+  document.getElementById('test-status').innerText = `🗑「${name}」を削除しました`;
+};
+
 // 初期表示
+refreshSavedList();
 window.updateScenarioDesc();
 
 // ===== テスト開始 =====

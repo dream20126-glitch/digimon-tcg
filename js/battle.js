@@ -217,14 +217,22 @@ window.acceptHand = function() {
   // === デバッグ: セキュリティの先頭にテイマーを仕込む ===
   if (window._DEBUG_TAMER_IN_SECURITY) {
     [bs.player, bs.ai].forEach(side => {
-      const tamers = [];
-      side.deck = side.deck.filter(c => {
-        if (c.type === 'テイマー' && tamers.length < 2) { tamers.push(c); return false; }
-        return true;
-      });
-      // セキュリティの先頭（最初にめくられる位置）に挿入
-      side.security.unshift(...tamers);
-      if (tamers.length > 0) console.log('[DEBUG] セキュリティにテイマー仕込み:', tamers.map(t => t.name));
+      // デッキ・手札・セキュリティからテイマーを探す
+      const allCards = [...side.deck, ...side.hand, ...side.security];
+      const tamers = allCards.filter(c => c.type === 'テイマー').slice(0, 2);
+      if (tamers.length > 0) {
+        // 見つかったテイマーをセキュリティ先頭に挿入
+        side.security.unshift(...tamers);
+        console.log('[DEBUG] セキュリティにテイマー仕込み:', tamers.map(t => t.name));
+      } else {
+        // テイマーがデッキにない場合、ダミーテイマーを作成して挿入
+        const dummyTamers = [
+          { name: '石田ヤマト(テスト)', cardNo: 'DEBUG-T1', type: 'テイマー', level: '', dp: 0, cost: 3, playCost: 3, effect: '【自分のターン開始時】メモリー+1する。', securityEffect: 'なし', evoSourceEffect: '', color: '青', feature: '', imgSrc: '', suspended: false, buffs: [], stack: [] },
+          { name: '八神太一(テスト)', cardNo: 'DEBUG-T2', type: 'テイマー', level: '', dp: 0, cost: 4, playCost: 4, effect: '【自分のターン開始時】メモリー+1する。', securityEffect: 'なし', evoSourceEffect: '', color: '赤', feature: '', imgSrc: '', suspended: false, buffs: [], stack: [] },
+        ];
+        side.security.unshift(...dummyTamers);
+        console.log('[DEBUG] ダミーテイマーをセキュリティに挿入:', dummyTamers.map(t => t.name));
+      }
     });
   }
 

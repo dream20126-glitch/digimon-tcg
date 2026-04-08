@@ -523,7 +523,10 @@ export function resolveSecurityCheck(atk, atkIdx) {
       if (sec.type === 'テイマー') {
         bs.ai.tamerArea.push(sec);
         addLog('👤 テイマー「' + sec.name + '」が相手に登場');
-        sendStateSync(); // テイマー登場を即座に同期
+        // 相手に「自分のテイマーエリアにカードを追加して」と通知
+        if (_onlineMode && _sendCommand) {
+          _sendCommand({ type: 'security_tamer_play', cardName: sec.name, cardNo: sec.cardNo || '', cardImg: cardImg(sec), effect: sec.effect || '', securityEffect: sec.securityEffect || '', dp: sec.dp || 0, level: sec.level || '', color: sec.color || '', feature: sec.feature || '', imgSrc: sec.imgSrc || '', cost: sec.cost || 0, playCost: sec.playCost || 0 });
+        }
         renderAll();
         if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
         else { checkAttackEnd(atk, atkIdx); }

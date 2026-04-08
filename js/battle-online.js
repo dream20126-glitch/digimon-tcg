@@ -305,6 +305,21 @@ function onRemoteCommand(cmd) {
       }
       break;
     }
+    case 'security_tamer_play': {
+      // 相手がセキュリティからテイマーをめくった → 自分のテイマーエリアに登場
+      const tamer = {
+        name: cmd.cardName || '???', cardNo: cmd.cardNo || '', type: 'テイマー',
+        effect: cmd.effect || '', securityEffect: cmd.securityEffect || '',
+        dp: cmd.dp || 0, level: cmd.level || '', color: cmd.color || '',
+        feature: cmd.feature || '', imgSrc: cmd.cardImg || cmd.imgSrc || '',
+        cost: cmd.cost || 0, playCost: cmd.playCost || 0,
+        suspended: false, buffs: [], stack: [],
+      };
+      bs.player.tamerArea.push(tamer);
+      addLog('👤 テイマー「' + tamer.name + '」がセキュリティから登場！');
+      renderAll();
+      break;
+    }
 
     // --- ターン ---
     case 'endTurn': {

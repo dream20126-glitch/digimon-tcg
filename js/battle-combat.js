@@ -1466,8 +1466,9 @@ export function showDestroyEffect(card, callback) {
 
 export function showDirectAttack(atkCard, side, callback) {
   if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_directAttack', atkName: atkCard.name, atkImg: cardImg(atkCard), side });
+  hideCombatBackdrop();
   const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:35000;display:flex;align-items:center;justify-content:center;flex-direction:column;';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:48000;display:flex;align-items:center;justify-content:center;flex-direction:column;';
 
   const label = document.createElement('div');
   label.style.cssText = 'font-size:clamp(1.2rem,5vw,1.8rem);font-weight:900;color:#ff0000;letter-spacing:4px;text-shadow:0 0 30px #ff0000,0 0 60px #ff0000;margin-bottom:20px;opacity:0;transition:opacity 0.3s;';

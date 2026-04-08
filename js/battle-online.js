@@ -437,6 +437,10 @@ function onRemoteCommand(cmd) {
         const isWin = cmd.result === 'victory';
         m.showGameEndOverlay(isWin ? '🎉 勝利！' : '😢 敗北...', isWin ? 'victory' : 'defeat', () => {
           cleanupOnline();
+          document.querySelectorAll('body > div[style*="position:fixed"]').forEach(el => {
+            if (!el.classList.contains('screen')) el.remove();
+          });
+          if (window._onGameEnd) { window._onGameEnd(); return; }
           showScreen('room-entrance-screen');
         });
       }

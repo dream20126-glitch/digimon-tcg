@@ -1026,15 +1026,22 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
     case 'use_main_effect': {
-      // このカードの【メイン】効果を再パースして実行
-      const mainBlocks = parseCardEffect(ctx.card);
-      const mainBlock = mainBlocks.find(b => b.trigger && b.trigger.code === 'main');
-      if (mainBlock && mainBlock.actions && mainBlock.actions.length > 0) {
+      // mainレシピがあればレシピ優先（テキスト解析よりも正確）
+      const mainRecipe = getRecipeForCard(ctx.card, 'main');
+      if (mainRecipe) {
         ctx.addLog('✦ 「' + ctx.card.name + '」の【メイン】効果を発揮！');
-        runActionList(mainBlock.actions, mainBlock.target, ctx, callback);
+        runRecipe(mainRecipe, ctx, callback);
       } else {
-        ctx.addLog('⚠ メイン効果が見つかりません');
-        callback();
+        // レシピなし → テキスト解析で実行
+        const mainBlocks = parseCardEffect(ctx.card);
+        const mainBlock = mainBlocks.find(b => b.trigger && b.trigger.code === 'main');
+        if (mainBlock && mainBlock.actions && mainBlock.actions.length > 0) {
+          ctx.addLog('✦ 「' + ctx.card.name + '」の【メイン】効果を発揮！');
+          runActionList(mainBlock.actions, mainBlock.target, ctx, callback);
+        } else {
+          ctx.addLog('⚠ メイン効果が見つかりません');
+          callback();
+        }
       }
       break;
     }
@@ -2457,6 +2464,16 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
 }
 
 // ===== レシピ実行エンジン =====
+
+// カードから指定トリガーのレシピを直接取得（use_main_effect用）
+function getRecipeForCard(card, triggerCode) {
+  if (!card || !card.recipe) return null;
+  try {
+    const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
+    const recipes = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return recipes[triggerCode] || null;
+  } catch(e) { return null; }
+}
 
 // カードからトリガーに対応するレシピを取得
 function getRecipeForTrigger(card, triggerCode) {

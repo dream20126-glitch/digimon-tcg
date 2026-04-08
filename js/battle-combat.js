@@ -1167,13 +1167,15 @@ export function checkPendingTurnEnd() {
 // ===== 勝敗判定 =====
 
 export function battleVictory() {
+  const wasOnline = _onlineMode;
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'game_end', result: 'defeat' });
-  showGameEndOverlay('🎉 勝利！', 'victory', () => { cleanupBattle(); showScreen(_onlineMode ? 'room-entrance-screen' : 'tutorial-screen'); });
+  showGameEndOverlay('🎉 勝利！', 'victory', () => { cleanupBattle(); showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen'); });
 }
 
 export function battleDefeat() {
+  const wasOnline = _onlineMode;
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'game_end', result: 'victory' });
-  showGameEndOverlay('😢 敗北...', 'defeat', () => { cleanupBattle(); showScreen(_onlineMode ? 'room-entrance-screen' : 'tutorial-screen'); });
+  showGameEndOverlay('😢 敗北...', 'defeat', () => { cleanupBattle(); showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen'); });
 }
 
 function cleanupBattle() {
@@ -1516,7 +1518,7 @@ function showSAttackPlusAnnounce(n, callback) {
 
 // ----- 勝敗演出 -----
 
-function showGameEndOverlay(text, type, callback) {
+export function showGameEndOverlay(text, type, callback) {
   const isVictory = type === 'victory';
   const color = isVictory ? '#00ff88' : '#ff4444';
   const bgColor = isVictory ? 'rgba(0,40,20,0.95)' : 'rgba(40,0,0,0.95)';

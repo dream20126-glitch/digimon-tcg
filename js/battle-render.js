@@ -536,15 +536,13 @@ function renderIkusei() {
       iku.classList.add('occupied');
       if (info) info.innerText = c.name;
 
-      // タップでカード詳細表示（全フェイズ・全レベル・両プレイヤー共通）
-      iku.onclick = (e) => {
-        e.stopPropagation();
-        if (window.showBCD) window.showBCD(null, isPlayer ? 'plIkusei' : 'aiIkusei');
-      };
-      iku.ontouchend = (e) => {
-        e.preventDefault(); // click合成を抑制して二重発火防止
-        if (window.showBCD) window.showBCD(null, isPlayer ? 'plIkusei' : 'aiIkusei');
-      };
+      if (isPlayer) {
+        // プレイヤー側: ドラッグで移動（移動可否はdoIkuMove内判定）+ 長押しでカード詳細
+        attachIkuDrag(iku);
+      } else {
+        // AI側: タップでカード詳細
+        iku.onclick = () => { if (window.showBCD) window.showBCD(null, 'aiIkusei'); };
+      }
     } else {
       if (isPlayer) iku._ikuDragAttached = false;
       const hasTamaDeck = isPlayer
@@ -573,7 +571,76 @@ function renderIkusei() {
   });
 }
 
-// 育成エリア → バトルエリア移動（育成フェイズのアクションバーから呼ばれる）
+// 育成エリアドラッグ移動 + 長押しでカード詳細
+function attachIkuDrag(iku) {
+  if (iku._ikuDragAttached) return;
+  iku._ikuDragAttached = true;
+
+  let ghostEl = null, dragging = false, dragMoved = false;
+  let startCx = 0, startCy = 0, longPressTimer = null;
+
+  function startDrag(cx, cy) {
+    dragging = true; dragMoved = false;
+    startCx = cx; startCy = cy;
+    // 長押し(500ms)でカード詳細
+    longPressTimer = setTimeout(() => {
+      dragging = false; // ドラッグをキャンセル
+      if (window.showBCD && bs.player.ikusei) window.showBCD(null, 'plIkusei');
+    }, 500);
+  }
+  function createGhost(cx, cy) {
+    if (ghostEl) return;
+    const card = bs.player.ikusei; if (!card) return;
+    ghostEl = document.createElement('div');
+    ghostEl.style.cssText = 'position:fixed;width:48px;height:66px;border-radius:5px;overflow:hidden;z-index:99999;pointer-events:none;opacity:0.85;border:2px solid #00ff88;box-shadow:0 0 15px rgba(0,255,136,0.5);';
+    const src = cardImg(card);
+    ghostEl.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#00ff88;font-size:7px;padding:4px;">${card.name}</div>`;
+    document.body.appendChild(ghostEl);
+    ghostEl.style.left = (cx - 24) + 'px'; ghostEl.style.top = (cy - 33) + 'px';
+  }
+  function moveDrag(cx, cy) {
+    if (!dragging) return;
+    if (!dragMoved) {
+      const dist = Math.abs(cx - startCx) + Math.abs(cy - startCy);
+      if (dist < 8) return;
+      dragMoved = true;
+      clearTimeout(longPressTimer); // ドラッグ開始 → 長押しキャンセル
+      createGhost(cx, cy);
+    }
+    if (ghostEl) { ghostEl.style.left = (cx - 24) + 'px'; ghostEl.style.top = (cy - 33) + 'px'; }
+  }
+  function endDrag(cx, cy) {
+    clearTimeout(longPressTimer);
+    if (!dragging) return;
+    dragging = false;
+    if (ghostEl && ghostEl.parentNode) document.body.removeChild(ghostEl);
+    ghostEl = null;
+    if (!dragMoved) return; // タップ → 何もしない（長押しならshowBCD済み）
+    // ドラッグ先判定
+    const plRow = document.getElementById('pl-battle-row');
+    if (plRow) {
+      let dropped = false;
+      plRow.querySelectorAll('.b-slot').forEach((slot, i) => {
+        if (dropped || bs.player.battleArea[i]) return;
+        const r = slot.getBoundingClientRect();
+        if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) { dropped = true; doIkuMove(); }
+      });
+      if (!dropped) {
+        const startRect = iku.getBoundingClientRect();
+        const dist = Math.sqrt(Math.pow(cx - startRect.left - startRect.width / 2, 2) + Math.pow(cy - startRect.top - startRect.height / 2, 2));
+        if (dist > 50) doIkuMove();
+      }
+    }
+  }
+  iku.addEventListener('touchstart', e => { startDrag(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+  iku.addEventListener('touchmove', e => { if (dragging) { moveDrag(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
+  iku.addEventListener('touchend', e => { endDrag(e.changedTouches[0].clientX, e.changedTouches[0].clientY); });
+  iku.addEventListener('mousedown', e => { if (e.button !== 0) return; startDrag(e.clientX, e.clientY); });
+  document.addEventListener('mousemove', e => { if (dragging) moveDrag(e.clientX, e.clientY); });
+  document.addEventListener('mouseup', e => { if (dragging) endDrag(e.clientX, e.clientY); });
+}
+
+// 育成エリア → バトルエリア移動
 export function doIkuMove() {
   if (!bs.player.ikusei) return;
   if (bs.phase !== 'breed') return;

@@ -14,7 +14,7 @@ import { renderAll, showBCD, closeBCD, showTrash, cardImg, updateMemGauge, setOn
 // Phase 3: フェーズ進行
 import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers, setFirstPlayer } from './battle-phase.js';
 // Phase 4: 戦闘
-import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, setCombatHooks, setCombatOnlineHandlers } from './battle-combat.js';
+import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, showGameEndOverlay, setCombatHooks, setCombatOnlineHandlers } from './battle-combat.js';
 // Phase 5: 演出
 import { loadAllDictionaries, registerFxRunners } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose } from './battle-fx.js';
@@ -336,7 +336,7 @@ setOnlineModules({
   showPlayEffect, showEvolveEffect, showSecurityCheck, showBattleResult,
   showDestroyEffect, showDirectAttack, showOptionEffect,
   showBlockConfirm, showBlockerSelection,
-  showGameEndOverlay: null, // battle-combat.js 内の showGameEndOverlay は非export → battleVictory/battleDefeat で代替
+  showGameEndOverlay,
   fxSAttackPlus, fxRemoteEffect, fxRemoteEffectClose,
   checkTurnStartEffects: (side, cb) => cb(), // Phase 3 のフック経由
   applyPermanentEffects: (side) => { try { _applyPermanentEE(bs, side, { bs, side }); } catch (_) {} },

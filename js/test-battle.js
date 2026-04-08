@@ -309,75 +309,55 @@ function makeDummyCard(index) {
 }
 
 // ===== シナリオから盤面を構築 =====
-function buildBoardFromScenario(scenario) {
+function buildBoardFromScenario(scenario, isPlayer1) {
   const sc = SCENARIOS[scenario];
   if (!sc) { console.error('不明なシナリオ:', scenario); return false; }
 
-  // 状態リセット（先攻で開始）
-  resetBattleState(true);
+  // Player1 = シナリオのplayer側、Player2 = シナリオのai側（盤面反転）
+  const mySc  = isPlayer1 ? sc.player : sc.ai;
+  const oppSc = isPlayer1 ? sc.ai : sc.player;
+
+  // 状態リセット
+  resetBattleState(isPlayer1);
   bs.phase = 'main';
   bs.isFirstTurn = false;
-  bs.memory = sc.memory;
+  // Player1: 正のメモリー（自分のターン）、Player2: 負のメモリー（相手のターン）
+  bs.memory = isPlayer1 ? sc.memory : -sc.memory;
+  bs.isPlayerTurn = isPlayer1;
 
-  // --- プレイヤー側 ---
-  // 手札
-  sc.player.hand.forEach(name => {
+  // --- 自分側 ---
+  (mySc.hand || []).forEach(name => {
     const card = findCardByName(name);
     if (card) bs.player.hand.push(card);
   });
-
-  // バトルエリア
-  sc.player.battleArea.forEach(name => {
+  (mySc.battleArea || []).forEach(name => {
     const card = findCardByName(name);
     if (card) bs.player.battleArea.push(card);
   });
-
-  // テイマーエリア
-  (sc.player.tamerArea || []).forEach(name => {
+  (mySc.tamerArea || []).forEach(name => {
     const card = findCardByName(name);
     if (card) bs.player.tamerArea.push(card);
   });
+  for (let i = 0; i < (mySc.security || 5); i++) bs.player.security.push(makeDummyCard(100 + i));
+  for (let i = 0; i < (mySc.deckSize || 20); i++) bs.player.deck.push(makeDummyCard(200 + i));
 
-  // セキュリティ（ダミー）
-  for (let i = 0; i < (sc.player.security || 5); i++) {
-    bs.player.security.push(makeDummyCard(100 + i));
-  }
-
-  // デッキ（ダミー）
-  for (let i = 0; i < (sc.player.deckSize || 20); i++) {
-    bs.player.deck.push(makeDummyCard(200 + i));
-  }
-
-  // --- AI（相手）側 ---
-  // 手札
-  (sc.ai.hand || []).forEach(name => {
+  // --- 相手側 ---
+  (oppSc.hand || []).forEach(name => {
     const card = findCardByName(name);
     if (card) bs.ai.hand.push(card);
   });
-
-  // バトルエリア
-  sc.ai.battleArea.forEach(name => {
+  (oppSc.battleArea || []).forEach(name => {
     const card = findCardByName(name);
     if (card) bs.ai.battleArea.push(card);
   });
-
-  // テイマーエリア
-  (sc.ai.tamerArea || []).forEach(name => {
+  (oppSc.tamerArea || []).forEach(name => {
     const card = findCardByName(name);
     if (card) bs.ai.tamerArea.push(card);
   });
+  for (let i = 0; i < (oppSc.security || 5); i++) bs.ai.security.push(makeDummyCard(300 + i));
+  for (let i = 0; i < (oppSc.deckSize || 20); i++) bs.ai.deck.push(makeDummyCard(400 + i));
 
-  // セキュリティ（ダミー）
-  for (let i = 0; i < (sc.ai.security || 5); i++) {
-    bs.ai.security.push(makeDummyCard(300 + i));
-  }
-
-  // デッキ（ダミー）
-  for (let i = 0; i < (sc.ai.deckSize || 20); i++) {
-    bs.ai.deck.push(makeDummyCard(400 + i));
-  }
-
-  addLog(`[TEST] シナリオ "${sc.name}" を読み込みました`);
+  addLog(`[TEST] シナリオ "${sc.name}" を読み込みました（${isPlayer1 ? 'Player1' : 'Player2'}）`);
   addLog(`[TEST] メモリー: ${bs.memory} / 手札: ${bs.player.hand.length}枚 / バトルエリア: ${bs.player.battleArea.length}体`);
   addLog(`[TEST] 相手バトルエリア: ${bs.ai.battleArea.length}体`);
 
@@ -437,9 +417,9 @@ window.startTest = async function() {
 
     statusEl.innerText = 'シナリオを構築中...';
 
-    // シナリオ選択
+    // シナリオ選択（Player1/Player2で盤面反転）
     const scenario = document.getElementById('scenario-select').value;
-    const ok = buildBoardFromScenario(scenario);
+    const ok = buildBoardFromScenario(scenario, isFirst);
     if (!ok) { statusEl.innerText = 'シナリオの構築に失敗しました'; startBtn.disabled = false; return; }
 
     // 画面切り替え

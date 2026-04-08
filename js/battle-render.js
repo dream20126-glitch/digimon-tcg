@@ -590,9 +590,14 @@ function attachIkuDrag(iku) {
     if (_ikuCallbacks.onBreedMove) _ikuCallbacks.onBreedMove(moved);
   }
 
-  let ghostEl = null, dragging = false, dragMoved = false;
+  let ghostEl = null, dragging = false, dragMoved = false, startCx = 0, startCy = 0;
   function startDrag(cx, cy) {
+    // タッチ/マウス開始位置を記録するだけ（ゴーストはまだ作らない）
     dragging = true; dragMoved = false;
+    startCx = cx; startCy = cy;
+  }
+  function createGhost(cx, cy) {
+    if (ghostEl) return;
     const card = bs.player.ikusei; if (!card) return;
     ghostEl = document.createElement('div');
     ghostEl.style.cssText = 'position:fixed;width:48px;height:66px;border-radius:5px;overflow:hidden;z-index:99999;pointer-events:none;opacity:0.85;border:2px solid #00ff88;box-shadow:0 0 15px rgba(0,255,136,0.5);';
@@ -601,13 +606,23 @@ function attachIkuDrag(iku) {
     document.body.appendChild(ghostEl);
     ghostEl.style.left = (cx - 24) + 'px'; ghostEl.style.top = (cy - 33) + 'px';
   }
-  function moveDrag(cx, cy) { if (ghostEl) { dragMoved = true; ghostEl.style.left = (cx - 24) + 'px'; ghostEl.style.top = (cy - 33) + 'px'; } }
+  function moveDrag(cx, cy) {
+    if (!dragging) return;
+    // 一定距離以上動いたら初めてドラッグ開始（タップと区別）
+    if (!dragMoved) {
+      const dist = Math.abs(cx - startCx) + Math.abs(cy - startCy);
+      if (dist < 8) return; // 微小移動は無視
+      dragMoved = true;
+      createGhost(cx, cy);
+    }
+    if (ghostEl) { ghostEl.style.left = (cx - 24) + 'px'; ghostEl.style.top = (cy - 33) + 'px'; }
+  }
   function endDrag(cx, cy) {
     if (!dragging) return;
     dragging = false;
     if (ghostEl && ghostEl.parentNode) document.body.removeChild(ghostEl);
     ghostEl = null;
-    if (!dragMoved) return; // タップ → onclickに任せる
+    if (!dragMoved) return; // タップ → onclickに任せる（DOM未変更なのでclick発火する）
     const plRow = document.getElementById('pl-battle-row');
     if (plRow) {
       let dropped = false;

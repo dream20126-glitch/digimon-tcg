@@ -499,14 +499,14 @@ window.startTest = async function() {
           hand: _customCards['p1-hand'],
           battleArea: _customCards['p1-battle'],
           tamerArea: _customCards['p1-tamer'],
-          security: 5,
+          security: parseInt(document.getElementById('custom-p1-sec').value) || 0,
           deckSize: 20,
         },
         ai: {
           hand: [],
           battleArea: _customCards['p2-battle'],
           tamerArea: _customCards['p2-tamer'],
-          security: 5,
+          security: parseInt(document.getElementById('custom-p2-sec').value) || 0,
           deckSize: 20,
         },
       };

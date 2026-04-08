@@ -183,6 +183,15 @@ function onRemoteCommand(cmd) {
   switch (cmd.type) {
     case 'mulligan': break;
     case 'acceptHand': break;
+    case 'security_init': {
+      // 相手のセキュリティ実データを受信 → bs.ai.securityを正しいデータで上書き
+      if (cmd.cards && Array.isArray(cmd.cards)) {
+        bs.ai.security = cmd.cards.map(c => ({ ...c, buffs: c.buffs || [], stack: c.stack || [] }));
+        bs._aiSecuritySynced = true;
+        console.log('[security_init] 相手セキュリティ同期:', bs.ai.security.length + '枚', bs.ai.security.map(c => c.name + '(' + c.type + ')'));
+      }
+      break;
+    }
 
     // --- カード除去 ---
     case 'own_card_removed': {
@@ -490,7 +499,7 @@ function onRemoteCommand(cmd) {
       if (st.handCount !== undefined) adjustArr(bs.ai.hand, st.handCount);
       if (st.trashCards) bs.ai.trash = toArray(st.trashCards).map(restoreCard);
       else if (st.trashCount !== undefined) adjustArr(bs.ai.trash, st.trashCount);
-      if (st.securityCount !== undefined && st.securityCount > 0 && st.securityCount < bs.ai.security.length) {
+      if (st.securityCount !== undefined && st.securityCount > 0 && st.securityCount < bs.ai.security.length && bs._aiSecuritySynced) {
         while (bs.ai.security.length > st.securityCount) bs.ai.security.shift();
       }
       // 注意: oppBattleArea/oppTamerArea による自分の状態の強制上書きは削除

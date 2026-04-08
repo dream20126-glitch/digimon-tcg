@@ -214,26 +214,27 @@ window.acceptHand = function() {
   bs.player.security = bs.player.deck.splice(0, 5);
   bs.ai.security = bs.ai.deck.splice(0, 5);
 
-  // === デバッグ: セキュリティの先頭にテイマーを仕込む（テスト中：常に有効） ===
-  {
-    [bs.player, bs.ai].forEach(side => {
-      // デッキ・手札・セキュリティからテイマーを探す
-      const allCards = [...side.deck, ...side.hand, ...side.security];
-      const tamers = allCards.filter(c => c.type === 'テイマー').slice(0, 2);
-      if (tamers.length > 0) {
-        // 見つかったテイマーをセキュリティ先頭に挿入
-        side.security.unshift(...tamers);
-        console.log('[DEBUG] セキュリティにテイマー仕込み:', tamers.map(t => t.name));
-      } else {
-        // テイマーがデッキにない場合、ダミーテイマーを作成して挿入
-        const dummyTamers = [
-          { name: '石田ヤマト(テスト)', cardNo: 'DEBUG-T1', type: 'テイマー', level: '', dp: 0, cost: 3, playCost: 3, effect: '【自分のターン開始時】メモリー+1する。', securityEffect: 'なし', evoSourceEffect: '', color: '青', feature: '', imgSrc: '', suspended: false, buffs: [], stack: [] },
-          { name: '八神太一(テスト)', cardNo: 'DEBUG-T2', type: 'テイマー', level: '', dp: 0, cost: 4, playCost: 4, effect: '【自分のターン開始時】メモリー+1する。', securityEffect: 'なし', evoSourceEffect: '', color: '赤', feature: '', imgSrc: '', suspended: false, buffs: [], stack: [] },
-        ];
-        side.security.unshift(...dummyTamers);
-        console.log('[DEBUG] ダミーテイマーをセキュリティに挿入:', dummyTamers.map(t => t.name));
-      }
-    });
+  // === デバッグ: セキュリティの先頭にテイマーを仕込む ===
+  if (window._DEBUG_TAMER_IN_SECURITY) {
+    const side = bs.player; // 自分のセキュリティにのみ仕込む
+    const tamers = [...side.deck, ...side.hand, ...side.security].filter(c => c.type === 'テイマー').slice(0, 2);
+    if (tamers.length > 0) { side.security.unshift(...tamers); console.log('[DEBUG] テイマー仕込み:', tamers.map(t => t.name)); }
+    else {
+      const dummies = [
+        { name: '石田ヤマト(テスト)', cardNo: 'DEBUG-T1', type: 'テイマー', level: '', dp: 0, cost: 3, playCost: 3, effect: '【自分のターン開始時】メモリー+1する。', securityEffect: 'なし', evoSourceEffect: '', color: '青', feature: '', imgSrc: '', suspended: false, buffs: [], stack: [] },
+        { name: '八神太一(テスト)', cardNo: 'DEBUG-T2', type: 'テイマー', level: '', dp: 0, cost: 4, playCost: 4, effect: '【自分のターン開始時】メモリー+1する。', securityEffect: 'なし', evoSourceEffect: '', color: '赤', feature: '', imgSrc: '', suspended: false, buffs: [], stack: [] },
+      ];
+      side.security.unshift(...dummies); console.log('[DEBUG] ダミーテイマー仕込み');
+    }
+  }
+
+  // オンライン: 自分のセキュリティの実データを相手に送信（相手のbs.ai.securityを正しいデータで上書き）
+  if (isOnlineMode()) {
+    const serializeCard = (c) => {
+      if (!c) return null;
+      return { cardNo: c.cardNo||'', name: c.name||'', type: c.type||'', level: c.level||'', dp: c.dp||0, baseDp: c.baseDp||0, cost: c.cost||0, playCost: c.playCost!==null?c.playCost:null, evolveCost: c.evolveCost!==null?c.evolveCost:null, effect: c.effect||'', evoSourceEffect: c.evoSourceEffect||'', securityEffect: c.securityEffect||'', imgSrc: c.imgSrc||'', imageUrl: c.imageUrl||'', color: c.color||'', feature: c.feature||'', evolveCond: c.evolveCond||'', recipe: c.recipe||'', suspended: false, buffs: [], stack: [] };
+    };
+    sendCommand({ type: 'security_init', cards: bs.player.security.map(serializeCard) });
   }
 
   addLog('🛡 セキュリティをセットしています...');

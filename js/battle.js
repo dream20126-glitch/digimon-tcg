@@ -232,7 +232,9 @@ window.acceptHand = function() {
   if (isOnlineMode()) {
     const serializeCard = (c) => {
       if (!c) return null;
-      return { cardNo: c.cardNo||'', name: c.name||'', type: c.type||'', level: c.level||'', dp: c.dp||0, baseDp: c.baseDp||0, cost: c.cost||0, playCost: c.playCost!==null?c.playCost:null, evolveCost: c.evolveCost!==null?c.evolveCost:null, effect: c.effect||'', evoSourceEffect: c.evoSourceEffect||'', securityEffect: c.securityEffect||'', imgSrc: c.imgSrc||'', imageUrl: c.imageUrl||'', color: c.color||'', feature: c.feature||'', evolveCond: c.evolveCond||'', recipe: c.recipe||'', suspended: false, buffs: [], stack: [] };
+      const safe = (v) => (v === undefined || v === null || isNaN(v)) ? 0 : v;
+      const safeNull = (v) => (v === undefined || v === null || isNaN(v)) ? null : v;
+      return { cardNo: c.cardNo||'', name: c.name||'', type: c.type||'', level: c.level||'', dp: safe(c.dp), baseDp: safe(c.baseDp), cost: safe(c.cost), playCost: safeNull(c.playCost), evolveCost: safeNull(c.evolveCost), effect: c.effect||'', evoSourceEffect: c.evoSourceEffect||'', securityEffect: c.securityEffect||'', imgSrc: c.imgSrc||'', imageUrl: c.imageUrl||'', color: c.color||'', feature: c.feature||'', evolveCond: c.evolveCond||'', recipe: c.recipe||'', suspended: false, buffs: [], stack: [] };
     };
     sendCommand({ type: 'security_init', cards: bs.player.security.map(serializeCard) });
   }

@@ -97,13 +97,22 @@ window._triggerMainEffect = function(card, callback) {
   catch (_) { callback && callback(); }
 };
 
+// テスト画面用: 勝敗後にシナリオ画面に戻る
+function backToScenarioScreen() {
+  cleanupOnline();
+  document.getElementById('battle-screen').style.display = 'none';
+  document.getElementById('battle-screen').classList.remove('active');
+  document.getElementById('scenario-screen').style.display = 'flex';
+  document.getElementById('start-test-btn').disabled = false;
+}
+window._onGameEnd = backToScenarioScreen;
+window._cleanupOnline = cleanupOnline;
+
 // HTML onclick から呼ばれる補助関数
 window.confirmExitGate = function() {
   showConfirm({ title: '退室確認', message: 'テストを終了しますか？', yesText: 'はい', noText: 'いいえ', color: '#ff4444' }).then(yes => {
     if (!yes) return;
-    cleanupOnline();
-    document.getElementById('battle-screen').style.display = 'none';
-    document.getElementById('scenario-screen').style.display = 'flex';
+    backToScenarioScreen();
   });
 };
 window.hideCardActionMenu = function() {

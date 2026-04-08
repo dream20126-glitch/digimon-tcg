@@ -1182,6 +1182,7 @@ export function battleVictory() {
     document.querySelectorAll('body > div[style*="position:fixed"]').forEach(el => {
       if (!el.classList.contains('screen')) el.remove();
     });
+    if (window._onGameEnd) { window._onGameEnd(); return; }
     showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen');
   });
 }
@@ -1195,6 +1196,7 @@ export function battleDefeat() {
     document.querySelectorAll('body > div[style*="position:fixed"]').forEach(el => {
       if (!el.classList.contains('screen')) el.remove();
     });
+    if (window._onGameEnd) { window._onGameEnd(); return; }
     showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen');
   });
 }

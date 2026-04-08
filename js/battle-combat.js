@@ -1178,6 +1178,10 @@ export function battleVictory() {
   showGameEndOverlay('🎉 勝利！', 'victory', () => {
     cleanupBattle();
     if (wasOnline && window._cleanupOnline) window._cleanupOnline();
+    // position:fixedの残りを念のため全消し（勝利オーバーレイの残骸含む）
+    document.querySelectorAll('body > div[style*="position:fixed"]').forEach(el => {
+      if (!el.classList.contains('screen')) el.remove();
+    });
     showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen');
   });
 }
@@ -1188,6 +1192,9 @@ export function battleDefeat() {
   showGameEndOverlay('😢 敗北...', 'defeat', () => {
     cleanupBattle();
     if (wasOnline && window._cleanupOnline) window._cleanupOnline();
+    document.querySelectorAll('body > div[style*="position:fixed"]').forEach(el => {
+      if (!el.classList.contains('screen')) el.remove();
+    });
     showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen');
   });
 }

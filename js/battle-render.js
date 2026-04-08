@@ -536,14 +536,15 @@ function renderIkusei() {
       iku.classList.add('occupied');
       if (info) info.innerText = c.name;
 
-      // タップでカード詳細表示
-      iku.onclick = () => {
-        if (window.showBCD) window.showBCD(null, isPlayer ? 'plIkusei' : 'aiIkusei');
-      };
-
-      // 育成フェーズ中 + プレイヤー + Lv3以上 → ドラッグ移動イベント
+      // 育成フェーズ中 + プレイヤー + Lv3以上 → ドラッグ移動イベント（タップ時はカード詳細）
       if (isPlayer && bs.phase === 'breed' && c.level !== '2') {
+        iku.onclick = null; // ドラッグ内でタップ→詳細を処理するのでonclickは不要
         attachIkuDrag(iku);
+      } else {
+        // ドラッグ不要 → タップでカード詳細表示
+        iku.onclick = () => {
+          if (window.showBCD) window.showBCD(null, isPlayer ? 'plIkusei' : 'aiIkusei');
+        };
       }
     } else {
       if (isPlayer) iku._ikuDragAttached = false;
@@ -603,9 +604,10 @@ function attachIkuDrag(iku) {
     if (_ikuCallbacks.onBreedMove) _ikuCallbacks.onBreedMove(moved);
   }
 
-  let ghostEl = null, dragging = false;
+  let ghostEl = null, dragging = false, dragMoved = false;
   function startDrag(cx, cy) {
     dragging = true;
+    dragMoved = false;
     const card = bs.player.ikusei; if (!card) return;
     ghostEl = document.createElement('div');
     ghostEl.style.cssText = 'position:fixed;width:48px;height:66px;border-radius:5px;overflow:hidden;z-index:99999;pointer-events:none;opacity:0.85;border:2px solid #00ff88;box-shadow:0 0 15px rgba(0,255,136,0.5);';
@@ -614,12 +616,17 @@ function attachIkuDrag(iku) {
     document.body.appendChild(ghostEl);
     ghostEl.style.left = (cx - 24) + 'px'; ghostEl.style.top = (cy - 33) + 'px';
   }
-  function moveDrag(cx, cy) { if (ghostEl) { ghostEl.style.left = (cx - 24) + 'px'; ghostEl.style.top = (cy - 33) + 'px'; } }
+  function moveDrag(cx, cy) { if (ghostEl) { dragMoved = true; ghostEl.style.left = (cx - 24) + 'px'; ghostEl.style.top = (cy - 33) + 'px'; } }
   function endDrag(cx, cy) {
     if (!dragging) return;
     dragging = false;
     if (ghostEl && ghostEl.parentNode) document.body.removeChild(ghostEl);
     ghostEl = null;
+    // ドラッグせずにタップ → カード詳細表示
+    if (!dragMoved) {
+      if (window.showBCD) window.showBCD(null, 'plIkusei');
+      return;
+    }
     const plRow = document.getElementById('pl-battle-row');
     if (plRow) {
       let dropped = false;

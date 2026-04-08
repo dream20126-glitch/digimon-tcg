@@ -306,11 +306,10 @@ export function fxRemoteEffect(cardName, effectText) {
   bx.style.cssText = 'max-width:85%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid #ff00fb;border-radius:12px;box-shadow:0 0 30px #ff00fb44;text-align:center;';
   bx.innerHTML = '<div style="color:#ff00fb;font-size:14px;font-weight:bold;margin-bottom:10px;text-shadow:0 0 8px #ff00fb;">⚡ 相手: ' + (cardName || '') + '</div>'
     + '<div style="color:#ddd;font-size:11px;line-height:1.6;text-align:left;margin-bottom:12px;max-height:100px;overflow-y:auto;">' + (effectText || '') + '</div>'
-    + '<div style="color:#888;font-size:10px;">相手が効果を処理中...</div>';
+    + '<div style="color:#888;font-size:10px;">🎯 相手が対象選択中...</div>';
   ov.appendChild(bx);
   document.body.appendChild(ov);
-  // フォールバック: 15秒で自動消去
-  setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 15000);
+  // タイムアウトなし — fx_effectClose受信時に消える
   return ov;
 }
 

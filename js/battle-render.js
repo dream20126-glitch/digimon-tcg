@@ -536,18 +536,18 @@ function renderIkusei() {
       iku.classList.add('occupied');
       if (info) info.innerText = c.name;
 
-      // タップでカード詳細表示（全フェイズ・全レベル・両プレイヤー共通）
-      // ドラッグモード中はattachIkuDrag内のendDragで処理するのでonclickはスキップ
-      iku.onclick = () => {
-        if (!iku._ikuDragAttached && window.showBCD) window.showBCD(null, isPlayer ? 'plIkusei' : 'aiIkusei');
-      };
+      // 前回のドラッグイベントをクリーンアップ
+      detachIkuDrag(iku);
 
-      // 育成フェーズ中 + プレイヤー + Lv3以上 → ドラッグ移動も有効化（タップ時は詳細表示）
+      // 育成フェーズ中 + プレイヤー + Lv3以上 → ドラッグ移動（タップ時はカード詳細）
       if (isPlayer && bs.phase === 'breed' && c.level !== '2') {
-        attachIkuDrag(iku);
-      } else if (isPlayer) {
-        iku._ikuDragAttached = false;
+        attachIkuDrag(iku, isPlayer ? 'plIkusei' : 'aiIkusei');
       }
+
+      // タップでカード詳細表示（全フェイズ・全レベル・両プレイヤー共通）
+      iku.onclick = () => {
+        if (window.showBCD) window.showBCD(null, isPlayer ? 'plIkusei' : 'aiIkusei');
+      };
     } else {
       if (isPlayer) iku._ikuDragAttached = false;
       const hasTamaDeck = isPlayer
@@ -576,9 +576,26 @@ function renderIkusei() {
   });
 }
 
+// 育成エリアドラッグ移動のクリーンアップ
+function detachIkuDrag(iku) {
+  if (iku._ikuDragHandlers) {
+    iku.removeEventListener('touchstart', iku._ikuDragHandlers.touchstart);
+    iku.removeEventListener('touchmove', iku._ikuDragHandlers.touchmove);
+    iku.removeEventListener('touchend', iku._ikuDragHandlers.touchend);
+    iku.removeEventListener('mousedown', iku._ikuDragHandlers.mousedown);
+    document.removeEventListener('mousemove', iku._ikuDragHandlers.mousemove);
+    document.removeEventListener('mouseup', iku._ikuDragHandlers.mouseup);
+    iku._ikuDragHandlers = null;
+  }
+  iku._ikuDragAttached = false;
+  iku.style.border = '';
+  iku.style.boxShadow = '';
+  iku.style.cursor = '';
+}
+
 // 育成エリアドラッグ移動
-function attachIkuDrag(iku) {
-  if (iku._ikuDragAttached) return;
+function attachIkuDrag(iku, bcdSource) {
+  detachIkuDrag(iku); // 既存リスナーを確実にクリーンアップ
   iku._ikuDragAttached = true;
   iku.style.border = '2px solid #00ff88';
   iku.style.boxShadow = '0 0 15px rgba(0,255,136,0.4)';
@@ -586,30 +603,21 @@ function attachIkuDrag(iku) {
 
   function doIkuMove() {
     if (!bs.player.ikusei) return;
-    // 育成フェイズ中のみ移動可能（公式ルール）
-    if (bs.phase !== 'breed') {
-      addLog('🚨 育成フェイズ中のみバトルエリアへ移動できます');
-      return;
-    }
-    // Lv3以上でないとバトルエリアに移動できない（公式ルール）
-    if (parseInt(bs.player.ikusei.level) < 3) {
-      addLog('🚨 レベル3以上に進化してからバトルエリアへ移動できます');
-      return;
-    }
+    if (bs.phase !== 'breed') { addLog('🚨 育成フェイズ中のみバトルエリアへ移動できます'); return; }
+    if (parseInt(bs.player.ikusei.level) < 3) { addLog('🚨 レベル3以上に進化してからバトルエリアへ移動できます'); return; }
     let slot = bs.player.battleArea.findIndex(s => s === null);
     if (slot === -1) { slot = bs.player.battleArea.length; bs.player.battleArea.push(null); }
     const moved = bs.player.ikusei;
     bs.player.battleArea[slot] = moved;
     bs.player.ikusei = null;
     addLog('🐾 「' + moved.name + '」をバトルエリアへ移動！');
-    iku._ikuDragAttached = false;
+    detachIkuDrag(iku);
     if (_ikuCallbacks.onBreedMove) _ikuCallbacks.onBreedMove(moved);
   }
 
   let ghostEl = null, dragging = false, dragMoved = false;
   function startDrag(cx, cy) {
-    dragging = true;
-    dragMoved = false;
+    dragging = true; dragMoved = false;
     const card = bs.player.ikusei; if (!card) return;
     ghostEl = document.createElement('div');
     ghostEl.style.cssText = 'position:fixed;width:48px;height:66px;border-radius:5px;overflow:hidden;z-index:99999;pointer-events:none;opacity:0.85;border:2px solid #00ff88;box-shadow:0 0 15px rgba(0,255,136,0.5);';
@@ -626,7 +634,7 @@ function attachIkuDrag(iku) {
     ghostEl = null;
     // ドラッグせずにタップ → カード詳細表示
     if (!dragMoved) {
-      if (window.showBCD) window.showBCD(null, 'plIkusei');
+      if (window.showBCD) window.showBCD(null, bcdSource || 'plIkusei');
       return;
     }
     const plRow = document.getElementById('pl-battle-row');
@@ -644,12 +652,23 @@ function attachIkuDrag(iku) {
       }
     }
   }
-  iku.addEventListener('touchstart', e => { startDrag(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
-  iku.addEventListener('touchmove', e => { if (dragging) { moveDrag(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
-  iku.addEventListener('touchend', e => { if (dragging) endDrag(e.changedTouches[0].clientX, e.changedTouches[0].clientY); });
-  iku.addEventListener('mousedown', e => { if (e.button !== 0) return; startDrag(e.clientX, e.clientY); });
-  document.addEventListener('mousemove', e => { if (dragging) moveDrag(e.clientX, e.clientY); });
-  document.addEventListener('mouseup', e => { if (dragging) endDrag(e.clientX, e.clientY); });
+
+  // 名前付きハンドラを保存（detachで確実にremoveできるように）
+  const handlers = {
+    touchstart: e => { startDrag(e.touches[0].clientX, e.touches[0].clientY); },
+    touchmove: e => { if (dragging) { moveDrag(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } },
+    touchend: e => { if (dragging) endDrag(e.changedTouches[0].clientX, e.changedTouches[0].clientY); },
+    mousedown: e => { if (e.button !== 0) return; startDrag(e.clientX, e.clientY); },
+    mousemove: e => { if (dragging) moveDrag(e.clientX, e.clientY); },
+    mouseup: e => { if (dragging) endDrag(e.clientX, e.clientY); },
+  };
+  iku._ikuDragHandlers = handlers;
+  iku.addEventListener('touchstart', handlers.touchstart, { passive: true });
+  iku.addEventListener('touchmove', handlers.touchmove, { passive: false });
+  iku.addEventListener('touchend', handlers.touchend);
+  iku.addEventListener('mousedown', handlers.mousedown);
+  document.addEventListener('mousemove', handlers.mousemove);
+  document.addEventListener('mouseup', handlers.mouseup);
 }
 
 // ===== 手札描画 =====

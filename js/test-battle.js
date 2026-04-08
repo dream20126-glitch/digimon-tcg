@@ -334,9 +334,20 @@ function buildBoardFromScenario(scenario, isPlayer1) {
     const card = findCardByName(name);
     if (card) bs.player.battleArea.push(card);
   });
+  // 進化元: バトルエリアの1体目に積む（下から順に）
+  if ((mySc.evoSource || []).length > 0 && bs.player.battleArea[0]) {
+    (mySc.evoSource).forEach(name => {
+      const card = findCardByName(name);
+      if (card) bs.player.battleArea[0].stack.push(card);
+    });
+  }
   (mySc.tamerArea || []).forEach(name => {
     const card = findCardByName(name);
     if (card) bs.player.tamerArea.push(card);
+  });
+  (mySc.trash || []).forEach(name => {
+    const card = findCardByName(name);
+    if (card) bs.player.trash.push(card);
   });
   for (let i = 0; i < (mySc.security || 5); i++) bs.player.security.push(makeDummyCard(100 + i));
   for (let i = 0; i < (mySc.deckSize || 20); i++) bs.player.deck.push(makeDummyCard(200 + i));
@@ -350,9 +361,20 @@ function buildBoardFromScenario(scenario, isPlayer1) {
     const card = findCardByName(name);
     if (card) bs.ai.battleArea.push(card);
   });
+  // 進化元: バトルエリアの1体目に積む（下から順に）
+  if ((oppSc.evoSource || []).length > 0 && bs.ai.battleArea[0]) {
+    (oppSc.evoSource).forEach(name => {
+      const card = findCardByName(name);
+      if (card) bs.ai.battleArea[0].stack.push(card);
+    });
+  }
   (oppSc.tamerArea || []).forEach(name => {
     const card = findCardByName(name);
     if (card) bs.ai.tamerArea.push(card);
+  });
+  (oppSc.trash || []).forEach(name => {
+    const card = findCardByName(name);
+    if (card) bs.ai.trash.push(card);
   });
   for (let i = 0; i < (oppSc.security || 5); i++) bs.ai.security.push(makeDummyCard(300 + i));
   for (let i = 0; i < (oppSc.deckSize || 20); i++) bs.ai.deck.push(makeDummyCard(400 + i));
@@ -367,7 +389,7 @@ function buildBoardFromScenario(scenario, isPlayer1) {
 // ===== シナリオ選択UI =====
 let _selectedPlayer = 'player1';
 let _selectedCardName = null; // 検索で選択中のカード名
-let _customCards = { 'p1-hand': [], 'p1-battle': [], 'p1-tamer': [], 'p2-battle': [], 'p2-tamer': [] };
+let _customCards = { 'p1-hand': [], 'p1-battle': [], 'p1-evo': [], 'p1-tamer': [], 'p1-trash': [], 'p2-battle': [], 'p2-evo': [], 'p2-tamer': [], 'p2-trash': [] };
 let _cardsLoaded = false;
 
 window.selectPlayer = function(player) {
@@ -498,14 +520,18 @@ window.startTest = async function() {
         player: {
           hand: _customCards['p1-hand'],
           battleArea: _customCards['p1-battle'],
+          evoSource: _customCards['p1-evo'],
           tamerArea: _customCards['p1-tamer'],
+          trash: _customCards['p1-trash'],
           security: parseInt(document.getElementById('custom-p1-sec').value) || 0,
           deckSize: 20,
         },
         ai: {
           hand: [],
           battleArea: _customCards['p2-battle'],
+          evoSource: _customCards['p2-evo'],
           tamerArea: _customCards['p2-tamer'],
+          trash: _customCards['p2-trash'],
           security: parseInt(document.getElementById('custom-p2-sec').value) || 0,
           deckSize: 20,
         },

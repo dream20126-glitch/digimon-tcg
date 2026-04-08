@@ -366,6 +366,9 @@ function buildBoardFromScenario(scenario, isPlayer1) {
 
 // ===== シナリオ選択UI =====
 let _selectedPlayer = 'player1';
+let _selectedCardName = null; // 検索で選択中のカード名
+let _customCards = { 'p1-hand': [], 'p1-battle': [], 'p1-tamer': [], 'p2-battle': [], 'p2-tamer': [] };
+let _cardsLoaded = false;
 
 window.selectPlayer = function(player) {
   _selectedPlayer = player;
@@ -375,10 +378,76 @@ window.selectPlayer = function(player) {
 
 window.updateScenarioDesc = function() {
   const sel = document.getElementById('scenario-select');
-  const sc = SCENARIOS[sel.value];
+  const panel = document.getElementById('custom-scenario-panel');
   const descEl = document.getElementById('scenario-desc');
-  if (sc && descEl) descEl.innerText = sc.description;
+  if (sel.value === '__custom__') {
+    panel.style.display = 'block';
+    descEl.innerText = 'カードを検索して配置してください';
+    // カードDB未読み込みなら読み込み
+    if (!_cardsLoaded) {
+      loadCardAndKeywordData().then(() => { _cardsLoaded = true; document.getElementById('test-status').innerText = `カード${window.allCards.length}件読み込み済み`; });
+    }
+  } else {
+    panel.style.display = 'none';
+    const sc = SCENARIOS[sel.value];
+    if (sc && descEl) descEl.innerText = sc.description;
+  }
 };
+
+// カード検索
+window.searchCards = function() {
+  const query = document.getElementById('card-search-input').value.trim();
+  if (!query || !window.allCards) return;
+  const results = window.allCards.filter(c => (c['名前'] || '').includes(query)).slice(0, 15);
+  const el = document.getElementById('card-search-results');
+  if (results.length === 0) { el.innerHTML = '<div style="color:#666;font-size:11px;padding:4px;">見つかりません</div>'; return; }
+  el.innerHTML = results.map(c => {
+    const name = c['名前'] || '???';
+    const type = c['タイプ'] || '';
+    const lv = c['レベル'] || '';
+    const dp = c['DP'] || '';
+    const color = type === 'デジモン' ? '#00fbff' : type === 'テイマー' ? '#00ff88' : '#ffaa00';
+    return `<div onclick="selectSearchCard('${name.replace(/'/g, "\\'")}')" style="padding:6px 8px;cursor:pointer;border-bottom:1px solid #222;font-size:11px;color:${color};transition:background 0.15s;" onmouseover="this.style.background='#1a1a2e'" onmouseout="this.style.background=''">
+      <b>${name}</b> <span style="color:#888;">${type} ${lv ? 'Lv.' + lv : ''} ${dp ? 'DP:' + dp : ''}</span>
+    </div>`;
+  }).join('');
+};
+
+// Enterキーで検索
+document.getElementById('card-search-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') searchCards(); });
+
+// 検索結果からカードを選択
+window.selectSearchCard = function(name) {
+  _selectedCardName = name;
+  document.getElementById('card-search-results').innerHTML = `<div style="color:#00ff88;font-size:11px;padding:4px;">✓「${name}」を選択中 → 追加先の「+追加」を押してください</div>`;
+};
+
+// カードを配置先に追加
+window.addCardTo = function(zone) {
+  if (!_selectedCardName) { alert('先にカードを検索して選択してください'); return; }
+  _customCards[zone].push(_selectedCardName);
+  renderCustomCards();
+  _selectedCardName = null;
+  document.getElementById('card-search-results').innerHTML = '';
+};
+
+// カードを配置先から削除
+window.removeCardFrom = function(zone, idx) {
+  _customCards[zone].splice(idx, 1);
+  renderCustomCards();
+};
+
+function renderCustomCards() {
+  Object.keys(_customCards).forEach(zone => {
+    const el = document.getElementById('custom-' + zone);
+    if (!el) return;
+    el.innerHTML = _customCards[zone].map((name, i) => {
+      const isP1 = zone.startsWith('p1');
+      const color = isP1 ? '#00fbff' : '#ff00fb';
+      return `<span style="background:${color}22;color:${color};border:1px solid ${color}44;border-radius:4px;padding:2px 6px;font-size:10px;cursor:pointer;" onclick="removeCardFrom('${zone}',${i})" title="クリックで削除">${name} ✕</span>`;
+    }).join('');
+  });
+}
 
 // 初期表示
 window.updateScenarioDesc();
@@ -418,8 +487,32 @@ window.startTest = async function() {
     statusEl.innerText = 'シナリオを構築中...';
 
     // シナリオ選択（Player1/Player2で盤面反転）
-    const scenario = document.getElementById('scenario-select').value;
-    const ok = buildBoardFromScenario(scenario, isFirst);
+    const scenarioKey = document.getElementById('scenario-select').value;
+
+    // カスタムシナリオの場合、動的にSCENARIOSに登録
+    if (scenarioKey === '__custom__') {
+      SCENARIOS['__custom__'] = {
+        name: 'カスタムシナリオ',
+        description: 'カスタム',
+        memory: parseInt(document.getElementById('custom-memory').value) || 5,
+        player: {
+          hand: _customCards['p1-hand'],
+          battleArea: _customCards['p1-battle'],
+          tamerArea: _customCards['p1-tamer'],
+          security: 5,
+          deckSize: 20,
+        },
+        ai: {
+          hand: [],
+          battleArea: _customCards['p2-battle'],
+          tamerArea: _customCards['p2-tamer'],
+          security: 5,
+          deckSize: 20,
+        },
+      };
+    }
+
+    const ok = buildBoardFromScenario(scenarioKey, isFirst);
     if (!ok) { statusEl.innerText = 'シナリオの構築に失敗しました'; startBtn.disabled = false; return; }
 
     // 画面切り替え

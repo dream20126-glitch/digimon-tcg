@@ -552,7 +552,9 @@ export function resolveSecurityCheck(atk, atkIdx) {
               if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
               else { checkAttackEnd(atk, atkIdx); }
             };
-            if (mentionsMainEffect && originalEffect.includes('【メイン】')) {
+            // レシピにuse_main_effectがある場合、セキュリティトリガーで既にメイン効果を実行済み
+            const hasRecipe = sec.recipe && typeof sec.recipe === 'string' && sec.recipe.includes('use_main_effect');
+            if (mentionsMainEffect && originalEffect.includes('【メイン】') && !hasRecipe) {
               sec.effect = originalEffect;
               _hooks.checkAndTriggerEffect(sec, '【メイン】', doFinish, 'ai');
             } else { doFinish(); }

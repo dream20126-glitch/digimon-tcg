@@ -2564,7 +2564,12 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (!c || selected.includes(i)) continue;
           if (step.condition) {
             const [condType, condVal] = step.condition.split(':');
-            if (condType === 'dp_le' && c.dp > parseInt(condVal)) continue;
+            const cardDp = parseInt(c.dp) || 0;
+            const limitDp = parseInt(condVal) || 0;
+            console.log('[select_multi] 条件チェック:', c.name, 'DP=' + cardDp, condType + ':' + limitDp);
+            if (condType === 'dp_le' && cardDp > limitDp) continue;
+            if (condType === 'dp_ge' && cardDp < limitDp) continue;
+            if (condType === 'lv_le' && (parseInt(c.level) || 0) > parseInt(condVal)) continue;
           }
           valid.push(i);
         }

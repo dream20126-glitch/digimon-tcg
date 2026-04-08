@@ -213,6 +213,21 @@ window.acceptHand = function() {
   document.getElementById('mulligan-overlay').style.display = 'none';
   bs.player.security = bs.player.deck.splice(0, 5);
   bs.ai.security = bs.ai.deck.splice(0, 5);
+
+  // === デバッグ: セキュリティの先頭にテイマーを仕込む ===
+  if (window._DEBUG_TAMER_IN_SECURITY) {
+    [bs.player, bs.ai].forEach(side => {
+      const tamers = [];
+      side.deck = side.deck.filter(c => {
+        if (c.type === 'テイマー' && tamers.length < 2) { tamers.push(c); return false; }
+        return true;
+      });
+      // セキュリティの先頭（最初にめくられる位置）に挿入
+      side.security.unshift(...tamers);
+      if (tamers.length > 0) console.log('[DEBUG] セキュリティにテイマー仕込み:', tamers.map(t => t.name));
+    });
+  }
+
   addLog('🛡 セキュリティをセットしています...');
   animateSecuritySet(() => {
     addLog('🛡 セキュリティセット完了！');

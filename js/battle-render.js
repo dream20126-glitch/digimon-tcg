@@ -275,7 +275,18 @@ function startAttackModeUI(slotIdx) {
   const aiRow = document.getElementById('ai-battle-row');
   if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, i) => {
     const def = bs.ai.battleArea[i]; if (!def) return;
-    if (def.suspended || canHitActive) { s.style.boxShadow = '0 0 10px #ff444488'; s.style.cursor = 'pointer'; }
+    if (def.suspended || canHitActive) {
+      s.style.boxShadow = '0 0 10px #ff444488'; s.style.cursor = 'pointer';
+    } else {
+      // アクティブ状態＝アタック不可 → 🚫マーク表示
+      const ban = document.createElement('div');
+      ban.className = '_atk-ban-mark';
+      ban.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px;z-index:2;pointer-events:none;opacity:0.8;text-shadow:0 0 6px rgba(0,0,0,0.8);';
+      ban.innerText = '🚫';
+      s.style.position = 'relative';
+      s.appendChild(ban);
+      s.style.opacity = '0.5';
+    }
   });
   const secArea = document.getElementById('ai-sec-area');
   if (secArea && bs.ai.security.length > 0) { secArea.style.boxShadow = '0 0 10px #ff444488'; secArea.style.cursor = 'pointer'; }
@@ -289,9 +300,11 @@ function startAttackModeUI(slotIdx) {
     const t = e.touches ? e.touches[0] : e;
     const line = document.getElementById('atk-arrow-line');
     if (line) { line.setAttribute('x2', t.clientX); line.setAttribute('y2', t.clientY); }
-    // ホバー効果
+    // ホバー効果（アタック可能な対象のみ浮かせる）
     if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, i) => {
       const def = bs.ai.battleArea[i]; if (!def) return;
+      const canTarget = def.suspended || canHitActive;
+      if (!canTarget) return; // アタック不可は浮かせない
       const r = s.getBoundingClientRect();
       const hit = t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
       s.style.transform = hit ? 'translateY(-4px) scale(1.05)' : '';
@@ -312,7 +325,7 @@ function startAttackModeUI(slotIdx) {
     inputLayer.removeEventListener('touchend', onEnd);
     inputLayer.removeEventListener('click', onClick);
     arrowSvg.style.display = 'none';
-    if (aiRow) aiRow.querySelectorAll('.b-slot').forEach(s => { s.style.boxShadow = ''; s.style.cursor = ''; s.style.transform = ''; });
+    if (aiRow) aiRow.querySelectorAll('.b-slot').forEach(s => { s.style.boxShadow = ''; s.style.cursor = ''; s.style.transform = ''; s.style.opacity = ''; s.querySelectorAll('._atk-ban-mark').forEach(m => m.remove()); });
     if (secArea) { secArea.style.boxShadow = ''; secArea.style.cursor = ''; secArea.style.transform = ''; }
   }
 
@@ -523,6 +536,11 @@ function renderIkusei() {
       iku.classList.add('occupied');
       if (info) info.innerText = c.name;
 
+      // タップでカード詳細表示
+      iku.onclick = () => {
+        if (window.showBCD) window.showBCD(null, isPlayer ? 'plIkusei' : 'aiIkusei');
+      };
+
       // 育成フェーズ中 + プレイヤー + Lv3以上 → ドラッグ移動イベント
       if (isPlayer && bs.phase === 'breed' && c.level !== '2') {
         attachIkuDrag(iku);
@@ -565,6 +583,11 @@ function attachIkuDrag(iku) {
 
   function doIkuMove() {
     if (!bs.player.ikusei) return;
+    // 育成フェイズ中のみ移動可能（公式ルール）
+    if (bs.phase !== 'breed') {
+      addLog('🚨 育成フェイズ中のみバトルエリアへ移動できます');
+      return;
+    }
     // Lv3以上でないとバトルエリアに移動できない（公式ルール）
     if (parseInt(bs.player.ikusei.level) < 3) {
       addLog('🚨 レベル3以上に進化してからバトルエリアへ移動できます');
@@ -814,6 +837,8 @@ export function showBCD(idxOrCard, source) {
   else if (source === 'mulliganHand') card = bs.player.hand[idxOrCard];
   else if (source === 'plBattle') card = bs.player.battleArea[idxOrCard];
   else if (source === 'aiBattle') card = bs.ai.battleArea[idxOrCard];
+  else if (source === 'plIkusei') card = bs.player.ikusei;
+  else if (source === 'aiIkusei') card = bs.ai.ikusei;
   else card = idxOrCard;
   if (!card) return;
 

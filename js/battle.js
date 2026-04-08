@@ -119,9 +119,10 @@ window._triggerMainEffect = function(card, callback) {
 window.confirmExitGate = function() {
   showConfirm({ title: '⚠ 退室確認', message: 'ゲートを出ますか？\nバトルの進行状況は失われます。', yesText: 'はい', noText: 'いいえ', color: '#ff4444' }).then(yes => {
     if (!yes) return;
-    if (isOnlineMode()) sendCommand({ type: 'player_exit', playerName: '' });
+    const wasOnline = isOnlineMode();
+    if (wasOnline) sendCommand({ type: 'player_exit', playerName: '' });
     cleanupOnline();
-    showScreen(isOnlineMode() ? 'room-entrance-screen' : 'tutorial-screen');
+    showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen');
   });
 };
 window.hideCardActionMenu = function() {

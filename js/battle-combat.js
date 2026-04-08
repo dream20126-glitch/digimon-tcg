@@ -345,8 +345,9 @@ export function getAttackState() { return _atkState; }
 // ===== アタック解決 =====
 
 export function resolveAttackTarget(target, targetIdx) {
-  if (!_atkState) return;
+  if (!_atkState) { console.warn('[resolveAttackTarget] _atkState is null'); return; }
   _attackInProgress = true;
+  console.log('[resolveAttackTarget]', target, targetIdx, '_atkState:', _atkState.card?.name);
   // 前回のブロック応答をクリア
   if (window._clearPendingBlock) window._clearPendingBlock();
   const atk = _atkState.card;

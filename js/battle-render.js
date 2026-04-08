@@ -536,15 +536,17 @@ function renderIkusei() {
       iku.classList.add('occupied');
       if (info) info.innerText = c.name;
 
-      // 育成フェーズ中 + プレイヤー + Lv3以上 → ドラッグ移動イベント（タップ時はカード詳細）
+      // タップでカード詳細表示（全フェイズ・全レベル・両プレイヤー共通）
+      // ドラッグモード中はattachIkuDrag内のendDragで処理するのでonclickはスキップ
+      iku.onclick = () => {
+        if (!iku._ikuDragAttached && window.showBCD) window.showBCD(null, isPlayer ? 'plIkusei' : 'aiIkusei');
+      };
+
+      // 育成フェーズ中 + プレイヤー + Lv3以上 → ドラッグ移動も有効化（タップ時は詳細表示）
       if (isPlayer && bs.phase === 'breed' && c.level !== '2') {
-        iku.onclick = null; // ドラッグ内でタップ→詳細を処理するのでonclickは不要
         attachIkuDrag(iku);
-      } else {
-        // ドラッグ不要 → タップでカード詳細表示
-        iku.onclick = () => {
-          if (window.showBCD) window.showBCD(null, isPlayer ? 'plIkusei' : 'aiIkusei');
-        };
+      } else if (isPlayer) {
+        iku._ikuDragAttached = false;
       }
     } else {
       if (isPlayer) iku._ikuDragAttached = false;

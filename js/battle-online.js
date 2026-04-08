@@ -369,7 +369,14 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_confirmClose': {
-      if (m.fxRemoteEffectClose) m.fxRemoteEffectClose();
+      // ポップアップを消さずにテキストを更新（fx_effectAnnounceで上書きされるので消す必要なし）
+      const remoteOv = document.getElementById('_remote-effect-announce');
+      if (remoteOv) {
+        const statusEl = remoteOv.querySelector('div[style*="color:#888"]');
+        if (statusEl) statusEl.innerText = cmd.accepted ? '⚡ 効果処理中...' : '💨 効果を発動しませんでした';
+        // 「いいえ」の場合は3秒後に消す
+        if (!cmd.accepted) setTimeout(() => { if (m.fxRemoteEffectClose) m.fxRemoteEffectClose(); }, 3000);
+      }
       break;
     }
     case 'fx_effectDeclined': {

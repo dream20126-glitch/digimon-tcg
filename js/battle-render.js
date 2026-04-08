@@ -565,6 +565,11 @@ function attachIkuDrag(iku) {
 
   function doIkuMove() {
     if (!bs.player.ikusei) return;
+    // Lv3以上でないとバトルエリアに移動できない（公式ルール）
+    if (parseInt(bs.player.ikusei.level) < 3) {
+      addLog('🚨 レベル3以上に進化してからバトルエリアへ移動できます');
+      return;
+    }
     let slot = bs.player.battleArea.findIndex(s => s === null);
     if (slot === -1) { slot = bs.player.battleArea.length; bs.player.battleArea.push(null); }
     const moved = bs.player.ikusei;

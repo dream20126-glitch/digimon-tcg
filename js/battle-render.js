@@ -537,12 +537,14 @@ function renderIkusei() {
       if (info) info.innerText = c.name;
 
       // タップでカード詳細表示（全フェイズ・全レベル・両プレイヤー共通）
-      iku.onclick = () => {
+      iku.onclick = (e) => {
+        e.stopPropagation();
         if (window.showBCD) window.showBCD(null, isPlayer ? 'plIkusei' : 'aiIkusei');
       };
-
-      // プレイヤー側: ドラッグは常に有効（移動可否はdoIkuMove内で判定）
-      if (isPlayer) attachIkuDrag(iku);
+      iku.ontouchend = (e) => {
+        e.preventDefault(); // click合成を抑制して二重発火防止
+        if (window.showBCD) window.showBCD(null, isPlayer ? 'plIkusei' : 'aiIkusei');
+      };
     } else {
       if (isPlayer) iku._ikuDragAttached = false;
       const hasTamaDeck = isPlayer
@@ -571,83 +573,21 @@ function renderIkusei() {
   });
 }
 
-// 育成エリアドラッグ移動（常に有効、移動可否はdoIkuMove内で判定）
-function attachIkuDrag(iku) {
-  if (iku._ikuDragAttached) return;
-  iku._ikuDragAttached = true;
-
-  function doIkuMove() {
-    if (!bs.player.ikusei) return;
-    if (bs.phase !== 'breed') return; // 育成フェイズ以外はスナップバック
-    if (parseInt(bs.player.ikusei.level) < 3) return; // Lv3未満はスナップバック
-    let slot = bs.player.battleArea.findIndex(s => s === null);
-    if (slot === -1) { slot = bs.player.battleArea.length; bs.player.battleArea.push(null); }
-    const moved = bs.player.ikusei;
-    bs.player.battleArea[slot] = moved;
-    bs.player.ikusei = null;
-    addLog('🐾 「' + moved.name + '」をバトルエリアへ移動！');
-    iku._ikuDragAttached = false;
-    if (_ikuCallbacks.onBreedMove) _ikuCallbacks.onBreedMove(moved);
+// 育成エリア → バトルエリア移動（育成フェイズのアクションバーから呼ばれる）
+export function doIkuMove() {
+  if (!bs.player.ikusei) return;
+  if (bs.phase !== 'breed') return;
+  if (parseInt(bs.player.ikusei.level) < 3) {
+    addLog('🚨 レベル3以上に進化してからバトルエリアへ移動できます');
+    return;
   }
-
-  let ghostEl = null, dragging = false, dragMoved = false, startCx = 0, startCy = 0;
-  function startDrag(cx, cy) {
-    // タッチ/マウス開始位置を記録するだけ（ゴーストはまだ作らない）
-    dragging = true; dragMoved = false;
-    startCx = cx; startCy = cy;
-  }
-  function createGhost(cx, cy) {
-    if (ghostEl) return;
-    const card = bs.player.ikusei; if (!card) return;
-    ghostEl = document.createElement('div');
-    ghostEl.style.cssText = 'position:fixed;width:48px;height:66px;border-radius:5px;overflow:hidden;z-index:99999;pointer-events:none;opacity:0.85;border:2px solid #00ff88;box-shadow:0 0 15px rgba(0,255,136,0.5);';
-    const src = cardImg(card);
-    ghostEl.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#00ff88;font-size:7px;padding:4px;">${card.name}</div>`;
-    document.body.appendChild(ghostEl);
-    ghostEl.style.left = (cx - 24) + 'px'; ghostEl.style.top = (cy - 33) + 'px';
-  }
-  function moveDrag(cx, cy) {
-    if (!dragging) return;
-    // 一定距離以上動いたら初めてドラッグ開始（タップと区別）
-    if (!dragMoved) {
-      const dist = Math.abs(cx - startCx) + Math.abs(cy - startCy);
-      if (dist < 8) return; // 微小移動は無視
-      dragMoved = true;
-      createGhost(cx, cy);
-    }
-    if (ghostEl) { ghostEl.style.left = (cx - 24) + 'px'; ghostEl.style.top = (cy - 33) + 'px'; }
-  }
-  function endDrag(cx, cy) {
-    if (!dragging) return;
-    dragging = false;
-    if (ghostEl && ghostEl.parentNode) document.body.removeChild(ghostEl);
-    ghostEl = null;
-    // タップ（移動なし）→ カード詳細表示（onclickが発火しないデバイスもあるため直接呼ぶ）
-    if (!dragMoved) {
-      if (window.showBCD && bs.player.ikusei) window.showBCD(null, 'plIkusei');
-      return;
-    }
-    const plRow = document.getElementById('pl-battle-row');
-    if (plRow) {
-      let dropped = false;
-      plRow.querySelectorAll('.b-slot').forEach((slot, i) => {
-        if (dropped || bs.player.battleArea[i]) return;
-        const r = slot.getBoundingClientRect();
-        if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) { dropped = true; doIkuMove(); }
-      });
-      if (!dropped) {
-        const startRect = iku.getBoundingClientRect();
-        const dist = Math.sqrt(Math.pow(cx - startRect.left - startRect.width / 2, 2) + Math.pow(cy - startRect.top - startRect.height / 2, 2));
-        if (dist > 50) doIkuMove();
-      }
-    }
-  }
-  iku.addEventListener('touchstart', e => { startDrag(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
-  iku.addEventListener('touchmove', e => { if (dragging) { moveDrag(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
-  iku.addEventListener('touchend', e => { if (dragging) endDrag(e.changedTouches[0].clientX, e.changedTouches[0].clientY); });
-  iku.addEventListener('mousedown', e => { if (e.button !== 0) return; startDrag(e.clientX, e.clientY); });
-  document.addEventListener('mousemove', e => { if (dragging) moveDrag(e.clientX, e.clientY); });
-  document.addEventListener('mouseup', e => { if (dragging) endDrag(e.clientX, e.clientY); });
+  let slot = bs.player.battleArea.findIndex(s => s === null);
+  if (slot === -1) { slot = bs.player.battleArea.length; bs.player.battleArea.push(null); }
+  const moved = bs.player.ikusei;
+  bs.player.battleArea[slot] = moved;
+  bs.player.ikusei = null;
+  addLog('🐾 「' + moved.name + '」をバトルエリアへ移動！');
+  if (_ikuCallbacks.onBreedMove) _ikuCallbacks.onBreedMove(moved);
 }
 
 // ===== 手札描画 =====

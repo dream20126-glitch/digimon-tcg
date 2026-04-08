@@ -10,7 +10,7 @@ import { getCardImageUrl } from './cards.js';
 import { bs, resetBattleState, drawCards } from './battle-state.js';
 // Phase 2: UI・描画
 import { addLog, showConfirm, showScreen } from './battle-ui.js';
-import { renderAll, showBCD, closeBCD, showTrash, cardImg, updateMemGauge, setOnlineInfo, setIkuCallbacks } from './battle-render.js';
+import { renderAll, showBCD, closeBCD, showTrash, cardImg, updateMemGauge, setOnlineInfo, setIkuCallbacks, doIkuMove } from './battle-render.js';
 // Phase 3: フェーズ進行
 import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers, setFirstPlayer } from './battle-phase.js';
 // Phase 4: 戦闘
@@ -92,6 +92,7 @@ window.renderAll = renderAll;
 // Phase 3: フェーズ進行
 window.onEndTurn = onEndTurn;
 window.skipBreedPhase = skipBreedPhase;
+window.doIkuMove = () => { doIkuMove(); breedActionDone(); };
 window.showYourTurn = showYourTurn;
 window.showPhaseAnnounce = showPhaseAnnounce;
 window.showSkipAnnounce = showSkipAnnounce;

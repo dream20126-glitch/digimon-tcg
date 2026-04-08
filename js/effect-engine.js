@@ -2571,6 +2571,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (valid.length === 0) { callback(); return; }
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
         ctx.addLog('🎯 対象を選んでください（残り' + remaining + '体）');
+        // オンライン: 相手に対象選択中を通知
+        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+          window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: ctx.card ? ctx.card.name : '', effectText: '🎯 対象選択中...（残り' + remaining + '体）' });
+        }
         showTargetSelection(rowId, valid, null, '#ff4444', (selectedIdx) => {
           if (selectedIdx !== null) {
             selected.push(selectedIdx);
@@ -2659,33 +2663,33 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
-    // === 消滅 ===
+    // === 消滅（1体ずつ演出） ===
     case 'destroy': {
       const targetData = step.card ? store[step.card] : null;
       if (targetData) {
         const targets = Array.isArray(targetData) ? targetData : [targetData];
-        const destroyedCards = [];
-        targets.forEach(t => {
+        let di = 0;
+        function destroyNext() {
+          if (di >= targets.length) { callback(); return; }
+          const t = targets[di++];
           const c = opponent.battleArea[t.idx];
-          if (c) {
-            destroyedCards.push(c);
-            opponent.battleArea[t.idx] = null;
-            opponent.trash.push(c);
-            if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
-            ctx.addLog('💥 「' + c.name + '」を消滅させた！');
+          if (!c) { destroyNext(); return; }
+          opponent.battleArea[t.idx] = null;
+          opponent.trash.push(c);
+          if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
+          ctx.addLog('💥 「' + c.name + '」を消滅させた！');
+          // オンライン同期: 消滅を相手に通知 + 復活防止マーク
+          if (window._isOnlineMode && window._isOnlineMode()) {
+            window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: t.idx, reason: 'destroy' });
+            if (window._markDestroyed) window._markDestroyed('ai', t.idx);
           }
-        });
-        ctx.renderAll();
-        // 消滅演出を順番に再生（ローカル＋相手）
-        if (ctx.showDestroyEffect && destroyedCards.length > 0) {
-          let di = 0;
-          function nextDestroy() {
-            if (di >= destroyedCards.length) { callback(); return; }
-            ctx.showDestroyEffect(destroyedCards[di++], nextDestroy);
-          }
-          nextDestroy();
-          return;
+          ctx.renderAll();
+          if (ctx.showDestroyEffect) {
+            ctx.showDestroyEffect(c, destroyNext);
+          } else { destroyNext(); }
         }
+        destroyNext();
+        return;
       }
       callback();
       break;

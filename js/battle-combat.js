@@ -522,7 +522,9 @@ export function resolveSecurityCheck(atk, atkIdx) {
       // ----- セキュリティがテイマー -----
       if (sec.type === 'テイマー') {
         bs.ai.tamerArea.push(sec);
-        addLog('👤 テイマー「' + sec.name + '」が相手に登場'); renderAll();
+        addLog('👤 テイマー「' + sec.name + '」が相手に登場');
+        sendStateSync(); // テイマー登場を即座に同期
+        renderAll();
         if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
         else { checkAttackEnd(atk, atkIdx); }
         return;

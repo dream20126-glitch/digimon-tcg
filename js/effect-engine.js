@@ -2462,7 +2462,8 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
 function getRecipeForTrigger(card, triggerCode) {
   if (!card.recipe) return null;
   try {
-    const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]/g, '') : card.recipe;
+    // 制御文字(改行等)＋直後の空白を除去（スプレッドシートのセル内改行対策）
+    const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
     const recipes = typeof raw === 'string' ? JSON.parse(raw) : raw;
     // { "main": [...], "on_attack": [...] } 形式
     if (recipes[triggerCode]) return recipes[triggerCode];
@@ -2668,32 +2669,36 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
-    // === 消滅（1体ずつ演出） ===
+    // === 消滅（1体ずつ選択→演出） ===
     case 'destroy': {
       const targetData = step.card ? store[step.card] : null;
       if (targetData) {
         const targets = Array.isArray(targetData) ? targetData : [targetData];
         let di = 0;
-        function destroyNext() {
+        function destroyOneByOne() {
           if (di >= targets.length) { callback(); return; }
           const t = targets[di++];
           const c = opponent.battleArea[t.idx];
-          if (!c) { destroyNext(); return; }
+          if (!c) { destroyOneByOne(); return; }
+          // 1体消滅
           opponent.battleArea[t.idx] = null;
           opponent.trash.push(c);
           if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
           ctx.addLog('💥 「' + c.name + '」を消滅させた！');
-          // オンライン同期: 消滅を相手に通知 + 復活防止マーク
+          // オンライン同期
           if (window._isOnlineMode && window._isOnlineMode()) {
             window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: t.idx, reason: 'destroy' });
             if (window._markDestroyed) window._markDestroyed('ai', t.idx);
           }
           ctx.renderAll();
+          // 消滅演出 → 完了後に次の1体
           if (ctx.showDestroyEffect) {
-            ctx.showDestroyEffect(c, destroyNext);
-          } else { destroyNext(); }
+            ctx.showDestroyEffect(c, () => {
+              setTimeout(destroyOneByOne, 300); // 少し間を空けて次へ
+            });
+          } else { destroyOneByOne(); }
         }
-        destroyNext();
+        destroyOneByOne();
         return;
       }
       callback();

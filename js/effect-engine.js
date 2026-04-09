@@ -2080,7 +2080,16 @@ export function applyPermanentEffects(bs, side, context) {
   const allCards = [...(bs[side].battleArea.filter(c => c)), ...(bs[side].tamerArea || [])];
 
   allCards.forEach(card => {
-    // メイン効果
+    // レシピがある場合はレシピパス(③④)で処理するのでテキスト解析はスキップ
+    const hasRecipePerm = (() => {
+      if (!card.recipe) return false;
+      let r = card.recipe;
+      if (typeof r === 'string') { try { r = JSON.parse(r.replace(/[\x00-\x1F\x7F]\s*/g, '')); } catch(_) { return false; } }
+      return !!(r.during_own_turn || r.during_opp_turn || r.during_any_turn || r.passive);
+    })();
+
+    // メイン効果（テキスト解析パス — レシピがなければ使用）
+    if (!hasRecipePerm) {
     const blocks = parseCardEffect(card);
     blocks.forEach(block => {
       if (!block.trigger || !['during_own_turn', 'during_opp_turn', 'during_any_turn'].includes(block.trigger.code)) return;
@@ -2126,11 +2135,14 @@ export function applyPermanentEffects(bs, side, context) {
         }
       });
     });
+    } // end if (!hasRecipePerm)
 
-    // 進化元効果（スタック内のみ）
+    // 進化元効果（スタック内のみ）— レシピがある進化元はスキップ（④で処理）
     if (card.stack) {
       card.stack.forEach((evoCard) => {
         if (!evoCard.evoSourceEffect || evoCard.evoSourceEffect === 'なし') return;
+        // 進化元カードにレシピがあればテキスト解析をスキップ
+        if (evoCard.recipe) return;
 
         // キーワードだけの進化元効果（例: 【Sアタック+1】）→ 無条件で常時付与
         const evoText = evoCard.evoSourceEffect.trim();

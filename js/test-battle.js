@@ -272,7 +272,8 @@ setCombatOnlineHandlers(false, null, { sendCommand, sendStateSync, sendMemoryUpd
 // スプシのヘッダー名揺れ対応ヘルパー（改行入り列名・旧列名の両方を探す）
 function cardField(card, ...names) {
   for (const n of names) {
-    if (card[n] !== undefined && card[n] !== null && card[n] !== '') return card[n];
+    const v = card[n];
+    if (v !== undefined && v !== null && v !== '' && v !== 'なし') return v;
   }
   return undefined;
 }

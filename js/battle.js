@@ -25,7 +25,8 @@ import { initOnline, startOnlineListener, sendCommand, sendStateSync, sendMemory
 // ===== スプシ列名揺れ対応ヘルパー =====
 function _f(obj, ...names) {
   for (const n of names) {
-    if (obj[n] !== undefined && obj[n] !== null && obj[n] !== '') return obj[n];
+    const v = obj[n];
+    if (v !== undefined && v !== null && v !== '' && v !== 'なし') return v;
   }
   return undefined;
 }

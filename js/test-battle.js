@@ -766,8 +766,8 @@ window.startTest = async function() {
     if (!ok) { statusEl.innerText = 'シナリオの構築に失敗しました'; startBtn.disabled = false; return; }
 
     // 永続効果を初期適用（テイマー効果やバフなど、盤面構築後に反映が必要）
-    try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch (e) { console.warn('[test] applyPermanent player:', e); }
-    try { _applyPermanentEE(bs, 'ai', makeEffectContext(null, 'ai')); } catch (e) { console.warn('[test] applyPermanent ai:', e); }
+    try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch (e) { console.error('[applyPerm player]', e.message, e.stack); }
+    try { _applyPermanentEE(bs, 'ai', makeEffectContext(null, 'ai')); } catch (e) { console.error('[applyPerm ai]', e.message, e.stack); }
 
     // 画面切り替え
     document.getElementById('scenario-screen').style.display = 'none';
@@ -804,8 +804,8 @@ window.startTest = async function() {
     addLog('[TEST] テスト開始！オンライン同期有効');
 
   } catch (e) {
-    console.error('[test] エラー:', e);
-    statusEl.innerText = 'エラー: ' + e.message;
+    console.error('[test] エラー:', e.message || e, e.stack || '');
+    statusEl.innerText = 'エラー: ' + (e.message || JSON.stringify(e));
     startBtn.disabled = false;
   }
 };

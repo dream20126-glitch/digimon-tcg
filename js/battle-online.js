@@ -493,7 +493,12 @@ function onRemoteCommand(cmd) {
       // メモリー反映（セキュリティ効果でメモリーが変動した場合）
       if (cmd.memory !== undefined) {
         bs.memory = -cmd.memory; // 相手のメモリーを反転して自分の値に
-        if (typeof updateMemGauge === 'function') updateMemGauge();
+        updateMemGauge();
+        // メモリーが相手側に渡った場合、アタック終了後にターン終了
+        if (bs.memory < 0) {
+          bs._pendingTurnEnd = true;
+          addLog('💾 メモリーが相手側へ（アタック終了後にターン終了）');
+        }
       }
       if (_pendingSecEffectCallback) {
         const cb = _pendingSecEffectCallback; _pendingSecEffectCallback = null; cb();

@@ -958,7 +958,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         break;
       }
       const n = action.value || 1;
-      const discardFromTarget = (tgt) => {
+      const discardFromTarget = (tgt, onDone) => {
         const discarded = [];
         for (let i = 0; i < n && tgt.stack.length > 0; i++) {
           const fromTop = action.code === 'evo_discard_top';
@@ -966,43 +966,49 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           opponent.trash.push(removed);
           discarded.push(removed);
         }
-        // 演出：画面にメッセージ表示
-        if (discarded.length > 0) {
-          const names = discarded.map(c => c.name || '???').join('、');
-          ctx.addLog('📤 「' + tgt.name + '」の進化元から「' + names + '」破棄！');
-          // 画面にフローティングメッセージ
-          const msgEl = document.createElement('div');
-          msgEl.style.cssText = 'position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:60001;background:rgba(0,0,0,0.9);border:2px solid #ff4444;border-radius:10px;padding:14px 24px;color:#ff4444;font-size:clamp(12px,3.5vw,16px);font-weight:bold;text-align:center;pointer-events:none;opacity:0;transition:opacity 0.3s;';
-          msgEl.innerHTML = '📤 「' + tgt.name + '」の進化元から<br>「' + names + '」破棄！';
-          document.body.appendChild(msgEl);
-          setTimeout(() => { msgEl.style.opacity = '1'; }, 50);
-          setTimeout(() => { msgEl.style.opacity = '0'; }, 2200);
-          setTimeout(() => { if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl); }, 2800);
-          // オンラインの相手にも演出＋実データ操作コマンドを送信
-          if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-            const tgtIdx = opponent.battleArea.indexOf(tgt);
-            window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names, targetIdx: tgtIdx, count: discarded.length, fromTop: action.code === 'evo_discard_top' });
-            // state_syncによる復元を防止（5秒間）
-            if (window._markEvoModified) window._markEvoModified('ai', tgtIdx);
+        if (discarded.length === 0) { onDone && onDone(); return; }
+        const names = discarded.map(c => c.name || '???').join('、');
+        ctx.addLog('📤 「' + tgt.name + '」の進化元から「' + names + '」破棄！');
+        // オンラインの相手にも演出＋実データ操作コマンドを送信
+        if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+          const tgtIdx = opponent.battleArea.indexOf(tgt);
+          window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names, targetIdx: tgtIdx, count: discarded.length, fromTop: action.code === 'evo_discard_top' });
+          if (window._markEvoModified) window._markEvoModified('ai', tgtIdx);
+        }
+        // カード移動演出（1枚ずつ順番に）
+        let idx = 0;
+        function showNextDiscard() {
+          if (idx >= discarded.length) { onDone && onDone(); return; }
+          const card = discarded[idx++];
+          if (window._fxCardMove) {
+            window._fxCardMove(card, tgt.name + 'の進化元', 'トラッシュ', showNextDiscard);
+          } else {
+            // fxCardMoveがなければフォールバック（メッセージのみ）
+            setTimeout(showNextDiscard, 500);
           }
         }
+        showNextDiscard();
       };
       // AIは自動選択、プレイヤーは対象選択UI
       if (effectiveSide === 'ai') {
-        discardFromTarget(opponent.battleArea[ctx._forceTargetIdx ?? evoTargets[0]]);
-        ctx.renderAll();
-        if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
-        callback();
+        discardFromTarget(opponent.battleArea[ctx._forceTargetIdx ?? evoTargets[0]], () => {
+          ctx.renderAll();
+          if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
+          callback();
+        });
         break;
       }
       ctx.addLog('🎯 進化元を破棄する対象を選んでください');
       showTargetSelection(opponentRowSide, evoTargets, null, uiColor, (selectedIdx) => {
         if (selectedIdx !== null) {
-          discardFromTarget(opponent.battleArea[selectedIdx]);
-          ctx.renderAll();
-          if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
+          discardFromTarget(opponent.battleArea[selectedIdx], () => {
+            ctx.renderAll();
+            if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
+            callback();
+          });
+        } else {
+          callback();
         }
-        callback();
       });
       break;
     }

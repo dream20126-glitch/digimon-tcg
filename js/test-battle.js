@@ -17,7 +17,7 @@ import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone,
 import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, showGameEndOverlay, setCombatHooks, setCombatOnlineHandlers } from './battle-combat.js';
 // Phase 5: 演出
 import { loadAllDictionaries, registerFxRunners } from './effect-engine.js';
-import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose } from './battle-fx.js';
+import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove } from './battle-fx.js';
 import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE } from './effect-engine.js';
 // Phase 6: オンライン
 import { initOnline, startOnlineListener, sendCommand, sendStateSync, sendMemoryUpdate, cleanupOnline, isOnlineMode, setOnlineModules } from './battle-online.js';
@@ -100,6 +100,8 @@ window._triggerMainEffect = function(card, callback) {
 };
 
 // セキュリティ効果委譲用（battle-online.jsから呼ばれる）
+window._fxCardMove = fxCardMove;
+
 window._triggerEffectFn = function(triggerCode, card, side, ctx, callback) {
   const fullCtx = makeEffectContext(card, side);
   try { _triggerEffectEE(triggerCode, card, side, fullCtx, callback); }

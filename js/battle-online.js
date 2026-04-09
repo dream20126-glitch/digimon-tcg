@@ -620,26 +620,30 @@ function onRemoteCommand(cmd) {
 
     // --- 演出コマンド（キュー経由で順次再生、並列起動によるバチバチを防止） ---
     case 'fx_evoDiscard': {
-      // 進化元破棄：自分のカードのstackを実際に操作 + 演出
+      // 進化元破棄：自分のカードのstackを実際に操作
+      const discardedCards = [];
       if (cmd.targetIdx !== undefined && cmd.count) {
         const myCard = bs.player.battleArea[cmd.targetIdx];
         if (myCard && myCard.stack && myCard.stack.length > 0) {
           for (let i = 0; i < cmd.count && myCard.stack.length > 0; i++) {
             const removed = cmd.fromTop ? myCard.stack.shift() : myCard.stack.pop();
             bs.player.trash.push(removed);
+            discardedCards.push(removed);
           }
           renderAll();
         }
       }
-      // 演出
-      const msgEl = document.createElement('div');
-      msgEl.style.cssText = 'position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:60001;background:rgba(0,0,0,0.9);border:2px solid #ff4444;border-radius:10px;padding:14px 24px;color:#ff4444;font-size:clamp(12px,3.5vw,16px);font-weight:bold;text-align:center;pointer-events:none;opacity:0;transition:opacity 0.3s;';
-      msgEl.innerHTML = '📤 「' + (cmd.targetName || '???') + '」の進化元から<br>「' + (cmd.discardedNames || '???') + '」破棄！';
-      document.body.appendChild(msgEl);
-      setTimeout(() => { msgEl.style.opacity = '1'; }, 50);
-      setTimeout(() => { msgEl.style.opacity = '0'; }, 2200);
-      setTimeout(() => { if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl); }, 2800);
       addLog('📤 「' + (cmd.targetName || '???') + '」の進化元から「' + (cmd.discardedNames || '???') + '」破棄！');
+      // カード移動演出（1枚ずつ）
+      let di = 0;
+      function showNextFx() {
+        if (di >= discardedCards.length) return;
+        const card = discardedCards[di++];
+        if (window._fxCardMove) {
+          window._fxCardMove(card, (cmd.targetName || '???') + 'の進化元', 'トラッシュ', showNextFx);
+        } else { setTimeout(showNextFx, 500); }
+      }
+      if (discardedCards.length > 0) { showNextFx(); }
       break;
     }
     case 'fx_battleResult': {

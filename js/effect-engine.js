@@ -2207,8 +2207,8 @@ export function applyPermanentEffects(bs, side, context) {
             const conds = parseRecipeCondition(step.condition);
             if (!checkConditions(conds, card, bs, side)) return;
           }
-          // per_count倍率
-          let value = step.value != null ? step.value : null;
+          // per_count倍率（valueが未指定なら1をデフォルトに）
+          let value = step.value != null ? step.value : (step.per_count ? 1 : null);
           if (step.per_count && value != null) {
             const refSource = step.ref || 'evo_source';
             const count = getRefSourceCountDirect(refSource, card, bs, side);
@@ -2274,7 +2274,7 @@ export function applyPermanentEffects(bs, side, context) {
               const conds = parseRecipeCondition(step.condition);
               if (!checkConditions(conds, card, bs, side)) return;
             }
-            let value = step.value != null ? step.value : null;
+            let value = step.value != null ? step.value : (step.per_count ? 1 : null);
             if (step.per_count && value != null) {
               const refSource = step.ref || 'evo_source';
               const count = getRefSourceCountDirect(refSource, card, bs, side);
@@ -3154,7 +3154,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.bs._usedLimits[limitKey] = true;
       }
       // per_count倍率を適用
-      let effectiveValue = step.value || null;
+      let effectiveValue = step.value != null ? step.value : (step.per_count ? 1 : null);
       if (step.per_count && effectiveValue != null) {
         const refSource = step.ref || 'evo_source';
         const count = getRefSourceCountDirect(refSource, ctx.card, ctx.bs, ctx.side);

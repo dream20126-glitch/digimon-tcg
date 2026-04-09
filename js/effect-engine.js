@@ -2551,37 +2551,51 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
   const isSourceOnly = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked'].includes(triggerCode);
 
   if (isActivated) {
-    // 起動効果: ソースカードだけキューに追加
-    // レシピがある場合は最初のブロック1つだけ（レシピが全アクションをカバー）
+    // 起動効果: ソースカードだけキューに追加（レシピ優先）
     if (sourceCard) {
-      const blocks = parseCardEffect(sourceCard);
-      const hasRecipe = !!getRecipeForTrigger(sourceCard, triggerCode);
-      let added = false;
-      blocks.forEach(block => {
-        if (block.trigger && block.trigger.code === triggerCode) {
-          if (hasRecipe && added) return; // レシピありは1ブロックのみ
-          addToQueue(sourceCard, block,
-            sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
-          );
-          added = true;
-        }
-      });
+      const recipe = getRecipeForTrigger(sourceCard, triggerCode);
+      if (recipe) {
+        const dummyBlock = {
+          raw: sourceCard.effect || '', trigger: { code: triggerCode },
+          actions: [], conditions: [],
+        };
+        addToQueue(sourceCard, dummyBlock,
+          sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
+        );
+      } else {
+        const blocks = parseCardEffect(sourceCard);
+        blocks.forEach(block => {
+          if (block.trigger && block.trigger.code === triggerCode) {
+            addToQueue(sourceCard, block,
+              sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
+            );
+          }
+        });
+      }
     }
   } else if (isSourceOnly) {
     // ソースカード限定イベント: ソースカード本体＋その進化元効果のみ処理
     if (sourceCard) {
-      const blocks = parseCardEffect(sourceCard);
-      const hasRecipe = !!getRecipeForTrigger(sourceCard, triggerCode);
-      let added = false;
-      blocks.forEach(block => {
-        if (block.trigger && block.trigger.code === triggerCode) {
-          if (hasRecipe && added) return;
-          addToQueue(sourceCard, block,
-            sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
-          );
-          added = true;
-        }
-      });
+      // レシピ優先：レシピがあればテキスト解析をスキップ
+      const mainRecipe = getRecipeForTrigger(sourceCard, triggerCode);
+      if (mainRecipe) {
+        const dummyBlock = {
+          raw: sourceCard.effect || '', trigger: { code: triggerCode },
+          actions: [], conditions: [],
+        };
+        addToQueue(sourceCard, dummyBlock,
+          sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
+        );
+      } else {
+        const blocks = parseCardEffect(sourceCard);
+        blocks.forEach(block => {
+          if (block.trigger && block.trigger.code === triggerCode) {
+            addToQueue(sourceCard, block,
+              sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
+            );
+          }
+        });
+      }
       // ソースカードの進化元効果もスキャン（テキスト解析 + レシピ）
       if (sourceCard.stack) {
         sourceCard.stack.forEach(evoCard => {
@@ -2612,20 +2626,27 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
       }
     }
   } else {
-    // 誘発効果: 盤面全体をスキャン
+    // 誘発効果: 盤面全体をスキャン（レシピ優先）
     ['player', 'ai'].forEach(side => {
       [...ctx.bs[side].battleArea, ...(ctx.bs[side].tamerArea || [])].forEach(card => {
         if (!card) return;
-        const blocks = parseCardEffect(card);
-        blocks.forEach(block => {
-          if (block.trigger && block.trigger.code === triggerCode) {
-            addToQueue(card, block,
-              side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer',
-              triggerCode.startsWith('when_') ? 'interrupt' : 'normal',
-              side
-            );
-          }
-        });
+        const priority = triggerCode.startsWith('when_') ? 'interrupt' : 'normal';
+        // レシピ優先
+        const cardRecipe = getRecipeForTrigger(card, triggerCode);
+        if (cardRecipe) {
+          const dummyBlock = {
+            raw: card.effect || '', trigger: { code: triggerCode },
+            actions: [], conditions: [],
+          };
+          addToQueue(card, dummyBlock, side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', priority, side);
+        } else {
+          const blocks = parseCardEffect(card);
+          blocks.forEach(block => {
+            if (block.trigger && block.trigger.code === triggerCode) {
+              addToQueue(card, block, side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', priority, side);
+            }
+          });
+        }
       });
 
       // 進化元効果もスキャン

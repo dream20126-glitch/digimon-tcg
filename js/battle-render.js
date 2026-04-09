@@ -130,10 +130,13 @@ function renderBattleRows() {
           html += `<div style="position:absolute;top:1px;right:2px;background:rgba(0,0,0,0.8);color:#ffaa00;font-size:6px;padding:1px 2px;border-radius:2px;">${card.stack.length}枚</div>`;
         }
 
-        // Sアタック+表示（左上）— 進化元効果/バフからSアタック+を算出
+        // Sアタック+表示（左上）— _permEffects（レシピ計算済み）優先、なければテキスト解析
         let saExtra = 0;
-        if (card.effect) { const m = card.effect.matchAll(/(?:Sアタック|セキュリティアタック)\+(\d+)/g); for (const r of m) saExtra += parseInt(r[1]); }
-        if (card.stack) card.stack.forEach(s => { if (s.evoSourceEffect) { const m = s.evoSourceEffect.matchAll(/(?:Sアタック|セキュリティアタック)\+(\d+)/g); for (const r of m) saExtra += parseInt(r[1]); } });
+        const hasRecipeSA = card._permEffects && card._permEffects.securityAttackPlus;
+        if (!hasRecipeSA) {
+          if (card.effect) { const m = card.effect.matchAll(/(?:Sアタック|セキュリティアタック)\+(\d+)/g); for (const r of m) saExtra += parseInt(r[1]); }
+          if (card.stack) card.stack.forEach(s => { if (s.evoSourceEffect) { const m = s.evoSourceEffect.matchAll(/(?:Sアタック|セキュリティアタック)\+(\d+)/g); for (const r of m) saExtra += parseInt(r[1]); } });
+        }
         if (card._permEffects && card._permEffects.securityAttackPlus) saExtra += card._permEffects.securityAttackPlus;
         if (card.buffs) card.buffs.forEach(b => { if (b.type === 'security_attack_plus') saExtra += (parseInt(b.value) || 0); });
         if (saExtra > 0) {

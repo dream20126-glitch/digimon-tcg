@@ -989,11 +989,18 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         }
         showNextDiscard();
       };
+      // 破棄後の後処理（永続効果再計算 + 描画 + 同期）
+      const afterDiscard = () => {
+        // 進化元が変わったので永続効果を再計算（SA+/DP+等）
+        const oppSide = effectiveSide === 'player' ? 'ai' : 'player';
+        try { applyPermanentEffects(ctx.bs, oppSide, ctx); } catch(_) {}
+        ctx.renderAll();
+        if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
+      };
       // AIは自動選択、プレイヤーは対象選択UI
       if (effectiveSide === 'ai') {
         discardFromTarget(opponent.battleArea[ctx._forceTargetIdx ?? evoTargets[0]], () => {
-          ctx.renderAll();
-          if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
+          afterDiscard();
           callback();
         });
         break;
@@ -1002,8 +1009,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       showTargetSelection(opponentRowSide, evoTargets, null, uiColor, (selectedIdx) => {
         if (selectedIdx !== null) {
           discardFromTarget(opponent.battleArea[selectedIdx], () => {
-            ctx.renderAll();
-            if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
+            afterDiscard();
             callback();
           });
         } else {

@@ -403,7 +403,7 @@ function buildBoardFromScenario(scenario, isPlayer1) {
 // ===== シナリオ選択UI =====
 let _selectedPlayer = 'player1';
 let _selectedCardName = null; // 検索で選択中のカード名
-let _customCards = { 'p1-hand': [], 'p1-battle': [], 'p1-tamer': [], 'p1-trash': [], 'p1-security': [], 'p2-battle': [], 'p2-tamer': [], 'p2-trash': [], 'p2-security': [] };
+let _customCards = { 'p1-hand': [], 'p1-battle': [], 'p1-tamer': [], 'p1-trash': [], 'p1-security': [], 'p2-hand': [], 'p2-battle': [], 'p2-tamer': [], 'p2-trash': [], 'p2-security': [] };
 let _customEvo = { p1: {}, p2: {} }; // { p1: { 0: ['カード名', ...], 1: [...] }, p2: { ... } }
 let _cardsLoaded = false;
 
@@ -673,7 +673,7 @@ window.startTest = async function() {
           deckSize: 20,
         },
         ai: {
-          hand: [],
+          hand: _customCards['p2-hand'],
           battleArea: _customCards['p2-battle'],
           evoSourceMap: _customEvo['p2'],
           tamerArea: _customCards['p2-tamer'],

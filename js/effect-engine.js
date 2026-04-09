@@ -2243,9 +2243,17 @@ export function applyPermanentEffects(bs, side, context) {
         try { card.recipe = JSON.parse(card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')); } catch (_) { card.recipe = null; }
       }
       if (!card.recipe) return;
+      // メイン効果テキストにトリガーがなく、進化元テキストにある場合は
+      // 進化元専用効果なので③ではスキップ（④で処理）
+      const cardMainEffect = card.effect || '';
+      const cardEvoEffect = card.evoSourceEffect || '';
       const turnKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
+      const turnTextMap = { 'during_own_turn': '【自分のターン】', 'during_opp_turn': '【相手のターン】', 'during_any_turn': '【お互いのターン】' };
       turnKeys.forEach(tk => {
         if (!card.recipe[tk]) return;
+        // 進化元効果のみのカード（メイン効果にターントリガーなし）はスキップ
+        const triggerText = turnTextMap[tk];
+        if (!cardMainEffect.includes(triggerText) && cardEvoEffect.includes(triggerText)) return;
         if (tk === 'during_own_turn' && side !== turnSide) return;
         if (tk === 'during_opp_turn' && side === turnSide) return;
         const steps = Array.isArray(card.recipe[tk]) ? card.recipe[tk] : [card.recipe[tk]];
@@ -2283,11 +2291,19 @@ export function applyPermanentEffects(bs, side, context) {
           }
         });
       });
-      // passiveキーワードフラグ
-      if (card.recipe.passive) {
+      // passiveキーワードフラグ（バトルエリアにいるカード自身に適用）
+      // ※evo_source内のpassiveはここでは適用しない（④で処理）
+      // カードのメイン効果テキストにキーワードが含まれる場合のみ適用
+      const hasEvoSourcePassive = card.recipe.evo_source && card.recipe.evo_source.passive;
+      if (card.recipe.passive && !hasEvoSourcePassive) {
+        const mainEffect = card.effect || '';
         const passives = Array.isArray(card.recipe.passive) ? card.recipe.passive : [card.recipe.passive];
         passives.forEach(p => {
           const flag = typeof p === 'string' ? p : (p.flag || p.action || '');
+          // 進化元効果のキーワードはバトルエリアでは適用しない
+          const keywordMap = { 'security_attack_plus': 'Sアタック', 'blocker': 'ブロッカー', 'piercing': '突進', 'rush': '速攻', 'penetrate': '貫通', 'jamming': 'ジャミング', 'reboot': '再起動' };
+          const kwText = keywordMap[flag];
+          if (kwText && !mainEffect.includes(kwText) && card.evoSourceEffect && card.evoSourceEffect.includes(kwText)) return;
           if (!card._permEffects) card._permEffects = {};
           if (flag === 'security_attack_plus') {
             const val = (typeof p === 'object' && p.value) ? p.value : 1;

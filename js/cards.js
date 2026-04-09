@@ -50,6 +50,17 @@ export async function loadCardAndKeywordData() {
 
     // 列名の正規化（新旧スプシ両対応）
     allCards.forEach(card => {
+      // スプシのヘッダー改行・列名変更に対応
+      // Lv → レベル
+      if (card["レベル"] === undefined && card["Lv"] !== undefined) card["レベル"] = card["Lv"];
+      // 「登場\nコスト」→「登場コスト」（セル内改行対応）
+      // 「進化\nコスト」→「進化コスト」（セル内改行対応）
+      for (const key of Object.keys(card)) {
+        const normalized = key.replace(/\n/g, '');
+        if (normalized !== key && card[normalized] === undefined) {
+          card[normalized] = card[key];
+        }
+      }
       // 新列名 → 旧列名にコピー（parseDeckや他のコードが旧名を参照するため）
       if (!card["効果"] && card["効果テキスト"]) card["効果"] = card["効果テキスト"];
       if (!card["進化元効果"] && card["進化元テキスト"]) card["進化元効果"] = card["進化元テキスト"];

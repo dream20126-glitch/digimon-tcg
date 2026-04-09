@@ -275,8 +275,6 @@ function findCardByName(name) {
     console.warn(`[test] カード "${name}" がDBに見つかりません`);
     return null;
   }
-  // デバッグ: カードDBのフィールド名を確認
-  console.log(`[findCardByName] "${name}" 全キー:`, JSON.stringify(Object.keys(card)));
   const playCost = card['登場コスト'];
   const evolveCost = card['進化コスト'];
   const hasPlay = playCost !== undefined && playCost !== '' && playCost !== null;

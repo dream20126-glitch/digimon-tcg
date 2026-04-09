@@ -590,5 +590,64 @@
 </div>
 
 <script type="module" src="js/test-battle.js"></script>
+
+<!-- デバッグログオーバーレイ（スマホ用） -->
+<div id="debug-log-panel" style="display:none;position:fixed;bottom:0;left:0;right:0;max-height:35vh;overflow-y:auto;background:rgba(0,0,0,0.9);border-top:2px solid #ffaa00;z-index:99999;font-family:monospace;font-size:10px;padding:4px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:2px 6px;position:sticky;top:0;background:#111;border-bottom:1px solid #333;">
+    <span style="color:#ffaa00;font-weight:bold;">Debug Log</span>
+    <div>
+      <button onclick="document.getElementById('debug-log-content').innerHTML=''" style="font-size:9px;padding:2px 6px;background:#333;color:#fff;border:1px solid #666;border-radius:3px;cursor:pointer;">Clear</button>
+      <button onclick="document.getElementById('debug-log-panel').style.display='none'" style="font-size:9px;padding:2px 6px;background:#333;color:#fff;border:1px solid #666;border-radius:3px;cursor:pointer;">Close</button>
+    </div>
+  </div>
+  <div id="debug-log-content"></div>
+</div>
+<button id="debug-toggle-btn" onclick="var p=document.getElementById('debug-log-panel');p.style.display=p.style.display==='none'?'block':'none';" style="position:fixed;bottom:8px;right:8px;z-index:99998;background:#ffaa00;color:#000;border:none;border-radius:50%;width:32px;height:32px;font-size:14px;font-weight:bold;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.5);">🐛</button>
+<script>
+(function() {
+  const orig = console.log;
+  console.log = function(...args) {
+    orig.apply(console, args);
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    // デバッグ系ログのみ表示
+    if (msg.startsWith('[')) {
+      const el = document.getElementById('debug-log-content');
+      if (el) {
+        const line = document.createElement('div');
+        line.style.cssText = 'color:#0f0;padding:1px 6px;border-bottom:1px solid #1a1a1a;word-break:break-all;';
+        line.textContent = msg;
+        el.appendChild(line);
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+  };
+  const origWarn = console.warn;
+  console.warn = function(...args) {
+    origWarn.apply(console, args);
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    const el = document.getElementById('debug-log-content');
+    if (el) {
+      const line = document.createElement('div');
+      line.style.cssText = 'color:#ffaa00;padding:1px 6px;border-bottom:1px solid #1a1a1a;word-break:break-all;';
+      line.textContent = '⚠ ' + msg;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+  };
+  const origErr = console.error;
+  console.error = function(...args) {
+    origErr.apply(console, args);
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    const el = document.getElementById('debug-log-content');
+    if (el) {
+      const line = document.createElement('div');
+      line.style.cssText = 'color:#ff4444;padding:1px 6px;border-bottom:1px solid #1a1a1a;word-break:break-all;';
+      line.textContent = '❌ ' + msg;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+  };
+})();
+</script>
 </body>
 </html>

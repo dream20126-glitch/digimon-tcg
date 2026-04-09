@@ -749,21 +749,21 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
       if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
       renderAll();
       showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
-        showBattleResult('Lost...', '#ff4444', '両者消滅！', () => { addLog('💥 両者消滅！'); renderAll(); callback(); });
+        showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => { addLog('💥 両者消滅！'); renderAll(); callback(); }, '両者消滅', '#ff4444');
       }); });
     } else if (atk.dp > def.dp) {
       bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
       if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
       renderAll();
       showDestroyEffect(def, () => {
-        showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); });
+        showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); }, 'Win!!', '#00ff88');
       });
     } else {
       bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
       if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
       renderAll();
       showDestroyEffect(atk, () => {
-        showBattleResult('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => { addLog('💥 「' + atk.name + '」を撃破！'); renderAll(); callback(); });
+        showBattleResult('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => { addLog('💥 「' + atk.name + '」を撃破！'); renderAll(); callback(); }, 'Lost...', '#ff4444');
       });
     }
   }, 'BATTLE!');

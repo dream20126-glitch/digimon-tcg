@@ -589,37 +589,44 @@ function getSecurityAttackCount(card) {
   _hooks.applyPermanentEffects('player');
   _hooks.applyPermanentEffects('ai');
 
-  function calcFromText(text) {
-    if (!text || text === 'なし') return;
-    if (/【(自分のターン|相手のターン|お互いのターン)】/.test(text)) return;
-    if (/(いる間|いるとき|いる場合|がいる(?![ぁ-ん]))/.test(text)) return;
+  // レシピで計算済みの_permEffectsがあればそちらを優先（テキスト解析と二重カウントしない）
+  const hasRecipeSA = card._permEffects && card._permEffects.securityAttackPlus;
 
-    if (text.includes('ごとに') && (text.includes('Sアタック') || text.includes('セキュリティアタック'))) {
-      const saMatch = text.match(/(?:Sアタック|セキュリティアタック)\+(\d+)/);
-      const perValue = saMatch ? parseInt(saMatch[1]) : 1;
-      const val = _hooks.calcPerCountValue(text, card, side);
-      if (val > 0) { extra += val; }
-      else {
-        const conditions = text.match(/(\d+)枚ごとに/);
-        if (conditions) {
-          const n = parseInt(conditions[1]);
-          const count = card.stack ? card.stack.length : 0;
-          extra += perValue * Math.floor(count / n);
+  if (!hasRecipeSA) {
+    // レシピがない場合のみテキスト解析でSA+を計算
+    function calcFromText(text) {
+      if (!text || text === 'なし') return;
+      if (/【(自分のターン|相手のターン|お互いのターン)】/.test(text)) return;
+      if (/(いる間|いるとき|いる場合|がいる(?![ぁ-ん]))/.test(text)) return;
+
+      if (text.includes('ごとに') && (text.includes('Sアタック') || text.includes('セキュリティアタック'))) {
+        const saMatch = text.match(/(?:Sアタック|セキュリティアタック)\+(\d+)/);
+        const perValue = saMatch ? parseInt(saMatch[1]) : 1;
+        const val = _hooks.calcPerCountValue(text, card, side);
+        if (val > 0) { extra += val; }
+        else {
+          const conditions = text.match(/(\d+)枚ごとに/);
+          if (conditions) {
+            const n = parseInt(conditions[1]);
+            const count = card.stack ? card.stack.length : 0;
+            extra += perValue * Math.floor(count / n);
+          }
         }
+        return;
       }
-      return;
+      const matches = text.matchAll(/(?:Sアタック|セキュリティアタック)\+(\d+)/g);
+      for (const m of matches) extra += parseInt(m[1]);
     }
-    const matches = text.matchAll(/(?:Sアタック|セキュリティアタック)\+(\d+)/g);
-    for (const m of matches) extra += parseInt(m[1]);
+
+    calcFromText(card.effect);
+    if (card.stack) {
+      card.stack.forEach(s => {
+        calcFromText(s.evoSourceEffect);
+        if (!s.evoSourceEffect && s.effect && s.effect !== 'なし') calcFromText(s.effect);
+      });
+    }
   }
 
-  calcFromText(card.effect);
-  if (card.stack) {
-    card.stack.forEach(s => {
-      calcFromText(s.evoSourceEffect);
-      if (!s.evoSourceEffect && s.effect && s.effect !== 'なし') calcFromText(s.effect);
-    });
-  }
   if (card._permEffects && card._permEffects.securityAttackPlus) extra += card._permEffects.securityAttackPlus;
   if (card.buffs && card.buffs.length > 0) {
     card.buffs.forEach(b => { if (b.type === 'security_attack_plus') extra += (parseInt(b.value) || 0); });

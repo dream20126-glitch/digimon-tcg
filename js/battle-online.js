@@ -716,52 +716,82 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   renderAll();
   sendCommand({ type: 'waiting_close' });
 
-  // ★ ブロック決定を即座に通知（攻撃側がセキュリティチェックに進まないようにする）
-  // 演出完了後にバトル結果（atkResult）を別コマンドで送信
+  // ★ ブロック決定を通知（攻撃側で「ブロックされた時」効果を先に処理してもらう）
   let atkResult = 'survived';
   if (atk.dp <= blocker.dp) atkResult = atk.dp === blocker.dp ? 'both_destroyed' : 'destroyed';
-  sendCommand({ type: 'block_response', blocked: true, atkIdx: cmd.atkIdx, atkResult });
+  sendCommand({ type: 'block_response', blocked: true, atkIdx: cmd.atkIdx, atkResult, blockerName: blocker.name, blockerImg: cardImg(blocker), blockerDp: blocker.dp });
 
-  // VS演出を相手にも送信
-  sendCommand({ type: 'fx_securityCheck', secName: blocker.name, secImg: cardImg(blocker), secDp: blocker.dp, secType: 'デジモン', atkName: atk.name, atkImg: cardImg(atk), atkDp: atk.dp, customLabel: 'BLOCK!' });
+  // 攻撃側の「ブロックされた時」効果完了を待ってからバトル解決
+  function startBattleResolution() {
+    const showSC = _modules.showSecurityCheck || ((a, b, cb) => cb());
+    const showBR = _modules.showBattleResult || ((a, b, c, cb) => cb());
+    const showDE = _modules.showDestroyEffect || ((a, cb) => cb());
 
-  const showSC = _modules.showSecurityCheck || ((a, b, cb) => cb());
-  const showBR = _modules.showBattleResult || ((a, b, c, cb) => cb());
-  const showDE = _modules.showDestroyEffect || ((a, cb) => cb());
+    // 表示関数からの自動送信を抑制（手動送信のみP1に届ける）
+    window._suppressFxSend = true;
 
-  showSC(blocker, atk, () => {
-    if (atk.dp === blocker.dp) {
-      bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-      bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
-      sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
-      renderAll();
-      sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '両者消滅！' });
-      showBR('両者消滅', '#ff4444', '両者消滅！', () => {
-        showDE(blocker, () => { showDE(atk, () => {
-          addLog('💥 両者消滅！'); sendStateSync();
-        }); });
-      });
-    } else if (atk.dp > blocker.dp) {
-      bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
-      sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
-      renderAll();
-      sendCommand({ type: 'fx_battleResult', text: 'Win!!', color: '#00ff88', sub: '「' + blocker.name + '」を撃破！' });
-      showBR('Lost...', '#ff4444', '「' + blocker.name + '」が撃破された', () => {
-        showDE(blocker, () => {
-          addLog('💥 「' + blocker.name + '」が撃破された'); sendStateSync();
+    // VS演出を相手にも送信
+    sendCommand({ type: 'fx_securityCheck', secName: blocker.name, secImg: cardImg(blocker), secDp: blocker.dp, secType: 'デジモン', atkName: atk.name, atkImg: cardImg(atk), atkDp: atk.dp, customLabel: 'BLOCK!' });
+
+    showSC(blocker, atk, () => {
+      if (atk.dp === blocker.dp) {
+        bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+        bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
+        sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
+        renderAll();
+        sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '両者消滅！' });
+        showBR('両者消滅', '#ff4444', '両者消滅！', () => {
+          showDE(blocker, () => { showDE(atk, () => {
+            addLog('💥 両者消滅！'); window._suppressFxSend = false; sendStateSync();
+          }); });
         });
-      });
-    } else {
-      bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-      renderAll();
-      sendCommand({ type: 'fx_battleResult', text: 'Lost...', color: '#ff4444', sub: '「' + atk.name + '」が撃破された' });
-      showBR('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => {
-        showDE(atk, () => {
-          addLog('💥 「' + atk.name + '」を撃破！'); sendStateSync();
+      } else if (atk.dp > blocker.dp) {
+        bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
+        sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
+        renderAll();
+        sendCommand({ type: 'fx_battleResult', text: 'Win!!', color: '#00ff88', sub: '「' + blocker.name + '」を撃破！' });
+        showBR('Lost...', '#ff4444', '「' + blocker.name + '」が撃破された', () => {
+          showDE(blocker, () => {
+            addLog('💥 「' + blocker.name + '」が撃破された'); window._suppressFxSend = false; sendStateSync();
+          });
         });
-      });
+      } else {
+        bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+        renderAll();
+        sendCommand({ type: 'fx_battleResult', text: 'Lost...', color: '#ff4444', sub: '「' + atk.name + '」が撃破された' });
+        showBR('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => {
+          showDE(atk, () => {
+            addLog('💥 「' + atk.name + '」を撃破！'); window._suppressFxSend = false; sendStateSync();
+          });
+        });
+      }
+    }, 'BLOCK!');
+  }
+
+  // 攻撃側の「ブロックされた時」効果完了シグナルを待つ（最大10秒）
+  let battleStarted = false;
+  const onBlockedDone = onValue(ref(rtdb, `rooms/${_onlineRoomId}/commands`), (snap) => {
+    if (battleStarted) return;
+    const cmds = snap.val();
+    if (!cmds) return;
+    const keys = Object.keys(cmds);
+    for (const k of keys) {
+      if (cmds[k] && cmds[k].type === 'blocked_effect_done' && cmds[k].from !== _onlineMyKey) {
+        battleStarted = true;
+        onBlockedDone(); // リスナー解除
+        startBattleResolution();
+        return;
+      }
     }
-  }, 'BLOCK!');
+  });
+  // タイムアウト: 10秒待っても来なければバトル開始
+  setTimeout(() => {
+    if (!battleStarted) {
+      battleStarted = true;
+      onBlockedDone();
+      startBattleResolution();
+    }
+  }, 10000);
 }
 
 // ===== クリーンアップ =====

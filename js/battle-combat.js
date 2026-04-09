@@ -364,8 +364,9 @@ export function resolveAttackTarget(target, targetIdx) {
             if (!resp.blocked) {
               resolveSecurityCheck(atk, atkSlotIdx);
             } else {
-              // ブロックされた時効果を発動（進化元含む）
+              // ブロックされた時効果を発動 → 完了シグナル送信
               afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
+                if (_onlineMode && _sendCommand) _sendCommand({ type: 'blocked_effect_done' });
                 renderAll();
                 checkPendingTurnEnd();
               });
@@ -394,8 +395,9 @@ export function resolveAttackTarget(target, targetIdx) {
             if (!resp.blocked) {
               resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai');
             } else {
-              // ブロックされた時効果を発動（進化元含む）
+              // ブロックされた時効果を発動 → 完了シグナル送信 → P2側でバトル解決開始
               afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
+                if (_onlineMode && _sendCommand) _sendCommand({ type: 'blocked_effect_done' });
                 renderAll();
                 checkPendingTurnEnd();
               });

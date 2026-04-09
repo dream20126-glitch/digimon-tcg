@@ -739,6 +739,10 @@ window.startTest = async function() {
     const ok = buildBoardFromScenario(scenarioKey, isFirst);
     if (!ok) { statusEl.innerText = 'シナリオの構築に失敗しました'; startBtn.disabled = false; return; }
 
+    // 永続効果を初期適用（テイマー効果やバフなど、盤面構築後に反映が必要）
+    try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch (e) { console.warn('[test] applyPermanent player:', e); }
+    try { _applyPermanentEE(bs, 'ai', makeEffectContext(null, 'ai')); } catch (e) { console.warn('[test] applyPermanent ai:', e); }
+
     // 画面切り替え
     document.getElementById('scenario-screen').style.display = 'none';
     document.getElementById('battle-screen').style.display = 'block';

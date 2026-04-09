@@ -961,6 +961,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       if (effectiveSide === 'ai') {
         discardFromTarget(opponent.battleArea[ctx._forceTargetIdx ?? evoTargets[0]]);
         ctx.renderAll();
+        // オンライン同期
+        if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
         callback();
         break;
       }
@@ -969,6 +971,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (selectedIdx !== null) {
           discardFromTarget(opponent.battleArea[selectedIdx]);
           ctx.renderAll();
+          // オンライン同期
+          if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
         }
         callback();
       });
@@ -2232,6 +2236,7 @@ export function applyPermanentEffects(bs, side, context) {
           } else if (step.action === 'security_attack_plus') {
             if (!card._permEffects) card._permEffects = {};
             card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (value || 1);
+            console.log('[perm③] SA+', value || 1, 'on', card.name, '→ total:', card._permEffects.securityAttackPlus);
           }
         });
       });
@@ -2287,6 +2292,7 @@ export function applyPermanentEffects(bs, side, context) {
             } else if (step.action === 'security_attack_plus') {
               if (!card._permEffects) card._permEffects = {};
               card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (value || 1);
+              console.log('[perm④] SA+', value || 1, 'on', card.name, 'from evo', evoCard.name, '→ total:', card._permEffects.securityAttackPlus);
             }
           });
         });
@@ -2299,6 +2305,7 @@ export function applyPermanentEffects(bs, side, context) {
             if (flag === 'security_attack_plus') {
               const val = (typeof p === 'object' && p.value) ? p.value : 1;
               card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + val;
+              console.log('[perm④passive] SA+', val, 'on', card.name, 'from evo', evoCard.name, '→ total:', card._permEffects.securityAttackPlus);
             } else if (flag === 'blocker') { card._permEffects.blocker = true; }
             else if (flag === 'piercing') { card._permEffects.piercing = true; }
             else if (flag === 'rush') { card._permEffects.rush = true; }
@@ -3095,9 +3102,13 @@ function executeRecipeStep(step, ctx, store, callback) {
       } else {
         // storeが無い場合は既存エンジンに委譲
         const action = { code: step.action, value: step.value || null };
+        if (!ctx.block) ctx.block = {};
         if (step.duration) {
-          if (!ctx.block) ctx.block = {};
           ctx.block.duration = { code: step.duration };
+        }
+        // 条件をctx.blockに伝搬（対象フィルタリング用）
+        if (step.condition) {
+          ctx.block.conditions = parseRecipeCondition(step.condition);
         }
         runOneAction(action, null, ctx, callback);
       }

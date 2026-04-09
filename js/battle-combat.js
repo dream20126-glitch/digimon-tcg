@@ -570,6 +570,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
               _hooks.checkAndTriggerEffect(sec, '【メイン】', doFinish, 'ai');
             } else { doFinish(); }
           };
+          hideCombatBackdrop(); // セキュリティ効果の対象選択UIが見えるようにバックドロップを一時解除
           _hooks.checkAndTriggerEffect(sec, '【セキュリティ】', afterSecEffect, 'ai');
         } else {
           bs.ai.trash.push(sec); renderAll();
@@ -666,14 +667,20 @@ function applyBattleBuffs(atk, def) {
         addLog('⚔ バトル中効果: 「' + card.name + '」DP+' + val + '（' + s.name + '）');
       }
     });
-    // レシピの when:"cond_in_battle" もチェック
-    if (card.recipe) {
+    // レシピの when:"cond_in_battle" もチェック（親カード + 進化元カード）
+    const recipeSources = [card.recipe];
+    if (card.stack) card.stack.forEach(s => { if (s.recipe) recipeSources.push(s.recipe); });
+    recipeSources.forEach(rawRecipe => {
+      if (!rawRecipe) return;
       try {
-        const recipes = typeof card.recipe === 'string' ? JSON.parse(card.recipe) : card.recipe;
+        let recipes = typeof rawRecipe === 'string' ? JSON.parse(rawRecipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : rawRecipe;
+        // evo_sourceラッパー対応
+        if (recipes.evo_source) recipes = recipes.evo_source;
         const durKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
         durKeys.forEach(key => {
           if (!recipes[key]) return;
-          recipes[key].forEach(step => {
+          const steps = Array.isArray(recipes[key]) ? recipes[key] : [recipes[key]];
+          steps.forEach(step => {
             if (step.when !== 'cond_in_battle') return;
             if (step.action !== 'dp_plus') return;
             const opponent = card === atk ? def : atk;
@@ -685,7 +692,7 @@ function applyBattleBuffs(atk, def) {
           });
         });
       } catch (_) {}
-    }
+    });
   });
   return applied;
 }
@@ -981,6 +988,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
               _hooks.checkAndTriggerEffect(sec, '【メイン】', doFinish, 'player');
             } else { doFinish(); }
           };
+          hideCombatBackdrop(); // セキュリティ効果の対象選択UIが見えるようにバックドロップを一時解除
           _hooks.checkAndTriggerEffect(sec, '【セキュリティ】', afterSec, 'player');
         } else {
           bs.player.trash.push(sec); renderAll();

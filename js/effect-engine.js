@@ -519,7 +519,9 @@ function executeQueueEntry(entry, context, callback) {
       // レシピがあればレシピ実行、なければ従来処理
       // 進化元効果のレシピは _recipeCard に格納されている
       const recipeCard = block._recipeCard || card;
-      const recipe = getRecipeForTrigger(recipeCard, block.trigger ? block.trigger.code : null);
+      const trigCode = block.trigger ? block.trigger.code : null;
+      const recipe = getRecipeForTrigger(recipeCard, trigCode);
+      console.log('[executeQueue]', card.name, trigCode, recipe ? 'recipe found' : 'no recipe, text fallback');
       if (recipe) {
         runRecipe(recipe, ctx, wrappedCallback);
       } else {
@@ -3256,7 +3258,11 @@ function executeRecipeStep(step, ctx, store, callback) {
         const conds = parseRecipeCondition(step.condition);
         // For non-target-selection actions: check if condition is met, skip if not
         if (!step.target || step.target === 'self') {
-          if (!checkConditions(conds, ctx.card, ctx.bs, ctx.side)) {
+          const oppSide = ctx.side === 'player' ? 'ai' : 'player';
+          const oppCards = ctx.bs[oppSide].battleArea.filter(c => c).map(c => c.name + '(stack:' + (c.stack ? c.stack.length : 0) + ',type:' + c.type + ')');
+          const condResult = checkConditions(conds, ctx.card, ctx.bs, ctx.side);
+          console.log('[recipe cond]', ctx.card.name, step.action, step.condition, '→', condResult, 'opp:', oppCards.join(','));
+          if (!condResult) {
             callback && callback();
             break;
           }

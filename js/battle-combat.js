@@ -364,9 +364,11 @@ export function resolveAttackTarget(target, targetIdx) {
             if (!resp.blocked) {
               resolveSecurityCheck(atk, atkSlotIdx);
             } else {
-              // ブロックされた → 相手側でバトル解決済み。攻撃側は結果を反映
-              renderAll();
-              checkPendingTurnEnd();
+              // ブロックされた時効果を発動（進化元含む）
+              afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
+                renderAll();
+                checkPendingTurnEnd();
+              });
             }
           });
         } else { resolveSecurityCheck(atk, atkSlotIdx); }
@@ -392,8 +394,11 @@ export function resolveAttackTarget(target, targetIdx) {
             if (!resp.blocked) {
               resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai');
             } else {
-              renderAll();
-              checkPendingTurnEnd();
+              // ブロックされた時効果を発動（進化元含む）
+              afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
+                renderAll();
+                checkPendingTurnEnd();
+              });
             }
           });
         } else { resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai'); }

@@ -176,7 +176,16 @@ function checkAndTriggerEffect(card, triggerType, callback, side, alreadyConfirm
   if (!card) { callback && callback(); return; }
   const hasInMain = card.effect && card.effect.includes(triggerType);
   const hasInEvo = card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes(triggerType));
-  if (!hasInMain && !hasInEvo) { callback && callback(); return; }
+  // レシピにトリガーがある場合もテキストフィルタを通過させる
+  const triggerCode = TRIGGER_CODE_MAP[triggerType] || triggerType;
+  let hasInRecipe = false;
+  if (card.recipe) {
+    try {
+      const r = typeof card.recipe === 'string' ? JSON.parse(card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : card.recipe;
+      hasInRecipe = !!(r[triggerCode]);
+    } catch(_) {}
+  }
+  if (!hasInMain && !hasInEvo && !hasInRecipe) { callback && callback(); return; }
   if (!side) {
     const inPlayer = bs.player.battleArea.includes(card) || bs.player.tamerArea.includes(card) || bs.player.hand.includes(card);
     side = inPlayer ? 'player' : 'ai';

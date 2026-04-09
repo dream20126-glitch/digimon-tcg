@@ -967,7 +967,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         break;
       }
       ctx.addLog('🎯 進化元を破棄する対象を選んでください');
+      console.log('[evo_discard] targets:', evoTargets, 'rowSide:', opponentRowSide, 'side:', effectiveSide);
       showTargetSelection(opponentRowSide, evoTargets, null, uiColor, (selectedIdx) => {
+        console.log('[evo_discard] selectedIdx:', selectedIdx, 'target:', selectedIdx !== null ? opponent.battleArea[selectedIdx]?.name : 'none');
         if (selectedIdx !== null) {
           discardFromTarget(opponent.battleArea[selectedIdx]);
           ctx.renderAll();
@@ -1007,11 +1009,15 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         break;
       }
       ctx.addLog('🎯 アタック・ブロック不可にする対象を選んでください');
+      console.log('[cant_attack_block] targets:', cabTargets, 'cond:', cabHasNoEvoCond, 'dur:', cabDur);
       showTargetSelection(opponentRowSide, cabTargets, null, uiColor, (selectedIdx) => {
+        console.log('[cant_attack_block] selectedIdx:', selectedIdx, 'target:', selectedIdx !== null ? opponent.battleArea[selectedIdx]?.name : 'none');
         if (selectedIdx !== null) {
           applyCab(opponent.battleArea[selectedIdx]);
+          console.log('[cant_attack_block] applied! cantAttack:', opponent.battleArea[selectedIdx]?.cantAttack);
         }
         ctx.renderAll();
+        if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
         callback();
       });
       break;

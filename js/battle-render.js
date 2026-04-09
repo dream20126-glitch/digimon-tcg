@@ -130,8 +130,12 @@ function renderBattleRows() {
           html += `<div style="position:absolute;top:1px;right:2px;background:rgba(0,0,0,0.8);color:#ffaa00;font-size:6px;padding:1px 2px;border-radius:2px;">${card.stack.length}枚</div>`;
         }
 
-        // Sアタック+表示（左上）— _permEffects（レシピ計算済み）優先、なければテキスト解析
+        // Sアタック+表示（左上）— 自分のターンのみ表示（永続効果は自分のターンのみ有効）
+        const isMySide = (sideName === 'pl');
+        const isMyTurn = bs.isPlayerTurn;
+        const showSA = isMySide ? isMyTurn : !isMyTurn; // 自分のターンのみSA+有効
         let saExtra = 0;
+        if (showSA) {
         const hasRecipeSA = card._permEffects && card._permEffects.securityAttackPlus;
         if (!hasRecipeSA) {
           if (card.effect) { const m = card.effect.matchAll(/(?:Sアタック|セキュリティアタック)\+(\d+)/g); for (const r of m) saExtra += parseInt(r[1]); }
@@ -142,6 +146,7 @@ function renderBattleRows() {
         if (saExtra > 0) {
           html += `<div style="position:absolute;top:1px;left:2px;background:rgba(255,0,0,0.8);color:#fff;font-size:6px;padding:1px 3px;border-radius:2px;">チェック+${saExtra}</div>`;
         }
+        } // end if (showSA)
 
         // バフ表示（状態異常マーク）
         if (card.cantAttack || card.cantBlock) {

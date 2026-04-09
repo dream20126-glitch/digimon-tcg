@@ -603,7 +603,18 @@ function onRemoteCommand(cmd) {
 
     // --- 演出コマンド（キュー経由で順次再生、並列起動によるバチバチを防止） ---
     case 'fx_evoDiscard': {
-      // 進化元破棄演出（相手から受信）
+      // 進化元破棄：自分のカードのstackを実際に操作 + 演出
+      if (cmd.targetIdx !== undefined && cmd.count) {
+        const myCard = bs.player.battleArea[cmd.targetIdx];
+        if (myCard && myCard.stack && myCard.stack.length > 0) {
+          for (let i = 0; i < cmd.count && myCard.stack.length > 0; i++) {
+            const removed = cmd.fromTop ? myCard.stack.shift() : myCard.stack.pop();
+            bs.player.trash.push(removed);
+          }
+          renderAll();
+        }
+      }
+      // 演出
       const msgEl = document.createElement('div');
       msgEl.style.cssText = 'position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:60001;background:rgba(0,0,0,0.9);border:2px solid #ff4444;border-radius:10px;padding:14px 24px;color:#ff4444;font-size:clamp(12px,3.5vw,16px);font-weight:bold;text-align:center;pointer-events:none;opacity:0;transition:opacity 0.3s;';
       msgEl.innerHTML = '📤 「' + (cmd.targetName || '???') + '」の進化元から<br>「' + (cmd.discardedNames || '???') + '」破棄！';

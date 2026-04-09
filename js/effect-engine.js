@@ -978,9 +978,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           setTimeout(() => { msgEl.style.opacity = '1'; }, 50);
           setTimeout(() => { msgEl.style.opacity = '0'; }, 2200);
           setTimeout(() => { if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl); }, 2800);
-          // オンラインの相手にも演出を送信
+          // オンラインの相手にも演出＋実データ操作コマンドを送信
           if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-            window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names });
+            // 相手側で自分のカードのstackを操作してもらう
+            const tgtIdx = opponent.battleArea.indexOf(tgt);
+            window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names, targetIdx: tgtIdx, count: discarded.length, fromTop: action.code === 'evo_discard_top' });
           }
         }
       };

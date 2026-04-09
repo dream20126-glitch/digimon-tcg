@@ -2173,7 +2173,153 @@ export function applyPermanentEffects(bs, side, context) {
         });
       });
     }
+
+    // ③ レシピベースの永続効果処理
+    if (card.recipe) {
+      // 文字列ならパース（キャッシュ）
+      if (typeof card.recipe === 'string') {
+        try { card.recipe = JSON.parse(card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')); } catch (_) { card.recipe = null; }
+      }
+      if (!card.recipe) return;
+      const turnKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
+      turnKeys.forEach(tk => {
+        if (!card.recipe[tk]) return;
+        if (tk === 'during_own_turn' && side !== turnSide) return;
+        if (tk === 'during_opp_turn' && side === turnSide) return;
+        const steps = Array.isArray(card.recipe[tk]) ? card.recipe[tk] : [card.recipe[tk]];
+        steps.forEach(step => {
+          // 条件チェック
+          if (step.condition) {
+            const conds = parseRecipeCondition(step.condition);
+            if (!checkConditions(conds, card, bs, side)) return;
+          }
+          // per_count倍率
+          let value = step.value != null ? step.value : null;
+          if (step.per_count && value != null) {
+            const refSource = step.ref || 'evo_source';
+            const count = getRefSourceCountDirect(refSource, card, bs, side);
+            value = value * Math.floor(count / step.per_count);
+          }
+          // アクション適用
+          if (step.action === 'dp_plus') {
+            const target = step.target || 'self';
+            if (target === 'self') {
+              if (!card.buffs) card.buffs = [];
+              card.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'recipe_perm' });
+              recalcDp(card);
+            } else if (target === 'own:all') {
+              bs[side].battleArea.forEach(tgt => {
+                if (!tgt) return;
+                if (!tgt.buffs) tgt.buffs = [];
+                tgt.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'recipe_perm' });
+                recalcDp(tgt);
+              });
+            }
+          } else if (step.action === 'security_attack_plus') {
+            if (!card._permEffects) card._permEffects = {};
+            card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (value || 1);
+          }
+        });
+      });
+      // passiveキーワードフラグ
+      if (card.recipe.passive) {
+        const passives = Array.isArray(card.recipe.passive) ? card.recipe.passive : [card.recipe.passive];
+        passives.forEach(p => {
+          const flag = typeof p === 'string' ? p : (p.flag || p.action || '');
+          if (!card._permEffects) card._permEffects = {};
+          if (flag === 'security_attack_plus') {
+            const val = (typeof p === 'object' && p.value) ? p.value : 1;
+            card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + val;
+          } else if (flag === 'blocker') { card._permEffects.blocker = true; }
+          else if (flag === 'piercing') { card._permEffects.piercing = true; }
+          else if (flag === 'rush') { card._permEffects.rush = true; }
+          else if (flag === 'penetrate') { card._permEffects.penetrate = true; }
+          else if (flag === 'jamming') { card._permEffects.jamming = true; }
+          else if (flag === 'reboot') { card._permEffects.reboot = true; }
+        });
+      }
+    }
+
+    // ④ 進化元カードのレシピ永続効果
+    if (card.stack) {
+      card.stack.forEach(evoCard => {
+        if (!evoCard.recipe) return;
+        if (typeof evoCard.recipe === 'string') {
+          try { evoCard.recipe = JSON.parse(evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')); } catch (_) { evoCard.recipe = null; }
+        }
+        if (!evoCard.recipe) return;
+        const evoRecipe = evoCard.recipe.evo_source || evoCard.recipe;
+        const turnKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
+        turnKeys.forEach(tk => {
+          if (!evoRecipe[tk]) return;
+          if (tk === 'during_own_turn' && side !== turnSide) return;
+          if (tk === 'during_opp_turn' && side === turnSide) return;
+          const steps = Array.isArray(evoRecipe[tk]) ? evoRecipe[tk] : [evoRecipe[tk]];
+          steps.forEach(step => {
+            if (step.condition) {
+              const conds = parseRecipeCondition(step.condition);
+              if (!checkConditions(conds, card, bs, side)) return;
+            }
+            let value = step.value != null ? step.value : null;
+            if (step.per_count && value != null) {
+              const refSource = step.ref || 'evo_source';
+              const count = getRefSourceCountDirect(refSource, card, bs, side);
+              value = value * Math.floor(count / step.per_count);
+            }
+            if (step.action === 'dp_plus') {
+              if (!card.buffs) card.buffs = [];
+              card.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'evo_recipe_perm' });
+              recalcDp(card);
+            } else if (step.action === 'security_attack_plus') {
+              if (!card._permEffects) card._permEffects = {};
+              card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (value || 1);
+            }
+          });
+        });
+        // 進化元のpassiveフラグ
+        if (evoRecipe.passive) {
+          const passives = Array.isArray(evoRecipe.passive) ? evoRecipe.passive : [evoRecipe.passive];
+          passives.forEach(p => {
+            const flag = typeof p === 'string' ? p : (p.flag || p.action || '');
+            if (!card._permEffects) card._permEffects = {};
+            if (flag === 'security_attack_plus') {
+              const val = (typeof p === 'object' && p.value) ? p.value : 1;
+              card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + val;
+            } else if (flag === 'blocker') { card._permEffects.blocker = true; }
+            else if (flag === 'piercing') { card._permEffects.piercing = true; }
+            else if (flag === 'rush') { card._permEffects.rush = true; }
+            else if (flag === 'penetrate') { card._permEffects.penetrate = true; }
+            else if (flag === 'jamming') { card._permEffects.jamming = true; }
+            else if (flag === 'reboot') { card._permEffects.reboot = true; }
+          });
+        }
+      });
+    }
   });
+}
+
+// ===== レシピ条件パーサー =====
+
+function parseRecipeCondition(condStr) {
+  if (!condStr) return [];
+  const parts = condStr.split(':');
+  if (parts[0] === 'cond_exists') {
+    // "cond_exists:cond_no_evo" → [{code:'cond_exists'}, {code:'cond_no_evo'}]
+    // "cond_exists:cond_has_evo:4" → [{code:'cond_exists'}, {code:'cond_has_evo', value:4}]
+    const result = [{code: 'cond_exists'}];
+    if (parts.length >= 2) {
+      const nested = parts.slice(1).join(':');
+      const nestedParts = nested.split(':');
+      result.push({code: nestedParts[0], value: nestedParts[1] ? parseInt(nestedParts[1]) : undefined});
+    }
+    return result;
+  }
+  // "cond_lv_le:5" → [{code:'cond_lv_le', value:5}]
+  // "cond_no_evo" → [{code:'cond_no_evo'}]
+  // "dp_le:4000" → [{code:'cond_dp_le', value:4000}]  (auto-prefix cond_)
+  let code = parts[0];
+  if (!code.startsWith('cond_')) code = 'cond_' + code;
+  return [{code: code, value: parts[1] ? parseInt(parts[1]) : undefined}];
 }
 
 // ===== 条件チェック =====
@@ -2681,6 +2827,23 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === コスト無し登場 ===
     case 'summon': {
+      // Security effect: summon self (tamer/digimon) to field at no cost
+      if (step.target === 'self' && step.cost_free) {
+        const cardToSummon = ctx.card;
+        if (!cardToSummon) { callback(); break; }
+        const p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+        if (cardToSummon.type === 'テイマー') {
+          p.tamerArea.push(cardToSummon);
+          ctx.addLog('🌟 「' + cardToSummon.name + '」をコストを支払わずに登場');
+        } else {
+          p.battleArea.push(cardToSummon);
+          ctx.addLog('🌟 「' + cardToSummon.name + '」をコストを支払わずに登場');
+        }
+        ctx.renderAll();
+        callback();
+        break;
+      }
+      // ... existing summon logic for store-based summon ...
       const srcData = store[step.card];
       if (!srcData || !srcData.card) { callback(); return; }
       const cardToSummon = srcData.card;
@@ -2892,10 +3055,46 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === キーワード付与 ===
+    case 'grant_keyword': {
+      const flag = step.flag;
+      const val = step.value || 1;
+      const dur = step.duration || 'dur_this_turn';
+
+      // Resolve targets
+      const resolveTargets = () => {
+        const p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+        if (step.target === 'self') return [ctx.card];
+        if (step.target === 'own:all') return p.battleArea.filter(c => c);
+        if (step.card && store[step.card]) {
+          const sd = store[step.card];
+          return (Array.isArray(sd) ? sd : [sd]).map(s => s.card || s).filter(c => c);
+        }
+        return [ctx.card];
+      };
+
+      const targets = resolveTargets();
+      targets.forEach(tgt => {
+        if (flag === 'security_attack_plus') {
+          if (!tgt.buffs) tgt.buffs = [];
+          tgt.buffs.push({ type: 'security_attack_plus', value: val, duration: dur, source: ctx.card ? ctx.card.cardNo : '' });
+          ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
+        } else {
+          // Generic keyword buff (blocker, piercing, etc.)
+          if (!tgt.buffs) tgt.buffs = [];
+          tgt.buffs.push({ type: 'keyword_' + flag, value: 0, duration: dur, source: ctx.card ? ctx.card.cardNo : '' });
+          ctx.addLog('✨ 「' + tgt.name + '」に【' + flag + '】付与');
+        }
+      });
+      ctx.renderAll();
+      callback();
+      break;
+    }
+
     // === その他のアクション（既存エンジンに委譲） ===
     default: {
       // once_per_turn制限チェック（レシピ形式）
-      if (step.limit === 'once_per_turn' && ctx.bs && ctx.card) {
+      if ((step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') && ctx.bs && ctx.card) {
         const limitKey = (ctx.card.cardNo || ctx.card.name) + '_recipe_' + step.action;
         if (!ctx.bs._usedLimits) ctx.bs._usedLimits = {};
         if (ctx.bs._usedLimits[limitKey]) {
@@ -2905,12 +3104,19 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         ctx.bs._usedLimits[limitKey] = true;
       }
+      // per_count倍率を適用
+      let effectiveValue = step.value || null;
+      if (step.per_count && effectiveValue != null) {
+        const refSource = step.ref || 'evo_source';
+        const count = getRefSourceCountDirect(refSource, ctx.card, ctx.bs, ctx.side);
+        effectiveValue = effectiveValue * Math.floor(count / step.per_count);
+      }
       // レシピのアクション名を既存エンジンのアクション名にマッピング
       let actionCode = step.action;
       if (actionCode === 'active_self') { actionCode = 'active'; }
       if (actionCode === 'trash_evo_bottom') { actionCode = 'evo_discard_bottom'; }
       // レシピのtarget形式 → runOneAction形式に変換
-      const action = { code: actionCode, value: step.value || null };
+      const action = { code: actionCode, value: effectiveValue };
       let target = null;
       if (step.target) {
         const t = step.target;
@@ -2930,8 +3136,17 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       // 条件
       if (step.condition) {
+        const conds = parseRecipeCondition(step.condition);
+        // For non-target-selection actions: check if condition is met, skip if not
+        if (!step.target || step.target === 'self') {
+          if (!checkConditions(conds, ctx.card, ctx.bs, ctx.side)) {
+            callback && callback();
+            break;
+          }
+        }
+        // Pass conditions to ctx.block for target filtering in runOneAction
         if (!ctx.block) ctx.block = {};
-        if (!ctx.block.conditions) ctx.block.conditions = [];
+        ctx.block.conditions = conds;
       }
       // storeから対象を引ける場合は対象選択をスキップして直接適用
       if (step.card && store[step.card]) {
@@ -3093,6 +3308,22 @@ export function calcPerCountValue(effectText, card, bs, side) {
 // カードがキーワード効果を持っているか
 export function cardHasKeyword(card, keywordCode) {
   if (!card) return false;
+
+  // Check _permEffects (set by applyPermanentEffects)
+  if (card._permEffects) {
+    const flagMap = {
+      'blocker': 'blocker', '【ブロッカー】': 'blocker',
+      'rush': 'rush', '【速攻】': 'rush',
+      'piercing': 'piercing', '【突進】': 'piercing',
+      'penetrate': 'penetrate', '【貫通】': 'penetrate',
+      'jamming': 'jamming', '【ジャミング】': 'jamming',
+      'reboot': 'reboot', '【再起動】': 'reboot',
+    };
+    const flag = flagMap[keywordCode];
+    if (flag && card._permEffects[flag]) return true;
+  }
+
+  // Existing text-parsing logic (keep as fallback)
   const texts = [card.effect];
   if (card.stack) card.stack.forEach(s => { if (s.evoSourceEffect) texts.push(s.evoSourceEffect); });
 

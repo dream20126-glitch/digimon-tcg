@@ -2097,24 +2097,32 @@ export function applyPermanentEffects(bs, side, context) {
       block.actions.forEach(action => {
         if (action.when === 'cond_in_battle') return;
         const target = block.target || { code: 'target_self' };
+        // per_count倍率を適用（「N枚ごとに」の処理）
+        let value = action.value;
+        const perCond = block.conditions && block.conditions.find(c => c.code === 'per_count');
+        if (perCond && perCond.value && value != null) {
+          const refSource = perCond.refSource || 'evo_source';
+          const count = getRefSourceCountDirect(refSource, card, bs, side);
+          value = value * Math.floor(count / perCond.value);
+        }
         if (action.code === 'dp_plus') {
           if (target.code === 'target_all_own') {
             bs[side].battleArea.forEach(tgt => {
               if (!tgt) return;
               if (!tgt.buffs) tgt.buffs = [];
-              tgt.buffs.push({ type: 'dp_plus', value: action.value, duration: 'permanent', source: 'perm' });
+              tgt.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'perm' });
               recalcDp(tgt);
             });
           } else if (target.code === 'target_self') {
             if (!card.buffs) card.buffs = [];
-            card.buffs.push({ type: 'dp_plus', value: action.value, duration: 'permanent', source: 'perm' });
+            card.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'perm' });
             recalcDp(card);
           }
         } else if (action.code === 'security_attack_plus') {
           // Sアタック+を永続フラグとして記録（getSecurityAttackCountで参照される）
           const tgt = (target.code === 'target_self') ? card : card;
           if (!tgt._permEffects) tgt._permEffects = {};
-          tgt._permEffects.securityAttackPlus = (tgt._permEffects.securityAttackPlus || 0) + (action.value || 1);
+          tgt._permEffects.securityAttackPlus = (tgt._permEffects.securityAttackPlus || 0) + (value || 1);
         }
       });
     });
@@ -2123,6 +2131,15 @@ export function applyPermanentEffects(bs, side, context) {
     if (card.stack) {
       card.stack.forEach((evoCard) => {
         if (!evoCard.evoSourceEffect || evoCard.evoSourceEffect === 'なし') return;
+
+        // キーワードだけの進化元効果（例: 【Sアタック+1】）→ 無条件で常時付与
+        const evoText = evoCard.evoSourceEffect.trim();
+        if (/^【Sアタック\+(\d+)】$/.test(evoText)) {
+          const saVal = parseInt(RegExp.$1) || 1;
+          if (!card._permEffects) card._permEffects = {};
+          card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + saVal;
+        }
+
         const evoBlocks = parseCardEffect(evoCard, evoCard.evoSourceEffect);
         evoBlocks.forEach(block => {
           if (!block.trigger) return;
@@ -2132,15 +2149,25 @@ export function applyPermanentEffects(bs, side, context) {
           // 「〜とき」を含む効果は誘発型なのでスキップ
           const evoRaw = block.raw || '';
           if (evoRaw.includes('されたとき') || evoRaw.includes('したとき') || evoRaw.includes('なったとき')) return;
+          // 「バトルしている間」はバトル解決時にのみ適用（永続適用しない）
+          if (evoRaw.includes('バトルしている間')) return;
           if (!checkConditions(block.conditions, card, bs, side)) return;
           block.actions.forEach(action => {
+            // per_count倍率を適用（「N枚ごとに」の処理）
+            let value = action.value;
+            const perCond = block.conditions && block.conditions.find(c => c.code === 'per_count');
+            if (perCond && perCond.value && value != null) {
+              const refSource = perCond.refSource || 'evo_source';
+              const count = getRefSourceCountDirect(refSource, card, bs, side);
+              value = value * Math.floor(count / perCond.value);
+            }
             if (action.code === 'dp_plus') {
               if (!card.buffs) card.buffs = [];
-              card.buffs.push({ type: 'dp_plus', value: action.value, duration: 'permanent', source: 'evo_perm' });
+              card.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'evo_perm' });
               recalcDp(card);
             } else if (action.code === 'security_attack_plus') {
               if (!card._permEffects) card._permEffects = {};
-              card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (action.value || 1);
+              card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (value || 1);
             }
           });
         });
@@ -2484,6 +2511,8 @@ function getRecipeForTrigger(card, triggerCode) {
     const recipes = typeof raw === 'string' ? JSON.parse(raw) : raw;
     // { "main": [...], "on_attack": [...] } 形式
     if (recipes[triggerCode]) return recipes[triggerCode];
+    // evo_sourceラッパー内のトリガーも探す（進化元効果のレシピ対応）
+    if (recipes['evo_source'] && recipes['evo_source'][triggerCode]) return recipes['evo_source'][triggerCode];
     // セキュリティ効果でuse_main_effectの場合、mainレシピを返す
     if (triggerCode === 'security' && recipes['main']) {
       // セキュリティ効果テキストに「メイン効果を発揮」があるか確認
@@ -2865,8 +2894,23 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === その他のアクション（既存エンジンに委譲） ===
     default: {
+      // once_per_turn制限チェック（レシピ形式）
+      if (step.limit === 'once_per_turn' && ctx.bs && ctx.card) {
+        const limitKey = (ctx.card.cardNo || ctx.card.name) + '_recipe_' + step.action;
+        if (!ctx.bs._usedLimits) ctx.bs._usedLimits = {};
+        if (ctx.bs._usedLimits[limitKey]) {
+          ctx.addLog && ctx.addLog('⏸ ターンに1回の制限（' + ctx.card.name + '）');
+          callback && callback();
+          break;
+        }
+        ctx.bs._usedLimits[limitKey] = true;
+      }
+      // レシピのアクション名を既存エンジンのアクション名にマッピング
+      let actionCode = step.action;
+      if (actionCode === 'active_self') { actionCode = 'active'; }
+      if (actionCode === 'trash_evo_bottom') { actionCode = 'evo_discard_bottom'; }
       // レシピのtarget形式 → runOneAction形式に変換
-      const action = { code: step.action, value: step.value || null };
+      const action = { code: actionCode, value: step.value || null };
       let target = null;
       if (step.target) {
         const t = step.target;

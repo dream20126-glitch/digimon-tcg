@@ -131,7 +131,7 @@ function renderBattleRows() {
         }
 
         // Sアタック+表示（左上）— 自分のターンのみ表示（永続効果は自分のターンのみ有効）
-        const isMySide = (sideName === 'pl');
+        const isMySide = (side === 'pl');
         const isMyTurn = bs.isPlayerTurn;
         const showSA = isMySide ? isMyTurn : !isMyTurn; // 自分のターンのみSA+有効
         let saExtra = 0;

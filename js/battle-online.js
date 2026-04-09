@@ -459,9 +459,10 @@ function onRemoteCommand(cmd) {
         const mentionsMain = /このカードの\s*【メイン】\s*効果/.test(secCard.securityEffect || secCard.effect);
         const doFinish = () => {
           secCard.effect = originalEffect;
-          // 処理完了を相手（アタック側）に通知
+          // メモリー変動を相手に通知 + 状態同期 + 処理完了通知
+          sendMemoryUpdate();
           sendStateSync();
-          sendCommand({ type: 'security_effect_done' });
+          sendCommand({ type: 'security_effect_done', memory: bs.memory });
         };
         const hasUseMain = secCard.recipe && typeof secCard.recipe === 'string' && secCard.recipe.includes('use_main_effect');
         if (mentionsMain && originalEffect.includes('【メイン】') && !hasUseMain) {
@@ -489,6 +490,11 @@ function onRemoteCommand(cmd) {
     }
     case 'security_effect_done': {
       // アタック側：防御側のセキュリティ効果処理が完了した
+      // メモリー反映（セキュリティ効果でメモリーが変動した場合）
+      if (cmd.memory !== undefined) {
+        bs.memory = -cmd.memory; // 相手のメモリーを反転して自分の値に
+        if (typeof updateMemGauge === 'function') updateMemGauge();
+      }
       if (_pendingSecEffectCallback) {
         const cb = _pendingSecEffectCallback; _pendingSecEffectCallback = null; cb();
       } else {

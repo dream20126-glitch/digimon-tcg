@@ -937,43 +937,66 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'evo_discard':
     case 'evo_discard_bottom':
     case 'evo_discard_top': {
-      // 進化元を持つ相手デジモンを列挙
+      // 進化元を持つ相手デジモンを列挙（条件フィルタ付き）
+      const edConds = ctx.block && ctx.block.conditions ? ctx.block.conditions : [];
       const evoTargets = [];
       for (let i = 0; i < opponent.battleArea.length; i++) {
-        if (opponent.battleArea[i] && opponent.battleArea[i].stack && opponent.battleArea[i].stack.length > 0) evoTargets.push(i);
+        const c = opponent.battleArea[i];
+        if (!c || !c.stack || c.stack.length === 0) continue;
+        // 条件フィルタ（Lv制限等）
+        let valid = true;
+        for (const cond of edConds) {
+          if (cond.code === 'cond_lv_le' && cond.value != null && (parseInt(c.level) || 0) > cond.value) valid = false;
+          if (cond.code === 'cond_lv_ge' && cond.value != null && (parseInt(c.level) || 0) < cond.value) valid = false;
+          if (cond.code === 'cond_dp_le' && cond.value != null && (c.dp || 0) > cond.value) valid = false;
+        }
+        if (valid) evoTargets.push(i);
       }
       if (evoTargets.length === 0) {
-        ctx.addLog('⚠ 進化元を持つ対象がいません');
+        ctx.addLog('⚠ 進化元を破棄できる対象がいません');
         showEffectFailed('効果を発動できませんでした', callback);
         break;
       }
       const n = action.value || 1;
       const discardFromTarget = (tgt) => {
+        const discarded = [];
         for (let i = 0; i < n && tgt.stack.length > 0; i++) {
-          // 公式ルール: 「進化元を破棄」はデフォルトで下から。上からは明示指定時のみ
           const fromTop = action.code === 'evo_discard_top';
           const removed = fromTop ? tgt.stack.shift() : tgt.stack.pop();
           opponent.trash.push(removed);
-          ctx.addLog('📤 「' + tgt.name + '」の進化元を破棄');
+          discarded.push(removed);
+        }
+        // 演出：画面にメッセージ表示
+        if (discarded.length > 0) {
+          const names = discarded.map(c => c.name || '???').join('、');
+          ctx.addLog('📤 「' + tgt.name + '」の進化元から「' + names + '」破棄！');
+          // 画面にフローティングメッセージ
+          const msgEl = document.createElement('div');
+          msgEl.style.cssText = 'position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:60001;background:rgba(0,0,0,0.9);border:2px solid #ff4444;border-radius:10px;padding:14px 24px;color:#ff4444;font-size:clamp(12px,3.5vw,16px);font-weight:bold;text-align:center;pointer-events:none;opacity:0;transition:opacity 0.3s;';
+          msgEl.innerHTML = '📤 「' + tgt.name + '」の進化元から<br>「' + names + '」破棄！';
+          document.body.appendChild(msgEl);
+          setTimeout(() => { msgEl.style.opacity = '1'; }, 50);
+          setTimeout(() => { msgEl.style.opacity = '0'; }, 2200);
+          setTimeout(() => { if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl); }, 2800);
+          // オンラインの相手にも演出を送信
+          if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names });
+          }
         }
       };
       // AIは自動選択、プレイヤーは対象選択UI
       if (effectiveSide === 'ai') {
         discardFromTarget(opponent.battleArea[ctx._forceTargetIdx ?? evoTargets[0]]);
         ctx.renderAll();
-        // オンライン同期
         if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
         callback();
         break;
       }
       ctx.addLog('🎯 進化元を破棄する対象を選んでください');
-      console.log('[evo_discard] targets:', evoTargets, 'rowSide:', opponentRowSide, 'side:', effectiveSide);
       showTargetSelection(opponentRowSide, evoTargets, null, uiColor, (selectedIdx) => {
-        console.log('[evo_discard] selectedIdx:', selectedIdx, 'target:', selectedIdx !== null ? opponent.battleArea[selectedIdx]?.name : 'none');
         if (selectedIdx !== null) {
           discardFromTarget(opponent.battleArea[selectedIdx]);
           ctx.renderAll();
-          // オンライン同期
           if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
         }
         callback();

@@ -980,9 +980,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           setTimeout(() => { if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl); }, 2800);
           // オンラインの相手にも演出＋実データ操作コマンドを送信
           if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-            // 相手側で自分のカードのstackを操作してもらう
             const tgtIdx = opponent.battleArea.indexOf(tgt);
             window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names, targetIdx: tgtIdx, count: discarded.length, fromTop: action.code === 'evo_discard_top' });
+            // state_syncによる復元を防止（5秒間）
+            if (window._markEvoModified) window._markEvoModified('ai', tgtIdx);
           }
         }
       };

@@ -36,6 +36,19 @@ function isRecentlyDestroyed(side, slotIdx) {
   return _recentlyDestroyed.some(d => d.side === side && d.slotIdx === slotIdx && Date.now() - d.time < DESTROY_COOLDOWN);
 }
 
+// 最近進化元が変更されたスロットの追跡（state_syncによる復元を防止）
+let _recentlyEvoModified = [];
+const EVO_MOD_COOLDOWN = 5000;
+
+function markEvoModified(side, slotIdx) {
+  _recentlyEvoModified.push({ side, slotIdx, time: Date.now() });
+  _recentlyEvoModified = _recentlyEvoModified.filter(d => Date.now() - d.time < EVO_MOD_COOLDOWN);
+}
+
+function isRecentlyEvoModified(side, slotIdx) {
+  return _recentlyEvoModified.some(d => d.side === side && d.slotIdx === slotIdx && Date.now() - d.time < EVO_MOD_COOLDOWN);
+}
+
 // ===== 外部モジュール参照（battle.jsから注入） =====
 let _modules = {
   showYourTurn: null,
@@ -571,10 +584,14 @@ function onRemoteCommand(cmd) {
 
       if (st.battleArea) {
         const newArea = toArray(st.battleArea).map(restoreCard);
-        // 最近消滅したスロットにカードが復活するのを防止
         for (let i = 0; i < newArea.length; i++) {
+          // 最近消滅したスロットにカードが復活するのを防止
           if (newArea[i] && isRecentlyDestroyed('ai', i)) {
             newArea[i] = null;
+          }
+          // 最近進化元が変更されたカードのstackを保護（古いsyncで復元されるのを防止）
+          if (newArea[i] && isRecentlyEvoModified('ai', i) && bs.ai.battleArea[i]) {
+            newArea[i].stack = bs.ai.battleArea[i].stack;
           }
         }
         bs.ai.battleArea = newArea;
@@ -951,6 +968,7 @@ window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
 window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._clearPendingBlock = () => { _pendingBlockCallback = null; _pendingBlockResponse = null; };
 window._markDestroyed = (side, slotIdx) => markDestroyed(side, slotIdx);
+window._markEvoModified = (side, slotIdx) => markEvoModified(side, slotIdx);
 window._cleanupOnline = () => cleanupOnline();
 
 // battle-combat.jsの戦闘演出中フラグをwindow経由で公開

@@ -99,6 +99,13 @@ window._triggerMainEffect = function(card, callback) {
   catch (_) { callback && callback(); }
 };
 
+// セキュリティ効果委譲用（battle-online.jsから呼ばれる）
+window._triggerEffectFn = function(triggerCode, card, side, ctx, callback) {
+  const fullCtx = makeEffectContext(card, side);
+  try { _triggerEffectEE(triggerCode, card, side, fullCtx, callback); }
+  catch (_) { callback && callback(); }
+};
+
 // テスト画面用: 勝敗後にシナリオ画面に戻る
 function backToScenarioScreen() {
   // cleanupOnlineは呼び出し元(battleVictory/battleDefeat/game_endハンドラ)で実行済み

@@ -18,6 +18,8 @@ let _onlineCmdListener = null; // Firebaseリスナー解除関数
 let _onlineCmdSeq = 0;         // コマンド連番
 let _pendingBlockCallback = null;
 let _pendingBlockResponse = null;
+let _pendingSecEffectCallback = null;
+let _pendingSecEffectResponse = null;
 
 // 最近消滅したスロットの追跡（state_syncによるカード復活を防止）
 // { side: 'ai'|'player', slotIdx: number, time: number }
@@ -169,6 +171,8 @@ export async function initOnline(roomId, myKey) {
   _onlineCmdSeq = 0;
   _pendingBlockCallback = null;
   _pendingBlockResponse = null;
+  _pendingSecEffectCallback = null;
+  _pendingSecEffectResponse = null;
   _recentlyDestroyed = [];
   _fxQueue = [];
   _fxRunning = false;
@@ -432,6 +436,67 @@ function onRemoteCommand(cmd) {
       break;
     }
 
+    // --- セキュリティ効果委譲（防御側が処理する） ---
+    case 'security_effect_request': {
+      // 相手がアタック→自分のセキュリティからカードがめくれた→自分が効果を処理
+      addLog('✦ セキュリティ効果：「' + cmd.cardName + '」');
+      const secCard = {
+        name: cmd.cardName, cardNo: cmd.cardNo || '', type: cmd.cardType || 'オプション',
+        effect: cmd.effect || '', securityEffect: cmd.securityEffect || '',
+        recipe: cmd.recipe || null, imgSrc: cmd.cardImg || '',
+        dp: cmd.dp || 0, level: cmd.level || '', color: cmd.color || '', feature: cmd.feature || '',
+        cost: cmd.cost || 0, playCost: cmd.playCost || 0,
+        stack: [], buffs: [], suspended: false,
+      };
+      // セキュリティ効果テキストを効果テキストにマージ（triggerEffect用）
+      const hasSecField = secCard.securityEffect && secCard.securityEffect.trim() && secCard.securityEffect !== 'なし';
+      const originalEffect = secCard.effect || '';
+      if (hasSecField) {
+        const secBlock = secCard.securityEffect.includes('【セキュリティ】') ? secCard.securityEffect : '【セキュリティ】' + secCard.securityEffect;
+        secCard.effect = originalEffect + (originalEffect ? '\n' : '') + secBlock;
+      }
+      const afterEffect = () => {
+        const mentionsMain = /このカードの\s*【メイン】\s*効果/.test(secCard.securityEffect || secCard.effect);
+        const doFinish = () => {
+          secCard.effect = originalEffect;
+          // 処理完了を相手（アタック側）に通知
+          sendStateSync();
+          sendCommand({ type: 'security_effect_done' });
+        };
+        const hasUseMain = secCard.recipe && typeof secCard.recipe === 'string' && secCard.recipe.includes('use_main_effect');
+        if (mentionsMain && originalEffect.includes('【メイン】') && !hasUseMain) {
+          secCard.effect = originalEffect;
+          if (_modules.checkTurnStartEffects) {
+            // checkAndTriggerEffectフック経由で処理
+          }
+          // メイン効果をトリガー
+          const ctx = { card: secCard, side: 'player', bs, addLog, renderAll: () => renderAll(), updateMemGauge: () => {}, doDraw: () => {} };
+          try {
+            const te = window._triggerEffectFn;
+            if (te) te('main', secCard, 'player', ctx, doFinish);
+            else doFinish();
+          } catch(_) { doFinish(); }
+        } else { doFinish(); }
+      };
+      // セキュリティ効果を自分側(player)として処理
+      const ctx = { card: secCard, side: 'player', bs, addLog, renderAll: () => renderAll(), updateMemGauge: () => {} };
+      try {
+        const te = window._triggerEffectFn;
+        if (te) te('security', secCard, 'player', ctx, afterEffect);
+        else afterEffect();
+      } catch(_) { afterEffect(); }
+      break;
+    }
+    case 'security_effect_done': {
+      // アタック側：防御側のセキュリティ効果処理が完了した
+      if (_pendingSecEffectCallback) {
+        const cb = _pendingSecEffectCallback; _pendingSecEffectCallback = null; cb();
+      } else {
+        _pendingSecEffectResponse = true;
+      }
+      break;
+    }
+
     // --- ゲーム終了 ---
     case 'game_end': {
       if (m.showGameEndOverlay) {
@@ -671,6 +736,30 @@ export function waitForBlockResponse(callback) {
   }, 30000);
 }
 
+// ===== セキュリティ効果待機（アタック側が防御側の処理完了を待つ） =====
+
+export function waitForSecurityEffect(callback) {
+  const waitOv = document.createElement('div');
+  waitOv.id = '_sec-effect-wait-overlay';
+  waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
+  waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手がセキュリティ効果を処理中...</div>';
+  document.body.appendChild(waitOv);
+
+  function onDone() {
+    if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
+    callback();
+  }
+  if (_pendingSecEffectResponse !== null) {
+    _pendingSecEffectResponse = null; onDone();
+  } else {
+    _pendingSecEffectCallback = onDone;
+  }
+  // 30秒タイムアウト
+  setTimeout(() => {
+    if (_pendingSecEffectCallback === onDone) { _pendingSecEffectCallback = null; onDone(); }
+  }, 30000);
+}
+
 function checkOnlineBlock(cmd) {
   const blockerIndices = [];
   bs.player.battleArea.forEach((c, i) => {
@@ -825,6 +914,7 @@ window._onlineSendCommand = (cmd) => sendCommand(cmd);
 window._onlineSendStateSync = () => sendStateSync();
 window._sendMemoryUpdate = () => sendMemoryUpdate();
 window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
+window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._clearPendingBlock = () => { _pendingBlockCallback = null; _pendingBlockResponse = null; };
 window._markDestroyed = (side, slotIdx) => markDestroyed(side, slotIdx);
 window._cleanupOnline = () => cleanupOnline();

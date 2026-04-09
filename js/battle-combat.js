@@ -549,6 +549,34 @@ export function resolveSecurityCheck(atk, atkIdx) {
       const hasSecInEffect = sec.effect && sec.effect.includes('【セキュリティ】');
       setTimeout(() => {
         if (hasSecField || hasSecInEffect) {
+          const doFinishSec = () => {
+            bs.ai.trash.push(sec); renderAll(); sendStateSync();
+            if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
+            else { checkAttackEnd(atk, atkIdx); }
+          };
+
+          // オンライン時: セキュリティ効果を防御側（P2）に委譲
+          if (_onlineMode && _sendCommand && typeof window._waitForSecurityEffect === 'function') {
+            hideCombatBackdrop();
+            _sendCommand({
+              type: 'security_effect_request',
+              cardName: sec.name, cardNo: sec.cardNo || '', cardType: sec.type || '',
+              effect: sec.effect || '', securityEffect: sec.securityEffect || '',
+              recipe: typeof sec.recipe === 'object' ? JSON.stringify(sec.recipe) : (sec.recipe || ''),
+              cardImg: cardImg(sec), dp: sec.dp || 0, level: sec.level || '',
+              color: sec.color || '', feature: sec.feature || '',
+              cost: sec.cost || 0, playCost: sec.playCost || 0,
+            });
+            addLog('⏳ 相手がセキュリティ効果を処理中...');
+            window._waitForSecurityEffect(() => {
+              // P2の処理完了 → 状態を再同期して続行
+              sendStateSync();
+              doFinishSec();
+            });
+            return;
+          }
+
+          // オフライン時: ローカルで処理
           const secText = hasSecField ? sec.securityEffect : sec.effect;
           const originalEffect = sec.effect || '';
           if (hasSecField) {
@@ -557,20 +585,14 @@ export function resolveSecurityCheck(atk, atkIdx) {
           }
           const afterSecEffect = () => {
             const mentionsMainEffect = /このカードの\s*【メイン】\s*効果/.test(secText);
-            const doFinish = () => {
-              sec.effect = originalEffect;
-              bs.ai.trash.push(sec); renderAll(); sendStateSync();
-              if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
-              else { checkAttackEnd(atk, atkIdx); }
-            };
-            // レシピにuse_main_effectがある場合、セキュリティトリガーで既にメイン効果を実行済み
+            const finish = () => { sec.effect = originalEffect; doFinishSec(); };
             const hasRecipe = sec.recipe && typeof sec.recipe === 'string' && sec.recipe.includes('use_main_effect');
             if (mentionsMainEffect && originalEffect.includes('【メイン】') && !hasRecipe) {
               sec.effect = originalEffect;
-              _hooks.checkAndTriggerEffect(sec, '【メイン】', doFinish, 'ai');
-            } else { doFinish(); }
+              _hooks.checkAndTriggerEffect(sec, '【メイン】', finish, 'ai');
+            } else { finish(); }
           };
-          hideCombatBackdrop(); // セキュリティ効果の対象選択UIが見えるようにバックドロップを一時解除
+          hideCombatBackdrop();
           _hooks.checkAndTriggerEffect(sec, '【セキュリティ】', afterSecEffect, 'ai');
         } else {
           bs.ai.trash.push(sec); renderAll();

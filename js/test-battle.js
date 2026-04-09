@@ -339,59 +339,59 @@ function buildBoardFromScenario(scenario, isPlayer1) {
   bs.memory = isPlayer1 ? sc.memory : -sc.memory;
   bs.isPlayerTurn = isPlayer1;
 
-  // --- 自分側 ---
-  (mySc.hand || []).forEach(name => {
-    const card = findCardByName(name);
-    if (card) bs.player.hand.push(card);
-  });
-  (mySc.battleArea || []).forEach(name => {
-    const card = findCardByName(name);
-    if (card) bs.player.battleArea.push(card);
-  });
-  // 進化元: バトルエリアの1体目に積む（下から順に）
-  if ((mySc.evoSource || []).length > 0 && bs.player.battleArea[0]) {
-    (mySc.evoSource).forEach(name => {
+  // --- サイド構築ヘルパー ---
+  function buildSide(target, sc, dummyOffset) {
+    (sc.hand || []).forEach(name => {
       const card = findCardByName(name);
-      if (card) bs.player.battleArea[0].stack.push(card);
+      if (card) target.hand.push(card);
     });
+    (sc.battleArea || []).forEach(name => {
+      const card = findCardByName(name);
+      if (card) target.battleArea.push(card);
+    });
+    // 進化元: evoSourceMap（新形式）= { battleIdx: [cardName, ...] }
+    if (sc.evoSourceMap) {
+      Object.keys(sc.evoSourceMap).forEach(idx => {
+        const bi = parseInt(idx);
+        if (target.battleArea[bi]) {
+          (sc.evoSourceMap[idx] || []).forEach(name => {
+            const card = findCardByName(name);
+            if (card) target.battleArea[bi].stack.push(card);
+          });
+        }
+      });
+    }
+    // 進化元: evoSource（旧形式）= 1体目に積む
+    if (!sc.evoSourceMap && (sc.evoSource || []).length > 0 && target.battleArea[0]) {
+      sc.evoSource.forEach(name => {
+        const card = findCardByName(name);
+        if (card) target.battleArea[0].stack.push(card);
+      });
+    }
+    (sc.tamerArea || []).forEach(name => {
+      const card = findCardByName(name);
+      if (card) target.tamerArea.push(card);
+    });
+    (sc.trash || []).forEach(name => {
+      const card = findCardByName(name);
+      if (card) target.trash.push(card);
+    });
+    // セキュリティ: 指定カード + ダミーで合計枚数を埋める
+    const secCards = sc.securityCards || [];
+    secCards.forEach(name => {
+      const card = findCardByName(name);
+      if (card) target.security.push(card);
+    });
+    const secDummy = sc.securityDummy ?? (secCards.length > 0 ? 0 : (sc.security ?? 5));
+    for (let i = 0; i < secDummy; i++) target.security.push(makeDummyCard(dummyOffset + i));
+    for (let i = 0; i < (sc.deckSize || 20); i++) target.deck.push(makeDummyCard(dummyOffset + 100 + i));
   }
-  (mySc.tamerArea || []).forEach(name => {
-    const card = findCardByName(name);
-    if (card) bs.player.tamerArea.push(card);
-  });
-  (mySc.trash || []).forEach(name => {
-    const card = findCardByName(name);
-    if (card) bs.player.trash.push(card);
-  });
-  for (let i = 0; i < (mySc.security ?? 5); i++) bs.player.security.push(makeDummyCard(100 + i));
-  for (let i = 0; i < (mySc.deckSize || 20); i++) bs.player.deck.push(makeDummyCard(200 + i));
+
+  // --- 自分側 ---
+  buildSide(bs.player, mySc, 100);
 
   // --- 相手側 ---
-  (oppSc.hand || []).forEach(name => {
-    const card = findCardByName(name);
-    if (card) bs.ai.hand.push(card);
-  });
-  (oppSc.battleArea || []).forEach(name => {
-    const card = findCardByName(name);
-    if (card) bs.ai.battleArea.push(card);
-  });
-  // 進化元: バトルエリアの1体目に積む（下から順に）
-  if ((oppSc.evoSource || []).length > 0 && bs.ai.battleArea[0]) {
-    (oppSc.evoSource).forEach(name => {
-      const card = findCardByName(name);
-      if (card) bs.ai.battleArea[0].stack.push(card);
-    });
-  }
-  (oppSc.tamerArea || []).forEach(name => {
-    const card = findCardByName(name);
-    if (card) bs.ai.tamerArea.push(card);
-  });
-  (oppSc.trash || []).forEach(name => {
-    const card = findCardByName(name);
-    if (card) bs.ai.trash.push(card);
-  });
-  for (let i = 0; i < (oppSc.security ?? 5); i++) bs.ai.security.push(makeDummyCard(300 + i));
-  for (let i = 0; i < (oppSc.deckSize || 20); i++) bs.ai.deck.push(makeDummyCard(400 + i));
+  buildSide(bs.ai, oppSc, 300);
 
   addLog(`[TEST] シナリオ "${sc.name}" を読み込みました（${isPlayer1 ? 'Player1' : 'Player2'}）`);
   addLog(`[TEST] メモリー: ${bs.memory} / 手札: ${bs.player.hand.length}枚 / バトルエリア: ${bs.player.battleArea.length}体`);
@@ -403,7 +403,8 @@ function buildBoardFromScenario(scenario, isPlayer1) {
 // ===== シナリオ選択UI =====
 let _selectedPlayer = 'player1';
 let _selectedCardName = null; // 検索で選択中のカード名
-let _customCards = { 'p1-hand': [], 'p1-battle': [], 'p1-evo': [], 'p1-tamer': [], 'p1-trash': [], 'p2-battle': [], 'p2-evo': [], 'p2-tamer': [], 'p2-trash': [] };
+let _customCards = { 'p1-hand': [], 'p1-battle': [], 'p1-tamer': [], 'p1-trash': [], 'p1-security': [], 'p2-battle': [], 'p2-tamer': [], 'p2-trash': [], 'p2-security': [] };
+let _customEvo = { p1: {}, p2: {} }; // { p1: { 0: ['カード名', ...], 1: [...] }, p2: { ... } }
 let _cardsLoaded = false;
 
 window.selectPlayer = function(player) {
@@ -462,6 +463,7 @@ window.selectSearchCard = function(name) {
 window.addCardTo = function(zone) {
   if (!_selectedCardName) { alert('先にカードを検索して選択してください'); return; }
   _customCards[zone].push(_selectedCardName);
+  // バトルカード削除時に進化元もクリーンアップするため、evo indexは自動管理
   renderCustomCards();
   _selectedCardName = null;
   document.getElementById('card-search-results').innerHTML = '';
@@ -470,6 +472,37 @@ window.addCardTo = function(zone) {
 // カードを配置先から削除
 window.removeCardFrom = function(zone, idx) {
   _customCards[zone].splice(idx, 1);
+  // バトルエリアから削除した場合、進化元データも調整
+  if (zone === 'p1-battle' || zone === 'p2-battle') {
+    const side = zone === 'p1-battle' ? 'p1' : 'p2';
+    const newEvo = {};
+    Object.keys(_customEvo[side]).forEach(key => {
+      const k = parseInt(key);
+      if (k < idx) newEvo[k] = _customEvo[side][k];
+      else if (k > idx) newEvo[k - 1] = _customEvo[side][k];
+      // k === idx は削除（そのデジモンの進化元ごと消える）
+    });
+    _customEvo[side] = newEvo;
+  }
+  renderCustomCards();
+};
+
+// 進化元を特定のバトルエリアデジモンに追加
+window.addEvoTo = function(side, battleIdx) {
+  if (!_selectedCardName) { alert('先にカードを検索して選択してください'); return; }
+  if (!_customEvo[side][battleIdx]) _customEvo[side][battleIdx] = [];
+  _customEvo[side][battleIdx].push(_selectedCardName);
+  renderCustomCards();
+  _selectedCardName = null;
+  document.getElementById('card-search-results').innerHTML = '';
+};
+
+// 進化元を削除
+window.removeEvoFrom = function(side, battleIdx, evoIdx) {
+  if (_customEvo[side][battleIdx]) {
+    _customEvo[side][battleIdx].splice(evoIdx, 1);
+    if (_customEvo[side][battleIdx].length === 0) delete _customEvo[side][battleIdx];
+  }
   renderCustomCards();
 };
 
@@ -477,9 +510,36 @@ function renderCustomCards() {
   Object.keys(_customCards).forEach(zone => {
     const el = document.getElementById('custom-' + zone);
     if (!el) return;
+    const isP1 = zone.startsWith('p1');
+    const color = isP1 ? '#00fbff' : '#ff00fb';
+
+    // バトルエリアは進化元付きで特別レンダリング
+    if (zone === 'p1-battle' || zone === 'p2-battle') {
+      const side = isP1 ? 'p1' : 'p2';
+      const btnBorder = isP1 ? '#0f0' : '#f0f';
+      if (_customCards[zone].length === 0) {
+        el.innerHTML = '';
+        return;
+      }
+      el.innerHTML = _customCards[zone].map((name, i) => {
+        const evoCards = _customEvo[side][i] || [];
+        const evoHtml = evoCards.map((eName, ei) =>
+          `<span style="background:#ffaa0022;color:#ffaa00;border:1px solid #ffaa0044;border-radius:4px;padding:1px 5px;font-size:9px;cursor:pointer;" onclick="removeEvoFrom('${side}',${i},${ei})" title="クリックで削除">${eName} ✕</span>`
+        ).join('');
+        return `<div style="background:#111;border:1px solid ${color}44;border-radius:6px;padding:4px 6px;margin-bottom:3px;">
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="color:${color};font-size:10px;font-weight:bold;">${name}</span>
+            <span style="color:#666;font-size:9px;cursor:pointer;" onclick="removeCardFrom('${zone}',${i})" title="デジモン削除">✕</span>
+            <button onclick="addEvoTo('${side}',${i})" style="font-size:8px;padding:1px 4px;background:#332200;color:#ffaa00;border:1px solid #ffaa0066;border-radius:3px;cursor:pointer;margin-left:auto;">+進化元</button>
+          </div>
+          ${evoCards.length > 0 ? `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px;padding-left:8px;border-left:2px solid #ffaa0033;">${evoHtml}</div>` : ''}
+        </div>`;
+      }).join('');
+      return;
+    }
+
+    // 通常のゾーン
     el.innerHTML = _customCards[zone].map((name, i) => {
-      const isP1 = zone.startsWith('p1');
-      const color = isP1 ? '#00fbff' : '#ff00fb';
       return `<span style="background:${color}22;color:${color};border:1px solid ${color}44;border-radius:4px;padding:2px 6px;font-size:10px;cursor:pointer;" onclick="removeCardFrom('${zone}',${i})" title="クリックで削除">${name} ✕</span>`;
     }).join('');
   });
@@ -507,9 +567,10 @@ window.saveScenario = function() {
   if (!name) { alert('シナリオ名を入力してください'); return; }
   const data = {
     cards: JSON.parse(JSON.stringify(_customCards)),
+    evo: JSON.parse(JSON.stringify(_customEvo)),
     memory: parseInt(document.getElementById('custom-memory').value) || 5,
-    p1Sec: parseInt(document.getElementById('custom-p1-sec').value) || 0,
-    p2Sec: parseInt(document.getElementById('custom-p2-sec').value) || 0,
+    p1SecDummy: parseInt(document.getElementById('custom-p1-sec').value) || 0,
+    p2SecDummy: parseInt(document.getElementById('custom-p2-sec').value) || 0,
   };
   const saved = getSavedScenarios();
   saved[name] = data;
@@ -527,9 +588,16 @@ window.loadScenario = function() {
   if (!data) return;
   // カード配置を復元
   Object.keys(data.cards).forEach(zone => { _customCards[zone] = data.cards[zone] || []; });
+  // 進化元を復元（旧形式対応）
+  if (data.evo) {
+    _customEvo = JSON.parse(JSON.stringify(data.evo));
+  } else {
+    _customEvo = { p1: {}, p2: {} };
+  }
+  // セキュリティ（旧形式: p1Sec/p2Sec → 新形式: p1SecDummy/p2SecDummy）
   document.getElementById('custom-memory').value = data.memory || 5;
-  document.getElementById('custom-p1-sec').value = data.p1Sec ?? 5;
-  document.getElementById('custom-p2-sec').value = data.p2Sec ?? 0;
+  document.getElementById('custom-p1-sec').value = data.p1SecDummy ?? data.p1Sec ?? 5;
+  document.getElementById('custom-p2-sec').value = data.p2SecDummy ?? data.p2Sec ?? 0;
   document.getElementById('save-name-input').value = name;
   renderCustomCards();
   document.getElementById('test-status').innerText = `📂「${name}」を読み込みました`;
@@ -597,19 +665,21 @@ window.startTest = async function() {
         player: {
           hand: _customCards['p1-hand'],
           battleArea: _customCards['p1-battle'],
-          evoSource: _customCards['p1-evo'],
+          evoSourceMap: _customEvo['p1'],
           tamerArea: _customCards['p1-tamer'],
           trash: _customCards['p1-trash'],
-          security: parseInt(document.getElementById('custom-p1-sec').value) || 0,
+          securityCards: _customCards['p1-security'],
+          securityDummy: parseInt(document.getElementById('custom-p1-sec').value) || 0,
           deckSize: 20,
         },
         ai: {
           hand: [],
           battleArea: _customCards['p2-battle'],
-          evoSource: _customCards['p2-evo'],
+          evoSourceMap: _customEvo['p2'],
           tamerArea: _customCards['p2-tamer'],
           trash: _customCards['p2-trash'],
-          security: parseInt(document.getElementById('custom-p2-sec').value) || 0,
+          securityCards: _customCards['p2-security'],
+          securityDummy: parseInt(document.getElementById('custom-p2-sec').value) || 0,
           deckSize: 20,
         },
       };

@@ -165,49 +165,55 @@
         <div id="custom-p1-hand" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
         <button onclick="addCardTo('p1-hand')" style="font-size:9px; padding:2px 6px; background:#333; color:#0f0; border:1px solid #0f0; border-radius:4px; cursor:pointer;">+追加</button>
       </div>
-      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
-        <span style="color:#888; font-size:10px; width:60px;">バトル:</span>
-        <div id="custom-p1-battle" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
-        <button onclick="addCardTo('p1-battle')" style="font-size:9px; padding:2px 6px; background:#333; color:#0f0; border:1px solid #0f0; border-radius:4px; cursor:pointer;">+追加</button>
-      </div>
-      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
-        <span style="color:#888; font-size:10px; width:60px;">進化元:</span>
-        <div id="custom-p1-evo" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
-        <button onclick="addCardTo('p1-evo')" style="font-size:9px; padding:2px 6px; background:#333; color:#0f0; border:1px solid #0f0; border-radius:4px; cursor:pointer;">+追加</button>
+      <div style="margin-bottom:4px;">
+        <div style="display:flex; gap:4px; align-items:center; margin-bottom:2px;">
+          <span style="color:#888; font-size:10px; width:60px;">バトル:</span>
+          <div style="flex:1;"></div>
+          <button onclick="addCardTo('p1-battle')" style="font-size:9px; padding:2px 6px; background:#333; color:#0f0; border:1px solid #0f0; border-radius:4px; cursor:pointer;">+追加</button>
+        </div>
+        <div id="custom-p1-battle" style="padding-left:8px;"></div>
       </div>
       <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
         <span style="color:#888; font-size:10px; width:60px;">テイマー:</span>
         <div id="custom-p1-tamer" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
         <button onclick="addCardTo('p1-tamer')" style="font-size:9px; padding:2px 6px; background:#333; color:#0f0; border:1px solid #0f0; border-radius:4px; cursor:pointer;">+追加</button>
       </div>
-      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:8px;">
+      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
         <span style="color:#888; font-size:10px; width:60px;">トラッシュ:</span>
         <div id="custom-p1-trash" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
         <button onclick="addCardTo('p1-trash')" style="font-size:9px; padding:2px 6px; background:#333; color:#0f0; border:1px solid #0f0; border-radius:4px; cursor:pointer;">+追加</button>
       </div>
+      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:8px;">
+        <span style="color:#888; font-size:10px; width:60px;">セキュリティ:</span>
+        <div id="custom-p1-security" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
+        <button onclick="addCardTo('p1-security')" style="font-size:9px; padding:2px 6px; background:#333; color:#0f0; border:1px solid #0f0; border-radius:4px; cursor:pointer;">+追加</button>
+      </div>
 
       <div style="color:#ff00fb; font-size:11px; font-weight:bold; margin:8px 0 4px;">相手（Player2）</div>
-      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
-        <span style="color:#888; font-size:10px; width:60px;">バトル:</span>
-        <div id="custom-p2-battle" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
-        <button onclick="addCardTo('p2-battle')" style="font-size:9px; padding:2px 6px; background:#333; color:#f0f; border:1px solid #f0f; border-radius:4px; cursor:pointer;">+追加</button>
-      </div>
-      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
-        <span style="color:#888; font-size:10px; width:60px;">進化元:</span>
-        <div id="custom-p2-evo" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
-        <button onclick="addCardTo('p2-evo')" style="font-size:9px; padding:2px 6px; background:#333; color:#f0f; border:1px solid #f0f; border-radius:4px; cursor:pointer;">+追加</button>
+      <div style="margin-bottom:4px;">
+        <div style="display:flex; gap:4px; align-items:center; margin-bottom:2px;">
+          <span style="color:#888; font-size:10px; width:60px;">バトル:</span>
+          <div style="flex:1;"></div>
+          <button onclick="addCardTo('p2-battle')" style="font-size:9px; padding:2px 6px; background:#333; color:#f0f; border:1px solid #f0f; border-radius:4px; cursor:pointer;">+追加</button>
+        </div>
+        <div id="custom-p2-battle" style="padding-left:8px;"></div>
       </div>
       <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
         <span style="color:#888; font-size:10px; width:60px;">テイマー:</span>
         <div id="custom-p2-tamer" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
         <button onclick="addCardTo('p2-tamer')" style="font-size:9px; padding:2px 6px; background:#333; color:#f0f; border:1px solid #f0f; border-radius:4px; cursor:pointer;">+追加</button>
       </div>
-      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:8px;">
+      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
         <span style="color:#888; font-size:10px; width:60px;">トラッシュ:</span>
         <div id="custom-p2-trash" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
         <button onclick="addCardTo('p2-trash')" style="font-size:9px; padding:2px 6px; background:#333; color:#f0f; border:1px solid #f0f; border-radius:4px; cursor:pointer;">+追加</button>
       </div>
-      <div style="color:#555; font-size:9px; margin-top:4px;">※ 進化元はバトルエリアの1体目のデジモンに積まれます（下から順に）</div>
+      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:8px;">
+        <span style="color:#888; font-size:10px; width:60px;">セキュリティ:</span>
+        <div id="custom-p2-security" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
+        <button onclick="addCardTo('p2-security')" style="font-size:9px; padding:2px 6px; background:#333; color:#f0f; border:1px solid #f0f; border-radius:4px; cursor:pointer;">+追加</button>
+      </div>
+      <div style="color:#555; font-size:9px; margin-top:4px;">※ 進化元はバトルエリアのデジモンごとに「+進化元」ボタンで追加できます</div>
 
       <!-- 保存/読み込み -->
       <div style="border-top:1px solid #333; margin-top:12px; padding-top:10px;">
@@ -230,11 +236,11 @@
           <input type="number" id="custom-memory" value="5" min="1" max="10" style="width:50px; padding:6px; background:#111; border:1px solid #333; border-radius:6px; color:#fff; font-size:13px; text-align:center;">
         </div>
         <div style="display:flex; gap:4px; align-items:center;">
-          <span style="color:#00fbff; font-size:11px;">自分セキュリティ:</span>
+          <span style="color:#00fbff; font-size:11px;">自分ダミーセキュリティ:</span>
           <input type="number" id="custom-p1-sec" value="5" min="0" max="10" style="width:45px; padding:6px; background:#111; border:1px solid #333; border-radius:6px; color:#fff; font-size:13px; text-align:center;">
         </div>
         <div style="display:flex; gap:4px; align-items:center;">
-          <span style="color:#ff00fb; font-size:11px;">相手セキュリティ:</span>
+          <span style="color:#ff00fb; font-size:11px;">相手ダミーセキュリティ:</span>
           <input type="number" id="custom-p2-sec" value="0" min="0" max="10" style="width:45px; padding:6px; background:#111; border:1px solid #333; border-radius:6px; color:#fff; font-size:13px; text-align:center;">
         </div>
       </div>

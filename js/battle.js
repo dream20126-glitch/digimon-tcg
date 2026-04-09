@@ -22,6 +22,14 @@ import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanent
 // Phase 6: オンライン
 import { initOnline, startOnlineListener, sendCommand, sendStateSync, sendMemoryUpdate, cleanupOnline, isOnlineMode, setOnlineModules } from './battle-online.js';
 
+// ===== スプシ列名揺れ対応ヘルパー =====
+function _f(obj, ...names) {
+  for (const n of names) {
+    if (obj[n] !== undefined && obj[n] !== null && obj[n] !== '') return obj[n];
+  }
+  return undefined;
+}
+
 // ===== デッキパーサー =====
 function parseDeck(deckData) {
   if (!deckData || !deckData.list) return [];
@@ -31,11 +39,13 @@ function parseDeck(deckData) {
     if (!m) return;
     const cardNo = m[2], count = parseInt(m[3]);
     const obj = allCards.find(c => c["カードNo"] === cardNo) || {};
-    const playCost = obj["登場コスト"], evolveCost = obj["進化コスト"];
-    const hasPlay = playCost !== undefined && playCost !== '' && playCost !== null;
-    const hasEvolve = evolveCost !== undefined && evolveCost !== '' && evolveCost !== null;
+    const playCost = _f(obj, '登場コスト', '登場\nコスト');
+    const evolveCost = _f(obj, '進化コスト', '進化\nコスト');
+    const level = _f(obj, 'レベル', 'Lv');
+    const hasPlay = playCost !== undefined;
+    const hasEvolve = evolveCost !== undefined;
     for (let i = 0; i < count; i++) out.push({
-      name: obj["名前"] || m[1], cardNo, level: String(obj["レベル"] || '?'),
+      name: obj["名前"] || m[1], cardNo, level: String(level ?? '?'),
       dp: parseInt(obj["DP"] || 0), baseDp: parseInt(obj["DP"] || 0), dpModifier: 0,
       playCost: hasPlay ? parseInt(playCost) : null,
       evolveCost: hasEvolve ? parseInt(evolveCost) : null,

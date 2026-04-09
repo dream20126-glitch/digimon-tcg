@@ -269,20 +269,29 @@ setOnlineHandlers(false, null, { sendCommand, sendStateSync, sendMemoryUpdate })
 setCombatOnlineHandlers(false, null, { sendCommand, sendStateSync, sendMemoryUpdate });
 
 // ===== カードDBからカードを名前で検索してカードオブジェクトを構築 =====
+// スプシのヘッダー名揺れ対応ヘルパー（改行入り列名・旧列名の両方を探す）
+function cardField(card, ...names) {
+  for (const n of names) {
+    if (card[n] !== undefined && card[n] !== null && card[n] !== '') return card[n];
+  }
+  return undefined;
+}
+
 function findCardByName(name) {
   const card = window.allCards.find(c => c['名前'] === name);
   if (!card) {
     console.warn(`[test] カード "${name}" がDBに見つかりません`);
     return null;
   }
-  const playCost = card['登場コスト'];
-  const evolveCost = card['進化コスト'];
-  const hasPlay = playCost !== undefined && playCost !== '' && playCost !== null;
-  const hasEvolve = evolveCost !== undefined && evolveCost !== '' && evolveCost !== null;
+  const level = cardField(card, 'レベル', 'Lv');
+  const playCost = cardField(card, '登場コスト', '登場\nコスト');
+  const evolveCost = cardField(card, '進化コスト', '進化\nコスト');
+  const hasPlay = playCost !== undefined;
+  const hasEvolve = evolveCost !== undefined;
   return {
     name: card['名前'] || name,
     cardNo: card['カードNo'] || '',
-    level: String(card['レベル'] || '?'),
+    level: String(level ?? '?'),
     dp: parseInt(card['DP'] || 0),
     baseDp: parseInt(card['DP'] || 0),
     dpModifier: 0,

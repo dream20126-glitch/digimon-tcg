@@ -517,7 +517,9 @@ function executeQueueEntry(entry, context, callback) {
         callback();
       };
       // レシピがあればレシピ実行、なければ従来処理
-      const recipe = getRecipeForTrigger(card, block.trigger ? block.trigger.code : null);
+      // 進化元効果のレシピは _recipeCard に格納されている
+      const recipeCard = block._recipeCard || card;
+      const recipe = getRecipeForTrigger(recipeCard, block.trigger ? block.trigger.code : null);
       if (recipe) {
         runRecipe(recipe, ctx, wrappedCallback);
       } else {
@@ -2580,10 +2582,24 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
           added = true;
         }
       });
-      // ソースカードの進化元効果もスキャン
+      // ソースカードの進化元効果もスキャン（テキスト解析 + レシピ）
       if (sourceCard.stack) {
         sourceCard.stack.forEach(evoCard => {
           if (!evoCard.evoSourceEffect || evoCard.evoSourceEffect === 'なし') return;
+          // レシピがある場合はレシピを優先
+          const evoRecipeSteps = getRecipeForTrigger(evoCard, triggerCode);
+          if (evoRecipeSteps) {
+            // レシピを実行するためのダミーブロックをキューに追加
+            const dummyBlock = {
+              raw: evoCard.evoSourceEffect, trigger: { code: triggerCode },
+              actions: [], conditions: [], _recipeCard: evoCard,
+            };
+            addToQueue(sourceCard, dummyBlock,
+              sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
+            );
+            return;
+          }
+          // テキスト解析フォールバック
           const evoBlocks = parseCardEffect(evoCard, evoCard.evoSourceEffect);
           evoBlocks.forEach(block => {
             if (block.trigger && block.trigger.code === triggerCode) {

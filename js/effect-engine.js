@@ -2236,7 +2236,6 @@ export function applyPermanentEffects(bs, side, context) {
           } else if (step.action === 'security_attack_plus') {
             if (!card._permEffects) card._permEffects = {};
             card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (value || 1);
-            console.log('[perm③] SA+', value || 1, 'on', card.name, '→ total:', card._permEffects.securityAttackPlus);
           }
         });
       });
@@ -2292,7 +2291,6 @@ export function applyPermanentEffects(bs, side, context) {
             } else if (step.action === 'security_attack_plus') {
               if (!card._permEffects) card._permEffects = {};
               card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (value || 1);
-              console.log('[perm④] SA+', value || 1, 'on', card.name, 'from evo', evoCard.name, '→ total:', card._permEffects.securityAttackPlus);
             }
           });
         });
@@ -2305,7 +2303,6 @@ export function applyPermanentEffects(bs, side, context) {
             if (flag === 'security_attack_plus') {
               const val = (typeof p === 'object' && p.value) ? p.value : 1;
               card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + val;
-              console.log('[perm④passive] SA+', val, 'on', card.name, 'from evo', evoCard.name, '→ total:', card._permEffects.securityAttackPlus);
             } else if (flag === 'blocker') { card._permEffects.blocker = true; }
             else if (flag === 'piercing') { card._permEffects.piercing = true; }
             else if (flag === 'rush') { card._permEffects.rush = true; }

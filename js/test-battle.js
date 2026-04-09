@@ -21,6 +21,8 @@ import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEff
 import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE } from './effect-engine.js';
 // Phase 6: オンライン
 import { initOnline, startOnlineListener, sendCommand, sendStateSync, sendMemoryUpdate, cleanupOnline, isOnlineMode, setOnlineModules } from './battle-online.js';
+// Firebase直接アクセス（シナリオ共有用）
+import { rtdb, ref, set, onValue } from './firebase-config.js';
 
 // ===== シナリオ定義 =====
 const SCENARIOS = {
@@ -619,6 +621,54 @@ window.deleteScenario = function() {
 refreshSavedList();
 window.updateScenarioDesc();
 
+// ===== カスタムシナリオをFirebaseに書き込み/読み取り =====
+function buildCustomScenarioData() {
+  return {
+    name: 'カスタムシナリオ',
+    description: 'カスタム',
+    memory: parseInt(document.getElementById('custom-memory').value) || 5,
+    player: {
+      hand: _customCards['p1-hand'],
+      battleArea: _customCards['p1-battle'],
+      evoSourceMap: _customEvo['p1'],
+      tamerArea: _customCards['p1-tamer'],
+      trash: _customCards['p1-trash'],
+      securityCards: _customCards['p1-security'],
+      securityDummy: parseInt(document.getElementById('custom-p1-sec').value) || 0,
+      deckSize: 20,
+    },
+    ai: {
+      hand: _customCards['p2-hand'],
+      battleArea: _customCards['p2-battle'],
+      evoSourceMap: _customEvo['p2'],
+      tamerArea: _customCards['p2-tamer'],
+      trash: _customCards['p2-trash'],
+      securityCards: _customCards['p2-security'],
+      securityDummy: parseInt(document.getElementById('custom-p2-sec').value) || 0,
+      deckSize: 20,
+    },
+  };
+}
+
+async function saveScenarioToFirebase(roomId, scenarioData) {
+  await set(ref(rtdb, `rooms/${roomId}/scenario`), scenarioData);
+}
+
+function loadScenarioFromFirebase(roomId) {
+  return new Promise((resolve) => {
+    const scenRef = ref(rtdb, `rooms/${roomId}/scenario`);
+    const unsub = onValue(scenRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        unsub(); // リスナー解除
+        resolve(data);
+      }
+    });
+    // 30秒タイムアウト
+    setTimeout(() => { unsub(); resolve(null); }, 30000);
+  });
+}
+
 // ===== テスト開始 =====
 window.startTest = async function() {
   const statusEl = document.getElementById('test-status');
@@ -656,33 +706,34 @@ window.startTest = async function() {
     // シナリオ選択（Player1/Player2で盤面反転）
     const scenarioKey = document.getElementById('scenario-select').value;
 
-    // カスタムシナリオの場合、動的にSCENARIOSに登録
     if (scenarioKey === '__custom__') {
-      SCENARIOS['__custom__'] = {
-        name: 'カスタムシナリオ',
-        description: 'カスタム',
-        memory: parseInt(document.getElementById('custom-memory').value) || 5,
-        player: {
-          hand: _customCards['p1-hand'],
-          battleArea: _customCards['p1-battle'],
-          evoSourceMap: _customEvo['p1'],
-          tamerArea: _customCards['p1-tamer'],
-          trash: _customCards['p1-trash'],
-          securityCards: _customCards['p1-security'],
-          securityDummy: parseInt(document.getElementById('custom-p1-sec').value) || 0,
-          deckSize: 20,
-        },
-        ai: {
-          hand: _customCards['p2-hand'],
-          battleArea: _customCards['p2-battle'],
-          evoSourceMap: _customEvo['p2'],
-          tamerArea: _customCards['p2-tamer'],
-          trash: _customCards['p2-trash'],
-          securityCards: _customCards['p2-security'],
-          securityDummy: parseInt(document.getElementById('custom-p2-sec').value) || 0,
-          deckSize: 20,
-        },
-      };
+      if (isFirst) {
+        // Player1: カスタムシナリオを構築してFirebaseに保存
+        const scenarioData = buildCustomScenarioData();
+        SCENARIOS['__custom__'] = scenarioData;
+        await saveScenarioToFirebase(roomId, scenarioData);
+        statusEl.innerText = 'シナリオをFirebaseに保存しました';
+      } else {
+        // Player2: Player1のシナリオをFirebaseから読み取り
+        statusEl.innerText = 'Player1のシナリオを待機中...';
+        const scenarioData = await loadScenarioFromFirebase(roomId);
+        if (!scenarioData) {
+          statusEl.innerText = 'シナリオの読み取りがタイムアウトしました。Player1が先にテスト開始してください。';
+          startBtn.disabled = false;
+          return;
+        }
+        // evoSourceMap はFirebaseでオブジェクト化される可能性があるので復元
+        if (scenarioData.player && scenarioData.player.evoSourceMap) {
+          const map = scenarioData.player.evoSourceMap;
+          Object.keys(map).forEach(k => { if (!Array.isArray(map[k])) map[k] = Object.values(map[k] || {}); });
+        }
+        if (scenarioData.ai && scenarioData.ai.evoSourceMap) {
+          const map = scenarioData.ai.evoSourceMap;
+          Object.keys(map).forEach(k => { if (!Array.isArray(map[k])) map[k] = Object.values(map[k] || {}); });
+        }
+        SCENARIOS['__custom__'] = scenarioData;
+        statusEl.innerText = 'シナリオを受信しました';
+      }
     }
 
     const ok = buildBoardFromScenario(scenarioKey, isFirst);

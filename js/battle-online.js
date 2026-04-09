@@ -111,6 +111,7 @@ export function sendStateSync() {
       imgSrc: c.imgSrc || '', imageUrl: c.imageUrl || '', color: c.color || '', feature: c.feature || '',
       evolveCond: c.evolveCond || '', buffs: c.buffs || [],
       stack: (c.stack || []).map(serializeCard),
+      recipe: c.recipe || null,
       _permEffects: c._permEffects || {}, _usedEffects: c._usedEffects || [],
     };
   };

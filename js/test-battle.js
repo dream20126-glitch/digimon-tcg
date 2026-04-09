@@ -102,6 +102,12 @@ window._triggerMainEffect = function(card, callback) {
 // セキュリティ効果委譲用（battle-online.jsから呼ばれる）
 window._fxCardMove = fxCardMove;
 
+// renderAll前の永続効果再計算用
+window._applyPermanentEffects = function() {
+  try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch(_) {}
+  try { _applyPermanentEE(bs, 'ai', makeEffectContext(null, 'ai')); } catch(_) {}
+};
+
 window._triggerEffectFn = function(triggerCode, card, side, ctx, callback) {
   const fullCtx = makeEffectContext(card, side);
   try { _triggerEffectEE(triggerCode, card, side, fullCtx, callback); }

@@ -35,6 +35,8 @@ let _syncTimer = null;
 export function renderAll(force) {
   // 対象選択中は再描画しない（UIが壊れるため）
   if (!force && isTargetSelecting()) return;
+  // 永続効果を再計算（SA+/DP+等が最新の進化元状態を反映するように）
+  if (window._applyPermanentEffects) { try { window._applyPermanentEffects(); } catch(_) {} }
   renderSecurity();
   renderBattleRows();
   renderTamerRows();

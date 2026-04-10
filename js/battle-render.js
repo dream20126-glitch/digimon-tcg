@@ -222,7 +222,9 @@ function showLongpressMenu(card, slotIdx, el) {
   const hasEvoSpeed = card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【速攻】'));
   const notSick = !card.summonedThisTurn || hasEvoSpeed;
   if (canAtk && notSick) {
-    if (_wasAlreadySuspended) {
+    if (card.cantAttack) {
+      html += '<button class="lp-action-btn lp-atk-btn" disabled style="opacity:0.3;cursor:not-allowed;">⚔ アタック不可</button>';
+    } else if (_wasAlreadySuspended) {
       html += '<button class="lp-action-btn lp-atk-btn" disabled style="opacity:0.3;cursor:not-allowed;">⚔ アタック（レスト中）</button>';
     } else {
       html += `<button class="lp-action-btn lp-atk-btn" onclick="startAttackMode(${slotIdx})">⚔ アタック</button>`;

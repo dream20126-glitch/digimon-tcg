@@ -2754,14 +2754,29 @@ function executeRecipeStep(step, ctx, store, callback) {
     // === 複数体選択（最大N体） ===
     case 'select_multi': {
       const maxCount = step.count || 1;
-      // 「N体まで」は任意効果。countが指定されていれば「N体までを選ぶ」とみなし、
-      // 1体選ぶごとに「もう1体選びますか？」を確認する。
+      // 「N体まで」は任意効果。0体選択も可能。
       const isOptional = maxCount > 1; // 複数選択は基本的に任意（〜まで）
       let selectedCount = 0;
       const selected = [];
 
-      function selectNext() {
-        if (selectedCount >= maxCount) { callback(); return; }
+      // 確認ダイアログ共通
+      const showConfirmDialog = (msgText, onYes, onNo) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;padding:20px;';
+        const box = document.createElement('div');
+        box.style.cssText = 'background:#0a0a0a;border:1px solid #ff4444;border-radius:12px;padding:24px;max-width:320px;width:100%;text-align:center;';
+        box.innerHTML = '<div style="color:#ff4444;font-size:14px;font-weight:bold;margin-bottom:16px;">' + msgText + '</div>'
+          + '<div style="display:flex;gap:10px;justify-content:center;">'
+          + '<button id="_conf-yes" style="background:#ff4444;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
+          + '<button id="_conf-no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
+          + '</div>';
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+        document.getElementById('_conf-yes').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); onYes(); };
+        document.getElementById('_conf-no').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); onNo(); };
+      };
+
+      function getValidTargets() {
         const valid = [];
         for (let i = 0; i < opponent.battleArea.length; i++) {
           const c = opponent.battleArea[i];
@@ -2776,6 +2791,12 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           valid.push(i);
         }
+        return valid;
+      }
+
+      function doSelect() {
+        if (selectedCount >= maxCount) { callback(); return; }
+        const valid = getValidTargets();
         if (valid.length === 0) { callback(); return; }
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
         ctx.addLog('🎯 対象を選んでください（' + (selectedCount + 1) + '体目 / 最大' + maxCount + '体）');
@@ -2790,38 +2811,31 @@ function executeRecipeStep(step, ctx, store, callback) {
             store[step.store].push({ idx: selectedIdx, card: opponent.battleArea[selectedIdx] });
           }
           selectedCount++;
-          // まだ選択可能で対象も残っている場合、追加選択を確認
+          // 上限到達 or 対象なし → 終了
           if (selectedCount >= maxCount) { callback(); return; }
-          const moreValid = valid.filter(i => !selected.includes(i));
-          if (moreValid.length === 0) { callback(); return; }
+          if (getValidTargets().length === 0) { callback(); return; }
+          // 任意の場合は次の選択も確認
           if (isOptional) {
-            // 「もう1体選びますか？」確認ダイアログ
-            const overlay = document.createElement('div');
-            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;padding:20px;';
-            const box = document.createElement('div');
-            box.style.cssText = 'background:#0a0a0a;border:1px solid #ff4444;border-radius:12px;padding:24px;max-width:320px;width:100%;text-align:center;';
-            box.innerHTML = '<div style="color:#ff4444;font-size:14px;font-weight:bold;margin-bottom:16px;">もう1体選びますか？</div>'
-              + '<div style="color:#aaa;font-size:11px;margin-bottom:16px;">（残り' + (maxCount - selectedCount) + '体まで）</div>'
-              + '<div style="display:flex;gap:10px;justify-content:center;">'
-              + '<button id="_more-yes" style="background:#ff4444;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
-              + '<button id="_more-no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
-              + '</div>';
-            overlay.appendChild(box);
-            document.body.appendChild(overlay);
-            document.getElementById('_more-yes').onclick = () => {
-              if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-              setTimeout(selectNext, 100);
-            };
-            document.getElementById('_more-no').onclick = () => {
-              if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-              callback();
-            };
+            askToSelect();
           } else {
-            selectNext();
+            doSelect();
           }
         });
       }
-      selectNext();
+
+      function askToSelect() {
+        // 対象がなければスキップ
+        if (getValidTargets().length === 0) { callback(); return; }
+        const msg = selectedCount === 0 ? '対象を選択しますか？' : 'もう1体選びますか？（残り' + (maxCount - selectedCount) + '体まで）';
+        showConfirmDialog(msg, () => doSelect(), () => callback());
+      }
+
+      // 任意の場合は最初の選択前にも確認、強制の場合は即選択
+      if (isOptional) {
+        askToSelect();
+      } else {
+        doSelect();
+      }
       break;
     }
 

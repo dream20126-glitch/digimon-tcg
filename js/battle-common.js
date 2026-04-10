@@ -191,8 +191,8 @@ export function setupCommonWindowExports() {
   window._fxCardMove = fxCardMove;
 
   window._applyPermanentEffects = function() {
-    try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch(_) {}
-    try { _applyPermanentEE(bs, 'ai', makeEffectContext(null, 'ai')); } catch(_) {}
+    try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch(e) { console.error('[applyPerm player]', e.message); }
+    try { _applyPermanentEE(bs, 'ai', makeEffectContext(null, 'ai')); } catch(e) { console.error('[applyPerm ai]', e.message); }
   };
 
   window._triggerEffectFn = function(triggerCode, card, side, ctx, callback) {

@@ -758,18 +758,18 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
       destroyDef(); destroyAtk(); renderAll();
       showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
         showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
-          addLog('💥 両者消滅！'); checkPendingTurnEnd();
+          addLog('💥 両者消滅！'); renderAll(); checkPendingTurnEnd();
         }); });
       }, '両者消滅', '#ff4444');
     } else if (atk.dp > def.dp) {
       destroyDef(); renderAll();
       showBattleResult('Win!!', '#00ff88', '「' + def.name + '」を撃破！', () => {
-        showDestroyEffect(def, () => { addLog('💥 「' + def.name + '」を撃破！'); checkAttackEnd(atk, atkIdx); });
+        showDestroyEffect(def, () => { addLog('💥 「' + def.name + '」を撃破！'); renderAll(); checkAttackEnd(atk, atkIdx); });
       }, 'Lose...', '#ff4444');
     } else {
       destroyAtk(); renderAll();
       showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された', () => {
-        showDestroyEffect(atk, () => { addLog('💥 「' + atk.name + '」が撃破された...'); checkPendingTurnEnd(); });
+        showDestroyEffect(atk, () => { addLog('💥 「' + atk.name + '」が撃破された...'); renderAll(); checkPendingTurnEnd(); });
       }, 'Win!!', '#00ff88');
     }
   }, 'BATTLE!');

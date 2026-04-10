@@ -54,12 +54,15 @@ let _recentlyExpiredBuffs = []; // {cardName, type, duration, time}
 const BUFF_EXPIRE_COOLDOWN = 8000;
 
 export function markBuffExpired(cardName, type, duration) {
+  console.log('[buff-mark]', cardName, type, duration);
   _recentlyExpiredBuffs.push({ cardName, type, duration, time: Date.now() });
   _recentlyExpiredBuffs = _recentlyExpiredBuffs.filter(e => Date.now() - e.time < BUFF_EXPIRE_COOLDOWN);
 }
 
 function isBuffRecentlyExpired(cardName, type, duration) {
-  return _recentlyExpiredBuffs.some(e => e.cardName === cardName && e.type === type && e.duration === duration && Date.now() - e.time < BUFF_EXPIRE_COOLDOWN);
+  const found = _recentlyExpiredBuffs.some(e => e.cardName === cardName && e.type === type && e.duration === duration && Date.now() - e.time < BUFF_EXPIRE_COOLDOWN);
+  if (found) console.log('[buff-skip]', cardName, type, duration);
+  return found;
 }
 
 // ===== 外部モジュール参照（battle.jsから注入） =====

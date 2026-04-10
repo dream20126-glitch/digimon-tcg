@@ -363,12 +363,13 @@ function onRemoteCommand(cmd) {
       bs.memory = cmd.memory !== undefined ? -cmd.memory : 3;
       bs.isFirstTurn = false;
       updateMemGauge();
-      // 相手ターン終了時に消えるバフを削除
-      // - dur_this_turn: 相手が付与した「このターンだけ」のバフ
-      // - dur_next_own_turn: 自分の効果で付与された「次の自分ターン終了時まで」のバフ
-      //   → 自分のターンが始まる前にチェック（次ターン終了でのみ削除）
-      // - dur_next_opp_turn は削除しない（自分のターン終了時に削除するため）
-      if (m.expireBuffs) { m.expireBuffs('dur_this_turn'); }
+      // 相手のターンが終わった瞬間 → 全タイミングを評価
+      // この時点ではまだ bs.isPlayerTurn = false（ai のターンが終わっている）
+      if (m.expireBuffs) {
+        m.expireBuffs('dur_this_turn');
+        m.expireBuffs('dur_next_opp_turn');
+        m.expireBuffs('dur_next_own_turn');
+      }
       renderAll();
       if (m.showYourTurn) {
         m.showYourTurn('相手のターン終了', '', '#555555', () => {

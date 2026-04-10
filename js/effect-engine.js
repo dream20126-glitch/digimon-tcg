@@ -2102,12 +2102,14 @@ function recalcDp(card) {
 // timing: 'dur_this_turn' / 'dur_next_opp_turn' / 'dur_next_own_turn' / 'permanent'
 // ownerSide: 'player'/'ai' — permanent バフの持ち主（ターン切替時に指定）
 //
-// 削除ルール:
-// - dur_this_turn: 付与した本人のターン終了時に削除
-// - dur_next_opp_turn: 付与した本人のターン終了時に削除（相手から見て「相手のターン終了時」）
-// - dur_next_own_turn: 付与時と同じ陣営のターンが2回終わる時に削除（次の自分ターン終了時）
-//   → _ticksカウンタで管理（ターン終了時にカウント、_ticks>=1で削除）
+// 削除ルール（_appliedSide = 付与した本人の陣営）:
+// - dur_this_turn: 付与した本人のターンが終わる時に削除（付与本人ターン終了時）
+// - dur_next_opp_turn: 次に来る相手ターン（付与した本人から見て相手）が終わる時に削除
+// - dur_next_own_turn: 付与した本人の次のターン（付与本人ターンが2回目に終わる時）に削除
+//
+// 呼び出しタイミング: 各ターンの終了時。bs.isPlayerTurn = ちょうど終わろうとしているターンの陣営
 export function expireBuffs(bs, timing, ownerSide) {
+  const endingSide = bs.isPlayerTurn ? 'player' : 'ai';
   ['player', 'ai'].forEach(side => {
     [...bs[side].battleArea, ...(bs[side].tamerArea || [])].forEach(card => {
       if (!card || !card.buffs || card.buffs.length === 0) return;
@@ -2121,21 +2123,25 @@ export function expireBuffs(bs, timing, ownerSide) {
           card.buffs = card.buffs.filter(b => b.duration !== 'permanent');
         }
       } else {
-        // 通常タイミング処理
         card.buffs = card.buffs.filter(b => {
           if (b.duration !== timing) return true;
-          // dur_next_own_turn は付与した本人ターンが2回目に終わる時に削除
-          if (timing === 'dur_next_own_turn') {
-            // 付与時のturnSide（自陣営）が今ターン終了する場合のみカウント
-            const currentTurnSide = bs.isPlayerTurn ? 'player' : 'ai';
-            if (b._appliedSide === currentTurnSide) {
-              if ((b._ticks || 0) >= 1) return false; // 2回目で削除
-              b._ticks = (b._ticks || 0) + 1;
-              return true;
-            }
-            return true;
+          // dur_this_turn: 付与本人ターン終了時のみ削除
+          if (timing === 'dur_this_turn') {
+            return b._appliedSide !== endingSide;
           }
-          // dur_this_turn / dur_next_opp_turn は即削除
+          // dur_next_opp_turn: 付与本人とは違う陣営のターン終了時に削除
+          // （付与本人のターン終了 → 相手ターン → 相手ターン終了で消える）
+          if (timing === 'dur_next_opp_turn') {
+            if (b._appliedSide === endingSide) return true; // 付与本人のターン終了 → スキップ
+            return false; // 相手ターン終了 → 削除
+          }
+          // dur_next_own_turn: 付与本人ターンが2回目に終わる時に削除
+          if (timing === 'dur_next_own_turn') {
+            if (b._appliedSide !== endingSide) return true; // 違う陣営 → スキップ
+            b._ticks = (b._ticks || 0) + 1;
+            if (b._ticks >= 2) return false; // 2回目（次の自分ターン終了）→ 削除
+            return true; // 1回目（付与ターン終了）→ キープ
+          }
           return false;
         });
       }

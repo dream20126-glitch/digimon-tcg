@@ -643,6 +643,7 @@ function onRemoteCommand(cmd) {
           duration: cmd.duration || 'dur_this_turn',
           source: 'remote',
           _appliedSide: myAppliedSide,
+          _appliedDuringOwnTurn: cmd.appliedDuringOwnTurn !== undefined ? cmd.appliedDuringOwnTurn : true,
           _ticks: 0,
         });
         renderAll();

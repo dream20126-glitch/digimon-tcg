@@ -1044,7 +1044,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
           const tgtIdx = opponent.battleArea.indexOf(tgt);
           // 付与本人 = 自分(player)。相手側からは ai として扱う
-          window._onlineSendCommand({ type: 'fx_cantAttackBlock', targetIdx: tgtIdx, targetName: tgt.name, duration: cabDur, action: 'cant_attack_block', appliedFromSender: 'player' });
+          // 付与時のターン（自分ターン中か相手ターン中か）も送る
+          const turnSide = ctx.bs.isPlayerTurn ? 'player' : 'ai';
+          const appliedDuringOwnTurn = (turnSide === ctx.side);
+          window._onlineSendCommand({ type: 'fx_cantAttackBlock', targetIdx: tgtIdx, targetName: tgt.name, duration: cabDur, action: 'cant_attack_block', appliedFromSender: 'player', appliedDuringOwnTurn: appliedDuringOwnTurn });
         }
         // 状態付与演出
         if (window._fxBuffStatus) {
@@ -2072,17 +2075,26 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
 
 function addBuffDirect(card, type, value, duration, ctx) {
   if (!card.buffs) card.buffs = [];
-  // 付与本人の陣営を記録（dur_next_*の期限管理用）
   let appliedSide = null;
   if (ctx && ctx.side) {
     appliedSide = ctx.side;
   } else if (ctx && ctx.bs) {
     appliedSide = ctx.bs.isPlayerTurn ? 'player' : 'ai';
   }
+  // 付与時が自分のターンか相手のターンかを判定
+  // dur_next_own_turn の必要tick数判定に使用:
+  //   自分ターン中の付与（main使用）: 2tick必要（付与ターン終了 + 次の自分ターン終了）
+  //   相手ターン中の付与（security使用）: 1tick必要（次の自分ターン終了のみ）
+  let appliedDuringOwnTurn = true;
+  if (ctx && ctx.bs && appliedSide) {
+    const turnSide = ctx.bs.isPlayerTurn ? 'player' : 'ai';
+    appliedDuringOwnTurn = (turnSide === appliedSide);
+  }
   card.buffs.push({
     type, value, duration,
     source: ctx && ctx.card ? ctx.card.cardNo : '',
     _appliedSide: appliedSide,
+    _appliedDuringOwnTurn: appliedDuringOwnTurn,
     _ticks: 0,
   });
   recalcDp(card);
@@ -2118,16 +2130,10 @@ function recalcDp(card) {
 // endingSide: 'player'/'ai' - 明示指定（省略時は bs.isPlayerTurn から推測、オンラインでは要明示）
 export function expireBuffs(bs, timing, ownerSide, endingSide) {
   if (!endingSide) endingSide = bs.isPlayerTurn ? 'player' : 'ai';
-  console.log('[expireBuffs] timing:', timing, 'endingSide:', endingSide, 'ownerSide:', ownerSide);
   ['player', 'ai'].forEach(side => {
     [...bs[side].battleArea, ...(bs[side].tamerArea || [])].forEach(card => {
       if (!card || !card.buffs || card.buffs.length === 0) return;
       const before = card.buffs.length;
-      // 該当timingのバフがあればログ
-      const matchingBuffs = card.buffs.filter(b => b.duration === timing);
-      if (matchingBuffs.length > 0) {
-        console.log('[expireCheck]', side, card.name, 'has', matchingBuffs.map(b => b.type + '(' + b.duration + ',_appliedSide=' + b._appliedSide + ')').join(','));
-      }
       if (timing === 'permanent') {
         if (ownerSide) {
           if (side === ownerSide) {
@@ -2149,20 +2155,20 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
             if (b._appliedSide === endingSide) return true; // 付与本人ターン終了→keep
             return false; // 相手ターン終了→remove
           }
-          // dur_next_own_turn: 付与本人ターンが2回目に終わる時に削除
+          // dur_next_own_turn: 付与本人の次のターン終了で削除
+          // 付与時が自分ターン: 2tick必要（付与ターン終了 + 次の自分ターン終了）
+          // 付与時が相手ターン: 1tick必要（次の自分ターン直接）
           if (timing === 'dur_next_own_turn') {
-            if (b._appliedSide !== endingSide) return true; // 違う陣営 → スキップ
+            if (b._appliedSide !== endingSide) return true;
             b._ticks = (b._ticks || 0) + 1;
-            if (b._ticks >= 2) return false; // 2回目（次の自分ターン終了）→ 削除
-            return true; // 1回目（付与ターン終了）→ キープ
+            const needed = b._appliedDuringOwnTurn === false ? 1 : 2;
+            if (b._ticks >= needed) return false;
+            return true;
           }
           return false;
         });
       }
-      if (card.buffs.length !== before) {
-        recalcDp(card);
-        console.log('[expireResult]', side, card.name, 'before:', before, 'after:', card.buffs.length, 'cantAttack:', card.cantAttack);
-      }
+      if (card.buffs.length !== before) recalcDp(card);
       if (!card.buffs.some(b => ['cant_attack_block', 'cant_attack'].includes(b.type))) card.cantAttack = false;
       if (!card.buffs.some(b => ['cant_attack_block', 'cant_block'].includes(b.type))) card.cantBlock = false;
       if (!card.buffs.some(b => b.type === 'cant_evolve')) card.cantEvolve = false;

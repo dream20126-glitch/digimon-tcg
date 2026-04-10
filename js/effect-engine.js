@@ -521,7 +521,6 @@ function executeQueueEntry(entry, context, callback) {
       const recipeCard = block._recipeCard || card;
       const trigCode = block.trigger ? block.trigger.code : null;
       const recipe = getRecipeForTrigger(recipeCard, trigCode);
-      console.log('[executeQueue]', card.name, trigCode, recipe ? 'recipe found' : 'no recipe, text fallback');
       if (recipe) {
         runRecipe(recipe, ctx, wrappedCallback);
       } else {
@@ -2260,6 +2259,12 @@ export function applyPermanentEffects(bs, side, context) {
         if (tk === 'during_opp_turn' && side === turnSide) return;
         const steps = Array.isArray(card.recipe[tk]) ? card.recipe[tk] : [card.recipe[tk]];
         steps.forEach(step => {
+          // SA+/DP+のレシピ存在フラグ（条件不成立でもテキスト解析をスキップするため）
+          if (step.action === 'security_attack_plus' || step.action === 'dp_plus') {
+            if (!card._permEffects) card._permEffects = {};
+            if (step.action === 'security_attack_plus') card._permEffects._recipeSAHandled = true;
+            if (step.action === 'dp_plus') card._permEffects._recipeDPHandled = true;
+          }
           // 条件チェック
           if (step.condition) {
             const conds = parseRecipeCondition(step.condition);
@@ -2336,13 +2341,15 @@ export function applyPermanentEffects(bs, side, context) {
           if (tk === 'during_opp_turn' && side === turnSide) return;
           const steps = Array.isArray(evoRecipe[tk]) ? evoRecipe[tk] : [evoRecipe[tk]];
           steps.forEach(step => {
+            // SA+/DP+のレシピが存在するだけでフラグを立てる（条件不成立でもテキスト解析をスキップするため）
+            if (step.action === 'security_attack_plus' || step.action === 'dp_plus') {
+              if (!card._permEffects) card._permEffects = {};
+              if (step.action === 'security_attack_plus') card._permEffects._recipeSAHandled = true;
+              if (step.action === 'dp_plus') card._permEffects._recipeDPHandled = true;
+            }
             if (step.condition) {
               const conds = parseRecipeCondition(step.condition);
-              const oppSide = side === 'player' ? 'ai' : 'player';
-              const oppCards = bs[oppSide].battleArea.filter(c => c).map(c => c.name + '(stack:' + (c.stack ? c.stack.length : 0) + ')');
-              const condResult = checkConditions(conds, card, bs, side);
-              console.log('[perm④cond]', card.name, '←', evoCard.name, step.action, step.condition, '→', condResult, 'side:', side, 'opp:', oppCards.join(','));
-              if (!condResult) return;
+              if (!checkConditions(conds, card, bs, side)) return;
             }
             let value = step.value != null ? step.value : (step.per_count ? 1 : null);
             if (step.per_count && value != null) {
@@ -3262,11 +3269,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const conds = parseRecipeCondition(step.condition);
         // For non-target-selection actions: check if condition is met, skip if not
         if (!step.target || step.target === 'self') {
-          const oppSide = ctx.side === 'player' ? 'ai' : 'player';
-          const oppCards = ctx.bs[oppSide].battleArea.filter(c => c).map(c => c.name + '(stack:' + (c.stack ? c.stack.length : 0) + ',type:' + c.type + ')');
-          const condResult = checkConditions(conds, ctx.card, ctx.bs, ctx.side);
-          console.log('[recipe cond]', ctx.card.name, step.action, step.condition, '→', condResult, 'opp:', oppCards.join(','));
-          if (!condResult) {
+          if (!checkConditions(conds, ctx.card, ctx.bs, ctx.side)) {
             callback && callback();
             break;
           }

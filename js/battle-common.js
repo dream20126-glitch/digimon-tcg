@@ -60,7 +60,6 @@ export function checkTurnStartEffects(side, cb) {
   const area = [...p.battleArea, ...(p.tamerArea || [])];
   const trigger = side === 'player' ? '【自分のターン開始時】' : '【相手のターン開始時】';
   const triggerCode = side === 'player' ? 'on_own_turn_start' : 'on_opp_turn_start';
-  console.log('[turnStart] side:', side, 'area:', area.map(c => c ? c.name + '(recipe:' + !!c.recipe + ')' : 'null').join(','), 'tamerArea:', (p.tamerArea||[]).map(c => c ? c.name : 'null').join(','));
   const hasRecipeTrigger = (c) => {
     if (!c.recipe) return false;
     try {
@@ -69,7 +68,6 @@ export function checkTurnStartEffects(side, cb) {
     } catch(_) { return false; }
   };
   const cardsWithEffect = area.filter(c => c && ((c.effect && c.effect.includes(trigger)) || hasRecipeTrigger(c)));
-  console.log('[turnStart] found:', cardsWithEffect.map(c => c.name).join(',') || 'NONE');
   if (cardsWithEffect.length === 0) { cb(); return; }
   let idx = 0;
   function next() {

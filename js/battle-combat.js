@@ -612,7 +612,7 @@ function getSecurityAttackCount(card) {
   _hooks.applyPermanentEffects('ai');
 
   // レシピで計算済みの_permEffectsがあればそちらを優先（テキスト解析と二重カウントしない）
-  const hasRecipeSA = card._permEffects && card._permEffects.securityAttackPlus;
+  const hasRecipeSA = card._permEffects && (card._permEffects.securityAttackPlus || card._permEffects._recipeSAHandled);
 
   if (!hasRecipeSA) {
     // レシピがない場合のみテキスト解析でSA+を計算

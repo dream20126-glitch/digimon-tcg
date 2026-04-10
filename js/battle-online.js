@@ -635,7 +635,17 @@ function onRemoteCommand(cmd) {
         if (cmd.action === 'cant_attack_block' || cmd.action === 'cant_attack') myCard.cantAttack = true;
         if (cmd.action === 'cant_attack_block' || cmd.action === 'cant_block') myCard.cantBlock = true;
         if (!myCard.buffs) myCard.buffs = [];
-        myCard.buffs.push({ type: cmd.action || 'cant_attack_block', value: 0, duration: cmd.duration || 'dur_this_turn', source: 'remote' });
+        // 送信者から見たappliedSideを受信側目線に反転（player→ai）
+        const senderSide = cmd.appliedFromSender || 'player';
+        const myAppliedSide = senderSide === 'player' ? 'ai' : 'player';
+        myCard.buffs.push({
+          type: cmd.action || 'cant_attack_block',
+          value: 0,
+          duration: cmd.duration || 'dur_this_turn',
+          source: 'remote',
+          _appliedSide: myAppliedSide,
+          _ticks: 0,
+        });
         renderAll();
       }
       // 状態付与演出

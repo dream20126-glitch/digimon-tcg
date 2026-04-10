@@ -1043,7 +1043,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // 相手側でも自カードに状態付与してもらう（state_syncでは自カードは更新されないため）
         if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
           const tgtIdx = opponent.battleArea.indexOf(tgt);
-          window._onlineSendCommand({ type: 'fx_cantAttackBlock', targetIdx: tgtIdx, targetName: tgt.name, duration: cabDur, action: 'cant_attack_block' });
+          // 付与本人 = 自分(player)。相手側からは ai として扱う
+          window._onlineSendCommand({ type: 'fx_cantAttackBlock', targetIdx: tgtIdx, targetName: tgt.name, duration: cabDur, action: 'cant_attack_block', appliedFromSender: 'player' });
         }
         // 状態付与演出
         if (window._fxBuffStatus) {

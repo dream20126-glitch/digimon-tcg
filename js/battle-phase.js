@@ -36,9 +36,9 @@ let _hooks = {
   checkTurnEndEffects: (cb) => cb(),
   /** 永続効果再計算 (side) */
   refreshPermanentEffects: (_side) => {},
-  /** バフ期限切れ (timing, side?) */
-  expireBuffs: (timing, side) => {
-    try { _expireBuffs(bs, timing, side); } catch (_) { /* effect-engine未接続時は無視 */ }
+  /** バフ期限切れ (timing, ownerSide?, endingSide?) */
+  expireBuffs: (timing, ownerSide, endingSide) => {
+    try { _expireBuffs(bs, timing, ownerSide, endingSide); } catch (_) { /* effect-engine未接続時は無視 */ }
   },
   /** 永続効果適用 (side) */
   applyPermanentEffects: (side) => {

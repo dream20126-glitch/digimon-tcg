@@ -22,8 +22,8 @@ let _hooks = {
   applyPermanentEffects: (side) => {
     try { _applyPermanent(bs, side, { bs, side }); } catch (_) {}
   },
-  expireBuffs: (timing, side) => {
-    try { _expireBuffs(bs, timing, side); } catch (_) {}
+  expireBuffs: (timing, ownerSide, endingSide) => {
+    try { _expireBuffs(bs, timing, ownerSide, endingSide); } catch (_) {}
   },
   triggerEffect: (code, card, side, ctx, cb) => {
     try { _triggerEffect(code, card, side, ctx, cb); } catch (_) { cb && cb(); }

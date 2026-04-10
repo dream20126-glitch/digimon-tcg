@@ -2806,15 +2806,24 @@ function executeRecipeStep(step, ctx, store, callback) {
         callback();
       };
 
+      // 初回のみ相手画面に効果内容を送信（カード名+効果テキスト+対象選択中）
+      let _annouceSent = false;
+      function ensureRemoteAnnounce() {
+        if (_annouceSent) return;
+        _annouceSent = true;
+        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && ctx.card) {
+          const effText = ctx.card.effect || ctx.card.securityEffect || '';
+          window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: ctx.card.name, effectText: effText.substring(0,300) });
+        }
+      }
+
       function doSelect() {
         if (selectedCount >= maxCount) { finishSelectMulti(); return; }
         const valid = getValidTargets();
         if (valid.length === 0) { finishSelectMulti(); return; }
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
         ctx.addLog('🎯 対象を選んでください（' + (selectedCount + 1) + '体目 / 最大' + maxCount + '体）');
-        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
-          window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: ctx.card ? ctx.card.name : '', effectText: '🎯 対象選択中...（' + (selectedCount + 1) + '体目 / 最大' + maxCount + '体）' });
-        }
+        ensureRemoteAnnounce();
         // 複数選択の途中では fx_effectClose を送信しない
         window._skipFxEffectClose = true;
         showTargetSelection(rowId, valid, null, '#ff4444', (selectedIdx) => {
@@ -2840,6 +2849,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       function askToSelect() {
         // 対象がなければスキップ
         if (getValidTargets().length === 0) { finishSelectMulti(); return; }
+        // 確認ダイアログ表示時にも相手画面に効果内容ポップアップを表示
+        ensureRemoteAnnounce();
         const msg = selectedCount === 0 ? '対象を選択しますか？' : 'もう1体選びますか？（残り' + (maxCount - selectedCount) + '体まで）';
         showConfirmDialog(msg, () => doSelect(), () => finishSelectMulti());
       }

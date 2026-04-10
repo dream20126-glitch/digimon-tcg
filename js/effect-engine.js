@@ -2131,112 +2131,6 @@ export function applyPermanentEffects(bs, side, context) {
   const allCards = [...(bs[side].battleArea.filter(c => c)), ...(bs[side].tamerArea || [])];
 
   allCards.forEach(card => {
-    // レシピがある場合はレシピパス(③④)で処理するのでテキスト解析はスキップ
-    const hasRecipePerm = (() => {
-      if (!card.recipe) return false;
-      let r = card.recipe;
-      if (typeof r === 'string') { try { r = JSON.parse(r.replace(/[\x00-\x1F\x7F]\s*/g, '')); } catch(_) { return false; } }
-      return !!(r.during_own_turn || r.during_opp_turn || r.during_any_turn || r.passive);
-    })();
-
-    // メイン効果（テキスト解析パス — レシピがなければ使用）
-    if (!hasRecipePerm) {
-    const blocks = parseCardEffect(card);
-    blocks.forEach(block => {
-      if (!block.trigger || !['during_own_turn', 'during_opp_turn', 'during_any_turn'].includes(block.trigger.code)) return;
-      if (block.trigger.code === 'during_own_turn' && side !== turnSide) return;
-      if (block.trigger.code === 'during_opp_turn' && side === turnSide) return;
-      // 「〜とき」を含む効果は誘発型（永続適用ではなくイベント発生時に適用）なのでスキップ
-      const rawBody = block.raw || '';
-      if (rawBody.includes('されたとき') || rawBody.includes('したとき') || rawBody.includes('なったとき')) return;
-      // 「バトルしている間」はバトル解決時にのみ適用（永続適用しない）
-      if (rawBody.includes('バトルしている間')) return;
-      if (!checkConditions(block.conditions, card, bs, side)) return;
-
-      // レシピの when:"cond_in_battle" もスキップ（バトル解決時に適用）
-      block.actions.forEach(action => {
-        if (action.when === 'cond_in_battle') return;
-        const target = block.target || { code: 'target_self' };
-        // per_count倍率を適用（「N枚ごとに」の処理）
-        let value = action.value;
-        const perCond = block.conditions && block.conditions.find(c => c.code === 'per_count');
-        if (perCond && perCond.value && value != null) {
-          const refSource = perCond.refSource || 'evo_source';
-          const count = getRefSourceCountDirect(refSource, card, bs, side);
-          value = value * Math.floor(count / perCond.value);
-        }
-        if (action.code === 'dp_plus') {
-          if (target.code === 'target_all_own') {
-            bs[side].battleArea.forEach(tgt => {
-              if (!tgt) return;
-              if (!tgt.buffs) tgt.buffs = [];
-              tgt.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'perm' });
-              recalcDp(tgt);
-            });
-          } else if (target.code === 'target_self') {
-            if (!card.buffs) card.buffs = [];
-            card.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'perm' });
-            recalcDp(card);
-          }
-        } else if (action.code === 'security_attack_plus') {
-          // Sアタック+を永続フラグとして記録（getSecurityAttackCountで参照される）
-          const tgt = (target.code === 'target_self') ? card : card;
-          if (!tgt._permEffects) tgt._permEffects = {};
-          tgt._permEffects.securityAttackPlus = (tgt._permEffects.securityAttackPlus || 0) + (value || 1);
-        }
-      });
-    });
-    } // end if (!hasRecipePerm)
-
-    // 進化元効果（スタック内のみ）— レシピがある進化元はスキップ（④で処理）
-    if (card.stack) {
-      card.stack.forEach((evoCard) => {
-        if (!evoCard.evoSourceEffect || evoCard.evoSourceEffect === 'なし') return;
-        // 進化元カードにレシピがあればテキスト解析をスキップ
-        if (evoCard.recipe) return;
-
-        // キーワードだけの進化元効果（例: 【Sアタック+1】）→ 無条件で常時付与
-        const evoText = evoCard.evoSourceEffect.trim();
-        if (/^【Sアタック\+(\d+)】$/.test(evoText)) {
-          const saVal = parseInt(RegExp.$1) || 1;
-          if (!card._permEffects) card._permEffects = {};
-          card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + saVal;
-        }
-
-        const evoBlocks = parseCardEffect(evoCard, evoCard.evoSourceEffect);
-        evoBlocks.forEach(block => {
-          if (!block.trigger) return;
-          if (block.trigger.code === 'during_own_turn' && side !== turnSide) return;
-          if (block.trigger.code === 'during_opp_turn' && side === turnSide) return;
-          if (!['during_own_turn', 'during_opp_turn', 'during_any_turn'].includes(block.trigger.code)) return;
-          // 「〜とき」を含む効果は誘発型なのでスキップ
-          const evoRaw = block.raw || '';
-          if (evoRaw.includes('されたとき') || evoRaw.includes('したとき') || evoRaw.includes('なったとき')) return;
-          // 「バトルしている間」はバトル解決時にのみ適用（永続適用しない）
-          if (evoRaw.includes('バトルしている間')) return;
-          if (!checkConditions(block.conditions, card, bs, side)) return;
-          block.actions.forEach(action => {
-            // per_count倍率を適用（「N枚ごとに」の処理）
-            let value = action.value;
-            const perCond = block.conditions && block.conditions.find(c => c.code === 'per_count');
-            if (perCond && perCond.value && value != null) {
-              const refSource = perCond.refSource || 'evo_source';
-              const count = getRefSourceCountDirect(refSource, card, bs, side);
-              value = value * Math.floor(count / perCond.value);
-            }
-            if (action.code === 'dp_plus') {
-              if (!card.buffs) card.buffs = [];
-              card.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'evo_perm' });
-              recalcDp(card);
-            } else if (action.code === 'security_attack_plus') {
-              if (!card._permEffects) card._permEffects = {};
-              card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (value || 1);
-            }
-          });
-        });
-      });
-    }
-
     // ③ レシピベースの永続効果処理
     if (card.recipe) {
       // 文字列ならパース（キャッシュ）
@@ -2259,12 +2153,6 @@ export function applyPermanentEffects(bs, side, context) {
         if (tk === 'during_opp_turn' && side === turnSide) return;
         const steps = Array.isArray(card.recipe[tk]) ? card.recipe[tk] : [card.recipe[tk]];
         steps.forEach(step => {
-          // SA+/DP+のレシピ存在フラグ（条件不成立でもテキスト解析をスキップするため）
-          if (step.action === 'security_attack_plus' || step.action === 'dp_plus') {
-            if (!card._permEffects) card._permEffects = {};
-            if (step.action === 'security_attack_plus') card._permEffects._recipeSAHandled = true;
-            if (step.action === 'dp_plus') card._permEffects._recipeDPHandled = true;
-          }
           // 条件チェック
           if (step.condition) {
             const conds = parseRecipeCondition(step.condition);
@@ -2341,12 +2229,6 @@ export function applyPermanentEffects(bs, side, context) {
           if (tk === 'during_opp_turn' && side === turnSide) return;
           const steps = Array.isArray(evoRecipe[tk]) ? evoRecipe[tk] : [evoRecipe[tk]];
           steps.forEach(step => {
-            // SA+/DP+のレシピが存在するだけでフラグを立てる（条件不成立でもテキスト解析をスキップするため）
-            if (step.action === 'security_attack_plus' || step.action === 'dp_plus') {
-              if (!card._permEffects) card._permEffects = {};
-              if (step.action === 'security_attack_plus') card._permEffects._recipeSAHandled = true;
-              if (step.action === 'dp_plus') card._permEffects._recipeDPHandled = true;
-            }
             if (step.condition) {
               const conds = parseRecipeCondition(step.condition);
               if (!checkConditions(conds, card, bs, side)) return;
@@ -3453,14 +3335,5 @@ export function cardHasKeyword(card, keywordCode) {
     if (flag && card._permEffects[flag]) return true;
   }
 
-  // Existing text-parsing logic (keep as fallback)
-  const texts = [card.effect];
-  if (card.stack) card.stack.forEach(s => { if (s.evoSourceEffect) texts.push(s.evoSourceEffect); });
-
-  for (const text of texts) {
-    if (!text || text === 'なし') continue;
-    const actions = findActions(text);
-    if (actions.some(a => a.code === keywordCode)) return true;
-  }
   return false;
 }

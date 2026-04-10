@@ -138,11 +138,6 @@ function renderBattleRows() {
         const showSA = isMySide ? isMyTurn : !isMyTurn; // 自分のターンのみSA+有効
         let saExtra = 0;
         if (showSA) {
-        const hasRecipeSA = card._permEffects && (card._permEffects.securityAttackPlus || card._permEffects._recipeSAHandled);
-        if (!hasRecipeSA) {
-          if (card.effect) { const m = card.effect.matchAll(/(?:Sアタック|セキュリティアタック)\+(\d+)/g); for (const r of m) saExtra += parseInt(r[1]); }
-          if (card.stack) card.stack.forEach(s => { if (s.evoSourceEffect) { const m = s.evoSourceEffect.matchAll(/(?:Sアタック|セキュリティアタック)\+(\d+)/g); for (const r of m) saExtra += parseInt(r[1]); } });
-        }
         if (card._permEffects && card._permEffects.securityAttackPlus) saExtra += card._permEffects.securityAttackPlus;
         if (card.buffs) card.buffs.forEach(b => { if (b.type === 'security_attack_plus') saExtra += (parseInt(b.value) || 0); });
         if (saExtra > 0) {

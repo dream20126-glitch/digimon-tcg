@@ -441,9 +441,10 @@ export function onEndTurn() {
     bs.memory = -3;
     if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
     updateMemGauge();
-    _hooks.expireBuffs('dur_this_turn');
-    _hooks.expireBuffs('dur_next_opp_turn'); // 自分=相手から見て「相手」のターン終了
-    _hooks.expireBuffs('dur_next_own_turn'); // 2回目のターン終了で削除（_ticks管理）
+    // プレイヤーのターン終了 → endingSide='player'
+    _hooks.expireBuffs('dur_this_turn', null, 'player');
+    _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
+    _hooks.expireBuffs('dur_next_own_turn', null, 'player');
     _hooks.expireBuffs('permanent', 'player');
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
@@ -459,9 +460,10 @@ export function onEndTurn() {
   _hooks.checkTurnEndEffects(() => {
     bs.memory = -3;
     updateMemGauge();
-    _hooks.expireBuffs('dur_this_turn');
-    _hooks.expireBuffs('dur_next_opp_turn');
-    _hooks.expireBuffs('dur_next_own_turn');
+    // プレイヤーのターン終了
+    _hooks.expireBuffs('dur_this_turn', null, 'player');
+    _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
+    _hooks.expireBuffs('dur_next_own_turn', null, 'player');
     _hooks.expireBuffs('permanent', 'player');
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
@@ -479,9 +481,10 @@ export function checkAutoTurnEnd() {
   const over = Math.abs(bs.memory);
   addLog('💾 メモリー' + over + 'で相手側へ');
   bs.isPlayerTurn = false;
-  _hooks.expireBuffs('dur_this_turn');
-  _hooks.expireBuffs('dur_next_opp_turn');
-  _hooks.expireBuffs('dur_next_own_turn');
+  // プレイヤーのターン終了
+  _hooks.expireBuffs('dur_this_turn', null, 'player');
+  _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
+  _hooks.expireBuffs('dur_next_own_turn', null, 'player');
   _hooks.expireBuffs('permanent', 'player');
   renderAll(true);
 
@@ -621,8 +624,10 @@ function aiPhaseMain() {
 // ----- AI ターン終了 -----
 
 function endAiTurn() {
-  _hooks.expireBuffs('dur_this_turn');
-  _hooks.expireBuffs('dur_next_opp_turn');
+  // AIのターン終了 → endingSide='ai'
+  _hooks.expireBuffs('dur_this_turn', null, 'ai');
+  _hooks.expireBuffs('dur_next_opp_turn', null, 'ai');
+  _hooks.expireBuffs('dur_next_own_turn', null, 'ai');
   _hooks.expireBuffs('permanent', 'ai');
   renderAll();
 

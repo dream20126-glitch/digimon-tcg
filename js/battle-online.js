@@ -363,12 +363,11 @@ function onRemoteCommand(cmd) {
       bs.memory = cmd.memory !== undefined ? -cmd.memory : 3;
       bs.isFirstTurn = false;
       updateMemGauge();
-      // 相手のターンが終わった瞬間 → 全タイミングを評価
-      // この時点ではまだ bs.isPlayerTurn = false（ai のターンが終わっている）
+      // 相手(ai)のターンが終わった → endingSide='ai'を明示
       if (m.expireBuffs) {
-        m.expireBuffs('dur_this_turn');
-        m.expireBuffs('dur_next_opp_turn');
-        m.expireBuffs('dur_next_own_turn');
+        m.expireBuffs('dur_this_turn', null, 'ai');
+        m.expireBuffs('dur_next_opp_turn', null, 'ai');
+        m.expireBuffs('dur_next_own_turn', null, 'ai');
       }
       renderAll();
       if (m.showYourTurn) {

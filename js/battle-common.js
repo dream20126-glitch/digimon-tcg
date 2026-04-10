@@ -100,8 +100,9 @@ export function applyPermanentEffectsWrap(side) {
 }
 
 // ===== expireBuffs (wrapper) =====
-export function expireBuffsWrap(timing, side) {
-  try { _expireBuffsEE(bs, timing, side); } catch (e) { console.error('[expireBuffs]', e); }
+// (timing, ownerSide, endingSide) — endingSideは明示推奨
+export function expireBuffsWrap(timing, ownerSide, endingSide) {
+  try { _expireBuffsEE(bs, timing, ownerSide, endingSide); } catch (e) { console.error('[expireBuffs]', e); }
 }
 
 // ===== triggerEffect (wrapper) =====
@@ -127,7 +128,7 @@ export function buildOnlineEffectHooks() {
   return {
     checkTurnStartEffects,
     applyPermanentEffects: (side) => { try { _applyPermanentEE(bs, side, { bs, side }); } catch (_) {} },
-    expireBuffs: (timing, side) => { try { _expireBuffsEE(bs, timing, side); } catch (_) {} },
+    expireBuffs: (timing, ownerSide, endingSide) => { try { _expireBuffsEE(bs, timing, ownerSide, endingSide); } catch (_) {} },
   };
 }
 

@@ -2079,7 +2079,6 @@ function addBuffDirect(card, type, value, duration, ctx) {
   } else if (ctx && ctx.bs) {
     appliedSide = ctx.bs.isPlayerTurn ? 'player' : 'ai';
   }
-  console.log('[addBuff]', card.name, type, duration, 'appliedSide:', appliedSide);
   card.buffs.push({
     type, value, duration,
     source: ctx && ctx.card ? ctx.card.cardNo : '',
@@ -2115,9 +2114,10 @@ function recalcDp(card) {
 // - dur_next_own_turn: 付与した本人の次のターン（付与本人ターンが2回目に終わる時）に削除
 //
 // 呼び出しタイミング: 各ターンの終了時。bs.isPlayerTurn = ちょうど終わろうとしているターンの陣営
-export function expireBuffs(bs, timing, ownerSide) {
-  const endingSide = bs.isPlayerTurn ? 'player' : 'ai';
-  console.log('[expireBuffs] timing:', timing, 'endingSide:', endingSide);
+// expireBuffs(bs, timing, ownerSide, endingSide)
+// endingSide: 'player'/'ai' - 明示指定（省略時は bs.isPlayerTurn から推測、オンラインでは要明示）
+export function expireBuffs(bs, timing, ownerSide, endingSide) {
+  if (!endingSide) endingSide = bs.isPlayerTurn ? 'player' : 'ai';
   ['player', 'ai'].forEach(side => {
     [...bs[side].battleArea, ...(bs[side].tamerArea || [])].forEach(card => {
       if (!card || !card.buffs || card.buffs.length === 0) return;
@@ -2140,9 +2140,8 @@ export function expireBuffs(bs, timing, ownerSide) {
           // dur_next_opp_turn: 付与本人とは違う陣営のターン終了時に削除
           // （付与本人のターン終了 → 相手ターン → 相手ターン終了で消える）
           if (timing === 'dur_next_opp_turn') {
-            const keep = b._appliedSide === endingSide;
-            console.log('[expire opp_turn]', card.name, b.type, '_appliedSide:', b._appliedSide, 'endingSide:', endingSide, '→', keep ? 'KEEP' : 'REMOVE');
-            return keep;
+            if (b._appliedSide === endingSide) return true; // 付与本人ターン終了→keep
+            return false; // 相手ターン終了→remove
           }
           // dur_next_own_turn: 付与本人ターンが2回目に終わる時に削除
           if (timing === 'dur_next_own_turn') {

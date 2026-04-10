@@ -2338,7 +2338,11 @@ export function applyPermanentEffects(bs, side, context) {
           steps.forEach(step => {
             if (step.condition) {
               const conds = parseRecipeCondition(step.condition);
-              if (!checkConditions(conds, card, bs, side)) return;
+              const oppSide = side === 'player' ? 'ai' : 'player';
+              const oppCards = bs[oppSide].battleArea.filter(c => c).map(c => c.name + '(stack:' + (c.stack ? c.stack.length : 0) + ')');
+              const condResult = checkConditions(conds, card, bs, side);
+              console.log('[perm④cond]', card.name, '←', evoCard.name, step.action, step.condition, '→', condResult, 'side:', side, 'opp:', oppCards.join(','));
+              if (!condResult) return;
             }
             let value = step.value != null ? step.value : (step.per_count ? 1 : null);
             if (step.per_count && value != null) {

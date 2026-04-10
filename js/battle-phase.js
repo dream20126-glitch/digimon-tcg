@@ -442,6 +442,7 @@ export function onEndTurn() {
     if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
     updateMemGauge();
     _hooks.expireBuffs('dur_this_turn');
+    _hooks.expireBuffs('dur_next_opp_turn'); // 自分=相手から見て「相手」のターン終了
     _hooks.expireBuffs('permanent', 'player');
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
@@ -458,6 +459,7 @@ export function onEndTurn() {
     bs.memory = -3;
     updateMemGauge();
     _hooks.expireBuffs('dur_this_turn');
+    _hooks.expireBuffs('dur_next_opp_turn');
     _hooks.expireBuffs('permanent', 'player');
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
@@ -476,6 +478,7 @@ export function checkAutoTurnEnd() {
   addLog('💾 メモリー' + over + 'で相手側へ');
   bs.isPlayerTurn = false;
   _hooks.expireBuffs('dur_this_turn');
+  _hooks.expireBuffs('dur_next_opp_turn');
   _hooks.expireBuffs('permanent', 'player');
   renderAll(true);
 

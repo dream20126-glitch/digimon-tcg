@@ -443,6 +443,7 @@ export function onEndTurn() {
     updateMemGauge();
     _hooks.expireBuffs('dur_this_turn');
     _hooks.expireBuffs('dur_next_opp_turn'); // 自分=相手から見て「相手」のターン終了
+    _hooks.expireBuffs('dur_next_own_turn'); // 2回目のターン終了で削除（_ticks管理）
     _hooks.expireBuffs('permanent', 'player');
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
@@ -460,6 +461,7 @@ export function onEndTurn() {
     updateMemGauge();
     _hooks.expireBuffs('dur_this_turn');
     _hooks.expireBuffs('dur_next_opp_turn');
+    _hooks.expireBuffs('dur_next_own_turn');
     _hooks.expireBuffs('permanent', 'player');
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
@@ -479,6 +481,7 @@ export function checkAutoTurnEnd() {
   bs.isPlayerTurn = false;
   _hooks.expireBuffs('dur_this_turn');
   _hooks.expireBuffs('dur_next_opp_turn');
+  _hooks.expireBuffs('dur_next_own_turn');
   _hooks.expireBuffs('permanent', 'player');
   renderAll(true);
 

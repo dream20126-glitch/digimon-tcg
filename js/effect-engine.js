@@ -2071,7 +2071,14 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
 
 function addBuffDirect(card, type, value, duration, ctx) {
   if (!card.buffs) card.buffs = [];
-  card.buffs.push({ type, value, duration, source: ctx.card ? ctx.card.cardNo : '' });
+  // 付与時のターン情報を記録（dur_next_*の正確な期限管理のため）
+  const appliedSide = ctx && ctx.bs ? (ctx.bs.isPlayerTurn ? 'player' : 'ai') : null;
+  card.buffs.push({
+    type, value, duration,
+    source: ctx && ctx.card ? ctx.card.cardNo : '',
+    _appliedSide: appliedSide,
+    _ticks: 0, // ターン経過カウント
+  });
   recalcDp(card);
 }
 
@@ -2092,17 +2099,21 @@ function recalcDp(card) {
 }
 
 // 持続切れバフを除去
-// timing: 'dur_this_turn' / 'dur_next_opp_turn' / 'dur_next_own_turn'
+// timing: 'dur_this_turn' / 'dur_next_opp_turn' / 'dur_next_own_turn' / 'permanent'
 // ownerSide: 'player'/'ai' — permanent バフの持ち主（ターン切替時に指定）
+//
+// 削除ルール:
+// - dur_this_turn: 付与した本人のターン終了時に削除
+// - dur_next_opp_turn: 付与した本人のターン終了時に削除（相手から見て「相手のターン終了時」）
+// - dur_next_own_turn: 付与時と同じ陣営のターンが2回終わる時に削除（次の自分ターン終了時）
+//   → _ticksカウンタで管理（ターン終了時にカウント、_ticks>=1で削除）
 export function expireBuffs(bs, timing, ownerSide) {
   ['player', 'ai'].forEach(side => {
     [...bs[side].battleArea, ...(bs[side].tamerArea || [])].forEach(card => {
       if (!card || !card.buffs || card.buffs.length === 0) return;
       const before = card.buffs.length;
       if (timing === 'permanent') {
-        // permanent バフを全消し（ownerSide指定時: そのsideのカードのバフのみ）
         if (ownerSide) {
-          // ownerSideのカードに付いているpermanentバフのみ消す
           if (side === ownerSide) {
             card.buffs = card.buffs.filter(b => b.duration !== 'permanent');
           }
@@ -2110,7 +2121,23 @@ export function expireBuffs(bs, timing, ownerSide) {
           card.buffs = card.buffs.filter(b => b.duration !== 'permanent');
         }
       } else {
-        card.buffs = card.buffs.filter(b => b.duration !== timing);
+        // 通常タイミング処理
+        card.buffs = card.buffs.filter(b => {
+          if (b.duration !== timing) return true;
+          // dur_next_own_turn は付与した本人ターンが2回目に終わる時に削除
+          if (timing === 'dur_next_own_turn') {
+            // 付与時のturnSide（自陣営）が今ターン終了する場合のみカウント
+            const currentTurnSide = bs.isPlayerTurn ? 'player' : 'ai';
+            if (b._appliedSide === currentTurnSide) {
+              if ((b._ticks || 0) >= 1) return false; // 2回目で削除
+              b._ticks = (b._ticks || 0) + 1;
+              return true;
+            }
+            return true;
+          }
+          // dur_this_turn / dur_next_opp_turn は即削除
+          return false;
+        });
       }
       if (card.buffs.length !== before) recalcDp(card);
       if (!card.buffs.some(b => ['cant_attack_block', 'cant_attack'].includes(b.type))) card.cantAttack = false;

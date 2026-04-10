@@ -572,7 +572,12 @@ function onRemoteCommand(cmd) {
       if (!st) break;
       const restoreCard = (data) => {
         if (!data) return null;
-        return { ...data, buffs: data.buffs || [], stack: (data.stack || []).map(restoreCard) };
+        // バフの_appliedSideは送信側視点なので反転（player↔ai）
+        const flippedBuffs = (data.buffs || []).map(b => {
+          if (!b._appliedSide) return b;
+          return { ...b, _appliedSide: b._appliedSide === 'player' ? 'ai' : (b._appliedSide === 'ai' ? 'player' : b._appliedSide) };
+        });
+        return { ...data, buffs: flippedBuffs, stack: (data.stack || []).map(restoreCard) };
       };
       const adjustArr = (arr, count) => { while (arr.length > count) arr.pop(); while (arr.length < count) arr.push({ name: '?', type: '不明', dp: 0 }); };
       // Firebaseはnull要素を含む配列をObjectとして保存するため安全に変換

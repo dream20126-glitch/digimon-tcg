@@ -878,10 +878,10 @@ export function aiAttackPhase(callback) {
     };
 
     doAfterAtkEffect(() => {
-      // ブロッカーチェック
+      // ブロッカーチェック（cantBlockのカードは除外）
       const blockerIndices = [];
       bs.player.battleArea.forEach((c, i) => {
-        if (c && !c.suspended && (hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】'))) {
+        if (c && !c.suspended && !c.cantBlock && (hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】'))) {
           blockerIndices.push(i);
         }
       });

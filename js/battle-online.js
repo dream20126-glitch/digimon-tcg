@@ -123,6 +123,7 @@ export function sendStateSync() {
       evolveCost: c.evolveCost !== null ? safeNum(c.evolveCost) : null,
       effect: c.effect || '', evoSourceEffect: c.evoSourceEffect || '', securityEffect: c.securityEffect || '',
       suspended: !!c.suspended, summonedThisTurn: !!c.summonedThisTurn,
+      cantAttack: !!c.cantAttack, cantBlock: !!c.cantBlock, cantEvolve: !!c.cantEvolve,
       imgSrc: c.imgSrc || '', imageUrl: c.imageUrl || '', color: c.color || '', feature: c.feature || '',
       evolveCond: c.evolveCond || '', buffs: c.buffs || [],
       stack: (c.stack || []).map(serializeCard),
@@ -621,6 +622,29 @@ function onRemoteCommand(cmd) {
     }
 
     // --- 演出コマンド（キュー経由で順次再生、並列起動によるバチバチを防止） ---
+    case 'fx_cantAttackBlock': {
+      // 相手から状態付与コマンドを受信 → 自分のカードに状態を付与
+      const myCard = bs.player.battleArea[cmd.targetIdx];
+      if (myCard) {
+        if (cmd.action === 'cant_attack_block' || cmd.action === 'cant_attack') myCard.cantAttack = true;
+        if (cmd.action === 'cant_attack_block' || cmd.action === 'cant_block') myCard.cantBlock = true;
+        if (!myCard.buffs) myCard.buffs = [];
+        myCard.buffs.push({ type: cmd.action || 'cant_attack_block', value: 0, duration: cmd.duration || 'dur_this_turn', source: 'remote' });
+        renderAll();
+      }
+      // 演出: フローティングメッセージ
+      const labelMap = { 'cant_attack_block': 'アタック・ブロック不可', 'cant_attack': 'アタック不可', 'cant_block': 'ブロック不可' };
+      const label = labelMap[cmd.action] || '行動制限';
+      const msgEl = document.createElement('div');
+      msgEl.style.cssText = 'position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:60001;background:rgba(0,0,0,0.9);border:2px solid #ff4444;border-radius:10px;padding:14px 24px;color:#ff4444;font-size:clamp(12px,3.5vw,16px);font-weight:bold;text-align:center;pointer-events:none;opacity:0;transition:opacity 0.3s;';
+      msgEl.innerHTML = '🔒 「' + (cmd.targetName || '???') + '」<br>' + label + '付与！';
+      document.body.appendChild(msgEl);
+      setTimeout(() => { msgEl.style.opacity = '1'; }, 50);
+      setTimeout(() => { msgEl.style.opacity = '0'; }, 2200);
+      setTimeout(() => { if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl); }, 2800);
+      addLog('🔒 「' + (cmd.targetName || '???') + '」' + label + '付与');
+      break;
+    }
     case 'fx_evoDiscard': {
       // 進化元破棄：自分のカードのstackを実際に操作
       const discardedCards = [];
@@ -820,7 +844,7 @@ export function waitForSecurityEffect(callback) {
 function checkOnlineBlock(cmd) {
   const blockerIndices = [];
   bs.player.battleArea.forEach((c, i) => {
-    if (c && !c.suspended) {
+    if (c && !c.suspended && !c.cantBlock) {
       const hasBlocker = (c.effect && c.effect.includes('【ブロッカー】'))
         || (c.stack && c.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【ブロッカー】')));
       if (hasBlocker) blockerIndices.push(i);

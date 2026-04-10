@@ -1040,6 +1040,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         tgt.cantAttack = true; tgt.cantBlock = true;
         addBuffDirect(tgt, 'cant_attack_block', 0, cabDur, ctx);
         ctx.addLog('🔒 「' + tgt.name + '」アタック・ブロック不可（' + cabDur + '）');
+        // 相手側でも自カードに状態付与してもらう（state_syncでは自カードは更新されないため）
+        if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+          const tgtIdx = opponent.battleArea.indexOf(tgt);
+          window._onlineSendCommand({ type: 'fx_cantAttackBlock', targetIdx: tgtIdx, targetName: tgt.name, duration: cabDur, action: 'cant_attack_block' });
+        }
       };
       if (effectiveSide === 'ai') {
         applyCab(opponent.battleArea[ctx._forceTargetIdx ?? cabTargets[0]]);
@@ -1048,12 +1053,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         break;
       }
       ctx.addLog('🎯 アタック・ブロック不可にする対象を選んでください');
-      console.log('[cant_attack_block] targets:', cabTargets, 'cond:', cabHasNoEvoCond, 'dur:', cabDur);
       showTargetSelection(opponentRowSide, cabTargets, null, uiColor, (selectedIdx) => {
-        console.log('[cant_attack_block] selectedIdx:', selectedIdx, 'target:', selectedIdx !== null ? opponent.battleArea[selectedIdx]?.name : 'none');
         if (selectedIdx !== null) {
           applyCab(opponent.battleArea[selectedIdx]);
-          console.log('[cant_attack_block] applied! cantAttack:', opponent.battleArea[selectedIdx]?.cantAttack);
         }
         ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }

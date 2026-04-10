@@ -914,16 +914,17 @@ function resolveOnlineBlock(blockerIdx, cmd) {
 
   // 攻撃側の「ブロックされた時」効果完了シグナルを待つ（最大10秒）
   let battleStarted = false;
-  let onBlockedDone = null;
-  onBlockedDone = onValue(ref(rtdb, `rooms/${_onlineRoomId}/commands`), (snap) => {
+  let unsubBlockedDone = null;
+  unsubBlockedDone = onValue(ref(rtdb, `rooms/${_onlineRoomId}/commands`), (snap) => {
     if (battleStarted) return;
+    if (!unsubBlockedDone) return; // 初期化前の即時コールバックをスキップ
     const cmds = snap.val();
     if (!cmds) return;
     const keys = Object.keys(cmds);
     for (const k of keys) {
       if (cmds[k] && cmds[k].type === 'blocked_effect_done' && cmds[k].from !== _onlineMyKey) {
         battleStarted = true;
-        onBlockedDone(); // リスナー解除
+        unsubBlockedDone(); // リスナー解除
         startBattleResolution();
         return;
       }
@@ -933,7 +934,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   setTimeout(() => {
     if (!battleStarted) {
       battleStarted = true;
-      onBlockedDone();
+      if (unsubBlockedDone) unsubBlockedDone();
       startBattleResolution();
     }
   }, 10000);

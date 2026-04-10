@@ -49,6 +49,19 @@ function isRecentlyEvoModified(side, slotIdx) {
   return _recentlyEvoModified.some(d => d.side === side && d.slotIdx === slotIdx && Date.now() - d.time < EVO_MOD_COOLDOWN);
 }
 
+// 最近期限切れで削除されたバフの追跡（state_syncによる復元を防止）
+let _recentlyExpiredBuffs = []; // {cardName, type, duration, time}
+const BUFF_EXPIRE_COOLDOWN = 8000;
+
+export function markBuffExpired(cardName, type, duration) {
+  _recentlyExpiredBuffs.push({ cardName, type, duration, time: Date.now() });
+  _recentlyExpiredBuffs = _recentlyExpiredBuffs.filter(e => Date.now() - e.time < BUFF_EXPIRE_COOLDOWN);
+}
+
+function isBuffRecentlyExpired(cardName, type, duration) {
+  return _recentlyExpiredBuffs.some(e => e.cardName === cardName && e.type === type && e.duration === duration && Date.now() - e.time < BUFF_EXPIRE_COOLDOWN);
+}
+
 // ===== 外部モジュール参照（battle.jsから注入） =====
 let _modules = {
   showYourTurn: null,
@@ -572,12 +585,15 @@ function onRemoteCommand(cmd) {
       if (!st) break;
       const restoreCard = (data) => {
         if (!data) return null;
-        const flippedBuffs = (data.buffs || []).map(b => {
+        // 最近削除されたバフはフィルタリング（state_syncで復活しないように）
+        const filteredBuffs = (data.buffs || []).filter(b => {
+          if (isBuffRecentlyExpired(data.name, b.type, b.duration)) return false;
+          return true;
+        });
+        // _appliedSideを送信側視点から受信側視点に反転
+        const flippedBuffs = filteredBuffs.map(b => {
           if (!b._appliedSide) return b;
           const flipped = b._appliedSide === 'player' ? 'ai' : (b._appliedSide === 'ai' ? 'player' : b._appliedSide);
-          if (b._appliedSide !== flipped) {
-            console.log('[sync-flip]', data.name, b.type, b._appliedSide, '→', flipped);
-          }
           return { ...b, _appliedSide: flipped };
         });
         return { ...data, buffs: flippedBuffs, stack: (data.stack || []).map(restoreCard) };
@@ -1023,6 +1039,7 @@ window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._clearPendingBlock = () => { _pendingBlockCallback = null; _pendingBlockResponse = null; };
 window._markDestroyed = (side, slotIdx) => markDestroyed(side, slotIdx);
 window._markEvoModified = (side, slotIdx) => markEvoModified(side, slotIdx);
+window._markBuffExpired = (cardName, type, duration) => markBuffExpired(cardName, type, duration);
 window._cleanupOnline = () => cleanupOnline();
 
 // battle-combat.jsの戦闘演出中フラグをwindow経由で公開

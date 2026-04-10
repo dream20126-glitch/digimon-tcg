@@ -2130,15 +2130,10 @@ function recalcDp(card) {
 // endingSide: 'player'/'ai' - 明示指定（省略時は bs.isPlayerTurn から推測、オンラインでは要明示）
 export function expireBuffs(bs, timing, ownerSide, endingSide) {
   if (!endingSide) endingSide = bs.isPlayerTurn ? 'player' : 'ai';
-  console.log('[expire]', timing, 'endingSide=' + endingSide);
   ['player', 'ai'].forEach(side => {
     [...bs[side].battleArea, ...(bs[side].tamerArea || [])].forEach(card => {
       if (!card || !card.buffs || card.buffs.length === 0) return;
       const before = card.buffs.length;
-      const matching = card.buffs.filter(b => b.duration === timing);
-      if (matching.length > 0) {
-        console.log('[expire-found]', side, card.name, matching.map(b => b.type + '(_appliedSide=' + b._appliedSide + ',_aDoT=' + b._appliedDuringOwnTurn + ',_ticks=' + b._ticks + ')').join(','));
-      }
       if (timing === 'permanent') {
         if (ownerSide) {
           if (side === ownerSide) {
@@ -2148,37 +2143,37 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
           card.buffs = card.buffs.filter(b => b.duration !== 'permanent');
         }
       } else {
+        const removedBuffs = [];
         card.buffs = card.buffs.filter(b => {
           if (b.duration !== timing) return true;
+          let shouldRemove = false;
           // dur_this_turn: 付与本人ターン終了時のみ削除
           if (timing === 'dur_this_turn') {
-            return b._appliedSide !== endingSide;
+            shouldRemove = b._appliedSide === endingSide;
           }
           // dur_next_opp_turn: 付与本人とは違う陣営のターン終了時に削除
-          // （付与本人のターン終了 → 相手ターン → 相手ターン終了で消える）
-          if (timing === 'dur_next_opp_turn') {
-            if (b._appliedSide === endingSide) return true; // 付与本人ターン終了→keep
-            return false; // 相手ターン終了→remove
+          else if (timing === 'dur_next_opp_turn') {
+            shouldRemove = b._appliedSide !== endingSide;
           }
           // dur_next_own_turn: 付与本人の次のターン終了で削除
-          // 付与時が自分ターン: 2tick必要（付与ターン終了 + 次の自分ターン終了）
-          // 付与時が相手ターン: 1tick必要（次の自分ターン直接）
-          if (timing === 'dur_next_own_turn') {
+          else if (timing === 'dur_next_own_turn') {
             if (b._appliedSide !== endingSide) return true;
             b._ticks = (b._ticks || 0) + 1;
             const needed = b._appliedDuringOwnTurn === false ? 1 : 2;
-            if (b._ticks >= needed) return false;
-            return true;
+            shouldRemove = b._ticks >= needed;
+            if (!shouldRemove) return true;
           }
-          return false;
+          if (shouldRemove) {
+            removedBuffs.push({ type: b.type, duration: b.duration });
+          }
+          return !shouldRemove;
         });
+        // 削除したバフをstate_sync復活防止のためマーク
+        if (removedBuffs.length > 0 && window._markBuffExpired) {
+          removedBuffs.forEach(rb => window._markBuffExpired(card.name, rb.type, rb.duration));
+        }
       }
-      if (card.buffs.length !== before) {
-        recalcDp(card);
-        console.log('[expire-removed]', side, card.name, 'before:' + before, 'after:' + card.buffs.length);
-      } else if (matching.length > 0) {
-        console.log('[expire-kept]', side, card.name, 'still has', card.buffs.filter(b => b.duration === timing).length, 'matching buffs');
-      }
+      if (card.buffs.length !== before) recalcDp(card);
       if (!card.buffs.some(b => ['cant_attack_block', 'cant_attack'].includes(b.type))) card.cantAttack = false;
       if (!card.buffs.some(b => ['cant_attack_block', 'cant_block'].includes(b.type))) card.cantBlock = false;
       if (!card.buffs.some(b => b.type === 'cant_evolve')) card.cantEvolve = false;

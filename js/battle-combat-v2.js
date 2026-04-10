@@ -144,7 +144,7 @@ export function doPlay(card, handIdx, slotIdx) {
         bs.player.trash.push(card);
         addLog('✦ 「' + card.name + '」をトラッシュへ');
         renderAll();
-        if (bs.memory < 0) handleAutoTurnEnd();
+        if (bs.memory < 0) checkAutoTurnEnd();
       }, 'player');
     });
     return;
@@ -274,7 +274,7 @@ function playerSpendMemory(cost) {
   updateMemGauge();
   sendMemoryUpdate();
   if (bs.memory < 0) {
-    handleAutoTurnEnd();
+    checkAutoTurnEnd();
     return true;
   }
   return false;
@@ -288,30 +288,7 @@ function aiSpendMemory(cost) {
   return bs.memory > 0;
 }
 
-// 自動ターン終了（メモリーオーバーフロー）
-function handleAutoTurnEnd() {
-  const over = Math.abs(bs.memory);
-  addLog('💾 メモリー' + over + 'で相手側へ');
-  bs.isPlayerTurn = false;
-  // プレイヤーのターン終了 → endingSide='player' を明示
-  _hooks.expireBuffs('dur_this_turn', null, 'player');
-  _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
-  _hooks.expireBuffs('dur_next_own_turn', null, 'player');
-  _hooks.expireBuffs('permanent', 'player');
-  renderAll(true);
-  if (_onlineMode) {
-    if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
-    showYourTurn('自分のターン終了', '', '#555555', () => {
-      showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {});
-    });
-  } else {
-    bs.memory = over;
-    updateMemGauge();
-    showYourTurn('自分のターン終了', '', '#555555', () => {
-      setTimeout(() => aiTurn(), 500);
-    });
-  }
-}
+// 自動ターン終了（メモリーオーバーフロー）→ battle-phase.jsのcheckAutoTurnEndに統合済み
 
 // ===== アタック状態管理 =====
 
@@ -1176,7 +1153,7 @@ export function checkPendingTurnEnd() {
   renderAll();
   if (bs._pendingTurnEnd) {
     bs._pendingTurnEnd = false;
-    handleAutoTurnEnd();
+    checkAutoTurnEnd();
   }
 }
 

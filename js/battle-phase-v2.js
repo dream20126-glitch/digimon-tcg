@@ -441,7 +441,6 @@ export function onEndTurn() {
     bs.memory = -3;
     if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
     updateMemGauge();
-    console.log('[onEndTurn online v2] 4-call expireBuffs starting');
     // プレイヤーのターン終了 → endingSide='player'
     _hooks.expireBuffs('dur_this_turn', null, 'player');
     _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
@@ -481,7 +480,6 @@ export function checkAutoTurnEnd() {
 
   const over = Math.abs(bs.memory);
   addLog('💾 メモリー' + over + 'で相手側へ');
-  console.log('[checkAutoTurnEnd v2] 4-call expireBuffs starting');
   bs.isPlayerTurn = false;
   // プレイヤーのターン終了
   _hooks.expireBuffs('dur_this_turn', null, 'player');

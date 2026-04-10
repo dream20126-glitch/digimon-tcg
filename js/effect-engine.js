@@ -2071,13 +2071,21 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
 
 function addBuffDirect(card, type, value, duration, ctx) {
   if (!card.buffs) card.buffs = [];
-  // 付与時のターン情報を記録（dur_next_*の正確な期限管理のため）
-  const appliedSide = ctx && ctx.bs ? (ctx.bs.isPlayerTurn ? 'player' : 'ai') : null;
+  // 付与本人の陣営を記録（dur_next_*の期限管理用）
+  // 優先順位: ctx.side（効果実行者）> ctx.bs.isPlayerTurn（ターン中の陣営）
+  // セキュリティ効果のように相手ターン中に発動する効果も、
+  // ctx.sideは正しくセキュリティ所有者の陣営を指す
+  let appliedSide = null;
+  if (ctx && ctx.side) {
+    appliedSide = ctx.side;
+  } else if (ctx && ctx.bs) {
+    appliedSide = ctx.bs.isPlayerTurn ? 'player' : 'ai';
+  }
   card.buffs.push({
     type, value, duration,
     source: ctx && ctx.card ? ctx.card.cardNo : '',
     _appliedSide: appliedSide,
-    _ticks: 0, // ターン経過カウント
+    _ticks: 0,
   });
   recalcDp(card);
 }

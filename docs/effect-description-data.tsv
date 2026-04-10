@@ -1,0 +1,37 @@
+処理コード	効果説明
+on_play
+on_evolve
+on_attack
+on_attack_end
+on_destroy
+when_destroy
+when_blocked
+when_attacked
+when_rest
+when_leave_battle
+when_security_decrease
+when_return_to_hand
+when_target_changed
+on_own_turn_start
+on_own_turn_end
+on_opp_turn_start
+on_opp_turn_end
+on_main_phase_start
+on_opp_main_phase_start
+main
+security
+counter
+from_hand
+from_trash
+during_own_turn
+during_opp_turn
+during_any_turn
+blocker	相手のデジモンのアタック時、このデジモンをレストさせることで、アタック対象をこのデジモンに変更できる
+security_attack_plus	セキュリティチェック回数を1+N回にする
+rush	登場したターンでもアタックできる
+piercing	アクティブにする状態の相手のデジモンにもアタックできる
+penetrate	相手のデジモンとのバトルに勝利した時、セキュリティチェックを行う
+jamming	セキュリティデジモンとのバトルで消滅しない
+reboot	相手のアクティブフェイズでこのデジモンをアクティブにする
+armor	消滅時、進化元を残して登場させることができる
+limit_once_per_turn

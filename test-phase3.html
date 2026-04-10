@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 3 テスト: フェーズ進行</title>
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/battle.css">
+<style>
+.test-bar { position:fixed; top:0; left:0; right:0; z-index:99999; background:#111; padding:8px 12px; display:flex; gap:6px; align-items:center; border-bottom:2px solid #ff9900; flex-wrap:wrap; }
+.test-bar h1 { font-size:13px; color:#ff9900; margin-right:8px; white-space:nowrap; }
+.test-btn { background:#0a1520; border:1px solid #ff9900; color:#ff9900; padding:5px 10px; border-radius:6px; font-size:10px; cursor:pointer; opacity:0.4; white-space:nowrap; }
+.test-btn:hover { background:#ff990022; }
+.test-btn.ready { opacity:1; }
+.test-sep { width:1px; height:20px; background:#333; margin:0 2px; }
+.test-info { color:#888; font-size:10px; margin-left:auto; }
+body { padding-top:70px; }
+#battle-screen { display:block !important; }
+</style>
+</head>
+<body>
+<!-- テストバー -->
+<div class="test-bar">
+  <h1>🧪 Phase 3</h1>
+  <button class="test-btn" id="btn-demo">▶ デモ開始</button>
+  <div class="test-sep"></div>
+  <button class="test-btn" id="btn-turn">🔄 ターン演出</button>
+  <button class="test-btn" id="btn-phase-a">🔄 アクティブ</button>
+  <button class="test-btn" id="btn-phase-d">🃏 ドロー</button>
+  <button class="test-btn" id="btn-phase-b">🥚 育成</button>
+  <button class="test-btn" id="btn-phase-m">⚡ メイン</button>
+  <div class="test-sep"></div>
+  <button class="test-btn" id="btn-skip">⏭ スキップ演出</button>
+  <button class="test-btn" id="btn-end">⏭ ターン終了</button>
+  <button class="test-btn" id="btn-ai">🤖 AIターン</button>
+  <div class="test-sep"></div>
+  <button class="test-btn" id="btn-full">🎬 フルサイクル</button>
+  <span class="test-info" id="load-status">読み込み中...</span>
+</div>
+
+<!-- バトル画面HTMLがここに挿入される -->
+<div id="page-battle"></div>
+
+<script type="module">
+// バトル画面HTML読み込み
+const res = await fetch('pages/battle.html');
+const html = await res.text();
+document.getElementById('page-battle').innerHTML = html;
+
+// カードデータ読み込み
+import { loadCardAndKeywordData } from './js/cards.js';
+await loadCardAndKeywordData();
+console.log('カードデータ読み込み完了:', allCards.length, '枚');
+
+// バトルモジュール読み込み（battle-phase.jsもbattle.js経由で読み込まれる）
+await import('./js/battle.js');
+console.log('バトルモジュール読み込み完了');
+
+// battle-phase.js の関数を直接importして個別テスト
+const phase = await import('./js/battle-phase.js');
+const state = await import('./js/battle-state.js');
+
+// ボタン有効化
+document.querySelectorAll('.test-btn').forEach(b => b.classList.add('ready'));
+document.getElementById('load-status').innerText = '✅ 準備完了';
+document.getElementById('load-status').style.color = '#00ff88';
+
+// ----- テストボタン -----
+
+// デモバトル開始
+document.getElementById('btn-demo').onclick = () => window.startBattleDemo();
+
+// ターン開始演出テスト
+document.getElementById('btn-turn').onclick = () => {
+  phase.showYourTurn('自分のターン開始', '【テスト】', '#00fbff', () => {
+    console.log('ターン演出完了');
+  });
+};
+
+// 各フェーズ演出テスト
+document.getElementById('btn-phase-a').onclick = () => {
+  phase.showPhaseAnnounce('🔄 アクティブフェイズ', '#00fbff', () => console.log('アクティブ演出完了'));
+};
+document.getElementById('btn-phase-d').onclick = () => {
+  phase.showPhaseAnnounce('🃏 ドローフェイズ', '#00ff88', () => console.log('ドロー演出完了'));
+};
+document.getElementById('btn-phase-b').onclick = () => {
+  phase.showPhaseAnnounce('🥚 育成フェイズ', '#ff9900', () => console.log('育成演出完了'));
+};
+document.getElementById('btn-phase-m').onclick = () => {
+  phase.showPhaseAnnounce('⚡ メインフェイズ', '#ff00fb', () => console.log('メイン演出完了'));
+};
+
+// スキップ演出テスト
+document.getElementById('btn-skip').onclick = () => {
+  phase.showSkipAnnounce('🔄 アクティブフェイズ スキップ！', () => console.log('スキップ演出完了'));
+};
+
+// ターン終了テスト
+document.getElementById('btn-end').onclick = () => {
+  if (!state.bs.isPlayerTurn) {
+    console.log('プレイヤーのターンではありません');
+    return;
+  }
+  phase.onEndTurn();
+};
+
+// AIターンテスト
+document.getElementById('btn-ai').onclick = () => {
+  phase.aiTurn();
+};
+
+// フルサイクルテスト（デモ開始 → 自動でフェーズ進行）
+document.getElementById('btn-full').onclick = async () => {
+  console.log('=== フルサイクルテスト開始 ===');
+  await window.startBattleDemo();
+};
+</script>
+</body>
+</html>

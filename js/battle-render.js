@@ -5,10 +5,10 @@
  * 各render関数は対応するHTML要素にカード/ゲージを描画
  */
 
-import { bs, MEM_MIN, MEM_MAX } from './battle-state.js';
-import { updateScrollArrows, addLog } from './battle-ui.js';
-import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
-import { isTargetSelecting } from './effect-engine.js';
+import { bs, MEM_MIN, MEM_MAX } from './battle-state.js?v=20260410-3';
+import { updateScrollArrows, addLog } from './battle-ui.js?v=20260410-3';
+import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js?v=20260410-3';
+import { isTargetSelecting } from './effect-engine.js?v=20260410-3';
 
 // 戦闘演出中フラグ（battle-combat.jsから参照）
 function isCombatAnimating() { return window._isCombatAnimating ? window._isCombatAnimating() : false; }

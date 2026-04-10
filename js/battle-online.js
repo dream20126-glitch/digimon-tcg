@@ -5,10 +5,10 @@
  * オフライン（AI対戦）時は全関数がno-opで安全
  */
 
-import { bs } from './battle-state.js';
-import { addLog, showScreen } from './battle-ui.js';
-import { renderAll, updateMemGauge, cardImg } from './battle-render.js';
-import { rtdb, ref, set, onValue, remove } from './firebase-config.js';
+import { bs } from './battle-state.js?v=20260410-3';
+import { addLog, showScreen } from './battle-ui.js?v=20260410-3';
+import { renderAll, updateMemGauge, cardImg } from './battle-render.js?v=20260410-3';
+import { rtdb, ref, set, onValue, remove } from './firebase-config.js?v=20260410-3';
 
 // ===== オンライン状態 =====
 let _onlineMode = false;
@@ -1046,5 +1046,5 @@ window._markBuffExpired = (cardName, type, duration) => markBuffExpired(cardName
 window._cleanupOnline = () => cleanupOnline();
 
 // battle-combat.jsの戦闘演出中フラグをwindow経由で公開
-import { isCombatAnimating } from './battle-combat.js';
+import { isCombatAnimating } from './battle-combat.js?v=20260410-3';
 window._isCombatAnimating = isCombatAnimating;

@@ -1,0 +1,37 @@
+処理コード	種類	キーワード	発動タイミング	効果消失タイミング	持続時間	強制or任意	備考
+on_play	trigger	【登場時】,登場したとき	デジモン/テイマーが登場した時		即時	強制/任意	登場後に発動。任意ならダイアログ確認
+on_evolve	trigger	【進化時】,進化したとき	デジモンが進化した時		即時	強制/任意	進化後1ドローの後に発動
+on_attack	trigger	【アタック時】,アタックしたとき	デジモンがアタック宣言した時		即時	強制/任意	レスト→アタック時効果→ブロック確認→バトル の順
+on_attack_end	trigger	【アタック終了時】	バトル勝利後/セキュリティチェック完了後		即時	強制/任意
+on_destroy	trigger	【消滅時】,消滅したとき	DPが0以下 or 効果で消滅し、トラッシュに送られた時		即時	強制/任意	進化元ごとトラッシュへ送った後に発動
+when_destroy	trigger	消滅するとき	消滅が確定し、トラッシュに送られる直前		即時	強制	消滅を置換する効果等
+when_blocked	trigger	ブロックされたとき,ブロックされた時	アタック中のデジモンがブロックされた時		即時	強制/任意	アタッカー側のカードで発動
+when_attacked	trigger	アタックされたとき,アタックされた時	相手のアタック対象になった時		即時	強制/任意	防御側のカードで発動
+when_rest	trigger	レストしたとき	カードがレスト状態になった時		即時	強制/任意
+when_leave_battle	trigger	バトルエリアを離れるとき	手札/デッキ/トラッシュ等に移動する時		即時	強制/任意
+when_security_decrease	trigger	セキュリティが減ったとき	セキュリティの枚数が減った時		即時	強制/任意
+when_return_to_hand	trigger	手札に戻ったとき	バトルエリアから手札に戻った時		即時	強制/任意
+when_target_changed	trigger	アタック対象が変更されたとき	ブロック等でアタック対象が変わった時		即時	強制/任意
+on_own_turn_start	trigger	【自分のターン開始時】	自分のターン開始直後（アクティブフェイズの前）		即時	強制/任意	全カードスキャン
+on_own_turn_end	trigger	【自分のターン終了時】	メモリーが相手側に入った時/手動ターン終了時		即時	強制/任意	全カードスキャン
+on_opp_turn_start	trigger	【相手のターン開始時】	相手のターン開始直後		即時	強制/任意	全カードスキャン
+on_opp_turn_end	trigger	【相手のターン終了時】	相手のターンが終了した時		即時	強制/任意	全カードスキャン
+on_main_phase_start	trigger	【メインフェイズ開始時】	自分のメインフェイズ開始直後		即時	強制/任意
+on_opp_main_phase_start	trigger	【相手のメインフェイズ開始時】	相手のメインフェイズ開始直後		即時	強制/任意
+main	trigger	【メイン】	メインフェイズ中、プレイヤーの任意タイミング		即時	任意	長押しメニューの「効果」ボタンから発動
+security	trigger	【セキュリティ】	セキュリティからめくられた時		即時	強制	セキュリティチェックでめくれた時に即発動
+counter	trigger	【カウンター】	相手のデジモンのアタック時		即時	任意	手札から使用可能
+from_hand	trigger	【手札】	手札にある時、メインフェイズ中に任意発動		即時	任意
+from_trash	trigger	【トラッシュ】	トラッシュにある時、メインフェイズ中に任意発動		即時	任意
+during_own_turn	continuous	【自分のターン】	自分のターン開始時	自分のターン終了時	永続	強制	条件付きの場合あり（「いる間」等）
+during_opp_turn	continuous	【相手のターン】	相手のターン開始時	相手のターン終了時	永続	強制	条件付きの場合あり
+during_any_turn	continuous	【お互いのターン】	常時有効		永続	強制	条件付きの場合あり
+blocker	passive	【ブロッカー】			永続	任意	アクティブ状態で相手アタック時、レストしてアタック先を自身に変更
+security_attack_plus	passive	【Sアタック+{N}】			永続	強制	セキュリティチェック回数が1+N回になる
+rush	passive	【速攻】			永続	強制	登場ターンでもアタック可能
+piercing	passive	【突進】			永続	強制	アクティブ状態の相手デジモンにもアタック可能
+penetrate	passive	【貫通】			永続	強制	相手デジモンとのバトル勝利時にセキュリティチェック追加
+jamming	passive	【ジャミング】			永続	強制	セキュリティデジモンとのバトルで負けても消滅しない
+reboot	passive	【再起動】			永続	強制	相手のアクティブフェイズでもアクティブになる
+armor	passive	【アーマー体】			永続	強制	アーマー体進化/消滅時にアーマー解除
+limit_once_per_turn	limit	【ターンに1回】,ターンに一回			-	-	同ターン内では1回のみ発動可能

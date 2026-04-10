@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 4 テスト: 戦闘</title>
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/battle.css">
+<style>
+.test-bar { position:fixed; top:0; left:0; right:0; z-index:99999; background:#111; padding:8px 12px; display:flex; gap:6px; align-items:center; border-bottom:2px solid #ff4444; flex-wrap:wrap; }
+.test-bar h1 { font-size:13px; color:#ff4444; margin-right:8px; white-space:nowrap; }
+.test-btn { background:#0a1520; border:1px solid #ff4444; color:#ff4444; padding:5px 10px; border-radius:6px; font-size:10px; cursor:pointer; opacity:0.4; white-space:nowrap; }
+.test-btn:hover { background:#ff444422; }
+.test-btn.ready { opacity:1; }
+.test-sep { width:1px; height:20px; background:#333; margin:0 2px; }
+.test-info { color:#888; font-size:10px; margin-left:auto; }
+body { padding-top:70px; }
+#battle-screen { display:block !important; }
+</style>
+</head>
+<body>
+<div class="test-bar">
+  <h1>🧪 Phase 4</h1>
+  <button class="test-btn" id="btn-demo">▶ デモ開始</button>
+  <div class="test-sep"></div>
+  <button class="test-btn" id="btn-play">🃏 登場</button>
+  <button class="test-btn" id="btn-evolve">⬆ 進化</button>
+  <button class="test-btn" id="btn-mega-evo">⬆ MEGA進化</button>
+  <button class="test-btn" id="btn-hatch">🥚 孵化</button>
+  <button class="test-btn" id="btn-option">✦ オプション</button>
+  <div class="test-sep"></div>
+  <button class="test-btn" id="btn-sec-win">🛡 SEC(勝ち)</button>
+  <button class="test-btn" id="btn-sec-lose">🛡 SEC(負け)</button>
+  <button class="test-btn" id="btn-sec-draw">🛡 SEC(相打ち)</button>
+  <button class="test-btn" id="btn-sec-option">🛡 SEC(オプション)</button>
+  <button class="test-btn" id="btn-sec-tamer">🛡 SEC(テイマー)</button>
+  <div class="test-sep"></div>
+  <button class="test-btn" id="btn-vs-win">⚔ VS(勝ち)</button>
+  <button class="test-btn" id="btn-vs-lose">⚔ VS(負け)</button>
+  <button class="test-btn" id="btn-vs-draw">⚔ VS(相打ち)</button>
+  <div class="test-sep"></div>
+  <button class="test-btn" id="btn-destroy">💥 消滅</button>
+  <button class="test-btn" id="btn-direct">🔥 ダイレクト</button>
+  <button class="test-btn" id="btn-s-atk">⚔ Sアタック+</button>
+  <div class="test-sep"></div>
+  <button class="test-btn" id="btn-draw">🃏 ドロー</button>
+  <button class="test-btn" id="btn-mega-draw">🃏 MEGAドロー</button>
+  <div class="test-sep"></div>
+  <button class="test-btn" id="btn-victory">🎉 勝利</button>
+  <button class="test-btn" id="btn-defeat">😢 敗北</button>
+  <span class="test-info" id="load-status">読み込み中...</span>
+</div>
+
+<div id="page-battle"></div>
+
+<script type="module">
+const res = await fetch('pages/battle.html');
+document.getElementById('page-battle').innerHTML = await res.text();
+
+import { loadCardAndKeywordData } from './js/cards.js';
+await loadCardAndKeywordData();
+console.log('カードデータ:', allCards.length, '枚');
+
+await import('./js/battle.js');
+console.log('バトルモジュール読み込み完了');
+
+const combat = await import('./js/battle-combat.js');
+const state = await import('./js/battle-state.js');
+const phase = await import('./js/battle-phase.js');
+
+document.querySelectorAll('.test-btn').forEach(b => b.classList.add('ready'));
+document.getElementById('load-status').innerText = '✅ 準備完了';
+document.getElementById('load-status').style.color = '#00ff88';
+
+// ダミーカード生成（実カードがあればそれを使う）
+function dummyCard(name, lv, dp, type) {
+  return { name, level: String(lv), dp, baseDp: dp, dpModifier: 0, type: type || 'デジモン',
+    playCost: lv * 2, evolveCost: lv, cost: lv * 2, effect: '', securityEffect: '',
+    imgSrc: '', cardNo: '', stack: [], suspended: false, buffs: [], summonedThisTurn: false };
+}
+
+// 実カードからダミーを探す（画像付きで見栄えを良くする）
+function findReal(type, minLv, maxLv) {
+  const cards = allCards.filter(c => {
+    const lv = parseInt(c['レベル']) || 0;
+    return c['タイプ'] === type && lv >= minLv && lv <= maxLv;
+  });
+  if (cards.length === 0) return null;
+  const c = cards[Math.floor(Math.random() * cards.length)];
+  const { getCardImageUrl } = window._cardHelpers || {};
+  return {
+    name: c['名前'] || 'Unknown', level: String(c['レベル'] || '?'),
+    dp: parseInt(c['DP'] || 0), baseDp: parseInt(c['DP'] || 0), dpModifier: 0,
+    type: c['タイプ'] || 'デジモン', playCost: parseInt(c['登場コスト'] || 0),
+    evolveCost: parseInt(c['進化コスト'] || 0), cost: parseInt(c['登場コスト'] || 0),
+    effect: c['効果'] || '', securityEffect: c['セキュリティ効果'] || '',
+    imgSrc: (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : c['ImageURL']) || '',
+    cardNo: c['カードNo'] || '', color: c['色'] || '',
+    stack: [], suspended: false, buffs: [], summonedThisTurn: false,
+  };
+}
+
+// カード画像ヘルパーをwindowに保存
+import { getCardImageUrl } from './js/cards.js';
+window._cardHelpers = { getCardImageUrl };
+
+// ===== テストボタン登録 =====
+
+document.getElementById('btn-demo').onclick = () => window.startBattleDemo();
+
+// ----- 登場 -----
+document.getElementById('btn-play').onclick = () => {
+  const card = findReal('デジモン', 3, 5) || dummyCard('テストモン', 4, 5000);
+  combat.showPlayEffect(card, () => console.log('登場演出完了'));
+};
+
+// ----- 通常進化 -----
+document.getElementById('btn-evolve').onclick = () => {
+  const base = findReal('デジモン', 3, 4) || dummyCard('テストモンLv4', 4, 5000);
+  const evolved = findReal('デジモン', 5, 5) || dummyCard('テストモンLv5', 5, 8000);
+  combat.showEvolveEffect(3, base.name, base, evolved, () => console.log('進化演出完了'));
+};
+
+// ----- MEGA進化（Lv6+で派手演出） -----
+document.getElementById('btn-mega-evo').onclick = () => {
+  const base = findReal('デジモン', 5, 5) || dummyCard('ワーガルルモン', 5, 8000);
+  const evolved = findReal('デジモン', 6, 7) || dummyCard('オメガモン', 7, 15000);
+  evolved.level = String(Math.max(parseInt(evolved.level), 6)); // Lv6以上を保証
+  combat.showEvolveEffect(4, base.name, base, evolved, () => console.log('MEGA進化演出完了'));
+};
+
+// ----- 孵化演出 -----
+document.getElementById('btn-hatch').onclick = () => {
+  const card = findReal('デジタマ', 2, 2) || dummyCard('ボタモン', 2, 0, 'デジタマ');
+  // showHatchEffect は battle-combat には含まれていないので、直接HTMLオーバーレイを使う
+  const overlay = document.getElementById('hatch-overlay');
+  if (!overlay) { console.log('hatch-overlay が見つかりません'); return; }
+  const flash = document.getElementById('hatch-flash');
+  const label = document.getElementById('hatch-label');
+  const imgEl = document.getElementById('hatch-card-img');
+  const nameEl = document.getElementById('hatch-card-name');
+  const subEl = document.getElementById('hatch-sub-text');
+  flash.style.opacity='0'; label.style.opacity='0';
+  imgEl.style.opacity='0'; imgEl.style.transform='scale(0.5) rotate(-10deg)';
+  nameEl.style.opacity='0'; subEl.style.opacity='0'; subEl.style.transform='scale(0.5)';
+  const src = card.imgSrc || '';
+  imgEl.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#ff9900;font-size:10px;padding:8px;">${card.name}</div>`;
+  nameEl.innerText = card.name;
+  overlay.style.display='flex';
+  setTimeout(() => {
+    flash.style.transition='opacity 0.1s'; flash.style.opacity='0.8';
+    setTimeout(() => {
+      flash.style.transition='opacity 0.25s'; flash.style.opacity='0';
+      label.style.opacity='1'; imgEl.style.opacity='1'; imgEl.style.transform='scale(1) rotate(0deg)';
+      setTimeout(() => { nameEl.style.opacity='1'; subEl.style.opacity='1'; subEl.style.transform='scale(1)'; }, 200);
+    }, 150);
+  }, 100);
+  setTimeout(() => { overlay.style.display='none'; console.log('孵化演出完了'); }, 2000);
+};
+
+// ----- オプション -----
+document.getElementById('btn-option').onclick = () => {
+  const card = findReal('オプション', 0, 99) || dummyCard('テストオプション', 3, 0, 'オプション');
+  card.type = 'オプション';
+  combat.showOptionEffect(card, () => console.log('オプション演出完了'));
+};
+
+// ----- セキュリティチェック: 勝ち（攻撃DP > 防御DP） -----
+document.getElementById('btn-sec-win').onclick = () => {
+  const atk = findReal('デジモン', 5, 6) || dummyCard('アタッカー', 5, 10000);
+  const sec = findReal('デジモン', 3, 4) || dummyCard('セキュリティ', 4, 5000);
+  if (atk.dp <= sec.dp) atk.dp = sec.dp + 3000; // 勝ち確定
+  combat.showSecurityCheck(sec, atk, () => {
+    combat.showBattleResult('Win!!', '#00ff88', 'セキュリティ突破！', () => {
+      combat.showDestroyEffect(sec, () => console.log('セキュリティ勝ち 一連完了'));
+    }, 'Lose...', '#ff4444');
+  });
+};
+
+// ----- セキュリティチェック: 負け（攻撃DP < 防御DP） -----
+document.getElementById('btn-sec-lose').onclick = () => {
+  const atk = findReal('デジモン', 3, 4) || dummyCard('アタッカー', 4, 4000);
+  const sec = findReal('デジモン', 5, 6) || dummyCard('セキュリティ', 6, 12000);
+  if (atk.dp >= sec.dp) sec.dp = atk.dp + 5000; // 負け確定
+  combat.showSecurityCheck(sec, atk, () => {
+    combat.showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された', () => {
+      combat.showDestroyEffect(atk, () => console.log('セキュリティ負け 一連完了'));
+    }, 'Win!!', '#00ff88');
+  });
+};
+
+// ----- セキュリティチェック: 相打ち（同DP） -----
+document.getElementById('btn-sec-draw').onclick = () => {
+  const atk = findReal('デジモン', 4, 5) || dummyCard('アタッカー', 5, 7000);
+  const sec = findReal('デジモン', 4, 5) || dummyCard('セキュリティ', 5, 7000);
+  sec.dp = atk.dp; // 同DP確定
+  combat.showSecurityCheck(sec, atk, () => {
+    combat.showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
+      combat.showDestroyEffect(sec, () => {
+        combat.showDestroyEffect(atk, () => console.log('セキュリティ相打ち 一連完了'));
+      });
+    }, '両者消滅', '#ff4444');
+  });
+};
+
+// ----- セキュリティチェック: オプション -----
+document.getElementById('btn-sec-option').onclick = () => {
+  const atk = findReal('デジモン', 5, 6) || dummyCard('アタッカー', 5, 8000);
+  const sec = findReal('オプション', 0, 99) || dummyCard('セキュリティオプション', 3, 0, 'オプション');
+  sec.type = 'オプション';
+  combat.showSecurityCheck(sec, atk, () => console.log('セキュリティ(オプション) 完了'));
+};
+
+// ----- セキュリティチェック: テイマー -----
+document.getElementById('btn-sec-tamer').onclick = () => {
+  const atk = findReal('デジモン', 5, 6) || dummyCard('アタッカー', 5, 8000);
+  const sec = findReal('テイマー', 0, 99) || dummyCard('テイマー太一', 3, 0, 'テイマー');
+  sec.type = 'テイマー';
+  combat.showSecurityCheck(sec, atk, () => console.log('セキュリティ(テイマー) 完了'));
+};
+
+// ----- VS画面バトル: 勝ち -----
+document.getElementById('btn-vs-win').onclick = () => {
+  const atk = findReal('デジモン', 5, 6) || dummyCard('メタルグレイモン', 5, 10000);
+  const def = findReal('デジモン', 4, 5) || dummyCard('デビモン', 4, 6000);
+  if (atk.dp <= def.dp) atk.dp = def.dp + 3000;
+  combat.showSecurityCheck(def, atk, () => {
+    combat.showBattleResult('Win!!', '#00ff88', '「' + def.name + '」を撃破！', () => {
+      combat.showDestroyEffect(def, () => console.log('VSバトル勝ち 一連完了'));
+    }, 'Lose...', '#ff4444');
+  }, 'BATTLE!');
+};
+
+// ----- VS画面バトル: 負け -----
+document.getElementById('btn-vs-lose').onclick = () => {
+  const atk = findReal('デジモン', 3, 4) || dummyCard('アグモン', 3, 3000);
+  const def = findReal('デジモン', 5, 6) || dummyCard('ウォーグレイモン', 6, 15000);
+  if (atk.dp >= def.dp) def.dp = atk.dp + 5000;
+  combat.showSecurityCheck(def, atk, () => {
+    combat.showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された', () => {
+      combat.showDestroyEffect(atk, () => console.log('VSバトル負け 一連完了'));
+    }, 'Win!!', '#00ff88');
+  }, 'BATTLE!');
+};
+
+// ----- VS画面バトル: 相打ち -----
+document.getElementById('btn-vs-draw').onclick = () => {
+  const atk = findReal('デジモン', 5, 5) || dummyCard('メタルガルルモン', 5, 9000);
+  const def = findReal('デジモン', 5, 5) || dummyCard('ワーガルルモン', 5, 9000);
+  def.dp = atk.dp;
+  combat.showSecurityCheck(def, atk, () => {
+    combat.showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
+      combat.showDestroyEffect(def, () => {
+        combat.showDestroyEffect(atk, () => console.log('VSバトル相打ち 一連完了'));
+      });
+    }, '両者消滅', '#ff4444');
+  }, 'BATTLE!');
+};
+
+// ----- 消滅 -----
+document.getElementById('btn-destroy').onclick = () => {
+  const card = findReal('デジモン', 4, 6) || dummyCard('消滅モン', 4, 5000);
+  combat.showDestroyEffect(card, () => console.log('消滅演出完了'));
+};
+
+// ----- ダイレクトアタック -----
+document.getElementById('btn-direct').onclick = () => {
+  const atk = findReal('デジモン', 6, 7) || dummyCard('ダイレクトモン', 6, 12000);
+  combat.showDirectAttack(atk, 'player', () => console.log('ダイレクト演出完了'));
+};
+
+// ----- Sアタック+演出 -----
+document.getElementById('btn-s-atk').onclick = () => {
+  // showSAttackPlusAnnounce は exportされていないので、combat経由で見せる代わりに
+  // phase announceで代用表示
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:61000;display:flex;align-items:center;justify-content:center;pointer-events:none;';
+  const el = document.createElement('div');
+  el.style.cssText = 'font-size:clamp(1.8rem,8vw,3rem);font-weight:900;color:#ff2255;text-shadow:0 0 10px #ff2255,0 0 30px #ff4466,0 0 60px #ff0044;letter-spacing:3px;white-space:nowrap;padding:16px 36px;border:3px solid #ff3366;border-radius:14px;background:linear-gradient(135deg,rgba(40,0,10,0.95),rgba(80,0,20,0.95));';
+  el.innerText = '⚔ セキュリティアタック+2！！';
+  overlay.appendChild(el);
+  document.body.appendChild(overlay);
+  setTimeout(() => { if(overlay.parentNode) overlay.parentNode.removeChild(overlay); console.log('Sアタック+演出完了'); }, 2200);
+};
+
+// ----- ドロー演出（直接showDrawEffectを呼ぶ） -----
+document.getElementById('btn-draw').onclick = () => {
+  const card = findReal('デジモン', 3, 5) || dummyCard('テストモン', 4, 5000);
+  phase.showDrawEffect(card, false, () => console.log('ドロー演出完了'));
+};
+
+// ----- MEGAドロー演出（Lv6+の前兆付き派手ドロー） -----
+document.getElementById('btn-mega-draw').onclick = () => {
+  const card = findReal('デジモン', 6, 7) || dummyCard('オメガモン', 7, 15000);
+  card.level = '7'; // Lv6以上を保証
+  console.log('MEGAドロー開始: ', card.name, 'Lv' + card.level);
+  phase.showDrawEffect(card, true, () => console.log('MEGAドロー演出完了'));
+};
+
+// ----- 勝利 / 敗北 -----
+document.getElementById('btn-victory').onclick = () => combat.battleVictory();
+document.getElementById('btn-defeat').onclick = () => combat.battleDefeat();
+</script>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 1 テスト: 状態管理</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0a1a; color:#fff; font-family:'Segoe UI','Hiragino Sans',sans-serif; padding:20px; }
+h1 { color:#00fbff; font-size:18px; margin-bottom:12px; }
+p { color:#888; font-size:12px; margin-bottom:20px; }
+.btn { background:#111; border:2px solid #00fbff; color:#00fbff; padding:12px 32px; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; margin:8px; }
+.btn:hover { background:#0a1520; }
+.log { background:#050510; border:1px solid #222; border-radius:8px; padding:16px; margin-top:20px; max-height:400px; overflow-y:auto; font-family:monospace; font-size:12px; line-height:1.8; }
+.log-entry { color:#aaa; border-bottom:1px solid #111; padding:2px 0; }
+</style>
+</head>
+<body>
+<h1>🧪 Phase 1 テスト: 状態管理 + UIヘルパー</h1>
+<p>ボタンを押してテストを実行してください。結果はログとブラウザのコンソール(F12)に表示されます。</p>
+
+<button class="btn" onclick="startBattleTest()">▶ 状態管理テスト実行</button>
+<button class="btn" onclick="testConfirm()" style="border-color:#ffaa00;color:#ffaa00;">❓ 確認ダイアログテスト</button>
+<button class="btn" onclick="testToast()" style="border-color:#00ff88;color:#00ff88;">💬 トーストテスト</button>
+
+<div class="log" id="log-area">
+  <div style="color:#555;">テスト結果がここに表示されます...</div>
+</div>
+
+<script type="module">
+import { showConfirm, showToast, addLog, getLogs } from './js/battle-ui.js';
+import './js/battle.js';
+
+// ログ表示を更新
+function updateLogDisplay() {
+  const area = document.getElementById('log-area');
+  const logs = getLogs();
+  area.innerHTML = logs.map(l =>
+    `<div class="log-entry">${new Date(l.time).toLocaleTimeString()} ${l.text}</div>`
+  ).join('');
+  area.scrollTop = area.scrollHeight;
+}
+
+// 定期更新
+setInterval(updateLogDisplay, 500);
+
+// 確認ダイアログテスト
+window.testConfirm = async function() {
+  const result = await showConfirm({
+    title: '効果を発動しますか？',
+    message: '【アタック時】このデジモンをアクティブにする。',
+    color: '#00fbff',
+  });
+  addLog(result ? '✅ 「はい」が選ばれました' : '❌ 「いいえ」が選ばれました');
+};
+
+// トーストテスト
+window.testToast = function() {
+  showToast('🎉 トースト表示テスト！', { color: '#00ff88', duration: 2500 });
+  addLog('💬 トースト表示');
+};
+</script>
+</body>
+</html>

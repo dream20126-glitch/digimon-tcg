@@ -5,9 +5,9 @@
  * 各関数は (options, callback) の形式で、演出完了後に callback() を呼ぶ
  */
 
-import { bs } from './battle-state.js';
-import { addLog } from './battle-ui.js';
-import { renderAll, updateMemGauge, cardImg } from './battle-render.js';
+import { bs } from './battle-state.js?v=20260410-3';
+import { addLog } from './battle-ui.js?v=20260410-3';
+import { renderAll, updateMemGauge, cardImg } from './battle-render.js?v=20260410-3';
 
 // ===== 効果確認ダイアログのwindow公開 =====
 window.confirmEffect = function(yes) {

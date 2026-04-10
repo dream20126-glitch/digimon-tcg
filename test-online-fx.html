@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>オンライン演出テスト: A画面 vs B画面</title>
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/battle.css">
+<style>
+.test-bar { position:fixed; top:0; left:0; right:0; z-index:99999; background:#111; padding:6px 10px; display:flex; gap:4px; align-items:center; border-bottom:2px solid #ff00fb; flex-wrap:wrap; }
+.test-bar h1 { font-size:12px; color:#ff00fb; margin-right:6px; white-space:nowrap; }
+.test-btn { background:#0a1520; border:1px solid #ff00fb; color:#ff00fb; padding:4px 7px; border-radius:6px; font-size:9px; cursor:pointer; opacity:0.4; white-space:nowrap; }
+.test-btn:hover { background:#ff00fb22; }
+.test-btn.ready { opacity:1; }
+.test-sep { width:1px; height:18px; background:#333; margin:0 1px; }
+.test-info { color:#888; font-size:9px; margin-left:auto; }
+.side-a { border-color:#00fbff !important; color:#00fbff !important; }
+.side-b { border-color:#ff00fb !important; color:#ff00fb !important; }
+.side-label { font-size:8px; display:block; margin-top:1px; }
+body { padding-top:75px; }
+#battle-screen { display:block !important; }
+</style>
+</head>
+<body>
+<div class="test-bar">
+  <h1>🌐 A/B演出</h1>
+  <button class="test-btn" id="btn-demo">▶ デモ</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-dp-a">💚DP+ A</button>
+  <button class="test-btn side-b" id="btn-dp-b">💚DP+ B</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-destroy-a">💥消滅 A</button>
+  <button class="test-btn side-b" id="btn-destroy-b">💥消滅 B</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-play-a">🃏登場 A</button>
+  <button class="test-btn side-b" id="btn-play-b">🃏登場 B</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-move-a">📤移動 A</button>
+  <button class="test-btn side-b" id="btn-move-b">📤移動 B</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-vs-a">⚔VS A</button>
+  <button class="test-btn side-b" id="btn-vs-b">⚔VS B</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-confirm-a">❓確認 A</button>
+  <button class="test-btn side-b" id="btn-confirm-b">❓確認 B</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-buff-a">🚫付与 A</button>
+  <button class="test-btn side-b" id="btn-buff-b">🚫付与 B</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-block-a">🛡ブロック A</button>
+  <button class="test-btn side-b" id="btn-block-b">🛡ブロック B</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-jogress-a">🌟ジョグレス A</button>
+  <button class="test-btn side-b" id="btn-jogress-b">🌟ジョグレス B</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-app-a">🔗アプ合体 A</button>
+  <button class="test-btn side-b" id="btn-app-b">🔗アプ合体 B</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-link-a">🔌リンク A</button>
+  <button class="test-btn side-b" id="btn-link-b">🔌リンク B</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-label-a">💬ラベル A</button>
+  <button class="test-btn side-b" id="btn-label-b">💬ラベル B</button>
+  <div class="test-sep"></div>
+
+  <button class="test-btn side-a" id="btn-satk-a">⚔S+ A</button>
+  <button class="test-btn side-b" id="btn-satk-b">⚔S+ B</button>
+
+  <span class="test-info" id="load-status">読み込み中...</span>
+</div>
+
+<div id="page-battle"></div>
+
+<script type="module">
+const res = await fetch('pages/battle.html');
+document.getElementById('page-battle').innerHTML = await res.text();
+
+import { loadCardAndKeywordData, getCardImageUrl } from './js/cards.js';
+await loadCardAndKeywordData();
+
+await import('./js/battle.js');
+const fx = await import('./js/battle-fx.js');
+const combat = await import('./js/battle-combat.js');
+const phase = await import('./js/battle-phase.js');
+
+document.querySelectorAll('.test-btn').forEach(b => b.classList.add('ready'));
+document.getElementById('load-status').innerText = '✅ A=発動側(シアン) B=相手側(ピンク)';
+document.getElementById('load-status').style.color = '#00ff88';
+
+function findReal(type, minLv, maxLv) {
+  const cards = allCards.filter(c => {
+    const lv = parseInt(c['レベル']) || 0;
+    return c['タイプ'] === type && lv >= minLv && lv <= maxLv;
+  });
+  if (cards.length === 0) return null;
+  const c = cards[Math.floor(Math.random() * cards.length)];
+  return {
+    name: c['名前'] || 'Unknown', level: String(c['レベル'] || '?'),
+    dp: parseInt(c['DP'] || 0), baseDp: parseInt(c['DP'] || 0), dpModifier: 0,
+    type: c['タイプ'] || 'デジモン', playCost: parseInt(c['登場コスト'] || 0),
+    evolveCost: parseInt(c['進化コスト'] || 0), cost: parseInt(c['登場コスト'] || 0),
+    effect: c['効果'] || '', securityEffect: c['セキュリティ効果'] || '',
+    imgSrc: getCardImageUrl(c) || '', cardNo: c['カードNo'] || '', color: c['色'] || '',
+    stack: [], suspended: false, buffs: [], summonedThisTurn: false,
+    cantAttack: false, cantBlock: false,
+  };
+}
+function dummy(name, lv, dp) {
+  return { name, level: String(lv), dp, baseDp: dp, dpModifier: 0, type: 'デジモン',
+    playCost: lv * 2, evolveCost: lv, cost: lv * 2, effect: '', securityEffect: '',
+    imgSrc: '', cardNo: '', stack: [], suspended: false, buffs: [], summonedThisTurn: false,
+    cantAttack: false, cantBlock: false };
+}
+
+// B画面用: 相手画面の演出を再現するヘルパー
+function showRemoteOverlay(cardName, effectText, subText) {
+  const id = '_remote-effect-test';
+  const existing = document.getElementById(id);
+  if (existing) existing.parentNode.removeChild(existing);
+  const ov = document.createElement('div');
+  ov.id = id;
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:55000;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease;';
+  const bx = document.createElement('div');
+  bx.style.cssText = 'max-width:85%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid #ff00fb;border-radius:12px;box-shadow:0 0 30px #ff00fb44;text-align:center;';
+  bx.innerHTML = '<div style="color:#ff00fb;font-size:14px;font-weight:bold;margin-bottom:10px;text-shadow:0 0 8px #ff00fb;">⚡ 相手: ' + (cardName || '') + '</div>'
+    + '<div style="color:#ddd;font-size:11px;line-height:1.6;text-align:left;margin-bottom:12px;max-height:100px;overflow-y:auto;">' + (effectText || '') + '</div>'
+    + '<div style="color:#888;font-size:10px;">' + (subText || '相手が効果を処理中...') + '</div>';
+  ov.appendChild(bx);
+  document.body.appendChild(ov);
+  return ov;
+}
+function closeRemoteOverlay() {
+  const el = document.getElementById('_remote-effect-test');
+  if (el && el.parentNode) el.parentNode.removeChild(el);
+}
+
+document.getElementById('btn-demo').onclick = () => window.startBattleDemo();
+
+// ===== 1. 数値ポップアップ =====
+document.getElementById('btn-dp-a').onclick = () => {
+  const card = findReal('デジモン', 5, 6) || dummy('ウォーグレイモン', 6, 12000);
+  fx.fxDpPopup(3000, card.name);
+};
+document.getElementById('btn-dp-b').onclick = () => {
+  // B画面: Aと同じ
+  const card = findReal('デジモン', 5, 6) || dummy('ウォーグレイモン', 6, 12000);
+  fx.fxDpPopup(3000, card.name);
+};
+
+// ===== 2. 消滅演出 =====
+document.getElementById('btn-destroy-a').onclick = () => {
+  const card = findReal('デジモン', 4, 5) || dummy('グレイモン', 4, 5000);
+  combat.showDestroyEffect(card, () => console.log('A: 消滅完了'));
+};
+document.getElementById('btn-destroy-b').onclick = () => {
+  // B画面: Aと同じ（fx_destroy コマンド受信時）
+  const card = findReal('デジモン', 4, 5) || dummy('グレイモン', 4, 5000);
+  combat.showDestroyEffect(card, () => console.log('B: 消滅完了'));
+};
+
+// ===== 3. カード登場 =====
+document.getElementById('btn-play-a').onclick = () => {
+  const card = findReal('デジモン', 4, 5) || dummy('テストモン', 4, 5000);
+  combat.showPlayEffect(card, () => console.log('A: 登場完了'));
+};
+document.getElementById('btn-play-b').onclick = () => {
+  // B画面: Aと同じ（play コマンド受信時）
+  const card = findReal('デジモン', 4, 5) || dummy('テストモン', 4, 5000);
+  combat.showPlayEffect(card, () => console.log('B: 登場完了'));
+};
+
+// ===== 4. カード移動 =====
+document.getElementById('btn-move-a').onclick = () => {
+  const card = findReal('デジモン', 3, 4) || dummy('アグモン', 3, 3000);
+  fx.fxCardMove(card, 'バトルエリア', '手札', () => console.log('A: 移動完了'));
+};
+document.getElementById('btn-move-b').onclick = () => {
+  // B画面: Aと同じ
+  const card = findReal('デジモン', 3, 4) || dummy('アグモン', 3, 3000);
+  fx.fxCardMove(card, 'バトルエリア', '手札', () => console.log('B: 移動完了'));
+};
+
+// ===== 5. VS画面 =====
+document.getElementById('btn-vs-a').onclick = () => {
+  const atk = findReal('デジモン', 5, 6) || dummy('ウォーグレイモン', 6, 12000);
+  const sec = findReal('デジモン', 4, 5) || dummy('グレイモン', 4, 5000);
+  combat.showSecurityCheck(sec, atk, () => {
+    combat.showBattleResult('Win!!', '#00ff88', 'セキュリティ突破！', () => console.log('A: VS完了'), 'Lose...', '#ff4444');
+  });
+};
+document.getElementById('btn-vs-b').onclick = () => {
+  // B画面: Aと同じだが視点反転（Lose...側）
+  const atk = findReal('デジモン', 5, 6) || dummy('ウォーグレイモン', 6, 12000);
+  const sec = findReal('デジモン', 4, 5) || dummy('グレイモン', 4, 5000);
+  combat.showSecurityCheck(sec, atk, () => {
+    combat.showBattleResult('Lose...', '#ff4444', 'セキュリティ突破された', () => console.log('B: VS完了'));
+  });
+};
+
+// ===== 6. 効果確認ダイアログ =====
+document.getElementById('btn-confirm-a').onclick = () => {
+  const card = findReal('デジモン', 5, 6) || dummy('メタルガルルモン', 5, 9000);
+  card.effect = card.effect || '【アタック時】このデジモンをアクティブにする。';
+  fx.fxConfirmDialog(card, card.effect, '効果を発動しますか？', (r) => console.log('A: 確認→', r ? 'はい' : 'いいえ'));
+};
+document.getElementById('btn-confirm-b').onclick = () => {
+  // B画面: カード名+効果+「処理中...」
+  const card = findReal('デジモン', 5, 6) || dummy('メタルガルルモン', 5, 9000);
+  card.effect = card.effect || '【アタック時】このデジモンをアクティブにする。';
+  const ov = showRemoteOverlay(card.name, card.effect, '相手が効果を処理中...');
+  setTimeout(() => { closeRemoteOverlay(); console.log('B: 確認終了'); }, 3000);
+};
+
+// ===== 7. 状態付与 =====
+document.getElementById('btn-buff-a').onclick = () => {
+  const card = findReal('デジモン', 4, 5) || dummy('グレイモン', 4, 5000);
+  card.cantAttack = true; card.cantBlock = true;
+  fx.fxBuffStatus(card, '⚔🛡✖', 'アタック・ブロック不可', '#9933ff', () => console.log('A: 付与完了'));
+};
+document.getElementById('btn-buff-b').onclick = () => {
+  // B画面: Aと同じ
+  const card = findReal('デジモン', 4, 5) || dummy('グレイモン', 4, 5000);
+  fx.fxBuffStatus(card, '⚔🛡✖', 'アタック・ブロック不可', '#9933ff', () => console.log('B: 付与完了'));
+};
+
+// ===== 8. ブロックダイアログ =====
+document.getElementById('btn-block-a').onclick = () => {
+  // A画面（防御側）: ブロック確認UI
+  const blocker = findReal('デジモン', 4, 5) || dummy('コアドラモン', 4, 6000);
+  const attacker = findReal('デジモン', 5, 6) || dummy('ウォーグレイモン', 6, 12000);
+  fx.fxShield(blocker, attacker, (r) => console.log('A: ブロック→', r ? 'はい' : 'いいえ'));
+};
+document.getElementById('btn-block-b').onclick = () => {
+  // B画面（攻撃側）: 「ブロック確認中...」待機オーバーレイ
+  const waitOv = document.createElement('div');
+  waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
+  waitOv.innerHTML = '<div style="color:#ff00fb;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ff00fb;">⏳ 相手のブロック確認中...</div>';
+  document.body.appendChild(waitOv);
+  setTimeout(() => { if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv); console.log('B: ブロック待機終了'); }, 3000);
+};
+
+// ===== 9. ジョグレス進化 =====
+document.getElementById('btn-jogress-a').onclick = () => {
+  const c1 = findReal('デジモン', 5, 5) || dummy('ワーガルルモン', 5, 8000);
+  const c2 = findReal('デジモン', 5, 5) || dummy('メタルグレイモン', 5, 9000);
+  const result = findReal('デジモン', 6, 7) || dummy('オメガモン', 7, 15000);
+  fx.fxJogressEvolve(c1, c2, result, () => console.log('A: ジョグレス完了'));
+};
+document.getElementById('btn-jogress-b').onclick = () => {
+  // B画面: Aと同じ
+  const c1 = findReal('デジモン', 5, 5) || dummy('ワーガルルモン', 5, 8000);
+  const c2 = findReal('デジモン', 5, 5) || dummy('メタルグレイモン', 5, 9000);
+  const result = findReal('デジモン', 6, 7) || dummy('オメガモン', 7, 15000);
+  fx.fxJogressEvolve(c1, c2, result, () => console.log('B: ジョグレス完了'));
+};
+
+// ===== 10. アプ合体 =====
+document.getElementById('btn-app-a').onclick = () => {
+  const c1 = findReal('デジモン', 4, 5) || dummy('ガッチモン', 4, 5000);
+  const c2 = findReal('デジモン', 4, 5) || dummy('ナビモン', 4, 4000);
+  const result = findReal('デジモン', 6, 7) || dummy('ドカモン', 6, 10000);
+  fx.fxAppGattai(c1, c2, result, () => console.log('A: アプ合体完了'));
+};
+document.getElementById('btn-app-b').onclick = () => {
+  // B画面: Aと同じ
+  const c1 = findReal('デジモン', 4, 5) || dummy('ガッチモン', 4, 5000);
+  const c2 = findReal('デジモン', 4, 5) || dummy('ナビモン', 4, 4000);
+  const result = findReal('デジモン', 6, 7) || dummy('ドカモン', 6, 10000);
+  fx.fxAppGattai(c1, c2, result, () => console.log('B: アプ合体完了'));
+};
+
+// ===== 11. リンク =====
+document.getElementById('btn-link-a').onclick = () => {
+  const base = findReal('デジモン', 4, 5) || dummy('ガッチモン', 4, 5000);
+  const link = findReal('デジモン', 3, 4) || dummy('ナビモン', 3, 3000);
+  fx.fxLinkEffect(base, link, () => console.log('A: リンク完了'));
+};
+document.getElementById('btn-link-b').onclick = () => {
+  // B画面: Aと同じ
+  const base = findReal('デジモン', 4, 5) || dummy('ガッチモン', 4, 5000);
+  const link = findReal('デジモン', 3, 4) || dummy('ナビモン', 3, 3000);
+  fx.fxLinkEffect(base, link, () => console.log('B: リンク完了'));
+};
+
+// ===== 12. 文字ポップアップ =====
+document.getElementById('btn-label-a').onclick = () => {
+  const card = findReal('デジモン', 3, 5) || dummy('アグモン', 3, 3000);
+  fx.fxLabelPopup(card, '🛡 ブロッカー付与！', '#00ff88', () => console.log('A: ラベル完了'));
+};
+document.getElementById('btn-label-b').onclick = () => {
+  // B画面: Aと同じ
+  const card = findReal('デジモン', 3, 5) || dummy('アグモン', 3, 3000);
+  fx.fxLabelPopup(card, '🛡 ブロッカー付与！', '#00ff88', () => console.log('B: ラベル完了'));
+};
+
+// ===== 13. Sアタック+ =====
+document.getElementById('btn-satk-a').onclick = () => {
+  fx.fxSAttackPlus(2, () => console.log('A: Sアタック+完了'));
+};
+document.getElementById('btn-satk-b').onclick = () => {
+  // B画面: Aと同じ
+  fx.fxSAttackPlus(2, () => console.log('B: Sアタック+完了'));
+};
+</script>
+</body>
+</html>

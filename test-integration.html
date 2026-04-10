@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>統合テスト: 全Phase通しテスト</title>
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/battle.css">
+<style>
+.test-bar { position:fixed; top:0; left:0; right:0; z-index:99999; background:#111; padding:6px 10px; display:flex; gap:4px; align-items:center; border-bottom:2px solid #00ff88; flex-wrap:wrap; }
+.test-bar h1 { font-size:12px; color:#00ff88; margin-right:6px; white-space:nowrap; }
+.test-btn { background:#0a1520; border:1px solid #00ff88; color:#00ff88; padding:4px 8px; border-radius:6px; font-size:9px; cursor:pointer; opacity:0.4; white-space:nowrap; }
+.test-btn:hover { background:#00ff8822; }
+.test-btn.ready { opacity:1; }
+.test-sep { width:1px; height:18px; background:#333; margin:0 1px; }
+.test-info { color:#888; font-size:9px; margin-left:auto; }
+.test-log { position:fixed; bottom:0; left:0; right:0; z-index:99998; background:#0a0a0a; border-top:1px solid #333; max-height:120px; overflow-y:auto; padding:6px 10px; font-size:10px; color:#888; font-family:monospace; }
+.test-log .ok { color:#00ff88; }
+.test-log .fail { color:#ff4444; }
+.test-log .info { color:#00fbff; }
+body { padding-top:70px; padding-bottom:130px; }
+#battle-screen { display:block !important; }
+</style>
+</head>
+<body>
+<div class="test-bar">
+  <h1>🧪 統合テスト</h1>
+  <button class="test-btn" id="btn-demo">▶ デモ開始</button>
+  <div class="test-sep"></div>
+  <button class="test-btn" id="btn-check-state">📋 状態確認</button>
+  <button class="test-btn" id="btn-check-modules">📦 モジュール確認</button>
+  <div class="test-sep"></div>
+  <button class="test-btn" id="btn-play-card">🃏 手札から登場</button>
+  <button class="test-btn" id="btn-evolve-card">⬆ 進化</button>
+  <button class="test-btn" id="btn-attack-sec">⚔ セキュリティアタック</button>
+  <button class="test-btn" id="btn-end-turn">⏭ ターン終了</button>
+  <div class="test-sep"></div>
+  <button class="test-btn" id="btn-auto-test">🤖 自動テスト</button>
+  <span class="test-info" id="load-status">読み込み中...</span>
+</div>
+
+<div id="page-battle"></div>
+<div class="test-log" id="test-log"></div>
+
+<script type="module">
+const res = await fetch('pages/battle.html');
+document.getElementById('page-battle').innerHTML = await res.text();
+
+import { loadCardAndKeywordData } from './js/cards.js';
+await loadCardAndKeywordData();
+
+await import('./js/battle.js');
+
+const state = await import('./js/battle-state.js');
+const phase = await import('./js/battle-phase.js');
+const combat = await import('./js/battle-combat.js');
+const fx = await import('./js/battle-fx.js');
+const render = await import('./js/battle-render.js');
+
+document.querySelectorAll('.test-btn').forEach(b => b.classList.add('ready'));
+document.getElementById('load-status').innerText = '✅ 全モジュール読み込み完了';
+document.getElementById('load-status').style.color = '#00ff88';
+
+// テストログ
+const logEl = document.getElementById('test-log');
+function tlog(msg, type) {
+  const line = document.createElement('div');
+  line.className = type || '';
+  line.innerText = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+  console.log(msg);
+}
+
+// ===== デモ開始 =====
+document.getElementById('btn-demo').onclick = async () => {
+  tlog('デモバトル開始...', 'info');
+  await window.startBattleDemo();
+  tlog('デモバトル開始完了', 'ok');
+};
+
+// ===== 状態確認 =====
+document.getElementById('btn-check-state').onclick = () => {
+  const bs = state.bs;
+  tlog('--- 状態確認 ---', 'info');
+  tlog('ターン: ' + bs.turn + ' / フェーズ: ' + bs.phase + ' / プレイヤーターン: ' + bs.isPlayerTurn);
+  tlog('メモリー: ' + bs.memory);
+  tlog('PL: 手札' + bs.player.hand.length + ' デッキ' + bs.player.deck.length + ' SEC' + bs.player.security.length + ' バトル' + bs.player.battleArea.filter(c=>c).length + ' テイマー' + bs.player.tamerArea.length + ' トラッシュ' + bs.player.trash.length);
+  tlog('AI: 手札' + bs.ai.hand.length + ' デッキ' + bs.ai.deck.length + ' SEC' + bs.ai.security.length + ' バトル' + bs.ai.battleArea.filter(c=>c).length + ' テイマー' + bs.ai.tamerArea.length + ' トラッシュ' + bs.ai.trash.length);
+  if (bs.player.ikusei) tlog('PL育成: ' + bs.player.ikusei.name + ' Lv' + bs.player.ikusei.level);
+  if (bs.ai.ikusei) tlog('AI育成: ' + bs.ai.ikusei.name + ' Lv' + bs.ai.ikusei.level);
+  // 手札一覧
+  tlog('PL手札: ' + bs.player.hand.map(c => c.name + '(Lv' + c.level + ')').join(', '));
+  // バトルエリア
+  tlog('PLバトル: ' + bs.player.battleArea.filter(c=>c).map(c => c.name + '(DP' + c.dp + ')').join(', '));
+  tlog('AIバトル: ' + bs.ai.battleArea.filter(c=>c).map(c => c.name + '(DP' + c.dp + ')').join(', '));
+};
+
+// ===== モジュール確認 =====
+document.getElementById('btn-check-modules').onclick = () => {
+  tlog('--- モジュール確認 ---', 'info');
+  const checks = [
+    ['battle-state.js', typeof state.bs === 'object'],
+    ['battle-phase.js', typeof phase.startPhase === 'function'],
+    ['battle-combat.js', typeof combat.doPlay === 'function'],
+    ['battle-fx.js', typeof fx.fxDpPopup === 'function'],
+    ['battle-render.js', typeof render.renderAll === 'function'],
+    ['window.startBattleGame', typeof window.startBattleGame === 'function'],
+    ['window.startBattleDemo', typeof window.startBattleDemo === 'function'],
+    ['window.onEndTurn', typeof window.onEndTurn === 'function'],
+    ['window.doPlay', typeof window.doPlay === 'function'],
+    ['window.startAttack', typeof window.startAttack === 'function'],
+    ['window.showBCD', typeof window.showBCD === 'function'],
+    ['window.startOnlineBattle', typeof window.startOnlineBattle === 'function'],
+    ['window.confirmEffect', typeof window.confirmEffect === 'function'],
+  ];
+  let pass = 0, fail = 0;
+  checks.forEach(([name, ok]) => {
+    if (ok) { tlog('  ✓ ' + name, 'ok'); pass++; }
+    else { tlog('  ✗ ' + name + ' — NOT FOUND', 'fail'); fail++; }
+  });
+  tlog('結果: ' + pass + '/' + checks.length + ' 通過' + (fail > 0 ? ' (' + fail + '件失敗)' : ''), fail > 0 ? 'fail' : 'ok');
+};
+
+// ===== 手札から登場 =====
+document.getElementById('btn-play-card').onclick = () => {
+  const bs = state.bs;
+  if (bs.phase !== 'main') { tlog('メインフェイズではありません (現在: ' + bs.phase + ')', 'fail'); return; }
+  // 登場可能なカード（Lv2以外、playCostあり）を探す
+  const idx = bs.player.hand.findIndex(c => c.level !== '2' && c.playCost !== null && c.type === 'デジモン');
+  if (idx === -1) { tlog('登場可能なカードが手札にありません', 'fail'); return; }
+  const card = bs.player.hand[idx];
+  let slotIdx = bs.player.battleArea.indexOf(null);
+  if (slotIdx === -1) slotIdx = bs.player.battleArea.length;
+  tlog('登場: 「' + card.name + '」Lv' + card.level + ' コスト' + card.playCost + ' → スロット' + slotIdx, 'info');
+  window.doPlay(card, idx, slotIdx);
+};
+
+// ===== 進化 =====
+document.getElementById('btn-evolve-card').onclick = () => {
+  const bs = state.bs;
+  if (bs.phase !== 'main') { tlog('メインフェイズではありません', 'fail'); return; }
+  // バトルエリアにカードがあり、手札に進化先があるか
+  for (let si = 0; si < bs.player.battleArea.length; si++) {
+    const base = bs.player.battleArea[si];
+    if (!base) continue;
+    const handIdx = bs.player.hand.findIndex(c =>
+      c.type === 'デジモン' && c.evolveCost !== null && window.canEvolveOnto(c, base)
+    );
+    if (handIdx !== -1) {
+      const card = bs.player.hand[handIdx];
+      tlog('進化: 「' + base.name + '」→「' + card.name + '」コスト' + card.evolveCost, 'info');
+      window.doEvolve(card, handIdx, si);
+      return;
+    }
+  }
+  tlog('進化可能な組み合わせがありません', 'fail');
+};
+
+// ===== セキュリティアタック =====
+document.getElementById('btn-attack-sec').onclick = () => {
+  const bs = state.bs;
+  if (bs.phase !== 'main') { tlog('メインフェイズではありません', 'fail'); return; }
+  const atkIdx = bs.player.battleArea.findIndex(c => c && c.type === 'デジモン' && !c.suspended && !c.summonedThisTurn);
+  if (atkIdx === -1) { tlog('アタック可能なデジモンがいません', 'fail'); return; }
+  const card = bs.player.battleArea[atkIdx];
+  tlog('アタック: 「' + card.name + '」→ セキュリティ', 'info');
+  if (window.startAttack(card, atkIdx)) {
+    window.resolveAttackTarget('security');
+  }
+};
+
+// ===== ターン終了 =====
+document.getElementById('btn-end-turn').onclick = () => {
+  tlog('ターン終了', 'info');
+  window.onEndTurn();
+};
+
+// ===== 自動テスト =====
+document.getElementById('btn-auto-test').onclick = async () => {
+  tlog('========== 自動テスト開始 ==========', 'info');
+
+  // 1. モジュール確認
+  document.getElementById('btn-check-modules').click();
+  await new Promise(r => setTimeout(r, 500));
+
+  // 2. デモ開始
+  tlog('--- Step 1: デモバトル開始 ---', 'info');
+  await window.startBattleDemo();
+  await new Promise(r => setTimeout(r, 12000)); // フェーズ進行を待つ
+
+  // 3. 状態確認
+  document.getElementById('btn-check-state').click();
+  await new Promise(r => setTimeout(r, 500));
+
+  const bs = state.bs;
+  // 4. 検証
+  tlog('--- Step 2: 状態検証 ---', 'info');
+  if (bs.phase === 'main') tlog('  ✓ メインフェイズに到達', 'ok');
+  else tlog('  △ 現在フェイズ: ' + bs.phase + '（メインフェイズ到達待ち）', 'info');
+
+  if (bs.player.hand.length > 0) tlog('  ✓ プレイヤー手札あり: ' + bs.player.hand.length + '枚', 'ok');
+  else tlog('  ✗ プレイヤー手札が空', 'fail');
+
+  if (bs.player.security.length === 5) tlog('  ✓ セキュリティ5枚', 'ok');
+  else tlog('  △ セキュリティ: ' + bs.player.security.length + '枚', 'info');
+
+  tlog('========== 自動テスト完了 ==========', 'ok');
+  tlog('メインフェイズ到達後、「手札から登場」「セキュリティアタック」「ターン終了」を手動でテストしてください', 'info');
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 2 テスト: 描画</title>
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/battle.css">
+<style>
+.test-bar { position:fixed; top:0; left:0; right:0; z-index:99999; background:#111; padding:8px 16px; display:flex; gap:8px; align-items:center; border-bottom:2px solid #00fbff; }
+.test-bar h1 { font-size:13px; color:#00fbff; margin-right:12px; }
+.test-btn { background:#0a1520; border:1px solid #00fbff; color:#00fbff; padding:6px 14px; border-radius:6px; font-size:11px; cursor:pointer; opacity:0.4; }
+.test-btn:hover { background:#00fbff22; }
+body { padding-top:50px; }
+/* battle-screenを常に表示（.screen.activeの代わりに） */
+#battle-screen { display:block !important; }
+</style>
+</head>
+<body>
+<!-- テストバー -->
+<div class="test-bar">
+  <h1>🧪 Phase 2</h1>
+  <button class="test-btn" id="btn-demo">▶ デモバトル開始</button>
+  <button class="test-btn" id="btn-render">🔄 再描画</button>
+  <span id="load-status" style="color:#888;font-size:10px;margin-left:8px;">読み込み中...</span>
+</div>
+
+<!-- バトル画面HTMLがここに挿入される -->
+<div id="page-battle"></div>
+
+<script type="module">
+// バトル画面HTMLを動的に読み込み（index.htmlと同じ方式）
+const res = await fetch('pages/battle.html');
+const html = await res.text();
+document.getElementById('page-battle').innerHTML = html;
+
+// カードデータ読み込み
+import { loadCardAndKeywordData } from './js/cards.js';
+await loadCardAndKeywordData();
+console.log('カードデータ読み込み完了:', allCards.length, '枚');
+
+// バトルモジュール読み込み
+await import('./js/battle.js');
+console.log('バトルモジュール読み込み完了');
+
+// ボタン有効化
+document.getElementById('btn-demo').style.opacity = '1';
+document.getElementById('btn-render').style.opacity = '1';
+document.getElementById('load-status').innerText = '✅ 準備完了';
+document.getElementById('load-status').style.color = '#00ff88';
+
+// ボタンイベント登録
+document.getElementById('btn-demo').onclick = () => window.startBattleDemo();
+document.getElementById('btn-render').onclick = () => window.renderAll();
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 /**
- * battle.js — バトル画面エントリポイント
+ * battle.js --- バトル画面エントリポイント
  *
  * 各サブモジュールをimportし、window公開・イベント配線を行う
  * ロジック本体はサブモジュール側に記述
@@ -21,6 +21,9 @@ import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEff
 import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE } from './effect-engine.js';
 // Phase 6: オンライン
 import { initOnline, startOnlineListener, sendCommand, sendStateSync, sendMemoryUpdate, cleanupOnline, isOnlineMode, setOnlineModules } from './battle-online.js';
+
+// 共通コード
+import { makeEffectContext, checkTurnStartEffects, buildOnlineEffectHooks, setupCommonHooks } from './battle-common.js';
 
 // ===== スプシ列名揺れ対応ヘルパー =====
 function _f(obj, ...names) {
@@ -94,52 +97,10 @@ function seededShuffle(arr, seed) {
   return a;
 }
 
-// ===== window公開（HTML onclick等から呼べるように） =====
-window.showBCD = showBCD;
-window.closeBCD = closeBCD;
-window.showTrash = showTrash;
-window.renderAll = renderAll;
+// ===== 共通フック・window公開セットアップ =====
+setupCommonHooks();
 
-// Phase 3: フェーズ進行
-window.onEndTurn = onEndTurn;
-window.skipBreedPhase = skipBreedPhase;
-window.doIkuMove = () => { doIkuMove(); breedActionDone(); };
-window.showYourTurn = showYourTurn;
-window.showPhaseAnnounce = showPhaseAnnounce;
-window.showSkipAnnounce = showSkipAnnounce;
-
-// Phase 4: 戦闘
-window.doPlay = doPlay;
-window.doEvolve = doEvolve;
-window.doEvolveIku = doEvolveIku;
-window.canEvolveOnto = canEvolveOnto;
-window.startAttack = startAttack;
-window.cancelAttack = cancelAttack;
-window.resolveAttackTarget = resolveAttackTarget;
-window.battleVictory = battleVictory;
-window.battleDefeat = battleDefeat;
-
-// 効果エンジン連携（battle-render.jsのactivateEffectから使用）
-window._triggerMainEffect = function(card, callback) {
-  const inPlayer = bs.player.battleArea.includes(card) || bs.player.tamerArea.includes(card);
-  const side = inPlayer ? 'player' : 'ai';
-  try { _triggerEffectEE('main', card, side, makeEffectContext(card, side), callback); }
-  catch (_) { callback && callback(); }
-};
-
-// レシピ一本化対応: 各モジュールからの参照用window公開
-window._fxCardMove = fxCardMove;
-window._applyPermanentEffects = function() {
-  try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch(_) {}
-  try { _applyPermanentEE(bs, 'ai', makeEffectContext(null, 'ai')); } catch(_) {}
-};
-window._triggerEffectFn = function(triggerCode, card, side, ctx, callback) {
-  const fullCtx = makeEffectContext(card, side);
-  try { _triggerEffectEE(triggerCode, card, side, fullCtx, callback); }
-  catch (_) { callback && callback(); }
-};
-
-// HTML onclick から呼ばれる補助関数
+// HTML onclick から呼ばれる補助関数（battle.js固有）
 window.confirmExitGate = function() {
   showConfirm({ title: '⚠ 退室確認', message: 'ゲートを出ますか？\nバトルの進行状況は失われます。', yesText: 'はい', noText: 'いいえ', color: '#ff4444' }).then(yes => {
     if (!yes) return;
@@ -149,16 +110,7 @@ window.confirmExitGate = function() {
     showScreen(wasOnline ? 'room-entrance-screen' : 'tutorial-screen');
   });
 };
-window.hideCardActionMenu = function() {
-  const menu = document.getElementById('card-action-menu');
-  const backdrop = document.getElementById('card-action-backdrop');
-  if (menu) menu.style.display = 'none';
-  if (backdrop) backdrop.style.display = 'none';
-};
-window.closePhaseOverlay = function() {
-  const el = document.getElementById('phase-desc-overlay');
-  if (el) el.style.display = 'none';
-};
+
 // ===== マリガン =====
 let _mulliganUsed = false;
 
@@ -288,101 +240,12 @@ window.doMulligan = function() {
   addLog('🔄 マリガン！手札を引き直しました');
 };
 
-// Phase 3 フック（aiMainPhase/aiAttackPhase/onDeckOut は先に設定、ターン効果は後で上書き）
+// Phase 3 フック（aiMainPhase/aiAttackPhase/onDeckOut）
 setPhaseHooks({
   aiMainPhase: aiMainPhase,
   aiAttackPhase: aiAttackPhase,
   onDeckOut: () => { addLog('⚠ デッキ切れ！'); battleDefeat(); },
 });
-
-// Phase 4→効果エンジン接続
-const TRIGGER_CODE_MAP = {
-  '【登場時】': 'on_play', '【進化時】': 'on_evolve', '【アタック時】': 'on_attack',
-  '【アタック終了時】': 'on_attack_end', '【自分のターン開始時】': 'on_own_turn_start',
-  '【自分のターン終了時】': 'on_own_turn_end', '【メイン】': 'main',
-  '【相手のターン開始時】': 'on_opp_turn_start', '【相手のターン終了時】': 'on_opp_turn_end',
-  '【消滅時】': 'on_destroy', '【セキュリティ】': 'security',
-  '【レストしたとき】': 'when_rest', '【アタックされたとき】': 'when_attacked',
-  '【ブロックされたとき】': 'when_blocked', 'ブロックされた時': 'when_blocked',
-  'アタックされた時': 'when_attacked',
-};
-
-function makeEffectContext(card, side) {
-  window._lastBattleState = bs;
-  return {
-    card, side, bs, addLog, renderAll, updateMemGauge,
-    doDraw, showYourTurn, aiTurn,
-    showPlayEffect, showEvolveEffect, showDestroyEffect,
-    showSecurityCheck, showBattleResult,
-  };
-}
-
-function checkAndTriggerEffect(card, triggerType, callback, side, alreadyConfirmed) {
-  if (!card) { callback && callback(); return; }
-  if (!side) {
-    const inPlayer = bs.player.battleArea.includes(card) || bs.player.tamerArea.includes(card) || bs.player.hand.includes(card);
-    side = inPlayer ? 'player' : 'ai';
-  }
-  const triggerCode = TRIGGER_CODE_MAP[triggerType] || triggerType;
-  const context = makeEffectContext(card, side);
-  if (alreadyConfirmed) context.alreadyConfirmed = true;
-  _triggerEffectEE(triggerCode, card, side, context, () => {
-    // 効果処理完了後にオンライン同期（進化元破棄等を相手に反映）
-    if (isOnlineMode()) sendStateSync();
-    callback && callback();
-  });
-}
-
-setCombatHooks({
-  checkAndTriggerEffect,
-  makeEffectContext,
-  hasKeyword: (card, kw) => card && card.effect && card.effect.includes(kw),
-  hasEvoKeyword: (card, kw) => card && card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes(kw)),
-  applyPermanentEffects: (side) => { try { _applyPermanentEE(bs, side, makeEffectContext(null, side)); } catch (e) { console.error('[applyPermanentEffects]', e); } },
-  expireBuffs: (timing, side) => { try { _expireBuffsEE(bs, timing, side); } catch (e) { console.error('[expireBuffs]', e); } },
-  triggerEffect: (code, card, side, ctx, cb) => { try { _triggerEffectEE(code, card, side, ctx, cb); } catch (e) { console.error('[triggerEffect]', e); cb && cb(); } },
-});
-
-// Phase 3→効果エンジン接続（ターン開始/終了時効果）
-setPhaseHooks({
-  checkTurnStartEffects: (side, cb) => {
-    bs._usedLimits = {};
-    const p = side === 'player' ? bs.player : bs.ai;
-    const area = [...p.battleArea, ...(p.tamerArea || [])];
-    const trigger = side === 'player' ? '【自分のターン開始時】' : '【相手のターン開始時】';
-    const triggerCode = side === 'player' ? 'on_own_turn_start' : 'on_opp_turn_start';
-    const hasRecipeTrigger = (c) => {
-      if (!c.recipe) return false;
-      try { const r = typeof c.recipe === 'string' ? JSON.parse(c.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : c.recipe; return !!(r[triggerCode]); } catch(_) { return false; }
-    };
-    const cardsWithEffect = area.filter(c => c && ((c.effect && c.effect.includes(trigger)) || hasRecipeTrigger(c)));
-    if (cardsWithEffect.length === 0) { cb(); return; }
-    let idx = 0;
-    function next() {
-      if (idx >= cardsWithEffect.length) { cb(); return; }
-      checkAndTriggerEffect(cardsWithEffect[idx++], trigger, next);
-    }
-    next();
-  },
-  checkTurnEndEffects: (cb) => {
-    const allCards = [...bs.player.battleArea, ...(bs.player.tamerArea || [])];
-    const hasEndRecipe = (c) => {
-      if (!c.recipe) return false;
-      try { const r = typeof c.recipe === 'string' ? JSON.parse(c.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : c.recipe; return !!(r['on_own_turn_end']); } catch(_) { return false; }
-    };
-    const cardsWithEffect = allCards.filter(c => c && ((c.effect && c.effect.includes('【自分のターン終了時】')) || hasEndRecipe(c)));
-    if (cardsWithEffect.length === 0) { cb(); return; }
-    let idx = 0;
-    function next() {
-      if (idx >= cardsWithEffect.length) { cb(); return; }
-      checkAndTriggerEffect(cardsWithEffect[idx++], '【自分のターン終了時】', next);
-    }
-    next();
-  },
-});
-
-// Phase 5: 演出エンジン接続
-registerFxRunners(getFxRunners());
 
 // Phase 6: オンラインモジュールに各演出/フェーズ関数を注入
 setOnlineModules({
@@ -392,49 +255,10 @@ setOnlineModules({
   showBlockConfirm, showBlockerSelection,
   showGameEndOverlay,
   fxSAttackPlus, fxRemoteEffect, fxRemoteEffectClose,
-  checkTurnStartEffects: (side, cb) => {
-    bs._usedLimits = {};
-    const p = side === 'player' ? bs.player : bs.ai;
-    const area = [...p.battleArea, ...(p.tamerArea || [])];
-    const trigger = side === 'player' ? '【自分のターン開始時】' : '【相手のターン開始時】';
-    const triggerCode = side === 'player' ? 'on_own_turn_start' : 'on_opp_turn_start';
-    const hasRecipeTrigger = (c) => {
-      if (!c.recipe) return false;
-      try { const r = typeof c.recipe === 'string' ? JSON.parse(c.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : c.recipe; return !!(r[triggerCode]); } catch(_) { return false; }
-    };
-    const cardsWithEffect = area.filter(c => c && ((c.effect && c.effect.includes(trigger)) || hasRecipeTrigger(c)));
-    if (cardsWithEffect.length === 0) { cb(); return; }
-    let idx = 0;
-    function next() {
-      if (idx >= cardsWithEffect.length) { cb(); return; }
-      checkAndTriggerEffect(cardsWithEffect[idx++], trigger, next);
-    }
-    next();
-  },
-  applyPermanentEffects: (side) => { try { _applyPermanentEE(bs, side, { bs, side }); } catch (_) {} },
-  expireBuffs: (timing, side) => { try { _expireBuffsEE(bs, timing, side); } catch (_) {} },
+  ...buildOnlineEffectHooks(),
 });
 
-// 育成エリア操作コールバック
-setIkuCallbacks({
-  onHatch: (card) => {
-    if (isOnlineMode()) sendCommand({ type: 'hatch', cardName: card.name, cardImg: card.imgSrc || '' });
-    renderAll();
-    fxHatchEffect(card, () => breedActionDone());
-  },
-  onBreedMove: (card) => {
-    if (isOnlineMode()) {
-      sendCommand({ type: 'breed_move', cardName: card.name, cardImg: card.imgSrc || '' });
-      sendStateSync();
-    }
-    // 永続効果を再計算（八神太一のDP+1000等を新カードにも適用）
-    try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch (_) {}
-    renderAll();
-    breedActionDone();
-  },
-});
-
-// Phase 3/4 にオンラインハンドラーを接続
+// Phase 3/4 にオンラインハンドラーを接続（初期はオフライン）
 setOnlineHandlers(false, null, { sendCommand, sendStateSync, sendMemoryUpdate });
 setCombatOnlineHandlers(false, null, { sendCommand, sendStateSync, sendMemoryUpdate });
 
@@ -564,16 +388,6 @@ window.startBattleDemo = async function() {
 
   addLog('📦 ダミーデッキ: メイン' + mainList.length + '枚 + タマ' + tamaList.length + '枚');
   await window.startBattleGame(dummyDeck, dummyDeck, true);
-};
-
-// ===== スクロールボタン =====
-window.scrollHand = function(direction) {
-  const el = document.getElementById('hand-wrap');
-  if (el) el.scrollBy({ left: direction * 80, behavior: 'smooth' });
-};
-window.scrollBattleRow = function(side, direction) {
-  const el = document.getElementById(side + '-battle-row');
-  if (el) el.scrollBy({ left: direction * 80, behavior: 'smooth' });
 };
 
 // ===== オンラインバトル開始 =====

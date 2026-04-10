@@ -632,17 +632,15 @@ function onRemoteCommand(cmd) {
         myCard.buffs.push({ type: cmd.action || 'cant_attack_block', value: 0, duration: cmd.duration || 'dur_this_turn', source: 'remote' });
         renderAll();
       }
-      // 演出: フローティングメッセージ
+      // 状態付与演出
+      const iconMap = { 'cant_attack_block': '⚔🛡✖', 'cant_attack': '⚔✖', 'cant_block': '🛡✖' };
       const labelMap = { 'cant_attack_block': 'アタック・ブロック不可', 'cant_attack': 'アタック不可', 'cant_block': 'ブロック不可' };
-      const label = labelMap[cmd.action] || '行動制限';
-      const msgEl = document.createElement('div');
-      msgEl.style.cssText = 'position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:60001;background:rgba(0,0,0,0.9);border:2px solid #ff4444;border-radius:10px;padding:14px 24px;color:#ff4444;font-size:clamp(12px,3.5vw,16px);font-weight:bold;text-align:center;pointer-events:none;opacity:0;transition:opacity 0.3s;';
-      msgEl.innerHTML = '🔒 「' + (cmd.targetName || '???') + '」<br>' + label + '付与！';
-      document.body.appendChild(msgEl);
-      setTimeout(() => { msgEl.style.opacity = '1'; }, 50);
-      setTimeout(() => { msgEl.style.opacity = '0'; }, 2200);
-      setTimeout(() => { if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl); }, 2800);
-      addLog('🔒 「' + (cmd.targetName || '???') + '」' + label + '付与');
+      const icon = iconMap[cmd.action] || '🔒';
+      const label = (labelMap[cmd.action] || '行動制限') + '付与！';
+      if (window._fxBuffStatus && myCard) {
+        window._fxBuffStatus(myCard, icon, label, '#9933ff', () => {});
+      }
+      addLog('🔒 「' + (cmd.targetName || '???') + '」' + (labelMap[cmd.action] || '行動制限') + '付与');
       break;
     }
     case 'fx_evoDiscard': {

@@ -145,16 +145,16 @@ function renderBattleRows() {
         }
         } // end if (showSA)
 
-        // バフ表示（状態異常マーク）
+        // バフ表示（状態異常マーク）— カード上部に表示して見えやすく
         if (card.cantAttack || card.cantBlock) {
           let mark = '';
           if (card.cantAttack && card.cantBlock) mark = '⚔🛡✖';
           else if (card.cantAttack) mark = '⚔✖';
           else if (card.cantBlock) mark = '🛡✖';
-          html += `<div style="position:absolute;bottom:14px;right:1px;background:#9933ff;color:#fff;font-size:7px;padding:1px 3px;border-radius:3px;">${mark}</div>`;
+          html += `<div style="position:absolute;top:1px;left:50%;transform:translateX(-50%);background:#9933ff;color:#fff;font-size:9px;font-weight:bold;padding:2px 5px;border-radius:4px;border:1px solid #fff;box-shadow:0 0 6px #9933ff;z-index:5;">${mark}</div>`;
         }
         if (card.cantEvolve) {
-          html += `<div style="position:absolute;bottom:1px;right:1px;background:#ff4444;color:#fff;font-size:7px;padding:1px 3px;border-radius:3px;">進❌</div>`;
+          html += `<div style="position:absolute;top:14px;left:50%;transform:translateX(-50%);background:#ff4444;color:#fff;font-size:9px;font-weight:bold;padding:2px 5px;border-radius:4px;border:1px solid #fff;box-shadow:0 0 6px #ff4444;z-index:5;">進❌</div>`;
         }
 
         // カード名

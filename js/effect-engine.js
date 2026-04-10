@@ -1036,7 +1036,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         showEffectFailed('効果を発動できませんでした', callback);
         break;
       }
-      const applyCab = (tgt) => {
+      const applyCab = (tgt, onDone) => {
         tgt.cantAttack = true; tgt.cantBlock = true;
         addBuffDirect(tgt, 'cant_attack_block', 0, cabDur, ctx);
         ctx.addLog('🔒 「' + tgt.name + '」アタック・ブロック不可（' + cabDur + '）');
@@ -1045,21 +1045,27 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           const tgtIdx = opponent.battleArea.indexOf(tgt);
           window._onlineSendCommand({ type: 'fx_cantAttackBlock', targetIdx: tgtIdx, targetName: tgt.name, duration: cabDur, action: 'cant_attack_block' });
         }
+        // 状態付与演出
+        if (window._fxBuffStatus) {
+          window._fxBuffStatus(tgt, '⚔🛡✖', 'アタック・ブロック不可付与！', '#9933ff', () => { onDone && onDone(); });
+        } else { onDone && onDone(); }
+      };
+      const finishCab = () => {
+        if (typeof ctx.renderAll === 'function') { try { ctx.renderAll(true); } catch(_) { ctx.renderAll(); } }
+        if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
+        callback();
       };
       if (effectiveSide === 'ai') {
-        applyCab(opponent.battleArea[ctx._forceTargetIdx ?? cabTargets[0]]);
-        ctx.renderAll();
-        callback();
+        applyCab(opponent.battleArea[ctx._forceTargetIdx ?? cabTargets[0]], finishCab);
         break;
       }
       ctx.addLog('🎯 アタック・ブロック不可にする対象を選んでください');
       showTargetSelection(opponentRowSide, cabTargets, null, uiColor, (selectedIdx) => {
         if (selectedIdx !== null) {
-          applyCab(opponent.battleArea[selectedIdx]);
+          applyCab(opponent.battleArea[selectedIdx], finishCab);
+        } else {
+          finishCab();
         }
-        ctx.renderAll();
-        if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
-        callback();
       });
       break;
     }

@@ -914,7 +914,8 @@ function resolveOnlineBlock(blockerIdx, cmd) {
 
   // 攻撃側の「ブロックされた時」効果完了シグナルを待つ（最大10秒）
   let battleStarted = false;
-  const onBlockedDone = onValue(ref(rtdb, `rooms/${_onlineRoomId}/commands`), (snap) => {
+  let onBlockedDone = null;
+  onBlockedDone = onValue(ref(rtdb, `rooms/${_onlineRoomId}/commands`), (snap) => {
     if (battleStarted) return;
     const cmds = snap.val();
     if (!cmds) return;

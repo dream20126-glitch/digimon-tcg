@@ -293,7 +293,10 @@ function handleAutoTurnEnd() {
   const over = Math.abs(bs.memory);
   addLog('💾 メモリー' + over + 'で相手側へ');
   bs.isPlayerTurn = false;
-  _hooks.expireBuffs('dur_this_turn');
+  // プレイヤーのターン終了 → endingSide='player' を明示
+  _hooks.expireBuffs('dur_this_turn', null, 'player');
+  _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
+  _hooks.expireBuffs('dur_next_own_turn', null, 'player');
   _hooks.expireBuffs('permanent', 'player');
   renderAll(true);
   if (_onlineMode) {

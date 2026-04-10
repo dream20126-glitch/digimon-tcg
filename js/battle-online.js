@@ -494,11 +494,62 @@ function onRemoteCommand(cmd) {
       };
       // セキュリティ効果を自分側(player)として処理
       const ctx = { card: secCard, side: 'player', bs, addLog, renderAll: () => renderAll(), updateMemGauge: () => {} };
+
+      // 任意効果かチェック（レシピのoptional or テキストの「できる」）
+      let isOptional = false;
       try {
-        const te = window._triggerEffectFn;
-        if (te) te('security', secCard, 'player', ctx, afterEffect);
-        else afterEffect();
-      } catch(_) { afterEffect(); }
+        const r = typeof cmd.recipe === 'string' ? JSON.parse(cmd.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : cmd.recipe;
+        if (r && r.security && Array.isArray(r.security)) {
+          isOptional = r.security.some(s => s.optional === true);
+        }
+      } catch(_) {}
+      // フォールバック: テキストに「してもよい」「できる」等があれば任意
+      const secText = secCard.securityEffect || '';
+      if (!isOptional && /(してもよい|してもいい|できる)/.test(secText)) isOptional = true;
+      // ギガデストロイヤー等「N体まで」も任意扱い
+      if (!isOptional && /\d+体まで/.test(secText)) isOptional = true;
+
+      const runEffect = () => {
+        // 攻撃側に効果発動を通知
+        sendCommand({ type: 'fx_effectAnnounce', cardName: secCard.name, effectText: '✦ ' + secCard.name + ' の効果発動！' });
+        try {
+          const te = window._triggerEffectFn;
+          if (te) te('security', secCard, 'player', ctx, afterEffect);
+          else afterEffect();
+        } catch(_) { afterEffect(); }
+      };
+
+      if (isOptional) {
+        // 任意効果: 確認ダイアログを表示
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;padding:20px;';
+        const box = document.createElement('div');
+        box.style.cssText = 'background:#0a0a0a;border:2px solid #ffaa00;border-radius:12px;padding:20px;max-width:340px;width:100%;text-align:center;';
+        const imgSrc = secCard.imgSrc || '';
+        box.innerHTML = (imgSrc ? '<img src="' + imgSrc + '" style="width:160px;border-radius:8px;margin-bottom:12px;border:1px solid #ffaa00;">' : '')
+          + '<div style="color:#ffaa00;font-size:14px;font-weight:bold;margin-bottom:6px;">' + secCard.name + '</div>'
+          + '<div style="color:#aaa;font-size:11px;margin-bottom:12px;line-height:1.6;text-align:left;background:#111;padding:10px;border-radius:6px;border:1px solid #333;">' + (secCard.securityEffect || secCard.effect || '') + '</div>'
+          + '<div style="color:#fff;font-size:13px;font-weight:bold;margin-bottom:16px;">効果を使用しますか？</div>'
+          + '<div style="display:flex;gap:10px;justify-content:center;">'
+          + '<button id="_sec-opt-yes" style="background:#ffaa00;color:#000;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
+          + '<button id="_sec-opt-no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
+          + '</div>';
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+        document.getElementById('_sec-opt-yes').onclick = () => {
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+          runEffect();
+        };
+        document.getElementById('_sec-opt-no').onclick = () => {
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+          // 効果不発で完了通知
+          sendCommand({ type: 'security_effect_done', memory: bs.memory });
+          addLog('💨 セキュリティ効果を使用しませんでした');
+        };
+      } else {
+        // 強制効果: 即実行
+        runEffect();
+      }
       break;
     }
     case 'security_effect_done': {

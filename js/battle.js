@@ -341,8 +341,12 @@ setPhaseHooks({
     const p = side === 'player' ? bs.player : bs.ai;
     const area = [...p.battleArea, ...(p.tamerArea || [])];
     const trigger = side === 'player' ? '【自分のターン開始時】' : '【相手のターン開始時】';
-    const cardsWithEffect = area.filter(c => c && c.effect && c.effect.includes(trigger));
-    console.log('[checkTurnStartEffects]', side, 'trigger:', trigger, 'found:', cardsWithEffect.map(c => c.name + ':' + (c.effect||'').substring(0,30)));
+    const triggerCode = side === 'player' ? 'on_own_turn_start' : 'on_opp_turn_start';
+    const hasRecipeTrigger = (c) => {
+      if (!c.recipe) return false;
+      try { const r = typeof c.recipe === 'string' ? JSON.parse(c.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : c.recipe; return !!(r[triggerCode]); } catch(_) { return false; }
+    };
+    const cardsWithEffect = area.filter(c => c && ((c.effect && c.effect.includes(trigger)) || hasRecipeTrigger(c)));
     if (cardsWithEffect.length === 0) { cb(); return; }
     let idx = 0;
     function next() {
@@ -375,7 +379,25 @@ setOnlineModules({
   showBlockConfirm, showBlockerSelection,
   showGameEndOverlay,
   fxSAttackPlus, fxRemoteEffect, fxRemoteEffectClose,
-  checkTurnStartEffects: (side, cb) => cb(), // Phase 3 のフック経由
+  checkTurnStartEffects: (side, cb) => {
+    bs._usedLimits = {};
+    const p = side === 'player' ? bs.player : bs.ai;
+    const area = [...p.battleArea, ...(p.tamerArea || [])];
+    const trigger = side === 'player' ? '【自分のターン開始時】' : '【相手のターン開始時】';
+    const triggerCode = side === 'player' ? 'on_own_turn_start' : 'on_opp_turn_start';
+    const hasRecipeTrigger = (c) => {
+      if (!c.recipe) return false;
+      try { const r = typeof c.recipe === 'string' ? JSON.parse(c.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : c.recipe; return !!(r[triggerCode]); } catch(_) { return false; }
+    };
+    const cardsWithEffect = area.filter(c => c && ((c.effect && c.effect.includes(trigger)) || hasRecipeTrigger(c)));
+    if (cardsWithEffect.length === 0) { cb(); return; }
+    let idx = 0;
+    function next() {
+      if (idx >= cardsWithEffect.length) { cb(); return; }
+      checkAndTriggerEffect(cardsWithEffect[idx++], trigger, next);
+    }
+    next();
+  },
   applyPermanentEffects: (side) => { try { _applyPermanentEE(bs, side, { bs, side }); } catch (_) {} },
   expireBuffs: (timing, side) => { try { _expireBuffsEE(bs, timing, side); } catch (_) {} },
 });

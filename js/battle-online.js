@@ -572,10 +572,13 @@ function onRemoteCommand(cmd) {
       if (!st) break;
       const restoreCard = (data) => {
         if (!data) return null;
-        // バフの_appliedSideは送信側視点なので反転（player↔ai）
         const flippedBuffs = (data.buffs || []).map(b => {
           if (!b._appliedSide) return b;
-          return { ...b, _appliedSide: b._appliedSide === 'player' ? 'ai' : (b._appliedSide === 'ai' ? 'player' : b._appliedSide) };
+          const flipped = b._appliedSide === 'player' ? 'ai' : (b._appliedSide === 'ai' ? 'player' : b._appliedSide);
+          if (b._appliedSide !== flipped) {
+            console.log('[sync-flip]', data.name, b.type, b._appliedSide, '→', flipped);
+          }
+          return { ...b, _appliedSide: flipped };
         });
         return { ...data, buffs: flippedBuffs, stack: (data.stack || []).map(restoreCard) };
       };

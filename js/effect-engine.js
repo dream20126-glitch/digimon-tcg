@@ -2130,10 +2130,15 @@ function recalcDp(card) {
 // endingSide: 'player'/'ai' - 明示指定（省略時は bs.isPlayerTurn から推測、オンラインでは要明示）
 export function expireBuffs(bs, timing, ownerSide, endingSide) {
   if (!endingSide) endingSide = bs.isPlayerTurn ? 'player' : 'ai';
+  console.log('[expire]', timing, 'endingSide=' + endingSide);
   ['player', 'ai'].forEach(side => {
     [...bs[side].battleArea, ...(bs[side].tamerArea || [])].forEach(card => {
       if (!card || !card.buffs || card.buffs.length === 0) return;
       const before = card.buffs.length;
+      const matching = card.buffs.filter(b => b.duration === timing);
+      if (matching.length > 0) {
+        console.log('[expire-found]', side, card.name, matching.map(b => b.type + '(_appliedSide=' + b._appliedSide + ',_aDoT=' + b._appliedDuringOwnTurn + ',_ticks=' + b._ticks + ')').join(','));
+      }
       if (timing === 'permanent') {
         if (ownerSide) {
           if (side === ownerSide) {
@@ -2168,7 +2173,12 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
           return false;
         });
       }
-      if (card.buffs.length !== before) recalcDp(card);
+      if (card.buffs.length !== before) {
+        recalcDp(card);
+        console.log('[expire-removed]', side, card.name, 'before:' + before, 'after:' + card.buffs.length);
+      } else if (matching.length > 0) {
+        console.log('[expire-kept]', side, card.name, 'still has', card.buffs.filter(b => b.duration === timing).length, 'matching buffs');
+      }
       if (!card.buffs.some(b => ['cant_attack_block', 'cant_attack'].includes(b.type))) card.cantAttack = false;
       if (!card.buffs.some(b => ['cant_attack_block', 'cant_block'].includes(b.type))) card.cantBlock = false;
       if (!card.buffs.some(b => b.type === 'cant_evolve')) card.cantEvolve = false;

@@ -1499,7 +1499,8 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
   function cleanup() {
     _targetSelecting = false;
     // 対象選択完了 → 相手の効果内容オーバーレイを閉じる
-    if (window._isOnlineMode && window._isOnlineMode()) {
+    // ただし、_skipFxEffectCloseフラグが立っている場合（複数選択途中等）は閉じない
+    if (window._isOnlineMode && window._isOnlineMode() && !window._skipFxEffectClose) {
       window._onlineSendCommand({ type: 'fx_effectClose' });
     }
     if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl);
@@ -2794,17 +2795,28 @@ function executeRecipeStep(step, ctx, store, callback) {
         return valid;
       }
 
+      // 全選択完了時に呼ぶ（フラグ解除 + オンラインに効果終了通知）
+      const finishSelectMulti = () => {
+        window._skipFxEffectClose = false;
+        if (window._isOnlineMode && window._isOnlineMode()) {
+          window._onlineSendCommand({ type: 'fx_effectClose' });
+        }
+        callback();
+      };
+
       function doSelect() {
-        if (selectedCount >= maxCount) { callback(); return; }
+        if (selectedCount >= maxCount) { finishSelectMulti(); return; }
         const valid = getValidTargets();
-        if (valid.length === 0) { callback(); return; }
+        if (valid.length === 0) { finishSelectMulti(); return; }
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
         ctx.addLog('🎯 対象を選んでください（' + (selectedCount + 1) + '体目 / 最大' + maxCount + '体）');
         if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
           window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: ctx.card ? ctx.card.name : '', effectText: '🎯 対象選択中...（' + (selectedCount + 1) + '体目 / 最大' + maxCount + '体）' });
         }
+        // 複数選択の途中では fx_effectClose を送信しない
+        window._skipFxEffectClose = true;
         showTargetSelection(rowId, valid, null, '#ff4444', (selectedIdx) => {
-          if (selectedIdx === null) { callback(); return; }
+          if (selectedIdx === null) { finishSelectMulti(); return; }
           selected.push(selectedIdx);
           if (step.store) {
             if (!store[step.store]) store[step.store] = [];
@@ -2812,8 +2824,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           selectedCount++;
           // 上限到達 or 対象なし → 終了
-          if (selectedCount >= maxCount) { callback(); return; }
-          if (getValidTargets().length === 0) { callback(); return; }
+          if (selectedCount >= maxCount) { finishSelectMulti(); return; }
+          if (getValidTargets().length === 0) { finishSelectMulti(); return; }
           // 任意の場合は次の選択も確認
           if (isOptional) {
             askToSelect();
@@ -2825,9 +2837,9 @@ function executeRecipeStep(step, ctx, store, callback) {
 
       function askToSelect() {
         // 対象がなければスキップ
-        if (getValidTargets().length === 0) { callback(); return; }
+        if (getValidTargets().length === 0) { finishSelectMulti(); return; }
         const msg = selectedCount === 0 ? '対象を選択しますか？' : 'もう1体選びますか？（残り' + (maxCount - selectedCount) + '体まで）';
-        showConfirmDialog(msg, () => doSelect(), () => callback());
+        showConfirmDialog(msg, () => doSelect(), () => finishSelectMulti());
       }
 
       // 任意の場合は最初の選択前にも確認、強制の場合は即選択

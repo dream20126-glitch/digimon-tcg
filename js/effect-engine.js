@@ -2618,6 +2618,9 @@ function checkConditions(conditions, card, bs, side) {
         const oppArea = bs[oppSide].battleArea;
         // 同じconditions内の他の条件（cond_no_evo, cond_dp_le等）を相手カードに適用
         const otherConds = conditions.filter(c => c.code !== 'cond_exists' && c.code !== 'per_count');
+        // DEBUG: oppArea のデジモン状態を出力
+        const dump = oppArea.map((c, i) => c ? `[${i}]${c.name}(${c.type})stack=${c.stack ? c.stack.length : 0}` : `[${i}]null`).join(',');
+        console.log('[cond_exists]', 'oppSide=' + oppSide, 'oppArea:', dump, 'otherConds=', JSON.stringify(otherConds));
         const hasMatch = oppArea.some(c => {
           if (!c) return false;
           if (c.type !== 'デジモン') return false; // デジモンのみ対象
@@ -2634,6 +2637,7 @@ function checkConditions(conditions, card, bs, side) {
             }
           });
         });
+        console.log('[cond_exists] hasMatch=', hasMatch);
         if (!hasMatch) return false;
         // cond_existsで使った他の条件はスキップ（二重チェック防止）
         return true;

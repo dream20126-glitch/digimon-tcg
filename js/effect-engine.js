@@ -2992,6 +2992,11 @@ export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase) {
     showEffectAnnounce(sourceCard, effectText, reactSide, () => {
       runRecipe(recipe, ctx, () => {
         ctx.renderAll && ctx.renderAll();
+        // オンライン: 相手側のポップアップを閉じる（reactSide が自分の時のみ送信。
+        // executeQueueEntry の wrappedCallback と同じパターン）
+        if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
+          window._onlineSendCommand({ type: 'fx_effectClose' });
+        }
         // 次のリアクションへ
         nextReaction();
       });

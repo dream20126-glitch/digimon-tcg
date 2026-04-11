@@ -6,6 +6,7 @@
  */
 
 // ===== ゲーム状態 =====
+// デバッグ用に window.bs として公開（コンソールから状態を確認できるように）
 export const bs = {
   // ターン管理
   turn: 1,
@@ -29,6 +30,9 @@ export const bs = {
   _usedLimits: {},
   _securityBuffs: [],
 };
+
+// デバッグ用 window 公開（コンソールから bs を直接インスペクト可能に）
+if (typeof window !== 'undefined') window.bs = bs;
 
 // 片側のフィールド初期状態を生成
 function createEmptySide() {

@@ -336,6 +336,9 @@ export function resolveAttackTarget(target, targetIdx) {
   const atkSlotIdx = _atkState.slotIdx;
   _atkState = null;
 
+  // アタック対象タイプを bs に記録（cond_attack_target_digimon で参照）
+  bs._lastAttackTarget = target;
+
   if (target === 'security') {
     // セキュリティアタック
     if (_onlineMode && _sendCommand) {
@@ -790,7 +793,15 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
       showBattleResult('Win!!', '#00ff88', '「' + def.name + '」を撃破！', () => {
         showDestroyEffect(def, () => {
           addLog('💥 「' + def.name + '」を撃破！'); renderAll();
-          _fireDestroyChain(['ai'], () => checkAttackEnd(atk, atkIdx));
+          _fireDestroyChain(['ai'], () => {
+            // バトル勝利トリガー（atk が生存・def 消滅）
+            bs._lastBattleWinner = atk;
+            const winCtx = _hooks.makeEffectContext(atk, 'player');
+            _hooks.triggerEffect('on_battle_win', atk, 'player', winCtx, () => {
+              bs._lastBattleWinner = null;
+              checkAttackEnd(atk, atkIdx);
+            });
+          });
         });
       }, 'Lose...', '#ff4444');
     } else {
@@ -835,7 +846,13 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
       renderAll();
       showDestroyEffect(def, () => {
         _fireDestroyChain(['player'], () => {
-          showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); }, 'Win!!', '#00ff88');
+          // AI が attacker として勝利 → on_battle_win on atk (AI side)
+          bs._lastBattleWinner = atk;
+          const winCtx = _hooks.makeEffectContext(atk, 'ai');
+          _hooks.triggerEffect('on_battle_win', atk, 'ai', winCtx, () => {
+            bs._lastBattleWinner = null;
+            showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); }, 'Win!!', '#00ff88');
+          });
         });
       });
     } else {
@@ -844,7 +861,13 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
       renderAll();
       showDestroyEffect(atk, () => {
         _fireDestroyChain(['ai'], () => {
-          showBattleResult('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => { addLog('💥 「' + atk.name + '」を撃破！'); renderAll(); callback(); }, 'Lost...', '#ff4444');
+          // 防御側 (def, player) が atk を撃破して生存 → on_battle_win on def
+          bs._lastBattleWinner = def;
+          const winCtx = _hooks.makeEffectContext(def, 'player');
+          _hooks.triggerEffect('on_battle_win', def, 'player', winCtx, () => {
+            bs._lastBattleWinner = null;
+            showBattleResult('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => { addLog('💥 「' + atk.name + '」を撃破！'); renderAll(); callback(); }, 'Lost...', '#ff4444');
+          });
         });
       });
     }

@@ -566,6 +566,22 @@ function executeQueueEntry(entry, context, callback) {
     context.bs._usedLimits[limitKey] = true;
   }
 
+  // ★ 事前条件チェック: レシピの全ステップが条件で弾かれるなら効果発動ポップアップを出さない
+  // 例: 石田ヤマトの「進化元を持たない相手デジモンがいるとき、メモリー+1」で
+  //     条件を満たす相手デジモンがいない場合、ポップアップ自体を出さない
+  {
+    const recipeCardForCheck = block._recipeCard || card;
+    const trigCodeForCheck = block.trigger ? block.trigger.code : null;
+    const recipeForCheck = trigCodeForCheck ? getRecipeForTrigger(recipeCardForCheck, trigCodeForCheck) : null;
+    if (recipeForCheck && Array.isArray(recipeForCheck)) {
+      const willExecute = recipeWillExecuteAnything(recipeForCheck, { card, bs: context.bs, side: actualSide });
+      if (!willExecute) {
+        callback();
+        return;
+      }
+    }
+  }
+
   // 強制効果 or 既に確認済み → 即実行
   if (!block.isOptional || context.alreadyConfirmed) {
     executeWithAnnounce();
@@ -2388,6 +2404,11 @@ export function applyPermanentEffects(bs, side, context) {
 
 function parseRecipeCondition(condStr) {
   if (!condStr) return [];
+  // 「進化元を持たない相手デジモンがいる」の自然語ショートカット
+  // = cond_exists + cond_no_evo の組み合わせ
+  if (condStr === 'opp_has_no_evo' || condStr === 'cond_opp_has_no_evo') {
+    return [{code: 'cond_exists'}, {code: 'cond_no_evo'}];
+  }
   const parts = condStr.split(':');
   if (parts[0] === 'cond_exists') {
     // "cond_exists:cond_no_evo" → [{code:'cond_exists'}, {code:'cond_no_evo'}]
@@ -2788,6 +2809,21 @@ function getRecipeForTrigger(card, triggerCode) {
     }
     return null;
   } catch(e) { return null; }
+}
+
+// レシピが実行されるか事前判定（全ステップが条件で弾かれるか）
+// 戻り値: true=少なくとも1ステップが実行される, false=全ステップが条件NGで何も起きない
+// 不確定な場合（store依存・ターゲット選択型など）は安全側で true を返す
+function recipeWillExecuteAnything(recipe, ctx) {
+  if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
+  for (const step of recipe) {
+    // 条件なし → 必ず実行される
+    if (!step.condition) return true;
+    // 条件あり → 評価
+    const conds = parseRecipeCondition(step.condition);
+    if (checkConditions(conds, ctx.card, ctx.bs, ctx.side)) return true;
+  }
+  return false; // 全てのステップが条件で弾かれた
 }
 
 // レシピを順次実行
@@ -3237,33 +3273,56 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
 
     // === キーワード付与 ===
-    case 'grant_keyword': {
-      const flag = step.flag;
-      const val = step.value || 1;
+    // grant_keyword: 単体（step.flag等で指定）
+    // grant_keyword_all: 全体（step.keyword="Sアタック+1"等のテキストで指定、step.target="own_all_digimon"等）
+    case 'grant_keyword':
+    case 'grant_keyword_all': {
+      // step.flag(英語) または step.keyword(日本語/「Sアタック+1」等)から flag を抽出
+      let flag = step.flag || '';
+      let val = step.value || 1;
       const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
 
-      // Resolve targets
+      // 日本語キーワードからエンジンフラグへの変換
+      if (!flag && step.keyword) {
+        const kw = String(step.keyword);
+        const saMatch = kw.match(/Sアタック\+?(\d+)/) || kw.match(/セキュリティアタック\+?(\d+)/);
+        if (saMatch) {
+          flag = 'security_attack_plus';
+          val = parseInt(saMatch[1]) || 1;
+        } else {
+          const flagMap = {
+            'ブロッカー': 'blocker', '速攻': 'rush', '突進': 'piercing',
+            '貫通': 'penetrate', 'ジャミング': 'jamming', '再起動': 'reboot',
+          };
+          flag = flagMap[kw] || kw;
+        }
+      }
+
+      // 対象解決
       const resolveTargets = () => {
         const p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
-        if (step.target === 'self') return [ctx.card];
-        if (step.target === 'own:all') return p.battleArea.filter(c => c);
+        const opp = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
+        const t = step.target;
+        if (t === 'self') return ctx.card ? [ctx.card] : [];
+        if (t === 'own:all' || t === 'own_all_digimon') return p.battleArea.filter(c => c);
+        if (t === 'opponent:all' || t === 'opp_all_digimon') return opp.battleArea.filter(c => c);
         if (step.card && store[step.card]) {
           const sd = store[step.card];
           return (Array.isArray(sd) ? sd : [sd]).map(s => s.card || s).filter(c => c);
         }
-        return [ctx.card];
+        return ctx.card ? [ctx.card] : [];
       };
 
       const targets = resolveTargets();
       targets.forEach(tgt => {
         if (flag === 'security_attack_plus') {
-          if (!tgt.buffs) tgt.buffs = [];
-          tgt.buffs.push({ type: 'security_attack_plus', value: val, duration: dur, source: ctx.card ? ctx.card.cardNo : '' });
+          // addBuffDirect 経由で _appliedSide / _appliedDuringOwnTurn を正しく設定
+          // → expireBuffs の dur_next_own_turn 等のサイド判定が正しく動く
+          addBuffDirect(tgt, 'security_attack_plus', val, dur, ctx);
           ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
         } else {
-          // Generic keyword buff (blocker, piercing, etc.)
-          if (!tgt.buffs) tgt.buffs = [];
-          tgt.buffs.push({ type: 'keyword_' + flag, value: 0, duration: dur, source: ctx.card ? ctx.card.cardNo : '' });
+          // 一般キーワードバフ (blocker, piercing 等)
+          addBuffDirect(tgt, 'keyword_' + flag, 0, dur, ctx);
           ctx.addLog('✨ 「' + tgt.name + '」に【' + flag + '】付与');
         }
       });

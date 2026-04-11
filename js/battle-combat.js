@@ -660,7 +660,7 @@ export function applyBattleBuffs(atk, def) {
             const val = step.value || 0;
             card.dp += val;
             applied.push({ card, value: val });
-            addLog('⚔ バトル中効果: 「' + card.name + '」DP+' + val);
+            addLog('⚔ バトル中効果: 「' + card.name + '」元のDP+' + val);
           });
         });
       } catch (_) {}

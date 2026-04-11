@@ -691,9 +691,23 @@ function onRemoteCommand(cmd) {
           _appliedDuringOwnTurn: cmd.appliedDuringOwnTurn !== undefined ? cmd.appliedDuringOwnTurn : true,
           _ticks: 0,
         });
+        // dp_plus/dp_minus は recalcDp で実DP値を更新する（インライン実装）
+        if (cmd.buffType === 'dp_plus' || cmd.buffType === 'dp_minus') {
+          if (myCard.baseDp == null) myCard.baseDp = parseInt(myCard.dp) || 0;
+          let mod = 0;
+          myCard.buffs.forEach(b => {
+            if (b.type === 'dp_plus') mod += (parseInt(b.value) || 0);
+            if (b.type === 'dp_minus') mod -= (parseInt(b.value) || 0);
+          });
+          myCard.dpModifier = mod;
+          myCard.dp = myCard.baseDp + mod;
+          // DP0以下なら消滅マーク
+          if (myCard.dp <= 0) myCard._pendingDestroy = true;
+        }
         renderAll();
       }
-      addLog('⚔ 「' + (cmd.targetName || '???') + '」に' + (cmd.buffType || 'バフ') + '+' + (cmd.value || 0) + ' 付与');
+      const sign = cmd.buffType === 'dp_minus' ? '-' : '+';
+      addLog('⚔ 「' + (cmd.targetName || '???') + '」に' + (cmd.buffType || 'バフ') + sign + (cmd.value || 0) + ' 付与');
       break;
     }
     case 'fx_cantAttackBlock': {

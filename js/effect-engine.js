@@ -859,12 +859,30 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const dpTargets = [];
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) dpTargets.push(i); }
       if(dpTargets.length === 0) { callback(); break; }
+      // 相手カードへの buff をオンライン同期するヘルパー
+      const sendDpRemoteBuff = (idx, tgt) => {
+        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && idx != null && window._onlineSendCommand) {
+          const dur = (ctx.block && ctx.block.duration && ctx.block.duration.code) || 'dur_this_turn';
+          window._onlineSendCommand({
+            type: 'fx_remoteBuff',
+            targetIdx: idx,
+            targetName: tgt.name,
+            buffType: 'dp_minus',
+            value: val,
+            duration: dur,
+            appliedFromSender: 'player',
+            appliedDuringOwnTurn: ctx.bs && ctx.bs.isPlayerTurn,
+          });
+        }
+      };
       if(effectiveSide === 'ai') {
-        const tgt = opponent.battleArea[ctx._forceTargetIdx ?? dpTargets[0]];
+        const di = ctx._forceTargetIdx ?? dpTargets[0];
+        const tgt = opponent.battleArea[di];
         addBuff(tgt, 'dp_minus', val, ctx);
         ctx.addLog('💥 ' + tgt.name + ' DP-' + val + ' → ' + tgt.dp);
         playEffect(action.code, { value: -val, ctx, label: tgt.name }, () => {});
         if(tgt.dp <= 0) tgt._pendingDestroy = true;
+        sendDpRemoteBuff(di, tgt);
         ctx.renderAll(); callback(); break;
       }
       ctx.addLog('🎯 DP-' + val + 'の対象を選んでください');
@@ -876,6 +894,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           ctx.addLog('💥 ' + tgt.name + ' DP-' + val + ' → ' + tgt.dp);
           playEffect(action.code, { value: -val, ctx, label: tgt.name }, () => {});
           if(tgt.dp <= 0) tgt._pendingDestroy = true;
+          sendDpRemoteBuff(selectedIdx, tgt);
           ctx.renderAll();
         }
         callback();

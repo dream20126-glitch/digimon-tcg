@@ -5,11 +5,11 @@
  * AI戦闘ロジック・戦闘演出を含む
  */
 
-import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js?v=20260410-3';
-import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js?v=20260410-3';
-import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js?v=20260410-3';
-import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js?v=20260410-3';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue } from './effect-engine.js?v=20260410-3';
+import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js?v=20260411a';
+import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js?v=20260411a';
+import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js?v=20260411a';
+import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js?v=20260411a';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue } from './effect-engine.js?v=20260411a';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -52,8 +52,10 @@ export function setCombatOnlineHandlers(online, myKey, handlers = {}) {
   _sendMemoryUpdate = handlers.sendMemoryUpdate || null;
 }
 
-function sendStateSync() { if (_onlineMode && _sendStateSync) _sendStateSync(); }
-function sendMemoryUpdate() { if (_onlineMode && _sendMemoryUpdate) _sendMemoryUpdate(); }
+// 内部dispatcher: handlers経由で注入されたbattle-online.jsのsendStateSync/sendMemoryUpdate本体を呼ぶ
+// 名前を本体と分けるのは、grepで本体と取り違えないようにするため
+function _dispatchStateSync() { if (_onlineMode && _sendStateSync) _sendStateSync(); }
+function _dispatchMemoryUpdate() { if (_onlineMode && _sendMemoryUpdate) _sendMemoryUpdate(); }
 
 // ===== 戦闘演出背景（ちらつき防止） =====
 
@@ -139,7 +141,7 @@ export function doPlay(card, handIdx, slotIdx) {
     showOptionEffect(card, () => {
       bs.memory -= card.playCost;
       updateMemGauge();
-      sendMemoryUpdate();
+      _dispatchMemoryUpdate();
       _hooks.checkAndTriggerEffect(card, '【メイン】', () => {
         bs.player.trash.push(card);
         addLog('✦ 「' + card.name + '」をトラッシュへ');
@@ -272,7 +274,7 @@ function playerSpendMemory(cost) {
   if (cost === 0) { updateMemGauge(); return false; }
   bs.memory -= cost;
   updateMemGauge();
-  sendMemoryUpdate();
+  _dispatchMemoryUpdate();
   if (bs.memory < 0) {
     checkAutoTurnEnd();
     return true;
@@ -480,14 +482,14 @@ export function resolveSecurityCheck(atk, atkIdx) {
         if (atk.dp === sec.dp) {
           bs.ai.trash.push(sec);
           removeOwnCard(atkIdx, 'destroy');
-          renderAll(); sendStateSync();
+          renderAll(); _dispatchStateSync();
           showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
             showDestroyEffect(sec, () => { showDestroyEffect(atk, () => {
-              addLog('💥 両者消滅！'); sendStateSync(); checkPendingTurnEnd();
+              addLog('💥 両者消滅！'); _dispatchStateSync(); checkPendingTurnEnd();
             }); });
           }, '両者消滅', '#ff4444');
         } else if (atk.dp > sec.dp) {
-          bs.ai.trash.push(sec); renderAll(); sendStateSync();
+          bs.ai.trash.push(sec); renderAll(); _dispatchStateSync();
           showBattleResult('Win!!', '#00ff88', 'セキュリティ突破！', () => {
             showDestroyEffect(sec, () => {
               addLog('✓ セキュリティ突破');
@@ -501,10 +503,10 @@ export function resolveSecurityCheck(atk, atkIdx) {
         } else {
           removeOwnCard(atkIdx, 'destroy');
           bs.ai.trash.push(sec);
-          renderAll(); sendStateSync();
+          renderAll(); _dispatchStateSync();
           showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された', () => {
             showDestroyEffect(atk, () => {
-              addLog('✗ セキュリティに敗北'); sendStateSync(); checkPendingTurnEnd();
+              addLog('✗ セキュリティに敗北'); _dispatchStateSync(); checkPendingTurnEnd();
             });
           }, 'Win!!', '#00ff88');
         }
@@ -530,7 +532,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
       setTimeout(() => {
         if (hasSecField || hasSecInEffect) {
           const doFinishSec = () => {
-            bs.ai.trash.push(sec); renderAll(); sendStateSync();
+            bs.ai.trash.push(sec); renderAll(); _dispatchStateSync();
             if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
             else { checkAttackEnd(atk, atkIdx); }
           };
@@ -550,7 +552,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
             addLog('⏳ 相手がセキュリティ効果を処理中...');
             window._waitForSecurityEffect(() => {
               // P2の処理完了 → 状態を再同期して続行
-              sendStateSync();
+              _dispatchStateSync();
               doFinishSec();
             });
             return;
@@ -619,27 +621,20 @@ function applySecurityBuffs(sec, ownerSide) {
 // ===== バトル中バフ一時適用 =====
 // レシピの when:"cond_in_battle" や効果テキストの「バトルしている間」をバトル解決時に適用
 
-function applyBattleBuffs(atk, def) {
+export function applyBattleBuffs(atk, def) {
   const applied = [];
+  const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+  // カードがどちらのバトルエリアに属するか判定
+  const sideOf = (card) => {
+    if (!card) return null;
+    if (bs.player.battleArea.indexOf(card) !== -1) return 'player';
+    if (bs.ai.battleArea.indexOf(card) !== -1) return 'ai';
+    return null;
+  };
   [atk, def].forEach(card => {
-    if (!card || !card.stack) return;
-    // 進化元効果から「バトルしている間」を検索
-    card.stack.forEach(s => {
-      const evoText = s.evoSourceEffect || '';
-      if (!evoText.includes('バトルしている間')) return;
-      // 条件チェック（進化元を持たない相手とバトル）
-      const opponent = card === atk ? def : atk;
-      if (evoText.includes('進化元を持たない') && opponent.stack && opponent.stack.length > 0) return;
-      // DP+N を抽出
-      const dpMatch = evoText.match(/DPを?\+(\d+)/);
-      if (dpMatch) {
-        const val = parseInt(dpMatch[1]);
-        card.dp += val;
-        applied.push({ card, value: val });
-        addLog('⚔ バトル中効果: 「' + card.name + '」DP+' + val + '（' + s.name + '）');
-      }
-    });
-    // レシピの when:"cond_in_battle" もチェック（親カード + 進化元カード）
+    if (!card) return;
+    const cardSide = sideOf(card);
+    // レシピの when:"cond_in_battle" をチェック（親カード + 進化元カード）
     const recipeSources = [card.recipe];
     if (card.stack) card.stack.forEach(s => { if (s.recipe) recipeSources.push(s.recipe); });
     recipeSources.forEach(rawRecipe => {
@@ -651,6 +646,11 @@ function applyBattleBuffs(atk, def) {
         const durKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
         durKeys.forEach(key => {
           if (!recipes[key]) return;
+          // ターンサイドフィルタ:【自分のターン】は自ターン中のみ、【相手のターン】は相手ターン中のみ発動
+          if (cardSide) {
+            if (key === 'during_own_turn' && cardSide !== turnSide) return;
+            if (key === 'during_opp_turn' && cardSide === turnSide) return;
+          }
           const steps = Array.isArray(recipes[key]) ? recipes[key] : [recipes[key]];
           steps.forEach(step => {
             if (step.when !== 'cond_in_battle') return;
@@ -669,7 +669,7 @@ function applyBattleBuffs(atk, def) {
   return applied;
 }
 
-function removeBattleBuffs(applied) {
+export function removeBattleBuffs(applied) {
   applied.forEach(({ card, value }) => {
     card.dp -= value;
   });
@@ -696,15 +696,17 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
   function destroyAtk() { removeOwnCard(atkIdx, 'destroy'); }
 
   showSecurityCheck(def, atk, () => {
+    // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
+    const _atkDp = atk.dp, _defDp = def.dp;
     removeBattleBuffs(battleBuffs);
-    if (atk.dp === def.dp) {
+    if (_atkDp === _defDp) {
       destroyDef(); destroyAtk(); renderAll();
       showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
         showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
           addLog('💥 両者消滅！'); renderAll(); checkPendingTurnEnd();
         }); });
       }, '両者消滅', '#ff4444');
-    } else if (atk.dp > def.dp) {
+    } else if (_atkDp > _defDp) {
       destroyDef(); renderAll();
       showBattleResult('Win!!', '#00ff88', '「' + def.name + '」を撃破！', () => {
         showDestroyEffect(def, () => { addLog('💥 「' + def.name + '」を撃破！'); renderAll(); checkAttackEnd(atk, atkIdx); });
@@ -727,8 +729,10 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
   const battleBuffs = applyBattleBuffs(atk, def);
   addLog('⚔ 「' + atk.name + '」(' + atk.dp + 'DP) vs 「' + def.name + '」(' + def.dp + 'DP)');
   showSecurityCheck(def, atk, () => {
+    // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
+    const _atkDp = atk.dp, _defDp = def.dp;
     removeBattleBuffs(battleBuffs);
-    if (atk.dp === def.dp) {
+    if (_atkDp === _defDp) {
       bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
       if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
       bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
@@ -737,7 +741,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
       showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
         showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => { addLog('💥 両者消滅！'); renderAll(); callback(); }, '両者消滅', '#ff4444');
       }); });
-    } else if (atk.dp > def.dp) {
+    } else if (_atkDp > _defDp) {
       bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
       if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
       renderAll();

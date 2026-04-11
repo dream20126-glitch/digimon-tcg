@@ -5,10 +5,11 @@
  * オフライン（AI対戦）時は全関数がno-opで安全
  */
 
-import { bs } from './battle-state.js?v=20260410-3';
-import { addLog, showScreen } from './battle-ui.js?v=20260410-3';
-import { renderAll, updateMemGauge, cardImg } from './battle-render.js?v=20260410-3';
-import { rtdb, ref, set, onValue, remove } from './firebase-config.js?v=20260410-3';
+import { bs } from './battle-state.js?v=20260411a';
+import { addLog, showScreen } from './battle-ui.js?v=20260411a';
+import { renderAll, updateMemGauge, cardImg } from './battle-render.js?v=20260411a';
+import { rtdb, ref, set, onValue, remove } from './firebase-config.js?v=20260411a';
+import { applyBattleBuffs, removeBattleBuffs } from './battle-combat.js?v=20260411a';
 
 // ===== オンライン状態 =====
 let _onlineMode = false;
@@ -927,7 +928,11 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   renderAll();
   sendCommand({ type: 'waiting_close' });
 
+  // ★ バトル中効果を適用してから勝敗判定（DP+1000等の進化元効果を反映）
+  const battleBuffs = applyBattleBuffs(atk, blocker);
+
   // ★ ブロック決定を通知（攻撃側で「ブロックされた時」効果を先に処理してもらう）
+  // バフ適用後のDPで勝敗判定
   let atkResult = 'survived';
   if (atk.dp <= blocker.dp) atkResult = atk.dp === blocker.dp ? 'both_destroyed' : 'destroyed';
   sendCommand({ type: 'block_response', blocked: true, atkIdx: cmd.atkIdx, atkResult, blockerName: blocker.name, blockerImg: cardImg(blocker), blockerDp: blocker.dp });
@@ -940,12 +945,16 @@ function resolveOnlineBlock(blockerIdx, cmd) {
 
     // 表示関数からの自動送信を抑制（手動送信のみP1に届ける）
     window._suppressFxSend = true;
+    // 注: battleBuffsは既に resolveOnlineBlock 冒頭で applyBattleBuffs 済み
 
-    // VS演出を相手にも送信
+    // VS演出を相手にも送信（バフ適用後のDPで送る）
     sendCommand({ type: 'fx_securityCheck', secName: blocker.name, secImg: cardImg(blocker), secDp: blocker.dp, secType: 'デジモン', atkName: atk.name, atkImg: cardImg(atk), atkDp: atk.dp, customLabel: 'BLOCK!' });
 
     showSC(blocker, atk, () => {
-      if (atk.dp === blocker.dp) {
+      // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
+      const _atkDp = atk.dp, _blkDp = blocker.dp;
+      removeBattleBuffs(battleBuffs);
+      if (_atkDp === _blkDp) {
         bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
         bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
         sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
@@ -956,7 +965,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
             addLog('💥 両者消滅！'); window._suppressFxSend = false; sendStateSync();
           }); });
         });
-      } else if (atk.dp > blocker.dp) {
+      } else if (_atkDp > _blkDp) {
         bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
         sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
         renderAll();
@@ -1046,5 +1055,5 @@ window._markBuffExpired = (cardName, type, duration) => markBuffExpired(cardName
 window._cleanupOnline = () => cleanupOnline();
 
 // battle-combat.jsの戦闘演出中フラグをwindow経由で公開
-import { isCombatAnimating } from './battle-combat.js?v=20260410-3';
+import { isCombatAnimating } from './battle-combat.js?v=20260411a';
 window._isCombatAnimating = isCombatAnimating;

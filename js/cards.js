@@ -1,5 +1,5 @@
 // カードデータ・画像管理（GAS API版）
-import { gasGet } from './firebase-config.js?v=20260410-3';
+import { gasGet } from './firebase-config.js?v=20260411a';
 
 // グローバルキャッシュ
 window.allCards = [];

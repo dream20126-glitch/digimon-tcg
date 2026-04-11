@@ -5,14 +5,14 @@
  */
 
 // --- 依存モジュール ---
-import { bs } from './battle-state.js?v=20260410-3';
-import { addLog } from './battle-ui.js?v=20260410-3';
-import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallbacks, doIkuMove } from './battle-render.js?v=20260410-3';
-import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks } from './battle-phase.js?v=20260410-3';
-import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, setCombatHooks } from './battle-combat.js?v=20260410-3';
-import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, loadAllDictionaries, registerFxRunners } from './effect-engine.js?v=20260410-3';
-import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxBuffStatus } from './battle-fx.js?v=20260410-3';
-import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js?v=20260410-3';
+import { bs } from './battle-state.js?v=20260411a';
+import { addLog } from './battle-ui.js?v=20260411a';
+import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallbacks, doIkuMove } from './battle-render.js?v=20260411a';
+import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks } from './battle-phase.js?v=20260411a';
+import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, setCombatHooks } from './battle-combat.js?v=20260411a';
+import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, loadAllDictionaries, registerFxRunners } from './effect-engine.js?v=20260411a';
+import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxBuffStatus } from './battle-fx.js?v=20260411a';
+import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js?v=20260411a';
 
 // ===== TRIGGER_CODE_MAP =====
 export const TRIGGER_CODE_MAP = {

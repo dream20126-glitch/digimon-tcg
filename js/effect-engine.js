@@ -1,6 +1,6 @@
 // 効果エンジン v2（効果辞書 + 効果アクション辞書 参照）
-import { gasGet } from './firebase-config.js?v=20260410-3';
-import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js?v=20260410-3';
+import { gasGet } from './firebase-config.js?v=20260411a';
+import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js?v=20260411a';
 
 // ===== 辞書データ =====
 let _triggerDict = [];  // 効果辞書（トリガー定義）

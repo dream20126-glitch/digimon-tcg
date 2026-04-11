@@ -5,27 +5,27 @@
  * シナリオベースで盤面を構築してオンライン同期付きでテストする
  */
 
-import { getCardImageUrl, loadCardAndKeywordData } from './cards.js?v=20260410-3';
+import { getCardImageUrl, loadCardAndKeywordData } from './cards.js?v=20260411a';
 // Phase 1: 状態管理
-import { bs, resetBattleState, drawCards } from './battle-state.js?v=20260410-3';
+import { bs, resetBattleState, drawCards } from './battle-state.js?v=20260411a';
 // Phase 2: UI・描画
-import { addLog, showConfirm, showScreen } from './battle-ui.js?v=20260410-3';
-import { renderAll, showBCD, closeBCD, showTrash, cardImg, updateMemGauge, setOnlineInfo, setIkuCallbacks, doIkuMove } from './battle-render.js?v=20260410-3';
+import { addLog, showConfirm, showScreen } from './battle-ui.js?v=20260411a';
+import { renderAll, showBCD, closeBCD, showTrash, cardImg, updateMemGauge, setOnlineInfo, setIkuCallbacks, doIkuMove } from './battle-render.js?v=20260411a';
 // Phase 3: フェーズ進行
-import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers, setFirstPlayer } from './battle-phase.js?v=20260410-3';
+import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers, setFirstPlayer } from './battle-phase.js?v=20260411a';
 // Phase 4: 戦闘
-import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, showGameEndOverlay, setCombatHooks, setCombatOnlineHandlers } from './battle-combat.js?v=20260410-3';
+import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, showGameEndOverlay, setCombatHooks, setCombatOnlineHandlers } from './battle-combat.js?v=20260411a';
 // Phase 5: 演出
-import { loadAllDictionaries, registerFxRunners } from './effect-engine.js?v=20260410-3';
-import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove } from './battle-fx.js?v=20260410-3';
-import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE } from './effect-engine.js?v=20260410-3';
+import { loadAllDictionaries, registerFxRunners } from './effect-engine.js?v=20260411a';
+import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove } from './battle-fx.js?v=20260411a';
+import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE } from './effect-engine.js?v=20260411a';
 // Phase 6: オンライン
-import { initOnline, startOnlineListener, sendCommand, sendStateSync, sendMemoryUpdate, cleanupOnline, isOnlineMode, setOnlineModules } from './battle-online.js?v=20260410-3';
+import { initOnline, startOnlineListener, sendCommand, sendStateSync, sendMemoryUpdate, cleanupOnline, isOnlineMode, setOnlineModules } from './battle-online.js?v=20260411a';
 // Firebase直接アクセス（シナリオ共有用）
-import { rtdb, ref, set, onValue } from './firebase-config.js?v=20260410-3';
+import { rtdb, ref, set, onValue } from './firebase-config.js?v=20260411a';
 
 // 共通コード
-import { makeEffectContext, checkTurnStartEffects, buildOnlineEffectHooks, setupCommonHooks } from './battle-common.js?v=20260410-3';
+import { makeEffectContext, checkTurnStartEffects, buildOnlineEffectHooks, setupCommonHooks } from './battle-common.js?v=20260411a';
 
 // ===== シナリオ定義 =====
 const SCENARIOS = {

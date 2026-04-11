@@ -5,13 +5,10 @@
  * 各render関数は対応するHTML要素にカード/ゲージを描画
  */
 
-import { bs, MEM_MIN, MEM_MAX } from './battle-state.js?v=20260410-3';
-import { updateScrollArrows, addLog } from './battle-ui.js?v=20260410-3';
-import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js?v=20260410-3';
-import { isTargetSelecting } from './effect-engine.js?v=20260410-3';
-
-// 戦闘演出中フラグ（battle-combat.jsから参照）
-function isCombatAnimating() { return window._isCombatAnimating ? window._isCombatAnimating() : false; }
+import { bs, MEM_MIN, MEM_MAX } from './battle-state.js?v=20260411a';
+import { updateScrollArrows, addLog } from './battle-ui.js?v=20260411a';
+import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js?v=20260411a';
+import { isTargetSelecting } from './effect-engine.js?v=20260411a';
 
 // ===== カード画像ヘルパー =====
 const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
@@ -49,7 +46,8 @@ export function renderAll(force) {
   setTimeout(updateScrollArrows, 0);
   // オンライン: 自分のターン中は定期的に状態同期（デバウンス500ms）
   // 戦闘演出中は同期しない（バチバチ防止）
-  if (_onlineMode && bs.isPlayerTurn && window._onlineSendStateSync && !isCombatAnimating()) {
+  // 戦闘演出中フラグ window._isCombatAnimating は battle-online.js が battle-combat.js から橋渡しして登録
+  if (_onlineMode && bs.isPlayerTurn && window._onlineSendStateSync && !(window._isCombatAnimating?.())) {
     if (_syncTimer) clearTimeout(_syncTimer);
     _syncTimer = setTimeout(() => window._onlineSendStateSync(), 500);
   }

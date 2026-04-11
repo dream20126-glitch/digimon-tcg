@@ -2176,6 +2176,11 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
       const before = card.buffs.length;
       const matching = card.buffs.filter(b => b.duration === timing);
       if (matching.length > 0) console.log('[expire-found]', side, card.name, matching.length, 'buffs');
+      // 詳細デバッグ: 全ての buff の duration を見せる（match しなかった理由を追跡）
+      if (card.buffs.length > 0 && (timing === 'dur_next_own_turn' || timing === 'dur_this_turn')) {
+        const buffDurations = card.buffs.map(b => `${b.type}:[${JSON.stringify(b.duration)}](appliedSide=${b._appliedSide},dOwn=${b._appliedDuringOwnTurn})`).join('|');
+        console.log('[expire-debug]', side, card.name, 'timing=' + JSON.stringify(timing), 'buffs:', buffDurations);
+      }
       if (timing === 'permanent') {
         if (ownerSide) {
           if (side === ownerSide) {
@@ -2907,7 +2912,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           valid.push(i);
         }
-        if (valid.length === 0) { showEffectFailed(null, callback); return; }
+        console.log('[select opponent]', 'ctxSide=' + ctx.side, 'opponent.battleArea.length=' + opponent.battleArea.length, 'valid=' + valid.length, 'cards=' + opponent.battleArea.filter(c => c).map(c => c.name).join(','));
+        if (valid.length === 0) { console.log('[select opponent] FAILED: no valid targets'); showEffectFailed(null, callback); return; }
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
         showTargetSelection(rowId, valid, null, '#ff4444', (selectedIdx) => {
           if (selectedIdx !== null) {

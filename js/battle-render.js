@@ -5,10 +5,10 @@
  * 各render関数は対応するHTML要素にカード/ゲージを描画
  */
 
-import { bs, MEM_MIN, MEM_MAX } from './battle-state.js?v=20260411a';
-import { updateScrollArrows, addLog } from './battle-ui.js?v=20260411a';
-import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js?v=20260411a';
-import { isTargetSelecting } from './effect-engine.js?v=20260411a';
+import { bs, MEM_MIN, MEM_MAX } from './battle-state.js?v=20260411b';
+import { updateScrollArrows, addLog } from './battle-ui.js?v=20260411b';
+import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js?v=20260411b';
+import { isTargetSelecting } from './effect-engine.js?v=20260411b';
 
 // ===== カード画像ヘルパー =====
 const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');

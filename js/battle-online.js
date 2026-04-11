@@ -5,11 +5,11 @@
  * オフライン（AI対戦）時は全関数がno-opで安全
  */
 
-import { bs } from './battle-state.js?v=20260411a';
-import { addLog, showScreen } from './battle-ui.js?v=20260411a';
-import { renderAll, updateMemGauge, cardImg } from './battle-render.js?v=20260411a';
-import { rtdb, ref, set, onValue, remove } from './firebase-config.js?v=20260411a';
-import { applyBattleBuffs, removeBattleBuffs } from './battle-combat.js?v=20260411a';
+import { bs } from './battle-state.js?v=20260411b';
+import { addLog, showScreen } from './battle-ui.js?v=20260411b';
+import { renderAll, updateMemGauge, cardImg } from './battle-render.js?v=20260411b';
+import { rtdb, ref, set, onValue, remove } from './firebase-config.js?v=20260411b';
+import { applyBattleBuffs, removeBattleBuffs } from './battle-combat.js?v=20260411b';
 
 // ===== オンライン状態 =====
 let _onlineMode = false;
@@ -726,8 +726,9 @@ function onRemoteCommand(cmd) {
       // ブロック待ちオーバーレイがあれば先に消す（BLOCK!演出が見えるように）
       const blockWait = document.getElementById('_block-wait-overlay');
       if (blockWait && blockWait.parentNode) blockWait.parentNode.removeChild(blockWait);
-      const secCard = { name: cmd.secName, imgSrc: cmd.secImg, cardNo: cmd.secCardNo || '', dp: cmd.secDp, type: cmd.secType };
-      const atkCard = { name: cmd.atkName, imgSrc: cmd.atkImg, cardNo: cmd.atkCardNo || '', dp: cmd.atkDp };
+      // baseDp を含めて再構築（受信側でも formatDpDisplay が「元値+バフ」を表示できるように）
+      const secCard = { name: cmd.secName, imgSrc: cmd.secImg, cardNo: cmd.secCardNo || '', dp: cmd.secDp, baseDp: cmd.secBaseDp != null ? cmd.secBaseDp : cmd.secDp, type: cmd.secType };
+      const atkCard = { name: cmd.atkName, imgSrc: cmd.atkImg, cardNo: cmd.atkCardNo || '', dp: cmd.atkDp, baseDp: cmd.atkBaseDp != null ? cmd.atkBaseDp : cmd.atkDp };
       if (m.showSecurityCheck) enqueueFx((done) => m.showSecurityCheck(secCard, atkCard, () => { renderAll(); done(); }, cmd.customLabel || null));
       break;
     }
@@ -896,7 +897,8 @@ function checkOnlineBlock(cmd) {
     sendCommand({ type: 'block_response', blocked: false });
     return;
   }
-  const attacker = { name: cmd.atkName || '???', dp: cmd.atkDp || 0, imgSrc: cmd.atkImg || '' };
+  // baseDp を含めて再構築（showBlockConfirm 内の formatDpDisplay が「元値+バフ」を表示できるように）
+  const attacker = { name: cmd.atkName || '???', dp: cmd.atkDp || 0, baseDp: cmd.atkBaseDp != null ? cmd.atkBaseDp : (cmd.atkDp || 0), imgSrc: cmd.atkImg || '' };
   if (_modules.showBlockConfirm) {
     _modules.showBlockConfirm(bs.player.battleArea[blockerIndices[0]], attacker, (doBlock) => {
       if (!doBlock) { sendCommand({ type: 'block_response', blocked: false }); return; }
@@ -1055,5 +1057,5 @@ window._markBuffExpired = (cardName, type, duration) => markBuffExpired(cardName
 window._cleanupOnline = () => cleanupOnline();
 
 // battle-combat.jsの戦闘演出中フラグをwindow経由で公開
-import { isCombatAnimating } from './battle-combat.js?v=20260411a';
+import { isCombatAnimating } from './battle-combat.js?v=20260411b';
 window._isCombatAnimating = isCombatAnimating;

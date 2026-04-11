@@ -5,11 +5,11 @@
  * AI戦闘ロジック・戦闘演出を含む
  */
 
-import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js?v=20260411a';
-import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js?v=20260411a';
-import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js?v=20260411a';
-import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js?v=20260411a';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue } from './effect-engine.js?v=20260411a';
+import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js?v=20260411b';
+import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js?v=20260411b';
+import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js?v=20260411b';
+import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js?v=20260411b';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue } from './effect-engine.js?v=20260411b';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -339,7 +339,7 @@ export function resolveAttackTarget(target, targetIdx) {
   if (target === 'security') {
     // セキュリティアタック
     if (_onlineMode && _sendCommand) {
-      _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkImg: cardImg(atk) });
+      _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk) });
       afterAtkEffect(atk, atkSlotIdx, () => {
         if (typeof window._waitForBlockResponse === 'function') {
           window._waitForBlockResponse((resp) => {
@@ -370,7 +370,7 @@ export function resolveAttackTarget(target, targetIdx) {
       return;
     }
     if (_onlineMode && _sendCommand) {
-      _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkImg: cardImg(atk) });
+      _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk) });
       afterAtkEffect(atk, atkSlotIdx, () => {
         if (typeof window._waitForBlockResponse === 'function') {
           window._waitForBlockResponse((resp) => {
@@ -601,6 +601,21 @@ function getSecurityAttackCount(card) {
   return 1 + extra;
 }
 
+// ===== DP表示フォーマッタ =====
+// バトル内のDP表示を「元値+バフ」形式で統一
+// 例: バフなし → "7000", DP+1000 → "7000+1000", DP-2000 → "7000-2000"
+// 元値の優先順: _origDp(セキュリティバフ用) > baseDp(永続/バトル中バフ用) > 現在値
+export function formatDpDisplay(card) {
+  if (!card) return '0';
+  const cur = parseInt(card.dp) || 0;
+  const baseRaw = (card._origDp != null) ? card._origDp : (card.baseDp != null ? card.baseDp : cur);
+  const base = parseInt(baseRaw) || 0;
+  const mod = cur - base;
+  if (mod === 0) return String(cur);
+  if (mod > 0) return base + '+' + mod;
+  return base + '' + mod; // modが負の場合は自動的に "5000-2000" となる
+}
+
 // セキュリティバフ適用
 function applySecurityBuffs(sec, ownerSide) {
   const buffs = bs._securityBuffs;
@@ -614,7 +629,7 @@ function applySecurityBuffs(sec, ownerSide) {
   });
   if (bonus !== 0) {
     sec.dp = sec._origDp + bonus;
-    addLog('🛡 セキュリティバフ適用: 「' + sec.name + '」DP ' + sec._origDp + ' → ' + sec.dp);
+    addLog('🛡 セキュリティバフ適用: 「' + sec.name + '」DP ' + formatDpDisplay(sec));
   }
 }
 
@@ -680,7 +695,7 @@ export function removeBattleBuffs(applied) {
 export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
   showCombatBackdrop();
   const battleBuffs = applyBattleBuffs(atk, def);
-  addLog('⚔ 「' + atk.name + '」(' + atk.dp + 'DP) vs 「' + def.name + '」(' + def.dp + 'DP)');
+  addLog('⚔ 「' + atk.name + '」(DP ' + formatDpDisplay(atk) + ') vs 「' + def.name + '」(DP ' + formatDpDisplay(def) + ')');
 
   function destroyDef() {
     if (defSide === 'ai') {
@@ -727,7 +742,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
   const origCb = callback;
   callback = () => { hideCombatBackdrop(); origCb(); };
   const battleBuffs = applyBattleBuffs(atk, def);
-  addLog('⚔ 「' + atk.name + '」(' + atk.dp + 'DP) vs 「' + def.name + '」(' + def.dp + 'DP)');
+  addLog('⚔ 「' + atk.name + '」(DP ' + formatDpDisplay(atk) + ') vs 「' + def.name + '」(DP ' + formatDpDisplay(def) + ')');
   showSecurityCheck(def, atk, () => {
     // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
     const _atkDp = atk.dp, _defDp = def.dp;
@@ -774,7 +789,7 @@ export function showBlockConfirm(blocker, attacker, callback) {
   nameEl.style.color = '#ff2222';
   nameEl.style.textShadow = '0 0 10px #ff0000, 0 0 20px #ff000088';
   nameEl.style.fontSize = '1.2rem';
-  textEl.innerText = '相手の「' + (attacker ? attacker.name : '???') + '」(DP:' + (attacker ? attacker.dp : '?') + ')がアタックしてきました！';
+  textEl.innerText = '相手の「' + (attacker ? attacker.name : '???') + '」(DP:' + (attacker ? formatDpDisplay(attacker) : '?') + ')がアタックしてきました！';
   if (questionEl) questionEl.innerText = 'ブロックしますか？';
   if (imgEl) imgEl.style.display = 'none';
   overlay.style.display = 'flex';
@@ -1339,7 +1354,12 @@ export function showOptionEffect(card, onDone) {
 // ----- セキュリティチェック演出 -----
 
 export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpen) {
-  if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_securityCheck', secName: secCard.name || '', secImg: cardImg(secCard), secCardNo: secCard.cardNo || '', secDp: parseInt(secCard.dp) || 0, secType: secCard.type || '', atkName: atkCard.name || '', atkImg: cardImg(atkCard), atkCardNo: atkCard.cardNo || '', atkDp: parseInt(atkCard.dp) || 0, customLabel: customLabel || '' });
+  if (_onlineMode && _sendCommand && !window._suppressFxSend) {
+    // バフ付きカードを受信側でも「元値+バフ」表示できるよう、baseDpを送る
+    const secBase = parseInt(secCard._origDp != null ? secCard._origDp : (secCard.baseDp != null ? secCard.baseDp : secCard.dp)) || 0;
+    const atkBase = parseInt(atkCard._origDp != null ? atkCard._origDp : (atkCard.baseDp != null ? atkCard.baseDp : atkCard.dp)) || 0;
+    _sendCommand({ type: 'fx_securityCheck', secName: secCard.name || '', secImg: cardImg(secCard), secCardNo: secCard.cardNo || '', secDp: parseInt(secCard.dp) || 0, secBaseDp: secBase, secType: secCard.type || '', atkName: atkCard.name || '', atkImg: cardImg(atkCard), atkCardNo: atkCard.cardNo || '', atkDp: parseInt(atkCard.dp) || 0, atkBaseDp: atkBase, customLabel: customLabel || '' });
+  }
   const overlay = document.getElementById('security-check-overlay');
   if (!overlay) { callback && callback(); return; }
 
@@ -1360,7 +1380,7 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
   const atkSrc = cardImg(atkCard);
   atkImgEl.innerHTML = atkSrc ? `<img src="${atkSrc}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#00fbff;padding:8px;">${atkCard.name}</div>`;
   atkNameEl.innerText = atkCard.name;
-  atkDpEl.innerText = 'DP: ' + atkCard.dp;
+  atkDpEl.innerText = 'DP: ' + formatDpDisplay(atkCard);
 
   const src = cardImg(secCard);
   imgEl.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#fff;padding:8px;">${secCard.name}</div>`;
@@ -1368,7 +1388,7 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
   const isDigimon = secCard.type === 'デジモン';
   const isOption = secCard.type === 'オプション';
   const isTamer = secCard.type === 'テイマー';
-  typeEl.innerText = isDigimon ? 'DP: ' + secCard.dp : isOption ? 'セキュリティ効果' : isTamer ? 'テイマー登場' : '';
+  typeEl.innerText = isDigimon ? 'DP: ' + formatDpDisplay(secCard) : isOption ? 'セキュリティ効果' : isTamer ? 'テイマー登場' : '';
 
   label.innerText = customLabel || 'SECURITY CHECK!';
   overlay.style.display = 'flex';

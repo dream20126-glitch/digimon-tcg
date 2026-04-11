@@ -534,10 +534,11 @@ function executeQueueEntry(entry, context, callback) {
         callback();
       };
       // レシピがあればレシピ実行、なければ従来処理
-      // 進化元効果のレシピは _recipeCard に格納されている
+      // 進化元効果のレシピは _recipeCard に格納されている → inEvoSource=true で参照
       const recipeCard = block._recipeCard || card;
+      const isEvoSourceLookup = !!block._recipeCard;
       const trigCode = block.trigger ? block.trigger.code : null;
-      const recipe = getRecipeForTrigger(recipeCard, trigCode);
+      const recipe = getRecipeForTrigger(recipeCard, trigCode, isEvoSourceLookup);
       if (recipe) {
         runRecipe(recipe, ctx, wrappedCallback);
       } else {
@@ -571,8 +572,9 @@ function executeQueueEntry(entry, context, callback) {
   //     条件を満たす相手デジモンがいない場合、ポップアップ自体を出さない
   {
     const recipeCardForCheck = block._recipeCard || card;
+    const isEvoSourceCheck = !!block._recipeCard;
     const trigCodeForCheck = block.trigger ? block.trigger.code : null;
-    const recipeForCheck = trigCodeForCheck ? getRecipeForTrigger(recipeCardForCheck, trigCodeForCheck) : null;
+    const recipeForCheck = trigCodeForCheck ? getRecipeForTrigger(recipeCardForCheck, trigCodeForCheck, isEvoSourceCheck) : null;
     if (recipeForCheck && Array.isArray(recipeForCheck)) {
       const willExecute = recipeWillExecuteAnything(recipeForCheck, { card, bs: context.bs, side: actualSide });
       if (!willExecute) {
@@ -2799,8 +2801,8 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
       if (sourceCard.stack) {
         sourceCard.stack.forEach(evoCard => {
           if (!evoCard.evoSourceEffect || evoCard.evoSourceEffect === 'なし') return;
-          // レシピがある場合はレシピを優先
-          const evoRecipeSteps = getRecipeForTrigger(evoCard, triggerCode);
+          // レシピがある場合はレシピを優先（進化元コンテキストなので inEvoSource=true）
+          const evoRecipeSteps = getRecipeForTrigger(evoCard, triggerCode, true);
           if (evoRecipeSteps) {
             // レシピを実行するためのダミーブロックをキューに追加
             const dummyBlock = {
@@ -2897,16 +2899,30 @@ function getRecipeForCard(card, triggerCode) {
 }
 
 // カードからトリガーに対応するレシピを取得
-function getRecipeForTrigger(card, triggerCode) {
+//
+// 引数:
+//   card:        対象カード
+//   triggerCode: トリガーコード（on_attack 等）
+//   inEvoSource: true → evo_source 階層のみ参照（このカードが他カードの進化元として
+//                       見られている時）
+//                false (default) → top-level のみ参照（このカードがメインとして
+//                       見られている時）
+//
+// 注意: フォールバック検索（top-level → evo_source）は意図しない発動の原因になるため
+// 廃止。呼び出し側は inEvoSource を明示する。
+function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
   if (!card.recipe) return null;
   try {
     // 制御文字(改行等)＋直後の空白を除去（スプレッドシートのセル内改行対策）
     const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
     const recipes = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    // { "main": [...], "on_attack": [...] } 形式
+    if (inEvoSource) {
+      // 進化元コンテキスト: evo_source.X のみ（top-level は見ない）
+      if (recipes['evo_source'] && recipes['evo_source'][triggerCode]) return recipes['evo_source'][triggerCode];
+      return null;
+    }
+    // メインコンテキスト: top-level のみ
     if (recipes[triggerCode]) return recipes[triggerCode];
-    // evo_sourceラッパー内のトリガーも探す（進化元効果のレシピ対応）
-    if (recipes['evo_source'] && recipes['evo_source'][triggerCode]) return recipes['evo_source'][triggerCode];
     // セキュリティ効果でuse_main_effectの場合、mainレシピを返す
     if (triggerCode === 'security' && recipes['main']) {
       // セキュリティ効果テキストに「メイン効果を発揮」があるか確認

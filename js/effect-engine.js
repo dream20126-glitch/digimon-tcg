@@ -1124,6 +1124,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'use_main_effect': {
       // mainレシピがあればレシピ優先（テキスト解析よりも正確）
       const mainRecipe = getRecipeForCard(ctx.card, 'main');
+      console.log('[use_main_effect]', 'card=' + (ctx.card && ctx.card.name), 'recipe type=' + typeof (ctx.card && ctx.card.recipe), 'recipe value=', ctx.card && ctx.card.recipe, 'mainRecipe=', mainRecipe, 'isArray=' + Array.isArray(mainRecipe), 'length=' + (mainRecipe && mainRecipe.length));
       if (mainRecipe) {
         ctx.addLog('✦ 「' + ctx.card.name + '」の【メイン】効果を発揮！');
         runRecipe(mainRecipe, ctx, callback);
@@ -2856,12 +2857,14 @@ function recipeWillExecuteAnything(recipe, ctx) {
 function runRecipe(steps, ctx, callback) {
   const store = {}; // ステップ間データ受け渡し用
   let idx = 0;
+  console.log('[runRecipe]', 'card=' + (ctx.card && ctx.card.name), 'steps.length=' + (steps && steps.length), 'isArray=' + Array.isArray(steps), 'first=', steps && steps[0]);
 
   function nextStep(success) {
     // コスト不足等で効果不発
-    if (success === false) { ctx.renderAll(); callback && callback(); return; }
-    if (idx >= steps.length) { ctx.renderAll(); callback && callback(); return; }
+    if (success === false) { console.log('[runRecipe] aborted (success=false)'); ctx.renderAll(); callback && callback(); return; }
+    if (idx >= steps.length) { console.log('[runRecipe] completed all steps'); ctx.renderAll(); callback && callback(); return; }
     const step = steps[idx++];
+    console.log('[runRecipe] executing step', idx, 'action=' + step.action, 'target=' + step.target);
     executeRecipeStep(step, ctx, store, nextStep);
   }
   nextStep();

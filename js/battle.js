@@ -187,7 +187,15 @@ function animateSecuritySet(callback) {
 window.acceptHand = function() {
   document.getElementById('mulligan-overlay').style.display = 'none';
   bs.player.security = bs.player.deck.splice(0, 5);
-  bs.ai.security = bs.ai.deck.splice(0, 5);
+  // 相手のセキュリティ:
+  // - オフライン: 自分でAIのセキュリティをセット
+  // - オンライン: 相手から security_init で送られてくる
+  //   既にsecurity_initが届いて bs._aiSecuritySynced=true なら、ローカル推測で上書きしない
+  //   （上書きすると相手側のデバッグ仕込み等が消えて不整合になる）
+  const aiSecGuess = bs.ai.deck.splice(0, 5);
+  if (!isOnlineMode() || !bs._aiSecuritySynced) {
+    bs.ai.security = aiSecGuess;
+  }
 
   // === デバッグ: セキュリティの先頭にテイマーを仕込む ===
   if (window._DEBUG_TAMER_IN_SECURITY) {

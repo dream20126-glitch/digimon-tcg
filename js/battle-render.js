@@ -130,16 +130,21 @@ function renderBattleRows() {
           html += `<div style="position:absolute;top:1px;right:2px;background:rgba(0,0,0,0.8);color:#ffaa00;font-size:6px;padding:1px 2px;border-radius:2px;">${card.stack.length}枚</div>`;
         }
 
-        // Sアタック+表示（左上）— 自分のターンのみ表示（永続効果は自分のターンのみ有効）
+        // Sアタック+/-表示（左上）— 自分のターンのみ表示（永続効果は自分のターンのみ有効）
         const isMySide = (side === 'pl');
         const isMyTurn = bs.isPlayerTurn;
-        const showSA = isMySide ? isMyTurn : !isMyTurn; // 自分のターンのみSA+有効
+        const showSA = isMySide ? isMyTurn : !isMyTurn; // 自分のターンのみSA+/-有効
         let saExtra = 0;
         if (showSA) {
         if (card._permEffects && card._permEffects.securityAttackPlus) saExtra += card._permEffects.securityAttackPlus;
-        if (card.buffs) card.buffs.forEach(b => { if (b.type === 'security_attack_plus') saExtra += (parseInt(b.value) || 0); });
+        if (card.buffs) card.buffs.forEach(b => {
+          if (b.type === 'security_attack_plus') saExtra += (parseInt(b.value) || 0);
+          if (b.type === 'security_attack_minus') saExtra -= (parseInt(b.value) || 0);
+        });
         if (saExtra > 0) {
           html += `<div style="position:absolute;top:1px;left:2px;background:rgba(255,0,0,0.8);color:#fff;font-size:6px;padding:1px 3px;border-radius:2px;">チェック+${saExtra}</div>`;
+        } else if (saExtra < 0) {
+          html += `<div style="position:absolute;top:1px;left:2px;background:rgba(0,128,255,0.85);color:#fff;font-size:6px;padding:1px 3px;border-radius:2px;">チェック${saExtra}</div>`;
         }
         } // end if (showSA)
 

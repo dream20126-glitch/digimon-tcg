@@ -9,7 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue, fireOnDestroyTriggers as _fireOnDestroy } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -429,8 +429,15 @@ export function resolveSecurityCheck(atk, atkIdx) {
   let checksRemaining = totalChecks;
   let checkNumber = 0;
   if (totalChecks > 1) addLog('⚔ セキュリティチェック x' + totalChecks + '！');
+  if (totalChecks === 0) addLog('🛡 「' + atk.name + '」のセキュリティチェック数が0のため、セキュリティをチェックしません');
 
   function startChecks() {
+    if (totalChecks === 0) {
+      // SA- で0回チェック → セキュリティを1枚も捲らずアタック終了
+      hideCombatBackdrop();
+      checkAttackEnd(atk, atkIdx);
+      return;
+    }
     if (bs.ai.security.length > 0) {
       doNextCheck();
     } else {
@@ -483,6 +490,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
           bs.ai.trash.push(sec);
           removeOwnCard(atkIdx, 'destroy');
           renderAll(); _dispatchStateSync();
+          try { _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
           showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
             showDestroyEffect(sec, () => { showDestroyEffect(atk, () => {
               addLog('💥 両者消滅！'); _dispatchStateSync(); checkPendingTurnEnd();
@@ -504,6 +512,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
           removeOwnCard(atkIdx, 'destroy');
           bs.ai.trash.push(sec);
           renderAll(); _dispatchStateSync();
+          try { _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
           showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された', () => {
             showDestroyEffect(atk, () => {
               addLog('✗ セキュリティに敗北'); _dispatchStateSync(); checkPendingTurnEnd();
@@ -532,7 +541,16 @@ export function resolveSecurityCheck(atk, atkIdx) {
       setTimeout(() => {
         if (hasSecField || hasSecInEffect) {
           const doFinishSec = () => {
-            bs.ai.trash.push(sec); renderAll(); _dispatchStateSync();
+            // ヘブンズゲート/ヘブンズチャーム等: セキュリティ効果で「このカードを手札に加える」
+            // が実行されると sec._returnToHand = true がセットされる
+            if (sec._returnToHand) {
+              delete sec._returnToHand;
+              bs.ai.hand.push(sec);
+              addLog('🃏 相手は「' + sec.name + '」を手札に加えた');
+            } else {
+              bs.ai.trash.push(sec);
+            }
+            renderAll(); _dispatchStateSync();
             if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
             else { checkAttackEnd(atk, atkIdx); }
           };
@@ -596,9 +614,13 @@ function getSecurityAttackCount(card) {
   // レシピベースの_permEffectsのみ使用
   if (card._permEffects && card._permEffects.securityAttackPlus) extra += card._permEffects.securityAttackPlus;
   if (card.buffs && card.buffs.length > 0) {
-    card.buffs.forEach(b => { if (b.type === 'security_attack_plus') extra += (parseInt(b.value) || 0); });
+    card.buffs.forEach(b => {
+      if (b.type === 'security_attack_plus') extra += (parseInt(b.value) || 0);
+      if (b.type === 'security_attack_minus') extra -= (parseInt(b.value) || 0);
+    });
   }
-  return 1 + extra;
+  // SA- で0以下になる可能性あり（その場合セキュリティチェック0回）
+  return Math.max(0, 1 + extra);
 }
 
 // ===== DP表示フォーマッタ =====
@@ -706,9 +728,13 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
         _sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: defIdx, reason: 'destroy' });
         if (window._markDestroyed) window._markDestroyed('ai', defIdx);
       }
+      try { _fireOnDestroy('ai', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
     }
   }
-  function destroyAtk() { removeOwnCard(atkIdx, 'destroy'); }
+  function destroyAtk() {
+    removeOwnCard(atkIdx, 'destroy');
+    try { _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
+  }
 
   showSecurityCheck(def, atk, () => {
     // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
@@ -753,6 +779,8 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
       bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
       if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
       renderAll();
+      try { _fireOnDestroy('ai', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
+      try { _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
       showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
         showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => { addLog('💥 両者消滅！'); renderAll(); callback(); }, '両者消滅', '#ff4444');
       }); });
@@ -760,6 +788,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
       bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
       if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
       renderAll();
+      try { _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
       showDestroyEffect(def, () => {
         showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); }, 'Win!!', '#00ff88');
       });
@@ -767,6 +796,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
       bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
       if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
       renderAll();
+      try { _fireOnDestroy('ai', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
       showDestroyEffect(atk, () => {
         showBattleResult('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => { addLog('💥 「' + atk.name + '」を撃破！'); renderAll(); callback(); }, 'Lost...', '#ff4444');
       });
@@ -931,6 +961,14 @@ export function aiAttackPhase(callback) {
 
 export function doAiSecurityCheck(atk, atkIdx, callback) {
   showCombatBackdrop();
+  // Sアタック-Nでチェック数が0になっている場合はセキュリティを捲らずアタック終了
+  const aiTotalChecks = getSecurityAttackCount(atk);
+  if (aiTotalChecks === 0) {
+    addLog('🛡 「' + atk.name + '」のセキュリティチェック数が0のため、セキュリティをチェックしません');
+    hideCombatBackdrop();
+    setTimeout(() => aiAttackPhase(callback), 800);
+    return;
+  }
   if (bs.player.security.length > 0) {
     const sec = bs.player.security.splice(0, 1)[0];
     applySecurityBuffs(sec, 'player');
@@ -940,11 +978,13 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
           bs.player.trash.push(sec);
+          try { _fireOnDestroy('ai', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
           showDestroyEffect(atk, () => { addLog('💥 両者消滅！'); renderAll(); setTimeout(() => aiAttackPhase(callback), 800); });
         } else if (sec.dp > atk.dp) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
           bs.player.trash.push(sec);
+          try { _fireOnDestroy('ai', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
           showDestroyEffect(atk, () => { addLog('💥 「' + atk.name + '」が撃破された'); renderAll(); setTimeout(() => aiAttackPhase(callback), 800); });
         } else {
           bs.player.trash.push(sec);
@@ -971,7 +1011,14 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
             const mentionsMain = /このカードの\s*【メイン】\s*効果/.test(secText);
             const doFinish = () => {
               sec.effect = originalEffect;
-              bs.player.trash.push(sec); renderAll();
+              if (sec._returnToHand) {
+                delete sec._returnToHand;
+                bs.player.hand.push(sec);
+                addLog('🃏 「' + sec.name + '」を手札に加えた');
+              } else {
+                bs.player.trash.push(sec);
+              }
+              renderAll();
               setTimeout(() => aiAttackPhase(callback), 800);
             };
             if (mentionsMain && originalEffect.includes('【メイン】')) {

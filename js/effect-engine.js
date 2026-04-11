@@ -1168,6 +1168,52 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
 
+    case 'security_attack_minus': {
+      // 期間付きでSアタック-Nを付与（相手デジモン対象）
+      const smVal = action.value || 1;
+      const smDur = normalizeRecipeDuration((ctx.block && ctx.block.duration && ctx.block.duration.code) || 'dur_this_turn');
+      const smTarget = defaultTarget || { code: 'target_opponent', count: 1 };
+      const applySM = (tgt) => {
+        if (!tgt) return;
+        addBuffDirect(tgt, 'security_attack_minus', smVal, smDur, ctx);
+        console.log('[grant-SA-]', tgt.name, 'val=' + smVal, 'dur=' + smDur, 'appliedSide=' + ctx.side, 'isPlayerTurn=' + ctx.bs.isPlayerTurn);
+        ctx.addLog('⚔ 「' + tgt.name + '」にSアタック-' + smVal + '（' + smDur + '）');
+      };
+      // 全体対象
+      if (smTarget.code === 'target_all_opponent') {
+        opponent.battleArea.forEach(c => { if (c) applySM(c); });
+        ctx.renderAll();
+        callback && callback();
+        break;
+      }
+      // 単体対象（相手1体）
+      const smTargets = [];
+      for (let i = 0; i < opponent.battleArea.length; i++) {
+        if (opponent.battleArea[i]) smTargets.push(i);
+      }
+      if (smTargets.length === 0) {
+        ctx.addLog('⚠ 対象がいません');
+        showEffectFailed('効果を発動できませんでした', callback);
+        break;
+      }
+      if (effectiveSide === 'ai') {
+        const ai = ctx._forceTargetIdx ?? smTargets[0];
+        applySM(opponent.battleArea[ai]);
+        ctx.renderAll();
+        callback && callback();
+        break;
+      }
+      ctx.addLog('🎯 Sアタック-' + smVal + 'の対象を選んでください');
+      showTargetSelection(opponentRowSide, smTargets, null, uiColor, (selectedIdx) => {
+        if (selectedIdx !== null) {
+          applySM(opponent.battleArea[selectedIdx]);
+        }
+        ctx.renderAll();
+        callback && callback();
+      });
+      break;
+    }
+
     // === レストさせる ===
     case 'rest': {
       const restTarget = defaultTarget || { code: 'target_opponent' };
@@ -1293,6 +1339,16 @@ function runOneAction(action, defaultTarget, ctx, callback) {
 
     // === 手札に加える（deck_open後の選択カードを手札に） ===
     case 'add_to_hand': {
+      const ahTarget = defaultTarget || { code: 'target_self' };
+      // target:"self" → セキュリティ効果で「このカードを手札に加える」
+      // ctx.card に _returnToHand フラグを立てるだけ。実際の hand 移動は
+      // doFinishSec / doFinish でセキュリティ処理完了時に行う
+      if (ahTarget.code === 'target_self' && ctx.card) {
+        ctx.card._returnToHand = true;
+        ctx.addLog('🃏 「' + ctx.card.name + '」を手札に加える（セキュリティ効果終了時）');
+        ctx.renderAll(); callback();
+        break;
+      }
       // deck_openで_openedCardsに残っている選択済みカードを手札に
       if(ctx._selectedOpenCards && ctx._selectedOpenCards.length > 0) {
         ctx._selectedOpenCards.forEach(c => {
@@ -1401,6 +1457,10 @@ function doDestroy(targetSide, slotIdx, ctx) {
     if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
   }
   ctx.renderAll();
+  // on_destroy グローバル発火（消滅した側を引数に）
+  // targetSide オブジェクトから 'player' / 'ai' を逆引き
+  const destroyedSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
+  fireOnDestroyTriggers(destroyedSideName, ctx.bs, ctx);
 }
 
 function doBounce(targetSide, slotIdx, ctx) {
@@ -2475,6 +2535,21 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_lv_ge': if (parseInt(card.level) < (cond.value || 0)) return false; break;
       case 'cond_cost_le': if ((card.playCost || card.cost || 0) > (cond.value || 0)) return false; break;
       case 'cond_cost_ge': if ((card.playCost || card.cost || 0) < (cond.value || 0)) return false; break;
+      case 'cond_own_security_le': if (bs && bs[side] && bs[side].security && bs[side].security.length > (cond.value || 0)) return false; break;
+      case 'cond_own_security_ge': if (bs && bs[side] && bs[side].security && bs[side].security.length < (cond.value || 0)) return false; break;
+      case 'cond_during_own_turn': {
+        // 「自分のターン」中のみ true。bs.isPlayerTurn の判定を side と照合
+        if (!bs) break;
+        const myTurn = (side === 'player' && bs.isPlayerTurn) || (side === 'ai' && !bs.isPlayerTurn);
+        if (!myTurn) return false;
+        break;
+      }
+      case 'cond_during_opp_turn': {
+        if (!bs) break;
+        const myTurn = (side === 'player' && bs.isPlayerTurn) || (side === 'ai' && !bs.isPlayerTurn);
+        if (myTurn) return false;
+        break;
+      }
       case 'cond_exists': {
         // 「～がいるとき」「～がいる間」→ 相手バトルエリアに条件を満たすカードがいるか
         if (!bs) break; // bsがない場合はスキップ（後方互換）
@@ -2511,6 +2586,7 @@ function checkConditions(conditions, card, bs, side) {
 
 function checkPendingDestroys(ctx) {
   let destroyed = false;
+  const destroyedSides = []; // on_destroy 発火用に消滅側を記録
   ['player', 'ai'].forEach(side => {
     const area = ctx.bs[side].battleArea;
     for (let i = 0; i < area.length; i++) {
@@ -2521,6 +2597,7 @@ function checkPendingDestroys(ctx) {
         if (card.stack) card.stack.forEach(s => ctx.bs[side].trash.push(s));
         ctx.addLog('💀 「' + card.name + '」消滅');
         destroyed = true;
+        destroyedSides.push(side);
         // オンライン: DP0消滅を即時通知（state_sync遅延による復活を防止）
         if (window._isOnlineMode && window._isOnlineMode()) {
           if (side === 'ai') {
@@ -2538,6 +2615,8 @@ function checkPendingDestroys(ctx) {
   if (destroyed && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
     window._onlineSendStateSync();
   }
+  // on_destroy グローバル発火（消滅した各カードについて反対側を発火）
+  destroyedSides.forEach(s => fireOnDestroyTriggers(s, ctx.bs, ctx));
 }
 
 // ===== 効果発動アナウンス（カード画像＋効果テキストを数秒表示） =====
@@ -2836,6 +2915,65 @@ function getRecipeForTrigger(card, triggerCode) {
     }
     return null;
   } catch(e) { return null; }
+}
+
+// ===== on_destroy グローバル発火 =====
+// デジモン消滅時に呼ぶ。消滅したデジモンの「相手側」のカード（バトルエリア + 進化元）を
+// スキャンし、on_destroy レシピがあれば発動する。
+// トコモン/パタモン等「相手のデジモンが消滅したとき」効果のためのフック。
+//
+// 引数:
+//   destroyedSide: 'player' | 'ai' — 消滅したカードがあった側
+//   bs:            battle state
+//   ctxBase:       元の context（addLog/renderAll/updateMemGauge 等を引き継ぐ）
+export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase) {
+  if (!bs) return;
+  // 反対側 = リアクション側
+  const reactSide = destroyedSide === 'player' ? 'ai' : 'player';
+  const reactPlayer = bs[reactSide];
+  if (!reactPlayer || !reactPlayer.battleArea) return;
+
+  reactPlayer.battleArea.forEach((carrier) => {
+    if (!carrier) return;
+    // 1) carrier 自身の on_destroy（main 階層）— 通常まれだが対応
+    const mainRecipe = getRecipeForTrigger(carrier, 'on_destroy');
+    // evo_source 内のレシピは getRecipeForTrigger で fallback ヒットするが、
+    // それは「carrier の」on_destroy であり、進化元カードごとに評価したい場合はここで個別にスキャン
+    // 2) 進化元カードそれぞれの on_destroy をスキャン
+    const evoRecipes = [];
+    if (carrier.stack) {
+      carrier.stack.forEach(evoCard => {
+        if (!evoCard || !evoCard.recipe) return;
+        try {
+          const raw = typeof evoCard.recipe === 'string'
+            ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
+          const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          const recipe = (r.evo_source && r.evo_source.on_destroy) || r.on_destroy;
+          if (recipe) evoRecipes.push({ evoCard, recipe });
+        } catch (_) { /* ignore parse errors here */ }
+      });
+    }
+
+    // carrier 自身の on_destroy（evo_source ラッパー越しでも getRecipeForTrigger がヒットする）
+    // → ただし evoRecipes と重複させないため、evoRecipes が空のときだけ採用
+    if (mainRecipe && evoRecipes.length === 0) {
+      const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: reactSide };
+      runRecipe(mainRecipe, ctx, () => { ctx.renderAll && ctx.renderAll(); });
+    }
+    // 進化元由来の on_destroy をそれぞれ実行（target:"self" は carrier を指す）
+    evoRecipes.forEach(({ evoCard, recipe }) => {
+      const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: reactSide, _evoSourceCard: evoCard };
+      runRecipe(recipe, ctx, () => { ctx.renderAll && ctx.renderAll(); });
+    });
+  });
+}
+
+// ctx の最小フィールドを構築（addLog/renderAll/updateMemGauge は ctxBase か window から拾う）
+function _buildBaseCtx(ctxBase, bs) {
+  const safeLog = (msg) => { try { (ctxBase && ctxBase.addLog) ? ctxBase.addLog(msg) : console.log(msg); } catch(_) {} };
+  const safeRender = () => { try { (ctxBase && ctxBase.renderAll) ? ctxBase.renderAll() : (window.renderAll && window.renderAll()); } catch(_) {} };
+  const safeMem = () => { try { (ctxBase && ctxBase.updateMemGauge) ? ctxBase.updateMemGauge() : (window.updateMemGauge && window.updateMemGauge()); } catch(_) {} };
+  return { bs, addLog: safeLog, renderAll: safeRender, updateMemGauge: safeMem };
 }
 
 // レシピが実行されるか事前判定（全ステップが条件で弾かれるか）

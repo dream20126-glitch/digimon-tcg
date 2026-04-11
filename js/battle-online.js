@@ -5,11 +5,11 @@
  * オフライン（AI対戦）時は全関数がno-opで安全
  */
 
-import { bs } from './battle-state.js?v=20260411b';
-import { addLog, showScreen } from './battle-ui.js?v=20260411b';
-import { renderAll, updateMemGauge, cardImg } from './battle-render.js?v=20260411b';
-import { rtdb, ref, set, onValue, remove } from './firebase-config.js?v=20260411b';
-import { applyBattleBuffs, removeBattleBuffs } from './battle-combat.js?v=20260411b';
+import { bs } from './battle-state.js?v=20260411c';
+import { addLog, showScreen } from './battle-ui.js?v=20260411c';
+import { renderAll, updateMemGauge, cardImg } from './battle-render.js?v=20260411c';
+import { rtdb, ref, set, onValue, remove } from './firebase-config.js?v=20260411c';
+import { applyBattleBuffs, removeBattleBuffs } from './battle-combat.js?v=20260411c';
 
 // ===== オンライン状態 =====
 let _onlineMode = false;
@@ -950,7 +950,10 @@ function resolveOnlineBlock(blockerIdx, cmd) {
     // 注: battleBuffsは既に resolveOnlineBlock 冒頭で applyBattleBuffs 済み
 
     // VS演出を相手にも送信（バフ適用後のDPで送る）
-    sendCommand({ type: 'fx_securityCheck', secName: blocker.name, secImg: cardImg(blocker), secDp: blocker.dp, secType: 'デジモン', atkName: atk.name, atkImg: cardImg(atk), atkDp: atk.dp, customLabel: 'BLOCK!' });
+    // baseDpも送って受信側の formatDpDisplay で「元値+バフ」表示できるようにする
+    const blockerBase = parseInt(blocker._origDp != null ? blocker._origDp : (blocker.baseDp != null ? blocker.baseDp : blocker.dp)) || 0;
+    const atkBase = parseInt(atk._origDp != null ? atk._origDp : (atk.baseDp != null ? atk.baseDp : atk.dp)) || 0;
+    sendCommand({ type: 'fx_securityCheck', secName: blocker.name, secImg: cardImg(blocker), secDp: blocker.dp, secBaseDp: blockerBase, secType: 'デジモン', atkName: atk.name, atkImg: cardImg(atk), atkDp: atk.dp, atkBaseDp: atkBase, customLabel: 'BLOCK!' });
 
     showSC(blocker, atk, () => {
       // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
@@ -1057,5 +1060,5 @@ window._markBuffExpired = (cardName, type, duration) => markBuffExpired(cardName
 window._cleanupOnline = () => cleanupOnline();
 
 // battle-combat.jsの戦闘演出中フラグをwindow経由で公開
-import { isCombatAnimating } from './battle-combat.js?v=20260411b';
+import { isCombatAnimating } from './battle-combat.js?v=20260411c';
 window._isCombatAnimating = isCombatAnimating;

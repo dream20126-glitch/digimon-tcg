@@ -5,11 +5,11 @@
  * AI戦闘ロジック・戦闘演出を含む
  */
 
-import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js?v=20260411b';
-import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js?v=20260411b';
-import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js?v=20260411b';
-import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js?v=20260411b';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue } from './effect-engine.js?v=20260411b';
+import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js?v=20260411c';
+import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js?v=20260411c';
+import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js?v=20260411c';
+import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js?v=20260411c';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue } from './effect-engine.js?v=20260411c';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能

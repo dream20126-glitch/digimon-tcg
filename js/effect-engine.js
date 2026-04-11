@@ -1,6 +1,6 @@
 // 効果エンジン v2（効果辞書 + 効果アクション辞書 参照）
-import { gasGet } from './firebase-config.js?v=20260411b';
-import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js?v=20260411b';
+import { gasGet } from './firebase-config.js?v=20260411c';
+import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js?v=20260411c';
 
 // ===== 辞書データ =====
 let _triggerDict = [];  // 効果辞書（トリガー定義）
@@ -277,6 +277,23 @@ function detectPerCountSource(effectText, entry) {
 }
 
 // 効果テキストから持続を検索
+// レシピ内の duration コード → エンジン内部の timing コードへ正規化
+// レシピは "this_turn" / "next_opp_turn_end" / "next_own_turn_end" を使うが、
+// expireBuffs は "dur_this_turn" / "dur_next_opp_turn" / "dur_next_own_turn" を期待する。
+// このマップで両者を繋ぐ。既に dur_ プレフィックス付きならそのまま返す。
+function normalizeRecipeDuration(code) {
+  if (!code) return code;
+  if (typeof code !== 'string') return code;
+  if (code.startsWith('dur_')) return code;
+  const map = {
+    'this_turn': 'dur_this_turn',
+    'next_opp_turn_end': 'dur_next_opp_turn',
+    'next_own_turn_end': 'dur_next_own_turn',
+    'permanent': 'permanent',
+  };
+  return map[code] || code;
+}
+
 function findDuration(effectText) {
   for (const entry of _actionDict) {
     if ((entry['アクションコード']||'').trim() && (entry['アクションコード']||'').trim().startsWith('dur_')) {
@@ -2186,8 +2203,28 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
     });
   });
   // セキュリティバフも同じtimingで期限切れ除去
+  // card.buffs と同じく付与本人のowner（=ctx.side）と endingSide を比較してサイド判定
   if (bs._securityBuffs && bs._securityBuffs.length > 0) {
-    bs._securityBuffs = bs._securityBuffs.filter(b => b.duration !== timing);
+    bs._securityBuffs = bs._securityBuffs.filter(b => {
+      if (b.duration !== timing) return true;
+      // dur_this_turn: 付与本人のターン終了時に削除
+      if (timing === 'dur_this_turn') {
+        return b.owner !== endingSide;
+      }
+      // dur_next_opp_turn: 付与本人とは違う陣営のターン終了時に削除
+      if (timing === 'dur_next_opp_turn') {
+        return b.owner === endingSide;
+      }
+      // dur_next_own_turn: 付与本人の次のターン終了で削除（tickベース）
+      if (timing === 'dur_next_own_turn') {
+        if (b.owner !== endingSide) return true; // 相手側ターン終了はカウントしない
+        b._ticks = (b._ticks || 0) + 1;
+        return b._ticks < 2; // 2tick目で削除（付与ターン終了 + 次の自分ターン終了）
+      }
+      // permanent も明示削除可
+      if (timing === 'permanent') return false;
+      return false; // フォールバック: 削除
+    });
   }
 }
 
@@ -3168,7 +3205,7 @@ function executeRecipeStep(step, ctx, store, callback) {
     case 'cant_attack':
     case 'cant_block':
     case 'cant_evolve': {
-      const dur = step.duration || (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn');
+      const dur = normalizeRecipeDuration(step.duration) || (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn');
       const storedData = step.card ? store[step.card] : null;
       const targets = storedData ? (Array.isArray(storedData) ? storedData : [storedData]) : null;
       if (targets && targets.length > 0) {
@@ -3188,7 +3225,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const action = { code: step.action, value: step.value || null };
         if (!ctx.block) ctx.block = {};
         if (step.duration) {
-          ctx.block.duration = { code: step.duration };
+          ctx.block.duration = { code: normalizeRecipeDuration(step.duration) };
         }
         // 条件をctx.blockに伝搬（対象フィルタリング用）
         if (step.condition) {
@@ -3203,7 +3240,7 @@ function executeRecipeStep(step, ctx, store, callback) {
     case 'grant_keyword': {
       const flag = step.flag;
       const val = step.value || 1;
-      const dur = step.duration || 'dur_this_turn';
+      const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
 
       // Resolve targets
       const resolveTargets = () => {
@@ -3274,9 +3311,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         else target = { code: 'target_' + t };
       }
       // 持続期間をctx.blockに設定（runOneAction内のapplyDpBuff等で参照）
+      // レシピのコード（this_turn等）→ エンジン内部コード（dur_this_turn等）に正規化
       if (step.duration) {
         if (!ctx.block) ctx.block = {};
-        ctx.block.duration = { code: step.duration };
+        ctx.block.duration = { code: normalizeRecipeDuration(step.duration) };
       }
       // 条件
       if (step.condition) {

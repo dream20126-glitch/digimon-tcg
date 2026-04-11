@@ -203,6 +203,76 @@ window.acceptHand = function() {
     }
   }
 
+  // === デバッグ: 任意のカードをセキュリティの1番上(=最初にめくれる位置)に仕込む ===
+  // 使い方:
+  //   コンソールで window._DEBUG_INSERT_SECURITY_TOP = 'シャドーウィング' と入力してから新しいバトルを開始
+  //   配列でも可: window._DEBUG_INSERT_SECURITY_TOP = ['シャドーウィング','スターライトエクスプロージョン']
+  //   後方互換: window._DEBUG_SHADOW_WING_IN_SECURITY = true でもシャドーウィングを仕込める
+  {
+    const debugNames = window._DEBUG_INSERT_SECURITY_TOP
+      ? (Array.isArray(window._DEBUG_INSERT_SECURITY_TOP) ? window._DEBUG_INSERT_SECURITY_TOP : [window._DEBUG_INSERT_SECURITY_TOP])
+      : (window._DEBUG_SHADOW_WING_IN_SECURITY ? ['シャドーウィング'] : []);
+    if (debugNames.length > 0) {
+      const side = bs.player;
+      // 配列順に unshift すると逆順に並ぶので、後ろから unshift して順序を保つ
+      for (let i = debugNames.length - 1; i >= 0; i--) {
+        const targetName = debugNames[i];
+        // ① まずデッキ/手札/セキュリティから探す
+        let card = null;
+        let foundIn = null;
+        const findIn = (arr) => {
+          const idx = arr.findIndex(c => c && c.name === targetName);
+          return idx !== -1 ? { arr, idx } : null;
+        };
+        let found = findIn(side.deck) || findIn(side.hand) || findIn(side.security);
+        if (found) {
+          card = found.arr.splice(found.idx, 1)[0];
+          foundIn = found.arr === side.deck ? 'デッキ' : found.arr === side.hand ? '手札' : 'セキュリティ';
+        } else {
+          // ② allCards から探して新規生成（パース処理は parseDeck と同じ形式）
+          const obj = (window.allCards || []).find(c => c['名前'] === targetName);
+          if (obj) {
+            const _f = (o, k1, k2) => o[k1] !== undefined ? o[k1] : o[k2];
+            const playCost = _f(obj, '登場コスト', '登場\nコスト');
+            const evolveCost = _f(obj, '進化コスト', '進化\nコスト');
+            const level = _f(obj, 'レベル', 'Lv');
+            const hasPlay = playCost !== undefined;
+            const hasEvolve = evolveCost !== undefined;
+            card = {
+              name: obj['名前'], cardNo: obj['カードNo'] || '', level: String(level ?? '?'),
+              dp: parseInt(obj['DP'] || 0), baseDp: parseInt(obj['DP'] || 0), dpModifier: 0,
+              playCost: hasPlay ? parseInt(playCost) : null,
+              evolveCost: hasEvolve ? parseInt(evolveCost) : null,
+              evolveCond: obj['進化条件'] || '',
+              cost: hasPlay ? parseInt(playCost) : hasEvolve ? parseInt(evolveCost) : 0,
+              effect: obj['効果テキスト'] || obj['効果'] || '',
+              evoSourceEffect: obj['進化元テキスト'] || obj['進化元効果'] || '',
+              securityEffect: obj['セキュリティテキスト'] || obj['セキュリティ効果'] || '',
+              recipe: obj['レシピ'] || obj['効果レシピ'] || null,
+              imageUrl: obj['ImageURL'] || '', imgSrc: getCardImageUrl(obj) || '',
+              type: obj['タイプ'] || '', color: obj['色'] || '', feature: obj['特徴'] || '',
+              stack: [], suspended: false, buffs: [],
+              cantBeActive: false, cantAttack: false, cantBlock: false,
+              summonedThisTurn: false, _pendingDestroy: false,
+            };
+            foundIn = 'allCards (新規生成)';
+          }
+        }
+        if (card) {
+          side.security.unshift(card);
+          console.log('[DEBUG] 「' + targetName + '」をセキュリティ1番上に仕込み (' + foundIn + ')');
+        } else {
+          console.error('[DEBUG] 「' + targetName + '」が見つかりません (allCards にも存在しない)');
+        }
+      }
+      // 5枚を超えた場合は末尾を切り捨て（公式ルールでは初期セキュリティは5枚）
+      if (side.security.length > 5) {
+        const removed = side.security.splice(5);
+        console.log('[DEBUG] 5枚超過分は破棄:', removed.map(c => c.name));
+      }
+    }
+  }
+
   // オンライン: 自分のセキュリティの実データを相手に送信（相手のbs.ai.securityを正しいデータで上書き）
   if (isOnlineMode()) {
     const serializeCard = (c) => {

@@ -3010,7 +3010,32 @@ export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase, done) {
     }
   });
 
-  if (reactions.length === 0) { finish(); return; }
+  // ★ 実行されないリアクションを事前に除外
+  // - once_per_turn が既に消費済み
+  // - 条件（cond_during_own_turn 等）を満たさない
+  // → 実行されないリアクションは選択 UI に出さない
+  const filtered = reactions.filter(({ sourceCard, recipe, carrier }) => {
+    if (!Array.isArray(recipe) || recipe.length === 0) return false;
+    return recipe.some(step => {
+      // 条件チェック
+      if (step.condition) {
+        const conds = parseRecipeCondition(step.condition);
+        if (!checkConditions(conds, carrier, bs, reactSide)) return false;
+      }
+      // ターンに1回制限チェック
+      if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
+        const sourceId = (sourceCard && (sourceCard.cardNo || sourceCard.name)) || 'unknown';
+        const carrierId = (carrier && (carrier.cardNo || carrier.name)) || 'unknown';
+        const limitKey = sourceId + '@' + carrierId + '_recipe_' + step.action;
+        if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
+      }
+      return true;
+    });
+  });
+
+  if (filtered.length === 0) { finish(); return; }
+  reactions.length = 0;
+  reactions.push(...filtered);
 
   // 残リアクション配列を消費していく
   const remaining = reactions.slice();
@@ -3631,11 +3656,17 @@ function executeRecipeStep(step, ctx, store, callback) {
     // === その他のアクション（既存エンジンに委譲） ===
     default: {
       // once_per_turn制限チェック（レシピ形式）
-      if ((step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') && ctx.bs && ctx.card) {
-        const limitKey = (ctx.card.cardNo || ctx.card.name) + '_recipe_' + step.action;
+      // 制限キーには **source card**（=evo card 等の本来の効果元）を含める。
+      // ctx._sourceCard があればそれを優先（fireOnDestroyTriggers から呼ばれた場合）
+      if ((step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') && ctx.bs) {
+        const sourceCard = ctx._sourceCard || ctx.card;
+        const sourceId = (sourceCard && (sourceCard.cardNo || sourceCard.name)) || 'unknown';
+        const carrierId = (ctx.card && (ctx.card.cardNo || ctx.card.name)) || 'unknown';
+        const limitKey = sourceId + '@' + carrierId + '_recipe_' + step.action;
         if (!ctx.bs._usedLimits) ctx.bs._usedLimits = {};
+        console.log('[limit-check]', 'key=' + limitKey, 'used=' + !!ctx.bs._usedLimits[limitKey], 'allKeys=' + JSON.stringify(Object.keys(ctx.bs._usedLimits)));
         if (ctx.bs._usedLimits[limitKey]) {
-          ctx.addLog && ctx.addLog('⏸ ターンに1回の制限（' + ctx.card.name + '）');
+          ctx.addLog && ctx.addLog('⏸ ターンに1回の制限（' + (sourceCard ? sourceCard.name : '?') + '）');
           callback && callback();
           break;
         }

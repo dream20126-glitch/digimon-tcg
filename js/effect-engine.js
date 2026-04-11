@@ -2389,6 +2389,11 @@ export function applyPermanentEffects(bs, side, context) {
     if (card.buffs) { card.buffs = card.buffs.filter(b => b.duration !== 'permanent'); recalcDp(card); }
     if (card._permEffects) card._permEffects = {};
   });
+  // 継続的（during_X）由来のセキュリティバフもクリア（再評価のため）
+  // source='recipe_perm_security' は applyPermanentEffects で毎回再構築される
+  if (bs._securityBuffs && bs._securityBuffs.length > 0) {
+    bs._securityBuffs = bs._securityBuffs.filter(b => !(b.source === 'recipe_perm_security' && b.owner === side));
+  }
 
   // ② 永続効果を全て再適用
   const allCards = [...(bs[side].battleArea.filter(c => c)), ...(bs[side].tamerArea || [])];
@@ -2441,6 +2446,15 @@ export function applyPermanentEffects(bs, side, context) {
                 if (!tgt.buffs) tgt.buffs = [];
                 tgt.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'recipe_perm' });
                 recalcDp(tgt);
+              });
+            } else if (target === 'own_security:all') {
+              // 高石タケル等: during_opp_turn で自分のセキュリティデジモン全体に DP+
+              // bs._securityBuffs に push（applySecurityBuffs/renderSecurity が参照）
+              if (!bs._securityBuffs) bs._securityBuffs = [];
+              bs._securityBuffs.push({
+                type: 'dp_plus', value: value, duration: 'permanent',
+                source: 'recipe_perm_security', owner: side,
+                _appliedDuringOwnTurn: false,
               });
             }
           } else if (step.action === 'security_attack_plus') {

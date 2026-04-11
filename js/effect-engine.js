@@ -2597,50 +2597,63 @@ function checkConditions(conditions, card, bs, side) {
 }
 
 // ===== 消滅チェック =====
-// callback: 消滅した全カードの on_destroy リアクションが完了したら呼ぶ
+// callback: 消滅した全カードの 演出 + on_destroy リアクションが完了したら呼ぶ
 
 function checkPendingDestroys(ctx, callback) {
-  let destroyed = false;
-  const destroyedSides = []; // on_destroy 発火用に消滅側を記録
+  // 消滅対象を「演出 → 削除 → on_destroy」の順で逐次処理する
   // ターンプレイヤー側を先に処理するため順序付き
   const turnPlayerSide = ctx.bs.isPlayerTurn ? 'player' : 'ai';
   const orderedSides = [turnPlayerSide, turnPlayerSide === 'player' ? 'ai' : 'player'];
+
+  // 1) 消滅対象カードを収集（まだ削除しない）
+  const pending = [];
   orderedSides.forEach(side => {
     const area = ctx.bs[side].battleArea;
     for (let i = 0; i < area.length; i++) {
       if (area[i] && area[i]._pendingDestroy) {
-        const card = area[i];
-        area[i] = null;
-        ctx.bs[side].trash.push(card);
-        if (card.stack) card.stack.forEach(s => ctx.bs[side].trash.push(s));
-        ctx.addLog('💀 「' + card.name + '」消滅');
-        destroyed = true;
-        destroyedSides.push(side);
-        // オンライン: DP0消滅を即時通知（state_sync遅延による復活を防止）
-        if (window._isOnlineMode && window._isOnlineMode()) {
-          if (side === 'ai') {
-            window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: i, reason: 'destroy' });
-            if (window._markDestroyed) window._markDestroyed('ai', i);
-          } else if (side === 'player') {
-            window._onlineSendCommand({ type: 'own_card_removed', slotIdx: i, reason: 'destroy' });
-          }
-        }
+        pending.push({ side, slot: i, card: area[i] });
       }
     }
   });
-  ctx.renderAll();
-  // 消滅があった場合は即時state_sync（デバウンスを待たず確実に同期）
-  if (destroyed && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
-    window._onlineSendStateSync();
+  if (pending.length === 0) { callback && callback(); return; }
+
+  // showDestroyEffect の取得（ctx 経由 or window フォールバック）
+  const showDE = (ctx && ctx.showDestroyEffect)
+    || (window.showDestroyEffect)
+    || ((c, cb) => cb && cb()); // フォールバック: 演出なし
+
+  // 2) 1枚ずつ処理: 演出 → trash 移動 → on_destroy
+  let idx = 0;
+  function processNext() {
+    if (idx >= pending.length) { callback && callback(); return; }
+    const { side, slot, card } = pending[idx++];
+    // 演出
+    showDE(card, () => {
+      // 削除（演出後に実際に消滅）
+      if (ctx.bs[side].battleArea[slot] === card) {
+        ctx.bs[side].battleArea[slot] = null;
+        ctx.bs[side].trash.push(card);
+        if (card.stack) card.stack.forEach(s => ctx.bs[side].trash.push(s));
+      }
+      ctx.addLog('💀 「' + card.name + '」消滅');
+      // オンライン: DP0消滅を即時通知（state_sync遅延による復活を防止）
+      if (window._isOnlineMode && window._isOnlineMode()) {
+        if (side === 'ai') {
+          window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slot, reason: 'destroy' });
+          if (window._markDestroyed) window._markDestroyed('ai', slot);
+        } else if (side === 'player') {
+          window._onlineSendCommand({ type: 'own_card_removed', slotIdx: slot, reason: 'destroy' });
+        }
+      }
+      ctx.renderAll();
+      if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
+        window._onlineSendStateSync();
+      }
+      // on_destroy リアクション → 完了 → 次の消滅へ
+      fireOnDestroyTriggers(side, ctx.bs, ctx, processNext);
+    });
   }
-  // on_destroy を逐次発火（ターンプレイヤー側優先）
-  let i = 0;
-  function fireNext() {
-    if (i >= destroyedSides.length) { callback && callback(); return; }
-    const s = destroyedSides[i++];
-    fireOnDestroyTriggers(s, ctx.bs, ctx, fireNext);
-  }
-  fireNext();
+  processNext();
 }
 
 // ===== 効果発動アナウンス（カード画像＋効果テキストを数秒表示） =====

@@ -137,8 +137,10 @@ function findCardByName(name) {
   const level = cardField(card, 'レベル', 'Lv');
   const playCost = cardField(card, '登場コスト', '登場\nコスト');
   const evolveCost = cardField(card, '進化コスト', '進化\nコスト');
-  const hasPlay = playCost !== undefined;
-  const hasEvolve = evolveCost !== undefined;
+  // 「なし」「-」等の文字列はコストなしとして null に正規化
+  const isNoCost = (v) => v === undefined || v === null || v === '' || v === 'なし' || v === '-';
+  const hasPlay = !isNoCost(playCost) && !isNaN(parseInt(playCost));
+  const hasEvolve = !isNoCost(evolveCost) && !isNaN(parseInt(evolveCost));
   return {
     name: card['名前'] || name,
     cardNo: card['カードNo'] || '',

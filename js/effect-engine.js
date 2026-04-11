@@ -3195,12 +3195,18 @@ function recipeWillExecuteAnything(recipe, ctx) {
   if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
   for (const step of recipe) {
     // 条件なし → 必ず実行される
-    if (!step.condition) return true;
+    if (!step.condition) {
+      console.log('[recipeWillExecute] step has no condition → true', 'action=' + step.action);
+      return true;
+    }
     // 条件あり → 評価
     const conds = parseRecipeCondition(step.condition);
-    if (checkConditions(conds, ctx.card, ctx.bs, ctx.side)) return true;
+    const result = checkConditions(conds, ctx.card, ctx.bs, ctx.side);
+    console.log('[recipeWillExecute]', 'action=' + step.action, 'condition=' + step.condition, 'parsed=' + JSON.stringify(conds), '→ ' + result);
+    if (result) return true;
   }
-  return false; // 全てのステップが条件で弾かれた
+  console.log('[recipeWillExecute] all steps blocked → false');
+  return false;
 }
 
 // レシピを順次実行

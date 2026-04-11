@@ -46,8 +46,10 @@ function parseDeck(deckData) {
     const playCost = _f(obj, '登場コスト', '登場\nコスト');
     const evolveCost = _f(obj, '進化コスト', '進化\nコスト');
     const level = _f(obj, 'レベル', 'Lv');
-    const hasPlay = playCost !== undefined;
-    const hasEvolve = evolveCost !== undefined;
+    // 「なし」「-」等の文字列はコストなしとして null に正規化
+    const isNoCost = (v) => v === undefined || v === null || v === '' || v === 'なし' || v === '-';
+    const hasPlay = !isNoCost(playCost) && !isNaN(parseInt(playCost));
+    const hasEvolve = !isNoCost(evolveCost) && !isNaN(parseInt(evolveCost));
     for (let i = 0; i < count; i++) out.push({
       name: obj["名前"] || m[1], cardNo, level: String(level ?? '?'),
       dp: parseInt(obj["DP"] || 0), baseDp: parseInt(obj["DP"] || 0), dpModifier: 0,
@@ -244,8 +246,9 @@ window.acceptHand = function() {
             const playCost = _f(obj, '登場コスト', '登場\nコスト');
             const evolveCost = _f(obj, '進化コスト', '進化\nコスト');
             const level = _f(obj, 'レベル', 'Lv');
-            const hasPlay = playCost !== undefined;
-            const hasEvolve = evolveCost !== undefined;
+            const isNoCost = (v) => v === undefined || v === null || v === '' || v === 'なし' || v === '-';
+            const hasPlay = !isNoCost(playCost) && !isNaN(parseInt(playCost));
+            const hasEvolve = !isNoCost(evolveCost) && !isNaN(parseInt(evolveCost));
             card = {
               name: obj['名前'], cardNo: obj['カードNo'] || '', level: String(level ?? '?'),
               dp: parseInt(obj['DP'] || 0), baseDp: parseInt(obj['DP'] || 0), dpModifier: 0,

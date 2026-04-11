@@ -5,10 +5,10 @@
  * プレイヤー側・AI側の両方を管理
  */
 
-import { bs, spendMemory, addMemory, endTurnManual, isMemoryOverflow, drawCards, isDeckEmpty } from './battle-state.js?v=20260411d';
-import { addLog, showOverlay, removeOverlay } from './battle-ui.js?v=20260411d';
-import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js?v=20260411d';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent } from './effect-engine.js?v=20260411d';
+import { bs, spendMemory, addMemory, endTurnManual, isMemoryOverflow, drawCards, isDeckEmpty } from './battle-state.js';
+import { addLog, showOverlay, removeOverlay } from './battle-ui.js';
+import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent } from './effect-engine.js';
 
 // ===== 定数 =====
 

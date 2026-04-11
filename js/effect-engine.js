@@ -1145,12 +1145,14 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'security_attack_plus': {
       // 期間付きでSアタック+Nを付与（対象デジモンのbuffsに追加）
       const saVal = action.value || 1;
-      const saDur = (ctx.block && ctx.block.duration && ctx.block.duration.code) || 'dur_this_turn';
+      const saDur = normalizeRecipeDuration((ctx.block && ctx.block.duration && ctx.block.duration.code) || 'dur_this_turn');
       const saTarget = defaultTarget || { code: 'target_all_own' };
       const applySA = (tgt) => {
         if (!tgt) return;
-        if (!tgt.buffs) tgt.buffs = [];
-        tgt.buffs.push({ type: 'security_attack_plus', value: saVal, duration: saDur, source: ctx.card ? ctx.card.cardNo : '' });
+        // addBuffDirect 経由で _appliedSide / _appliedDuringOwnTurn / _ticks を正しく設定
+        // → expireBuffs の dur_next_own_turn 等のサイド判定が正しく動く
+        addBuffDirect(tgt, 'security_attack_plus', saVal, saDur, ctx);
+        console.log('[grant-SA+]', tgt.name, 'val=' + saVal, 'dur=' + saDur, 'appliedSide=' + ctx.side, 'isPlayerTurn=' + ctx.bs.isPlayerTurn);
         ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + saVal + '（' + saDur + '）');
       };
       if (saTarget.code === 'target_all_own') {
@@ -2082,7 +2084,11 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
   } else if (target.code === 'target_all_own_security') {
     // セキュリティバフを記録（セキュリティチェック時に参照）
     if (!ctx.bs._securityBuffs) ctx.bs._securityBuffs = [];
-    ctx.bs._securityBuffs.push({ type, value: val, duration: dur, source: ctx.card ? ctx.card.cardNo : '', owner: ctx.side });
+    // 付与時のターン保持者と付与本人(owner)が同じか判定（dur_this_turn のセキュリティ発動時の判定用）
+    const turnSide = ctx.bs.isPlayerTurn ? 'player' : 'ai';
+    const appliedDuringOwnTurn = (turnSide === ctx.side);
+    ctx.bs._securityBuffs.push({ type, value: val, duration: dur, source: ctx.card ? ctx.card.cardNo : '', owner: ctx.side, _appliedDuringOwnTurn: appliedDuringOwnTurn });
+    console.log('[security_buff added]', 'type=' + type, 'val=' + val, 'dur=' + dur, 'owner=' + ctx.side, 'appliedDuringOwnTurn=' + appliedDuringOwnTurn);
     ctx.addLog(label + 'セキュリティデジモン全体 DP' + sign + val + '（' + dur + '）');
     showDpPopup(isPlus ? val : -val, 'セキュリティ全て');
     ctx.renderAll();
@@ -2183,9 +2189,17 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
         card.buffs = card.buffs.filter(b => {
           if (b.duration !== timing) return true;
           let shouldRemove = false;
-          // dur_this_turn: 付与本人ターン終了時のみ削除
+          // dur_this_turn: 「このターン」= 付与時に走っていたターン終了で削除
+          // 自ターン中に付与（_appliedDuringOwnTurn=true）→ 付与本人のターン終了で削除
+          // 相手ターン中に付与（=セキュリティ発動など、_appliedDuringOwnTurn=false）→ 相手側のターン終了で削除
           if (timing === 'dur_this_turn') {
-            shouldRemove = b._appliedSide === endingSide;
+            if (b._appliedDuringOwnTurn === false) {
+              // 付与時は相手のターンだった → 相手のターン終了 (=appliedSide と異なる側のターン終了) で削除
+              shouldRemove = b._appliedSide !== endingSide;
+            } else {
+              // 通常: 付与本人のターン終了で削除
+              shouldRemove = b._appliedSide === endingSide;
+            }
           }
           // dur_next_opp_turn: 付与本人とは違う陣営のターン終了時に削除
           else if (timing === 'dur_next_opp_turn') {
@@ -2223,8 +2237,15 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
   if (bs._securityBuffs && bs._securityBuffs.length > 0) {
     bs._securityBuffs = bs._securityBuffs.filter(b => {
       if (b.duration !== timing) return true;
-      // dur_this_turn: 付与本人のターン終了時に削除
+      // dur_this_turn: 「このターン」= 付与時に走っていたターン終了で削除
+      // セキュリティ発動など相手ターン中に付与した場合 (_appliedDuringOwnTurn=false) は
+      // 相手側のターン終了で削除する
       if (timing === 'dur_this_turn') {
+        if (b._appliedDuringOwnTurn === false) {
+          // 相手ターン中に付与 → owner と異なる側のターン終了で削除 (= keep if same side)
+          return b.owner === endingSide;
+        }
+        // 通常: 付与本人のターン終了で削除 (= keep if different side)
         return b.owner !== endingSide;
       }
       // dur_next_opp_turn: 付与本人とは違う陣営のターン終了時に削除
@@ -3314,11 +3335,13 @@ function executeRecipeStep(step, ctx, store, callback) {
       };
 
       const targets = resolveTargets();
+      console.log('[grant_keyword_all]', 'action=' + step.action, 'flag=' + flag, 'val=' + val, 'dur=' + dur, 'targets=' + targets.map(t => t.name).join(','), 'ctxSide=' + ctx.side, 'isPlayerTurn=' + ctx.bs.isPlayerTurn);
       targets.forEach(tgt => {
         if (flag === 'security_attack_plus') {
           // addBuffDirect 経由で _appliedSide / _appliedDuringOwnTurn を正しく設定
           // → expireBuffs の dur_next_own_turn 等のサイド判定が正しく動く
           addBuffDirect(tgt, 'security_attack_plus', val, dur, ctx);
+          console.log('[grant_keyword_all] applied buff to', tgt.name, 'buffs.length=' + tgt.buffs.length, 'last=', tgt.buffs[tgt.buffs.length - 1]);
           ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
         } else {
           // 一般キーワードバフ (blocker, piercing 等)

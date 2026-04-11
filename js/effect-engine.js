@@ -491,18 +491,19 @@ function processQueue(context, onComplete) {
   const next = _effectQueue.find(e => e.status === 'waiting');
   if (!next) {
     clearQueue();
-    checkPendingDestroys(context);
-    // メモリー超過チェック
-    if (context._memoryOverflow) {
-      context._memoryOverflow = false;
-      if (context._parentContext) context._parentContext._memoryOverflow = false;
-      // アタック中の場合はバトル完了後にターン終了する（フラグだけ立てる）
-      context.bs._pendingTurnEnd = true;
-      context.addLog('💾 メモリーが相手側へ（アタック終了後にターン終了）');
-      context.updateMemGauge();
-      // コールバックは実行する（バトル/セキュリティチェックを続行）
-    }
-    onComplete && onComplete();
+    // 消滅処理 → on_destroy リアクション完了を待つ
+    checkPendingDestroys(context, () => {
+      // メモリー超過チェック
+      if (context._memoryOverflow) {
+        context._memoryOverflow = false;
+        if (context._parentContext) context._parentContext._memoryOverflow = false;
+        // アタック中の場合はバトル完了後にターン終了する（フラグだけ立てる）
+        context.bs._pendingTurnEnd = true;
+        context.addLog('💾 メモリーが相手側へ（アタック終了後にターン終了）');
+        context.updateMemGauge();
+      }
+      onComplete && onComplete();
+    });
     return;
   }
 
@@ -909,16 +910,20 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       if(effectiveSide === 'ai') {
         const di = ctx._forceTargetIdx ?? destroyTargets[0];
         const card = opponent.battleArea[di];
-        doDestroy(opponent, di, ctx);
-        playEffect(action.code, { card, ctx }, callback);
+        // 消滅演出 → doDestroy（on_destroy リアクション完了まで待つ）→ callback
+        playEffect(action.code, { card, ctx }, () => {
+          doDestroy(opponent, di, ctx, callback);
+        });
         break;
       }
       ctx.addLog('🎯 消滅させる対象を選んでください');
       showTargetSelection(opponentRowSide, destroyTargets, null, borderColor, (selectedIdx) => {
         if(selectedIdx !== null) {
           const card = opponent.battleArea[selectedIdx];
-          doDestroy(opponent, selectedIdx, ctx);
-          playEffect(action.code, { card, ctx }, callback); // → showDestroyEffect → fx_destroy送信
+          // 消滅演出 → doDestroy（on_destroy リアクション完了まで待つ）→ callback
+          playEffect(action.code, { card, ctx }, () => {
+            doDestroy(opponent, selectedIdx, ctx, callback);
+          });
         } else { callback(); }
       });
       break;
@@ -1446,9 +1451,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
 
 // ===== ヘルパー関数 =====
 
-function doDestroy(targetSide, slotIdx, ctx) {
+function doDestroy(targetSide, slotIdx, ctx, callback) {
   const destroyed = targetSide.battleArea[slotIdx];
-  if (!destroyed) return;
+  if (!destroyed) { callback && callback(); return; }
   targetSide.battleArea[slotIdx] = null;
   targetSide.trash.push(destroyed);
   if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));
@@ -1462,7 +1467,9 @@ function doDestroy(targetSide, slotIdx, ctx) {
   // on_destroy グローバル発火（消滅した側を引数に）
   // targetSide オブジェクトから 'player' / 'ai' を逆引き
   const destroyedSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-  fireOnDestroyTriggers(destroyedSideName, ctx.bs, ctx);
+  fireOnDestroyTriggers(destroyedSideName, ctx.bs, ctx, () => {
+    callback && callback();
+  });
 }
 
 function doBounce(targetSide, slotIdx, ctx) {
@@ -2585,11 +2592,15 @@ function checkConditions(conditions, card, bs, side) {
 }
 
 // ===== 消滅チェック =====
+// callback: 消滅した全カードの on_destroy リアクションが完了したら呼ぶ
 
-function checkPendingDestroys(ctx) {
+function checkPendingDestroys(ctx, callback) {
   let destroyed = false;
   const destroyedSides = []; // on_destroy 発火用に消滅側を記録
-  ['player', 'ai'].forEach(side => {
+  // ターンプレイヤー側を先に処理するため順序付き
+  const turnPlayerSide = ctx.bs.isPlayerTurn ? 'player' : 'ai';
+  const orderedSides = [turnPlayerSide, turnPlayerSide === 'player' ? 'ai' : 'player'];
+  orderedSides.forEach(side => {
     const area = ctx.bs[side].battleArea;
     for (let i = 0; i < area.length; i++) {
       if (area[i] && area[i]._pendingDestroy) {
@@ -2617,8 +2628,14 @@ function checkPendingDestroys(ctx) {
   if (destroyed && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
     window._onlineSendStateSync();
   }
-  // on_destroy グローバル発火（消滅した各カードについて反対側を発火）
-  destroyedSides.forEach(s => fireOnDestroyTriggers(s, ctx.bs, ctx));
+  // on_destroy を逐次発火（ターンプレイヤー側優先）
+  let i = 0;
+  function fireNext() {
+    if (i >= destroyedSides.length) { callback && callback(); return; }
+    const s = destroyedSides[i++];
+    fireOnDestroyTriggers(s, ctx.bs, ctx, fireNext);
+  }
+  fireNext();
 }
 
 // ===== 効果発動アナウンス（カード画像＋効果テキストを数秒表示） =====
@@ -2938,29 +2955,28 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
 // スキャンし、on_destroy レシピがあれば発動する。
 // トコモン/パタモン等「相手のデジモンが消滅したとき」効果のためのフック。
 //
-// 効果は **逐次** 実行される（1つの効果発動ポップアップ → 効果処理 → 次の効果発動ポップアップ）
+// 効果は **逐次** 実行される。複数リアクションがあれば「どちらから発動？」UI を出して
+// プレイヤー（リアクション側がターンプレイヤーなら）が順番を選択する。
+// すべて完了したら done コールバックを呼ぶ。
 //
 // 引数:
 //   destroyedSide: 'player' | 'ai' — 消滅したカードがあった側
 //   bs:            battle state
 //   ctxBase:       元の context（addLog/renderAll/updateMemGauge 等を引き継ぐ）
-export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase) {
-  if (!bs) return;
+//   done:          全リアクション完了時に呼ぶコールバック（省略時は no-op）
+export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase, done) {
+  const finish = () => { try { done && done(); } catch(_) {} };
+  if (!bs) { finish(); return; }
   // 反対側 = リアクション側
   const reactSide = destroyedSide === 'player' ? 'ai' : 'player';
   const reactPlayer = bs[reactSide];
-  if (!reactPlayer || !reactPlayer.battleArea) return;
+  if (!reactPlayer || !reactPlayer.battleArea) { finish(); return; }
 
   // 全 carrier × 全進化元（+ carrier 自身）から on_destroy レシピを収集
-  // 各エントリ: { sourceCard, recipe, carrier }
-  //   sourceCard: ポップアップに表示するカード（進化元なら evo card、carrier 自身なら carrier）
-  //   recipe:     実行するレシピ
-  //   carrier:    target:"self" の解決先（カード本体）
   const reactions = [];
   reactPlayer.battleArea.forEach((carrier) => {
     if (!carrier) return;
-    // 1) 進化元カードそれぞれの on_destroy をスキャン（優先）
-    let foundEvoRecipe = false;
+    // 1) 進化元カードそれぞれの on_destroy をスキャン
     if (carrier.stack) {
       carrier.stack.forEach(evoCard => {
         if (!evoCard || !evoCard.recipe) return;
@@ -2968,18 +2984,15 @@ export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase) {
           const raw = typeof evoCard.recipe === 'string'
             ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
           const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          // **進化元効果専用**: evo_source.on_destroy のみ拾う（top-level on_destroy はメイン効果なので拾わない）
+          // 進化元効果専用: evo_source.on_destroy のみ拾う
           const recipe = r.evo_source && r.evo_source.on_destroy;
           if (recipe) {
             reactions.push({ sourceCard: evoCard, recipe, carrier });
-            foundEvoRecipe = true;
           }
-        } catch (_) { /* ignore parse errors here */ }
+        } catch (_) {}
       });
     }
-    // 2) carrier 自身の on_destroy（メイン効果としての on_destroy 用、レアケース）
-    //    ただし getRecipeForTrigger は evo_source ラッパーにフォールバックするので
-    //    top-level の on_destroy のみ厳密にチェック
+    // 2) carrier 自身の on_destroy（メイン効果として）
     if (carrier.recipe) {
       try {
         const raw = typeof carrier.recipe === 'string'
@@ -2992,15 +3005,14 @@ export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase) {
     }
   });
 
-  if (reactions.length === 0) return;
+  if (reactions.length === 0) { finish(); return; }
 
-  // 逐次実行
-  let idx = 0;
-  function nextReaction() {
-    if (idx >= reactions.length) return;
-    const { sourceCard, recipe, carrier } = reactions[idx++];
+  // 残リアクション配列を消費していく
+  const remaining = reactions.slice();
+
+  function runOne(reaction, afterDone) {
+    const { sourceCard, recipe, carrier } = reaction;
     const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: reactSide, _sourceCard: sourceCard };
-    // 「⚡ ○○の効果発動」ポップアップを出す
     const effectText = sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし'
       ? sourceCard.evoSourceEffect
       : (sourceCard.effect || '');
@@ -3008,17 +3020,74 @@ export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase) {
     showEffectAnnounce(sourceCard, effectText, reactSide, () => {
       runRecipe(recipe, ctx, () => {
         ctx.renderAll && ctx.renderAll();
-        // オンライン: 相手側のポップアップを閉じる（reactSide が自分の時のみ送信。
-        // executeQueueEntry の wrappedCallback と同じパターン）
         if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
           window._onlineSendCommand({ type: 'fx_effectClose' });
         }
-        // 次のリアクションへ
-        nextReaction();
+        afterDone();
       });
     });
   }
+
+  function nextReaction() {
+    if (remaining.length === 0) { finish(); return; }
+    if (remaining.length === 1) {
+      // 1 つだけなら即実行
+      const r = remaining.shift();
+      runOne(r, nextReaction);
+      return;
+    }
+    // 複数 → リアクション側がローカルプレイヤーの時だけ選択 UI を出す
+    // （ai 側は自動で先頭から処理）
+    if (reactSide !== 'player') {
+      const r = remaining.shift();
+      runOne(r, nextReaction);
+      return;
+    }
+    showReactionOrderSelect(remaining, (chosenIdx) => {
+      const [r] = remaining.splice(chosenIdx, 1);
+      runOne(r, nextReaction);
+    });
+  }
   nextReaction();
+}
+
+// ===== リアクション順番選択 UI =====
+// 「どちらから発動しますか？」モーダル。カードと効果テキストを並べ、タップで選択。
+function showReactionOrderSelect(reactions, callback) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;animation:fadeIn 0.2s ease;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;margin-bottom:14px;text-shadow:0 0 8px #00fbff;';
+  title.innerText = '⚡ どちらから発動しますか？';
+  overlay.appendChild(title);
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:90%;';
+  overlay.appendChild(row);
+
+  reactions.forEach((reaction, idx) => {
+    const { sourceCard } = reaction;
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#0a0a0a;border:2px solid #00fbff;border-radius:10px;padding:10px;width:200px;cursor:pointer;text-align:center;transition:transform 0.15s ease, box-shadow 0.15s ease;';
+    card.onmouseenter = () => { card.style.transform = 'translateY(-3px) scale(1.03)'; card.style.boxShadow = '0 0 18px #00fbff'; };
+    card.onmouseleave = () => { card.style.transform = ''; card.style.boxShadow = ''; };
+    const imgSrc = sourceCard.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(sourceCard) : '') || sourceCard.imageUrl || '';
+    const effText = (sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
+      ? sourceCard.evoSourceEffect
+      : (sourceCard.effect || '');
+    card.innerHTML =
+      (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
+      + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+sourceCard.name+'</div>'
+      + '<div style="color:#aaf;font-size:10px;line-height:1.5;text-align:left;max-height:80px;overflow-y:auto;background:#111;padding:6px;border-radius:4px;">'+effText+'</div>';
+    card.onclick = () => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      callback(idx);
+    };
+    row.appendChild(card);
+  });
+
+  document.body.appendChild(overlay);
 }
 
 // ctx の最小フィールドを構築（addLog/renderAll/updateMemGauge は ctxBase か window から拾う）

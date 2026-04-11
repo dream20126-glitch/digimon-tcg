@@ -490,10 +490,15 @@ export function resolveSecurityCheck(atk, atkIdx) {
           bs.ai.trash.push(sec);
           removeOwnCard(atkIdx, 'destroy');
           renderAll(); _dispatchStateSync();
-          try { _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
           showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
             showDestroyEffect(sec, () => { showDestroyEffect(atk, () => {
-              addLog('💥 両者消滅！'); _dispatchStateSync(); checkPendingTurnEnd();
+              addLog('💥 両者消滅！'); _dispatchStateSync();
+              // 演出完了 → on_destroy リアクション完了 → ターンエンド
+              try {
+                _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }, () => {
+                  checkPendingTurnEnd();
+                });
+              } catch(_) { checkPendingTurnEnd(); }
             }); });
           }, '両者消滅', '#ff4444');
         } else if (atk.dp > sec.dp) {
@@ -512,10 +517,14 @@ export function resolveSecurityCheck(atk, atkIdx) {
           removeOwnCard(atkIdx, 'destroy');
           bs.ai.trash.push(sec);
           renderAll(); _dispatchStateSync();
-          try { _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
           showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された', () => {
             showDestroyEffect(atk, () => {
-              addLog('✗ セキュリティに敗北'); _dispatchStateSync(); checkPendingTurnEnd();
+              addLog('✗ セキュリティに敗北'); _dispatchStateSync();
+              try {
+                _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }, () => {
+                  checkPendingTurnEnd();
+                });
+              } catch(_) { checkPendingTurnEnd(); }
             });
           }, 'Win!!', '#00ff88');
         }
@@ -720,6 +729,21 @@ export function removeBattleBuffs(applied) {
 
 // ===== バトル解決（プレイヤー → AI デジモン） =====
 
+// _fireOnDestroy をチェーン実行するヘルパー
+// sides: ['ai','player'] のような配列、各要素は destroyedSide
+// done: 全完了時 callback
+function _fireDestroyChain(sides, done) {
+  let i = 0;
+  function next() {
+    if (i >= sides.length) { done && done(); return; }
+    const s = sides[i++];
+    try {
+      _fireOnDestroy(s, bs, { bs, addLog, renderAll, updateMemGauge }, next);
+    } catch (_) { next(); }
+  }
+  next();
+}
+
 export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
   showCombatBackdrop();
   const battleBuffs = applyBattleBuffs(atk, def);
@@ -734,12 +758,10 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
         _sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: defIdx, reason: 'destroy' });
         if (window._markDestroyed) window._markDestroyed('ai', defIdx);
       }
-      try { _fireOnDestroy('ai', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
     }
   }
   function destroyAtk() {
     removeOwnCard(atkIdx, 'destroy');
-    try { _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
   }
 
   showSecurityCheck(def, atk, () => {
@@ -750,18 +772,26 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
       destroyDef(); destroyAtk(); renderAll();
       showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
         showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
-          addLog('💥 両者消滅！'); renderAll(); checkPendingTurnEnd();
+          addLog('💥 両者消滅！'); renderAll();
+          // ターンプレイヤー（player）側の reactions を先 → 'ai' destroyed が reactSide='player'
+          _fireDestroyChain(['ai', 'player'], () => checkPendingTurnEnd());
         }); });
       }, '両者消滅', '#ff4444');
     } else if (_atkDp > _defDp) {
       destroyDef(); renderAll();
       showBattleResult('Win!!', '#00ff88', '「' + def.name + '」を撃破！', () => {
-        showDestroyEffect(def, () => { addLog('💥 「' + def.name + '」を撃破！'); renderAll(); checkAttackEnd(atk, atkIdx); });
+        showDestroyEffect(def, () => {
+          addLog('💥 「' + def.name + '」を撃破！'); renderAll();
+          _fireDestroyChain(['ai'], () => checkAttackEnd(atk, atkIdx));
+        });
       }, 'Lose...', '#ff4444');
     } else {
       destroyAtk(); renderAll();
       showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された', () => {
-        showDestroyEffect(atk, () => { addLog('💥 「' + atk.name + '」が撃破された...'); renderAll(); checkPendingTurnEnd(); });
+        showDestroyEffect(atk, () => {
+          addLog('💥 「' + atk.name + '」が撃破された...'); renderAll();
+          _fireDestroyChain(['player'], () => checkPendingTurnEnd());
+        });
       }, 'Win!!', '#00ff88');
     }
   }, 'BATTLE!');
@@ -785,26 +815,29 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
       bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
       if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
       renderAll();
-      try { _fireOnDestroy('ai', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
-      try { _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
       showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
-        showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => { addLog('💥 両者消滅！'); renderAll(); callback(); }, '両者消滅', '#ff4444');
+        // ターンプレイヤー（ai）側の reactions を先 → 'player' destroyed が reactSide='ai'
+        _fireDestroyChain(['player', 'ai'], () => {
+          showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => { addLog('💥 両者消滅！'); renderAll(); callback(); }, '両者消滅', '#ff4444');
+        });
       }); });
     } else if (_atkDp > _defDp) {
       bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
       if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
       renderAll();
-      try { _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
       showDestroyEffect(def, () => {
-        showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); }, 'Win!!', '#00ff88');
+        _fireDestroyChain(['player'], () => {
+          showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); }, 'Win!!', '#00ff88');
+        });
       });
     } else {
       bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
       if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
       renderAll();
-      try { _fireOnDestroy('ai', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
       showDestroyEffect(atk, () => {
-        showBattleResult('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => { addLog('💥 「' + atk.name + '」を撃破！'); renderAll(); callback(); }, 'Lost...', '#ff4444');
+        _fireDestroyChain(['ai'], () => {
+          showBattleResult('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => { addLog('💥 「' + atk.name + '」を撃破！'); renderAll(); callback(); }, 'Lost...', '#ff4444');
+        });
       });
     }
   }, 'BATTLE!');
@@ -984,14 +1017,18 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
           bs.player.trash.push(sec);
-          try { _fireOnDestroy('ai', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
-          showDestroyEffect(atk, () => { addLog('💥 両者消滅！'); renderAll(); setTimeout(() => aiAttackPhase(callback), 800); });
+          showDestroyEffect(atk, () => {
+            addLog('💥 両者消滅！'); renderAll();
+            _fireDestroyChain(['ai'], () => setTimeout(() => aiAttackPhase(callback), 800));
+          });
         } else if (sec.dp > atk.dp) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
           bs.player.trash.push(sec);
-          try { _fireOnDestroy('ai', bs, { bs, addLog, renderAll, updateMemGauge }); } catch(_) {}
-          showDestroyEffect(atk, () => { addLog('💥 「' + atk.name + '」が撃破された'); renderAll(); setTimeout(() => aiAttackPhase(callback), 800); });
+          showDestroyEffect(atk, () => {
+            addLog('💥 「' + atk.name + '」が撃破された'); renderAll();
+            _fireDestroyChain(['ai'], () => setTimeout(() => aiAttackPhase(callback), 800));
+          });
         } else {
           bs.player.trash.push(sec);
           addLog('✓ セキュリティ突破'); renderAll();

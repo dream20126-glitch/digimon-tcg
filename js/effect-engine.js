@@ -511,7 +511,12 @@ function processQueue(context, onComplete) {
   executeQueueEntry(next, context, () => {
     next.status = 'completed';
     sortQueue();
-    processQueue(context, onComplete);
+    // ★ 各効果の完了直後に消滅判定 → on_destroy リアクションを処理
+    // これで複数の on_attack 効果が連続する場合、効果1の destroy/on_destroy が
+    // 完全に終わってから効果2の対象選択に進む
+    checkPendingDestroys(context, () => {
+      processQueue(context, onComplete);
+    });
   });
 }
 

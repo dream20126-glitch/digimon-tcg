@@ -339,8 +339,11 @@ export function resolveAttackTarget(target, targetIdx) {
   if (target === 'security') {
     // セキュリティアタック
     if (_onlineMode && _sendCommand) {
-      _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk) });
+      // ★ アタック時効果を先に処理 → 完了後にブロック要求を送信
+      // （これでターンプレイヤーが効果処理中に相手の画面にブロック確認が出ない）
       afterAtkEffect(atk, atkSlotIdx, () => {
+        // 効果処理完了 → このタイミングで attack_security を送る
+        _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk) });
         if (typeof window._waitForBlockResponse === 'function') {
           window._waitForBlockResponse((resp) => {
             if (!resp.blocked) {
@@ -370,8 +373,9 @@ export function resolveAttackTarget(target, targetIdx) {
       return;
     }
     if (_onlineMode && _sendCommand) {
-      _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk) });
+      // ★ アタック時効果を先に処理 → 完了後にブロック要求を送信
       afterAtkEffect(atk, atkSlotIdx, () => {
+        _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk) });
         if (typeof window._waitForBlockResponse === 'function') {
           window._waitForBlockResponse((resp) => {
             if (!resp.blocked) {

@@ -130,13 +130,16 @@ function renderBattleRows() {
           html += `<div style="position:absolute;top:1px;right:2px;background:rgba(0,0,0,0.8);color:#ffaa00;font-size:6px;padding:1px 2px;border-radius:2px;">${card.stack.length}枚</div>`;
         }
 
-        // Sアタック+/-表示（左上）— 自分のターンのみ表示（永続効果は自分のターンのみ有効）
+        // Sアタック+/-表示（左上）
+        // _permEffects.securityAttackPlus: 永続効果（during_own_turn等）→ 自分ターンのみ表示
+        // card.buffs の SA+/SA-: 効果で付与されたバフ → 常時表示
         const isMySide = (side === 'pl');
         const isMyTurn = bs.isPlayerTurn;
-        const showSA = isMySide ? isMyTurn : !isMyTurn; // 自分のターンのみSA+/-有効
+        const showPermSA = isMySide ? isMyTurn : !isMyTurn; // 永続SA+は自分のターンのみ有効
         let saExtra = 0;
-        if (showSA) {
-        if (card._permEffects && card._permEffects.securityAttackPlus) saExtra += card._permEffects.securityAttackPlus;
+        if (showPermSA && card._permEffects && card._permEffects.securityAttackPlus) {
+          saExtra += card._permEffects.securityAttackPlus;
+        }
         if (card.buffs) card.buffs.forEach(b => {
           if (b.type === 'security_attack_plus') saExtra += (parseInt(b.value) || 0);
           if (b.type === 'security_attack_minus') saExtra -= (parseInt(b.value) || 0);
@@ -146,7 +149,6 @@ function renderBattleRows() {
         } else if (saExtra < 0) {
           html += `<div style="position:absolute;top:1px;left:2px;background:rgba(0,128,255,0.85);color:#fff;font-size:6px;padding:1px 3px;border-radius:2px;">チェック${saExtra}</div>`;
         }
-        } // end if (showSA)
 
         // バフ表示（状態異常マーク）— カード右上に1行で表示
         if (card.cantAttack || card.cantBlock || card.cantEvolve) {

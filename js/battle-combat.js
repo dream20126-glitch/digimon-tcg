@@ -612,15 +612,21 @@ function getSecurityAttackCount(card) {
   _hooks.applyPermanentEffects('ai');
 
   // レシピベースの_permEffectsのみ使用
-  if (card._permEffects && card._permEffects.securityAttackPlus) extra += card._permEffects.securityAttackPlus;
+  let permPlus = 0, buffPlus = 0, buffMinus = 0;
+  if (card._permEffects && card._permEffects.securityAttackPlus) {
+    permPlus = card._permEffects.securityAttackPlus;
+    extra += permPlus;
+  }
   if (card.buffs && card.buffs.length > 0) {
     card.buffs.forEach(b => {
-      if (b.type === 'security_attack_plus') extra += (parseInt(b.value) || 0);
-      if (b.type === 'security_attack_minus') extra -= (parseInt(b.value) || 0);
+      if (b.type === 'security_attack_plus') { buffPlus += (parseInt(b.value) || 0); extra += (parseInt(b.value) || 0); }
+      if (b.type === 'security_attack_minus') { buffMinus += (parseInt(b.value) || 0); extra -= (parseInt(b.value) || 0); }
     });
   }
+  const result = Math.max(0, 1 + extra);
+  console.log('[getSecurityAttackCount]', card.name, 'permSA+=' + permPlus, 'buffSA+=' + buffPlus, 'buffSA-=' + buffMinus, 'extra=' + extra, '→ checks=' + result);
   // SA- で0以下になる可能性あり（その場合セキュリティチェック0回）
-  return Math.max(0, 1 + extra);
+  return result;
 }
 
 // ===== DP表示フォーマッタ =====

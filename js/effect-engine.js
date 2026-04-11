@@ -1176,7 +1176,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const applySM = (tgt) => {
         if (!tgt) return;
         addBuffDirect(tgt, 'security_attack_minus', smVal, smDur, ctx);
-        console.log('[grant-SA-]', tgt.name, 'val=' + smVal, 'dur=' + smDur, 'appliedSide=' + ctx.side, 'isPlayerTurn=' + ctx.bs.isPlayerTurn);
+        console.log('[grant-SA-]', tgt.name, 'val=' + smVal, 'dur=' + smDur, 'appliedSide=' + ctx.side, 'isPlayerTurn=' + ctx.bs.isPlayerTurn, 'buffs after:', JSON.stringify(tgt.buffs));
         ctx.addLog('⚔ 「' + tgt.name + '」にSアタック-' + smVal + '（' + smDur + '）');
       };
       // 全体対象
@@ -2922,6 +2922,8 @@ function getRecipeForTrigger(card, triggerCode) {
 // スキャンし、on_destroy レシピがあれば発動する。
 // トコモン/パタモン等「相手のデジモンが消滅したとき」効果のためのフック。
 //
+// 効果は **逐次** 実行される（1つの効果発動ポップアップ → 効果処理 → 次の効果発動ポップアップ）
+//
 // 引数:
 //   destroyedSide: 'player' | 'ai' — 消滅したカードがあった側
 //   bs:            battle state
@@ -2933,14 +2935,16 @@ export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase) {
   const reactPlayer = bs[reactSide];
   if (!reactPlayer || !reactPlayer.battleArea) return;
 
+  // 全 carrier × 全進化元（+ carrier 自身）から on_destroy レシピを収集
+  // 各エントリ: { sourceCard, recipe, carrier }
+  //   sourceCard: ポップアップに表示するカード（進化元なら evo card、carrier 自身なら carrier）
+  //   recipe:     実行するレシピ
+  //   carrier:    target:"self" の解決先（カード本体）
+  const reactions = [];
   reactPlayer.battleArea.forEach((carrier) => {
     if (!carrier) return;
-    // 1) carrier 自身の on_destroy（main 階層）— 通常まれだが対応
-    const mainRecipe = getRecipeForTrigger(carrier, 'on_destroy');
-    // evo_source 内のレシピは getRecipeForTrigger で fallback ヒットするが、
-    // それは「carrier の」on_destroy であり、進化元カードごとに評価したい場合はここで個別にスキャン
-    // 2) 進化元カードそれぞれの on_destroy をスキャン
-    const evoRecipes = [];
+    // 1) 進化元カードそれぞれの on_destroy をスキャン（優先）
+    let foundEvoRecipe = false;
     if (carrier.stack) {
       carrier.stack.forEach(evoCard => {
         if (!evoCard || !evoCard.recipe) return;
@@ -2948,24 +2952,52 @@ export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase) {
           const raw = typeof evoCard.recipe === 'string'
             ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
           const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          const recipe = (r.evo_source && r.evo_source.on_destroy) || r.on_destroy;
-          if (recipe) evoRecipes.push({ evoCard, recipe });
+          // **進化元効果専用**: evo_source.on_destroy のみ拾う（top-level on_destroy はメイン効果なので拾わない）
+          const recipe = r.evo_source && r.evo_source.on_destroy;
+          if (recipe) {
+            reactions.push({ sourceCard: evoCard, recipe, carrier });
+            foundEvoRecipe = true;
+          }
         } catch (_) { /* ignore parse errors here */ }
       });
     }
-
-    // carrier 自身の on_destroy（evo_source ラッパー越しでも getRecipeForTrigger がヒットする）
-    // → ただし evoRecipes と重複させないため、evoRecipes が空のときだけ採用
-    if (mainRecipe && evoRecipes.length === 0) {
-      const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: reactSide };
-      runRecipe(mainRecipe, ctx, () => { ctx.renderAll && ctx.renderAll(); });
+    // 2) carrier 自身の on_destroy（メイン効果としての on_destroy 用、レアケース）
+    //    ただし getRecipeForTrigger は evo_source ラッパーにフォールバックするので
+    //    top-level の on_destroy のみ厳密にチェック
+    if (carrier.recipe) {
+      try {
+        const raw = typeof carrier.recipe === 'string'
+          ? carrier.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : carrier.recipe;
+        const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (r.on_destroy) {
+          reactions.push({ sourceCard: carrier, recipe: r.on_destroy, carrier });
+        }
+      } catch (_) {}
     }
-    // 進化元由来の on_destroy をそれぞれ実行（target:"self" は carrier を指す）
-    evoRecipes.forEach(({ evoCard, recipe }) => {
-      const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: reactSide, _evoSourceCard: evoCard };
-      runRecipe(recipe, ctx, () => { ctx.renderAll && ctx.renderAll(); });
-    });
   });
+
+  if (reactions.length === 0) return;
+
+  // 逐次実行
+  let idx = 0;
+  function nextReaction() {
+    if (idx >= reactions.length) return;
+    const { sourceCard, recipe, carrier } = reactions[idx++];
+    const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: reactSide, _sourceCard: sourceCard };
+    // 「⚡ ○○の効果発動」ポップアップを出す
+    const effectText = sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし'
+      ? sourceCard.evoSourceEffect
+      : (sourceCard.effect || '');
+    ctx.addLog && ctx.addLog('⚡ 「' + sourceCard.name + '」の効果発動');
+    showEffectAnnounce(sourceCard, effectText, reactSide, () => {
+      runRecipe(recipe, ctx, () => {
+        ctx.renderAll && ctx.renderAll();
+        // 次のリアクションへ
+        nextReaction();
+      });
+    });
+  }
+  nextReaction();
 }
 
 // ctx の最小フィールドを構築（addLog/renderAll/updateMemGauge は ctxBase か window から拾う）

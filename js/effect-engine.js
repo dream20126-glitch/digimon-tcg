@@ -3123,12 +3123,13 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === 消滅（1体ずつ選択→演出） ===
     case 'destroy': {
-      // 共通の消滅処理（先に定義しておく）
-      const processDestroyTargets = (destroyList) => {
+      const targetData = step.card ? store[step.card] : null;
+      if (targetData) {
+        const targets = Array.isArray(targetData) ? targetData : [targetData];
         let di = 0;
-        const destroyOneByOne = () => {
-          if (di >= destroyList.length) { callback(); return; }
-          const t = destroyList[di++];
+        function destroyOneByOne() {
+          if (di >= targets.length) { callback(); return; }
+          const t = targets[di++];
           const c = opponent.battleArea[t.idx];
           if (!c) { destroyOneByOne(); return; }
           // 1体消滅
@@ -3148,63 +3149,10 @@ function executeRecipeStep(step, ctx, store, callback) {
               setTimeout(destroyOneByOne, 300); // 少し間を空けて次へ
             });
           } else { destroyOneByOne(); }
-        };
+        }
         destroyOneByOne();
-      };
-
-      // ① store経由（select で先に対象を選んだケース）
-      const targetData = step.card ? store[step.card] : null;
-      if (targetData) {
-        const targets = Array.isArray(targetData) ? targetData : [targetData];
-        processDestroyTargets(targets);
         return;
       }
-
-      // ② 直接ターゲット指定（target:"opponent:1" / "opponent:2" / "opponent:all"）
-      // select ステップを挟まず destroy 単体で記述されるレシピに対応
-      if (step.target && typeof step.target === 'string') {
-        // opponent:all → 全消滅
-        if (step.target === 'opponent:all') {
-          const all = [];
-          for (let i = 0; i < opponent.battleArea.length; i++) {
-            if (opponent.battleArea[i]) all.push({ idx: i, card: opponent.battleArea[i] });
-          }
-          if (all.length === 0) { ctx.addLog('⚠ 消滅対象がいません'); showEffectFailed(null, callback); return; }
-          processDestroyTargets(all);
-          return;
-        }
-        // opponent:N → N体選択 (UIで選ばせる)
-        const m = step.target.match(/^opponent:(\d+)$/);
-        if (m) {
-          const count = parseInt(m[1]) || 1;
-          const valid = [];
-          for (let i = 0; i < opponent.battleArea.length; i++) {
-            if (opponent.battleArea[i]) valid.push(i);
-          }
-          if (valid.length === 0) { ctx.addLog('⚠ 消滅対象がいません'); showEffectFailed(null, callback); return; }
-          // 候補が count 体以下なら自動で全部消滅
-          if (valid.length <= count) {
-            const autoList = valid.map(i => ({ idx: i, card: opponent.battleArea[i] }));
-            processDestroyTargets(autoList);
-            return;
-          }
-          // 1体選択
-          if (count === 1) {
-            const rowId = ctx.side === 'player' ? 'ai' : 'pl';
-            showTargetSelection(rowId, valid, null, '#ff4444', (selectedIdx) => {
-              if (selectedIdx === null) { callback(); return; }
-              processDestroyTargets([{ idx: selectedIdx, card: opponent.battleArea[selectedIdx] }]);
-            });
-            return;
-          }
-          // 複数選択 (count > 1) は暫定的に先頭 count 体を自動消滅 (今後 select_multi 風UIに拡張可)
-          const autoList = valid.slice(0, count).map(i => ({ idx: i, card: opponent.battleArea[i] }));
-          processDestroyTargets(autoList);
-          return;
-        }
-      }
-
-      // どれにも該当しない → 何もしない
       callback();
       break;
     }

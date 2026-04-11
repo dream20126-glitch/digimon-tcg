@@ -655,6 +655,30 @@ function onRemoteCommand(cmd) {
     }
 
     // --- 演出コマンド（キュー経由で順次再生、並列起動によるバチバチを防止） ---
+    case 'fx_remoteBuff': {
+      // 相手から汎用バフ付与コマンドを受信 → 自分の対象カードに buff を直接 push
+      // state_sync は oppBattleArea を上書きしないため、相手のカードに付与した buff は
+      // この個別コマンドで同期する
+      const myCard = bs.player.battleArea[cmd.targetIdx];
+      if (myCard) {
+        if (!myCard.buffs) myCard.buffs = [];
+        // 送信側 _appliedSide を受信側目線に反転
+        const senderSide = cmd.appliedFromSender || 'player';
+        const myAppliedSide = senderSide === 'player' ? 'ai' : 'player';
+        myCard.buffs.push({
+          type: cmd.buffType,
+          value: cmd.value || 0,
+          duration: cmd.duration || 'dur_this_turn',
+          source: 'remote',
+          _appliedSide: myAppliedSide,
+          _appliedDuringOwnTurn: cmd.appliedDuringOwnTurn !== undefined ? cmd.appliedDuringOwnTurn : true,
+          _ticks: 0,
+        });
+        renderAll();
+      }
+      addLog('⚔ 「' + (cmd.targetName || '???') + '」に' + (cmd.buffType || 'バフ') + '+' + (cmd.value || 0) + ' 付与');
+      break;
+    }
     case 'fx_cantAttackBlock': {
       // 相手から状態付与コマンドを受信 → 自分のカードに状態を付与
       const myCard = bs.player.battleArea[cmd.targetIdx];

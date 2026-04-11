@@ -144,10 +144,6 @@ function renderBattleRows() {
           if (b.type === 'security_attack_plus') saExtra += (parseInt(b.value) || 0);
           if (b.type === 'security_attack_minus') saExtra -= (parseInt(b.value) || 0);
         });
-        // DEBUG: ウォーグレイモンの SA 計算をログ出力（不要になったら削除）
-        if (card.name && card.name.includes('ウォーグレイモン')) {
-          console.log('[render-SA]', card.name, 'side=' + side, 'isMyTurn=' + isMyTurn, 'showPermSA=' + showPermSA, 'permSA+=' + (card._permEffects && card._permEffects.securityAttackPlus), 'buffs=', JSON.stringify(card.buffs || []), '→ saExtra=' + saExtra);
-        }
         if (saExtra > 0) {
           html += `<div style="position:absolute;top:1px;left:2px;background:rgba(255,0,0,0.8);color:#fff;font-size:6px;padding:1px 3px;border-radius:2px;">チェック+${saExtra}</div>`;
         } else if (saExtra < 0) {

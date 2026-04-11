@@ -1185,15 +1185,29 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const smVal = action.value || 1;
       const smDur = normalizeRecipeDuration((ctx.block && ctx.block.duration && ctx.block.duration.code) || 'dur_this_turn');
       const smTarget = defaultTarget || { code: 'target_opponent', count: 1 };
-      const applySM = (tgt) => {
+      const applySM = (tgt, idx) => {
         if (!tgt) return;
         addBuffDirect(tgt, 'security_attack_minus', smVal, smDur, ctx);
         console.log('[grant-SA-]', tgt.name, 'val=' + smVal, 'dur=' + smDur, 'appliedSide=' + ctx.side, 'isPlayerTurn=' + ctx.bs.isPlayerTurn, 'buffs after:', JSON.stringify(tgt.buffs));
         ctx.addLog('⚔ 「' + tgt.name + '」にSアタック-' + smVal + '（' + smDur + '）');
+        // オンライン: 相手側に buff を反映（state_sync は oppBattleArea を上書きしないため
+        // 個別に fx_remoteBuff を送信する。ctx.side === 'player' の時だけ送信）
+        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && idx != null && window._onlineSendCommand) {
+          window._onlineSendCommand({
+            type: 'fx_remoteBuff',
+            targetIdx: idx,
+            targetName: tgt.name,
+            buffType: 'security_attack_minus',
+            value: smVal,
+            duration: smDur,
+            appliedFromSender: 'player',
+            appliedDuringOwnTurn: ctx.bs && ctx.bs.isPlayerTurn,
+          });
+        }
       };
       // 全体対象
       if (smTarget.code === 'target_all_opponent') {
-        opponent.battleArea.forEach(c => { if (c) applySM(c); });
+        opponent.battleArea.forEach((c, i) => { if (c) applySM(c, i); });
         ctx.renderAll();
         callback && callback();
         break;
@@ -1210,7 +1224,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       if (effectiveSide === 'ai') {
         const ai = ctx._forceTargetIdx ?? smTargets[0];
-        applySM(opponent.battleArea[ai]);
+        applySM(opponent.battleArea[ai], ai);
         ctx.renderAll();
         callback && callback();
         break;
@@ -1218,7 +1232,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       ctx.addLog('🎯 Sアタック-' + smVal + 'の対象を選んでください');
       showTargetSelection(opponentRowSide, smTargets, null, uiColor, (selectedIdx) => {
         if (selectedIdx !== null) {
-          applySM(opponent.battleArea[selectedIdx]);
+          applySM(opponent.battleArea[selectedIdx], selectedIdx);
         }
         ctx.renderAll();
         callback && callback();

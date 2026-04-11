@@ -555,8 +555,12 @@ export function resolveSecurityCheck(atk, atkIdx) {
         if (hasSecField || hasSecInEffect) {
           const doFinishSec = () => {
             // ヘブンズゲート/ヘブンズチャーム等: セキュリティ効果で「このカードを手札に加える」
-            // が実行されると sec._returnToHand = true がセットされる
-            if (sec._returnToHand) {
+            // - オフライン: 直接 sec._returnToHand に立つ
+            // - オンライン: 防御側 (P2) で立つ → security_effect_done で
+            //   window._lastSecEffectReturnToHand に伝達される
+            const onlineRTH = window._lastSecEffectReturnToHand === true;
+            window._lastSecEffectReturnToHand = false;
+            if (sec._returnToHand || onlineRTH) {
               delete sec._returnToHand;
               bs.ai.hand.push(sec);
               addLog('🃏 相手は「' + sec.name + '」を手札に加えた');

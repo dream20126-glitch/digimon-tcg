@@ -495,10 +495,24 @@ function onRemoteCommand(cmd) {
         const mentionsMain = /このカードの\s*【メイン】\s*効果/.test(secCard.securityEffect || secCard.effect);
         const doFinish = () => {
           secCard.effect = originalEffect;
+          // ヘブンズゲート/ヘブンズチャーム等: secCard._returnToHand が立っていれば
+          // P2 のローカル状態でも、すでに security_remove でトラッシュに送られた実カードを
+          // 探して手札へ戻す
+          if (secCard._returnToHand) {
+            const tIdx = bs.player.trash.findIndex(c =>
+              c && (c.cardNo === (cmd.cardNo || secCard.cardNo) || c.name === (cmd.cardName || secCard.name))
+            );
+            if (tIdx !== -1) {
+              const realCard = bs.player.trash.splice(tIdx, 1)[0];
+              bs.player.hand.push(realCard);
+              addLog('🃏 「' + realCard.name + '」を手札に加えた');
+              renderAll();
+            }
+          }
           // メモリー変動を相手に通知 + 状態同期 + 処理完了通知
           sendMemoryUpdate();
           sendStateSync();
-          sendCommand({ type: 'security_effect_done', memory: bs.memory });
+          sendCommand({ type: 'security_effect_done', memory: bs.memory, returnToHand: !!secCard._returnToHand });
         };
         const hasUseMain = secCard.recipe && typeof secCard.recipe === 'string' && secCard.recipe.includes('use_main_effect');
         if (mentionsMain && originalEffect.includes('【メイン】') && !hasUseMain) {
@@ -538,6 +552,9 @@ function onRemoteCommand(cmd) {
           addLog('💾 メモリーが相手側へ（アタック終了後にターン終了）');
         }
       }
+      // ヘブンズゲート/ヘブンズチャーム等の「手札に戻る」セキュリティ効果用フラグ
+      // doFinishSec がこのグローバルを参照して ai.hand vs ai.trash を判断する
+      window._lastSecEffectReturnToHand = !!cmd.returnToHand;
       if (_pendingSecEffectCallback) {
         const cb = _pendingSecEffectCallback; _pendingSecEffectCallback = null; cb();
       } else {

@@ -86,12 +86,15 @@ const TRIGGER_TYPES = [
   { value: 'before_end_turn',      label: '自分のターン終了直前' },
   { value: 'memory_crossed',       label: 'メモリー相手側到達時' },
   { value: 'before_opponent_turn', label: '相手ターン開始前' },
-  // アクション直後
-  { value: 'after_hatch',          label: '孵化直後' },
-  { value: 'after_play',           label: 'カード登場直後' },
-  { value: 'after_evolve',         label: '進化直後' },
+  // アクション中間点（コスト支払い後、効果発動前）
+  { value: 'after_play_cost',      label: '登場コスト支払い後（効果前）' },
+  { value: 'after_evolve_cost',    label: '進化コスト支払い+ドロー後（効果前）' },
+  // アクション完了後（効果処理完了後）
+  { value: 'after_hatch',          label: '孵化完了後' },
+  { value: 'after_play',           label: '登場時効果完了後' },
+  { value: 'after_evolve',         label: '進化時効果完了後' },
   { value: 'after_attack',         label: 'アタック解決後' },
-  { value: 'after_use_effect',     label: '効果使用直後' },
+  { value: 'after_use_effect',     label: '効果使用完了後' },
   // UI系
   { value: 'on_card_detail_open',  label: 'カード詳細表示中' },
 ];

@@ -138,13 +138,16 @@ export function doPlay(card, handIdx, slotIdx) {
     bs.player.hand.splice(handIdx, 1); bs.selHand = null;
     addLog('✦ 「' + card.name + '」を使用！（コスト ' + card.playCost + '）');
     renderAll();
-    showOptionEffect(card, () => {
+    showOptionEffect(card, async () => {
       // ★ 公式ルール: コスト支払い → 効果処理 → ターン終了判定
       playerSpendMemory(card.playCost, true); // defer=true
+      // 割り込み1: コスト支払い後、効果発動前
+      if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play_cost');
       _hooks.checkAndTriggerEffect(card, '【メイン】', async () => {
         bs.player.trash.push(card);
         addLog('✦ 「' + card.name + '」をトラッシュへ');
         renderAll();
+        // 割り込み2: 効果完了後
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
         checkPlayerPendingTurnEnd();
       }, 'player');
@@ -158,12 +161,15 @@ export function doPlay(card, handIdx, slotIdx) {
     bs.player.tamerArea.push(card);
     addLog('▶ 「' + card.name + '」を登場！（コスト ' + card.playCost + '）');
     renderAll();
-    showPlayEffect(card, () => {
+    showPlayEffect(card, async () => {
       // ★ 公式ルール: コスト支払い → 登場時効果 → ターン終了判定
       playerSpendMemory(card.playCost, true); // defer=true
       _hooks.applyPermanentEffects('player');
       renderAll();
+      // 割り込み1: コスト支払い後、効果発動前
+      if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play_cost');
       const finishTamer = async () => {
+        // 割り込み2: 効果完了後
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
         checkPlayerPendingTurnEnd();
       };
@@ -186,12 +192,15 @@ export function doPlay(card, handIdx, slotIdx) {
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
   addLog('▶ 「' + card.name + '」を登場！（コスト ' + card.playCost + '）');
   renderAll();
-  showPlayEffect(card, () => {
+  showPlayEffect(card, async () => {
     _hooks.applyPermanentEffects('player');
     renderAll(true);
     // ★ 公式ルール: コスト支払い(メモリー消費) → 登場時効果 → ターン終了判定
     playerSpendMemory(card.playCost, true); // defer=true: ターン終了は保留
+    // 割り込み1: コスト支払い後、効果発動前
+    if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play_cost');
     const finishPlay = async () => {
+      // 割り込み2: 効果完了後
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
       checkPlayerPendingTurnEnd();
     };
@@ -233,8 +242,11 @@ export function doEvolve(card, handIdx, slotIdx) {
   showEvolveEffect(cost, base.name, base, evolved, () => {
     // ★ 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定
     playerSpendMemory(cost, true); // defer=true: ターン終了は保留
-    doDraw('player', '進化ドロー', () => {
+    doDraw('player', '進化ドロー', async () => {
+      // 割り込み1: コスト支払い + ドロー完了後、効果発動前
+      if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve_cost');
       const finishEvolve = async () => {
+        // 割り込み2: 効果完了後
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
         checkPlayerPendingTurnEnd();
       };
@@ -277,8 +289,11 @@ export function doEvolveIku(card, handIdx) {
   showEvolveEffect(cost, base.name, base, evolved, () => {
     // ★ 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定
     playerSpendMemory(cost, true); // defer=true: ターン終了は保留
-    doDraw('player', '進化ドロー', () => {
+    doDraw('player', '進化ドロー', async () => {
+      // 割り込み1: コスト支払い + ドロー完了後、効果発動前
+      if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve_cost');
       const finishEvolveIku = async () => {
+        // 割り込み2: 効果完了後
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
         checkPlayerPendingTurnEnd();
       };

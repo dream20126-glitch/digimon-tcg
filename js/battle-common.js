@@ -83,10 +83,14 @@ async function _tutorialInterruptAfter(evType) {
   const runner = (typeof window !== 'undefined') ? window._tutorialRunner : null;
   if (!runner || !runner.active) return;
   const triggerMap = {
-    'play':       'after_play',
-    'evolve':     'after_evolve',
-    'hatch':      'after_hatch',
-    'use_effect': 'after_use_effect',
+    // 効果完了後
+    'play':        'after_play',
+    'evolve':      'after_evolve',
+    'hatch':       'after_hatch',
+    'use_effect':  'after_use_effect',
+    // コスト支払い後（効果前）
+    'play_cost':   'after_play_cost',
+    'evolve_cost': 'after_evolve_cost',
   };
   const triggerKey = triggerMap[evType];
   if (!triggerKey) return;

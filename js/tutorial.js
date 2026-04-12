@@ -236,8 +236,12 @@ window._tutorialShowInstruction = function(text, targetArea, step) {
   const opType = (step && step.operationType) || '';
   const secondArea = (step && step.secondTargetArea) || '';
 
-  if (targetArea) {
-    _showPointer(resolvedText, targetArea, opType, secondArea);
+  // カードNo指定があればカード単位の赤枠（エリアより優先）
+  const targetCardNo = (step && step.targetCardNo) || '';
+  const secondCardNo = (step && step.secondTargetCardNo) || '';
+
+  if (targetCardNo || targetArea) {
+    _showPointer(resolvedText, targetArea, opType, secondArea, targetCardNo, secondCardNo);
   } else {
     _hidePointer();
     const overlay = document.getElementById('tutorial-instruction-overlay');
@@ -274,57 +278,53 @@ let _uiControlActive = false;
 let _savedButtonStates = [];  // 復元用
 
 function _applyStepUiControl(step) {
-  _clearStepUiControl(); // 前回の制御をクリア
-  if (!step) return;
+  _clearStepUiControl();
+  if (!step || !step.uiControl) return;
 
-  // --- カードハイライト ---
-  const hlCards = step.highlightCardNos;
-  const blockOther = step.blockOther;
-  if (Array.isArray(hlCards) && hlCards.length > 0) {
-    // 全カード要素を取得（手札 .h-card / バトルエリア .b-slot[data-card-no]）
+  const greyOut = Array.isArray(step.greyOut) ? step.greyOut : [];
+  const hlCards = Array.isArray(step.highlightCardNos) ? step.highlightCardNos : [];
+  const hlButtons = Array.isArray(step.highlightButtons) ? step.highlightButtons : [];
+  const greyOutCards = greyOut.includes('other_cards');
+
+  // --- カードハイライト + グレーアウト ---
+  if (hlCards.length > 0 || greyOutCards) {
     const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no]');
     allCards.forEach(cardEl => {
-      const cardNo = cardEl.dataset.cardNo || (cardEl.querySelector('[data-card-no]') || {}).dataset?.cardNo || '';
-      if (hlCards.includes(cardNo)) {
+      const no = cardEl.dataset.cardNo || '';
+      if (hlCards.length > 0 && hlCards.includes(no)) {
         cardEl.classList.add('tutorial-card-highlight');
-      } else if (blockOther) {
+      } else if (greyOutCards) {
         cardEl.classList.add('tutorial-card-disabled');
       }
     });
     _uiControlActive = true;
   }
 
-  // --- ボタン制御 ---
-  const btnCtrl = step.buttonControl;
-  if (btnCtrl && typeof btnCtrl === 'object') {
-    Object.entries(btnCtrl).forEach(([btnKey, state]) => {
-      if (!state) return;
-      const selector = _BUTTON_SELECTOR_MAP[btnKey];
-      if (!selector) return;
-      const btn = document.querySelector(selector);
-      if (!btn) return;
-
-      // 元の状態を保存
-      _savedButtonStates.push({
-        el: btn,
-        disabled: btn.disabled,
-        classes: [...btn.classList],
-      });
-
-      if (state === 'disabled') {
-        btn.disabled = true;
-        btn.classList.add('tutorial-btn-disabled');
-      } else if (state === 'highlighted') {
-        btn.classList.add('tutorial-btn-highlighted');
-      }
-    });
+  // --- ボタンハイライト ---
+  hlButtons.forEach(btnKey => {
+    const selector = _BUTTON_SELECTOR_MAP[btnKey];
+    if (!selector) return;
+    const btn = document.querySelector(selector);
+    if (!btn) return;
+    _savedButtonStates.push({ el: btn, disabled: btn.disabled });
+    btn.classList.add('tutorial-btn-highlighted');
     _uiControlActive = true;
-  }
+  });
 
-  // blockOther時: ブロック用オーバーレイは不要、CSS pointer-events で制御
-  if (blockOther && _uiControlActive) {
-    document.body.classList.add('tutorial-block-other');
-  }
+  // --- ボタングレーアウト ---
+  greyOut.forEach(key => {
+    if (key === 'other_cards') return; // カードは上で処理済み
+    const selector = _BUTTON_SELECTOR_MAP[key];
+    if (!selector) return;
+    const btn = document.querySelector(selector);
+    if (!btn) return;
+    // ハイライト済みならスキップ
+    if (btn.classList.contains('tutorial-btn-highlighted')) return;
+    _savedButtonStates.push({ el: btn, disabled: btn.disabled });
+    btn.disabled = true;
+    btn.classList.add('tutorial-btn-disabled');
+    _uiControlActive = true;
+  });
 }
 
 function _clearStepUiControl() {
@@ -375,15 +375,35 @@ const TARGET_AREA_SELECTORS = {
 
 let _highlightedEls = []; // 現在ハイライト中のDOM要素群
 
-function _showPointer(text, targetArea, opType, secondArea) {
+// カードNoからDOM要素を探す
+function _findCardElement(cardNo) {
+  if (!cardNo) return null;
+  // 手札
+  const hand = document.querySelectorAll('#hand-wrap .h-card');
+  for (const el of hand) { if (el.dataset.cardNo === cardNo) return el; }
+  // バトルエリア
+  const battle = document.querySelectorAll('#pl-battle-row .b-slot');
+  for (const el of battle) { if (el.dataset.cardNo === cardNo) return el; }
+  // 育成エリア
+  const raising = document.querySelector('#pl-iku-slot .b-slot, #pl-iku-slot');
+  if (raising && raising.dataset && raising.dataset.cardNo === cardNo) return raising;
+  return null;
+}
+
+function _showPointer(text, targetArea, opType, secondArea, targetCardNo, secondCardNo) {
   const overlay = document.getElementById('tutorial-pointer-overlay');
   const bubble = document.getElementById('tutorial-pointer-text');
   const finger = document.getElementById('tutorial-pointer-finger');
   const wrap   = document.getElementById('tutorial-pointer-wrap');
   if (!overlay || !bubble || !finger || !wrap) return;
 
-  const finder = TARGET_AREA_SELECTORS[targetArea];
-  const targetEl = finder ? finder() : null;
+  // カードNo指定があればカード要素を優先、なければエリア
+  let targetEl = null;
+  if (targetCardNo) targetEl = _findCardElement(targetCardNo);
+  if (!targetEl && targetArea) {
+    const finder = TARGET_AREA_SELECTORS[targetArea];
+    targetEl = finder ? finder() : null;
+  }
 
   if (!targetEl) {
     _hidePointer();
@@ -398,14 +418,16 @@ function _showPointer(text, targetArea, opType, secondArea) {
   targetEl.classList.add('tutorial-highlight');
   _highlightedEls.push(targetEl);
 
-  // 赤枠ハイライト（2つ目）
-  if (secondArea) {
+  // 赤枠ハイライト（2つ目）: カードNo優先、なければエリア
+  let secondEl = null;
+  if (secondCardNo) secondEl = _findCardElement(secondCardNo);
+  if (!secondEl && secondArea) {
     const finder2 = TARGET_AREA_SELECTORS[secondArea];
-    const el2 = finder2 ? finder2() : null;
-    if (el2) {
-      el2.classList.add('tutorial-highlight');
-      _highlightedEls.push(el2);
-    }
+    secondEl = finder2 ? finder2() : null;
+  }
+  if (secondEl) {
+    secondEl.classList.add('tutorial-highlight');
+    _highlightedEls.push(secondEl);
   }
 
   // 操作アイコン設定

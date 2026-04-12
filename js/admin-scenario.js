@@ -59,13 +59,6 @@ const BUTTON_TARGETS = [
   { value: 'end_turn',      label: 'ターン終了ボタン' },
 ];
 
-// ボタン状態の選択肢
-const BUTTON_STATES = [
-  { value: '',            label: '─ 通常' },
-  { value: 'highlighted', label: '★ ハイライト' },
-  { value: 'disabled',    label: '✕ グレーアウト' },
-];
-
 // 割り込みトリガー定義
 const TRIGGER_TYPES = [
   { value: 'before_end_turn',     label: 'ターン終了直前' },
@@ -733,16 +726,25 @@ window.flowUpdateStep = function(slotKey, stepIdx, field, value) {
   } else if (field === 'stepType') {
     step.stepType = value || 'action';
     _renderFlowEditor();
+  } else if (field === 'targetCardNo') {
+    step.targetCardNo = value || '';
+  } else if (field === 'secondTargetCardNo') {
+    step.secondTargetCardNo = value || '';
+  } else if (field === 'uiControl') {
+    step.uiControl = !!value;
+    _renderFlowEditor();
   } else if (field === 'highlightCardNos') {
-    // カンマ区切り文字列 → 配列
     step.highlightCardNos = String(value || '').split(',').map(s => s.trim()).filter(Boolean);
-  } else if (field === 'blockOther') {
-    step.blockOther = !!value;
-  } else if (field.startsWith('btnCtrl_')) {
-    const btnKey = field.replace('btnCtrl_', '');
-    if (!step.buttonControl) step.buttonControl = {};
-    if (value) step.buttonControl[btnKey] = value;
-    else delete step.buttonControl[btnKey];
+  } else if (field.startsWith('greyOut_')) {
+    const key = field.replace('greyOut_', '');
+    if (!Array.isArray(step.greyOut)) step.greyOut = [];
+    if (value) { if (!step.greyOut.includes(key)) step.greyOut.push(key); }
+    else { step.greyOut = step.greyOut.filter(g => g !== key); }
+  } else if (field.startsWith('hlBtn_')) {
+    const key = field.replace('hlBtn_', '');
+    if (!Array.isArray(step.highlightButtons)) step.highlightButtons = [];
+    if (value) { if (!step.highlightButtons.includes(key)) step.highlightButtons.push(key); }
+    else { step.highlightButtons = step.highlightButtons.filter(b => b !== key); }
   }
 };
 
@@ -849,11 +851,19 @@ function _renderFlowStep(slotKey, sIdx, step) {
         </div>
       </div>` : ''}
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
-        <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">${isSpotlight ? 'スポットライト対象' : '赤枠ハイライト1'}</label>
-          <select onchange="flowUpdateStep(${sk},${sIdx},'targetArea',this.value)">${areaOpts}</select>
+        <div class="tsave-field" style="margin-bottom:0;">
+          <label style="font-size:10px;">${isSpotlight ? 'スポットライト対象' : '赤枠ハイライト1'}</label>
+          <select onchange="flowUpdateStep(${sk},${sIdx},'targetArea',this.value)" style="margin-bottom:3px;">${areaOpts}</select>
+          <input type="text" value="${_escHtml(step.targetCardNo || '')}"
+            oninput="flowUpdateStep(${sk},${sIdx},'targetCardNo',this.value)"
+            placeholder="カードNo指定（優先）" style="font-size:10px; padding:3px;">
         </div>
-        <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">赤枠ハイライト2</label>
-          <select onchange="flowUpdateStep(${sk},${sIdx},'secondTargetArea',this.value)">${areaOpts2}</select>
+        <div class="tsave-field" style="margin-bottom:0;">
+          <label style="font-size:10px;">赤枠ハイライト2</label>
+          <select onchange="flowUpdateStep(${sk},${sIdx},'secondTargetArea',this.value)" style="margin-bottom:3px;">${areaOpts2}</select>
+          <input type="text" value="${_escHtml(step.secondTargetCardNo || '')}"
+            oninput="flowUpdateStep(${sk},${sIdx},'secondTargetCardNo',this.value)"
+            placeholder="カードNo指定（優先）" style="font-size:10px; padding:3px;">
         </div>
       </div>
       ${isAction && needsCard ? `
@@ -867,44 +877,63 @@ function _renderFlowStep(slotKey, sIdx, step) {
   `;
 }
 
-// ステップ内の UI制御セクション（カードハイライト + ボタン制御）
+// ステップ内の UI制御セクション（トグル展開式）
 function _renderStepUiControl(slotKey, sIdx, step) {
   const sk = `'${slotKey}'`;
-  const hlCards = (step.highlightCardNos || []).join(', ');
-  const blockOther = step.blockOther ? 'checked' : '';
-  const btnCtrl = step.buttonControl || {};
+  const hasUi = step.uiControl;
+  const checked = hasUi ? 'checked' : '';
+  const greyOut = Array.isArray(step.greyOut) ? step.greyOut : [];
+  const hlButtons = Array.isArray(step.highlightButtons) ? step.highlightButtons : [];
 
-  const btnRows = BUTTON_TARGETS.map(btn => {
-    const curState = btnCtrl[btn.value] || '';
-    const opts = BUTTON_STATES.map(s =>
-      `<option value="${s.value}"${s.value === curState ? ' selected' : ''}>${s.label}</option>`
-    ).join('');
-    return `
-      <div style="display:flex; align-items:center; gap:6px; margin-bottom:3px;">
-        <span style="color:#aaa; font-size:10px; min-width:110px;">${btn.label}</span>
-        <select onchange="flowUpdateStep(${sk},${sIdx},'btnCtrl_${btn.value}',this.value)" style="font-size:10px; padding:2px; flex:1;">${opts}</select>
-      </div>`;
-  }).join('');
+  // グレーアウト対象（カード＋ボタン統合）
+  const GREYOUT_OPTIONS = [
+    { value: 'other_cards',   label: 'ハイライト以外のカード' },
+    { value: 'mulligan_redo', label: '引き直しボタン' },
+    { value: 'game_start',    label: 'ゲーム開始ボタン' },
+    { value: 'end_turn',      label: 'ターン終了ボタン' },
+  ];
+
+  const greyOutChecks = GREYOUT_OPTIONS.map(opt => `
+    <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:10px; color:#aaa; margin-bottom:2px;">
+      <input type="checkbox" ${greyOut.includes(opt.value) ? 'checked' : ''}
+        onchange="flowUpdateStep(${sk},${sIdx},'greyOut_${opt.value}',this.checked)">
+      ${opt.label}
+    </label>`).join('');
+
+  const hlBtnChecks = BUTTON_TARGETS.map(btn => `
+    <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:10px; color:#aaa; margin-bottom:2px;">
+      <input type="checkbox" ${hlButtons.includes(btn.value) ? 'checked' : ''}
+        onchange="flowUpdateStep(${sk},${sIdx},'hlBtn_${btn.value}',this.checked)">
+      ${btn.label}
+    </label>`).join('');
+
+  const hlCards = (step.highlightCardNos || []).join(', ');
 
   return `
-    <div style="border-top:1px solid #1a1a1a; margin-top:8px; padding-top:8px;">
-      <div style="color:#888; font-size:10px; font-weight:bold; margin-bottom:6px;">UI制御（カード・ボタン）</div>
-      <div class="tsave-field" style="margin-bottom:6px;">
-        <label style="font-size:10px;">ハイライトカード <span style="color:#666;">カードNoをカンマ区切り（空＝制御なし）</span></label>
-        <input type="text" value="${_escHtml(hlCards)}"
-          oninput="flowUpdateStep(${sk},${sIdx},'highlightCardNos',this.value)"
-          placeholder="例: ST1-03, BT1-010">
-      </div>
-      <div style="margin-bottom:8px;">
-        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:10px; color:#aaa;">
-          <input type="checkbox" ${blockOther} onchange="flowUpdateStep(${sk},${sIdx},'blockOther',this.checked)">
-          ハイライト以外の操作をブロック（strictモード時）
-        </label>
-      </div>
-      <div style="background:#050505; border:1px solid #1a1a1a; border-radius:4px; padding:8px;">
-        <div style="color:#888; font-size:9px; margin-bottom:4px;">ボタン制御</div>
-        ${btnRows}
-      </div>
+    <div style="border-top:1px solid #1a1a1a; margin-top:8px; padding-top:6px;">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:10px; color:#888; font-weight:bold;">
+        <input type="checkbox" ${checked} onchange="flowUpdateStep(${sk},${sIdx},'uiControl',this.checked)">
+        UI制御を設定する
+      </label>
+      ${hasUi ? `
+      <div style="margin-top:8px; padding:8px; background:#050505; border:1px solid #1a1a1a; border-radius:4px;">
+        <div class="tsave-field" style="margin-bottom:8px;">
+          <label style="font-size:10px;">ハイライトカード <span style="color:#666;">カンマ区切り（赤枠ハイライトのカードNo指定と連動）</span></label>
+          <input type="text" value="${_escHtml(hlCards)}"
+            oninput="flowUpdateStep(${sk},${sIdx},'highlightCardNos',this.value)"
+            placeholder="例: ST1-03, BT1-010">
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div>
+            <div style="color:#ff6666; font-size:9px; font-weight:bold; margin-bottom:4px;">グレーアウト（無効化）</div>
+            ${greyOutChecks}
+          </div>
+          <div>
+            <div style="color:#00ff88; font-size:9px; font-weight:bold; margin-bottom:4px;">ボタンハイライト（緑発光）</div>
+            ${hlBtnChecks}
+          </div>
+        </div>
+      </div>` : ''}
     </div>`;
 }
 

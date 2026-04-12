@@ -139,14 +139,14 @@ export function doPlay(card, handIdx, slotIdx) {
     addLog('✦ 「' + card.name + '」を使用！（コスト ' + card.playCost + '）');
     renderAll();
     showOptionEffect(card, () => {
-      bs.memory -= card.playCost;
-      updateMemGauge();
-      _dispatchMemoryUpdate();
-      _hooks.checkAndTriggerEffect(card, '【メイン】', () => {
+      // ★ 公式ルール: コスト支払い → 効果処理 → ターン終了判定
+      playerSpendMemory(card.playCost, true); // defer=true
+      _hooks.checkAndTriggerEffect(card, '【メイン】', async () => {
         bs.player.trash.push(card);
         addLog('✦ 「' + card.name + '」をトラッシュへ');
         renderAll();
-        if (bs.memory < 0) checkAutoTurnEnd();
+        if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
+        checkPlayerPendingTurnEnd();
       }, 'player');
     });
     return;
@@ -159,13 +159,21 @@ export function doPlay(card, handIdx, slotIdx) {
     addLog('▶ 「' + card.name + '」を登場！（コスト ' + card.playCost + '）');
     renderAll();
     showPlayEffect(card, () => {
-      const turnEnded = playerSpendMemory(card.playCost);
-      if (!turnEnded) {
-        _hooks.applyPermanentEffects('player');
-        renderAll();
-        if (hasKeyword(card, '【登場時】')) {
-          _hooks.checkAndTriggerEffect(card, '【登場時】', () => renderAll());
-        }
+      // ★ 公式ルール: コスト支払い → 登場時効果 → ターン終了判定
+      playerSpendMemory(card.playCost, true); // defer=true
+      _hooks.applyPermanentEffects('player');
+      renderAll();
+      const finishTamer = async () => {
+        if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
+        checkPlayerPendingTurnEnd();
+      };
+      if (hasKeyword(card, '【登場時】')) {
+        _hooks.checkAndTriggerEffect(card, '【登場時】', () => {
+          renderAll();
+          finishTamer();
+        });
+      } else {
+        finishTamer();
       }
     });
     return;
@@ -181,9 +189,11 @@ export function doPlay(card, handIdx, slotIdx) {
   showPlayEffect(card, () => {
     _hooks.applyPermanentEffects('player');
     renderAll(true);
+    // ★ 公式ルール: コスト支払い(メモリー消費) → 登場時効果 → ターン終了判定
+    playerSpendMemory(card.playCost, true); // defer=true: ターン終了は保留
     const finishPlay = async () => {
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
-      playerSpendMemory(card.playCost);
+      checkPlayerPendingTurnEnd();
     };
     if (hasKeyword(card, '【登場時】')) {
       _hooks.checkAndTriggerEffect(card, '【登場時】', () => {
@@ -221,10 +231,12 @@ export function doEvolve(card, handIdx, slotIdx) {
   addLog('⬆ 「' + base.name + '」→「' + evolved.name + '」進化！（コスト ' + cost + '）');
   renderAll();
   showEvolveEffect(cost, base.name, base, evolved, () => {
+    // ★ 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定
+    playerSpendMemory(cost, true); // defer=true: ターン終了は保留
     doDraw('player', '進化ドロー', () => {
       const finishEvolve = async () => {
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
-        playerSpendMemory(cost);
+        checkPlayerPendingTurnEnd();
       };
       if (hasKeyword(evolved, '【進化時】')) {
         _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
@@ -263,10 +275,12 @@ export function doEvolveIku(card, handIdx) {
   addLog('⬆ 育成「' + base.name + '」→「' + evolved.name + '」進化！（コスト ' + cost + '）');
   renderAll();
   showEvolveEffect(cost, base.name, base, evolved, () => {
+    // ★ 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定
+    playerSpendMemory(cost, true); // defer=true: ターン終了は保留
     doDraw('player', '進化ドロー', () => {
       const finishEvolveIku = async () => {
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
-        playerSpendMemory(cost);
+        checkPlayerPendingTurnEnd();
       };
       if (evolved.effect && evolved.effect.includes('＜育成＞') && hasKeyword(evolved, '【進化時】')) {
         _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
@@ -282,16 +296,31 @@ export function doEvolveIku(card, handIdx) {
 
 // ===== メモリー消費（プレイヤー） =====
 
-function playerSpendMemory(cost) {
+// cost を消費し、メモリーが相手側に超過した場合は checkAutoTurnEnd を呼ぶ。
+// defer=true の場合はターン終了判定を bs._pendingTurnEnd に保留し、呼び出し側で
+// 全ての効果処理完了後に checkPlayerPendingTurnEnd() を呼ぶ。
+function playerSpendMemory(cost, defer) {
   if (cost === 0) { updateMemGauge(); return false; }
   bs.memory -= cost;
   updateMemGauge();
   _dispatchMemoryUpdate();
   if (bs.memory < 0) {
+    if (defer) {
+      bs._pendingTurnEnd = true;
+      return true;
+    }
     checkAutoTurnEnd();
     return true;
   }
   return false;
+}
+
+// 効果処理完了後、保留中のターン終了判定を実行
+function checkPlayerPendingTurnEnd() {
+  if (bs._pendingTurnEnd) {
+    bs._pendingTurnEnd = false;
+    checkAutoTurnEnd();
+  }
 }
 
 // AI メモリー消費

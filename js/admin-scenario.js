@@ -30,9 +30,11 @@ const TARGET_AREAS = [
   { value: 'hand',            label: '手札エリア' },
   { value: 'battle',          label: 'バトルエリア' },
   { value: 'end_turn_btn',    label: 'ターン終了ボタン' },
-  { value: 'opp_security',    label: '相手セキュリティ' },
-  { value: 'opp_battle',      label: '相手バトルエリア' },
-  { value: 'memory_gauge',    label: 'メモリーゲージ' },
+  { value: 'opp_security',        label: '相手セキュリティ' },
+  { value: 'opp_battle',          label: '相手バトルエリア' },
+  { value: 'memory_gauge',        label: 'メモリーゲージ（全体）' },
+  { value: 'memory_gauge_player', label: 'メモリーゲージ（自分側）' },
+  { value: 'memory_gauge_opp',    label: 'メモリーゲージ（相手側）' },
 ];
 
 // ステップタイプ定義

@@ -372,7 +372,22 @@ const TARGET_AREA_SELECTORS = {
   end_turn_btn:  () => document.getElementById('action-bar'),
   opp_security:  () => document.querySelector('#ai-security-row, [id*="ai-sec"]'),
   opp_battle:    () => document.getElementById('ai-battle-row'),
-  memory_gauge:  () => document.getElementById('memory-gauge-row'),
+  memory_gauge:        () => document.getElementById('memory-gauge-row'),
+  memory_gauge_player: () => {
+    // 自分側のメモリーセル群をラップ要素として返す（最初のm-plセルの親=row）
+    const row = document.getElementById('memory-gauge-row');
+    if (!row) return null;
+    // m-pl セルが複数あるので、row 内で自分側をハイライトするため範囲を特定
+    // 簡易: 自分側セル群の最初と最後を含む仮想範囲 → row 自体に pl クラスを付けて CSS で制御
+    const cells = row.querySelectorAll('.m-pl');
+    return cells.length ? cells[Math.floor(cells.length / 2)] : row;
+  },
+  memory_gauge_opp: () => {
+    const row = document.getElementById('memory-gauge-row');
+    if (!row) return null;
+    const cells = row.querySelectorAll('.m-ai');
+    return cells.length ? cells[Math.floor(cells.length / 2)] : row;
+  },
 };
 
 let _highlightedEls = []; // 現在ハイライト中のDOM要素群

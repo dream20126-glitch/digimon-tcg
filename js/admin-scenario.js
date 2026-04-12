@@ -558,8 +558,27 @@ window.updateClearConditionUI = function() {
 };
 
 // ===================================================================
-// フロー編集（フェーズベース）
+// フロー編集（トグル式フェーズ一覧）
 // ===================================================================
+
+// 全フェーズ＋割り込みの定義（表示順）
+const ALL_FLOW_SLOTS = [
+  // 通常フェーズ
+  { key: 'mulligan',  phase: 'mulligan',  label: '🎴 マリガン',          color: '#ff88ff', hint: '手札の引き直し画面。説明ポップアップや引き直しボタンの制御を設定。' },
+  { key: 'unsuspend', phase: 'unsuspend', label: '🔄 アクティブフェーズ',  color: '#88ccff', hint: 'レスト状態のカードを縦に戻す自動フェーズ。説明を���みたい時にON。' },
+  { key: 'draw',      phase: 'draw',      label: '🃏 ドローフェーズ',      color: '#88ffcc', hint: '���ッキから1枚ドローする自動フェーズ。説明を挟みたい時にON。' },
+  { key: 'breed',     phase: 'breed',     label: '🥚 育成フェーズ',        color: '#ffcc44', hint: '孵化・育成エリアからの移動など。操作誘導や説明を設定。' },
+  { key: 'main',      phase: 'main',      label: '⚔️ メインフェーズ',      color: '#ff6666', hint: 'プレイ・進化・アタックなどの操作誘導や説明を設定。' },
+  // 割り込みトリガー
+  { key: 'trg_before_end_turn',     phase: '_trigger', trigger: 'before_end_turn',     label: '⚡ 自分のターン終了直前',    color: '#ffaa00', hint: 'ターン終了アニメーションの前に説明を挟む。' },
+  { key: 'trg_memory_crossed',      phase: '_trigger', trigger: 'memory_crossed',      label: '⚡ メモリー相手側到達時',    color: '#ffaa00', hint: 'メモリーが相手側に振れた瞬間に説明を挟む。' },
+  { key: 'trg_after_attack',        phase: '_trigger', trigger: 'after_attack',        label: '⚡ アタック解決後',          color: '#ffaa00', hint: 'アタックが解決した直後に説明を挟む。' },
+  { key: 'trg_before_opponent_turn', phase: '_trigger', trigger: 'before_opponent_turn', label: '⚡ 相手ターン開始前',       color: '#ffaa00', hint: '相手ターン開始アニメーションの前に説明を挟む。' },
+];
+
+let _flowEditTurn = 1;  // 現在編集中のターン番号
+let _flowMaxTurn = 1;   // 最大ターン番号
+
 function _conditionNeedsCard(type) {
   const def = CONDITION_TYPES.find(t => t.value === type);
   return !!(def && def.needsCardNo);
@@ -567,76 +586,120 @@ function _conditionNeedsCard(type) {
 
 // フロー設定画面を開く
 window.openFlowEditor = function() {
+  // 最大ターン番号を算出
+  _flowMaxTurn = Math.max(1, ...(_scenarioFlow.map(b => b.turn || 1)));
+  _flowEditTurn = 1;
   showScreen('tutorial-flow-edit-screen');
+  _renderTurnTabs();
   _renderFlowEditor();
 };
 
 // フロー設定画面から戻る
 window.closeFlowEditor = function() {
+  // ONだけどステップが0のブロックを除去（ク���ーンアップ）
+  // → 残す。ONの意図がある可能性があるので、ステップ空でも残す
   showScreen('tutorial-scenario-edit-screen');
   _renderFlowSummary();
 };
 
-// フェーズを追加
-window.flowAddPhase = function() {
-  const phase = document.getElementById('flow-add-phase-select').value;
-  const turn = Number(document.getElementById('flow-add-turn').value || 1);
-  _scenarioFlow.push({ phase, turn, steps: [] });
+// ターンタブ
+window.flowAddTurnTab = function() {
+  _flowMaxTurn++;
+  _flowEditTurn = _flowMaxTurn;
+  _renderTurnTabs();
   _renderFlowEditor();
 };
 
-// 割り込みトリガーを追加
-window.flowAddTrigger = function() {
-  const trigger = document.getElementById('flow-add-trigger-select').value;
-  const turn = Number(document.getElementById('flow-add-trigger-turn').value || 1);
-  _scenarioFlow.push({ phase: '_trigger', trigger, turn, steps: [] });
+window.flowSelectTurn = function(turn) {
+  _flowEditTurn = turn;
+  _renderTurnTabs();
   _renderFlowEditor();
 };
 
-// フェーズ/トリガーブロックを削除
-window.flowRemoveBlock = function(blockIdx) {
-  _scenarioFlow.splice(blockIdx, 1);
+function _renderTurnTabs() {
+  const wrap = document.getElementById('flow-turn-tabs');
+  if (!wrap) return;
+  let html = '';
+  for (let t = 1; t <= _flowMaxTurn; t++) {
+    // このターンにブロックがあるか
+    const hasBlocks = _scenarioFlow.some(b => (b.turn || 1) === t);
+    const isActive = t === _flowEditTurn;
+    const bg = isActive ? 'var(--main-cyan)' : (hasBlocks ? '#1a3030' : '#111');
+    const color = isActive ? '#000' : (hasBlocks ? 'var(--main-cyan)' : '#555');
+    const border = hasBlocks ? 'var(--main-cyan)' : '#333';
+    html += `<button onclick="flowSelectTurn(${t})" style="padding:4px 12px; font-size:11px; font-weight:bold; border-radius:4px; border:1px solid ${border}; background:${bg}; color:${color}; cursor:pointer;">T${t}</button>`;
+  }
+  wrap.innerHTML = html;
+}
+
+// スロッ���のON/OFF切替
+window.flowToggleSlot = function(slotKey) {
+  const slot = ALL_FLOW_SLOTS.find(s => s.key === slotKey);
+  if (!slot) return;
+  const blockIdx = _findBlockIndex(slot);
+  if (blockIdx >= 0) {
+    // OFF: ブロックを削除
+    _scenarioFlow.splice(blockIdx, 1);
+  } else {
+    // ON: ブロックを追加
+    const newBlock = { phase: slot.phase, turn: _flowEditTurn, steps: [] };
+    if (slot.trigger) newBlock.trigger = slot.trigger;
+    _scenarioFlow.push(newBlock);
+  }
+  _renderTurnTabs();
   _renderFlowEditor();
 };
 
-// フェーズ/トリガーブロックを上下に移動
-window.flowMoveBlock = function(blockIdx, delta) {
-  const to = blockIdx + delta;
-  if (to < 0 || to >= _scenarioFlow.length) return;
-  [_scenarioFlow[blockIdx], _scenarioFlow[to]] = [_scenarioFlow[to], _scenarioFlow[blockIdx]];
-  _renderFlowEditor();
-};
+// 該当ターン＋スロットのブロックインデックスを探す
+function _findBlockIndex(slot) {
+  return _scenarioFlow.findIndex(b => {
+    if ((b.turn || 1) !== _flowEditTurn) return false;
+    if (slot.trigger) return b.phase === '_trigger' && b.trigger === slot.trigger;
+    return b.phase === slot.phase && b.phase !== '_trigger';
+  });
+}
 
 // ステップ追加
-window.flowAddStep = function(blockIdx) {
-  if (!_scenarioFlow[blockIdx]) return;
-  _scenarioFlow[blockIdx].steps.push({
+window.flowAddStep = function(slotKey) {
+  const block = _getOrCreateBlock(slotKey);
+  if (!block) return;
+  block.steps.push({
     stepType: 'action', instructionText: '', advanceCondition: { type: 'hatch' },
     targetArea: '', secondTargetArea: '', operationType: '',
   });
   _renderFlowEditor();
 };
 
+function _getOrCreateBlock(slotKey) {
+  const slot = ALL_FLOW_SLOTS.find(s => s.key === slotKey);
+  if (!slot) return null;
+  const idx = _findBlockIndex(slot);
+  return idx >= 0 ? _scenarioFlow[idx] : null;
+}
+
 // ステップ削除
-window.flowRemoveStep = function(blockIdx, stepIdx) {
-  if (!_scenarioFlow[blockIdx]) return;
-  _scenarioFlow[blockIdx].steps.splice(stepIdx, 1);
+window.flowRemoveStep = function(slotKey, stepIdx) {
+  const block = _getOrCreateBlock(slotKey);
+  if (!block) return;
+  block.steps.splice(stepIdx, 1);
   _renderFlowEditor();
 };
 
 // ステップ移動
-window.flowMoveStep = function(blockIdx, stepIdx, delta) {
-  const steps = _scenarioFlow[blockIdx] && _scenarioFlow[blockIdx].steps;
-  if (!steps) return;
+window.flowMoveStep = function(slotKey, stepIdx, delta) {
+  const block = _getOrCreateBlock(slotKey);
+  if (!block || !block.steps) return;
   const to = stepIdx + delta;
-  if (to < 0 || to >= steps.length) return;
-  [steps[stepIdx], steps[to]] = [steps[to], steps[stepIdx]];
+  if (to < 0 || to >= block.steps.length) return;
+  [block.steps[stepIdx], block.steps[to]] = [block.steps[to], block.steps[stepIdx]];
   _renderFlowEditor();
 };
 
 // ステップフィールド更新
-window.flowUpdateStep = function(blockIdx, stepIdx, field, value) {
-  const step = _scenarioFlow[blockIdx] && _scenarioFlow[blockIdx].steps[stepIdx];
+window.flowUpdateStep = function(slotKey, stepIdx, field, value) {
+  const block = _getOrCreateBlock(slotKey);
+  if (!block) return;
+  const step = block.steps[stepIdx];
   if (!step) return;
   if (field === 'instructionText') {
     step.instructionText = value;
@@ -659,52 +722,54 @@ window.flowUpdateStep = function(blockIdx, stepIdx, field, value) {
   }
 };
 
-// --- フロー設定画面のレンダリング ---
+// --- メインレンダリング ---
 function _renderFlowEditor() {
   const container = document.getElementById('flow-phases-container');
   if (!container) return;
-  if (!_scenarioFlow.length) {
-    container.innerHTML = '<p style="color:#666; font-size:11px; text-align:center; padding:20px;">フェーズが未登録です。上のプルダウンからフェーズを追加してください。</p>';
-    return;
-  }
-  container.innerHTML = _scenarioFlow.map((block, bIdx) => {
-    const isTrigger = block.phase === '_trigger';
-    const phaseDef = PHASE_DEFS.find(p => p.value === block.phase);
-    const triggerDef = TRIGGER_TYPES.find(t => t.value === block.trigger);
-    const label = isTrigger
-      ? `⚡ ${triggerDef ? triggerDef.label : block.trigger}`
-      : (phaseDef ? phaseDef.label : block.phase);
-    const borderColor = isTrigger ? '#ffaa00' : (phaseDef ? phaseDef.color : '#555');
-    const turnLabel = `ターン${block.turn || 1}`;
 
-    const stepsHtml = (block.steps || []).map((step, sIdx) =>
-      _renderFlowStep(bIdx, sIdx, step)
-    ).join('');
+  container.innerHTML = ALL_FLOW_SLOTS.map(slot => {
+    const blockIdx = _findBlockIndex(slot);
+    const isOn = blockIdx >= 0;
+    const block = isOn ? _scenarioFlow[blockIdx] : null;
+    const stepCount = block ? (block.steps || []).length : 0;
+    const isTrigger = !!slot.trigger;
 
-    return `
-      <div style="border:1px solid ${borderColor}; border-radius:8px; margin-bottom:12px; overflow:hidden;">
-        <div style="background:${borderColor}22; padding:8px 12px; display:flex; justify-content:space-between; align-items:center;">
-          <div>
-            <span style="color:${borderColor}; font-weight:bold; font-size:12px;">${label}</span>
-            <span style="color:#888; font-size:10px; margin-left:8px;">${turnLabel}</span>
+    // ヘッダー（トグ���スイッチ付き）
+    const headerBg = isOn ? `${slot.color}22` : '#0a0a0a';
+    const headerBorder = isOn ? slot.color : '#222';
+    const toggleChecked = isOn ? 'checked' : '';
+    const badge = isOn && stepCount > 0 ? `<span style="background:${slot.color}44; color:${slot.color}; font-size:9px; padding:1px 6px; border-radius:3px; margin-left:6px;">${stepCount}ステップ</span>` : '';
+
+    let html = `
+      <div style="border:1px solid ${headerBorder}; border-radius:8px; margin-bottom:8px; overflow:hidden; transition:border-color 0.2s;">
+        <div style="background:${headerBg}; padding:8px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onclick="flowToggleSlot('${slot.key}')">
+          <input type="checkbox" ${toggleChecked} style="accent-color:${slot.color}; pointer-events:none; width:16px; height:16px;">
+          <div style="flex:1;">
+            <span style="color:${isOn ? slot.color : '#666'}; font-weight:bold; font-size:12px;">${slot.label}</span>${badge}
+            <div style="color:#666; font-size:10px; margin-top:1px;">${slot.hint}</div>
           </div>
-          <div style="display:flex; gap:4px;">
-            <button class="admin-btn-sm" style="padding:2px 8px; font-size:10px;" onclick="flowMoveBlock(${bIdx},-1)">↑</button>
-            <button class="admin-btn-sm" style="padding:2px 8px; font-size:10px;" onclick="flowMoveBlock(${bIdx},1)">↓</button>
-            <button class="admin-btn-danger" style="padding:2px 8px; font-size:10px;" onclick="flowRemoveBlock(${bIdx})">×</button>
-          </div>
-        </div>
-        <div style="padding:10px 12px;">
-          ${stepsHtml || '<p style="color:#555; font-size:10px; margin:0;">ステップなし</p>'}
-          <button class="admin-btn-sm" onclick="flowAddStep(${bIdx})" style="width:100%; margin-top:8px; font-size:10px;">＋ ステップを追加</button>
-        </div>
-      </div>
-    `;
+        </div>`;
+
+    // 展���部分（ONの場合のみ）
+    if (isOn) {
+      const stepsHtml = (block.steps || []).map((step, sIdx) =>
+        _renderFlowStep(slot.key, sIdx, step)
+      ).join('');
+
+      html += `
+        <div style="padding:10px 12px; border-top:1px solid ${slot.color}33;">
+          ${stepsHtml || '<p style="color:#555; font-size:10px; margin:0 0 6px;">ステップが未登録です。下のボタンから追加してください。</p>'}
+          <button class="admin-btn-sm" onclick="event.stopPropagation(); flowAddStep('${slot.key}')" style="width:100%; margin-top:4px; font-size:10px;">＋ ステップを追加</button>
+        </div>`;
+    }
+
+    html += '</div>';
+    return html;
   }).join('');
 }
 
 // 個別ステップの描画
-function _renderFlowStep(bIdx, sIdx, step) {
+function _renderFlowStep(slotKey, sIdx, step) {
   const sType = step.stepType || 'action';
   const isAction = sType === 'action';
   const isSpotlight = sType === 'spotlight';
@@ -712,6 +777,7 @@ function _renderFlowStep(bIdx, sIdx, step) {
   const needsCard = _conditionNeedsCard(cond.type);
   const cardNo = (cond.params && cond.params.cardNo) || '';
 
+  const sk = `'${slotKey}'`;
   const stepTypeOpts = STEP_TYPES.map(s =>
     `<option value="${s.value}"${s.value === sType ? ' selected' : ''}>${s.label}</option>`
   ).join('');
@@ -731,45 +797,45 @@ function _renderFlowStep(bIdx, sIdx, step) {
   const borderColor = isAction ? '#333' : isSpotlight ? '#ffaa0066' : '#00fbff66';
 
   return `
-    <div style="background:#0a0a0a; border:1px solid ${borderColor}; border-radius:6px; padding:10px; margin-bottom:6px;">
+    <div style="background:#0a0a0a; border:1px solid ${borderColor}; border-radius:6px; padding:10px; margin-bottom:6px;" onclick="event.stopPropagation()">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
         <span style="color:#aaa; font-size:10px; font-weight:bold;">STEP ${sIdx + 1}</span>
         <div>
-          <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${bIdx},${sIdx},-1)">↑</button>
-          <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${bIdx},${sIdx},1)">↓</button>
-          <button class="admin-btn-danger" style="padding:2px 6px; font-size:9px;" onclick="flowRemoveStep(${bIdx},${sIdx})">×</button>
+          <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${sIdx},-1)">↑</button>
+          <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${sIdx},1)">↓</button>
+          <button class="admin-btn-danger" style="padding:2px 6px; font-size:9px;" onclick="flowRemoveStep(${sk},${sIdx})">×</button>
         </div>
       </div>
       <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">ステップタイプ</label>
-        <select onchange="flowUpdateStep(${bIdx},${sIdx},'stepType',this.value)">${stepTypeOpts}</select>
+        <select onchange="flowUpdateStep(${sk},${sIdx},'stepType',this.value)">${stepTypeOpts}</select>
       </div>
       <div class="tsave-field" style="margin-bottom:6px;">
         <label style="font-size:10px;">${isAction ? '指示テキスト' : '説明テキスト'} <span style="color:#888;">※ {{pc:XX|sp:YY}} でデバイス切替可</span></label>
-        <textarea rows="${isAction ? 1 : 3}" oninput="flowUpdateStep(${bIdx},${sIdx},'instructionText',this.value)"
+        <textarea rows="${isAction ? 1 : 3}" oninput="flowUpdateStep(${sk},${sIdx},'instructionText',this.value)"
           placeholder="${isAction ? '例: 育成エリアをタップして孵化しよう!' : '例: セキュリティは5枚あるよ。相手のセキュリティを0にして...'}"
           style="resize:vertical;">${_escHtml(step.instructionText || '')}</textarea>
       </div>
       ${isAction ? `
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">次に進む条件</label>
-          <select onchange="flowUpdateStep(${bIdx},${sIdx},'conditionType',this.value)">${condOpts}</select>
+          <select onchange="flowUpdateStep(${sk},${sIdx},'conditionType',this.value)">${condOpts}</select>
         </div>
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">操作タイプ</label>
-          <select onchange="flowUpdateStep(${bIdx},${sIdx},'operationType',this.value)">${opOpts}</select>
+          <select onchange="flowUpdateStep(${sk},${sIdx},'operationType',this.value)">${opOpts}</select>
         </div>
       </div>` : ''}
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">${isSpotlight ? 'スポットライト対象' : '赤枠ハイライト1'}</label>
-          <select onchange="flowUpdateStep(${bIdx},${sIdx},'targetArea',this.value)">${areaOpts}</select>
+          <select onchange="flowUpdateStep(${sk},${sIdx},'targetArea',this.value)">${areaOpts}</select>
         </div>
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">赤枠ハイライト2</label>
-          <select onchange="flowUpdateStep(${bIdx},${sIdx},'secondTargetArea',this.value)">${areaOpts2}</select>
+          <select onchange="flowUpdateStep(${sk},${sIdx},'secondTargetArea',this.value)">${areaOpts2}</select>
         </div>
       </div>
       ${isAction && needsCard ? `
       <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">カードNo</label>
         <input type="text" value="${_escHtml(cardNo)}"
-          oninput="flowUpdateStep(${bIdx},${sIdx},'conditionCardNo',this.value)"
+          oninput="flowUpdateStep(${sk},${sIdx},'conditionCardNo',this.value)"
           placeholder="例: BT1-010">
       </div>` : ''}
     </div>
@@ -784,18 +850,24 @@ function _renderFlowSummary() {
     wrap.innerHTML = '<p style="color:#666; font-size:11px; text-align:center;">フロー未設定</p>';
     return;
   }
-  wrap.innerHTML = _scenarioFlow.map(block => {
-    const isTrigger = block.phase === '_trigger';
-    const phaseDef = PHASE_DEFS.find(p => p.value === block.phase);
-    const triggerDef = TRIGGER_TYPES.find(t => t.value === block.trigger);
-    const label = isTrigger
-      ? `⚡${triggerDef ? triggerDef.label : block.trigger}`
-      : (phaseDef ? phaseDef.label : block.phase);
-    const color = isTrigger ? '#ffaa00' : (phaseDef ? phaseDef.color : '#888');
-    const count = (block.steps || []).length;
-    return `<span style="display:inline-block; background:${color}22; border:1px solid ${color}44; color:${color}; border-radius:4px; padding:2px 8px; margin:2px; font-size:10px;">
-      ${label} T${block.turn || 1} (${count}ステップ)
-    </span>`;
+  // ターンごとにグループ化
+  const turns = [...new Set(_scenarioFlow.map(b => b.turn || 1))].sort((a, b) => a - b);
+  wrap.innerHTML = turns.map(t => {
+    const blocks = _scenarioFlow.filter(b => (b.turn || 1) === t);
+    const tags = blocks.map(block => {
+      const isTrigger = block.phase === '_trigger';
+      const slot = ALL_FLOW_SLOTS.find(s =>
+        isTrigger ? s.trigger === block.trigger : s.phase === block.phase && !s.trigger
+      );
+      const label = slot ? slot.label : (block.phase || '?');
+      const color = slot ? slot.color : '#888';
+      const count = (block.steps || []).length;
+      return `<span style="display:inline-block; background:${color}22; border:1px solid ${color}44; color:${color}; border-radius:4px; padding:2px 8px; margin:2px; font-size:10px;">
+        ${label} (${count})
+      </span>`;
+    }).join('');
+    const turnLabel = turns.length > 1 ? `<span style="color:#888; font-size:10px; margin-right:4px;">T${t}:</span>` : '';
+    return `<div style="margin-bottom:2px;">${turnLabel}${tags}</div>`;
   }).join('');
 }
 

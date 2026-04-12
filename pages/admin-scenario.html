@@ -189,38 +189,20 @@
 <!-- ===== フロー設定画面 ===== -->
 <div id="tutorial-flow-edit-screen" class="screen">
   <div style="max-width:750px; margin:auto; padding:24px 20px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
       <h2 style="color:var(--main-cyan); margin:0; font-size:1.1rem;">📝 フロー設定</h2>
       <button class="admin-btn-sm" onclick="closeFlowEditor()" style="padding:6px 16px;">← 戻る</button>
     </div>
-    <p style="color:#888; font-size:11px; margin:0 0 16px;">フェーズを追加して、各フェーズ内にステップ（指示・説明・演出）を設定してください。不要なフェーズは追加しなければスキップされます。</p>
+    <p style="color:#888; font-size:11px; margin:0 0 16px;">使用するフェーズをONにして、中身を設定してください。OFFのフェーズはスキップされます。</p>
 
-    <!-- フェーズ追加 -->
-    <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
-      <select id="flow-add-phase-select" style="font-size:12px; padding:6px;">
-        <option value="mulligan">🎴 マリガン</option>
-        <option value="unsuspend">🔄 アクティブフェーズ</option>
-        <option value="draw">🃏 ドローフェーズ</option>
-        <option value="breed">🥚 育成フェーズ</option>
-        <option value="main">⚔️ メインフェーズ</option>
-      </select>
-      <label style="color:#aaa; font-size:11px;">ターン <input type="number" id="flow-add-turn" value="1" min="1" style="width:50px; padding:4px; font-size:11px;"></label>
-      <button class="admin-btn-sm" onclick="flowAddPhase()">＋ フェーズを追加</button>
+    <!-- ターン選択 -->
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+      <span style="color:#aaa; font-size:12px; font-weight:bold;">設定中のターン:</span>
+      <div id="flow-turn-tabs" style="display:flex; gap:4px;"></div>
+      <button class="admin-btn-sm" onclick="flowAddTurnTab()" style="padding:2px 10px; font-size:10px;">＋</button>
     </div>
 
-    <!-- 割り込みトリガー追加 -->
-    <div style="display:flex; gap:8px; align-items:center; margin-bottom:20px; flex-wrap:wrap;">
-      <select id="flow-add-trigger-select" style="font-size:12px; padding:6px;">
-        <option value="before_end_turn">ターン終了直前</option>
-        <option value="after_attack">アタック後</option>
-        <option value="memory_crossed">メモリー相手側到達</option>
-        <option value="before_opponent_turn">相手ターン開始前</option>
-      </select>
-      <label style="color:#aaa; font-size:11px;">ターン <input type="number" id="flow-add-trigger-turn" value="1" min="1" style="width:50px; padding:4px; font-size:11px;"></label>
-      <button class="admin-btn-sm" onclick="flowAddTrigger()" style="border-color:#ffaa00; color:#ffaa00;">＋ 割り込みを追加</button>
-    </div>
-
-    <!-- フェーズ一覧（動的生成） -->
+    <!-- フェーズ一覧（全フェーズ固定表示・トグル式） -->
     <div id="flow-phases-container"></div>
   </div>
 </div>

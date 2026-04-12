@@ -52,6 +52,20 @@ const OPERATION_TYPES = [
   { value: 'rest_action',  label: 'レスト操作（PC:長押し / SP:左スワイプ 自動判定）' },
 ];
 
+// ボタン制御対象の定義
+const BUTTON_TARGETS = [
+  { value: 'mulligan_redo', label: '引き直しボタン' },
+  { value: 'game_start',    label: 'ゲーム開始ボタン' },
+  { value: 'end_turn',      label: 'ターン終了ボタン' },
+];
+
+// ボタン状態の選択肢
+const BUTTON_STATES = [
+  { value: '',            label: '─ 通常' },
+  { value: 'highlighted', label: '★ ハイライト' },
+  { value: 'disabled',    label: '✕ グレーアウト' },
+];
+
 // 割り込みトリガー定義
 const TRIGGER_TYPES = [
   { value: 'before_end_turn',     label: 'ターン終了直前' },
@@ -719,6 +733,16 @@ window.flowUpdateStep = function(slotKey, stepIdx, field, value) {
   } else if (field === 'stepType') {
     step.stepType = value || 'action';
     _renderFlowEditor();
+  } else if (field === 'highlightCardNos') {
+    // カンマ区切り文字列 → 配列
+    step.highlightCardNos = String(value || '').split(',').map(s => s.trim()).filter(Boolean);
+  } else if (field === 'blockOther') {
+    step.blockOther = !!value;
+  } else if (field.startsWith('btnCtrl_')) {
+    const btnKey = field.replace('btnCtrl_', '');
+    if (!step.buttonControl) step.buttonControl = {};
+    if (value) step.buttonControl[btnKey] = value;
+    else delete step.buttonControl[btnKey];
   }
 };
 
@@ -833,13 +857,55 @@ function _renderFlowStep(slotKey, sIdx, step) {
         </div>
       </div>
       ${isAction && needsCard ? `
-      <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">カードNo</label>
+      <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">カードNo（進行条件用）</label>
         <input type="text" value="${_escHtml(cardNo)}"
           oninput="flowUpdateStep(${sk},${sIdx},'conditionCardNo',this.value)"
           placeholder="例: BT1-010">
       </div>` : ''}
+      ${_renderStepUiControl(slotKey, sIdx, step)}
     </div>
   `;
+}
+
+// ステップ内の UI制御セクション（カードハイライト + ボタン制御）
+function _renderStepUiControl(slotKey, sIdx, step) {
+  const sk = `'${slotKey}'`;
+  const hlCards = (step.highlightCardNos || []).join(', ');
+  const blockOther = step.blockOther ? 'checked' : '';
+  const btnCtrl = step.buttonControl || {};
+
+  const btnRows = BUTTON_TARGETS.map(btn => {
+    const curState = btnCtrl[btn.value] || '';
+    const opts = BUTTON_STATES.map(s =>
+      `<option value="${s.value}"${s.value === curState ? ' selected' : ''}>${s.label}</option>`
+    ).join('');
+    return `
+      <div style="display:flex; align-items:center; gap:6px; margin-bottom:3px;">
+        <span style="color:#aaa; font-size:10px; min-width:110px;">${btn.label}</span>
+        <select onchange="flowUpdateStep(${sk},${sIdx},'btnCtrl_${btn.value}',this.value)" style="font-size:10px; padding:2px; flex:1;">${opts}</select>
+      </div>`;
+  }).join('');
+
+  return `
+    <div style="border-top:1px solid #1a1a1a; margin-top:8px; padding-top:8px;">
+      <div style="color:#888; font-size:10px; font-weight:bold; margin-bottom:6px;">UI制御（カード・ボタン）</div>
+      <div class="tsave-field" style="margin-bottom:6px;">
+        <label style="font-size:10px;">ハイライトカード <span style="color:#666;">カードNoをカンマ区切り（空＝制御なし）</span></label>
+        <input type="text" value="${_escHtml(hlCards)}"
+          oninput="flowUpdateStep(${sk},${sIdx},'highlightCardNos',this.value)"
+          placeholder="例: ST1-03, BT1-010">
+      </div>
+      <div style="margin-bottom:8px;">
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:10px; color:#aaa;">
+          <input type="checkbox" ${blockOther} onchange="flowUpdateStep(${sk},${sIdx},'blockOther',this.checked)">
+          ハイライト以外の操作をブロック（strictモード時）
+        </label>
+      </div>
+      <div style="background:#050505; border:1px solid #1a1a1a; border-radius:4px; padding:8px;">
+        <div style="color:#888; font-size:9px; margin-bottom:4px;">ボタン制御</div>
+        ${btnRows}
+      </div>
+    </div>`;
 }
 
 // 編集フォームにフローサマリーを表示

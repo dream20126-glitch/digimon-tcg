@@ -576,3 +576,47 @@
   60%  { transform:translate(-50%,-50%) scale(0.95) rotate(-1deg); }
   100% { transform:translate(-50%,-50%) scale(1) rotate(0); }
 }
+
+/* ===== チュートリアル UI制御 ===== */
+
+/* カードハイライト（操作可能） */
+.tutorial-card-highlight {
+  box-shadow: 0 0 12px 3px rgba(0, 255, 136, 0.7), 0 0 30px rgba(0, 255, 136, 0.3) !important;
+  border: 2px solid #00ff88 !important;
+  position: relative;
+  z-index: 100;
+  animation: tutorialCardPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes tutorialCardPulse {
+  0%, 100% { box-shadow: 0 0 12px 3px rgba(0, 255, 136, 0.7); }
+  50%      { box-shadow: 0 0 20px 6px rgba(0, 255, 136, 0.9); }
+}
+
+/* カードグレーアウト（操作不可） */
+.tutorial-card-disabled {
+  opacity: 0.35 !important;
+  filter: grayscale(0.7) !important;
+  pointer-events: none !important;
+}
+
+/* ボタングレーアウト */
+.tutorial-btn-disabled {
+  opacity: 0.3 !important;
+  filter: grayscale(1) !important;
+  pointer-events: none !important;
+  cursor: not-allowed !important;
+}
+
+/* ボタンハイライト */
+.tutorial-btn-highlighted {
+  box-shadow: 0 0 15px 4px rgba(0, 255, 136, 0.6) !important;
+  border-color: #00ff88 !important;
+  color: #00ff88 !important;
+  animation: tutorialBtnPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes tutorialBtnPulse {
+  0%, 100% { box-shadow: 0 0 15px 4px rgba(0, 255, 136, 0.6); }
+  50%      { box-shadow: 0 0 25px 8px rgba(0, 255, 136, 0.9); }
+}

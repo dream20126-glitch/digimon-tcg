@@ -110,6 +110,7 @@ function renderBattleRows() {
       const card = area[i];
       const sl = document.createElement('div');
       sl.className = 'b-slot' + (card ? (isPlayer ? ' pl-card' : ' ai-card') : '');
+      if (card) sl.dataset.cardNo = card.cardNo || '';
       if (card && card.suspended) sl.classList.add('suspended');
 
       if (card) {
@@ -676,6 +677,7 @@ export function renderHand() {
   bs.player.hand.forEach((c, i) => {
     const el = document.createElement('div');
     el.className = 'h-card' + (bs.selHand === i ? ' h-selected' : '');
+    el.dataset.cardNo = c.cardNo || '';
     el.style.zIndex = i;
     if (i > 0) el.style.marginLeft = '4px';
 

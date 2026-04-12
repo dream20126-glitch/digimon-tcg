@@ -247,13 +247,104 @@ window._tutorialShowInstruction = function(text, targetArea, step) {
       overlay.style.display = 'block';
     }
   }
+
+  // UI制御: カードハイライト + ボタン制御
+  _applyStepUiControl(step);
 };
 
 // 指示テキストを非表示
 window._tutorialHideInstruction = function() {
   _hidePointer();
+  _clearStepUiControl();
   // 上部オーバーレイは残す（ゴール表示用なのでシナリオ終了まで表示）
 };
+
+// ===================================================================
+// ステップUI制御（カードハイライト + ボタン制御）
+// ===================================================================
+
+// ボタンキー → DOMセレクタのマッピング
+const _BUTTON_SELECTOR_MAP = {
+  mulligan_redo: '#mulligan-btn',
+  game_start:    '#mulligan-overlay .menu-btn.primary',
+  end_turn:      '.a-btn-end',
+};
+
+let _uiControlActive = false;
+let _savedButtonStates = [];  // 復元用
+
+function _applyStepUiControl(step) {
+  _clearStepUiControl(); // 前回の制御をクリア
+  if (!step) return;
+
+  // --- カードハイライト ---
+  const hlCards = step.highlightCardNos;
+  const blockOther = step.blockOther;
+  if (Array.isArray(hlCards) && hlCards.length > 0) {
+    // 全カード要素を取得（手札 .h-card / バトルエリア .b-slot[data-card-no]）
+    const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no]');
+    allCards.forEach(cardEl => {
+      const cardNo = cardEl.dataset.cardNo || (cardEl.querySelector('[data-card-no]') || {}).dataset?.cardNo || '';
+      if (hlCards.includes(cardNo)) {
+        cardEl.classList.add('tutorial-card-highlight');
+      } else if (blockOther) {
+        cardEl.classList.add('tutorial-card-disabled');
+      }
+    });
+    _uiControlActive = true;
+  }
+
+  // --- ボタン制御 ---
+  const btnCtrl = step.buttonControl;
+  if (btnCtrl && typeof btnCtrl === 'object') {
+    Object.entries(btnCtrl).forEach(([btnKey, state]) => {
+      if (!state) return;
+      const selector = _BUTTON_SELECTOR_MAP[btnKey];
+      if (!selector) return;
+      const btn = document.querySelector(selector);
+      if (!btn) return;
+
+      // 元の状態を保存
+      _savedButtonStates.push({
+        el: btn,
+        disabled: btn.disabled,
+        classes: [...btn.classList],
+      });
+
+      if (state === 'disabled') {
+        btn.disabled = true;
+        btn.classList.add('tutorial-btn-disabled');
+      } else if (state === 'highlighted') {
+        btn.classList.add('tutorial-btn-highlighted');
+      }
+    });
+    _uiControlActive = true;
+  }
+
+  // blockOther時: ブロック用オーバーレイは不要、CSS pointer-events で制御
+  if (blockOther && _uiControlActive) {
+    document.body.classList.add('tutorial-block-other');
+  }
+}
+
+function _clearStepUiControl() {
+  if (!_uiControlActive) return;
+
+  // カードクラス除去
+  document.querySelectorAll('.tutorial-card-highlight').forEach(el => el.classList.remove('tutorial-card-highlight'));
+  document.querySelectorAll('.tutorial-card-disabled').forEach(el => el.classList.remove('tutorial-card-disabled'));
+
+  // ボタン状態復元
+  _savedButtonStates.forEach(({ el, disabled, classes }) => {
+    el.disabled = disabled;
+    el.classList.remove('tutorial-btn-disabled', 'tutorial-btn-highlighted');
+  });
+  _savedButtonStates = [];
+
+  // ブロック解除
+  document.body.classList.remove('tutorial-block-other');
+  _uiControlActive = false;
+}
 
 // 成功演出（ステップ進行時）
 window._tutorialShowSuccess = function(message) {

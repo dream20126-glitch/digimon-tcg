@@ -339,6 +339,20 @@ export function resolveAttackTarget(target, targetIdx) {
   // アタック対象タイプを bs に記録（cond_attack_target_digimon で参照）
   bs._lastAttackTarget = target;
 
+  // チュートリアル通知: attack_declared (ダイレクトアタック判定付き)
+  if (window._tutorialRunner && window._tutorialRunner.active) {
+    const isDirect = (target === 'security') && (bs.ai.battleArea || []).filter(c => c).length === 0;
+    try {
+      window._tutorialRunner.notifyEvent('attack_declared', {
+        cardNo: atk && atk.cardNo,
+        cardName: atk && atk.name,
+        target,
+        isDirect,
+        side: 'player',
+      });
+    } catch (e) { console.error('[tutorial attack_declared]', e); }
+  }
+
   if (target === 'security') {
     // セキュリティアタック
     if (_onlineMode && _sendCommand) {
@@ -556,6 +570,9 @@ export function resolveSecurityCheck(atk, atkIdx) {
       }
       // ----- セキュリティがオプション等 -----
       addLog('✦ セキュリティ効果：「' + sec.name + '」');
+      if (window._tutorialRunner && window._tutorialRunner.active) {
+        try { window._tutorialRunner.notifyEvent('security_effect', { cardNo: sec.cardNo, cardName: sec.name, side: 'opponent' }); } catch (e) {}
+      }
       const hasSecField = sec.securityEffect && sec.securityEffect.trim() && sec.securityEffect !== 'なし';
       const hasSecInEffect = sec.effect && sec.effect.includes('【セキュリティ】');
       setTimeout(() => {
@@ -997,6 +1014,9 @@ export function aiAttackPhase(callback) {
               const blocker = bs.player.battleArea[blockerIdx];
               blocker.suspended = true;
               addLog('🛡 「' + blocker.name + '」でブロック！');
+              if (window._tutorialRunner && window._tutorialRunner.active) {
+                try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
+              }
               renderAll();
               afterBlockedEffect(atk, atkIdx, 'ai', () => {
                 resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
@@ -1009,6 +1029,9 @@ export function aiAttackPhase(callback) {
                   const blocker = bs.player.battleArea[selectedIdx];
                   blocker.suspended = true;
                   addLog('🛡 「' + blocker.name + '」でブロック！');
+                  if (window._tutorialRunner && window._tutorialRunner.active) {
+                    try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
+                  }
                   renderAll();
                   afterBlockedEffect(atk, atkIdx, 'ai', () => {
                     resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {

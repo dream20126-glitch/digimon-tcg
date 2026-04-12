@@ -9,18 +9,30 @@ import { loadCardAndKeywordData, getCardImageUrl } from './cards.js';
 // ここに追加/削除すれば管理画面のプルダウンに自動反映される
 // 新しい条件タイプを追加するときは tutorial-runner.js の CONDITION_EVALUATORS にも追加すること
 const CONDITION_TYPES = [
-  { value: 'hatch',            label: '育成エリアで孵化',     needsCardNo: false },
-  { value: 'play_any',         label: '任意のカードをプレイ', needsCardNo: false },
-  { value: 'play_specific',    label: '特定カードをプレイ',   needsCardNo: true  },
-  { value: 'evolve_any',       label: '任意のデジモンに進化', needsCardNo: false },
-  { value: 'evolve_specific',  label: '特定カードに進化',     needsCardNo: true  },
-  { value: 'attack_declared',  label: 'アタック宣言した',     needsCardNo: false },
-  { value: 'attack_resolved',  label: 'バトルが解決した',     needsCardNo: false },
-  { value: 'destroy_opponent', label: '相手デジモンを消滅させた', needsCardNo: false },
-  { value: 'security_reduced', label: 'セキュリティが削れた', needsCardNo: false },
-  { value: 'use_effect',       label: '特定カードの効果を発動', needsCardNo: true  },
-  { value: 'turn_end',         label: 'ターン終了した',       needsCardNo: false },
-  { value: 'turn_start',       label: 'ターン開始した',       needsCardNo: false },
+  // 育成フェイズ関連
+  { value: 'breed_end',          label: '育成フェイズ終了（孵化/移動/何もしない）', needsCardNo: false },
+  // 進化
+  { value: 'evolve_any',         label: 'デジモンを進化させた',     needsCardNo: false },
+  { value: 'evolve_lv6',         label: 'レベル6に進化させた',       needsCardNo: false },
+  // 登場・カード使用
+  { value: 'play_digimon',       label: 'デジモンを登場させた',     needsCardNo: false },
+  { value: 'play_option',        label: 'オプションカードを使った', needsCardNo: false },
+  { value: 'play_tamer',         label: 'テイマーカードを使った',   needsCardNo: false },
+  // アタック
+  { value: 'attack_declared',    label: 'アタック宣言した（アタックボタン押下）', needsCardNo: false },
+  { value: 'attack_resolved',    label: 'バトルを解決した（デジモン/セキュリティ）', needsCardNo: false },
+  { value: 'direct_attack',      label: 'ダイレクトアタックした',   needsCardNo: false },
+  { value: 'block',              label: 'ブロックした',             needsCardNo: false },
+  // 効果
+  { value: 'use_effect',         label: '効果を使った（任意）',     needsCardNo: false },
+  { value: 'effect_triggered',   label: '効果を誘発させた',         needsCardNo: false },
+  { value: 'security_effect',    label: 'セキュリティ効果を発動させた', needsCardNo: false },
+  // 特殊
+  { value: 'security_zero',      label: '相手セキュリティを0枚にした', needsCardNo: false },
+  { value: 'card_detail_closed', label: 'カード詳細を見た（閉じた）', needsCardNo: false },
+  // 既存の進行系（互換のため残す）
+  { value: 'turn_end',           label: 'ターン終了した',           needsCardNo: false },
+  { value: 'turn_start',         label: 'ターン開始した',           needsCardNo: false },
 ];
 
 // 指差しマーカーの対象エリア定義（全シナリオ共通で使用）

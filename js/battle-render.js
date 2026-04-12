@@ -921,6 +921,10 @@ export function showBCD(idxOrCard, source) {
 export function closeBCD() {
   const bcd = document.getElementById('b-card-detail');
   if (bcd) bcd.style.display = 'none';
+  // チュートリアル通知: カード詳細を閉じた
+  if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
+    try { window._tutorialRunner.notifyEvent('card_detail_closed', {}); } catch (e) {}
+  }
 }
 
 // ===== トラッシュ表示 =====

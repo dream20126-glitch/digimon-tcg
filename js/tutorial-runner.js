@@ -12,26 +12,51 @@ import { gasPost } from './firebase-config.js';
 // 新しい条件を追加するときはここに1行足すだけ（コードはこの1箇所のみ編集）
 // params はシナリオの advanceCondition.params、ev は notifyEvent の引数
 // ===================================================================
+// カード参照ヘルパー（admin/battle で共通の allCards を参照）
+function _findCardMeta(cardNo) {
+  if (!cardNo || typeof window === 'undefined' || !window.allCards) return null;
+  return window.allCards.find(c => String(c['カードNo']) === String(cardNo)) || null;
+}
+function _getCardType(cardNo) {
+  const c = _findCardMeta(cardNo);
+  return c ? String(c['種類'] || c['カード種類'] || '') : '';
+}
+function _getCardLevel(cardNo) {
+  const c = _findCardMeta(cardNo);
+  if (!c) return '';
+  return String(c['Lv'] || c['レベル'] || '');
+}
+
 export const CONDITION_EVALUATORS = {
-  hatch: (params, ev) => ev.type === 'hatch',
-  play_any: (params, ev) => ev.type === 'play',
-  play_specific: (params, ev) =>
-    ev.type === 'play' && String(ev.cardNo || '') === String(params.cardNo || ''),
+  // 育成フェイズ終了（breed→main 遷移で発火）
+  breed_end: (params, ev) => ev.type === 'phase_enter' && ev.phase === 'main',
+
+  // 進化（既存 + レベル6判定）
   evolve_any: (params, ev) => ev.type === 'evolve',
-  evolve_specific: (params, ev) =>
-    ev.type === 'evolve' && String(ev.targetCardNo || '') === String(params.cardNo || ''),
+  evolve_lv6: (params, ev) => ev.type === 'evolve' && _getCardLevel(ev.targetCardNo) === '6',
+
+  // カード登場・使用（カード種類で判定）
+  play_digimon: (params, ev) => ev.type === 'play' && _getCardType(ev.cardNo).includes('デジモン'),
+  play_option:  (params, ev) => ev.type === 'play' && _getCardType(ev.cardNo).includes('オプション'),
+  play_tamer:   (params, ev) => ev.type === 'play' && _getCardType(ev.cardNo).includes('テイマー'),
+
+  // アタック関連
   attack_declared: (params, ev) => ev.type === 'attack_declared',
   attack_resolved: (params, ev) => ev.type === 'attack_resolved',
-  destroy_opponent: (params, ev) => ev.type === 'destroy' && ev.targetSide === 'opponent',
-  security_reduced: (params, ev) => {
-    if (ev.type !== 'security_reduced') return false;
-    const wantSide = params.side || 'opponent';
-    if (wantSide !== 'any' && ev.side !== wantSide) return false;
-    return (ev.count || 1) >= Number(params.count || 1);
-  },
-  use_effect: (params, ev) =>
-    ev.type === 'use_effect' &&
-    (!params.cardNo || String(ev.cardNo || '') === String(params.cardNo)),
+  direct_attack:   (params, ev) => ev.type === 'attack_declared' && ev.isDirect === true,
+  block:           (params, ev) => ev.type === 'block',
+
+  // 効果
+  use_effect:        (params, ev) => ev.type === 'use_effect',
+  effect_triggered:  (params, ev) => ev.type === 'effect_triggered',
+  security_effect:   (params, ev) => ev.type === 'security_effect',
+
+  // 特殊
+  security_zero: (params, ev) =>
+    ev.type === 'security_reduced' && ev.side === 'opponent' && (ev.remaining ?? -1) === 0,
+  card_detail_closed: (params, ev) => ev.type === 'card_detail_closed',
+
+  // 既存の進行系（互換維持）
   turn_end: (params, ev) => {
     if (ev.type !== 'turn_end') return false;
     const wantSide = params.side || 'player';
@@ -41,6 +66,19 @@ export const CONDITION_EVALUATORS = {
     if (ev.type !== 'turn_start') return false;
     const wantSide = params.side || 'player';
     return wantSide === 'any' || ev.side === wantSide;
+  },
+
+  // --- 互換用（旧条件を使っているシナリオのため残す）---
+  hatch:              (params, ev) => ev.type === 'hatch',
+  play_any:           (params, ev) => ev.type === 'play',
+  play_specific:      (params, ev) => ev.type === 'play' && String(ev.cardNo || '') === String(params.cardNo || ''),
+  evolve_specific:    (params, ev) => ev.type === 'evolve' && String(ev.targetCardNo || '') === String(params.cardNo || ''),
+  destroy_opponent:   (params, ev) => ev.type === 'destroy' && ev.targetSide === 'opponent',
+  security_reduced: (params, ev) => {
+    if (ev.type !== 'security_reduced') return false;
+    const wantSide = params.side || 'opponent';
+    if (wantSide !== 'any' && ev.side !== wantSide) return false;
+    return (ev.count || 1) >= Number(params.count || 1);
   },
   custom: () => false,
 };
@@ -159,6 +197,8 @@ class TutorialRunner {
     if (phase === 'unsuspend' || phase === 'draw') {
       this.hideInstruction();
     }
+    // フェーズ進入イベントを notifyEvent 経由で流す（breed_end 等の条件判定用）
+    this.notifyEvent('phase_enter', { phase });
     // notifyPhaseChange で処理するので、ここではフェーズブロック探索はしない
   }
 

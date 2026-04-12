@@ -38,13 +38,19 @@ export function makeEffectContext(card, side) {
 }
 
 // ===== チュートリアルイベント種別マッピング（トリガーコード → チュートリアルイベント名）=====
+// 注: attack_declared は battle-combat 側で isDirect 情報付きで直接発火するため除外
 const TUTORIAL_EVENT_MAP = {
   'on_play': 'play',
   'on_evolve': 'evolve',
-  'on_attack': 'attack_declared',
   'on_attack_end': 'attack_resolved',
   'on_destroy': 'destroy',
   'main': 'use_effect',
+  // 誘発型効果（on_attack / on_own_turn_start / on_opp_turn_start 等）は effect_triggered
+  'on_attack': 'effect_triggered',
+  'on_own_turn_start': 'effect_triggered',
+  'on_opp_turn_start': 'effect_triggered',
+  'on_attacked': 'effect_triggered',
+  'on_blocked': 'effect_triggered',
 };
 
 // ===== チュートリアルランナーへの一括通知ヘルパー =====
@@ -62,6 +68,10 @@ function _notifyTutorial(triggerCode, card, side) {
   };
   if (evType === 'destroy') {
     evData.targetSide = (side === 'ai') ? 'opponent' : 'own';
+  }
+  // evolve イベントは進化後カードを targetCardNo として渡す (evolve_lv6 等の判定用)
+  if (evType === 'evolve') {
+    evData.targetCardNo = card && card.cardNo;
   }
   try { runner.notifyEvent(evType, evData); } catch (e) { console.error('[tutorial notify]', e); }
 }

@@ -282,9 +282,11 @@ function _applyStepUiControl(step) {
   if (!step || !step.uiControl) return;
 
   const greyOut = Array.isArray(step.greyOut) ? step.greyOut : [];
-  const hlCards = Array.isArray(step.highlightCardNos) ? step.highlightCardNos : [];
   const hlButtons = Array.isArray(step.highlightButtons) ? step.highlightButtons : [];
   const greyOutCards = greyOut.includes('other_cards');
+
+  // ハイライト対象カード = 赤枠ハイライト1/2のカードNo
+  const hlCards = [step.targetCardNo, step.secondTargetCardNo].filter(Boolean);
 
   // --- カードハイライト + グレーアウト ---
   if (hlCards.length > 0 || greyOutCards) {

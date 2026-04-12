@@ -733,8 +733,6 @@ window.flowUpdateStep = function(slotKey, stepIdx, field, value) {
   } else if (field === 'uiControl') {
     step.uiControl = !!value;
     _renderFlowEditor();
-  } else if (field === 'highlightCardNos') {
-    step.highlightCardNos = String(value || '').split(',').map(s => s.trim()).filter(Boolean);
   } else if (field.startsWith('greyOut_')) {
     const key = field.replace('greyOut_', '');
     if (!Array.isArray(step.greyOut)) step.greyOut = [];
@@ -854,16 +852,12 @@ function _renderFlowStep(slotKey, sIdx, step) {
         <div class="tsave-field" style="margin-bottom:0;">
           <label style="font-size:10px;">${isSpotlight ? 'スポットライト対象' : '赤枠ハイライト1'}</label>
           <select onchange="flowUpdateStep(${sk},${sIdx},'targetArea',this.value)" style="margin-bottom:3px;">${areaOpts}</select>
-          <input type="text" value="${_escHtml(step.targetCardNo || '')}"
-            oninput="flowUpdateStep(${sk},${sIdx},'targetCardNo',this.value)"
-            placeholder="カードNo指定（優先）" style="font-size:10px; padding:3px;">
+          ${_renderCardPicker(slotKey, sIdx, 'targetCardNo', step.targetCardNo)}
         </div>
         <div class="tsave-field" style="margin-bottom:0;">
           <label style="font-size:10px;">赤枠ハイライト2</label>
           <select onchange="flowUpdateStep(${sk},${sIdx},'secondTargetArea',this.value)" style="margin-bottom:3px;">${areaOpts2}</select>
-          <input type="text" value="${_escHtml(step.secondTargetCardNo || '')}"
-            oninput="flowUpdateStep(${sk},${sIdx},'secondTargetCardNo',this.value)"
-            placeholder="カードNo指定（優先）" style="font-size:10px; padding:3px;">
+          ${_renderCardPicker(slotKey, sIdx, 'secondTargetCardNo', step.secondTargetCardNo)}
         </div>
       </div>
       ${isAction && needsCard ? `
@@ -877,6 +871,69 @@ function _renderFlowStep(slotKey, sIdx, step) {
   `;
 }
 
+// カード検索ピッカー（赤枠ハイライト用）
+function _renderCardPicker(slotKey, sIdx, field, currentCardNo) {
+  const sk = `'${slotKey}'`;
+  const uid = `cp_${slotKey}_${sIdx}_${field}`;
+  if (currentCardNo) {
+    const name = _findCardName(currentCardNo);
+    return `
+      <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
+        <span style="background:#111; border:1px solid #00ff88; border-radius:3px; padding:2px 6px; font-size:10px; color:#fff; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          ${_escHtml(name)} <span style="color:#888;">(${_escHtml(currentCardNo)})</span>
+        </span>
+        <button class="admin-btn-danger" style="padding:1px 6px; font-size:9px;" onclick="flowUpdateStep(${sk},${sIdx},'${field}',''); event.stopPropagation();">×</button>
+      </div>`;
+  }
+  return `
+    <div style="position:relative; margin-top:2px;">
+      <input type="text" id="${uid}" placeholder="カード名で検索（空＝エリア全体）"
+        oninput="flowCardSearch('${uid}',${sk},${sIdx},'${field}')"
+        style="font-size:10px; padding:3px; width:100%;">
+      <div id="${uid}_results" style="display:none; position:absolute; left:0; right:0; top:100%; z-index:100; max-height:180px; overflow-y:auto; background:#111; border:1px solid #333; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.5);"></div>
+    </div>`;
+}
+
+// カード検索結果を表示
+window.flowCardSearch = function(uid, slotKey, sIdx, field) {
+  const input = document.getElementById(uid);
+  const results = document.getElementById(uid + '_results');
+  if (!input || !results) return;
+  const kw = (input.value || '').trim().toLowerCase();
+  if (!kw || kw.length < 1) { results.style.display = 'none'; return; }
+  if (!window.allCards || !window.allCards.length) {
+    results.innerHTML = '<p style="color:#888; font-size:10px; padding:6px;">カードデータ読込中...</p>';
+    results.style.display = 'block';
+    return;
+  }
+  const matched = window.allCards.filter(c => {
+    const name = String(c['名前'] || '').toLowerCase();
+    const no   = String(c['カードNo'] || '').toLowerCase();
+    return name.includes(kw) || no.includes(kw);
+  }).slice(0, 20);
+
+  if (!matched.length) {
+    results.innerHTML = '<p style="color:#888; font-size:10px; padding:6px;">見つかりません</p>';
+    results.style.display = 'block';
+    return;
+  }
+
+  const sk = `'${slotKey}'`;
+  results.innerHTML = matched.map(c => {
+    const no = _escHtml(c['カードNo'] || '');
+    const name = _escHtml(c['名前'] || '');
+    const lv = _escHtml(c['Lv'] || c['レベル'] || '');
+    return `<div onclick="flowUpdateStep(${sk},${sIdx},'${field}','${no}'); event.stopPropagation();"
+      style="padding:4px 8px; cursor:pointer; font-size:10px; color:#fff; border-bottom:1px solid #1a1a1a; display:flex; align-items:center; gap:6px;"
+      onmouseenter="this.style.background='#1a3030'" onmouseleave="this.style.background=''">
+      <span style="color:#aaa; min-width:70px;">${no}</span>
+      <span style="flex:1;">${name}</span>
+      <span style="color:#666;">Lv.${lv}</span>
+    </div>`;
+  }).join('');
+  results.style.display = 'block';
+};
+
 // ステップ内の UI制御セクション（トグル展開式）
 function _renderStepUiControl(slotKey, sIdx, step) {
   const sk = `'${slotKey}'`;
@@ -885,7 +942,6 @@ function _renderStepUiControl(slotKey, sIdx, step) {
   const greyOut = Array.isArray(step.greyOut) ? step.greyOut : [];
   const hlButtons = Array.isArray(step.highlightButtons) ? step.highlightButtons : [];
 
-  // グレーアウト対象（カード＋ボタン統合）
   const GREYOUT_OPTIONS = [
     { value: 'other_cards',   label: 'ハイライト以外のカード' },
     { value: 'mulligan_redo', label: '引き直しボタン' },
@@ -907,8 +963,6 @@ function _renderStepUiControl(slotKey, sIdx, step) {
       ${btn.label}
     </label>`).join('');
 
-  const hlCards = (step.highlightCardNos || []).join(', ');
-
   return `
     <div style="border-top:1px solid #1a1a1a; margin-top:8px; padding-top:6px;">
       <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:10px; color:#888; font-weight:bold;">
@@ -917,12 +971,6 @@ function _renderStepUiControl(slotKey, sIdx, step) {
       </label>
       ${hasUi ? `
       <div style="margin-top:8px; padding:8px; background:#050505; border:1px solid #1a1a1a; border-radius:4px;">
-        <div class="tsave-field" style="margin-bottom:8px;">
-          <label style="font-size:10px;">ハイライトカード <span style="color:#666;">カンマ区切り（赤枠ハイライトのカードNo指定と連動）</span></label>
-          <input type="text" value="${_escHtml(hlCards)}"
-            oninput="flowUpdateStep(${sk},${sIdx},'highlightCardNos',this.value)"
-            placeholder="例: ST1-03, BT1-010">
-        </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <div>
             <div style="color:#ff6666; font-size:9px; font-weight:bold; margin-bottom:4px;">グレーアウト（無効化）</div>

@@ -80,12 +80,14 @@ const BUTTON_TARGETS = [
   { value: 'end_turn',      label: 'ターン終了ボタン' },
 ];
 
-// 割り込みトリガー定義
+// 割り込みトリガー定義（詳細プレビュー/サマリー用、ALL_FLOW_SLOTSからラベル引き）
 const TRIGGER_TYPES = [
-  // ターン/フェーズ境界
+  // ターン境界
+  { value: 'turn_start_self',       label: '自分のターン開始' },
   { value: 'before_end_turn',      label: '自分のターン終了直前' },
   { value: 'memory_crossed',       label: 'メモリー相手側到達時' },
   { value: 'before_opponent_turn', label: '相手ターン開始前' },
+  { value: 'turn_end_opp',         label: '相手ターン終了後' },
   // アクション中間点（コスト支払い後、効果発動前）
   { value: 'after_play_cost',      label: '登場コスト支払い後（効果前）' },
   { value: 'after_evolve_cost',    label: '進化コスト支払い+ドロー後（効果前）' },
@@ -601,18 +603,75 @@ window.updateClearConditionUI = function() {
 // ===================================================================
 
 // 全フェーズ＋割り込みの定義（表示順）
+// 9大項目（ユーザー指定順）+ 各大項目の配下に入る割り込みサブ項目
+// parentPhase: この項目をどの大項目の配下に表示するか
 const ALL_FLOW_SLOTS = [
-  // 通常フェーズ
-  { key: 'mulligan',  phase: 'mulligan',  label: '🎴 マリガン',          color: '#ff88ff', hint: '手札の引き直し画面。説明ポップアップや引き直しボタンの制御を設定。' },
-  { key: 'unsuspend', phase: 'unsuspend', label: '🔄 アクティブフェーズ',  color: '#88ccff', hint: 'レスト状態のカードを縦に戻す自動フェーズ。説明を���みたい時にON。' },
-  { key: 'draw',      phase: 'draw',      label: '🃏 ドローフェーズ',      color: '#88ffcc', hint: '���ッキから1枚ドローする自動フェーズ。説明を挟みたい時にON。' },
-  { key: 'breed',     phase: 'breed',     label: '🥚 育成フェーズ',        color: '#ffcc44', hint: '孵化・育成エリアからの移動など。操作誘導や説明を設定。' },
-  { key: 'main',      phase: 'main',      label: '⚔️ メインフェーズ',      color: '#ff6666', hint: 'プレイ・進化・アタックなどの操作誘導や説明を設定。' },
-  // 割り込みトリガー
-  { key: 'trg_before_end_turn',     phase: '_trigger', trigger: 'before_end_turn',     label: '⚡ 自分のターン終了直前',    color: '#ffaa00', hint: 'ターン終了アニメーションの前に説明を挟む。' },
-  { key: 'trg_memory_crossed',      phase: '_trigger', trigger: 'memory_crossed',      label: '⚡ メモリー相手側到達時',    color: '#ffaa00', hint: 'メモリーが相手側に振れた瞬間に説明を挟む。' },
-  { key: 'trg_after_attack',        phase: '_trigger', trigger: 'after_attack',        label: '⚡ アタック解決後',          color: '#ffaa00', hint: 'アタックが解決した直後に説明を挟む。' },
-  { key: 'trg_before_opponent_turn', phase: '_trigger', trigger: 'before_opponent_turn', label: '⚡ 相手ターン開始前',       color: '#ffaa00', hint: '相手ターン開始アニメーションの前に説明を挟む。' },
+  // === 1. マリガン ===
+  { key: 'mulligan',  phase: 'mulligan',  label: '🎴 マリガン画面',        color: '#ff88ff',
+    hint: '手札の引き直し画面。引き直しボタンやゲーム開始ボタンの制御を設定。' },
+
+  // === 2. 自分のターン開始 ===
+  { key: 'trg_turn_start_self', phase: '_trigger', trigger: 'turn_start_self',
+    label: '▶ 自分のターン開始',  color: '#ffbb44',
+    hint: 'ターン開始アニメーションの直後、アクティブフェイズ進入前。' },
+
+  // === 3. アクティブフェイズ ===
+  { key: 'unsuspend', phase: 'unsuspend', label: '🔄 アクティブフェイズ',  color: '#88ccff',
+    hint: 'レスト状態のカードを縦に戻す自動フェイズ。説明を挟みたい時にON。' },
+
+  // === 4. ドローフェイズ ===
+  { key: 'draw',      phase: 'draw',      label: '🃏 ドローフェイズ',      color: '#88ffcc',
+    hint: 'デッキから1枚ドローする自動フェイズ。説明を挟みたい時にON。' },
+
+  // === 5. 育成フェイズ ===
+  { key: 'breed',     phase: 'breed',     label: '🥚 育成フェイズ',        color: '#ffcc44',
+    hint: '孵化・育成エリアからの移動など。操作誘導や説明を設定。' },
+  { key: 'trg_after_hatch', phase: '_trigger', trigger: 'after_hatch', parentPhase: 'breed',
+    label: '  ⚡ 孵化完了直後', color: '#ffcc44',
+    hint: '孵化演出の直後。孵化についての説明を挟む。' },
+
+  // === 6. メインフェイズ ===
+  { key: 'main',      phase: 'main',      label: '⚔️ メインフェイズ',      color: '#ff6666',
+    hint: 'プレイ・進化・アタック・効果などの操作誘導や説明を設定。' },
+  { key: 'trg_after_play_cost',  phase: '_trigger', trigger: 'after_play_cost',  parentPhase: 'main',
+    label: '  ⚡ 登場コスト支払い直後（効果前）', color: '#ff9966',
+    hint: 'メモリー消費した直後、登場時効果発動前。' },
+  { key: 'trg_after_play',       phase: '_trigger', trigger: 'after_play',       parentPhase: 'main',
+    label: '  ⚡ 登場時効果完了後', color: '#ff9966',
+    hint: '登場時効果の処理が全て完了した後。' },
+  { key: 'trg_after_evolve_cost', phase: '_trigger', trigger: 'after_evolve_cost', parentPhase: 'main',
+    label: '  ⚡ 進化コスト+ドロー直後（効果前）', color: '#ff9966',
+    hint: 'メモリー消費+進化ドロー完了後、進化時効果発動前。' },
+  { key: 'trg_after_evolve',      phase: '_trigger', trigger: 'after_evolve',      parentPhase: 'main',
+    label: '  ⚡ 進化時効果完了後', color: '#ff9966',
+    hint: '進化時効果の処理が全て完了した後。' },
+  { key: 'trg_after_attack',      phase: '_trigger', trigger: 'after_attack',      parentPhase: 'main',
+    label: '  ⚡ アタック解決後', color: '#ff9966',
+    hint: 'アタックが解決した直後。' },
+  { key: 'trg_after_use_effect',  phase: '_trigger', trigger: 'after_use_effect',  parentPhase: 'main',
+    label: '  ⚡ 効果使用完了後', color: '#ff9966',
+    hint: 'メイン効果の処理が完了した後。' },
+  { key: 'trg_on_card_detail_open', phase: '_trigger', trigger: 'on_card_detail_open', parentPhase: 'main',
+    label: '  ⚡ カード詳細表示中', color: '#ff9966',
+    hint: 'カード詳細モーダルが開いた瞬間（閉じるまで説明を表示）。' },
+
+  // === 7. 自分のターン終了 ===
+  { key: 'trg_before_end_turn', phase: '_trigger', trigger: 'before_end_turn',
+    label: '🏁 自分のターン終了', color: '#ffaa00',
+    hint: 'ターン終了アニメーションの前。手動終了/メモリー相手側での自動終了どちらでも発火。' },
+  { key: 'trg_memory_crossed', phase: '_trigger', trigger: 'memory_crossed', parentPhase: 'trg_before_end_turn',
+    label: '  ⚡ メモリー相手側到達時', color: '#ffaa00',
+    hint: 'メモリーが相手側に振れた瞬間（自動ターン終了時のみ）。' },
+
+  // === 8. 相手ターン開始 ===
+  { key: 'trg_before_opponent_turn', phase: '_trigger', trigger: 'before_opponent_turn',
+    label: '⏸ 相手ターン開始', color: '#aa88ff',
+    hint: '相手ターン開始アニメーションの前。' },
+
+  // === 9. 相手ターン終了 ===
+  { key: 'trg_turn_end_opp', phase: '_trigger', trigger: 'turn_end_opp',
+    label: '⏭ 相手ターン終了', color: '#8899ff',
+    hint: '相手ターン終了後、自分のターン開始前。' },
 ];
 
 let _flowEditTurn = 1;  // 現在編集中のターン番号
@@ -778,50 +837,62 @@ window.flowUpdateStep = function(slotKey, stepIdx, field, value) {
   }
 };
 
-// --- メインレンダリング ---
+// --- メインレンダリング（親子構造対応） ---
 function _renderFlowEditor() {
   const container = document.getElementById('flow-phases-container');
   if (!container) return;
 
-  container.innerHTML = ALL_FLOW_SLOTS.map(slot => {
-    const blockIdx = _findBlockIndex(slot);
-    const isOn = blockIdx >= 0;
-    const block = isOn ? _scenarioFlow[blockIdx] : null;
-    const stepCount = block ? (block.steps || []).length : 0;
-    const isTrigger = !!slot.trigger;
+  // 親項目 + その子項目を再帰的にレンダリング
+  const topLevelSlots = ALL_FLOW_SLOTS.filter(s => !s.parentPhase);
+  container.innerHTML = topLevelSlots.map(slot => _renderSlotBlock(slot, 0)).join('');
+}
 
-    // ヘッダー（トグ���スイッチ付き）
-    const headerBg = isOn ? `${slot.color}22` : '#0a0a0a';
-    const headerBorder = isOn ? slot.color : '#222';
-    const toggleChecked = isOn ? 'checked' : '';
-    const badge = isOn && stepCount > 0 ? `<span style="background:${slot.color}44; color:${slot.color}; font-size:9px; padding:1px 6px; border-radius:3px; margin-left:6px;">${stepCount}ステップ</span>` : '';
+// スロット1つのHTML生成（indent: インデント段数）
+function _renderSlotBlock(slot, indent) {
+  const blockIdx = _findBlockIndex(slot);
+  const isOn = blockIdx >= 0;
+  const block = isOn ? _scenarioFlow[blockIdx] : null;
+  const stepCount = block ? (block.steps || []).length : 0;
 
-    let html = `
-      <div style="border:1px solid ${headerBorder}; border-radius:8px; margin-bottom:8px; overflow:hidden; transition:border-color 0.2s;">
-        <div style="background:${headerBg}; padding:8px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onclick="flowToggleSlot('${slot.key}')">
-          <input type="checkbox" ${toggleChecked} style="accent-color:${slot.color}; pointer-events:none; width:16px; height:16px;">
-          <div style="flex:1;">
-            <span style="color:${isOn ? slot.color : '#666'}; font-weight:bold; font-size:12px;">${slot.label}</span>${badge}
-            <div style="color:#666; font-size:10px; margin-top:1px;">${slot.hint}</div>
-          </div>
-        </div>`;
+  const headerBg = isOn ? `${slot.color}22` : '#0a0a0a';
+  const headerBorder = isOn ? slot.color : '#222';
+  const toggleChecked = isOn ? 'checked' : '';
+  const badge = isOn && stepCount > 0
+    ? `<span style="background:${slot.color}44; color:${slot.color}; font-size:9px; padding:1px 6px; border-radius:3px; margin-left:6px;">${stepCount}ステップ</span>`
+    : '';
 
-    // 展���部分（ONの場合のみ）
-    if (isOn) {
-      const stepsHtml = (block.steps || []).map((step, sIdx) =>
-        _renderFlowStep(slot.key, sIdx, step)
-      ).join('');
+  const marginLeft = indent > 0 ? `margin-left:${indent * 20}px;` : '';
 
-      html += `
-        <div style="padding:10px 12px; border-top:1px solid ${slot.color}33;">
-          ${stepsHtml || '<p style="color:#555; font-size:10px; margin:0 0 6px;">ステップが未登録です。下のボタンから追加してください。</p>'}
-          <button class="admin-btn-sm" onclick="event.stopPropagation(); flowAddStep('${slot.key}')" style="width:100%; margin-top:4px; font-size:10px;">＋ ステップを追加</button>
-        </div>`;
-    }
+  let html = `
+    <div style="border:1px solid ${headerBorder}; border-radius:8px; margin-bottom:6px; overflow:hidden; transition:border-color 0.2s; ${marginLeft}">
+      <div style="background:${headerBg}; padding:8px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onclick="flowToggleSlot('${slot.key}')">
+        <input type="checkbox" ${toggleChecked} style="accent-color:${slot.color}; pointer-events:none; width:16px; height:16px;">
+        <div style="flex:1;">
+          <span style="color:${isOn ? slot.color : '#666'}; font-weight:bold; font-size:12px;">${slot.label}</span>${badge}
+          <div style="color:#666; font-size:10px; margin-top:1px;">${slot.hint}</div>
+        </div>
+      </div>`;
 
-    html += '</div>';
-    return html;
-  }).join('');
+  if (isOn) {
+    const stepsHtml = (block.steps || []).map((step, sIdx) =>
+      _renderFlowStep(slot.key, sIdx, step)
+    ).join('');
+    html += `
+      <div style="padding:10px 12px; border-top:1px solid ${slot.color}33;">
+        ${stepsHtml || '<p style="color:#555; font-size:10px; margin:0 0 6px;">ステップが未登録です。下のボタンから追加してください。</p>'}
+        <button class="admin-btn-sm" onclick="event.stopPropagation(); flowAddStep('${slot.key}')" style="width:100%; margin-top:4px; font-size:10px;">＋ ステップを追加</button>
+      </div>`;
+  }
+
+  html += '</div>';
+
+  // 子項目を追加（parentPhase がこの slot.key のもの）
+  const children = ALL_FLOW_SLOTS.filter(s => s.parentPhase === slot.key);
+  children.forEach(child => {
+    html += _renderSlotBlock(child, indent + 1);
+  });
+
+  return html;
 }
 
 // 個別ステップの描画

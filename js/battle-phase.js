@@ -280,7 +280,11 @@ export function getOppTurnColor() {
 
 export function startPlayerTurn() {
   bs.isPlayerTurn = true;
-  showYourTurn('自分のターン開始', '', '#00fbff', () => {
+  showYourTurn('自分のターン開始', '', '#00fbff', async () => {
+    // チュートリアル割り込み: 自分のターン開始
+    if (window._tutorialRunner && window._tutorialRunner.active) {
+      await window._tutorialRunner.checkInterrupt('turn_start_self');
+    }
     _hooks.checkTurnStartEffects('player', () => {
       // 両サイドの永続効果を再計算
       _hooks.applyPermanentEffects('player');
@@ -296,7 +300,11 @@ export function startPlayerTurn() {
  */
 export function startFirstTurn() {
   bs.isPlayerTurn = true;
-  showYourTurn('自分のターン開始', '【先攻プレイヤー】', '#00fbff', () => {
+  showYourTurn('自分のターン開始', '【先攻プレイヤー】', '#00fbff', async () => {
+    // チュートリアル割り込み: 自分のターン開始（初回）
+    if (window._tutorialRunner && window._tutorialRunner.active) {
+      await window._tutorialRunner.checkInterrupt('turn_start_self');
+    }
     _hooks.checkTurnStartEffects('player', () => {
       _hooks.applyPermanentEffects('player');
       _hooks.applyPermanentEffects('ai');
@@ -657,13 +665,18 @@ function aiPhaseMain() {
 
 // ----- AI ターン終了 -----
 
-function endAiTurn() {
+async function endAiTurn() {
   // AIのターン終了 → endingSide='ai'
   _hooks.expireBuffs('dur_this_turn', null, 'ai');
   _hooks.expireBuffs('dur_next_opp_turn', null, 'ai');
   _hooks.expireBuffs('dur_next_own_turn', null, 'ai');
   _hooks.expireBuffs('permanent', 'ai');
   renderAll();
+
+  // チュートリアル割り込み: 相手ターン終了（自分ターン開始前）
+  if (window._tutorialRunner && window._tutorialRunner.active) {
+    await window._tutorialRunner.checkInterrupt('turn_end_opp');
+  }
 
   // プレイヤー側3にメモリ移動
   bs.memory = 3;

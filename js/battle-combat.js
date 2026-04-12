@@ -474,6 +474,10 @@ export function resolveSecurityCheck(atk, atkIdx) {
     if (_onlineMode && _sendCommand && sec.type !== 'テイマー') {
       _sendCommand({ type: 'security_remove', secName: sec.name, secType: sec.type, remaining: bs.ai.security.length });
     }
+    // チュートリアル通知: 相手側セキュリティが削れた
+    if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
+      try { window._tutorialRunner.notifyEvent('security_reduced', { side: 'opponent', count: 1, remaining: bs.ai.security.length }); } catch (e) {}
+    }
     applySecurityBuffs(sec, 'ai');
 
     // Sアタック+のチェック枚数ラベル表示
@@ -1042,6 +1046,10 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
   if (bs.player.security.length > 0) {
     const sec = bs.player.security.splice(0, 1)[0];
     applySecurityBuffs(sec, 'player');
+    // チュートリアル通知: 自分側セキュリティが削れた
+    if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
+      try { window._tutorialRunner.notifyEvent('security_reduced', { side: 'own', count: 1, remaining: bs.player.security.length }); } catch (e) {}
+    }
     showSecurityCheck(sec, atk, () => {
       if (sec.type === 'デジモン') {
         if (atk.dp === sec.dp) {
@@ -1287,10 +1295,14 @@ function aiPlayAuto(callback) {
 
 // ===== ターン終了チェック =====
 
-export function checkPendingTurnEnd() {
+export async function checkPendingTurnEnd() {
   _attackInProgress = false;
   hideCombatBackdrop();
   renderAll();
+  // チュートリアル割り込み: アタック後
+  if (window._tutorialRunner && window._tutorialRunner.active) {
+    await window._tutorialRunner.checkInterrupt('after_attack');
+  }
   if (bs._pendingTurnEnd) {
     bs._pendingTurnEnd = false;
     checkAutoTurnEnd();

@@ -102,6 +102,9 @@ function seededShuffle(arr, seed) {
 // ===== 共通フック・window公開セットアップ =====
 setupCommonHooks();
 
+// チュートリアルランナー用: parseDeck を公開（cardNo→カードオブジェクト変換に使用）
+window.parseDeck = parseDeck;
+
 // HTML onclick から呼ばれる補助関数（battle.js固有）
 window.confirmExitGate = function() {
   showConfirm({ title: '⚠ 退室確認', message: 'ゲートを出ますか？\nバトルの進行状況は失われます。', yesText: 'はい', noText: 'いいえ', color: '#ff4444' }).then(yes => {
@@ -119,7 +122,16 @@ let _mulliganUsed = false;
 function showMulliganOverlay() {
   _mulliganUsed = false;
   const btn = document.getElementById('mulligan-btn');
-  if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.innerText = '引き直す'; }
+  // チュートリアル(showPhaseGuide=true): 引き直しを無効化
+  const runner = window._tutorialRunner;
+  const isTutorialRestricted = runner && runner.active && runner.scenario && runner.scenario.showPhaseGuide;
+  if (btn) {
+    if (isTutorialRestricted) {
+      btn.disabled = true; btn.style.opacity = '0.3'; btn.innerText = '引き直す（使用不可）';
+    } else {
+      btn.disabled = false; btn.style.opacity = '1'; btn.innerText = '引き直す';
+    }
+  }
   document.getElementById('mulligan-overlay').style.display = 'flex';
   renderMulliganPreview(true);
 }
@@ -441,7 +453,16 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
     showScreen('battle-screen');
     renderAll();
     addLog('✅ バトル画面描画完了');
-    setTimeout(() => showMulliganOverlay(), 400);
+    setTimeout(() => {
+      // チュートリアル: マリガン説明ポップアップ (showPhaseGuide=true のシナリオのみ)
+      const runner = window._tutorialRunner;
+      if (runner && runner.active && typeof runner.notifyPhaseChange === 'function'
+          && runner.scenario && runner.scenario.showPhaseGuide) {
+        runner.notifyPhaseChange('mulligan').then(() => showMulliganOverlay());
+      } else {
+        showMulliganOverlay();
+      }
+    }, 400);
   });
 };
 

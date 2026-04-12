@@ -314,8 +314,28 @@ export function startPhase(phase) {
   if (_onlineMode && _sendCommand) { _sendCommand({ type: 'phase', phase }); }
 
   const info = PHASE_NAMES[phase];
-  if (!info) { execPhase(phase); return; }
-  showPhaseAnnounce(`${info.icon} ${info.name}`, PHASE_COLORS[phase], () => execPhase(phase));
+
+  // チュートリアル: フェーズ変更通知（指差し表示/非表示制御用）
+  const runner = (typeof window !== 'undefined') ? window._tutorialRunner : null;
+  if (runner && runner.active && typeof runner.onPhaseChange === 'function') {
+    try { runner.onPhaseChange(phase); } catch (e) {}
+  }
+
+  // チュートリアル: フェーズ説明ポップアップ (showPhaseGuide=true のシナリオのみ)
+  const needsGuide = runner && runner.active && typeof runner.notifyPhaseChange === 'function'
+    && runner.scenario && runner.scenario.showPhaseGuide
+    && runner._shownPhases && !runner._shownPhases[phase];
+
+  const proceed = () => {
+    if (!info) { execPhase(phase); return; }
+    showPhaseAnnounce(`${info.icon} ${info.name}`, PHASE_COLORS[phase], () => execPhase(phase));
+  };
+
+  if (needsGuide) {
+    runner.notifyPhaseChange(phase).then(proceed);
+  } else {
+    proceed();
+  }
 }
 
 function execPhase(phase) {
@@ -457,7 +477,11 @@ export function onEndTurn() {
   }
 
   // AI対戦
-  _hooks.checkTurnEndEffects(() => {
+  _hooks.checkTurnEndEffects(async () => {
+    // チュートリアル割り込み: ターン終了直前
+    if (window._tutorialRunner && window._tutorialRunner.active) {
+      await window._tutorialRunner.checkInterrupt('before_end_turn');
+    }
     bs.memory = -3;
     updateMemGauge();
     // プレイヤーのターン終了
@@ -488,7 +512,12 @@ export function checkAutoTurnEnd() {
   _hooks.expireBuffs('permanent', 'player');
   renderAll(true);
 
-  _hooks.checkTurnEndEffects(() => {
+  _hooks.checkTurnEndEffects(async () => {
+    // チュートリアル割り込み: メモリー相手側到達
+    if (window._tutorialRunner && window._tutorialRunner.active) {
+      await window._tutorialRunner.checkInterrupt('memory_crossed');
+      await window._tutorialRunner.checkInterrupt('before_end_turn');
+    }
     if (_onlineMode) {
       if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
       showYourTurn('自分のターン終了', '', '#555555', () => {
@@ -508,9 +537,14 @@ export function checkAutoTurnEnd() {
 
 // ===== AI ターン =====
 
-export function aiTurn() {
+export async function aiTurn() {
   if (bs._battleAborted) return;
   if (_onlineMode) return;
+
+  // チュートリアル割り込み: 相手ターン開始前
+  if (window._tutorialRunner && window._tutorialRunner.active) {
+    await window._tutorialRunner.checkInterrupt('before_opponent_turn');
+  }
 
   bs.turn++;
   showYourTurn('相手のターン開始', '🤖 デジモンマスター', '#ff00fb', () => {

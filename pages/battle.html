@@ -341,3 +341,97 @@
     </div>
   </div>
 </div>
+
+<!-- ===== チュートリアル フェーズ説明ポップアップ ===== -->
+<div id="tutorial-phase-popup" style="display:none; position:fixed; inset:0; z-index:58000; background:rgba(0,0,0,0.8); align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+  <div style="background:linear-gradient(135deg, #001020, #002030); border:2px solid var(--main-cyan); border-radius:14px; padding:24px 28px; max-width:420px; width:calc(100% - 40px); text-align:center; box-shadow:0 0 40px rgba(0,251,255,0.3);">
+    <div id="tutorial-phase-icon" style="font-size:2.5rem; margin-bottom:6px;"></div>
+    <div id="tutorial-phase-title" style="color:var(--main-cyan); font-size:14px; font-weight:bold; letter-spacing:2px; margin-bottom:10px;"></div>
+    <div id="tutorial-phase-body" style="color:#ddd; font-size:12px; line-height:1.8; text-align:left; margin-bottom:18px; white-space:pre-line;"></div>
+    <button class="menu-btn primary" onclick="closeTutorialPhasePopup()" style="width:100%; font-size:13px;">次へ</button>
+  </div>
+</div>
+
+<!-- ===== チュートリアル 指差しマーカー + 吹き出し ===== -->
+<div id="tutorial-pointer-overlay" style="display:none; position:fixed; z-index:54000; pointer-events:none;">
+  <div id="tutorial-pointer-wrap" style="display:flex; flex-direction:column; align-items:center;">
+    <!-- 上から指すとき: 吹き出し → 👇 -->
+    <div id="tutorial-pointer-bubble" style="background:rgba(0,10,20,0.95); border:2px solid #ffaa00; border-radius:10px; padding:8px 14px; max-width:260px; text-align:center; box-shadow:0 0 20px rgba(255,170,0,0.3);">
+      <div id="tutorial-pointer-text" style="color:#fff; font-size:12px; font-weight:bold; line-height:1.5;"></div>
+    </div>
+    <div id="tutorial-pointer-finger" style="font-size:28px;">👇</div>
+  </div>
+</div>
+
+<style>
+.tutorial-highlight {
+  outline: 3px solid #ff4444 !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 15px rgba(255,68,68,0.6) !important;
+  animation: tutorialHighlightPulse 1s ease-in-out infinite !important;
+  position: relative;
+  z-index: 100;
+}
+@keyframes tutorialHighlightPulse {
+  0%, 100% { outline-color: #ff4444; box-shadow: 0 0 15px rgba(255,68,68,0.6); }
+  50% { outline-color: #ff8888; box-shadow: 0 0 25px rgba(255,68,68,0.9); }
+}
+@keyframes tutorialTap {
+  0%, 100% { transform: scale(1); opacity:1; }
+  50% { transform: scale(0.85); opacity:0.6; }
+}
+@keyframes tutorialDragArrow {
+  0% { transform: translateX(-20px); opacity:0; }
+  50% { transform: translateX(0); opacity:1; }
+  100% { transform: translateX(20px); opacity:0; }
+}
+@keyframes tutorialLongPress {
+  0% { transform: scale(1); opacity:0.7; }
+  40% { transform: scale(1.15); opacity:1; }
+  100% { transform: scale(1.15); opacity:1; }
+}
+@keyframes tutorialSwipeLeft {
+  0% { transform: translateX(10px); opacity:0; }
+  30% { opacity:1; }
+  100% { transform: translateX(-30px); opacity:0; }
+}
+@keyframes tutorialBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+@keyframes tutorialSuccessFlash {
+  0% { opacity:0; transform:scale(0.3); }
+  30% { opacity:1; transform:scale(1.1); }
+  60% { opacity:1; transform:scale(1); }
+  100% { opacity:0; transform:scale(1.2); }
+}
+</style>
+
+<!-- ===== チュートリアル 成功演出 ===== -->
+<div id="tutorial-success-overlay" style="display:none; position:fixed; inset:0; z-index:56000; pointer-events:none; align-items:center; justify-content:center;">
+  <div id="tutorial-success-text" style="font-size:3rem; font-weight:bold; color:#00ff88; text-shadow:0 0 40px rgba(0,255,136,0.8); letter-spacing:6px; animation:tutorialSuccessFlash 1.2s ease forwards;"></div>
+</div>
+
+<!-- ===== チュートリアル指示テキストオーバーレイ ===== -->
+<div id="tutorial-instruction-overlay" style="display:none; position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:55000; width:calc(100% - 32px); max-width:520px; pointer-events:none;">
+  <div style="background:linear-gradient(135deg, rgba(0,10,20,0.96), rgba(0,30,40,0.96)); border:2px solid var(--main-cyan); border-radius:12px; padding:10px 16px; box-shadow:0 0 24px rgba(0,251,255,0.35); backdrop-filter:blur(6px);">
+    <div style="display:flex; align-items:center; gap:8px;">
+      <div style="font-size:20px; flex-shrink:0;">💡</div>
+      <div style="flex:1; min-width:0;">
+        <div style="color:var(--main-cyan); font-size:10px; font-weight:bold; letter-spacing:1px; margin-bottom:2px;">TUTORIAL GOAL</div>
+        <div id="tutorial-instruction-text" style="color:#fff; font-size:13px; font-weight:bold; line-height:1.5;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== チュートリアルクリア演出オーバーレイ ===== -->
+<div id="tutorial-clear-overlay" style="display:none; position:fixed; inset:0; z-index:60000; background:rgba(0,0,0,0.88); align-items:center; justify-content:center; flex-direction:column; backdrop-filter:blur(4px);">
+  <div style="background:linear-gradient(135deg, #001020, #003040); border:2px solid #00ff88; border-radius:16px; padding:32px 40px; text-align:center; box-shadow:0 0 60px rgba(0,255,136,0.4); max-width:440px;">
+    <div style="font-size:3rem; margin-bottom:8px;">🎉</div>
+    <div style="color:#00ff88; font-size:11px; font-weight:bold; letter-spacing:3px; margin-bottom:4px;">SCENARIO CLEARED</div>
+    <div id="tutorial-clear-title" style="color:#fff; font-size:1.4rem; font-weight:bold; margin-bottom:20px;"></div>
+    <div id="tutorial-clear-desc" style="color:#aaa; font-size:12px; line-height:1.6; margin-bottom:12px;"></div>
+    <div id="tutorial-clear-message" style="display:none; color:#fff; font-size:13px; line-height:1.7; margin-bottom:24px; padding:12px; background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.2); border-radius:8px; white-space:pre-wrap;"></div>
+    <button class="menu-btn primary" onclick="closeTutorialClear()" style="width:100%;">シナリオ一覧へ戻る</button>
+  </div>
+</div>

@@ -85,6 +85,7 @@
 <div id="page-battle"></div>
 <div id="page-tutorial"></div>
 <div id="page-admin"></div>
+<div id="page-admin-scenario"></div>
 
 <!-- JS モジュール -->
 <script type="module" src="js/app.js"></script>
@@ -94,7 +95,9 @@
 <script type="module" src="js/effect-engine.js"></script>
 <script type="module" src="js/battle.js"></script>
 <script type="module" src="js/tutorial.js"></script>
+<script type="module" src="js/tutorial-runner.js"></script>
 <script type="module" src="js/admin.js"></script>
+<script type="module" src="js/admin-scenario.js"></script>
 
 <!-- 各画面のHTMLを動的に読み込み -->
 <script type="module">
@@ -116,6 +119,7 @@ await Promise.all([
   loadPage('pages/battle.html', 'page-battle'),
   loadPage('pages/tutorial.html', 'page-tutorial'),
   loadPage('pages/admin.html', 'page-admin'),
+  loadPage('pages/admin-scenario.html', 'page-admin-scenario'),
 ]);
 
 console.log('All pages loaded');

@@ -1,0 +1,226 @@
+<!-- ===== チュートリアルシナリオ管理 ===== -->
+
+<!-- シナリオメニュー -->
+<div id="tutorial-scenario-menu-screen" class="screen">
+  <div style="max-width:500px; margin:auto; padding:40px 20px;">
+    <h2 style="color:var(--main-cyan); text-align:center; margin-bottom:30px;">🎬 チュートリアルシナリオ登録</h2>
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <button class="admin-btn-lg" onclick="initTutorialScenarioBuilder()">
+        ✏️ 新規作成する
+        <span class="btn-sub">新しいチュートリアルシナリオを作成します</span>
+      </button>
+      <button class="admin-btn-lg" onclick="showScreen('tutorial-scenario-list-screen'); loadTutorialScenarioList();">
+        📋 シナリオ一覧を見る
+        <span class="btn-sub">登録済みのチュートリアルシナリオを確認・編集・削除します</span>
+      </button>
+      <button class="admin-btn-sm" onclick="showScreen('管理画面-screen')" style="border-color:#555; color:#555; width:100%; text-align:center;">管理画面へ戻る</button>
+    </div>
+  </div>
+</div>
+
+<!-- シナリオ一覧 -->
+<div id="tutorial-scenario-list-screen" class="screen">
+  <div style="max-width:1000px; margin:auto; padding:24px 20px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+      <h2 style="color:var(--main-cyan); margin:0; font-size:1.2rem;">🎬 チュートリアルシナリオ一覧</h2>
+      <div>
+        <button class="admin-btn-sm" onclick="initTutorialScenarioBuilder()">＋ 新規作成</button>
+        <button class="admin-btn-sm" onclick="showScreen('tutorial-scenario-menu-screen')" style="border-color:#555; color:#555;">戻る</button>
+      </div>
+    </div>
+    <div id="tutorial-scenario-list"><p style="color:#555; text-align:center; padding:40px;">読み込み中...</p></div>
+  </div>
+</div>
+
+<!-- シナリオ詳細プレビューモーダル -->
+<div id="ts-detail-modal" style="display:none; position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,0.85); padding:20px; overflow-y:auto;">
+  <div style="max-width:700px; margin:30px auto; background:#0a1414; border:1px solid var(--main-cyan); border-radius:12px; padding:24px; box-shadow:0 0 40px rgba(0,251,255,0.2);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid #222; padding-bottom:10px;">
+      <h2 id="ts-detail-title" style="color:var(--main-cyan); margin:0; font-size:1.2rem;">シナリオ詳細</h2>
+      <button class="admin-btn-sm" onclick="closeTutorialScenarioDetail()" style="padding:4px 14px;">閉じる ✕</button>
+    </div>
+    <div id="ts-detail-body" style="color:#ddd; font-size:12px; line-height:1.7;"></div>
+  </div>
+</div>
+
+<!-- シナリオ作成/編集フォーム -->
+<div id="tutorial-scenario-edit-screen" class="screen">
+  <div style="max-width:700px; margin:auto; padding:24px 20px;">
+    <h2 style="color:var(--main-cyan); text-align:center; margin-bottom:6px;" id="ts-edit-title">チュートリアルシナリオ登録</h2>
+    <p style="color:#aaa; text-align:center; font-size:12px; margin-bottom:20px;">シナリオの内容を入力してください</p>
+
+    <!-- 基本情報 -->
+    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:10px; padding:20px; margin-bottom:16px;">
+      <p style="color:var(--main-cyan); font-size:12px; font-weight:bold; margin:0 0 10px;">基本情報</p>
+      <div class="tsave-field"><label>チュートリアル名 <span style="color:#ff4444;">*</span></label>
+        <input type="text" id="ts-tutorial-name" placeholder="例：育成と孵化を覚えよう">
+      </div>
+      <div class="tsave-field"><label>シナリオ説明</label>
+        <textarea id="ts-description" rows="3" placeholder="例：育成エリアで孵化し、バトルエリアに出すまでを体験します"></textarea>
+      </div>
+      <div class="tsave-field"><label>難易度</label>
+        <select id="ts-difficulty">
+          <option value="⭐">⭐ かんたん</option>
+          <option value="⭐⭐">⭐⭐ ふつう</option>
+          <option value="⭐⭐⭐">⭐⭐⭐ むずかしい</option>
+        </select>
+      </div>
+      <div class="tsave-field"><label>表示順 (数値が小さいほど先)</label>
+        <input type="number" id="ts-order" value="1" min="0">
+      </div>
+      <div class="tsave-field">
+        <label>前提シナリオ</label>
+        <select id="ts-prerequisite"><option value="">（なし・最初から解放）</option></select>
+        <p style="color:#888; font-size:11px; margin:4px 0 0;">このシナリオを解放するために必要なシナリオを選んでください。空白=最初から解放（後で修正も可）</p>
+      </div>
+      <div class="tsave-field"><label>モード</label>
+        <select id="ts-mode">
+          <option value="strict">strict (指示外の操作をブロック)</option>
+          <option value="free">free (自由操作OK)</option>
+        </select>
+      </div>
+      <div class="tsave-field"><label>使用デッキ <span style="color:#ff4444;">*</span></label>
+        <select id="ts-deck-id"><option value="">読み込み中...</option></select>
+      </div>
+      <div class="tsave-field" style="margin-top:8px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="ts-show-phase-guide" onchange="togglePhaseGuideTexts()">
+          <span>フェーズ説明を表示する（入門シナリオ向け）</span>
+        </label>
+        <p style="color:#888; font-size:10px; margin:4px 0 0;">ONにすると、マリガン〜メインフェイズの各フェーズで説明ポップアップが表示されます</p>
+      </div>
+      <div id="ts-phase-guide-texts" style="display:none; margin-top:10px; background:#050505; border:1px solid #1a3030; border-radius:6px; padding:12px;">
+        <p style="color:var(--main-cyan); font-size:10px; font-weight:bold; margin:0 0 8px;">フェーズ説明テキスト（空欄＝スキップ）</p>
+        <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">🎴 マリガン</label>
+          <textarea id="ts-pg-mulligan" rows="2" placeholder="最初の5枚が配られるよ..."></textarea></div>
+        <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">🔄 アクティブフェーズ</label>
+          <textarea id="ts-pg-unsuspend" rows="2" placeholder="レスト（横向き）のカードを縦にするよ..."></textarea></div>
+        <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">🃏 ドローフェーズ</label>
+          <textarea id="ts-pg-draw" rows="2" placeholder="1枚デッキから手札にカードが引けるよ..."></textarea></div>
+        <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">🥚 育成フェーズ</label>
+          <textarea id="ts-pg-breed" rows="2" placeholder="育成エリアのカードを操作できるよ..."></textarea></div>
+        <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">⚔️ メインフェーズ</label>
+          <textarea id="ts-pg-main" rows="2" placeholder="このフェーズで相手とバトルしたり..."></textarea></div>
+      </div>
+    </div>
+
+    <!-- クリア条件 -->
+    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:10px; padding:20px; margin-bottom:16px;">
+      <p style="color:var(--main-cyan); font-size:12px; font-weight:bold; margin:0 0 10px;">クリア条件 <span style="color:#ff4444;">*</span></p>
+      <p style="color:#888; font-size:11px; margin:0 0 10px;">このシナリオを終了させる条件を指定します</p>
+      <div class="tsave-field"><label>条件タイプ</label>
+        <select id="ts-clear-type" onchange="updateClearConditionUI()"></select>
+      </div>
+      <div class="tsave-field" id="ts-clear-param-wrap" style="display:none;"><label>パラメータ (カードNo等)</label>
+        <input type="text" id="ts-clear-param" placeholder="例: BT1-010">
+      </div>
+    </div>
+
+    <!-- 初期盤面 -->
+    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:10px; padding:20px; margin-bottom:16px;">
+      <p style="color:var(--main-cyan); font-size:12px; font-weight:bold; margin:0 0 10px;">初期盤面</p>
+
+      <!-- 基本設定 -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <div class="tsave-field"><label>先攻</label>
+          <select id="ts-player-first"><option value="true">プレイヤー先攻</option><option value="false">相手先攻</option></select>
+        </div>
+        <div class="tsave-field"><label>開始メモリー</label>
+          <input type="number" id="ts-player-memory" value="0">
+        </div>
+        <div class="tsave-field"><label>自分 セキュリティ枚数</label>
+          <input type="number" id="ts-player-sec" value="5" min="0" max="10">
+        </div>
+        <div class="tsave-field"><label>相手 セキュリティ枚数</label>
+          <input type="number" id="ts-opponent-sec" value="5" min="0" max="10">
+        </div>
+      </div>
+
+      <!-- カード配置 -->
+      <div style="border-top:1px solid #222; padding-top:12px; margin-top:8px;">
+        <p style="color:#aaa; font-size:11px; margin:0 0 6px; font-weight:bold;">カード配置（手札・バトルエリア・育成エリア）</p>
+        <p style="color:#666; font-size:10px; margin:0 0 8px;">カード名またはNoで検索 → 配置先を選んで追加</p>
+        <input type="text" id="ts-card-search" placeholder="カード名またはカードNoで検索..." oninput="tsFilterCardsForBoard()" style="width:100%; margin-bottom:6px;">
+        <div id="ts-card-search-results" style="max-height:200px; overflow-y:auto; background:#0a0a0a; border:1px solid #222; border-radius:4px; padding:4px;"></div>
+      </div>
+
+      <!-- 配置済みカード表示 -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;">
+        <div style="background:#0a0a0a; border:1px solid #00fbff33; border-radius:6px; padding:8px;">
+          <p style="color:var(--main-cyan); font-size:11px; margin:0 0 6px; font-weight:bold;">自分側の配置</p>
+          <div id="ts-own-areas"></div>
+        </div>
+        <div style="background:#0a0a0a; border:1px solid #ff00fb33; border-radius:6px; padding:8px;">
+          <p style="color:#ff00fb; font-size:11px; margin:0 0 6px; font-weight:bold;">相手側の配置</p>
+          <div id="ts-opp-areas"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 相手AIスクリプト -->
+    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:10px; padding:20px; margin-bottom:16px;">
+      <p style="color:var(--main-cyan); font-size:12px; font-weight:bold; margin:0 0 10px;">相手AIスクリプト</p>
+      <p style="color:#888; font-size:11px; margin:0 0 10px;">各ターンで相手に取らせたい行動を順番に指定します</p>
+      <div id="ts-opponent-script-container"></div>
+      <button class="admin-btn-sm" onclick="tsAddOpponentTurn()" style="width:100%; margin-top:10px;">＋ ターンを追加</button>
+    </div>
+
+    <!-- クリア後メッセージ -->
+    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:10px; padding:20px; margin-bottom:16px;">
+      <p style="color:var(--main-cyan); font-size:12px; font-weight:bold; margin:0 0 10px;">クリア後メッセージ</p>
+      <p style="color:#888; font-size:11px; margin:0 0 10px;">シナリオクリア演出の後に表示するメッセージ（空欄＝なし）</p>
+      <textarea id="ts-clear-message" rows="3" placeholder="例：お疲れ様でした！次は「進化を覚えよう」に挑戦してみてね！"></textarea>
+    </div>
+
+    <!-- フロー設定 -->
+    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:10px; padding:20px; margin-bottom:16px;">
+      <p style="color:var(--main-cyan); font-size:12px; font-weight:bold; margin:0 0 10px;">フロー設定（フェーズ別ステップ）</p>
+      <p style="color:#888; font-size:11px; margin:0 0 10px;">各フェーズで表示する指示・説明・演出を設定します</p>
+      <div id="ts-flow-summary" style="margin-bottom:10px;"></div>
+      <button class="menu-btn" onclick="openFlowEditor()" style="width:100%;">📝 フローを設定する</button>
+    </div>
+
+    <!-- 保存ボタン -->
+    <button class="menu-btn primary" id="ts-save-btn" onclick="executeTutorialScenarioSave()">保存する</button>
+    <button class="menu-btn" onclick="showScreen('tutorial-scenario-list-screen')" style="margin-top:8px;">キャンセル</button>
+  </div>
+</div>
+
+<!-- ===== フロー設定画面 ===== -->
+<div id="tutorial-flow-edit-screen" class="screen">
+  <div style="max-width:750px; margin:auto; padding:24px 20px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h2 style="color:var(--main-cyan); margin:0; font-size:1.1rem;">📝 フロー設定</h2>
+      <button class="admin-btn-sm" onclick="closeFlowEditor()" style="padding:6px 16px;">← 戻る</button>
+    </div>
+    <p style="color:#888; font-size:11px; margin:0 0 16px;">フェーズを追加して、各フェーズ内にステップ（指示・説明・演出）を設定してください。不要なフェーズは追加しなければスキップされます。</p>
+
+    <!-- フェーズ追加 -->
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
+      <select id="flow-add-phase-select" style="font-size:12px; padding:6px;">
+        <option value="mulligan">🎴 マリガン</option>
+        <option value="unsuspend">🔄 アクティブフェーズ</option>
+        <option value="draw">🃏 ドローフェーズ</option>
+        <option value="breed">🥚 育成フェーズ</option>
+        <option value="main">⚔️ メインフェーズ</option>
+      </select>
+      <label style="color:#aaa; font-size:11px;">ターン <input type="number" id="flow-add-turn" value="1" min="1" style="width:50px; padding:4px; font-size:11px;"></label>
+      <button class="admin-btn-sm" onclick="flowAddPhase()">＋ フェーズを追加</button>
+    </div>
+
+    <!-- 割り込みトリガー追加 -->
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:20px; flex-wrap:wrap;">
+      <select id="flow-add-trigger-select" style="font-size:12px; padding:6px;">
+        <option value="before_end_turn">ターン終了直前</option>
+        <option value="after_attack">アタック後</option>
+        <option value="memory_crossed">メモリー相手側到達</option>
+        <option value="before_opponent_turn">相手ターン開始前</option>
+      </select>
+      <label style="color:#aaa; font-size:11px;">ターン <input type="number" id="flow-add-trigger-turn" value="1" min="1" style="width:50px; padding:4px; font-size:11px;"></label>
+      <button class="admin-btn-sm" onclick="flowAddTrigger()" style="border-color:#ffaa00; color:#ffaa00;">＋ 割り込みを追加</button>
+    </div>
+
+    <!-- フェーズ一覧（動的生成） -->
+    <div id="flow-phases-container"></div>
+  </div>
+</div>

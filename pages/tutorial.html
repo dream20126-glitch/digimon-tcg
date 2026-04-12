@@ -1,34 +1,45 @@
+<!-- ===== チュートリアル画面 (シナリオ選択) ===== -->
 <div id="tutorial-screen" class="screen">
-  <div style="max-width:500px; margin:auto; padding:40px 20px; text-align:center;">
+  <div style="max-width:600px; margin:auto; padding:40px 20px; text-align:center;">
     <div style="font-size:2.5rem; margin-bottom:10px;">📖</div>
     <h1 class="main-title" style="font-size:1.6rem; margin-bottom:8px;">チュートリアル</h1>
-    <p style="color:#aaa; font-size:13px; margin-bottom:24px;">AIと対戦練習ができます。<br>チュートリアルデッキを選んで挑戦しよう！</p>
-    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:14px; padding:24px; margin-bottom:20px;">
-      <p style="color:#fff; font-size:14px; margin-bottom:16px; font-weight:bold;">使用するデッキを選択</p>
-      <div id="tutorial-deck-select-area"><p style="color:#555;">読み込み中...</p></div>
+    <p style="color:#aaa; font-size:13px; margin-bottom:24px;">シナリオを選んでデジカの基本を学ぼう！</p>
+
+    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:14px; padding:20px 16px; margin-bottom:20px;">
+      <div id="tutorial-scenario-select-area"><p style="color:#555;">読み込み中...</p></div>
     </div>
+
     <button class="menu-btn" onclick="backToTop()">TOPへ戻る</button>
   </div>
 </div>
 
+<!-- ===== チュートリアル詳細 (目的・使用デッキ・開始) ===== -->
 <div id="tutorial-lobby-screen" class="screen">
   <div style="max-width:500px; margin:auto; padding:40px 20px; text-align:center;">
-    <h2 style="color:var(--main-cyan); margin-bottom:20px; letter-spacing:3px;">DIGITAL GATE OPEN</h2>
-    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:14px; padding:20px; margin-bottom:30px;">
-      <div style="display:flex; justify-content:space-around; align-items:center; margin-bottom:20px;">
-        <div>
-          <div style="font-size:12px; color:#aaa; margin-bottom:5px;" id="tl-you-label">YOU</div>
-          <div id="tl-p-img" style="width:80px; height:110px; border:1px solid var(--main-cyan); border-radius:5px; background:#111; overflow:hidden;"></div>
-        </div>
-        <div style="font-size:24px; font-weight:bold; color:var(--border-col);">VS</div>
-        <div>
-          <div style="font-size:12px; color:#aaa; margin-bottom:5px;">🤖デジモンマスター</div>
-          <div id="tl-ai-img" style="width:80px; height:110px; border:1px solid #ff00fb; border-radius:5px; background:#111; overflow:hidden;"></div>
+    <h2 style="color:var(--main-cyan); margin-bottom:6px; letter-spacing:2px;" id="tl-scenario-title">シナリオ詳細</h2>
+    <p style="color:#888; font-size:12px; margin-bottom:20px;" id="tl-scenario-difficulty"></p>
+
+    <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:14px; padding:20px; margin-bottom:20px; text-align:left;">
+      <div style="margin-bottom:16px;">
+        <div style="color:var(--main-cyan); font-size:11px; font-weight:bold; margin-bottom:4px;">🎯 このシナリオの目的</div>
+        <div id="tl-scenario-description" style="color:#fff; font-size:13px; line-height:1.6;"></div>
+      </div>
+
+      <div style="margin-bottom:16px; border-top:1px solid #222; padding-top:12px;">
+        <div style="color:var(--main-cyan); font-size:11px; font-weight:bold; margin-bottom:6px;">🃏 使用デッキ</div>
+        <div style="display:flex; align-items:center;">
+          <div id="tl-deck-img" style="width:50px; height:70px; border:1px solid var(--main-cyan); border-radius:5px; background:#111; overflow:hidden; margin-right:12px;"></div>
+          <div>
+            <div id="tl-deck-name" style="color:#fff; font-size:13px; font-weight:bold;"></div>
+            <div id="tl-deck-tutorial-name" style="color:#888; font-size:11px;"></div>
+          </div>
         </div>
       </div>
-      <div id="tutorial-status-msg" style="font-size:14px; color:var(--main-cyan); min-height:1.5em; margin-bottom:20px;">デッキを選択してください。</div>
-      <div id="tutorial-action-area"></div>
+
+      <div id="tutorial-status-msg" style="font-size:12px; color:var(--main-cyan); min-height:1.2em; margin-top:10px;"></div>
     </div>
-    <button class="menu-btn" onclick="showScreen('tutorial-screen')" style="border-color:#444; color:#888;">戻る</button>
+
+    <button class="menu-btn primary" id="tl-start-btn" onclick="enterTutorialBattle()" style="width:100%; box-shadow: 0 0 15px var(--main-cyan);">シナリオを開始</button>
+    <button class="menu-btn" onclick="showScreen('tutorial-screen')" style="margin-top:8px; border-color:#444; color:#888;">シナリオ一覧へ戻る</button>
   </div>
 </div>

@@ -37,6 +37,35 @@ export function makeEffectContext(card, side) {
   };
 }
 
+// ===== チュートリアルイベント種別マッピング（トリガーコード → チュートリアルイベント名）=====
+const TUTORIAL_EVENT_MAP = {
+  'on_play': 'play',
+  'on_evolve': 'evolve',
+  'on_attack': 'attack_declared',
+  'on_attack_end': 'attack_resolved',
+  'on_destroy': 'destroy',
+  'main': 'use_effect',
+};
+
+// ===== チュートリアルランナーへの一括通知ヘルパー =====
+function _notifyTutorial(triggerCode, card, side) {
+  const runner = (typeof window !== 'undefined') ? window._tutorialRunner : null;
+  if (!runner || !runner.active) return;
+  const evType = TUTORIAL_EVENT_MAP[triggerCode];
+  if (!evType) return;
+  // destroy は常に通知、それ以外はプレイヤー操作のみ通知
+  if (evType !== 'destroy' && side !== 'player') return;
+  const evData = {
+    cardNo: card && card.cardNo,
+    cardName: card && card.name,
+    side,
+  };
+  if (evType === 'destroy') {
+    evData.targetSide = (side === 'ai') ? 'opponent' : 'own';
+  }
+  try { runner.notifyEvent(evType, evData); } catch (e) { console.error('[tutorial notify]', e); }
+}
+
 // ===== checkAndTriggerEffect =====
 export function checkAndTriggerEffect(card, triggerType, callback, side, alreadyConfirmed) {
   if (!card) { callback && callback(); return; }
@@ -45,6 +74,8 @@ export function checkAndTriggerEffect(card, triggerType, callback, side, already
     side = inPlayer ? 'player' : 'ai';
   }
   const triggerCode = TRIGGER_CODE_MAP[triggerType] || triggerType;
+  // チュートリアル通知（既存の動作には影響なし、active=falseなら何もしない）
+  _notifyTutorial(triggerCode, card, side);
   const context = makeEffectContext(card, side);
   if (alreadyConfirmed) context.alreadyConfirmed = true;
   _triggerEffectEE(triggerCode, card, side, context, () => {
@@ -55,6 +86,10 @@ export function checkAndTriggerEffect(card, triggerType, callback, side, already
 
 // ===== checkTurnStartEffects =====
 export function checkTurnStartEffects(side, cb) {
+  // チュートリアル通知（両サイド）。tutorial-runner 側で side を見て処理する
+  if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
+    try { window._tutorialRunner.notifyEvent('turn_start', { side }); } catch (e) { console.error('[tutorial turn_start]', e); }
+  }
   bs._usedLimits = {};
   const p = side === 'player' ? bs.player : bs.ai;
   const area = [...p.battleArea, ...(p.tamerArea || [])];
@@ -79,6 +114,10 @@ export function checkTurnStartEffects(side, cb) {
 
 // ===== checkTurnEndEffects =====
 export function checkTurnEndEffects(cb) {
+  // チュートリアル通知（プレイヤーターン終了のみ、checkTurnEndEffectsは自分ターンのみ呼ばれる想定）
+  if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
+    try { window._tutorialRunner.notifyEvent('turn_end', { side: 'player' }); } catch (e) { console.error('[tutorial turn_end]', e); }
+  }
   const allCards = [...bs.player.battleArea, ...(bs.player.tamerArea || [])];
   const hasEndRecipe = (c) => {
     if (!c.recipe) return false;
@@ -137,6 +176,11 @@ export function buildIkuCallbacks() {
   return {
     onHatch: (card) => {
       if (isOnlineMode()) sendCommand({ type: 'hatch', cardName: card.name, cardImg: card.imgSrc || '' });
+      // チュートリアル通知
+      if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
+        try { window._tutorialRunner.notifyEvent('hatch', { cardNo: card.cardNo, cardName: card.name }); }
+        catch (e) { console.error('[tutorial hatch]', e); }
+      }
       renderAll();
       fxHatchEffect(card, () => breedActionDone());
     },

@@ -1448,6 +1448,21 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
 
+    case 'goal_reached': {
+      // チュートリアル専用アクション。チュートリアルランナーが動作中のときだけ通知する。
+      // 通常のオンライン対戦では誰も呼ばないので副作用なし。
+      try {
+        if (typeof window !== 'undefined' && window._tutorialRunner && typeof window._tutorialRunner.onGoalReached === 'function') {
+          window._tutorialRunner.onGoalReached(action, ctx);
+          ctx.addLog('🎯 チュートリアルゴール達成');
+        }
+      } catch (e) {
+        console.error('goal_reached action error:', e);
+      }
+      callback();
+      break;
+    }
+
     default:
       // キーワード効果（blocker, rush等）はパッシブなので実行不要
       callback();

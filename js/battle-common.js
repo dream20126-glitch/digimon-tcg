@@ -76,6 +76,28 @@ function _notifyTutorial(triggerCode, card, side) {
   try { runner.notifyEvent(evType, evData); } catch (e) { console.error('[tutorial notify]', e); }
 }
 
+// ===== アクション直後の割り込みトリガー発火 =====
+// evType: 'play' | 'evolve' | 'hatch' | 'use_effect' など
+// 呼び出し側で await する
+async function _tutorialInterruptAfter(evType) {
+  const runner = (typeof window !== 'undefined') ? window._tutorialRunner : null;
+  if (!runner || !runner.active) return;
+  const triggerMap = {
+    'play':       'after_play',
+    'evolve':     'after_evolve',
+    'hatch':      'after_hatch',
+    'use_effect': 'after_use_effect',
+  };
+  const triggerKey = triggerMap[evType];
+  if (!triggerKey) return;
+  try { await runner.checkInterrupt(triggerKey); } catch (e) { console.error('[tutorial interrupt]', e); }
+}
+
+// window からも呼べるようにする（battle-combat 等から利用）
+if (typeof window !== 'undefined') {
+  window._tutorialInterruptAfter = _tutorialInterruptAfter;
+}
+
 // ===== checkAndTriggerEffect =====
 export function checkAndTriggerEffect(card, triggerType, callback, side, alreadyConfirmed) {
   if (!card) { callback && callback(); return; }
@@ -192,7 +214,10 @@ export function buildIkuCallbacks() {
         catch (e) { console.error('[tutorial hatch]', e); }
       }
       renderAll();
-      fxHatchEffect(card, () => breedActionDone());
+      fxHatchEffect(card, async () => {
+        if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('hatch');
+        breedActionDone();
+      });
     },
     onBreedMove: (card) => {
       if (isOnlineMode()) {

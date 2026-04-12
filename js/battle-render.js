@@ -429,8 +429,14 @@ window.activateEffect = function(slotIdx, effectSource) {
     }
     card._usedEffects.push(effectSource || 'self');
     // effect-engine の checkAndTriggerEffect を window 経由で呼ぶ
-    if (window._triggerMainEffect) window._triggerMainEffect(card, () => renderAll());
-    else renderAll();
+    if (window._triggerMainEffect) {
+      window._triggerMainEffect(card, async () => {
+        if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('use_effect');
+        renderAll();
+      });
+    } else {
+      renderAll();
+    }
   };
 };
 
@@ -916,6 +922,12 @@ export function showBCD(idxOrCard, source) {
 
   document.body.appendChild(bcd);
   bcd.style.display = 'flex';
+
+  // チュートリアル割り込み: カード詳細表示
+  // on_card_detail_open トリガー有効なシナリオのみ割り込む（閉じるまで待機）
+  if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
+    try { window._tutorialRunner.checkInterrupt('on_card_detail_open'); } catch (e) {}
+  }
 }
 
 export function closeBCD() {

@@ -388,6 +388,13 @@ const TARGET_AREA_SELECTORS = {
     const cells = row.querySelectorAll('.m-ai');
     return cells.length ? cells[Math.floor(cells.length / 2)] : row;
   },
+  // カード詳細モーダル内部
+  card_detail:            () => document.getElementById('b-card-detail'),
+  card_detail_name:       () => document.getElementById('bcd-name'),
+  card_detail_stats:      () => document.getElementById('bcd-stats'),
+  card_detail_effect:     () => document.getElementById('bcd-effect'),
+  card_detail_evo_source: () => document.getElementById('bcd-evo-source'),
+  card_detail_sec_effect: () => document.getElementById('bcd-security-effect'),
 };
 
 let _highlightedEls = []; // 現在ハイライト中のDOM要素群

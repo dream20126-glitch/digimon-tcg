@@ -181,13 +181,17 @@ export function doPlay(card, handIdx, slotIdx) {
   showPlayEffect(card, () => {
     _hooks.applyPermanentEffects('player');
     renderAll(true);
+    const finishPlay = async () => {
+      if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
+      playerSpendMemory(card.playCost);
+    };
     if (hasKeyword(card, '【登場時】')) {
       _hooks.checkAndTriggerEffect(card, '【登場時】', () => {
         renderAll(true);
-        playerSpendMemory(card.playCost);
+        finishPlay();
       });
     } else {
-      playerSpendMemory(card.playCost);
+      finishPlay();
     }
   });
 }
@@ -218,13 +222,17 @@ export function doEvolve(card, handIdx, slotIdx) {
   renderAll();
   showEvolveEffect(cost, base.name, base, evolved, () => {
     doDraw('player', '進化ドロー', () => {
+      const finishEvolve = async () => {
+        if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
+        playerSpendMemory(cost);
+      };
       if (hasKeyword(evolved, '【進化時】')) {
         _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
           renderAll(true);
-          playerSpendMemory(cost);
+          finishEvolve();
         });
       } else {
-        playerSpendMemory(cost);
+        finishEvolve();
       }
     });
   });
@@ -256,13 +264,17 @@ export function doEvolveIku(card, handIdx) {
   renderAll();
   showEvolveEffect(cost, base.name, base, evolved, () => {
     doDraw('player', '進化ドロー', () => {
+      const finishEvolveIku = async () => {
+        if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
+        playerSpendMemory(cost);
+      };
       if (evolved.effect && evolved.effect.includes('＜育成＞') && hasKeyword(evolved, '【進化時】')) {
         _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
           renderAll(true);
-          playerSpendMemory(cost);
+          finishEvolveIku();
         });
       } else {
-        playerSpendMemory(cost);
+        finishEvolveIku();
       }
     });
   });

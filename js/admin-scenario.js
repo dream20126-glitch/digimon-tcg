@@ -47,6 +47,13 @@ const TARGET_AREAS = [
   { value: 'memory_gauge',        label: 'メモリーゲージ（全体）' },
   { value: 'memory_gauge_player', label: 'メモリーゲージ（自分側）' },
   { value: 'memory_gauge_opp',    label: 'メモリーゲージ（相手側）' },
+  // カード詳細モーダル内部の部位
+  { value: 'card_detail',            label: 'カード詳細：モーダル全体' },
+  { value: 'card_detail_name',       label: 'カード詳細：カード名' },
+  { value: 'card_detail_stats',      label: 'カード詳細：Lv/DP/コスト' },
+  { value: 'card_detail_effect',    label: 'カード詳細：効果欄' },
+  { value: 'card_detail_evo_source', label: 'カード詳細：進化元効果' },
+  { value: 'card_detail_sec_effect', label: 'カード詳細：セキュリティ効果' },
 ];
 
 // ステップタイプ定義
@@ -75,10 +82,18 @@ const BUTTON_TARGETS = [
 
 // 割り込みトリガー定義
 const TRIGGER_TYPES = [
-  { value: 'before_end_turn',     label: 'ターン終了直前' },
-  { value: 'after_attack',        label: 'アタック後' },
-  { value: 'memory_crossed',      label: 'メモリー相手側到達' },
+  // ターン/フェーズ境界
+  { value: 'before_end_turn',      label: '自分のターン終了直前' },
+  { value: 'memory_crossed',       label: 'メモリー相手側到達時' },
   { value: 'before_opponent_turn', label: '相手ターン開始前' },
+  // アクション直後
+  { value: 'after_hatch',          label: '孵化直後' },
+  { value: 'after_play',           label: 'カード登場直後' },
+  { value: 'after_evolve',         label: '進化直後' },
+  { value: 'after_attack',         label: 'アタック解決後' },
+  { value: 'after_use_effect',     label: '効果使用直後' },
+  // UI系
+  { value: 'on_card_detail_open',  label: 'カード詳細表示中' },
 ];
 
 // フェーズ定義（表示用）

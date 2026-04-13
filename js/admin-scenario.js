@@ -30,6 +30,7 @@ const CONDITION_TYPES = [
   // 特殊
   { value: 'security_zero',      label: '相手セキュリティを0枚にした', needsCardNo: false },
   { value: 'card_detail_closed', label: 'カード詳細を見た（閉じた）', needsCardNo: false },
+  { value: 'mulligan_accepted',  label: 'ゲーム開始ボタンを押した（マリガン）', needsCardNo: false },
   // 既存の進行系（互換のため残す）
   { value: 'turn_end',           label: 'ターン終了した',           needsCardNo: false },
   { value: 'turn_start',         label: 'ターン開始した',           needsCardNo: false },
@@ -1006,6 +1007,7 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
   const sType = step.stepType || 'action';
   const isAction = sType === 'action';
   const isSpotlight = sType === 'spotlight';
+  const isMessage = sType === 'message';
   const cond = step.advanceCondition || { type: 'hatch' };
   const needsCard = _conditionNeedsCard(cond.type);
   const cardNo = (cond.params && cond.params.cardNo) || '';
@@ -1035,6 +1037,24 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
   ).join('');
 
   const borderColor = isAction ? '#333' : isSpotlight ? '#ffaa0066' : '#00fbff66';
+  const textLabel = isAction ? '指示テキスト' : isSpotlight ? '吹き出しテキスト' : '説明テキスト';
+  const textPlaceholder = isAction ? '例: 育成エリアをタップして孵化しよう!'
+                        : isSpotlight ? '例: ここがあなたの手札！長押しで詳細が見られるよ'
+                        : '例: マリガン画面では、5枚配られた手札を確認できるよ...';
+  const target1Label = isSpotlight ? 'スポットライト対象 + 赤枠'
+                     : isAction ? '赤枠ハイライト1（指差し対象）'
+                     : '';
+  const target2Label = isSpotlight ? 'スポットライト対象2（任意）'
+                     : isAction ? '赤枠ハイライト2（任意）'
+                     : '';
+
+  // ステップタイプ別の表示項目:
+  //   message  : 説明テキストのみ（フルスクリーン説明ポップアップ）
+  //   spotlight: 説明テキスト + スポットライト対象1/2
+  //   action   : 指示テキスト + 進行条件 + 操作タイプ + 赤枠1/2 + UI制御
+  const showTargets   = isSpotlight || isAction;
+  const showCondOp    = isAction;
+  const showUiControl = isAction;
 
   return `
     <div style="background:#0a0a0a; border:1px solid ${borderColor}; border-radius:6px; padding:10px; margin-bottom:6px;" onclick="event.stopPropagation()">
@@ -1054,12 +1074,12 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
         <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'stepType',this.value)">${stepTypeOpts}</select>
       </div>
       <div class="tsave-field" style="margin-bottom:6px;">
-        <label style="font-size:10px;">${isAction ? '指示テキスト' : '説明テキスト'} <span style="color:#888;">※ {{pc:XX|sp:YY}} でデバイス切替可</span></label>
+        <label style="font-size:10px;">${textLabel} <span style="color:#888;">※ {{pc:XX|sp:YY}} でデバイス切替可</span></label>
         <textarea rows="${isAction ? 1 : 3}" oninput="flowUpdateStep(${sk},${tg},${sIdx},'instructionText',this.value)"
-          placeholder="${isAction ? '例: 育成エリアをタップして孵化しよう!' : '例: セキュリティは5枚あるよ...'}"
+          placeholder="${textPlaceholder}"
           style="resize:vertical;">${_escHtml(step.instructionText || '')}</textarea>
       </div>
-      ${isAction ? `
+      ${showCondOp ? `
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">次に進む条件</label>
           <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'conditionType',this.value)">${condOpts}</select>
@@ -1068,26 +1088,27 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
           <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'operationType',this.value)">${opOpts}</select>
         </div>
       </div>` : ''}
-      ${_renderConditionSubSettings(slotKey, timing, sIdx, step, cond)}
+      ${showCondOp ? _renderConditionSubSettings(slotKey, timing, sIdx, step, cond) : ''}
+      ${showTargets ? `
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
         <div class="tsave-field" style="margin-bottom:0;">
-          <label style="font-size:10px;">${isSpotlight ? 'スポットライト対象' : '赤枠ハイライト1'}</label>
+          <label style="font-size:10px;">${target1Label}</label>
           <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'targetArea',this.value)" style="margin-bottom:3px;">${areaOpts}</select>
           ${_renderCardPicker(slotKey, timing, sIdx, 'targetCardNo', step.targetCardNo)}
         </div>
         <div class="tsave-field" style="margin-bottom:0;">
-          <label style="font-size:10px;">赤枠ハイライト2</label>
+          <label style="font-size:10px;">${target2Label}</label>
           <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'secondTargetArea',this.value)" style="margin-bottom:3px;">${areaOpts2}</select>
           ${_renderCardPicker(slotKey, timing, sIdx, 'secondTargetCardNo', step.secondTargetCardNo)}
         </div>
-      </div>
+      </div>` : ''}
       ${isAction && needsCard ? `
       <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">カードNo（進行条件用）</label>
         <input type="text" value="${_escHtml(cardNo)}"
           oninput="flowUpdateStep(${sk},${tg},${sIdx},'conditionCardNo',this.value)"
           placeholder="例: BT1-010">
       </div>` : ''}
-      ${_renderStepUiControl(slotKey, timing, sIdx, step)}
+      ${showUiControl ? _renderStepUiControl(slotKey, timing, sIdx, step) : ''}
     </div>
   `;
 }

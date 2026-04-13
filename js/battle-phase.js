@@ -329,20 +329,24 @@ export function startPhase(phase) {
     try { runner.onPhaseChange(phase); } catch (e) {}
   }
 
-  // チュートリアル: フェーズ通知
-  // notifyPhaseChange は内部で
-  //   1) showPhaseGuide=true なら説明ポップアップ表示
-  //   2) flow に該当フェーズのブロックがあればステップブロックを発火
-  // を行う。両機能ともシナリオ進行に必要なので、runner が active なら常に呼ぶ。
-  const proceed = () => {
+  // チュートリアル: フェーズ進行は「アナウンス演出 → 説明ポップ(次へ待ち) → execPhase」の順
+  //   notifyPhaseChange は内部で
+  //     1) showPhaseGuide=true なら説明ポップアップ表示（await で次へ待ち）
+  //     2) flow に該当フェーズのブロックがあればステップブロックを発火
+  const isTutorial = runner && runner.active && typeof runner.notifyPhaseChange === 'function';
+
+  if (isTutorial) {
+    if (info) {
+      // アナウンス演出 → 完了後にポップ → ポップ閉じてから execPhase
+      showPhaseAnnounce(`${info.icon} ${info.name}`, PHASE_COLORS[phase], () => {
+        runner.notifyPhaseChange(phase).then(() => execPhase(phase));
+      });
+    } else {
+      runner.notifyPhaseChange(phase).then(() => execPhase(phase));
+    }
+  } else {
     if (!info) { execPhase(phase); return; }
     showPhaseAnnounce(`${info.icon} ${info.name}`, PHASE_COLORS[phase], () => execPhase(phase));
-  };
-
-  if (runner && runner.active && typeof runner.notifyPhaseChange === 'function') {
-    runner.notifyPhaseChange(phase).then(proceed);
-  } else {
-    proceed();
   }
 }
 

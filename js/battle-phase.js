@@ -334,18 +334,12 @@ export function startPhase(phase) {
   //     1) showPhaseGuide=true なら説明ポップアップ表示（await で次へ待ち）
   //     2) flow に該当フェーズのブロックがあればステップブロックを発火
   const isTutorial = runner && runner.active && typeof runner.notifyPhaseChange === 'function';
-  console.log('[startPhase]', phase, 'isTutorial=', isTutorial, 'info=', info);
 
   if (isTutorial) {
     if (info) {
       // アナウンス演出 → 完了後にポップ → ポップ閉じてから execPhase
-      console.log('[startPhase] → showPhaseAnnounce for', phase);
       showPhaseAnnounce(`${info.icon} ${info.name}`, PHASE_COLORS[phase], () => {
-        console.log('[startPhase] banner end → notifyPhaseChange', phase);
-        runner.notifyPhaseChange(phase).then(() => {
-          console.log('[startPhase] popup closed → execPhase', phase);
-          execPhase(phase);
-        });
+        runner.notifyPhaseChange(phase).then(() => execPhase(phase));
       });
     } else {
       runner.notifyPhaseChange(phase).then(() => execPhase(phase));

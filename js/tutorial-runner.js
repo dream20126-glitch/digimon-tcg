@@ -322,8 +322,12 @@ class TutorialRunner {
 
   _advanceStep() {
     // 成功演出（actionステップのみ）
+    // ただし mulligan_accepted のような UI ボタン押下系は演出を抑制
     const step = this._currentBlock && this._currentBlock.steps[this._currentStepIdx];
-    if (step && step.stepType === 'action') {
+    const condType = step && step.advanceCondition && step.advanceCondition.type;
+    const SILENT_CONDITIONS = ['mulligan_accepted'];
+    const silent = SILENT_CONDITIONS.includes(condType);
+    if (step && step.stepType === 'action' && !silent) {
       const successMessages = ['OK!', 'GREAT!', 'NICE!', 'PERFECT!'];
       const msg = successMessages[Math.min(this._currentStepIdx, successMessages.length - 1)];
       if (typeof window._tutorialShowSuccess === 'function') {

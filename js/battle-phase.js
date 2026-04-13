@@ -329,17 +329,17 @@ export function startPhase(phase) {
     try { runner.onPhaseChange(phase); } catch (e) {}
   }
 
-  // チュートリアル: フェーズ説明ポップアップ (showPhaseGuide=true のシナリオのみ)
-  const needsGuide = runner && runner.active && typeof runner.notifyPhaseChange === 'function'
-    && runner.scenario && runner.scenario.showPhaseGuide
-    && runner._shownPhases && !runner._shownPhases[phase];
-
+  // チュートリアル: フェーズ通知
+  // notifyPhaseChange は内部で
+  //   1) showPhaseGuide=true なら説明ポップアップ表示
+  //   2) flow に該当フェーズのブロックがあればステップブロックを発火
+  // を行う。両機能ともシナリオ進行に必要なので、runner が active なら常に呼ぶ。
   const proceed = () => {
     if (!info) { execPhase(phase); return; }
     showPhaseAnnounce(`${info.icon} ${info.name}`, PHASE_COLORS[phase], () => execPhase(phase));
   };
 
-  if (needsGuide) {
+  if (runner && runner.active && typeof runner.notifyPhaseChange === 'function') {
     runner.notifyPhaseChange(phase).then(proceed);
   } else {
     proceed();

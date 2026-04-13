@@ -458,13 +458,15 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
     renderAll();
     addLog('✅ バトル画面描画完了');
     setTimeout(() => {
-      // チュートリアル: マリガン説明ポップアップ (showPhaseGuide=true のシナリオのみ)
+      // 1) マリガン画面を先に表示（カード配布演出が走る）
+      showMulliganOverlay();
+
+      // 2) チュートリアル中は配布演出が落ち着いてから notifyPhaseChange を呼ぶ
+      //    （ポップアップとゲート演出/配布演出が被らないように）
+      //    配布演出: 5枚 * 150ms + 400ms + フリップ約900ms ≈ 約2.3秒
       const runner = window._tutorialRunner;
-      if (runner && runner.active && typeof runner.notifyPhaseChange === 'function'
-          && runner.scenario && runner.scenario.showPhaseGuide) {
-        runner.notifyPhaseChange('mulligan').then(() => showMulliganOverlay());
-      } else {
-        showMulliganOverlay();
+      if (runner && runner.active && typeof runner.notifyPhaseChange === 'function') {
+        setTimeout(() => { runner.notifyPhaseChange('mulligan'); }, 2400);
       }
     }, 400);
   });

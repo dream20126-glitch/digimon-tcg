@@ -168,8 +168,8 @@ class TutorialRunner {
       window._tutorialShowGoal(scenario.clearCondition);
     }
 
-    // マリガンフェーズのブロックがあれば即開始
-    this._tryActivatePhaseBlock('mulligan');
+    // マリガンフェーズのブロック発火は battle.js 側のゲート演出終了後に
+    // notifyPhaseChange('mulligan') から駆動する（ゲート演出中の早期発火を防ぐ）
   }
 
   // ---------------------------------------------------------------

@@ -425,6 +425,8 @@ const TARGET_AREA_SELECTORS = {
     const cnt = document.getElementById('ai-trash-count');
     return cnt ? cnt.parentElement : null;
   },
+  own_deck:      () => document.getElementById('pl-deck-img'),
+  opp_deck:      () => document.getElementById('ai-deck-img'),
   memory_gauge:        () => document.getElementById('memory-gauge-row'),
   memory_gauge_player: () => {
     // 自分側のメモリーセル群をラップ要素として返す（最初のm-plセルの親=row）

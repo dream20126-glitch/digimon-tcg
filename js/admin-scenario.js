@@ -46,10 +46,12 @@ const TARGET_AREAS = [
   { value: 'battle',       label: 'バトルエリア',                        group: '🟢 自分のエリア' },
   { value: 'own_security', label: 'セキュリティ',                        group: '🟢 自分のエリア' },
   { value: 'own_trash',    label: 'トラッシュ',                          group: '🟢 自分のエリア' },
+  { value: 'own_deck',     label: 'デッキ',                              group: '🟢 自分のエリア' },
   // --- 相手エリア ---
   { value: 'opp_battle',   label: 'バトルエリア',                        group: '🔴 相手のエリア' },
   { value: 'opp_security', label: 'セキュリティ',                        group: '🔴 相手のエリア' },
   { value: 'opp_trash',    label: 'トラッシュ',                          group: '🔴 相手のエリア' },
+  { value: 'opp_deck',     label: 'デッキ',                              group: '🔴 相手のエリア' },
   // --- ボタン ---
   { value: 'mulligan_btn_start', label: 'ゲーム開始ボタン（マリガン）', group: '🔘 ボタン' },
   { value: 'mulligan_btn_redo',  label: '引き直しボタン（マリガン）',   group: '🔘 ボタン' },

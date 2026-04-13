@@ -122,9 +122,9 @@ let _mulliganUsed = false;
 function showMulliganOverlay() {
   _mulliganUsed = false;
   const btn = document.getElementById('mulligan-btn');
-  // チュートリアル(showPhaseGuide=true): 引き直しを無効化
+  // チュートリアル中: 引き直しを無効化（管理画面のステップでハイライト/グレーアウト制御するため）
   const runner = window._tutorialRunner;
-  const isTutorialRestricted = runner && runner.active && runner.scenario && runner.scenario.showPhaseGuide;
+  const isTutorialRestricted = runner && runner.active && runner.scenario;
   if (btn) {
     if (isTutorialRestricted) {
       btn.disabled = true; btn.style.opacity = '0.3'; btn.innerText = '引き直す（使用不可）';

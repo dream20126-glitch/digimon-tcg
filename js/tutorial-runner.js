@@ -179,13 +179,11 @@ class TutorialRunner {
   async notifyPhaseChange(phaseKey) {
     if (!this.active || this.cleared) return;
 
-    // フェーズ説明ポップアップ（showPhaseGuide=true のシナリオ）
-    if (this.scenario.showPhaseGuide) {
-      if (!this._shownPhases[phaseKey]) {
-        this._shownPhases[phaseKey] = true;
-        if (typeof window._tutorialShowPhaseGuide === 'function') {
-          await window._tutorialShowPhaseGuide(phaseKey);
-        }
+    // フェーズ説明ポップアップ（phaseGuideTexts にテキストが入っていれば表示）
+    if (!this._shownPhases[phaseKey]) {
+      this._shownPhases[phaseKey] = true;
+      if (typeof window._tutorialShowPhaseGuide === 'function') {
+        await window._tutorialShowPhaseGuide(phaseKey);
       }
     }
 

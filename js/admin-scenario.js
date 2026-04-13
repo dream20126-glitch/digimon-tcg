@@ -614,12 +614,9 @@ window.editTutorialScenario = async function(scenario) {
   document.getElementById('ts-order').value = scenario.order || 1;
   document.getElementById('ts-prerequisite').value = scenario.prerequisiteId || '';
   document.getElementById('ts-mode').value = scenario.mode || 'strict';
-  const phaseGuideEditCheck = document.getElementById('ts-show-phase-guide');
-  if (phaseGuideEditCheck) phaseGuideEditCheck.checked = !!scenario.showPhaseGuide;
   // フェーズ説明テキスト復元
   const pgt = scenario.phaseGuideTexts || {};
   _setPhaseGuideTexts(pgt);
-  togglePhaseGuideTexts();
   document.getElementById('ts-deck-id').value = scenario.deckId || '';
   // クリア後メッセージ復元
   document.getElementById('ts-clear-message').value = scenario.clearMessage || '';
@@ -688,10 +685,7 @@ async function _prepareEditForm() {
   document.getElementById('ts-difficulty').value = '⭐';
   document.getElementById('ts-order').value = 1;
   document.getElementById('ts-mode').value = 'strict';
-  const phaseGuideCheck = document.getElementById('ts-show-phase-guide');
-  if (phaseGuideCheck) phaseGuideCheck.checked = false;
   _resetPhaseGuideTexts();
-  togglePhaseGuideTexts();
   document.getElementById('ts-player-first').value = 'true';
   document.getElementById('ts-player-memory').value = 0;
   document.getElementById('ts-player-sec').value = 5;
@@ -1474,19 +1468,8 @@ const PHASE_DEFAULTS = {
   main:      'このフェーズで相手とバトルしたり、\n進化や登場ができるよ！',
 };
 
-window.togglePhaseGuideTexts = function() {
-  const check = document.getElementById('ts-show-phase-guide');
-  const panel = document.getElementById('ts-phase-guide-texts');
-  if (!check || !panel) return;
-  panel.style.display = check.checked ? 'block' : 'none';
-  // 初回チェック時にデフォルト文言をセット（空の場合のみ）
-  if (check.checked) {
-    PHASE_KEYS.forEach(k => {
-      const el = document.getElementById('ts-pg-' + k);
-      if (el && !el.value) el.value = PHASE_DEFAULTS[k] || '';
-    });
-  }
-};
+// 後方互換: 既存呼び出しが残っていてもエラーにならないよう no-op を残す
+window.togglePhaseGuideTexts = function() {};
 
 function _resetPhaseGuideTexts() {
   PHASE_KEYS.forEach(k => {
@@ -1796,7 +1779,6 @@ window.executeTutorialScenarioSave = async function() {
     order: Number(document.getElementById('ts-order').value || 0),
     prerequisiteId: document.getElementById('ts-prerequisite').value.trim() || null,
     mode: document.getElementById('ts-mode').value,
-    showPhaseGuide: !!(document.getElementById('ts-show-phase-guide') && document.getElementById('ts-show-phase-guide').checked),
     phaseGuideTexts: _getPhaseGuideTexts(),
     deckId,
     clearCondition,

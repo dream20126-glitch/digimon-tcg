@@ -82,15 +82,8 @@
       <div class="tsave-field"><label>使用デッキ <span style="color:#ff4444;">*</span></label>
         <select id="ts-deck-id"><option value="">読み込み中...</option></select>
       </div>
-      <div class="tsave-field" style="margin-top:8px;">
-        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-          <input type="checkbox" id="ts-show-phase-guide" onchange="togglePhaseGuideTexts()">
-          <span>フェーズ説明を表示する（入門シナリオ向け）</span>
-        </label>
-        <p style="color:#888; font-size:10px; margin:4px 0 0;">ONにすると、マリガン〜メインフェイズの各フェーズで説明ポップアップが表示されます</p>
-      </div>
-      <div id="ts-phase-guide-texts" style="display:none; margin-top:10px; background:#050505; border:1px solid #1a3030; border-radius:6px; padding:12px;">
-        <p style="color:var(--main-cyan); font-size:10px; font-weight:bold; margin:0 0 8px;">フェーズ説明テキスト（空欄＝スキップ）</p>
+      <div id="ts-phase-guide-texts" style="margin-top:10px; background:#050505; border:1px solid #1a3030; border-radius:6px; padding:12px;">
+        <p style="color:var(--main-cyan); font-size:10px; font-weight:bold; margin:0 0 8px;">フェーズ説明テキスト（空欄＝説明ポップアップなし）</p>
         <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">🎴 マリガン</label>
           <textarea id="ts-pg-mulligan" rows="2" placeholder="最初の5枚が配られるよ..."></textarea></div>
         <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">🔄 アクティブフェーズ</label>

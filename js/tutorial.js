@@ -172,38 +172,6 @@ window.enterTutorialBattle = async function() {
 };
 
 // ===================================================================
-// 🧪 開発用: ファイル直読みシナリオ起動
-// （管理画面/GAS経由ではなく、docs配下のJSONを直接読んで起動するテスト用）
-// ===================================================================
-window.runTestScenarioFromFile = async function(jsonPath) {
-  try {
-    // シナリオJSON取得
-    const res = await fetch(jsonPath, { cache: 'no-store' });
-    if (!res.ok) { alert('シナリオファイル取得失敗: ' + res.status); return; }
-    const scenario = await res.json();
-
-    // デッキ確保（_decksCache が空なら取得）
-    if (!_decksCache.length) {
-      try {
-        const decks = await gasGet('getTutorialDecks');
-        if (Array.isArray(decks)) _decksCache = decks;
-      } catch (e) {}
-    }
-    let deck = _decksCache.find(d => (d.deckId || d.tutorialName) === scenario.deckId);
-    if (!deck) deck = _decksCache[0]; // フォールバック: 先頭のチュートリアルデッキ
-    if (!deck) { alert('使用可能なチュートリアルデッキがありません'); return; }
-    const list = deck.list || deck['カードリスト'];
-    if (!list) { alert('デッキのカードリストが空です'); return; }
-
-    const runner = getTutorialRunner();
-    await runner.start(scenario, { list }, { list });
-  } catch (e) {
-    console.error('[tutorial test] start failed:', e);
-    alert('テストシナリオ起動失敗: ' + e.message);
-  }
-};
-
-// ===================================================================
 // バトル画面 UI フック (TutorialRunner から呼ばれる)
 // ===================================================================
 
@@ -389,9 +357,9 @@ window._tutorialShowSuccess = function(message) {
   // アニメリセット
   textEl.style.animation = 'none';
   void textEl.offsetHeight; // reflow
-  textEl.style.animation = 'tutorialSuccessFlash 1.2s ease forwards';
+  textEl.style.animation = 'tutorialSuccessFlash 0.9s ease forwards';
   overlay.style.display = 'flex';
-  setTimeout(() => { overlay.style.display = 'none'; }, 1300);
+  setTimeout(() => { overlay.style.display = 'none'; }, 950);
 };
 
 // ===================================================================
@@ -413,7 +381,7 @@ const TARGET_AREA_SELECTORS = {
   end_turn_btn:  () => document.getElementById('action-bar'),
   mulligan_btn_start: () => document.querySelector('#mulligan-overlay .menu-btn.primary'),
   mulligan_btn_redo:  () => document.getElementById('mulligan-btn'),
-  opp_security:  () => document.querySelector('#ai-security-row, [id*="ai-sec"]'),
+  opp_security:  () => document.getElementById('ai-sec-area'),
   opp_battle:    () => document.getElementById('ai-battle-row'),
   // 自分・相手のセキュリティ/トラッシュ
   own_security:  () => document.getElementById('pl-sec-area'),
@@ -551,10 +519,17 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
     finger.innerText = canFitAbove ? '👇' : '👆';
   }
 
-  // 水平位置: 対象の中央に合わせる
+  // 水平位置: 吹き出しが画面に収まる範囲で対象中央寄せ
   const targetCenterX = rect.left + rect.width / 2;
   const left = Math.max(8, Math.min(window.innerWidth - bubbleW - 8, targetCenterX - bubbleW / 2));
   overlay.style.left = left + 'px';
+
+  // 👆/👇 を対象の中央に合わせて横方向にオフセット
+  // （対象が画面端で吹き出しがズレても、指マーカーは対象を指すように）
+  // transform はアニメーションキーフレームで上書きされるので marginLeft を使う
+  const wrapCenterX = left + bubbleW / 2;
+  const fingerOffsetX = targetCenterX - wrapCenterX;
+  finger.style.marginLeft = fingerOffsetX + 'px';
 }
 
 function _clearHighlight() {

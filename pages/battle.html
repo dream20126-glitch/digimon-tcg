@@ -402,16 +402,17 @@
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-8px); }
 @keyframes tutorialSuccessFlash {
-  0% { opacity:0; transform:scale(0.3); }
-  30% { opacity:1; transform:scale(1.1); }
-  60% { opacity:1; transform:scale(1); }
-  100% { opacity:0; transform:scale(1.2); }
+  0% { opacity:1; transform:scale(0.6); }
+  10% { opacity:1; transform:scale(1.2); }
+  30% { opacity:1; transform:scale(1); }
+  80% { opacity:1; transform:scale(1); }
+  100% { opacity:0; transform:scale(1.1); }
 }
 </style>
 
 <!-- ===== チュートリアル 成功演出 ===== -->
 <div id="tutorial-success-overlay" style="display:none; position:fixed; inset:0; z-index:56000; pointer-events:none; align-items:center; justify-content:center;">
-  <div id="tutorial-success-text" style="font-size:3rem; font-weight:bold; color:#00ff88; text-shadow:0 0 40px rgba(0,255,136,0.8); letter-spacing:6px; animation:tutorialSuccessFlash 1.2s ease forwards;"></div>
+  <div id="tutorial-success-text" style="font-size:3rem; font-weight:bold; color:#00ff88; text-shadow:0 0 40px rgba(0,255,136,0.8); letter-spacing:6px; animation:tutorialSuccessFlash 0.9s ease forwards;"></div>
 </div>
 
 <!-- ===== チュートリアル指示テキストオーバーレイ ===== -->

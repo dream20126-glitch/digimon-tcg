@@ -39,9 +39,11 @@ const CONDITION_TYPES = [
 const TARGET_AREAS = [
   { value: '',                label: 'なし（指差しなし）' },
   { value: 'raising',         label: '育成エリア' },
-  { value: 'hand',            label: '手札エリア' },
+  { value: 'hand',            label: '手札エリア（マリガン時は最初の5枚全体）' },
   { value: 'battle',          label: 'バトルエリア' },
   { value: 'end_turn_btn',    label: 'ターン終了ボタン' },
+  { value: 'mulligan_btn_start', label: 'ゲーム開始ボタン（マリガン）' },
+  { value: 'mulligan_btn_redo',  label: '引き直しボタン（マリガン）' },
   { value: 'opp_security',        label: '相手セキュリティ' },
   { value: 'opp_battle',          label: '相手バトルエリア' },
   { value: 'memory_gauge',        label: 'メモリーゲージ（全体）' },

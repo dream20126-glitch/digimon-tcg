@@ -365,11 +365,22 @@ window._tutorialShowSuccess = function(message) {
 // ===================================================================
 // 指差しマーカーの表示/非表示
 // ===================================================================
+// マリガン表示中か判定
+function _isMulliganActive() {
+  const mul = document.getElementById('mulligan-overlay');
+  return !!(mul && mul.style.display !== 'none' && getComputedStyle(mul).display !== 'none');
+}
+
 const TARGET_AREA_SELECTORS = {
   raising:       () => document.getElementById('pl-iku-slot'),
-  hand:          () => document.getElementById('hand-wrap'),
+  // マリガン中なら最初の5枚プレビューを、通常時は手札エリアを返す
+  hand:          () => _isMulliganActive()
+    ? document.getElementById('mulligan-hand-preview')
+    : document.getElementById('hand-wrap'),
   battle:        () => document.getElementById('pl-battle-row'),
   end_turn_btn:  () => document.getElementById('action-bar'),
+  mulligan_btn_start: () => document.querySelector('#mulligan-overlay .menu-btn.primary'),
+  mulligan_btn_redo:  () => document.getElementById('mulligan-btn'),
   opp_security:  () => document.querySelector('#ai-security-row, [id*="ai-sec"]'),
   opp_battle:    () => document.getElementById('ai-battle-row'),
   memory_gauge:        () => document.getElementById('memory-gauge-row'),
@@ -596,7 +607,37 @@ window.closeTutorialPhasePopup = function() {
 // ===================================================================
 let _stepPopupResolve = null;
 
-window._tutorialShowStepPopup = function(step, sType) {
+// ブロックコンテキスト → 表示用フェーズ名
+const _PHASE_DISPLAY_NAMES = {
+  mulligan:  'マリガン',
+  unsuspend: 'アクティブフェイズ',
+  draw:      'ドローフェイズ',
+  breed:     '育成フェイズ',
+  main:      'メインフェイズ',
+};
+const _TRIGGER_DISPLAY_NAMES = {
+  turn_start_self:       '自分のターン開始',
+  before_end_turn:       '自分のターン終了',
+  memory_crossed:        'メモリー相手側到達',
+  before_opponent_turn:  '相手ターン開始',
+  turn_end_opp:          '相手ターン終了',
+  after_hatch:           '孵化完了後',
+  after_play_cost:       '登場コスト支払い後',
+  after_play:            '登場時効果完了後',
+  after_evolve_cost:     '進化コスト+ドロー後',
+  after_evolve:          '進化時効果完了後',
+  after_attack:          'アタック解決後',
+  after_use_effect:      '効果使用完了後',
+  on_card_detail_open:   'カード詳細',
+};
+function _getStepContextTitle(ctx) {
+  if (!ctx) return '';
+  if (ctx.trigger) return _TRIGGER_DISPLAY_NAMES[ctx.trigger] || '';
+  if (ctx.phase)   return _PHASE_DISPLAY_NAMES[ctx.phase]   || '';
+  return '';
+}
+
+window._tutorialShowStepPopup = function(step, sType, ctx) {
   return new Promise(resolve => {
     const resolvedText = _resolveDeviceText(step.instructionText || '');
     const targetArea = step.targetArea || '';
@@ -613,7 +654,7 @@ window._tutorialShowStepPopup = function(step, sType) {
     const titleEl = document.getElementById('tutorial-phase-title');
     const bodyEl = document.getElementById('tutorial-phase-body');
     if (iconEl) iconEl.innerText = sType === 'spotlight' ? '🔦' : '💬';
-    if (titleEl) titleEl.innerText = '';
+    if (titleEl) titleEl.innerText = _getStepContextTitle(ctx);
     if (bodyEl) bodyEl.innerText = resolvedText;
     popup.style.display = 'flex';
     _stepPopupResolve = resolve;
@@ -646,25 +687,29 @@ window.closeTutorialPhasePopup = function() {
 // スポットライト（暗転＋対象ハイライト）
 // ===================================================================
 function _showSpotlight(targetArea, secondArea) {
-  // 対象を赤枠ハイライト
+  // 対象を赤枠ハイライト + 周囲暗転（box-shadow で画面全体を覆う）
   _clearHighlight();
   const finder = TARGET_AREA_SELECTORS[targetArea];
   const el = finder ? finder() : null;
   if (el) {
-    el.classList.add('tutorial-highlight');
+    el.classList.add('tutorial-highlight', 'tutorial-spotlight-focus');
     _highlightedEls.push(el);
   }
   if (secondArea) {
     const finder2 = TARGET_AREA_SELECTORS[secondArea];
     const el2 = finder2 ? finder2() : null;
     if (el2) {
-      el2.classList.add('tutorial-highlight');
+      el2.classList.add('tutorial-highlight', 'tutorial-spotlight-focus');
       _highlightedEls.push(el2);
     }
   }
 }
 
 function _hideSpotlight() {
+  // spotlight-focus クラスも除去
+  document.querySelectorAll('.tutorial-spotlight-focus').forEach(el =>
+    el.classList.remove('tutorial-spotlight-focus')
+  );
   _clearHighlight();
 }
 

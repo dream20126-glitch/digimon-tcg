@@ -300,7 +300,12 @@ class TutorialRunner {
     if (sType === 'message' || sType === 'spotlight') {
       this.hideInstruction();
       if (typeof window._tutorialShowStepPopup === 'function') {
-        window._tutorialShowStepPopup(step, sType).then(() => {
+        // 現在のブロック情報を渡して、ポップアップタイトルに使う
+        const ctx = {
+          phase: this._currentBlock ? this._currentBlock.phase : null,
+          trigger: this._currentBlock ? this._currentBlock.trigger : null,
+        };
+        window._tutorialShowStepPopup(step, sType, ctx).then(() => {
           this._advanceStep();
         });
       } else {

@@ -663,7 +663,7 @@ window._tutorialShowStepPopup = function(step, sType, ctx) {
 };
 
 // ===================================================================
-// スポットライト（インライン表示）: マリガン画面を映したまま対象を浮かび上がらせる
+// スポットライト（インライン表示）: 画面はそのまま、対象以外を黒く暗転
 // ===================================================================
 function _tutorialShowInlineSpotlight(step, ctx) {
   return new Promise(resolve => {
@@ -673,37 +673,74 @@ function _tutorialShowInlineSpotlight(step, ctx) {
     const secondArea = step.secondTargetArea || '';
     const secondCardNo = step.secondTargetCardNo || '';
 
-    // 対象要素を取得（_showPointerと同じロジック）
+    // 対象要素を取得
     let targetEl = null;
     if (targetCardNo) targetEl = _findCardElement(targetCardNo);
     if (!targetEl && targetArea) {
       const finder = TARGET_AREA_SELECTORS[targetArea];
       targetEl = finder ? finder() : null;
     }
+    let secondEl = null;
+    if (secondCardNo) secondEl = _findCardElement(secondCardNo);
+    if (!secondEl && secondArea) {
+      const f = TARGET_AREA_SELECTORS[secondArea];
+      secondEl = f ? f() : null;
+    }
+
+    // 黒い暗転オーバーレイをclip-pathで対象位置に穴を空けて表示
+    _createSpotlightDimOverlay(targetEl, secondEl);
 
     // 吹き出し + 👇 + 赤枠を表示（通常のポインター表示を流用）
     _showPointer(text, targetArea, '', secondArea, targetCardNo, secondCardNo);
 
-    // 対象に tutorial-spotlight-focus を追加 → 周囲が白く暗転
-    if (targetEl) targetEl.classList.add('tutorial-spotlight-focus');
-    if (secondCardNo || secondArea) {
-      let secondEl = null;
-      if (secondCardNo) secondEl = _findCardElement(secondCardNo);
-      if (!secondEl && secondArea) {
-        const f = TARGET_AREA_SELECTORS[secondArea];
-        secondEl = f ? f() : null;
-      }
-      if (secondEl) secondEl.classList.add('tutorial-spotlight-focus');
-    }
-
     // 「次へ」ボタンを画面下部に表示
     _showSpotlightNextBtn(() => {
       _hideSpotlightNextBtn();
+      _removeSpotlightDimOverlay();
       _hidePointer();
       _hideSpotlight();
       resolve();
     });
   });
+}
+
+// スポットライト暗転（opacity方式）:
+// 対象+祖先+子孫に .tutorial-keep-visible を付け、それ以外の兄弟要素を透明度で薄く
+// → マリガン背景が既に暗い場合も、非対象要素が消えるように暗く見える
+function _createSpotlightDimOverlay(targetEl, secondEl) {
+  _removeSpotlightDimOverlay();
+  const targets = [targetEl, secondEl].filter(Boolean);
+  if (!targets.length) return;
+
+  targets.forEach(el => {
+    _markElementAndKin(el);
+  });
+  document.body.classList.add('tutorial-spotlight-mode');
+}
+
+// 対象 + 祖先全部 + 子孫全部に .tutorial-keep-visible を付与
+function _markElementAndKin(el) {
+  // 祖先（自分含む）
+  let cur = el;
+  while (cur) {
+    cur.classList.add('tutorial-keep-visible');
+    cur = cur.parentElement;
+  }
+  // 子孫
+  const walk = (node) => {
+    Array.from(node.children).forEach(child => {
+      child.classList.add('tutorial-keep-visible');
+      walk(child);
+    });
+  };
+  walk(el);
+}
+
+function _removeSpotlightDimOverlay() {
+  document.body.classList.remove('tutorial-spotlight-mode');
+  document.querySelectorAll('.tutorial-keep-visible').forEach(el =>
+    el.classList.remove('tutorial-keep-visible')
+  );
 }
 
 // スポットライト専用「次へ」ボタン（画面下部に固定表示）
@@ -751,31 +788,20 @@ window.closeTutorialPhasePopup = function() {
 // ===================================================================
 // スポットライト（暗転＋対象ハイライト）
 // ===================================================================
+// レガシー: 現在は _tutorialShowInlineSpotlight がメイン
 function _showSpotlight(targetArea, secondArea) {
-  // 対象を赤枠ハイライト + 周囲暗転（box-shadow で画面全体を覆う）
+  // 旧: box-shadow 方式（未使用だが closeTutorialPhasePopup 互換のため残置）
   _clearHighlight();
-  const finder = TARGET_AREA_SELECTORS[targetArea];
-  const el = finder ? finder() : null;
-  if (el) {
-    el.classList.add('tutorial-highlight', 'tutorial-spotlight-focus');
-    _highlightedEls.push(el);
-  }
-  if (secondArea) {
-    const finder2 = TARGET_AREA_SELECTORS[secondArea];
-    const el2 = finder2 ? finder2() : null;
-    if (el2) {
-      el2.classList.add('tutorial-highlight', 'tutorial-spotlight-focus');
-      _highlightedEls.push(el2);
-    }
-  }
 }
 
 function _hideSpotlight() {
-  // spotlight-focus クラスも除去
+  // 念のため spotlight-focus も除去
   document.querySelectorAll('.tutorial-spotlight-focus').forEach(el =>
     el.classList.remove('tutorial-spotlight-focus')
   );
   _clearHighlight();
+  // 暗転オーバーレイも念のため削除
+  _removeSpotlightDimOverlay();
 }
 
 // ===================================================================

@@ -579,15 +579,19 @@
 
 /* ===== チュートリアル UI制御 ===== */
 
-/* スポットライト: 対象以外を白っぽく暗転（マリガン暗背景上で対象が浮かび上がる） */
-/* tutorial-highlight と併用される場合の上書きも兼ねる（specificity: 2） */
-.tutorial-spotlight-focus,
-.tutorial-highlight.tutorial-spotlight-focus {
-  position: relative !important;
-  z-index: 55000 !important;
-  animation: none !important;       /* highlight のpulseアニメを無効化 */
-  box-shadow: 0 0 0 9999px rgba(255, 255, 255, 0.82) !important;
-  border-radius: 6px;
+/* スポットライト: 対象+祖先+子孫以外の兄弟要素を透明度で薄くする
+ * body.tutorial-spotlight-mode .tutorial-keep-visible > *:not(.tutorial-keep-visible)
+ *  = 「keepされている要素の直接の子で、keepされていないもの」
+ *    → 対象の兄弟要素（祖先の兄弟を含む）すべてが該当 → opacityで薄く
+ * ネストしたopacityが掛け算されるので実質的に「非対象」全体が薄く見える */
+body.tutorial-spotlight-mode .tutorial-keep-visible > *:not(.tutorial-keep-visible) {
+  opacity: 0.18 !important;
+  transition: opacity 0.25s;
+  pointer-events: none !important;
+}
+/* 対象要素にグロー（目立ちやすく） */
+body.tutorial-spotlight-mode .tutorial-keep-visible.tutorial-highlight {
+  filter: drop-shadow(0 0 16px rgba(255, 221, 68, 0.5));
 }
 
 /* ===== チュートリアル 吹き出し（白×赤枠の本格スタイル） ===== */

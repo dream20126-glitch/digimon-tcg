@@ -323,15 +323,29 @@ class TutorialRunner {
 
   _advanceStep() {
     // 成功演出（actionステップのみ）
-    // ただし mulligan_accepted のような UI ボタン押下系は演出を抑制
+    // step.successPopup で挙動を制御:
+    //   未設定 or 'auto' → 自動切替（OK→GREAT→NICE→PERFECT）
+    //   'none'           → 表示しない
+    //   その他の文字列   → そのテキストをそのまま表示
+    // 後方互換: mulligan_accepted は明示設定なしのとき silent
     const step = this._currentBlock && this._currentBlock.steps[this._currentStepIdx];
     const condType = step && step.advanceCondition && step.advanceCondition.type;
-    const SILENT_CONDITIONS = ['mulligan_accepted'];
-    const silent = SILENT_CONDITIONS.includes(condType);
-    if (step && step.stepType === 'action' && !silent) {
-      const successMessages = ['OK!', 'GREAT!', 'NICE!', 'PERFECT!'];
-      const msg = successMessages[Math.min(this._currentStepIdx, successMessages.length - 1)];
-      if (typeof window._tutorialShowSuccess === 'function') {
+    if (step && step.stepType === 'action') {
+      let mode = step.successPopup;
+      if (!mode) {
+        // 未設定: mulligan_accepted のみデフォルト silent、その他 auto
+        mode = (condType === 'mulligan_accepted') ? 'none' : 'auto';
+      }
+      let msg = null;
+      if (mode === 'none') {
+        msg = null;
+      } else if (mode === 'auto') {
+        const seq = ['OK!', 'GREAT!', 'NICE!', 'PERFECT!'];
+        msg = seq[Math.min(this._currentStepIdx, seq.length - 1)];
+      } else {
+        msg = mode;
+      }
+      if (msg && typeof window._tutorialShowSuccess === 'function') {
         window._tutorialShowSuccess(msg);
       }
     }

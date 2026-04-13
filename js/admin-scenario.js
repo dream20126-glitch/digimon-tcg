@@ -242,6 +242,20 @@ const OPERATION_TYPES = [
   { value: 'rest_action',  label: 'レスト操作（PC:長押し / SP:左スワイプ 自動判定）' },
 ];
 
+// 成功演出（次に進む条件達成時に表示）プリセット
+const SUCCESS_POPUP_PRESETS = [
+  { value: 'auto',        label: '自動（OK→GREAT→NICE→PERFECTの順）' },
+  { value: 'none',        label: '表示しない' },
+  { value: 'OK!',         label: '👍 OK!' },
+  { value: 'GREAT!',      label: '✨ GREAT!' },
+  { value: 'NICE!',       label: '💫 NICE!' },
+  { value: 'PERFECT!',    label: '🌟 PERFECT!' },
+  { value: 'GOOD JOB!',   label: '🎉 GOOD JOB!' },
+  { value: 'AMAZING!',    label: '🔥 AMAZING!' },
+  { value: 'やったね！',  label: '💪 やったね！' },
+  { value: 'ばっちり！',  label: '🙌 ばっちり！' },
+];
+
 // ボタン制御対象の定義
 const BUTTON_TARGETS = [
   { value: 'mulligan_redo', label: '引き直しボタン' },
@@ -1022,6 +1036,8 @@ window.flowUpdateStep = function(slotKey, timing, stepIdx, field, value) {
     step.secondTargetArea = value || '';
   } else if (field === 'operationType') {
     step.operationType = value || '';
+  } else if (field === 'successPopup') {
+    step.successPopup = value || 'auto';
   } else if (field === 'stepType') {
     step.stepType = value || 'action';
     _renderFlowEditor();
@@ -1249,6 +1265,11 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">操作タイプ</label>
           <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'operationType',this.value)">${opOpts}</select>
         </div>
+      </div>
+      <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">成功演出（条件達成時）</label>
+        <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'successPopup',this.value)">
+          ${SUCCESS_POPUP_PRESETS.map(p => `<option value="${p.value}"${(step.successPopup || 'auto') === p.value ? ' selected' : ''}>${p.label}</option>`).join('')}
+        </select>
       </div>` : ''}
       ${showCondOp ? _renderConditionSubSettings(slotKey, timing, sIdx, step, cond) : ''}
       ${showTargets ? `

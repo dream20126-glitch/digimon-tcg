@@ -143,6 +143,22 @@ window.areaPickerToggleGroup = function(gid, el) {
 // 項目選択
 window.areaPickerSelect = function(uid, slotKey, timing, sIdx, field, value) {
   flowUpdateStep(slotKey, timing, sIdx, field, value);
+  // ボタンラベルを更新
+  const picker = document.getElementById(uid);
+  if (picker) {
+    const def = TARGET_AREAS.find(a => a.value === value) || TARGET_AREAS[0];
+    const label = picker.querySelector('.ap-button > span:first-child');
+    if (label) label.innerText = def.label;
+    // 選択中アイテムのハイライト更新
+    picker.querySelectorAll('.ap-item').forEach(it => it.classList.remove('selected'));
+    // クリックされた要素を選択状態に
+    const items = picker.querySelectorAll('.ap-item');
+    items.forEach(it => {
+      if (it.getAttribute('onclick') && it.getAttribute('onclick').includes(`'${value}')`)) {
+        it.classList.add('selected');
+      }
+    });
+  }
   const panel = document.getElementById(uid + '_panel');
   if (panel) panel.style.display = 'none';
 };

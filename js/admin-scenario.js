@@ -9,32 +9,82 @@ import { loadCardAndKeywordData, getCardImageUrl } from './cards.js';
 // ここに追加/削除すれば管理画面のプルダウンに自動反映される
 // 新しい条件タイプを追加するときは tutorial-runner.js の CONDITION_EVALUATORS にも追加すること
 const CONDITION_TYPES = [
-  // 育成フェイズ関連
-  { value: 'breed_end',          label: '育成フェイズ終了（孵化/移動/何もしない）', needsCardNo: false },
+  // フェイズ関連
+  { value: 'breed_end',          label: '育成フェイズ終了（孵化/移動/何もしない）', needsCardNo: false, group: '🥚 フェイズ' },
+  { value: 'turn_start',         label: 'ターン開始した',                              needsCardNo: false, group: '🥚 フェイズ' },
+  { value: 'turn_end',           label: 'ターン終了した',                              needsCardNo: false, group: '🥚 フェイズ' },
   // 進化
-  { value: 'evolve_any',         label: 'デジモンを進化させた',     needsCardNo: false },
-  { value: 'evolve_lv6',         label: 'レベル6に進化させた',       needsCardNo: false },
+  { value: 'evolve_any',         label: 'デジモンを進化させた',                       needsCardNo: false, group: '⬆ 進化' },
+  { value: 'evolve_lv6',         label: 'レベル6に進化させた',                         needsCardNo: false, group: '⬆ 進化' },
   // 登場・カード使用
-  { value: 'play_digimon',       label: 'デジモンを登場させた',     needsCardNo: false },
-  { value: 'play_option',        label: 'オプションカードを使った', needsCardNo: false },
-  { value: 'play_tamer',         label: 'テイマーカードを使った',   needsCardNo: false },
+  { value: 'play_digimon',       label: 'デジモンを登場させた',                       needsCardNo: false, group: '📥 登場・カード使用' },
+  { value: 'play_option',        label: 'オプションカードを使った',                   needsCardNo: false, group: '📥 登場・カード使用' },
+  { value: 'play_tamer',         label: 'テイマーカードを使った',                     needsCardNo: false, group: '📥 登場・カード使用' },
   // アタック
-  { value: 'attack_declared',    label: 'アタック宣言した（アタックボタン押下）', needsCardNo: false },
-  { value: 'attack_resolved',    label: 'バトルを解決した（デジモン/セキュリティ）', needsCardNo: false },
-  { value: 'direct_attack',      label: 'ダイレクトアタックした',   needsCardNo: false },
-  { value: 'block',              label: 'ブロックした',             needsCardNo: false },
+  { value: 'attack_declared',    label: 'アタック宣言した（アタックボタン押下）',     needsCardNo: false, group: '⚔ アタック' },
+  { value: 'attack_resolved',    label: 'バトルを解決した（デジモン/セキュリティ）',  needsCardNo: false, group: '⚔ アタック' },
+  { value: 'direct_attack',      label: 'ダイレクトアタックした',                     needsCardNo: false, group: '⚔ アタック' },
+  { value: 'block',              label: 'ブロックした',                                needsCardNo: false, group: '⚔ アタック' },
   // 効果
-  { value: 'use_effect',         label: '効果を使った（任意）',     needsCardNo: false },
-  { value: 'effect_triggered',   label: '効果を誘発させた',         needsCardNo: false },
-  { value: 'security_effect',    label: 'セキュリティ効果を発動させた', needsCardNo: false },
-  // 特殊
-  { value: 'security_zero',      label: '相手セキュリティを0枚にした', needsCardNo: false },
-  { value: 'card_detail_closed', label: 'カード詳細を見た（閉じた）', needsCardNo: false },
-  { value: 'mulligan_accepted',  label: 'ゲーム開始ボタンを押した（マリガン）', needsCardNo: false },
-  // 既存の進行系（互換のため残す）
-  { value: 'turn_end',           label: 'ターン終了した',           needsCardNo: false },
-  { value: 'turn_start',         label: 'ターン開始した',           needsCardNo: false },
+  { value: 'use_effect',         label: '効果を使った（任意）',                       needsCardNo: false, group: '✨ 効果' },
+  { value: 'effect_triggered',   label: '効果を誘発させた',                           needsCardNo: false, group: '✨ 効果' },
+  { value: 'security_effect',    label: 'セキュリティ効果を発動させた',               needsCardNo: false, group: '✨ 効果' },
+  // UI操作
+  { value: 'card_detail_opened', label: 'カード詳細を見た（開いた）',                 needsCardNo: false, group: '🖱 UI操作' },
+  { value: 'card_detail_closed', label: 'カード詳細を閉じた',                         needsCardNo: false, group: '🖱 UI操作' },
+  { value: 'mulligan_accepted',  label: 'ゲーム開始ボタンを押した（マリガン）',       needsCardNo: false, group: '🖱 UI操作' },
+  // 達成系
+  { value: 'security_zero',      label: '相手セキュリティを0枚にした',                needsCardNo: false, group: '🏆 達成' },
 ];
+
+// CONDITION_TYPES からアコーディオン式のピッカー HTML を組み立てる
+function _renderConditionPicker(slotKey, timing, sIdx, currentValue) {
+  const uid = `cp_cond_${slotKey}_${timing}_${sIdx}`;
+  const cur = CONDITION_TYPES.find(t => t.value === (currentValue || '')) || { label: '（未設定）' };
+  const sk = `'${slotKey}'`;
+  const tg = `'${timing}'`;
+
+  const groups = {};
+  const order = [];
+  CONDITION_TYPES.forEach(t => {
+    const g = t.group || '🔧 その他';
+    if (!groups[g]) { groups[g] = []; order.push(g); }
+    groups[g].push(t);
+  });
+
+  const item = (t) => {
+    const v = `'${t.value}'`;
+    const sel = t.value === (currentValue || '') ? ' selected' : '';
+    return `<div class="ap-item${sel}" onclick="conditionPickerSelect('${uid}',${sk},${tg},${sIdx},${v})">${_escHtml(t.label)}</div>`;
+  };
+
+  let panel = '';
+  order.forEach(g => {
+    const gid = `${uid}_g_${order.indexOf(g)}`;
+    const opened = groups[g].some(t => t.value === (currentValue || ''));
+    panel += `<div class="ap-group">
+      <div class="ap-group-header${opened ? ' open' : ''}" onclick="areaPickerToggleGroup('${gid}', this)">
+        <span class="ap-arrow">▶</span>${_escHtml(g)}
+      </div>
+      <div class="ap-group-body" id="${gid}_body" style="display:${opened ? 'block' : 'none'};">
+        ${groups[g].map(item).join('')}
+      </div>
+    </div>`;
+  });
+
+  return `<div class="area-picker" id="${uid}" onclick="event.stopPropagation()">
+    <button type="button" class="ap-button" onclick="areaPickerToggle('${uid}')">
+      <span>${_escHtml(cur.label)}</span>
+      <span class="ap-caret">▼</span>
+    </button>
+    <div class="ap-panel" id="${uid}_panel" style="display:none;">${panel}</div>
+  </div>`;
+}
+
+window.conditionPickerSelect = function(uid, slotKey, timing, sIdx, value) {
+  flowUpdateStep(slotKey, timing, sIdx, 'conditionType', value);
+  // _renderFlowEditor が呼ばれて全体再描画されるので、ボタン更新は不要
+};
 
 // 指差しマーカーの対象エリア定義（全シナリオ共通で使用）
 // group: optgroup ラベル（未指定なら先頭にそのまま並ぶ）
@@ -1194,7 +1244,7 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
       ${showCondOp ? `
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">次に進む条件</label>
-          <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'conditionType',this.value)">${condOpts}</select>
+          ${_renderConditionPicker(slotKey, timing, sIdx, cond.type)}
         </div>
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">操作タイプ</label>
           <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'operationType',this.value)">${opOpts}</select>

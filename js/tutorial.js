@@ -428,20 +428,14 @@ const TARGET_AREA_SELECTORS = {
   own_deck:      () => document.getElementById('pl-deck-img'),
   opp_deck:      () => document.getElementById('ai-deck-img'),
   memory_gauge:        () => document.getElementById('memory-gauge-row'),
+  // 自分/相手側のメモリーゲージ全体を配列で返す（赤枠とスポットライトを全セルに付ける）
   memory_gauge_player: () => {
-    // 自分側のメモリーセル群をラップ要素として返す（最初のm-plセルの親=row）
-    const row = document.getElementById('memory-gauge-row');
-    if (!row) return null;
-    // m-pl セルが複数あるので、row 内で自分側をハイライトするため範囲を特定
-    // 簡易: 自分側セル群の最初と最後を含む仮想範囲 → row 自体に pl クラスを付けて CSS で制御
-    const cells = row.querySelectorAll('.m-pl');
-    return cells.length ? cells[Math.floor(cells.length / 2)] : row;
+    const cells = document.querySelectorAll('#memory-gauge-row .m-pl');
+    return cells.length ? Array.from(cells) : null;
   },
   memory_gauge_opp: () => {
-    const row = document.getElementById('memory-gauge-row');
-    if (!row) return null;
-    const cells = row.querySelectorAll('.m-ai');
-    return cells.length ? cells[Math.floor(cells.length / 2)] : row;
+    const cells = document.querySelectorAll('#memory-gauge-row .m-ai');
+    return cells.length ? Array.from(cells) : null;
   },
   // カード詳細モーダル内部
   card_detail:            () => document.getElementById('b-card-detail'),
@@ -469,6 +463,34 @@ function _findCardElement(cardNo) {
   return null;
 }
 
+// 単一/配列どちらでも要素を配列で返す
+function _resolveTargets(targetArea, targetCardNo) {
+  if (targetCardNo) {
+    const el = _findCardElement(targetCardNo);
+    if (el) return [el];
+  }
+  if (targetArea) {
+    const finder = TARGET_AREA_SELECTORS[targetArea];
+    const result = finder ? finder() : null;
+    if (!result) return [];
+    return Array.isArray(result) ? result : [result];
+  }
+  return [];
+}
+
+// 複数要素を包括する矩形を計算
+function _unionRect(elements) {
+  let top = Infinity, left = Infinity, right = -Infinity, bottom = -Infinity;
+  elements.forEach(el => {
+    const r = el.getBoundingClientRect();
+    if (r.top < top) top = r.top;
+    if (r.left < left) left = r.left;
+    if (r.right > right) right = r.right;
+    if (r.bottom > bottom) bottom = r.bottom;
+  });
+  return { top, left, right, bottom, width: right - left, height: bottom - top };
+}
+
 function _showPointer(text, targetArea, opType, secondArea, targetCardNo, secondCardNo) {
   const overlay = document.getElementById('tutorial-pointer-overlay');
   const bubble = document.getElementById('tutorial-pointer-text');
@@ -476,38 +498,20 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
   const wrap   = document.getElementById('tutorial-pointer-wrap');
   if (!overlay || !bubble || !finger || !wrap) return;
 
-  // カードNo指定があればカード要素を優先、なければエリア
-  let targetEl = null;
-  if (targetCardNo) targetEl = _findCardElement(targetCardNo);
-  if (!targetEl && targetArea) {
-    const finder = TARGET_AREA_SELECTORS[targetArea];
-    targetEl = finder ? finder() : null;
-  }
-
-  if (!targetEl) {
-    _hidePointer();
-    return;
-  }
+  // 対象解決（単一 or 配列）
+  const targets = _resolveTargets(targetArea, targetCardNo);
+  if (!targets.length) { _hidePointer(); return; }
 
   // テキスト設定
   bubble.innerText = text || '';
 
-  // 赤枠ハイライト（1つ目）
+  // 赤枠ハイライト（1つ目: 全要素に付与）
   _clearHighlight();
-  targetEl.classList.add('tutorial-highlight');
-  _highlightedEls.push(targetEl);
+  targets.forEach(el => { el.classList.add('tutorial-highlight'); _highlightedEls.push(el); });
 
-  // 赤枠ハイライト（2つ目）: カードNo優先、なければエリア
-  let secondEl = null;
-  if (secondCardNo) secondEl = _findCardElement(secondCardNo);
-  if (!secondEl && secondArea) {
-    const finder2 = TARGET_AREA_SELECTORS[secondArea];
-    secondEl = finder2 ? finder2() : null;
-  }
-  if (secondEl) {
-    secondEl.classList.add('tutorial-highlight');
-    _highlightedEls.push(secondEl);
-  }
+  // 赤枠ハイライト（2つ目）
+  const seconds = _resolveTargets(secondArea, secondCardNo);
+  seconds.forEach(el => { el.classList.add('tutorial-highlight'); _highlightedEls.push(el); });
 
   // 操作アイコン設定
   const opInfo = _getOperationIcon(opType);
@@ -516,40 +520,40 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
 
   // 表示
   overlay.style.display = 'block';
+  // 表示直後は wrap の offsetHeight が古い可能性があるので強制リフロー
+  void wrap.offsetHeight;
 
-  // 対象要素の位置を取得
-  const rect = targetEl.getBoundingClientRect();
+  // 対象（target+second 全部）を結合した矩形で位置を取る
+  // → 赤枠ハイライトついている要素の集合に常に👆/吹き出しが寄る
+  const rect = _unionRect([...targets, ...seconds]);
   const pointerH = wrap.offsetHeight || 100;
   const bubbleW = 320;
 
   // 対象の上に吹き出しを置く余白があれば上、なければ下
-  // （多くの場合 = 上に表示。👇が下を指して target にツッコむ）
   const canFitAbove = rect.top > pointerH + 12;
 
   if (canFitAbove) {
     wrap.style.flexDirection = 'column';   // [bubble][finger]
     const top = rect.top - pointerH - 4;
     overlay.style.top = Math.max(4, top) + 'px';
-    // 通常向き吹き出し（しっぽ下）
     const bubbleEl = document.getElementById('tutorial-pointer-bubble');
     if (bubbleEl) bubbleEl.classList.remove('tutorial-bubble-below');
   } else {
     wrap.style.flexDirection = 'column-reverse';  // [finger][bubble]
     const top = rect.bottom + 4;
     overlay.style.top = top + 'px';
-    // 上向き吹き出し（しっぽ上）
     const bubbleEl = document.getElementById('tutorial-pointer-bubble');
     if (bubbleEl) bubbleEl.classList.add('tutorial-bubble-below');
   }
 
-  // 👆/👇 は吹き出しの位置に応じて常に対象を指す向きに上書き
-  // （tap/未指定操作のとき。drag/long_press/swipe は方向のあるアイコンなので維持）
+  // 👆/👇 は吹き出しの位置に応じて常に対象を指す向きに
   if (opType === 'tap' || !opType) {
     finger.innerText = canFitAbove ? '👇' : '👆';
   }
 
   // 水平位置: 対象の中央に合わせる
-  const left = Math.max(8, Math.min(window.innerWidth - bubbleW - 8, rect.left + rect.width / 2 - bubbleW / 2));
+  const targetCenterX = rect.left + rect.width / 2;
+  const left = Math.max(8, Math.min(window.innerWidth - bubbleW - 8, targetCenterX - bubbleW / 2));
   overlay.style.left = left + 'px';
 }
 
@@ -723,22 +727,12 @@ function _tutorialShowInlineSpotlight(step, ctx) {
     const secondArea = step.secondTargetArea || '';
     const secondCardNo = step.secondTargetCardNo || '';
 
-    // 対象要素を取得
-    let targetEl = null;
-    if (targetCardNo) targetEl = _findCardElement(targetCardNo);
-    if (!targetEl && targetArea) {
-      const finder = TARGET_AREA_SELECTORS[targetArea];
-      targetEl = finder ? finder() : null;
-    }
-    let secondEl = null;
-    if (secondCardNo) secondEl = _findCardElement(secondCardNo);
-    if (!secondEl && secondArea) {
-      const f = TARGET_AREA_SELECTORS[secondArea];
-      secondEl = f ? f() : null;
-    }
+    // 対象要素を取得（配列対応）
+    const targetEls = _resolveTargets(targetArea, targetCardNo);
+    const secondEls = _resolveTargets(secondArea, secondCardNo);
 
     // 黒い暗転オーバーレイをclip-pathで対象位置に穴を空けて表示
-    _createSpotlightDimOverlay(targetEl, secondEl);
+    _createSpotlightDimOverlay(targetEls, secondEls);
 
     // 吹き出し + 👇 + 赤枠を表示（通常のポインター表示を流用）
     _showPointer(text, targetArea, '', secondArea, targetCardNo, secondCardNo);
@@ -757,14 +751,15 @@ function _tutorialShowInlineSpotlight(step, ctx) {
 // スポットライト暗転（opacity方式）:
 // 対象+祖先+子孫に .tutorial-keep-visible を付け、それ以外の兄弟要素を透明度で薄く
 // → マリガン背景が既に暗い場合も、非対象要素が消えるように暗く見える
-function _createSpotlightDimOverlay(targetEl, secondEl) {
+function _createSpotlightDimOverlay(targetEls, secondEls) {
   _removeSpotlightDimOverlay();
-  const targets = [targetEl, secondEl].filter(Boolean);
-  if (!targets.length) return;
+  // 単一要素/配列どちらでも受け付け、フラットな配列にまとめる
+  const flat = [];
+  const collect = (x) => { if (!x) return; if (Array.isArray(x)) x.forEach(collect); else flat.push(x); };
+  collect(targetEls); collect(secondEls);
+  if (!flat.length) return;
 
-  targets.forEach(el => {
-    _markElementAndKin(el);
-  });
+  flat.forEach(el => { _markElementAndKin(el); });
   document.body.classList.add('tutorial-spotlight-mode');
 }
 

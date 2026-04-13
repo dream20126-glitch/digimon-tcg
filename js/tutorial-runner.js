@@ -54,6 +54,7 @@ export const CONDITION_EVALUATORS = {
   // 特殊
   security_zero: (params, ev) =>
     ev.type === 'security_reduced' && ev.side === 'opponent' && (ev.remaining ?? -1) === 0,
+  card_detail_opened: (params, ev) => ev.type === 'card_detail_opened',
   card_detail_closed: (params, ev) => ev.type === 'card_detail_closed',
   mulligan_accepted: (params, ev) => ev.type === 'mulligan_accepted',
 

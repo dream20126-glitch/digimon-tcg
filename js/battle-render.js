@@ -923,9 +923,11 @@ export function showBCD(idxOrCard, source) {
   document.body.appendChild(bcd);
   bcd.style.display = 'flex';
 
-  // チュートリアル割り込み: カード詳細表示
-  // on_card_detail_open トリガー有効なシナリオのみ割り込む（閉じるまで待機）
+  // チュートリアル: カード詳細を開いた
   if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
+    // 進行条件用イベント（action ステップで card_detail_opened を待っているとき）
+    try { window._tutorialRunner.notifyEvent('card_detail_opened', {}); } catch (e) {}
+    // 割り込みトリガー（on_card_detail_open ブロックを発火）
     try { window._tutorialRunner.checkInterrupt('on_card_detail_open'); } catch (e) {}
   }
 }

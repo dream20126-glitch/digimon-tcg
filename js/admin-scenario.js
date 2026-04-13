@@ -1242,7 +1242,9 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
         <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'stepType',this.value)">${stepTypeOpts}</select>
       </div>
       <div class="tsave-field" style="margin-bottom:6px;">
-        <label style="font-size:10px;">${textLabel} <span style="color:#888;">※ {{pc:XX|sp:YY}} でデバイス切替可</span></label>
+        <label style="font-size:10px;">${textLabel}
+          <span style="color:#888;">※ {{pc:XX|sp:YY}} でデバイス切替可${isAction ? '' : ' / 空行で区切ると複数の吹き出しに分割'}</span>
+        </label>
         <textarea rows="${isAction ? 1 : 3}" oninput="flowUpdateStep(${sk},${tg},${sIdx},'instructionText',this.value)"
           placeholder="${textPlaceholder}"
           style="resize:vertical;">${_escHtml(step.instructionText || '')}</textarea>

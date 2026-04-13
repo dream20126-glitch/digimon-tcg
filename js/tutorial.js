@@ -491,9 +491,9 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
   // 表示直後は wrap の offsetHeight が古い可能性があるので強制リフロー
   void wrap.offsetHeight;
 
-  // 対象（target+second 全部）を結合した矩形で位置を取る
-  // → 赤枠ハイライトついている要素の集合に常に👆/吹き出しが寄る
-  const rect = _unionRect([...targets, ...seconds]);
+  // 吹き出しと👆の位置は target1（プライマリ）で決める
+  // （target2 が離れた場所にあると結合矩形の中央が変な所に行くため）
+  const rect = _unionRect(targets.length ? targets : seconds);
   const pointerH = wrap.offsetHeight || 100;
   // 吹き出しは可変幅（CSS で max-width: min(85vw, 440px)）→ 実測値を使う
   const bubbleW = wrap.offsetWidth || 320;
@@ -671,24 +671,56 @@ function _getStepContextTitle(ctx) {
   return '';
 }
 
+// テキストを空行（連続する改行）で複数バブルに分割
+// 例: "前半文章\n\n後半文章" → ["前半文章", "後半文章"]
+function _splitMessageParts(text) {
+  if (!text) return [''];
+  const parts = String(text)
+    .split(/\n\s*\n+/)        // 1つ以上の空行で区切る
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+  return parts.length ? parts : [String(text)];
+}
+
 window._tutorialShowStepPopup = function(step, sType, ctx) {
   // spotlight: インライン表示（全画面モーダルを出さない）
   if (sType === 'spotlight') {
     return _tutorialShowInlineSpotlight(step, ctx);
   }
-  // message: 全画面モーダル（従来通り）
+  // message: 全画面モーダル（複数パート対応）
   return new Promise(resolve => {
-    const resolvedText = _resolveDeviceText(step.instructionText || '');
+    const fullText = _resolveDeviceText(step.instructionText || '');
+    const parts = _splitMessageParts(fullText);
     const popup = document.getElementById('tutorial-phase-popup');
     if (!popup) { resolve(); return; }
-    const iconEl = document.getElementById('tutorial-phase-icon');
+    const iconEl  = document.getElementById('tutorial-phase-icon');
     const titleEl = document.getElementById('tutorial-phase-title');
-    const bodyEl = document.getElementById('tutorial-phase-body');
-    if (iconEl) iconEl.innerText = '💬';
-    if (titleEl) titleEl.innerText = _getStepContextTitle(ctx);
-    if (bodyEl) bodyEl.innerText = resolvedText;
-    popup.style.display = 'flex';
-    _stepPopupResolve = resolve;
+    const bodyEl  = document.getElementById('tutorial-phase-body');
+    const btn     = popup.querySelector('button');
+
+    let idx = 0;
+    const showPart = () => {
+      if (iconEl)  iconEl.innerText  = '💬';
+      if (titleEl) titleEl.innerText = _getStepContextTitle(ctx) +
+        (parts.length > 1 ? ` (${idx + 1}/${parts.length})` : '');
+      if (bodyEl)  bodyEl.innerText  = parts[idx];
+      popup.style.display = 'flex';
+      if (btn) {
+        const isLast = (idx + 1) >= parts.length;
+        btn.innerText = isLast ? '次へ' : '次へ ▶';
+        btn.onclick = () => {
+          if (isLast) {
+            popup.style.display = 'none';
+            btn.onclick = window.closeTutorialPhasePopup; // 元に戻す
+            resolve();
+          } else {
+            idx++;
+            showPart();
+          }
+        };
+      }
+    };
+    showPart();
   });
 };
 
@@ -697,7 +729,8 @@ window._tutorialShowStepPopup = function(step, sType, ctx) {
 // ===================================================================
 function _tutorialShowInlineSpotlight(step, ctx) {
   return new Promise(resolve => {
-    const text = _resolveDeviceText(step.instructionText || '');
+    const fullText = _resolveDeviceText(step.instructionText || '');
+    const parts = _splitMessageParts(fullText);
     const targetArea = step.targetArea || '';
     const targetCardNo = step.targetCardNo || '';
     const secondArea = step.secondTargetArea || '';
@@ -707,20 +740,30 @@ function _tutorialShowInlineSpotlight(step, ctx) {
     const targetEls = _resolveTargets(targetArea, targetCardNo);
     const secondEls = _resolveTargets(secondArea, secondCardNo);
 
-    // 黒い暗転オーバーレイをclip-pathで対象位置に穴を空けて表示
+    // 黒い暗転オーバーレイは1度だけ表示（パート切替で消えないように）
     _createSpotlightDimOverlay(targetEls, secondEls);
 
-    // 吹き出し + 👇 + 赤枠を表示（通常のポインター表示を流用）
-    _showPointer(text, targetArea, '', secondArea, targetCardNo, secondCardNo);
-
-    // 「次へ」ボタンを画面下部に表示
-    _showSpotlightNextBtn(() => {
-      _hideSpotlightNextBtn();
-      _removeSpotlightDimOverlay();
-      _hidePointer();
-      _hideSpotlight();
-      resolve();
-    });
+    let idx = 0;
+    const showPart = () => {
+      _showPointer(parts[idx], targetArea, '', secondArea, targetCardNo, secondCardNo);
+      const isLast = (idx + 1) >= parts.length;
+      const okBtn = document.getElementById('tutorial-spotlight-ok');
+      if (okBtn) okBtn.innerText = isLast ? 'OK' : '次へ ▶';
+      _showSpotlightNextBtn(() => {
+        idx++;
+        if (idx < parts.length) {
+          showPart();
+        } else {
+          _hideSpotlightNextBtn();
+          if (okBtn) okBtn.innerText = 'OK'; // 元に戻す
+          _removeSpotlightDimOverlay();
+          _hidePointer();
+          _hideSpotlight();
+          resolve();
+        }
+      });
+    };
+    showPart();
   });
 }
 

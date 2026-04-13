@@ -37,27 +37,58 @@ const CONDITION_TYPES = [
 ];
 
 // 指差しマーカーの対象エリア定義（全シナリオ共通で使用）
+// group: optgroup ラベル（未指定なら先頭にそのまま並ぶ）
 const TARGET_AREAS = [
-  { value: '',                label: 'なし（指差しなし）' },
-  { value: 'raising',         label: '育成エリア' },
-  { value: 'hand',            label: '手札エリア（マリガン時は最初の5枚全体）' },
-  { value: 'battle',          label: 'バトルエリア' },
-  { value: 'end_turn_btn',    label: 'ターン終了ボタン' },
-  { value: 'mulligan_btn_start', label: 'ゲーム開始ボタン（マリガン）' },
-  { value: 'mulligan_btn_redo',  label: '引き直しボタン（マリガン）' },
-  { value: 'opp_security',        label: '相手セキュリティ' },
-  { value: 'opp_battle',          label: '相手バトルエリア' },
-  { value: 'memory_gauge',        label: 'メモリーゲージ（全体）' },
-  { value: 'memory_gauge_player', label: 'メモリーゲージ（自分側）' },
-  { value: 'memory_gauge_opp',    label: 'メモリーゲージ（相手側）' },
-  // カード詳細モーダル内部の部位
-  { value: 'card_detail',            label: 'カード詳細：モーダル全体' },
-  { value: 'card_detail_name',       label: 'カード詳細：カード名' },
-  { value: 'card_detail_stats',      label: 'カード詳細：Lv/DP/コスト' },
-  { value: 'card_detail_effect',    label: 'カード詳細：効果欄' },
-  { value: 'card_detail_evo_source', label: 'カード詳細：進化元効果' },
-  { value: 'card_detail_sec_effect', label: 'カード詳細：セキュリティ効果' },
+  { value: '', label: 'なし（指差しなし）' },
+  // --- 自分エリア ---
+  { value: 'raising',      label: '育成エリア',                          group: '🟢 自分のエリア' },
+  { value: 'hand',         label: '手札（マリガン時は最初の5枚）',     group: '🟢 自分のエリア' },
+  { value: 'battle',       label: 'バトルエリア',                        group: '🟢 自分のエリア' },
+  { value: 'own_security', label: 'セキュリティ',                        group: '🟢 自分のエリア' },
+  { value: 'own_trash',    label: 'トラッシュ',                          group: '🟢 自分のエリア' },
+  // --- 相手エリア ---
+  { value: 'opp_battle',   label: 'バトルエリア',                        group: '🔴 相手のエリア' },
+  { value: 'opp_security', label: 'セキュリティ',                        group: '🔴 相手のエリア' },
+  { value: 'opp_trash',    label: 'トラッシュ',                          group: '🔴 相手のエリア' },
+  // --- ボタン ---
+  { value: 'mulligan_btn_start', label: 'ゲーム開始ボタン（マリガン）', group: '🔘 ボタン' },
+  { value: 'mulligan_btn_redo',  label: '引き直しボタン（マリガン）',   group: '🔘 ボタン' },
+  { value: 'end_turn_btn',       label: 'ターン終了ボタン',               group: '🔘 ボタン' },
+  // --- メモリーゲージ ---
+  { value: 'memory_gauge',        label: '全体',                          group: '⚙ メモリーゲージ' },
+  { value: 'memory_gauge_player', label: '自分側',                        group: '⚙ メモリーゲージ' },
+  { value: 'memory_gauge_opp',    label: '相手側',                        group: '⚙ メモリーゲージ' },
+  // --- カード詳細モーダル ---
+  { value: 'card_detail',            label: 'モーダル全体',               group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_name',       label: 'カード名',                    group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_stats',      label: 'Lv/DP/コスト',                group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_effect',     label: '効果欄',                      group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_evo_source', label: '進化元効果',                  group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_sec_effect', label: 'セキュリティ効果',            group: '🔍 カード詳細モーダル' },
 ];
+
+// TARGET_AREAS から <option>+<optgroup> HTML を組み立てる
+function _buildAreaOptions(currentValue) {
+  const groups = {};
+  const order = [];
+  let html = '';
+  TARGET_AREAS.forEach(a => {
+    if (!a.group) {
+      html += `<option value="${a.value}"${a.value === currentValue ? ' selected' : ''}>${a.label}</option>`;
+      return;
+    }
+    if (!groups[a.group]) { groups[a.group] = []; order.push(a.group); }
+    groups[a.group].push(a);
+  });
+  order.forEach(g => {
+    html += `<optgroup label="${g}">`;
+    groups[g].forEach(a => {
+      html += `<option value="${a.value}"${a.value === currentValue ? ' selected' : ''}>${a.label}</option>`;
+    });
+    html += '</optgroup>';
+  });
+  return html;
+}
 
 // ステップタイプ定義
 const STEP_TYPES = [
@@ -1020,12 +1051,8 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
   const condOpts = CONDITION_TYPES.map(t =>
     `<option value="${t.value}"${t.value === cond.type ? ' selected' : ''}>${t.label}</option>`
   ).join('');
-  const areaOpts = TARGET_AREAS.map(a =>
-    `<option value="${a.value}"${a.value === (step.targetArea || '') ? ' selected' : ''}>${a.label}</option>`
-  ).join('');
-  const areaOpts2 = TARGET_AREAS.map(a =>
-    `<option value="${a.value}"${a.value === (step.secondTargetArea || '') ? ' selected' : ''}>${a.label}</option>`
-  ).join('');
+  const areaOpts  = _buildAreaOptions(step.targetArea || '');
+  const areaOpts2 = _buildAreaOptions(step.secondTargetArea || '');
   const opOpts = OPERATION_TYPES.map(o =>
     `<option value="${o.value}"${o.value === (step.operationType || '') ? ' selected' : ''}>${o.label}</option>`
   ).join('');

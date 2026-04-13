@@ -415,6 +415,16 @@ const TARGET_AREA_SELECTORS = {
   mulligan_btn_redo:  () => document.getElementById('mulligan-btn'),
   opp_security:  () => document.querySelector('#ai-security-row, [id*="ai-sec"]'),
   opp_battle:    () => document.getElementById('ai-battle-row'),
+  // 自分・相手のセキュリティ/トラッシュ
+  own_security:  () => document.getElementById('pl-sec-area'),
+  own_trash:     () => {
+    const cnt = document.getElementById('pl-trash-count');
+    return cnt ? cnt.parentElement : null;
+  },
+  opp_trash:     () => {
+    const cnt = document.getElementById('ai-trash-count');
+    return cnt ? cnt.parentElement : null;
+  },
   memory_gauge:        () => document.getElementById('memory-gauge-row'),
   memory_gauge_player: () => {
     // 自分側のメモリーセル群をラップ要素として返す（最初のm-plセルの親=row）

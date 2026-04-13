@@ -614,9 +614,6 @@ window.editTutorialScenario = async function(scenario) {
   document.getElementById('ts-order').value = scenario.order || 1;
   document.getElementById('ts-prerequisite').value = scenario.prerequisiteId || '';
   document.getElementById('ts-mode').value = scenario.mode || 'strict';
-  // フェーズ説明テキスト復元
-  const pgt = scenario.phaseGuideTexts || {};
-  _setPhaseGuideTexts(pgt);
   document.getElementById('ts-deck-id').value = scenario.deckId || '';
   // クリア後メッセージ復元
   document.getElementById('ts-clear-message').value = scenario.clearMessage || '';
@@ -685,7 +682,6 @@ async function _prepareEditForm() {
   document.getElementById('ts-difficulty').value = '⭐';
   document.getElementById('ts-order').value = 1;
   document.getElementById('ts-mode').value = 'strict';
-  _resetPhaseGuideTexts();
   document.getElementById('ts-player-first').value = 'true';
   document.getElementById('ts-player-memory').value = 0;
   document.getElementById('ts-player-sec').value = 5;
@@ -1456,43 +1452,7 @@ function _renderFlowSummary() {
   }).join('');
 }
 
-// ===================================================================
-// フェーズ説明テキストのトグル / リセット / 取得
-// ===================================================================
-const PHASE_KEYS = ['mulligan', 'unsuspend', 'draw', 'breed', 'main'];
-const PHASE_DEFAULTS = {
-  mulligan:  '最初の5枚が配られるよ。\n気に入らなければ1回だけ引き直すことが可能！',
-  unsuspend: 'レスト（横向き）のカードを縦にするよ。\n縦向きになればもう一度行動可能！',
-  draw:      '1枚デッキから手札にカードが引けるよ！\n1ターン目の先攻だけドロー不可\n（2ターン目から普通にドローできるよ）',
-  breed:     '育成エリアのカードを操作できるよ。\nこのフェーズでは下記3行動のうち1つだけ選んで行動するよ。\n\n1. 孵化する（裏向きのカードを表向きにする）\n2. バトルエリアに移動する（レベル3以上になったら移動できるよ）\n3. 何もしない（このフェーズをスキップするよ）',
-  main:      'このフェーズで相手とバトルしたり、\n進化や登場ができるよ！',
-};
-
-// 後方互換: 既存呼び出しが残っていてもエラーにならないよう no-op を残す
-window.togglePhaseGuideTexts = function() {};
-
-function _resetPhaseGuideTexts() {
-  PHASE_KEYS.forEach(k => {
-    const el = document.getElementById('ts-pg-' + k);
-    if (el) el.value = '';
-  });
-}
-
-function _setPhaseGuideTexts(pgt) {
-  PHASE_KEYS.forEach(k => {
-    const el = document.getElementById('ts-pg-' + k);
-    if (el) el.value = pgt[k] || '';
-  });
-}
-
-function _getPhaseGuideTexts() {
-  const pgt = {};
-  PHASE_KEYS.forEach(k => {
-    const el = document.getElementById('ts-pg-' + k);
-    if (el && el.value.trim()) pgt[k] = el.value.trim();
-  });
-  return pgt;
-}
+// ※ phaseGuideTexts 機能は廃止。フェーズ説明はフロー設定の message ステップで作る方針。
 
 // ===================================================================
 // カード検索 / 配置 / 配置済み表示
@@ -1779,7 +1739,6 @@ window.executeTutorialScenarioSave = async function() {
     order: Number(document.getElementById('ts-order').value || 0),
     prerequisiteId: document.getElementById('ts-prerequisite').value.trim() || null,
     mode: document.getElementById('ts-mode').value,
-    phaseGuideTexts: _getPhaseGuideTexts(),
     deckId,
     clearCondition,
     clearMessage,

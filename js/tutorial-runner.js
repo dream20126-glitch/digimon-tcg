@@ -178,16 +178,8 @@ class TutorialRunner {
   // ---------------------------------------------------------------
   async notifyPhaseChange(phaseKey) {
     if (!this.active || this.cleared) return;
-
-    // フェーズ説明ポップアップ（phaseGuideTexts にテキストが入っていれば表示）
-    if (!this._shownPhases[phaseKey]) {
-      this._shownPhases[phaseKey] = true;
-      if (typeof window._tutorialShowPhaseGuide === 'function') {
-        await window._tutorialShowPhaseGuide(phaseKey);
-      }
-    }
-
-    // 該当フェーズのブロックをアクティブにする
+    // フェーズ説明ポップは管理画面のフロー設定（message ステップ）で個別に作る方針。
+    // ここで自動ポップアップは出さない。
     this._tryActivatePhaseBlock(phaseKey);
   }
 

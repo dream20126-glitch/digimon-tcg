@@ -775,23 +775,16 @@ function _removeSpotlightDimOverlay() {
   );
 }
 
-// スポットライト専用「次へ」ボタン（画面下部に固定表示）
+// スポットライト専用OKボタン（吹き出し内に表示）
 function _showSpotlightNextBtn(onClick) {
-  let btn = document.getElementById('tutorial-spotlight-next');
-  if (!btn) {
-    btn = document.createElement('button');
-    btn.id = 'tutorial-spotlight-next';
-    btn.className = 'menu-btn primary';
-    btn.innerText = '次へ';
-    btn.style.cssText = 'position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:56500; padding:12px 48px; font-size:14px; font-weight:bold; border-radius:24px; box-shadow:0 4px 20px rgba(0,251,255,0.5); min-width:180px;';
-    document.body.appendChild(btn);
-  }
-  btn.style.display = 'block';
+  const btn = document.getElementById('tutorial-spotlight-ok');
+  if (!btn) return;
+  btn.style.display = 'inline-block';
   btn.onclick = onClick;
 }
 
 function _hideSpotlightNextBtn() {
-  const btn = document.getElementById('tutorial-spotlight-next');
+  const btn = document.getElementById('tutorial-spotlight-ok');
   if (btn) btn.style.display = 'none';
 }
 

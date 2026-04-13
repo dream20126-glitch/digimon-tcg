@@ -593,6 +593,14 @@ body.tutorial-spotlight-mode .tutorial-keep-visible > *:not(.tutorial-keep-visib
 body.tutorial-spotlight-mode .tutorial-keep-visible.tutorial-highlight {
   filter: drop-shadow(0 0 16px rgba(255, 221, 68, 0.5));
 }
+/* スポットライト時、吹き出し/👇/OKボタンは暗転対象外（はっきり表示） */
+body.tutorial-spotlight-mode #tutorial-pointer-overlay,
+body.tutorial-spotlight-mode #tutorial-pointer-overlay * {
+  opacity: 1 !important;
+}
+body.tutorial-spotlight-mode #tutorial-spotlight-ok {
+  pointer-events: auto !important;
+}
 
 /* ===== チュートリアル 吹き出し（白×赤枠の本格スタイル） ===== */
 .tutorial-bubble {

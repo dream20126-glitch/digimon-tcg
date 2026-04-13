@@ -43,3 +43,37 @@
   border-radius: 4px; cursor: pointer; text-align: center; font-size: 13px; line-height: 1.4;
 }
 .tdiff-btn.selected { border-color: var(--main-cyan); color: var(--main-cyan); background: rgba(0, 251, 255, 0.08); }
+
+/* ===== 対象エリア アコーディオンピッカー ===== */
+.area-picker { position: relative; width: 100%; }
+.ap-button {
+  width: 100%; padding: 6px 10px; background: #111;
+  border: 1px solid var(--border-col); color: #fff;
+  border-radius: 4px; font-size: 11px; cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center;
+  text-align: left;
+}
+.ap-button:hover { border-color: var(--main-cyan); }
+.ap-button .ap-caret { color: var(--main-cyan); font-size: 9px; margin-left: 6px; }
+.ap-panel {
+  position: absolute; top: calc(100% + 2px); left: 0; right: 0;
+  background: #0a0a0a; border: 1px solid var(--main-cyan); border-radius: 4px;
+  max-height: 300px; overflow-y: auto;
+  z-index: 200; box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+}
+.ap-item {
+  padding: 6px 12px; font-size: 11px; color: #ccc; cursor: pointer;
+  border-bottom: 1px solid #1a1a1a;
+}
+.ap-item:hover { background: #1a3030; color: #fff; }
+.ap-item.selected { background: rgba(0, 251, 255, 0.15); color: var(--main-cyan); font-weight: bold; }
+.ap-group-header {
+  padding: 6px 10px; font-size: 11px; font-weight: bold;
+  color: #00ff88; background: #161616; cursor: pointer;
+  display: flex; align-items: center; gap: 4px;
+  border-top: 1px solid #1a1a1a;
+}
+.ap-group-header:hover { background: #1a2a1a; }
+.ap-group-header .ap-arrow { display: inline-block; transition: transform 0.15s; font-size: 9px; }
+.ap-group-header.open .ap-arrow { transform: rotate(90deg); }
+.ap-group-body { padding-left: 12px; background: #050505; }

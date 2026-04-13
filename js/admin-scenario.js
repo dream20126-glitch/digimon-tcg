@@ -67,27 +67,93 @@ const TARGET_AREAS = [
   { value: 'card_detail_sec_effect', label: 'セキュリティ効果',            group: '🔍 カード詳細モーダル' },
 ];
 
-// TARGET_AREAS から <option>+<optgroup> HTML を組み立てる
-function _buildAreaOptions(currentValue) {
+// アコーディオン型エリアピッカー
+//   uid : DOM一意ID
+//   slotKey/timing/sIdx/field : flowUpdateStep に渡す引数
+//   currentValue : 現在選択中の value
+function _renderAreaPicker(slotKey, timing, sIdx, field, currentValue) {
+  const uid = `ap_${slotKey}_${timing}_${sIdx}_${field}`;
+  const cur = TARGET_AREAS.find(a => a.value === (currentValue || '')) || TARGET_AREAS[0];
+  const sk = JSON.stringify(String(slotKey));
+  const tg = JSON.stringify(String(timing));
+  const fd = JSON.stringify(String(field));
+
+  // グルーピング
   const groups = {};
   const order = [];
-  let html = '';
+  const noGroup = [];
   TARGET_AREAS.forEach(a => {
-    if (!a.group) {
-      html += `<option value="${a.value}"${a.value === currentValue ? ' selected' : ''}>${a.label}</option>`;
-      return;
-    }
+    if (!a.group) { noGroup.push(a); return; }
     if (!groups[a.group]) { groups[a.group] = []; order.push(a.group); }
     groups[a.group].push(a);
   });
+
+  const item = (a) => {
+    const v = JSON.stringify(a.value);
+    const sel = a.value === (currentValue || '') ? ' selected' : '';
+    return `<div class="ap-item${sel}" onclick="areaPickerSelect('${uid}',${sk},${tg},${sIdx},${fd},${v})">${_escHtml(a.label)}</div>`;
+  };
+
+  let panel = '';
+  noGroup.forEach(a => { panel += item(a); });
   order.forEach(g => {
-    html += `<optgroup label="${g}">`;
-    groups[g].forEach(a => {
-      html += `<option value="${a.value}"${a.value === currentValue ? ' selected' : ''}>${a.label}</option>`;
-    });
-    html += '</optgroup>';
+    const gid = `${uid}_g_${order.indexOf(g)}`;
+    // 現在選択中の value がこのグループに含まれていたら開いた状態にする
+    const opened = groups[g].some(a => a.value === (currentValue || ''));
+    panel += `<div class="ap-group">
+      <div class="ap-group-header${opened ? ' open' : ''}" onclick="areaPickerToggleGroup('${gid}', this)">
+        <span class="ap-arrow">▶</span>${_escHtml(g)}
+      </div>
+      <div class="ap-group-body" id="${gid}_body" style="display:${opened ? 'block' : 'none'};">
+        ${groups[g].map(item).join('')}
+      </div>
+    </div>`;
   });
-  return html;
+
+  return `<div class="area-picker" id="${uid}" onclick="event.stopPropagation()">
+    <button type="button" class="ap-button" onclick="areaPickerToggle('${uid}')">
+      <span>${_escHtml(cur.label)}</span>
+      <span class="ap-caret">▼</span>
+    </button>
+    <div class="ap-panel" id="${uid}_panel" style="display:none;">${panel}</div>
+  </div>`;
+}
+
+// パネル開閉
+window.areaPickerToggle = function(uid) {
+  // 他のピッカーは閉じる
+  document.querySelectorAll('.ap-panel').forEach(p => {
+    if (p.id !== uid + '_panel') p.style.display = 'none';
+  });
+  const panel = document.getElementById(uid + '_panel');
+  if (!panel) return;
+  panel.style.display = (panel.style.display === 'none' || !panel.style.display) ? 'block' : 'none';
+};
+
+// グループ開閉
+window.areaPickerToggleGroup = function(gid, el) {
+  const body = document.getElementById(gid + '_body');
+  if (!body) return;
+  const open = body.style.display === 'none' || !body.style.display;
+  body.style.display = open ? 'block' : 'none';
+  if (el) el.classList.toggle('open', open);
+};
+
+// 項目選択
+window.areaPickerSelect = function(uid, slotKey, timing, sIdx, field, value) {
+  flowUpdateStep(slotKey, timing, sIdx, field, value);
+  const panel = document.getElementById(uid + '_panel');
+  if (panel) panel.style.display = 'none';
+};
+
+// 外側クリックでパネル閉じる
+if (typeof document !== 'undefined' && !window._areaPickerOutsideHandler) {
+  window._areaPickerOutsideHandler = true;
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.area-picker')) {
+      document.querySelectorAll('.ap-panel').forEach(p => p.style.display = 'none');
+    }
+  });
 }
 
 // ステップタイプ定義
@@ -1051,8 +1117,8 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
   const condOpts = CONDITION_TYPES.map(t =>
     `<option value="${t.value}"${t.value === cond.type ? ' selected' : ''}>${t.label}</option>`
   ).join('');
-  const areaOpts  = _buildAreaOptions(step.targetArea || '');
-  const areaOpts2 = _buildAreaOptions(step.secondTargetArea || '');
+  const areaPicker1 = _renderAreaPicker(slotKey, timing, sIdx, 'targetArea',       step.targetArea || '');
+  const areaPicker2 = _renderAreaPicker(slotKey, timing, sIdx, 'secondTargetArea', step.secondTargetArea || '');
   const opOpts = OPERATION_TYPES.map(o =>
     `<option value="${o.value}"${o.value === (step.operationType || '') ? ' selected' : ''}>${o.label}</option>`
   ).join('');
@@ -1120,12 +1186,12 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
         <div class="tsave-field" style="margin-bottom:0;">
           <label style="font-size:10px;">${target1Label}</label>
-          <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'targetArea',this.value)" style="margin-bottom:3px;">${areaOpts}</select>
+          ${areaPicker1}
           ${_renderCardPicker(slotKey, timing, sIdx, 'targetCardNo', step.targetCardNo)}
         </div>
         <div class="tsave-field" style="margin-bottom:0;">
           <label style="font-size:10px;">${target2Label}</label>
-          <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'secondTargetArea',this.value)" style="margin-bottom:3px;">${areaOpts2}</select>
+          ${areaPicker2}
           ${_renderCardPicker(slotKey, timing, sIdx, 'secondTargetCardNo', step.secondTargetCardNo)}
         </div>
       </div>` : ''}

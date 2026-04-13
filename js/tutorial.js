@@ -642,28 +642,89 @@ function _getStepContextTitle(ctx) {
 }
 
 window._tutorialShowStepPopup = function(step, sType, ctx) {
+  // spotlight: インライン表示（全画面モーダルを出さない）
+  if (sType === 'spotlight') {
+    return _tutorialShowInlineSpotlight(step, ctx);
+  }
+  // message: 全画面モーダル（従来通り）
   return new Promise(resolve => {
     const resolvedText = _resolveDeviceText(step.instructionText || '');
-    const targetArea = step.targetArea || '';
-
-    if (sType === 'spotlight' && targetArea) {
-      // スポットライト: 他エリアを暗転 + 対象を赤枠ハイライト
-      _showSpotlight(targetArea, step.secondTargetArea || '');
-    }
-
-    // ポップアップ表示（フェーズ説明と同じモーダルを流用）
     const popup = document.getElementById('tutorial-phase-popup');
     if (!popup) { resolve(); return; }
     const iconEl = document.getElementById('tutorial-phase-icon');
     const titleEl = document.getElementById('tutorial-phase-title');
     const bodyEl = document.getElementById('tutorial-phase-body');
-    if (iconEl) iconEl.innerText = sType === 'spotlight' ? '🔦' : '💬';
+    if (iconEl) iconEl.innerText = '💬';
     if (titleEl) titleEl.innerText = _getStepContextTitle(ctx);
     if (bodyEl) bodyEl.innerText = resolvedText;
     popup.style.display = 'flex';
     _stepPopupResolve = resolve;
   });
 };
+
+// ===================================================================
+// スポットライト（インライン表示）: マリガン画面を映したまま対象を浮かび上がらせる
+// ===================================================================
+function _tutorialShowInlineSpotlight(step, ctx) {
+  return new Promise(resolve => {
+    const text = _resolveDeviceText(step.instructionText || '');
+    const targetArea = step.targetArea || '';
+    const targetCardNo = step.targetCardNo || '';
+    const secondArea = step.secondTargetArea || '';
+    const secondCardNo = step.secondTargetCardNo || '';
+
+    // 対象要素を取得（_showPointerと同じロジック）
+    let targetEl = null;
+    if (targetCardNo) targetEl = _findCardElement(targetCardNo);
+    if (!targetEl && targetArea) {
+      const finder = TARGET_AREA_SELECTORS[targetArea];
+      targetEl = finder ? finder() : null;
+    }
+
+    // 吹き出し + 👇 + 赤枠を表示（通常のポインター表示を流用）
+    _showPointer(text, targetArea, '', secondArea, targetCardNo, secondCardNo);
+
+    // 対象に tutorial-spotlight-focus を追加 → 周囲が白く暗転
+    if (targetEl) targetEl.classList.add('tutorial-spotlight-focus');
+    if (secondCardNo || secondArea) {
+      let secondEl = null;
+      if (secondCardNo) secondEl = _findCardElement(secondCardNo);
+      if (!secondEl && secondArea) {
+        const f = TARGET_AREA_SELECTORS[secondArea];
+        secondEl = f ? f() : null;
+      }
+      if (secondEl) secondEl.classList.add('tutorial-spotlight-focus');
+    }
+
+    // 「次へ」ボタンを画面下部に表示
+    _showSpotlightNextBtn(() => {
+      _hideSpotlightNextBtn();
+      _hidePointer();
+      _hideSpotlight();
+      resolve();
+    });
+  });
+}
+
+// スポットライト専用「次へ」ボタン（画面下部に固定表示）
+function _showSpotlightNextBtn(onClick) {
+  let btn = document.getElementById('tutorial-spotlight-next');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'tutorial-spotlight-next';
+    btn.className = 'menu-btn primary';
+    btn.innerText = '次へ';
+    btn.style.cssText = 'position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:56500; padding:12px 48px; font-size:14px; font-weight:bold; border-radius:24px; box-shadow:0 4px 20px rgba(0,251,255,0.5); min-width:180px;';
+    document.body.appendChild(btn);
+  }
+  btn.style.display = 'block';
+  btn.onclick = onClick;
+}
+
+function _hideSpotlightNextBtn() {
+  const btn = document.getElementById('tutorial-spotlight-next');
+  if (btn) btn.style.display = 'none';
+}
 
 // closeTutorialPhasePopup は既存の「次へ」ボタン → stepPopup にも共用
 const _origClosePhasePopup = window.closeTutorialPhasePopup;

@@ -603,75 +603,70 @@ window.updateClearConditionUI = function() {
 // ===================================================================
 
 // 全フェーズ＋割り込みの定義（表示順）
-// 9大項目（ユーザー指定順）+ 各大項目の配下に入る割り込みサブ項目
-// parentPhase: この項目をどの大項目の配下に表示するか
+// 9大項目（フラット）
 const ALL_FLOW_SLOTS = [
-  // === 1. マリガン ===
   { key: 'mulligan',  phase: 'mulligan',  label: '🎴 マリガン画面',        color: '#ff88ff',
     hint: '手札の引き直し画面。引き直しボタンやゲーム開始ボタンの制御を設定。' },
-
-  // === 2. 自分のターン開始 ===
   { key: 'trg_turn_start_self', phase: '_trigger', trigger: 'turn_start_self',
     label: '▶ 自分のターン開始',  color: '#ffbb44',
     hint: 'ターン開始アニメーションの直後、アクティブフェイズ進入前。' },
-
-  // === 3. アクティブフェイズ ===
   { key: 'unsuspend', phase: 'unsuspend', label: '🔄 アクティブフェイズ',  color: '#88ccff',
-    hint: 'レスト状態のカードを縦に戻す自動フェイズ。説明を挟みたい時にON。' },
-
-  // === 4. ドローフェイズ ===
+    hint: 'レスト状態のカードを縦に戻す自動フェイズ。' },
   { key: 'draw',      phase: 'draw',      label: '🃏 ドローフェイズ',      color: '#88ffcc',
-    hint: 'デッキから1枚ドローする自動フェイズ。説明を挟みたい時にON。' },
-
-  // === 5. 育成フェイズ ===
+    hint: 'デッキから1枚ドローする自動フェイズ。' },
   { key: 'breed',     phase: 'breed',     label: '🥚 育成フェイズ',        color: '#ffcc44',
-    hint: '孵化・育成エリアからの移動など。操作誘導や説明を設定。' },
-  { key: 'trg_after_hatch', phase: '_trigger', trigger: 'after_hatch', parentPhase: 'breed',
-    label: '  ⚡ 孵化完了直後', color: '#ffcc44',
-    hint: '孵化演出の直後。孵化についての説明を挟む。' },
-
-  // === 6. メインフェイズ ===
+    hint: '孵化・育成エリアからの移動など。' },
   { key: 'main',      phase: 'main',      label: '⚔️ メインフェイズ',      color: '#ff6666',
-    hint: 'プレイ・進化・アタック・効果などの操作誘導や説明を設定。' },
-  { key: 'trg_after_play_cost',  phase: '_trigger', trigger: 'after_play_cost',  parentPhase: 'main',
-    label: '  ⚡ 登場コスト支払い直後（効果前）', color: '#ff9966',
-    hint: 'メモリー消費した直後、登場時効果発動前。' },
-  { key: 'trg_after_play',       phase: '_trigger', trigger: 'after_play',       parentPhase: 'main',
-    label: '  ⚡ 登場時効果完了後', color: '#ff9966',
-    hint: '登場時効果の処理が全て完了した後。' },
-  { key: 'trg_after_evolve_cost', phase: '_trigger', trigger: 'after_evolve_cost', parentPhase: 'main',
-    label: '  ⚡ 進化コスト+ドロー直後（効果前）', color: '#ff9966',
-    hint: 'メモリー消費+進化ドロー完了後、進化時効果発動前。' },
-  { key: 'trg_after_evolve',      phase: '_trigger', trigger: 'after_evolve',      parentPhase: 'main',
-    label: '  ⚡ 進化時効果完了後', color: '#ff9966',
-    hint: '進化時効果の処理が全て完了した後。' },
-  { key: 'trg_after_attack',      phase: '_trigger', trigger: 'after_attack',      parentPhase: 'main',
-    label: '  ⚡ アタック解決後', color: '#ff9966',
-    hint: 'アタックが解決した直後。' },
-  { key: 'trg_after_use_effect',  phase: '_trigger', trigger: 'after_use_effect',  parentPhase: 'main',
-    label: '  ⚡ 効果使用完了後', color: '#ff9966',
-    hint: 'メイン効果の処理が完了した後。' },
-  { key: 'trg_on_card_detail_open', phase: '_trigger', trigger: 'on_card_detail_open', parentPhase: 'main',
-    label: '  ⚡ カード詳細表示中', color: '#ff9966',
-    hint: 'カード詳細モーダルが開いた瞬間（閉じるまで説明を表示）。' },
-
-  // === 7. 自分のターン終了 ===
+    hint: 'プレイ・進化・アタック・効果など、各アクション中の説明も設定可能。' },
   { key: 'trg_before_end_turn', phase: '_trigger', trigger: 'before_end_turn',
     label: '🏁 自分のターン終了', color: '#ffaa00',
     hint: 'ターン終了アニメーションの前。手動終了/メモリー相手側での自動終了どちらでも発火。' },
-  { key: 'trg_memory_crossed', phase: '_trigger', trigger: 'memory_crossed', parentPhase: 'trg_before_end_turn',
-    label: '  ⚡ メモリー相手側到達時', color: '#ffaa00',
-    hint: 'メモリーが相手側に振れた瞬間（自動ターン終了時のみ）。' },
-
-  // === 8. 相手ターン開始 ===
   { key: 'trg_before_opponent_turn', phase: '_trigger', trigger: 'before_opponent_turn',
     label: '⏸ 相手ターン開始', color: '#aa88ff',
     hint: '相手ターン開始アニメーションの前。' },
-
-  // === 9. 相手ターン終了 ===
   { key: 'trg_turn_end_opp', phase: '_trigger', trigger: 'turn_end_opp',
     label: '⏭ 相手ターン終了', color: '#8899ff',
     hint: '相手ターン終了後、自分のターン開始前。' },
+];
+
+// ステップ表示タイミング定義
+// 各タイミング → 内部のトリガーブロックキー（または親フェーズそのまま）
+// availableIn: このタイミングを表示できる大項目キー（複数）
+const STEP_TIMINGS = [
+  // フェーズ開始時（全フェーズで使える）
+  { value: 'phase_start',       label: '⏱ フェーズ開始時（即時）',        trigger: null,
+    availableIn: ['mulligan','trg_turn_start_self','unsuspend','draw','breed','main','trg_before_end_turn','trg_before_opponent_turn','trg_turn_end_opp'] },
+  // 育成
+  { value: 'after_hatch',       label: '🥚 孵化完了直後',                 trigger: 'after_hatch',
+    availableIn: ['breed'] },
+  // メインフェーズ内のアクション
+  { value: 'after_play_cost',   label: '📥 登場コスト支払い直後（効果前）', trigger: 'after_play_cost',
+    availableIn: ['main'] },
+  { value: 'after_play',        label: '📥 登場時効果完了後',              trigger: 'after_play',
+    availableIn: ['main'] },
+  { value: 'after_evolve_cost', label: '⬆ 進化コスト+ドロー直後（効果前）', trigger: 'after_evolve_cost',
+    availableIn: ['main','breed'] },
+  { value: 'after_evolve',      label: '⬆ 進化時効果完了後',               trigger: 'after_evolve',
+    availableIn: ['main','breed'] },
+  { value: 'after_attack',      label: '⚔ アタック解決後',                trigger: 'after_attack',
+    availableIn: ['main'] },
+  { value: 'after_use_effect',  label: '✨ 効果使用完了後',                 trigger: 'after_use_effect',
+    availableIn: ['main'] },
+  { value: 'on_card_detail_open', label: '🔍 カード詳細表示中',            trigger: 'on_card_detail_open',
+    availableIn: ['main','breed','mulligan'] },
+  // 自分のターン終了配下
+  { value: 'memory_crossed',    label: '💾 メモリー相手側到達時',           trigger: 'memory_crossed',
+    availableIn: ['trg_before_end_turn'] },
+];
+
+// カード詳細ハイライト箇所（card_detail_closed 条件のサブ設定）
+const CARD_DETAIL_AREAS = [
+  { value: 'whole',      label: 'モーダル全体',        area: 'card_detail' },
+  { value: 'name',       label: 'カード名',            area: 'card_detail_name' },
+  { value: 'stats',      label: 'Lv/DP/コスト',        area: 'card_detail_stats' },
+  { value: 'effect',     label: '効果欄',              area: 'card_detail_effect' },
+  { value: 'evo_source', label: '進化元効果',          area: 'card_detail_evo_source' },
+  { value: 'sec_effect', label: 'セキュリティ効果',    area: 'card_detail_sec_effect' },
 ];
 
 let _flowEditTurn = 1;  // 現在編集中のターン番号
@@ -730,37 +725,36 @@ function _renderTurnTabs() {
   wrap.innerHTML = html;
 }
 
-// スロッ���のON/OFF切替
+// スロットのON/OFF切替
 window.flowToggleSlot = function(slotKey) {
-  const slot = ALL_FLOW_SLOTS.find(s => s.key === slotKey);
-  if (!slot) return;
-  const blockIdx = _findBlockIndex(slot);
-  if (blockIdx >= 0) {
-    // OFF: ブロックを削除
-    _scenarioFlow.splice(blockIdx, 1);
+  const turn = _flowEditTurn;
+  const related = _getRelatedBlocks(slotKey, turn);
+  if (related.length > 0) {
+    // OFF: 関連ブロックを全て削除
+    related.forEach(r => {
+      const idx = _scenarioFlow.indexOf(r.block);
+      if (idx >= 0) _scenarioFlow.splice(idx, 1);
+    });
   } else {
-    // ON: ブロックを追加
-    const newBlock = { phase: slot.phase, turn: _flowEditTurn, steps: [] };
-    if (slot.trigger) newBlock.trigger = slot.trigger;
-    _scenarioFlow.push(newBlock);
+    // ON: phase_start のプライマリブロックを作成
+    const slot = ALL_FLOW_SLOTS.find(s => s.key === slotKey);
+    if (slot) {
+      _findOrCreateBlock(slot.phase, slot.trigger, turn);
+    }
   }
   _renderTurnTabs();
   _renderFlowEditor();
 };
 
-// 該当ターン＋スロットのブロックインデックスを探す
-function _findBlockIndex(slot) {
-  return _scenarioFlow.findIndex(b => {
-    if ((b.turn || 1) !== _flowEditTurn) return false;
-    if (slot.trigger) return b.phase === '_trigger' && b.trigger === slot.trigger;
-    return b.phase === slot.phase && b.phase !== '_trigger';
-  });
-}
-
-// ステップ追加
-window.flowAddStep = function(slotKey) {
-  const block = _getOrCreateBlock(slotKey);
-  if (!block) return;
+// ステップ追加（スロット内に新しいタイミングでステップ追加）
+window.flowAddStepInSlot = function(slotKey) {
+  const slot = ALL_FLOW_SLOTS.find(s => s.key === slotKey);
+  if (!slot) return;
+  // デフォルトタイミング = phase_start
+  const timing = 'phase_start';
+  const info = _getTargetBlockInfo(slotKey, timing);
+  if (!info) return;
+  const block = _findOrCreateBlock(info.phase, info.trigger, _flowEditTurn);
   block.steps.push({
     stepType: 'action', instructionText: '', advanceCondition: { type: 'hatch' },
     targetArea: '', secondTargetArea: '', operationType: '',
@@ -768,24 +762,70 @@ window.flowAddStep = function(slotKey) {
   _renderFlowEditor();
 };
 
-function _getOrCreateBlock(slotKey) {
-  const slot = ALL_FLOW_SLOTS.find(s => s.key === slotKey);
-  if (!slot) return null;
-  const idx = _findBlockIndex(slot);
-  return idx >= 0 ? _scenarioFlow[idx] : null;
-}
-
-// ステップ削除
-window.flowRemoveStep = function(slotKey, stepIdx) {
-  const block = _getOrCreateBlock(slotKey);
-  if (!block) return;
-  block.steps.splice(stepIdx, 1);
+// ステップのタイミング変更（別ブロックへ移動）
+window.flowChangeStepTiming = function(slotKey, currentTiming, stepIdx, newTiming) {
+  if (currentTiming === newTiming) return;
+  const fromInfo = _getTargetBlockInfo(slotKey, currentTiming);
+  const toInfo   = _getTargetBlockInfo(slotKey, newTiming);
+  if (!fromInfo || !toInfo) return;
+  const fromBlock = _scenarioFlow.find(b =>
+    b.phase === fromInfo.phase &&
+    (b.trigger || undefined) === (fromInfo.trigger || undefined) &&
+    (b.turn || 1) === _flowEditTurn
+  );
+  if (!fromBlock || !fromBlock.steps[stepIdx]) return;
+  const step = fromBlock.steps.splice(stepIdx, 1)[0];
+  // 空になった古いブロックを削除
+  if (fromBlock.steps.length === 0) {
+    const fIdx = _scenarioFlow.indexOf(fromBlock);
+    if (fIdx >= 0) _scenarioFlow.splice(fIdx, 1);
+  }
+  const toBlock = _findOrCreateBlock(toInfo.phase, toInfo.trigger, _flowEditTurn);
+  toBlock.steps.push(step);
   _renderFlowEditor();
 };
 
-// ステップ移動
-window.flowMoveStep = function(slotKey, stepIdx, delta) {
-  const block = _getOrCreateBlock(slotKey);
+// slotKey + timing + stepIdx から step を取得
+function _getStepByTiming(slotKey, timing, stepIdx) {
+  const info = _getTargetBlockInfo(slotKey, timing);
+  if (!info) return null;
+  const block = _scenarioFlow.find(b =>
+    b.phase === info.phase &&
+    (b.trigger || undefined) === (info.trigger || undefined) &&
+    (b.turn || 1) === _flowEditTurn
+  );
+  if (!block || !block.steps[stepIdx]) return null;
+  return { block, step: block.steps[stepIdx] };
+}
+
+// ステップ削除
+window.flowRemoveStep = function(slotKey, timing, stepIdx) {
+  const info = _getTargetBlockInfo(slotKey, timing);
+  if (!info) return;
+  const block = _scenarioFlow.find(b =>
+    b.phase === info.phase &&
+    (b.trigger || undefined) === (info.trigger || undefined) &&
+    (b.turn || 1) === _flowEditTurn
+  );
+  if (!block) return;
+  block.steps.splice(stepIdx, 1);
+  // 空になったら削除（phase_start以外）
+  if (block.steps.length === 0 && timing !== 'phase_start') {
+    const idx = _scenarioFlow.indexOf(block);
+    if (idx >= 0) _scenarioFlow.splice(idx, 1);
+  }
+  _renderFlowEditor();
+};
+
+// ステップ移動（同一タイミング内）
+window.flowMoveStep = function(slotKey, timing, stepIdx, delta) {
+  const info = _getTargetBlockInfo(slotKey, timing);
+  if (!info) return;
+  const block = _scenarioFlow.find(b =>
+    b.phase === info.phase &&
+    (b.trigger || undefined) === (info.trigger || undefined) &&
+    (b.turn || 1) === _flowEditTurn
+  );
   if (!block || !block.steps) return;
   const to = stepIdx + delta;
   if (to < 0 || to >= block.steps.length) return;
@@ -794,11 +834,10 @@ window.flowMoveStep = function(slotKey, stepIdx, delta) {
 };
 
 // ステップフィールド更新
-window.flowUpdateStep = function(slotKey, stepIdx, field, value) {
-  const block = _getOrCreateBlock(slotKey);
-  if (!block) return;
-  const step = block.steps[stepIdx];
-  if (!step) return;
+window.flowUpdateStep = function(slotKey, timing, stepIdx, field, value) {
+  const ref = _getStepByTiming(slotKey, timing, stepIdx);
+  if (!ref) return;
+  const step = ref.step;
   if (field === 'instructionText') {
     step.instructionText = value;
   } else if (field === 'conditionType') {
@@ -837,34 +876,93 @@ window.flowUpdateStep = function(slotKey, stepIdx, field, value) {
   }
 };
 
-// --- メインレンダリング（親子構造対応） ---
+// ================================================================
+// ステップのタイミング→ブロックルーティング
+// 各ステップは phaseKey(UI上の所属) + timing(タイミング) を持ち、
+// timing に応じた内部ブロック（phase/_trigger）に格納される。
+// ================================================================
+
+// phaseKey + timing → 実際に格納するブロック情報
+function _getTargetBlockInfo(phaseKey, timing) {
+  const slot = ALL_FLOW_SLOTS.find(s => s.key === phaseKey);
+  if (!slot) return null;
+  const timingDef = STEP_TIMINGS.find(t => t.value === timing);
+  if (!timingDef || !timingDef.trigger) {
+    // phase_start等はスロットのphase/triggerをそのまま使う
+    return { phase: slot.phase, trigger: slot.trigger || undefined };
+  }
+  // trigger指定あり: 内部的には _trigger ブロックに格納
+  return { phase: '_trigger', trigger: timingDef.trigger };
+}
+
+// ブロックを見つける or 作成
+function _findOrCreateBlock(phase, trigger, turn) {
+  let b = _scenarioFlow.find(x =>
+    x.phase === phase &&
+    (x.trigger || undefined) === (trigger || undefined) &&
+    (x.turn || 1) === turn
+  );
+  if (!b) {
+    b = { phase, turn, steps: [] };
+    if (trigger) b.trigger = trigger;
+    _scenarioFlow.push(b);
+  }
+  return b;
+}
+
+// 指定スロット(大項目)に関連する全ブロックを取得（phase block + 紐づく trigger block）
+function _getRelatedBlocks(slotKey, turn) {
+  const slot = ALL_FLOW_SLOTS.find(s => s.key === slotKey);
+  if (!slot) return [];
+  const blocks = [];
+  // Primary block (phase or trigger itself)
+  const primary = _scenarioFlow.find(b =>
+    b.phase === slot.phase &&
+    (b.trigger || undefined) === (slot.trigger || undefined) &&
+    (b.turn || 1) === turn
+  );
+  if (primary) blocks.push({ block: primary, timing: 'phase_start' });
+  // Related trigger blocks for this slot
+  STEP_TIMINGS.forEach(t => {
+    if (!t.trigger) return;
+    if (!t.availableIn.includes(slotKey)) return;
+    const tb = _scenarioFlow.find(b =>
+      b.phase === '_trigger' &&
+      b.trigger === t.trigger &&
+      (b.turn || 1) === turn
+    );
+    if (tb) blocks.push({ block: tb, timing: t.value });
+  });
+  return blocks;
+}
+
+// スロットの現ON/OFF判定（関連ブロックが1つでもあれば ON）
+function _slotIsOn(slotKey, turn) {
+  return _getRelatedBlocks(slotKey, turn).length > 0;
+}
+
+// --- メインレンダリング ---
 function _renderFlowEditor() {
   const container = document.getElementById('flow-phases-container');
   if (!container) return;
-
-  // 親項目 + その子項目を再帰的にレンダリング
-  const topLevelSlots = ALL_FLOW_SLOTS.filter(s => !s.parentPhase);
-  container.innerHTML = topLevelSlots.map(slot => _renderSlotBlock(slot, 0)).join('');
+  container.innerHTML = ALL_FLOW_SLOTS.map(slot => _renderSlotBlock(slot)).join('');
 }
 
-// スロット1つのHTML生成（indent: インデント段数）
-function _renderSlotBlock(slot, indent) {
-  const blockIdx = _findBlockIndex(slot);
-  const isOn = blockIdx >= 0;
-  const block = isOn ? _scenarioFlow[blockIdx] : null;
-  const stepCount = block ? (block.steps || []).length : 0;
+function _renderSlotBlock(slot) {
+  const turn = _flowEditTurn;
+  const related = _getRelatedBlocks(slot.key, turn);
+  const isOn = related.length > 0;
+  const totalSteps = related.reduce((n, r) => n + (r.block.steps || []).length, 0);
 
   const headerBg = isOn ? `${slot.color}22` : '#0a0a0a';
   const headerBorder = isOn ? slot.color : '#222';
   const toggleChecked = isOn ? 'checked' : '';
-  const badge = isOn && stepCount > 0
-    ? `<span style="background:${slot.color}44; color:${slot.color}; font-size:9px; padding:1px 6px; border-radius:3px; margin-left:6px;">${stepCount}ステップ</span>`
+  const badge = totalSteps > 0
+    ? `<span style="background:${slot.color}44; color:${slot.color}; font-size:9px; padding:1px 6px; border-radius:3px; margin-left:6px;">${totalSteps}ステップ</span>`
     : '';
 
-  const marginLeft = indent > 0 ? `margin-left:${indent * 20}px;` : '';
-
   let html = `
-    <div style="border:1px solid ${headerBorder}; border-radius:8px; margin-bottom:6px; overflow:hidden; transition:border-color 0.2s; ${marginLeft}">
+    <div style="border:1px solid ${headerBorder}; border-radius:8px; margin-bottom:6px; overflow:hidden;">
       <div style="background:${headerBg}; padding:8px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onclick="flowToggleSlot('${slot.key}')">
         <input type="checkbox" ${toggleChecked} style="accent-color:${slot.color}; pointer-events:none; width:16px; height:16px;">
         <div style="flex:1;">
@@ -874,29 +972,35 @@ function _renderSlotBlock(slot, indent) {
       </div>`;
 
   if (isOn) {
-    const stepsHtml = (block.steps || []).map((step, sIdx) =>
-      _renderFlowStep(slot.key, sIdx, step)
-    ).join('');
+    // タイミングごとにステップをグループ化して表示
+    const stepsHtml = related.map(r => {
+      const tDef = STEP_TIMINGS.find(t => t.value === r.timing);
+      const tLabel = tDef ? tDef.label : r.timing;
+      const stepsInGroup = (r.block.steps || []).map((step, sIdx) =>
+        _renderFlowStep(slot.key, r.timing, sIdx, step)
+      ).join('');
+      if (!stepsInGroup) return '';
+      // 複数タイミングがある場合のみグループヘッダーを表示
+      const showGroupHeader = related.length > 1 || r.timing !== 'phase_start';
+      const groupHeader = showGroupHeader
+        ? `<div style="color:${slot.color}; font-size:10px; font-weight:bold; margin:4px 0 4px; padding-left:2px;">${tLabel}</div>`
+        : '';
+      return groupHeader + stepsInGroup;
+    }).join('');
+
     html += `
       <div style="padding:10px 12px; border-top:1px solid ${slot.color}33;">
         ${stepsHtml || '<p style="color:#555; font-size:10px; margin:0 0 6px;">ステップが未登録です。下のボタンから追加してください。</p>'}
-        <button class="admin-btn-sm" onclick="event.stopPropagation(); flowAddStep('${slot.key}')" style="width:100%; margin-top:4px; font-size:10px;">＋ ステップを追加</button>
+        <button class="admin-btn-sm" onclick="event.stopPropagation(); flowAddStepInSlot('${slot.key}')" style="width:100%; margin-top:4px; font-size:10px;">＋ ステップを追加</button>
       </div>`;
   }
 
   html += '</div>';
-
-  // 子項目を追加（parentPhase がこの slot.key のもの）
-  const children = ALL_FLOW_SLOTS.filter(s => s.parentPhase === slot.key);
-  children.forEach(child => {
-    html += _renderSlotBlock(child, indent + 1);
-  });
-
   return html;
 }
 
 // 個別ステップの描画
-function _renderFlowStep(slotKey, sIdx, step) {
+function _renderFlowStep(slotKey, timing, sIdx, step) {
   const sType = step.stepType || 'action';
   const isAction = sType === 'action';
   const isSpotlight = sType === 'spotlight';
@@ -905,6 +1009,7 @@ function _renderFlowStep(slotKey, sIdx, step) {
   const cardNo = (cond.params && cond.params.cardNo) || '';
 
   const sk = `'${slotKey}'`;
+  const tg = `'${timing}'`;
   const stepTypeOpts = STEP_TYPES.map(s =>
     `<option value="${s.value}"${s.value === sType ? ' selected' : ''}>${s.label}</option>`
   ).join('');
@@ -921,6 +1026,12 @@ function _renderFlowStep(slotKey, sIdx, step) {
     `<option value="${o.value}"${o.value === (step.operationType || '') ? ' selected' : ''}>${o.label}</option>`
   ).join('');
 
+  // このステップが属せるタイミング（現在のスロット内）
+  const availableTimings = STEP_TIMINGS.filter(t => t.availableIn.includes(slotKey));
+  const timingOpts = availableTimings.map(t =>
+    `<option value="${t.value}"${t.value === timing ? ' selected' : ''}>${t.label}</option>`
+  ).join('');
+
   const borderColor = isAction ? '#333' : isSpotlight ? '#ffaa0066' : '#00fbff66';
 
   return `
@@ -928,56 +1039,82 @@ function _renderFlowStep(slotKey, sIdx, step) {
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
         <span style="color:#aaa; font-size:10px; font-weight:bold;">STEP ${sIdx + 1}</span>
         <div>
-          <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${sIdx},-1)">↑</button>
-          <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${sIdx},1)">↓</button>
-          <button class="admin-btn-danger" style="padding:2px 6px; font-size:9px;" onclick="flowRemoveStep(${sk},${sIdx})">×</button>
+          <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${tg},${sIdx},-1)">↑</button>
+          <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${tg},${sIdx},1)">↓</button>
+          <button class="admin-btn-danger" style="padding:2px 6px; font-size:9px;" onclick="flowRemoveStep(${sk},${tg},${sIdx})">×</button>
         </div>
       </div>
+      ${availableTimings.length > 1 ? `
+      <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">表示タイミング</label>
+        <select onchange="flowChangeStepTiming(${sk},${tg},${sIdx},this.value)">${timingOpts}</select>
+      </div>` : ''}
       <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">ステップタイプ</label>
-        <select onchange="flowUpdateStep(${sk},${sIdx},'stepType',this.value)">${stepTypeOpts}</select>
+        <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'stepType',this.value)">${stepTypeOpts}</select>
       </div>
       <div class="tsave-field" style="margin-bottom:6px;">
         <label style="font-size:10px;">${isAction ? '指示テキスト' : '説明テキスト'} <span style="color:#888;">※ {{pc:XX|sp:YY}} でデバイス切替可</span></label>
-        <textarea rows="${isAction ? 1 : 3}" oninput="flowUpdateStep(${sk},${sIdx},'instructionText',this.value)"
-          placeholder="${isAction ? '例: 育成エリアをタップして孵化しよう!' : '例: セキュリティは5枚あるよ。相手のセキュリティを0にして...'}"
+        <textarea rows="${isAction ? 1 : 3}" oninput="flowUpdateStep(${sk},${tg},${sIdx},'instructionText',this.value)"
+          placeholder="${isAction ? '例: 育成エリアをタップして孵化しよう!' : '例: セキュリティは5枚あるよ...'}"
           style="resize:vertical;">${_escHtml(step.instructionText || '')}</textarea>
       </div>
       ${isAction ? `
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">次に進む条件</label>
-          <select onchange="flowUpdateStep(${sk},${sIdx},'conditionType',this.value)">${condOpts}</select>
+          <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'conditionType',this.value)">${condOpts}</select>
         </div>
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">操作タイプ</label>
-          <select onchange="flowUpdateStep(${sk},${sIdx},'operationType',this.value)">${opOpts}</select>
+          <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'operationType',this.value)">${opOpts}</select>
         </div>
       </div>` : ''}
+      ${_renderConditionSubSettings(slotKey, timing, sIdx, step, cond)}
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
         <div class="tsave-field" style="margin-bottom:0;">
           <label style="font-size:10px;">${isSpotlight ? 'スポットライト対象' : '赤枠ハイライト1'}</label>
-          <select onchange="flowUpdateStep(${sk},${sIdx},'targetArea',this.value)" style="margin-bottom:3px;">${areaOpts}</select>
-          ${_renderCardPicker(slotKey, sIdx, 'targetCardNo', step.targetCardNo)}
+          <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'targetArea',this.value)" style="margin-bottom:3px;">${areaOpts}</select>
+          ${_renderCardPicker(slotKey, timing, sIdx, 'targetCardNo', step.targetCardNo)}
         </div>
         <div class="tsave-field" style="margin-bottom:0;">
           <label style="font-size:10px;">赤枠ハイライト2</label>
-          <select onchange="flowUpdateStep(${sk},${sIdx},'secondTargetArea',this.value)" style="margin-bottom:3px;">${areaOpts2}</select>
-          ${_renderCardPicker(slotKey, sIdx, 'secondTargetCardNo', step.secondTargetCardNo)}
+          <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'secondTargetArea',this.value)" style="margin-bottom:3px;">${areaOpts2}</select>
+          ${_renderCardPicker(slotKey, timing, sIdx, 'secondTargetCardNo', step.secondTargetCardNo)}
         </div>
       </div>
       ${isAction && needsCard ? `
       <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">カードNo（進行条件用）</label>
         <input type="text" value="${_escHtml(cardNo)}"
-          oninput="flowUpdateStep(${sk},${sIdx},'conditionCardNo',this.value)"
+          oninput="flowUpdateStep(${sk},${tg},${sIdx},'conditionCardNo',this.value)"
           placeholder="例: BT1-010">
       </div>` : ''}
-      ${_renderStepUiControl(slotKey, sIdx, step)}
+      ${_renderStepUiControl(slotKey, timing, sIdx, step)}
     </div>
   `;
 }
 
-// カード検索ピッカー（赤枠ハイライト用）
-function _renderCardPicker(slotKey, sIdx, field, currentCardNo) {
+// 条件ごとのサブ設定（card_detail_closed のハイライト箇所など）
+function _renderConditionSubSettings(slotKey, timing, sIdx, step, cond) {
   const sk = `'${slotKey}'`;
-  const uid = `cp_${slotKey}_${sIdx}_${field}`;
+  const tg = `'${timing}'`;
+  // card_detail_closed の場合: ハイライト箇所プルダウン（targetArea を自動設定）
+  if (cond.type === 'card_detail_closed') {
+    const currentArea = step.targetArea || 'card_detail';
+    const opts = CARD_DETAIL_AREAS.map(a =>
+      `<option value="${a.area}"${a.area === currentArea ? ' selected' : ''}>${a.label}</option>`
+    ).join('');
+    return `
+      <div class="tsave-field" style="margin-bottom:6px; background:#050505; border:1px dashed #00ff8844; border-radius:4px; padding:8px;">
+        <label style="font-size:10px; color:#00ff88;">カード詳細ハイライト箇所</label>
+        <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'targetArea',this.value)">${opts}</select>
+        <p style="color:#666; font-size:9px; margin:3px 0 0;">※ 下の「赤枠ハイライト1」と連動。別の箇所を指定したい時は下で上書きできます。</p>
+      </div>`;
+  }
+  return '';
+}
+
+// カード検索ピッカー（赤枠ハイライト用）
+function _renderCardPicker(slotKey, timing, sIdx, field, currentCardNo) {
+  const sk = `'${slotKey}'`;
+  const tg = `'${timing}'`;
+  const uid = `cp_${slotKey}_${timing}_${sIdx}_${field}`;
   if (currentCardNo) {
     const name = _findCardName(currentCardNo);
     return `
@@ -985,20 +1122,20 @@ function _renderCardPicker(slotKey, sIdx, field, currentCardNo) {
         <span style="background:#111; border:1px solid #00ff88; border-radius:3px; padding:2px 6px; font-size:10px; color:#fff; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
           ${_escHtml(name)} <span style="color:#888;">(${_escHtml(currentCardNo)})</span>
         </span>
-        <button class="admin-btn-danger" style="padding:1px 6px; font-size:9px;" onclick="flowUpdateStep(${sk},${sIdx},'${field}',''); event.stopPropagation();">×</button>
+        <button class="admin-btn-danger" style="padding:1px 6px; font-size:9px;" onclick="flowUpdateStep(${sk},${tg},${sIdx},'${field}',''); event.stopPropagation();">×</button>
       </div>`;
   }
   return `
     <div style="position:relative; margin-top:2px;">
       <input type="text" id="${uid}" placeholder="カード名で検索（空＝エリア全体）"
-        oninput="flowCardSearch('${uid}',${sk},${sIdx},'${field}')"
+        oninput="flowCardSearch('${uid}',${sk},${tg},${sIdx},'${field}')"
         style="font-size:10px; padding:3px; width:100%;">
       <div id="${uid}_results" style="display:none; position:absolute; left:0; right:0; top:100%; z-index:100; max-height:180px; overflow-y:auto; background:#111; border:1px solid #333; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.5);"></div>
     </div>`;
 }
 
 // カード検索結果を表示
-window.flowCardSearch = function(uid, slotKey, sIdx, field) {
+window.flowCardSearch = function(uid, slotKey, timing, sIdx, field) {
   const input = document.getElementById(uid);
   const results = document.getElementById(uid + '_results');
   if (!input || !results) return;
@@ -1022,11 +1159,12 @@ window.flowCardSearch = function(uid, slotKey, sIdx, field) {
   }
 
   const sk = `'${slotKey}'`;
+  const tg = `'${timing}'`;
   results.innerHTML = matched.map(c => {
     const no = _escHtml(c['カードNo'] || '');
     const name = _escHtml(c['名前'] || '');
     const lv = _escHtml(c['Lv'] || c['レベル'] || '');
-    return `<div onclick="flowUpdateStep(${sk},${sIdx},'${field}','${no}'); event.stopPropagation();"
+    return `<div onclick="flowUpdateStep(${sk},${tg},${sIdx},'${field}','${no}'); event.stopPropagation();"
       style="padding:4px 8px; cursor:pointer; font-size:10px; color:#fff; border-bottom:1px solid #1a1a1a; display:flex; align-items:center; gap:6px;"
       onmouseenter="this.style.background='#1a3030'" onmouseleave="this.style.background=''">
       <span style="color:#aaa; min-width:70px;">${no}</span>
@@ -1038,8 +1176,9 @@ window.flowCardSearch = function(uid, slotKey, sIdx, field) {
 };
 
 // ステップ内の UI制御セクション（トグル展開式）
-function _renderStepUiControl(slotKey, sIdx, step) {
+function _renderStepUiControl(slotKey, timing, sIdx, step) {
   const sk = `'${slotKey}'`;
+  const tg = `'${timing}'`;
   const hasUi = step.uiControl;
   const checked = hasUi ? 'checked' : '';
   const greyOut = Array.isArray(step.greyOut) ? step.greyOut : [];
@@ -1055,21 +1194,21 @@ function _renderStepUiControl(slotKey, sIdx, step) {
   const greyOutChecks = GREYOUT_OPTIONS.map(opt => `
     <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:10px; color:#aaa; margin-bottom:2px;">
       <input type="checkbox" ${greyOut.includes(opt.value) ? 'checked' : ''}
-        onchange="flowUpdateStep(${sk},${sIdx},'greyOut_${opt.value}',this.checked)">
+        onchange="flowUpdateStep(${sk},${tg},${sIdx},'greyOut_${opt.value}',this.checked)">
       ${opt.label}
     </label>`).join('');
 
   const hlBtnChecks = BUTTON_TARGETS.map(btn => `
     <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:10px; color:#aaa; margin-bottom:2px;">
       <input type="checkbox" ${hlButtons.includes(btn.value) ? 'checked' : ''}
-        onchange="flowUpdateStep(${sk},${sIdx},'hlBtn_${btn.value}',this.checked)">
+        onchange="flowUpdateStep(${sk},${tg},${sIdx},'hlBtn_${btn.value}',this.checked)">
       ${btn.label}
     </label>`).join('');
 
   return `
     <div style="border-top:1px solid #1a1a1a; margin-top:8px; padding-top:6px;">
       <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:10px; color:#888; font-weight:bold;">
-        <input type="checkbox" ${checked} onchange="flowUpdateStep(${sk},${sIdx},'uiControl',this.checked)">
+        <input type="checkbox" ${checked} onchange="flowUpdateStep(${sk},${tg},${sIdx},'uiControl',this.checked)">
         UI制御を設定する
       </label>
       ${hasUi ? `

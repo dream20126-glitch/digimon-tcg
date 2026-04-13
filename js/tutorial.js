@@ -530,6 +530,12 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
     if (bubbleEl) bubbleEl.classList.add('tutorial-bubble-below');
   }
 
+  // 👆/👇 は吹き出しの位置に応じて常に対象を指す向きに上書き
+  // （tap/未指定操作のとき。drag/long_press/swipe は方向のあるアイコンなので維持）
+  if (opType === 'tap' || !opType) {
+    finger.innerText = canFitAbove ? '👇' : '👆';
+  }
+
   // 水平位置: 対象の中央に合わせる
   const left = Math.max(8, Math.min(window.innerWidth - bubbleW - 8, rect.left + rect.width / 2 - bubbleW / 2));
   overlay.style.left = left + 'px';

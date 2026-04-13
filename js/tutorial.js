@@ -495,7 +495,8 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
   // → 赤枠ハイライトついている要素の集合に常に👆/吹き出しが寄る
   const rect = _unionRect([...targets, ...seconds]);
   const pointerH = wrap.offsetHeight || 100;
-  const bubbleW = 320;
+  // 吹き出しは可変幅（CSS で max-width: min(85vw, 440px)）→ 実測値を使う
+  const bubbleW = wrap.offsetWidth || 320;
 
   // 対象の上に吹き出しを置く余白があれば上、なければ下
   const canFitAbove = rect.top > pointerH + 12;

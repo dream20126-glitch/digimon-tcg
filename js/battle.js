@@ -376,7 +376,7 @@ function showLoading() {
 
 function showGateOpen(callback) {
   const ov = document.createElement('div');
-  ov.style.cssText = 'position:fixed;inset:0;z-index:45000;display:flex;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,0.95);overflow:hidden;';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:45000;display:flex;align-items:center;justify-content:center;flex-direction:column;background:#000;overflow:hidden;';
 
   // 背景（放射状の光）
   ov.innerHTML = '<div style="position:absolute;inset:0;background:radial-gradient(circle at center,rgba(0,251,255,0.15) 0%,rgba(0,0,0,0) 70%);animation:gateGlow 2s ease-in-out;"></div>';
@@ -413,8 +413,14 @@ function showGateOpen(callback) {
   let called = false;
   function finish() {
     if (called) return; called = true;
-    ov.style.transition = 'opacity 0.5s ease'; ov.style.opacity = '0';
-    setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); callback(); }, 500);
+    // 先に callback を発火 → 次の画面（マリガンoverlay等）を裏側に準備
+    // フェードアウトで露出するのはバトルエリアではなくマリガン画面の暗背景になる
+    try { callback(); } catch (e) { console.error('[showGateOpen] callback error:', e); }
+    requestAnimationFrame(() => {
+      ov.style.transition = 'opacity 0.4s ease';
+      ov.style.opacity = '0';
+      setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 400);
+    });
   }
   setTimeout(finish, 5000);
   ov.addEventListener('click', finish, { once: true });
@@ -453,22 +459,19 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   // ローディング消去 → ゲートオープン演出
   if (loadingOv.parentNode) loadingOv.parentNode.removeChild(loadingOv);
   showGateOpen(() => {
-    // 演出終了後にバトル画面 → マリガン
+    // 演出終了直前に即マリガン画面を準備（バトルエリアが見えないようにする）
     showScreen('battle-screen');
     renderAll();
     addLog('✅ バトル画面描画完了');
-    setTimeout(() => {
-      // 1) マリガン画面を先に表示（カード配布演出が走る）
-      showMulliganOverlay();
+    showMulliganOverlay();
 
-      // 2) チュートリアル中は配布演出が落ち着いてから notifyPhaseChange を呼ぶ
-      //    （ポップアップとゲート演出/配布演出が被らないように）
-      //    配布演出: 5枚 * 150ms + 400ms + フリップ約900ms ≈ 約2.3秒
-      const runner = window._tutorialRunner;
-      if (runner && runner.active && typeof runner.notifyPhaseChange === 'function') {
-        setTimeout(() => { runner.notifyPhaseChange('mulligan'); }, 2400);
-      }
-    }, 400);
+    // チュートリアル中は配布演出が落ち着いてから notifyPhaseChange を呼ぶ
+    // （ポップアップが配布演出と被らないように）
+    // 配布演出: 5枚 * 150ms + 400ms + フリップ約900ms ≈ 約2.3秒
+    const runner = window._tutorialRunner;
+    if (runner && runner.active && typeof runner.notifyPhaseChange === 'function') {
+      setTimeout(() => { runner.notifyPhaseChange('mulligan'); }, 2400);
+    }
   });
 };
 

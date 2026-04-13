@@ -121,6 +121,10 @@ export function showScreen(screenId) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const target = document.getElementById(screenId);
   if (target) target.classList.add('active');
+  // チュートリアルゴール表示はバトル画面以外では消す
+  if (typeof window._tutorialHideGoal === 'function' && screenId !== 'battle-screen') {
+    try { window._tutorialHideGoal(); } catch (e) {}
+  }
 }
 
 // ===== スクロール矢印 =====

@@ -176,15 +176,54 @@ window.enterTutorialBattle = async function() {
 // ===================================================================
 
 // ゴール（クリア条件）を上部に表示
+// 表示はバトル画面アクティブ かつ マリガン受諾後 に限定
+let _tutorialGoalLabel = '';
+let _tutorialGoalActive = false;
+let _tutorialMulliganDone = false;
+
 window._tutorialShowGoal = function(clearCondition) {
+  _tutorialGoalLabel = _clearConditionToJapanese(clearCondition);
+  _tutorialGoalActive = true;
+  _refreshGoalBanner();
+};
+
+window._tutorialHideGoal = function() {
+  _tutorialGoalActive = false;
+  _refreshGoalBanner();
+};
+
+// battle.js から呼ばれる: マリガン状態の通知
+// state: 'shown'(マリガン表示中) | 'accepted'(承諾済み)
+window._tutorialNotifyMulligan = function(state) {
+  _tutorialMulliganDone = (state === 'accepted');
+  _refreshGoalBanner();
+};
+
+function _refreshGoalBanner() {
   const overlay = document.getElementById('tutorial-instruction-overlay');
   const el = document.getElementById('tutorial-instruction-text');
   if (!overlay || !el) return;
-  // クリア条件を日本語に変換（簡易）
-  const label = _clearConditionToJapanese(clearCondition);
-  el.innerText = label;
-  overlay.style.display = 'block';
-};
+  const battleScreen = document.getElementById('battle-screen');
+  const battleActive = battleScreen && battleScreen.classList.contains('active');
+  const shouldShow = _tutorialGoalActive && battleActive && _tutorialMulliganDone;
+  if (shouldShow) {
+    el.innerText = _tutorialGoalLabel;
+    overlay.style.display = 'block';
+  } else {
+    overlay.style.display = 'none';
+  }
+}
+
+// 画面遷移時にゴール表示を再評価（バトル画面を離れたら自動で消える）
+if (typeof window.showScreen === 'function' && !window._tutorialShowScreenWrapped) {
+  const _origShowScreen = window.showScreen;
+  window.showScreen = function(id) {
+    const r = _origShowScreen.apply(this, arguments);
+    try { _refreshGoalBanner(); } catch (e) {}
+    return r;
+  };
+  window._tutorialShowScreenWrapped = true;
+}
 
 function _clearConditionToJapanese(cond) {
   if (!cond || !cond.type) return '';
@@ -580,8 +619,7 @@ window.closeTutorialClear = function() {
 
   // 指示オーバーレイ + ゴール表示も確実に消す
   window._tutorialHideInstruction();
-  const goalOverlay = document.getElementById('tutorial-instruction-overlay');
-  if (goalOverlay) goalOverlay.style.display = 'none';
+  if (typeof window._tutorialHideGoal === 'function') window._tutorialHideGoal();
 
   // シナリオ一覧を再読込して進捗を反映
   if (typeof window.loadTutorialScreen === 'function') {

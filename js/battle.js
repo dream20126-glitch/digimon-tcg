@@ -134,6 +134,7 @@ function showMulliganOverlay() {
   }
   document.getElementById('mulligan-overlay').style.display = 'flex';
   renderMulliganPreview(true);
+  if (typeof window._tutorialNotifyMulligan === 'function') window._tutorialNotifyMulligan('shown');
 }
 
 function renderMulliganPreview(animate) {
@@ -204,6 +205,7 @@ window.acceptHand = function() {
   if (window._tutorialRunner && typeof window._tutorialRunner.notifyEvent === 'function') {
     try { window._tutorialRunner.notifyEvent('mulligan_accepted', {}); } catch (e) {}
   }
+  if (typeof window._tutorialNotifyMulligan === 'function') window._tutorialNotifyMulligan('accepted');
   bs.player.security = bs.player.deck.splice(0, 5);
   // 相手のセキュリティ:
   // - オフライン: 自分でAIのセキュリティをセット

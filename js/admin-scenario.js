@@ -74,9 +74,10 @@ const TARGET_AREAS = [
 function _renderAreaPicker(slotKey, timing, sIdx, field, currentValue) {
   const uid = `ap_${slotKey}_${timing}_${sIdx}_${field}`;
   const cur = TARGET_AREAS.find(a => a.value === (currentValue || '')) || TARGET_AREAS[0];
-  const sk = JSON.stringify(String(slotKey));
-  const tg = JSON.stringify(String(timing));
-  const fd = JSON.stringify(String(field));
+  // HTML属性内の onclick で渡すため、シングルクォートでラップした文字列を組む
+  const sk = `'${slotKey}'`;
+  const tg = `'${timing}'`;
+  const fd = `'${field}'`;
 
   // グルーピング
   const groups = {};
@@ -89,7 +90,7 @@ function _renderAreaPicker(slotKey, timing, sIdx, field, currentValue) {
   });
 
   const item = (a) => {
-    const v = JSON.stringify(a.value);
+    const v = `'${a.value}'`;
     const sel = a.value === (currentValue || '') ? ' selected' : '';
     return `<div class="ap-item${sel}" onclick="areaPickerSelect('${uid}',${sk},${tg},${sIdx},${fd},${v})">${_escHtml(a.label)}</div>`;
   };

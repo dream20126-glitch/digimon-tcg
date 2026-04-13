@@ -475,23 +475,27 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
 
   // 対象要素の位置を取得
   const rect = targetEl.getBoundingClientRect();
-  const screenH = window.innerHeight;
-  const pointerH = wrap.offsetHeight || 80;
-  const bubbleW = 260;
+  const pointerH = wrap.offsetHeight || 100;
+  const bubbleW = 320;
 
-  // 対象が画面下半分 → 吹き出しを対象の上に
-  // 対象が画面上半分 → 吹き出しを対象の下に
-  const targetCenter = rect.top + rect.height / 2;
-  const isBelow = targetCenter > screenH * 0.5;
+  // 対象の上に吹き出しを置く余白があれば上、なければ下
+  // （多くの場合 = 上に表示。👇が下を指して target にツッコむ）
+  const canFitAbove = rect.top > pointerH + 12;
 
-  if (isBelow) {
-    wrap.style.flexDirection = 'column';
+  if (canFitAbove) {
+    wrap.style.flexDirection = 'column';   // [bubble][finger]
     const top = rect.top - pointerH - 4;
     overlay.style.top = Math.max(4, top) + 'px';
+    // 通常向き吹き出し（しっぽ下）
+    const bubbleEl = document.getElementById('tutorial-pointer-bubble');
+    if (bubbleEl) bubbleEl.classList.remove('tutorial-bubble-below');
   } else {
-    wrap.style.flexDirection = 'column-reverse';
+    wrap.style.flexDirection = 'column-reverse';  // [finger][bubble]
     const top = rect.bottom + 4;
     overlay.style.top = top + 'px';
+    // 上向き吹き出し（しっぽ上）
+    const bubbleEl = document.getElementById('tutorial-pointer-bubble');
+    if (bubbleEl) bubbleEl.classList.add('tutorial-bubble-below');
   }
 
   // 水平位置: 対象の中央に合わせる

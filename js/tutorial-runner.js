@@ -55,6 +55,7 @@ export const CONDITION_EVALUATORS = {
   security_zero: (params, ev) =>
     ev.type === 'security_reduced' && ev.side === 'opponent' && (ev.remaining ?? -1) === 0,
   card_detail_closed: (params, ev) => ev.type === 'card_detail_closed',
+  mulligan_accepted: (params, ev) => ev.type === 'mulligan_accepted',
 
   // 既存の進行系（互換維持）
   turn_end: (params, ev) => {

@@ -172,6 +172,38 @@ window.enterTutorialBattle = async function() {
 };
 
 // ===================================================================
+// 🧪 開発用: ファイル直読みシナリオ起動
+// （管理画面/GAS経由ではなく、docs配下のJSONを直接読んで起動するテスト用）
+// ===================================================================
+window.runTestScenarioFromFile = async function(jsonPath) {
+  try {
+    // シナリオJSON取得
+    const res = await fetch(jsonPath, { cache: 'no-store' });
+    if (!res.ok) { alert('シナリオファイル取得失敗: ' + res.status); return; }
+    const scenario = await res.json();
+
+    // デッキ確保（_decksCache が空なら取得）
+    if (!_decksCache.length) {
+      try {
+        const decks = await gasGet('getTutorialDecks');
+        if (Array.isArray(decks)) _decksCache = decks;
+      } catch (e) {}
+    }
+    let deck = _decksCache.find(d => (d.deckId || d.tutorialName) === scenario.deckId);
+    if (!deck) deck = _decksCache[0]; // フォールバック: 先頭のチュートリアルデッキ
+    if (!deck) { alert('使用可能なチュートリアルデッキがありません'); return; }
+    const list = deck.list || deck['カードリスト'];
+    if (!list) { alert('デッキのカードリストが空です'); return; }
+
+    const runner = getTutorialRunner();
+    await runner.start(scenario, { list }, { list });
+  } catch (e) {
+    console.error('[tutorial test] start failed:', e);
+    alert('テストシナリオ起動失敗: ' + e.message);
+  }
+};
+
+// ===================================================================
 // バトル画面 UI フック (TutorialRunner から呼ばれる)
 // ===================================================================
 

@@ -1,0 +1,53 @@
+{
+  "id": "tutorial_basic_flow_01",
+  "tutorialName": "基本の流れを覚えよう（先攻1ターン目）",
+  "description": "マリガンから先攻1ターン目終了までの基本操作を学ぶ、はじめてのチュートリアル。",
+  "difficulty": "★",
+  "mode": "offline",
+  "order": 1,
+
+  "showPhaseGuide": true,
+  "phaseGuideTexts": {
+    "mulligan": "ゲームの最初に、デッキから5枚の手札が配られたよ！\n手札を見て気に入らなければ、1ゲームに1回だけ引き直しができるよ。",
+    "unsuspend": "アクティブフェイズだよ！\nレスト状態（横向き）になっているカードを、すべて縦向きに戻すフェイズだよ。\nこのフェイズは自動で進むから、見ているだけでOK！"
+  },
+
+  "flow": [
+    {
+      "phase": "mulligan",
+      "turn": 1,
+      "steps": [
+        {
+          "stepType": "spotlight",
+          "instructionText": "これがあなたの手札の5枚！\nカードを長押しすると、詳しい情報が見られるよ。気になるカードはチェックしてみよう。",
+          "targetArea": "hand"
+        },
+        {
+          "stepType": "action",
+          "instructionText": "それじゃあ、このまま「ゲーム開始」を押してバトルをはじめよう！",
+          "targetArea": "mulligan_btn_start",
+          "operationType": "tap",
+          "uiControl": true,
+          "highlightButtons": ["game_start"],
+          "greyOut": ["mulligan_redo"],
+          "advanceCondition": { "type": "mulligan_accepted" }
+        }
+      ]
+    }
+  ],
+
+  "_TODO_NEXT": [
+    "ターン開始演出のあとに『アクティブフェイズ』のphaseGuideTextを追加するところまでは showPhaseGuide=true で自動表示される",
+    "phaseGuideTexts.unsuspend を埋めるとアクティブフェイズ説明が出る（次ステップで決める）",
+    "そこから先：drawフェーズ説明 / breedフェーズ説明 / mainフェーズ操作 / ターン終了まで を順に追加予定"
+  ],
+
+  "clearCondition": null,
+  "clearMessage": "お疲れさま！基本の流れはこれでバッチリ！",
+
+  "initialBoard": {
+    "playerFirst": true
+  },
+
+  "opponentScript": []
+}

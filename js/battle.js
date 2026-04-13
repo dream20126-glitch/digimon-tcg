@@ -200,6 +200,10 @@ function animateSecuritySet(callback) {
 
 window.acceptHand = function() {
   document.getElementById('mulligan-overlay').style.display = 'none';
+  // チュートリアル進行通知
+  if (window._tutorialRunner && typeof window._tutorialRunner.notifyEvent === 'function') {
+    try { window._tutorialRunner.notifyEvent('mulligan_accepted', {}); } catch (e) {}
+  }
   bs.player.security = bs.player.deck.splice(0, 5);
   // 相手のセキュリティ:
   // - オフライン: 自分でAIのセキュリティをセット

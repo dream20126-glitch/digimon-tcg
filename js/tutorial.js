@@ -419,6 +419,8 @@ const TARGET_AREA_SELECTORS = {
     const cards = hw.querySelectorAll('.h-card');
     return cards.length ? cards[cards.length - 1] : null;
   },
+  // ドロー演出中の中央カード
+  drawn_card:    () => document.getElementById('draw-card-img'),
   battle:        () => document.getElementById('pl-battle-row'),
   end_turn_btn:  () => document.getElementById('action-bar'),
   mulligan_btn_start: () => document.querySelector('#mulligan-overlay .menu-btn.primary'),
@@ -706,6 +708,7 @@ const _TRIGGER_DISPLAY_NAMES = {
   after_attack:          'アタック解決後',
   after_use_effect:      '効果使用完了後',
   on_card_detail_open:   'カード詳細',
+  on_draw:               'ドロー演出',
 };
 function _getStepContextTitle(ctx) {
   if (!ctx) return '';

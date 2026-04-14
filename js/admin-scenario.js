@@ -93,7 +93,8 @@ const TARGET_AREAS = [
   // --- 自分エリア ---
   { value: 'raising',      label: '育成エリア',                          group: '🟢 自分のエリア' },
   { value: 'hand',         label: '手札（マリガン時は最初の5枚）',     group: '🟢 自分のエリア' },
-  { value: 'hand_last',    label: 'ドローしたカード（手札の最後）',      group: '🟢 自分のエリア' },
+  { value: 'drawn_card',   label: 'ドローしたカード（演出中の中央カード）', group: '🟢 自分のエリア' },
+  { value: 'hand_last',    label: '手札の最後尾のカード',                 group: '🟢 自分のエリア' },
   { value: 'battle',       label: 'バトルエリア',                        group: '🟢 自分のエリア' },
   { value: 'own_security', label: 'セキュリティ',                        group: '🟢 自分のエリア' },
   { value: 'own_trash',    label: 'トラッシュ',                          group: '🟢 自分のエリア' },
@@ -830,6 +831,8 @@ const STEP_TIMINGS = [
     availableIn: ['main'] },
   { value: 'on_card_detail_open', label: '🔍 カード詳細表示中',            trigger: 'on_card_detail_open',
     availableIn: ['main','breed','mulligan'] },
+  { value: 'on_draw',             label: '🃏 ドロー演出中',                  trigger: 'on_draw',
+    availableIn: ['draw'] },
   // 自分のターン終了配下
   { value: 'memory_crossed',    label: '💾 メモリー相手側到達時',           trigger: 'memory_crossed',
     availableIn: ['trg_before_end_turn'] },

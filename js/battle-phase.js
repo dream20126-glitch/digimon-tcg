@@ -245,7 +245,8 @@ export function showDrawEffect(card, isLv6Plus, callback) {
         }, 800);
       }, 1200);
     }
-    setTimeout(() => {
+    setTimeout(async () => {
+      await _maybeWaitTutorialDrawInterrupt();
       overlay.style.display = 'none'; overlay.style.background = ''; imgEl.style.transition = '';
       callback && callback();
     }, 4200);
@@ -255,8 +256,19 @@ export function showDrawEffect(card, isLv6Plus, callback) {
     setTimeout(() => { imgEl.style.opacity = '1'; imgEl.style.transform = 'translateY(0)'; labelEl.style.opacity = '1';
       setTimeout(() => { nameEl.style.opacity = '1'; }, 200);
     }, 100);
-    setTimeout(() => { overlay.style.display = 'none'; overlay.style.background = ''; callback && callback(); }, 1300);
+    setTimeout(async () => {
+      await _maybeWaitTutorialDrawInterrupt();
+      overlay.style.display = 'none'; overlay.style.background = '';
+      callback && callback();
+    }, 1300);
   }
+}
+
+// チュートリアルで on_draw 割り込みブロックがあればドロー演出維持のまま await
+async function _maybeWaitTutorialDrawInterrupt() {
+  const runner = (typeof window !== 'undefined') ? window._tutorialRunner : null;
+  if (!runner || !runner.active) return;
+  try { await runner.checkInterrupt('on_draw'); } catch (e) {}
 }
 
 // ===== オンラインターン色 =====

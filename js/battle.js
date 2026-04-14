@@ -206,15 +206,21 @@ window.acceptHand = function() {
     try { window._tutorialRunner.notifyEvent('mulligan_accepted', {}); } catch (e) {}
   }
   if (typeof window._tutorialNotifyMulligan === 'function') window._tutorialNotifyMulligan('accepted');
-  bs.player.security = bs.player.deck.splice(0, 5);
+  // チュートリアル等で初期盤面が既にセキュリティをセットしている場合は
+  // そのまま尊重して上書きしない（二重にデッキから引かないように）
+  if (!bs.player.security || bs.player.security.length === 0) {
+    bs.player.security = bs.player.deck.splice(0, 5);
+  }
   // 相手のセキュリティ:
   // - オフライン: 自分でAIのセキュリティをセット
   // - オンライン: 相手から security_init で送られてくる
   //   既にsecurity_initが届いて bs._aiSecuritySynced=true なら、ローカル推測で上書きしない
   //   （上書きすると相手側のデバッグ仕込み等が消えて不整合になる）
-  const aiSecGuess = bs.ai.deck.splice(0, 5);
-  if (!isOnlineMode() || !bs._aiSecuritySynced) {
-    bs.ai.security = aiSecGuess;
+  if (!bs.ai.security || bs.ai.security.length === 0) {
+    const aiSecGuess = bs.ai.deck.splice(0, 5);
+    if (!isOnlineMode() || !bs._aiSecuritySynced) {
+      bs.ai.security = aiSecGuess;
+    }
   }
 
   // === デバッグ: セキュリティの先頭にテイマーを仕込む ===

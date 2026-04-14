@@ -690,6 +690,16 @@ body.tutorial-spotlight-mode #tutorial-spotlight-ok {
   position: relative;
   z-index: 100;
   animation: tutorialCardPulse 1.5s ease-in-out infinite;
+  /* スポットライト暗転や他の dim 系を上書きして必ず明るく表示 */
+  opacity: 1 !important;
+  filter: none !important;
+  pointer-events: auto !important;
+}
+/* ハイライトカード内のすべての要素も明るく */
+.tutorial-card-highlight *,
+.tutorial-card-highlight img {
+  opacity: 1 !important;
+  filter: none !important;
 }
 
 @keyframes tutorialCardPulse {

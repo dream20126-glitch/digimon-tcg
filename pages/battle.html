@@ -374,6 +374,15 @@
   animation: tutorialHighlightPulse 1s ease-in-out infinite !important;
   position: relative;
   z-index: 100;
+  /* スポットライト暗転を貫通して必ずはっきり表示 */
+  opacity: 1 !important;
+  filter: none !important;
+  pointer-events: auto !important;
+}
+.tutorial-highlight *,
+.tutorial-highlight img {
+  opacity: 1 !important;
+  filter: none !important;
 }
 @keyframes tutorialHighlightPulse {
   0%, 100% { outline-color: #ff4444; box-shadow: 0 0 15px rgba(255,68,68,0.6); }

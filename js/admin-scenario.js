@@ -1136,9 +1136,12 @@ function _renderSlotBlock(slot) {
     ? `<span style="background:${slot.color}44; color:${slot.color}; font-size:9px; padding:1px 6px; border-radius:3px; margin-left:6px;">${totalSteps}ステップ</span>`
     : '';
 
+  // overflow:hidden を外す（中の絶対配置プルダウンがクリップされるため）
+  // 代わりに header / body の角を個別に丸める
+  const headerRadius = isOn ? '7px 7px 0 0' : '7px';
   let html = `
-    <div style="border:1px solid ${headerBorder}; border-radius:8px; margin-bottom:6px; overflow:hidden;">
-      <div style="background:${headerBg}; padding:8px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onclick="flowToggleSlot('${slot.key}')">
+    <div style="border:1px solid ${headerBorder}; border-radius:8px; margin-bottom:6px;">
+      <div style="background:${headerBg}; padding:8px 12px; display:flex; align-items:center; gap:10px; cursor:pointer; border-radius:${headerRadius};" onclick="flowToggleSlot('${slot.key}')">
         <input type="checkbox" ${toggleChecked} style="accent-color:${slot.color}; pointer-events:none; width:16px; height:16px;">
         <div style="flex:1;">
           <span style="color:${isOn ? slot.color : '#666'}; font-weight:bold; font-size:12px;">${slot.label}</span>${badge}
@@ -1164,7 +1167,7 @@ function _renderSlotBlock(slot) {
     }).join('');
 
     html += `
-      <div style="padding:10px 12px; border-top:1px solid ${slot.color}33;">
+      <div style="padding:10px 12px; border-top:1px solid ${slot.color}33; border-radius:0 0 7px 7px;">
         ${stepsHtml || '<p style="color:#555; font-size:10px; margin:0 0 6px;">ステップが未登録です。下のボタンから追加してください。</p>'}
         <button class="admin-btn-sm" onclick="event.stopPropagation(); flowAddStepInSlot('${slot.key}')" style="width:100%; margin-top:4px; font-size:10px;">＋ ステップを追加</button>
       </div>`;

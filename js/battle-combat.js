@@ -255,22 +255,19 @@ export function doEvolve(card, handIdx, slotIdx) {
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
   addLog('⬆ 「' + base.name + '」→「' + evolved.name + '」進化！（コスト ' + cost + '）');
   renderAll();
-  showEvolveEffect(cost, base.name, base, evolved, () => {
+  showEvolveEffect(cost, base.name, base, evolved, async () => {
     // ★ 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定
     playerSpendMemory(cost, true); // defer=true: ターン終了は保留
+    // チュートリアル: 進化通知 → GREAT! を先に出してからドロー演出へ
+    if (window._tutorialRunner && window._tutorialRunner.active) {
+      try { window._tutorialRunner.notifyEvent('evolve', { cardNo: evolved.cardNo, cardName: evolved.name, targetCardNo: evolved.cardNo, side: 'player' }); } catch (e) {}
+    }
+    if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
     doDraw('player', '進化ドロー', async (dismissDraw) => {
-      // 割り込み1: コスト支払い + ドロー完了後、効果発動前
-      // ドロー演出は開いたまま → 割り込み完了後に閉じる（drawn_card スポットライト対応）
-      // 割り込み前に進化イベントを通知（main block の action ステップを advance させるため）
-      if (window._tutorialRunner && window._tutorialRunner.active) {
-        try { window._tutorialRunner.notifyEvent('evolve', { cardNo: evolved.cardNo, cardName: evolved.name, targetCardNo: evolved.cardNo, side: 'player' }); } catch (e) {}
-      }
+      // 割り込み: ドロー直後 (drawn_card スポットライト等)
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve_cost');
       if (typeof dismissDraw === 'function') dismissDraw();
-      // 進化演出 + ドロー演出 + 割り込み完了 → 成功演出をここで実演出
-      if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
       const finishEvolve = async () => {
-        // 割り込み2: 効果完了後
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
         checkPlayerPendingTurnEnd();
       };
@@ -310,22 +307,19 @@ export function doEvolveIku(card, handIdx) {
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
   addLog('⬆ 育成「' + base.name + '」→「' + evolved.name + '」進化！（コスト ' + cost + '）');
   renderAll();
-  showEvolveEffect(cost, base.name, base, evolved, () => {
+  showEvolveEffect(cost, base.name, base, evolved, async () => {
     // ★ 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定
     playerSpendMemory(cost, true); // defer=true: ターン終了は保留
+    // チュートリアル: 進化通知 → GREAT! を先に出してからドロー演出へ
+    if (window._tutorialRunner && window._tutorialRunner.active) {
+      try { window._tutorialRunner.notifyEvent('evolve', { cardNo: evolved.cardNo, cardName: evolved.name, targetCardNo: evolved.cardNo, side: 'player' }); } catch (e) {}
+    }
+    if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
     doDraw('player', '進化ドロー', async (dismissDraw) => {
-      // 割り込み1: コスト支払い + ドロー完了後、効果発動前
-      // ドロー演出は開いたまま → 割り込み完了後に閉じる（drawn_card スポットライト対応）
-      // 割り込み前に進化イベントを通知（main block の action ステップを advance させるため）
-      if (window._tutorialRunner && window._tutorialRunner.active) {
-        try { window._tutorialRunner.notifyEvent('evolve', { cardNo: evolved.cardNo, cardName: evolved.name, targetCardNo: evolved.cardNo, side: 'player' }); } catch (e) {}
-      }
+      // 割り込み: ドロー直後 (drawn_card スポットライト等)
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve_cost');
       if (typeof dismissDraw === 'function') dismissDraw();
-      // 進化演出 + ドロー演出 + 割り込み完了 → 成功演出をここで実演出
-      if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
       const finishEvolveIku = async () => {
-        // 割り込み2: 効果完了後
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
         checkPlayerPendingTurnEnd();
       };

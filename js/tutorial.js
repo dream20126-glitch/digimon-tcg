@@ -312,16 +312,18 @@ const _BUTTON_SELECTOR_MAP = {
 let _uiControlActive = false;
 let _savedButtonStates = [];  // 復元用
 
+// 現在適用中のステップを保持（renderHand 後の再適用用）
+let _activeUiStep = null;
+
 function _applyStepUiControl(step) {
   _clearStepUiControl();
-  if (!step) return;
+  if (!step || !step.uiControl) return;
+  _activeUiStep = step;
 
   const greyOut = Array.isArray(step.greyOut) ? step.greyOut : [];
   const hlButtons = Array.isArray(step.highlightButtons) ? step.highlightButtons : [];
-  // targetCardNo が指定されていれば uiControl 未設定でも
-  // 他のカード自動グレーアウト（対象以外誤タップ防止）
   const hlCards = [step.targetCardNo, step.secondTargetCardNo].filter(Boolean);
-  const greyOutCards = greyOut.includes('other_cards') || hlCards.length > 0;
+  const greyOutCards = greyOut.includes('other_cards');
 
   // --- カードハイライト + グレーアウト ---
   if (hlCards.length > 0 || greyOutCards) {
@@ -381,7 +383,29 @@ function _clearStepUiControl() {
   // ブロック解除
   document.body.classList.remove('tutorial-block-other');
   _uiControlActive = false;
+  _activeUiStep = null;
 }
+
+// renderHand 等から呼ばれる再適用フック
+// 手札が innerHTML='' で描き直されると tutorial-card-* クラスが剥がれるため、
+// 直近の step に基づいて再適用する
+window._tutorialReapplyUiControl = function() {
+  if (!_activeUiStep) return;
+  const step = _activeUiStep;
+  const greyOut = Array.isArray(step.greyOut) ? step.greyOut : [];
+  const hlCards = [step.targetCardNo, step.secondTargetCardNo].filter(Boolean);
+  const greyOutCards = greyOut.includes('other_cards');
+  if (hlCards.length === 0 && !greyOutCards) return;
+  const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no]');
+  allCards.forEach(cardEl => {
+    const no = cardEl.dataset.cardNo || '';
+    if (hlCards.length > 0 && hlCards.includes(no)) {
+      cardEl.classList.add('tutorial-card-highlight');
+    } else if (greyOutCards) {
+      cardEl.classList.add('tutorial-card-disabled');
+    }
+  });
+};
 
 // 成功演出（ステップ進行時）
 window._tutorialShowSuccess = function(message) {
@@ -789,6 +813,9 @@ function _tutorialShowInlineSpotlight(step, ctx) {
     // 対象要素を取得（配列対応）
     const targetEls = _resolveTargets(targetArea, targetCardNo);
     const secondEls = _resolveTargets(secondArea, secondCardNo);
+
+    // UI制御（グレーアウト/ハイライト）を spotlight にも適用
+    _applyStepUiControl(step);
 
     // 黒い暗転オーバーレイは1度だけ表示（パート切替で消えないように）
     _createSpotlightDimOverlay(targetEls, secondEls);

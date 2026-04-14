@@ -778,6 +778,10 @@ export function renderHand() {
 
     hw.appendChild(el);
   });
+  // 手札再描画で tutorial-card-* クラスが剥がれるため、チュートリアル UI を再適用
+  if (typeof window._tutorialReapplyUiControl === 'function') {
+    window._tutorialReapplyUiControl();
+  }
 }
 
 // ドロップゾーンハイライト

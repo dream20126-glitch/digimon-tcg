@@ -859,6 +859,25 @@ function applyBackImages() {
   if (aiTama && tamaBackUrl) aiTama.src = tamaBackUrl;
 }
 
+// ===== カード詳細用ステータス文字列 =====
+// Lv. / DP / 登場コスト / 進化コスト（進化条件があれば前置）を組み立てる
+// 例: "Lv.4 ／ DP:7000 ／ 登場コスト:6<br>進化コスト：赤のLv4から3"
+export function formatCardStats(card) {
+  if (!card) return '';
+  const esc = (s) => String(s).replace(/[&<>]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
+  const parts = [];
+  parts.push('Lv.' + (card.level || '?'));
+  parts.push('DP:' + (card.dp || '?'));
+  const playCost = (card.playCost != null) ? card.playCost : (card.cost != null ? card.cost : null);
+  parts.push('登場コスト:' + (playCost != null ? playCost : '—'));
+  let html = parts.join(' ／ ');
+  if (card.evolveCost != null) {
+    const cond = (card.evolveCond || '').trim();
+    html += '<br>進化コスト：' + (cond ? esc(cond) : '') + card.evolveCost;
+  }
+  return html;
+}
+
 // ===== カード詳細画面 =====
 export function showBCD(idxOrCard, source) {
   // 対象選択中はカード詳細を開かない（タップ干渉防止）
@@ -879,7 +898,7 @@ export function showBCD(idxOrCard, source) {
 
   document.getElementById('bcd-img').src = cardImg(card);
   document.getElementById('bcd-name').innerText = card.name + ' (' + (card.cardNo || '') + ')';
-  document.getElementById('bcd-stats').innerText = 'Lv.' + card.level + ' ／ DP:' + card.dp + ' ／ コスト:' + (card.cost || card.playCost || '?');
+  document.getElementById('bcd-stats').innerHTML = formatCardStats(card);
 
   // 効果
   const effectEl = document.getElementById('bcd-effect');

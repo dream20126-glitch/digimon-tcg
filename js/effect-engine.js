@@ -1583,9 +1583,15 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
 
     // カード画像
     const imgSrc = card ? (card.imgSrc || getCardImageUrl(card) || card.imageUrl || '') : '';
+    const _pc = (card.playCost != null) ? card.playCost : (card.cost != null ? card.cost : null);
+    let _statsHtml = 'Lv.'+(card.level||'?')+' ／ DP:'+(card.dp||'?')+' ／ 登場コスト:'+(_pc != null ? _pc : '—');
+    if (card.evolveCost != null) {
+      const _cond = (card.evolveCond || '').trim();
+      _statsHtml += '<br>進化コスト：' + (_cond ? _cond.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) : '') + card.evolveCost;
+    }
     box.innerHTML = (imgSrc ? '<img src="'+imgSrc+'" style="width:160px;border-radius:8px;margin-bottom:12px;border:1px solid '+borderColor+';">' : '')
       + '<div style="color:#fff;font-weight:bold;font-size:14px;margin-bottom:8px;">'+(card.name||'不明')+' ('+(card.cardNo||'')+')</div>'
-      + '<div style="font-size:12px;color:'+borderColor+';margin-bottom:10px;">Lv.'+(card.level||'?')+' ／ DP:'+(card.dp||'?')+' ／ コスト:'+(card.cost||card.playCost||'?')+'</div>';
+      + '<div style="font-size:12px;color:'+borderColor+';margin-bottom:10px;line-height:1.5;">'+_statsHtml+'</div>';
 
     // 効果
     if (card.effect && card.effect !== 'なし') {

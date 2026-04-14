@@ -19,12 +19,14 @@ function _findCardMeta(cardNo) {
 }
 function _getCardType(cardNo) {
   const c = _findCardMeta(cardNo);
-  return c ? String(c['種類'] || c['カード種類'] || '') : '';
+  // カードデータは「タイプ」カラム（parseDeck と同一）。
+  // 旧名「種類」「カード種類」も後方互換で許容
+  return c ? String(c['タイプ'] || c['種類'] || c['カード種類'] || '') : '';
 }
 function _getCardLevel(cardNo) {
   const c = _findCardMeta(cardNo);
   if (!c) return '';
-  return String(c['Lv'] || c['レベル'] || '');
+  return String(c['レベル'] || c['Lv'] || '');
 }
 
 export const CONDITION_EVALUATORS = {

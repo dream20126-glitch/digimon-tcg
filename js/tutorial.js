@@ -846,6 +846,9 @@ window._tutorialShowClear = function(scenario) {
   const msgEl     = document.getElementById('tutorial-clear-message');
   const nextBtn   = document.getElementById('tutorial-clear-next-btn');
   const particles = document.getElementById('tutorial-clear-particles');
+  const goldEl    = document.getElementById('tutorial-clear-goldflash');
+  const raysEl    = document.getElementById('tutorial-clear-rays');
+  const ringEl    = document.getElementById('tutorial-clear-ring-stage');
   if (!overlay) return;
 
   // テキストセット
@@ -859,7 +862,6 @@ window._tutorialShowClear = function(scenario) {
       msgEl.style.display = 'none';
     }
   }
-  // 次シナリオの有無で「次のシナリオへ」ボタン表示
   const next = _findNextScenario(scenario);
   _pendingNextScenario = next;
   if (nextBtn) {
@@ -868,36 +870,123 @@ window._tutorialShowClear = function(scenario) {
   }
 
   // 状態リセット
-  if (titleStage) { titleStage.style.opacity = '0'; titleStage.style.transform = 'scale(0.9)'; }
-  if (banner) { banner.style.opacity = '0'; banner.style.animation = 'none'; }
-  if (detail) { detail.style.opacity = '0'; detail.style.transform = 'translateY(20px)'; }
-  if (particles) particles.innerHTML = '';
+  if (titleStage) { titleStage.style.opacity = '0'; titleStage.style.transform = 'translateY(40px)'; }
+  if (banner)     { banner.style.opacity = '0'; banner.style.animation = 'none'; }
+  if (detail)     { detail.style.opacity = '0'; detail.style.transform = 'translateY(30px)'; }
+  if (particles)  particles.innerHTML = '';
+  if (ringEl)     ringEl.innerHTML = '';
+  if (goldEl)     { goldEl.style.opacity = '0'; goldEl.style.animation = 'none'; }
+  if (raysEl)     { raysEl.style.opacity = '0'; raysEl.style.animation = 'none'; }
 
   // 表示
   overlay.style.background = 'rgba(0,0,0,0)';
   overlay.style.backdropFilter = 'blur(0)';
-  overlay.style.animation = 'tutorialClearBgFade 0.4s ease forwards';
+  overlay.style.animation = 'tutorialClearBgFade 0.5s ease forwards';
   overlay.style.display = 'flex';
 
-  // ステージ2: タイトル fade-in
+  // 黄金フラッシュ (画面全体が一瞬明るくなる)
   setTimeout(() => {
-    if (titleStage) { titleStage.style.opacity = '1'; titleStage.style.transform = 'scale(1)'; }
-  }, 400);
+    if (goldEl) {
+      void goldEl.offsetHeight;
+      goldEl.style.animation = 'tutorialClearGoldFlash 0.7s ease-out forwards';
+    }
+    if (raysEl) {
+      void raysEl.offsetHeight;
+      raysEl.style.animation = 'tutorialClearRays 6s linear forwards';
+    }
+  }, 100);
 
-  // ステージ3: バンッ + 紙吹雪
+  // タイトル スライドアップ + fade-in
+  setTimeout(() => {
+    if (titleStage) { titleStage.style.opacity = '1'; titleStage.style.transform = 'translateY(0)'; }
+  }, 600);
+
+  // 「シナリオクリア!」バンッ + 揺れ + 紙吹雪 + リング波
   setTimeout(() => {
     if (banner) {
       banner.style.opacity = '1';
-      banner.style.animation = 'tutorialClearBangIn 0.7s cubic-bezier(0.2,0.9,0.3,1) forwards';
+      banner.style.animation = 'tutorialClearBangIn 0.9s cubic-bezier(0.2,0.9,0.3,1) forwards, tutorialClearShake 0.5s ease 0.28s';
     }
-    _spawnConfetti(particles, 36);
-  }, 1000);
+    _spawnRingWaves(ringEl);
+    _spawnConfettiBurst(particles, 60);
+    _spawnConfettiFall(particles, 50);
+  }, 1200);
 
-  // ステージ4: 詳細パネル
+  // 詳細パネル スライドアップ
   setTimeout(() => {
     if (detail) { detail.style.opacity = '1'; detail.style.transform = 'translateY(0)'; }
-  }, 1900);
+  }, 2300);
 };
+
+// リング波: 中央から外へ拡散する金色のリング3〜4重
+function _spawnRingWaves(container) {
+  if (!container) return;
+  const colors = ['#ffdd44', '#ffaa00', '#00fbff', '#00ff88'];
+  for (let i = 0; i < 4; i++) {
+    const ring = document.createElement('div');
+    const c = colors[i % colors.length];
+    ring.style.cssText =
+      'position:absolute; left:0; top:0;' +
+      'width:200px; height:200px;' +
+      'border:6px solid ' + c + ';' +
+      'border-radius:50%;' +
+      'box-shadow:0 0 30px ' + c + ', inset 0 0 20px ' + c + '88;' +
+      'transform:translate(-50%,-50%) scale(0);' +
+      'animation:tutorialClearRingExpand ' + (1.0 + i * 0.15) + 's ease-out ' + (i * 0.12) + 's forwards;';
+    container.appendChild(ring);
+  }
+  setTimeout(() => { if (container) container.innerHTML = ''; }, 2400);
+}
+
+// 紙吹雪 (中央から爆発)
+function _spawnConfettiBurst(container, count) {
+  if (!container) return;
+  const colors = ['#ffdd44', '#ff5577', '#00fbff', '#00ff88', '#ff00fb', '#ffaa00', '#ffffff'];
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    const sz = 6 + Math.random() * 10;
+    const ang = Math.random() * Math.PI * 2;
+    const radius = 200 + Math.random() * 500;
+    const dx = Math.cos(ang) * radius;
+    const dy = Math.sin(ang) * radius - 100; // 上方向に少しバイアス
+    const dr = (Math.random() - 0.5) * 1080;
+    const dur = 1.2 + Math.random() * 0.9;
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    p.style.cssText =
+      'position:absolute; left:50%; top:50%;' +
+      'width:' + sz + 'px; height:' + sz + 'px;' +
+      'background:' + color + '; border-radius:' + (Math.random() < 0.5 ? '50%' : '2px') + ';' +
+      'box-shadow:0 0 10px ' + color + ';' +
+      '--dx:' + dx + 'px; --dy:' + dy + 'px; --dr:' + dr + 'deg;' +
+      'animation:tutorialClearConfetti ' + dur + 's ease-out forwards;';
+    container.appendChild(p);
+  }
+}
+
+// 紙吹雪 (上から降る、複数色)
+function _spawnConfettiFall(container, count) {
+  if (!container) return;
+  const colors = ['#ffdd44', '#ff5577', '#00fbff', '#00ff88', '#ff00fb', '#ffaa00', '#ffffff'];
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    const sz = 6 + Math.random() * 8;
+    const startX = Math.random() * window.innerWidth;
+    const dx = (Math.random() - 0.5) * 200;
+    const dr = (Math.random() - 0.5) * 720;
+    const dur = 2.5 + Math.random() * 1.5;
+    const delay = Math.random() * 0.8;
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    p.style.cssText =
+      'position:absolute; left:' + startX + 'px; top:0;' +
+      'width:' + sz + 'px; height:' + (sz * (Math.random() < 0.5 ? 1.6 : 1)) + 'px;' +
+      'background:' + color + '; border-radius:' + (Math.random() < 0.4 ? '50%' : '2px') + ';' +
+      'box-shadow:0 0 8px ' + color + ';' +
+      '--dx:' + dx + 'px; --dr:' + dr + 'deg;' +
+      'animation:tutorialClearConfettiFall ' + dur + 's ease-in ' + delay + 's forwards;';
+    container.appendChild(p);
+  }
+  setTimeout(() => { if (container) container.innerHTML = ''; }, 5000);
+}
 
 // 次に進むべきシナリオを判定（order昇順 + 未クリア + 前提クリア済みの最初のもの）
 let _pendingNextScenario = null;

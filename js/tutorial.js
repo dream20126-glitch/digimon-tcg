@@ -270,22 +270,38 @@ function _getOperationIcon(opType) {
 }
 
 // 指示テキストを指差しマーカーの吹き出しに表示
+// 空行で分割された複数パートに対応:
+//   - 中間パート: 「次へ ▶」ボタンで進める
+//   - 最後のパート: ボタン非表示、進行条件 (タップ/進化等) を待つ
 window._tutorialShowInstruction = function(text, targetArea, step) {
   const resolvedText = _resolveDeviceText(text);
   const opType = (step && step.operationType) || '';
   const secondArea = (step && step.secondTargetArea) || '';
-
-  // カードNo指定があればカード単位の赤枠（エリアより優先）
   const targetCardNo = (step && step.targetCardNo) || '';
   const secondCardNo = (step && step.secondTargetCardNo) || '';
 
-  if (targetCardNo || targetArea) {
-    _showPointer(resolvedText, targetArea, opType, secondArea, targetCardNo, secondCardNo);
-  } else {
-    // 対象未指定の action ステップは指差しを出さない
-    // （tutorial-instruction-overlay は ゴール表示専用なので上書きしない）
-    _hidePointer();
-  }
+  const parts = _splitMessageParts(resolvedText);
+  let idx = 0;
+  const showPart = () => {
+    const partText = parts[idx];
+    if (targetCardNo || targetArea) {
+      _showPointer(partText, targetArea, opType, secondArea, targetCardNo, secondCardNo);
+    } else {
+      _hidePointer();
+    }
+    const isLast = (idx + 1) >= parts.length;
+    if (isLast) {
+      _hideSpotlightNextBtn();
+    } else {
+      const okBtn = document.getElementById('tutorial-spotlight-ok');
+      if (okBtn) okBtn.innerText = '次へ ▶';
+      _showSpotlightNextBtn(() => {
+        idx++;
+        showPart();
+      });
+    }
+  };
+  showPart();
 
   // UI制御: カードハイライト + ボタン制御
   _applyStepUiControl(step);

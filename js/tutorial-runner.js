@@ -123,6 +123,7 @@ class TutorialRunner {
     // 割り込み制御
     this._interruptResolve = null; // checkInterrupt の Promise resolve
     this._pausedBlock = null;      // 割り込み前のブロック状態（完了後にレジューム）
+    this._phaseBlockResolve = null; // notifyPhaseChange 待ち Promise の resolver
   }
 
   // ---------------------------------------------------------------
@@ -180,8 +181,9 @@ class TutorialRunner {
   async notifyPhaseChange(phaseKey) {
     if (!this.active || this.cleared) return;
     // フェーズ説明ポップは管理画面のフロー設定（message ステップ）で個別に作る方針。
-    // ここで自動ポップアップは出さない。
-    this._tryActivatePhaseBlock(phaseKey);
+    // message/spotlight ステップが先頭に並んでいる場合は「次へ」を押すまで
+    // execPhase を待たせる。action ステップが来たら解放（フェーズ動作を進める）
+    await this._tryActivatePhaseBlock(phaseKey);
   }
 
   // 自動進行フェーズ（unsuspend/draw）では指差しを隠す
@@ -263,9 +265,30 @@ class TutorialRunner {
       (b.turn || 1) === turn &&
       !this._completedBlocks.has(i)
     );
-    if (blockIdx < 0) return; // 該当なし
+    if (blockIdx < 0) return Promise.resolve();
 
-    this._activateBlock(blockIdx);
+    return new Promise(resolve => {
+      this._phaseBlockResolve = resolve;
+      this._activateBlock(blockIdx);
+      // _activateBlock 内で _showCurrentStep が走り、先頭ステップが表示される。
+      // 先頭が action なら即解放（フェーズ通常進行）。
+      // message/spotlight なら _advanceStep を経て action/block完了時に解放される。
+      this._maybeReleasePhaseBlock();
+    });
+  }
+
+  // フェーズブロックの Promise を解放できる状態なら解放
+  //   - ブロックが完了した（_currentBlock=null）
+  //   - 現在ステップが action（=フェーズを進めていい）
+  _maybeReleasePhaseBlock() {
+    if (!this._phaseBlockResolve) return;
+    const step = this._currentBlock && this._currentBlock.steps && this._currentBlock.steps[this._currentStepIdx];
+    const sType = step && (step.stepType || 'action');
+    if (!this._currentBlock || !step || sType === 'action') {
+      const r = this._phaseBlockResolve;
+      this._phaseBlockResolve = null;
+      r();
+    }
   }
 
   _activateBlock(blockIdx) {
@@ -289,6 +312,9 @@ class TutorialRunner {
     if (!step) { this._completeCurrentBlock(); return; }
 
     const sType = step.stepType || 'action';
+
+    // action ステップに到達したらフェーズ進行を解放
+    if (sType === 'action') this._maybeReleasePhaseBlock();
 
     if (sType === 'message' || sType === 'spotlight') {
       this.hideInstruction();
@@ -366,6 +392,8 @@ class TutorialRunner {
       // 割り込み前にブロックが動いていたならレジューム
       this._resumePausedBlock();
     }
+    // フェーズブロックが全ステップ終えた場合もPromiseを解放
+    this._maybeReleasePhaseBlock();
   }
 
   // 割り込み前のブロック状態を復元して次ステップ表示
@@ -565,6 +593,10 @@ class TutorialRunner {
     if (this._interruptResolve) {
       this._interruptResolve();
       this._interruptResolve = null;
+    }
+    if (this._phaseBlockResolve) {
+      this._phaseBlockResolve();
+      this._phaseBlockResolve = null;
     }
     if (window._tutorialRunner === this) {
       window._tutorialRunner = null;

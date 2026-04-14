@@ -843,11 +843,19 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
   overlay.style.left = left + 'px';
 
   // 👆/👇 を対象の中央に合わせて横方向にオフセット
-  // （対象が画面端で吹き出しがズレても、指マーカーは対象を指すように）
-  // transform はアニメーションキーフレームで上書きされるので marginLeft を使う
+  // (対象が画面端で吹き出しがズレても、指マーカーは対象を指すように)
+  // 位置補正は finger 親の anchor に position:left でかける
+  // (finger 自身の transform はアニメーションキーフレームで上書きされるため避ける)
   const wrapCenterX = left + bubbleW / 2;
   const fingerOffsetX = targetCenterX - wrapCenterX;
-  finger.style.marginLeft = fingerOffsetX + 'px';
+  const anchor = document.getElementById('tutorial-pointer-finger-anchor');
+  if (anchor) {
+    anchor.style.position = 'relative';
+    anchor.style.left = fingerOffsetX + 'px';
+    finger.style.marginLeft = '0';  // 旧マージン残りをクリア
+  } else {
+    finger.style.marginLeft = fingerOffsetX + 'px';
+  }
 
   // 吹き出しのしっぽも対象方向に向ける
   // bubble の左端からの相対 px を CSS変数 --arrow-left にセット

@@ -860,22 +860,21 @@ function applyBackImages() {
 }
 
 // ===== カード詳細用ステータス文字列 =====
-// Lv. / DP / 登場コスト / 進化コスト（進化条件があれば前置）を組み立てる
-// 例: "Lv.4 ／ DP:7000 ／ 登場コスト:6<br>進化コスト：赤のLv4から3"
+// 基本ステータス: Lv. / DP / 登場コスト
 export function formatCardStats(card) {
   if (!card) return '';
-  const esc = (s) => String(s).replace(/[&<>]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
-  const parts = [];
-  parts.push('Lv.' + (card.level || '?'));
-  parts.push('DP:' + (card.dp || '?'));
   const playCost = (card.playCost != null) ? card.playCost : (card.cost != null ? card.cost : null);
-  parts.push('登場コスト:' + (playCost != null ? playCost : '—'));
-  let html = parts.join(' ／ ');
-  if (card.evolveCost != null) {
-    const cond = (card.evolveCond || '').trim();
-    html += '<br>進化コスト：' + (cond ? esc(cond) : '') + card.evolveCost;
-  }
-  return html;
+  return 'Lv.' + (card.level || '?')
+       + ' ／ DP:' + (card.dp || '?')
+       + ' ／ 登場コスト:' + (playCost != null ? playCost : '—');
+}
+
+// 進化コスト行: "進化コスト：[進化条件]から[コスト]"（進化不可なら null）
+export function formatEvolveCost(card) {
+  if (!card || card.evolveCost == null) return null;
+  const esc = (s) => String(s).replace(/[&<>]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
+  const cond = (card.evolveCond || '').trim();
+  return '進化コスト：' + (cond ? esc(cond) + 'から' : '') + card.evolveCost;
 }
 
 // ===== カード詳細画面 =====
@@ -898,7 +897,23 @@ export function showBCD(idxOrCard, source) {
 
   document.getElementById('bcd-img').src = cardImg(card);
   document.getElementById('bcd-name').innerText = card.name + ' (' + (card.cardNo || '') + ')';
-  document.getElementById('bcd-stats').innerHTML = formatCardStats(card);
+  const statsEl = document.getElementById('bcd-stats');
+  statsEl.innerText = formatCardStats(card);
+  // 進化コスト行は別要素に分離（チュートリアルでスポットライト指定可能にするため）
+  let evoCostEl = document.getElementById('bcd-evo-cost');
+  if (!evoCostEl) {
+    evoCostEl = document.createElement('div');
+    evoCostEl.id = 'bcd-evo-cost';
+    evoCostEl.style.cssText = 'font-size:12px; color:#00ff88; margin-top:-4px; margin-bottom:10px;';
+    statsEl.parentNode.insertBefore(evoCostEl, statsEl.nextSibling);
+  }
+  const evoCostText = formatEvolveCost(card);
+  if (evoCostText) {
+    evoCostEl.innerText = evoCostText;
+    evoCostEl.style.display = 'block';
+  } else {
+    evoCostEl.style.display = 'none';
+  }
 
   // 効果
   const effectEl = document.getElementById('bcd-effect');

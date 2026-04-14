@@ -448,6 +448,7 @@ const TARGET_AREA_SELECTORS = {
   card_detail:            () => document.getElementById('b-card-detail'),
   card_detail_name:       () => document.getElementById('bcd-name'),
   card_detail_stats:      () => document.getElementById('bcd-stats'),
+  card_detail_evo_cost:   () => document.getElementById('bcd-evo-cost'),
   card_detail_effect:     () => document.getElementById('bcd-effect'),
   card_detail_evo_source: () => document.getElementById('bcd-evo-source'),
   card_detail_sec_effect: () => document.getElementById('bcd-security-effect'),

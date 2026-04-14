@@ -113,7 +113,8 @@ const TARGET_AREAS = [
   // --- カード詳細モーダル ---
   { value: 'card_detail',            label: 'モーダル全体',               group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_name',       label: 'カード名',                    group: '🔍 カード詳細モーダル' },
-  { value: 'card_detail_stats',      label: 'Lv/DP/コスト',                group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_stats',      label: 'Lv/DP/登場コスト',            group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_evo_cost',   label: '進化コスト',                  group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_effect',     label: '効果欄',                      group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_evo_source', label: '進化元効果',                  group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_sec_effect', label: 'セキュリティ効果',            group: '🔍 カード詳細モーダル' },
@@ -836,7 +837,8 @@ const STEP_TIMINGS = [
 const CARD_DETAIL_AREAS = [
   { value: 'whole',      label: 'モーダル全体',        area: 'card_detail' },
   { value: 'name',       label: 'カード名',            area: 'card_detail_name' },
-  { value: 'stats',      label: 'Lv/DP/コスト',        area: 'card_detail_stats' },
+  { value: 'stats',      label: 'Lv/DP/登場コスト',    area: 'card_detail_stats' },
+  { value: 'evo_cost',   label: '進化コスト',          area: 'card_detail_evo_cost' },
   { value: 'effect',     label: '効果欄',              area: 'card_detail_effect' },
   { value: 'evo_source', label: '進化元効果',          area: 'card_detail_evo_source' },
   { value: 'sec_effect', label: 'セキュリティ効果',    area: 'card_detail_sec_effect' },

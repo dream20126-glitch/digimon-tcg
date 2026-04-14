@@ -536,7 +536,10 @@ function _runSuccessAnim(message) {
   if (flashEl) flashEl.style.background = 'radial-gradient(circle, rgba(255,255,200,0.95) 0%, rgba(' + t.glow + ',0.55) 35%, rgba(' + t.glow + ',0) 70%)';
   if (ringEl)  { ringEl.style.borderColor = t.c1; ringEl.style.boxShadow = '0 0 30px rgba(' + t.glow + ',0.85)'; }
 
-  // ===== アニメリセット =====
+  // ===== 先に表示してからアニメリセット =====
+  // (display:none 状態でアニメを設定すると即座に終了状態と判断される
+  //  ブラウザがあるため、必ず flex で見せてから reset → reflow → animation の順で組む)
+  overlay.style.display = 'flex';
   overlay.style.animation = 'none';
   textEl.style.animation  = 'none';
   if (panelEl)  panelEl.style.animation  = 'none';
@@ -570,7 +573,7 @@ function _runSuccessAnim(message) {
     }
   }
 
-  // ===== アニメ開始 =====
+  // ===== アニメ開始 (reflow 後に設定) =====
   // Slam (scale) は textEl に、Shake (translate) は panelEl にかける
   // 同じ要素で transform が衝突しないように分離
   overlay.style.animation = 'tutorialSuccessBg 1.3s ease forwards';
@@ -579,7 +582,6 @@ function _runSuccessAnim(message) {
   if (flashEl)  flashEl.style.animation = 'tutorialSuccessLightFlash 0.85s ease-out forwards';
   if (ringEl)   ringEl.style.animation  = 'tutorialSuccessRing 0.7s ease-out 0.18s forwards';
   if (ring2El)  ring2El.style.animation = 'tutorialSuccessRing2 0.6s ease-out 0.25s forwards';
-  overlay.style.display = 'flex';
 
   // ===== 粒子フィニッシュ (爆発時に発生) =====
   if (sparkleEl) {

@@ -684,15 +684,13 @@ body.tutorial-spotlight-mode #tutorial-spotlight-ok {
   margin-top: 6px;
 }
 
-/* スマホ: 👇 と吹き出しのしっぽを非表示にして、シンプルな囲みボックス表示にする
- * (ターゲット位置との誤差が出やすいため、説明テキストだけを四角で見せる) */
+/* スマホ: 吹き出しのしっぽは非表示 (位置ズレ防止)、👇 は残してターゲット指示用に */
 @media (max-width: 600px), (pointer: coarse) {
-  #tutorial-pointer-finger { display: none !important; }
   .tutorial-bubble::before,
   .tutorial-bubble::after { display: none !important; }
   .tutorial-bubble {
     border-radius: 14px !important;        /* オーバルから角丸長方形に */
-    margin-bottom: 0 !important;
+    margin-bottom: 4px !important;
     margin-top: 0 !important;
     min-width: 0 !important;
     max-width: min(92vw, 440px) !important;

@@ -99,7 +99,7 @@ function _renderScenarioList() {
           <div style="color:#fff; font-size:13px; font-weight:bold; word-break:break-all; overflow-wrap:anywhere;">
             ${_escHtml(title)}${badge}
           </div>
-          <div style="color:#888; font-size:11px;">${_escHtml(diff)}</div>
+          <div style="color:#888; font-size:11px;">${diff ? '難易度: ' + _escHtml(diff) : ''}</div>
           <div style="color:#aaa; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${_escHtml(desc)}</div>
           ${locked ? `<div style="color:#666; font-size:10px; margin-top:2px;">前提シナリオをクリアで解放</div>` : ''}
         </div>
@@ -121,7 +121,7 @@ window.selectTutorialScenario = function(scenarioId) {
 
   // タイトル・目的表示
   document.getElementById('tl-scenario-title').innerText = scenario.tutorialName || '';
-  document.getElementById('tl-scenario-difficulty').innerText = scenario.difficulty || '';
+  document.getElementById('tl-scenario-difficulty').innerText = scenario.difficulty ? `難易度: ${scenario.difficulty}` : '';
   document.getElementById('tl-scenario-description').innerText = scenario.description || '(目的の説明がありません)';
 
   // デッキ情報表示

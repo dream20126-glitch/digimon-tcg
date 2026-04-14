@@ -684,6 +684,21 @@ body.tutorial-spotlight-mode #tutorial-spotlight-ok {
   margin-top: 6px;
 }
 
+/* スマホ: 👇 と吹き出しのしっぽを非表示にして、シンプルな囲みボックス表示にする
+ * (ターゲット位置との誤差が出やすいため、説明テキストだけを四角で見せる) */
+@media (max-width: 600px), (pointer: coarse) {
+  #tutorial-pointer-finger { display: none !important; }
+  .tutorial-bubble::before,
+  .tutorial-bubble::after { display: none !important; }
+  .tutorial-bubble {
+    border-radius: 14px !important;        /* オーバルから角丸長方形に */
+    margin-bottom: 0 !important;
+    margin-top: 0 !important;
+    min-width: 0 !important;
+    max-width: min(92vw, 440px) !important;
+  }
+}
+
 /* カードハイライト（操作可能） */
 .tutorial-card-highlight {
   box-shadow: 0 0 12px 3px rgba(0, 255, 136, 0.7), 0 0 30px rgba(0, 255, 136, 0.3) !important;

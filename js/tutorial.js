@@ -413,10 +413,12 @@ window._tutorialShowSuccess = function(message) {
   const textEl = document.getElementById('tutorial-success-text');
   if (!overlay || !textEl) return;
   textEl.innerText = message || 'OK!';
-  // アニメリセット
+  // アニメリセット（背景暗転 + テキスト両方）
+  overlay.style.animation = 'none';
   textEl.style.animation = 'none';
   void textEl.offsetHeight; // reflow
-  textEl.style.animation = 'tutorialSuccessFlash 0.9s ease forwards';
+  overlay.style.animation = 'tutorialSuccessBg 0.9s ease forwards';
+  textEl.style.animation  = 'tutorialSuccessFlash 0.9s ease forwards';
   overlay.style.display = 'flex';
   setTimeout(() => { overlay.style.display = 'none'; }, 950);
 };
@@ -618,16 +620,25 @@ function _hidePointer() {
   _clearHighlight();
 }
 
-// クリア演出を表示
+// クリア演出を表示（多段階アニメ）
+//   1) 暗転（0〜400ms）
+//   2) シナリオタイトル fade-in（400〜900ms）
+//   3) 「シナリオクリア!」がバンッ（1000〜1700ms）+ 紙吹雪
+//   4) 詳細パネル fade-in（1900ms〜）
 window._tutorialShowClear = function(scenario) {
-  const overlay = document.getElementById('tutorial-clear-overlay');
-  const titleEl = document.getElementById('tutorial-clear-title');
-  const descEl = document.getElementById('tutorial-clear-desc');
-  const msgEl = document.getElementById('tutorial-clear-message');
+  const overlay   = document.getElementById('tutorial-clear-overlay');
+  const titleStage= document.getElementById('tutorial-clear-title-stage');
+  const banner    = document.getElementById('tutorial-clear-banner');
+  const detail    = document.getElementById('tutorial-clear-detail');
+  const titleEl   = document.getElementById('tutorial-clear-title');
+  const descEl    = document.getElementById('tutorial-clear-desc');
+  const msgEl     = document.getElementById('tutorial-clear-message');
+  const particles = document.getElementById('tutorial-clear-particles');
   if (!overlay) return;
-  if (titleEl) titleEl.innerText = (scenario && scenario.tutorialName) || 'シナリオクリア!';
-  if (descEl) descEl.innerText = (scenario && scenario.description) || '';
-  // クリア後メッセージ
+
+  // テキストセット
+  if (titleEl) titleEl.innerText = (scenario && scenario.tutorialName) || 'シナリオ';
+  if (descEl)  descEl.innerText  = (scenario && scenario.description) || '';
   if (msgEl) {
     if (scenario && scenario.clearMessage) {
       msgEl.innerText = scenario.clearMessage;
@@ -637,8 +648,56 @@ window._tutorialShowClear = function(scenario) {
       msgEl.style.display = 'none';
     }
   }
+
+  // 状態リセット
+  if (titleStage) { titleStage.style.opacity = '0'; titleStage.style.transform = 'scale(0.9)'; }
+  if (banner) { banner.style.opacity = '0'; banner.style.animation = 'none'; }
+  if (detail) { detail.style.opacity = '0'; detail.style.transform = 'translateY(20px)'; }
+  if (particles) particles.innerHTML = '';
+
+  // 表示
+  overlay.style.background = 'rgba(0,0,0,0)';
+  overlay.style.backdropFilter = 'blur(0)';
+  overlay.style.animation = 'tutorialClearBgFade 0.4s ease forwards';
   overlay.style.display = 'flex';
+
+  // ステージ2: タイトル fade-in
+  setTimeout(() => {
+    if (titleStage) { titleStage.style.opacity = '1'; titleStage.style.transform = 'scale(1)'; }
+  }, 400);
+
+  // ステージ3: バンッ + 紙吹雪
+  setTimeout(() => {
+    if (banner) {
+      banner.style.opacity = '1';
+      banner.style.animation = 'tutorialClearBangIn 0.7s cubic-bezier(0.2,0.9,0.3,1) forwards';
+    }
+    _spawnConfetti(particles, 36);
+  }, 1000);
+
+  // ステージ4: 詳細パネル
+  setTimeout(() => {
+    if (detail) { detail.style.opacity = '1'; detail.style.transform = 'translateY(0)'; }
+  }, 1900);
 };
+
+function _spawnConfetti(container, count) {
+  if (!container) return;
+  const colors = ['#ffdd44', '#ff5577', '#00fbff', '#00ff88', '#ff00fb', '#ffaa00'];
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    const sz = 6 + Math.random() * 8;
+    const dx = (Math.random() - 0.5) * 600;
+    const dy = (Math.random() - 0.2) * 700;
+    const dr = (Math.random() - 0.5) * 720;
+    const dur = 1.2 + Math.random() * 0.8;
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    p.style.cssText = `position:absolute; left:50%; top:50%; width:${sz}px; height:${sz}px; background:${color}; border-radius:${Math.random()<0.5?'50%':'2px'}; --dx:${dx}px; --dy:${dy}px; --dr:${dr}deg; animation:tutorialClearConfetti ${dur}s ease-out forwards; box-shadow:0 0 8px ${color}80;`;
+    container.appendChild(p);
+  }
+  // 後始末（演出終了後にDOM片付け）
+  setTimeout(() => { if (container) container.innerHTML = ''; }, 2200);
+}
 
 // クリア演出を閉じる → シナリオ一覧へ戻る
 window.closeTutorialClear = function() {

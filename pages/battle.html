@@ -408,10 +408,16 @@
   80% { opacity:1; transform:scale(1); }
   100% { opacity:0; transform:scale(1.1); }
 }
+@keyframes tutorialSuccessBg {
+  0%   { background:rgba(0,0,0,0); }
+  20%  { background:rgba(0,0,0,0.55); }
+  80%  { background:rgba(0,0,0,0.55); }
+  100% { background:rgba(0,0,0,0); }
+}
 </style>
 
 <!-- ===== チュートリアル 成功演出 ===== -->
-<div id="tutorial-success-overlay" style="display:none; position:fixed; inset:0; z-index:56000; pointer-events:none; align-items:center; justify-content:center;">
+<div id="tutorial-success-overlay" style="display:none; position:fixed; inset:0; z-index:56000; pointer-events:none; align-items:center; justify-content:center; background:rgba(0,0,0,0); animation:tutorialSuccessBg 0.9s ease forwards;">
   <div id="tutorial-success-text" style="font-size:3rem; font-weight:bold; color:#00ff88; text-shadow:0 0 40px rgba(0,255,136,0.8); letter-spacing:6px; animation:tutorialSuccessFlash 0.9s ease forwards;"></div>
 </div>
 
@@ -429,13 +435,43 @@
 </div>
 
 <!-- ===== チュートリアルクリア演出オーバーレイ ===== -->
-<div id="tutorial-clear-overlay" style="display:none; position:fixed; inset:0; z-index:60000; background:rgba(0,0,0,0.88); align-items:center; justify-content:center; flex-direction:column; backdrop-filter:blur(4px);">
-  <div style="background:linear-gradient(135deg, #001020, #003040); border:2px solid #00ff88; border-radius:16px; padding:32px 40px; text-align:center; box-shadow:0 0 60px rgba(0,255,136,0.4); max-width:440px;">
-    <div style="font-size:3rem; margin-bottom:8px;">🎉</div>
-    <div style="color:#00ff88; font-size:11px; font-weight:bold; letter-spacing:3px; margin-bottom:4px;">SCENARIO CLEARED</div>
-    <div id="tutorial-clear-title" style="color:#fff; font-size:1.4rem; font-weight:bold; margin-bottom:20px;"></div>
+<div id="tutorial-clear-overlay" style="display:none; position:fixed; inset:0; z-index:60000; background:rgba(0,0,0,0); align-items:center; justify-content:center; flex-direction:column; padding:20px; overflow:hidden;">
+  <!-- パーティクル装飾用レイヤー -->
+  <div id="tutorial-clear-particles" style="position:absolute; inset:0; pointer-events:none; overflow:hidden;"></div>
+  <!-- ステージ1: シナリオタイトル（先に表示） -->
+  <div id="tutorial-clear-title-stage" style="position:relative; opacity:0; transform:scale(0.9); transition:opacity 0.5s, transform 0.5s; text-align:center; margin-bottom:16px;">
+    <div style="color:#00ff88; font-size:11px; font-weight:bold; letter-spacing:3px; margin-bottom:6px;">SCENARIO</div>
+    <div id="tutorial-clear-title" style="color:#fff; font-size:1.6rem; font-weight:bold; text-shadow:0 0 20px rgba(255,255,255,0.4);"></div>
+  </div>
+  <!-- ステージ2: 「シナリオクリア」バンッ -->
+  <div id="tutorial-clear-banner" style="position:relative; opacity:0; margin-bottom:24px;">
+    <div style="font-size:3.4rem; font-weight:900; color:#ffdd44; text-shadow:0 0 30px #ffdd44, 0 0 60px #ff9933, 0 0 100px rgba(255,221,68,0.4); letter-spacing:6px; -webkit-text-stroke:2px #fff;">
+      シナリオクリア!
+    </div>
+    <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:5rem; opacity:0.2; pointer-events:none;">🎉</div>
+  </div>
+  <!-- ステージ3: 詳細＋メッセージ＋ボタン -->
+  <div id="tutorial-clear-detail" style="opacity:0; transform:translateY(20px); transition:opacity 0.5s, transform 0.5s; background:linear-gradient(135deg, rgba(0,16,32,0.95), rgba(0,48,64,0.95)); border:2px solid #00ff88; border-radius:16px; padding:24px 28px; text-align:center; box-shadow:0 0 60px rgba(0,255,136,0.4); max-width:440px; width:100%;">
     <div id="tutorial-clear-desc" style="color:#aaa; font-size:12px; line-height:1.6; margin-bottom:12px;"></div>
-    <div id="tutorial-clear-message" style="display:none; color:#fff; font-size:13px; line-height:1.7; margin-bottom:24px; padding:12px; background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.2); border-radius:8px; white-space:pre-wrap;"></div>
+    <div id="tutorial-clear-message" style="display:none; color:#fff; font-size:13px; line-height:1.7; margin-bottom:20px; padding:12px; background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.2); border-radius:8px; white-space:pre-wrap; text-align:left;"></div>
     <button class="menu-btn primary" onclick="closeTutorialClear()" style="width:100%;">シナリオ一覧へ戻る</button>
   </div>
 </div>
+
+<style>
+@keyframes tutorialClearBgFade {
+  0%   { background:rgba(0,0,0,0); backdrop-filter:blur(0); }
+  100% { background:rgba(0,0,0,0.85); backdrop-filter:blur(4px); }
+}
+@keyframes tutorialClearBangIn {
+  0%   { opacity:0; transform:scale(2.4) rotate(-8deg); filter:blur(8px); }
+  40%  { opacity:1; transform:scale(0.85) rotate(2deg); filter:blur(0); }
+  60%  { transform:scale(1.08) rotate(-1deg); }
+  80%  { transform:scale(0.97) rotate(0deg); }
+  100% { opacity:1; transform:scale(1) rotate(0deg); filter:blur(0); }
+}
+@keyframes tutorialClearConfetti {
+  0%   { transform:translate(0,0) rotate(0deg); opacity:1; }
+  100% { transform:translate(var(--dx), var(--dy)) rotate(var(--dr)); opacity:0; }
+}
+</style>

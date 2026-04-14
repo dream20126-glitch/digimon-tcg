@@ -405,22 +405,54 @@ function _clearStepUiControl() {
 }
 
 // renderHand 等から呼ばれる再適用フック
-// 手札が innerHTML='' で描き直されると tutorial-card-* クラスが剥がれるため、
-// 直近の step に基づいて再適用する
+// 手札が innerHTML='' で描き直されると tutorial-card-* クラスが剥がれる、
+// 育成フェイズの「何もしない」ボタンは execBreed で動的生成されるため
+// step show時にはまだ存在しない → 再適用が必要
 window._tutorialReapplyUiControl = function() {
   if (!_activeUiStep) return;
   const step = _activeUiStep;
   const greyOut = Array.isArray(step.greyOut) ? step.greyOut : [];
+  const hlButtons = Array.isArray(step.highlightButtons) ? step.highlightButtons : [];
   const hlCards = [step.targetCardNo, step.secondTargetCardNo].filter(Boolean);
   const greyOutCards = greyOut.includes('other_cards');
-  if (hlCards.length === 0 && !greyOutCards) return;
-  const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no]');
-  allCards.forEach(cardEl => {
-    const no = cardEl.dataset.cardNo || '';
-    if (hlCards.length > 0 && hlCards.includes(no)) {
-      cardEl.classList.add('tutorial-card-highlight');
-    } else if (greyOutCards) {
-      cardEl.classList.add('tutorial-card-disabled');
+
+  // --- カード再適用 ---
+  if (hlCards.length > 0 || greyOutCards) {
+    const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no], #mulligan-hand-preview .mulligan-card');
+    allCards.forEach(cardEl => {
+      const no = cardEl.dataset.cardNo || '';
+      if (hlCards.length > 0 && hlCards.includes(no)) {
+        cardEl.classList.add('tutorial-card-highlight');
+      } else if (greyOutCards) {
+        cardEl.classList.add('tutorial-card-disabled');
+      }
+    });
+  }
+
+  // --- ボタンハイライト 再適用 ---
+  hlButtons.forEach(btnKey => {
+    const selector = _BUTTON_SELECTOR_MAP[btnKey];
+    if (!selector) return;
+    const btn = document.querySelector(selector);
+    if (!btn) return;
+    if (!btn.classList.contains('tutorial-btn-highlighted')) {
+      _savedButtonStates.push({ el: btn, disabled: btn.disabled });
+      btn.classList.add('tutorial-btn-highlighted');
+    }
+  });
+
+  // --- ボタングレーアウト 再適用 ---
+  greyOut.forEach(key => {
+    if (key === 'other_cards') return;
+    const selector = _BUTTON_SELECTOR_MAP[key];
+    if (!selector) return;
+    const btn = document.querySelector(selector);
+    if (!btn) return;
+    if (btn.classList.contains('tutorial-btn-highlighted')) return;
+    if (!btn.classList.contains('tutorial-btn-disabled')) {
+      _savedButtonStates.push({ el: btn, disabled: btn.disabled });
+      btn.disabled = true;
+      btn.classList.add('tutorial-btn-disabled');
     }
   });
 };

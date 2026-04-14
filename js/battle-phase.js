@@ -453,6 +453,10 @@ function execBreed() {
   const ikuEl = document.getElementById('pl-iku-slot');
   if (ikuEl) ikuEl.classList.add('breed-hover-active');
   renderAll();
+  // チュートリアルUI制御の再適用（breed-skip-btn が今生成されたため）
+  if (typeof window._tutorialReapplyUiControl === 'function') {
+    try { window._tutorialReapplyUiControl(); } catch (e) {}
+  }
   // プレイヤーの操作を待つ（孵化/移動/パス）
 }
 

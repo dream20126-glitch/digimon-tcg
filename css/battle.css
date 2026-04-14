@@ -593,9 +593,11 @@ body.tutorial-spotlight-mode .tutorial-keep-visible > *:not(.tutorial-keep-visib
 body.tutorial-spotlight-mode .tutorial-keep-visible.tutorial-highlight {
   filter: drop-shadow(0 0 16px rgba(255, 221, 68, 0.5));
 }
-/* スポットライト時、吹き出し/👇/OKボタンは暗転対象外（はっきり表示） */
+/* スポットライト時、吹き出し/👇/OKボタン/ゴール表示は暗転対象外（はっきり表示） */
 body.tutorial-spotlight-mode #tutorial-pointer-overlay,
-body.tutorial-spotlight-mode #tutorial-pointer-overlay * {
+body.tutorial-spotlight-mode #tutorial-pointer-overlay *,
+body.tutorial-spotlight-mode #tutorial-instruction-overlay,
+body.tutorial-spotlight-mode #tutorial-instruction-overlay * {
   opacity: 1 !important;
 }
 body.tutorial-spotlight-mode #tutorial-spotlight-ok {

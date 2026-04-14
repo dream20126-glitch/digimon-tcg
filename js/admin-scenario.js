@@ -1395,7 +1395,7 @@ function _renderStepUiControl(slotKey, timing, sIdx, step) {
   const hlButtons = Array.isArray(step.highlightButtons) ? step.highlightButtons : [];
 
   const GREYOUT_OPTIONS = [
-    { value: 'other_cards',   label: 'ハイライト以外のカード' },
+    { value: 'other_cards',   label: 'カード（ハイライト以外、未指定なら全カード）' },
     { value: 'mulligan_redo', label: '引き直しボタン' },
     { value: 'game_start',    label: 'ゲーム開始ボタン' },
     { value: 'end_turn',      label: 'ターン終了ボタン' },

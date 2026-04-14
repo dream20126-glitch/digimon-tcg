@@ -146,6 +146,7 @@ function renderMulliganPreview(animate) {
     const src = cardImg(c);
     const div = document.createElement('div');
     div.className = 'mulligan-card';
+    div.dataset.cardNo = c.cardNo || '';
     div.style.perspective = '200px';
     div.innerHTML = `<div class="mulligan-card-inner" style="width:100%;height:100%;position:relative;transition:transform 0.5s;transform-style:preserve-3d;">
       <div style="position:absolute;inset:0;backface-visibility:hidden;">${backUrl ? `<img src="${backUrl}" style="width:100%;height:100%;object-fit:cover;">` : '<div style="width:100%;height:100%;background:#1a1a3a;border-radius:4px;"></div>'}</div>
@@ -166,7 +167,15 @@ function renderMulliganPreview(animate) {
         const inner = div.querySelector('.mulligan-card-inner');
         if (inner) { inner.style.transition = `transform 0.5s ease ${i * 0.08}s`; inner.style.transform = 'rotateY(180deg)'; }
       });
+      // 反転完了後にチュートリアルUI（ハイライト/グレーアウト）を再適用
+      if (typeof window._tutorialReapplyUiControl === 'function') {
+        try { window._tutorialReapplyUiControl(); } catch (e) {}
+      }
     }, flipDelay);
+  } else {
+    if (typeof window._tutorialReapplyUiControl === 'function') {
+      try { window._tutorialReapplyUiControl(); } catch (e) {}
+    }
   }
 }
 

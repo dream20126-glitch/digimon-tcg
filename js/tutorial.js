@@ -327,7 +327,7 @@ function _applyStepUiControl(step) {
 
   // --- カードハイライト + グレーアウト ---
   if (hlCards.length > 0 || greyOutCards) {
-    const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no]');
+    const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no], #mulligan-hand-preview .mulligan-card');
     allCards.forEach(cardEl => {
       const no = cardEl.dataset.cardNo || '';
       if (hlCards.length > 0 && hlCards.includes(no)) {
@@ -493,6 +493,11 @@ let _highlightedEls = []; // 現在ハイライト中のDOM要素群
 // カードNoからDOM要素を探す
 function _findCardElement(cardNo) {
   if (!cardNo) return null;
+  // マリガン中の最初の5枚
+  if (_isMulliganActive()) {
+    const mul = document.querySelectorAll('#mulligan-hand-preview .mulligan-card');
+    for (const el of mul) { if (el.dataset.cardNo === cardNo) return el; }
+  }
   // 手札
   const hand = document.querySelectorAll('#hand-wrap .h-card');
   for (const el of hand) { if (el.dataset.cardNo === cardNo) return el; }

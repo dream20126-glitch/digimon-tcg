@@ -314,14 +314,14 @@ let _savedButtonStates = [];  // 復元用
 
 function _applyStepUiControl(step) {
   _clearStepUiControl();
-  if (!step || !step.uiControl) return;
+  if (!step) return;
 
   const greyOut = Array.isArray(step.greyOut) ? step.greyOut : [];
   const hlButtons = Array.isArray(step.highlightButtons) ? step.highlightButtons : [];
-  const greyOutCards = greyOut.includes('other_cards');
-
-  // ハイライト対象カード = 赤枠ハイライト1/2のカードNo
+  // targetCardNo が指定されていれば uiControl 未設定でも
+  // 他のカード自動グレーアウト（対象以外誤タップ防止）
   const hlCards = [step.targetCardNo, step.secondTargetCardNo].filter(Boolean);
+  const greyOutCards = greyOut.includes('other_cards') || hlCards.length > 0;
 
   // --- カードハイライト + グレーアウト ---
   if (hlCards.length > 0 || greyOutCards) {
@@ -721,11 +721,15 @@ function _getStepContextTitle(ctx) {
 // 例: "前半文章\n\n後半文章" → ["前半文章", "後半文章"]
 function _splitMessageParts(text) {
   if (!text) return [''];
-  const parts = String(text)
-    .split(/\n\s*\n+/)        // 1つ以上の空行で区切る
+  // 改行正規化: \r\n / \r → \n
+  const normalized = String(text).replace(/\r\n?/g, '\n');
+  // 空行（改行 + 横方向空白のみの行 + 改行）で分割
+  // [ \t\u3000\u00a0]* = 半角空白/タブ/全角空白/NBSP
+  const parts = normalized
+    .split(/\n[ \t\u3000\u00a0]*\n+/)
     .map(s => s.trim())
     .filter(s => s.length > 0);
-  return parts.length ? parts : [String(text)];
+  return parts.length ? parts : [normalized];
 }
 
 window._tutorialShowStepPopup = function(step, sType, ctx) {

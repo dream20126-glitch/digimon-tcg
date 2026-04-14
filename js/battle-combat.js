@@ -245,6 +245,10 @@ export function doEvolve(card, handIdx, slotIdx) {
     doDraw('player', '進化ドロー', async (dismissDraw) => {
       // 割り込み1: コスト支払い + ドロー完了後、効果発動前
       // ドロー演出は開いたまま → 割り込み完了後に閉じる（drawn_card スポットライト対応）
+      // 割り込み前に進化イベントを通知（main block の action ステップを advance させるため）
+      if (window._tutorialRunner && window._tutorialRunner.active) {
+        try { window._tutorialRunner.notifyEvent('evolve', { cardNo: evolved.cardNo, cardName: evolved.name, targetCardNo: evolved.cardNo, side: 'player' }); } catch (e) {}
+      }
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve_cost');
       if (typeof dismissDraw === 'function') dismissDraw();
       const finishEvolve = async () => {
@@ -294,6 +298,10 @@ export function doEvolveIku(card, handIdx) {
     doDraw('player', '進化ドロー', async (dismissDraw) => {
       // 割り込み1: コスト支払い + ドロー完了後、効果発動前
       // ドロー演出は開いたまま → 割り込み完了後に閉じる（drawn_card スポットライト対応）
+      // 割り込み前に進化イベントを通知（main block の action ステップを advance させるため）
+      if (window._tutorialRunner && window._tutorialRunner.active) {
+        try { window._tutorialRunner.notifyEvent('evolve', { cardNo: evolved.cardNo, cardName: evolved.name, targetCardNo: evolved.cardNo, side: 'player' }); } catch (e) {}
+      }
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve_cost');
       if (typeof dismissDraw === 'function') dismissDraw();
       const finishEvolveIku = async () => {

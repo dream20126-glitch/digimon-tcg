@@ -266,6 +266,8 @@ const BUTTON_TARGETS = [
   { value: 'mulligan_redo', label: '引き直しボタン' },
   { value: 'game_start',    label: 'ゲーム開始ボタン' },
   { value: 'end_turn',      label: 'ターン終了ボタン' },
+  { value: 'breed_skip',    label: '何もしないボタン（育成）' },
+  { value: 'exit_gate',     label: 'ゲートを出るボタン' },
 ];
 
 // 割り込みトリガー定義（詳細プレビュー/サマリー用、ALL_FLOW_SLOTSからラベル引き）
@@ -1399,6 +1401,8 @@ function _renderStepUiControl(slotKey, timing, sIdx, step) {
     { value: 'mulligan_redo', label: '引き直しボタン' },
     { value: 'game_start',    label: 'ゲーム開始ボタン' },
     { value: 'end_turn',      label: 'ターン終了ボタン' },
+    { value: 'breed_skip',    label: '何もしないボタン（育成フェイズ）' },
+    { value: 'exit_gate',     label: 'ゲートを出るボタン' },
   ];
 
   const greyOutChecks = GREYOUT_OPTIONS.map(opt => `

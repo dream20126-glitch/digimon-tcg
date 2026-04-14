@@ -447,7 +447,7 @@ function execBreed() {
   addLog('🥚 育成フェイズ');
   const actionBar = document.getElementById('breed-action-bar');
   if (actionBar) {
-    actionBar.innerHTML = '<button class="a-btn a-btn-cyan" onclick="skipBreedPhase()" style="width:100%;">何もしない → メインフェイズへ</button>';
+    actionBar.innerHTML = '<button id="breed-skip-btn" class="a-btn a-btn-cyan" onclick="skipBreedPhase()" style="width:100%;">何もしない → メインフェイズへ</button>';
     actionBar.style.display = 'block';
   }
   const ikuEl = document.getElementById('pl-iku-slot');

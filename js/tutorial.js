@@ -323,6 +323,8 @@ const _BUTTON_SELECTOR_MAP = {
   mulligan_redo: '#mulligan-btn',
   game_start:    '#mulligan-overlay .menu-btn.primary',
   end_turn:      '.a-btn-end',
+  breed_skip:    '#breed-skip-btn',
+  exit_gate:     '#exit-gate-btn',
 };
 
 let _uiControlActive = false;

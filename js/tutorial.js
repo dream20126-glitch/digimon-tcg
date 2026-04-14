@@ -464,31 +464,122 @@ window._tutorialShowSuccess = function(message) {
   return _runSuccessAnim(message);
 };
 
+// ランクごとの色テーマ
+function _successTheme(message) {
+  const m = String(message || '').toUpperCase();
+  if (m.includes('PERFECT'))   return { c1:'#ffd700', c2:'#ff8800', c3:'#ff00ff', stroke:'#fff', glow:'255,215,0', label:'rainbow' };
+  if (m.includes('NICE'))      return { c1:'#00d4ff', c2:'#0088ff', c3:'#00ffaa', stroke:'#fff', glow:'0,212,255',  label:'blue' };
+  if (m.includes('GREAT'))     return { c1:'#00ff88', c2:'#00cc66', c3:'#88ffaa', stroke:'#fff', glow:'0,255,136',  label:'green' };
+  if (m.includes('OK'))        return { c1:'#ffffff', c2:'#cccccc', c3:'#88ddff', stroke:'#00fbff', glow:'200,240,255', label:'white' };
+  if (m.includes('AMAZING'))   return { c1:'#ff5577', c2:'#ff0044', c3:'#ffaa00', stroke:'#fff', glow:'255,85,119',  label:'red' };
+  return { c1:'#ffdd44', c2:'#ff9933', c3:'#00fbff', stroke:'#fff', glow:'255,221,68', label:'gold' };
+}
+
 function _runSuccessAnim(message) {
-  const overlay = document.getElementById('tutorial-success-overlay');
-  const textEl  = document.getElementById('tutorial-success-text');
-  const panelEl = document.getElementById('tutorial-success-panel');
-  const flashEl = document.getElementById('tutorial-success-flash');
-  const ringEl  = document.getElementById('tutorial-success-ring');
+  const overlay   = document.getElementById('tutorial-success-overlay');
+  const textEl    = document.getElementById('tutorial-success-text');
+  const panelEl   = document.getElementById('tutorial-success-panel');
+  const flashEl   = document.getElementById('tutorial-success-flash');
+  const ringEl    = document.getElementById('tutorial-success-ring');
+  const ring2El   = document.getElementById('tutorial-success-ring2');
+  const convEl    = document.getElementById('tutorial-success-converge');
+  const sparkleEl = document.getElementById('tutorial-success-sparkles');
   if (!overlay || !textEl) return Promise.resolve();
   textEl.innerText = message || 'OK!';
-  // アニメリセット
+
+  // ===== ランクごとの色を適用 =====
+  const t = _successTheme(message);
+  const isRainbow = t.label === 'rainbow';
+  if (isRainbow) {
+    textEl.style.color = 'transparent';
+    textEl.style.backgroundImage = 'linear-gradient(135deg,' + t.c1 + ',' + t.c2 + ' 50%,' + t.c3 + ')';
+    textEl.style.backgroundClip = 'text';
+    textEl.style.webkitBackgroundClip = 'text';
+  } else {
+    textEl.style.color = t.c1;
+    textEl.style.backgroundImage = 'none';
+  }
+  textEl.style.webkitTextStroke = '3px ' + t.stroke;
+  textEl.style.textShadow = '0 0 30px rgba(' + t.glow + ',0.95), 0 0 80px rgba(' + t.glow + ',0.6)';
+  if (flashEl) flashEl.style.background = 'radial-gradient(circle, rgba(255,255,200,0.95) 0%, rgba(' + t.glow + ',0.55) 35%, rgba(' + t.glow + ',0) 70%)';
+  if (ringEl)  { ringEl.style.borderColor = t.c1; ringEl.style.boxShadow = '0 0 30px rgba(' + t.glow + ',0.85)'; }
+
+  // ===== アニメリセット =====
   overlay.style.animation = 'none';
-  if (panelEl) panelEl.style.animation = 'none';
-  if (flashEl) flashEl.style.animation = 'none';
-  if (ringEl)  ringEl.style.animation  = 'none';
+  if (panelEl)  panelEl.style.animation  = 'none';
+  if (flashEl)  flashEl.style.animation  = 'none';
+  if (ringEl)   ringEl.style.animation   = 'none';
+  if (ring2El)  ring2El.style.animation  = 'none';
   void textEl.offsetHeight; // reflow
-  overlay.style.animation = 'tutorialSuccessBg 1.1s ease forwards';
-  if (panelEl) panelEl.style.animation = 'tutorialSuccessFlash 1.1s ease forwards';
-  if (flashEl) flashEl.style.animation = 'tutorialSuccessLightFlash 0.7s ease-out forwards';
-  if (ringEl)  ringEl.style.animation  = 'tutorialSuccessRing 0.6s ease-out forwards';
+
+  // ===== 集中線生成 (12 本、画面端から中央へ) =====
+  if (convEl) {
+    convEl.innerHTML = '';
+    const lineCount = 12;
+    for (let i = 0; i < lineCount; i++) {
+      const angle = (360 / lineCount) * i;
+      const rad = angle * Math.PI / 180;
+      const dist = Math.max(window.innerWidth, window.innerHeight) * 0.55;
+      const fromX = Math.cos(rad) * dist;
+      const fromY = Math.sin(rad) * dist;
+      const len = 100 + Math.random() * 80;
+      const colorPick = i % 3 === 0 ? t.c1 : i % 3 === 1 ? t.c2 : t.c3;
+      const line = document.createElement('div');
+      line.style.cssText =
+        'position:absolute; left:50%; top:50%;' +
+        'width:' + len + 'px; height:4px;' +
+        'background:linear-gradient(90deg, transparent, ' + colorPick + ', transparent);' +
+        'box-shadow:0 0 12px ' + colorPick + ';' +
+        'transform-origin:50% 50%;' +
+        '--from-x:' + fromX + 'px; --from-y:' + fromY + 'px; --rot:' + angle + 'deg;' +
+        'animation:tutorialSuccessConverge 0.55s ease-out forwards;';
+      convEl.appendChild(line);
+    }
+  }
+
+  // ===== アニメ開始 =====
+  overlay.style.animation = 'tutorialSuccessBg 1.3s ease forwards';
+  if (panelEl)  panelEl.style.animation = 'tutorialSuccessSlam 1.3s cubic-bezier(0.2,0.9,0.3,1) forwards, tutorialSuccessShake 0.5s ease 0.18s';
+  if (flashEl)  flashEl.style.animation = 'tutorialSuccessLightFlash 0.85s ease-out forwards';
+  if (ringEl)   ringEl.style.animation  = 'tutorialSuccessRing 0.7s ease-out 0.18s forwards';
+  if (ring2El)  ring2El.style.animation = 'tutorialSuccessRing2 0.6s ease-out 0.25s forwards';
   overlay.style.display = 'flex';
+
+  // ===== 粒子フィニッシュ (爆発時に発生) =====
+  if (sparkleEl) {
+    sparkleEl.innerHTML = '';
+    setTimeout(() => {
+      const colors = [t.c1, t.c2, t.c3, '#ffffff'];
+      for (let i = 0; i < 24; i++) {
+        const sz = 4 + Math.random() * 7;
+        const ang = Math.random() * Math.PI * 2;
+        const radius = 80 + Math.random() * 220;
+        const dx = Math.cos(ang) * radius;
+        const dy = Math.sin(ang) * radius;
+        const rot = (Math.random() - 0.5) * 720;
+        const dur = 0.7 + Math.random() * 0.4;
+        const c = colors[Math.floor(Math.random() * colors.length)];
+        const p = document.createElement('div');
+        p.style.cssText =
+          'position:absolute; left:50%; top:50%;' +
+          'width:' + sz + 'px; height:' + sz + 'px;' +
+          'background:' + c + '; border-radius:' + (Math.random() < 0.5 ? '50%' : '2px') + ';' +
+          'box-shadow:0 0 10px ' + c + ';' +
+          '--dx:' + dx + 'px; --dy:' + dy + 'px; --rot:' + rot + 'deg;' +
+          'animation:tutorialSuccessSparkle ' + dur + 's ease-out forwards;';
+        sparkleEl.appendChild(p);
+      }
+    }, 180);
+  }
+
   _activeSuccessPromise = new Promise(resolve => {
     setTimeout(() => {
       overlay.style.display = 'none';
+      if (convEl) convEl.innerHTML = '';
+      if (sparkleEl) sparkleEl.innerHTML = '';
       _activeSuccessPromise = null;
       resolve();
-    }, 1150);
+    }, 1300);
   });
   return _activeSuccessPromise;
 }

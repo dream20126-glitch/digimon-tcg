@@ -410,43 +410,80 @@
 @keyframes tutorialBounce {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-8px); }
-@keyframes tutorialSuccessFlash {
-  0%   { opacity:0; transform:scale(0.4); }
-  20%  { opacity:1; transform:scale(1.25); }
-  35%  { opacity:1; transform:scale(0.95); }
-  50%  { opacity:1; transform:scale(1.05); }
-  85%  { opacity:1; transform:scale(1); }
-  100% { opacity:0; transform:scale(1.15); }
+/* テキスト: ズドン!と叩きつけ → バウンド */
+@keyframes tutorialSuccessSlam {
+  0%   { opacity:0; transform:scale(3.2); filter:blur(12px); }
+  18%  { opacity:1; transform:scale(0.82); filter:blur(0); }
+  28%  { transform:scale(1.12); }
+  38%  { transform:scale(0.96); }
+  48%  { transform:scale(1.04); }
+  58%  { transform:scale(1.0); }
+  85%  { opacity:1; transform:scale(1.0); }
+  100% { opacity:0; transform:scale(1.2); }
+}
+/* 画面揺れ (ズドンの瞬間) */
+@keyframes tutorialSuccessShake {
+  0%, 100% { transform:translate(0,0); }
+  10% { transform:translate(-6px,-4px); }
+  20% { transform:translate(7px,-3px); }
+  30% { transform:translate(-5px,5px); }
+  40% { transform:translate(4px,3px); }
+  50% { transform:translate(-3px,-2px); }
+  60% { transform:translate(2px,2px); }
+  70% { transform:translate(-1px,1px); }
 }
 @keyframes tutorialSuccessBg {
   0%   { background:rgba(0,0,0,0); }
-  15%  { background:rgba(0,0,0,0.78); }
-  85%  { background:rgba(0,0,0,0.78); }
+  15%  { background:rgba(0,0,0,0.82); }
+  85%  { background:rgba(0,0,0,0.82); }
   100% { background:rgba(0,0,0,0); }
 }
 @keyframes tutorialSuccessLightFlash {
   0%   { opacity:0; transform:translate(-50%,-50%) scale(0.2); }
-  15%  { opacity:1; transform:translate(-50%,-50%) scale(1.3); }
-  60%  { opacity:0.5; transform:translate(-50%,-50%) scale(1.6); }
-  100% { opacity:0; transform:translate(-50%,-50%) scale(2); }
+  18%  { opacity:1; transform:translate(-50%,-50%) scale(1.4); }
+  60%  { opacity:0.5; transform:translate(-50%,-50%) scale(1.7); }
+  100% { opacity:0; transform:translate(-50%,-50%) scale(2.1); }
 }
 @keyframes tutorialSuccessRing {
   0%   { opacity:0; transform:translate(-50%,-50%) scale(0.4); border-width:4px; }
-  30%  { opacity:1; transform:translate(-50%,-50%) scale(1.6); border-width:3px; }
-  100% { opacity:0; transform:translate(-50%,-50%) scale(3); border-width:1px; }
+  30%  { opacity:1; transform:translate(-50%,-50%) scale(1.8); border-width:3px; }
+  100% { opacity:0; transform:translate(-50%,-50%) scale(3.4); border-width:1px; }
+}
+@keyframes tutorialSuccessRing2 {
+  0%   { opacity:0; transform:translate(-50%,-50%) scale(0.2); border-width:5px; }
+  20%  { opacity:1; transform:translate(-50%,-50%) scale(1.2); }
+  100% { opacity:0; transform:translate(-50%,-50%) scale(2.6); border-width:1px; }
+}
+/* 集中線: 画面端から中央へ高速で集まる */
+@keyframes tutorialSuccessConverge {
+  0%   { opacity:0; transform:translate(var(--from-x), var(--from-y)) rotate(var(--rot)) scaleX(0); }
+  25%  { opacity:1; transform:translate(calc(var(--from-x) * 0.5), calc(var(--from-y) * 0.5)) rotate(var(--rot)) scaleX(1); }
+  50%  { opacity:1; transform:translate(0,0) rotate(var(--rot)) scaleX(1); }
+  100% { opacity:0; transform:translate(0,0) rotate(var(--rot)) scaleX(0.6); }
+}
+/* キラキラ粒子 */
+@keyframes tutorialSuccessSparkle {
+  0%   { opacity:0; transform:translate(-50%,-50%) scale(0); }
+  20%  { opacity:1; transform:translate(calc(-50% + var(--dx) * 0.4), calc(-50% + var(--dy) * 0.4)) scale(1.3); }
+  100% { opacity:0; transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.4) rotate(var(--rot, 0deg)); }
 }
 </style>
 
 <!-- ===== チュートリアル 成功演出 ===== -->
 <div id="tutorial-success-overlay" style="display:none; position:fixed; inset:0; z-index:56000; pointer-events:none; align-items:center; justify-content:center; background:rgba(0,0,0,0); overflow:hidden;">
+  <!-- 集中線（ランクで色変化） -->
+  <div id="tutorial-success-converge" style="position:absolute; inset:0; pointer-events:none;"></div>
   <!-- 中央光フラッシュ -->
-  <div id="tutorial-success-flash" style="position:absolute; top:50%; left:50%; width:600px; height:600px; transform:translate(-50%,-50%) scale(0); border-radius:50%; background:radial-gradient(circle, rgba(255,255,180,0.9) 0%, rgba(0,255,136,0.5) 35%, rgba(0,255,136,0) 70%); filter:blur(8px); pointer-events:none;"></div>
-  <!-- リング -->
+  <div id="tutorial-success-flash" style="position:absolute; top:50%; left:50%; width:700px; height:700px; transform:translate(-50%,-50%) scale(0); border-radius:50%; background:radial-gradient(circle, rgba(255,255,180,0.95) 0%, rgba(0,255,136,0.55) 35%, rgba(0,255,136,0) 70%); filter:blur(8px); pointer-events:none;"></div>
+  <!-- リング (3重に拡散) -->
   <div id="tutorial-success-ring" style="position:absolute; top:50%; left:50%; width:120px; height:120px; transform:translate(-50%,-50%) scale(0); border:3px solid #00ff88; border-radius:50%; box-shadow:0 0 30px rgba(0,255,136,0.8); pointer-events:none; opacity:0;"></div>
-  <!-- メインテキスト（背景パネルなし、テキスト単体） -->
+  <div id="tutorial-success-ring2" style="position:absolute; top:50%; left:50%; width:120px; height:120px; transform:translate(-50%,-50%) scale(0); border:2px solid #ffffff; border-radius:50%; box-shadow:0 0 24px rgba(255,255,255,0.7); pointer-events:none; opacity:0;"></div>
+  <!-- メインテキスト -->
   <div id="tutorial-success-panel" style="position:relative;">
-    <div id="tutorial-success-text" style="font-size:3.4rem; font-weight:900; color:#00ff88; text-shadow:0 0 30px rgba(0,255,136,0.95), 0 0 60px rgba(0,255,136,0.5); letter-spacing:6px; -webkit-text-stroke:2px #fff; line-height:1;"></div>
+    <div id="tutorial-success-text" style="font-size:4rem; font-weight:900; color:#00ff88; text-shadow:0 0 30px rgba(0,255,136,0.95), 0 0 80px rgba(0,255,136,0.6); letter-spacing:8px; -webkit-text-stroke:3px #fff; line-height:1; will-change:transform,opacity,filter;"></div>
   </div>
+  <!-- 粒子フィニッシュ -->
+  <div id="tutorial-success-sparkles" style="position:absolute; inset:0; pointer-events:none;"></div>
 </div>
 
 <!-- ===== チュートリアル指示テキストオーバーレイ ===== -->

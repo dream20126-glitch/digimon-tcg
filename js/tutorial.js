@@ -94,9 +94,9 @@ function _renderScenarioList() {
 
     return `
       <div style="${baseStyle}${bgStyle}" ${clickAttr}>
-        <img src="${imgUrl}" style="width:40px; height:56px; border-radius:3px; object-fit:cover; margin-right:12px; background:#000;" onerror="this.style.display='none'">
-        <div style="flex:1; min-width:0;">
-          <div style="color:#fff; font-size:13px; font-weight:bold;">
+        <img src="${imgUrl}" style="width:40px; height:56px; flex-shrink:0; border-radius:3px; object-fit:cover; margin-right:12px; background:#000;" onerror="this.style.display='none'">
+        <div style="flex:1; min-width:0; overflow:hidden;">
+          <div style="color:#fff; font-size:13px; font-weight:bold; word-break:break-all; overflow-wrap:anywhere;">
             ${_escHtml(title)}${badge}
           </div>
           <div style="color:#888; font-size:11px;">${_escHtml(diff)}</div>

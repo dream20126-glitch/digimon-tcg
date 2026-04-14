@@ -627,6 +627,7 @@ body.tutorial-spotlight-mode #tutorial-spotlight-ok {
   text-align: center;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   margin-bottom: 4px;
+  --arrow-left: 50%;            /* JS で対象方向に上書き */
 }
 .tutorial-bubble #tutorial-pointer-text {
   color: #1a1a1a;
@@ -640,7 +641,7 @@ body.tutorial-spotlight-mode #tutorial-spotlight-ok {
 .tutorial-bubble::after {
   content: '';
   position: absolute;
-  left: 50%;
+  left: var(--arrow-left, 50%);
   width: 0;
   height: 0;
   border-style: solid;

@@ -817,6 +817,17 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
   const wrapCenterX = left + bubbleW / 2;
   const fingerOffsetX = targetCenterX - wrapCenterX;
   finger.style.marginLeft = fingerOffsetX + 'px';
+
+  // 吹き出しのしっぽも対象方向に向ける
+  // bubble の左端からの相対 px を CSS変数 --arrow-left にセット
+  const bubbleEl = document.getElementById('tutorial-pointer-bubble');
+  if (bubbleEl) {
+    const bRect = bubbleEl.getBoundingClientRect();
+    const arrowLeftPx = targetCenterX - bRect.left;
+    // bubble の端から 24px 以上内側に収める（しっぽが角に出ないように）
+    const clamped = Math.max(24, Math.min(bRect.width - 24, arrowLeftPx));
+    bubbleEl.style.setProperty('--arrow-left', clamped + 'px');
+  }
 }
 
 function _clearHighlight() {

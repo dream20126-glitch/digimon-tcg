@@ -242,9 +242,11 @@ export function doEvolve(card, handIdx, slotIdx) {
   showEvolveEffect(cost, base.name, base, evolved, () => {
     // ★ 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定
     playerSpendMemory(cost, true); // defer=true: ターン終了は保留
-    doDraw('player', '進化ドロー', async () => {
+    doDraw('player', '進化ドロー', async (dismissDraw) => {
       // 割り込み1: コスト支払い + ドロー完了後、効果発動前
+      // ドロー演出は開いたまま → 割り込み完了後に閉じる（drawn_card スポットライト対応）
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve_cost');
+      if (typeof dismissDraw === 'function') dismissDraw();
       const finishEvolve = async () => {
         // 割り込み2: 効果完了後
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
@@ -258,7 +260,7 @@ export function doEvolve(card, handIdx, slotIdx) {
       } else {
         finishEvolve();
       }
-    });
+    }, { deferDismiss: true });
   });
 }
 
@@ -289,9 +291,11 @@ export function doEvolveIku(card, handIdx) {
   showEvolveEffect(cost, base.name, base, evolved, () => {
     // ★ 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定
     playerSpendMemory(cost, true); // defer=true: ターン終了は保留
-    doDraw('player', '進化ドロー', async () => {
+    doDraw('player', '進化ドロー', async (dismissDraw) => {
       // 割り込み1: コスト支払い + ドロー完了後、効果発動前
+      // ドロー演出は開いたまま → 割り込み完了後に閉じる（drawn_card スポットライト対応）
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve_cost');
+      if (typeof dismissDraw === 'function') dismissDraw();
       const finishEvolveIku = async () => {
         // 割り込み2: 効果完了後
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
@@ -305,7 +309,7 @@ export function doEvolveIku(card, handIdx) {
       } else {
         finishEvolveIku();
       }
-    });
+    }, { deferDismiss: true });
   });
 }
 

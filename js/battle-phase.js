@@ -157,7 +157,7 @@ export function showSkipAnnounce(text, callback) {
 
 // ===== 演出: ドロー =====
 
-export function doDraw(side, reason, callback) {
+export function doDraw(side, reason, callback, options) {
   const deck = bs[side].deck;
   const hand = bs[side].hand;
   if (deck.length === 0) { callback && callback(); return; }
@@ -166,10 +166,12 @@ export function doDraw(side, reason, callback) {
   hand.push(c);
   const isLv6 = parseInt(c.level) >= 6;
   addLog('🃏 ' + reason + '：「' + c.name + '」');
-  showDrawEffect(c, isLv6, () => { renderAll(); callback && callback(); });
+  showDrawEffect(c, isLv6, (dismiss) => { renderAll(); callback && callback(dismiss); }, options);
 }
 
-export function showDrawEffect(card, isLv6Plus, callback) {
+// options.deferDismiss=true の場合、overlay を閉じずに callback(dismiss) を呼ぶ。
+// 呼び元は好きなタイミングで dismiss() を実行して演出を閉じる。
+export function showDrawEffect(card, isLv6Plus, callback, options) {
   const overlay = document.getElementById('draw-overlay');
   if (!overlay) { callback && callback(); return; }
 
@@ -247,8 +249,11 @@ export function showDrawEffect(card, isLv6Plus, callback) {
     }
     setTimeout(async () => {
       await _maybeWaitTutorialDrawInterrupt();
-      overlay.style.display = 'none'; overlay.style.background = ''; imgEl.style.transition = '';
-      callback && callback();
+      const dismiss = () => {
+        overlay.style.display = 'none'; overlay.style.background = ''; imgEl.style.transition = '';
+      };
+      if (!options || !options.deferDismiss) dismiss();
+      callback && callback(dismiss);
     }, 4200);
   } else {
     // ===== 通常ドロー =====
@@ -258,8 +263,11 @@ export function showDrawEffect(card, isLv6Plus, callback) {
     }, 100);
     setTimeout(async () => {
       await _maybeWaitTutorialDrawInterrupt();
-      overlay.style.display = 'none'; overlay.style.background = '';
-      callback && callback();
+      const dismiss = () => {
+        overlay.style.display = 'none'; overlay.style.background = '';
+      };
+      if (!options || !options.deferDismiss) dismiss();
+      callback && callback(dismiss);
     }, 1300);
   }
 }

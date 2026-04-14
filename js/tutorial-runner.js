@@ -347,6 +347,11 @@ class TutorialRunner {
     // 後方互換: mulligan_accepted は明示設定なしのとき silent
     const step = this._currentBlock && this._currentBlock.steps[this._currentStepIdx];
     const condType = step && step.advanceCondition && step.advanceCondition.type;
+    // action ステップは進行条件達成と同時に指差し/吹き出しを消す
+    // （成功演出やバトル演出が始まる前に古い指差しを消しておくことで重なりを防ぐ）
+    if (step && step.stepType === 'action') {
+      this.hideInstruction();
+    }
     if (step && step.stepType === 'action') {
       let mode = step.successPopup;
       if (!mode) {

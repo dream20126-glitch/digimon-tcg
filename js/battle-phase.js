@@ -336,7 +336,7 @@ export function startFirstTurn() {
 
 // ===== フェーズ進行 =====
 
-export function startPhase(phase) {
+export async function startPhase(phase) {
   bs.phase = phase;
   if (_onlineMode && _sendStateSync) { _sendStateSync(); }
   if (_onlineMode && _sendCommand) { _sendCommand({ type: 'phase', phase }); }
@@ -347,6 +347,12 @@ export function startPhase(phase) {
   const runner = (typeof window !== 'undefined') ? window._tutorialRunner : null;
   if (runner && runner.active && typeof runner.onPhaseChange === 'function') {
     try { runner.onPhaseChange(phase); } catch (e) {}
+  }
+
+  // チュートリアル: 成功演出が残っていれば必ず終わってからフェーズアニメへ
+  // （GREAT! とフェーズ名アニメが被るのを防ぐ）
+  if (typeof window !== 'undefined' && window._tutorialAwaitSuccess) {
+    try { await window._tutorialAwaitSuccess(); } catch (_) {}
   }
 
   // チュートリアル: フェーズ進行は「アナウンス演出 → 説明ポップ(次へ待ち) → execPhase」の順

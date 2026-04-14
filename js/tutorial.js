@@ -282,13 +282,9 @@ window._tutorialShowInstruction = function(text, targetArea, step) {
   if (targetCardNo || targetArea) {
     _showPointer(resolvedText, targetArea, opType, secondArea, targetCardNo, secondCardNo);
   } else {
+    // 対象未指定の action ステップは指差しを出さない
+    // （tutorial-instruction-overlay は ゴール表示専用なので上書きしない）
     _hidePointer();
-    const overlay = document.getElementById('tutorial-instruction-overlay');
-    const el = document.getElementById('tutorial-instruction-text');
-    if (overlay && el) {
-      el.innerText = resolvedText;
-      overlay.style.display = 'block';
-    }
   }
 
   // UI制御: カードハイライト + ボタン制御

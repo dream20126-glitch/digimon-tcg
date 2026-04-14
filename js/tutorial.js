@@ -412,6 +412,13 @@ const TARGET_AREA_SELECTORS = {
   hand:          () => _isMulliganActive()
     ? document.getElementById('mulligan-hand-preview')
     : document.getElementById('hand-wrap'),
+  // 手札の最後尾 = 直近ドローしたカード（drawCards は末尾に push するため）
+  hand_last:     () => {
+    const hw = document.getElementById('hand-wrap');
+    if (!hw) return null;
+    const cards = hw.querySelectorAll('.h-card');
+    return cards.length ? cards[cards.length - 1] : null;
+  },
   battle:        () => document.getElementById('pl-battle-row'),
   end_turn_btn:  () => document.getElementById('action-bar'),
   mulligan_btn_start: () => document.querySelector('#mulligan-overlay .menu-btn.primary'),

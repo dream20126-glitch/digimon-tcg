@@ -93,6 +93,7 @@ const TARGET_AREAS = [
   // --- 自分エリア ---
   { value: 'raising',      label: '育成エリア',                          group: '🟢 自分のエリア' },
   { value: 'hand',         label: '手札（マリガン時は最初の5枚）',     group: '🟢 自分のエリア' },
+  { value: 'hand_last',    label: 'ドローしたカード（手札の最後）',      group: '🟢 自分のエリア' },
   { value: 'battle',       label: 'バトルエリア',                        group: '🟢 自分のエリア' },
   { value: 'own_security', label: 'セキュリティ',                        group: '🟢 自分のエリア' },
   { value: 'own_trash',    label: 'トラッシュ',                          group: '🟢 自分のエリア' },

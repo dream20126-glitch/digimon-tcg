@@ -122,6 +122,7 @@ class TutorialRunner {
 
     // 割り込み制御
     this._interruptResolve = null; // checkInterrupt の Promise resolve
+    this._pausedBlock = null;      // 割り込み前のブロック状態（完了後にレジューム）
   }
 
   // ---------------------------------------------------------------
@@ -362,12 +363,33 @@ class TutorialRunner {
       const resolve = this._interruptResolve;
       this._interruptResolve = null;
       resolve();
+      // 割り込み前にブロックが動いていたならレジューム
+      this._resumePausedBlock();
     }
+  }
+
+  // 割り込み前のブロック状態を復元して次ステップ表示
+  _resumePausedBlock() {
+    if (!this._pausedBlock) return;
+    const p = this._pausedBlock;
+    this._pausedBlock = null;
+    // 中断前のブロックが既に完了扱いでなく、まだステップが残っている場合のみ復元
+    if (!p.block || !p.block.steps || p.stepIdx >= p.block.steps.length) return;
+    this._currentBlock = p.block;
+    this._currentStepIdx = p.stepIdx;
+    setTimeout(() => this._showCurrentStep(), 200);
   }
 
   // 割り込みブロックのステップを全実行して完了を待つ
   _runBlockSteps(blockIdx) {
     return new Promise(resolve => {
+      // 実行中ブロックがあれば退避（割り込み後に復元）
+      if (this._currentBlock && this._currentBlock._flowIdx !== blockIdx) {
+        this._pausedBlock = {
+          block: this._currentBlock,
+          stepIdx: this._currentStepIdx,
+        };
+      }
       this._interruptResolve = resolve;
       this._activateBlock(blockIdx);
 
@@ -375,6 +397,7 @@ class TutorialRunner {
       if (!this._currentBlock) {
         this._interruptResolve = null;
         resolve();
+        this._resumePausedBlock();
       }
     });
   }
@@ -537,6 +560,7 @@ class TutorialRunner {
     this._currentBlock = null;
     this._currentStepIdx = 0;
     this._completedBlocks = new Set();
+    this._pausedBlock = null;
     this.hideInstruction();
     if (this._interruptResolve) {
       this._interruptResolve();

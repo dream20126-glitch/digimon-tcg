@@ -452,6 +452,7 @@ const TARGET_AREA_SELECTORS = {
   card_detail_effect:     () => document.getElementById('bcd-effect'),
   card_detail_evo_source: () => document.getElementById('bcd-evo-source'),
   card_detail_sec_effect: () => document.getElementById('bcd-security-effect'),
+  card_detail_close:      () => document.getElementById('bcd-close-btn'),
 };
 
 let _highlightedEls = []; // 現在ハイライト中のDOM要素群

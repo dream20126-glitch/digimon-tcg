@@ -118,6 +118,7 @@ const TARGET_AREAS = [
   { value: 'card_detail_effect',     label: '効果欄',                      group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_evo_source', label: '進化元効果',                  group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_sec_effect', label: 'セキュリティ効果',            group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_close',      label: '閉じるボタン',                group: '🔍 カード詳細モーダル' },
 ];
 
 // アコーディオン型エリアピッカー
@@ -842,6 +843,7 @@ const CARD_DETAIL_AREAS = [
   { value: 'effect',     label: '効果欄',              area: 'card_detail_effect' },
   { value: 'evo_source', label: '進化元効果',          area: 'card_detail_evo_source' },
   { value: 'sec_effect', label: 'セキュリティ効果',    area: 'card_detail_sec_effect' },
+  { value: 'close',      label: '閉じるボタン',        area: 'card_detail_close' },
 ];
 
 let _flowEditTurn = 1;  // 現在編集中のターン番号

@@ -141,8 +141,14 @@ export function doPlay(card, handIdx, slotIdx) {
     showOptionEffect(card, async () => {
       // ★ 公式ルール: コスト支払い → 効果処理 → ターン終了判定
       playerSpendMemory(card.playCost, true); // defer=true
+      // チュートリアル進行通知（オプション登場）
+      if (window._tutorialRunner && window._tutorialRunner.active) {
+        try { window._tutorialRunner.notifyEvent('play', { cardNo: card.cardNo, cardName: card.name, targetCardNo: card.cardNo, side: 'player' }); } catch (e) {}
+      }
       // 割り込み1: コスト支払い後、効果発動前
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play_cost');
+      // 演出が落ち着いたタイミングで成功演出を flush
+      if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
       _hooks.checkAndTriggerEffect(card, '【メイン】', async () => {
         bs.player.trash.push(card);
         addLog('✦ 「' + card.name + '」をトラッシュへ');
@@ -166,8 +172,13 @@ export function doPlay(card, handIdx, slotIdx) {
       playerSpendMemory(card.playCost, true); // defer=true
       _hooks.applyPermanentEffects('player');
       renderAll();
+      // チュートリアル進行通知（テイマー登場）
+      if (window._tutorialRunner && window._tutorialRunner.active) {
+        try { window._tutorialRunner.notifyEvent('play', { cardNo: card.cardNo, cardName: card.name, targetCardNo: card.cardNo, side: 'player' }); } catch (e) {}
+      }
       // 割り込み1: コスト支払い後、効果発動前
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play_cost');
+      if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
       const finishTamer = async () => {
         // 割り込み2: 効果完了後
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
@@ -197,8 +208,13 @@ export function doPlay(card, handIdx, slotIdx) {
     renderAll(true);
     // ★ 公式ルール: コスト支払い(メモリー消費) → 登場時効果 → ターン終了判定
     playerSpendMemory(card.playCost, true); // defer=true: ターン終了は保留
+    // チュートリアル進行通知（デジモン登場）
+    if (window._tutorialRunner && window._tutorialRunner.active) {
+      try { window._tutorialRunner.notifyEvent('play', { cardNo: card.cardNo, cardName: card.name, targetCardNo: card.cardNo, side: 'player' }); } catch (e) {}
+    }
     // 割り込み1: コスト支払い後、効果発動前
     if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play_cost');
+    if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
     const finishPlay = async () => {
       // 割り込み2: 効果完了後
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
@@ -1394,9 +1410,12 @@ export async function checkPendingTurnEnd() {
   _attackInProgress = false;
   hideCombatBackdrop();
   renderAll();
-  // チュートリアル割り込み: アタック後
+  // チュートリアル割り込み: アタック後 → 終了後にキュー中の成功演出 flush
   if (window._tutorialRunner && window._tutorialRunner.active) {
     await window._tutorialRunner.checkInterrupt('after_attack');
+    if (window._tutorialFlushSuccess) {
+      try { await window._tutorialFlushSuccess(); } catch (_) {}
+    }
   }
   if (bs._pendingTurnEnd) {
     bs._pendingTurnEnd = false;

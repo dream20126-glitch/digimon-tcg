@@ -95,6 +95,10 @@ async function _tutorialInterruptAfter(evType) {
   const triggerKey = triggerMap[evType];
   if (!triggerKey) return;
   try { await runner.checkInterrupt(triggerKey); } catch (e) { console.error('[tutorial interrupt]', e); }
+  // 割り込み完了後にキュー中の成功演出を flush（次の処理が走る前に必ず GREAT! を見せる）
+  if (window._tutorialFlushSuccess) {
+    try { await window._tutorialFlushSuccess(); } catch (_) {}
+  }
 }
 
 // window からも呼べるようにする（battle-combat 等から利用）

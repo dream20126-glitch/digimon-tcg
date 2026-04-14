@@ -408,12 +408,50 @@ window._tutorialReapplyUiControl = function() {
 };
 
 // 成功演出（ステップ進行時）
+// 成功演出: queue → battle側でflush → 完了をawait できる設計
+//   queue : _advanceStep から呼ぶ。すぐには出さない（バトル演出中に重なるのを防ぐ）
+//   flush : バトル演出が終わった直後に battle 側から呼ぶ。pending を実演出に変える
+//   await : 次ステップ表示を遅らせる用。実演出が終わるまで Promise を返す
+let _pendingSuccessMsg     = null;
+let _pendingSuccessTimer   = null;
+let _activeSuccessPromise  = null;
+
+window._tutorialQueueSuccess = function(message) {
+  _pendingSuccessMsg = message;
+  // 安全装置: バトル側が flush を呼ばないケースに備えて 8s 後に自動 flush
+  if (_pendingSuccessTimer) clearTimeout(_pendingSuccessTimer);
+  _pendingSuccessTimer = setTimeout(() => {
+    if (typeof window._tutorialFlushSuccess === 'function') window._tutorialFlushSuccess();
+  }, 8000);
+};
+
+window._tutorialFlushSuccess = function() {
+  if (_pendingSuccessTimer) { clearTimeout(_pendingSuccessTimer); _pendingSuccessTimer = null; }
+  if (!_pendingSuccessMsg) return _activeSuccessPromise || Promise.resolve();
+  const msg = _pendingSuccessMsg;
+  _pendingSuccessMsg = null;
+  return _runSuccessAnim(msg);
+};
+
+window._tutorialAwaitSuccess = function() {
+  // queue 中ならまず flush して await。実演出中ならそのまま await。
+  if (_pendingSuccessMsg) return window._tutorialFlushSuccess();
+  return _activeSuccessPromise || Promise.resolve();
+};
+
+// 直接表示（後方互換用）
 window._tutorialShowSuccess = function(message) {
+  if (_pendingSuccessTimer) { clearTimeout(_pendingSuccessTimer); _pendingSuccessTimer = null; }
+  _pendingSuccessMsg = null;
+  return _runSuccessAnim(message);
+};
+
+function _runSuccessAnim(message) {
   const overlay = document.getElementById('tutorial-success-overlay');
   const textEl  = document.getElementById('tutorial-success-text');
   const flashEl = document.getElementById('tutorial-success-flash');
   const ringEl  = document.getElementById('tutorial-success-ring');
-  if (!overlay || !textEl) return;
+  if (!overlay || !textEl) return Promise.resolve();
   textEl.innerText = message || 'OK!';
   // アニメリセット
   overlay.style.animation = 'none';
@@ -426,8 +464,15 @@ window._tutorialShowSuccess = function(message) {
   if (flashEl) flashEl.style.animation = 'tutorialSuccessLightFlash 0.7s ease-out forwards';
   if (ringEl)  ringEl.style.animation  = 'tutorialSuccessRing 0.6s ease-out forwards';
   overlay.style.display = 'flex';
-  setTimeout(() => { overlay.style.display = 'none'; }, 1150);
-};
+  _activeSuccessPromise = new Promise(resolve => {
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      _activeSuccessPromise = null;
+      resolve();
+    }, 1150);
+  });
+  return _activeSuccessPromise;
+}
 
 // ===================================================================
 // 指差しマーカーの表示/非表示

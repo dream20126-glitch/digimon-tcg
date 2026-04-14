@@ -362,8 +362,20 @@ class TutorialRunner {
       } else {
         msg = mode;
       }
-      if (msg && typeof window._tutorialShowSuccess === 'function') {
-        window._tutorialShowSuccess(msg);
+      // 成功演出は queue（バトル演出が走っている可能性があるので、battle側からの
+      // flush または安全タイマー (2.5s) で実演出に変わる）
+      // 演出が無い系（カード詳細・マリガン・ターン等）は即 flush して即座に表示
+      const ANIMATED_CONDITIONS = new Set([
+        'hatch', 'evolve_any', 'evolve_specific',
+        'play_any', 'play_specific',
+        'attack_declared', 'attack_resolved', 'destroy_opponent',
+      ]);
+      if (msg && typeof window._tutorialQueueSuccess === 'function') {
+        window._tutorialQueueSuccess(msg);
+        if (!ANIMATED_CONDITIONS.has(condType) && typeof window._tutorialFlushSuccess === 'function') {
+          // バトル演出を待つ必要が無い → 即フラッシュ
+          setTimeout(() => { try { window._tutorialFlushSuccess(); } catch (e) {} }, 0);
+        }
       }
     }
 
@@ -372,9 +384,19 @@ class TutorialRunner {
       this._completeCurrentBlock();
       return;
     }
-    // 次のステップ表示（少し間を置く）
-    // action ステップは成功演出 (~1.15s) を見せきってから次へ
-    setTimeout(() => this._showCurrentStep(), step && step.stepType === 'action' ? 1200 : 100);
+    // 次ステップ表示は「成功演出が完全に終わってから」
+    // action: queue → battle演出が flush → 演出完了 を待つ
+    // message/spotlight: 即座に次へ
+    if (step && step.stepType === 'action') {
+      (async () => {
+        if (typeof window._tutorialAwaitSuccess === 'function') {
+          try { await window._tutorialAwaitSuccess(); } catch (e) {}
+        }
+        setTimeout(() => this._showCurrentStep(), 150);
+      })();
+    } else {
+      setTimeout(() => this._showCurrentStep(), 100);
+    }
   }
 
   _completeCurrentBlock() {

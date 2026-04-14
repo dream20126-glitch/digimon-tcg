@@ -219,6 +219,8 @@ export function buildIkuCallbacks() {
       }
       renderAll();
       fxHatchEffect(card, async () => {
+        // バトル演出（孵化アニメ）終了 → 成功演出を表示してから次へ
+        if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('hatch');
         breedActionDone();
       });

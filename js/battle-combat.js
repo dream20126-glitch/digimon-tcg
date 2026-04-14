@@ -251,6 +251,8 @@ export function doEvolve(card, handIdx, slotIdx) {
       }
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve_cost');
       if (typeof dismissDraw === 'function') dismissDraw();
+      // 進化演出 + ドロー演出 + 割り込み完了 → 成功演出をここで実演出
+      if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
       const finishEvolve = async () => {
         // 割り込み2: 効果完了後
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
@@ -304,6 +306,8 @@ export function doEvolveIku(card, handIdx) {
       }
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve_cost');
       if (typeof dismissDraw === 'function') dismissDraw();
+      // 進化演出 + ドロー演出 + 割り込み完了 → 成功演出をここで実演出
+      if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
       const finishEvolveIku = async () => {
         // 割り込み2: 効果完了後
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');

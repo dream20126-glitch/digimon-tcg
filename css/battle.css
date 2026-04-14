@@ -707,17 +707,20 @@ body.tutorial-spotlight-mode #tutorial-spotlight-ok {
   50%      { box-shadow: 0 0 20px 6px rgba(0, 255, 136, 0.9); }
 }
 
-/* カードグレーアウト（操作不可） */
+/* カードグレーアウト（操作不可）— スポットライト暗転と同じくらい黒く */
 .tutorial-card-disabled {
-  opacity: 0.35 !important;
-  filter: grayscale(0.7) !important;
+  opacity: 0.18 !important;
+  filter: brightness(0.4) grayscale(0.7) !important;
   pointer-events: none !important;
+}
+.tutorial-card-disabled * {
+  opacity: 1 !important;
 }
 
 /* ボタングレーアウト */
 .tutorial-btn-disabled {
-  opacity: 0.3 !important;
-  filter: grayscale(1) !important;
+  opacity: 0.18 !important;
+  filter: brightness(0.4) grayscale(1) !important;
   pointer-events: none !important;
   cursor: not-allowed !important;
 }

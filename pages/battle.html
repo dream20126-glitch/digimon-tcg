@@ -443,8 +443,10 @@
   <div id="tutorial-success-flash" style="position:absolute; top:50%; left:50%; width:600px; height:600px; transform:translate(-50%,-50%) scale(0); border-radius:50%; background:radial-gradient(circle, rgba(255,255,180,0.9) 0%, rgba(0,255,136,0.5) 35%, rgba(0,255,136,0) 70%); filter:blur(8px); pointer-events:none;"></div>
   <!-- リング -->
   <div id="tutorial-success-ring" style="position:absolute; top:50%; left:50%; width:120px; height:120px; transform:translate(-50%,-50%) scale(0); border:3px solid #00ff88; border-radius:50%; box-shadow:0 0 30px rgba(0,255,136,0.8); pointer-events:none; opacity:0;"></div>
-  <!-- メインテキスト -->
-  <div id="tutorial-success-text" style="position:relative; font-size:3.4rem; font-weight:900; color:#00ff88; text-shadow:0 0 40px rgba(0,255,136,0.95), 0 0 80px rgba(0,255,136,0.6); letter-spacing:6px; -webkit-text-stroke:2px #fff;"></div>
+  <!-- メインテキスト（背景パネル付き） -->
+  <div id="tutorial-success-panel" style="position:relative; padding:18px 48px; border-radius:18px; background:linear-gradient(135deg, rgba(0,40,30,0.92), rgba(0,80,50,0.92)); border:3px solid #00ff88; box-shadow:0 0 40px rgba(0,255,136,0.7), inset 0 0 30px rgba(0,255,136,0.25); backdrop-filter:blur(6px);">
+    <div id="tutorial-success-text" style="font-size:3.4rem; font-weight:900; color:#00ff88; text-shadow:0 0 30px rgba(0,255,136,0.95), 0 0 60px rgba(0,255,136,0.5); letter-spacing:6px; -webkit-text-stroke:2px #fff; line-height:1;"></div>
+  </div>
 </div>
 
 <!-- ===== チュートリアル指示テキストオーバーレイ ===== -->

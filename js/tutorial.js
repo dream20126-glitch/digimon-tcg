@@ -449,18 +449,19 @@ window._tutorialShowSuccess = function(message) {
 function _runSuccessAnim(message) {
   const overlay = document.getElementById('tutorial-success-overlay');
   const textEl  = document.getElementById('tutorial-success-text');
+  const panelEl = document.getElementById('tutorial-success-panel');
   const flashEl = document.getElementById('tutorial-success-flash');
   const ringEl  = document.getElementById('tutorial-success-ring');
   if (!overlay || !textEl) return Promise.resolve();
   textEl.innerText = message || 'OK!';
   // アニメリセット
   overlay.style.animation = 'none';
-  textEl.style.animation  = 'none';
+  if (panelEl) panelEl.style.animation = 'none';
   if (flashEl) flashEl.style.animation = 'none';
   if (ringEl)  ringEl.style.animation  = 'none';
   void textEl.offsetHeight; // reflow
   overlay.style.animation = 'tutorialSuccessBg 1.1s ease forwards';
-  textEl.style.animation  = 'tutorialSuccessFlash 1.1s ease forwards';
+  if (panelEl) panelEl.style.animation = 'tutorialSuccessFlash 1.1s ease forwards';
   if (flashEl) flashEl.style.animation = 'tutorialSuccessLightFlash 0.7s ease-out forwards';
   if (ringEl)  ringEl.style.animation  = 'tutorialSuccessRing 0.6s ease-out forwards';
   overlay.style.display = 'flex';

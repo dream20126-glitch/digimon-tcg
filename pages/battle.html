@@ -411,23 +411,40 @@
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-8px); }
 @keyframes tutorialSuccessFlash {
-  0% { opacity:1; transform:scale(0.6); }
-  10% { opacity:1; transform:scale(1.2); }
-  30% { opacity:1; transform:scale(1); }
-  80% { opacity:1; transform:scale(1); }
-  100% { opacity:0; transform:scale(1.1); }
+  0%   { opacity:0; transform:scale(0.4); }
+  20%  { opacity:1; transform:scale(1.25); }
+  35%  { opacity:1; transform:scale(0.95); }
+  50%  { opacity:1; transform:scale(1.05); }
+  85%  { opacity:1; transform:scale(1); }
+  100% { opacity:0; transform:scale(1.15); }
 }
 @keyframes tutorialSuccessBg {
   0%   { background:rgba(0,0,0,0); }
-  20%  { background:rgba(0,0,0,0.55); }
-  80%  { background:rgba(0,0,0,0.55); }
+  15%  { background:rgba(0,0,0,0.78); }
+  85%  { background:rgba(0,0,0,0.78); }
   100% { background:rgba(0,0,0,0); }
+}
+@keyframes tutorialSuccessLightFlash {
+  0%   { opacity:0; transform:translate(-50%,-50%) scale(0.2); }
+  15%  { opacity:1; transform:translate(-50%,-50%) scale(1.3); }
+  60%  { opacity:0.5; transform:translate(-50%,-50%) scale(1.6); }
+  100% { opacity:0; transform:translate(-50%,-50%) scale(2); }
+}
+@keyframes tutorialSuccessRing {
+  0%   { opacity:0; transform:translate(-50%,-50%) scale(0.4); border-width:4px; }
+  30%  { opacity:1; transform:translate(-50%,-50%) scale(1.6); border-width:3px; }
+  100% { opacity:0; transform:translate(-50%,-50%) scale(3); border-width:1px; }
 }
 </style>
 
 <!-- ===== チュートリアル 成功演出 ===== -->
-<div id="tutorial-success-overlay" style="display:none; position:fixed; inset:0; z-index:56000; pointer-events:none; align-items:center; justify-content:center; background:rgba(0,0,0,0); animation:tutorialSuccessBg 0.9s ease forwards;">
-  <div id="tutorial-success-text" style="font-size:3rem; font-weight:bold; color:#00ff88; text-shadow:0 0 40px rgba(0,255,136,0.8); letter-spacing:6px; animation:tutorialSuccessFlash 0.9s ease forwards;"></div>
+<div id="tutorial-success-overlay" style="display:none; position:fixed; inset:0; z-index:56000; pointer-events:none; align-items:center; justify-content:center; background:rgba(0,0,0,0); overflow:hidden;">
+  <!-- 中央光フラッシュ -->
+  <div id="tutorial-success-flash" style="position:absolute; top:50%; left:50%; width:600px; height:600px; transform:translate(-50%,-50%) scale(0); border-radius:50%; background:radial-gradient(circle, rgba(255,255,180,0.9) 0%, rgba(0,255,136,0.5) 35%, rgba(0,255,136,0) 70%); filter:blur(8px); pointer-events:none;"></div>
+  <!-- リング -->
+  <div id="tutorial-success-ring" style="position:absolute; top:50%; left:50%; width:120px; height:120px; transform:translate(-50%,-50%) scale(0); border:3px solid #00ff88; border-radius:50%; box-shadow:0 0 30px rgba(0,255,136,0.8); pointer-events:none; opacity:0;"></div>
+  <!-- メインテキスト -->
+  <div id="tutorial-success-text" style="position:relative; font-size:3.4rem; font-weight:900; color:#00ff88; text-shadow:0 0 40px rgba(0,255,136,0.95), 0 0 80px rgba(0,255,136,0.6); letter-spacing:6px; -webkit-text-stroke:2px #fff;"></div>
 </div>
 
 <!-- ===== チュートリアル指示テキストオーバーレイ ===== -->
@@ -459,11 +476,13 @@
     </div>
     <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:5rem; opacity:0.2; pointer-events:none;">🎉</div>
   </div>
-  <!-- ステージ3: 詳細＋メッセージ＋ボタン -->
+  <!-- ステージ3: メッセージ＋ボタン群 -->
   <div id="tutorial-clear-detail" style="opacity:0; transform:translateY(20px); transition:opacity 0.5s, transform 0.5s; background:linear-gradient(135deg, rgba(0,16,32,0.95), rgba(0,48,64,0.95)); border:2px solid #00ff88; border-radius:16px; padding:24px 28px; text-align:center; box-shadow:0 0 60px rgba(0,255,136,0.4); max-width:440px; width:100%;">
-    <div id="tutorial-clear-desc" style="color:#aaa; font-size:12px; line-height:1.6; margin-bottom:12px;"></div>
     <div id="tutorial-clear-message" style="display:none; color:#fff; font-size:13px; line-height:1.7; margin-bottom:20px; padding:12px; background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.2); border-radius:8px; white-space:pre-wrap; text-align:left;"></div>
-    <button class="menu-btn primary" onclick="closeTutorialClear()" style="width:100%;">シナリオ一覧へ戻る</button>
+    <div id="tutorial-clear-buttons" style="display:flex; flex-direction:column; gap:8px;">
+      <button id="tutorial-clear-next-btn" class="menu-btn primary" onclick="goToNextScenario()" style="width:100%; display:none;">次のシナリオへ ▷</button>
+      <button class="menu-btn" onclick="closeTutorialClear()" style="width:100%;">シナリオ一覧へ戻る</button>
+    </div>
   </div>
 </div>
 

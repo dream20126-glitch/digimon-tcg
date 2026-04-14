@@ -373,7 +373,8 @@ class TutorialRunner {
       return;
     }
     // 次のステップ表示（少し間を置く）
-    setTimeout(() => this._showCurrentStep(), step && step.stepType === 'action' ? 800 : 100);
+    // action ステップは成功演出 (~1.15s) を見せきってから次へ
+    setTimeout(() => this._showCurrentStep(), step && step.stepType === 'action' ? 1200 : 100);
   }
 
   _completeCurrentBlock() {

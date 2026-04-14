@@ -410,17 +410,23 @@ window._tutorialReapplyUiControl = function() {
 // 成功演出（ステップ進行時）
 window._tutorialShowSuccess = function(message) {
   const overlay = document.getElementById('tutorial-success-overlay');
-  const textEl = document.getElementById('tutorial-success-text');
+  const textEl  = document.getElementById('tutorial-success-text');
+  const flashEl = document.getElementById('tutorial-success-flash');
+  const ringEl  = document.getElementById('tutorial-success-ring');
   if (!overlay || !textEl) return;
   textEl.innerText = message || 'OK!';
-  // アニメリセット（背景暗転 + テキスト両方）
+  // アニメリセット
   overlay.style.animation = 'none';
-  textEl.style.animation = 'none';
+  textEl.style.animation  = 'none';
+  if (flashEl) flashEl.style.animation = 'none';
+  if (ringEl)  ringEl.style.animation  = 'none';
   void textEl.offsetHeight; // reflow
-  overlay.style.animation = 'tutorialSuccessBg 0.9s ease forwards';
-  textEl.style.animation  = 'tutorialSuccessFlash 0.9s ease forwards';
+  overlay.style.animation = 'tutorialSuccessBg 1.1s ease forwards';
+  textEl.style.animation  = 'tutorialSuccessFlash 1.1s ease forwards';
+  if (flashEl) flashEl.style.animation = 'tutorialSuccessLightFlash 0.7s ease-out forwards';
+  if (ringEl)  ringEl.style.animation  = 'tutorialSuccessRing 0.6s ease-out forwards';
   overlay.style.display = 'flex';
-  setTimeout(() => { overlay.style.display = 'none'; }, 950);
+  setTimeout(() => { overlay.style.display = 'none'; }, 1150);
 };
 
 // ===================================================================
@@ -636,14 +642,13 @@ window._tutorialShowClear = function(scenario) {
   const banner    = document.getElementById('tutorial-clear-banner');
   const detail    = document.getElementById('tutorial-clear-detail');
   const titleEl   = document.getElementById('tutorial-clear-title');
-  const descEl    = document.getElementById('tutorial-clear-desc');
   const msgEl     = document.getElementById('tutorial-clear-message');
+  const nextBtn   = document.getElementById('tutorial-clear-next-btn');
   const particles = document.getElementById('tutorial-clear-particles');
   if (!overlay) return;
 
   // テキストセット
   if (titleEl) titleEl.innerText = (scenario && scenario.tutorialName) || 'シナリオ';
-  if (descEl)  descEl.innerText  = (scenario && scenario.description) || '';
   if (msgEl) {
     if (scenario && scenario.clearMessage) {
       msgEl.innerText = scenario.clearMessage;
@@ -652,6 +657,13 @@ window._tutorialShowClear = function(scenario) {
       msgEl.innerText = '';
       msgEl.style.display = 'none';
     }
+  }
+  // 次シナリオの有無で「次のシナリオへ」ボタン表示
+  const next = _findNextScenario(scenario);
+  _pendingNextScenario = next;
+  if (nextBtn) {
+    nextBtn.style.display = next ? 'block' : 'none';
+    if (next) nextBtn.innerText = `次のシナリオ：${next.tutorialName || ''} ▷`;
   }
 
   // 状態リセット
@@ -684,6 +696,47 @@ window._tutorialShowClear = function(scenario) {
   setTimeout(() => {
     if (detail) { detail.style.opacity = '1'; detail.style.transform = 'translateY(0)'; }
   }, 1900);
+};
+
+// 次に進むべきシナリオを判定（order昇順 + 未クリア + 前提クリア済みの最初のもの）
+let _pendingNextScenario = null;
+function _findNextScenario(currentScenario) {
+  if (!currentScenario) return null;
+  const list = [..._scenariosCache].sort((a, b) => (a.order || 0) - (b.order || 0));
+  // 1) prerequisiteId === currentScenario.id のものを優先
+  const byPrereq = list.find(s => s.id !== currentScenario.id && s.prerequisiteId === currentScenario.id);
+  if (byPrereq) return byPrereq;
+  // 2) order 順で current より後のものを順に探し、ロックされていない最初のものを返す
+  const curOrder = currentScenario.order || 0;
+  for (const s of list) {
+    if (s.id === currentScenario.id) continue;
+    if ((s.order || 0) <= curOrder) continue;
+    if (s.prerequisiteId && s.prerequisiteId !== currentScenario.id && !_isCleared(s.prerequisiteId)) continue;
+    return s;
+  }
+  return null;
+}
+
+// 「次のシナリオへ」ボタン
+window.goToNextScenario = function() {
+  const next = _pendingNextScenario;
+  if (!next) return;
+  // 現在のクリア演出を閉じる + ランナー停止 + 一覧再読込はせず、直接シナリオ詳細へ
+  const overlay = document.getElementById('tutorial-clear-overlay');
+  if (overlay) overlay.style.display = 'none';
+  if (window._tutorialRunner && typeof window._tutorialRunner.stop === 'function') {
+    try { window._tutorialRunner.stop(); } catch (e) {}
+  }
+  window._tutorialHideInstruction();
+  if (typeof window._tutorialHideGoal === 'function') window._tutorialHideGoal();
+  // 次シナリオの詳細画面を開く（シナリオ一覧を経由しない）
+  if (typeof window.selectTutorialScenario === 'function') {
+    window.selectTutorialScenario(next.id);
+  } else if (typeof window.loadTutorialScreen === 'function') {
+    window.loadTutorialScreen();
+  } else {
+    showScreen('tutorial-screen');
+  }
 };
 
 function _spawnConfetti(container, count) {

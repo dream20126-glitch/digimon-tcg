@@ -112,6 +112,7 @@ const TARGET_AREAS = [
   { value: 'memory_gauge',        label: '全体',                          group: '⚙ メモリーゲージ' },
   { value: 'memory_gauge_player', label: '自分側',                        group: '⚙ メモリーゲージ' },
   { value: 'memory_gauge_opp',    label: '相手側',                        group: '⚙ メモリーゲージ' },
+  { value: 'memory_gauge_current',label: '現在のメモリー（点灯セル）',    group: '⚙ メモリーゲージ' },
   // --- カード詳細モーダル ---
   { value: 'card_detail',            label: 'モーダル全体',               group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_name',       label: 'カード名',                    group: '🔍 カード詳細モーダル' },

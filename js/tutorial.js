@@ -473,6 +473,8 @@ const TARGET_AREA_SELECTORS = {
     const cells = document.querySelectorAll('#memory-gauge-row .m-ai');
     return cells.length ? Array.from(cells) : null;
   },
+  // 現在のメモリー（点灯中セル）
+  memory_gauge_current: () => document.querySelector('#memory-gauge-row .m-active'),
   // カード詳細モーダル内部
   card_detail:            () => document.getElementById('b-card-detail'),
   card_detail_name:       () => document.getElementById('bcd-name'),

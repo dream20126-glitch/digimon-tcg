@@ -537,11 +537,15 @@ function _runSuccessAnim(message) {
   if (ringEl)  { ringEl.style.borderColor = t.c1; ringEl.style.boxShadow = '0 0 30px rgba(' + t.glow + ',0.85)'; }
 
   // ===== 先に表示してからアニメリセット =====
-  // (display:none 状態でアニメを設定すると即座に終了状態と判断される
-  //  ブラウザがあるため、必ず flex で見せてから reset → reflow → animation の順で組む)
+  // display:none 状態でアニメを設定すると即終了状態と判断されるブラウザがあるため、
+  // 必ず flex で見せてから reset → reflow → animation の順で組む
   overlay.style.display = 'flex';
   overlay.style.animation = 'none';
   textEl.style.animation  = 'none';
+  // textEl の前回 forwards で残った transform/opacity/filter をリセット
+  textEl.style.transform = '';
+  textEl.style.opacity = '';
+  textEl.style.filter = '';
   if (panelEl)  panelEl.style.animation  = 'none';
   if (flashEl)  flashEl.style.animation  = 'none';
   if (ringEl)   ringEl.style.animation   = 'none';
@@ -574,14 +578,18 @@ function _runSuccessAnim(message) {
   }
 
   // ===== アニメ開始 (reflow 後に設定) =====
-  // Slam (scale) は textEl に、Shake (translate) は panelEl にかける
-  // 同じ要素で transform が衝突しないように分離
-  overlay.style.animation = 'tutorialSuccessBg 1.3s ease forwards';
-  textEl.style.animation  = 'tutorialSuccessSlam 1.3s cubic-bezier(0.2,0.9,0.3,1) forwards';
-  if (panelEl)  panelEl.style.animation = 'tutorialSuccessShake 0.5s ease 0.18s';
-  if (flashEl)  flashEl.style.animation = 'tutorialSuccessLightFlash 0.85s ease-out forwards';
-  if (ringEl)   ringEl.style.animation  = 'tutorialSuccessRing 0.7s ease-out 0.18s forwards';
-  if (ring2El)  ring2El.style.animation = 'tutorialSuccessRing2 0.6s ease-out 0.25s forwards';
+  // 二重 requestAnimationFrame でブラウザのレイアウト確定を保証してから動かす
+  // → 「アニメが効かず静止状態になる」現象の予防
+  const startAnimations = () => {
+    overlay.style.animation = 'tutorialSuccessBg 1.6s ease forwards';
+    // Slam (rotate + scale) は textEl に、Shake (translate) は panelEl に分離
+    textEl.style.animation  = 'tutorialSuccessSlam 1.6s cubic-bezier(0.2,0.9,0.3,1) forwards';
+    if (panelEl)  panelEl.style.animation = 'tutorialSuccessShake 0.5s ease 0.4s';
+    if (flashEl)  flashEl.style.animation = 'tutorialSuccessLightFlash 0.95s ease-out forwards';
+    if (ringEl)   ringEl.style.animation  = 'tutorialSuccessRing 0.8s ease-out 0.35s forwards';
+    if (ring2El)  ring2El.style.animation = 'tutorialSuccessRing2 0.7s ease-out 0.45s forwards';
+  };
+  requestAnimationFrame(() => requestAnimationFrame(startAnimations));
 
   // ===== 粒子フィニッシュ (爆発時に発生) =====
   if (sparkleEl) {
@@ -617,7 +625,7 @@ function _runSuccessAnim(message) {
       if (sparkleEl) sparkleEl.innerHTML = '';
       _activeSuccessPromise = null;
       resolve();
-    }, 1300);
+    }, 1650);
   });
   return _activeSuccessPromise;
 }

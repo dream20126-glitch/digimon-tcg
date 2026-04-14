@@ -410,16 +410,16 @@
 @keyframes tutorialBounce {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-8px); }
-/* テキスト: ズドン!と叩きつけ → バウンド */
+/* テキスト: 高速回転しながら大きく登場 → バウンド着地 → フェードアウト */
 @keyframes tutorialSuccessSlam {
-  0%   { opacity:0; transform:scale(3.2); filter:blur(12px); }
-  18%  { opacity:1; transform:scale(0.82); filter:blur(0); }
-  28%  { transform:scale(1.12); }
-  38%  { transform:scale(0.96); }
-  48%  { transform:scale(1.04); }
-  58%  { transform:scale(1.0); }
-  85%  { opacity:1; transform:scale(1.0); }
-  100% { opacity:0; transform:scale(1.2); }
+  0%   { opacity:0; transform:rotate(-720deg) scale(0.05); filter:blur(10px); }
+  35%  { opacity:1; transform:rotate(15deg)   scale(1.35); filter:blur(0); }
+  50%  { transform:rotate(-8deg)  scale(0.92); }
+  62%  { transform:rotate(4deg)   scale(1.08); }
+  72%  { transform:rotate(-2deg)  scale(0.98); }
+  82%  { transform:rotate(0deg)   scale(1.02); }
+  90%  { opacity:1; transform:rotate(0deg) scale(1); }
+  100% { opacity:0; transform:rotate(0deg) scale(1.2); }
 }
 /* 画面揺れ (ズドンの瞬間) */
 @keyframes tutorialSuccessShake {

@@ -506,6 +506,7 @@ function _runSuccessAnim(message) {
 
   // ===== アニメリセット =====
   overlay.style.animation = 'none';
+  textEl.style.animation  = 'none';
   if (panelEl)  panelEl.style.animation  = 'none';
   if (flashEl)  flashEl.style.animation  = 'none';
   if (ringEl)   ringEl.style.animation   = 'none';
@@ -538,8 +539,11 @@ function _runSuccessAnim(message) {
   }
 
   // ===== アニメ開始 =====
+  // Slam (scale) は textEl に、Shake (translate) は panelEl にかける
+  // 同じ要素で transform が衝突しないように分離
   overlay.style.animation = 'tutorialSuccessBg 1.3s ease forwards';
-  if (panelEl)  panelEl.style.animation = 'tutorialSuccessSlam 1.3s cubic-bezier(0.2,0.9,0.3,1) forwards, tutorialSuccessShake 0.5s ease 0.18s';
+  textEl.style.animation  = 'tutorialSuccessSlam 1.3s cubic-bezier(0.2,0.9,0.3,1) forwards';
+  if (panelEl)  panelEl.style.animation = 'tutorialSuccessShake 0.5s ease 0.18s';
   if (flashEl)  flashEl.style.animation = 'tutorialSuccessLightFlash 0.85s ease-out forwards';
   if (ringEl)   ringEl.style.animation  = 'tutorialSuccessRing 0.7s ease-out 0.18s forwards';
   if (ring2El)  ring2El.style.animation = 'tutorialSuccessRing2 0.6s ease-out 0.25s forwards';

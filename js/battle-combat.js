@@ -137,6 +137,9 @@ export function doPlay(card, handIdx, slotIdx) {
   if (card.type === 'オプション') {
     bs.player.hand.splice(handIdx, 1); bs.selHand = null;
     addLog('✦ 「' + card.name + '」を使用！（コスト ' + card.playCost + '）');
+    if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
+      try { window._tutorialHideInstruction(); } catch (e) {}
+    }
     renderAll();
     showOptionEffect(card, async () => {
       // ★ 公式ルール: コスト支払い → 効果処理 → ターン終了判定
@@ -164,6 +167,9 @@ export function doPlay(card, handIdx, slotIdx) {
     bs.player.hand.splice(handIdx, 1); bs.selHand = null;
     bs.player.tamerArea.push(card);
     addLog('▶ 「' + card.name + '」を登場！（コスト ' + card.playCost + '）');
+    if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
+      try { window._tutorialHideInstruction(); } catch (e) {}
+    }
     renderAll();
     showPlayEffect(card, async () => {
       // ★ 公式ルール: コスト支払い → 登場時効果 → ターン終了判定
@@ -199,6 +205,9 @@ export function doPlay(card, handIdx, slotIdx) {
   bs.player.battleArea[slotIdx] = card;
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
   addLog('▶ 「' + card.name + '」を登場！（コスト ' + card.playCost + '）');
+  if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
+    try { window._tutorialHideInstruction(); } catch (e) {}
+  }
   renderAll();
   showPlayEffect(card, async () => {
     _hooks.applyPermanentEffects('player');
@@ -250,6 +259,10 @@ export function doEvolve(card, handIdx, slotIdx) {
   bs.player.battleArea[slotIdx] = evolved;
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
   addLog('⬆ 「' + base.name + '」→「' + evolved.name + '」進化！（コスト ' + cost + '）');
+  // チュートリアル: アクション完了の瞬間に指差し/吹き出しを消す
+  if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
+    try { window._tutorialHideInstruction(); } catch (e) {}
+  }
   renderAll();
   showEvolveEffect(cost, base.name, base, evolved, async () => {
     // ★ 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定
@@ -302,6 +315,10 @@ export function doEvolveIku(card, handIdx) {
   bs.player.ikusei = evolved;
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
   addLog('⬆ 育成「' + base.name + '」→「' + evolved.name + '」進化！（コスト ' + cost + '）');
+  // チュートリアル: アクション完了の瞬間に指差し/吹き出しを消す
+  if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
+    try { window._tutorialHideInstruction(); } catch (e) {}
+  }
   renderAll();
   showEvolveEffect(cost, base.name, base, evolved, async () => {
     // ★ 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定

@@ -216,8 +216,11 @@ export function buildIkuCallbacks() {
   return {
     onHatch: (card) => {
       if (isOnlineMode()) sendCommand({ type: 'hatch', cardName: card.name, cardImg: card.imgSrc || '' });
-      // チュートリアル通知
+      // チュートリアル通知 + 指差し/吹き出しの即時消去
       if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
+        if (window._tutorialHideInstruction) {
+          try { window._tutorialHideInstruction(); } catch (e) {}
+        }
         try { window._tutorialRunner.notifyEvent('hatch', { cardNo: card.cardNo, cardName: card.name }); }
         catch (e) { console.error('[tutorial hatch]', e); }
       }

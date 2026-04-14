@@ -813,18 +813,20 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
   // 吹き出しは可変幅（CSS で max-width: min(85vw, 440px)）→ 実測値を使う
   const bubbleW = wrap.offsetWidth || 320;
 
-  // 対象の上に吹き出しを置く余白があれば上、なければ下
-  const canFitAbove = rect.top > pointerH + 12;
+  // 対象との隙間 = 赤枠 outline (3px) + outline-offset (2px) + 視認用 margin
+  // 合計 18px を確保して、説明枠と赤枠が重ならないようにする
+  const TARGET_GAP = 18;
+  const canFitAbove = rect.top > pointerH + TARGET_GAP + 8;
 
   if (canFitAbove) {
     wrap.style.flexDirection = 'column';   // [bubble][finger]
-    const top = rect.top - pointerH - 4;
+    const top = rect.top - pointerH - TARGET_GAP;
     overlay.style.top = Math.max(4, top) + 'px';
     const bubbleEl = document.getElementById('tutorial-pointer-bubble');
     if (bubbleEl) bubbleEl.classList.remove('tutorial-bubble-below');
   } else {
     wrap.style.flexDirection = 'column-reverse';  // [finger][bubble]
-    const top = rect.bottom + 4;
+    const top = rect.bottom + TARGET_GAP;
     overlay.style.top = top + 'px';
     const bubbleEl = document.getElementById('tutorial-pointer-bubble');
     if (bubbleEl) bubbleEl.classList.add('tutorial-bubble-below');

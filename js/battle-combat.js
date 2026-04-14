@@ -156,6 +156,7 @@ export function doPlay(card, handIdx, slotIdx) {
         renderAll();
         // 割り込み2: 効果完了後
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
+        if (window._tutorialBattleDone) window._tutorialBattleDone();
         checkPlayerPendingTurnEnd();
       }, 'player');
     });
@@ -223,6 +224,8 @@ export function doPlay(card, handIdx, slotIdx) {
     const finishPlay = async () => {
       // 割り込み2: 効果完了後
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
+      // 全工程 (登場演出 + コスト + 割り込み + 効果) 完了 → 次ステップ表示を解放
+      if (window._tutorialBattleDone) window._tutorialBattleDone();
       checkPlayerPendingTurnEnd();
     };
     if (hasKeyword(card, '【登場時】')) {
@@ -278,6 +281,8 @@ export function doEvolve(card, handIdx, slotIdx) {
       if (typeof dismissDraw === 'function') dismissDraw();
       const finishEvolve = async () => {
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
+        // 全工程完了 → 次ステップ表示を解放
+        if (window._tutorialBattleDone) window._tutorialBattleDone();
         checkPlayerPendingTurnEnd();
       };
       if (hasKeyword(evolved, '【進化時】')) {
@@ -334,6 +339,8 @@ export function doEvolveIku(card, handIdx) {
       if (typeof dismissDraw === 'function') dismissDraw();
       const finishEvolveIku = async () => {
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('evolve');
+        // 全工程完了 → 次ステップ表示を解放
+        if (window._tutorialBattleDone) window._tutorialBattleDone();
         checkPlayerPendingTurnEnd();
       };
       if (evolved.effect && evolved.effect.includes('＜育成＞') && hasKeyword(evolved, '【進化時】')) {
@@ -1423,6 +1430,8 @@ export async function checkPendingTurnEnd() {
     if (window._tutorialFlushSuccess) {
       try { await window._tutorialFlushSuccess(); } catch (_) {}
     }
+    // 全工程完了 → 次ステップ表示を解放
+    if (window._tutorialBattleDone) window._tutorialBattleDone();
   }
   if (bs._pendingTurnEnd) {
     bs._pendingTurnEnd = false;

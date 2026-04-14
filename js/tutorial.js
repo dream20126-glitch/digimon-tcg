@@ -489,6 +489,35 @@ window._tutorialAwaitSuccess = function() {
   return _activeSuccessPromise || Promise.resolve();
 };
 
+// ===== 「battle 側の一連の処理が完全に終わるまで次ステップ表示を待つ」仕組み =====
+// バトル演出 → 成功演出 → 割り込み(ドロー説明等) を全て見せきってから、
+// main block の次ステップを表示するために使う。
+//   _tutorialAwaitBattleDone(): battle 側が done を呼ぶまで await
+//   _tutorialBattleDone(): battle 側が「全工程完了」を通知
+// 安全タイマー: 10s 経っても呼ばれなかったら自動解除（保険）
+let _battleDoneResolve = null;
+let _battleDoneTimer = null;
+window._tutorialAwaitBattleDone = function() {
+  return new Promise(resolve => {
+    _battleDoneResolve = resolve;
+    if (_battleDoneTimer) clearTimeout(_battleDoneTimer);
+    _battleDoneTimer = setTimeout(() => {
+      if (_battleDoneResolve === resolve) {
+        _battleDoneResolve = null;
+        resolve();
+      }
+    }, 10000);
+  });
+};
+window._tutorialBattleDone = function() {
+  if (_battleDoneTimer) { clearTimeout(_battleDoneTimer); _battleDoneTimer = null; }
+  if (_battleDoneResolve) {
+    const r = _battleDoneResolve;
+    _battleDoneResolve = null;
+    r();
+  }
+};
+
 // 直接表示（後方互換用）
 window._tutorialShowSuccess = function(message) {
   if (_pendingSuccessTimer) { clearTimeout(_pendingSuccessTimer); _pendingSuccessTimer = null; }
@@ -1201,7 +1230,7 @@ window._tutorialShowStepPopup = function(step, sType, ctx) {
       popup.style.display = 'flex';
       if (btn) {
         const isLast = (idx + 1) >= parts.length;
-        btn.innerText = isLast ? '次へ' : '次へ ▶';
+        btn.innerText = isLast ? 'OK' : '次へ ▶';
         btn.onclick = () => {
           if (isLast) {
             popup.style.display = 'none';

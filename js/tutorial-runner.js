@@ -393,11 +393,23 @@ class TutorialRunner {
     }
     // 次ステップ表示は「成功演出が完全に終わってから」
     // action: queue → battle演出が flush → 演出完了 を待つ
+    //         ANIMATED 系 (進化/登場/孵化/アタック) はさらに battle 側の
+    //         全工程 (割り込み含む) 完了通知を待つ。
+    //         → 「ドロー説明の前に main block の次ステップが一瞬出る」を防ぐ
     // message/spotlight: 即座に次へ
     if (step && step.stepType === 'action') {
+      const ANIMATED = new Set([
+        'hatch', 'evolve_any', 'evolve_specific',
+        'play_any', 'play_specific', 'play_digimon', 'play_tamer', 'play_option',
+        'attack_declared', 'attack_resolved', 'destroy_opponent',
+      ]);
+      const waitForBattle = ANIMATED.has(condType);
       (async () => {
         if (typeof window._tutorialAwaitSuccess === 'function') {
           try { await window._tutorialAwaitSuccess(); } catch (e) {}
+        }
+        if (waitForBattle && typeof window._tutorialAwaitBattleDone === 'function') {
+          try { await window._tutorialAwaitBattleDone(); } catch (e) {}
         }
         setTimeout(() => this._showCurrentStep(), 150);
       })();

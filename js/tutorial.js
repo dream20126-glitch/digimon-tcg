@@ -581,13 +581,13 @@ function _runSuccessAnim(message) {
   // 二重 requestAnimationFrame でブラウザのレイアウト確定を保証してから動かす
   // → 「アニメが効かず静止状態になる」現象の予防
   const startAnimations = () => {
-    overlay.style.animation = 'tutorialSuccessBg 1.6s ease forwards';
-    // Slam (rotate + scale) は textEl に、Shake (translate) は panelEl に分離
-    textEl.style.animation  = 'tutorialSuccessSlam 1.6s cubic-bezier(0.2,0.9,0.3,1) forwards';
-    if (panelEl)  panelEl.style.animation = 'tutorialSuccessShake 0.5s ease 0.4s';
-    if (flashEl)  flashEl.style.animation = 'tutorialSuccessLightFlash 0.95s ease-out forwards';
-    if (ringEl)   ringEl.style.animation  = 'tutorialSuccessRing 0.8s ease-out 0.35s forwards';
-    if (ring2El)  ring2El.style.animation = 'tutorialSuccessRing2 0.7s ease-out 0.45s forwards';
+    overlay.style.animation = 'tutorialSuccessBg 1.3s ease forwards';
+    // Slam (scale) は textEl に、Shake (translate) は panelEl に分離
+    textEl.style.animation  = 'tutorialSuccessSlam 1.3s cubic-bezier(0.2,0.9,0.3,1) forwards';
+    if (panelEl)  panelEl.style.animation = 'tutorialSuccessShake 0.5s ease 0.18s';
+    if (flashEl)  flashEl.style.animation = 'tutorialSuccessLightFlash 0.85s ease-out forwards';
+    if (ringEl)   ringEl.style.animation  = 'tutorialSuccessRing 0.7s ease-out 0.18s forwards';
+    if (ring2El)  ring2El.style.animation = 'tutorialSuccessRing2 0.6s ease-out 0.25s forwards';
   };
   requestAnimationFrame(() => requestAnimationFrame(startAnimations));
 
@@ -625,7 +625,7 @@ function _runSuccessAnim(message) {
       if (sparkleEl) sparkleEl.innerHTML = '';
       _activeSuccessPromise = null;
       resolve();
-    }, 1650);
+    }, 1350);
   });
   return _activeSuccessPromise;
 }

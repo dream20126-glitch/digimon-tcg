@@ -1746,11 +1746,61 @@ function _placedCardChip(card, area, idx) {
   if (!cardNo) return '';
   const name = _escHtml(_findCardName(cardNo));
   const removeFn = (idx === null) ? `tsRemovePlacedRaising('${area}')` : `tsRemovePlacedCard('${area}',${idx})`;
-  return `<span style="display:inline-block; background:#111; border:1px solid #333; border-radius:3px; padding:2px 6px; margin:2px 2px 0 0; font-size:10px; color:#fff;">
+  // バトルエリア（自分・相手）のみ進化元編集ボタンを出す
+  const isBattle = area === 'playerBattleArea' || area === 'opponentBattleArea';
+  const evoSources = (typeof card === 'object' && Array.isArray(card.evolutionSources)) ? card.evolutionSources : [];
+  let evoChips = '';
+  if (isBattle) {
+    if (evoSources.length) {
+      evoChips = '<div style="margin-top:3px; padding-left:8px; border-left:2px solid #ffaa0066;">'
+        + '<div style="color:#ffaa00; font-size:9px; margin-bottom:2px;">進化元 (下が一番下のカード):</div>'
+        + evoSources.map((src, sIdx) => {
+            const sNo = typeof src === 'string' ? src : (src && src.cardNo);
+            if (!sNo) return '';
+            const sName = _escHtml(_findCardName(sNo));
+            return `<span style="display:inline-block; background:#1a1100; border:1px solid #553; border-radius:3px; padding:1px 5px; margin:1px 2px 0 0; font-size:9px; color:#ffcc66;">
+              ${sName} <span style="color:#888;">(${_escHtml(sNo)})</span>
+              <span onclick="tsRemoveEvoSrc('${area}',${idx},${sIdx})" style="color:#ff4444; cursor:pointer; margin-left:3px; font-weight:bold;">×</span>
+            </span>`;
+          }).join('')
+        + '</div>';
+    }
+    evoChips += `<div style="margin-top:3px;">
+      <button onclick="tsAddEvoSrcPrompt('${area}',${idx})" style="font-size:9px; padding:1px 6px; background:#332200; color:#ffaa00; border:1px solid #ffaa0066; border-radius:3px; cursor:pointer;">+進化元</button>
+    </div>`;
+  }
+  return `<div style="display:inline-block; background:#111; border:1px solid #333; border-radius:3px; padding:3px 6px; margin:2px 2px 0 0; font-size:10px; color:#fff; vertical-align:top;">
     ${name} <span style="color:#888;">(${_escHtml(cardNo)})</span>
     <span onclick="${removeFn}" style="color:#ff4444; cursor:pointer; margin-left:4px; font-weight:bold;">×</span>
-  </span>`;
+    ${evoChips}
+  </div>`;
 }
+
+// バトルエリアカードに進化元を追加（cardNo 入力ダイアログ）
+window.tsAddEvoSrcPrompt = function(area, idx) {
+  if (!_initialBoardState || !Array.isArray(_initialBoardState[area])) return;
+  const card = _initialBoardState[area][idx];
+  if (!card) return;
+  const cardNo = prompt('進化元として積むカードのカードNoを入力してください（例: ST1-02）');
+  if (!cardNo) return;
+  // オブジェクト化（文字列だった場合）
+  if (typeof card === 'string') {
+    _initialBoardState[area][idx] = { cardNo: card, evolutionSources: [cardNo.trim()] };
+  } else {
+    if (!Array.isArray(card.evolutionSources)) card.evolutionSources = [];
+    card.evolutionSources.push(cardNo.trim());
+  }
+  _renderPlacedCards();
+};
+
+// 進化元を削除
+window.tsRemoveEvoSrc = function(area, cardIdx, srcIdx) {
+  if (!_initialBoardState || !Array.isArray(_initialBoardState[area])) return;
+  const card = _initialBoardState[area][cardIdx];
+  if (!card || !Array.isArray(card.evolutionSources)) return;
+  card.evolutionSources.splice(srcIdx, 1);
+  _renderPlacedCards();
+};
 
 function _renderAreaSection(title, area) {
   if (!_initialBoardState) return '';

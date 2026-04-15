@@ -9,38 +9,32 @@ import { loadCardAndKeywordData, getCardImageUrl } from './cards.js';
 // ここに追加/削除すれば管理画面のプルダウンに自動反映される
 // 新しい条件タイプを追加するときは tutorial-runner.js の CONDITION_EVALUATORS にも追加すること
 // clearable: false → クリア条件のプルダウンには出さない（次に進む条件のみ）
+// params: [{key, label, type, min, max, default, suffix}] → 選択時にラベル横に入力欄
 const CONDITION_TYPES = [
   // フェイズ関連
   { value: 'breed_end',          label: '育成フェイズ終了（孵化/移動/何もしない）', needsCardNo: false, group: '🥚 フェイズ', clearable: false },
-  { value: 'turn_start',         label: 'ターン開始した',                              needsCardNo: false, group: '🥚 フェイズ' },
-  { value: 'turn_end',           label: 'ターン終了した',                              needsCardNo: false, group: '🥚 フェイズ' },
+  { value: 'turn_start',         label: 'ターン開始した',                              needsCardNo: false, group: '🥚 フェイズ',
+    params: [{ key: 'turn', label: '何ターン目', type: 'number', min: 1, max: 99, default: 1, suffix: 'ターン目' }] },
+  { value: 'turn_end',           label: 'ターン終了した',                              needsCardNo: false, group: '🥚 フェイズ',
+    params: [{ key: 'turn', label: '何ターン目', type: 'number', min: 1, max: 99, default: 1, suffix: 'ターン目' }] },
   // 進化
   { value: 'evolve_any',         label: 'デジモンを進化させた',                       needsCardNo: false, group: '⬆ 進化' },
-  { value: 'evolve_lv3',         label: 'レベル3に進化させた',                         needsCardNo: false, group: '⬆ 進化' },
-  { value: 'evolve_lv4',         label: 'レベル4に進化させた',                         needsCardNo: false, group: '⬆ 進化' },
-  { value: 'evolve_lv5',         label: 'レベル5に進化させた',                         needsCardNo: false, group: '⬆ 進化' },
-  { value: 'evolve_lv6',         label: 'レベル6に進化させた',                         needsCardNo: false, group: '⬆ 進化' },
-  { value: 'evolve_lv7',         label: 'レベル7に進化させた',                         needsCardNo: false, group: '⬆ 進化' },
+  { value: 'evolve_lv',          label: 'レベルNに進化させた',                         needsCardNo: false, group: '⬆ 進化',
+    params: [{ key: 'level', label: 'レベル', type: 'number', min: 2, max: 7, default: 3, suffix: '' }] },
   // 登場・カード使用
   { value: 'play_digimon',       label: 'デジモンを登場させた',                       needsCardNo: false, group: '📥 登場・カード使用' },
   { value: 'play_option',        label: 'オプションカードを使った',                   needsCardNo: false, group: '📥 登場・カード使用' },
   { value: 'play_tamer',         label: 'テイマーカードを使った',                     needsCardNo: false, group: '📥 登場・カード使用' },
-  { value: 'play_lv3',           label: 'レベル3を登場させた',                         needsCardNo: false, group: '📥 登場・カード使用' },
-  { value: 'play_lv4',           label: 'レベル4を登場させた',                         needsCardNo: false, group: '📥 登場・カード使用' },
-  { value: 'play_lv5',           label: 'レベル5を登場させた',                         needsCardNo: false, group: '📥 登場・カード使用' },
-  { value: 'play_lv6',           label: 'レベル6を登場させた',                         needsCardNo: false, group: '📥 登場・カード使用' },
-  { value: 'play_lv7',           label: 'レベル7を登場させた',                         needsCardNo: false, group: '📥 登場・カード使用' },
+  { value: 'play_lv',            label: 'レベルNを登場させた',                         needsCardNo: false, group: '📥 登場・カード使用',
+    params: [{ key: 'level', label: 'レベル', type: 'number', min: 2, max: 7, default: 3, suffix: '' }] },
   // アタック
   { value: 'attack_declared',    label: 'アタック宣言した（アタックボタン押下）',     needsCardNo: false, group: '⚔ アタック' },
   { value: 'attack_resolved',    label: 'バトルを解決した（デジモン/セキュリティ）',  needsCardNo: false, group: '⚔ アタック' },
   { value: 'direct_attack',      label: 'ダイレクトアタックした',                     needsCardNo: false, group: '⚔ アタック' },
   { value: 'block',              label: 'ブロックした',                                needsCardNo: false, group: '⚔ アタック' },
   // セキュリティ
-  { value: 'security_check_1',   label: '相手セキュリティを1枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ' },
-  { value: 'security_check_2',   label: '相手セキュリティを2枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ' },
-  { value: 'security_check_3',   label: '相手セキュリティを3枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ' },
-  { value: 'security_check_4',   label: '相手セキュリティを4枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ' },
-  { value: 'security_check_5',   label: '相手セキュリティを5枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ' },
+  { value: 'security_check_n',   label: '相手セキュリティをN枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ',
+    params: [{ key: 'count', label: '枚数', type: 'number', min: 1, max: 5, default: 1, suffix: '枚' }] },
   // 効果
   { value: 'use_effect',         label: '効果を使った（任意）',                       needsCardNo: false, group: '✨ 効果' },
   { value: 'effect_triggered',   label: '効果を誘発させた',                           needsCardNo: false, group: '✨ 効果' },
@@ -101,6 +95,44 @@ window.conditionPickerSelect = function(uid, slotKey, timing, sIdx, value) {
   flowUpdateStep(slotKey, timing, sIdx, 'conditionType', value);
   // _renderFlowEditor が呼ばれて全体再描画されるので、ボタン更新は不要
 };
+
+// フロー編集: 進行条件のパラメータ値を更新
+window.flowUpdateStepParam = function(slotKey, timing, sIdx, key, value) {
+  const ref = _getStepByTiming(slotKey, timing, sIdx);
+  if (!ref) return;
+  const step = ref.step;
+  if (!step.advanceCondition) return;
+  if (!step.advanceCondition.params) step.advanceCondition.params = {};
+  // 数値はNumber化
+  const def = CONDITION_TYPES.find(t => t.value === step.advanceCondition.type);
+  const pdef = def && def.params && def.params.find(p => p.key === key);
+  step.advanceCondition.params[key] = (pdef && pdef.type === 'number') ? Number(value) : value;
+};
+
+// クリア条件のパラメータ保持用 (key→value)
+let _clearConditionParams = {};
+
+// 条件のパラメータ入力欄 HTML を生成（共通）
+//   condValue: 選択中の条件タイプ
+//   currentParams: 現在保存されているパラメータ {key: value}
+//   onChangeAttr: input の onchange 属性文字列（__KEY__ がパラメータキーに置換される）
+function _renderConditionParams(condValue, currentParams, onChangeAttr) {
+  const def = CONDITION_TYPES.find(t => t.value === condValue);
+  if (!def || !Array.isArray(def.params) || def.params.length === 0) return '';
+  const cur = currentParams || {};
+  return def.params.map(p => {
+    const val = (cur[p.key] != null) ? cur[p.key] : (p.default != null ? p.default : '');
+    const minAttr = (p.min != null) ? `min="${p.min}"` : '';
+    const maxAttr = (p.max != null) ? `max="${p.max}"` : '';
+    return `<span style="display:inline-flex; align-items:center; gap:4px; margin-left:6px; font-size:11px; color:#aaa;">
+      <span>${_escHtml(p.label || p.key)}:</span>
+      <input type="${p.type || 'number'}" value="${_escHtml(String(val))}" ${minAttr} ${maxAttr} data-pkey="${p.key}"
+        onchange="${onChangeAttr.replace(/__KEY__/g, p.key)}"
+        style="width:60px; padding:3px 6px; background:#111; border:1px solid var(--border-col); color:#fff; border-radius:3px; font-size:11px;">
+      ${p.suffix ? `<span>${_escHtml(p.suffix)}</span>` : ''}
+    </span>`;
+  }).join('');
+}
 
 // クリア条件用のアコーディオン式ピッカー
 // (CONDITION_TYPES のうち clearable !== false のものだけ表示)
@@ -164,7 +196,26 @@ window.clearConditionPickerSelect = function(value) {
       }
     });
   }
+  // パラメータ入力欄を更新（条件種類が変わったらデフォルト値で初期化）
+  _clearConditionParams = {};
+  if (def && Array.isArray(def.params)) {
+    def.params.forEach(p => { _clearConditionParams[p.key] = p.default != null ? p.default : ''; });
+  }
+  _refreshClearConditionParamUI(value);
   if (typeof updateClearConditionUI === 'function') updateClearConditionUI();
+};
+
+// クリア条件のパラメータ入力欄を再描画
+function _refreshClearConditionParamUI(condValue) {
+  const wrap = document.getElementById('ts-clear-params');
+  if (!wrap) return;
+  wrap.innerHTML = _renderConditionParams(condValue, _clearConditionParams, "clearConditionParamChange(this,'__KEY__')");
+}
+
+// パラメータ入力変更時
+window.clearConditionParamChange = function(input, key) {
+  const v = input.type === 'number' ? Number(input.value) : input.value;
+  _clearConditionParams[key] = v;
 };
 
 // 指差しマーカーの対象エリア定義（全シナリオ共通で使用）
@@ -713,6 +764,16 @@ window.editTutorialScenario = async function(scenario) {
   if (clearMount) clearMount.innerHTML = _renderClearConditionPicker(ccType);
   document.getElementById('ts-clear-type').value = ccType;
   if (cc && cc.params && cc.params.cardNo) document.getElementById('ts-clear-param').value = cc.params.cardNo;
+  // 数値パラメータを復元
+  _clearConditionParams = {};
+  const ccDef = CONDITION_TYPES.find(t => t.value === ccType);
+  if (ccDef && Array.isArray(ccDef.params)) {
+    ccDef.params.forEach(p => {
+      const v = (cc && cc.params && cc.params[p.key] != null) ? cc.params[p.key] : (p.default != null ? p.default : '');
+      _clearConditionParams[p.key] = v;
+    });
+  }
+  _refreshClearConditionParamUI(ccType);
   if (typeof updateClearConditionUI === 'function') updateClearConditionUI();
 
   // 初期盤面
@@ -763,6 +824,8 @@ async function _prepareEditForm() {
   const clearHidden = document.getElementById('ts-clear-type');
   if (clearHidden) clearHidden.value = '';
   document.getElementById('ts-clear-param').value = '';
+  _clearConditionParams = {};
+  _refreshClearConditionParamUI('');
 
   // フォームリセット
   document.getElementById('ts-tutorial-name').value = '';
@@ -1110,6 +1173,16 @@ window.flowUpdateStep = function(slotKey, timing, stepIdx, field, value) {
   } else if (field === 'conditionType') {
     step.advanceCondition = { type: value };
     if (_conditionNeedsCard(value)) step.advanceCondition.params = { cardNo: '' };
+    // 数値パラメータがあるならデフォルト値で初期化
+    const cdef = CONDITION_TYPES.find(t => t.value === value);
+    if (cdef && Array.isArray(cdef.params)) {
+      step.advanceCondition.params = step.advanceCondition.params || {};
+      cdef.params.forEach(p => {
+        if (step.advanceCondition.params[p.key] == null && p.default != null) {
+          step.advanceCondition.params[p.key] = p.default;
+        }
+      });
+    }
     _renderFlowEditor();
   } else if (field === 'conditionCardNo') {
     if (!step.advanceCondition.params) step.advanceCondition.params = {};
@@ -1350,6 +1423,9 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">次に進む条件</label>
           ${_renderConditionPicker(slotKey, timing, sIdx, cond.type)}
+          <div style="margin-top:4px;">
+            ${_renderConditionParams(cond.type, cond.params || {}, `flowUpdateStepParam(${sk},${tg},${sIdx},'__KEY__',this.value)`)}
+          </div>
         </div>
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">操作タイプ</label>
           <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'operationType',this.value)">${opOpts}</select>
@@ -1798,7 +1874,17 @@ window.executeTutorialScenarioSave = async function() {
   if (def && def.needsCardNo) {
     const cardNo = document.getElementById('ts-clear-param').value.trim();
     if (!cardNo) return alert('クリア条件のカードNoを入力してください');
-    clearCondition.params = { cardNo };
+    clearCondition.params = Object.assign({}, clearCondition.params || {}, { cardNo });
+  }
+  // 数値等のパラメータ入力を取り込む（_clearConditionParams から）
+  if (def && Array.isArray(def.params) && def.params.length > 0) {
+    const ps = {};
+    def.params.forEach(p => {
+      const v = _clearConditionParams[p.key];
+      if (v != null && v !== '') ps[p.key] = v;
+      else if (p.default != null) ps[p.key] = p.default;
+    });
+    clearCondition.params = Object.assign({}, clearCondition.params || {}, ps);
   }
 
   // 初期盤面（視覚UI経由の _initialBoardState から構築）

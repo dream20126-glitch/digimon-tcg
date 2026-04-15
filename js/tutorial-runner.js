@@ -42,8 +42,10 @@ export const CONDITION_EVALUATORS = {
   // 育成フェイズ終了（breed→main 遷移で発火）
   breed_end: (params, ev) => ev.type === 'phase_enter' && ev.phase === 'main',
 
-  // 進化（任意 + レベル別）
+  // 進化（任意 + レベル別パラメータ）
   evolve_any: (params, ev) => ev.type === 'evolve',
+  evolve_lv: (params, ev) => ev.type === 'evolve' && _getCardLevel(ev.targetCardNo) === String(params.level || ''),
+  // 旧固定キー（互換用、既存シナリオが壊れないように残す）
   evolve_lv3: (params, ev) => ev.type === 'evolve' && _getCardLevel(ev.targetCardNo) === '3',
   evolve_lv4: (params, ev) => ev.type === 'evolve' && _getCardLevel(ev.targetCardNo) === '4',
   evolve_lv5: (params, ev) => ev.type === 'evolve' && _getCardLevel(ev.targetCardNo) === '5',
@@ -54,14 +56,16 @@ export const CONDITION_EVALUATORS = {
   play_digimon: (params, ev) => ev.type === 'play' && _getCardType(ev.cardNo).includes('デジモン'),
   play_option:  (params, ev) => ev.type === 'play' && _getCardType(ev.cardNo).includes('オプション'),
   play_tamer:   (params, ev) => ev.type === 'play' && _getCardType(ev.cardNo).includes('テイマー'),
-  // レベル別登場
+  // レベル別登場（パラメータ）+ 旧固定キー
+  play_lv: (params, ev) => ev.type === 'play' && _getCardLevel(ev.cardNo) === String(params.level || ''),
   play_lv3: (params, ev) => ev.type === 'play' && _getCardLevel(ev.cardNo) === '3',
   play_lv4: (params, ev) => ev.type === 'play' && _getCardLevel(ev.cardNo) === '4',
   play_lv5: (params, ev) => ev.type === 'play' && _getCardLevel(ev.cardNo) === '5',
   play_lv6: (params, ev) => ev.type === 'play' && _getCardLevel(ev.cardNo) === '6',
   play_lv7: (params, ev) => ev.type === 'play' && _getCardLevel(ev.cardNo) === '7',
 
-  // セキュリティチェック累計（runner._oppSecurityChecks を見る）
+  // セキュリティチェック累計（params.count または旧固定キー）
+  security_check_n: (params, ev) => ev.type === 'security_reduced' && ev.side === 'opponent' && _getOppSecChecks() >= Number(params.count || 1),
   security_check_1: (params, ev) => ev.type === 'security_reduced' && ev.side === 'opponent' && _getOppSecChecks() >= 1,
   security_check_2: (params, ev) => ev.type === 'security_reduced' && ev.side === 'opponent' && _getOppSecChecks() >= 2,
   security_check_3: (params, ev) => ev.type === 'security_reduced' && ev.side === 'opponent' && _getOppSecChecks() >= 3,
@@ -86,16 +90,27 @@ export const CONDITION_EVALUATORS = {
   card_detail_closed: (params, ev) => ev.type === 'card_detail_closed',
   mulligan_accepted: (params, ev) => ev.type === 'mulligan_accepted',
 
-  // 既存の進行系（互換維持）
+  // 既存の進行系（互換維持 + ターン数指定）
   turn_end: (params, ev) => {
     if (ev.type !== 'turn_end') return false;
     const wantSide = params.side || 'player';
-    return wantSide === 'any' || ev.side === wantSide;
+    if (wantSide !== 'any' && ev.side !== wantSide) return false;
+    // params.turn が指定されていれば該当ターン数の終了時のみ
+    if (params.turn != null && params.turn !== '') {
+      const cur = (window.bs && window.bs.turn) || 0;
+      if (Number(params.turn) !== cur) return false;
+    }
+    return true;
   },
   turn_start: (params, ev) => {
     if (ev.type !== 'turn_start') return false;
     const wantSide = params.side || 'player';
-    return wantSide === 'any' || ev.side === wantSide;
+    if (wantSide !== 'any' && ev.side !== wantSide) return false;
+    if (params.turn != null && params.turn !== '') {
+      const cur = (window.bs && window.bs.turn) || 0;
+      if (Number(params.turn) !== cur) return false;
+    }
+    return true;
   },
 
   // --- 互換用（旧条件を使っているシナリオのため残す）---

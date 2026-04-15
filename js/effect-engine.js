@@ -1513,18 +1513,21 @@ export function isTargetSelecting() { return _targetSelecting; }
 
 function showTargetSelection(targetSide, validIndices, conditions, borderColor, callback) {
   // ★ チュートリアル AI 対象選択 intent: スクリプトで指定したカードがあれば自動選択
-  //   _tutorialAiSelectTarget = 'BT1-001' のような cardNo
+  //   _tutorialAiSelectTarget = カードNo or カード名 (部分一致対応)
   if (typeof window !== 'undefined' && window._tutorialAiSelectTarget) {
     const bs = window._lastBattleState || window.bs;
     if (bs) {
       const area = targetSide === 'ai' ? (bs.ai && bs.ai.battleArea) : (bs.player && bs.player.battleArea);
-      const intentNo = window._tutorialAiSelectTarget;
+      const intentKey = String(window._tutorialAiSelectTarget).trim();
       if (Array.isArray(area)) {
-        const matchIdx = (validIndices || []).find(idx => area[idx] && area[idx].cardNo === intentNo);
+        // cardNo 完全一致 → name 完全一致 → name 部分一致 の順
+        let matchIdx = (validIndices || []).find(idx => area[idx] && String(area[idx].cardNo) === intentKey);
+        if (matchIdx === undefined) matchIdx = (validIndices || []).find(idx => area[idx] && String(area[idx].name) === intentKey);
+        if (matchIdx === undefined) matchIdx = (validIndices || []).find(idx => area[idx] && String(area[idx].name || '').includes(intentKey));
         if (matchIdx !== undefined && matchIdx >= 0) {
           window._tutorialAiSelectTarget = null; // intent 消費
           if (typeof window.addLog === 'function') {
-            window.addLog('🎯 [AI] 対象「' + (area[matchIdx].name || intentNo) + '」を自動選択');
+            window.addLog('🎯 [AI] 対象「' + (area[matchIdx].name || intentKey) + '」を自動選択');
           }
           callback(matchIdx);
           return;

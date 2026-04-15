@@ -456,9 +456,9 @@ const OPPONENT_ACTION_TYPES = [
 ];
 
 const FIELD_LABELS = {
-  cardNo:       'カードNo (例: BT1-001)',
-  sourceCardNo: 'アタッカー/進化元のカードNo (バトルエリア)',
-  targetCardNo: '進化先 / 対象 カードNo',
+  cardNo:       'カードNo または カード名 (例: BT1-001 / アグモン)',
+  sourceCardNo: 'アタッカー/進化元 (カードNo or カード名)',
+  targetCardNo: '進化先 / 対象 (カードNo or カード名)',
   targetMode:   'アタック対象 (security / digimon)',
 };
 

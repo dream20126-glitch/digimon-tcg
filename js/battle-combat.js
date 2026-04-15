@@ -459,10 +459,17 @@ export function resolveAttackTarget(target, targetIdx) {
     // ★ チュートリアルAIブロック intent: セキュリティアタックでも intent あれば割り込む
     const aiBlockIntent = window._tutorialAiBlockIntent;
     if (aiBlockIntent && !_onlineMode) {
-      const blockerCardNo = (typeof aiBlockIntent === 'string') ? aiBlockIntent : null;
-      const blockerIdx = blockerCardNo
-        ? bs.ai.battleArea.findIndex(c => c && c.cardNo === blockerCardNo && !c.suspended && (hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】')))
-        : -1;
+      const blockerKey = (typeof aiBlockIntent === 'string') ? aiBlockIntent : null;
+      // カードNo/カード名 両方で検索 + ブロッカー条件を満たすか
+      let blockerIdx = -1;
+      if (blockerKey) {
+        const k = String(blockerKey).trim();
+        bs.ai.battleArea.forEach((c, i) => {
+          if (blockerIdx >= 0 || !c || c.suspended) return;
+          if (!(hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】'))) return;
+          if (String(c.cardNo) === k || String(c.name) === k || String(c.name || '').includes(k)) blockerIdx = i;
+        });
+      }
       if (blockerIdx >= 0) {
         window._tutorialAiBlockIntent = null;
         const blocker = bs.ai.battleArea[blockerIdx];
@@ -521,10 +528,17 @@ export function resolveAttackTarget(target, targetIdx) {
     //   いれば、afterAtkEffect → ブロック処理 に流す
     const aiBlockIntent = window._tutorialAiBlockIntent;
     if (aiBlockIntent && !_onlineMode) {
-      const blockerCardNo = (typeof aiBlockIntent === 'string') ? aiBlockIntent : null;
-      const blockerIdx = blockerCardNo
-        ? bs.ai.battleArea.findIndex(c => c && c.cardNo === blockerCardNo && !c.suspended && (hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】')))
-        : -1;
+      const blockerKey = (typeof aiBlockIntent === 'string') ? aiBlockIntent : null;
+      // カードNo/カード名 両方で検索 + ブロッカー条件を満たすか
+      let blockerIdx = -1;
+      if (blockerKey) {
+        const k = String(blockerKey).trim();
+        bs.ai.battleArea.forEach((c, i) => {
+          if (blockerIdx >= 0 || !c || c.suspended) return;
+          if (!(hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】'))) return;
+          if (String(c.cardNo) === k || String(c.name) === k || String(c.name || '').includes(k)) blockerIdx = i;
+        });
+      }
       if (blockerIdx >= 0) {
         // intent 消費
         window._tutorialAiBlockIntent = null;
@@ -1939,14 +1953,33 @@ export function showGameEndOverlay(text, type, callback) {
 // AI スクリプト用 公開 helper
 //   チュートリアルの相手AIスクリプトから呼ばれる。
 //   公式ルール準拠（コスト消費 / 効果発動 / アニメーション）で動作。
+//   key には カードNo または カード名 を指定可能（部分一致対応）
 // ===================================================================
 
+// 配列からカードNo/名前 で1枚見つける
+//   key: 検索キー (カードNo 完全一致優先 → 名前 完全一致 → 名前 部分一致)
+function _findCardInArray(arr, key) {
+  if (!Array.isArray(arr) || !key) return -1;
+  const k = String(key).trim();
+  // 1) cardNo 完全一致
+  let idx = arr.findIndex(c => c && String(c.cardNo) === k);
+  if (idx >= 0) return idx;
+  // 2) name 完全一致
+  idx = arr.findIndex(c => c && String(c.name) === k);
+  if (idx >= 0) return idx;
+  // 3) name 部分一致
+  idx = arr.findIndex(c => c && String(c.name || '').includes(k));
+  return idx;
+}
+
 // AI: 手札のカードを登場（オプション/テイマー/デジモン）
+//   key: カードNo または カード名
 //   onDone(turnEnded) で完了通知
-export function aiScriptPlayCard(cardNo, onDone) {
-  const handIdx = bs.ai.hand.findIndex(c => c && c.cardNo === cardNo);
+export function aiScriptPlayCard(key, onDone) {
+  const handIdx = _findCardInArray(bs.ai.hand, key);
+  const cardNo = key;
   if (handIdx < 0) {
-    addLog('🤖 [スクリプト] 手札に「' + cardNo + '」がありません');
+    addLog('🤖 [スクリプト] 手札に「' + key + '」が見つかりません');
     onDone && onDone(false);
     return;
   }
@@ -1960,15 +1993,16 @@ export function aiScriptPlayCard(cardNo, onDone) {
 }
 
 // AI: バトルエリアで進化（コスト+ドロー+【進化時】）
-export function aiScriptEvolveBattle(sourceCardNo, targetCardNo, onDone) {
-  const slotIdx = bs.ai.battleArea.findIndex(c => c && c.cardNo === sourceCardNo);
-  const handIdx = bs.ai.hand.findIndex(c => c && c.cardNo === targetCardNo);
+//   sourceKey/targetKey: カードNo または カード名
+export function aiScriptEvolveBattle(sourceKey, targetKey, onDone) {
+  const slotIdx = _findCardInArray(bs.ai.battleArea, sourceKey);
+  const handIdx = _findCardInArray(bs.ai.hand, targetKey);
   if (slotIdx < 0) {
-    addLog('🤖 [スクリプト] バトルエリアに「' + sourceCardNo + '」がありません');
+    addLog('🤖 [スクリプト] バトルエリアに「' + sourceKey + '」がありません');
     onDone && onDone(false); return;
   }
   if (handIdx < 0) {
-    addLog('🤖 [スクリプト] 手札に「' + targetCardNo + '」がありません');
+    addLog('🤖 [スクリプト] 手札に「' + targetKey + '」がありません');
     onDone && onDone(false); return;
   }
   const base = bs.ai.battleArea[slotIdx];
@@ -2008,11 +2042,11 @@ export function aiScriptEvolveBattle(sourceCardNo, targetCardNo, onDone) {
   });
 }
 
-// AI: 育成エリアで進化
-export function aiScriptEvolveBreed(targetCardNo, onDone) {
-  const handIdx = bs.ai.hand.findIndex(c => c && c.cardNo === targetCardNo);
+// AI: 育成エリアで進化（targetKey: カードNo または カード名）
+export function aiScriptEvolveBreed(targetKey, onDone) {
+  const handIdx = _findCardInArray(bs.ai.hand, targetKey);
   if (handIdx < 0) {
-    addLog('🤖 [スクリプト] 手札に「' + targetCardNo + '」がありません');
+    addLog('🤖 [スクリプト] 手札に「' + targetKey + '」がありません');
     onDone && onDone(false); return;
   }
   const base = bs.ai.ikusei;
@@ -2076,11 +2110,12 @@ export function aiScriptMoveToBattle(onDone) {
 }
 
 // AI: 指定アタッカーで指定対象に攻撃
-//   target: 'security' | { type:'digimon', cardNo: 'XX' }
-export function aiScriptAttack(attackerCardNo, target, onDone) {
-  const atkIdx = bs.ai.battleArea.findIndex(c => c && c.cardNo === attackerCardNo);
+//   attackerKey: カードNo または カード名
+//   target: 'security' | { type:'digimon', cardNo: 'XX' or name }
+export function aiScriptAttack(attackerKey, target, onDone) {
+  const atkIdx = _findCardInArray(bs.ai.battleArea, attackerKey);
   if (atkIdx < 0) {
-    addLog('🤖 [スクリプト] バトルエリアに「' + attackerCardNo + '」がありません');
+    addLog('🤖 [スクリプト] バトルエリアに「' + attackerKey + '」がありません');
     onDone && onDone(); return;
   }
   const atk = bs.ai.battleArea[atkIdx];
@@ -2096,9 +2131,10 @@ export function aiScriptAttack(attackerCardNo, target, onDone) {
   let targetMode = 'security';
   let targetIdx = -1;
   if (target && typeof target === 'object' && target.type === 'digimon') {
-    targetIdx = bs.player.battleArea.findIndex(c => c && c.cardNo === target.cardNo);
+    const k = target.cardNo || target.name || '';
+    targetIdx = _findCardInArray(bs.player.battleArea, k);
     if (targetIdx < 0) {
-      addLog('🤖 [スクリプト] プレイヤー「' + target.cardNo + '」が見つからないためセキュリティをアタック');
+      addLog('🤖 [スクリプト] プレイヤー「' + k + '」が見つからないためセキュリティをアタック');
       targetMode = 'security';
     } else {
       targetMode = 'digimon';

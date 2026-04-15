@@ -456,6 +456,32 @@ export function resolveAttackTarget(target, targetIdx) {
   }
 
   if (target === 'security') {
+    // ★ チュートリアルAIブロック intent: セキュリティアタックでも intent あれば割り込む
+    const aiBlockIntent = window._tutorialAiBlockIntent;
+    if (aiBlockIntent && !_onlineMode) {
+      const blockerCardNo = (typeof aiBlockIntent === 'string') ? aiBlockIntent : null;
+      const blockerIdx = blockerCardNo
+        ? bs.ai.battleArea.findIndex(c => c && c.cardNo === blockerCardNo && !c.suspended && (hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】')))
+        : -1;
+      if (blockerIdx >= 0) {
+        window._tutorialAiBlockIntent = null;
+        const blocker = bs.ai.battleArea[blockerIdx];
+        addLog('🛡 [AI] 「' + blocker.name + '」でブロック！');
+        blocker.suspended = true;
+        try {
+          if (window._tutorialRunner) {
+            window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'ai' });
+          }
+        } catch (_) {}
+        renderAll();
+        afterAtkEffect(atk, atkSlotIdx, () => {
+          afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
+            resolveBattle(atk, atkSlotIdx, blocker, blockerIdx, 'ai');
+          });
+        });
+        return;
+      }
+    }
     // セキュリティアタック
     if (_onlineMode && _sendCommand) {
       // ★ アタック時効果を先に処理 → 完了後にブロック要求を送信
@@ -490,6 +516,36 @@ export function resolveAttackTarget(target, targetIdx) {
       addLog('🚨 アクティブ状態のデジモンにはアタックできません');
       atk.suspended = false; renderAll();
       return;
+    }
+    // ★ チュートリアルAIブロック intent: スクリプトで指定されたブロッカーがAIバトルエリアに
+    //   いれば、afterAtkEffect → ブロック処理 に流す
+    const aiBlockIntent = window._tutorialAiBlockIntent;
+    if (aiBlockIntent && !_onlineMode) {
+      const blockerCardNo = (typeof aiBlockIntent === 'string') ? aiBlockIntent : null;
+      const blockerIdx = blockerCardNo
+        ? bs.ai.battleArea.findIndex(c => c && c.cardNo === blockerCardNo && !c.suspended && (hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】')))
+        : -1;
+      if (blockerIdx >= 0) {
+        // intent 消費
+        window._tutorialAiBlockIntent = null;
+        const blocker = bs.ai.battleArea[blockerIdx];
+        addLog('🛡 [AI] 「' + blocker.name + '」でブロック！');
+        blocker.suspended = true;
+        try {
+          if (window._tutorialRunner) {
+            window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'ai' });
+          }
+        } catch (_) {}
+        renderAll();
+        afterAtkEffect(atk, atkSlotIdx, () => {
+          // ブロックされた側 (player) の効果
+          afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
+            // ブロッカー vs アタッカー のバトル解決 (def を blocker に差し替え)
+            resolveBattle(atk, atkSlotIdx, blocker, blockerIdx, 'ai');
+          });
+        });
+        return;
+      }
     }
     if (_onlineMode && _sendCommand) {
       // ★ アタック時効果を先に処理 → 完了後にブロック要求を送信

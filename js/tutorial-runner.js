@@ -187,6 +187,11 @@ class TutorialRunner {
     this._interruptResolve = null;
     this._oppSecurityChecks = 0;
     this._ownSecurityChecks = 0;
+    // 前シナリオの残留 intent を必ずクリア
+    if (typeof window !== 'undefined') {
+      window._tutorialAiBlockIntent = null;
+      window._tutorialAiSelectTarget = null;
+    }
     window._tutorialRunner = this;
 
     // フロー構築（flow がなければ空）

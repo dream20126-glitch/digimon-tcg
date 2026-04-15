@@ -442,25 +442,39 @@ let _opponentScript = [];      // 相手AIスクリプトの編集中状態
 
 // 相手AIアクション種別定義（新しいアクションを追加したい場合はここに1行）
 // fields: 入力欄として表示するフィールド名
+// fieldDefs: アクションごとに [{ key, label, type, options? }] で個別ラベル/型を定義
 const OPPONENT_ACTION_TYPES = [
-  { value: 'hatch',          label: '孵化',                                          fields: [] },
-  { value: 'play_card',      label: 'デジモン/オプション/テイマーを登場',           fields: ['cardNo'] },
-  { value: 'evolve_battle',  label: 'バトルエリアで進化',                            fields: ['sourceCardNo', 'targetCardNo'] },
-  { value: 'evolve_breed',   label: '育成エリアで進化',                              fields: ['targetCardNo'] },
-  { value: 'move_to_battle', label: '育成エリア→バトルエリアへ移動',                fields: [] },
-  { value: 'attack',         label: '相手にアタック (セキュリティ or 指定デジモン)', fields: ['cardNo', 'targetMode', 'targetCardNo'] },
-  { value: 'block',          label: 'ブロックする(プレイヤーの次のアタック)',         fields: ['cardNo'] },
-  { value: 'select_target',  label: '対象選択 (効果指定で選ぶカード)',                fields: ['cardNo'] },
-  { value: 'pass',           label: '何もしない',                                    fields: [] },
-  { value: 'end_turn',       label: 'ターン終了',                                    fields: [] },
+  { value: 'hatch',          label: '孵化',                                          fieldDefs: [] },
+  { value: 'play_card',      label: 'デジモン/オプション/テイマーを登場',           fieldDefs: [
+    { key: 'cardNo', label: '登場させるカード (No or 名前)' }
+  ] },
+  { value: 'evolve_battle',  label: 'バトルエリアで進化',                            fieldDefs: [
+    { key: 'sourceCardNo', label: '進化元 (バトルエリア)' },
+    { key: 'targetCardNo', label: '進化先 (手札)' }
+  ] },
+  { value: 'evolve_breed',   label: '育成エリアで進化',                              fieldDefs: [
+    { key: 'targetCardNo', label: '進化先 (手札)' }
+  ] },
+  { value: 'move_to_battle', label: '育成エリア→バトルエリアへ移動',                fieldDefs: [] },
+  { value: 'attack',         label: '相手にアタック',                                fieldDefs: [
+    { key: 'cardNo',       label: 'どのデジモンでアタック (バトルエリア)' },
+    { key: 'targetMode',   label: 'アタック対象', type: 'select', options: [
+      { value: 'security', label: 'セキュリティを攻撃' },
+      { value: 'digimon',  label: '相手デジモンを攻撃' }
+    ] },
+    { key: 'targetCardNo', label: '攻撃する相手デジモン (digimon選択時のみ)' }
+  ] },
+  { value: 'block',          label: 'ブロックする (プレイヤーの次の攻撃)',           fieldDefs: [
+    { key: 'cardNo', label: 'ブロッカー (バトルエリア)' }
+  ] },
+  { value: 'select_target',  label: '対象選択 (AIの効果対象に選ぶカード)',           fieldDefs: [
+    { key: 'cardNo', label: '対象として選ぶカード (No or 名前)' }
+  ] },
+  { value: 'pass',           label: '何もしない',                                    fieldDefs: [] },
+  { value: 'end_turn',       label: 'ターン終了',                                    fieldDefs: [] },
 ];
-
-const FIELD_LABELS = {
-  cardNo:       'カードNo または カード名 (例: BT1-001 / アグモン)',
-  sourceCardNo: 'アタッカー/進化元 (カードNo or カード名)',
-  targetCardNo: '進化先 / 対象 (カードNo or カード名)',
-  targetMode:   'アタック対象 (security / digimon)',
-};
+// 旧 fields キーとの互換 (詳細プレビュー等で参照されているため)
+OPPONENT_ACTION_TYPES.forEach(t => { t.fields = (t.fieldDefs || []).map(f => f.key); });
 
 // 初期盤面の空状態を作成
 function _emptyBoardState() {
@@ -2027,22 +2041,40 @@ function _renderOpponentActionRow(turnIdx, actIdx, action) {
     `<option value="${t.value}"${t.value === action.type ? ' selected' : ''}>${t.label}</option>`
   ).join('');
   const def = OPPONENT_ACTION_TYPES.find(t => t.value === action.type);
-  const fieldsHtml = def && def.fields.length
-    ? def.fields.map(f => `
-        <input type="text" value="${_escHtml(action[f] || '')}"
-          placeholder="${FIELD_LABELS[f] || f}"
-          oninput="tsUpdateOpponentActionField(${turnIdx},${actIdx},'${f}',this.value)"
-          style="font-size:10px; padding:3px; width:130px; margin-left:4px;">
-      `).join('')
-    : '';
+  const defs = (def && def.fieldDefs) || [];
+  const fieldsHtml = defs.map(fd => {
+    const val = action[fd.key] || '';
+    if (fd.type === 'select') {
+      const opts = (fd.options || []).map(o =>
+        `<option value="${o.value}"${o.value === val ? ' selected' : ''}>${o.label}</option>`
+      ).join('');
+      return `<label style="display:inline-flex; align-items:center; gap:3px; font-size:10px; color:#888; margin-left:6px;">
+        <span>${_escHtml(fd.label)}:</span>
+        <select onchange="tsUpdateOpponentActionField(${turnIdx},${actIdx},'${fd.key}',this.value)"
+          style="font-size:10px; padding:3px;">
+          <option value="">（選択）</option>
+          ${opts}
+        </select>
+      </label>`;
+    }
+    return `<label style="display:inline-flex; align-items:center; gap:3px; font-size:10px; color:#888; margin-left:6px;">
+      <span>${_escHtml(fd.label)}:</span>
+      <input type="text" value="${_escHtml(val)}"
+        placeholder="No or 名前"
+        oninput="tsUpdateOpponentActionField(${turnIdx},${actIdx},'${fd.key}',this.value)"
+        style="font-size:10px; padding:3px; width:140px;">
+    </label>`;
+  }).join('');
   return `
-    <div style="display:flex; align-items:center; padding:4px; background:#0f0f0f; border-radius:3px; margin-bottom:3px; flex-wrap:wrap; gap:4px;">
-      <span style="color:#888; font-size:10px; min-width:30px;">${actIdx + 1}.</span>
-      <select onchange="tsUpdateOpponentActionType(${turnIdx},${actIdx},this.value)" style="font-size:10px; padding:3px;">
-        ${typeOpts}
-      </select>
-      ${fieldsHtml}
-      <button class="admin-btn-danger" style="padding:2px 6px; font-size:10px; margin-left:auto;" onclick="tsRemoveOpponentAction(${turnIdx},${actIdx})">×</button>
+    <div style="display:block; padding:6px; background:#0f0f0f; border-radius:3px; margin-bottom:4px;">
+      <div style="display:flex; align-items:center; gap:4px;">
+        <span style="color:#888; font-size:10px; min-width:30px;">${actIdx + 1}.</span>
+        <select onchange="tsUpdateOpponentActionType(${turnIdx},${actIdx},this.value)" style="font-size:10px; padding:3px; flex:1;">
+          ${typeOpts}
+        </select>
+        <button class="admin-btn-danger" style="padding:2px 6px; font-size:10px;" onclick="tsRemoveOpponentAction(${turnIdx},${actIdx})">×</button>
+      </div>
+      ${fieldsHtml ? `<div style="margin-top:4px; padding-left:34px;">${fieldsHtml}</div>` : ''}
     </div>
   `;
 }

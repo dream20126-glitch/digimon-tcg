@@ -795,10 +795,14 @@ class OpponentScriptRunner {
         }
         case 'attack': {
           // 相手 (プレイヤー) にアタック
-          //   action.cardNo: アタッカー (AIバトルエリア)
-          //   action.target: 'security' | { type:'digimon', cardNo:'XX' }
+          //   action.cardNo:       アタッカー (AIバトルエリア)
+          //   action.targetMode:   'security' | 'digimon'
+          //   action.targetCardNo: 攻撃する相手デジモンのカードNo/名前 (digimon時)
           if (window._aiScriptAttack && action.cardNo) {
-            const target = action.target || 'security';
+            const mode = action.targetMode || 'security';
+            const target = (mode === 'digimon')
+              ? { type: 'digimon', cardNo: action.targetCardNo || '' }
+              : 'security';
             window._aiScriptAttack(action.cardNo, target, () => cb());
           } else { cb(); }
           break;

@@ -89,7 +89,8 @@
       <p style="color:var(--main-cyan); font-size:12px; font-weight:bold; margin:0 0 10px;">クリア条件 <span style="color:#ff4444;">*</span></p>
       <p style="color:#888; font-size:11px; margin:0 0 10px;">このシナリオを終了させる条件を指定します</p>
       <div class="tsave-field"><label>条件タイプ</label>
-        <select id="ts-clear-type" onchange="updateClearConditionUI()"></select>
+        <input type="hidden" id="ts-clear-type" value="">
+        <div id="ts-clear-picker-mount"></div>
       </div>
       <div class="tsave-field" id="ts-clear-param-wrap" style="display:none;"><label>パラメータ (カードNo等)</label>
         <input type="text" id="ts-clear-param" placeholder="例: BT1-010">

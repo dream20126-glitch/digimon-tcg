@@ -8,31 +8,47 @@ import { loadCardAndKeywordData, getCardImageUrl } from './cards.js';
 // 進行条件・クリア条件の種別定義（プルダウン用）
 // ここに追加/削除すれば管理画面のプルダウンに自動反映される
 // 新しい条件タイプを追加するときは tutorial-runner.js の CONDITION_EVALUATORS にも追加すること
+// clearable: false → クリア条件のプルダウンには出さない（次に進む条件のみ）
 const CONDITION_TYPES = [
   // フェイズ関連
-  { value: 'breed_end',          label: '育成フェイズ終了（孵化/移動/何もしない）', needsCardNo: false, group: '🥚 フェイズ' },
+  { value: 'breed_end',          label: '育成フェイズ終了（孵化/移動/何もしない）', needsCardNo: false, group: '🥚 フェイズ', clearable: false },
   { value: 'turn_start',         label: 'ターン開始した',                              needsCardNo: false, group: '🥚 フェイズ' },
   { value: 'turn_end',           label: 'ターン終了した',                              needsCardNo: false, group: '🥚 フェイズ' },
   // 進化
   { value: 'evolve_any',         label: 'デジモンを進化させた',                       needsCardNo: false, group: '⬆ 進化' },
+  { value: 'evolve_lv3',         label: 'レベル3に進化させた',                         needsCardNo: false, group: '⬆ 進化' },
+  { value: 'evolve_lv4',         label: 'レベル4に進化させた',                         needsCardNo: false, group: '⬆ 進化' },
+  { value: 'evolve_lv5',         label: 'レベル5に進化させた',                         needsCardNo: false, group: '⬆ 進化' },
   { value: 'evolve_lv6',         label: 'レベル6に進化させた',                         needsCardNo: false, group: '⬆ 進化' },
+  { value: 'evolve_lv7',         label: 'レベル7に進化させた',                         needsCardNo: false, group: '⬆ 進化' },
   // 登場・カード使用
   { value: 'play_digimon',       label: 'デジモンを登場させた',                       needsCardNo: false, group: '📥 登場・カード使用' },
   { value: 'play_option',        label: 'オプションカードを使った',                   needsCardNo: false, group: '📥 登場・カード使用' },
   { value: 'play_tamer',         label: 'テイマーカードを使った',                     needsCardNo: false, group: '📥 登場・カード使用' },
+  { value: 'play_lv3',           label: 'レベル3を登場させた',                         needsCardNo: false, group: '📥 登場・カード使用' },
+  { value: 'play_lv4',           label: 'レベル4を登場させた',                         needsCardNo: false, group: '📥 登場・カード使用' },
+  { value: 'play_lv5',           label: 'レベル5を登場させた',                         needsCardNo: false, group: '📥 登場・カード使用' },
+  { value: 'play_lv6',           label: 'レベル6を登場させた',                         needsCardNo: false, group: '📥 登場・カード使用' },
+  { value: 'play_lv7',           label: 'レベル7を登場させた',                         needsCardNo: false, group: '📥 登場・カード使用' },
   // アタック
   { value: 'attack_declared',    label: 'アタック宣言した（アタックボタン押下）',     needsCardNo: false, group: '⚔ アタック' },
   { value: 'attack_resolved',    label: 'バトルを解決した（デジモン/セキュリティ）',  needsCardNo: false, group: '⚔ アタック' },
   { value: 'direct_attack',      label: 'ダイレクトアタックした',                     needsCardNo: false, group: '⚔ アタック' },
   { value: 'block',              label: 'ブロックした',                                needsCardNo: false, group: '⚔ アタック' },
+  // セキュリティ
+  { value: 'security_check_1',   label: '相手セキュリティを1枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ' },
+  { value: 'security_check_2',   label: '相手セキュリティを2枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ' },
+  { value: 'security_check_3',   label: '相手セキュリティを3枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ' },
+  { value: 'security_check_4',   label: '相手セキュリティを4枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ' },
+  { value: 'security_check_5',   label: '相手セキュリティを5枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ' },
   // 効果
   { value: 'use_effect',         label: '効果を使った（任意）',                       needsCardNo: false, group: '✨ 効果' },
   { value: 'effect_triggered',   label: '効果を誘発させた',                           needsCardNo: false, group: '✨ 効果' },
   { value: 'security_effect',    label: 'セキュリティ効果を発動させた',               needsCardNo: false, group: '✨ 効果' },
-  // UI操作
-  { value: 'card_detail_opened', label: 'カード詳細を見た（開いた）',                 needsCardNo: false, group: '🖱 UI操作' },
-  { value: 'card_detail_closed', label: 'カード詳細を閉じた',                         needsCardNo: false, group: '🖱 UI操作' },
-  { value: 'mulligan_accepted',  label: 'ゲーム開始ボタンを押した（マリガン）',       needsCardNo: false, group: '🖱 UI操作' },
+  // UI操作（クリア条件には出さない）
+  { value: 'card_detail_opened', label: 'カード詳細を見た（開いた）',                 needsCardNo: false, group: '🖱 UI操作', clearable: false },
+  { value: 'card_detail_closed', label: 'カード詳細を閉じた',                         needsCardNo: false, group: '🖱 UI操作', clearable: false },
+  { value: 'mulligan_accepted',  label: 'ゲーム開始ボタンを押した（マリガン）',       needsCardNo: false, group: '🖱 UI操作', clearable: false },
   // 達成系
   { value: 'security_zero',      label: '相手セキュリティを0枚にした',                needsCardNo: false, group: '🏆 達成' },
 ];
@@ -84,6 +100,71 @@ function _renderConditionPicker(slotKey, timing, sIdx, currentValue) {
 window.conditionPickerSelect = function(uid, slotKey, timing, sIdx, value) {
   flowUpdateStep(slotKey, timing, sIdx, 'conditionType', value);
   // _renderFlowEditor が呼ばれて全体再描画されるので、ボタン更新は不要
+};
+
+// クリア条件用のアコーディオン式ピッカー
+// (CONDITION_TYPES のうち clearable !== false のものだけ表示)
+function _renderClearConditionPicker(currentValue) {
+  const uid = 'cp_clear';
+  const list = CONDITION_TYPES.filter(t => t.clearable !== false);
+  const cur = list.find(t => t.value === (currentValue || '')) || { label: '（条件を選択）' };
+
+  const groups = {};
+  const order = [];
+  list.forEach(t => {
+    const g = t.group || '🔧 その他';
+    if (!groups[g]) { groups[g] = []; order.push(g); }
+    groups[g].push(t);
+  });
+
+  const item = (t) => {
+    const v = `'${t.value}'`;
+    const sel = t.value === (currentValue || '') ? ' selected' : '';
+    return `<div class="ap-item${sel}" onclick="clearConditionPickerSelect(${v})">${_escHtml(t.label)}</div>`;
+  };
+
+  let panel = '';
+  order.forEach(g => {
+    const gid = `${uid}_g_${order.indexOf(g)}`;
+    const opened = groups[g].some(t => t.value === (currentValue || ''));
+    panel += `<div class="ap-group">
+      <div class="ap-group-header${opened ? ' open' : ''}" onclick="areaPickerToggleGroup('${gid}', this)">
+        <span class="ap-arrow">▶</span>${_escHtml(g)}
+      </div>
+      <div class="ap-group-body" id="${gid}_body" style="display:${opened ? 'block' : 'none'};">
+        ${groups[g].map(item).join('')}
+      </div>
+    </div>`;
+  });
+
+  return `<div class="area-picker" id="${uid}" onclick="event.stopPropagation()">
+    <button type="button" class="ap-button" onclick="areaPickerToggle('${uid}')">
+      <span id="cp_clear_label">${_escHtml(cur.label)}</span>
+      <span class="ap-caret">▼</span>
+    </button>
+    <div class="ap-panel" id="${uid}_panel" style="display:none;">${panel}</div>
+  </div>`;
+}
+
+// クリア条件選択時の処理
+window.clearConditionPickerSelect = function(value) {
+  const hiddenInput = document.getElementById('ts-clear-type');
+  if (hiddenInput) hiddenInput.value = value;
+  const def = CONDITION_TYPES.find(t => t.value === value);
+  const labelEl = document.getElementById('cp_clear_label');
+  if (labelEl) labelEl.innerText = def ? def.label : value;
+  const panel = document.getElementById('cp_clear_panel');
+  if (panel) panel.style.display = 'none';
+  const picker = document.getElementById('cp_clear');
+  if (picker) {
+    picker.querySelectorAll('.ap-item').forEach(it => it.classList.remove('selected'));
+    picker.querySelectorAll('.ap-item').forEach(it => {
+      if (it.getAttribute('onclick') && it.getAttribute('onclick').includes(`'${value}'`)) {
+        it.classList.add('selected');
+      }
+    });
+  }
+  if (typeof updateClearConditionUI === 'function') updateClearConditionUI();
 };
 
 // 指差しマーカーの対象エリア定義（全シナリオ共通で使用）
@@ -625,13 +706,14 @@ window.editTutorialScenario = async function(scenario) {
   // クリア後メッセージ復元
   document.getElementById('ts-clear-message').value = scenario.clearMessage || '';
 
-  // クリア条件
+  // クリア条件 (アコーディオンピッカーを再マウントして現在値を反映)
   const cc = scenario.clearCondition || null;
-  if (cc) {
-    document.getElementById('ts-clear-type').value = cc.type || '';
-    if (cc.params && cc.params.cardNo) document.getElementById('ts-clear-param').value = cc.params.cardNo;
-    updateClearConditionUI();
-  }
+  const ccType = cc ? (cc.type || '') : '';
+  const clearMount = document.getElementById('ts-clear-picker-mount');
+  if (clearMount) clearMount.innerHTML = _renderClearConditionPicker(ccType);
+  document.getElementById('ts-clear-type').value = ccType;
+  if (cc && cc.params && cc.params.cardNo) document.getElementById('ts-clear-param').value = cc.params.cardNo;
+  if (typeof updateClearConditionUI === 'function') updateClearConditionUI();
 
   // 初期盤面
   const ib = scenario.initialBoard || {};
@@ -675,12 +757,11 @@ window.editTutorialScenario = async function(scenario) {
 };
 
 async function _prepareEditForm() {
-  // クリア条件プルダウンを構築
-  const clearSel = document.getElementById('ts-clear-type');
-  if (clearSel && !clearSel.dataset.built) {
-    clearSel.innerHTML = CONDITION_TYPES.map(t => `<option value="${t.value}">${t.label}</option>`).join('');
-    clearSel.dataset.built = '1';
-  }
+  // クリア条件アコーディオンピッカーをマウント（初期値空）
+  const clearMount = document.getElementById('ts-clear-picker-mount');
+  if (clearMount) clearMount.innerHTML = _renderClearConditionPicker('');
+  const clearHidden = document.getElementById('ts-clear-type');
+  if (clearHidden) clearHidden.value = '';
   document.getElementById('ts-clear-param').value = '';
 
   // フォームリセット
@@ -771,9 +852,11 @@ async function _loadDeckOptions() {
 // クリア条件のUI切替（パラメータ欄の表示制御）
 // ===================================================================
 window.updateClearConditionUI = function() {
-  const type = document.getElementById('ts-clear-type').value;
+  const hidden = document.getElementById('ts-clear-type');
+  const type = hidden ? hidden.value : '';
   const def = CONDITION_TYPES.find(t => t.value === type);
   const wrap = document.getElementById('ts-clear-param-wrap');
+  if (!wrap) return;
   if (def && def.needsCardNo) wrap.style.display = '';
   else wrap.style.display = 'none';
 };
@@ -1709,6 +1792,7 @@ window.executeTutorialScenarioSave = async function() {
 
   // クリア条件
   const type = document.getElementById('ts-clear-type').value;
+  if (!type) return alert('クリア条件を選択してください');
   let clearCondition = { type };
   const def = CONDITION_TYPES.find(t => t.value === type);
   if (def && def.needsCardNo) {

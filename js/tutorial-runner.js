@@ -28,19 +28,45 @@ function _getCardLevel(cardNo) {
   if (!c) return '';
   return String(c['レベル'] || c['Lv'] || '');
 }
+// runner インスタンス上の累計カウンタを参照
+function _getOppSecChecks() {
+  const r = (typeof window !== 'undefined') ? window._tutorialRunner : null;
+  return (r && r._oppSecurityChecks) || 0;
+}
+function _getOwnSecChecks() {
+  const r = (typeof window !== 'undefined') ? window._tutorialRunner : null;
+  return (r && r._ownSecurityChecks) || 0;
+}
 
 export const CONDITION_EVALUATORS = {
   // 育成フェイズ終了（breed→main 遷移で発火）
   breed_end: (params, ev) => ev.type === 'phase_enter' && ev.phase === 'main',
 
-  // 進化（既存 + レベル6判定）
+  // 進化（任意 + レベル別）
   evolve_any: (params, ev) => ev.type === 'evolve',
+  evolve_lv3: (params, ev) => ev.type === 'evolve' && _getCardLevel(ev.targetCardNo) === '3',
+  evolve_lv4: (params, ev) => ev.type === 'evolve' && _getCardLevel(ev.targetCardNo) === '4',
+  evolve_lv5: (params, ev) => ev.type === 'evolve' && _getCardLevel(ev.targetCardNo) === '5',
   evolve_lv6: (params, ev) => ev.type === 'evolve' && _getCardLevel(ev.targetCardNo) === '6',
+  evolve_lv7: (params, ev) => ev.type === 'evolve' && _getCardLevel(ev.targetCardNo) === '7',
 
   // カード登場・使用（カード種類で判定）
   play_digimon: (params, ev) => ev.type === 'play' && _getCardType(ev.cardNo).includes('デジモン'),
   play_option:  (params, ev) => ev.type === 'play' && _getCardType(ev.cardNo).includes('オプション'),
   play_tamer:   (params, ev) => ev.type === 'play' && _getCardType(ev.cardNo).includes('テイマー'),
+  // レベル別登場
+  play_lv3: (params, ev) => ev.type === 'play' && _getCardLevel(ev.cardNo) === '3',
+  play_lv4: (params, ev) => ev.type === 'play' && _getCardLevel(ev.cardNo) === '4',
+  play_lv5: (params, ev) => ev.type === 'play' && _getCardLevel(ev.cardNo) === '5',
+  play_lv6: (params, ev) => ev.type === 'play' && _getCardLevel(ev.cardNo) === '6',
+  play_lv7: (params, ev) => ev.type === 'play' && _getCardLevel(ev.cardNo) === '7',
+
+  // セキュリティチェック累計（runner._oppSecurityChecks を見る）
+  security_check_1: (params, ev) => ev.type === 'security_reduced' && ev.side === 'opponent' && _getOppSecChecks() >= 1,
+  security_check_2: (params, ev) => ev.type === 'security_reduced' && ev.side === 'opponent' && _getOppSecChecks() >= 2,
+  security_check_3: (params, ev) => ev.type === 'security_reduced' && ev.side === 'opponent' && _getOppSecChecks() >= 3,
+  security_check_4: (params, ev) => ev.type === 'security_reduced' && ev.side === 'opponent' && _getOppSecChecks() >= 4,
+  security_check_5: (params, ev) => ev.type === 'security_reduced' && ev.side === 'opponent' && _getOppSecChecks() >= 5,
 
   // アタック関連
   attack_declared: (params, ev) => ev.type === 'attack_declared',
@@ -121,6 +147,8 @@ class TutorialRunner {
     this._completedBlocks = new Set(); // 完了済みブロックのインデックス
     this._shownPhases = {};
     this._currentTurn = 1;        // 現在のターン番号
+    this._oppSecurityChecks = 0;  // 相手セキュリティチェック累計
+    this._ownSecurityChecks = 0;  // 自分セキュリティチェック累計
 
     // 割り込み制御
     this._interruptResolve = null; // checkInterrupt の Promise resolve
@@ -142,6 +170,8 @@ class TutorialRunner {
     this._currentBlock = null;
     this._currentStepIdx = 0;
     this._interruptResolve = null;
+    this._oppSecurityChecks = 0;
+    this._ownSecurityChecks = 0;
     window._tutorialRunner = this;
 
     // フロー構築（flow がなければ空）
@@ -231,6 +261,12 @@ class TutorialRunner {
     // ターン番号を追跡
     if (type === 'turn_start' && ev.side === 'player') {
       this._currentTurn = (window.bs && window.bs.turn) || this._currentTurn;
+    }
+
+    // セキュリティチェック累計を追跡（security_check_N の判定用）
+    if (type === 'security_reduced') {
+      if (ev.side === 'opponent') this._oppSecurityChecks = (this._oppSecurityChecks || 0) + (Number(ev.count) || 1);
+      if (ev.side === 'own')      this._ownSecurityChecks = (this._ownSecurityChecks || 0) + (Number(ev.count) || 1);
     }
 
     // 相手ターン開始時: 相手AIスクリプトを実行

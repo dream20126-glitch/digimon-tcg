@@ -9,7 +9,7 @@ import { bs } from './battle-state.js';
 import { addLog } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallbacks, doIkuMove } from './battle-render.js';
 import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks } from './battle-phase.js';
-import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, setCombatHooks } from './battle-combat.js';
+import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack } from './battle-combat.js';
 import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, loadAllDictionaries, registerFxRunners } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxBuffStatus } from './battle-fx.js';
 import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js';
@@ -270,6 +270,13 @@ export function setupCommonWindowExports() {
   window.startAttack = startAttack;
   window.cancelAttack = cancelAttack;
   window.resolveAttackTarget = resolveAttackTarget;
+
+  // チュートリアル相手AIスクリプト用 helper
+  window._aiScriptPlayCard      = aiScriptPlayCard;
+  window._aiScriptEvolveBattle  = aiScriptEvolveBattle;
+  window._aiScriptEvolveBreed   = aiScriptEvolveBreed;
+  window._aiScriptMoveToBattle  = aiScriptMoveToBattle;
+  window._aiScriptAttack        = aiScriptAttack;
   window.battleVictory = battleVictory;
   window.battleDefeat = battleDefeat;
 

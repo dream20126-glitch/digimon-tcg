@@ -757,39 +757,65 @@ class OpponentScriptRunner {
           }
           cb(); break;
         }
+        // ===== 公式ルール準拠アクション (新) =====
+        case 'play_card':
         case 'play': {
-          if (bs && action.cardNo) {
-            const idx = bs.ai.hand.findIndex(c => c && c.cardNo === action.cardNo);
-            if (idx >= 0) {
-              const card = bs.ai.hand.splice(idx, 1)[0];
-              card.summonedThisTurn = true;
-              bs.ai.battleArea.push(card);
-              log('相手が「' + card.name + '」をプレイ');
-              if (typeof window.renderAll === 'function') window.renderAll();
-            }
-          }
-          cb(); break;
+          // デジモン/オプション/テイマー登場（コスト+【登場時】効果）
+          if (window._aiScriptPlayCard && action.cardNo) {
+            window._aiScriptPlayCard(action.cardNo, () => cb());
+          } else { cb(); }
+          break;
         }
+        case 'evolve_battle':
         case 'evolve': {
-          if (bs && action.sourceCardNo && action.targetCardNo) {
-            const slotIdx = bs.ai.battleArea.findIndex(c => c && c.cardNo === action.sourceCardNo);
-            const handIdx = bs.ai.hand.findIndex(c => c && c.cardNo === action.targetCardNo);
-            if (slotIdx >= 0 && handIdx >= 0) {
-              const base = bs.ai.battleArea[slotIdx];
-              const evo  = bs.ai.hand.splice(handIdx, 1)[0];
-              evo.stack = [...(base.stack || []), base];
-              evo.suspended = base.suspended;
-              bs.ai.battleArea[slotIdx] = evo;
-              log('相手が「' + base.name + '」→「' + evo.name + '」に進化');
-              if (typeof window.renderAll === 'function') window.renderAll();
-            }
-          }
+          // バトルエリアで進化（コスト+ドロー+【進化時】）
+          if (window._aiScriptEvolveBattle && action.sourceCardNo && action.targetCardNo) {
+            window._aiScriptEvolveBattle(action.sourceCardNo, action.targetCardNo, () => cb());
+          } else { cb(); }
+          break;
+        }
+        case 'evolve_breed': {
+          // 育成エリアで進化（コスト+ドロー）
+          if (window._aiScriptEvolveBreed && action.targetCardNo) {
+            window._aiScriptEvolveBreed(action.targetCardNo, () => cb());
+          } else { cb(); }
+          break;
+        }
+        case 'move_to_battle': {
+          // 育成エリア → バトルエリア移動
+          if (window._aiScriptMoveToBattle) {
+            window._aiScriptMoveToBattle(() => cb());
+          } else { cb(); }
+          break;
+        }
+        case 'attack': {
+          // 相手 (プレイヤー) にアタック
+          //   action.cardNo: アタッカー (AIバトルエリア)
+          //   action.target: 'security' | { type:'digimon', cardNo:'XX' }
+          if (window._aiScriptAttack && action.cardNo) {
+            const target = action.target || 'security';
+            window._aiScriptAttack(action.cardNo, target, () => cb());
+          } else { cb(); }
+          break;
+        }
+        case 'block': {
+          // 次にプレイヤーがアタックしてきた時、指定カードでブロックする意図を登録
+          //   action.cardNo: AIバトルエリアのブロッカー
+          window._tutorialAiBlockIntent = action.cardNo || true;
+          log('相手は次のアタックをブロックする予定');
           cb(); break;
         }
+        case 'select_target': {
+          // 効果対象選択時、指定カードを選ぶ意図を登録
+          //   action.cardNo: 対象として選ぶカード
+          window._tutorialAiSelectTarget = action.cardNo;
+          log('相手は次の対象選択で「' + action.cardNo + '」を選ぶ予定');
+          cb(); break;
+        }
+        // ===== 旧アクション (互換) =====
         case 'attack_security':
         case 'attack_digimon': {
-          log('[未実装] 相手アタック: ' + action.type);
-          console.warn('[OpponentScriptRunner] attack action not fully implemented:', action);
+          log('[非推奨] attack に統一: ' + action.type);
           cb(); break;
         }
         case 'pass': {

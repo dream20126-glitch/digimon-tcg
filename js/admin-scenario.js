@@ -443,19 +443,23 @@ let _opponentScript = [];      // 相手AIスクリプトの編集中状態
 // 相手AIアクション種別定義（新しいアクションを追加したい場合はここに1行）
 // fields: 入力欄として表示するフィールド名
 const OPPONENT_ACTION_TYPES = [
-  { value: 'hatch',           label: '孵化',               fields: [] },
-  { value: 'play',            label: 'カードをプレイ',       fields: ['cardNo'] },
-  { value: 'evolve',          label: '進化',               fields: ['sourceCardNo', 'targetCardNo'] },
-  { value: 'attack_security', label: 'セキュリティアタック', fields: ['sourceCardNo'] },
-  { value: 'attack_digimon',  label: '相手デジモンアタック', fields: ['sourceCardNo', 'targetCardNo'] },
-  { value: 'pass',            label: '何もしない',         fields: [] },
-  { value: 'end_turn',        label: 'ターン終了',         fields: [] },
+  { value: 'hatch',          label: '孵化',                                          fields: [] },
+  { value: 'play_card',      label: 'デジモン/オプション/テイマーを登場',           fields: ['cardNo'] },
+  { value: 'evolve_battle',  label: 'バトルエリアで進化',                            fields: ['sourceCardNo', 'targetCardNo'] },
+  { value: 'evolve_breed',   label: '育成エリアで進化',                              fields: ['targetCardNo'] },
+  { value: 'move_to_battle', label: '育成エリア→バトルエリアへ移動',                fields: [] },
+  { value: 'attack',         label: '相手にアタック (セキュリティ or 指定デジモン)', fields: ['cardNo', 'targetMode', 'targetCardNo'] },
+  { value: 'block',          label: 'ブロックする(プレイヤーの次のアタック)',         fields: ['cardNo'] },
+  { value: 'select_target',  label: '対象選択 (効果指定で選ぶカード)',                fields: ['cardNo'] },
+  { value: 'pass',           label: '何もしない',                                    fields: [] },
+  { value: 'end_turn',       label: 'ターン終了',                                    fields: [] },
 ];
 
 const FIELD_LABELS = {
-  cardNo:       'カードNo',
-  sourceCardNo: '実行側のカードNo (自分の場)',
-  targetCardNo: '対象カードNo',
+  cardNo:       'カードNo (例: BT1-001)',
+  sourceCardNo: 'アタッカー/進化元のカードNo (バトルエリア)',
+  targetCardNo: '進化先 / 対象 カードNo',
+  targetMode:   'アタック対象 (security / digimon)',
 };
 
 // 初期盤面の空状態を作成

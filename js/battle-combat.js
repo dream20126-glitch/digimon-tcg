@@ -1303,8 +1303,18 @@ function aiPlayCard(c, handIdx, onDone) {
   addLog('🤖 AIが「' + c.name + '」を登場！（コスト' + c.playCost + '）');
   renderAll();
   showPlayEffect(c, () => {
-    const turnEnded = aiSpendMemory(c.playCost); renderAll();
-    onDone(turnEnded);
+    const turnEnded = aiSpendMemory(c.playCost);
+    _hooks.applyPermanentEffects('ai');
+    renderAll();
+    // 【登場時】効果を発動 (公式ルール準拠)
+    if (hasKeyword(c, '【登場時】')) {
+      _hooks.checkAndTriggerEffect(c, '【登場時】', () => {
+        renderAll(true);
+        onDone(turnEnded);
+      }, 'ai');
+    } else {
+      onDone(turnEnded);
+    }
   });
 }
 
@@ -1867,4 +1877,229 @@ export function showGameEndOverlay(text, type, callback) {
   overlay.appendChild(btn);
 
   document.body.appendChild(overlay);
+}
+
+// ===================================================================
+// AI スクリプト用 公開 helper
+//   チュートリアルの相手AIスクリプトから呼ばれる。
+//   公式ルール準拠（コスト消費 / 効果発動 / アニメーション）で動作。
+// ===================================================================
+
+// AI: 手札のカードを登場（オプション/テイマー/デジモン）
+//   onDone(turnEnded) で完了通知
+export function aiScriptPlayCard(cardNo, onDone) {
+  const handIdx = bs.ai.hand.findIndex(c => c && c.cardNo === cardNo);
+  if (handIdx < 0) {
+    addLog('🤖 [スクリプト] 手札に「' + cardNo + '」がありません');
+    onDone && onDone(false);
+    return;
+  }
+  const card = bs.ai.hand[handIdx];
+  if (card.playCost == null) {
+    addLog('🤖 [スクリプト] 「' + card.name + '」は登場できません (進化専用)');
+    onDone && onDone(false);
+    return;
+  }
+  aiPlayCard(card, handIdx, (turnEnded) => onDone && onDone(turnEnded));
+}
+
+// AI: バトルエリアで進化（コスト+ドロー+【進化時】）
+export function aiScriptEvolveBattle(sourceCardNo, targetCardNo, onDone) {
+  const slotIdx = bs.ai.battleArea.findIndex(c => c && c.cardNo === sourceCardNo);
+  const handIdx = bs.ai.hand.findIndex(c => c && c.cardNo === targetCardNo);
+  if (slotIdx < 0) {
+    addLog('🤖 [スクリプト] バトルエリアに「' + sourceCardNo + '」がありません');
+    onDone && onDone(false); return;
+  }
+  if (handIdx < 0) {
+    addLog('🤖 [スクリプト] 手札に「' + targetCardNo + '」がありません');
+    onDone && onDone(false); return;
+  }
+  const base = bs.ai.battleArea[slotIdx];
+  const evo  = bs.ai.hand[handIdx];
+  if (evo.evolveCost == null) {
+    addLog('🤖 [スクリプト] 「' + evo.name + '」は進化できません');
+    onDone && onDone(false); return;
+  }
+  bs.ai.hand.splice(handIdx, 1);
+  evo.stack = [...(base.stack || []), base];
+  evo.summonedThisTurn = false;
+  evo.suspended = base.suspended;
+  evo.baseDp = parseInt(evo.dp) || 0;
+  evo.dpModifier = 0;
+  evo.buffs = [];
+  bs.ai.battleArea[slotIdx] = evo;
+  const cost = evo.evolveCost;
+  addLog('🤖 AIが「' + base.name + '」→「' + evo.name + '」進化！（コスト ' + cost + '）');
+  renderAll();
+  showEvolveEffect(cost, base.name, base, evo, () => {
+    const turnEnded = aiSpendMemory(cost);
+    // 進化したら 1 ドロー
+    if (bs.ai.deck.length > 0) {
+      bs.ai.hand.push(bs.ai.deck.shift());
+      addLog('🤖 進化ドロー');
+    }
+    _hooks.applyPermanentEffects('ai');
+    renderAll(true);
+    if (hasKeyword(evo, '【進化時】')) {
+      _hooks.checkAndTriggerEffect(evo, '【進化時】', () => {
+        renderAll(true);
+        onDone && onDone(turnEnded);
+      }, 'ai');
+    } else {
+      onDone && onDone(turnEnded);
+    }
+  });
+}
+
+// AI: 育成エリアで進化
+export function aiScriptEvolveBreed(targetCardNo, onDone) {
+  const handIdx = bs.ai.hand.findIndex(c => c && c.cardNo === targetCardNo);
+  if (handIdx < 0) {
+    addLog('🤖 [スクリプト] 手札に「' + targetCardNo + '」がありません');
+    onDone && onDone(false); return;
+  }
+  const base = bs.ai.ikusei;
+  if (!base) {
+    addLog('🤖 [スクリプト] 育成エリアにカードがありません');
+    onDone && onDone(false); return;
+  }
+  const evo = bs.ai.hand[handIdx];
+  if (evo.evolveCost == null) {
+    addLog('🤖 [スクリプト] 「' + evo.name + '」は進化できません');
+    onDone && onDone(false); return;
+  }
+  bs.ai.hand.splice(handIdx, 1);
+  evo.stack = [...(base.stack || []), base];
+  evo.summonedThisTurn = false;
+  evo.suspended = base.suspended;
+  evo.baseDp = parseInt(evo.dp) || 0;
+  evo.dpModifier = 0;
+  evo.buffs = [];
+  bs.ai.ikusei = evo;
+  const cost = evo.evolveCost;
+  addLog('🤖 AIが育成「' + base.name + '」→「' + evo.name + '」進化！');
+  renderAll();
+  showEvolveEffect(cost, base.name, base, evo, () => {
+    const turnEnded = aiSpendMemory(cost);
+    if (bs.ai.deck.length > 0) {
+      bs.ai.hand.push(bs.ai.deck.shift());
+    }
+    renderAll(true);
+    // 育成エリアでは <育成> を持つ進化時効果のみ発動
+    if (evo.effect && evo.effect.includes('＜育成＞') && hasKeyword(evo, '【進化時】')) {
+      _hooks.checkAndTriggerEffect(evo, '【進化時】', () => {
+        renderAll(true);
+        onDone && onDone(turnEnded);
+      }, 'ai');
+    } else {
+      onDone && onDone(turnEnded);
+    }
+  });
+}
+
+// AI: 育成エリア → バトルエリアに移動
+export function aiScriptMoveToBattle(onDone) {
+  const card = bs.ai.ikusei;
+  if (!card) {
+    addLog('🤖 [スクリプト] 育成エリアにカードがありません');
+    onDone && onDone(false); return;
+  }
+  if (card.level === '2') {
+    addLog('🤖 [スクリプト] レベル2のカードはバトルエリアに移動できません');
+    onDone && onDone(false); return;
+  }
+  bs.ai.ikusei = null;
+  let empty = bs.ai.battleArea.findIndex(s => s === null);
+  if (empty === -1) { empty = bs.ai.battleArea.length; bs.ai.battleArea.push(null); }
+  bs.ai.battleArea[empty] = card;
+  addLog('🤖 AIが「' + card.name + '」を育成→バトルエリアへ移動');
+  _hooks.applyPermanentEffects('ai');
+  renderAll(true);
+  onDone && onDone(false);
+}
+
+// AI: 指定アタッカーで指定対象に攻撃
+//   target: 'security' | { type:'digimon', cardNo: 'XX' }
+export function aiScriptAttack(attackerCardNo, target, onDone) {
+  const atkIdx = bs.ai.battleArea.findIndex(c => c && c.cardNo === attackerCardNo);
+  if (atkIdx < 0) {
+    addLog('🤖 [スクリプト] バトルエリアに「' + attackerCardNo + '」がありません');
+    onDone && onDone(); return;
+  }
+  const atk = bs.ai.battleArea[atkIdx];
+  if (atk.suspended) {
+    addLog('🤖 [スクリプト] 「' + atk.name + '」はレスト中でアタックできません');
+    onDone && onDone(); return;
+  }
+  if (atk.summonedThisTurn) {
+    addLog('🤖 [スクリプト] 「' + atk.name + '」は登場ターンのためアタックできません');
+    onDone && onDone(); return;
+  }
+  // 対象解決: digimon ターゲットの場合 cardNo からプレイヤーバトルエリアの index を引く
+  let targetMode = 'security';
+  let targetIdx = -1;
+  if (target && typeof target === 'object' && target.type === 'digimon') {
+    targetIdx = bs.player.battleArea.findIndex(c => c && c.cardNo === target.cardNo);
+    if (targetIdx < 0) {
+      addLog('🤖 [スクリプト] プレイヤー「' + target.cardNo + '」が見つからないためセキュリティをアタック');
+      targetMode = 'security';
+    } else {
+      targetMode = 'digimon';
+    }
+  }
+  // 既存の attack ロジック (aiAttackPhase) は自動選択なので、最小実装で代用
+  atk.suspended = true;
+  addLog('🤖 「' + atk.name + '」でアタック！');
+  renderAll();
+  // チュートリアル通知
+  try {
+    if (window._tutorialRunner) {
+      window._tutorialRunner.notifyEvent('attack_declared', {
+        cardNo: atk.cardNo, cardName: atk.name,
+        target: targetMode, isDirect: targetMode === 'security' && (bs.player.battleArea || []).filter(c => c).length === 0,
+        side: 'ai',
+      });
+    }
+  } catch (_) {}
+  // 簡易: digimon ターゲット → DP比較で結果決定 / security ターゲット → セキュリティチェック
+  if (targetMode === 'digimon') {
+    const def = bs.player.battleArea[targetIdx];
+    const aDp = atk.dp || 0;
+    const dDp = def.dp || 0;
+    setTimeout(() => {
+      if (aDp >= dDp) {
+        addLog('💥 「' + def.name + '」消滅 (DP ' + dDp + ' ≦ ' + aDp + ')');
+        bs.player.battleArea[targetIdx] = null;
+        if (def.stack) bs.player.trash.push(...def.stack, Object.assign({}, def, { stack: undefined }));
+        else bs.player.trash.push(Object.assign({}, def, { stack: undefined }));
+      }
+      if (dDp >= aDp) {
+        addLog('💥 「' + atk.name + '」消滅 (DP ' + aDp + ' ≦ ' + dDp + ')');
+        bs.ai.battleArea[atkIdx] = null;
+        if (atk.stack) bs.ai.trash.push(...atk.stack, Object.assign({}, atk, { stack: undefined }));
+        else bs.ai.trash.push(Object.assign({}, atk, { stack: undefined }));
+      }
+      renderAll();
+      onDone && onDone();
+    }, 600);
+  } else {
+    // セキュリティチェック (簡易)
+    setTimeout(() => {
+      if (bs.player.security.length > 0) {
+        const sec = bs.player.security.shift();
+        bs.player.trash.push(sec);
+        addLog('🛡 プレイヤーセキュリティチェック: ' + sec.name);
+        try {
+          if (window._tutorialRunner) {
+            window._tutorialRunner.notifyEvent('security_reduced', { side: 'own', count: 1, remaining: bs.player.security.length });
+          }
+        } catch (_) {}
+      } else {
+        addLog('💥 ダイレクトアタック! プレイヤーの負け');
+      }
+      renderAll();
+      onDone && onDone();
+    }, 600);
+  }
 }

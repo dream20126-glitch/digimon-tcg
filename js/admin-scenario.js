@@ -1776,21 +1776,103 @@ function _placedCardChip(card, area, idx) {
   </div>`;
 }
 
-// バトルエリアカードに進化元を追加（cardNo 入力ダイアログ）
+// バトルエリアカードに進化元を追加（カード名/番号 検索モーダル）
 window.tsAddEvoSrcPrompt = function(area, idx) {
   if (!_initialBoardState || !Array.isArray(_initialBoardState[area])) return;
   const card = _initialBoardState[area][idx];
   if (!card) return;
-  const cardNo = prompt('進化元として積むカードのカードNoを入力してください（例: ST1-02）');
-  if (!cardNo) return;
-  // オブジェクト化（文字列だった場合）
+  _evoPickerCtx = { area, idx };
+  _showEvoPickerModal();
+};
+
+let _evoPickerCtx = null;
+
+function _showEvoPickerModal() {
+  let modal = document.getElementById('ts-evo-picker-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'ts-evo-picker-modal';
+    modal.style.cssText = 'position:fixed; inset:0; z-index:11000; background:rgba(0,0,0,0.85); padding:20px; overflow-y:auto; display:flex; align-items:flex-start; justify-content:center;';
+    modal.onclick = (e) => { if (e.target === modal) _closeEvoPicker(); };
+    modal.innerHTML = `
+      <div style="background:#0a0a0a; border:1px solid var(--main-cyan); border-radius:10px; padding:16px; max-width:480px; width:100%; margin-top:40px;" onclick="event.stopPropagation()">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+          <div style="color:var(--main-cyan); font-size:13px; font-weight:bold;">進化元として積むカードを選択</div>
+          <button onclick="_closeEvoPicker()" style="background:none; border:1px solid #555; color:#aaa; padding:3px 10px; border-radius:4px; cursor:pointer; font-size:11px;">閉じる</button>
+        </div>
+        <input id="ts-evo-search" type="text" placeholder="カード名 または カードNo で検索"
+          oninput="_filterEvoPicker()" autocomplete="off"
+          style="width:100%; padding:6px 10px; background:#111; border:1px solid var(--border-col); color:#fff; border-radius:4px; font-size:12px; margin-bottom:8px; box-sizing:border-box;">
+        <div id="ts-evo-results" style="max-height:50vh; overflow-y:auto; background:#050505; border:1px solid #222; border-radius:4px; padding:4px;"></div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+  const input = document.getElementById('ts-evo-search');
+  if (input) { input.value = ''; setTimeout(() => input.focus(), 50); }
+  _filterEvoPicker();
+}
+
+window._closeEvoPicker = function() {
+  const modal = document.getElementById('ts-evo-picker-modal');
+  if (modal) modal.style.display = 'none';
+  _evoPickerCtx = null;
+};
+
+window._filterEvoPicker = function() {
+  const input = document.getElementById('ts-evo-search');
+  const results = document.getElementById('ts-evo-results');
+  if (!input || !results) return;
+  const kw = (input.value || '').trim().toLowerCase();
+  if (!window.allCards || !window.allCards.length) {
+    results.innerHTML = '<p style="color:#888; font-size:11px; text-align:center; padding:10px;">カードデータを読み込み中...</p>';
+    return;
+  }
+  let list = window.allCards;
+  if (kw) {
+    list = list.filter(c => {
+      const name = String(c['名前'] || '').toLowerCase();
+      const no   = String(c['カードNo'] || '').toLowerCase();
+      return name.includes(kw) || no.includes(kw);
+    });
+  }
+  list = list.slice(0, 50);
+  if (!list.length) {
+    results.innerHTML = '<p style="color:#888; font-size:11px; text-align:center; padding:10px;">一致するカードがありません</p>';
+    return;
+  }
+  results.innerHTML = list.map(c => {
+    const img  = getCardImageUrl(c) || '';
+    const name = _escHtml(c['名前'] || '');
+    const no   = _escHtml(c['カードNo'] || '');
+    const lv   = _escHtml(c['Lv'] || c['レベル'] || '');
+    return `
+      <div style="display:flex; align-items:center; padding:4px; border-bottom:1px solid #1a1a1a;">
+        <img src="${img}" style="width:30px; height:42px; object-fit:cover; border-radius:2px; margin-right:8px; background:#000;" onerror="this.style.display='none'">
+        <div style="flex:1; min-width:0;">
+          <div style="color:#fff; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
+          <div style="color:#888; font-size:10px;">${no} / Lv.${lv}</div>
+        </div>
+        <button onclick="_pickEvoSrc('${no}')" style="font-size:10px; padding:3px 10px; background:#332200; color:#ffaa00; border:1px solid #ffaa0066; border-radius:3px; cursor:pointer;">+ 追加</button>
+      </div>
+    `;
+  }).join('');
+};
+
+window._pickEvoSrc = function(cardNo) {
+  if (!_evoPickerCtx) return;
+  const { area, idx } = _evoPickerCtx;
+  if (!_initialBoardState || !Array.isArray(_initialBoardState[area])) return;
+  const card = _initialBoardState[area][idx];
+  if (!card) return;
   if (typeof card === 'string') {
-    _initialBoardState[area][idx] = { cardNo: card, evolutionSources: [cardNo.trim()] };
+    _initialBoardState[area][idx] = { cardNo: card, evolutionSources: [cardNo] };
   } else {
     if (!Array.isArray(card.evolutionSources)) card.evolutionSources = [];
-    card.evolutionSources.push(cardNo.trim());
+    card.evolutionSources.push(cardNo);
   }
   _renderPlacedCards();
+  // モーダルは閉じない（連続追加できるように）
 };
 
 // 進化元を削除

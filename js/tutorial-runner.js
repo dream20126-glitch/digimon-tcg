@@ -629,7 +629,7 @@ class TutorialRunner {
       }
     }
 
-    // デッキトップ指定
+    // デッキトップ指定（先頭=次に引く順）
     if (Array.isArray(ib.playerDeckTop) && ib.playerDeckTop.length) {
       const top = this._resolveCardRefs(ib.playerDeckTop);
       bs.player.deck = [...top, ...bs.player.deck];
@@ -637,6 +637,24 @@ class TutorialRunner {
     if (Array.isArray(ib.opponentDeckTop) && ib.opponentDeckTop.length) {
       const top = this._resolveCardRefs(ib.opponentDeckTop);
       bs.ai.deck = [...top, ...bs.ai.deck];
+    }
+
+    // セキュリティ指定（先頭=最初にチェックされるカード）
+    // 既存セキュリティを上書きして指定カードでセット
+    if (Array.isArray(ib.playerSecurity) && ib.playerSecurity.length) {
+      bs.player.security = this._resolveCardRefs(ib.playerSecurity);
+    }
+    if (Array.isArray(ib.opponentSecurity) && ib.opponentSecurity.length) {
+      bs.ai.security = this._resolveCardRefs(ib.opponentSecurity);
+      bs._aiSecuritySynced = true; // acceptHand 二重引き防止
+    }
+
+    // トラッシュ指定
+    if (Array.isArray(ib.playerTrash) && ib.playerTrash.length) {
+      bs.player.trash = this._resolveCardRefs(ib.playerTrash);
+    }
+    if (Array.isArray(ib.opponentTrash) && ib.opponentTrash.length) {
+      bs.ai.trash = this._resolveCardRefs(ib.opponentTrash);
     }
 
     // 再描画

@@ -464,9 +464,15 @@ function _emptyBoardState() {
     playerHand: [],        // [{cardNo}, ...]
     playerBattleArea: [],  // [{cardNo}, ...]
     playerRaisingArea: null,  // {cardNo} or null
+    playerSecurity: [],    // [{cardNo}, ...] 上から順 (先頭=最初にチェックされる)
+    playerDeckTop: [],     // [{cardNo}, ...] デッキ上から順 (先頭=次に引く)
+    playerTrash: [],       // [{cardNo}, ...]
     opponentHand: [],
     opponentBattleArea: [],
     opponentRaisingArea: null,
+    opponentSecurity: [],
+    opponentDeckTop: [],
+    opponentTrash: [],
   };
 }
 
@@ -625,9 +631,15 @@ function _renderScenarioDetail(s) {
   boardItems.push(areaLine('自分 手札', ib.playerHand));
   boardItems.push(areaLine('自分 バトルエリア', ib.playerBattleArea));
   boardItems.push(oneLine('自分 育成エリア', ib.playerRaisingArea));
+  boardItems.push(areaLine('自分 セキュリティ', ib.playerSecurity));
+  boardItems.push(areaLine('自分 デッキ上', ib.playerDeckTop));
+  boardItems.push(areaLine('自分 トラッシュ', ib.playerTrash));
   boardItems.push(areaLine('相手 手札', ib.opponentHand));
   boardItems.push(areaLine('相手 バトルエリア', ib.opponentBattleArea));
   boardItems.push(oneLine('相手 育成エリア', ib.opponentRaisingArea));
+  boardItems.push(areaLine('相手 セキュリティ', ib.opponentSecurity));
+  boardItems.push(areaLine('相手 デッキ上', ib.opponentDeckTop));
+  boardItems.push(areaLine('相手 トラッシュ', ib.opponentTrash));
   const board = boardItems.filter(Boolean).join('');
 
   // フロー
@@ -797,9 +809,15 @@ window.editTutorialScenario = async function(scenario) {
     playerHand: normArr(ib.playerHand),
     playerBattleArea: normArr(ib.playerBattleArea),
     playerRaisingArea: normOne(ib.playerRaisingArea),
+    playerSecurity: normArr(ib.playerSecurity),
+    playerDeckTop: normArr(ib.playerDeckTop),
+    playerTrash: normArr(ib.playerTrash),
     opponentHand: normArr(ib.opponentHand),
     opponentBattleArea: normArr(ib.opponentBattleArea),
     opponentRaisingArea: normOne(ib.opponentRaisingArea),
+    opponentSecurity: normArr(ib.opponentSecurity),
+    opponentDeckTop: normArr(ib.opponentDeckTop),
+    opponentTrash: normArr(ib.opponentTrash),
   };
   _renderPlacedCards();
 
@@ -1635,12 +1653,18 @@ function _renderFlowSummary() {
 // カード検索 / 配置 / 配置済み表示
 // ===================================================================
 const AREA_LABELS = {
-  playerHand:         '自分の手札',
-  playerBattleArea:   '自分のバトルエリア',
-  playerRaisingArea:  '自分の育成エリア',
-  opponentHand:       '相手の手札',
-  opponentBattleArea: '相手のバトルエリア',
-  opponentRaisingArea:'相手の育成エリア',
+  playerHand:          '自分の手札',
+  playerBattleArea:    '自分のバトルエリア',
+  playerRaisingArea:   '自分の育成エリア',
+  playerSecurity:      '自分のセキュリティ(上から順)',
+  playerDeckTop:       '自分のデッキ上(次に引く順)',
+  playerTrash:         '自分のトラッシュ',
+  opponentHand:        '相手の手札',
+  opponentBattleArea:  '相手のバトルエリア',
+  opponentRaisingArea: '相手の育成エリア',
+  opponentSecurity:    '相手のセキュリティ(上から順)',
+  opponentDeckTop:     '相手のデッキ上(次に引く順)',
+  opponentTrash:       '相手のトラッシュ',
 };
 
 window.tsFilterCardsForBoard = function() {
@@ -1752,11 +1776,17 @@ function _renderPlacedCards() {
   own.innerHTML =
     _renderAreaSection('手札', 'playerHand') +
     _renderAreaSection('バトルエリア', 'playerBattleArea') +
-    _renderAreaSection('育成エリア', 'playerRaisingArea');
+    _renderAreaSection('育成エリア', 'playerRaisingArea') +
+    _renderAreaSection('セキュリティ(上から順)', 'playerSecurity') +
+    _renderAreaSection('デッキ上(次に引く順)', 'playerDeckTop') +
+    _renderAreaSection('トラッシュ', 'playerTrash');
   opp.innerHTML =
     _renderAreaSection('手札', 'opponentHand') +
     _renderAreaSection('バトルエリア', 'opponentBattleArea') +
-    _renderAreaSection('育成エリア', 'opponentRaisingArea');
+    _renderAreaSection('育成エリア', 'opponentRaisingArea') +
+    _renderAreaSection('セキュリティ(上から順)', 'opponentSecurity') +
+    _renderAreaSection('デッキ上(次に引く順)', 'opponentDeckTop') +
+    _renderAreaSection('トラッシュ', 'opponentTrash');
 }
 
 // ===================================================================
@@ -1894,12 +1924,18 @@ window.executeTutorialScenarioSave = async function() {
     playerMemory: Number(document.getElementById('ts-player-memory').value || 0),
     playerSecurityCount: Number(document.getElementById('ts-player-sec').value || 5),
     opponentSecurityCount: Number(document.getElementById('ts-opponent-sec').value || 5),
-    playerHand:         ibState.playerHand         || [],
-    playerBattleArea:   ibState.playerBattleArea   || [],
-    playerRaisingArea:  ibState.playerRaisingArea  || null,
-    opponentHand:       ibState.opponentHand       || [],
-    opponentBattleArea: ibState.opponentBattleArea || [],
-    opponentRaisingArea:ibState.opponentRaisingArea|| null,
+    playerHand:          ibState.playerHand         || [],
+    playerBattleArea:    ibState.playerBattleArea   || [],
+    playerRaisingArea:   ibState.playerRaisingArea  || null,
+    playerSecurity:      ibState.playerSecurity     || [],
+    playerDeckTop:       ibState.playerDeckTop      || [],
+    playerTrash:         ibState.playerTrash        || [],
+    opponentHand:        ibState.opponentHand       || [],
+    opponentBattleArea:  ibState.opponentBattleArea || [],
+    opponentRaisingArea: ibState.opponentRaisingArea|| null,
+    opponentSecurity:    ibState.opponentSecurity   || [],
+    opponentDeckTop:     ibState.opponentDeckTop    || [],
+    opponentTrash:       ibState.opponentTrash      || [],
   };
 
   // 相手AIスクリプト（選択式UIから構築済み）

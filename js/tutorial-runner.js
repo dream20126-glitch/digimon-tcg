@@ -556,6 +556,11 @@ class TutorialRunner {
     if (this.cleared) return;
     this.cleared = true;
     this.hideInstruction();
+    // バトル進行を停止（AIターン/フェーズ遷移/戦闘をすべて中断）
+    if (window.bs) {
+      window.bs._battleAborted = true;
+      window.bs._pendingTurnEnd = false;
+    }
     this.saveProgress();
     this.showClearModal();
   }
@@ -577,10 +582,24 @@ class TutorialRunner {
       const playerName = window.currentPlayerName || '';
       const password = window.currentSessionPassword || '';
       const scenarioId = this.scenario && this.scenario.id;
-      if (!password || !scenarioId) return;
-      await gasPost('saveTutorialProgress', { playerName, password, scenarioId });
+      console.log('[TutorialRunner] saveProgress 呼出', { playerName, hasPassword: !!password, scenarioId });
+      if (!password) {
+        console.warn('[TutorialRunner] パスワード未設定のため進捗保存スキップ');
+        return;
+      }
+      if (!scenarioId) {
+        console.warn('[TutorialRunner] scenarioId 未設定のため進捗保存スキップ');
+        return;
+      }
+      const res = await gasPost('saveTutorialProgress', { playerName, password, scenarioId });
+      console.log('[TutorialRunner] saveTutorialProgress 応答:', res);
+      if (res && res.error) {
+        console.error('[TutorialRunner] GAS エラー:', res.error);
+      } else if (res && res.status && res.status !== 'SUCCESS_NEW' && res.status !== 'ALREADY_CLEARED') {
+        console.error('[TutorialRunner] 進捗保存失敗:', res);
+      }
     } catch (e) {
-      console.error('[TutorialRunner] 進捗保存失敗:', e);
+      console.error('[TutorialRunner] 進捗保存失敗 (例外):', e);
     }
   }
 

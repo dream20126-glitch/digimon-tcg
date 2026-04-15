@@ -115,7 +115,11 @@ export function showYourTurn(text, sub, color, callback) {
   lineBottom.style.animation = 'turnLineExpand 1.5s ease 0.1s forwards';
 
   overlay.style.display = 'flex';
-  setTimeout(() => { overlay.style.display = 'none'; if (callback) callback(); }, 1800);
+  setTimeout(() => {
+    overlay.style.display = 'none';
+    if (bs._battleAborted) return;
+    if (callback) callback();
+  }, 1800);
 }
 
 // ===== 演出: フェーズアナウンス =====
@@ -138,7 +142,11 @@ export function showPhaseAnnounce(text, color, callback) {
   textEl.style.animation = 'phaseSlideIn 1.4s ease forwards';
 
   overlay.style.display = 'flex';
-  setTimeout(() => { overlay.style.display = 'none'; if (callback) callback(); }, 1500);
+  setTimeout(() => {
+    overlay.style.display = 'none';
+    if (bs._battleAborted) return;
+    if (callback) callback();
+  }, 1500);
 }
 
 // ===== 演出: スキップアナウンス =====
@@ -152,7 +160,11 @@ export function showSkipAnnounce(text, callback) {
   textEl.style.animation = 'skipFadeUp 1s ease forwards';
 
   overlay.style.display = 'flex';
-  setTimeout(() => { overlay.style.display = 'none'; if (callback) callback(); }, 1100);
+  setTimeout(() => {
+    overlay.style.display = 'none';
+    if (bs._battleAborted) return;
+    if (callback) callback();
+  }, 1100);
 }
 
 // ===== 演出: ドロー =====

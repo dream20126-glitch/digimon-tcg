@@ -716,13 +716,15 @@ function aiPhaseBreed() {
 // ----- AI メインフェイズ -----
 
 function aiPhaseMain() {
-  // チュートリアル: AIスクリプトがあれば通常AI行動をスキップ
-  // （スクリプトは turn_start 通知時に既に実行済み）
+  // チュートリアル: AIスクリプトがあればメインフェイズでスクリプトを実行
   const runner = window._tutorialRunner;
   if (runner && runner.active && runner.opponentScriptRunner) {
     showPhaseAnnounce('⚡ メインフェイズ', '#ff00fb', () => {
       addLog('🤖 メインフェイズ（スクリプト制御）');
-      endAiTurn();
+      const turnNumber = (bs && bs.turn) || 1;
+      runner.opponentScriptRunner.runTurn(turnNumber, () => {
+        setTimeout(() => endAiTurn(), 600);
+      });
     });
     return;
   }

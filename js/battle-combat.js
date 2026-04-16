@@ -2121,10 +2121,16 @@ export function aiScriptMoveToBattle(onDone) {
   let empty = bs.ai.battleArea.findIndex(s => s === null);
   if (empty === -1) { empty = bs.ai.battleArea.length; bs.ai.battleArea.push(null); }
   bs.ai.battleArea[empty] = card;
-  addLog('🤖 AIが「' + card.name + '」を育成→バトルエリアへ移動');
-  _hooks.applyPermanentEffects('ai');
-  renderAll(true);
-  onDone && onDone(false);
+
+  showPhaseAnnounce('🚀 バトルエリアへ移動！', '#ff9900', () => {
+    addLog('🤖 AIが「' + card.name + '」を育成→バトルエリアへ移動');
+    _hooks.applyPermanentEffects('ai');
+    renderAll(true);
+    // 登場時効果があれば発動
+    _hooks.checkAndTriggerEffect(card, '【登場時】', () => {
+      onDone && onDone(false);
+    }, 'ai');
+  });
 }
 
 // AI: 指定アタッカーで指定対象に攻撃
@@ -2145,7 +2151,6 @@ export function aiScriptAttack(attackerKey, target, onDone) {
     addLog('🤖 [スクリプト] 「' + atk.name + '」は登場ターンのためアタックできません');
     onDone && onDone(); return;
   }
-  // 対象解決: digimon ターゲットの場合 cardNo からプレイヤーバトルエリアの index を引く
   let targetMode = 'security';
   let targetIdx = -1;
   if (target && typeof target === 'object' && target.type === 'digimon') {
@@ -2153,16 +2158,16 @@ export function aiScriptAttack(attackerKey, target, onDone) {
     targetIdx = _findCardInArray(bs.player.battleArea, k);
     if (targetIdx < 0) {
       addLog('🤖 [スクリプト] プレイヤー「' + k + '」が見つからないためセキュリティをアタック');
-      targetMode = 'security';
     } else {
       targetMode = 'digimon';
     }
   }
-  // 既存の attack ロジック (aiAttackPhase) は自動選択なので、最小実装で代用
+
+  // 本物のアタックフロー（演出・ブロック確認・効果処理すべて含む）
   atk.suspended = true;
   addLog('🤖 「' + atk.name + '」でアタック！');
   renderAll();
-  // チュートリアル通知
+
   try {
     if (window._tutorialRunner) {
       window._tutorialRunner.notifyEvent('attack_declared', {
@@ -2172,44 +2177,79 @@ export function aiScriptAttack(attackerKey, target, onDone) {
       });
     }
   } catch (_) {}
-  // 簡易: digimon ターゲット → DP比較で結果決定 / security ターゲット → セキュリティチェック
-  if (targetMode === 'digimon') {
-    const def = bs.player.battleArea[targetIdx];
-    const aDp = atk.dp || 0;
-    const dDp = def.dp || 0;
-    setTimeout(() => {
-      if (aDp >= dDp) {
-        addLog('💥 「' + def.name + '」消滅 (DP ' + dDp + ' ≦ ' + aDp + ')');
-        bs.player.battleArea[targetIdx] = null;
-        if (def.stack) bs.player.trash.push(...def.stack, Object.assign({}, def, { stack: undefined }));
-        else bs.player.trash.push(Object.assign({}, def, { stack: undefined }));
-      }
-      if (dDp >= aDp) {
-        addLog('💥 「' + atk.name + '」消滅 (DP ' + aDp + ' ≦ ' + dDp + ')');
-        bs.ai.battleArea[atkIdx] = null;
-        if (atk.stack) bs.ai.trash.push(...atk.stack, Object.assign({}, atk, { stack: undefined }));
-        else bs.ai.trash.push(Object.assign({}, atk, { stack: undefined }));
-      }
-      renderAll();
-      onDone && onDone();
-    }, 600);
-  } else {
-    // セキュリティチェック (簡易)
-    setTimeout(() => {
-      if (bs.player.security.length > 0) {
-        const sec = bs.player.security.shift();
-        bs.player.trash.push(sec);
-        addLog('🛡 プレイヤーセキュリティチェック: ' + sec.name);
-        try {
-          if (window._tutorialRunner) {
-            window._tutorialRunner.notifyEvent('security_reduced', { side: 'own', count: 1, remaining: bs.player.security.length });
-          }
-        } catch (_) {}
+
+  showPhaseAnnounce('⚔ AIアタック！', '#ff4444', () => {
+    // アタック時効果
+    const doAfterAtkEffect = (cb) => {
+      if (hasKeyword(atk, '【アタック時】') || hasEvoKeyword(atk, '【アタック時】')) {
+        _hooks.checkAndTriggerEffect(atk, '【アタック時】', cb, 'ai');
+      } else { cb(); }
+    };
+
+    doAfterAtkEffect(() => {
+      if (targetMode === 'digimon') {
+        // デジモンバトル → 本物の resolveBattleAI
+        const def = bs.player.battleArea[targetIdx];
+        if (!def) { onDone && onDone(); return; }
+        resolveBattleAI(atk, atkIdx, def, targetIdx, () => {
+          checkPendingTurnEnd();
+          onDone && onDone();
+        });
       } else {
-        addLog('💥 ダイレクトアタック! プレイヤーの負け');
+        // セキュリティアタック → ブロッカーチェック付き
+        const blockerIndices = [];
+        bs.player.battleArea.forEach((c, i) => {
+          if (c && !c.suspended && !c.cantBlock && (hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】'))) {
+            blockerIndices.push(i);
+          }
+        });
+
+        if (blockerIndices.length > 0) {
+          const _showBlock = () => showBlockConfirm(bs.player.battleArea[blockerIndices[0]], atk, (doBlock) => {
+            if (doBlock) {
+              if (blockerIndices.length === 1) {
+                const blockerIdx = blockerIndices[0];
+                const blocker = bs.player.battleArea[blockerIdx];
+                blocker.suspended = true;
+                addLog('🛡 「' + blocker.name + '」でブロック！');
+                renderAll();
+                afterBlockedEffect(atk, atkIdx, 'ai', () => {
+                  resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
+                    checkPendingTurnEnd();
+                    onDone && onDone();
+                  });
+                });
+              } else {
+                showBlockerSelection(blockerIndices, atk, (selectedIdx) => {
+                  if (selectedIdx !== null) {
+                    const blocker = bs.player.battleArea[selectedIdx];
+                    blocker.suspended = true;
+                    addLog('🛡 「' + blocker.name + '」でブロック！');
+                    renderAll();
+                    afterBlockedEffect(atk, atkIdx, 'ai', () => {
+                      resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {
+                        checkPendingTurnEnd();
+                        onDone && onDone();
+                      });
+                    });
+                  } else {
+                    doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); onDone && onDone(); });
+                  }
+                });
+              }
+            } else {
+              doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); onDone && onDone(); });
+            }
+          });
+          if (window._tutorialRunner && window._tutorialRunner.active) {
+            window._tutorialRunner.checkInterrupt('block_confirm').then(_showBlock);
+          } else {
+            _showBlock();
+          }
+        } else {
+          doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); onDone && onDone(); });
+        }
       }
-      renderAll();
-      onDone && onDone();
-    }, 600);
-  }
+    });
+  });
 }

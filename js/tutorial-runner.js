@@ -293,12 +293,7 @@ class TutorialRunner {
       if (ev.side === 'own')      this._ownSecurityChecks = (this._ownSecurityChecks || 0) + (Number(ev.count) || 1);
     }
 
-    // 相手ターン開始時: 相手AIスクリプトを実行
-    if (type === 'turn_start' && ev.side === 'ai' && this.opponentScriptRunner) {
-      const turnNumber = (window.bs && window.bs.turn) || 1;
-      try { this.opponentScriptRunner.runTurn(turnNumber, () => {}); }
-      catch (e) { console.error('[TutorialRunner] opponent script error:', e); }
-    }
+    // 相手ターン開始は記録のみ（スクリプト実行は aiPhaseMain から呼ばれる）
 
     // 現在アクティブなブロックのステップ進行条件をチェック
     if (this._currentBlock) {

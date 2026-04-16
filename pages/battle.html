@@ -489,16 +489,10 @@
   <div id="tutorial-success-sparkles" style="position:absolute; inset:0; pointer-events:none;"></div>
 </div>
 
-<!-- ===== チュートリアル指示テキストオーバーレイ ===== -->
-<div id="tutorial-instruction-overlay" style="display:none; position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:55000; width:calc(100% - 32px); max-width:520px; pointer-events:none;">
-  <div style="background:linear-gradient(135deg, rgba(0,10,20,0.96), rgba(0,30,40,0.96)); border:2px solid var(--main-cyan); border-radius:12px; padding:10px 16px; box-shadow:0 0 24px rgba(0,251,255,0.35); backdrop-filter:blur(6px);">
-    <div style="display:flex; align-items:center; gap:8px;">
-      <div style="font-size:20px; flex-shrink:0;">💡</div>
-      <div style="flex:1; min-width:0;">
-        <div style="color:var(--main-cyan); font-size:10px; font-weight:bold; letter-spacing:1px; margin-bottom:2px;">TUTORIAL GOAL</div>
-        <div id="tutorial-instruction-text" style="color:#fff; font-size:13px; font-weight:bold; line-height:1.5;"></div>
-      </div>
-    </div>
+<!-- ===== チュートリアル指示テキストオーバーレイ（メモリーゲージ付近・コンパクト） ===== -->
+<div id="tutorial-instruction-overlay" style="display:none; position:fixed; left:50%; transform:translateX(-50%); bottom:48%; z-index:55000; width:auto; max-width:calc(100% - 24px); pointer-events:none;">
+  <div style="background:rgba(0,10,20,0.88); border:1px solid var(--main-cyan); border-radius:20px; padding:4px 14px; box-shadow:0 0 12px rgba(0,251,255,0.25); backdrop-filter:blur(4px); white-space:nowrap;">
+    <div id="tutorial-instruction-text" style="color:#fff; font-size:11px; font-weight:bold; line-height:1.4;"></div>
   </div>
 </div>
 

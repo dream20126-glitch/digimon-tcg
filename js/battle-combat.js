@@ -1179,7 +1179,8 @@ export function aiAttackPhase(callback) {
       });
 
       if (blockerIndices.length > 0) {
-        showBlockConfirm(bs.player.battleArea[blockerIndices[0]], atk, (doBlock) => {
+        // チュートリアル: ブロック確認画面の前に割り込み
+        const _showBlock = () => showBlockConfirm(bs.player.battleArea[blockerIndices[0]], atk, (doBlock) => {
           if (doBlock) {
             if (blockerIndices.length === 1) {
               const blockerIdx = blockerIndices[0];
@@ -1219,6 +1220,11 @@ export function aiAttackPhase(callback) {
             doAiSecurityCheck(atk, atkIdx, callback);
           }
         });
+        if (window._tutorialRunner && window._tutorialRunner.active) {
+          window._tutorialRunner.checkInterrupt('block_confirm').then(_showBlock);
+        } else {
+          _showBlock();
+        }
         return;
       }
       doAiSecurityCheck(atk, atkIdx, callback);

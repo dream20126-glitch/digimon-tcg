@@ -440,6 +440,10 @@ const TRIGGER_TYPES = [
   { value: 'after_use_effect',     label: '効果使用完了後' },
   // バトル演出
   { value: 'battle_vs',            label: 'VS画面表示中（カード表示後）' },
+  // プレイヤー操作要求（相手ターン中にも発生）
+  { value: 'block_confirm',        label: 'ブロック確認画面の前' },
+  { value: 'effect_confirm',       label: '効果確認ダイアログの前' },
+  { value: 'target_selection',     label: '対象選択画面の前' },
   // UI系
   { value: 'on_card_detail_open',  label: 'カード詳細表示中' },
 ];
@@ -1044,6 +1048,12 @@ const STEP_TIMINGS = [
     availableIn: ['main','breed'] },
   { value: 'battle_vs',          label: '⚔ VS画面表示中（カード表示後）',  trigger: 'battle_vs',
     availableIn: ['main'] },
+  { value: 'block_confirm',     label: '🛡 ブロック確認画面の前',          trigger: 'block_confirm',
+    availableIn: ['main','trg_before_opponent_turn','trg_turn_end_opp'] },
+  { value: 'effect_confirm',    label: '⚡ 効果確認ダイアログの前',        trigger: 'effect_confirm',
+    availableIn: ['main','trg_before_opponent_turn','trg_turn_end_opp','breed','draw','unsuspend'] },
+  { value: 'target_selection',  label: '🎯 対象選択画面の前',              trigger: 'target_selection',
+    availableIn: ['main','trg_before_opponent_turn','trg_turn_end_opp','breed'] },
   { value: 'after_attack',      label: '⚔ アタック解決後',                trigger: 'after_attack',
     availableIn: ['main'] },
   { value: 'after_use_effect',  label: '✨ 効果使用完了後',                 trigger: 'after_use_effect',

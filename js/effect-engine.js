@@ -1536,6 +1536,7 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
     }
   }
 
+  const _showUI = () => {
   const rowId = targetSide === 'ai' ? 'ai-battle-row' : 'pl-battle-row';
   const row = document.getElementById(rowId);
   if (!row) { callback(null); return; }
@@ -1691,6 +1692,15 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
     document.addEventListener('click', onSelect, true);
     document.addEventListener('touchend', onSelect, true);
   }, 100);
+  }; // end _showUI
+
+  // チュートリアル: 対象選択画面の前に割り込み
+  const runner = window._tutorialRunner;
+  if (runner && runner.active && typeof runner.checkInterrupt === 'function') {
+    runner.checkInterrupt('target_selection').then(_showUI);
+  } else {
+    _showUI();
+  }
 }
 
 // ===== デッキオープンUI（新仕様: filter/selections/return_to対応） =====
@@ -2687,14 +2697,24 @@ function showEffectFailed(message, callback) {
 function showConfirmDialog(card, effectText, callback) {
   const overlay = document.getElementById('effect-confirm-overlay');
   if (!overlay) { callback(false); return; }
-  document.getElementById('effect-confirm-name').innerText = card.name;
-  document.getElementById('effect-confirm-text').innerText = effectText;
-  document.body.appendChild(overlay);
-  overlay.style.display = 'flex';
-  window._effectConfirmCallback = callback;
-  // オンライン: 確認ダイアログを相手にも表示
-  if (window._isOnlineMode && window._isOnlineMode()) {
-    window._onlineSendCommand({ type: 'fx_confirmShow', cardName: card.name, effectText: (effectText||'').substring(0,200) });
+
+  const _show = () => {
+    document.getElementById('effect-confirm-name').innerText = card.name;
+    document.getElementById('effect-confirm-text').innerText = effectText;
+    document.body.appendChild(overlay);
+    overlay.style.display = 'flex';
+    window._effectConfirmCallback = callback;
+    if (window._isOnlineMode && window._isOnlineMode()) {
+      window._onlineSendCommand({ type: 'fx_confirmShow', cardName: card.name, effectText: (effectText||'').substring(0,200) });
+    }
+  };
+
+  // チュートリアル: 効果確認画面の前に割り込み
+  const runner = window._tutorialRunner;
+  if (runner && runner.active && typeof runner.checkInterrupt === 'function') {
+    runner.checkInterrupt('effect_confirm').then(_show);
+  } else {
+    _show();
   }
 }
 

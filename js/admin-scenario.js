@@ -257,7 +257,7 @@ const TARGET_AREAS = [
   { value: 'card_detail_sec_effect', label: 'セキュリティ効果',            group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_close',      label: '閉じるボタン',                group: '🔍 カード詳細モーダル' },
   // --- 効果確認ダイアログ ---
-  { value: 'effect_confirm',         label: 'ダイアログ全体',           group: '⚡ 効果確認ダイアログ' },
+  { value: 'effect_confirm',         label: 'ダイアログパネル',         group: '⚡ 効果確認ダイアログ' },
   { value: 'effect_confirm_yes',     label: '「はい」ボタン',           group: '⚡ 効果確認ダイアログ' },
   { value: 'effect_confirm_no',      label: '「いいえ」ボタン',         group: '⚡ 効果確認ダイアログ' },
   // --- トラッシュモーダル ---

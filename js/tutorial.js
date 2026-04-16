@@ -914,7 +914,9 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
   // 対象との隙間 = 赤枠 outline (3px) + outline-offset (2px) + 視認用 margin
   // 合計 18px を確保して、説明枠と赤枠が重ならないようにする
   const TARGET_GAP = 18;
+  const viewH = window.innerHeight;
   const canFitAbove = rect.top > pointerH + TARGET_GAP + 8;
+  const canFitBelow = (rect.bottom + TARGET_GAP + pointerH) < viewH - 8;
 
   if (canFitAbove) {
     wrap.style.flexDirection = 'column';   // [bubble][finger]
@@ -922,12 +924,18 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
     overlay.style.top = Math.max(4, top) + 'px';
     const bubbleEl = document.getElementById('tutorial-pointer-bubble');
     if (bubbleEl) bubbleEl.classList.remove('tutorial-bubble-below');
-  } else {
+  } else if (canFitBelow) {
     wrap.style.flexDirection = 'column-reverse';  // [finger][bubble]
     const top = rect.bottom + TARGET_GAP;
     overlay.style.top = top + 'px';
     const bubbleEl = document.getElementById('tutorial-pointer-bubble');
     if (bubbleEl) bubbleEl.classList.add('tutorial-bubble-below');
+  } else {
+    // 上にも下にも収まらない → 対象の上にかぶせてでも画面上部に表示
+    wrap.style.flexDirection = 'column';
+    overlay.style.top = '4px';
+    const bubbleEl = document.getElementById('tutorial-pointer-bubble');
+    if (bubbleEl) bubbleEl.classList.remove('tutorial-bubble-below');
   }
 
   // 👆/👇 は吹き出しの位置に応じて常に対象を指す向きに

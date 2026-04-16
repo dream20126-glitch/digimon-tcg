@@ -931,11 +931,11 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
     const bubbleEl = document.getElementById('tutorial-pointer-bubble');
     if (bubbleEl) bubbleEl.classList.add('tutorial-bubble-below');
   } else {
-    // 上にも下にも収まらない → 画面上部に配置、👇で下の対象を指す
-    wrap.style.flexDirection = 'column-reverse';
+    // 上にも下にも収まらない → 画面上部に配置、吹き出し(下向き尻尾)→👇 の順
+    wrap.style.flexDirection = 'column';
     overlay.style.top = '4px';
     const bubbleEl = document.getElementById('tutorial-pointer-bubble');
-    if (bubbleEl) bubbleEl.classList.add('tutorial-bubble-below');
+    if (bubbleEl) bubbleEl.classList.remove('tutorial-bubble-below');
   }
 
   // 👆/👇 は吹き出しの位置に応じて常に対象を指す向きに

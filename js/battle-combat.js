@@ -1102,6 +1102,10 @@ export function showBlockConfirm(blocker, attacker, callback) {
     if (nBtn) { nBtn.disabled = true; nBtn.style.opacity = '0.3'; }
     setTimeout(() => {
       window._tutorialRunner.checkInterrupt('block_confirm').then(() => {
+        // スポットライトモード強制解除 + ボタン有効化
+        document.body.classList.remove('tutorial-spotlight-mode');
+        document.querySelectorAll('.tutorial-keep-visible').forEach(el =>
+          el.classList.remove('tutorial-keep-visible'));
         _enableButtons();
       });
     }, 100);

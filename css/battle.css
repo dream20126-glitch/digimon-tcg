@@ -617,6 +617,7 @@ body.tutorial-spotlight-mode #effect-confirm-panel,
 body.tutorial-spotlight-mode #effect-confirm-yes,
 body.tutorial-spotlight-mode #effect-confirm-no {
   pointer-events: auto !important;
+  opacity: 1 !important;
 }
 
 /* ===== チュートリアル 吹き出し（白×赤枠の本格スタイル） ===== */

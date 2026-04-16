@@ -788,6 +788,20 @@ const TARGET_AREA_SELECTORS = {
   card_detail_evo_source: () => document.getElementById('bcd-evo-source'),
   card_detail_sec_effect: () => document.getElementById('bcd-security-effect'),
   card_detail_close:      () => document.getElementById('bcd-close-btn'),
+  // VS画面（セキュリティチェック/バトル演出）
+  vs_screen:         () => document.getElementById('security-check-overlay'),
+  vs_cards:          () => document.getElementById('sec-vs-cards'),
+  vs_atk_area:       () => document.getElementById('sec-atk-area'),
+  vs_atk_card:       () => document.getElementById('sec-atk-card-img'),
+  vs_atk_name:       () => document.getElementById('sec-atk-name'),
+  vs_atk_dp:         () => document.getElementById('sec-atk-dp'),
+  vs_def_area:       () => document.getElementById('sec-def-area'),
+  vs_def_card:       () => document.getElementById('sec-check-card-img'),
+  vs_def_name:       () => document.getElementById('sec-check-card-name'),
+  vs_def_dp:         () => document.getElementById('sec-check-type'),
+  vs_label:          () => document.getElementById('sec-vs-label'),
+  vs_title:          () => document.getElementById('sec-check-label'),
+  vs_result:         () => document.getElementById('sec-check-result'),
 };
 
 let _highlightedEls = []; // 現在ハイライト中のDOM要素群

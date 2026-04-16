@@ -255,6 +255,20 @@ const TARGET_AREAS = [
   { value: 'card_detail_evo_source', label: '進化元効果',                  group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_sec_effect', label: 'セキュリティ効果',            group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_close',      label: '閉じるボタン',                group: '🔍 カード詳細モーダル' },
+  // --- VS画面（セキュリティチェック/バトル演出） ---
+  { value: 'vs_screen',    label: '画面全体',                            group: '⚔ VS画面' },
+  { value: 'vs_cards',     label: 'カード2枚（左右まとめて）',          group: '⚔ VS画面' },
+  { value: 'vs_atk_area',  label: '左: 自分のカード（全体）',           group: '⚔ VS画面' },
+  { value: 'vs_atk_card',  label: '左: 自分のカード画像',               group: '⚔ VS画面' },
+  { value: 'vs_atk_name',  label: '左: 自分のカード名',                 group: '⚔ VS画面' },
+  { value: 'vs_atk_dp',    label: '左: 自分のDP',                       group: '⚔ VS画面' },
+  { value: 'vs_def_area',  label: '右: 相手のカード（全体）',           group: '⚔ VS画面' },
+  { value: 'vs_def_card',  label: '右: 相手のカード画像',               group: '⚔ VS画面' },
+  { value: 'vs_def_name',  label: '右: 相手のカード名',                 group: '⚔ VS画面' },
+  { value: 'vs_def_dp',    label: '右: 相手のDP',                       group: '⚔ VS画面' },
+  { value: 'vs_label',     label: '「VS」テキスト',                     group: '⚔ VS画面' },
+  { value: 'vs_title',     label: 'タイトル（SECURITY CHECK!等）',      group: '⚔ VS画面' },
+  { value: 'vs_result',    label: '結果テキスト（Win/Lost等）',         group: '⚔ VS画面' },
 ];
 
 // アコーディオン型エリアピッカー

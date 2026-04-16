@@ -273,16 +273,16 @@
 <!-- セキュリティチェック演出（アタック側+セキュリティ側を並べて大きく表示） -->
 <div id="security-check-overlay" style="display:none; position:fixed; inset:0; z-index:47500; align-items:center; justify-content:center; flex-direction:column; gap:16px; background:rgba(0,0,0,0.95);">
   <div id="sec-check-label" style="font-size:1.2rem; color:#ff4444; letter-spacing:4px; font-weight:bold; opacity:0; transition:opacity 0.3s; text-shadow:0 0 20px rgba(255,68,68,0.6);">SECURITY CHECK!</div>
-  <div style="display:flex; gap:20px; align-items:center;">
+  <div id="sec-vs-cards" style="display:flex; gap:20px; align-items:center;">
     <!-- アタック側 -->
-    <div style="text-align:center;">
+    <div id="sec-atk-area" style="text-align:center;">
       <div id="sec-atk-card-img" style="width:110px; height:154px; border-radius:10px; overflow:hidden; border:2px solid #00fbff; box-shadow:0 0 25px rgba(0,251,255,0.5); opacity:0; transition:opacity 0.3s;"></div>
       <div id="sec-atk-name" style="font-size:11px; color:#00fbff; margin-top:6px; font-weight:bold; opacity:0; transition:opacity 0.3s;"></div>
       <div id="sec-atk-dp" style="font-size:10px; color:#aaa; opacity:0; transition:opacity 0.3s;"></div>
     </div>
-    <div style="font-size:2rem; font-weight:bold; color:#ff4444; text-shadow:0 0 15px #ff4444;">VS</div>
-    <!-- セキュリティ側 -->
-    <div style="text-align:center;">
+    <div id="sec-vs-label" style="font-size:2rem; font-weight:bold; color:#ff4444; text-shadow:0 0 15px #ff4444;">VS</div>
+    <!-- セキュリティ/相手側 -->
+    <div id="sec-def-area" style="text-align:center;">
       <div id="sec-check-card-img" style="width:110px; height:154px; border-radius:10px; overflow:hidden; border:2px solid #ff4444; box-shadow:0 0 25px rgba(255,68,68,0.5); opacity:0; transform:rotateY(180deg); transition:opacity 0.4s, transform 0.6s;"></div>
       <div id="sec-check-card-name" style="font-size:11px; color:#ff4444; margin-top:6px; font-weight:bold; opacity:0; transition:opacity 0.3s;"></div>
       <div id="sec-check-type" style="font-size:10px; color:#aaa; opacity:0; transition:opacity 0.3s;"></div>

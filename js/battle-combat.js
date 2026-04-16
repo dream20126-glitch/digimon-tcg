@@ -1087,32 +1087,14 @@ export function showBlockConfirm(blocker, attacker, callback) {
   if (imgEl) imgEl.style.display = 'none';
   overlay.style.display = 'flex';
 
-  const _enableButtons = () => {
-    const yBtn = document.getElementById('effect-confirm-yes');
-    const nBtn = document.getElementById('effect-confirm-no');
-    if (yBtn) { yBtn.disabled = false; yBtn.style.opacity = ''; }
-    if (nBtn) { nBtn.disabled = false; nBtn.style.opacity = ''; }
-  };
-
-  // チュートリアル: ダイアログ表示中に割り込み（ボタン無効化 → 説明 → 有効化）
+  // チュートリアル: ダイアログ表示中に割り込み
   if (window._tutorialRunner && window._tutorialRunner.active) {
-    const yBtn = document.getElementById('effect-confirm-yes');
-    const nBtn = document.getElementById('effect-confirm-no');
-    if (yBtn) { yBtn.disabled = true; yBtn.style.opacity = '0.3'; }
-    if (nBtn) { nBtn.disabled = true; nBtn.style.opacity = '0.3'; }
     setTimeout(() => {
-      window._tutorialRunner.checkInterrupt('block_confirm').then(() => {
-        // スポットライトモード強制解除 + ボタン有効化
-        document.body.classList.remove('tutorial-spotlight-mode');
-        document.querySelectorAll('.tutorial-keep-visible').forEach(el =>
-          el.classList.remove('tutorial-keep-visible'));
-        _enableButtons();
-      });
+      window._tutorialRunner.checkInterrupt('block_confirm').then(() => {});
     }, 100);
   }
 
   window._effectConfirmCallback = function(result) {
-    _enableButtons();
     nameEl.style.color = '#fff';
     nameEl.style.textShadow = '';
     nameEl.style.fontSize = '1rem';

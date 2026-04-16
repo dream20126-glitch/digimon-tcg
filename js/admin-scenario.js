@@ -1576,7 +1576,7 @@ function _renderFlowStep(slotKey, timing, sIdx, step, occ) {
           oninput="flowUpdateStep(${sk},${tg},${sIdx},'conditionCardNo',this.value,${occVal})"
           placeholder="例: BT1-010">
       </div>` : ''}
-      ${showUiControl ? _renderStepUiControl(slotKey, timing, sIdx, step) : ''}
+      ${showUiControl ? _renderStepUiControl(slotKey, timing, sIdx, step, occVal) : ''}
     </div>
   `;
 }
@@ -1619,14 +1619,14 @@ function _renderCardPicker(slotKey, timing, sIdx, field, currentCardNo) {
   return `
     <div style="position:relative; margin-top:2px;">
       <input type="text" id="${uid}" placeholder="カード名で検索（空＝エリア全体）"
-        oninput="flowCardSearch('${uid}',${sk},${tg},${sIdx},'${field}')"
+        oninput="flowCardSearch('${uid}',${sk},${tg},${sIdx},'${field}',${occVal})"
         style="font-size:10px; padding:3px; width:100%;">
       <div id="${uid}_results" style="display:none; position:absolute; left:0; right:0; top:100%; z-index:100; max-height:180px; overflow-y:auto; background:#111; border:1px solid #333; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.5);"></div>
     </div>`;
 }
 
 // カード検索結果を表示
-window.flowCardSearch = function(uid, slotKey, timing, sIdx, field) {
+window.flowCardSearch = function(uid, slotKey, timing, sIdx, field, occVal) {
   const input = document.getElementById(uid);
   const results = document.getElementById(uid + '_results');
   if (!input || !results) return;
@@ -1667,7 +1667,7 @@ window.flowCardSearch = function(uid, slotKey, timing, sIdx, field) {
 };
 
 // ステップ内の UI制御セクション（トグル展開式）
-function _renderStepUiControl(slotKey, timing, sIdx, step) {
+function _renderStepUiControl(slotKey, timing, sIdx, step, occVal) {
   const sk = `'${slotKey}'`;
   const tg = `'${timing}'`;
   const hasUi = step.uiControl;

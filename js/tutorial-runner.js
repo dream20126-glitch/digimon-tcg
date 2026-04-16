@@ -431,7 +431,7 @@ class TutorialRunner {
       const ANIMATED_CONDITIONS = new Set([
         'hatch', 'evolve_any', 'evolve_specific',
         'play_any', 'play_specific',
-        'attack_declared', 'attack_resolved', 'destroy_opponent',
+        'attack_resolved', 'destroy_opponent',
       ]);
       if (msg && typeof window._tutorialQueueSuccess === 'function') {
         window._tutorialQueueSuccess(msg);
@@ -457,7 +457,7 @@ class TutorialRunner {
       const ANIMATED = new Set([
         'hatch', 'evolve_any', 'evolve_specific',
         'play_any', 'play_specific', 'play_digimon', 'play_tamer', 'play_option',
-        'attack_declared', 'attack_resolved', 'destroy_opponent',
+        'attack_resolved', 'destroy_opponent',
       ]);
       const waitForBattle = ANIMATED.has(condType);
       (async () => {

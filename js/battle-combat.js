@@ -2221,6 +2221,9 @@ export function aiScriptAttack(attackerKey, target, onDone) {
                 const blocker = bs.player.battleArea[blockerIdx];
                 blocker.suspended = true;
                 addLog('🛡 「' + blocker.name + '」でブロック！');
+                if (window._tutorialRunner && window._tutorialRunner.active) {
+                  try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
+                }
                 renderAll();
                 afterBlockedEffect(atk, atkIdx, 'ai', () => {
                   resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
@@ -2234,6 +2237,9 @@ export function aiScriptAttack(attackerKey, target, onDone) {
                     const blocker = bs.player.battleArea[selectedIdx];
                     blocker.suspended = true;
                     addLog('🛡 「' + blocker.name + '」でブロック！');
+                    if (window._tutorialRunner && window._tutorialRunner.active) {
+                      try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
+                    }
                     renderAll();
                     afterBlockedEffect(atk, atkIdx, 'ai', () => {
                       resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {

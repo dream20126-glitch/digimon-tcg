@@ -269,9 +269,11 @@ class TutorialRunner {
       (b.turn || 1) === turn &&
       !this._completedBlocks.has(i)
     );
-    if (blockIdx < 0) return; // 該当なし → 即return
+    console.log('[TutorialRunner] checkInterrupt', triggerKey, '| turn=', turn, '| found=', blockIdx,
+      '| candidates=', this._flow.filter(b => b.phase === '_trigger' && b.trigger === triggerKey).map(b => ({turn: b.turn, completed: this._completedBlocks.has(this._flow.indexOf(b))}))
+    );
+    if (blockIdx < 0) return;
 
-    // ブロックのステップを順番に実行して完了を待つ
     await this._runBlockSteps(blockIdx);
   }
 

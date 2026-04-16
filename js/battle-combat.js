@@ -413,16 +413,6 @@ export function startAttack(card, slotIdx) {
   addLog('⚔ 「' + card.name + '」でアタック！');
   renderAll();
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'attack_start', atkIdx: slotIdx, atkName: card.name, atkDp: card.dp, atkImg: cardImg(card) });
-
-  // チュートリアル通知: アタックボタン押下時点でも attack_declared を発火
-  if (window._tutorialRunner && window._tutorialRunner.active) {
-    try {
-      window._tutorialRunner.notifyEvent('attack_declared', {
-        cardNo: card.cardNo, cardName: card.name,
-        target: null, isDirect: false, side: 'player',
-      });
-    } catch (e) {}
-  }
   return true;
 }
 

@@ -268,6 +268,16 @@ function startAttackModeUI(slotIdx) {
   const card = bs.player.battleArea[slotIdx]; if (!card) return;
   addLog('⚔ 「' + card.name + '」でアタック！ → 対象を選んでください');
 
+  // チュートリアル通知: アタックボタン押下時点で attack_declared を発火
+  if (window._tutorialRunner && window._tutorialRunner.active) {
+    try {
+      window._tutorialRunner.notifyEvent('attack_declared', {
+        cardNo: card.cardNo, cardName: card.name,
+        target: null, isDirect: false, side: 'player',
+      });
+    } catch (e) {}
+  }
+
   let arrowSvg = document.getElementById('attack-arrow-svg');
   if (!arrowSvg) {
     arrowSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

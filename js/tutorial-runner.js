@@ -175,6 +175,8 @@ class TutorialRunner {
     this._interruptResolve = null; // checkInterrupt の Promise resolve
     this._pausedBlock = null;      // 割り込み前のブロック状態（完了後にレジューム）
     this._phaseBlockResolve = null; // notifyPhaseChange 待ち Promise の resolver
+    this._triggerCounts = {};       // トリガー発生回数カウンター（ターンごとにリセット）
+    this._lastCountTurn = 0;       // カウンターの最終リセットターン
   }
 
   // ---------------------------------------------------------------
@@ -264,15 +266,25 @@ class TutorialRunner {
     if (!this.active || this.cleared) return;
     const turn = this._currentTurn;
 
-    // 該当する割り込みブロックを探す
+    // ターンが変わったらカウンターリセット
+    const bsTurn = (window.bs && window.bs.turn) || 0;
+    if (bsTurn !== this._lastCountTurn) {
+      this._triggerCounts = {};
+      this._lastCountTurn = bsTurn;
+    }
+
+    // 発生回数をインクリメント
+    const countKey = triggerKey + ':' + turn;
+    this._triggerCounts[countKey] = (this._triggerCounts[countKey] || 0) + 1;
+    const currentOccurrence = this._triggerCounts[countKey];
+
+    // 該当する割り込みブロックを探す（occurrence マッチ付き）
     const blockIdx = this._flow.findIndex((b, i) =>
       b.phase === '_trigger' &&
       b.trigger === triggerKey &&
       (b.turn || 1) === turn &&
-      !this._completedBlocks.has(i)
-    );
-    console.log('[TutorialRunner] checkInterrupt', triggerKey, '| turn=', turn, '| found=', blockIdx,
-      '| candidates=', this._flow.filter(b => b.phase === '_trigger' && b.trigger === triggerKey).map(b => ({turn: b.turn, completed: this._completedBlocks.has(this._flow.indexOf(b))}))
+      !this._completedBlocks.has(i) &&
+      (b.occurrence || 1) === currentOccurrence
     );
     if (blockIdx < 0) return;
 

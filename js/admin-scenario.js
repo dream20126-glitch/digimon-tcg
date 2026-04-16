@@ -51,7 +51,7 @@ const CONDITION_TYPES = [
 ];
 
 // CONDITION_TYPES からアコーディオン式のピッカー HTML を組み立てる
-function _renderConditionPicker(slotKey, timing, sIdx, currentValue) {
+function _renderConditionPicker(slotKey, timing, sIdx, currentValue, occ) {
   const uid = `cp_cond_${slotKey}_${timing}_${sIdx}`;
   const cur = CONDITION_TYPES.find(t => t.value === (currentValue || '')) || { label: '（未設定）' };
   const sk = `'${slotKey}'`;
@@ -68,7 +68,7 @@ function _renderConditionPicker(slotKey, timing, sIdx, currentValue) {
   const item = (t) => {
     const v = `'${t.value}'`;
     const sel = t.value === (currentValue || '') ? ' selected' : '';
-    return `<div class="ap-item${sel}" onclick="conditionPickerSelect('${uid}',${sk},${tg},${sIdx},${v})">${_escHtml(t.label)}</div>`;
+    return `<div class="ap-item${sel}" onclick="conditionPickerSelect('${uid}',${sk},${tg},${sIdx},${v},${occ || 1})">${_escHtml(t.label)}</div>`;
   };
 
   let panel = '';
@@ -94,14 +94,14 @@ function _renderConditionPicker(slotKey, timing, sIdx, currentValue) {
   </div>`;
 }
 
-window.conditionPickerSelect = function(uid, slotKey, timing, sIdx, value) {
-  flowUpdateStep(slotKey, timing, sIdx, 'conditionType', value);
+window.conditionPickerSelect = function(uid, slotKey, timing, sIdx, value, occ) {
+  flowUpdateStep(slotKey, timing, sIdx, 'conditionType', value, occ);
   // _renderFlowEditor が呼ばれて全体再描画されるので、ボタン更新は不要
 };
 
 // フロー編集: 進行条件のパラメータ値を更新
-window.flowUpdateStepParam = function(slotKey, timing, sIdx, key, value) {
-  const ref = _getStepByTiming(slotKey, timing, sIdx);
+window.flowUpdateStepParam = function(slotKey, timing, sIdx, key, value, occ) {
+  const ref = _getStepByTiming(slotKey, timing, sIdx, occ);
   if (!ref) return;
   const step = ref.step;
   if (!step.advanceCondition) return;
@@ -284,7 +284,7 @@ const TARGET_AREAS = [
 //   uid : DOM一意ID
 //   slotKey/timing/sIdx/field : flowUpdateStep に渡す引数
 //   currentValue : 現在選択中の value
-function _renderAreaPicker(slotKey, timing, sIdx, field, currentValue) {
+function _renderAreaPicker(slotKey, timing, sIdx, field, currentValue, occ) {
   const uid = `ap_${slotKey}_${timing}_${sIdx}_${field}`;
   const cur = TARGET_AREAS.find(a => a.value === (currentValue || '')) || TARGET_AREAS[0];
   // HTML属性内の onclick で渡すため、シングルクォートでラップした文字列を組む
@@ -305,7 +305,7 @@ function _renderAreaPicker(slotKey, timing, sIdx, field, currentValue) {
   const item = (a) => {
     const v = `'${a.value}'`;
     const sel = a.value === (currentValue || '') ? ' selected' : '';
-    return `<div class="ap-item${sel}" onclick="areaPickerSelect('${uid}',${sk},${tg},${sIdx},${fd},${v})">${_escHtml(a.label)}</div>`;
+    return `<div class="ap-item${sel}" onclick="areaPickerSelect('${uid}',${sk},${tg},${sIdx},${fd},${v},${occ || 1})">${_escHtml(a.label)}</div>`;
   };
 
   let panel = '';
@@ -354,8 +354,8 @@ window.areaPickerToggleGroup = function(gid, el) {
 };
 
 // 項目選択
-window.areaPickerSelect = function(uid, slotKey, timing, sIdx, field, value) {
-  flowUpdateStep(slotKey, timing, sIdx, field, value);
+window.areaPickerSelect = function(uid, slotKey, timing, sIdx, field, value, occ) {
+  flowUpdateStep(slotKey, timing, sIdx, field, value, occ);
   // ボタンラベルを更新
   const picker = document.getElementById(uid);
   if (picker) {
@@ -1213,57 +1213,64 @@ window.flowChangeStepTiming = function(slotKey, currentTiming, stepIdx, newTimin
   _renderFlowEditor();
 };
 
-// slotKey + timing + stepIdx から step を取得
-function _getStepByTiming(slotKey, timing, stepIdx) {
+// slotKey + timing + stepIdx + occurrence から step を取得
+function _getStepByTiming(slotKey, timing, stepIdx, occ) {
   const info = _getTargetBlockInfo(slotKey, timing);
   if (!info) return null;
+  const occurrence = occ || 1;
   const block = _scenarioFlow.find(b =>
     b.phase === info.phase &&
     (b.trigger || undefined) === (info.trigger || undefined) &&
-    (b.turn || 1) === _flowEditTurn
+    (b.turn || 1) === _flowEditTurn &&
+    (b.occurrence || 1) === occurrence
   );
   if (!block || !block.steps[stepIdx]) return null;
   return { block, step: block.steps[stepIdx] };
 }
 
 // ステップ削除
-window.flowRemoveStep = function(slotKey, timing, stepIdx) {
-  const info = _getTargetBlockInfo(slotKey, timing);
-  if (!info) return;
-  const block = _scenarioFlow.find(b =>
-    b.phase === info.phase &&
-    (b.trigger || undefined) === (info.trigger || undefined) &&
-    (b.turn || 1) === _flowEditTurn
-  );
-  if (!block) return;
-  block.steps.splice(stepIdx, 1);
-  // 空になったら削除（phase_start以外）
-  if (block.steps.length === 0 && timing !== 'phase_start') {
-    const idx = _scenarioFlow.indexOf(block);
+window.flowRemoveStep = function(slotKey, timing, stepIdx, occ) {
+  const ref = _getStepByTiming(slotKey, timing, stepIdx, occ);
+  if (!ref) return;
+  ref.block.steps.splice(stepIdx, 1);
+  if (ref.block.steps.length === 0 && timing !== 'phase_start') {
+    const idx = _scenarioFlow.indexOf(ref.block);
     if (idx >= 0) _scenarioFlow.splice(idx, 1);
   }
   _renderFlowEditor();
 };
 
 // ステップ移動（同一タイミング内）
-window.flowMoveStep = function(slotKey, timing, stepIdx, delta) {
-  const info = _getTargetBlockInfo(slotKey, timing);
-  if (!info) return;
-  const block = _scenarioFlow.find(b =>
-    b.phase === info.phase &&
-    (b.trigger || undefined) === (info.trigger || undefined) &&
-    (b.turn || 1) === _flowEditTurn
-  );
-  if (!block || !block.steps) return;
+window.flowMoveStep = function(slotKey, timing, stepIdx, delta, occ) {
+  const ref = _getStepByTiming(slotKey, timing, stepIdx, occ);
+  if (!ref) return;
+  const block = ref.block;
+  if (!block.steps) return;
   const to = stepIdx + delta;
   if (to < 0 || to >= block.steps.length) return;
   [block.steps[stepIdx], block.steps[to]] = [block.steps[to], block.steps[stepIdx]];
   _renderFlowEditor();
 };
 
+// トリガーブロックの発生回数を変更
+window.flowChangeOccurrence = function(slotKey, timing, currentOcc, newOcc) {
+  const info = _getTargetBlockInfo(slotKey, timing);
+  if (!info) return;
+  const block = _scenarioFlow.find(b =>
+    b.phase === info.phase &&
+    (b.trigger || undefined) === (info.trigger || undefined) &&
+    (b.turn || 1) === _flowEditTurn &&
+    (b.occurrence || 1) === currentOcc
+  );
+  if (!block) return;
+  if (newOcc > 1) block.occurrence = newOcc;
+  else delete block.occurrence;
+  _renderFlowEditor();
+};
+
 // ステップフィールド更新
-window.flowUpdateStep = function(slotKey, timing, stepIdx, field, value) {
-  const ref = _getStepByTiming(slotKey, timing, stepIdx);
+window.flowUpdateStep = function(slotKey, timing, stepIdx, field, value, occ) {
+  const ref = _getStepByTiming(slotKey, timing, stepIdx, occ);
   if (!ref) return;
   const step = ref.step;
   if (field === 'instructionText') {
@@ -1336,15 +1343,18 @@ function _getTargetBlockInfo(phaseKey, timing) {
 }
 
 // ブロックを見つける or 作成
-function _findOrCreateBlock(phase, trigger, turn) {
+function _findOrCreateBlock(phase, trigger, turn, occurrence) {
+  const occ = occurrence || 1;
   let b = _scenarioFlow.find(x =>
     x.phase === phase &&
     (x.trigger || undefined) === (trigger || undefined) &&
-    (x.turn || 1) === turn
+    (x.turn || 1) === turn &&
+    (x.occurrence || 1) === occ
   );
   if (!b) {
     b = { phase, turn, steps: [] };
     if (trigger) b.trigger = trigger;
+    if (occ > 1) b.occurrence = occ;
     _scenarioFlow.push(b);
   }
   return b;
@@ -1362,16 +1372,15 @@ function _getRelatedBlocks(slotKey, turn) {
     (b.turn || 1) === turn
   );
   if (primary) blocks.push({ block: primary, timing: 'phase_start' });
-  // Related trigger blocks for this slot
+  // Related trigger blocks for this slot (occurrence 違いも含め全て取得)
   STEP_TIMINGS.forEach(t => {
     if (!t.trigger) return;
     if (!t.availableIn.includes(slotKey)) return;
-    const tb = _scenarioFlow.find(b =>
-      b.phase === '_trigger' &&
-      b.trigger === t.trigger &&
-      (b.turn || 1) === turn
-    );
-    if (tb) blocks.push({ block: tb, timing: t.value });
+    _scenarioFlow.forEach(b => {
+      if (b.phase === '_trigger' && b.trigger === t.trigger && (b.turn || 1) === turn) {
+        blocks.push({ block: b, timing: t.value, occurrence: b.occurrence || 1 });
+      }
+    });
   });
   return blocks;
 }
@@ -1419,14 +1428,21 @@ function _renderSlotBlock(slot) {
     const stepsHtml = related.map(r => {
       const tDef = STEP_TIMINGS.find(t => t.value === r.timing);
       const tLabel = tDef ? tDef.label : r.timing;
+      const occ = r.occurrence || 1;
       const stepsInGroup = (r.block.steps || []).map((step, sIdx) =>
-        _renderFlowStep(slot.key, r.timing, sIdx, step)
+        _renderFlowStep(slot.key, r.timing, sIdx, step, occ)
       ).join('');
       if (!stepsInGroup) return '';
-      // 複数タイミングがある場合のみグループヘッダーを表示
       const showGroupHeader = related.length > 1 || r.timing !== 'phase_start';
+      // トリガーブロックには発生回数セレクタを表示
+      const isTrigger = r.block.phase === '_trigger';
+      const occHtml = isTrigger
+        ? ` <select style="font-size:9px; background:#111; color:#aaa; border:1px solid #333; border-radius:3px; padding:1px 2px; margin-left:4px;" onchange="flowChangeOccurrence('${slot.key}','${r.timing}',${occ},Number(this.value))">`
+          + [1,2,3,4,5].map(n => `<option value="${n}" ${n === occ ? 'selected' : ''}>${n}回目</option>`).join('')
+          + '</select>'
+        : '';
       const groupHeader = showGroupHeader
-        ? `<div style="color:${slot.color}; font-size:10px; font-weight:bold; margin:4px 0 4px; padding-left:2px;">${tLabel}</div>`
+        ? `<div style="color:${slot.color}; font-size:10px; font-weight:bold; margin:4px 0 4px; padding-left:2px;">${tLabel}${occHtml}</div>`
         : '';
       return groupHeader + stepsInGroup;
     }).join('');
@@ -1443,7 +1459,7 @@ function _renderSlotBlock(slot) {
 }
 
 // 個別ステップの描画
-function _renderFlowStep(slotKey, timing, sIdx, step) {
+function _renderFlowStep(slotKey, timing, sIdx, step, occ) {
   const sType = step.stepType || 'action';
   const isAction = sType === 'action';
   const isSpotlight = sType === 'spotlight';
@@ -1451,6 +1467,7 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
   const cond = step.advanceCondition || { type: 'hatch' };
   const needsCard = _conditionNeedsCard(cond.type);
   const cardNo = (cond.params && cond.params.cardNo) || '';
+  const occVal = occ || 1;
 
   const sk = `'${slotKey}'`;
   const tg = `'${timing}'`;
@@ -1460,8 +1477,8 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
   const condOpts = CONDITION_TYPES.map(t =>
     `<option value="${t.value}"${t.value === cond.type ? ' selected' : ''}>${t.label}</option>`
   ).join('');
-  const areaPicker1 = _renderAreaPicker(slotKey, timing, sIdx, 'targetArea',       step.targetArea || '');
-  const areaPicker2 = _renderAreaPicker(slotKey, timing, sIdx, 'secondTargetArea', step.secondTargetArea || '');
+  const areaPicker1 = _renderAreaPicker(slotKey, timing, sIdx, 'targetArea',       step.targetArea || '',       occVal);
+  const areaPicker2 = _renderAreaPicker(slotKey, timing, sIdx, 'secondTargetArea', step.secondTargetArea || '', occVal);
   const opOpts = OPERATION_TYPES.map(o =>
     `<option value="${o.value}"${o.value === (step.operationType || '') ? ' selected' : ''}>${o.label}</option>`
   ).join('');
@@ -1497,9 +1514,9 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
         <span style="color:#aaa; font-size:10px; font-weight:bold;">STEP ${sIdx + 1}</span>
         <div>
-          <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${tg},${sIdx},-1)">↑</button>
-          <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${tg},${sIdx},1)">↓</button>
-          <button class="admin-btn-danger" style="padding:2px 6px; font-size:9px;" onclick="flowRemoveStep(${sk},${tg},${sIdx})">×</button>
+          <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${tg},${sIdx},-1,${occVal})">↑</button>
+          <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${tg},${sIdx},1,${occVal})">↓</button>
+          <button class="admin-btn-danger" style="padding:2px 6px; font-size:9px;" onclick="flowRemoveStep(${sk},${tg},${sIdx},${occVal})">×</button>
         </div>
       </div>
       ${availableTimings.length > 1 ? `
@@ -1507,30 +1524,30 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
         <select onchange="flowChangeStepTiming(${sk},${tg},${sIdx},this.value)">${timingOpts}</select>
       </div>` : ''}
       <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">ステップタイプ</label>
-        <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'stepType',this.value)">${stepTypeOpts}</select>
+        <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'stepType',this.value,${occVal})">${stepTypeOpts}</select>
       </div>
       <div class="tsave-field" style="margin-bottom:6px;">
         <label style="font-size:10px;">${textLabel}
           <span style="color:#888;">※ {{pc:XX|sp:YY}} でデバイス切替可${isAction ? '' : ' / 空行で区切ると複数の吹き出しに分割'}</span>
         </label>
-        <textarea rows="${isAction ? 1 : 3}" oninput="flowUpdateStep(${sk},${tg},${sIdx},'instructionText',this.value)"
+        <textarea rows="${isAction ? 1 : 3}" oninput="flowUpdateStep(${sk},${tg},${sIdx},'instructionText',this.value,${occVal})"
           placeholder="${textPlaceholder}"
           style="resize:vertical;">${_escHtml(step.instructionText || '')}</textarea>
       </div>
       ${showCondOp ? `
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">次に進む条件</label>
-          ${_renderConditionPicker(slotKey, timing, sIdx, cond.type)}
+          ${_renderConditionPicker(slotKey, timing, sIdx, cond.type, occVal)}
           <div style="margin-top:4px;">
-            ${_renderConditionParams(cond.type, cond.params || {}, `flowUpdateStepParam(${sk},${tg},${sIdx},'__KEY__',this.value)`)}
+            ${_renderConditionParams(cond.type, cond.params || {}, `flowUpdateStepParam(${sk},${tg},${sIdx},'__KEY__',this.value,${occVal})`)}
           </div>
         </div>
         <div class="tsave-field" style="margin-bottom:0;"><label style="font-size:10px;">操作タイプ</label>
-          <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'operationType',this.value)">${opOpts}</select>
+          <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'operationType',this.value,${occVal})">${opOpts}</select>
         </div>
       </div>
       <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">成功演出（条件達成時）</label>
-        <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'successPopup',this.value)">
+        <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'successPopup',this.value,${occVal})">
           ${SUCCESS_POPUP_PRESETS.map(p => `<option value="${p.value}"${(step.successPopup || 'auto') === p.value ? ' selected' : ''}>${p.label}</option>`).join('')}
         </select>
       </div>` : ''}
@@ -1551,7 +1568,7 @@ function _renderFlowStep(slotKey, timing, sIdx, step) {
       ${isAction && needsCard ? `
       <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">カードNo（進行条件用）</label>
         <input type="text" value="${_escHtml(cardNo)}"
-          oninput="flowUpdateStep(${sk},${tg},${sIdx},'conditionCardNo',this.value)"
+          oninput="flowUpdateStep(${sk},${tg},${sIdx},'conditionCardNo',this.value,${occVal})"
           placeholder="例: BT1-010">
       </div>` : ''}
       ${showUiControl ? _renderStepUiControl(slotKey, timing, sIdx, step) : ''}
@@ -1572,7 +1589,7 @@ function _renderConditionSubSettings(slotKey, timing, sIdx, step, cond) {
     return `
       <div class="tsave-field" style="margin-bottom:6px; background:#050505; border:1px dashed #00ff8844; border-radius:4px; padding:8px;">
         <label style="font-size:10px; color:#00ff88;">カード詳細ハイライト箇所</label>
-        <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'targetArea',this.value)">${opts}</select>
+        <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'targetArea',this.value,${occVal})">${opts}</select>
         <p style="color:#666; font-size:9px; margin:3px 0 0;">※ 下の「赤枠ハイライト1」と連動。別の箇所を指定したい時は下で上書きできます。</p>
       </div>`;
   }
@@ -1591,7 +1608,7 @@ function _renderCardPicker(slotKey, timing, sIdx, field, currentCardNo) {
         <span style="background:#111; border:1px solid #00ff88; border-radius:3px; padding:2px 6px; font-size:10px; color:#fff; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
           ${_escHtml(name)} <span style="color:#888;">(${_escHtml(currentCardNo)})</span>
         </span>
-        <button class="admin-btn-danger" style="padding:1px 6px; font-size:9px;" onclick="flowUpdateStep(${sk},${tg},${sIdx},'${field}',''); event.stopPropagation();">×</button>
+        <button class="admin-btn-danger" style="padding:1px 6px; font-size:9px;" onclick="flowUpdateStep(${sk},${tg},${sIdx},'${field}','',${occVal}); event.stopPropagation();">×</button>
       </div>`;
   }
   return `
@@ -1633,7 +1650,7 @@ window.flowCardSearch = function(uid, slotKey, timing, sIdx, field) {
     const no = _escHtml(c['カードNo'] || '');
     const name = _escHtml(c['名前'] || '');
     const lv = _escHtml(c['Lv'] || c['レベル'] || '');
-    return `<div onclick="flowUpdateStep(${sk},${tg},${sIdx},'${field}','${no}'); event.stopPropagation();"
+    return `<div onclick="flowUpdateStep(${sk},${tg},${sIdx},'${field}','${no}',${occVal}); event.stopPropagation();"
       style="padding:4px 8px; cursor:pointer; font-size:10px; color:#fff; border-bottom:1px solid #1a1a1a; display:flex; align-items:center; gap:6px;"
       onmouseenter="this.style.background='#1a3030'" onmouseleave="this.style.background=''">
       <span style="color:#aaa; min-width:70px;">${no}</span>
@@ -1668,21 +1685,21 @@ function _renderStepUiControl(slotKey, timing, sIdx, step) {
   const greyOutChecks = GREYOUT_OPTIONS.map(opt => `
     <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:10px; color:#aaa; margin-bottom:2px;">
       <input type="checkbox" ${greyOut.includes(opt.value) ? 'checked' : ''}
-        onchange="flowUpdateStep(${sk},${tg},${sIdx},'greyOut_${opt.value}',this.checked)">
+        onchange="flowUpdateStep(${sk},${tg},${sIdx},'greyOut_${opt.value}',this.checked,${occVal})">
       ${opt.label}
     </label>`).join('');
 
   const hlBtnChecks = BUTTON_TARGETS.map(btn => `
     <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:10px; color:#aaa; margin-bottom:2px;">
       <input type="checkbox" ${hlButtons.includes(btn.value) ? 'checked' : ''}
-        onchange="flowUpdateStep(${sk},${tg},${sIdx},'hlBtn_${btn.value}',this.checked)">
+        onchange="flowUpdateStep(${sk},${tg},${sIdx},'hlBtn_${btn.value}',this.checked,${occVal})">
       ${btn.label}
     </label>`).join('');
 
   return `
     <div style="border-top:1px solid #1a1a1a; margin-top:8px; padding-top:6px;">
       <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:10px; color:#888; font-weight:bold;">
-        <input type="checkbox" ${checked} onchange="flowUpdateStep(${sk},${tg},${sIdx},'uiControl',this.checked)">
+        <input type="checkbox" ${checked} onchange="flowUpdateStep(${sk},${tg},${sIdx},'uiControl',this.checked,${occVal})">
         UI制御を設定する
       </label>
       ${hasUi ? `

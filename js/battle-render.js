@@ -983,9 +983,11 @@ export function showBCD(idxOrCard, source) {
 export function closeBCD() {
   const bcd = document.getElementById('b-card-detail');
   if (bcd) bcd.style.display = 'none';
-  // チュートリアル通知: カード詳細を閉じた
   if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
-    try { window._tutorialRunner.notifyEvent('card_detail_closed', {}); } catch (e) {}
+    try {
+      window._tutorialRunner.notifyEvent('card_detail_closed', {});
+      window._tutorialRunner.notifyEvent('modal_closed', { modal: 'card_detail' });
+    } catch (e) {}
   }
 }
 
@@ -1006,7 +1008,7 @@ export function showTrash(side) {
   } else {
     grid.innerHTML = trash.map((c, i) => {
       const src = cardImg(c);
-      return `<div id="trash-card-${i}" style="text-align:center;cursor:pointer;padding:3px;border:2px solid transparent;border-radius:6px;transition:all 0.2s;" onclick="selectTrashCard('${side}',${i})" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 4px 12px rgba(0,251,255,0.3)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+      return `<div id="trash-card-${i}" data-card-no="${c.cardNo || ''}" data-card-name="${c.name || ''}" style="text-align:center;cursor:pointer;padding:3px;border:2px solid transparent;border-radius:6px;transition:all 0.2s;" onclick="selectTrashCard('${side}',${i})" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 4px 12px rgba(0,251,255,0.3)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
         ${src ? `<img src="${src}" style="width:100%;border-radius:4px;">` : `<div style="height:60px;background:#111;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#aaa;">${c.name}</div>`}
         <div style="font-size:7px;color:#888;margin-top:2px;">${c.name}</div>
       </div>`;

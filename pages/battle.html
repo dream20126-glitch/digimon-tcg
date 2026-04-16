@@ -323,7 +323,7 @@
   <div style="max-width:400px; margin:auto;">
     <h3 id="trash-modal-title" style="color:var(--main-cyan); text-align:center; margin-bottom:12px;"></h3>
     <div id="trash-modal-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(65px, 1fr)); gap:6px; margin-bottom:16px;"></div>
-    <button class="menu-btn" onclick="document.getElementById('trash-modal').style.display='none'">閉じる</button>
+    <button id="trash-close-btn" class="menu-btn" onclick="document.getElementById('trash-modal').style.display='none'; if(window._tutorialRunner&&window._tutorialRunner.active)try{window._tutorialRunner.notifyEvent('modal_closed',{modal:'trash'})}catch(e){}">閉じる</button>
   </div>
 </div>
 

@@ -788,6 +788,9 @@ const TARGET_AREA_SELECTORS = {
   card_detail_evo_source: () => document.getElementById('bcd-evo-source'),
   card_detail_sec_effect: () => document.getElementById('bcd-security-effect'),
   card_detail_close:      () => document.getElementById('bcd-close-btn'),
+  // トラッシュモーダル
+  trash_modal:       () => document.getElementById('trash-modal'),
+  trash_close_btn:   () => document.getElementById('trash-close-btn'),
   // VS画面（セキュリティチェック/バトル演出）
   vs_screen:         () => document.getElementById('security-check-overlay'),
   vs_cards:          () => document.getElementById('sec-vs-cards'),
@@ -823,6 +826,17 @@ function _findCardElement(cardNo) {
   // 育成エリア
   const raising = document.querySelector('#pl-iku-slot .b-slot, #pl-iku-slot');
   if (raising && raising.dataset && raising.dataset.cardNo === cardNo) return raising;
+  // トラッシュモーダル内（cardNo完全一致 → cardName部分一致）
+  const trashModal = document.getElementById('trash-modal');
+  if (trashModal && trashModal.style.display !== 'none') {
+    const trashCards = trashModal.querySelectorAll('[data-card-no]');
+    for (const el of trashCards) {
+      if (el.dataset.cardNo === cardNo) return el;
+    }
+    for (const el of trashCards) {
+      if (el.dataset.cardName && el.dataset.cardName.includes(cardNo)) return el;
+    }
+  }
   return null;
 }
 

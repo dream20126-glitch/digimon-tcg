@@ -84,6 +84,9 @@ export const CONDITION_EVALUATORS = {
   effect_triggered:  (params, ev) => ev.type === 'effect_triggered',
   security_effect:   (params, ev) => ev.type === 'security_effect',
 
+  // 閉じるボタン押下（カード詳細/トラッシュ/各種モーダル共通）
+  modal_closed: (params, ev) => ev.type === 'modal_closed',
+
   // 特殊
   security_zero: (params, ev) =>
     ev.type === 'security_reduced' && ev.side === 'opponent' && (ev.remaining ?? -1) === 0,

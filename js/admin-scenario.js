@@ -43,6 +43,7 @@ const CONDITION_TYPES = [
   // UI操作（クリア条件には出さない）
   { value: 'card_detail_opened', label: 'カード詳細を見た（開いた）',                 needsCardNo: false, group: '🖱 UI操作', clearable: false },
   { value: 'card_detail_closed', label: 'カード詳細を閉じた',                         needsCardNo: false, group: '🖱 UI操作', clearable: false },
+  { value: 'modal_closed',       label: '閉じるボタンを押した（全モーダル共通）',     needsCardNo: false, group: '🖱 UI操作', clearable: false },
   { value: 'mulligan_accepted',  label: 'ゲーム開始ボタンを押した（マリガン）',       needsCardNo: false, group: '🖱 UI操作', clearable: false },
   // 達成系
   { value: 'security_zero',      label: '相手セキュリティを0枚にした',                needsCardNo: false, group: '🏆 達成' },
@@ -255,6 +256,9 @@ const TARGET_AREAS = [
   { value: 'card_detail_evo_source', label: '進化元効果',                  group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_sec_effect', label: 'セキュリティ効果',            group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_close',      label: '閉じるボタン',                group: '🔍 カード詳細モーダル' },
+  // --- トラッシュモーダル ---
+  { value: 'trash_modal',          label: 'トラッシュ画面全体',           group: '🗑 トラッシュ' },
+  { value: 'trash_close_btn',      label: '閉じるボタン',                group: '🗑 トラッシュ' },
   // --- VS画面（セキュリティチェック/バトル演出） ---
   { value: 'vs_screen',    label: '画面全体',                            group: '⚔ VS画面' },
   { value: 'vs_cards',     label: 'カード2枚（左右まとめて）',          group: '⚔ VS画面' },

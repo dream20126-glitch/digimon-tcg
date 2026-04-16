@@ -264,19 +264,47 @@ if (typeof window.showScreen === 'function' && !window._tutorialShowScreenWrappe
 
 function _clearConditionToJapanese(cond) {
   if (!cond || !cond.type) return '';
+  const p = cond.params || {};
+
+  // パラメータ付きの動的テキスト
+  if (cond.type === 'turn_end') {
+    const turn = p.turn;
+    return turn ? `🎯 ${turn}ターン目を終了しよう` : '🎯 ターンを終了しよう';
+  }
+  if (cond.type === 'turn_start') {
+    const turn = p.turn;
+    return turn ? `🎯 ${turn}ターン目を開始しよう` : '🎯 ターンを開始しよう';
+  }
+  if (cond.type === 'security_check_n') {
+    const count = p.count || 1;
+    return `🎯 相手セキュリティを${count}枚チェックしよう`;
+  }
+  if (cond.type === 'evolve_lv') {
+    return `🎯 Lv.${p.level || '?'}に進化させよう`;
+  }
+  if (cond.type === 'play_lv') {
+    return `🎯 Lv.${p.level || '?'}を登場させよう`;
+  }
+
   const map = {
     hatch: '育成エリアで孵化しよう',
     play_any: 'カードをプレイしよう',
     play_specific: 'カードをプレイしよう',
+    play_digimon: 'デジモンを登場させよう',
+    play_option: 'オプションカードを使おう',
+    play_tamer: 'テイマーカードを登場させよう',
     evolve_any: 'デジモンを進化させよう',
     evolve_specific: 'デジモンを進化させよう',
     attack_declared: 'アタック宣言しよう',
     attack_resolved: 'バトルを解決しよう',
+    direct_attack: 'ダイレクトアタックしよう',
+    block: 'ブロックしよう',
     destroy_opponent: '相手デジモンを消滅させよう',
     security_reduced: '相手のセキュリティを削ろう',
+    security_zero: '相手セキュリティを0枚にしよう',
     use_effect: '効果を発動しよう',
-    turn_end: 'ターンを終了しよう',
-    turn_start: 'ターンを開始しよう',
+    effect_triggered: '効果を誘発させよう',
+    security_effect: 'セキュリティ効果を発動しよう',
   };
   return '🎯 ' + (map[cond.type] || cond.type);
 }

@@ -130,3 +130,9 @@
 
 .large-btn { padding: 22px !important; font-size: 1.2rem; }
 .menu-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+
+/* ===== チュートリアル: NEWバッジのパルスアニメ ===== */
+@keyframes tutorialNewPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 4px rgba(255,204,0,0.5); }
+  50%      { transform: scale(1.12); box-shadow: 0 0 10px rgba(255,204,0,0.9); }
+}

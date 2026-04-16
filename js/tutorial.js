@@ -60,16 +60,44 @@ function _isLocked(scenario) {
   return !_isCleared(scenario.prerequisiteId);
 }
 
+// 新規解放マーク用: 既に見たシナリオを localStorage に保持
+function _seenKey() {
+  const player = window.currentPlayerName || '';
+  const pw = window.currentSessionPassword || '';
+  return `tutorial_seen::${player}::${pw}`;
+}
+function _getSeenSet() {
+  try {
+    const raw = localStorage.getItem(_seenKey());
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch (e) { return new Set(); }
+}
+function _markSeen(scenarioId) {
+  if (!scenarioId) return;
+  const set = _getSeenSet();
+  if (set.has(scenarioId)) return;
+  set.add(scenarioId);
+  try { localStorage.setItem(_seenKey(), JSON.stringify([...set])); } catch (e) {}
+}
+// 解放済みかつ未クリアかつ未閲覧 = New
+function _isNew(scenario, seenSet) {
+  if (_isLocked(scenario)) return false;
+  if (_isCleared(scenario.id)) return false;
+  return !seenSet.has(scenario.id);
+}
+
 function _renderScenarioList() {
   const area = document.getElementById('tutorial-scenario-select-area');
   if (!area) return;
 
   // order昇順（API側でソート済みだが念のため）
   const list = [..._scenariosCache].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const seenSet = _getSeenSet();
 
   area.innerHTML = list.map(s => {
     const cleared = _isCleared(s.id);
     const locked  = _isLocked(s);
+    const isNew   = _isNew(s, seenSet);
     const deck    = _decksCache.find(d => (d.deckId || d.tutorialName) === s.deckId);
     const imgUrl  = deck ? getGoogleDriveDirectLink(deck.cover || deck['代表画像URL'] || '') : '';
     const title   = s.tutorialName || '(無題)';
@@ -82,15 +110,21 @@ function _renderScenarioList() {
       ? 'opacity:0.45; cursor:not-allowed; border:1px solid #333;'
       : cleared
         ? 'cursor:pointer; border:1px solid #00ff88;'
-        : 'cursor:pointer; border:1px solid #222;';
+        : isNew
+          ? 'cursor:pointer; border:1px solid #ffcc00; box-shadow:0 0 8px rgba(255,204,0,0.4);'
+          : 'cursor:pointer; border:1px solid #222;';
 
     const clickAttr = locked ? '' : `onclick="selectTutorialScenario('${s.id}')"`;
 
-    const badge = cleared
-      ? '<span style="background:#00ff88; color:#000; font-size:10px; padding:2px 6px; border-radius:3px; margin-left:6px;">済</span>'
-      : locked
-        ? '<span style="background:#444; color:#aaa; font-size:10px; padding:2px 6px; border-radius:3px; margin-left:6px;">🔒</span>'
-        : '';
+    // クリア済み ✔ / ロック 🔒 / 新規解放 NEW
+    let badge = '';
+    if (cleared) {
+      badge = '<span style="background:#00ff88; color:#000; font-size:12px; font-weight:bold; padding:2px 7px; border-radius:3px; margin-left:6px;">✔</span>';
+    } else if (locked) {
+      badge = '<span style="background:#444; color:#aaa; font-size:10px; padding:2px 6px; border-radius:3px; margin-left:6px;">🔒</span>';
+    } else if (isNew) {
+      badge = '<span style="background:#ffcc00; color:#000; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:3px; margin-left:6px; animation:tutorialNewPulse 1.2s ease-in-out infinite;">NEW</span>';
+    }
 
     return `
       <div style="${baseStyle}${bgStyle}" ${clickAttr}>
@@ -115,6 +149,9 @@ window.selectTutorialScenario = function(scenarioId) {
   const scenario = _scenariosCache.find(s => s.id === scenarioId);
   if (!scenario) return;
   if (_isLocked(scenario)) { alert('前提シナリオをクリアしてください'); return; }
+
+  // 一度詳細画面を開いたら NEW バッジを消す
+  _markSeen(scenarioId);
 
   _selectedScenario = scenario;
   _selectedDeck = _decksCache.find(d => (d.deckId || d.tutorialName) === scenario.deckId) || null;

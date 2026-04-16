@@ -418,11 +418,13 @@ const SUCCESS_POPUP_PRESETS = [
 
 // ボタン制御対象の定義
 const BUTTON_TARGETS = [
-  { value: 'mulligan_redo', label: '引き直しボタン' },
-  { value: 'game_start',    label: 'ゲーム開始ボタン' },
-  { value: 'end_turn',      label: 'ターン終了ボタン' },
-  { value: 'breed_skip',    label: '何もしないボタン（育成）' },
-  { value: 'exit_gate',     label: 'ゲートを出るボタン' },
+  { value: 'mulligan_redo',    label: '引き直しボタン' },
+  { value: 'game_start',       label: 'ゲーム開始ボタン' },
+  { value: 'end_turn',         label: 'ターン終了ボタン' },
+  { value: 'breed_skip',       label: '何もしないボタン（育成）' },
+  { value: 'exit_gate',        label: 'ゲートを出るボタン' },
+  { value: 'confirm_yes',      label: '「はい」ボタン（効果確認/ブロック）' },
+  { value: 'confirm_no',       label: '「いいえ」ボタン（効果確認/ブロック）' },
 ];
 
 // 割り込みトリガー定義（詳細プレビュー/サマリー用、ALL_FLOW_SLOTSからラベル引き）

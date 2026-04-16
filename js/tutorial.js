@@ -391,6 +391,8 @@ const _BUTTON_SELECTOR_MAP = {
   end_turn:      '.a-btn-end',
   breed_skip:    '#breed-skip-btn',
   exit_gate:     '#exit-gate-btn',
+  confirm_yes:   '#effect-confirm-yes',
+  confirm_no:    '#effect-confirm-no',
 };
 
 let _uiControlActive = false;

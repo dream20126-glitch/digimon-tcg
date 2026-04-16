@@ -447,7 +447,7 @@ const TRIGGER_TYPES = [
   // バトル演出（相手のターン）
   { value: 'opp_battle_vs',        label: 'VS画面表示中（相手のアタック）' },
   { value: 'opp_after_attack',     label: 'アタック解決後（相手のアタック）' },
-  { value: 'block_confirm',        label: 'ブロック確認画面の前' },
+  { value: 'block_confirm',        label: 'ブロック確認画面' },
   // 共通（どちらのターンでも発生）
   { value: 'effect_confirm',       label: '効果確認ダイアログの前' },
   { value: 'target_selection',     label: '対象選択画面の前' },
@@ -1063,7 +1063,7 @@ const STEP_TIMINGS = [
     availableIn: ['opp_main'] },
   { value: 'opp_after_attack',  label: '⚔ アタック解決後（相手のアタック）', trigger: 'opp_after_attack',
     availableIn: ['opp_main'] },
-  { value: 'block_confirm',     label: '🛡 ブロック確認画面の前',          trigger: 'block_confirm',
+  { value: 'block_confirm',     label: '🛡 ブロック確認画面',              trigger: 'block_confirm',
     availableIn: ['opp_main'] },
   { value: 'effect_confirm',    label: '⚡ 効果確認ダイアログの前',        trigger: 'effect_confirm',
     availableIn: ['main','opp_main'] },

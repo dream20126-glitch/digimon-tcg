@@ -1087,6 +1087,11 @@ export function showBlockConfirm(blocker, attacker, callback) {
   if (imgEl) imgEl.style.display = 'none';
   overlay.style.display = 'flex';
 
+  // チュートリアル: ダイアログ表示後に割り込み（「はい/いいえ」の説明等）
+  if (window._tutorialRunner && window._tutorialRunner.active) {
+    window._tutorialRunner.checkInterrupt('block_confirm').then(() => {});
+  }
+
   window._effectConfirmCallback = function(result) {
     nameEl.style.color = '#fff';
     nameEl.style.textShadow = '';
@@ -1220,11 +1225,7 @@ export function aiAttackPhase(callback) {
             doAiSecurityCheck(atk, atkIdx, callback);
           }
         });
-        if (window._tutorialRunner && window._tutorialRunner.active) {
-          window._tutorialRunner.checkInterrupt('block_confirm').then(_showBlock);
-        } else {
-          _showBlock();
-        }
+        _showBlock();
         return;
       }
       doAiSecurityCheck(atk, atkIdx, callback);
@@ -2243,11 +2244,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
               doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); onDone && onDone(); });
             }
           });
-          if (window._tutorialRunner && window._tutorialRunner.active) {
-            window._tutorialRunner.checkInterrupt('block_confirm').then(_showBlock);
-          } else {
-            _showBlock();
-          }
+          _showBlock();
         } else {
           doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); onDone && onDone(); });
         }

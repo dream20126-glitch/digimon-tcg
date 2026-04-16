@@ -1562,12 +1562,12 @@ function _renderFlowStep(slotKey, timing, sIdx, step, occ) {
         <div class="tsave-field" style="margin-bottom:0;">
           <label style="font-size:10px;">${target1Label}</label>
           ${areaPicker1}
-          ${_renderCardPicker(slotKey, timing, sIdx, 'targetCardNo', step.targetCardNo)}
+          ${_renderCardPicker(slotKey, timing, sIdx, 'targetCardNo', step.targetCardNo, occVal)}
         </div>
         <div class="tsave-field" style="margin-bottom:0;">
           <label style="font-size:10px;">${target2Label}</label>
           ${areaPicker2}
-          ${_renderCardPicker(slotKey, timing, sIdx, 'secondTargetCardNo', step.secondTargetCardNo)}
+          ${_renderCardPicker(slotKey, timing, sIdx, 'secondTargetCardNo', step.secondTargetCardNo, occVal)}
         </div>
       </div>` : ''}
       ${isAction && needsCard ? `
@@ -1602,7 +1602,7 @@ function _renderConditionSubSettings(slotKey, timing, sIdx, step, cond) {
 }
 
 // カード検索ピッカー（赤枠ハイライト用）
-function _renderCardPicker(slotKey, timing, sIdx, field, currentCardNo) {
+function _renderCardPicker(slotKey, timing, sIdx, field, currentCardNo, occVal) {
   const sk = `'${slotKey}'`;
   const tg = `'${timing}'`;
   const uid = `cp_${slotKey}_${timing}_${sIdx}_${field}`;

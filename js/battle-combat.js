@@ -1101,9 +1101,14 @@ export function showBlockConfirm(blocker, attacker, callback) {
     if (questionEl) questionEl.innerText = '効果を発動しますか？';
     if (imgEl) imgEl.style.display = '';
     overlay.style.display = 'none';
-    // チュートリアル通知: 確認ダイアログ閉じた
+    // チュートリアル: 吹き出し/スポットライトを強制消去 + イベント通知
     if (window._tutorialRunner && window._tutorialRunner.active) {
-      try { window._tutorialRunner.notifyEvent('modal_closed', { modal: 'block_confirm', result }); } catch (e) {}
+      try {
+        window._tutorialRunner.hideInstruction();
+        document.body.classList.remove('tutorial-spotlight-mode');
+        document.querySelectorAll('.tutorial-keep-visible').forEach(el => el.classList.remove('tutorial-keep-visible'));
+        window._tutorialRunner.notifyEvent('modal_closed', { modal: 'block_confirm', result });
+      } catch (e) {}
     }
     callback(result);
   };

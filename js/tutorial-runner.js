@@ -747,15 +747,34 @@ class OpponentScriptRunner {
     this.executedTurns = {};
   }
 
+  // 育成フェイズ系アクション
+  static BREED_ACTIONS = new Set(['hatch', 'move_to_battle', 'evolve_breed']);
+  // メインフェイズ系アクション
+  static MAIN_ACTIONS = new Set(['attack', 'play_card', 'play', 'evolve_battle', 'evolve', 'block', 'select_target', 'pass', 'end_turn']);
+
   runTurn(turnNumber, done) {
     if (this.executedTurns[turnNumber]) { done && done(); return; }
     this.executedTurns[turnNumber] = true;
+    done && done();
+  }
+
+  // 指定フェーズのアクションだけ実行
+  runPhase(turnNumber, phase, done) {
     const entry = this.script.find(t => Number(t.turn) === Number(turnNumber));
     if (!entry || !Array.isArray(entry.actions) || entry.actions.length === 0) {
-      done && done();
-      return;
+      done && done(); return;
     }
-    this._runActions(entry.actions, 0, done);
+    const filter = phase === 'breed' ? OpponentScriptRunner.BREED_ACTIONS : OpponentScriptRunner.MAIN_ACTIONS;
+    const actions = entry.actions.filter(a => filter.has(a.type));
+    if (actions.length === 0) { done && done(); return; }
+    this._runActions(actions, 0, done);
+  }
+
+  hasActionsForPhase(turnNumber, phase) {
+    const entry = this.script.find(t => Number(t.turn) === Number(turnNumber));
+    if (!entry || !Array.isArray(entry.actions)) return false;
+    const filter = phase === 'breed' ? OpponentScriptRunner.BREED_ACTIONS : OpponentScriptRunner.MAIN_ACTIONS;
+    return entry.actions.some(a => filter.has(a.type));
   }
 
   _runActions(actions, idx, done) {

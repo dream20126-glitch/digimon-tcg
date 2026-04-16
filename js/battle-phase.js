@@ -663,12 +663,21 @@ function aiPhaseDraw() {
 // ----- AI 育成フェイズ -----
 
 function aiPhaseBreed() {
-  // チュートリアル: AIスクリプトがあれば育成の自動行動もスキップ
+  // チュートリアル: AIスクリプトがあれば育成系アクションをここで実行
   const runner = window._tutorialRunner;
   if (runner && runner.active && runner.opponentScriptRunner) {
-    showSkipAnnounce('🥚 育成フェイズ スキップ！', () => {
-      setTimeout(() => aiPhaseMain(), 300);
-    });
+    const turnNumber = (bs && bs.turn) || 1;
+    if (runner.opponentScriptRunner.hasActionsForPhase(turnNumber, 'breed')) {
+      showPhaseAnnounce('🥚 育成フェイズ', '#ff9900', () => {
+        runner.opponentScriptRunner.runPhase(turnNumber, 'breed', () => {
+          setTimeout(() => aiPhaseMain(), 500);
+        });
+      });
+    } else {
+      showSkipAnnounce('🥚 育成フェイズ スキップ！', () => {
+        setTimeout(() => aiPhaseMain(), 300);
+      });
+    }
     return;
   }
   // 育成エリアにLv3以上 → バトルエリアへ移動
@@ -719,13 +728,19 @@ function aiPhaseMain() {
   // チュートリアル: AIスクリプトがあればメインフェイズでスクリプトを実行
   const runner = window._tutorialRunner;
   if (runner && runner.active && runner.opponentScriptRunner) {
-    showPhaseAnnounce('⚡ メインフェイズ', '#ff00fb', () => {
-      addLog('🤖 メインフェイズ（スクリプト制御）');
-      const turnNumber = (bs && bs.turn) || 1;
-      runner.opponentScriptRunner.runTurn(turnNumber, () => {
-        setTimeout(() => endAiTurn(), 600);
+    const turnNumber = (bs && bs.turn) || 1;
+    if (runner.opponentScriptRunner.hasActionsForPhase(turnNumber, 'main')) {
+      showPhaseAnnounce('⚡ メインフェイズ', '#ff00fb', () => {
+        addLog('🤖 メインフェイズ（スクリプト制御）');
+        runner.opponentScriptRunner.runPhase(turnNumber, 'main', () => {
+          setTimeout(() => endAiTurn(), 600);
+        });
       });
-    });
+    } else {
+      showSkipAnnounce('⚡ メインフェイズ スキップ！', () => {
+        endAiTurn();
+      });
+    }
     return;
   }
   showPhaseAnnounce('⚡ メインフェイズ', '#ff00fb', () => {

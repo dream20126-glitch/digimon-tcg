@@ -430,8 +430,6 @@ function showGateOpen(callback) {
   let called = false;
   function finish() {
     if (called) return; called = true;
-    // 先に callback を発火 → 次の画面（マリガンoverlay等）を裏側に準備
-    // フェードアウトで露出するのはバトルエリアではなくマリガン画面の暗背景になる
     try { callback(); } catch (e) { console.error('[showGateOpen] callback error:', e); }
     requestAnimationFrame(() => {
       ov.style.transition = 'opacity 0.4s ease';
@@ -439,8 +437,20 @@ function showGateOpen(callback) {
       setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 400);
     });
   }
-  setTimeout(finish, 5000);
-  ov.addEventListener('click', finish, { once: true });
+
+  // チュートリアル: gate_open フェーズブロックがあれば演出中にメッセージを表示
+  const runner = window._tutorialRunner;
+  if (runner && runner.active && typeof runner.notifyPhaseChange === 'function') {
+    // テキスト表示後（1.5s）にチュートリアルメッセージを開始
+    setTimeout(async () => {
+      await runner.notifyPhaseChange('gate_open');
+      // メッセージ終了後にクリックまたは自動で閉じる
+      setTimeout(finish, 800);
+    }, 1500);
+  } else {
+    setTimeout(finish, 5000);
+    ov.addEventListener('click', finish, { once: true });
+  }
 }
 
 // ===== ゲーム開始 =====

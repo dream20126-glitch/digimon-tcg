@@ -476,16 +476,28 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   // ローディング消去 → ゲートオープン演出
   if (loadingOv.parentNode) loadingOv.parentNode.removeChild(loadingOv);
   showGateOpen(() => {
-    // 演出終了直前に即マリガン画面を準備（バトルエリアが見えないようにする）
     showScreen('battle-screen');
     renderAll();
     addLog('✅ バトル画面描画完了');
+
+    // チュートリアル: initialBoard.skipMulligan / initialPhase を反映
+    const runner = window._tutorialRunner;
+    const ib = (runner && runner.active && runner.scenario && runner.scenario.initialBoard) || null;
+    if (ib && ib.initialPhase) {
+      bs._tutorialInitialPhase = ib.initialPhase;
+    }
+    if (ib && ib.skipMulligan) {
+      // マリガン画面を飛ばして即 acceptHand（セキュリティセット + startFirstTurn）
+      if (typeof window.acceptHand === 'function') window.acceptHand();
+      return;
+    }
+
+    // 演出終了直前に即マリガン画面を準備（バトルエリアが見えないようにする）
     showMulliganOverlay();
 
     // チュートリアル中は配布演出が落ち着いてから notifyPhaseChange を呼ぶ
     // （ポップアップが配布演出と被らないように）
     // 配布演出: 5枚 * 150ms + 400ms + フリップ約900ms ≈ 約2.3秒
-    const runner = window._tutorialRunner;
     if (runner && runner.active && typeof runner.notifyPhaseChange === 'function') {
       setTimeout(() => { runner.notifyPhaseChange('mulligan'); }, 2400);
     }

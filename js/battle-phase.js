@@ -341,7 +341,16 @@ export function startFirstTurn() {
       _hooks.applyPermanentEffects('player');
       _hooks.applyPermanentEffects('ai');
       renderAll();
-      setTimeout(() => startPhase('unsuspend'), 300);
+      // チュートリアル: initialPhase が指定されていれば該当フェーズから開始
+      //   先攻1ターン目の draw スキップ処理を回避するため main 指定時は isFirstTurn も切る
+      const initPhase = bs._tutorialInitialPhase;
+      bs._tutorialInitialPhase = null;
+      if (initPhase) {
+        if (initPhase === 'main' || initPhase === 'breed') bs.isFirstTurn = false;
+        setTimeout(() => startPhase(initPhase), 300);
+      } else {
+        setTimeout(() => startPhase('unsuspend'), 300);
+      }
     });
   });
 }

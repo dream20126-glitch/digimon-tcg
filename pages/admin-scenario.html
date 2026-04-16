@@ -116,6 +116,21 @@
         <div class="tsave-field"><label>相手 セキュリティ枚数</label>
           <input type="number" id="ts-opponent-sec" value="5" min="0" max="10">
         </div>
+        <div class="tsave-field"><label>マリガン画面</label>
+          <select id="ts-skip-mulligan">
+            <option value="false">表示する</option>
+            <option value="true">スキップする</option>
+          </select>
+        </div>
+        <div class="tsave-field"><label>開始フェーズ</label>
+          <select id="ts-initial-phase">
+            <option value="">通常（アクティブから）</option>
+            <option value="unsuspend">アクティブフェイズ</option>
+            <option value="draw">ドローフェイズ</option>
+            <option value="breed">育成フェイズ</option>
+            <option value="main">メインフェイズ</option>
+          </select>
+        </div>
       </div>
 
       <!-- カード配置 -->

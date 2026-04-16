@@ -632,6 +632,11 @@ function _renderScenarioDetail(s) {
   boardItems.push(`<div>先攻: ${ib.playerFirst === false ? '相手' : 'プレイヤー'}</div>`);
   boardItems.push(`<div>開始メモリー: ${ib.playerMemory ?? 0}</div>`);
   boardItems.push(`<div>セキュリティ: 自分 ${ib.playerSecurityCount ?? 5} / 相手 ${ib.opponentSecurityCount ?? 5}</div>`);
+  if (ib.skipMulligan) boardItems.push(`<div>マリガン: スキップ</div>`);
+  if (ib.initialPhase) {
+    const phaseLabel = { unsuspend:'アクティブ', draw:'ドロー', breed:'育成', main:'メイン' }[ib.initialPhase] || ib.initialPhase;
+    boardItems.push(`<div>開始フェーズ: ${phaseLabel}フェイズから</div>`);
+  }
   const areaLine = (label, arr) => {
     if (!Array.isArray(arr) || !arr.length) return '';
     const names = arr.map(c => {
@@ -812,6 +817,8 @@ window.editTutorialScenario = async function(scenario) {
   document.getElementById('ts-player-memory').value = ib.playerMemory ?? 0;
   document.getElementById('ts-player-sec').value = ib.playerSecurityCount ?? 5;
   document.getElementById('ts-opponent-sec').value = ib.opponentSecurityCount ?? 5;
+  document.getElementById('ts-skip-mulligan').value = ib.skipMulligan ? 'true' : 'false';
+  document.getElementById('ts-initial-phase').value = ib.initialPhase || '';
 
   // 配置済みカードを復元（CardRef配列を {cardNo} 形式に統一）
   const normArr = (arr) => (Array.isArray(arr) ? arr : []).map(c => {
@@ -873,6 +880,8 @@ async function _prepareEditForm() {
   document.getElementById('ts-player-memory').value = 0;
   document.getElementById('ts-player-sec').value = 5;
   document.getElementById('ts-opponent-sec').value = 5;
+  document.getElementById('ts-skip-mulligan').value = 'false';
+  document.getElementById('ts-initial-phase').value = '';
 
   // 相手AIスクリプトリセット
   _opponentScript = [];
@@ -2116,6 +2125,8 @@ window.executeTutorialScenarioSave = async function() {
     playerMemory: Number(document.getElementById('ts-player-memory').value || 0),
     playerSecurityCount: Number(document.getElementById('ts-player-sec').value || 5),
     opponentSecurityCount: Number(document.getElementById('ts-opponent-sec').value || 5),
+    skipMulligan: document.getElementById('ts-skip-mulligan').value === 'true',
+    initialPhase: document.getElementById('ts-initial-phase').value || '',
     playerHand:          ibState.playerHand         || [],
     playerBattleArea:    ibState.playerBattleArea   || [],
     playerRaisingArea:   ibState.playerRaisingArea  || null,

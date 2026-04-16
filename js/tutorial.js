@@ -788,6 +788,10 @@ const TARGET_AREA_SELECTORS = {
   card_detail_evo_source: () => document.getElementById('bcd-evo-source'),
   card_detail_sec_effect: () => document.getElementById('bcd-security-effect'),
   card_detail_close:      () => document.getElementById('bcd-close-btn'),
+  // 効果確認ダイアログ
+  effect_confirm:         () => document.getElementById('effect-confirm-overlay'),
+  effect_confirm_yes:     () => document.getElementById('effect-confirm-yes'),
+  effect_confirm_no:      () => document.getElementById('effect-confirm-no'),
   // トラッシュモーダル
   trash_modal:       () => document.getElementById('trash-modal'),
   trash_close_btn:   () => document.getElementById('trash-close-btn'),

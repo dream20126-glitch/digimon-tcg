@@ -940,7 +940,8 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
 
   // 👆/👇 は吹き出しの位置に応じて常に対象を指す向きに
   if (opType === 'tap' || !opType) {
-    finger.innerText = canFitAbove ? '👇' : '👆';
+    // 上に配置 or フォールバック上部配置 → 👇（下を指す）、下に配置 → 👆（上を指す）
+    finger.innerText = (canFitAbove || !canFitBelow) ? '👇' : '👆';
   }
 
   // 水平位置: 吹き出しが画面に収まる範囲で対象中央寄せ

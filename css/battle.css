@@ -612,9 +612,10 @@ body.tutorial-spotlight-mode #pl-iku-slot {
   pointer-events: none !important;
 }
 body.tutorial-spotlight-mode #tutorial-spotlight-ok,
+body.tutorial-spotlight-mode #effect-confirm-overlay,
+body.tutorial-spotlight-mode #effect-confirm-panel,
 body.tutorial-spotlight-mode #effect-confirm-yes,
-body.tutorial-spotlight-mode #effect-confirm-no,
-body.tutorial-spotlight-mode #effect-confirm-panel {
+body.tutorial-spotlight-mode #effect-confirm-no {
   pointer-events: auto !important;
 }
 

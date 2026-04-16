@@ -663,6 +663,14 @@ function aiPhaseDraw() {
 // ----- AI 育成フェイズ -----
 
 function aiPhaseBreed() {
+  // チュートリアル: AIスクリプトがあれば育成の自動行動もスキップ
+  const runner = window._tutorialRunner;
+  if (runner && runner.active && runner.opponentScriptRunner) {
+    showSkipAnnounce('🥚 育成フェイズ スキップ！', () => {
+      setTimeout(() => aiPhaseMain(), 300);
+    });
+    return;
+  }
   // 育成エリアにLv3以上 → バトルエリアへ移動
   if (bs.ai.ikusei && parseInt(bs.ai.ikusei.level) >= 3) {
     let slot = bs.ai.battleArea.findIndex(s => s === null);
@@ -708,6 +716,16 @@ function aiPhaseBreed() {
 // ----- AI メインフェイズ -----
 
 function aiPhaseMain() {
+  // チュートリアル: AIスクリプトがあれば通常AI行動をスキップ
+  // （スクリプトは turn_start 通知時に既に実行済み）
+  const runner = window._tutorialRunner;
+  if (runner && runner.active && runner.opponentScriptRunner) {
+    showPhaseAnnounce('⚡ メインフェイズ', '#ff00fb', () => {
+      addLog('🤖 メインフェイズ（スクリプト制御）');
+      endAiTurn();
+    });
+    return;
+  }
   showPhaseAnnounce('⚡ メインフェイズ', '#ff00fb', () => {
     addLog('🤖 メインフェイズ');
     _hooks.aiMainPhase(() => {

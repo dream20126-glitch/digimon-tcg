@@ -1512,7 +1512,8 @@ export async function checkPendingTurnEnd() {
   renderAll();
   // チュートリアル割り込み: アタック後 → 終了後にキュー中の成功演出 flush
   if (window._tutorialRunner && window._tutorialRunner.active) {
-    await window._tutorialRunner.checkInterrupt('after_attack');
+    const atkKey = bs.isPlayerTurn ? 'after_attack' : 'opp_after_attack';
+    await window._tutorialRunner.checkInterrupt(atkKey);
     if (window._tutorialFlushSuccess) {
       try { await window._tutorialFlushSuccess(); } catch (_) {}
     }
@@ -1757,7 +1758,8 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
   const tutRunner = window._tutorialRunner;
   if (tutRunner && tutRunner.active && typeof tutRunner.checkInterrupt === 'function') {
     setTimeout(async () => {
-      await tutRunner.checkInterrupt('battle_vs');
+      const vsKey = bs.isPlayerTurn ? 'battle_vs' : 'opp_battle_vs';
+      await tutRunner.checkInterrupt(vsKey);
       resultEl.innerText = resultText; resultEl.style.color = resultColor;
       resultEl.style.textShadow = `0 0 20px ${resultColor}`;
       resultEl.style.opacity = '1'; resultEl.style.transform = 'scale(1)';

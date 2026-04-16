@@ -436,12 +436,15 @@ const TRIGGER_TYPES = [
   { value: 'after_hatch',          label: '孵化完了後' },
   { value: 'after_play',           label: '登場時効果完了後' },
   { value: 'after_evolve',         label: '進化時効果完了後' },
-  { value: 'after_attack',         label: 'アタック解決後' },
+  { value: 'after_attack',         label: 'アタック解決後（自分のアタック）' },
   { value: 'after_use_effect',     label: '効果使用完了後' },
-  // バトル演出
-  { value: 'battle_vs',            label: 'VS画面表示中（カード表示後）' },
-  // プレイヤー操作要求（相手ターン中にも発生）
+  // バトル演出（自分のターン）
+  { value: 'battle_vs',            label: 'VS画面表示中（自分のアタック）' },
+  // バトル演出（相手のターン）
+  { value: 'opp_battle_vs',        label: 'VS画面表示中（相手のアタック）' },
+  { value: 'opp_after_attack',     label: 'アタック解決後（相手のアタック）' },
   { value: 'block_confirm',        label: 'ブロック確認画面の前' },
+  // 共通（どちらのターンでも発生）
   { value: 'effect_confirm',       label: '効果確認ダイアログの前' },
   { value: 'target_selection',     label: '対象選択画面の前' },
   // UI系
@@ -1050,8 +1053,12 @@ const STEP_TIMINGS = [
     availableIn: ['main','breed'] },
   { value: 'after_evolve',      label: '⬆ 進化時効果完了後',               trigger: 'after_evolve',
     availableIn: ['main','breed'] },
-  { value: 'battle_vs',          label: '⚔ VS画面表示中（カード表示後）',  trigger: 'battle_vs',
-    availableIn: ['main','opp_main'] },
+  { value: 'battle_vs',          label: '⚔ VS画面表示中（自分のアタック）', trigger: 'battle_vs',
+    availableIn: ['main'] },
+  { value: 'opp_battle_vs',     label: '⚔ VS画面表示中（相手のアタック）', trigger: 'opp_battle_vs',
+    availableIn: ['opp_main'] },
+  { value: 'opp_after_attack',  label: '⚔ アタック解決後（相手のアタック）', trigger: 'opp_after_attack',
+    availableIn: ['opp_main'] },
   { value: 'block_confirm',     label: '🛡 ブロック確認画面の前',          trigger: 'block_confirm',
     availableIn: ['main','opp_main','trg_before_opponent_turn','trg_turn_end_opp'] },
   { value: 'effect_confirm',    label: '⚡ 効果確認ダイアログの前',        trigger: 'effect_confirm',

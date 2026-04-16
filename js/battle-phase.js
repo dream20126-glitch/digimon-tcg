@@ -668,7 +668,11 @@ function aiPhaseBreed() {
   if (runner && runner.active && runner.opponentScriptRunner) {
     const turnNumber = (bs && bs.turn) || 1;
     if (runner.opponentScriptRunner.hasActionsForPhase(turnNumber, 'breed')) {
-      showPhaseAnnounce('🥚 育成フェイズ', '#ff9900', () => {
+      showPhaseAnnounce('🥚 育成フェイズ', '#ff9900', async () => {
+        // チュートリアル: 相手育成フェイズの説明を挿入
+        if (typeof runner.notifyPhaseChange === 'function') {
+          await runner.notifyPhaseChange('opp_breed');
+        }
         runner.opponentScriptRunner.runPhase(turnNumber, 'breed', () => {
           setTimeout(() => aiPhaseMain(), 500);
         });
@@ -730,8 +734,12 @@ function aiPhaseMain() {
   if (runner && runner.active && runner.opponentScriptRunner) {
     const turnNumber = (bs && bs.turn) || 1;
     if (runner.opponentScriptRunner.hasActionsForPhase(turnNumber, 'main')) {
-      showPhaseAnnounce('⚡ メインフェイズ', '#ff00fb', () => {
+      showPhaseAnnounce('⚡ メインフェイズ', '#ff00fb', async () => {
         addLog('🤖 メインフェイズ（スクリプト制御）');
+        // チュートリアル: 相手メインフェイズの説明を挿入
+        if (typeof runner.notifyPhaseChange === 'function') {
+          await runner.notifyPhaseChange('opp_main');
+        }
         runner.opponentScriptRunner.runPhase(turnNumber, 'main', () => {
           setTimeout(() => endAiTurn(), 600);
         });

@@ -314,8 +314,12 @@ class TutorialRunner {
   // フェーズブロックのアクティベート
   // ---------------------------------------------------------------
   _tryActivatePhaseBlock(phaseKey) {
-    const turn = this._currentTurn;
-    // 該当フェーズ＋ターンのブロックを探す（未完了のもの）
+    // 相手フェーズの場合: ターン番号は「相手の何ターン目か」で照合
+    // bs.turn はAIターン開始時に加算されるので、相手1ターン目 = bs.turn 2
+    const isOppPhase = phaseKey === 'opp_breed' || phaseKey === 'opp_main';
+    const turn = isOppPhase
+      ? ((window.bs && window.bs.turn) || 1) - 1  // bs.turn 2 → T1, bs.turn 3 → T2
+      : this._currentTurn;
     const blockIdx = this._flow.findIndex((b, i) =>
       b.phase === phaseKey &&
       b.phase !== '_trigger' &&

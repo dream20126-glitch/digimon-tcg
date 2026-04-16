@@ -441,18 +441,18 @@ export function resolveAttackTarget(target, targetIdx) {
   // アタック対象タイプを bs に記録（cond_attack_target_digimon で参照）
   bs._lastAttackTarget = target;
 
-  // チュートリアル通知: attack_declared (ダイレクトアタック判定付き)
+  // チュートリアル通知: 対象選択完了
   if (window._tutorialRunner && window._tutorialRunner.active) {
     const isDirect = (target === 'security') && (bs.ai.battleArea || []).filter(c => c).length === 0;
     try {
-      window._tutorialRunner.notifyEvent('attack_declared', {
+      window._tutorialRunner.notifyEvent('attack_target_selected', {
         cardNo: atk && atk.cardNo,
         cardName: atk && atk.name,
         target,
         isDirect,
         side: 'player',
       });
-    } catch (e) { console.error('[tutorial attack_declared]', e); }
+    } catch (e) {}
   }
 
   if (target === 'security') {

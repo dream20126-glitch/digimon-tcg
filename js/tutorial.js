@@ -296,6 +296,7 @@ function _clearConditionToJapanese(cond) {
     evolve_any: 'デジモンを進化させよう',
     evolve_specific: 'デジモンを進化させよう',
     attack_declared: 'アタック宣言しよう',
+    attack_target_selected: '対象を選択しよう',
     attack_resolved: 'バトルを解決しよう',
     direct_attack: 'ダイレクトアタックしよう',
     block: 'ブロックしよう',

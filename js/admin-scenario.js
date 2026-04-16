@@ -28,8 +28,9 @@ const CONDITION_TYPES = [
   { value: 'play_lv',            label: 'レベルNを登場させた',                         needsCardNo: false, group: '📥 登場・カード使用',
     params: [{ key: 'level', label: 'レベル', type: 'number', min: 2, max: 7, default: 3, suffix: '' }] },
   // アタック
-  { value: 'attack_declared',    label: 'アタック宣言した（アタックボタン押下）',     needsCardNo: false, group: '⚔ アタック' },
-  { value: 'attack_resolved',    label: 'バトルを解決した（デジモン/セキュリティ）',  needsCardNo: false, group: '⚔ アタック' },
+  { value: 'attack_declared',         label: 'アタック宣言した（アタックボタン押下）',     needsCardNo: false, group: '⚔ アタック' },
+  { value: 'attack_target_selected', label: '対象選択した（セキュリティ/デジモン）',     needsCardNo: false, group: '⚔ アタック' },
+  { value: 'attack_resolved',        label: 'バトルを解決した（デジモン/セキュリティ）', needsCardNo: false, group: '⚔ アタック' },
   { value: 'direct_attack',      label: 'ダイレクトアタックした',                     needsCardNo: false, group: '⚔ アタック' },
   { value: 'block',              label: 'ブロックした',                                needsCardNo: false, group: '⚔ アタック' },
   // セキュリティ

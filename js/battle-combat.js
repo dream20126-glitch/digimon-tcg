@@ -1747,8 +1747,20 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
   else if (isTamer) { resultText = 'テイマー登場'; resultColor = '#00fbff'; }
   else if (!isDigimon) { resultText = 'トラッシュへ'; resultColor = '#888'; }
 
-  setTimeout(() => { resultEl.innerText = resultText; resultEl.style.color = resultColor; resultEl.style.textShadow = `0 0 20px ${resultColor}`; resultEl.style.opacity = '1'; resultEl.style.transform = 'scale(1)'; }, 1500);
-  setTimeout(() => { overlay.style.display = 'none'; callback && callback(); }, 2800);
+  // チュートリアル: VS画面の割り込み（カード表示後、結果表示前にメッセージ挿入）
+  const tutRunner = window._tutorialRunner;
+  if (tutRunner && tutRunner.active && typeof tutRunner.checkInterrupt === 'function') {
+    setTimeout(async () => {
+      await tutRunner.checkInterrupt('battle_vs');
+      resultEl.innerText = resultText; resultEl.style.color = resultColor;
+      resultEl.style.textShadow = `0 0 20px ${resultColor}`;
+      resultEl.style.opacity = '1'; resultEl.style.transform = 'scale(1)';
+      setTimeout(() => { overlay.style.display = 'none'; callback && callback(); }, 1300);
+    }, 1500);
+  } else {
+    setTimeout(() => { resultEl.innerText = resultText; resultEl.style.color = resultColor; resultEl.style.textShadow = `0 0 20px ${resultColor}`; resultEl.style.opacity = '1'; resultEl.style.transform = 'scale(1)'; }, 1500);
+    setTimeout(() => { overlay.style.display = 'none'; callback && callback(); }, 2800);
+  }
 }
 
 // ----- バトル結果演出 -----

@@ -420,6 +420,8 @@ const TRIGGER_TYPES = [
   { value: 'after_evolve',         label: '進化時効果完了後' },
   { value: 'after_attack',         label: 'アタック解決後' },
   { value: 'after_use_effect',     label: '効果使用完了後' },
+  // バトル演出
+  { value: 'battle_vs',            label: 'VS画面表示中（カード表示後）' },
   // UI系
   { value: 'on_card_detail_open',  label: 'カード詳細表示中' },
 ];
@@ -1022,6 +1024,8 @@ const STEP_TIMINGS = [
     availableIn: ['main','breed'] },
   { value: 'after_evolve',      label: '⬆ 進化時効果完了後',               trigger: 'after_evolve',
     availableIn: ['main','breed'] },
+  { value: 'battle_vs',          label: '⚔ VS画面表示中（カード表示後）',  trigger: 'battle_vs',
+    availableIn: ['main'] },
   { value: 'after_attack',      label: '⚔ アタック解決後',                trigger: 'after_attack',
     availableIn: ['main'] },
   { value: 'after_use_effect',  label: '✨ 効果使用完了後',                 trigger: 'after_use_effect',

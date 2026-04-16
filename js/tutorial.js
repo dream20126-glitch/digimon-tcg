@@ -1369,6 +1369,7 @@ function _tutorialShowInlineSpotlight(step, ctx) {
 
     // 対象要素を取得（配列対応）
     const targetEls = _resolveTargets(targetArea, targetCardNo);
+    console.log('[Spotlight] area=', targetArea, 'els=', targetEls, 'text=', fullText.substring(0, 30));
     const secondEls = _resolveTargets(secondArea, secondCardNo);
 
     // UI制御（グレーアウト/ハイライト）を spotlight にも適用

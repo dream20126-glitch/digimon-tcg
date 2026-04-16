@@ -1087,16 +1087,28 @@ export function showBlockConfirm(blocker, attacker, callback) {
   if (imgEl) imgEl.style.display = 'none';
   overlay.style.display = 'flex';
 
-  // チュートリアル: ダイアログ表示後に割り込み（描画完了を待ってから）
+  const _enableButtons = () => {
+    const yBtn = document.getElementById('effect-confirm-yes');
+    const nBtn = document.getElementById('effect-confirm-no');
+    if (yBtn) { yBtn.disabled = false; yBtn.style.opacity = ''; }
+    if (nBtn) { nBtn.disabled = false; nBtn.style.opacity = ''; }
+  };
+
+  // チュートリアル: ダイアログ表示中に割り込み（ボタン無効化 → 説明 → 有効化）
   if (window._tutorialRunner && window._tutorialRunner.active) {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window._tutorialRunner.checkInterrupt('block_confirm').then(() => {});
+    const yBtn = document.getElementById('effect-confirm-yes');
+    const nBtn = document.getElementById('effect-confirm-no');
+    if (yBtn) { yBtn.disabled = true; yBtn.style.opacity = '0.3'; }
+    if (nBtn) { nBtn.disabled = true; nBtn.style.opacity = '0.3'; }
+    setTimeout(() => {
+      window._tutorialRunner.checkInterrupt('block_confirm').then(() => {
+        _enableButtons();
       });
-    });
+    }, 100);
   }
 
   window._effectConfirmCallback = function(result) {
+    _enableButtons();
     nameEl.style.color = '#fff';
     nameEl.style.textShadow = '';
     nameEl.style.fontSize = '1rem';

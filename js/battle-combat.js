@@ -1087,9 +1087,13 @@ export function showBlockConfirm(blocker, attacker, callback) {
   if (imgEl) imgEl.style.display = 'none';
   overlay.style.display = 'flex';
 
-  // チュートリアル: ダイアログ表示後に割り込み（「はい/いいえ」の説明等）
+  // チュートリアル: ダイアログ表示後に割り込み（描画完了を待ってから）
   if (window._tutorialRunner && window._tutorialRunner.active) {
-    window._tutorialRunner.checkInterrupt('block_confirm').then(() => {});
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window._tutorialRunner.checkInterrupt('block_confirm').then(() => {});
+      });
+    });
   }
 
   window._effectConfirmCallback = function(result) {

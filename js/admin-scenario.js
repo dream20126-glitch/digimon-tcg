@@ -449,7 +449,7 @@ const TRIGGER_TYPES = [
   { value: 'opp_after_attack',     label: 'アタック解決後（相手のアタック）' },
   { value: 'block_confirm',        label: 'ブロック確認画面' },
   // 共通（どちらのターンでも発生）
-  { value: 'effect_confirm',       label: '効果確認ダイアログの前' },
+  { value: 'effect_confirm',       label: '効果確認ダイアログ' },
   { value: 'target_selection',     label: '対象選択画面の前' },
   // UI系
   { value: 'on_card_detail_open',  label: 'カード詳細表示中' },
@@ -1065,7 +1065,7 @@ const STEP_TIMINGS = [
     availableIn: ['opp_main'] },
   { value: 'block_confirm',     label: '🛡 ブロック確認画面',              trigger: 'block_confirm',
     availableIn: ['opp_main'] },
-  { value: 'effect_confirm',    label: '⚡ 効果確認ダイアログの前',        trigger: 'effect_confirm',
+  { value: 'effect_confirm',    label: '⚡ 効果確認ダイアログ',            trigger: 'effect_confirm',
     availableIn: ['main','opp_main'] },
   { value: 'target_selection',  label: '🎯 対象選択画面の前',              trigger: 'target_selection',
     availableIn: ['main','opp_main'] },

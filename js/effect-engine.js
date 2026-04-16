@@ -2709,10 +2709,15 @@ function showConfirmDialog(card, effectText, callback) {
     }
   };
 
-  // チュートリアル: 効果確認画面の前に割り込み
+  // チュートリアル: 効果確認画面表示後に割り込み（描画完了を待つ）
   const runner = window._tutorialRunner;
   if (runner && runner.active && typeof runner.checkInterrupt === 'function') {
-    runner.checkInterrupt('effect_confirm').then(_show);
+    _show();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        runner.checkInterrupt('effect_confirm').then(() => {});
+      });
+    });
   } else {
     _show();
   }

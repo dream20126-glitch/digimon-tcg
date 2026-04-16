@@ -436,9 +436,20 @@ function _applyStepUiControl(step) {
     _uiControlActive = true;
   });
 
+  // --- 育成エリアグレーアウト ---
+  if (greyOut.includes('raising_area')) {
+    const iku = document.getElementById('pl-iku-slot');
+    if (iku) {
+      _savedButtonStates.push({ el: iku, disabled: false });
+      iku.classList.add('tutorial-card-disabled');
+      iku.style.pointerEvents = 'none';
+      _uiControlActive = true;
+    }
+  }
+
   // --- ボタングレーアウト ---
   greyOut.forEach(key => {
-    if (key === 'other_cards') return; // カードは上で処理済み
+    if (key === 'other_cards' || key === 'raising_area') return;
     const selector = _BUTTON_SELECTOR_MAP[key];
     if (!selector) return;
     const btn = document.querySelector(selector);
@@ -459,9 +470,10 @@ function _clearStepUiControl() {
   document.querySelectorAll('.tutorial-card-highlight').forEach(el => el.classList.remove('tutorial-card-highlight'));
   document.querySelectorAll('.tutorial-card-disabled').forEach(el => el.classList.remove('tutorial-card-disabled'));
 
-  // ボタン状態復元
-  _savedButtonStates.forEach(({ el, disabled, classes }) => {
+  // ボタン/エリア状態復元
+  _savedButtonStates.forEach(({ el, disabled }) => {
     el.disabled = disabled;
+    el.style.pointerEvents = '';
     el.classList.remove('tutorial-btn-disabled', 'tutorial-btn-highlighted');
   });
   _savedButtonStates = [];

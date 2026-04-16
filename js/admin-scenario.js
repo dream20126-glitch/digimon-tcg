@@ -44,6 +44,7 @@ const CONDITION_TYPES = [
   { value: 'card_detail_opened', label: 'カード詳細を見た（開いた）',                 needsCardNo: false, group: '🖱 UI操作', clearable: false },
   { value: 'card_detail_closed', label: 'カード詳細を閉じた',                         needsCardNo: false, group: '🖱 UI操作', clearable: false },
   { value: 'modal_closed',       label: '閉じるボタンを押した（全モーダル共通）',     needsCardNo: false, group: '🖱 UI操作', clearable: false },
+  { value: 'action_cancelled',  label: 'キャンセルした（アタック/効果いいえ 共通）', needsCardNo: false, group: '🖱 UI操作', clearable: false },
   { value: 'mulligan_accepted',  label: 'ゲーム開始ボタンを押した（マリガン）',       needsCardNo: false, group: '🖱 UI操作', clearable: false },
   // 達成系
   { value: 'security_zero',      label: '相手セキュリティを0枚にした',                needsCardNo: false, group: '🏆 達成' },
@@ -1654,6 +1655,7 @@ function _renderStepUiControl(slotKey, timing, sIdx, step) {
 
   const GREYOUT_OPTIONS = [
     { value: 'other_cards',   label: 'カード（ハイライト以外、未指定なら全カード）' },
+    { value: 'raising_area',  label: '育成エリア' },
     { value: 'mulligan_redo', label: '引き直しボタン' },
     { value: 'game_start',    label: 'ゲーム開始ボタン' },
     { value: 'end_turn',      label: 'ターン終了ボタン' },

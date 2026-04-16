@@ -86,6 +86,8 @@ export const CONDITION_EVALUATORS = {
 
   // 閉じるボタン押下（カード詳細/トラッシュ/各種モーダル共通）
   modal_closed: (params, ev) => ev.type === 'modal_closed',
+  // キャンセルボタン押下（長押しメニュー/効果確認いいえ 共通）
+  action_cancelled: (params, ev) => ev.type === 'action_cancelled',
 
   // 特殊
   security_zero: (params, ev) =>

@@ -14,9 +14,12 @@ window.confirmEffect = function(yes) {
   // 相手画面の効果オーバーレイも閉じる
   fxRemoteEffectClose();
 
-  // チュートリアル通知: 確認ダイアログ閉じた
+  // チュートリアル通知
   if (window._tutorialRunner && window._tutorialRunner.active) {
-    try { window._tutorialRunner.notifyEvent('modal_closed', { modal: 'effect_confirm', result: yes }); } catch (e) {}
+    try {
+      window._tutorialRunner.notifyEvent('modal_closed', { modal: 'effect_confirm', result: yes });
+      if (!yes) window._tutorialRunner.notifyEvent('action_cancelled', { context: 'effect_confirm' });
+    } catch (e) {}
   }
 
   if (window._effectEngineConfirm) {

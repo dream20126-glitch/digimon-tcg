@@ -414,6 +414,9 @@ window.cancelLongpress = function(slotIdx) {
   const card = bs.player.battleArea[slotIdx];
   if (card && !_wasAlreadySuspended) card.suspended = false;
   renderAll();
+  if (window._tutorialRunner && window._tutorialRunner.active) {
+    try { window._tutorialRunner.notifyEvent('action_cancelled', { context: 'longpress' }); } catch (e) {}
+  }
 };
 window.activateEffect = function(slotIdx, effectSource) {
   hideLongpressMenu();

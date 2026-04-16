@@ -356,7 +356,9 @@ class TutorialRunner {
 
   _activateBlock(blockIdx) {
     const block = this._flow[blockIdx];
+    console.log('[TutorialRunner] _activateBlock', blockIdx, 'block=', block ? {phase: block.phase, trigger: block.trigger, stepsLen: (block.steps||[]).length} : null);
     if (!block || !block.steps || !block.steps.length) {
+      console.warn('[TutorialRunner] block empty or no steps, skipping');
       this._completedBlocks.add(blockIdx);
       return;
     }
@@ -370,11 +372,12 @@ class TutorialRunner {
   // ステップ表示・進行
   // ---------------------------------------------------------------
   _showCurrentStep() {
-    if (!this._currentBlock) { this.hideInstruction(); return; }
+    if (!this._currentBlock) { console.log('[TutorialRunner] _showCurrentStep: no currentBlock'); this.hideInstruction(); return; }
     const step = this._currentBlock.steps[this._currentStepIdx];
-    if (!step) { this._completeCurrentBlock(); return; }
+    if (!step) { console.log('[TutorialRunner] _showCurrentStep: no step at idx', this._currentStepIdx); this._completeCurrentBlock(); return; }
 
     const sType = step.stepType || 'action';
+    console.log('[TutorialRunner] _showCurrentStep', sType, 'idx=', this._currentStepIdx, 'target=', step.targetArea);
 
     // action ステップに到達したらフェーズ進行を解放
     if (sType === 'action') this._maybeReleasePhaseBlock();

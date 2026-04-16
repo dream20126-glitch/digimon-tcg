@@ -1659,6 +1659,8 @@ function _renderStepUiControl(slotKey, timing, sIdx, step) {
     { value: 'end_turn',      label: 'ターン終了ボタン' },
     { value: 'breed_skip',    label: '何もしないボタン（育成フェイズ）' },
     { value: 'exit_gate',     label: 'ゲートを出るボタン' },
+    { value: 'confirm_yes',   label: '「はい」ボタン（効果確認/ブロック）' },
+    { value: 'confirm_no',    label: '「いいえ」ボタン（効果確認/ブロック）' },
   ];
 
   const greyOutChecks = GREYOUT_OPTIONS.map(opt => `

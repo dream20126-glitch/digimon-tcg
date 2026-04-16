@@ -1394,7 +1394,12 @@ function _slotIsOn(slotKey, turn) {
 function _renderFlowEditor() {
   const container = document.getElementById('flow-phases-container');
   if (!container) return;
-  container.innerHTML = ALL_FLOW_SLOTS.map(slot => _renderSlotBlock(slot)).join('');
+  try {
+    container.innerHTML = ALL_FLOW_SLOTS.map(slot => _renderSlotBlock(slot)).join('');
+  } catch (e) {
+    console.error('[FlowEditor] render error:', e);
+    container.innerHTML = `<p style="color:#ff4444;">フロー描画エラー: ${e.message}</p>`;
+  }
 }
 
 function _renderSlotBlock(slot) {

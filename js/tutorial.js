@@ -828,31 +828,53 @@ const TARGET_AREA_SELECTORS = {
 let _highlightedEls = []; // 現在ハイライト中のDOM要素群
 
 // カードNoからDOM要素を探す
-function _findCardElement(cardNo) {
-  if (!cardNo) return null;
+// エリア限定: "battle:ST1-03" → バトルエリアのST1-03のみ
+//   プレフィックス: hand: / battle: / raising: / trash:
+function _findCardElement(rawCardNo) {
+  if (!rawCardNo) return null;
+
+  // エリア指定を分離
+  let area = null, cardNo = rawCardNo;
+  const colonIdx = rawCardNo.indexOf(':');
+  if (colonIdx > 0 && colonIdx < rawCardNo.length - 1) {
+    const prefix = rawCardNo.substring(0, colonIdx).toLowerCase();
+    if (['hand', 'battle', 'raising', 'trash'].includes(prefix)) {
+      area = prefix;
+      cardNo = rawCardNo.substring(colonIdx + 1);
+    }
+  }
+
   // マリガン中の最初の5枚
-  if (_isMulliganActive()) {
+  if ((!area || area === 'hand') && _isMulliganActive()) {
     const mul = document.querySelectorAll('#mulligan-hand-preview .mulligan-card');
     for (const el of mul) { if (el.dataset.cardNo === cardNo) return el; }
   }
   // 手札
-  const hand = document.querySelectorAll('#hand-wrap .h-card');
-  for (const el of hand) { if (el.dataset.cardNo === cardNo) return el; }
+  if (!area || area === 'hand') {
+    const hand = document.querySelectorAll('#hand-wrap .h-card');
+    for (const el of hand) { if (el.dataset.cardNo === cardNo) return el; }
+  }
   // バトルエリア
-  const battle = document.querySelectorAll('#pl-battle-row .b-slot');
-  for (const el of battle) { if (el.dataset.cardNo === cardNo) return el; }
+  if (!area || area === 'battle') {
+    const battle = document.querySelectorAll('#pl-battle-row .b-slot');
+    for (const el of battle) { if (el.dataset.cardNo === cardNo) return el; }
+  }
   // 育成エリア
-  const raising = document.querySelector('#pl-iku-slot .b-slot, #pl-iku-slot');
-  if (raising && raising.dataset && raising.dataset.cardNo === cardNo) return raising;
-  // トラッシュモーダル内（cardNo完全一致 → cardName部分一致）
-  const trashModal = document.getElementById('trash-modal');
-  if (trashModal && trashModal.style.display !== 'none') {
-    const trashCards = trashModal.querySelectorAll('[data-card-no]');
-    for (const el of trashCards) {
-      if (el.dataset.cardNo === cardNo) return el;
-    }
-    for (const el of trashCards) {
-      if (el.dataset.cardName && el.dataset.cardName.includes(cardNo)) return el;
+  if (!area || area === 'raising') {
+    const raising = document.querySelector('#pl-iku-slot .b-slot, #pl-iku-slot');
+    if (raising && raising.dataset && raising.dataset.cardNo === cardNo) return raising;
+  }
+  // トラッシュモーダル内
+  if (!area || area === 'trash') {
+    const trashModal = document.getElementById('trash-modal');
+    if (trashModal && trashModal.style.display !== 'none') {
+      const trashCards = trashModal.querySelectorAll('[data-card-no]');
+      for (const el of trashCards) {
+        if (el.dataset.cardNo === cardNo) return el;
+      }
+      for (const el of trashCards) {
+        if (el.dataset.cardName && el.dataset.cardName.includes(cardNo)) return el;
+      }
     }
   }
   return null;

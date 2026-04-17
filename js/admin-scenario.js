@@ -1262,9 +1262,11 @@ window.flowChangeOccurrence = function(slotKey, timing, currentOcc, newOcc) {
     (b.turn || 1) === _flowEditTurn &&
     (b.occurrence || 1) === currentOcc
   );
+  console.log('[flowChangeOccurrence]', timing, currentOcc, '->', newOcc, 'block=', block, 'info=', info);
   if (!block) return;
   if (newOcc > 1) block.occurrence = newOcc;
   else delete block.occurrence;
+  console.log('[flowChangeOccurrence] after:', block.occurrence, 'flow=', _scenarioFlow.filter(b => b.trigger === info.trigger).map(b => ({occ: b.occurrence, steps: b.steps?.length})));
   _renderFlowEditor();
 };
 

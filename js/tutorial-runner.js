@@ -641,16 +641,6 @@ class TutorialRunner {
     // メモリー
     if (typeof ib.playerMemory === 'number') bs.memory = ib.playerMemory;
 
-    // セキュリティ枚数調整
-    const adjustSecurity = (side, want) => {
-      if (typeof want !== 'number') return;
-      const s = bs[side];
-      while (s.security.length > want && s.security.length > 0) s.security.pop();
-      while (s.security.length < want && s.deck.length > 0) s.security.push(s.deck.shift());
-    };
-    adjustSecurity('player', ib.playerSecurityCount);
-    adjustSecurity('ai', ib.opponentSecurityCount);
-
     // 手札上書き
     if (Array.isArray(ib.playerHand))   bs.player.hand = this._resolveCardRefs(ib.playerHand);
     if (Array.isArray(ib.opponentHand)) bs.ai.hand     = this._resolveCardRefs(ib.opponentHand);
@@ -686,14 +676,24 @@ class TutorialRunner {
     }
 
     // セキュリティ指定（先頭=最初にチェックされるカード）
-    // 既存セキュリティを上書きして指定カードでセット
+    // 指定カードを先にセットし、その後に枚数調整でデッキから補充
     if (Array.isArray(ib.playerSecurity) && ib.playerSecurity.length) {
       bs.player.security = this._resolveCardRefs(ib.playerSecurity);
     }
     if (Array.isArray(ib.opponentSecurity) && ib.opponentSecurity.length) {
       bs.ai.security = this._resolveCardRefs(ib.opponentSecurity);
-      bs._aiSecuritySynced = true; // acceptHand 二重引き防止
+      bs._aiSecuritySynced = true;
     }
+
+    // セキュリティ枚数調整（指定カードの後にデッキから補充/超過分を削除）
+    const adjustSecurity = (side, want) => {
+      if (typeof want !== 'number') return;
+      const s = bs[side];
+      while (s.security.length > want && s.security.length > 0) s.security.pop();
+      while (s.security.length < want && s.deck.length > 0) s.security.push(s.deck.shift());
+    };
+    adjustSecurity('player', ib.playerSecurityCount);
+    adjustSecurity('ai', ib.opponentSecurityCount);
 
     // トラッシュ指定
     if (Array.isArray(ib.playerTrash) && ib.playerTrash.length) {

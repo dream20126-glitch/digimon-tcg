@@ -459,7 +459,9 @@ function execDraw() {
 function execBreed() {
   const hasTama = bs.player.tamaDeck && bs.player.tamaDeck.length > 0;
   const canMove = bs.player.ikusei && bs.player.ikusei.level !== '2';
-  if (!hasTama && !canMove) {
+  // チュートリアル中は自動スキップしない（指示を表示するため）
+  const isTutorial = window._tutorialRunner && window._tutorialRunner.active;
+  if (!hasTama && !canMove && !isTutorial) {
     addLog('🥚 育成フェイズ スキップ（デジタマなし）');
     setTimeout(() => startPhase('main'), 300);
     return;

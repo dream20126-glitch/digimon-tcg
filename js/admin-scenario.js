@@ -1253,7 +1253,10 @@ window.flowMoveStep = function(slotKey, timing, stepIdx, delta, occ) {
 };
 
 // トリガーブロックの発生回数を変更
+let _occChangeGuard = false;
 window.flowChangeOccurrence = function(slotKey, timing, currentOcc, newOcc) {
+  if (_occChangeGuard) return;
+  if (currentOcc === newOcc) return;
   const info = _getTargetBlockInfo(slotKey, timing);
   if (!info) return;
   const block = _scenarioFlow.find(b =>
@@ -1262,12 +1265,12 @@ window.flowChangeOccurrence = function(slotKey, timing, currentOcc, newOcc) {
     (b.turn || 1) === _flowEditTurn &&
     (b.occurrence || 1) === currentOcc
   );
-  console.log('[flowChangeOccurrence]', timing, currentOcc, '->', newOcc, 'block=', block, 'info=', info);
   if (!block) return;
   if (newOcc > 1) block.occurrence = newOcc;
   else delete block.occurrence;
-  console.log('[flowChangeOccurrence] after:', block.occurrence, 'flow=', _scenarioFlow.filter(b => b.trigger === info.trigger).map(b => ({occ: b.occurrence, steps: b.steps?.length})));
+  _occChangeGuard = true;
   _renderFlowEditor();
+  setTimeout(() => { _occChangeGuard = false; }, 100);
 };
 
 // ステップフィールド更新
@@ -1445,7 +1448,7 @@ function _renderSlotBlock(slot) {
       // トリガーブロックには発生回数セレクタを表示
       const isTrigger = r.block.phase === '_trigger';
       const occHtml = isTrigger
-        ? ` <select style="font-size:9px; background:#111; color:#aaa; border:1px solid #333; border-radius:3px; padding:1px 2px; margin-left:4px;" onchange="flowChangeOccurrence('${slot.key}','${r.timing}',${occ},Number(this.value))">`
+        ? ` <select style="font-size:9px; background:#111; color:#aaa; border:1px solid #333; border-radius:3px; padding:1px 2px; margin-left:4px;" onclick="event.stopPropagation()" onchange="event.stopPropagation(); flowChangeOccurrence('${slot.key}','${r.timing}',${occ},Number(this.value))">`
           + [1,2,3,4,5].map(n => `<option value="${n}" ${n === occ ? 'selected' : ''}>${n}回目</option>`).join('')
           + '</select>'
         : '';

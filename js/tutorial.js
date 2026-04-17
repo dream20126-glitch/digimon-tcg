@@ -350,11 +350,7 @@ window._tutorialShowInstruction = function(text, targetArea, step) {
   let idx = 0;
   const showPart = () => {
     const partText = parts[idx];
-    if (targetCardNo || targetArea) {
-      _showPointer(partText, targetArea, opType, secondArea, targetCardNo, secondCardNo);
-    } else {
-      _hidePointer();
-    }
+    _showPointer(partText, targetArea, opType, secondArea, targetCardNo, secondCardNo);
     const isLast = (idx + 1) >= parts.length;
     if (isLast) {
       _hideSpotlightNextBtn();
@@ -945,20 +941,26 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
   // 対象解決（単一 or 配列）
   let targets = _resolveTargets(targetArea, targetCardNo);
   // ターゲットが見つからない場合、少し待って再試行（動的生成ボタン等のため）
-  if (!targets.length && targetArea) {
-    setTimeout(() => {
+  if (!targets.length && (targetArea || targetCardNo)) {
+    // 動的生成ボタン等のため複数回リトライ
+    let retryCount = 0;
+    const retryTimer = setInterval(() => {
+      retryCount++;
       const retryTargets = _resolveTargets(targetArea, targetCardNo);
       if (retryTargets.length) {
+        clearInterval(retryTimer);
         _showPointer(text, targetArea, opType, secondArea, targetCardNo, secondCardNo);
+      } else if (retryCount >= 5) {
+        clearInterval(retryTimer);
       }
-    }, 300);
+    }, 200);
   }
   if (!targets.length) {
-    // ターゲットなしでもテキストは表示（画面中央上部）
+    // ターゲットなしでもテキストは表示（画面中央付近）
     bubble.innerText = text || '';
     overlay.style.display = 'block';
     wrap.style.flexDirection = 'column';
-    overlay.style.top = '60px';
+    overlay.style.top = '40%';
     overlay.style.left = '50%';
     overlay.style.transform = 'translateX(-50%)';
     finger.style.display = 'none';

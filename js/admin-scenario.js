@@ -808,6 +808,7 @@ window.editTutorialScenario = async function(scenario) {
         turn: block.turn || 1,
         trigger: block.trigger || undefined,
         occurrence: block.occurrence || undefined,
+        parentSlot: block.parentSlot || undefined,
         steps: Array.isArray(block.steps) ? block.steps.map(s => Object.assign({}, s, {
           advanceCondition: s.advanceCondition ? Object.assign({}, s.advanceCondition, {
             params: s.advanceCondition.params ? Object.assign({}, s.advanceCondition.params) : undefined,
@@ -1076,7 +1077,7 @@ const STEP_TIMINGS = [
   { value: 'after_use_effect',  label: '✨ 効果使用完了後',                 trigger: 'after_use_effect',
     availableIn: ['main'] },
   { value: 'on_card_detail_open', label: '🔍 カード詳細表示中',            trigger: 'on_card_detail_open',
-    availableIn: ['main'] },
+    availableIn: ['main','opp_main'] },
   { value: 'on_draw',             label: '🃏 ドロー演出中',                  trigger: 'on_draw',
     availableIn: ['draw'] },
   // 自分のターン終了配下
@@ -1181,7 +1182,7 @@ window.flowAddStepInSlot = function(slotKey) {
   const timing = 'phase_start';
   const info = _getTargetBlockInfo(slotKey, timing);
   if (!info) return;
-  const block = _findOrCreateBlock(info.phase, info.trigger, _flowEditTurn);
+  const block = _findOrCreateBlock(info.phase, info.trigger, _flowEditTurn, 1, info.parentSlot);
   block.steps.push({
     stepType: 'action', instructionText: '', advanceCondition: { type: 'hatch' },
     targetArea: '', secondTargetArea: '', operationType: '',
@@ -1207,7 +1208,7 @@ window.flowChangeStepTiming = function(slotKey, currentTiming, stepIdx, newTimin
     const fIdx = _scenarioFlow.indexOf(fromBlock);
     if (fIdx >= 0) _scenarioFlow.splice(fIdx, 1);
   }
-  const toBlock = _findOrCreateBlock(toInfo.phase, toInfo.trigger, _flowEditTurn);
+  const toBlock = _findOrCreateBlock(toInfo.phase, toInfo.trigger, _flowEditTurn, 1, toInfo.parentSlot);
   toBlock.steps.push(step);
   _renderFlowEditor();
 };
@@ -1221,7 +1222,8 @@ function _getStepByTiming(slotKey, timing, stepIdx, occ) {
     b.phase === info.phase &&
     (b.trigger || undefined) === (info.trigger || undefined) &&
     (b.turn || 1) === _flowEditTurn &&
-    (b.occurrence || 1) === occurrence
+    (b.occurrence || 1) === occurrence &&
+    (!info.parentSlot || (b.parentSlot || undefined) === info.parentSlot)
   );
   if (!block || !block.steps[stepIdx]) return null;
   return { block, step: block.steps[stepIdx] };
@@ -1344,23 +1346,25 @@ function _getTargetBlockInfo(phaseKey, timing) {
     // phase_start等はスロットのphase/triggerをそのまま使う
     return { phase: slot.phase, trigger: slot.trigger || undefined };
   }
-  // trigger指定あり: 内部的には _trigger ブロックに格納
-  return { phase: '_trigger', trigger: timingDef.trigger };
+  // trigger指定あり: parentSlot で親フェーズを記録し、フェーズごとに別ブロックにする
+  return { phase: '_trigger', trigger: timingDef.trigger, parentSlot: phaseKey };
 }
 
 // ブロックを見つける or 作成
-function _findOrCreateBlock(phase, trigger, turn, occurrence) {
+function _findOrCreateBlock(phase, trigger, turn, occurrence, parentSlot) {
   const occ = occurrence || 1;
   let b = _scenarioFlow.find(x =>
     x.phase === phase &&
     (x.trigger || undefined) === (trigger || undefined) &&
     (x.turn || 1) === turn &&
-    (x.occurrence || 1) === occ
+    (x.occurrence || 1) === occ &&
+    (!parentSlot || (x.parentSlot || undefined) === parentSlot)
   );
   if (!b) {
     b = { phase, turn, steps: [] };
     if (trigger) b.trigger = trigger;
     if (occ > 1) b.occurrence = occ;
+    if (parentSlot) b.parentSlot = parentSlot;
     _scenarioFlow.push(b);
   }
   return b;
@@ -1383,7 +1387,8 @@ function _getRelatedBlocks(slotKey, turn) {
     if (!t.trigger) return;
     if (!t.availableIn.includes(slotKey)) return;
     _scenarioFlow.forEach(b => {
-      if (b.phase === '_trigger' && b.trigger === t.trigger && (b.turn || 1) === turn) {
+      if (b.phase === '_trigger' && b.trigger === t.trigger && (b.turn || 1) === turn &&
+          (!b.parentSlot || b.parentSlot === slotKey)) {
         blocks.push({ block: b, timing: t.value, occurrence: b.occurrence || 1 });
       }
     });
@@ -2237,6 +2242,7 @@ window.executeTutorialScenarioSave = async function() {
     turn: block.turn || 1,
     trigger: block.trigger || undefined,
     occurrence: block.occurrence || undefined,
+    parentSlot: block.parentSlot || undefined,
     steps: (block.steps || []).filter(s => s && (s.instructionText || s.advanceCondition)),
   }));
 

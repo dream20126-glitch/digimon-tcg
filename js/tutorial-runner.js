@@ -240,6 +240,7 @@ class TutorialRunner {
   // ---------------------------------------------------------------
   async notifyPhaseChange(phaseKey) {
     if (!this.active || this.cleared) return;
+    console.log('[TutorialRunner] notifyPhaseChange', phaseKey, '_currentTurn=', this._currentTurn, 'bs.turn=', window.bs?.turn);
     // フェーズ説明ポップは管理画面のフロー設定（message ステップ）で個別に作る方針。
     // message/spotlight ステップが先頭に並んでいる場合は「次へ」を押すまで
     // execPhase を待たせる。action ステップが来たら解放（フェーズ動作を進める）

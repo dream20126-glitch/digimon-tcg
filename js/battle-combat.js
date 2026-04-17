@@ -1283,9 +1283,15 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
           });
         } else {
           bs.player.trash.push(sec);
-          addLog('✓ セキュリティ突破'); renderAll();
-          if (bs.player.security.length <= 0) addLog('🛡 自分のセキュリティが0枚になった');
-          setTimeout(() => aiAttackPhase(callback), 800);
+          renderAll();
+          showDestroyEffect(sec, () => {
+            showBattleResult('Win!!', '#00ff88', 'セキュリティ突破！', () => {
+              addLog('✓ セキュリティ突破');
+              if (bs.player.security.length <= 0) addLog('🛡 自分のセキュリティが0枚になった');
+              renderAll();
+              setTimeout(() => aiAttackPhase(callback), 800);
+            }, 'Lost...', '#ff4444');
+          });
         }
       } else if (sec.type === 'テイマー') {
         bs.player.tamerArea.push(sec);

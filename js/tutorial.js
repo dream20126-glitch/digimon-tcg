@@ -881,7 +881,34 @@ function _findCardElement(rawCardNo) {
 }
 
 // 単一/配列どちらでも要素を配列で返す
+// targetArea + targetCardNo 両方指定 → そのエリア内のカードを検索
 function _resolveTargets(targetArea, targetCardNo) {
+  if (targetArea && targetCardNo) {
+    // エリア内のカードを検索
+    const areaToScope = {
+      hand: '#hand-wrap .h-card',
+      battle: '#pl-battle-row .b-slot',
+      raising: '#pl-iku-slot .b-slot, #pl-iku-slot',
+      opp_battle: '#ai-battle-row .b-slot',
+      opp_security: '#ai-sec-area .sec-card',
+    };
+    const selector = areaToScope[targetArea];
+    if (selector) {
+      const els = document.querySelectorAll(selector);
+      for (const el of els) {
+        if (el.dataset.cardNo === targetCardNo) return [el];
+        if (el.dataset.cardNo && el.dataset.cardNo.includes(targetCardNo)) return [el];
+      }
+      // カード名での検索（data-card-no にカード名が入っていない場合）
+      for (const el of els) {
+        const nameEl = el.querySelector('.card-name, .b-name');
+        if (nameEl && nameEl.textContent.includes(targetCardNo)) return [el];
+      }
+    }
+    // エリア限定が効かない場合は従来のグローバル検索にフォールバック
+    const el = _findCardElement(targetCardNo);
+    if (el) return [el];
+  }
   if (targetCardNo) {
     const el = _findCardElement(targetCardNo);
     if (el) return [el];

@@ -662,18 +662,7 @@ class TutorialRunner {
       }
     }
 
-    // デッキトップ指定（先頭=次に引く順）
-    if (Array.isArray(ib.playerDeckTop) && ib.playerDeckTop.length) {
-      const top = this._resolveCardRefs(ib.playerDeckTop);
-      bs.player.deck = [...top, ...bs.player.deck];
-    }
-    if (Array.isArray(ib.opponentDeckTop) && ib.opponentDeckTop.length) {
-      const top = this._resolveCardRefs(ib.opponentDeckTop);
-      bs.ai.deck = [...top, ...bs.ai.deck];
-    }
-
     // セキュリティ指定（先頭=最初にチェックされるカード）
-    // 指定カードを先にセットし、その後に枚数調整でデッキから補充
     if (Array.isArray(ib.playerSecurity) && ib.playerSecurity.length) {
       bs.player.security = this._resolveCardRefs(ib.playerSecurity);
     }
@@ -683,6 +672,7 @@ class TutorialRunner {
     }
 
     // セキュリティ枚数調整（指定カードの後にデッキから補充/超過分を削除）
+    // ※ デッキトップ指定より先に実行（デッキ上のカードがセキュリティに消費されるのを防ぐ）
     const adjustSecurity = (side, want) => {
       if (typeof want !== 'number') return;
       const s = bs[side];
@@ -691,6 +681,17 @@ class TutorialRunner {
     };
     adjustSecurity('player', ib.playerSecurityCount);
     adjustSecurity('ai', ib.opponentSecurityCount);
+
+    // デッキトップ指定（先頭=次に引く順）
+    // ※ セキュリティ調整の後に実行し、指定カードが確実にデッキ上に残るようにする
+    if (Array.isArray(ib.playerDeckTop) && ib.playerDeckTop.length) {
+      const top = this._resolveCardRefs(ib.playerDeckTop);
+      bs.player.deck = [...top, ...bs.player.deck];
+    }
+    if (Array.isArray(ib.opponentDeckTop) && ib.opponentDeckTop.length) {
+      const top = this._resolveCardRefs(ib.opponentDeckTop);
+      bs.ai.deck = [...top, ...bs.ai.deck];
+    }
 
     // トラッシュ指定
     if (Array.isArray(ib.playerTrash) && ib.playerTrash.length) {

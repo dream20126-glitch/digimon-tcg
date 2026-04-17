@@ -1439,7 +1439,6 @@ function _renderSlotBlock(slot) {
       const tDef = STEP_TIMINGS.find(t => t.value === r.timing);
       const tLabel = tDef ? tDef.label : r.timing;
       const occ = r.occurrence || 1;
-      console.log('[render]', r.timing, 'occ=', occ, 'block.occurrence=', r.block.occurrence, 'steps=', (r.block.steps||[]).length);
       const stepsInGroup = (r.block.steps || []).map((step, sIdx) =>
         _renderFlowStep(slot.key, r.timing, sIdx, step, occ)
       ).join('');
@@ -2236,6 +2235,7 @@ window.executeTutorialScenarioSave = async function() {
     phase: block.phase,
     turn: block.turn || 1,
     trigger: block.trigger || undefined,
+    occurrence: block.occurrence || undefined,
     steps: (block.steps || []).filter(s => s && (s.instructionText || s.advanceCondition)),
   }));
 

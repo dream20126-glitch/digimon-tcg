@@ -1562,7 +1562,7 @@ function _renderFlowStep(slotKey, timing, sIdx, step, occ) {
           ${SUCCESS_POPUP_PRESETS.map(p => `<option value="${p.value}"${(step.successPopup || 'auto') === p.value ? ' selected' : ''}>${p.label}</option>`).join('')}
         </select>
       </div>` : ''}
-      ${showCondOp ? _renderConditionSubSettings(slotKey, timing, sIdx, step, cond) : ''}
+      ${showCondOp ? _renderConditionSubSettings(slotKey, timing, sIdx, step, cond, occVal) : ''}
       ${showTargets ? `
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
         <div class="tsave-field" style="margin-bottom:0;">
@@ -1588,7 +1588,7 @@ function _renderFlowStep(slotKey, timing, sIdx, step, occ) {
 }
 
 // 条件ごとのサブ設定（card_detail_closed のハイライト箇所など）
-function _renderConditionSubSettings(slotKey, timing, sIdx, step, cond) {
+function _renderConditionSubSettings(slotKey, timing, sIdx, step, cond, occVal) {
   const sk = `'${slotKey}'`;
   const tg = `'${timing}'`;
   // card_detail_closed の場合: ハイライト箇所プルダウン（targetArea を自動設定）

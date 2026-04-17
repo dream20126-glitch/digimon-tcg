@@ -1311,8 +1311,10 @@ window.flowUpdateStep = function(slotKey, timing, stepIdx, field, value, occ) {
     _renderFlowEditor();
   } else if (field === 'targetCardNo') {
     step.targetCardNo = value || '';
+    _renderFlowEditor();
   } else if (field === 'secondTargetCardNo') {
     step.secondTargetCardNo = value || '';
+    _renderFlowEditor();
   } else if (field === 'uiControl') {
     step.uiControl = !!value;
     _renderFlowEditor();

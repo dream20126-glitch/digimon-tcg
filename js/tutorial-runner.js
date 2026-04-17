@@ -342,6 +342,10 @@ class TutorialRunner {
       (b.turn || 1) === turn &&
       !this._completedBlocks.has(i)
     );
+    if (blockIdx < 0 && phaseKey === 'breed') {
+      console.log('[TutorialRunner] breed block not found | _currentTurn=', this._currentTurn, 'bs.turn=', window.bs?.turn, 'candidates=',
+        this._flow.filter(b => b.phase === 'breed').map(b => ({turn: b.turn, steps: b.steps?.length})));
+    }
     if (blockIdx < 0) return Promise.resolve();
 
     return new Promise(resolve => {

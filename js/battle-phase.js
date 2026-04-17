@@ -587,8 +587,8 @@ export function checkAutoTurnEnd() {
         showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {});
       });
     } else {
-      // AI対戦: 相手メモリーは超過した絶対値
-      bs.memory = over;
+      // AI対戦: 相手メモリーは超過した絶対値（AI側なので負の値）
+      bs.memory = -over;
       updateMemGauge();
       showYourTurn('自分のターン終了', '', '#555555', () => {
         setTimeout(() => aiTurn(), 500);

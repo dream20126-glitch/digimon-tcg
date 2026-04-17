@@ -938,6 +938,10 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
   const wrap   = document.getElementById('tutorial-pointer-wrap');
   if (!overlay || !bubble || !finger || !wrap) return;
 
+  // 前回のフォールバック用スタイルをリセット
+  overlay.style.transform = '';
+  finger.style.display = '';
+
   // 対象解決（単一 or 配列）
   let targets = _resolveTargets(targetArea, targetCardNo);
   // ターゲットが見つからない場合、少し待って再試行（動的生成ボタン等のため）

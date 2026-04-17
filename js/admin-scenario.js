@@ -1076,7 +1076,7 @@ const STEP_TIMINGS = [
   { value: 'after_use_effect',  label: '✨ 効果使用完了後',                 trigger: 'after_use_effect',
     availableIn: ['main'] },
   { value: 'on_card_detail_open', label: '🔍 カード詳細表示中',            trigger: 'on_card_detail_open',
-    availableIn: ['main','breed','mulligan'] },
+    availableIn: ['main'] },
   { value: 'on_draw',             label: '🃏 ドロー演出中',                  trigger: 'on_draw',
     availableIn: ['draw'] },
   // 自分のターン終了配下

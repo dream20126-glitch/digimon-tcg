@@ -894,8 +894,28 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
   if (!overlay || !bubble || !finger || !wrap) return;
 
   // 対象解決（単一 or 配列）
-  const targets = _resolveTargets(targetArea, targetCardNo);
-  if (!targets.length) { _hidePointer(); return; }
+  let targets = _resolveTargets(targetArea, targetCardNo);
+  // ターゲットが見つからない場合、少し待って再試行（動的生成ボタン等のため）
+  if (!targets.length && targetArea) {
+    setTimeout(() => {
+      const retryTargets = _resolveTargets(targetArea, targetCardNo);
+      if (retryTargets.length) {
+        _showPointer(text, targetArea, opType, secondArea, targetCardNo, secondCardNo);
+      }
+    }, 300);
+  }
+  if (!targets.length) {
+    // ターゲットなしでもテキストは表示（画面中央上部）
+    bubble.innerText = text || '';
+    overlay.style.display = 'block';
+    wrap.style.flexDirection = 'column';
+    overlay.style.top = '60px';
+    overlay.style.left = '50%';
+    overlay.style.transform = 'translateX(-50%)';
+    finger.style.display = 'none';
+    return;
+  }
+  finger.style.display = '';
 
   // テキスト設定
   bubble.innerText = text || '';

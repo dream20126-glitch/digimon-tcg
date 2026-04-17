@@ -1285,12 +1285,12 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
           bs.player.trash.push(sec);
           renderAll();
           showDestroyEffect(sec, () => {
-            showBattleResult('Win!!', '#00ff88', 'セキュリティ突破！', () => {
+            showBattleResult('Lost...', '#ff4444', 'セキュリティ突破された', () => {
               addLog('✓ セキュリティ突破');
               if (bs.player.security.length <= 0) addLog('🛡 自分のセキュリティが0枚になった');
               renderAll();
               setTimeout(() => aiAttackPhase(callback), 800);
-            }, 'Lost...', '#ff4444');
+            }, 'Win!!', '#00ff88');
           });
         }
       } else if (sec.type === 'テイマー') {

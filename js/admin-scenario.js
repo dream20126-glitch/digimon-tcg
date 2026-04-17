@@ -807,6 +807,7 @@ window.editTutorialScenario = async function(scenario) {
         phase: block.phase,
         turn: block.turn || 1,
         trigger: block.trigger || undefined,
+        occurrence: block.occurrence || undefined,
         steps: Array.isArray(block.steps) ? block.steps.map(s => Object.assign({}, s, {
           advanceCondition: s.advanceCondition ? Object.assign({}, s.advanceCondition, {
             params: s.advanceCondition.params ? Object.assign({}, s.advanceCondition.params) : undefined,

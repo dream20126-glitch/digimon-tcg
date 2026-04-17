@@ -1012,8 +1012,6 @@ window.updateClearConditionUI = function() {
 // 全フェーズ＋割り込みの定義（表示順）
 // 9大項目（フラット）
 const ALL_FLOW_SLOTS = [
-  { key: 'gate_open', phase: 'gate_open', label: '🌀 VS画面（ゲートオープン）', color: '#00fbff',
-    hint: 'バトル開始時のゲートオープン演出中。ルール説明やバトルの目的を伝える。' },
   { key: 'mulligan',  phase: 'mulligan',  label: '🎴 マリガン画面',        color: '#ff88ff',
     hint: '手札の引き直し画面。引き直しボタンやゲーム開始ボタンの制御を設定。' },
   { key: 'trg_turn_start_self', phase: '_trigger', trigger: 'turn_start_self',
@@ -1048,7 +1046,7 @@ const ALL_FLOW_SLOTS = [
 const STEP_TIMINGS = [
   // フェーズ開始時（全フェーズで使える）
   { value: 'phase_start',       label: '⏱ フェーズ開始時（即時）',        trigger: null,
-    availableIn: ['gate_open','mulligan','trg_turn_start_self','unsuspend','draw','breed','main','trg_before_end_turn','trg_before_opponent_turn','opp_breed','opp_main','trg_turn_end_opp'] },
+    availableIn: ['mulligan','trg_turn_start_self','unsuspend','draw','breed','main','trg_before_end_turn','trg_before_opponent_turn','opp_breed','opp_main','trg_turn_end_opp'] },
   // 育成
   { value: 'after_hatch',       label: '🥚 孵化完了直後',                 trigger: 'after_hatch',
     availableIn: ['breed'] },

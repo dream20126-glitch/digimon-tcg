@@ -778,8 +778,10 @@ async function endAiTurn() {
     await window._tutorialRunner.checkInterrupt('turn_end_opp');
   }
 
-  // プレイヤー側3にメモリ移動
-  bs.memory = 3;
+  // プレイヤー側にメモリ移動
+  // AIがコストを消費して自動終了した場合はその値を維持、
+  // それ以外（パス等）はメモリー3で開始
+  if (bs.memory <= 0) bs.memory = 3;
   updateMemGauge();
 
   showYourTurn('相手のターン終了', '', '#555555', () => {

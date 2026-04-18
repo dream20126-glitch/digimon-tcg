@@ -954,6 +954,10 @@ function checkOnlineBlock(cmd) {
   }
   // baseDp を含めて再構築（showBlockConfirm 内の formatDpDisplay が「元値+バフ」を表示できるように）
   const attacker = { name: cmd.atkName || '???', dp: cmd.atkDp || 0, baseDp: cmd.atkBaseDp != null ? cmd.atkBaseDp : (cmd.atkDp || 0), imgSrc: cmd.atkImg || '' };
+  // アタック対象情報（受信側の表示用）
+  let targetInfo = null;
+  if (cmd.type === 'attack_security') targetInfo = { type: 'security' };
+  else if (cmd.type === 'attack_digimon') targetInfo = { type: 'digimon', name: cmd.defName || '' };
   if (_modules.showBlockConfirm) {
     _modules.showBlockConfirm(bs.player.battleArea[blockerIndices[0]], attacker, (doBlock) => {
       if (!doBlock) { sendCommand({ type: 'block_response', blocked: false }); return; }
@@ -968,7 +972,7 @@ function checkOnlineBlock(cmd) {
         // ブロッカー選択UIがない場合、最初のブロッカーで自動ブロック
         resolveOnlineBlock(blockerIndices[0], cmd);
       }
-    });
+    }, targetInfo);
   } else {
     // ブロック確認UIがない場合、ブロックなしとして応答
     sendCommand({ type: 'block_response', blocked: false });

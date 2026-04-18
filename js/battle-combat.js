@@ -1069,7 +1069,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
 
 // ===== ブロック確認UI =====
 
-export function showBlockConfirm(blocker, attacker, callback) {
+export function showBlockConfirm(blocker, attacker, callback, targetInfo) {
   // 旧コード準拠: effect-confirm-overlay を使用
   const overlay = document.getElementById('effect-confirm-overlay');
   if (!overlay) { callback(false); return; }
@@ -1082,7 +1082,12 @@ export function showBlockConfirm(blocker, attacker, callback) {
   nameEl.style.color = '#ff2222';
   nameEl.style.textShadow = '0 0 10px #ff0000, 0 0 20px #ff000088';
   nameEl.style.fontSize = '1.2rem';
-  textEl.innerText = '相手の「' + (attacker ? attacker.name : '???') + '」(DP:' + (attacker ? formatDpDisplay(attacker) : '?') + ')がアタックしてきました！';
+  let targetText = '';
+  if (targetInfo) {
+    if (targetInfo.type === 'security') targetText = '\n→ セキュリティへアタック';
+    else if (targetInfo.type === 'digimon') targetText = '\n→「' + (targetInfo.name || '???') + '」へアタック';
+  }
+  textEl.innerText = '相手の「' + (attacker ? attacker.name : '???') + '」(DP:' + (attacker ? formatDpDisplay(attacker) : '?') + ')がアタックしてきました！' + targetText;
   if (questionEl) questionEl.innerText = 'ブロックしますか？';
   if (imgEl) imgEl.style.display = 'none';
   overlay.style.display = 'flex';
@@ -1196,6 +1201,7 @@ export function aiAttackPhase(callback) {
 
       if (blockerIndices.length > 0) {
         // チュートリアル: ブロック確認画面の前に割り込み
+        // aiAttackPhase: 常にセキュリティアタック
         const _showBlock = () => showBlockConfirm(bs.player.battleArea[blockerIndices[0]], atk, (doBlock) => {
           if (doBlock) {
             if (blockerIndices.length === 1) {
@@ -1235,7 +1241,7 @@ export function aiAttackPhase(callback) {
           } else {
             doAiSecurityCheck(atk, atkIdx, callback);
           }
-        });
+        }, { type: 'security' });
         _showBlock();
         return;
       }
@@ -2266,7 +2272,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
             } else {
               doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); onDone && onDone(); });
             }
-          });
+          }, { type: 'security' });
           _showBlock();
         } else {
           doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); onDone && onDone(); });

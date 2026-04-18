@@ -1003,6 +1003,23 @@ function _showPointer(text, targetArea, opType, secondArea, targetCardNo, second
   // 吹き出しと👆の位置は target1（プライマリ）で決める
   // （target2 が離れた場所にあると結合矩形の中央が変な所に行くため）
   const rect = _unionRect(targets.length ? targets : seconds);
+  // 対象の bounds が (0,0,0,0) (非表示直後や transition 中) の場合は少し待って再計算
+  if ((rect.width === 0 && rect.height === 0) || (rect.top === 0 && rect.left === 0 && rect.right === 0 && rect.bottom === 0)) {
+    let rc = 0;
+    const rt = setInterval(() => {
+      rc++;
+      const rt2 = _resolveTargets(targetArea, targetCardNo);
+      if (rt2.length) {
+        const r2 = _unionRect(rt2);
+        if (r2.width > 0 || r2.height > 0) {
+          clearInterval(rt);
+          _showPointer(text, targetArea, opType, secondArea, targetCardNo, secondCardNo);
+        }
+      }
+      if (rc >= 10) clearInterval(rt);
+    }, 100);
+    // 本関数はそのまま進める (暫定的に画面中央 or 対象位置に描画されるが、retry で更新)
+  }
   const pointerH = wrap.offsetHeight || 100;
   // 吹き出しは可変幅（CSS で max-width: min(85vw, 440px)）→ 実測値を使う
   const bubbleW = wrap.offsetWidth || 320;

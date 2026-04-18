@@ -815,12 +815,18 @@ window.editTutorialScenario = async function(scenario) {
       params: s.advanceCondition.params ? Object.assign({}, s.advanceCondition.params) : undefined,
     }) : { type: 'hatch' },
   });
-  // 古いデータのマイグレーション: parentSlot が未設定のトリガーブロックは、
-  // 複数スロットで共有される形になってしまうため、availableIn の先頭スロットに割り当てる
+  // 古いデータのマイグレーション:
+  //  - parentSlot 未設定のトリガーブロックを availableIn 先頭スロットに割り当て
+  //  - 旧トリガー名 (effect_confirm / target_confirm) → 統一した confirm_dialog
+  const _migrateTrigger = (trigger) => {
+    if (trigger === 'effect_confirm' || trigger === 'target_confirm') return 'confirm_dialog';
+    return trigger;
+  };
   const _inferParentSlot = (block) => {
     if (block.parentSlot) return block.parentSlot;
     if (block.phase !== '_trigger' || !block.trigger) return undefined;
-    const timingDef = STEP_TIMINGS.find(t => t.trigger === block.trigger);
+    const trig = _migrateTrigger(block.trigger);
+    const timingDef = STEP_TIMINGS.find(t => t.trigger === trig);
     if (!timingDef || !Array.isArray(timingDef.availableIn) || timingDef.availableIn.length === 0) return undefined;
     return timingDef.availableIn[0];
   };
@@ -832,7 +838,7 @@ window.editTutorialScenario = async function(scenario) {
       _scenarioFlow.push({
         phase: block.phase,
         turn: block.turn || 1,
-        trigger: block.trigger || undefined,
+        trigger: _migrateTrigger(block.trigger) || undefined,
         occurrence: block.occurrence || undefined,
         parentSlot: inferredParentSlot,
         steps: [],
@@ -843,7 +849,7 @@ window.editTutorialScenario = async function(scenario) {
       _scenarioFlow.push({
         phase: block.phase,
         turn: block.turn || 1,
-        trigger: block.trigger || undefined,
+        trigger: _migrateTrigger(block.trigger) || undefined,
         occurrence: block.occurrence || undefined,
         parentSlot: inferredParentSlot,
         steps: [cloneStep(s)],
@@ -1102,11 +1108,9 @@ const STEP_TIMINGS = [
     availableIn: ['opp_main'] },
   { value: 'block_confirm',     label: '🛡 ブロック確認画面',              trigger: 'block_confirm',
     availableIn: ['opp_main'] },
-  { value: 'effect_confirm',    label: '⚡ 効果発動の確認ダイアログ（効果を使う？ はい/いいえ）', trigger: 'effect_confirm',
+  { value: 'confirm_dialog',    label: '⚡ 確認ダイアログ（はい/いいえ）', trigger: 'confirm_dialog',
     availableIn: ['main','opp_main'] },
   { value: 'target_selection',  label: '🎯 対象選択画面の前',              trigger: 'target_selection',
-    availableIn: ['main','opp_main'] },
-  { value: 'target_confirm',    label: '🎯 対象カードの確認ダイアログ（このカード？ はい/いいえ）', trigger: 'target_confirm',
     availableIn: ['main','opp_main'] },
   { value: 'after_attack',      label: '⚔ アタック解決後',                trigger: 'after_attack',
     availableIn: ['main'] },

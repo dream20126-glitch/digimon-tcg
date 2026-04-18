@@ -1667,10 +1667,10 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
       if (e.target === overlay) e.stopPropagation();
     });
 
-    // チュートリアル: 対象確認ダイアログ表示中の割り込み
+    // チュートリアル: 確認ダイアログ表示中の割り込み (効果確認/対象確認を統一)
     if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active
         && typeof window._tutorialRunner.checkInterrupt === 'function') {
-      try { window._tutorialRunner.checkInterrupt('target_confirm'); } catch (_) {}
+      try { window._tutorialRunner.checkInterrupt('confirm_dialog'); } catch (_) {}
     }
 
     function cleanupConfirm() {
@@ -2747,7 +2747,7 @@ function showConfirmDialog(card, effectText, callback) {
     _show();
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        runner.checkInterrupt('effect_confirm').then(() => {});
+        runner.checkInterrupt('confirm_dialog').then(() => {});
       });
     });
   } else {

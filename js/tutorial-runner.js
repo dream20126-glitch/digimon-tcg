@@ -306,6 +306,12 @@ class TutorialRunner {
       this._pendingWaitKind = null;
       this._pendingWaitValue = null;
       this._showCurrentStep();
+      // message/spotlight ポップアップが表示された場合は dismiss されるまで await
+      // (呼び出し側は await で受けており、ドロー演出 dismiss 等を遅らせる効果がある)
+      if (this._currentStepPopupPromise) {
+        const p = this._currentStepPopupPromise;
+        try { await p; } catch (_) {}
+      }
     }
     return;
   }
@@ -458,7 +464,13 @@ class TutorialRunner {
           phase: this._currentBlock ? this._currentBlock.phase : null,
           trigger: this._currentBlock ? this._currentBlock.trigger : null,
         };
-        window._tutorialShowStepPopup(step, sType, ctx).then(() => {
+        const popupPromise = window._tutorialShowStepPopup(step, sType, ctx);
+        // checkInterrupt から await できるように保持 (ドロー演出等が dismiss を遅らせる用)
+        this._currentStepPopupPromise = popupPromise;
+        popupPromise.then(() => {
+          if (this._currentStepPopupPromise === popupPromise) {
+            this._currentStepPopupPromise = null;
+          }
           this._advanceStep();
         });
       } else {

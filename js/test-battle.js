@@ -75,9 +75,12 @@ setupCommonHooks();
 // テスト画面用: 勝敗後にシナリオ画面に戻る
 function backToScenarioScreen() {
   // cleanupOnlineは呼び出し元(battleVictory/battleDefeat/game_endハンドラ)で実行済み
-  // 残留オーバーレイを念のため消す
+  // 残留オーバーレイを念のため消す（デバッグパネル/トグル等の永続UIは除外）
+  const KEEP_IDS = new Set(['debug-log-panel', 'debug-toggle-btn']);
   document.querySelectorAll('body > div[style*="position:fixed"]').forEach(el => {
-    if (!el.classList.contains('screen')) el.remove();
+    if (el.classList.contains('screen')) return;
+    if (KEEP_IDS.has(el.id)) return;
+    el.remove();
   });
   document.getElementById('battle-screen').style.display = 'none';
   document.getElementById('battle-screen').classList.remove('active');

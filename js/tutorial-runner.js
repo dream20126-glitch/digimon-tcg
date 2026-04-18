@@ -232,20 +232,28 @@ class TutorialRunner {
       window._tutorialShowGoal(scenario.clearCondition);
     }
 
-    // マリガンフェーズのブロック発火は battle.js 側のゲート演出終了後に
-    // notifyPhaseChange('mulligan') から駆動する（ゲート演出中の早期発火を防ぐ）
+    // 順次実行モデル: 先頭ブロックを活性化
+    // (battle.js 側のゲート演出が始まってから起動するよう少し遅延)
+    if (this._flow.length > 0) {
+      setTimeout(() => {
+        if (!this.active || this.cleared) return;
+        if (this._currentBlock) return; // 既に活性化済み (notifyPhaseChange 経由等) ならスキップ
+        const firstIdx = this._flow.findIndex((b, i) => !this._completedBlocks.has(i));
+        if (firstIdx >= 0) this._activateBlock(firstIdx);
+      }, 500);
+    }
   }
 
   // ---------------------------------------------------------------
   // フェーズ切替通知（battle-phase.js から呼ばれる）
+  // 順次実行モデルでは phase activation は使わない (start() で先頭ブロック自動活性化)。
+  // phase_change イベントは notifyEvent 経由で発火されるので、ステップの advanceCondition で受けられる。
   // ---------------------------------------------------------------
   async notifyPhaseChange(phaseKey) {
     if (!this.active || this.cleared) return;
-    console.log('[TutorialRunner] notifyPhaseChange', phaseKey, '_currentTurn=', this._currentTurn, 'bs.turn=', window.bs?.turn);
-    // フェーズ説明ポップは管理画面のフロー設定（message ステップ）で個別に作る方針。
-    // message/spotlight ステップが先頭に並んでいる場合は「次へ」を押すまで
-    // execPhase を待たせる。action ステップが来たら解放（フェーズ動作を進める）
-    await this._tryActivatePhaseBlock(phaseKey);
+    // イベントとして発火 (既存の条件と互換)
+    try { this.notifyEvent('phase_change', { phase: phaseKey }); } catch (_) {}
+    return;
   }
 
   // 自動進行フェーズ（unsuspend/draw）では指差しを隠す
@@ -265,32 +273,11 @@ class TutorialRunner {
   // 該当する割り込みブロックがあればステップを全て実行してから resolve する
   // ---------------------------------------------------------------
   async checkInterrupt(triggerKey) {
+    // 順次実行モデルでは割り込み機構を廃止。trigger はイベントとして発火させ、
+    // 現在ステップの advanceCondition で拾う形に統一する。
     if (!this.active || this.cleared) return;
-    const turn = this._currentTurn;
-
-    // ターンが変わったらカウンターリセット
-    const bsTurn = (window.bs && window.bs.turn) || 0;
-    if (bsTurn !== this._lastCountTurn) {
-      this._triggerCounts = {};
-      this._lastCountTurn = bsTurn;
-    }
-
-    // 発生回数をインクリメント
-    const countKey = triggerKey + ':' + turn;
-    this._triggerCounts[countKey] = (this._triggerCounts[countKey] || 0) + 1;
-    const currentOccurrence = this._triggerCounts[countKey];
-
-    // 該当する割り込みブロックを探す（occurrence マッチ付き）
-    const blockIdx = this._flow.findIndex((b, i) =>
-      b.phase === '_trigger' &&
-      b.trigger === triggerKey &&
-      (b.turn || 1) === turn &&
-      !this._completedBlocks.has(i) &&
-      (b.occurrence || 1) === currentOccurrence
-    );
-    if (blockIdx < 0) return;
-
-    await this._runBlockSteps(blockIdx);
+    try { this.notifyEvent(triggerKey, {}); } catch (_) {}
+    return;
   }
 
   // ---------------------------------------------------------------
@@ -500,7 +487,6 @@ class TutorialRunner {
   }
 
   _completeCurrentBlock() {
-    const completedBlock = this._currentBlock;
     if (this._currentBlock && typeof this._currentBlock._flowIdx === 'number') {
       this._completedBlocks.add(this._currentBlock._flowIdx);
     }
@@ -508,26 +494,24 @@ class TutorialRunner {
     this._currentStepIdx = 0;
     this.hideInstruction();
 
-    // 割り込み完了通知
+    // 割り込み完了通知 (旧モデル互換)
     if (this._interruptResolve) {
       const resolve = this._interruptResolve;
       this._interruptResolve = null;
       resolve();
-      // 割り込み前にブロックが動いていたならレジューム
       this._resumePausedBlock();
-    } else if (completedBlock && completedBlock.phase && completedBlock.phase !== '_trigger') {
-      // フェーズブロックが完了 → 同じ phase+turn で未完了の次のブロック (occurrence 2+) があれば続行
-      const nextIdx = this._flow.findIndex((b, i) =>
-        b.phase === completedBlock.phase &&
-        (b.turn || 1) === (completedBlock.turn || 1) &&
-        !this._completedBlocks.has(i)
-      );
-      if (nextIdx >= 0) {
-        this._activateBlock(nextIdx);
-        return; // _showCurrentStep が _maybeReleasePhaseBlock を呼ぶ
-      }
+      return;
     }
-    // フェーズブロックが全ステップ終えた場合もPromiseを解放
+
+    // 順次実行モデル: _flow の次の未完了ブロックを自動活性化
+    // (phase/trigger を問わず、配列順にチェーン)
+    const nextIdx = this._flow.findIndex((b, i) => !this._completedBlocks.has(i));
+    if (nextIdx >= 0) {
+      this._activateBlock(nextIdx);
+      return;
+    }
+
+    // 全ブロック完了
     this._maybeReleasePhaseBlock();
   }
 

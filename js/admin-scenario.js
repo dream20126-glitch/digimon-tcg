@@ -808,21 +808,38 @@ window.initTutorialScenarioBuilder = async function() {
 
 window.editTutorialScenario = async function(scenario) {
   _scenarioEditData = scenario;
-  // フロー復元（ディープコピー）
-  _scenarioFlow = Array.isArray(scenario.flow)
-    ? scenario.flow.map(block => ({
+  // フロー復元（ディープコピー + マルチステップブロックを1ステップ単位に分割）
+  // 編集UIでは「ステップ = 1ブロック」の扱いにすることで、↑↓で任意位置に並び替え可能に
+  const cloneStep = (s) => Object.assign({}, s, {
+    advanceCondition: s.advanceCondition ? Object.assign({}, s.advanceCondition, {
+      params: s.advanceCondition.params ? Object.assign({}, s.advanceCondition.params) : undefined,
+    }) : { type: 'hatch' },
+  });
+  _scenarioFlow = [];
+  (Array.isArray(scenario.flow) ? scenario.flow : []).forEach(block => {
+    const steps = Array.isArray(block.steps) ? block.steps : [];
+    if (steps.length === 0) {
+      _scenarioFlow.push({
         phase: block.phase,
         turn: block.turn || 1,
         trigger: block.trigger || undefined,
         occurrence: block.occurrence || undefined,
         parentSlot: block.parentSlot || undefined,
-        steps: Array.isArray(block.steps) ? block.steps.map(s => Object.assign({}, s, {
-          advanceCondition: s.advanceCondition ? Object.assign({}, s.advanceCondition, {
-            params: s.advanceCondition.params ? Object.assign({}, s.advanceCondition.params) : undefined,
-          }) : { type: 'hatch' },
-        })) : [],
-      }))
-    : [];
+        steps: [],
+      });
+      return;
+    }
+    steps.forEach(s => {
+      _scenarioFlow.push({
+        phase: block.phase,
+        turn: block.turn || 1,
+        trigger: block.trigger || undefined,
+        occurrence: block.occurrence || undefined,
+        parentSlot: block.parentSlot || undefined,
+        steps: [cloneStep(s)],
+      });
+    });
+  });
   await _prepareEditForm();
 
   // 値を入れる
@@ -1197,125 +1214,116 @@ window.flowAddStepInSlot = function(slotKey) {
   const timing = 'phase_start';
   const info = _getTargetBlockInfo(slotKey, timing);
   if (!info) return;
-  // 既存の同タイミングブロックのうち、配列内で最後に出てくるブロックに追加する
-  // (occurrence 1 → 2 と作った場合、新ステップは 2 に追加される)
-  let block = null;
-  for (let i = _scenarioFlow.length - 1; i >= 0; i--) {
-    const b = _scenarioFlow[i];
-    if (b.phase === info.phase &&
-        (b.trigger || undefined) === (info.trigger || undefined) &&
-        (b.turn || 1) === _flowEditTurn &&
-        (!info.parentSlot || (b.parentSlot || undefined) === info.parentSlot)) {
-      block = b;
-      break;
-    }
+  // 編集UIは 1ブロック=1ステップ。新規ブロックをスロット内末尾に挿入する。
+  // (スロット内最後のブロックの次に配置することで、同じスロット内で末尾追加の体験)
+  let lastFlatBlock = null;
+  const related = _getRelatedBlocks(slotKey, _flowEditTurn);
+  if (related.length > 0) lastFlatBlock = related[related.length - 1].block;
+  // デフォルト occurrence: スロット末尾ブロックの値を継承 (フェーズブロックは 1、連続性を壊さないため)
+  const defaultOcc = lastFlatBlock && info.phase === lastFlatBlock.phase
+                     && (info.trigger || undefined) === (lastFlatBlock.trigger || undefined)
+    ? (lastFlatBlock.occurrence || 1)
+    : 1;
+  const newBlock = {
+    phase: info.phase,
+    turn: _flowEditTurn,
+    steps: [{
+      stepType: 'action', instructionText: '', advanceCondition: { type: 'hatch' },
+      targetArea: '', secondTargetArea: '', operationType: '',
+    }],
+  };
+  if (info.trigger) newBlock.trigger = info.trigger;
+  if (info.parentSlot) newBlock.parentSlot = info.parentSlot;
+  if (defaultOcc > 1) newBlock.occurrence = defaultOcc;
+  // _scenarioFlow への挿入: 最後の同スロットブロックの直後 (なければ末尾)
+  if (lastFlatBlock) {
+    const idx = _scenarioFlow.indexOf(lastFlatBlock);
+    _scenarioFlow.splice(idx + 1, 0, newBlock);
+  } else {
+    _scenarioFlow.push(newBlock);
   }
-  if (!block) block = _findOrCreateBlock(info.phase, info.trigger, _flowEditTurn, 1, info.parentSlot);
-  block.steps.push({
-    stepType: 'action', instructionText: '', advanceCondition: { type: 'hatch' },
-    targetArea: '', secondTargetArea: '', operationType: '',
-  });
   _renderFlowEditor();
 };
 
-// ステップのタイミング変更（別ブロックへ移動）
+// ステップのタイミング変更（= ブロックの phase/trigger を書き換え）
+// 編集UIでは 1ブロック=1ステップ なので、stepIdx はスロット内のフラットインデックス
 window.flowChangeStepTiming = function(slotKey, currentTiming, stepIdx, newTiming) {
   if (currentTiming === newTiming) return;
-  const fromInfo = _getTargetBlockInfo(slotKey, currentTiming);
-  const toInfo   = _getTargetBlockInfo(slotKey, newTiming);
-  if (!fromInfo || !toInfo) return;
-  const fromBlock = _scenarioFlow.find(b =>
-    b.phase === fromInfo.phase &&
-    (b.trigger || undefined) === (fromInfo.trigger || undefined) &&
-    (b.turn || 1) === _flowEditTurn
-  );
-  if (!fromBlock || !fromBlock.steps[stepIdx]) return;
-  const step = fromBlock.steps.splice(stepIdx, 1)[0];
-  // 空になった古いブロックを削除
-  if (fromBlock.steps.length === 0) {
-    const fIdx = _scenarioFlow.indexOf(fromBlock);
-    if (fIdx >= 0) _scenarioFlow.splice(fIdx, 1);
-  }
-  const toBlock = _findOrCreateBlock(toInfo.phase, toInfo.trigger, _flowEditTurn, 1, toInfo.parentSlot);
-  toBlock.steps.push(step);
+  const toInfo = _getTargetBlockInfo(slotKey, newTiming);
+  if (!toInfo) return;
+  const block = _getBlockByFlatIdx(slotKey, stepIdx);
+  if (!block) return;
+  block.phase = toInfo.phase;
+  if (toInfo.trigger) block.trigger = toInfo.trigger; else delete block.trigger;
+  if (toInfo.parentSlot) block.parentSlot = toInfo.parentSlot; else delete block.parentSlot;
   _renderFlowEditor();
 };
 
-// slotKey + timing + stepIdx + occurrence から step を取得
-function _getStepByTiming(slotKey, timing, stepIdx, occ) {
-  const info = _getTargetBlockInfo(slotKey, timing);
-  if (!info) return null;
-  const occurrence = occ || 1;
-  const block = _scenarioFlow.find(b =>
-    b.phase === info.phase &&
-    (b.trigger || undefined) === (info.trigger || undefined) &&
-    (b.turn || 1) === _flowEditTurn &&
-    (b.occurrence || 1) === occurrence &&
-    (!info.parentSlot || (b.parentSlot || undefined) === info.parentSlot)
-  );
-  if (!block || !block.steps[stepIdx]) return null;
-  return { block, step: block.steps[stepIdx] };
+// スロット内フラットインデックスからブロックを取得
+function _getBlockByFlatIdx(slotKey, flatIdx) {
+  const related = _getRelatedBlocks(slotKey, _flowEditTurn);
+  const entry = related[flatIdx];
+  return entry ? entry.block : null;
 }
 
-// ステップ削除
+// 旧: (slotKey, timing, stepIdx, occ) → { block, step } 取得
+// 新: stepIdx をフラットインデックスとして解釈 (timing/occ は無視)
+function _getStepByTiming(slotKey, timing, stepIdx, occ) {
+  const block = _getBlockByFlatIdx(slotKey, stepIdx);
+  if (!block || !block.steps[0]) return null;
+  return { block, step: block.steps[0] };
+}
+
+// ステップ削除 = ブロック削除
 window.flowRemoveStep = function(slotKey, timing, stepIdx, occ) {
-  const ref = _getStepByTiming(slotKey, timing, stepIdx, occ);
-  if (!ref) return;
-  ref.block.steps.splice(stepIdx, 1);
-  if (ref.block.steps.length === 0 && timing !== 'phase_start') {
-    const idx = _scenarioFlow.indexOf(ref.block);
-    if (idx >= 0) _scenarioFlow.splice(idx, 1);
-  }
+  const block = _getBlockByFlatIdx(slotKey, stepIdx);
+  if (!block) return;
+  const idx = _scenarioFlow.indexOf(block);
+  if (idx >= 0) _scenarioFlow.splice(idx, 1);
   _renderFlowEditor();
 };
 
-// ステップ移動（同一タイミング内）
+// ステップ移動 = スロット内で隣接ブロックと swap
 window.flowMoveStep = function(slotKey, timing, stepIdx, delta, occ) {
-  const ref = _getStepByTiming(slotKey, timing, stepIdx, occ);
-  if (!ref) return;
-  const block = ref.block;
-  if (!block.steps) return;
-  const to = stepIdx + delta;
-  if (to < 0 || to >= block.steps.length) return;
-  [block.steps[stepIdx], block.steps[to]] = [block.steps[to], block.steps[stepIdx]];
+  const related = _getRelatedBlocks(slotKey, _flowEditTurn);
+  const j = stepIdx + delta;
+  if (!related[stepIdx] || !related[j]) return;
+  const a = related[stepIdx].block;
+  const b = related[j].block;
+  const ai = _scenarioFlow.indexOf(a);
+  const bi = _scenarioFlow.indexOf(b);
+  if (ai < 0 || bi < 0) return;
+  _scenarioFlow[ai] = b;
+  _scenarioFlow[bi] = a;
   _renderFlowEditor();
 };
 
-// ステップ単体を別の発生回数ブロックへ移動
+// ステップの occurrence を変更 (ブロックの occurrence を書き換え)
 window.flowChangeStepOccurrence = function(slotKey, timing, stepIdx, currentOcc, newOcc) {
   if (currentOcc === newOcc) return;
-  const info = _getTargetBlockInfo(slotKey, timing);
-  if (!info) return;
-  const fromRef = _getStepByTiming(slotKey, timing, stepIdx, currentOcc);
-  if (!fromRef) return;
-  const step = fromRef.block.steps.splice(stepIdx, 1)[0];
-  // 元ブロックが空になれば削除
-  if (fromRef.block.steps.length === 0) {
-    const fIdx = _scenarioFlow.indexOf(fromRef.block);
-    if (fIdx >= 0) _scenarioFlow.splice(fIdx, 1);
-  }
-  // 移動先ブロック（なければ作成）
-  const toBlock = _findOrCreateBlock(info.phase, info.trigger, _flowEditTurn, newOcc, info.parentSlot);
-  toBlock.steps.push(step);
+  const block = _getBlockByFlatIdx(slotKey, stepIdx);
+  if (!block) return;
+  if (newOcc > 1) block.occurrence = newOcc;
+  else delete block.occurrence;
   _renderFlowEditor();
 };
 
-// トリガーブロックの発生回数を変更
+// グループヘッダーの occurrence 変更 (= そのグループ内の全ブロックの occurrence を一括変更)
 let _occChangeGuard = false;
 window.flowChangeOccurrence = function(slotKey, timing, currentOcc, newOcc) {
   if (_occChangeGuard) return;
   if (currentOcc === newOcc) return;
   const info = _getTargetBlockInfo(slotKey, timing);
   if (!info) return;
-  const block = _scenarioFlow.find(b =>
-    b.phase === info.phase &&
-    (b.trigger || undefined) === (info.trigger || undefined) &&
-    (b.turn || 1) === _flowEditTurn &&
-    (b.occurrence || 1) === currentOcc
-  );
-  if (!block) return;
-  if (newOcc > 1) block.occurrence = newOcc;
-  else delete block.occurrence;
+  _scenarioFlow.forEach(b => {
+    if (b.phase !== info.phase) return;
+    if ((b.trigger || undefined) !== (info.trigger || undefined)) return;
+    if ((b.turn || 1) !== _flowEditTurn) return;
+    if (info.parentSlot && (b.parentSlot || undefined) !== info.parentSlot) return;
+    if ((b.occurrence || 1) !== currentOcc) return;
+    if (newOcc > 1) b.occurrence = newOcc;
+    else delete b.occurrence;
+  });
   _occChangeGuard = true;
   _renderFlowEditor();
   setTimeout(() => { _occChangeGuard = false; }, 100);
@@ -1491,27 +1499,23 @@ function _renderSlotBlock(slot) {
       </div>`;
 
   if (isOn) {
-    // タイミングごとにステップをグループ化して表示
-    const stepsHtml = related.map(r => {
+    // フラット表示: 連続する同じ timing はヘッダーを1つにまとめる
+    // 各ブロックは 1 ステップ (=1 ブロック=1 ステップ)
+    let stepsHtml = '';
+    let flatIdx = 0;
+    let prevTiming = null;
+    related.forEach(r => {
       const tDef = STEP_TIMINGS.find(t => t.value === r.timing);
       const tLabel = tDef ? tDef.label : r.timing;
-      const occ = r.occurrence || 1;
-      const stepsInGroup = (r.block.steps || []).map((step, sIdx) =>
-        _renderFlowStep(slot.key, r.timing, sIdx, step, occ)
-      ).join('');
-      if (!stepsInGroup) return '';
-      // 同タイミングの複数箱 (occurrence 2以上) があるか、phase_start以外、あるいは他タイミングがある場合はヘッダー表示
-      const hasMultiOcc = related.filter(x => x.timing === r.timing).length > 1;
-      const showGroupHeader = related.length > 1 || r.timing !== 'phase_start' || hasMultiOcc;
-      // 発生回数セレクタ (フェーズ/トリガー共通で箱分割を可能に)
-      const occHtml = ` <select style="font-size:9px; background:#111; color:#aaa; border:1px solid #333; border-radius:3px; padding:1px 2px; margin-left:4px;" onclick="event.stopPropagation()" onchange="event.stopPropagation(); flowChangeOccurrence('${slot.key}','${r.timing}',${occ},Number(this.value))">`
-        + [1,2,3,4,5].map(n => `<option value="${n}" ${n === occ ? 'selected' : ''}>${n}回目</option>`).join('')
-        + '</select>';
-      const groupHeader = showGroupHeader
-        ? `<div style="color:${slot.color}; font-size:10px; font-weight:bold; margin:4px 0 4px; padding-left:2px;">${tLabel}${occHtml}</div>`
-        : '';
-      return groupHeader + stepsInGroup;
-    }).join('');
+      if (r.timing !== prevTiming) {
+        stepsHtml += `<div style="color:${slot.color}; font-size:10px; font-weight:bold; margin:8px 0 4px; padding-left:2px;">${tLabel}</div>`;
+        prevTiming = r.timing;
+      }
+      const step = r.block.steps[0];
+      if (!step) return;
+      stepsHtml += _renderFlowStep(slot.key, r.timing, flatIdx, step, 1);
+      flatIdx++;
+    });
 
     html += `
       <div style="padding:10px 12px; border-top:1px solid ${slot.color}33; border-radius:0 0 7px 7px;">
@@ -1575,15 +1579,10 @@ function _renderFlowStep(slotKey, timing, sIdx, step, occ) {
   const showCondOp    = isAction;
   const showUiControl = isAction;
 
-  // ステップ単体で発生回数(= 何番目の箱か)を変更できるセレクタを表示
-  const stepOccHtml = `<select style="font-size:9px; background:#111; color:#aaa; border:1px solid #333; border-radius:3px; padding:1px 2px; margin-left:6px;" onclick="event.stopPropagation()" onchange="event.stopPropagation(); flowChangeStepOccurrence(${sk},${tg},${sIdx},${occVal},Number(this.value))">`
-    + [1,2,3,4,5].map(n => `<option value="${n}" ${n === occVal ? 'selected' : ''}>${n}回目</option>`).join('')
-    + '</select>';
-
   return `
     <div style="background:#0a0a0a; border:1px solid ${borderColor}; border-radius:6px; padding:10px; margin-bottom:6px;" onclick="event.stopPropagation()">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-        <span style="color:#aaa; font-size:10px; font-weight:bold;">STEP ${sIdx + 1}${stepOccHtml}</span>
+        <span style="color:#aaa; font-size:10px; font-weight:bold;">STEP ${sIdx + 1}</span>
         <div>
           <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${tg},${sIdx},-1,${occVal})">↑</button>
           <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${tg},${sIdx},1,${occVal})">↓</button>
@@ -2291,15 +2290,31 @@ window.executeTutorialScenarioSave = async function() {
     actions: (t.actions || []).map(a => Object.assign({}, a)),
   })).filter(t => t.actions.length > 0);
 
-  // フロー検証（空ステップのフェーズは残すが、完全に空なフローもOK）
-  const cleanedFlow = _scenarioFlow.map(block => ({
-    phase: block.phase,
-    turn: block.turn || 1,
-    trigger: block.trigger || undefined,
-    occurrence: block.occurrence || undefined,
-    parentSlot: block.parentSlot || undefined,
-    steps: (block.steps || []).filter(s => s && (s.instructionText || s.advanceCondition)),
-  }));
+  // フロー検証 + 保存用に連続する同一グループのブロックを結合（編集UIは1ステップ1ブロック扱いのため）
+  const cleanedFlow = [];
+  _scenarioFlow.forEach(block => {
+    const validSteps = (block.steps || []).filter(s => s && (s.instructionText || s.advanceCondition));
+    if (validSteps.length === 0 && (block.steps || []).length > 0) return; // 空ステップのみのブロックは除外
+    const prev = cleanedFlow[cleanedFlow.length - 1];
+    const sameGroup = prev
+      && prev.phase === block.phase
+      && (prev.trigger || undefined) === (block.trigger || undefined)
+      && (prev.turn || 1) === (block.turn || 1)
+      && (prev.occurrence || undefined) === (block.occurrence || undefined)
+      && (prev.parentSlot || undefined) === (block.parentSlot || undefined);
+    if (sameGroup) {
+      prev.steps.push(...validSteps);
+    } else {
+      cleanedFlow.push({
+        phase: block.phase,
+        turn: block.turn || 1,
+        trigger: block.trigger || undefined,
+        occurrence: block.occurrence || undefined,
+        parentSlot: block.parentSlot || undefined,
+        steps: validSteps,
+      });
+    }
+  });
 
   // クリア後メッセージ
   const clearMessage = (document.getElementById('ts-clear-message').value || '').trim() || undefined;

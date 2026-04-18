@@ -1253,6 +1253,25 @@ window.flowMoveStep = function(slotKey, timing, stepIdx, delta, occ) {
   _renderFlowEditor();
 };
 
+// ステップ単体を別の発生回数ブロックへ移動
+window.flowChangeStepOccurrence = function(slotKey, timing, stepIdx, currentOcc, newOcc) {
+  if (currentOcc === newOcc) return;
+  const info = _getTargetBlockInfo(slotKey, timing);
+  if (!info || !info.trigger) return; // トリガー系タイミングのみ対応
+  const fromRef = _getStepByTiming(slotKey, timing, stepIdx, currentOcc);
+  if (!fromRef) return;
+  const step = fromRef.block.steps.splice(stepIdx, 1)[0];
+  // 元ブロックが空になれば削除
+  if (fromRef.block.steps.length === 0) {
+    const fIdx = _scenarioFlow.indexOf(fromRef.block);
+    if (fIdx >= 0) _scenarioFlow.splice(fIdx, 1);
+  }
+  // 移動先ブロック（なければ作成）
+  const toBlock = _findOrCreateBlock(info.phase, info.trigger, _flowEditTurn, newOcc, info.parentSlot);
+  toBlock.steps.push(step);
+  _renderFlowEditor();
+};
+
 // トリガーブロックの発生回数を変更
 let _occChangeGuard = false;
 window.flowChangeOccurrence = function(slotKey, timing, currentOcc, newOcc) {
@@ -1525,10 +1544,19 @@ function _renderFlowStep(slotKey, timing, sIdx, step, occ) {
   const showCondOp    = isAction;
   const showUiControl = isAction;
 
+  // トリガー系タイミングならステップ単体で発生回数を変更できるセレクタを表示
+  const _tDef = STEP_TIMINGS.find(t => t.value === timing);
+  const isTriggerStep = !!(_tDef && _tDef.trigger);
+  const stepOccHtml = isTriggerStep
+    ? `<select style="font-size:9px; background:#111; color:#aaa; border:1px solid #333; border-radius:3px; padding:1px 2px; margin-left:6px;" onclick="event.stopPropagation()" onchange="event.stopPropagation(); flowChangeStepOccurrence(${sk},${tg},${sIdx},${occVal},Number(this.value))">`
+      + [1,2,3,4,5].map(n => `<option value="${n}" ${n === occVal ? 'selected' : ''}>${n}回目</option>`).join('')
+      + '</select>'
+    : '';
+
   return `
     <div style="background:#0a0a0a; border:1px solid ${borderColor}; border-radius:6px; padding:10px; margin-bottom:6px;" onclick="event.stopPropagation()">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-        <span style="color:#aaa; font-size:10px; font-weight:bold;">STEP ${sIdx + 1}</span>
+        <span style="color:#aaa; font-size:10px; font-weight:bold;">STEP ${sIdx + 1}${stepOccHtml}</span>
         <div>
           <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${tg},${sIdx},-1,${occVal})">↑</button>
           <button class="admin-btn-sm" style="padding:2px 6px; font-size:9px;" onclick="flowMoveStep(${sk},${tg},${sIdx},1,${occVal})">↓</button>

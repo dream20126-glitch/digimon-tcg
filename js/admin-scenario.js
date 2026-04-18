@@ -52,7 +52,7 @@ const CONDITION_TYPES = [
 
 // CONDITION_TYPES からアコーディオン式のピッカー HTML を組み立てる
 function _renderConditionPicker(slotKey, timing, sIdx, currentValue, occ) {
-  const uid = `cp_cond_${slotKey}_${timing}_${sIdx}`;
+  const uid = `cp_cond_${slotKey}_${timing}_${sIdx}_${occ || 1}`;
   const cur = CONDITION_TYPES.find(t => t.value === (currentValue || '')) || { label: '（未設定）' };
   const sk = `'${slotKey}'`;
   const tg = `'${timing}'`;
@@ -254,7 +254,13 @@ const TARGET_AREAS = [
   { value: 'card_detail_stats',      label: 'Lv/DP/登場コスト',            group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_evo_cost',   label: '進化コスト',                  group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_effect',     label: '効果欄',                      group: '🔍 カード詳細モーダル' },
-  { value: 'card_detail_evo_source', label: '進化元効果',                  group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_evo_source', label: '進化元効果（上カード＋スタック全体）', group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_evo_source_stack',   label: '進化元カードの進化元効果（全体）', group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_evo_source_stack_0', label: '└ 1枚目（一番下）',          group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_evo_source_stack_1', label: '└ 2枚目',                    group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_evo_source_stack_2', label: '└ 3枚目',                    group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_evo_source_stack_3', label: '└ 4枚目',                    group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_evo_source_stack_4', label: '└ 5枚目',                    group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_sec_effect', label: 'セキュリティ効果',            group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_close',      label: '閉じるボタン',                group: '🔍 カード詳細モーダル' },
   // --- 効果確認ダイアログ ---
@@ -285,7 +291,7 @@ const TARGET_AREAS = [
 //   slotKey/timing/sIdx/field : flowUpdateStep に渡す引数
 //   currentValue : 現在選択中の value
 function _renderAreaPicker(slotKey, timing, sIdx, field, currentValue, occ) {
-  const uid = `ap_${slotKey}_${timing}_${sIdx}_${field}`;
+  const uid = `ap_${slotKey}_${timing}_${sIdx}_${field}_${occ || 1}`;
   const cur = TARGET_AREAS.find(a => a.value === (currentValue || '')) || TARGET_AREAS[0];
   // HTML属性内の onclick で渡すため、シングルクォートでラップした文字列を組む
   const sk = `'${slotKey}'`;
@@ -1092,7 +1098,13 @@ const CARD_DETAIL_AREAS = [
   { value: 'stats',      label: 'Lv/DP/登場コスト',    area: 'card_detail_stats' },
   { value: 'evo_cost',   label: '進化コスト',          area: 'card_detail_evo_cost' },
   { value: 'effect',     label: '効果欄',              area: 'card_detail_effect' },
-  { value: 'evo_source', label: '進化元効果',          area: 'card_detail_evo_source' },
+  { value: 'evo_source',         label: '進化元効果（全体）',             area: 'card_detail_evo_source' },
+  { value: 'evo_source_stack',   label: '進化元カードの進化元（全体）',   area: 'card_detail_evo_source_stack' },
+  { value: 'evo_source_stack_0', label: '└ 1枚目',                         area: 'card_detail_evo_source_stack_0' },
+  { value: 'evo_source_stack_1', label: '└ 2枚目',                         area: 'card_detail_evo_source_stack_1' },
+  { value: 'evo_source_stack_2', label: '└ 3枚目',                         area: 'card_detail_evo_source_stack_2' },
+  { value: 'evo_source_stack_3', label: '└ 4枚目',                         area: 'card_detail_evo_source_stack_3' },
+  { value: 'evo_source_stack_4', label: '└ 5枚目',                         area: 'card_detail_evo_source_stack_4' },
   { value: 'sec_effect', label: 'セキュリティ効果',    area: 'card_detail_sec_effect' },
   { value: 'close',      label: '閉じるボタン',        area: 'card_detail_close' },
 ];
@@ -1644,7 +1656,7 @@ function _renderConditionSubSettings(slotKey, timing, sIdx, step, cond, occVal) 
 function _renderCardPicker(slotKey, timing, sIdx, field, currentCardNo, occVal) {
   const sk = `'${slotKey}'`;
   const tg = `'${timing}'`;
-  const uid = `cp_${slotKey}_${timing}_${sIdx}_${field}`;
+  const uid = `cp_${slotKey}_${timing}_${sIdx}_${field}_${occVal || 1}`;
   if (currentCardNo) {
     const name = _findCardName(currentCardNo);
     return `

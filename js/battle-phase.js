@@ -270,11 +270,14 @@ export function showDrawEffect(card, isLv6Plus, callback, options) {
   } else {
     // ===== 通常ドロー =====
     overlay.style.background = 'rgba(0,0,0,0.85)';
+    console.log('[drawFx] normal start, src=', src, 'deferDismiss=', !!(options && options.deferDismiss));
     setTimeout(() => { imgEl.style.opacity = '1'; imgEl.style.transform = 'translateY(0)'; labelEl.style.opacity = '1';
       setTimeout(() => { nameEl.style.opacity = '1'; }, 200);
     }, 100);
     setTimeout(async () => {
+      console.log('[drawFx] 1300ms timer fired');
       await _maybeWaitTutorialDrawInterrupt();
+      console.log('[drawFx] drawInterrupt awaited, calling callback');
       const dismiss = () => {
         overlay.style.display = 'none'; overlay.style.background = '';
       };

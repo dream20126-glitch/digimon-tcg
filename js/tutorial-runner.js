@@ -178,6 +178,12 @@ class TutorialRunner {
     this._phaseBlockResolve = null; // notifyPhaseChange 待ち Promise の resolver
     this._triggerCounts = {};       // トリガー発生回数カウンター（ターンごとにリセット）
     this._lastCountTurn = 0;       // カウンターの最終リセットターン
+
+    // ステップ表示待機 (フェーズアナウンスやトリガーが発火するまで待つ)
+    this._currentPhase = null;        // 直近 notifyPhaseChange で受けたフェーズ
+    this._pendingStep = null;         // 表示待ちのステップ
+    this._pendingWaitKind = null;     // 'phase' | 'trigger' | null
+    this._pendingWaitValue = null;    // 待機対象の phase 名 or trigger 名
   }
 
   // ---------------------------------------------------------------
@@ -251,8 +257,25 @@ class TutorialRunner {
   // ---------------------------------------------------------------
   async notifyPhaseChange(phaseKey) {
     if (!this.active || this.cleared) return;
+    this._currentPhase = phaseKey;
     // イベントとして発火 (既存の条件と互換)
     try { this.notifyEvent('phase_change', { phase: phaseKey }); } catch (_) {}
+    // 該当フェーズ待ちの保留ステップを表示
+    if (this._pendingWaitKind === 'phase' && this._pendingWaitValue === phaseKey && this._pendingStep) {
+      this._pendingStep = null;
+      this._pendingWaitKind = null;
+      this._pendingWaitValue = null;
+      this._showCurrentStep();
+    }
+    // 現在のブロックがこのフェーズに属し、message/spotlight ステップ中なら
+    // ユーザーが読み終わる (次へ を押して action に到達する) まで execPhase を待たせる
+    if (this._currentBlock && this._currentBlock.phase === phaseKey) {
+      const step = this._currentBlock.steps && this._currentBlock.steps[this._currentStepIdx];
+      const sType = step && (step.stepType || 'action');
+      if (sType === 'message' || sType === 'spotlight') {
+        return new Promise(resolve => { this._phaseBlockResolve = resolve; });
+      }
+    }
     return;
   }
 
@@ -273,10 +296,17 @@ class TutorialRunner {
   // 該当する割り込みブロックがあればステップを全て実行してから resolve する
   // ---------------------------------------------------------------
   async checkInterrupt(triggerKey) {
-    // 順次実行モデルでは割り込み機構を廃止。trigger はイベントとして発火させ、
-    // 現在ステップの advanceCondition で拾う形に統一する。
     if (!this.active || this.cleared) return;
     try { this.notifyEvent(triggerKey, {}); } catch (_) {}
+    // 直近の発火を記録 (後からこのトリガーを待つブロックが活性化したときに即表示するため)
+    this._lastFiredTrigger = { key: triggerKey, time: Date.now() };
+    // 現在このトリガーを待っているペンディングステップがあれば表示
+    if (this._pendingWaitKind === 'trigger' && this._pendingWaitValue === triggerKey && this._pendingStep) {
+      this._pendingStep = null;
+      this._pendingWaitKind = null;
+      this._pendingWaitValue = null;
+      this._showCurrentStep();
+    }
     return;
   }
 
@@ -380,6 +410,40 @@ class TutorialRunner {
     if (!this._currentBlock) { this.hideInstruction(); return; }
     const step = this._currentBlock.steps[this._currentStepIdx];
     if (!step) { this._completeCurrentBlock(); return; }
+
+    // ブロックの phase/trigger に応じて表示タイミングを制御
+    // フェーズブロック (phase='mulligan'/'unsuspend' 等): そのフェーズの notifyPhaseChange が来るまで待つ
+    // トリガーブロック (phase='_trigger'): その trigger 名の checkInterrupt が呼ばれるまで待つ
+    //   (直前 2 秒以内に同じトリガーが発火済みなら即表示)
+    const block = this._currentBlock;
+    const NOW = Date.now();
+    if (block.phase === '_trigger' && block.trigger) {
+      const justFired = this._lastFiredTrigger
+        && this._lastFiredTrigger.key === block.trigger
+        && (NOW - this._lastFiredTrigger.time) < 2000;
+      if (justFired) {
+        this._lastFiredTrigger = null;
+      } else {
+        this._pendingStep = step;
+        this._pendingWaitKind = 'trigger';
+        this._pendingWaitValue = block.trigger;
+        this.hideInstruction();
+        return;
+      }
+    } else if (block.phase && block.phase !== '_trigger') {
+      if (this._currentPhase !== block.phase) {
+        this._pendingStep = step;
+        this._pendingWaitKind = 'phase';
+        this._pendingWaitValue = block.phase;
+        this.hideInstruction();
+        return;
+      }
+    }
+
+    // 表示可能 → ペンディングクリア
+    this._pendingStep = null;
+    this._pendingWaitKind = null;
+    this._pendingWaitValue = null;
 
     const sType = step.stepType || 'action';
 

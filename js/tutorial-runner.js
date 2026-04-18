@@ -500,6 +500,7 @@ class TutorialRunner {
   }
 
   _completeCurrentBlock() {
+    const completedBlock = this._currentBlock;
     if (this._currentBlock && typeof this._currentBlock._flowIdx === 'number') {
       this._completedBlocks.add(this._currentBlock._flowIdx);
     }
@@ -514,6 +515,17 @@ class TutorialRunner {
       resolve();
       // 割り込み前にブロックが動いていたならレジューム
       this._resumePausedBlock();
+    } else if (completedBlock && completedBlock.phase && completedBlock.phase !== '_trigger') {
+      // フェーズブロックが完了 → 同じ phase+turn で未完了の次のブロック (occurrence 2+) があれば続行
+      const nextIdx = this._flow.findIndex((b, i) =>
+        b.phase === completedBlock.phase &&
+        (b.turn || 1) === (completedBlock.turn || 1) &&
+        !this._completedBlocks.has(i)
+      );
+      if (nextIdx >= 0) {
+        this._activateBlock(nextIdx);
+        return; // _showCurrentStep が _maybeReleasePhaseBlock を呼ぶ
+      }
     }
     // フェーズブロックが全ステップ終えた場合もPromiseを解放
     this._maybeReleasePhaseBlock();

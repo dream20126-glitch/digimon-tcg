@@ -1197,7 +1197,20 @@ window.flowAddStepInSlot = function(slotKey) {
   const timing = 'phase_start';
   const info = _getTargetBlockInfo(slotKey, timing);
   if (!info) return;
-  const block = _findOrCreateBlock(info.phase, info.trigger, _flowEditTurn, 1, info.parentSlot);
+  // 既存の同タイミングブロックのうち、配列内で最後に出てくるブロックに追加する
+  // (occurrence 1 → 2 と作った場合、新ステップは 2 に追加される)
+  let block = null;
+  for (let i = _scenarioFlow.length - 1; i >= 0; i--) {
+    const b = _scenarioFlow[i];
+    if (b.phase === info.phase &&
+        (b.trigger || undefined) === (info.trigger || undefined) &&
+        (b.turn || 1) === _flowEditTurn &&
+        (!info.parentSlot || (b.parentSlot || undefined) === info.parentSlot)) {
+      block = b;
+      break;
+    }
+  }
+  if (!block) block = _findOrCreateBlock(info.phase, info.trigger, _flowEditTurn, 1, info.parentSlot);
   block.steps.push({
     stepType: 'action', instructionText: '', advanceCondition: { type: 'hatch' },
     targetArea: '', secondTargetArea: '', operationType: '',
@@ -1272,7 +1285,7 @@ window.flowMoveStep = function(slotKey, timing, stepIdx, delta, occ) {
 window.flowChangeStepOccurrence = function(slotKey, timing, stepIdx, currentOcc, newOcc) {
   if (currentOcc === newOcc) return;
   const info = _getTargetBlockInfo(slotKey, timing);
-  if (!info || !info.trigger) return; // トリガー系タイミングのみ対応
+  if (!info) return;
   const fromRef = _getStepByTiming(slotKey, timing, stepIdx, currentOcc);
   if (!fromRef) return;
   const step = fromRef.block.steps.splice(stepIdx, 1)[0];
@@ -1404,28 +1417,32 @@ function _findOrCreateBlock(phase, trigger, turn, occurrence, parentSlot) {
   return b;
 }
 
-// 指定スロット(大項目)に関連する全ブロックを取得（phase block + 紐づく trigger block）
+// 指定スロット(大項目)に関連する全ブロックを取得
+// phase block (occurrence 1,2,...複数対応) + 紐づく trigger block 全て
+// 返却順は _scenarioFlow の出現順をそのまま使う (↑↓ による並び替え反映用)
 function _getRelatedBlocks(slotKey, turn) {
   const slot = ALL_FLOW_SLOTS.find(s => s.key === slotKey);
   if (!slot) return [];
-  const blocks = [];
-  // Primary block (phase or trigger itself)
-  const primary = _scenarioFlow.find(b =>
-    b.phase === slot.phase &&
-    (b.trigger || undefined) === (slot.trigger || undefined) &&
-    (b.turn || 1) === turn
+  const availableTriggers = new Set(
+    STEP_TIMINGS.filter(t => t.trigger && t.availableIn.includes(slotKey)).map(t => t.trigger)
   );
-  if (primary) blocks.push({ block: primary, timing: 'phase_start' });
-  // Related trigger blocks for this slot (occurrence 違いも含め全て取得)
-  STEP_TIMINGS.forEach(t => {
-    if (!t.trigger) return;
-    if (!t.availableIn.includes(slotKey)) return;
-    _scenarioFlow.forEach(b => {
-      if (b.phase === '_trigger' && b.trigger === t.trigger && (b.turn || 1) === turn &&
-          (!b.parentSlot || b.parentSlot === slotKey)) {
-        blocks.push({ block: b, timing: t.value, occurrence: b.occurrence || 1 });
-      }
-    });
+  const triggerToTiming = {};
+  STEP_TIMINGS.forEach(t => { if (t.trigger) triggerToTiming[t.trigger] = t.value; });
+
+  const blocks = [];
+  _scenarioFlow.forEach(b => {
+    if ((b.turn || 1) !== turn) return;
+    // フェーズブロック
+    if (b.phase === slot.phase && (b.trigger || undefined) === (slot.trigger || undefined)) {
+      blocks.push({ block: b, timing: 'phase_start', occurrence: b.occurrence || 1 });
+      return;
+    }
+    // 紐づくトリガーブロック
+    if (b.phase === '_trigger' && b.trigger && availableTriggers.has(b.trigger)
+        && (!b.parentSlot || b.parentSlot === slotKey)) {
+      const t = triggerToTiming[b.trigger];
+      if (t) blocks.push({ block: b, timing: t, occurrence: b.occurrence || 1 });
+    }
   });
   return blocks;
 }
@@ -1483,14 +1500,13 @@ function _renderSlotBlock(slot) {
         _renderFlowStep(slot.key, r.timing, sIdx, step, occ)
       ).join('');
       if (!stepsInGroup) return '';
-      const showGroupHeader = related.length > 1 || r.timing !== 'phase_start';
-      // トリガーブロックには発生回数セレクタを表示
-      const isTrigger = r.block.phase === '_trigger';
-      const occHtml = isTrigger
-        ? ` <select style="font-size:9px; background:#111; color:#aaa; border:1px solid #333; border-radius:3px; padding:1px 2px; margin-left:4px;" onclick="event.stopPropagation()" onchange="event.stopPropagation(); flowChangeOccurrence('${slot.key}','${r.timing}',${occ},Number(this.value))">`
-          + [1,2,3,4,5].map(n => `<option value="${n}" ${n === occ ? 'selected' : ''}>${n}回目</option>`).join('')
-          + '</select>'
-        : '';
+      // 同タイミングの複数箱 (occurrence 2以上) があるか、phase_start以外、あるいは他タイミングがある場合はヘッダー表示
+      const hasMultiOcc = related.filter(x => x.timing === r.timing).length > 1;
+      const showGroupHeader = related.length > 1 || r.timing !== 'phase_start' || hasMultiOcc;
+      // 発生回数セレクタ (フェーズ/トリガー共通で箱分割を可能に)
+      const occHtml = ` <select style="font-size:9px; background:#111; color:#aaa; border:1px solid #333; border-radius:3px; padding:1px 2px; margin-left:4px;" onclick="event.stopPropagation()" onchange="event.stopPropagation(); flowChangeOccurrence('${slot.key}','${r.timing}',${occ},Number(this.value))">`
+        + [1,2,3,4,5].map(n => `<option value="${n}" ${n === occ ? 'selected' : ''}>${n}回目</option>`).join('')
+        + '</select>';
       const groupHeader = showGroupHeader
         ? `<div style="color:${slot.color}; font-size:10px; font-weight:bold; margin:4px 0 4px; padding-left:2px;">${tLabel}${occHtml}</div>`
         : '';
@@ -1559,14 +1575,10 @@ function _renderFlowStep(slotKey, timing, sIdx, step, occ) {
   const showCondOp    = isAction;
   const showUiControl = isAction;
 
-  // トリガー系タイミングならステップ単体で発生回数を変更できるセレクタを表示
-  const _tDef = STEP_TIMINGS.find(t => t.value === timing);
-  const isTriggerStep = !!(_tDef && _tDef.trigger);
-  const stepOccHtml = isTriggerStep
-    ? `<select style="font-size:9px; background:#111; color:#aaa; border:1px solid #333; border-radius:3px; padding:1px 2px; margin-left:6px;" onclick="event.stopPropagation()" onchange="event.stopPropagation(); flowChangeStepOccurrence(${sk},${tg},${sIdx},${occVal},Number(this.value))">`
-      + [1,2,3,4,5].map(n => `<option value="${n}" ${n === occVal ? 'selected' : ''}>${n}回目</option>`).join('')
-      + '</select>'
-    : '';
+  // ステップ単体で発生回数(= 何番目の箱か)を変更できるセレクタを表示
+  const stepOccHtml = `<select style="font-size:9px; background:#111; color:#aaa; border:1px solid #333; border-radius:3px; padding:1px 2px; margin-left:6px;" onclick="event.stopPropagation()" onchange="event.stopPropagation(); flowChangeStepOccurrence(${sk},${tg},${sIdx},${occVal},Number(this.value))">`
+    + [1,2,3,4,5].map(n => `<option value="${n}" ${n === occVal ? 'selected' : ''}>${n}回目</option>`).join('')
+    + '</select>';
 
   return `
     <div style="background:#0a0a0a; border:1px solid ${borderColor}; border-radius:6px; padding:10px; margin-bottom:6px;" onclick="event.stopPropagation()">

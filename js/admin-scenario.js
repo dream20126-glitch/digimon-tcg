@@ -1079,8 +1079,8 @@ const ALL_FLOW_SLOTS = [
 // 各タイミング → 内部のトリガーブロックキー（または親フェーズそのまま）
 // availableIn: このタイミングを表示できる大項目キー（複数）
 const STEP_TIMINGS = [
-  // フェーズ開始時（全フェーズで使える）
-  { value: 'phase_start',       label: '⏱ フェーズ開始時（即時）',        trigger: null,
+  // バトルフィールド画面（通常時、何の効果も発動していない状態）
+  { value: 'phase_start',       label: '🎴 バトルフィールド画面（通常時）', trigger: null,
     availableIn: ['mulligan','trg_turn_start_self','unsuspend','draw','breed','main','trg_before_end_turn','trg_before_opponent_turn','opp_breed','opp_main','trg_turn_end_opp'] },
   // 育成
   { value: 'after_hatch',       label: '🥚 孵化完了直後',                 trigger: 'after_hatch',
@@ -1102,11 +1102,11 @@ const STEP_TIMINGS = [
     availableIn: ['opp_main'] },
   { value: 'block_confirm',     label: '🛡 ブロック確認画面',              trigger: 'block_confirm',
     availableIn: ['opp_main'] },
-  { value: 'effect_confirm',    label: '⚡ 効果確認ダイアログ',            trigger: 'effect_confirm',
+  { value: 'effect_confirm',    label: '⚡ 効果発動の確認ダイアログ（効果を使う？ はい/いいえ）', trigger: 'effect_confirm',
     availableIn: ['main','opp_main'] },
   { value: 'target_selection',  label: '🎯 対象選択画面の前',              trigger: 'target_selection',
     availableIn: ['main','opp_main'] },
-  { value: 'target_confirm',    label: '🎯 対象確認ダイアログ（はい/いいえ）', trigger: 'target_confirm',
+  { value: 'target_confirm',    label: '🎯 対象カードの確認ダイアログ（このカード？ はい/いいえ）', trigger: 'target_confirm',
     availableIn: ['main','opp_main'] },
   { value: 'after_attack',      label: '⚔ アタック解決後',                trigger: 'after_attack',
     availableIn: ['main'] },

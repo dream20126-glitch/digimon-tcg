@@ -80,6 +80,7 @@ export const CONDITION_EVALUATORS = {
   block:           (params, ev) => ev.type === 'block',
 
   // 効果
+  effect_target_selected: (params, ev) => ev.type === 'effect_target_selected',
   use_effect:        (params, ev) => ev.type === 'use_effect',
   effect_triggered:  (params, ev) => ev.type === 'effect_triggered',
   security_effect:   (params, ev) => ev.type === 'security_effect',

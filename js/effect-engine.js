@@ -1582,9 +1582,31 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
       const bs = window._lastBattleState;
       const area = targetSide === 'ai' ? (bs ? bs.ai.battleArea : []) : (bs ? bs.player.battleArea : []);
       const card = area[selectedIdx];
+      // チュートリアル通知: 対象選択タップ完了（確認ダイアログ表示前）
+      if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
+        try {
+          window._tutorialRunner.notifyEvent('effect_target_selected', {
+            cardNo: card && card.cardNo,
+            cardName: card && card.name,
+            targetSide,
+            side: 'player',
+          });
+        } catch (_) {}
+      }
       // 確認ダイアログ表示
       showTargetConfirm(card, selectedIdx, color, (confirmed) => {
         if (confirmed) {
+          // チュートリアル通知: 効果を使った（「はい」押下直後）
+          if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
+            try {
+              window._tutorialRunner.notifyEvent('use_effect', {
+                cardNo: card && card.cardNo,
+                cardName: card && card.name,
+                targetSide,
+                side: 'player',
+              });
+            } catch (_) {}
+          }
           cleanup();
           callback(selectedIdx);
         }

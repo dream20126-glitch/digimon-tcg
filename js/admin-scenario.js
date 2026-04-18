@@ -37,7 +37,8 @@ const CONDITION_TYPES = [
   { value: 'security_check_n',   label: '相手セキュリティをN枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ',
     params: [{ key: 'count', label: '枚数', type: 'number', min: 1, max: 5, default: 1, suffix: '枚' }] },
   // 効果
-  { value: 'use_effect',         label: '効果を使った（任意）',                       needsCardNo: false, group: '✨ 効果' },
+  { value: 'effect_target_selected', label: '対象選択後（確認画面表示前）',           needsCardNo: false, group: '✨ 効果' },
+  { value: 'use_effect',         label: '効果を使った（対象確認「はい」押下後）',     needsCardNo: false, group: '✨ 効果' },
   { value: 'effect_triggered',   label: '効果を誘発させた',                           needsCardNo: false, group: '✨ 効果' },
   { value: 'security_effect',    label: 'セキュリティ効果を発動させた',               needsCardNo: false, group: '✨ 効果' },
   // UI操作（クリア条件には出さない）

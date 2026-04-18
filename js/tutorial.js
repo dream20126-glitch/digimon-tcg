@@ -303,6 +303,7 @@ function _clearConditionToJapanese(cond) {
     destroy_opponent: '相手デジモンを消滅させよう',
     security_reduced: '相手のセキュリティを削ろう',
     security_zero: '相手セキュリティを0枚にしよう',
+    effect_target_selected: '効果の対象を選ぼう',
     use_effect: '効果を発動しよう',
     effect_triggered: '効果を誘発させよう',
     security_effect: 'セキュリティ効果を発動しよう',

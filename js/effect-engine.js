@@ -1717,9 +1717,13 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
   }; // end _showUI
 
   // チュートリアル: 対象選択画面の前に割り込み
+  // 先に対象選択UIを起動してから割り込みを走らせる。
+  // そうしないと、チュートリアルステップが effect_target_selected で進む設定の時、
+  // そのイベントを発火する _showUI がまだ走っていないため永遠にステップが進まない。
   const runner = window._tutorialRunner;
   if (runner && runner.active && typeof runner.checkInterrupt === 'function') {
-    runner.checkInterrupt('target_selection').then(_showUI);
+    _showUI();
+    runner.checkInterrupt('target_selection');
   } else {
     _showUI();
   }

@@ -1667,6 +1667,12 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
       if (e.target === overlay) e.stopPropagation();
     });
 
+    // チュートリアル: 対象確認ダイアログ表示中の割り込み
+    if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active
+        && typeof window._tutorialRunner.checkInterrupt === 'function') {
+      try { window._tutorialRunner.checkInterrupt('target_confirm'); } catch (_) {}
+    }
+
     function cleanupConfirm() {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     }

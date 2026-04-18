@@ -353,7 +353,7 @@
 </div>
 
 <!-- ===== チュートリアル 指差しマーカー + 吹き出し ===== -->
-<div id="tutorial-pointer-overlay" style="display:none; position:fixed; z-index:56000; pointer-events:none;">
+<div id="tutorial-pointer-overlay" style="display:none; position:fixed; z-index:70000; pointer-events:none;">
   <div id="tutorial-pointer-wrap" style="display:flex; flex-direction:column; align-items:center;">
     <!-- 上から指すとき: 吹き出し → 👇 -->
     <div id="tutorial-pointer-bubble" class="tutorial-bubble">
@@ -473,7 +473,7 @@
 </style>
 
 <!-- ===== チュートリアル 成功演出 ===== -->
-<div id="tutorial-success-overlay" style="display:none; position:fixed; inset:0; z-index:56000; pointer-events:none; align-items:center; justify-content:center; background:rgba(0,0,0,0); overflow:hidden;">
+<div id="tutorial-success-overlay" style="display:none; position:fixed; inset:0; z-index:70000; pointer-events:none; align-items:center; justify-content:center; background:rgba(0,0,0,0); overflow:hidden;">
   <!-- 集中線（ランクで色変化） -->
   <div id="tutorial-success-converge" style="position:absolute; inset:0; pointer-events:none;"></div>
   <!-- 中央光フラッシュ -->
@@ -490,7 +490,7 @@
 </div>
 
 <!-- ===== チュートリアル指示テキストオーバーレイ（メモリーゲージ付近・コンパクト） ===== -->
-<div id="tutorial-instruction-overlay" style="display:none; position:fixed; top:4px; left:50%; transform:translateX(-50%); z-index:55000; width:auto; max-width:calc(100% - 24px); pointer-events:none;">
+<div id="tutorial-instruction-overlay" style="display:none; position:fixed; top:4px; left:50%; transform:translateX(-50%); z-index:70000; width:auto; max-width:calc(100% - 24px); pointer-events:none;">
   <div style="background:rgba(0,10,20,0.88); border:1px solid var(--main-cyan); border-radius:20px; padding:4px 14px; box-shadow:0 0 12px rgba(0,251,255,0.25); backdrop-filter:blur(4px); white-space:nowrap;">
     <div id="tutorial-instruction-text" style="color:#fff; font-size:11px; font-weight:bold; line-height:1.4;"></div>
   </div>

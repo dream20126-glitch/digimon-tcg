@@ -1079,6 +1079,8 @@ const STEP_TIMINGS = [
     availableIn: ['main','opp_main'] },
   { value: 'target_selection',  label: '🎯 対象選択画面の前',              trigger: 'target_selection',
     availableIn: ['main','opp_main'] },
+  { value: 'target_confirm',    label: '🎯 対象確認ダイアログ（はい/いいえ）', trigger: 'target_confirm',
+    availableIn: ['main','opp_main'] },
   { value: 'after_attack',      label: '⚔ アタック解決後',                trigger: 'after_attack',
     availableIn: ['main'] },
   { value: 'after_use_effect',  label: '✨ 効果使用完了後',                 trigger: 'after_use_effect',

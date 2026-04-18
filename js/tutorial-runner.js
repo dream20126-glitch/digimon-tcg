@@ -567,6 +567,10 @@ class TutorialRunner {
       return;
     }
 
+    // フェーズの promise 解放 (block 完了後は必ず解放)
+    // 次のブロック活性化前に解放することでバトル側の execPhase → 次フェーズ進行がブロックされない
+    this._maybeReleasePhaseBlock();
+
     // 順次実行モデル: _flow の次の未完了ブロックを自動活性化
     // (phase/trigger を問わず、配列順にチェーン)
     const nextIdx = this._flow.findIndex((b, i) => !this._completedBlocks.has(i));
@@ -574,9 +578,6 @@ class TutorialRunner {
       this._activateBlock(nextIdx);
       return;
     }
-
-    // 全ブロック完了
-    this._maybeReleasePhaseBlock();
   }
 
   // 割り込み前のブロック状態を復元して次ステップ表示

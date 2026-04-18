@@ -815,8 +815,18 @@ window.editTutorialScenario = async function(scenario) {
       params: s.advanceCondition.params ? Object.assign({}, s.advanceCondition.params) : undefined,
     }) : { type: 'hatch' },
   });
+  // 古いデータのマイグレーション: parentSlot が未設定のトリガーブロックは、
+  // 複数スロットで共有される形になってしまうため、availableIn の先頭スロットに割り当てる
+  const _inferParentSlot = (block) => {
+    if (block.parentSlot) return block.parentSlot;
+    if (block.phase !== '_trigger' || !block.trigger) return undefined;
+    const timingDef = STEP_TIMINGS.find(t => t.trigger === block.trigger);
+    if (!timingDef || !Array.isArray(timingDef.availableIn) || timingDef.availableIn.length === 0) return undefined;
+    return timingDef.availableIn[0];
+  };
   _scenarioFlow = [];
   (Array.isArray(scenario.flow) ? scenario.flow : []).forEach(block => {
+    const inferredParentSlot = _inferParentSlot(block);
     const steps = Array.isArray(block.steps) ? block.steps : [];
     if (steps.length === 0) {
       _scenarioFlow.push({
@@ -824,7 +834,7 @@ window.editTutorialScenario = async function(scenario) {
         turn: block.turn || 1,
         trigger: block.trigger || undefined,
         occurrence: block.occurrence || undefined,
-        parentSlot: block.parentSlot || undefined,
+        parentSlot: inferredParentSlot,
         steps: [],
       });
       return;
@@ -835,7 +845,7 @@ window.editTutorialScenario = async function(scenario) {
         turn: block.turn || 1,
         trigger: block.trigger || undefined,
         occurrence: block.occurrence || undefined,
-        parentSlot: block.parentSlot || undefined,
+        parentSlot: inferredParentSlot,
         steps: [cloneStep(s)],
       });
     });

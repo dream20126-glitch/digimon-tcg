@@ -308,11 +308,20 @@ class TutorialRunner {
       this._pendingWaitKind = null;
       this._pendingWaitValue = null;
       this._showCurrentStep();
-      // message/spotlight ポップアップが表示された場合は dismiss されるまで await
-      // (呼び出し側は await で受けており、ドロー演出 dismiss 等を遅らせる効果がある)
+    }
+    // 同一トリガーのステップが連続している間は全ポップアップの dismiss を待つ
+    // (step 8 → step 9 と連続するスポットライト説明を最後まで見せてから VS画面クローズ/消滅演出へ)
+    let guard = 0;
+    while (this.active && !this.cleared && this._currentBlock
+           && this._currentBlock.phase === '_trigger'
+           && this._currentBlock.trigger === triggerKey
+           && guard++ < 30) {
       if (this._currentStepPopupPromise) {
         const p = this._currentStepPopupPromise;
         try { await p; } catch (_) {}
+      } else {
+        // ポップアップ無し (action ステップ等) → これ以上待たない
+        break;
       }
     }
     return;

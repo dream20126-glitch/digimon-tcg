@@ -184,6 +184,8 @@ class TutorialRunner {
     this._pendingStep = null;         // 表示待ちのステップ
     this._pendingWaitKind = null;     // 'phase' | 'trigger' | null
     this._pendingWaitValue = null;    // 待機対象の phase 名 or trigger 名
+    this._lastShownTriggerCtx = null; // 直前に表示したトリガーブロックのコンテキスト
+                                       //   (同じトリガー連続ステップの場合に即時表示するため)
   }
 
   // ---------------------------------------------------------------
@@ -420,14 +422,21 @@ class TutorialRunner {
     // ブロックの phase/trigger に応じて表示タイミングを制御
     // フェーズブロック (phase='mulligan'/'unsuspend' 等): そのフェーズの notifyPhaseChange が来るまで待つ
     // トリガーブロック (phase='_trigger'): その trigger 名の checkInterrupt が呼ばれるまで待つ
-    //   (直前 2 秒以内に同じトリガーが発火済みなら即表示)
+    //   (直前 2 秒以内に同じトリガーが発火済み、または連続する同一トリガーステップなら即表示)
     const block = this._currentBlock;
     const NOW = Date.now();
     if (block.phase === '_trigger' && block.trigger) {
+      // 連続する同じトリガーステップ (VS画面で複数ステップ見せるケース等) なら待機せず即時表示
+      const lastCtx = this._lastShownTriggerCtx;
+      const sameContext = lastCtx
+        && lastCtx.trigger === block.trigger
+        && (lastCtx.parentSlot || null) === (block.parentSlot || null);
       const justFired = this._lastFiredTrigger
         && this._lastFiredTrigger.key === block.trigger
         && (NOW - this._lastFiredTrigger.time) < 2000;
-      if (justFired) {
+      if (sameContext) {
+        // 前のブロックと同じトリガーコンテキスト → そのまま表示
+      } else if (justFired) {
         this._lastFiredTrigger = null;
       } else {
         this._pendingStep = step;
@@ -446,10 +455,16 @@ class TutorialRunner {
       }
     }
 
-    // 表示可能 → ペンディングクリア
+    // 表示可能 → ペンディングクリア + 表示コンテキストを記録
     this._pendingStep = null;
     this._pendingWaitKind = null;
     this._pendingWaitValue = null;
+    if (block.phase === '_trigger' && block.trigger) {
+      this._lastShownTriggerCtx = { trigger: block.trigger, parentSlot: block.parentSlot || null };
+    } else {
+      // フェーズブロック: トリガーコンテキストを解除
+      this._lastShownTriggerCtx = null;
+    }
 
     const sType = step.stepType || 'action';
 

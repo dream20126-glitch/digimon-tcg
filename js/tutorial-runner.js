@@ -318,19 +318,14 @@ class TutorialRunner {
            && guard++ < 30) {
       if (this._currentStepPopupPromise) {
         const p = this._currentStepPopupPromise;
-        console.log('[tutRunner] checkInterrupt awaiting popup, trigger=', triggerKey, 'guard=', guard);
+        const stepBefore = this._currentBlock && this._currentBlock.steps && this._currentBlock.steps[0];
+        console.log('[tutRunner] checkInterrupt awaiting popup, trigger=', triggerKey, 'guard=', guard, 'stepType=', stepBefore && stepBefore.stepType, 'stepText=', (stepBefore && stepBefore.instructionText||'').slice(0, 30));
         try { await p; } catch (_) {}
-        console.log('[tutRunner] checkInterrupt popup resolved, _currentBlock=', this._currentBlock && {phase:this._currentBlock.phase, trigger:this._currentBlock.trigger}, '_currentStepPopupPromise?', !!this._currentStepPopupPromise);
-        // 次のステップが同一トリガーかつポップアップが未設定 (まだ _showCurrentStep が走っていない or action ステップ) の場合、
-        // microtask 1 周だけ待って次の popupPromise がセットされるのを確認
-        if (!this._currentStepPopupPromise && this._currentBlock
-            && this._currentBlock.phase === '_trigger'
-            && this._currentBlock.trigger === triggerKey) {
-          await Promise.resolve();
-        }
+        const b = this._currentBlock;
+        console.log('[tutRunner] checkInterrupt popup resolved, block=', b && {phase:b.phase, trigger:b.trigger, parentSlot:b.parentSlot, stepType:(b.steps&&b.steps[0]&&b.steps[0].stepType)}, 'hasPopup=', !!this._currentStepPopupPromise, 'pending=', this._pendingWaitKind, this._pendingWaitValue);
       } else {
-        // ポップアップ無し (action ステップ等) → これ以上待たない
-        console.log('[tutRunner] checkInterrupt loop break: no popup, guard=', guard);
+        const b = this._currentBlock;
+        console.log('[tutRunner] checkInterrupt loop break: no popup, guard=', guard, 'block=', b && {phase:b.phase, trigger:b.trigger, parentSlot:b.parentSlot, stepType:(b.steps&&b.steps[0]&&b.steps[0].stepType)}, 'pending=', this._pendingWaitKind, this._pendingWaitValue);
         break;
       }
     }

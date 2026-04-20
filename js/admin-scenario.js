@@ -1527,7 +1527,7 @@ function _renderSlotBlock(slot) {
       }
       const step = r.block.steps[0];
       if (!step) return;
-      stepsHtml += _renderFlowStep(slot.key, r.timing, flatIdx, step, 1);
+      stepsHtml += _renderFlowStep(slot.key, r.timing, flatIdx, step, r.occurrence || 1);
       flatIdx++;
     });
 

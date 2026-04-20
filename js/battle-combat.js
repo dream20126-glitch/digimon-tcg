@@ -1541,6 +1541,14 @@ export async function checkPendingTurnEnd() {
   _attackInProgress = false;
   hideCombatBackdrop();
   renderAll();
+  // チュートリアル通知: バトル解決完了（attack_resolved 条件用）
+  if (window._tutorialRunner && window._tutorialRunner.active) {
+    try {
+      window._tutorialRunner.notifyEvent('attack_resolved', {
+        side: bs.isPlayerTurn ? 'player' : 'ai',
+      });
+    } catch (_) {}
+  }
   // チュートリアル割り込み: アタック後 → 終了後にキュー中の成功演出 flush
   if (window._tutorialRunner && window._tutorialRunner.active) {
     const atkKey = bs.isPlayerTurn ? 'after_attack' : 'opp_after_attack';

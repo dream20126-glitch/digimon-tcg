@@ -1222,7 +1222,7 @@ export function aiAttackPhase(callback) {
               renderAll();
               afterBlockedEffect(atk, atkIdx, 'ai', () => {
                 resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
-                  setTimeout(() => aiAttackPhase(callback), 800);
+                  if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
                 });
               });
             } else {
@@ -1237,7 +1237,7 @@ export function aiAttackPhase(callback) {
                   renderAll();
                   afterBlockedEffect(atk, atkIdx, 'ai', () => {
                     resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {
-                      setTimeout(() => aiAttackPhase(callback), 800);
+                      if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
                     });
                   });
                 } else {
@@ -1266,7 +1266,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
   if (aiTotalChecks === 0) {
     addLog('🛡 「' + atk.name + '」のセキュリティチェック数が0のため、セキュリティをチェックしません');
     hideCombatBackdrop();
-    setTimeout(() => aiAttackPhase(callback), 800);
+    if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
     return;
   }
   if (bs.player.security.length > 0) {
@@ -1284,7 +1284,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
           bs.player.trash.push(sec);
           showDestroyEffect(atk, () => {
             addLog('💥 両者消滅！'); renderAll();
-            _fireDestroyChain(['ai'], () => setTimeout(() => aiAttackPhase(callback), 800));
+            _fireDestroyChain(['ai'], () => { if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); } });
           });
         } else if (sec.dp > atk.dp) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
@@ -1292,7 +1292,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
           bs.player.trash.push(sec);
           showDestroyEffect(atk, () => {
             addLog('💥 「' + atk.name + '」が撃破された'); renderAll();
-            _fireDestroyChain(['ai'], () => setTimeout(() => aiAttackPhase(callback), 800));
+            _fireDestroyChain(['ai'], () => { if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); } });
           });
         } else {
           bs.player.trash.push(sec);
@@ -1302,14 +1302,15 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
               addLog('✓ セキュリティ突破');
               if (bs.player.security.length <= 0) addLog('🛡 自分のセキュリティが0枚になった');
               renderAll();
-              setTimeout(() => aiAttackPhase(callback), 800);
+              if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
             }, 'Win!!', '#00ff88');
           });
         }
       } else if (sec.type === 'テイマー') {
         bs.player.tamerArea.push(sec);
         addLog('👤 テイマー「' + sec.name + '」がプレイヤーに登場');
-        renderAll(); setTimeout(() => aiAttackPhase(callback), 800);
+        renderAll();
+        if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
       } else {
         addLog('✦ セキュリティ効果：「' + sec.name + '」');
         const hasSecField = sec.securityEffect && sec.securityEffect.trim() && sec.securityEffect !== 'なし';
@@ -1333,7 +1334,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
                 bs.player.trash.push(sec);
               }
               renderAll();
-              setTimeout(() => aiAttackPhase(callback), 800);
+              if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
             };
             if (mentionsMain && originalEffect.includes('【メイン】')) {
               sec.effect = originalEffect;
@@ -1344,7 +1345,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
           _hooks.checkAndTriggerEffect(sec, '【セキュリティ】', afterSec, 'player');
         } else {
           bs.player.trash.push(sec); renderAll();
-          setTimeout(() => aiAttackPhase(callback), 800);
+          if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
         }
       }
     });
@@ -2182,19 +2183,26 @@ export function aiScriptMoveToBattle(onDone) {
 //   attackerKey: カードNo または カード名
 //   target: 'security' | { type:'digimon', cardNo: 'XX' or name }
 export function aiScriptAttack(attackerKey, target, onDone) {
+  // スクリプト経由のアタックでは、doAiSecurityCheck 内で aiAttackPhase を
+  // 連鎖呼び出ししないようフラグを立てる (script で指示したアタックのみ実行)
+  bs._aiScriptInProgress = true;
+  const _wrappedDone = () => {
+    bs._aiScriptInProgress = false;
+    onDone && onDone();
+  };
   const atkIdx = _findCardInArray(bs.ai.battleArea, attackerKey);
   if (atkIdx < 0) {
     addLog('🤖 [スクリプト] バトルエリアに「' + attackerKey + '」がありません');
-    onDone && onDone(); return;
+    _wrappedDone(); return;
   }
   const atk = bs.ai.battleArea[atkIdx];
   if (atk.suspended) {
     addLog('🤖 [スクリプト] 「' + atk.name + '」はレスト中でアタックできません');
-    onDone && onDone(); return;
+    _wrappedDone(); return;
   }
   if (atk.summonedThisTurn) {
     addLog('🤖 [スクリプト] 「' + atk.name + '」は登場ターンのためアタックできません');
-    onDone && onDone(); return;
+    _wrappedDone(); return;
   }
   let targetMode = 'security';
   let targetIdx = -1;
@@ -2235,10 +2243,10 @@ export function aiScriptAttack(attackerKey, target, onDone) {
       if (targetMode === 'digimon') {
         // デジモンバトル → 本物の resolveBattleAI
         const def = bs.player.battleArea[targetIdx];
-        if (!def) { onDone && onDone(); return; }
+        if (!def) { _wrappedDone(); return; }
         resolveBattleAI(atk, atkIdx, def, targetIdx, () => {
           checkPendingTurnEnd();
-          onDone && onDone();
+          _wrappedDone();
         });
       } else {
         // セキュリティアタック → ブロッカーチェック付き
@@ -2264,7 +2272,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
                 afterBlockedEffect(atk, atkIdx, 'ai', () => {
                   resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
                     checkPendingTurnEnd();
-                    onDone && onDone();
+                    _wrappedDone();
                   });
                 });
               } else {
@@ -2280,21 +2288,21 @@ export function aiScriptAttack(attackerKey, target, onDone) {
                     afterBlockedEffect(atk, atkIdx, 'ai', () => {
                       resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {
                         checkPendingTurnEnd();
-                        onDone && onDone();
+                        _wrappedDone();
                       });
                     });
                   } else {
-                    doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); onDone && onDone(); });
+                    doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); _wrappedDone(); });
                   }
                 });
               }
             } else {
-              doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); onDone && onDone(); });
+              doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); _wrappedDone(); });
             }
           }, { type: 'security' });
           _showBlock();
         } else {
-          doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); onDone && onDone(); });
+          doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); _wrappedDone(); });
         }
       }
     });

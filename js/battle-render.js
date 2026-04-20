@@ -945,14 +945,17 @@ export function showBCD(idxOrCard, source) {
     evoHtml += '<div style="color:#ffaa00;font-size:10px;margin-bottom:4px;font-weight:bold;">進化元効果</div>' + card.evoSourceEffect;
   }
   // スタック内の全進化元カードを表示（効果なしでもカード名+なしと表示）
+  // 表示順: 1枚目=一番下(デジタマ) → 最後=直前の進化形 (スタックデータを逆順で表示)
   if (card.stack && card.stack.length > 0) {
     let stackHtml = '<div id="bcd-evo-source-stack">';
-    card.stack.forEach((s, i) => {
+    let displayIdx = 0;
+    for (let i = card.stack.length - 1; i >= 0; i--, displayIdx++) {
+      const s = card.stack[i];
       const hasEvo = s.evoSourceEffect && s.evoSourceEffect.trim() && s.evoSourceEffect !== 'なし';
-      stackHtml += '<div id="bcd-evo-source-stack-' + i + '" style="margin-top:6px;border-top:1px solid #222;padding-top:4px;">'
+      stackHtml += '<div id="bcd-evo-source-stack-' + displayIdx + '" style="margin-top:6px;border-top:1px solid #222;padding-top:4px;">'
         + '<div style="color:#ffaa00;font-size:9px;margin-bottom:2px;">進化元: ' + s.name + ' (Lv.' + (s.level || '?') + ')</div>'
         + '<div style="font-size:10px;color:' + (hasEvo ? '#ddd' : '#555') + ';">' + (hasEvo ? s.evoSourceEffect : 'なし') + '</div></div>';
-    });
+    }
     stackHtml += '</div>';
     evoHtml += stackHtml;
   }

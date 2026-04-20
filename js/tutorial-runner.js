@@ -268,6 +268,16 @@ class TutorialRunner {
       this._pendingWaitKind = null;
       this._pendingWaitValue = null;
       this._showCurrentStep();
+    } else if (!this._currentBlock || this._currentBlock.phase !== phaseKey) {
+      // 現ブロックがこのフェーズと無関係なら、_flow 内を検索してこのフェーズの未完了ブロックを活性化
+      const matchIdx = this._flow.findIndex((b, i) =>
+        !this._completedBlocks.has(i) &&
+        b.phase === phaseKey &&
+        b.phase !== '_trigger'
+      );
+      if (matchIdx >= 0) {
+        this._activateBlock(matchIdx);
+      }
     }
     // 現在のブロックがこのフェーズに属し、message/spotlight ステップ中なら
     // ユーザーが読み終わる (次へ を押して action に到達する) まで execPhase を待たせる
@@ -310,6 +320,19 @@ class TutorialRunner {
       this._pendingWaitKind = null;
       this._pendingWaitValue = null;
       this._showCurrentStep();
+    } else if (!this._currentBlock
+               || this._currentBlock.phase !== '_trigger'
+               || this._currentBlock.trigger !== triggerKey) {
+      // 現ブロックがこのトリガーと無関係なら、_flow 内を検索してこのトリガーの未完了ブロックを活性化
+      const matchIdx = this._flow.findIndex((b, i) =>
+        !this._completedBlocks.has(i) &&
+        b.phase === '_trigger' &&
+        b.trigger === triggerKey
+      );
+      if (matchIdx >= 0) {
+        console.log('[tutRunner] activating trigger block at idx=', matchIdx);
+        this._activateBlock(matchIdx);
+      }
     }
     // 同一トリガーのブロックが連続している間は全ポップアップの dismiss を待つ
     // (step 8 → step 9 の遷移は setTimeout(100ms) で次ステップ表示が走るため、
@@ -594,6 +617,7 @@ class TutorialRunner {
   }
 
   _completeCurrentBlock() {
+    const completedBlock = this._currentBlock;
     if (this._currentBlock && typeof this._currentBlock._flowIdx === 'number') {
       this._completedBlocks.add(this._currentBlock._flowIdx);
     }
@@ -611,15 +635,31 @@ class TutorialRunner {
     }
 
     // フェーズの promise 解放 (block 完了後は必ず解放)
-    // 次のブロック活性化前に解放することでバトル側の execPhase → 次フェーズ進行がブロックされない
     this._maybeReleasePhaseBlock();
 
-    // 順次実行モデル: _flow の次の未完了ブロックを自動活性化
-    // (phase/trigger を問わず、配列順にチェーン)
-    const nextIdx = this._flow.findIndex((b, i) => !this._completedBlocks.has(i));
-    if (nextIdx >= 0) {
-      this._activateBlock(nextIdx);
-      return;
+    // 同一グループ (同 phase or 同 trigger+parentSlot) の次ブロックのみ自動チェーン
+    // 別グループのブロックは対応イベント発火時に活性化される (checkInterrupt/notifyPhaseChange経由)
+    if (completedBlock && completedBlock.phase === '_trigger' && completedBlock.trigger) {
+      const nextIdx = this._flow.findIndex((b, i) =>
+        !this._completedBlocks.has(i) &&
+        b.phase === '_trigger' &&
+        b.trigger === completedBlock.trigger &&
+        (b.parentSlot || undefined) === (completedBlock.parentSlot || undefined)
+      );
+      if (nextIdx >= 0) {
+        this._activateBlock(nextIdx);
+        return;
+      }
+    } else if (completedBlock && completedBlock.phase && completedBlock.phase !== '_trigger') {
+      const nextIdx = this._flow.findIndex((b, i) =>
+        !this._completedBlocks.has(i) &&
+        b.phase === completedBlock.phase &&
+        (b.turn || 1) === (completedBlock.turn || 1)
+      );
+      if (nextIdx >= 0) {
+        this._activateBlock(nextIdx);
+        return;
+      }
     }
   }
 

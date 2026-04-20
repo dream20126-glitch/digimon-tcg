@@ -685,17 +685,31 @@ class TutorialRunner {
       }
     }
 
-    // トリガーブロック完了後: 現在のフェーズのまだ活性化されていない次ブロックを探して再開
+    // トリガーブロック完了後: 現在のフェーズ+現在ターンのまだ活性化されていない次ブロックを探して再開
     // (例: trigger→phase の遷移で、イベント自動発火を待たずに phase を再活性化)
+    // ただし「配列内の直後」が別フェーズ/トリガーなら、そのブロックを差し置かずに該当ブロックのみに限定
     if (completedBlock && completedBlock.phase === '_trigger' && this._currentPhase) {
+      const curTurn = this._currentTurn || 1;
       const matchIdx = this._flow.findIndex((b, i) =>
         !this._completedBlocks.has(i) &&
         b.phase === this._currentPhase &&
-        b.phase !== '_trigger'
+        b.phase !== '_trigger' &&
+        (b.turn || 1) === curTurn
       );
       if (matchIdx >= 0) {
-        this._activateBlock(matchIdx);
-        return;
+        // さらに「配列内の完了ブロックから match ブロックまでの間」に別のトリガーブロックが
+        // 存在する場合は、それを先に発火待ちにするためフォールバック活性化を行わない
+        let hasInterveningTrigger = false;
+        const startIdx = completedFlowIdx + 1;
+        for (let i = startIdx; i < matchIdx; i++) {
+          if (!this._completedBlocks.has(i) && this._flow[i] && this._flow[i].phase === '_trigger') {
+            hasInterveningTrigger = true; break;
+          }
+        }
+        if (!hasInterveningTrigger) {
+          this._activateBlock(matchIdx);
+          return;
+        }
       }
     }
   }

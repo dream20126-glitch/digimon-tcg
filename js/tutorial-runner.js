@@ -309,27 +309,23 @@ class TutorialRunner {
       this._pendingWaitValue = null;
       this._showCurrentStep();
     }
-    // 同一トリガーのステップが連続している間は全ポップアップの dismiss を待つ
-    // (step 8 → step 9 と連続するスポットライト説明を最後まで見せてから VS画面クローズ/消滅演出へ)
+    // 同一トリガーのブロックが連続している間は全ポップアップの dismiss を待つ
+    // (step 8 → step 9 の遷移は setTimeout(100ms) で次ステップ表示が走るため、
+    //  popup が一時的に null になる間を 200ms 待って次の popup がセットされるのを見る)
     let guard = 0;
-    while (this.active && !this.cleared && this._currentBlock
-           && this._currentBlock.phase === '_trigger'
-           && this._currentBlock.trigger === triggerKey
-           && guard++ < 30) {
+    while (guard++ < 30) {
+      if (!this.active || this.cleared) break;
+      if (!this._currentBlock) break;
+      if (this._currentBlock.phase !== '_trigger' || this._currentBlock.trigger !== triggerKey) break;
       if (this._currentStepPopupPromise) {
-        const p = this._currentStepPopupPromise;
-        const stepBefore = this._currentBlock && this._currentBlock.steps && this._currentBlock.steps[0];
-        console.log('[tutRunner] checkInterrupt awaiting popup, trigger=', triggerKey, 'guard=', guard, 'stepType=', stepBefore && stepBefore.stepType, 'stepText=', (stepBefore && stepBefore.instructionText||'').slice(0, 30));
-        try { await p; } catch (_) {}
-        const b = this._currentBlock;
-        console.log('[tutRunner] checkInterrupt popup resolved, block=', b && {phase:b.phase, trigger:b.trigger, parentSlot:b.parentSlot, stepType:(b.steps&&b.steps[0]&&b.steps[0].stepType)}, 'hasPopup=', !!this._currentStepPopupPromise, 'pending=', this._pendingWaitKind, this._pendingWaitValue);
+        try { await this._currentStepPopupPromise; } catch (_) {}
+        // 次ステップの popup が set されるのを 200ms 待つ (setTimeout 100ms 経由でセットされるため)
+        await new Promise(r => setTimeout(r, 200));
       } else {
-        const b = this._currentBlock;
-        console.log('[tutRunner] checkInterrupt loop break: no popup, guard=', guard, 'block=', b && {phase:b.phase, trigger:b.trigger, parentSlot:b.parentSlot, stepType:(b.steps&&b.steps[0]&&b.steps[0].stepType)}, 'pending=', this._pendingWaitKind, this._pendingWaitValue);
+        // popup 無し (action ステップ) → 待たない
         break;
       }
     }
-    console.log('[tutRunner] checkInterrupt loop exit, trigger=', triggerKey, 'guard=', guard);
     return;
   }
 

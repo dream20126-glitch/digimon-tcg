@@ -311,11 +311,17 @@ class TutorialRunner {
   // ---------------------------------------------------------------
   async checkInterrupt(triggerKey) {
     if (!this.active || this.cleared) return;
-    console.log('[tutRunner] checkInterrupt enter', triggerKey, 'pending=', this._pendingWaitKind, this._pendingWaitValue, 'block=', this._currentBlock && {phase:this._currentBlock.phase, trigger:this._currentBlock.trigger, idx:this._currentStepIdx});
+    // このトリガーが「相手側」か判定 (turn 計算用)
+    const OPP_TRIGGERS = new Set(['before_opponent_turn', 'opp_battle_vs', 'opp_after_attack', 'turn_end_opp']);
+    const triggerTurn = OPP_TRIGGERS.has(triggerKey)
+      ? Math.max(1, ((window.bs && window.bs.turn) || 1) - 1)
+      : (this._currentTurn || 1);
+    console.log('[tutRunner] checkInterrupt enter', triggerKey, 'turn=', triggerTurn, 'pending=', this._pendingWaitKind, this._pendingWaitValue, 'block=', this._currentBlock && {phase:this._currentBlock.phase, trigger:this._currentBlock.trigger, idx:this._currentStepIdx});
     try { this.notifyEvent(triggerKey, {}); } catch (_) {}
-    // このトリガーの発火回数をインクリメント (occurrence マッチ用)
-    this._triggerFireCount[triggerKey] = (this._triggerFireCount[triggerKey] || 0) + 1;
-    const fireCount = this._triggerFireCount[triggerKey];
+    // このトリガーの (turn, trigger) 発火回数をインクリメント (occurrence マッチ用)
+    const countKey = triggerKey + ':' + triggerTurn;
+    this._triggerFireCount[countKey] = (this._triggerFireCount[countKey] || 0) + 1;
+    const fireCount = this._triggerFireCount[countKey];
     // 直近の発火を記録 (後からこのトリガーを待つブロックが活性化したときに即表示するため)
     this._lastFiredTrigger = { key: triggerKey, time: Date.now() };
     // 現在このトリガーを待っているペンディングステップがあれば表示
@@ -326,15 +332,16 @@ class TutorialRunner {
       this._pendingWaitValue = null;
       this._showCurrentStep();
     } else if (!this._currentBlock) {
-      // 現ブロックが無ければ、このトリガーの fireCount に一致する occurrence のブロックを検索して活性化
+      // 現ブロックが無ければ、このトリガーの (turn, fireCount) に一致するブロックを検索して活性化
       const matchIdx = this._flow.findIndex((b, i) =>
         !this._completedBlocks.has(i) &&
         b.phase === '_trigger' &&
         b.trigger === triggerKey &&
-        (b.occurrence || 1) === fireCount
+        (b.occurrence || 1) === fireCount &&
+        (b.turn || 1) === triggerTurn
       );
       if (matchIdx >= 0) {
-        console.log('[tutRunner] activating trigger block at idx=', matchIdx, 'fireCount=', fireCount);
+        console.log('[tutRunner] activating trigger block at idx=', matchIdx, 'turn=', triggerTurn, 'fireCount=', fireCount);
         this._activateBlock(matchIdx);
       }
     } else {
@@ -343,12 +350,13 @@ class TutorialRunner {
         !this._completedBlocks.has(i) &&
         b.phase === '_trigger' &&
         b.trigger === triggerKey &&
-        (b.occurrence || 1) === fireCount
+        (b.occurrence || 1) === fireCount &&
+        (b.turn || 1) === triggerTurn
       );
       if (matchIdx >= 0) {
         const already = this._pendingActivationQueue.some(q => q.idx === matchIdx);
         if (!already) {
-          console.log('[tutRunner] queueing trigger block for later, idx=', matchIdx, 'trigger=', triggerKey, 'fireCount=', fireCount);
+          console.log('[tutRunner] queueing trigger block for later, idx=', matchIdx, 'turn=', triggerTurn, 'fireCount=', fireCount);
           this._pendingActivationQueue.push({ idx: matchIdx, trigger: triggerKey });
         }
       }

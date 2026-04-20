@@ -841,9 +841,23 @@ const TARGET_AREA_SELECTORS = {
   card_detail_sec_effect: () => document.getElementById('bcd-security-effect'),
   card_detail_close:      () => document.getElementById('bcd-close-btn'),
   // 効果確認ダイアログ
-  effect_confirm:         () => document.getElementById('effect-confirm-panel'),
-  effect_confirm_yes:     () => document.getElementById('effect-confirm-yes'),
-  effect_confirm_no:      () => document.getElementById('effect-confirm-no'),
+  // 確認ダイアログ: 効果発動確認 (#effect-confirm-*) と対象確認 (#_target-*) の両方を
+  // サポート。現在表示中の方を返す (offsetParent で可視判定)。
+  effect_confirm:         () => {
+    const panels = [document.getElementById('effect-confirm-panel'),
+                    document.querySelector('#_target-confirm-overlay > div')];
+    return panels.find(e => e && e.offsetParent) || panels.find(e => e) || null;
+  },
+  effect_confirm_yes:     () => {
+    const btns = [document.getElementById('effect-confirm-yes'),
+                  document.getElementById('_target-yes')];
+    return btns.find(e => e && e.offsetParent) || btns.find(e => e) || null;
+  },
+  effect_confirm_no:      () => {
+    const btns = [document.getElementById('effect-confirm-no'),
+                  document.getElementById('_target-no')];
+    return btns.find(e => e && e.offsetParent) || btns.find(e => e) || null;
+  },
   // トラッシュモーダル
   trash_modal:       () => document.getElementById('trash-modal'),
   trash_close_btn:   () => document.getElementById('trash-close-btn'),

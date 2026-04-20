@@ -405,15 +405,33 @@ function _applyStepUiControl(step) {
 
   const greyOut = Array.isArray(step.greyOut) ? step.greyOut : [];
   const hlButtons = Array.isArray(step.highlightButtons) ? step.highlightButtons : [];
-  const hlCards = [step.targetCardNo, step.secondTargetCardNo].filter(Boolean);
+  // area-aware ペア: area 指定があればそのエリア内のカードだけ赤枠対象にする
+  const hlPairs = [
+    { area: step.targetArea || '', cardNo: step.targetCardNo || '' },
+    { area: step.secondTargetArea || '', cardNo: step.secondTargetCardNo || '' },
+  ].filter(p => p.cardNo);
   const greyOutCards = greyOut.includes('other_cards');
 
   // --- カードハイライト + グレーアウト ---
-  if (hlCards.length > 0 || greyOutCards) {
+  if (hlPairs.length > 0 || greyOutCards) {
+    const _cardAreaSelectors = {
+      hand: '#hand-wrap .h-card, #mulligan-hand-preview .mulligan-card',
+      battle: '#pl-battle-row .b-slot[data-card-no]',
+      raising: '#pl-iku-slot',
+      opp_battle: '#ai-battle-row .b-slot[data-card-no]',
+    };
     const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no], #mulligan-hand-preview .mulligan-card');
     allCards.forEach(cardEl => {
       const no = cardEl.dataset.cardNo || '';
-      if (hlCards.length > 0 && hlCards.includes(no)) {
+      let isHighlight = false;
+      for (const p of hlPairs) {
+        if (p.cardNo !== no) continue;
+        if (!p.area) { isHighlight = true; break; }          // エリア未指定 → 全域マッチ
+        const sel = _cardAreaSelectors[p.area];
+        if (!sel) { isHighlight = true; break; }              // 未知エリア → 全域マッチ
+        if (cardEl.matches(sel)) { isHighlight = true; break; }
+      }
+      if (isHighlight) {
         cardEl.classList.add('tutorial-card-highlight');
       } else if (greyOutCards) {
         cardEl.classList.add('tutorial-card-disabled');
@@ -490,15 +508,32 @@ window._tutorialReapplyUiControl = function() {
   const step = _activeUiStep;
   const greyOut = Array.isArray(step.greyOut) ? step.greyOut : [];
   const hlButtons = Array.isArray(step.highlightButtons) ? step.highlightButtons : [];
-  const hlCards = [step.targetCardNo, step.secondTargetCardNo].filter(Boolean);
+  const hlPairs = [
+    { area: step.targetArea || '', cardNo: step.targetCardNo || '' },
+    { area: step.secondTargetArea || '', cardNo: step.secondTargetCardNo || '' },
+  ].filter(p => p.cardNo);
   const greyOutCards = greyOut.includes('other_cards');
 
-  // --- カード再適用 ---
-  if (hlCards.length > 0 || greyOutCards) {
+  // --- カード再適用 (area-aware) ---
+  if (hlPairs.length > 0 || greyOutCards) {
+    const _cardAreaSelectors = {
+      hand: '#hand-wrap .h-card, #mulligan-hand-preview .mulligan-card',
+      battle: '#pl-battle-row .b-slot[data-card-no]',
+      raising: '#pl-iku-slot',
+      opp_battle: '#ai-battle-row .b-slot[data-card-no]',
+    };
     const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no], #mulligan-hand-preview .mulligan-card');
     allCards.forEach(cardEl => {
       const no = cardEl.dataset.cardNo || '';
-      if (hlCards.length > 0 && hlCards.includes(no)) {
+      let isHighlight = false;
+      for (const p of hlPairs) {
+        if (p.cardNo !== no) continue;
+        if (!p.area) { isHighlight = true; break; }
+        const sel = _cardAreaSelectors[p.area];
+        if (!sel) { isHighlight = true; break; }
+        if (cardEl.matches(sel)) { isHighlight = true; break; }
+      }
+      if (isHighlight) {
         cardEl.classList.add('tutorial-card-highlight');
       } else if (greyOutCards) {
         cardEl.classList.add('tutorial-card-disabled');

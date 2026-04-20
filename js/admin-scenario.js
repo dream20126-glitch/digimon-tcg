@@ -524,12 +524,14 @@ function _emptyBoardState() {
   return {
     playerHand: [],        // [{cardNo}, ...]
     playerBattleArea: [],  // [{cardNo}, ...]
+    playerTamerArea: [],   // [{cardNo}, ...] テイマー
     playerRaisingArea: null,  // {cardNo} or null
     playerSecurity: [],    // [{cardNo}, ...] 上から順 (先頭=最初にチェックされる)
     playerDeckTop: [],     // [{cardNo}, ...] デッキ上から順 (先頭=次に引く)
     playerTrash: [],       // [{cardNo}, ...]
     opponentHand: [],
     opponentBattleArea: [],
+    opponentTamerArea: [],
     opponentRaisingArea: null,
     opponentSecurity: [],
     opponentDeckTop: [],
@@ -696,12 +698,14 @@ function _renderScenarioDetail(s) {
   };
   boardItems.push(areaLine('自分 手札', ib.playerHand));
   boardItems.push(areaLine('自分 バトルエリア', ib.playerBattleArea));
+  boardItems.push(areaLine('自分 テイマーエリア', ib.playerTamerArea));
   boardItems.push(oneLine('自分 育成エリア', ib.playerRaisingArea));
   boardItems.push(areaLine('自分 セキュリティ', ib.playerSecurity));
   boardItems.push(areaLine('自分 デッキ上', ib.playerDeckTop));
   boardItems.push(areaLine('自分 トラッシュ', ib.playerTrash));
   boardItems.push(areaLine('相手 手札', ib.opponentHand));
   boardItems.push(areaLine('相手 バトルエリア', ib.opponentBattleArea));
+  boardItems.push(areaLine('相手 テイマーエリア', ib.opponentTamerArea));
   boardItems.push(oneLine('相手 育成エリア', ib.opponentRaisingArea));
   boardItems.push(areaLine('相手 セキュリティ', ib.opponentSecurity));
   boardItems.push(areaLine('相手 デッキ上', ib.opponentDeckTop));
@@ -911,12 +915,14 @@ window.editTutorialScenario = async function(scenario) {
   _initialBoardState = {
     playerHand: normArr(ib.playerHand),
     playerBattleArea: normArr(ib.playerBattleArea),
+    playerTamerArea: normArr(ib.playerTamerArea),
     playerRaisingArea: normOne(ib.playerRaisingArea),
     playerSecurity: normArr(ib.playerSecurity),
     playerDeckTop: normArr(ib.playerDeckTop),
     playerTrash: normArr(ib.playerTrash),
     opponentHand: normArr(ib.opponentHand),
     opponentBattleArea: normArr(ib.opponentBattleArea),
+    opponentTamerArea: normArr(ib.opponentTamerArea),
     opponentRaisingArea: normOne(ib.opponentRaisingArea),
     opponentSecurity: normArr(ib.opponentSecurity),
     opponentDeckTop: normArr(ib.opponentDeckTop),
@@ -1853,12 +1859,14 @@ function _renderFlowSummary() {
 const AREA_LABELS = {
   playerHand:          '自分の手札',
   playerBattleArea:    '自分のバトルエリア',
+  playerTamerArea:     '自分のテイマーエリア',
   playerRaisingArea:   '自分の育成エリア',
   playerSecurity:      '自分のセキュリティ(上から順)',
   playerDeckTop:       '自分のデッキ上(次に引く順)',
   playerTrash:         '自分のトラッシュ',
   opponentHand:        '相手の手札',
   opponentBattleArea:  '相手のバトルエリア',
+  opponentTamerArea:   '相手のテイマーエリア',
   opponentRaisingArea: '相手の育成エリア',
   opponentSecurity:    '相手のセキュリティ(上から順)',
   opponentDeckTop:     '相手のデッキ上(次に引く順)',
@@ -2130,6 +2138,7 @@ function _renderPlacedCards() {
   own.innerHTML =
     _renderAreaSection('手札', 'playerHand') +
     _renderAreaSection('バトルエリア', 'playerBattleArea') +
+    _renderAreaSection('テイマーエリア', 'playerTamerArea') +
     _renderAreaSection('育成エリア', 'playerRaisingArea') +
     _renderAreaSection('セキュリティ(上から順)', 'playerSecurity') +
     _renderAreaSection('デッキ上(次に引く順)', 'playerDeckTop') +
@@ -2137,6 +2146,7 @@ function _renderPlacedCards() {
   opp.innerHTML =
     _renderAreaSection('手札', 'opponentHand') +
     _renderAreaSection('バトルエリア', 'opponentBattleArea') +
+    _renderAreaSection('テイマーエリア', 'opponentTamerArea') +
     _renderAreaSection('育成エリア', 'opponentRaisingArea') +
     _renderAreaSection('セキュリティ(上から順)', 'opponentSecurity') +
     _renderAreaSection('デッキ上(次に引く順)', 'opponentDeckTop') +

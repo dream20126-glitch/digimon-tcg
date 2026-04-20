@@ -911,6 +911,10 @@ class TutorialRunner {
     if (Array.isArray(ib.playerBattleArea))   bs.player.battleArea = this._resolveCardRefs(ib.playerBattleArea);
     if (Array.isArray(ib.opponentBattleArea)) bs.ai.battleArea     = this._resolveCardRefs(ib.opponentBattleArea);
 
+    // テイマーエリア上書き
+    if (Array.isArray(ib.playerTamerArea))   bs.player.tamerArea = this._resolveCardRefs(ib.playerTamerArea);
+    if (Array.isArray(ib.opponentTamerArea)) bs.ai.tamerArea     = this._resolveCardRefs(ib.opponentTamerArea);
+
     // 育成エリア
     if (ib.playerRaisingArea !== undefined) {
       if (ib.playerRaisingArea === null) bs.player.ikusei = null;

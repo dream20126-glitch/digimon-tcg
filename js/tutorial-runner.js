@@ -334,8 +334,34 @@ class TutorialRunner {
         (b.turn || 1) === triggerTurn
       );
       if (matchIdx >= 0) {
-        console.log('[tutRunner] activating trigger block at idx=', matchIdx, 'turn=', triggerTurn, 'fireCount=', fireCount);
-        this._activateBlock(matchIdx);
+        // 順序保証: 同じバトルトリガー群 (VS画面/ブロック/アタック関連) で、
+        // 配列上 matchIdx より前にまだ完了していないブロックがあれば、
+        // それを先に表示するため matchIdx を queue に積んで待機する。
+        // (battle_vs が after_attack より前に発火しても、ユーザー設定順 (step 20 → 25)
+        //  に従って step 20 を先に表示するための仕組み)
+        const BATTLE_TRIGGERS = new Set([
+          'attack_declared', 'attack_target_selected',
+          'battle_vs', 'opp_battle_vs',
+          'block', 'block_confirm',
+          'after_attack', 'opp_after_attack',
+        ]);
+        const isBattleTrigger = BATTLE_TRIGGERS.has(triggerKey);
+        const hasBlockingEarlier = isBattleTrigger && this._flow.some((b, i) =>
+          i < matchIdx &&
+          !this._completedBlocks.has(i) &&
+          b.phase === '_trigger' &&
+          BATTLE_TRIGGERS.has(b.trigger)
+        );
+        if (hasBlockingEarlier) {
+          const already = this._pendingActivationQueue.some(q => q.idx === matchIdx);
+          if (!already) {
+            console.log('[tutRunner] queueing (order) trigger block, idx=', matchIdx, 'earlier battle-trigger unfinished');
+            this._pendingActivationQueue.push({ idx: matchIdx, trigger: triggerKey });
+          }
+        } else {
+          console.log('[tutRunner] activating trigger block at idx=', matchIdx, 'turn=', triggerTurn, 'fireCount=', fireCount);
+          this._activateBlock(matchIdx);
+        }
       }
     } else {
       // 現ブロックが active のままトリガーが発火 → 保留キューに入れて block 完了時に活性化
@@ -685,16 +711,34 @@ class TutorialRunner {
     }
 
     // 保留キュー処理 (block active 中に発火したトリガー)
-    while (this._pendingActivationQueue.length > 0) {
-      const item = this._pendingActivationQueue.shift();
-      if (item && item.idx != null && !this._completedBlocks.has(item.idx) && this._flow[item.idx]) {
-        console.log('[tutRunner] activating queued block at idx=', item.idx, 'trigger=', item.trigger);
-        if (item.trigger) {
-          this._lastFiredTrigger = { key: item.trigger, time: Date.now() };
-        }
-        this._activateBlock(item.idx);
-        return;
+    //   idx 昇順にソートして、未完了の earlier battle trigger を含まないものから活性化
+    this._pendingActivationQueue.sort((a, b) => (a.idx || 0) - (b.idx || 0));
+    const BATTLE_TRIGGERS = new Set([
+      'attack_declared', 'attack_target_selected',
+      'battle_vs', 'opp_battle_vs',
+      'block', 'block_confirm',
+      'after_attack', 'opp_after_attack',
+    ]);
+    for (let i = 0; i < this._pendingActivationQueue.length; i++) {
+      const item = this._pendingActivationQueue[i];
+      if (!item || item.idx == null || this._completedBlocks.has(item.idx) || !this._flow[item.idx]) continue;
+      // 順序保証: この item より idx が小さい未完了 battle トリガーがあれば、この item を後回し
+      const isBattleTrigger = BATTLE_TRIGGERS.has(item.trigger);
+      const hasBlockingEarlier = isBattleTrigger && this._flow.some((b, j) =>
+        j < item.idx &&
+        !this._completedBlocks.has(j) &&
+        b.phase === '_trigger' &&
+        BATTLE_TRIGGERS.has(b.trigger)
+      );
+      if (hasBlockingEarlier) continue;
+      // activate
+      this._pendingActivationQueue.splice(i, 1);
+      console.log('[tutRunner] activating queued block at idx=', item.idx, 'trigger=', item.trigger);
+      if (item.trigger) {
+        this._lastFiredTrigger = { key: item.trigger, time: Date.now() };
       }
+      this._activateBlock(item.idx);
+      return;
     }
 
     // トリガーブロック完了後: 現在のフェーズ+現在ターンのまだ活性化されていない次ブロックを探して再開

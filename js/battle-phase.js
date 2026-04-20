@@ -4,6 +4,7 @@
  * ターン開始 → アクティブ → ドロー → 育成 → メイン → ターン終了
  * プレイヤー側・AI側の両方を管理
  */
+console.log('[LOADED] battle-phase.js version=player_pre_diagnostic_v2');
 
 import { bs, spendMemory, addMemory, endTurnManual, isMemoryOverflow, drawCards, isDeckEmpty } from './battle-state.js';
 import { addLog, showOverlay, removeOverlay } from './battle-ui.js';
@@ -313,6 +314,13 @@ export function getOppTurnColor() {
 export function startPlayerTurn() {
   bs.isPlayerTurn = true;
   showYourTurn('自分のターン開始', '', '#00fbff', async () => {
+    // チュートリアル: プレイヤーターンの AIスクリプト (block/select_target 意図セット)
+    //   通算ターン番号 = 2 * bs.turn - 1 (プレイヤー N 回目 = 2N-1)
+    const runner = window._tutorialRunner;
+    if (runner && runner.active && runner.opponentScriptRunner) {
+      const turnNumber = Math.max(1, 2 * ((bs && bs.turn) || 1) - 1);
+      await new Promise(res => runner.opponentScriptRunner.runPhase(turnNumber, 'player_pre', res));
+    }
     // チュートリアル割り込み: 自分のターン開始
     if (window._tutorialRunner && window._tutorialRunner.active) {
       await window._tutorialRunner.checkInterrupt('turn_start_self');
@@ -331,8 +339,17 @@ export function startPlayerTurn() {
  * ゲーム開始直後の初回ターン開始（先攻表示付き）
  */
 export function startFirstTurn() {
+  console.log('[診断] startFirstTurn called @', new Date().toISOString(), 'runner=', !!window._tutorialRunner, 'opponentScriptRunner=', !!window._tutorialRunner?.opponentScriptRunner);
   bs.isPlayerTurn = true;
   showYourTurn('自分のターン開始', '【先攻プレイヤー】', '#00fbff', async () => {
+    console.log('[診断] startFirstTurn showYourTurn cb @', new Date().toISOString(), 'opponentScriptRunner=', !!window._tutorialRunner?.opponentScriptRunner);
+    // チュートリアル: プレイヤーターンの AIスクリプト (block/select_target 意図セット)
+    //   通算ターン番号 = 2 * bs.turn - 1 (プレイヤー N 回目 = 2N-1)
+    const runner = window._tutorialRunner;
+    if (runner && runner.active && runner.opponentScriptRunner) {
+      const turnNumber = Math.max(1, 2 * ((bs && bs.turn) || 1) - 1);
+      await new Promise(res => runner.opponentScriptRunner.runPhase(turnNumber, 'player_pre', res));
+    }
     // チュートリアル割り込み: 自分のターン開始（初回）
     if (window._tutorialRunner && window._tutorialRunner.active) {
       await window._tutorialRunner.checkInterrupt('turn_start_self');
@@ -668,9 +685,9 @@ function aiPhaseBreed() {
   // チュートリアル: AIスクリプトがあれば育成系アクションをここで実行
   const runner = window._tutorialRunner;
   if (runner && runner.active && runner.opponentScriptRunner) {
-    // AIスクリプトの「ターン N」は AI's N回目のターン。bs.turn は AI ターン開始時に ++ されるので
-    // AI's 1回目のターンで bs.turn=2 → AIターン番号は bs.turn - 1
-    const turnNumber = Math.max(1, ((bs && bs.turn) || 1) - 1);
+    // AIスクリプトの「ターン N」は "通算ターン番号" (プレイヤー=奇数, AI=偶数)。
+    // bs.turn は AI ターン開始時のみ ++ されるので、AI's N回目ターンで bs.turn=N+1 → 通算ターン = 2N = 2*(bs.turn-1)
+    const turnNumber = Math.max(2, 2 * (((bs && bs.turn) || 1) - 1));
     if (runner.opponentScriptRunner.hasActionsForPhase(turnNumber, 'breed')) {
       showPhaseAnnounce('🥚 育成フェイズ', '#ff9900', async () => {
         // チュートリアル: 相手育成フェイズの説明を挿入
@@ -736,8 +753,8 @@ function aiPhaseMain() {
   // チュートリアル: AIスクリプトがあればメインフェイズでスクリプトを実行
   const runner = window._tutorialRunner;
   if (runner && runner.active && runner.opponentScriptRunner) {
-    // AIスクリプトの「ターン N」は AI's N回目のターン (aiPhaseBreed と同じ計算)
-    const turnNumber = Math.max(1, ((bs && bs.turn) || 1) - 1);
+    // 通算ターン番号 (aiPhaseBreed と同一): AI's N回目 → 2N = 2*(bs.turn-1)
+    const turnNumber = Math.max(2, 2 * (((bs && bs.turn) || 1) - 1));
     if (runner.opponentScriptRunner.hasActionsForPhase(turnNumber, 'main')) {
       showPhaseAnnounce('⚡ メインフェイズ', '#ff00fb', async () => {
         addLog('🤖 メインフェイズ（スクリプト制御）');

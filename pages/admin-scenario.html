@@ -158,6 +158,7 @@
     <div style="background:var(--panel-bg); border:1px solid var(--border-col); border-radius:10px; padding:20px; margin-bottom:16px;">
       <p style="color:var(--main-cyan); font-size:12px; font-weight:bold; margin:0 0 10px;">相手AIスクリプト</p>
       <p style="color:#888; font-size:11px; margin:0 0 10px;">各ターンで相手に取らせたい行動を順番に指定します</p>
+      <p style="color:#ffcc66; font-size:10px; margin:0 0 10px;">※通算ターン番号：ターン1＝プレイヤー1回目、ターン2＝AI1回目、ターン3＝プレイヤー2回目、ターン4＝AI2回目…。「block」「select_target」はプレイヤーターン（奇数）に、その他の行動はAIターン（偶数）に指定してください。</p>
       <div id="ts-opponent-script-container"></div>
       <button class="admin-btn-sm" onclick="tsAddOpponentTurn()" style="width:100%; margin-top:10px;">＋ ターンを追加</button>
     </div>

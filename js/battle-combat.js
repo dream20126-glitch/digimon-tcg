@@ -458,6 +458,7 @@ export function resolveAttackTarget(target, targetIdx) {
   if (target === 'security') {
     // ★ チュートリアルAIブロック intent: セキュリティアタックでも intent あれば割り込む
     const aiBlockIntent = window._tutorialAiBlockIntent;
+    console.log('[ブロック診断] security attack, intent=', aiBlockIntent, 'ai.battleArea=', (bs.ai.battleArea||[]).map(c=>c?{name:c.name,cardNo:c.cardNo,suspended:c.suspended,hasBlocker:hasKeyword(c,'【ブロッカー】')||hasEvoKeyword(c,'【ブロッカー】')}:null));
     if (aiBlockIntent && !_onlineMode) {
       const blockerKey = (typeof aiBlockIntent === 'string') ? aiBlockIntent : null;
       // カードNo/カード名 両方で検索 + ブロッカー条件を満たすか
@@ -470,6 +471,7 @@ export function resolveAttackTarget(target, targetIdx) {
           if (String(c.cardNo) === k || String(c.name) === k || String(c.name || '').includes(k)) blockerIdx = i;
         });
       }
+      console.log('[ブロック診断] blockerIdx=', blockerIdx);
       if (blockerIdx >= 0) {
         window._tutorialAiBlockIntent = null;
         const blocker = bs.ai.battleArea[blockerIdx];

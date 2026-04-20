@@ -977,10 +977,12 @@ class OpponentScriptRunner {
     this.executedTurns = {};
   }
 
-  // 育成フェイズ系アクション
+  // 育成フェイズ系アクション (AIターンのみ)
   static BREED_ACTIONS = new Set(['hatch', 'move_to_battle', 'evolve_breed']);
-  // メインフェイズ系アクション
-  static MAIN_ACTIONS = new Set(['attack', 'play_card', 'play', 'evolve_battle', 'evolve', 'block', 'select_target', 'pass', 'end_turn']);
+  // メインフェイズ系アクション (AIターンのみ)
+  static MAIN_ACTIONS = new Set(['attack', 'play_card', 'play', 'evolve_battle', 'evolve', 'pass', 'end_turn']);
+  // プレイヤーターン時に "事前" セットするアクション (ブロック/対象選択 intent)
+  static PLAYER_TURN_ACTIONS = new Set(['block', 'select_target']);
 
   runTurn(turnNumber, done) {
     if (this.executedTurns[turnNumber]) { done && done(); return; }
@@ -989,13 +991,18 @@ class OpponentScriptRunner {
   }
 
   // 指定フェーズのアクションだけ実行
+  // phase: 'breed' | 'main' | 'player_pre'
+  //   - 'player_pre': プレイヤーターン開始時（ブロック意図/対象選択意図のセット）
+  //   - 'breed'/'main': AIターン中
   runPhase(turnNumber, phase, done) {
     const entry = this.script.find(t => Number(t.turn) === Number(turnNumber));
+    console.log('[AIスクリプト] runPhase turn=', turnNumber, 'phase=', phase, 'entry=', entry, 'scriptLen=', this.script.length);
     if (!entry || !Array.isArray(entry.actions) || entry.actions.length === 0) {
       done && done(); return;
     }
-    const filter = phase === 'breed' ? OpponentScriptRunner.BREED_ACTIONS : OpponentScriptRunner.MAIN_ACTIONS;
+    const filter = this._filterForPhase(phase);
     const actions = entry.actions.filter(a => filter.has(a.type));
+    console.log('[AIスクリプト] filtered actions:', actions);
     if (actions.length === 0) { done && done(); return; }
     this._runActions(actions, 0, done);
   }
@@ -1003,8 +1010,14 @@ class OpponentScriptRunner {
   hasActionsForPhase(turnNumber, phase) {
     const entry = this.script.find(t => Number(t.turn) === Number(turnNumber));
     if (!entry || !Array.isArray(entry.actions)) return false;
-    const filter = phase === 'breed' ? OpponentScriptRunner.BREED_ACTIONS : OpponentScriptRunner.MAIN_ACTIONS;
+    const filter = this._filterForPhase(phase);
     return entry.actions.some(a => filter.has(a.type));
+  }
+
+  _filterForPhase(phase) {
+    if (phase === 'breed') return OpponentScriptRunner.BREED_ACTIONS;
+    if (phase === 'player_pre') return OpponentScriptRunner.PLAYER_TURN_ACTIONS;
+    return OpponentScriptRunner.MAIN_ACTIONS;
   }
 
   _runActions(actions, idx, done) {
@@ -1078,6 +1091,7 @@ class OpponentScriptRunner {
           // 次にプレイヤーがアタックしてきた時、指定カードでブロックする意図を登録
           //   action.cardNo: AIバトルエリアのブロッカー
           window._tutorialAiBlockIntent = action.cardNo || true;
+          console.log('[AIスクリプト] block intent set:', window._tutorialAiBlockIntent, 'bs.turn=', window.bs?.turn);
           log('相手は次のアタックをブロックする予定');
           cb(); break;
         }

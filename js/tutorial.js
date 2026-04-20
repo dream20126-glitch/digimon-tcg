@@ -947,21 +947,21 @@ function _resolveTargets(targetArea, targetCardNo) {
     const selector = areaToScope[targetArea];
     if (selector) {
       const els = document.querySelectorAll(selector);
-      const cardNos = Array.from(els).map(e => e.dataset.cardNo || '(none)');
-      console.log('[tutResolve] area=', targetArea, 'card=', targetCardNo, 'selector=', selector, 'foundSlots=', els.length, 'cardNos=', cardNos);
+      const cardNos = Array.from(els).map(e => e.dataset.cardNo || '(none)').join('|');
+      console.log('[tutResolve] area=' + targetArea + ' card=' + targetCardNo + ' selector=' + selector + ' foundSlots=' + els.length + ' cardNos=[' + cardNos + ']');
       for (const el of els) {
-        if (el.dataset.cardNo === targetCardNo) return [el];
-        if (el.dataset.cardNo && el.dataset.cardNo.includes(targetCardNo)) return [el];
+        if (el.dataset.cardNo === targetCardNo) { console.log('[tutResolve] MATCH: cardNo===target'); return [el]; }
+        if (el.dataset.cardNo && el.dataset.cardNo.includes(targetCardNo)) { console.log('[tutResolve] MATCH: cardNo.includes(target)'); return [el]; }
       }
       // カード名での検索（data-card-no にカード名が入っていない場合）
       for (const el of els) {
         const nameEl = el.querySelector('.card-name, .b-name');
-        if (nameEl && nameEl.textContent.includes(targetCardNo)) return [el];
+        if (nameEl && nameEl.textContent.includes(targetCardNo)) { console.log('[tutResolve] MATCH: by name'); return [el]; }
       }
     }
     // エリア限定が効かない場合は従来のグローバル検索にフォールバック
     const el = _findCardElement(targetCardNo);
-    console.log('[tutResolve] fallback _findCardElement returned', el && el.tagName, el && el.dataset && el.dataset.cardNo);
+    console.log('[tutResolve] fallback _findCardElement returned=' + (el ? (el.tagName + ' cardNo=' + (el.dataset && el.dataset.cardNo)) : 'null'));
     if (el) return [el];
   }
   if (targetCardNo) {

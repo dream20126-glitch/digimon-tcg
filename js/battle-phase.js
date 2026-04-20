@@ -668,7 +668,9 @@ function aiPhaseBreed() {
   // チュートリアル: AIスクリプトがあれば育成系アクションをここで実行
   const runner = window._tutorialRunner;
   if (runner && runner.active && runner.opponentScriptRunner) {
-    const turnNumber = (bs && bs.turn) || 1;
+    // AIスクリプトの「ターン N」は AI's N回目のターン。bs.turn は AI ターン開始時に ++ されるので
+    // AI's 1回目のターンで bs.turn=2 → AIターン番号は bs.turn - 1
+    const turnNumber = Math.max(1, ((bs && bs.turn) || 1) - 1);
     if (runner.opponentScriptRunner.hasActionsForPhase(turnNumber, 'breed')) {
       showPhaseAnnounce('🥚 育成フェイズ', '#ff9900', async () => {
         // チュートリアル: 相手育成フェイズの説明を挿入
@@ -734,7 +736,8 @@ function aiPhaseMain() {
   // チュートリアル: AIスクリプトがあればメインフェイズでスクリプトを実行
   const runner = window._tutorialRunner;
   if (runner && runner.active && runner.opponentScriptRunner) {
-    const turnNumber = (bs && bs.turn) || 1;
+    // AIスクリプトの「ターン N」は AI's N回目のターン (aiPhaseBreed と同じ計算)
+    const turnNumber = Math.max(1, ((bs && bs.turn) || 1) - 1);
     if (runner.opponentScriptRunner.hasActionsForPhase(turnNumber, 'main')) {
       showPhaseAnnounce('⚡ メインフェイズ', '#ff00fb', async () => {
         addLog('🤖 メインフェイズ（スクリプト制御）');

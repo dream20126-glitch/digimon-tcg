@@ -460,6 +460,7 @@ class TutorialRunner {
 
   _activateBlock(blockIdx) {
     const block = this._flow[blockIdx];
+    console.log('[tutRunner] _activateBlock idx=', blockIdx, 'phase=', block?.phase, 'trigger=', block?.trigger, 'turn=', block?.turn, 'occurrence=', block?.occurrence, 'steps=', block?.steps?.length);
     if (!block || !block.steps || !block.steps.length) {
       this._completedBlocks.add(blockIdx);
       return;
@@ -638,6 +639,8 @@ class TutorialRunner {
 
   _completeCurrentBlock() {
     const completedBlock = this._currentBlock;
+    const _completedIdx = completedBlock && completedBlock._flowIdx;
+    console.log('[tutRunner] _completeCurrentBlock idx=', _completedIdx, 'phase=', completedBlock?.phase, 'trigger=', completedBlock?.trigger, 'queue=', this._pendingActivationQueue.map(q=>q.idx));
     if (this._currentBlock && typeof this._currentBlock._flowIdx === 'number') {
       this._completedBlocks.add(this._currentBlock._flowIdx);
     }

@@ -650,42 +650,51 @@ class TutorialRunner {
     // フェーズの promise 解放 (block 完了後は必ず解放)
     this._maybeReleasePhaseBlock();
 
-    // 同一グループ (同 phase or 同 trigger+parentSlot) の次ブロックのみ自動チェーン
-    // 別グループのブロックは対応イベント発火時に活性化される (checkInterrupt/notifyPhaseChange経由)
-    if (completedBlock && completedBlock.phase === '_trigger' && completedBlock.trigger) {
-      const nextIdx = this._flow.findIndex((b, i) =>
-        !this._completedBlocks.has(i) &&
-        b.phase === '_trigger' &&
-        b.trigger === completedBlock.trigger &&
-        (b.parentSlot || undefined) === (completedBlock.parentSlot || undefined)
-      );
-      if (nextIdx >= 0) {
-        this._activateBlock(nextIdx);
-        return;
-      }
-    } else if (completedBlock && completedBlock.phase && completedBlock.phase !== '_trigger') {
-      const nextIdx = this._flow.findIndex((b, i) =>
-        !this._completedBlocks.has(i) &&
-        b.phase === completedBlock.phase &&
-        (b.turn || 1) === (completedBlock.turn || 1)
-      );
-      if (nextIdx >= 0) {
-        this._activateBlock(nextIdx);
+    // 「配列内の直後のブロック」が同一グループの場合のみチェーン
+    // (間に別グループのブロックがある場合はそのブロックの活性化を待つ)
+    const completedFlowIdx = (completedBlock && typeof completedBlock._flowIdx === 'number') ? completedBlock._flowIdx : -1;
+    let immediateNextIdx = -1;
+    for (let i = completedFlowIdx + 1; i < this._flow.length; i++) {
+      if (!this._completedBlocks.has(i)) { immediateNextIdx = i; break; }
+    }
+    if (immediateNextIdx >= 0 && completedBlock) {
+      const nextB = this._flow[immediateNextIdx];
+      const sameGroup =
+        (completedBlock.phase === '_trigger' && nextB.phase === '_trigger'
+          && completedBlock.trigger === nextB.trigger
+          && (completedBlock.parentSlot || undefined) === (nextB.parentSlot || undefined))
+        || (completedBlock.phase && completedBlock.phase !== '_trigger'
+          && nextB.phase === completedBlock.phase
+          && (nextB.turn || 1) === (completedBlock.turn || 1));
+      if (sameGroup) {
+        this._activateBlock(immediateNextIdx);
         return;
       }
     }
 
-    // 同一グループの次ブロックが無い場合: 保留キューにあるブロックを活性化
-    // (block active 中に発火したトリガーが待機されている)
+    // 保留キュー処理 (block active 中に発火したトリガー)
     while (this._pendingActivationQueue.length > 0) {
       const item = this._pendingActivationQueue.shift();
       if (item && item.idx != null && !this._completedBlocks.has(item.idx) && this._flow[item.idx]) {
         console.log('[tutRunner] activating queued block at idx=', item.idx, 'trigger=', item.trigger);
-        // キューから活性化する時はトリガーが既に発火済みなので、justFired 扱いにするため refresh
         if (item.trigger) {
           this._lastFiredTrigger = { key: item.trigger, time: Date.now() };
         }
         this._activateBlock(item.idx);
+        return;
+      }
+    }
+
+    // トリガーブロック完了後: 現在のフェーズのまだ活性化されていない次ブロックを探して再開
+    // (例: trigger→phase の遷移で、イベント自動発火を待たずに phase を再活性化)
+    if (completedBlock && completedBlock.phase === '_trigger' && this._currentPhase) {
+      const matchIdx = this._flow.findIndex((b, i) =>
+        !this._completedBlocks.has(i) &&
+        b.phase === this._currentPhase &&
+        b.phase !== '_trigger'
+      );
+      if (matchIdx >= 0) {
+        this._activateBlock(matchIdx);
         return;
       }
     }

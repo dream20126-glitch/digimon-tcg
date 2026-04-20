@@ -242,16 +242,9 @@ class TutorialRunner {
       window._tutorialShowGoal(scenario.clearCondition);
     }
 
-    // 順次実行モデル: 先頭ブロックを活性化
-    // (battle.js 側のゲート演出が始まってから起動するよう少し遅延)
-    if (this._flow.length > 0) {
-      setTimeout(() => {
-        if (!this.active || this.cleared) return;
-        if (this._currentBlock) return; // 既に活性化済み (notifyPhaseChange 経由等) ならスキップ
-        const firstIdx = this._flow.findIndex((b, i) => !this._completedBlocks.has(i));
-        if (firstIdx >= 0) this._activateBlock(firstIdx);
-      }, 500);
-    }
+    // ブロックの活性化は phase change や trigger 発火などのイベントに任せる
+    // (先頭ブロックを早期に activate すると、ゲート演出中に pending wait 状態で
+    //  はあっても一瞬表示される可能性があるため)
   }
 
   // ---------------------------------------------------------------

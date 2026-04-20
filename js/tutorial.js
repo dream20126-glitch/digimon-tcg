@@ -947,6 +947,8 @@ function _resolveTargets(targetArea, targetCardNo) {
     const selector = areaToScope[targetArea];
     if (selector) {
       const els = document.querySelectorAll(selector);
+      const cardNos = Array.from(els).map(e => e.dataset.cardNo || '(none)');
+      console.log('[tutResolve] area=', targetArea, 'card=', targetCardNo, 'selector=', selector, 'foundSlots=', els.length, 'cardNos=', cardNos);
       for (const el of els) {
         if (el.dataset.cardNo === targetCardNo) return [el];
         if (el.dataset.cardNo && el.dataset.cardNo.includes(targetCardNo)) return [el];
@@ -959,6 +961,7 @@ function _resolveTargets(targetArea, targetCardNo) {
     }
     // エリア限定が効かない場合は従来のグローバル検索にフォールバック
     const el = _findCardElement(targetCardNo);
+    console.log('[tutResolve] fallback _findCardElement returned', el && el.tagName, el && el.dataset && el.dataset.cardNo);
     if (el) return [el];
   }
   if (targetCardNo) {

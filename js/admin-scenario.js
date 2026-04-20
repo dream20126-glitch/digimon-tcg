@@ -232,11 +232,13 @@ const TARGET_AREAS = [
   { value: 'drawn_card',   label: 'ドローしたカード（演出中の中央カード）', group: '🟢 自分のエリア' },
   { value: 'hand_last',    label: '手札の最後尾のカード',                 group: '🟢 自分のエリア' },
   { value: 'battle',       label: 'バトルエリア',                        group: '🟢 自分のエリア' },
+  { value: 'tamer',        label: 'テイマーエリア',                      group: '🟢 自分のエリア' },
   { value: 'own_security', label: 'セキュリティ',                        group: '🟢 自分のエリア' },
   { value: 'own_trash',    label: 'トラッシュ',                          group: '🟢 自分のエリア' },
   { value: 'own_deck',     label: 'デッキ',                              group: '🟢 自分のエリア' },
   // --- 相手エリア ---
   { value: 'opp_battle',   label: 'バトルエリア',                        group: '🔴 相手のエリア' },
+  { value: 'opp_tamer',    label: 'テイマーエリア',                      group: '🔴 相手のエリア' },
   { value: 'opp_security', label: 'セキュリティ',                        group: '🔴 相手のエリア' },
   { value: 'opp_trash',    label: 'トラッシュ',                          group: '🔴 相手のエリア' },
   { value: 'opp_deck',     label: 'デッキ',                              group: '🔴 相手のエリア' },

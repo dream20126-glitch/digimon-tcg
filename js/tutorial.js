@@ -417,10 +417,12 @@ function _applyStepUiControl(step) {
     const _cardAreaSelectors = {
       hand: '#hand-wrap .h-card, #mulligan-hand-preview .mulligan-card',
       battle: '#pl-battle-row .b-slot[data-card-no]',
+      tamer: '#pl-tamer-row .tamer-slot[data-card-no]',
       raising: '#pl-iku-slot',
       opp_battle: '#ai-battle-row .b-slot[data-card-no]',
+      opp_tamer: '#ai-tamer-row .tamer-slot[data-card-no]',
     };
-    const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no], #mulligan-hand-preview .mulligan-card');
+    const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no], #pl-tamer-row .tamer-slot[data-card-no], #ai-tamer-row .tamer-slot[data-card-no], #mulligan-hand-preview .mulligan-card');
     allCards.forEach(cardEl => {
       const no = cardEl.dataset.cardNo || '';
       let isHighlight = false;
@@ -523,10 +525,12 @@ window._tutorialReapplyUiControl = function() {
     const _cardAreaSelectors = {
       hand: '#hand-wrap .h-card, #mulligan-hand-preview .mulligan-card',
       battle: '#pl-battle-row .b-slot[data-card-no]',
+      tamer: '#pl-tamer-row .tamer-slot[data-card-no]',
       raising: '#pl-iku-slot',
       opp_battle: '#ai-battle-row .b-slot[data-card-no]',
+      opp_tamer: '#ai-tamer-row .tamer-slot[data-card-no]',
     };
-    const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no], #mulligan-hand-preview .mulligan-card');
+    const allCards = document.querySelectorAll('#hand-wrap .h-card, #pl-battle-row .b-slot[data-card-no], #pl-tamer-row .tamer-slot[data-card-no], #ai-tamer-row .tamer-slot[data-card-no], #mulligan-hand-preview .mulligan-card');
     allCards.forEach(cardEl => {
       const no = cardEl.dataset.cardNo || '';
       let isHighlight = false;
@@ -800,11 +804,13 @@ const TARGET_AREA_SELECTORS = {
   // ドロー演出中の中央カード
   drawn_card:    () => document.getElementById('draw-card-img'),
   battle:        () => document.getElementById('pl-battle-row'),
+  tamer:         () => document.getElementById('pl-tamer-row'),
   end_turn_btn:  () => document.getElementById('action-bar'),
   mulligan_btn_start: () => document.querySelector('#mulligan-overlay .menu-btn.primary'),
   mulligan_btn_redo:  () => document.getElementById('mulligan-btn'),
   opp_security:  () => document.getElementById('ai-sec-area'),
   opp_battle:    () => document.getElementById('ai-battle-row'),
+  opp_tamer:     () => document.getElementById('ai-tamer-row'),
   // 自分・相手のセキュリティ/トラッシュ
   own_security:  () => document.getElementById('pl-sec-area'),
   own_trash:     () => {
@@ -945,8 +951,10 @@ function _resolveTargets(targetArea, targetCardNo) {
     const areaToScope = {
       hand: '#hand-wrap .h-card',
       battle: '#pl-battle-row .b-slot',
+      tamer: '#pl-tamer-row .tamer-slot',
       raising: '#pl-iku-slot .b-slot, #pl-iku-slot',
       opp_battle: '#ai-battle-row .b-slot',
+      opp_tamer: '#ai-tamer-row .tamer-slot',
       opp_security: '#ai-sec-area .sec-card',
     };
     const selector = areaToScope[targetArea];

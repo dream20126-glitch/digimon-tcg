@@ -466,6 +466,8 @@ function renderTamerRows() {
       if (!card) return;
       const sl = document.createElement('div');
       sl.className = 'tamer-slot';
+      sl.dataset.cardNo = card.cardNo || '';
+      sl.dataset.cardName = card.name || '';
       if (card.suspended) sl.style.transform = 'rotate(90deg)';
       const src = cardImg(card);
       sl.innerHTML = (src

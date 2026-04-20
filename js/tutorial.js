@@ -1584,6 +1584,7 @@ function _createSpotlightDimOverlay(targetEls, secondEls) {
   const flat = [];
   const collect = (x) => { if (!x) return; if (Array.isArray(x)) x.forEach(collect); else flat.push(x); };
   collect(targetEls); collect(secondEls);
+  console.log('[tutSpotlight] createDim - targets=', targetEls && targetEls.length, 'seconds=', secondEls && secondEls.length, 'flat=', flat.length);
   if (!flat.length) return;
 
   flat.forEach(el => { _markElementAndKin(el); });

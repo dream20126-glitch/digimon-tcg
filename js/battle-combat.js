@@ -676,10 +676,15 @@ export function resolveSecurityCheck(atk, atkIdx) {
       if (old && old.parentNode) old.parentNode.removeChild(old);
       const el = document.createElement('div');
       el.id = '_sec-check-count-label';
-      el.style.cssText = 'position:fixed;top:10%;left:50%;transform:translateX(-50%);z-index:60001;pointer-events:none;font-size:clamp(0.9rem,4vw,1.3rem);font-weight:700;color:#fff;background:rgba(0,0,0,0.7);padding:6px 18px;border-radius:8px;border:1px solid #aaa;text-align:center;animation:secCheckLabel 2.5s ease forwards;';
+      // チュートリアル中は自動フェードアウトせず、次のラベル or VS画面クローズまで表示を維持
+      const tutorialActive = !!(window._tutorialRunner && window._tutorialRunner.active);
+      const animCss = tutorialActive ? '' : 'animation:secCheckLabel 2.5s ease forwards;';
+      el.style.cssText = 'position:fixed;top:10%;left:50%;transform:translateX(-50%);z-index:60001;pointer-events:none;font-size:clamp(0.9rem,4vw,1.3rem);font-weight:700;color:#fff;background:rgba(0,0,0,0.7);padding:6px 18px;border-radius:8px;border:1px solid #aaa;text-align:center;' + animCss;
       el.innerText = labelText;
       document.body.appendChild(el);
-      setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 2800);
+      if (!tutorialActive) {
+        setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 2800);
+      }
     }
 
     showSecurityCheck(sec, atk, () => {
@@ -1782,6 +1787,10 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
 
   // チュートリアル: VS画面の割り込み（カード表示後、結果表示前にメッセージ挿入）
   const tutRunner = window._tutorialRunner;
+  const _removeCountLabel = () => {
+    const cl = document.getElementById('_sec-check-count-label');
+    if (cl && cl.parentNode) cl.parentNode.removeChild(cl);
+  };
   if (tutRunner && tutRunner.active && typeof tutRunner.checkInterrupt === 'function') {
     setTimeout(async () => {
       const vsKey = bs.isPlayerTurn ? 'battle_vs' : 'opp_battle_vs';
@@ -1789,11 +1798,11 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
       resultEl.innerText = resultText; resultEl.style.color = resultColor;
       resultEl.style.textShadow = `0 0 20px ${resultColor}`;
       resultEl.style.opacity = '1'; resultEl.style.transform = 'scale(1)';
-      setTimeout(() => { overlay.style.display = 'none'; callback && callback(); }, 1300);
+      setTimeout(() => { overlay.style.display = 'none'; _removeCountLabel(); callback && callback(); }, 1300);
     }, 1500);
   } else {
     setTimeout(() => { resultEl.innerText = resultText; resultEl.style.color = resultColor; resultEl.style.textShadow = `0 0 20px ${resultColor}`; resultEl.style.opacity = '1'; resultEl.style.transform = 'scale(1)'; }, 1500);
-    setTimeout(() => { overlay.style.display = 'none'; callback && callback(); }, 2800);
+    setTimeout(() => { overlay.style.display = 'none'; _removeCountLabel(); callback && callback(); }, 2800);
   }
 }
 

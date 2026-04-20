@@ -285,6 +285,7 @@ const TARGET_AREAS = [
   { value: 'vs_label',     label: '「VS」テキスト',                     group: '⚔ VS画面' },
   { value: 'vs_title',     label: 'タイトル（SECURITY CHECK!等）',      group: '⚔ VS画面' },
   { value: 'vs_result',    label: '結果テキスト（Win/Lost等）',         group: '⚔ VS画面' },
+  { value: 'vs_check_count', label: '「N枚目」カウンタ（Sアタック+時）', group: '⚔ VS画面' },
 ];
 
 // アコーディオン型エリアピッカー

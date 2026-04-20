@@ -879,6 +879,7 @@ const TARGET_AREA_SELECTORS = {
   vs_label:          () => document.getElementById('sec-vs-label'),
   vs_title:          () => document.getElementById('sec-check-label'),
   vs_result:         () => document.getElementById('sec-check-result'),
+  vs_check_count:    () => document.getElementById('_sec-check-count-label'),
 };
 
 let _highlightedEls = []; // 現在ハイライト中のDOM要素群

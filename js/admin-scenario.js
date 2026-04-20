@@ -1607,6 +1607,19 @@ function _renderFlowStep(slotKey, timing, sIdx, step, occ) {
       <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">表示タイミング</label>
         <select onchange="flowChangeStepTiming(${sk},${tg},${sIdx},this.value)">${timingOpts}</select>
       </div>` : ''}
+      ${(() => {
+        // トリガー系タイミングなら「発火 N 回目」のセレクタを表示 (同一トリガーでの複数回発火を区別)
+        const _tDef = STEP_TIMINGS.find(t => t.value === timing);
+        const isTriggerTiming = !!(_tDef && _tDef.trigger);
+        if (!isTriggerTiming) return '';
+        return `<div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">このトリガー発火の何回目?
+          <span style="color:#888;">※ 同じトリガーの複数回発火を区別。デフォルト1回目（同じ発火で連続表示）。</span>
+        </label>
+          <select onchange="flowChangeStepOccurrence(${sk},${tg},${sIdx},${occVal},Number(this.value))">` +
+            [1,2,3,4,5].map(n => `<option value="${n}" ${n === occVal ? 'selected' : ''}>${n}回目</option>`).join('') +
+          `</select>
+        </div>`;
+      })()}
       <div class="tsave-field" style="margin-bottom:6px;"><label style="font-size:10px;">ステップタイプ</label>
         <select onchange="flowUpdateStep(${sk},${tg},${sIdx},'stepType',this.value,${occVal})">${stepTypeOpts}</select>
       </div>

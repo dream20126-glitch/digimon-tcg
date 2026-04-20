@@ -187,6 +187,7 @@ class TutorialRunner {
     this._lastShownTriggerCtx = null; // 直前に表示したトリガーブロックのコンテキスト
                                        //   (同じトリガー連続ステップの場合に即時表示するため)
     this._pendingActivationQueue = []; // 現ブロックが active のために保留されたトリガーブロック index
+    this._triggerFireCount = {};      // トリガーごとの発火回数 (occurrence マッチ用)
   }
 
   // ---------------------------------------------------------------
@@ -312,6 +313,9 @@ class TutorialRunner {
     if (!this.active || this.cleared) return;
     console.log('[tutRunner] checkInterrupt enter', triggerKey, 'pending=', this._pendingWaitKind, this._pendingWaitValue, 'block=', this._currentBlock && {phase:this._currentBlock.phase, trigger:this._currentBlock.trigger, idx:this._currentStepIdx});
     try { this.notifyEvent(triggerKey, {}); } catch (_) {}
+    // このトリガーの発火回数をインクリメント (occurrence マッチ用)
+    this._triggerFireCount[triggerKey] = (this._triggerFireCount[triggerKey] || 0) + 1;
+    const fireCount = this._triggerFireCount[triggerKey];
     // 直近の発火を記録 (後からこのトリガーを待つブロックが活性化したときに即表示するため)
     this._lastFiredTrigger = { key: triggerKey, time: Date.now() };
     // 現在このトリガーを待っているペンディングステップがあれば表示
@@ -322,14 +326,15 @@ class TutorialRunner {
       this._pendingWaitValue = null;
       this._showCurrentStep();
     } else if (!this._currentBlock) {
-      // 現ブロックが無ければ、このトリガーの未完了ブロックを検索して活性化
+      // 現ブロックが無ければ、このトリガーの fireCount に一致する occurrence のブロックを検索して活性化
       const matchIdx = this._flow.findIndex((b, i) =>
         !this._completedBlocks.has(i) &&
         b.phase === '_trigger' &&
-        b.trigger === triggerKey
+        b.trigger === triggerKey &&
+        (b.occurrence || 1) === fireCount
       );
       if (matchIdx >= 0) {
-        console.log('[tutRunner] activating trigger block at idx=', matchIdx);
+        console.log('[tutRunner] activating trigger block at idx=', matchIdx, 'fireCount=', fireCount);
         this._activateBlock(matchIdx);
       }
     } else {
@@ -337,12 +342,13 @@ class TutorialRunner {
       const matchIdx = this._flow.findIndex((b, i) =>
         !this._completedBlocks.has(i) &&
         b.phase === '_trigger' &&
-        b.trigger === triggerKey
+        b.trigger === triggerKey &&
+        (b.occurrence || 1) === fireCount
       );
       if (matchIdx >= 0) {
         const already = this._pendingActivationQueue.some(q => q.idx === matchIdx);
         if (!already) {
-          console.log('[tutRunner] queueing trigger block for later, idx=', matchIdx, 'trigger=', triggerKey);
+          console.log('[tutRunner] queueing trigger block for later, idx=', matchIdx, 'trigger=', triggerKey, 'fireCount=', fireCount);
           this._pendingActivationQueue.push({ idx: matchIdx, trigger: triggerKey });
         }
       }
@@ -662,7 +668,8 @@ class TutorialRunner {
       const sameGroup =
         (completedBlock.phase === '_trigger' && nextB.phase === '_trigger'
           && completedBlock.trigger === nextB.trigger
-          && (completedBlock.parentSlot || undefined) === (nextB.parentSlot || undefined))
+          && (completedBlock.parentSlot || undefined) === (nextB.parentSlot || undefined)
+          && (completedBlock.occurrence || 1) === (nextB.occurrence || 1))
         || (completedBlock.phase && completedBlock.phase !== '_trigger'
           && nextB.phase === completedBlock.phase
           && (nextB.turn || 1) === (completedBlock.turn || 1));

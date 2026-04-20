@@ -504,6 +504,10 @@ function _clearStepUiControl() {
 // 育成フェイズの「何もしない」ボタンは execBreed で動的生成されるため
 // step show時にはまだ存在しない → 再適用が必要
 window._tutorialReapplyUiControl = function() {
+  // renderAll 後にスポットライト対象も再マーク (keep-visible クラス剥がれ対策)
+  if (typeof window._tutorialReapplySpotlight === 'function') {
+    try { window._tutorialReapplySpotlight(); } catch (_) {}
+  }
   if (!_activeUiStep) return;
   const step = _activeUiStep;
   const greyOut = Array.isArray(step.greyOut) ? step.greyOut : [];
@@ -947,21 +951,18 @@ function _resolveTargets(targetArea, targetCardNo) {
     const selector = areaToScope[targetArea];
     if (selector) {
       const els = document.querySelectorAll(selector);
-      const cardNos = Array.from(els).map(e => e.dataset.cardNo || '(none)').join('|');
-      console.log('[tutResolve] area=' + targetArea + ' card=' + targetCardNo + ' selector=' + selector + ' foundSlots=' + els.length + ' cardNos=[' + cardNos + ']');
       for (const el of els) {
-        if (el.dataset.cardNo === targetCardNo) { console.log('[tutResolve] MATCH: cardNo===target'); return [el]; }
-        if (el.dataset.cardNo && el.dataset.cardNo.includes(targetCardNo)) { console.log('[tutResolve] MATCH: cardNo.includes(target)'); return [el]; }
+        if (el.dataset.cardNo === targetCardNo) return [el];
+        if (el.dataset.cardNo && el.dataset.cardNo.includes(targetCardNo)) return [el];
       }
       // カード名での検索（data-card-no にカード名が入っていない場合）
       for (const el of els) {
         const nameEl = el.querySelector('.card-name, .b-name');
-        if (nameEl && nameEl.textContent.includes(targetCardNo)) { console.log('[tutResolve] MATCH: by name'); return [el]; }
+        if (nameEl && nameEl.textContent.includes(targetCardNo)) return [el];
       }
     }
     // エリア限定が効かない場合は従来のグローバル検索にフォールバック
     const el = _findCardElement(targetCardNo);
-    console.log('[tutResolve] fallback _findCardElement returned=' + (el ? (el.tagName + ' cardNo=' + (el.dataset && el.dataset.cardNo)) : 'null'));
     if (el) return [el];
   }
   if (targetCardNo) {
@@ -1549,7 +1550,7 @@ function _tutorialShowInlineSpotlight(step, ctx) {
     _applyStepUiControl(step);
 
     // 黒い暗転オーバーレイは1度だけ表示（パート切替で消えないように）
-    _createSpotlightDimOverlay(targetEls, secondEls);
+    _createSpotlightDimOverlay(targetEls, secondEls, { targetArea, targetCardNo, secondArea, secondCardNo });
 
     let idx = 0;
     const showPart = () => {
@@ -1578,17 +1579,21 @@ function _tutorialShowInlineSpotlight(step, ctx) {
 // スポットライト暗転（opacity方式）:
 // 対象+祖先+子孫に .tutorial-keep-visible を付け、それ以外の兄弟要素を透明度で薄く
 // → マリガン背景が既に暗い場合も、非対象要素が消えるように暗く見える
-function _createSpotlightDimOverlay(targetEls, secondEls) {
+// renderAll 後に再適用できるように、現在のスポットライト対象情報を保持
+let _activeSpotlightArgs = null;  // { targetArea, targetCardNo, secondArea, secondCardNo }
+
+function _createSpotlightDimOverlay(targetEls, secondEls, spotlightArgs) {
   _removeSpotlightDimOverlay();
   // 単一要素/配列どちらでも受け付け、フラットな配列にまとめる
   const flat = [];
   const collect = (x) => { if (!x) return; if (Array.isArray(x)) x.forEach(collect); else flat.push(x); };
   collect(targetEls); collect(secondEls);
-  console.log('[tutSpotlight] createDim - targets=', targetEls && targetEls.length, 'seconds=', secondEls && secondEls.length, 'flat=', flat.length);
   if (!flat.length) return;
 
   flat.forEach(el => { _markElementAndKin(el); });
   document.body.classList.add('tutorial-spotlight-mode');
+  // 再適用用に対象情報を保存
+  if (spotlightArgs) _activeSpotlightArgs = spotlightArgs;
 }
 
 // 対象 + 祖先全部 + 子孫全部に .tutorial-keep-visible を付与
@@ -1614,7 +1619,25 @@ function _removeSpotlightDimOverlay() {
   document.querySelectorAll('.tutorial-keep-visible').forEach(el =>
     el.classList.remove('tutorial-keep-visible')
   );
+  _activeSpotlightArgs = null;
 }
+
+// renderAll 等で DOM 再生成されても keep-visible クラスを再適用する
+window._tutorialReapplySpotlight = function() {
+  if (!_activeSpotlightArgs) return;
+  const a = _activeSpotlightArgs;
+  const targetEls = _resolveTargets(a.targetArea || '', a.targetCardNo || '');
+  const secondEls = _resolveTargets(a.secondArea || '', a.secondCardNo || '');
+  const flat = [];
+  const collect = (x) => { if (!x) return; if (Array.isArray(x)) x.forEach(collect); else flat.push(x); };
+  collect(targetEls); collect(secondEls);
+  if (!flat.length) return;
+  // 既存の keep-visible をクリアしてから再マーク (body クラスは保持)
+  document.querySelectorAll('.tutorial-keep-visible').forEach(el =>
+    el.classList.remove('tutorial-keep-visible')
+  );
+  flat.forEach(el => { _markElementAndKin(el); });
+};
 
 // スポットライト専用OKボタン（吹き出し内に表示）
 function _showSpotlightNextBtn(onClick) {

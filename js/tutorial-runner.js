@@ -186,6 +186,7 @@ class TutorialRunner {
     this._pendingWaitValue = null;    // 待機対象の phase 名 or trigger 名
     this._lastShownTriggerCtx = null; // 直前に表示したトリガーブロックのコンテキスト
                                        //   (同じトリガー連続ステップの場合に即時表示するため)
+    this._pendingActivationQueue = []; // 現ブロックが active のために保留されたトリガーブロック index
   }
 
   // ---------------------------------------------------------------
@@ -268,8 +269,8 @@ class TutorialRunner {
       this._pendingWaitKind = null;
       this._pendingWaitValue = null;
       this._showCurrentStep();
-    } else if (!this._currentBlock || this._currentBlock.phase !== phaseKey) {
-      // 現ブロックがこのフェーズと無関係なら、_flow 内を検索してこのフェーズの未完了ブロックを活性化
+    } else if (!this._currentBlock) {
+      // 現ブロックが無ければ、このフェーズの未完了ブロックを検索して活性化
       const matchIdx = this._flow.findIndex((b, i) =>
         !this._completedBlocks.has(i) &&
         b.phase === phaseKey &&
@@ -320,10 +321,8 @@ class TutorialRunner {
       this._pendingWaitKind = null;
       this._pendingWaitValue = null;
       this._showCurrentStep();
-    } else if (!this._currentBlock
-               || this._currentBlock.phase !== '_trigger'
-               || this._currentBlock.trigger !== triggerKey) {
-      // 現ブロックがこのトリガーと無関係なら、_flow 内を検索してこのトリガーの未完了ブロックを活性化
+    } else if (!this._currentBlock) {
+      // 現ブロックが無ければ、このトリガーの未完了ブロックを検索して活性化
       const matchIdx = this._flow.findIndex((b, i) =>
         !this._completedBlocks.has(i) &&
         b.phase === '_trigger' &&
@@ -332,6 +331,17 @@ class TutorialRunner {
       if (matchIdx >= 0) {
         console.log('[tutRunner] activating trigger block at idx=', matchIdx);
         this._activateBlock(matchIdx);
+      }
+    } else {
+      // 現ブロックが active のままトリガーが発火 → 保留キューに入れて block 完了時に活性化
+      const matchIdx = this._flow.findIndex((b, i) =>
+        !this._completedBlocks.has(i) &&
+        b.phase === '_trigger' &&
+        b.trigger === triggerKey
+      );
+      if (matchIdx >= 0 && !this._pendingActivationQueue.includes(matchIdx)) {
+        console.log('[tutRunner] queueing trigger block for later, idx=', matchIdx);
+        this._pendingActivationQueue.push(matchIdx);
       }
     }
     // 同一トリガーのブロックが連続している間は全ポップアップの dismiss を待つ
@@ -658,6 +668,17 @@ class TutorialRunner {
       );
       if (nextIdx >= 0) {
         this._activateBlock(nextIdx);
+        return;
+      }
+    }
+
+    // 同一グループの次ブロックが無い場合: 保留キューにあるブロックを活性化
+    // (block active 中に発火したトリガーが待機されている)
+    while (this._pendingActivationQueue.length > 0) {
+      const idx = this._pendingActivationQueue.shift();
+      if (idx != null && !this._completedBlocks.has(idx) && this._flow[idx]) {
+        console.log('[tutRunner] activating queued block at idx=', idx);
+        this._activateBlock(idx);
         return;
       }
     }

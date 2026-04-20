@@ -701,6 +701,14 @@ class TutorialRunner {
     // (例: trigger→phase の遷移で、イベント自動発火を待たずに phase を再活性化)
     // ただし「配列内の直後」が別フェーズ/トリガーなら、そのブロックを差し置かずに該当ブロックのみに限定
     if (completedBlock && completedBlock.phase === '_trigger' && this._currentPhase) {
+      // battle_vs / opp_battle_vs は必ず after_attack / opp_after_attack が続いて発火するので、
+      // VS 完了時はフォールバック活性化を止めて after_attack の発火を待つ
+      //   (でないと battle_vs 完了 → 次の main ブロック活性化 → after_attack が queue 行き、
+      //    ステップ順序が逆転してしまう)
+      const VS_TRIGGERS = new Set(['battle_vs', 'opp_battle_vs']);
+      if (VS_TRIGGERS.has(completedBlock.trigger)) {
+        return;
+      }
       const curTurn = this._currentTurn || 1;
       const matchIdx = this._flow.findIndex((b, i) =>
         !this._completedBlocks.has(i) &&

@@ -568,6 +568,7 @@ class TutorialRunner {
     // 後方互換: mulligan_accepted は明示設定なしのとき silent
     const step = this._currentBlock && this._currentBlock.steps[this._currentStepIdx];
     const condType = step && step.advanceCondition && step.advanceCondition.type;
+    console.log('[tutRunner] _advanceStep from stepIdx=', this._currentStepIdx, 'block idx=', this._currentBlock?._flowIdx, 'phase=', this._currentBlock?.phase, 'trigger=', this._currentBlock?.trigger, 'condType=', condType);
     // action ステップは進行条件達成と同時に指差し/吹き出しを消す
     // （成功演出やバトル演出が始まる前に古い指差しを消しておくことで重なりを防ぐ）
     if (step && step.stepType === 'action') {

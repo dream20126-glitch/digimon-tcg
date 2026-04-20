@@ -299,11 +299,13 @@ class TutorialRunner {
   // ---------------------------------------------------------------
   async checkInterrupt(triggerKey) {
     if (!this.active || this.cleared) return;
+    console.log('[tutRunner] checkInterrupt enter', triggerKey, 'pending=', this._pendingWaitKind, this._pendingWaitValue, 'block=', this._currentBlock && {phase:this._currentBlock.phase, trigger:this._currentBlock.trigger, idx:this._currentStepIdx});
     try { this.notifyEvent(triggerKey, {}); } catch (_) {}
     // 直近の発火を記録 (後からこのトリガーを待つブロックが活性化したときに即表示するため)
     this._lastFiredTrigger = { key: triggerKey, time: Date.now() };
     // 現在このトリガーを待っているペンディングステップがあれば表示
     if (this._pendingWaitKind === 'trigger' && this._pendingWaitValue === triggerKey && this._pendingStep) {
+      console.log('[tutRunner] pending match, showing step');
       this._pendingStep = null;
       this._pendingWaitKind = null;
       this._pendingWaitValue = null;
@@ -318,11 +320,14 @@ class TutorialRunner {
       if (!this._currentBlock) break;
       if (this._currentBlock.phase !== '_trigger' || this._currentBlock.trigger !== triggerKey) break;
       if (this._currentStepPopupPromise) {
+        console.log('[tutRunner] loop await popup, trigger=', triggerKey, 'guard=', guard);
         try { await this._currentStepPopupPromise; } catch (_) {}
+        console.log('[tutRunner] loop popup resolved, block=', this._currentBlock && {phase:this._currentBlock.phase, trigger:this._currentBlock.trigger, idx:this._currentStepIdx}, 'popup=', !!this._currentStepPopupPromise);
         // 次ステップの popup が set されるのを 200ms 待つ (setTimeout 100ms 経由でセットされるため)
         await new Promise(r => setTimeout(r, 200));
+        console.log('[tutRunner] loop after 200ms, block=', this._currentBlock && {phase:this._currentBlock.phase, trigger:this._currentBlock.trigger, idx:this._currentStepIdx}, 'popup=', !!this._currentStepPopupPromise);
       } else {
-        // popup 無し (action ステップ) → 待たない
+        console.log('[tutRunner] loop break: no popup, block=', this._currentBlock && {phase:this._currentBlock.phase, trigger:this._currentBlock.trigger, idx:this._currentStepIdx}, 'pending=', this._pendingWaitKind, this._pendingWaitValue);
         break;
       }
     }

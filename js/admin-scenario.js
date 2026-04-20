@@ -257,11 +257,11 @@ const TARGET_AREAS = [
   { value: 'card_detail_effect',     label: '効果欄',                      group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_evo_source', label: '進化元効果（上カード＋スタック全体）', group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_evo_source_stack',   label: '進化元カードの進化元効果（全体）', group: '🔍 カード詳細モーダル' },
-  { value: 'card_detail_evo_source_stack_0', label: '└ 1枚目（一番下）',          group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_evo_source_stack_0', label: '└ 1枚目',                    group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_evo_source_stack_1', label: '└ 2枚目',                    group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_evo_source_stack_2', label: '└ 3枚目',                    group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_evo_source_stack_3', label: '└ 4枚目',                    group: '🔍 カード詳細モーダル' },
-  { value: 'card_detail_evo_source_stack_4', label: '└ 5枚目',                    group: '🔍 カード詳細モーダル' },
+  { value: 'card_detail_evo_source_stack_4', label: '└ 5枚目（一番下）',          group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_sec_effect', label: 'セキュリティ効果',            group: '🔍 カード詳細モーダル' },
   { value: 'card_detail_close',      label: '閉じるボタン',                group: '🔍 カード詳細モーダル' },
   // --- 効果確認ダイアログ ---
@@ -1138,7 +1138,7 @@ const CARD_DETAIL_AREAS = [
   { value: 'evo_source_stack_1', label: '└ 2枚目',                         area: 'card_detail_evo_source_stack_1' },
   { value: 'evo_source_stack_2', label: '└ 3枚目',                         area: 'card_detail_evo_source_stack_2' },
   { value: 'evo_source_stack_3', label: '└ 4枚目',                         area: 'card_detail_evo_source_stack_3' },
-  { value: 'evo_source_stack_4', label: '└ 5枚目',                         area: 'card_detail_evo_source_stack_4' },
+  { value: 'evo_source_stack_4', label: '└ 5枚目（一番下）',              area: 'card_detail_evo_source_stack_4' },
   { value: 'sec_effect', label: 'セキュリティ効果',    area: 'card_detail_sec_effect' },
   { value: 'close',      label: '閉じるボタン',        area: 'card_detail_close' },
 ];

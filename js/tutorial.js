@@ -219,6 +219,13 @@ let _tutorialGoalActive = false;
 let _tutorialMulliganDone = false;
 
 window._tutorialShowGoal = function(clearCondition) {
+  // exit_room など「ゴールに表示しない」クリア条件はバナー非表示
+  const HIDE_IN_GOAL = new Set(['exit_room']);
+  if (clearCondition && HIDE_IN_GOAL.has(clearCondition.type)) {
+    _tutorialGoalActive = false;
+    _refreshGoalBanner();
+    return;
+  }
   _tutorialGoalLabel = _clearConditionToJapanese(clearCondition);
   _tutorialGoalActive = true;
   _refreshGoalBanner();

@@ -86,6 +86,9 @@ export const CONDITION_EVALUATORS = {
   effect_triggered:  (params, ev) => ev.type === 'effect_triggered',
   security_effect:   (params, ev) => ev.type === 'security_effect',
 
+  // ルーム退出（ゲートを出るボタン押下後、確認「はい」）
+  exit_room: (params, ev) => ev.type === 'exit_room',
+
   // 閉じるボタン押下（カード詳細/トラッシュ/各種モーダル共通）
   modal_closed: (params, ev) => ev.type === 'modal_closed',
   // キャンセルボタン押下（長押しメニュー/効果確認いいえ 共通）

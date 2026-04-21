@@ -48,6 +48,7 @@ const CONDITION_TYPES = [
   { value: 'modal_closed',       label: '閉じるボタンを押した（全モーダル共通）',     needsCardNo: false, group: '🖱 UI操作', clearable: false },
   { value: 'action_cancelled',  label: 'キャンセルした（アタック/効果いいえ 共通）', needsCardNo: false, group: '🖱 UI操作', clearable: false },
   { value: 'mulligan_accepted',  label: 'ゲーム開始ボタンを押した（マリガン）',       needsCardNo: false, group: '🖱 UI操作', clearable: false },
+  { value: 'exit_room',          label: 'ルームを出る（ゲート退出ボタン押下）',       needsCardNo: false, group: '🖱 UI操作', hideInGoal: true },
   // 達成系
   { value: 'security_zero',      label: '相手セキュリティを0枚にした',                needsCardNo: false, group: '🏆 達成' },
 ];

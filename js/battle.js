@@ -109,6 +109,12 @@ window.parseDeck = parseDeck;
 window.confirmExitGate = function() {
   showConfirm({ title: '⚠ 退室確認', message: 'ゲートを出ますか？\nバトルの進行状況は失われます。', yesText: 'はい', noText: 'いいえ', color: '#ff4444' }).then(yes => {
     if (!yes) return;
+    // チュートリアル: ゲート退出イベント通知（クリア条件 exit_room 用）
+    //   onClear が cleared=true を立てると以降の screen 遷移はクリアモーダル側で処理される
+    if (window._tutorialRunner && window._tutorialRunner.active) {
+      try { window._tutorialRunner.notifyEvent('exit_room', {}); } catch (_) {}
+      if (window._tutorialRunner.cleared) return; // クリアモーダル → シナリオ一覧へ遷移するので以降をスキップ
+    }
     const wasOnline = isOnlineMode();
     if (wasOnline) sendCommand({ type: 'player_exit', playerName: '' });
     cleanupOnline();

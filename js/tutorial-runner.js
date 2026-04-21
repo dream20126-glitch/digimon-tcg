@@ -495,13 +495,10 @@ class TutorialRunner {
     this._currentBlock = block;
     this._currentBlock._flowIdx = blockIdx;
     this._currentStepIdx = 0;
-    // victory_condition トリガー: フェーズアナウンス演出 → 説明ポップアップ
-    if (block.phase === '_trigger' && block.trigger === 'victory_condition'
-        && typeof window.showPhaseAnnounce === 'function') {
+    // victory_condition トリガー: アナウンス演出なし、説明ポップアップにタイトル「勝利条件」を付けるだけ
+    if (block.phase === '_trigger' && block.trigger === 'victory_condition') {
       // 「justFired」扱いにして _showCurrentStep 内でトリガー待機されないように
       this._lastFiredTrigger = { key: 'victory_condition', time: Date.now() };
-      window.showPhaseAnnounce('🏆 勝利条件', '#ffcc00', () => this._showCurrentStep());
-      return;
     }
     this._showCurrentStep();
   }

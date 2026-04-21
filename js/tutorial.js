@@ -1474,6 +1474,7 @@ const _TRIGGER_DISPLAY_NAMES = {
   after_use_effect:      '効果使用完了後',
   on_card_detail_open:   'カード詳細',
   on_draw:               'ドロー演出',
+  victory_condition:     '🏆 勝利条件',
 };
 function _getStepContextTitle(ctx) {
   if (!ctx) return '';

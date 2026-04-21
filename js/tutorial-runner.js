@@ -717,14 +717,17 @@ class TutorialRunner {
         this._activateBlock(immediateNextIdx);
         return;
       }
-      // 勝利条件ブロック: 直前がフェーズブロックで、次がその親スロット配下の
-      // victory_condition トリガーなら自動活性化 (ユーザーが配置した順に沿って表示)
+      // 勝利条件ブロック: 次が victory_condition トリガーで、同じ親スロット配下かつ同ターンなら自動活性化
+      //   (フェーズブロック / トリガーブロックどちらから繋がっても OK)
       if (nextB.phase === '_trigger' && nextB.trigger === 'victory_condition'
-          && completedBlock.phase && completedBlock.phase !== '_trigger'
-          && nextB.parentSlot === completedBlock.phase
           && (nextB.turn || 1) === (completedBlock.turn || 1)) {
-        this._activateBlock(immediateNextIdx);
-        return;
+        const completedSlot = completedBlock.phase === '_trigger'
+          ? (completedBlock.parentSlot || null)
+          : completedBlock.phase;
+        if (nextB.parentSlot === completedSlot) {
+          this._activateBlock(immediateNextIdx);
+          return;
+        }
       }
     }
 

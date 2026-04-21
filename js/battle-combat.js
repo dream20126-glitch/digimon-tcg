@@ -1260,16 +1260,49 @@ export function aiAttackPhase(callback) {
 
 // ===== AIセキュリティチェック =====
 
-export function doAiSecurityCheck(atk, atkIdx, callback) {
+export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
   showCombatBackdrop();
+  // Sアタック+Nのチェック枚数は最初の呼び出し時にセットし、各チェックで -1
+  if (_remainingChecks === undefined) {
+    _remainingChecks = getSecurityAttackCount(atk);
+    if (_remainingChecks > 1) addLog('⚔ AI「' + atk.name + '」のセキュリティチェック x' + _remainingChecks + '！');
+  }
   // Sアタック-Nでチェック数が0になっている場合はセキュリティを捲らずアタック終了
-  const aiTotalChecks = getSecurityAttackCount(atk);
-  if (aiTotalChecks === 0) {
+  if (_remainingChecks === 0) {
     addLog('🛡 「' + atk.name + '」のセキュリティチェック数が0のため、セキュリティをチェックしません');
     hideCombatBackdrop();
     if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
     return;
   }
+  // _remainingChecks -1 にしてから1枚めくる。0になったら次のアタッカー/callback へ、残があればこの関数を再帰
+  const _nextRemaining = Math.max(0, _remainingChecks - 1);
+  const _checkNumber = (getSecurityAttackCount(atk) - _nextRemaining);
+  // Sアタック+表示ラベル (複数チェックのみ)
+  if (getSecurityAttackCount(atk) > 1) {
+    const labelText = _checkNumber + '枚目';
+    const old = document.getElementById('_sec-check-count-label');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    const el = document.createElement('div');
+    el.id = '_sec-check-count-label';
+    const tutorialActive = !!(window._tutorialRunner && window._tutorialRunner.active);
+    const animCss = tutorialActive ? '' : 'animation:secCheckLabel 2.5s ease forwards;';
+    el.style.cssText = 'position:fixed;top:10%;left:50%;transform:translateX(-50%);z-index:60001;pointer-events:none;font-size:clamp(0.9rem,4vw,1.3rem);font-weight:700;color:#fff;background:rgba(0,0,0,0.7);padding:6px 18px;border-radius:8px;border:1px solid #aaa;text-align:center;' + animCss;
+    el.innerText = labelText;
+    document.body.appendChild(el);
+    if (!tutorialActive) {
+      setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 2800);
+    }
+  }
+  // 次の接続: 残があれば同じアタッカーで続ける、なければ aiAttackPhase or callback
+  const _afterOne = () => {
+    if (_nextRemaining > 0 && bs.ai.battleArea[atkIdx] === atk && bs.player.security.length > 0) {
+      setTimeout(() => doAiSecurityCheck(atk, atkIdx, callback, _nextRemaining), 500);
+    } else if (bs._aiScriptInProgress) {
+      callback && callback();
+    } else {
+      setTimeout(() => aiAttackPhase(callback), 800);
+    }
+  };
   if (bs.player.security.length > 0) {
     const sec = bs.player.security.splice(0, 1)[0];
     applySecurityBuffs(sec, 'player');
@@ -1285,7 +1318,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
           bs.player.trash.push(sec);
           showDestroyEffect(atk, () => {
             addLog('💥 両者消滅！'); renderAll();
-            _fireDestroyChain(['ai'], () => { if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); } });
+            _fireDestroyChain(['ai'], _afterOne);
           });
         } else if (sec.dp > atk.dp) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
@@ -1293,7 +1326,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
           bs.player.trash.push(sec);
           showDestroyEffect(atk, () => {
             addLog('💥 「' + atk.name + '」が撃破された'); renderAll();
-            _fireDestroyChain(['ai'], () => { if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); } });
+            _fireDestroyChain(['ai'], _afterOne);
           });
         } else {
           bs.player.trash.push(sec);
@@ -1303,7 +1336,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
               addLog('✓ セキュリティ突破');
               if (bs.player.security.length <= 0) addLog('🛡 自分のセキュリティが0枚になった');
               renderAll();
-              if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+              _afterOne();
             }, 'Win!!', '#00ff88');
           });
         }
@@ -1311,7 +1344,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
         bs.player.tamerArea.push(sec);
         addLog('👤 テイマー「' + sec.name + '」がプレイヤーに登場');
         renderAll();
-        if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+        _afterOne();
       } else {
         addLog('✦ セキュリティ効果：「' + sec.name + '」');
         const hasSecField = sec.securityEffect && sec.securityEffect.trim() && sec.securityEffect !== 'なし';
@@ -1335,7 +1368,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
                 bs.player.trash.push(sec);
               }
               renderAll();
-              if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+              _afterOne();
             };
             if (mentionsMain && originalEffect.includes('【メイン】')) {
               sec.effect = originalEffect;
@@ -1346,7 +1379,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback) {
           _hooks.checkAndTriggerEffect(sec, '【セキュリティ】', afterSec, 'player');
         } else {
           bs.player.trash.push(sec); renderAll();
-          if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+          _afterOne();
         }
       }
     });

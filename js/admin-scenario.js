@@ -32,6 +32,7 @@ const CONDITION_TYPES = [
   { value: 'attack_target_selected', label: '対象選択した（セキュリティ/デジモン）',     needsCardNo: false, group: '⚔ アタック' },
   { value: 'attack_resolved',        label: 'バトルを解決した（デジモン/セキュリティ）', needsCardNo: false, group: '⚔ アタック' },
   { value: 'direct_attack',      label: 'ダイレクトアタックした',                     needsCardNo: false, group: '⚔ アタック' },
+  { value: 'direct_attack_resolved', label: 'ダイレクトアタック成功（解決完了）',     needsCardNo: false, group: '⚔ アタック' },
   { value: 'block',              label: 'ブロックした',                                needsCardNo: false, group: '⚔ アタック' },
   // セキュリティ
   { value: 'security_check_n',   label: '相手セキュリティをN枚チェックした',           needsCardNo: false, group: '🛡 セキュリティ',

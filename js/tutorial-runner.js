@@ -77,6 +77,7 @@ export const CONDITION_EVALUATORS = {
   attack_target_selected: (params, ev) => ev.type === 'attack_target_selected',
   attack_resolved: (params, ev) => ev.type === 'attack_resolved',
   direct_attack:   (params, ev) => ev.type === 'attack_declared' && ev.isDirect === true,
+  direct_attack_resolved: (params, ev) => ev.type === 'attack_resolved' && ev.isDirect === true,
   block:           (params, ev) => ev.type === 'block',
 
   // 効果

@@ -442,14 +442,15 @@ export function resolveAttackTarget(target, targetIdx) {
   bs._lastAttackTarget = target;
 
   // チュートリアル通知: 対象選択完了
+  const _isDirect = (target === 'security') && (bs.ai.battleArea || []).filter(c => c).length === 0;
+  bs._lastAttackIsDirect = _isDirect;
   if (window._tutorialRunner && window._tutorialRunner.active) {
-    const isDirect = (target === 'security') && (bs.ai.battleArea || []).filter(c => c).length === 0;
     try {
       window._tutorialRunner.notifyEvent('attack_target_selected', {
         cardNo: atk && atk.cardNo,
         cardName: atk && atk.name,
         target,
-        isDirect,
+        isDirect: _isDirect,
         side: 'player',
       });
     } catch (e) {}
@@ -1547,9 +1548,12 @@ export async function checkPendingTurnEnd() {
     try {
       window._tutorialRunner.notifyEvent('attack_resolved', {
         side: bs.isPlayerTurn ? 'player' : 'ai',
+        isDirect: !!bs._lastAttackIsDirect,
       });
     } catch (_) {}
   }
+  // 解決完了 → isDirect フラグをリセット
+  bs._lastAttackIsDirect = false;
   // チュートリアル割り込み: アタック後 → 終了後にキュー中の成功演出 flush
   if (window._tutorialRunner && window._tutorialRunner.active) {
     const atkKey = bs.isPlayerTurn ? 'after_attack' : 'opp_after_attack';
@@ -2221,11 +2225,13 @@ export function aiScriptAttack(attackerKey, target, onDone) {
   addLog('🤖 「' + atk.name + '」でアタック！');
   renderAll();
 
+  const _aiIsDirect = targetMode === 'security' && (bs.player.battleArea || []).filter(c => c).length === 0;
+  bs._lastAttackIsDirect = _aiIsDirect;
   try {
     if (window._tutorialRunner) {
       window._tutorialRunner.notifyEvent('attack_declared', {
         cardNo: atk.cardNo, cardName: atk.name,
-        target: targetMode, isDirect: targetMode === 'security' && (bs.player.battleArea || []).filter(c => c).length === 0,
+        target: targetMode, isDirect: _aiIsDirect,
         side: 'ai',
       });
     }

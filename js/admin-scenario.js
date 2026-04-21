@@ -96,6 +96,9 @@ function _renderConditionPicker(slotKey, timing, sIdx, currentValue, occ) {
 }
 
 window.conditionPickerSelect = function(uid, slotKey, timing, sIdx, value, occ) {
+  console.log('[conditionPicker] select uid=', uid, 'slotKey=', slotKey, 'timing=', timing, 'sIdx=', sIdx, 'value=', value, 'occ=', occ, 'editTurn=', _flowEditTurn);
+  const ref = _getStepByTiming(slotKey, timing, sIdx, occ);
+  console.log('[conditionPicker] _getStepByTiming returned:', ref ? {turn: ref.block.turn, phase: ref.block.phase, trigger: ref.block.trigger} : null);
   flowUpdateStep(slotKey, timing, sIdx, 'conditionType', value, occ);
   // _renderFlowEditor が呼ばれて全体再描画されるので、ボタン更新は不要
 };

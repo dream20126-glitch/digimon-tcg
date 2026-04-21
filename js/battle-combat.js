@@ -1296,7 +1296,14 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
   // Sアタック+Nのチェック枚数は最初の呼び出し時にセットし、各チェックで -1
   if (_remainingChecks === undefined) {
     _remainingChecks = getSecurityAttackCount(atk);
-    if (_remainingChecks > 1) addLog('⚔ AI「' + atk.name + '」のセキュリティチェック x' + _remainingChecks + '！');
+    if (_remainingChecks > 1) {
+      addLog('⚔ AI「' + atk.name + '」のセキュリティチェック x' + _remainingChecks + '！');
+      // プレイヤーと同じく「⚔ セキュリティアタック+N！！」アナウンス演出を挟んでから開始
+      showSAttackPlusAnnounce(_remainingChecks - 1, () =>
+        doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks)
+      );
+      return;
+    }
   }
   // Sアタック-Nでチェック数が0になっている場合はセキュリティを捲らずアタック終了
   if (_remainingChecks === 0) {

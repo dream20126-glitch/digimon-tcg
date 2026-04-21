@@ -243,6 +243,18 @@ class TutorialRunner {
       window._tutorialShowGoal(scenario.clearCondition);
     }
 
+    // battleVictory / battleDefeat 完了後のフック:
+    //   勝利演出が閉じられた後にクリアモーダルを表示する (クリア達成済みなら)
+    //   クリア未達成なら通常どおりシナリオ画面へ
+    const _runnerRef = this;
+    window._onGameEnd = () => {
+      if (_runnerRef.cleared) {
+        _runnerRef._showClearModalOnce();
+      } else if (typeof window.showScreen === 'function') {
+        window.showScreen('tutorial-screen');
+      }
+    };
+
     // ブロックの活性化は phase change や trigger 発火などのイベントに任せる
     // (先頭ブロックを早期に activate すると、ゲート演出中に pending wait 状態で
     //  はあっても一瞬表示される可能性があるため)
@@ -864,6 +876,17 @@ class TutorialRunner {
       window.bs._pendingTurnEnd = false;
     }
     this.saveProgress();
+    // クリアモーダルはバトル終了演出（勝利/敗北）の後に表示する。
+    // 2.5秒以内にゲーム終了演出が走らなければタイマーで表示（通常クリア経路）。
+    this._clearModalShown = false;
+    if (this._clearModalTimer) clearTimeout(this._clearModalTimer);
+    this._clearModalTimer = setTimeout(() => this._showClearModalOnce(), 2500);
+  }
+
+  _showClearModalOnce() {
+    if (this._clearModalShown) return;
+    this._clearModalShown = true;
+    if (this._clearModalTimer) { clearTimeout(this._clearModalTimer); this._clearModalTimer = null; }
     this.showClearModal();
   }
 

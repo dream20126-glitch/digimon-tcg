@@ -270,10 +270,12 @@ function startAttackModeUI(slotIdx) {
 
   // チュートリアル通知: アタックボタン押下時点で attack_declared を発火
   if (window._tutorialRunner && window._tutorialRunner.active) {
+    // isDirect: 相手にブロックできるデジモンがいない場合 true (= ダイレクトアタック可能状態)
+    const _isDirect = (bs.ai.battleArea || []).filter(c => c).length === 0;
     try {
       window._tutorialRunner.notifyEvent('attack_declared', {
         cardNo: card.cardNo, cardName: card.name,
-        target: null, isDirect: false, side: 'player',
+        target: null, isDirect: _isDirect, side: 'player',
       });
     } catch (e) {}
   }

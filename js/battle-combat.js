@@ -637,6 +637,19 @@ export function resolveSecurityCheck(atk, atkIdx) {
     if (bs.ai.security.length > 0) {
       doNextCheck();
     } else {
+      // ダイレクトアタック: attack_resolved + clearCondition 判定のため attack_declared も再発火
+      //   battleVictory() は checkPendingTurnEnd を呼ばないので、ここで通知する必要がある
+      if (window._tutorialRunner && window._tutorialRunner.active) {
+        try {
+          window._tutorialRunner.notifyEvent('attack_declared', {
+            cardNo: atk.cardNo, cardName: atk.name,
+            target: 'security', isDirect: true, side: 'player',
+          });
+          window._tutorialRunner.notifyEvent('attack_resolved', {
+            side: 'player', isDirect: true,
+          });
+        } catch (_) {}
+      }
       showDirectAttack(atk, 'player', () => { battleVictory(); });
     }
   }

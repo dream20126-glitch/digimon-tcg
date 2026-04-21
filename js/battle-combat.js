@@ -642,6 +642,8 @@ export function resolveSecurityCheck(atk, atkIdx) {
       //   ここで明示的に行い、流れを:
       //     吹き出し消去 → 成功演出 → ダイレクトアタック演出 → 勝利演出 → クリア演出
       //   にする。
+      // クリアモーダルを勝利演出より先に出させないためのフラグ
+      bs._tutorialExpectVictory = true;
       const _runDirect = () => showDirectAttack(atk, 'player', () => { battleVictory(); });
       if (window._tutorialRunner && window._tutorialRunner.active) {
         try {

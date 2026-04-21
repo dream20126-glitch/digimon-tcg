@@ -876,11 +876,17 @@ class TutorialRunner {
       window.bs._pendingTurnEnd = false;
     }
     this.saveProgress();
-    // クリアモーダルはバトル終了演出（勝利/敗北）の後に表示する。
-    // 2.5秒以内にゲーム終了演出が走らなければタイマーで表示（通常クリア経路）。
+    // クリアモーダルの表示タイミング:
+    //   A. ダイレクトアタック等でバトル終了演出が確実に来る場合 (bs._tutorialExpectVictory=true):
+    //      タイマーを立てず、_onGameEnd フックからのみ表示 (勝利演出→クリア演出の順)
+    //   B. それ以外 (進化/効果等の条件でミッド進行中にクリア):
+    //      3秒タイマーで表示 (バトル演出が走っていない想定)
     this._clearModalShown = false;
     if (this._clearModalTimer) clearTimeout(this._clearModalTimer);
-    this._clearModalTimer = setTimeout(() => this._showClearModalOnce(), 2500);
+    const expectVictory = !!(window.bs && window.bs._tutorialExpectVictory);
+    if (!expectVictory) {
+      this._clearModalTimer = setTimeout(() => this._showClearModalOnce(), 3000);
+    }
   }
 
   _showClearModalOnce() {

@@ -1474,8 +1474,48 @@ const _TRIGGER_DISPLAY_NAMES = {
   after_use_effect:      '効果使用完了後',
   on_card_detail_open:   'カード詳細',
   on_draw:               'ドロー演出',
-  victory_condition:     '🏆 勝利条件',
+  victory_condition:     '勝利条件',
 };
+
+// ポップアップ上部アイコン (各フェーズ/トリガーの演出に対応する絵文字)
+const _PHASE_ICONS = {
+  mulligan:  '🎴',
+  unsuspend: '🔄',
+  draw:      '🃏',
+  breed:     '🥚',
+  main:      '⚔️',
+  opp_breed: '🥚',
+  opp_main:  '⚔️',
+};
+const _TRIGGER_ICONS = {
+  turn_start_self:       '▶',
+  before_end_turn:       '🏁',
+  memory_crossed:        '💾',
+  before_opponent_turn:  '⏸',
+  turn_end_opp:          '🏁',
+  after_hatch:           '🥚',
+  after_play_cost:       '📥',
+  after_play:            '📥',
+  after_evolve_cost:     '⬆',
+  after_evolve:          '⬆',
+  battle_vs:             '⚔',
+  opp_battle_vs:         '⚔',
+  opp_after_attack:      '⚔',
+  block_confirm:         '🛡',
+  confirm_dialog:        '⚡',
+  target_selection:      '🎯',
+  after_attack:          '⚔',
+  after_use_effect:      '✨',
+  on_card_detail_open:   '🔍',
+  on_draw:               '🃏',
+  victory_condition:     '🏆',
+};
+function _getStepContextIcon(ctx) {
+  if (!ctx) return '💬';
+  if (ctx.trigger && _TRIGGER_ICONS[ctx.trigger]) return _TRIGGER_ICONS[ctx.trigger];
+  if (ctx.phase && _PHASE_ICONS[ctx.phase])     return _PHASE_ICONS[ctx.phase];
+  return '💬';
+}
 function _getStepContextTitle(ctx) {
   if (!ctx) return '';
   if (ctx.trigger) return _TRIGGER_DISPLAY_NAMES[ctx.trigger] || '';
@@ -1516,7 +1556,7 @@ window._tutorialShowStepPopup = function(step, sType, ctx) {
 
     let idx = 0;
     const showPart = () => {
-      if (iconEl)  iconEl.innerText  = '💬';
+      if (iconEl)  iconEl.innerText  = _getStepContextIcon(ctx);
       if (titleEl) titleEl.innerText = _getStepContextTitle(ctx) +
         (parts.length > 1 ? ` (${idx + 1}/${parts.length})` : '');
       if (bodyEl)  bodyEl.innerText  = parts[idx];

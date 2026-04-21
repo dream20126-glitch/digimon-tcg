@@ -1132,6 +1132,9 @@ const STEP_TIMINGS = [
   // 自分のターン終了配下
   { value: 'memory_crossed',    label: '💾 メモリー相手側到達時',           trigger: 'memory_crossed',
     availableIn: ['trg_before_end_turn'] },
+  // 勝利条件説明 (メインフェイズ中、手動発火)
+  { value: 'victory_condition', label: '🏆 勝利条件説明（アナウンス演出）',  trigger: 'victory_condition',
+    availableIn: ['main'] },
 ];
 
 // カード詳細ハイライト箇所（card_detail_closed 条件のサブ設定）

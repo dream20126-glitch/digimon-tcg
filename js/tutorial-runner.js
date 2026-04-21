@@ -494,6 +494,14 @@ class TutorialRunner {
     this._currentBlock = block;
     this._currentBlock._flowIdx = blockIdx;
     this._currentStepIdx = 0;
+    // victory_condition トリガー: フェーズアナウンス演出 → 説明ポップアップ
+    if (block.phase === '_trigger' && block.trigger === 'victory_condition'
+        && typeof window.showPhaseAnnounce === 'function') {
+      // 「justFired」扱いにして _showCurrentStep 内でトリガー待機されないように
+      this._lastFiredTrigger = { key: 'victory_condition', time: Date.now() };
+      window.showPhaseAnnounce('🏆 勝利条件', '#ffcc00', () => this._showCurrentStep());
+      return;
+    }
     this._showCurrentStep();
   }
 
@@ -705,6 +713,15 @@ class TutorialRunner {
           && nextB.phase === completedBlock.phase
           && (nextB.turn || 1) === (completedBlock.turn || 1));
       if (sameGroup) {
+        this._activateBlock(immediateNextIdx);
+        return;
+      }
+      // 勝利条件ブロック: 直前がフェーズブロックで、次がその親スロット配下の
+      // victory_condition トリガーなら自動活性化 (ユーザーが配置した順に沿って表示)
+      if (nextB.phase === '_trigger' && nextB.trigger === 'victory_condition'
+          && completedBlock.phase && completedBlock.phase !== '_trigger'
+          && nextB.parentSlot === completedBlock.phase
+          && (nextB.turn || 1) === (completedBlock.turn || 1)) {
         this._activateBlock(immediateNextIdx);
         return;
       }

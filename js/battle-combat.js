@@ -2078,6 +2078,19 @@ export function showGameEndOverlay(text, type, callback) {
   subText.innerText = isVictory ? 'Congratulations!' : 'Game Over';
   overlay.appendChild(subText);
 
+  // チュートリアルクリア時 (勝利 & runner.cleared): ボタン無しで自動遷移 (クリア演出へ)
+  const _tutorialAutoDismiss = isVictory
+    && !!(window._tutorialRunner && window._tutorialRunner.active && window._tutorialRunner.cleared);
+
+  if (_tutorialAutoDismiss) {
+    document.body.appendChild(overlay);
+    setTimeout(() => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      callback();
+    }, 3500);
+    return;
+  }
+
   const btn = document.createElement('button');
   btn.style.cssText = 'position:relative;z-index:1;margin-top:30px;background:' + color + '22;color:' + color + ';border:2px solid ' + color + ';padding:12px 32px;border-radius:10px;font-size:1rem;font-weight:bold;cursor:pointer;opacity:0;animation:gateTextAppear 1s ease 1.5s forwards;';
   btn.innerText = '戻る';

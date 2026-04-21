@@ -96,9 +96,6 @@ function _renderConditionPicker(slotKey, timing, sIdx, currentValue, occ) {
 }
 
 window.conditionPickerSelect = function(uid, slotKey, timing, sIdx, value, occ) {
-  console.log('[conditionPicker] select uid=', uid, 'slotKey=', slotKey, 'timing=', timing, 'sIdx=', sIdx, 'value=', value, 'occ=', occ, 'editTurn=', _flowEditTurn);
-  const ref = _getStepByTiming(slotKey, timing, sIdx, occ);
-  console.log('[conditionPicker] _getStepByTiming returned:', ref ? {turn: ref.block.turn, phase: ref.block.phase, trigger: ref.block.trigger} : null);
   flowUpdateStep(slotKey, timing, sIdx, 'conditionType', value, occ);
   // _renderFlowEditor が呼ばれて全体再描画されるので、ボタン更新は不要
 };
@@ -1286,9 +1283,12 @@ window.flowChangeStepTiming = function(slotKey, currentTiming, stepIdx, newTimin
 };
 
 // スロット内フラットインデックスからブロックを取得
+// _renderSlotBlock は steps[0] が空のブロックをスキップして flatIdx を進めるので、
+// ここでも同じスキップ規則を適用してインデックスを揃える
 function _getBlockByFlatIdx(slotKey, flatIdx) {
   const related = _getRelatedBlocks(slotKey, _flowEditTurn);
-  const entry = related[flatIdx];
+  const nonEmpty = related.filter(r => r.block && r.block.steps && r.block.steps[0]);
+  const entry = nonEmpty[flatIdx];
   return entry ? entry.block : null;
 }
 
@@ -1311,7 +1311,8 @@ window.flowRemoveStep = function(slotKey, timing, stepIdx, occ) {
 
 // ステップ移動 = スロット内で隣接ブロックと swap
 window.flowMoveStep = function(slotKey, timing, stepIdx, delta, occ) {
-  const related = _getRelatedBlocks(slotKey, _flowEditTurn);
+  const related = _getRelatedBlocks(slotKey, _flowEditTurn)
+    .filter(r => r.block && r.block.steps && r.block.steps[0]);
   const j = stepIdx + delta;
   if (!related[stepIdx] || !related[j]) return;
   const a = related[stepIdx].block;

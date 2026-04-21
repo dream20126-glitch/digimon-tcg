@@ -637,8 +637,12 @@ export function resolveSecurityCheck(atk, atkIdx) {
     if (bs.ai.security.length > 0) {
       doNextCheck();
     } else {
-      // ダイレクトアタック: attack_resolved + clearCondition 判定のため attack_declared も再発火
-      //   battleVictory() は checkPendingTurnEnd を呼ばないので、ここで通知する必要がある
+      // ダイレクトアタック (= 相手セキュリティ0枚の相手にアタックして貫通)
+      //   battleVictory() は checkPendingTurnEnd を呼ばないので、通知とフラッシュを
+      //   ここで明示的に行い、流れを:
+      //     吹き出し消去 → 成功演出 → ダイレクトアタック演出 → 勝利演出 → クリア演出
+      //   にする。
+      const _runDirect = () => showDirectAttack(atk, 'player', () => { battleVictory(); });
       if (window._tutorialRunner && window._tutorialRunner.active) {
         try {
           window._tutorialRunner.notifyEvent('attack_declared', {
@@ -649,8 +653,22 @@ export function resolveSecurityCheck(atk, atkIdx) {
             side: 'player', isDirect: true,
           });
         } catch (_) {}
+        // 成功演出フラッシュ (ANIMATED 条件だが checkPendingTurnEnd 経由しないのでここで flush)
+        if (typeof window._tutorialFlushSuccess === 'function') {
+          try { window._tutorialFlushSuccess(); } catch (_) {}
+        }
+        // 成功演出が出終わるのを待ってから次へ
+        if (typeof window._tutorialAwaitSuccess === 'function') {
+          window._tutorialAwaitSuccess().then(() => {
+            if (typeof window._tutorialBattleDone === 'function') {
+              try { window._tutorialBattleDone(); } catch (_) {}
+            }
+            _runDirect();
+          });
+          return;
+        }
       }
-      showDirectAttack(atk, 'player', () => { battleVictory(); });
+      _runDirect();
     }
   }
 

@@ -269,13 +269,13 @@ function startAttackModeUI(slotIdx) {
   addLog('⚔ 「' + card.name + '」でアタック！ → 対象を選んでください');
 
   // チュートリアル通知: アタックボタン押下時点で attack_declared を発火
+  // (この時点では対象未選択なので isDirect は false 固定。
+  //  ダイレクトアタックの本確定は battle-combat.js の直接攻撃分岐で再発火する)
   if (window._tutorialRunner && window._tutorialRunner.active) {
-    // isDirect: 相手にブロックできるデジモンがいない場合 true (= ダイレクトアタック可能状態)
-    const _isDirect = (bs.ai.battleArea || []).filter(c => c).length === 0;
     try {
       window._tutorialRunner.notifyEvent('attack_declared', {
         cardNo: card.cardNo, cardName: card.name,
-        target: null, isDirect: _isDirect, side: 'player',
+        target: null, isDirect: false, side: 'player',
       });
     } catch (e) {}
   }

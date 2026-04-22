@@ -510,10 +510,10 @@ class TutorialRunner {
     this._currentBlock = block;
     this._currentBlock._flowIdx = blockIdx;
     this._currentStepIdx = 0;
-    // victory_condition トリガー: アナウンス演出なし、説明ポップアップにタイトル「勝利条件」を付けるだけ
-    if (block.phase === '_trigger' && block.trigger === 'victory_condition') {
-      // 「justFired」扱いにして _showCurrentStep 内でトリガー待機されないように
-      this._lastFiredTrigger = { key: 'victory_condition', time: Date.now() };
+    // 手動発火系トリガー (victory_condition / scenario_intro 等): イベント待機なしで即表示
+    const MANUAL_TRIGGERS = new Set(['victory_condition', 'scenario_intro']);
+    if (block.phase === '_trigger' && MANUAL_TRIGGERS.has(block.trigger)) {
+      this._lastFiredTrigger = { key: block.trigger, time: Date.now() };
     }
     this._showCurrentStep();
   }
@@ -729,9 +729,11 @@ class TutorialRunner {
         this._activateBlock(immediateNextIdx);
         return;
       }
-      // 勝利条件ブロック: 次が victory_condition トリガーで、同じ親スロット配下かつ同ターンなら自動活性化
+      // 手動発火系ブロック (victory_condition / scenario_intro 等): 次がそのトリガーで、
+      // 同じ親スロット配下かつ同ターンなら自動活性化
       //   (フェーズブロック / トリガーブロックどちらから繋がっても OK)
-      if (nextB.phase === '_trigger' && nextB.trigger === 'victory_condition'
+      const AUTO_CHAIN_TRIGGERS = new Set(['victory_condition', 'scenario_intro']);
+      if (nextB.phase === '_trigger' && AUTO_CHAIN_TRIGGERS.has(nextB.trigger)
           && (nextB.turn || 1) === (completedBlock.turn || 1)) {
         const completedSlot = completedBlock.phase === '_trigger'
           ? (completedBlock.parentSlot || null)

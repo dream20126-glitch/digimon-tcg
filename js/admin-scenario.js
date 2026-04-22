@@ -1135,7 +1135,10 @@ const STEP_TIMINGS = [
   { value: 'memory_crossed',    label: '💾 メモリー相手側到達時',           trigger: 'memory_crossed',
     availableIn: ['trg_before_end_turn'] },
   // 勝利条件説明 (メインフェイズ中、手動発火)
-  { value: 'victory_condition', label: '🏆 勝利条件説明（アナウンス演出）',  trigger: 'victory_condition',
+  { value: 'victory_condition', label: '🏆 勝利条件説明',  trigger: 'victory_condition',
+    availableIn: ['main'] },
+  // シナリオ説明 (メインフェイズ中、手動発火) - このシナリオで何をやるか等の導入説明
+  { value: 'scenario_intro',    label: '📖 シナリオ説明',   trigger: 'scenario_intro',
     availableIn: ['main'] },
 ];
 

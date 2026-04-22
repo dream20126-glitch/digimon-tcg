@@ -1482,6 +1482,7 @@ const _TRIGGER_DISPLAY_NAMES = {
   on_card_detail_open:   'カード詳細',
   on_draw:               'ドロー演出',
   victory_condition:     '勝利条件',
+  scenario_intro:        'シナリオ説明',
 };
 
 // ポップアップ上部アイコン (各フェーズ/トリガーの演出に対応する絵文字)
@@ -1516,6 +1517,7 @@ const _TRIGGER_ICONS = {
   on_card_detail_open:   '🔍',
   on_draw:               '🃏',
   victory_condition:     '🏆',
+  scenario_intro:        '📖',
 };
 function _getStepContextIcon(ctx) {
   if (!ctx) return '💬';

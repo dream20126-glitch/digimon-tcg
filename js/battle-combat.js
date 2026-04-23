@@ -1420,7 +1420,16 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
               renderAll();
               _afterOne();
             };
-            if (mentionsMain && originalEffect.includes('【メイン】')) {
+            // recipe の security に use_main_effect があれば既に main が実行済みなので二重発動防止
+            let hasRecipe = false;
+            if (sec.recipe) {
+              if (typeof sec.recipe === 'string') {
+                hasRecipe = sec.recipe.includes('use_main_effect');
+              } else if (typeof sec.recipe === 'object' && Array.isArray(sec.recipe.security)) {
+                hasRecipe = sec.recipe.security.some(s => s && s.action === 'use_main_effect');
+              }
+            }
+            if (mentionsMain && originalEffect.includes('【メイン】') && !hasRecipe) {
               sec.effect = originalEffect;
               _hooks.checkAndTriggerEffect(sec, '【メイン】', doFinish, 'player');
             } else { doFinish(); }

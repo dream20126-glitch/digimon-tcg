@@ -3320,8 +3320,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       const selected = [];
 
       // 確認ダイアログ共通
-      // 既存の effect_confirm スポットライト/割り込みと互換にするため、
-      // panel/yes/no に専用 ID を付与し、表示直後に checkInterrupt('effect_confirm') を呼ぶ。
+      // 既存の confirm_dialog スポットライト/割り込みと互換にするため、
+      // panel/yes/no に専用 ID を付与し、表示直後に checkInterrupt('confirm_dialog') を呼ぶ。
+      // showTargetConfirm（「このカードでいいですか？」）と同じトリガーで連番カウントされる。
       const showConfirmDialog = (msgText, onYes, onNo) => {
         const overlay = document.createElement('div');
         overlay.id = '_select-multi-confirm-overlay';
@@ -3347,10 +3348,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         };
         document.getElementById('_select-multi-yes').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); _notifyClose(true); onYes(); };
         document.getElementById('_select-multi-no').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); _notifyClose(false); onNo(); };
-        // チュートリアル割り込み: 効果確認ダイアログとして発火（既存トリガーと統合）
+        // チュートリアル割り込み: 確認ダイアログとして発火（既存 confirm_dialog と統合）
         const _runner = (typeof window !== 'undefined') ? window._tutorialRunner : null;
         if (_runner && _runner.active && typeof _runner.checkInterrupt === 'function') {
-          try { _runner.checkInterrupt('effect_confirm'); } catch (_) {}
+          try { _runner.checkInterrupt('confirm_dialog'); } catch (_) {}
         }
       };
 

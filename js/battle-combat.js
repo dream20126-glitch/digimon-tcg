@@ -841,7 +841,16 @@ export function resolveSecurityCheck(atk, atkIdx) {
           const afterSecEffect = () => {
             const mentionsMainEffect = /このカードの\s*【メイン】\s*効果/.test(secText);
             const finish = () => { sec.effect = originalEffect; doFinishSec(); };
-            const hasRecipe = sec.recipe && typeof sec.recipe === 'string' && sec.recipe.includes('use_main_effect');
+            // recipe は文字列(JSON)とオブジェクト両方ありうる。security レシピに
+            // use_main_effect が含まれていれば既に main が実行されているので二重発動防止。
+            let hasRecipe = false;
+            if (sec.recipe) {
+              if (typeof sec.recipe === 'string') {
+                hasRecipe = sec.recipe.includes('use_main_effect');
+              } else if (typeof sec.recipe === 'object' && Array.isArray(sec.recipe.security)) {
+                hasRecipe = sec.recipe.security.some(s => s && s.action === 'use_main_effect');
+              }
+            }
             if (mentionsMainEffect && originalEffect.includes('【メイン】') && !hasRecipe) {
               sec.effect = originalEffect;
               _hooks.checkAndTriggerEffect(sec, '【メイン】', finish, 'ai');

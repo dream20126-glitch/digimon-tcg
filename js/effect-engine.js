@@ -3433,12 +3433,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         showConfirmDialog(msg, () => doSelect(), () => finishSelectMulti());
       }
 
-      // 任意の場合は最初の選択前にも確認、強制の場合は即選択
-      if (isOptional) {
-        askToSelect();
-      } else {
-        doSelect();
-      }
+      // N体まで効果: 1体目は確認なしで即対象選択へ。
+      // 2体目以降は doSelect 内で isOptional 判定により askToSelect (「もう1体選びますか？」) が呼ばれる。
+      doSelect();
       break;
     }
 

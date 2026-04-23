@@ -154,8 +154,9 @@ export function doPlay(card, handIdx, slotIdx) {
         bs.player.trash.push(card);
         addLog('✦ 「' + card.name + '」をトラッシュへ');
         renderAll();
-        // 割り込み2: 効果完了後
+        // 割り込み2: 効果完了後（after_play / after_use_effect 両方発火）
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
+        if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('use_effect');
         if (window._tutorialBattleDone) window._tutorialBattleDone();
         checkPlayerPendingTurnEnd();
       }, 'player');

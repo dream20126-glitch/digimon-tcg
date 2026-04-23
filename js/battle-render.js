@@ -881,13 +881,18 @@ function applyBackImages() {
 }
 
 // ===== カード詳細用ステータス文字列 =====
-// 基本ステータス: Lv. / DP / 登場コスト
+// デジモン: Lv. / DP / 登場コスト
+// テイマー: 登場コスト〇
+// オプション: 使用コスト〇
 export function formatCardStats(card) {
   if (!card) return '';
   const playCost = (card.playCost != null) ? card.playCost : (card.cost != null ? card.cost : null);
+  const costStr = (playCost != null ? playCost : '—');
+  if (card.type === 'テイマー') return '登場コスト:' + costStr;
+  if (card.type === 'オプション') return '使用コスト:' + costStr;
   return 'Lv.' + (card.level || '?')
        + ' ／ DP:' + (card.dp || '?')
-       + ' ／ 登場コスト:' + (playCost != null ? playCost : '—');
+       + ' ／ 登場コスト:' + costStr;
 }
 
 // 進化コスト行: "進化コスト：[進化条件]から[コスト]"（進化不可なら null）

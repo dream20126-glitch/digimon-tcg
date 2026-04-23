@@ -107,6 +107,10 @@ window.parseDeck = parseDeck;
 
 // HTML onclick から呼ばれる補助関数（battle.js固有）
 window.confirmExitGate = function() {
+  // チュートリアル: ボタン押下時点で通知（確認ダイアログ表示前の進行条件用）
+  if (window._tutorialRunner && window._tutorialRunner.active) {
+    try { window._tutorialRunner.notifyEvent('exit_gate_clicked', {}); } catch (_) {}
+  }
   showConfirm({ title: '⚠ 退室確認', message: 'ゲートを出ますか？\nバトルの進行状況は失われます。', yesText: 'はい', noText: 'いいえ', color: '#ff4444' }).then(yes => {
     if (!yes) return;
     // チュートリアル: ゲート退出イベント通知（クリア条件 exit_room 用）

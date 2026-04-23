@@ -88,6 +88,8 @@ export const CONDITION_EVALUATORS = {
 
   // ルーム退出（ゲートを出るボタン押下後、確認「はい」）
   exit_room: (params, ev) => ev.type === 'exit_room',
+  // ゲートを出るボタン押下時点（確認ダイアログ表示前）
+  exit_gate_clicked: (params, ev) => ev.type === 'exit_gate_clicked',
 
   // 閉じるボタン押下（カード詳細/トラッシュ/各種モーダル共通）
   modal_closed: (params, ev) => ev.type === 'modal_closed',

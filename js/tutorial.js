@@ -862,17 +862,20 @@ const TARGET_AREA_SELECTORS = {
   // サポート。現在表示中の方を返す (offsetParent で可視判定)。
   effect_confirm:         () => {
     const panels = [document.getElementById('effect-confirm-panel'),
-                    document.querySelector('#_target-confirm-overlay > div')];
+                    document.querySelector('#_target-confirm-overlay > div'),
+                    document.getElementById('_select-multi-confirm-panel')];
     return panels.find(e => e && e.offsetParent) || panels.find(e => e) || null;
   },
   effect_confirm_yes:     () => {
     const btns = [document.getElementById('effect-confirm-yes'),
-                  document.getElementById('_target-yes')];
+                  document.getElementById('_target-yes'),
+                  document.getElementById('_select-multi-yes')];
     return btns.find(e => e && e.offsetParent) || btns.find(e => e) || null;
   },
   effect_confirm_no:      () => {
     const btns = [document.getElementById('effect-confirm-no'),
-                  document.getElementById('_target-no')];
+                  document.getElementById('_target-no'),
+                  document.getElementById('_select-multi-no')];
     return btns.find(e => e && e.offsetParent) || btns.find(e => e) || null;
   },
   // トラッシュモーダル

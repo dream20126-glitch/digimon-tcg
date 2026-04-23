@@ -3320,20 +3320,38 @@ function executeRecipeStep(step, ctx, store, callback) {
       const selected = [];
 
       // 確認ダイアログ共通
+      // 既存の effect_confirm スポットライト/割り込みと互換にするため、
+      // panel/yes/no に専用 ID を付与し、表示直後に checkInterrupt('effect_confirm') を呼ぶ。
       const showConfirmDialog = (msgText, onYes, onNo) => {
         const overlay = document.createElement('div');
+        overlay.id = '_select-multi-confirm-overlay';
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;padding:20px;';
         const box = document.createElement('div');
+        box.id = '_select-multi-confirm-panel';
         box.style.cssText = 'background:#0a0a0a;border:1px solid #ff4444;border-radius:12px;padding:24px;max-width:320px;width:100%;text-align:center;';
         box.innerHTML = '<div style="color:#ff4444;font-size:14px;font-weight:bold;margin-bottom:16px;">' + msgText + '</div>'
           + '<div style="display:flex;gap:10px;justify-content:center;">'
-          + '<button id="_conf-yes" style="background:#ff4444;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
-          + '<button id="_conf-no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
+          + '<button id="_select-multi-yes" style="background:#ff4444;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
+          + '<button id="_select-multi-no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
           + '</div>';
         overlay.appendChild(box);
         document.body.appendChild(overlay);
-        document.getElementById('_conf-yes').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); onYes(); };
-        document.getElementById('_conf-no').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); onNo(); };
+        const _notifyClose = (yes) => {
+          const r = (typeof window !== 'undefined') ? window._tutorialRunner : null;
+          if (r && r.active) {
+            try {
+              r.notifyEvent('modal_closed', { modal: 'effect_confirm', result: yes });
+              if (!yes) r.notifyEvent('action_cancelled', { context: 'effect_confirm' });
+            } catch (_) {}
+          }
+        };
+        document.getElementById('_select-multi-yes').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); _notifyClose(true); onYes(); };
+        document.getElementById('_select-multi-no').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); _notifyClose(false); onNo(); };
+        // チュートリアル割り込み: 効果確認ダイアログとして発火（既存トリガーと統合）
+        const _runner = (typeof window !== 'undefined') ? window._tutorialRunner : null;
+        if (_runner && _runner.active && typeof _runner.checkInterrupt === 'function') {
+          try { _runner.checkInterrupt('effect_confirm'); } catch (_) {}
+        }
       };
 
       function getValidTargets() {

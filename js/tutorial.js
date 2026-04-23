@@ -395,8 +395,8 @@ const _BUTTON_SELECTOR_MAP = {
   end_turn:      '.a-btn-end',
   breed_skip:    '#breed-skip-btn',
   exit_gate:     '#exit-gate-btn',
-  confirm_yes:   '#effect-confirm-yes',
-  confirm_no:    '#effect-confirm-no',
+  confirm_yes:   '#effect-confirm-yes, #_target-yes, #_select-multi-yes',
+  confirm_no:    '#effect-confirm-no, #_target-no, #_select-multi-no',
 };
 
 let _uiControlActive = false;
@@ -453,11 +453,11 @@ function _applyStepUiControl(step) {
   hlButtons.forEach(btnKey => {
     const selector = _BUTTON_SELECTOR_MAP[btnKey];
     if (!selector) return;
-    const btn = document.querySelector(selector);
-    if (!btn) return;
-    _savedButtonStates.push({ el: btn, disabled: btn.disabled });
-    btn.classList.add('tutorial-btn-highlighted');
-    _uiControlActive = true;
+    document.querySelectorAll(selector).forEach(btn => {
+      _savedButtonStates.push({ el: btn, disabled: btn.disabled });
+      btn.classList.add('tutorial-btn-highlighted');
+      _uiControlActive = true;
+    });
   });
 
   // --- 育成エリアグレーアウト ---
@@ -476,14 +476,14 @@ function _applyStepUiControl(step) {
     if (key === 'other_cards' || key === 'raising_area') return;
     const selector = _BUTTON_SELECTOR_MAP[key];
     if (!selector) return;
-    const btn = document.querySelector(selector);
-    if (!btn) return;
-    // ハイライト済みならスキップ
-    if (btn.classList.contains('tutorial-btn-highlighted')) return;
-    _savedButtonStates.push({ el: btn, disabled: btn.disabled });
-    btn.disabled = true;
-    btn.classList.add('tutorial-btn-disabled');
-    _uiControlActive = true;
+    document.querySelectorAll(selector).forEach(btn => {
+      // ハイライト済みならスキップ
+      if (btn.classList.contains('tutorial-btn-highlighted')) return;
+      _savedButtonStates.push({ el: btn, disabled: btn.disabled });
+      btn.disabled = true;
+      btn.classList.add('tutorial-btn-disabled');
+      _uiControlActive = true;
+    });
   });
 }
 
@@ -560,12 +560,12 @@ window._tutorialReapplyUiControl = function() {
   hlButtons.forEach(btnKey => {
     const selector = _BUTTON_SELECTOR_MAP[btnKey];
     if (!selector) return;
-    const btn = document.querySelector(selector);
-    if (!btn) return;
-    if (!btn.classList.contains('tutorial-btn-highlighted')) {
-      _savedButtonStates.push({ el: btn, disabled: btn.disabled });
-      btn.classList.add('tutorial-btn-highlighted');
-    }
+    document.querySelectorAll(selector).forEach(btn => {
+      if (!btn.classList.contains('tutorial-btn-highlighted')) {
+        _savedButtonStates.push({ el: btn, disabled: btn.disabled });
+        btn.classList.add('tutorial-btn-highlighted');
+      }
+    });
   });
 
   // --- ボタングレーアウト 再適用 ---
@@ -573,14 +573,14 @@ window._tutorialReapplyUiControl = function() {
     if (key === 'other_cards') return;
     const selector = _BUTTON_SELECTOR_MAP[key];
     if (!selector) return;
-    const btn = document.querySelector(selector);
-    if (!btn) return;
-    if (btn.classList.contains('tutorial-btn-highlighted')) return;
-    if (!btn.classList.contains('tutorial-btn-disabled')) {
-      _savedButtonStates.push({ el: btn, disabled: btn.disabled });
-      btn.disabled = true;
-      btn.classList.add('tutorial-btn-disabled');
-    }
+    document.querySelectorAll(selector).forEach(btn => {
+      if (btn.classList.contains('tutorial-btn-highlighted')) return;
+      if (!btn.classList.contains('tutorial-btn-disabled')) {
+        _savedButtonStates.push({ el: btn, disabled: btn.disabled });
+        btn.disabled = true;
+        btn.classList.add('tutorial-btn-disabled');
+      }
+    });
   });
 };
 

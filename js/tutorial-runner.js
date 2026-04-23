@@ -321,7 +321,7 @@ class TutorialRunner {
   async checkInterrupt(triggerKey) {
     if (!this.active || this.cleared) return;
     // このトリガーが「相手側」か判定 (turn 計算用)
-    const OPP_TRIGGERS = new Set(['before_opponent_turn', 'opp_battle_vs', 'opp_after_attack', 'turn_end_opp']);
+    const OPP_TRIGGERS = new Set(['before_opponent_turn', 'opp_battle_vs', 'opp_after_attack', 'turn_end_opp', 'opp_target_selection']);
     const triggerTurn = OPP_TRIGGERS.has(triggerKey)
       ? Math.max(1, ((window.bs && window.bs.turn) || 1) - 1)
       : (this._currentTurn || 1);

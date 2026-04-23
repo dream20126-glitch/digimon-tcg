@@ -1729,7 +1729,10 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
   const runner = window._tutorialRunner;
   if (runner && runner.active && typeof runner.checkInterrupt === 'function') {
     _showUI();
-    runner.checkInterrupt('target_selection');
+    // 相手ターン中の対象選択（セキュリティ効果等）は opp_target_selection を使う
+    const isOppTurn = !(window.bs && window.bs.isPlayerTurn);
+    const triggerKey = isOppTurn ? 'opp_target_selection' : 'target_selection';
+    runner.checkInterrupt(triggerKey);
   } else {
     _showUI();
   }

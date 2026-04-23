@@ -1515,6 +1515,7 @@ const _TRIGGER_ICONS = {
   block_confirm:         '🛡',
   confirm_dialog:        '⚡',
   target_selection:      '🎯',
+  opp_target_selection:  '🎯',
   after_attack:          '⚔',
   after_use_effect:      '✨',
   on_card_detail_open:   '🔍',

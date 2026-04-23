@@ -3343,6 +3343,8 @@ function executeRecipeStep(step, ctx, store, callback) {
             try {
               r.notifyEvent('modal_closed', { modal: 'effect_confirm', result: yes });
               if (!yes) r.notifyEvent('action_cancelled', { context: 'effect_confirm' });
+              // A案: 全ての確認ダイアログの「はい」で use_effect を発火（進行条件用）
+              if (yes) r.notifyEvent('use_effect', { context: 'select_multi_confirm' });
             } catch (_) {}
           }
         };

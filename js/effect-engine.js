@@ -2797,7 +2797,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
   const isActivated = ['main'].includes(triggerCode);
   // ソースカード限定のイベント系トリガー（そのカード固有のイベント）
   // これらは盤面全体をスキャンすると関係ない他カードの効果まで誘発してしまう
-  const isSourceOnly = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked', 'on_battle_win'].includes(triggerCode);
+  const isSourceOnly = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked', 'on_battle_win', 'on_battle_destroy'].includes(triggerCode);
 
   if (isActivated) {
     // 起動効果: ソースカードだけキューに追加（レシピ優先）
@@ -3058,6 +3058,18 @@ export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
 //   ctxBase:       元の context（addLog/renderAll/updateMemGauge 等を引き継ぐ）
 //   done:          全リアクション完了時に呼ぶコールバック（省略時は no-op）
 export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase, done) {
+  return _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, 'on_destroy');
+}
+
+// ===== on_battle_destroy グローバル発火 =====
+// バトル解決（DP比較）で消滅した場合のみ呼ぶ。効果による消滅では呼ばない。
+// 道連れ等「このデジモンがバトルで消滅したとき」「相手のデジモンがバトルで消滅したとき」用のフック。
+// on_destroy と同じスキャン構造だが、レシピキーは on_battle_destroy を拾う。
+export function fireOnBattleDestroyTriggers(destroyedSide, bs, ctxBase, done) {
+  return _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, 'on_battle_destroy');
+}
+
+function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) {
   const finish = () => { try { done && done(); } catch(_) {} };
   if (!bs) { finish(); return; }
   // 反対側 = リアクション側
@@ -3065,11 +3077,11 @@ export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase, done) {
   const reactPlayer = bs[reactSide];
   if (!reactPlayer || !reactPlayer.battleArea) { finish(); return; }
 
-  // 全 carrier × 全進化元（+ carrier 自身）から on_destroy レシピを収集
+  // 全 carrier × 全進化元（+ carrier 自身）から triggerKey レシピを収集
   const reactions = [];
   reactPlayer.battleArea.forEach((carrier) => {
     if (!carrier) return;
-    // 1) 進化元カードそれぞれの on_destroy をスキャン
+    // 1) 進化元カードそれぞれの triggerKey をスキャン
     if (carrier.stack) {
       carrier.stack.forEach(evoCard => {
         if (!evoCard || !evoCard.recipe) return;
@@ -3077,22 +3089,22 @@ export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase, done) {
           const raw = typeof evoCard.recipe === 'string'
             ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
           const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          // 進化元効果専用: evo_source.on_destroy のみ拾う
-          const recipe = r.evo_source && r.evo_source.on_destroy;
+          // 進化元効果専用: evo_source[triggerKey] のみ拾う
+          const recipe = r.evo_source && r.evo_source[triggerKey];
           if (recipe) {
             reactions.push({ sourceCard: evoCard, recipe, carrier });
           }
         } catch (_) {}
       });
     }
-    // 2) carrier 自身の on_destroy（メイン効果として）
+    // 2) carrier 自身の triggerKey（メイン効果として）
     if (carrier.recipe) {
       try {
         const raw = typeof carrier.recipe === 'string'
           ? carrier.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : carrier.recipe;
         const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        if (r.on_destroy) {
-          reactions.push({ sourceCard: carrier, recipe: r.on_destroy, carrier });
+        if (r[triggerKey]) {
+          reactions.push({ sourceCard: carrier, recipe: r[triggerKey], carrier });
         }
       } catch (_) {}
     }
@@ -3258,6 +3270,12 @@ function runRecipe(steps, ctx, callback) {
 function executeRecipeStep(step, ctx, store, callback) {
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
+
+  // separator ステップ（「その後、」区切り用のマーカー）は何も実行せず次へ
+  if (step.separator !== undefined && !step.action) {
+    callback && callback();
+    return;
+  }
 
   // 条件チェック（stepにconditionがあれば事前判定）
   if (step.require) {

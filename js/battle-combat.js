@@ -9,7 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue, fireOnDestroyTriggers as _fireOnDestroy } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -984,16 +984,22 @@ export function removeBattleBuffs(applied) {
 
 // ===== バトル解決（プレイヤー → AI デジモン） =====
 
-// _fireOnDestroy をチェーン実行するヘルパー
+// _fireOnDestroy + _fireOnBattleDestroy をチェーン実行するヘルパー
 // sides: ['ai','player'] のような配列、各要素は destroyedSide
 // done: 全完了時 callback
+// バトル起因の消滅でのみ呼ばれるため、on_destroy に加えて on_battle_destroy も発火する
 function _fireDestroyChain(sides, done) {
   let i = 0;
   function next() {
     if (i >= sides.length) { done && done(); return; }
     const s = sides[i++];
+    const ctxBase = { bs, addLog, renderAll, updateMemGauge };
     try {
-      _fireOnDestroy(s, bs, { bs, addLog, renderAll, updateMemGauge }, next);
+      _fireOnDestroy(s, bs, ctxBase, () => {
+        try {
+          _fireOnBattleDestroy(s, bs, ctxBase, next);
+        } catch (_) { next(); }
+      });
     } catch (_) { next(); }
   }
   next();

@@ -252,6 +252,17 @@ function buildBoardFromScenario(scenario, isPlayer1) {
     const secDummy = sc.securityDummy ?? (secCards.length > 0 ? 0 : (sc.security ?? 5));
     for (let i = 0; i < secDummy; i++) target.security.push(makeDummyCard(dummyOffset + i));
     for (let i = 0; i < (sc.deckSize || 20); i++) target.deck.push(makeDummyCard(dummyOffset + 100 + i));
+    // デッキトップ指定（先頭=次に引く順）。セキュリティ補充の後に挿入することで、
+    // 指定したカードがセキュリティに消費されないようにする。
+    const deckTopCards = sc.deckTopCards || [];
+    if (deckTopCards.length > 0) {
+      const top = [];
+      deckTopCards.forEach(name => {
+        const card = findCardByName(name);
+        if (card) top.push(card);
+      });
+      target.deck = [...top, ...target.deck];
+    }
   }
 
   // --- 自分側 ---
@@ -270,7 +281,7 @@ function buildBoardFromScenario(scenario, isPlayer1) {
 // ===== シナリオ選択UI =====
 let _selectedPlayer = 'player1';
 let _selectedCardName = null; // 検索で選択中のカード名
-let _customCards = { 'p1-hand': [], 'p1-battle': [], 'p1-tamer': [], 'p1-trash': [], 'p1-security': [], 'p2-hand': [], 'p2-battle': [], 'p2-tamer': [], 'p2-trash': [], 'p2-security': [] };
+let _customCards = { 'p1-hand': [], 'p1-battle': [], 'p1-tamer': [], 'p1-trash': [], 'p1-security': [], 'p1-deck': [], 'p2-hand': [], 'p2-battle': [], 'p2-tamer': [], 'p2-trash': [], 'p2-security': [], 'p2-deck': [] };
 let _customEvo = { p1: {}, p2: {} }; // { p1: { 0: ['カード名', ...], 1: [...] }, p2: { ... } }
 let _cardsLoaded = false;
 
@@ -500,6 +511,7 @@ function buildCustomScenarioData() {
       trash: _customCards['p1-trash'],
       securityCards: _customCards['p1-security'],
       securityDummy: parseInt(document.getElementById('custom-p1-sec').value) || 0,
+      deckTopCards: _customCards['p1-deck'],
       deckSize: 20,
     },
     ai: {
@@ -510,6 +522,7 @@ function buildCustomScenarioData() {
       trash: _customCards['p2-trash'],
       securityCards: _customCards['p2-security'],
       securityDummy: parseInt(document.getElementById('custom-p2-sec').value) || 0,
+      deckTopCards: _customCards['p2-deck'],
       deckSize: 20,
     },
   };

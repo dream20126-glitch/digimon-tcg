@@ -9,7 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -37,6 +37,15 @@ export function setCombatHooks(hooks) {
   Object.assign(_hooks, hooks);
 }
 
+// レスト発生時に when_opp_rest トリガーを発火する共通ヘルパー
+// restedOwnerSide: 'player' | 'ai' — レストしたカードの所有者
+// cb はトリガー処理（効果使用ダイアログ等）の完了後に呼ばれる
+function fireOppRestThen(restedOwnerSide, cb) {
+  const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+  try { _fireWhenOppRest(restedOwnerSide, bs, ctxBase, () => cb && cb()); }
+  catch (_) { cb && cb(); }
+}
+
 // ブロッカー判定: 効果テキスト/進化元/permanent flag/buff のいずれかで判断
 // レシピ passive blocker（カブテリモン等）も拾えるようにする
 function isBlocker(c) {
@@ -45,6 +54,26 @@ function isBlocker(c) {
   if (_hooks.hasEvoKeyword(c, '【ブロッカー】')) return true;
   if (c._permEffects && c._permEffects.blocker) return true;
   if (c.buffs && c.buffs.some(b => b.type === 'keyword_blocker')) return true;
+  // レシピ直読みフォールバック (Firebase復元等で _permEffects が落ちている場合用)
+  const passiveContainsBlocker = (arr) => Array.isArray(arr) && arr.some(p => (p && (p.flag === 'blocker' || p === 'blocker')));
+  const parseRecipe = (rec) => {
+    if (!rec) return null;
+    try {
+      if (typeof rec === 'string') return JSON.parse(rec.replace(/[\x00-\x1F\x7F]\s*/g, ''));
+      return rec;
+    } catch (_) { return null; }
+  };
+  const r = parseRecipe(c.recipe);
+  if (r && passiveContainsBlocker(r.passive)) return true;
+  if (c.stack && Array.isArray(c.stack)) {
+    for (const evo of c.stack) {
+      if (!evo) continue;
+      const er = parseRecipe(evo.recipe);
+      if (!er) continue;
+      const evoPassives = (er.evo_source && er.evo_source.passive) || er.passive;
+      if (passiveContainsBlocker(evoPassives)) return true;
+    }
+  }
   return false;
 }
 
@@ -496,9 +525,12 @@ export function resolveAttackTarget(target, targetIdx) {
           }
         } catch (_) {}
         renderAll();
-        afterAtkEffect(atk, atkSlotIdx, () => {
-          afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
-            resolveBattle(atk, atkSlotIdx, blocker, blockerIdx, 'ai');
+        // AI 側のブロッカーがレストした → プレイヤー側の when_opp_rest 発火
+        fireOppRestThen('ai', () => {
+          afterAtkEffect(atk, atkSlotIdx, () => {
+            afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
+              resolveBattle(atk, atkSlotIdx, blocker, blockerIdx, 'ai');
+            });
           });
         });
         return;
@@ -566,11 +598,14 @@ export function resolveAttackTarget(target, targetIdx) {
           }
         } catch (_) {}
         renderAll();
-        afterAtkEffect(atk, atkSlotIdx, () => {
-          // ブロックされた側 (player) の効果
-          afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
-            // ブロッカー vs アタッカー のバトル解決 (def を blocker に差し替え)
-            resolveBattle(atk, atkSlotIdx, blocker, blockerIdx, 'ai');
+        // AI 側のブロッカーがレストした → プレイヤー側の when_opp_rest 発火
+        fireOppRestThen('ai', () => {
+          afterAtkEffect(atk, atkSlotIdx, () => {
+            // ブロックされた側 (player) の効果
+            afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
+              // ブロッカー vs アタッカー のバトル解決 (def を blocker に差し替え)
+              resolveBattle(atk, atkSlotIdx, blocker, blockerIdx, 'ai');
+            });
           });
         });
         return;
@@ -1281,9 +1316,12 @@ export function aiAttackPhase(callback) {
                 try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
               }
               renderAll();
-              afterBlockedEffect(atk, atkIdx, 'ai', () => {
-                resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
-                  if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+              // プレイヤー側ブロッカーがレストした → AI 側の when_opp_rest 発火
+              fireOppRestThen('player', () => {
+                afterBlockedEffect(atk, atkIdx, 'ai', () => {
+                  resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
+                    if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+                  });
                 });
               });
             } else {
@@ -1296,9 +1334,11 @@ export function aiAttackPhase(callback) {
                     try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
                   }
                   renderAll();
-                  afterBlockedEffect(atk, atkIdx, 'ai', () => {
-                    resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {
-                      if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+                  fireOppRestThen('player', () => {
+                    afterBlockedEffect(atk, atkIdx, 'ai', () => {
+                      resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {
+                        if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+                      });
                     });
                   });
                 } else {
@@ -2397,10 +2437,12 @@ export function aiScriptAttack(attackerKey, target, onDone) {
                   try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
                 }
                 renderAll();
-                afterBlockedEffect(atk, atkIdx, 'ai', () => {
-                  resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
-                    checkPendingTurnEnd();
-                    _wrappedDone();
+                fireOppRestThen('player', () => {
+                  afterBlockedEffect(atk, atkIdx, 'ai', () => {
+                    resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
+                      checkPendingTurnEnd();
+                      _wrappedDone();
+                    });
                   });
                 });
               } else {
@@ -2413,10 +2455,12 @@ export function aiScriptAttack(attackerKey, target, onDone) {
                       try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
                     }
                     renderAll();
-                    afterBlockedEffect(atk, atkIdx, 'ai', () => {
-                      resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {
-                        checkPendingTurnEnd();
-                        _wrappedDone();
+                    fireOppRestThen('player', () => {
+                      afterBlockedEffect(atk, atkIdx, 'ai', () => {
+                        resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {
+                          checkPendingTurnEnd();
+                          _wrappedDone();
+                        });
                       });
                     });
                   } else {

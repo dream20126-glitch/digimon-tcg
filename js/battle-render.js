@@ -430,6 +430,9 @@ window.activateEffect = function(slotIdx, effectSource) {
     const evoCard = card.stack && card.stack[evoIdx];
     if (evoCard && evoCard.evoSourceEffect) { effectText = evoCard.evoSourceEffect; effectName = evoCard.name + '（進化元効果）'; }
   }
+  // 効果発動はレストを伴わない（公式ルール: 起動型効果は通常レストを要求しない）
+  // 長押しメニューで仮レストされた状態を解除（元々アクティブだった場合）
+  if (!_wasAlreadySuspended) card.suspended = false;
   renderAll();
   document.getElementById('effect-confirm-name').innerText = effectName;
   document.getElementById('effect-confirm-text').innerText = effectText;
@@ -437,8 +440,10 @@ window.activateEffect = function(slotIdx, effectSource) {
   // confirmEffect のコールバックで効果エンジンを呼ぶ
   window._effectConfirmCallback = function(yes) {
     document.getElementById('effect-confirm-overlay').style.display = 'none';
+    // 「いいえ」「はい」どちらでも効果発動はレストを伴わないため、
+    // 元々アクティブだったら解除する（仮レスト状態の戻し）
+    if (!_wasAlreadySuspended) card.suspended = false;
     if (!yes) {
-      if (!_wasAlreadySuspended) card.suspended = false;
       renderAll();
       return;
     }

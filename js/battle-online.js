@@ -1174,19 +1174,38 @@ import { isCombatAnimating } from './battle-combat.js';
 window._isCombatAnimating = isCombatAnimating;
 
 // ===== 相手の「デッキオープン」観戦オーバーレイ =====
-// 公式ルール上「オープン」効果は両プレイヤーに公開されるため、相手の操作内容を逐次表示する。
-let _remoteDeckOpenState = null; // { overlay, cardArea, footer, entries: [{ wrap, cardNo }] }
+// 公式ルール上「オープン」効果は両プレイヤーに公開されるため、発動側と同じデザインで
+// 1枚ずつめくれる演出を再生し、移動内容も逐次表示する。
+let _remoteDeckOpenState = null;
 
 function showRemoteDeckOpenOverlay(cmd) {
+  console.log('[fx_remoteDeckOpenStart] received', cmd);
   // 二重表示防止
   hideRemoteDeckOpenOverlay();
   const cards = Array.isArray(cmd.cards) ? cmd.cards : [];
 
+  // めくれ用 keyframe（既に効果テスト発動側で挿入済の可能性ありなのでガード）
+  if (!document.getElementById('deck-open-flip-style')) {
+    const styleEl = document.createElement('style');
+    styleEl.id = 'deck-open-flip-style';
+    styleEl.textContent = `
+      @keyframes deckOpenFlip {
+        0% { transform: rotateY(0deg); }
+        50% { transform: rotateY(90deg); }
+        50.01% { transform: rotateY(-90deg); }
+        100% { transform: rotateY(0deg); }
+      }
+      .deck-open-card-flipping { animation: deckOpenFlip 360ms ease-in-out forwards; transform-style: preserve-3d; }
+    `;
+    document.head.appendChild(styleEl);
+  }
+
   const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:60500;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;pointer-events:none;animation:fadeIn 0.2s ease;';
+  // z-index は selection UI(60000) より上、fxCardMove(66000) より下
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:65000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;pointer-events:none;animation:fadeIn 0.2s ease;';
 
   const title = document.createElement('div');
-  title.style.cssText = 'color:#ff00fb;font-size:14px;font-weight:bold;margin-bottom:6px;text-shadow:0 0 8px #ff00fb;';
+  title.style.cssText = 'color:#ff00fb;font-size:14px;font-weight:bold;margin-bottom:4px;text-shadow:0 0 8px #ff00fb;';
   title.innerText = '👁 相手のデッキオープン (' + cards.length + '枚)';
   overlay.appendChild(title);
 
@@ -1200,51 +1219,82 @@ function showRemoteDeckOpenOverlay(cmd) {
   overlay.appendChild(cardArea);
 
   const footer = document.createElement('div');
-  footer.style.cssText = 'color:#fff;font-size:10px;opacity:0.7;';
-  footer.innerText = '相手が選択中...（操作不可）';
+  footer.style.cssText = 'color:#fff;font-size:11px;opacity:0.85;min-height:14px;';
+  footer.innerText = '相手がオープン中...';
   overlay.appendChild(footer);
 
+  // 最初は裏向きで設置
   const entries = cards.map(c => {
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'width:90px;height:126px;border:2px solid #444;border-radius:6px;overflow:hidden;background:#111;transition:all 0.2s;';
-    if (c.imgSrc) {
-      const img = document.createElement('img');
-      img.src = c.imgSrc;
-      img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
-      wrap.appendChild(img);
-    } else {
-      const fb = document.createElement('div');
-      fb.style.cssText = 'padding:6px;font-size:9px;color:#aaa;';
-      fb.innerText = c.name || '?';
-      wrap.appendChild(fb);
-    }
+    wrap.style.cssText = 'width:90px;height:126px;border:2px solid #444;border-radius:6px;overflow:hidden;background:linear-gradient(135deg,#2a0a30 0%,#3a1448 50%,#2a0a30 100%);position:relative;transition:border 0.2s, box-shadow 0.2s;';
+    const back = document.createElement('div');
+    back.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#ff00fb66;font-size:36px;font-weight:bold;text-shadow:0 0 6px #ff00fb44;';
+    back.innerText = '◆';
+    wrap.appendChild(back);
     cardArea.appendChild(wrap);
-    return { wrap, cardNo: c.cardNo, name: c.name };
+    return { wrap, cardNo: c.cardNo, name: c.name, imgSrc: c.imgSrc, _flipped: false, _removed: false };
   });
 
   document.body.appendChild(overlay);
   _remoteDeckOpenState = { overlay, cardArea, footer, entries };
+
+  // 1枚ずつめくる（発動側と同じタイミング・速度）
+  let idx = 0;
+  const FLIP_INTERVAL = 220;
+  const FLIP_HALFWAY = 180;
+  function flipNext() {
+    if (!_remoteDeckOpenState || idx >= entries.length) return;
+    const entry = entries[idx++];
+    entry.wrap.classList.add('deck-open-card-flipping');
+    setTimeout(() => {
+      if (entry._flipped) return;
+      entry._flipped = true;
+      while (entry.wrap.firstChild) entry.wrap.removeChild(entry.wrap.firstChild);
+      entry.wrap.style.background = '#111';
+      if (entry.imgSrc) {
+        const img = document.createElement('img');
+        img.src = entry.imgSrc;
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+        entry.wrap.appendChild(img);
+      } else {
+        const fb = document.createElement('div');
+        fb.style.cssText = 'padding:6px;font-size:9px;color:#aaa;';
+        fb.innerText = entry.name || '?';
+        entry.wrap.appendChild(fb);
+      }
+    }, FLIP_HALFWAY);
+    setTimeout(() => {
+      entry.wrap.classList.remove('deck-open-card-flipping');
+      flipNext();
+    }, FLIP_INTERVAL);
+  }
+  flipNext();
 }
 
 function handleRemoteDeckOpenAct(cmd) {
+  console.log('[fx_remoteDeckOpenAct] received', cmd);
   if (!_remoteDeckOpenState) return;
   const ent = _remoteDeckOpenState.entries.find(e => !e._removed && e.cardNo === cmd.cardNo);
   if (!ent) return;
   ent._removed = true;
   const labelMap = {
-    'hand': '手札', 'trash': 'トラッシュ',
-    'deck_top': 'デッキの上', 'deck_bottom': 'デッキの下',
+    'hand': '手札へ', 'trash': 'トラッシュへ',
+    'deck_top': 'デッキの上へ', 'deck_bottom': 'デッキの下へ',
   };
   const toLabel = labelMap[cmd.to] || '???';
   if (_remoteDeckOpenState.footer) {
-    _remoteDeckOpenState.footer.innerText = '「' + (cmd.name || '?') + '」を' + toLabel + 'へ移動';
+    _remoteDeckOpenState.footer.innerText = '📥 「' + (cmd.name || '?') + '」を ' + toLabel;
   }
-  // フェードアウト + カード移動演出
-  ent.wrap.style.transition = 'opacity 0.2s, transform 0.2s';
-  ent.wrap.style.opacity = '0.25';
-  ent.wrap.style.transform = 'scale(0.92)';
-  if (window._fxCardMove && (cmd.to === 'hand' || cmd.to === 'trash')) {
-    window._fxCardMove({ name: cmd.name, cardNo: cmd.cardNo, imgSrc: ent.wrap.querySelector('img') ? ent.wrap.querySelector('img').src : '' }, 'デッキ', toLabel, () => {
+  // 全宛先で fxCardMove を再生（手前で表示されるよう z-index は 66000）
+  if (window._fxCardMove) {
+    const imgEl = ent.wrap.querySelector('img');
+    const cardObj = { name: cmd.name, cardNo: cmd.cardNo, imgSrc: imgEl ? imgEl.src : (ent.imgSrc || '') };
+    const dest = labelMap[cmd.to] ? labelMap[cmd.to].replace('へ', '') : '???';
+    // 発動側の操作が見えるよう、対象カードを薄くしてから演出
+    ent.wrap.style.transition = 'opacity 0.15s, transform 0.15s';
+    ent.wrap.style.opacity = '0.25';
+    ent.wrap.style.transform = 'scale(0.92)';
+    window._fxCardMove(cardObj, 'デッキ', dest, () => {
       if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap);
     });
   } else {
@@ -1253,6 +1303,7 @@ function handleRemoteDeckOpenAct(cmd) {
 }
 
 function hideRemoteDeckOpenOverlay() {
+  console.log('[fx_remoteDeckOpenEnd] received');
   if (!_remoteDeckOpenState) return;
   const ov = _remoteDeckOpenState.overlay;
   if (ov && ov.parentNode) ov.parentNode.removeChild(ov);

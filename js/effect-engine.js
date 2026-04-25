@@ -1795,7 +1795,14 @@ function showDeckOpenUI(opened, step, ctx, callback) {
 
   // 「オープン」効果は両プレイヤーに公開されるため、自分側プレイヤー操作時は相手画面にも観戦UIを送る
   const isOnlineSelf = () => ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
-  const sendRemote = (cmd) => { if (isOnlineSelf()) { try { window._onlineSendCommand(cmd); } catch (_) {} } };
+  const sendRemote = (cmd) => {
+    if (!isOnlineSelf()) {
+      console.log('[deckOpen sendRemote] skip', { ctxSide: ctx.side, online: !!(window._isOnlineMode && window._isOnlineMode()), hasSend: !!window._onlineSendCommand });
+      return;
+    }
+    console.log('[deckOpen sendRemote] sending', cmd.type, cmd);
+    try { window._onlineSendCommand(cmd); } catch (e) { console.error('[deckOpen sendRemote] error', e); }
+  };
   // 開始通知: 全 opened カードを表向きで相手に公開
   sendRemote({
     type: 'fx_remoteDeckOpenStart',

@@ -142,7 +142,8 @@ export function fxLabelPopup(card, effectName, color, callback) {
 
 export function fxCardMove(card, fromLabel, toLabel, callback) {
   const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:55000;display:flex;align-items:center;justify-content:center;pointer-events:none;';
+  // z-index は deck_open UI(60000) / 観戦オーバーレイ(65000) の上に重ねる必要がある
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:66000;display:flex;align-items:center;justify-content:center;pointer-events:none;';
 
   const container = document.createElement('div');
   container.style.cssText = 'display:flex;align-items:center;gap:16px;';

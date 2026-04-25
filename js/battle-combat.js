@@ -46,16 +46,16 @@ function fireOppRestThen(restedOwnerSide, cb) {
   catch (_) { cb && cb(); }
 }
 
-// ブロッカー判定: 効果テキスト/進化元/permanent flag/buff のいずれかで判断
-// レシピ passive blocker（カブテリモン等）も拾えるようにする
-function isBlocker(c) {
+// passive flag を 効果テキスト / 進化元 / _permEffects / buffs / レシピ直読み で総合判定する
+// flagName: 'blocker' / 'penetrate' / 'piercing' 等
+// kwBracket: '【ブロッカー】' / '【貫通】' 等（テキスト判定用、無くても可）
+function hasPassiveFlag(c, flagName, kwBracket) {
   if (!c) return false;
-  if (_hooks.hasKeyword(c, '【ブロッカー】')) return true;
-  if (_hooks.hasEvoKeyword(c, '【ブロッカー】')) return true;
-  if (c._permEffects && c._permEffects.blocker) return true;
-  if (c.buffs && c.buffs.some(b => b.type === 'keyword_blocker')) return true;
-  // レシピ直読みフォールバック (Firebase復元等で _permEffects が落ちている場合用)
-  const passiveContainsBlocker = (arr) => Array.isArray(arr) && arr.some(p => (p && (p.flag === 'blocker' || p === 'blocker')));
+  if (kwBracket && _hooks.hasKeyword(c, kwBracket)) return true;
+  if (kwBracket && _hooks.hasEvoKeyword(c, kwBracket)) return true;
+  if (c._permEffects && c._permEffects[flagName]) return true;
+  if (c.buffs && c.buffs.some(b => b.type === 'keyword_' + flagName)) return true;
+  const passiveContains = (arr) => Array.isArray(arr) && arr.some(p => (p && (p.flag === flagName || p === flagName)));
   const parseRecipe = (rec) => {
     if (!rec) return null;
     try {
@@ -64,18 +64,22 @@ function isBlocker(c) {
     } catch (_) { return null; }
   };
   const r = parseRecipe(c.recipe);
-  if (r && passiveContainsBlocker(r.passive)) return true;
+  if (r && passiveContains(r.passive)) return true;
   if (c.stack && Array.isArray(c.stack)) {
     for (const evo of c.stack) {
       if (!evo) continue;
       const er = parseRecipe(evo.recipe);
       if (!er) continue;
       const evoPassives = (er.evo_source && er.evo_source.passive) || er.passive;
-      if (passiveContainsBlocker(evoPassives)) return true;
+      if (passiveContains(evoPassives)) return true;
     }
   }
   return false;
 }
+// ブロッカー判定（カブテリモン等）
+function isBlocker(c) { return hasPassiveFlag(c, 'blocker', '【ブロッカー】'); }
+// 貫通判定（ヘラクルカブテリモン等）: アタックで撃破時に追加セキュリティチェック
+function hasPenetrate(c) { return hasPassiveFlag(c, 'penetrate', '【貫通】'); }
 
 // ===== オンラインモード参照 =====
 let _onlineMode = false;
@@ -1095,7 +1099,13 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
             const winCtx = _hooks.makeEffectContext(atk, 'player');
             _hooks.triggerEffect('on_battle_win', atk, 'player', winCtx, () => {
               bs._lastBattleWinner = null;
-              checkAttackEnd(atk, atkIdx);
+              // ≪貫通≫: アタックで相手デジモン撃破 → アタック終了直前に追加セキュリティチェック
+              if (hasPenetrate(atk)) {
+                addLog('🗡 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
+                resolveSecurityCheck(atk, atkIdx);
+              } else {
+                checkAttackEnd(atk, atkIdx);
+              }
             });
           });
         });
@@ -1147,7 +1157,16 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           const winCtx = _hooks.makeEffectContext(atk, 'ai');
           _hooks.triggerEffect('on_battle_win', atk, 'ai', winCtx, () => {
             bs._lastBattleWinner = null;
-            showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); }, 'Win!!', '#00ff88');
+            // ≪貫通≫: AI アタッカーが撃破したら追加セキュリティチェック
+            if (hasPenetrate(atk)) {
+              addLog('🗡 [AI] 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
+              showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => {
+                addLog('💥 「' + def.name + '」が撃破された'); renderAll();
+                doAiSecurityCheck(atk, atkIdx, callback);
+              }, 'Win!!', '#00ff88');
+            } else {
+              showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); }, 'Win!!', '#00ff88');
+            }
           });
         });
       });

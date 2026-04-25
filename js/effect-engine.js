@@ -533,7 +533,13 @@ function executeQueueEntry(entry, context, callback) {
 
   // 効果発動 → カード&効果テキストを数秒表示してから実行
   function executeWithAnnounce() {
-    ctx.addLog('⚡ 「' + card.name + '」の効果発動');
+    // 進化元由来の効果なら、進化元カードを announce に渡して表示を分かりやすくする
+    const evoSourceCard = block && block._recipeCard;
+    if (evoSourceCard) {
+      ctx.addLog('⚡ 「' + card.name + '」の進化元【' + evoSourceCard.name + '】の効果発動');
+    } else {
+      ctx.addLog('⚡ 「' + card.name + '」の効果発動');
+    }
     showEffectAnnounce(card, block.raw, actualSide, () => {
       // 効果完了時に相手のオーバーレイを閉じるコールバック（対象選択で既に閉じた場合は不要だが安全のため送る）
       const wrappedCallback = () => {
@@ -554,7 +560,7 @@ function executeQueueEntry(entry, context, callback) {
       } else {
         executeCostAndActions(block, ctx, () => executeAfterActions(block, ctx, wrappedCallback));
       }
-    });
+    }, evoSourceCard);
   }
 
   // 条件チェック（cond_exists等）
@@ -2804,7 +2810,7 @@ function checkPendingDestroys(ctx, callback) {
 
 // ===== 効果発動アナウンス（カード画像＋効果テキストを数秒表示） =====
 
-function showEffectAnnounce(card, effectText, side, callback) {
+function showEffectAnnounce(card, effectText, side, callback, evoSourceCard) {
   // effectTextが空の場合、カードの効果テキスト全文をフォールバック
   let displayText = effectText || card.effect || '';
   // セキュリティ効果が「このカードの【メイン】効果を発揮する」と書かれている場合、
@@ -2819,8 +2825,12 @@ function showEffectAnnounce(card, effectText, side, callback) {
       }
     }
   }
+  // タイトルに進化元由来の効果であることを明示
+  const titleName = evoSourceCard
+    ? (card.name + '（進化元【' + evoSourceCard.name + '】の効果）')
+    : card.name;
   if (window._isOnlineMode && window._isOnlineMode() && side === 'player') {
-    window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: card.name, effectText: displayText.substring(0,400) });
+    window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: titleName, effectText: displayText.substring(0,400) });
   }
   const sideColor = side === 'player' ? '#00fbff' : '#ff00fb';
 
@@ -2832,8 +2842,15 @@ function showEffectAnnounce(card, effectText, side, callback) {
 
   const nameEl = document.createElement('div');
   nameEl.style.cssText = 'color:' + sideColor + ';font-size:14px;font-weight:bold;margin-bottom:10px;text-shadow:0 0 8px ' + sideColor + ';';
-  nameEl.innerText = '⚡ ' + card.name + ' — 効果発動';
+  nameEl.innerText = '⚡ ' + titleName + ' — 効果発動';
   box.appendChild(nameEl);
+  // 進化元由来なら一目で分かるサブラベル
+  if (evoSourceCard) {
+    const sub = document.createElement('div');
+    sub.style.cssText = 'color:#ffaa00;font-size:11px;font-weight:bold;margin-bottom:8px;text-shadow:0 0 4px #ffaa0066;';
+    sub.innerText = '◇ 進化元効果 ◇';
+    box.appendChild(sub);
+  }
 
   const effectEl = document.createElement('div');
   effectEl.style.cssText = 'color:#ddd;font-size:11px;line-height:1.6;max-height:100px;overflow-y:auto;text-align:left;';
@@ -3157,15 +3174,20 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
 //   done:       全リアクション完了時 callback
 export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
   const finish = () => { try { done && done(); } catch(_) {} };
+  console.log('[fireWhenOppRest] called restedSide=' + restedSide + ' isPlayerTurn=' + (bs && bs.isPlayerTurn));
   if (!bs) { finish(); return; }
   const reactSide = restedSide === 'player' ? 'ai' : 'player';
   const reactPlayer = bs[reactSide];
   if (!reactPlayer) { finish(); return; }
   // バトルエリア + テイマーエリアをスキャン
   const cards = [...(reactPlayer.battleArea || []), ...(reactPlayer.tamerArea || [])].filter(c => c);
+  console.log('[fireWhenOppRest] reactSide=' + reactSide + ' scan対象=' + cards.map(c => c.name).join(','));
   const reactions = [];
   cards.forEach(card => {
-    if (!card.recipe) return;
+    if (!card.recipe) {
+      console.log('  [fireWhenOppRest] skip ' + card.name + ' (recipe無し)');
+      return;
+    }
     try {
       const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
       const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -3175,19 +3197,30 @@ export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
         const willRun = recipe.some(step => {
           if (step.condition) {
             const conds = parseRecipeCondition(step.condition);
-            if (!checkConditions(conds, card, bs, reactSide)) return false;
+            const ok = checkConditions(conds, card, bs, reactSide);
+            console.log('  [fireWhenOppRest] ' + card.name + ' condition=' + step.condition + ' result=' + ok);
+            if (!ok) return false;
           }
           if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
             const sourceId = card.cardNo || card.name || 'unknown';
             const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
-            if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
+            if (bs._usedLimits && bs._usedLimits[limitKey]) {
+              console.log('  [fireWhenOppRest] ' + card.name + ' limit済');
+              return false;
+            }
           }
           return true;
         });
+        console.log('  [fireWhenOppRest] ' + card.name + ' willRun=' + willRun);
         if (willRun) reactions.push({ card, recipe });
+      } else {
+        console.log('  [fireWhenOppRest] ' + card.name + ' when_opp_rest無し');
       }
-    } catch (_) {}
+    } catch (e) {
+      console.log('  [fireWhenOppRest] ' + card.name + ' parse error', e.message);
+    }
   });
+  console.log('[fireWhenOppRest] reactions.length=' + reactions.length);
   if (reactions.length === 0) { finish(); return; }
   let idx = 0;
   function nextReaction() {
@@ -3887,7 +3920,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       const carrier = ctx.card;
       if (!carrier || !carrier.stack || carrier.stack.length < need) {
         ctx.addLog && ctx.addLog('⚠ デジバースト' + need + ': 進化元が足りません');
-        callback && callback(false); // 失敗 → 後続スキップ
+        // 視覚フィードバック: 「条件を満たさないため発動できません」
+        showEffectFailed('進化元が' + need + '枚必要です（条件を満たさないため発動できません）', () => {
+          callback && callback(false); // 失敗 → 後続スキップ
+        });
         return;
       }
       // プレイヤーが N 枚タップ選択して破棄

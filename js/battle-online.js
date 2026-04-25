@@ -746,6 +746,23 @@ function onRemoteCommand(cmd) {
       hideRemoteDeckOpenOverlay();
       break;
     }
+    case 'fx_targetSelectStart': {
+      // 相手が対象選択を開始 → 「相手が対象選択中...」専用ポップアップを表示
+      let ov = document.getElementById('_remote-target-select');
+      if (!ov) {
+        ov = document.createElement('div');
+        ov.id = '_remote-target-select';
+        ov.style.cssText = 'position:fixed;top:15%;left:50%;transform:translateX(-50%);z-index:55000;background:rgba(0,0,0,0.9);border:1px solid #ff00fb;border-radius:10px;padding:10px 20px;color:#ff00fb;font-size:13px;font-weight:bold;text-align:center;box-shadow:0 0 20px #ff00fb44;pointer-events:none;animation:fadeIn 0.2s ease;';
+        document.body.appendChild(ov);
+      }
+      ov.innerText = '🎯 相手が対象を選択中...';
+      break;
+    }
+    case 'fx_targetSelectEnd': {
+      const ov = document.getElementById('_remote-target-select');
+      if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+      break;
+    }
     case 'fx_penetrate': {
       // 相手の貫通発動 → 自分側でも演出を再生
       const overlay = document.createElement('div');

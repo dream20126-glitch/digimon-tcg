@@ -1570,6 +1570,11 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
   const slots = row.querySelectorAll('.b-slot');
   const color = borderColor || '#ff4444';
 
+  // オンライン: 相手画面に「対象選択中」専用ポップアップを表示
+  if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    try { window._onlineSendCommand({ type: 'fx_targetSelectStart' }); } catch (_) {}
+  }
+
   // メッセージを画面中央に表示
   const msgEl = document.createElement('div');
   msgEl.style.cssText = 'position:fixed;top:15%;left:50%;transform:translateX(-50%);z-index:60000;background:rgba(0,0,0,0.9);border:1px solid '+color+';border-radius:10px;padding:12px 24px;color:'+color+';font-size:14px;font-weight:bold;text-align:center;box-shadow:0 0 20px '+color+'44;pointer-events:none;';
@@ -1720,9 +1725,10 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
 
   function cleanup() {
     _targetSelecting = false;
-    // 対象選択完了 → 相手の効果内容オーバーレイを閉じる
+    // 対象選択完了 → 相手の対象選択中ポップアップ + 効果発動ポップアップを閉じる
     // ただし、_skipFxEffectCloseフラグが立っている場合（複数選択途中等）は閉じない
     if (window._isOnlineMode && window._isOnlineMode() && !window._skipFxEffectClose) {
+      window._onlineSendCommand({ type: 'fx_targetSelectEnd' });
       window._onlineSendCommand({ type: 'fx_effectClose' });
     }
     if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl);
@@ -3977,6 +3983,11 @@ function executeRecipeStep(step, ctx, store, callback) {
         function discardNext() {
           if (i >= selectedCards.length) {
             ctx.renderAll();
+            // cost 解決完了 → 相手画面の効果発動ポップアップを閉じる
+            // （後続の対象選択フェーズで「相手が対象選択中」専用ポップアップに切り替えるため）
+            if (isOnlineSelf()) {
+              try { window._onlineSendCommand({ type: 'fx_effectClose' }); } catch (_) {}
+            }
             callback && callback(true);
             return;
           }

@@ -462,7 +462,7 @@ function onRemoteCommand(cmd) {
       const remoteOv = document.getElementById('_remote-effect-announce');
       if (remoteOv) {
         const statusEl = remoteOv.querySelector('div[style*="color:#888"]');
-        if (statusEl) statusEl.innerText = cmd.accepted ? '⚡ 効果処理中...' : '💨 効果を発動しませんでした';
+        if (statusEl) statusEl.innerText = cmd.accepted ? '⚡ 相手が効果を発動中...' : '💨 効果を発動しませんでした';
         // 「いいえ」の場合は3秒後に消す
         if (!cmd.accepted) setTimeout(() => { if (m.fxRemoteEffectClose) m.fxRemoteEffectClose(); }, 3000);
       }
@@ -744,6 +744,46 @@ function onRemoteCommand(cmd) {
     case 'fx_remoteDeckOpenEnd': {
       // 観戦オーバーレイを閉じる
       hideRemoteDeckOpenOverlay();
+      break;
+    }
+    case 'fx_penetrate': {
+      // 相手の貫通発動 → 自分側でも演出を再生
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:48000;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(0,0,0,0.55);';
+      const text = document.createElement('div');
+      text.style.cssText = 'font-size:clamp(1.6rem,7vw,3.2rem);font-weight:900;color:#ff9900;letter-spacing:6px;text-shadow:0 0 20px #ff9900,0 0 40px #ff5500,0 0 60px #ff5500;animation:phaseSlideIn 1.4s ease forwards;';
+      text.innerText = '🗡 貫通！';
+      overlay.appendChild(text);
+      document.body.appendChild(overlay);
+      setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 1400);
+      addLog('🗡 相手の【貫通】効果でセキュリティチェック！');
+      break;
+    }
+    case 'fx_remoteSelfEvoDiscard': {
+      // 相手が自分の進化元を破棄したことを通知（state は state_sync で同期される）
+      // 受信側目線では「相手のカード」なので bs.ai.battleArea を参照
+      const targetName = cmd.targetName || '???';
+      const discardedNames = Array.isArray(cmd.discardedNames) ? cmd.discardedNames : (cmd.discardedNames ? [cmd.discardedNames] : []);
+      addLog('📤 相手「' + targetName + '」の進化元から「' + discardedNames.join(', ') + '」破棄');
+      // カード移動演出のみ再生（演出のために必要なら image src を補う）
+      let i = 0;
+      function next() {
+        if (i >= discardedNames.length) return;
+        const name = discardedNames[i++];
+        // 名前から DB を探して image を補強（無くても演出はOK）
+        const card = { name };
+        if (window.allCards) {
+          const found = window.allCards.find(c => c['名前'] === name);
+          if (found) {
+            card.imgSrc = (typeof getCardImageUrl === 'function' ? getCardImageUrl(found) : '') || found['ImageURL'] || '';
+            card.cardNo = found['カードNo'] || '';
+          }
+        }
+        if (window._fxCardMove) {
+          window._fxCardMove(card, targetName + 'の進化元', 'トラッシュ', next);
+        } else { setTimeout(next, 500); }
+      }
+      if (discardedNames.length > 0) next();
       break;
     }
     case 'fx_remoteSuspend': {

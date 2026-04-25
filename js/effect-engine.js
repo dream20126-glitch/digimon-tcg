@@ -3988,16 +3988,16 @@ function executeRecipeStep(step, ctx, store, callback) {
             ctx.addLog && ctx.addLog('🗑 「' + ec.name + '」を進化元から破棄');
           }
           ctx.renderAll();
-          // オンライン: 相手画面にもカード移動演出を送る（既存 fx_evoDiscard 受信ハンドラを再利用）
+          // オンライン: 相手画面にもカード移動演出を送る
+          // fx_evoDiscard は「相手が自分のカードを操作」用なので使えない。
+          // 自分が自分の進化元を破棄したことを相手に演出だけ知らせる専用コマンドを使う
           if (isOnlineSelf()) {
             try {
               window._onlineSendCommand({
-                type: 'fx_evoDiscard',
+                type: 'fx_remoteSelfEvoDiscard',
                 targetName: carrier.name,
+                targetCardNo: carrier.cardNo || '',
                 discardedNames: [ec.name],
-                targetIdx: carrierIdx,
-                count: 1,
-                fromTop: false,
               });
               if (window._markEvoModified) window._markEvoModified('ai', carrierIdx);
             } catch (_) {}

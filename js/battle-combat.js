@@ -118,6 +118,26 @@ function showCombatBackdrop() {
   bd.style.display = 'block';
 }
 
+// 貫通アナウンス: combat-backdrop(46999) の上に出すため独立z-indexで実装
+function showPenetrateAnnounce(callback) {
+  // オンライン: 相手画面にも演出を送る
+  if (_onlineMode && _sendCommand && !window._suppressFxSend) {
+    try { _sendCommand({ type: 'fx_penetrate' }); } catch (_) {}
+  }
+  const overlay = document.createElement('div');
+  overlay.id = '_penetrate-announce';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:48000;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(0,0,0,0.55);';
+  const text = document.createElement('div');
+  text.style.cssText = 'font-size:clamp(1.6rem,7vw,3.2rem);font-weight:900;color:#ff9900;letter-spacing:6px;text-shadow:0 0 20px #ff9900,0 0 40px #ff5500,0 0 60px #ff5500;animation:phaseSlideIn 1.4s ease forwards;';
+  text.innerText = '🗡 貫通！';
+  overlay.appendChild(text);
+  document.body.appendChild(overlay);
+  setTimeout(() => {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    callback && callback();
+  }, 1400);
+}
+
 function hideCombatBackdrop() {
   _combatAnimating = false;
   const bd = document.getElementById('_combat-backdrop');
@@ -1102,7 +1122,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
               // ≪貫通≫: アタックで相手デジモン撃破 → アタック終了直前に追加セキュリティチェック
               if (hasPenetrate(atk)) {
                 addLog('🗡 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
-                showPhaseAnnounce('🗡 貫通！', '#ff9900', () => {
+                showPenetrateAnnounce(() => {
                   resolveSecurityCheck(atk, atkIdx);
                 });
               } else {
@@ -1164,7 +1184,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
               addLog('🗡 [AI] 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
               showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => {
                 addLog('💥 「' + def.name + '」が撃破された'); renderAll();
-                showPhaseAnnounce('🗡 貫通！', '#ff9900', () => {
+                showPenetrateAnnounce(() => {
                   doAiSecurityCheck(atk, atkIdx, callback);
                 });
               }, 'Win!!', '#00ff88');

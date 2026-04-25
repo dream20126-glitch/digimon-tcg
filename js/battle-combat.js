@@ -1295,6 +1295,18 @@ export function aiAttackPhase(callback) {
 
     doAfterAtkEffect(() => {
       // ブロッカーチェック（cantBlockのカードは除外）
+      // デバッグ: 各カードの判定結果をログ出力（カブテリモン等のブロック発動不具合調査用）
+      console.log('[ブロック判定:AI攻撃時]', (bs.player.battleArea || []).map((c, i) => {
+        if (!c) return null;
+        return {
+          idx: i, name: c.name, type: c.type,
+          suspended: c.suspended, cantBlock: c.cantBlock,
+          isBlocker: isBlocker(c),
+          effectHasBlocker: !!(c.effect && c.effect.includes('【ブロッカー】')),
+          recipePreview: typeof c.recipe === 'string' ? c.recipe.slice(0, 80) : (c.recipe ? JSON.stringify(c.recipe).slice(0, 80) : '(なし)'),
+          permEffectsBlocker: !!(c._permEffects && c._permEffects.blocker),
+        };
+      }));
       const blockerIndices = [];
       bs.player.battleArea.forEach((c, i) => {
         if (c && !c.suspended && !c.cantBlock && isBlocker(c)) {

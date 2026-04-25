@@ -3007,11 +3007,15 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
       }
       // ソースカードの進化元効果もスキャン（テキスト解析 + レシピ）
       if (sourceCard.stack) {
-        sourceCard.stack.forEach(evoCard => {
-          if (!evoCard.evoSourceEffect || evoCard.evoSourceEffect === 'なし') return;
+        console.log('[scanTriggers/sourceOnly evo] trigger=' + triggerCode + ' source=' + sourceCard.name + ' stack数=' + sourceCard.stack.length);
+        sourceCard.stack.forEach((evoCard, evoIdx) => {
+          const evoEffectExists = evoCard && evoCard.evoSourceEffect && evoCard.evoSourceEffect !== 'なし';
+          console.log('  [evo' + evoIdx + ']', evoCard ? evoCard.name : '(null)', 'effExists=' + evoEffectExists, 'recipe=' + (evoCard && evoCard.recipe ? '有' : '無'));
+          if (!evoEffectExists) return;
           // レシピがある場合はレシピを優先（進化元コンテキストなので inEvoSource=true）
           const evoRecipeSteps = getRecipeForTrigger(evoCard, triggerCode, true);
           if (evoRecipeSteps) {
+            console.log('  → レシピ追加 trigger=' + triggerCode + ' steps=' + (Array.isArray(evoRecipeSteps) ? evoRecipeSteps.length : 1));
             // レシピを実行するためのダミーブロックをキューに追加
             const dummyBlock = {
               raw: evoCard.evoSourceEffect, trigger: { code: triggerCode },
@@ -3032,6 +3036,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
             }
           });
         });
+        console.log('[scanTriggers/sourceOnly evo] done queue size=' + _effectQueue.length);
       }
     }
   } else {
@@ -3434,6 +3439,31 @@ function executeRecipeStep(step, ctx, store, callback) {
   // separator ステップ（「その後、」区切り用のマーカー）は何も実行せず次へ
   if (step.separator !== undefined && !step.action) {
     callback && callback();
+    return;
+  }
+
+  // step.cost が指定されていれば、本体アクションの前にコストを順次実行する。
+  // すべてのコストが成功した場合のみ本体アクションへ進む。
+  // 失敗時は callback(false) を呼んで後続レシピごとアボートする。
+  if (Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved) {
+    let i = 0;
+    function runCost() {
+      if (i >= step.cost.length) {
+        // 全コスト解決 → _costsResolved を立てて自身を再実行（本体アクション側へ進む）
+        executeRecipeStep({ ...step, _costsResolved: true }, ctx, store, callback);
+        return;
+      }
+      const costStep = step.cost[i++];
+      executeRecipeStep(costStep, ctx, store, (success) => {
+        if (success === false) {
+          // コスト不成立 → 効果不発、後続もスキップさせる
+          callback && callback(false);
+          return;
+        }
+        runCost();
+      });
+    }
+    runCost();
     return;
   }
 

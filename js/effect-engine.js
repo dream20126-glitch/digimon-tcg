@@ -1793,6 +1793,16 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   const selections = Array.isArray(step.selections) ? step.selections : [];
   const returnTo = step.return_to || 'deck_bottom';
 
+  // 「オープン」効果は両プレイヤーに公開されるため、自分側プレイヤー操作時は相手画面にも観戦UIを送る
+  const isOnlineSelf = () => ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
+  const sendRemote = (cmd) => { if (isOnlineSelf()) { try { window._onlineSendCommand(cmd); } catch (_) {} } };
+  // 開始通知: 全 opened カードを表向きで相手に公開
+  sendRemote({
+    type: 'fx_remoteDeckOpenStart',
+    sourceCardName: ctx.card ? ctx.card.name : '',
+    cards: opened.map(c => ({ cardNo: c.cardNo, name: c.name, imgSrc: getImg(c) })),
+  });
+
   // === オーバーレイ ===
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:60000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.2s ease;';
@@ -1987,6 +1997,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
               refreshSelectUI();
             }
           };
+          // 相手画面にもどこへ移動したか通知（カード移動演出付き）
+          sendRemote({ type: 'fx_remoteDeckOpenAct', cardNo: entry.card.cardNo, name: entry.card.name, to: dest });
           // 「カード移動演出」を挟む（hand / trash のみ。fxCardMove が無い環境ではフォールバック）
           if ((dest === 'hand' || dest === 'trash') && window._fxCardMove) {
             const toLabel = dest === 'hand' ? '手札' : 'トラッシュ';
@@ -2029,6 +2041,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
     if (remaining.length === 0) { cleanup(); callback(); return; }
     if (returnTo === 'trash') {
       remaining.forEach(e => {
+        sendRemote({ type: 'fx_remoteDeckOpenAct', cardNo: e.card.cardNo, name: e.card.name, to: 'trash' });
         player.trash.push(e.card);
         ctx.addLog && ctx.addLog('🗑 「' + e.card.name + '」をトラッシュへ');
         removeEntry(e);
@@ -2041,6 +2054,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       if (position === 'top') player.deck.unshift(card);
       else player.deck.push(card);
       ctx.addLog && ctx.addLog('📥 「' + card.name + '」をデッキの' + (position === 'top' ? '上' : '下') + 'へ');
+      // 相手画面にも通知
+      sendRemote({ type: 'fx_remoteDeckOpenAct', cardNo: card.cardNo, name: card.name, to: position === 'top' ? 'deck_top' : 'deck_bottom' });
     };
 
     // deck_bottom（「デッキの下に戻す」明記）: ポップアップ無しで全自動
@@ -2139,6 +2154,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
 
   function cleanup() {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    // 相手画面の観戦オーバーレイも閉じる
+    sendRemote({ type: 'fx_remoteDeckOpenEnd' });
   }
 
   // 開始: まず1枚ずつめくれ演出を再生してから、選択/戻しフェーズへ

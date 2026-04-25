@@ -730,6 +730,22 @@ function onRemoteCommand(cmd) {
       addLog('⚔ 「' + (cmd.targetName || '???') + '」に' + (cmd.buffType || 'バフ') + sign + (cmd.value || 0) + ' 付与');
       break;
     }
+    case 'fx_remoteDeckOpenStart': {
+      // 相手が「デッキオープン」効果を発動 → 観戦用オーバーレイを表示（操作不可・表向き）
+      showRemoteDeckOpenOverlay(cmd);
+      addLog('📖 相手が「' + (cmd.sourceCardName || 'カード') + '」の効果でデッキ ' + ((cmd.cards && cmd.cards.length) || 0) + '枚をオープン');
+      break;
+    }
+    case 'fx_remoteDeckOpenAct': {
+      // 観戦オーバーレイから対象カードを抜き、移動演出を再生
+      handleRemoteDeckOpenAct(cmd);
+      break;
+    }
+    case 'fx_remoteDeckOpenEnd': {
+      // 観戦オーバーレイを閉じる
+      hideRemoteDeckOpenOverlay();
+      break;
+    }
     case 'fx_remoteSuspend': {
       // 相手から rest/active コマンドを受信 → 自分側カードの suspended を直接書き換え
       // state_sync は oppBattleArea を上書きしないため、相手のカードの suspended は
@@ -1156,3 +1172,89 @@ window._cleanupOnline = () => cleanupOnline();
 // battle-combat.jsの戦闘演出中フラグをwindow経由で公開
 import { isCombatAnimating } from './battle-combat.js';
 window._isCombatAnimating = isCombatAnimating;
+
+// ===== 相手の「デッキオープン」観戦オーバーレイ =====
+// 公式ルール上「オープン」効果は両プレイヤーに公開されるため、相手の操作内容を逐次表示する。
+let _remoteDeckOpenState = null; // { overlay, cardArea, footer, entries: [{ wrap, cardNo }] }
+
+function showRemoteDeckOpenOverlay(cmd) {
+  // 二重表示防止
+  hideRemoteDeckOpenOverlay();
+  const cards = Array.isArray(cmd.cards) ? cmd.cards : [];
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:60500;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;pointer-events:none;animation:fadeIn 0.2s ease;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#ff00fb;font-size:14px;font-weight:bold;margin-bottom:6px;text-shadow:0 0 8px #ff00fb;';
+  title.innerText = '👁 相手のデッキオープン (' + cards.length + '枚)';
+  overlay.appendChild(title);
+
+  const subtitle = document.createElement('div');
+  subtitle.style.cssText = 'color:#ffaa00;font-size:11px;margin-bottom:10px;';
+  subtitle.innerText = cmd.sourceCardName ? '「' + cmd.sourceCardName + '」の効果' : 'カード効果による';
+  overlay.appendChild(subtitle);
+
+  const cardArea = document.createElement('div');
+  cardArea.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;background:rgba(20,5,30,0.85);border:1px solid #ff00fb44;border-radius:12px;padding:14px 20px;margin-bottom:10px;';
+  overlay.appendChild(cardArea);
+
+  const footer = document.createElement('div');
+  footer.style.cssText = 'color:#fff;font-size:10px;opacity:0.7;';
+  footer.innerText = '相手が選択中...（操作不可）';
+  overlay.appendChild(footer);
+
+  const entries = cards.map(c => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'width:90px;height:126px;border:2px solid #444;border-radius:6px;overflow:hidden;background:#111;transition:all 0.2s;';
+    if (c.imgSrc) {
+      const img = document.createElement('img');
+      img.src = c.imgSrc;
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+      wrap.appendChild(img);
+    } else {
+      const fb = document.createElement('div');
+      fb.style.cssText = 'padding:6px;font-size:9px;color:#aaa;';
+      fb.innerText = c.name || '?';
+      wrap.appendChild(fb);
+    }
+    cardArea.appendChild(wrap);
+    return { wrap, cardNo: c.cardNo, name: c.name };
+  });
+
+  document.body.appendChild(overlay);
+  _remoteDeckOpenState = { overlay, cardArea, footer, entries };
+}
+
+function handleRemoteDeckOpenAct(cmd) {
+  if (!_remoteDeckOpenState) return;
+  const ent = _remoteDeckOpenState.entries.find(e => !e._removed && e.cardNo === cmd.cardNo);
+  if (!ent) return;
+  ent._removed = true;
+  const labelMap = {
+    'hand': '手札', 'trash': 'トラッシュ',
+    'deck_top': 'デッキの上', 'deck_bottom': 'デッキの下',
+  };
+  const toLabel = labelMap[cmd.to] || '???';
+  if (_remoteDeckOpenState.footer) {
+    _remoteDeckOpenState.footer.innerText = '「' + (cmd.name || '?') + '」を' + toLabel + 'へ移動';
+  }
+  // フェードアウト + カード移動演出
+  ent.wrap.style.transition = 'opacity 0.2s, transform 0.2s';
+  ent.wrap.style.opacity = '0.25';
+  ent.wrap.style.transform = 'scale(0.92)';
+  if (window._fxCardMove && (cmd.to === 'hand' || cmd.to === 'trash')) {
+    window._fxCardMove({ name: cmd.name, cardNo: cmd.cardNo, imgSrc: ent.wrap.querySelector('img') ? ent.wrap.querySelector('img').src : '' }, 'デッキ', toLabel, () => {
+      if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap);
+    });
+  } else {
+    setTimeout(() => { if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap); }, 350);
+  }
+}
+
+function hideRemoteDeckOpenOverlay() {
+  if (!_remoteDeckOpenState) return;
+  const ov = _remoteDeckOpenState.overlay;
+  if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+  _remoteDeckOpenState = null;
+}

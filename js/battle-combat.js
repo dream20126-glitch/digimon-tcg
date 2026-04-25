@@ -1102,7 +1102,9 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
               // ≪貫通≫: アタックで相手デジモン撃破 → アタック終了直前に追加セキュリティチェック
               if (hasPenetrate(atk)) {
                 addLog('🗡 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
-                resolveSecurityCheck(atk, atkIdx);
+                showPhaseAnnounce('🗡 貫通！', '#ff9900', () => {
+                  resolveSecurityCheck(atk, atkIdx);
+                });
               } else {
                 checkAttackEnd(atk, atkIdx);
               }
@@ -1162,7 +1164,9 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
               addLog('🗡 [AI] 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
               showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => {
                 addLog('💥 「' + def.name + '」が撃破された'); renderAll();
-                doAiSecurityCheck(atk, atkIdx, callback);
+                showPhaseAnnounce('🗡 貫通！', '#ff9900', () => {
+                  doAiSecurityCheck(atk, atkIdx, callback);
+                });
               }, 'Win!!', '#00ff88');
             } else {
               showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); }, 'Win!!', '#00ff88');

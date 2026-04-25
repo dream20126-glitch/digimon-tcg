@@ -3227,6 +3227,40 @@ export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
     if (idx >= reactions.length) { finish(); return; }
     const { card, recipe } = reactions[idx++];
     const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side: reactSide };
+
+    const proceed = () => {
+      ctx.addLog && ctx.addLog('⚡ 「' + card.name + '」の効果発動');
+      showEffectAnnounce(card, card.effect || '', reactSide, () => {
+        runRecipe(recipe, ctx, () => {
+          ctx.renderAll && ctx.renderAll();
+          if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
+            window._onlineSendCommand({ type: 'fx_effectClose' });
+          }
+          nextReaction();
+        });
+      });
+    };
+
+    // 任意効果（コストを伴うレストや手札捨て等）→ プレイヤー側のみ確認ダイアログを出す
+    // AI 側は自動でスキップ判定（AI ロジック未実装のため、現状は発動しない方を選ぶ）
+    const isOptional = recipe.some(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0)));
+    if (isOptional) {
+      if (reactSide === 'player') {
+        showConfirmDialog(card, card.effect || '', (yes) => {
+          if (yes) proceed();
+          else {
+            ctx.addLog && ctx.addLog('☓ 「' + card.name + '」の効果は発動しなかった');
+            nextReaction();
+          }
+        });
+      } else {
+        // AI: 任意効果はスキップ（将来 AI 判断ロジックを実装する場所）
+        ctx.addLog && ctx.addLog('☓ AI: 「' + card.name + '」の効果は発動しなかった');
+        nextReaction();
+      }
+      return;
+    }
+    // 強制効果 → そのまま実行（旧パスとの互換のためここでは旧構造を踏襲）
     ctx.addLog && ctx.addLog('⚡ 「' + card.name + '」の効果発動');
     showEffectAnnounce(card, card.effect || '', reactSide, () => {
       runRecipe(recipe, ctx, () => {
@@ -3934,17 +3968,48 @@ function executeRecipeStep(step, ctx, store, callback) {
           callback && callback(false);
           return;
         }
-        // 選択された evo card を carrier.stack から取り除いて trash へ
-        selectedCards.forEach(ec => {
+        // 進化元破棄を1枚ずつ「カード移動演出」付きで進める。
+        // 自分側でも演出を見せ、オンライン時は相手画面にも fx_evoDiscard を送って
+        // 同じカード移動演出を再生させる。
+        const carrierIdx = (ctx.bs.player.battleArea || []).indexOf(carrier);
+        const isOnlineSelf = () => ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
+        let i = 0;
+        function discardNext() {
+          if (i >= selectedCards.length) {
+            ctx.renderAll();
+            callback && callback(true);
+            return;
+          }
+          const ec = selectedCards[i++];
           const idx = carrier.stack.indexOf(ec);
           if (idx !== -1) {
             carrier.stack.splice(idx, 1);
             player.trash.push(ec);
             ctx.addLog && ctx.addLog('🗑 「' + ec.name + '」を進化元から破棄');
           }
-        });
-        ctx.renderAll();
-        callback && callback(true);
+          ctx.renderAll();
+          // オンライン: 相手画面にもカード移動演出を送る（既存 fx_evoDiscard 受信ハンドラを再利用）
+          if (isOnlineSelf()) {
+            try {
+              window._onlineSendCommand({
+                type: 'fx_evoDiscard',
+                targetName: carrier.name,
+                discardedNames: [ec.name],
+                targetIdx: carrierIdx,
+                count: 1,
+                fromTop: false,
+              });
+              if (window._markEvoModified) window._markEvoModified('ai', carrierIdx);
+            } catch (_) {}
+          }
+          // 自分側のカード移動演出
+          if (window._fxCardMove) {
+            window._fxCardMove(ec, carrier.name + 'の進化元', 'トラッシュ', discardNext);
+          } else {
+            setTimeout(discardNext, 300);
+          }
+        }
+        discardNext();
       };
       // showEvoSourceSelection を使って evo card を N 枚選ばせる
       // フィルタなし（任意の進化元から選択可）

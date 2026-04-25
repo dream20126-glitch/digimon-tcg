@@ -1966,23 +1966,36 @@ function showDeckOpenUI(opened, step, ctx, callback) {
         if (!cardMatchesFilter(entry.card, filter)) { entry.wrap.onclick = null; return; }
         entry.wrap.onclick = () => {
           if (entry.removed) return;
-          if (dest === 'hand') player.hand.push(entry.card);
-          else if (dest === 'trash') player.trash.push(entry.card);
-          ctx.addLog && ctx.addLog('🃏 「' + entry.card.name + '」を' + (dest === 'hand' ? '手札に加えた' : 'トラッシュへ'));
-          removeEntry(entry);
-          pickedCount++;
-          ctx.renderAll && ctx.renderAll();
-          if (pickedCount >= maxCount) {
-            cardEls.forEach(e => { if (!e.removed) setCardNeutral(e); });
-            runSelectionPhase();
-            return;
-          }
-          const stillMatching = cardEls.filter(e => !e.removed && cardMatchesFilter(e.card, filter));
-          if (stillMatching.length === 0) {
-            cardEls.forEach(e => { if (!e.removed) setCardNeutral(e); });
-            runSelectionPhase();
+          // 実際の移動処理 + 後続フロー
+          const proceed = () => {
+            if (dest === 'hand') player.hand.push(entry.card);
+            else if (dest === 'trash') player.trash.push(entry.card);
+            ctx.addLog && ctx.addLog('🃏 「' + entry.card.name + '」を' + (dest === 'hand' ? '手札に加えた' : 'トラッシュへ'));
+            removeEntry(entry);
+            pickedCount++;
+            ctx.renderAll && ctx.renderAll();
+            if (pickedCount >= maxCount) {
+              cardEls.forEach(e => { if (!e.removed) setCardNeutral(e); });
+              runSelectionPhase();
+              return;
+            }
+            const stillMatching = cardEls.filter(e => !e.removed && cardMatchesFilter(e.card, filter));
+            if (stillMatching.length === 0) {
+              cardEls.forEach(e => { if (!e.removed) setCardNeutral(e); });
+              runSelectionPhase();
+            } else {
+              refreshSelectUI();
+            }
+          };
+          // 「カード移動演出」を挟む（hand / trash のみ。fxCardMove が無い環境ではフォールバック）
+          if ((dest === 'hand' || dest === 'trash') && window._fxCardMove) {
+            const toLabel = dest === 'hand' ? '手札' : 'トラッシュ';
+            // 選択カードを一旦dimして演出に集中させる
+            entry.wrap.style.transition = 'opacity 0.15s';
+            entry.wrap.style.opacity = '0.3';
+            window._fxCardMove(entry.card, 'デッキ', toLabel, proceed);
           } else {
-            refreshSelectUI();
+            proceed();
           }
         };
       });

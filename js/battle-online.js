@@ -50,6 +50,21 @@ function isRecentlyEvoModified(side, slotIdx) {
   return _recentlyEvoModified.some(d => d.side === side && d.slotIdx === slotIdx && Date.now() - d.time < EVO_MOD_COOLDOWN);
 }
 
+// 最近suspended状態を変更したスロットの追跡（state_syncによる上書きを防止）
+// { side, slotIdx, suspended, time }
+let _recentlySuspendChanged = [];
+const SUSPEND_COOLDOWN = 5000;
+
+function markSuspendChanged(side, slotIdx, suspended) {
+  _recentlySuspendChanged.push({ side, slotIdx, suspended, time: Date.now() });
+  _recentlySuspendChanged = _recentlySuspendChanged.filter(d => Date.now() - d.time < SUSPEND_COOLDOWN);
+}
+
+function recentSuspendOverride(side, slotIdx) {
+  const e = _recentlySuspendChanged.find(d => d.side === side && d.slotIdx === slotIdx && Date.now() - d.time < SUSPEND_COOLDOWN);
+  return e ? e.suspended : null;
+}
+
 // 最近期限切れで削除されたバフの追跡（state_syncによる復元を防止）
 let _recentlyExpiredBuffs = []; // {cardName, type, duration, time}
 const BUFF_EXPIRE_COOLDOWN = 8000;
@@ -646,6 +661,11 @@ function onRemoteCommand(cmd) {
           if (newArea[i] && isRecentlyEvoModified('ai', i) && bs.ai.battleArea[i]) {
             newArea[i].stack = bs.ai.battleArea[i].stack;
           }
+          // 最近自分がレスト/アクティブにしたカードの suspended を保護（古いsyncで戻されないように）
+          if (newArea[i]) {
+            const ov = recentSuspendOverride('ai', i);
+            if (ov !== null) newArea[i].suspended = ov;
+          }
         }
         bs.ai.battleArea = newArea;
       }
@@ -708,6 +728,20 @@ function onRemoteCommand(cmd) {
       }
       const sign = cmd.buffType === 'dp_minus' ? '-' : '+';
       addLog('⚔ 「' + (cmd.targetName || '???') + '」に' + (cmd.buffType || 'バフ') + sign + (cmd.value || 0) + ' 付与');
+      break;
+    }
+    case 'fx_remoteSuspend': {
+      // 相手から rest/active コマンドを受信 → 自分側カードの suspended を直接書き換え
+      // state_sync は oppBattleArea を上書きしないため、相手のカードの suspended は
+      // この個別コマンドで同期する
+      const myCard = bs.player.battleArea[cmd.targetIdx];
+      if (myCard) {
+        myCard.suspended = !!cmd.suspended;
+        // 自分側でも保護フラグを立てて、相手からの古い state_sync で戻されないようにする
+        markSuspendChanged('player', cmd.targetIdx, !!cmd.suspended);
+        renderAll();
+      }
+      addLog((cmd.suspended ? '💤 ' : '🔄 ') + '「' + (cmd.targetName || '???') + '」が' + (cmd.suspended ? 'レスト' : 'アクティブ'));
       break;
     }
     case 'fx_cantAttackBlock': {
@@ -1115,6 +1149,7 @@ window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._clearPendingBlock = () => { _pendingBlockCallback = null; _pendingBlockResponse = null; };
 window._markDestroyed = (side, slotIdx) => markDestroyed(side, slotIdx);
 window._markEvoModified = (side, slotIdx) => markEvoModified(side, slotIdx);
+window._markSuspendChanged = (side, slotIdx, suspended) => markSuspendChanged(side, slotIdx, suspended);
 window._markBuffExpired = (cardName, type, duration) => markBuffExpired(cardName, type, duration);
 window._cleanupOnline = () => cleanupOnline();
 

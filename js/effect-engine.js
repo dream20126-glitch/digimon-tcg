@@ -459,13 +459,17 @@ function clearQueue() { _effectQueue = []; }
 function addToQueue(card, block, side, priority, actualSide) {
   const triggerCode = block.trigger?.code;
   // 同じカード+同じトリガー+同じ効果テキストが既にキューにあればスキップ
-  // 注意: 進化元効果は異なるカード由来でも同じ親カードで登録されるため、
-  //        blockのraw(効果テキスト)も比較して区別する
+  // 注意1: 進化元効果は異なるカード由来でも同じ親カードで登録されるため、
+  //         blockのraw(効果テキスト)も比較して区別する
+  // 注意2: 同名・同効果テキストの進化元カードが2枚以上ある場合（例: トゲモン+パルモンが同時に
+  //         進化元）、両方を別エントリとして扱う必要があるため _recipeCard の同一性も比較する
   const blockRaw = block.raw || '';
+  const blockRecipeCard = block._recipeCard || null;
   const isDuplicate = _effectQueue.some(e =>
     e.block.trigger?.code === triggerCode &&
     (e.card === card || (e.card.name === card.name && e.card.cardNo === card.cardNo)) &&
-    (e.block.raw || '') === blockRaw
+    (e.block.raw || '') === blockRaw &&
+    (e.block._recipeCard || null) === blockRecipeCard
   );
   if (isDuplicate) {
     return;
@@ -1278,10 +1282,24 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const finishWithTrigger = () => {
         fireWhenOppRestTriggers(restedSide, ctx.bs, ctx, callback);
       };
+      // 自分側プレイヤーが相手のカードをレストさせた場合、両者の画面で suspended を同期する
+      // - 自分側: state_sync で false に戻されないよう保護フラグ
+      // - 相手側: 個別 fx_remoteSuspend コマンドで反映
+      const syncRest = (idx) => {
+        if (ctx.side !== 'player') return;
+        if (typeof window !== 'undefined' && window._markSuspendChanged) {
+          window._markSuspendChanged('ai', idx, true);
+        }
+        if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+          const tgt = opponent.battleArea[idx];
+          window._onlineSendCommand({ type: 'fx_remoteSuspend', targetIdx: idx, suspended: true, targetName: tgt ? tgt.name : '' });
+        }
+      };
       if(effectiveSide === 'ai') {
         const ri = ctx._forceTargetIdx ?? restTargets[0];
         opponent.battleArea[ri].suspended = true;
         ctx.addLog('💤 「' + opponent.battleArea[ri].name + '」をレスト');
+        syncRest(ri);
         ctx.renderAll();
         finishWithTrigger();
         break;
@@ -1292,6 +1310,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           sendEffectResult(opponent.battleArea[selectedIdx], 'rest', ctx);
           opponent.battleArea[selectedIdx].suspended = true;
           ctx.addLog('💤 「' + opponent.battleArea[selectedIdx].name + '」をレスト');
+          syncRest(selectedIdx);
           ctx.renderAll();
           finishWithTrigger();
         } else {
@@ -1796,25 +1815,76 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   buttonArea.style.cssText = 'display:flex;gap:8px;';
   overlay.appendChild(buttonArea);
 
-  // カード要素を作成
+  // === 裏→表めくれ演出用のCSSキーフレーム挿入（重複追加防止） ===
+  if (!document.getElementById('deck-open-flip-style')) {
+    const styleEl = document.createElement('style');
+    styleEl.id = 'deck-open-flip-style';
+    styleEl.textContent = `
+      @keyframes deckOpenFlip {
+        0% { transform: rotateY(0deg); }
+        50% { transform: rotateY(90deg); }
+        50.01% { transform: rotateY(-90deg); }
+        100% { transform: rotateY(0deg); }
+      }
+      .deck-open-card-flipping { animation: deckOpenFlip 360ms ease-in-out forwards; transform-style: preserve-3d; }
+    `;
+    document.head.appendChild(styleEl);
+  }
+
+  // カード要素を作成（最初は裏向き → 1枚ずつ表にめくる）
   const cardEls = opened.map(card => {
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'width:90px;height:126px;border:2px solid #444;border-radius:6px;overflow:hidden;cursor:default;transition:all 0.2s;background:#111;';
-    const src = getImg(card);
+    wrap.style.cssText = 'width:90px;height:126px;border:2px solid #444;border-radius:6px;overflow:hidden;cursor:default;transition:border 0.2s, box-shadow 0.2s;background:linear-gradient(135deg,#0a1f2e 0%,#142838 50%,#0a1f2e 100%);position:relative;';
+    // 裏面の装飾
+    const back = document.createElement('div');
+    back.className = 'deck-open-card-back';
+    back.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#00fbff66;font-size:36px;font-weight:bold;text-shadow:0 0 6px #00fbff44;';
+    back.innerText = '◆';
+    wrap.appendChild(back);
+    cardArea.appendChild(wrap);
+    return { wrap, card, removed: false, _flipped: false, _back: back };
+  });
+
+  function buildFront(entry) {
+    if (entry._flipped) return;
+    entry._flipped = true;
+    // 中身を表に差し替え
+    while (entry.wrap.firstChild) entry.wrap.removeChild(entry.wrap.firstChild);
+    entry.wrap.style.background = '#111';
+    const src = getImg(entry.card);
     if (src) {
       const img = document.createElement('img');
       img.src = src;
       img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
-      wrap.appendChild(img);
+      entry.wrap.appendChild(img);
     } else {
       const fb = document.createElement('div');
       fb.style.cssText = 'padding:6px;font-size:9px;color:#aaa;';
-      fb.innerText = card.name;
-      wrap.appendChild(fb);
+      fb.innerText = entry.card.name;
+      entry.wrap.appendChild(fb);
     }
-    cardArea.appendChild(wrap);
-    return { wrap, card, removed: false };
-  });
+  }
+
+  function flipAll(done) {
+    let idx = 0;
+    const FLIP_INTERVAL = 220;     // 次のカードへ移るまでの待ち時間
+    const FLIP_HALFWAY  = 180;     // アニメ中盤で中身を差し替える時間
+    function flipNext() {
+      if (idx >= cardEls.length) {
+        // 全フリップ完了後に少し見せてから次フェーズへ
+        setTimeout(done, 250);
+        return;
+      }
+      const entry = cardEls[idx++];
+      entry.wrap.classList.add('deck-open-card-flipping');
+      setTimeout(() => buildFront(entry), FLIP_HALFWAY);
+      setTimeout(() => {
+        entry.wrap.classList.remove('deck-open-card-flipping');
+        flipNext();
+      }, FLIP_INTERVAL);
+    }
+    flipNext();
+  }
 
   function setCardActive(entry) {
     entry.wrap.style.border = '2px solid #00ff88';
@@ -1935,6 +2005,12 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   }
 
   // === 戻しフェーズ ===
+  // return_to の値別挙動:
+  //   'trash'             : 全てトラッシュへ自動移動（操作なし）
+  //   'deck_top'          : タップした順にデッキ上から積まれる
+  //   'deck_bottom'       : ポップアップ無しで自動的にデッキ下へ自動送出（短アニメ）
+  //   'deck_choice'       : 「好きな順番で」記載 → タップした順にデッキ下へ（ポップアップ無し）
+  //   'deck_top_or_bottom': 「上か下に戻す」記載 → 1枚ずつポップアップで上下選択
   function runReturnPhase() {
     const remaining = cardEls.filter(e => !e.removed);
     if (remaining.length === 0) { cleanup(); callback(); return; }
@@ -1954,13 +2030,41 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       ctx.addLog && ctx.addLog('📥 「' + card.name + '」をデッキの' + (position === 'top' ? '上' : '下') + 'へ');
     };
 
+    // deck_bottom（「デッキの下に戻す」明記）: ポップアップ無しで全自動
+    if (returnTo === 'deck_bottom') {
+      stepEl.innerText = '残りカードをデッキの下へ戻します...';
+      clearButtons();
+      let i = 0;
+      const STEP = 220;
+      function autoNext() {
+        const entry = remaining[i++];
+        if (!entry) {
+          ctx.renderAll && ctx.renderAll();
+          setTimeout(() => { cleanup(); callback(); }, 200);
+          return;
+        }
+        // 軽いフェードアウト → 配置
+        entry.wrap.style.transition = 'opacity 0.18s, transform 0.18s';
+        entry.wrap.style.opacity = '0';
+        entry.wrap.style.transform = 'translateY(20px) scale(0.92)';
+        setTimeout(() => {
+          placeFn(entry.card, 'bottom');
+          removeEntry(entry);
+          ctx.renderAll && ctx.renderAll();
+          autoNext();
+        }, STEP);
+      }
+      autoNext();
+      return;
+    }
+
     function refreshReturnUI() {
       const left = cardEls.filter(e => !e.removed);
       if (left.length === 0) { cleanup(); callback(); return; }
       let labelText = '残りカードをデッキに戻す';
-      if (returnTo === 'deck_top') labelText += '（タップ順に上から積まれます）';
-      else if (returnTo === 'deck_bottom') labelText += '（最後にタップしたカードが一番下）';
-      else if (returnTo === 'deck_choice') labelText += '（タップして上/下を選択）';
+      if (returnTo === 'deck_top') labelText += '（タップ順にデッキの上へ積まれます）';
+      else if (returnTo === 'deck_choice') labelText += '（好きな順番で：タップした順にデッキの下へ）';
+      else if (returnTo === 'deck_top_or_bottom') labelText += '（タップして上か下を選択）';
       stepEl.innerText = labelText;
       clearButtons();
       cardEls.forEach(entry => {
@@ -1968,16 +2072,21 @@ function showDeckOpenUI(opened, step, ctx, callback) {
         setCardReturnable(entry);
         entry.wrap.onclick = () => {
           if (entry.removed) return;
-          if (returnTo === 'deck_choice') {
+          if (returnTo === 'deck_top_or_bottom') {
             showTopBottomChoice(entry.card, (pos) => {
               placeFn(entry.card, pos);
               removeEntry(entry);
               ctx.renderAll && ctx.renderAll();
               refreshReturnUI();
             });
+          } else if (returnTo === 'deck_top') {
+            placeFn(entry.card, 'top');
+            removeEntry(entry);
+            ctx.renderAll && ctx.renderAll();
+            refreshReturnUI();
           } else {
-            const pos = returnTo === 'deck_top' ? 'top' : 'bottom';
-            placeFn(entry.card, pos);
+            // deck_choice = 「好きな順番で」 → タップ順にデッキ下へ
+            placeFn(entry.card, 'bottom');
             removeEntry(entry);
             ctx.renderAll && ctx.renderAll();
             refreshReturnUI();
@@ -2019,12 +2128,14 @@ function showDeckOpenUI(opened, step, ctx, callback) {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
   }
 
-  // 開始
-  if (selections.length === 0) {
-    runReturnPhase();
-  } else {
-    runSelectionPhase();
-  }
+  // 開始: まず1枚ずつめくれ演出を再生してから、選択/戻しフェーズへ
+  flipAll(() => {
+    if (selections.length === 0) {
+      runReturnPhase();
+    } else {
+      runSelectionPhase();
+    }
+  });
 }
 
 

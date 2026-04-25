@@ -2806,9 +2806,21 @@ function checkPendingDestroys(ctx, callback) {
 
 function showEffectAnnounce(card, effectText, side, callback) {
   // effectTextが空の場合、カードの効果テキスト全文をフォールバック
-  const displayText = effectText || card.effect || '';
+  let displayText = effectText || card.effect || '';
+  // セキュリティ効果が「このカードの【メイン】効果を発揮する」と書かれている場合、
+  // card.effect 内の【メイン】ブロックを抽出して併記（プレイヤーがメイン効果の中身を確認できるように）
+  const mentionsMain = /このカードの\s*【メイン】\s*効果/.test(displayText);
+  if (mentionsMain && card.effect) {
+    const mainMatch = card.effect.match(/【メイン】[\s\S]*?(?=\n*【(?:セキュリティ|アタック時|消滅時|登場時|進化時|自分のターン|相手のターン|お互いのターン)】|$)/);
+    if (mainMatch) {
+      const mainBlock = mainMatch[0].trim();
+      if (mainBlock && !displayText.includes(mainBlock)) {
+        displayText = displayText + '\n\n📌 ' + mainBlock;
+      }
+    }
+  }
   if (window._isOnlineMode && window._isOnlineMode() && side === 'player') {
-    window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: card.name, effectText: displayText.substring(0,300) });
+    window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: card.name, effectText: displayText.substring(0,400) });
   }
   const sideColor = side === 'player' ? '#00fbff' : '#ff00fb';
 
@@ -3643,12 +3655,27 @@ function executeRecipeStep(step, ctx, store, callback) {
         const cardToSummon = ctx.card;
         if (!cardToSummon) { callback(); break; }
         const p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
-        if (cardToSummon.type === 'テイマー') {
-          p.tamerArea.push(cardToSummon);
-          ctx.addLog('🌟 「' + cardToSummon.name + '」をコストを支払わずに登場');
+        // テイマー判定: type プロパティ揺らぎ(Firebase復元時に落ちる事例)に備え、
+        // セキュリティ/効果テキストに【メイン】が無く Lv が無い等のヒントも併用
+        const typeStr = String(cardToSummon.type || '');
+        const isTamer = typeStr === 'テイマー' || typeStr.toLowerCase().includes('tamer')
+          || (cardToSummon.cardType && String(cardToSummon.cardType).includes('テイマー'))
+          // 補助: Lv なし & DP なし & 効果テキストにテイマー特有の記載
+          || ((cardToSummon.level === '' || cardToSummon.level == null)
+              && (cardToSummon.dp == null || cardToSummon.dp === 0 || cardToSummon.dp === '')
+              && (typeof cardToSummon.effect === 'string' && /テイマー|【自分のターン】|【相手のターン】/.test(cardToSummon.effect)));
+        if (isTamer) {
+          // 既に tamerArea に存在する場合は二重登場させない
+          if (!p.tamerArea.includes(cardToSummon)) p.tamerArea.push(cardToSummon);
+          ctx.addLog('🌟 「' + cardToSummon.name + '」をテイマーエリアに登場');
         } else {
-          p.battleArea.push(cardToSummon);
-          ctx.addLog('🌟 「' + cardToSummon.name + '」をコストを支払わずに登場');
+          // 既にバトルエリアにある場合は二重登場させない
+          if (!p.battleArea.includes(cardToSummon)) {
+            const empty = p.battleArea.indexOf(null);
+            if (empty !== -1) p.battleArea[empty] = cardToSummon;
+            else p.battleArea.push(cardToSummon);
+          }
+          ctx.addLog('🌟 「' + cardToSummon.name + '」をバトルエリアに登場');
         }
         ctx.renderAll();
         callback();

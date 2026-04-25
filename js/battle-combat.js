@@ -37,6 +37,17 @@ export function setCombatHooks(hooks) {
   Object.assign(_hooks, hooks);
 }
 
+// ブロッカー判定: 効果テキスト/進化元/permanent flag/buff のいずれかで判断
+// レシピ passive blocker（カブテリモン等）も拾えるようにする
+function isBlocker(c) {
+  if (!c) return false;
+  if (_hooks.hasKeyword(c, '【ブロッカー】')) return true;
+  if (_hooks.hasEvoKeyword(c, '【ブロッカー】')) return true;
+  if (c._permEffects && c._permEffects.blocker) return true;
+  if (c.buffs && c.buffs.some(b => b.type === 'keyword_blocker')) return true;
+  return false;
+}
+
 // ===== オンラインモード参照 =====
 let _onlineMode = false;
 let _onlineMyKey = null;
@@ -460,7 +471,7 @@ export function resolveAttackTarget(target, targetIdx) {
   if (target === 'security') {
     // ★ チュートリアルAIブロック intent: セキュリティアタックでも intent あれば割り込む
     const aiBlockIntent = window._tutorialAiBlockIntent;
-    console.log('[ブロック診断] security attack, intent=', aiBlockIntent, 'ai.battleArea=', (bs.ai.battleArea||[]).map(c=>c?{name:c.name,cardNo:c.cardNo,suspended:c.suspended,hasBlocker:hasKeyword(c,'【ブロッカー】')||hasEvoKeyword(c,'【ブロッカー】')}:null));
+    console.log('[ブロック診断] security attack, intent=', aiBlockIntent, 'ai.battleArea=', (bs.ai.battleArea||[]).map(c=>c?{name:c.name,cardNo:c.cardNo,suspended:c.suspended,hasBlocker:isBlocker(c)}:null));
     if (aiBlockIntent && !_onlineMode) {
       const blockerKey = (typeof aiBlockIntent === 'string') ? aiBlockIntent : null;
       // カードNo/カード名 両方で検索 + ブロッカー条件を満たすか
@@ -469,7 +480,7 @@ export function resolveAttackTarget(target, targetIdx) {
         const k = String(blockerKey).trim();
         bs.ai.battleArea.forEach((c, i) => {
           if (blockerIdx >= 0 || !c || c.suspended) return;
-          if (!(hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】'))) return;
+          if (!isBlocker(c)) return;
           if (String(c.cardNo) === k || String(c.name) === k || String(c.name || '').includes(k)) blockerIdx = i;
         });
       }
@@ -539,7 +550,7 @@ export function resolveAttackTarget(target, targetIdx) {
         const k = String(blockerKey).trim();
         bs.ai.battleArea.forEach((c, i) => {
           if (blockerIdx >= 0 || !c || c.suspended) return;
-          if (!(hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】'))) return;
+          if (!isBlocker(c)) return;
           if (String(c.cardNo) === k || String(c.name) === k || String(c.name || '').includes(k)) blockerIdx = i;
         });
       }
@@ -1251,7 +1262,7 @@ export function aiAttackPhase(callback) {
       // ブロッカーチェック（cantBlockのカードは除外）
       const blockerIndices = [];
       bs.player.battleArea.forEach((c, i) => {
-        if (c && !c.suspended && !c.cantBlock && (hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】'))) {
+        if (c && !c.suspended && !c.cantBlock && isBlocker(c)) {
           blockerIndices.push(i);
         }
       });
@@ -2369,7 +2380,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
         // セキュリティアタック → ブロッカーチェック付き
         const blockerIndices = [];
         bs.player.battleArea.forEach((c, i) => {
-          if (c && !c.suspended && !c.cantBlock && (hasKeyword(c, '【ブロッカー】') || hasEvoKeyword(c, '【ブロッカー】'))) {
+          if (c && !c.suspended && !c.cantBlock && isBlocker(c)) {
             blockerIndices.push(i);
           }
         });

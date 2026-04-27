@@ -35,3 +35,9 @@ jamming	passive	【ジャミング】			永続	強制	セキュリティデジ�
 reboot	passive	【再起動】			永続	強制	相手のアクティブフェイズでもアクティブになる
 armor	passive	【アーマー体】			永続	強制	アーマー体進化/消滅時にアーマー解除
 limit_once_per_turn	limit	【ターンに1回】,ターンに一回			-	-	同ターン内では1回のみ発動可能
+when_own_block	trigger	自分のブロッカーがレストしたとき		相手ターン中、自デジがブロックでレストした時	即時	任意	八神太一(黒)等。ターンプレイヤー側のテイマーが反応
+when_own_destroyed	trigger	自分のデジモンが消滅したとき			即時	任意	石田ヤマト(紫)等。同side側のテイマー/デジモンが反応
+on_battle_destroy	trigger	バトルで消滅したとき		効果消滅は除外	即時	強制/任意	道連れ等用。on_destroyと別経路
+on_battle_win	trigger	バトル勝利時			即時	強制/任意	自身生存・相手消滅で発動
+when_opp_rest	trigger	相手のデジモンがレストしたとき			即時	任意	泉光子郎等
+michizure	passive	【道連れ】			即時	強制	バトルで自分だけ消滅時、バトルした相手も消滅(公式18-13)

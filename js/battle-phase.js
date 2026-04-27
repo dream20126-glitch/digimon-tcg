@@ -423,9 +423,26 @@ function execPhase(phase) {
 
 // ----- アクティブフェイズ -----
 
+// ≪再起動≫判定: _permEffects.reboot or buffs[keyword_reboot]
+function _hasReboot(c) {
+  if (!c) return false;
+  if (c._permEffects && c._permEffects.reboot) return true;
+  if (c.buffs && c.buffs.some(b => b.type === 'keyword_reboot')) return true;
+  return false;
+}
+
 function execUnsuspend() {
   const hasRested = bs.player.battleArea.some(c => c && c.suspended && !c.cantBeActive)
     || bs.player.tamerArea.some(c => c && c.suspended);
+
+  // ≪再起動≫: 相手のアクティブフェイズでもアクティブになる
+  // 自分(プレイヤー)のアクティブフェイズで、相手(AI)側の再起動持ちカードもアクティブにする
+  bs.ai.battleArea.forEach(c => {
+    if (c && c.suspended && _hasReboot(c)) {
+      c.suspended = false;
+      addLog('🔄 【再起動】「' + c.name + '」がアクティブに');
+    }
+  });
 
   if (hasRested) {
     bs.player.battleArea.forEach(c => {
@@ -441,6 +458,7 @@ function execUnsuspend() {
     // レスト無しでもリセットは実行
     bs.player.battleArea.forEach(c => { if (c) { c.summonedThisTurn = false; c._usedEffects = []; } });
     bs.player.tamerArea.forEach(c => { if (c) c.suspended = false; });
+    renderAll();
     showSkipAnnounce('🔄 アクティブフェイズ スキップ！', () => {
       addLog('🔄 アクティブフェイズ スキップ');
       setTimeout(() => startPhase('draw'), 300);
@@ -648,6 +666,13 @@ export async function aiTurn() {
 
 function aiPhaseUnsuspend() {
   const hasRested = bs.ai.battleArea.some(c => c && c.suspended);
+  // ≪再起動≫: 相手(AI)のアクティブフェイズで、自分(プレイヤー)側の再起動持ちカードもアクティブにする
+  bs.player.battleArea.forEach(c => {
+    if (c && c.suspended && _hasReboot(c)) {
+      c.suspended = false;
+      addLog('🔄 【再起動】「' + c.name + '」がアクティブに');
+    }
+  });
   if (hasRested) {
     showPhaseAnnounce('🔄 アクティブフェイズ', '#00fbff', () => {
       bs.ai.battleArea.forEach(c => {
@@ -658,6 +683,7 @@ function aiPhaseUnsuspend() {
       setTimeout(() => aiPhaseDraw(), 500);
     });
   } else {
+    renderAll();
     showSkipAnnounce('🔄 アクティブフェイズ スキップ！', () => {
       bs.ai.battleArea.forEach(c => { if (c) { c.summonedThisTurn = false; c._usedEffects = []; } });
       setTimeout(() => aiPhaseDraw(), 300);

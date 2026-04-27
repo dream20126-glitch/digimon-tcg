@@ -1784,6 +1784,55 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
 // セミ自動: フィルタにマッチするカードのみタップ可能、残りはタップ順にデッキへ戻す
 
 // カードがフィルタにマッチするか判定
+// 「N体まで」式の対象選択ヘルパー
+// ギガデストロイヤー (select_multi) と同じ UX:
+//   - 1体目: 確認なしで即選択画面
+//   - 2体目以降: 「もう1体選びますか？（残りN体まで）」確認ダイアログ
+// rowSide: 'pl' | 'ai' (どちら側の battleArea を選択対象にするか)
+// validIndices: 選択候補のインデックス配列
+// maxCount: 最大選択数
+// onPicked: (chosenIdxArr) => void
+function pickUpToNTargets(rowSide, validIndices, maxCount, color, onPicked) {
+  const picked = [];
+  function showAskDialog(msgText, onYes, onNo) {
+    const overlay = document.createElement('div');
+    overlay.id = '_select-multi-confirm-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;padding:20px;';
+    const box = document.createElement('div');
+    box.id = '_select-multi-confirm-panel';
+    box.style.cssText = 'background:#0a0a0a;border:1px solid ' + color + ';border-radius:12px;padding:24px;max-width:320px;width:100%;text-align:center;';
+    box.innerHTML = '<div style="color:' + color + ';font-size:14px;font-weight:bold;margin-bottom:16px;">' + msgText + '</div>'
+      + '<div style="display:flex;gap:10px;justify-content:center;">'
+      + '<button id="_select-multi-yes" style="background:' + color + ';color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
+      + '<button id="_select-multi-no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
+      + '</div>';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    document.getElementById('_select-multi-yes').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); onYes(); };
+    document.getElementById('_select-multi-no').onclick  = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); onNo(); };
+  }
+  function pickOne() {
+    if (picked.length >= maxCount) { onPicked(picked.slice()); return; }
+    const remaining = validIndices.filter(i => !picked.includes(i));
+    if (remaining.length === 0) { onPicked(picked.slice()); return; }
+    showTargetSelection(rowSide, remaining, null, color, (selectedIdx) => {
+      if (selectedIdx == null) { onPicked(picked.slice()); return; }
+      picked.push(selectedIdx);
+      // 上限到達 or 候補なし → 終了
+      if (picked.length >= maxCount) { onPicked(picked.slice()); return; }
+      const stillValid = validIndices.filter(i => !picked.includes(i));
+      if (stillValid.length === 0) { onPicked(picked.slice()); return; }
+      // 2体目以降: 「もう1体選びますか？」確認
+      const remainSlot = maxCount - picked.length;
+      showAskDialog('もう1体選びますか？（残り' + remainSlot + '体まで）',
+        () => pickOne(),
+        () => onPicked(picked.slice())
+      );
+    });
+  }
+  pickOne();
+}
+
 // トラッシュからフィルタ済み候補をN枚選ばせる UI
 // candidates: 表示するカード配列（既にフィルタ済）
 // wantCount: 選択する枚数
@@ -4093,6 +4142,103 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === 退化（dedigivolve） ===
+    // 公式 18-12: ≪退化N≫ = 対象に重ねられているカード(進化元)を上から N 枚破棄
+    // step: { action:'dedigivolve', target:'opponent:N'|'opponent:up_to_N', value:N }
+    case 'dedigivolve': {
+      const dedigN = step.value || 1; // 退化枚数
+      const tStr = step.target || 'opponent:1';
+      const upToMatch = tStr.match(/^(own|opponent):up_to_(\d+)$/);
+      const exactMatch = tStr.match(/^(own|opponent):(\d+)$/);
+      const isOwn = tStr.startsWith('own:');
+      const wantCount = upToMatch ? parseInt(upToMatch[2]) : (exactMatch ? parseInt(exactMatch[2]) : 1);
+      const isUpTo = !!upToMatch;
+      const tgtPlayer = isOwn ? player : opponent;
+      const tgtRowId = isOwn ? (ctx.side === 'player' ? 'pl' : 'ai') : opponentRowSide;
+      const valid = [];
+      for (let i = 0; i < tgtPlayer.battleArea.length; i++) {
+        const c = tgtPlayer.battleArea[i];
+        if (c && c.stack && c.stack.length > 0) valid.push(i);
+      }
+      if (valid.length === 0) {
+        ctx.addLog && ctx.addLog('⚠ 進化元を持つ対象がいません');
+        showEffectFailed('効果を発動できませんでした', callback);
+        return;
+      }
+      const applyDedigi = (idxs) => {
+        let i = 0;
+        function dediNext() {
+          if (i >= idxs.length) { ctx.renderAll(); callback(); return; }
+          const idx = idxs[i++];
+          const tgt = tgtPlayer.battleArea[idx];
+          if (!tgt || !tgt.stack || tgt.stack.length === 0) { dediNext(); return; }
+          // 上から N 枚破棄（実際の破棄枚数は stack.length に応じる）
+          const removed = [];
+          for (let k = 0; k < dedigN && tgt.stack.length > 0; k++) {
+            removed.push(tgt.stack.pop()); // 「上から」= スタック最上位
+          }
+          removed.forEach(r => tgtPlayer.trash.push(r));
+          ctx.addLog && ctx.addLog('🔻 「' + tgt.name + '」の進化元から ' + removed.length + '枚破棄（退化' + dedigN + '）');
+          ctx.renderAll();
+          // 自分側でカード移動演出
+          let r = 0;
+          function showRemovedAnim() {
+            if (r >= removed.length) {
+              // オンライン同期: 進化元破棄を相手画面にも通知
+              if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+                try {
+                  window._onlineSendCommand({
+                    type: 'fx_evoDiscard',
+                    targetName: tgt.name,
+                    discardedNames: removed.map(c => c.name),
+                    targetIdx: tgtPlayer.battleArea.indexOf(tgt),
+                    count: removed.length,
+                    fromTop: true,
+                  });
+                  if (window._markEvoModified) window._markEvoModified(isOwn ? 'player' : 'ai', tgtPlayer.battleArea.indexOf(tgt));
+                } catch (_) {}
+              }
+              dediNext();
+              return;
+            }
+            const card = removed[r++];
+            if (window._fxCardMove) {
+              window._fxCardMove(card, tgt.name + 'の進化元', 'トラッシュ', showRemovedAnim);
+            } else { setTimeout(showRemovedAnim, 300); }
+          }
+          showRemovedAnim();
+        }
+        dediNext();
+      };
+      if (effectiveSide === 'ai') {
+        // AI: 先頭から wantCount 件を自動選択
+        applyDedigi(valid.slice(0, wantCount));
+        break;
+      }
+      if (isUpTo) {
+        pickUpToNTargets(tgtRowId, valid, wantCount, '#aa66ff', applyDedigi);
+      } else if (wantCount === 1) {
+        showTargetSelection(tgtRowId, valid, null, '#aa66ff', (selectedIdx) => {
+          if (selectedIdx == null) { callback(); return; }
+          applyDedigi([selectedIdx]);
+        });
+      } else {
+        // exact N 体: ギガデストロイヤー方式は使わず、N 体まで連続選択
+        const picked = [];
+        (function pickEx() {
+          if (picked.length >= wantCount) { applyDedigi(picked); return; }
+          const remaining = valid.filter(i => !picked.includes(i));
+          if (remaining.length === 0) { applyDedigi(picked); return; }
+          showTargetSelection(tgtRowId, remaining, null, '#aa66ff', (selectedIdx) => {
+            if (selectedIdx == null) { applyDedigi(picked); return; }
+            picked.push(selectedIdx);
+            pickEx();
+          });
+        })();
+      }
+      break;
+    }
+
     // === トラッシュから手札に戻す ===
     // step: { action:'trash_to_hand', filter:{...}, count:N, optional:bool }
     case 'trash_to_hand': {
@@ -4449,24 +4595,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (validIdxs.length === 0) { showEffectFailed(null, callback); return; }
         const rowSide = isOwnSelect ? (ctx.side === 'player' ? 'pl' : 'ai')
                                     : (ctx.side === 'player' ? 'ai' : 'pl');
-        // up_to の場合は wantCount まで連続選択、それ未満で完了可
-        const picked = [];
-        function pickOne() {
-          if (picked.length >= wantCount) { applyAll(picked); return; }
-          const remaining = validIdxs.filter(i => !picked.includes(i));
-          if (remaining.length === 0) { applyAll(picked); return; }
-          showTargetSelection(rowSide, remaining, null, '#00ff88', (selectedIdx) => {
-            if (selectedIdx == null) {
-              if (isUpTo && picked.length > 0) { applyAll(picked); return; }
-              if (isUpTo) { ctx.addLog && ctx.addLog('☓ 付与をスキップ'); callback(); return; }
-              callback();
-              return;
-            }
-            picked.push(selectedIdx);
-            pickOne();
-          });
-        }
-        function applyAll(idxs) {
+        const applyAll = (idxs) => {
           idxs.forEach(idx => {
             const tgt = tgtPlayer2.battleArea[idx]; if (!tgt) return;
             if (flag === 'security_attack_plus') {
@@ -4479,8 +4608,24 @@ function executeRecipeStep(step, ctx, store, callback) {
           });
           ctx.renderAll();
           callback();
+        };
+        if (isUpTo) {
+          // 「N体まで」: ギガデストロイヤーと同じ UX (1体目即選択、2体目以降は確認ダイアログ)
+          pickUpToNTargets(rowSide, validIdxs, wantCount, '#00ff88', applyAll);
+        } else {
+          // 「N体」: wantCount 体まで連続選択（キャンセルで途中終了）
+          const picked = [];
+          (function pickEx() {
+            if (picked.length >= wantCount) { applyAll(picked); return; }
+            const remaining = validIdxs.filter(i => !picked.includes(i));
+            if (remaining.length === 0) { applyAll(picked); return; }
+            showTargetSelection(rowSide, remaining, null, '#00ff88', (selectedIdx) => {
+              if (selectedIdx == null) { applyAll(picked); return; }
+              picked.push(selectedIdx);
+              pickEx();
+            });
+          })();
         }
-        pickOne();
         break;
       }
 

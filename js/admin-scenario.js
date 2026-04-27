@@ -1911,18 +1911,29 @@ window.tsFilterCardsForBoard = function() {
     return;
   }
 
+  // 色 → 表示用カラー
+  const colorStyleMap = {
+    '赤': '#ff5577', '青': '#5599ff', '黄': '#ffcc44', '緑': '#44dd88',
+    '黒': '#bbbbbb', '紫': '#cc77ff', '白': '#eeeeee'
+  };
+
   results.innerHTML = matched.map(c => {
     const img  = getCardImageUrl(c) || '';
     const name = _escHtml(c['名前'] || '');
     const no   = _escHtml(c['カードNo'] || '');
     const lv   = _escHtml(c['Lv'] || c['レベル'] || '');
+    const cardColor = String(c['色'] || '').trim();
+    const colorStyle = colorStyleMap[cardColor] || '#aaa';
+    const colorBadge = cardColor
+      ? `<span style="background:${colorStyle}22; color:${colorStyle}; border:1px solid ${colorStyle}66; border-radius:3px; padding:1px 5px; font-size:9px; margin-right:4px;">${_escHtml(cardColor)}</span>`
+      : '';
     const opts = Object.keys(AREA_LABELS).map(k => `<option value="${k}">${AREA_LABELS[k]}</option>`).join('');
     return `
       <div style="display:flex; align-items:center; padding:4px; border-bottom:1px solid #1a1a1a;">
         <img src="${img}" style="width:30px; height:42px; object-fit:cover; border-radius:2px; margin-right:8px; background:#000;" onerror="this.style.display='none'">
         <div style="flex:1; min-width:0;">
-          <div style="color:#fff; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
-          <div style="color:#888; font-size:10px;">${no} / Lv.${lv}</div>
+          <div style="color:#fff; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${colorBadge}${name}</div>
+          <div style="color:#888; font-size:10px; font-family:monospace;">${no}${lv ? ' / Lv.' + lv : ''}</div>
         </div>
         <select onchange="tsPlaceCardFromSearch('${no}', this)" style="font-size:10px; padding:3px; max-width:130px;">
           <option value="">＋配置</option>

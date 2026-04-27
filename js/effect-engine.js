@@ -1456,30 +1456,6 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
 
-    // === 手札捨て（コスト以外の効果としての手札捨て） ===
-    case 'discard': {
-      const discardN = action.value || 1;
-      if(player.hand.length === 0) { callback(); break; }
-      const discardMax = Math.min(discardN, player.hand.length);
-      ctx.addLog('🎯 手札を' + discardMax + '枚捨ててください');
-      let discarded = 0;
-      function discardNext() {
-        if(discarded >= discardMax) { ctx.renderAll(); callback(); return; }
-        const validIdxs = player.hand.map((_, i) => i);
-        showHandSelection(player.hand, validIdxs, '#ffaa00', (selectedIdx) => {
-          if(selectedIdx !== null) {
-            const card = player.hand.splice(selectedIdx, 1)[0];
-            player.trash.push(card);
-            ctx.addLog('✦ 「' + card.name + '」を捨てた');
-            discarded++;
-          } else { discarded = discardMax; } // キャンセル
-          discardNext();
-        });
-      }
-      discardNext();
-      break;
-    }
-
     case 'goal_reached': {
       // チュートリアル専用アクション。チュートリアルランナーが動作中のときだけ通知する。
       // 通常のオンライン対戦では誰も呼ばないので副作用なし。
@@ -2943,6 +2919,75 @@ function checkConditions(conditions, card, bs, side) {
         // cond_existsで使った他の条件はスキップ（二重チェック防止）
         return true;
       }
+      case 'cond_jogress': {
+        // ジョグレス進化していたなら
+        if (!card._jogressEvolved) return false;
+        break;
+      }
+      case 'cond_in_battle': {
+        // バトル中のみ
+        if (!bs || !bs._inBattle) return false;
+        break;
+      }
+      case 'cond_color': {
+        // 指定色（cond.value に色文字列）
+        if (cond.value && card.color && !String(card.color).includes(cond.value)) return false;
+        break;
+      }
+      case 'cond_feature': {
+        // 指定特徴
+        if (cond.value && card.feature && !String(card.feature).includes(cond.value)) return false;
+        break;
+      }
+      case 'cond_memory_opponent': {
+        // メモリーが相手側のN以上
+        if (!bs) break;
+        const oppMem = bs.isPlayerTurn ? -bs.memory : bs.memory;
+        if (oppMem < (cond.value || 1)) return false;
+        break;
+      }
+      case 'cond_no_tamer_evo': {
+        // 進化元にテイマーカードが無い
+        if (card.stack && card.stack.some(s => s && (s.type === 'テイマー' || String(s.type||'').toLowerCase().includes('tamer')))) return false;
+        break;
+      }
+      case 'cond_not_own_effect': {
+        // 自分の効果以外で消滅した場合のみ true
+        // bs._lastDestroyCause が 'own_effect' なら false
+        if (bs && bs._lastDestroyCause === 'own_effect') return false;
+        break;
+      }
+      case 'cond_name_contains': {
+        // 名称に指定文字列を含む
+        if (cond.value && card.name && !String(card.name).includes(cond.value)) return false;
+        break;
+      }
+      case 'cond_feature_contains': {
+        // 特徴に指定文字列を含む
+        if (cond.value && card.feature && !String(card.feature).includes(cond.value)) return false;
+        break;
+      }
+      case 'cond_link_state': {
+        // リンク状態
+        if (!card.linkedCards || card.linkedCards.length === 0) return false;
+        break;
+      }
+      case 'cond_link_eligible': {
+        // リンク条件を満たす（簡易: linkedCards 上限内）
+        const cap = (card._linkCapacityBonus || 0) + 1;
+        if (card.linkedCards && card.linkedCards.length >= cap) return false;
+        break;
+      }
+      case 'cond_assembly_eligible': {
+        // アセンブリ条件を満たす（カード固有のフラグを参照）
+        if (!card._assemblyEligible) return false;
+        break;
+      }
+      case 'cond_digicross': {
+        // デジクロスでカードが下に置かれた場合のみ
+        if (!card._digicrossed) return false;
+        break;
+      }
     }
   }
   return true;
@@ -3451,6 +3496,66 @@ export function fireWhenOwnBlockTriggers(blockOwnerSide, bs, ctxBase, done) {
 // 石田ヤマト(紫) 用
 export function fireWhenOwnDestroyedTriggers(destroyedSide, bs, ctxBase, done) {
   return _fireSidedReactionTriggers(destroyedSide, 'when_own_destroyed', bs, ctxBase, done);
+}
+
+// 消滅するとき（消滅置換効果用） → 該当カードを持つ side が反応
+export function fireWhenDestroyTriggers(destroyedSide, bs, ctxBase, done) {
+  return _fireSidedReactionTriggers(destroyedSide, 'when_destroy', bs, ctxBase, done);
+}
+
+// バトルエリアを離れるとき → 離れる側の自分側が反応
+export function fireWhenLeaveBattleTriggers(leavingSide, bs, ctxBase, done) {
+  return _fireSidedReactionTriggers(leavingSide, 'when_leave_battle', bs, ctxBase, done);
+}
+
+// セキュリティが減ったとき → 減った側の自分側が反応
+export function fireWhenSecurityDecreaseTriggers(decreasedSide, bs, ctxBase, done) {
+  return _fireSidedReactionTriggers(decreasedSide, 'when_security_decrease', bs, ctxBase, done);
+}
+
+// 手札に戻ったとき → 戻った側が反応
+export function fireWhenReturnToHandTriggers(returnedSide, bs, ctxBase, done) {
+  return _fireSidedReactionTriggers(returnedSide, 'when_return_to_hand', bs, ctxBase, done);
+}
+
+// アタック対象が変更されたとき → アタック側の自分側が反応
+export function fireWhenTargetChangedTriggers(attackerSide, bs, ctxBase, done) {
+  return _fireSidedReactionTriggers(attackerSide, 'when_target_changed', bs, ctxBase, done);
+}
+
+// 自分のメインフェイズ開始時 → ターンプレイヤー側が反応
+export function fireOnMainPhaseStartTriggers(turnSide, bs, ctxBase, done) {
+  return _fireSidedReactionTriggers(turnSide, 'on_main_phase_start', bs, ctxBase, done);
+}
+
+// 相手のメインフェイズ開始時 → 非ターンプレイヤー側が反応
+export function fireOnOppMainPhaseStartTriggers(turnSide, bs, ctxBase, done) {
+  const oppSide = turnSide === 'player' ? 'ai' : 'player';
+  return _fireSidedReactionTriggers(oppSide, 'on_opp_main_phase_start', bs, ctxBase, done);
+}
+
+// 【カウンター】効果 → 相手のアタック時、手札からカウンター可能なカードを使える
+export function fireCounterTriggers(attackerSide, bs, ctxBase, done) {
+  const finish = () => { try { done && done(); } catch(_) {} };
+  if (!bs) { finish(); return; }
+  const reactSide = attackerSide === 'player' ? 'ai' : 'player';
+  const reactPlayer = bs[reactSide];
+  if (!reactPlayer) { finish(); return; }
+  // 手札からカウンター可能なカードを抽出
+  const handCards = (reactPlayer.hand || []).filter(c => c && c.recipe);
+  const counters = [];
+  handCards.forEach(card => {
+    try {
+      const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
+      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (r.counter && Array.isArray(r.counter)) counters.push({ card, recipe: r.counter });
+    } catch(_) {}
+  });
+  if (counters.length === 0) { finish(); return; }
+  // 簡易: プレイヤーのみダイアログ提示（AIは未対応）
+  if (reactSide !== 'player') { finish(); return; }
+  // 既存の confirm UI で「カウンター効果を使う？」を出す形は省略し、手動操作にゆだねる
+  finish();
 }
 
 export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
@@ -4519,39 +4624,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
-    // === 自分のDP以下の相手を消滅 ===
-    case 'destroy_by_dp': {
-      const myDp = ctx.card ? ctx.card.dp : 0;
-      const valid = [];
-      for (let i = 0; i < opponent.battleArea.length; i++) {
-        const c = opponent.battleArea[i];
-        if (c && c.dp <= myDp) valid.push(i);
-      }
-      if (valid.length === 0) { showEffectFailed(null, callback); return; }
-      const rowId = ctx.side === 'player' ? 'ai' : 'pl';
-      showTargetSelection(rowId, valid, null, '#ff4444', (selectedIdx) => {
-        if (selectedIdx !== null) {
-          const c = opponent.battleArea[selectedIdx];
-          opponent.battleArea[selectedIdx] = null;
-          opponent.trash.push(c);
-          if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
-          ctx.addLog('💥 「' + c.name + '」(DP' + c.dp + ')を消滅させた！');
-          ctx.renderAll();
-        }
-        callback();
-      });
-      break;
-    }
-
-    // === レストせずアタック可能にする ===
-    case 'enable_attack_without_rest': {
-      if (ctx.card) {
-        ctx.card._attackWithoutRest = true;
-        ctx.addLog('⚔ 「' + ctx.card.name + '」はレストせずにアタックできる！');
-      }
-      callback();
-      break;
-    }
+    // === レストせずアタック可能にする（attack_without_restとマージ済み） ===
+    // case 'enable_attack_without_rest' は削除（attack_without_rest にリネーム）
 
     // === storeの対象にバフ/状態を直接適用 ===
     case 'cant_attack_block':
@@ -4593,7 +4667,7 @@ function executeRecipeStep(step, ctx, store, callback) {
     // grant_keyword: 単体（step.flag等で指定）
     // grant_keyword_all: 全体（step.keyword="Sアタック+1"等のテキストで指定、step.target="own_all_digimon"等）
     case 'grant_keyword':
-    case 'grant_keyword_all': {
+    case 'grant_keyword_to': {
       // step.flag(英語) または step.keyword(日本語/「Sアタック+1」等)から flag を抽出
       let flag = step.flag || '';
       let val = step.value || 1;
@@ -4700,6 +4774,458 @@ function executeRecipeStep(step, ctx, store, callback) {
       });
       ctx.renderAll();
       callback();
+      break;
+    }
+
+    // === レストせずアタック可能（attack_without_rest: enable_attack_without_rest のリネーム後継）===
+    case 'attack_without_rest': {
+      if (ctx.card) {
+        ctx.card._attackWithoutRest = true;
+        ctx.addLog('⚔ 「' + ctx.card.name + '」はレストせずにアタックできる！');
+      }
+      callback();
+      break;
+    }
+
+    // === 進化元を全て破棄 ===
+    case 'evo_discard_all': {
+      const targets = (() => {
+        if (step.target === 'self') return ctx.card ? [ctx.card] : [];
+        if (step.card && store[step.card]) {
+          const sd = store[step.card];
+          return (Array.isArray(sd) ? sd : [sd]).map(s => s.card || s).filter(c => c);
+        }
+        return ctx.card ? [ctx.card] : [];
+      })();
+      const ownerSide = step.target === 'self' || (step.target && step.target.startsWith('own')) ? player : opponent;
+      targets.forEach(t => {
+        if (Array.isArray(t.stack)) {
+          while (t.stack.length > 0) ownerSide.trash.push(t.stack.shift());
+          ctx.addLog('🗑 「' + t.name + '」の進化元を全て破棄');
+        }
+      });
+      ctx.renderAll();
+      callback();
+      break;
+    }
+
+    // === 一番上から1枚破棄（進化元の一番上） ===
+    case 'trash_top_card': {
+      const tgts = (step.card && store[step.card]) ? (Array.isArray(store[step.card]) ? store[step.card] : [store[step.card]]) : [];
+      tgts.forEach(t => {
+        const c = t.card || t;
+        if (c && Array.isArray(c.stack) && c.stack.length > 0) {
+          const top = c.stack.pop();
+          (step.target && step.target.startsWith('own') ? player : opponent).trash.push(top);
+          ctx.addLog('🗑 「' + c.name + '」の進化元1枚を破棄');
+        }
+      });
+      ctx.renderAll();
+      callback();
+      break;
+    }
+
+    // === このカードを破棄（コスト用） ===
+    case 'cost_trash_self': {
+      if (ctx.card) {
+        const idx = player.battleArea.indexOf(ctx.card);
+        if (idx >= 0) {
+          player.battleArea[idx] = null;
+          player.trash.push(ctx.card);
+          if (ctx.card.stack) ctx.card.stack.forEach(s => player.trash.push(s));
+          ctx.addLog('🗑 「' + ctx.card.name + '」を破棄');
+          ctx.renderAll();
+        }
+      }
+      callback();
+      break;
+    }
+
+    // === アタック終了時に自身消滅（フラグ付与） ===
+    case 'self_destroy_after_attack': {
+      if (ctx.card) {
+        ctx.card._destroyAfterAttack = true;
+        ctx.addLog('💀 「' + ctx.card.name + '」はアタック終了時に消滅');
+      }
+      callback();
+      break;
+    }
+
+    // === 効果で消滅しない（バフ付与） ===
+    case 'prevent_destroy': {
+      const tgt = ctx.card;
+      if (tgt) {
+        const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+        addBuffDirect(tgt, 'keyword_prevent_destroy', 0, dur, ctx);
+        ctx.addLog('🛡 「' + tgt.name + '」は効果で消滅しない');
+      }
+      callback();
+      break;
+    }
+
+    // === バトルで消滅しない（バフ付与） ===
+    case 'prevent_battle_destroy': {
+      const tgt = ctx.card;
+      if (tgt) {
+        const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+        addBuffDirect(tgt, 'keyword_prevent_battle_destroy', 0, dur, ctx);
+        ctx.addLog('🛡 「' + tgt.name + '」はバトルで消滅しない');
+      }
+      callback();
+      break;
+    }
+
+    // === テイマーの下に置く ===
+    case 'place_under_tamer': {
+      const sd = step.card ? store[step.card] : null;
+      const cardToPlace = sd && (sd.card || sd);
+      if (!cardToPlace) { callback(); break; }
+      const tamerIdxs = [];
+      player.tamerArea.forEach((t, i) => { if (t) tamerIdxs.push(i); });
+      if (tamerIdxs.length === 0) { ctx.addLog('⚠ テイマーがいない'); callback(); break; }
+      const rowId = ctx.side === 'player' ? 'pl' : 'ai';
+      showTargetSelection(rowId + '-tamer', tamerIdxs, 'テイマーを選んで下に置く', '#00ff88', (selectedIdx) => {
+        if (selectedIdx == null) { callback(); return; }
+        const tamer = player.tamerArea[selectedIdx];
+        if (!tamer.stack) tamer.stack = [];
+        tamer.stack.unshift(cardToPlace);
+        ctx.addLog('🃏 「' + tamer.name + '」の下に「' + cardToPlace.name + '」を置く');
+        ctx.renderAll();
+        callback();
+      });
+      break;
+    }
+
+    // === デジモンの進化元の下に置く ===
+    case 'place_under_digimon': {
+      const sd = step.card ? store[step.card] : null;
+      const cardToPlace = sd && (sd.card || sd);
+      if (!cardToPlace) { callback(); break; }
+      const valid = [];
+      player.battleArea.forEach((c, i) => { if (c) valid.push(i); });
+      if (valid.length === 0) { callback(); break; }
+      const rowId = ctx.side === 'player' ? 'pl' : 'ai';
+      showTargetSelection(rowId, valid, 'デジモンを選んで進化元の下に置く', '#00ff88', (selectedIdx) => {
+        if (selectedIdx == null) { callback(); return; }
+        const digi = player.battleArea[selectedIdx];
+        if (!digi.stack) digi.stack = [];
+        digi.stack.unshift(cardToPlace);
+        ctx.addLog('🃏 「' + digi.name + '」の進化元の下に置く');
+        ctx.renderAll();
+        callback();
+      });
+      break;
+    }
+
+    // === セキュリティの上に置く ===
+    case 'place_on_security_top': {
+      const sd = step.card ? store[step.card] : null;
+      const cardToPlace = sd && (sd.card || sd);
+      if (!cardToPlace) { callback(); break; }
+      player.security.unshift(cardToPlace);
+      ctx.addLog('🛡 「' + cardToPlace.name + '」をセキュリティの上に置く');
+      ctx.renderAll();
+      callback();
+      break;
+    }
+
+    // === デッキの上から進化元の下に置く（裏向き） ===
+    case 'deck_to_evo_bottom': {
+      const n = step.value || 1;
+      const sd = step.card ? store[step.card] : null;
+      const target = sd ? (sd.card || sd) : ctx.card;
+      if (!target) { callback(); break; }
+      if (!target.stack) target.stack = [];
+      for (let i = 0; i < n && player.deck.length > 0; i++) {
+        const top = player.deck.shift();
+        target.stack.unshift(top);
+      }
+      ctx.addLog('🃏 デッキの上' + n + '枚を「' + target.name + '」の進化元の下に置く');
+      ctx.renderAll();
+      callback();
+      break;
+    }
+
+    // === デッキに戻す（上下選択） ===
+    case 'return_deck': {
+      const sd = step.card ? store[step.card] : null;
+      const cardToReturn = sd && (sd.card || sd);
+      if (!cardToReturn) { callback(); break; }
+      const top = step.position === 'top' || step.deck_top;
+      if (top) player.deck.unshift(cardToReturn);
+      else player.deck.push(cardToReturn);
+      ctx.addLog('🔄 「' + cardToReturn.name + '」をデッキの' + (top ? '上' : '下') + 'に戻す');
+      ctx.renderAll();
+      callback();
+      break;
+    }
+
+    // === セキュリティを選んで破棄 ===
+    case 'security_trash_select': {
+      const owner = step.target && step.target.startsWith('own') ? player : opponent;
+      if (owner.security.length === 0) { callback(); break; }
+      const idxs = owner.security.map((_, i) => i);
+      const rowId = (owner === player ? (ctx.side === 'player' ? 'pl' : 'ai') : (ctx.side === 'player' ? 'ai' : 'pl')) + '-sec';
+      showTargetSelection(rowId, idxs, 'セキュリティから破棄するカードを選択', '#ff4444', (selectedIdx) => {
+        if (selectedIdx == null) { callback(); return; }
+        const c = owner.security.splice(selectedIdx, 1)[0];
+        if (c) owner.trash.push(c);
+        ctx.addLog('🗑 セキュリティから「' + (c ? c.name : '?') + '」を破棄');
+        ctx.renderAll();
+        callback();
+      });
+      break;
+    }
+
+    // === 相手にブロック強制（衝突キーワード用） ===
+    case 'force_block': {
+      if (ctx.card) {
+        ctx.card._forceBlock = true;
+        ctx.addLog('🛡 相手はブロック強制');
+      }
+      callback();
+      break;
+    }
+
+    // === 効果を受けない（バフ付与） ===
+    case 'immune_effects': {
+      const tgt = ctx.card;
+      if (tgt) {
+        const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+        addBuffDirect(tgt, 'keyword_immune', 0, dur, ctx);
+        ctx.addLog('🪄 「' + tgt.name + '」は相手の効果を受けない');
+      }
+      callback();
+      break;
+    }
+
+    // === 進化元枚数でバトル（氷装キーワード） ===
+    case 'battle_by_evo_count': {
+      if (ctx.card) {
+        ctx.card._battleByEvoCount = true;
+        ctx.addLog('❄ 「' + ctx.card.name + '」は進化元枚数でバトル');
+      }
+      callback();
+      break;
+    }
+
+    // === 登場ターンでもアタック（速攻キーワード） ===
+    case 'mod_attack_first_turn': {
+      if (ctx.card) {
+        ctx.card._canAttackFirstTurn = true;
+        ctx.addLog('⚡ 「' + ctx.card.name + '」は登場ターンでもアタック可');
+      }
+      callback();
+      break;
+    }
+
+    // === アタックの対象を変更（突進キーワード） ===
+    case 'change_attack_target': {
+      // バトル中のみ意味を持つフラグ
+      if (ctx.card) ctx.card._canChangeAttackTarget = true;
+      ctx.addLog('🎯 アタック対象を変更');
+      callback();
+      break;
+    }
+
+    // === 進化コスト-N ===
+    case 'evo_cost_minus': {
+      if (ctx.card) {
+        ctx.card._evoCostReduction = (ctx.card._evoCostReduction || 0) + (step.value || 1);
+        ctx.addLog('💠 進化コスト-' + (step.value || 1));
+      }
+      callback();
+      break;
+    }
+
+    // === 登場コスト-N ===
+    case 'summon_cost_minus': {
+      if (ctx.card) {
+        ctx.card._summonCostReduction = (ctx.card._summonCostReduction || 0) + (step.value || 1);
+        ctx.addLog('💠 登場コスト-' + (step.value || 1));
+      }
+      callback();
+      break;
+    }
+
+    // === リンクカード枚数上限+N ===
+    case 'link_capacity': {
+      if (ctx.card) {
+        ctx.card._linkCapacityBonus = (ctx.card._linkCapacityBonus || 0) + (step.value || 1);
+        ctx.addLog('🔗 リンク+' + (step.value || 1));
+      }
+      callback();
+      break;
+    }
+
+    // === プレイヤーにアタック（強制アタック） ===
+    case 'attack_player': {
+      // 自身でアタック宣言を発火
+      if (ctx.card && window._battleStartAttack) {
+        window._battleStartAttack(ctx.card, 'player', ctx);
+      }
+      ctx.addLog('⚔ プレイヤーにアタック');
+      callback();
+      break;
+    }
+
+    // === 相手のデジモンにアタック ===
+    case 'attack_digimon': {
+      const sd = step.card ? store[step.card] : null;
+      const tgt = sd ? (sd.card || sd) : null;
+      if (ctx.card && tgt && window._battleStartAttack) {
+        window._battleStartAttack(ctx.card, 'digimon', ctx, tgt);
+      }
+      ctx.addLog('⚔ デジモンにアタック');
+      callback();
+      break;
+    }
+
+    // === セキュリティチェックを実行（貫通キーワード） ===
+    case 'do_security_check': {
+      // 1回分のセキュリティチェックをキューイング
+      if (ctx.bs) {
+        ctx.bs._extraSecurityChecks = (ctx.bs._extraSecurityChecks || 0) + (step.value || 1);
+      }
+      ctx.addLog('🛡 セキュリティチェック+' + (step.value || 1));
+      callback();
+      break;
+    }
+
+    // === ジョグレス進化（UIトリガー） ===
+    case 'jogress_evolve': {
+      // ジョグレス進化UI起動（既存システムに委譲）
+      if (window._startJogressEvolve) {
+        window._startJogressEvolve(ctx, callback);
+      } else {
+        ctx.addLog('🌟 ジョグレス進化（手動操作）');
+        callback();
+      }
+      break;
+    }
+
+    // === リンク（手札/Bエリアからリンク） ===
+    case 'link': {
+      const sd = step.card ? store[step.card] : null;
+      const linkCard = sd && (sd.card || sd);
+      if (!linkCard || !ctx.card) { callback(); break; }
+      if (!ctx.card.linkedCards) ctx.card.linkedCards = [];
+      ctx.card.linkedCards.push(linkCard);
+      ctx.addLog('🔗 「' + ctx.card.name + '」に「' + linkCard.name + '」をリンク');
+      ctx.renderAll();
+      callback();
+      break;
+    }
+
+    // === リンクを破棄 ===
+    case 'unlink': {
+      if (ctx.card && Array.isArray(ctx.card.linkedCards) && ctx.card.linkedCards.length > 0) {
+        const n = step.value || 1;
+        for (let i = 0; i < n && ctx.card.linkedCards.length > 0; i++) {
+          const c = ctx.card.linkedCards.shift();
+          player.trash.push(c);
+          ctx.addLog('🔗 リンクカード「' + c.name + '」を破棄');
+        }
+        ctx.renderAll();
+      }
+      callback();
+      break;
+    }
+
+    // === リンクコストを支払う ===
+    case 'link_cost': {
+      // メモリーをN支払う
+      if (ctx.bs) {
+        ctx.bs.memory -= (step.value || 1);
+        ctx.addLog('💾 リンクコスト-' + (step.value || 1));
+      }
+      callback();
+      break;
+    }
+
+    // === アプ合体で進化 ===
+    case 'app_gattai_evolve': {
+      // 専用UI起動（既存システムに委譲）
+      if (window._startAppGattaiEvolve) {
+        window._startAppGattaiEvolve(ctx, callback);
+      } else {
+        ctx.addLog('🌟 アプ合体進化（手動操作）');
+        callback();
+      }
+      break;
+    }
+
+    // === トラッシュからカードの下に置く ===
+    case 'place_from_trash_under': {
+      const filter = step.filter || {};
+      const candidates = player.trash.map((c, i) => ({card:c, idx:i}))
+        .filter(({card}) => card && cardMatchesFilter(card, filter));
+      if (candidates.length === 0) { ctx.addLog('⚠ 条件に合うトラッシュカードが無い'); callback(); break; }
+      showTrashCardPicker && showTrashCardPicker(candidates.map(c => c.card), 1, (chosen) => {
+        if (!chosen) { callback(); return; }
+        const tIdx = player.trash.indexOf(chosen);
+        if (tIdx >= 0) player.trash.splice(tIdx, 1);
+        // 対象選択
+        const valid = [];
+        player.battleArea.forEach((c, i) => { if (c) valid.push(i); });
+        if (valid.length === 0) { player.trash.push(chosen); callback(); return; }
+        const rowId = ctx.side === 'player' ? 'pl' : 'ai';
+        showTargetSelection(rowId, valid, '進化元の下に置く対象', '#00ff88', (selIdx) => {
+          if (selIdx == null) { player.trash.push(chosen); callback(); return; }
+          const tgt = player.battleArea[selIdx];
+          if (!tgt.stack) tgt.stack = [];
+          tgt.stack.unshift(chosen);
+          ctx.addLog('🃏 トラッシュから「' + chosen.name + '」を「' + tgt.name + '」の進化元の下に');
+          ctx.renderAll();
+          callback();
+        });
+      });
+      break;
+    }
+
+    // === 色条件を無視（オプションカード用フラグ） ===
+    case 'ignore_color_condition': {
+      if (ctx.card) ctx.card._ignoreColorCondition = true;
+      ctx.addLog('🎨 色条件を無視');
+      callback();
+      break;
+    }
+
+    // === メモリーオーバーフロー時の処理 ===
+    case 'overflow_memory_minus': {
+      // バトルエリアを離れる際にメモリーをN減らす
+      if (ctx.bs) {
+        ctx.bs.memory -= (step.value || 1);
+        ctx.addLog('💾 メモリー-' + (step.value || 1));
+      }
+      callback();
+      break;
+    }
+
+    // === 手札またはバトルエリアからカードの下に置く ===
+    case 'place_from_hand_battle_under': {
+      // 簡易実装：手札からのみ対応
+      const filter = step.filter || {};
+      const handCands = player.hand.map((c,i)=>({card:c,idx:i})).filter(({card}) => card && cardMatchesFilter(card, filter));
+      if (handCands.length === 0) { callback(); break; }
+      showHandSelection && showHandSelection(handCands.map(c=>c.card), 1, (chosen) => {
+        if (!chosen) { callback(); return; }
+        const hIdx = player.hand.indexOf(chosen);
+        if (hIdx >= 0) player.hand.splice(hIdx, 1);
+        const valid = [];
+        player.battleArea.forEach((c, i) => { if (c) valid.push(i); });
+        if (valid.length === 0) { player.hand.push(chosen); callback(); return; }
+        const rowId = ctx.side === 'player' ? 'pl' : 'ai';
+        showTargetSelection(rowId, valid, '進化元の下に置く対象', '#00ff88', (selIdx) => {
+          if (selIdx == null) { player.hand.push(chosen); callback(); return; }
+          const tgt = player.battleArea[selIdx];
+          if (!tgt.stack) tgt.stack = [];
+          tgt.stack.unshift(chosen);
+          ctx.addLog('🃏 「' + chosen.name + '」を「' + tgt.name + '」の進化元の下に');
+          ctx.renderAll();
+          callback();
+        });
+      });
       break;
     }
 

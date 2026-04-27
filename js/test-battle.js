@@ -131,10 +131,12 @@ function cardField(card, ...names) {
   return undefined;
 }
 
-function findCardByName(name) {
-  const card = window.allCards.find(c => c['名前'] === name);
+function findCardByName(idOrName) {
+  // カードNo優先 → 同名でも一意特定可能。フォールバックで名前一致（後方互換: 旧シナリオ保存）
+  let card = window.allCards.find(c => c['カードNo'] === idOrName);
+  if (!card) card = window.allCards.find(c => c['名前'] === idOrName);
   if (!card) {
-    console.warn(`[test] カード "${name}" がDBに見つかりません`);
+    console.warn(`[test] カード "${idOrName}" がDBに見つかりません`);
     return null;
   }
   const level = cardField(card, 'レベル', 'Lv');
@@ -309,21 +311,39 @@ window.updateScenarioDesc = function() {
   }
 };
 
-// カード検索
+// 色文字列 → 表示用カラー
+const _CARD_COLOR_STYLE = {
+  '赤': '#ff5577', '青': '#5599ff', '黄': '#ffcc44', '緑': '#44dd88',
+  '黒': '#bbbbbb', '紫': '#cc77ff', '白': '#eeeeee'
+};
+
+// カード検索（カードNo・色も表示して一意識別を担保）
 window.searchCards = function() {
   const query = document.getElementById('card-search-input').value.trim();
   if (!query || !window.allCards) return;
-  const results = window.allCards.filter(c => (c['名前'] || '').includes(query)).slice(0, 15);
+  // 名前 or カードNo どちらでもヒット
+  const results = window.allCards.filter(c =>
+    (c['名前'] || '').includes(query) || (c['カードNo'] || '').includes(query)
+  ).slice(0, 15);
   const el = document.getElementById('card-search-results');
   if (results.length === 0) { el.innerHTML = '<div style="color:#666;font-size:11px;padding:4px;">見つかりません</div>'; return; }
   el.innerHTML = results.map(c => {
     const name = c['名前'] || '???';
+    const cardNo = c['カードNo'] || '';
+    const cardColor = c['色'] || '';
     const type = c['タイプ'] || '';
-    const lv = c['レベル'] || '';
+    const lv = c['レベル'] || c['Lv'] || '';
     const dp = c['DP'] || '';
-    const color = type === 'デジモン' ? '#00fbff' : type === 'テイマー' ? '#00ff88' : '#ffaa00';
-    return `<div onclick="selectSearchCard('${name.replace(/'/g, "\\'")}')" style="padding:6px 8px;cursor:pointer;border-bottom:1px solid #222;font-size:11px;color:${color};transition:background 0.15s;" onmouseover="this.style.background='#1a1a2e'" onmouseout="this.style.background=''">
-      <b>${name}</b> <span style="color:#888;">${type} ${lv ? 'Lv.' + lv : ''} ${dp ? 'DP:' + dp : ''}</span>
+    const typeColor = type === 'デジモン' ? '#00fbff' : type === 'テイマー' ? '#00ff88' : '#ffaa00';
+    const colorStyle = _CARD_COLOR_STYLE[cardColor] || '#aaa';
+    const colorBadge = cardColor
+      ? `<span style="background:${colorStyle}22;color:${colorStyle};border:1px solid ${colorStyle}66;border-radius:3px;padding:1px 4px;font-size:9px;margin-right:3px;">${cardColor}</span>`
+      : '';
+    const noBadge = cardNo
+      ? `<span style="color:#888;font-size:9px;font-family:monospace;margin-right:3px;">${cardNo}</span>`
+      : '';
+    return `<div onclick="selectSearchCard('${cardNo.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'")}')" style="padding:6px 8px;cursor:pointer;border-bottom:1px solid #222;font-size:11px;color:${typeColor};transition:background 0.15s;" onmouseover="this.style.background='#1a1a2e'" onmouseout="this.style.background=''">
+      ${noBadge}${colorBadge}<b>${name}</b> <span style="color:#888;">${type} ${lv ? 'Lv.' + lv : ''} ${dp ? 'DP:' + dp : ''}</span>
     </div>`;
   }).join('');
 };
@@ -331,10 +351,21 @@ window.searchCards = function() {
 // Enterキーで検索
 document.getElementById('card-search-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') searchCards(); });
 
-// 検索結果からカードを選択
-window.selectSearchCard = function(name) {
-  _selectedCardName = name;
-  document.getElementById('card-search-results').innerHTML = `<div style="color:#00ff88;font-size:11px;padding:4px;">✓「${name}」を選択中 → 追加先の「+追加」を押してください</div>`;
+// 検索結果からカードを選択（カードNo + 名前を保存）
+window.selectSearchCard = function(cardNo, name) {
+  // 後方互換: 旧呼出（name のみ）にも対応
+  if (!name && cardNo) {
+    var hit = window.allCards && window.allCards.find(c => c['カードNo'] === cardNo);
+    if (!hit) {
+      hit = window.allCards && window.allCards.find(c => c['名前'] === cardNo);
+      if (hit) { name = cardNo; cardNo = hit['カードNo'] || ''; }
+    } else {
+      name = hit['名前'] || cardNo;
+    }
+  }
+  _selectedCardName = cardNo || name;  // _customCards に push する識別子（カードNo 優先）
+  const display = (cardNo && name) ? `[${cardNo}] ${name}` : (name || cardNo);
+  document.getElementById('card-search-results').innerHTML = `<div style="color:#00ff88;font-size:11px;padding:4px;">✓「${display}」を選択中 → 追加先の「+追加」を押してください</div>`;
 };
 
 // カードを配置先に追加
@@ -399,14 +430,15 @@ function renderCustomCards() {
         el.innerHTML = '';
         return;
       }
-      el.innerHTML = _customCards[zone].map((name, i) => {
+      el.innerHTML = _customCards[zone].map((idOrName, i) => {
+        const label = _displayLabelFor(idOrName);
         const evoCards = _customEvo[side][i] || [];
-        const evoHtml = evoCards.map((eName, ei) =>
-          `<span style="background:#ffaa0022;color:#ffaa00;border:1px solid #ffaa0044;border-radius:4px;padding:1px 5px;font-size:9px;cursor:pointer;" onclick="removeEvoFrom('${side}',${i},${ei})" title="クリックで削除">${eName} ✕</span>`
+        const evoHtml = evoCards.map((eIdOrName, ei) =>
+          `<span style="background:#ffaa0022;color:#ffaa00;border:1px solid #ffaa0044;border-radius:4px;padding:1px 5px;font-size:9px;cursor:pointer;" onclick="removeEvoFrom('${side}',${i},${ei})" title="クリックで削除">${_displayLabelFor(eIdOrName)} ✕</span>`
         ).join('');
         return `<div style="background:#111;border:1px solid ${color}44;border-radius:6px;padding:4px 6px;margin-bottom:3px;">
           <div style="display:flex;align-items:center;gap:4px;">
-            <span style="color:${color};font-size:10px;font-weight:bold;">${name}</span>
+            <span style="color:${color};font-size:10px;font-weight:bold;">${label}</span>
             <span style="color:#666;font-size:9px;cursor:pointer;" onclick="removeCardFrom('${zone}',${i})" title="デジモン削除">✕</span>
             <button onclick="addEvoTo('${side}',${i})" style="font-size:8px;padding:1px 4px;background:#332200;color:#ffaa00;border:1px solid #ffaa0066;border-radius:3px;cursor:pointer;margin-left:auto;">+進化元</button>
           </div>
@@ -417,10 +449,21 @@ function renderCustomCards() {
     }
 
     // 通常のゾーン
-    el.innerHTML = _customCards[zone].map((name, i) => {
-      return `<span style="background:${color}22;color:${color};border:1px solid ${color}44;border-radius:4px;padding:2px 6px;font-size:10px;cursor:pointer;" onclick="removeCardFrom('${zone}',${i})" title="クリックで削除">${name} ✕</span>`;
+    el.innerHTML = _customCards[zone].map((idOrName, i) => {
+      return `<span style="background:${color}22;color:${color};border:1px solid ${color}44;border-radius:4px;padding:2px 6px;font-size:10px;cursor:pointer;" onclick="removeCardFrom('${zone}',${i})" title="クリックで削除">${_displayLabelFor(idOrName)} ✕</span>`;
     }).join('');
   });
+}
+
+// カードNo or 名前 → 表示用ラベル「[ST5-15] レーザーアイ」
+function _displayLabelFor(idOrName) {
+  if (!window.allCards || !idOrName) return idOrName || '';
+  let card = window.allCards.find(c => c['カードNo'] === idOrName);
+  if (!card) card = window.allCards.find(c => c['名前'] === idOrName);
+  if (!card) return idOrName;
+  const cardNo = card['カードNo'] || '';
+  const name = card['名前'] || '';
+  return cardNo ? `[${cardNo}] ${name}` : name;
 }
 
 // ===== シナリオ保存/読み込み（localStorage） =====

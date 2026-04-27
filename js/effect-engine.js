@@ -930,29 +930,36 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
     case 'destroy': {
+      // target_own の場合は自分側のカードを対象にする（cost 用途で「自分のデジモン1体を消滅させる」等）
+      const isOwn = defaultTarget && defaultTarget.code === 'target_own';
+      const tgtPlayer = isOwn ? player : opponent;
+      const tgtRowId = isOwn ? (ctx.side === 'player' ? 'pl' : 'ai') : opponentRowSide;
       const destroyTargets = [];
-      for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) destroyTargets.push(i); }
-      if(destroyTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
+      for(let i=0;i<tgtPlayer.battleArea.length;i++) { if(tgtPlayer.battleArea[i]) destroyTargets.push(i); }
+      if(destroyTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', () => callback(false)); break; }
       // 枠色を辞書から取得
       const borderColor = uiColor;
       if(effectiveSide === 'ai') {
         const di = ctx._forceTargetIdx ?? destroyTargets[0];
-        const card = opponent.battleArea[di];
+        const card = tgtPlayer.battleArea[di];
         // 消滅演出 → doDestroy（on_destroy リアクション完了まで待つ）→ callback
         playEffect(action.code, { card, ctx }, () => {
-          doDestroy(opponent, di, ctx, callback);
+          doDestroy(tgtPlayer, di, ctx, () => callback(true));
         });
         break;
       }
-      ctx.addLog('🎯 消滅させる対象を選んでください');
-      showTargetSelection(opponentRowSide, destroyTargets, null, borderColor, (selectedIdx) => {
+      ctx.addLog(isOwn ? '🎯 自分のデジモンから消滅させる対象を選んでください' : '🎯 消滅させる対象を選んでください');
+      showTargetSelection(tgtRowId, destroyTargets, null, borderColor, (selectedIdx) => {
         if(selectedIdx !== null) {
-          const card = opponent.battleArea[selectedIdx];
+          const card = tgtPlayer.battleArea[selectedIdx];
           // 消滅演出 → doDestroy（on_destroy リアクション完了まで待つ）→ callback
           playEffect(action.code, { card, ctx }, () => {
-            doDestroy(opponent, selectedIdx, ctx, callback);
+            doDestroy(tgtPlayer, selectedIdx, ctx, () => callback(true));
           });
-        } else { callback(); }
+        } else {
+          // target_own は cost 用途とみなし、キャンセル時は callback(false) で後続中止
+          callback(isOwn ? false : undefined);
+        }
       });
       break;
     }
@@ -1513,7 +1520,10 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
   // targetSide オブジェクトから 'player' / 'ai' を逆引き
   const destroyedSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
   fireOnDestroyTriggers(destroyedSideName, ctx.bs, ctx, () => {
-    callback && callback();
+    // 自分のデジモンが消滅したとき（同 side のテイマー/デジモンが反応：石田ヤマト等）
+    _fireSidedReactionTriggers(destroyedSideName, 'when_own_destroyed', ctx.bs, ctx, () => {
+      callback && callback();
+    });
   });
 }
 
@@ -1774,6 +1784,80 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
 // セミ自動: フィルタにマッチするカードのみタップ可能、残りはタップ順にデッキへ戻す
 
 // カードがフィルタにマッチするか判定
+// トラッシュからフィルタ済み候補をN枚選ばせる UI
+// candidates: 表示するカード配列（既にフィルタ済）
+// wantCount: 選択する枚数
+// optional: true なら「使わない」ボタン表示
+// title: 上部に表示するメッセージ
+// callback: (chosenCards[]) => void  キャンセル時は [] or null を渡す
+function showTrashCardPicker(candidates, wantCount, optional, title, callback) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:62000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.2s ease;';
+
+  const titleEl = document.createElement('div');
+  titleEl.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;margin-bottom:8px;text-shadow:0 0 8px #00fbff;';
+  titleEl.innerText = title || '🃏 カードを選択';
+  overlay.appendChild(titleEl);
+
+  const sub = document.createElement('div');
+  sub.style.cssText = 'color:#ffaa00;font-size:11px;margin-bottom:12px;';
+  sub.innerText = '対象: ' + candidates.length + '枚（最大' + wantCount + '枚選択）';
+  overlay.appendChild(sub);
+
+  const cardArea = document.createElement('div');
+  cardArea.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:90%;max-height:60vh;overflow-y:auto;background:rgba(0,15,25,0.8);border:1px solid #00fbff44;border-radius:12px;padding:12px;margin-bottom:12px;';
+  overlay.appendChild(cardArea);
+
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;';
+  overlay.appendChild(btnRow);
+
+  const picked = [];
+  const getImg = (c) => c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '';
+  const wraps = candidates.map(card => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'width:80px;height:112px;border:2px solid #444;border-radius:6px;overflow:hidden;cursor:pointer;background:#111;transition:all 0.2s;';
+    const src = getImg(card);
+    if (src) {
+      wrap.innerHTML = '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">';
+    } else {
+      wrap.innerHTML = '<div style="padding:6px;font-size:9px;color:#aaa;">' + card.name + '</div>';
+    }
+    wrap.onclick = () => {
+      const idx = picked.indexOf(card);
+      if (idx !== -1) {
+        picked.splice(idx, 1);
+        wrap.style.border = '2px solid #444';
+        wrap.style.boxShadow = '';
+      } else {
+        if (picked.length >= wantCount) return;
+        picked.push(card);
+        wrap.style.border = '2px solid #00ff88';
+        wrap.style.boxShadow = '0 0 12px #00ff88aa';
+      }
+      sub.innerText = '対象: ' + candidates.length + '枚（' + picked.length + '/' + wantCount + ' 選択）';
+    };
+    cardArea.appendChild(wrap);
+    return wrap;
+  });
+
+  function cleanup() {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+  }
+  const okBtn = document.createElement('button');
+  okBtn.innerText = '✓ 決定';
+  okBtn.style.cssText = 'background:#00ff88;color:#000;border:none;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
+  okBtn.onclick = () => { cleanup(); callback(picked.slice()); };
+  btnRow.appendChild(okBtn);
+  if (optional) {
+    const skipBtn = document.createElement('button');
+    skipBtn.innerText = '⏭ 使わない';
+    skipBtn.style.cssText = 'background:#555;color:#fff;border:1px solid #888;padding:10px 22px;border-radius:6px;font-size:13px;cursor:pointer;';
+    skipBtn.onclick = () => { cleanup(); callback([]); };
+    btnRow.appendChild(skipBtn);
+  }
+}
+
 function cardMatchesFilter(card, filter) {
   if (!filter) return true;
   if (filter.type && card.type !== filter.type) return false;
@@ -1784,6 +1868,13 @@ function cardMatchesFilter(card, filter) {
   if (filter.name_includes && !(card.name || '').includes(filter.name_includes)) return false;
   if (filter.lv_ge != null && (parseInt(card.level) || 0) < filter.lv_ge) return false;
   if (filter.lv_le != null && (parseInt(card.level) || 0) > filter.lv_le) return false;
+  if (filter.lv != null && (parseInt(card.level) || 0) !== filter.lv) return false;
+  // コスト系: cost (登場/使用コスト) のフィルタ
+  const cardCost = (card.playCost != null ? card.playCost : (card.cost || 0));
+  if (filter.cost != null && cardCost !== filter.cost) return false;
+  if (filter.cost_le != null && cardCost > filter.cost_le) return false;
+  if (filter.cost_ge != null && cardCost < filter.cost_ge) return false;
+  if (Array.isArray(filter.cost_in) && !filter.cost_in.includes(cardCost)) return false;
   // 特徴: 「竜人型/四大竜」のようにスラッシュ区切り
   const cardFeatures = (card.feature || '').split(/[\/、,]/).map(s => s.trim()).filter(s => s);
   if (filter.feature) {
@@ -2573,6 +2664,7 @@ export function applyPermanentEffects(bs, side, context) {
           else if (flag === 'penetrate') { card._permEffects.penetrate = true; }
           else if (flag === 'jamming') { card._permEffects.jamming = true; }
           else if (flag === 'reboot') { card._permEffects.reboot = true; }
+          else if (flag === 'michizure') { card._permEffects.michizure = true; }
         });
       }
     }
@@ -2716,6 +2808,20 @@ function checkConditions(conditions, card, bs, side) {
         if (!bs) break;
         const myTurn = (side === 'player' && bs.isPlayerTurn) || (side === 'ai' && !bs.isPlayerTurn);
         if (myTurn) return false;
+        break;
+      }
+      case 'cond_opp_no_attack_this_turn': {
+        // 「このターンに相手のデジモンが1度でもアタックしていないなら」
+        // ターン中に相手がアタックすると bs._currentTurnAttackCount がインクリメントされる
+        // ターン切り替え時にリセット
+        if (bs && bs._currentTurnAttackCount > 0) return false;
+        break;
+      }
+      case 'cond_own_trash_ge': {
+        // 「自分のトラッシュがN枚以上の間」
+        if (!bs) break;
+        const trashLen = bs[side] && bs[side].trash ? bs[side].trash.length : 0;
+        if (trashLen < (cond.value || 0)) return false;
         break;
       }
       case 'cond_exists': {
@@ -3178,6 +3284,87 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
 //   bs:         battle state
 //   ctxBase:    元の context
 //   done:       全リアクション完了時 callback
+// ===== 自分のブロッカー or 自分のデジモン消滅 トリガー =====
+// 共通汎用関数。reactSide のバトルエリア + テイマーエリアをスキャンして recipeKey の
+// レシピを発動する。確認ダイアログ・任意効果・once_per_turn 制限なども共通処理。
+function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done) {
+  const finish = () => { try { done && done(); } catch(_) {} };
+  if (!bs) { finish(); return; }
+  const reactPlayer = bs[reactSide];
+  if (!reactPlayer) { finish(); return; }
+  const cards = [...(reactPlayer.battleArea || []), ...(reactPlayer.tamerArea || [])].filter(c => c);
+  const reactions = [];
+  cards.forEach(card => {
+    if (!card.recipe) return;
+    try {
+      const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
+      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const recipe = r[recipeKey];
+      if (recipe && Array.isArray(recipe)) {
+        const willRun = recipe.some(step => {
+          if (step.condition) {
+            const conds = parseRecipeCondition(step.condition);
+            if (!checkConditions(conds, card, bs, reactSide)) return false;
+          }
+          if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
+            const sourceId = card.cardNo || card.name || 'unknown';
+            const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
+            if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
+          }
+          return true;
+        });
+        if (willRun) reactions.push({ card, recipe });
+      }
+    } catch (_) {}
+  });
+  if (reactions.length === 0) { finish(); return; }
+  let idx = 0;
+  function nextReaction() {
+    if (idx >= reactions.length) { finish(); return; }
+    const { card, recipe } = reactions[idx++];
+    const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side: reactSide };
+    const proceed = () => {
+      ctx.addLog && ctx.addLog('⚡ 「' + card.name + '」の効果発動');
+      showEffectAnnounce(card, card.effect || '', reactSide, () => {
+        runRecipe(recipe, ctx, () => {
+          ctx.renderAll && ctx.renderAll();
+          if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
+            window._onlineSendCommand({ type: 'fx_effectClose' });
+          }
+          nextReaction();
+        });
+      });
+    };
+    const isOptional = recipe.some(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0)));
+    if (isOptional) {
+      if (reactSide === 'player') {
+        showConfirmDialog(card, card.effect || '', (yes) => {
+          if (yes) proceed();
+          else { ctx.addLog && ctx.addLog('☓ 「' + card.name + '」の効果は発動しなかった'); nextReaction(); }
+        });
+      } else {
+        ctx.addLog && ctx.addLog('☓ AI: 「' + card.name + '」の効果は発動しなかった');
+        nextReaction();
+      }
+      return;
+    }
+    proceed();
+  }
+  nextReaction();
+}
+
+// 自分のブロッカーがレストしたとき → blockOwnerSide のテイマー/デジモンが反応
+// 八神太一(黒) 用
+export function fireWhenOwnBlockTriggers(blockOwnerSide, bs, ctxBase, done) {
+  return _fireSidedReactionTriggers(blockOwnerSide, 'when_own_block', bs, ctxBase, done);
+}
+
+// 自分のデジモンが消滅したとき → 同 side のテイマー/デジモンが反応
+// 石田ヤマト(紫) 用
+export function fireWhenOwnDestroyedTriggers(destroyedSide, bs, ctxBase, done) {
+  return _fireSidedReactionTriggers(destroyedSide, 'when_own_destroyed', bs, ctxBase, done);
+}
+
 export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
   const finish = () => { try { done && done(); } catch(_) {} };
   console.log('[fireWhenOppRest] called restedSide=' + restedSide + ' isPlayerTurn=' + (bs && bs.isPlayerTurn));
@@ -3906,6 +4093,102 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === トラッシュから手札に戻す ===
+    // step: { action:'trash_to_hand', filter:{...}, count:N, optional:bool }
+    case 'trash_to_hand': {
+      const filter = step.filter || {};
+      const wantCount = step.count || 1;
+      const optional = !!step.optional;
+      const candidates = (player.trash || []).filter(c => cardMatchesFilter(c, filter));
+      if (candidates.length === 0) {
+        ctx.addLog && ctx.addLog('💨 条件を満たすカードがトラッシュにありません');
+        showEffectFailed(null, () => callback());
+        return;
+      }
+      const onPicked = (chosen) => {
+        if (!chosen || chosen.length === 0) {
+          if (optional) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); }
+          else { showEffectFailed(null, () => callback()); }
+          return;
+        }
+        let i = 0;
+        function moveNext() {
+          if (i >= chosen.length) { ctx.renderAll(); callback(); return; }
+          const c = chosen[i++];
+          const ti = player.trash.indexOf(c);
+          if (ti !== -1) player.trash.splice(ti, 1);
+          player.hand.push(c);
+          ctx.addLog && ctx.addLog('🃏 「' + c.name + '」をトラッシュから手札に戻した');
+          if (window._fxCardMove) window._fxCardMove(c, 'トラッシュ', '手札', moveNext);
+          else setTimeout(moveNext, 300);
+        }
+        moveNext();
+      };
+      if (effectiveSide === 'ai') {
+        // AI: 先頭から N 枚を自動選択
+        onPicked(candidates.slice(0, wantCount));
+      } else {
+        showTrashCardPicker(candidates, wantCount, optional, '🃏 手札に戻すカードを選んでください', onPicked);
+      }
+      break;
+    }
+
+    // === トラッシュから登場させる ===
+    // step: { action:'summon_from_trash', filter:{...}, count:N, cost_free:true, skip_on_play:true }
+    case 'summon_from_trash': {
+      const filter = step.filter || {};
+      const wantCount = step.count || 1;
+      const optional = !!step.optional;
+      const candidates = (player.trash || []).filter(c => cardMatchesFilter(c, filter));
+      if (candidates.length === 0) {
+        ctx.addLog && ctx.addLog('💨 条件を満たすカードがトラッシュにありません');
+        showEffectFailed(null, () => callback());
+        return;
+      }
+      const onPicked = (chosen) => {
+        if (!chosen || chosen.length === 0) {
+          if (optional) { ctx.addLog && ctx.addLog('☓ 「登場させない」を選択'); callback(); }
+          else { showEffectFailed(null, () => callback()); }
+          return;
+        }
+        let i = 0;
+        function summonNext() {
+          if (i >= chosen.length) { ctx.renderAll(); callback(); return; }
+          const c = chosen[i++];
+          const ti = player.trash.indexOf(c);
+          if (ti !== -1) player.trash.splice(ti, 1);
+          // type別に配置先を決定
+          const isTamer = String(c.type || '') === 'テイマー';
+          if (isTamer) {
+            player.tamerArea.push(c);
+          } else {
+            const empty = player.battleArea.indexOf(null);
+            if (empty !== -1) player.battleArea[empty] = c;
+            else player.battleArea.push(c);
+          }
+          c.summonedThisTurn = true;
+          c.suspended = false;
+          c.buffs = [];
+          // skip_on_play 指定時は登場時効果を発動しない
+          if (step.skip_on_play) {
+            c._skipOnPlayEffect = true;
+            ctx.addLog && ctx.addLog('🌟 「' + c.name + '」を登場（登場時効果は発揮しない）');
+          } else {
+            ctx.addLog && ctx.addLog('🌟 「' + c.name + '」を登場');
+          }
+          if (window._fxCardMove) window._fxCardMove(c, 'トラッシュ', isTamer ? 'テイマー' : 'バトル', summonNext);
+          else setTimeout(summonNext, 300);
+        }
+        summonNext();
+      };
+      if (effectiveSide === 'ai') {
+        onPicked(candidates.slice(0, wantCount));
+      } else {
+        showTrashCardPicker(candidates, wantCount, optional, '🌟 登場させるカードを選んでください', onPicked);
+      }
+      break;
+    }
+
     // === 進化元に追加 ===
     case 'add_to_evo_source': {
       const cards = store[step.card];
@@ -4142,12 +4425,66 @@ function executeRecipeStep(step, ctx, store, callback) {
           const flagMap = {
             'ブロッカー': 'blocker', '速攻': 'rush', '突進': 'piercing',
             '貫通': 'penetrate', 'ジャミング': 'jamming', '再起動': 'reboot',
+            '道連れ': 'michizure',
           };
           flag = flagMap[kw] || kw;
         }
       }
 
-      // 対象解決
+      // own:N / own:up_to_N の場合は非同期に対象選択UIを出してから付与
+      const tStr = step.target || '';
+      const isOwnSelect = (tStr.startsWith('own:') && !['own:all'].includes(tStr));
+      const isOpponentSelect = (tStr.startsWith('opponent:') && !['opponent:all'].includes(tStr));
+      if ((isOwnSelect || isOpponentSelect) && !step.card) {
+        const upToMatch = tStr.match(/^(own|opponent):up_to_(\d+)$/);
+        const exactMatch = tStr.match(/^(own|opponent):(\d+)$/);
+        const wantCount = upToMatch ? parseInt(upToMatch[2]) : (exactMatch ? parseInt(exactMatch[2]) : 1);
+        const isUpTo = !!upToMatch;
+        const tgtPlayer2 = isOwnSelect ? (ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai)
+                                       : (ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player);
+        const validIdxs = [];
+        for (let i = 0; i < tgtPlayer2.battleArea.length; i++) {
+          if (tgtPlayer2.battleArea[i]) validIdxs.push(i);
+        }
+        if (validIdxs.length === 0) { showEffectFailed(null, callback); return; }
+        const rowSide = isOwnSelect ? (ctx.side === 'player' ? 'pl' : 'ai')
+                                    : (ctx.side === 'player' ? 'ai' : 'pl');
+        // up_to の場合は wantCount まで連続選択、それ未満で完了可
+        const picked = [];
+        function pickOne() {
+          if (picked.length >= wantCount) { applyAll(picked); return; }
+          const remaining = validIdxs.filter(i => !picked.includes(i));
+          if (remaining.length === 0) { applyAll(picked); return; }
+          showTargetSelection(rowSide, remaining, null, '#00ff88', (selectedIdx) => {
+            if (selectedIdx == null) {
+              if (isUpTo && picked.length > 0) { applyAll(picked); return; }
+              if (isUpTo) { ctx.addLog && ctx.addLog('☓ 付与をスキップ'); callback(); return; }
+              callback();
+              return;
+            }
+            picked.push(selectedIdx);
+            pickOne();
+          });
+        }
+        function applyAll(idxs) {
+          idxs.forEach(idx => {
+            const tgt = tgtPlayer2.battleArea[idx]; if (!tgt) return;
+            if (flag === 'security_attack_plus') {
+              addBuffDirect(tgt, 'security_attack_plus', val, dur, ctx);
+              ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
+            } else {
+              addBuffDirect(tgt, 'keyword_' + flag, 0, dur, ctx);
+              ctx.addLog('✨ 「' + tgt.name + '」に【' + flag + '】付与');
+            }
+          });
+          ctx.renderAll();
+          callback();
+        }
+        pickOne();
+        break;
+      }
+
+      // 対象解決（既存パス: self / own:all / store経由）
       const resolveTargets = () => {
         const p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
         const opp = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
@@ -4222,6 +4559,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         else if (t === 'opponent:all') target = { code: 'target_all_opponent' };
         else if (t === 'own_security:all') target = { code: 'target_all_own_security' };
         else if (t.startsWith('opponent_suspended:')) target = { code: 'target_opponent_suspended', count: parseInt(t.split(':')[1]) || 1 };
+        else if (t.startsWith('own:up_to_')) target = { code: 'target_own', count: parseInt(t.split('own:up_to_')[1]) || 1, upTo: true };
+        else if (t.startsWith('opponent:up_to_')) target = { code: 'target_opponent', count: parseInt(t.split('opponent:up_to_')[1]) || 1, upTo: true };
         else if (t.startsWith('own:')) target = { code: 'target_own', count: parseInt(t.split(':')[1]) || 1 };
         else if (t.startsWith('opponent:')) target = { code: 'target_opponent', count: parseInt(t.split(':')[1]) || 1 };
         else if (t.startsWith('other_own:')) target = { code: 'target_other_own', count: parseInt(t.split(':')[1]) || 1 };

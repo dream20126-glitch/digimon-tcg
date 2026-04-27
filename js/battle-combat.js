@@ -9,7 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -43,6 +43,25 @@ export function setCombatHooks(hooks) {
 function fireOppRestThen(restedOwnerSide, cb) {
   const ctxBase = { bs, addLog, renderAll, updateMemGauge };
   try { _fireWhenOppRest(restedOwnerSide, bs, ctxBase, () => cb && cb()); }
+  catch (_) { cb && cb(); }
+}
+
+// ブロック専用: blocker のオーナー側のテイマー/デジモンを反応させる
+function fireOwnBlockThen(blockOwnerSide, cb) {
+  const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+  try { _fireWhenOwnBlock(blockOwnerSide, bs, ctxBase, () => cb && cb()); }
+  catch (_) { cb && cb(); }
+}
+
+// ブロック発生時の総合反応: 反対側の when_opp_rest + ブロッカー所有側の when_own_block を順次発火
+function fireBlockReactionThen(blockerSide, cb) {
+  fireOppRestThen(blockerSide, () => fireOwnBlockThen(blockerSide, cb));
+}
+
+// 自分のデジモンが消滅したとき: destroyed のオーナー側のテイマー/デジモンを反応させる
+function fireOwnDestroyedThen(destroyedSide, cb) {
+  const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+  try { _fireWhenOwnDestroyed(destroyedSide, bs, ctxBase, () => cb && cb()); }
   catch (_) { cb && cb(); }
 }
 
@@ -80,6 +99,8 @@ function hasPassiveFlag(c, flagName, kwBracket) {
 function isBlocker(c) { return hasPassiveFlag(c, 'blocker', '【ブロッカー】'); }
 // 貫通判定（ヘラクルカブテリモン等）: アタックで撃破時に追加セキュリティチェック
 function hasPenetrate(c) { return hasPassiveFlag(c, 'penetrate', '【貫通】'); }
+// 道連れ判定（ヴェノムヴァンデモン等）: バトルで自分だけ消滅したとき相手も消滅
+function hasMichizure(c) { return hasPassiveFlag(c, 'michizure', '【道連れ】'); }
 
 // ===== オンラインモード参照 =====
 let _onlineMode = false;
@@ -474,6 +495,7 @@ export function startAttack(card, slotIdx) {
   if (card.cantAttack) return false;
 
   card.suspended = true;
+  bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   _atkState = { card, slotIdx };
   addLog('⚔ 「' + card.name + '」でアタック！');
   renderAll();
@@ -549,8 +571,8 @@ export function resolveAttackTarget(target, targetIdx) {
           }
         } catch (_) {}
         renderAll();
-        // AI 側のブロッカーがレストした → プレイヤー側の when_opp_rest 発火
-        fireOppRestThen('ai', () => {
+        // AI 側のブロッカーがレストした → プレイヤー側の when_opp_rest + AI 側の when_own_block 発火
+        fireBlockReactionThen('ai', () => {
           afterAtkEffect(atk, atkSlotIdx, () => {
             afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
               resolveBattle(atk, atkSlotIdx, blocker, blockerIdx, 'ai');
@@ -622,8 +644,8 @@ export function resolveAttackTarget(target, targetIdx) {
           }
         } catch (_) {}
         renderAll();
-        // AI 側のブロッカーがレストした → プレイヤー側の when_opp_rest 発火
-        fireOppRestThen('ai', () => {
+        // AI 側のブロッカーがレストした → プレイヤー側の when_opp_rest + AI 側の when_own_block 発火
+        fireBlockReactionThen('ai', () => {
           afterAtkEffect(atk, atkSlotIdx, () => {
             // ブロックされた側 (player) の効果
             afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
@@ -1054,7 +1076,7 @@ export function removeBattleBuffs(applied) {
 
 // ===== バトル解決（プレイヤー → AI デジモン） =====
 
-// _fireOnDestroy + _fireOnBattleDestroy をチェーン実行するヘルパー
+// _fireOnDestroy + _fireOnBattleDestroy + _fireWhenOwnDestroyed をチェーン実行するヘルパー
 // sides: ['ai','player'] のような配列、各要素は destroyedSide
 // done: 全完了時 callback
 // バトル起因の消滅でのみ呼ばれるため、on_destroy に加えて on_battle_destroy も発火する
@@ -1067,7 +1089,10 @@ function _fireDestroyChain(sides, done) {
     try {
       _fireOnDestroy(s, bs, ctxBase, () => {
         try {
-          _fireOnBattleDestroy(s, bs, ctxBase, next);
+          _fireOnBattleDestroy(s, bs, ctxBase, () => {
+            // 自分のデジモンが消滅したとき（同 side のテイマー/デジモンが反応）
+            try { _fireWhenOwnDestroyed(s, bs, ctxBase, next); } catch (_) { next(); }
+          });
         } catch (_) { next(); }
       });
     } catch (_) { next(); }
@@ -1137,6 +1162,19 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
       showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された', () => {
         showDestroyEffect(atk, () => {
           addLog('💥 「' + atk.name + '」が撃破された...'); renderAll();
+          // ≪道連れ≫: バトルで自分だけ消滅 → 相手(def)も消滅させる
+          if (hasMichizure(atk) && def && bs.ai.battleArea.indexOf(def) >= 0) {
+            addLog('💀 【道連れ】「' + atk.name + '」が「' + def.name + '」を巻き込んで消滅！');
+            const defIdx2 = bs.ai.battleArea.indexOf(def);
+            bs.ai.battleArea[defIdx2] = null;
+            bs.ai.trash.push(def);
+            if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
+            renderAll();
+            showDestroyEffect(def, () => {
+              _fireDestroyChain(['player', 'ai'], () => checkPendingTurnEnd());
+            });
+            return;
+          }
           _fireDestroyChain(['player'], () => checkPendingTurnEnd());
         });
       }, 'Win!!', '#00ff88');
@@ -1198,6 +1236,23 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
       bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
       if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
       renderAll();
+      // ≪道連れ≫: AI のアタッカーが消滅したとき、防御側 (player の def) も巻き込む
+      if (hasMichizure(atk) && def && bs.player.battleArea.indexOf(def) >= 0) {
+        const defIdx2 = bs.player.battleArea.indexOf(def);
+        bs.player.battleArea[defIdx2] = null;
+        bs.player.trash.push(def);
+        if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
+        addLog('💀 【道連れ】「' + atk.name + '」が「' + def.name + '」を巻き込んで消滅！');
+        renderAll();
+        showDestroyEffect(atk, () => {
+          showDestroyEffect(def, () => {
+            _fireDestroyChain(['ai', 'player'], () => {
+              showBattleResult('両者消滅', '#ff4444', '両者消滅（道連れ）！', () => { renderAll(); callback(); }, '両者消滅', '#ff4444');
+            });
+          });
+        });
+        return;
+      }
       showDestroyEffect(atk, () => {
         _fireDestroyChain(['ai'], () => {
           // 防御側 (def, player) が atk を撃破して生存 → on_battle_win on def
@@ -1326,6 +1381,7 @@ export function aiAttackPhase(callback) {
 
   const atk = bs.ai.battleArea[atkIdx];
   atk.suspended = true;
+  bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   addLog('🤖 「' + atk.name + '」でアタック！');
   renderAll();
 
@@ -1371,8 +1427,8 @@ export function aiAttackPhase(callback) {
                 try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
               }
               renderAll();
-              // プレイヤー側ブロッカーがレストした → AI 側の when_opp_rest 発火
-              fireOppRestThen('player', () => {
+              // プレイヤー側ブロッカーがレストした → AI 側 when_opp_rest + プレイヤー側 when_own_block 発火
+              fireBlockReactionThen('player', () => {
                 afterBlockedEffect(atk, atkIdx, 'ai', () => {
                   resolveBattleAI(atk, atkIdx, blocker, blockerIdx, () => {
                     if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
@@ -1389,7 +1445,7 @@ export function aiAttackPhase(callback) {
                     try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
                   }
                   renderAll();
-                  fireOppRestThen('player', () => {
+                  fireBlockReactionThen('player', () => {
                     afterBlockedEffect(atk, atkIdx, 'ai', () => {
                       resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {
                         if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
@@ -2439,6 +2495,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
 
   // 本物のアタックフロー（演出・ブロック確認・効果処理すべて含む）
   atk.suspended = true;
+  bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   addLog('🤖 「' + atk.name + '」でアタック！');
   renderAll();
 
@@ -2510,7 +2567,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
                       try { window._tutorialRunner.notifyEvent('block', { cardNo: blocker.cardNo, cardName: blocker.name, side: 'player' }); } catch (e) {}
                     }
                     renderAll();
-                    fireOppRestThen('player', () => {
+                    fireBlockReactionThen('player', () => {
                       afterBlockedEffect(atk, atkIdx, 'ai', () => {
                         resolveBattleAI(atk, atkIdx, blocker, selectedIdx, () => {
                           checkPendingTurnEnd();

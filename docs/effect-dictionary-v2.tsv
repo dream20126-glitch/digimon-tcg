@@ -41,6 +41,31 @@ on_battle_destroy	trigger	バトルで消滅したとき		効果消滅は除外	
 on_battle_win	trigger	バトル勝利時			即時	強制/任意	自身生存・相手消滅で発動
 when_opp_rest	trigger	相手のデジモンがレストしたとき			即時	任意	泉光子郎等
 michizure	passive	【道連れ】			即時	強制	バトルで自分だけ消滅時、バトルした相手も消滅(公式18-13)
+charge	passive	【進撃】			永続	任意	メモリーが相手側1以上のとき、このデジモンでアタック宣言可(公式18-16)
+collision	passive	【衝突】			永続	強制	アタック中、相手のデジモンを参照するキーワード(公式18-30、仕様要確認)
+evade	passive	【回避】			即時	任意	消滅するとき、このデジモンをレストすることで消滅しない(公式18-22)
+barrier	passive	【防壁】			即時	任意	バトルで消滅するとき、自分のセキュリティ上1枚破棄で消滅しない(公式18-25)
+armor_break	passive	【アーマー解除】			即時	任意	消滅するとき、進化元上1枚破棄で消滅しない(公式18-19)
+indomitable	passive	【不屈】			即時	強制	進化元持ちが消滅したとき、コスト無しで登場(公式18-27)
+combo	passive	【連携】			即時	任意	アタック時、他デジモンレストでDP+(対象DP)とSアタック+1(公式18-24、要詳細実装)
+absorb_evolve	action	【吸収進化】			即時	強制	手札のデジモンカードを進化元として進化(公式18-10、未実装)
+delay	action	【ディレイ】			即時	任意	このカード破棄で指定の効果発揮(公式18-17、未実装)
+decoy	passive	【デコイ】			即時	任意	指定の他のデジモンが消滅するとき身代わり(公式18-18、未実装)
+save	passive	【セーブ】			永続	任意	自分のテイマー1体の下に置く(公式18-20、未実装)
+material_save	passive	【マテリアルセーブ】			即時	任意	消滅時、進化元のデジクロス条件カードをテイマー下に置く(公式18-21、未実装)
+mind_link	passive	【マインドリンク】			永続	任意	テイマーを進化元下に置く(公式18-28、未実装)
+partition	passive	【パーティション】			即時	任意	バトルエリアを離れるとき、進化元から登場(公式18-29、未実装)
+scapegoat	passive	【スケープゴート】			即時	任意	自分の効果以外で消滅するとき、他のデジモン消滅で身代わり(公式18-32、未実装)
+vortex	passive	【ヴォルテクス】			永続	強制	(公式18-33、仕様要確認)
+blast_evolve	action	【ブラスト進化】			即時	任意	手札のこのカードにコスト無しで進化(公式18-26、未実装)
+blast_jogress	action	【ブラストジョグレス】			即時	任意	コストを支払ってジョグレス進化(公式18-31、未実装)
+overclock	passive	【オーバークロック】			永続	強制	(独自キーワード、仕様要確認)
+ice_armor	passive	【氷装】			永続	強制	(独自キーワード、仕様要確認)
+decode	action	【デコード】			即時	任意	(独自キーワード、仕様要確認)
+fragment	passive	【フラグメント】			永続	強制	(独自キーワード、仕様要確認)
+execute	action	【エグゼキュート】			即時	任意	(独自キーワード、仕様要確認)
+progress	passive	【プログレス】			永続	強制	(独自キーワード、仕様要確認)
+training	passive	【トレーニング】			永続	強制	(独自キーワード、仕様要確認)
 cond_dp_le	condition	DP以下					DPがN以下のデジモンのみ対象/条件成立
 cond_dp_ge	condition	DP以上					DPがN以上のデジモンのみ対象/条件成立
 cond_lv_le	condition	Lv.以下					Lv.がN以下のデジモンのみ対象/条件成立

@@ -2714,6 +2714,13 @@ export function applyPermanentEffects(bs, side, context) {
           else if (flag === 'jamming') { card._permEffects.jamming = true; }
           else if (flag === 'reboot') { card._permEffects.reboot = true; }
           else if (flag === 'michizure') { card._permEffects.michizure = true; }
+          else if (flag === 'charge') { card._permEffects.charge = true; }
+          else if (flag === 'collision') { card._permEffects.collision = true; }
+          else if (flag === 'evade') { card._permEffects.evade = true; }
+          else if (flag === 'barrier') { card._permEffects.barrier = true; }
+          else if (flag === 'armor_break') { card._permEffects.armor_break = true; }
+          else if (flag === 'indomitable') { card._permEffects.indomitable = true; }
+          else if (flag === 'combo') { card._permEffects.combo = true; }
         });
       }
     }

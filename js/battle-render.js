@@ -225,8 +225,14 @@ function showLongpressMenu(card, slotIdx, el) {
 
   let html = '';
   const canAtk = card.type === 'デジモン';
-  const hasEvoSpeed = card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【速攻】'));
-  const notSick = !card.summonedThisTurn || hasEvoSpeed;
+  // 速攻判定: effect / 進化元 / _permEffects.rush / buffs[keyword_rush] / レシピ passive
+  const hasRushFlag = (
+    (card.effect && card.effect.includes('【速攻】'))
+    || (card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【速攻】')))
+    || (card._permEffects && card._permEffects.rush)
+    || (card.buffs && card.buffs.some(b => b.type === 'keyword_rush'))
+  );
+  const notSick = !card.summonedThisTurn || hasRushFlag;
   if (canAtk && notSick) {
     if (card.cantAttack) {
       html += '<button class="lp-action-btn lp-atk-btn" disabled style="opacity:0.3;cursor:not-allowed;">⚔ アタック不可</button>';

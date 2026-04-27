@@ -102,6 +102,58 @@ function hasPenetrate(c) { return hasPassiveFlag(c, 'penetrate', '【貫通】')
 // 道連れ判定（ヴェノムヴァンデモン等）: バトルで自分だけ消滅したとき相手も消滅
 function hasMichizure(c) { return hasPassiveFlag(c, 'michizure', '【道連れ】'); }
 
+// 消滅キャンセル試行ヘルパー
+// 戻り値: { canceled: true, reason: '...' } か null。
+// 公式キーワード（防壁・回避・アーマー解除）は1ターンに何度でも、ただしコスト1回ごとに消費。
+// AI 側はとりあえず防壁/アーマー解除/回避すべて使う（プレイヤー側は将来確認ダイアログ化）。
+// onlyBattle: true なら防壁のみチェック（バトル消滅専用）
+function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle) {
+  if (!card || !ownerSidePlayer) return null;
+  // 防壁（バトル消滅時、自セキュリティ1枚破棄で回避）
+  if (hasBarrier(card) && ownerSidePlayer.security && ownerSidePlayer.security.length > 0) {
+    var trashed = ownerSidePlayer.security.shift();
+    if (trashed) ownerSidePlayer.trash.push(trashed);
+    addLog('🛡 【防壁】「' + card.name + '」がセキュリティ1枚破棄で消滅回避！');
+    return { canceled: true, reason: 'barrier' };
+  }
+  if (onlyBattle) return null;
+  // アーマー解除（消滅時、進化元1枚破棄で回避）
+  if (hasArmorBreak(card) && card.stack && card.stack.length > 0) {
+    var ev = card.stack.pop();
+    if (ev) ownerSidePlayer.trash.push(ev);
+    addLog('🛡 【アーマー解除】「' + card.name + '」が進化元1枚破棄で消滅回避！');
+    return { canceled: true, reason: 'armor_break' };
+  }
+  // 回避（消滅時、レストすることで回避）アクティブな場合のみ
+  if (hasEvade(card) && !card.suspended) {
+    card.suspended = true;
+    addLog('🛡 【回避】「' + card.name + '」がレストして消滅回避！');
+    return { canceled: true, reason: 'evade' };
+  }
+  // 不屈（進化元を持つこのデジモンが消滅したとき、コスト無しで再登場）
+  // 簡易実装: 消滅キャンセル + 進化元全破棄 + アクティブで残留（実質「再登場」と等価）
+  if (hasIndomitable(card) && card.stack && card.stack.length > 0) {
+    card.stack.forEach(function(s){ ownerSidePlayer.trash.push(s); });
+    card.stack = [];
+    card.suspended = false;
+    card.summonedThisTurn = false;
+    addLog('💪 【不屈】「' + card.name + '」が進化元全破棄でコスト無し再登場！');
+    return { canceled: true, reason: 'indomitable' };
+  }
+  return null;
+}
+// その他キーワード判定（フェーズ1〜2 実装分）
+function hasRush(c)         { return hasPassiveFlag(c, 'rush', '【速攻】'); }
+function hasPiercing(c)     { return hasPassiveFlag(c, 'piercing', '【突進】'); }
+function hasJamming(c)      { return hasPassiveFlag(c, 'jamming', '【ジャミング】'); }
+function hasCharge(c)       { return hasPassiveFlag(c, 'charge', '【進撃】'); }
+function hasCollision(c)    { return hasPassiveFlag(c, 'collision', '【衝突】'); }
+function hasEvade(c)        { return hasPassiveFlag(c, 'evade', '【回避】'); }
+function hasBarrier(c)      { return hasPassiveFlag(c, 'barrier', '【防壁】'); }
+function hasArmorBreak(c)   { return hasPassiveFlag(c, 'armor_break', '【アーマー解除】'); }
+function hasIndomitable(c)  { return hasPassiveFlag(c, 'indomitable', '【不屈】'); }
+function hasCombo(c)        { return hasPassiveFlag(c, 'combo', '【連携】'); }
+
 // ===== オンラインモード参照 =====
 let _onlineMode = false;
 let _onlineMyKey = null;
@@ -488,9 +540,12 @@ let _attackInProgress = false; // アタック処理中フラグ（操作ロッ�
 export function isAttackInProgress() { return _attackInProgress; }
 
 export function startAttack(card, slotIdx) {
-  if (bs.phase !== 'main') return false;
+  // ≪進撃≫: メモリーが相手側のとき（bs.memory < 0）でも進撃持ちならアタック可（公式ルール 18-16）
+  var chargeAllowed = card && hasCharge(card) && bs.memory < 0;
+  if (bs.phase !== 'main' && !chargeAllowed) return false;
   if (!card) return false;
   if (_attackInProgress) return false;
+  if (chargeAllowed) addLog('⚔ 【進撃】「' + card.name + '」がメモリー相手側でアタック宣言');
   // suspended チェックは行わない（長押しメニューで既にレスト済み）
   if (card.cantAttack) return false;
 
@@ -611,7 +666,7 @@ export function resolveAttackTarget(target, targetIdx) {
     // デジモンアタック
     const def = bs.ai.battleArea[targetIdx];
     if (!def) { cancelAttack(); return; }
-    const canHitActive = hasEvoKeyword(atk, '【突進】') || hasKeyword(atk, 'アクティブ状態のデジモンにもアタックできる');
+    const canHitActive = hasPiercing(atk) || hasKeyword(atk, 'アクティブ状態のデジモンにもアタックできる');
     if (!def.suspended && !canHitActive) {
       addLog('🚨 アクティブ状態のデジモンにはアタックできません');
       atk.suspended = false; renderAll();
@@ -845,6 +900,33 @@ export function resolveSecurityCheck(atk, atkIdx) {
             });
           }, 'Lose...', '#ff4444');
         } else {
+          // ≪ジャミング≫: セキュリティデジモンとのバトル敗北時、消滅しない
+          if (hasJamming(atk)) {
+            bs.ai.trash.push(sec);
+            renderAll(); _dispatchStateSync();
+            addLog('🛡 【ジャミング】「' + atk.name + '」がセキュリティバトルで消滅回避');
+            showBattleResult('ジャミング！', '#00fbff', '「' + atk.name + '」が消滅を回避', () => {
+              showDestroyEffect(sec, () => {
+                if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
+                else { checkAttackEnd(atk, atkIdx); }
+              });
+            }, 'ジャミング！', '#00fbff');
+            return;
+          }
+          // ≪防壁≫: セキュリティバトル消滅時、自分のセキュリティ1枚破棄で回避
+          // ≪回避≫/≪アーマー解除≫もここで判定
+          var cancelAtkInSec = _tryCancelDestroy(atk, bs.player, false);
+          if (cancelAtkInSec) {
+            bs.ai.trash.push(sec);
+            renderAll(); _dispatchStateSync();
+            showBattleResult('回避！', '#00fbff', '「' + atk.name + '」が消滅を回避', () => {
+              showDestroyEffect(sec, () => {
+                if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
+                else { checkAttackEnd(atk, atkIdx); }
+              });
+            }, '回避！', '#00fbff');
+            return;
+          }
           removeOwnCard(atkIdx, 'destroy');
           bs.ai.trash.push(sec);
           renderAll(); _dispatchStateSync();
@@ -1134,6 +1216,13 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
         }); });
       }, '両者消滅', '#ff4444');
     } else if (_atkDp > _defDp) {
+      // ≪防壁≫/≪回避≫/≪アーマー解除≫: def 側の消滅回避を試行
+      var cancelDef = _tryCancelDestroy(def, bs.ai, false);
+      if (cancelDef) {
+        renderAll();
+        showBattleResult('回避！', '#ff00fb', '相手「' + def.name + '」が消滅を回避', () => { renderAll(); checkAttackEnd(atk, atkIdx); }, 'Lost...', '#ff4444');
+        return;
+      }
       destroyDef(); renderAll();
       showBattleResult('Win!!', '#00ff88', '「' + def.name + '」を撃破！', () => {
         showDestroyEffect(def, () => {
@@ -1158,6 +1247,13 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
         });
       }, 'Lose...', '#ff4444');
     } else {
+      // ≪防壁≫/≪回避≫/≪アーマー解除≫: 消滅回避を試行
+      var cancelResult = _tryCancelDestroy(atk, bs.player, false);
+      if (cancelResult) {
+        renderAll();
+        showBattleResult('回避！', '#00fbff', '「' + atk.name + '」が消滅を回避', () => { renderAll(); checkAttackEnd(atk, atkIdx); }, 'Win!!', '#00ff88');
+        return;
+      }
       destroyAtk(); renderAll();
       showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された', () => {
         showDestroyEffect(atk, () => {
@@ -1207,6 +1303,13 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         });
       }); });
     } else if (_atkDp > _defDp) {
+      // ≪防壁≫/≪回避≫/≪アーマー解除≫: プレイヤー側 def の消滅回避を試行
+      var cancelPlayerDef = _tryCancelDestroy(def, bs.player, false);
+      if (cancelPlayerDef) {
+        renderAll();
+        showBattleResult('回避！', '#00fbff', '「' + def.name + '」が消滅を回避', () => { renderAll(); callback(); }, '回避！', '#00fbff');
+        return;
+      }
       bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
       if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
       renderAll();
@@ -1233,6 +1336,13 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         });
       });
     } else {
+      // ≪防壁≫/≪回避≫/≪アーマー解除≫: AI 側 atk の消滅回避を試行
+      var cancelAiAtk = _tryCancelDestroy(atk, bs.ai, false);
+      if (cancelAiAtk) {
+        renderAll();
+        showBattleResult('回避！', '#ff00fb', '相手「' + atk.name + '」が消滅を回避', () => { renderAll(); callback(); }, '回避！', '#ff00fb');
+        return;
+      }
       bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
       if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
       renderAll();

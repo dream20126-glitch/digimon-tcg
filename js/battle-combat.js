@@ -37,6 +37,12 @@ export function setCombatHooks(hooks) {
   Object.assign(_hooks, hooks);
 }
 
+// ===== effect-engine 等から呼び出すための window 公開（循環依存回避） =====
+if (typeof window !== 'undefined') {
+  window._tryDecoyRedirect = function(target, ownerSide) { return _tryDecoyRedirect(target, ownerSide); };
+  window._tryScapegoat = function(target, ownerSide) { return _tryScapegoat(target, ownerSide); };
+}
+
 // レスト発生時に when_opp_rest トリガーを発火する共通ヘルパー
 // restedOwnerSide: 'player' | 'ai' — レストしたカードの所有者
 // cb はトリガー処理（効果使用ダイアログ等）の完了後に呼ばれる
@@ -131,7 +137,6 @@ function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle) {
     return { canceled: true, reason: 'evade' };
   }
   // 不屈（進化元を持つこのデジモンが消滅したとき、コスト無しで再登場）
-  // 簡易実装: 消滅キャンセル + 進化元全破棄 + アクティブで残留（実質「再登場」と等価）
   if (hasIndomitable(card) && card.stack && card.stack.length > 0) {
     card.stack.forEach(function(s){ ownerSidePlayer.trash.push(s); });
     card.stack = [];
@@ -140,8 +145,74 @@ function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle) {
     addLog('💪 【不屈】「' + card.name + '」が進化元全破棄でコスト無し再登場！');
     return { canceled: true, reason: 'indomitable' };
   }
+  // スケープゴート（自分の効果以外で消滅時、他デジモンを身代わりに消滅させて回避）
+  if (_tryScapegoat(card, ownerSidePlayer)) {
+    return { canceled: true, reason: 'scapegoat' };
+  }
   return null;
 }
+// ≪連携≫の処理: アタック時、他のアクティブデジモン1体をレストさせて
+// このターン DP+(対象DP) と Sアタック+1 を一時付与する (公式 18-24)
+function _tryCombo(atk, ownerSidePlayer) {
+  if (!atk || !hasCombo(atk) || !ownerSidePlayer) return false;
+  var others = [];
+  for (var i = 0; i < ownerSidePlayer.battleArea.length; i++) {
+    var c = ownerSidePlayer.battleArea[i];
+    if (c && c !== atk && !c.suspended) others.push(c);
+  }
+  if (others.length === 0) return false;
+  var target = others[0];
+  target.suspended = true;
+  var addedDp = parseInt(target.dp) || 0;
+  if (!atk.buffs) atk.buffs = [];
+  atk.buffs.push({ type: 'dp_plus', value: addedDp, duration: 'dur_this_turn', source: 'combo' });
+  atk.buffs.push({ type: 'security_attack_plus', value: 1, duration: 'dur_this_turn', source: 'combo' });
+  if (atk.baseDp == null) atk.baseDp = parseInt(atk.dp) || 0;
+  var mod = 0;
+  atk.buffs.forEach(function(b){
+    if (b.type === 'dp_plus') mod += (parseInt(b.value) || 0);
+    if (b.type === 'dp_minus') mod -= (parseInt(b.value) || 0);
+  });
+  atk.dpModifier = mod;
+  atk.dp = atk.baseDp + mod;
+  addLog('🤝 【連携】「' + atk.name + '」が「' + target.name + '」をレスト。DP+' + addedDp + ' & Sアタック+1');
+  return true;
+}
+
+// ≪デコイ≫の処理: 自分の他のデジモンが効果消滅するとき、デコイ持ちが身代わりに消滅
+// (公式 18-18, 簡易実装: 色指定無視)
+// 戻り値: { redirected:true, decoyCard, decoySlotIdx } or null
+function _tryDecoyRedirect(destroyTarget, ownerSidePlayer) {
+  if (!destroyTarget || !ownerSidePlayer) return null;
+  var ba = ownerSidePlayer.battleArea;
+  for (var i = 0; i < ba.length; i++) {
+    var c = ba[i];
+    if (!c || c === destroyTarget) continue;
+    if (hasDecoy(c)) {
+      addLog('🛡 【デコイ】「' + c.name + '」が「' + destroyTarget.name + '」の身代わりに消滅');
+      return { redirected: true, decoyCard: c, decoySlotIdx: i };
+    }
+  }
+  return null;
+}
+
+// ≪スケープゴート≫の処理: 自分の効果以外で消滅するとき、他のデジモン1体を消滅で回避
+// (公式 18-32, 簡易実装: 効果元判別省略)
+function _tryScapegoat(destroyTarget, ownerSidePlayer) {
+  if (!destroyTarget || !ownerSidePlayer || !hasScapegoat(destroyTarget)) return false;
+  var ba = ownerSidePlayer.battleArea;
+  for (var i = 0; i < ba.length; i++) {
+    var c = ba[i];
+    if (!c || c === destroyTarget) continue;
+    ba[i] = null;
+    ownerSidePlayer.trash.push(c);
+    if (c.stack) c.stack.forEach(function(s){ ownerSidePlayer.trash.push(s); });
+    addLog('🛡 【スケープゴート】「' + destroyTarget.name + '」が「' + c.name + '」を身代わりにして回避');
+    return true;
+  }
+  return false;
+}
+
 // その他キーワード判定（フェーズ1〜2 実装分）
 function hasRush(c)         { return hasPassiveFlag(c, 'rush', '【速攻】'); }
 function hasPiercing(c)     { return hasPassiveFlag(c, 'piercing', '【突進】'); }
@@ -153,6 +224,8 @@ function hasBarrier(c)      { return hasPassiveFlag(c, 'barrier', '【防壁】'
 function hasArmorBreak(c)   { return hasPassiveFlag(c, 'armor_break', '【アーマー解除】'); }
 function hasIndomitable(c)  { return hasPassiveFlag(c, 'indomitable', '【不屈】'); }
 function hasCombo(c)        { return hasPassiveFlag(c, 'combo', '【連携】'); }
+function hasDecoy(c)        { return hasPassiveFlag(c, 'decoy', '【デコイ】'); }
+function hasScapegoat(c)    { return hasPassiveFlag(c, 'scapegoat', '【スケープゴート】'); }
 
 // ===== オンラインモード参照 =====
 let _onlineMode = false;
@@ -553,6 +626,8 @@ export function startAttack(card, slotIdx) {
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   _atkState = { card, slotIdx };
   addLog('⚔ 「' + card.name + '」でアタック！');
+  // ≪連携≫: アタック時に他デジモンレストでバフ（自動発動・他に対象なければスキップ）
+  _tryCombo(card, bs.player);
   renderAll();
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'attack_start', atkIdx: slotIdx, atkName: card.name, atkDp: card.dp, atkImg: cardImg(card) });
   return true;
@@ -1233,6 +1308,18 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
             const winCtx = _hooks.makeEffectContext(atk, 'player');
             _hooks.triggerEffect('on_battle_win', atk, 'player', winCtx, () => {
               bs._lastBattleWinner = null;
+              // ≪衝突≫: アタックで相手デジモン撃破 → 自身も消滅 (公式 18-30 推定: 相互道連れ)
+              if (hasCollision(atk)) {
+                addLog('💥 【衝突】「' + atk.name + '」が相手撃破とともに消滅！');
+                bs.player.battleArea[atkIdx] = null;
+                bs.player.trash.push(atk);
+                if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
+                renderAll();
+                showDestroyEffect(atk, function() {
+                  _fireDestroyChain(['player'], function() { checkPendingTurnEnd(); });
+                });
+                return;
+              }
               // ≪貫通≫: アタックで相手デジモン撃破 → アタック終了直前に追加セキュリティチェック
               if (hasPenetrate(atk)) {
                 addLog('🗡 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
@@ -1320,6 +1407,20 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           const winCtx = _hooks.makeEffectContext(atk, 'ai');
           _hooks.triggerEffect('on_battle_win', atk, 'ai', winCtx, () => {
             bs._lastBattleWinner = null;
+            // ≪衝突≫: AI アタッカーが撃破したら自身も消滅
+            if (hasCollision(atk)) {
+              addLog('💥 【衝突】相手「' + atk.name + '」が撃破とともに消滅！');
+              bs.ai.battleArea[atkIdx] = null;
+              bs.ai.trash.push(atk);
+              if (atk.stack) atk.stack.forEach(function(s){ bs.ai.trash.push(s); });
+              renderAll();
+              showDestroyEffect(atk, function() {
+                _fireDestroyChain(['ai'], function() {
+                  showBattleResult('両者消滅', '#ff4444', '衝突で両者消滅', function() { renderAll(); callback(); }, '両者消滅', '#ff4444');
+                });
+              });
+              return;
+            }
             // ≪貫通≫: AI アタッカーが撃破したら追加セキュリティチェック
             if (hasPenetrate(atk)) {
               addLog('🗡 [AI] 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
@@ -1493,6 +1594,8 @@ export function aiAttackPhase(callback) {
   atk.suspended = true;
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   addLog('🤖 「' + atk.name + '」でアタック！');
+  // ≪連携≫: AI 側もバフ自動発動
+  _tryCombo(atk, bs.ai);
   renderAll();
 
   showPhaseAnnounce('⚔ AIアタック！', '#ff4444', () => {
@@ -2607,6 +2710,8 @@ export function aiScriptAttack(attackerKey, target, onDone) {
   atk.suspended = true;
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   addLog('🤖 「' + atk.name + '」でアタック！');
+  // ≪連携≫: AI 側もバフ自動発動
+  _tryCombo(atk, bs.ai);
   renderAll();
 
   const _aiIsDirect = targetMode === 'security' && (bs.player.battleArea || []).filter(c => c).length === 0;

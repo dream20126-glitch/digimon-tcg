@@ -1506,6 +1506,38 @@ function runOneAction(action, defaultTarget, ctx, callback) {
 function doDestroy(targetSide, slotIdx, ctx, callback) {
   const destroyed = targetSide.battleArea[slotIdx];
   if (!destroyed) { callback && callback(); return; }
+  // ≪デコイ≫ - 同 side の他デジモンが身代わりに消滅
+  // ≪スケープゴート≫ - 消滅対象が他デジモンを身代わりに消滅させて回避
+  // どちらも window 経由で battle-combat.js のヘルパーを呼ぶ
+  if (window._tryDecoyRedirect) {
+    var decoyRes = window._tryDecoyRedirect(destroyed, targetSide);
+    if (decoyRes && decoyRes.decoyCard != null && decoyRes.decoySlotIdx != null) {
+      // デコイ持ちを消滅させ、対象 (destroyed) はそのまま残す
+      var dc = decoyRes.decoyCard;
+      var di = decoyRes.decoySlotIdx;
+      targetSide.battleArea[di] = null;
+      targetSide.trash.push(dc);
+      if (dc.stack) dc.stack.forEach(function(s){ targetSide.trash.push(s); });
+      ctx.renderAll && ctx.renderAll();
+      // デコイ自身の消滅で on_destroy 発火
+      const decoyOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
+      fireOnDestroyTriggers(decoyOwnerSide, ctx.bs, ctx, function() {
+        callback && callback();
+      });
+      return;
+    }
+  }
+  if (window._tryScapegoat) {
+    if (window._tryScapegoat(destroyed, targetSide)) {
+      // 他デジモンを身代わりにして destroyed は残す
+      ctx.renderAll && ctx.renderAll();
+      const sgOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
+      fireOnDestroyTriggers(sgOwnerSide, ctx.bs, ctx, function() {
+        callback && callback();
+      });
+      return;
+    }
+  }
   targetSide.battleArea[slotIdx] = null;
   targetSide.trash.push(destroyed);
   if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));

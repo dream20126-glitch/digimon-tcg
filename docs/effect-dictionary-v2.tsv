@@ -41,3 +41,33 @@ on_battle_destroy	trigger	バトルで消滅したとき		効果消滅は除外	
 on_battle_win	trigger	バトル勝利時			即時	強制/任意	自身生存・相手消滅で発動
 when_opp_rest	trigger	相手のデジモンがレストしたとき			即時	任意	泉光子郎等
 michizure	passive	【道連れ】			即時	強制	バトルで自分だけ消滅時、バトルした相手も消滅(公式18-13)
+cond_dp_le	condition	DP以下					DPがN以下のデジモンのみ対象/条件成立
+cond_dp_ge	condition	DP以上					DPがN以上のデジモンのみ対象/条件成立
+cond_lv_le	condition	Lv.以下					Lv.がN以下のデジモンのみ対象/条件成立
+cond_lv_ge	condition	Lv.以上					Lv.がN以上のデジモンのみ対象/条件成立
+cond_cost_le	condition	コスト以下					登場コストがN以下のデジモンのみ対象
+cond_cost_ge	condition	コスト以上					登場コストがN以上のデジモンのみ対象
+cond_no_evo	condition	進化元を持たない,進化元がない					進化元が無いデジモンのみ対象
+cond_has_evo	condition	進化元をN枚以上持つ					進化元がN枚以上のデジモンのみ対象
+cond_exists	condition	いるとき,がいる間,がいるとき					条件を満たすカードが存在するときのみ発動
+cond_jogress	condition	ジョグレス進化していたなら					ジョグレス進化が成立していた場合のみ
+cond_in_battle	condition	バトルしている間					バトル中のみ発動（セキュリティバトル含む）
+cond_battle_destroy	condition	バトルで消滅					バトル(DP比較)で消滅した場合のみ。効果消滅は除外
+cond_color	condition	指定色					指定色のカードのみ対象
+cond_feature	condition	指定特徴					指定特徴を持つカードのみ対象
+cond_memory_opponent	condition	メモリーが相手側					メモリーが相手側のN以上のとき発動（進撃等）
+cond_no_tamer_evo	condition	進化元にテイマーカードが無い					進化元にテイマーが無いデジモンのみ対象
+cond_not_own_effect	condition	自分の効果以外					自分の効果以外で消滅した場合のみ（スケープゴート等）
+cond_name_contains	condition	名称に含む					名称に指定文字列を含むカードのみ対象
+cond_feature_contains	condition	特徴に含む					特徴に指定文字列を含むカードのみ対象
+cond_link_state	condition	リンク状態					リンク状態のカードのみ対象
+cond_link_eligible	condition	リンク条件を満たす					リンク条件を満たす場合のみ
+cond_assembly_eligible	condition	アセンブリ条件を満たす					アセンブリ条件を満たす場合のみ
+cond_digicross	condition	デジクロスしていたなら					デジクロスでカードが下に置かれた場合のみ
+cond_own_security_le	condition	自分のセキュリティ以下,自分のセキュリティが枚以下					自分のセキュリティ枚数がN以下なら発動
+cond_attack_target_digimon	condition	相手のデジモンにアタックしたとき					アタック対象がデジモンの場合のみ発動
+cond_during_own_turn	condition	自分のターン中					自分のターン中のみ発動条件を満たす
+cond_during_opp_turn	condition	相手のターン中					相手のターン中のみ発動条件を満たす
+cond_self_active	condition	このデジモンがアクティブの間					自身がアクティブ状態のみ条件成立
+cond_opp_no_attack_this_turn	condition	相手がアタックしていない					このターンに相手のデジモンが1度もアタックしていない場合
+cond_own_trash_ge	condition	自分のトラッシュN枚以上					自分のトラッシュがN枚以上の間

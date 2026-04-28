@@ -620,6 +620,7 @@ function processQueue(context, onComplete) {
       executeQueueEntry(chosen, context, () => {
         chosen.status = 'completed';
         sortQueue();
+        if (window._sendMemoryUpdate) try { window._sendMemoryUpdate(); } catch(_) {}
         checkPendingDestroys(context, () => {
           processQueue(context, onComplete);
         });
@@ -634,6 +635,8 @@ function processQueue(context, onComplete) {
     next.status = 'completed';
     sortQueue();
     // ★ 各効果の完了直後に消滅判定 → on_destroy リアクションを処理
+    // 加えてメモリー値が効果でズレている可能性に備え必ずメモリー同期も送る
+    if (window._sendMemoryUpdate) try { window._sendMemoryUpdate(); } catch(_) {}
     checkPendingDestroys(context, () => {
       processQueue(context, onComplete);
     });
@@ -5303,6 +5306,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (ctx.bs) {
         ctx.bs.memory -= (step.value || 1);
         ctx.addLog('💾 リンクコスト-' + (step.value || 1));
+        ctx.updateMemGauge && ctx.updateMemGauge();
+        if (window._sendMemoryUpdate) window._sendMemoryUpdate();
       }
       callback();
       break;
@@ -5362,6 +5367,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (ctx.bs) {
         ctx.bs.memory -= (step.value || 1);
         ctx.addLog('💾 メモリー-' + (step.value || 1));
+        ctx.updateMemGauge && ctx.updateMemGauge();
+        if (window._sendMemoryUpdate) window._sendMemoryUpdate();
       }
       callback();
       break;

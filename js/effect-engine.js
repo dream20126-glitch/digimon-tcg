@@ -584,14 +584,9 @@ function showQueueOrderSelect(entries, callback) {
     const effText = (fromEvo && effectOwner.evoSourceEffect && effectOwner.evoSourceEffect !== 'なし')
       ? effectOwner.evoSourceEffect
       : ((entry.block && entry.block.raw) || effectOwner.effect || '');
-    // 進化元効果の場合は「進化先: <carrier 名>」を補足
-    const carrierLabel = fromEvo
-      ? `<div style="color:#ffaa00;font-size:9px;margin-bottom:4px;">進化元効果（進化先: ${carrier.name||'?'}）</div>`
-      : '';
     div.innerHTML =
       (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
       + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+(effectOwner.name||'')+'</div>'
-      + carrierLabel
       + '<div style="color:#aaf;font-size:10px;line-height:1.5;text-align:left;max-height:80px;overflow-y:auto;background:#111;padding:6px;border-radius:4px;">'+effText+'</div>';
     div.onclick = () => {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);

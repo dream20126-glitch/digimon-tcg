@@ -491,7 +491,46 @@ function sortQueue() {
 }
 
 // キュー処理メインループ
+// キュー内のエントリが「実際に発動可能か」を事前判定
+// 主に limit_once_per_turn 済みの再発動を弾く
+function _entryWillExecute(entry, ctx) {
+  if (!entry || !entry.card || !ctx || !ctx.bs) return true;
+  const triggerCode = entry.block && entry.block.trigger && entry.block.trigger.code;
+  if (!triggerCode) return true;
+  const isEvoSource = !!(entry.block && entry.block._recipeCard);
+  const recipeCard = (entry.block && entry.block._recipeCard) || entry.card;
+  let recipe = null;
+  try {
+    if (recipeCard.recipe) {
+      const raw = typeof recipeCard.recipe === 'string'
+        ? recipeCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')
+        : recipeCard.recipe;
+      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      recipe = isEvoSource ? (r.evo_source && r.evo_source[triggerCode]) : r[triggerCode];
+    }
+  } catch(_) {}
+  if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
+  // 少なくとも1つのstepが limit を超過していなければOK
+  return recipe.some(step => {
+    if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
+      const sourceId = (recipeCard.cardNo || recipeCard.name) || 'unknown';
+      const carrierId = (entry.card.cardNo || entry.card.name) || 'unknown';
+      const limitKey = sourceId + '@' + carrierId + '_recipe_' + step.action;
+      if (ctx.bs._usedLimits && ctx.bs._usedLimits[limitKey]) return false;
+    }
+    return true;
+  });
+}
+
 function processQueue(context, onComplete) {
+  // ターン1回制限済みなど発動不可なエントリは完了扱いにスキップ
+  _effectQueue.filter(e => e.status === 'waiting').forEach(e => {
+    if (!_entryWillExecute(e, context)) {
+      e.status = 'completed';
+      const cn = (e.card && e.card.name) ? e.card.name : '?';
+      context.addLog && context.addLog('⏸ 「' + cn + '」はターン1回制限により発動しません');
+    }
+  });
   const waiting = _effectQueue.filter(e => e.status === 'waiting');
   if (waiting.length === 0) {
     clearQueue();

@@ -423,11 +423,30 @@ function execPhase(phase) {
 
 // ----- アクティブフェイズ -----
 
-// ≪再起動≫判定: _permEffects.reboot or buffs[keyword_reboot]
+// ≪再起動≫判定: _permEffects.reboot or buffs[keyword_reboot] or キーワード欄/効果テキスト
 function _hasReboot(c) {
   if (!c) return false;
   if (c._permEffects && c._permEffects.reboot) return true;
   if (c.buffs && c.buffs.some(b => b.type === 'keyword_reboot')) return true;
+  // キーワード欄に「再起動」を含む場合もアクティブ扱い（passive flag 適用前のフォールバック）
+  const kw = String(c.keyword || c['キーワード'] || '');
+  if (kw.indexOf('再起動') >= 0) return true;
+  // 効果テキストに「【再起動】」が記載されているケース（自身が再起動持ちであることを示す表記）
+  const ef = String(c.effect || '');
+  const evo = String(c.evoSourceEffect || '');
+  if (/【再起動】/.test(ef) || /【再起動】/.test(evo)) return true;
+  // 進化元のレシピ passive に reboot がある場合
+  if (Array.isArray(c.stack)) {
+    for (const s of c.stack) {
+      if (!s || !s.recipe) continue;
+      try {
+        const raw = typeof s.recipe === 'string' ? s.recipe.replace(/[\x00-\x1F\x7F]/g, '') : s.recipe;
+        const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        const passives = (r.evo_source && r.evo_source.passive) || r.passive;
+        if (Array.isArray(passives) && passives.some(p => (p && (p.flag === 'reboot' || p === 'reboot')))) return true;
+      } catch(_) {}
+    }
+  }
   return false;
 }
 

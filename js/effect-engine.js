@@ -1109,8 +1109,25 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const isOwn = defaultTarget && defaultTarget.code === 'target_own';
       const tgtPlayer = isOwn ? player : opponent;
       const tgtRowId = isOwn ? (ctx.side === 'player' ? 'pl' : 'ai') : opponentRowSide;
+      // 条件フィルタ（cond_lv_le:4 等）を適用して対象を絞る
+      const dConds = ctx.block && ctx.block.conditions ? ctx.block.conditions : [];
       const destroyTargets = [];
-      for(let i=0;i<tgtPlayer.battleArea.length;i++) { if(tgtPlayer.battleArea[i]) destroyTargets.push(i); }
+      for(let i=0;i<tgtPlayer.battleArea.length;i++) {
+        const c = tgtPlayer.battleArea[i];
+        if(!c) continue;
+        let valid = true;
+        for(const cond of dConds) {
+          if (cond.code === 'cond_lv_le' && cond.value != null && (parseInt(c.level) || 0) > cond.value) { valid = false; break; }
+          if (cond.code === 'cond_lv_ge' && cond.value != null && (parseInt(c.level) || 0) < cond.value) { valid = false; break; }
+          if (cond.code === 'cond_dp_le' && cond.value != null && (c.dp || 0) > cond.value) { valid = false; break; }
+          if (cond.code === 'cond_dp_ge' && cond.value != null && (c.dp || 0) < cond.value) { valid = false; break; }
+          if (cond.code === 'cond_cost_le' && cond.value != null && ((c.playCost || c.cost || 0) > cond.value)) { valid = false; break; }
+          if (cond.code === 'cond_cost_ge' && cond.value != null && ((c.playCost || c.cost || 0) < cond.value)) { valid = false; break; }
+          if (cond.code === 'cond_no_evo' && c.stack && c.stack.length > 0) { valid = false; break; }
+          if (cond.code === 'cond_has_evo' && (!c.stack || c.stack.length < (cond.value || 0))) { valid = false; break; }
+        }
+        if (valid) destroyTargets.push(i);
+      }
       if(destroyTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', () => callback(false)); break; }
       // 枠色を辞書から取得
       const borderColor = uiColor;

@@ -3959,12 +3959,38 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
       runOne(r, nextReaction);
       return;
     }
+    // 全て自動発動のみ（対象選択・コスト・任意発動を伴わない）なら順序選択UIをスキップ
+    const needsInputSomeone = remaining.some(r => _reactionNeedsUserInput(r));
+    if (!needsInputSomeone) {
+      const r = remaining.shift();
+      runOne(r, nextReaction);
+      return;
+    }
     showReactionOrderSelect(remaining, (chosenIdx) => {
       const [r] = remaining.splice(chosenIdx, 1);
       runOne(r, nextReaction);
     });
   }
   nextReaction();
+}
+
+// リアクションがプレイヤー入力（対象選択・コスト等）を必要とするか
+function _reactionNeedsUserInput(reaction) {
+  if (!reaction || !reaction.recipe || !Array.isArray(reaction.recipe)) return true;
+  return reaction.recipe.some(step => {
+    if (Array.isArray(step.cost) && step.cost.length > 0) return true;
+    if (step.optional === true) return true;
+    if (step.action && MANUAL_INPUT_ACTIONS && MANUAL_INPUT_ACTIONS[step.action]) return true;
+    if (step.target) {
+      const t = String(step.target);
+      if (t === 'self') return false;
+      if (/^(own|opponent):all$/.test(t)) return false;
+      if (/^target_(self|all_own|all_opponent|all_own_security|battle_opponent)/.test(t)) return false;
+      if (/^(own|opponent):(\d+|up_to_\d+)$/.test(t)) return true;
+      if (/^target_/.test(t)) return true;
+    }
+    return false;
+  });
 }
 
 // ===== リアクション順番選択 UI =====

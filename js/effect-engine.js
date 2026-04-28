@@ -2710,6 +2710,15 @@ function addBuffDirect(card, type, value, duration, ctx) {
     _ticks: 0,
   });
   recalcDp(card);
+  // キーワードバフ追加時は cond_self_keyword 等の条件結果が変わるため永続効果を再評価
+  if (typeof type === 'string' && type.indexOf('keyword_') === 0 && ctx && ctx.bs && !ctx._inApplyPerm) {
+    try {
+      ctx._inApplyPerm = true; // 再帰防止
+      applyPermanentEffects(ctx.bs, 'player', ctx);
+      applyPermanentEffects(ctx.bs, 'ai', ctx);
+    } catch(_) {}
+    finally { delete ctx._inApplyPerm; }
+  }
 }
 
 function recalcDp(card) {
@@ -2841,6 +2850,11 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
       return false; // フォールバック: 削除
     });
   }
+  // バフ消失後、cond_self_keyword 等の条件結果が変わるため永続効果を再評価
+  try {
+    applyPermanentEffects(bs, 'player', { bs, side: 'player' });
+    applyPermanentEffects(bs, 'ai', { bs, side: 'ai' });
+  } catch(_) {}
 }
 
 // ===== 永続効果適用 =====

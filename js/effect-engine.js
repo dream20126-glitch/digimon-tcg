@@ -491,6 +491,55 @@ function sortQueue() {
 }
 
 // キュー処理メインループ
+// 対象選択・コスト等でプレイヤー入力が必要なアクション
+var MANUAL_INPUT_ACTIONS = {
+  'destroy': 1, 'bounce': 1, 'evo_discard': 1, 'evo_discard_bottom': 1,
+  'cost_discard': 1, 'cost_trash_self': 1, 'cost_digiburst': 1,
+  'select': 1, 'select_multi': 1, 'select_evo_source': 1,
+  'place_under_tamer': 1, 'place_under_digimon': 1, 'place_on_security_top': 1,
+  'jogress_evolve': 1, 'app_gattai_evolve': 1, 'return_deck': 1,
+  'add_to_hand': 1, 'security_trash_select': 1,
+  'place_from_trash_under': 1, 'place_from_hand_battle_under': 1,
+  'rest': 1, 'cant_attack': 1, 'cant_block': 1, 'cant_attack_block': 1,
+  'cant_evolve': 1, 'change_attack_target': 1,
+  'trash_to_hand': 1, 'summon_from_trash': 1, 'summon': 1,
+  'dedigivolve': 1, 'deck_open': 1, 'force_block': 1,
+};
+
+// キューエントリがプレイヤー入力（対象選択・コスト等）を必要とするか
+function _entryNeedsUserInput(entry, ctx) {
+  if (!entry || !entry.card) return true;
+  const triggerCode = entry.block && entry.block.trigger && entry.block.trigger.code;
+  if (!triggerCode) return true;
+  const isEvoSource = !!(entry.block && entry.block._recipeCard);
+  const recipeCard = (entry.block && entry.block._recipeCard) || entry.card;
+  let recipe = null;
+  try {
+    if (recipeCard && recipeCard.recipe) {
+      const raw = typeof recipeCard.recipe === 'string'
+        ? recipeCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')
+        : recipeCard.recipe;
+      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      recipe = isEvoSource ? (r.evo_source && r.evo_source[triggerCode]) : r[triggerCode];
+    }
+  } catch(_) {}
+  if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
+  return recipe.some(step => {
+    if (Array.isArray(step.cost) && step.cost.length > 0) return true;
+    if (step.optional === true) return true;
+    if (step.action && MANUAL_INPUT_ACTIONS[step.action]) return true;
+    if (step.target) {
+      const t = String(step.target);
+      if (t === 'self') return false;
+      if (/^(own|opponent):all$/.test(t)) return false;
+      if (/^target_(self|all_own|all_opponent|all_own_security|battle_opponent)/.test(t)) return false;
+      if (/^(own|opponent):(\d+|up_to_\d+)$/.test(t)) return true;
+      if (/^target_/.test(t)) return true;
+    }
+    return false;
+  });
+}
+
 // キュー内のエントリが「実際に発動可能か」を事前判定
 // 主に limit_once_per_turn 済みの再発動を弾く
 function _entryWillExecute(entry, ctx) {
@@ -561,7 +610,10 @@ function processQueue(context, onComplete) {
   // ローカルプレイヤー判定: bs.isPlayerTurn と side('turnPlayer'/'nonTurnPlayer') から導出
   const isPlayerTurn = !!(context.bs && context.bs.isPlayerTurn);
   const isLocalSide = (head.side === 'turnPlayer' && isPlayerTurn) || (head.side === 'nonTurnPlayer' && !isPlayerTurn);
-  if (sameLevel.length > 1 && isLocalSide) {
+  // 同レベル内に1件でも対話入力が必要な効果があれば順序選択UIを出す。
+  // 全て自動発動のみの場合は順番不問で先頭から自動処理。
+  const needsInputSomeone = sameLevel.some(e => _entryNeedsUserInput(e, context));
+  if (sameLevel.length > 1 && isLocalSide && needsInputSomeone) {
     showQueueOrderSelect(sameLevel, (chosenIdx) => {
       const chosen = sameLevel[chosenIdx];
       chosen.status = 'processing';

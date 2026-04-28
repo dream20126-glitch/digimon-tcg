@@ -2665,6 +2665,26 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
   }
 }
 
+// 内部キーワードコード → 日本語表示名（バナー / ログ共通）
+function _keywordJpName(flag) {
+  const map = {
+    blocker:'ブロッカー', rush:'速攻', piercing:'突進', penetrate:'貫通',
+    jamming:'ジャミング', reboot:'再起動', michizure:'道連れ', charge:'進撃',
+    barrier:'防壁', evade:'回避', armor_break:'アーマー解除', indomitable:'不屈',
+    combo:'連携', collision:'衝突', decoy:'デコイ', scapegoat:'スケープゴート',
+    save:'セーブ', delay:'ディレイ', absorb_evolve:'吸収進化',
+    mind_link:'マインドリンク', partition:'パーティション',
+    material_save:'マテリアルセーブ', blast_evolve:'ブラスト進化',
+    blast_jogress:'ブラストジョグレス', vortex:'ヴォルテクス',
+    overclock:'オーバークロック', ice_armor:'氷装', decode:'デコード',
+    fragment:'フラグメント', execute:'エグゼキュート', progress:'プログレス',
+    training:'トレーニング', prevent_destroy:'消滅耐性',
+    prevent_battle_destroy:'バトル耐性', immune:'効果耐性',
+    security_attack_plus:'Sアタック+',
+  };
+  return map[flag] || flag;
+}
+
 function addBuffDirect(card, type, value, duration, ctx) {
   if (!card.buffs) card.buffs = [];
   let appliedSide = null;
@@ -4958,7 +4978,7 @@ function executeRecipeStep(step, ctx, store, callback) {
               ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
             } else {
               addBuffDirect(tgt, 'keyword_' + flag, 0, dur, ctx);
-              const _kwJp = ({blocker:'ブロッカー',rush:'速攻',piercing:'突進',penetrate:'貫通',jamming:'ジャミング',reboot:'再起動',michizure:'道連れ',charge:'進撃',barrier:'防壁',evade:'回避',armor_break:'アーマー解除',indomitable:'不屈',combo:'連携',collision:'衝突',decoy:'デコイ'})[flag] || flag;
+              const _kwJp = _keywordJpName(flag);
               ctx.addLog('✨ 「' + tgt.name + '」に【' + _kwJp + '】付与');
               if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, _kwJp); } catch(_) {}
             }
@@ -5013,7 +5033,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         } else {
           // 一般キーワードバフ (blocker, piercing 等)
           addBuffDirect(tgt, 'keyword_' + flag, 0, dur, ctx);
-          ctx.addLog('✨ 「' + tgt.name + '」に【' + flag + '】付与');
+          const _kwJp = _keywordJpName(flag);
+          ctx.addLog('✨ 「' + tgt.name + '」に【' + _kwJp + '】付与');
+          if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, _kwJp); } catch(_) {}
         }
       });
       ctx.renderAll();

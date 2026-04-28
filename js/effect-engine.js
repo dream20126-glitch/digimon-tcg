@@ -4199,6 +4199,8 @@ function runRecipe(steps, ctx, callback) {
 function executeRecipeStep(step, ctx, store, callback) {
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
+  // _forceTargetIdx で対象が確定済みなら 'ai' 扱い（自動選択パス）
+  const effectiveSide = (ctx._forceTargetIdx !== undefined) ? 'ai' : ctx.side;
 
   // separator ステップ（「その後、」区切り用のマーカー）は何も実行せず次へ
   if (step.separator !== undefined && !step.action) {
@@ -4542,7 +4544,24 @@ function executeRecipeStep(step, ctx, store, callback) {
         destroyOneByOne();
         return;
       }
-      callback();
+      // store 未指定 → target 指定の destroy として default ハンドラに委譲（runOneAction経由）
+      const _actionObj = { code: 'destroy', value: step.value || null };
+      if (step.condition) _actionObj.conditions = parseRecipeCondition(step.condition);
+      let _targetObj = null;
+      const _t = step.target || '';
+      if (_t === 'self') _targetObj = { code: 'target_self' };
+      else if (_t === 'own:all') _targetObj = { code: 'target_all_own' };
+      else if (_t === 'opponent:all') _targetObj = { code: 'target_all_opponent' };
+      else if (_t.startsWith('own:up_to_')) _targetObj = { code: 'target_own', count: parseInt(_t.split('own:up_to_')[1]) || 1, upTo: true };
+      else if (_t.startsWith('opponent:up_to_')) _targetObj = { code: 'target_opponent', count: parseInt(_t.split('opponent:up_to_')[1]) || 1, upTo: true };
+      else if (_t.startsWith('own:')) _targetObj = { code: 'target_own', count: parseInt(_t.split(':')[1]) || 1 };
+      else if (_t.startsWith('opponent:')) _targetObj = { code: 'target_opponent', count: parseInt(_t.split(':')[1]) || 1 };
+      else if (_t.startsWith('other_own:')) _targetObj = { code: 'target_other_own', count: parseInt(_t.split(':')[1]) || 1 };
+      if (step.condition) {
+        if (!ctx.block) ctx.block = {};
+        ctx.block.conditions = parseRecipeCondition(step.condition);
+      }
+      runOneAction(_actionObj, _targetObj, ctx, callback);
       break;
     }
 

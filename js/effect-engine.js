@@ -571,23 +571,27 @@ function showQueueOrderSelect(entries, callback) {
   overlay.appendChild(row);
 
   entries.forEach((entry, idx) => {
-    const card = entry.card;
+    const carrier = entry.card;
+    // 進化元効果の場合は _recipeCard が効果を持つ進化元カード本体
+    const fromEvo = !!(entry.block && entry.block._recipeCard);
+    const effectOwner = (entry.block && entry.block._recipeCard) || carrier;
     const div = document.createElement('div');
     div.style.cssText = 'background:#0a0a0a;border:2px solid #00fbff;border-radius:10px;padding:10px;width:200px;cursor:pointer;text-align:center;transition:transform 0.15s ease, box-shadow 0.15s ease;';
     div.onmouseenter = () => { div.style.transform = 'translateY(-3px) scale(1.03)'; div.style.boxShadow = '0 0 18px #00fbff'; };
     div.onmouseleave = () => { div.style.transform = ''; div.style.boxShadow = ''; };
-    const imgSrc = card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || card.imageUrl || '';
-    // 進化元効果由来かどうかを判定して表示テキスト切替
-    const fromEvo = !!(entry.block && entry.block._recipeCard);
-    const recipeCard = (entry.block && entry.block._recipeCard) || card;
-    const effText = (fromEvo && recipeCard.evoSourceEffect && recipeCard.evoSourceEffect !== 'なし')
-      ? recipeCard.evoSourceEffect
-      : ((entry.block && entry.block.raw) || card.effect || '');
-    const sourceLabel = fromEvo ? `<div style="color:#ffaa00;font-size:9px;margin-bottom:4px;">進化元【${recipeCard.name}】の効果</div>` : '';
+    // 画像・名前は「効果を持つカード本体」を表示（進化元効果なら進化元カード）
+    const imgSrc = effectOwner.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(effectOwner) : '') || effectOwner.imageUrl || '';
+    const effText = (fromEvo && effectOwner.evoSourceEffect && effectOwner.evoSourceEffect !== 'なし')
+      ? effectOwner.evoSourceEffect
+      : ((entry.block && entry.block.raw) || effectOwner.effect || '');
+    // 進化元効果の場合は「進化先: <carrier 名>」を補足
+    const carrierLabel = fromEvo
+      ? `<div style="color:#ffaa00;font-size:9px;margin-bottom:4px;">進化元効果（進化先: ${carrier.name||'?'}）</div>`
+      : '';
     div.innerHTML =
       (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
-      + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+(card.name||'')+'</div>'
-      + sourceLabel
+      + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+(effectOwner.name||'')+'</div>'
+      + carrierLabel
       + '<div style="color:#aaf;font-size:10px;line-height:1.5;text-align:left;max-height:80px;overflow-y:auto;background:#111;padding:6px;border-radius:4px;">'+effText+'</div>';
     div.onclick = () => {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);

@@ -1110,7 +1110,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const tgtPlayer = isOwn ? player : opponent;
       const tgtRowId = isOwn ? (ctx.side === 'player' ? 'pl' : 'ai') : opponentRowSide;
       // 条件フィルタ（cond_lv_le:4 等）を適用して対象を絞る
-      const dConds = ctx.block && ctx.block.conditions ? ctx.block.conditions : [];
+      // action.conditions（executeRecipeStepから直接渡されたもの）を優先、フォールバックで ctx.block.conditions
+      const dConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
       const destroyTargets = [];
       for(let i=0;i<tgtPlayer.battleArea.length;i++) {
         const c = tgtPlayer.battleArea[i];
@@ -5579,6 +5580,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (actionCode === 'trash_evo_bottom') { actionCode = 'evo_discard_bottom'; }
       // レシピのtarget形式 → runOneAction形式に変換
       const action = { code: actionCode, value: effectiveValue };
+      // 条件もaction経由で渡す（destroy等のフィルタ用、ctx.block.conditionsだけだと失われるケースあり）
+      if (step.condition) {
+        action.conditions = parseRecipeCondition(step.condition);
+      }
       let target = null;
       if (step.target) {
         const t = step.target;

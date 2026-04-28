@@ -451,6 +451,8 @@ function _hasReboot(c) {
 }
 
 function execUnsuspend() {
+  // 再起動判定の前に永続効果を再評価（直前の付与状態を確実に反映）
+  try { _applyPermanent(bs, 'player', { bs, side: 'player' }); _applyPermanent(bs, 'ai', { bs, side: 'ai' }); } catch(_) {}
   const hasRested = bs.player.battleArea.some(c => c && c.suspended && !c.cantBeActive)
     || bs.player.tamerArea.some(c => c && c.suspended);
 
@@ -684,6 +686,8 @@ export async function aiTurn() {
 // ----- AI アクティブフェイズ -----
 
 function aiPhaseUnsuspend() {
+  // 再起動判定の前に永続効果を再評価（直前の付与状態を確実に反映）
+  try { _applyPermanent(bs, 'player', { bs, side: 'player' }); _applyPermanent(bs, 'ai', { bs, side: 'ai' }); } catch(_) {}
   const hasRested = bs.ai.battleArea.some(c => c && c.suspended);
   // ≪再起動≫: 相手(AI)のアクティブフェイズで、自分(プレイヤー)側の再起動持ちカードもアクティブにする
   bs.player.battleArea.forEach(c => {

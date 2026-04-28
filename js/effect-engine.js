@@ -4941,7 +4941,9 @@ function executeRecipeStep(step, ctx, store, callback) {
               ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
             } else {
               addBuffDirect(tgt, 'keyword_' + flag, 0, dur, ctx);
-              ctx.addLog('✨ 「' + tgt.name + '」に【' + flag + '】付与');
+              const _kwJp = ({blocker:'ブロッカー',rush:'速攻',piercing:'突進',penetrate:'貫通',jamming:'ジャミング',reboot:'再起動',michizure:'道連れ',charge:'進撃',barrier:'防壁',evade:'回避',armor_break:'アーマー解除',indomitable:'不屈',combo:'連携',collision:'衝突',decoy:'デコイ'})[flag] || flag;
+              ctx.addLog('✨ 「' + tgt.name + '」に【' + _kwJp + '】付与');
+              if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, _kwJp); } catch(_) {}
             }
           });
           ctx.renderAll();

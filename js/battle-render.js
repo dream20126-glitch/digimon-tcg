@@ -67,10 +67,10 @@ function _keywordColor(code) {
   return '#aaaaaa';
 }
 
-// カードからアクティブなキーワード一覧を抽出（重複除去）
+// カードに「効果で付与された」キーワード一覧を抽出
+// 元から持っているキーワード（カードテキスト/進化元/recipe.passive）はカード詳細で確認できるためバッジ表示しない
 function _collectActiveKeywords(card) {
   const set = new Set();
-  // 1) 効果で付与された buff (keyword_xxx)
   if (Array.isArray(card.buffs)) {
     card.buffs.forEach(b => {
       if (b && b.type && typeof b.type === 'string' && b.type.indexOf('keyword_') === 0) {
@@ -78,54 +78,29 @@ function _collectActiveKeywords(card) {
       }
     });
   }
-  // 2) 永続効果フラグ (_permEffects)
-  if (card._permEffects && typeof card._permEffects === 'object') {
-    Object.keys(card._permEffects).forEach(k => {
-      if (card._permEffects[k] && KEYWORD_DISPLAY_NAMES[k]) set.add(k);
-    });
-  }
-  // 3) 本体レシピの passive flag
-  if (card.recipe) {
-    try {
-      const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]/g, '') : card.recipe;
-      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      if (Array.isArray(r.passive)) {
-        r.passive.forEach(p => { if (p && p.flag) set.add(p.flag); });
-      }
-    } catch(_) {}
-  }
-  // 4) 進化元 (stack) のレシピの evo_source.passive flag
-  if (Array.isArray(card.stack)) {
-    card.stack.forEach(s => {
-      if (s && s.recipe) {
-        try {
-          const raw = typeof s.recipe === 'string' ? s.recipe.replace(/[\x00-\x1F\x7F]/g, '') : s.recipe;
-          const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          if (r.evo_source && Array.isArray(r.evo_source.passive)) {
-            r.evo_source.passive.forEach(p => { if (p && p.flag) set.add(p.flag); });
-          }
-          if (Array.isArray(r.passive)) {
-            r.passive.forEach(p => { if (p && p.flag) set.add(p.flag); });
-          }
-        } catch(_) {}
-      }
-    });
-  }
   return [...set];
 }
 
-// バッジHTMLを生成（カード下部に薄いオーバーレイで配置）
+// バッジHTMLを生成（カード名の上に配置、カード名と被らない位置）
 function _renderKeywordBadges(card) {
   const codes = _collectActiveKeywords(card);
   if (codes.length === 0) return '';
   const visible = codes.filter(c => KEYWORD_DISPLAY_NAMES[c]);
   if (visible.length === 0) return '';
-  const items = visible.map(code => {
+  // 多すぎる場合は3件 + "+N" で省略表示
+  const MAX = 3;
+  const showItems = visible.slice(0, MAX);
+  const overflow = visible.length - MAX;
+  let html = showItems.map(code => {
     const name = KEYWORD_DISPLAY_NAMES[code];
     const color = _keywordColor(code);
-    return `<span style="background:${color};color:#fff;font-size:7px;font-weight:bold;padding:1px 3px;border-radius:2px;border:1px solid rgba(255,255,255,0.6);white-space:nowrap;line-height:1;">${name}</span>`;
+    return `<span style="background:${color};color:#fff;font-size:7px;font-weight:bold;padding:1px 3px;border-radius:2px;border:1px solid rgba(255,255,255,0.7);white-space:nowrap;line-height:1;box-shadow:0 0 3px rgba(0,0,0,0.6);">${name}</span>`;
   }).join('');
-  return `<div style="position:absolute;bottom:14px;left:1px;right:1px;display:flex;flex-wrap:wrap;gap:1px;justify-content:center;pointer-events:none;z-index:4;">${items}</div>`;
+  if (overflow > 0) {
+    html += `<span style="background:#444;color:#fff;font-size:7px;font-weight:bold;padding:1px 3px;border-radius:2px;border:1px solid rgba(255,255,255,0.6);">+${overflow}</span>`;
+  }
+  // カード名(.s-name)は bottom:13px なので、その上(28px)に配置してかぶらないように
+  return `<div style="position:absolute;bottom:28px;left:1px;right:1px;display:flex;flex-wrap:wrap;gap:1px;justify-content:center;pointer-events:none;z-index:4;">${html}</div>`;
 }
 
 // ===== メイン描画 =====

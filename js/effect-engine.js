@@ -3047,7 +3047,13 @@ function parseRecipeCondition(condStr) {
   // "dp_le:4000" → [{code:'cond_dp_le', value:4000}]  (auto-prefix cond_)
   let code = parts[0];
   if (!code.startsWith('cond_')) code = 'cond_' + code;
-  return [{code: code, value: parts[1] ? parseInt(parts[1]) : undefined}];
+  // 数値ならparseInt、それ以外は文字列のまま保持（cond_self_keyword:blocker 等）
+  let val = parts[1];
+  if (val !== undefined) {
+    const n = parseInt(val);
+    if (!isNaN(n) && String(n) === String(val).trim()) val = n;
+  }
+  return [{code: code, value: val}];
 }
 
 // ===== 条件チェック =====
@@ -3148,6 +3154,34 @@ function checkConditions(conditions, card, bs, side) {
         if (!hasMatch) return false;
         // cond_existsで使った他の条件はスキップ（二重チェック防止）
         return true;
+      }
+      case 'cond_self_keyword': {
+        // 自身（card）が指定キーワードを持つかチェック (cond.value: 'blocker' 等の英語コード)
+        if (!cond.value) break;
+        const kw = String(cond.value);
+        let has = false;
+        if (card._permEffects && card._permEffects[kw]) has = true;
+        else if (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'keyword_' + kw)) has = true;
+        else {
+          const kwTextMap = { blocker:'ブロッカー', rush:'速攻', piercing:'突進', penetrate:'貫通', jamming:'ジャミング', reboot:'再起動', michizure:'道連れ', charge:'進撃', barrier:'防壁', evade:'回避', armor_break:'アーマー解除', indomitable:'不屈', combo:'連携', collision:'衝突', decoy:'デコイ' };
+          const kwText = kwTextMap[kw] || kw;
+          const txt = String(card.effect || '') + '|' + String(card.keyword || '') + '|' + String(card.evoSourceEffect || '');
+          if (txt.includes('【' + kwText + '】') || txt.includes(kwText)) has = true;
+          // 進化元の recipe.passive にもキーワードがあるかチェック
+          if (!has && Array.isArray(card.stack)) {
+            for (const s of card.stack) {
+              if (!s || !s.recipe) continue;
+              try {
+                const raw = typeof s.recipe === 'string' ? s.recipe.replace(/[\x00-\x1F\x7F]/g, '') : s.recipe;
+                const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                const passives = (r.evo_source && r.evo_source.passive) || r.passive;
+                if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw))) { has = true; break; }
+              } catch(_) {}
+            }
+          }
+        }
+        if (!has) return false;
+        break;
       }
       case 'cond_jogress': {
         // ジョグレス進化していたなら

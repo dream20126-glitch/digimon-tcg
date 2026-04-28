@@ -1593,7 +1593,25 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // target:"self" → セキュリティ効果で「このカードを手札に加える」
       if (ahTarget.code === 'target_self' && ctx.card) {
         ctx.card._returnToHand = true;
-        ctx.addLog('🃏 「' + ctx.card.name + '」を手札に加える（セキュリティ効果終了時）');
+        // ctx.card は dummy オブジェクトの可能性が高いため、実体を player.trash / player.security から探して移動する
+        const matchFn = (c) => c && (
+          (ctx.card.cardNo && c.cardNo === ctx.card.cardNo) ||
+          (ctx.card.name && c.name === ctx.card.name)
+        );
+        let realCard = null;
+        const trashIdx = player.trash.findIndex(matchFn);
+        if (trashIdx >= 0) {
+          realCard = player.trash.splice(trashIdx, 1)[0];
+        } else {
+          const secIdx = player.security.findIndex(matchFn);
+          if (secIdx >= 0) realCard = player.security.splice(secIdx, 1)[0];
+        }
+        if (realCard) {
+          player.hand.push(realCard);
+          ctx.addLog('🃏 「' + realCard.name + '」を手札に加えた');
+        } else {
+          ctx.addLog('🃏 「' + ctx.card.name + '」を手札に加える（セキュリティ効果終了時）');
+        }
         ctx.renderAll(); callback();
         break;
       }

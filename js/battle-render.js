@@ -27,6 +27,95 @@ export function setOnlineInfo(online, myKey) {
   _onlineMyKey = myKey;
 }
 
+// ===== キーワード効果バッジ表示 =====
+// 内部コード→日本語表示名 マッピング
+const KEYWORD_DISPLAY_NAMES = {
+  blocker: 'ブロッカー', rush: '速攻', piercing: '突進', penetrate: '貫通',
+  jamming: 'ジャミング', reboot: '再起動', michizure: '道連れ',
+  charge: '進撃', barrier: '防壁', evade: '回避', armor_break: 'アーマー解除',
+  indomitable: '不屈', combo: '連携', collision: '衝突', decoy: 'デコイ',
+  scapegoat: 'スケープゴート', save: 'セーブ', delay: 'ディレイ',
+  absorb_evolve: '吸収進化', mind_link: 'マインドリンク',
+  partition: 'パーティション', material_save: 'マテリアルセーブ',
+  blast_evolve: 'ブラスト進化', blast_jogress: 'ブラストジョグレス',
+  vortex: 'ヴォルテクス', overclock: 'オーバークロック',
+  ice_armor: '氷装', decode: 'デコード', fragment: 'フラグメント',
+  execute: 'エグゼキュート', progress: 'プログレス', training: 'トレーニング',
+  prevent_destroy: '消滅耐性', prevent_battle_destroy: 'バトル耐性',
+  immune: '効果耐性',
+};
+
+// キーワード→色カテゴリ
+function _keywordColor(code) {
+  if (['michizure', 'penetrate', 'piercing', 'rush', 'charge', 'execute', 'vortex', 'overclock'].includes(code)) return '#ff5577'; // 攻撃系
+  if (['barrier', 'evade', 'armor_break', 'indomitable', 'scapegoat', 'fragment', 'prevent_destroy', 'prevent_battle_destroy', 'ice_armor'].includes(code)) return '#5599ff'; // 防御系
+  if (['blocker', 'combo', 'collision', 'decoy', 'force_block'].includes(code)) return '#44dd88'; // ブロック・支援系
+  if (['jamming', 'progress', 'immune', 'reboot'].includes(code)) return '#44ddcc'; // 状態系
+  if (['absorb_evolve', 'blast_evolve', 'blast_jogress', 'save', 'material_save', 'mind_link', 'partition', 'delay'].includes(code)) return '#cc77ff'; // 進化・配置系
+  return '#aaaaaa';
+}
+
+// カードからアクティブなキーワード一覧を抽出（重複除去）
+function _collectActiveKeywords(card) {
+  const set = new Set();
+  // 1) 効果で付与された buff (keyword_xxx)
+  if (Array.isArray(card.buffs)) {
+    card.buffs.forEach(b => {
+      if (b && b.type && typeof b.type === 'string' && b.type.indexOf('keyword_') === 0) {
+        set.add(b.type.slice('keyword_'.length));
+      }
+    });
+  }
+  // 2) 永続効果フラグ (_permEffects)
+  if (card._permEffects && typeof card._permEffects === 'object') {
+    Object.keys(card._permEffects).forEach(k => {
+      if (card._permEffects[k] && KEYWORD_DISPLAY_NAMES[k]) set.add(k);
+    });
+  }
+  // 3) 本体レシピの passive flag
+  if (card.recipe) {
+    try {
+      const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]/g, '') : card.recipe;
+      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (Array.isArray(r.passive)) {
+        r.passive.forEach(p => { if (p && p.flag) set.add(p.flag); });
+      }
+    } catch(_) {}
+  }
+  // 4) 進化元 (stack) のレシピの evo_source.passive flag
+  if (Array.isArray(card.stack)) {
+    card.stack.forEach(s => {
+      if (s && s.recipe) {
+        try {
+          const raw = typeof s.recipe === 'string' ? s.recipe.replace(/[\x00-\x1F\x7F]/g, '') : s.recipe;
+          const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          if (r.evo_source && Array.isArray(r.evo_source.passive)) {
+            r.evo_source.passive.forEach(p => { if (p && p.flag) set.add(p.flag); });
+          }
+          if (Array.isArray(r.passive)) {
+            r.passive.forEach(p => { if (p && p.flag) set.add(p.flag); });
+          }
+        } catch(_) {}
+      }
+    });
+  }
+  return [...set];
+}
+
+// バッジHTMLを生成（カード下部に薄いオーバーレイで配置）
+function _renderKeywordBadges(card) {
+  const codes = _collectActiveKeywords(card);
+  if (codes.length === 0) return '';
+  const visible = codes.filter(c => KEYWORD_DISPLAY_NAMES[c]);
+  if (visible.length === 0) return '';
+  const items = visible.map(code => {
+    const name = KEYWORD_DISPLAY_NAMES[code];
+    const color = _keywordColor(code);
+    return `<span style="background:${color};color:#fff;font-size:7px;font-weight:bold;padding:1px 3px;border-radius:2px;border:1px solid rgba(255,255,255,0.6);white-space:nowrap;line-height:1;">${name}</span>`;
+  }).join('');
+  return `<div style="position:absolute;bottom:14px;left:1px;right:1px;display:flex;flex-wrap:wrap;gap:1px;justify-content:center;pointer-events:none;z-index:4;">${items}</div>`;
+}
+
 // ===== メイン描画 =====
 let _syncTimer = null;
 export function renderAll(force) {
@@ -160,6 +249,10 @@ function renderBattleRows() {
           if (card.cantEvolve) mark += '進❌';
           html += `<div style="position:absolute;top:1px;right:1px;background:#9933ff;color:#fff;font-size:8px;font-weight:bold;padding:1px 4px;border-radius:3px;border:1px solid #fff;box-shadow:0 0 5px #9933ff;z-index:5;white-space:nowrap;">${mark}</div>`;
         }
+
+        // キーワード効果バッジ — カード下部に表示（カード画像を隠さない）
+        const kwBadges = _renderKeywordBadges(card);
+        if (kwBadges) html += kwBadges;
 
         // カード名
         html += `<div class="s-name">${card.name}</div>`;

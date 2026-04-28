@@ -610,12 +610,18 @@ function processQueue(context, onComplete) {
   // ローカルプレイヤー判定: bs.isPlayerTurn と side('turnPlayer'/'nonTurnPlayer') から導出
   const isPlayerTurn = !!(context.bs && context.bs.isPlayerTurn);
   const isLocalSide = (head.side === 'turnPlayer' && isPlayerTurn) || (head.side === 'nonTurnPlayer' && !isPlayerTurn);
-  // 同レベル内に1件でも対話入力が必要な効果があれば順序選択UIを出す。
-  // 全て自動発動のみの場合は順番不問で先頭から自動処理。
-  const needsInputSomeone = sameLevel.some(e => _entryNeedsUserInput(e, context));
-  if (sameLevel.length > 1 && isLocalSide && needsInputSomeone) {
-    showQueueOrderSelect(sameLevel, (chosenIdx) => {
-      const chosen = sameLevel[chosenIdx];
+
+  // 同レベル内で「自動発動」を「手動入力必要」より先に実行する
+  const sameLevelAutos = sameLevel.filter(e => !_entryNeedsUserInput(e, context));
+  const sameLevelManuals = sameLevel.filter(e => _entryNeedsUserInput(e, context));
+  // 自動が残っていれば自動を優先実行
+  let next = null;
+  if (sameLevelAutos.length > 0) {
+    next = sameLevelAutos[0];
+  } else if (sameLevelManuals.length > 1 && isLocalSide) {
+    // 手動が複数残った → 順序選択UI
+    showQueueOrderSelect(sameLevelManuals, (chosenIdx) => {
+      const chosen = sameLevelManuals[chosenIdx];
       chosen.status = 'processing';
       executeQueueEntry(chosen, context, () => {
         chosen.status = 'completed';
@@ -627,9 +633,10 @@ function processQueue(context, onComplete) {
       });
     });
     return;
+  } else {
+    next = waiting[0]; // 手動1件 or 非ローカル → 通常処理
   }
 
-  const next = waiting[0];
   next.status = 'processing';
   executeQueueEntry(next, context, () => {
     next.status = 'completed';
@@ -3959,9 +3966,15 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
       runOne(r, nextReaction);
       return;
     }
-    // 全て自動発動のみ（対象選択・コスト・任意発動を伴わない）なら順序選択UIをスキップ
-    const needsInputSomeone = remaining.some(r => _reactionNeedsUserInput(r));
-    if (!needsInputSomeone) {
+    // 自動発動できるリアクションを先に実行する
+    const autoIdx = remaining.findIndex(r => !_reactionNeedsUserInput(r));
+    if (autoIdx >= 0) {
+      const [r] = remaining.splice(autoIdx, 1);
+      runOne(r, nextReaction);
+      return;
+    }
+    // 残りは全て手動入力必要 → 複数なら順序選択UI、1件ならそのまま実行
+    if (remaining.length === 1) {
       const r = remaining.shift();
       runOne(r, nextReaction);
       return;

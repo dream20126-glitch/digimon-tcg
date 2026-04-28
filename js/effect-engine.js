@@ -492,8 +492,8 @@ function sortQueue() {
 
 // キュー処理メインループ
 function processQueue(context, onComplete) {
-  const next = _effectQueue.find(e => e.status === 'waiting');
-  if (!next) {
+  const waiting = _effectQueue.filter(e => e.status === 'waiting');
+  if (waiting.length === 0) {
     clearQueue();
     // 消滅処理 → on_destroy リアクション完了を待つ
     checkPendingDestroys(context, () => {
@@ -511,17 +511,92 @@ function processQueue(context, onComplete) {
     return;
   }
 
+  // === 同レベル(同priority/同side/同optional)のwaiting が複数あり、
+  //     かつローカルプレイヤー側なら順序選択UIを出す ===
+  const head = waiting[0];
+  const sameLevel = waiting.filter(e =>
+    e.priority === head.priority &&
+    e.side === head.side &&
+    !!e.block.isOptional === !!head.block.isOptional
+  );
+  // ローカルプレイヤー判定: bs.isPlayerTurn と side('turnPlayer'/'nonTurnPlayer') から導出
+  const isPlayerTurn = !!(context.bs && context.bs.isPlayerTurn);
+  const isLocalSide = (head.side === 'turnPlayer' && isPlayerTurn) || (head.side === 'nonTurnPlayer' && !isPlayerTurn);
+  if (sameLevel.length > 1 && isLocalSide) {
+    showQueueOrderSelect(sameLevel, (chosenIdx) => {
+      const chosen = sameLevel[chosenIdx];
+      chosen.status = 'processing';
+      executeQueueEntry(chosen, context, () => {
+        chosen.status = 'completed';
+        sortQueue();
+        checkPendingDestroys(context, () => {
+          processQueue(context, onComplete);
+        });
+      });
+    });
+    return;
+  }
+
+  const next = waiting[0];
   next.status = 'processing';
   executeQueueEntry(next, context, () => {
     next.status = 'completed';
     sortQueue();
     // ★ 各効果の完了直後に消滅判定 → on_destroy リアクションを処理
-    // これで複数の on_attack 効果が連続する場合、効果1の destroy/on_destroy が
-    // 完全に終わってから効果2の対象選択に進む
     checkPendingDestroys(context, () => {
       processQueue(context, onComplete);
     });
   });
+}
+
+// ===== キュー順序選択UI =====
+// 同レベルで誘発した効果が複数ある時、プレイヤーがどれを先に発動するか選択する
+function showQueueOrderSelect(entries, callback) {
+  const overlay = document.createElement('div');
+  overlay.id = '_queue-order-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;animation:fadeIn 0.2s ease;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;margin-bottom:14px;text-shadow:0 0 8px #00fbff;';
+  title.innerText = '⚡ どの効果から使用しますか？';
+  overlay.appendChild(title);
+
+  const subtitle = document.createElement('div');
+  subtitle.style.cssText = 'color:#aaa;font-size:11px;margin-bottom:14px;';
+  subtitle.innerText = entries.length + '件の効果が同時に誘発しました。発動順を選んでください。';
+  overlay.appendChild(subtitle);
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:90%;';
+  overlay.appendChild(row);
+
+  entries.forEach((entry, idx) => {
+    const card = entry.card;
+    const div = document.createElement('div');
+    div.style.cssText = 'background:#0a0a0a;border:2px solid #00fbff;border-radius:10px;padding:10px;width:200px;cursor:pointer;text-align:center;transition:transform 0.15s ease, box-shadow 0.15s ease;';
+    div.onmouseenter = () => { div.style.transform = 'translateY(-3px) scale(1.03)'; div.style.boxShadow = '0 0 18px #00fbff'; };
+    div.onmouseleave = () => { div.style.transform = ''; div.style.boxShadow = ''; };
+    const imgSrc = card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || card.imageUrl || '';
+    // 進化元効果由来かどうかを判定して表示テキスト切替
+    const fromEvo = !!(entry.block && entry.block._recipeCard);
+    const recipeCard = (entry.block && entry.block._recipeCard) || card;
+    const effText = (fromEvo && recipeCard.evoSourceEffect && recipeCard.evoSourceEffect !== 'なし')
+      ? recipeCard.evoSourceEffect
+      : ((entry.block && entry.block.raw) || card.effect || '');
+    const sourceLabel = fromEvo ? `<div style="color:#ffaa00;font-size:9px;margin-bottom:4px;">進化元【${recipeCard.name}】の効果</div>` : '';
+    div.innerHTML =
+      (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
+      + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+(card.name||'')+'</div>'
+      + sourceLabel
+      + '<div style="color:#aaf;font-size:10px;line-height:1.5;text-align:left;max-height:80px;overflow-y:auto;background:#111;padding:6px;border-radius:4px;">'+effText+'</div>';
+    div.onclick = () => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      callback(idx);
+    };
+    row.appendChild(div);
+  });
+
+  document.body.appendChild(overlay);
 }
 
 // キューエントリを実行

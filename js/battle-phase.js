@@ -458,10 +458,22 @@ function execUnsuspend() {
 
   // ≪再起動≫: 相手のアクティブフェイズでもアクティブになる
   // 自分(プレイヤー)のアクティブフェイズで、相手(AI)側の再起動持ちカードもアクティブにする
-  bs.ai.battleArea.forEach(c => {
+  // オンラインの場合、bs.ai は相手の自カード視点なので fx_remoteSuspend で同期する
+  bs.ai.battleArea.forEach((c, idx) => {
     if (c && c.suspended && _hasReboot(c)) {
       c.suspended = false;
       addLog('🔄 【再起動】「' + c.name + '」がアクティブに');
+      // オンラインでは相手の本体カードもアクティブにするため通知
+      if (typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+        try {
+          window._onlineSendCommand({
+            type: 'fx_remoteSuspend',
+            targetIdx: idx,
+            targetName: c.name || '',
+            suspended: false,
+          });
+        } catch(_) {}
+      }
     }
   });
 

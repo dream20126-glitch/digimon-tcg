@@ -5304,6 +5304,22 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === デッキの上からN枚破棄（自分側）===
+    case 'deck_trash_top': {
+      const n = step.value || 1;
+      let trashed = 0;
+      for (let k = 0; k < n; k++) {
+        if (!player.deck || player.deck.length === 0) break;
+        const top = player.deck.shift();
+        player.trash.push(top);
+        trashed++;
+      }
+      ctx.addLog && ctx.addLog('🗑 デッキ上から' + trashed + '枚をトラッシュへ');
+      ctx.renderAll && ctx.renderAll();
+      callback();
+      break;
+    }
+
     // === 一番上から1枚破棄（進化元の一番上） ===
     case 'trash_top_card': {
       const tgts = (step.card && store[step.card]) ? (Array.isArray(store[step.card]) ? store[step.card] : [store[step.card]]) : [];

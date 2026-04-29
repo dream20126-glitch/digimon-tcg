@@ -1641,6 +1641,8 @@ export function showBlockerSelection(blockerIndices, attacker, callback) {
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) selectedIdx = idx;
     });
     if (selectedIdx !== null) {
+      // スロットの onclick（カード詳細を開く）にイベントが伝播しないよう停止
+      try { e.stopPropagation(); e.stopImmediatePropagation(); e.preventDefault && e.preventDefault(); } catch(_) {}
       // 選択候補のカード詳細 + 「このデジモンでブロックしますか？」確認ダイアログを出す
       // 「はい」で確定、「いいえ」で再選択に戻す（他効果の対象選択と同じ UX）
       document.removeEventListener('click', onSelect, true);

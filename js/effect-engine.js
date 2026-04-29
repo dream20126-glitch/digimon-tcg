@@ -3601,8 +3601,13 @@ function showEffectAnnounce(card, effectText, side, callback, evoSourceCard) {
   const titleName = evoSourceCard
     ? (card.name + '（進化元【' + evoSourceCard.name + '】の効果）')
     : card.name;
-  if (window._isOnlineMode && window._isOnlineMode() && side === 'player') {
-    window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: titleName, effectText: displayText.substring(0,400) });
+  // オンライン: side に関わらず相手画面にもポップアップ通知を送る
+  // （side==='player' は自分の効果、side==='ai' は相手の効果に対する自機ローカル表示。
+  //   どちらの場合も相手機にも見せたほうが UX が良い）
+  if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand && !window._suppressFxSend) {
+    try {
+      window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: titleName, effectText: displayText.substring(0,400) });
+    } catch (_) {}
   }
   const sideColor = side === 'player' ? '#00fbff' : '#ff00fb';
 
@@ -5525,6 +5530,17 @@ function executeRecipeStep(step, ctx, store, callback) {
         player.trash.push(top);
         ctx.addLog && ctx.addLog('🗑 デッキ上から「' + (top.name || '?') + '」をトラッシュへ');
         ctx.renderAll && ctx.renderAll();
+        // オンライン: 相手画面にも「デッキ → トラッシュ」のカード移動演出を送る
+        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+          try {
+            window._onlineSendCommand({
+              type: 'fx_remoteCardMove',
+              cardName: top.name, cardNo: top.cardNo,
+              cardImg: top.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(top) : '') || '',
+              fromLabel: 'デッキ', toLabel: 'トラッシュ',
+            });
+          } catch(_) {}
+        }
         // 一瞬カード画像を中央表示してから移動（簡易演出）
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:62000;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.15s ease;pointer-events:none;';

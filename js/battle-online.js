@@ -274,10 +274,14 @@ function onRemoteCommand(cmd) {
           // 消滅 (destroy) の場合は on_destroy / on_battle_destroy / when_own_destroyed を
           // 自分側 (player) で発火する。これでパグモン等の進化元 evo_source.on_destroy が
           // カード所有者の画面に正しくポップアップ表示される。
+          // バトル解決中の VS / battleResult 演出と被らないよう enqueueFx でキュー化し、
+          // 直前の fx 演出が完了してから発火する。
           if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
-            try {
-              window._fireOnlineDestroyChain(['player'], { player: card }, () => {});
-            } catch (_) {}
+            enqueueFx((doneFx) => {
+              try {
+                window._fireOnlineDestroyChain(['player'], { player: card }, () => doneFx && doneFx());
+              } catch (_) { doneFx && doneFx(); }
+            });
           }
         }
       }

@@ -3601,10 +3601,10 @@ function showEffectAnnounce(card, effectText, side, callback, evoSourceCard) {
   const titleName = evoSourceCard
     ? (card.name + '（進化元【' + evoSourceCard.name + '】の効果）')
     : card.name;
-  // オンライン: side / _suppressFxSend に関わらず常に相手画面にもポップアップ通知を送る。
-  // 受信側の fxRemoteEffect は単純なオーバーレイ表示のみで再帰送信しないので
-  // ping-pong は発生しない。両画面で必ず効果発動が見えるようにするため抑制を外す。
-  if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+  // オンライン: 自分側 (side='player') の効果のときだけ相手機に送信。
+  // 自機の bs.ai 側の効果 (=相手のカード視点) を送るとオーナー機側で「相手の効果」
+  // として誤表示されてしまうので、所有者の機械からだけ送る運用に戻す。
+  if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand && side === 'player') {
     try {
       window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: titleName, effectText: displayText.substring(0,400) });
     } catch (_) {}

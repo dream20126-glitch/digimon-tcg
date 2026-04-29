@@ -1275,12 +1275,13 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         showBR('両者消滅', '#ff4444', '両者消滅！', () => {
           showDE(blocker, () => { showDE(atk, () => {
             addLog('💥 両者消滅！');
-            // 自分側 (blocker = bs.player) と相手側 (atk = bs.ai) の両方を発火。
-            // 相手側 (atk) は ctx.side='ai' で実行されるため、自機のローカル演出のみ。
-            // データ反映 (デッキ破棄等) は card_removed 受信側 (オーナー機) で行われる。
+            // 自分側 (blocker = bs.player) のみここで発火。
+            // 相手側 (atk) の on_destroy はカード所有者 (相手機) で card_removed 受信時に発火される
+            // ので、ここで 'ai' を発火すると「相手の効果」が自機側にもポップアップ表示されて
+            // 「P1 と P2 で popup が逆」状態になるため発火しない。
             const fire = window._fireOnlineDestroyChain;
             const finish = () => { window._suppressFxSend = false; sendStateSync(); };
-            if (fire) fire(['player', 'ai'], { player: blocker, ai: atk }, finish);
+            if (fire) fire(['player'], { player: blocker }, finish);
             else finish();
           }); });
         });
@@ -1310,11 +1311,10 @@ function resolveOnlineBlock(blockerIdx, cmd) {
               showMichi(() => {
                 showDE(atk, () => {
                   addLog('💥 両者消滅（道連れ）！');
-                  // blocker (player) と atk (ai) 両方発火。
-                  // atk のデータ反映は card_removed 受信側 (オーナー機) で行われる。
+                  // blocker (player) のみ発火。atk の on_destroy はオーナー機側で発火される。
                   const fire = window._fireOnlineDestroyChain;
                   const finish = () => { window._suppressFxSend = false; sendStateSync(); };
-                  if (fire) fire(['player', 'ai'], { player: blocker, ai: atk }, finish);
+                  if (fire) fire(['player'], { player: blocker }, finish);
                   else finish();
                 });
               });
@@ -1358,11 +1358,10 @@ function resolveOnlineBlock(blockerIdx, cmd) {
               showMichi(() => {
                 showDE(blocker, () => {
                   addLog('💥 両者消滅（道連れ）！');
-                  // blocker (player) と atk (ai) 両方発火。
-                  // atk のデータ反映は card_removed 受信側 (オーナー機) で行われる。
+                  // blocker (player) のみ発火。atk の on_destroy はオーナー機側で発火される。
                   const fire = window._fireOnlineDestroyChain;
                   const finish = () => { window._suppressFxSend = false; sendStateSync(); };
-                  if (fire) fire(['player', 'ai'], { player: blocker, ai: atk }, finish);
+                  if (fire) fire(['player'], { player: blocker }, finish);
                   else finish();
                 });
               });
@@ -1374,12 +1373,9 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         showBR('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => {
           showDE(atk, () => {
             addLog('💥 「' + atk.name + '」を撃破！');
-            // atk (ai) の on_destroy をローカルでも発火 (演出用)。
-            // データ反映は card_removed 受信側 (オーナー機) で行われる。
-            const fire = window._fireOnlineDestroyChain;
-            const finish = () => { window._suppressFxSend = false; sendStateSync(); };
-            if (fire) fire(['ai'], { ai: atk }, finish);
-            else finish();
+            // atk の on_destroy はカード所有者 (相手機) で card_removed 受信時に発火される
+            window._suppressFxSend = false;
+            sendStateSync();
           });
         });
       }

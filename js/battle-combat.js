@@ -1641,23 +1641,28 @@ export function showBlockerSelection(blockerIndices, attacker, callback) {
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) selectedIdx = idx;
     });
     if (selectedIdx !== null) {
-      // スロットの onclick（カード詳細を開く）にイベントが伝播しないよう停止
-      try { e.stopPropagation(); e.stopImmediatePropagation(); e.preventDefault && e.preventDefault(); } catch(_) {}
       // 選択候補のカード詳細 + 「このデジモンでブロックしますか？」確認ダイアログを出す
       // 「はい」で確定、「いいえ」で再選択に戻す（他効果の対象選択と同じ UX）
       document.removeEventListener('click', onSelect, true);
       document.removeEventListener('touchend', onSelect, true);
       const card = bs.player.battleArea[selectedIdx];
-      showBlockerConfirm(card, () => {
-        cleanup();
-        callback(selectedIdx);
-      }, () => {
-        // キャンセル → 選択画面へ戻す
-        setTimeout(() => {
-          document.addEventListener('click', onSelect, true);
-          document.addEventListener('touchend', onSelect, true);
-        }, 100);
-      });
+      // bubble で b-card-detail (BCD) が開いた場合は確認ダイアログ表示直前に閉じる
+      setTimeout(() => {
+        try {
+          const bcd = document.getElementById('b-card-detail');
+          if (bcd) bcd.style.display = 'none';
+        } catch (_) {}
+        showBlockerConfirm(card, () => {
+          cleanup();
+          callback(selectedIdx);
+        }, () => {
+          // キャンセル → 選択画面へ戻す
+          setTimeout(() => {
+            document.addEventListener('click', onSelect, true);
+            document.addEventListener('touchend', onSelect, true);
+          }, 100);
+        });
+      }, 30);
     }
   }
 
@@ -1706,11 +1711,20 @@ function showBlockerConfirm(card, onYes, onNo) {
   document.getElementById('_blocker-yes').addEventListener('click', (e) => {
     e.stopPropagation();
     cleanupConf();
+    // 確定後に裏で BCD が開いていたら閉じる
+    try {
+      const bcd = document.getElementById('b-card-detail');
+      if (bcd) bcd.style.display = 'none';
+    } catch (_) {}
     setTimeout(() => onYes && onYes(), 50);
   });
   document.getElementById('_blocker-no').addEventListener('click', (e) => {
     e.stopPropagation();
     cleanupConf();
+    try {
+      const bcd = document.getElementById('b-card-detail');
+      if (bcd) bcd.style.display = 'none';
+    } catch (_) {}
     setTimeout(() => onNo && onNo(), 50);
   });
 }

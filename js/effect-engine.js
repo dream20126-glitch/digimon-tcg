@@ -3944,6 +3944,15 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done) {
             const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
             if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
           }
+          // コスト feasibility チェック: 「自身をレスト」コストがあるが既にレスト中ならスキップ
+          // （八神太一(黒) 等が既にレスト状態で再発動できないように）
+          if (Array.isArray(step.cost)) {
+            for (const c of step.cost) {
+              if (c && c.action === 'rest' && (c.target === 'self' || !c.target) && card.suspended) {
+                return false;
+              }
+            }
+          }
           return true;
         });
         if (willRun) reactions.push({ card, recipe });

@@ -404,27 +404,36 @@ function onRemoteCommand(cmd) {
       // 自分のカードの「相手のターン終了時」効果を発火
       // scanTriggers が盤面全体（本体 + 進化元レシピ）をスキャンするので、
       // 任意の自分カードを source として triggerEffect を 1 度だけ呼ぶ
-      try {
-        const te = window._triggerEffectFn;
-        const anyOwn = (bs.player.battleArea || []).find(c => c)
-          || (bs.player.tamerArea || []).find(c => c);
-        if (te && anyOwn) te('on_opp_turn_end', anyOwn, 'player', null, () => {});
-      } catch(_) {}
+      const fireOppTurnEnd = (done) => {
+        try {
+          const te = window._triggerEffectFn;
+          const anyOwn = (bs.player.battleArea || []).find(c => c)
+            || (bs.player.tamerArea || []).find(c => c);
+          if (te && anyOwn) {
+            te('on_opp_turn_end', anyOwn, 'player', null, () => done());
+            return;
+          }
+        } catch(_) {}
+        done();
+      };
       renderAll();
-      if (m.showYourTurn) {
-        m.showYourTurn('相手のターン終了', '', '#555555', () => {
-          bs.isPlayerTurn = true;
-          m.showYourTurn('自分のターン開始', '', '#00fbff', () => {
-            const afterStart = () => {
-              if (m.applyPermanentEffects) { m.applyPermanentEffects('player'); m.applyPermanentEffects('ai'); }
-              renderAll();
-              if (m.startPhase) setTimeout(() => m.startPhase('unsuspend'), 300);
-            };
-            if (m.checkTurnStartEffects) m.checkTurnStartEffects('player', afterStart);
-            else afterStart();
+      // 効果処理完了 → 「相手のターン終了」演出 → 自分のターン開始
+      fireOppTurnEnd(() => {
+        if (m.showYourTurn) {
+          m.showYourTurn('相手のターン終了', '', '#555555', () => {
+            bs.isPlayerTurn = true;
+            m.showYourTurn('自分のターン開始', '', '#00fbff', () => {
+              const afterStart = () => {
+                if (m.applyPermanentEffects) { m.applyPermanentEffects('player'); m.applyPermanentEffects('ai'); }
+                renderAll();
+                if (m.startPhase) setTimeout(() => m.startPhase('unsuspend'), 300);
+              };
+              if (m.checkTurnStartEffects) m.checkTurnStartEffects('player', afterStart);
+              else afterStart();
+            });
           });
-        });
-      }
+        }
+      });
       break;
     }
     case 'phase': {

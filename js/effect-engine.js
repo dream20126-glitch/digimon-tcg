@@ -1021,10 +1021,16 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           ctx.addLog('🃏 「' + c.name + '」をドロー');
         }
       }
-      // 演出を辞書の演出タイプで実行
-      if (drawn.length > 0) {
-        playEffect(action.code, { cards: drawn, ctx }, () => { ctx.renderAll(true); callback(); });
-      } else { ctx.renderAll(); callback(); }
+      // 演出: ctx.showDrawEffect があれば 1 枚ずつ流す（辞書未設定でも確実に演出する）
+      if (drawn.length > 0 && ctx.showDrawEffect) {
+        let di = 0;
+        const showOne = () => {
+          if (di >= drawn.length) { ctx.renderAll(true); callback(); return; }
+          const c = drawn[di++];
+          ctx.showDrawEffect(c, parseInt(c.level) >= 6, showOne);
+        };
+        showOne();
+      } else { ctx.renderAll(true); callback(); }
       break;
     }
     case 'dp_plus': {

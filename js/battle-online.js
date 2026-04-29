@@ -1260,7 +1260,12 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '両者消滅！' });
         showBR('両者消滅', '#ff4444', '両者消滅！', () => {
           showDE(blocker, () => { showDE(atk, () => {
-            addLog('💥 両者消滅！'); window._suppressFxSend = false; sendStateSync();
+            addLog('💥 両者消滅！');
+            // on_destroy / on_battle_destroy / when_own_destroyed をまとめて発火
+            const fire = window._fireOnlineDestroyChain;
+            const finish = () => { window._suppressFxSend = false; sendStateSync(); };
+            if (fire) fire(['player', 'ai'], { player: blocker, ai: atk }, finish);
+            else finish();
           }); });
         });
       } else if (_atkDp > _blkDp) {
@@ -1286,7 +1291,11 @@ function resolveOnlineBlock(blockerIdx, cmd) {
               const showMichi = window._showMichizureAnnounce || ((cb) => cb && cb());
               showMichi(() => {
                 showDE(atk, () => {
-                  addLog('💥 両者消滅（道連れ）！'); window._suppressFxSend = false; sendStateSync();
+                  addLog('💥 両者消滅（道連れ）！');
+                  const fire = window._fireOnlineDestroyChain;
+                  const finish = () => { window._suppressFxSend = false; sendStateSync(); };
+                  if (fire) fire(['player', 'ai'], { player: blocker, ai: atk }, finish);
+                  else finish();
                 });
               });
             });
@@ -1296,7 +1305,11 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         sendCommand({ type: 'fx_battleResult', text: 'Win!!', color: '#00ff88', sub: '「' + blocker.name + '」を撃破！' });
         showBR('Lost...', '#ff4444', '「' + blocker.name + '」が撃破された', () => {
           showDE(blocker, () => {
-            addLog('💥 「' + blocker.name + '」が撃破された'); window._suppressFxSend = false; sendStateSync();
+            addLog('💥 「' + blocker.name + '」が撃破された');
+            const fire = window._fireOnlineDestroyChain;
+            const finish = () => { window._suppressFxSend = false; sendStateSync(); };
+            if (fire) fire(['player'], { player: blocker }, finish);
+            else finish();
           });
         });
       } else {
@@ -1322,7 +1335,11 @@ function resolveOnlineBlock(blockerIdx, cmd) {
               const showMichi = window._showMichizureAnnounce || ((cb) => cb && cb());
               showMichi(() => {
                 showDE(blocker, () => {
-                  addLog('💥 両者消滅（道連れ）！'); window._suppressFxSend = false; sendStateSync();
+                  addLog('💥 両者消滅（道連れ）！');
+                  const fire = window._fireOnlineDestroyChain;
+                  const finish = () => { window._suppressFxSend = false; sendStateSync(); };
+                  if (fire) fire(['player', 'ai'], { player: blocker, ai: atk }, finish);
+                  else finish();
                 });
               });
             });
@@ -1332,7 +1349,11 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         sendCommand({ type: 'fx_battleResult', text: 'Lost...', color: '#ff4444', sub: '「' + atk.name + '」が撃破された' });
         showBR('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => {
           showDE(atk, () => {
-            addLog('💥 「' + atk.name + '」を撃破！'); window._suppressFxSend = false; sendStateSync();
+            addLog('💥 「' + atk.name + '」を撃破！');
+            const fire = window._fireOnlineDestroyChain;
+            const finish = () => { window._suppressFxSend = false; sendStateSync(); };
+            if (fire) fire(['ai'], { ai: atk }, finish);
+            else finish();
           });
         });
       }

@@ -10,7 +10,7 @@ import { addLog } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallbacks, doIkuMove } from './battle-render.js';
 import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, showDrawEffect } from './battle-phase.js';
 import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack } from './battle-combat.js';
-import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, loadAllDictionaries, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE } from './effect-engine.js';
+import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, loadAllDictionaries, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxBuffStatus } from './battle-fx.js';
 import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js';
 
@@ -327,6 +327,29 @@ export function setupCommonWindowExports() {
   window._fireWhenOwnBlock = function(blockOwnerSide, _bs, ctxBase, done) {
     try { _fireWhenOwnBlockEE(blockOwnerSide, _bs || bs, ctxBase || { bs, addLog, renderAll, updateMemGauge }, done); }
     catch (_) { done && done(); }
+  };
+
+  // 消滅時/バトル消滅時/自分のデジモンが消滅したとき の誘発をまとめて発火する
+  // （battle-online.js のオンラインブロック解決で呼ぶ）
+  // sides: ['ai','player'] のような配列、destroyedCardsBySide: { ai: card, player: card }
+  window._fireOnlineDestroyChain = function(sides, destroyedCardsBySide, done) {
+    const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+    let i = 0;
+    const next = () => {
+      if (i >= sides.length) { done && done(); return; }
+      const s = sides[i++];
+      const dc = destroyedCardsBySide && destroyedCardsBySide[s];
+      try {
+        _fireOnDestroyEE(s, bs, ctxBase, () => {
+          try {
+            _fireOnBattleDestroyEE(s, bs, ctxBase, () => {
+              try { _fireWhenOwnDestroyedEE(s, bs, ctxBase, next); } catch(_) { next(); }
+            }, dc);
+          } catch(_) { next(); }
+        }, dc);
+      } catch(_) { next(); }
+    };
+    next();
   };
 
   // スクロールボタン

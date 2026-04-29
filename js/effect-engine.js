@@ -1741,7 +1741,11 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
   fireOnDestroyTriggers(destroyedSideName, ctx.bs, ctx, () => {
     // 自分のデジモンが消滅したとき（同 side のテイマー/デジモンが反応：石田ヤマト等）
     _fireSidedReactionTriggers(destroyedSideName, 'when_own_destroyed', ctx.bs, ctx, () => {
-      callback && callback();
+      // 相手のデジモンが消滅したとき（反対 side のカードが反応）
+      const oppSideName = destroyedSideName === 'player' ? 'ai' : 'player';
+      _fireSidedReactionTriggers(oppSideName, 'when_opp_destroyed', ctx.bs, ctx, () => {
+        callback && callback();
+      });
     });
   }, destroyed);
 }
@@ -3461,8 +3465,13 @@ function checkPendingDestroys(ctx, callback) {
       if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
         window._onlineSendStateSync();
       }
-      // on_destroy リアクション → 完了 → 次の消滅へ
-      fireOnDestroyTriggers(side, ctx.bs, ctx, processNext, card);
+      // on_destroy: 自身の消滅効果 → when_own_destroyed → when_opp_destroyed → 次の消滅へ
+      fireOnDestroyTriggers(side, ctx.bs, ctx, () => {
+        _fireSidedReactionTriggers(side, 'when_own_destroyed', ctx.bs, ctx, () => {
+          const oppSide = side === 'player' ? 'ai' : 'player';
+          _fireSidedReactionTriggers(oppSide, 'when_opp_destroyed', ctx.bs, ctx, processNext);
+        });
+      }, card);
     });
   }
   processNext();

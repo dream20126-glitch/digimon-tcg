@@ -3641,6 +3641,10 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
   // ソースカード限定のイベント系トリガー（そのカード固有のイベント）
   // これらは盤面全体をスキャンすると関係ない他カードの効果まで誘発してしまう
   const isSourceOnly = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked', 'on_battle_win', 'on_battle_destroy'].includes(triggerCode);
+  // ターン境界トリガー: 「相手のターン終了時」「自分のターン終了時」等は
+  // 一方のサイドのカードのみ発火する（相手ターン終了 = 自陣営カードが反応）。
+  // sourceSide で指定された側のみスキャン対象にする。
+  const isSideScopedTurnTrigger = ['on_opp_turn_end', 'on_own_turn_end', 'on_opp_turn_start', 'on_own_turn_start'].includes(triggerCode);
 
   if (isActivated) {
     // 起動効果: ソースカードだけキューに追加（レシピ優先）
@@ -3724,7 +3728,11 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
     }
   } else {
     // 誘発効果: 盤面全体をスキャン（レシピ優先）
-    ['player', 'ai'].forEach(side => {
+    // ターン境界トリガーは sourceSide のみスキャン
+    const sidesToScan = isSideScopedTurnTrigger && sourceSide
+      ? [sourceSide]
+      : ['player', 'ai'];
+    sidesToScan.forEach(side => {
       [...ctx.bs[side].battleArea, ...(ctx.bs[side].tamerArea || [])].forEach(card => {
         if (!card) return;
         const priority = triggerCode.startsWith('when_') ? 'interrupt' : 'normal';

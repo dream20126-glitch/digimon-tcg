@@ -1382,32 +1382,47 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'cost_discard': {
       const n = action.value || 1;
       if (player.hand.length < n) { callback(false); return; }
-      // AI 側 / または UI が無い場合は先頭から自動破棄（フォールバック）
       const isPlayerSide = ctx.side === 'player';
       const canShowPicker = isPlayerSide && typeof showHandDiscardPicker === 'function';
-      if (!canShowPicker) {
-        for (let i = 0; i < n; i++) {
-          if (player.hand.length > 0) {
-            const d = player.hand.pop();
-            player.trash.push(d);
-            ctx.addLog('✦ 「' + d.name + '」を捨てた');
-          }
+      // 1 枚ずつ破棄演出（自分側で fxCardMove, オンラインなら相手側にも fx_remoteCardMove 送信）
+      const discardOne = (card, done) => {
+        const idx = player.hand.indexOf(card);
+        if (idx !== -1) player.hand.splice(idx, 1);
+        player.trash.push(card);
+        ctx.addLog('✦ 「' + card.name + '」を捨てた');
+        // オンライン: 相手画面にもカード移動演出を送信
+        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+          try {
+            window._onlineSendCommand({
+              type: 'fx_remoteCardMove',
+              cardName: card.name, cardNo: card.cardNo,
+              cardImg: card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || '',
+              fromLabel: '手札', toLabel: 'トラッシュ',
+            });
+          } catch(_) {}
         }
-        ctx.renderAll();
-        callback();
+        if (window._fxCardMove) {
+          window._fxCardMove(card, '手札', 'トラッシュ', done);
+        } else { setTimeout(done, 300); }
+      };
+      const runDiscards = (cards, finalize) => {
+        let i = 0;
+        const next = () => {
+          if (i >= cards.length) { ctx.renderAll(); finalize(); return; }
+          discardOne(cards[i++], next);
+        };
+        next();
+      };
+      if (!canShowPicker) {
+        // AI 側 / UI なし: 末尾 N 枚を自動破棄
+        const auto = player.hand.slice(-n);
+        runDiscards(auto, () => callback());
         return;
       }
       // プレイヤー: 手札ピッカーで N 枚選択 → 破棄
       showHandDiscardPicker(player.hand.slice(), n, (picked) => {
         if (!picked || picked.length < n) { callback(false); return; }
-        picked.forEach(d => {
-          const idx = player.hand.indexOf(d);
-          if (idx !== -1) player.hand.splice(idx, 1);
-          player.trash.push(d);
-          ctx.addLog('✦ 「' + d.name + '」を捨てた');
-        });
-        ctx.renderAll();
-        callback();
+        runDiscards(picked, () => callback());
       });
       break;
     }
@@ -4905,7 +4920,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       const wantCount = upToMatch ? parseInt(upToMatch[2]) : (exactMatch ? parseInt(exactMatch[2]) : 1);
       const isUpTo = !!upToMatch;
       const tgtPlayer = isOwn ? player : opponent;
-      const tgtRowId = isOwn ? (ctx.side === 'player' ? 'pl' : 'ai') : opponentRowSide;
+      // executeRecipeStep では opponentRowSide が未定義のため、ここで構築する
+      const tgtRowId = isOwn
+        ? (ctx.side === 'player' ? 'pl' : 'ai')
+        : (ctx.side === 'player' ? 'ai' : 'pl');
       const valid = [];
       for (let i = 0; i < tgtPlayer.battleArea.length; i++) {
         const c = tgtPlayer.battleArea[i];

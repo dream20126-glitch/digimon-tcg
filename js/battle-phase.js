@@ -599,6 +599,15 @@ export function onEndTurn() {
     _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
     _hooks.expireBuffs('dur_next_own_turn', null, 'player');
     _hooks.expireBuffs('permanent', 'player');
+    // ≪再起動≫: 相手のアクティブフェイズで自分の本体側カードをアクティブにする
+    // (相手側マシンからは fx_remoteSuspend が来るが、テスト/scripted opp 環境のため
+    //  自分側でもローカルに活性化しておく)
+    bs.player.battleArea.forEach((c, idx) => {
+      if (c && c.suspended && _hasReboot(c)) {
+        c.suspended = false;
+        addLog('🔄 【再起動】「' + c.name + '」がアクティブに（相手のアクティブフェイズ）');
+      }
+    });
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
       bs.isPlayerTurn = false;

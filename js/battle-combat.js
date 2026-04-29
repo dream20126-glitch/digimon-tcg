@@ -289,6 +289,28 @@ function showCombatBackdrop() {
   bd.style.display = 'block';
 }
 
+// 道連れアナウンス: combat-backdrop(46999) の上に出すため独立z-indexで実装
+// オンライン時は相手画面にも fx_michizure を送って同じ演出を再生
+function showMichizureAnnounce(callback) {
+  if (_onlineMode && _sendCommand && !window._suppressFxSend) {
+    try { _sendCommand({ type: 'fx_michizure' }); } catch (_) {}
+  }
+  const overlay = document.createElement('div');
+  overlay.id = '_michizure-announce';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:48000;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(0,0,0,0.55);';
+  const text = document.createElement('div');
+  text.style.cssText = 'font-size:clamp(1.6rem,7vw,3.2rem);font-weight:900;color:#ff5577;letter-spacing:6px;text-shadow:0 0 20px #ff5577,0 0 40px #aa0033,0 0 60px #aa0033;animation:phaseSlideIn 1.4s ease forwards;';
+  text.innerText = '💀 道連れ！';
+  overlay.appendChild(text);
+  document.body.appendChild(overlay);
+  setTimeout(() => {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    callback && callback();
+  }, 1200);
+}
+// window から呼べるように公開（battle-online.js のオンラインブロック処理で使う）
+if (typeof window !== 'undefined') window._showMichizureAnnounce = showMichizureAnnounce;
+
 // 貫通アナウンス: combat-backdrop(46999) の上に出すため独立z-indexで実装
 function showPenetrateAnnounce(callback) {
   // オンライン: 相手画面にも演出を送る
@@ -1382,8 +1404,11 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
             bs.ai.trash.push(def);
             if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
             renderAll();
-            showDestroyEffect(def, () => {
-              _fireDestroyChain(['player', 'ai'], () => checkPendingTurnEnd(), { player: atk, ai: def });
+            // 巻き込まれた相手 (def) の消滅前に「道連れ」演出を挟む
+            showMichizureAnnounce(() => {
+              showDestroyEffect(def, () => {
+                _fireDestroyChain(['player', 'ai'], () => checkPendingTurnEnd(), { player: atk, ai: def });
+              });
             });
             return;
           }
@@ -1485,10 +1510,13 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         addLog('💀 【道連れ】「' + atk.name + '」が「' + def.name + '」を巻き込んで消滅！');
         renderAll();
         showDestroyEffect(atk, () => {
-          showDestroyEffect(def, () => {
-            _fireDestroyChain(['ai', 'player'], () => {
-              showBattleResult('両者消滅', '#ff4444', '両者消滅（道連れ）！', () => { renderAll(); callback(); }, '両者消滅', '#ff4444');
-            }, { ai: atk, player: def });
+          // 巻き込まれた def の消滅前に「道連れ」演出
+          showMichizureAnnounce(() => {
+            showDestroyEffect(def, () => {
+              _fireDestroyChain(['ai', 'player'], () => {
+                showBattleResult('両者消滅', '#ff4444', '両者消滅（道連れ）！', () => { renderAll(); callback(); }, '両者消滅', '#ff4444');
+              }, { ai: atk, player: def });
+            });
           });
         });
         return;

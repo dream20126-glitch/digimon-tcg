@@ -786,6 +786,18 @@ function onRemoteCommand(cmd) {
       if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
       break;
     }
+    case 'fx_michizure': {
+      // 相手の道連れ発動 → 自分側でも演出を再生
+      const movly = document.createElement('div');
+      movly.style.cssText = 'position:fixed;inset:0;z-index:48000;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(0,0,0,0.55);';
+      const mtxt = document.createElement('div');
+      mtxt.style.cssText = 'font-size:clamp(1.6rem,7vw,3.2rem);font-weight:900;color:#ff5577;letter-spacing:6px;text-shadow:0 0 20px #ff5577,0 0 40px #aa0033,0 0 60px #aa0033;animation:phaseSlideIn 1.4s ease forwards;';
+      mtxt.innerText = '💀 道連れ！';
+      movly.appendChild(mtxt);
+      document.body.appendChild(movly);
+      setTimeout(() => { if (movly.parentNode) movly.parentNode.removeChild(movly); }, 1200);
+      break;
+    }
     case 'fx_penetrate': {
       // 相手の貫通発動 → 自分側でも演出を再生
       const overlay = document.createElement('div');
@@ -1199,9 +1211,16 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           renderAll();
           sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '道連れで両者消滅！' });
           showBR('両者消滅', '#ff4444', '道連れで両者消滅！', () => {
-            showDE(blocker, () => { showDE(atk, () => {
-              addLog('💥 両者消滅（道連れ）！'); window._suppressFxSend = false; sendStateSync();
-            }); });
+            showDE(blocker, () => {
+              // 巻き込まれた atk の消滅前に「道連れ」演出（自他両画面）
+              sendCommand({ type: 'fx_michizure' });
+              const showMichi = window._showMichizureAnnounce || ((cb) => cb && cb());
+              showMichi(() => {
+                showDE(atk, () => {
+                  addLog('💥 両者消滅（道連れ）！'); window._suppressFxSend = false; sendStateSync();
+                });
+              });
+            });
           });
           return;
         }
@@ -1228,9 +1247,16 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           renderAll();
           sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '道連れで両者消滅！' });
           showBR('両者消滅', '#ff4444', '道連れで両者消滅！', () => {
-            showDE(atk, () => { showDE(blocker, () => {
-              addLog('💥 両者消滅（道連れ）！'); window._suppressFxSend = false; sendStateSync();
-            }); });
+            showDE(atk, () => {
+              // 巻き込まれた blocker の消滅前に「道連れ」演出（自他両画面）
+              sendCommand({ type: 'fx_michizure' });
+              const showMichi = window._showMichizureAnnounce || ((cb) => cb && cb());
+              showMichi(() => {
+                showDE(blocker, () => {
+                  addLog('💥 両者消滅（道連れ）！'); window._suppressFxSend = false; sendStateSync();
+                });
+              });
+            });
           });
           return;
         }

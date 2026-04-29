@@ -2149,37 +2149,43 @@ function showTrashCardPicker(candidates, wantCount, optional, title, callback, f
       });
     };
     renderItems();
-    // 操作ボタンを追加（既存の閉じるボタンは DOM から一時退避させ確実に消す）
+    // 既存の「閉じる」ボタンは DOM から一時退避（×印もこの ID で兼用しているケースを考慮）
     let closeBtnHomeParent = null, closeBtnHomeNext = null;
     if (closeBtn && closeBtn.parentNode) {
       closeBtnHomeParent = closeBtn.parentNode;
       closeBtnHomeNext = closeBtn.nextSibling;
       closeBtn.parentNode.removeChild(closeBtn);
     }
-    const actionRow = document.createElement('div');
-    actionRow.id = '_trash-picker-actions';
-    actionRow.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:10px;';
-    const okBtn = document.createElement('button');
-    okBtn.innerText = '✓ 決定';
-    okBtn.style.cssText = 'background:#00ff88;color:#000;border:none;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
-    actionRow.appendChild(okBtn);
-    let skipBtn = null;
+    // optional のときだけ「⏭ 使わない」ボタンを表示。
+    // それ以外は各カード詳細ダイアログの「このカードで決定」が確定操作を兼ねる。
+    let actionRow = null, skipBtn = null;
     if (optional) {
+      actionRow = document.createElement('div');
+      actionRow.id = '_trash-picker-actions';
+      actionRow.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:10px;';
       skipBtn = document.createElement('button');
       skipBtn.innerText = '⏭ 使わない';
       skipBtn.style.cssText = 'background:#555;color:#fff;border:1px solid #888;padding:10px 22px;border-radius:6px;font-size:13px;cursor:pointer;';
       actionRow.appendChild(skipBtn);
+      if (closeBtnHomeParent) closeBtnHomeParent.appendChild(actionRow); else modal.appendChild(actionRow);
     }
-    if (closeBtnHomeParent) closeBtnHomeParent.appendChild(actionRow); else modal.appendChild(actionRow);
+    // オンライン同期: トラッシュ選択中は相手画面の「効果発動ポップアップ」を閉じない
+    // （複数枚選択の途中で消えないようフラグで保護し、最終確定時にまとめて閉じる）
+    const _onlinePickerActive = !!(window._isOnlineMode && window._isOnlineMode());
+    if (_onlinePickerActive) window._skipFxEffectClose = true;
     const cleanup = () => {
       modal.style.display = 'none';
-      if (actionRow.parentNode) actionRow.parentNode.removeChild(actionRow);
+      if (actionRow && actionRow.parentNode) actionRow.parentNode.removeChild(actionRow);
       // 元の閉じるボタンを元の場所に戻す（次回の通常のトラッシュ閲覧用）
       if (closeBtn && closeBtnHomeParent) {
         try { closeBtnHomeParent.insertBefore(closeBtn, closeBtnHomeNext); } catch(_) { closeBtnHomeParent.appendChild(closeBtn); }
       }
+      // 最終確定時のみ相手画面のポップアップを閉じる
+      if (_onlinePickerActive) {
+        window._skipFxEffectClose = false;
+        try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_effectClose' }); } catch(_) {}
+      }
     };
-    okBtn.onclick = () => { cleanup(); callback(picked.slice()); };
     if (skipBtn) skipBtn.onclick = () => { cleanup(); callback([]); };
     modal.style.display = 'block';
     return;

@@ -4940,31 +4940,57 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (i >= idxs.length) { ctx.renderAll(); callback(); return; }
           const idx = idxs[i++];
           const tgt = tgtPlayer.battleArea[idx];
-          if (!tgt || !tgt.stack || tgt.stack.length === 0) { dediNext(); return; }
-          // 上から N 枚破棄（実際の破棄枚数は stack.length に応じる）
+          if (!tgt) { dediNext(); return; }
+          // 退化 N: 一番上 (= キャリア) から N 枚破棄。
+          // キャリア + stack 末尾 (N-1) 枚を破棄し、stack に残ったうち最も新しいカード
+          // (= stack.pop()) が新しいキャリアになる。
+          const totalRemovable = 1 + (tgt.stack ? tgt.stack.length : 0);
+          const actualN = Math.min(dedigN, totalRemovable);
           const removed = [];
-          for (let k = 0; k < dedigN && tgt.stack.length > 0; k++) {
-            removed.push(tgt.stack.pop()); // 「上から」= スタック最上位
+          // 1) キャリア自身を破棄（バフ等の transient 状態は失われる）
+          removed.push(tgt);
+          // 2) stack 末尾から N-1 枚破棄
+          for (let k = 1; k < actualN; k++) {
+            if (tgt.stack && tgt.stack.length > 0) removed.push(tgt.stack.pop());
           }
+          // 3) 残った stack の末尾を新キャリアとして昇格
+          let newCarrier = null;
+          if (tgt.stack && tgt.stack.length > 0) {
+            newCarrier = tgt.stack.pop();
+            newCarrier.stack = (tgt.stack || []).slice();
+            // 新キャリアの transient 状態を初期化（rest 状態は元キャリアから引き継ぎ）
+            newCarrier.suspended = !!tgt.suspended;
+            newCarrier.buffs = [];
+            newCarrier._permEffects = {};
+            newCarrier.summonedThisTurn = false;
+            newCarrier._usedEffects = [];
+            newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
+            newCarrier.dp = newCarrier.baseDp;
+            newCarrier.dpModifier = 0;
+          }
+          tgtPlayer.battleArea[idx] = newCarrier;
           removed.forEach(r => tgtPlayer.trash.push(r));
-          ctx.addLog && ctx.addLog('🔻 「' + tgt.name + '」の進化元から ' + removed.length + '枚破棄（退化' + dedigN + '）');
+          ctx.addLog && ctx.addLog('🔻 「' + tgt.name + '」を退化' + actualN + ' (上から' + actualN + '枚破棄' + (newCarrier ? ' / 新形態: ' + newCarrier.name : ' / 完全消滅') + ')');
           ctx.renderAll();
+          // 永続効果を再評価（新キャリアの passive を適用）
+          try { applyPermanentEffects(ctx.bs, isOwn ? ctx.side : (ctx.side === 'player' ? 'ai' : 'player'), ctx); } catch(_) {}
           // 自分側でカード移動演出
           let r = 0;
           function showRemovedAnim() {
             if (r >= removed.length) {
-              // オンライン同期: 進化元破棄を相手画面にも通知
+              // オンライン同期: 退化を相手画面にも通知（state_sync で全同期）
               if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
                 try {
                   window._onlineSendCommand({
                     type: 'fx_evoDiscard',
                     targetName: tgt.name,
                     discardedNames: removed.map(c => c.name),
-                    targetIdx: tgtPlayer.battleArea.indexOf(tgt),
+                    targetIdx: idx,
                     count: removed.length,
                     fromTop: true,
                   });
-                  if (window._markEvoModified) window._markEvoModified(isOwn ? 'player' : 'ai', tgtPlayer.battleArea.indexOf(tgt));
+                  if (window._markEvoModified) window._markEvoModified(isOwn ? 'player' : 'ai', idx);
+                  if (window._onlineSendStateSync) window._onlineSendStateSync();
                 } catch (_) {}
               }
               dediNext();
@@ -4972,7 +4998,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             }
             const card = removed[r++];
             if (window._fxCardMove) {
-              window._fxCardMove(card, tgt.name + 'の進化元', 'トラッシュ', showRemovedAnim);
+              window._fxCardMove(card, tgt.name + (card === tgt ? '' : 'の進化元'), 'トラッシュ', showRemovedAnim);
             } else { setTimeout(showRemovedAnim, 300); }
           }
           showRemovedAnim();

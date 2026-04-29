@@ -1214,6 +1214,26 @@ function resolveOnlineBlock(blockerIdx, cmd) {
       } else {
         bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
         renderAll();
+        // ≪道連れ≫: 攻撃側 atk が「自分だけバトルで消滅」したとき blocker も消滅
+        const atkHasMichizure = !!(
+          (atk._permEffects && atk._permEffects.michizure)
+          || (Array.isArray(atk.buffs) && atk.buffs.some(b => b && b.type === 'keyword_michizure'))
+        );
+        if (atkHasMichizure && bs.player.battleArea[blockerIdx] === blocker) {
+          addLog('💀 【道連れ】「' + atk.name + '」が「' + blocker.name + '」を巻き込んで消滅！');
+          bs.player.battleArea[blockerIdx] = null;
+          bs.player.trash.push(blocker);
+          if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
+          sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
+          renderAll();
+          sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '道連れで両者消滅！' });
+          showBR('両者消滅', '#ff4444', '道連れで両者消滅！', () => {
+            showDE(atk, () => { showDE(blocker, () => {
+              addLog('💥 両者消滅（道連れ）！'); window._suppressFxSend = false; sendStateSync();
+            }); });
+          });
+          return;
+        }
         sendCommand({ type: 'fx_battleResult', text: 'Lost...', color: '#ff4444', sub: '「' + atk.name + '」が撃破された' });
         showBR('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => {
           showDE(atk, () => {

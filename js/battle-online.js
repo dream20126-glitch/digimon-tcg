@@ -345,6 +345,8 @@ function onRemoteCommand(cmd) {
     // --- アタック ---
     case 'attack_security': {
       const atkName = cmd.atkName || '???';
+      // 相手がアタックしたことを記録（cond_opp_no_attack_this_turn 判定用）
+      bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
       addLog('🎮 相手の「' + atkName + '」でセキュリティアタック！');
       if (m.showYourTurn) m.showYourTurn('⚔ 相手アタック！', '「' + atkName + '」→ セキュリティ', '#ff4444', () => { checkOnlineBlock(cmd); });
       break;
@@ -352,6 +354,8 @@ function onRemoteCommand(cmd) {
     case 'attack_digimon': {
       const atkName2 = cmd.atkName || '???';
       const defName2 = cmd.defName || '???';
+      // 相手がアタックしたことを記録（cond_opp_no_attack_this_turn 判定用）
+      bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
       addLog('🎮 相手の「' + atkName2 + '」が「' + defName2 + '」にアタック！');
       if (m.showYourTurn) m.showYourTurn('⚔ 相手アタック！', '「' + atkName2 + '」→「' + defName2 + '」', '#ff4444', () => { checkOnlineBlock(cmd); });
       break;

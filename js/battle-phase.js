@@ -865,6 +865,17 @@ async function endAiTurn() {
   _hooks.expireBuffs('dur_next_opp_turn', null, 'ai');
   _hooks.expireBuffs('dur_next_own_turn', null, 'ai');
   _hooks.expireBuffs('permanent', 'ai');
+  // 自分(プレイヤー)のカードの「相手のターン終了時」効果を発火
+  // scanTriggersが盤面全体（本体 + 進化元レシピ）を走査するので
+  // 任意の自分カード1枚を source として triggerEffect を1度だけ呼ぶ
+  try {
+    const te = window._triggerEffectFn;
+    const anyOwn = (bs.player.battleArea || []).find(c => c)
+      || (bs.player.tamerArea || []).find(c => c);
+    if (te && anyOwn) {
+      await new Promise(res => te('on_opp_turn_end', anyOwn, 'player', null, res));
+    }
+  } catch(_) {}
   renderAll();
 
   // チュートリアル割り込み: 相手ターン終了（自分ターン開始前）

@@ -402,35 +402,13 @@ function onRemoteCommand(cmd) {
         m.expireBuffs('dur_next_own_turn', null, 'ai');
       }
       // 自分のカードの「相手のターン終了時」効果を発火
+      // scanTriggers が盤面全体（本体 + 進化元レシピ）をスキャンするので、
+      // 任意の自分カードを source として triggerEffect を 1 度だけ呼ぶ
       try {
-        const playerCards = [...(bs.player.battleArea || []), ...(bs.player.tamerArea || [])].filter(c => c);
-        playerCards.forEach(card => {
-          if (!card.recipe) return;
-          let recipe = null;
-          try {
-            const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
-            recipe = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          } catch(_) {}
-          // top-level on_opp_turn_end
-          if (recipe && Array.isArray(recipe.on_opp_turn_end)) {
-            const te = window._triggerEffectFn;
-            if (te) te('on_opp_turn_end', card, 'player', null, () => {});
-          }
-          // 進化元カードの evo_source.on_opp_turn_end
-          if (Array.isArray(card.stack)) {
-            card.stack.forEach(evoCard => {
-              if (!evoCard || !evoCard.recipe) return;
-              try {
-                const raw = typeof evoCard.recipe === 'string' ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
-                const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-                if (r.evo_source && Array.isArray(r.evo_source.on_opp_turn_end)) {
-                  const te = window._triggerEffectFn;
-                  if (te) te('on_opp_turn_end', card, 'player', null, () => {});
-                }
-              } catch(_) {}
-            });
-          }
-        });
+        const te = window._triggerEffectFn;
+        const anyOwn = (bs.player.battleArea || []).find(c => c)
+          || (bs.player.tamerArea || []).find(c => c);
+        if (te && anyOwn) te('on_opp_turn_end', anyOwn, 'player', null, () => {});
       } catch(_) {}
       renderAll();
       if (m.showYourTurn) {

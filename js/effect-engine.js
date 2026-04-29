@@ -2180,10 +2180,14 @@ function showTrashCardPicker(candidates, wantCount, optional, title, callback, f
       if (closeBtn && closeBtnHomeParent) {
         try { closeBtnHomeParent.insertBefore(closeBtn, closeBtnHomeNext); } catch(_) { closeBtnHomeParent.appendChild(closeBtn); }
       }
-      // 最終確定時のみ相手画面のポップアップを閉じる
+      // 最終確定時のみ相手画面のポップアップを閉じる。
+      // ただし後続の登場演出 / カード移動演出が呼び出す play/state_sync コマンドより
+      // 先に届いて演出が抑止されないよう、1tick 遅延 → さらに少し余裕を持たせる
       if (_onlinePickerActive) {
         window._skipFxEffectClose = false;
-        try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_effectClose' }); } catch(_) {}
+        setTimeout(() => {
+          try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_effectClose' }); } catch(_) {}
+        }, 50);
       }
     };
     if (skipBtn) skipBtn.onclick = () => { cleanup(); callback([]); };
@@ -3742,10 +3746,24 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
         }
       });
 
-      // 進化元効果もスキャン
+      // 進化元効果もスキャン（レシピ優先 → テキスト解析フォールバック）
       ctx.bs[side].battleArea.forEach(card => {
         if (!card || !card.stack) return;
         card.stack.forEach(evoCard => {
+          if (!evoCard) return;
+          // レシピ優先: evo_source.[triggerCode] を直接参照
+          const evoRecipeSteps = getRecipeForTrigger(evoCard, triggerCode, true);
+          if (evoRecipeSteps) {
+            const dummyBlock = {
+              raw: evoCard.evoSourceEffect || '', trigger: { code: triggerCode },
+              actions: [], conditions: [], _recipeCard: evoCard,
+            };
+            addToQueue(card, dummyBlock,
+              side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
+            );
+            return;
+          }
+          // テキスト解析フォールバック
           if (!evoCard.evoSourceEffect || evoCard.evoSourceEffect === 'なし') return;
           const blocks = parseCardEffect(evoCard, evoCard.evoSourceEffect);
           blocks.forEach(block => {

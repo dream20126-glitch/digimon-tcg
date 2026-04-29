@@ -1708,9 +1708,9 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       ctx.renderAll && ctx.renderAll();
       // デコイ自身の消滅で on_destroy 発火
       const decoyOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-      fireOnDestroyTriggers(decoyOwnerSide, ctx.bs, ctx, function() {
+      fireDestroyChain(dc, decoyOwnerSide, ctx.bs, ctx, function() {
         callback && callback();
-      }, dc);
+      });
       return;
     }
   }
@@ -1719,9 +1719,9 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       // 他デジモンを身代わりにして destroyed は残す
       ctx.renderAll && ctx.renderAll();
       const sgOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-      fireOnDestroyTriggers(sgOwnerSide, ctx.bs, ctx, function() {
+      fireDestroyChain(destroyed, sgOwnerSide, ctx.bs, ctx, function() {
         callback && callback();
-      }, destroyed);
+      });
       return;
     }
   }
@@ -1738,21 +1738,8 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
   // on_destroy グローバル発火（消滅した側を引数に）
   // targetSide オブジェクトから 'player' / 'ai' を逆引き
   const destroyedSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-  fireOnDestroyTriggers(destroyedSideName, ctx.bs, ctx, () => {
-    // 自分のデジモンが消滅したとき（同 side のテイマー/デジモンが反応：石田ヤマト等）
-    _fireSidedReactionTriggers(destroyedSideName, 'when_own_destroyed', ctx.bs, ctx, () => {
-      // 相手のデジモンが消滅したとき（反対 side のカードが反応）
-      const oppSideName = destroyedSideName === 'player' ? 'ai' : 'player';
-      _fireSidedReactionTriggers(oppSideName, 'when_opp_destroyed', ctx.bs, ctx, () => {
-        // 他のデジモンが消滅したとき（自他問わず両 side のカードが反応）
-        _fireSidedReactionTriggers('player', 'when_other_destroyed', ctx.bs, ctx, () => {
-          _fireSidedReactionTriggers('ai', 'when_other_destroyed', ctx.bs, ctx, () => {
-            callback && callback();
-          });
-        });
-      });
-    });
-  }, destroyed);
+  // 共通の消滅トリガーチェーン
+  fireDestroyChain(destroyed, destroyedSideName, ctx.bs, ctx, callback);
 }
 
 function doBounce(targetSide, slotIdx, ctx) {
@@ -3470,17 +3457,8 @@ function checkPendingDestroys(ctx, callback) {
       if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
         window._onlineSendStateSync();
       }
-      // on_destroy: 自身の消滅効果 → when_own_destroyed → when_opp_destroyed → when_other_destroyed → 次の消滅へ
-      fireOnDestroyTriggers(side, ctx.bs, ctx, () => {
-        _fireSidedReactionTriggers(side, 'when_own_destroyed', ctx.bs, ctx, () => {
-          const oppSide = side === 'player' ? 'ai' : 'player';
-          _fireSidedReactionTriggers(oppSide, 'when_opp_destroyed', ctx.bs, ctx, () => {
-            _fireSidedReactionTriggers('player', 'when_other_destroyed', ctx.bs, ctx, () => {
-              _fireSidedReactionTriggers('ai', 'when_other_destroyed', ctx.bs, ctx, processNext);
-            });
-          });
-        });
-      }, card);
+      // 共通の消滅トリガーチェーン
+      fireDestroyChain(card, side, ctx.bs, ctx, processNext);
     });
   }
   processNext();
@@ -4108,6 +4086,25 @@ export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
 //   bs:            battle state
 //   ctxBase:       元の context（addLog/renderAll/updateMemGauge 等を引き継ぐ）
 //   done:          全リアクション完了時に呼ぶコールバック（省略時は no-op）
+// 共通: 消滅後のトリガーチェーン
+// 順序: 自身のon_destroy → when_own_destroyed → when_opp_destroyed → when_other_destroyed
+// destroyedCard: 消滅したカード（必須）
+// destroyedSide: 'player'/'ai'
+export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, callback) {
+  const finish = () => { try { callback && callback(); } catch(_) {} };
+  if (!destroyedCard || !bs) { finish(); return; }
+  const oppSide = destroyedSide === 'player' ? 'ai' : 'player';
+  fireOnDestroyTriggers(destroyedSide, bs, ctxBase, () => {
+    _fireSidedReactionTriggers(destroyedSide, 'when_own_destroyed', bs, ctxBase, () => {
+      _fireSidedReactionTriggers(oppSide, 'when_opp_destroyed', bs, ctxBase, () => {
+        _fireSidedReactionTriggers('player', 'when_other_destroyed', bs, ctxBase, () => {
+          _fireSidedReactionTriggers('ai', 'when_other_destroyed', bs, ctxBase, finish);
+        });
+      });
+    });
+  }, destroyedCard);
+}
+
 export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase, done, destroyedCard) {
   // 消滅したカード自身および進化元の自己効果を発動
   if (destroyedCard) {

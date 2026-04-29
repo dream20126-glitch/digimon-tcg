@@ -672,9 +672,10 @@ function onRemoteCommand(cmd) {
           if (newArea[i] && isRecentlyDestroyed('ai', i)) {
             newArea[i] = null;
           }
-          // 最近進化元が変更されたカードのstackを保護（古いsyncで復元されるのを防止）
-          if (newArea[i] && isRecentlyEvoModified('ai', i) && bs.ai.battleArea[i]) {
-            newArea[i].stack = bs.ai.battleArea[i].stack;
+          // 最近進化元が変更されたスロットはカード本体ごと保護（退化等で新キャリアに昇格した
+          // ローカル状態を、まだ反映前の古い相手 state_sync に上書きされないようにする）
+          if (isRecentlyEvoModified('ai', i)) {
+            newArea[i] = bs.ai.battleArea[i] || null;
           }
           // 最近自分がレスト/アクティブにしたカードの suspended を保護（古いsyncで戻されないように）
           if (newArea[i]) {

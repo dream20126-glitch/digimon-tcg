@@ -955,7 +955,19 @@ export function resolveSecurityCheck(atk, atkIdx) {
   function doNextCheck() {
     checksRemaining--;
     checkNumber++;
-    if (!bs.player.battleArea[atkIdx]) { checkAttackEnd(atk, atkIdx); return; }
+    // アタッカーが場を離れた / 退化等で別カードに置換された → アタック終了
+    if (!bs.player.battleArea[atkIdx] || bs.player.battleArea[atkIdx] !== atk) {
+      addLog('⚔ アタッカーが場を離れたためセキュリティチェックを終了');
+      checkAttackEnd(atk, atkIdx);
+      return;
+    }
+    // Sアタック+ を動的に再評価（退化や効果無効化で +1 が消えた場合は早期終了）
+    const currentTotal = getSecurityAttackCount(atk);
+    if (checkNumber > currentTotal) {
+      addLog('⚔ Sアタック+効果が失われたためセキュリティチェック終了');
+      checkAttackEnd(atk, atkIdx);
+      return;
+    }
     if (bs.ai.security.length <= 0) {
       addLog('🛡 相手のセキュリティが0枚になった');
       checkAttackEnd(atk, atkIdx);

@@ -890,6 +890,51 @@ function onRemoteCommand(cmd) {
       addLog('🔒 「' + (cmd.targetName || '???') + '」' + (labelMap[cmd.action] || '行動制限') + '付与');
       break;
     }
+    case 'fx_dedigivolve': {
+      // 退化: 受信側でキャリアを破棄 + stack 先頭から N-1 枚破棄 + 残り stack 先頭を新キャリアに昇格
+      // onSide: 'self' = 自分側 (bs.player) / 'opp' = 相手側 (bs.ai)。送信側の対象側と反転する。
+      const tgtPlayer = cmd.onSide === 'opp' ? bs.ai : bs.player;
+      const tgt = tgtPlayer.battleArea[cmd.targetIdx];
+      const removeCount = cmd.removeCount || 1;
+      if (!tgt) break;
+      const removed = [];
+      removed.push(tgt);
+      for (let k = 1; k < removeCount; k++) {
+        if (tgt.stack && tgt.stack.length > 0) removed.push(tgt.stack.shift());
+      }
+      let newCarrier = null;
+      if (tgt.stack && tgt.stack.length > 0) {
+        newCarrier = tgt.stack.shift();
+        newCarrier.stack = (tgt.stack || []).slice();
+        newCarrier.suspended = !!tgt.suspended;
+        newCarrier.buffs = [];
+        newCarrier._permEffects = {};
+        newCarrier.summonedThisTurn = false;
+        newCarrier._usedEffects = [];
+        newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
+        newCarrier.dp = newCarrier.baseDp;
+        newCarrier.dpModifier = 0;
+      }
+      tgtPlayer.battleArea[cmd.targetIdx] = newCarrier;
+      removed.forEach(r => tgtPlayer.trash.push(r));
+      addLog('🔻 「' + tgt.name + '」を退化' + removeCount + (newCarrier ? ' (新形態: ' + newCarrier.name + ')' : ' (完全消滅)'));
+      // 退化後の永続効果を再評価
+      try {
+        if (window._applyPermanentEffects) window._applyPermanentEffects();
+      } catch(_) {}
+      renderAll();
+      // 1枚ずつ移動演出
+      let dedi = 0;
+      function dediShowAnim() {
+        if (dedi >= removed.length) return;
+        const card = removed[dedi++];
+        if (window._fxCardMove) {
+          window._fxCardMove(card, tgt.name + (card === tgt ? '' : 'の進化元'), 'トラッシュ', dediShowAnim);
+        } else { setTimeout(dediShowAnim, 300); }
+      }
+      dediShowAnim();
+      break;
+    }
     case 'fx_evoDiscard': {
       // 進化元破棄：自分のカードのstackを実際に操作
       const discardedCards = [];

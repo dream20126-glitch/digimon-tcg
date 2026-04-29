@@ -4978,19 +4978,22 @@ function executeRecipeStep(step, ctx, store, callback) {
           let r = 0;
           function showRemovedAnim() {
             if (r >= removed.length) {
-              // オンライン同期: 退化を相手画面にも通知（state_sync で全同期）
-              if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+              // オンライン同期: 退化を相手画面にも通知（カード本体ごと置換するため
+              // 専用コマンド fx_dedigivolve を送る）
+              if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
                 try {
-                  window._onlineSendCommand({
-                    type: 'fx_evoDiscard',
-                    targetName: tgt.name,
-                    discardedNames: removed.map(c => c.name),
-                    targetIdx: idx,
-                    count: removed.length,
-                    fromTop: true,
-                  });
-                  if (window._markEvoModified) window._markEvoModified(isOwn ? 'player' : 'ai', idx);
-                  if (window._onlineSendStateSync) window._onlineSendStateSync();
+                  // ctx.side === 'player' なら相手 (bs.ai 側) を退化させた → 受信側では bs.player 側
+                  // ctx.side === 'ai' (まれ) ならローカルの 'player' は実は AI 側 ... 通常は player のみ送信
+                  if (ctx.side === 'player') {
+                    window._onlineSendCommand({
+                      type: 'fx_dedigivolve',
+                      targetIdx: idx,
+                      onSide: isOwn ? 'opp' : 'self', // 受信側視点: 'self'=自分側 / 'opp'=相手側
+                      removeCount: actualN,
+                    });
+                    if (window._markEvoModified) window._markEvoModified(isOwn ? 'player' : 'ai', idx);
+                    if (window._onlineSendStateSync) window._onlineSendStateSync();
+                  }
                 } catch (_) {}
               }
               dediNext();

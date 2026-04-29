@@ -1640,13 +1640,77 @@ export function showBlockerSelection(blockerIndices, attacker, callback) {
       const r = slot.getBoundingClientRect();
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) selectedIdx = idx;
     });
-    if (selectedIdx !== null) { cleanup(); callback(selectedIdx); }
+    if (selectedIdx !== null) {
+      // 選択候補のカード詳細 + 「このデジモンでブロックしますか？」確認ダイアログを出す
+      // 「はい」で確定、「いいえ」で再選択に戻す（他効果の対象選択と同じ UX）
+      document.removeEventListener('click', onSelect, true);
+      document.removeEventListener('touchend', onSelect, true);
+      const card = bs.player.battleArea[selectedIdx];
+      showBlockerConfirm(card, () => {
+        cleanup();
+        callback(selectedIdx);
+      }, () => {
+        // キャンセル → 選択画面へ戻す
+        setTimeout(() => {
+          document.addEventListener('click', onSelect, true);
+          document.addEventListener('touchend', onSelect, true);
+        }, 100);
+      });
+    }
   }
 
   setTimeout(() => {
     document.addEventListener('click', onSelect, true);
     document.addEventListener('touchend', onSelect, true);
   }, 100);
+}
+
+// ブロッカー候補のカード詳細 + 「このデジモンでブロックしますか？」確認ダイアログ
+function showBlockerConfirm(card, onYes, onNo) {
+  const borderColor = '#00fbff';
+  const overlay = document.createElement('div');
+  overlay.id = '_blocker-confirm-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#0a0a0a;border:1px solid ' + borderColor + ';border-radius:12px;padding:20px;max-width:320px;width:100%;text-align:center;';
+  const imgSrc = card ? (card.imgSrc || cardImg(card) || card.imageUrl || '') : '';
+  const _pc = (card.playCost != null) ? card.playCost : (card.cost != null ? card.cost : null);
+  let _statsHtml = 'Lv.' + (card.level || '?') + ' ／ DP:' + (card.dp || '?') + ' ／ 登場コスト:' + (_pc != null ? _pc : '—');
+  if (card.evolveCost != null) {
+    const _cond = (card.evolveCond || '').trim();
+    const _condEsc = _cond.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    _statsHtml += '<br><span style="color:#00ff88;">進化コスト：' + (_cond ? _condEsc + 'から' : '') + card.evolveCost + '</span>';
+  }
+  box.innerHTML = (imgSrc ? '<img src="' + imgSrc + '" style="width:160px;border-radius:8px;margin-bottom:12px;border:1px solid ' + borderColor + ';">' : '')
+    + '<div style="color:#fff;font-weight:bold;font-size:14px;margin-bottom:8px;">' + (card.name || '不明') + ' (' + (card.cardNo || '') + ')</div>'
+    + '<div style="font-size:12px;color:' + borderColor + ';margin-bottom:10px;line-height:1.5;">' + _statsHtml + '</div>';
+  if (card.effect && card.effect !== 'なし') {
+    box.innerHTML += '<div style="font-size:11px;color:#ddd;line-height:1.7;margin-bottom:10px;text-align:left;background:#111;padding:10px;border-radius:6px;border:1px solid #333;">'
+      + '<div style="color:' + borderColor + ';font-size:10px;margin-bottom:4px;font-weight:bold;">効果</div>' + card.effect + '</div>';
+  }
+  if (card.evoSourceEffect && card.evoSourceEffect !== 'なし') {
+    box.innerHTML += '<div style="font-size:11px;color:#aaa;line-height:1.7;margin-bottom:10px;text-align:left;background:#0a0a0a;padding:10px;border-radius:6px;border:1px solid #222;">'
+      + '<div style="color:#ffaa00;font-size:10px;margin-bottom:4px;font-weight:bold;">進化元効果</div>' + card.evoSourceEffect + '</div>';
+  }
+  box.innerHTML += '<div style="color:' + borderColor + ';font-size:14px;font-weight:bold;margin:16px 0 12px;">🛡 このデジモンでブロックしますか？</div>'
+    + '<div style="display:flex;gap:10px;justify-content:center;">'
+    + '<button id="_blocker-yes" style="background:' + borderColor + ';color:#000;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
+    + '<button id="_blocker-no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
+    + '</div>';
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) e.stopPropagation(); });
+  const cleanupConf = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+  document.getElementById('_blocker-yes').addEventListener('click', (e) => {
+    e.stopPropagation();
+    cleanupConf();
+    setTimeout(() => onYes && onYes(), 50);
+  });
+  document.getElementById('_blocker-no').addEventListener('click', (e) => {
+    e.stopPropagation();
+    cleanupConf();
+    setTimeout(() => onNo && onNo(), 50);
+  });
 }
 
 // ===== AIアタックフェーズ =====

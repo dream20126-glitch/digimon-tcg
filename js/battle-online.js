@@ -284,11 +284,6 @@ function onRemoteCommand(cmd) {
     case 'card_removed': {
       if (cmd.zone === 'battle' && cmd.slotIdx !== undefined) {
         let card = bs.player.battleArea[cmd.slotIdx];
-        console.log('[card_removed]', 'slotIdx=' + cmd.slotIdx, 'reason=' + cmd.reason,
-          'card=' + (card ? card.name : 'null'),
-          'stack=' + (card && card.stack ? card.stack.map(s => s ? s.name : '?').join(',') : 'none'),
-          'cmd.cardData=' + (cmd.cardData ? cmd.cardData.name : 'none'),
-          'fireFn=' + !!window._fireOnlineDestroyChain);
         if (card) {
           bs.player.battleArea[cmd.slotIdx] = null;
           if (cmd.reason === 'bounce') {
@@ -310,14 +305,9 @@ function onRemoteCommand(cmd) {
             // fx_battleResult (showBR, 約1.7s) → fx_destroy (showDE, 1.9s) のキュー処理の
             // 完了タイミングを見越して 3500ms 後に発火する。
             setTimeout(() => {
-              console.log('[card_removed] firing destroy chain for', cardForChain.name,
-                'stack.length=' + (cardForChain.stack ? cardForChain.stack.length : 0),
-                'fromCmdData=' + (!card && !!cmd.cardData));
               try {
-                window._fireOnlineDestroyChain(['player'], { player: cardForChain }, () => {
-                  console.log('[card_removed] destroy chain finished for', cardForChain.name);
-                });
-              } catch (e) { console.error('[card_removed] chain error:', e); }
+                window._fireOnlineDestroyChain(['player'], { player: cardForChain }, () => {});
+              } catch (_) {}
             }, 3500);
           }
         }

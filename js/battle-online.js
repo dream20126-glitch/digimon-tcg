@@ -274,14 +274,13 @@ function onRemoteCommand(cmd) {
           // 消滅 (destroy) の場合は on_destroy / on_battle_destroy / when_own_destroyed を
           // 自分側 (player) で発火する。これでパグモン等の進化元 evo_source.on_destroy が
           // カード所有者の画面に正しくポップアップ表示される。
-          // バトル解決中の VS / battleResult 演出と被らないよう enqueueFx でキュー化し、
-          // 直前の fx 演出が完了してから発火する。
+          // バトル中の VS / battleResult 演出と被らないよう少し遅延させてから発火する。
           if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
-            enqueueFx((doneFx) => {
+            setTimeout(() => {
               try {
-                window._fireOnlineDestroyChain(['player'], { player: card }, () => doneFx && doneFx());
-              } catch (_) { doneFx && doneFx(); }
-            });
+                window._fireOnlineDestroyChain(['player'], { player: card }, () => {});
+              } catch (_) {}
+            }, 1200);
           }
         }
       }
@@ -1272,6 +1271,9 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy' });
         renderAll();
         sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '両者消滅！' });
+        // 両者の消滅演出を相手機にも明示送信
+        sendCommand({ type: 'fx_destroy', cardName: blocker.name, cardImg: cardImg(blocker) });
+        sendCommand({ type: 'fx_destroy', cardName: atk.name, cardImg: cardImg(atk) });
         showBR('両者消滅', '#ff4444', '両者消滅！', () => {
           showDE(blocker, () => { showDE(atk, () => {
             addLog('💥 両者消滅！');
@@ -1323,6 +1325,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           return;
         }
         sendCommand({ type: 'fx_battleResult', text: 'Win!!', color: '#00ff88', sub: '「' + blocker.name + '」を撃破！' });
+        sendCommand({ type: 'fx_destroy', cardName: blocker.name, cardImg: cardImg(blocker) });
         showBR('Lost...', '#ff4444', '「' + blocker.name + '」が撃破された', () => {
           showDE(blocker, () => {
             addLog('💥 「' + blocker.name + '」が撃破された');
@@ -1370,6 +1373,9 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           return;
         }
         sendCommand({ type: 'fx_battleResult', text: 'Lost...', color: '#ff4444', sub: '「' + atk.name + '」が撃破された' });
+        // _suppressFxSend のせいで showDE(atk) 内の自動 fx_destroy 送信が抑止されるため、
+        // 攻撃側カードの消滅演出を相手機にも明示的に送る
+        sendCommand({ type: 'fx_destroy', cardName: atk.name, cardImg: cardImg(atk) });
         showBR('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => {
           showDE(atk, () => {
             addLog('💥 「' + atk.name + '」を撃破！');

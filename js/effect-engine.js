@@ -2137,16 +2137,29 @@ function showTrashCardPicker(candidates, wantCount, optional, title, callback, f
             // 上限到達ならスキップ
             if (picked.length >= wantCount) return;
             // カード詳細＋決定/キャンセルダイアログを開く
-            _showCardConfirmDialog(c, () => { picked.push(c); renderItems(); });
+            _showCardConfirmDialog(c, () => {
+              picked.push(c);
+              // 指定枚数に達した時点で自動確定
+              if (picked.length >= wantCount) {
+                cleanup();
+                callback(picked.slice());
+                return;
+              }
+              renderItems();
+            });
           };
         }
         grid.appendChild(wrap);
       });
     };
     renderItems();
-    // 操作ボタンを追加（既存の閉じるボタンを一時隠す）
-    const closeBtnOrigDisplay = closeBtn ? closeBtn.style.display : '';
-    if (closeBtn) closeBtn.style.setProperty('display', 'none', 'important');
+    // 操作ボタンを追加（既存の閉じるボタンは DOM から一時退避させ確実に消す）
+    let closeBtnHomeParent = null, closeBtnHomeNext = null;
+    if (closeBtn && closeBtn.parentNode) {
+      closeBtnHomeParent = closeBtn.parentNode;
+      closeBtnHomeNext = closeBtn.nextSibling;
+      closeBtn.parentNode.removeChild(closeBtn);
+    }
     const actionRow = document.createElement('div');
     actionRow.id = '_trash-picker-actions';
     actionRow.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:10px;';
@@ -2161,13 +2174,13 @@ function showTrashCardPicker(candidates, wantCount, optional, title, callback, f
       skipBtn.style.cssText = 'background:#555;color:#fff;border:1px solid #888;padding:10px 22px;border-radius:6px;font-size:13px;cursor:pointer;';
       actionRow.appendChild(skipBtn);
     }
-    if (closeBtn && closeBtn.parentNode) closeBtn.parentNode.appendChild(actionRow); else modal.appendChild(actionRow);
+    if (closeBtnHomeParent) closeBtnHomeParent.appendChild(actionRow); else modal.appendChild(actionRow);
     const cleanup = () => {
       modal.style.display = 'none';
       if (actionRow.parentNode) actionRow.parentNode.removeChild(actionRow);
-      if (closeBtn) {
-        closeBtn.style.removeProperty('display');
-        if (closeBtnOrigDisplay) closeBtn.style.display = closeBtnOrigDisplay;
+      // 元の閉じるボタンを元の場所に戻す（次回の通常のトラッシュ閲覧用）
+      if (closeBtn && closeBtnHomeParent) {
+        try { closeBtnHomeParent.insertBefore(closeBtn, closeBtnHomeNext); } catch(_) { closeBtnHomeParent.appendChild(closeBtn); }
       }
     };
     okBtn.onclick = () => { cleanup(); callback(picked.slice()); };
@@ -3449,7 +3462,7 @@ function checkPendingDestroys(ctx, callback) {
         window._onlineSendStateSync();
       }
       // on_destroy リアクション → 完了 → 次の消滅へ
-      fireOnDestroyTriggers(side, ctx.bs, ctx, processNext);
+      fireOnDestroyTriggers(side, ctx.bs, ctx, processNext, card);
     });
   }
   processNext();
@@ -4077,16 +4090,70 @@ export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
 //   bs:            battle state
 //   ctxBase:       元の context（addLog/renderAll/updateMemGauge 等を引き継ぐ）
 //   done:          全リアクション完了時に呼ぶコールバック（省略時は no-op）
-export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase, done) {
+export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase, done, destroyedCard) {
+  // 消滅したカード自身および進化元の自己効果を発動
+  if (destroyedCard) {
+    return _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done, 'on_destroy');
+  }
   return _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, 'on_destroy');
 }
 
 // ===== on_battle_destroy グローバル発火 =====
 // バトル解決（DP比較）で消滅した場合のみ呼ぶ。効果による消滅では呼ばない。
-// 道連れ等「このデジモンがバトルで消滅したとき」「相手のデジモンがバトルで消滅したとき」用のフック。
-// on_destroy と同じスキャン構造だが、レシピキーは on_battle_destroy を拾う。
-export function fireOnBattleDestroyTriggers(destroyedSide, bs, ctxBase, done) {
+// 道連れ等「このデジモンがバトルで消滅したとき」用のフック。
+export function fireOnBattleDestroyTriggers(destroyedSide, bs, ctxBase, done, destroyedCard) {
+  if (destroyedCard) {
+    return _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done, 'on_battle_destroy');
+  }
   return _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, 'on_battle_destroy');
+}
+
+// 消滅したカード自身（および進化元）が持つ on_destroy / on_battle_destroy 効果を発動
+// destroyedCard: 消滅したカード本体
+// destroyedSide: そのカードが所属していた side ('player' or 'ai')
+function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done, triggerKey) {
+  const finish = () => { try { done && done(); } catch(_) {} };
+  if (!destroyedCard || !bs) { finish(); return; }
+  const reactions = [];
+  const parseRecipe = (recipe) => {
+    if (!recipe) return null;
+    try {
+      const raw = typeof recipe === 'string' ? recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : recipe;
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch(_) { return null; }
+  };
+  // 1) 本体カードの on_destroy
+  const ownR = parseRecipe(destroyedCard.recipe);
+  if (ownR && Array.isArray(ownR[triggerKey])) {
+    reactions.push({ sourceCard: destroyedCard, recipe: ownR[triggerKey], carrier: destroyedCard });
+  }
+  // 2) 進化元カードの evo_source.on_destroy
+  if (Array.isArray(destroyedCard.stack)) {
+    destroyedCard.stack.forEach(evoCard => {
+      if (!evoCard) return;
+      const r = parseRecipe(evoCard.recipe);
+      if (r && r.evo_source && Array.isArray(r.evo_source[triggerKey])) {
+        reactions.push({ sourceCard: evoCard, recipe: r.evo_source[triggerKey], carrier: destroyedCard });
+      }
+    });
+  }
+  if (reactions.length === 0) { finish(); return; }
+  let i = 0;
+  const runOne = () => {
+    if (i >= reactions.length) { finish(); return; }
+    const { sourceCard, recipe, carrier } = reactions[i++];
+    const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: destroyedSide };
+    const effText = (sourceCard !== carrier && sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
+      ? sourceCard.evoSourceEffect : (sourceCard.effect || carrier.effect || '');
+    ctx.addLog && ctx.addLog('⚡ 「' + (carrier.name||'?') + '」' + (sourceCard !== carrier ? 'の進化元【'+sourceCard.name+'】' : '') + 'の効果発動');
+    showEffectAnnounce(carrier, effText, destroyedSide, () => {
+      runRecipe(recipe, ctx, () => {
+        ctx.renderAll && ctx.renderAll();
+        runOne();
+      });
+    }, sourceCard !== carrier ? sourceCard : undefined);
+  };
+  runOne();
 }
 
 function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) {
@@ -5304,19 +5371,44 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
-    // === デッキの上からN枚破棄（自分側）===
+    // === デッキの上からN枚破棄（自分側）1枚ずつ表示+カード移動演出 ===
     case 'deck_trash_top': {
       const n = step.value || 1;
-      let trashed = 0;
-      for (let k = 0; k < n; k++) {
-        if (!player.deck || player.deck.length === 0) break;
+      let i = 0;
+      const trashOne = () => {
+        if (i >= n || !player.deck || player.deck.length === 0) {
+          ctx.renderAll && ctx.renderAll();
+          callback();
+          return;
+        }
+        i++;
         const top = player.deck.shift();
         player.trash.push(top);
-        trashed++;
-      }
-      ctx.addLog && ctx.addLog('🗑 デッキ上から' + trashed + '枚をトラッシュへ');
-      ctx.renderAll && ctx.renderAll();
-      callback();
+        ctx.addLog && ctx.addLog('🗑 デッキ上から「' + (top.name || '?') + '」をトラッシュへ');
+        ctx.renderAll && ctx.renderAll();
+        // 一瞬カード画像を中央表示してから移動（簡易演出）
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:62000;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.15s ease;pointer-events:none;';
+        const card = document.createElement('div');
+        const src = top.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(top) : '') || top.imageUrl || '';
+        card.style.cssText = 'background:#0a0a0a;border:2px solid #ff5577;border-radius:10px;padding:14px;max-width:240px;text-align:center;box-shadow:0 0 30px rgba(255,85,119,0.5);';
+        card.innerHTML = (src ? '<img src="'+src+'" style="width:160px;border-radius:6px;margin-bottom:8px;">' : '')
+          + '<div style="color:#fff;font-size:13px;font-weight:bold;">' + (top.name || '?') + '</div>'
+          + '<div style="color:#ff5577;font-size:10px;margin-top:4px;">→ トラッシュへ</div>';
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+        setTimeout(() => {
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+          // カード移動演出（あれば）
+          if (window._fxCardMove) {
+            try { window._fxCardMove(top, 'デッキ', 'トラッシュ', () => setTimeout(trashOne, 200)); }
+            catch(_) { setTimeout(trashOne, 200); }
+          } else {
+            setTimeout(trashOne, 200);
+          }
+        }, 700);
+      };
+      trashOne();
       break;
     }
 

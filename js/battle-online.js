@@ -401,6 +401,37 @@ function onRemoteCommand(cmd) {
         m.expireBuffs('dur_next_opp_turn', null, 'ai');
         m.expireBuffs('dur_next_own_turn', null, 'ai');
       }
+      // 自分のカードの「相手のターン終了時」効果を発火
+      try {
+        const playerCards = [...(bs.player.battleArea || []), ...(bs.player.tamerArea || [])].filter(c => c);
+        playerCards.forEach(card => {
+          if (!card.recipe) return;
+          let recipe = null;
+          try {
+            const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
+            recipe = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          } catch(_) {}
+          // top-level on_opp_turn_end
+          if (recipe && Array.isArray(recipe.on_opp_turn_end)) {
+            const te = window._triggerEffectFn;
+            if (te) te('on_opp_turn_end', card, 'player', null, () => {});
+          }
+          // 進化元カードの evo_source.on_opp_turn_end
+          if (Array.isArray(card.stack)) {
+            card.stack.forEach(evoCard => {
+              if (!evoCard || !evoCard.recipe) return;
+              try {
+                const raw = typeof evoCard.recipe === 'string' ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
+                const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                if (r.evo_source && Array.isArray(r.evo_source.on_opp_turn_end)) {
+                  const te = window._triggerEffectFn;
+                  if (te) te('on_opp_turn_end', card, 'player', null, () => {});
+                }
+              } catch(_) {}
+            });
+          }
+        });
+      } catch(_) {}
       renderAll();
       if (m.showYourTurn) {
         m.showYourTurn('相手のターン終了', '', '#555555', () => {

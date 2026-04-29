@@ -1,0 +1,9 @@
+{
+  "name": "digimon-tcg",
+  "version": "1.0.0",
+  "description": "Digimon Card Game web app (static + GAS hybrid)",
+  "scripts": {
+    "sync-cards": "node scripts/sync-cards.js"
+  },
+  "private": true
+}

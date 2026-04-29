@@ -1,4 +1,8 @@
-// カードデータ・画像管理（GAS API版）
+// カードデータ・画像管理
+// 読み込み戦略:
+//   1) data/cards.json (静的) → 50-300ms
+//   2) localhost なら GAS API (常時最新) → 1-5s
+//   3) 静的が無ければ GAS にフォールバック
 import { gasGet } from './firebase-config.js';
 
 // グローバルキャッシュ
@@ -6,6 +10,33 @@ window.allCards = [];
 window.keywords = [];
 window.masterKeywords = [];
 window.cardImages = {};
+
+// 静的 JSON のパス（リポジトリルート相対）
+const CARDS_JSON_PATH = 'data/cards.json';
+
+// localhost / file:// は開発モード扱い（GAS 直 → 常に最新）
+function isDevMode() {
+  if (typeof window === 'undefined') return false;
+  const h = window.location && window.location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || h === '' || (window.location && window.location.protocol === 'file:');
+}
+
+// 静的 JSON から読み込み（version は cache buster として URL に付与）
+async function loadFromStaticJson() {
+  // version-pin: data/cards-version.json があればそこから取得 → 確実に最新ファイル
+  let versionParam = '';
+  try {
+    const vRes = await fetch('data/cards-version.json?_=' + Date.now(), { cache: 'no-store' });
+    if (vRes.ok) {
+      const v = await vRes.json();
+      if (v && v.version) versionParam = '?v=' + v.version;
+    }
+  } catch (_) {}
+  const url = CARDS_JSON_PATH + (versionParam || ('?v=' + Date.now()));
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('static cards.json not found: ' + res.status);
+  return await res.json();
+}
 
 // Google Drive URL → 直リンク変換（GAS経由Base64不要に）
 export function getGoogleDriveDirectLink(url) {
@@ -32,15 +63,37 @@ export function getCardImageUrl(card) {
   return directUrl;
 }
 
-// カードデータ読み込み（GAS API経由 → スプレッドシート）
+// カードデータ読み込み（静的JSON優先 → GAS フォールバック）
 export async function loadCardAndKeywordData() {
   if (allCards.length > 0) return { cards: allCards, keywords };
 
-  try {
-    const data = await gasGet('getCards');
+  let data = null;
+  let source = '';
 
+  // 1) 開発モード以外はまず静的 JSON を試す
+  if (!isDevMode()) {
+    try {
+      data = await loadFromStaticJson();
+      source = 'static (' + (data.exportedAt || '?') + ')';
+    } catch (e) {
+      console.warn('[cards] 静的 JSON 失敗、GAS にフォールバック:', e.message);
+    }
+  }
+
+  // 2) フォールバック: GAS API
+  if (!data) {
+    try {
+      data = await gasGet('getCards');
+      source = 'GAS';
+    } catch (e) {
+      console.error('[cards] GAS API 失敗:', e);
+      return { cards: [], keywords: [] };
+    }
+  }
+
+  try {
     if (data.error) {
-      console.error('GAS API エラー:', data.error);
+      console.error('カード読み込みエラー:', data.error);
       return { cards: [], keywords: [] };
     }
 
@@ -84,7 +137,7 @@ export async function loadCardAndKeywordData() {
       }
     });
 
-    console.log("Data Loaded:", allCards.length, "cards,", keywords.length, "keywords");
+    console.log('[cards] Loaded:', allCards.length, 'cards,', keywords.length, 'keywords (source: ' + source + ')');
     return { cards: allCards, keywords };
   } catch (e) {
     console.error("カードデータ読み込みエラー:", e);

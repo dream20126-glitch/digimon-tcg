@@ -2146,7 +2146,7 @@ function showTrashCardPicker(candidates, wantCount, optional, title, callback, f
     renderItems();
     // 操作ボタンを追加（既存の閉じるボタンを一時隠す）
     const closeBtnOrigDisplay = closeBtn ? closeBtn.style.display : '';
-    if (closeBtn) closeBtn.style.display = 'none';
+    if (closeBtn) closeBtn.style.setProperty('display', 'none', 'important');
     const actionRow = document.createElement('div');
     actionRow.id = '_trash-picker-actions';
     actionRow.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:10px;';
@@ -2165,7 +2165,10 @@ function showTrashCardPicker(candidates, wantCount, optional, title, callback, f
     const cleanup = () => {
       modal.style.display = 'none';
       if (actionRow.parentNode) actionRow.parentNode.removeChild(actionRow);
-      if (closeBtn) closeBtn.style.display = closeBtnOrigDisplay;
+      if (closeBtn) {
+        closeBtn.style.removeProperty('display');
+        if (closeBtnOrigDisplay) closeBtn.style.display = closeBtnOrigDisplay;
+      }
     };
     okBtn.onclick = () => { cleanup(); callback(picked.slice()); };
     if (skipBtn) skipBtn.onclick = () => { cleanup(); callback([]); };
@@ -3287,27 +3290,32 @@ function checkConditions(conditions, card, bs, side) {
       }
       case 'cond_self_keyword': {
         // 自身（card）が指定キーワードを持つかチェック (cond.value: 'blocker' 等の英語コード)
+        // テキスト一致は誤検知が多い（「ブロッカーを持つ間」のような言及で成立してしまう）ため
+        // 構造的な情報（_permEffects / buffs / 本体&進化元のrecipe.passive）のみで判定する
         if (!cond.value) break;
         const kw = String(cond.value);
         let has = false;
         if (card._permEffects && card._permEffects[kw]) has = true;
         else if (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'keyword_' + kw)) has = true;
-        else {
-          const kwTextMap = { blocker:'ブロッカー', rush:'速攻', piercing:'突進', penetrate:'貫通', jamming:'ジャミング', reboot:'再起動', michizure:'道連れ', charge:'進撃', barrier:'防壁', evade:'回避', armor_break:'アーマー解除', indomitable:'不屈', combo:'連携', collision:'衝突', decoy:'デコイ' };
-          const kwText = kwTextMap[kw] || kw;
-          const txt = String(card.effect || '') + '|' + String(card.keyword || '') + '|' + String(card.evoSourceEffect || '');
-          if (txt.includes('【' + kwText + '】') || txt.includes(kwText)) has = true;
-          // 進化元の recipe.passive にもキーワードがあるかチェック
-          if (!has && Array.isArray(card.stack)) {
-            for (const s of card.stack) {
-              if (!s || !s.recipe) continue;
-              try {
-                const raw = typeof s.recipe === 'string' ? s.recipe.replace(/[\x00-\x1F\x7F]/g, '') : s.recipe;
-                const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-                const passives = (r.evo_source && r.evo_source.passive) || r.passive;
-                if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw))) { has = true; break; }
-              } catch(_) {}
-            }
+        // 本体カードの recipe.passive
+        if (!has && card.recipe) {
+          try {
+            const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]/g, '') : card.recipe;
+            const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            const passives = r.passive;
+            if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw))) has = true;
+          } catch(_) {}
+        }
+        // 進化元の recipe.passive
+        if (!has && Array.isArray(card.stack)) {
+          for (const s of card.stack) {
+            if (!s || !s.recipe) continue;
+            try {
+              const raw = typeof s.recipe === 'string' ? s.recipe.replace(/[\x00-\x1F\x7F]/g, '') : s.recipe;
+              const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+              const passives = (r.evo_source && r.evo_source.passive) || r.passive;
+              if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw))) { has = true; break; }
+            } catch(_) {}
           }
         }
         if (!has) return false;
@@ -4936,7 +4944,21 @@ function executeRecipeStep(step, ctx, store, callback) {
               setTimeout(afterAnim, 300);
             }
           };
-          playSummon(summonNext);
+          // 登場演出 → skip_on_play 指定が無ければ登場時効果を発火
+          playSummon(() => {
+            if (step.skip_on_play) {
+              summonNext();
+              return;
+            }
+            // 登場時効果（on_play）を発火: scanTriggers でキューに積む → 直後に再帰的に処理
+            try {
+              scanTriggers('on_play', c, ctx.side, ctx);
+              // キューに積まれた on_play エントリを処理してから summonNext
+              processQueue(ctx, () => summonNext());
+            } catch(_) {
+              summonNext();
+            }
+          });
         }
         summonNext();
       };

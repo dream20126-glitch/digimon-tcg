@@ -1357,16 +1357,33 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'cost_discard': {
       const n = action.value || 1;
       if (player.hand.length < n) { callback(false); return; }
-      // TODO: プレイヤーが手札選択
-      for (let i = 0; i < n; i++) {
-        if (player.hand.length > 0) {
-          const d = player.hand.pop();
+      // AI 側 / または UI が無い場合は先頭から自動破棄（フォールバック）
+      const isPlayerSide = ctx.side === 'player';
+      const canShowPicker = isPlayerSide && typeof showHandDiscardPicker === 'function';
+      if (!canShowPicker) {
+        for (let i = 0; i < n; i++) {
+          if (player.hand.length > 0) {
+            const d = player.hand.pop();
+            player.trash.push(d);
+            ctx.addLog('✦ 「' + d.name + '」を捨てた');
+          }
+        }
+        ctx.renderAll();
+        callback();
+        return;
+      }
+      // プレイヤー: 手札ピッカーで N 枚選択 → 破棄
+      showHandDiscardPicker(player.hand.slice(), n, (picked) => {
+        if (!picked || picked.length < n) { callback(false); return; }
+        picked.forEach(d => {
+          const idx = player.hand.indexOf(d);
+          if (idx !== -1) player.hand.splice(idx, 1);
           player.trash.push(d);
           ctx.addLog('✦ 「' + d.name + '」を捨てた');
-        }
-      }
-      ctx.renderAll();
-      callback();
+        });
+        ctx.renderAll();
+        callback();
+      });
       break;
     }
     case 'use_main_effect': {
@@ -2094,6 +2111,62 @@ function _showCardConfirmDialog(card, onConfirm) {
   btnRow.appendChild(cancelBtn);
   conf.appendChild(btnRow);
   document.body.appendChild(conf);
+}
+
+// 手札からN枚選んで破棄する UI（cost_discard 用）
+// hand: プレイヤーの手札配列のスナップショット
+// wantCount: 破棄枚数
+// callback: (picked[]) => void  キャンセルは null
+function showHandDiscardPicker(hand, wantCount, callback) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:62000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.2s ease;';
+  const titleEl = document.createElement('div');
+  titleEl.style.cssText = 'color:#ff9900;font-size:14px;font-weight:bold;margin-bottom:8px;text-shadow:0 0 8px #ff9900;';
+  titleEl.innerText = '🗑 手札から ' + wantCount + ' 枚破棄';
+  overlay.appendChild(titleEl);
+  const sub = document.createElement('div');
+  sub.style.cssText = 'color:#ffaa00;font-size:11px;margin-bottom:12px;';
+  sub.innerText = '0/' + wantCount + ' 選択';
+  overlay.appendChild(sub);
+  const cardArea = document.createElement('div');
+  cardArea.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:90%;max-height:60vh;overflow-y:auto;background:rgba(0,15,25,0.8);border:1px solid #ff990044;border-radius:12px;padding:12px;margin-bottom:12px;';
+  overlay.appendChild(cardArea);
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;';
+  overlay.appendChild(btnRow);
+
+  const picked = [];
+  const getImg = (c) => c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '';
+  const cleanup = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+  hand.forEach(card => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'width:80px;height:112px;border:2px solid #444;border-radius:6px;overflow:hidden;cursor:pointer;background:#111;transition:all 0.2s;';
+    const src = getImg(card);
+    wrap.innerHTML = src
+      ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">'
+      : '<div style="padding:6px;font-size:9px;color:#aaa;">' + (card.name||'') + '</div>';
+    wrap.onclick = () => {
+      const idx = picked.indexOf(card);
+      if (idx !== -1) {
+        picked.splice(idx, 1);
+        wrap.style.border = '2px solid #444';
+        wrap.style.boxShadow = '';
+      } else {
+        if (picked.length >= wantCount) return;
+        picked.push(card);
+        wrap.style.border = '2px solid #ff9900';
+        wrap.style.boxShadow = '0 0 12px #ff9900aa';
+        // wantCount に達したら自動確定
+        if (picked.length >= wantCount) {
+          setTimeout(() => { cleanup(); callback(picked.slice()); }, 200);
+          return;
+        }
+      }
+      sub.innerText = picked.length + '/' + wantCount + ' 選択';
+    };
+    cardArea.appendChild(wrap);
+  });
+  document.body.appendChild(overlay);
 }
 
 // トラッシュからフィルタ済み候補をN枚選ばせる UI
@@ -3122,14 +3195,17 @@ export function applyPermanentEffects(bs, side, context) {
     }
 
     // ④ 進化元カードのレシピ永続効果
+    // 進化元として扱うときは evo_source.* のみを参照する。
+    // top-level の passive / during_X は「そのカードがメインで居るとき」の効果なので
+    // evo stack の文脈では適用しない。
     if (card.stack) {
       card.stack.forEach(evoCard => {
         if (!evoCard.recipe) return;
         if (typeof evoCard.recipe === 'string') {
           try { evoCard.recipe = JSON.parse(evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')); } catch (_) { evoCard.recipe = null; }
         }
-        if (!evoCard.recipe) return;
-        const evoRecipe = evoCard.recipe.evo_source || evoCard.recipe;
+        if (!evoCard.recipe || !evoCard.recipe.evo_source) return;
+        const evoRecipe = evoCard.recipe.evo_source;
         const turnKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
         turnKeys.forEach(tk => {
           if (!evoRecipe[tk]) return;
@@ -4985,6 +5061,17 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (ti !== -1) player.trash.splice(ti, 1);
           player.hand.push(c);
           ctx.addLog && ctx.addLog('🃏 「' + c.name + '」をトラッシュから手札に戻した');
+          // オンライン: 相手画面にも同じカード移動演出を送信
+          if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+            try {
+              window._onlineSendCommand({
+                type: 'fx_remoteCardMove',
+                cardName: c.name, cardNo: c.cardNo,
+                cardImg: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '',
+                fromLabel: 'トラッシュ', toLabel: '手札',
+              });
+            } catch(_) {}
+          }
           if (window._fxCardMove) window._fxCardMove(c, 'トラッシュ', '手札', moveNext);
           else setTimeout(moveNext, 300);
         }

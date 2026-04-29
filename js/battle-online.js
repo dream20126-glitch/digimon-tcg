@@ -764,6 +764,14 @@ function onRemoteCommand(cmd) {
       hideRemoteDeckOpenOverlay();
       break;
     }
+    case 'fx_remoteCardMove': {
+      // 相手側でのカード移動演出を自分側でも再生（受信側視点で from/to ラベルは反転表示しない）
+      if (window._fxCardMove) {
+        const dummy = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '', cardNo: cmd.cardNo || '' };
+        try { window._fxCardMove(dummy, '相手の' + (cmd.fromLabel || ''), '相手の' + (cmd.toLabel || ''), () => {}); } catch(_) {}
+      }
+      break;
+    }
     case 'fx_targetSelectStart': {
       // 相手が対象選択を開始 → 「相手が対象選択中...」専用ポップアップを表示
       let ov = document.getElementById('_remote-target-select');
@@ -1113,6 +1121,15 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   addLog('🛡 「' + blocker.name + '」でブロック！');
   renderAll();
   sendCommand({ type: 'waiting_close' });
+  // when_own_block 反応（八神太一(黒)等のテイマー誘発効果）
+  // ※ オンライン経由のブロックでは AI 側 attack 処理は対戦相手機で動いているため
+  //   こちら側で player サイドのリアクションを直接発火する必要がある
+  try {
+    if (window._fireWhenOwnBlock) {
+      const ctxBase = { bs, addLog, renderAll, updateMemGauge: _modules.updateMemGauge };
+      window._fireWhenOwnBlock('player', bs, ctxBase, () => {});
+    }
+  } catch(_) {}
 
   // ★ バトル中効果を適用してから勝敗判定（DP+1000等の進化元効果を反映）
   const battleBuffs = applyBattleBuffs(atk, blocker);

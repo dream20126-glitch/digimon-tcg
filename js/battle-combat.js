@@ -94,9 +94,10 @@ function hasPassiveFlag(c, flagName, kwBracket) {
     for (const evo of c.stack) {
       if (!evo) continue;
       const er = parseRecipe(evo.recipe);
-      if (!er) continue;
-      const evoPassives = (er.evo_source && er.evo_source.passive) || er.passive;
-      if (passiveContains(evoPassives)) return true;
+      if (!er || !er.evo_source) continue;
+      // 進化元コンテキストでは evo_source.passive のみ参照
+      // top-level passive はそのカードがメインで居るときの効果なので使わない
+      if (passiveContains(er.evo_source.passive)) return true;
     }
   }
   return false;

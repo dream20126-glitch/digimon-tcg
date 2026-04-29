@@ -1073,13 +1073,36 @@ export function waitForSecurityEffect(callback) {
 }
 
 function checkOnlineBlock(cmd) {
+  // ブロッカー判定: テキスト一致は「【ブロッカー】を得る」「【ブロッカー】を持つ間」等の
+  // 言及にも誤マッチするため、構造的な情報（_permEffects / buffs / recipe.passive /
+  // stack[].recipe.evo_source.passive）のみで判定する
+  const passiveHasBlocker = (arr) =>
+    Array.isArray(arr) && arr.some(p => p && (p.flag === 'blocker' || p === 'blocker'));
+  const parseR = (rec) => {
+    if (!rec) return null;
+    try {
+      if (typeof rec === 'string') return JSON.parse(rec.replace(/[\x00-\x1F\x7F]\s*/g, ''));
+      return rec;
+    } catch (_) { return null; }
+  };
+  const isBlocker = (c) => {
+    if (!c) return false;
+    if (c._permEffects && c._permEffects.blocker) return true;
+    if (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_blocker')) return true;
+    const r = parseR(c.recipe);
+    if (r && passiveHasBlocker(r.passive)) return true;
+    if (Array.isArray(c.stack)) {
+      for (const evo of c.stack) {
+        const er = parseR(evo && evo.recipe);
+        if (!er || !er.evo_source) continue;
+        if (passiveHasBlocker(er.evo_source.passive)) return true;
+      }
+    }
+    return false;
+  };
   const blockerIndices = [];
   bs.player.battleArea.forEach((c, i) => {
-    if (c && !c.suspended && !c.cantBlock) {
-      const hasBlocker = (c.effect && c.effect.includes('【ブロッカー】'))
-        || (c.stack && c.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【ブロッカー】')));
-      if (hasBlocker) blockerIndices.push(i);
-    }
+    if (c && !c.suspended && !c.cantBlock && isBlocker(c)) blockerIndices.push(i);
   });
   if (blockerIndices.length === 0) {
     sendCommand({ type: 'block_response', blocked: false });
@@ -1121,15 +1144,6 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   addLog('🛡 「' + blocker.name + '」でブロック！');
   renderAll();
   sendCommand({ type: 'waiting_close' });
-  // when_own_block 反応（八神太一(黒)等のテイマー誘発効果）
-  // ※ オンライン経由のブロックでは AI 側 attack 処理は対戦相手機で動いているため
-  //   こちら側で player サイドのリアクションを直接発火する必要がある
-  try {
-    if (window._fireWhenOwnBlock) {
-      const ctxBase = { bs, addLog, renderAll, updateMemGauge: _modules.updateMemGauge };
-      window._fireWhenOwnBlock('player', bs, ctxBase, () => {});
-    }
-  } catch(_) {}
 
   // ★ バトル中効果を適用してから勝敗判定（DP+1000等の進化元効果を反映）
   const battleBuffs = applyBattleBuffs(atk, blocker);
@@ -1197,6 +1211,23 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   // 攻撃側の「ブロックされた時」効果完了シグナルを待つ（最大10秒）
   let battleStarted = false;
   let unsubBlockedDone = null;
+  // when_own_block (八神太一(黒)等) を VS 画面前に発火するためのラッパ
+  const goResolution = () => {
+    if (battleStarted) return;
+    battleStarted = true;
+    if (unsubBlockedDone) unsubBlockedDone();
+    // VS 画面表示前に「自分のブロッカーがブロックしたとき」効果を完了まで処理
+    let fired = false;
+    const startFn = () => { if (fired) return; fired = true; startBattleResolution(); };
+    try {
+      if (window._fireWhenOwnBlock) {
+        const ctxBase = { bs, addLog, renderAll, updateMemGauge: _modules.updateMemGauge };
+        window._fireWhenOwnBlock('player', bs, ctxBase, startFn);
+        return;
+      }
+    } catch(_) {}
+    startFn();
+  };
   unsubBlockedDone = onValue(ref(rtdb, `rooms/${_onlineRoomId}/commands`), (snap) => {
     if (battleStarted) return;
     if (!unsubBlockedDone) return; // 初期化前の即時コールバックをスキップ
@@ -1205,21 +1236,13 @@ function resolveOnlineBlock(blockerIdx, cmd) {
     const keys = Object.keys(cmds);
     for (const k of keys) {
       if (cmds[k] && cmds[k].type === 'blocked_effect_done' && cmds[k].from !== _onlineMyKey) {
-        battleStarted = true;
-        unsubBlockedDone(); // リスナー解除
-        startBattleResolution();
+        goResolution();
         return;
       }
     }
   });
   // タイムアウト: 10秒待っても来なければバトル開始
-  setTimeout(() => {
-    if (!battleStarted) {
-      battleStarted = true;
-      if (unsubBlockedDone) unsubBlockedDone();
-      startBattleResolution();
-    }
-  }, 10000);
+  setTimeout(() => { goResolution(); }, 10000);
 }
 
 // ===== クリーンアップ =====

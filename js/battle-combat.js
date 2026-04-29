@@ -76,8 +76,9 @@ function fireOwnDestroyedThen(destroyedSide, cb) {
 // kwBracket: '【ブロッカー】' / '【貫通】' 等（テキスト判定用、無くても可）
 function hasPassiveFlag(c, flagName, kwBracket) {
   if (!c) return false;
-  if (kwBracket && _hooks.hasKeyword(c, kwBracket)) return true;
-  if (kwBracket && _hooks.hasEvoKeyword(c, kwBracket)) return true;
+  // テキスト一致は誤検知が多い（メタルグレイモン「【ブロッカー】を得る」やカプリモン進化元
+  // 「【ブロッカー】を持つ間」も【ブロッカー】を含んでしまう）。
+  // 構造的な情報（_permEffects / buffs / recipe.passive / stack[].recipe.evo_source.passive）のみで判定する。
   if (c._permEffects && c._permEffects[flagName]) return true;
   if (c.buffs && c.buffs.some(b => b.type === 'keyword_' + flagName)) return true;
   const passiveContains = (arr) => Array.isArray(arr) && arr.some(p => (p && (p.flag === flagName || p === flagName)));

@@ -1189,7 +1189,53 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
     case 'active': {
-      if (ctx.card) { ctx.card.suspended = false; ctx.addLog('🔄 「' + ctx.card.name + '」アクティブ'); }
+      // target: 'target_self' / 'target_own' (選択UI) / 'target_all_own'
+      const tCode = (defaultTarget && defaultTarget.code) || 'target_self';
+      const activateOne = (tgt) => {
+        if (!tgt) return;
+        tgt.suspended = false;
+        ctx.addLog('🔄 「' + tgt.name + '」アクティブ');
+        // オンライン: 相手画面にも反映
+        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+          const idx = (ctx.bs.player.battleArea || []).indexOf(tgt);
+          if (idx !== -1) {
+            try {
+              window._onlineSendCommand({ type: 'fx_remoteSuspend', targetIdx: idx, suspended: false, targetName: tgt.name });
+            } catch(_) {}
+          }
+        }
+      };
+      if (tCode === 'target_self') {
+        if (ctx.card) activateOne(ctx.card);
+        ctx.renderAll(); callback(); break;
+      }
+      if (tCode === 'target_all_own') {
+        (player.battleArea || []).forEach(c => { if (c && c.suspended) activateOne(c); });
+        ctx.renderAll(); callback(); break;
+      }
+      if (tCode === 'target_own') {
+        // 自分のレスト中デジモンから 1 体選択
+        const valid = [];
+        for (let i = 0; i < player.battleArea.length; i++) {
+          const c = player.battleArea[i];
+          if (c && c.suspended) valid.push(i);
+        }
+        if (valid.length === 0) { ctx.addLog && ctx.addLog('💨 アクティブにできるレスト中デジモンがいません'); ctx.renderAll(); callback(); break; }
+        if (effectiveSide === 'ai') {
+          activateOne(player.battleArea[valid[0]]);
+          ctx.renderAll(); callback(); break;
+        }
+        const rowId = ctx.side === 'player' ? 'pl' : 'ai';
+        showTargetSelection(rowId, valid, null, '#00ff88', (selectedIdx) => {
+          if (selectedIdx == null) { callback(); return; }
+          activateOne(player.battleArea[selectedIdx]);
+          ctx.renderAll();
+          callback();
+        });
+        break;
+      }
+      // フォールバック: ctx.card
+      if (ctx.card) activateOne(ctx.card);
       ctx.renderAll();
       callback();
       break;

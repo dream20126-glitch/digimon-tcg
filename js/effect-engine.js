@@ -1710,7 +1710,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       const decoyOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
       fireOnDestroyTriggers(decoyOwnerSide, ctx.bs, ctx, function() {
         callback && callback();
-      });
+      }, dc);
       return;
     }
   }
@@ -1721,7 +1721,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       const sgOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
       fireOnDestroyTriggers(sgOwnerSide, ctx.bs, ctx, function() {
         callback && callback();
-      });
+      }, destroyed);
       return;
     }
   }
@@ -1743,7 +1743,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
     _fireSidedReactionTriggers(destroyedSideName, 'when_own_destroyed', ctx.bs, ctx, () => {
       callback && callback();
     });
-  });
+  }, destroyed);
 }
 
 function doBounce(targetSide, slotIdx, ctx) {

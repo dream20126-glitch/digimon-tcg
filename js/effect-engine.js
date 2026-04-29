@@ -2052,13 +2052,127 @@ function pickUpToNTargets(rowSide, validIndices, maxCount, color, onPicked) {
   pickOne();
 }
 
+// カード詳細を表示し、決定/キャンセルで選択するダイアログ
+function _showCardConfirmDialog(card, onConfirm) {
+  const conf = document.createElement('div');
+  conf.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:62500;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.15s ease;';
+  const src = card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || card.imageUrl || '';
+  const colorBadge = card.color ? `<span style="background:rgba(255,204,0,0.2);color:#ffcc00;border:1px solid #ffcc0066;border-radius:3px;padding:1px 6px;font-size:10px;margin-right:4px;">${card.color}</span>` : '';
+  const lvText = card.level ? `Lv.${card.level}` : '';
+  const dpText = card.dp ? `DP ${card.dp}` : '';
+  const typeText = card.type || '';
+  const stats = [lvText, typeText, dpText].filter(Boolean).join(' / ');
+  const effHtml = card.effect && card.effect !== 'なし'
+    ? `<div style="color:#00fbff;font-size:10px;margin-bottom:4px;font-weight:bold;">効果</div>${card.effect}`
+    : '<span style="color:#666;">効果なし</span>';
+  const evoHtml = (card.evoSourceEffect && card.evoSourceEffect !== 'なし')
+    ? `<div style="margin-top:8px;color:#ffaa00;font-size:10px;font-weight:bold;">進化元効果</div>${card.evoSourceEffect}`
+    : '';
+  const cardBox = document.createElement('div');
+  cardBox.style.cssText = 'background:#0a0a0a;border:2px solid #ffcc00;border-radius:12px;padding:18px;max-width:300px;width:90%;text-align:center;box-shadow:0 0 30px rgba(255,204,0,0.45);max-height:70vh;overflow-y:auto;';
+  cardBox.innerHTML = `
+    ${src ? `<img src="${src}" style="width:200px;max-width:100%;border-radius:8px;margin-bottom:10px;">` : ''}
+    <div style="color:#fff;font-size:14px;font-weight:bold;margin-bottom:4px;">${card.name || '?'}</div>
+    <div style="color:#888;font-size:10px;font-family:monospace;margin-bottom:6px;">${card.cardNo || ''}</div>
+    <div style="margin-bottom:8px;">${colorBadge}<span style="color:#aaa;font-size:11px;">${stats}</span></div>
+    <div style="color:#ddd;font-size:11px;text-align:left;background:#111;padding:8px;border-radius:6px;line-height:1.5;">${effHtml}${evoHtml}</div>
+  `;
+  conf.appendChild(cardBox);
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:10px;margin-top:14px;';
+  const okBtn = document.createElement('button');
+  okBtn.innerText = '✓ このカードに決定';
+  okBtn.style.cssText = 'background:#00ff88;color:#000;border:none;padding:10px 20px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
+  okBtn.onclick = () => { if (conf.parentNode) conf.parentNode.removeChild(conf); onConfirm && onConfirm(); };
+  const cancelBtn = document.createElement('button');
+  cancelBtn.innerText = '✕ キャンセル';
+  cancelBtn.style.cssText = 'background:#555;color:#fff;border:1px solid #888;padding:10px 20px;border-radius:6px;font-size:13px;cursor:pointer;';
+  cancelBtn.onclick = () => { if (conf.parentNode) conf.parentNode.removeChild(conf); };
+  btnRow.appendChild(okBtn);
+  btnRow.appendChild(cancelBtn);
+  conf.appendChild(btnRow);
+  document.body.appendChild(conf);
+}
+
 // トラッシュからフィルタ済み候補をN枚選ばせる UI
 // candidates: 表示するカード配列（既にフィルタ済）
 // wantCount: 選択する枚数
 // optional: true なら「使わない」ボタン表示
 // title: 上部に表示するメッセージ
 // callback: (chosenCards[]) => void  キャンセル時は [] or null を渡す
-function showTrashCardPicker(candidates, wantCount, optional, title, callback) {
+// fullTrash: 全トラッシュ配列（指定すれば既存の trash-modal を使い対象だけハイライト表示）
+function showTrashCardPicker(candidates, wantCount, optional, title, callback, fullTrash) {
+  // 既存 trash-modal を使うインプレース版
+  const modal = document.getElementById('trash-modal');
+  if (modal && Array.isArray(fullTrash) && fullTrash.length > 0) {
+    const titleEl = document.getElementById('trash-modal-title');
+    const grid = document.getElementById('trash-modal-grid');
+    const closeBtn = document.getElementById('trash-close-btn');
+    if (titleEl) titleEl.innerText = (title || '🌟 カードを選択') + `（候補${candidates.length}枚 / 最大${wantCount}枚選択）`;
+    const candSet = new Set(candidates);
+    const picked = [];
+    const renderItems = () => {
+      if (!grid) return;
+      grid.innerHTML = '';
+      fullTrash.forEach((c) => {
+        if (!c) return;
+        const wrap = document.createElement('div');
+        const isCand = candSet.has(c);
+        const isPicked = picked.includes(c);
+        const borderColor = isPicked ? '#00ff88' : (isCand ? '#ffcc00' : 'transparent');
+        const opacity = isCand ? '1' : '0.35';
+        const cursor = isCand ? 'pointer' : 'not-allowed';
+        const shadow = isPicked ? '0 0 14px #00ff88aa' : (isCand ? '0 0 8px #ffcc0099' : 'none');
+        wrap.style.cssText = `text-align:center;cursor:${cursor};padding:3px;border:2px solid ${borderColor};border-radius:6px;opacity:${opacity};transition:all 0.2s;box-shadow:${shadow};`;
+        const src = c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '';
+        wrap.innerHTML = (src
+          ? `<img src="${src}" style="width:100%;border-radius:4px;">`
+          : `<div style="height:60px;background:#111;display:flex;align-items:center;justify-content:center;font-size:7px;color:#aaa;">${c.name||''}</div>`
+        ) + `<div style="font-size:7px;color:#888;margin-top:2px;">${c.name||''}</div>`;
+        if (isCand) {
+          wrap.onclick = () => {
+            // 既に選択済みなら確認なしで解除
+            const pi = picked.indexOf(c);
+            if (pi >= 0) { picked.splice(pi, 1); renderItems(); return; }
+            // 上限到達ならスキップ
+            if (picked.length >= wantCount) return;
+            // カード詳細＋決定/キャンセルダイアログを開く
+            _showCardConfirmDialog(c, () => { picked.push(c); renderItems(); });
+          };
+        }
+        grid.appendChild(wrap);
+      });
+    };
+    renderItems();
+    // 操作ボタンを追加（既存の閉じるボタンを一時隠す）
+    const closeBtnOrigDisplay = closeBtn ? closeBtn.style.display : '';
+    if (closeBtn) closeBtn.style.display = 'none';
+    const actionRow = document.createElement('div');
+    actionRow.id = '_trash-picker-actions';
+    actionRow.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:10px;';
+    const okBtn = document.createElement('button');
+    okBtn.innerText = '✓ 決定';
+    okBtn.style.cssText = 'background:#00ff88;color:#000;border:none;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
+    actionRow.appendChild(okBtn);
+    let skipBtn = null;
+    if (optional) {
+      skipBtn = document.createElement('button');
+      skipBtn.innerText = '⏭ 使わない';
+      skipBtn.style.cssText = 'background:#555;color:#fff;border:1px solid #888;padding:10px 22px;border-radius:6px;font-size:13px;cursor:pointer;';
+      actionRow.appendChild(skipBtn);
+    }
+    if (closeBtn && closeBtn.parentNode) closeBtn.parentNode.appendChild(actionRow); else modal.appendChild(actionRow);
+    const cleanup = () => {
+      modal.style.display = 'none';
+      if (actionRow.parentNode) actionRow.parentNode.removeChild(actionRow);
+      if (closeBtn) closeBtn.style.display = closeBtnOrigDisplay;
+    };
+    okBtn.onclick = () => { cleanup(); callback(picked.slice()); };
+    if (skipBtn) skipBtn.onclick = () => { cleanup(); callback([]); };
+    modal.style.display = 'block';
+    return;
+  }
+  // フォールバック: 旧版オーバーレイ（fullTrashが指定されない場合）
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:62000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.2s ease;';
 
@@ -2124,6 +2238,7 @@ function showTrashCardPicker(candidates, wantCount, optional, title, callback) {
     skipBtn.onclick = () => { cleanup(); callback([]); };
     btnRow.appendChild(skipBtn);
   }
+  document.body.appendChild(overlay);
 }
 
 function cardMatchesFilter(card, filter) {
@@ -4208,21 +4323,24 @@ function executeRecipeStep(step, ctx, store, callback) {
     return;
   }
 
+  console.log('[executeRecipeStep] step:', JSON.stringify(step).substring(0, 200));
   // step.cost が指定されていれば、本体アクションの前にコストを順次実行する。
   // すべてのコストが成功した場合のみ本体アクションへ進む。
   // 失敗時は callback(false) を呼んで後続レシピごとアボートする。
   if (Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved) {
+    console.log('[cost] running', step.cost.length, 'cost step(s) before main action=' + step.action);
     let i = 0;
     function runCost() {
       if (i >= step.cost.length) {
-        // 全コスト解決 → _costsResolved を立てて自身を再実行（本体アクション側へ進む）
+        console.log('[cost] all cost steps succeeded, running main action=' + step.action);
         executeRecipeStep({ ...step, _costsResolved: true }, ctx, store, callback);
         return;
       }
       const costStep = step.cost[i++];
+      console.log('[cost] executing cost step', i, 'action=' + costStep.action);
       executeRecipeStep(costStep, ctx, store, (success) => {
         if (success === false) {
-          // コスト不成立 → 効果不発、後続もスキップさせる
+          console.log('[cost] cost FAILED → aborting main');
           callback && callback(false);
           return;
         }
@@ -4748,7 +4866,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         // AI: 先頭から N 枚を自動選択
         onPicked(candidates.slice(0, wantCount));
       } else {
-        showTrashCardPicker(candidates, wantCount, optional, '🃏 手札に戻すカードを選んでください', onPicked);
+        showTrashCardPicker(candidates, wantCount, optional, '🃏 手札に戻すカードを選んでください', onPicked, player.trash);
       }
       break;
     }
@@ -4759,7 +4877,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       const filter = step.filter || {};
       const wantCount = step.count || 1;
       const optional = !!step.optional;
+      console.log('[summon_from_trash] ctx.side=' + ctx.side + ' effectiveSide=' + effectiveSide + ' player.trash.length=' + (player.trash ? player.trash.length : 'null') + ' filter=' + JSON.stringify(filter));
+      console.log('[summon_from_trash] trash contents:', (player.trash || []).map(c => (c && c.name ? c.name : '?') + '(' + (c && c.color || '?') + '/Lv' + (c && c.level || '?') + '/' + (c && c.type || '?') + ')').join(', '));
       const candidates = (player.trash || []).filter(c => cardMatchesFilter(c, filter));
+      console.log('[summon_from_trash] candidates.length=' + candidates.length);
       if (candidates.length === 0) {
         ctx.addLog && ctx.addLog('💨 条件を満たすカードがトラッシュにありません');
         showEffectFailed(null, () => callback());
@@ -4796,15 +4917,33 @@ function executeRecipeStep(step, ctx, store, callback) {
           } else {
             ctx.addLog && ctx.addLog('🌟 「' + c.name + '」を登場');
           }
-          if (window._fxCardMove) window._fxCardMove(c, 'トラッシュ', isTamer ? 'テイマー' : 'バトル', summonNext);
-          else setTimeout(summonNext, 300);
+          ctx.renderAll && ctx.renderAll();
+          // 登場演出（通常のsummonと同じUX）
+          const playSummon = (afterAnim) => {
+            const showFn = (ctx && ctx.showPlayEffect) || (typeof window !== 'undefined' && window.showPlayEffect);
+            if (showFn) {
+              const dummy = {
+                name: c.name,
+                imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '',
+                type: c.type || 'デジモン',
+                playCost: 0
+              };
+              if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+                window._onlineSendCommand({ type: 'play', cardName: c.name, cardImg: dummy.imgSrc, cardType: c.type, playCost: 0 });
+              }
+              showFn(dummy, afterAnim);
+            } else {
+              setTimeout(afterAnim, 300);
+            }
+          };
+          playSummon(summonNext);
         }
         summonNext();
       };
       if (effectiveSide === 'ai') {
         onPicked(candidates.slice(0, wantCount));
       } else {
-        showTrashCardPicker(candidates, wantCount, optional, '🌟 登場させるカードを選んでください', onPicked);
+        showTrashCardPicker(candidates, wantCount, optional, '🌟 登場させるカードを選んでください', onPicked, player.trash);
       }
       break;
     }

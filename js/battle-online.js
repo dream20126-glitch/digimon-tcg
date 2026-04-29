@@ -271,6 +271,14 @@ function onRemoteCommand(cmd) {
           if (card.stack) card.stack.forEach(s => bs.player.trash.push(s));
           markDestroyed('player', cmd.slotIdx);
           renderAll();
+          // 消滅 (destroy) の場合は on_destroy / on_battle_destroy / when_own_destroyed を
+          // 自分側 (player) で発火する。これでパグモン等の進化元 evo_source.on_destroy が
+          // カード所有者の画面に正しくポップアップ表示される。
+          if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
+            try {
+              window._fireOnlineDestroyChain(['player'], { player: card }, () => {});
+            } catch (_) {}
+          }
         }
       }
       break;
@@ -1256,15 +1264,18 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
         bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
         sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
+        // 攻撃側 atk の消滅を相手(攻撃側オーナー)に通知 → 受信側で on_destroy 等を発火
+        sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy' });
         renderAll();
         sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '両者消滅！' });
         showBR('両者消滅', '#ff4444', '両者消滅！', () => {
           showDE(blocker, () => { showDE(atk, () => {
             addLog('💥 両者消滅！');
-            // on_destroy / on_battle_destroy / when_own_destroyed をまとめて発火
+            // 自分側 (blocker = bs.player) の on_destroy のみここで発火
+            // 相手側 (atk) の on_destroy は card_removed 受信時に相手機で発火される
             const fire = window._fireOnlineDestroyChain;
             const finish = () => { window._suppressFxSend = false; sendStateSync(); };
-            if (fire) fire(['player', 'ai'], { player: blocker, ai: atk }, finish);
+            if (fire) fire(['player'], { player: blocker }, finish);
             else finish();
           }); });
         });
@@ -1282,6 +1293,8 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           bs.ai.battleArea[cmd.atkIdx] = null;
           bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+          // 相手機にも atk 消滅を通知
+          sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy' });
           renderAll();
           sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '道連れで両者消滅！' });
           showBR('両者消滅', '#ff4444', '道連れで両者消滅！', () => {
@@ -1292,9 +1305,10 @@ function resolveOnlineBlock(blockerIdx, cmd) {
               showMichi(() => {
                 showDE(atk, () => {
                   addLog('💥 両者消滅（道連れ）！');
+                  // blocker 側 (player) のみ。atk の on_destroy は相手機で発火される。
                   const fire = window._fireOnlineDestroyChain;
                   const finish = () => { window._suppressFxSend = false; sendStateSync(); };
-                  if (fire) fire(['player', 'ai'], { player: blocker, ai: atk }, finish);
+                  if (fire) fire(['player'], { player: blocker }, finish);
                   else finish();
                 });
               });
@@ -1314,6 +1328,8 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         });
       } else {
         bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+        // 攻撃側 atk の消滅を相手(攻撃側オーナー)に通知
+        sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy' });
         renderAll();
         // ≪道連れ≫: 攻撃側 atk が「自分だけバトルで消滅」したとき blocker も消滅
         const atkHasMichizure = !!(
@@ -1336,9 +1352,10 @@ function resolveOnlineBlock(blockerIdx, cmd) {
               showMichi(() => {
                 showDE(blocker, () => {
                   addLog('💥 両者消滅（道連れ）！');
+                  // blocker (player) 側のみ。atk の on_destroy は相手機で発火される。
                   const fire = window._fireOnlineDestroyChain;
                   const finish = () => { window._suppressFxSend = false; sendStateSync(); };
-                  if (fire) fire(['player', 'ai'], { player: blocker, ai: atk }, finish);
+                  if (fire) fire(['player'], { player: blocker }, finish);
                   else finish();
                 });
               });
@@ -1350,10 +1367,9 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         showBR('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => {
           showDE(atk, () => {
             addLog('💥 「' + atk.name + '」を撃破！');
-            const fire = window._fireOnlineDestroyChain;
-            const finish = () => { window._suppressFxSend = false; sendStateSync(); };
-            if (fire) fire(['ai'], { ai: atk }, finish);
-            else finish();
+            // atk の on_destroy は相手機 (オーナー) で card_removed 受信時に発火される
+            window._suppressFxSend = false;
+            sendStateSync();
           });
         });
       }

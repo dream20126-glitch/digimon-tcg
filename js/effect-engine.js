@@ -4974,31 +4974,28 @@ function executeRecipeStep(step, ctx, store, callback) {
           ctx.renderAll();
           // 永続効果を再評価（新キャリアの passive を適用）
           try { applyPermanentEffects(ctx.bs, isOwn ? ctx.side : (ctx.side === 'player' ? 'ai' : 'player'), ctx); } catch(_) {}
+          // オンライン同期: 退化を相手画面にも通知 + 古い state_sync で
+          // ローカルの新キャリアが上書きされないよう即座に markEvoModified + 即送信
+          if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            try {
+              if (ctx.side === 'player') {
+                window._onlineSendCommand({
+                  type: 'fx_dedigivolve',
+                  targetIdx: idx,
+                  onSide: isOwn ? 'opp' : 'self', // 受信側視点: 'self'=自分側 / 'opp'=相手側
+                  removeCount: actualN,
+                });
+                // 受信側の bs.player 上書き防止用 + 自側 (送信側) の bs.ai 上書き防止用
+                // (markEvoModified は両方向で機能する flag)
+                if (window._markEvoModified) window._markEvoModified(isOwn ? 'player' : 'ai', idx);
+                if (window._onlineSendStateSync) window._onlineSendStateSync();
+              }
+            } catch (_) {}
+          }
           // 自分側でカード移動演出
           let r = 0;
           function showRemovedAnim() {
-            if (r >= removed.length) {
-              // オンライン同期: 退化を相手画面にも通知（カード本体ごと置換するため
-              // 専用コマンド fx_dedigivolve を送る）
-              if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-                try {
-                  // ctx.side === 'player' なら相手 (bs.ai 側) を退化させた → 受信側では bs.player 側
-                  // ctx.side === 'ai' (まれ) ならローカルの 'player' は実は AI 側 ... 通常は player のみ送信
-                  if (ctx.side === 'player') {
-                    window._onlineSendCommand({
-                      type: 'fx_dedigivolve',
-                      targetIdx: idx,
-                      onSide: isOwn ? 'opp' : 'self', // 受信側視点: 'self'=自分側 / 'opp'=相手側
-                      removeCount: actualN,
-                    });
-                    if (window._markEvoModified) window._markEvoModified(isOwn ? 'player' : 'ai', idx);
-                    if (window._onlineSendStateSync) window._onlineSendStateSync();
-                  }
-                } catch (_) {}
-              }
-              dediNext();
-              return;
-            }
+            if (r >= removed.length) { dediNext(); return; }
             const card = removed[r++];
             if (window._fxCardMove) {
               window._fxCardMove(card, tgt.name + (card === tgt ? '' : 'の進化元'), 'トラッシュ', showRemovedAnim);

@@ -923,6 +923,24 @@ function onRemoteCommand(cmd) {
         if (window._applyPermanentEffects) window._applyPermanentEffects();
       } catch(_) {}
       renderAll();
+      // 受信側の bs.* を更新したので、相手画面にも新状態を伝えるため state_sync を送る。
+      // また、5秒の cooldown 中にこちらの古い state_sync で相手の正しい状態が
+      // 上書きされないよう markEvoModified で保護。
+      // - cmd.onSide==='self' (退化対象は自分側=bs.player) → 相手側の view では 'ai'
+      // - cmd.onSide==='opp'  (退化対象は相手側=bs.ai)    → こちら側の view では 'ai'
+      try {
+        if (cmd.onSide === 'self') {
+          // bs.player を変更した → 相手の bs.ai 上書き防止用フラグ送信
+          // ただし markEvoModified はローカル状態を守る fn なので、自身の bs.player を守るために
+          // 'player' を引数に。ここでは player 側の上書きは state_sync の対象外なので
+          // 自分側 bs.player は安全。
+        } else if (cmd.onSide === 'opp') {
+          // bs.ai を変更した → 自分のローカル bs.ai が古い state_sync で戻されないように保護
+          if (window._markEvoModified) window._markEvoModified('ai', cmd.targetIdx);
+        }
+        // 反映後の state を相手機にも送信
+        if (window._onlineSendStateSync) window._onlineSendStateSync();
+      } catch(_) {}
       // 1枚ずつ移動演出
       let dedi = 0;
       function dediShowAnim() {

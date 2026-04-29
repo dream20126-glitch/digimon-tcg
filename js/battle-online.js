@@ -261,6 +261,10 @@ function onRemoteCommand(cmd) {
     case 'card_removed': {
       if (cmd.zone === 'battle' && cmd.slotIdx !== undefined) {
         const card = bs.player.battleArea[cmd.slotIdx];
+        console.log('[card_removed]', 'slotIdx=' + cmd.slotIdx, 'reason=' + cmd.reason,
+          'card=' + (card ? card.name : 'null'),
+          'stack=' + (card && card.stack ? card.stack.map(s => s ? s.name : '?').join(',') : 'none'),
+          'fireFn=' + !!window._fireOnlineDestroyChain);
         if (card) {
           bs.player.battleArea[cmd.slotIdx] = null;
           if (cmd.reason === 'bounce') {
@@ -277,9 +281,12 @@ function onRemoteCommand(cmd) {
           // バトル中の VS / battleResult 演出と被らないよう少し遅延させてから発火する。
           if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
             setTimeout(() => {
+              console.log('[card_removed] firing destroy chain for', card.name, 'stack.length=' + (card.stack ? card.stack.length : 0));
               try {
-                window._fireOnlineDestroyChain(['player'], { player: card }, () => {});
-              } catch (_) {}
+                window._fireOnlineDestroyChain(['player'], { player: card }, () => {
+                  console.log('[card_removed] destroy chain finished for', card.name);
+                });
+              } catch (e) { console.error('[card_removed] chain error:', e); }
             }, 1200);
           }
         }

@@ -134,6 +134,29 @@ export function isOnlineMode() { return _onlineMode; }
 export function getMyKey() { return _onlineMyKey; }
 export function getRoomId() { return _onlineRoomId; }
 
+// ===== コマンド送信用カードシリアライザ =====
+// card_removed 等で消滅カードのフル情報 (stack の recipe 含む) を相手機に送るためのヘルパー
+function serializeCardForCmd(c) {
+  if (!c) return null;
+  const ser = (cc) => {
+    if (!cc) return null;
+    return {
+      name: cc.name || '', cardNo: cc.cardNo || '',
+      effect: cc.effect || '', evoSourceEffect: cc.evoSourceEffect || '',
+      securityEffect: cc.securityEffect || '',
+      recipe: cc.recipe || null,
+      imgSrc: cc.imgSrc || cc.imageUrl || '',
+      dp: cc.dp || 0, level: cc.level || '',
+      color: cc.color || '', feature: cc.feature || '',
+      type: cc.type || '',
+      stack: (cc.stack || []).map(ser),
+      buffs: cc.buffs || [],
+      _permEffects: cc._permEffects || {},
+    };
+  };
+  return ser(c);
+}
+
 // ===== コマンド送信 =====
 
 export function sendCommand(cmd) {
@@ -260,10 +283,11 @@ function onRemoteCommand(cmd) {
     }
     case 'card_removed': {
       if (cmd.zone === 'battle' && cmd.slotIdx !== undefined) {
-        const card = bs.player.battleArea[cmd.slotIdx];
+        let card = bs.player.battleArea[cmd.slotIdx];
         console.log('[card_removed]', 'slotIdx=' + cmd.slotIdx, 'reason=' + cmd.reason,
           'card=' + (card ? card.name : 'null'),
           'stack=' + (card && card.stack ? card.stack.map(s => s ? s.name : '?').join(',') : 'none'),
+          'cmd.cardData=' + (cmd.cardData ? cmd.cardData.name : 'none'),
           'fireFn=' + !!window._fireOnlineDestroyChain);
         if (card) {
           bs.player.battleArea[cmd.slotIdx] = null;
@@ -275,16 +299,20 @@ function onRemoteCommand(cmd) {
           if (card.stack) card.stack.forEach(s => bs.player.trash.push(s));
           markDestroyed('player', cmd.slotIdx);
           renderAll();
-          // 消滅 (destroy) の場合は on_destroy / on_battle_destroy / when_own_destroyed を
-          // 自分側 (player) で発火する。これでパグモン等の進化元 evo_source.on_destroy が
-          // カード所有者の画面に正しくポップアップ表示される。
-          // バトル中の VS / battleResult 演出と被らないよう少し遅延させてから発火する。
-          if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
+        }
+        // 消滅 (destroy) の場合は on_destroy / on_battle_destroy / when_own_destroyed を
+        // 自分側 (player) で発火する。受信側のローカルでカードが見つからないケース (同期ずれ等)
+        // でも cmd.cardData にフルカード情報があれば、そちらを使って destroy chain を発火する。
+        if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
+          const cardForChain = card || cmd.cardData;
+          if (cardForChain) {
             setTimeout(() => {
-              console.log('[card_removed] firing destroy chain for', card.name, 'stack.length=' + (card.stack ? card.stack.length : 0));
+              console.log('[card_removed] firing destroy chain for', cardForChain.name,
+                'stack.length=' + (cardForChain.stack ? cardForChain.stack.length : 0),
+                'fromCmdData=' + (!card && !!cmd.cardData));
               try {
-                window._fireOnlineDestroyChain(['player'], { player: card }, () => {
-                  console.log('[card_removed] destroy chain finished for', card.name);
+                window._fireOnlineDestroyChain(['player'], { player: cardForChain }, () => {
+                  console.log('[card_removed] destroy chain finished for', cardForChain.name);
                 });
               } catch (e) { console.error('[card_removed] chain error:', e); }
             }, 1200);
@@ -1275,7 +1303,13 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
         sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
         // 攻撃側 atk の消滅を相手(攻撃側オーナー)に通知 → 受信側で on_destroy 等を発火
-        sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy' });
+        // 送信側 (防御側) で観測している atk のフルカード情報を含める。
+        // 受信側 (オーナー機) のローカル状態が同期遅延でずれていても、
+        // この cardData から on_destroy 用の stack/recipe を取得できる
+        sendCommand({
+          type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy',
+          cardData: serializeCardForCmd(atk),
+        });
         renderAll();
         sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '両者消滅！' });
         // 両者の消滅演出を相手機にも明示送信
@@ -1309,7 +1343,13 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
           // 相手機にも atk 消滅を通知
-          sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy' });
+          // 送信側 (防御側) で観測している atk のフルカード情報を含める。
+        // 受信側 (オーナー機) のローカル状態が同期遅延でずれていても、
+        // この cardData から on_destroy 用の stack/recipe を取得できる
+        sendCommand({
+          type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy',
+          cardData: serializeCardForCmd(atk),
+        });
           renderAll();
           sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '道連れで両者消滅！' });
           showBR('両者消滅', '#ff4444', '道連れで両者消滅！', () => {
@@ -1345,7 +1385,13 @@ function resolveOnlineBlock(blockerIdx, cmd) {
       } else {
         bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
         // 攻撃側 atk の消滅を相手(攻撃側オーナー)に通知
-        sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy' });
+        // 送信側 (防御側) で観測している atk のフルカード情報を含める。
+        // 受信側 (オーナー機) のローカル状態が同期遅延でずれていても、
+        // この cardData から on_destroy 用の stack/recipe を取得できる
+        sendCommand({
+          type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy',
+          cardData: serializeCardForCmd(atk),
+        });
         renderAll();
         // ≪道連れ≫: 攻撃側 atk が「自分だけバトルで消滅」したとき blocker も消滅
         const atkHasMichizure = !!(

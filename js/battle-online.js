@@ -306,6 +306,9 @@ function onRemoteCommand(cmd) {
         if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
           const cardForChain = card || cmd.cardData;
           if (cardForChain) {
+            // 消滅演出 (showDestroyEffect = 1900ms) と被らないよう、十分待ってから発火。
+            // fx_battleResult (showBR, 約1.7s) → fx_destroy (showDE, 1.9s) のキュー処理の
+            // 完了タイミングを見越して 3500ms 後に発火する。
             setTimeout(() => {
               console.log('[card_removed] firing destroy chain for', cardForChain.name,
                 'stack.length=' + (cardForChain.stack ? cardForChain.stack.length : 0),
@@ -315,7 +318,7 @@ function onRemoteCommand(cmd) {
                   console.log('[card_removed] destroy chain finished for', cardForChain.name);
                 });
               } catch (e) { console.error('[card_removed] chain error:', e); }
-            }, 1200);
+            }, 3500);
           }
         }
       }

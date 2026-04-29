@@ -1985,7 +1985,8 @@ function aiPlayAuto(callback) {
       const handIdx = bs.ai.hand.indexOf(evoCandidate);
       bs.ai.hand.splice(handIdx, 1);
       const oldCard = bs.ai.ikusei;
-      evoCandidate.stack = [...(oldCard.stack || []), oldCard];
+      // stack[0] = 直前の進化形（top）, stack[N-1] = デジタマ（bottom）の規約に統一
+      evoCandidate.stack = [oldCard, ...(oldCard.stack || [])];
       evoCandidate.summonedThisTurn = false;
       evoCandidate.suspended = oldCard.suspended;
       evoCandidate.baseDp = parseInt(evoCandidate.dp) || 0;
@@ -2014,7 +2015,8 @@ function aiPlayAuto(callback) {
     if (evoCandidate) {
       const handIdx = bs.ai.hand.indexOf(evoCandidate);
       bs.ai.hand.splice(handIdx, 1);
-      evoCandidate.stack = [...(base.stack || []), base];
+      // stack[0] = 直前の進化形（top）, stack[N-1] = デジタマ（bottom）の規約に統一
+      evoCandidate.stack = [base, ...(base.stack || [])];
       evoCandidate.summonedThisTurn = false;
       evoCandidate.suspended = base.suspended;
       evoCandidate.baseDp = parseInt(evoCandidate.dp) || 0;
@@ -2623,7 +2625,8 @@ export function aiScriptEvolveBattle(sourceKey, targetKey, onDone) {
     onDone && onDone(false); return;
   }
   bs.ai.hand.splice(handIdx, 1);
-  evo.stack = [...(base.stack || []), base];
+  // stack[0] = 直前の進化形（top）, stack[N-1] = デジタマ（bottom）の規約に統一
+  evo.stack = [base, ...(base.stack || [])];
   evo.summonedThisTurn = false;
   evo.suspended = base.suspended;
   evo.baseDp = parseInt(evo.dp) || 0;
@@ -2671,7 +2674,8 @@ export function aiScriptEvolveBreed(targetKey, onDone) {
     onDone && onDone(false); return;
   }
   bs.ai.hand.splice(handIdx, 1);
-  evo.stack = [...(base.stack || []), base];
+  // stack[0] = 直前の進化形（top）, stack[N-1] = デジタマ（bottom）の規約に統一
+  evo.stack = [base, ...(base.stack || [])];
   evo.summonedThisTurn = false;
   evo.suspended = base.suspended;
   evo.baseDp = parseInt(evo.dp) || 0;

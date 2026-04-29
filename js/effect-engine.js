@@ -4942,21 +4942,21 @@ function executeRecipeStep(step, ctx, store, callback) {
           const tgt = tgtPlayer.battleArea[idx];
           if (!tgt) { dediNext(); return; }
           // 退化 N: 一番上 (= キャリア) から N 枚破棄。
-          // キャリア + stack 末尾 (N-1) 枚を破棄し、stack に残ったうち最も新しいカード
-          // (= stack.pop()) が新しいキャリアになる。
+          // 規約: stack[0] = 直前の進化形 (top), stack[N-1] = デジタマ (bottom)
+          // キャリア + stack の先頭 (top 側) (N-1) 枚を破棄し、残ったうち先頭が新キャリア。
           const totalRemovable = 1 + (tgt.stack ? tgt.stack.length : 0);
           const actualN = Math.min(dedigN, totalRemovable);
           const removed = [];
           // 1) キャリア自身を破棄（バフ等の transient 状態は失われる）
           removed.push(tgt);
-          // 2) stack 末尾から N-1 枚破棄
+          // 2) stack 先頭 (top 側) から N-1 枚破棄
           for (let k = 1; k < actualN; k++) {
-            if (tgt.stack && tgt.stack.length > 0) removed.push(tgt.stack.pop());
+            if (tgt.stack && tgt.stack.length > 0) removed.push(tgt.stack.shift());
           }
-          // 3) 残った stack の末尾を新キャリアとして昇格
+          // 3) 残った stack の先頭を新キャリアとして昇格
           let newCarrier = null;
           if (tgt.stack && tgt.stack.length > 0) {
-            newCarrier = tgt.stack.pop();
+            newCarrier = tgt.stack.shift();
             newCarrier.stack = (tgt.stack || []).slice();
             // 新キャリアの transient 状態を初期化（rest 状態は元キャリアから引き継ぎ）
             newCarrier.suspended = !!tgt.suspended;

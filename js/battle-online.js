@@ -318,7 +318,8 @@ function onRemoteCommand(cmd) {
       if (evoCard && bs.ai.ikusei) {
         bs.ai.hand.splice(cmd.handIdx, 1);
         const old = bs.ai.ikusei;
-        evoCard.stack = [...(old.stack || []), old];
+        // stack[0] = 直前の進化形（top）, stack[N-1] = デジタマ（bottom）の規約に統一
+        evoCard.stack = [old, ...(old.stack || [])];
         evoCard.suspended = old.suspended;
         evoCard.baseDp = parseInt(evoCard.dp) || 0;
         evoCard.dpModifier = 0; evoCard.buffs = [];

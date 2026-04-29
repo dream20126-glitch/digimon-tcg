@@ -1744,7 +1744,12 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       // 相手のデジモンが消滅したとき（反対 side のカードが反応）
       const oppSideName = destroyedSideName === 'player' ? 'ai' : 'player';
       _fireSidedReactionTriggers(oppSideName, 'when_opp_destroyed', ctx.bs, ctx, () => {
-        callback && callback();
+        // 他のデジモンが消滅したとき（自他問わず両 side のカードが反応）
+        _fireSidedReactionTriggers('player', 'when_other_destroyed', ctx.bs, ctx, () => {
+          _fireSidedReactionTriggers('ai', 'when_other_destroyed', ctx.bs, ctx, () => {
+            callback && callback();
+          });
+        });
       });
     });
   }, destroyed);
@@ -3465,11 +3470,15 @@ function checkPendingDestroys(ctx, callback) {
       if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
         window._onlineSendStateSync();
       }
-      // on_destroy: 自身の消滅効果 → when_own_destroyed → when_opp_destroyed → 次の消滅へ
+      // on_destroy: 自身の消滅効果 → when_own_destroyed → when_opp_destroyed → when_other_destroyed → 次の消滅へ
       fireOnDestroyTriggers(side, ctx.bs, ctx, () => {
         _fireSidedReactionTriggers(side, 'when_own_destroyed', ctx.bs, ctx, () => {
           const oppSide = side === 'player' ? 'ai' : 'player';
-          _fireSidedReactionTriggers(oppSide, 'when_opp_destroyed', ctx.bs, ctx, processNext);
+          _fireSidedReactionTriggers(oppSide, 'when_opp_destroyed', ctx.bs, ctx, () => {
+            _fireSidedReactionTriggers('player', 'when_other_destroyed', ctx.bs, ctx, () => {
+              _fireSidedReactionTriggers('ai', 'when_other_destroyed', ctx.bs, ctx, processNext);
+            });
+          });
         });
       }, card);
     });

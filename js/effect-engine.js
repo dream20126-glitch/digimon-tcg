@@ -372,31 +372,10 @@ function getActionUI(actionCode) {
   return null;
 }
 
-// ===== 効果テキスト解析 =====
-
-// カードの効果テキスト全体を解析して効果ブロックに分解
-export function parseCardEffect(card, effectField) {
-  const text = effectField || card.effect;
-  if (!text || text === 'なし') return [];
-
-  const blocks = [];
-  // 自己参照（「このカードの【メイン】効果」等）の【】は分割対象にしない
-  // → 先に【】を外して通常の文字列化し、findActionsで「メイン効果を発揮」等とマッチさせる
-  let preproc = text.replace(/このカードの【メイン】効果/g, 'このカードのメイン効果');
-  // キーワード効果・制限修飾子の【】はトリガーではないので、分割前にエスケープ
-  const keywordBrackets = /【(ターンに[1一]回|ブロッカー|速攻|突進|貫通|ジャミング|再起動|Sアタック\+\d+|セキュリティアタック\+\d+)】/g;
-  const normalized = preproc.replace(keywordBrackets, (m, p1) => '〔' + p1 + '〕');
-  // 【】で始まるブロックに分割
-  const parts = normalized.split(/(?=【)/);
-  for (const part of parts) {
-    // エスケープを元に戻す
-    const restored = part.replace(/〔([^〕]+)〕/g, '【$1】');
-    const trimmed = restored.trim();
-    if (!trimmed) continue;
-    const block = analyzeBlock(trimmed);
-    if (block) blocks.push(block);
-  }
-  return blocks;
+// ===== 効果テキスト解析（廃止: レシピのみで動作） =====
+// テキスト解析は撤廃。互換のため空配列を返すスタブのみ残す。
+export function parseCardEffect(_card, _effectField) {
+  return [];
 }
 
 // 1つの効果ブロックを解析
@@ -1433,23 +1412,14 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
     case 'use_main_effect': {
-      // mainレシピがあればレシピ優先（テキスト解析よりも正確）
+      // レシピのみ（テキスト解析フォールバックは廃止）
       const mainRecipe = getRecipeForCard(ctx.card, 'main');
-      console.log('[use_main_effect]', 'card=' + (ctx.card && ctx.card.name), 'recipe type=' + typeof (ctx.card && ctx.card.recipe), 'recipe value=', ctx.card && ctx.card.recipe, 'mainRecipe=', mainRecipe, 'isArray=' + Array.isArray(mainRecipe), 'length=' + (mainRecipe && mainRecipe.length));
       if (mainRecipe) {
         ctx.addLog('✦ 「' + ctx.card.name + '」の【メイン】効果を発揮！');
         runRecipe(mainRecipe, ctx, callback);
       } else {
-        // レシピなし → テキスト解析で実行
-        const mainBlocks = parseCardEffect(ctx.card);
-        const mainBlock = mainBlocks.find(b => b.trigger && b.trigger.code === 'main');
-        if (mainBlock && mainBlock.actions && mainBlock.actions.length > 0) {
-          ctx.addLog('✦ 「' + ctx.card.name + '」の【メイン】効果を発揮！');
-          runActionList(mainBlock.actions, mainBlock.target, ctx, callback);
-        } else {
-          ctx.addLog('⚠ メイン効果が見つかりません');
-          callback();
-        }
+        ctx.addLog('⚠ メイン効果のレシピが見つかりません');
+        callback();
       }
       break;
     }
@@ -3207,17 +3177,10 @@ export function applyPermanentEffects(bs, side, context) {
       });
       // passiveキーワードフラグ（バトルエリアにいるカード自身に適用）
       // ※evo_source内のpassiveはここでは適用しない（④で処理）
-      // カードのメイン効果テキストにキーワードが含まれる場合のみ適用
-      const hasEvoSourcePassive = card.recipe.evo_source && card.recipe.evo_source.passive;
-      if (card.recipe.passive && !hasEvoSourcePassive) {
-        const mainEffect = card.effect || '';
+      if (card.recipe.passive) {
         const passives = Array.isArray(card.recipe.passive) ? card.recipe.passive : [card.recipe.passive];
         passives.forEach(p => {
           const flag = typeof p === 'string' ? p : (p.flag || p.action || '');
-          // 進化元効果のキーワードはバトルエリアでは適用しない
-          const keywordMap = { 'security_attack_plus': 'Sアタック', 'blocker': 'ブロッカー', 'piercing': '突進', 'rush': '速攻', 'penetrate': '貫通', 'jamming': 'ジャミング', 'reboot': '再起動' };
-          const kwText = keywordMap[flag];
-          if (kwText && !mainEffect.includes(kwText) && card.evoSourceEffect && card.evoSourceEffect.includes(kwText)) return;
           if (!card._permEffects) card._permEffects = {};
           if (flag === 'security_attack_plus') {
             const val = (typeof p === 'object' && p.value) ? p.value : 1;
@@ -3775,7 +3738,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
   const isSideScopedTurnTrigger = ['on_opp_turn_end', 'on_own_turn_end', 'on_opp_turn_start', 'on_own_turn_start'].includes(triggerCode);
 
   if (isActivated) {
-    // 起動効果: ソースカードだけキューに追加（レシピ優先）
+    // 起動効果: ソースカードだけキューに追加（レシピのみ）
     if (sourceCard) {
       const recipe = getRecipeForTrigger(sourceCard, triggerCode);
       if (recipe) {
@@ -3786,21 +3749,11 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
         addToQueue(sourceCard, dummyBlock,
           sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
         );
-      } else {
-        const blocks = parseCardEffect(sourceCard);
-        blocks.forEach(block => {
-          if (block.trigger && block.trigger.code === triggerCode) {
-            addToQueue(sourceCard, block,
-              sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
-            );
-          }
-        });
       }
     }
   } else if (isSourceOnly) {
-    // ソースカード限定イベント: ソースカード本体＋その進化元効果のみ処理
+    // ソースカード限定イベント: ソースカード本体＋その進化元効果のみ処理（レシピのみ）
     if (sourceCard) {
-      // レシピ優先：レシピがあればテキスト解析をスキップ
       const mainRecipe = getRecipeForTrigger(sourceCard, triggerCode);
       if (mainRecipe) {
         const dummyBlock = {
@@ -3810,52 +3763,28 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
         addToQueue(sourceCard, dummyBlock,
           sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
         );
-      } else {
-        const blocks = parseCardEffect(sourceCard);
-        blocks.forEach(block => {
-          if (block.trigger && block.trigger.code === triggerCode) {
-            addToQueue(sourceCard, block,
-              sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
-            );
-          }
-        });
       }
-      // ソースカードの進化元効果もスキャン（テキスト解析 + レシピ）
+      // ソースカードの進化元効果もスキャン（レシピのみ）
       if (sourceCard.stack) {
         console.log('[scanTriggers/sourceOnly evo] trigger=' + triggerCode + ' source=' + sourceCard.name + ' stack数=' + sourceCard.stack.length);
         sourceCard.stack.forEach((evoCard, evoIdx) => {
-          const evoEffectExists = evoCard && evoCard.evoSourceEffect && evoCard.evoSourceEffect !== 'なし';
-          console.log('  [evo' + evoIdx + ']', evoCard ? evoCard.name : '(null)', 'effExists=' + evoEffectExists, 'recipe=' + (evoCard && evoCard.recipe ? '有' : '無'));
-          if (!evoEffectExists) return;
-          // レシピがある場合はレシピを優先（進化元コンテキストなので inEvoSource=true）
+          if (!evoCard) return;
           const evoRecipeSteps = getRecipeForTrigger(evoCard, triggerCode, true);
-          if (evoRecipeSteps) {
-            console.log('  → レシピ追加 trigger=' + triggerCode + ' steps=' + (Array.isArray(evoRecipeSteps) ? evoRecipeSteps.length : 1));
-            // レシピを実行するためのダミーブロックをキューに追加
-            const dummyBlock = {
-              raw: evoCard.evoSourceEffect, trigger: { code: triggerCode },
-              actions: [], conditions: [], _recipeCard: evoCard,
-            };
-            addToQueue(sourceCard, dummyBlock,
-              sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
-            );
-            return;
-          }
-          // テキスト解析フォールバック
-          const evoBlocks = parseCardEffect(evoCard, evoCard.evoSourceEffect);
-          evoBlocks.forEach(block => {
-            if (block.trigger && block.trigger.code === triggerCode) {
-              addToQueue(sourceCard, block,
-                sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
-              );
-            }
-          });
+          console.log('  [evo' + evoIdx + ']', evoCard.name, 'recipe=' + (evoRecipeSteps ? '有' : '無'));
+          if (!evoRecipeSteps) return;
+          const dummyBlock = {
+            raw: evoCard.evoSourceEffect || '', trigger: { code: triggerCode },
+            actions: [], conditions: [], _recipeCard: evoCard,
+          };
+          addToQueue(sourceCard, dummyBlock,
+            sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
+          );
         });
         console.log('[scanTriggers/sourceOnly evo] done queue size=' + _effectQueue.length);
       }
     }
   } else {
-    // 誘発効果: 盤面全体をスキャン（レシピ優先）
+    // 誘発効果: 盤面全体をスキャン（レシピのみ）
     // ターン境界トリガーは sourceSide のみスキャン
     const sidesToScan = isSideScopedTurnTrigger && sourceSide
       ? [sourceSide]
@@ -3864,67 +3793,47 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
       [...ctx.bs[side].battleArea, ...(ctx.bs[side].tamerArea || [])].forEach(card => {
         if (!card) return;
         const priority = triggerCode.startsWith('when_') ? 'interrupt' : 'normal';
-        // レシピ優先
         const cardRecipe = getRecipeForTrigger(card, triggerCode);
-        if (cardRecipe) {
-          const dummyBlock = {
-            raw: card.effect || '', trigger: { code: triggerCode },
-            actions: [], conditions: [],
-          };
-          addToQueue(card, dummyBlock, side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', priority, side);
-        } else {
-          const blocks = parseCardEffect(card);
-          blocks.forEach(block => {
-            if (block.trigger && block.trigger.code === triggerCode) {
-              addToQueue(card, block, side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', priority, side);
-            }
-          });
-        }
+        if (!cardRecipe) return;
+        const dummyBlock = {
+          raw: card.effect || '', trigger: { code: triggerCode },
+          actions: [], conditions: [],
+        };
+        addToQueue(card, dummyBlock, side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', priority, side);
       });
 
-      // 進化元効果もスキャン（レシピ優先 → テキスト解析フォールバック）
+      // 進化元効果もスキャン（レシピのみ）
       ctx.bs[side].battleArea.forEach(card => {
         if (!card || !card.stack) return;
         card.stack.forEach(evoCard => {
           if (!evoCard) return;
-          // レシピ優先: evo_source.[triggerCode] を直接参照
           const evoRecipeSteps = getRecipeForTrigger(evoCard, triggerCode, true);
-          if (evoRecipeSteps) {
-            const dummyBlock = {
-              raw: evoCard.evoSourceEffect || '', trigger: { code: triggerCode },
-              actions: [], conditions: [], _recipeCard: evoCard,
-            };
-            addToQueue(card, dummyBlock,
-              side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
-            );
-            return;
-          }
-          // テキスト解析フォールバック
-          if (!evoCard.evoSourceEffect || evoCard.evoSourceEffect === 'なし') return;
-          const blocks = parseCardEffect(evoCard, evoCard.evoSourceEffect);
-          blocks.forEach(block => {
-            if (block.trigger && block.trigger.code === triggerCode) {
-              addToQueue(card, block,
-                side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
-              );
-            }
-          });
+          if (!evoRecipeSteps) return;
+          const dummyBlock = {
+            raw: evoCard.evoSourceEffect || '', trigger: { code: triggerCode },
+            actions: [], conditions: [], _recipeCard: evoCard,
+          };
+          addToQueue(card, dummyBlock,
+            side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
+          );
         });
       });
     });
 
-    // ソースカード自身（盤面スキャンで見つからなかった場合のみ追加）
+    // ソースカード自身（盤面スキャンで見つからなかった場合のみ追加・レシピのみ）
     if (sourceCard) {
       const alreadyQueued = _effectQueue.some(e => e.card === sourceCard);
       if (!alreadyQueued) {
-        const blocks = parseCardEffect(sourceCard);
-        blocks.forEach(block => {
-          if (block.trigger && block.trigger.code === triggerCode) {
-            addToQueue(sourceCard, block,
-              sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
-            );
-          }
-        });
+        const recipe = getRecipeForTrigger(sourceCard, triggerCode);
+        if (recipe) {
+          const dummyBlock = {
+            raw: sourceCard.effect || '', trigger: { code: triggerCode },
+            actions: [], conditions: [],
+          };
+          addToQueue(sourceCard, dummyBlock,
+            sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
+          );
+        }
       }
     }
   }
@@ -6224,37 +6133,16 @@ export function triggerEffect(triggerCode, sourceCard, sourceSide, context, call
   processQueue(context, callback);
 }
 
-// 「～ごとに」パターンの倍率付き効果値を計算（battle.jsから利用）
-// effectText: カード効果テキスト、card: カードオブジェクト、bs: バトルステート、side: 'player'/'ai'
-// actionCode: 対象アクション（例: 'security_attack_plus', 'dp_plus'）
-// 戻り値: 倍率適用済みの値（0なら該当なし）
-export function calcPerCountValue(effectText, card, bs, side) {
-  if (!effectText || effectText === 'なし') return 0;
-  const conditions = findConditions(effectText);
-  const perCond = conditions.find(c => c.code === 'per_count');
-  if (!perCond || !perCond.value) return 0;
-
-  const n = perCond.value;
-  const refSource = perCond.refSource || 'evo_source';
-  const count = getRefSourceCountDirect(refSource, card, bs, side);
-  const multiplier = Math.floor(count / n);
-
-  // 後続アクションの値を取得
-  const actions = findActions(effectText);
-  let totalValue = 0;
-  for (const a of actions) {
-    if (a.value != null && a.value > 0) {
-      totalValue += a.value * multiplier;
-    }
-  }
-  return totalValue;
+// 「～ごとに」パターンの倍率付き効果値: テキスト解析を撤去したため常に 0 を返す
+// per_count はレシピの during_X / passive 経由で applyPermanentEffects 内部処理されるため
+// 外部から呼ぶ必要はない（互換維持のため関数自体は残置）
+export function calcPerCountValue(_effectText, _card, _bs, _side) {
+  return 0;
 }
 
-// カードがキーワード効果を持っているか
+// カードがキーワード効果を持っているか（_permEffects のみ参照）
 export function cardHasKeyword(card, keywordCode) {
   if (!card) return false;
-
-  // Check _permEffects (set by applyPermanentEffects)
   if (card._permEffects) {
     const flagMap = {
       'blocker': 'blocker', '【ブロッカー】': 'blocker',
@@ -6267,6 +6155,33 @@ export function cardHasKeyword(card, keywordCode) {
     const flag = flagMap[keywordCode];
     if (flag && card._permEffects[flag]) return true;
   }
-
   return false;
+}
+
+// カードがそのトリガーのレシピを持っているか（top-level または evo_source）
+// triggerCode: 'on_play' / 'on_evolve' / 'on_attack' / 'on_attack_end' / 'security' 等
+export function hasRecipeTrigger(card, triggerCode) {
+  if (!card || !card.recipe) return false;
+  try {
+    const r = typeof card.recipe === 'string'
+      ? JSON.parse(card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, ''))
+      : card.recipe;
+    if (r[triggerCode]) return true;
+    if (r.evo_source && r.evo_source[triggerCode]) return true;
+    return false;
+  } catch (_) { return false; }
+}
+
+// stack 内の進化元カードに該当トリガーのレシピがあるか
+export function hasEvoStackTrigger(card, triggerCode) {
+  if (!card || !Array.isArray(card.stack)) return false;
+  return card.stack.some(s => {
+    if (!s || !s.recipe) return false;
+    try {
+      const r = typeof s.recipe === 'string'
+        ? JSON.parse(s.recipe.replace(/[\x00-\x1F\x7F]\s*/g, ''))
+        : s.recipe;
+      return !!(r.evo_source && r.evo_source[triggerCode]);
+    } catch (_) { return false; }
+  });
 }

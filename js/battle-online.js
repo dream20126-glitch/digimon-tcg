@@ -517,13 +517,10 @@ function onRemoteCommand(cmd) {
         cost: cmd.cost || 0, playCost: cmd.playCost || 0,
         stack: [], buffs: [], suspended: false,
       };
-      // セキュリティ効果テキストを効果テキストにマージ（triggerEffect用）
+      // セキュリティ効果はレシピ側 (recipe.security) で扱うため、
+      // テキストマージは廃止。表示用に originalEffect は残す。
       const hasSecField = secCard.securityEffect && secCard.securityEffect.trim() && secCard.securityEffect !== 'なし';
       const originalEffect = secCard.effect || '';
-      if (hasSecField) {
-        const secBlock = secCard.securityEffect.includes('【セキュリティ】') ? secCard.securityEffect : '【セキュリティ】' + secCard.securityEffect;
-        secCard.effect = originalEffect + (originalEffect ? '\n' : '') + secBlock;
-      }
       const afterEffect = () => {
         const mentionsMain = /このカードの\s*【メイン】\s*効果/.test(secCard.securityEffect || secCard.effect);
         const doFinish = () => {

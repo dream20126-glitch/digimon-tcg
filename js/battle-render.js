@@ -8,7 +8,7 @@
 import { bs, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { updateScrollArrows, addLog } from './battle-ui.js';
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
-import { isTargetSelecting } from './effect-engine.js';
+import { isTargetSelecting, hasRecipeTrigger } from './effect-engine.js';
 
 // ===== カード画像ヘルパー =====
 const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
@@ -275,7 +275,7 @@ function setupLongpress(el, slotIdx, card) {
     const c = bs.player.battleArea[slotIdx]; if (!c) return;
     _wasAlreadySuspended = c.suspended;
     if (!c.suspended) {
-      const noRest = (c.effect && c.effect.includes('レストせずアタックできる')) || c._attackWithoutRest;
+      const noRest = !!c._attackWithoutRest;
       if (!noRest) c.suspended = true;
       renderAll();
     }
@@ -305,11 +305,9 @@ function showLongpressMenu(card, slotIdx, el) {
 
   let html = '';
   const canAtk = card.type === 'デジモン';
-  // 速攻判定: effect / 進化元 / _permEffects.rush / buffs[keyword_rush] / レシピ passive
-  const hasRushFlag = (
-    (card.effect && card.effect.includes('【速攻】'))
-    || (card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【速攻】')))
-    || (card._permEffects && card._permEffects.rush)
+  // 速攻判定: _permEffects.rush（applyPermanentEffects が recipe.passive から構築）/ buffs[keyword_rush]
+  const hasRushFlag = !!(
+    (card._permEffects && card._permEffects.rush)
     || (card.buffs && card.buffs.some(b => b.type === 'keyword_rush'))
   );
   const notSick = !card.summonedThisTurn || hasRushFlag;
@@ -323,7 +321,7 @@ function showLongpressMenu(card, slotIdx, el) {
     }
   }
   if (!card._usedEffects) card._usedEffects = [];
-  if (card.effect && card.effect.includes('【メイン】')) {
+  if (hasRecipeTrigger(card, 'main')) {
     const used = card._usedEffects.includes('self');
     html += used
       ? '<button class="lp-action-btn lp-effect-btn" disabled style="opacity:0.3;">⚡ 効果（使用済み）</button>'
@@ -380,7 +378,8 @@ function startAttackModeUI(slotIdx) {
   arrowSvg.style.display = 'block';
 
   // アタック対象ハイライト
-  const canHitActive = (card.effect && card.effect.includes('アクティブ状態のデジモンにもアタックできる')) || (card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【突進】')));
+  // 突進(piercing) を持っていればアクティブ状態のデジモンにもアタック可能
+  const canHitActive = !!(card._permEffects && card._permEffects.piercing);
   const aiRow = document.getElementById('ai-battle-row');
   if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, i) => {
     const def = bs.ai.battleArea[i]; if (!def) return;

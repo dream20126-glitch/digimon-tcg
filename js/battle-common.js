@@ -10,7 +10,7 @@ import { addLog } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallbacks, doIkuMove } from './battle-render.js';
 import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, showDrawEffect } from './battle-phase.js';
 import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack } from './battle-combat.js';
-import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, loadAllDictionaries, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE } from './effect-engine.js';
+import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, loadAllDictionaries, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxBuffStatus } from './battle-fx.js';
 import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js';
 
@@ -195,8 +195,28 @@ export function buildCombatHooks() {
   return {
     checkAndTriggerEffect,
     makeEffectContext,
-    hasKeyword: (card, kw) => card && card.effect && card.effect.includes(kw),
-    hasEvoKeyword: (card, kw) => card && card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes(kw)),
+    hasKeyword: (card, kw) => {
+      if (!card) return false;
+      const map = {
+        '【登場時】': 'on_play', '【進化時】': 'on_evolve',
+        '【アタック時】': 'on_attack', '【アタック終了時】': 'on_attack_end',
+        '【消滅時】': 'on_destroy', '【セキュリティ】': 'security',
+        '【自分のターン終了時】': 'on_own_turn_end', '【相手のターン終了時】': 'on_opp_turn_end',
+        '【メイン】': 'main',
+      };
+      const trig = map[kw];
+      return trig ? _hasRecipeTriggerEE(card, trig) : false;
+    },
+    hasEvoKeyword: (card, kw) => {
+      if (!card) return false;
+      const map = {
+        '【登場時】': 'on_play', '【進化時】': 'on_evolve',
+        '【アタック時】': 'on_attack', '【アタック終了時】': 'on_attack_end',
+        '【消滅時】': 'on_destroy', '【セキュリティ】': 'security',
+      };
+      const trig = map[kw];
+      return trig ? _hasEvoStackTriggerEE(card, trig) : false;
+    },
     applyPermanentEffects: applyPermanentEffectsWrap,
     expireBuffs: expireBuffsWrap,
     triggerEffect: triggerEffectWrap,

@@ -9,7 +9,7 @@ console.log('[LOADED] battle-phase.js version=player_pre_diagnostic_v2');
 import { bs, spendMemory, addMemory, endTurnManual, isMemoryOverflow, drawCards, isDeckEmpty } from './battle-state.js';
 import { addLog, showOverlay, removeOverlay } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, hasRecipeTrigger as _hasRecipeTrigger } from './effect-engine.js';
 
 // ===== 定数 =====
 
@@ -45,8 +45,19 @@ let _hooks = {
   applyPermanentEffects: (side) => {
     try { _applyPermanent(bs, side, { bs, side }); } catch (_) { /* effect-engine未接続時は無視 */ }
   },
-  /** カードがキーワードを持つか */
-  hasKeyword: (card, kw) => card && card.effect && card.effect.includes(kw),
+  /** カードがキーワードを持つか（テキスト一致は廃止し、recipe トリガーで判定） */
+  hasKeyword: (card, kw) => {
+    if (!card) return false;
+    const map = {
+      '【登場時】': 'on_play', '【進化時】': 'on_evolve',
+      '【アタック時】': 'on_attack', '【アタック終了時】': 'on_attack_end',
+      '【消滅時】': 'on_destroy', '【セキュリティ】': 'security',
+      '【自分のターン終了時】': 'on_own_turn_end', '【相手のターン終了時】': 'on_opp_turn_end',
+      '【メイン】': 'main',
+    };
+    const trig = map[kw];
+    return trig ? _hasRecipeTrigger(card, trig) : false;
+  },
   /** 効果トリガー (card, triggerType, callback, side) */
   checkAndTriggerEffect: (_card, _trigger, cb, _side) => cb(),
   /** デッキ切れ負け */

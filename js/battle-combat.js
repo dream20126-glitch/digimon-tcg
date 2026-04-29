@@ -9,7 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, calcPerCountValue as _calcPerCountValue, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -17,8 +17,31 @@ import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, 
 let _hooks = {
   checkAndTriggerEffect: (_card, _trigger, cb, _side) => cb(),
   makeEffectContext: (card, side) => ({ card, side, bs }),
-  hasKeyword: (card, kw) => card && card.effect && card.effect.includes(kw),
-  hasEvoKeyword: (card, kw) => card && card.stack && card.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes(kw)),
+  // テキスト一致は撤廃。日本語トリガー名 → recipe トリガーコードのマップで構造的に判定する
+  hasKeyword: (card, kw) => {
+    if (!card) return false;
+    const map = {
+      '【登場時】': 'on_play', '【進化時】': 'on_evolve',
+      '【アタック時】': 'on_attack', '【アタック終了時】': 'on_attack_end',
+      '【消滅時】': 'on_destroy', '【セキュリティ】': 'security',
+      '【自分のターン終了時】': 'on_own_turn_end', '【相手のターン終了時】': 'on_opp_turn_end',
+      '【自分のターン開始時】': 'on_own_turn_start', '【相手のターン開始時】': 'on_opp_turn_start',
+      '【メイン】': 'main',
+    };
+    const trig = map[kw];
+    return trig ? _hasRecipeTrigger(card, trig) : false;
+  },
+  hasEvoKeyword: (card, kw) => {
+    if (!card) return false;
+    const map = {
+      '【登場時】': 'on_play', '【進化時】': 'on_evolve',
+      '【アタック時】': 'on_attack', '【アタック終了時】': 'on_attack_end',
+      '【消滅時】': 'on_destroy', '【セキュリティ】': 'security',
+      '【自分のターン終了時】': 'on_own_turn_end', '【相手のターン終了時】': 'on_opp_turn_end',
+    };
+    const trig = map[kw];
+    return trig ? _hasEvoStackTrigger(card, trig) : false;
+  },
   applyPermanentEffects: (side) => {
     try { _applyPermanent(bs, side, { bs, side }); } catch (_) {}
   },
@@ -556,7 +579,8 @@ export function doEvolveIku(card, handIdx) {
         if (window._tutorialBattleDone) window._tutorialBattleDone();
         checkPlayerPendingTurnEnd();
       };
-      if (evolved.effect && evolved.effect.includes('＜育成＞') && hasKeyword(evolved, '【進化時】')) {
+      // ＜育成＞ 限定の発火条件は廃止。on_evolve レシピがあれば発火する。
+      if (hasKeyword(evolved, '【進化時】')) {
         _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
           renderAll(true);
           finishEvolveIku();
@@ -743,7 +767,8 @@ export function resolveAttackTarget(target, targetIdx) {
     // デジモンアタック
     const def = bs.ai.battleArea[targetIdx];
     if (!def) { cancelAttack(); return; }
-    const canHitActive = hasPiercing(atk) || hasKeyword(atk, 'アクティブ状態のデジモンにもアタックできる');
+    // 「アクティブ状態のデジモンにもアタックできる」は突進(piercing)で判定
+    const canHitActive = hasPiercing(atk);
     if (!def.suspended && !canHitActive) {
       addLog('🚨 アクティブ状態のデジモンにはアタックできません');
       atk.suspended = false; renderAll();
@@ -817,7 +842,7 @@ export function resolveAttackTarget(target, targetIdx) {
 // アタック時効果
 function afterAtkEffect(atk, atkSlotIdx, callback) {
   const hasAtk = hasKeyword(atk, '【アタック時】') ||
-    (atk.stack && atk.stack.some(s => s.evoSourceEffect && s.evoSourceEffect.includes('【アタック時】')));
+    hasEvoKeyword(atk, '【アタック時】');
   if (hasAtk) {
     _hooks.checkAndTriggerEffect(atk, '【アタック時】', callback);
   } else callback();
@@ -1039,7 +1064,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
         try { window._tutorialRunner.notifyEvent('security_effect', { cardNo: sec.cardNo, cardName: sec.name, side: 'opponent' }); } catch (e) {}
       }
       const hasSecField = sec.securityEffect && sec.securityEffect.trim() && sec.securityEffect !== 'なし';
-      const hasSecInEffect = sec.effect && sec.effect.includes('【セキュリティ】');
+      const hasSecInEffect = _hasRecipeTrigger(sec, 'security');
       setTimeout(() => {
         if (hasSecField || hasSecInEffect) {
           const doFinishSec = () => {
@@ -1616,7 +1641,7 @@ export function aiAttackPhase(callback) {
           idx: i, name: c.name, type: c.type,
           suspended: c.suspended, cantBlock: c.cantBlock,
           isBlocker: isBlocker(c),
-          effectHasBlocker: !!(c.effect && c.effect.includes('【ブロッカー】')),
+          effectHasBlocker: !!(c._permEffects && c._permEffects.blocker),
           recipePreview: typeof c.recipe === 'string' ? c.recipe.slice(0, 80) : (c.recipe ? JSON.stringify(c.recipe).slice(0, 80) : '(なし)'),
           permEffectsBlocker: !!(c._permEffects && c._permEffects.blocker),
         };
@@ -1781,7 +1806,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
       } else {
         addLog('✦ セキュリティ効果：「' + sec.name + '」');
         const hasSecField = sec.securityEffect && sec.securityEffect.trim() && sec.securityEffect !== 'なし';
-        const hasSecInEffect = sec.effect && sec.effect.includes('【セキュリティ】');
+        const hasSecInEffect = _hasRecipeTrigger(sec, 'security');
         if (hasSecField || hasSecInEffect) {
           const secText = hasSecField ? sec.securityEffect : sec.effect;
           const originalEffect = sec.effect || '';
@@ -2633,7 +2658,7 @@ export function aiScriptEvolveBreed(targetKey, onDone) {
     }
     renderAll(true);
     // 育成エリアでは <育成> を持つ進化時効果のみ発動
-    if (evo.effect && evo.effect.includes('＜育成＞') && hasKeyword(evo, '【進化時】')) {
+    if (hasKeyword(evo, '【進化時】')) {
       _hooks.checkAndTriggerEffect(evo, '【進化時】', () => {
         renderAll(true);
         onDone && onDone(turnEnded);

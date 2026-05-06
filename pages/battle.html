@@ -356,9 +356,11 @@
   </div>
 </div>
 
-<!-- ===== モバイル用 画面内ログビューア（URLに ?debuglog=1 で有効化） ===== -->
-<div id="mobile-log-toggle" style="display:none; position:fixed; bottom:6px; right:6px; z-index:90001; background:#222; color:#0f0; border:1px solid #0f0; border-radius:50%; width:36px; height:36px; font-size:16px; cursor:pointer; pointer-events:auto;" onclick="document.getElementById('mobile-log-panel').style.display = (document.getElementById('mobile-log-panel').style.display==='none'?'block':'none')">📋</div>
-<div id="mobile-log-panel" style="display:none; position:fixed; bottom:48px; left:6px; right:6px; max-height:40vh; z-index:90000; background:rgba(0,0,0,0.92); color:#0f0; border:1px solid #0f0; border-radius:6px; padding:6px; font-size:10px; font-family:monospace; overflow-y:auto; pointer-events:auto;">
+<!-- ===== モバイル用 画面内ログビューア ===== -->
+<!-- 常時表示（小さい）。デバッグ完了時は対応コミットを revert で消す。
+     位置はブラウザナビバーに隠れないよう bottom:90px、左寄せに変更 -->
+<div id="mobile-log-toggle" style="position:fixed; bottom:90px; left:6px; z-index:90001; background:#222; color:#0f0; border:1px solid #0f0; border-radius:50%; width:36px; height:36px; font-size:16px; cursor:pointer; pointer-events:auto; display:flex; align-items:center; justify-content:center; box-shadow:0 0 8px rgba(0,255,0,0.5); opacity:0.85;" onclick="document.getElementById('mobile-log-panel').style.display = (document.getElementById('mobile-log-panel').style.display==='none'?'block':'none')">📋</div>
+<div id="mobile-log-panel" style="display:none; position:fixed; bottom:130px; left:6px; right:6px; max-height:40vh; z-index:90000; background:rgba(0,0,0,0.92); color:#0f0; border:1px solid #0f0; border-radius:6px; padding:6px; font-size:10px; font-family:monospace; overflow-y:auto; pointer-events:auto;">
   <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
     <span style="color:#0f0;">🔍 ログ</span>
     <button onclick="document.getElementById('mobile-log-list').innerHTML=''" style="background:#330; color:#0f0; border:1px solid #0f0; padding:1px 6px; font-size:10px; cursor:pointer;">クリア</button>
@@ -366,19 +368,9 @@
   <div id="mobile-log-list" style="white-space:pre-wrap; word-break:break-all; line-height:1.4;"></div>
 </div>
 <script>
-  // ?debuglog=1 が URL に含まれる、または localStorage.debuglog === '1' のとき有効化
-  // URL でセットされたら localStorage にも保存（ページ遷移後も保持）
-  // OFF にしたい場合は ?debuglog=0 を付けて開く
-  try {
-    const _qs = location.search || '';
-    if (/[?&]debuglog=1/.test(_qs)) localStorage.setItem('debuglog', '1');
-    else if (/[?&]debuglog=0/.test(_qs)) localStorage.removeItem('debuglog');
-  } catch (_) {}
-  const _debuglogActive = (() => {
-    try { return localStorage.getItem('debuglog') === '1'; } catch (_) { return false; }
-  })() || /[?&]debuglog=1/.test(location.search || '');
-  if (typeof window !== 'undefined' && _debuglogActive) {
-    document.getElementById('mobile-log-toggle').style.display = 'block';
+  // モバイルログビューア: ボタンは常時表示。タップで開閉
+  // console.log/warn/error をフックして画面内に表示（スマホで開発者ツールが使えない時用）
+  if (typeof window !== 'undefined') {
     const _logList = document.getElementById('mobile-log-list');
     const _appendLog = (level, args) => {
       try {

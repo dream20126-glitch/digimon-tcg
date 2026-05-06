@@ -9,6 +9,15 @@
   <link rel="stylesheet" href="css/builder.css">
   <link rel="stylesheet" href="css/battle.css">
   <link rel="stylesheet" href="css/admin.css">
+  <script>
+    // モバイル debuglog 設定の永続化（トップページで ?debuglog=1 を受け取って localStorage に保存）
+    // 以降のページ遷移後（battle.html 等）でもログビューアが有効
+    try {
+      const _qs = location.search || '';
+      if (/[?&]debuglog=1/.test(_qs)) localStorage.setItem('debuglog', '1');
+      else if (/[?&]debuglog=0/.test(_qs)) localStorage.removeItem('debuglog');
+    } catch (_) {}
+  </script>
 </head>
 <body>
 

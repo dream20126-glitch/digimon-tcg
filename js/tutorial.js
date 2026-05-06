@@ -1716,8 +1716,18 @@ function _hideSpotlightNextBtn() {
 }
 
 // closeTutorialPhasePopup は既存の「次へ」ボタン → stepPopup にも共用
+// モバイル対策: ontouchend と onclick が連続発火し（300ms以内）、2回目の呼び出しが
+// 直後に表示された次のポップアップまで閉じてしまうため、短時間デバウンスする
 const _origClosePhasePopup = window.closeTutorialPhasePopup;
+let _lastPhasePopupCloseAt = 0;
 window.closeTutorialPhasePopup = function() {
+  const now = Date.now();
+  if (now - _lastPhasePopupCloseAt < 500) {
+    // 500ms以内の重複呼び出しは touch→click の二重発火とみなして無視
+    return;
+  }
+  _lastPhasePopupCloseAt = now;
+
   const popup = document.getElementById('tutorial-phase-popup');
   if (popup) popup.style.display = 'none';
 

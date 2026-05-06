@@ -857,31 +857,40 @@ export function renderHand() {
         cardEl.style.position = ''; cardEl.style.zIndex = ''; cardEl.style.left = ''; cardEl.style.top = '';
         cardEl.style.transform = ''; cardEl.style.pointerEvents = ''; cardEl.style.transition = '';
         highlightDropZones(false);
+        console.log('[handDrag] end card=' + (card && card.name) + ' wasDrag=' + wasDrag);
         if (!wasDrag) return;
         _dragDone = true; setTimeout(() => { _dragDone = false; }, 50);
         const cx = t.clientX, cy = t.clientY;
+        console.log('[handDrag] drop coords=(' + cx + ',' + cy + ')');
         let dropped = false;
         // 育成エリアに進化
         const ikuEl = document.getElementById('pl-iku-slot');
         if (!dropped && ikuEl && bs.player.ikusei) {
           const r = ikuEl.getBoundingClientRect(), pad = 20;
           if (cx >= r.left - pad && cx <= r.right + pad && cy >= r.top - pad && cy <= r.bottom + pad) {
+            console.log('[handDrag] drop on iku slot');
             if (window.doEvolveIku) window.doEvolveIku(card, idx); dropped = true;
           }
         }
         // バトルエリアに登場 or 進化
         if (!dropped) {
           const plRow = document.getElementById('pl-battle-row');
-          if (plRow) plRow.querySelectorAll('.b-slot').forEach((slot, si) => {
+          const slots = plRow ? plRow.querySelectorAll('.b-slot') : [];
+          console.log('[handDrag] battle slots count=' + slots.length);
+          if (plRow) slots.forEach((slot, si) => {
             if (dropped) return;
             const r = slot.getBoundingClientRect();
-            if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
-              if (bs.player.battleArea[si]) { if (window.doEvolve) window.doEvolve(card, idx, si); }
+            const inside = (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom);
+            if (inside) {
+              const occupied = !!bs.player.battleArea[si];
+              console.log('[handDrag] drop on slot ' + si + ' occupied=' + occupied + ' hasDoPlay=' + !!window.doPlay + ' hasDoEvolve=' + !!window.doEvolve);
+              if (occupied) { if (window.doEvolve) window.doEvolve(card, idx, si); }
               else { if (window.doPlay) window.doPlay(card, idx, si); }
               dropped = true;
             }
           });
         }
+        if (!dropped) console.log('[handDrag] not dropped on any zone');
       }
       cardEl.addEventListener('mousedown', onStart);
       cardEl.addEventListener('touchstart', onStart, { passive: true });

@@ -61,6 +61,7 @@ export function setCombatHooks(hooks) {
 if (typeof window !== 'undefined') {
   window._tryDecoyRedirect = function(target, ownerSide) { return _tryDecoyRedirect(target, ownerSide); };
   window._tryScapegoat = function(target, ownerSide) { return _tryScapegoat(target, ownerSide); };
+  window._tryFragment = function(target, ownerSide) { return _tryFragment(target, ownerSide); };
 }
 
 // レスト発生時に when_opp_rest トリガーを発火する共通ヘルパー
@@ -171,6 +172,10 @@ function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle) {
   if (_tryScapegoat(card, ownerSidePlayer)) {
     return { canceled: true, reason: 'scapegoat' };
   }
+  // フラグメント（消滅時、進化元を破棄することで消滅回避）
+  if (_tryFragment(card, ownerSidePlayer)) {
+    return { canceled: true, reason: 'fragment' };
+  }
   return null;
 }
 // ≪連携≫の処理: アタック時、他のアクティブデジモン1体をレストさせて
@@ -234,6 +239,28 @@ function _tryScapegoat(destroyTarget, ownerSidePlayer) {
   }
   return false;
 }
+
+// ≪フラグメント≫の処理: 自身が消滅するとき、進化元を選んでN枚破棄することで消滅しない
+// 簡易実装: 上から N 枚（指定値、なければ 1）破棄。0枚なら回避不可
+function _tryFragment(destroyTarget, ownerSidePlayer) {
+  if (!destroyTarget || !ownerSidePlayer || !hasFragment(destroyTarget)) return false;
+  var stack = destroyTarget.stack || [];
+  if (stack.length === 0) return false;
+  // フラグメントN: passive.flag='fragment' の value（または 1）枚破棄
+  var n = 1;
+  try {
+    var pe = destroyTarget._permEffects;
+    if (pe && pe.fragmentValue) n = pe.fragmentValue;
+  } catch(_) {}
+  if (n > stack.length) n = stack.length;
+  for (var i = 0; i < n; i++) {
+    var s = stack.shift();
+    if (s) ownerSidePlayer.trash.push(s);
+  }
+  addLog('🛡 【フラグメント】「' + destroyTarget.name + '」が進化元 ' + n + ' 枚を破棄して消滅回避');
+  return true;
+}
+function hasFragment(c) { return hasPassiveFlag(c, 'fragment', '【フラグメント】'); }
 
 // その他キーワード判定（フェーズ1〜2 実装分）
 function hasRush(c)         { return hasPassiveFlag(c, 'rush', '【速攻】'); }
@@ -516,6 +543,8 @@ export function doEvolve(card, handIdx, slotIdx) {
   evolved.dp = evolved.baseDp + evolved.dpModifier;
   bs.player.battleArea[slotIdx] = evolved;
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
+  // cond_evolved_this_turn 用カウンタを増加
+  bs._evolveCountThisTurn = (bs._evolveCountThisTurn || 0) + 1;
   addLog('⬆ 「' + base.name + '」→「' + evolved.name + '」進化！（コスト ' + cost + '）');
   // チュートリアル: アクション完了の瞬間に指差し/吹き出しを消す
   if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
@@ -1139,6 +1168,15 @@ export function resolveSecurityCheck(atk, atkIdx) {
           }
 
           // オフライン時: ローカルで処理
+          // ≪オプションのセキュリティ効果無効化≫: アタッカーが suppressOptSecurityEffect 持ちで
+          // めくったカードがオプションなら、セキュリティ効果をスキップしてトラッシュへ
+          if (atk && atk._permEffects && atk._permEffects.suppressOptSecurityEffect && sec.type === 'オプション') {
+            addLog('🚫 ≪オプションSE無効化≫: 「' + sec.name + '」のセキュリティ効果は発揮しない');
+            bs.ai.trash.push(sec); renderAll();
+            if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
+            else { checkAttackEnd(atk, atkIdx); }
+            return;
+          }
           const secText = hasSecField ? sec.securityEffect : sec.effect;
           const originalEffect = sec.effect || '';
           if (hasSecField) {
@@ -1183,10 +1221,15 @@ function getSecurityAttackCount(card) {
   _hooks.applyPermanentEffects('ai');
 
   // レシピベースの_permEffectsのみ使用
-  let permPlus = 0, buffPlus = 0, buffMinus = 0;
+  let permPlus = 0, permMinus = 0, buffPlus = 0, buffMinus = 0;
   if (card._permEffects && card._permEffects.securityAttackPlus) {
     permPlus = card._permEffects.securityAttackPlus;
     extra += permPlus;
+  }
+  // Sアタック- は permEffects 経由でも減算
+  if (card._permEffects && card._permEffects.securityAttackMinus) {
+    permMinus = card._permEffects.securityAttackMinus;
+    extra -= permMinus;
   }
   if (card.buffs && card.buffs.length > 0) {
     card.buffs.forEach(b => {
@@ -1339,7 +1382,14 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
 
   showSecurityCheck(def, atk, () => {
     // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
-    const _atkDp = atk.dp, _defDp = def.dp;
+    // ≪氷装≫: セキュリティデジモン以外とのバトルでは DP ではなく進化元枚数を比べる
+    let _atkDp = atk.dp, _defDp = def.dp;
+    const iceArmorActive = (atk._permEffects && atk._permEffects.iceArmor) || (def._permEffects && def._permEffects.iceArmor);
+    if (iceArmorActive) {
+      _atkDp = atk.stack ? atk.stack.length : 0;
+      _defDp = def.stack ? def.stack.length : 0;
+      addLog('🧊 ≪氷装≫: 進化元枚数比較 (atk=' + _atkDp + ' / def=' + _defDp + ')');
+    }
     removeBattleBuffs(battleBuffs);
     if (_atkDp === _defDp) {
       destroyDef(); destroyAtk(); renderAll();
@@ -1438,7 +1488,14 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
   addLog('⚔ 「' + atk.name + '」(DP ' + formatDpDisplay(atk) + ') vs 「' + def.name + '」(DP ' + formatDpDisplay(def) + ')');
   showSecurityCheck(def, atk, () => {
     // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
-    const _atkDp = atk.dp, _defDp = def.dp;
+    // ≪氷装≫: 進化元枚数比較
+    let _atkDp = atk.dp, _defDp = def.dp;
+    const iceArmorActive2 = (atk._permEffects && atk._permEffects.iceArmor) || (def._permEffects && def._permEffects.iceArmor);
+    if (iceArmorActive2) {
+      _atkDp = atk.stack ? atk.stack.length : 0;
+      _defDp = def.stack ? def.stack.length : 0;
+      addLog('🧊 ≪氷装≫: 進化元枚数比較 (atk=' + _atkDp + ' / def=' + _defDp + ')');
+    }
     removeBattleBuffs(battleBuffs);
     if (_atkDp === _defDp) {
       bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
@@ -1766,8 +1823,11 @@ export function aiAttackPhase(callback) {
         };
       }));
       const blockerIndices = [];
+      // 「ブロックされない」フラグ: アタッカーが cantBeBlocked なら全ブロック不可
+      const atkCantBeBlocked = atk && atk._permEffects && atk._permEffects.cantBeBlocked;
       bs.player.battleArea.forEach((c, i) => {
         if (c && !c.suspended && !c.cantBlock && isBlocker(c)) {
+          if (atkCantBeBlocked) return; // ブロックされない: スキップ
           blockerIndices.push(i);
         }
       });

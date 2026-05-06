@@ -624,6 +624,7 @@ export function onEndTurn() {
       bs.isPlayerTurn = false;
       // ターン中アタック回数のリセット
       bs._currentTurnAttackCount = 0;
+      bs._evolveCountThisTurn = 0;
       showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {
         addLog('⏳ 相手のターン（操作待ち）');
       });
@@ -704,6 +705,7 @@ export async function aiTurn() {
   bs.turn++;
   // ターン中アタック回数のリセット（cond_opp_no_attack_this_turn 等で使用）
   bs._currentTurnAttackCount = 0;
+  bs._evolveCountThisTurn = 0;
   showYourTurn('相手のターン開始', '🤖 デジモンマスター', '#ff00fb', () => {
     _hooks.checkTurnStartEffects('ai', () => {
       _hooks.applyPermanentEffects('player');
@@ -904,6 +906,7 @@ async function endAiTurn() {
     bs.isPlayerTurn = true;
     // ターン中アタック回数のリセット
     bs._currentTurnAttackCount = 0;
+    bs._evolveCountThisTurn = 0;
     startPlayerTurn();
   });
 }

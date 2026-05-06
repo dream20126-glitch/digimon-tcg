@@ -275,6 +275,14 @@ class TutorialRunner {
     this._currentPhase = phaseKey;
     // イベントとして発火 (既存の条件と互換)
     try { this.notifyEvent('phase_change', { phase: phaseKey }); } catch (_) {}
+    // フェーズ説明ポップアップ: scenario.showPhaseGuide が true かつ phaseGuideTexts[phaseKey] が定義済み
+    // のときだけ表示。閉じるまで await で待ち、フェーズ進行を一時停止する
+    if (this.scenario && this.scenario.showPhaseGuide && typeof window !== 'undefined' && window._tutorialShowPhaseGuide) {
+      const pgt = this.scenario.phaseGuideTexts || {};
+      if (pgt[phaseKey]) {
+        try { await window._tutorialShowPhaseGuide(phaseKey); } catch (_) {}
+      }
+    }
     // 該当フェーズ待ちの保留ステップを表示
     if (this._pendingWaitKind === 'phase' && this._pendingWaitValue === phaseKey && this._pendingStep) {
       this._pendingStep = null;

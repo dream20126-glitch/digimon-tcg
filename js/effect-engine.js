@@ -9,27 +9,81 @@ let _actionDict = [];   // 効果アクション辞書（アクション・対�
 // ===== 効果キュー =====
 let _effectQueue = [];
 
+// ===== 持続コードの正規化 =====
+// レシピ JSON 由来の duration を内部コードに揃えるユーティリティ
+//   undefined/空 → undefined
+//   既に 'dur_' で始まる → そのまま (例: 'dur_this_turn')
+//   それ以外      → 'dur_' を前置 (例: 'this_turn' → 'dur_this_turn')
+// 使用箇所: dp_plus / grant_keyword 等の duration 参照時、ctx.block.duration への正規化
+function normalizeRecipeDuration(d) {
+  if (d === undefined || d === null || d === '') return undefined;
+  const s = String(d).trim();
+  if (s === '') return undefined;
+  if (s.startsWith('dur_')) return s;
+  return 'dur_' + s;
+}
+
 // ===== 辞書読み込み =====
+// 統合「効果辞書」(コード/種類/表示名/演出タイプ...) と旧2分割辞書 両方対応
 export async function loadAllDictionaries() {
   try {
-    const [triggers, actions] = await Promise.all([
-      gasGet('getEffectDictionary'),
-      gasGet('getEffectActionDictionary')
-    ]);
-    _triggerDict = triggers || [];
-    _actionDict = actions || [];
+    const data = await gasGet('getEffectDictionary');
+    const all = Array.isArray(data) ? data : [];
+    // 統合辞書 判定: 'コード' or '種類' 列を持つ
+    const isUnified = all.length > 0 && (
+      Object.prototype.hasOwnProperty.call(all[0], 'コード') ||
+      Object.prototype.hasOwnProperty.call(all[0], '種類')
+    );
+    if (isUnified) {
+      // 統合版: 種類列で振り分け
+      _triggerDict = all.filter(e => {
+        const k = String(e['種類']||'').trim();
+        return k === 'trigger' || k === 'continuous' || k === 'condition' || k === 'limit' || k === 'duration' || k === 'target' || k === '';
+      });
+      _actionDict = all.filter(e => String(e['種類']||'').trim() === 'action');
+      // 後方互換: getActionUI が 'アクションコード' を見るので 'コード' をコピー
+      _actionDict.forEach(e => {
+        if (!e['アクションコード'] && e['コード']) e['アクションコード'] = e['コード'];
+      });
+      // trigger も '処理コード' を補完
+      _triggerDict.forEach(e => {
+        if (!e['処理コード'] && e['コード']) e['処理コード'] = e['コード'];
+      });
+      console.log('[EffectEngine] 統合辞書ロード: trigger=' + _triggerDict.length + ' action=' + _actionDict.length);
+    } else {
+      // 旧仕様: 効果辞書 + 効果アクション辞書 の2分割
+      _triggerDict = all;
+      try {
+        const actions = await gasGet('getEffectActionDictionary');
+        _actionDict = actions || [];
+      } catch(_) { _actionDict = []; }
+      console.log('[EffectEngine] 旧仕様辞書ロード: trigger=' + _triggerDict.length + ' action=' + _actionDict.length);
+    }
   } catch(e) {
     console.error('[EffectEngine] 辞書読み込みエラー:', e);
   }
 }
 
-
 // アクションコードからUI情報を取得
+// 統合辞書 'コード' / 旧 'アクションコード' 両対応
 function getActionUI(actionCode) {
+  if (!actionCode) return null;
+  // ロジック alias: 同コードに 'ロジックコード' が定義されてればそちらの行を返す
+  const target = String(actionCode).trim();
   for (const entry of _actionDict) {
-    if ((entry['アクションコード']||'').trim() === actionCode) return entry;
+    const code = String(entry['アクションコード']||entry['コード']||'').trim();
+    if (code === target) return entry;
   }
   return null;
+}
+
+// ロジック alias 解決: 辞書に 'ロジックコード' 列があれば既存ロジックに alias
+// 例: 新 'dp_plus_strong' のロジックコード='dp_plus' → switch では 'dp_plus' として扱う
+function resolveLogicCode(actionCode) {
+  const ui = getActionUI(actionCode);
+  if (!ui) return actionCode;
+  const alias = String(ui['ロジックコード']||'').trim();
+  return alias || actionCode;
 }
 
 // ===== 効果キュー管理 =====
@@ -462,14 +516,60 @@ function getRefSourceCount(refSource, ctx) {
 }
 
 // 参照先の枚数を取得（直接指定版 - calcPerCountValue用）
-function getRefSourceCountDirect(refSource, card, bs, side) {
+function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateStr) {
   const player = side === 'player' ? bs.player : bs.ai;
+  const opponent = side === 'player' ? bs.ai : bs.player;
+  // refFilter (色/タイプ/特徴/Lv 等) を適用してカウント
+  const hasFilter = refFilter && typeof refFilter === 'object' && Object.keys(refFilter).length > 0;
+  // refStateStr ("cond_self_rest" 等) を checkConditions で評価
+  const stateConds = refStateStr ? parseRecipeCondition(String(refStateStr)) : null;
+  function passesState(c) {
+    if (!stateConds) return true;
+    return checkConditions(stateConds, c, bs, side);
+  }
+  function countWith(arr) {
+    let result = arr.filter(c => c && passesState(c));
+    if (!hasFilter) return result.length;
+    if (typeof cardMatchesFilter === 'function') {
+      return result.filter(c => cardMatchesFilter(c, refFilter)).length;
+    }
+    // フォールバック: 主要フィルタを手書き判定
+    return result.filter(c => {
+      if (refFilter.color && String(c.color || '') !== refFilter.color) return false;
+      if (refFilter.type && String(c.type || '') !== refFilter.type) return false;
+      if (refFilter.lv_le !== undefined && parseInt(c.level || c.Lv || c.lv) > refFilter.lv_le) return false;
+      if (refFilter.lv_ge !== undefined && parseInt(c.level || c.Lv || c.lv) < refFilter.lv_ge) return false;
+      if (refFilter.dp_le !== undefined && (c.dp || 0) > refFilter.dp_le) return false;
+      if (refFilter.dp_ge !== undefined && (c.dp || 0) < refFilter.dp_ge) return false;
+      if (refFilter.feature_contains && String(c.feature || '').indexOf(refFilter.feature_contains) < 0) return false;
+      if (refFilter.name_contains && String(c.name || '').indexOf(refFilter.name_contains) < 0) return false;
+      return true;
+    }).length;
+  }
   switch (refSource) {
-    case 'evo_source': return card && card.stack ? card.stack.length : 0;
-    case 'hand': return player.hand.length;
-    case 'trash': return player.trash.length;
-    case 'security': return player.security.length;
-    case 'battle_area': return player.battleArea.filter(c => c !== null).length;
+    // --- 自分側 ---
+    case 'evo_source':         return countWith(card && card.stack ? card.stack : []);
+    case 'hand':               return countWith(player.hand);
+    case 'trash':              return countWith(player.trash);
+    case 'security':           return countWith(player.security);
+    case 'battle_area':        return countWith(player.battleArea.filter(c => c !== null));
+    case 'own_hand':           return countWith(player.hand);
+    case 'own_trash':          return countWith(player.trash);
+    case 'own_security':       return countWith(player.security);
+    case 'own_battle_area':    return countWith(player.battleArea.filter(c => c !== null));
+    case 'own_digimon':        return countWith(player.battleArea.filter(c => c && c.type === 'デジモン'));
+    case 'own_rest_digimon':   return countWith(player.battleArea.filter(c => c && c.type === 'デジモン' && c.suspended));
+    case 'own_active_digimon': return countWith(player.battleArea.filter(c => c && c.type === 'デジモン' && !c.suspended));
+    case 'own_tamer':          return countWith((player.tamerArea || []).filter(c => c !== null));
+    // --- 相手側 ---
+    case 'opp_hand':           return countWith(opponent.hand);
+    case 'opp_trash':          return countWith(opponent.trash);
+    case 'opp_security':       return countWith(opponent.security);
+    case 'opp_battle_area':    return countWith(opponent.battleArea.filter(c => c !== null));
+    case 'opp_digimon':        return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン'));
+    case 'opp_rest_digimon':   return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && c.suspended));
+    case 'opp_active_digimon': return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && !c.suspended));
+    case 'opp_tamer':          return countWith((opponent.tamerArea || []).filter(c => c !== null));
     default: return 0;
   }
 }
@@ -591,7 +691,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
   const autoSelect = ctx._forceTargetIdx !== undefined;
   const effectiveSide = autoSelect ? 'ai' : ctx.side;
 
-  switch (action.code) {
+  // ロジック alias 解決: 辞書に 'ロジックコード' が定義されていれば既存ロジックを再利用
+  // 例: 新アクション 'dp_plus_strong' の 'ロジックコード'='dp_plus' → switch では dp_plus 扱い
+  const dispatchCode = resolveLogicCode(action.code);
+
+  switch (dispatchCode) {
     case 'draw': {
       const n = action.value || 1;
       const drawn = [];
@@ -982,6 +1086,41 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       });
       break;
     }
+    // === コスト: 他のデジモン消滅 ===
+    case 'cost_destroy_other': {
+      // 自分側 battleArea から自身（card）以外のデジモンを1体消滅
+      const candidates = [];
+      player.battleArea.forEach((c, i) => { if (c && c !== card) candidates.push(i); });
+      if (candidates.length === 0) { callback(false); return; }
+      const doDestroy = (idx) => {
+        const tgt = player.battleArea[idx];
+        if (!tgt) { callback(false); return; }
+        ctx.addLog('💀 コスト: 「' + tgt.name + '」を消滅');
+        // showDestroyEffect 経由で既存消滅ロジックへ流す（callback chain）
+        if (window._showDestroyEffect) {
+          window._showDestroyEffect(tgt, () => {
+            const i2 = player.battleArea.indexOf(tgt);
+            if (i2 >= 0) { player.trash.push(tgt); player.battleArea[i2] = null; }
+            ctx.renderAll(); callback(true);
+          });
+        } else {
+          player.trash.push(tgt);
+          player.battleArea[idx] = null;
+          ctx.renderAll(); callback(true);
+        }
+      };
+      if (effectiveSide === 'ai' || ctx._forceTargetIdx !== undefined) {
+        const tIdx = ctx._forceTargetIdx ?? candidates[0];
+        doDestroy(tIdx);
+        break;
+      }
+      ctx.addLog('🎯 コスト: 消滅させるデジモンを選択');
+      showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', candidates, null, '#ff4444', (selectedIdx) => {
+        if (selectedIdx === null) { callback(false); return; }
+        doDestroy(selectedIdx);
+      });
+      break;
+    }
     case 'cost_discard': {
       const n = action.value || 1;
       if (player.hand.length < n) { callback(false); return; }
@@ -1215,6 +1354,36 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
 
     // === ブロック不可（単体） ===
+    // === オプションのセキュリティ効果を無効化 ===
+    // 旧コード 'security_effect' も alias として受け付け
+    case 'security_effect':
+    case 'suppress_opt_security_effect': {
+      card._permEffects = card._permEffects || {};
+      card._permEffects.suppressOptSecurityEffect = true;
+      addBuffDirect(card, 'suppress_opt_security_effect', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
+      ctx.addLog('🚫 「' + card.name + '」: オプションSE無効化');
+      ctx.renderAll(); callback(); break;
+    }
+    // === 進化元枚数でバトル ===
+    case 'battle_by_evo_count': {
+      // 自身に iceArmor フラグを一時的に立てる（dur_this_turn 標準）
+      card._permEffects = card._permEffects || {};
+      card._permEffects.iceArmor = true;
+      addBuffDirect(card, 'ice_armor', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
+      ctx.addLog('🧊 「' + card.name + '」: 進化元枚数でバトル');
+      ctx.renderAll(); callback(); break;
+    }
+    // === ブロックされない（アクション版: 自身に cantBeBlocked フラグ付与） ===
+    // 旧コード 'custom' も alias として受け付け
+    case 'custom':
+    case 'cant_be_blocked': {
+      const target = card; // 通常 self
+      target._permEffects = target._permEffects || {};
+      target._permEffects.cantBeBlocked = true;
+      addBuffDirect(target, 'cant_be_blocked', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
+      ctx.addLog('🛡 「' + target.name + '」はブロックされなくなった');
+      ctx.renderAll(); callback(); break;
+    }
     case 'cant_block': {
       const cbTargets = [];
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) cbTargets.push(i); }
@@ -1421,8 +1590,14 @@ export function isTargetSelecting() { return _targetSelecting; }
 function showTargetSelection(targetSide, validIndices, conditions, borderColor, callback) {
   // ★ チュートリアル AI 対象選択 intent: スクリプトで指定したカードがあれば自動選択
   //   _tutorialAiSelectTarget = カードNo or カード名 (部分一致対応)
-  if (typeof window !== 'undefined' && window._tutorialAiSelectTarget) {
-    const bs = window._lastBattleState || window.bs;
+  //   ※ AI が効果を使う時のみ消費する（AI のターン中、または targetSide='player' で AI が
+  //   プレイヤーのカードを対象に選ぶ場合）。プレイヤーがメイン操作中（自分のターンの自分の
+  //   効果）は AI 意図を絶対に消費しない（誤発火で UI スキップする不具合防止）。
+  const _bsForIntent = (typeof window !== 'undefined') ? (window._lastBattleState || window.bs) : null;
+  const _isPlayerTurnNow = !!(_bsForIntent && _bsForIntent.isPlayerTurn);
+  const _aiIntentEligible = !_isPlayerTurnNow; // 相手ターン中だけ AI 意図を消費
+  if (typeof window !== 'undefined' && window._tutorialAiSelectTarget && _aiIntentEligible) {
+    const bs = _bsForIntent;
     if (bs) {
       const area = targetSide === 'ai' ? (bs.ai && bs.ai.battleArea) : (bs.player && bs.player.battleArea);
       const intentKey = String(window._tutorialAiSelectTarget).trim();
@@ -1464,12 +1639,21 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
   document.body.appendChild(msgEl);
 
   // 対象を光らせる＋ホバー演出
+  // チュートリアルの tutorial-spotlight-mode が残っていても確実にタップ可能にする保険:
+  //   - body から spotlight クラスを除去
+  //   - 対象スロットに pointer-events:auto / opacity:1 を強制（CSS !important を上書き）
+  document.body.classList.remove('tutorial-spotlight-mode');
+  document.querySelectorAll('.tutorial-keep-visible').forEach(el =>
+    el.classList.remove('tutorial-keep-visible')
+  );
   validIndices.forEach(idx => {
     const slot = slots[idx];
     if (!slot) return;
     slot.style.border = '2px solid ' + color;
     slot.style.boxShadow = '0 0 15px ' + color;
     slot.style.cursor = 'pointer';
+    slot.style.setProperty('pointer-events', 'auto', 'important');
+    slot.style.setProperty('opacity', '1', 'important');
     slot.onmouseenter = () => { slot.style.transform = 'translateY(-4px) scale(1.05)'; };
     slot.onmouseleave = () => { slot.style.transform = ''; };
   });
@@ -1621,6 +1805,9 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
       slot.style.boxShadow = '';
       slot.style.cursor = '';
       slot.style.transform = '';
+      // 強制適用した pointer-events / opacity を解除（spotlight 復帰可能）
+      slot.style.removeProperty('pointer-events');
+      slot.style.removeProperty('opacity');
       slot.onmouseenter = null;
       slot.onmouseleave = null;
     });
@@ -2505,10 +2692,24 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
     const validTargets = [];
     for(let i=0;i<player.battleArea.length;i++) { if(player.battleArea[i]) validTargets.push(i); }
     if(validTargets.length === 0) { showEffectFailed(null, callback); return; }
-    if(ctx.side === 'ai') { applyAndLog(player.battleArea[validTargets[0]]); ctx.renderAll(); callback && callback(); return; }
+    // _forceTargetIdx で対象が事前確定済みなら UI スキップして自動適用（same_target など）
+    if(ctx.side === 'ai' || ctx._forceTargetIdx !== undefined) {
+      const fixedIdx = (ctx._forceTargetIdx !== undefined) ? ctx._forceTargetIdx : validTargets[0];
+      const tgtCard = player.battleArea[fixedIdx];
+      if (tgtCard) {
+        ctx.bs._lastPickedCard = tgtCard;
+        applyAndLog(tgtCard);
+      }
+      ctx.renderAll(); callback && callback();
+      return;
+    }
     ctx.addLog('🎯 DP' + sign + val + 'の対象を選んでください');
     showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', validTargets, null, isPlus ? '#00ff88' : '#ff4444', (idx) => {
-      if(idx !== null) applyAndLog(player.battleArea[idx]);
+      if(idx !== null) {
+        // 同一対象の連続適用 (same_target) のため、選んだカードを保存
+        ctx.bs._lastPickedCard = player.battleArea[idx];
+        applyAndLog(player.battleArea[idx]);
+      }
       ctx.renderAll(); callback && callback();
     });
   } else {
@@ -2760,7 +2961,7 @@ export function applyPermanentEffects(bs, side, context) {
           let value = step.value != null ? step.value : (step.per_count ? 1 : null);
           if (step.per_count && value != null) {
             const refSource = step.ref || 'evo_source';
-            const count = getRefSourceCountDirect(refSource, card, bs, side);
+            const count = getRefSourceCountDirect(refSource, card, bs, side, step.ref_filter, step.ref_state);
             value = value * Math.floor(count / step.per_count);
           }
           // アクション適用
@@ -2817,6 +3018,39 @@ export function applyPermanentEffects(bs, side, context) {
           else if (flag === 'armor_break') { card._permEffects.armor_break = true; }
           else if (flag === 'indomitable') { card._permEffects.indomitable = true; }
           else if (flag === 'combo') { card._permEffects.combo = true; }
+          // 新規追加
+          else if (flag === 'progress') { card._permEffects.progress = true; }
+          else if (flag === 'link_plus') {
+            const val = (typeof p === 'object' && p.value) ? p.value : 1;
+            card._permEffects.linkPlus = (card._permEffects.linkPlus || 0) + val;
+            // 既存のリンク容量計算にも反映
+            card._linkCapacityBonus = (card._linkCapacityBonus || 0) + val;
+          }
+          else if (flag === 'ice_armor') { card._permEffects.iceArmor = true; }
+          else if (flag === 'advance') { card._permEffects.advance = true; card._permEffects.charge = true; /* charge にも alias */ }
+          else if (flag === 'security_attack_minus') {
+            const val = (typeof p === 'object' && p.value) ? p.value : 1;
+            card._permEffects.securityAttackMinus = (card._permEffects.securityAttackMinus || 0) + val;
+          }
+          else if (flag === 'cant_be_blocked' || flag === 'custom') { card._permEffects.cantBeBlocked = true; }
+          else if (flag === 'suppress_opt_security_effect' || flag === 'security_effect') { card._permEffects.suppressOptSecurityEffect = true; }
+          // Stage 3 追加（passive flag 認識のみ。完全な game logic は別途）
+          else if (flag === 'delay') { card._permEffects.delay = true; }
+          else if (flag === 'save') { card._permEffects.save = true; }
+          else if (flag === 'decoy') { card._permEffects.decoy = true; }
+          else if (flag === 'fragment') { card._permEffects.fragment = true; }
+          else if (flag === 'scapegoat') { card._permEffects.scapegoat = true; }
+          else if (flag === 'material_save') { card._permEffects.materialSave = true; }
+          else if (flag === 'vortex') { card._permEffects.vortex = true; }
+          else if (flag === 'execute') { card._permEffects.execute = true; }
+          else if (flag === 'decode') { card._permEffects.decode = true; }
+          else if (flag === 'training') { card._permEffects.training = true; }
+          else if (flag === 'absorb_evolve') { card._permEffects.absorbEvolve = true; }
+          else if (flag === 'blast_evolve') { card._permEffects.blastEvolve = true; }
+          else if (flag === 'blast_jogress') { card._permEffects.blastJogress = true; }
+          else if (flag === 'mind_link') { card._permEffects.mindLink = true; }
+          else if (flag === 'partition') { card._permEffects.partition = true; }
+          else if (flag === 'overclock') { card._permEffects.overclock = true; }
         });
       }
     }
@@ -2847,7 +3081,7 @@ export function applyPermanentEffects(bs, side, context) {
             let value = step.value != null ? step.value : (step.per_count ? 1 : null);
             if (step.per_count && value != null) {
               const refSource = step.ref || 'evo_source';
-              const count = getRefSourceCountDirect(refSource, card, bs, side);
+              const count = getRefSourceCountDirect(refSource, card, bs, side, step.ref_filter, step.ref_state);
               value = value * Math.floor(count / step.per_count);
             }
             if (step.action === 'dp_plus') {
@@ -2875,6 +3109,37 @@ export function applyPermanentEffects(bs, side, context) {
             else if (flag === 'penetrate') { card._permEffects.penetrate = true; }
             else if (flag === 'jamming') { card._permEffects.jamming = true; }
             else if (flag === 'reboot') { card._permEffects.reboot = true; }
+            // 新規追加（進化元由来も同等扱い）
+            else if (flag === 'progress') { card._permEffects.progress = true; }
+            else if (flag === 'link_plus') {
+              const val = (typeof p === 'object' && p.value) ? p.value : 1;
+              card._permEffects.linkPlus = (card._permEffects.linkPlus || 0) + val;
+            }
+            else if (flag === 'ice_armor') { card._permEffects.iceArmor = true; }
+            else if (flag === 'advance') { card._permEffects.advance = true; card._permEffects.charge = true; /* charge にも alias */ }
+            else if (flag === 'security_attack_minus') {
+              const val = (typeof p === 'object' && p.value) ? p.value : 1;
+              card._permEffects.securityAttackMinus = (card._permEffects.securityAttackMinus || 0) + val;
+            }
+            // Stage 3 追加（進化元由来も同等）
+            else if (flag === 'cant_be_blocked' || flag === 'custom') { card._permEffects.cantBeBlocked = true; }
+            else if (flag === 'suppress_opt_security_effect' || flag === 'security_effect') { card._permEffects.suppressOptSecurityEffect = true; }
+            else if (flag === 'delay') { card._permEffects.delay = true; }
+            else if (flag === 'save') { card._permEffects.save = true; }
+            else if (flag === 'decoy') { card._permEffects.decoy = true; }
+            else if (flag === 'fragment') { card._permEffects.fragment = true; }
+            else if (flag === 'scapegoat') { card._permEffects.scapegoat = true; }
+            else if (flag === 'material_save') { card._permEffects.materialSave = true; }
+            else if (flag === 'vortex') { card._permEffects.vortex = true; }
+            else if (flag === 'execute') { card._permEffects.execute = true; }
+            else if (flag === 'decode') { card._permEffects.decode = true; }
+            else if (flag === 'training') { card._permEffects.training = true; }
+            else if (flag === 'absorb_evolve') { card._permEffects.absorbEvolve = true; }
+            else if (flag === 'blast_evolve') { card._permEffects.blastEvolve = true; }
+            else if (flag === 'blast_jogress') { card._permEffects.blastJogress = true; }
+            else if (flag === 'mind_link') { card._permEffects.mindLink = true; }
+            else if (flag === 'partition') { card._permEffects.partition = true; }
+            else if (flag === 'overclock') { card._permEffects.overclock = true; }
           });
         }
       });
@@ -2891,53 +3156,141 @@ function parseRecipeCondition(condStr) {
   if (condStr === 'opp_has_no_evo' || condStr === 'cond_opp_has_no_evo') {
     return [{code: 'cond_exists'}, {code: 'cond_no_evo'}];
   }
+  // === @subject 抽出（レシピエディタ recipe.ts の serialize 規約） ===
+  // 形式: "<base>[:<value>][@<subject>]"
+  // 例: "cond_hand_le:4@own_any" → base=cond_hand_le / value=4 / subject=own_any
+  let subject;
+  const atIdx = condStr.lastIndexOf('@');
+  if (atIdx >= 0) {
+    subject = condStr.substring(atIdx + 1);
+    condStr = condStr.substring(0, atIdx);
+  }
   const parts = condStr.split(':');
+  let result;
   if (parts[0] === 'cond_exists') {
     // "cond_exists:cond_no_evo" → [{code:'cond_exists'}, {code:'cond_no_evo'}]
     // "cond_exists:cond_has_evo:4" → [{code:'cond_exists'}, {code:'cond_has_evo', value:4}]
-    const result = [{code: 'cond_exists'}];
+    result = [{code: 'cond_exists'}];
     if (parts.length >= 2) {
       const nested = parts.slice(1).join(':');
       const nestedParts = nested.split(':');
       result.push({code: nestedParts[0], value: nestedParts[1] ? parseInt(nestedParts[1]) : undefined});
     }
-    return result;
+  } else {
+    // "cond_lv_le:5" → [{code:'cond_lv_le', value:5}]
+    // "cond_no_evo" → [{code:'cond_no_evo'}]
+    // "dp_le:4000" → [{code:'cond_dp_le', value:4000}]  (auto-prefix cond_)
+    let code = parts[0];
+    if (!code.startsWith('cond_')) code = 'cond_' + code;
+    // 数値ならparseInt、それ以外は文字列のまま保持（cond_self_keyword:blocker 等）
+    let val = parts[1];
+    if (val !== undefined) {
+      const n = parseInt(val);
+      if (!isNaN(n) && String(n) === String(val).trim()) val = n;
+    }
+    result = [{code: code, value: val}];
   }
-  // "cond_lv_le:5" → [{code:'cond_lv_le', value:5}]
-  // "cond_no_evo" → [{code:'cond_no_evo'}]
-  // "dp_le:4000" → [{code:'cond_dp_le', value:4000}]  (auto-prefix cond_)
-  let code = parts[0];
-  if (!code.startsWith('cond_')) code = 'cond_' + code;
-  // 数値ならparseInt、それ以外は文字列のまま保持（cond_self_keyword:blocker 等）
-  let val = parts[1];
-  if (val !== undefined) {
-    const n = parseInt(val);
-    if (!isNaN(n) && String(n) === String(val).trim()) val = n;
+  // subject を全 result エントリに付与（cond_exists の場合は両エントリに同じ subject）
+  if (subject) result.forEach(r => r.subject = subject);
+  return result;
+}
+
+// subject から side ('player'/'ai') を解決するヘルパ
+// own系 → currentSide / opp系 → opposite / 未指定 → currentSide (既定)
+function resolveSubjectSide(subject, currentSide) {
+  if (!subject) return currentSide;
+  const s = String(subject).toLowerCase();
+  if (s === 'opp' || s === 'opp_any' || s === 'opp_card' || s === 'opp_player' || s === 'opp_tamer' || s === 'opponent' || s === 'opponent_card') {
+    return currentSide === 'player' ? 'ai' : 'player';
   }
-  return [{code: code, value: val}];
+  return currentSide;
 }
 
 // ===== 条件チェック =====
 
 function checkConditions(conditions, card, bs, side) {
   if (!conditions || conditions.length === 0) return true;
-  // cond_existsがある場合は先に評価（他の条件は相手カード側に適用される）
+  // cond_exists / cond_has_evo_digimon (メタ条件) があれば先に評価し、
+  // 他の条件はその候補集合に対して適用する
   const hasExists = conditions.some(c => c.code === 'cond_exists');
+  const hasEvoDigimon = !hasExists && conditions.some(c => c.code === 'cond_has_evo_digimon');
   const orderedConds = hasExists
     ? [conditions.find(c => c.code === 'cond_exists'), ...conditions.filter(c => c.code !== 'cond_exists')]
-    : conditions;
+    : hasEvoDigimon
+      ? [conditions.find(c => c.code === 'cond_has_evo_digimon'), ...conditions.filter(c => c.code !== 'cond_has_evo_digimon')]
+      : conditions;
   for (const cond of orderedConds) {
     switch (cond.code) {
       case 'cond_has_evo': if (!card.stack || card.stack.length < (cond.value || 0)) return false; break;
       case 'cond_no_evo': if (card.stack && card.stack.length > 0) return false; break;
       case 'cond_dp_le': if (card.dp > (cond.value || 0)) return false; break;
       case 'cond_dp_ge': if (card.dp < (cond.value || 0)) return false; break;
+      case 'cond_dp':    if (card.dp !== (cond.value || 0)) return false; break;
       case 'cond_lv_le': if (parseInt(card.level) > (cond.value || 0)) return false; break;
       case 'cond_lv_ge': if (parseInt(card.level) < (cond.value || 0)) return false; break;
+      case 'cond_lv':    if (parseInt(card.level) !== (cond.value || 0)) return false; break;
       case 'cond_cost_le': if ((card.playCost || card.cost || 0) > (cond.value || 0)) return false; break;
       case 'cond_cost_ge': if ((card.playCost || card.cost || 0) < (cond.value || 0)) return false; break;
+      case 'cond_cost':    if ((card.playCost || card.cost || 0) !== (cond.value || 0)) return false; break;
       case 'cond_own_security_le': if (bs && bs[side] && bs[side].security && bs[side].security.length > (cond.value || 0)) return false; break;
       case 'cond_own_security_ge': if (bs && bs[side] && bs[side].security && bs[side].security.length < (cond.value || 0)) return false; break;
+      // === ゾーン枚数条件（subject 駆動: @own_any/@opp_any 等で side 切替） ===
+      case 'cond_hand_le': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].hand ? bs[ts].hand.length : 0;
+        if (len > (cond.value || 0)) return false;
+        break;
+      }
+      case 'cond_hand_ge': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].hand ? bs[ts].hand.length : 0;
+        if (len < (cond.value || 0)) return false;
+        break;
+      }
+      case 'cond_security_le': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].security ? bs[ts].security.length : 0;
+        if (len > (cond.value || 0)) return false;
+        break;
+      }
+      case 'cond_security_ge': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].security ? bs[ts].security.length : 0;
+        if (len < (cond.value || 0)) return false;
+        break;
+      }
+      case 'cond_trash_ge': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].trash ? bs[ts].trash.length : 0;
+        if (len < (cond.value || 0)) return false;
+        break;
+      }
+      case 'cond_trash_le': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].trash ? bs[ts].trash.length : 0;
+        if (len > (cond.value || 0)) return false;
+        break;
+      }
+      case 'cond_deck_le': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].deck ? bs[ts].deck.length : 0;
+        if (len > (cond.value || 0)) return false;
+        break;
+      }
+      case 'cond_deck_ge': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].deck ? bs[ts].deck.length : 0;
+        if (len < (cond.value || 0)) return false;
+        break;
+      }
       case 'cond_during_own_turn': {
         // 「自分のターン」中のみ true。bs.isPlayerTurn の判定を side と照合
         if (!bs) break;
@@ -2945,9 +3298,70 @@ function checkConditions(conditions, card, bs, side) {
         if (!myTurn) return false;
         break;
       }
+      case 'cond_during_any_turn': {
+        // 「お互いのターン中」: 常時 true（ターン中なら必ず満たす・実質 no-op ゲート）
+        // テキスト「お互いのターン中」を明示的に書きたい時用
+        break;
+      }
       case 'cond_attack_target_digimon': {
         // 「相手のデジモンにアタックしたとき」: bs._lastAttackTarget が 'digimon' なら true
         if (!bs || bs._lastAttackTarget !== 'digimon') return false;
+        break;
+      }
+      case 'cond_attack_target_player': {
+        // 「プレイヤーにアタックしたとき」: bs._lastAttackTarget が 'player' なら true
+        if (!bs || bs._lastAttackTarget !== 'player') return false;
+        break;
+      }
+      case 'cond_picked_color':
+      case 'cond_picked_type':
+      case 'cond_picked_lv':
+      case 'cond_picked_dp':
+      case 'cond_picked_cost':
+      case 'cond_picked_name': {
+        // 直前にプレイヤーが選択したカード (bs._lastPickedCard) の属性参照
+        // 例: cond_picked_color:黄 → bs._lastPickedCard.color === '黄'
+        const picked = bs && bs._lastPickedCard;
+        if (!picked) return false;
+        const attrMap = {
+          cond_picked_color: 'color', cond_picked_type: 'type',
+          cond_picked_lv: 'lv', cond_picked_dp: 'dp',
+          cond_picked_cost: 'playCost', cond_picked_name: 'name',
+        };
+        const attr = attrMap[cond.base];
+        const want = String(cond.value || '');
+        if (want === '') break; // 値未指定は no-op (true)
+        const got = picked[attr];
+        if (attr === 'lv' || attr === 'dp' || attr === 'playCost') {
+          // 数値比較（lv/dp/cost は完全一致）
+          if (parseInt(String(got || ''), 10) !== parseInt(want, 10)) return false;
+        } else {
+          if (String(got || '') !== want) return false;
+        }
+        break;
+      }
+      case 'cond_picked_feature_contains': {
+        // 直前選択カードの feature(特徴) に want が含まれるとき true
+        const picked = bs && bs._lastPickedCard;
+        if (!picked) return false;
+        const want = String(cond.value || '');
+        if (want === '') break;
+        const features = String(picked.feature || picked.features || '');
+        if (!features.includes(want)) return false;
+        break;
+      }
+      case 'cond_same_as_picked': {
+        // 「選んだデジモンと同じ」: cond.value (カンマ区切り属性リスト) で指定された属性が
+        // bs._lastPickedCard と card で全て一致する必要がある
+        // 例: cond.value = "name" → card.name === picked.name
+        // 例: cond.value = "name,color" → name と color の両方が一致
+        const fields = String(cond.value || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (fields.length === 0) break; // 属性指定なし → 常に true (no-op)
+        const picked = bs && bs._lastPickedCard;
+        if (!picked || !card) return false;
+        for (const f of fields) {
+          if (card[f] !== picked[f]) return false;
+        }
         break;
       }
       case 'cond_battle_win': {
@@ -2963,6 +3377,27 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_self_active': {
         // 自身がアクティブ状態（レストしていない）の時 true
         if (card && card.suspended) return false;
+        break;
+      }
+      case 'cond_self_rest':
+      case 'cond_self_suspended': {
+        // 自身がレスト状態の時 true
+        if (!card || !card.suspended) return false;
+        break;
+      }
+      case 'cond_type': {
+        // 「指定タイプ」: card.type が cond.value と一致する時 true
+        // 完全一致。'カード' の場合は全タイプ許可（type フィルタ無効化マーカー）
+        if (!cond.value) break;
+        const want = String(cond.value);
+        if (want === 'カード' || want === 'card') break; // 全カード許可
+        if (!card || String(card.type || '') !== want) return false;
+        break;
+      }
+      case 'cond_name': {
+        // 「名前（完全一致）」: card.name === cond.value で判定
+        if (!cond.value) break;
+        if (!card || String(card.name || '') !== String(cond.value)) return false;
         break;
       }
       case 'cond_during_opp_turn': {
@@ -3016,6 +3451,40 @@ function checkConditions(conditions, card, bs, side) {
         // cond_existsで使った他の条件はスキップ（二重チェック防止）
         return true;
       }
+      case 'cond_has_evo_digimon': {
+        // 「進化元にデジモンカードを持つ」メタ条件。
+        // subject='self' (既定) なら自身の stack をスキャン。
+        // 同 step 内の他条件 (cond_lv_le 等) を進化元デジモンカード候補に対する filter として適用。
+        // 候補が1つでもあれば true。動作的には cond_exists の進化元版。
+        if (!card || !Array.isArray(card.stack) || card.stack.length === 0) return false;
+        const otherConds = conditions.filter(c =>
+          c.code !== 'cond_has_evo_digimon' && c.code !== 'per_count'
+        );
+        const matching = card.stack.filter(s => {
+          if (!s || s.type !== 'デジモン') return false;
+          if (otherConds.length === 0) return true;
+          // 各 filter 条件を進化元カード s に対して評価（簡易版: cond_lv_le/ge, cond_dp_le/ge, cond_color, cond_no_evo, cond_has_evo, cond_cost_le/ge）
+          return otherConds.every(oc => {
+            switch (oc.code) {
+              case 'cond_lv_le': return parseInt(s.level || s.Lv || s.lv) <= (oc.value || 0);
+              case 'cond_lv_ge': return parseInt(s.level || s.Lv || s.lv) >= (oc.value || 0);
+              case 'cond_dp_le': return (s.dp || 0) <= (oc.value || 0);
+              case 'cond_dp_ge': return (s.dp || 0) >= (oc.value || 0);
+              case 'cond_cost_le': return (s.playCost || s.cost || 0) <= (oc.value || 0);
+              case 'cond_cost_ge': return (s.playCost || s.cost || 0) >= (oc.value || 0);
+              case 'cond_color': return !oc.value || (s.color && String(s.color).indexOf(String(oc.value)) >= 0);
+              case 'cond_no_evo': return !s.stack || s.stack.length === 0;
+              case 'cond_has_evo': return s.stack && s.stack.length >= (oc.value || 0);
+              case 'cond_feature': return !oc.value || (s.feature && String(s.feature).indexOf(String(oc.value)) >= 0);
+              default: return true; // 知らない条件はパス（gate しない）
+            }
+          });
+        });
+        if (matching.length === 0) return false;
+        // アクション側で再利用できるよう、候補を一時記録（mutation）
+        if (card) card._evoSourceCandidates = matching;
+        return true; // 他条件は filter として消費したので true 即返し
+      }
       case 'cond_self_keyword': {
         // 自身（card）が指定キーワードを持つかチェック (cond.value: 'blocker' 等の英語コード)
         // テキスト一致は誤検知が多い（「ブロッカーを持つ間」のような言及で成立してしまう）ため
@@ -3047,6 +3516,141 @@ function checkConditions(conditions, card, bs, side) {
           }
         }
         if (!has) return false;
+        break;
+      }
+      // === 旧 / 別名条件群（alias 実装） ===
+      case 'cond_opp_digimon': {
+        // 「相手のデジモンがいるとき」: 相手バトルエリアにデジモン存在
+        if (!bs) return false;
+        const oppSideX = side === 'player' ? 'ai' : 'player';
+        const oppArea = bs[oppSideX] && bs[oppSideX].battleArea ? bs[oppSideX].battleArea : [];
+        if (!oppArea.some(c => c && c.type === 'デジモン')) return false;
+        break;
+      }
+      case 'cond_own': {
+        // 「自分のデジモンがいるとき」: 自分バトルエリアにデジモン存在
+        if (!bs) return false;
+        const ownArea = bs[side] && bs[side].battleArea ? bs[side].battleArea : [];
+        if (!ownArea.some(c => c && c.type === 'デジモン')) return false;
+        break;
+      }
+      case 'cond_digimon': {
+        // 「他のデジモンがいるとき」: 自分・相手いずれかにこのデジモン以外のデジモンが存在
+        if (!bs) return false;
+        const a1 = (bs.player && bs.player.battleArea) || [];
+        const a2 = (bs.ai && bs.ai.battleArea) || [];
+        const others = [...a1, ...a2].filter(c => c && c !== card && c.type === 'デジモン');
+        if (others.length === 0) return false;
+        break;
+      }
+      case 'cond_keyword': {
+        // 「対象がキーワードを持つ」: 対象 card が cond.value で指定されたキーワードを持つか
+        // cond_self_keyword と同じ判定だが、card は対象（ターゲット）として渡される想定
+        if (!cond.value) break;
+        const kw = String(cond.value);
+        let has = false;
+        if (card && card._permEffects && card._permEffects[kw]) has = true;
+        if (!has && card && Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'keyword_' + kw)) has = true;
+        if (!has && card && card.recipe) {
+          try {
+            const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]/g, '') : card.recipe;
+            const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            const passives = r.passive;
+            if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw))) has = true;
+          } catch(_) {}
+        }
+        if (!has && card && Array.isArray(card.stack)) {
+          for (const s of card.stack) {
+            if (!s || !s.recipe) continue;
+            try {
+              const raw = typeof s.recipe === 'string' ? s.recipe.replace(/[\x00-\x1F\x7F]/g, '') : s.recipe;
+              const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+              const passives = (r.evo_source && r.evo_source.passive) || r.passive;
+              if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw))) { has = true; break; }
+            } catch(_) {}
+          }
+        }
+        if (!has) return false;
+        break;
+      }
+      case 'cond_custom': {
+        // 「手札を破棄する」: 条件として使う場合は「手札に1枚以上ある」を意味するマーカー
+        // （アクション or コストとして使う場合はそちらで処理）
+        if (!bs) break;
+        const handLen = bs[side] && bs[side].hand ? bs[side].hand.length : 0;
+        const need = cond.value || 1;
+        if (handLen < need) return false;
+        break;
+      }
+      case 'deck_trash_top': {
+        // 条件タブに誤登録された action コード。条件としては「デッキに1枚以上ある」とみなす
+        if (!bs) break;
+        const deckLen = bs[side] && bs[side].deck ? bs[side].deck.length : 0;
+        const needN = cond.value || 1;
+        if (deckLen < needN) return false;
+        break;
+      }
+      case 'cond_evolved_this_turn': {
+        // このターンに自分が1回以上進化させていれば成立
+        // bs._evolveCountThisTurn は進化解決時に++される（battle側で更新が必要）
+        if (!bs) return false;
+        if (!bs._evolveCountThisTurn || bs._evolveCountThisTurn < 1) return false;
+        break;
+      }
+      case 'cond_rest_count_ge': {
+        // 両陣営のバトルエリア内でレスト状態のデジモン合計が cond.value 体以上
+        if (!bs) return false;
+        const min = cond.value || 0;
+        const own = (bs.player && bs.player.battleArea) ? bs.player.battleArea.filter(c => c && c.suspended).length : 0;
+        const opp = (bs.ai && bs.ai.battleArea) ? bs.ai.battleArea.filter(c => c && c.suspended).length : 0;
+        if (own + opp < min) return false;
+        break;
+      }
+      case 'cond_memory_ge': {
+        // メモリーが自分側で N 以上 (bs.memory >= N、自分側=正、相手側=負)
+        if (!bs) return false;
+        const min = cond.value || 0;
+        // 自分側にメモリーがある時のみ判定（side === 'player' なら memory >= 0、 'ai' なら memory <= 0）
+        const myMemory = side === 'player' ? bs.memory : -bs.memory;
+        if (myMemory < min) return false;
+        break;
+      }
+      case 'cond_memory_le': {
+        // メモリーが自分側で N 以下 (bs.memory <= N、自分側=正、相手側=負)
+        if (!bs) return false;
+        const max = cond.value || 0;
+        const myMemory = side === 'player' ? bs.memory : -bs.memory;
+        if (myMemory > max) return false;
+        break;
+      }
+      case 'cond_exists_count_ge': {
+        // サブ条件を満たすデジモンが N 体以上いる
+        // cond.value 形式: "<sub_cond>:<N>" or "<sub_cond>" (デフォルト1) や数字単独 (any)
+        if (!bs) return false;
+        const oppSide2 = side === 'player' ? 'ai' : 'player';
+        const oppArea2 = bs[oppSide2].battleArea || [];
+        let subCondCode = '';
+        let minCount = 1;
+        if (typeof cond.value === 'string' && cond.value.indexOf(':') >= 0) {
+          const parts = cond.value.split(':');
+          subCondCode = parts[0];
+          minCount = parseInt(parts[1] || '1', 10) || 1;
+        } else if (typeof cond.value === 'number') {
+          minCount = cond.value;
+        } else if (typeof cond.value === 'string') {
+          subCondCode = cond.value;
+        }
+        const matched = oppArea2.filter(c => {
+          if (!c || c.type !== 'デジモン') return false;
+          if (!subCondCode) return true;
+          // サブ条件評価（cond_exists 内のロジック流用）
+          switch (subCondCode) {
+            case 'cond_no_evo': return !c.stack || c.stack.length === 0;
+            case 'cond_has_evo': return c.stack && c.stack.length >= 1;
+            default: return true;
+          }
+        }).length;
+        if (matched < minCount) return false;
         break;
       }
       case 'cond_jogress': {
@@ -3347,6 +3951,63 @@ function showDpPopup(value, label) {
 
 // ===== 誘発スキャナー =====
 
+// subject 駆動の反応レシピをスキャンしてキューに追加するヘルパ
+// sourceOnly トリガー (on_play 等) で「他の自分のデジモンが登場した時」のような
+// 反応効果を盤面全体から拾う。block._eventSourceCard に発火元を記録する。
+function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide, ctx, turnPlayer) {
+  const matchSubject = (subject, cardSide) => {
+    if (!subject) return false;
+    switch (subject) {
+      case 'other_own':
+      case 'own':
+      case 'own_any':
+        return cardSide === sourceSide;
+      case 'opp':
+      case 'opp_any':
+      case 'opp_card':
+        return cardSide !== sourceSide;
+      default: return false;
+    }
+  };
+  const recipeHasReactiveSubject = (steps, cardSide) => {
+    if (!Array.isArray(steps)) return false;
+    return steps.some(s => s && matchSubject(s.subject, cardSide));
+  };
+
+  ['player', 'ai'].forEach(side => {
+    const cards = [...ctx.bs[side].battleArea, ...(ctx.bs[side].tamerArea || [])];
+    cards.forEach(card => {
+      if (!card || card === sourceCard) return;
+      const steps = getRecipeForTrigger(card, triggerCode);
+      if (!recipeHasReactiveSubject(steps, side)) return;
+      // 'other_own' で同じカード自体は対象外（card !== sourceCard でガード済）
+      const dummyBlock = {
+        raw: card.effect || '', trigger: { code: triggerCode },
+        actions: [], conditions: [], _eventSourceCard: sourceCard,
+      };
+      addToQueue(card, dummyBlock,
+        side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
+      );
+    });
+    // 進化元効果側
+    ctx.bs[side].battleArea.forEach(card => {
+      if (!card || !card.stack) return;
+      card.stack.forEach(evoCard => {
+        if (!evoCard) return;
+        const evoSteps = getRecipeForTrigger(evoCard, triggerCode, true);
+        if (!recipeHasReactiveSubject(evoSteps, side)) return;
+        const dummyBlock = {
+          raw: evoCard.evoSourceEffect || '', trigger: { code: triggerCode },
+          actions: [], conditions: [], _recipeCard: evoCard, _eventSourceCard: sourceCard,
+        };
+        addToQueue(card, dummyBlock,
+          side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
+        );
+      });
+    });
+  });
+}
+
 function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
   const turnPlayer = ctx.bs.isPlayerTurn ? 'player' : 'ai';
 
@@ -3376,6 +4037,11 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
     }
   } else if (isSourceOnly) {
     // ソースカード限定イベント: ソースカード本体＋その進化元効果のみ処理（レシピのみ）
+    // === NEW: 加えて、盤面の他カードで subject='other_own' / 'opp' 等の反応レシピがあればキューに追加 ===
+    // 例: ダルクモン「他の自分のデジモンが登場した時に発動」
+    if (sourceCard && (triggerCode === 'on_play' || triggerCode === 'on_evolve' || triggerCode === 'on_attack')) {
+      _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide, ctx, turnPlayer);
+    }
     if (sourceCard) {
       const mainRecipe = getRecipeForTrigger(sourceCard, triggerCode);
       if (mainRecipe) {
@@ -4063,12 +4729,35 @@ function _buildBaseCtx(ctxBase, bs) {
   return { bs, addLog: safeLog, renderAll: safeRender, updateMemGauge: safeMem };
 }
 
+// step.trigger_conditions[] を評価（イベント発火元カードに対して AND）
+// trigger_conditions: ["cond_color:黄", "cond_lv:3", "cond_type:デジモン"] のような string 配列
+// eventCard: トリガー発火元カード（ctx.block._eventSourceCard or fallback ctx.card）
+function checkStepTriggerConditions(step, ctx) {
+  if (!step || !Array.isArray(step.trigger_conditions) || step.trigger_conditions.length === 0) return true;
+  const eventCard = (ctx && ctx.block && ctx.block._eventSourceCard) || (ctx && ctx.card);
+  if (!eventCard) {
+    console.log('[trigger_conditions] no event source card → fail');
+    return false;
+  }
+  for (const condStr of step.trigger_conditions) {
+    const conds = parseRecipeCondition(String(condStr));
+    if (!checkConditions(conds, eventCard, ctx.bs, ctx.side)) {
+      console.log('[trigger_conditions] FAIL:', condStr, 'against', eventCard.name);
+      return false;
+    }
+  }
+  console.log('[trigger_conditions] all pass');
+  return true;
+}
+
 // レシピが実行されるか事前判定（全ステップが条件で弾かれるか）
 // 戻り値: true=少なくとも1ステップが実行される, false=全ステップが条件NGで何も起きない
 // 不確定な場合（store依存・ターゲット選択型など）は安全側で true を返す
 function recipeWillExecuteAnything(recipe, ctx) {
   if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
   for (const step of recipe) {
+    // trigger_conditions: 発火元カードへのフィルタ（NG なら次の step）
+    if (!checkStepTriggerConditions(step, ctx)) continue;
     // 条件なし → 必ず実行される
     if (!step.condition) {
       console.log('[recipeWillExecute] step has no condition → true', 'action=' + step.action);
@@ -4082,6 +4771,118 @@ function recipeWillExecuteAnything(recipe, ctx) {
   }
   console.log('[recipeWillExecute] all steps blocked → false');
   return false;
+}
+
+// === post_actions: メインアクション完了後に実行する条件付き追加ステップ群 ===
+// ルール内に文脈条件（cond_picked_color 等）が付いた場合、ruleTranslator により
+// step.post_actions[] として直列化される。各要素は通常の effect step と同じ構造を
+// 持ち、condition / when / extra_conditions で評価される。
+// 用途: security_open / deck_open 等の選択完了後に「選んだカードが黄ならリカバリー」
+// のような条件分岐を表現するため。
+function runPostActions(postActions, ctx, done) {
+  if (!Array.isArray(postActions) || postActions.length === 0) {
+    done && done();
+    return;
+  }
+  const store = {};
+  let i = 0;
+  function nextPost() {
+    if (i >= postActions.length) { done && done(); return; }
+    const pa = postActions[i++];
+    // condition があれば checkConditions で評価し、NG なら skip
+    if (pa.condition) {
+      const conds = parseRecipeCondition(pa.condition);
+      const ok = checkConditions(conds, ctx.card, ctx.bs, ctx.side);
+      if (!ok) {
+        console.log('[runPostActions] condition NG → skip', pa.condition);
+        nextPost();
+        return;
+      }
+    }
+    executeRecipeStep(pa, ctx, store, () => nextPost());
+  }
+  nextPost();
+}
+
+// === 代替アクション処理: メインアクションと alt_actions[] を OR / AND で結合 ===
+// OR  = プレイヤー選択UI（メインと各 alt から1つ選んで実行）
+// AND = メイン → alt[0] → alt[1] を順次実行
+function runWithAltActions(step, ctx, store, callback) {
+  const op = step.alt_actions_op === 'and' ? 'and' : 'or';
+  const alts = Array.isArray(step.alt_actions) ? step.alt_actions : [];
+  // alt_actions を剥がしたメインステップ（再帰時の無限ループ防止）
+  const mainOnly = Object.assign({}, step);
+  delete mainOnly.alt_actions;
+  delete mainOnly.alt_actions_op;
+
+  if (op === 'and') {
+    // メイン → alt 順次
+    executeRecipeStep(mainOnly, ctx, store, () => {
+      let i = 0;
+      function nextAlt() {
+        if (i >= alts.length) { callback && callback(); return; }
+        const a = alts[i++];
+        executeRecipeStep(a, ctx, store, () => nextAlt());
+      }
+      nextAlt();
+    });
+    return;
+  }
+
+  // OR: メインと alts のどれか1つを選択
+  const choices = [mainOnly].concat(alts);
+  const labels = choices.map((c) => actionLabelOf(c.action));
+
+  // AI / 自動選択: 最初の有効な選択肢
+  if (ctx.side === 'ai' || ctx._forceAltChoice !== undefined) {
+    const idx = (ctx._forceAltChoice !== undefined) ? ctx._forceAltChoice : 0;
+    executeRecipeStep(choices[idx] || choices[0], ctx, store, callback);
+    return;
+  }
+
+  // プレイヤー: 選択UI
+  showAltActionChoice(labels, (idx) => {
+    // オンライン相手にも選択を共有（fx_remoteAltChoice）
+    if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+      try { window._onlineSendCommand({ type: 'fx_remoteAltChoice', choice: idx, label: labels[idx] }); } catch (_) {}
+    }
+    executeRecipeStep(choices[idx], ctx, store, callback);
+  });
+}
+
+// アクションコードから表示ラベル取得（辞書未登録なら code そのまま）
+function actionLabelOf(code) {
+  if (!code) return '(なし)';
+  if (typeof getActionLabel === 'function') {
+    try { return getActionLabel(code) || code; } catch (_) {}
+  }
+  return code;
+}
+
+// 代替アクション選択UI（OR時）
+function showAltActionChoice(labels, callback) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:60000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;animation:fadeIn 0.2s ease;';
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#e9d5ff;font-size:14px;font-weight:bold;text-shadow:0 0 8px #c084fc;';
+  title.innerText = '🔀 どちらを実行しますか？';
+  overlay.appendChild(title);
+  const btnArea = document.createElement('div');
+  btnArea.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:90%;';
+  overlay.appendChild(btnArea);
+  labels.forEach((lbl, i) => {
+    const b = document.createElement('button');
+    b.innerText = lbl;
+    b.style.cssText = 'padding:10px 22px;font-size:13px;background:#9333ea;color:#fff;border:1px solid #c084fc;border-radius:8px;cursor:pointer;font-weight:bold;box-shadow:0 0 12px rgba(192,132,252,0.5);';
+    b.onmouseenter = () => { b.style.background = '#a855f7'; };
+    b.onmouseleave = () => { b.style.background = '#9333ea'; };
+    b.onclick = () => {
+      if (overlay.parentNode) document.body.removeChild(overlay);
+      callback(i);
+    };
+    btnArea.appendChild(b);
+  });
+  document.body.appendChild(overlay);
 }
 
 // レシピを順次実行
@@ -4103,6 +4904,48 @@ function runRecipe(steps, ctx, callback) {
 
 // レシピの1ステップを実行
 function executeRecipeStep(step, ctx, store, callback) {
+  // trigger_conditions ゲート: 発火元カードへのフィルタが NG ならステップスキップ
+  if (!checkStepTriggerConditions(step, ctx)) {
+    console.log('[executeRecipeStep] trigger_conditions blocked → skip step');
+    callback && callback();
+    return;
+  }
+
+  // 代替アクション処理: 'or' = 選択UI / 'and' = 順次実行
+  if (Array.isArray(step.alt_actions) && step.alt_actions.length > 0) {
+    runWithAltActions(step, ctx, store, callback);
+    return;
+  }
+
+  // 'same_target' / 'picked' = 直前選択カード (bs._lastPickedCard) を対象に再利用
+  // 「DPを+2000し、そのデジモンはSアタック+1を得る」のような同一対象連続適用で使用
+  if (step.target === 'same_target' || step.target === 'picked') {
+    const picked = ctx.bs && ctx.bs._lastPickedCard;
+    if (!picked) {
+      ctx.addLog && ctx.addLog('⚠ 直前選択カードがないため対象なし（same_target）');
+      callback && callback();
+      return;
+    }
+    const _ownArea = (ctx.side === 'player' ? ctx.bs.player.battleArea : ctx.bs.ai.battleArea) || [];
+    const _oppArea = (ctx.side === 'player' ? ctx.bs.ai.battleArea : ctx.bs.player.battleArea) || [];
+    const _ownIdx = _ownArea.indexOf(picked);
+    const _oppIdx = _oppArea.indexOf(picked);
+    if (_ownIdx >= 0) {
+      // 自分のデジモン: 'own:1' に置き換え + _forceTargetIdx で UI スキップ
+      step = Object.assign({}, step, { target: 'own:1' });
+      ctx = Object.assign({}, ctx, { _forceTargetIdx: _ownIdx });
+    } else if (_oppIdx >= 0) {
+      step = Object.assign({}, step, { target: 'opponent:1' });
+      ctx = Object.assign({}, ctx, { _forceTargetIdx: _oppIdx });
+    } else if (picked === ctx.card) {
+      step = Object.assign({}, step, { target: 'self' });
+    } else {
+      ctx.addLog && ctx.addLog('⚠ 直前選択カードが場にいません（same_target）');
+      callback && callback();
+      return;
+    }
+  }
+
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
   // _forceTargetIdx で対象が確定済みなら 'ai' 扱い（自動選択パス）
@@ -4155,7 +4998,7 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === 対象選択（自分のデジモン） ===
     case 'select': {
-      if (step.target === 'own') {
+      if (step.target === 'own' || step.target === 'own:1') {
         const valid = [];
         for (let i = 0; i < player.battleArea.length; i++) {
           if (player.battleArea[i]) valid.push(i);
@@ -4164,11 +5007,14 @@ function executeRecipeStep(step, ctx, store, callback) {
         const rowId = ctx.side === 'player' ? 'pl' : 'ai';
         showTargetSelection(rowId, valid, null, '#00fbff', (selectedIdx) => {
           if (selectedIdx !== null) {
-            store[step.store] = { idx: selectedIdx, card: player.battleArea[selectedIdx] };
+            const picked = player.battleArea[selectedIdx];
+            if (step.store) store[step.store] = { idx: selectedIdx, card: picked };
+            // cond_same_as_picked 用にグローバルにも保存
+            ctx.bs._lastPickedCard = picked;
           }
           callback();
         });
-      } else if (step.target === 'opponent') {
+      } else if (step.target === 'opponent' || step.target === 'opponent:1') {
         const valid = [];
         for (let i = 0; i < opponent.battleArea.length; i++) {
           const c = opponent.battleArea[i];
@@ -4187,7 +5033,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
         showTargetSelection(rowId, valid, null, '#ff4444', (selectedIdx) => {
           if (selectedIdx !== null) {
-            store[step.store] = { idx: selectedIdx, card: opponent.battleArea[selectedIdx] };
+            const picked = opponent.battleArea[selectedIdx];
+            if (step.store) store[step.store] = { idx: selectedIdx, card: picked };
+            // cond_same_as_picked 用にグローバルにも保存
+            ctx.bs._lastPickedCard = picked;
           }
           callback();
         });
@@ -4451,6 +5300,46 @@ function executeRecipeStep(step, ctx, store, callback) {
           } else { destroyOneByOne(); }
         }
         destroyOneByOne();
+        return;
+      }
+      // === target=opponent:all + step.condition: per-target フィルタとして条件を評価し、
+      //     一致するカード全てを消滅 ===
+      if ((step.target === 'opponent:all' || step.target === 'own:all') && step.condition) {
+        const isOwnAll = step.target === 'own:all';
+        const tgtPlayer = isOwnAll ? player : opponent;
+        const tgtSideTag = isOwnAll ? (ctx.side === 'player' ? 'player' : 'ai') : (ctx.side === 'player' ? 'ai' : 'player');
+        const conds = parseRecipeCondition(step.condition);
+        const matchedIdxs = [];
+        for (let i = 0; i < tgtPlayer.battleArea.length; i++) {
+          const c = tgtPlayer.battleArea[i];
+          if (!c) continue;
+          if (checkConditions(conds, c, ctx.bs, tgtSideTag)) matchedIdxs.push(i);
+        }
+        if (matchedIdxs.length === 0) {
+          ctx.addLog('⚠ 条件に一致するカードがありません');
+          callback();
+          return;
+        }
+        let di2 = 0;
+        function destroyMatchingNext() {
+          if (di2 >= matchedIdxs.length) { callback(); return; }
+          const idx = matchedIdxs[di2++];
+          const c = tgtPlayer.battleArea[idx];
+          if (!c) { destroyMatchingNext(); return; }
+          tgtPlayer.battleArea[idx] = null;
+          tgtPlayer.trash.push(c);
+          if (c.stack) c.stack.forEach(s => tgtPlayer.trash.push(s));
+          ctx.addLog('💥 「' + c.name + '」を消滅させた！');
+          if (window._isOnlineMode && window._isOnlineMode()) {
+            window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'destroy' });
+            if (window._markDestroyed) window._markDestroyed(isOwnAll ? 'player' : 'ai', idx);
+          }
+          ctx.renderAll();
+          if (ctx.showDestroyEffect) {
+            ctx.showDestroyEffect(c, () => setTimeout(destroyMatchingNext, 300));
+          } else { destroyMatchingNext(); }
+        }
+        destroyMatchingNext();
         return;
       }
       // store 未指定 → target 指定の destroy として default ハンドラに委譲（runOneAction経由）
@@ -4793,6 +5682,97 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === 進化元から登場させる ===
+    // 例: メタルガルルモン「進化元のLv.4以下のデジモンカード1枚を、コストを支払わずに別のデジモンとして登場」
+    // step は通常 target='self' / value=登場枚数 / options:['ignore_cost'] 等を持つ
+    // 候補は cond_has_evo_digimon メタ条件が card._evoSourceCandidates にセット済（無ければ自身の stack デジモンカード全件）
+    case 'summon_from_evo_source': {
+      const self = ctx.card;
+      if (!self || !Array.isArray(self.stack) || self.stack.length === 0) {
+        ctx.addLog && ctx.addLog('⚠ 進化元がありません');
+        showEffectFailed(null, () => callback());
+        return;
+      }
+      // 候補: cond_has_evo_digimon が事前に絞ったものがあれば優先、無ければ stack の type='デジモン' 全件
+      let candidates = Array.isArray(self._evoSourceCandidates) && self._evoSourceCandidates.length > 0
+        ? self._evoSourceCandidates.slice()
+        : self.stack.filter(s => s && s.type === 'デジモン');
+      if (candidates.length === 0) {
+        ctx.addLog && ctx.addLog('⚠ 条件を満たす進化元がありません');
+        showEffectFailed(null, () => callback());
+        return;
+      }
+      const wantCount = step.value || step.count || 1;
+      const ignoreCost = Array.isArray(step.options) && step.options.includes('ignore_cost');
+
+      const performSummon = (chosen) => {
+        if (!chosen || chosen.length === 0) { callback(); return; }
+        let i = 0;
+        function summonNext() {
+          if (i >= chosen.length) {
+            // 一回限りキャッシュをクリア
+            if (self._evoSourceCandidates) self._evoSourceCandidates = null;
+            ctx.renderAll && ctx.renderAll();
+            callback();
+            return;
+          }
+          const c = chosen[i++];
+          // self.stack から除去
+          const si = self.stack.indexOf(c);
+          if (si >= 0) self.stack.splice(si, 1);
+          // battleArea 空きスロットへ配置（テイマーは tamerArea へ。ただし通常はデジモンのみ）
+          const isTamer = String(c.type || '') === 'テイマー';
+          if (isTamer) {
+            player.tamerArea.push(c);
+          } else {
+            const empty = player.battleArea.indexOf(null);
+            if (empty !== -1) player.battleArea[empty] = c;
+            else player.battleArea.push(c);
+          }
+          c.summonedThisTurn = true;
+          c.suspended = false;
+          c.buffs = [];
+          c.stack = []; // 進化元はリセット（別カードとして登場）
+          ctx.addLog && ctx.addLog('🌟 「' + c.name + '」を進化元から登場' + (ignoreCost ? '（コスト無視）' : ''));
+          ctx.renderAll && ctx.renderAll();
+          // 登場演出 → on_play 効果発火
+          const showFn = (ctx && ctx.showPlayEffect) || (typeof window !== 'undefined' && window.showPlayEffect);
+          const playSummon = (afterAnim) => {
+            if (showFn) {
+              const dummy = {
+                name: c.name,
+                imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '',
+                type: c.type || 'デジモン',
+                playCost: 0
+              };
+              if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+                window._onlineSendCommand({ type: 'play', cardName: c.name, cardImg: dummy.imgSrc, cardType: c.type, playCost: 0 });
+              }
+              showFn(dummy, afterAnim);
+            } else {
+              setTimeout(afterAnim, 300);
+            }
+          };
+          playSummon(() => {
+            try {
+              scanTriggers('on_play', c, ctx.side, ctx);
+              processQueue(ctx, () => summonNext());
+            } catch(_) { summonNext(); }
+          });
+        }
+        summonNext();
+      };
+
+      // 候補が wantCount 以下なら自動。それ以上ならプレイヤーが選択
+      if (candidates.length <= wantCount || effectiveSide === 'ai') {
+        performSummon(candidates.slice(0, wantCount));
+      } else {
+        // 進化元は通常そう枚数多くないので、トラッシュピッカーを流用（候補配列 + 選択数）
+        showTrashCardPicker(candidates, wantCount, false, '🌟 進化元から登場させるカードを選んでください', performSummon, candidates);
+      }
+      break;
+    }
+
     // === 進化元に追加 ===
     case 'add_to_evo_source': {
       const cards = store[step.card];
@@ -4833,9 +5813,65 @@ function executeRecipeStep(step, ctx, store, callback) {
       ctx.addLog && ctx.addLog('📖 デッキの上から' + opened.length + '枚オープン');
       ctx.renderAll && ctx.renderAll();
       // 新 UI を呼ぶ
+      const handBeforeDO = player.hand.slice();
       showDeckOpenUI(opened, step, ctx, () => {
+        // 直前選択カードを保存（post_actions の cond_picked_* で参照可能に）
+        const newPicked = player.hand.filter(c => !handBeforeDO.includes(c));
+        if (newPicked.length > 0) ctx.bs._lastPickedCard = newPicked[newPicked.length - 1];
         ctx.renderAll && ctx.renderAll();
+        runPostActions(step.post_actions, ctx, () => callback && callback());
+      });
+      break;
+    }
+
+    // === セキュリティを全公開＋ルール選択＋自動シャッフル ===
+    // step.value === 'all' で全公開、それ以外は数値で N 枚
+    // selections[] でルールから決まった選択先（手札等）を反映
+    // post_actions[] で「選んだカードが黄ならリカバリー」等の文脈条件付き追加処理を実行
+    // 完了後はセキュリティ自動シャッフル（中身を見たため）
+    case 'security_open': {
+      let openN;
+      if (step.value === 'all' || step.value === undefined || step.value === null || step.value === '') {
+        openN = player.security.length;
+      } else {
+        openN = parseInt(step.value, 10) || 1;
+      }
+      if (player.security.length === 0) {
+        ctx.addLog && ctx.addLog('⚠ セキュリティが空です');
         callback && callback();
+        break;
+      }
+      // セキュリティから N 枚（または全て）を opened へ
+      const opened = [];
+      for (let i = 0; i < openN && player.security.length > 0; i++) {
+        opened.push(player.security.shift());
+      }
+      ctx.addLog && ctx.addLog('🛡 セキュリティ' + opened.length + '枚確認');
+      // showDeckOpenUI を流用するため一時的に player.deck を空に退避
+      // 戻し先は player.deck になるが、完了後に security へ移し替えてシャッフル
+      const savedDeckSO = player.deck;
+      player.deck = [];
+      ctx.renderAll && ctx.renderAll();
+      const handBeforeSO = player.hand.slice();
+      const customStep = Object.assign({}, step, { return_to: step.return_to || 'deck_choice' });
+      showDeckOpenUI(opened, customStep, ctx, () => {
+        // 戻ったカード（player.deck 上のもの）をセキュリティへ移して shuffle
+        const remaining = player.deck.slice();
+        player.deck = savedDeckSO;
+        // セキュリティ全体を再構築：（残ったセキュリティ） + remaining、shuffle
+        const newSecurity = player.security.concat(remaining);
+        // Fisher–Yates シャッフル
+        for (let i = newSecurity.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          const tmp = newSecurity[i]; newSecurity[i] = newSecurity[j]; newSecurity[j] = tmp;
+        }
+        player.security = newSecurity;
+        ctx.addLog && ctx.addLog('🔀 セキュリティをシャッフル');
+        // 直前選択カード保存
+        const newPickedSO = player.hand.filter(c => !handBeforeSO.includes(c));
+        if (newPickedSO.length > 0) ctx.bs._lastPickedCard = newPickedSO[newPickedSO.length - 1];
+        ctx.renderAll && ctx.renderAll();
+        runPostActions(step.post_actions, ctx, () => callback && callback());
       });
       break;
     }
@@ -5025,6 +6061,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         const applyAll = (idxs) => {
           idxs.forEach(idx => {
             const tgt = tgtPlayer2.battleArea[idx]; if (!tgt) return;
+            // 連続同一対象用 (same_target): 選んだカードを保存
+            ctx.bs._lastPickedCard = tgt;
             if (flag === 'security_attack_plus') {
               addBuffDirect(tgt, 'security_attack_plus', val, dur, ctx);
               ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
@@ -5038,6 +6076,11 @@ function executeRecipeStep(step, ctx, store, callback) {
           ctx.renderAll();
           callback();
         };
+        // _forceTargetIdx で対象が事前確定済みなら UI スキップ（same_target など）
+        if (ctx._forceTargetIdx !== undefined) {
+          applyAll([ctx._forceTargetIdx]);
+          return;
+        }
         if (isUpTo) {
           // 「N体まで」: ギガデストロイヤーと同じ UX (1体目即選択、2体目以降は確認ダイアログ)
           pickUpToNTargets(rowSide, validIdxs, wantCount, '#00ff88', applyAll);
@@ -5626,7 +6669,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       let effectiveValue = step.value != null ? step.value : (step.per_count ? 1 : null);
       if (step.per_count && effectiveValue != null) {
         const refSource = step.ref || 'evo_source';
-        const count = getRefSourceCountDirect(refSource, ctx.card, ctx.bs, ctx.side);
+        const count = getRefSourceCountDirect(refSource, ctx.card, ctx.bs, ctx.side, step.ref_filter, step.ref_state);
         effectiveValue = effectiveValue * Math.floor(count / step.per_count);
       }
       // レシピのアクション名を既存エンジンのアクション名にマッピング

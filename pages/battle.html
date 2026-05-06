@@ -367,40 +367,9 @@
   </div>
   <div id="mobile-log-list" style="white-space:pre-wrap; word-break:break-all; line-height:1.4;"></div>
 </div>
-<script>
-  // モバイルログビューア: ボタンは常時表示。タップで開閉
-  // console.log/warn/error をフックして画面内に表示（スマホで開発者ツールが使えない時用）
-  if (typeof window !== 'undefined') {
-    const _logList = document.getElementById('mobile-log-list');
-    const _appendLog = (level, args) => {
-      try {
-        const time = new Date().toLocaleTimeString('ja-JP', { hour12: false }).slice(-8);
-        const text = Array.from(args).map(a => {
-          try { return typeof a === 'object' ? JSON.stringify(a).slice(0, 200) : String(a); }
-          catch (_) { return String(a); }
-        }).join(' ');
-        const color = level === 'error' ? '#f55' : (level === 'warn' ? '#fa3' : '#0f0');
-        const div = document.createElement('div');
-        div.style.color = color;
-        div.style.borderBottom = '1px dotted #050';
-        div.style.padding = '1px 0';
-        div.textContent = '[' + time + '] ' + text;
-        _logList.appendChild(div);
-        // 古いログを削除（パフォーマンス対策）
-        while (_logList.children.length > 200) _logList.removeChild(_logList.firstChild);
-        _logList.scrollTop = _logList.scrollHeight;
-      } catch (_) {}
-    };
-    ['log','warn','error'].forEach(lv => {
-      const orig = console[lv].bind(console);
-      console[lv] = function() { try { _appendLog(lv, arguments); } catch (_) {} return orig.apply(console, arguments); };
-    });
-    window.addEventListener('error', (e) => { _appendLog('error', ['UncaughtError:', e.message, e.filename + ':' + e.lineno]); });
-    window.addEventListener('unhandledrejection', (e) => { _appendLog('error', ['UnhandledRejection:', e.reason]); });
-    // 起動メッセージ
-    _appendLog('log', ['📋 モバイルログビューア起動 — 右下📋ボタンで開閉']);
-  }
-</script>
+<!-- モバイルログビューアの console フックは index.html 側で実装（innerHTML 経由で
+     挿入される battle.html 内 <script> は実行されないため） -->
+
 
 <!-- ===== チュートリアル 指差しマーカー + 吹き出し ===== -->
 <div id="tutorial-pointer-overlay" style="display:none; position:fixed; z-index:70000; pointer-events:none;">

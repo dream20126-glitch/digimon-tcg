@@ -10,13 +10,63 @@
   <link rel="stylesheet" href="css/battle.css">
   <link rel="stylesheet" href="css/admin.css">
   <script>
-    // モバイル debuglog 設定の永続化（トップページで ?debuglog=1 を受け取って localStorage に保存）
-    // 以降のページ遷移後（battle.html 等）でもログビューアが有効
-    try {
-      const _qs = location.search || '';
-      if (/[?&]debuglog=1/.test(_qs)) localStorage.setItem('debuglog', '1');
-      else if (/[?&]debuglog=0/.test(_qs)) localStorage.removeItem('debuglog');
-    } catch (_) {}
+    // === モバイル用 画面内ログビューア（console.log/warn/error を画面表示） ===
+    // battle.html 内に書いた <script> は innerHTML 経由で挿入されるため実行されない。
+    // index.html 側でグローバルに console をフックし、battle.html 内の DOM 要素
+    // (#mobile-log-list) にログを追記する。DOM 要素は遅延挿入されるため毎回 lookup。
+    (function setupMobileLogViewer() {
+      const _bufferedLogs = []; // DOM 挿入前のログを保持
+      const _appendToList = (level, args, time) => {
+        try {
+          const list = document.getElementById('mobile-log-list');
+          const entry = { level, args, time };
+          if (!list) {
+            _bufferedLogs.push(entry);
+            return;
+          }
+          // バッファ溜まっていれば flush
+          if (_bufferedLogs.length > 0) {
+            _bufferedLogs.forEach(e => _renderEntry(list, e));
+            _bufferedLogs.length = 0;
+          }
+          _renderEntry(list, entry);
+        } catch (_) {}
+      };
+      const _renderEntry = (list, e) => {
+        const text = Array.from(e.args).map(a => {
+          try { return typeof a === 'object' ? JSON.stringify(a).slice(0, 200) : String(a); }
+          catch (_) { return String(a); }
+        }).join(' ');
+        const color = e.level === 'error' ? '#f55' : (e.level === 'warn' ? '#fa3' : '#0f0');
+        const div = document.createElement('div');
+        div.style.color = color;
+        div.style.borderBottom = '1px dotted #050';
+        div.style.padding = '1px 0';
+        div.textContent = '[' + e.time + '] ' + text;
+        list.appendChild(div);
+        while (list.children.length > 200) list.removeChild(list.firstChild);
+        list.scrollTop = list.scrollHeight;
+      };
+      ['log','warn','error'].forEach(lv => {
+        const orig = console[lv].bind(console);
+        console[lv] = function() {
+          try {
+            const time = new Date().toLocaleTimeString('ja-JP', { hour12: false }).slice(-8);
+            _appendToList(lv, arguments, time);
+          } catch (_) {}
+          return orig.apply(console, arguments);
+        };
+      });
+      window.addEventListener('error', (e) => {
+        const time = new Date().toLocaleTimeString('ja-JP', { hour12: false }).slice(-8);
+        _appendToList('error', ['UncaughtError:', e.message, e.filename + ':' + e.lineno], time);
+      });
+      window.addEventListener('unhandledrejection', (e) => {
+        const time = new Date().toLocaleTimeString('ja-JP', { hour12: false }).slice(-8);
+        _appendToList('error', ['UnhandledRejection:', e.reason], time);
+      });
+      console.log('📋 モバイルログビューア起動');
+    })();
   </script>
 </head>
 <body>

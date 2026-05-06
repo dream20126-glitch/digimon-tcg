@@ -1725,6 +1725,18 @@ function _hideSpotlightNextBtn() {
 // 直後に表示された次のポップアップまで閉じてしまうため、短時間デバウンスする
 const _origClosePhasePopup = window.closeTutorialPhasePopup;
 let _lastPhasePopupCloseAt = 0;
+
+// シナリオ再開時に呼ばれるポップアップ状態リセット
+// 前シナリオで残った _phasePopupResolve / _stepPopupResolve / デバウンスタイマーが
+// 次シナリオの説明表示を妨げる不具合を防ぐ
+window._tutorialResetPopupState = function() {
+  _lastPhasePopupCloseAt = 0;
+  _phasePopupResolve = null;
+  _stepPopupResolve = null;
+  const popup = document.getElementById('tutorial-phase-popup');
+  if (popup) popup.style.display = 'none';
+  console.log('[tutorial] popup state reset');
+};
 window.closeTutorialPhasePopup = function() {
   const now = Date.now();
   if (now - _lastPhasePopupCloseAt < 500) {

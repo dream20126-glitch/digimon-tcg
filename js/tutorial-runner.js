@@ -212,10 +212,15 @@ class TutorialRunner {
     this._interruptResolve = null;
     this._oppSecurityChecks = 0;
     this._ownSecurityChecks = 0;
-    // 前シナリオの残留 intent を必ずクリア
+    // 前シナリオの残留 intent / popup state を必ずクリア
+    // （キャッシュクリアで動くがリロードなしの再開で説明が出ない不具合の修正）
     if (typeof window !== 'undefined') {
       window._tutorialAiBlockIntent = null;
       window._tutorialAiSelectTarget = null;
+      // tutorial.js 側の popup state も明示リセット
+      if (typeof window._tutorialResetPopupState === 'function') {
+        try { window._tutorialResetPopupState(); } catch (_) {}
+      }
     }
     window._tutorialRunner = this;
 

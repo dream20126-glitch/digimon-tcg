@@ -1756,6 +1756,21 @@ window._tutorialResetPopupState = function() {
   _savedButtonStates = [];
   _activeUiStep = null;
 
+  // 重要: tutorial-card-disabled / tutorial-card-highlight / tutorial-btn-* 等のクラスを
+  // DOM から強制除去。_clearStepUiControl() は _uiControlActive=false で早期 return するため
+  // ここで直接クリーンアップしないと前シナリオの「カード無効化」が残ってドラッグ不能になる
+  document.querySelectorAll('.tutorial-card-highlight').forEach(el => el.classList.remove('tutorial-card-highlight'));
+  document.querySelectorAll('.tutorial-card-disabled').forEach(el => el.classList.remove('tutorial-card-disabled'));
+  document.querySelectorAll('.tutorial-btn-disabled').forEach(el => {
+    el.classList.remove('tutorial-btn-disabled');
+    if (el.disabled !== undefined) el.disabled = false;
+    el.style.pointerEvents = '';
+  });
+  document.querySelectorAll('.tutorial-btn-highlighted').forEach(el => el.classList.remove('tutorial-btn-highlighted'));
+  // body 側のブロッカークラスも除去
+  document.body.classList.remove('tutorial-block-other');
+  document.body.classList.remove('tutorial-spotlight-mode');
+
   // ハイライト DOM 参照
   _highlightedEls = [];
 

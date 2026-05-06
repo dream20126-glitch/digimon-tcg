@@ -827,7 +827,11 @@ export function renderHand() {
       let isDragging = false, startX = 0, startY = 0;
 
       function onStart(e) {
-        if (bs.phase !== 'main' || !bs.isPlayerTurn) return;
+        if (bs.phase !== 'main' || !bs.isPlayerTurn) {
+          console.log('[handDrag] blocked: phase=' + bs.phase + ' isPlayerTurn=' + bs.isPlayerTurn + ' card=' + (card && card.name));
+          return;
+        }
+        console.log('[handDrag] start card=' + (card && card.name) + ' type=' + (card && card.type));
         if (e.type === 'mousedown') e.preventDefault();
         const t = e.touches ? e.touches[0] : e;
         startX = t.clientX; startY = t.clientY; isDragging = false;

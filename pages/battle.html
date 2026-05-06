@@ -356,6 +356,50 @@
   </div>
 </div>
 
+<!-- ===== モバイル用 画面内ログビューア（URLに ?debuglog=1 で有効化） ===== -->
+<div id="mobile-log-toggle" style="display:none; position:fixed; bottom:6px; right:6px; z-index:90001; background:#222; color:#0f0; border:1px solid #0f0; border-radius:50%; width:36px; height:36px; font-size:16px; cursor:pointer; pointer-events:auto;" onclick="document.getElementById('mobile-log-panel').style.display = (document.getElementById('mobile-log-panel').style.display==='none'?'block':'none')">📋</div>
+<div id="mobile-log-panel" style="display:none; position:fixed; bottom:48px; left:6px; right:6px; max-height:40vh; z-index:90000; background:rgba(0,0,0,0.92); color:#0f0; border:1px solid #0f0; border-radius:6px; padding:6px; font-size:10px; font-family:monospace; overflow-y:auto; pointer-events:auto;">
+  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+    <span style="color:#0f0;">🔍 ログ</span>
+    <button onclick="document.getElementById('mobile-log-list').innerHTML=''" style="background:#330; color:#0f0; border:1px solid #0f0; padding:1px 6px; font-size:10px; cursor:pointer;">クリア</button>
+  </div>
+  <div id="mobile-log-list" style="white-space:pre-wrap; word-break:break-all; line-height:1.4;"></div>
+</div>
+<script>
+  // ?debuglog=1 が URL に含まれるときだけ有効化
+  if (typeof window !== 'undefined' && /[?&]debuglog=1/.test(location.search || '')) {
+    document.getElementById('mobile-log-toggle').style.display = 'block';
+    const _logList = document.getElementById('mobile-log-list');
+    const _appendLog = (level, args) => {
+      try {
+        const time = new Date().toLocaleTimeString('ja-JP', { hour12: false }).slice(-8);
+        const text = Array.from(args).map(a => {
+          try { return typeof a === 'object' ? JSON.stringify(a).slice(0, 200) : String(a); }
+          catch (_) { return String(a); }
+        }).join(' ');
+        const color = level === 'error' ? '#f55' : (level === 'warn' ? '#fa3' : '#0f0');
+        const div = document.createElement('div');
+        div.style.color = color;
+        div.style.borderBottom = '1px dotted #050';
+        div.style.padding = '1px 0';
+        div.textContent = '[' + time + '] ' + text;
+        _logList.appendChild(div);
+        // 古いログを削除（パフォーマンス対策）
+        while (_logList.children.length > 200) _logList.removeChild(_logList.firstChild);
+        _logList.scrollTop = _logList.scrollHeight;
+      } catch (_) {}
+    };
+    ['log','warn','error'].forEach(lv => {
+      const orig = console[lv].bind(console);
+      console[lv] = function() { try { _appendLog(lv, arguments); } catch (_) {} return orig.apply(console, arguments); };
+    });
+    window.addEventListener('error', (e) => { _appendLog('error', ['UncaughtError:', e.message, e.filename + ':' + e.lineno]); });
+    window.addEventListener('unhandledrejection', (e) => { _appendLog('error', ['UnhandledRejection:', e.reason]); });
+    // 起動メッセージ
+    _appendLog('log', ['📋 モバイルログビューア起動 — 右下📋ボタンで開閉']);
+  }
+</script>
+
 <!-- ===== チュートリアル 指差しマーカー + 吹き出し ===== -->
 <div id="tutorial-pointer-overlay" style="display:none; position:fixed; z-index:70000; pointer-events:none;">
   <div id="tutorial-pointer-wrap" style="display:flex; flex-direction:column; align-items:center;">

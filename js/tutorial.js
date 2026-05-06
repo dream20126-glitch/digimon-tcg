@@ -1566,9 +1566,11 @@ window._tutorialShowStepPopup = function(step, sType, ctx) {
     const titleEl = document.getElementById('tutorial-phase-title');
     const bodyEl  = document.getElementById('tutorial-phase-body');
     const btn     = popup.querySelector('button');
+    console.log('[stepPopup] open parts=' + parts.length + ' trigger=' + (ctx && (ctx.trigger || ctx.phase)));
 
     let idx = 0;
     const showPart = () => {
+      console.log('[stepPopup] showPart idx=' + idx + '/' + parts.length);
       if (iconEl)  iconEl.innerText  = _getStepContextIcon(ctx);
       if (titleEl) titleEl.innerText = _getStepContextTitle(ctx) +
         (parts.length > 1 ? ` (${idx + 1}/${parts.length})` : '');
@@ -1578,6 +1580,7 @@ window._tutorialShowStepPopup = function(step, sType, ctx) {
         const isLast = (idx + 1) >= parts.length;
         btn.innerText = isLast ? 'OK' : '次へ ▶';
         btn.onclick = () => {
+          console.log('[stepPopup] btn click idx=' + idx + ' isLast=' + isLast);
           if (isLast) {
             popup.style.display = 'none';
             btn.onclick = window.closeTutorialPhasePopup; // 元に戻す
@@ -1587,6 +1590,8 @@ window._tutorialShowStepPopup = function(step, sType, ctx) {
             showPart();
           }
         };
+      } else {
+        console.warn('[stepPopup] btn not found');
       }
     };
     showPart();

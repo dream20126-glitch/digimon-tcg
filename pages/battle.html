@@ -366,8 +366,18 @@
   <div id="mobile-log-list" style="white-space:pre-wrap; word-break:break-all; line-height:1.4;"></div>
 </div>
 <script>
-  // ?debuglog=1 が URL に含まれるときだけ有効化
-  if (typeof window !== 'undefined' && /[?&]debuglog=1/.test(location.search || '')) {
+  // ?debuglog=1 が URL に含まれる、または localStorage.debuglog === '1' のとき有効化
+  // URL でセットされたら localStorage にも保存（ページ遷移後も保持）
+  // OFF にしたい場合は ?debuglog=0 を付けて開く
+  try {
+    const _qs = location.search || '';
+    if (/[?&]debuglog=1/.test(_qs)) localStorage.setItem('debuglog', '1');
+    else if (/[?&]debuglog=0/.test(_qs)) localStorage.removeItem('debuglog');
+  } catch (_) {}
+  const _debuglogActive = (() => {
+    try { return localStorage.getItem('debuglog') === '1'; } catch (_) { return false; }
+  })() || /[?&]debuglog=1/.test(location.search || '');
+  if (typeof window !== 'undefined' && _debuglogActive) {
     document.getElementById('mobile-log-toggle').style.display = 'block';
     const _logList = document.getElementById('mobile-log-list');
     const _appendLog = (level, args) => {

@@ -1726,16 +1726,62 @@ function _hideSpotlightNextBtn() {
 const _origClosePhasePopup = window.closeTutorialPhasePopup;
 let _lastPhasePopupCloseAt = 0;
 
-// シナリオ再開時に呼ばれるポップアップ状態リセット
-// 前シナリオで残った _phasePopupResolve / _stepPopupResolve / デバウンスタイマーが
-// 次シナリオの説明表示を妨げる不具合を防ぐ
+// シナリオ再開時に呼ばれる「全 popup / overlay / module 状態リセット」
+// 前シナリオで残った state が次シナリオの説明表示・スポットライト・UI を妨げる不具合を防ぐ
 window._tutorialResetPopupState = function() {
+  // ポップアップ resolver / debounce
   _lastPhasePopupCloseAt = 0;
   _phasePopupResolve = null;
   _stepPopupResolve = null;
+
+  // スポットライト関連
+  _activeSpotlightArgs = null;
+  document.body.classList.remove('tutorial-spotlight-mode');
+  document.querySelectorAll('.tutorial-keep-visible').forEach(el =>
+    el.classList.remove('tutorial-keep-visible')
+  );
+
+  // 成功演出 pending
+  _pendingSuccessMsg = null;
+  if (_pendingSuccessTimer) { try { clearTimeout(_pendingSuccessTimer); } catch (_) {} _pendingSuccessTimer = null; }
+  _activeSuccessPromise = null;
+
+  // バトル完了 resolver / timer
+  if (_battleDoneTimer) { try { clearTimeout(_battleDoneTimer); } catch (_) {} _battleDoneTimer = null; }
+  if (_battleDoneResolve) { try { _battleDoneResolve(); } catch (_) {} _battleDoneResolve = null; }
+
+  // UI 制御フラグ
+  _uiControlActive = false;
+  _savedButtonStates = [];
+  _activeUiStep = null;
+
+  // ハイライト DOM 参照
+  _highlightedEls = [];
+
+  // チュートリアルゴール
+  _tutorialGoalLabel = '';
+  _tutorialGoalActive = false;
+  _tutorialMulliganDone = false;
+
+  // 待機中の次シナリオ
+  _pendingNextScenario = null;
+
+  // popup 表示クリア
   const popup = document.getElementById('tutorial-phase-popup');
   if (popup) popup.style.display = 'none';
-  console.log('[tutorial] popup state reset');
+  // 指差し / 吹き出し / OK ボタン非表示
+  const pointer = document.getElementById('tutorial-pointer-overlay');
+  if (pointer) pointer.style.display = 'none';
+  const okBtn = document.getElementById('tutorial-spotlight-ok');
+  if (okBtn) okBtn.style.display = 'none';
+  // 成功演出オーバーレイ非表示
+  const successOl = document.getElementById('tutorial-success-overlay');
+  if (successOl) successOl.style.display = 'none';
+  // 指示オーバーレイ非表示
+  const instOl = document.getElementById('tutorial-instruction-overlay');
+  if (instOl) instOl.style.display = 'none';
+
+  console.log('[tutorial] full popup/overlay state reset');
 };
 window.closeTutorialPhasePopup = function() {
   const now = Date.now();

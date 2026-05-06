@@ -209,7 +209,12 @@ class TutorialRunner {
     this._completedBlocks = new Set();
     this._currentBlock = null;
     this._currentStepIdx = 0;
+    this._currentPhase = null;       // 前シナリオの phase が残ると新シナリオ開始判定に支障
     this._interruptResolve = null;
+    this._phaseBlockResolve = null;  // フェーズブロック完了 resolver もリセット
+    this._pendingStep = null;
+    this._pendingWaitKind = null;
+    this._pendingWaitValue = null;
     this._oppSecurityChecks = 0;
     this._ownSecurityChecks = 0;
     // 前シナリオの残留 intent / popup state を必ずクリア

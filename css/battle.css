@@ -633,6 +633,15 @@ body.tutorial-spotlight-mode #effect-confirm-no {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   margin-bottom: 4px;
   --arrow-left: 50%;            /* JS で対象方向に上書き */
+  /* タッチイベントを下層に通す（バトルエリアへのスワイプ操作を妨げない）。
+     OK ボタン（#tutorial-spotlight-ok）だけは別途 pointer-events:auto で操作可能 */
+  pointer-events: none !important;
+  touch-action: none;
+}
+.tutorial-bubble #tutorial-pointer-text,
+#tutorial-pointer-finger,
+#tutorial-pointer-wrap {
+  pointer-events: none !important;
 }
 .tutorial-bubble #tutorial-pointer-text {
   color: #1a1a1a;

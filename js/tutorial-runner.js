@@ -211,10 +211,20 @@ class TutorialRunner {
     this._currentStepIdx = 0;
     this._currentPhase = null;       // 前シナリオの phase が残ると新シナリオ開始判定に支障
     this._interruptResolve = null;
+    this._pausedBlock = null;
     this._phaseBlockResolve = null;  // フェーズブロック完了 resolver もリセット
     this._pendingStep = null;
     this._pendingWaitKind = null;
     this._pendingWaitValue = null;
+    this._lastShownTriggerCtx = null;
+    // 重要: 前シナリオで蓄積されたトリガー発火回数を必ずリセット
+    //   _triggerFireCount = {} がリセットされないと、シナリオ1で on_draw が N 回発火した状態が残り、
+    //   シナリオ2 で trigger ブロック (occurrence=1 期待) が永久にマッチしなくなる
+    this._triggerFireCount = {};
+    this._triggerCounts = {};
+    this._lastCountTurn = 0;
+    this._lastFiredTrigger = null;
+    this._pendingActivationQueue = [];
     this._oppSecurityChecks = 0;
     this._ownSecurityChecks = 0;
     // 前シナリオの残留 intent / popup state を必ずクリア

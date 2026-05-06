@@ -1427,13 +1427,14 @@ let _phasePopupResolve = null;
 window._tutorialShowPhaseGuide = function(phaseKey) {
   return new Promise(resolve => {
     const iconData = PHASE_GUIDE_ICONS[phaseKey];
-    if (!iconData) { resolve(); return; }
+    if (!iconData) { console.log('[showPhaseGuide] skip: no iconData phase=' + phaseKey); resolve(); return; }
 
     // シナリオのフェーズ説明テキストを取得（管理画面で設定したもの）
     const runner = window._tutorialRunner;
     const pgt = (runner && runner.scenario && runner.scenario.phaseGuideTexts) || {};
     const body = pgt[phaseKey];
-    if (!body) { resolve(); return; } // テキスト未設定 = このフェーズはスキップ
+    if (!body) { console.log('[showPhaseGuide] skip: no text phase=' + phaseKey); resolve(); return; }
+    console.log('[showPhaseGuide] showing phase=' + phaseKey + ' body=' + String(body).slice(0, 30)); // テキスト未設定 = このフェーズはスキップ
 
     const data = { icon: iconData.icon, title: iconData.title, body };
     const popup = document.getElementById('tutorial-phase-popup');

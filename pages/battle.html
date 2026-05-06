@@ -349,8 +349,10 @@
     <div id="tutorial-phase-icon" style="font-size:2.5rem; margin-bottom:6px;"></div>
     <div id="tutorial-phase-title" style="color:var(--main-cyan, #00fbff); font-size:14px; font-weight:bold; letter-spacing:2px; margin-bottom:10px;"></div>
     <div id="tutorial-phase-body" style="color:#ddd; font-size:12px; line-height:1.8; text-align:left; margin-bottom:18px; white-space:pre-line;"></div>
-    <!-- ontouchend でも応答（iOS Safari で onclick が反応しないケースの保険） -->
-    <button class="menu-btn primary" onclick="closeTutorialPhasePopup()" ontouchend="event.preventDefault(); closeTutorialPhasePopup();" style="width:100%; font-size:13px; touch-action:manipulation;">次へ</button>
+    <!-- onclick のみ。ontouchend は preventDefault が click 合成を止め、showPart で動的に
+         バインドされる btn.onclick（複数パート進行）が発火しなくなるため使わない。
+         touch-action:manipulation で 300ms タップ遅延は既に解消済み -->
+    <button class="menu-btn primary" onclick="closeTutorialPhasePopup()" style="width:100%; font-size:13px; touch-action:manipulation;">次へ</button>
   </div>
 </div>
 

@@ -231,6 +231,21 @@ class TutorialRunner {
 
     // フロー構築（flow がなければ空）
     this._flow = Array.isArray(scenario.flow) ? scenario.flow : [];
+    // 診断: シナリオの主要設定とフロー一覧を出力
+    try {
+      console.log('[TutorialRunner.start] scenario.id=' + scenario.id
+        + ' showPhaseGuide=' + scenario.showPhaseGuide
+        + ' phaseGuideTextKeys=' + Object.keys(scenario.phaseGuideTexts || {}).join(',')
+        + ' flow.length=' + this._flow.length);
+      this._flow.forEach((b, i) => {
+        const trig = b.trigger || b.triggerType || '(none)';
+        const phase = b.phase || '(none)';
+        const turn = b.turn != null ? b.turn : '?';
+        const stepCount = Array.isArray(b.steps) ? b.steps.length : 0;
+        console.log('[TutorialRunner.start] flow[' + i + '] phase=' + phase
+          + ' trigger=' + trig + ' turn=' + turn + ' steps=' + stepCount);
+      });
+    } catch (_) {}
 
     const deckForAi = aiDeckData || playerDeckData;
     const playerFirst = (scenario.initialBoard && scenario.initialBoard.playerFirst !== false);

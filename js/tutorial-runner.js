@@ -241,6 +241,14 @@ class TutorialRunner {
       if (typeof window._tutorialResetCombatLocks === 'function') {
         try { window._tutorialResetCombatLocks(); } catch (_) {}
       }
+      // bs._tutorialExpectVictory が前シナリオから残ると onClear 時に
+      // 3秒タイマーをセットしないため、シナリオクリアモーダルが永久に出ない
+      if (window.bs) {
+        try {
+          window.bs._tutorialExpectVictory = false;
+          window.bs._battleAborted = false;
+        } catch (_) {}
+      }
     }
     window._tutorialRunner = this;
 
@@ -926,7 +934,10 @@ class TutorialRunner {
   }
 
   onClear() {
-    if (this.cleared) return;
+    if (this.cleared) {
+      console.log('[onClear] already cleared - skip');
+      return;
+    }
     this.cleared = true;
     this.hideInstruction();
     // バトル進行を停止（AIターン/フェーズ遷移/戦闘をすべて中断）
@@ -943,12 +954,17 @@ class TutorialRunner {
     this._clearModalShown = false;
     if (this._clearModalTimer) clearTimeout(this._clearModalTimer);
     const expectVictory = !!(window.bs && window.bs._tutorialExpectVictory);
+    console.log('[onClear] cleared=true expectVictory=' + expectVictory + ' (timer ' + (expectVictory ? 'NOT set, waiting _onGameEnd' : 'set 3s') + ')');
     if (!expectVictory) {
-      this._clearModalTimer = setTimeout(() => this._showClearModalOnce(), 3000);
+      this._clearModalTimer = setTimeout(() => {
+        console.log('[onClear] 3s timer fired, calling _showClearModalOnce');
+        this._showClearModalOnce();
+      }, 3000);
     }
   }
 
   _showClearModalOnce() {
+    console.log('[_showClearModalOnce] called, alreadyShown=' + this._clearModalShown);
     if (this._clearModalShown) return;
     this._clearModalShown = true;
     if (this._clearModalTimer) { clearTimeout(this._clearModalTimer); this._clearModalTimer = null; }
@@ -956,6 +972,7 @@ class TutorialRunner {
   }
 
   showClearModal() {
+    console.log('[showClearModal] _tutorialShowClear=' + (typeof window._tutorialShowClear));
     if (typeof window._tutorialShowClear === 'function') {
       window._tutorialShowClear(this.scenario);
     } else {

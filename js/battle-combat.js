@@ -408,8 +408,9 @@ export function canEvolveOnto(evoCard, baseCard) {
 // ===== カード登場 =====
 
 export function doPlay(card, handIdx, slotIdx) {
-  if (bs.phase !== 'main') return;
-  if (_attackInProgress) return;
+  console.log('[doPlay] card=' + (card && card.name) + ' type=' + (card && card.type) + ' phase=' + bs.phase + ' attackInProgress=' + _attackInProgress);
+  if (bs.phase !== 'main') { console.log('[doPlay] skip: phase != main'); return; }
+  if (_attackInProgress) { console.log('[doPlay] skip: attack in progress'); return; }
   if (card.level === '2') { addLog('🚨 デジタマはバトルエリアに出せません'); return; }
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'play', handIdx, slotIdx, cardName: card.name, cardType: card.type, cardImg: card.imgSrc || '', playCost: card.playCost || 0 });
   if (card.playCost === null) { addLog('🚨 「' + card.name + '」は進化専用カードです'); return; }
@@ -685,6 +686,17 @@ let _atkState = null; // { card, slotIdx }
 let _attackInProgress = false; // アタック処理中フラグ（操作ロック用）
 
 export function isAttackInProgress() { return _attackInProgress; }
+
+// 戦闘・操作ロック系フラグの強制リセット（チュートリアル再開時等の状態漏洩対策）
+// 前シナリオで attack 中に異常終了すると _attackInProgress=true のまま残り、
+// 次シナリオで doPlay 等が早期 return して反応しなくなる不具合の防止
+export function resetCombatLocks() {
+  _atkState = null;
+  _attackInProgress = false;
+}
+if (typeof window !== 'undefined') {
+  window._tutorialResetCombatLocks = resetCombatLocks;
+}
 
 export function startAttack(card, slotIdx) {
   // ≪進撃≫: メモリーが相手側のとき（bs.memory < 0）でも進撃持ちならアタック可（公式ルール 18-16）

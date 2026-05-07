@@ -236,6 +236,11 @@ class TutorialRunner {
       if (typeof window._tutorialResetPopupState === 'function') {
         try { window._tutorialResetPopupState(); } catch (_) {}
       }
+      // battle-combat の操作ロック (_attackInProgress 等) も明示リセット
+      // → これが残ると次シナリオで doPlay が早期 return してドラッグが反応しない
+      if (typeof window._tutorialResetCombatLocks === 'function') {
+        try { window._tutorialResetCombatLocks(); } catch (_) {}
+      }
     }
     window._tutorialRunner = this;
 

@@ -488,12 +488,30 @@ function execUnsuspend() {
     }
   });
 
+  // prevent_unsuspend バフを持つカードは suspend 解除をスキップ（バフは本フェーズ後失効）
+  const _hasPreventUnsuspend = (c) => !!(c && Array.isArray(c.buffs)
+    && c.buffs.some(b => b && b.type === 'prevent_unsuspend'));
+
   if (hasRested) {
     bs.player.battleArea.forEach(c => {
-      if (c) { if (!c.cantBeActive) c.suspended = false; c.summonedThisTurn = false; c._usedEffects = []; }
+      if (c) {
+        if (!c.cantBeActive && !_hasPreventUnsuspend(c)) c.suspended = false;
+        c.summonedThisTurn = false; c._usedEffects = [];
+      }
     });
     bs.player.tamerArea.forEach(c => {
       if (c) { c.suspended = false; c._usedEffects = []; }
+    });
+    // prevent_unsuspend バフを本フェーズ終了で失効
+    bs.player.battleArea.forEach(c => {
+      if (c && Array.isArray(c.buffs)) {
+        c.buffs = c.buffs.filter(b => b && b.duration !== 'dur_next_own_unsuspend');
+      }
+    });
+    bs.ai.battleArea.forEach(c => {
+      if (c && Array.isArray(c.buffs)) {
+        c.buffs = c.buffs.filter(b => b && b.duration !== 'dur_next_opp_unsuspend');
+      }
     });
     addLog('🔄 アクティブフェイズ完了');
     renderAll();

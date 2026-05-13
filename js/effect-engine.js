@@ -3379,6 +3379,53 @@ function checkConditions(conditions, card, bs, side) {
         if (card && card.suspended) return false;
         break;
       }
+      case 'cond_rest': {
+        // 「レスト状態」: 対象カードがレスト状態のとき true（cond_self_rest の汎用版）
+        if (!card || !card.suspended) return false;
+        break;
+      }
+      case 'cond_blocker': {
+        // 「ブロッカーを持たない」: 対象カードが blocker フラグを持たないとき true
+        // value="不持" 等で「持たない」反転指定可能だが、ここでは「持つ＝true」「持たない＝false」を返す
+        // 「持たない条件」として使うなら、エンジン呼び出し側で否定するか辞書名で表現する
+        const hasBlocker = !!(card && (
+          (card._permEffects && card._permEffects.blocker) ||
+          (card.buffs && card.buffs.some(b => b.type === 'keyword_blocker')) ||
+          /ブロッカー/.test(String(card.keywords || card.effect || ''))
+        ));
+        // デフォルトは「ブロッカーを持たない」の意味（cond.value !== '1' のとき）
+        const wantHas = String(cond.value || '') === '1';
+        if (wantHas ? !hasBlocker : hasBlocker) return false;
+        break;
+      }
+      case 'cond_tamer': {
+        // 「テイマーがいるとき」: 自分側のテイマーエリアに少なくとも1人いれば true
+        if (!bs) return false;
+        const ts = resolveSubjectSide(cond.subject || 'own', side);
+        const tamerArea = bs[ts] && bs[ts].tamerArea;
+        if (!Array.isArray(tamerArea) || tamerArea.filter(t => t).length === 0) return false;
+        break;
+      }
+      case 'cond_security': {
+        // 「セキュリティN枚ごと」: value で指定された枚数刻みの条件（per_count と組み合わせて使う想定）
+        // 単独ではセキュリティ枚数 >= value のとき true として実装
+        if (!bs) return false;
+        const ss = resolveSubjectSide(cond.subject || 'own', side);
+        const len = bs[ss] && bs[ss].security ? bs[ss].security.length : 0;
+        const need = parseInt(String(cond.value || '0'), 10) || 0;
+        if (len < need) return false;
+        break;
+      }
+      case 'cond_evolve_to_lv': {
+        // 「進化先のLv（完全一致）」: evo_cost_minus 等の進化バフ評価時に
+        // bs._evolveContext.toLv === cond.value のとき true
+        const ctxEvo = bs && bs._evolveContext;
+        if (!ctxEvo) return false;
+        const want = parseInt(String(cond.value || '0'), 10) || 0;
+        const got = parseInt(String(ctxEvo.toLv || 0), 10) || 0;
+        if (got !== want) return false;
+        break;
+      }
       case 'cond_self_rest':
       case 'cond_self_suspended': {
         // 自身がレスト状態の時 true
@@ -4892,8 +4939,19 @@ function runRecipe(steps, ctx, callback) {
   console.log('[runRecipe]', 'card=' + (ctx.card && ctx.card.name), 'steps.length=' + (steps && steps.length), 'isArray=' + Array.isArray(steps), 'first=', steps && steps[0]);
 
   function nextStep(success) {
-    // コスト不足等で効果不発
-    if (success === false) { console.log('[runRecipe] aborted (success=false)'); ctx.renderAll(); callback && callback(); return; }
+    // コスト不足等で効果不発: 次ステップに `continue_on_fail` 修飾子があれば継続
+    // （「その後」連結のデジカ公式ルール対応）
+    if (success === false) {
+      const peekNext = steps[idx];
+      const continueOnFail = peekNext
+        && Array.isArray(peekNext.options)
+        && peekNext.options.includes('continue_on_fail');
+      if (!continueOnFail) {
+        console.log('[runRecipe] aborted (success=false)');
+        ctx.renderAll(); callback && callback(); return;
+      }
+      console.log('[runRecipe] step failed but next has continue_on_fail → continue');
+    }
     if (idx >= steps.length) { console.log('[runRecipe] completed all steps'); ctx.renderAll(); callback && callback(); return; }
     const step = steps[idx++];
     console.log('[runRecipe] executing step', idx, 'action=' + step.action, 'target=' + step.target);
@@ -5824,6 +5882,150 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === メモリーをNにする ===
+    case 'memory': {
+      const target = parseInt(String(step.value ?? 0), 10) || 0;
+      // ctx.side='player' のとき: 自分側 +N、相手側 -N の体系
+      //   bs.memory > 0 = プレイヤー側、bs.memory < 0 = AI 側 (左右反転)
+      const want = (ctx.side === 'player') ? target : -target;
+      bs.memory = want;
+      ctx.addLog && ctx.addLog('💎 メモリーを ' + target + ' にする');
+      if (ctx.updateMemGauge) ctx.updateMemGauge();
+      if (window._sendMemoryUpdate) window._sendMemoryUpdate();
+      callback();
+      break;
+    }
+    // === DPをNにする（自身のDPを target 値に上書き = base override） ===
+    case 'dp': {
+      if (!ctx.card) { callback(); break; }
+      const target = parseInt(String(step.value ?? 0), 10) || 0;
+      const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+      const cur = parseInt(String(ctx.card.dp || 0), 10) || 0;
+      // diff を dp_plus/dp_minus として addBuffDirect で適用（既存 buff 機構を流用）
+      const diff = target - cur;
+      if (diff !== 0) {
+        addBuffDirect(ctx.card, diff > 0 ? 'dp_plus' : 'dp_minus', Math.abs(diff), dur, ctx);
+      }
+      ctx.addLog && ctx.addLog('💪 「' + ctx.card.name + '」DPを ' + target + ' にする');
+      ctx.renderAll && ctx.renderAll();
+      callback();
+      break;
+    }
+    // === デジタマカードを孵化する ===
+    // 育成エリアに最上位のデジタマカードを移動（既存の breed フロー流用）
+    case 'hatch': {
+      // 既存の breed move とほぼ同じ。育成エリアにすでにカードがあれば skip
+      if (player.ikusei) { ctx.addLog && ctx.addLog('⚠ 育成エリアに既にカードがあります'); callback(); break; }
+      // デジタマデッキ（player.eggDeck）の上から1枚を育成エリアへ
+      if (!player.eggDeck || player.eggDeck.length === 0) {
+        ctx.addLog && ctx.addLog('⚠ デジタマデッキが空です'); callback(); break;
+      }
+      const egg = player.eggDeck.shift();
+      player.ikusei = egg;
+      ctx.addLog && ctx.addLog('🥚 「' + egg.name + '」を孵化');
+      ctx.renderAll && ctx.renderAll();
+      callback();
+      break;
+    }
+    // === 育成エリアからバトルエリアに移動 (breed → battle, 進化なし) ===
+    case 'battle_area_make': {
+      if (!player.ikusei) { ctx.addLog && ctx.addLog('⚠ 育成エリアにカードがありません'); callback(); break; }
+      // 空きスロットを探す
+      let slot = -1;
+      for (let i = 0; i < player.battleArea.length; i++) {
+        if (!player.battleArea[i]) { slot = i; break; }
+      }
+      if (slot < 0) slot = player.battleArea.length;
+      player.battleArea[slot] = player.ikusei;
+      ctx.addLog && ctx.addLog('🐾 「' + player.ikusei.name + '」をバトルエリアへ');
+      player.ikusei = null;
+      ctx.renderAll && ctx.renderAll();
+      callback();
+      break;
+    }
+    // === セキュリティを破棄（汎用 alias: security_trash_top と同等） ===
+    case 'security_discard': {
+      const n = step.value || 1;
+      for (let i = 0; i < n; i++) {
+        if (opponent.security.length > 0) {
+          opponent.trash.push(opponent.security.shift());
+          ctx.addLog && ctx.addLog('🛡 セキュリティ破棄');
+        }
+      }
+      ctx.renderAll && ctx.renderAll();
+      callback();
+      break;
+    }
+    // === セキュリティに置く（デッキ上から N 枚 or 指定カードをセキュリティへ） ===
+    case 'place_security': {
+      const n = step.value || 1;
+      for (let i = 0; i < n; i++) {
+        if (player.deck.length > 0) {
+          player.security.push(player.deck.shift());
+          ctx.addLog && ctx.addLog('🛡 セキュリティ+1');
+        }
+      }
+      ctx.renderAll && ctx.renderAll();
+      callback();
+      break;
+    }
+    // === 「次の相手のアクティブフェイズではアクティブにならない」用 buff 付与 ===
+    case 'not_active':
+    case 'prevent_unsuspend': {
+      const dur = normalizeRecipeDuration(step.duration) || 'dur_next_opp_unsuspend';
+      const tStr = String(step.target || 'opponent:all');
+      const tgtPlayer = tStr.startsWith('opp') ? opponent : player;
+      const all = tStr.endsWith(':all') || tStr === 'opponent' || tStr === 'own';
+      if (all) {
+        (tgtPlayer.battleArea || []).forEach(c => {
+          if (c) addBuffDirect(c, 'prevent_unsuspend', 0, dur, ctx);
+        });
+        ctx.addLog && ctx.addLog('🔒 ' + (tStr.startsWith('opp') ? '相手' : '自分') + 'のデジモン全てに「アクティブにならない」付与');
+      }
+      ctx.renderAll && ctx.renderAll();
+      callback();
+      break;
+    }
+    // === 一時的にトリガー効果を付与（granted_recipe を対象に attach） ===
+    case 'grant_effect': {
+      const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+      const granted = step.granted_recipe;
+      if (!granted) { ctx.addLog && ctx.addLog('⚠ granted_recipe が未設定'); callback(); break; }
+      const tStr = String(step.target || 'own:all');
+      const tgtPlayer = tStr.startsWith('opp') ? opponent : player;
+      const applyTo = (c) => {
+        if (!c) return;
+        if (!c._grantedRecipes) c._grantedRecipes = [];
+        c._grantedRecipes.push({ recipe: granted, duration: dur, side: ctx.side });
+        ctx.addLog && ctx.addLog('🎁 「' + c.name + '」に効果を付与');
+      };
+      if (tStr.endsWith(':all') || tStr === 'own' || tStr === 'opponent') {
+        (tgtPlayer.battleArea || []).forEach(applyTo);
+      } else if (tStr === 'self') {
+        applyTo(ctx.card);
+      } else {
+        // own:1 等 → 既存の対象選択 UI に乗せる（簡易: applyDpBuff の target_own と同等）
+        const validTargets = [];
+        for (let i = 0; i < tgtPlayer.battleArea.length; i++) {
+          if (tgtPlayer.battleArea[i]) validTargets.push(i);
+        }
+        if (validTargets.length === 0) { showEffectFailed(null, callback); return; }
+        if (effectiveSide === 'ai' || ctx._forceTargetIdx !== undefined) {
+          const fixedIdx = (ctx._forceTargetIdx !== undefined) ? ctx._forceTargetIdx : validTargets[0];
+          applyTo(tgtPlayer.battleArea[fixedIdx]);
+          ctx.renderAll && ctx.renderAll(); callback();
+          return;
+        }
+        showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', validTargets, null, '#c084fc', (idx) => {
+          if (idx !== null) applyTo(tgtPlayer.battleArea[idx]);
+          ctx.renderAll && ctx.renderAll(); callback();
+        });
+        return;
+      }
+      ctx.renderAll && ctx.renderAll();
+      callback();
+      break;
+    }
     // === セキュリティを全公開＋ルール選択＋自動シャッフル ===
     // step.value === 'all' で全公開、それ以外は数値で N 枚
     // selections[] でルールから決まった選択先（手札等）を反映

@@ -302,7 +302,15 @@ window.updateScenarioDesc = function() {
     descEl.innerText = 'カードを検索して配置してください';
     // カードDB未読み込みなら読み込み
     if (!_cardsLoaded) {
-      loadCardAndKeywordData().then(() => { _cardsLoaded = true; document.getElementById('test-status').innerText = `カード${window.allCards.length}件読み込み済み`; });
+      loadCardAndKeywordData().then(async () => {
+        _cardsLoaded = true;
+        let ver = '';
+        try {
+          const v = await fetch('data/cards-version.json?_=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null);
+          if (v && v.version) ver = ` (v: ${v.version})`;
+        } catch (_) {}
+        document.getElementById('test-status').innerText = `カード${window.allCards.length}件読み込み済み${ver}`;
+      });
     }
   } else {
     panel.style.display = 'none';
@@ -320,14 +328,17 @@ const _CARD_COLOR_STYLE = {
 // カード検索（カードNo・色も表示して一意識別を担保）
 window.searchCards = function() {
   const query = document.getElementById('card-search-input').value.trim();
-  if (!query || !window.allCards) return;
-  // 名前 or カードNo どちらでもヒット
-  const results = window.allCards.filter(c =>
-    (c['名前'] || '').includes(query) || (c['カードNo'] || '').includes(query)
-  ).slice(0, 15);
+  if (!window.allCards) return;
+  // 名前 or カードNo どちらでもヒット（空クエリなら全件）
+  const results = query
+    ? window.allCards.filter(c =>
+        (c['名前'] || '').includes(query) || (c['カードNo'] || '').includes(query)
+      )
+    : window.allCards.slice();
   const el = document.getElementById('card-search-results');
   if (results.length === 0) { el.innerHTML = '<div style="color:#666;font-size:11px;padding:4px;">見つかりません</div>'; return; }
-  el.innerHTML = results.map(c => {
+  const countLabel = `<div style="color:#888;font-size:10px;padding:4px 6px;border-bottom:1px solid #222;position:sticky;top:0;background:#0a0a0a;">${results.length}件ヒット${query ? ` / 検索:「${query}」` : '（全件）'}</div>`;
+  el.innerHTML = countLabel + results.map(c => {
     const name = c['名前'] || '???';
     const cardNo = c['カードNo'] || '';
     const cardColor = c['色'] || '';

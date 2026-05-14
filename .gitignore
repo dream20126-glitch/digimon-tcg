@@ -3,3 +3,9 @@ node_modules/
 Thumbs.db
 *.log
 スクリーンショット/
+
+# recipe-editor build artifacts
+recipe-editor-src/.tsbuildcache/
+recipe-editor-src/*.tsbuildinfo
+recipe-editor-src/vite.config.d.ts
+recipe-editor-src/vite.config.js

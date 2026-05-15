@@ -403,7 +403,8 @@ function executeQueueEntry(entry, context, callback) {
     const trigCodeForCheck = block.trigger ? block.trigger.code : null;
     const recipeForCheck = trigCodeForCheck ? getRecipeForTrigger(recipeCardForCheck, trigCodeForCheck, isEvoSourceCheck) : null;
     if (recipeForCheck && Array.isArray(recipeForCheck)) {
-      const willExecute = recipeWillExecuteAnything(recipeForCheck, { card, bs: context.bs, side: actualSide });
+      // block を渡す: trigger_conditions を発火元カード(_eventSourceCard)に対して評価するため
+      const willExecute = recipeWillExecuteAnything(recipeForCheck, { card, bs: context.bs, side: actualSide, block });
       if (!willExecute) {
         callback();
         return;

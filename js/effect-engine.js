@@ -816,22 +816,14 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 条件フィルタ（cond_lv_le:4 等）を適用して対象を絞る
       // action.conditions（executeRecipeStepから直接渡されたもの）を優先、フォールバックで ctx.block.conditions
       const dConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
+      const _dSideTag = isOwn ? (ctx.side === 'player' ? 'player' : 'ai') : (ctx.side === 'player' ? 'ai' : 'player');
       const destroyTargets = [];
       for(let i=0;i<tgtPlayer.battleArea.length;i++) {
         const c = tgtPlayer.battleArea[i];
         if(!c) continue;
-        let valid = true;
-        for(const cond of dConds) {
-          if (cond.code === 'cond_lv_le' && cond.value != null && (parseInt(c.level) || 0) > cond.value) { valid = false; break; }
-          if (cond.code === 'cond_lv_ge' && cond.value != null && (parseInt(c.level) || 0) < cond.value) { valid = false; break; }
-          if (cond.code === 'cond_dp_le' && cond.value != null && (c.dp || 0) > cond.value) { valid = false; break; }
-          if (cond.code === 'cond_dp_ge' && cond.value != null && (c.dp || 0) < cond.value) { valid = false; break; }
-          if (cond.code === 'cond_cost_le' && cond.value != null && ((c.playCost || c.cost || 0) > cond.value)) { valid = false; break; }
-          if (cond.code === 'cond_cost_ge' && cond.value != null && ((c.playCost || c.cost || 0) < cond.value)) { valid = false; break; }
-          if (cond.code === 'cond_no_evo' && c.stack && c.stack.length > 0) { valid = false; break; }
-          if (cond.code === 'cond_has_evo' && (!c.stack || c.stack.length < (cond.value || 0))) { valid = false; break; }
-        }
-        if (valid) destroyTargets.push(i);
+        // 条件フィルタ（cond_keyword / cond_lv_le / cond_no_evo 等）を checkConditions で一括評価
+        if (dConds.length > 0 && !checkConditions(dConds, c, ctx.bs, _dSideTag)) continue;
+        destroyTargets.push(i);
       }
       if(destroyTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', () => callback(false)); break; }
       // 枠色を辞書から取得
@@ -2185,7 +2177,8 @@ function cardMatchesFilter(card, filter) {
   if (filter.cardno && card.cardNo !== filter.cardno) return false;
   if (filter.cardno_includes && !(card.cardNo || '').includes(filter.cardno_includes)) return false;
   if (filter.name && card.name !== filter.name) return false;
-  if (filter.name_includes && !(card.name || '').includes(filter.name_includes)) return false;
+  const _nameInc = filter.name_includes || filter.name_contains;
+  if (_nameInc && !(card.name || '').includes(_nameInc)) return false;
   if (filter.lv_ge != null && (parseInt(card.level) || 0) < filter.lv_ge) return false;
   if (filter.lv_le != null && (parseInt(card.level) || 0) > filter.lv_le) return false;
   if (filter.lv != null && (parseInt(card.level) || 0) !== filter.lv) return false;
@@ -4893,6 +4886,18 @@ function recipeWillExecuteAnything(recipe, ctx) {
     }
     // 条件あり → 評価
     const conds = parseRecipeCondition(step.condition);
+    // destroy で target が opponent/own → condition は対象フィルタ。対象側で該当者を探す
+    if (step.action === 'destroy' && /^(opponent|own)(?::|$)/.test(String(step.target || ''))) {
+      const _isOpp = String(step.target).startsWith('opponent');
+      const _area = _isOpp
+        ? (ctx.side === 'player' ? ctx.bs.ai.battleArea : ctx.bs.player.battleArea)
+        : (ctx.side === 'player' ? ctx.bs.player.battleArea : ctx.bs.ai.battleArea);
+      const _sTag = _isOpp
+        ? (ctx.side === 'player' ? 'ai' : 'player')
+        : (ctx.side === 'player' ? 'player' : 'ai');
+      if ((_area || []).some(c => c && checkConditions(conds, c, ctx.bs, _sTag))) return true;
+      continue;
+    }
     const result = checkConditions(conds, ctx.card, ctx.bs, ctx.side);
     console.log('[recipeWillExecute]', 'action=' + step.action, 'condition=' + step.condition, 'parsed=' + JSON.stringify(conds), '→ ' + result);
     if (result) return true;
@@ -5053,7 +5058,11 @@ function executeRecipeStep(step, ctx, store, callback) {
   // ターン回数制限チェック（once_per_turn=1回 / per_turn:N=N回）
   // active 等の専用 case は default の limit-check を通らないため、ここで共通的に判定する
   {
-    const _limitMax = getLimitMaxUses(step);
+    // コスト持ち step は cost 完了後の本体実行段階(_costsResolved)でのみ判定する。
+    // cost 処理は本体を executeRecipeStep で再帰呼び出しするため、判定しないと
+    // limit-check が1アタックで2回走り使用回数が二重カウントされる。
+    const _hasCost = Array.isArray(step.cost) && step.cost.length > 0;
+    const _limitMax = (!_hasCost || step._costsResolved) ? getLimitMaxUses(step) : 0;
     if (_limitMax > 0 && ctx.bs) {
       const _srcCard = ctx._sourceCard || ctx.card;
       const _srcId = (_srcCard && (_srcCard.cardNo || _srcCard.name)) || 'unknown';

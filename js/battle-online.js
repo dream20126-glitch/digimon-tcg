@@ -763,10 +763,12 @@ function onRemoteCommand(cmd) {
 
     // --- 演出コマンド（キュー経由で順次再生、並列起動によるバチバチを防止） ---
     case 'fx_remoteBuff': {
-      // 相手から汎用バフ付与コマンドを受信 → 自分の対象カードに buff を直接 push
-      // state_sync は oppBattleArea を上書きしないため、相手のカードに付与した buff は
-      // この個別コマンドで同期する
-      const myCard = bs.player.battleArea[cmd.targetIdx];
+      // 相手から汎用バフ付与コマンドを受信 → 対象カードに buff を直接 push
+      // state_sync は oppBattleArea を上書きしないため、この個別コマンドで同期する
+      // senderOwn=true : 送信者が自分のカードに付与 → 受信側では相手(ai)のカード
+      // senderOwn なし : 送信者が相手のカードに付与 → 受信側では自分(player)のカード
+      const _buffZone = cmd.senderOwn ? 'ai' : 'player';
+      const myCard = bs[_buffZone].battleArea[cmd.targetIdx];
       if (myCard) {
         if (!myCard.buffs) myCard.buffs = [];
         // 送信側 _appliedSide を受信側目線に反転

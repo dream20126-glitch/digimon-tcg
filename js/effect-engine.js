@@ -6340,6 +6340,15 @@ function executeRecipeStep(step, ctx, store, callback) {
               addBuffDirect(tgt, 'security_attack_plus', val, dur, ctx);
               ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
               if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, 'Sアタック+' + val); } catch(_) {}
+              // オンライン: 相手画面にも buff を同期（カード左上「チェック+」表示のため）
+              if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+                window._onlineSendCommand({
+                  type: 'fx_remoteBuff', targetIdx: idx, targetName: tgt.name,
+                  buffType: 'security_attack_plus', value: val, duration: dur,
+                  senderOwn: isOwnSelect, appliedFromSender: 'player',
+                  appliedDuringOwnTurn: ctx.bs && ctx.bs.isPlayerTurn,
+                });
+              }
             } else {
               addBuffDirect(tgt, 'keyword_' + flag, 0, dur, ctx);
               const _kwJp = _keywordJpName(flag);

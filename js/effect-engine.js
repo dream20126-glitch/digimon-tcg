@@ -897,7 +897,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           const idx = (ctx.bs.player.battleArea || []).indexOf(tgt);
           if (idx !== -1) {
             try {
-              window._onlineSendCommand({ type: 'fx_remoteSuspend', targetIdx: idx, suspended: false, targetName: tgt.name });
+              // senderOwn: 送信者の自分側カードを操作したことを示す（受信側では相手(ai)側のカード）
+              window._onlineSendCommand({ type: 'fx_remoteSuspend', targetIdx: idx, suspended: false, targetName: tgt.name, senderOwn: true });
             } catch(_) {}
           }
         }
@@ -4865,6 +4866,13 @@ function recipeWillExecuteAnything(recipe, ctx) {
   for (const step of recipe) {
     // trigger_conditions: 発火元カードへのフィルタ（NG なら次の step）
     if (!checkStepTriggerConditions(step, ctx)) continue;
+    // limit 到達済みの step はスキップ（2回目のアタック等で効果説明ポップアップを出さないため）
+    if ((step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') && ctx.bs && ctx.bs._usedLimits) {
+      const _lsc = ctx._sourceCard || ctx.card;
+      const _lSourceId = (_lsc && (_lsc.cardNo || _lsc.name)) || 'unknown';
+      const _lCarrierId = (ctx.card && (ctx.card.cardNo || ctx.card.name)) || 'unknown';
+      if (ctx.bs._usedLimits[_lSourceId + '@' + _lCarrierId + '_recipe_' + step.action]) continue;
+    }
     // 条件なし → 必ず実行される
     if (!step.condition) {
       console.log('[recipeWillExecute] step has no condition → true', 'action=' + step.action);

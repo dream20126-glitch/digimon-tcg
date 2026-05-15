@@ -884,14 +884,16 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_remoteSuspend': {
-      // 相手から rest/active コマンドを受信 → 自分側カードの suspended を直接書き換え
-      // state_sync は oppBattleArea を上書きしないため、相手のカードの suspended は
-      // この個別コマンドで同期する
-      const myCard = bs.player.battleArea[cmd.targetIdx];
+      // 相手から rest/active コマンドを受信 → 対象カードの suspended を直接書き換え
+      // state_sync は oppBattleArea を上書きしないため、この個別コマンドで同期する
+      // senderOwn=true : 送信者が自分のカードを操作 → 受信側では相手(ai)側のカード
+      // senderOwn なし : 送信者が相手のカードを操作 → 受信側では自分(player)側のカード
+      const _suspZone = cmd.senderOwn ? 'ai' : 'player';
+      const myCard = bs[_suspZone].battleArea[cmd.targetIdx];
       if (myCard) {
         myCard.suspended = !!cmd.suspended;
-        // 自分側でも保護フラグを立てて、相手からの古い state_sync で戻されないようにする
-        markSuspendChanged('player', cmd.targetIdx, !!cmd.suspended);
+        // 保護フラグを立てて、相手からの古い state_sync で戻されないようにする
+        markSuspendChanged(_suspZone, cmd.targetIdx, !!cmd.suspended);
         renderAll();
       }
       addLog((cmd.suspended ? '💤 ' : '🔄 ') + '「' + (cmd.targetName || '???') + '」が' + (cmd.suspended ? 'レスト' : 'アクティブ'));

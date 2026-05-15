@@ -804,7 +804,7 @@ export function resolveAttackTarget(target, targetIdx) {
       // （これでターンプレイヤーが効果処理中に相手の画面にブロック確認が出ない）
       afterAtkEffect(atk, atkSlotIdx, () => {
         // 効果処理完了 → このタイミングで attack_security を送る
-        _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk) });
+        _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo) });
         if (typeof window._waitForBlockResponse === 'function') {
           window._waitForBlockResponse((resp) => {
             if (!resp.blocked) {
@@ -877,7 +877,7 @@ export function resolveAttackTarget(target, targetIdx) {
     if (_onlineMode && _sendCommand) {
       // ★ アタック時効果を先に処理 → 完了後にブロック要求を送信
       afterAtkEffect(atk, atkSlotIdx, () => {
-        _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk) });
+        _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo) });
         if (typeof window._waitForBlockResponse === 'function') {
           window._waitForBlockResponse((resp) => {
             if (!resp.blocked) {
@@ -1837,9 +1837,12 @@ export function aiAttackPhase(callback) {
       const blockerIndices = [];
       // 「ブロックされない」フラグ: アタッカーが cantBeBlocked なら全ブロック不可
       const atkCantBeBlocked = atk && atk._permEffects && atk._permEffects.cantBeBlocked;
+      // 「進化元を持たないデジモンにはブロックされない」(イッカクモン等)
+      const atkCantBeBlockedByNoEvo = atk && atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo;
       bs.player.battleArea.forEach((c, i) => {
         if (c && !c.suspended && !c.cantBlock && isBlocker(c)) {
           if (atkCantBeBlocked) return; // ブロックされない: スキップ
+          if (atkCantBeBlockedByNoEvo && (!c.stack || c.stack.length === 0)) return; // 進化元なしブロッカーは不可
           blockerIndices.push(i);
         }
       });

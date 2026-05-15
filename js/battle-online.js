@@ -1219,7 +1219,11 @@ function checkOnlineBlock(cmd) {
   };
   const blockerIndices = [];
   bs.player.battleArea.forEach((c, i) => {
-    if (c && !c.suspended && !c.cantBlock && isBlocker(c)) blockerIndices.push(i);
+    if (c && !c.suspended && !c.cantBlock && isBlocker(c)) {
+      if (cmd.atkCantBeBlocked) return; // アタッカーがブロックされない
+      if (cmd.atkCantBeBlockedByNoEvo && (!c.stack || c.stack.length === 0)) return; // 進化元なしブロッカーは不可
+      blockerIndices.push(i);
+    }
   });
   if (blockerIndices.length === 0) {
     sendCommand({ type: 'block_response', blocked: false });

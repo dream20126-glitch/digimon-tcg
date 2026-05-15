@@ -411,6 +411,17 @@ function executeQueueEntry(entry, context, callback) {
     }
   }
 
+  // recipe を見て任意効果か判定（コストを持つ / optional フラグ）→ 確認ダイアログの要否
+  // 「手札を3枚破棄することで〜」等のコスト持ち効果は任意発動なので確認を挟む
+  if (block.isOptional === undefined) {
+    const _optRc = block._recipeCard || card;
+    const _optTc = block.trigger ? block.trigger.code : null;
+    const _optRecipe = _optTc ? getRecipeForTrigger(_optRc, _optTc, !!block._recipeCard) : null;
+    block.isOptional = Array.isArray(_optRecipe) && _optRecipe.some(s =>
+      s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0))
+    );
+  }
+
   // 強制効果 or 既に確認済み → 即実行
   if (!block.isOptional || context.alreadyConfirmed) {
     executeWithAnnounce();
@@ -2952,6 +2963,25 @@ export function applyPermanentEffects(bs, side, context) {
         if (tk === 'during_opp_turn' && side === turnSide) return;
         const steps = Array.isArray(card.recipe[tk]) ? card.recipe[tk] : [card.recipe[tk]];
         steps.forEach(step => {
+          // grant_keyword for own:all（八神太一等）: condition/when はターゲット個別フィルタとして評価
+          if (step.action === 'grant_keyword' || step.action === 'grant_keyword_to') {
+            const kw = step.keyword || step.flag || '';
+            if (!(kw === 'security_attack_plus' || /Sアタック/.test(String(kw)))) return;
+            const gv = step.value != null ? step.value : 1;
+            const filterConds = [];
+            if (step.condition) filterConds.push(...parseRecipeCondition(step.condition));
+            if (step.when) filterConds.push(...parseRecipeCondition(step.when));
+            const applyKw = (tgt) => {
+              if (!tgt) return;
+              if (filterConds.length && !checkConditions(filterConds, tgt, bs, side)) return;
+              if (!tgt._permEffects) tgt._permEffects = {};
+              tgt._permEffects.securityAttackPlus = (tgt._permEffects.securityAttackPlus || 0) + gv;
+            };
+            const gt = String(step.target || 'self');
+            if (gt === 'own:all') bs[side].battleArea.forEach(applyKw);
+            else if (gt === 'self') applyKw(card);
+            return;
+          }
           // 条件チェック
           if (step.condition) {
             const conds = parseRecipeCondition(step.condition);
@@ -3074,6 +3104,15 @@ export function applyPermanentEffects(bs, side, context) {
           if (tk === 'during_opp_turn' && side === turnSide) return;
           const steps = Array.isArray(evoRecipe[tk]) ? evoRecipe[tk] : [evoRecipe[tk]];
           steps.forEach(step => {
+            // custom: 進化元由来の特殊効果。condition はブロック判定用フィルタなので前提条件として評価しない
+            if (step.action === 'custom') {
+              const cs = String(step.condition || '');
+              if (cs.includes('cond_no_evo') && cs.includes('opp_blocker')) {
+                if (!card._permEffects) card._permEffects = {};
+                card._permEffects.cantBeBlockedByNoEvo = true;
+              }
+              return;
+            }
             if (step.condition) {
               const conds = parseRecipeCondition(step.condition);
               if (!checkConditions(conds, card, bs, side)) return;
@@ -4018,7 +4057,24 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
   };
   const recipeHasReactiveSubject = (steps, cardSide) => {
     if (!Array.isArray(steps)) return false;
-    return steps.some(s => s && matchSubject(s.subject, cardSide));
+    return steps.some(s => {
+      if (!s) return false;
+      if (matchSubject(s.subject, cardSide)) return true;
+      // trigger_conditions を持つ step は他カードのイベント(登場/進化/アタック)に反応する効果
+      // (例: 石田ヤマト「青の自分のデジモンが登場したとき」)
+      if (Array.isArray(s.trigger_conditions) && s.trigger_conditions.length > 0) {
+        // @own / @opp スコープで発火元カードの side をフィルタ
+        return s.trigger_conditions.every(tc => {
+          const at = String(tc).indexOf('@');
+          if (at < 0) return true;
+          const scope = String(tc).slice(at + 1);
+          if (scope === 'own') return sourceSide === cardSide;
+          if (scope === 'opp') return sourceSide !== cardSide;
+          return true;
+        });
+      }
+      return false;
+    });
   };
 
   ['player', 'ai'].forEach(side => {
@@ -4578,6 +4634,10 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
     showEffectAnnounce(carrier, effText, destroyedSide, () => {
       runRecipe(recipe, ctx, () => {
         ctx.renderAll && ctx.renderAll();
+        // showEffectAnnounce で相手機に開いた効果ポップアップを閉じる（announce と対称）
+        if (window._isOnlineMode && window._isOnlineMode() && destroyedSide === 'player' && window._onlineSendCommand) {
+          window._onlineSendCommand({ type: 'fx_effectClose' });
+        }
         runOne();
       });
     }, sourceCard !== carrier ? sourceCard : undefined);
@@ -6887,7 +6947,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       let target = null;
       if (step.target) {
         const t = step.target;
-        if (t === 'self') target = { code: 'target_self' };
+        if (t === 'self' || t === 'self_card') target = { code: 'target_self' };
         else if (t === 'own:all') target = { code: 'target_all_own' };
         else if (t === 'opponent:all') target = { code: 'target_all_opponent' };
         else if (t === 'own_security:all') target = { code: 'target_all_own_security' };

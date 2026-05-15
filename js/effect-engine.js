@@ -892,6 +892,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const activateOne = (tgt) => {
         if (!tgt) return;
         tgt.suspended = false;
+        // same_target（ブレイブシールド等: アクティブにしたデジモンにブロッカー付与）用に保存
+        if (ctx.bs) ctx.bs._lastPickedCard = tgt;
         ctx.addLog('🔄 「' + tgt.name + '」アクティブ');
         // オンライン: 相手画面にも反映
         if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
@@ -6337,6 +6339,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (flag === 'security_attack_plus') {
               addBuffDirect(tgt, 'security_attack_plus', val, dur, ctx);
               ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
+              if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, 'Sアタック+' + val); } catch(_) {}
             } else {
               addBuffDirect(tgt, 'keyword_' + flag, 0, dur, ctx);
               const _kwJp = _keywordJpName(flag);
@@ -6396,6 +6399,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           addBuffDirect(tgt, 'security_attack_plus', val, dur, ctx);
           console.log('[grant_keyword_all] applied buff to', tgt.name, 'buffs.length=' + tgt.buffs.length, 'last=', tgt.buffs[tgt.buffs.length - 1]);
           ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
+          if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, 'Sアタック+' + val); } catch(_) {}
         } else {
           // 一般キーワードバフ (blocker, piercing 等)
           addBuffDirect(tgt, 'keyword_' + flag, 0, dur, ctx);

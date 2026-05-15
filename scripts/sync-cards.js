@@ -24,9 +24,13 @@ function fetchJson(url) {
       if (res.statusCode === 301 || res.statusCode === 302) {
         return resolve(fetchJson(res.headers.location));
       }
-      let data = '';
-      res.on('data', (chunk) => data += chunk);
+      // チャンクは Buffer のまま貯め、最後にまとめて UTF-8 デコードする。
+      // 各チャンクを個別に toString() するとマルチバイト文字がチャンク境界で
+      // 分断され U+FFFD に化けるため、必ず Buffer.concat してからデコードする。
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => {
+        const data = Buffer.concat(chunks).toString('utf8');
         try { resolve(JSON.parse(data)); }
         catch (e) { reject(new Error('JSON parse error: ' + e.message + '\n' + data.slice(0, 500))); }
       });

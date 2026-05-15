@@ -4861,6 +4861,15 @@ function checkStepTriggerConditions(step, ctx) {
   return true;
 }
 
+// step.limit を最大使用回数に変換（once_per_turn=1 / per_turn:N=N / それ以外=0=無制限）
+function getLimitMaxUses(step) {
+  const l = String((step && step.limit) || '');
+  if (l === 'once_per_turn' || l === 'limit_once_per_turn') return 1;
+  const m = l.match(/^(?:limit_)?per_turn:(\d+)$/);
+  if (m) return parseInt(m[1]) || 0;
+  return 0;
+}
+
 // レシピが実行されるか事前判定（全ステップが条件で弾かれるか）
 // 戻り値: true=少なくとも1ステップが実行される, false=全ステップが条件NGで何も起きない
 // 不確定な場合（store依存・ターゲット選択型など）は安全側で true を返す
@@ -4869,12 +4878,13 @@ function recipeWillExecuteAnything(recipe, ctx) {
   for (const step of recipe) {
     // trigger_conditions: 発火元カードへのフィルタ（NG なら次の step）
     if (!checkStepTriggerConditions(step, ctx)) continue;
-    // limit 到達済みの step はスキップ（2回目のアタック等で効果説明ポップアップを出さないため）
-    if ((step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') && ctx.bs && ctx.bs._usedLimits) {
+    // limit 到達済みの step はスキップ（2回目/3回目のアタック等で効果説明ポップアップを出さないため）
+    const _lMax = getLimitMaxUses(step);
+    if (_lMax > 0 && ctx.bs && ctx.bs._usedLimits) {
       const _lsc = ctx._sourceCard || ctx.card;
       const _lSourceId = (_lsc && (_lsc.cardNo || _lsc.name)) || 'unknown';
       const _lCarrierId = (ctx.card && (ctx.card.cardNo || ctx.card.name)) || 'unknown';
-      if (ctx.bs._usedLimits[_lSourceId + '@' + _lCarrierId + '_recipe_' + step.action]) continue;
+      if ((ctx.bs._usedLimits[_lSourceId + '@' + _lCarrierId + '_recipe_' + step.action] || 0) >= _lMax) continue;
     }
     // 条件なし → 必ず実行される
     if (!step.condition) {
@@ -5038,6 +5048,26 @@ function executeRecipeStep(step, ctx, store, callback) {
     console.log('[executeRecipeStep] trigger_conditions blocked → skip step');
     callback && callback();
     return;
+  }
+
+  // ターン回数制限チェック（once_per_turn=1回 / per_turn:N=N回）
+  // active 等の専用 case は default の limit-check を通らないため、ここで共通的に判定する
+  {
+    const _limitMax = getLimitMaxUses(step);
+    if (_limitMax > 0 && ctx.bs) {
+      const _srcCard = ctx._sourceCard || ctx.card;
+      const _srcId = (_srcCard && (_srcCard.cardNo || _srcCard.name)) || 'unknown';
+      const _carId = (ctx.card && (ctx.card.cardNo || ctx.card.name)) || 'unknown';
+      const _limitKey = _srcId + '@' + _carId + '_recipe_' + step.action;
+      if (!ctx.bs._usedLimits) ctx.bs._usedLimits = {};
+      const _used = ctx.bs._usedLimits[_limitKey] || 0;
+      if (_used >= _limitMax) {
+        ctx.addLog && ctx.addLog('⏸ ターンに' + _limitMax + '回の制限（' + (_srcCard ? _srcCard.name : '?') + '）');
+        callback && callback();
+        return;
+      }
+      ctx.bs._usedLimits[_limitKey] = _used + 1;
+    }
   }
 
   // 代替アクション処理: 'or' = 選択UI / 'and' = 順次実行
@@ -6932,23 +6962,6 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === その他のアクション（既存エンジンに委譲） ===
     default: {
-      // once_per_turn制限チェック（レシピ形式）
-      // 制限キーには **source card**（=evo card 等の本来の効果元）を含める。
-      // ctx._sourceCard があればそれを優先（fireOnDestroyTriggers から呼ばれた場合）
-      if ((step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') && ctx.bs) {
-        const sourceCard = ctx._sourceCard || ctx.card;
-        const sourceId = (sourceCard && (sourceCard.cardNo || sourceCard.name)) || 'unknown';
-        const carrierId = (ctx.card && (ctx.card.cardNo || ctx.card.name)) || 'unknown';
-        const limitKey = sourceId + '@' + carrierId + '_recipe_' + step.action;
-        if (!ctx.bs._usedLimits) ctx.bs._usedLimits = {};
-        console.log('[limit-check]', 'key=' + limitKey, 'used=' + !!ctx.bs._usedLimits[limitKey], 'allKeys=' + JSON.stringify(Object.keys(ctx.bs._usedLimits)));
-        if (ctx.bs._usedLimits[limitKey]) {
-          ctx.addLog && ctx.addLog('⏸ ターンに1回の制限（' + (sourceCard ? sourceCard.name : '?') + '）');
-          callback && callback();
-          break;
-        }
-        ctx.bs._usedLimits[limitKey] = true;
-      }
       // per_count倍率を適用
       let effectiveValue = step.value != null ? step.value : (step.per_count ? 1 : null);
       if (step.per_count && effectiveValue != null) {

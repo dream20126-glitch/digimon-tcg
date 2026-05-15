@@ -509,6 +509,16 @@ function onRemoteCommand(cmd) {
       break;
     }
 
+    // --- 貫通: 防御側でブロッカーが貫通持ちアタッカーに撃破された → 攻撃側が追加セキュリティチェック ---
+    case 'penetrate_security_check': {
+      const atk = bs.player.battleArea[cmd.atkIdx];
+      if (atk && typeof window._resolveSecurityCheck === 'function') {
+        addLog('🗡 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
+        window._resolveSecurityCheck(atk, cmd.atkIdx);
+      }
+      break;
+    }
+
     // --- 効果 ---
     case 'effect_start': {
       addLog('🎮 相手が「' + cmd.cardName + '」の効果を発動！');
@@ -1263,6 +1273,27 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   const atk = bs.ai.battleArea[cmd.atkIdx];
   if (!blocker || !atk) { sendCommand({ type: 'block_response', blocked: false }); return; }
 
+  // ≪貫通≫: 攻撃側カードが【貫通】を持つか（_permEffects / buffs / recipe.passive / 進化元passive）
+  const atkHasPenetrate = (() => {
+    if (atk._permEffects && atk._permEffects.penetrate) return true;
+    if (Array.isArray(atk.buffs) && atk.buffs.some(b => b && b.type === 'keyword_penetrate')) return true;
+    const pHas = (arr) => Array.isArray(arr) && arr.some(p => p && (p.flag === 'penetrate' || p === 'penetrate'));
+    const parseRec = (rec) => {
+      if (!rec) return null;
+      try { return typeof rec === 'string' ? JSON.parse(rec.replace(/[\x00-\x1F\x7F]\s*/g, '')) : rec; }
+      catch (_) { return null; }
+    };
+    const r = parseRec(atk.recipe);
+    if (r && pHas(r.passive)) return true;
+    if (Array.isArray(atk.stack)) {
+      for (const evo of atk.stack) {
+        const er = parseRec(evo && evo.recipe);
+        if (er && er.evo_source && pHas(er.evo_source.passive)) return true;
+      }
+    }
+    return false;
+  })();
+
   blocker.suspended = true;
   addLog('🛡 「' + blocker.name + '」でブロック！');
   renderAll();
@@ -1376,7 +1407,12 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           showDE(blocker, () => {
             addLog('💥 「' + blocker.name + '」が撃破された');
             const fire = window._fireOnlineDestroyChain;
-            const finish = () => { window._suppressFxSend = false; sendStateSync(); };
+            const finish = () => {
+              window._suppressFxSend = false;
+              sendStateSync();
+              // ≪貫通≫: ブロッカーを撃破し atk が貫通を持つなら攻撃側に追加セキュリティチェックを要求
+              if (atkHasPenetrate) sendCommand({ type: 'penetrate_security_check', atkIdx: cmd.atkIdx });
+            };
             if (fire) fire(['player'], { player: blocker }, finish);
             else finish();
           });

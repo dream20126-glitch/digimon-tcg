@@ -1224,6 +1224,8 @@ export function resolveSecurityCheck(atk, atkIdx) {
     });
   }
 }
+// 貫通効果のオンライン処理用: ブロック解決(防御側)から攻撃側へ追加セキュリティチェックを依頼するため公開
+if (typeof window !== 'undefined') window._resolveSecurityCheck = resolveSecurityCheck;
 
 // Sアタック+計算
 function getSecurityAttackCount(card) {

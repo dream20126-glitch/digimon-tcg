@@ -6542,6 +6542,58 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
 
     // === 進化元を全て破棄 ===
+    case 'bounce': {
+      // from:'evo_source' → 自分(ctx.card)の進化元から条件一致のデジモンカードを手札に戻す
+      // 例: オメガモン【アタック時】「進化元のLv.6を手札に戻すことでアクティブ」のコスト
+      const _bounceFromEvo = step.from === 'evo_source'
+        || (Array.isArray(step.from) && step.from.indexOf('evo_source') >= 0);
+      if (_bounceFromEvo) {
+        const _self = ctx.card;
+        if (!_self || !Array.isArray(_self.stack) || _self.stack.length === 0) {
+          ctx.addLog('⚠ 進化元がありません');
+          showEffectFailed('効果を発動できませんでした', () => callback(false));
+          return;
+        }
+        const _bConds = step.condition ? parseRecipeCondition(step.condition) : [];
+        const _bCands = _self.stack.filter((s) =>
+          s && s.type === 'デジモン'
+          && (_bConds.length === 0 || checkConditions(_bConds, s, ctx.bs, ctx.side))
+        );
+        if (_bCands.length === 0) {
+          ctx.addLog('⚠ 条件を満たす進化元がありません');
+          showEffectFailed('効果を発動できませんでした', () => callback(false));
+          return;
+        }
+        const _bWant = step.value || step.count || 1;
+        const _doBounceEvo = (chosen) => {
+          if (!chosen || chosen.length === 0) { callback(false); return; }
+          chosen.forEach((c) => {
+            const si = _self.stack.indexOf(c);
+            if (si >= 0) _self.stack.splice(si, 1);
+            player.hand.push(c);
+            ctx.addLog('🃏 進化元の「' + c.name + '」を手札に戻した');
+          });
+          ctx.renderAll();
+          callback(true);
+        };
+        if (effectiveSide === 'ai' || _bCands.length <= _bWant) {
+          _doBounceEvo(_bCands.slice(0, _bWant));
+        } else {
+          showTrashCardPicker(_bCands, _bWant, false, '🃏 手札に戻す進化元を選んでください', _doBounceEvo, _bCands);
+        }
+        return;
+      }
+      // 通常の bounce（相手デジモンを手札に戻す）→ 既存エンジンに委譲
+      const _bAction = { code: 'bounce', value: step.value || null };
+      if (step.condition) {
+        _bAction.conditions = parseRecipeCondition(step.condition);
+        if (!ctx.block) ctx.block = {};
+        ctx.block.conditions = _bAction.conditions;
+      }
+      runOneAction(_bAction, null, ctx, callback);
+      break;
+    }
+
     case 'evo_discard_all': {
       // 進化元を全て破棄する。target: self / own:all / own:1 / opponent:all / opponent:1 / step.card(store)
       const _edTgt = step.target || 'self';

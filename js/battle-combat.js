@@ -1184,8 +1184,11 @@ export function resolveSecurityCheck(atk, atkIdx) {
             // security_effect_request を送らない＝P2 側も効果が走らない。
             bs.ai.trash.push(sec);
             renderAll();
-            if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
-            else { checkAttackEnd(atk, atkIdx); }
+            // アタッカーの効果でセキュリティ効果が無効化されたことを画面に明示
+            showPhaseAnnounce('🚫「' + atk.name + '」効果：セキュリティ効果は発揮しない', '#9933ff', () => {
+              if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
+              else { checkAttackEnd(atk, atkIdx); }
+            });
             return;
           }
 

@@ -1184,13 +1184,25 @@ export function resolveSecurityCheck(atk, atkIdx) {
             // security_effect_request を送らない＝P2 側も効果が走らない。
             bs.ai.trash.push(sec);
             renderAll();
-            // 戦闘バックドロップ（暗転）を消してからアナウンス（消さないと真っ黒画面に隠れる）
-            hideCombatBackdrop();
-            // アタッカーの効果でセキュリティ効果が無効化されたことを画面に明示
-            showPhaseAnnounce('🚫「' + atk.name + '」効果：セキュリティ効果は発揮しない', '#9933ff', () => {
-              if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
-              else { checkAttackEnd(atk, atkIdx); }
-            });
+            // VS画面の上に効果説明ポップアップ風のアナウンスを表示
+            const _seOv = document.createElement('div');
+            _seOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:60000;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease;';
+            const _seBox = document.createElement('div');
+            _seBox.style.cssText = 'max-width:85%;padding:20px;background:rgba(10,0,20,0.96);border:2px solid #9933ff;border-radius:12px;box-shadow:0 0 30px #9933ff66;text-align:center;';
+            _seBox.innerHTML =
+              '<div style="color:#c77dff;font-size:14px;font-weight:bold;margin-bottom:10px;text-shadow:0 0 8px #9933ff;">⚡ ' + atk.name + ' — 効果発動</div>'
+              + '<div style="color:#eee;font-size:12px;line-height:1.7;">チェックしたオプションカード「' + sec.name + '」の<br>【セキュリティ】効果は発揮しない</div>';
+            _seOv.appendChild(_seBox);
+            document.body.appendChild(_seOv);
+            setTimeout(() => {
+              _seOv.style.animation = 'fadeOut 0.3s ease forwards';
+              setTimeout(() => {
+                if (_seOv.parentNode) _seOv.parentNode.removeChild(_seOv);
+                hideCombatBackdrop();
+                if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
+                else { checkAttackEnd(atk, atkIdx); }
+              }, 300);
+            }, 2200);
             return;
           }
 

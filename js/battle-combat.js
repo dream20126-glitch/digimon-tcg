@@ -1159,6 +1159,36 @@ export function resolveSecurityCheck(atk, atkIdx) {
             else { checkAttackEnd(atk, atkIdx); }
           };
 
+          // ≪オプションのセキュリティ効果無効化≫（ウォーグレイモン等）:
+          // アタッカーがこの効果を持ち、めくったカードがオプションなら
+          // セキュリティ効果を発揮させずトラッシュへ。★オンライン分岐より前に判定する
+          // （オンライン時は下の return で素通りしてしまうため）。
+          // _permEffects 優先・未評価でも recipe.passive を直接スキャンしてフォールバック。
+          const _atkSuppressOptSE = !!(atk && (
+            (atk._permEffects && atk._permEffects.suppressOptSecurityEffect) ||
+            (function () {
+              try {
+                const r = typeof atk.recipe === 'string'
+                  ? JSON.parse(atk.recipe.replace(/[\x00-\x1F\x7F]\s*/g, ''))
+                  : atk.recipe;
+                const ps = r && r.passive;
+                return Array.isArray(ps) && ps.some(function (p) {
+                  return p && (p.flag === 'suppress_opt_security_effect' || p.flag === 'security_effect');
+                });
+              } catch (_) { return false; }
+            })()
+          ));
+          if (_atkSuppressOptSE && sec.type === 'オプション') {
+            addLog('🚫 ≪オプションSE無効化≫:「' + sec.name + '」のセキュリティ効果は発揮しない');
+            // オンライン: P2 のセキュリティカードは既に security_remove で除去済。
+            // security_effect_request を送らない＝P2 側も効果が走らない。
+            bs.ai.trash.push(sec);
+            renderAll();
+            if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
+            else { checkAttackEnd(atk, atkIdx); }
+            return;
+          }
+
           // オンライン時: セキュリティ効果を防御側（P2）に委譲
           if (_onlineMode && _sendCommand && typeof window._waitForSecurityEffect === 'function') {
             hideCombatBackdrop();
@@ -1181,15 +1211,6 @@ export function resolveSecurityCheck(atk, atkIdx) {
           }
 
           // オフライン時: ローカルで処理
-          // ≪オプションのセキュリティ効果無効化≫: アタッカーが suppressOptSecurityEffect 持ちで
-          // めくったカードがオプションなら、セキュリティ効果をスキップしてトラッシュへ
-          if (atk && atk._permEffects && atk._permEffects.suppressOptSecurityEffect && sec.type === 'オプション') {
-            addLog('🚫 ≪オプションSE無効化≫: 「' + sec.name + '」のセキュリティ効果は発揮しない');
-            bs.ai.trash.push(sec); renderAll();
-            if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
-            else { checkAttackEnd(atk, atkIdx); }
-            return;
-          }
           const secText = hasSecField ? sec.securityEffect : sec.effect;
           const originalEffect = sec.effect || '';
           if (hasSecField) {

@@ -4166,7 +4166,10 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
       const mainRecipe = getRecipeForTrigger(sourceCard, triggerCode);
       if (mainRecipe) {
         const dummyBlock = {
-          raw: sourceCard.effect || '', trigger: { code: triggerCode },
+          // security トリガー（セキュリティからチェックして発動）はセキュリティ効果テキストを、
+          // それ以外（main = 手札から発動 等）はメイン効果テキストを効果説明に表示する
+          raw: ((triggerCode === 'security' ? (sourceCard.securityEffect || sourceCard.effect) : sourceCard.effect) || ''),
+          trigger: { code: triggerCode },
           actions: [], conditions: [],
         };
         addToQueue(sourceCard, dummyBlock,

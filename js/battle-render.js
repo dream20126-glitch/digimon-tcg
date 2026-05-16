@@ -103,6 +103,37 @@ function _renderKeywordBadges(card) {
   return `<div style="position:absolute;bottom:28px;left:1px;right:1px;display:flex;flex-wrap:wrap;gap:1px;justify-content:center;pointer-events:none;z-index:4;">${html}</div>`;
 }
 
+// カードに「効果で付与された」もの一覧（DP / Sアタック / キーワード / 行動制限）を
+// 表示用ラベル配列で返す。カード詳細画面（showBCD）で使用。
+// レスト状態で盤面バッジが見えないときでも詳細で付与状況を確認できるようにするため。
+function _buildGrantBadges(card) {
+  if (!card) return [];
+  const items = [];
+  let dpMod = 0;
+  let saMod = 0;
+  const kwSet = new Set();
+  if (Array.isArray(card.buffs)) {
+    card.buffs.forEach((b) => {
+      if (!b || !b.type) return;
+      if (b.type === 'dp_plus') dpMod += (parseInt(b.value) || 0);
+      else if (b.type === 'dp_minus') dpMod -= (parseInt(b.value) || 0);
+      else if (b.type === 'security_attack_plus') saMod += (parseInt(b.value) || 0);
+      else if (b.type === 'security_attack_minus') saMod -= (parseInt(b.value) || 0);
+      else if (b.type.indexOf('keyword_') === 0) kwSet.add(b.type.slice('keyword_'.length));
+    });
+  }
+  if (dpMod !== 0) items.push({ label: 'DP' + (dpMod > 0 ? '+' : '') + dpMod, color: dpMod > 0 ? '#00aa55' : '#cc3333' });
+  if (saMod !== 0) items.push({ label: 'Sアタック' + (saMod > 0 ? '+' : '') + saMod, color: saMod > 0 ? '#cc2222' : '#2266cc' });
+  kwSet.forEach((code) => {
+    items.push({ label: KEYWORD_DISPLAY_NAMES[code] || code, color: _keywordColor(code) });
+  });
+  if (card.cantAttack && card.cantBlock) items.push({ label: 'アタック・ブロック不可', color: '#9933ff' });
+  else if (card.cantAttack) items.push({ label: 'アタック不可', color: '#9933ff' });
+  else if (card.cantBlock) items.push({ label: 'ブロック不可', color: '#9933ff' });
+  if (card.cantEvolve) items.push({ label: '進化不可', color: '#9933ff' });
+  return items;
+}
+
 // ===== メイン描画 =====
 let _syncTimer = null;
 export function renderAll(force) {
@@ -1042,6 +1073,26 @@ export function showBCD(idxOrCard, source) {
     evoCostEl.style.display = 'block';
   } else {
     evoCostEl.style.display = 'none';
+  }
+
+  // 付与中の効果（DP / Sアタック / キーワード / 行動制限など、効果で付与されたもの）
+  // レスト状態で盤面バッジが見えないときでも詳細画面で確認できるようにする
+  let grantEl = document.getElementById('bcd-grants');
+  if (!grantEl) {
+    grantEl = document.createElement('div');
+    grantEl.id = 'bcd-grants';
+    grantEl.style.cssText = 'margin:6px 0;display:flex;flex-wrap:wrap;gap:4px;align-items:center;';
+    evoCostEl.parentNode.insertBefore(grantEl, evoCostEl.nextSibling);
+  }
+  const grantItems = _buildGrantBadges(card);
+  if (grantItems.length > 0) {
+    grantEl.innerHTML = '<div style="width:100%;color:#ffd24a;font-size:10px;font-weight:bold;margin-bottom:2px;">✨ 付与中の効果</div>'
+      + grantItems.map((it) =>
+          `<span style="background:${it.color};color:#fff;font-size:10px;font-weight:bold;padding:2px 6px;border-radius:3px;border:1px solid rgba(255,255,255,0.6);white-space:nowrap;">${it.label}</span>`
+        ).join('');
+    grantEl.style.display = 'flex';
+  } else {
+    grantEl.style.display = 'none';
   }
 
   // 効果

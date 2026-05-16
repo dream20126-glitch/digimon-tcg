@@ -788,6 +788,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const val = action.value || 1;
       if (ctx.side === 'player') ctx.bs.memory += val; else ctx.bs.memory -= val;
       ctx.addLog('💎 ' + sideLabel + 'のメモリー+' + val);
+      // revert_at_turn_end:「このターン終了時メモリー-N」をターン終了処理用キューに積む
+      // （オプションカード等、トラッシュ移動後に on_own_turn_end が走らないケースに対応）
+      if (action.revert_at_turn_end && ctx.bs) {
+        ctx.bs._turnEndMemoryShift = (ctx.bs._turnEndMemoryShift || 0) + (ctx.side === 'player' ? -val : val);
+        ctx.addLog('⏳ このターン終了時にメモリー-' + val + '（' + sideLabel + '）');
+      }
       ctx.updateMemGauge();
       if (window._sendMemoryUpdate) window._sendMemoryUpdate(); // 相手に即時通知
       ctx.renderAll();
@@ -7088,6 +7094,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (step.condition) {
         action.conditions = parseRecipeCondition(step.condition);
       }
+      // ターン終了時メモリー復元フラグを引き継ぐ（memory_plus の revert_at_turn_end）
+      if (step.revert_at_turn_end) action.revert_at_turn_end = true;
       let target = null;
       if (step.target) {
         const t = step.target;

@@ -615,12 +615,25 @@ function execMain() {
 
 // ===== 手動ターン終了 =====
 
+// ターン終了時メモリー変動（memory_plus の revert_at_turn_end 等）を
+// 確定後の bs.memory に適用してキューをクリアする。
+// グラビティブレス「このターン終了時メモリー-2」等、ターン終了時に
+// bs.memory が固定値へ上書きされた後で変動を反映させるために使う。
+function applyTurnEndMemoryShift() {
+  if (bs._turnEndMemoryShift) {
+    bs.memory += bs._turnEndMemoryShift;
+    addLog('💎 ターン終了時メモリー変動 ' + (bs._turnEndMemoryShift > 0 ? '+' : '') + bs._turnEndMemoryShift);
+    bs._turnEndMemoryShift = 0;
+  }
+}
+
 export function onEndTurn() {
   if (!bs.isPlayerTurn) return;
   exitBreedPhase();
 
   if (_onlineMode) {
     bs.memory = -3;
+    applyTurnEndMemoryShift();
     if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
     updateMemGauge();
     // プレイヤーのターン終了 → endingSide='player'
@@ -657,6 +670,7 @@ export function onEndTurn() {
       await window._tutorialRunner.checkInterrupt('before_end_turn');
     }
     bs.memory = -3;
+    applyTurnEndMemoryShift();
     updateMemGauge();
     // プレイヤーのターン終了
     _hooks.expireBuffs('dur_this_turn', null, 'player');
@@ -693,6 +707,7 @@ export function checkAutoTurnEnd() {
       await window._tutorialRunner.checkInterrupt('before_end_turn');
     }
     if (_onlineMode) {
+      applyTurnEndMemoryShift();
       if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
       showYourTurn('自分のターン終了', '', '#555555', () => {
         showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {});
@@ -700,6 +715,7 @@ export function checkAutoTurnEnd() {
     } else {
       // AI対戦: 相手メモリーは超過した絶対値（AI側なので負の値）
       bs.memory = -over;
+      applyTurnEndMemoryShift();
       updateMemGauge();
       showYourTurn('自分のターン終了', '', '#555555', () => {
         setTimeout(() => aiTurn(), 500);
@@ -918,6 +934,7 @@ async function endAiTurn() {
   // AIがコストを消費して自動終了した場合はその値を維持、
   // それ以外（パス等）はメモリー3で開始
   if (bs.memory <= 0) bs.memory = 3;
+  applyTurnEndMemoryShift();
   updateMemGauge();
 
   showYourTurn('相手のターン終了', '', '#555555', () => {

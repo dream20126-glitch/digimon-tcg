@@ -29,6 +29,7 @@ export const bs = {
   _pendingTurnEnd: false,
   _usedLimits: {},
   _securityBuffs: [],
+  _turnEndMemoryShift: 0,
 };
 
 // デバッグ用 window 公開（コンソールから bs を直接インスペクト可能に）
@@ -67,6 +68,7 @@ export function resetBattleState(playerFirst) {
   bs._pendingTurnEnd = false;
   bs._usedLimits = {};
   bs._securityBuffs = [];
+  bs._turnEndMemoryShift = 0;
 
   bs.player = createEmptySide();
   bs.ai = createEmptySide();

@@ -1184,6 +1184,8 @@ export function resolveSecurityCheck(atk, atkIdx) {
             // security_effect_request を送らない＝P2 側も効果が走らない。
             bs.ai.trash.push(sec);
             renderAll();
+            // 戦闘バックドロップ（暗転）を消してからアナウンス（消さないと真っ黒画面に隠れる）
+            hideCombatBackdrop();
             // アタッカーの効果でセキュリティ効果が無効化されたことを画面に明示
             showPhaseAnnounce('🚫「' + atk.name + '」効果：セキュリティ効果は発揮しない', '#9933ff', () => {
               if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }

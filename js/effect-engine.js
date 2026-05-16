@@ -6567,14 +6567,31 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _bWant = step.value || step.count || 1;
         const _doBounceEvo = (chosen) => {
           if (!chosen || chosen.length === 0) { callback(false); return; }
-          chosen.forEach((c) => {
+          let _bi = 0;
+          const _moveNextEvo = () => {
+            if (_bi >= chosen.length) { ctx.renderAll(); callback(true); return; }
+            const c = chosen[_bi++];
             const si = _self.stack.indexOf(c);
             if (si >= 0) _self.stack.splice(si, 1);
             player.hand.push(c);
             ctx.addLog('🃏 進化元の「' + c.name + '」を手札に戻した');
-          });
-          ctx.renderAll();
-          callback(true);
+            ctx.renderAll();
+            // オンライン: 相手画面にも「進化元 → 手札」の移動演出を送る
+            if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+              try {
+                window._onlineSendCommand({
+                  type: 'fx_remoteCardMove',
+                  cardName: c.name, cardNo: c.cardNo,
+                  cardImg: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '',
+                  fromLabel: '進化元', toLabel: '手札',
+                });
+              } catch (_) {}
+            }
+            // 進化元 → 手札 の移動演出（はっきり表示）
+            if (window._fxCardMove) window._fxCardMove(c, '進化元', '手札', _moveNextEvo);
+            else setTimeout(_moveNextEvo, 300);
+          };
+          _moveNextEvo();
         };
         if (effectiveSide === 'ai' || _bCands.length <= _bWant) {
           _doBounceEvo(_bCands.slice(0, _bWant));

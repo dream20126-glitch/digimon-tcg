@@ -6297,31 +6297,73 @@ function executeRecipeStep(step, ctx, store, callback) {
       const dur = normalizeRecipeDuration(step.duration) || (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn');
       const storedData = step.card ? store[step.card] : null;
       const targets = storedData ? (Array.isArray(storedData) ? storedData : [storedData]) : null;
+      // 1体に行動制限を付与（フラグ更新 + buff + ログ + 相手カードはオンライン同期）
+      const _applyCantState = (c, isOppCard) => {
+        if (step.action === 'cant_attack_block' || step.action === 'cant_attack') c.cantAttack = true;
+        if (step.action === 'cant_attack_block' || step.action === 'cant_block') c.cantBlock = true;
+        if (step.action === 'cant_evolve') c.cantEvolve = true;
+        addBuffDirect(c, step.action, 0, dur, ctx);
+        ctx.addLog('🔒 「' + c.name + '」' + (step.action === 'cant_attack_block' ? 'アタック・ブロック不可' : step.action === 'cant_attack' ? 'アタック不可' : step.action === 'cant_block' ? 'ブロック不可' : '進化不可'));
+        // 相手カードへの付与は state_sync で同期されないため fx_cantAttackBlock を個別送信
+        if (isOppCard && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+          const _ci = opponent.battleArea.indexOf(c);
+          if (_ci >= 0) {
+            const _turnSide = ctx.bs.isPlayerTurn ? 'player' : 'ai';
+            window._onlineSendCommand({
+              type: 'fx_cantAttackBlock', targetIdx: _ci, targetName: c.name,
+              duration: dur, action: step.action, appliedFromSender: 'player',
+              appliedDuringOwnTurn: (_turnSide === ctx.side),
+            });
+          }
+        }
+      };
+      const _syncStateAfterCant = () => {
+        if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
+          try { window._onlineSendStateSync(); } catch (_) {}
+        }
+      };
       if (targets && targets.length > 0) {
         targets.forEach(t => {
           const c = opponent.battleArea[t.idx];
-          if (!c) return;
-          if (step.action === 'cant_attack_block' || step.action === 'cant_attack') c.cantAttack = true;
-          if (step.action === 'cant_attack_block' || step.action === 'cant_block') c.cantBlock = true;
-          if (step.action === 'cant_evolve') c.cantEvolve = true;
-          addBuffDirect(c, step.action, 0, dur, ctx);
-          ctx.addLog('🔒 「' + c.name + '」' + (step.action === 'cant_attack_block' ? 'アタック・ブロック不可' : step.action === 'cant_attack' ? 'アタック不可' : step.action === 'cant_block' ? 'ブロック不可' : '進化不可'));
+          if (c) _applyCantState(c, true);
         });
         ctx.renderAll();
+        _syncStateAfterCant();
         callback();
-      } else {
-        // storeが無い場合は既存エンジンに委譲
-        const action = { code: step.action, value: step.value || null };
-        if (!ctx.block) ctx.block = {};
-        if (step.duration) {
-          ctx.block.duration = { code: normalizeRecipeDuration(step.duration) };
-        }
-        // 条件をctx.blockに伝搬（対象フィルタリング用）
-        if (step.condition) {
-          ctx.block.conditions = parseRecipeCondition(step.condition);
-        }
-        runOneAction(action, null, ctx, callback);
+        break;
       }
+      // opponent:all / own:all → 条件フィルタを適用して全体に直接付与（対象選択を出さない）
+      const _cantTgt = step.target || '';
+      if (_cantTgt === 'opponent:all' || _cantTgt === 'own:all') {
+        const _isOwnAll = _cantTgt === 'own:all';
+        const _tgtPlayer = _isOwnAll ? player : opponent;
+        const _tgtSideTag = _isOwnAll ? (ctx.side === 'player' ? 'player' : 'ai')
+                                      : (ctx.side === 'player' ? 'ai' : 'player');
+        const _conds = step.condition ? parseRecipeCondition(step.condition) : [];
+        let _applied = 0;
+        (_tgtPlayer.battleArea || []).forEach(c => {
+          if (!c) return;
+          if (_conds.length > 0 && !checkConditions(_conds, c, ctx.bs, _tgtSideTag)) return;
+          _applyCantState(c, !_isOwnAll);
+          _applied++;
+        });
+        if (_applied === 0) ctx.addLog('⚠ 対象がいません');
+        ctx.renderAll();
+        _syncStateAfterCant();
+        callback();
+        break;
+      }
+      // 単体選択など → 既存エンジンに委譲
+      const action = { code: step.action, value: step.value || null };
+      if (!ctx.block) ctx.block = {};
+      if (step.duration) {
+        ctx.block.duration = { code: normalizeRecipeDuration(step.duration) };
+      }
+      // 条件をctx.blockに伝搬（対象フィルタリング用）
+      if (step.condition) {
+        ctx.block.conditions = parseRecipeCondition(step.condition);
+      }
+      runOneAction(action, null, ctx, callback);
       break;
     }
 

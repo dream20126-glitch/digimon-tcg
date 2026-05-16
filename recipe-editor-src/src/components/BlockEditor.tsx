@@ -126,7 +126,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const ruleSteps: MiniStep[] = block.rules || [];
   // メインアクションが rules 対応か判定（dict 由来の allowsRules または翻訳器あり）
   // 位置バリアント suffix が付いていてもベース code で辞書を引く
-  const dictAction = findActionEntry(block.action);
+  const dictAction = findActionEntry(block.action || '');
   const actionAllowsRules = !!(dictAction && dictAction.allowsRules) || hasRuleTranslator(block.action);
   function setRuleSteps(next: MiniStep[]) { update('rules', next); }
   function addRuleStep() { setRuleSteps([...ruleSteps, { action: '' }]); }
@@ -523,6 +523,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
           );
         })()}
+
+        {/* memory_plus 専用: このターン終了時メモリー-N */}
+        {block.action === 'memory_plus' && (
+          <div className="field" style={{ marginTop: 8, background: '#eef4ff', padding: 8, borderRadius: 4, border: '1px solid #b3c8ff' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#1a5fb4' }}>
+              <input
+                type="checkbox"
+                checked={!!block.revertAtTurnEnd}
+                onChange={(e) => update('revertAtTurnEnd', e.target.checked)}
+              />
+              このターン終了時にメモリーを-N（revert_at_turn_end）
+            </label>
+            <span style={{ fontSize: 10, color: '#666' }}>
+              「メモリーを+Nする。このターン終了時、メモリーを-Nする。」のカード用（グラビティブレス / メタルグレイモン等）
+            </span>
+          </div>
+        )}
 
         {/* 対象 / 対象数 (アクションのターゲット) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>

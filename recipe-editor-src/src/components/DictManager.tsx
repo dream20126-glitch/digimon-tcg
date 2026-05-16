@@ -197,7 +197,7 @@ const TOKEN_MAP: Record<string, string> = {
   // === 残りの構成要素（短い汎用トークン） ===
   '消滅': 'destroy', '破棄': 'discard', '破壊': 'destroy', '登場': 'summon',
   '進化': 'evolve', '退化': 'dedigivolve', 'レスト': 'rest', 'アクティブ': 'active',
-  '回復': 'recover', 'リカバリー': 'recover', 'ドロー': 'draw', '手札': 'hand', 'トラッシュ': 'trash',
+  '回復': 'recover', 'ドロー': 'draw', '手札': 'hand', 'トラッシュ': 'trash',
   'デッキ': 'deck', 'セキュリティ': 'security', 'バトルエリア': 'battle_area',
   '進化元': 'evo', 'テイマー': 'tamer', 'DP': 'dp', 'メモリー': 'memory',
   'コスト': 'cost', 'Lv': 'lv', 'レベル': 'lv', '上から': 'top', '下から': 'bottom',

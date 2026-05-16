@@ -97,6 +97,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock) {
   }
   if (b.target) step.target = b.target;
   if (b.keyword) step.keyword = b.keyword;
+  // memory_plus の「このターン終了時メモリー-N」フラグ
+  if (b.revertAtTurnEnd) step.revert_at_turn_end = true;
   // 取得元エリア (fromZones[]) の serialize:
   //   1件のみ → 'hand' のような文字列
   //   2件以上 → 配列 + (op が 'and' の時のみ) step.from_op
@@ -293,6 +295,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
     target: true,
     value: true,
     keyword: true,
+    revert_at_turn_end: true,
     options: true,
     limit: true,
     in_zone: true,
@@ -368,6 +371,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
     value: step?.value,
     target: step?.target || '',
     keyword: step?.keyword || '',
+    revertAtTurnEnd: !!step?.revert_at_turn_end,
     // 取得元エリアの deserialize: 文字列・配列・旧 'hand_or_trash' 形式すべてサポート
     fromZones: (() => {
       const f = step?.from;

@@ -3436,10 +3436,17 @@ function checkConditions(conditions, card, bs, side) {
       }
       case 'cond_tamer': {
         // 「テイマーがいるとき」: 自分側のテイマーエリアに少なくとも1人いれば true
+        // cond.value に色指定（例: cond_tamer:青）があれば、その色のテイマーが必要
         if (!bs) return false;
         const ts = resolveSubjectSide(cond.subject || 'own', side);
         const tamerArea = bs[ts] && bs[ts].tamerArea;
-        if (!Array.isArray(tamerArea) || tamerArea.filter(t => t).length === 0) return false;
+        if (!Array.isArray(tamerArea)) return false;
+        const _tamers = tamerArea.filter(t => t);
+        if (_tamers.length === 0) return false;
+        if (cond.value) {
+          const _wantColor = String(cond.value);
+          if (!_tamers.some(t => t.color && String(t.color).indexOf(_wantColor) >= 0)) return false;
+        }
         break;
       }
       case 'cond_security': {
@@ -3460,6 +3467,13 @@ function checkConditions(conditions, card, bs, side) {
         const want = parseInt(String(cond.value || '0'), 10) || 0;
         const got = parseInt(String(ctxEvo.toLv || 0), 10) || 0;
         if (got !== want) return false;
+        break;
+      }
+      case 'cond_self_attacked': {
+        // このデジモンがこのターンにアタック済みのとき true
+        // （battle 側で attack 宣言時に card._attackedOnTurn = bs.turn をセット）
+        if (!card || card._attackedOnTurn == null) return false;
+        if (!bs || card._attackedOnTurn !== bs.turn) return false;
         break;
       }
       case 'cond_self_rest':
@@ -5865,6 +5879,11 @@ function executeRecipeStep(step, ctx, store, callback) {
       let candidates = Array.isArray(self._evoSourceCandidates) && self._evoSourceCandidates.length > 0
         ? self._evoSourceCandidates.slice()
         : self.stack.filter(s => s && s.type === 'デジモン');
+      // step.when（cond_lv_le:4 等）を進化元候補に対する個別フィルタとして適用
+      if (step.when) {
+        const _whenConds = parseRecipeCondition(step.when);
+        if (_whenConds.length > 0) candidates = candidates.filter(s => checkConditions(_whenConds, s, ctx.bs, ctx.side));
+      }
       if (candidates.length === 0) {
         ctx.addLog && ctx.addLog('⚠ 条件を満たす進化元がありません');
         showEffectFailed(null, () => callback());
@@ -6515,23 +6534,62 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === 進化元を全て破棄 ===
     case 'evo_discard_all': {
-      const targets = (() => {
-        if (step.target === 'self') return ctx.card ? [ctx.card] : [];
-        if (step.card && store[step.card]) {
-          const sd = store[step.card];
-          return (Array.isArray(sd) ? sd : [sd]).map(s => s.card || s).filter(c => c);
+      // 進化元を全て破棄する。target: self / own:all / own:1 / opponent:all / opponent:1 / step.card(store)
+      const _edTgt = step.target || 'self';
+      const _edIsOpp = _edTgt.startsWith('opponent');
+      const _edOwner = _edIsOpp ? opponent : player; // 破棄した進化元は所有者のトラッシュへ
+      const _discardEvoAll = (tgt) => {
+        if (!tgt || !Array.isArray(tgt.stack) || tgt.stack.length === 0) return false;
+        const _cnt = tgt.stack.length;
+        const _names = tgt.stack.map(s => (s && s.name) || '???').join('、');
+        while (tgt.stack.length > 0) _edOwner.trash.push(tgt.stack.shift());
+        ctx.addLog('🗑 「' + tgt.name + '」の進化元を全て破棄（' + _names + '）');
+        // 相手カードの進化元破棄は state_sync で同期されないため fx_evoDiscard を個別送信
+        if (_edIsOpp && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+          const _ti = opponent.battleArea.indexOf(tgt);
+          if (_ti >= 0) {
+            window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: _names, targetIdx: _ti, count: _cnt, fromTop: true });
+            if (window._markEvoModified) window._markEvoModified('ai', _ti);
+          }
         }
-        return ctx.card ? [ctx.card] : [];
-      })();
-      const ownerSide = step.target === 'self' || (step.target && step.target.startsWith('own')) ? player : opponent;
-      targets.forEach(t => {
-        if (Array.isArray(t.stack)) {
-          while (t.stack.length > 0) ownerSide.trash.push(t.stack.shift());
-          ctx.addLog('🗑 「' + t.name + '」の進化元を全て破棄');
-        }
+        return true;
+      };
+      // self / store 指定
+      if (_edTgt === 'self') {
+        if (ctx.card) _discardEvoAll(ctx.card);
+        ctx.renderAll(); callback(); break;
+      }
+      if (step.card && store[step.card]) {
+        const sd = store[step.card];
+        (Array.isArray(sd) ? sd : [sd]).map(s => s.card || s).filter(c => c).forEach(_discardEvoAll);
+        ctx.renderAll(); callback(); break;
+      }
+      // opponent:all / own:all → 進化元を持つ全デジモンに一括適用
+      if (_edTgt === 'opponent:all' || _edTgt === 'own:all') {
+        let _hit = false;
+        (_edOwner.battleArea || []).forEach(c => { if (c && _discardEvoAll(c)) _hit = true; });
+        if (!_hit) ctx.addLog('⚠ 進化元を持つデジモンがいません');
+        ctx.renderAll(); callback(); break;
+      }
+      // opponent:1 / own:1 → 進化元を持つデジモンから1体選択
+      const _edCands = [];
+      (_edOwner.battleArea || []).forEach((c, i) => { if (c && Array.isArray(c.stack) && c.stack.length > 0) _edCands.push(i); });
+      if (_edCands.length === 0) {
+        ctx.addLog('⚠ 進化元を持つデジモンがいません');
+        showEffectFailed('効果を発動できませんでした', callback);
+        break;
+      }
+      const _edRowId = _edIsOpp ? (ctx.side === 'player' ? 'ai' : 'pl') : (ctx.side === 'player' ? 'pl' : 'ai');
+      if (effectiveSide === 'ai' || _edCands.length === 1) {
+        _discardEvoAll(_edOwner.battleArea[ctx._forceTargetIdx != null ? ctx._forceTargetIdx : _edCands[0]]);
+        ctx.renderAll(); callback(); break;
+      }
+      ctx.addLog('🎯 進化元を破棄する対象を選んでください');
+      showTargetSelection(_edRowId, _edCands, null, '#ff5577', (selIdx) => {
+        if (selIdx !== null) _discardEvoAll(_edOwner.battleArea[selIdx]);
+        ctx.renderAll();
+        callback();
       });
-      ctx.renderAll();
-      callback();
       break;
     }
 

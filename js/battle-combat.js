@@ -709,6 +709,7 @@ export function startAttack(card, slotIdx) {
   if (card.cantAttack) return false;
 
   card.suspended = true;
+  card._attackedOnTurn = bs.turn; // cond_self_attacked 用（このターンにアタックしたか）
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   _atkState = { card, slotIdx };
   addLog('⚔ 「' + card.name + '」でアタック！');
@@ -1809,6 +1810,7 @@ export function aiAttackPhase(callback) {
 
   const atk = bs.ai.battleArea[atkIdx];
   atk.suspended = true;
+  atk._attackedOnTurn = bs.turn; // cond_self_attacked 用
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   addLog('🤖 「' + atk.name + '」でアタック！');
   // ≪連携≫: AI 側もバフ自動発動
@@ -2935,6 +2937,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
 
   // 本物のアタックフロー（演出・ブロック確認・効果処理すべて含む）
   atk.suspended = true;
+  atk._attackedOnTurn = bs.turn; // cond_self_attacked 用
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   addLog('🤖 「' + atk.name + '」でアタック！');
   // ≪連携≫: AI 側もバフ自動発動

@@ -1287,9 +1287,17 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if(ctx.card) { ctx.card.suspended = true; ctx.addLog('💤 「' + ctx.card.name + '」をレスト'); }
         ctx.renderAll(); callback(); break;
       }
-      // 対象が相手デジモンの場合
+      // 対象が相手デジモンの場合（condition があれば対象フィルタとして適用）
+      // 例: テントモン進化元「DP3000以下の相手1体をレスト」の cond_dp_le:3000
+      const _restConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
+      const _restCondTag = ctx.side === 'player' ? 'ai' : 'player';
       const restTargets = [];
-      for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i] && !opponent.battleArea[i].suspended) restTargets.push(i); }
+      for(let i=0;i<opponent.battleArea.length;i++) {
+        const _rc = opponent.battleArea[i];
+        if(!_rc || _rc.suspended) continue;
+        if(_restConds.length > 0 && !checkConditions(_restConds, _rc, ctx.bs, _restCondTag)) continue;
+        restTargets.push(i);
+      }
       if(restTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
       const restColor = uiColor;
       // 相手デジモンがレスト → when_opp_rest 発火（restedSide = 相手側）
@@ -4919,8 +4927,12 @@ function recipeWillExecuteAnything(recipe, ctx) {
     }
     // 条件あり → 評価
     const conds = parseRecipeCondition(step.condition);
-    // destroy で target が opponent/own → condition は対象フィルタ。対象側で該当者を探す
-    if (step.action === 'destroy' && /^(opponent|own)(?::|$)/.test(String(step.target || ''))) {
+    // destroy / rest / bounce / cant_* で target が opponent/own → condition は
+    // 「対象カードへのフィルタ」。発動元カードではなく対象側で該当者を探す。
+    // 例: テントモン進化元「DP3000以下の相手1体をレスト」の cond_dp_le:3000 は
+    //     進化先デジモン本体ではなくレスト対象に対する条件。
+    if (['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve'].includes(step.action)
+        && /^(opponent|own)(?::|$)/.test(String(step.target || ''))) {
       const _isOpp = String(step.target).startsWith('opponent');
       const _area = _isOpp
         ? (ctx.side === 'player' ? ctx.bs.ai.battleArea : ctx.bs.player.battleArea)

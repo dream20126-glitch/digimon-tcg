@@ -10,7 +10,7 @@ import { addLog } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallbacks, doIkuMove } from './battle-render.js';
 import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, showDrawEffect } from './battle-phase.js';
 import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack } from './battle-combat.js';
-import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, loadAllDictionaries, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE } from './effect-engine.js';
+import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, loadAllDictionaries, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxBuffStatus } from './battle-fx.js';
 import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js';
 
@@ -326,6 +326,13 @@ export function setupCommonWindowExports() {
   // 「自分のブロッカーがブロックしたとき」誘発（八神太一(黒) 等）を window から呼べるように
   window._fireWhenOwnBlock = function(blockOwnerSide, _bs, ctxBase, done) {
     try { _fireWhenOwnBlockEE(blockOwnerSide, _bs || bs, ctxBase || { bs, addLog, renderAll, updateMemGauge }, done); }
+    catch (_) { done && done(); }
+  };
+
+  // 「相手のデジモンがプレイヤーにアタックしたとき」誘発（ロゼモン BT1-082 等）
+  // attackerSide = アタックしたデジモンがいる側。反対側のカードが反応する。
+  window._fireWhenOppAttack = function(attackerSide, _bs, ctxBase, done) {
+    try { _fireWhenOppAttackEE(attackerSide, _bs || bs, ctxBase || { bs, addLog, renderAll, updateMemGauge }, done); }
     catch (_) { done && done(); }
   };
 

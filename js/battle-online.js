@@ -388,7 +388,15 @@ function onRemoteCommand(cmd) {
       // 相手がアタックしたことを記録（cond_opp_no_attack_this_turn 判定用）
       bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
       addLog('🎮 相手の「' + atkName + '」でセキュリティアタック！');
-      if (m.showYourTurn) m.showYourTurn('⚔ 相手アタック！', '「' + atkName + '」→ セキュリティ', '#ff4444', () => { checkOnlineBlock(cmd); });
+      // ロゼモン(BT1-082) 等「相手のデジモンがプレイヤーにアタックしたとき」誘発 →
+      // 完了後にブロック確認へ進む
+      const _afterOppAtkTrig = () => { checkOnlineBlock(cmd); };
+      const _runOppAtkTrig = () => {
+        if (window._fireWhenOppAttack) {
+          window._fireWhenOppAttack('ai', bs, null, _afterOppAtkTrig);
+        } else { _afterOppAtkTrig(); }
+      };
+      if (m.showYourTurn) m.showYourTurn('⚔ 相手アタック！', '「' + atkName + '」→ セキュリティ', '#ff4444', _runOppAtkTrig);
       break;
     }
     case 'attack_digimon': {

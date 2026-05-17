@@ -742,6 +742,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const dpTargets = [];
       for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) dpTargets.push(i); }
       if(dpTargets.length === 0) { callback(); break; }
+      // 対象数（opponent:N の N）。opponent:all は全体。未指定は1体。
+      let dpNeed = 1;
+      if (defaultTarget && defaultTarget.code === 'target_all_opponent') dpNeed = dpTargets.length;
+      else if (defaultTarget && defaultTarget.count) dpNeed = defaultTarget.count;
+      dpNeed = Math.min(dpNeed, dpTargets.length);
       // 相手カードへの buff をオンライン同期するヘルパー
       const sendDpRemoteBuff = (idx, tgt) => {
         if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && idx != null && window._onlineSendCommand) {
@@ -758,30 +763,45 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           });
         }
       };
-      if(effectiveSide === 'ai') {
-        const di = ctx._forceTargetIdx ?? dpTargets[0];
-        const tgt = opponent.battleArea[di];
+      const applyDpMinus = (idx) => {
+        const tgt = opponent.battleArea[idx];
+        if (!tgt) return;
         addBuff(tgt, 'dp_minus', val, ctx);
         ctx.addLog('💥 ' + tgt.name + ' DP-' + val + ' → ' + tgt.dp);
         playEffect(action.code, { value: -val, ctx, label: tgt.name }, () => {});
         if(tgt.dp <= 0) tgt._pendingDestroy = true;
-        sendDpRemoteBuff(di, tgt);
+        sendDpRemoteBuff(idx, tgt);
+      };
+      if(effectiveSide === 'ai') {
+        // AI: _forceTargetIdx を優先しつつ先頭から dpNeed 体に適用
+        const dpPick = [];
+        if (ctx._forceTargetIdx != null && dpTargets.indexOf(ctx._forceTargetIdx) >= 0) dpPick.push(ctx._forceTargetIdx);
+        for (const di of dpTargets) { if (dpPick.length >= dpNeed) break; if (dpPick.indexOf(di) < 0) dpPick.push(di); }
+        dpPick.forEach(applyDpMinus);
         ctx.renderAll(); callback(); break;
       }
-      ctx.addLog('🎯 DP-' + val + 'の対象を選んでください');
-      showTargetSelection(opponentRowSide, dpTargets, null, uiColor, (selectedIdx) => {
-        if(selectedIdx !== null) {
-          const tgt = opponent.battleArea[selectedIdx];
-          sendEffectResult(tgt, 'dp_minus', ctx);
-          addBuff(tgt, 'dp_minus', val, ctx);
-          ctx.addLog('💥 ' + tgt.name + ' DP-' + val + ' → ' + tgt.dp);
-          playEffect(action.code, { value: -val, ctx, label: tgt.name }, () => {});
-          if(tgt.dp <= 0) tgt._pendingDestroy = true;
-          sendDpRemoteBuff(selectedIdx, tgt);
-          ctx.renderAll();
-        }
-        callback();
-      });
+      // プレイヤー: dpNeed 体を順に選択
+      const dpRemain = dpTargets.slice();
+      let dpPicked = 0;
+      const pickDpNext = () => {
+        if (dpPicked >= dpNeed || dpRemain.length === 0) { ctx.renderAll(); callback(); return; }
+        ctx.addLog('🎯 DP-' + val + 'の対象を選んでください' + (dpNeed > 1 ? '（' + (dpPicked + 1) + '/' + dpNeed + '体目）' : ''));
+        showTargetSelection(opponentRowSide, dpRemain.slice(), null, uiColor, (selectedIdx) => {
+          if(selectedIdx !== null) {
+            const tgt = opponent.battleArea[selectedIdx];
+            sendEffectResult(tgt, 'dp_minus', ctx);
+            applyDpMinus(selectedIdx);
+            const ri = dpRemain.indexOf(selectedIdx);
+            if (ri >= 0) dpRemain.splice(ri, 1);
+            dpPicked++;
+            ctx.renderAll();
+            pickDpNext();
+          } else {
+            ctx.renderAll(); callback();
+          }
+        });
+      };
+      pickDpNext();
       break;
     }
     case 'memory_plus': {
@@ -4382,6 +4402,13 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done) {
             const conds = parseRecipeCondition(step.condition);
             if (!checkConditions(conds, card, bs, reactSide)) return false;
           }
+          // gate: 発動可否のみを判定する条件。step.condition と違い対象選択の
+          // フィルタには使われない（「自身がレスト中なら相手1体をレスト」等で、
+          // 自身の状態判定が相手側の対象フィルタに漏れるのを防ぐ）。
+          if (step.gate) {
+            const gconds = parseRecipeCondition(step.gate);
+            if (!checkConditions(gconds, card, bs, reactSide)) return false;
+          }
           if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
             const sourceId = card.cardNo || card.name || 'unknown';
             const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
@@ -4473,6 +4500,14 @@ export function fireWhenReturnToHandTriggers(returnedSide, bs, ctxBase, done) {
 // アタック対象が変更されたとき → アタック側の自分側が反応
 export function fireWhenTargetChangedTriggers(attackerSide, bs, ctxBase, done) {
   return _fireSidedReactionTriggers(attackerSide, 'when_target_changed', bs, ctxBase, done);
+}
+
+// 相手のデジモンがプレイヤーにアタックしたとき → アタックされた側（防御側）が反応
+// ロゼモン(BT1-082) 等「相手のデジモンがプレイヤーにアタックしたとき〜」用。
+// attackerSide = アタックしたデジモンがいる側。反応するのはその反対側。
+export function fireWhenOppAttackTriggers(attackerSide, bs, ctxBase, done) {
+  const reactSide = attackerSide === 'player' ? 'ai' : 'player';
+  return _fireSidedReactionTriggers(reactSide, 'when_opp_attack', bs, ctxBase, done);
 }
 
 // 自分のメインフェイズ開始時 → ターンプレイヤー側が反応
@@ -6199,14 +6234,18 @@ function executeRecipeStep(step, ctx, store, callback) {
     case 'hatch': {
       // 既存の breed move とほぼ同じ。育成エリアにすでにカードがあれば skip
       if (player.ikusei) { ctx.addLog && ctx.addLog('⚠ 育成エリアに既にカードがあります'); callback(); break; }
-      // デジタマデッキ（player.eggDeck）の上から1枚を育成エリアへ
-      if (!player.eggDeck || player.eggDeck.length === 0) {
+      // デジタマデッキ（player.tamaDeck）の上から1枚を育成エリアへ
+      if (!player.tamaDeck || player.tamaDeck.length === 0) {
         ctx.addLog && ctx.addLog('⚠ デジタマデッキが空です'); callback(); break;
       }
-      const egg = player.eggDeck.shift();
+      const egg = player.tamaDeck.shift();
       player.ikusei = egg;
       ctx.addLog && ctx.addLog('🥚 「' + egg.name + '」を孵化');
       ctx.renderAll && ctx.renderAll();
+      // オンライン: 育成エリアの変化を相手画面へ同期
+      if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
+        try { window._onlineSendStateSync(); } catch (_) {}
+      }
       callback();
       break;
     }
@@ -6223,6 +6262,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       ctx.addLog && ctx.addLog('🐾 「' + player.ikusei.name + '」をバトルエリアへ');
       player.ikusei = null;
       ctx.renderAll && ctx.renderAll();
+      // オンライン: 育成エリア／バトルエリアの変化を相手画面へ同期
+      if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
+        try { window._onlineSendStateSync(); } catch (_) {}
+      }
       callback();
       break;
     }

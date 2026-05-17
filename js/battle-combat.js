@@ -1865,9 +1865,16 @@ export function aiAttackPhase(callback) {
 
   showPhaseAnnounce('⚔ AIアタック！', '#ff4444', () => {
     const doAfterAtkEffect = (cb) => {
+      // アタッカーの【アタック時】効果 → その後に防御側の
+      // 「相手のデジモンがプレイヤーにアタックしたとき」誘発（ロゼモン BT1-082 等）
+      const _afterAtkTime = () => {
+        if (window._fireWhenOppAttack) {
+          window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
+        } else { cb(); }
+      };
       if (hasKeyword(atk, '【アタック時】') || hasEvoKeyword(atk, '【アタック時】')) {
-        _hooks.checkAndTriggerEffect(atk, '【アタック時】', cb, 'ai');
-      } else { cb(); }
+        _hooks.checkAndTriggerEffect(atk, '【アタック時】', _afterAtkTime, 'ai');
+      } else { _afterAtkTime(); }
     };
 
     doAfterAtkEffect(() => {
@@ -3005,9 +3012,16 @@ export function aiScriptAttack(attackerKey, target, onDone) {
   showPhaseAnnounce('⚔ AIアタック！', '#ff4444', () => {
     // アタック時効果
     const doAfterAtkEffect = (cb) => {
+      // 【アタック時】効果 → プレイヤーへのアタック時のみ防御側の
+      // 「相手のデジモンがプレイヤーにアタックしたとき」誘発（ロゼモン BT1-082 等）
+      const _afterAtkTime = () => {
+        if (targetMode !== 'digimon' && window._fireWhenOppAttack) {
+          window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
+        } else { cb(); }
+      };
       if (hasKeyword(atk, '【アタック時】') || hasEvoKeyword(atk, '【アタック時】')) {
-        _hooks.checkAndTriggerEffect(atk, '【アタック時】', cb, 'ai');
-      } else { cb(); }
+        _hooks.checkAndTriggerEffect(atk, '【アタック時】', _afterAtkTime, 'ai');
+      } else { _afterAtkTime(); }
     };
 
     doAfterAtkEffect(() => {

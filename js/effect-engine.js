@@ -6479,29 +6479,24 @@ function executeRecipeStep(step, ctx, store, callback) {
     // === 「次の相手のアクティブフェイズではアクティブにならない」用 buff 付与 ===
     case 'not_active':
     case 'prevent_unsuspend': {
-      const dur = normalizeRecipeDuration(step.duration) || 'dur_next_opp_unsuspend';
       const tStr = String(step.target || 'opponent:all');
       const _naIsOpp = tStr.startsWith('opp');
-      const tgtPlayer = _naIsOpp ? opponent : player;
       const all = tStr.endsWith(':all') || tStr === 'opponent' || tStr === 'own';
-      const _naOnline = window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand;
       if (all) {
-        (tgtPlayer.battleArea || []).forEach((c, i) => {
-          if (!c) return;
-          addBuffDirect(c, 'prevent_unsuspend', 0, dur, ctx);
-          // 相手カードへの付与は state_sync で同期されないため fx_remoteBuff を個別送信
-          if (_naIsOpp && _naOnline) {
-            try {
-              window._onlineSendCommand({
-                type: 'fx_remoteBuff', targetIdx: i, targetName: c.name,
-                buffType: 'prevent_unsuspend', value: 0, duration: dur,
-                appliedFromSender: 'player',
-                appliedDuringOwnTurn: ctx.bs && ctx.bs.isPlayerTurn,
-              });
-            } catch (_) {}
-          }
-        });
-        ctx.addLog && ctx.addLog('🔒 ' + (_naIsOpp ? '相手' : '自分') + 'のデジモン全てに「アクティブにならない」付与');
+        // 「次のアクティブフェイズでアクティブにならない（全て）」は継続効果。
+        // 効果適用後に登場/レストしたデジモンも対象にするため、対象 side の
+        // 次のアクティブフェイズを丸ごとスキップするフラグを立てる
+        // （個別 buff のスナップショットでは新規レスト分が漏れるため）。
+        const targetSide = _naIsOpp
+          ? (ctx.side === 'player' ? 'ai' : 'player')
+          : ctx.side;
+        if (!ctx.bs._skipUnsuspend) ctx.bs._skipUnsuspend = {};
+        ctx.bs._skipUnsuspend[targetSide] = true;
+        ctx.addLog && ctx.addLog('🔒 ' + (_naIsOpp ? '相手' : '自分') + 'のデジモンは次のアクティブフェイズでアクティブにならない');
+        // オンライン: 相手機にも同期（受信側で side を反転）
+        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+          try { window._onlineSendCommand({ type: 'fx_preventUnsuspendAll', side: targetSide }); } catch (_) {}
+        }
       }
       ctx.renderAll && ctx.renderAll();
       callback();

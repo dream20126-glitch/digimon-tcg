@@ -274,8 +274,13 @@ function renderBattleRows() {
         }
 
         // バフ表示（状態異常マーク）— カード右上に1行で表示
-        const _hasPreventUnsuspend = Array.isArray(card.buffs)
-          && card.buffs.some(b => b && b.type === 'prevent_unsuspend');
+        // 「次のアクティブフェイズでアクティブにならない」: 個別バフ or 全体スキップ
+        // フラグ（_skipUnsuspend）。全体フラグ時はレスト中のデジモンに表示する。
+        const _suSide = isPlayer ? 'player' : 'ai';
+        const _skipFlag = !!(bs._skipUnsuspend && bs._skipUnsuspend[_suSide]);
+        const _hasPreventUnsuspend = (Array.isArray(card.buffs)
+          && card.buffs.some(b => b && b.type === 'prevent_unsuspend'))
+          || (_skipFlag && card.suspended);
         if (card.cantAttack || card.cantBlock || card.cantEvolve || _hasPreventUnsuspend) {
           let mark = '';
           if (card.cantAttack && card.cantBlock) mark = '⚔🛡✖';

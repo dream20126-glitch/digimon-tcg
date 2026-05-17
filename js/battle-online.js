@@ -847,6 +847,15 @@ function onRemoteCommand(cmd) {
       if (window._fxShuffle) { try { window._fxShuffle(cmd.label || 'シャッフル', () => {}); } catch (_) {} }
       break;
     }
+    case 'fx_preventUnsuspendAll': {
+      // 「次のアクティブフェイズで全デジモンがアクティブにならない」フラグの同期。
+      // 送信側 side を受信側目線に反転（player↔ai）。clear:true なら解除。
+      const _puSide = cmd.side === 'ai' ? 'player' : 'ai';
+      if (!bs._skipUnsuspend) bs._skipUnsuspend = {};
+      bs._skipUnsuspend[_puSide] = !cmd.clear;
+      renderAll();
+      break;
+    }
     case 'fx_securityPeek': {
       // 相手がセキュリティを非公開で確認中 → 「確認中」ポップアップを表示/消去
       if (cmd.state === 'start') {

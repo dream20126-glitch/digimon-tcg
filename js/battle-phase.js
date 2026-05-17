@@ -492,10 +492,21 @@ function execUnsuspend() {
   const _hasPreventUnsuspend = (c) => !!(c && Array.isArray(c.buffs)
     && c.buffs.some(b => b && b.type === 'prevent_unsuspend'));
 
+  // 「次のアクティブフェイズで全デジモンがアクティブにならない」継続効果フラグ。
+  // 効果適用後にレストしたデジモンも含め、本フェーズの解除を丸ごとスキップする。
+  const _skipAllUnsuspend = !!(bs._skipUnsuspend && bs._skipUnsuspend.player);
+  if (_skipAllUnsuspend) {
+    bs._skipUnsuspend.player = false;
+    addLog('🔒 アクティブフェイズ: 全デジモンがアクティブにならない');
+    if (typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+      try { window._onlineSendCommand({ type: 'fx_preventUnsuspendAll', side: 'player', clear: true }); } catch (_) {}
+    }
+  }
+
   if (hasRested) {
     bs.player.battleArea.forEach(c => {
       if (c) {
-        if (!c.cantBeActive && !_hasPreventUnsuspend(c)) c.suspended = false;
+        if (!c.cantBeActive && !_hasPreventUnsuspend(c) && !_skipAllUnsuspend) c.suspended = false;
         c.summonedThisTurn = false; c._usedEffects = [];
       }
     });
@@ -762,13 +773,19 @@ function aiPhaseUnsuspend() {
       addLog('🔄 【再起動】「' + c.name + '」がアクティブに');
     }
   });
+  // 「次のアクティブフェイズで全デジモンがアクティブにならない」継続効果フラグ
+  const _aiSkipAllUnsuspend = !!(bs._skipUnsuspend && bs._skipUnsuspend.ai);
+  if (_aiSkipAllUnsuspend) {
+    bs._skipUnsuspend.ai = false;
+    addLog('🔒 アクティブフェイズ: 全デジモンがアクティブにならない');
+  }
   if (hasRested) {
     showPhaseAnnounce('🔄 アクティブフェイズ', '#00fbff', () => {
       bs.ai.battleArea.forEach(c => {
         if (!c) return;
-        // prevent_unsuspend バフ持ちはアクティブにしない → その後バフ失効
+        // prevent_unsuspend バフ持ち or スキップフラグ時はアクティブにしない → バフ失効
         const _hasPU = Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'prevent_unsuspend');
-        if (!c.cantBeActive && !_hasPU) c.suspended = false;
+        if (!c.cantBeActive && !_hasPU && !_aiSkipAllUnsuspend) c.suspended = false;
         c.summonedThisTurn = false; c._usedEffects = [];
         if (Array.isArray(c.buffs)) c.buffs = c.buffs.filter(b => !(b && b.type === 'prevent_unsuspend'));
       });

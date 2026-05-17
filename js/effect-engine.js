@@ -6481,13 +6481,27 @@ function executeRecipeStep(step, ctx, store, callback) {
     case 'prevent_unsuspend': {
       const dur = normalizeRecipeDuration(step.duration) || 'dur_next_opp_unsuspend';
       const tStr = String(step.target || 'opponent:all');
-      const tgtPlayer = tStr.startsWith('opp') ? opponent : player;
+      const _naIsOpp = tStr.startsWith('opp');
+      const tgtPlayer = _naIsOpp ? opponent : player;
       const all = tStr.endsWith(':all') || tStr === 'opponent' || tStr === 'own';
+      const _naOnline = window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand;
       if (all) {
-        (tgtPlayer.battleArea || []).forEach(c => {
-          if (c) addBuffDirect(c, 'prevent_unsuspend', 0, dur, ctx);
+        (tgtPlayer.battleArea || []).forEach((c, i) => {
+          if (!c) return;
+          addBuffDirect(c, 'prevent_unsuspend', 0, dur, ctx);
+          // 相手カードへの付与は state_sync で同期されないため fx_remoteBuff を個別送信
+          if (_naIsOpp && _naOnline) {
+            try {
+              window._onlineSendCommand({
+                type: 'fx_remoteBuff', targetIdx: i, targetName: c.name,
+                buffType: 'prevent_unsuspend', value: 0, duration: dur,
+                appliedFromSender: 'player',
+                appliedDuringOwnTurn: ctx.bs && ctx.bs.isPlayerTurn,
+              });
+            } catch (_) {}
+          }
         });
-        ctx.addLog && ctx.addLog('🔒 ' + (tStr.startsWith('opp') ? '相手' : '自分') + 'のデジモン全てに「アクティブにならない」付与');
+        ctx.addLog && ctx.addLog('🔒 ' + (_naIsOpp ? '相手' : '自分') + 'のデジモン全てに「アクティブにならない」付与');
       }
       ctx.renderAll && ctx.renderAll();
       callback();

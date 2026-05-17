@@ -502,15 +502,13 @@ function execUnsuspend() {
     bs.player.tamerArea.forEach(c => {
       if (c) { c.suspended = false; c._usedEffects = []; }
     });
-    // prevent_unsuspend バフを本フェーズ終了で失効
+    // prevent_unsuspend バフを本フェーズ（＝このプレイヤーのアクティブフェイズ）で失効。
+    // 「次のアクティブフェイズではアクティブにならない」効果は、その対象カードの
+    // 持ち主のアクティブフェイズで1回スキップした後に消費される。execUnsuspend は
+    // 自分(player)のアクティブフェイズなので、player 側のカードから除去する。
     bs.player.battleArea.forEach(c => {
       if (c && Array.isArray(c.buffs)) {
-        c.buffs = c.buffs.filter(b => b && b.duration !== 'dur_next_own_unsuspend');
-      }
-    });
-    bs.ai.battleArea.forEach(c => {
-      if (c && Array.isArray(c.buffs)) {
-        c.buffs = c.buffs.filter(b => b && b.duration !== 'dur_next_opp_unsuspend');
+        c.buffs = c.buffs.filter(b => !(b && b.type === 'prevent_unsuspend'));
       }
     });
     addLog('🔄 アクティブフェイズ完了');
@@ -767,7 +765,12 @@ function aiPhaseUnsuspend() {
   if (hasRested) {
     showPhaseAnnounce('🔄 アクティブフェイズ', '#00fbff', () => {
       bs.ai.battleArea.forEach(c => {
-        if (c) { c.suspended = false; c.summonedThisTurn = false; c._usedEffects = []; }
+        if (!c) return;
+        // prevent_unsuspend バフ持ちはアクティブにしない → その後バフ失効
+        const _hasPU = Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'prevent_unsuspend');
+        if (!c.cantBeActive && !_hasPU) c.suspended = false;
+        c.summonedThisTurn = false; c._usedEffects = [];
+        if (Array.isArray(c.buffs)) c.buffs = c.buffs.filter(b => !(b && b.type === 'prevent_unsuspend'));
       });
       addLog('🤖 アクティブフェイズ完了');
       renderAll();

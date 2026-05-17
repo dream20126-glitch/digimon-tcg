@@ -126,7 +126,8 @@ function drainFxQueue() {
   const fn = _fxQueue.shift();
   // 受信側の演出実行中はfxコマンド送信を抑制（ping-pong防止）
   window._suppressFxSend = true;
-  fn(() => { window._suppressFxSend = false; drainFxQueue(); });
+  // 演出と演出の間に小休止を入れ、立て続けに表示されないようにする
+  fn(() => { window._suppressFxSend = false; setTimeout(drainFxQueue, 280); });
 }
 
 // ===== 状態アクセサ =====

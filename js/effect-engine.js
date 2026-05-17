@@ -2485,8 +2485,17 @@ function showDeckOpenUI(opened, step, ctx, callback) {
 
   // === 選択フェーズ ===
   let selIdx = 0;
+  let _selectionDoneFired = false;
   function runSelectionPhase() {
-    if (selIdx >= selections.length) { runReturnPhase(); return; }
+    if (selIdx >= selections.length) {
+      // 選択フェーズ完了（戻しフェーズの前）→ フックを1回だけ発火
+      if (!_selectionDoneFired && typeof step._onSelectionDone === 'function') {
+        _selectionDoneFired = true;
+        try { step._onSelectionDone(); } catch (_) {}
+      }
+      runReturnPhase();
+      return;
+    }
     const sel = selections[selIdx];
     selIdx++;
     const filter = sel.filter || {};
@@ -6595,7 +6604,14 @@ function executeRecipeStep(step, ctx, store, callback) {
       player.deck = [];
       ctx.renderAll && ctx.renderAll();
       const handBeforeSO = player.hand.slice();
-      const customStep = Object.assign({}, step, { return_to: step.return_to || 'deck_bottom', private: true });
+      const customStep = Object.assign({}, step, {
+        return_to: step.return_to || 'deck_bottom',
+        private: true,
+        // カード選択完了の瞬間（戻しフェーズ前）に相手の効果発動ポップアップを閉じる
+        _onSelectionDone: () => {
+          if (_soOnline) { try { window._onlineSendCommand({ type: 'fx_effectClose' }); } catch (_) {} }
+        },
+      });
       showDeckOpenUI(opened, customStep, ctx, () => {
         // 選択完了 → 相手の効果発動ポップアップ（fxRemoteEffect）を閉じる。
         // 以降の公開カード／リカバリー／シャッフル演出が相手画面で見えるようにするため。

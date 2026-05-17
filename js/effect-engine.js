@@ -1034,14 +1034,16 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // recoverSide にリカバリーした側（ctx.side）を載せ、受信側で逆サイドへ適用する。
       // 手札からの使用（side=player）でも、セキュリティからめくれて発動
       // （side=ai 側で処理される）でも、処理した機械から1回だけ送られる。
-      // ※ security_open 内のリカバリーは security_open 側が security_init で
-      //   セキュリティ全体を再同期するため、ここでは送らない（二重加算防止）。
-      if (recoveredCards.length > 0 && !ctx._securityOpenActive
+      // ※ security_open 内のリカバリーは animOnly:true で送る（演出のみ。
+      //   セキュリティ枚数は security_open 側の security_init 再同期に集約し
+      //   二重加算を防ぐ）。
+      if (recoveredCards.length > 0
           && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
         try {
           window._onlineSendCommand({
             type: 'fx_recover',
             recoverSide: ctx.side,
+            animOnly: !!ctx._securityOpenActive,
             cards: recoveredCards.map(c => ({
               name: c.name, cardNo: c.cardNo, type: c.type, color: c.color,
               level: c.level, dp: c.dp, baseDp: c.baseDp,
@@ -6586,10 +6588,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         securityEffect: c.securityEffect, recipe: c.recipe,
         evolveCond: c.evolveCond, imgSrc: c.imgSrc, imageUrl: c.imageUrl, feature: c.feature,
       });
-      // 相手画面: 「相手がセキュリティを確認中」ポップアップ（中身は見せない）
-      if (_soOnline) {
-        try { window._onlineSendCommand({ type: 'fx_securityPeek', state: 'start', sourceName: ctx.card ? ctx.card.name : '' }); } catch (_) {}
-      }
+      // 相手画面の「確認中」表示は効果発動ポップアップ（fxRemoteEffect）が兼ねる。
       // showDeckOpenUI を流用（private: true で中身を相手に送らない）。
       // 一時的に player.deck を空に退避し、戻ったカードを完了後にセキュリティへ戻す。
       const savedDeckSO = player.deck;
@@ -6598,6 +6597,11 @@ function executeRecipeStep(step, ctx, store, callback) {
       const handBeforeSO = player.hand.slice();
       const customStep = Object.assign({}, step, { return_to: step.return_to || 'deck_bottom', private: true });
       showDeckOpenUI(opened, customStep, ctx, () => {
+        // 選択完了 → 相手の効果発動ポップアップ（fxRemoteEffect）を閉じる。
+        // 以降の公開カード／リカバリー／シャッフル演出が相手画面で見えるようにするため。
+        if (_soOnline) {
+          try { window._onlineSendCommand({ type: 'fx_effectClose' }); } catch (_) {}
+        }
         // 戻ったカード（player.deck 上のもの）をセキュリティへ戻す（まだシャッフルしない）
         const remaining = player.deck.slice();
         player.deck = savedDeckSO;
@@ -6628,11 +6632,10 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           ctx.addLog && ctx.addLog('🔀 セキュリティをシャッフル');
           ctx.renderAll && ctx.renderAll();
-          // オンライン: 確認中ポップアップを閉じ、セキュリティ（実カード・新順序）を相手へ再同期
+          // オンライン: セキュリティ（実カード・新順序）を相手へ再同期
           // ＋ 相手画面にもシャッフル演出を送る
           if (_soOnline) {
             try {
-              window._onlineSendCommand({ type: 'fx_securityPeek', state: 'end' });
               window._onlineSendCommand({ type: 'security_init', cards: player.security.map(_soSerialize) });
               window._onlineSendCommand({ type: 'fx_shuffle', label: 'セキュリティをシャッフル' });
             } catch (_) {}

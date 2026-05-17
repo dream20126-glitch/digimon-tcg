@@ -843,8 +843,10 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_shuffle': {
-      // 相手のシャッフル演出を自分側でも再生
-      if (window._fxShuffle) { try { window._fxShuffle(cmd.label || 'シャッフル', () => {}); } catch (_) {} }
+      // 相手のシャッフル演出を自分側でも再生（fxキューで順次再生）
+      if (window._fxShuffle) {
+        enqueueFx((done) => { try { window._fxShuffle(cmd.label || 'シャッフル', done); } catch (_) { done(); } });
+      }
       break;
     }
     case 'fx_preventUnsuspendAll': {
@@ -874,25 +876,27 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_securityReveal': {
-      // 相手がセキュリティ確認で選んだカードを公開 → 一定時間カードを表示
-      const ov = document.createElement('div');
-      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:56000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;animation:fadeIn 0.2s ease;';
-      const label = document.createElement('div');
-      label.style.cssText = 'color:#00fbff;font-size:13px;font-weight:bold;text-shadow:0 0 8px #00fbff;';
-      label.innerText = '🛡 相手がセキュリティから公開 → 手札へ';
-      ov.appendChild(label);
-      if (cmd.cardImg) {
-        const img = document.createElement('img');
-        img.src = cmd.cardImg;
-        img.style.cssText = 'width:150px;border-radius:8px;border:2px solid #00fbff;box-shadow:0 0 20px #00fbff88;';
-        ov.appendChild(img);
-      }
-      const nm = document.createElement('div');
-      nm.style.cssText = 'color:#fff;font-size:13px;font-weight:bold;';
-      nm.innerText = cmd.cardName || '';
-      ov.appendChild(nm);
-      document.body.appendChild(ov);
-      setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 2200);
+      // 相手がセキュリティ確認で選んだカードを公開 → 一定時間カードを表示（fxキューで順次）
+      enqueueFx((done) => {
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:56000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;animation:fadeIn 0.2s ease;';
+        const label = document.createElement('div');
+        label.style.cssText = 'color:#00fbff;font-size:13px;font-weight:bold;text-shadow:0 0 8px #00fbff;';
+        label.innerText = '🛡 相手がセキュリティから公開 → 手札へ';
+        ov.appendChild(label);
+        if (cmd.cardImg) {
+          const img = document.createElement('img');
+          img.src = cmd.cardImg;
+          img.style.cssText = 'width:150px;border-radius:8px;border:2px solid #00fbff;box-shadow:0 0 20px #00fbff88;';
+          ov.appendChild(img);
+        }
+        const nm = document.createElement('div');
+        nm.style.cssText = 'color:#fff;font-size:13px;font-weight:bold;';
+        nm.innerText = cmd.cardName || '';
+        ov.appendChild(nm);
+        document.body.appendChild(ov);
+        setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); done(); }, 2000);
+      });
       break;
     }
     case 'fx_recover': {
@@ -904,18 +908,21 @@ function onRemoteCommand(cmd) {
       const recTargetSide = (cmd.recoverSide === 'ai') ? 'player' : 'ai';
       const recArea = bs[recTargetSide];
       const recLabel = recTargetSide === 'player' ? '自分の' : '相手の';
-      let ri = 0;
-      const playNextRecover = () => {
-        if (ri >= recCards.length) { renderAll(); return; }
-        const c = { ...recCards[ri++], buffs: [], stack: [], suspended: false };
-        recArea.security.push(c);
-        renderAll();
-        if (window._fxCardMove) {
-          try { window._fxCardMove(c, recLabel + 'デッキ', recLabel + 'セキュリティ', () => { renderAll(); playNextRecover(); }); }
-          catch (_) { renderAll(); playNextRecover(); }
-        } else { renderAll(); playNextRecover(); }
-      };
-      playNextRecover();
+      enqueueFx((done) => {
+        let ri = 0;
+        const playNextRecover = () => {
+          if (ri >= recCards.length) { renderAll(); done(); return; }
+          const c = { ...recCards[ri++], buffs: [], stack: [], suspended: false };
+          // animOnly: 演出のみ（枚数は別途 security_init 等で同期済み）
+          if (!cmd.animOnly) recArea.security.push(c);
+          renderAll();
+          if (window._fxCardMove) {
+            try { window._fxCardMove(c, recLabel + 'デッキ', recLabel + 'セキュリティ', () => { renderAll(); playNextRecover(); }); }
+            catch (_) { renderAll(); playNextRecover(); }
+          } else { renderAll(); playNextRecover(); }
+        };
+        playNextRecover();
+      });
       break;
     }
     case 'fx_remoteCardMove': {

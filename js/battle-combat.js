@@ -388,7 +388,9 @@ export function canEvolveOnto(evoCard, baseCard) {
     if (m) {
       const reqColor = m[1] || '';
       const reqLevel = m[2];
-      const baseLevel = String(baseCard.level);
+      // baseCard.level にスプレッドシート由来の前後空白（全角スペース含む）が
+      // 混入していると文字列比較が外れるため trim で正規化する
+      const baseLevel = String(baseCard.level).trim();
       const baseColor = baseCard.color || '';
       if (baseLevel !== reqLevel) continue;
       if (reqColor && !baseColor.includes(reqColor)) continue;

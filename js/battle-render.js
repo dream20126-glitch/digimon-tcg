@@ -623,7 +623,10 @@ function renderTamerRows() {
 // テイマー効果メニュー
 function showTamerMenu(card, tamerIdx, el) {
   if (bs.phase !== 'main' || !bs.isPlayerTurn) return;
-  if (!card.suspended) card.suspended = true;
+  // ここではテイマーをレストさせない。
+  // テイマー【メイン】効果のコスト「このテイマーをレストする」はレシピ側
+  // （cost: rest self）で処理される。先にレストしてしまうと、そのコストが
+  // 「既にレスト中」で支払えず効果が不発になる（泉光子郎/太刀川ミミ等）。
   renderAll();
   const tamerRow = document.getElementById('pl-tamer-row');
   const updatedEl = tamerRow ? tamerRow.querySelectorAll('.b-slot')[tamerIdx] : el;

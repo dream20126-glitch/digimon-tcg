@@ -6397,16 +6397,18 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.renderAll && ctx.renderAll();
         // 1体目が閾値超 → そこで終了（1体のみ）
         if (firstDp > rcTh) { rcFinish(); return; }
-        // 1体目が閾値以下 → 任意でもう1体（DP閾値以下のアクティブ相手デジモン）
+        // 1体目が閾値以下 → DP閾値以下をもう1体「強制」でレストする
+        // （他に閾値以下のアクティブ相手デジモンがいない場合のみ1体で終了）
         const rcV2 = rcActive().filter(i => (parseInt(rcArea[i].dp) || 0) <= rcTh);
-        if (rcV2.length === 0) { rcFinish(); return; }
-        showConfirmDialog(ctx.card, 'DP' + rcTh + '以下の相手のデジモンをもう1体レストできます。', (yes) => {
-          if (!yes) { rcFinish(); return; }
-          ctx.addLog && ctx.addLog('🎯 レストさせる対象を選んでください（2体目・DP' + rcTh + '以下）');
-          showTargetSelection(rcRow, rcV2, null, '#ff4444', (idx2) => {
-            if (idx2 !== null) rcDoRest(idx2);
-            rcFinish();
-          });
+        if (rcV2.length === 0) {
+          ctx.addLog && ctx.addLog('⚠ 他にDP' + rcTh + '以下の相手デジモンがいないため1体のみ');
+          rcFinish();
+          return;
+        }
+        ctx.addLog && ctx.addLog('🎯 レストさせる対象を選んでください（2体目・DP' + rcTh + '以下／必須）');
+        showTargetSelection(rcRow, rcV2, null, '#ff4444', (idx2) => {
+          if (idx2 !== null) rcDoRest(idx2);
+          rcFinish();
         });
       });
       break;

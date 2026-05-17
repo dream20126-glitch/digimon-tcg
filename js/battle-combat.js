@@ -1158,8 +1158,16 @@ export function resolveSecurityCheck(atk, atkIdx) {
           _sendCommand({ type: 'security_tamer_play', cardName: sec.name, cardNo: sec.cardNo || '', cardImg: cardImg(sec), effect: sec.effect || '', securityEffect: sec.securityEffect || '', dp: sec.dp || 0, level: sec.level || '', color: sec.color || '', feature: sec.feature || '', imgSrc: sec.imgSrc || '', cost: sec.cost || 0, playCost: sec.playCost || 0 });
         }
         renderAll();
-        if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
-        else { checkAttackEnd(atk, atkIdx); }
+        const _afterSecTamer = () => {
+          if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
+          else { checkAttackEnd(atk, atkIdx); }
+        };
+        // セキュリティから登場したテイマーの【登場時】効果を発動（高石タケル等）
+        if (hasKeyword(sec, '【登場時】') || _hasRecipeTrigger(sec, 'on_play')) {
+          _hooks.checkAndTriggerEffect(sec, '【登場時】', () => { renderAll(); _afterSecTamer(); }, 'ai');
+        } else {
+          _afterSecTamer();
+        }
         return;
       }
       // ----- セキュリティがオプション等 -----

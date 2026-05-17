@@ -7242,6 +7242,40 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === その他のアクション（既存エンジンに委譲） ===
     default: {
+      // rest で target が opponent:all / own:all → 条件フィルタを適用して全体をレスト
+      // （対象選択UIを出さない。フラウカノン「ブロッカーを持たない相手デジモン全てをレスト」等）
+      if (step.action === 'rest' && (step.target === 'opponent:all' || step.target === 'own:all')) {
+        const _isOwnAll = step.target === 'own:all';
+        const _restP = _isOwnAll ? player : opponent;
+        const _restTag = _isOwnAll ? (ctx.side === 'player' ? 'player' : 'ai')
+                                   : (ctx.side === 'player' ? 'ai' : 'player');
+        const _restConds = step.condition ? parseRecipeCondition(step.condition) : [];
+        let _restedAny = false;
+        (_restP.battleArea || []).forEach((c, i) => {
+          if (!c || c.suspended) return;
+          if (_restConds.length > 0 && !checkConditions(_restConds, c, ctx.bs, _restTag)) return;
+          c.suspended = true;
+          _restedAny = true;
+          ctx.addLog('💤 「' + c.name + '」をレスト');
+          // 相手カードへのレストは state_sync で同期されないため fx_remoteSuspend を個別送信
+          if (!_isOwnAll && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode()) {
+            if (window._markSuspendChanged) window._markSuspendChanged('ai', i, true);
+            if (window._onlineSendCommand) {
+              window._onlineSendCommand({ type: 'fx_remoteSuspend', targetIdx: i, suspended: true, targetName: c.name });
+            }
+          }
+        });
+        if (!_restedAny) ctx.addLog('⚠ レスト対象がいません');
+        ctx.renderAll();
+        if (!_isOwnAll && _restedAny) {
+          // 相手デジモンをレストさせた → when_opp_rest 反応を発火
+          const _restedSide = ctx.side === 'player' ? 'ai' : 'player';
+          try { fireWhenOppRestTriggers(_restedSide, ctx.bs, ctx, () => callback()); return; }
+          catch (_) {}
+        }
+        callback();
+        break;
+      }
       // per_count倍率を適用
       let effectiveValue = step.value != null ? step.value : (step.per_count ? 1 : null);
       if (step.per_count && effectiveValue != null) {

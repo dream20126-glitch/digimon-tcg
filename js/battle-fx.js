@@ -906,7 +906,9 @@ export function getFxRunners() {
       const from = opts.fromLabel || getCardZone(opts.card, opts.ctx) || '?';
       // 移動先: コード明示指定 → 移動後のカード位置から自動判定
       const to = opts.toLabel || getCardZone(opts.card, opts.ctx) || '?';
-      fxCardMove(opts.card, from, to, cb);
+      // セキュリティへ移動するカードは秘匿情報なので裏向きで演出（リカバリー等）
+      const faceDown = !!(to && String(to).indexOf('セキュリティ') >= 0);
+      fxCardMove(opts.card, from, to, cb, faceDown);
     },
     "カード登場": (opts, cb) => {
       if (opts.ctx && opts.ctx.showPlayEffect) {

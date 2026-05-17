@@ -407,6 +407,28 @@ export function canEvolveOnto(evoCard, baseCard) {
   return false;
 }
 
+// 保留中の進化コスト軽減（スマッシュポテト等）を消費して合計軽減値を返す。
+// bs._pendingEvoCostReductions の各エントリは color / baseLv / evoLv の記述子で
+// 「どの進化に適用されるか」を絞る。once のものは消費して除去する。
+function _consumePendingEvoCostReduction(evolved, base) {
+  if (!bs || !Array.isArray(bs._pendingEvoCostReductions) || bs._pendingEvoCostReductions.length === 0) return 0;
+  const evColor = evolved.color || '';
+  const evLv = parseInt(String(evolved.level), 10) || 0;
+  const baseLv = base ? (parseInt(String(base.level), 10) || 0) : 0;
+  let total = 0;
+  bs._pendingEvoCostReductions.forEach(r => {
+    if (!r || r._used) return;
+    if (r.side && r.side !== 'player') return;
+    if (r.color && !evColor.includes(r.color)) return;
+    if (r.baseLv != null && r.baseLv !== baseLv) return;
+    if (r.evoLv != null && r.evoLv !== evLv) return;
+    total += r.value || 0;
+    if (r.once) r._used = true;
+  });
+  bs._pendingEvoCostReductions = bs._pendingEvoCostReductions.filter(r => r && !r._used);
+  return total;
+}
+
 // ===== カード登場 =====
 
 export function doPlay(card, handIdx, slotIdx) {
@@ -473,14 +495,13 @@ export function doPlay(card, handIdx, slotIdx) {
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
         checkPlayerPendingTurnEnd();
       };
-      if (hasKeyword(card, '【登場時】')) {
-        _hooks.checkAndTriggerEffect(card, '【登場時】', () => {
-          renderAll();
-          finishTamer();
-        });
-      } else {
+      // 登場時効果は常にスキャンする（このカード自身に【登場時】が無くても、
+      // 他カードの「他のデジモンが登場したとき」誘発を拾うため。
+      // 効果が無ければ checkAndTriggerEffect は即 callback して何も起きない）
+      _hooks.checkAndTriggerEffect(card, '【登場時】', () => {
+        renderAll();
         finishTamer();
-      }
+      });
     });
     return;
   }
@@ -513,14 +534,12 @@ export function doPlay(card, handIdx, slotIdx) {
       if (window._tutorialBattleDone) window._tutorialBattleDone();
       checkPlayerPendingTurnEnd();
     };
-    if (hasKeyword(card, '【登場時】')) {
-      _hooks.checkAndTriggerEffect(card, '【登場時】', () => {
-        renderAll(true);
-        finishPlay();
-      });
-    } else {
+    // 登場時効果は常にスキャン（他カードの「他のデジモンが登場したとき」誘発も拾う。
+    // ダルクモン「黄Lv.3の自分のデジモンが登場したとき」等）
+    _hooks.checkAndTriggerEffect(card, '【登場時】', () => {
+      renderAll(true);
       finishPlay();
-    }
+    });
   });
 }
 
@@ -535,7 +554,9 @@ export function doEvolve(card, handIdx, slotIdx) {
   if (card.evolveCost === null) { addLog('🚨 「' + card.name + '」は進化できません‼'); return; }
   if (!canEvolveOnto(card, base)) { addLog('🚨 進化条件を満たしていません‼（' + card.evolveCond + '）'); return; }
 
-  const cost = card.evolveCost;
+  let cost = card.evolveCost;
+  const _evoDisc = _consumePendingEvoCostReduction(card, base);
+  if (_evoDisc > 0) { cost = Math.max(0, cost - _evoDisc); addLog('💠 進化コスト-' + _evoDisc + '（コスト' + cost + 'で進化）'); }
   const evolved = Object.assign({}, card, {
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,
@@ -595,7 +616,9 @@ export function doEvolveIku(card, handIdx) {
   if (card.evolveCost === null) { addLog('🚨 「' + card.name + '」は進化できません‼'); return; }
   if (!canEvolveOnto(card, base)) { addLog('🚨 進化条件を満たしていません‼（' + card.evolveCond + '）'); return; }
 
-  const cost = card.evolveCost;
+  let cost = card.evolveCost;
+  const _evoDisc = _consumePendingEvoCostReduction(card, base);
+  if (_evoDisc > 0) { cost = Math.max(0, cost - _evoDisc); addLog('💠 進化コスト-' + _evoDisc + '（コスト' + cost + 'で進化）'); }
   const evolved = Object.assign({}, card, {
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,
@@ -903,12 +926,10 @@ export function resolveAttackTarget(target, targetIdx) {
 }
 
 // アタック時効果
+// 常にスキャンする（アタッカー自身に【アタック時】が無くても、付与効果
+// (ヘブンズリッパー等)や他カードの誘発を拾うため。効果が無ければ即 callback）
 function afterAtkEffect(atk, atkSlotIdx, callback) {
-  const hasAtk = hasKeyword(atk, '【アタック時】') ||
-    hasEvoKeyword(atk, '【アタック時】');
-  if (hasAtk) {
-    _hooks.checkAndTriggerEffect(atk, '【アタック時】', callback);
-  } else callback();
+  _hooks.checkAndTriggerEffect(atk, '【アタック時】', callback);
 }
 
 // ブロックされた時効果
@@ -1874,9 +1895,8 @@ export function aiAttackPhase(callback) {
           window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
         } else { cb(); }
       };
-      if (hasKeyword(atk, '【アタック時】') || hasEvoKeyword(atk, '【アタック時】')) {
-        _hooks.checkAndTriggerEffect(atk, '【アタック時】', _afterAtkTime, 'ai');
-      } else { _afterAtkTime(); }
+      // 常にスキャン（付与効果・誘発も拾う。効果が無ければ即コールバック）
+      _hooks.checkAndTriggerEffect(atk, '【アタック時】', _afterAtkTime, 'ai');
     };
 
     doAfterAtkEffect(() => {
@@ -3026,9 +3046,8 @@ export function aiScriptAttack(attackerKey, target, onDone) {
           window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
         } else { cb(); }
       };
-      if (hasKeyword(atk, '【アタック時】') || hasEvoKeyword(atk, '【アタック時】')) {
-        _hooks.checkAndTriggerEffect(atk, '【アタック時】', _afterAtkTime, 'ai');
-      } else { _afterAtkTime(); }
+      // 常にスキャン（付与効果・誘発も拾う。効果が無ければ即コールバック）
+      _hooks.checkAndTriggerEffect(atk, '【アタック時】', _afterAtkTime, 'ai');
     };
 
     doAfterAtkEffect(() => {

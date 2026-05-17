@@ -140,7 +140,7 @@ var MANUAL_INPUT_ACTIONS = {
   'jogress_evolve': 1, 'app_gattai_evolve': 1, 'return_deck': 1,
   'add_to_hand': 1, 'security_trash_select': 1,
   'place_from_trash_under': 1, 'place_from_hand_battle_under': 1,
-  'rest': 1, 'cant_attack': 1, 'cant_block': 1, 'cant_attack_block': 1,
+  'rest': 1, 'rest_chain': 1, 'cant_attack': 1, 'cant_block': 1, 'cant_attack_block': 1,
   'cant_evolve': 1, 'change_attack_target': 1,
   'trash_to_hand': 1, 'summon_from_trash': 1, 'summon': 1,
   'dedigivolve': 1, 'deck_open': 1, 'force_block': 1,
@@ -815,13 +815,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const dpSetDur = (ctx.block && ctx.block.duration && ctx.block.duration.code) || 'dur_this_turn';
       const applyDpSet = (c, isOpp, idx) => {
         if (!c) return;
-        const base = (c.baseDp != null ? c.baseDp : parseInt(String(c.dp || 0), 10)) || 0;
-        const d = dpSetVal - base;
-        if (d !== 0) addBuffDirect(c, d > 0 ? 'dp_plus' : 'dp_minus', Math.abs(d), dpSetDur, ctx);
-        else recalcDp(c);
+        // 既存の dp_set を除去してから「元々のDPを変更」buff を付与（最新が有効）
+        if (Array.isArray(c.buffs)) c.buffs = c.buffs.filter(b => b.type !== 'dp_set');
+        addBuffDirect(c, 'dp_set', dpSetVal, dpSetDur, ctx);
         ctx.addLog('💪 「' + c.name + '」の元々のDPを ' + dpSetVal + ' に変更 → ' + c.dp);
         if (isOpp && idx != null && window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
-          window._onlineSendCommand({ type: 'fx_remoteBuff', targetIdx: idx, targetName: c.name, buffType: d > 0 ? 'dp_plus' : 'dp_minus', value: Math.abs(d), duration: dpSetDur, appliedFromSender: 'player', appliedDuringOwnTurn: ctx.bs && ctx.bs.isPlayerTurn });
+          window._onlineSendCommand({ type: 'fx_remoteBuff', targetIdx: idx, targetName: c.name, buffType: 'dp_set', value: dpSetVal, duration: dpSetDur, appliedFromSender: 'player', appliedDuringOwnTurn: ctx.bs && ctx.bs.isPlayerTurn });
         }
       };
       if (dpsTgt.code === 'target_self') {
@@ -2919,14 +2918,17 @@ function recalcDp(card) {
     card.baseDp = parseInt(card.dp) || 0;
   }
   let mod = 0;
+  let overrideBase = null;
   if (card.buffs) {
     card.buffs.forEach(b => {
       if (b.type === 'dp_plus') mod += (parseInt(b.value) || 0);
       if (b.type === 'dp_minus') mod -= (parseInt(b.value) || 0);
+      // dp_set: 「元々のDPを N に変更」。複数あれば最後に付与されたものが有効
+      if (b.type === 'dp_set') overrideBase = (parseInt(b.value) || 0);
     });
   }
   card.dpModifier = mod;
-  card.dp = card.baseDp + mod;
+  card.dp = (overrideBase != null ? overrideBase : card.baseDp) + mod;
 }
 
 // 持続切れバフを除去
@@ -3025,6 +3027,17 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
       });
     });
   });
+
+  // 進化コスト軽減の保留分（スマッシュポテト等）の期限切れ除去
+  if (Array.isArray(bs._pendingEvoCostReductions) && bs._pendingEvoCostReductions.length > 0) {
+    bs._pendingEvoCostReductions = bs._pendingEvoCostReductions.filter(r => {
+      if (!r || r._used) return false;
+      if (r.duration !== timing) return true;
+      if (timing === 'dur_this_turn') return r.side !== endingSide;
+      if (timing === 'dur_next_opp_turn') return r.side === endingSide;
+      return false;
+    });
+  }
 
   // セキュリティバフも同じtimingで期限切れ除去
   // card.buffs と同じく付与本人のowner（=ctx.side）と endingSide を比較してサイド判定
@@ -6343,6 +6356,61 @@ function executeRecipeStep(step, ctx, store, callback) {
       callback();
       break;
     }
+    // === レストチェイン: 相手1体をレスト → そのDPが閾値以下なら任意でもう1体（閾値以下）===
+    // ギガブラスター「相手1体か、DP5000以下の相手2体をレストさせる」用。
+    // step.dp_threshold（既定5000）。1体目が閾値超なら終了、閾値以下なら2体目を任意選択。
+    case 'rest_chain': {
+      const rcTh = step.dp_threshold || 5000;
+      const rcArea = opponent.battleArea;
+      const rcRow = ctx.side === 'player' ? 'ai' : 'pl';
+      const rcActive = () => { const a = []; for (let i = 0; i < rcArea.length; i++) { const c = rcArea[i]; if (c && !c.suspended) a.push(i); } return a; };
+      const rcDoRest = (idx) => {
+        const c = rcArea[idx];
+        if (!c) return;
+        c.suspended = true;
+        ctx.addLog && ctx.addLog('💤 「' + c.name + '」をレスト');
+        if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode()) {
+          if (window._markSuspendChanged) window._markSuspendChanged('ai', idx, true);
+          if (window._onlineSendCommand) window._onlineSendCommand({ type: 'fx_remoteSuspend', targetIdx: idx, suspended: true, targetName: c.name });
+        }
+      };
+      const rcFinish = () => {
+        ctx.renderAll && ctx.renderAll();
+        const restedSide = ctx.side === 'player' ? 'ai' : 'player';
+        try { fireWhenOppRestTriggers(restedSide, ctx.bs, ctx, () => callback()); return; } catch (_) {}
+        callback();
+      };
+      const rcV1 = rcActive();
+      if (rcV1.length === 0) { ctx.addLog && ctx.addLog('⚠ レスト対象がいません'); callback(); break; }
+      if (ctx.side === 'ai' || ctx._forceTargetIdx !== undefined) {
+        const i1 = (ctx._forceTargetIdx !== undefined && rcV1.indexOf(ctx._forceTargetIdx) >= 0) ? ctx._forceTargetIdx : rcV1[0];
+        rcDoRest(i1);
+        rcFinish();
+        break;
+      }
+      ctx.addLog && ctx.addLog('🎯 レストさせる対象を選んでください（1体目）');
+      showTargetSelection(rcRow, rcV1, null, '#ff4444', (idx1) => {
+        if (idx1 === null) { callback(); return; }
+        const first = rcArea[idx1];
+        const firstDp = first ? (parseInt(first.dp) || 0) : 0;
+        rcDoRest(idx1);
+        ctx.renderAll && ctx.renderAll();
+        // 1体目が閾値超 → そこで終了（1体のみ）
+        if (firstDp > rcTh) { rcFinish(); return; }
+        // 1体目が閾値以下 → 任意でもう1体（DP閾値以下のアクティブ相手デジモン）
+        const rcV2 = rcActive().filter(i => (parseInt(rcArea[i].dp) || 0) <= rcTh);
+        if (rcV2.length === 0) { rcFinish(); return; }
+        showConfirmDialog(ctx.card, 'DP' + rcTh + '以下の相手のデジモンをもう1体レストできます。', (yes) => {
+          if (!yes) { rcFinish(); return; }
+          ctx.addLog && ctx.addLog('🎯 レストさせる対象を選んでください（2体目・DP' + rcTh + '以下）');
+          showTargetSelection(rcRow, rcV2, null, '#ff4444', (idx2) => {
+            if (idx2 !== null) rcDoRest(idx2);
+            rcFinish();
+          });
+        });
+      });
+      break;
+    }
     // === セキュリティを破棄（汎用 alias: security_trash_top と同等） ===
     case 'security_discard': {
       const n = step.value || 1;
@@ -7209,11 +7277,29 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
 
     // === 進化コスト-N ===
+    // 「次に〜が進化するときの進化コストを-N」= 次の対象進化に適用する保留割引として
+    // bs._pendingEvoCostReductions に登録する（doEvolve / doEvolveIku が消費）。
+    // step.condition(cond_color:X) / step.when(cond_lv:N) / step.extra_conditions
+    // (cond_evolve_to_lv:N) で「どの進化に適用されるか」を記述する。
     case 'evo_cost_minus': {
-      if (ctx.card) {
-        ctx.card._evoCostReduction = (ctx.card._evoCostReduction || 0) + (step.value || 1);
-        ctx.addLog('💠 進化コスト-' + (step.value || 1));
-      }
+      const ecmVal = step.value || 1;
+      if (!ctx.bs._pendingEvoCostReductions) ctx.bs._pendingEvoCostReductions = [];
+      const _parseLvCond = (cs) => { const m = /cond_(?:evolve_to_)?lv:(\d+)/.exec(String(cs || '')); return m ? parseInt(m[1], 10) : null; };
+      const _colorM = /cond_color:([^@:]+)/.exec(String(step.condition || ''));
+      const _extraArr = Array.isArray(step.extra_conditions) ? step.extra_conditions
+        : (step.extra_conditions ? [step.extra_conditions] : []);
+      let _evoLv = null;
+      for (const ec of _extraArr) { const v = _parseLvCond(ec); if (v != null) _evoLv = v; }
+      ctx.bs._pendingEvoCostReductions.push({
+        value: ecmVal,
+        color: _colorM ? _colorM[1].trim() : null,
+        baseLv: _parseLvCond(step.when),
+        evoLv: _evoLv,
+        duration: normalizeRecipeDuration(step.duration) || 'dur_this_turn',
+        side: ctx.side,
+        once: Array.isArray(step.options) && (step.options.includes('once_only') || step.options.includes('once')),
+      });
+      ctx.addLog && ctx.addLog('💠 進化コスト-' + ecmVal + '（次の対象進化に適用）');
       callback();
       break;
     }

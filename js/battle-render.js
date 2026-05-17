@@ -131,6 +131,11 @@ function _buildGrantBadges(card) {
   else if (card.cantAttack) items.push({ label: 'アタック不可', color: '#9933ff' });
   else if (card.cantBlock) items.push({ label: 'ブロック不可', color: '#9933ff' });
   if (card.cantEvolve) items.push({ label: '進化不可', color: '#9933ff' });
+  if (Array.isArray(card._grantedRecipes) && card._grantedRecipes.length > 0) {
+    card._grantedRecipes.forEach((g) => {
+      items.push({ label: '付与効果' + (g && g.granterName ? '（' + g.granterName + '）' : ''), color: '#c084fc' });
+    });
+  }
   return items;
 }
 
@@ -256,6 +261,11 @@ function renderBattleRows() {
           html += `<div style="position:absolute;top:1px;left:2px;background:rgba(255,0,0,0.8);color:#fff;font-size:6px;padding:1px 3px;border-radius:2px;">チェック+${saExtra}</div>`;
         } else if (saExtra < 0) {
           html += `<div style="position:absolute;top:1px;left:2px;background:rgba(0,128,255,0.85);color:#fff;font-size:6px;padding:1px 3px;border-radius:2px;">チェック${saExtra}</div>`;
+        }
+
+        // 付与効果インジケータ（grant_effect で得た効果。ヘブンズリッパー等）
+        if (Array.isArray(card._grantedRecipes) && card._grantedRecipes.length > 0) {
+          html += `<div style="position:absolute;top:14px;left:2px;background:rgba(192,132,252,0.92);color:#fff;font-size:6px;font-weight:bold;padding:1px 3px;border-radius:2px;z-index:5;box-shadow:0 0 5px #c084fc;">付与効果</div>`;
         }
 
         // バフ表示（状態異常マーク）— カード右上に1行で表示

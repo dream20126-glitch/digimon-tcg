@@ -4587,14 +4587,21 @@ export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, call
   const finish = () => { try { callback && callback(); } catch(_) {} };
   if (!destroyedCard || !bs) { finish(); return; }
   const oppSide = destroyedSide === 'player' ? 'ai' : 'player';
+  // 1) 消滅したカード自身＋その進化元の on_destroy
   fireOnDestroyTriggers(destroyedSide, bs, ctxBase, () => {
-    _fireSidedReactionTriggers(destroyedSide, 'when_own_destroyed', bs, ctxBase, () => {
-      _fireSidedReactionTriggers(oppSide, 'when_opp_destroyed', bs, ctxBase, () => {
-        _fireSidedReactionTriggers('player', 'when_other_destroyed', bs, ctxBase, () => {
-          _fireSidedReactionTriggers('ai', 'when_other_destroyed', bs, ctxBase, finish);
+    // 2) 反対側のカード（本体＋進化元）の on_destroy 反応も発火する。
+    //    例: ラブラモン進化元「相手デジモンがDP0で消滅したとき1ドロー」。
+    //    効果によるDP0消滅でも、セキュリティチェック消滅と同じ反応経路
+    //    （_fireDestroyTriggersImpl）に揃える。
+    _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, () => {
+      _fireSidedReactionTriggers(destroyedSide, 'when_own_destroyed', bs, ctxBase, () => {
+        _fireSidedReactionTriggers(oppSide, 'when_opp_destroyed', bs, ctxBase, () => {
+          _fireSidedReactionTriggers('player', 'when_other_destroyed', bs, ctxBase, () => {
+            _fireSidedReactionTriggers('ai', 'when_other_destroyed', bs, ctxBase, finish);
+          });
         });
       });
-    });
+    }, 'on_destroy');
   }, destroyedCard);
 }
 

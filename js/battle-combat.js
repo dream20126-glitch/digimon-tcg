@@ -1162,8 +1162,11 @@ export function resolveSecurityCheck(atk, atkIdx) {
           if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
           else { checkAttackEnd(atk, atkIdx); }
         };
-        // セキュリティから登場したテイマーの【登場時】効果を発動（高石タケル等）
-        if (hasKeyword(sec, '【登場時】') || _hasRecipeTrigger(sec, 'on_play')) {
+        // セキュリティから登場したテイマーの【登場時】効果を発動（高石タケル等）。
+        // オンラインでは「カード所有者(相手)」の機械で発動させる必要があるため
+        // ここでは発動せず、security_tamer_play 受信側(所有者)で発動する。
+        // （攻撃側で発動するとセキュリティ中身が攻撃側に見えてしまう）
+        if (!_onlineMode && (hasKeyword(sec, '【登場時】') || _hasRecipeTrigger(sec, 'on_play'))) {
           _hooks.checkAndTriggerEffect(sec, '【登場時】', () => { renderAll(); _afterSecTamer(); }, 'ai');
         } else {
           _afterSecTamer();

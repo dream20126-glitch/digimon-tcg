@@ -439,6 +439,22 @@ function onRemoteCommand(cmd) {
       bs.player.tamerArea.push(tamer);
       addLog('👤 テイマー「' + tamer.name + '」がセキュリティから登場！');
       renderAll();
+      // セキュリティから登場したテイマーの【登場時】効果を「所有者(自分)」の機械で発動。
+      // （攻撃側ではなくカード所有者側で処理する。高石タケルの security_open 等は
+      //   所有者だけがセキュリティ中身を見る非公開効果のため必須）
+      let _stHasOnPlay = false;
+      try {
+        const _r = tamer.recipe
+          ? (typeof tamer.recipe === 'string'
+              ? JSON.parse(tamer.recipe.replace(/[\x00-\x1F\x7F]\s*/g, ''))
+              : tamer.recipe)
+          : null;
+        _stHasOnPlay = !!(_r && _r.on_play);
+      } catch (_) {}
+      if (_stHasOnPlay && window._triggerEffectFn) {
+        const _stCtx = { card: tamer, side: 'player', bs, addLog, renderAll: () => renderAll(), updateMemGauge: () => {} };
+        try { window._triggerEffectFn('on_play', tamer, 'player', _stCtx, () => renderAll()); } catch (_) {}
+      }
       break;
     }
 

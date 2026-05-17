@@ -1034,7 +1034,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // recoverSide にリカバリーした側（ctx.side）を載せ、受信側で逆サイドへ適用する。
       // 手札からの使用（side=player）でも、セキュリティからめくれて発動
       // （side=ai 側で処理される）でも、処理した機械から1回だけ送られる。
-      if (recoveredCards.length > 0
+      // ※ security_open 内のリカバリーは security_open 側が security_init で
+      //   セキュリティ全体を再同期するため、ここでは送らない（二重加算防止）。
+      if (recoveredCards.length > 0 && !ctx._securityOpenActive
           && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
         try {
           window._onlineSendCommand({
@@ -2332,6 +2334,9 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   // 「オープン」効果は両プレイヤーに公開されるため、自分側プレイヤー操作時は相手画面にも観戦UIを送る
   const isOnlineSelf = () => ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
   const sendRemote = (cmd) => {
+    // private: セキュリティ非公開確認（高石タケル等）→ 中身を相手に送らない。
+    // 公開はオプション側（security_open）が選択カードのみ個別に行う。
+    if (step.private) return;
     if (!isOnlineSelf()) {
       console.log('[deckOpen sendRemote] skip', { ctxSide: ctx.side, online: !!(window._isOnlineMode && window._isOnlineMode()), hasSend: !!window._onlineSendCommand });
       return;
@@ -2353,7 +2358,9 @@ function showDeckOpenUI(opened, step, ctx, callback) {
 
   const titleEl = document.createElement('div');
   titleEl.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;margin-bottom:8px;text-shadow:0 0 8px #00fbff;';
-  titleEl.innerText = '📖 デッキオープン (' + opened.length + '枚)';
+  titleEl.innerText = step.private
+    ? '🛡 セキュリティを確認 (' + opened.length + '枚) — 相手には非公開'
+    : '📖 デッキオープン (' + opened.length + '枚)';
   overlay.appendChild(titleEl);
 
   const stepEl = document.createElement('div');
@@ -6538,6 +6545,10 @@ function executeRecipeStep(step, ctx, store, callback) {
     // selections[] でルールから決まった選択先（手札等）を反映
     // post_actions[] で「選んだカードが黄ならリカバリー」等の文脈条件付き追加処理を実行
     // 完了後はセキュリティ自動シャッフル（中身を見たため）
+    // === セキュリティを非公開で確認 → 選んだカードのみ公開して手札へ ===
+    // 高石タケル(BT1-087) 等。自分のセキュリティを全て（または N 枚）確認するが
+    // 中身は相手に見せない（private）。選択したカードのみ相手に公開して手札に加える。
+    // post_actions（黄ならリカバリー等）を処理してから、セキュリティを全てシャッフル。
     case 'security_open': {
       let openN;
       if (step.value === 'all' || step.value === undefined || step.value === null || step.value === '') {
@@ -6555,32 +6566,67 @@ function executeRecipeStep(step, ctx, store, callback) {
       for (let i = 0; i < openN && player.security.length > 0; i++) {
         opened.push(player.security.shift());
       }
-      ctx.addLog && ctx.addLog('🛡 セキュリティ' + opened.length + '枚確認');
-      // showDeckOpenUI を流用するため一時的に player.deck を空に退避
-      // 戻し先は player.deck になるが、完了後に security へ移し替えてシャッフル
+      ctx.addLog && ctx.addLog('🛡 セキュリティ' + opened.length + '枚を確認（相手には非公開）');
+      const _soOnline = ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
+      const _soSerialize = (c) => ({
+        name: c.name, cardNo: c.cardNo, type: c.type, color: c.color,
+        level: c.level, dp: c.dp, baseDp: c.baseDp,
+        playCost: c.playCost, evolveCost: c.evolveCost, cost: c.cost,
+        effect: c.effect, evoSourceEffect: c.evoSourceEffect,
+        securityEffect: c.securityEffect, recipe: c.recipe,
+        evolveCond: c.evolveCond, imgSrc: c.imgSrc, imageUrl: c.imageUrl, feature: c.feature,
+      });
+      // 相手画面: 「相手がセキュリティを確認中」ポップアップ（中身は見せない）
+      if (_soOnline) {
+        try { window._onlineSendCommand({ type: 'fx_securityPeek', state: 'start', sourceName: ctx.card ? ctx.card.name : '' }); } catch (_) {}
+      }
+      // showDeckOpenUI を流用（private: true で中身を相手に送らない）。
+      // 一時的に player.deck を空に退避し、戻ったカードを完了後にセキュリティへ戻す。
       const savedDeckSO = player.deck;
       player.deck = [];
       ctx.renderAll && ctx.renderAll();
       const handBeforeSO = player.hand.slice();
-      const customStep = Object.assign({}, step, { return_to: step.return_to || 'deck_choice' });
+      const customStep = Object.assign({}, step, { return_to: step.return_to || 'deck_bottom', private: true });
       showDeckOpenUI(opened, customStep, ctx, () => {
-        // 戻ったカード（player.deck 上のもの）をセキュリティへ移して shuffle
+        // 戻ったカード（player.deck 上のもの）をセキュリティへ戻す（まだシャッフルしない）
         const remaining = player.deck.slice();
         player.deck = savedDeckSO;
-        // セキュリティ全体を再構築：（残ったセキュリティ） + remaining、shuffle
-        const newSecurity = player.security.concat(remaining);
-        // Fisher–Yates シャッフル
-        for (let i = newSecurity.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          const tmp = newSecurity[i]; newSecurity[i] = newSecurity[j]; newSecurity[j] = tmp;
-        }
-        player.security = newSecurity;
-        ctx.addLog && ctx.addLog('🔀 セキュリティをシャッフル');
-        // 直前選択カード保存
+        player.security = player.security.concat(remaining);
+        // 選択して手札に加わったカード（cond_picked_color 等で参照）
         const newPickedSO = player.hand.filter(c => !handBeforeSO.includes(c));
         if (newPickedSO.length > 0) ctx.bs._lastPickedCard = newPickedSO[newPickedSO.length - 1];
         ctx.renderAll && ctx.renderAll();
-        runPostActions(step.post_actions, ctx, () => callback && callback());
+        // オンライン: 選んだカードのみ相手に公開（残りは非公開のまま）
+        if (_soOnline) {
+          try {
+            newPickedSO.forEach(pc => {
+              window._onlineSendCommand({ type: 'fx_securityReveal', cardName: pc.name, cardNo: pc.cardNo || '', cardImg: pc.imgSrc || pc.imageUrl || '' });
+            });
+          } catch (_) {}
+        }
+        // リカバリー等（黄ならデッキ→セキュリティ）を先に処理 → その後シャッフル
+        // _securityOpenActive: 内部 recover が個別 fx_recover を送らないようにする
+        // （完了後に security_init でセキュリティ全体を再同期するため）
+        ctx._securityOpenActive = true;
+        runPostActions(step.post_actions, ctx, () => {
+          ctx._securityOpenActive = false;
+          // セキュリティを全てシャッフル（Fisher–Yates）
+          const sec = player.security;
+          for (let i = sec.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const tmp = sec[i]; sec[i] = sec[j]; sec[j] = tmp;
+          }
+          ctx.addLog && ctx.addLog('🔀 セキュリティをシャッフル');
+          ctx.renderAll && ctx.renderAll();
+          // オンライン: 確認中ポップアップを閉じ、セキュリティ（実カード・新順序）を相手へ再同期
+          if (_soOnline) {
+            try {
+              window._onlineSendCommand({ type: 'fx_securityPeek', state: 'end' });
+              window._onlineSendCommand({ type: 'security_init', cards: player.security.map(_soSerialize) });
+            } catch (_) {}
+          }
+          callback && callback();
+        });
       });
       break;
     }

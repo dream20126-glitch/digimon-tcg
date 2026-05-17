@@ -826,6 +826,45 @@ function onRemoteCommand(cmd) {
       hideRemoteDeckOpenOverlay();
       break;
     }
+    case 'fx_securityPeek': {
+      // 相手がセキュリティを非公開で確認中 → 「確認中」ポップアップを表示/消去
+      if (cmd.state === 'start') {
+        let ov = document.getElementById('_security-peek-popup');
+        if (!ov) {
+          ov = document.createElement('div');
+          ov.id = '_security-peek-popup';
+          ov.style.cssText = 'position:fixed;top:15%;left:50%;transform:translateX(-50%);z-index:55000;background:rgba(0,0,0,0.9);border:1px solid #00fbff;border-radius:10px;padding:10px 20px;color:#00fbff;font-size:13px;font-weight:bold;text-align:center;box-shadow:0 0 20px #00fbff44;pointer-events:none;animation:fadeIn 0.2s ease;';
+          document.body.appendChild(ov);
+        }
+        ov.innerText = '🛡 相手がセキュリティを確認中...' + (cmd.sourceName ? '（' + cmd.sourceName + '）' : '');
+      } else {
+        const ov = document.getElementById('_security-peek-popup');
+        if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+      }
+      break;
+    }
+    case 'fx_securityReveal': {
+      // 相手がセキュリティ確認で選んだカードを公開 → 一定時間カードを表示
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:56000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;animation:fadeIn 0.2s ease;';
+      const label = document.createElement('div');
+      label.style.cssText = 'color:#00fbff;font-size:13px;font-weight:bold;text-shadow:0 0 8px #00fbff;';
+      label.innerText = '🛡 相手がセキュリティから公開 → 手札へ';
+      ov.appendChild(label);
+      if (cmd.cardImg) {
+        const img = document.createElement('img');
+        img.src = cmd.cardImg;
+        img.style.cssText = 'width:150px;border-radius:8px;border:2px solid #00fbff;box-shadow:0 0 20px #00fbff88;';
+        ov.appendChild(img);
+      }
+      const nm = document.createElement('div');
+      nm.style.cssText = 'color:#fff;font-size:13px;font-weight:bold;';
+      nm.innerText = cmd.cardName || '';
+      ov.appendChild(nm);
+      document.body.appendChild(ov);
+      setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 2200);
+      break;
+    }
     case 'fx_recover': {
       // リカバリー同期 → セキュリティに実カードを追加し、
       // デッキ→セキュリティの移動演出（裏向き）を再生する。

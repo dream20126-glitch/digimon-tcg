@@ -1031,11 +1031,15 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       ctx.renderAll();
       // オンライン: 相手画面にもセキュリティ追加（実カード）＋移動演出を送る
       // （state_sync はセキュリティ増加を反映しないため個別コマンドで同期）
-      if (recoveredCards.length > 0 && ctx.side === 'player'
+      // recoverSide にリカバリーした側（ctx.side）を載せ、受信側で逆サイドへ適用する。
+      // 手札からの使用（side=player）でも、セキュリティからめくれて発動
+      // （side=ai 側で処理される）でも、処理した機械から1回だけ送られる。
+      if (recoveredCards.length > 0
           && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
         try {
           window._onlineSendCommand({
             type: 'fx_recover',
+            recoverSide: ctx.side,
             cards: recoveredCards.map(c => ({
               name: c.name, cardNo: c.cardNo, type: c.type, color: c.color,
               level: c.level, dp: c.dp, baseDp: c.baseDp,

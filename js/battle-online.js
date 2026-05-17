@@ -827,17 +827,22 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_recover': {
-      // 相手がリカバリー → 相手(ai)のセキュリティに実カードを追加し、
-      // デッキ→セキュリティの移動演出（裏向き）を再生する
+      // リカバリー同期 → セキュリティに実カードを追加し、
+      // デッキ→セキュリティの移動演出（裏向き）を再生する。
+      // recoverSide = 送信側でリカバリーした side。受信側ではその逆サイドに適用。
+      // （送信側 player → 受信側 ai / 送信側 ai → 受信側 player）
       const recCards = Array.isArray(cmd.cards) ? cmd.cards : [];
+      const recTargetSide = (cmd.recoverSide === 'ai') ? 'player' : 'ai';
+      const recArea = bs[recTargetSide];
+      const recLabel = recTargetSide === 'player' ? '自分の' : '相手の';
       let ri = 0;
       const playNextRecover = () => {
         if (ri >= recCards.length) { renderAll(); return; }
         const c = { ...recCards[ri++], buffs: [], stack: [], suspended: false };
-        bs.ai.security.push(c);
+        recArea.security.push(c);
         renderAll();
         if (window._fxCardMove) {
-          try { window._fxCardMove(c, '相手のデッキ', '相手のセキュリティ', () => { renderAll(); playNextRecover(); }); }
+          try { window._fxCardMove(c, recLabel + 'デッキ', recLabel + 'セキュリティ', () => { renderAll(); playNextRecover(); }); }
           catch (_) { renderAll(); playNextRecover(); }
         } else { renderAll(); playNextRecover(); }
       };

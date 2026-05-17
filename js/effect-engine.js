@@ -4999,6 +4999,33 @@ function runWithAltActions(step, ctx, store, callback) {
   const choices = [mainOnly].concat(alts);
   const labels = choices.map((c) => actionLabelOf(c.action));
 
+  // 盤面状況で実行可能な選択肢が1つだけなら、選択UIを出さず自動実行する。
+  // （太刀川ミミ: 育成エリアが空→孵化 / Lv.3以上デジモンがいる→バトル移動。
+  //   どちらか一方しか成立しないので「どちらを実行？」を出さない）
+  const _altFeasible = (c) => {
+    if (!c || !ctx.bs) return true;
+    const sidePl = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+    if (c.action === 'hatch') {
+      // 育成エリアが空 かつ デジタマデッキにカードがある
+      return !sidePl.ikusei && Array.isArray(sidePl.tamaDeck) && sidePl.tamaDeck.length > 0;
+    }
+    if (c.action === 'battle_area_make') {
+      // 育成エリアにデジモンがいる（condition があれば そのデジモンに対し評価）
+      if (!sidePl.ikusei) return false;
+      if (c.condition) {
+        const _cs = parseRecipeCondition(c.condition);
+        if (_cs.length > 0 && !checkConditions(_cs, sidePl.ikusei, ctx.bs, ctx.side)) return false;
+      }
+      return true;
+    }
+    return true; // 不明アクションは従来通り（選択UIに出す）
+  };
+  const _feasibleChoices = choices.filter(_altFeasible);
+  if (_feasibleChoices.length === 1) {
+    executeRecipeStep(_feasibleChoices[0], ctx, store, callback);
+    return;
+  }
+
   // AI / 自動選択: 最初の有効な選択肢
   if (ctx.side === 'ai' || ctx._forceAltChoice !== undefined) {
     const idx = (ctx._forceAltChoice !== undefined) ? ctx._forceAltChoice : 0;

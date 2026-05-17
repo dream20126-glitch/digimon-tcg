@@ -141,6 +141,8 @@ export function fxLabelPopup(card, effectName, color, callback) {
 // =====================================================
 
 export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
+  // 移動先がセキュリティの場合は秘匿情報なので強制的に裏向き（カード名も隠す）
+  const _fd = !!faceDown || /セキュリティ/.test(String(toLabel || ''));
   const overlay = document.createElement('div');
   // z-index は deck_open UI(60000) / 観戦オーバーレイ(65000) の上に重ねる必要がある
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:66000;display:flex;align-items:center;justify-content:center;pointer-events:none;';
@@ -153,9 +155,9 @@ export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
   fromDiv.style.cssText = 'text-align:center;';
   const cardDiv = document.createElement('div');
   cardDiv.style.cssText = 'width:80px;height:112px;border-radius:6px;border:2px solid #00fbff;overflow:hidden;box-shadow:0 0 15px #00fbff44;';
-  // faceDown=true: カード内容を見せず裏向き（セキュリティへ加える等、秘匿が必要な移動）
-  const src = (card && !faceDown) ? cardImg(card) : '';
-  cardDiv.innerHTML = faceDown
+  // _fd=true: カード内容を見せず裏向き（セキュリティへ加える等、秘匿が必要な移動）
+  const src = (card && !_fd) ? cardImg(card) : '';
+  cardDiv.innerHTML = _fd
     ? `<div style="width:100%;height:100%;background:linear-gradient(135deg,#1a3a6a,#0a1530);display:flex;align-items:center;justify-content:center;font-size:20px;color:#3a5a9a;">🛡</div>`
     : (src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#00fbff;padding:8px;font-size:10px;">${(card && card.name) || '?'}</div>`);
   fromDiv.appendChild(cardDiv);
@@ -193,7 +195,8 @@ export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
     destBox.style.borderColor = '#00fbff';
     destBox.style.boxShadow = '0 0 15px #00fbff44';
     destBox.style.color = '#00fbff';
-    destBox.innerText = card ? card.name : '✓';
+    // 裏向き移動（セキュリティ等）は移動先でもカード名を出さない
+    destBox.innerText = _fd ? '🛡' : (card ? card.name : '✓');
   }, 1500);
   setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2500);
 }

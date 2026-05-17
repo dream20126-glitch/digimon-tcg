@@ -4028,10 +4028,13 @@ window._effectEngineConfirm = function(yes) {
   if (window._isOnlineMode && window._isOnlineMode()) {
     window._onlineSendCommand({ type: 'fx_confirmClose', accepted: yes });
   }
-  if (window._effectConfirmCallback) {
-    window._effectConfirmCallback(yes);
-    window._effectConfirmCallback = null;
-  }
+  // ★ コールバック実行前に global を null 化する。
+  // cb 内で showConfirmDialog が再度 _effectConfirmCallback を設定するケース
+  // （テイマー効果ボタン → さらに engine の確認ダイアログ 等の連鎖）で、
+  // 「cb 実行 → null」の順だと再設定されたコールバックまで消えて効果が止まる。
+  const cb = window._effectConfirmCallback;
+  window._effectConfirmCallback = null;
+  if (cb) cb(yes);
 };
 
 // ===== DP変化ポップアップ =====
@@ -5425,6 +5428,51 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.renderAll();
         callback();
         break;
+      }
+      // 手札/トラッシュから filter 一致のカードを登場（ピーターモン「ティンカーモン」等）
+      // step.from に hand/trash を含み、store 経由でないケース
+      {
+        const _fromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
+        if (!step.card && (_fromZones.includes('hand') || _fromZones.includes('trash'))) {
+          const _filter = step.filter || {};
+          const _cands = [];
+          if (_fromZones.includes('hand')) (player.hand || []).forEach(c => { if (c && cardMatchesFilter(c, _filter)) _cands.push(c); });
+          if (_fromZones.includes('trash')) (player.trash || []).forEach(c => { if (c && cardMatchesFilter(c, _filter)) _cands.push(c); });
+          const _opt = Array.isArray(step.options) && step.options.includes('optional');
+          if (_cands.length === 0) {
+            ctx.addLog('💨 条件を満たすカードが手札・トラッシュにありません');
+            showEffectFailed(null, () => callback());
+            return;
+          }
+          const _doSummonHT = (c) => {
+            if (!c) { callback(); return; }
+            const hi = player.hand.indexOf(c); if (hi !== -1) player.hand.splice(hi, 1);
+            const ti = player.trash.indexOf(c); if (ti !== -1) player.trash.splice(ti, 1);
+            const empty = player.battleArea.indexOf(null);
+            if (empty !== -1) player.battleArea[empty] = c; else player.battleArea.push(c);
+            c.summonedThisTurn = true; c.suspended = false; c.buffs = []; c.stack = [];
+            ctx.addLog('🌟 「' + c.name + '」を登場');
+            ctx.renderAll();
+            const showFn = (ctx && ctx.showPlayEffect) || (typeof window !== 'undefined' && window.showPlayEffect);
+            const afterAnim = () => {
+              try { scanTriggers('on_play', c, ctx.side, ctx); processQueue(ctx, () => callback()); }
+              catch (_) { callback(); }
+            };
+            if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+              try { window._onlineSendCommand({ type: 'play', cardName: c.name, cardImg: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '', cardType: c.type, playCost: 0 }); } catch (_) {}
+            }
+            if (showFn) showFn({ name: c.name, imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '', type: c.type || 'デジモン', playCost: 0 }, afterAnim);
+            else setTimeout(afterAnim, 300);
+          };
+          if (effectiveSide === 'ai' || _cands.length === 1) {
+            _doSummonHT(_cands[0]);
+          } else {
+            showTrashCardPicker(_cands, 1, _opt, '🌟 登場させるカードを選んでください', (picked) => {
+              _doSummonHT(picked && picked.length > 0 ? picked[0] : null);
+            }, _cands);
+          }
+          return;
+        }
       }
       // ... existing summon logic for store-based summon ...
       const srcData = store[step.card];

@@ -140,7 +140,7 @@ export function fxLabelPopup(card, effectName, color, callback) {
 //  5. カード移動演出（移動元→移動先にカードが飛ぶ）
 // =====================================================
 
-export function fxCardMove(card, fromLabel, toLabel, callback) {
+export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
   const overlay = document.createElement('div');
   // z-index は deck_open UI(60000) / 観戦オーバーレイ(65000) の上に重ねる必要がある
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:66000;display:flex;align-items:center;justify-content:center;pointer-events:none;';
@@ -153,8 +153,11 @@ export function fxCardMove(card, fromLabel, toLabel, callback) {
   fromDiv.style.cssText = 'text-align:center;';
   const cardDiv = document.createElement('div');
   cardDiv.style.cssText = 'width:80px;height:112px;border-radius:6px;border:2px solid #00fbff;overflow:hidden;box-shadow:0 0 15px #00fbff44;';
-  const src = card ? cardImg(card) : '';
-  cardDiv.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#00fbff;padding:8px;font-size:10px;">${(card && card.name) || '?'}</div>`;
+  // faceDown=true: カード内容を見せず裏向き（セキュリティへ加える等、秘匿が必要な移動）
+  const src = (card && !faceDown) ? cardImg(card) : '';
+  cardDiv.innerHTML = faceDown
+    ? `<div style="width:100%;height:100%;background:linear-gradient(135deg,#1a3a6a,#0a1530);display:flex;align-items:center;justify-content:center;font-size:20px;color:#3a5a9a;">🛡</div>`
+    : (src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#00fbff;padding:8px;font-size:10px;">${(card && card.name) || '?'}</div>`);
   fromDiv.appendChild(cardDiv);
   const fromLbl = document.createElement('div');
   fromLbl.style.cssText = 'font-size:9px;color:#00fbff;margin-top:4px;';
@@ -607,7 +610,8 @@ export function fxLinkEffect(baseCard, linkCard, callback) {
 // =====================================================
 
 export function fxSecurityAdd(card, callback) {
-  fxCardMove(card || { name: 'カード' }, 'デッキ', 'セキュリティ', callback);
+  // セキュリティへ加えるカードは秘匿情報なので裏向きで移動演出する
+  fxCardMove(card || { name: 'カード' }, 'デッキ', 'セキュリティ', callback, true);
 }
 
 // =====================================================

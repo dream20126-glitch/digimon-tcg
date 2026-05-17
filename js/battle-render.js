@@ -653,15 +653,12 @@ function showTamerMenu(card, tamerIdx, el) {
 window.activateTamerEffect = function(tamerIdx) {
   hideLongpressMenu();
   const card = bs.player.tamerArea[tamerIdx]; if (!card) return;
-  document.getElementById('effect-confirm-name').innerText = card.name;
-  document.getElementById('effect-confirm-text').innerText = card.effect;
-  document.getElementById('effect-confirm-overlay').style.display = 'flex';
-  window._effectConfirmCallback = function(yes) {
-    document.getElementById('effect-confirm-overlay').style.display = 'none';
-    if (!yes) { card.suspended = false; renderAll(); return; }
-    if (window._triggerMainEffect) window._triggerMainEffect(card, () => renderAll());
-    else renderAll();
-  };
+  // 確認ダイアログは effect-engine 側に委譲する。
+  // ここで独自に effect-confirm-overlay を出すと、engine の showConfirmDialog と
+  // 同じ要素・同じ _effectConfirmCallback を奪い合い、確認が二重化して効果が止まる。
+  // コスト持ち効果（cost: rest self 等）は engine が確認ダイアログを出す。
+  if (window._triggerMainEffect) window._triggerMainEffect(card, () => renderAll());
+  else renderAll();
 };
 window.cancelTamerLongpress = function(tamerIdx) {
   hideLongpressMenu();

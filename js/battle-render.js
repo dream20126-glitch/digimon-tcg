@@ -131,6 +131,9 @@ function _buildGrantBadges(card) {
   else if (card.cantAttack) items.push({ label: 'アタック不可', color: '#9933ff' });
   else if (card.cantBlock) items.push({ label: 'ブロック不可', color: '#9933ff' });
   if (card.cantEvolve) items.push({ label: '進化不可', color: '#9933ff' });
+  if (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'prevent_unsuspend')) {
+    items.push({ label: 'アクティブにならない', color: '#9933ff' });
+  }
   if (Array.isArray(card._grantedRecipes) && card._grantedRecipes.length > 0) {
     card._grantedRecipes.forEach((g) => {
       items.push({ label: '付与効果' + (g && g.granterName ? '（' + g.granterName + '）' : ''), color: '#c084fc' });
@@ -271,12 +274,15 @@ function renderBattleRows() {
         }
 
         // バフ表示（状態異常マーク）— カード右上に1行で表示
-        if (card.cantAttack || card.cantBlock || card.cantEvolve) {
+        const _hasPreventUnsuspend = Array.isArray(card.buffs)
+          && card.buffs.some(b => b && b.type === 'prevent_unsuspend');
+        if (card.cantAttack || card.cantBlock || card.cantEvolve || _hasPreventUnsuspend) {
           let mark = '';
           if (card.cantAttack && card.cantBlock) mark = '⚔🛡✖';
           else if (card.cantAttack) mark = '⚔✖';
           else if (card.cantBlock) mark = '🛡✖';
           if (card.cantEvolve) mark += '進❌';
+          if (_hasPreventUnsuspend) mark += '🔄✖';
           html += `<div style="position:absolute;top:1px;right:1px;background:#9933ff;color:#fff;font-size:8px;font-weight:bold;padding:1px 4px;border-radius:3px;border:1px solid #fff;box-shadow:0 0 5px #9933ff;z-index:5;white-space:nowrap;">${mark}</div>`;
         }
 

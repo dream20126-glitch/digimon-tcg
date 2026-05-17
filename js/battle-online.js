@@ -826,6 +826,11 @@ function onRemoteCommand(cmd) {
       hideRemoteDeckOpenOverlay();
       break;
     }
+    case 'fx_shuffle': {
+      // 相手のシャッフル演出を自分側でも再生
+      if (window._fxShuffle) { try { window._fxShuffle(cmd.label || 'シャッフル', () => {}); } catch (_) {} }
+      break;
+    }
     case 'fx_securityPeek': {
       // 相手がセキュリティを非公開で確認中 → 「確認中」ポップアップを表示/消去
       if (cmd.state === 'start') {

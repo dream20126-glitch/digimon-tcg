@@ -623,6 +623,46 @@ export function fxSecurityRemove(card, callback) {
 }
 
 // =====================================================
+//  13b. シャッフル演出（カード束が混ざるアニメーション）
+// =====================================================
+
+export function fxShuffle(label, callback) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:58000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;animation:fadeIn 0.15s ease;';
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;text-shadow:0 0 8px #00fbff;';
+  title.innerText = '🔀 ' + (label || 'シャッフル');
+  overlay.appendChild(title);
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:relative;width:170px;height:130px;';
+  overlay.appendChild(stage);
+  if (!document.getElementById('_fx-shuffle-style')) {
+    const st = document.createElement('style');
+    st.id = '_fx-shuffle-style';
+    st.textContent =
+      '@keyframes fxShuffleA{0%{transform:translate(-42px,0) rotate(-7deg);}25%{transform:translate(32px,-32px) rotate(11deg);}50%{transform:translate(42px,0) rotate(8deg);}75%{transform:translate(-32px,32px) rotate(-11deg);}100%{transform:translate(-42px,0) rotate(-7deg);}}'
+      + '@keyframes fxShuffleB{0%{transform:translate(42px,0) rotate(7deg);}25%{transform:translate(-32px,32px) rotate(-11deg);}50%{transform:translate(-42px,0) rotate(-8deg);}75%{transform:translate(32px,-32px) rotate(11deg);}100%{transform:translate(42px,0) rotate(7deg);}}';
+    document.head.appendChild(st);
+  }
+  for (let i = 0; i < 5; i++) {
+    const c = document.createElement('div');
+    const anim = i % 2 === 0 ? 'fxShuffleA' : 'fxShuffleB';
+    c.style.cssText = 'position:absolute;left:50%;top:50%;width:56px;height:80px;margin:-40px 0 0 -28px;'
+      + 'border-radius:6px;border:1px solid #00fbff;background:linear-gradient(135deg,#0a1f2e,#142838);'
+      + 'box-shadow:0 0 8px rgba(0,251,255,0.4);display:flex;align-items:center;justify-content:center;'
+      + 'color:#00fbff66;font-size:22px;'
+      + 'animation:' + anim + ' 0.52s ease-in-out ' + (i * 0.07) + 's infinite;';
+    c.innerText = '◆';
+    stage.appendChild(c);
+  }
+  document.body.appendChild(overlay);
+  setTimeout(() => {
+    overlay.style.animation = 'fadeOut 0.25s ease forwards';
+    setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 250);
+  }, 1100);
+}
+
+// =====================================================
 //  14. バリア演出（ジャミング: VS画面に「ジャミング！」表示）
 // =====================================================
 

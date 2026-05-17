@@ -3560,7 +3560,8 @@ function checkConditions(conditions, card, bs, side) {
           cond_picked_lv: 'lv', cond_picked_dp: 'dp',
           cond_picked_cost: 'playCost', cond_picked_name: 'name',
         };
-        const attr = attrMap[cond.base];
+        // cond.code で参照（parseRecipeCondition は base ではなく code を設定する）
+        const attr = attrMap[cond.code];
         const want = String(cond.value || '');
         if (want === '') break; // 値未指定は no-op (true)
         const got = picked[attr];
@@ -6619,12 +6620,17 @@ function executeRecipeStep(step, ctx, store, callback) {
           ctx.addLog && ctx.addLog('🔀 セキュリティをシャッフル');
           ctx.renderAll && ctx.renderAll();
           // オンライン: 確認中ポップアップを閉じ、セキュリティ（実カード・新順序）を相手へ再同期
+          // ＋ 相手画面にもシャッフル演出を送る
           if (_soOnline) {
             try {
               window._onlineSendCommand({ type: 'fx_securityPeek', state: 'end' });
               window._onlineSendCommand({ type: 'security_init', cards: player.security.map(_soSerialize) });
+              window._onlineSendCommand({ type: 'fx_shuffle', label: 'セキュリティをシャッフル' });
             } catch (_) {}
           }
+          // シャッフル演出（ローカル）→ 完了後に callback
+          const _fxShuf = (typeof window !== 'undefined' && window._fxShuffle);
+          if (_fxShuf) { try { _fxShuf('セキュリティをシャッフル', () => callback && callback()); return; } catch (_) {} }
           callback && callback();
         });
       });

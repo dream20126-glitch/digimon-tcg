@@ -631,7 +631,8 @@ export function fxSecurityRemove(card, callback) {
 
 export function fxShuffle(label, callback) {
   const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:58000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;animation:fadeIn 0.15s ease;';
+  // z-index は fxCardMove(66000) より上に置く（他の移動演出に隠れないように）
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:67000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;animation:fadeIn 0.15s ease;';
   const title = document.createElement('div');
   title.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;text-shadow:0 0 8px #00fbff;';
   title.innerText = '🔀 ' + (label || 'シャッフル');

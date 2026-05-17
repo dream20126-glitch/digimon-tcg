@@ -126,8 +126,18 @@ function drainFxQueue() {
   const fn = _fxQueue.shift();
   // 受信側の演出実行中はfxコマンド送信を抑制（ping-pong防止）
   window._suppressFxSend = true;
-  // 演出と演出の間に小休止を入れ、立て続けに表示されないようにする
-  fn(() => { window._suppressFxSend = false; setTimeout(drainFxQueue, 280); });
+  // 演出と演出の間に小休止を入れ、立て続けに表示されないようにする。
+  // 安全弁: fn が done を呼ばなくても一定時間で次へ進む（キュー停止防止）。
+  let _advanced = false;
+  const _advance = () => {
+    if (_advanced) return;
+    _advanced = true;
+    clearTimeout(_safety);
+    window._suppressFxSend = false;
+    setTimeout(drainFxQueue, 280);
+  };
+  const _safety = setTimeout(_advance, 7000);
+  fn(_advance);
 }
 
 // ===== 状態アクセサ =====

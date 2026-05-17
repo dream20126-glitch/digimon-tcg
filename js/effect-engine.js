@@ -5442,11 +5442,11 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _fromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
         if (!step.card && (_fromZones.includes('hand') || _fromZones.includes('trash'))) {
           const _filter = step.filter || {};
-          const _cands = [];
-          if (_fromZones.includes('hand')) (player.hand || []).forEach(c => { if (c && cardMatchesFilter(c, _filter)) _cands.push(c); });
-          if (_fromZones.includes('trash')) (player.trash || []).forEach(c => { if (c && cardMatchesFilter(c, _filter)) _cands.push(c); });
-          const _opt = Array.isArray(step.options) && step.options.includes('optional');
-          if (_cands.length === 0) {
+          const _handCands = _fromZones.includes('hand')
+            ? (player.hand || []).filter(c => c && cardMatchesFilter(c, _filter)) : [];
+          const _trashCands = _fromZones.includes('trash')
+            ? (player.trash || []).filter(c => c && cardMatchesFilter(c, _filter)) : [];
+          if (_handCands.length === 0 && _trashCands.length === 0) {
             ctx.addLog('💨 条件を満たすカードが手札・トラッシュにありません');
             showEffectFailed(null, () => callback());
             return;
@@ -5471,12 +5471,23 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (showFn) showFn({ name: c.name, imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '', type: c.type || 'デジモン', playCost: 0 }, afterAnim);
             else setTimeout(afterAnim, 300);
           };
-          if (effectiveSide === 'ai' || _cands.length === 1) {
-            _doSummonHT(_cands[0]);
-          } else {
-            showTrashCardPicker(_cands, 1, _opt, '🌟 登場させるカードを選んでください', (picked) => {
+          // 指定ゾーンのカードから1枚選んで登場（1枚なら即時）
+          const _pickFromZone = (zoneCands) => {
+            if (!zoneCands || zoneCands.length === 0) { callback(); return; }
+            if (zoneCands.length === 1) { _doSummonHT(zoneCands[0]); return; }
+            showTrashCardPicker(zoneCands, 1, false, '🌟 登場させるカードを選んでください', (picked) => {
               _doSummonHT(picked && picked.length > 0 ? picked[0] : null);
-            }, _cands);
+            }, zoneCands);
+          };
+          if (effectiveSide === 'ai') {
+            _doSummonHT(_handCands[0] || _trashCands[0]);
+          } else if (_handCands.length > 0 && _trashCands.length > 0) {
+            // 手札・トラッシュ両方に対象がある → どちらから登場するか選択
+            showAltActionChoice(['手札から', 'トラッシュから'], (zi) => {
+              _pickFromZone(zi === 0 ? _handCands : _trashCands);
+            });
+          } else {
+            _pickFromZone(_handCands.length > 0 ? _handCands : _trashCands);
           }
           return;
         }

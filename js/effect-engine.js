@@ -101,11 +101,15 @@ function addToQueue(card, block, side, priority, actualSide) {
   //         進化元）、両方を別エントリとして扱う必要があるため _recipeCard の同一性も比較する
   const blockRaw = block.raw || '';
   const blockRecipeCard = block._recipeCard || null;
+  // 付与効果(grant_effect)由来は _grantedSteps の同一性も比較する
+  // （カード本来の同トリガー効果と別エントリ扱いにするため）
+  const blockGrantedSteps = block._grantedSteps || null;
   const isDuplicate = _effectQueue.some(e =>
     e.block.trigger?.code === triggerCode &&
     (e.card === card || (e.card.name === card.name && e.card.cardNo === card.cardNo)) &&
     (e.block.raw || '') === blockRaw &&
-    (e.block._recipeCard || null) === blockRecipeCard
+    (e.block._recipeCard || null) === blockRecipeCard &&
+    (e.block._grantedSteps || null) === blockGrantedSteps
   );
   if (isDuplicate) {
     return;
@@ -365,7 +369,7 @@ function executeQueueEntry(entry, context, callback) {
       const recipeCard = block._recipeCard || card;
       const isEvoSourceLookup = !!block._recipeCard;
       const trigCode = block.trigger ? block.trigger.code : null;
-      const recipe = getRecipeForTrigger(recipeCard, trigCode, isEvoSourceLookup);
+      const recipe = block._grantedSteps || getRecipeForTrigger(recipeCard, trigCode, isEvoSourceLookup);
       if (recipe) {
         runRecipe(recipe, ctx, wrappedCallback);
       } else {
@@ -401,7 +405,7 @@ function executeQueueEntry(entry, context, callback) {
     const recipeCardForCheck = block._recipeCard || card;
     const isEvoSourceCheck = !!block._recipeCard;
     const trigCodeForCheck = block.trigger ? block.trigger.code : null;
-    const recipeForCheck = trigCodeForCheck ? getRecipeForTrigger(recipeCardForCheck, trigCodeForCheck, isEvoSourceCheck) : null;
+    const recipeForCheck = block._grantedSteps || (trigCodeForCheck ? getRecipeForTrigger(recipeCardForCheck, trigCodeForCheck, isEvoSourceCheck) : null);
     if (recipeForCheck && Array.isArray(recipeForCheck)) {
       // block を渡す: trigger_conditions を発火元カード(_eventSourceCard)に対して評価するため
       const willExecute = recipeWillExecuteAnything(recipeForCheck, { card, bs: context.bs, side: actualSide, block });
@@ -417,7 +421,7 @@ function executeQueueEntry(entry, context, callback) {
   if (block.isOptional === undefined) {
     const _optRc = block._recipeCard || card;
     const _optTc = block.trigger ? block.trigger.code : null;
-    const _optRecipe = _optTc ? getRecipeForTrigger(_optRc, _optTc, !!block._recipeCard) : null;
+    const _optRecipe = block._grantedSteps || (_optTc ? getRecipeForTrigger(_optRc, _optTc, !!block._recipeCard) : null);
     block.isOptional = Array.isArray(_optRecipe) && _optRecipe.some(s =>
       s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0))
     );
@@ -802,6 +806,60 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         });
       };
       pickDpNext();
+      break;
+    }
+    // === 元々のDPを value に変更（base override）。対象は self / opponent:N / own:N ===
+    case 'dp': {
+      const dpSetVal = parseInt(String(action.value ?? 0), 10) || 0;
+      const dpsTgt = defaultTarget || { code: 'target_self' };
+      const dpSetDur = (ctx.block && ctx.block.duration && ctx.block.duration.code) || 'dur_this_turn';
+      const applyDpSet = (c, isOpp, idx) => {
+        if (!c) return;
+        const base = (c.baseDp != null ? c.baseDp : parseInt(String(c.dp || 0), 10)) || 0;
+        const d = dpSetVal - base;
+        if (d !== 0) addBuffDirect(c, d > 0 ? 'dp_plus' : 'dp_minus', Math.abs(d), dpSetDur, ctx);
+        else recalcDp(c);
+        ctx.addLog('💪 「' + c.name + '」の元々のDPを ' + dpSetVal + ' に変更 → ' + c.dp);
+        if (isOpp && idx != null && window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+          window._onlineSendCommand({ type: 'fx_remoteBuff', targetIdx: idx, targetName: c.name, buffType: d > 0 ? 'dp_plus' : 'dp_minus', value: Math.abs(d), duration: dpSetDur, appliedFromSender: 'player', appliedDuringOwnTurn: ctx.bs && ctx.bs.isPlayerTurn });
+        }
+      };
+      if (dpsTgt.code === 'target_self') {
+        if (ctx.card) applyDpSet(ctx.card, false, null);
+        ctx.renderAll(); callback(); break;
+      }
+      const dpsIsOpp = dpsTgt.code === 'target_opponent' || dpsTgt.code === 'target_all_opponent';
+      const dpsPlayer = dpsIsOpp ? opponent : player;
+      const dpsRow = dpsIsOpp ? opponentRowSide : (ctx.side === 'player' ? 'pl' : 'ai');
+      const dpsValid = [];
+      for (let i = 0; i < dpsPlayer.battleArea.length; i++) if (dpsPlayer.battleArea[i]) dpsValid.push(i);
+      if (dpsValid.length === 0) { showEffectFailed('効果を発動できませんでした', callback); break; }
+      let dpsNeed = (dpsTgt.code === 'target_all_opponent' || dpsTgt.code === 'target_all_own') ? dpsValid.length : (dpsTgt.count || 1);
+      dpsNeed = Math.min(dpsNeed, dpsValid.length);
+      if (effectiveSide === 'ai') {
+        const dpsPick = [];
+        if (ctx._forceTargetIdx != null && dpsValid.indexOf(ctx._forceTargetIdx) >= 0) dpsPick.push(ctx._forceTargetIdx);
+        for (const i of dpsValid) { if (dpsPick.length >= dpsNeed) break; if (dpsPick.indexOf(i) < 0) dpsPick.push(i); }
+        dpsPick.forEach(i => applyDpSet(dpsPlayer.battleArea[i], dpsIsOpp, i));
+        ctx.renderAll(); callback(); break;
+      }
+      const dpsRemain = dpsValid.slice();
+      let dpsPicked = 0;
+      const pickDpSet = () => {
+        if (dpsPicked >= dpsNeed || dpsRemain.length === 0) { ctx.renderAll(); callback(); return; }
+        ctx.addLog('🎯 元々のDPを' + dpSetVal + 'にする対象を選んでください');
+        showTargetSelection(dpsRow, dpsRemain.slice(), null, uiColor, (idx) => {
+          if (idx !== null) {
+            applyDpSet(dpsPlayer.battleArea[idx], dpsIsOpp, idx);
+            const ri = dpsRemain.indexOf(idx);
+            if (ri >= 0) dpsRemain.splice(ri, 1);
+            dpsPicked++;
+            ctx.renderAll();
+            pickDpSet();
+          } else { ctx.renderAll(); callback(); }
+        });
+      };
+      pickDpSet();
       break;
     }
     case 'memory_plus': {
@@ -2953,6 +3011,21 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
       if (!card.buffs.some(b => b.type === 'cant_evolve')) card.cantEvolve = false;
     });
   });
+  // 付与効果(grant_effect)の期限切れ除去
+  // buffs と同じサイド判定（付与本人 g.side と endingSide の比較）
+  ['player', 'ai'].forEach(side => {
+    [...bs[side].battleArea, ...(bs[side].tamerArea || [])].forEach(card => {
+      if (!card || !Array.isArray(card._grantedRecipes) || card._grantedRecipes.length === 0) return;
+      card._grantedRecipes = card._grantedRecipes.filter(g => {
+        if (!g || g.duration !== timing) return true;
+        if (timing === 'dur_this_turn') return g.side !== endingSide;
+        if (timing === 'dur_next_opp_turn') return g.side === endingSide;
+        if (timing === 'permanent') return false;
+        return false;
+      });
+    });
+  });
+
   // セキュリティバフも同じtimingで期限切れ除去
   // card.buffs と同じく付与本人のowner（=ctx.side）と endingSide を比較してサイド判定
   if (bs._securityBuffs && bs._securityBuffs.length > 0) {
@@ -4246,6 +4319,23 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
         addToQueue(sourceCard, dummyBlock,
           sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
         );
+      }
+      // 付与効果（grant_effect で付与されたレシピ）も triggerCode でスキャン
+      // 例: ヘブンズリッパーで全デジモンが得る「【アタック時】DP-2000」
+      if (Array.isArray(sourceCard._grantedRecipes)) {
+        sourceCard._grantedRecipes.forEach(g => {
+          const gSteps = g && g.recipe && g.recipe[triggerCode];
+          if (gSteps && Array.isArray(gSteps)) {
+            const gBlock = {
+              raw: (g.granterText || ('付与効果（' + (g.granterName || '') + '）')),
+              trigger: { code: triggerCode },
+              actions: [], conditions: [], _grantedSteps: gSteps,
+            };
+            addToQueue(sourceCard, gBlock,
+              sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
+            );
+          }
+        });
       }
       // ソースカードの進化元効果もスキャン（レシピのみ）
       if (sourceCard.stack) {
@@ -6213,22 +6303,6 @@ function executeRecipeStep(step, ctx, store, callback) {
       callback();
       break;
     }
-    // === DPをNにする（自身のDPを target 値に上書き = base override） ===
-    case 'dp': {
-      if (!ctx.card) { callback(); break; }
-      const target = parseInt(String(step.value ?? 0), 10) || 0;
-      const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
-      const cur = parseInt(String(ctx.card.dp || 0), 10) || 0;
-      // diff を dp_plus/dp_minus として addBuffDirect で適用（既存 buff 機構を流用）
-      const diff = target - cur;
-      if (diff !== 0) {
-        addBuffDirect(ctx.card, diff > 0 ? 'dp_plus' : 'dp_minus', Math.abs(diff), dur, ctx);
-      }
-      ctx.addLog && ctx.addLog('💪 「' + ctx.card.name + '」DPを ' + target + ' にする');
-      ctx.renderAll && ctx.renderAll();
-      callback();
-      break;
-    }
     // === デジタマカードを孵化する ===
     // 育成エリアに最上位のデジタマカードを移動（既存の breed フロー流用）
     case 'hatch': {
@@ -6322,7 +6396,11 @@ function executeRecipeStep(step, ctx, store, callback) {
       const applyTo = (c) => {
         if (!c) return;
         if (!c._grantedRecipes) c._grantedRecipes = [];
-        c._grantedRecipes.push({ recipe: granted, duration: dur, side: ctx.side });
+        c._grantedRecipes.push({
+          recipe: granted, duration: dur, side: ctx.side,
+          granterName: ctx.card ? ctx.card.name : '',
+          granterText: ctx.card ? (ctx.card.effect || '') : '',
+        });
         ctx.addLog && ctx.addLog('🎁 「' + c.name + '」に効果を付与');
       };
       if (tStr.endsWith(':all') || tStr === 'own' || tStr === 'opponent') {

@@ -2055,7 +2055,12 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
         bs.player.tamerArea.push(sec);
         addLog('👤 テイマー「' + sec.name + '」がプレイヤーに登場');
         renderAll();
-        _afterOne();
+        // セキュリティから登場したテイマーの【登場時】効果を発動（高石タケル等）
+        if (hasKeyword(sec, '【登場時】') || _hasRecipeTrigger(sec, 'on_play')) {
+          _hooks.checkAndTriggerEffect(sec, '【登場時】', () => { renderAll(); _afterOne(); }, 'player');
+        } else {
+          _afterOne();
+        }
       } else {
         addLog('✦ セキュリティ効果：「' + sec.name + '」');
         const hasSecField = sec.securityEffect && sec.securityEffect.trim() && sec.securityEffect !== 'なし';

@@ -231,9 +231,11 @@ function renderBattleRows() {
           ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:4px;">`
           : `<div style="font-size:8px;color:${isPlayer ? '#00fbff' : '#ff00fb'};padding:3px;">${card.name}</div>`;
 
-        // DP表示（baseDp + dpModifier内訳）
+        // DP表示（実効ベース + dpModifier内訳）
+        // dp_set（元々のDP変更）対応: 実効ベース = 現DP - 修正値
         const dpMod = card.dpModifier || 0;
-        let dpHtml = `${card.baseDp || card.dp}`;
+        const effBaseDp = (typeof card.dp === 'number') ? (card.dp - dpMod) : (card.baseDp || card.dp);
+        let dpHtml = `${effBaseDp}`;
         if (dpMod > 0) dpHtml += `<span style="color:#00ff88;font-size:6px;"> +${dpMod}</span>`;
         else if (dpMod < 0) dpHtml += `<span style="color:#ff4444;font-size:6px;"> ${dpMod}</span>`;
         html += `<div class="s-dp">${dpHtml}</div>`;

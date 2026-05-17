@@ -826,6 +826,24 @@ function onRemoteCommand(cmd) {
       hideRemoteDeckOpenOverlay();
       break;
     }
+    case 'fx_recover': {
+      // 相手がリカバリー → 相手(ai)のセキュリティに実カードを追加し、
+      // デッキ→セキュリティの移動演出（裏向き）を再生する
+      const recCards = Array.isArray(cmd.cards) ? cmd.cards : [];
+      let ri = 0;
+      const playNextRecover = () => {
+        if (ri >= recCards.length) { renderAll(); return; }
+        const c = { ...recCards[ri++], buffs: [], stack: [], suspended: false };
+        bs.ai.security.push(c);
+        renderAll();
+        if (window._fxCardMove) {
+          try { window._fxCardMove(c, '相手のデッキ', '相手のセキュリティ', () => { renderAll(); playNextRecover(); }); }
+          catch (_) { renderAll(); playNextRecover(); }
+        } else { renderAll(); playNextRecover(); }
+      };
+      playNextRecover();
+      break;
+    }
     case 'fx_remoteCardMove': {
       // 相手側でのカード移動演出を自分側でも再生（受信側視点で from/to ラベルは反転表示しない）
       if (window._fxCardMove) {

@@ -1019,10 +1019,35 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'recover': {
       const n = action.value || 1;
       const recoverCard = player.deck.length > 0 ? player.deck[0] : null;
+      const recoveredCards = [];
       for (let i = 0; i < n; i++) {
-        if (player.deck.length > 0) { player.security.push(player.deck.splice(0, 1)[0]); ctx.addLog('🛡 セキュリティ+1'); }
+        if (player.deck.length > 0) {
+          const rc = player.deck.splice(0, 1)[0];
+          player.security.push(rc);
+          recoveredCards.push(rc);
+          ctx.addLog('🛡 セキュリティ+1');
+        }
       }
       ctx.renderAll();
+      // オンライン: 相手画面にもセキュリティ追加（実カード）＋移動演出を送る
+      // （state_sync はセキュリティ増加を反映しないため個別コマンドで同期）
+      if (recoveredCards.length > 0 && ctx.side === 'player'
+          && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+        try {
+          window._onlineSendCommand({
+            type: 'fx_recover',
+            cards: recoveredCards.map(c => ({
+              name: c.name, cardNo: c.cardNo, type: c.type, color: c.color,
+              level: c.level, dp: c.dp, baseDp: c.baseDp,
+              playCost: c.playCost, evolveCost: c.evolveCost, cost: c.cost,
+              effect: c.effect, evoSourceEffect: c.evoSourceEffect,
+              securityEffect: c.securityEffect, recipe: c.recipe,
+              evolveCond: c.evolveCond, imgSrc: c.imgSrc, imageUrl: c.imageUrl,
+              feature: c.feature,
+            })),
+          });
+        } catch (_) {}
+      }
       // 辞書の演出パラメータ1=デッキ, パラメータ2=セキュリティ で自動決定
       playEffect(action.code, { card: recoverCard, ctx }, () => { callback(); });
       break;
@@ -6466,10 +6491,14 @@ function executeRecipeStep(step, ctx, store, callback) {
       const applyTo = (c) => {
         if (!c) return;
         if (!c._grantedRecipes) c._grantedRecipes = [];
+        // 付与効果の説明文: 付与元カードの効果テキストの「」内（＝付与される効果本体）
+        // のみを使う。無ければ全文。
+        const _gFullText = ctx.card ? (ctx.card.effect || '') : '';
+        const _gQuoted = /「([^」]+)」/.exec(_gFullText);
         c._grantedRecipes.push({
           recipe: granted, duration: dur, side: ctx.side,
           granterName: ctx.card ? ctx.card.name : '',
-          granterText: ctx.card ? (ctx.card.effect || '') : '',
+          granterText: _gQuoted ? _gQuoted[1] : _gFullText,
         });
         ctx.addLog && ctx.addLog('🎁 「' + c.name + '」に効果を付与');
       };

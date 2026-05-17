@@ -2443,9 +2443,14 @@ function showDeckOpenUI(opened, step, ctx, callback) {
               cardEls.forEach(e => { if (!e.removed) setCardNeutral(e); });
               runSelectionPhase();
             };
-            // 進化先の進化時効果（on_evolve）を発火してから次フェーズへ
-            try { scanTriggers('on_evolve', _evolved, ctx.side, ctx); processQueue(ctx, _contAfterEvo); }
-            catch (_) { _contAfterEvo(); }
+            // on_evolve はキューに積むだけにする。inline processQueue は deck_open の
+            // 進行フロー（戻しフェーズ）と再入して UI が固まるため呼ばない
+            // （積まれた効果は外側の効果処理ループが後で拾う）。
+            try { scanTriggers('on_evolve', _evolved, ctx.side, ctx); } catch (_) {}
+            // 自分の画面でも進化演出を表示（相手画面は上の evolve コマンドで表示）
+            const _showEvo = (ctx && ctx.showEvolveEffect) || (typeof window !== 'undefined' && window.showEvolveEffect);
+            if (_showEvo) { try { _showEvo(0, _base.name, _base, _evolved, _contAfterEvo); } catch (_) { _contAfterEvo(); } }
+            else _contAfterEvo();
             return;
           }
           // 実際の移動処理 + 後続フロー

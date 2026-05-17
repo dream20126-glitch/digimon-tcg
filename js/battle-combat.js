@@ -994,6 +994,14 @@ export function resolveSecurityCheck(atk, atkIdx) {
   function doNextCheck() {
     checksRemaining--;
     checkNumber++;
+    // アタック中に進化した場合、進化後のカードが新しいアタッカー。
+    // battleArea[atkIdx] が atk の進化先（stack に atk を含む）ならアタッカーを
+    // 引き継ぎ、アタックを最後まで継続する。
+    const _curAtk = bs.player.battleArea[atkIdx];
+    if (_curAtk && _curAtk !== atk && Array.isArray(_curAtk.stack) && _curAtk.stack.indexOf(atk) >= 0) {
+      addLog('⬆ アタッカー「' + atk.name + '」が「' + _curAtk.name + '」に進化（アタック継続）');
+      atk = _curAtk;
+    }
     // アタッカーが場を離れた / 退化等で別カードに置換された → アタック終了
     if (!bs.player.battleArea[atkIdx] || bs.player.battleArea[atkIdx] !== atk) {
       addLog('⚔ アタッカーが場を離れたためセキュリティチェックを終了');

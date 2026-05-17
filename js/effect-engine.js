@@ -2413,6 +2413,41 @@ function showDeckOpenUI(opened, step, ctx, callback) {
         if (!cardMatchesFilter(entry.card, filter)) { entry.wrap.onclick = null; return; }
         entry.wrap.onclick = () => {
           if (entry.removed) return;
+          // 進化選択（ジャガモン等「デッキオープンで選んだカードに進化」）
+          if (sel.action === 'evolve') {
+            const _base = ctx.card;
+            const _slot = _base ? player.battleArea.indexOf(_base) : -1;
+            if (_slot < 0) { ctx.addLog && ctx.addLog('⚠ 進化元がバトルエリアにいません'); return; }
+            // base を選んだカードに進化させる（コスト無し・特殊進化）
+            const _evolved = Object.assign({}, entry.card, {
+              suspended: _base.suspended,
+              summonedThisTurn: _base.summonedThisTurn,
+              buffs: _base.buffs || [],
+              dpModifier: _base.dpModifier || 0,
+              stack: [_base].concat(_base.stack || []),
+            });
+            _evolved.baseDp = parseInt(entry.card.dp) || parseInt(entry.card.baseDp) || 0;
+            _evolved.dp = _evolved.baseDp + (_evolved.dpModifier || 0);
+            player.battleArea[_slot] = _evolved;
+            if (ctx.bs) ctx.bs._evolveCountThisTurn = (ctx.bs._evolveCountThisTurn || 0) + 1;
+            ctx.addLog && ctx.addLog('⬆ 「' + _base.name + '」→「' + _evolved.name + '」進化！（コスト無し）');
+            sendRemote({ type: 'fx_remoteDeckOpenAct', cardNo: entry.card.cardNo, name: entry.card.name, to: 'evolve' });
+            // オンライン: 相手画面に進化演出を通知（盤面自体は効果完了後の state_sync で同期）
+            if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+              try { window._onlineSendCommand({ type: 'evolve', cardName: _evolved.name, baseName: _base.name, cardImg: _evolved.imgSrc || '', evolveCost: 0 }); } catch (_) {}
+            }
+            removeEntry(entry);
+            pickedCount++;
+            ctx.renderAll && ctx.renderAll();
+            const _contAfterEvo = () => {
+              cardEls.forEach(e => { if (!e.removed) setCardNeutral(e); });
+              runSelectionPhase();
+            };
+            // 進化先の進化時効果（on_evolve）を発火してから次フェーズへ
+            try { scanTriggers('on_evolve', _evolved, ctx.side, ctx); processQueue(ctx, _contAfterEvo); }
+            catch (_) { _contAfterEvo(); }
+            return;
+          }
           // 実際の移動処理 + 後続フロー
           const proceed = () => {
             if (dest === 'hand') player.hand.push(entry.card);

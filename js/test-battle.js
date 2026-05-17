@@ -241,6 +241,22 @@ function buildBoardFromScenario(scenario, isPlayer1) {
       const card = findCardByName(name);
       if (card) target.tamerArea.push(card);
     });
+    // 育成エリア（1体・進化元スタック対応）
+    if (sc.ikusei) {
+      const ikCard = findCardByName(sc.ikusei);
+      if (ikCard) {
+        (sc.ikuseiEvo || []).forEach(name => {
+          const ec = findCardByName(name);
+          if (ec) ikCard.stack.push(ec);
+        });
+        target.ikusei = ikCard;
+      }
+    }
+    // デジタマデッキ（孵化用・先頭=上から孵化される順）
+    (sc.eggCards || []).forEach(name => {
+      const ec = findCardByName(name);
+      if (ec) target.tamaDeck.push(ec);
+    });
     (sc.trash || []).forEach(name => {
       const card = findCardByName(name);
       if (card) target.trash.push(card);
@@ -283,8 +299,9 @@ function buildBoardFromScenario(scenario, isPlayer1) {
 // ===== シナリオ選択UI =====
 let _selectedPlayer = 'player1';
 let _selectedCardName = null; // 検索で選択中のカード名
-let _customCards = { 'p1-hand': [], 'p1-battle': [], 'p1-tamer': [], 'p1-trash': [], 'p1-security': [], 'p1-deck': [], 'p2-hand': [], 'p2-battle': [], 'p2-tamer': [], 'p2-trash': [], 'p2-security': [], 'p2-deck': [] };
+let _customCards = { 'p1-hand': [], 'p1-battle': [], 'p1-tamer': [], 'p1-trash': [], 'p1-security': [], 'p1-deck': [], 'p1-ikusei': [], 'p1-egg': [], 'p2-hand': [], 'p2-battle': [], 'p2-tamer': [], 'p2-trash': [], 'p2-security': [], 'p2-deck': [], 'p2-ikusei': [], 'p2-egg': [] };
 let _customEvo = { p1: {}, p2: {} }; // { p1: { 0: ['カード名', ...], 1: [...] }, p2: { ... } }
+let _customIkuseiEvo = { p1: [], p2: [] }; // 育成エリアのデジモンの進化元スタック { p1: ['カード名', ...], p2: [...] }
 let _cardsLoaded = false;
 
 window.selectPlayer = function(player) {
@@ -382,6 +399,10 @@ window.selectSearchCard = function(cardNo, name) {
 // カードを配置先に追加
 window.addCardTo = function(zone) {
   if (!_selectedCardName) { alert('先にカードを検索して選択してください'); return; }
+  // 育成エリアは1体まで
+  if ((zone === 'p1-ikusei' || zone === 'p2-ikusei') && _customCards[zone].length >= 1) {
+    alert('育成エリアは1体までです（先に削除してください）'); return;
+  }
   _customCards[zone].push(_selectedCardName);
   // バトルカード削除時に進化元もクリーンアップするため、evo indexは自動管理
   renderCustomCards();
@@ -404,6 +425,25 @@ window.removeCardFrom = function(zone, idx) {
     });
     _customEvo[side] = newEvo;
   }
+  // 育成エリアから削除した場合は進化元スタックもクリア
+  if (zone === 'p1-ikusei' || zone === 'p2-ikusei') {
+    _customIkuseiEvo[zone === 'p1-ikusei' ? 'p1' : 'p2'] = [];
+  }
+  renderCustomCards();
+};
+
+// 育成エリアのデジモンに進化元を追加（孵化元デジタマ等）
+window.addIkuseiEvo = function(side) {
+  if (!_selectedCardName) { alert('先にカードを検索して選択してください'); return; }
+  _customIkuseiEvo[side].push(_selectedCardName);
+  renderCustomCards();
+  _selectedCardName = null;
+  document.getElementById('card-search-results').innerHTML = '';
+};
+
+// 育成エリアの進化元を削除
+window.removeIkuseiEvo = function(side, evoIdx) {
+  _customIkuseiEvo[side].splice(evoIdx, 1);
   renderCustomCards();
 };
 
@@ -459,6 +499,28 @@ function renderCustomCards() {
       return;
     }
 
+    // 育成エリアは進化元付き（1体）でレンダリング
+    if (zone === 'p1-ikusei' || zone === 'p2-ikusei') {
+      const side = isP1 ? 'p1' : 'p2';
+      if (_customCards[zone].length === 0) { el.innerHTML = ''; return; }
+      el.innerHTML = _customCards[zone].map((idOrName, i) => {
+        const label = _displayLabelFor(idOrName);
+        const evoCards = _customIkuseiEvo[side] || [];
+        const evoHtml = evoCards.map((eIdOrName, ei) =>
+          `<span style="background:#ffaa0022;color:#ffaa00;border:1px solid #ffaa0044;border-radius:4px;padding:1px 5px;font-size:9px;cursor:pointer;" onclick="removeIkuseiEvo('${side}',${ei})" title="クリックで削除">${_displayLabelFor(eIdOrName)} ✕</span>`
+        ).join('');
+        return `<div style="background:#111;border:1px solid ${color}44;border-radius:6px;padding:4px 6px;margin-bottom:3px;">
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="color:${color};font-size:10px;font-weight:bold;">${label}</span>
+            <span style="color:#666;font-size:9px;cursor:pointer;" onclick="removeCardFrom('${zone}',${i})" title="削除">✕</span>
+            <button onclick="addIkuseiEvo('${side}')" style="font-size:8px;padding:1px 4px;background:#332200;color:#ffaa00;border:1px solid #ffaa0066;border-radius:3px;cursor:pointer;margin-left:auto;">+進化元</button>
+          </div>
+          ${evoCards.length > 0 ? `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px;padding-left:8px;border-left:2px solid #ffaa0033;">${evoHtml}</div>` : ''}
+        </div>`;
+      }).join('');
+      return;
+    }
+
     // 通常のゾーン
     el.innerHTML = _customCards[zone].map((idOrName, i) => {
       return `<span style="background:${color}22;color:${color};border:1px solid ${color}44;border-radius:4px;padding:2px 6px;font-size:10px;cursor:pointer;" onclick="removeCardFrom('${zone}',${i})" title="クリックで削除">${_displayLabelFor(idOrName)} ✕</span>`;
@@ -500,6 +562,7 @@ window.saveScenario = function() {
   const data = {
     cards: JSON.parse(JSON.stringify(_customCards)),
     evo: JSON.parse(JSON.stringify(_customEvo)),
+    ikuseiEvo: JSON.parse(JSON.stringify(_customIkuseiEvo)),
     memory: parseInt(document.getElementById('custom-memory').value) || 5,
     p1SecDummy: parseInt(document.getElementById('custom-p1-sec').value) || 0,
     p2SecDummy: parseInt(document.getElementById('custom-p2-sec').value) || 0,
@@ -518,14 +581,19 @@ window.loadScenario = function() {
   const saved = getSavedScenarios();
   const data = saved[name];
   if (!data) return;
-  // カード配置を復元
-  Object.keys(data.cards).forEach(zone => { _customCards[zone] = data.cards[zone] || []; });
+  // カード配置を復元（全ゾーンを一旦クリア → 旧データに無い新ゾーンが残らないように）
+  Object.keys(_customCards).forEach(z => { _customCards[z] = []; });
+  Object.keys(data.cards || {}).forEach(zone => {
+    if (_customCards[zone] !== undefined) _customCards[zone] = data.cards[zone] || [];
+  });
   // 進化元を復元（旧形式対応）
   if (data.evo) {
     _customEvo = JSON.parse(JSON.stringify(data.evo));
   } else {
     _customEvo = { p1: {}, p2: {} };
   }
+  // 育成エリアの進化元スタックを復元
+  _customIkuseiEvo = data.ikuseiEvo ? JSON.parse(JSON.stringify(data.ikuseiEvo)) : { p1: [], p2: [] };
   // セキュリティ（旧形式: p1Sec/p2Sec → 新形式: p1SecDummy/p2SecDummy）
   document.getElementById('custom-memory').value = data.memory || 5;
   document.getElementById('custom-p1-sec').value = data.p1SecDummy ?? data.p1Sec ?? 5;
@@ -566,6 +634,9 @@ function buildCustomScenarioData() {
       securityCards: _customCards['p1-security'],
       securityDummy: parseInt(document.getElementById('custom-p1-sec').value) || 0,
       deckTopCards: _customCards['p1-deck'],
+      ikusei: _customCards['p1-ikusei'][0] || null,
+      ikuseiEvo: _customIkuseiEvo['p1'],
+      eggCards: _customCards['p1-egg'],
       deckSize: 20,
     },
     ai: {
@@ -577,6 +648,9 @@ function buildCustomScenarioData() {
       securityCards: _customCards['p2-security'],
       securityDummy: parseInt(document.getElementById('custom-p2-sec').value) || 0,
       deckTopCards: _customCards['p2-deck'],
+      ikusei: _customCards['p2-ikusei'][0] || null,
+      ikuseiEvo: _customIkuseiEvo['p2'],
+      eggCards: _customCards['p2-egg'],
       deckSize: 20,
     },
   };

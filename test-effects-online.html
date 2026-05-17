@@ -181,6 +181,19 @@
         <div id="custom-p1-tamer" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
         <button onclick="addCardTo('p1-tamer')" style="font-size:9px; padding:2px 6px; background:#333; color:#0f0; border:1px solid #0f0; border-radius:4px; cursor:pointer;">+追加</button>
       </div>
+      <div style="margin-bottom:4px;">
+        <div style="display:flex; gap:4px; align-items:center; margin-bottom:2px;">
+          <span style="color:#888; font-size:10px; width:60px;" title="育成エリアに1体配置（デジタマ=孵化済み / デジモン=進化済み。+進化元で進化元も指定可）">育成:</span>
+          <div style="flex:1;"></div>
+          <button onclick="addCardTo('p1-ikusei')" style="font-size:9px; padding:2px 6px; background:#333; color:#0f0; border:1px solid #0f0; border-radius:4px; cursor:pointer;">+追加</button>
+        </div>
+        <div id="custom-p1-ikusei" style="padding-left:8px;"></div>
+      </div>
+      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
+        <span style="color:#888; font-size:10px; width:60px;" title="デジタマデッキ。左=上から孵化される順。たまごの残枚数=配置した数">デジタマ:</span>
+        <div id="custom-p1-egg" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
+        <button onclick="addCardTo('p1-egg')" style="font-size:9px; padding:2px 6px; background:#333; color:#0f0; border:1px solid #0f0; border-radius:4px; cursor:pointer;">+追加</button>
+      </div>
       <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
         <span style="color:#888; font-size:10px; width:60px;">トラッシュ:</span>
         <div id="custom-p1-trash" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
@@ -215,6 +228,19 @@
         <span style="color:#888; font-size:10px; width:60px;">テイマー:</span>
         <div id="custom-p2-tamer" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
         <button onclick="addCardTo('p2-tamer')" style="font-size:9px; padding:2px 6px; background:#333; color:#f0f; border:1px solid #f0f; border-radius:4px; cursor:pointer;">+追加</button>
+      </div>
+      <div style="margin-bottom:4px;">
+        <div style="display:flex; gap:4px; align-items:center; margin-bottom:2px;">
+          <span style="color:#888; font-size:10px; width:60px;" title="育成エリアに1体配置（デジタマ=孵化済み / デジモン=進化済み。+進化元で進化元も指定可）">育成:</span>
+          <div style="flex:1;"></div>
+          <button onclick="addCardTo('p2-ikusei')" style="font-size:9px; padding:2px 6px; background:#333; color:#f0f; border:1px solid #f0f; border-radius:4px; cursor:pointer;">+追加</button>
+        </div>
+        <div id="custom-p2-ikusei" style="padding-left:8px;"></div>
+      </div>
+      <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
+        <span style="color:#888; font-size:10px; width:60px;" title="デジタマデッキ。左=上から孵化される順。たまごの残枚数=配置した数">デジタマ:</span>
+        <div id="custom-p2-egg" style="display:flex; gap:3px; flex-wrap:wrap; flex:1;"></div>
+        <button onclick="addCardTo('p2-egg')" style="font-size:9px; padding:2px 6px; background:#333; color:#f0f; border:1px solid #f0f; border-radius:4px; cursor:pointer;">+追加</button>
       </div>
       <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;">
         <span style="color:#888; font-size:10px; width:60px;">トラッシュ:</span>
@@ -602,7 +628,7 @@
   </div>
 </div>
 
-<script type="module" src="js/test-battle.js?v=20260514a"></script>
+<script type="module" src="js/test-battle.js?v=20260517a"></script>
 
 <!-- デバッグログオーバーレイ（スマホ用） -->
 <div id="debug-log-panel" style="display:none;position:fixed;bottom:0;left:0;right:0;max-height:35vh;overflow-y:auto;background:rgba(0,0,0,0.9);border-top:2px solid #ffaa00;z-index:99999;font-family:monospace;font-size:10px;padding:4px;">

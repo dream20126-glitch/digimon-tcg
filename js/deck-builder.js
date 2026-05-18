@@ -129,13 +129,22 @@ window.hidePreview = function() {
   document.getElementById('card-preview-window').style.display = 'none';
 };
 
+// カードNoの「_」より前（絵違いをまとめた基準ID）。例: BT1-087_P → BT1-087
+function baseCardNo(id) { return String(id || '').split('_')[0]; }
+// tempDeck 内で baseCardNo が一致するカード（絵違い含む）の合計枚数
+function baseDeckCount(id) {
+  const b = baseCardNo(id);
+  return tempDeck.filter(i => baseCardNo(i.card["カードNo"]) === b).reduce((s, i) => s + i.count, 0);
+}
+
 window.addToDeck = function(id, num, limit) {
   const card = allCards.find(c => c["カードNo"] === id);
   if (!card) return;
   const isTama = (String(card["レベル"]) === '2');
   let item = tempDeck.find(i => i.card["カードNo"] === id);
-  let current = item ? item.count : 0;
-  if (current + num > limit) return alert(`最大 ${limit} 枚までです`);
+  // 4枚制限は「カードNoの _ より前」が同じカード（絵違い）を合算して判定
+  const current = baseDeckCount(id);
+  if (current + num > limit) return alert(`最大 ${limit} 枚までです（絵違い合計）`);
   if (isTama) {
     const tamaTotal = tempDeck.filter(i => String(i.card["レベル"]) === '2').reduce((s, i) => s + i.count, 0);
     if (tamaTotal + num > 5) return alert('デジタマデッキは最大5枚までです');
@@ -146,9 +155,9 @@ window.addToDeck = function(id, num, limit) {
 };
 
 function updateQtyMsg(id) {
-  const item = tempDeck.find(i => i.card["カードNo"] === id);
+  // 投入数は絵違い合算で表示（4枚制限と同じ基準）
   const msgEl = document.getElementById('current-qty-msg');
-  if (msgEl) msgEl.innerText = `現在投入数: ${item ? item.count : 0} 枚`;
+  if (msgEl) msgEl.innerText = `現在投入数: ${baseDeckCount(id)} 枚`;
 }
 
 window.changeQty = function(id, diff) {
@@ -156,7 +165,8 @@ window.changeQty = function(id, diff) {
   if (!item) return;
   const isTama = (String(item.card["レベル"]) === '2');
   const limit = (item.card["効果"] || '').includes('50枚まで') ? 50 : 4;
-  if (item.count + diff > limit) return;
+  // 4枚制限は絵違い合算で判定（カードNoの _ より前で集計）
+  if (diff > 0 && baseDeckCount(id) + diff > limit) return;
   if (isTama && diff > 0) {
     const tamaTotal = tempDeck.filter(i => String(i.card["レベル"]) === '2').reduce((s, i) => s + i.count, 0);
     if (tamaTotal >= 5) return alert('デジタマデッキは最大5枚までです');

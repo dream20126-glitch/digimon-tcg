@@ -7981,12 +7981,23 @@ export function getAltEvolve(evoCard, baseCard, bs, side) {
       const conds = parseRecipeCondition(entry.condition);
       if (!checkConditions(conds, evoCard, bs, side || 'player')) continue;
     }
-    // 進化元フィルタ（名前/色/Lv）
+    // 進化元フィルタ（名前/色/Lv） — base_filter オブジェクト形式
     const bf = entry.base_filter || {};
     if (bf.name && !String(baseCard.name || '').includes(bf.name)) continue;
     if (bf.color && !String(baseCard.color || '').includes(bf.color)) continue;
     if (bf.lv != null && (parseInt(baseCard.level) || 0) !== bf.lv) continue;
-    return { cost: (entry.cost != null ? entry.cost : (evoCard.evolveCost || 0)) };
+    // 進化元フィルタ — エディタ形式（条件文字列を進化元カードに対し評価）
+    //   when（条件2つ目）/ base_cond で「cond_name_contains:インプモン」等を指定
+    const baseCond = entry.when || entry.base_cond;
+    if (baseCond) {
+      const bc = parseRecipeCondition(baseCond);
+      if (!checkConditions(bc, baseCard, bs, side || 'player')) continue;
+    }
+    // 進化コスト: cost > value > 元カードの進化コスト の優先順
+    const _c = (entry.cost != null) ? entry.cost
+             : (entry.value != null) ? entry.value
+             : (evoCard.evolveCost || 0);
+    return { cost: parseInt(_c, 10) || 0 };
   }
   return null;
 }

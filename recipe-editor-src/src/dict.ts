@@ -177,6 +177,9 @@ export const TRIGGERS: DictEntry[] = [
   // 特殊
   { code: 'main', kind: 'trigger', label: 'メインフェイズ中' },
   { code: 'passive', kind: 'trigger', label: 'パッシブ' },
+  // 常時メカニクス（アクション不要・条件と値だけ設定する）
+  { code: 'summon_cost', kind: 'trigger', label: '［常時］登場コスト軽減（条件＝発動条件／値＝軽減量）' },
+  { code: 'alt_evolve', kind: 'trigger', label: '［常時］代替進化・進化条件無視（条件1＝発動条件／条件2＝進化元の絞り込み／値＝進化コスト）' },
 ];
 
 // 条件（種類: condition）
@@ -184,6 +187,7 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_dp', kind: 'condition', label: 'DP（完全一致）' },
   { code: 'cond_dp_le', kind: 'condition', label: 'DP以下' },
   { code: 'cond_dp_ge', kind: 'condition', label: 'DP以上' },
+  { code: 'cond_opp_dp_ge', kind: 'condition', label: '相手にDP N以上のデジモンがいる' },
   { code: 'cond_lv', kind: 'condition', label: 'Lv.（完全一致）' },
   { code: 'cond_lv_le', kind: 'condition', label: 'Lv.以下' },
   { code: 'cond_lv_ge', kind: 'condition', label: 'Lv.以上' },

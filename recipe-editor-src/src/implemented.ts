@@ -108,6 +108,8 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_picked_name', 'cond_picked_feature_contains',
   // Stage 6 追加（汎用カード状態 / 進化文脈）
   'cond_rest', 'cond_blocker', 'cond_tamer', 'cond_security', 'cond_evolve_to_lv',
+  // Stage 8 追加（代替進化 / 条件付き登場コスト軽減）
+  'cond_opp_dp_ge',
 ]);
 
 // エンジンで実装済の修飾子コード（アクションの実行方法を変える）

@@ -259,6 +259,7 @@ export const ACTIONS: DictEntry[] = [
   { code: 'evo_discard_bottom', kind: 'action', label: '進化元の下から破棄' },
   { code: 'summon', kind: 'action', label: '登場させる' },
   { code: 'summon_from_trash', kind: 'action', label: 'トラッシュから登場' },
+  { code: 'summon_token', kind: 'action', label: 'トークンを登場させる（値=トークンのカードNo）' },
   { code: 'deck_open', kind: 'action', label: 'デッキの上からオープン' },
   { code: 'deck_trash_top', kind: 'action', label: 'デッキの上から破棄' },
   { code: 'add_to_hand', kind: 'action', label: '手札に加える' },

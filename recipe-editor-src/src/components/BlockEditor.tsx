@@ -517,7 +517,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     else if (/^\d+$/.test(v)) update('value', Number(v));
                     else update('value', v);
                   }}
-                  placeholder="数値 (例: 1000)"
+                  placeholder={block.action === 'summon_token' ? 'トークンのカードNo (例: TK-01)' : '数値 (例: 1000)'}
                 />
               </div>
             </div>

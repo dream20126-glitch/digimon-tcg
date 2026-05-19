@@ -6409,7 +6409,9 @@ function executeRecipeStep(step, ctx, store, callback) {
     // ディアボロモン(BT2-082) のアタック時効果等。場ではデジモンとして扱い、
     // _isToken=true（場を離れると消滅＝トラッシュ等に残らない）。
     case 'summon_token': {
-      const _tokNo = step.tokenNo || step.token || '';
+      // tokenNo / token / value のいずれかでトークンのカードNoを指定
+      // （レシピエディタは「値」欄に入れるため step.value も受ける）
+      const _tokNo = step.tokenNo || step.token || step.value || '';
       const _tokObj = (typeof window !== 'undefined' && Array.isArray(window.allCards))
         ? window.allCards.find(c => c && c['カードNo'] === _tokNo) : null;
       if (!_tokObj) {

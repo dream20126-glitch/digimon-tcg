@@ -42,6 +42,8 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'security_discard', 'place_security',
   'not_active', 'prevent_unsuspend',
   'grant_effect',
+  // Stage 7 追加（トークン生成）
+  'summon_token',
 ]);
 
 // エンジンで実装済の passive flag (キーワード)

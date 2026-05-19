@@ -9,7 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -380,6 +380,8 @@ function removeOwnCard(slotIdx, reason) {
 // ===== 進化条件チェック =====
 
 export function canEvolveOnto(evoCard, baseCard) {
+  // 代替進化（alt_evolve / 進化条件を無視）が成立するなら進化可
+  try { if (_getAltEvolve(evoCard, baseCard, bs, 'player')) return true; } catch (_) {}
   const cond = evoCard.evolveCond || '';
   if (!cond || cond === 'なし' || cond === '') return false;
   const conditions = cond.split('/').map(s => s.trim());
@@ -436,20 +438,26 @@ export function doPlay(card, handIdx, slotIdx) {
   if (bs.phase !== 'main') { console.log('[doPlay] skip: phase != main'); return; }
   if (_attackInProgress) { console.log('[doPlay] skip: attack in progress'); return; }
   if (card.level === '2') { addLog('🚨 デジタマはバトルエリアに出せません'); return; }
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'play', handIdx, slotIdx, cardName: card.name, cardType: card.type, cardImg: card.imgSrc || '', playCost: card.playCost || 0 });
   if (card.playCost === null) { addLog('🚨 「' + card.name + '」は進化専用カードです'); return; }
+  // recipe の summon_cost（条件付き登場コスト軽減）を反映した実効登場コスト
+  // 例: ブラックウォーグレイモン「DP10000以上の相手がいる間、登場コスト-6」
+  const _effPlayCost = _getEffectivePlayCost(card, bs, 'player');
+  if (_effPlayCost !== card.playCost) {
+    addLog('💠 「' + card.name + '」の登場コスト ' + card.playCost + ' → ' + _effPlayCost);
+  }
+  if (_onlineMode && _sendCommand) _sendCommand({ type: 'play', handIdx, slotIdx, cardName: card.name, cardType: card.type, cardImg: card.imgSrc || '', playCost: _effPlayCost });
 
   // ----- オプションカード -----
   if (card.type === 'オプション') {
     bs.player.hand.splice(handIdx, 1); bs.selHand = null;
-    addLog('✦ 「' + card.name + '」を使用！（コスト ' + card.playCost + '）');
+    addLog('✦ 「' + card.name + '」を使用！（コスト ' + _effPlayCost + '）');
     if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
       try { window._tutorialHideInstruction(); } catch (e) {}
     }
     renderAll();
     showOptionEffect(card, async () => {
       // ★ 公式ルール: コスト支払い → 効果処理 → ターン終了判定
-      playerSpendMemory(card.playCost, true); // defer=true
+      playerSpendMemory(_effPlayCost, true); // defer=true
       // チュートリアル進行通知 → PERFECT/GREAT を先に流してから割り込み(説明等)へ
       if (window._tutorialRunner && window._tutorialRunner.active) {
         try { window._tutorialRunner.notifyEvent('play', { cardNo: card.cardNo, cardName: card.name, targetCardNo: card.cardNo, side: 'player' }); } catch (e) {}
@@ -474,14 +482,14 @@ export function doPlay(card, handIdx, slotIdx) {
   if (card.type === 'テイマー') {
     bs.player.hand.splice(handIdx, 1); bs.selHand = null;
     bs.player.tamerArea.push(card);
-    addLog('▶ 「' + card.name + '」を登場！（コスト ' + card.playCost + '）');
+    addLog('▶ 「' + card.name + '」を登場！（コスト ' + _effPlayCost + '）');
     if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
       try { window._tutorialHideInstruction(); } catch (e) {}
     }
     renderAll();
     showPlayEffect(card, async () => {
       // ★ 公式ルール: コスト支払い → 登場時効果 → ターン終了判定
-      playerSpendMemory(card.playCost, true); // defer=true
+      playerSpendMemory(_effPlayCost, true); // defer=true
       _hooks.applyPermanentEffects('player');
       renderAll();
       // チュートリアル進行通知 → PERFECT/GREAT を先に流してから割り込み(説明等)へ
@@ -511,7 +519,7 @@ export function doPlay(card, handIdx, slotIdx) {
   while (bs.player.battleArea.length <= slotIdx) bs.player.battleArea.push(null);
   bs.player.battleArea[slotIdx] = card;
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
-  addLog('▶ 「' + card.name + '」を登場！（コスト ' + card.playCost + '）');
+  addLog('▶ 「' + card.name + '」を登場！（コスト ' + _effPlayCost + '）');
   if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
     try { window._tutorialHideInstruction(); } catch (e) {}
   }
@@ -555,6 +563,9 @@ export function doEvolve(card, handIdx, slotIdx) {
   if (!canEvolveOnto(card, base)) { addLog('🚨 進化条件を満たしていません‼（' + card.evolveCond + '）'); return; }
 
   let cost = card.evolveCost;
+  // 代替進化（alt_evolve・進化条件を無視）が成立していれば、その指定コストを使う
+  const _altEvo = _getAltEvolve(card, base, bs, 'player');
+  if (_altEvo) { cost = _altEvo.cost; addLog('⬆ 代替進化（進化条件を無視）コスト' + cost); }
   const _evoDisc = _consumePendingEvoCostReduction(card, base);
   if (_evoDisc > 0) { cost = Math.max(0, cost - _evoDisc); addLog('💠 進化コスト-' + _evoDisc + '（コスト' + cost + 'で進化）'); }
   const evolved = Object.assign({}, card, {
@@ -617,6 +628,9 @@ export function doEvolveIku(card, handIdx) {
   if (!canEvolveOnto(card, base)) { addLog('🚨 進化条件を満たしていません‼（' + card.evolveCond + '）'); return; }
 
   let cost = card.evolveCost;
+  // 代替進化（alt_evolve・進化条件を無視）が成立していれば、その指定コストを使う
+  const _altEvo = _getAltEvolve(card, base, bs, 'player');
+  if (_altEvo) { cost = _altEvo.cost; addLog('⬆ 代替進化（進化条件を無視）コスト' + cost); }
   const _evoDisc = _consumePendingEvoCostReduction(card, base);
   if (_evoDisc > 0) { cost = Math.max(0, cost - _evoDisc); addLog('💠 進化コスト-' + _evoDisc + '（コスト' + cost + 'で進化）'); }
   const evolved = Object.assign({}, card, {

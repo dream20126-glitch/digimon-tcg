@@ -3469,6 +3469,19 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_dp_le': if (card.dp > (cond.value || 0)) return false; break;
       case 'cond_dp_ge': if (card.dp < (cond.value || 0)) return false; break;
       case 'cond_dp':    if (card.dp !== (cond.value || 0)) return false; break;
+      // 自分のトラッシュが N 枚以上（ベルゼブモン等）
+      case 'cond_own_trash_ge': {
+        const _p = side === 'player' ? bs.player : bs.ai;
+        if (!_p || (_p.trash || []).length < (cond.value || 0)) return false;
+        break;
+      }
+      // 相手にDP N以上のデジモンがいる（ブラックウォーグレイモン等）
+      case 'cond_opp_dp_ge': {
+        const _opp = side === 'player' ? bs.ai : bs.player;
+        const _ok = _opp && (_opp.battleArea || []).some(c => c && (parseInt(c.dp) || 0) >= (cond.value || 0));
+        if (!_ok) return false;
+        break;
+      }
       case 'cond_lv_le': if (parseInt(card.level) > (cond.value || 0)) return false; break;
       case 'cond_lv_ge': if (parseInt(card.level) < (cond.value || 0)) return false; break;
       case 'cond_lv':    if (parseInt(card.level) !== (cond.value || 0)) return false; break;
@@ -7919,6 +7932,63 @@ export function hasRecipeTrigger(card, triggerCode) {
     if (r.evo_source && r.evo_source[triggerCode]) return true;
     return false;
   } catch (_) { return false; }
+}
+
+// recipe を安全にパースして返す（失敗時 null）
+function _parseCardRecipe(card) {
+  if (!card || !card.recipe) return null;
+  try {
+    const raw = typeof card.recipe === 'string'
+      ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (_) { return null; }
+}
+
+// recipe の summon_cost（条件付き登場コスト軽減）を反映した実効登場コスト。
+// summon_cost: [{ condition?, value }] — condition 成立分の value を合算して減算。
+// 例: ブラックウォーグレイモン「DP10000以上の相手がいる間、登場コスト-6」
+export function getEffectivePlayCost(card, bs, side) {
+  const base = (card && card.playCost != null) ? card.playCost : 0;
+  if (base <= 0) return base;
+  const recipe = _parseCardRecipe(card);
+  const list = recipe && recipe.summon_cost;
+  if (!Array.isArray(list) || list.length === 0) return base;
+  let reduction = 0;
+  for (const entry of list) {
+    if (!entry) continue;
+    if (entry.condition) {
+      const conds = parseRecipeCondition(entry.condition);
+      if (!checkConditions(conds, card, bs, side || 'player')) continue;
+    }
+    reduction += parseInt(entry.value, 10) || 0;
+  }
+  return Math.max(0, base - reduction);
+}
+
+// recipe の alt_evolve（進化条件を無視する代替進化）が baseCard に対して成立するか。
+// alt_evolve: [{ condition?, base_filter?:{name?,color?,lv?}, ignore_cond?, cost? }]
+// 成立すれば { cost } を返す（進化条件チェックを飛ばしてそのコストで進化可）。不成立は null。
+// 例: ベルゼブモン「トラッシュ10枚以上の間、インプモンは進化条件無視・コスト4で進化」
+export function getAltEvolve(evoCard, baseCard, bs, side) {
+  if (!evoCard || !baseCard) return null;
+  const recipe = _parseCardRecipe(evoCard);
+  const list = recipe && recipe.alt_evolve;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  for (const entry of list) {
+    if (!entry) continue;
+    // 全体条件（自分のトラッシュN枚以上 等）
+    if (entry.condition) {
+      const conds = parseRecipeCondition(entry.condition);
+      if (!checkConditions(conds, evoCard, bs, side || 'player')) continue;
+    }
+    // 進化元フィルタ（名前/色/Lv）
+    const bf = entry.base_filter || {};
+    if (bf.name && !String(baseCard.name || '').includes(bf.name)) continue;
+    if (bf.color && !String(baseCard.color || '').includes(bf.color)) continue;
+    if (bf.lv != null && (parseInt(baseCard.level) || 0) !== bf.lv) continue;
+    return { cost: (entry.cost != null ? entry.cost : (evoCard.evolveCost || 0)) };
+  }
+  return null;
 }
 
 // stack 内の進化元カードに該当トリガーのレシピがあるか

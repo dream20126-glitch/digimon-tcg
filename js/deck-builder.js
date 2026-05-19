@@ -81,6 +81,8 @@ window.filterCards = function() {
   const input = document.getElementById('s-input').value.toLowerCase();
   const feature = document.getElementById('s-feature').value.toLowerCase();
   const filtered = allCards.filter(c => {
+    // トークンはデッキに入れられないので検索結果から除外
+    if (String(c["タイプ"]) === 'トークン') return false;
     const targetText = (searchMode === 'name')
       ? (String(c["名前"]) + String(c["カードNo"])).toLowerCase()
       : String(c["効果"]).toLowerCase();

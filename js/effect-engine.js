@@ -6404,6 +6404,58 @@ function executeRecipeStep(step, ctx, store, callback) {
       callback();
       break;
     }
+    // === トークンを生成して登場（コスト不要） ===
+    // step.tokenNo でカードDBのトークン行（タイプ=トークン）を指定。
+    // ディアボロモン(BT2-082) のアタック時効果等。場ではデジモンとして扱い、
+    // _isToken=true（場を離れると消滅＝トラッシュ等に残らない）。
+    case 'summon_token': {
+      const _tokNo = step.tokenNo || step.token || '';
+      const _tokObj = (typeof window !== 'undefined' && Array.isArray(window.allCards))
+        ? window.allCards.find(c => c && c['カードNo'] === _tokNo) : null;
+      if (!_tokObj) {
+        ctx.addLog && ctx.addLog('⚠ トークン「' + _tokNo + '」がカードDBに見つかりません');
+        callback();
+        break;
+      }
+      const _tokRecipe = _tokObj['レシピ'] || _tokObj['効果レシピ'] || null;
+      const token = {
+        name: _tokObj['名前'] || 'トークン',
+        cardNo: _tokObj['カードNo'],
+        type: 'デジモン',                              // 場ではデジモンとして扱う
+        level: String(_tokObj['レベル'] ?? _tokObj['Lv'] ?? '?').trim(),
+        color: _tokObj['色'] || '',
+        feature: _tokObj['特徴'] || '',
+        dp: parseInt(_tokObj['DP']) || 0,
+        baseDp: parseInt(_tokObj['DP']) || 0,
+        dpModifier: 0,
+        playCost: null, evolveCost: null, cost: 0,
+        evolveCond: _tokObj['進化条件'] || '',
+        effect: _tokObj['効果テキスト'] || _tokObj['効果'] || '',
+        evoSourceEffect: '', securityEffect: '',
+        recipe: (_tokRecipe && _tokRecipe !== '""') ? _tokRecipe : null,
+        imageUrl: _tokObj['ImageURL'] || '',
+        imgSrc: getCardImageUrl(_tokObj) || '',
+        stack: [], suspended: false, buffs: [],
+        cantBeActive: false, cantAttack: false, cantBlock: false,
+        summonedThisTurn: true, _pendingDestroy: false,
+        _isToken: true,
+      };
+      // 空きスロットへ登場
+      let _tokSlot = -1;
+      for (let i = 0; i < player.battleArea.length; i++) {
+        if (!player.battleArea[i]) { _tokSlot = i; break; }
+      }
+      if (_tokSlot < 0) _tokSlot = player.battleArea.length;
+      player.battleArea[_tokSlot] = token;
+      ctx.addLog && ctx.addLog('🌀 トークン「' + token.name + '」を登場（コスト無し）');
+      ctx.renderAll && ctx.renderAll();
+      // オンライン: バトルエリアの変化（トークン登場）を相手画面へ同期
+      if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
+        try { window._onlineSendStateSync(); } catch (_) {}
+      }
+      callback();
+      break;
+    }
     // === レストチェイン: 相手1体をレスト → そのDPが閾値以下なら任意でもう1体（閾値以下）===
     // ギガブラスター「相手1体か、DP5000以下の相手2体をレストさせる」用。
     // step.dp_threshold（既定5000）。1体目が閾値超なら終了、閾値以下なら2体目を任意選択。

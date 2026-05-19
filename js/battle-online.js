@@ -195,6 +195,7 @@ export function sendStateSync() {
       stack: (c.stack || []).map(serializeCard),
       recipe: c.recipe || null,
       _permEffects: c._permEffects || {}, _usedEffects: c._usedEffects || [],
+      _isToken: !!c._isToken,
     };
   };
   sendCommand({

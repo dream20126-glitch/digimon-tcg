@@ -142,11 +142,26 @@ function _buildGrantBadges(card) {
   return items;
 }
 
+// トークン（_isToken）はバトルエリア以外には存在しない。
+// 場を離れたトークンはトラッシュ等に残さず消滅させる（各 trash.push 箇所を
+// 個別に直す代わりに、描画前に一括で除去する）。
+function _purgeTokens() {
+  ['player', 'ai'].forEach(side => {
+    const p = bs[side];
+    if (!p) return;
+    ['trash', 'hand', 'deck', 'security'].forEach(zone => {
+      if (Array.isArray(p[zone])) p[zone] = p[zone].filter(c => !(c && c._isToken));
+    });
+  });
+}
+
 // ===== メイン描画 =====
 let _syncTimer = null;
 export function renderAll(force) {
   // 対象選択中は再描画しない（UIが壊れるため）
   if (!force && isTargetSelecting()) return;
+  // トークンが場を離れていたら消滅させる
+  _purgeTokens();
   // 永続効果を再計算（SA+/DP+等が最新の進化元状態を反映するように）
   if (window._applyPermanentEffects) { try { window._applyPermanentEffects(); } catch(_) {} }
   renderSecurity();

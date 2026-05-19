@@ -47,9 +47,9 @@ export function CardList({
         </button>
       </div>
       <div className="card-list">
-        {filtered.map((c) => (
+        {filtered.map((c, i) => (
           <div
-            key={c.cardNo}
+            key={c.cardNo + '#' + i}
             className={'card-row' + (c.cardNo === selectedNo ? ' active' : '')}
             onClick={() => onSelect(c.cardNo)}
           >

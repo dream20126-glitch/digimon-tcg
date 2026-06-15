@@ -582,10 +582,11 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     case 'opp_trash':          return countWith(opponent.trash);
     case 'opp_security':       return countWith(opponent.security);
     case 'opp_battle_area':    return countWith(opponent.battleArea.filter(c => c !== null));
-    case 'opp_digimon':        return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン'));
-    case 'opp_rest_digimon':   return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && c.suspended));
-    case 'opp_active_digimon': return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && !c.suspended));
-    case 'opp_tamer':          return countWith((opponent.tamerArea || []).filter(c => c !== null));
+    case 'opp_digimon':          return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン'));
+    case 'opp_rest_digimon':     return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && c.suspended));
+    case 'opp_active_digimon':   return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && !c.suspended));
+    case 'opp_no_evo_digimon':   return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && (!c.stack || c.stack.length === 0)));
+    case 'opp_tamer':            return countWith((opponent.tamerArea || []).filter(c => c !== null));
     default: return 0;
   }
 }
@@ -3170,7 +3171,6 @@ export function applyPermanentEffects(bs, side, context) {
           // grant_keyword for own:all（八神太一等）: condition/when はターゲット個別フィルタとして評価
           if (step.action === 'grant_keyword' || step.action === 'grant_keyword_to') {
             const kw = step.keyword || step.flag || '';
-            if (!(kw === 'security_attack_plus' || /Sアタック/.test(String(kw)))) return;
             const gv = step.value != null ? step.value : 1;
             const filterConds = [];
             if (step.condition) filterConds.push(...parseRecipeCondition(step.condition));
@@ -3179,7 +3179,19 @@ export function applyPermanentEffects(bs, side, context) {
               if (!tgt) return;
               if (filterConds.length && !checkConditions(filterConds, tgt, bs, side)) return;
               if (!tgt._permEffects) tgt._permEffects = {};
-              tgt._permEffects.securityAttackPlus = (tgt._permEffects.securityAttackPlus || 0) + gv;
+              if (kw === 'security_attack_plus' || /Sアタック/.test(String(kw))) {
+                tgt._permEffects.securityAttackPlus = (tgt._permEffects.securityAttackPlus || 0) + gv;
+              } else if (kw === 'jamming')     { tgt._permEffects.jamming = true; }
+              else if (kw === 'reboot')        { tgt._permEffects.reboot = true; }
+              else if (kw === 'blocker')       { tgt._permEffects.blocker = true; }
+              else if (kw === 'rush')          { tgt._permEffects.rush = true; }
+              else if (kw === 'penetrate')     { tgt._permEffects.penetrate = true; }
+              else if (kw === 'piercing')      { tgt._permEffects.piercing = true; }
+              else if (kw === 'michizure')     { tgt._permEffects.michizure = true; }
+              else if (kw === 'barrier')       { tgt._permEffects.barrier = true; }
+              else if (kw === 'evade')         { tgt._permEffects.evade = true; }
+              else if (kw === 'armor_break')   { tgt._permEffects.armor_break = true; }
+              else if (kw === 'indomitable')   { tgt._permEffects.indomitable = true; }
             };
             const gt = String(step.target || 'self');
             if (gt === 'own:all') bs[side].battleArea.forEach(applyKw);
@@ -7960,7 +7972,13 @@ export function getEffectivePlayCost(card, bs, side) {
       const conds = parseRecipeCondition(entry.condition);
       if (!checkConditions(conds, card, bs, side || 'player')) continue;
     }
-    reduction += parseInt(entry.value, 10) || 0;
+    if (entry.per_count && entry.ref) {
+      const count = getRefSourceCountDirect(entry.ref, card, bs, side || 'player', entry.ref_filter, entry.ref_state);
+      const perUnit = parseInt(entry.value, 10) || 1;
+      reduction += perUnit * Math.floor(count / entry.per_count);
+    } else {
+      reduction += parseInt(entry.value, 10) || 0;
+    }
   }
   return Math.max(0, base - reduction);
 }

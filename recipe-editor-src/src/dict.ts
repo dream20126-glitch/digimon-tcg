@@ -39,8 +39,9 @@ export const REF_SUBJECTS = [
   { code: 'own_security',    label: '自分のセキュリティ' },
   { code: 'own_battle_area', label: '自分のバトルエリア（全カード）' },
   // 相手側
-  { code: 'opp_digimon',     label: '相手のデジモン' },
-  { code: 'opp_tamer',       label: '相手のテイマー' },
+  { code: 'opp_digimon',         label: '相手のデジモン' },
+  { code: 'opp_no_evo_digimon', label: '相手の進化元なしデジモン' },
+  { code: 'opp_tamer',          label: '相手のテイマー' },
   { code: 'opp_hand',        label: '相手の手札' },
   { code: 'opp_trash',       label: '相手のトラッシュ' },
   { code: 'opp_security',    label: '相手のセキュリティ' },

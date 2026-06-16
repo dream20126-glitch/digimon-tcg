@@ -504,9 +504,13 @@ function execUnsuspend() {
   }
 
   if (hasRested) {
+    const _onActiveCards = [];
     bs.player.battleArea.forEach(c => {
       if (c) {
-        if (!c.cantBeActive && !_hasPreventUnsuspend(c) && !_skipAllUnsuspend) c.suspended = false;
+        if (!c.cantBeActive && !_hasPreventUnsuspend(c) && !_skipAllUnsuspend) {
+          if (c.suspended) _onActiveCards.push(c);
+          c.suspended = false;
+        }
         c.summonedThisTurn = false; c._usedEffects = [];
       }
     });
@@ -524,7 +528,23 @@ function execUnsuspend() {
     });
     addLog('🔄 アクティブフェイズ完了');
     renderAll();
-    setTimeout(() => startPhase('draw'), 500);
+    // on_active 誘発: アクティブフェイズでアクティブになったカード1枚ずつ発火
+    const _fireOnActiveSeq = (cards, idx, done) => {
+      if (idx >= cards.length) { done(); return; }
+      const te = window._triggerEffectFn;
+      if (te) {
+        bs._onActivePhase = 'unsuspend';
+        te('on_active', cards[idx], 'player', null, () => {
+          delete bs._onActivePhase;
+          _fireOnActiveSeq(cards, idx + 1, done);
+        });
+      } else {
+        _fireOnActiveSeq(cards, idx + 1, done);
+      }
+    };
+    _fireOnActiveSeq(_onActiveCards, 0, () => {
+      setTimeout(() => startPhase('draw'), 500);
+    });
   } else {
     // レスト無しでもリセットは実行
     bs.player.battleArea.forEach(c => { if (c) { c.summonedThisTurn = false; c._usedEffects = []; } });

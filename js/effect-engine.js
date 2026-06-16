@@ -983,8 +983,18 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         }
       };
       if (tCode === 'target_self') {
+        const _activeSelfWasSuspended = ctx.card && ctx.card.suspended;
         if (ctx.card) activateOne(ctx.card);
-        ctx.renderAll(); callback(); break;
+        if (_activeSelfWasSuspended) {
+          if (ctx.bs) ctx.bs._onActivePhase = 'main';
+          scanTriggers('on_active', ctx.card, ctx.side, ctx);
+          if (ctx.bs) delete ctx.bs._onActivePhase;
+          ctx.renderAll();
+          processQueue(ctx, callback);
+        } else {
+          ctx.renderAll(); callback();
+        }
+        break;
       }
       if (tCode === 'target_all_own') {
         (player.battleArea || []).forEach(c => { if (c && c.suspended) activateOne(c); });
@@ -3198,6 +3208,15 @@ export function applyPermanentEffects(bs, side, context) {
             else if (gt === 'self') applyKw(card);
             return;
           }
+          // custom: メインカード由来の特殊フラグ設定
+          if (step.action === 'custom') {
+            const cs = String(step.condition || '');
+            if (cs.includes('cond_no_evo') && cs.includes('opp_blocker')) {
+              if (!card._permEffects) card._permEffects = {};
+              card._permEffects.cantBeBlockedByNoEvo = true;
+            }
+            return;
+          }
           // 条件チェック
           if (step.condition) {
             const conds = parseRecipeCondition(step.condition);
@@ -3641,6 +3660,24 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_when_opp_rest': {
         // when_opp_rest トリガー時に bs._lastRestedOppCard がセットされる
         if (!bs || !bs._lastRestedOppCard) return false;
+        break;
+      }
+      case 'cond_main': {
+        // on_active トリガーで「メインフェイズにアクティブになった」= bs._onActivePhase === 'main'
+        if (!bs || bs._onActivePhase !== 'main') return false;
+        break;
+      }
+      case 'cond_active': {
+        // on_active トリガーで「アクティブフェイズにアクティブになった」= bs._onActivePhase === 'unsuspend'
+        if (!bs || bs._onActivePhase !== 'unsuspend') return false;
+        break;
+      }
+      case 'cond_same_name_digimon': {
+        // 「このデジモンと同じ名称の他の自分のデジモンがいる間」
+        if (!bs || !card) return false;
+        const _csnSide = resolveSubjectSide(cond.subject, side);
+        const _csnArea = (bs[_csnSide] && bs[_csnSide].battleArea) || [];
+        if (!_csnArea.some(c => c && c !== card && c.name === card.name)) return false;
         break;
       }
       case 'cond_self_active': {
@@ -4365,7 +4402,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
   const isActivated = ['main'].includes(triggerCode);
   // ソースカード限定のイベント系トリガー（そのカード固有のイベント）
   // これらは盤面全体をスキャンすると関係ない他カードの効果まで誘発してしまう
-  const isSourceOnly = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked', 'on_battle_win', 'on_battle_destroy'].includes(triggerCode);
+  const isSourceOnly = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked', 'on_battle_win', 'on_battle_destroy', 'on_active'].includes(triggerCode);
   // ターン境界トリガー: 「相手のターン終了時」「自分のターン終了時」等は
   // 一方のサイドのカードのみ発火する（相手ターン終了 = 自陣営カードが反応）。
   // sourceSide で指定された側のみスキャン対象にする。

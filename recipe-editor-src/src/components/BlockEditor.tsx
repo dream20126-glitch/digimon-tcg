@@ -581,81 +581,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         </div>
 
         {/* === 🔍 ターゲットフィルタ（対象の直下・step.filter に出力） === */}
-        {(() => {
-          const tf = targetFilter;
-          const TF_STATE_CONDS = [
-            { code: 'cond_self_rest',   label: 'レスト状態' },
-            { code: 'cond_self_active', label: 'アクティブ状態' },
-          ];
-          const TF_ATTR_CONDS: CommonCondDef[] = COMMON_CONDS.filter((c) =>
-            ['cond_color','cond_type','cond_lv','cond_lv_le','cond_lv_ge','cond_feature_contains','cond_name','cond_name_contains'].includes(c.code)
-          );
-          const isTFChecked = (code: string) => tf.some((c) => c.base === code);
-          const getTFValue = (code: string) => { const c = tf.find((cc) => cc.base === code); return c ? (c.value || '') : ''; };
-          const setTFChecked = (code: string, enabled: boolean) => {
-            if (enabled) { if (!isTFChecked(code)) update('targetFilter', [...tf, { base: code, value: '' }]); }
-            else update('targetFilter', tf.filter((c) => c.base !== code));
-          };
-          const setTFValue = (code: string, val: string) => {
-            const i = tf.findIndex((c) => c.base === code);
-            if (i >= 0) { const next = tf.slice(); next[i] = { ...next[i], value: val }; update('targetFilter', next); }
-            else update('targetFilter', [...tf, { base: code, value: val }]);
-          };
-          return (
-            <details className="field" style={{ marginTop: 8 }} open={tf.length > 0}>
-              <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#0d7377' }}>
-                🔍 ターゲットフィルタ{tf.length > 0 ? ` (${tf.length})` : ''} <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666' }}>step.filter に出力</span>
-              </summary>
-              <div style={{ padding: 8, border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', marginTop: 4 }}>
-                <div style={{ fontSize: 10, color: '#555', marginBottom: 6 }}>
-                  対象カードの絞り込み条件（対象に「レスト状態の」「青の」等を付けたい場合に設定）
-                </div>
-                {/* 状態（フラグ型・値不要） */}
-                <div style={{ marginBottom: 6 }}>
-                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#0d7377', marginBottom: 3 }}>状態</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-                    {TF_STATE_CONDS.map((f) => (
-                      <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-                        <input type="checkbox" checked={isTFChecked(f.code)} onChange={(e) => setTFChecked(f.code, e.target.checked)} style={{ margin: 0 }} />
-                        {f.label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                {/* 属性（値入力あり） */}
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#0d7377', marginBottom: 3 }}>属性</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 4 }}>
-                    {TF_ATTR_CONDS.map((f) => (
-                      <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-                        <input type="checkbox" checked={isTFChecked(f.code)} onChange={(e) => setTFChecked(f.code, e.target.checked)} style={{ margin: 0 }} />
-                        {f.label}
-                      </label>
-                    ))}
-                  </div>
-                  {TF_ATTR_CONDS.some((f) => isTFChecked(f.code)) && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6 }}>
-                      {TF_ATTR_CONDS.filter((f) => isTFChecked(f.code)).map((f) => (
-                        <div key={f.code}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{f.label}</div>
-                          {f.input === 'select' ? (
-                            <select value={getTFValue(f.code)} onChange={(e) => setTFValue(f.code, e.target.value)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}>
-                              {(f.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                            </select>
-                          ) : f.input === 'number' ? (
-                            <input type="number" value={getTFValue(f.code)} onChange={(e) => setTFValue(f.code, e.target.value)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }} />
-                          ) : (
-                            <input type="text" value={getTFValue(f.code)} onChange={(e) => setTFValue(f.code, e.target.value)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }} />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </details>
-          );
-        })()}
+        <details className="field" style={{ marginTop: 8 }} open={targetFilter.length > 0}>
+          <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#0d7377' }}>
+            🔍 ターゲットフィルタ{targetFilter.length > 0 ? ` (${targetFilter.length})` : ''} <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666' }}>step.filter に出力</span>
+          </summary>
+          <div style={{ border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', marginTop: 4, padding: 8 }}>
+            <div style={{ fontSize: 10, color: '#555', marginBottom: 6 }}>
+              対象カードの絞り込み条件（「レスト状態の」「進化元を持たない」「青の」等）
+            </div>
+            <ConditionsHybridEditor
+              conditions={targetFilter}
+              onChange={(next) => update('targetFilter', next)}
+              dict={dict}
+              title="ターゲットフィルタ"
+              hint="（対象カードの絞り込み条件・複数 AND）"
+              theme="action"
+              defaultSubject=""
+              showSubjectSelector={false}
+            />
+          </div>
+        </details>
 
         {/* === 🎯 発動条件（常時表示・デフォルト折りたたみ・データあれば展開） === */}
         <details className="field" style={{ marginTop: 8 }} open={conditions.length > 0}>

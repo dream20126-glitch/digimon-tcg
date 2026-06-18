@@ -580,30 +580,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </div>
         </div>
 
-        {/* === 🎯 発動条件（常時表示・デフォルト折りたたみ・データあれば展開） === */}
-        <details className="field" style={{ marginTop: 8 }} open={conditions.length > 0}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#1a4f8a' }}>
-            🎯 発動条件{conditions.length > 0 ? ` (${conditions.length})` : ''}
-          </summary>
-          <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>
-            このカード自身やゲーム状況を確認する条件。対象カードを色/タイプで絞る場合は「ターゲットフィルタ」を使用
-          </div>
-          <ConditionsHybridEditor
-            conditions={conditions}
-            onChange={(next) => update('conditions', next)}
-            dict={dict}
-            title="発動条件"
-            hint="（このアクションを発動するために満たすべき条件・複数指定可・AND結合）"
-            theme="action"
-            defaultSubject=""
-          />
-        </details>
-
-        {/* === 🔍 ターゲットフィルタ（発動条件の直下・step.filter に出力） === */}
+        {/* === 🔍 ターゲットフィルタ（対象の直下・step.filter に出力） === */}
         {(() => {
           const tf = targetFilter;
-          // COMMON_CONDS のサブセット（ターゲットフィルタ対象項目）
-          const TF_CONDS: CommonCondDef[] = COMMON_CONDS.filter((c) =>
+          const TF_STATE_CONDS = [
+            { code: 'cond_self_rest',   label: 'レスト状態' },
+            { code: 'cond_self_active', label: 'アクティブ状態' },
+          ];
+          const TF_ATTR_CONDS: CommonCondDef[] = COMMON_CONDS.filter((c) =>
             ['cond_color','cond_type','cond_lv','cond_lv_le','cond_lv_ge','cond_feature_contains','cond_name','cond_name_contains'].includes(c.code)
           );
           const isTFChecked = (code: string) => tf.some((c) => c.base === code);
@@ -624,38 +608,73 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               </summary>
               <div style={{ padding: 8, border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', marginTop: 4 }}>
                 <div style={{ fontSize: 10, color: '#555', marginBottom: 6 }}>
-                  色/タイプ/Lv/特徴など対象カード自体の属性でフィルタ。rest の own_tamer:all など対応アクションで有効
+                  対象カードの絞り込み条件（対象に「レスト状態の」「青の」等を付けたい場合に設定）
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 4 }}>
-                  {TF_CONDS.map((f) => (
-                    <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-                      <input type="checkbox" checked={isTFChecked(f.code)} onChange={(e) => setTFChecked(f.code, e.target.checked)} style={{ margin: 0 }} />
-                      {f.label}
-                    </label>
-                  ))}
-                </div>
-                {TF_CONDS.some((f) => isTFChecked(f.code)) && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6 }}>
-                    {TF_CONDS.filter((f) => isTFChecked(f.code)).map((f) => (
-                      <div key={f.code}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{f.label}</div>
-                        {f.input === 'select' ? (
-                          <select value={getTFValue(f.code)} onChange={(e) => setTFValue(f.code, e.target.value)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}>
-                            {(f.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                          </select>
-                        ) : f.input === 'number' ? (
-                          <input type="number" value={getTFValue(f.code)} onChange={(e) => setTFValue(f.code, e.target.value)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }} />
-                        ) : (
-                          <input type="text" value={getTFValue(f.code)} onChange={(e) => setTFValue(f.code, e.target.value)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }} />
-                        )}
-                      </div>
+                {/* 状態（フラグ型・値不要） */}
+                <div style={{ marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#0d7377', marginBottom: 3 }}>状態</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+                    {TF_STATE_CONDS.map((f) => (
+                      <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
+                        <input type="checkbox" checked={isTFChecked(f.code)} onChange={(e) => setTFChecked(f.code, e.target.checked)} style={{ margin: 0 }} />
+                        {f.label}
+                      </label>
                     ))}
                   </div>
-                )}
+                </div>
+                {/* 属性（値入力あり） */}
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#0d7377', marginBottom: 3 }}>属性</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 4 }}>
+                    {TF_ATTR_CONDS.map((f) => (
+                      <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
+                        <input type="checkbox" checked={isTFChecked(f.code)} onChange={(e) => setTFChecked(f.code, e.target.checked)} style={{ margin: 0 }} />
+                        {f.label}
+                      </label>
+                    ))}
+                  </div>
+                  {TF_ATTR_CONDS.some((f) => isTFChecked(f.code)) && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6 }}>
+                      {TF_ATTR_CONDS.filter((f) => isTFChecked(f.code)).map((f) => (
+                        <div key={f.code}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{f.label}</div>
+                          {f.input === 'select' ? (
+                            <select value={getTFValue(f.code)} onChange={(e) => setTFValue(f.code, e.target.value)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}>
+                              {(f.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                          ) : f.input === 'number' ? (
+                            <input type="number" value={getTFValue(f.code)} onChange={(e) => setTFValue(f.code, e.target.value)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }} />
+                          ) : (
+                            <input type="text" value={getTFValue(f.code)} onChange={(e) => setTFValue(f.code, e.target.value)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </details>
           );
         })()}
+
+        {/* === 🎯 発動条件（常時表示・デフォルト折りたたみ・データあれば展開） === */}
+        <details className="field" style={{ marginTop: 8 }} open={conditions.length > 0}>
+          <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#1a4f8a' }}>
+            🎯 発動条件{conditions.length > 0 ? ` (${conditions.length})` : ''}
+          </summary>
+          <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>
+            このカード自身やゲーム状況を確認する条件。対象カードを色/タイプで絞る場合は「ターゲットフィルタ」を使用
+          </div>
+          <ConditionsHybridEditor
+            conditions={conditions}
+            onChange={(next) => update('conditions', next)}
+            dict={dict}
+            title="発動条件"
+            hint="（このアクションを発動するために満たすべき条件・複数指定可・AND結合）"
+            theme="action"
+            defaultSubject=""
+          />
+        </details>
 
         {/* === 📐 ルール（アクション直下に配置・メインアクションが対応している場合のみ） === */}
         {actionAllowsRules && (

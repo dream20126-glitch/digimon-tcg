@@ -5445,6 +5445,27 @@ function executeRecipeStep(step, ctx, store, callback) {
     return;
   }
 
+  // per_count_mode === 'repeat': 値×NでなくアクションをN回繰り返す
+  // 例：「黄テイマー1体ごとに相手デジモン1体のDP-4000」→ 2体なら -4000 を2回発動
+  if (step.per_count_mode === 'repeat' && step.per_count) {
+    const _rRef = step.ref || 'evo_source';
+    const _rCount = getRefSourceCountDirect(_rRef, ctx.card, ctx.bs, ctx.side, step.ref_filter, step.ref_state);
+    const _rN = Math.floor(_rCount / step.per_count);
+    if (_rN <= 0) { callback && callback(); return; }
+    const _rStep = Object.assign({}, step);
+    delete _rStep.per_count_mode;
+    delete _rStep.per_count;
+    delete _rStep.ref;
+    delete _rStep.ref_filter;
+    delete _rStep.ref_state;
+    const _rFire = (remaining, done) => {
+      if (remaining <= 0) { done(); return; }
+      executeRecipeStep(_rStep, ctx, store, () => _rFire(remaining - 1, done));
+    };
+    _rFire(_rN, callback);
+    return;
+  }
+
   // 'same_target' / 'picked' = 直前選択カード (bs._lastPickedCard) を対象に再利用
   // 「DPを+2000し、そのデジモンはSアタック+1を得る」のような同一対象連続適用で使用
   if (step.target === 'same_target' || step.target === 'picked') {

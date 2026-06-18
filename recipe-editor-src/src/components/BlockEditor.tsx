@@ -1135,7 +1135,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 />
                 <b>✖ ～ごとに（倍率設定）</b>
                 <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666' }}>
-                  （指定対象を数えて 値 × その数 を掛ける）
+                  （指定対象を数えて 値 × その数 を掛ける、または N 回発動）
                 </span>
               </label>
               {isEnabled && (
@@ -1193,6 +1193,32 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <span style={{ fontSize: 10, color: '#666', alignSelf: 'flex-end', paddingBottom: 4 }}>
                       を数える
                     </span>
+                  </div>
+                  {/* 発動モード: 値×N か N回発動か */}
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 8, padding: '6px 8px', background: '#eaf0fb', borderRadius: 4, border: '1px solid #b3c8ff', fontSize: 11 }}>
+                    <span style={{ color: '#1a4f8a', fontWeight: 'bold', whiteSpace: 'nowrap' }}>発動モード:</span>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name={`perCountMode_${index}`}
+                        checked={block.perCountMode !== 'repeat'}
+                        onChange={() => update('perCountMode', undefined)}
+                        style={{ margin: 0 }}
+                      />
+                      <span>値 × N（合計）</span>
+                      <span style={{ color: '#888', fontSize: 10 }}>例: DP-4000×2体=-8000</span>
+                    </label>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name={`perCountMode_${index}`}
+                        checked={block.perCountMode === 'repeat'}
+                        onChange={() => update('perCountMode', 'repeat')}
+                        style={{ margin: 0 }}
+                      />
+                      <span style={{ fontWeight: block.perCountMode === 'repeat' ? 'bold' : 'normal', color: block.perCountMode === 'repeat' ? '#1a4f8a' : 'inherit' }}>N 回発動</span>
+                      <span style={{ color: '#888', fontSize: 10 }}>例: DP-4000 を2回（対象を毎回選べる）</span>
+                    </label>
                   </div>
                   {/* フィルタ: カウント時に追加で絞り込み（COMMON_CONDS と項目共通） */}
                   {(() => {

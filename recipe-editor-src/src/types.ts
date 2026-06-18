@@ -32,6 +32,7 @@ export interface EffectBlock {
   perRef?: string;    // カウント対象 subject ('own_digimon' / 'opp_digimon' / 'own_hand' 等)
   perRefStateCond?: ConditionPair; // 状態を表す単一条件（cond_self_rest / cond_no_evo 等）
   perRefFilter?: ConditionPair[]; // カウント時の追加フィルタ（色/タイプ/特徴/Lv 等）
+  perCountMode?: 'repeat'; // 'repeat' = N回発動（1枚ごとに1回効果）, undefined = 値×N（既存動作）
   options?: string[]; // 修飾子コード配列（'ignore_cost' / 'face_down' 等、複数可）
   rules?: MiniStep[]; // ルール = ミニ effect step の配列。serialize 時に main action 毎に翻訳されて step に展開
   // 代替アクション: 「〇〇するか〇〇する」のように複数アクションを OR / AND で結ぶ

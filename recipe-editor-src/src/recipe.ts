@@ -115,6 +115,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock) {
   // 「～ごとに」倍率設定の serialize
   if (b.perCount !== undefined && b.perCount !== null && Number(b.perCount) > 0 && b.perRef) {
     step.per_count = Number(b.perCount);
+    if (b.perCountMode === 'repeat') step.per_count_mode = 'repeat';
     step.ref = b.perRef;
     // 状態 cond を ref_state に変換
     if (b.perRefStateCond && b.perRefStateCond.base) {
@@ -392,6 +393,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
     })(),
     options: Array.isArray(step?.options) ? step.options.slice() : [],
     perCount: step?.per_count !== undefined && step?.per_count !== null ? Number(step.per_count) : undefined,
+    perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : undefined,
     perRef: step?.ref || '',
     perRefStateCond: (() => {
       const s = step?.ref_state;

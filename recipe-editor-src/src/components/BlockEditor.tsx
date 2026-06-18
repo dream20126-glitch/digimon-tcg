@@ -589,6 +589,29 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <div style={{ fontSize: 10, color: '#555', marginBottom: 6 }}>
               対象カードの絞り込み条件（「レスト状態の」「進化元を持たない」「青の」等）
             </div>
+            {/* よく使う状態（クイックチェックボックス） */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 6, padding: '4px 6px', background: 'white', borderRadius: 3, border: '1px solid #b2dfdb' }}>
+              {[
+                { code: 'cond_self_rest',   label: 'レスト状態' },
+                { code: 'cond_self_active', label: 'アクティブ状態' },
+              ].map((f) => {
+                const checked = targetFilter.some((c) => c.base === f.code);
+                return (
+                  <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        if (e.target.checked) { if (!checked) update('targetFilter', [...targetFilter, { base: f.code, value: '' }]); }
+                        else update('targetFilter', targetFilter.filter((c) => c.base !== f.code));
+                      }}
+                      style={{ margin: 0 }}
+                    />
+                    {f.label}
+                  </label>
+                );
+              })}
+            </div>
             <ConditionsHybridEditor
               conditions={targetFilter}
               onChange={(next) => update('targetFilter', next)}

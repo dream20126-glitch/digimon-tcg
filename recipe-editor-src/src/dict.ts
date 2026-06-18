@@ -42,6 +42,8 @@ export const REF_SUBJECTS = [
   { code: 'opp_digimon',         label: '相手のデジモン' },
   { code: 'opp_no_evo_digimon', label: '相手の進化元なしデジモン' },
   { code: 'opp_tamer',          label: '相手のテイマー' },
+  // 特殊カウンタ
+  { code: 'last_rest_count',    label: 'この効果でレストさせた枚数' },
   { code: 'opp_hand',        label: '相手の手札' },
   { code: 'opp_trash',       label: '相手のトラッシュ' },
   { code: 'opp_security',    label: '相手のセキュリティ' },

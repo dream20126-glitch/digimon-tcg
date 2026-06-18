@@ -587,6 +587,8 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     case 'opp_active_digimon':   return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && !c.suspended));
     case 'opp_no_evo_digimon':   return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && (!c.stack || c.stack.length === 0)));
     case 'opp_tamer':            return countWith((opponent.tamerArea || []).filter(c => c !== null));
+    // 直前の rest 効果でレストさせた枚数（bs._lastRestCount に保存）
+    case 'last_rest_count':      return (bs && bs._lastRestCount != null) ? bs._lastRestCount : 0;
     default: return 0;
   }
 }
@@ -7753,6 +7755,24 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === その他のアクション（既存エンジンに委譲） ===
     default: {
+      // rest で target が own_tamer:all → テイマーエリア全体をレスト（filter 適用可）
+      // レストさせた枚数を bs._lastRestCount に保存（ref:'last_rest_count' で参照可能）
+      if (step.action === 'rest' && step.target === 'own_tamer:all') {
+        const _tFilter = step.filter || {};
+        let _newlyRested = 0;
+        (player.tamerArea || []).forEach((t) => {
+          if (!t || t.suspended) return;
+          if (_tFilter.color && t.color !== _tFilter.color) return;
+          if (_tFilter.type && t.type !== _tFilter.type) return;
+          t.suspended = true;
+          _newlyRested++;
+          ctx.addLog('💤 「' + t.name + '」をレスト');
+        });
+        if (ctx.bs) ctx.bs._lastRestCount = _newlyRested;
+        ctx.renderAll();
+        callback();
+        break;
+      }
       // rest で target が opponent:all / own:all → 条件フィルタを適用して全体をレスト
       // （対象選択UIを出さない。フラウカノン「ブロッカーを持たない相手デジモン全てをレスト」等）
       if (step.action === 'rest' && (step.target === 'opponent:all' || step.target === 'own:all')) {

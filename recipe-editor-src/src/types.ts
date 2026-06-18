@@ -44,6 +44,7 @@ export interface EffectBlock {
   // 例: 「自分のデジモン全ては『【アタック時】相手DP-2000』を得る」
   grantedStep?: GrantedStep;
   extras?: string; // フリー入力 JSON 文字列
+  targetFilter?: ConditionPair[]; // アクション対象の絞り込み → step.filter に serialize
 }
 
 // 付与される効果（grant_effect 用のネスト 1ステップ）
@@ -67,6 +68,12 @@ export interface AltAction {
   options?: string[];
   fromZones?: string[];
   fromZonesOp?: 'or' | 'and';
+  // 期間・倍率（AND実行時の追加設定）
+  duration?: string;
+  perCount?: number;
+  perRef?: string;
+  perCountMode?: 'repeat';
+  perRefFilter?: ConditionPair[];
 }
 
 // ルール = メインアクションに紐づく「ミニ effect step」

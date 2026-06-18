@@ -175,11 +175,52 @@ function appendStep(container: Record<string, any>, b: EffectBlock) {
           }
         }
         if (Array.isArray(a.options) && a.options.length > 0) out.options = a.options.slice();
+        // per_count / duration / ref / ref_filter
+        if (a.perCount && a.perCount > 0 && a.perRef) {
+          out.per_count = a.perCount;
+          out.ref = a.perRef;
+          if (a.perCountMode === 'repeat') out.per_count_mode = 'repeat';
+          if (Array.isArray(a.perRefFilter) && a.perRefFilter.length > 0) {
+            const af: Record<string, any> = {};
+            a.perRefFilter.forEach((c) => {
+              if (!c || !c.base || !c.value) return;
+              const num2 = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
+              switch (c.base) {
+                case 'cond_color': af.color = c.value; break;
+                case 'cond_type':  af.type = c.value; break;
+                case 'cond_lv': { const n = num2(c.value); if (n !== undefined) { af.lv_le = n; af.lv_ge = n; } break; }
+                case 'cond_lv_le': { const n = num2(c.value); if (n !== undefined) af.lv_le = n; break; }
+                case 'cond_lv_ge': { const n = num2(c.value); if (n !== undefined) af.lv_ge = n; break; }
+              }
+            });
+            if (Object.keys(af).length > 0) out.ref_filter = af;
+          }
+        }
+        if (a.duration) out.duration = a.duration;
         return out;
       });
     if (step.alt_actions.length > 0) {
       step.alt_actions_op = b.altActionsOp || 'or';
     }
+  }
+  // === targetFilter → step.filter ===
+  if (Array.isArray(b.targetFilter) && b.targetFilter.length > 0) {
+    const f: Record<string, any> = {};
+    b.targetFilter.forEach((c) => {
+      if (!c || !c.base || !c.value) return;
+      const num = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
+      switch (c.base) {
+        case 'cond_color':            f.color = c.value; break;
+        case 'cond_type':             f.type = c.value; break;
+        case 'cond_lv':       { const n = num(c.value); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
+        case 'cond_lv_le':    { const n = num(c.value); if (n !== undefined) f.lv_le = n; break; }
+        case 'cond_lv_ge':    { const n = num(c.value); if (n !== undefined) f.lv_ge = n; break; }
+        case 'cond_feature_contains': f.feature_contains = c.value; break;
+        case 'cond_name':             f.name = c.value; break;
+        case 'cond_name_contains':    f.name_contains = c.value; break;
+      }
+    });
+    if (Object.keys(f).length > 0) step.filter = f;
   }
   // === 付与効果 (granted_recipe) ===
   // 対象に一時的にトリガー効果を付与（grant_effect 等で使用）
@@ -311,6 +352,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
     alt_actions: true,
     alt_actions_op: true,
     granted_recipe: true,
+    filter: true,
   };
   const extras: any = {};
   Object.keys(step || {}).forEach((k) => {
@@ -445,6 +487,24 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
             options: Array.isArray(a?.options) ? a.options.slice() : [],
             fromZones: fromZ,
             fromZonesOp: a?.from_op === 'and' ? 'and' as const : 'or' as const,
+            duration: a?.duration || '',
+            perCount: a?.per_count != null ? Number(a.per_count) : undefined,
+            perRef: a?.ref || '',
+            perCountMode: a?.per_count_mode === 'repeat' ? 'repeat' as const : undefined,
+            perRefFilter: (() => {
+              const f = a?.ref_filter;
+              if (!f || typeof f !== 'object') return [];
+              const out2: ConditionPair[] = [];
+              if (f.color) out2.push({ base: 'cond_color', value: String(f.color) });
+              if (f.type)  out2.push({ base: 'cond_type',  value: String(f.type)  });
+              if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
+                out2.push({ base: 'cond_lv', value: String(f.lv_le) });
+              } else {
+                if (f.lv_le !== undefined) out2.push({ base: 'cond_lv_le', value: String(f.lv_le) });
+                if (f.lv_ge !== undefined) out2.push({ base: 'cond_lv_ge', value: String(f.lv_ge) });
+              }
+              return out2;
+            })(),
           };
         })
       : [],
@@ -474,6 +534,22 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
         conditions: condArr,
         options: Array.isArray(inner?.options) ? inner.options.slice() : [],
       };
+    })(),
+    targetFilter: (() => {
+      const f = step?.filter;
+      if (!f || typeof f !== 'object') return [];
+      const out: ConditionPair[] = [];
+      if (f.color)            out.push({ base: 'cond_color',            value: String(f.color) });
+      if (f.type)             out.push({ base: 'cond_type',             value: String(f.type) });
+      if (f.feature_contains) out.push({ base: 'cond_feature_contains', value: String(f.feature_contains) });
+      if (f.name_contains)    out.push({ base: 'cond_name_contains',    value: String(f.name_contains) });
+      if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
+        out.push({ base: 'cond_lv', value: String(f.lv_le) });
+      } else {
+        if (f.lv_le !== undefined) out.push({ base: 'cond_lv_le', value: String(f.lv_le) });
+        if (f.lv_ge !== undefined) out.push({ base: 'cond_lv_ge', value: String(f.lv_ge) });
+      }
+      return out;
     })(),
     extras: Object.keys(extras).length > 0 ? JSON.stringify(extras) : '',
   };

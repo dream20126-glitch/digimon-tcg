@@ -101,6 +101,20 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     update('conditions', conditions.filter((_, idx) => idx !== i));
   }
 
+  // ターゲットフィルタ操作（step.filter に serialize）
+  const targetFilter = block.targetFilter || [];
+  function updateTargetFilter(i: number, p: ConditionPair) {
+    const next = targetFilter.slice();
+    next[i] = p;
+    update('targetFilter', next);
+  }
+  function addTargetFilter() {
+    update('targetFilter', [...targetFilter, { base: '', value: '' }]);
+  }
+  function removeTargetFilter(i: number) {
+    update('targetFilter', targetFilter.filter((_, idx) => idx !== i));
+  }
+
   // トリガー条件操作（トリガー発火元カードへのフィルタ）
   const triggerConditions = block.triggerConditions || [];
   function updateTriggerCondition(i: number, p: ConditionPair) {
@@ -183,23 +197,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   }
 
   // === 折りたたみ state ===
-  // ☑「条件」チェックボックス。データがあれば自動展開
-  const TIMING_COND_CODE_SET = new Set(TIMING_PRESETS_CONDITION.map((p) => p.code));
-  const _hasNonTimingConds = (block.conditions || []).some((c) => !TIMING_COND_CODE_SET.has(c.base));
+  // 追加オプション（期間/取得元/修飾子/～ごとに/コスト/追加JSON）にデータがあれば展開
   const _hasActionExtras = !!(
-    _hasNonTimingConds ||
     (block.options || []).length > 0 ||
     (block.fromZones || []).length > 0 ||
-    (block.rules || []).length > 0 ||
     (block.costs || []).length > 0 ||
-    (block.altActions || []).length > 0 ||
-    block.grantedStep ||
     block.duration ||
     block.perCount ||
     block.extras
   );
   const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
-  const [actionCondsOpen, setActionCondsOpen] = useState<boolean>(_hasActionExtras);
 
   return (
     <div className="block">
@@ -573,6 +580,83 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </div>
         </div>
 
+        {/* === 🎯 発動条件（常時表示・デフォルト折りたたみ・データあれば展開） === */}
+        <details className="field" style={{ marginTop: 8 }} open={conditions.length > 0}>
+          <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#1a4f8a' }}>
+            🎯 発動条件{conditions.length > 0 ? ` (${conditions.length})` : ''}
+          </summary>
+          <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>
+            このカード自身やゲーム状況を確認する条件。対象カードを色/タイプで絞る場合は「ターゲットフィルタ」を使用
+          </div>
+          <ConditionsHybridEditor
+            conditions={conditions}
+            onChange={(next) => update('conditions', next)}
+            dict={dict}
+            title="発動条件"
+            hint="（このアクションを発動するために満たすべき条件・複数指定可・AND結合）"
+            theme="action"
+            defaultSubject=""
+          />
+        </details>
+
+        {/* === 🔍 ターゲットフィルタ（発動条件の直下・step.filter に出力） === */}
+        {(() => {
+          const tf = targetFilter;
+          // COMMON_CONDS のサブセット（ターゲットフィルタ対象項目）
+          const TF_CONDS: CommonCondDef[] = COMMON_CONDS.filter((c) =>
+            ['cond_color','cond_type','cond_lv','cond_lv_le','cond_lv_ge','cond_feature_contains','cond_name','cond_name_contains'].includes(c.code)
+          );
+          const isTFChecked = (code: string) => tf.some((c) => c.base === code);
+          const getTFValue = (code: string) => { const c = tf.find((cc) => cc.base === code); return c ? (c.value || '') : ''; };
+          const setTFChecked = (code: string, enabled: boolean) => {
+            if (enabled) { if (!isTFChecked(code)) update('targetFilter', [...tf, { base: code, value: '' }]); }
+            else update('targetFilter', tf.filter((c) => c.base !== code));
+          };
+          const setTFValue = (code: string, val: string) => {
+            const i = tf.findIndex((c) => c.base === code);
+            if (i >= 0) { const next = tf.slice(); next[i] = { ...next[i], value: val }; update('targetFilter', next); }
+            else update('targetFilter', [...tf, { base: code, value: val }]);
+          };
+          return (
+            <details className="field" style={{ marginTop: 8 }} open={tf.length > 0}>
+              <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#0d7377' }}>
+                🔍 ターゲットフィルタ{tf.length > 0 ? ` (${tf.length})` : ''} <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666' }}>step.filter に出力</span>
+              </summary>
+              <div style={{ padding: 8, border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', marginTop: 4 }}>
+                <div style={{ fontSize: 10, color: '#555', marginBottom: 6 }}>
+                  色/タイプ/Lv/特徴など対象カード自体の属性でフィルタ。rest の own_tamer:all など対応アクションで有効
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 4 }}>
+                  {TF_CONDS.map((f) => (
+                    <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
+                      <input type="checkbox" checked={isTFChecked(f.code)} onChange={(e) => setTFChecked(f.code, e.target.checked)} style={{ margin: 0 }} />
+                      {f.label}
+                    </label>
+                  ))}
+                </div>
+                {TF_CONDS.some((f) => isTFChecked(f.code)) && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6 }}>
+                    {TF_CONDS.filter((f) => isTFChecked(f.code)).map((f) => (
+                      <div key={f.code}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{f.label}</div>
+                        {f.input === 'select' ? (
+                          <select value={getTFValue(f.code)} onChange={(e) => setTFValue(f.code, e.target.value)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}>
+                            {(f.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        ) : f.input === 'number' ? (
+                          <input type="number" value={getTFValue(f.code)} onChange={(e) => setTFValue(f.code, e.target.value)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }} />
+                        ) : (
+                          <input type="text" value={getTFValue(f.code)} onChange={(e) => setTFValue(f.code, e.target.value)} style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }} />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </details>
+          );
+        })()}
+
         {/* === 📐 ルール（アクション直下に配置・メインアクションが対応している場合のみ） === */}
         {actionAllowsRules && (
           <div className="field" style={{ marginTop: 8 }}>
@@ -786,6 +870,121 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       showSubjectSelector={false}
                     />
                   </div>
+                  {/* ⚙ 期間・倍率（AND実行時の追加設定） */}
+                  <details style={{ marginTop: 6 }} open={!!(a.duration || (a.perCount && a.perRef))}>
+                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#9333ea', padding: '2px 0', fontWeight: 'bold' }}>
+                      ⚙ 期間・倍率（AND実行時の追加設定）
+                    </summary>
+                    <div style={{ padding: 6, border: '1px solid #d4b8f0', borderRadius: 4, background: '#faf5ff', marginTop: 4 }}>
+                      {/* 期間 */}
+                      <div style={{ marginBottom: 6 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>期間</div>
+                        <SearchSelect
+                          value={a.duration || ''}
+                          onChange={(v) => updateAltAction(i, { duration: v })}
+                          options={toOpts(DURATIONS)}
+                        />
+                      </div>
+                      {/* ✖ ～ごとに */}
+                      {(() => {
+                        const isPerEnabled = !!(a.perCount && a.perRef);
+                        const afArr = a.perRefFilter || [];
+                        const PER_FILTER_CONDS: CommonCondDef[] = COMMON_CONDS.filter((c) =>
+                          ['cond_color','cond_type','cond_lv','cond_lv_le','cond_lv_ge'].includes(c.code)
+                        );
+                        const isAFChecked = (code: string) => afArr.some((c) => c.base === code);
+                        const getAFValue = (code: string) => { const c = afArr.find((cc) => cc.base === code); return c ? (c.value || '') : ''; };
+                        const setAFChecked = (code: string, enabled: boolean) => {
+                          if (enabled) { if (!isAFChecked(code)) updateAltAction(i, { perRefFilter: [...afArr, { base: code, value: '' }] }); }
+                          else updateAltAction(i, { perRefFilter: afArr.filter((c) => c.base !== code) });
+                        };
+                        const setAFValue = (code: string, val: string) => {
+                          const idx = afArr.findIndex((c) => c.base === code);
+                          if (idx >= 0) { const next = afArr.slice(); next[idx] = { ...next[idx], value: val }; updateAltAction(i, { perRefFilter: next }); }
+                          else updateAltAction(i, { perRefFilter: [...afArr, { base: code, value: val }] });
+                        };
+                        return (
+                          <div>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#9333ea' }}>
+                              <input
+                                type="checkbox"
+                                checked={isPerEnabled}
+                                onChange={(e) => {
+                                  if (e.target.checked) updateAltAction(i, { perCount: 1, perRef: 'opp_digimon' });
+                                  else updateAltAction(i, { perCount: undefined, perRef: '' });
+                                }}
+                                style={{ margin: 0 }}
+                              />
+                              ✖ ～ごとに（倍率設定）
+                            </label>
+                            {isPerEnabled && (
+                              <div style={{ marginTop: 6, padding: 6, background: 'white', borderRadius: 4, border: '1px solid #d4b8f0' }}>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <input
+                                      type="number" min={1}
+                                      value={a.perCount || 1}
+                                      onChange={(e) => updateAltAction(i, { perCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                                      style={{ width: 50, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                                    />
+                                    <span style={{ fontSize: 11, color: '#555' }}>枚ごと、</span>
+                                  </div>
+                                  <div style={{ minWidth: 180 }}>
+                                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                                    <SearchSelect
+                                      value={a.perRef || ''}
+                                      onChange={(v) => updateAltAction(i, { perRef: v })}
+                                      options={toOpts(REF_SUBJECTS)}
+                                    />
+                                  </div>
+                                </div>
+                                {/* 発動モード */}
+                                <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '4px 6px', background: '#eaf0fb', borderRadius: 4, border: '1px solid #b3c8ff', fontSize: 11, marginBottom: 4 }}>
+                                  <span style={{ color: '#1a4f8a', fontWeight: 'bold' }}>発動モード:</span>
+                                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
+                                    <input type="radio" name={`altPerMode_${index}_${i}`} checked={a.perCountMode !== 'repeat'} onChange={() => updateAltAction(i, { perCountMode: undefined })} style={{ margin: 0 }} />
+                                    <span>○ 値×N</span>
+                                  </label>
+                                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
+                                    <input type="radio" name={`altPerMode_${index}_${i}`} checked={a.perCountMode === 'repeat'} onChange={() => updateAltAction(i, { perCountMode: 'repeat' })} style={{ margin: 0 }} />
+                                    <span>● N回発動</span>
+                                  </label>
+                                </div>
+                                {/* 絞り込み */}
+                                <div style={{ padding: 4, background: '#faf5ff', borderRadius: 4, border: '1px solid #d4b8f0' }}>
+                                  <div style={{ fontSize: 10, fontWeight: 'bold', color: '#9333ea', marginBottom: 3 }}>🔍 絞り込み</div>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 10px', marginBottom: 3 }}>
+                                    {PER_FILTER_CONDS.map((f) => (
+                                      <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 10, cursor: 'pointer' }}>
+                                        <input type="checkbox" checked={isAFChecked(f.code)} onChange={(e) => setAFChecked(f.code, e.target.checked)} style={{ margin: 0 }} />
+                                        {f.label}
+                                      </label>
+                                    ))}
+                                  </div>
+                                  {PER_FILTER_CONDS.some((f) => isAFChecked(f.code)) && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 4 }}>
+                                      {PER_FILTER_CONDS.filter((f) => isAFChecked(f.code)).map((f) => (
+                                        <div key={f.code}>
+                                          <div style={{ fontSize: 9, color: '#555', marginBottom: 1 }}>{f.label}</div>
+                                          {f.input === 'select' ? (
+                                            <select value={getAFValue(f.code)} onChange={(e) => setAFValue(f.code, e.target.value)} style={{ padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 11, width: '100%' }}>
+                                              {(f.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                            </select>
+                                          ) : (
+                                            <input type={f.input === 'number' ? 'number' : 'text'} value={getAFValue(f.code)} onChange={(e) => setAFValue(f.code, e.target.value)} style={{ padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 11, width: '100%', boxSizing: 'border-box' }} />
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </details>
                 </div>
               );
             })}
@@ -934,19 +1133,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </div>
         </details>
 
-        {/* ☑ 条件・追加設定を有効化 */}
-        <label style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-          marginTop: 10, fontWeight: 'bold', fontSize: 12, color: '#1976d2',
-        }}>
-          <input
-            type="checkbox"
-            checked={actionCondsOpen}
-            onChange={(e) => setActionCondsOpen(e.target.checked)}
-          />
-          ☑ 条件・追加設定（発動条件・期間・取得元・修飾子・コスト・倍率・追加JSON）
-        </label>
-        {actionCondsOpen && (
+        {/* ⚙ 追加オプション（期間・取得元・修飾子・～ごとに・コスト・追加JSON） */}
+        <details style={{ marginTop: 10 }} open={_hasActionExtras}>
+          <summary style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 12, color: '#1976d2', padding: '4px 0' }}>
+            ⚙ 追加オプション（期間・取得元・修飾子・倍率・コスト・追加JSON）
+          </summary>
         <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
 
         <div className="field">
@@ -1307,22 +1498,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
           );
         })()}
-
-        {/* 🎯 発動条件 ハイブリッド (チェックボックス + プルダウン) */}
-        <details className="field" open={conditions.length > 0}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#1a4f8a' }}>
-            🎯 発動条件{conditions.length > 0 ? ` (${conditions.length})` : ''}
-          </summary>
-          <ConditionsHybridEditor
-            conditions={conditions}
-            onChange={(next) => update('conditions', next)}
-            dict={dict}
-            title="発動条件"
-            hint="（このアクションを発動するために満たすべき条件・複数指定可・AND結合）"
-            theme="action"
-            defaultSubject=""
-          />
-        </details>
 
         {/* コスト: 「〇〇することで」を表現 */}
         <div className="field" style={{ gridColumn: '1 / span 2' }}>
@@ -1685,7 +1860,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         </details>
 
         </div>
-        )}
+        </details>
         </div>
         {/* === アクショングループここまで === */}
 

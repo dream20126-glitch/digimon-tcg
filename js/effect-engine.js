@@ -4704,6 +4704,12 @@ export function fireWhenDestroyTriggers(destroyedSide, bs, ctxBase, done) {
   return _fireSidedReactionTriggers(destroyedSide, 'when_destroy', bs, ctxBase, done);
 }
 
+// バトルで消滅するとき（消滅前・置換効果用） → 消滅直前に呼び出す（コスト払いで消滅キャンセル）
+// TODO: battle-combat.js のバトル消滅処理前に呼び出し実装が必要
+export function fireWhenBattleDestroyTriggers(destroyedSide, bs, ctxBase, done) {
+  return _fireSidedReactionTriggers(destroyedSide, 'when_battle_destroy', bs, ctxBase, done);
+}
+
 // バトルエリアを離れるとき → 離れる側の自分側が反応
 export function fireWhenLeaveBattleTriggers(leavingSide, bs, ctxBase, done) {
   return _fireSidedReactionTriggers(leavingSide, 'when_leave_battle', bs, ctxBase, done);

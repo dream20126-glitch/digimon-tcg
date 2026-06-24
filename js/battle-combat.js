@@ -9,7 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -178,6 +178,25 @@ function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle) {
   }
   return null;
 }
+
+// when_battle_destroy トリガーを発火し、コスト払いでバフが付与されていれば消滅をキャンセルする。
+// onDestroy: 消滅実行コールバック / onCancel: 消滅回避コールバック
+function _runWhenBattleDestroy(side, card, onDestroy, onCancel) {
+  if (!_hasRecipeTrigger(card, 'when_battle_destroy')) { onDestroy(); return; }
+  const ctxWBD = _hooks.makeEffectContext(card, side);
+  _hooks.triggerEffect('when_battle_destroy', card, side, ctxWBD, () => {
+    const prevented = !!(card.buffs && card.buffs.some(b =>
+      b.type === 'keyword_prevent_battle_destroy' || b.type === 'keyword_prevent_destroy'
+    ));
+    if (prevented) {
+      addLog('🛡 「' + card.name + '」はコストを払い消滅を回避！');
+      onCancel();
+    } else {
+      onDestroy();
+    }
+  });
+}
+
 // ≪連携≫の処理: アタック時、他のアクティブデジモン1体をレストさせて
 // このターン DP+(対象DP) と Sアタック+1 を一時付与する (公式 18-24)
 function _tryCombo(atk, ownerSidePlayer) {
@@ -1519,6 +1538,8 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
         showBattleResult('回避！', '#ff00fb', '相手「' + def.name + '」が消滅を回避', () => { renderAll(); checkAttackEnd(atk, atkIdx); }, 'Lost...', '#ff4444');
         return;
       }
+      _runWhenBattleDestroy('ai', def,
+        () => {
       destroyDef(); renderAll();
       showBattleResult('Win!!', '#00ff88', '「' + def.name + '」を撃破！', () => {
         showDestroyEffect(def, () => {
@@ -1554,6 +1575,12 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
           }, { ai: def });
         });
       }, 'Lose...', '#ff4444');
+        },
+        () => {
+          renderAll();
+          showBattleResult('回避！', '#ff00fb', '相手「' + def.name + '」がコストを払い消滅を回避', () => { renderAll(); checkAttackEnd(atk, atkIdx); }, 'Lose...', '#ff4444');
+        }
+      );
     } else {
       // ≪防壁≫/≪回避≫/≪アーマー解除≫: 消滅回避を試行
       var cancelResult = _tryCancelDestroy(atk, bs.player, false);
@@ -1562,29 +1589,36 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
         showBattleResult('回避！', '#00fbff', '「' + atk.name + '」が消滅を回避', () => { renderAll(); checkAttackEnd(atk, atkIdx); }, 'Win!!', '#00ff88');
         return;
       }
-      destroyAtk(); renderAll();
-      showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された', () => {
-        showDestroyEffect(atk, () => {
-          addLog('💥 「' + atk.name + '」が撃破された...'); renderAll();
-          // ≪道連れ≫: バトルで自分だけ消滅 → 相手(def)も消滅させる
-          if (hasMichizure(atk) && def && bs.ai.battleArea.indexOf(def) >= 0) {
-            addLog('💀 【道連れ】「' + atk.name + '」が「' + def.name + '」を巻き込んで消滅！');
-            const defIdx2 = bs.ai.battleArea.indexOf(def);
-            bs.ai.battleArea[defIdx2] = null;
-            bs.ai.trash.push(def);
-            if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
-            renderAll();
-            // 巻き込まれた相手 (def) の消滅前に「道連れ」演出を挟む
-            showMichizureAnnounce(() => {
-              showDestroyEffect(def, () => {
-                _fireDestroyChain(['player', 'ai'], () => checkPendingTurnEnd(), { player: atk, ai: def });
-              });
+      _runWhenBattleDestroy('player', atk,
+        () => {
+          destroyAtk(); renderAll();
+          showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された', () => {
+            showDestroyEffect(atk, () => {
+              addLog('💥 「' + atk.name + '」が撃破された...'); renderAll();
+              // ≪道連れ≫: バトルで自分だけ消滅 → 相手(def)も消滅させる
+              if (hasMichizure(atk) && def && bs.ai.battleArea.indexOf(def) >= 0) {
+                addLog('💀 【道連れ】「' + atk.name + '」が「' + def.name + '」を巻き込んで消滅！');
+                const defIdx2 = bs.ai.battleArea.indexOf(def);
+                bs.ai.battleArea[defIdx2] = null;
+                bs.ai.trash.push(def);
+                if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
+                renderAll();
+                showMichizureAnnounce(() => {
+                  showDestroyEffect(def, () => {
+                    _fireDestroyChain(['player', 'ai'], () => checkPendingTurnEnd(), { player: atk, ai: def });
+                  });
+                });
+                return;
+              }
+              _fireDestroyChain(['player'], () => checkPendingTurnEnd(), { player: atk });
             });
-            return;
-          }
-          _fireDestroyChain(['player'], () => checkPendingTurnEnd(), { player: atk });
-        });
-      }, 'Win!!', '#00ff88');
+          }, 'Win!!', '#00ff88');
+        },
+        () => {
+          renderAll();
+          showBattleResult('回避！', '#00fbff', '「' + atk.name + '」がコストを払い消滅を回避', () => { renderAll(); checkAttackEnd(atk, atkIdx); }, 'Win!!', '#00ff88');
+        }
+      );
     }
   }, 'BATTLE!');
 }
@@ -1628,11 +1662,13 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         showBattleResult('回避！', '#00fbff', '「' + def.name + '」が消滅を回避', () => { renderAll(); callback(); }, '回避！', '#00fbff');
         return;
       }
-      bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
-      if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
-      renderAll();
-      showDestroyEffect(def, () => {
-        _fireDestroyChain(['player'], () => {
+      _runWhenBattleDestroy('player', def,
+        () => {
+          bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
+          if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
+          renderAll();
+          showDestroyEffect(def, () => {
+            _fireDestroyChain(['player'], () => {
           // AI が attacker として勝利 → on_battle_win on atk (AI side)
           bs._lastBattleWinner = atk;
           const winCtx = _hooks.makeEffectContext(atk, 'ai');
@@ -1666,7 +1702,13 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
             }
           });
         }, { player: def });
-      });
+          });
+        },
+        () => {
+          renderAll();
+          showBattleResult('回避！', '#00fbff', '「' + def.name + '」がコストを払い消滅を回避', () => { renderAll(); callback(); }, '回避！', '#00fbff');
+        }
+      );
     } else {
       // ≪防壁≫/≪回避≫/≪アーマー解除≫: AI 側 atk の消滅回避を試行
       var cancelAiAtk = _tryCancelDestroy(atk, bs.ai, false);
@@ -1675,6 +1717,8 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         showBattleResult('回避！', '#ff00fb', '相手「' + atk.name + '」が消滅を回避', () => { renderAll(); callback(); }, '回避！', '#ff00fb');
         return;
       }
+      _runWhenBattleDestroy('ai', atk,
+        () => {
       bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
       if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
       renderAll();
@@ -1709,6 +1753,12 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           });
         }, { ai: atk });
       });
+        },
+        () => {
+          renderAll();
+          showBattleResult('回避！', '#ff00fb', '相手「' + atk.name + '」がコストを払い消滅を回避', () => { renderAll(); callback(); }, '回避！', '#ff00fb');
+        }
+      );
     }
   }, 'BATTLE!');
 }

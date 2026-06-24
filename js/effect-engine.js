@@ -1225,8 +1225,15 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     // === コスト: 他のデジモン消滅 ===
     case 'cost_destroy_other': {
       // 自分側 battleArea から自身（card）以外のデジモンを1体消滅
+      // step.condition に cond_name:xxx が指定された場合は名前でフィルタ
+      const _cdoNameM = /cond_name:(.+)/.exec(String(step.condition || ''));
+      const _cdoNameFilter = _cdoNameM ? _cdoNameM[1].trim() : null;
       const candidates = [];
-      player.battleArea.forEach((c, i) => { if (c && c !== card) candidates.push(i); });
+      player.battleArea.forEach((c, i) => {
+        if (!c || c === card) return;
+        if (_cdoNameFilter && String(c.name || '') !== _cdoNameFilter) return;
+        candidates.push(i);
+      });
       if (candidates.length === 0) { callback(false); return; }
       const doDestroy = (idx) => {
         const tgt = player.battleArea[idx];
@@ -7539,16 +7546,22 @@ function executeRecipeStep(step, ctx, store, callback) {
       const ecmVal = step.value || 1;
       if (!ctx.bs._pendingEvoCostReductions) ctx.bs._pendingEvoCostReductions = [];
       const _parseLvCond = (cs) => { const m = /cond_(?:evolve_to_)?lv:(\d+)/.exec(String(cs || '')); return m ? parseInt(m[1], 10) : null; };
+      const _parseNameCond = (cs) => { const m = /cond_name:(.+)/.exec(String(cs || '')); return m ? m[1].trim() : null; };
       const _colorM = /cond_color:([^@:]+)/.exec(String(step.condition || ''));
       const _extraArr = Array.isArray(step.extra_conditions) ? step.extra_conditions
         : (step.extra_conditions ? [step.extra_conditions] : []);
       let _evoLv = null;
-      for (const ec of _extraArr) { const v = _parseLvCond(ec); if (v != null) _evoLv = v; }
+      let _evoName = null;
+      for (const ec of _extraArr) {
+        const v = _parseLvCond(ec); if (v != null) _evoLv = v;
+        const n = _parseNameCond(ec); if (n != null) _evoName = n;
+      }
       ctx.bs._pendingEvoCostReductions.push({
         value: ecmVal,
         color: _colorM ? _colorM[1].trim() : null,
         baseLv: _parseLvCond(step.when),
         evoLv: _evoLv,
+        name: _evoName,
         duration: normalizeRecipeDuration(step.duration) || 'dur_this_turn',
         side: ctx.side,
         once: Array.isArray(step.options) && (step.options.includes('once_only') || step.options.includes('once')),

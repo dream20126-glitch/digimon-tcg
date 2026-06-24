@@ -410,12 +410,13 @@ export function canEvolveOnto(evoCard, baseCard) {
 }
 
 // 保留中の進化コスト軽減（スマッシュポテト等）を消費して合計軽減値を返す。
-// bs._pendingEvoCostReductions の各エントリは color / baseLv / evoLv の記述子で
+// bs._pendingEvoCostReductions の各エントリは color / baseLv / evoLv / name の記述子で
 // 「どの進化に適用されるか」を絞る。once のものは消費して除去する。
 function _consumePendingEvoCostReduction(evolved, base) {
   if (!bs || !Array.isArray(bs._pendingEvoCostReductions) || bs._pendingEvoCostReductions.length === 0) return 0;
   const evColor = evolved.color || '';
   const evLv = parseInt(String(evolved.level), 10) || 0;
+  const evName = evolved.name || '';
   const baseLv = base ? (parseInt(String(base.level), 10) || 0) : 0;
   let total = 0;
   bs._pendingEvoCostReductions.forEach(r => {
@@ -424,6 +425,7 @@ function _consumePendingEvoCostReduction(evolved, base) {
     if (r.color && !evColor.includes(r.color)) return;
     if (r.baseLv != null && r.baseLv !== baseLv) return;
     if (r.evoLv != null && r.evoLv !== evLv) return;
+    if (r.name && evName !== r.name) return;
     total += r.value || 0;
     if (r.once) r._used = true;
   });

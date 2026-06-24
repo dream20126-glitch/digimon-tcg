@@ -7540,8 +7540,8 @@ function executeRecipeStep(step, ctx, store, callback) {
     // === 進化コスト-N ===
     // 「次に〜が進化するときの進化コストを-N」= 次の対象進化に適用する保留割引として
     // bs._pendingEvoCostReductions に登録する（doEvolve / doEvolveIku が消費）。
-    // step.condition(cond_color:X) / step.when(cond_lv:N) / step.extra_conditions
-    // (cond_evolve_to_lv:N) で「どの進化に適用されるか」を記述する。
+    // step.condition(cond_color:X または cond_name:X) / step.when(cond_lv:N) / step.extra_conditions
+    // (cond_evolve_to_lv:N / cond_name:X) で「どの進化に適用されるか」を記述する。
     case 'evo_cost_minus': {
       const ecmVal = step.value || 1;
       if (!ctx.bs._pendingEvoCostReductions) ctx.bs._pendingEvoCostReductions = [];
@@ -7551,7 +7551,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _extraArr = Array.isArray(step.extra_conditions) ? step.extra_conditions
         : (step.extra_conditions ? [step.extra_conditions] : []);
       let _evoLv = null;
-      let _evoName = null;
+      // step.condition に cond_name が指定される場合（エディタで条件1に設定したとき）も解釈する
+      let _evoName = _parseNameCond(step.condition || '');
       for (const ec of _extraArr) {
         const v = _parseLvCond(ec); if (v != null) _evoLv = v;
         const n = _parseNameCond(ec); if (n != null) _evoName = n;

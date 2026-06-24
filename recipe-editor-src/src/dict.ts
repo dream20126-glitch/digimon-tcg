@@ -280,6 +280,8 @@ export const ACTIONS: DictEntry[] = [
   { code: 'security_attack_minus', kind: 'action', label: 'Sアタックを-' },
   { code: 'attack_without_rest', kind: 'action', label: 'レストせずにアタック' },
   { code: 'cost_discard', kind: 'action', label: '手札を捨てる（コスト）' },
+  { code: 'cost_destroy_other', kind: 'action', label: '他の自分のデジモンを消滅させる（コスト）' },
+  { code: 'evo_cost_minus', kind: 'action', label: '進化コストを-' },
   { code: 'use_main_effect', kind: 'action', label: 'メイン効果を発揮' },
   { code: 'select', kind: 'action', label: '1体選ぶ' },
   { code: 'select_multi', kind: 'action', label: 'N体まで選ぶ' },

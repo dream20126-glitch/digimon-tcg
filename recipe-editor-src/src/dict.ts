@@ -290,6 +290,7 @@ export const ACTIONS: DictEntry[] = [
   { code: 'grant_keyword_to', kind: 'action', label: 'キーワードを与える' },
   { code: 'prevent_destroy', kind: 'action', label: '効果で消滅しない' },
   { code: 'prevent_battle_destroy', kind: 'action', label: 'バトルで消滅しない' },
+  { code: 'prevent_any_destroy', kind: 'action', label: 'バトルでも効果でも消滅しない' },
   { code: 'place_under_tamer', kind: 'action', label: 'テイマーの下に置く' },
   { code: 'place_under_digimon', kind: 'action', label: '進化元の下に置く' },
   { code: 'jogress_evolve', kind: 'action', label: 'ジョグレス進化' },

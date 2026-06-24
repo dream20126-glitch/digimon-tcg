@@ -19,7 +19,7 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'overflow_memory_minus',
   'place_from_hand_battle_under', 'place_from_trash_under', 'place_on_security_top',
   'place_under_digimon', 'place_under_tamer',
-  'prevent_battle_destroy', 'prevent_destroy',
+  'prevent_battle_destroy', 'prevent_destroy', 'prevent_any_destroy',
   'recover', 'rest', 'rest_self', 'return_deck',
   'security_attack_minus', 'security_attack_plus',
   'security_trash_bottom', 'security_trash_select', 'security_trash_top',

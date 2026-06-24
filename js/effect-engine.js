@@ -7372,6 +7372,19 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === バトルでも効果でも消滅しない（バフ2つ付与） ===
+    case 'prevent_any_destroy': {
+      const tgt = ctx.card;
+      if (tgt) {
+        const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+        addBuffDirect(tgt, 'keyword_prevent_destroy', 0, dur, ctx);
+        addBuffDirect(tgt, 'keyword_prevent_battle_destroy', 0, dur, ctx);
+        ctx.addLog('🛡 「' + tgt.name + '」はバトルでも効果でも消滅しない');
+      }
+      callback();
+      break;
+    }
+
     // === バトルで消滅しない（バフ付与） ===
     case 'prevent_battle_destroy': {
       const tgt = ctx.card;

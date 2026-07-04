@@ -531,6 +531,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
+        {/* summon 専用: コストを支払わずに登場（対象は self/self_card のときのみ有効） */}
+        {block.action === 'summon' && (
+          <div className="field" style={{ marginTop: 8, background: '#fff3e0', padding: 8, borderRadius: 4, border: '1px solid #ffd591' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#b76e00' }}>
+              <input
+                type="checkbox"
+                checked={!!block.costFree}
+                onChange={(e) => update('costFree', e.target.checked)}
+              />
+              コストを支払わずに登場させる（cost_free）
+            </label>
+            <span style={{ fontSize: 10, color: '#666' }}>
+              「このカードをコストを支払わずに登場させる。」のセキュリティ効果用。対象は「このデジモン(self)」または「このカード(self_card)」にすること
+            </span>
+          </div>
+        )}
+
         {/* memory_plus 専用: このターン終了時メモリー-N */}
         {block.action === 'memory_plus' && (
           <div className="field" style={{ marginTop: 8, background: '#eef4ff', padding: 8, borderRadius: 4, border: '1px solid #b3c8ff' }}>

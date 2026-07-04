@@ -5791,7 +5791,9 @@ function executeRecipeStep(step, ctx, store, callback) {
     // === コスト無し登場 ===
     case 'summon': {
       // Security effect: summon self (tamer/digimon) to field at no cost
-      if (step.target === 'self' && step.cost_free) {
+      // cost_free:true と options:['ignore_cost'] のどちらの表記も受け付ける
+      const _summonSelfIgnoreCost = !!step.cost_free || (Array.isArray(step.options) && step.options.includes('ignore_cost'));
+      if ((step.target === 'self' || step.target === 'self_card') && _summonSelfIgnoreCost) {
         const cardToSummon = ctx.card;
         if (!cardToSummon) { callback(); break; }
         const p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;

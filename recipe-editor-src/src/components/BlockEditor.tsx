@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep } from '../types';
 import {
   SECTIONS,
@@ -2099,8 +2099,6 @@ const COMMON_CONDS: CommonCondDef[] = [
   { code: 'cond_name',             label: '名前（完全一致）', input: 'text' },
   { code: 'cond_name_contains',    label: '名前を含む',   input: 'text' },
 ];
-const COMMON_COND_CODES = new Set(COMMON_CONDS.map((c) => c.code));
-
 // ルール上部フィールド (step 直下) のみ。条件は ConditionsHybridEditor に統一。
 const RULE_FIELDS: RuleFieldDef[] = [
   { key: 'is_remaining', label: '残ったカード', kind: 'top', topKey: 'isRemaining', input: 'flag' },
@@ -2451,129 +2449,47 @@ interface ConditionsHybridEditorProps {
   showSubjectSelector?: boolean; // 主体プルダウンを各行に出すか
   showAttackTargetRow?: boolean; // 🎯 アタック対象行（プレイヤー/デジモン）を表示するか（トリガー条件専用）
 }
+// 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
+const NO_VALUE_CONDS = new Set([
+  'cond_attack_target_player', 'cond_attack_target_digimon', 'cond_no_evo',
+  'cond_jogress', 'cond_in_battle', 'cond_during_own_turn', 'cond_during_opp_turn',
+  'cond_during_any_turn', 'cond_self_active', 'cond_self_rest', 'cond_opp_no_attack_this_turn',
+  'cond_evolved_this_turn', 'cond_no_tamer_evo', 'cond_not_own_effect', 'cond_has_evo_digimon',
+]);
+
+// クイック追加ショートカット（ワンクリックで「条件N」の新規行を追加）
+// トリガー条件専用の「アタック対象」もここに統合（旧: 専用トグルUI → 通常の条件行として扱う）
+const QUICK_ADD_COMMON: { code: string; label: string }[] = [
+  { code: 'cond_color', label: '色' },
+  { code: 'cond_type', label: 'タイプ' },
+  { code: 'cond_lv_ge', label: 'Lv以上' },
+  { code: 'cond_dp_ge', label: 'DP以上' },
+];
+const QUICK_ADD_ATTACK_TARGET: { code: string; label: string }[] = [
+  { code: 'cond_attack_target_player', label: 'プレイヤーにアタック' },
+  { code: 'cond_attack_target_digimon', label: 'デジモンにアタック' },
+];
+
 function ConditionsHybridEditor({
   conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true, showAttackTargetRow = false,
 }: ConditionsHybridEditorProps) {
-  // === 🎯 アタック対象 (プレイヤー / デジモン): cond_attack_target_player / cond_attack_target_digimon ===
-  // 排他: どちらか1つだけ ON。OFF にすれば該当条件を削除
-  const ATTACK_TARGET_PLAYER_CODE = 'cond_attack_target_player';
-  const ATTACK_TARGET_DIGIMON_CODE = 'cond_attack_target_digimon';
-  const hasAttackTargetPlayer = conditions.some((c) => c.base === ATTACK_TARGET_PLAYER_CODE);
-  const hasAttackTargetDigimon = conditions.some((c) => c.base === ATTACK_TARGET_DIGIMON_CODE);
-  function setAttackTarget(target: 'player' | 'digimon' | '') {
-    // 両方を一度除去してから新しいのを追加（排他制御）
-    let next = conditions.filter(
-      (c) => c.base !== ATTACK_TARGET_PLAYER_CODE && c.base !== ATTACK_TARGET_DIGIMON_CODE
-    );
-    if (target === 'player') next = [...next, { base: ATTACK_TARGET_PLAYER_CODE, value: '' }];
-    else if (target === 'digimon') next = [...next, { base: ATTACK_TARGET_DIGIMON_CODE, value: '' }];
-    onChange(next);
-  }
-
-  // 「その他の条件」=チェックボックス対象外の cond_xxx
-  // インデックス対応: customConds[i] が conditions の何番目か
-  const customIndices: number[] = [];
-  conditions.forEach((c, i) => { if (!COMMON_COND_CODES.has(c.base)) customIndices.push(i); });
-
-  // === 共通対象 (subject): チェックボックス追加した全条件で共有 ===
-  // ローカル state で管理。これで共有条件が1つも無くても 対象 ☑ を保持できる。
-  const initialSubject = (() => {
-    const c = conditions.find((cc) => COMMON_COND_CODES.has(cc.base) && cc.subject);
-    return c?.subject || '';
-  })();
-  const [subjectEnabled, setSubjectEnabled] = useState<boolean>(!!initialSubject);
-  const [subjectValue, setSubjectValue] = useState<string>(initialSubject);
-
-  // 外部 data 変更時（例: 別効果ブロック切替）に再同期
-  useEffect(() => {
-    if (initialSubject) {
-      setSubjectEnabled(true);
-      setSubjectValue(initialSubject);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSubject]);
-
-  function applySubjectToAll(subject: string) {
-    const next = conditions.map((c) =>
-      COMMON_COND_CODES.has(c.base)
-        ? { ...c, subject: subject || undefined }
-        : c
-    );
-    onChange(next);
-  }
-  function setSubjectShared(subject: string) {
-    setSubjectValue(subject);
-    applySubjectToAll(subject);
-  }
-  function setSubjectChecked(enabled: boolean) {
-    setSubjectEnabled(enabled);
-    if (!enabled) {
-      setSubjectValue('');
-      applySubjectToAll('');
-    } else {
-      // ☑ に切替時、既存値が空なら 'self' をデフォルトとして適用
-      const newSubject = subjectValue || 'self';
-      setSubjectValue(newSubject);
-      applySubjectToAll(newSubject);
-    }
-  }
-  // 新規 common 条件追加時に付与する subject を計算
-  function currentSubjectForNew(): string | undefined {
-    if (subjectEnabled && subjectValue) return subjectValue;
-    return defaultSubject || undefined;
-  }
-
-  // === チェックボックス用ヘルパ ===
-  function isChecked(code: string): boolean { return conditions.some((c) => c.base === code); }
-  function getValue(code: string): string {
-    const c = conditions.find((cc) => cc.base === code);
-    return c ? (c.value || '') : '';
-  }
-  function setChecked(code: string, enabled: boolean) {
-    if (enabled) {
-      if (!isChecked(code)) onChange([...conditions, { base: code, value: '', subject: currentSubjectForNew() }]);
-    } else {
-      onChange(conditions.filter((c) => c.base !== code));
-    }
-  }
-  function setValue(code: string, value: string) {
-    const i = conditions.findIndex((c) => c.base === code);
-    if (i >= 0) {
-      const next = conditions.slice();
-      next[i] = { ...next[i], value };
-      onChange(next);
-    } else {
-      onChange([...conditions, { base: code, value, subject: currentSubjectForNew() }]);
-    }
-  }
-
-  // === 「その他の条件」用ヘルパ ===
-  function updateCustomAt(displayIdx: number, p: ConditionPair) {
-    const realIdx = customIndices[displayIdx];
-    if (realIdx < 0 || realIdx === undefined) return;
-    const next = conditions.slice();
-    next[realIdx] = p;
-    onChange(next);
-  }
-  function removeCustomAt(displayIdx: number) {
-    const realIdx = customIndices[displayIdx];
-    if (realIdx < 0 || realIdx === undefined) return;
-    onChange(conditions.filter((_, i) => i !== realIdx));
-  }
-  function addCustom() {
-    onChange([...conditions, { base: '', value: '', subject: defaultSubject || undefined }]);
-  }
-
   const colors = theme === 'trigger'
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
     : { bg: '#e8f0fe', border: '#93b5e5', accent: '#1a4f8a', icon: '🎯' };
 
-  // dict.conditions の中で COMMON / アタック対象 専用UI に無いものだけプルダウン候補に
-  const otherCondOptions = toOpts(dict.conditions.filter((c) =>
-    !COMMON_COND_CODES.has(c.code)
-    && c.code !== ATTACK_TARGET_PLAYER_CODE
-    && c.code !== ATTACK_TARGET_DIGIMON_CODE
-  ));
+  const condOptions = toOpts(dict.conditions);
+
+  function updateAt(i: number, patch: Partial<ConditionPair>) {
+    const next = conditions.slice();
+    next[i] = { ...next[i], ...patch };
+    onChange(next);
+  }
+  function removeAt(i: number) {
+    onChange(conditions.filter((_, idx) => idx !== i));
+  }
+  function addRow(base = '') {
+    onChange([...conditions, { base, value: '', subject: defaultSubject || undefined }]);
+  }
 
   return (
     <div className="field" style={{ gridColumn: '1 / span 2', background: colors.bg, padding: 8, borderRadius: 4, border: `1px solid ${colors.border}` }}>
@@ -2581,212 +2497,137 @@ function ConditionsHybridEditor({
         {colors.icon} {title}
         <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>{hint}</span>
       </label>
-
-      {/* === 🎯 アタック対象 (トリガー条件専用): プレイヤー / デジモン 排他 === */}
-      {showAttackTargetRow && (
-        <div style={{ marginTop: 6, padding: 8, background: '#fff8e6', borderRadius: 4, border: '1px solid #ffd591' }}>
-          <div style={{ fontSize: 11, fontWeight: 'bold', color: '#b76e00', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-            🎯 アタック対象
-            <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666' }}>
-              （アタック先がどちらか1つを指定。on_attack 系トリガー専用）
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px' }}>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-              <input
-                type="checkbox"
-                checked={hasAttackTargetPlayer}
-                onChange={(e) => setAttackTarget(e.target.checked ? 'player' : '')}
-                style={{ margin: 0 }}
-              />
-              プレイヤー
-            </label>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-              <input
-                type="checkbox"
-                checked={hasAttackTargetDigimon}
-                onChange={(e) => setAttackTarget(e.target.checked ? 'digimon' : '')}
-                style={{ margin: 0 }}
-              />
-              デジモン
-            </label>
-          </div>
-        </div>
-      )}
-
-      {/* === チェックボックスエリア === */}
-      <div style={{ marginTop: 6, padding: 8, background: 'white', borderRadius: 4, border: `1px solid ${colors.border}` }}>
-        <div style={{ fontSize: 11, fontWeight: 'bold', color: colors.accent, marginBottom: 4 }}>
-          📋 よく使う条件（チェックで有効化）
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-          {/* 📌 対象 (共有 subject) チェックボックス */}
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none', background: '#fff3e0', padding: '0 4px', borderRadius: 3 }}>
-            <input
-              type="checkbox"
-              checked={subjectEnabled}
-              onChange={(e) => setSubjectChecked(e.target.checked)}
-              style={{ margin: 0 }}
-            />
-            📌 対象
-          </label>
-          {COMMON_CONDS.map((c) => (
-            <label key={c.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-              <input
-                type="checkbox"
-                checked={isChecked(c.code)}
-                onChange={(e) => setChecked(c.code, e.target.checked)}
-                style={{ margin: 0 }}
-              />
-              {c.label}
-            </label>
-          ))}
-        </div>
-        {/* 📌 対象 が ☑ ならプルダウン表示 */}
-        {subjectEnabled && (
-          <div style={{ marginTop: 6, padding: 6, background: '#fff8e6', borderRadius: 4, border: '1px solid #ffd591', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 'bold', color: '#b76e00', whiteSpace: 'nowrap' }}>📌 共有対象:</span>
-            <div style={{ flex: 1 }}>
-              <SearchSelect
-                value={subjectValue}
-                onChange={(v) => setSubjectShared(v)}
-                options={toOpts(CONDITION_SUBJECTS)}
-              />
-            </div>
-            <span style={{ fontSize: 10, color: '#666' }}>（チェックボックスで追加した全条件に適用）</span>
-          </div>
-        )}
-        {COMMON_CONDS.some((c) => isChecked(c.code)) && (
-          <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6 }}>
-            {COMMON_CONDS.filter((c) => isChecked(c.code)).map((c) => (
-              <div key={c.code}>
-                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{c.label}</div>
-                {c.input === 'select' ? (
-                  <select
-                    value={getValue(c.code)}
-                    onChange={(e) => setValue(c.code, e.target.value)}
-                    style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}
-                  >
-                    {(c.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                ) : c.input === 'number' ? (
-                  <input
-                    type="number"
-                    value={getValue(c.code)}
-                    onChange={(e) => setValue(c.code, e.target.value)}
-                    style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                  />
-                ) : (
-                  <input
-                    type="text"
-                    value={getValue(c.code)}
-                    onChange={(e) => setValue(c.code, e.target.value)}
-                    style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+      <div style={{ fontSize: 10, color: '#666', margin: '2px 0 6px' }}>
+        条件1・条件2・…はすべて AND（全部を満たしたときだけ発動）。各行で「種別・値・対象」を個別に設定できます。
       </div>
 
-      {/* === その他の条件エリア（プルダウン） === */}
-      <div style={{ marginTop: 8 }}>
-        <div style={{ fontSize: 11, fontWeight: 'bold', color: colors.accent, marginBottom: 4 }}>
-          🔍 その他の条件（cond_self_rest / cond_jogress 等の高度な条件）
-        </div>
-        {customIndices.length === 0 && (
-          <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>追加なし</div>
-        )}
-        {customIndices.map((realIdx, i) => {
-          const c = conditions[realIdx];
-          return (
-            <div key={i} style={{ marginBottom: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
-              <div style={{ display: 'flex', gap: 4, marginBottom: 4, alignItems: 'flex-start' }}>
-                <div style={{ flex: 2 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2, fontWeight: 'bold' }}>条件種別</div>
-                  <SearchSelect
-                    value={c.base}
-                    onChange={(v) => updateCustomAt(i, { ...c, base: v })}
-                    options={otherCondOptions}
-                    allowFreeText
-                    placeholder="--条件--"
-                  />
-                  {c.base && (
-                    isConditionImplemented(c.base)
-                      ? <span style={{ color: '#2e7d32', fontSize: 10 }}>✅実装済</span>
-                      : <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠未実装</span>
-                  )}
-                </div>
-                <div style={{ flex: 1.5 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2, fontWeight: 'bold' }}>値</div>
-                  {c.base === 'cond_same_as_picked' ? (
-                    /* 「選んだデジモンと同じ」: 属性チェックボックス群（カンマ区切りで保存） */
-                    (() => {
-                      const sel = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
-                      const isCheckedAttr = (code: string) => sel.includes(code);
-                      const toggleAttr = (code: string, on: boolean) => {
-                        const next = on
-                          ? Array.from(new Set([...sel, code]))
-                          : sel.filter((s) => s !== code);
-                        updateCustomAt(i, { ...c, value: next.join(',') });
-                      };
-                      return (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, background: 'white' }}>
-                          {SAME_AS_PICKED_FIELDS.map((f) => (
-                            <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, cursor: 'pointer' }}>
-                              <input
-                                type="checkbox"
-                                checked={isCheckedAttr(f.code)}
-                                onChange={(e) => toggleAttr(f.code, e.target.checked)}
-                                style={{ margin: 0 }}
-                              />
-                              {f.label}
-                            </label>
-                          ))}
-                        </div>
-                      );
-                    })()
-                  ) : (
-                    <input
-                      type="text"
-                      value={c.value || ''}
-                      onChange={(e) => updateCustomAt(i, { ...c, value: e.target.value })}
-                      placeholder="（必要なら）"
-                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-                    />
-                  )}
-                </div>
-                <button
-                  onClick={() => removeCustomAt(i)}
-                  style={{ padding: '0 8px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', height: 26, alignSelf: 'flex-end' }}
-                >
-                  ✕
-                </button>
-              </div>
-              {showSubjectSelector && (
-                <div style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 11 }}>
-                  <span style={{ color: colors.accent, fontWeight: 'bold', minWidth: 100 }}>
-                    {colors.icon} 条件の対象:
-                  </span>
-                  <div style={{ flex: 1 }}>
-                    <SearchSelect
-                      value={c.subject || ''}
-                      onChange={(v) => updateCustomAt(i, { ...c, subject: v })}
-                      options={toOpts(CONDITION_SUBJECTS)}
-                    />
-                  </div>
-                </div>
+      {conditions.length === 0 && (
+        <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>条件なし</div>
+      )}
+
+      {conditions.map((c, i) => {
+        const def = COMMON_CONDS.find((cc) => cc.code === c.base);
+        return (
+          <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
+            <div style={{ fontSize: 11, fontWeight: 'bold', color: colors.accent, minWidth: 44, paddingTop: 6, whiteSpace: 'nowrap' }}>
+              条件{i + 1}
+            </div>
+            <div style={{ flex: 2 }}>
+              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>種別</div>
+              <SearchSelect
+                value={c.base}
+                onChange={(v) => updateAt(i, { base: v })}
+                options={condOptions}
+                allowFreeText
+                placeholder="--条件を選択--"
+              />
+              {c.base && (
+                isConditionImplemented(c.base)
+                  ? <span style={{ color: '#2e7d32', fontSize: 10 }}>✅実装済</span>
+                  : <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠未実装</span>
               )}
             </div>
-          );
-        })}
+            <div style={{ flex: 1.5 }}>
+              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
+              {c.base === 'cond_same_as_picked' ? (
+                /* 「選んだデジモンと同じ」: 属性チェックボックス群（カンマ区切りで保存） */
+                (() => {
+                  const sel = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
+                  const isCheckedAttr = (code: string) => sel.includes(code);
+                  const toggleAttr = (code: string, on: boolean) => {
+                    const next = on
+                      ? Array.from(new Set([...sel, code]))
+                      : sel.filter((s) => s !== code);
+                    updateAt(i, { value: next.join(',') });
+                  };
+                  return (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, background: 'white' }}>
+                      {SAME_AS_PICKED_FIELDS.map((f) => (
+                        <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={isCheckedAttr(f.code)}
+                            onChange={(e) => toggleAttr(f.code, e.target.checked)}
+                            style={{ margin: 0 }}
+                          />
+                          {f.label}
+                        </label>
+                      ))}
+                    </div>
+                  );
+                })()
+              ) : def && def.input === 'select' ? (
+                <select
+                  value={c.value || ''}
+                  onChange={(e) => updateAt(i, { value: e.target.value })}
+                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}
+                >
+                  {(def.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              ) : def && def.input === 'number' ? (
+                <input
+                  type="number"
+                  value={c.value || ''}
+                  onChange={(e) => updateAt(i, { value: e.target.value })}
+                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={c.value || ''}
+                  onChange={(e) => updateAt(i, { value: e.target.value })}
+                  placeholder={NO_VALUE_CONDS.has(c.base) ? '（値不要）' : '（必要なら）'}
+                  disabled={NO_VALUE_CONDS.has(c.base)}
+                  style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                />
+              )}
+            </div>
+            {showSubjectSelector && (
+              <div style={{ flex: 1.6 }}>
+                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                <SearchSelect
+                  value={c.subject || ''}
+                  onChange={(v) => updateAt(i, { subject: v || undefined })}
+                  options={toOpts(CONDITION_SUBJECTS)}
+                />
+              </div>
+            )}
+            <button
+              onClick={() => removeAt(i)}
+              style={{ padding: '0 8px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', height: 26, alignSelf: 'flex-end' }}
+            >
+              ✕
+            </button>
+          </div>
+        );
+      })}
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 4 }}>
         <button
-          onClick={addCustom}
-          style={{ padding: '4px 8px', border: `1px dashed ${colors.border}`, background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, marginTop: 2, color: colors.accent }}
+          onClick={() => addRow()}
+          style={{ padding: '4px 8px', border: `1px dashed ${colors.border}`, background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: colors.accent }}
         >
-          ＋ その他の条件を追加
+          ＋ 条件{conditions.length + 1}を追加
         </button>
+        <span style={{ fontSize: 10, color: '#888' }}>よく使う条件:</span>
+        {QUICK_ADD_COMMON.map((q) => (
+          <button
+            key={q.code}
+            onClick={() => addRow(q.code)}
+            style={{ padding: '3px 8px', border: `1px solid ${colors.border}`, background: colors.bg, borderRadius: 10, cursor: 'pointer', fontSize: 10.5, color: colors.accent }}
+          >
+            ＋{q.label}
+          </button>
+        ))}
+        {showAttackTargetRow && QUICK_ADD_ATTACK_TARGET.map((q) => (
+          <button
+            key={q.code}
+            onClick={() => addRow(q.code)}
+            style={{ padding: '3px 8px', border: '1px solid #ffd591', background: '#fff8e6', borderRadius: 10, cursor: 'pointer', fontSize: 10.5, color: '#b76e00' }}
+          >
+            ＋{q.label}
+          </button>
+        ))}
       </div>
     </div>
   );

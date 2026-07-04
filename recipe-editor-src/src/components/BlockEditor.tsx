@@ -2565,9 +2565,12 @@ function ConditionsHybridEditor({
             </div>
             <div style={{ flex: 1.5 }}>
               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-              {c.base === 'cond_same_as_picked' ? (
-                /* 「選んだデジモンと同じ」: 属性チェックボックス群（カンマ区切りで保存） */
+              {c.base === 'cond_same_as_picked' || c.base === 'cond_from_zone' ? (
+                /* 「選んだデジモンと同じ」「取得元」: 複数選択チェックボックス群（カンマ区切りで保存）。
+                   カードは同時に複数ゾーンには存在できないため、複数選択=常にOR判定でよい
+                   （「手札かトラッシュの〜」は取得元で hand,trash を両方チェックするだけで表現可能） */
                 (() => {
+                  const optList = c.base === 'cond_from_zone' ? FROM_ZONES : SAME_AS_PICKED_FIELDS;
                   const sel = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
                   const isCheckedAttr = (code: string) => sel.includes(code);
                   const toggleAttr = (code: string, on: boolean) => {
@@ -2578,7 +2581,7 @@ function ConditionsHybridEditor({
                   };
                   return (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, background: 'white' }}>
-                      {SAME_AS_PICKED_FIELDS.map((f) => (
+                      {optList.map((f) => (
                         <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, cursor: 'pointer' }}>
                           <input
                             type="checkbox"

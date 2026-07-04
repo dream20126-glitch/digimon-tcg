@@ -650,6 +650,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               theme="action"
               defaultSubject=""
               showSubjectSelector={false}
+              supportsMultiValue={true}
             />
           </div>
         </details>
@@ -2481,6 +2482,11 @@ interface ConditionsHybridEditorProps {
   defaultSubject?: string;  // チェックボックス追加時の既定 subject（'' or 'self' 等）
   showSubjectSelector?: boolean; // 主体プルダウンを各行に出すか
   showAttackTargetRow?: boolean; // 🎯 アタック対象行（プレイヤー/デジモン）を表示するか（トリガー条件専用）
+  // true のとき cond_type 等を複数選択(カンマ区切り値)で入力可能にする。
+  // step.filter (ターゲットフィルタ) は type_in 配列を受け付けるためOK判定できるが、
+  // trigger_conditions/発動条件側の cond_type は単一値exact-matchのみ対応のため、
+  // それらの用途では誤動作を避けるため false のままにすること。
+  supportsMultiValue?: boolean;
 }
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
@@ -2508,6 +2514,7 @@ const QUICK_ADD_ATTACK_TARGET: { code: string; label: string }[] = [
 
 function ConditionsHybridEditor({
   conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true, showAttackTargetRow = false,
+  supportsMultiValue = false,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
@@ -2565,12 +2572,18 @@ function ConditionsHybridEditor({
             </div>
             <div style={{ flex: 1.5 }}>
               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-              {c.base === 'cond_same_as_picked' || c.base === 'cond_from_zone' ? (
-                /* 「選んだデジモンと同じ」「取得元」: 複数選択チェックボックス群（カンマ区切りで保存）。
-                   カードは同時に複数ゾーンには存在できないため、複数選択=常にOR判定でよい
-                   （「手札かトラッシュの〜」は取得元で hand,trash を両方チェックするだけで表現可能） */
+              {c.base === 'cond_same_as_picked' || c.base === 'cond_from_zone'
+                || (supportsMultiValue && c.base === 'cond_type') ? (
+                /* 「選んだデジモンと同じ」「取得元」「タイプ(複数可・ターゲットフィルタ限定)」:
+                   複数選択チェックボックス群（カンマ区切りで保存）。
+                   カードは同時に複数ゾーンやタイプを持てないため、複数選択=常にOR判定でよい
+                   （「紫のデジモンかオプション」はタイプで デジモン,オプション を両方チェックするだけで表現可能）
+                   ※ cond_type の複数値は step.filter (type_in配列) でのみ解釈される。
+                     トリガー条件/発動条件側は単一値exact-match想定なのでそちらでは使わないこと */
                 (() => {
-                  const optList = c.base === 'cond_from_zone' ? FROM_ZONES : SAME_AS_PICKED_FIELDS;
+                  const optList = c.base === 'cond_from_zone' ? FROM_ZONES
+                    : c.base === 'cond_type' ? RULE_TYPE_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
+                    : SAME_AS_PICKED_FIELDS;
                   const sel = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
                   const isCheckedAttr = (code: string) => sel.includes(code);
                   const toggleAttr = (code: string, on: boolean) => {

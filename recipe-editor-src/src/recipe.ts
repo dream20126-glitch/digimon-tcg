@@ -216,7 +216,12 @@ function appendStep(container: Record<string, any>, b: EffectBlock) {
       const num = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
       switch (c.base) {
         case 'cond_color':            f.color = c.value; break;
-        case 'cond_type':             f.type = c.value; break;
+        // カンマ区切り(複数チェック)なら type_in 配列(OR)、単一値ならこれまで通り type
+        case 'cond_type': {
+          const types = String(c.value).split(',').map((s) => s.trim()).filter(Boolean);
+          if (types.length > 1) f.type_in = types; else f.type = types[0];
+          break;
+        }
         case 'cond_lv':       { const n = num(c.value); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
         case 'cond_lv_le':    { const n = num(c.value); if (n !== undefined) f.lv_le = n; break; }
         case 'cond_lv_ge':    { const n = num(c.value); if (n !== undefined) f.lv_ge = n; break; }
@@ -547,7 +552,11 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
       if (!f || typeof f !== 'object') return [];
       const out: ConditionPair[] = [];
       if (f.color)            out.push({ base: 'cond_color',            value: String(f.color) });
-      if (f.type)             out.push({ base: 'cond_type',             value: String(f.type) });
+      if (Array.isArray(f.type_in) && f.type_in.length > 0) {
+        out.push({ base: 'cond_type', value: f.type_in.join(',') });
+      } else if (f.type) {
+        out.push({ base: 'cond_type', value: String(f.type) });
+      }
       if (f.feature_contains) out.push({ base: 'cond_feature_contains', value: String(f.feature_contains) });
       if (f.name_contains)    out.push({ base: 'cond_name_contains',    value: String(f.name_contains) });
       if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {

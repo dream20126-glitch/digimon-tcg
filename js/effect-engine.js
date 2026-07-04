@@ -2319,6 +2319,7 @@ function showTrashCardPicker(candidates, wantCount, optional, title, callback, f
 function cardMatchesFilter(card, filter) {
   if (!filter) return true;
   if (filter.type && card.type !== filter.type) return false;
+  if (Array.isArray(filter.type_in) && !filter.type_in.includes(card.type)) return false;
   if (filter.color && card.color !== filter.color) return false;
   if (filter.cardno && card.cardNo !== filter.cardno) return false;
   if (filter.cardno_includes && !(card.cardNo || '').includes(filter.cardno_includes)) return false;

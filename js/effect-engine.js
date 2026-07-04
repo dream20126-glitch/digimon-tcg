@@ -1147,7 +1147,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
         if (didDiscard) {
-          try { fireWhenOppEvoDiscardTriggers(oppSide, ctx.bs, ctx, () => doneCb && doneCb()); return; } catch (_) {}
+          try { fireWhenEvoDiscardTriggers(oppSide, ctx.bs, ctx, () => doneCb && doneCb()); return; } catch (_) {}
         }
         doneCb && doneCb();
       };
@@ -4607,7 +4607,9 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
 // ===== 自分のブロッカー or 自分のデジモン消滅 トリガー =====
 // 共通汎用関数。reactSide のバトルエリア + テイマーエリアをスキャンして recipeKey の
 // レシピを発動する。確認ダイアログ・任意効果・once_per_turn 制限なども共通処理。
-function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done) {
+// stepFilter(step, reactSide): 追加の発動可否判定（省略時は常に true）。
+// 「発動主体(step.subject)」で自分/相手を判定するトリガー（when_evo_discard 等）に使う。
+function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, stepFilter) {
   const finish = () => { try { done && done(); } catch(_) {} };
   if (!bs) { finish(); return; }
   const reactPlayer = bs[reactSide];
@@ -4622,6 +4624,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done) {
       const recipe = r[recipeKey];
       if (recipe && Array.isArray(recipe)) {
         const willRun = recipe.some(step => {
+          if (stepFilter && !stepFilter(step, reactSide)) return false;
           if (step.condition) {
             const conds = parseRecipeCondition(step.condition);
             if (!checkConditions(conds, card, bs, reactSide)) return false;
@@ -4740,11 +4743,21 @@ export function fireWhenOppAttackTriggers(attackerSide, bs, ctxBase, done) {
   return _fireSidedReactionTriggers(reactSide, 'when_opp_attack', bs, ctxBase, done);
 }
 
-// 相手のデジモンの進化元を破棄したとき → 破棄した側（discardedSide の反対側）が反応
-// 城戸丈(BT2-085) 用。discardedSide = 進化元を破棄されたデジモンがいる側。
-export function fireWhenOppEvoDiscardTriggers(discardedSide, bs, ctxBase, done) {
-  const reactSide = discardedSide === 'player' ? 'ai' : 'player';
-  return _fireSidedReactionTriggers(reactSide, 'when_opp_evo_discard', bs, ctxBase, done);
+// デジモンの進化元が破棄されたとき → 発動主体(step.subject: 'opp'='相手のデジモン' /
+// 'own'='自分のデジモン')で判定し、両陣営をスキャンして反応させる。
+// 城戸丈(BT2-085)「相手のデジモンの進化元を破棄したとき」用。subject 未指定時は不発火
+// （このトリガーは「誰の進化元か」を明示しないと意味を成さないため）。
+// discardedSide = 進化元を破棄されたデジモンがいる側。
+export function fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, done) {
+  const finish = () => { try { done && done(); } catch(_) {} };
+  const subjectMatches = (step, cardSide) => {
+    if (step.subject === 'opp') return discardedSide !== cardSide;
+    if (step.subject === 'own') return discardedSide === cardSide;
+    return false;
+  };
+  _fireSidedReactionTriggers('player', 'when_evo_discard', bs, ctxBase, () => {
+    _fireSidedReactionTriggers('ai', 'when_evo_discard', bs, ctxBase, finish, subjectMatches);
+  }, subjectMatches);
 }
 
 // 自分のメインフェイズ開始時 → ターンプレイヤー側が反応
@@ -7252,11 +7265,12 @@ function executeRecipeStep(step, ctx, store, callback) {
         (Array.isArray(sd) ? sd : [sd]).map(s => s.card || s).filter(c => c).forEach(_discardEvoAll);
         ctx.renderAll(); callback(); break;
       }
-      // 「相手のデジモンの進化元を破棄したとき」反応（城戸丈 BT2-085 等）。相手対象の場合のみ発火
+      // 「進化元を破棄したとき」反応（城戸丈 BT2-085 等）。discardedSide は破棄された
+      // 進化元の持ち主側（own指定なら effectiveSide 自身、opponent指定ならその反対側）
       const _fireEvoDiscardReactIfNeeded = (didHit, doneCb) => {
-        if (didHit && _edIsOpp) {
-          const _oppSide = effectiveSide === 'player' ? 'ai' : 'player';
-          try { fireWhenOppEvoDiscardTriggers(_oppSide, ctx.bs, ctx, () => doneCb && doneCb()); return; } catch (_) {}
+        if (didHit) {
+          const _discardedSide = _edIsOpp ? (effectiveSide === 'player' ? 'ai' : 'player') : effectiveSide;
+          try { fireWhenEvoDiscardTriggers(_discardedSide, ctx.bs, ctx, () => doneCb && doneCb()); return; } catch (_) {}
         }
         doneCb && doneCb();
       };

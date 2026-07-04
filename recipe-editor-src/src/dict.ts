@@ -167,7 +167,7 @@ export const TRIGGERS: DictEntry[] = [
   { code: 'when_opp_destroyed', kind: 'trigger', label: '相手のデジモンが消滅したとき' },
   { code: 'when_own_block', kind: 'trigger', label: '自分のブロッカーがレストしたとき' },
   { code: 'when_opp_rest', kind: 'trigger', label: '相手のデジモンがレストしたとき' },
-  { code: 'when_opp_evo_discard', kind: 'trigger', label: '相手のデジモンの進化元を破棄したとき' },
+  { code: 'when_evo_discard', kind: 'trigger', label: '進化元を破棄したとき（発動主体で誰の進化元か指定）' },
   // ターン境界
   { code: 'on_own_turn_start', kind: 'trigger', label: '自分のターン開始時' },
   { code: 'on_own_turn_end', kind: 'trigger', label: '自分のターン終了時' },

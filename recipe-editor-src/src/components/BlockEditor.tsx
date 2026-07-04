@@ -2493,6 +2493,8 @@ const QUICK_ADD_COMMON: { code: string; label: string }[] = [
   { code: 'cond_type', label: 'タイプ' },
   { code: 'cond_lv_ge', label: 'Lv以上' },
   { code: 'cond_dp_ge', label: 'DP以上' },
+  { code: 'cond_name', label: '名前(完全一致)' },
+  { code: 'cond_name_contains', label: '名前(含む)' },
 ];
 const QUICK_ADD_ATTACK_TARGET: { code: string; label: string }[] = [
   { code: 'cond_attack_target_player', label: 'プレイヤーにアタック' },

@@ -1116,7 +1116,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           opponent.trash.push(removed);
           discarded.push(removed);
         }
-        if (discarded.length === 0) { onDone && onDone(); return; }
+        if (discarded.length === 0) { onDone && onDone(false); return; }
         const names = discarded.map(c => c.name || '???').join('、');
         ctx.addLog('📤 「' + tgt.name + '」の進化元から「' + names + '」破棄！');
         // オンラインの相手にも演出＋実データ操作コマンドを送信
@@ -1128,7 +1128,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // カード移動演出（1枚ずつ順番に）
         let idx = 0;
         function showNextDiscard() {
-          if (idx >= discarded.length) { onDone && onDone(); return; }
+          if (idx >= discarded.length) { onDone && onDone(true); return; }
           const card = discarded[idx++];
           if (window._fxCardMove) {
             window._fxCardMove(card, tgt.name + 'の進化元', 'トラッシュ', showNextDiscard);
@@ -1139,28 +1139,30 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         }
         showNextDiscard();
       };
-      // 破棄後の後処理（永続効果再計算 + 描画 + 同期）
-      const afterDiscard = () => {
+      // 破棄後の後処理（永続効果再計算 + 描画 + 同期 + 相手の進化元を破棄したとき反応）
+      const afterDiscard = (didDiscard, doneCb) => {
         // 進化元が変わったので永続効果を再計算（SA+/DP+等）
         const oppSide = effectiveSide === 'player' ? 'ai' : 'player';
         try { applyPermanentEffects(ctx.bs, oppSide, ctx); } catch(_) {}
         ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
+        if (didDiscard) {
+          try { fireWhenOppEvoDiscardTriggers(oppSide, ctx.bs, ctx, () => doneCb && doneCb()); return; } catch (_) {}
+        }
+        doneCb && doneCb();
       };
       // AIは自動選択、プレイヤーは対象選択UI
       if (effectiveSide === 'ai') {
-        discardFromTarget(opponent.battleArea[ctx._forceTargetIdx ?? evoTargets[0]], () => {
-          afterDiscard();
-          callback();
+        discardFromTarget(opponent.battleArea[ctx._forceTargetIdx ?? evoTargets[0]], (didDiscard) => {
+          afterDiscard(didDiscard, callback);
         });
         break;
       }
       ctx.addLog('🎯 進化元を破棄する対象を選んでください');
       showTargetSelection(opponentRowSide, evoTargets, null, uiColor, (selectedIdx) => {
         if (selectedIdx !== null) {
-          discardFromTarget(opponent.battleArea[selectedIdx], () => {
-            afterDiscard();
-            callback();
+          discardFromTarget(opponent.battleArea[selectedIdx], (didDiscard) => {
+            afterDiscard(didDiscard, callback);
           });
         } else {
           callback();
@@ -4738,6 +4740,13 @@ export function fireWhenOppAttackTriggers(attackerSide, bs, ctxBase, done) {
   return _fireSidedReactionTriggers(reactSide, 'when_opp_attack', bs, ctxBase, done);
 }
 
+// 相手のデジモンの進化元を破棄したとき → 破棄した側（discardedSide の反対側）が反応
+// 城戸丈(BT2-085) 用。discardedSide = 進化元を破棄されたデジモンがいる側。
+export function fireWhenOppEvoDiscardTriggers(discardedSide, bs, ctxBase, done) {
+  const reactSide = discardedSide === 'player' ? 'ai' : 'player';
+  return _fireSidedReactionTriggers(reactSide, 'when_opp_evo_discard', bs, ctxBase, done);
+}
+
 // 自分のメインフェイズ開始時 → ターンプレイヤー側が反応
 export function fireOnMainPhaseStartTriggers(turnSide, bs, ctxBase, done) {
   return _fireSidedReactionTriggers(turnSide, 'on_main_phase_start', bs, ctxBase, done);
@@ -7243,12 +7252,22 @@ function executeRecipeStep(step, ctx, store, callback) {
         (Array.isArray(sd) ? sd : [sd]).map(s => s.card || s).filter(c => c).forEach(_discardEvoAll);
         ctx.renderAll(); callback(); break;
       }
+      // 「相手のデジモンの進化元を破棄したとき」反応（城戸丈 BT2-085 等）。相手対象の場合のみ発火
+      const _fireEvoDiscardReactIfNeeded = (didHit, doneCb) => {
+        if (didHit && _edIsOpp) {
+          const _oppSide = effectiveSide === 'player' ? 'ai' : 'player';
+          try { fireWhenOppEvoDiscardTriggers(_oppSide, ctx.bs, ctx, () => doneCb && doneCb()); return; } catch (_) {}
+        }
+        doneCb && doneCb();
+      };
       // opponent:all / own:all → 進化元を持つ全デジモンに一括適用
       if (_edTgt === 'opponent:all' || _edTgt === 'own:all') {
         let _hit = false;
         (_edOwner.battleArea || []).forEach(c => { if (c && _discardEvoAll(c)) _hit = true; });
         if (!_hit) ctx.addLog('⚠ 進化元を持つデジモンがいません');
-        ctx.renderAll(); callback(); break;
+        ctx.renderAll();
+        _fireEvoDiscardReactIfNeeded(_hit, callback);
+        break;
       }
       // opponent:1 / own:1 → 進化元を持つデジモンから1体選択
       const _edCands = [];
@@ -7260,14 +7279,16 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       const _edRowId = _edIsOpp ? (ctx.side === 'player' ? 'ai' : 'pl') : (ctx.side === 'player' ? 'pl' : 'ai');
       if (effectiveSide === 'ai' || _edCands.length === 1) {
-        _discardEvoAll(_edOwner.battleArea[ctx._forceTargetIdx != null ? ctx._forceTargetIdx : _edCands[0]]);
-        ctx.renderAll(); callback(); break;
+        const _edDid = _discardEvoAll(_edOwner.battleArea[ctx._forceTargetIdx != null ? ctx._forceTargetIdx : _edCands[0]]);
+        ctx.renderAll();
+        _fireEvoDiscardReactIfNeeded(_edDid, callback);
+        break;
       }
       ctx.addLog('🎯 進化元を破棄する対象を選んでください');
       showTargetSelection(_edRowId, _edCands, null, '#ff5577', (selIdx) => {
-        if (selIdx !== null) _discardEvoAll(_edOwner.battleArea[selIdx]);
+        const _edDid = selIdx !== null ? _discardEvoAll(_edOwner.battleArea[selIdx]) : false;
         ctx.renderAll();
-        callback();
+        _fireEvoDiscardReactIfNeeded(_edDid, callback);
       });
       break;
     }

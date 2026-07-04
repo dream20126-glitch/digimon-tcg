@@ -2127,6 +2127,10 @@ const COMMON_CONDS: CommonCondDef[] = [
   { code: 'cond_feature_contains', label: '特徴を含む',   input: 'text' },
   { code: 'cond_name',             label: '名前（完全一致）', input: 'text' },
   { code: 'cond_name_contains',    label: '名前を含む',   input: 'text' },
+  // 取得元（手札/トラッシュ等）。タイガ(BT2-088)「手札の名称に〜」等、進化元カードの
+  // 所在ゾーンを限定したいケース用。判定ロジックはエンジン未実装（before_evolve 等の
+  // 割り込みトリガーと合わせて対応予定）で、現状は常に'hand'扱いになる想定。
+  { code: 'cond_from_zone',        label: '取得元',       input: 'select', options: toOpts(FROM_ZONES) },
 ];
 // ルール上部フィールド (step 直下) のみ。条件は ConditionsHybridEditor に統一。
 const RULE_FIELDS: RuleFieldDef[] = [
@@ -2495,6 +2499,7 @@ const QUICK_ADD_COMMON: { code: string; label: string }[] = [
   { code: 'cond_dp_ge', label: 'DP以上' },
   { code: 'cond_name', label: '名前(完全一致)' },
   { code: 'cond_name_contains', label: '名前(含む)' },
+  { code: 'cond_from_zone', label: '取得元' },
 ];
 const QUICK_ADD_ATTACK_TARGET: { code: string; label: string }[] = [
   { code: 'cond_attack_target_player', label: 'プレイヤーにアタック' },

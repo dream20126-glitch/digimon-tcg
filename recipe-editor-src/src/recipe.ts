@@ -14,13 +14,16 @@ function pairToString(p: ConditionPair): string {
 export function blocksToRecipe(blocks: EffectBlock[]): Record<string, any> {
   const recipe: Record<string, any> = {};
   blocks.forEach((b) => {
+    // セキュリティ効果はトリガー入力不要（常に 'security' キーに出力される）。
+    // トリガー未入力を理由に他セクションと同様スキップされてしまわないよう先に処理する。
+    if (b.section === 'security') {
+      appendStep(recipe, { ...b, trigger: 'security' });
+      return;
+    }
     if (!b.trigger) return;
     if (b.section === 'evo_source') {
       recipe.evo_source = recipe.evo_source || {};
       appendStep(recipe.evo_source, b);
-    } else if (b.section === 'security') {
-      const b2: EffectBlock = { ...b, trigger: 'security' };
-      appendStep(recipe, b2);
     } else {
       appendStep(recipe, b);
     }

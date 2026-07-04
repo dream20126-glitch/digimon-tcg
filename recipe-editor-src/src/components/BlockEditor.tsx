@@ -273,6 +273,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         </div>
 
         {/* === 🎬 トリガーグループ === */}
+        {/* セキュリティ効果(区分=セキュリティ)は常に「セキュリティチェック時」に発動するため、
+            トリガー/発動主体/タイミング等の入力は不要（内部的に trigger:'security' が自動設定される） */}
+        {block.section === 'security' ? (
+          <div style={{
+            gridColumn: '1 / span 2', padding: 10, background: '#f0f9f0',
+            border: '2px solid #93c693', borderRadius: 6,
+            fontSize: 12, color: '#1a5a1a',
+          }}>
+            🔒 セキュリティ効果は「セキュリティでめくれたとき」に自動で発動します。トリガーの指定は不要です。
+          </div>
+        ) : (
         <div style={{
           gridColumn: '1 / span 2',
           padding: 10,
@@ -398,6 +409,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
           )}
         </div>
+        )}
 
         {/* === ⚡ アクショングループ === */}
         <div style={{

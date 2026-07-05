@@ -2496,19 +2496,70 @@ const NO_VALUE_CONDS = new Set([
   'cond_evolved_this_turn', 'cond_no_tamer_evo', 'cond_not_own_effect', 'cond_has_evo_digimon',
 ]);
 
-// クイック追加ショートカット（ワンクリックで「条件N」の新規行を追加）
-// トリガー条件専用の「アタック対象」もここに統合（旧: 専用トグルUI → 通常の条件行として扱う）
-const QUICK_ADD_COMMON: { code: string; label: string }[] = [
-  { code: 'cond_color', label: '色' },
-  { code: 'cond_type', label: 'タイプ' },
-  { code: 'cond_lv_ge', label: 'Lv以上' },
-  { code: 'cond_lv_le', label: 'Lv以下' },
-  { code: 'cond_dp_ge', label: 'DP以上' },
-  { code: 'cond_dp_le', label: 'DP以下' },
-  { code: 'cond_name', label: '名前(完全一致)' },
-  { code: 'cond_name_contains', label: '名前(含む)' },
-  { code: 'cond_from_zone', label: '取得元' },
+// === 条件の「種別」を大分類(カテゴリ)+詳細(バリアント)の2段構成にする ===
+// 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
+// Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
+// バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'name' | 'zone' | 'other' | '';
+
+const CATEGORY_OPTIONS: { value: string; label: string }[] = [
+  { value: 'color', label: '色' },
+  { value: 'type', label: 'タイプ' },
+  { value: 'feature', label: '特徴' },
+  { value: 'lv', label: 'Lv' },
+  { value: 'dp', label: 'DP' },
+  { value: 'name', label: '名前' },
+  { value: 'zone', label: '場所' },
+  { value: 'other', label: 'その他' },
 ];
+
+// カテゴリ選択直後に自動セットされる既定コード（バリアント無しは1つだけ・バリアント有りは先頭）
+const CATEGORY_DEFAULT_BASE: Record<string, string> = {
+  color: 'cond_color',
+  type: 'cond_type',
+  feature: 'cond_feature_contains',
+  zone: 'cond_from_zone',
+  lv: 'cond_lv_ge',
+  dp: 'cond_dp_ge',
+  name: 'cond_name',
+};
+
+// バリアント選択が必要なカテゴリのプルダウン候補
+const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: string }[]>> = {
+  lv: [
+    { value: 'cond_lv_ge', label: '以上' },
+    { value: 'cond_lv_le', label: '以下' },
+    { value: 'cond_lv', label: '完全一致' },
+  ],
+  dp: [
+    { value: 'cond_dp_ge', label: '以上' },
+    { value: 'cond_dp_le', label: '以下' },
+    { value: 'cond_dp', label: '完全一致' },
+  ],
+  name: [
+    { value: 'cond_name', label: '完全一致' },
+    { value: 'cond_name_contains', label: '含む' },
+  ],
+};
+
+// 条件コード → カテゴリ の逆引き（既存レシピ読込時・行の見た目復元用）
+function baseToCategory(base: string): CondCategory {
+  if (!base) return '';
+  if (base === 'cond_color') return 'color';
+  if (base === 'cond_type') return 'type';
+  if (base === 'cond_feature_contains' || base === 'cond_feature') return 'feature';
+  if (base === 'cond_from_zone') return 'zone';
+  if (base === 'cond_lv_ge' || base === 'cond_lv_le' || base === 'cond_lv') return 'lv';
+  if (base === 'cond_dp_ge' || base === 'cond_dp_le' || base === 'cond_dp') return 'dp';
+  if (base === 'cond_name' || base === 'cond_name_contains') return 'name';
+  return 'other';
+}
+
+// クイック追加ショートカット（ワンクリックで「条件N」の新規行を追加・カテゴリ既定コードを直接セット）
+// トリガー条件専用の「アタック対象」もここに統合（旧: 専用トグルUI → 通常の条件行として扱う）
+const QUICK_ADD_COMMON: { code: string; label: string }[] = CATEGORY_OPTIONS
+  .filter((c) => c.value !== 'other')
+  .map((c) => ({ code: CATEGORY_DEFAULT_BASE[c.value], label: c.label }));
 const QUICK_ADD_ATTACK_TARGET: { code: string; label: string }[] = [
   { code: 'cond_attack_target_player', label: 'プレイヤーにアタック' },
   { code: 'cond_attack_target_digimon', label: 'デジモンにアタック' },
@@ -2522,7 +2573,13 @@ function ConditionsHybridEditor({
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
     : { bg: '#e8f0fe', border: '#93b5e5', accent: '#1a4f8a', icon: '🎯' };
 
-  const condOptions = toOpts(dict.conditions);
+  // 「その他」用: 色/タイプ/特徴/Lv/DP/名前/場所として直接選べるコード群を除いた残り
+  const CATEGORIZED_CODES = new Set<string>([
+    'cond_color', 'cond_type', 'cond_feature_contains', 'cond_feature', 'cond_from_zone',
+    'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_dp_ge', 'cond_dp_le', 'cond_dp',
+    'cond_name', 'cond_name_contains',
+  ]);
+  const otherCondOptions = toOpts(dict.conditions.filter((c) => !CATEGORIZED_CODES.has(c.code)));
 
   function updateAt(i: number, patch: Partial<ConditionPair>) {
     const next = conditions.slice();
@@ -2559,13 +2616,45 @@ function ConditionsHybridEditor({
             </div>
             <div style={{ flex: 2 }}>
               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>種別</div>
-              <SearchSelect
-                value={c.base}
-                onChange={(v) => updateAt(i, { base: v })}
-                options={condOptions}
-                allowFreeText
-                placeholder="--条件を選択--"
-              />
+              {(() => {
+                const category = baseToCategory(c.base);
+                return (
+                  <SearchSelect
+                    value={category}
+                    onChange={(newCat) => {
+                      if (newCat === 'other') {
+                        updateAt(i, { base: otherCondOptions[0]?.value || '', value: '' });
+                      } else {
+                        updateAt(i, { base: CATEGORY_DEFAULT_BASE[newCat] || '', value: '' });
+                      }
+                    }}
+                    options={CATEGORY_OPTIONS}
+                    placeholder="--種別を選択--"
+                  />
+                );
+              })()}
+              {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントプルダウン */}
+              {CATEGORY_VARIANTS[baseToCategory(c.base)] && (
+                <div style={{ marginTop: 4 }}>
+                  <SearchSelect
+                    value={c.base}
+                    onChange={(v) => updateAt(i, { base: v })}
+                    options={CATEGORY_VARIANTS[baseToCategory(c.base)]!}
+                  />
+                </div>
+              )}
+              {/* その他: カテゴリ化されていない条件を直接選ぶ逃し弁 */}
+              {baseToCategory(c.base) === 'other' && (
+                <div style={{ marginTop: 4 }}>
+                  <SearchSelect
+                    value={c.base}
+                    onChange={(v) => updateAt(i, { base: v })}
+                    options={otherCondOptions}
+                    allowFreeText
+                    placeholder="--条件を選択--"
+                  />
+                </div>
+              )}
               {c.base && (
                 isConditionImplemented(c.base)
                   ? <span style={{ color: '#2e7d32', fontSize: 10 }}>✅実装済</span>

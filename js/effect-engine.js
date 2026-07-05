@@ -5879,10 +5879,17 @@ function executeRecipeStep(step, ctx, store, callback) {
             const empty = player.battleArea.indexOf(null);
             if (empty !== -1) player.battleArea[empty] = c; else player.battleArea.push(c);
             c.summonedThisTurn = true; c.suspended = false; c.buffs = []; c.stack = [];
-            ctx.addLog('🌟 「' + c.name + '」を登場');
+            // skip_on_play 指定時は登場時効果を発動しない
+            if (step.skip_on_play) {
+              c._skipOnPlayEffect = true;
+              ctx.addLog('🌟 「' + c.name + '」を登場（登場時効果は発揮しない）');
+            } else {
+              ctx.addLog('🌟 「' + c.name + '」を登場');
+            }
             ctx.renderAll();
             const showFn = (ctx && ctx.showPlayEffect) || (typeof window !== 'undefined' && window.showPlayEffect);
             const afterAnim = () => {
+              if (step.skip_on_play) { callback(); return; }
               try { scanTriggers('on_play', c, ctx.side, ctx); processQueue(ctx, () => callback()); }
               catch (_) { callback(); }
             };

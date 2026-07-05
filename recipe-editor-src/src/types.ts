@@ -28,6 +28,9 @@ export interface EffectBlock {
   // summon 専用:「このカードをコストを支払わずに登場させる」（テイマーのセキュリティ効果等）
   // true のとき JSON へ step.cost_free:true を出力する。対象は 'self' / 'self_card' のとき有効
   costFree?: boolean;
+  // summon_from_trash 専用:「この効果で登場したデジモンの【登場時】効果は発揮しない」
+  // true のとき JSON へ step.skip_on_play:true を出力する
+  skipOnPlay?: boolean;
   fromZones?: string[]; // アクションの取得元エリア（'hand' / 'trash' / 'deck' 等）。複数指定可。JSON では step.from
   fromZonesOp?: 'or' | 'and'; // 複数取得元の結合演算子（既定は 'or'）
   // 「～ごとに」倍率設定。perRef を数えて value × floor(count / perCount) を計算

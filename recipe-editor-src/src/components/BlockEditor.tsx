@@ -543,8 +543,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
-        {/* summon 専用: コストを支払わずに登場（対象は self/self_card のときのみ有効） */}
-        {block.action === 'summon' && (
+        {/* summon / summon_from_trash 専用: コストを支払わずに登場 / 登場時効果を発揮しない */}
+        {(block.action === 'summon' || block.action === 'summon_from_trash') && (
           <div className="field" style={{ marginTop: 8, background: '#fff3e0', padding: 8, borderRadius: 4, border: '1px solid #ffd591' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#b76e00' }}>
               <input
@@ -554,9 +554,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               />
               コストを支払わずに登場させる（cost_free）
             </label>
-            <span style={{ fontSize: 10, color: '#666' }}>
-              「このカードをコストを支払わずに登場させる。」のセキュリティ効果用。対象は「このデジモン(self)」または「このカード(self_card)」にすること
+            <span style={{ fontSize: 10, color: '#666', marginLeft: 24 }}>
+              対象「このデジモン(self)」「このカード(self_card)」の自己登場、または取得元(手札/トラッシュ)からの登場、どちらにも使えます
             </span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#b76e00', marginTop: 6 }}>
+              <input
+                type="checkbox"
+                checked={!!block.skipOnPlay}
+                onChange={(e) => update('skipOnPlay', e.target.checked)}
+              />
+              この効果で登場したデジモンの【登場時】効果は発揮しない（skip_on_play）
+            </label>
           </div>
         )}
 

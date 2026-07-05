@@ -874,18 +874,36 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </div>
                     </details>
                   )}
-                  {/* 🔒 ゲート条件: 「〜のとき、代わりに〜する」用。1件のみ。
-                      これが成立していればメイン(無条件側)の代わりに自動でこちらが実行される */}
-                  <div style={{ marginTop: 6 }}>
-                    <ConditionsHybridEditor
-                      conditions={a.gate ? [a.gate] : []}
-                      onChange={(next) => updateAltAction(i, { gate: next.length > 0 ? next[next.length - 1] : undefined })}
-                      dict={dict}
-                      title="🔒 ゲート条件（代わりに自動実行する条件・1件のみ）"
-                      hint="（成立していればメインの代わりに自動選択。対象選択のフィルタには使わない）"
-                      theme="action"
-                      defaultSubject=""
-                    />
+                  {/* ☑ 代わりに: ONにすると「条件成立時、メインの代わりに自動でこちらを実行」
+                      という自動選択モードになる。OFF(未チェック)のままなら従来通り
+                      プレイヤーが「🔀 どちらを実行しますか？」で手動選択するモード */}
+                  <div style={{ marginTop: 6, padding: 6, background: a.gate ? '#fff3e0' : '#faf5ff', borderRadius: 4, border: '1px solid #ffd591' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#b76e00', fontSize: 12 }}>
+                      <input
+                        type="checkbox"
+                        checked={!!a.gate}
+                        onChange={(e) => updateAltAction(i, { gate: e.target.checked ? (a.gate || { base: '', value: '' }) : undefined })}
+                      />
+                      ☑ 代わりに（条件成立時、プレイヤーに確認せずメインの代わりに自動実行）
+                    </label>
+                    {!a.gate && (
+                      <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
+                        未チェックの場合は従来通り「🔀 どちらを実行しますか？」でプレイヤーが手動選択します
+                      </div>
+                    )}
+                    {a.gate && (
+                      <div style={{ marginTop: 6 }}>
+                        <ConditionsHybridEditor
+                          conditions={[a.gate]}
+                          onChange={(next) => updateAltAction(i, { gate: next.length > 0 ? next[next.length - 1] : { base: '', value: '' } })}
+                          dict={dict}
+                          title="条件"
+                          hint="（成立している間だけ「代わりに」が有効。対象選択のフィルタには使わない）"
+                          theme="action"
+                          defaultSubject=""
+                        />
+                      </div>
+                    )}
                   </div>
                   {/* 条件: ハイブリッドエディタ（メインの発動条件と同UI） */}
                   <div style={{ marginTop: 6 }}>

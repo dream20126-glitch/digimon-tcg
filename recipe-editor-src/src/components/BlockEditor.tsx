@@ -283,6 +283,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           }}>
             🔒 セキュリティ効果は「セキュリティでめくれたとき」に自動で発動します。トリガーの指定は不要です。
           </div>
+        ) : block.trigger === 'alt_evolve' ? (
+          <div style={{
+            gridColumn: '1 / span 2', padding: 10, background: '#f0f9f0',
+            border: '2px solid #93c693', borderRadius: 6,
+            fontSize: 12, color: '#1a5a1a', lineHeight: 1.6,
+          }}>
+            🔄 <b>代替進化（進化条件を無視して進化できる）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。下の「🎯 発動条件」欄をこの意味で使います:
+            <br />・<b>条件1</b> = この効果が有効になる条件（例:「自分のトラッシュがN枚以上」）
+            <br />・<b>条件2</b> = 進化元（進化させたい元のデジモン）の絞り込み（例:「名前を含む: インプモン」）
+            <br />・<b>値</b> = 無視して支払う進化コスト
+          </div>
         ) : (
         <div style={{
           gridColumn: '1 / span 2',
@@ -422,6 +433,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           <div style={{ fontWeight: 'bold', fontSize: 13, color: '#1976d2', marginBottom: 8 }}>
             ⚡ アクション（何をするか）
           </div>
+
+          {block.trigger === 'alt_evolve' && (
+            <div style={{ fontSize: 10, color: '#888', marginBottom: 6 }}>
+              🔄 代替進化トリガーはアクション/対象を使いません。空のままで構いません。
+            </div>
+          )}
 
           {(() => {
           // アクションのグループ表示処理（_top/_bottom/_select 系を1エントリに）
@@ -676,7 +693,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             onChange={(next) => update('conditions', next)}
             dict={dict}
             title="発動条件"
-            hint="（このアクションを発動するために満たすべき条件・複数指定可・AND結合）"
+            hint={
+              block.trigger === 'alt_evolve'
+                ? '（代替進化専用の意味: 条件1=発動条件 / 条件2=進化元の絞り込み・複数追加時は3個目以降は無視されます）'
+                : '（このアクションを発動するために満たすべき条件・複数指定可・AND結合）'
+            }
             theme="action"
             defaultSubject=""
           />

@@ -877,34 +877,40 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {/* ☑ 代わりに: ONにすると「条件成立時、メインの代わりに自動でこちらを実行」
                       という自動選択モードになる。OFF(未チェック)のままなら従来通り
                       プレイヤーが「🔀 どちらを実行しますか？」で手動選択するモード */}
-                  <div style={{ marginTop: 6, padding: 6, background: a.gate ? '#fff3e0' : '#faf5ff', borderRadius: 4, border: '1px solid #ffd591' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#b76e00', fontSize: 12 }}>
-                      <input
-                        type="checkbox"
-                        checked={!!a.gate}
-                        onChange={(e) => updateAltAction(i, { gate: e.target.checked ? (a.gate || { base: '', value: '' }) : undefined })}
-                      />
-                      ☑ 代わりに（条件成立時、プレイヤーに確認せずメインの代わりに自動実行）
-                    </label>
-                    {!a.gate && (
-                      <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
-                        未チェックの場合は従来通り「🔀 どちらを実行しますか？」でプレイヤーが手動選択します
+                  {(() => {
+                    const gateConds = a.gateConditions || [];
+                    const gateEnabled = gateConds.length > 0;
+                    return (
+                      <div style={{ marginTop: 6, padding: 6, background: gateEnabled ? '#fff3e0' : '#faf5ff', borderRadius: 4, border: '1px solid #ffd591' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#b76e00', fontSize: 12 }}>
+                          <input
+                            type="checkbox"
+                            checked={gateEnabled}
+                            onChange={(e) => updateAltAction(i, { gateConditions: e.target.checked ? [{ base: '', value: '' }] : [] })}
+                          />
+                          ☑ 代わりに（条件成立時、プレイヤーに確認せずメインの代わりに自動実行）
+                        </label>
+                        {!gateEnabled && (
+                          <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
+                            未チェックの場合は従来通り「🔀 どちらを実行しますか？」でプレイヤーが手動選択します
+                          </div>
+                        )}
+                        {gateEnabled && (
+                          <div style={{ marginTop: 6 }}>
+                            <ConditionsHybridEditor
+                              conditions={gateConds}
+                              onChange={(next) => updateAltAction(i, { gateConditions: next })}
+                              dict={dict}
+                              title="条件"
+                              hint="（すべて成立している間だけ「代わりに」が有効・複数AND。対象選択のフィルタには使わない）"
+                              theme="action"
+                              defaultSubject=""
+                            />
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {a.gate && (
-                      <div style={{ marginTop: 6 }}>
-                        <ConditionsHybridEditor
-                          conditions={[a.gate]}
-                          onChange={(next) => updateAltAction(i, { gate: next.length > 0 ? next[next.length - 1] : { base: '', value: '' } })}
-                          dict={dict}
-                          title="条件"
-                          hint="（成立している間だけ「代わりに」が有効。対象選択のフィルタには使わない）"
-                          theme="action"
-                          defaultSubject=""
-                        />
-                      </div>
-                    )}
-                  </div>
+                    );
+                  })()}
                   {/* 条件: ハイブリッドエディタ（メインの発動条件と同UI） */}
                   <div style={{ marginTop: 6 }}>
                     <ConditionsHybridEditor

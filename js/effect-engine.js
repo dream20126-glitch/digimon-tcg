@@ -5348,9 +5348,20 @@ function runWithAltActions(step, ctx, store, callback) {
   // メイン側（無条件）は、gateが成立した alt が1つでもあれば「代わりに」置き換えられた
   // とみなし infeasible にする。これにより条件と無条件の1本ずつなら常に自動選択され、
   // プレイヤーへの「どちらを実行？」確認は出ない。
+  // gate / gate_when / gate_extra_conditions (AND) を1本の条件配列に組み立てる
+  // (発動条件の condition/when/extra_conditions と同じ3フィールド方式)
+  const _gateConditionsOf = (step) => {
+    if (!step) return [];
+    const arr = [];
+    if (step.gate) arr.push(...parseRecipeCondition(step.gate));
+    if (step.gate_when) arr.push(...parseRecipeCondition(step.gate_when));
+    if (Array.isArray(step.gate_extra_conditions)) {
+      step.gate_extra_conditions.forEach((s) => arr.push(...parseRecipeCondition(s)));
+    }
+    return arr;
+  };
   const _hasGatedAltMet = alts.some((a) => {
-    if (!a || !a.gate) return false;
-    const _cs = parseRecipeCondition(a.gate);
+    const _cs = _gateConditionsOf(a);
     return _cs.length > 0 && checkConditions(_cs, ctx.card, ctx.bs, ctx.side);
   });
   const _altFeasible = (c, isMain) => {
@@ -5369,10 +5380,9 @@ function runWithAltActions(step, ctx, store, callback) {
       }
       return true;
     }
-    if (c.gate) {
-      const _cs = parseRecipeCondition(c.gate);
-      if (_cs.length > 0 && !checkConditions(_cs, ctx.card, ctx.bs, ctx.side)) return false;
-      return true;
+    const _gcs = _gateConditionsOf(c);
+    if (_gcs.length > 0) {
+      return checkConditions(_gcs, ctx.card, ctx.bs, ctx.side);
     }
     // gate無しのメイン: gateが成立した alt があれば「代わりに」置き換えられるため infeasible
     if (isMain && _hasGatedAltMet) return false;

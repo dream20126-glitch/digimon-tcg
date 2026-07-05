@@ -167,7 +167,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock) {
           out.value = isNaN(n) ? a.value : n;
         }
         if (a.target) out.target = a.target;
-        if (a.gate && a.gate.base) out.gate = pairToString(a.gate);
+        const validGate = (a.gateConditions || []).filter((p) => p.base);
+        if (validGate.length >= 1) out.gate = pairToString(validGate[0]);
+        if (validGate.length >= 2) out.gate_when = pairToString(validGate[1]);
+        if (validGate.length >= 3) out.gate_extra_conditions = validGate.slice(2).map(pairToString);
         const validC = (a.conditions || []).filter((p) => p.base);
         if (validC.length >= 1) out.condition = pairToString(validC[0]);
         if (validC.length >= 2) out.when = pairToString(validC[1]);
@@ -484,6 +487,12 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
           if (Array.isArray(a?.extra_conditions)) {
             a.extra_conditions.forEach((s: string) => condArr.push(stringToPair(String(s))));
           }
+          const gateArr: ConditionPair[] = [];
+          if (a?.gate) gateArr.push(stringToPair(String(a.gate)));
+          if (a?.gate_when) gateArr.push(stringToPair(String(a.gate_when)));
+          if (Array.isArray(a?.gate_extra_conditions)) {
+            a.gate_extra_conditions.forEach((s: string) => gateArr.push(stringToPair(String(s))));
+          }
           const fromZ: string[] = (() => {
             const f = a?.from;
             if (!f) return [];
@@ -496,7 +505,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
             action: a?.action || '',
             value: a?.value,
             target: a?.target || '',
-            gate: a?.gate ? stringToPair(String(a.gate)) : undefined,
+            gateConditions: gateArr,
             conditions: condArr,
             options: Array.isArray(a?.options) ? a.options.slice() : [],
             fromZones: fromZ,

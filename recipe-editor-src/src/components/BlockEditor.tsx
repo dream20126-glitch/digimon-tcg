@@ -2572,6 +2572,7 @@ const NO_VALUE_CONDS = new Set([
   'cond_jogress', 'cond_in_battle', 'cond_during_own_turn', 'cond_during_opp_turn',
   'cond_during_any_turn', 'cond_self_active', 'cond_self_rest', 'cond_opp_no_attack_this_turn',
   'cond_evolved_this_turn', 'cond_no_tamer_evo', 'cond_not_own_effect', 'cond_has_evo_digimon',
+  'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
 ]);
 
 // === 条件の「種別」を大分類(カテゴリ)+詳細(バリアント)の2段構成にする ===
@@ -2613,6 +2614,8 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_dp_ge', label: '以上' },
     { value: 'cond_dp_le', label: '以下' },
     { value: 'cond_dp', label: '完全一致' },
+    { value: 'cond_attack_target_highest_dp', label: '最も高い（アタック対象専用）' },
+    { value: 'cond_attack_target_lowest_dp', label: '最も低い（アタック対象専用）' },
   ],
   name: [
     { value: 'cond_name', label: '完全一致' },
@@ -2628,7 +2631,8 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_feature_contains' || base === 'cond_feature') return 'feature';
   if (base === 'cond_from_zone') return 'zone';
   if (base === 'cond_lv_ge' || base === 'cond_lv_le' || base === 'cond_lv') return 'lv';
-  if (base === 'cond_dp_ge' || base === 'cond_dp_le' || base === 'cond_dp') return 'dp';
+  if (base === 'cond_dp_ge' || base === 'cond_dp_le' || base === 'cond_dp'
+    || base === 'cond_attack_target_highest_dp' || base === 'cond_attack_target_lowest_dp') return 'dp';
   if (base === 'cond_name' || base === 'cond_name_contains') return 'name';
   return 'other';
 }
@@ -2655,6 +2659,7 @@ function ConditionsHybridEditor({
   const CATEGORIZED_CODES = new Set<string>([
     'cond_color', 'cond_type', 'cond_feature_contains', 'cond_feature', 'cond_from_zone',
     'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_dp_ge', 'cond_dp_le', 'cond_dp',
+    'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
     'cond_name', 'cond_name_contains',
   ]);
   const otherCondOptions = toOpts(dict.conditions.filter((c) => !CATEGORIZED_CODES.has(c.code)));

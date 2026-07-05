@@ -101,6 +101,8 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_name',
   // アタック先（プレイヤー）判定
   'cond_attack_target_player',
+  // アタック先が最もDPの高い/低い相手のデジモンか判定
+  'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
   // 選んだデジモンと同じ
   'cond_same_as_picked',
   // 直前に選択したカード (bs._lastPickedCard) の属性参照（post_actions 用）

@@ -804,6 +804,8 @@ export function resolveAttackTarget(target, targetIdx) {
 
   // アタック対象タイプを bs に記録（cond_attack_target_digimon で参照）
   bs._lastAttackTarget = target;
+  // アタック対象の具体的なインデックス（cond_attack_target_highest_dp 等で参照）
+  bs._lastAttackTargetIdx = (target === 'digimon') ? targetIdx : -1;
 
   // チュートリアル通知: 対象選択完了
   const _isDirect = (target === 'security') && (bs.ai.battleArea || []).filter(c => c).length === 0;

@@ -3608,8 +3608,26 @@ function checkConditions(conditions, card, bs, side) {
         break;
       }
       case 'cond_attack_target_player': {
-        // 「プレイヤーにアタックしたとき」: bs._lastAttackTarget が 'player' なら true
-        if (!bs || bs._lastAttackTarget !== 'player') return false;
+        // 「プレイヤーにアタックしたとき」: bs._lastAttackTarget は 'security'/'digimon' の
+        // どちらかにしかならない（'player' という値は実際には設定されない）ため、
+        // 'security' で判定する
+        if (!bs || bs._lastAttackTarget !== 'security') return false;
+        break;
+      }
+      case 'cond_attack_target_highest_dp':
+      case 'cond_attack_target_lowest_dp': {
+        // 「最もDPの高い/低い相手のデジモンにアタックしたとき」:
+        // bs._lastAttackTargetIdx が指すカードが、相手側バトルエリア全体で
+        // 最大/最小DPと一致するか判定
+        if (!bs || bs._lastAttackTarget !== 'digimon' || bs._lastAttackTargetIdx == null || bs._lastAttackTargetIdx < 0) return false;
+        const oppSide = side === 'player' ? 'ai' : 'player';
+        const oppArea = (bs[oppSide] && bs[oppSide].battleArea) || [];
+        const attackedCard = oppArea[bs._lastAttackTargetIdx];
+        if (!attackedCard) return false;
+        const dps = oppArea.filter(c => c).map(c => c.dp || 0);
+        if (dps.length === 0) return false;
+        const extreme = cond.code === 'cond_attack_target_highest_dp' ? Math.max(...dps) : Math.min(...dps);
+        if ((attackedCard.dp || 0) !== extreme) return false;
         break;
       }
       case 'cond_picked_color':

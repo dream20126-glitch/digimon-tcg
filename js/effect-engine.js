@@ -5340,7 +5340,20 @@ function runWithAltActions(step, ctx, store, callback) {
   // 盤面状況で実行可能な選択肢が1つだけなら、選択UIを出さず自動実行する。
   // （太刀川ミミ: 育成エリアが空→孵化 / Lv.3以上デジモンがいる→バトル移動。
   //   どちらか一方しか成立しないので「どちらを実行？」を出さない）
-  const _altFeasible = (c) => {
+  //
+  // 汎用ルール（ネガモン等「〜のとき、代わりに〜する」用）:
+  // alt側に gate が付いていれば、その条件を満たす時だけ feasible。
+  // ※ condition ではなく gate を使うのは、select等一部アクションが condition を
+  //   独自形式(dp_le:5000等)の対象フィルタとして専有しているため、衝突を避けるため。
+  // メイン側（無条件）は、gateが成立した alt が1つでもあれば「代わりに」置き換えられた
+  // とみなし infeasible にする。これにより条件と無条件の1本ずつなら常に自動選択され、
+  // プレイヤーへの「どちらを実行？」確認は出ない。
+  const _hasGatedAltMet = alts.some((a) => {
+    if (!a || !a.gate) return false;
+    const _cs = parseRecipeCondition(a.gate);
+    return _cs.length > 0 && checkConditions(_cs, ctx.card, ctx.bs, ctx.side);
+  });
+  const _altFeasible = (c, isMain) => {
     if (!c || !ctx.bs) return true;
     const sidePl = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
     if (c.action === 'hatch') {
@@ -5356,9 +5369,16 @@ function runWithAltActions(step, ctx, store, callback) {
       }
       return true;
     }
-    return true; // 不明アクションは従来通り（選択UIに出す）
+    if (c.gate) {
+      const _cs = parseRecipeCondition(c.gate);
+      if (_cs.length > 0 && !checkConditions(_cs, ctx.card, ctx.bs, ctx.side)) return false;
+      return true;
+    }
+    // gate無しのメイン: gateが成立した alt があれば「代わりに」置き換えられるため infeasible
+    if (isMain && _hasGatedAltMet) return false;
+    return true;
   };
-  const _feasibleChoices = choices.filter(_altFeasible);
+  const _feasibleChoices = choices.filter((c, idx) => _altFeasible(c, idx === 0));
   if (_feasibleChoices.length === 1) {
     executeRecipeStep(_feasibleChoices[0], ctx, store, callback);
     return;
@@ -5606,9 +5626,11 @@ function executeRecipeStep(step, ctx, store, callback) {
         for (let i = 0; i < opponent.battleArea.length; i++) {
           const c = opponent.battleArea[i];
           if (!c) continue;
-          // 条件フィルタ
+          // 条件フィルタ（レシピエディタは "cond_dp_le:5000" 形式で出力するため、
+          // 先頭の "cond_" は有無どちらでも受け付ける）
           if (step.condition) {
-            const [condType, condVal] = step.condition.split(':');
+            const [rawType, condVal] = step.condition.split(':');
+            const condType = String(rawType || '').replace(/^cond_/, '');
             if (condType === 'dp_le' && c.dp > parseInt(condVal)) continue;
             if (condType === 'dp_ge' && c.dp < parseInt(condVal)) continue;
             if (condType === 'lv_le' && parseInt(c.level) > parseInt(condVal)) continue;
@@ -5685,7 +5707,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           const c = opponent.battleArea[i];
           if (!c || selected.includes(i)) continue;
           if (step.condition) {
-            const [condType, condVal] = step.condition.split(':');
+            const [rawType, condVal] = step.condition.split(':');
+            const condType = String(rawType || '').replace(/^cond_/, '');
             const cardDp = parseInt(c.dp) || 0;
             const limitDp = parseInt(condVal) || 0;
             if (condType === 'dp_le' && cardDp > limitDp) continue;

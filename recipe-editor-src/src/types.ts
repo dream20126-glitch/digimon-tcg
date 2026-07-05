@@ -67,6 +67,11 @@ export interface AltAction {
   action: string;
   value?: number | string;
   target?: string;
+  // 発動可否のみを判定する条件（対象選択のフィルタには使わない）。
+  // 「〜のとき、代わりに〜する」のように、この代替アクションが自動選択される
+  // 条件を表す。メイン側にgateが無く、alt側にgateがあって条件成立していれば、
+  // メインの代わりにこちらが自動実行される（ネガモン等）
+  gate?: ConditionPair;
   conditions?: ConditionPair[];
   options?: string[];
   fromZones?: string[];

@@ -167,6 +167,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock) {
           out.value = isNaN(n) ? a.value : n;
         }
         if (a.target) out.target = a.target;
+        if (a.gate && a.gate.base) out.gate = pairToString(a.gate);
         const validC = (a.conditions || []).filter((p) => p.base);
         if (validC.length >= 1) out.condition = pairToString(validC[0]);
         if (validC.length >= 2) out.when = pairToString(validC[1]);
@@ -495,6 +496,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
             action: a?.action || '',
             value: a?.value,
             target: a?.target || '',
+            gate: a?.gate ? stringToPair(String(a.gate)) : undefined,
             conditions: condArr,
             options: Array.isArray(a?.options) ? a.options.slice() : [],
             fromZones: fromZ,

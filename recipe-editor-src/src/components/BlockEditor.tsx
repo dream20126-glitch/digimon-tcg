@@ -874,6 +874,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </div>
                     </details>
                   )}
+                  {/* 🔒 ゲート条件: 「〜のとき、代わりに〜する」用。1件のみ。
+                      これが成立していればメイン(無条件側)の代わりに自動でこちらが実行される */}
+                  <div style={{ marginTop: 6 }}>
+                    <ConditionsHybridEditor
+                      conditions={a.gate ? [a.gate] : []}
+                      onChange={(next) => updateAltAction(i, { gate: next.length > 0 ? next[next.length - 1] : undefined })}
+                      dict={dict}
+                      title="🔒 ゲート条件（代わりに自動実行する条件・1件のみ）"
+                      hint="（成立していればメインの代わりに自動選択。対象選択のフィルタには使わない）"
+                      theme="action"
+                      defaultSubject=""
+                    />
+                  </div>
                   {/* 条件: ハイブリッドエディタ（メインの発動条件と同UI） */}
                   <div style={{ marginTop: 6 }}>
                     <ConditionsHybridEditor

@@ -292,7 +292,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             🔄 <b>代替進化（進化条件を無視して進化できる）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。下の「🎯 発動条件」欄をこの意味で使います:
             <br />・<b>条件1</b> = この効果が有効になる条件（例:「自分のトラッシュがN枚以上」）
             <br />・<b>条件2</b> = 進化元（進化させたい元のデジモン）の絞り込み（例:「名前を含む: インプモン」）
-            <br />・<b>値</b> = 無視して支払う進化コスト
+            <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #ffb74d' }}>
+              <label style={{ display: 'block', fontWeight: 'bold', color: '#b76e00', marginBottom: 4 }}>
+                💰 進化コスト（無視して支払うコスト。下のアクション欄ではなく、ここに入力してください）
+              </label>
+              <input
+                type="number"
+                value={block.value === undefined ? '' : String(block.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  update('value', v === '' ? undefined : Number(v));
+                }}
+                placeholder="例: 4"
+                style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
+              />
+            </div>
           </div>
         ) : (
         <div style={{
@@ -434,13 +448,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             ⚡ アクション（何をするか）
           </div>
 
-          {block.trigger === 'alt_evolve' && (
-            <div style={{ fontSize: 10, color: '#888', marginBottom: 6 }}>
-              🔄 代替進化トリガーはアクション/対象を使いません。空のままで構いません。
+          {block.trigger === 'alt_evolve' ? (
+            <div style={{ fontSize: 11, color: '#888' }}>
+              🔄 代替進化トリガーはアクション不要です（進化コストは上の🔄バナー内に入力済み）。
             </div>
-          )}
-
-          {(() => {
+          ) : (() => {
           // アクションのグループ表示処理（_top/_bottom/_select 系を1エントリに）
           const { options: actionDisplayOptions, flaggedBases, autoGroupBases } = buildActionDisplay(dict.actions);
           const curVariant = getActionVariant(block.action || '');

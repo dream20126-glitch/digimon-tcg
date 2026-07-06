@@ -746,8 +746,16 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
     case 'dp_minus': {
       const val = action.value || 0;
+      // 対象フィルタ（Lv/色等）。rest 等と同じく action.conditions / ctx.block.conditions を見る
+      const _dpmConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
+      const _dpmCondSide = ctx.side === 'player' ? 'ai' : 'player';
       const dpTargets = [];
-      for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) dpTargets.push(i); }
+      for(let i=0;i<opponent.battleArea.length;i++) {
+        const _dc = opponent.battleArea[i];
+        if (!_dc) continue;
+        if (_dpmConds.length > 0 && !checkConditions(_dpmConds, _dc, ctx.bs, _dpmCondSide)) continue;
+        dpTargets.push(i);
+      }
       if(dpTargets.length === 0) { callback(); break; }
       // 対象数（opponent:N の N）。opponent:all は全体。未指定は1体。
       let dpNeed = 1;
@@ -941,15 +949,38 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'bounce': {
       // target_opponent_suspended が指定されていればレスト状態のみフィルタ
       const onlySuspended = defaultTarget && defaultTarget.code === 'target_opponent_suspended';
+      // 追加の条件フィルタ（Lv/DP等）。rest/dp_minus 等と同じく action.conditions / ctx.block.conditions を見る
+      const _bounceConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
+      const _bounceCondSide = ctx.side === 'player' ? 'ai' : 'player';
       const bounceTargets = [];
       for(let i=0;i<opponent.battleArea.length;i++) {
         const c = opponent.battleArea[i];
         if (!c) continue;
         if (onlySuspended && !c.suspended) continue;
+        if (_bounceConds.length > 0 && !checkConditions(_bounceConds, c, ctx.bs, _bounceCondSide)) continue;
         bounceTargets.push(i);
       }
       if(bounceTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
       const bounceColor = uiColor;
+      // 複数対象（opponent:N / opponent:up_to_N）
+      const bounceNeed = (defaultTarget && defaultTarget.count) || 1;
+      const bounceUpTo = !!(defaultTarget && defaultTarget.upTo);
+      if (bounceNeed > 1 || bounceUpTo) {
+        if (effectiveSide === 'ai') {
+          const picks = bounceTargets.slice(0, bounceNeed);
+          picks.forEach(idx => doBounce(opponent, idx, ctx));
+          ctx.renderAll(); callback(); break;
+        }
+        const rowId = ctx.side === 'player' ? 'ai' : 'pl';
+        pickUpToNTargets(rowId, bounceTargets, bounceNeed, bounceColor, (idxs) => {
+          idxs.forEach(idx => {
+            sendEffectResult(opponent.battleArea[idx], 'bounce', ctx);
+            doBounce(opponent, idx, ctx);
+          });
+          callback();
+        });
+        break;
+      }
       if(effectiveSide === 'ai') {
         doBounce(opponent, ctx._forceTargetIdx ?? bounceTargets[0], ctx);
         callback(); break;
@@ -998,8 +1029,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         }
         break;
       }
+      // 追加の条件フィルタ（例: cond_blocker:1 で「ブロッカーを持つ」デジモンのみ対象）
+      const _activeConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
+      const _activeCondSide = ctx.side;
+      const _activeCondPass = (c) => _activeConds.length === 0 || checkConditions(_activeConds, c, ctx.bs, _activeCondSide);
       if (tCode === 'target_all_own') {
-        (player.battleArea || []).forEach(c => { if (c && c.suspended) activateOne(c); });
+        (player.battleArea || []).forEach(c => { if (c && c.suspended && _activeCondPass(c)) activateOne(c); });
         ctx.renderAll(); callback(); break;
       }
       if (tCode === 'target_own') {
@@ -1007,7 +1042,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const valid = [];
         for (let i = 0; i < player.battleArea.length; i++) {
           const c = player.battleArea[i];
-          if (c && c.suspended) valid.push(i);
+          if (c && c.suspended && _activeCondPass(c)) valid.push(i);
         }
         if (valid.length === 0) { ctx.addLog && ctx.addLog('💨 アクティブにできるレスト中デジモンがいません'); ctx.renderAll(); callback(); break; }
         if (effectiveSide === 'ai') {
@@ -1086,7 +1121,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
     case 'evo_discard':
     case 'evo_discard_bottom':
-    case 'evo_discard_top': {
+    case 'evo_discard_top':
+    case 'evo_discard_select': {
       // 進化元を持つ相手デジモンを列挙（条件フィルタ付き）
       const edConds = ctx.block && ctx.block.conditions ? ctx.block.conditions : [];
       const evoTargets = [];
@@ -1108,14 +1144,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         break;
       }
       const n = action.value || 1;
-      const discardFromTarget = (tgt, onDone) => {
-        const discarded = [];
-        for (let i = 0; i < n && tgt.stack.length > 0; i++) {
-          const fromTop = action.code === 'evo_discard_top';
-          const removed = fromTop ? tgt.stack.shift() : tgt.stack.pop();
-          opponent.trash.push(removed);
-          discarded.push(removed);
-        }
+      // 破棄確定後の共通後処理（演出 + ログ + オンライン同期）
+      const finalizeDiscard = (discarded, tgt, onDone) => {
         if (discarded.length === 0) { onDone && onDone(false); return; }
         const names = discarded.map(c => c.name || '???').join('、');
         ctx.addLog('📤 「' + tgt.name + '」の進化元から「' + names + '」破棄！');
@@ -1138,6 +1168,39 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           }
         }
         showNextDiscard();
+      };
+      const discardFromTarget = (tgt, onDone) => {
+        // 「選んで破棄」: 進化元カード選択UIをN回繰り返す（AIは先頭を自動選択）
+        if (action.code === 'evo_discard_select') {
+          const discarded = [];
+          const pickNext = (remaining) => {
+            if (remaining <= 0 || tgt.stack.length === 0) { finalizeDiscard(discarded, tgt, onDone); return; }
+            const takeCard = (chosen) => {
+              if (!chosen) { finalizeDiscard(discarded, tgt, onDone); return; }
+              const si = tgt.stack.indexOf(chosen);
+              if (si !== -1) tgt.stack.splice(si, 1);
+              opponent.trash.push(chosen);
+              discarded.push(chosen);
+              pickNext(remaining - 1);
+            };
+            if (effectiveSide === 'ai') {
+              takeCard(tgt.stack[0]);
+            } else {
+              showEvoSourceSelection(tgt, tgt.stack.slice(), null, takeCard);
+            }
+          };
+          pickNext(n);
+          return;
+        }
+        // 上から/下から: 自動で決め打ち
+        const discarded = [];
+        for (let i = 0; i < n && tgt.stack.length > 0; i++) {
+          const fromTop = action.code === 'evo_discard_top';
+          const removed = fromTop ? tgt.stack.shift() : tgt.stack.pop();
+          opponent.trash.push(removed);
+          discarded.push(removed);
+        }
+        finalizeDiscard(discarded, tgt, onDone);
       };
       // 破棄後の後処理（永続効果再計算 + 描画 + 同期 + 相手の進化元を破棄したとき反応）
       const afterDiscard = (didDiscard, doneCb) => {
@@ -1450,6 +1513,19 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           window._onlineSendCommand({ type: 'fx_remoteSuspend', targetIdx: idx, suspended: true, targetName: tgt ? tgt.name : '' });
         }
       };
+      // 「全て」指定（条件でフィルタ済みの restTargets 全員に自動適用・選択UI無し）
+      if (restTarget.code === 'target_all_opponent') {
+        restTargets.forEach(idx => {
+          const tgt = opponent.battleArea[idx];
+          if (!tgt) return;
+          tgt.suspended = true;
+          ctx.addLog('💤 「' + tgt.name + '」をレスト');
+          syncRest(idx);
+        });
+        ctx.renderAll();
+        finishWithTrigger();
+        break;
+      }
       if(effectiveSide === 'ai') {
         const ri = ctx._forceTargetIdx ?? restTargets[0];
         opponent.battleArea[ri].suspended = true;
@@ -2876,8 +2952,22 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
   if (target.code === 'target_self' && ctx.card) {
     applyAndLog(ctx.card);
     ctx.renderAll(); callback && callback();
+  } else if (target.code === 'target_trigger_source') {
+    // 反応トリガー（on_play/on_evolve/on_attack 等の盤面スキャン反応）の発火元カードを対象にする。
+    // 例: 武之内空「赤の自分のデジモンがアタックしたとき〜そのデジモンのDPを+2000」
+    const src = block._eventSourceCard;
+    if (src) applyAndLog(src);
+    else ctx.addLog && ctx.addLog('⚠ 発火元カードが見つかりません（trigger_source）');
+    ctx.renderAll(); callback && callback();
   } else if (target.code === 'target_all_own') {
-    player.battleArea.forEach(c => { if (c) addBuffDirect(c, type, val, dur, ctx); });
+    // target.filter（色/タイプ等）と block.conditions（cond_blocker 等）の両方で絞り込み可能
+    const _dpAllConds = block.conditions || [];
+    player.battleArea.forEach(c => {
+      if (!c) return;
+      if (target.filter && !cardMatchesFilter(c, target.filter)) return;
+      if (_dpAllConds.length > 0 && !checkConditions(_dpAllConds, c, ctx.bs, ctx.side)) return;
+      addBuffDirect(c, type, val, dur, ctx);
+    });
     ctx.addLog(label + '全デジモン DP' + sign + val);
     showDpPopup(isPlus ? val : -val, '自分のデジモン全て');
     ctx.renderAll(); callback && callback();
@@ -5662,6 +5752,8 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (condType === 'dp_le' && c.dp > parseInt(condVal)) continue;
             if (condType === 'dp_ge' && c.dp < parseInt(condVal)) continue;
             if (condType === 'lv_le' && parseInt(c.level) > parseInt(condVal)) continue;
+            if (condType === 'self_active' && c.suspended) continue;
+            if (condType === 'self_rest' && !c.suspended) continue;
           }
           valid.push(i);
         }
@@ -5742,6 +5834,8 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (condType === 'dp_le' && cardDp > limitDp) continue;
             if (condType === 'dp_ge' && cardDp < limitDp) continue;
             if (condType === 'lv_le' && (parseInt(c.level) || 0) > parseInt(condVal)) continue;
+            if (condType === 'self_active' && c.suspended) continue;
+            if (condType === 'self_rest' && !c.suspended) continue;
           }
           valid.push(i);
         }
@@ -7178,13 +7272,15 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
 
       // 対象解決（既存パス: self / own:all / store経由）
+      // own:all / opponent:all は step.filter（色/タイプ/名前等）で絞り込み可能
       const resolveTargets = () => {
         const p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
         const opp = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
         const t = step.target;
+        const applyFilter = (arr) => (step.filter ? arr.filter(c => cardMatchesFilter(c, step.filter)) : arr);
         if (t === 'self') return ctx.card ? [ctx.card] : [];
-        if (t === 'own:all' || t === 'own_all_digimon') return p.battleArea.filter(c => c);
-        if (t === 'opponent:all' || t === 'opp_all_digimon') return opp.battleArea.filter(c => c);
+        if (t === 'own:all' || t === 'own_all_digimon') return applyFilter(p.battleArea.filter(c => c));
+        if (t === 'opponent:all' || t === 'opp_all_digimon') return applyFilter(opp.battleArea.filter(c => c));
         if (step.card && store[step.card]) {
           const sd = store[step.card];
           return (Array.isArray(sd) ? sd : [sd]).map(s => s.card || s).filter(c => c);
@@ -7291,7 +7387,16 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (!ctx.block) ctx.block = {};
         ctx.block.conditions = _bAction.conditions;
       }
-      runOneAction(_bAction, null, ctx, callback);
+      // step.target（opponent:N / opponent:up_to_N / opponent_suspended:N）を対象数として引き継ぐ
+      // 例: アルティメットストリーム「Lv3の相手のデジモン3体まで」= opponent:up_to_3 + cond_lv:3
+      let _bTarget = null;
+      const _bt = step.target;
+      if (_bt) {
+        if (_bt.startsWith('opponent_suspended:')) _bTarget = { code: 'target_opponent_suspended', count: parseInt(_bt.split(':')[1]) || 1 };
+        else if (_bt.startsWith('opponent:up_to_')) _bTarget = { code: 'target_opponent', count: parseInt(_bt.split('opponent:up_to_')[1]) || 1, upTo: true };
+        else if (_bt.startsWith('opponent:')) _bTarget = { code: 'target_opponent', count: parseInt(_bt.split(':')[1]) || 1 };
+      }
+      runOneAction(_bAction, _bTarget, ctx, callback);
       break;
     }
 
@@ -7572,14 +7677,57 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === デッキに戻す（上下選択） ===
     case 'return_deck': {
-      const sd = step.card ? store[step.card] : null;
-      const cardToReturn = sd && (sd.card || sd);
-      if (!cardToReturn) { callback(); break; }
-      const top = step.position === 'top' || step.deck_top;
-      if (top) player.deck.unshift(cardToReturn);
-      else player.deck.push(cardToReturn);
-      ctx.addLog('🔄 「' + cardToReturn.name + '」をデッキの' + (top ? '上' : '下') + 'に戻す');
-      ctx.renderAll();
+      // store経由（自分側カードを対象にした従来パス）: 自分のデッキに戻す
+      if (step.card) {
+        const sd = store[step.card];
+        const cardToReturn = sd && (sd.card || sd);
+        if (!cardToReturn) { callback(); break; }
+        const top = step.position === 'top' || step.deck_top;
+        if (top) player.deck.unshift(cardToReturn);
+        else player.deck.push(cardToReturn);
+        ctx.addLog('🔄 「' + cardToReturn.name + '」をデッキの' + (top ? '上' : '下') + 'に戻す');
+        ctx.renderAll();
+        callback();
+        break;
+      }
+      // target:"opponent:1" 等の直接指定: 相手デジモンをバトルエリアから外し、
+      // 相手自身のデッキ（所有者のデッキ）に戻す。例: テラーズクラスター
+      // 「レスト状態の相手のデジモン1体をデッキの下に戻す」
+      const _rdTStr = step.target || '';
+      if (_rdTStr.startsWith('opponent')) {
+        const _rdConds = step.condition ? parseRecipeCondition(step.condition) : [];
+        const _rdCondSide = ctx.side === 'player' ? 'ai' : 'player';
+        const _rdCands = [];
+        for (let i = 0; i < opponent.battleArea.length; i++) {
+          const c = opponent.battleArea[i];
+          if (!c) continue;
+          if (_rdConds.length > 0 && !checkConditions(_rdConds, c, ctx.bs, _rdCondSide)) continue;
+          _rdCands.push(i);
+        }
+        if (_rdCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
+        const _rdTop = step.position === 'top' || step.deck_top;
+        const _doReturnDeck = (idx) => {
+          const c = opponent.battleArea[idx];
+          if (!c) return;
+          opponent.battleArea[idx] = null;
+          if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
+          if (_rdTop) opponent.deck.unshift(c); else opponent.deck.push(c);
+          ctx.addLog('🔄 「' + c.name + '」を持ち主のデッキの' + (_rdTop ? '上' : '下') + 'に戻す');
+          if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+            window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'return_deck' });
+          }
+        };
+        if (effectiveSide === 'ai') {
+          _doReturnDeck(ctx._forceTargetIdx ?? _rdCands[0]);
+          ctx.renderAll(); callback(); break;
+        }
+        showTargetSelection(opponentRowSide, _rdCands, null, uiColor, (selectedIdx) => {
+          if (selectedIdx !== null) _doReturnDeck(selectedIdx);
+          ctx.renderAll();
+          callback();
+        });
+        break;
+      }
       callback();
       break;
     }
@@ -7963,6 +8111,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         else if (t === 'opponent:all') target = { code: 'target_all_opponent' };
         else if (t === 'own_security:all') target = { code: 'target_all_own_security' };
         else if (t.startsWith('opponent_suspended:')) target = { code: 'target_opponent_suspended', count: parseInt(t.split(':')[1]) || 1 };
+        else if (t.startsWith('opponent_active:')) target = { code: 'target_opponent_active', count: parseInt(t.split(':')[1]) || 1 };
         else if (t.startsWith('own:up_to_')) target = { code: 'target_own', count: parseInt(t.split('own:up_to_')[1]) || 1, upTo: true };
         else if (t.startsWith('opponent:up_to_')) target = { code: 'target_opponent', count: parseInt(t.split('opponent:up_to_')[1]) || 1, upTo: true };
         else if (t.startsWith('own:')) target = { code: 'target_own', count: parseInt(t.split(':')[1]) || 1 };
@@ -7970,6 +8119,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         else if (t.startsWith('other_own:')) target = { code: 'target_other_own', count: parseInt(t.split(':')[1]) || 1 };
         else target = { code: 'target_' + t };
       }
+      // step.filter（色/タイプ/名前等）を target に引き継ぐ（target_all_own 等の絞り込みに使用）
+      if (target && step.filter) target.filter = step.filter;
       // 持続期間をctx.blockに設定（runOneAction内のapplyDpBuff等で参照）
       // レシピのコード（this_turn等）→ エンジン内部コード（dur_this_turn等）に正規化
       if (step.duration) {
@@ -8225,6 +8376,74 @@ export function getAltEvolve(evoCard, baseCard, bs, side) {
     return { cost: parseInt(_c, 10) || 0 };
   }
   return null;
+}
+
+// 進化コスト確定前に「〜するとき、このテイマーをレストさせることでコストを-N」のような
+// テイマー反応を確認する（before_evolve トリガー）。
+// before_evolve: [{ trigger_conditions?, condition?, cost?, value }]
+// trigger_conditions は進化先カード(evoCard=手札のカード)に対して評価する
+// （タイガ BT2-088「手札の名称に『ティラノモン』を含むデジモンカードに進化するとき」等）。
+// condition はテイマー自身の発動条件（during_own_turn 等）。
+// callback(discountAmount) — 0 なら適用なし。プレイヤー確認はUIで行う（AIは自動承諾）。
+export function checkBeforeEvolveDiscount(evoCard, bs, side, callback) {
+  const finish = (amount) => { try { callback(amount || 0); } catch (_) {} };
+  if (!bs || !evoCard) { finish(0); return; }
+  const sidePl = bs[side];
+  if (!sidePl) { finish(0); return; }
+  const cards = [...(sidePl.battleArea || []), ...(sidePl.tamerArea || [])].filter(c => c);
+  let found = null;
+  for (const card of cards) {
+    if (!card.recipe) continue;
+    try {
+      const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
+      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const list = r.before_evolve;
+      if (!Array.isArray(list)) continue;
+      for (const step of list) {
+        if (!step) continue;
+        if (Array.isArray(step.trigger_conditions) && step.trigger_conditions.length > 0) {
+          const ok = step.trigger_conditions.every((cs) => {
+            const conds = parseRecipeCondition(String(cs));
+            return checkConditions(conds, evoCard, bs, side);
+          });
+          if (!ok) continue;
+        }
+        if (step.condition) {
+          const conds = parseRecipeCondition(step.condition);
+          if (!checkConditions(conds, card, bs, side)) continue;
+        }
+        // コストfeasibility: 自身をレストするコストなのに既にレスト中なら不可
+        if (Array.isArray(step.cost)) {
+          const infeasible = step.cost.some((c) => c && c.action === 'rest' && (c.target === 'self' || !c.target) && card.suspended);
+          if (infeasible) continue;
+        }
+        found = { card, step };
+        break;
+      }
+    } catch (_) {}
+    if (found) break;
+  }
+  if (!found) { finish(0); return; }
+  const { card, step } = found;
+  const amount = parseInt(step.value, 10) || 0;
+  const hasCost = Array.isArray(step.cost) && step.cost.length > 0;
+  const applyDiscount = () => {
+    if (hasCost) {
+      step.cost.forEach((c) => { if (c && c.action === 'rest') card.suspended = true; });
+    }
+    finish(amount);
+  };
+  if (side !== 'player') {
+    // AI: 自動的にコスト軽減を採用
+    applyDiscount();
+    return;
+  }
+  const msg = 'このテイマーをレストさせることで、進化コストを-' + amount + 'しますか？';
+  if (typeof showConfirmDialog === 'function') {
+    showConfirmDialog(card, msg, (yes) => { if (yes) applyDiscount(); else finish(0); });
+  } else {
+    applyDiscount();
+  }
 }
 
 // stack 内の進化元カードに該当トリガーのレシピがあるか

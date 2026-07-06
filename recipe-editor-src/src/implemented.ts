@@ -11,7 +11,7 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'change_attack_target', 'cost_digiburst', 'cost_discard', 'cost_trash_self',
   'deck_open', 'deck_to_evo_bottom', 'deck_trash_top', 'dedigivolve', 'destroy',
   'do_security_check', 'dp_minus', 'dp_plus', 'draw',
-  'evo_cost_minus', 'evo_discard', 'evo_discard_all', 'evo_discard_bottom', 'evo_discard_top',
+  'evo_cost_minus', 'evo_discard', 'evo_discard_all', 'evo_discard_bottom', 'evo_discard_top', 'evo_discard_select',
   'force_block', 'goal_reached', 'grant_keyword', 'grant_keyword_to',
   'ignore_color_condition', 'immune_effects', 'jogress_evolve',
   'link', 'link_capacity', 'link_cost',

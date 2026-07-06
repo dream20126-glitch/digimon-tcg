@@ -9,7 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -589,6 +589,18 @@ export function doEvolve(card, handIdx, slotIdx) {
   if (_altEvo) { cost = _altEvo.cost; addLog('⬆ 代替進化（進化条件を無視）コスト' + cost); }
   const _evoDisc = _consumePendingEvoCostReduction(card, base);
   if (_evoDisc > 0) { cost = Math.max(0, cost - _evoDisc); addLog('💠 進化コスト-' + _evoDisc + '（コスト' + cost + 'で進化）'); }
+  // before_evolve: 「〜のとき、このテイマーをレストさせることでコストを-N」のような
+  // 進化コスト確定前の割り込み確認（タイガ BT2-088 等）。コスト確定後に本処理へ進む。
+  _checkBeforeEvolveDiscount(card, bs, 'player', (discount) => {
+    if (discount > 0) {
+      cost = Math.max(0, cost - discount);
+      addLog('💠 テイマーの効果で進化コスト-' + discount + '（コスト' + cost + 'で進化）');
+    }
+    _finishDoEvolve(card, base, handIdx, slotIdx, cost);
+  });
+}
+
+function _finishDoEvolve(card, base, handIdx, slotIdx, cost) {
   const evolved = Object.assign({}, card, {
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,

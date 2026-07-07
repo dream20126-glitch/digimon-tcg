@@ -4461,24 +4461,12 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
   };
   const recipeHasReactiveSubject = (steps, cardSide) => {
     if (!Array.isArray(steps)) return false;
-    return steps.some(s => {
-      if (!s) return false;
-      if (matchSubject(s.subject, cardSide)) return true;
-      // trigger_conditions を持つ step は他カードのイベント(登場/進化/アタック)に反応する効果
-      // (例: 石田ヤマト「青の自分のデジモンが登場したとき」)
-      if (Array.isArray(s.trigger_conditions) && s.trigger_conditions.length > 0) {
-        // @own / @opp スコープで発火元カードの side をフィルタ
-        return s.trigger_conditions.every(tc => {
-          const at = String(tc).indexOf('@');
-          if (at < 0) return true;
-          const scope = String(tc).slice(at + 1);
-          if (scope === 'own') return sourceSide === cardSide;
-          if (scope === 'opp') return sourceSide !== cardSide;
-          return true;
-        });
-      }
-      return false;
-    });
+    // "他カードのイベントに反応する効果" かどうかは明示的な subject フィールドでのみ判定する。
+    // trigger_conditions 内の @own/@opp/@self 等はイベント条件の単なる値スコープ指定であり
+    // (例: ブラックウォーグレイモン「アタック時」の cond_attack_target_highest_dp@opp は
+    //  “自分の”アタック対象を判定するための条件スコープであって、他カード反応の印ではない)、
+    // これを反応判定に流用すると自分自身のイベント専用の効果まで他カードのイベントで誤発火する。
+    return steps.some(s => s && matchSubject(s.subject, cardSide));
   };
 
   ['player', 'ai'].forEach(side => {

@@ -5357,20 +5357,14 @@ function recipeWillExecuteAnything(recipe, ctx) {
     // 条件あり → 評価
     const conds = parseRecipeCondition(step.condition);
     // destroy / rest / bounce / cant_* で target が opponent/own → condition は
-    // 「対象カードへのフィルタ」。発動元カードではなく対象側で該当者を探す。
-    // 例: テントモン進化元「DP3000以下の相手1体をレスト」の cond_dp_le:3000 は
-    //     進化先デジモン本体ではなくレスト対象に対する条件。
+    // 「対象カードへのフィルタ」であり、効果発動そのものの可否を決めるゲートではない。
+    // 例: メガログラウモン「進化時、赤の自分のテイマーがいるとき、DP3000以下の
+    //     相手のデジモン1体を消滅させる」は、trigger_conditions（赤テイマー）が
+    //     満たされていれば対象が0体でも効果は発動した扱いとし、演出ポップアップは出す
+    //     （対象がいないだけで不発になるのは destroy 実行側の処理に任せる）。
     if (['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve'].includes(step.action)
         && /^(opponent|own)(?::|$)/.test(String(step.target || ''))) {
-      const _isOpp = String(step.target).startsWith('opponent');
-      const _area = _isOpp
-        ? (ctx.side === 'player' ? ctx.bs.ai.battleArea : ctx.bs.player.battleArea)
-        : (ctx.side === 'player' ? ctx.bs.player.battleArea : ctx.bs.ai.battleArea);
-      const _sTag = _isOpp
-        ? (ctx.side === 'player' ? 'ai' : 'player')
-        : (ctx.side === 'player' ? 'player' : 'ai');
-      if ((_area || []).some(c => c && checkConditions(conds, c, ctx.bs, _sTag))) return true;
-      continue;
+      return true;
     }
     const result = checkConditions(conds, ctx.card, ctx.bs, ctx.side);
     console.log('[recipeWillExecute]', 'action=' + step.action, 'condition=' + step.condition, 'parsed=' + JSON.stringify(conds), '→ ' + result);
@@ -6787,15 +6781,33 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
     // === セキュリティを破棄（汎用 alias: security_trash_top と同等） ===
     case 'security_discard': {
-      const n = step.value || 1;
+      // per_count/ref倍率を適用（例: デュークモン「相手のトラッシュ10枚ごとに」）
+      let n = step.value != null ? step.value : 1;
+      if (step.per_count) {
+        const refSource = step.ref || 'opp_trash';
+        const count = getRefSourceCountDirect(refSource, ctx.card, ctx.bs, ctx.side, step.ref_filter, step.ref_state);
+        n = n * Math.floor(count / step.per_count);
+      }
+      const discarded = [];
       for (let i = 0; i < n; i++) {
-        if (opponent.security.length > 0) {
-          opponent.trash.push(opponent.security.shift());
-          ctx.addLog && ctx.addLog('🛡 セキュリティ破棄');
+        if (opponent.security.length > 0) discarded.push(opponent.security.shift());
+      }
+      if (discarded.length === 0) { ctx.renderAll && ctx.renderAll(); callback(); break; }
+      discarded.forEach(c => opponent.trash.push(c));
+      ctx.addLog && ctx.addLog('🛡 セキュリティ破棄 ×' + discarded.length);
+      ctx.renderAll && ctx.renderAll();
+      // カード移動演出（1枚ずつ順番に）
+      let idx = 0;
+      function showNextSecDiscard() {
+        if (idx >= discarded.length) { callback(); return; }
+        const card = discarded[idx++];
+        if (window._fxCardMove) {
+          window._fxCardMove(card, 'セキュリティ', 'トラッシュ', showNextSecDiscard);
+        } else {
+          setTimeout(showNextSecDiscard, 300);
         }
       }
-      ctx.renderAll && ctx.renderAll();
-      callback();
+      showNextSecDiscard();
       break;
     }
     // === セキュリティに置く（デッキ上から N 枚 or 指定カードをセキュリティへ） ===

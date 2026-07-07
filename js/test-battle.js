@@ -12,7 +12,7 @@ import { bs, resetBattleState, drawCards } from './battle-state.js';
 import { addLog, showConfirm, showScreen } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, cardImg, updateMemGauge, setOnlineInfo, setIkuCallbacks, doIkuMove } from './battle-render.js';
 // Phase 3: フェーズ進行
-import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers, setFirstPlayer, PHASE_NAMES, PHASE_COLORS } from './battle-phase.js';
+import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers, setFirstPlayer } from './battle-phase.js';
 // Phase 4: 戦闘
 import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, showGameEndOverlay, setCombatHooks, setCombatOnlineHandlers } from './battle-combat.js';
 // Phase 5: 演出
@@ -760,18 +760,15 @@ window.startTest = async function() {
 
     // ターン開始演出
     if (isFirst) {
-      showYourTurn('あなたのターン', 'メインフェイズ - カードをプレイしよう', '#00fbff', () => {
-        showPhaseAnnounce(`${PHASE_NAMES.main.icon} ${PHASE_NAMES.main.name}`, PHASE_COLORS.main, () => {
-          addLog('[TEST] メインフェイズ開始 - カードをプレイしてテストしてください');
-          renderAll();
-        });
-      });
+      // 本番と同じフェーズ進行（アクティブ→ドロー→育成→メイン）を実際に走らせる。
+      // ターン開始時効果・アクティブフェイズのアンサスペンド・育成フェーズの登場操作も
+      // 本番同様に発生する（フェーズ移行は自動でオンライン相手にも同期される）。
+      addLog('[TEST] ターン開始 - 本番同様にフェーズを進行します');
+      startFirstTurn();
     } else {
       showYourTurn('相手のターン', '相手の操作を待っています...', '#ff00fb', () => {
-        showPhaseAnnounce(`${PHASE_NAMES.main.icon} ${PHASE_NAMES.main.name}`, PHASE_COLORS.main, () => {
-          addLog('[TEST] 相手のターンです（操作待ち）');
-          renderAll();
-        });
+        addLog('[TEST] 相手のターンです（操作待ち）');
+        renderAll();
       });
     }
 

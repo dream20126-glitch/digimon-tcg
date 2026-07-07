@@ -5114,6 +5114,13 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
   if (!reactPlayer || !reactPlayer.battleArea) { finish(); return; }
 
   // 全 carrier × 全進化元（+ carrier 自身）から triggerKey レシピを収集
+  // ★ この関数は常に「消滅したカードの反対側」を無条件にスキャンするため、
+  //   明示的に subject:"opp"系 を持つステップだけを反応対象とする。
+  //   on_destroy は本来「自身が消滅したとき」専用トリガー（自己効果は
+  //   _fireSelfDestroyEffects が別途処理済）なので、subject 無しの
+  //   on_destroy まで拾うと無関係な自己完結効果まで誤発火する
+  //   （例: 攻撃側ピヨモンの消滅で防御側ウィザーモン/プロットモンが反応してしまう）。
+  const isOppReactiveStep = (s) => !!s && (s.subject === 'opp' || s.subject === 'opp_any' || s.subject === 'opp_card');
   const reactions = [];
   reactPlayer.battleArea.forEach((carrier) => {
     if (!carrier) return;
@@ -5127,7 +5134,7 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
           const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
           // 進化元効果専用: evo_source[triggerKey] のみ拾う
           const recipe = r.evo_source && r.evo_source[triggerKey];
-          if (recipe) {
+          if (Array.isArray(recipe) && recipe.some(isOppReactiveStep)) {
             reactions.push({ sourceCard: evoCard, recipe, carrier });
           }
         } catch (_) {}
@@ -5139,7 +5146,7 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
         const raw = typeof carrier.recipe === 'string'
           ? carrier.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : carrier.recipe;
         const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        if (r[triggerKey]) {
+        if (Array.isArray(r[triggerKey]) && r[triggerKey].some(isOppReactiveStep)) {
           reactions.push({ sourceCard: carrier, recipe: r[triggerKey], carrier });
         }
       } catch (_) {}

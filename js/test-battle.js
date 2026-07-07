@@ -12,7 +12,7 @@ import { bs, resetBattleState, drawCards } from './battle-state.js';
 import { addLog, showConfirm, showScreen } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, cardImg, updateMemGauge, setOnlineInfo, setIkuCallbacks, doIkuMove } from './battle-render.js';
 // Phase 3: フェーズ進行
-import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers, setFirstPlayer } from './battle-phase.js';
+import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, setOnlineHandlers, setFirstPlayer, PHASE_NAMES, PHASE_COLORS } from './battle-phase.js';
 // Phase 4: 戦闘
 import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, showGameEndOverlay, setCombatHooks, setCombatOnlineHandlers } from './battle-combat.js';
 // Phase 5: 演出
@@ -761,13 +761,17 @@ window.startTest = async function() {
     // ターン開始演出
     if (isFirst) {
       showYourTurn('あなたのターン', 'メインフェイズ - カードをプレイしよう', '#00fbff', () => {
-        addLog('[TEST] メインフェイズ開始 - カードをプレイしてテストしてください');
-        renderAll();
+        showPhaseAnnounce(`${PHASE_NAMES.main.icon} ${PHASE_NAMES.main.name}`, PHASE_COLORS.main, () => {
+          addLog('[TEST] メインフェイズ開始 - カードをプレイしてテストしてください');
+          renderAll();
+        });
       });
     } else {
       showYourTurn('相手のターン', '相手の操作を待っています...', '#ff00fb', () => {
-        addLog('[TEST] 相手のターンです（操作待ち）');
-        renderAll();
+        showPhaseAnnounce(`${PHASE_NAMES.main.icon} ${PHASE_NAMES.main.name}`, PHASE_COLORS.main, () => {
+          addLog('[TEST] 相手のターンです（操作待ち）');
+          renderAll();
+        });
       });
     }
 

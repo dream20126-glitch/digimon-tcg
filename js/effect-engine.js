@@ -5333,6 +5333,18 @@ function getLimitMaxUses(step) {
   return 0;
 }
 
+// 対象カード自身の性質を表す条件コード（destroy/dp_minus等の対象フィルタとして妥当なもの）。
+// cond_tamer / cond_memory_ge / cond_exists 等、盤面・メモリー等の全体状態を見る条件は含めない
+// （それらは発動可否のゲートとして扱う）。
+const TARGET_FILTER_COND_CODES = new Set([
+  'cond_color', 'cond_type', 'cond_lv', 'cond_lv_le', 'cond_lv_ge',
+  'cond_dp', 'cond_dp_le', 'cond_dp_ge', 'cond_cost', 'cond_cost_le', 'cond_cost_ge',
+  'cond_feature', 'cond_feature_contains', 'cond_name', 'cond_name_contains',
+  'cond_keyword', 'cond_self_active', 'cond_self_rest', 'cond_self_suspended',
+  'cond_blocker', 'cond_rest', 'cond_no_evo', 'cond_has_evo', 'cond_evolve_to_lv',
+  'cond_same_as_picked', 'cond_digicross', 'cond_jogress',
+]);
+
 // レシピが実行されるか事前判定（全ステップが条件で弾かれるか）
 // 戻り値: true=少なくとも1ステップが実行される, false=全ステップが条件NGで何も起きない
 // 不確定な場合（store依存・ターゲット選択型など）は安全側で true を返す
@@ -5365,14 +5377,19 @@ function recipeWillExecuteAnything(recipe, ctx) {
     }
     // 条件あり → 評価
     const conds = parseRecipeCondition(step.condition);
-    // destroy / rest / bounce / cant_* で target が opponent/own → condition は
-    // 「対象カードへのフィルタ」であり、効果発動そのものの可否を決めるゲートではない。
+    // destroy / rest / bounce / cant_* / dp_plus / dp_minus で target が opponent/own の場合、
+    // condition が「対象カードごとの性質（色/タイプ/Lv/DP/キーワード等）を絞り込むフィルタ」
+    // であれば、効果発動そのものの可否を決めるゲートとして扱わない。
     // 例: メガログラウモン「進化時、赤の自分のテイマーがいるとき、DP3000以下の
     //     相手のデジモン1体を消滅させる」は、trigger_conditions（赤テイマー）が
     //     満たされていれば対象が0体でも効果は発動した扱いとし、演出ポップアップは出す
     //     （対象がいないだけで不発になるのは destroy 実行側の処理に任せる）。
-    if (['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve'].includes(step.action)
-        && /^(opponent|own)(?::|$)/.test(String(step.target || ''))) {
+    // ただし cond_tamer / cond_memory_ge / cond_exists 等、盤面全体やメモリーなど
+    // 「対象カード自身の性質ではない」条件は、引き続き発動可否のゲートとして評価する
+    // （ライアモン「メモリーが3以上のとき」等がゲートとして機能しなくなるのを防ぐ）。
+    if (['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'dp_plus', 'dp_minus'].includes(step.action)
+        && /^(opponent|own)(?::|$)/.test(String(step.target || ''))
+        && conds.every(c => c && TARGET_FILTER_COND_CODES.has(c.code))) {
       return true;
     }
     const result = checkConditions(conds, ctx.card, ctx.bs, ctx.side);
@@ -8113,10 +8130,6 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (actionCode === 'trash_evo_bottom') { actionCode = 'evo_discard_bottom'; }
       // レシピのtarget形式 → runOneAction形式に変換
       const action = { code: actionCode, value: effectiveValue };
-      // 条件もaction経由で渡す（destroy等のフィルタ用、ctx.block.conditionsだけだと失われるケースあり）
-      if (step.condition) {
-        action.conditions = parseRecipeCondition(step.condition);
-      }
       // ターン終了時メモリー復元フラグを引き継ぐ（memory_plus の revert_at_turn_end）
       if (step.revert_at_turn_end) action.revert_at_turn_end = true;
       let target = null;
@@ -8146,16 +8159,26 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 条件
       if (step.condition) {
         const conds = parseRecipeCondition(step.condition);
-        // For non-target-selection actions: check if condition is met, skip if not
-        if (!step.target || step.target === 'self') {
+        const _isSelfTgt = !step.target || step.target === 'self' || step.target === 'self_card';
+        // 盤面全体・メモリー等の状態を見る条件（cond_tamer/cond_memory_ge等、対象カード
+        // 自身の性質ではないもの）は、target指定があっても対象フィルタとして流用せず、
+        // 発動可否のゲートとして（発動元カード視点で）評価する。
+        // 例: ライアモン「メモリーが3以上のとき」を対象フィルタ扱いすると、
+        //     相手側の文脈で評価されて常に不成立になってしまう。
+        const _isTargetFilterable = !_isSelfTgt && conds.every(c => c && TARGET_FILTER_COND_CODES.has(c.code));
+        if (!_isTargetFilterable) {
           if (!checkConditions(conds, ctx.card, ctx.bs, ctx.side)) {
             callback && callback();
             break;
           }
         }
-        // Pass conditions to ctx.block for target filtering in runOneAction
-        if (!ctx.block) ctx.block = {};
-        ctx.block.conditions = conds;
+        if (_isTargetFilterable) {
+          // 対象フィルタとして action / ctx.block 両経由で渡す（destroy等のフィルタ用、
+          // ctx.block.conditionsだけだと失われるケースあり）
+          action.conditions = conds;
+          if (!ctx.block) ctx.block = {};
+          ctx.block.conditions = conds;
+        }
       }
       // storeから対象を引ける場合は対象選択をスキップして直接適用
       if (step.card && store[step.card]) {

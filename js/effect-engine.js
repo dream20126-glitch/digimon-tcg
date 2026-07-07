@@ -5349,6 +5349,15 @@ function recipeWillExecuteAnything(recipe, ctx) {
       const _lCarrierId = (ctx.card && (ctx.card.cardNo || ctx.card.name)) || 'unknown';
       if ((ctx.bs._usedLimits[_lSourceId + '@' + _lCarrierId + '_recipe_' + step.action] || 0) >= _lMax) continue;
     }
+    // コスト feasibility チェック: 「自身をレスト」コストがあるが既にレスト中ならスキップ
+    // （武之内空等「このテイマーをレストさせることで〜」は、既にレスト状態なら
+    //   コストを支払えず効果自体が発動しないため、演出ポップアップも出さない）
+    if (Array.isArray(step.cost)) {
+      const _costInfeasible = step.cost.some((c) =>
+        c && c.action === 'rest' && (c.target === 'self' || c.target === 'self_card' || !c.target) && ctx.card && ctx.card.suspended
+      );
+      if (_costInfeasible) continue;
+    }
     // 条件なし → 必ず実行される
     if (!step.condition) {
       console.log('[recipeWillExecute] step has no condition → true', 'action=' + step.action);

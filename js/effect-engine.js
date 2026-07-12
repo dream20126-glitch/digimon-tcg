@@ -3304,6 +3304,14 @@ export function applyPermanentEffects(bs, side, context) {
               else if (kw === 'evade')         { tgt._permEffects.evade = true; }
               else if (kw === 'armor_break')   { tgt._permEffects.armor_break = true; }
               else if (kw === 'indomitable')   { tgt._permEffects.indomitable = true; }
+              // カード上のキーワードバッジ表示用（ウィザーモン「黄の自分のデジモンがいる間、
+              // 道連れを得る」等、条件付きで得ているキーワードが盤面上で見えるように）。
+              // buffsは①で毎回'permanent'をクリアしてから②で再構築されるため、
+              // 累積せず条件成立時のみ表示される。
+              if (kw !== 'security_attack_plus' && !/Sアタック/.test(String(kw))) {
+                if (!tgt.buffs) tgt.buffs = [];
+                tgt.buffs.push({ type: 'keyword_' + kw, value: 0, duration: 'permanent', source: 'recipe_perm' });
+              }
             };
             const gt = String(step.target || 'self');
             if (gt === 'own:all') bs[side].battleArea.forEach(applyKw);
@@ -3908,15 +3916,17 @@ function checkConditions(conditions, card, bs, side) {
         break;
       }
       case 'cond_exists': {
-        // 「～がいるとき」「～がいる間」→ 相手バトルエリアに条件を満たすカードがいるか
+        // 「～がいるとき」「～がいる間」→ デフォルトは相手バトルエリアに条件を満たす
+        // カードがいるか（subject 未指定時の既定動作、既存カード互換のため維持）。
+        // subject:"own"/"own_any" 指定時のみ自分側を見る
+        // （例: ウィザーモン「黄の自分のデジモンがいる間」= cond_exists@own）。
         if (!bs) break; // bsがない場合はスキップ（後方互換）
-        const oppSide = side === 'player' ? 'ai' : 'player';
+        const _existsSubj = String(cond.subject || 'opp').toLowerCase();
+        const _existsOwn = _existsSubj === 'own' || _existsSubj === 'own_any' || _existsSubj === 'own_card';
+        const oppSide = _existsOwn ? side : (side === 'player' ? 'ai' : 'player');
         const oppArea = bs[oppSide].battleArea;
         // 同じconditions内の他の条件（cond_no_evo, cond_dp_le等）を相手カードに適用
         const otherConds = conditions.filter(c => c.code !== 'cond_exists' && c.code !== 'per_count');
-        // DEBUG: oppArea のデジモン状態を出力
-        const dump = oppArea.map((c, i) => c ? `[${i}]${c.name}(${c.type})stack=${c.stack ? c.stack.length : 0}` : `[${i}]null`).join(',');
-        console.log('[cond_exists]', 'oppSide=' + oppSide, 'oppArea:', dump, 'otherConds=', JSON.stringify(otherConds));
         const hasMatch = oppArea.some(c => {
           if (!c) return false;
           if (c.type !== 'デジモン') return false; // デジモンのみ対象
@@ -5082,11 +5092,17 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
       }
     });
   }
-  if (reactions.length === 0) { finish(); return; }
+  // 事前条件チェック: 全ステップが条件で弾かれるレシピは演出ポップアップも出さない
+  // 例: ピヨモン「自分のターンのとき、メモリー+1」を相手のターン中に消滅させても
+  //     ポップアップだけ出て何も起きない、という見え方を防ぐ
+  const _reactionsToRun = reactions.filter(({ carrier, recipe }) =>
+    recipeWillExecuteAnything(recipe, { card: carrier, bs, side: destroyedSide })
+  );
+  if (_reactionsToRun.length === 0) { finish(); return; }
   let i = 0;
   const runOne = () => {
-    if (i >= reactions.length) { finish(); return; }
-    const { sourceCard, recipe, carrier } = reactions[i++];
+    if (i >= _reactionsToRun.length) { finish(); return; }
+    const { sourceCard, recipe, carrier } = _reactionsToRun[i++];
     const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: destroyedSide };
     const effText = (sourceCard !== carrier && sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
       ? sourceCard.evoSourceEffect : (sourceCard.effect || carrier.effect || '');
@@ -6003,15 +6019,23 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (!c) { callback(); return; }
             const hi = player.hand.indexOf(c); if (hi !== -1) player.hand.splice(hi, 1);
             const ti = player.trash.indexOf(c); if (ti !== -1) player.trash.splice(ti, 1);
-            const empty = player.battleArea.indexOf(null);
-            if (empty !== -1) player.battleArea[empty] = c; else player.battleArea.push(c);
+            // テイマーはテイマーエリアへ、それ以外はバトルエリアへ
+            // （ライズグレイモン「手札から黄のテイマーを登場」等でバトルエリアに
+            //  誤配置されるのを防ぐ）
+            const _isSummonTamer = String(c.type || '') === 'テイマー';
+            if (_isSummonTamer) {
+              if (!player.tamerArea.includes(c)) player.tamerArea.push(c);
+            } else {
+              const empty = player.battleArea.indexOf(null);
+              if (empty !== -1) player.battleArea[empty] = c; else player.battleArea.push(c);
+            }
             c.summonedThisTurn = true; c.suspended = false; c.buffs = []; c.stack = [];
             // skip_on_play 指定時は登場時効果を発動しない
             if (step.skip_on_play) {
               c._skipOnPlayEffect = true;
-              ctx.addLog('🌟 「' + c.name + '」を登場（登場時効果は発揮しない）');
+              ctx.addLog('🌟 「' + c.name + '」を' + (_isSummonTamer ? 'テイマーエリアに' : '') + '登場（登場時効果は発揮しない）');
             } else {
-              ctx.addLog('🌟 「' + c.name + '」を登場');
+              ctx.addLog('🌟 「' + c.name + '」を' + (_isSummonTamer ? 'テイマーエリアに' : '') + '登場');
             }
             ctx.renderAll();
             const showFn = (ctx && ctx.showPlayEffect) || (typeof window !== 'undefined' && window.showPlayEffect);

@@ -798,9 +798,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // プレイヤー: dpNeed 体を順に選択
       const dpRemain = dpTargets.slice();
       let dpPicked = 0;
+      // 「テイマー1体ごとに」等の繰り返し実行中は (1回目)(2回目) を対象選択に表示
+      const _dpmRepeatLabel = (ctx._repeatTotal > 1) ? '（' + ctx._repeatIndex + '/' + ctx._repeatTotal + '回目）' : '';
       const pickDpNext = () => {
         if (dpPicked >= dpNeed || dpRemain.length === 0) { ctx.renderAll(); callback(); return; }
-        ctx.addLog('🎯 DP-' + val + 'の対象を選んでください' + (dpNeed > 1 ? '（' + (dpPicked + 1) + '/' + dpNeed + '体目）' : ''));
+        ctx.addLog('🎯 DP-' + val + 'の対象を選んでください' + (dpNeed > 1 ? '（' + (dpPicked + 1) + '/' + dpNeed + '体目）' : '') + _dpmRepeatLabel);
         showTargetSelection(opponentRowSide, dpRemain.slice(), null, uiColor, (selectedIdx) => {
           if(selectedIdx !== null) {
             const tgt = opponent.battleArea[selectedIdx];
@@ -814,7 +816,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           } else {
             ctx.renderAll(); callback();
           }
-        });
+        }, _dpmRepeatLabel);
       };
       pickDpNext();
       break;
@@ -1816,7 +1818,7 @@ function doBounce(targetSide, slotIdx, ctx) {
 let _targetSelecting = false; // 対象選択中フラグ（renderAll抑制用）
 export function isTargetSelecting() { return _targetSelecting; }
 
-function showTargetSelection(targetSide, validIndices, conditions, borderColor, callback) {
+function showTargetSelection(targetSide, validIndices, conditions, borderColor, callback, extraLabel) {
   // ★ チュートリアル AI 対象選択 intent: スクリプトで指定したカードがあれば自動選択
   //   _tutorialAiSelectTarget = カードNo or カード名 (部分一致対応)
   //   ※ AI が効果を使う時のみ消費する（AI のターン中、または targetSide='player' で AI が
@@ -1864,7 +1866,7 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
   // メッセージを画面中央に表示
   const msgEl = document.createElement('div');
   msgEl.style.cssText = 'position:fixed;top:15%;left:50%;transform:translateX(-50%);z-index:60000;background:rgba(0,0,0,0.9);border:1px solid '+color+';border-radius:10px;padding:12px 24px;color:'+color+';font-size:14px;font-weight:bold;text-align:center;box-shadow:0 0 20px '+color+'44;pointer-events:none;';
-  msgEl.innerText = '🎯 対象を選んでください';
+  msgEl.innerText = '🎯 対象を選んでください' + (extraLabel || '');
   document.body.appendChild(msgEl);
 
   // 対象を光らせる＋ホバー演出
@@ -3249,9 +3251,9 @@ export function applyPermanentEffects(bs, side, context) {
     if (card._permEffects) card._permEffects = {};
   });
   // 継続的（during_X）由来のセキュリティバフもクリア（再評価のため）
-  // source='recipe_perm_security' は applyPermanentEffects で毎回再構築される
+  // source='recipe_perm_security' / 'evo_recipe_perm_security' は applyPermanentEffects で毎回再構築される
   if (bs._securityBuffs && bs._securityBuffs.length > 0) {
-    bs._securityBuffs = bs._securityBuffs.filter(b => !(b.source === 'recipe_perm_security' && b.owner === side));
+    bs._securityBuffs = bs._securityBuffs.filter(b => !((b.source === 'recipe_perm_security' || b.source === 'evo_recipe_perm_security') && b.owner === side));
   }
 
   // ② 永続効果を全て再適用
@@ -3469,12 +3471,48 @@ export function applyPermanentEffects(bs, side, context) {
               value = value * Math.floor(count / step.per_count);
             }
             if (step.action === 'dp_plus') {
-              if (!card.buffs) card.buffs = [];
-              card.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'evo_recipe_perm' });
-              recalcDp(card);
+              const target = step.target || 'self';
+              if (target === 'self') {
+                if (!card.buffs) card.buffs = [];
+                card.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'evo_recipe_perm' });
+                recalcDp(card);
+              } else if (target === 'own:all') {
+                bs[side].battleArea.forEach(tgt => {
+                  if (!tgt) return;
+                  if (!tgt.buffs) tgt.buffs = [];
+                  tgt.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'evo_recipe_perm' });
+                  recalcDp(tgt);
+                });
+              } else if (target === 'own_security:all') {
+                // ニャロモン等: 進化元として持つ間、自分のセキュリティデジモン全体に DP+
+                if (!bs._securityBuffs) bs._securityBuffs = [];
+                bs._securityBuffs.push({
+                  type: 'dp_plus', value: value, duration: 'permanent',
+                  source: 'evo_recipe_perm_security', owner: side,
+                  _appliedDuringOwnTurn: false,
+                });
+              }
             } else if (step.action === 'security_attack_plus') {
               if (!card._permEffects) card._permEffects = {};
               card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (value || 1);
+            } else if (step.action === 'grant_keyword' || step.action === 'grant_keyword_to') {
+              // ライズグレイモン/メタルグレイモン等: 進化元として持つ間、条件成立でキーワード付与
+              const kw = step.keyword || step.flag || '';
+              const gv = value != null ? value : 1;
+              if (!card._permEffects) card._permEffects = {};
+              if (kw === 'security_attack_plus' || /Sアタック/.test(String(kw))) {
+                card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + gv;
+              } else if (kw === 'jamming')      { card._permEffects.jamming = true; }
+              else if (kw === 'reboot')         { card._permEffects.reboot = true; }
+              else if (kw === 'blocker')        { card._permEffects.blocker = true; }
+              else if (kw === 'rush')           { card._permEffects.rush = true; }
+              else if (kw === 'penetrate')      { card._permEffects.penetrate = true; }
+              else if (kw === 'piercing')       { card._permEffects.piercing = true; }
+              else if (kw === 'michizure')      { card._permEffects.michizure = true; }
+              else if (kw === 'barrier')        { card._permEffects.barrier = true; }
+              else if (kw === 'evade')          { card._permEffects.evade = true; }
+              else if (kw === 'armor_break')    { card._permEffects.armor_break = true; }
+              else if (kw === 'indomitable')    { card._permEffects.indomitable = true; }
             }
           });
         });
@@ -5666,7 +5704,16 @@ function executeRecipeStep(step, ctx, store, callback) {
     delete _rStep.ref_filter;
     delete _rStep.ref_state;
     const _rFire = (remaining, done) => {
-      if (remaining <= 0) { done(); return; }
+      if (remaining <= 0) {
+        delete ctx._repeatIndex;
+        delete ctx._repeatTotal;
+        done();
+        return;
+      }
+      // シャイングレイモン等「〜1体ごとに」の繰り返し実行中、対象選択UIに
+      // 「(1回目)」「(2回目)」を表示するための現在周回情報
+      ctx._repeatIndex = _rN - remaining + 1;
+      ctx._repeatTotal = _rN;
       executeRecipeStep(_rStep, ctx, store, () => _rFire(remaining - 1, done));
     };
     _rFire(_rN, callback);

@@ -261,6 +261,9 @@ function buildBoardFromScenario(scenario, isPlayer1) {
       const card = findCardByName(name);
       if (card) target.trash.push(card);
     });
+    // トラッシュ: 「N枚以上」等の条件テスト用にダミーカードで嵩増し（セキュリティと同じ方式）
+    const trashDummy = sc.trashDummy || 0;
+    for (let i = 0; i < trashDummy; i++) target.trash.push(makeDummyCard(dummyOffset + 50 + i));
     // セキュリティ: 指定カード + ダミーで合計枚数を埋める
     const secCards = sc.securityCards || [];
     secCards.forEach(name => {
@@ -566,6 +569,8 @@ window.saveScenario = function() {
     memory: parseInt(document.getElementById('custom-memory').value) || 5,
     p1SecDummy: parseInt(document.getElementById('custom-p1-sec').value) || 0,
     p2SecDummy: parseInt(document.getElementById('custom-p2-sec').value) || 0,
+    p1TrashDummy: parseInt(document.getElementById('custom-p1-trash-dummy').value) || 0,
+    p2TrashDummy: parseInt(document.getElementById('custom-p2-trash-dummy').value) || 0,
   };
   const saved = getSavedScenarios();
   saved[name] = data;
@@ -598,6 +603,8 @@ window.loadScenario = function() {
   document.getElementById('custom-memory').value = data.memory || 5;
   document.getElementById('custom-p1-sec').value = data.p1SecDummy ?? data.p1Sec ?? 5;
   document.getElementById('custom-p2-sec').value = data.p2SecDummy ?? data.p2Sec ?? 0;
+  document.getElementById('custom-p1-trash-dummy').value = data.p1TrashDummy ?? 0;
+  document.getElementById('custom-p2-trash-dummy').value = data.p2TrashDummy ?? 0;
   document.getElementById('save-name-input').value = name;
   renderCustomCards();
   document.getElementById('test-status').innerText = `📂「${name}」を読み込みました`;
@@ -631,6 +638,7 @@ function buildCustomScenarioData() {
       evoSourceMap: _customEvo['p1'],
       tamerArea: _customCards['p1-tamer'],
       trash: _customCards['p1-trash'],
+      trashDummy: parseInt(document.getElementById('custom-p1-trash-dummy').value) || 0,
       securityCards: _customCards['p1-security'],
       securityDummy: parseInt(document.getElementById('custom-p1-sec').value) || 0,
       deckTopCards: _customCards['p1-deck'],
@@ -645,6 +653,7 @@ function buildCustomScenarioData() {
       evoSourceMap: _customEvo['p2'],
       tamerArea: _customCards['p2-tamer'],
       trash: _customCards['p2-trash'],
+      trashDummy: parseInt(document.getElementById('custom-p2-trash-dummy').value) || 0,
       securityCards: _customCards['p2-security'],
       securityDummy: parseInt(document.getElementById('custom-p2-sec').value) || 0,
       deckTopCards: _customCards['p2-deck'],

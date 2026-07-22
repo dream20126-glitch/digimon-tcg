@@ -5442,6 +5442,24 @@ function recipeWillExecuteAnything(recipe, ctx) {
       );
       if (_costInfeasible) continue;
     }
+    // summon（手札/トラッシュから filter 一致で登場）/ summon_from_trash: フィルタに
+    // 一致する候補が1枚も無ければ、条件を満たしていても効果不発なので演出ポップアップも
+    // 出さない（ホーリードラモン「黄色のLv3のデジモン」等が手札に無い場合に該当）
+    if ((step.action === 'summon' && !step.card) || step.action === 'summon_from_trash') {
+      const _fromZones = step.action === 'summon_from_trash'
+        ? ['trash']
+        : (Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []));
+      if (_fromZones.includes('hand') || _fromZones.includes('trash')) {
+        const _filter = step.filter || {};
+        const _p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+        const _hasCand = (_fromZones.includes('hand') && (_p.hand || []).some(c => c && cardMatchesFilter(c, _filter)))
+          || (_fromZones.includes('trash') && (_p.trash || []).some(c => c && cardMatchesFilter(c, _filter)));
+        if (!_hasCand) {
+          console.log('[recipeWillExecute] summon filter has no candidate → skip', 'action=' + step.action);
+          continue;
+        }
+      }
+    }
     // 条件なし → 必ず実行される
     if (!step.condition) {
       console.log('[recipeWillExecute] step has no condition → true', 'action=' + step.action);
@@ -6071,6 +6089,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _fromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
         if (!step.card && (_fromZones.includes('hand') || _fromZones.includes('trash'))) {
           const _filter = step.filter || {};
+          const _optional = !!step.optional;
           const _handCands = _fromZones.includes('hand')
             ? (player.hand || []).filter(c => c && cardMatchesFilter(c, _filter)) : [];
           const _trashCands = _fromZones.includes('trash')
@@ -6115,11 +6134,17 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (showFn) showFn({ name: c.name, imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '', type: c.type || 'デジモン', playCost: 0 }, afterAnim);
             else setTimeout(afterAnim, 300);
           };
-          // 指定ゾーンのカードから1枚選んで登場（1枚なら即時）
+          // 指定ゾーンのカードから1枚選んで登場（1枚なら即時。ただし「できる」(optional)
+          // 指定時は1枚だけでも「使わない」を選べるよう必ずピッカーを経由させる）
           const _pickFromZone = (zoneCands) => {
             if (!zoneCands || zoneCands.length === 0) { callback(); return; }
-            if (zoneCands.length === 1) { _doSummonHT(zoneCands[0]); return; }
-            showTrashCardPicker(zoneCands, 1, false, '🌟 登場させるカードを選んでください', (picked) => {
+            if (zoneCands.length === 1 && !_optional) { _doSummonHT(zoneCands[0]); return; }
+            showTrashCardPicker(zoneCands, 1, _optional, '🌟 登場させるカードを選んでください', (picked) => {
+              if (_optional && (!picked || picked.length === 0)) {
+                ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
+                callback();
+                return;
+              }
               _doSummonHT(picked && picked.length > 0 ? picked[0] : null);
             }, zoneCands);
           };
@@ -6127,7 +6152,10 @@ function executeRecipeStep(step, ctx, store, callback) {
             _doSummonHT(_handCands[0] || _trashCands[0]);
           } else if (_handCands.length > 0 && _trashCands.length > 0) {
             // 手札・トラッシュ両方に対象がある → どちらから登場するか選択
-            showAltActionChoice(['手札から', 'トラッシュから'], (zi) => {
+            const _zoneLabels = ['手札から', 'トラッシュから'];
+            if (_optional) _zoneLabels.push('使わない');
+            showAltActionChoice(_zoneLabels, (zi) => {
+              if (_optional && zi === 2) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
               _pickFromZone(zi === 0 ? _handCands : _trashCands);
             });
           } else {
@@ -7770,9 +7798,19 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === セキュリティの上に置く ===
     case 'place_on_security_top': {
-      const sd = step.card ? store[step.card] : null;
-      const cardToPlace = sd && (sd.card || sd);
+      // target:"self"/"self_card"（例: オファニモン【消滅時】「このカードを自分のセキュリティの上に置く」）
+      // 指定時は ctx.card（消滅したカード自身）を対象にする。それ以外は従来通り store 経由。
+      const isSelf = step.target === 'self' || step.target === 'self_card';
+      const sd = !isSelf && step.card ? store[step.card] : null;
+      const cardToPlace = isSelf ? ctx.card : (sd && (sd.card || sd));
       if (!cardToPlace) { callback(); break; }
+      // self指定時は消滅演出で既にトラッシュ行き済みのはずなので、二重登録されないよう除去してから積む
+      if (isSelf) {
+        const _ti = player.trash.indexOf(cardToPlace);
+        if (_ti !== -1) player.trash.splice(_ti, 1);
+        const _bi = player.battleArea.indexOf(cardToPlace);
+        if (_bi !== -1) player.battleArea[_bi] = null;
+      }
       player.security.unshift(cardToPlace);
       ctx.addLog('🛡 「' + cardToPlace.name + '」をセキュリティの上に置く');
       ctx.renderAll();

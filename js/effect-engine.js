@@ -5380,19 +5380,20 @@ function _buildBaseCtx(ctxBase, bs) {
 // eventCard: トリガー発火元カード（ctx.block._eventSourceCard or fallback ctx.card）
 function checkStepTriggerConditions(step, ctx) {
   if (!step || !Array.isArray(step.trigger_conditions) || step.trigger_conditions.length === 0) return true;
+  const reactingName = (ctx && ctx.card && ctx.card.name) || '?';
   const eventCard = (ctx && ctx.block && ctx.block._eventSourceCard) || (ctx && ctx.card);
   if (!eventCard) {
-    console.log('[trigger_conditions] no event source card → fail');
+    console.log('[trigger_conditions] reactor=' + reactingName + ' no event source card → fail');
     return false;
   }
   for (const condStr of step.trigger_conditions) {
     const conds = parseRecipeCondition(String(condStr));
     if (!checkConditions(conds, eventCard, ctx.bs, ctx.side)) {
-      console.log('[trigger_conditions] FAIL:', condStr, 'against', eventCard.name);
+      console.log('[trigger_conditions] reactor=' + reactingName + ' FAIL:', condStr, 'against', eventCard.name);
       return false;
     }
   }
-  console.log('[trigger_conditions] all pass');
+  console.log('[trigger_conditions] reactor=' + reactingName + ' all pass');
   return true;
 }
 
@@ -5422,6 +5423,7 @@ const TARGET_FILTER_COND_CODES = new Set([
 // 不確定な場合（store依存・ターゲット選択型など）は安全側で true を返す
 function recipeWillExecuteAnything(recipe, ctx) {
   if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
+  const _reactor = (ctx && ctx.card && ctx.card.name) || '?';
   for (const step of recipe) {
     // trigger_conditions: 発火元カードへのフィルタ（NG なら次の step）
     if (!checkStepTriggerConditions(step, ctx)) continue;
@@ -5455,14 +5457,14 @@ function recipeWillExecuteAnything(recipe, ctx) {
         const _hasCand = (_fromZones.includes('hand') && (_p.hand || []).some(c => c && cardMatchesFilter(c, _filter)))
           || (_fromZones.includes('trash') && (_p.trash || []).some(c => c && cardMatchesFilter(c, _filter)));
         if (!_hasCand) {
-          console.log('[recipeWillExecute] summon filter has no candidate → skip', 'action=' + step.action);
+          console.log('[recipeWillExecute] reactor=' + _reactor + ' summon filter has no candidate → skip', 'action=' + step.action);
           continue;
         }
       }
     }
     // 条件なし → 必ず実行される
     if (!step.condition) {
-      console.log('[recipeWillExecute] step has no condition → true', 'action=' + step.action);
+      console.log('[recipeWillExecute] reactor=' + _reactor + ' step has no condition → true', 'action=' + step.action);
       return true;
     }
     // 条件あり → 評価
@@ -5483,14 +5485,14 @@ function recipeWillExecuteAnything(recipe, ctx) {
       const _tgtArea = (ctx.bs[_tgtSide] && ctx.bs[_tgtSide].battleArea) || [];
       const _hasTarget = _tgtArea.some(c => c && checkConditions(conds, c, ctx.bs, _tgtSide));
       if (_hasTarget) return true;
-      console.log('[recipeWillExecute] target filter has no candidate → skip', 'action=' + step.action);
+      console.log('[recipeWillExecute] reactor=' + _reactor + ' target filter has no candidate → skip', 'action=' + step.action);
       continue;
     }
     const result = checkConditions(conds, ctx.card, ctx.bs, ctx.side);
-    console.log('[recipeWillExecute]', 'action=' + step.action, 'condition=' + step.condition, 'parsed=' + JSON.stringify(conds), '→ ' + result);
+    console.log('[recipeWillExecute] reactor=' + _reactor, 'action=' + step.action, 'condition=' + step.condition, 'parsed=' + JSON.stringify(conds), '→ ' + result);
     if (result) return true;
   }
-  console.log('[recipeWillExecute] all steps blocked → false');
+  console.log('[recipeWillExecute] reactor=' + _reactor + ' all steps blocked → false');
   return false;
 }
 

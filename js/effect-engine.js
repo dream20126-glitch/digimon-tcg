@@ -5469,18 +5469,22 @@ function recipeWillExecuteAnything(recipe, ctx) {
     const conds = parseRecipeCondition(step.condition);
     // destroy / rest / bounce / cant_* / dp_plus / dp_minus で target が opponent/own の場合、
     // condition が「対象カードごとの性質（色/タイプ/Lv/DP/キーワード等）を絞り込むフィルタ」
-    // であれば、効果発動そのものの可否を決めるゲートとして扱わない。
-    // 例: メガログラウモン「進化時、赤の自分のテイマーがいるとき、DP3000以下の
-    //     相手のデジモン1体を消滅させる」は、trigger_conditions（赤テイマー）が
-    //     満たされていれば対象が0体でも効果は発動した扱いとし、演出ポップアップは出す
-    //     （対象がいないだけで不発になるのは destroy 実行側の処理に任せる）。
+    // であれば、盤面に実際にその条件を満たすカードが1体でもいるかを確認する。
+    // 例: グラウモン「DP2000以下の相手のデジモン1体を消滅させる」で対象0体なら不発
+    //     扱いにし、演出ポップアップも出さない。
     // ただし cond_tamer / cond_memory_ge / cond_exists 等、盤面全体やメモリーなど
     // 「対象カード自身の性質ではない」条件は、引き続き発動可否のゲートとして評価する
     // （ライアモン「メモリーが3以上のとき」等がゲートとして機能しなくなるのを防ぐ）。
     if (['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'dp_plus', 'dp_minus'].includes(step.action)
         && /^(opponent|own)(?::|$)/.test(String(step.target || ''))
         && conds.every(c => c && TARGET_FILTER_COND_CODES.has(c.code))) {
-      return true;
+      const _isOwnTarget = /^own(?::|$)/.test(String(step.target || ''));
+      const _tgtSide = _isOwnTarget ? ctx.side : (ctx.side === 'player' ? 'ai' : 'player');
+      const _tgtArea = (ctx.bs[_tgtSide] && ctx.bs[_tgtSide].battleArea) || [];
+      const _hasTarget = _tgtArea.some(c => c && checkConditions(conds, c, ctx.bs, _tgtSide));
+      if (_hasTarget) return true;
+      console.log('[recipeWillExecute] target filter has no candidate → skip', 'action=' + step.action);
+      continue;
     }
     const result = checkConditions(conds, ctx.card, ctx.bs, ctx.side);
     console.log('[recipeWillExecute]', 'action=' + step.action, 'condition=' + step.condition, 'parsed=' + JSON.stringify(conds), '→ ' + result);

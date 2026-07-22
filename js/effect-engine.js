@@ -3596,7 +3596,14 @@ function parseRecipeCondition(condStr) {
     if (parts.length >= 2) {
       const nested = parts.slice(1).join(':');
       const nestedParts = nested.split(':');
-      result.push({code: nestedParts[0], value: nestedParts[1] ? parseInt(nestedParts[1]) : undefined});
+      // 色名等の非数値をparseIntで壊さないよう、数値の時だけ変換する
+      // （例: "cond_exists:cond_color:紫" の "紫" がparseIntでNaN化しないように）
+      let nv = nestedParts[1];
+      if (nv !== undefined) {
+        const nn = parseInt(nv, 10);
+        if (!isNaN(nn) && String(nn) === String(nv).trim()) nv = nn;
+      }
+      result.push({code: nestedParts[0], value: nv});
     }
   } else {
     // "cond_lv_le:5" → [{code:'cond_lv_le', value:5}]
@@ -3611,6 +3618,11 @@ function parseRecipeCondition(condStr) {
       if (!isNaN(n) && String(n) === String(val).trim()) val = n;
     }
     result = [{code: code, value: val}];
+    // 3パート目（例: "cond_tamer:黄:3" の "3"）は「N体以上」等の個数しきい値として扱う
+    if (parts.length >= 3 && parts[2] !== undefined && parts[2] !== '') {
+      const cn = parseInt(parts[2], 10);
+      if (!isNaN(cn)) result[0].count = cn;
+    }
   }
   // subject を全 result エントリに付与（cond_exists の場合は両エントリに同じ subject）
   if (subject) result.forEach(r => r.subject = subject);
@@ -3873,15 +3885,19 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_tamer': {
         // 「テイマーがいるとき」: 自分側のテイマーエリアに少なくとも1人いれば true
         // cond.value に色指定（例: cond_tamer:青）があれば、その色のテイマーが必要
+        // cond.count があれば「N体以上」（例: cond_tamer:黄:3 → 黄のテイマーが3体以上）
         if (!bs) return false;
         const ts = resolveSubjectSide(cond.subject || 'own', side);
         const tamerArea = bs[ts] && bs[ts].tamerArea;
         if (!Array.isArray(tamerArea)) return false;
         const _tamers = tamerArea.filter(t => t);
-        if (_tamers.length === 0) return false;
+        const _needCount = cond.count || 1;
         if (cond.value) {
           const _wantColor = String(cond.value);
-          if (!_tamers.some(t => t.color && String(t.color).indexOf(_wantColor) >= 0)) return false;
+          const _matchedCount = _tamers.filter(t => t.color && String(t.color).indexOf(_wantColor) >= 0).length;
+          if (_matchedCount < _needCount) return false;
+        } else {
+          if (_tamers.length < _needCount) return false;
         }
         break;
       }
@@ -3977,6 +3993,8 @@ function checkConditions(conditions, card, bs, side) {
               case 'cond_dp_ge': return c.dp >= (oc.value || 0);
               case 'cond_lv_le': return parseInt(c.level) <= (oc.value || 0);
               case 'cond_lv_ge': return parseInt(c.level) >= (oc.value || 0);
+              case 'cond_color': return !oc.value || (c.color && String(c.color).indexOf(String(oc.value)) >= 0);
+              case 'cond_feature': return !oc.value || (c.feature && String(c.feature).indexOf(String(oc.value)) >= 0);
               default: return true;
             }
           });

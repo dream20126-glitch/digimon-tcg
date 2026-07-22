@@ -1134,11 +1134,9 @@ export function resolveSecurityCheck(atk, atkIdx) {
           showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
             showDestroyEffect(sec, () => { showDestroyEffect(atk, () => {
               addLog('💥 両者消滅！'); _dispatchStateSync();
-              // 演出完了 → on_destroy リアクション完了 → ターンエンド
+              // 演出完了 → 消滅チェーン(on_destroy → on_battle_destroy → when_own_destroyed)完了 → ターンエンド
               try {
-                _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }, () => {
-                  checkPendingTurnEnd();
-                });
+                _fireDestroyChain(['player'], () => checkPendingTurnEnd(), { player: atk });
               } catch(_) { checkPendingTurnEnd(); }
             }); });
           }, '両者消滅', '#ff4444');
@@ -1189,9 +1187,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
             showDestroyEffect(atk, () => {
               addLog('✗ セキュリティに敗北'); _dispatchStateSync();
               try {
-                _fireOnDestroy('player', bs, { bs, addLog, renderAll, updateMemGauge }, () => {
-                  checkPendingTurnEnd();
-                });
+                _fireDestroyChain(['player'], () => checkPendingTurnEnd(), { player: atk });
               } catch(_) { checkPendingTurnEnd(); }
             });
           }, 'Win!!', '#00ff88');

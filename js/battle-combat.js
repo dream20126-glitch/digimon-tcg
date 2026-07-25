@@ -549,7 +549,7 @@ export function doPlay(card, handIdx, slotIdx) {
     _hooks.applyPermanentEffects('player');
     renderAll(true);
     // ★ 公式ルール: コスト支払い(メモリー消費) → 登場時効果 → ターン終了判定
-    playerSpendMemory(card.playCost, true); // defer=true: ターン終了は保留
+    playerSpendMemory(_effPlayCost, true); // defer=true: ターン終了は保留
     // チュートリアル進行通知 → PERFECT/GREAT を先に流してから割り込み(説明等)へ
     if (window._tutorialRunner && window._tutorialRunner.active) {
       try { window._tutorialRunner.notifyEvent('play', { cardNo: card.cardNo, cardName: card.name, targetCardNo: card.cardNo, side: 'player' }); } catch (e) {}

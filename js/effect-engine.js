@@ -1801,8 +1801,18 @@ function doBounce(targetSide, slotIdx, ctx) {
   const bounced = targetSide.battleArea[slotIdx];
   if (!bounced) return;
   targetSide.battleArea[slotIdx] = null;
+  // 手札に戻る = 一時的な状態（バフ/DP修整/永続効果/レスト等）は全てリセットされる
+  // （八神太一のDP+1000等が手札に戻った後も残ってしまう不具合の修正）
+  bounced.buffs = [];
+  bounced.dpModifier = 0;
+  if (bounced.baseDp == null) bounced.baseDp = parseInt(bounced.dp) || 0;
+  bounced.dp = bounced.baseDp;
+  bounced._permEffects = {};
+  bounced.suspended = false;
+  bounced.summonedThisTurn = false;
   targetSide.hand.push(bounced);
   if (bounced.stack) bounced.stack.forEach(s => targetSide.trash.push(s));
+  bounced.stack = [];
   ctx.addLog('↩ 「' + bounced.name + '」を手札に戻した');
   // オンライン: 相手のカードをバウンスした場合、直接通知 + 復活防止マーク
   if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {

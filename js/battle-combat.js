@@ -465,6 +465,8 @@ export function doPlay(card, handIdx, slotIdx) {
   const _effPlayCost = _getEffectivePlayCost(card, bs, 'player');
   if (_effPlayCost !== card.playCost) {
     addLog('💠 「' + card.name + '」の登場コスト ' + card.playCost + ' → ' + _effPlayCost);
+    // showPlayEffect/showOptionEffect の演出表示（自分側画面）にも軽減後コストを反映
+    card._costReduction = card.playCost - _effPlayCost;
   }
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'play', handIdx, slotIdx, cardName: card.name, cardType: card.type, cardImg: card.imgSrc || '', playCost: _effPlayCost });
 
@@ -2586,7 +2588,12 @@ export function showOptionEffect(card, onDone) {
   imgEl.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#aa66ff;padding:8px;">${card.name}</div>`;
   imgEl.style.animation = 'optionGlow 1s ease-in-out infinite';
   nameEl.innerText = card.name;
-  costEl.innerText = card.playCost + ' コストで使用！';
+  if (card._costReduction) {
+    costEl.innerText = '-' + card._costReduction + ' で使用！';
+    delete card._costReduction;
+  } else {
+    costEl.innerText = card.playCost + ' コストで使用！';
+  }
   overlay.style.display = 'flex';
 
   setTimeout(() => { flash.style.opacity = '1'; }, 50);

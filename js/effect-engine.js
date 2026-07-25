@@ -4506,9 +4506,15 @@ function showEffectAnnounce(card, effectText, side, callback, evoSourceCard) {
   }
 
   const effectEl = document.createElement('div');
-  effectEl.style.cssText = 'color:#ddd;font-size:11px;line-height:1.6;max-height:100px;overflow-y:auto;text-align:left;';
+  effectEl.style.cssText = 'color:#ddd;font-size:11px;line-height:1.6;max-height:100px;overflow-y:auto;text-align:left;margin-bottom:14px;';
   effectEl.innerText = displayText;
   box.appendChild(effectEl);
+
+  // 自動で消えず、効果発動する側が読み終えてからOKで進める
+  const okBtn = document.createElement('button');
+  okBtn.innerText = 'OK';
+  okBtn.style.cssText = 'background:' + sideColor + ';color:#001a1a;border:none;padding:8px 32px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
+  box.appendChild(okBtn);
 
   overlay.appendChild(box);
   document.body.appendChild(overlay);
@@ -4522,14 +4528,10 @@ function showEffectAnnounce(card, effectText, side, callback, evoSourceCard) {
     callback();
   }
 
-  // 2.5秒後に自動で消えてcallback（ローカル表示のみ）
-  setTimeout(() => {
-    overlay.style.animation = 'fadeOut 0.3s ease forwards';
-    setTimeout(finish, 300);
-  }, 2500);
-
-  // タップで早送り
-  overlay.addEventListener('click', finish, { once: true });
+  okBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    finish();
+  });
 }
 
 // ===== 効果不発ポップアップ =====

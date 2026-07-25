@@ -1033,9 +1033,24 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const _activeConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
       const _activeCondSide = ctx.side;
       const _activeCondPass = (c) => _activeConds.length === 0 || checkConditions(_activeConds, c, ctx.bs, _activeCondSide);
+      // 他のデジモンをアクティブにするケース（target_own/target_all_own）でも、
+      // target:"self"の時と同じくメインフェイズでの on_active トリガーをスキャンする
+      // （チビモン/ブイモン等「このデジモンがメインフェイズでアクティブになったとき」）
+      const _scanActivatedForMain = (activated, done) => {
+        if (activated.length === 0) { done(); return; }
+        if (ctx.bs) ctx.bs._onActivePhase = 'main';
+        activated.forEach(c => scanTriggers('on_active', c, ctx.side, ctx));
+        if (ctx.bs) delete ctx.bs._onActivePhase;
+        processQueue(ctx, done);
+      };
       if (tCode === 'target_all_own') {
-        (player.battleArea || []).forEach(c => { if (c && c.suspended && _activeCondPass(c)) activateOne(c); });
-        ctx.renderAll(); callback(); break;
+        const activated = [];
+        (player.battleArea || []).forEach(c => {
+          if (c && c.suspended && _activeCondPass(c)) { activated.push(c); activateOne(c); }
+        });
+        ctx.renderAll();
+        _scanActivatedForMain(activated, callback);
+        break;
       }
       if (tCode === 'target_own') {
         // 自分のレスト中デジモンから 1 体選択
@@ -1046,15 +1061,19 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         }
         if (valid.length === 0) { ctx.addLog && ctx.addLog('💨 アクティブにできるレスト中デジモンがいません'); ctx.renderAll(); callback(); break; }
         if (effectiveSide === 'ai') {
-          activateOne(player.battleArea[valid[0]]);
-          ctx.renderAll(); callback(); break;
+          const tgt = player.battleArea[valid[0]];
+          activateOne(tgt);
+          ctx.renderAll();
+          _scanActivatedForMain([tgt], callback);
+          break;
         }
         const rowId = ctx.side === 'player' ? 'pl' : 'ai';
         showTargetSelection(rowId, valid, null, '#00ff88', (selectedIdx) => {
           if (selectedIdx == null) { callback(); return; }
-          activateOne(player.battleArea[selectedIdx]);
+          const tgt = player.battleArea[selectedIdx];
+          activateOne(tgt);
           ctx.renderAll();
-          callback();
+          _scanActivatedForMain([tgt], callback);
         });
         break;
       }
@@ -8615,6 +8634,12 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback) {
   };
   if (side !== 'player') {
     // AI: 自動的にコスト軽減を採用
+    applyDiscount();
+    return;
+  }
+  if (!hasCost) {
+    // コスト（テイマーのレスト等）が無い = 強制効果なので確認なしで即座に適用
+    // （インフェルモン「手札のディアボロモンに進化するときコスト-1」等）
     applyDiscount();
     return;
   }

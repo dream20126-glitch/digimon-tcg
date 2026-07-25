@@ -2496,7 +2496,7 @@ export function showPlayEffect(card, onDone) {
   nameEl.innerText = card.name;
   const isOption = card.type === 'オプション';
   if (card._costReduction) {
-    costEl.innerText = '-' + card._costReduction + ' で' + (isOption ? '使用！！' : '登場！！');
+    costEl.innerText = (card.playCost - card._costReduction) + ' コストで' + (isOption ? '使用！！' : '登場！！');
     delete card._costReduction;
   } else {
     costEl.innerText = card.playCost + ' コストで' + (isOption ? '使用！！' : '登場！！');
@@ -2536,11 +2536,9 @@ export function showEvolveEffect(cost, baseName, baseCard, evolvedCard, onDone) 
   label.style.fontSize = isLv6 ? '1.1rem' : '0.9rem';
   costEl.style.color = evoColor; costEl.style.textShadow = `0 0 20px ${evoColor}`;
   if (evolvedCard._costReduction) {
-    costEl.innerText = '-' + evolvedCard._costReduction + ' で進化！！';
     delete evolvedCard._costReduction;
-  } else {
-    costEl.innerText = cost + ' コスト進化！！';
   }
+  costEl.innerText = cost + ' コスト進化！！';
 
   imgEl.style.transition = 'none'; imgEl.style.transform = 'scale(1) rotate(0deg)'; imgEl.style.opacity = '1';
   const baseSrc = cardImg(baseCard);
@@ -2589,7 +2587,7 @@ export function showOptionEffect(card, onDone) {
   imgEl.style.animation = 'optionGlow 1s ease-in-out infinite';
   nameEl.innerText = card.name;
   if (card._costReduction) {
-    costEl.innerText = '-' + card._costReduction + ' で使用！';
+    costEl.innerText = (card.playCost - card._costReduction) + ' コストで使用！';
     delete card._costReduction;
   } else {
     costEl.innerText = card.playCost + ' コストで使用！';

@@ -6412,14 +6412,27 @@ function executeRecipeStep(step, ctx, store, callback) {
           // 退化 N: 一番上 (= キャリア) から N 枚破棄。
           // 規約: stack[0] = 直前の進化形 (top), stack[N-1] = デジタマ (bottom)
           // キャリア + stack の先頭 (top 側) (N-1) 枚を破棄し、残ったうち先頭が新キャリア。
-          const totalRemovable = 1 + (tgt.stack ? tgt.stack.length : 0);
-          const actualN = Math.min(dedigN, totalRemovable);
+          // 公式ルール: 退化はLv.3未満にはならない。破棄候補（キャリア→stack先頭→…の順）
+          // を順に見てLv.3以下のカードに達したらそこで打ち切る（そのカードは破棄せず
+          // 結果として残る。退化4等の指定枚数より少なく破棄で終わることがある）。
+          const _dediSeq = [tgt].concat(tgt.stack || []);
+          const _dediWantN = Math.min(dedigN, _dediSeq.length);
           const removed = [];
-          // 1) キャリア自身を破棄（バフ等の transient 状態は失われる）
-          removed.push(tgt);
-          // 2) stack 先頭 (top 側) から N-1 枚破棄
-          for (let k = 1; k < actualN; k++) {
-            if (tgt.stack && tgt.stack.length > 0) removed.push(tgt.stack.shift());
+          for (let k = 0; k < _dediWantN; k++) {
+            const candidate = _dediSeq[k];
+            const lv = parseInt(candidate.level, 10) || 0;
+            if (lv > 0 && lv <= 3) break;
+            removed.push(candidate);
+          }
+          const actualN = removed.length;
+          if (actualN === 0) {
+            ctx.addLog && ctx.addLog('⚠ 「' + tgt.name + '」はLv.3以下のため退化できません');
+            dediNext();
+            return;
+          }
+          // stack から実際に取り除く（removed[0]=キャリア自身、removed[1..]はstack先頭から）
+          for (let m = 1; m < removed.length; m++) {
+            if (tgt.stack && tgt.stack.length > 0) tgt.stack.shift();
           }
           // 3) 残った stack の先頭を新キャリアとして昇格
           let newCarrier = null;

@@ -1366,13 +1366,13 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
     // === コスト: 他のデジモン消滅 ===
     case 'cost_destroy_other': {
-      // 自分側 battleArea から自身（card）以外のデジモンを1体消滅
+      // 自分側 battleArea から自身（ctx.card）以外のデジモンを1体消滅
       // action.condition に cond_name:xxx が指定された場合は名前でフィルタ
       const _cdoNameM = /cond_name:(.+)/.exec(String(action.condition || ''));
       const _cdoNameFilter = _cdoNameM ? _cdoNameM[1].trim() : null;
       const candidates = [];
       player.battleArea.forEach((c, i) => {
-        if (!c || c === card) return;
+        if (!c || c === ctx.card) return;
         if (_cdoNameFilter && String(c.name || '') !== _cdoNameFilter) return;
         candidates.push(i);
       });
@@ -1663,26 +1663,26 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     // 旧コード 'security_effect' も alias として受け付け
     case 'security_effect':
     case 'suppress_opt_security_effect': {
-      card._permEffects = card._permEffects || {};
-      card._permEffects.suppressOptSecurityEffect = true;
-      addBuffDirect(card, 'suppress_opt_security_effect', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
-      ctx.addLog('🚫 「' + card.name + '」: オプションSE無効化');
+      ctx.card._permEffects = ctx.card._permEffects || {};
+      ctx.card._permEffects.suppressOptSecurityEffect = true;
+      addBuffDirect(ctx.card, 'suppress_opt_security_effect', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
+      ctx.addLog('🚫 「' + ctx.card.name + '」: オプションSE無効化');
       ctx.renderAll(); callback(); break;
     }
     // === 進化元枚数でバトル ===
     case 'battle_by_evo_count': {
       // 自身に iceArmor フラグを一時的に立てる（dur_this_turn 標準）
-      card._permEffects = card._permEffects || {};
-      card._permEffects.iceArmor = true;
-      addBuffDirect(card, 'ice_armor', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
-      ctx.addLog('🧊 「' + card.name + '」: 進化元枚数でバトル');
+      ctx.card._permEffects = ctx.card._permEffects || {};
+      ctx.card._permEffects.iceArmor = true;
+      addBuffDirect(ctx.card, 'ice_armor', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);
+      ctx.addLog('🧊 「' + ctx.card.name + '」: 進化元枚数でバトル');
       ctx.renderAll(); callback(); break;
     }
     // === ブロックされない（アクション版: 自身に cantBeBlocked フラグ付与） ===
     // 旧コード 'custom' も alias として受け付け
     case 'custom':
     case 'cant_be_blocked': {
-      const target = card; // 通常 self
+      const target = ctx.card; // 通常 self
       target._permEffects = target._permEffects || {};
       target._permEffects.cantBeBlocked = true;
       addBuffDirect(target, 'cant_be_blocked', 0, (ctx.block && ctx.block.duration ? ctx.block.duration.code : 'dur_this_turn'), ctx);

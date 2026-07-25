@@ -1367,8 +1367,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     // === コスト: 他のデジモン消滅 ===
     case 'cost_destroy_other': {
       // 自分側 battleArea から自身（card）以外のデジモンを1体消滅
-      // step.condition に cond_name:xxx が指定された場合は名前でフィルタ
-      const _cdoNameM = /cond_name:(.+)/.exec(String(step.condition || ''));
+      // action.condition に cond_name:xxx が指定された場合は名前でフィルタ
+      const _cdoNameM = /cond_name:(.+)/.exec(String(action.condition || ''));
       const _cdoNameFilter = _cdoNameM ? _cdoNameM[1].trim() : null;
       const candidates = [];
       player.battleArea.forEach((c, i) => {
@@ -8549,6 +8549,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (actionCode === 'trash_evo_bottom') { actionCode = 'evo_discard_bottom'; }
       // レシピのtarget形式 → runOneAction形式に変換
       const action = { code: actionCode, value: effectiveValue };
+      // 生の条件文字列も引き継ぐ（cost_destroy_other の cond_name:xxx 名前フィルタ等で使用）
+      if (step.condition) action.condition = step.condition;
       // ターン終了時メモリー復元フラグを引き継ぐ（memory_plus の revert_at_turn_end）
       if (step.revert_at_turn_end) action.revert_at_turn_end = true;
       let target = null;

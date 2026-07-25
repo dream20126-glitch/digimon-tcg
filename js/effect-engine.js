@@ -349,7 +349,7 @@ function executeQueueEntry(entry, context, callback) {
     // 進化元由来の効果なら、進化元カードを announce に渡して表示を分かりやすくする
     const evoSourceCard = block && block._recipeCard;
     if (evoSourceCard) {
-      ctx.addLog('⚡ 「' + card.name + '」の進化元【' + evoSourceCard.name + '】の効果発動');
+      ctx.addLog('⚡ 「' + evoSourceCard.name + '」（「' + card.name + '」の進化元）の効果発動');
     } else {
       ctx.addLog('⚡ 「' + card.name + '」の効果発動');
     }
@@ -1052,7 +1052,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
                 const raw = typeof evoCard.recipe === 'string' ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
                 const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
                 const recipe = r.evo_source && r.evo_source.on_active;
-                if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe });
+                if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe, sourceCard: evoCard });
               } catch (_) {}
             });
           }
@@ -1062,7 +1062,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
               const raw = typeof carrier.recipe === 'string' ? carrier.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : carrier.recipe;
               const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
               const recipe = r.on_active;
-              if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe });
+              if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe, sourceCard: carrier });
             } catch (_) {}
           }
         });
@@ -1071,15 +1071,18 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         let ri = 0;
         function nextReaction() {
           if (ri >= reactions.length) { finish(); return; }
-          const { card, recipe } = reactions[ri++];
+          const { card, recipe, sourceCard } = reactions[ri++];
           const rctx = { ...ctx, card };
-          rctx.addLog && rctx.addLog('⚡ 「' + card.name + '」の効果発動');
-          showEffectAnnounce(card, card.effect || '', _side, () => {
+          const _isEvo = sourceCard !== card;
+          rctx.addLog && rctx.addLog(_isEvo
+            ? '⚡ 「' + sourceCard.name + '」（「' + card.name + '」の進化元）の効果発動'
+            : '⚡ 「' + card.name + '」の効果発動');
+          showEffectAnnounce(card, (_isEvo ? sourceCard.evoSourceEffect : card.effect) || '', _side, () => {
             runRecipe(recipe, rctx, () => {
               rctx.renderAll && rctx.renderAll();
               nextReaction();
             });
-          });
+          }, _isEvo ? sourceCard : undefined);
         }
         nextReaction();
       };
@@ -4471,10 +4474,9 @@ function showEffectAnnounce(card, effectText, side, callback, evoSourceCard) {
       }
     }
   }
-  // タイトルに進化元由来の効果であることを明示
-  const titleName = evoSourceCard
-    ? (card.name + '（進化元【' + evoSourceCard.name + '】の効果）')
-    : card.name;
+  // タイトルには実際に効果を持つカードの名前を出す（進化元由来ならその進化元カード名）。
+  // カード自身（キャリア）の名前は分かりにくいとの要望のため、サブラベル側に回す。
+  const titleName = evoSourceCard ? evoSourceCard.name : card.name;
   // オンライン: 自分側 (side='player') の効果のときだけ相手機に送信。
   // 自機の bs.ai 側の効果 (=相手のカード視点) を送るとオーナー機側で「相手の効果」
   // として誤表示されてしまうので、所有者の機械からだけ送る運用に戻す。
@@ -4495,11 +4497,11 @@ function showEffectAnnounce(card, effectText, side, callback, evoSourceCard) {
   nameEl.style.cssText = 'color:' + sideColor + ';font-size:14px;font-weight:bold;margin-bottom:10px;text-shadow:0 0 8px ' + sideColor + ';';
   nameEl.innerText = '⚡ ' + titleName + ' — 効果発動';
   box.appendChild(nameEl);
-  // 進化元由来なら一目で分かるサブラベル
+  // 進化元由来なら、どのカードの進化元として発揮しているか分かるサブラベル
   if (evoSourceCard) {
     const sub = document.createElement('div');
     sub.style.cssText = 'color:#ffaa00;font-size:11px;font-weight:bold;margin-bottom:8px;text-shadow:0 0 4px #ffaa0066;';
-    sub.innerText = '◇ 進化元効果 ◇';
+    sub.innerText = '◇ 「' + card.name + '」の進化元効果 ◇';
     box.appendChild(sub);
   }
 
@@ -5286,7 +5288,7 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
       const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
       const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
       const recipe = r.when_summon;
-      if (Array.isArray(recipe) && _willRun(recipe, card)) reactions.push({ card, recipe });
+      if (Array.isArray(recipe) && _willRun(recipe, card)) reactions.push({ card, recipe, sourceCard: card });
     } catch (_) {}
   });
   // 2) 進化元(evo_source)のwhen_summon（carrier=トップレベルカードが反応・実行対象）
@@ -5298,7 +5300,7 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
         const raw = typeof evoCard.recipe === 'string' ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
         const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
         const recipe = r.evo_source && r.evo_source.when_summon;
-        if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe });
+        if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe, sourceCard: evoCard });
       } catch (_) {}
     });
   });
@@ -5306,10 +5308,13 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
   let idx = 0;
   function nextReaction() {
     if (idx >= reactions.length) { finish(); return; }
-    const { card, recipe } = reactions[idx++];
+    const { card, recipe, sourceCard } = reactions[idx++];
     const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side: summonedSide };
-    ctx.addLog && ctx.addLog('⚡ 「' + card.name + '」の効果発動');
-    showEffectAnnounce(card, card.effect || '', summonedSide, () => {
+    const _isEvo = sourceCard !== card;
+    ctx.addLog && ctx.addLog(_isEvo
+      ? '⚡ 「' + sourceCard.name + '」（「' + card.name + '」の進化元）の効果発動'
+      : '⚡ 「' + card.name + '」の効果発動');
+    showEffectAnnounce(card, (_isEvo ? sourceCard.evoSourceEffect : card.effect) || '', summonedSide, () => {
       runRecipe(recipe, ctx, () => {
         ctx.renderAll && ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode() && summonedSide === 'player' && window._onlineSendCommand) {
@@ -5317,7 +5322,7 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
         }
         nextReaction();
       });
-    });
+    }, _isEvo ? sourceCard : undefined);
   }
   nextReaction();
 }
@@ -5423,7 +5428,11 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
     const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: destroyedSide };
     const effText = (sourceCard !== carrier && sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
       ? sourceCard.evoSourceEffect : (sourceCard.effect || carrier.effect || '');
-    ctx.addLog && ctx.addLog('⚡ 「' + (carrier.name||'?') + '」' + (sourceCard !== carrier ? 'の進化元【'+sourceCard.name+'】' : '') + 'の効果発動');
+    if (sourceCard !== carrier) {
+      ctx.addLog && ctx.addLog('⚡ 「' + sourceCard.name + '」（「' + (carrier.name||'?') + '」の進化元）の効果発動');
+    } else {
+      ctx.addLog && ctx.addLog('⚡ 「' + (carrier.name||'?') + '」の効果発動');
+    }
     showEffectAnnounce(carrier, effText, destroyedSide, () => {
       runRecipe(recipe, ctx, () => {
         ctx.renderAll && ctx.renderAll();

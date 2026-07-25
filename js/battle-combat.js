@@ -1534,14 +1534,44 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
     }
     removeBattleBuffs(battleBuffs);
     if (_atkDp === _defDp) {
-      destroyDef(); destroyAtk(); renderAll();
-      showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
-        showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
-          addLog('💥 両者消滅！'); renderAll();
-          // ターンプレイヤー（player）側の reactions を先 → 'ai' destroyed が reactSide='player'
-          _fireDestroyChain(['ai', 'player'], () => checkPendingTurnEnd(), { ai: def, player: atk });
-        }); });
-      }, '両者消滅', '#ff4444');
+      // 両者消滅の前に、双方独立に when_battle_destroy（消滅回避コスト）を確認する
+      _runWhenBattleDestroy('ai', def, () => {
+        _runWhenBattleDestroy('player', atk, () => {
+          // 両者とも回避せず → 両者消滅
+          destroyDef(); destroyAtk(); renderAll();
+          showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
+            showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
+              addLog('💥 両者消滅！'); renderAll();
+              // ターンプレイヤー（player）側の reactions を先 → 'ai' destroyed が reactSide='player'
+              _fireDestroyChain(['ai', 'player'], () => checkPendingTurnEnd(), { ai: def, player: atk });
+            }); });
+          }, '両者消滅', '#ff4444');
+        }, () => {
+          // atk のみコストを払い消滅回避 → def のみ消滅
+          destroyDef(); renderAll();
+          showBattleResult('撃破！', '#00ff88', '「' + def.name + '」を撃破（自分は消滅回避）', () => {
+            showDestroyEffect(def, () => {
+              addLog('💥 「' + def.name + '」を撃破！'); renderAll();
+              _fireDestroyChain(['ai'], () => checkPendingTurnEnd(), { ai: def });
+            });
+          }, '回避！', '#00fbff');
+        });
+      }, () => {
+        _runWhenBattleDestroy('player', atk, () => {
+          // def のみコストを払い消滅回避 → atk のみ消滅
+          destroyAtk(); renderAll();
+          showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された...', () => {
+            showDestroyEffect(atk, () => {
+              addLog('💥 「' + atk.name + '」が撃破された...'); renderAll();
+              _fireDestroyChain(['player'], () => checkPendingTurnEnd(), { player: atk });
+            });
+          }, '回避！', '#00fbff');
+        }, () => {
+          // 両者ともコストを払い消滅回避
+          renderAll();
+          showBattleResult('回避！', '#00fbff', '両者がコストを払い消滅を回避', () => { renderAll(); checkPendingTurnEnd(); }, '回避！', '#00fbff');
+        });
+      });
     } else if (_atkDp > _defDp) {
       // ≪防壁≫/≪回避≫/≪アーマー解除≫: def 側の消滅回避を試行
       var cancelDef = _tryCancelDestroy(def, bs.ai, false);
@@ -1655,17 +1685,49 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
     }
     removeBattleBuffs(battleBuffs);
     if (_atkDp === _defDp) {
-      bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
-      if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-      bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
-      if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
-      renderAll();
-      showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
-        // ターンプレイヤー（ai）側の reactions を先 → 'player' destroyed が reactSide='ai'
-        _fireDestroyChain(['player', 'ai'], () => {
-          showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => { addLog('💥 両者消滅！'); renderAll(); callback(); }, '両者消滅', '#ff4444');
-        }, { player: def, ai: atk });
-      }); });
+      // 両者消滅の前に、双方独立に when_battle_destroy（消滅回避コスト）を確認する
+      _runWhenBattleDestroy('player', def, () => {
+        _runWhenBattleDestroy('ai', atk, () => {
+          // 両者とも回避せず → 両者消滅
+          bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
+          if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+          bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
+          if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
+          renderAll();
+          showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
+            // ターンプレイヤー（ai）側の reactions を先 → 'player' destroyed が reactSide='ai'
+            _fireDestroyChain(['player', 'ai'], () => {
+              showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => { addLog('💥 両者消滅！'); renderAll(); callback(); }, '両者消滅', '#ff4444');
+            }, { player: def, ai: atk });
+          }); });
+        }, () => {
+          // atk のみコストを払い消滅回避 → def のみ消滅
+          bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
+          if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
+          renderAll();
+          showDestroyEffect(def, () => {
+            _fireDestroyChain(['player'], () => {
+              showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された（相手は消滅回避）', () => { addLog('💥 「' + def.name + '」が撃破された'); renderAll(); callback(); }, '回避！', '#00fbff');
+            }, { player: def });
+          });
+        });
+      }, () => {
+        _runWhenBattleDestroy('ai', atk, () => {
+          // def のみコストを払い消滅回避 → atk のみ消滅
+          bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
+          if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+          renderAll();
+          showDestroyEffect(atk, () => {
+            _fireDestroyChain(['ai'], () => {
+              showBattleResult('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => { addLog('💥 「' + atk.name + '」を撃破！'); renderAll(); callback(); }, 'Lost...', '#ff4444');
+            }, { ai: atk });
+          });
+        }, () => {
+          // 両者ともコストを払い消滅回避
+          renderAll();
+          showBattleResult('回避！', '#00fbff', '両者がコストを払い消滅を回避', () => { renderAll(); callback(); }, '回避！', '#00fbff');
+        });
+      });
     } else if (_atkDp > _defDp) {
       // ≪防壁≫/≪回避≫/≪アーマー解除≫: プレイヤー側 def の消滅回避を試行
       var cancelPlayerDef = _tryCancelDestroy(def, bs.player, false);

@@ -5644,7 +5644,13 @@ function _buildBaseCtx(ctxBase, bs) {
   const safeLog = (msg) => { try { (ctxBase && ctxBase.addLog) ? ctxBase.addLog(msg) : console.log(msg); } catch(_) {} };
   const safeRender = () => { try { (ctxBase && ctxBase.renderAll) ? ctxBase.renderAll() : (window.renderAll && window.renderAll()); } catch(_) {} };
   const safeMem = () => { try { (ctxBase && ctxBase.updateMemGauge) ? ctxBase.updateMemGauge() : (window.updateMemGauge && window.updateMemGauge()); } catch(_) {} };
-  return { bs, addLog: safeLog, renderAll: safeRender, updateMemGauge: safeMem };
+  const base = { bs, addLog: safeLog, renderAll: safeRender, updateMemGauge: safeMem };
+  // 演出コールバック（showDrawEffect等）は window には公開されていないため、
+  // 呼び出し元の ctxBase（makeEffectContext由来）から引き継ぐ
+  ['showDrawEffect', 'showPlayEffect', 'showEvolveEffect', 'showDestroyEffect', 'showSecurityCheck', 'showBattleResult', 'doDraw'].forEach((key) => {
+    if (ctxBase && typeof ctxBase[key] === 'function') base[key] = ctxBase[key];
+  });
+  return base;
 }
 
 // step.trigger_conditions[] を評価（イベント発火元カードに対して AND）

@@ -78,6 +78,12 @@ function _collectActiveKeywords(card) {
       }
     });
   }
+  // 進化元由来の「条件成立時のみ」のキーワード付与（グレイモン「再起動を持つ間
+  // ジャミングを得る」等）。カード自身が常に持つ静的passiveと違い、今有効かどうか
+  // カード詳細だけでは分からないためバッジ表示する。
+  if (card._evoGrantedKeywords) {
+    card._evoGrantedKeywords.forEach(kw => set.add(kw));
+  }
   return [...set];
 }
 

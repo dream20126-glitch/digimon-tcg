@@ -3294,6 +3294,11 @@ export function applyPermanentEffects(bs, side, context) {
     if (!card) return;
     if (card.buffs) { card.buffs = card.buffs.filter(b => b.duration !== 'permanent'); recalcDp(card); }
     if (card._permEffects) card._permEffects = {};
+    if (card._evoGrantedKeywords) card._evoGrantedKeywords = null;
+    // レシピ由来のcant_attack/cant_block（during_own_turn等）は毎回③④で再評価するため
+    // 一旦クリアする（バフ由来のcant_attack/cant_blockが別にあれば維持）
+    if (!card.buffs || !card.buffs.some(b => ['cant_attack_block', 'cant_attack'].includes(b.type))) card.cantAttack = false;
+    if (!card.buffs || !card.buffs.some(b => ['cant_attack_block', 'cant_block'].includes(b.type))) card.cantBlock = false;
   });
   // 継続的（during_X）由来のセキュリティバフもクリア（再評価のため）
   // source='recipe_perm_security' / 'evo_recipe_perm_security' は applyPermanentEffects で毎回再構築される
@@ -3413,6 +3418,10 @@ export function applyPermanentEffects(bs, side, context) {
           } else if (step.action === 'security_attack_plus') {
             if (!card._permEffects) card._permEffects = {};
             card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (value || 1);
+          } else if (step.action === 'cant_attack' || step.action === 'cant_block' || step.action === 'cant_attack_block') {
+            // ガードロモン等「【自分のターン】このデジモンはアタックできない」
+            if (step.action !== 'cant_block') card.cantAttack = true;
+            if (step.action !== 'cant_attack') card.cantBlock = true;
           }
         });
       });
@@ -3558,6 +3567,13 @@ export function applyPermanentEffects(bs, side, context) {
               else if (kw === 'evade')          { card._permEffects.evade = true; }
               else if (kw === 'armor_break')    { card._permEffects.armor_break = true; }
               else if (kw === 'indomitable')    { card._permEffects.indomitable = true; }
+              // 進化元由来の「条件成立時のみ」の付与はバッジ表示対象として記録する
+              // （カード自身が常に持つ静的passiveと違い、カード詳細だけでは今有効かどうか
+              //   分からないため。グレイモン「再起動を持つ間ジャミングを得る」等）
+              if (kw !== 'security_attack_plus' && !/Sアタック/.test(String(kw))) {
+                if (!card._evoGrantedKeywords) card._evoGrantedKeywords = new Set();
+                card._evoGrantedKeywords.add(kw);
+              }
             }
           });
         });
@@ -3640,15 +3656,21 @@ function parseRecipeCondition(condStr) {
     result = [{code: 'cond_exists'}];
     if (parts.length >= 2) {
       const nested = parts.slice(1).join(':');
-      const nestedParts = nested.split(':');
-      // 色名等の非数値をparseIntで壊さないよう、数値の時だけ変換する
-      // （例: "cond_exists:cond_color:紫" の "紫" がparseIntでNaN化しないように）
-      let nv = nestedParts[1];
-      if (nv !== undefined) {
-        const nn = parseInt(nv, 10);
-        if (!isNaN(nn) && String(nn) === String(nv).trim()) nv = nn;
+      if (!nested.startsWith('cond_')) {
+        // "cond_exists:青@own_tamer" のように色名のみが続く場合は cond_color として扱う
+        // （nestedParts[0]を条件コードとして解釈すると色名がそのままcodeになってしまうため）
+        result.push({code: 'cond_color', value: nested});
+      } else {
+        const nestedParts = nested.split(':');
+        // 色名等の非数値をparseIntで壊さないよう、数値の時だけ変換する
+        // （例: "cond_exists:cond_color:紫" の "紫" がparseIntでNaN化しないように）
+        let nv = nestedParts[1];
+        if (nv !== undefined) {
+          const nn = parseInt(nv, 10);
+          if (!isNaN(nn) && String(nn) === String(nv).trim()) nv = nn;
+        }
+        result.push({code: nestedParts[0], value: nv});
       }
-      result.push({code: nestedParts[0], value: nv});
     }
   } else {
     // "cond_lv_le:5" → [{code:'cond_lv_le', value:5}]
@@ -4021,14 +4043,15 @@ function checkConditions(conditions, card, bs, side) {
         // （例: ウィザーモン「黄の自分のデジモンがいる間」= cond_exists@own）。
         if (!bs) break; // bsがない場合はスキップ（後方互換）
         const _existsSubj = String(cond.subject || 'opp').toLowerCase();
-        const _existsOwn = _existsSubj === 'own' || _existsSubj === 'own_any' || _existsSubj === 'own_card';
+        const _existsOwn = _existsSubj === 'own' || _existsSubj === 'own_any' || _existsSubj === 'own_card' || _existsSubj.startsWith('own_');
+        const _existsWantTamer = _existsSubj.includes('tamer');
         const oppSide = _existsOwn ? side : (side === 'player' ? 'ai' : 'player');
-        const oppArea = bs[oppSide].battleArea;
+        const oppArea = _existsWantTamer ? (bs[oppSide].tamerArea || []) : bs[oppSide].battleArea;
         // 同じconditions内の他の条件（cond_no_evo, cond_dp_le等）を相手カードに適用
         const otherConds = conditions.filter(c => c.code !== 'cond_exists' && c.code !== 'per_count');
         const hasMatch = oppArea.some(c => {
           if (!c) return false;
-          if (c.type !== 'デジモン') return false; // デジモンのみ対象
+          if (!_existsWantTamer && c.type !== 'デジモン') return false; // デジモンのみ対象（テイマー参照時は除く）
           if (otherConds.length === 0) return true; // 条件なし＝相手デジモンがいればOK
           return otherConds.every(oc => {
             switch (oc.code) {
@@ -5167,6 +5190,83 @@ export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) 
       runRecipe(recipe, ctx, () => {
         ctx.renderAll && ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode() && restedSide === 'player' && window._onlineSendCommand) {
+          window._onlineSendCommand({ type: 'fx_effectClose' });
+        }
+        nextReaction();
+      });
+    });
+  }
+  nextReaction();
+}
+
+// ===== when_summon グローバル発火 =====
+// 自分側にデジモンが登場（トークン等）したとき、同じ側のトップレベルカード自身、
+// および他カードの進化元(evo_source)のwhen_summonが反応する。
+// ケラモン(BT2-053)/クリサリモン(BT2-059)「このデジモンと同じ名称の他の自分の
+// デジモンが登場したとき」用（進化元テキストなので evo_source 側で判定・実行）。
+// summonedSide: 登場したデジモンがいる側（反応するのも同じ側）
+// summonedCard: 登場したデジモン本体（trigger_conditions の評価対象）
+export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, done) {
+  const finish = () => { try { done && done(); } catch(_) {} };
+  if (!bs || !summonedCard) { finish(); return; }
+  const reactPlayer = bs[summonedSide];
+  if (!reactPlayer) { finish(); return; }
+  const topCards = [...(reactPlayer.battleArea || []), ...(reactPlayer.tamerArea || [])].filter(c => c);
+  const _willRun = (recipe, reactorCard) => recipe.some(step => {
+    if (!step) return false;
+    if (Array.isArray(step.trigger_conditions) && step.trigger_conditions.length > 0) {
+      const ok = step.trigger_conditions.every((cs) => {
+        const conds = parseRecipeCondition(String(cs));
+        return checkConditions(conds, summonedCard, bs, summonedSide);
+      });
+      if (!ok) return false;
+    }
+    if (step.condition) {
+      const conds = parseRecipeCondition(step.condition);
+      if (!checkConditions(conds, reactorCard, bs, summonedSide)) return false;
+    }
+    if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
+      const sourceId = reactorCard.cardNo || reactorCard.name || 'unknown';
+      const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
+      if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
+    }
+    return true;
+  });
+  const reactions = [];
+  // 1) トップレベルカード自身の when_summon
+  topCards.forEach(card => {
+    if (card === summonedCard || !card.recipe) return;
+    try {
+      const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
+      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const recipe = r.when_summon;
+      if (Array.isArray(recipe) && _willRun(recipe, card)) reactions.push({ card, recipe });
+    } catch (_) {}
+  });
+  // 2) 進化元(evo_source)のwhen_summon（carrier=トップレベルカードが反応・実行対象）
+  topCards.forEach(carrier => {
+    if (!Array.isArray(carrier.stack)) return;
+    carrier.stack.forEach(evoCard => {
+      if (!evoCard || !evoCard.recipe) return;
+      try {
+        const raw = typeof evoCard.recipe === 'string' ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
+        const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        const recipe = r.evo_source && r.evo_source.when_summon;
+        if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe });
+      } catch (_) {}
+    });
+  });
+  if (reactions.length === 0) { finish(); return; }
+  let idx = 0;
+  function nextReaction() {
+    if (idx >= reactions.length) { finish(); return; }
+    const { card, recipe } = reactions[idx++];
+    const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side: summonedSide };
+    ctx.addLog && ctx.addLog('⚡ 「' + card.name + '」の効果発動');
+    showEffectAnnounce(card, card.effect || '', summonedSide, () => {
+      runRecipe(recipe, ctx, () => {
+        ctx.renderAll && ctx.renderAll();
+        if (window._isOnlineMode && window._isOnlineMode() && summonedSide === 'player' && window._onlineSendCommand) {
           window._onlineSendCommand({ type: 'fx_effectClose' });
         }
         nextReaction();
@@ -6996,7 +7096,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
         try { window._onlineSendStateSync(); } catch (_) {}
       }
-      callback();
+      try {
+        fireWhenSummonTriggers(token, ctx.side, ctx.bs, ctx, () => callback());
+      } catch (_) { callback(); }
       break;
     }
     // === レストチェイン: 相手1体をレスト → そのDPが閾値以下なら任意でもう1体（閾値以下）===

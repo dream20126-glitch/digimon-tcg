@@ -130,6 +130,11 @@ function _buildGrantBadges(card) {
   }
   if (dpMod !== 0) items.push({ label: 'DP' + (dpMod > 0 ? '+' : '') + dpMod, color: dpMod > 0 ? '#00aa55' : '#cc3333' });
   if (saMod !== 0) items.push({ label: 'Sアタック' + (saMod > 0 ? '+' : '') + saMod, color: saMod > 0 ? '#cc2222' : '#2266cc' });
+  // 進化元由来の「条件成立時のみ」のキーワード付与（グレイモン「再起動を持つ間
+  // ジャミングを得る」等）もここに含める（盤面バッジと同じ扱い）
+  if (card._evoGrantedKeywords) {
+    card._evoGrantedKeywords.forEach((code) => kwSet.add(code));
+  }
   kwSet.forEach((code) => {
     items.push({ label: KEYWORD_DISPLAY_NAMES[code] || code, color: _keywordColor(code) });
   });

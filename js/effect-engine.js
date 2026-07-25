@@ -8155,6 +8155,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         if (_rdCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
         const _rdTop = step.position === 'top' || step.deck_top;
+        // executeRecipeStep では opponentRowSide / uiColor が未定義のため、ここで構築する
+        const _rdRowId = ctx.side === 'player' ? 'ai' : 'pl';
+        const _rdColor = getUIColor(step.action, '#ff4444');
         const _doReturnDeck = (idx) => {
           const c = opponent.battleArea[idx];
           if (!c) return;
@@ -8170,7 +8173,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           _doReturnDeck(ctx._forceTargetIdx ?? _rdCands[0]);
           ctx.renderAll(); callback(); break;
         }
-        showTargetSelection(opponentRowSide, _rdCands, null, uiColor, (selectedIdx) => {
+        showTargetSelection(_rdRowId, _rdCands, null, _rdColor, (selectedIdx) => {
           if (selectedIdx !== null) _doReturnDeck(selectedIdx);
           ctx.renderAll();
           callback();

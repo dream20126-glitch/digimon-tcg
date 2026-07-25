@@ -962,36 +962,46 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       if(bounceTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
       const bounceColor = uiColor;
+      // 順番に1体ずつ doBounce する（when_battle_destroy 等の非同期な離脱回避チェックがあるため直列実行）
+      const _doBounceSeq = (idxs, done) => {
+        let bi = 0;
+        const nextBounce = () => {
+          if (bi >= idxs.length) { done(); return; }
+          const idx = idxs[bi++];
+          const c = opponent.battleArea[idx];
+          if (!c) { nextBounce(); return; }
+          sendEffectResult(c, 'bounce', ctx);
+          doBounce(opponent, idx, ctx, nextBounce);
+        };
+        nextBounce();
+      };
       // 複数対象（opponent:N / opponent:up_to_N）
       const bounceNeed = (defaultTarget && defaultTarget.count) || 1;
       const bounceUpTo = !!(defaultTarget && defaultTarget.upTo);
       if (bounceNeed > 1 || bounceUpTo) {
         if (effectiveSide === 'ai') {
           const picks = bounceTargets.slice(0, bounceNeed);
-          picks.forEach(idx => doBounce(opponent, idx, ctx));
-          ctx.renderAll(); callback(); break;
+          _doBounceSeq(picks, () => { ctx.renderAll(); callback(); });
+          break;
         }
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
         pickUpToNTargets(rowId, bounceTargets, bounceNeed, bounceColor, (idxs) => {
-          idxs.forEach(idx => {
-            sendEffectResult(opponent.battleArea[idx], 'bounce', ctx);
-            doBounce(opponent, idx, ctx);
-          });
-          callback();
+          _doBounceSeq(idxs, callback);
         });
         break;
       }
       if(effectiveSide === 'ai') {
-        doBounce(opponent, ctx._forceTargetIdx ?? bounceTargets[0], ctx);
-        callback(); break;
+        doBounce(opponent, ctx._forceTargetIdx ?? bounceTargets[0], ctx, callback);
+        break;
       }
       ctx.addLog('🎯 手札に戻す対象を選んでください' + (onlySuspended ? '（レスト状態のみ）' : ''));
       showTargetSelection(opponentRowSide, bounceTargets, null, bounceColor, (selectedIdx) => {
         if(selectedIdx !== null) {
           sendEffectResult(opponent.battleArea[selectedIdx], 'bounce', ctx);
-          doBounce(opponent, selectedIdx, ctx);
+          doBounce(opponent, selectedIdx, ctx, callback);
+        } else {
+          callback();
         }
-        callback();
       });
       break;
     }
@@ -1831,6 +1841,22 @@ function runOneAction(action, defaultTarget, ctx, callback) {
 
 // ===== ヘルパー関数 =====
 
+// カードがバトルエリアを離れる（消滅・手札やデッキに戻る等、退化を除く）直前に呼ぶ。
+// when_battle_destroy レシピ（他カード消滅等のコストを払うことで離脱を回避する効果）を評価する。
+// 例: ディアボロモン「他の自分のディアボロモン1体を消滅させることで、このデジモンは消滅（離脱）しない」
+// レシピが無い/回避不成立なら onProceed、コストを払い回避成立なら onCancel を呼ぶ。
+function _checkLeaveBattleAreaPrevention(card, ownerSide, ctx, onProceed, onCancel) {
+  const recipeSteps = card && getRecipeForTrigger(card, 'when_battle_destroy');
+  if (!recipeSteps) { onProceed(); return; }
+  const localCtx = { ..._buildBaseCtx(ctx, ctx.bs), card, side: ownerSide };
+  runRecipe(recipeSteps, localCtx, () => {
+    const prevented = !!(card.buffs && card.buffs.some(b =>
+      b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_battle_destroy'
+    ));
+    if (prevented) onCancel(); else onProceed();
+  });
+}
+
 function doDestroy(targetSide, slotIdx, ctx, callback) {
   const destroyed = targetSide.battleArea[slotIdx];
   if (!destroyed) { callback && callback(); return; }
@@ -1866,46 +1892,58 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       return;
     }
   }
-  targetSide.battleArea[slotIdx] = null;
-  targetSide.trash.push(destroyed);
-  if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));
-  ctx.addLog('💀 「' + destroyed.name + '」を消滅');
-  // オンライン: 相手のカードを消滅させた場合、直接通知 + 復活防止マーク
-  if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
-    window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'destroy' });
-    if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
-  }
-  ctx.renderAll();
-  // on_destroy グローバル発火（消滅した側を引数に）
-  // targetSide オブジェクトから 'player' / 'ai' を逆引き
-  const destroyedSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-  // 共通の消滅トリガーチェーン
-  fireDestroyChain(destroyed, destroyedSideName, ctx.bs, ctx, callback);
+  const destroyedOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
+  _checkLeaveBattleAreaPrevention(destroyed, destroyedOwnerSide, ctx, () => {
+    targetSide.battleArea[slotIdx] = null;
+    targetSide.trash.push(destroyed);
+    if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));
+    ctx.addLog('💀 「' + destroyed.name + '」を消滅');
+    // オンライン: 相手のカードを消滅させた場合、直接通知 + 復活防止マーク
+    if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+      window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'destroy' });
+      if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
+    }
+    ctx.renderAll();
+    // on_destroy グローバル発火（消滅した側を引数に）・共通の消滅トリガーチェーン
+    fireDestroyChain(destroyed, destroyedOwnerSide, ctx.bs, ctx, callback);
+  }, () => {
+    // コストを払い離脱を回避（消滅しない）
+    ctx.renderAll && ctx.renderAll();
+    callback && callback();
+  });
 }
 
-function doBounce(targetSide, slotIdx, ctx) {
+function doBounce(targetSide, slotIdx, ctx, callback) {
   const bounced = targetSide.battleArea[slotIdx];
-  if (!bounced) return;
-  targetSide.battleArea[slotIdx] = null;
-  // 手札に戻る = 一時的な状態（バフ/DP修整/永続効果/レスト等）は全てリセットされる
-  // （八神太一のDP+1000等が手札に戻った後も残ってしまう不具合の修正）
-  bounced.buffs = [];
-  bounced.dpModifier = 0;
-  if (bounced.baseDp == null) bounced.baseDp = parseInt(bounced.dp) || 0;
-  bounced.dp = bounced.baseDp;
-  bounced._permEffects = {};
-  bounced.suspended = false;
-  bounced.summonedThisTurn = false;
-  targetSide.hand.push(bounced);
-  if (bounced.stack) bounced.stack.forEach(s => targetSide.trash.push(s));
-  bounced.stack = [];
-  ctx.addLog('↩ 「' + bounced.name + '」を手札に戻した');
-  // オンライン: 相手のカードをバウンスした場合、直接通知 + 復活防止マーク
-  if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
-    window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'bounce' });
-    if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
-  }
-  ctx.renderAll();
+  if (!bounced) { callback && callback(); return; }
+  const bouncedOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
+  _checkLeaveBattleAreaPrevention(bounced, bouncedOwnerSide, ctx, () => {
+    targetSide.battleArea[slotIdx] = null;
+    // 手札に戻る = 一時的な状態（バフ/DP修整/永続効果/レスト等）は全てリセットされる
+    // （八神太一のDP+1000等が手札に戻った後も残ってしまう不具合の修正）
+    bounced.buffs = [];
+    bounced.dpModifier = 0;
+    if (bounced.baseDp == null) bounced.baseDp = parseInt(bounced.dp) || 0;
+    bounced.dp = bounced.baseDp;
+    bounced._permEffects = {};
+    bounced.suspended = false;
+    bounced.summonedThisTurn = false;
+    targetSide.hand.push(bounced);
+    if (bounced.stack) bounced.stack.forEach(s => targetSide.trash.push(s));
+    bounced.stack = [];
+    ctx.addLog('↩ 「' + bounced.name + '」を手札に戻した');
+    // オンライン: 相手のカードをバウンスした場合、直接通知 + 復活防止マーク
+    if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+      window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'bounce' });
+      if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
+    }
+    ctx.renderAll();
+    callback && callback();
+  }, () => {
+    // コストを払い離脱を回避（手札に戻らない）
+    ctx.renderAll && ctx.renderAll();
+    callback && callback();
+  });
 }
 
 // ===== 対象選択UI =====
@@ -8165,25 +8203,35 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         if (_rdCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
         const _rdTop = step.position === 'top' || step.deck_top;
-        const _doReturnDeck = (idx) => {
+        const _doReturnDeck = (idx, done) => {
           const c = opponent.battleArea[idx];
-          if (!c) return;
-          opponent.battleArea[idx] = null;
-          if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
-          if (_rdTop) opponent.deck.unshift(c); else opponent.deck.push(c);
-          ctx.addLog('🔄 「' + c.name + '」を持ち主のデッキの' + (_rdTop ? '上' : '下') + 'に戻す');
-          if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
-            window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'return_deck' });
-          }
+          if (!c) { done(); return; }
+          const _rdOwnerSide = _rdCondSide;
+          _checkLeaveBattleAreaPrevention(c, _rdOwnerSide, ctx, () => {
+            opponent.battleArea[idx] = null;
+            if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
+            if (_rdTop) opponent.deck.unshift(c); else opponent.deck.push(c);
+            ctx.addLog('🔄 「' + c.name + '」を持ち主のデッキの' + (_rdTop ? '上' : '下') + 'に戻す');
+            if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+              window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'return_deck' });
+            }
+            done();
+          }, () => {
+            // コストを払い離脱を回避（デッキに戻らない）
+            done();
+          });
         };
         if (effectiveSide === 'ai') {
-          _doReturnDeck(ctx._forceTargetIdx ?? _rdCands[0]);
-          ctx.renderAll(); callback(); break;
+          _doReturnDeck(ctx._forceTargetIdx ?? _rdCands[0], () => { ctx.renderAll(); callback(); });
+          break;
         }
         showTargetSelection(opponentRowSide, _rdCands, null, uiColor, (selectedIdx) => {
-          if (selectedIdx !== null) _doReturnDeck(selectedIdx);
-          ctx.renderAll();
-          callback();
+          if (selectedIdx !== null) {
+            _doReturnDeck(selectedIdx, () => { ctx.renderAll(); callback(); });
+          } else {
+            ctx.renderAll();
+            callback();
+          }
         });
         break;
       }

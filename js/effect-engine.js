@@ -1942,6 +1942,13 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
   const slots = row.querySelectorAll('.b-slot');
   const color = borderColor || '#ff4444';
 
+  // バトル演出中の黒背景（_combat-backdrop, z-index:46999）が盤面より前面にあり、
+  // その裏で対象選択が必要になるケース（例: ディアボロモンのwhen_battle_destroy）で
+  // 対象カードが見えず選べなくなるため、選択中だけ一時的に隠す
+  const _combatBackdrop = document.getElementById('_combat-backdrop');
+  const _combatBackdropWasVisible = !!(_combatBackdrop && _combatBackdrop.style.display !== 'none');
+  if (_combatBackdropWasVisible) _combatBackdrop.style.display = 'none';
+
   // オンライン: 相手画面に「対象選択中」専用ポップアップを表示
   if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
     try { window._onlineSendCommand({ type: 'fx_targetSelectStart' }); } catch (_) {}
@@ -2112,6 +2119,7 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
       window._onlineSendCommand({ type: 'fx_targetSelectEnd' });
       window._onlineSendCommand({ type: 'fx_effectClose' });
     }
+    if (_combatBackdropWasVisible) _combatBackdrop.style.display = 'block';
     if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl);
     validIndices.forEach(idx => {
       const slot = slots[idx];

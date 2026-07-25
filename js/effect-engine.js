@@ -1015,22 +1015,82 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           }
         }
       };
+      // メインフェイズ中にアクティブになったカードの on_active（進化元）反応。
+      // チビモン/ブイモン等「このデジモンがメインフェイズでアクティブになったとき」用。
+      // ※ scanTriggers/processQueue（グローバル共有キュー）は使わない。この「active」
+      //   ステップ自体が他の効果（セキュリティ効果等）の実行中に呼ばれることがあり、
+      //   共有キューを入れ子で操作すると外側の処理と競合してデッドロックする
+      //   （アトミック・レイのセキュリティ効果が固まる不具合の原因だった）。
+      const _fireOnActiveMainReactions = (activated, done) => {
+        if (!activated || activated.length === 0) { done(); return; }
+        const _side = ctx.side;
+        const _bs = ctx.bs;
+        if (_bs) _bs._onActivePhase = 'main';
+        const _willRun = (recipe, reactorCard) => recipe.some(step => {
+          if (!step) return false;
+          if (Array.isArray(step.trigger_conditions) && step.trigger_conditions.length > 0) {
+            const ok = step.trigger_conditions.every((cs) => checkConditions(parseRecipeCondition(String(cs)), reactorCard, _bs, _side));
+            if (!ok) return false;
+          }
+          if (step.condition) {
+            if (!checkConditions(parseRecipeCondition(step.condition), reactorCard, _bs, _side)) return false;
+          }
+          if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
+            const sourceId = reactorCard.cardNo || reactorCard.name || 'unknown';
+            const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
+            if (_bs._usedLimits && _bs._usedLimits[limitKey]) return false;
+          }
+          return true;
+        });
+        const reactions = [];
+        activated.forEach(carrier => {
+          // 進化元(evo_source)のon_active
+          if (Array.isArray(carrier.stack)) {
+            carrier.stack.forEach(evoCard => {
+              if (!evoCard || !evoCard.recipe) return;
+              try {
+                const raw = typeof evoCard.recipe === 'string' ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
+                const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                const recipe = r.evo_source && r.evo_source.on_active;
+                if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe });
+              } catch (_) {}
+            });
+          }
+          // カード自身のトップレベルon_active（他カードのactive経由でも一応拾う）
+          if (carrier.recipe && carrier !== ctx.card) {
+            try {
+              const raw = typeof carrier.recipe === 'string' ? carrier.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : carrier.recipe;
+              const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+              const recipe = r.on_active;
+              if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe });
+            } catch (_) {}
+          }
+        });
+        const finish = () => { if (_bs) delete _bs._onActivePhase; done(); };
+        if (reactions.length === 0) { finish(); return; }
+        let ri = 0;
+        function nextReaction() {
+          if (ri >= reactions.length) { finish(); return; }
+          const { card, recipe } = reactions[ri++];
+          const rctx = { ...ctx, card };
+          rctx.addLog && rctx.addLog('⚡ 「' + card.name + '」の効果発動');
+          showEffectAnnounce(card, card.effect || '', _side, () => {
+            runRecipe(recipe, rctx, () => {
+              rctx.renderAll && rctx.renderAll();
+              nextReaction();
+            });
+          });
+        }
+        nextReaction();
+      };
       if (tCode === 'target_self') {
         const _activeSelfWasSuspended = ctx.card && ctx.card.suspended;
         if (ctx.card) activateOne(ctx.card);
+        ctx.renderAll();
         if (_activeSelfWasSuspended) {
-          if (ctx.bs) ctx.bs._onActivePhase = 'main';
-          scanTriggers('on_active', ctx.card, ctx.side, ctx);
-          ctx.renderAll();
-          // _onActivePhase は processQueue が実際にキュー内容(cond_main等)を
-          // 評価し終えるまで保持しないと判定に間に合わない（スキャン=キュー登録のみで
-          // 判定は processQueue 内で行われるため）
-          processQueue(ctx, () => {
-            if (ctx.bs) delete ctx.bs._onActivePhase;
-            callback();
-          });
+          _fireOnActiveMainReactions([ctx.card], callback);
         } else {
-          ctx.renderAll(); callback();
+          callback();
         }
         break;
       }
@@ -1038,27 +1098,13 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const _activeConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
       const _activeCondSide = ctx.side;
       const _activeCondPass = (c) => _activeConds.length === 0 || checkConditions(_activeConds, c, ctx.bs, _activeCondSide);
-      // 他のデジモンをアクティブにするケース（target_own/target_all_own）でも、
-      // target:"self"の時と同じくメインフェイズでの on_active トリガーをスキャンする
-      // （チビモン/ブイモン等「このデジモンがメインフェイズでアクティブになったとき」）
-      const _scanActivatedForMain = (activated, done) => {
-        if (activated.length === 0) { done(); return; }
-        if (ctx.bs) ctx.bs._onActivePhase = 'main';
-        activated.forEach(c => scanTriggers('on_active', c, ctx.side, ctx));
-        // _onActivePhase は processQueue が cond_main 等を評価し終えるまで保持する
-        // （target_self側と同じ理由。スキャン=キュー登録のみで判定はprocessQueue内）
-        processQueue(ctx, () => {
-          if (ctx.bs) delete ctx.bs._onActivePhase;
-          done();
-        });
-      };
       if (tCode === 'target_all_own') {
         const activated = [];
         (player.battleArea || []).forEach(c => {
           if (c && c.suspended && _activeCondPass(c)) { activated.push(c); activateOne(c); }
         });
         ctx.renderAll();
-        _scanActivatedForMain(activated, callback);
+        _fireOnActiveMainReactions(activated, callback);
         break;
       }
       if (tCode === 'target_own') {
@@ -1073,7 +1119,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           const tgt = player.battleArea[valid[0]];
           activateOne(tgt);
           ctx.renderAll();
-          _scanActivatedForMain([tgt], callback);
+          _fireOnActiveMainReactions([tgt], callback);
           break;
         }
         const rowId = ctx.side === 'player' ? 'pl' : 'ai';
@@ -1082,7 +1128,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           const tgt = player.battleArea[selectedIdx];
           activateOne(tgt);
           ctx.renderAll();
-          _scanActivatedForMain([tgt], callback);
+          _fireOnActiveMainReactions([tgt], callback);
         });
         break;
       }

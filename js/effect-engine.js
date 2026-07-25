@@ -1021,9 +1021,14 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (_activeSelfWasSuspended) {
           if (ctx.bs) ctx.bs._onActivePhase = 'main';
           scanTriggers('on_active', ctx.card, ctx.side, ctx);
-          if (ctx.bs) delete ctx.bs._onActivePhase;
           ctx.renderAll();
-          processQueue(ctx, callback);
+          // _onActivePhase は processQueue が実際にキュー内容(cond_main等)を
+          // 評価し終えるまで保持しないと判定に間に合わない（スキャン=キュー登録のみで
+          // 判定は processQueue 内で行われるため）
+          processQueue(ctx, () => {
+            if (ctx.bs) delete ctx.bs._onActivePhase;
+            callback();
+          });
         } else {
           ctx.renderAll(); callback();
         }
@@ -1040,8 +1045,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (activated.length === 0) { done(); return; }
         if (ctx.bs) ctx.bs._onActivePhase = 'main';
         activated.forEach(c => scanTriggers('on_active', c, ctx.side, ctx));
-        if (ctx.bs) delete ctx.bs._onActivePhase;
-        processQueue(ctx, done);
+        // _onActivePhase は processQueue が cond_main 等を評価し終えるまで保持する
+        // （target_self側と同じ理由。スキャン=キュー登録のみで判定はprocessQueue内）
+        processQueue(ctx, () => {
+          if (ctx.bs) delete ctx.bs._onActivePhase;
+          done();
+        });
       };
       if (tCode === 'target_all_own') {
         const activated = [];
@@ -1498,7 +1507,16 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const restTarget = defaultTarget || { code: 'target_opponent' };
       // 対象が自分自身の場合
       if (restTarget.code === 'target_self') {
-        if(ctx.card) { ctx.card.suspended = true; ctx.addLog('💤 「' + ctx.card.name + '」をレスト'); }
+        if (ctx.card) {
+          ctx.card.suspended = true;
+          ctx.addLog('💤 「' + ctx.card.name + '」をレスト');
+          const _restedCard = ctx.card;
+          ctx.renderAll();
+          try {
+            fireWhenRestTriggers(ctx.side, _restedCard, ctx.bs, ctx, () => callback());
+          } catch (_) { callback(); }
+          break;
+        }
         ctx.renderAll(); callback(); break;
       }
       // 対象が相手デジモンの場合（condition があれば対象フィルタとして適用）
@@ -5079,6 +5097,76 @@ export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
       runRecipe(recipe, ctx, () => {
         ctx.renderAll && ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
+          window._onlineSendCommand({ type: 'fx_effectClose' });
+        }
+        nextReaction();
+      });
+    });
+  }
+  nextReaction();
+}
+
+// ===== when_rest グローバル発火 =====
+// 自分側のカード（テイマー等）がレストしたとき、同じ側の他カードが反応する。
+// アルフォースブイドラモン(BT2-032)「青の自分のテイマーがレストしたとき、
+// このデジモンをアクティブにする」用。when_opp_rest（相手側が反応）とは逆に、
+// レストしたカードと同じ側が反応する。
+// restedSide: レストしたカードがいる側（反応するのも同じ側）
+// restedCard: レストしたカード本体（trigger_conditions の評価対象）
+export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) {
+  const finish = () => { try { done && done(); } catch(_) {} };
+  if (!bs || !restedCard) { finish(); return; }
+  const reactPlayer = bs[restedSide];
+  if (!reactPlayer) { finish(); return; }
+  const cards = [...(reactPlayer.battleArea || []), ...(reactPlayer.tamerArea || [])].filter(c => c);
+  const reactions = [];
+  cards.forEach(card => {
+    if (!card.recipe) return;
+    try {
+      const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
+      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const recipe = r.when_rest;
+      if (!Array.isArray(recipe)) return;
+      const willRun = recipe.some(step => {
+        if (!step) return false;
+        // subject: "own_tamer"/"own_digimon" 等でレストしたカードの種別を絞り込む
+        if (step.subject) {
+          const s = String(step.subject);
+          if (s.includes('tamer') && restedCard.type !== 'テイマー') return false;
+          if (s.includes('digimon') && restedCard.type !== 'デジモン') return false;
+        }
+        if (Array.isArray(step.trigger_conditions) && step.trigger_conditions.length > 0) {
+          const ok = step.trigger_conditions.every((cs) => {
+            const conds = parseRecipeCondition(String(cs));
+            return checkConditions(conds, restedCard, bs, restedSide);
+          });
+          if (!ok) return false;
+        }
+        if (step.condition) {
+          const conds = parseRecipeCondition(step.condition);
+          if (!checkConditions(conds, card, bs, restedSide)) return false;
+        }
+        if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
+          const sourceId = card.cardNo || card.name || 'unknown';
+          const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
+          if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
+        }
+        return true;
+      });
+      if (willRun) reactions.push({ card, recipe });
+    } catch (_) {}
+  });
+  if (reactions.length === 0) { finish(); return; }
+  let idx = 0;
+  function nextReaction() {
+    if (idx >= reactions.length) { finish(); return; }
+    const { card, recipe } = reactions[idx++];
+    const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side: restedSide };
+    ctx.addLog && ctx.addLog('⚡ 「' + card.name + '」の効果発動');
+    showEffectAnnounce(card, card.effect || '', restedSide, () => {
+      runRecipe(recipe, ctx, () => {
+        ctx.renderAll && ctx.renderAll();
+        if (window._isOnlineMode && window._isOnlineMode() && restedSide === 'player' && window._onlineSendCommand) {
           window._onlineSendCommand({ type: 'fx_effectClose' });
         }
         nextReaction();

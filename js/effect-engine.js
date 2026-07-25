@@ -5738,7 +5738,7 @@ function recipeWillExecuteAnything(recipe, ctx) {
     // ただし cond_tamer / cond_memory_ge / cond_exists 等、盤面全体やメモリーなど
     // 「対象カード自身の性質ではない」条件は、引き続き発動可否のゲートとして評価する
     // （ライアモン「メモリーが3以上のとき」等がゲートとして機能しなくなるのを防ぐ）。
-    if (['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'dp_plus', 'dp_minus'].includes(step.action)
+    if (['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'dp_plus', 'dp_minus', 'active'].includes(step.action)
         && /^(opponent|own)(?::|$)/.test(String(step.target || ''))
         && conds.every(c => c && TARGET_FILTER_COND_CODES.has(c.code))) {
       const _isOwnTarget = /^own(?::|$)/.test(String(step.target || ''));

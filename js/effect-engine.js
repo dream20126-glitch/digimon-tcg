@@ -4513,7 +4513,7 @@ function _narrowBySentence(blockText, triggerCode) {
   return result;
 }
 
-function extractTriggerSectionText(fullText, triggerCode) {
+export function extractTriggerSectionText(fullText, triggerCode) {
   if (!fullText) return fullText || '';
   const label = triggerCode && TRIGGER_LABEL_MAP[triggerCode];
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -4530,7 +4530,7 @@ function extractTriggerSectionText(fullText, triggerCode) {
 
 // ===== 効果発動アナウンス（カード画像＋効果テキストを数秒表示） =====
 
-function showEffectAnnounce(card, effectText, side, callback, evoSourceCard) {
+export function showEffectAnnounce(card, effectText, side, callback, evoSourceCard) {
   // effectTextが空の場合、カードの効果テキスト全文をフォールバック
   let displayText = effectText || card.effect || '';
   // セキュリティ効果が「このカードの【メイン】効果を発揮する」と書かれている場合、

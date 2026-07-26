@@ -9,7 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -836,6 +836,7 @@ export function resolveAttackTarget(target, targetIdx) {
     } catch (e) {}
   }
 
+  function _proceedAttack() {
   if (target === 'security') {
     // ★ チュートリアルAIブロック intent: セキュリティアタックでも intent あれば割り込む
     const aiBlockIntent = window._tutorialAiBlockIntent;
@@ -973,6 +974,20 @@ export function resolveAttackTarget(target, targetIdx) {
     } else {
       afterAtkEffect(atk, atkSlotIdx, () => resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai'));
     }
+  }
+  } // _proceedAttack
+
+  // 「進化元を持たない相手のデジモンにはブロックされない」等、アタック宣言時に
+  // アナウンスしておきたい常在型能力（メタルシードラモン/イッカクモン等）。
+  // アタックするたびに毎回表示する（相手の盤面状況による条件分岐は行わない）。
+  if (atk && atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo) {
+    const _announceText = _extractTriggerSectionText(atk.effect || '', 'during_own_turn');
+    _showEffectAnnounce(atk, _announceText, 'player', () => {
+      if (_onlineMode && _sendCommand) _sendCommand({ type: 'fx_effectClose' });
+      _proceedAttack();
+    });
+  } else {
+    _proceedAttack();
   }
 }
 

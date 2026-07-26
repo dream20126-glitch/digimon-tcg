@@ -1488,15 +1488,26 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide) {
     const s = sides[i++];
     const ctxBase = { bs, addLog, renderAll, updateMemGauge };
     const destroyedCard = destroyedCardsBySide && destroyedCardsBySide[s];
+    // オンライン対戦中、相手側('ai')の on_destroy はここでは発火しない。
+    // 相手（カードの所有者）の機械が card_removed 受信時に 3500ms 後、自機で発火する
+    // （resolveOnlineBlock と同じ設計）。ここで発火すると、相手の効果の確認/演出
+    // ポップアップが「効果発動していない側」の画面にも操作可能な形で二重表示されてしまう。
+    // on_battle_destroy / when_own_destroyed には対応する所有者側発火経路が無いため、
+    // これらは従来通りここで発火する。
+    const skipLocalOnDestroy = _onlineMode && s === 'ai';
+    const afterOnDestroy = (cb) => {
+      if (skipLocalOnDestroy) { cb(); return; }
+      try { _fireOnDestroy(s, bs, ctxBase, cb, destroyedCard); } catch (_) { cb(); }
+    };
     try {
-      _fireOnDestroy(s, bs, ctxBase, () => {
+      afterOnDestroy(() => {
         try {
           _fireOnBattleDestroy(s, bs, ctxBase, () => {
             // 自分のデジモンが消滅したとき（同 side のテイマー/デジモンが反応）
             try { _fireWhenOwnDestroyed(s, bs, ctxBase, next); } catch (_) { next(); }
           }, destroyedCard);
         } catch (_) { next(); }
-      }, destroyedCard);
+      });
     } catch (_) { next(); }
   }
   next();

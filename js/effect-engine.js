@@ -5431,21 +5431,45 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
     const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: destroyedSide };
     const effText = (sourceCard !== carrier && sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
       ? sourceCard.evoSourceEffect : (sourceCard.effect || carrier.effect || '');
-    if (sourceCard !== carrier) {
-      ctx.addLog && ctx.addLog('⚡ 「' + sourceCard.name + '」（「' + (carrier.name||'?') + '」の進化元）の効果発動');
-    } else {
-      ctx.addLog && ctx.addLog('⚡ 「' + (carrier.name||'?') + '」の効果発動');
-    }
-    showEffectAnnounce(carrier, effText, destroyedSide, () => {
-      runRecipe(recipe, ctx, () => {
-        ctx.renderAll && ctx.renderAll();
-        // showEffectAnnounce で相手機に開いた効果ポップアップを閉じる（announce と対称）
-        if (window._isOnlineMode && window._isOnlineMode() && destroyedSide === 'player' && window._onlineSendCommand) {
-          window._onlineSendCommand({ type: 'fx_effectClose' });
+    const evoSourceArg = sourceCard !== carrier ? sourceCard : undefined;
+
+    const doAnnounceAndRun = () => {
+      if (sourceCard !== carrier) {
+        ctx.addLog && ctx.addLog('⚡ 「' + sourceCard.name + '」（「' + (carrier.name||'?') + '」の進化元）の効果発動');
+      } else {
+        ctx.addLog && ctx.addLog('⚡ 「' + (carrier.name||'?') + '」の効果発動');
+      }
+      showEffectAnnounce(carrier, effText, destroyedSide, () => {
+        runRecipe(recipe, ctx, () => {
+          ctx.renderAll && ctx.renderAll();
+          // showEffectAnnounce で相手機に開いた効果ポップアップを閉じる（announce と対称）
+          if (window._isOnlineMode && window._isOnlineMode() && destroyedSide === 'player' && window._onlineSendCommand) {
+            window._onlineSendCommand({ type: 'fx_effectClose' });
+          }
+          runOne();
+        });
+      }, evoSourceArg);
+    };
+
+    // 任意効果（「〜できる」= step.optional / コスト持ち）は発動前に確認ダイアログを挟む。
+    // 通常の効果ディスパッチ（executeQueueEntry）と同じ判定・同じ確認フローに揃える。
+    const isOptional = Array.isArray(recipe) && recipe.some(s =>
+      s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0))
+    );
+    if (isOptional) {
+      showConfirmDialog(carrier, effText, (accepted) => {
+        if (accepted) {
+          doAnnounceAndRun();
+        } else {
+          if (window._isOnlineMode && window._isOnlineMode() && destroyedSide === 'player' && window._onlineSendCommand) {
+            window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: carrier.name });
+          }
+          runOne();
         }
-        runOne();
       });
-    }, sourceCard !== carrier ? sourceCard : undefined);
+    } else {
+      doAnnounceAndRun();
+    }
   };
   runOne();
 }

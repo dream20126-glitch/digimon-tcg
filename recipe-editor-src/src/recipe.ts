@@ -108,6 +108,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock) {
   if (b.skipOnPlay) step.skip_on_play = true;
   // 「〜できる」任意効果フラグ
   if (b.optional) step.optional = true;
+  // 効果発動ポップアップの表示テキスト明示指定 / 非表示フラグ
+  if (b.displayText && b.displayText.trim()) step.display_text = b.displayText.trim();
+  if (b.noAnnounce) step.no_announce = true;
   // 取得元エリア (fromZones[]) の serialize:
   //   1件のみ → 'hand' のような文字列
   //   2件以上 → 配列 + (op が 'and' の時のみ) step.from_op
@@ -359,6 +362,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
     cost_free: true,
     skip_on_play: true,
     optional: true,
+    display_text: true,
+    no_announce: true,
     options: true,
     limit: true,
     in_zone: true,
@@ -439,6 +444,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
     costFree: !!step?.cost_free,
     skipOnPlay: !!step?.skip_on_play,
     optional: !!step?.optional,
+    displayText: step?.display_text || '',
+    noAnnounce: !!step?.no_announce,
     // 取得元エリアの deserialize: 文字列・配列・旧 'hand_or_trash' 形式すべてサポート
     fromZones: (() => {
       const f = step?.from;

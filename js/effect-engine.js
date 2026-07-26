@@ -323,8 +323,10 @@ function showQueueOrderSelect(entries, callback) {
     const _fullEffText = (fromEvo && effectOwner.evoSourceEffect && effectOwner.evoSourceEffect !== 'なし')
       ? effectOwner.evoSourceEffect
       : ((entry.block && entry.block.raw) || effectOwner.effect || '');
-    // 選択肢プレビューも、実際に発動するトリガー部分だけを抜粋して表示する
-    const effText = extractTriggerSectionText(_fullEffText, entry.block && entry.block.trigger ? entry.block.trigger.code : null);
+    const _trigCode = entry.block && entry.block.trigger ? entry.block.trigger.code : null;
+    const _steps = entry.block && (entry.block._grantedSteps || (_trigCode ? getRecipeForTrigger(effectOwner, _trigCode, fromEvo) : null));
+    // 選択肢プレビューも、実際に発動するトリガー部分だけを抜粋して表示する（display_text指定があれば最優先）
+    const effText = extractTriggerSectionText(_fullEffText, _trigCode, Array.isArray(_steps) ? _steps : null);
     div.innerHTML =
       (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
       + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+(effectOwner.name||'')+'</div>'
@@ -345,8 +347,13 @@ function executeQueueEntry(entry, context, callback) {
   // sideを実際のplayer/aiに変換
   const actualSide = entry.actualSide || (side === 'turnPlayer' ? (context.bs.isPlayerTurn ? 'player' : 'ai') : (context.bs.isPlayerTurn ? 'ai' : 'player'));
   const ctx = { ...context, card, side: actualSide, block, _parentContext: context };
-  // ポップアップ表示用: 複数トリガーを持つカードでも、今発動中のトリガー部分だけを抜粋する
-  const displayEffText = extractTriggerSectionText(block.raw, block.trigger ? block.trigger.code : null);
+  // このトリガーで実際に実行されるレシピステップ配列（display_text/no_announce/optional/事前条件チェックで共用）
+  const _recipeCardForLookup = block._recipeCard || card;
+  const _trigCodeForLookup = block.trigger ? block.trigger.code : null;
+  const _recipeStepsForLookup = block._grantedSteps || (_trigCodeForLookup ? getRecipeForTrigger(_recipeCardForLookup, _trigCodeForLookup, !!block._recipeCard) : null);
+  // ポップアップ表示用: display_text 指定があればそれを最優先、無ければ複数トリガーを
+  // 持つカードでも今発動中のトリガー部分だけを抜粋する
+  const displayEffText = extractTriggerSectionText(block.raw, block.trigger ? block.trigger.code : null, _recipeStepsForLookup);
 
   // レシピ/アクションを実行（アナウンス演出は挟まない）
   function runEffectNow(cb) {
@@ -379,7 +386,9 @@ function executeQueueEntry(entry, context, callback) {
   }
 
   // 強制効果用: カード&効果テキストを数秒表示するアナウンス演出を挟んでから実行
+  // （レシピで no_announce:true が指定されていればアナウンス自体を省略して即実行）
   function executeWithAnnounce() {
+    if (hasNoAnnounceOverride(_recipeStepsForLookup)) { runEffectNow(callback); return; }
     const evoSourceCard = block && block._recipeCard;
     showEffectAnnounce(card, displayEffText, actualSide, () => runEffectNow(callback), evoSourceCard);
   }
@@ -407,28 +416,19 @@ function executeQueueEntry(entry, context, callback) {
   // ★ 事前条件チェック: レシピの全ステップが条件で弾かれるなら効果発動ポップアップを出さない
   // 例: 石田ヤマトの「進化元を持たない相手デジモンがいるとき、メモリー+1」で
   //     条件を満たす相手デジモンがいない場合、ポップアップ自体を出さない
-  {
-    const recipeCardForCheck = block._recipeCard || card;
-    const isEvoSourceCheck = !!block._recipeCard;
-    const trigCodeForCheck = block.trigger ? block.trigger.code : null;
-    const recipeForCheck = block._grantedSteps || (trigCodeForCheck ? getRecipeForTrigger(recipeCardForCheck, trigCodeForCheck, isEvoSourceCheck) : null);
-    if (recipeForCheck && Array.isArray(recipeForCheck)) {
-      // block を渡す: trigger_conditions を発火元カード(_eventSourceCard)に対して評価するため
-      const willExecute = recipeWillExecuteAnything(recipeForCheck, { card, bs: context.bs, side: actualSide, block });
-      if (!willExecute) {
-        callback();
-        return;
-      }
+  if (Array.isArray(_recipeStepsForLookup)) {
+    // block を渡す: trigger_conditions を発火元カード(_eventSourceCard)に対して評価するため
+    const willExecute = recipeWillExecuteAnything(_recipeStepsForLookup, { card, bs: context.bs, side: actualSide, block });
+    if (!willExecute) {
+      callback();
+      return;
     }
   }
 
   // recipe を見て任意効果か判定（コストを持つ / optional フラグ）→ 確認ダイアログの要否
   // 「手札を3枚破棄することで〜」等のコスト持ち効果は任意発動なので確認を挟む
   if (block.isOptional === undefined) {
-    const _optRc = block._recipeCard || card;
-    const _optTc = block.trigger ? block.trigger.code : null;
-    const _optRecipe = block._grantedSteps || (_optTc ? getRecipeForTrigger(_optRc, _optTc, !!block._recipeCard) : null);
-    block.isOptional = Array.isArray(_optRecipe) && _optRecipe.some(s =>
+    block.isOptional = Array.isArray(_recipeStepsForLookup) && _recipeStepsForLookup.some(s =>
       s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0))
     );
   }
@@ -4516,7 +4516,23 @@ function _narrowBySentence(blockText, triggerCode) {
   return result;
 }
 
-export function extractTriggerSectionText(fullText, triggerCode) {
+// レシピの各ステップに display_text（表示テキスト明示指定）があれば最優先で使う。
+// テキスト解析（括弧/文単位の抜粋）はあくまで display_text 未設定時のフォールバック。
+// recipeSteps: そのトリガーで実行されるレシピステップ配列（省略可）
+function _findDisplayTextOverride(recipeSteps) {
+  if (!Array.isArray(recipeSteps)) return null;
+  const withText = recipeSteps.find(s => s && typeof s.display_text === 'string' && s.display_text.trim());
+  return withText ? withText.display_text.trim() : null;
+}
+
+// レシピのいずれかのステップに no_announce:true があるか（＝表示なし指定）
+export function hasNoAnnounceOverride(recipeSteps) {
+  return Array.isArray(recipeSteps) && recipeSteps.some(s => s && s.no_announce === true);
+}
+
+export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
+  const override = _findDisplayTextOverride(recipeSteps);
+  if (override) return override;
   if (!fullText) return fullText || '';
   const label = triggerCode && TRIGGER_LABEL_MAP[triggerCode];
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -5504,8 +5520,9 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
     const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: destroyedSide };
     const fullEffText = (sourceCard !== carrier && sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
       ? sourceCard.evoSourceEffect : (sourceCard.effect || carrier.effect || '');
-    // ポップアップ表示用: 他のトリガー（進化時/アタック時等）の文言まで一緒に出さないよう抜粋
-    const effText = extractTriggerSectionText(fullEffText, triggerKey);
+    // ポップアップ表示用: display_text指定があれば最優先。無ければ他のトリガー
+    // （進化時/アタック時等）の文言まで一緒に出さないよう抜粋
+    const effText = extractTriggerSectionText(fullEffText, triggerKey, recipe);
     const evoSourceArg = sourceCard !== carrier ? sourceCard : undefined;
 
     const runNow = () => {
@@ -5524,7 +5541,9 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
       });
     };
     // 強制効果用: カード&効果テキストを表示するアナウンス演出を挟んでから実行
+    // （no_announce:true 指定時はアナウンス自体を省略）
     const doAnnounceAndRun = () => {
+      if (hasNoAnnounceOverride(recipe)) { runNow(); return; }
       showEffectAnnounce(carrier, effText, destroyedSide, runNow, evoSourceArg);
     };
 
@@ -5637,8 +5656,9 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
     const fullEffectText = sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし'
       ? sourceCard.evoSourceEffect
       : (sourceCard.effect || '');
-    // ポップアップ表示用: 他のトリガーの文言まで一緒に出さないよう抜粋
-    const effectText = extractTriggerSectionText(fullEffectText, triggerKey);
+    // ポップアップ表示用: display_text指定があれば最優先。無ければ他のトリガーの文言まで
+    // 一緒に出さないよう抜粋
+    const effectText = extractTriggerSectionText(fullEffectText, triggerKey, recipe);
 
     const runNow = () => {
       ctx.addLog && ctx.addLog('⚡ 「' + sourceCard.name + '」の効果発動');
@@ -5650,8 +5670,9 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
         afterDone();
       });
     };
-    // 強制効果用: アナウンス演出を挟んでから実行
+    // 強制効果用: アナウンス演出を挟んでから実行（no_announce:true 指定時は省略）
     const doAnnounceAndRun = () => {
+      if (hasNoAnnounceOverride(recipe)) { runNow(); return; }
       showEffectAnnounce(sourceCard, effectText, reactSide, runNow);
     };
 
@@ -5746,7 +5767,7 @@ function showReactionOrderSelect(reactions, triggerKey, callback) {
   overlay.appendChild(row);
 
   reactions.forEach((reaction, idx) => {
-    const { sourceCard } = reaction;
+    const { sourceCard, recipe } = reaction;
     const card = document.createElement('div');
     card.style.cssText = 'background:#0a0a0a;border:2px solid #00fbff;border-radius:10px;padding:10px;width:200px;cursor:pointer;text-align:center;transition:transform 0.15s ease, box-shadow 0.15s ease;';
     card.onmouseenter = () => { card.style.transform = 'translateY(-3px) scale(1.03)'; card.style.boxShadow = '0 0 18px #00fbff'; };
@@ -5755,7 +5776,7 @@ function showReactionOrderSelect(reactions, triggerKey, callback) {
     const _fullEffText = (sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
       ? sourceCard.evoSourceEffect
       : (sourceCard.effect || '');
-    const effText = extractTriggerSectionText(_fullEffText, triggerKey);
+    const effText = extractTriggerSectionText(_fullEffText, triggerKey, recipe);
     card.innerHTML =
       (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
       + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+sourceCard.name+'</div>'

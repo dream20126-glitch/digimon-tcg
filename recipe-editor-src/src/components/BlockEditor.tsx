@@ -586,6 +586,30 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </div>
         )}
 
+        {/* 効果発動ポップアップの表示テキスト: 空欄なら効果テキストから自動抽出にフォールバック。
+            強制効果のみ「表示しない」を選べる（任意効果は確認ダイアログが必須のため対象外） */}
+        {block.trigger !== 'alt_evolve' && block.action && (
+          <div className="field" style={{ marginTop: 8 }}>
+            <label>💬 効果発動ポップアップの表示テキスト（空欄なら効果テキストから自動抽出）</label>
+            <textarea
+              value={block.displayText || ''}
+              onChange={(e) => update('displayText', e.target.value)}
+              rows={2}
+              placeholder="例: このデジモンは、進化元を持たない相手のデジモンにはブロックされない。"
+            />
+            {!block.optional && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 4, fontSize: 12, color: '#666' }}>
+                <input
+                  type="checkbox"
+                  checked={!!block.noAnnounce}
+                  onChange={(e) => update('noAnnounce', e.target.checked)}
+                />
+                🔕 効果発動ポップアップを表示しない
+              </label>
+            )}
+          </div>
+        )}
+
         {/* summon / summon_from_trash 専用: コストを支払わずに登場 / 登場時効果を発揮しない */}
         {(block.action === 'summon' || block.action === 'summon_from_trash') && (
           <div className="field" style={{ marginTop: 8, background: '#fff3e0', padding: 8, borderRadius: 4, border: '1px solid #ffd591' }}>

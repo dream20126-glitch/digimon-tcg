@@ -9,7 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -124,12 +124,13 @@ function hasPassiveFlag(c, flagName, kwBracket) {
   }
   return false;
 }
-// 「進化元を持たない相手のデジモンにはブロックされない」の元テキストを取得。
+// 「進化元を持たない相手のデジモンにはブロックされない」の表示情報 { text, steps } を取得。
 // メタルシードラモン等は本体の during_own_turn、イッカクモン(BT1-034)等は進化元の
 // evo_source.during_own_turn にこの能力を持つため、両方のケースを見て正しい方の
-// テキスト（本体 or 進化元カードの evoSourceEffect）を返す。
-function _getNoEvoBlockImmunityText(atk) {
-  if (!atk) return '';
+// テキスト（本体 or 進化元カードの evoSourceEffect。display_text指定があれば最優先）を返す。
+// steps はレシピ作成時の no_announce:true 判定に使う。
+function _getNoEvoBlockImmunityInfo(atk) {
+  if (!atk) return { text: '', steps: null };
   const parseRec = (rec) => {
     if (!rec) return null;
     try { return typeof rec === 'string' ? JSON.parse(rec.replace(/[\x00-\x1F\x7F]\s*/g, '')) : rec; }
@@ -141,18 +142,21 @@ function _getNoEvoBlockImmunityText(atk) {
   });
   const r = parseRec(atk.recipe);
   if (r && hasNoEvoBlockerCustom(r.during_own_turn)) {
-    return _extractTriggerSectionText(atk.effect || '', 'during_own_turn');
+    return { text: _extractTriggerSectionText(atk.effect || '', 'during_own_turn', r.during_own_turn), steps: r.during_own_turn };
   }
   if (Array.isArray(atk.stack)) {
     for (const evo of atk.stack) {
       if (!evo) continue;
       const er = parseRec(evo.recipe);
       if (er && er.evo_source && hasNoEvoBlockerCustom(er.evo_source.during_own_turn)) {
-        return _extractTriggerSectionText(evo.evoSourceEffect || '', 'during_own_turn');
+        return {
+          text: _extractTriggerSectionText(evo.evoSourceEffect || '', 'during_own_turn', er.evo_source.during_own_turn),
+          steps: er.evo_source.during_own_turn,
+        };
       }
     }
   }
-  return '';
+  return { text: '', steps: null };
 }
 // ブロッカー判定（カブテリモン等）
 function isBlocker(c) { return hasPassiveFlag(c, 'blocker', '【ブロッカー】'); }
@@ -1011,11 +1015,15 @@ export function resolveAttackTarget(target, targetIdx) {
   // アナウンスしておきたい常在型能力（メタルシードラモン/イッカクモン等）。
   // アタックするたびに毎回表示する（相手の盤面状況による条件分岐は行わない）。
   if (atk && atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo) {
-    const _announceText = _getNoEvoBlockImmunityText(atk);
-    _showEffectAnnounce(atk, _announceText, 'player', () => {
-      if (_onlineMode && _sendCommand) _sendCommand({ type: 'fx_effectClose' });
+    const _noEvoInfo = _getNoEvoBlockImmunityInfo(atk);
+    if (_hasNoAnnounceOverride(_noEvoInfo.steps)) {
       _proceedAttack();
-    });
+    } else {
+      _showEffectAnnounce(atk, _noEvoInfo.text, 'player', () => {
+        if (_onlineMode && _sendCommand) _sendCommand({ type: 'fx_effectClose' });
+        _proceedAttack();
+      });
+    }
   } else {
     _proceedAttack();
   }
@@ -2197,8 +2205,12 @@ export function aiAttackPhase(callback) {
     // 「進化元を持たない相手のデジモンにはブロックされない」等、アタック宣言時に
     // アナウンスしておきたい常在型能力（メタルシードラモン/イッカクモン等）。AI側アタック用。
     if (atk && atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo) {
-      const _announceText = _getNoEvoBlockImmunityText(atk);
-      _showEffectAnnounce(atk, _announceText, 'ai', () => { _afterAnnounce(); });
+      const _noEvoInfo = _getNoEvoBlockImmunityInfo(atk);
+      if (_hasNoAnnounceOverride(_noEvoInfo.steps)) {
+        _afterAnnounce();
+      } else {
+        _showEffectAnnounce(atk, _noEvoInfo.text, 'ai', () => { _afterAnnounce(); });
+      }
     } else {
       _afterAnnounce();
     }

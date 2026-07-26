@@ -34,6 +34,14 @@ export interface EffectBlock {
   // 「〜できる」= 任意効果。true のとき JSON へ step.optional:true を出力する。
   // エンジンは発動前に「発動しますか？」の確認ダイアログを挟む（未指定/falseは強制効果）
   optional?: boolean;
+  // 効果発動ポップアップ（確認ダイアログ/アナウンス演出）に表示するテキストの明示指定。
+  // 空欄なら効果テキストから自動抽出（該当トリガー部分を推測）にフォールバックする。
+  // JSON では step.display_text を出力する
+  displayText?: string;
+  // true のとき、このステップの効果発動ポップアップ自体を表示しない
+  // （任意効果の確認ダイアログには影響しない。強制効果のアナウンス演出のみ省略）
+  // JSON では step.no_announce:true を出力する
+  noAnnounce?: boolean;
   fromZones?: string[]; // アクションの取得元エリア（'hand' / 'trash' / 'deck' 等）。複数指定可。JSON では step.from
   fromZonesOp?: 'or' | 'and'; // 複数取得元の結合演算子（既定は 'or'）
   // 「～ごとに」倍率設定。perRef を数えて value × floor(count / perCount) を計算

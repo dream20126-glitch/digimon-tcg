@@ -379,6 +379,273 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
   const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
 
+  // ✖ ～ごとに（倍率設定）: 値 × floor(count / N) でスケーリング。
+  // 通常は⚙追加オプション内に表示するが、コスト軽減トリガーでは💰バナー内（発動条件の隣）
+  // に直接埋め込むため、関数として切り出して2箇所から呼べるようにしている
+  function renderPerCountEditor() {
+    // 旧形式 (own_rest_digimon 等) を subject + 状態cond に分解（読み込み時の互換）
+    const decomposeRef = (ref: string): { subject: string; legacyState: string } => {
+      switch (ref) {
+        case 'own_rest_digimon':   return { subject: 'own_digimon', legacyState: 'cond_self_rest' };
+        case 'own_active_digimon': return { subject: 'own_digimon', legacyState: 'cond_self_active' };
+        case 'opp_rest_digimon':   return { subject: 'opp_digimon', legacyState: 'cond_self_rest' };
+        case 'opp_active_digimon': return { subject: 'opp_digimon', legacyState: 'cond_self_active' };
+        default: return { subject: ref || '', legacyState: '' };
+      }
+    };
+    const { subject: legacySubject, legacyState } = decomposeRef(block.perRef || '');
+    const refSubject = legacySubject;
+    const isDigimonSubject = refSubject === 'own_digimon' || refSubject === 'opp_digimon';
+    const isEnabled = !!(block.perCount && block.perRef);
+    // 現在の状態 cond（perRefStateCond > legacyState の優先順）
+    const currentStateCond: ConditionPair = block.perRefStateCond
+      || (legacyState ? { base: legacyState, value: '' } : { base: '', value: '' });
+
+    // 状態 pulldown 候補: dict.conditions のうちカード単体に適用できるものをフィルタ
+    // 除外: cond_during_*_turn / cond_memory_* / cond_own_security_* / cond_opp_no_attack_* / cond_exists* 等
+    const stateCondOptions: SelectOption[] = [
+      { value: '', label: '状態問わず' },
+      ...dict.conditions
+        .filter((c) => {
+          const code = c.code || '';
+          if (/^cond_during_/.test(code)) return false;
+          if (/^cond_memory_/.test(code)) return false;
+          if (/^cond_own_security_/.test(code)) return false;
+          if (/^cond_opp_no_attack/.test(code)) return false;
+          if (code === 'cond_exists' || code === 'cond_opp_exists' || code === 'cond_own_exists' || code === 'cond_exists_count_ge') return false;
+          if (code === 'cond_evolved_this_turn' || code === 'cond_rest_count_ge' || code === 'cond_battle_win') return false;
+          return true;
+        })
+        .map((c) => ({ value: c.code, label: c.label || c.code })),
+    ];
+
+    function setSubject(newSubject: string) {
+      // 2フィールド同時更新: update を2回呼ぶと古い block 参照で2回目が1回目を上書きするため
+      // onChange でまとめて反映する
+      const isDigimonRef = (newSubject === 'own_digimon' || newSubject === 'opp_digimon');
+      onChange({
+        ...block,
+        perRef: newSubject,
+        // 非デジモン系: 状態をクリア（card-state は意味薄）
+        perRefStateCond: isDigimonRef ? block.perRefStateCond : undefined,
+      });
+    }
+    function setStateBase(newBase: string) {
+      // 同じく 2フィールド (perRefStateCond + perRef のlegacy正規化) を1回でまとめて更新
+      const newStateCond = newBase
+        ? { base: newBase, value: currentStateCond.value || '' }
+        : undefined;
+      let nextPerRef = block.perRef;
+      if (block.perRef === 'own_rest_digimon' || block.perRef === 'own_active_digimon') {
+        nextPerRef = 'own_digimon';
+      } else if (block.perRef === 'opp_rest_digimon' || block.perRef === 'opp_active_digimon') {
+        nextPerRef = 'opp_digimon';
+      }
+      onChange({ ...block, perRefStateCond: newStateCond, perRef: nextPerRef });
+    }
+    function setStateValue(newValue: string) {
+      if (!currentStateCond.base) return;
+      update('perRefStateCond', { base: currentStateCond.base, value: newValue });
+    }
+
+    return (
+      <div className="field" style={{ gridColumn: '1 / span 2' }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={isEnabled}
+            onChange={(e) => {
+              // 2フィールドを同時更新する必要があるため、update を2回呼ばず onChange でまとめる
+              if (e.target.checked) {
+                onChange({
+                  ...block,
+                  perCount: block.perCount || 1,
+                  perRef: block.perRef || 'opp_digimon',
+                });
+              } else {
+                onChange({
+                  ...block,
+                  perCount: undefined,
+                  perRef: '',
+                });
+              }
+            }}
+          />
+          <b>✖ ～ごとに（倍率設定）</b>
+          <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666' }}>
+            （指定対象を数えて 値 × その数 を掛ける、または N 回発動）
+          </span>
+        </label>
+        {isEnabled && (
+          <div style={{ marginTop: 6, padding: 8, background: '#f3f6fc', borderRadius: 4, border: '1px solid #c5d4ea' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <input
+                  type="number"
+                  min={1}
+                  value={block.perCount || 1}
+                  onChange={(e) => update('perCount', Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  style={{ width: 50, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                />
+                <span style={{ fontSize: 11, color: '#555' }}>枚ごと、</span>
+              </div>
+              {/* 対象プルダウン */}
+              <div style={{ minWidth: 200 }}>
+                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                <SearchSelect
+                  value={refSubject}
+                  onChange={setSubject}
+                  options={toOpts(REF_SUBJECTS)}
+                />
+              </div>
+              {/* 状態プルダウン: デジモン系のみ表示。dict.conditions から動的に選択肢生成 */}
+              {isDigimonSubject && (
+                <div style={{ minWidth: 200 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    状態（条件）
+                    {currentStateCond.base && (
+                      isConditionImplemented(currentStateCond.base)
+                        ? <span style={{ color: '#2e7d32', fontSize: 9 }}>✅</span>
+                        : <span style={{ color: '#e65100', fontSize: 9 }} title="エンジン未実装">⚠</span>
+                    )}
+                    <span style={{ marginLeft: 'auto', fontSize: 9, color: '#888' }}>辞書の条件を流用</span>
+                  </div>
+                  <SearchSelect
+                    value={currentStateCond.base}
+                    onChange={setStateBase}
+                    options={stateCondOptions}
+                    allowFreeText
+                  />
+                  {/* 値が必要な条件（cond_lv_le など）の値入力 */}
+                  {currentStateCond.base && (
+                    <input
+                      type="text"
+                      value={currentStateCond.value || ''}
+                      onChange={(e) => setStateValue(e.target.value)}
+                      placeholder="値（必要な場合・例: 5）"
+                      style={{ marginTop: 4, padding: '3px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
+                    />
+                  )}
+                </div>
+              )}
+              <span style={{ fontSize: 10, color: '#666', alignSelf: 'flex-end', paddingBottom: 4 }}>
+                を数える
+              </span>
+            </div>
+            {/* 発動モード: 値×N か N回発動か */}
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 8, padding: '6px 8px', background: '#eaf0fb', borderRadius: 4, border: '1px solid #b3c8ff', fontSize: 11 }}>
+              <span style={{ color: '#1a4f8a', fontWeight: 'bold', whiteSpace: 'nowrap' }}>発動モード:</span>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name={`perCountMode_${index}`}
+                  checked={block.perCountMode !== 'repeat'}
+                  onChange={() => update('perCountMode', undefined)}
+                  style={{ margin: 0 }}
+                />
+                <span>値 × N（合計）</span>
+                <span style={{ color: '#888', fontSize: 10 }}>例: DP-4000×2体=-8000</span>
+              </label>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name={`perCountMode_${index}`}
+                  checked={block.perCountMode === 'repeat'}
+                  onChange={() => update('perCountMode', 'repeat')}
+                  style={{ margin: 0 }}
+                />
+                <span style={{ fontWeight: block.perCountMode === 'repeat' ? 'bold' : 'normal', color: block.perCountMode === 'repeat' ? '#1a4f8a' : 'inherit' }}>N 回発動</span>
+                <span style={{ color: '#888', fontSize: 10 }}>例: DP-4000 を2回（対象を毎回選べる）</span>
+              </label>
+            </div>
+            {/* フィルタ: カウント時に追加で絞り込み（COMMON_CONDS と項目共通） */}
+            {(() => {
+              // 発動条件と同じ COMMON_CONDS を共有（項目統一）
+              const FILTER_FIELDS: CommonCondDef[] = COMMON_CONDS;
+              const filterArr = block.perRefFilter || [];
+              const isFilterChecked = (code: string) => filterArr.some((c) => c.base === code);
+              const getFilterValue = (code: string) => {
+                const c = filterArr.find((cc) => cc.base === code);
+                return c ? (c.value || '') : '';
+              };
+              const setFilterChecked = (code: string, enabled: boolean) => {
+                if (enabled) {
+                  if (!isFilterChecked(code)) {
+                    update('perRefFilter', [...filterArr, { base: code, value: '' }]);
+                  }
+                } else {
+                  update('perRefFilter', filterArr.filter((c) => c.base !== code));
+                }
+              };
+              const setFilterValue = (code: string, val: string) => {
+                const i = filterArr.findIndex((c) => c.base === code);
+                if (i >= 0) {
+                  const next = filterArr.slice();
+                  next[i] = { ...next[i], value: val };
+                  update('perRefFilter', next);
+                } else {
+                  update('perRefFilter', [...filterArr, { base: code, value: val }]);
+                }
+              };
+              return (
+                <div style={{ marginTop: 8, padding: 6, background: 'white', borderRadius: 4, border: '1px solid #c5d4ea' }}>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#1976d2', marginBottom: 4 }}>
+                    🔍 さらに絞り込み（チェックで有効化・複数で AND）
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+                    {FILTER_FIELDS.map((f) => (
+                      <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={isFilterChecked(f.code)}
+                          onChange={(e) => setFilterChecked(f.code, e.target.checked)}
+                          style={{ margin: 0 }}
+                        />
+                        {f.label}
+                      </label>
+                    ))}
+                  </div>
+                  {FILTER_FIELDS.some((f) => isFilterChecked(f.code)) && (
+                    <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6 }}>
+                      {FILTER_FIELDS.filter((f) => isFilterChecked(f.code)).map((f) => (
+                        <div key={f.code}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{f.label}</div>
+                          {f.input === 'select' ? (
+                            <select
+                              value={getFilterValue(f.code)}
+                              onChange={(e) => setFilterValue(f.code, e.target.value)}
+                              style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}
+                            >
+                              {(f.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                          ) : f.input === 'number' ? (
+                            <input
+                              type="number"
+                              value={getFilterValue(f.code)}
+                              onChange={(e) => setFilterValue(f.code, e.target.value)}
+                              style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              value={getFilterValue(f.code)}
+                              onChange={(e) => setFilterValue(f.code, e.target.value)}
+                              style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="block">
       <div className="block-header">
@@ -487,12 +754,25 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 }}
                 accentColor="#ef6c00"
               />
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 11 }}>軽減量:</span>
+                <input
+                  type="number"
+                  value={block.value === undefined ? '' : String(block.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    update('value', v === '' ? undefined : Number(v));
+                  }}
+                  placeholder="例: 1"
+                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 70 }}
+                />
+              </span>
               <button
                 type="button"
                 onClick={() => onChange({ ...block, trigger: '', triggers: [] })}
-                style={{ padding: '3px 9px', borderRadius: 5, border: '1px solid #999', background: '#fff', color: '#555', cursor: 'pointer', fontSize: 11 }}
+                style={{ padding: '3px 9px', borderRadius: 5, border: 'none', background: '#757575', color: '#fff', cursor: 'pointer', fontSize: 11 }}
               >
-                ← トリガーを選び直す
+                戻る
               </button>
             </div>
             {!COST_REDUCTION_VARIANTS.find((v) => v.trigger === block.trigger)?.implemented && (
@@ -501,22 +781,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               </div>
             )}
             常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。
-            <br />・下の「⚙ 追加オプション」内「✖ ～ごとに」= 「〜1体ごとに」の倍率設定
-            <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #ffb74d' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', color: '#b76e00', marginBottom: 4 }}>
-                💰 軽減量
-              </label>
-              <input
-                type="number"
-                value={block.value === undefined ? '' : String(block.value)}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  update('value', v === '' ? undefined : Number(v));
-                }}
-                placeholder="例: 1"
-                style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
-              />
-            </div>
             <div style={{ marginTop: 8 }}>
               <ConditionsHybridEditor
                 conditions={conditions}
@@ -528,6 +792,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 defaultSubject=""
               />
             </div>
+            {renderPerCountEditor()}
           </div>
         ) : (
         <div style={{
@@ -768,7 +1033,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         </div>
         )}
 
-        {/* === ⚡ アクショングループ === */}
+        {/* === ⚡ アクショングループ ===（コスト軽減トリガーはアクション不要のため丸ごと非表示。
+            条件・～ごとに は💰バナー側に埋め込み済み） */}
+        {!COST_REDUCTION_TRIGGERS.has(block.trigger) && (
         <div style={{
           gridColumn: '1 / span 2',
           padding: 10,
@@ -1735,270 +2002,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           })()}
         </details>
 
-        {/* ✖ ～ごとに（倍率設定）: 値 × floor(count / N) でスケーリング */}
-        {(() => {
-          // 旧形式 (own_rest_digimon 等) を subject + 状態cond に分解（読み込み時の互換）
-          const decomposeRef = (ref: string): { subject: string; legacyState: string } => {
-            switch (ref) {
-              case 'own_rest_digimon':   return { subject: 'own_digimon', legacyState: 'cond_self_rest' };
-              case 'own_active_digimon': return { subject: 'own_digimon', legacyState: 'cond_self_active' };
-              case 'opp_rest_digimon':   return { subject: 'opp_digimon', legacyState: 'cond_self_rest' };
-              case 'opp_active_digimon': return { subject: 'opp_digimon', legacyState: 'cond_self_active' };
-              default: return { subject: ref || '', legacyState: '' };
-            }
-          };
-          const { subject: legacySubject, legacyState } = decomposeRef(block.perRef || '');
-          const refSubject = legacySubject;
-          const isDigimonSubject = refSubject === 'own_digimon' || refSubject === 'opp_digimon';
-          const isEnabled = !!(block.perCount && block.perRef);
-          // 現在の状態 cond（perRefStateCond > legacyState の優先順）
-          const currentStateCond: ConditionPair = block.perRefStateCond
-            || (legacyState ? { base: legacyState, value: '' } : { base: '', value: '' });
-
-          // 状態 pulldown 候補: dict.conditions のうちカード単体に適用できるものをフィルタ
-          // 除外: cond_during_*_turn / cond_memory_* / cond_own_security_* / cond_opp_no_attack_* / cond_exists* 等
-          const stateCondOptions: SelectOption[] = [
-            { value: '', label: '状態問わず' },
-            ...dict.conditions
-              .filter((c) => {
-                const code = c.code || '';
-                if (/^cond_during_/.test(code)) return false;
-                if (/^cond_memory_/.test(code)) return false;
-                if (/^cond_own_security_/.test(code)) return false;
-                if (/^cond_opp_no_attack/.test(code)) return false;
-                if (code === 'cond_exists' || code === 'cond_opp_exists' || code === 'cond_own_exists' || code === 'cond_exists_count_ge') return false;
-                if (code === 'cond_evolved_this_turn' || code === 'cond_rest_count_ge' || code === 'cond_battle_win') return false;
-                return true;
-              })
-              .map((c) => ({ value: c.code, label: c.label || c.code })),
-          ];
-
-          function setSubject(newSubject: string) {
-            // 2フィールド同時更新: update を2回呼ぶと古い block 参照で2回目が1回目を上書きするため
-            // onChange でまとめて反映する
-            const isDigimonRef = (newSubject === 'own_digimon' || newSubject === 'opp_digimon');
-            onChange({
-              ...block,
-              perRef: newSubject,
-              // 非デジモン系: 状態をクリア（card-state は意味薄）
-              perRefStateCond: isDigimonRef ? block.perRefStateCond : undefined,
-            });
-          }
-          function setStateBase(newBase: string) {
-            // 同じく 2フィールド (perRefStateCond + perRef のlegacy正規化) を1回でまとめて更新
-            const newStateCond = newBase
-              ? { base: newBase, value: currentStateCond.value || '' }
-              : undefined;
-            let nextPerRef = block.perRef;
-            if (block.perRef === 'own_rest_digimon' || block.perRef === 'own_active_digimon') {
-              nextPerRef = 'own_digimon';
-            } else if (block.perRef === 'opp_rest_digimon' || block.perRef === 'opp_active_digimon') {
-              nextPerRef = 'opp_digimon';
-            }
-            onChange({ ...block, perRefStateCond: newStateCond, perRef: nextPerRef });
-          }
-          function setStateValue(newValue: string) {
-            if (!currentStateCond.base) return;
-            update('perRefStateCond', { base: currentStateCond.base, value: newValue });
-          }
-
-          return (
-            <div className="field" style={{ gridColumn: '1 / span 2' }}>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={isEnabled}
-                  onChange={(e) => {
-                    // 2フィールドを同時更新する必要があるため、update を2回呼ばず onChange でまとめる
-                    if (e.target.checked) {
-                      onChange({
-                        ...block,
-                        perCount: block.perCount || 1,
-                        perRef: block.perRef || 'opp_digimon',
-                      });
-                    } else {
-                      onChange({
-                        ...block,
-                        perCount: undefined,
-                        perRef: '',
-                      });
-                    }
-                  }}
-                />
-                <b>✖ ～ごとに（倍率設定）</b>
-                <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666' }}>
-                  （指定対象を数えて 値 × その数 を掛ける、または N 回発動）
-                </span>
-              </label>
-              {isEnabled && (
-                <div style={{ marginTop: 6, padding: 8, background: '#f3f6fc', borderRadius: 4, border: '1px solid #c5d4ea' }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <input
-                        type="number"
-                        min={1}
-                        value={block.perCount || 1}
-                        onChange={(e) => update('perCount', Math.max(1, parseInt(e.target.value, 10) || 1))}
-                        style={{ width: 50, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
-                      />
-                      <span style={{ fontSize: 11, color: '#555' }}>枚ごと、</span>
-                    </div>
-                    {/* 対象プルダウン */}
-                    <div style={{ minWidth: 200 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                      <SearchSelect
-                        value={refSubject}
-                        onChange={setSubject}
-                        options={toOpts(REF_SUBJECTS)}
-                      />
-                    </div>
-                    {/* 状態プルダウン: デジモン系のみ表示。dict.conditions から動的に選択肢生成 */}
-                    {isDigimonSubject && (
-                      <div style={{ minWidth: 200 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                          状態（条件）
-                          {currentStateCond.base && (
-                            isConditionImplemented(currentStateCond.base)
-                              ? <span style={{ color: '#2e7d32', fontSize: 9 }}>✅</span>
-                              : <span style={{ color: '#e65100', fontSize: 9 }} title="エンジン未実装">⚠</span>
-                          )}
-                          <span style={{ marginLeft: 'auto', fontSize: 9, color: '#888' }}>辞書の条件を流用</span>
-                        </div>
-                        <SearchSelect
-                          value={currentStateCond.base}
-                          onChange={setStateBase}
-                          options={stateCondOptions}
-                          allowFreeText
-                        />
-                        {/* 値が必要な条件（cond_lv_le など）の値入力 */}
-                        {currentStateCond.base && (
-                          <input
-                            type="text"
-                            value={currentStateCond.value || ''}
-                            onChange={(e) => setStateValue(e.target.value)}
-                            placeholder="値（必要な場合・例: 5）"
-                            style={{ marginTop: 4, padding: '3px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                          />
-                        )}
-                      </div>
-                    )}
-                    <span style={{ fontSize: 10, color: '#666', alignSelf: 'flex-end', paddingBottom: 4 }}>
-                      を数える
-                    </span>
-                  </div>
-                  {/* 発動モード: 値×N か N回発動か */}
-                  <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 8, padding: '6px 8px', background: '#eaf0fb', borderRadius: 4, border: '1px solid #b3c8ff', fontSize: 11 }}>
-                    <span style={{ color: '#1a4f8a', fontWeight: 'bold', whiteSpace: 'nowrap' }}>発動モード:</span>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-                      <input
-                        type="radio"
-                        name={`perCountMode_${index}`}
-                        checked={block.perCountMode !== 'repeat'}
-                        onChange={() => update('perCountMode', undefined)}
-                        style={{ margin: 0 }}
-                      />
-                      <span>値 × N（合計）</span>
-                      <span style={{ color: '#888', fontSize: 10 }}>例: DP-4000×2体=-8000</span>
-                    </label>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-                      <input
-                        type="radio"
-                        name={`perCountMode_${index}`}
-                        checked={block.perCountMode === 'repeat'}
-                        onChange={() => update('perCountMode', 'repeat')}
-                        style={{ margin: 0 }}
-                      />
-                      <span style={{ fontWeight: block.perCountMode === 'repeat' ? 'bold' : 'normal', color: block.perCountMode === 'repeat' ? '#1a4f8a' : 'inherit' }}>N 回発動</span>
-                      <span style={{ color: '#888', fontSize: 10 }}>例: DP-4000 を2回（対象を毎回選べる）</span>
-                    </label>
-                  </div>
-                  {/* フィルタ: カウント時に追加で絞り込み（COMMON_CONDS と項目共通） */}
-                  {(() => {
-                    // 発動条件と同じ COMMON_CONDS を共有（項目統一）
-                    const FILTER_FIELDS: CommonCondDef[] = COMMON_CONDS;
-                    const filterArr = block.perRefFilter || [];
-                    const isFilterChecked = (code: string) => filterArr.some((c) => c.base === code);
-                    const getFilterValue = (code: string) => {
-                      const c = filterArr.find((cc) => cc.base === code);
-                      return c ? (c.value || '') : '';
-                    };
-                    const setFilterChecked = (code: string, enabled: boolean) => {
-                      if (enabled) {
-                        if (!isFilterChecked(code)) {
-                          update('perRefFilter', [...filterArr, { base: code, value: '' }]);
-                        }
-                      } else {
-                        update('perRefFilter', filterArr.filter((c) => c.base !== code));
-                      }
-                    };
-                    const setFilterValue = (code: string, val: string) => {
-                      const i = filterArr.findIndex((c) => c.base === code);
-                      if (i >= 0) {
-                        const next = filterArr.slice();
-                        next[i] = { ...next[i], value: val };
-                        update('perRefFilter', next);
-                      } else {
-                        update('perRefFilter', [...filterArr, { base: code, value: val }]);
-                      }
-                    };
-                    return (
-                      <div style={{ marginTop: 8, padding: 6, background: 'white', borderRadius: 4, border: '1px solid #c5d4ea' }}>
-                        <div style={{ fontSize: 11, fontWeight: 'bold', color: '#1976d2', marginBottom: 4 }}>
-                          🔍 さらに絞り込み（チェックで有効化・複数で AND）
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-                          {FILTER_FIELDS.map((f) => (
-                            <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer' }}>
-                              <input
-                                type="checkbox"
-                                checked={isFilterChecked(f.code)}
-                                onChange={(e) => setFilterChecked(f.code, e.target.checked)}
-                                style={{ margin: 0 }}
-                              />
-                              {f.label}
-                            </label>
-                          ))}
-                        </div>
-                        {FILTER_FIELDS.some((f) => isFilterChecked(f.code)) && (
-                          <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6 }}>
-                            {FILTER_FIELDS.filter((f) => isFilterChecked(f.code)).map((f) => (
-                              <div key={f.code}>
-                                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{f.label}</div>
-                                {f.input === 'select' ? (
-                                  <select
-                                    value={getFilterValue(f.code)}
-                                    onChange={(e) => setFilterValue(f.code, e.target.value)}
-                                    style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}
-                                  >
-                                    {(f.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                  </select>
-                                ) : f.input === 'number' ? (
-                                  <input
-                                    type="number"
-                                    value={getFilterValue(f.code)}
-                                    onChange={(e) => setFilterValue(f.code, e.target.value)}
-                                    style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                                  />
-                                ) : (
-                                  <input
-                                    type="text"
-                                    value={getFilterValue(f.code)}
-                                    onChange={(e) => setFilterValue(f.code, e.target.value)}
-                                    style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                                  />
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        {renderPerCountEditor()}
 
         {/* コスト: 「〇〇することで」を表現 */}
         <div className="field" style={{ gridColumn: '1 / span 2' }}>
@@ -2363,6 +2367,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         </div>
         </details>
         </div>
+        )}
         {/* === アクショングループここまで === */}
 
         {/* === キーワード（最下段） === */}

@@ -30,7 +30,8 @@ function toOpts(arr: { code: string; label: string }[]): SelectOption[] {
 }
 
 // ボタン式の単一選択グループ（区分・発動領域など、選択肢が少なく視覚的に選ばせたい項目用）
-function ButtonGroup({ options, value, onChange }: { options: { code: string; label: string }[]; value: string; onChange: (v: string) => void }) {
+function ButtonGroup({ options, value, onChange, accentColor }: { options: { code: string; label: string }[]; value: string; onChange: (v: string) => void; accentColor?: string }) {
+  const accent = accentColor || '#d81b60';
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
       {options.map((o) => {
@@ -43,13 +44,13 @@ function ButtonGroup({ options, value, onChange }: { options: { code: string; la
             style={{
               padding: '3px 9px',
               borderRadius: 5,
-              border: active ? '2px solid #d81b60' : '1px solid #bbb',
-              background: active ? '#d81b60' : '#f5f5f5',
+              border: active ? `2px solid ${accent}` : '1px solid #bbb',
+              background: active ? accent : '#f5f5f5',
               color: active ? '#fff' : '#333',
               fontWeight: active ? 'bold' : 'normal',
               cursor: 'pointer',
               fontSize: 11,
-              boxShadow: active ? '0 0 6px #d81b6099' : 'none',
+              boxShadow: active ? `0 0 6px ${accent}99` : 'none',
               transition: 'all 0.12s ease',
             }}
           >
@@ -302,12 +303,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>区分 *</label>
-            <ButtonGroup options={SECTIONS} value={block.section} onChange={(v) => update('section', v)} />
+            <ButtonGroup options={SECTIONS} value={block.section} onChange={(v) => update('section', v)} accentColor="#d6336c" />
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>発動領域</label>
-            <ButtonGroup options={ZONE_BUTTONS} value={block.zone || ''} onChange={(v) => update('zone', v)} />
+            <ButtonGroup options={ZONE_BUTTONS} value={block.zone || ''} onChange={(v) => update('zone', v)} accentColor="#d6336c" />
           </div>
 
           <div>
@@ -329,6 +330,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       options={[1, 2, 3].map((n) => ({ code: String(n), label: n + '回' }))}
                       value={String(limCount)}
                       onChange={(v) => update('limit', combineLimit('per_turn', parseInt(v, 10)))}
+                      accentColor="#d6336c"
                     />
                   )}
                 </div>
@@ -440,13 +442,39 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 const l2Options = cur.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
                 return (
                   <>
-                    <ButtonGroup options={SUBJECT_L1} value={cur.l1} onChange={handleL1} />
+                    <ButtonGroup options={SUBJECT_L1} value={cur.l1} onChange={handleL1} accentColor="#2e7d32" />
                     {cur.l1 !== 'self' && (
                       <div style={{ marginTop: 4 }}>
-                        <ButtonGroup options={l2Options} value={cur.l2} onChange={handleL2} />
+                        <ButtonGroup options={l2Options} value={cur.l2} onChange={handleL2} accentColor="#2e7d32" />
                       </div>
                     )}
                   </>
+                );
+              })()}
+
+              {/* 発動主体の状態フィルタ（レスト/アクティブ）: トリガー条件(cond_rest/cond_self_active)への
+                  ショートカット。例:「レスト状態の自分のデジモンが消滅したとき」 */}
+              {(() => {
+                const isRest = triggerConditions.some((c) => c.base === 'cond_rest');
+                const isActive = triggerConditions.some((c) => c.base === 'cond_self_active');
+                const setState = (mode: 'rest' | 'active' | null) => {
+                  const rest = triggerConditions.filter((c) => c.base !== 'cond_rest' && c.base !== 'cond_self_active');
+                  const next = mode === 'rest' ? [...rest, { base: 'cond_rest' }]
+                    : mode === 'active' ? [...rest, { base: 'cond_self_active' }]
+                    : rest;
+                  update('triggerConditions', next);
+                };
+                return (
+                  <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11 }}>
+                      <input type="checkbox" checked={isRest} onChange={(e) => setState(e.target.checked ? 'rest' : null)} />
+                      レスト状態
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11 }}>
+                      <input type="checkbox" checked={isActive} onChange={(e) => setState(e.target.checked ? 'active' : null)} />
+                      アクティブ状態
+                    </label>
+                  </div>
                 );
               })()}
             </div>

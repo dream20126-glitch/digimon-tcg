@@ -127,8 +127,17 @@ interface TriggerFamily {
 const COMMON_TRIGGER_FAMILIES: TriggerFamily[] = [
   { code: 'on_play', label: '登場時', kind: 'event' },
   { code: 'on_evolve', label: '進化時', kind: 'event' },
-  { code: 'on_attack', label: 'アタック時', kind: 'event' },
-  { code: 'on_attack_end', label: 'アタック終了時', kind: 'event' },
+  {
+    code: 'on_attack', label: 'アタック時', kind: 'timing',
+    // 自分=このカードがアタックしたとき(on_attack) / 相手=相手のデジモンがアタックしたとき(when_opp_attack、ロゼモン等)
+    variants: { self: 'on_attack', opp: 'when_opp_attack', any: 'on_any_attack' },
+    implemented: { self: true, opp: true, any: false },
+  },
+  {
+    code: 'on_attack_end', label: 'アタック終了時', kind: 'timing',
+    variants: { self: 'on_attack_end', opp: 'when_opp_attack_end', any: 'on_any_attack_end' },
+    implemented: { self: true, opp: false, any: false },
+  },
   { code: 'on_destroy', label: '消滅時', kind: 'event' },
   {
     code: 'main', label: 'メイン', kind: 'timing',
@@ -161,6 +170,18 @@ const TIMING_OPTIONS: { code: TimingKey; label: string }[] = [
   { code: 'opp', label: '相手' },
   { code: 'any', label: 'お互い' },
 ];
+
+// 【コスト軽減】は自分/相手/お互いの軸ではなく「何のコストを軽減するか」の軸を持つ特殊トリガー。
+// 登場コスト/使用コストは実装上どちらも summon_cost（getEffectivePlayCost が playCost に対して
+// 一律に適用するため、デジモンの登場もオプション/テイマーの使用も区別がない）。
+// 進化コストは常時軽減の専用recipeキーが未実装（evo_cost_minusは単発アクションのみ）なので、
+// エンジン未対応のプレースホルダーコードとして用意する。
+const COST_REDUCTION_VARIANTS: { code: string; label: string; trigger: string; implemented: boolean }[] = [
+  { code: 'summon', label: '登場', trigger: 'summon_cost', implemented: true },
+  { code: 'evolve', label: '進化', trigger: 'evo_cost', implemented: false },
+  { code: 'use', label: '使用', trigger: 'summon_cost', implemented: true },
+];
+const COST_REDUCTION_TRIGGERS = new Set(COST_REDUCTION_VARIANTS.map((v) => v.trigger));
 // 現在選択中のtriggers/triggerConditionsから、共有の発動タイミングを逆算する
 function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair[]): TimingKey {
   for (const fam of COMMON_TRIGGER_FAMILIES) {
@@ -449,6 +470,48 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               />
             </div>
           </div>
+        ) : COST_REDUCTION_TRIGGERS.has(block.trigger) ? (
+          <div style={{
+            gridColumn: '1 / span 2', padding: 10, background: '#fff8e1',
+            border: '2px solid #ffcc80', borderRadius: 6,
+            fontSize: 12, color: '#8a5300', lineHeight: 1.6,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+              <b>💰 コスト軽減</b>
+              <ButtonGroup
+                options={COST_REDUCTION_VARIANTS.map((v) => ({ code: v.code, label: v.label }))}
+                value={COST_REDUCTION_VARIANTS.find((v) => v.trigger === block.trigger)?.code || 'summon'}
+                onChange={(code) => {
+                  const v = COST_REDUCTION_VARIANTS.find((x) => x.code === code)!;
+                  onChange({ ...block, trigger: v.trigger, triggers: [v.trigger], zone: block.zone || 'hand' });
+                }}
+                accentColor="#ef6c00"
+              />
+            </div>
+            {!COST_REDUCTION_VARIANTS.find((v) => v.trigger === block.trigger)?.implemented && (
+              <div style={{ marginBottom: 6, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
+                ⚠ 進化コスト軽減はエンジン未実装です（保存はできますが動作しません）
+              </div>
+            )}
+            常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。
+            <br />・下の「🎯 発動条件」欄 = この軽減が有効になる条件（例:「レスト状態の相手デジモンがいる」）
+            <br />・下の「⚙ 追加オプション」内「✖ ～ごとに」= 「〜1体ごとに」の倍率設定
+            <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #ffb74d' }}>
+              <label style={{ display: 'block', fontWeight: 'bold', color: '#b76e00', marginBottom: 4 }}>
+                💰 軽減量
+              </label>
+              <input
+                type="number"
+                value={block.value === undefined ? '' : String(block.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  update('value', v === '' ? undefined : Number(v));
+                }}
+                placeholder="例: 1"
+                style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
+              />
+            </div>
+          </div>
         ) : (
         <div style={{
           gridColumn: '1 / span 2',
@@ -568,6 +631,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         </button>
                       );
                     })}
+                    <button
+                      type="button"
+                      onClick={() => onChange({ ...block, trigger: 'summon_cost', triggers: ['summon_cost'], zone: block.zone || 'hand' })}
+                      style={{
+                        padding: '3px 9px', borderRadius: 5,
+                        border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
+                        fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
+                      }}
+                    >
+                      コスト軽減
+                    </button>
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>

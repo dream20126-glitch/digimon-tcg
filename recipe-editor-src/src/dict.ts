@@ -183,7 +183,8 @@ export const TRIGGERS: DictEntry[] = [
   { code: 'main', kind: 'trigger', label: 'メインフェイズ中' },
   { code: 'passive', kind: 'trigger', label: 'パッシブ' },
   // 常時メカニクス（アクション不要・条件と値だけ設定する）
-  { code: 'summon_cost', kind: 'trigger', label: '［常時］登場コスト軽減（条件＝発動条件／値＝軽減量）' },
+  { code: 'summon_cost', kind: 'trigger', label: '［常時］登場・使用コスト軽減（条件＝発動条件／値＝軽減量）' },
+  { code: 'evo_cost', kind: 'trigger', label: '［常時・エンジン未実装］進化コスト軽減（条件＝発動条件／値＝軽減量）' },
   { code: 'alt_evolve', kind: 'trigger', label: '［常時］代替進化・進化条件無視（条件1＝発動条件／条件2＝進化元の絞り込み／値＝進化コスト）' },
 ];
 

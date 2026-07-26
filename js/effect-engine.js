@@ -7292,9 +7292,24 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
         try { window._onlineSendStateSync(); } catch (_) {}
       }
-      try {
-        fireWhenSummonTriggers(token, ctx.side, ctx.bs, ctx, () => callback());
-      } catch (_) { callback(); }
+      // 登場演出（通常のsummonと同じUX）
+      const _playToken = (afterAnim) => {
+        const showFn = (ctx && ctx.showPlayEffect) || (typeof window !== 'undefined' && window.showPlayEffect);
+        if (showFn) {
+          const dummy = { name: token.name, imgSrc: token.imgSrc || '', type: token.type || 'デジモン', playCost: 0 };
+          if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+            window._onlineSendCommand({ type: 'play', cardName: token.name, cardImg: dummy.imgSrc, cardType: token.type, playCost: 0 });
+          }
+          showFn(dummy, afterAnim);
+        } else {
+          setTimeout(afterAnim, 300);
+        }
+      };
+      _playToken(() => {
+        try {
+          fireWhenSummonTriggers(token, ctx.side, ctx.bs, ctx, () => callback());
+        } catch (_) { callback(); }
+      });
       break;
     }
     // === レストチェイン: 相手1体をレスト → そのDPが閾値以下なら任意でもう1体（閾値以下）===

@@ -62,6 +62,39 @@ function ButtonGroup({ options, value, onChange, accentColor }: { options: { cod
   );
 }
 
+// ボタン式の複数選択グループ（トリガーの「よく使うトリガー」用。複数同時にactive可）
+function MultiButtonGroup({ options, values, onToggle, accentColor }: { options: { code: string; label: string }[]; values: string[]; onToggle: (v: string) => void; accentColor?: string }) {
+  const accent = accentColor || '#d81b60';
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {options.map((o) => {
+        const active = values.includes(o.code);
+        return (
+          <button
+            key={o.code}
+            type="button"
+            onClick={() => onToggle(o.code)}
+            style={{
+              padding: '3px 9px',
+              borderRadius: 5,
+              border: active ? `2px solid ${accent}` : '1px solid #bbb',
+              background: active ? accent : '#f5f5f5',
+              color: active ? '#fff' : '#333',
+              fontWeight: active ? 'bold' : 'normal',
+              cursor: 'pointer',
+              fontSize: 11,
+              boxShadow: active ? `0 0 6px ${accent}99` : 'none',
+              transition: 'all 0.12s ease',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // 発動領域ボタンの表示順・ラベル（ZONESの code:'' はバトルエリアを指す）
 const ZONE_BUTTONS = [
   { code: 'hand', label: '手札' },
@@ -107,6 +140,13 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   other_own_card: { l1: 'other_own', l2: 'card' },
   other_own_tamer: { l1: 'other_own', l2: 'tamer' },
 };
+
+// よく使うトリガー（実カードDB469枚のレシピ内訳から使用頻度の高い順に選定。
+// during_opp_turnはduring_own_turn/during_any_turnとの対称性のため含めている）
+const COMMON_TRIGGERS = [
+  'security', 'main', 'on_attack', 'during_own_turn', 'during_opp_turn', 'during_any_turn',
+  'passive', 'on_play', 'on_evolve', 'on_destroy', 'on_own_turn_start',
+];
 
 // 限定文字列の split/combine
 // 'once_per_turn' → { type:'per_turn', count:1 }
@@ -283,6 +323,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     block.extras
   );
   const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
+  const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
 
   return (
     <div className="block">
@@ -387,98 +428,116 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             🎬 トリガー（いつ発動するか）
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <div className="field">
-              <label>トリガー（複数選択可）</label>
-              {(() => {
-                const currentTriggers = (block.triggers && block.triggers.length > 0) ? block.triggers : (block.trigger ? [block.trigger] : []);
-                const addTrigger = (code: string) => {
-                  if (!code || currentTriggers.includes(code)) return;
-                  const next = [...currentTriggers, code];
-                  onChange({ ...block, trigger: next[0], triggers: next });
-                };
-                const removeTrigger = (code: string) => {
-                  const next = currentTriggers.filter((t) => t !== code);
-                  onChange({ ...block, trigger: next[0] || '', triggers: next });
-                };
-                return (
-                  <>
-                    <SearchSelect
-                      value=""
-                      onChange={addTrigger}
-                      options={toOpts(dict.triggers).filter((o) => !currentTriggers.includes(o.value))}
-                      allowFreeText
+          {(() => {
+            const currentTriggers = (block.triggers && block.triggers.length > 0) ? block.triggers : (block.trigger ? [block.trigger] : []);
+            const addTrigger = (code: string) => {
+              if (!code || currentTriggers.includes(code)) return;
+              const next = [...currentTriggers, code];
+              onChange({ ...block, trigger: next[0], triggers: next });
+            };
+            const removeTrigger = (code: string) => {
+              const next = currentTriggers.filter((t) => t !== code);
+              onChange({ ...block, trigger: next[0] || '', triggers: next });
+            };
+            const toggleCommonTrigger = (code: string) => {
+              if (currentTriggers.includes(code)) removeTrigger(code); else addTrigger(code);
+            };
+            const commonOptions = COMMON_TRIGGERS.map((code) => ({
+              code, label: dict.triggers.find((d) => d.code === code)?.label || code,
+            }));
+            const hasOtherSelected = currentTriggers.some((t) => !COMMON_TRIGGERS.includes(t));
+
+            const cur = SUBJECT_CODE_TO_L1L2[block.triggerSubject || ''] || { l1: 'self', l2: '' };
+            const handleL1 = (l1: string) => {
+              if (l1 === 'self') { update('triggerSubject', 'self'); return; }
+              const l2 = cur.l1 === l1 && cur.l2 ? cur.l2 : 'digimon';
+              update('triggerSubject', SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon']);
+            };
+            const handleL2 = (l2: string) => {
+              update('triggerSubject', SUBJECT_L1L2_TO_CODE[cur.l1 + ':' + l2]);
+            };
+            const l2Options = cur.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
+            // レスト/アクティブ状態フィルタは「このカード/デジモン/テイマー」のときだけ意味を持つ
+            // （「カード」全般やプレイヤーにはレスト/アクティブの概念が無い）
+            const showRestActive = cur.l1 === 'self' || cur.l2 === 'digimon' || cur.l2 === 'tamer';
+            const isRest = triggerConditions.some((c) => c.base === 'cond_rest');
+            const isActive = triggerConditions.some((c) => c.base === 'cond_self_active');
+            const setRestActiveState = (mode: 'rest' | 'active' | null) => {
+              const rest = triggerConditions.filter((c) => c.base !== 'cond_rest' && c.base !== 'cond_self_active');
+              const next = mode === 'rest' ? [...rest, { base: 'cond_rest' }]
+                : mode === 'active' ? [...rest, { base: 'cond_self_active' }]
+                : rest;
+              update('triggerConditions', next);
+            };
+
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: showRestActive ? '1.3fr 1fr auto' : '1.3fr 1fr', gap: 8 }}>
+                <div className="field">
+                  <label>トリガー（複数選択可）</label>
+                  <MultiButtonGroup options={commonOptions} values={currentTriggers} onToggle={toggleCommonTrigger} accentColor="#2e7d32" />
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 6, color: '#666' }}>
+                    <input
+                      type="checkbox"
+                      checked={otherTriggerOpen || hasOtherSelected}
+                      onChange={(e) => setOtherTriggerOpen(e.target.checked)}
                     />
-                    {currentTriggers.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-                        {currentTriggers.map((t) => {
-                          const label = dict.triggers.find((d) => d.code === t)?.label || t;
-                          return (
-                            <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#e0f7f1', border: '1px solid #93c693', borderRadius: 12, fontSize: 11 }}>
-                              {label}
-                              <button type="button" onClick={() => removeTrigger(t)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#c62828', fontWeight: 'bold', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
+                    その他のトリガー
+                  </label>
+                  {(otherTriggerOpen || hasOtherSelected) && (
+                    <div style={{ marginTop: 4 }}>
+                      <SearchSelect
+                        value=""
+                        onChange={addTrigger}
+                        options={toOpts(dict.triggers).filter((o) => !COMMON_TRIGGERS.includes(o.value) && !currentTriggers.includes(o.value))}
+                        allowFreeText
+                      />
+                    </div>
+                  )}
 
-            <div className="field">
-              <label>発動主体</label>
-              {(() => {
-                const cur = SUBJECT_CODE_TO_L1L2[block.triggerSubject || ''] || { l1: 'self', l2: '' };
-                const handleL1 = (l1: string) => {
-                  if (l1 === 'self') { update('triggerSubject', 'self'); return; }
-                  const l2 = cur.l1 === l1 && cur.l2 ? cur.l2 : 'digimon';
-                  update('triggerSubject', SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon']);
-                };
-                const handleL2 = (l2: string) => {
-                  update('triggerSubject', SUBJECT_L1L2_TO_CODE[cur.l1 + ':' + l2]);
-                };
-                const l2Options = cur.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
-                return (
-                  <>
-                    <ButtonGroup options={SUBJECT_L1} value={cur.l1} onChange={handleL1} accentColor="#2e7d32" />
-                    {cur.l1 !== 'self' && (
-                      <div style={{ marginTop: 4 }}>
-                        <ButtonGroup options={l2Options} value={cur.l2} onChange={handleL2} accentColor="#2e7d32" />
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
+                  {currentTriggers.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                      {currentTriggers.map((t) => {
+                        const label = dict.triggers.find((d) => d.code === t)?.label || t;
+                        return (
+                          <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#e0f7f1', border: '1px solid #93c693', borderRadius: 12, fontSize: 11 }}>
+                            {label}
+                            <button type="button" onClick={() => removeTrigger(t)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#c62828', fontWeight: 'bold', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
 
-              {/* 発動主体の状態フィルタ（レスト/アクティブ）: トリガー条件(cond_rest/cond_self_active)への
-                  ショートカット。例:「レスト状態の自分のデジモンが消滅したとき」 */}
-              {(() => {
-                const isRest = triggerConditions.some((c) => c.base === 'cond_rest');
-                const isActive = triggerConditions.some((c) => c.base === 'cond_self_active');
-                const setState = (mode: 'rest' | 'active' | null) => {
-                  const rest = triggerConditions.filter((c) => c.base !== 'cond_rest' && c.base !== 'cond_self_active');
-                  const next = mode === 'rest' ? [...rest, { base: 'cond_rest' }]
-                    : mode === 'active' ? [...rest, { base: 'cond_self_active' }]
-                    : rest;
-                  update('triggerConditions', next);
-                };
-                return (
-                  <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11 }}>
-                      <input type="checkbox" checked={isRest} onChange={(e) => setState(e.target.checked ? 'rest' : null)} />
-                      レスト状態
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11 }}>
-                      <input type="checkbox" checked={isActive} onChange={(e) => setState(e.target.checked ? 'active' : null)} />
-                      アクティブ状態
-                    </label>
+                <div className="field">
+                  <label>発動主体</label>
+                  <ButtonGroup options={SUBJECT_L1} value={cur.l1} onChange={handleL1} accentColor="#2e7d32" />
+                  {cur.l1 !== 'self' && (
+                    <div style={{ marginTop: 4 }}>
+                      <ButtonGroup options={l2Options} value={cur.l2} onChange={handleL2} accentColor="#2e7d32" />
+                    </div>
+                  )}
+                </div>
+
+                {showRestActive && (
+                  <div className="field">
+                    <label>状態</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11 }}>
+                        <input type="checkbox" checked={isRest} onChange={(e) => setRestActiveState(e.target.checked ? 'rest' : null)} />
+                        レスト状態
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11 }}>
+                        <input type="checkbox" checked={isActive} onChange={(e) => setRestActiveState(e.target.checked ? 'active' : null)} />
+                        アクティブ状態
+                      </label>
+                    </div>
                   </div>
-                );
-              })()}
-            </div>
-          </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ⏱ タイミング・持続プリセット (トリガーグループ内に配置) */}
           <div style={{ marginTop: 8, background: '#fff3e0', padding: 8, borderRadius: 4, border: '1px solid #ffd591' }}>

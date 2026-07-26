@@ -6903,6 +6903,11 @@ function executeRecipeStep(step, ctx, store, callback) {
       };
       if (effectiveSide === 'ai') {
         onPicked(candidates.slice(0, wantCount));
+      } else if (optional && candidates.length <= wantCount) {
+        // 発動可否は上位の効果確認ダイアログ（block.isOptional→「発動しますか？」）で
+        // 既に確認済み。候補が必要数以下で選ぶ余地が無い場合はピッカーを経由せず直接登場させる
+        // （ミレニアモン「このカードをトラッシュから登場できる」等、自分自身のみが対象のケース）
+        onPicked(candidates.slice(0, wantCount));
       } else {
         showTrashCardPicker(candidates, wantCount, optional, '🌟 登場させるカードを選んでください', onPicked, player.trash);
       }

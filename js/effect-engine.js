@@ -344,36 +344,40 @@ function executeQueueEntry(entry, context, callback) {
   const actualSide = entry.actualSide || (side === 'turnPlayer' ? (context.bs.isPlayerTurn ? 'player' : 'ai') : (context.bs.isPlayerTurn ? 'ai' : 'player'));
   const ctx = { ...context, card, side: actualSide, block, _parentContext: context };
 
-  // 効果発動 → カード&効果テキストを数秒表示してから実行
-  function executeWithAnnounce() {
-    // 進化元由来の効果なら、進化元カードを announce に渡して表示を分かりやすくする
+  // レシピ/アクションを実行（アナウンス演出は挟まない）
+  function runEffectNow(cb) {
+    // 進化元由来の効果なら、進化元カードを名指しでログに残す
     const evoSourceCard = block && block._recipeCard;
     if (evoSourceCard) {
       ctx.addLog('⚡ 「' + evoSourceCard.name + '」（「' + card.name + '」の進化元）の効果発動');
     } else {
       ctx.addLog('⚡ 「' + card.name + '」の効果発動');
     }
-    showEffectAnnounce(card, block.raw, actualSide, () => {
-      // 効果完了時に相手のオーバーレイを閉じるコールバック（対象選択で既に閉じた場合は不要だが安全のため送る）
-      const wrappedCallback = () => {
-        if (window._isOnlineMode && window._isOnlineMode() && actualSide === 'player') {
-          // 残っていれば閉じる（対象選択で既にcleanupから送信済みの場合はDOMが無いので影響なし）
-          window._onlineSendCommand({ type: 'fx_effectClose' });
-        }
-        callback();
-      };
-      // レシピがあればレシピ実行、なければ従来処理
-      // 進化元効果のレシピは _recipeCard に格納されている → inEvoSource=true で参照
-      const recipeCard = block._recipeCard || card;
-      const isEvoSourceLookup = !!block._recipeCard;
-      const trigCode = block.trigger ? block.trigger.code : null;
-      const recipe = block._grantedSteps || getRecipeForTrigger(recipeCard, trigCode, isEvoSourceLookup);
-      if (recipe) {
-        runRecipe(recipe, ctx, wrappedCallback);
-      } else {
-        executeCostAndActions(block, ctx, () => executeAfterActions(block, ctx, wrappedCallback));
+    // 効果完了時に相手のオーバーレイを閉じるコールバック（対象選択で既に閉じた場合は不要だが安全のため送る）
+    const wrappedCallback = () => {
+      if (window._isOnlineMode && window._isOnlineMode() && actualSide === 'player') {
+        // 残っていれば閉じる（対象選択/確認ダイアログで既に開いた相手側オーバーレイをここで閉じる）
+        window._onlineSendCommand({ type: 'fx_effectClose' });
       }
-    }, evoSourceCard);
+      cb();
+    };
+    // レシピがあればレシピ実行、なければ従来処理
+    // 進化元効果のレシピは _recipeCard に格納されている → inEvoSource=true で参照
+    const recipeCard = block._recipeCard || card;
+    const isEvoSourceLookup = !!block._recipeCard;
+    const trigCode = block.trigger ? block.trigger.code : null;
+    const recipe = block._grantedSteps || getRecipeForTrigger(recipeCard, trigCode, isEvoSourceLookup);
+    if (recipe) {
+      runRecipe(recipe, ctx, wrappedCallback);
+    } else {
+      executeCostAndActions(block, ctx, () => executeAfterActions(block, ctx, wrappedCallback));
+    }
+  }
+
+  // 強制効果用: カード&効果テキストを数秒表示するアナウンス演出を挟んでから実行
+  function executeWithAnnounce() {
+    const evoSourceCard = block && block._recipeCard;
+    showEffectAnnounce(card, block.raw, actualSide, () => runEffectNow(callback), evoSourceCard);
   }
 
   // 条件チェック（cond_exists等）
@@ -431,12 +435,13 @@ function executeQueueEntry(entry, context, callback) {
     return;
   }
 
-  // 任意効果 → 確認ダイアログ
-  // B画面: fx_confirmShow → Aが「はい」→ fx_confirmClose → fx_effectAnnounce（処理中表示）
+  // 任意効果 → 確認ダイアログ（カード名・効果テキストは既にここで表示済みのため、
+  // 「はい」を選んだ後に別途アナウンス演出は挟まず、その場で実行する）
+  // B画面: fx_confirmShow → Aが「はい」→ fx_confirmClose（処理中表示）→ 実行完了で fx_effectClose
   //                        → Aが「いいえ」→ fx_confirmClose(accepted:false) → 「発動しませんでした」
   showConfirmDialog(card, block.raw, (accepted) => {
     if (accepted) {
-      executeWithAnnounce();
+      runEffectNow(callback);
     } else {
       // 「いいえ」→ 相手に「効果を発動しませんでした」を通知
       if (window._isOnlineMode && window._isOnlineMode() && actualSide === 'player') {
@@ -5433,33 +5438,37 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
       ? sourceCard.evoSourceEffect : (sourceCard.effect || carrier.effect || '');
     const evoSourceArg = sourceCard !== carrier ? sourceCard : undefined;
 
-    const doAnnounceAndRun = () => {
+    const runNow = () => {
       if (sourceCard !== carrier) {
         ctx.addLog && ctx.addLog('⚡ 「' + sourceCard.name + '」（「' + (carrier.name||'?') + '」の進化元）の効果発動');
       } else {
         ctx.addLog && ctx.addLog('⚡ 「' + (carrier.name||'?') + '」の効果発動');
       }
-      showEffectAnnounce(carrier, effText, destroyedSide, () => {
-        runRecipe(recipe, ctx, () => {
-          ctx.renderAll && ctx.renderAll();
-          // showEffectAnnounce で相手機に開いた効果ポップアップを閉じる（announce と対称）
-          if (window._isOnlineMode && window._isOnlineMode() && destroyedSide === 'player' && window._onlineSendCommand) {
-            window._onlineSendCommand({ type: 'fx_effectClose' });
-          }
-          runOne();
-        });
-      }, evoSourceArg);
+      runRecipe(recipe, ctx, () => {
+        ctx.renderAll && ctx.renderAll();
+        // 確認ダイアログ/アナウンスで相手機に開いたオーバーレイを閉じる
+        if (window._isOnlineMode && window._isOnlineMode() && destroyedSide === 'player' && window._onlineSendCommand) {
+          window._onlineSendCommand({ type: 'fx_effectClose' });
+        }
+        runOne();
+      });
+    };
+    // 強制効果用: カード&効果テキストを表示するアナウンス演出を挟んでから実行
+    const doAnnounceAndRun = () => {
+      showEffectAnnounce(carrier, effText, destroyedSide, runNow, evoSourceArg);
     };
 
     // 任意効果（「〜できる」= step.optional / コスト持ち）は発動前に確認ダイアログを挟む。
     // 通常の効果ディスパッチ（executeQueueEntry）と同じ判定・同じ確認フローに揃える。
+    // 確認ダイアログでカード名・効果テキストは既に表示済みのため、「はい」を選んだ後に
+    // 別途アナウンス演出は挟まず、その場で実行する。
     const isOptional = Array.isArray(recipe) && recipe.some(s =>
       s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0))
     );
     if (isOptional) {
       showConfirmDialog(carrier, effText, (accepted) => {
         if (accepted) {
-          doAnnounceAndRun();
+          runNow();
         } else {
           if (window._isOnlineMode && window._isOnlineMode() && destroyedSide === 'player' && window._onlineSendCommand) {
             window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: carrier.name });

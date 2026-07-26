@@ -173,12 +173,12 @@ const TIMING_OPTIONS: { code: TimingKey; label: string }[] = [
 
 // 【コスト軽減】は自分/相手/お互いの軸ではなく「何のコストを軽減するか」の軸を持つ特殊トリガー。
 // 登場コスト・使用コスト(オプション/テイマー)は実装上どちらも summon_cost 一本（getEffectivePlayCost
-// が playCost に対して一律に適用するため区別がなく、ボタンを分けても同一コードで選択状態が
-// 一致してしまうため「登場」に統一。使用コストもここで代用する旨は本文で案内する）。
+// が playCost に対して一律に適用するため区別がない）。ボタンを分けると同一コードで選択状態が
+// 一致してしまい押しても反映されないため、「登場/使用」1ボタンにまとめる。
 // 進化コストは常時軽減の専用recipeキーが未実装（evo_cost_minusは単発アクションのみ）なので、
 // エンジン未対応のプレースホルダーコードとして用意する。
 const COST_REDUCTION_VARIANTS: { code: string; label: string; trigger: string; implemented: boolean }[] = [
-  { code: 'summon', label: '登場', trigger: 'summon_cost', implemented: true },
+  { code: 'summon', label: '登場/使用', trigger: 'summon_cost', implemented: true },
   { code: 'evolve', label: '進化', trigger: 'evo_cost', implemented: false },
 ];
 const COST_REDUCTION_TRIGGERS = new Set(COST_REDUCTION_VARIANTS.map((v) => v.trigger));
@@ -494,9 +494,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               >
                 ← トリガーを選び直す
               </button>
-            </div>
-            <div style={{ fontSize: 10, color: '#8a5300', marginBottom: 6 }}>
-              ※オプション/テイマーの使用コストも「登場」と同じ扱いです（内部的に同一コード）
             </div>
             {!COST_REDUCTION_VARIANTS.find((v) => v.trigger === block.trigger)?.implemented && (
               <div style={{ marginBottom: 6, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>

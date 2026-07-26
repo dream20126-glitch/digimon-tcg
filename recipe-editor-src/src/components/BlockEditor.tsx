@@ -2,12 +2,9 @@ import { useState } from 'react';
 import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep } from '../types';
 import {
   SECTIONS,
-  ZONES,
-  LIMITS,
   DURATIONS,
   TARGETS,
   TARGET_COUNTS,
-  TRIGGER_SUBJECTS,
   CONDITION_SUBJECTS,
   FROM_ZONES,
   REF_SUBJECTS,
@@ -31,6 +28,84 @@ interface Props {
 function toOpts(arr: { code: string; label: string }[]): SelectOption[] {
   return arr.map((e) => ({ value: e.code, label: e.label }));
 }
+
+// ボタン式の単一選択グループ（区分・発動領域など、選択肢が少なく視覚的に選ばせたい項目用）
+function ButtonGroup({ options, value, onChange }: { options: { code: string; label: string }[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {options.map((o) => {
+        const active = value === o.code;
+        return (
+          <button
+            key={o.code || '(empty)'}
+            type="button"
+            onClick={() => onChange(o.code)}
+            style={{
+              padding: '3px 9px',
+              borderRadius: 5,
+              border: active ? '2px solid #d81b60' : '1px solid #bbb',
+              background: active ? '#d81b60' : '#f5f5f5',
+              color: active ? '#fff' : '#333',
+              fontWeight: active ? 'bold' : 'normal',
+              cursor: 'pointer',
+              fontSize: 11,
+              boxShadow: active ? '0 0 6px #d81b6099' : 'none',
+              transition: 'all 0.12s ease',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// 発動領域ボタンの表示順・ラベル（ZONESの code:'' はバトルエリアを指す）
+const ZONE_BUTTONS = [
+  { code: 'hand', label: '手札' },
+  { code: 'trash', label: 'トラッシュ' },
+  { code: 'security', label: 'セキュリティ' },
+  { code: 'breed', label: '育成エリア' },
+  { code: '', label: 'バトルエリア' },
+];
+
+// 発動主体の2段階ボタン選択:
+// 1段目「このカード/自分/相手/他」→ 2段目「デジモン/カード/テイマー/プレイヤー」
+// own_card/opp_card/other_own_card/other_own_tamer はエディタ側でのみ選べる新コード
+// （エンジン側は未実装。実際にこの範囲を使うカードが出てきたら実装する）
+const SUBJECT_L1 = [
+  { code: 'self', label: 'このカード' },
+  { code: 'own', label: '自分' },
+  { code: 'opp', label: '相手' },
+  { code: 'other_own', label: '他' },
+];
+const SUBJECT_L2 = [
+  { code: 'digimon', label: 'デジモン' },
+  { code: 'card', label: 'カード' },
+  { code: 'tamer', label: 'テイマー' },
+  { code: 'player', label: 'プレイヤー' },
+];
+const SUBJECT_L1L2_TO_CODE: Record<string, string> = {
+  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:player': 'own_player',
+  'opp:digimon': 'opp', 'opp:card': 'opp_card', 'opp:tamer': 'opp_tamer', 'opp:player': 'opp_player',
+  'other_own:digimon': 'other_own', 'other_own:card': 'other_own_card', 'other_own:tamer': 'other_own_tamer',
+};
+const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
+  '': { l1: 'self', l2: '' },
+  self: { l1: 'self', l2: '' },
+  own: { l1: 'own', l2: 'digimon' },
+  own_card: { l1: 'own', l2: 'card' },
+  own_tamer: { l1: 'own', l2: 'tamer' },
+  own_player: { l1: 'own', l2: 'player' },
+  opp: { l1: 'opp', l2: 'digimon' },
+  opp_card: { l1: 'opp', l2: 'card' },
+  opp_tamer: { l1: 'opp', l2: 'tamer' },
+  opp_player: { l1: 'opp', l2: 'player' },
+  other_own: { l1: 'other_own', l2: 'digimon' },
+  other_own_card: { l1: 'other_own', l2: 'card' },
+  other_own_tamer: { l1: 'other_own', l2: 'tamer' },
+};
 
 // 限定文字列の split/combine
 // 'once_per_turn' → { type:'per_turn', count:1 }
@@ -220,52 +295,42 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
       </div>
 
       <div className="block-grid">
-        {/* === 上段: 区分 / 発動領域 / 限定 === */}
-        <div style={{ gridColumn: '1 / span 2', display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr', gap: 8 }}>
-          <div className="field">
-            <label>区分 *</label>
-            <SearchSelect
-              value={block.section}
-              onChange={(v) => update('section', v)}
-              options={toOpts(SECTIONS)}
-              required
-            />
+        {/* === ＜前提＞ブロック: 区分 / 発動領域 / 限定 をボタン式で選択 === */}
+        <div style={{
+          gridColumn: '1 / span 2', padding: 10, background: '#fdeef2',
+          border: '1px solid #f3b8ce', borderRadius: 6,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>区分 *</label>
+            <ButtonGroup options={SECTIONS} value={block.section} onChange={(v) => update('section', v)} />
           </div>
 
-          <div className="field">
-            <label>発動領域</label>
-            <SearchSelect
-              value={block.zone || ''}
-              onChange={(v) => update('zone', v)}
-              options={toOpts(ZONES)}
-            />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>発動領域</label>
+            <ButtonGroup options={ZONE_BUTTONS} value={block.zone || ''} onChange={(v) => update('zone', v)} />
           </div>
 
-          <div className="field">
-            <label>限定</label>
+          <div>
             {(() => {
               const { type: limType, count: limCount } = splitLimit(block.limit);
+              const limitOn = limType === 'per_turn';
               return (
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <div style={{ flex: 2 }}>
-                    <SearchSelect
-                      value={limType}
-                      onChange={(v) => update('limit', combineLimit(v, limCount))}
-                      options={toOpts(LIMITS)}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, fontWeight: 'bold' }}>
+                    <input
+                      type="checkbox"
+                      checked={limitOn}
+                      onChange={(e) => update('limit', e.target.checked ? combineLimit('per_turn', 1) : '')}
                     />
-                  </div>
-                  <input
-                    type="number"
-                    min={1}
-                    value={limType ? limCount : ''}
-                    onChange={(e) => {
-                      const n = Math.max(1, parseInt(e.target.value, 10) || 1);
-                      update('limit', combineLimit(limType, n));
-                    }}
-                    disabled={!limType}
-                    placeholder="回数"
-                    style={{ flex: 1, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
-                  />
+                    ターンにN回
+                  </label>
+                  {limitOn && (
+                    <ButtonGroup
+                      options={[1, 2, 3].map((n) => ({ code: String(n), label: n + '回' }))}
+                      value={String(limCount)}
+                      onChange={(v) => update('limit', combineLimit('per_turn', parseInt(v, 10)))}
+                    />
+                  )}
                 </div>
               );
             })()}
@@ -322,22 +387,68 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <div className="field">
-              <label>トリガー</label>
-              <SearchSelect
-                value={block.trigger}
-                onChange={(v) => update('trigger', v)}
-                options={toOpts(dict.triggers)}
-                allowFreeText
-              />
+              <label>トリガー（複数選択可）</label>
+              {(() => {
+                const currentTriggers = (block.triggers && block.triggers.length > 0) ? block.triggers : (block.trigger ? [block.trigger] : []);
+                const addTrigger = (code: string) => {
+                  if (!code || currentTriggers.includes(code)) return;
+                  const next = [...currentTriggers, code];
+                  onChange({ ...block, trigger: next[0], triggers: next });
+                };
+                const removeTrigger = (code: string) => {
+                  const next = currentTriggers.filter((t) => t !== code);
+                  onChange({ ...block, trigger: next[0] || '', triggers: next });
+                };
+                return (
+                  <>
+                    <SearchSelect
+                      value=""
+                      onChange={addTrigger}
+                      options={toOpts(dict.triggers).filter((o) => !currentTriggers.includes(o.value))}
+                      allowFreeText
+                    />
+                    {currentTriggers.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                        {currentTriggers.map((t) => {
+                          const label = dict.triggers.find((d) => d.code === t)?.label || t;
+                          return (
+                            <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#e0f7f1', border: '1px solid #93c693', borderRadius: 12, fontSize: 11 }}>
+                              {label}
+                              <button type="button" onClick={() => removeTrigger(t)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#c62828', fontWeight: 'bold', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             <div className="field">
               <label>発動主体</label>
-              <SearchSelect
-                value={block.triggerSubject || ''}
-                onChange={(v) => update('triggerSubject', v)}
-                options={toOpts(TRIGGER_SUBJECTS)}
-              />
+              {(() => {
+                const cur = SUBJECT_CODE_TO_L1L2[block.triggerSubject || ''] || { l1: 'self', l2: '' };
+                const handleL1 = (l1: string) => {
+                  if (l1 === 'self') { update('triggerSubject', 'self'); return; }
+                  const l2 = cur.l1 === l1 && cur.l2 ? cur.l2 : 'digimon';
+                  update('triggerSubject', SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon']);
+                };
+                const handleL2 = (l2: string) => {
+                  update('triggerSubject', SUBJECT_L1L2_TO_CODE[cur.l1 + ':' + l2]);
+                };
+                const l2Options = cur.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
+                return (
+                  <>
+                    <ButtonGroup options={SUBJECT_L1} value={cur.l1} onChange={handleL1} />
+                    {cur.l1 !== 'self' && (
+                      <div style={{ marginTop: 4 }}>
+                        <ButtonGroup options={l2Options} value={cur.l2} onChange={handleL2} />
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
 

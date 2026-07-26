@@ -20,13 +20,17 @@ export function blocksToRecipe(blocks: EffectBlock[]): Record<string, any> {
       appendStep(recipe, { ...b, trigger: 'security' });
       return;
     }
-    if (!b.trigger) return;
-    if (b.section === 'evo_source') {
-      recipe.evo_source = recipe.evo_source || {};
-      appendStep(recipe.evo_source, b);
-    } else {
-      appendStep(recipe, b);
-    }
+    // トリガー複数選択: 「登場時/進化時どちらでも同じ効果」のように、選択された
+    // 各トリガーコードへ同一内容のstepをそれぞれ出力する
+    const triggerList = (b.triggers && b.triggers.length > 0) ? b.triggers : (b.trigger ? [b.trigger] : []);
+    triggerList.forEach((trig) => {
+      if (b.section === 'evo_source') {
+        recipe.evo_source = recipe.evo_source || {};
+        appendStep(recipe.evo_source, { ...b, trigger: trig });
+      } else {
+        appendStep(recipe, { ...b, trigger: trig });
+      }
+    });
   });
   return recipe;
 }

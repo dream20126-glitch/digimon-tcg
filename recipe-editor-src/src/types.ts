@@ -9,7 +9,10 @@ export interface ConditionPair {
 export interface EffectBlock {
   section: 'main' | 'evo_source' | 'security';
   zone?: string; // '' | 'security' | 'trash' | 'hand' | 'breed'
-  trigger: string; // code (e.g., 'on_play', 'during_own_turn', 'passive', 'main')
+  trigger: string; // code (e.g., 'on_play', 'during_own_turn', 'passive', 'main')。複数選択時はtriggers[0]と一致させる
+  // トリガーの複数選択（例: 登場時/進化時どちらでも同じ効果）。2件以上のときのみ意味を持つ。
+  // blocksToRecipeで各コードごとに同じstepを複製して出力する。1件以下ならtriggerのみを見る
+  triggers?: string[];
   triggerSubject?: string; // '' = このデジモン / 'own' / 'other_own' / 'opp' / 'own_tamer'
   limit?: string; // '' | 'once_per_turn'
   // トリガー条件: トリガー発火元のカード（登場/消滅したカード等）に対するフィルタ

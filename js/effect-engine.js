@@ -667,49 +667,71 @@ export function registerFxRunners(runners) {
   });
 }
 
-// アクションコードから辞書のUI情報を使って演出を実行
+// アクションコードの命名パターンから演出タイプ/演出コード/枠色を推測する。
+// レシピエディタの辞書管理画面(自動推測 suggestVisualType)の判定ルールをベースに、
+// 実際に battle-fx.js#getFxRunners() に登録されているキー名と食い違っていた箇所
+// （数値ポップアップ+/- → 実装は「数値ポップアップ」のみ／Sアタック-・退化演出・
+// レスト演出・アクティブ演出は演出ランナー自体が未実装）を実装に合わせて補正した版。
+// 辞書（スプシ）は参照せず、コードの命名パターンだけで判定する。
+function _inferVisualInfo(actionCode) {
+  const lc = String(actionCode || '').toLowerCase();
+  // security_attack_plus/minus は末尾が _plus/_minus と一致するため、汎用の数値
+  // ポップアップ判定より先に判定する
+  if (/security_attack/.test(lc)) {
+    const minus = /_minus/.test(lc);
+    if (minus) return { visualType: null, visualCode: null, frameColor: '赤' }; // 「Sアタック-」の演出ランナーは未実装
+    return { visualType: 'Sアタック+', visualCode: 'sattack_plus', frameColor: '緑' };
+  }
+  if (/(_plus|_minus)$/.test(lc)) {
+    const minus = /_minus$/.test(lc);
+    // 実装済みランナーは「数値ポップアップ」のみ（+/-の区別は無い）
+    return { visualType: '数値ポップアップ', visualCode: minus ? 'popup_minus' : 'popup_plus', frameColor: minus ? '赤' : '緑' };
+  }
+  if (/destroy/.test(lc)) return { visualType: '消滅演出', visualCode: 'card_destroy', frameColor: '赤' };
+  if (/draw/.test(lc)) return { visualType: 'ドロー演出', visualCode: 'draw_card', frameColor: 'シアン' };
+  if (/summon/.test(lc)) return { visualType: 'カード登場', visualCode: 'card_appear', frameColor: '緑' };
+  if (/(bounce|return|add_to_hand|trash_to_hand|move|recover|deck_open|deck_trash|evo_discard)/.test(lc)) {
+    return { visualType: 'カード移動', visualCode: 'card_move', frameColor: 'シアン' };
+  }
+  if (/(grant|cant_|immune|prevent_)/.test(lc)) return { visualType: '状態付与演出', visualCode: 'buff_status', frameColor: '紫' };
+  if (/jogress/.test(lc)) return { visualType: 'ジョグレス進化', visualCode: 'jogress_evolve', frameColor: '黄' };
+  // 以下は対応する演出ランナーが未実装のため枠色のみ推測（演出タイプは付けない）
+  if (/dedigivolve/.test(lc)) return { visualType: null, visualCode: null, frameColor: '黄' };
+  if (/^rest$/.test(lc)) return { visualType: null, visualCode: null, frameColor: 'オレンジ' };
+  if (/^active$/.test(lc)) return { visualType: null, visualCode: null, frameColor: '緑' };
+  return { visualType: null, visualCode: null, frameColor: null };
+}
+
+const _COLOR_MAP = { '赤': '#ff4444', '緑': '#00ff88', 'シアン': '#00fbff', 'オレンジ': '#ff9900', '黄': '#ffaa00', '紫': '#aa66ff' };
+
+// アクションコードから演出を実行（推測ルールベース。辞書は参照しない）
 // 戻り値: true=演出実行した, false=演出なし
 function playEffect(actionCode, options, callback) {
-  const ui = getActionUI(actionCode);
-  if (!ui) { callback(); return false; }
-  const typeName = ui['演出タイプ'];
-  if (!typeName || typeName === 'なし') { callback(); return false; }
-  const runner = EFFECT_RUNNERS[typeName];
+  const info = _inferVisualInfo(actionCode);
+  if (!info.visualType) { callback(); return false; }
+  const runner = EFFECT_RUNNERS[info.visualType];
   if (!runner) { callback(); return false; }
 
-  // 辞書の各列をoptionsに自動セット
   options.actionCode = actionCode;
-
-  const fxCode = ui['演出コード'] || '';
-  if (fxCode && fxCode !== 'なし') options.fxCode = fxCode;
-
-  // 枠色
-  if (ui['枠色'] && ui['枠色'] !== 'なし') {
-    const colorMap = { '赤': '#ff4444', '緑': '#00ff88', 'シアン': '#00fbff', 'オレンジ': '#ff9900', '黄': '#ffaa00', '紫': '#aa66ff' };
-    options.color = colorMap[ui['枠色']] || ui['枠色'];
-  }
+  if (info.visualCode) options.fxCode = info.visualCode;
+  if (info.frameColor) options.color = _COLOR_MAP[info.frameColor] || info.frameColor;
 
   runner(options, callback);
   return true;
 }
 
-// 辞書から枠色を取得するヘルパー
+// 枠色を取得するヘルパー（アクションコードの命名パターンから推測。辞書は参照しない）
 function getUIColor(actionCode, fallback) {
-  const ui = getActionUI(actionCode);
-  if (!ui || !ui['枠色'] || ui['枠色'] === 'なし') return fallback || '#ff4444';
-  const colorMap = { '赤': '#ff4444', '緑': '#00ff88', 'シアン': '#00fbff', 'オレンジ': '#ff9900', '黄': '#ffaa00', '紫': '#aa66ff' };
-  return colorMap[ui['枠色']] || fallback || '#ff4444';
+  const inferred = _inferVisualInfo(actionCode).frameColor;
+  return (inferred && _COLOR_MAP[inferred]) || fallback || '#ff4444';
 }
 
 
 function runOneAction(action, defaultTarget, ctx, callback) {
-  const ui = getActionUI(action.code);
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
   const sideLabel = ctx.side === 'player' ? '自分' : '相手';
-  // 演出タイプを辞書から取得（スプシの「演出タイプ」列）
-  const effectTypeName = ui ? ui['演出タイプ'] : null;
-  // 枠色を辞書から取得（スプシの「枠色」列）
+  // 枠色をアクションコードから推測（辞書は参照しない）
   const uiColor = getUIColor(action.code, '#ff4444');
   // 対象選択UIに渡すサイド（opponent側のDOM行ID用: 'ai' or 'pl'）
   const opponentRowSide = ctx.side === 'player' ? 'ai' : 'pl';

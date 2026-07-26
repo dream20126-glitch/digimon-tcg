@@ -4479,15 +4479,53 @@ const TRIGGER_LABEL_MAP = {
   main: 'メイン', during_own_turn: '自分のターン', during_opp_turn: '相手のターン', during_any_turn: 'お互いのターン',
 };
 const _ALL_TRIGGER_LABELS = Array.from(new Set(Object.values(TRIGGER_LABEL_MAP)));
+
+// 「他のデジモンが消滅/登場したとき」等の反応系トリガーは、レシピ上は when_own_destroyed /
+// on_play(subject:other_own) 等の別コードだが、カードテキストは【自分のターン】のような
+// 同じ括弧の中にまとめて書かれることがある（括弧だけでは区別できない）。
+// レシピの構造としては別トリガーなので、その「系統」を表すキーワードで文単位まで絞り込む。
+// あくまで表示用の best-effort ヒント: 一致しない/曖昧なときはそのまま（絞り込まない）。
+// ゲームの挙動自体はレシピのみで決まり、この一致に依存しない。
+const REACTIVE_TRIGGER_FAMILY = {
+  when_own_destroyed: '消滅', when_opp_destroyed: '消滅', when_other_destroyed: '消滅',
+  on_destroy: '消滅', on_battle_destroy: '消滅',
+  on_play: '登場', when_summon: '登場',
+  on_evolve: '進化',
+  on_attack: 'アタック', on_attack_end: 'アタック',
+  when_own_block: 'ブロック',
+  when_opp_rest: 'レスト',
+};
+const _ALL_REACTIVE_FAMILIES = Array.from(new Set(Object.values(REACTIVE_TRIGGER_FAMILY)));
+
+// ブロック内テキストを「。」区切りの文単位に分解し、発動中トリガーの系統キーワードを
+// 含む文だけに絞り込む（ちょうど1系統だけ一致する場合のみ。曖昧なら絞り込まない）
+function _narrowBySentence(blockText, triggerCode) {
+  const family = REACTIVE_TRIGGER_FAMILY[triggerCode];
+  if (!family) return blockText;
+  const sentences = blockText.split(/(?<=。)/).map(s => s.trim()).filter(Boolean);
+  if (sentences.length <= 1) return blockText;
+  const matched = sentences.filter(s => s.includes(family));
+  if (matched.length === 0 || matched.length === sentences.length) return blockText;
+  // 他の系統キーワードが1つも入っていない文だけを対象にする（複数系統が同居する文は除外しない）
+  let result = matched.join('');
+  const labelPrefixMatch = blockText.match(/^【[^】]+】/);
+  if (labelPrefixMatch && !result.startsWith('【')) result = labelPrefixMatch[0] + result;
+  return result;
+}
+
 function extractTriggerSectionText(fullText, triggerCode) {
+  if (!fullText) return fullText || '';
   const label = triggerCode && TRIGGER_LABEL_MAP[triggerCode];
-  if (!label || !fullText) return fullText || '';
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  try {
-    const re = new RegExp('【' + esc(label) + '】[\\s\\S]*?(?=\\n*【(?:' + _ALL_TRIGGER_LABELS.map(esc).join('|') + ')】|$)');
-    const m = fullText.match(re);
-    return m ? m[0].trim() : fullText;
-  } catch (_) { return fullText; }
+  let block = fullText;
+  if (label) {
+    try {
+      const re = new RegExp('【' + esc(label) + '】[\\s\\S]*?(?=\\n*【(?:' + _ALL_TRIGGER_LABELS.map(esc).join('|') + ')】|$)');
+      const m = fullText.match(re);
+      block = m ? m[0].trim() : fullText;
+    } catch (_) { block = fullText; }
+  }
+  return _narrowBySentence(block, triggerCode);
 }
 
 // ===== 効果発動アナウンス（カード画像＋効果テキストを数秒表示） =====

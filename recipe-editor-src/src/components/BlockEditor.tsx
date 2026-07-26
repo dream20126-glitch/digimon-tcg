@@ -599,10 +599,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
 
-                  {currentTriggers.length > 0 && (
+                  {/* チップ表示は「その他のトリガー」で追加した分だけ（よく使うトリガーはボタン自体の
+                      ハイライトで選択状態が分かるため、重複表示しない） */}
+                  {currentTriggers.some((t) => !allFamilyCodes.has(t)) && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-                      {currentTriggers.map((t) => {
-                        const label = dict.triggers.find((d) => d.code === t)?.label || FAMILY_VARIANT_FALLBACK_LABELS[t] || t;
+                      {currentTriggers.filter((t) => !allFamilyCodes.has(t)).map((t) => {
+                        const label = dict.triggers.find((d) => d.code === t)?.label || t;
                         return (
                           <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#e0f7f1', border: '1px solid #93c693', borderRadius: 12, fontSize: 11 }}>
                             {label}

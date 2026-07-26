@@ -4494,6 +4494,9 @@ const REACTIVE_TRIGGER_FAMILY = {
   on_attack: 'アタック', on_attack_end: 'アタック',
   when_own_block: 'ブロック',
   when_opp_rest: 'レスト',
+  // 「進化元を持たない相手のデジモンにはブロックされない」等、during_own_turn 文中に
+  // 他の【自分のターン】効果と同居していても、この一文だけに絞り込めるようにする
+  during_own_turn: 'ブロックされ',
 };
 const _ALL_REACTIVE_FAMILIES = Array.from(new Set(Object.values(REACTIVE_TRIGGER_FAMILY)));
 

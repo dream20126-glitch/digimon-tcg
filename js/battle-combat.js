@@ -124,6 +124,36 @@ function hasPassiveFlag(c, flagName, kwBracket) {
   }
   return false;
 }
+// 「進化元を持たない相手のデジモンにはブロックされない」の元テキストを取得。
+// メタルシードラモン等は本体の during_own_turn、イッカクモン(BT1-034)等は進化元の
+// evo_source.during_own_turn にこの能力を持つため、両方のケースを見て正しい方の
+// テキスト（本体 or 進化元カードの evoSourceEffect）を返す。
+function _getNoEvoBlockImmunityText(atk) {
+  if (!atk) return '';
+  const parseRec = (rec) => {
+    if (!rec) return null;
+    try { return typeof rec === 'string' ? JSON.parse(rec.replace(/[\x00-\x1F\x7F]\s*/g, '')) : rec; }
+    catch (_) { return null; }
+  };
+  const hasNoEvoBlockerCustom = (steps) => Array.isArray(steps) && steps.some(s => {
+    const cs = String((s && s.condition) || '');
+    return s && s.action === 'custom' && cs.includes('cond_no_evo') && cs.includes('opp_blocker');
+  });
+  const r = parseRec(atk.recipe);
+  if (r && hasNoEvoBlockerCustom(r.during_own_turn)) {
+    return _extractTriggerSectionText(atk.effect || '', 'during_own_turn');
+  }
+  if (Array.isArray(atk.stack)) {
+    for (const evo of atk.stack) {
+      if (!evo) continue;
+      const er = parseRec(evo.recipe);
+      if (er && er.evo_source && hasNoEvoBlockerCustom(er.evo_source.during_own_turn)) {
+        return _extractTriggerSectionText(evo.evoSourceEffect || '', 'during_own_turn');
+      }
+    }
+  }
+  return '';
+}
 // ブロッカー判定（カブテリモン等）
 function isBlocker(c) { return hasPassiveFlag(c, 'blocker', '【ブロッカー】'); }
 // 貫通判定（ヘラクルカブテリモン等）: アタックで撃破時に追加セキュリティチェック
@@ -981,7 +1011,7 @@ export function resolveAttackTarget(target, targetIdx) {
   // アナウンスしておきたい常在型能力（メタルシードラモン/イッカクモン等）。
   // アタックするたびに毎回表示する（相手の盤面状況による条件分岐は行わない）。
   if (atk && atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo) {
-    const _announceText = _extractTriggerSectionText(atk.effect || '', 'during_own_turn');
+    const _announceText = _getNoEvoBlockImmunityText(atk);
     _showEffectAnnounce(atk, _announceText, 'player', () => {
       if (_onlineMode && _sendCommand) _sendCommand({ type: 'fx_effectClose' });
       _proceedAttack();
@@ -2081,6 +2111,7 @@ export function aiAttackPhase(callback) {
       _hooks.checkAndTriggerEffect(atk, '【アタック時】', _afterAtkTime, 'ai');
     };
 
+    const _afterAnnounce = () => {
     doAfterAtkEffect(() => {
       // ブロッカーチェック（cantBlockのカードは除外）
       // デバッグ: 各カードの判定結果をログ出力（カブテリモン等のブロック発動不具合調査用）
@@ -2161,6 +2192,16 @@ export function aiAttackPhase(callback) {
       }
       doAiSecurityCheck(atk, atkIdx, callback);
     });
+    };
+
+    // 「進化元を持たない相手のデジモンにはブロックされない」等、アタック宣言時に
+    // アナウンスしておきたい常在型能力（メタルシードラモン/イッカクモン等）。AI側アタック用。
+    if (atk && atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo) {
+      const _announceText = _getNoEvoBlockImmunityText(atk);
+      _showEffectAnnounce(atk, _announceText, 'ai', () => { _afterAnnounce(); });
+    } else {
+      _afterAnnounce();
+    }
   });
 }
 

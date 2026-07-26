@@ -341,7 +341,13 @@ export function setupCommonWindowExports() {
   // （battle-online.js のオンラインブロック解決で呼ぶ）
   // sides: ['ai','player'] のような配列、destroyedCardsBySide: { ai: card, player: card }
   window._fireOnlineDestroyChain = function(sides, destroyedCardsBySide, done) {
-    const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+    // 演出コールバックも渡す（makeEffectContextと同じ構成）。
+    // これが無いと on_destroy レシピの summon_from_trash / summon_token 等で
+    // 登場演出（showPlayEffect）が発火しない。
+    const ctxBase = {
+      bs, addLog, renderAll, updateMemGauge, doDraw, showDrawEffect,
+      showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult,
+    };
     let i = 0;
     const next = () => {
       if (i >= sides.length) { done && done(); return; }

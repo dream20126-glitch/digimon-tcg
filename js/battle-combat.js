@@ -1486,7 +1486,12 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide) {
   function next() {
     if (i >= sides.length) { done && done(); return; }
     const s = sides[i++];
-    const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+    // 演出コールバックも渡す。これが無いと on_destroy レシピの summon_from_trash /
+    // summon_token 等で登場演出（showPlayEffect）が発火しない。
+    const ctxBase = {
+      bs, addLog, renderAll, updateMemGauge, doDraw,
+      showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult,
+    };
     const destroyedCard = destroyedCardsBySide && destroyedCardsBySide[s];
     // オンライン対戦中、相手側('ai')の on_destroy はここでは発火しない。
     // 相手（カードの所有者）の機械が card_removed 受信時に 3500ms 後、自機で発火する

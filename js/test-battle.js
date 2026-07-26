@@ -16,7 +16,7 @@ import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone,
 // Phase 4: 戦闘
 import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, showGameEndOverlay, setCombatHooks, setCombatOnlineHandlers } from './battle-combat.js';
 // Phase 5: 演出
-import { loadAllDictionaries, registerFxRunners } from './effect-engine.js';
+import { registerFxRunners } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove } from './battle-fx.js';
 import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE } from './effect-engine.js';
 // Phase 6: オンライン
@@ -694,11 +694,7 @@ window.startTest = async function() {
   try {
     // カードデータ読み込み
     await loadCardAndKeywordData();
-    statusEl.innerText = `カード ${window.allCards.length} 件読み込み完了。辞書を読み込み中...`;
-
-    // 効果辞書読み込み
-    await loadAllDictionaries();
-    statusEl.innerText = 'オンライン接続中...';
+    statusEl.innerText = `カード ${window.allCards.length} 件読み込み完了。オンライン接続中...`;
 
     // オンライン接続
     const roomId = document.getElementById('room-id-input').value.trim();

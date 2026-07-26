@@ -16,7 +16,7 @@ import { startFirstTurn, startPhase, onEndTurn, skipBreedPhase, breedActionDone,
 // Phase 4: 戦闘
 import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, aiAttackPhase, aiMainPhase, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showOptionEffect, showSecurityCheck, showBattleResult, showDestroyEffect, showDirectAttack, showBlockConfirm, showBlockerSelection, showGameEndOverlay, setCombatHooks, setCombatOnlineHandlers } from './battle-combat.js';
 // Phase 5: 演出
-import { loadAllDictionaries, registerFxRunners } from './effect-engine.js';
+import { registerFxRunners } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove } from './battle-fx.js';
 import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE } from './effect-engine.js';
 // Phase 6: オンライン
@@ -513,9 +513,6 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   const loadingOv = showLoading();
 
   addLog('🎮 バトル開始');
-
-  // 辞書読み込み
-  await loadAllDictionaries();
 
   // カードDB読み込み: 図鑑全件ではなく、両プレイヤーのデッキに実際に入っている
   // カードだけをピンポイントで読み込む（カード数が増えても軽い）

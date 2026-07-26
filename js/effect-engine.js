@@ -1,10 +1,6 @@
-// 効果エンジン v2（効果辞書 + 効果アクション辞書 参照）
-import { gasGet } from './firebase-config.js';
+// 効果エンジン v2（レシピJSON方式。枠色/演出タイプはアクションコードから自動推測するため
+// 効果辞書スプレッドシートの読み込みは不要）
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
-
-// ===== 辞書データ =====
-let _triggerDict = [];  // 効果辞書（トリガー定義）
-let _actionDict = [];   // 効果アクション辞書（アクション・対象・条件・持続・判定）
 
 // ===== 効果キュー =====
 let _effectQueue = [];
@@ -21,69 +17,6 @@ function normalizeRecipeDuration(d) {
   if (s === '') return undefined;
   if (s.startsWith('dur_')) return s;
   return 'dur_' + s;
-}
-
-// ===== 辞書読み込み =====
-// 統合「効果辞書」(コード/種類/表示名/演出タイプ...) と旧2分割辞書 両方対応
-export async function loadAllDictionaries() {
-  try {
-    const data = await gasGet('getEffectDictionary');
-    const all = Array.isArray(data) ? data : [];
-    // 統合辞書 判定: 'コード' or '種類' 列を持つ
-    const isUnified = all.length > 0 && (
-      Object.prototype.hasOwnProperty.call(all[0], 'コード') ||
-      Object.prototype.hasOwnProperty.call(all[0], '種類')
-    );
-    if (isUnified) {
-      // 統合版: 種類列で振り分け
-      _triggerDict = all.filter(e => {
-        const k = String(e['種類']||'').trim();
-        return k === 'trigger' || k === 'continuous' || k === 'condition' || k === 'limit' || k === 'duration' || k === 'target' || k === '';
-      });
-      _actionDict = all.filter(e => String(e['種類']||'').trim() === 'action');
-      // 後方互換: getActionUI が 'アクションコード' を見るので 'コード' をコピー
-      _actionDict.forEach(e => {
-        if (!e['アクションコード'] && e['コード']) e['アクションコード'] = e['コード'];
-      });
-      // trigger も '処理コード' を補完
-      _triggerDict.forEach(e => {
-        if (!e['処理コード'] && e['コード']) e['処理コード'] = e['コード'];
-      });
-      console.log('[EffectEngine] 統合辞書ロード: trigger=' + _triggerDict.length + ' action=' + _actionDict.length);
-    } else {
-      // 旧仕様: 効果辞書 + 効果アクション辞書 の2分割
-      _triggerDict = all;
-      try {
-        const actions = await gasGet('getEffectActionDictionary');
-        _actionDict = actions || [];
-      } catch(_) { _actionDict = []; }
-      console.log('[EffectEngine] 旧仕様辞書ロード: trigger=' + _triggerDict.length + ' action=' + _actionDict.length);
-    }
-  } catch(e) {
-    console.error('[EffectEngine] 辞書読み込みエラー:', e);
-  }
-}
-
-// アクションコードからUI情報を取得
-// 統合辞書 'コード' / 旧 'アクションコード' 両対応
-function getActionUI(actionCode) {
-  if (!actionCode) return null;
-  // ロジック alias: 同コードに 'ロジックコード' が定義されてればそちらの行を返す
-  const target = String(actionCode).trim();
-  for (const entry of _actionDict) {
-    const code = String(entry['アクションコード']||entry['コード']||'').trim();
-    if (code === target) return entry;
-  }
-  return null;
-}
-
-// ロジック alias 解決: 辞書に 'ロジックコード' 列があれば既存ロジックに alias
-// 例: 新 'dp_plus_strong' のロジックコード='dp_plus' → switch では 'dp_plus' として扱う
-function resolveLogicCode(actionCode) {
-  const ui = getActionUI(actionCode);
-  if (!ui) return actionCode;
-  const alias = String(ui['ロジックコード']||'').trim();
-  return alias || actionCode;
 }
 
 // ===== 効果キュー管理 =====
@@ -744,11 +677,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
   const autoSelect = ctx._forceTargetIdx !== undefined;
   const effectiveSide = autoSelect ? 'ai' : ctx.side;
 
-  // ロジック alias 解決: 辞書に 'ロジックコード' が定義されていれば既存ロジックを再利用
-  // 例: 新アクション 'dp_plus_strong' の 'ロジックコード'='dp_plus' → switch では dp_plus 扱い
-  const dispatchCode = resolveLogicCode(action.code);
-
-  switch (dispatchCode) {
+  switch (action.code) {
     case 'draw': {
       const n = action.value || 1;
       const drawn = [];

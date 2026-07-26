@@ -1,5 +1,5 @@
 // アプリ共通：画面遷移、ログイン/ログアウト
-import { loadCardAndKeywordData, getGoogleDriveDirectLink } from './cards.js';
+import { getGoogleDriveDirectLink } from './cards.js';
 
 // グローバル状態
 window.currentSessionPassword = '';
@@ -59,10 +59,11 @@ window.doLogout = function() {
 };
 
 // アプリ初期化
+// カード図鑑の全件読み込みはここでは行わない（カード数が数千〜1万件規模になっても
+// ログイン画面自体は重くならないよう、各画面が実際に必要になった時点で読み込む）。
+// デッキ構築・管理画面は画面表示時に、バトル・効果テストは開始時にデッキ/設定分のみ読み込む。
 window.addEventListener('DOMContentLoaded', async () => {
-  // カードデータ読み込み
-  const data = await loadCardAndKeywordData();
-  console.log('App initialized:', data.cards.length, 'cards loaded');
+  console.log('App initialized (カード読み込みは各画面で実施)');
 
   // カード裏面画像を設定
   const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1dB8HeZHD0TbKAnNpZSCBnWgyD7YDeseD/view');

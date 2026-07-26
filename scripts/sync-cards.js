@@ -16,6 +16,11 @@ const https = require('https');
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbxB3kIy-fSGrGfJm65RWaNxGGvpCeF0GqrqGitXT7yBRLZE9LtW-SbpOqydxTLgDKf8/exec';
 const OUT_FILE = path.join(__dirname, '..', 'data', 'cards.json');
 const VERSION_FILE = path.join(__dirname, '..', 'data', 'cards-version.json');
+// カード1枚単位の個別ファイル（バトル開始時等、必要なカードだけをピンポイントで
+// 取得できるようにするための分割出力）。ファイル名はカードNo（英数字・-・_のみ）。
+const CARDS_DIR = path.join(__dirname, '..', 'data', 'cards');
+// カードNoをファイル名として安全に使えるか（想定外の文字が来た場合はスキップし警告）
+const SAFE_CARDNO_RE = /^[A-Za-z0-9_-]+$/;
 
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
@@ -92,12 +97,27 @@ async function main() {
   fs.writeFileSync(OUT_FILE, JSON.stringify(out));
   fs.writeFileSync(VERSION_FILE, JSON.stringify({ version, exportedAt: out.exportedAt, cardCount: cards.length }));
 
+  // カード個別ファイル（バトル開始時等、デッキに入っているカードだけをピンポイント
+  // 取得できるようにするための分割出力）。既存フォルダは一旦クリアしてから書き直す
+  // ことで、カードNo変更・削除に伴う古いファイルの残留を防ぐ。
+  fs.mkdirSync(CARDS_DIR, { recursive: true });
+  for (const f of fs.readdirSync(CARDS_DIR)) {
+    if (f.endsWith('.json')) fs.unlinkSync(path.join(CARDS_DIR, f));
+  }
+  let skipped = 0;
+  for (const card of cards) {
+    const no = card['カードNo'];
+    if (!no || !SAFE_CARDNO_RE.test(no)) { skipped++; continue; }
+    fs.writeFileSync(path.join(CARDS_DIR, no + '.json'), JSON.stringify(card));
+  }
+
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
   const sizeKB = (fs.statSync(OUT_FILE).size / 1024).toFixed(1);
   console.log(`[sync-cards] 完了 ${elapsed}s / ${cards.length} 枚 / ${sizeKB} KB`);
+  console.log(`[sync-cards] 個別ファイル: ${cards.length - skipped} 枚 出力（スキップ ${skipped} 枚）`);
   console.log(`[sync-cards] version=${version}`);
   console.log(`[sync-cards] 出力: ${OUT_FILE}`);
-  console.log(`[sync-cards] 次の手順: git add data/cards.json data/cards-version.json && git commit && git push`);
+  console.log(`[sync-cards] 次の手順: git add data/cards.json data/cards-version.json data/cards && git commit && git push`);
 }
 
 main().catch(e => {

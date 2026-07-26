@@ -6,6 +6,7 @@
 // 現在ステップの進行条件・シナリオのクリア条件をチェックする。
 // ===================================================================
 import { gasPost } from './firebase-config.js';
+import { loadCardAndKeywordData } from './cards.js';
 
 // ===================================================================
 // 進行条件判定ディスパッチテーブル
@@ -279,6 +280,11 @@ class TutorialRunner {
       console.error('[TutorialRunner] startBattleGame が見つかりません');
       return;
     }
+    // チュートリアルの初期盤面(initialBoard)はデッキに入っていない任意のカードを
+    // 指定できるため、デッキ限定の読み込みでは足りないケースがある。ここは安全側に
+    // 倒して図鑑全件を読み込んでおく（startBattleGame内の限定読み込みは
+    // 既読み込み分をスキップするので二重にはならない）
+    await loadCardAndKeywordData();
     await window.startBattleGame(playerDeckData, deckForAi, playerFirst);
 
     // 初期盤面セットアップ

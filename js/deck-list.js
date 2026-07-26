@@ -1,6 +1,6 @@
 // デッキ一覧・登録ロジック（GAS API版）
 import { gasGet, gasPost } from './firebase-config.js';
-import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
+import { getCardImageUrl, getGoogleDriveDirectLink, loadCardAndKeywordData } from './cards.js';
 
 window.loadSavedDecks = async function() {
   const container = document.getElementById('saved-decks-container');
@@ -57,12 +57,15 @@ window.goToDeckListDirect = function() {
   loadSavedDecks();
 };
 
-window.viewDeckDetail = function(idx) {
+window.viewDeckDetail = async function(idx) {
   const d = window.latestDecks[idx];
   const grid = document.getElementById('view-grid');
   grid.innerHTML = '';
   document.getElementById('view-title').innerText = d.name;
   document.getElementById('deck-view-modal').style.display = 'block';
+
+  // カード画像・レベル判定に図鑑データが必要（デッキ確認は任意のカードを含みうるため全件読み込み）
+  if (allCards.length === 0) await loadCardAndKeywordData();
 
   let mainDeckCount = 0;
   d.list.split(',').forEach(line => {

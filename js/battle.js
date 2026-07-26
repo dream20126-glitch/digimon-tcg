@@ -5,7 +5,7 @@
  * ロジック本体はサブモジュール側に記述
  */
 
-import { getCardImageUrl } from './cards.js';
+import { getCardImageUrl, loadCardsByNo, loadCardAndKeywordData } from './cards.js';
 // Phase 1: 状態管理
 import { bs, resetBattleState, drawCards } from './battle-state.js';
 // Phase 2: UI・描画
@@ -32,6 +32,50 @@ function _f(obj, ...names) {
     if (v !== undefined && v !== null && v !== '' && v !== 'なし') return v;
   }
   return undefined;
+}
+
+// deckData.list（"名前(カードNo)x枚数,..."）からカードNoの一覧だけを取り出す。
+// カードDBを読み込む前でも使える軽量パーサー（バトル開始時に必要なカードだけを
+// ピンポイントで読み込むための事前チェックに使う）
+function extractCardNos(deckData) {
+  if (!deckData || !deckData.list) return [];
+  const nos = [];
+  deckData.list.split(',').forEach(line => {
+    const m = line.match(/(.+)\((.+)\)x(\d+)/);
+    if (m) nos.push(m[2]);
+  });
+  return nos;
+}
+
+// 指定カード群のレシピ（本体 + evo_source）から summon_token が参照するカードNoを集める。
+// デッキ由来のカードだけを読み込んだ直後に呼び、トークン用カードを追加読み込みするために使う
+function collectTokenCardNos(cards) {
+  const nos = new Set();
+  const scanSteps = (steps) => {
+    if (!Array.isArray(steps)) return;
+    steps.forEach(s => {
+      if (s && s.action === 'summon_token') {
+        const tno = s.tokenNo || s.token || s.value;
+        if (tno) nos.add(String(tno));
+      }
+    });
+  };
+  (cards || []).forEach(card => {
+    const rec = card && (card['レシピ'] || card['効果レシピ']);
+    if (!rec) return;
+    let parsed;
+    try { parsed = typeof rec === 'string' ? JSON.parse(rec.replace(/[\x00-\x1F\x7F]/g, '')) : rec; }
+    catch (_) { return; }
+    if (!parsed || typeof parsed !== 'object') return;
+    Object.keys(parsed).forEach(key => {
+      if (key === 'evo_source' && parsed.evo_source && typeof parsed.evo_source === 'object') {
+        Object.values(parsed.evo_source).forEach(scanSteps);
+      } else {
+        scanSteps(parsed[key]);
+      }
+    });
+  });
+  return Array.from(nos);
 }
 
 // ===== デッキパーサー =====
@@ -473,6 +517,15 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   // 辞書読み込み
   await loadAllDictionaries();
 
+  // カードDB読み込み: 図鑑全件ではなく、両プレイヤーのデッキに実際に入っている
+  // カードだけをピンポイントで読み込む（カード数が増えても軽い）
+  const deckCardNos = Array.from(new Set([...extractCardNos(playerDeckData), ...extractCardNos(aiDeckData)]));
+  await loadCardsByNo(deckCardNos);
+  // レシピでトークンとして参照されるカード（summon_token）も追加読み込み
+  const deckCards = deckCardNos.map(no => allCards.find(c => c["カードNo"] === no)).filter(Boolean);
+  const tokenCardNos = collectTokenCardNos(deckCards);
+  if (tokenCardNos.length > 0) await loadCardsByNo(tokenCardNos);
+
   // 状態リセット
   resetBattleState(playerFirst);
   bs.phase = 'standby';
@@ -526,6 +579,8 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
 
 // ===== デモ用: ダミーデッキでバトル開始 =====
 window.startBattleDemo = async function() {
+  // デモは図鑑全体からランダムにデッキを組むため、ここだけは全件読み込みが必要
+  await loadCardAndKeywordData();
   // ダミーのデッキデータ（50枚になるよう各カードを複数枚入れる）
   const mainCards = allCards.filter(c => c["タイプ"] !== 'デジタマ');
   const tamaCards = allCards.filter(c => c["タイプ"] === 'デジタマ');

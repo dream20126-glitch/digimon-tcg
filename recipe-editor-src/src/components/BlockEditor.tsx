@@ -62,39 +62,6 @@ function ButtonGroup({ options, value, onChange, accentColor }: { options: { cod
   );
 }
 
-// ボタン式の複数選択グループ（トリガーの「よく使うトリガー」用。複数同時にactive可）
-function MultiButtonGroup({ options, values, onToggle, accentColor }: { options: { code: string; label: string }[]; values: string[]; onToggle: (v: string) => void; accentColor?: string }) {
-  const accent = accentColor || '#d81b60';
-  return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-      {options.map((o) => {
-        const active = values.includes(o.code);
-        return (
-          <button
-            key={o.code}
-            type="button"
-            onClick={() => onToggle(o.code)}
-            style={{
-              padding: '3px 9px',
-              borderRadius: 5,
-              border: active ? `2px solid ${accent}` : '1px solid #bbb',
-              background: active ? accent : '#f5f5f5',
-              color: active ? '#fff' : '#333',
-              fontWeight: active ? 'bold' : 'normal',
-              cursor: 'pointer',
-              fontSize: 11,
-              boxShadow: active ? `0 0 6px ${accent}99` : 'none',
-              transition: 'all 0.12s ease',
-            }}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 // 発動領域ボタンの表示順・ラベル（ZONESの code:'' はバトルエリアを指す）
 const ZONE_BUTTONS = [
   { code: 'hand', label: '手札' },
@@ -141,17 +108,78 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   other_own_tamer: { l1: 'other_own', l2: 'tamer' },
 };
 
-// よく使うトリガー（指定リスト）:
-// 登場時/進化時/消滅時/メイン/ターン中(自分/相手/互い)/ターン終了時(自分/相手)/
-// ターン開始時(自分/相手)/メインフェイズ開始時。
-// 「ターン終了時」「ターン開始時」の"互い"版は現状エンジンに専用コードが無いため未収録
-const COMMON_TRIGGERS = [
-  'on_play', 'on_evolve', 'on_destroy', 'main',
-  'during_own_turn', 'during_opp_turn', 'during_any_turn',
-  'on_own_turn_end', 'on_opp_turn_end',
-  'on_own_turn_start', 'on_opp_turn_start',
-  'on_main_phase_start',
+// よく使うトリガー:
+// - 'event' 種別（登場時/進化時/アタック時/アタック終了時/消滅時）は実際に起きる出来事。
+//   発動タイミング(自分/相手/お互い)を選ぶと、トリガーコード自体は変えず
+//   cond_during_own_turn/cond_during_opp_turnを条件として追加する（お互い=条件なし）。
+// - 'timing' 種別（メイン/ターン開始時/ターン終了時/継続効果/メインフェイズ開始時）は
+//   発動タイミングによってトリガーコード自体が切り替わる。
+//   engine未実装の組み合わせ（例: メイン+相手）も選べるようにするため、実在しない
+//   プレースホルダーコードを用意している（isImplemented:falseの箇所）。
+type TimingKey = 'self' | 'opp' | 'any';
+interface TriggerFamily {
+  code: string; // ボタンのkey
+  label: string;
+  kind: 'event' | 'timing';
+  variants?: Record<TimingKey, string>; // kind='timing'のときのみ
+  implemented?: Partial<Record<TimingKey, boolean>>; // 未指定=true扱い
+}
+const COMMON_TRIGGER_FAMILIES: TriggerFamily[] = [
+  { code: 'on_play', label: '登場時', kind: 'event' },
+  { code: 'on_evolve', label: '進化時', kind: 'event' },
+  { code: 'on_attack', label: 'アタック時', kind: 'event' },
+  { code: 'on_attack_end', label: 'アタック終了時', kind: 'event' },
+  { code: 'on_destroy', label: '消滅時', kind: 'event' },
+  {
+    code: 'main', label: 'メイン', kind: 'timing',
+    variants: { self: 'main', opp: 'opp_main', any: 'any_main' },
+    implemented: { self: true, opp: false, any: false },
+  },
+  {
+    code: 'turn_start', label: 'ターン開始時', kind: 'timing',
+    variants: { self: 'on_own_turn_start', opp: 'on_opp_turn_start', any: 'on_any_turn_start' },
+    implemented: { self: true, opp: true, any: false },
+  },
+  {
+    code: 'turn_end', label: 'ターン終了時', kind: 'timing',
+    variants: { self: 'on_own_turn_end', opp: 'on_opp_turn_end', any: 'on_any_turn_end' },
+    implemented: { self: true, opp: true, any: false },
+  },
+  {
+    code: 'during_turn', label: '継続効果', kind: 'timing',
+    variants: { self: 'during_own_turn', opp: 'during_opp_turn', any: 'during_any_turn' },
+    implemented: { self: true, opp: true, any: true },
+  },
+  {
+    code: 'main_phase_start', label: 'メインフェイズ開始時', kind: 'timing',
+    variants: { self: 'on_main_phase_start', opp: 'on_opp_main_phase_start', any: 'on_any_main_phase_start' },
+    implemented: { self: true, opp: true, any: false },
+  },
 ];
+const TIMING_OPTIONS: { code: TimingKey; label: string }[] = [
+  { code: 'self', label: '自分' },
+  { code: 'opp', label: '相手' },
+  { code: 'any', label: 'お互い' },
+];
+// 現在選択中のtriggers/triggerConditionsから、共有の発動タイミングを逆算する
+function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair[]): TimingKey {
+  for (const fam of COMMON_TRIGGER_FAMILIES) {
+    if (fam.kind !== 'timing' || !fam.variants) continue;
+    if (currentTriggers.includes(fam.variants.opp)) return 'opp';
+    if (currentTriggers.includes(fam.variants.any)) return 'any';
+  }
+  if (triggerConditions.some((c) => c.base === 'cond_during_opp_turn')) return 'opp';
+  return 'self';
+}
+// 辞書に存在しない可能性がある新規プレースホルダーコード（メイン+相手 等）の表示名フォールバック
+const FAMILY_VARIANT_FALLBACK_LABELS: Record<string, string> = {};
+COMMON_TRIGGER_FAMILIES.forEach((fam) => {
+  if (fam.kind !== 'timing' || !fam.variants) return;
+  (Object.keys(fam.variants) as TimingKey[]).forEach((k) => {
+    const timingLabel = TIMING_OPTIONS.find((t) => t.code === k)!.label;
+    FAMILY_VARIANT_FALLBACK_LABELS[fam.variants![k]] = fam.label + '（' + timingLabel + '）';
+  });
+});
 
 // 限定文字列の split/combine
 // 'once_per_turn' → { type:'per_turn', count:1 }
@@ -444,13 +472,52 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               const next = currentTriggers.filter((t) => t !== code);
               onChange({ ...block, trigger: next[0] || '', triggers: next });
             };
-            const toggleCommonTrigger = (code: string) => {
-              if (currentTriggers.includes(code)) removeTrigger(code); else addTrigger(code);
+
+            const timing = inferTiming(currentTriggers, triggerConditions);
+            const isFamilyActive = (fam: TriggerFamily): boolean =>
+              fam.kind === 'event' ? currentTriggers.includes(fam.code)
+                : Object.values(fam.variants!).some((v) => currentTriggers.includes(v));
+
+            const toggleFamily = (fam: TriggerFamily) => {
+              if (fam.kind === 'event') {
+                if (currentTriggers.includes(fam.code)) removeTrigger(fam.code); else addTrigger(fam.code);
+                return;
+              }
+              const variant = fam.variants![timing];
+              if (currentTriggers.includes(variant)) { removeTrigger(variant); return; }
+              const others = Object.values(fam.variants!).filter((v) => v !== variant);
+              const next = [...currentTriggers.filter((t) => !others.includes(t)), variant];
+              onChange({ ...block, trigger: next[0], triggers: next });
             };
-            const commonOptions = COMMON_TRIGGERS.map((code) => ({
-              code, label: dict.triggers.find((d) => d.code === code)?.label || code,
-            }));
-            const hasOtherSelected = currentTriggers.some((t) => !COMMON_TRIGGERS.includes(t));
+
+            const setTiming = (newTiming: TimingKey) => {
+              let next = [...currentTriggers];
+              COMMON_TRIGGER_FAMILIES.forEach((fam) => {
+                if (fam.kind !== 'timing' || !fam.variants) return;
+                const oldVariant = Object.values(fam.variants).find((v) => next.includes(v));
+                if (!oldVariant) return;
+                const newVariant = fam.variants[newTiming];
+                next = next.filter((t) => t !== oldVariant);
+                if (!next.includes(newVariant)) next.push(newVariant);
+              });
+              let nextConds = triggerConditions.filter((c) => c.base !== 'cond_during_own_turn' && c.base !== 'cond_during_opp_turn');
+              if (newTiming === 'self') nextConds = [...nextConds, { base: 'cond_during_own_turn' }];
+              else if (newTiming === 'opp') nextConds = [...nextConds, { base: 'cond_during_opp_turn' }];
+              onChange({ ...block, trigger: next[0] || '', triggers: next, triggerConditions: nextConds });
+            };
+
+            const allFamilyCodes = new Set<string>();
+            COMMON_TRIGGER_FAMILIES.forEach((fam) => {
+              if (fam.kind === 'event') allFamilyCodes.add(fam.code);
+              else Object.values(fam.variants!).forEach((v) => allFamilyCodes.add(v));
+            });
+            const hasOtherSelected = currentTriggers.some((t) => !allFamilyCodes.has(t));
+
+            const unimplementedActive = COMMON_TRIGGER_FAMILIES.filter((fam) => {
+              if (fam.kind !== 'timing' || !fam.variants) return false;
+              const variant = fam.variants[timing];
+              return currentTriggers.includes(variant) && fam.implemented?.[timing] === false;
+            });
 
             const cur = SUBJECT_CODE_TO_L1L2[block.triggerSubject || ''] || { l1: 'self', l2: '' };
             const handleL1 = (l1: string) => {
@@ -479,7 +546,39 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 8 }}>
                 <div className="field">
                   <label>トリガー（複数選択可）</label>
-                  <MultiButtonGroup options={commonOptions} values={currentTriggers} onToggle={toggleCommonTrigger} accentColor="#2e7d32" />
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {COMMON_TRIGGER_FAMILIES.map((fam) => {
+                      const active = isFamilyActive(fam);
+                      return (
+                        <button
+                          key={fam.code}
+                          type="button"
+                          onClick={() => toggleFamily(fam)}
+                          style={{
+                            padding: '3px 9px', borderRadius: 5,
+                            border: active ? '2px solid #2e7d32' : '1px solid #bbb',
+                            background: active ? '#2e7d32' : '#f5f5f5',
+                            color: active ? '#fff' : '#333',
+                            fontWeight: active ? 'bold' : 'normal',
+                            cursor: 'pointer', fontSize: 11,
+                            boxShadow: active ? '0 0 6px #2e7d3299' : 'none',
+                          }}
+                        >
+                          {fam.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                    <span style={{ fontSize: 11, color: '#666' }}>発動タイミング:</span>
+                    <ButtonGroup options={TIMING_OPTIONS.map((t) => ({ code: t.code, label: t.label }))} value={timing} onChange={(v) => setTiming(v as TimingKey)} accentColor="#2e7d32" />
+                  </div>
+                  {unimplementedActive.length > 0 && (
+                    <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
+                      ⚠ 「{unimplementedActive.map((f) => f.label).join('」「')}」×「{TIMING_OPTIONS.find((t) => t.code === timing)?.label}」はエンジン未実装です（保存はできますが動作しません）
+                    </div>
+                  )}
 
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 6, color: '#666' }}>
                     <input
@@ -494,7 +593,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       <SearchSelect
                         value=""
                         onChange={addTrigger}
-                        options={toOpts(dict.triggers).filter((o) => !COMMON_TRIGGERS.includes(o.value) && !currentTriggers.includes(o.value))}
+                        options={toOpts(dict.triggers).filter((o) => !allFamilyCodes.has(o.value) && !currentTriggers.includes(o.value))}
                         allowFreeText
                       />
                     </div>
@@ -503,7 +602,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {currentTriggers.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                       {currentTriggers.map((t) => {
-                        const label = dict.triggers.find((d) => d.code === t)?.label || t;
+                        const label = dict.triggers.find((d) => d.code === t)?.label || FAMILY_VARIANT_FALLBACK_LABELS[t] || t;
                         return (
                           <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#e0f7f1', border: '1px solid #93c693', borderRadius: 12, fontSize: 11 }}>
                             {label}

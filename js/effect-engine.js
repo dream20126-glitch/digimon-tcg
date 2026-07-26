@@ -320,9 +320,11 @@ function showQueueOrderSelect(entries, callback) {
     div.onmouseleave = () => { div.style.transform = ''; div.style.boxShadow = ''; };
     // 画像・名前は「効果を持つカード本体」を表示（進化元効果なら進化元カード）
     const imgSrc = effectOwner.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(effectOwner) : '') || effectOwner.imageUrl || '';
-    const effText = (fromEvo && effectOwner.evoSourceEffect && effectOwner.evoSourceEffect !== 'なし')
+    const _fullEffText = (fromEvo && effectOwner.evoSourceEffect && effectOwner.evoSourceEffect !== 'なし')
       ? effectOwner.evoSourceEffect
       : ((entry.block && entry.block.raw) || effectOwner.effect || '');
+    // 選択肢プレビューも、実際に発動するトリガー部分だけを抜粋して表示する
+    const effText = extractTriggerSectionText(_fullEffText, entry.block && entry.block.trigger ? entry.block.trigger.code : null);
     div.innerHTML =
       (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
       + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+(effectOwner.name||'')+'</div>'
@@ -343,6 +345,8 @@ function executeQueueEntry(entry, context, callback) {
   // sideを実際のplayer/aiに変換
   const actualSide = entry.actualSide || (side === 'turnPlayer' ? (context.bs.isPlayerTurn ? 'player' : 'ai') : (context.bs.isPlayerTurn ? 'ai' : 'player'));
   const ctx = { ...context, card, side: actualSide, block, _parentContext: context };
+  // ポップアップ表示用: 複数トリガーを持つカードでも、今発動中のトリガー部分だけを抜粋する
+  const displayEffText = extractTriggerSectionText(block.raw, block.trigger ? block.trigger.code : null);
 
   // レシピ/アクションを実行（アナウンス演出は挟まない）
   function runEffectNow(cb) {
@@ -377,7 +381,7 @@ function executeQueueEntry(entry, context, callback) {
   // 強制効果用: カード&効果テキストを数秒表示するアナウンス演出を挟んでから実行
   function executeWithAnnounce() {
     const evoSourceCard = block && block._recipeCard;
-    showEffectAnnounce(card, block.raw, actualSide, () => runEffectNow(callback), evoSourceCard);
+    showEffectAnnounce(card, displayEffText, actualSide, () => runEffectNow(callback), evoSourceCard);
   }
 
   // 条件チェック（cond_exists等）
@@ -439,7 +443,7 @@ function executeQueueEntry(entry, context, callback) {
   // 「はい」を選んだ後に別途アナウンス演出は挟まず、その場で実行する）
   // B画面: fx_confirmShow → Aが「はい」→ fx_confirmClose（処理中表示）→ 実行完了で fx_effectClose
   //                        → Aが「いいえ」→ fx_confirmClose(accepted:false) → 「発動しませんでした」
-  showConfirmDialog(card, block.raw, (accepted) => {
+  showConfirmDialog(card, displayEffText, (accepted) => {
     if (accepted) {
       runEffectNow(callback);
     } else {
@@ -4463,6 +4467,29 @@ function checkPendingDestroys(ctx, callback) {
   processNext();
 }
 
+// ===== 効果テキストの該当トリガー部分のみ抜粋 =====
+// カードが複数トリガー（例:【進化時】と【アタック時】）を持つ場合、効果発動ポップアップに
+// 全文を出すと「今発動していない方の効果」まで一緒に表示されてしまう。
+// 発動中の trigger コードに対応する【】ブロックだけを本文から切り出す。
+const TRIGGER_LABEL_MAP = {
+  on_play: '登場時', on_evolve: '進化時', on_attack: 'アタック時', on_attack_end: 'アタック終了時',
+  on_destroy: '消滅時', on_battle_destroy: '消滅時', security: 'セキュリティ',
+  on_own_turn_end: '自分のターン終了時', on_opp_turn_end: '相手のターン終了時',
+  on_own_turn_start: '自分のターン開始時', on_opp_turn_start: '相手のターン開始時',
+  main: 'メイン', during_own_turn: '自分のターン', during_opp_turn: '相手のターン', during_any_turn: 'お互いのターン',
+};
+const _ALL_TRIGGER_LABELS = Array.from(new Set(Object.values(TRIGGER_LABEL_MAP)));
+function extractTriggerSectionText(fullText, triggerCode) {
+  const label = triggerCode && TRIGGER_LABEL_MAP[triggerCode];
+  if (!label || !fullText) return fullText || '';
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  try {
+    const re = new RegExp('【' + esc(label) + '】[\\s\\S]*?(?=\\n*【(?:' + _ALL_TRIGGER_LABELS.map(esc).join('|') + ')】|$)');
+    const m = fullText.match(re);
+    return m ? m[0].trim() : fullText;
+  } catch (_) { return fullText; }
+}
+
 // ===== 効果発動アナウンス（カード画像＋効果テキストを数秒表示） =====
 
 function showEffectAnnounce(card, effectText, side, callback, evoSourceCard) {
@@ -5434,8 +5461,10 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
     if (i >= _reactionsToRun.length) { finish(); return; }
     const { sourceCard, recipe, carrier } = _reactionsToRun[i++];
     const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: destroyedSide };
-    const effText = (sourceCard !== carrier && sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
+    const fullEffText = (sourceCard !== carrier && sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
       ? sourceCard.evoSourceEffect : (sourceCard.effect || carrier.effect || '');
+    // ポップアップ表示用: 他のトリガー（進化時/アタック時等）の文言まで一緒に出さないよう抜粋
+    const effText = extractTriggerSectionText(fullEffText, triggerKey);
     const evoSourceArg = sourceCard !== carrier ? sourceCard : undefined;
 
     const runNow = () => {
@@ -5564,11 +5593,14 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
   function runOne(reaction, afterDone) {
     const { sourceCard, recipe, carrier } = reaction;
     const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: reactSide, _sourceCard: sourceCard };
-    const effectText = sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし'
+    const fullEffectText = sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし'
       ? sourceCard.evoSourceEffect
       : (sourceCard.effect || '');
-    ctx.addLog && ctx.addLog('⚡ 「' + sourceCard.name + '」の効果発動');
-    showEffectAnnounce(sourceCard, effectText, reactSide, () => {
+    // ポップアップ表示用: 他のトリガーの文言まで一緒に出さないよう抜粋
+    const effectText = extractTriggerSectionText(fullEffectText, triggerKey);
+
+    const runNow = () => {
+      ctx.addLog && ctx.addLog('⚡ 「' + sourceCard.name + '」の効果発動');
       runRecipe(recipe, ctx, () => {
         ctx.renderAll && ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
@@ -5576,7 +5608,30 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
         }
         afterDone();
       });
-    });
+    };
+    // 強制効果用: アナウンス演出を挟んでから実行
+    const doAnnounceAndRun = () => {
+      showEffectAnnounce(sourceCard, effectText, reactSide, runNow);
+    };
+
+    // 任意効果（「〜できる」= step.optional / コスト持ち）は発動前に確認ダイアログを挟む
+    const isOptional = Array.isArray(recipe) && recipe.some(s =>
+      s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0))
+    );
+    if (isOptional) {
+      showConfirmDialog(sourceCard, effectText, (accepted) => {
+        if (accepted) {
+          runNow();
+        } else {
+          if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
+            window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: sourceCard.name });
+          }
+          afterDone();
+        }
+      });
+    } else {
+      doAnnounceAndRun();
+    }
   }
 
   function nextReaction() {
@@ -5607,7 +5662,7 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
       runOne(r, nextReaction);
       return;
     }
-    showReactionOrderSelect(remaining, (chosenIdx) => {
+    showReactionOrderSelect(remaining, triggerKey, (chosenIdx) => {
       const [r] = remaining.splice(chosenIdx, 1);
       runOne(r, nextReaction);
     });
@@ -5636,7 +5691,7 @@ function _reactionNeedsUserInput(reaction) {
 
 // ===== リアクション順番選択 UI =====
 // 「どちらから発動しますか？」モーダル。カードと効果テキストを並べ、タップで選択。
-function showReactionOrderSelect(reactions, callback) {
+function showReactionOrderSelect(reactions, triggerKey, callback) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;animation:fadeIn 0.2s ease;';
 
@@ -5656,9 +5711,10 @@ function showReactionOrderSelect(reactions, callback) {
     card.onmouseenter = () => { card.style.transform = 'translateY(-3px) scale(1.03)'; card.style.boxShadow = '0 0 18px #00fbff'; };
     card.onmouseleave = () => { card.style.transform = ''; card.style.boxShadow = ''; };
     const imgSrc = sourceCard.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(sourceCard) : '') || sourceCard.imageUrl || '';
-    const effText = (sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
+    const _fullEffText = (sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
       ? sourceCard.evoSourceEffect
       : (sourceCard.effect || '');
+    const effText = extractTriggerSectionText(_fullEffText, triggerKey);
     card.innerHTML =
       (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
       + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+sourceCard.name+'</div>'

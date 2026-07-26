@@ -4178,7 +4178,9 @@ function checkConditions(conditions, card, bs, side) {
             try {
               const raw = typeof s.recipe === 'string' ? s.recipe.replace(/[\x00-\x1F\x7F]/g, '') : s.recipe;
               const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-              const passives = (r.evo_source && r.evo_source.passive) || r.passive;
+              // 進化元として持つときは evo_source.passive のみ参照（本体 passive にフォールバックしない）。
+              // 本体の passive は「そのカードがメインで居るとき」限定の効果のため。
+              const passives = r.evo_source && r.evo_source.passive;
               if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw))) { has = true; break; }
             } catch(_) {}
           }
@@ -4233,7 +4235,8 @@ function checkConditions(conditions, card, bs, side) {
             try {
               const raw = typeof s.recipe === 'string' ? s.recipe.replace(/[\x00-\x1F\x7F]/g, '') : s.recipe;
               const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-              const passives = (r.evo_source && r.evo_source.passive) || r.passive;
+              // 進化元として持つときは evo_source.passive のみ参照（本体 passive にフォールバックしない）
+              const passives = r.evo_source && r.evo_source.passive;
               if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw))) { has = true; break; }
             } catch(_) {}
           }

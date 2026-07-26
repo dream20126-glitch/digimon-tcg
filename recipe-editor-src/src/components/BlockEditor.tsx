@@ -141,11 +141,16 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   other_own_tamer: { l1: 'other_own', l2: 'tamer' },
 };
 
-// よく使うトリガー（実カードDB469枚のレシピ内訳から使用頻度の高い順に選定。
-// during_opp_turnはduring_own_turn/during_any_turnとの対称性のため含めている）
+// よく使うトリガー（指定リスト）:
+// 登場時/進化時/消滅時/メイン/ターン中(自分/相手/互い)/ターン終了時(自分/相手)/
+// ターン開始時(自分/相手)/メインフェイズ開始時。
+// 「ターン終了時」「ターン開始時」の"互い"版は現状エンジンに専用コードが無いため未収録
 const COMMON_TRIGGERS = [
-  'security', 'main', 'on_attack', 'during_own_turn', 'during_opp_turn', 'during_any_turn',
-  'passive', 'on_play', 'on_evolve', 'on_destroy', 'on_own_turn_start',
+  'on_play', 'on_evolve', 'on_destroy', 'main',
+  'during_own_turn', 'during_opp_turn', 'during_any_turn',
+  'on_own_turn_end', 'on_opp_turn_end',
+  'on_own_turn_start', 'on_opp_turn_start',
+  'on_main_phase_start',
 ];
 
 // 限定文字列の split/combine
@@ -471,7 +476,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             };
 
             return (
-              <div style={{ display: 'grid', gridTemplateColumns: showRestActive ? '1.3fr 1fr auto' : '1.3fr 1fr', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 8 }}>
                 <div className="field">
                   <label>トリガー（複数選択可）</label>
                   <MultiButtonGroup options={commonOptions} values={currentTriggers} onToggle={toggleCommonTrigger} accentColor="#2e7d32" />
@@ -511,7 +516,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
 
                 <div className="field">
-                  <label>発動主体</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <label>発動主体</label>
+                    {showRestActive && (
+                      <>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'normal' }}>
+                          <input type="checkbox" checked={isRest} onChange={(e) => setRestActiveState(e.target.checked ? 'rest' : null)} />
+                          レスト状態
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'normal' }}>
+                          <input type="checkbox" checked={isActive} onChange={(e) => setRestActiveState(e.target.checked ? 'active' : null)} />
+                          アクティブ状態
+                        </label>
+                      </>
+                    )}
+                  </div>
                   <ButtonGroup options={SUBJECT_L1} value={cur.l1} onChange={handleL1} accentColor="#2e7d32" />
                   {cur.l1 !== 'self' && (
                     <div style={{ marginTop: 4 }}>
@@ -519,86 +538,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
                 </div>
-
-                {showRestActive && (
-                  <div className="field">
-                    <label>状態</label>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11 }}>
-                        <input type="checkbox" checked={isRest} onChange={(e) => setRestActiveState(e.target.checked ? 'rest' : null)} />
-                        レスト状態
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11 }}>
-                        <input type="checkbox" checked={isActive} onChange={(e) => setRestActiveState(e.target.checked ? 'active' : null)} />
-                        アクティブ状態
-                      </label>
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })()}
-
-          {/* ⏱ タイミング・持続プリセット (トリガーグループ内に配置) */}
-          <div style={{ marginTop: 8, background: '#fff3e0', padding: 8, borderRadius: 4, border: '1px solid #ffd591' }}>
-            <div style={{ fontWeight: 'bold', color: '#b76e00', fontSize: 12 }}>
-              ⏱ タイミング・持続プリセット
-              <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
-                （【自分のターン】等を一発入力。トリガー or 発動条件のどちらに使うかで欄を分けています）
-              </span>
-            </div>
-
-            {/* グループA: トリガーとして設定（持続/イベント・相互排他） */}
-            <div style={{ marginTop: 6, padding: 6, background: 'white', borderRadius: 4, border: '1px solid #ffd591' }}>
-              <div style={{ fontSize: 11, fontWeight: 'bold', color: '#b76e00', marginBottom: 4 }}>
-                🎬 持続・イベント（トリガー欄を上書き・1つだけ選択可）
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-                {TIMING_PRESETS_TRIGGER.map((p) => (
-                  <label key={p.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-                    <input
-                      type="checkbox"
-                      checked={block.trigger === p.code}
-                      onChange={(e) => update('trigger', e.target.checked ? p.code : '')}
-                      style={{ margin: 0 }}
-                    />
-                    {p.label}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* グループB: 発動条件として追加（複数選択可・条件配列に cond_xxx を追加） */}
-            <div style={{ marginTop: 6, padding: 6, background: 'white', borderRadius: 4, border: '1px solid #ffd591' }}>
-              <div style={{ fontSize: 11, fontWeight: 'bold', color: '#b76e00', marginBottom: 4 }}>
-                ❓ 発動条件として（🎯 発動条件に cond_xxx を追加・複数選択可）
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-                {TIMING_PRESETS_CONDITION.map((p) => {
-                  const checked = !!conditions.find((c) => c.base === p.code);
-                  return (
-                    <label key={p.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            if (!conditions.find((c) => c.base === p.code)) {
-                              update('conditions', [...conditions, { base: p.code, value: '' }]);
-                            }
-                          } else {
-                            update('conditions', conditions.filter((c) => c.base !== p.code));
-                          }
-                        }}
-                        style={{ margin: 0 }}
-                      />
-                      {p.label}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
 
           {/* ☑ 条件を設定する（トリガー条件） */}
           <label style={{
@@ -2398,36 +2340,6 @@ function buildActionDisplay(actions: DictEntry[]): {
   });
   return { options, flaggedBases, autoGroupBases };
 }
-
-// === タイミング/持続 プリセット ===
-// トリガー領域に表示するチェックボックス群。【自分のターン】等の一発入力用。
-//
-// kind:
-//   'trigger'   = block.trigger に該当コードをセット（持続効果 or ターン境界イベント）
-//                 同グループ内で相互排他（1つだけ ON）
-//   'condition' = block.conditions に cond_during_*_turn を追加（発動条件としてのタイミング）
-//                 複数追加可（独立）
-type TimingPresetKind = 'trigger' | 'condition';
-interface TimingPreset {
-  code: string;
-  label: string;
-  kind: TimingPresetKind;
-}
-const TIMING_PRESETS_TRIGGER: TimingPreset[] = [
-  { code: 'main',              label: 'メイン（メインフェイズ起動効果）', kind: 'trigger' },
-  { code: 'during_own_turn',   label: '自分のターン (持続)',   kind: 'trigger' },
-  { code: 'during_opp_turn',   label: '相手のターン (持続)',   kind: 'trigger' },
-  { code: 'during_any_turn',   label: 'お互いのターン (持続)', kind: 'trigger' },
-  { code: 'on_own_turn_start', label: '自分のターン開始時',    kind: 'trigger' },
-  { code: 'on_opp_turn_start', label: '相手のターン開始時',    kind: 'trigger' },
-  { code: 'on_own_turn_end',   label: '自分のターン終了時',    kind: 'trigger' },
-  { code: 'on_opp_turn_end',   label: '相手のターン終了時',    kind: 'trigger' },
-];
-const TIMING_PRESETS_CONDITION: TimingPreset[] = [
-  { code: 'cond_during_own_turn', label: '自分のターン中', kind: 'condition' },
-  { code: 'cond_during_opp_turn', label: '相手のターン中', kind: 'condition' },
-  { code: 'cond_during_any_turn', label: 'お互いのターン中', kind: 'condition' },
-];
 
 // === 「選んだデジモンと同じ」用の属性選択 ===
 // cond_same_as_picked の値はカンマ区切り属性リスト ('name,color' 等)。

@@ -318,7 +318,8 @@ function onRemoteCommand(cmd) {
             // 完了タイミングを見越して 3500ms 後に発火する。
             setTimeout(() => {
               try {
-                window._fireOnlineDestroyChain(['player'], { player: cardForChain }, () => {});
+                // on_destroy 完了時に盤面を同期（summon_from_trash 等で盤面が変化するケースがあるため）
+                window._fireOnlineDestroyChain(['player'], { player: cardForChain }, () => { sendStateSync(); });
               } catch (_) {}
             }, 3500);
           }

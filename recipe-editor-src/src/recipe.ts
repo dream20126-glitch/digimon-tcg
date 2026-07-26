@@ -106,6 +106,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock) {
   if (b.costFree) step.cost_free = true;
   // summon_from_trash の「登場したデジモンの【登場時】効果は発揮しない」フラグ
   if (b.skipOnPlay) step.skip_on_play = true;
+  // 「〜できる」任意効果フラグ
+  if (b.optional) step.optional = true;
   // 取得元エリア (fromZones[]) の serialize:
   //   1件のみ → 'hand' のような文字列
   //   2件以上 → 配列 + (op が 'and' の時のみ) step.from_op
@@ -356,6 +358,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
     revert_at_turn_end: true,
     cost_free: true,
     skip_on_play: true,
+    optional: true,
     options: true,
     limit: true,
     in_zone: true,
@@ -435,6 +438,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
     revertAtTurnEnd: !!step?.revert_at_turn_end,
     costFree: !!step?.cost_free,
     skipOnPlay: !!step?.skip_on_play,
+    optional: !!step?.optional,
     // 取得元エリアの deserialize: 文字列・配列・旧 'hand_or_trash' 形式すべてサポート
     fromZones: (() => {
       const f = step?.from;

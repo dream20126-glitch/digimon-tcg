@@ -572,6 +572,20 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
+        {/* 任意 / 強制: 「〜できる」効果は optional をONにする。ONの間、発動前に「発動しますか？」の確認ダイアログが入る */}
+        {block.trigger !== 'alt_evolve' && block.action && (
+          <div className="field" style={{ marginTop: 8, background: !!block.optional ? '#e8f5e9' : '#f5f5f5', padding: 8, borderRadius: 4, border: `1px solid ${!!block.optional ? '#8bc34a' : '#ccc'}` }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: !!block.optional ? '#2e7d32' : '#666' }}>
+              <input
+                type="checkbox"
+                checked={!!block.optional}
+                onChange={(e) => update('optional', e.target.checked)}
+              />
+              {block.optional ? '🔓 任意効果（〜できる / 発動前に確認ダイアログあり）' : '🔒 強制効果（〜する）'}
+            </label>
+          </div>
+        )}
+
         {/* summon / summon_from_trash 専用: コストを支払わずに登場 / 登場時効果を発揮しない */}
         {(block.action === 'summon' || block.action === 'summon_from_trash') && (
           <div className="field" style={{ marginTop: 8, background: '#fff3e0', padding: 8, borderRadius: 4, border: '1px solid #ffd591' }}>

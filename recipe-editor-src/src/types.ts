@@ -31,6 +31,9 @@ export interface EffectBlock {
   // summon_from_trash 専用:「この効果で登場したデジモンの【登場時】効果は発揮しない」
   // true のとき JSON へ step.skip_on_play:true を出力する
   skipOnPlay?: boolean;
+  // 「〜できる」= 任意効果。true のとき JSON へ step.optional:true を出力する。
+  // エンジンは発動前に「発動しますか？」の確認ダイアログを挟む（未指定/falseは強制効果）
+  optional?: boolean;
   fromZones?: string[]; // アクションの取得元エリア（'hand' / 'trash' / 'deck' 等）。複数指定可。JSON では step.from
   fromZonesOp?: 'or' | 'and'; // 複数取得元の結合演算子（既定は 'or'）
   // 「～ごとに」倍率設定。perRef を数えて value × floor(count / perCount) を計算

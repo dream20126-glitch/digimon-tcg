@@ -4,8 +4,8 @@ import type { DictEntry, VisualTypeEntry } from '../types';
 import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOptionImplemented } from '../implemented';
 import { SearchSelect } from './SearchSelect';
 
-type DictKind = 'triggers' | 'conditions' | 'actions' | 'keywords' | 'options';
-type Tab = DictKind | 'visualTypes';
+export type DictKind = 'triggers' | 'conditions' | 'actions' | 'keywords' | 'options';
+export type Tab = DictKind | 'visualTypes';
 
 const KIND_LABELS: Record<DictKind, string> = {
   triggers: 'トリガー',
@@ -250,7 +250,7 @@ const TOKEN_MAP: Record<string, string> = {
 
 // 全 dict ラベルから、入力 label と完全一致するエントリのコードを返す
 // 既存エントリの再入力時に最高精度で suggest するためのショートカット
-function findExactDictMatch(label: string, dict?: DictAPI): string | null {
+export function findExactDictMatch(label: string, dict?: DictAPI): string | null {
   if (!dict) return null;
   const all: { code: string; label: string }[] = [
     ...dict.triggers, ...dict.conditions, ...dict.actions, ...dict.keywords, ...dict.options,
@@ -260,7 +260,7 @@ function findExactDictMatch(label: string, dict?: DictAPI): string | null {
   return hit ? hit.code : null;
 }
 
-function suggestCode(label: string, kind: Tab, dict?: DictAPI): string {
+export function suggestCode(label: string, kind: Tab, dict?: DictAPI): string {
   // 1) 既存 dict ラベル完全一致 → そのコードを返す（最高精度）
   const exact = findExactDictMatch(label, dict);
   if (exact) return exact;
@@ -300,7 +300,7 @@ function suggestCode(label: string, kind: Tab, dict?: DictAPI): string {
   return prefix + stem;
 }
 
-function suggestVisualType(code: string): { visualType: string; visualCode: string; frameColor: string; valueLabel: string } {
+export function suggestVisualType(code: string): { visualType: string; visualCode: string; frameColor: string; valueLabel: string } {
   const lc = code.toLowerCase();
   if (/(_plus)$/.test(lc)) return { visualType: '数値ポップアップ+', visualCode: 'popup_plus', frameColor: '緑', valueLabel: '増減値' };
   if (/(_minus)$/.test(lc)) return { visualType: '数値ポップアップ-', visualCode: 'popup_minus', frameColor: '赤', valueLabel: '増減値' };
@@ -321,7 +321,7 @@ function suggestVisualType(code: string): { visualType: string; visualCode: stri
   return { visualType: 'なし', visualCode: 'none', frameColor: 'なし', valueLabel: '' };
 }
 
-function suggestAutoManual(code: string): string {
+export function suggestAutoManual(code: string): string {
   const lc = code.toLowerCase();
   if (/^(select|select_multi|pick|place_|jogress|app_gattai|link|unlink)/.test(lc)) return '手動';
   if (/(cost_discard|cost_trash|cost_digiburst|cost_destroy_other|return_deck|add_to_hand|security_trash_select)/.test(lc)) return '手動';
@@ -1001,7 +1001,7 @@ function buildUnimplementedReport(dict: DictAPI): string {
   return lines.join('\n');
 }
 
-function kindToSingular(k: DictKind): string {
+export function kindToSingular(k: DictKind): string {
   return k === 'triggers' ? 'trigger'
     : k === 'conditions' ? 'condition'
     : k === 'actions' ? 'action'

@@ -13,6 +13,7 @@ import type { DictAPI } from '../useDict';
 import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOptionImplemented } from '../implemented';
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
+import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
 
 interface Props {
   block: EffectBlock;
@@ -58,6 +59,97 @@ function ButtonGroup({ options, value, onChange, accentColor }: { options: { cod
           </button>
         );
       })}
+    </div>
+  );
+}
+
+const DICT_KIND_LABELS: Record<DictKind, string> = {
+  triggers: 'トリガー', conditions: '条件', actions: 'アクション', keywords: 'キーワード', options: '修飾子',
+};
+
+// レシピ編集中に「この項目が辞書にない」となったとき、その場で効果辞書（スプシ）に
+// 新規登録できるミニフォーム。登録成功時は onRegistered(code) で呼び出し元のプルダウンに反映する
+function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: DictAPI; onRegistered: (code: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState('');
+  const [code, setCode] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  function autoSuggest() {
+    if (!label.trim()) { setMsg('❌ 先に日本語名を入力してください'); return; }
+    setCode(suggestCode(label, kind, dict));
+    setMsg('');
+  }
+
+  async function handleSubmit() {
+    if (!label.trim() || !code.trim()) { setMsg('❌ 日本語名とコードは必須'); return; }
+    setSubmitting(true);
+    setMsg('💾 スプシに書き込み中...');
+    try {
+      const extra = kind === 'actions' ? suggestVisualType(code.trim()) : {};
+      const r = await dict.addEntry(kind, { code: code.trim(), label: label.trim(), kind: kindToSingular(kind), ...extra });
+      if (r.ok) {
+        setMsg('✅ 登録しました: ' + code.trim());
+        onRegistered(code.trim());
+        setOpen(false);
+        setLabel('');
+        setCode('');
+      } else {
+        setMsg('❌ ' + (r.msg || '登録失敗'));
+      }
+    } catch (e: any) {
+      setMsg('❌ 通信エラー: ' + (e?.message || e));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => { setOpen(true); setMsg(''); }}
+        style={{ marginTop: 4, padding: '2px 8px', fontSize: 11, border: '1px dashed #1976d2', background: 'white', color: '#1976d2', borderRadius: 4, cursor: 'pointer' }}
+      >
+        ＋ 辞書に新規登録
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 6, padding: 8, background: '#fffde7', border: '1px solid #e0c847', borderRadius: 4 }}>
+      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#8a6d00', marginBottom: 4 }}>
+        ＋ 効果辞書に新規登録（{DICT_KIND_LABELS[kind]}）
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="日本語名（例: 相手のデジモンがアタックしたとき）"
+          style={{ flex: 1, minWidth: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+        />
+        <input
+          type="text"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="コード"
+          style={{ width: 140, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+        />
+        <button type="button" onClick={autoSuggest} style={{ padding: '3px 8px', fontSize: 11, border: '1px solid #1976d2', background: 'white', color: '#1976d2', borderRadius: 4, cursor: 'pointer' }}>
+          🔄推測
+        </button>
+        <button type="button" onClick={handleSubmit} disabled={submitting} style={{ padding: '3px 10px', fontSize: 11, border: 'none', background: '#2e7d32', color: 'white', borderRadius: 4, cursor: submitting ? 'default' : 'pointer', opacity: submitting ? 0.6 : 1 }}>
+          登録
+        </button>
+        <button type="button" onClick={() => { setOpen(false); setMsg(''); }} style={{ padding: '3px 8px', fontSize: 11, border: '1px solid #999', background: 'white', color: '#555', borderRadius: 4, cursor: 'pointer' }}>
+          キャンセル
+        </button>
+      </div>
+      {msg && (
+        <div style={{ fontSize: 11, marginTop: 4, color: msg.startsWith('✅') ? '#2e7d32' : '#c62828' }}>{msg}</div>
+      )}
     </div>
   );
 }
@@ -952,6 +1044,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         options={toOpts(dict.triggers).filter((o) => !allFamilyCodes.has(o.value) && !currentTriggers.includes(o.value))}
                         allowFreeText
                       />
+                      <InlineDictAdd kind="triggers" dict={dict} onRegistered={addTrigger} />
                     </div>
                   )}
 
@@ -1145,6 +1238,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   options={actionDisplayOptions}
                   allowFreeText
                 />
+                <InlineDictAdd kind="actions" dict={dict} onRegistered={onActionPulldownChange} />
               </div>
               {/* 位置バリアント pulldown: フラグ駆動 or 自動グループ化時のみ */}
               {isPositional && variantOptions.length > 0 && (
@@ -3117,6 +3211,7 @@ function ConditionsHybridEditor({
                     allowFreeText
                     placeholder="--条件を選択--"
                   />
+                  <InlineDictAdd kind="conditions" dict={dict} onRegistered={(v) => updateAt(i, { base: v })} />
                 </div>
               )}
               {c.base && (

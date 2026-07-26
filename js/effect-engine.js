@@ -705,25 +705,30 @@ function _inferVisualInfo(actionCode) {
 const _COLOR_MAP = { '赤': '#ff4444', '緑': '#00ff88', 'シアン': '#00fbff', 'オレンジ': '#ff9900', '黄': '#ffaa00', '紫': '#aa66ff' };
 
 // アクションコードから演出を実行（推測ルールベース。辞書は参照しない）
+// overrides: { visualType, frameColor } — レシピで明示指定されていれば自動推測より優先
 // 戻り値: true=演出実行した, false=演出なし
-function playEffect(actionCode, options, callback) {
+function playEffect(actionCode, options, callback, overrides) {
   const info = _inferVisualInfo(actionCode);
-  if (!info.visualType) { callback(); return false; }
-  const runner = EFFECT_RUNNERS[info.visualType];
+  const visualType = (overrides && overrides.visualType) || info.visualType;
+  const frameColor = (overrides && overrides.frameColor) || info.frameColor;
+  if (!visualType) { callback(); return false; }
+  const runner = EFFECT_RUNNERS[visualType];
   if (!runner) { callback(); return false; }
 
   options.actionCode = actionCode;
-  if (info.visualCode) options.fxCode = info.visualCode;
-  if (info.frameColor) options.color = _COLOR_MAP[info.frameColor] || info.frameColor;
+  // 演出タイプを明示指定した場合、対応する演出コードは不明なので自動推測の値は使わない
+  if (!(overrides && overrides.visualType) && info.visualCode) options.fxCode = info.visualCode;
+  if (frameColor) options.color = _COLOR_MAP[frameColor] || frameColor;
 
   runner(options, callback);
   return true;
 }
 
-// 枠色を取得するヘルパー（アクションコードの命名パターンから推測。辞書は参照しない）
-function getUIColor(actionCode, fallback) {
-  const inferred = _inferVisualInfo(actionCode).frameColor;
-  return (inferred && _COLOR_MAP[inferred]) || fallback || '#ff4444';
+// 枠色を取得するヘルパー（レシピで明示指定されていればそれを優先、無ければ
+// アクションコードの命名パターンから推測。辞書は参照しない）
+function getUIColor(actionCode, fallback, override) {
+  const color = override || _inferVisualInfo(actionCode).frameColor;
+  return (color && _COLOR_MAP[color]) || fallback || '#ff4444';
 }
 
 
@@ -731,8 +736,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
   const sideLabel = ctx.side === 'player' ? '自分' : '相手';
-  // 枠色をアクションコードから推測（辞書は参照しない）
-  const uiColor = getUIColor(action.code, '#ff4444');
+  // 枠色: レシピで明示指定されていればそれを優先、無ければアクションコードから推測
+  const uiColor = getUIColor(action.code, '#ff4444', action.frameColor);
   // 対象選択UIに渡すサイド（opponent側のDOM行ID用: 'ai' or 'pl'）
   const opponentRowSide = ctx.side === 'player' ? 'ai' : 'pl';
   // store経由で対象が確定済みの場合、AI自動選択と同じパスを通す
@@ -812,7 +817,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (!tgt) return;
         addBuff(tgt, 'dp_minus', val, ctx);
         ctx.addLog('💥 ' + tgt.name + ' DP-' + val + ' → ' + tgt.dp);
-        playEffect(action.code, { value: -val, ctx, label: tgt.name }, () => {});
+        playEffect(action.code, { value: -val, ctx, label: tgt.name }, () => {}, { visualType: action.visualType, frameColor: action.frameColor });
         if(tgt.dp <= 0) tgt._pendingDestroy = true;
         sendDpRemoteBuff(idx, tgt);
       };
@@ -959,7 +964,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // 消滅演出 → doDestroy（on_destroy リアクション完了まで待つ）→ callback
         playEffect(action.code, { card, ctx }, () => {
           doDestroy(tgtPlayer, di, ctx, () => callback(true));
-        });
+        }, { visualType: action.visualType, frameColor: action.frameColor });
         break;
       }
       ctx.addLog(isOwn ? '🎯 自分のデジモンから消滅させる対象を選んでください' : '🎯 消滅させる対象を選んでください');
@@ -969,7 +974,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           // 消滅演出 → doDestroy（on_destroy リアクション完了まで待つ）→ callback
           playEffect(action.code, { card, ctx }, () => {
             doDestroy(tgtPlayer, selectedIdx, ctx, () => callback(true));
-          });
+          }, { visualType: action.visualType, frameColor: action.frameColor });
         } else {
           // target_own は cost 用途とみなし、キャンセル時は callback(false) で後続中止
           callback(isOwn ? false : undefined);
@@ -1213,7 +1218,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         } catch (_) {}
       }
       // 辞書の演出パラメータ1=デッキ, パラメータ2=セキュリティ で自動決定
-      playEffect(action.code, { card: recoverCard, ctx }, () => { callback(); });
+      playEffect(action.code, { card: recoverCard, ctx }, () => { callback(); }, { visualType: action.visualType, frameColor: action.frameColor });
       break;
     }
     case 'security_trash_top': {
@@ -1224,7 +1229,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       ctx.renderAll();
       // 辞書の演出パラメータ1=セキュリティ, パラメータ2=トラッシュ で自動決定
-      playEffect(action.code, { card: trashCard, ctx }, () => { callback(); });
+      playEffect(action.code, { card: trashCard, ctx }, () => { callback(); }, { visualType: action.visualType, frameColor: action.frameColor });
       break;
     }
     case 'evo_discard':
@@ -8361,7 +8366,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _rdTop = step.position === 'top' || step.deck_top;
         // executeRecipeStep では opponentRowSide / uiColor が未定義のため、ここで構築する
         const _rdRowId = ctx.side === 'player' ? 'ai' : 'pl';
-        const _rdColor = getUIColor(step.action, '#ff4444');
+        const _rdColor = getUIColor(step.action, '#ff4444', step.frame_color);
         const _doReturnDeck = (idx) => {
           const c = opponent.battleArea[idx];
           if (!c) return;
@@ -8757,6 +8762,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (step.condition) action.condition = step.condition;
       // ターン終了時メモリー復元フラグを引き継ぐ（memory_plus の revert_at_turn_end）
       if (step.revert_at_turn_end) action.revert_at_turn_end = true;
+      // 演出タイプ・枠色の明示指定（レシピエディタで指定）。未指定なら自動推測にフォールバック
+      if (step.frame_color) action.frameColor = step.frame_color;
+      if (step.visual_type) action.visualType = step.visual_type;
       let target = null;
       if (step.target) {
         const t = step.target;

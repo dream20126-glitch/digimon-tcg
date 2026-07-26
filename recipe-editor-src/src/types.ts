@@ -42,6 +42,11 @@ export interface EffectBlock {
   // （任意効果の確認ダイアログには影響しない。強制効果のアナウンス演出のみ省略）
   // JSON では step.no_announce:true を出力する
   noAnnounce?: boolean;
+  // 演出の枠色・演出タイプの明示指定。空欄ならアクションコードの命名パターンから
+  // 自動推測される（例: dp_plus→緑、destroy→赤 等）。特定のカードだけ演出を変えたい
+  // 場合の上書き用オプション。JSON では step.frame_color / step.visual_type を出力する
+  frameColor?: string;
+  visualType?: string;
   fromZones?: string[]; // アクションの取得元エリア（'hand' / 'trash' / 'deck' 等）。複数指定可。JSON では step.from
   fromZonesOp?: 'or' | 'and'; // 複数取得元の結合演算子（既定は 'or'）
   // 「～ごとに」倍率設定。perRef を数えて value × floor(count / perCount) を計算

@@ -172,14 +172,14 @@ const TIMING_OPTIONS: { code: TimingKey; label: string }[] = [
 ];
 
 // 【コスト軽減】は自分/相手/お互いの軸ではなく「何のコストを軽減するか」の軸を持つ特殊トリガー。
-// 登場コスト/使用コストは実装上どちらも summon_cost（getEffectivePlayCost が playCost に対して
-// 一律に適用するため、デジモンの登場もオプション/テイマーの使用も区別がない）。
+// 登場コスト・使用コスト(オプション/テイマー)は実装上どちらも summon_cost 一本（getEffectivePlayCost
+// が playCost に対して一律に適用するため区別がなく、ボタンを分けても同一コードで選択状態が
+// 一致してしまうため「登場」に統一。使用コストもここで代用する旨は本文で案内する）。
 // 進化コストは常時軽減の専用recipeキーが未実装（evo_cost_minusは単発アクションのみ）なので、
 // エンジン未対応のプレースホルダーコードとして用意する。
 const COST_REDUCTION_VARIANTS: { code: string; label: string; trigger: string; implemented: boolean }[] = [
   { code: 'summon', label: '登場', trigger: 'summon_cost', implemented: true },
   { code: 'evolve', label: '進化', trigger: 'evo_cost', implemented: false },
-  { code: 'use', label: '使用', trigger: 'summon_cost', implemented: true },
 ];
 const COST_REDUCTION_TRIGGERS = new Set(COST_REDUCTION_VARIANTS.map((v) => v.trigger));
 // 現在選択中のtriggers/triggerConditionsから、共有の発動タイミングを逆算する
@@ -487,6 +487,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 }}
                 accentColor="#ef6c00"
               />
+              <button
+                type="button"
+                onClick={() => onChange({ ...block, trigger: '', triggers: [] })}
+                style={{ padding: '3px 9px', borderRadius: 5, border: '1px solid #999', background: '#fff', color: '#555', cursor: 'pointer', fontSize: 11 }}
+              >
+                ← トリガーを選び直す
+              </button>
+            </div>
+            <div style={{ fontSize: 10, color: '#8a5300', marginBottom: 6 }}>
+              ※オプション/テイマーの使用コストも「登場」と同じ扱いです（内部的に同一コード）
             </div>
             {!COST_REDUCTION_VARIANTS.find((v) => v.trigger === block.trigger)?.implemented && (
               <div style={{ marginBottom: 6, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
@@ -494,7 +504,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               </div>
             )}
             常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。
-            <br />・下の「🎯 発動条件」欄 = この軽減が有効になる条件（例:「レスト状態の相手デジモンがいる」）
             <br />・下の「⚙ 追加オプション」内「✖ ～ごとに」= 「〜1体ごとに」の倍率設定
             <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #ffb74d' }}>
               <label style={{ display: 'block', fontWeight: 'bold', color: '#b76e00', marginBottom: 4 }}>
@@ -509,6 +518,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 }}
                 placeholder="例: 1"
                 style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
+              />
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <ConditionsHybridEditor
+                conditions={conditions}
+                onChange={(next) => update('conditions', next)}
+                dict={dict}
+                title="発動条件"
+                hint="（この軽減が有効になる条件・複数指定可・AND結合）"
+                theme="trigger"
+                defaultSubject=""
               />
             </div>
           </div>
@@ -766,6 +786,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           {block.trigger === 'alt_evolve' ? (
             <div style={{ fontSize: 11, color: '#888' }}>
               🔄 代替進化トリガーはアクション不要です（進化コストは上の🔄バナー内に入力済み）。
+            </div>
+          ) : COST_REDUCTION_TRIGGERS.has(block.trigger) ? (
+            <div style={{ fontSize: 11, color: '#888' }}>
+              💰 コスト軽減トリガーはアクション不要です（軽減量は上の💰バナー内に入力済み）。
             </div>
           ) : (() => {
           // アクションのグループ表示処理（_top/_bottom/_select 系を1エントリに）
@@ -1073,7 +1097,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </div>
         </details>
 
-        {/* === 🎯 発動条件（常時表示・デフォルト折りたたみ・データあれば展開） === */}
+        {/* === 🎯 発動条件（常時表示・デフォルト折りたたみ・データあれば展開） ===
+            コスト軽減トリガーは同内容の編集欄を上の💰バナー内に直接表示しているため、
+            ここでの二重表示は避ける */}
+        {!COST_REDUCTION_TRIGGERS.has(block.trigger) && (
         <details className="field" style={{ marginTop: 8 }} open={conditions.length > 0}>
           <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#1a4f8a' }}>
             🎯 発動条件{conditions.length > 0 ? ` (${conditions.length})` : ''}
@@ -1095,6 +1122,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             defaultSubject=""
           />
         </details>
+        )}
 
         {/* === 📐 ルール（アクション直下に配置・メインアクションが対応している場合のみ） === */}
         {actionAllowsRules && (

@@ -5,7 +5,6 @@ import {
   DURATIONS,
   TARGETS,
   TARGET_COUNTS,
-  CONDITION_SUBJECTS,
   FROM_ZONES,
   REF_SUBJECTS,
 } from '../dict';
@@ -198,6 +197,63 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   other_own: { l1: 'other_own', l2: 'digimon' },
   other_own_card: { l1: 'other_own', l2: 'card' },
   other_own_tamer: { l1: 'other_own', l2: 'tamer' },
+};
+
+// 条件の「対象」用の2段階ボタン選択（発動主体と同じ見た目のパターンだが、
+// CONDITION_SUBJECTS のコード体系が発動主体と異なる＝別テーブルで持つ）
+// - '既定'（空文字）= 対象を指定しない（アクション対象そのものを見る）
+// - このカード配下は self（このデジモン）/ self_card（このカード全般）の2択のみ
+// - 他 は other_own の1択のみ（other_own_card/tamer は条件対象としては未定義）
+const COND_SUBJECT_L1 = [
+  { code: '', label: '既定' },
+  { code: 'self', label: 'このカード' },
+  { code: 'own', label: '自分' },
+  { code: 'opp', label: '相手' },
+  { code: 'other_own', label: '他' },
+];
+const COND_SUBJECT_L2: Record<string, { code: string; label: string }[]> = {
+  self: [
+    { code: 'digimon', label: 'デジモン' },
+    { code: 'card', label: 'カード' },
+  ],
+  own: [
+    { code: 'digimon', label: 'デジモン' },
+    { code: 'card', label: 'カード' },
+    { code: 'tamer', label: 'テイマー' },
+    { code: 'player', label: 'プレイヤー' },
+    { code: 'any', label: '指定なし' },
+  ],
+  opp: [
+    { code: 'digimon', label: 'デジモン' },
+    { code: 'card', label: 'カード' },
+    { code: 'tamer', label: 'テイマー' },
+    { code: 'player', label: 'プレイヤー' },
+    { code: 'any', label: '指定なし' },
+    { code: 'blocker', label: 'ブロッカー' },
+  ],
+};
+const COND_SUBJECT_L1L2_TO_CODE: Record<string, string> = {
+  'self:digimon': 'self', 'self:card': 'self_card',
+  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:player': 'own_player', 'own:any': 'own_any',
+  'opp:digimon': 'opp', 'opp:card': 'opp_card', 'opp:tamer': 'opp_tamer', 'opp:player': 'opp_player', 'opp:any': 'opp_any', 'opp:blocker': 'opp_blocker',
+  'other_own:digimon': 'other_own',
+};
+const COND_SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
+  '': { l1: '', l2: '' },
+  self: { l1: 'self', l2: 'digimon' },
+  self_card: { l1: 'self', l2: 'card' },
+  own: { l1: 'own', l2: 'digimon' },
+  own_card: { l1: 'own', l2: 'card' },
+  own_tamer: { l1: 'own', l2: 'tamer' },
+  own_player: { l1: 'own', l2: 'player' },
+  own_any: { l1: 'own', l2: 'any' },
+  opp: { l1: 'opp', l2: 'digimon' },
+  opp_card: { l1: 'opp', l2: 'card' },
+  opp_tamer: { l1: 'opp', l2: 'tamer' },
+  opp_player: { l1: 'opp', l2: 'player' },
+  opp_any: { l1: 'opp', l2: 'any' },
+  opp_blocker: { l1: 'opp', l2: 'blocker' },
+  other_own: { l1: 'other_own', l2: 'digimon' },
 };
 
 // よく使うトリガー:
@@ -3066,6 +3122,9 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'zone', label: '場所' },
   { value: 'other', label: 'その他' },
 ];
+// 種別ボタン用（「その他」はトリガー同様、別枠のチェックボックスで扱うため除外）
+const CATEGORY_BUTTON_OPTIONS = CATEGORY_OPTIONS.filter((c) => c.value !== 'other')
+  .map((c) => ({ code: c.value, label: c.label }));
 
 // カテゴリ選択直後に自動セットされる既定コード（バリアント無しは1つだけ・バリアント有りは先頭）
 const CATEGORY_DEFAULT_BASE: Record<string, string> = {
@@ -3174,34 +3233,35 @@ function ConditionsHybridEditor({
             </div>
             <div style={{ flex: 2 }}>
               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>種別</div>
-              {(() => {
-                const category = baseToCategory(c.base);
-                return (
-                  <SearchSelect
-                    value={category}
-                    onChange={(newCat) => {
-                      if (newCat === 'other') {
-                        updateAt(i, { base: otherCondOptions[0]?.value || '', value: '' });
-                      } else {
-                        updateAt(i, { base: CATEGORY_DEFAULT_BASE[newCat] || '', value: '' });
-                      }
-                    }}
-                    options={CATEGORY_OPTIONS}
-                    placeholder="--種別を選択--"
-                  />
-                );
-              })()}
-              {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントプルダウン */}
+              <ButtonGroup
+                options={CATEGORY_BUTTON_OPTIONS}
+                value={baseToCategory(c.base) === 'other' ? '' : baseToCategory(c.base)}
+                onChange={(newCat) => updateAt(i, { base: CATEGORY_DEFAULT_BASE[newCat] || '', value: '' })}
+                accentColor={colors.accent}
+              />
+              {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントボタン */}
               {CATEGORY_VARIANTS[baseToCategory(c.base)] && (
                 <div style={{ marginTop: 4 }}>
-                  <SearchSelect
+                  <ButtonGroup
+                    options={CATEGORY_VARIANTS[baseToCategory(c.base)]!.map((v) => ({ code: v.value, label: v.label }))}
                     value={c.base}
                     onChange={(v) => updateAt(i, { base: v })}
-                    options={CATEGORY_VARIANTS[baseToCategory(c.base)]!}
+                    accentColor={colors.accent}
                   />
                 </div>
               )}
-              {/* その他: カテゴリ化されていない条件を直接選ぶ逃し弁 */}
+              {/* その他: よく使う種別に無いものは、トリガーの「その他のトリガー」と同様に
+                  チェックボックスで開いたプルダウンから選ぶ（辞書への新規登録も可能） */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, marginTop: 4, color: '#666' }}>
+                <input
+                  type="checkbox"
+                  checked={baseToCategory(c.base) === 'other'}
+                  onChange={(e) => updateAt(i, e.target.checked
+                    ? { base: otherCondOptions[0]?.value || '', value: '' }
+                    : { base: CATEGORY_DEFAULT_BASE.color, value: '' })}
+                />
+                その他の条件
+              </label>
               {baseToCategory(c.base) === 'other' && (
                 <div style={{ marginTop: 4 }}>
                   <SearchSelect
@@ -3259,13 +3319,12 @@ function ConditionsHybridEditor({
                   );
                 })()
               ) : def && def.input === 'select' ? (
-                <select
+                <ButtonGroup
+                  options={(def.options || []).filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))}
                   value={c.value || ''}
-                  onChange={(e) => updateAt(i, { value: e.target.value })}
-                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}
-                >
-                  {(def.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                  onChange={(v) => updateAt(i, { value: v })}
+                  accentColor={colors.accent}
+                />
               ) : def && def.input === 'number' ? (
                 <input
                   type="number"
@@ -3287,11 +3346,29 @@ function ConditionsHybridEditor({
             {showSubjectSelector && (
               <div style={{ flex: 1.6 }}>
                 <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                <SearchSelect
-                  value={c.subject || ''}
-                  onChange={(v) => updateAt(i, { subject: v || undefined })}
-                  options={toOpts(CONDITION_SUBJECTS)}
-                />
+                {(() => {
+                  const curSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };
+                  const l2Options = COND_SUBJECT_L2[curSub.l1] || [];
+                  const handleSubL1 = (l1: string) => {
+                    if (!l1) { updateAt(i, { subject: undefined }); return; }
+                    if (!COND_SUBJECT_L2[l1]) { updateAt(i, { subject: 'other_own' }); return; }
+                    const l2 = curSub.l1 === l1 && curSub.l2 ? curSub.l2 : 'digimon';
+                    updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] });
+                  };
+                  const handleSubL2 = (l2: string) => {
+                    updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2] });
+                  };
+                  return (
+                    <>
+                      <ButtonGroup options={COND_SUBJECT_L1} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
+                      {l2Options.length > 0 && (
+                        <div style={{ marginTop: 4 }}>
+                          <ButtonGroup options={l2Options} value={curSub.l2} onChange={handleSubL2} accentColor={colors.accent} />
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             )}
             <button

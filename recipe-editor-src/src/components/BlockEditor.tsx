@@ -1419,8 +1419,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           )}
 
           {/* 効果発動ポップアップの表示テキスト: 空欄なら効果テキストから自動抽出にフォールバック。
-              強制効果のみ「表示しない」を選べる（任意効果は確認ダイアログが必須のため対象外） */}
-          {block.trigger !== 'alt_evolve' && block.action && (
+              強制効果のみ「表示しない」を選べる（任意効果は確認ダイアログが必須のため対象外）。
+              強制/任意ボタンと同様、アクション選択前から常に表示する */}
+          {block.trigger !== 'alt_evolve' && (
             <div className="field" style={{ marginBottom: 8 }}>
               <label>💬 効果発動ポップアップの表示テキスト（空欄なら効果テキストから自動抽出）</label>
               <textarea

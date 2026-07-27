@@ -1084,6 +1084,30 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
 
+                  {/* 【アタック時】【アタック終了時】のときだけ、アタックの対象（プレイヤー/デジモン）を選べる。
+                      実体はtriggerConditionsのcond_attack_target_player/digimonをこのUIから操作するだけ
+                      （「対象」なので発動主体でも発動条件でもなく、トリガー自体の付帯情報として並べる） */}
+                  {currentTriggers.some((t) => ['on_attack', 'when_opp_attack', 'on_any_attack', 'on_attack_end', 'when_opp_attack_end', 'on_any_attack_end'].includes(t)) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                      <span style={{ fontSize: 11, color: '#666' }}>アタック対象:</span>
+                      <ButtonGroup
+                        options={[{ code: '', label: '指定なし' }, { code: 'player', label: 'プレイヤー' }, { code: 'digimon', label: 'デジモン' }]}
+                        value={
+                          triggerConditions.some((c) => c.base === 'cond_attack_target_player') ? 'player'
+                            : triggerConditions.some((c) => c.base === 'cond_attack_target_digimon') ? 'digimon' : ''
+                        }
+                        onChange={(v) => {
+                          const rest = triggerConditions.filter((c) => c.base !== 'cond_attack_target_player' && c.base !== 'cond_attack_target_digimon');
+                          const withNew = v === 'player' ? [...rest, { base: 'cond_attack_target_player' }]
+                            : v === 'digimon' ? [...rest, { base: 'cond_attack_target_digimon' }]
+                            : rest;
+                          update('triggerConditions', withNew);
+                        }}
+                        accentColor="#2e7d32"
+                      />
+                    </div>
+                  )}
+
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 6, color: '#666' }}>
                     <input
                       type="checkbox"
@@ -1175,7 +1199,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 hint="（このトリガーが発火する条件・トリガー発火元カードへのフィルタ）"
                 theme="trigger"
                 defaultSubject=""
-                showAttackTargetRow={true}
               />
             </div>
           )}
@@ -3090,7 +3113,6 @@ interface ConditionsHybridEditorProps {
   theme: 'trigger' | 'action';
   defaultSubject?: string;  // チェックボックス追加時の既定 subject（'' or 'self' 等）
   showSubjectSelector?: boolean; // 主体プルダウンを各行に出すか
-  showAttackTargetRow?: boolean; // 🎯 アタック対象行（プレイヤー/デジモン）を表示するか（トリガー条件専用）
   // true のとき cond_type 等を複数選択(カンマ区切り値)で入力可能にする。
   // step.filter (ターゲットフィルタ) は type_in 配列を受け付けるためOK判定できるが、
   // trigger_conditions/発動条件側の cond_type は単一値exact-matchのみ対応のため、
@@ -3171,14 +3193,8 @@ function baseToCategory(base: string): CondCategory {
   return 'other';
 }
 
-// トリガー条件専用の「アタック対象」よく使うボタン
-const QUICK_ADD_ATTACK_TARGET: { code: string; label: string }[] = [
-  { code: 'cond_attack_target_player', label: 'プレイヤーにアタック' },
-  { code: 'cond_attack_target_digimon', label: 'デジモンにアタック' },
-];
-
 function ConditionsHybridEditor({
-  conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true, showAttackTargetRow = false,
+  conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true,
   supportsMultiValue = false,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
@@ -3191,6 +3207,8 @@ function ConditionsHybridEditor({
     'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_dp_ge', 'cond_dp_le', 'cond_dp',
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
     'cond_name', 'cond_name_contains',
+    // トリガーボックス側の専用「アタック対象」ボタンで管理するため、その他の追加候補にも出さない
+    'cond_attack_target_player', 'cond_attack_target_digimon',
   ]);
   const otherCondOptions = toOpts(dict.conditions.filter((c) => !CATEGORIZED_CODES.has(c.code)));
 
@@ -3216,18 +3234,12 @@ function ConditionsHybridEditor({
       addRow(CATEGORY_DEFAULT_BASE[cat] || '');
     }
   }
-  // アタック対象（プレイヤーにアタック/デジモンにアタック）等、値/対象を持たない単発条件のトグル
-  function toggleExactCode(code: string) {
-    if (conditions.some((c) => c.base === code)) {
-      onChange(conditions.filter((c) => c.base !== code));
-    } else {
-      addRow(code);
-    }
-  }
-
+  // アタック対象(cond_attack_target_player/digimon)はトリガーボックス側の専用「アタック対象」
+  // ボタンで管理するため、その他の条件リストには二重表示しない
   const otherRows = conditions
     .map((c, i) => ({ c, i }))
-    .filter(({ c }) => baseToCategory(c.base) === 'other');
+    .filter(({ c }) => baseToCategory(c.base) === 'other'
+      && c.base !== 'cond_attack_target_player' && c.base !== 'cond_attack_target_digimon');
 
   return (
     <div className="field" style={{ gridColumn: '1 / span 2', background: colors.bg, padding: 8, borderRadius: 4, border: `1px solid ${colors.border}` }}>
@@ -3258,26 +3270,6 @@ function ConditionsHybridEditor({
               }}
             >
               {cat.label}
-            </button>
-          );
-        })}
-        {showAttackTargetRow && QUICK_ADD_ATTACK_TARGET.map((q) => {
-          const active = conditions.some((c) => c.base === q.code);
-          return (
-            <button
-              key={q.code}
-              type="button"
-              onClick={() => toggleExactCode(q.code)}
-              style={{
-                padding: '3px 9px', borderRadius: 5,
-                border: active ? '2px solid #b76e00' : '1px solid #ffd591',
-                background: active ? '#b76e00' : '#fff8e6',
-                color: active ? '#fff' : '#b76e00',
-                fontWeight: active ? 'bold' : 'normal',
-                cursor: 'pointer', fontSize: 11,
-              }}
-            >
-              {q.label}
             </button>
           );
         })}

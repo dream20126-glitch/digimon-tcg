@@ -178,6 +178,8 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
           <div style={{ fontSize: 10, color: '#666', marginBottom: 6 }}>
             登場時/継続効果 等、既存のトリガー/アクションの組み合わせで表現できる場合のみ作成してください。
             空のままなら今まで通り「フラグとしてキーワード名を持つだけ」で登録されます（エンジン側の対応が別途必要）。
+            <br />※【セキュリティアタック+2】のように数値がカードごとに変わる場合、ここでは値欄を空欄のままにしてください。
+            カード側の「キーワード効果」バナーで入力した数値が、保存時にこの空欄部分へ自動で差し込まれます。
           </div>
           {templateBlocks.map((b, i) => (
             <BlockEditor

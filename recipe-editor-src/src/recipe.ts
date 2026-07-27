@@ -39,13 +39,19 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
   return recipe;
 }
 
-// テンプレートrecipeの各トリガーキーの配列を、containerの同じキーへ追記合流する
-function mergeTemplateRecipe(container: Record<string, any>, template: Record<string, any>) {
+// テンプレートrecipeの各トリガーキーの配列を、containerの同じキーへ追記合流する。
+// テンプレート側で値を空にしておいたstep（例:「DP+」までで数値未設定）には、
+// カード側でキーワード効果に入力した数値(cardValue)をそのまま差し込む
+// （＝「Nはカードごとに違う」ケースをテンプレート側で固定せずに済む）
+function mergeTemplateRecipe(container: Record<string, any>, template: Record<string, any>, cardValue?: number | string) {
   Object.keys(template).forEach((key) => {
     const steps = template[key];
     if (!Array.isArray(steps) || steps.length === 0) return;
     if (key === 'evo_source' || key === 'passive') return; // 未対応の入れ子は無視（v1では単純なトリガーキーのみ）
-    container[key] = Array.isArray(container[key]) ? [...container[key], ...steps] : steps.slice();
+    const filled = cardValue === undefined || cardValue === ''
+      ? steps
+      : steps.map((s: any) => (s && s.value === undefined ? { ...s, value: cardValue } : s));
+    container[key] = Array.isArray(container[key]) ? [...container[key], ...filled] : filled.slice();
   });
 }
 
@@ -56,7 +62,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       try {
         const template = JSON.parse(kwEntry.recipeTemplate);
         if (template && typeof template === 'object') {
-          mergeTemplateRecipe(container, template);
+          const cv = b.value !== undefined && b.value !== '' && b.value !== null
+            ? (isNaN(Number(b.value)) ? b.value : Number(b.value))
+            : undefined;
+          mergeTemplateRecipe(container, template, cv);
           return;
         }
       } catch (_) { /* パース失敗時は下のpassive出力にフォールバック */ }

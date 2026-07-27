@@ -1392,10 +1392,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               「発動しますか？」の確認ダイアログが入る。アクション選択前から常に表示する
               （枠色は削除。演出タイプはこの行に統合） */}
           {block.trigger !== 'alt_evolve' && (
-            <div className="field" style={{ marginBottom: 8, display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
+            <div style={{ marginBottom: 8, display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
               <div>
                 <ButtonGroup
-                  options={[{ code: 'forced', label: '🔒 強制効果（〜する）' }, { code: 'optional', label: '🔓 任意効果（〜できる）' }]}
+                  options={[{ code: 'forced', label: '強制' }, { code: 'optional', label: '任意' }]}
                   value={block.optional ? 'optional' : 'forced'}
                   onChange={(v) => update('optional', v === 'optional')}
                   accentColor="#2e7d32"

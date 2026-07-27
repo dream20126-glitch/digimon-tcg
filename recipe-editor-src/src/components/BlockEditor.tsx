@@ -333,6 +333,25 @@ const COST_REDUCTION_VARIANTS: { code: string; label: string; trigger: string; i
   { code: 'evolve', label: '進化', trigger: 'evo_cost', implemented: false },
 ];
 const COST_REDUCTION_TRIGGERS = new Set(COST_REDUCTION_VARIANTS.map((v) => v.trigger));
+
+// よく使うアクション: カードDB(data/cards.json)のレシピ内action出現数を集計し、
+// 上位のものをボタン化（トリガー家族ボタンと同じ操作感にするため）。
+// 出現数目安: DP+84 / メモリー+48 / レスト40 / 登場36 / ドロー35 / キーワード付与33 /
+// 消滅31 / アクティブ27 / デッキオープン24 / DP-21 / メモリー-20 / 回復16
+const COMMON_ACTIONS: { code: string; label: string }[] = [
+  { code: 'dp_plus', label: 'DP+' },
+  { code: 'dp_minus', label: 'DP-' },
+  { code: 'memory_plus', label: 'メモリー+' },
+  { code: 'memory_minus', label: 'メモリー-' },
+  { code: 'rest', label: 'レスト' },
+  { code: 'active', label: 'アクティブ' },
+  { code: 'summon', label: '登場' },
+  { code: 'draw', label: 'ドロー' },
+  { code: 'grant_keyword', label: 'キーワード付与' },
+  { code: 'destroy', label: '消滅' },
+  { code: 'deck_open', label: 'デッキオープン' },
+  { code: 'recover', label: '回復' },
+];
 // 現在選択中のtriggers/triggerConditionsから、共有の発動タイミングを逆算する
 function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair[]): TimingKey {
   for (const fam of COMMON_TRIGGER_FAMILIES) {
@@ -534,6 +553,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   );
   const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
   const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
+  const [otherActionOpen, setOtherActionOpen] = useState<boolean>(false);
 
   // ✖ ～ごとに（倍率設定）: 値 × floor(count / N) でスケーリング。
   // 通常は⚙追加オプション内に表示するが、コスト軽減トリガーでは💰バナー内（発動条件の隣）
@@ -1306,6 +1326,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             changeAction(base + newSuffix);
           }
 
+          // よく使うアクション（トリガー家族ボタンと同じ操作感）: 該当すればボタン1つで即選択、
+          // 無ければ「その他のアクション」を開いて既存のプルダウン(+位置バリアント)から選ぶ
+          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === (block.action || ''));
+          function selectCommonAction(code: string) {
+            const dictEntry = findActionEntry(code);
+            const allowsRules = !!(dictEntry && dictEntry.allowsRules) || hasRuleTranslator(code);
+            const next: EffectBlock = { ...block, action: code, value: '' };
+            if (!allowsRules && Array.isArray(block.rules) && block.rules.length > 0) next.rules = [];
+            onChange(next);
+          }
+
           return (
             <div style={{
               display: 'grid',
@@ -1321,13 +1352,47 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
                   )}
                 </label>
-                <SearchSelect
-                  value={normalizedActionValue}
-                  onChange={onActionPulldownChange}
-                  options={actionDisplayOptions}
-                  allowFreeText
-                />
-                <InlineDictAdd kind="actions" dict={dict} onRegistered={onActionPulldownChange} />
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {COMMON_ACTIONS.map((a) => {
+                    const active = block.action === a.code;
+                    return (
+                      <button
+                        key={a.code}
+                        type="button"
+                        onClick={() => selectCommonAction(a.code)}
+                        style={{
+                          padding: '3px 9px', borderRadius: 5,
+                          border: active ? '2px solid #1976d2' : '1px solid #bbb',
+                          background: active ? '#1976d2' : '#f5f5f5',
+                          color: active ? '#fff' : '#333',
+                          fontWeight: active ? 'bold' : 'normal',
+                          cursor: 'pointer', fontSize: 11,
+                        }}
+                      >
+                        {a.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 6, color: '#666' }}>
+                  <input
+                    type="checkbox"
+                    checked={otherActionOpen || (!!block.action && !isCommonAction)}
+                    onChange={(e) => setOtherActionOpen(e.target.checked)}
+                  />
+                  その他のアクション
+                </label>
+                {(otherActionOpen || (!!block.action && !isCommonAction)) && (
+                  <div style={{ marginTop: 4 }}>
+                    <SearchSelect
+                      value={normalizedActionValue}
+                      onChange={onActionPulldownChange}
+                      options={actionDisplayOptions}
+                      allowFreeText
+                    />
+                    <InlineDictAdd kind="actions" dict={dict} onRegistered={onActionPulldownChange} />
+                  </div>
+                )}
               </div>
               {/* 位置バリアント pulldown: フラグ駆動 or 自動グループ化時のみ */}
               {isPositional && variantOptions.length > 0 && (

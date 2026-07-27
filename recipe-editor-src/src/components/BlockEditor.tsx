@@ -1388,16 +1388,33 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             ⚡ アクション（何をするか）
           </div>
 
-          {/* 強制 / 任意: 「〜できる」効果は optional をONにする。ONの間、発動前に「発動しますか？」
-              の確認ダイアログが入る。よく使うアクションより先に決める方が分かりやすいため最上部に配置 */}
-          {block.trigger !== 'alt_evolve' && block.action && (
-            <div className="field" style={{ marginBottom: 8 }}>
-              <ButtonGroup
-                options={[{ code: 'forced', label: '🔒 強制効果（〜する）' }, { code: 'optional', label: '🔓 任意効果（〜できる）' }]}
-                value={block.optional ? 'optional' : 'forced'}
-                onChange={(v) => update('optional', v === 'optional')}
-                accentColor="#2e7d32"
-              />
+          {/* 強制 / 任意 + 演出タイプ: 「〜できる」効果は optional をONにする。ONの間、発動前に
+              「発動しますか？」の確認ダイアログが入る。アクション選択前から常に表示する
+              （枠色は削除。演出タイプはこの行に統合） */}
+          {block.trigger !== 'alt_evolve' && (
+            <div className="field" style={{ marginBottom: 8, display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
+              <div>
+                <ButtonGroup
+                  options={[{ code: 'forced', label: '🔒 強制効果（〜する）' }, { code: 'optional', label: '🔓 任意効果（〜できる）' }]}
+                  value={block.optional ? 'optional' : 'forced'}
+                  onChange={(v) => update('optional', v === 'optional')}
+                  accentColor="#2e7d32"
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#666' }}>✨ 演出タイプ（空欄ならアクションコードから自動推測）</label>
+                <select value={block.visualType || ''} onChange={(e) => update('visualType', e.target.value)}>
+                  <option value="">（自動推測）</option>
+                  <option value="数値ポップアップ">数値ポップアップ</option>
+                  <option value="消滅演出">消滅演出</option>
+                  <option value="ドロー演出">ドロー演出</option>
+                  <option value="カード登場">カード登場</option>
+                  <option value="カード移動">カード移動</option>
+                  <option value="状態付与演出">状態付与演出</option>
+                  <option value="Sアタック+">Sアタック+</option>
+                  <option value="ジョグレス進化">ジョグレス進化</option>
+                </select>
+              </div>
             </div>
           )}
 
@@ -1422,34 +1439,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   🔕 効果発動ポップアップを表示しない
                 </label>
               )}
-              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 11, color: '#666' }}>🎨 枠色（空欄ならアクションコードから自動推測）</label>
-                  <select value={block.frameColor || ''} onChange={(e) => update('frameColor', e.target.value)}>
-                    <option value="">（自動推測）</option>
-                    <option value="赤">赤</option>
-                    <option value="緑">緑</option>
-                    <option value="シアン">シアン</option>
-                    <option value="オレンジ">オレンジ</option>
-                    <option value="黄">黄</option>
-                    <option value="紫">紫</option>
-                  </select>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 11, color: '#666' }}>✨ 演出タイプ（空欄ならアクションコードから自動推測）</label>
-                  <select value={block.visualType || ''} onChange={(e) => update('visualType', e.target.value)}>
-                    <option value="">（自動推測）</option>
-                    <option value="数値ポップアップ">数値ポップアップ</option>
-                    <option value="消滅演出">消滅演出</option>
-                    <option value="ドロー演出">ドロー演出</option>
-                    <option value="カード登場">カード登場</option>
-                    <option value="カード移動">カード移動</option>
-                    <option value="状態付与演出">状態付与演出</option>
-                    <option value="Sアタック+">Sアタック+</option>
-                    <option value="ジョグレス進化">ジョグレス進化</option>
-                  </select>
-                </div>
-              </div>
             </div>
           )}
 

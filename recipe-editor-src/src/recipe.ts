@@ -1,5 +1,5 @@
 // EffectBlock[] ⇄ recipe JSON 変換
-import type { EffectBlock, ConditionPair } from './types';
+import type { ConditionPair, DictEntry, EffectBlock } from './types';
 import { applyRulesToStep } from './ruleTranslator';
 
 // 条件pairを「base:value@subject」形式の文字列に変換
@@ -11,13 +11,17 @@ function pairToString(p: ConditionPair): string {
   return s;
 }
 
-export function blocksToRecipe(blocks: EffectBlock[]): Record<string, any> {
+// keywordDict を渡すと、trigger='passive' のキーワードに recipeTemplate が登録されていれば
+// カード自身のレシピにそのテンプレートの中身を展開・合流させる（キーワード効果登録機能）。
+// テンプレートが無いキーワード（エンジン側が名前で直接認識する既存キーワード）は
+// 今まで通り passive:[{flag}] のみで出力する（既存カードへの影響なし）
+export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
   const recipe: Record<string, any> = {};
   blocks.forEach((b) => {
     // セキュリティ効果はトリガー入力不要（常に 'security' キーに出力される）。
     // トリガー未入力を理由に他セクションと同様スキップされてしまわないよう先に処理する。
     if (b.section === 'security') {
-      appendStep(recipe, { ...b, trigger: 'security' });
+      appendStep(recipe, { ...b, trigger: 'security' }, keywordDict);
       return;
     }
     // トリガー複数選択: 「登場時/進化時どちらでも同じ効果」のように、選択された
@@ -26,17 +30,37 @@ export function blocksToRecipe(blocks: EffectBlock[]): Record<string, any> {
     triggerList.forEach((trig) => {
       if (b.section === 'evo_source') {
         recipe.evo_source = recipe.evo_source || {};
-        appendStep(recipe.evo_source, { ...b, trigger: trig });
+        appendStep(recipe.evo_source, { ...b, trigger: trig }, keywordDict);
       } else {
-        appendStep(recipe, { ...b, trigger: trig });
+        appendStep(recipe, { ...b, trigger: trig }, keywordDict);
       }
     });
   });
   return recipe;
 }
 
-function appendStep(container: Record<string, any>, b: EffectBlock) {
+// テンプレートrecipeの各トリガーキーの配列を、containerの同じキーへ追記合流する
+function mergeTemplateRecipe(container: Record<string, any>, template: Record<string, any>) {
+  Object.keys(template).forEach((key) => {
+    const steps = template[key];
+    if (!Array.isArray(steps) || steps.length === 0) return;
+    if (key === 'evo_source' || key === 'passive') return; // 未対応の入れ子は無視（v1では単純なトリガーキーのみ）
+    container[key] = Array.isArray(container[key]) ? [...container[key], ...steps] : steps.slice();
+  });
+}
+
+function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?: DictEntry[]) {
   if (b.trigger === 'passive') {
+    const kwEntry = keywordDict && b.keyword ? keywordDict.find((k) => k.code === b.keyword) : undefined;
+    if (kwEntry && kwEntry.recipeTemplate) {
+      try {
+        const template = JSON.parse(kwEntry.recipeTemplate);
+        if (template && typeof template === 'object') {
+          mergeTemplateRecipe(container, template);
+          return;
+        }
+      } catch (_) { /* パース失敗時は下のpassive出力にフォールバック */ }
+    }
     container.passive = container.passive || [];
     const p: any = { flag: b.keyword };
     // 値 (例: 【Sアタック+2】 の "2"): 数値化できれば number、そうでなければそのまま

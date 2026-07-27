@@ -42,9 +42,9 @@ export function RecipeEditor({
   }, [card.cardNo]);
 
   const recipeJson = useMemo(() => {
-    const recipe = blocksToRecipe(blocks);
+    const recipe = blocksToRecipe(blocks, dict.keywords);
     return Object.keys(recipe).length > 0 ? JSON.stringify(recipe) : '';
-  }, [blocks]);
+  }, [blocks, dict.keywords]);
 
   function addBlock() {
     setBlocks([...blocks, { section: 'main', trigger: '', triggerSubject: 'self', conditions: [] }]);

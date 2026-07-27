@@ -13,6 +13,7 @@ import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOp
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
+import { blocksToRecipe } from '../recipe';
 
 interface Props {
   block: EffectBlock;
@@ -22,6 +23,9 @@ interface Props {
   onRemove: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  // true のとき、キーワード効果のレシピ作成専用トリガー（アクティブフェイズ開始時 等）も
+  // よく使うトリガーに追加表示する（通常のカードレシピ編集画面では出さない）
+  isKeywordMode?: boolean;
 }
 
 // 共通ヘルパ: code/label の配列 → SelectOption[]
@@ -74,6 +78,9 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState('');
+  // キーワード専用: このキーワードの実体となるレシピ（エンジンが対応する出来事の組み合わせで
+  // 表現できる場合のみ）。空のままなら今まで通り passive:[{flag}] のみで出力される
+  const [templateBlocks, setTemplateBlocks] = useState<EffectBlock[]>([]);
 
   function autoSuggest() {
     if (!label.trim()) { setMsg('❌ 先に日本語名を入力してください'); return; }
@@ -81,12 +88,28 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
     setMsg('');
   }
 
+  function addTemplateBlock() {
+    setTemplateBlocks([...templateBlocks, { section: 'main', trigger: '', triggerSubject: 'self', conditions: [] }]);
+  }
+  function updateTemplateBlock(i: number, b: EffectBlock) {
+    const next = templateBlocks.slice();
+    next[i] = b;
+    setTemplateBlocks(next);
+  }
+  function removeTemplateBlock(i: number) {
+    setTemplateBlocks(templateBlocks.filter((_, idx) => idx !== i));
+  }
+
   async function handleSubmit() {
     if (!label.trim() || !code.trim()) { setMsg('❌ 日本語名とコードは必須'); return; }
     setSubmitting(true);
     setMsg('💾 スプシに書き込み中...');
     try {
-      const extra = kind === 'actions' ? suggestVisualType(code.trim()) : {};
+      const extra: Record<string, any> = kind === 'actions' ? suggestVisualType(code.trim()) : {};
+      if (kind === 'keywords' && templateBlocks.length > 0) {
+        const recipe = blocksToRecipe(templateBlocks);
+        if (Object.keys(recipe).length > 0) extra.recipeTemplate = JSON.stringify(recipe);
+      }
       const r = await dict.addEntry(kind, { code: code.trim(), label: label.trim(), kind: kindToSingular(kind), ...extra });
       if (r.ok) {
         setMsg('✅ 登録しました: ' + code.trim());
@@ -94,6 +117,7 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
         setOpen(false);
         setLabel('');
         setCode('');
+        setTemplateBlocks([]);
       } else {
         setMsg('❌ ' + (r.msg || '登録失敗'));
       }
@@ -146,6 +170,35 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
           キャンセル
         </button>
       </div>
+      {kind === 'keywords' && (
+        <div style={{ marginTop: 8, padding: 8, background: 'white', border: '1px solid #e0c847', borderRadius: 4 }}>
+          <div style={{ fontSize: 11, fontWeight: 'bold', color: '#8a6d00', marginBottom: 4 }}>
+            🔑 このキーワードの実際の効果（レシピ・任意）
+          </div>
+          <div style={{ fontSize: 10, color: '#666', marginBottom: 6 }}>
+            登場時/継続効果 等、既存のトリガー/アクションの組み合わせで表現できる場合のみ作成してください。
+            空のままなら今まで通り「フラグとしてキーワード名を持つだけ」で登録されます（エンジン側の対応が別途必要）。
+          </div>
+          {templateBlocks.map((b, i) => (
+            <BlockEditor
+              key={i}
+              block={b}
+              index={i}
+              dict={dict}
+              onChange={(nb) => updateTemplateBlock(i, nb)}
+              onRemove={() => removeTemplateBlock(i)}
+              isKeywordMode
+            />
+          ))}
+          <button
+            type="button"
+            onClick={addTemplateBlock}
+            style={{ padding: '4px 8px', border: '1px dashed #8a6d00', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#8a6d00' }}
+          >
+            ＋ 効果ステップを追加
+          </button>
+        </div>
+      )}
       {msg && (
         <div style={{ fontSize: 11, marginTop: 4, color: msg.startsWith('✅') ? '#2e7d32' : '#c62828' }}>{msg}</div>
       )}
@@ -313,6 +366,16 @@ const COMMON_TRIGGER_FAMILIES: TriggerFamily[] = [
     implemented: { self: true, opp: true, any: false },
   },
 ];
+// キーワード効果のレシピ作成画面でのみ選べるトリガー。通常のカードレシピでは
+// 「相手のアクティブフェイズ開始時」のような出来事を使うことがまず無いため、
+// 選択肢を汚さないようにこちらに分離している（isKeywordMode時のみ結合して使う）
+const KEYWORD_ONLY_TRIGGER_FAMILIES: TriggerFamily[] = [
+  {
+    code: 'active_phase_start', label: 'アクティブフェイズ開始時', kind: 'timing',
+    variants: { self: 'on_own_active_phase_start', opp: 'on_opp_active_phase_start', any: 'on_any_active_phase_start' },
+    implemented: { self: false, opp: false, any: false },
+  },
+];
 // 【アタック時】【アタック終了時】ファミリーの全バリアントコード。
 // アタック対象(cond_attack_target_*)関連のUIをこのトリガーのときだけ出す判定に使う
 const ATTACK_TRIGGER_CODES = ['on_attack', 'when_opp_attack', 'on_any_attack', 'on_attack_end', 'when_opp_attack_end', 'on_any_attack_end'];
@@ -353,8 +416,8 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'recover', label: '回復' },
 ];
 // 現在選択中のtriggers/triggerConditionsから、共有の発動タイミングを逆算する
-function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair[]): TimingKey {
-  for (const fam of COMMON_TRIGGER_FAMILIES) {
+function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair[], families: TriggerFamily[] = COMMON_TRIGGER_FAMILIES): TimingKey {
+  for (const fam of families) {
     if (fam.kind !== 'timing' || !fam.variants) continue;
     if (currentTriggers.includes(fam.variants.opp)) return 'opp';
     if (currentTriggers.includes(fam.variants.any)) return 'any';
@@ -364,7 +427,7 @@ function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair
 }
 // 辞書に存在しない可能性がある新規プレースホルダーコード（メイン+相手 等）の表示名フォールバック
 const FAMILY_VARIANT_FALLBACK_LABELS: Record<string, string> = {};
-COMMON_TRIGGER_FAMILIES.forEach((fam) => {
+[...COMMON_TRIGGER_FAMILIES, ...KEYWORD_ONLY_TRIGGER_FAMILIES].forEach((fam) => {
   if (fam.kind !== 'timing' || !fam.variants) return;
   (Object.keys(fam.variants) as TimingKey[]).forEach((k) => {
     const timingLabel = TIMING_OPTIONS.find((t) => t.code === k)!.label;
@@ -391,7 +454,8 @@ function combineLimit(type: string, count: number): string {
   return type;
 }
 
-export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, onMoveDown }: Props) {
+export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, onMoveDown, isKeywordMode }: Props) {
+  const effectiveTriggerFamilies = isKeywordMode ? [...COMMON_TRIGGER_FAMILIES, ...KEYWORD_ONLY_TRIGGER_FAMILIES] : COMMON_TRIGGER_FAMILIES;
   function update(key: keyof EffectBlock, value: any) {
     onChange({ ...block, [key]: value });
   }
@@ -1046,7 +1110,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               onChange({ ...block, trigger: next[0] || '', triggers: next });
             };
 
-            const timing = inferTiming(currentTriggers, triggerConditions);
+            const timing = inferTiming(currentTriggers, triggerConditions, effectiveTriggerFamilies);
             const isFamilyActive = (fam: TriggerFamily): boolean =>
               fam.kind === 'event' ? currentTriggers.includes(fam.code)
                 : Object.values(fam.variants!).some((v) => currentTriggers.includes(v));
@@ -1065,7 +1129,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
             const setTiming = (newTiming: TimingKey) => {
               let next = [...currentTriggers];
-              COMMON_TRIGGER_FAMILIES.forEach((fam) => {
+              effectiveTriggerFamilies.forEach((fam) => {
                 if (fam.kind !== 'timing' || !fam.variants) return;
                 const oldVariant = Object.values(fam.variants).find((v) => next.includes(v));
                 if (!oldVariant) return;
@@ -1080,13 +1144,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             };
 
             const allFamilyCodes = new Set<string>();
-            COMMON_TRIGGER_FAMILIES.forEach((fam) => {
+            effectiveTriggerFamilies.forEach((fam) => {
               if (fam.kind === 'event') allFamilyCodes.add(fam.code);
               else Object.values(fam.variants!).forEach((v) => allFamilyCodes.add(v));
             });
             const hasOtherSelected = currentTriggers.some((t) => !allFamilyCodes.has(t));
 
-            const unimplementedActive = COMMON_TRIGGER_FAMILIES.filter((fam) => {
+            const unimplementedActive = effectiveTriggerFamilies.filter((fam) => {
               if (fam.kind !== 'timing' || !fam.variants) return false;
               const variant = fam.variants[timing];
               return currentTriggers.includes(variant) && fam.implemented?.[timing] === false;
@@ -1120,7 +1184,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <div className="field">
                   <label>トリガー（複数選択可）</label>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {COMMON_TRIGGER_FAMILIES.map((fam) => {
+                    {effectiveTriggerFamilies.map((fam) => {
                       const active = isFamilyActive(fam);
                       return (
                         <button

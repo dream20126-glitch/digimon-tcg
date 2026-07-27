@@ -64,6 +64,7 @@ function categorize(rows: any[]): { triggers: DictEntry[]; conditions: DictEntry
       frameColor: String(r['枠色'] || '').trim() || undefined,
       valueLabel: String(r['数値の意味'] || '').trim() || undefined,
       logicCode: String(r['ロジックコード'] || '').trim() || undefined,
+      recipeTemplate: String(r['キーワードレシピ'] || '').trim() || undefined,
       // ルール許可フラグ: スプシ「ルール許可」列に "1" / "true" / "yes" 等が入っていれば true
       allowsRules: (() => {
         const v = String(r['ルール許可'] || '').trim().toLowerCase();
@@ -199,6 +200,7 @@ export function useDict(password: string): DictAPI {
       'ロジックコード': entry.logicCode || '',
       'ルール許可': entry.allowsRules ? '1' : '',
       '位置指定': entry.hasPositionVariant ? '1' : '',
+      'キーワードレシピ': entry.recipeTemplate || '',
     };
     const r = await apiAdd('dict', row, password);
     // アクションのフラグを localStorage に保存（スプシ側に列がなくてもエディタ内で保持）
@@ -224,6 +226,7 @@ export function useDict(password: string): DictAPI {
       frameColor: '枠色',
       valueLabel: '数値の意味',
       logicCode: 'ロジックコード',
+      recipeTemplate: 'キーワードレシピ',
     };
     const row: Record<string, any> = {};
     Object.keys(patch).forEach((k) => {

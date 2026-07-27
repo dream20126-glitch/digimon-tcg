@@ -153,6 +153,11 @@ export interface DictEntry {
   // 例: code='security_trash' + hasPositionVariant=true → 位置pulldownで _top/_bottom/_select を選ぶ
   // 保存時のJSON action コード = base + '_top' / '_bottom' / '_select' に自動結合
   hasPositionVariant?: boolean;
+  // キーワード辞書専用: このキーワードの実体となるレシピ（EffectBlock[]をJSON文字列化したもの）。
+  // カード側でtrigger='passive'+このキーワードを選んだとき、blocksToRecipeがこれを展開して
+  // カード自身のレシピに埋め込む。エンジンが未対応の出来事（アクティブフェイズ開始時等）しか
+  // 表現できないキーワードは、これを空欄のままにして今まで通りpassive:[{flag}]で出力する
+  recipeTemplate?: string;
 }
 
 // コスト1ステップ（〇〇することで...の "〇〇する" 部分）

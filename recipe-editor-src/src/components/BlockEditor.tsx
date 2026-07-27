@@ -3171,11 +3171,7 @@ function baseToCategory(base: string): CondCategory {
   return 'other';
 }
 
-// クイック追加ショートカット（ワンクリックで「条件N」の新規行を追加・カテゴリ既定コードを直接セット）
-// トリガー条件専用の「アタック対象」もここに統合（旧: 専用トグルUI → 通常の条件行として扱う）
-const QUICK_ADD_COMMON: { code: string; label: string }[] = CATEGORY_OPTIONS
-  .filter((c) => c.value !== 'other')
-  .map((c) => ({ code: CATEGORY_DEFAULT_BASE[c.value], label: c.label }));
+// トリガー条件専用の「アタック対象」よく使うボタン
 const QUICK_ADD_ATTACK_TARGET: { code: string; label: string }[] = [
   { code: 'cond_attack_target_player', label: 'プレイヤーにアタック' },
   { code: 'cond_attack_target_digimon', label: 'デジモンにアタック' },
@@ -3198,6 +3194,8 @@ function ConditionsHybridEditor({
   ]);
   const otherCondOptions = toOpts(dict.conditions.filter((c) => !CATEGORIZED_CODES.has(c.code)));
 
+  const [otherOpen, setOtherOpen] = useState(false);
+
   function updateAt(i: number, patch: Partial<ConditionPair>) {
     const next = conditions.slice();
     next[i] = { ...next[i], ...patch };
@@ -3209,6 +3207,27 @@ function ConditionsHybridEditor({
   function addRow(base = '') {
     onChange([...conditions, { base, value: '', subject: defaultSubject || undefined }]);
   }
+  // よく使う条件（色/タイプ/特徴/Lv/DP/名前/場所）ボタンのトグル。
+  // オフ→オン: そのカテゴリの既定コードで1行追加。オン→オフ: そのカテゴリの行を全て削除
+  function toggleCategory(cat: string) {
+    if (conditions.some((c) => baseToCategory(c.base) === cat)) {
+      onChange(conditions.filter((c) => baseToCategory(c.base) !== cat));
+    } else {
+      addRow(CATEGORY_DEFAULT_BASE[cat] || '');
+    }
+  }
+  // アタック対象（プレイヤーにアタック/デジモンにアタック）等、値/対象を持たない単発条件のトグル
+  function toggleExactCode(code: string) {
+    if (conditions.some((c) => c.base === code)) {
+      onChange(conditions.filter((c) => c.base !== code));
+    } else {
+      addRow(code);
+    }
+  }
+
+  const otherRows = conditions
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => baseToCategory(c.base) === 'other');
 
   return (
     <div className="field" style={{ gridColumn: '1 / span 2', background: colors.bg, padding: 8, borderRadius: 4, border: `1px solid ${colors.border}` }}>
@@ -3217,122 +3236,217 @@ function ConditionsHybridEditor({
         <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>{hint}</span>
       </label>
       <div style={{ fontSize: 10, color: '#666', margin: '2px 0 6px' }}>
-        条件1・条件2・…はすべて AND（全部を満たしたときだけ発動）。各行で「種別・値・対象」を個別に設定できます。
+        複数指定した場合はすべて AND（全部を満たしたときだけ発動）。
       </div>
 
-      {conditions.length === 0 && (
-        <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>条件なし</div>
-      )}
+      {/* よく使う条件: ボタンを押すとその場に詳細設定が展開する（よく使うトリガーと同じ操作感） */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {CATEGORY_BUTTON_OPTIONS.map((cat) => {
+          const active = conditions.some((c) => baseToCategory(c.base) === cat.code);
+          return (
+            <button
+              key={cat.code}
+              type="button"
+              onClick={() => toggleCategory(cat.code)}
+              style={{
+                padding: '3px 9px', borderRadius: 5,
+                border: active ? `2px solid ${colors.accent}` : '1px solid #bbb',
+                background: active ? colors.accent : '#f5f5f5',
+                color: active ? '#fff' : '#333',
+                fontWeight: active ? 'bold' : 'normal',
+                cursor: 'pointer', fontSize: 11,
+              }}
+            >
+              {cat.label}
+            </button>
+          );
+        })}
+        {showAttackTargetRow && QUICK_ADD_ATTACK_TARGET.map((q) => {
+          const active = conditions.some((c) => c.base === q.code);
+          return (
+            <button
+              key={q.code}
+              type="button"
+              onClick={() => toggleExactCode(q.code)}
+              style={{
+                padding: '3px 9px', borderRadius: 5,
+                border: active ? '2px solid #b76e00' : '1px solid #ffd591',
+                background: active ? '#b76e00' : '#fff8e6',
+                color: active ? '#fff' : '#b76e00',
+                fontWeight: active ? 'bold' : 'normal',
+                cursor: 'pointer', fontSize: 11,
+              }}
+            >
+              {q.label}
+            </button>
+          );
+        })}
+      </div>
 
-      {conditions.map((c, i) => {
-        const def = COMMON_CONDS.find((cc) => cc.code === c.base);
+      {/* アクティブなカテゴリごとの詳細設定（値・対象） */}
+      {CATEGORY_BUTTON_OPTIONS.map((cat) => {
+        const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => baseToCategory(c.base) === cat.code);
+        if (rows.length === 0) return null;
         return (
-          <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
-            <div style={{ fontSize: 11, fontWeight: 'bold', color: colors.accent, minWidth: 44, paddingTop: 6, whiteSpace: 'nowrap' }}>
-              条件{i + 1}
-            </div>
-            <div style={{ flex: 2 }}>
-              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>種別</div>
-              <ButtonGroup
-                options={CATEGORY_BUTTON_OPTIONS}
-                value={baseToCategory(c.base) === 'other' ? '' : baseToCategory(c.base)}
-                onChange={(newCat) => updateAt(i, { base: CATEGORY_DEFAULT_BASE[newCat] || '', value: '' })}
-                accentColor={colors.accent}
-              />
-              {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントボタン */}
-              {CATEGORY_VARIANTS[baseToCategory(c.base)] && (
-                <div style={{ marginTop: 4 }}>
-                  <ButtonGroup
-                    options={CATEGORY_VARIANTS[baseToCategory(c.base)]!.map((v) => ({ code: v.value, label: v.label }))}
-                    value={c.base}
-                    onChange={(v) => updateAt(i, { base: v })}
-                    accentColor={colors.accent}
-                  />
-                </div>
-              )}
-              {/* その他: よく使う種別に無いものは、トリガーの「その他のトリガー」と同様に
-                  チェックボックスで開いたプルダウンから選ぶ（辞書への新規登録も可能） */}
-              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, marginTop: 4, color: '#666' }}>
-                <input
-                  type="checkbox"
-                  checked={baseToCategory(c.base) === 'other'}
-                  onChange={(e) => updateAt(i, e.target.checked
-                    ? { base: otherCondOptions[0]?.value || '', value: '' }
-                    : { base: CATEGORY_DEFAULT_BASE.color, value: '' })}
-                />
-                その他の条件
-              </label>
-              {baseToCategory(c.base) === 'other' && (
-                <div style={{ marginTop: 4 }}>
-                  <SearchSelect
-                    value={c.base}
-                    onChange={(v) => updateAt(i, { base: v })}
-                    options={otherCondOptions}
-                    allowFreeText
-                    placeholder="--条件を選択--"
-                  />
-                  <InlineDictAdd kind="conditions" dict={dict} onRegistered={(v) => updateAt(i, { base: v })} />
-                </div>
-              )}
-              {c.base && (
-                isConditionImplemented(c.base)
-                  ? <span style={{ color: '#2e7d32', fontSize: 10 }}>✅実装済</span>
-                  : <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠未実装</span>
-              )}
-            </div>
-            <div style={{ flex: 1.5 }}>
-              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-              {c.base === 'cond_same_as_picked' || c.base === 'cond_from_zone'
-                || (supportsMultiValue && c.base === 'cond_type') ? (
-                /* 「選んだデジモンと同じ」「取得元」「タイプ(複数可・ターゲットフィルタ限定)」:
-                   複数選択チェックボックス群（カンマ区切りで保存）。
-                   カードは同時に複数ゾーンやタイプを持てないため、複数選択=常にOR判定でよい
-                   （「紫のデジモンかオプション」はタイプで デジモン,オプション を両方チェックするだけで表現可能）
-                   ※ cond_type の複数値は step.filter (type_in配列) でのみ解釈される。
-                     トリガー条件/発動条件側は単一値exact-match想定なのでそちらでは使わないこと */
-                (() => {
-                  const optList = c.base === 'cond_from_zone' ? FROM_ZONES
-                    : c.base === 'cond_type' ? RULE_TYPE_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
-                    : SAME_AS_PICKED_FIELDS;
-                  const sel = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
-                  const isCheckedAttr = (code: string) => sel.includes(code);
-                  const toggleAttr = (code: string, on: boolean) => {
-                    const next = on
-                      ? Array.from(new Set([...sel, code]))
-                      : sel.filter((s) => s !== code);
-                    updateAt(i, { value: next.join(',') });
-                  };
-                  return (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, background: 'white' }}>
-                      {optList.map((f) => (
-                        <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={isCheckedAttr(f.code)}
-                            onChange={(e) => toggleAttr(f.code, e.target.checked)}
-                            style={{ margin: 0 }}
-                          />
-                          {f.label}
-                        </label>
-                      ))}
+          <div key={cat.code} style={{ marginTop: 6 }}>
+            {rows.map(({ c, i }) => {
+              const def = COMMON_CONDS.find((cc) => cc.code === c.base);
+              return (
+                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: colors.accent, minWidth: 40, paddingTop: 6, whiteSpace: 'nowrap' }}>
+                    {cat.label}
+                  </div>
+                  <div style={{ flex: 2 }}>
+                    {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントボタン */}
+                    {CATEGORY_VARIANTS[cat.code as CondCategory] && (
+                      <ButtonGroup
+                        options={CATEGORY_VARIANTS[cat.code as CondCategory]!.map((v) => ({ code: v.value, label: v.label }))}
+                        value={c.base}
+                        onChange={(v) => updateAt(i, { base: v })}
+                        accentColor={colors.accent}
+                      />
+                    )}
+                    {c.base && (
+                      isConditionImplemented(c.base)
+                        ? <span style={{ color: '#2e7d32', fontSize: 10 }}>✅実装済</span>
+                        : <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠未実装</span>
+                    )}
+                  </div>
+                  <div style={{ flex: 1.5 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
+                    {c.base === 'cond_same_as_picked' || c.base === 'cond_from_zone'
+                      || (supportsMultiValue && c.base === 'cond_type') ? (
+                      /* 「選んだデジモンと同じ」「取得元」「タイプ(複数可・ターゲットフィルタ限定)」:
+                         複数選択チェックボックス群（カンマ区切りで保存）。
+                         カードは同時に複数ゾーンやタイプを持てないため、複数選択=常にOR判定でよい
+                         （「紫のデジモンかオプション」はタイプで デジモン,オプション を両方チェックするだけで表現可能）
+                         ※ cond_type の複数値は step.filter (type_in配列) でのみ解釈される。
+                           トリガー条件/発動条件側は単一値exact-match想定なのでそちらでは使わないこと */
+                      (() => {
+                        const optList = c.base === 'cond_from_zone' ? FROM_ZONES
+                          : c.base === 'cond_type' ? RULE_TYPE_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
+                          : SAME_AS_PICKED_FIELDS;
+                        const sel = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
+                        const isCheckedAttr = (code: string) => sel.includes(code);
+                        const toggleAttr = (code: string, on: boolean) => {
+                          const next = on
+                            ? Array.from(new Set([...sel, code]))
+                            : sel.filter((s) => s !== code);
+                          updateAt(i, { value: next.join(',') });
+                        };
+                        return (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, background: 'white' }}>
+                            {optList.map((f) => (
+                              <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, cursor: 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isCheckedAttr(f.code)}
+                                  onChange={(e) => toggleAttr(f.code, e.target.checked)}
+                                  style={{ margin: 0 }}
+                                />
+                                {f.label}
+                              </label>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    ) : def && def.input === 'select' ? (
+                      <ButtonGroup
+                        options={(def.options || []).filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))}
+                        value={c.value || ''}
+                        onChange={(v) => updateAt(i, { value: v })}
+                        accentColor={colors.accent}
+                      />
+                    ) : def && def.input === 'number' ? (
+                      <input
+                        type="number"
+                        value={c.value || ''}
+                        onChange={(e) => updateAt(i, { value: e.target.value })}
+                        style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={c.value || ''}
+                        onChange={(e) => updateAt(i, { value: e.target.value })}
+                        placeholder={NO_VALUE_CONDS.has(c.base) ? '（値不要）' : '（必要なら）'}
+                        disabled={NO_VALUE_CONDS.has(c.base)}
+                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                      />
+                    )}
+                  </div>
+                  {showSubjectSelector && (
+                    <div style={{ flex: 1.6 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                      {(() => {
+                        const curSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };
+                        const l2Options = COND_SUBJECT_L2[curSub.l1] || [];
+                        const handleSubL1 = (l1: string) => {
+                          if (!l1) { updateAt(i, { subject: undefined }); return; }
+                          if (!COND_SUBJECT_L2[l1]) { updateAt(i, { subject: 'other_own' }); return; }
+                          const l2 = curSub.l1 === l1 && curSub.l2 ? curSub.l2 : 'digimon';
+                          updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] });
+                        };
+                        const handleSubL2 = (l2: string) => {
+                          updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2] });
+                        };
+                        return (
+                          <>
+                            <ButtonGroup options={COND_SUBJECT_L1} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
+                            {l2Options.length > 0 && (
+                              <div style={{ marginTop: 4 }}>
+                                <ButtonGroup options={l2Options} value={curSub.l2} onChange={handleSubL2} accentColor={colors.accent} />
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
-                  );
-                })()
-              ) : def && def.input === 'select' ? (
-                <ButtonGroup
-                  options={(def.options || []).filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))}
-                  value={c.value || ''}
-                  onChange={(v) => updateAt(i, { value: v })}
-                  accentColor={colors.accent}
+                  )}
+                  <button
+                    onClick={() => removeAt(i)}
+                    style={{ padding: '0 8px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', height: 26, alignSelf: 'flex-end' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+
+      {/* その他: よく使う条件に無いものは、トリガーの「その他のトリガー」と同様に
+          チェックボックスで開いたプルダウンから選ぶ（辞書への新規登録も可能） */}
+      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 8, color: '#666' }}>
+        <input
+          type="checkbox"
+          checked={otherOpen || otherRows.length > 0}
+          onChange={(e) => setOtherOpen(e.target.checked)}
+        />
+        その他の条件
+      </label>
+      {(otherOpen || otherRows.length > 0) && (
+        <div style={{ marginTop: 4 }}>
+          {otherRows.map(({ c, i }) => (
+            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
+              <div style={{ flex: 2 }}>
+                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>条件</div>
+                <SearchSelect
+                  value={c.base}
+                  onChange={(v) => updateAt(i, { base: v })}
+                  options={otherCondOptions}
+                  allowFreeText
+                  placeholder="--条件を選択--"
                 />
-              ) : def && def.input === 'number' ? (
-                <input
-                  type="number"
-                  value={c.value || ''}
-                  onChange={(e) => updateAt(i, { value: e.target.value })}
-                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                />
-              ) : (
+                {c.base && (
+                  isConditionImplemented(c.base)
+                    ? <span style={{ color: '#2e7d32', fontSize: 10 }}>✅実装済</span>
+                    : <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠未実装</span>
+                )}
+              </div>
+              <div style={{ flex: 1.5 }}>
+                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
                 <input
                   type="text"
                   value={c.value || ''}
@@ -3341,73 +3455,53 @@ function ConditionsHybridEditor({
                   disabled={NO_VALUE_CONDS.has(c.base)}
                   style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
                 />
-              )}
-            </div>
-            {showSubjectSelector && (
-              <div style={{ flex: 1.6 }}>
-                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                {(() => {
-                  const curSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };
-                  const l2Options = COND_SUBJECT_L2[curSub.l1] || [];
-                  const handleSubL1 = (l1: string) => {
-                    if (!l1) { updateAt(i, { subject: undefined }); return; }
-                    if (!COND_SUBJECT_L2[l1]) { updateAt(i, { subject: 'other_own' }); return; }
-                    const l2 = curSub.l1 === l1 && curSub.l2 ? curSub.l2 : 'digimon';
-                    updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] });
-                  };
-                  const handleSubL2 = (l2: string) => {
-                    updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2] });
-                  };
-                  return (
-                    <>
-                      <ButtonGroup options={COND_SUBJECT_L1} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
-                      {l2Options.length > 0 && (
-                        <div style={{ marginTop: 4 }}>
-                          <ButtonGroup options={l2Options} value={curSub.l2} onChange={handleSubL2} accentColor={colors.accent} />
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
               </div>
-            )}
-            <button
-              onClick={() => removeAt(i)}
-              style={{ padding: '0 8px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', height: 26, alignSelf: 'flex-end' }}
-            >
-              ✕
-            </button>
-          </div>
-        );
-      })}
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 4 }}>
-        <button
-          onClick={() => addRow()}
-          style={{ padding: '4px 8px', border: `1px dashed ${colors.border}`, background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: colors.accent }}
-        >
-          ＋ 条件{conditions.length + 1}を追加
-        </button>
-        <span style={{ fontSize: 10, color: '#888' }}>よく使う条件:</span>
-        {QUICK_ADD_COMMON.map((q) => (
-          <button
-            key={q.code}
-            onClick={() => addRow(q.code)}
-            style={{ padding: '3px 8px', border: `1px solid ${colors.border}`, background: colors.bg, borderRadius: 10, cursor: 'pointer', fontSize: 10.5, color: colors.accent }}
-          >
-            ＋{q.label}
-          </button>
-        ))}
-        {showAttackTargetRow && QUICK_ADD_ATTACK_TARGET.map((q) => (
-          <button
-            key={q.code}
-            onClick={() => addRow(q.code)}
-            style={{ padding: '3px 8px', border: '1px solid #ffd591', background: '#fff8e6', borderRadius: 10, cursor: 'pointer', fontSize: 10.5, color: '#b76e00' }}
-          >
-            ＋{q.label}
-          </button>
-        ))}
-      </div>
+              {showSubjectSelector && (
+                <div style={{ flex: 1.6 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                  {(() => {
+                    const curSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };
+                    const l2Options = COND_SUBJECT_L2[curSub.l1] || [];
+                    const handleSubL1 = (l1: string) => {
+                      if (!l1) { updateAt(i, { subject: undefined }); return; }
+                      if (!COND_SUBJECT_L2[l1]) { updateAt(i, { subject: 'other_own' }); return; }
+                      const l2 = curSub.l1 === l1 && curSub.l2 ? curSub.l2 : 'digimon';
+                      updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] });
+                    };
+                    const handleSubL2 = (l2: string) => {
+                      updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2] });
+                    };
+                    return (
+                      <>
+                        <ButtonGroup options={COND_SUBJECT_L1} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
+                        {l2Options.length > 0 && (
+                          <div style={{ marginTop: 4 }}>
+                            <ButtonGroup options={l2Options} value={curSub.l2} onChange={handleSubL2} accentColor={colors.accent} />
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+              <button
+                onClick={() => removeAt(i)}
+                style={{ padding: '0 8px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', height: 26, alignSelf: 'flex-end' }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <SearchSelect
+            value=""
+            onChange={(v) => addRow(v)}
+            options={otherCondOptions}
+            allowFreeText
+            placeholder="＋ 条件を選択して追加"
+          />
+          <InlineDictAdd kind="conditions" dict={dict} onRegistered={(v) => addRow(v)} />
+        </div>
+      )}
     </div>
   );
 }

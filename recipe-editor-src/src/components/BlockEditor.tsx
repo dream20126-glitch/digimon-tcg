@@ -900,7 +900,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
       </div>
 
       <div className="block-grid">
-        {/* === ＜前提＞ブロック: 区分 / 発動領域 / 限定 をボタン式で選択 === */}
+        {/* === ＜前提＞ブロック: 区分 / 発動領域 / 限定 をボタン式で選択 ===
+            キーワード効果のテンプレート編集(isKeywordMode)では、カード固有の概念（区分/
+            発動領域/ターン制限）は不要なため非表示にする */}
+        {!isKeywordMode && (
         <div style={{
           gridColumn: '1 / span 2', padding: 10, background: '#fdeef2',
           border: '1px solid #f3b8ce', borderRadius: 6,
@@ -942,6 +945,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             })()}
           </div>
         </div>
+        )}
 
         {/* === 🎬 トリガーグループ === */}
         {/* セキュリティ効果(区分=セキュリティ)は常に「セキュリティチェック時」に発動するため、
@@ -1207,28 +1211,35 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         </button>
                       );
                     })}
-                    <button
-                      type="button"
-                      onClick={() => onChange({ ...block, trigger: 'summon_cost', triggers: ['summon_cost'], zone: block.zone || 'hand' })}
-                      style={{
-                        padding: '3px 9px', borderRadius: 5,
-                        border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
-                        fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
-                      }}
-                    >
-                      コスト軽減
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onChange({ ...block, trigger: 'passive', triggers: ['passive'] })}
-                      style={{
-                        padding: '3px 9px', borderRadius: 5,
-                        border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
-                        fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
-                      }}
-                    >
-                      キーワード効果
-                    </button>
+                    {/* コスト軽減/キーワード効果はカード自身の特殊トリガーのため、
+                        キーワードのテンプレート編集(isKeywordMode)では出さない
+                        （キーワード内でさらにキーワードやコスト軽減を使うことは想定しない） */}
+                    {!isKeywordMode && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onChange({ ...block, trigger: 'summon_cost', triggers: ['summon_cost'], zone: block.zone || 'hand' })}
+                          style={{
+                            padding: '3px 9px', borderRadius: 5,
+                            border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
+                            fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
+                          }}
+                        >
+                          コスト軽減
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onChange({ ...block, trigger: 'passive', triggers: ['passive'] })}
+                          style={{
+                            padding: '3px 9px', borderRadius: 5,
+                            border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
+                            fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
+                          }}
+                        >
+                          キーワード効果
+                        </button>
+                      </>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>

@@ -971,6 +971,57 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
             {renderPerCountEditor()}
           </div>
+        ) : block.trigger === 'passive' ? (
+          <div style={{
+            gridColumn: '1 / span 2', padding: 10, background: '#f3e8fd',
+            border: '2px solid #c39bf0', borderRadius: 6,
+            fontSize: 12, color: '#5e2a8a', lineHeight: 1.6,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+              <b>🔑 キーワード効果</b>
+              <button
+                type="button"
+                onClick={() => onChange({ ...block, trigger: '', triggers: [] })}
+                style={{ padding: '3px 9px', borderRadius: 5, border: 'none', background: '#757575', color: '#fff', cursor: 'pointer', fontSize: 11 }}
+              >
+                戻る
+              </button>
+            </div>
+            【再起動】【セキュリティアタック+】のような、それ自体で1つの効果を表すキーワードです。
+            常時判定される特殊トリガーです。アクション/対象/発動条件は不要（空のままでOK）。
+            <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #d8b4fe' }}>
+              <label style={{ display: 'block', fontWeight: 'bold', color: '#6b21a8', marginBottom: 4 }}>
+                🔑 キーワード
+                {block.keyword && (
+                  isKeywordImplemented(block.keyword)
+                    ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 6 }}>✅実装済</span>
+                    : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
+                )}
+              </label>
+              <SearchSelect
+                value={block.keyword || ''}
+                onChange={(v) => update('keyword', v)}
+                options={toOpts(dict.keywords)}
+                allowFreeText
+              />
+              <InlineDictAdd kind="keywords" dict={dict} onRegistered={(v) => update('keyword', v)} />
+              <div style={{ marginTop: 8 }}>
+                <label style={{ display: 'block', fontWeight: 'bold', color: '#6b21a8', marginBottom: 4 }}>
+                  数値（【セキュリティアタック+2】等の数値がある場合のみ）
+                </label>
+                <input
+                  type="number"
+                  value={block.value === undefined ? '' : String(block.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    update('value', v === '' ? undefined : Number(v));
+                  }}
+                  placeholder="例: 2"
+                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
+                />
+              </div>
+            </div>
+          </div>
         ) : (
         <div style={{
           gridColumn: '1 / span 2',
@@ -1100,6 +1151,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       }}
                     >
                       コスト軽減
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onChange({ ...block, trigger: 'passive', triggers: ['passive'] })}
+                      style={{
+                        padding: '3px 9px', borderRadius: 5,
+                        border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
+                        fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
+                      }}
+                    >
+                      キーワード効果
                     </button>
                   </div>
 
@@ -1235,9 +1297,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         </div>
         )}
 
-        {/* === ⚡ アクショングループ ===（コスト軽減トリガーはアクション不要のため丸ごと非表示。
-            条件・～ごとに は💰バナー側に埋め込み済み） */}
-        {!COST_REDUCTION_TRIGGERS.has(block.trigger) && (
+        {/* === ⚡ アクショングループ ===（コスト軽減・キーワード効果トリガーはアクション不要のため
+            丸ごと非表示。条件・～ごとに は💰バナー側に埋め込み済み・キーワードは対象/条件が無い） */}
+        {!COST_REDUCTION_TRIGGERS.has(block.trigger) && block.trigger !== 'passive' && (
         <div style={{
           gridColumn: '1 / span 2',
           padding: 10,
@@ -2623,10 +2685,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         )}
         {/* === アクショングループここまで === */}
 
-        {/* === キーワード（最下段） === */}
+        {/* === キーワード（最下段） ===
+            trigger='passive'（キーワード効果）は上の🔑バナー内で同じ項目を編集できるため、
+            ここでの二重表示は避ける。grant_keywordアクションの対象キーワード指定用に残す */}
+        {block.trigger !== 'passive' && (
         <div className="field" style={{ gridColumn: '1 / span 2' }}>
           <label>
-            キーワード（passive / grant_keyword 用）
+            キーワード（grant_keyword 用）
             {block.keyword && (
               isKeywordImplemented(block.keyword)
                 ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 6 }}>✅実装済</span>
@@ -2639,7 +2704,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             options={toOpts(dict.keywords)}
             allowFreeText
           />
+          <InlineDictAdd kind="keywords" dict={dict} onRegistered={(v) => update('keyword', v)} />
         </div>
+        )}
       </div>
     </div>
   );

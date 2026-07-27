@@ -313,6 +313,9 @@ const COMMON_TRIGGER_FAMILIES: TriggerFamily[] = [
     implemented: { self: true, opp: true, any: false },
   },
 ];
+// 【アタック時】【アタック終了時】ファミリーの全バリアントコード。
+// アタック対象(cond_attack_target_*)関連のUIをこのトリガーのときだけ出す判定に使う
+const ATTACK_TRIGGER_CODES = ['on_attack', 'when_opp_attack', 'on_any_attack', 'on_attack_end', 'when_opp_attack_end', 'on_any_attack_end'];
 const TIMING_OPTIONS: { code: TimingKey; label: string }[] = [
   { code: 'self', label: '自分' },
   { code: 'opp', label: '相手' },
@@ -432,6 +435,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   function removeTargetFilter(i: number) {
     update('targetFilter', targetFilter.filter((_, idx) => idx !== i));
   }
+
+  // このブロックのトリガーが【アタック時】【アタック終了時】系か（アタック対象専用の
+  // 条件UIをこのときだけ出すために使う）
+  const isAttackTrigger = ((block.triggers && block.triggers.length > 0) ? block.triggers : (block.trigger ? [block.trigger] : []))
+    .some((t) => ATTACK_TRIGGER_CODES.includes(t));
 
   // トリガー条件操作（トリガー発火元カードへのフィルタ）
   const triggerConditions = block.triggerConditions || [];
@@ -938,6 +946,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 hint="（この軽減が有効になる条件・複数指定可・AND結合）"
                 theme="trigger"
                 defaultSubject=""
+                attackContextActive={isAttackTrigger}
               />
             </div>
             {renderPerCountEditor()}
@@ -1087,7 +1096,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {/* 【アタック時】【アタック終了時】のときだけ、アタックの対象（プレイヤー/デジモン）を選べる。
                       実体はtriggerConditionsのcond_attack_target_player/digimonをこのUIから操作するだけ
                       （「対象」なので発動主体でも発動条件でもなく、トリガー自体の付帯情報として並べる） */}
-                  {currentTriggers.some((t) => ['on_attack', 'when_opp_attack', 'on_any_attack', 'on_attack_end', 'when_opp_attack_end', 'on_any_attack_end'].includes(t)) && (
+                  {currentTriggers.some((t) => ATTACK_TRIGGER_CODES.includes(t)) && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                       <span style={{ fontSize: 11, color: '#666' }}>アタック対象:</span>
                       <ButtonGroup
@@ -1199,6 +1208,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 hint="（このトリガーが発火する条件・トリガー発火元カードへのフィルタ）"
                 theme="trigger"
                 defaultSubject=""
+                attackContextActive={isAttackTrigger}
               />
             </div>
           )}
@@ -1557,6 +1567,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             }
             theme="action"
             defaultSubject=""
+            attackContextActive={isAttackTrigger}
           />
         </details>
         )}
@@ -1583,6 +1594,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   onRemove={() => removeRuleStep(i)}
                   onUp={i > 0 ? () => moveRuleStep(i, -1) : undefined}
                   onDown={i < ruleSteps.length - 1 ? () => moveRuleStep(i, 1) : undefined}
+                  isAttackTrigger={isAttackTrigger}
                 />
               ))}
               <button
@@ -1792,6 +1804,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                               hint="（すべて成立している間だけ「代わりに」が有効・複数AND。対象選択のフィルタには使わない）"
                               theme="action"
                               defaultSubject=""
+                              attackContextActive={isAttackTrigger}
                             />
                           </div>
                         )}
@@ -1809,6 +1822,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       theme="action"
                       defaultSubject=""
                       showSubjectSelector={false}
+                      attackContextActive={isAttackTrigger}
                     />
                   </div>
                   {/* ⚙ 期間・倍率（AND実行時の追加設定） */}
@@ -2068,6 +2082,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   theme="action"
                   defaultSubject=""
                   showSubjectSelector={false}
+                  attackContextActive={ATTACK_TRIGGER_CODES.includes(grantedStep.trigger)}
                 />
               </>
             )}
@@ -2576,6 +2591,8 @@ interface RuleStepEditorProps {
   onRemove: () => void;
   onUp?: () => void;
   onDown?: () => void;
+  // 親ブロックのトリガーが【アタック時】系か（アタック対象専用のDP条件を出すかの判定に使う）
+  isAttackTrigger?: boolean;
 }
 // === ルールフィールド定義 ===
 // 各フィールドはチェックボックスで有効/無効を切替できる。
@@ -2773,7 +2790,7 @@ const RULE_FIELDS: RuleFieldDef[] = [
   { key: 'value',  label: '値（枚数）', kind: 'top', topKey: 'value',  input: 'value' },
 ];
 
-function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown }: RuleStepEditorProps) {
+function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, isAttackTrigger }: RuleStepEditorProps) {
   // === フィールドの「有効化」判定 ===
   // top: step[topKey] が undefined でなければ有効
   // condition: step.conditions に condCode がある entry があれば有効
@@ -3050,6 +3067,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown }:
           theme="action"
           defaultSubject=""
           showSubjectSelector={false}
+          attackContextActive={!!isAttackTrigger}
         />
       </div>
 
@@ -3118,6 +3136,9 @@ interface ConditionsHybridEditorProps {
   // trigger_conditions/発動条件側の cond_type は単一値exact-matchのみ対応のため、
   // それらの用途では誤動作を避けるため false のままにすること。
   supportsMultiValue?: boolean;
+  // true のとき、DPの「最も高い/最も低い（アタック対象専用）」バリアントを選べるようにする。
+  // これはbs._lastAttackTargetを見る条件で、【アタック時】【アタック終了時】以外では意味を成さない
+  attackContextActive?: boolean;
 }
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
@@ -3195,11 +3216,16 @@ function baseToCategory(base: string): CondCategory {
 
 function ConditionsHybridEditor({
   conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true,
-  supportsMultiValue = false,
+  supportsMultiValue = false, attackContextActive = false,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
     : { bg: '#e8f0fe', border: '#93b5e5', accent: '#1a4f8a', icon: '🎯' };
+  // DPの「最も高い/最も低い（アタック対象専用）」は、【アタック時】系のブロックでのみ意味を成すため
+  // それ以外のときは選択肢から除外する
+  const dpVariantOptions = (CATEGORY_VARIANTS.dp || []).filter((v) =>
+    attackContextActive || (v.value !== 'cond_attack_target_highest_dp' && v.value !== 'cond_attack_target_lowest_dp')
+  );
 
   // 「その他」用: 色/タイプ/特徴/Lv/DP/名前/場所として直接選べるコード群を除いた残り
   const CATEGORIZED_CODES = new Set<string>([
@@ -3294,9 +3320,9 @@ function ConditionsHybridEditor({
                     )}
                   </div>
                   {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントボタン（コンテンツ幅のみ使用・空なら詰める） */}
-                  {CATEGORY_VARIANTS[cat.code as CondCategory] && (
+                  {(cat.code === 'dp' ? dpVariantOptions : CATEGORY_VARIANTS[cat.code as CondCategory]) && (
                     <ButtonGroup
-                      options={CATEGORY_VARIANTS[cat.code as CondCategory]!.map((v) => ({ code: v.value, label: v.label }))}
+                      options={(cat.code === 'dp' ? dpVariantOptions : CATEGORY_VARIANTS[cat.code as CondCategory]!).map((v) => ({ code: v.value, label: v.label }))}
                       value={c.base}
                       onChange={(v) => updateAt(i, { base: v })}
                       accentColor={colors.accent}

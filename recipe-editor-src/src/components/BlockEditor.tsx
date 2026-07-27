@@ -3292,27 +3292,25 @@ function ConditionsHybridEditor({
             {rows.map(({ c, i }) => {
               const def = COMMON_CONDS.find((cc) => cc.code === c.base);
               return (
-                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
-                  <div style={{ fontSize: 11, fontWeight: 'bold', color: colors.accent, minWidth: 40, paddingTop: 6, whiteSpace: 'nowrap' }}>
+                <div key={i} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start', marginBottom: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: colors.accent, paddingTop: 6, whiteSpace: 'nowrap' }}>
                     {cat.label}
-                  </div>
-                  <div style={{ flex: 2 }}>
-                    {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントボタン */}
-                    {CATEGORY_VARIANTS[cat.code as CondCategory] && (
-                      <ButtonGroup
-                        options={CATEGORY_VARIANTS[cat.code as CondCategory]!.map((v) => ({ code: v.value, label: v.label }))}
-                        value={c.base}
-                        onChange={(v) => updateAt(i, { base: v })}
-                        accentColor={colors.accent}
-                      />
-                    )}
                     {c.base && (
                       isConditionImplemented(c.base)
-                        ? <span style={{ color: '#2e7d32', fontSize: 10 }}>✅実装済</span>
-                        : <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠未実装</span>
+                        ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 4 }}>✅</span>
+                        : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 4 }} title="エンジン未実装">⚠</span>
                     )}
                   </div>
-                  <div style={{ flex: 1.5 }}>
+                  {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントボタン（コンテンツ幅のみ使用・空なら詰める） */}
+                  {CATEGORY_VARIANTS[cat.code as CondCategory] && (
+                    <ButtonGroup
+                      options={CATEGORY_VARIANTS[cat.code as CondCategory]!.map((v) => ({ code: v.value, label: v.label }))}
+                      value={c.base}
+                      onChange={(v) => updateAt(i, { base: v })}
+                      accentColor={colors.accent}
+                    />
+                  )}
+                  <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
                     {c.base === 'cond_same_as_picked' || c.base === 'cond_from_zone'
                       || (supportsMultiValue && c.base === 'cond_type') ? (
@@ -3362,7 +3360,7 @@ function ConditionsHybridEditor({
                         type="number"
                         value={c.value || ''}
                         onChange={(e) => updateAt(i, { value: e.target.value })}
-                        style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
+                        style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 100, boxSizing: 'border-box' }}
                       />
                     ) : (
                       <input
@@ -3371,12 +3369,12 @@ function ConditionsHybridEditor({
                         onChange={(e) => updateAt(i, { value: e.target.value })}
                         placeholder={NO_VALUE_CONDS.has(c.base) ? '（値不要）' : '（必要なら）'}
                         disabled={NO_VALUE_CONDS.has(c.base)}
-                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                        style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
                       />
                     )}
                   </div>
                   {showSubjectSelector && (
-                    <div style={{ flex: 1.6 }}>
+                    <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
                       {(() => {
                         const curSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };
@@ -3429,8 +3427,8 @@ function ConditionsHybridEditor({
       {(otherOpen || otherRows.length > 0) && (
         <div style={{ marginTop: 4 }}>
           {otherRows.map(({ c, i }) => (
-            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
-              <div style={{ flex: 2 }}>
+            <div key={i} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start', marginBottom: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
+              <div style={{ width: 220 }}>
                 <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>条件</div>
                 <SearchSelect
                   value={c.base}
@@ -3445,7 +3443,7 @@ function ConditionsHybridEditor({
                     : <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠未実装</span>
                 )}
               </div>
-              <div style={{ flex: 1.5 }}>
+              <div>
                 <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
                 <input
                   type="text"
@@ -3453,11 +3451,11 @@ function ConditionsHybridEditor({
                   onChange={(e) => updateAt(i, { value: e.target.value })}
                   placeholder={NO_VALUE_CONDS.has(c.base) ? '（値不要）' : '（必要なら）'}
                   disabled={NO_VALUE_CONDS.has(c.base)}
-                  style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                  style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
                 />
               </div>
               {showSubjectSelector && (
-                <div style={{ flex: 1.6 }}>
+                <div>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
                   {(() => {
                     const curSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };

@@ -1388,6 +1388,71 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             ⚡ アクション（何をするか）
           </div>
 
+          {/* 強制 / 任意: 「〜できる」効果は optional をONにする。ONの間、発動前に「発動しますか？」
+              の確認ダイアログが入る。よく使うアクションより先に決める方が分かりやすいため最上部に配置 */}
+          {block.trigger !== 'alt_evolve' && block.action && (
+            <div className="field" style={{ marginBottom: 8 }}>
+              <ButtonGroup
+                options={[{ code: 'forced', label: '🔒 強制効果（〜する）' }, { code: 'optional', label: '🔓 任意効果（〜できる）' }]}
+                value={block.optional ? 'optional' : 'forced'}
+                onChange={(v) => update('optional', v === 'optional')}
+                accentColor="#2e7d32"
+              />
+            </div>
+          )}
+
+          {/* 効果発動ポップアップの表示テキスト: 空欄なら効果テキストから自動抽出にフォールバック。
+              強制効果のみ「表示しない」を選べる（任意効果は確認ダイアログが必須のため対象外） */}
+          {block.trigger !== 'alt_evolve' && block.action && (
+            <div className="field" style={{ marginBottom: 8 }}>
+              <label>💬 効果発動ポップアップの表示テキスト（空欄なら効果テキストから自動抽出）</label>
+              <textarea
+                value={block.displayText || ''}
+                onChange={(e) => update('displayText', e.target.value)}
+                rows={2}
+                placeholder="例: このデジモンは、進化元を持たない相手のデジモンにはブロックされない。"
+              />
+              {!block.optional && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 4, fontSize: 12, color: '#666' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!block.noAnnounce}
+                    onChange={(e) => update('noAnnounce', e.target.checked)}
+                  />
+                  🔕 効果発動ポップアップを表示しない
+                </label>
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 11, color: '#666' }}>🎨 枠色（空欄ならアクションコードから自動推測）</label>
+                  <select value={block.frameColor || ''} onChange={(e) => update('frameColor', e.target.value)}>
+                    <option value="">（自動推測）</option>
+                    <option value="赤">赤</option>
+                    <option value="緑">緑</option>
+                    <option value="シアン">シアン</option>
+                    <option value="オレンジ">オレンジ</option>
+                    <option value="黄">黄</option>
+                    <option value="紫">紫</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 11, color: '#666' }}>✨ 演出タイプ（空欄ならアクションコードから自動推測）</label>
+                  <select value={block.visualType || ''} onChange={(e) => update('visualType', e.target.value)}>
+                    <option value="">（自動推測）</option>
+                    <option value="数値ポップアップ">数値ポップアップ</option>
+                    <option value="消滅演出">消滅演出</option>
+                    <option value="ドロー演出">ドロー演出</option>
+                    <option value="カード登場">カード登場</option>
+                    <option value="カード移動">カード移動</option>
+                    <option value="状態付与演出">状態付与演出</option>
+                    <option value="Sアタック+">Sアタック+</option>
+                    <option value="ジョグレス進化">ジョグレス進化</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
           {block.trigger === 'alt_evolve' ? (
             <div style={{ fontSize: 11, color: '#888' }}>
               🔄 代替進化トリガーはアクション不要です（進化コストは上の🔄バナー内に入力済み）。
@@ -1561,72 +1626,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
           );
         })()}
-
-        {/* 任意 / 強制: 「〜できる」効果は optional をONにする。ONの間、発動前に「発動しますか？」の確認ダイアログが入る */}
-        {block.trigger !== 'alt_evolve' && block.action && (
-          <div className="field" style={{ marginTop: 8, background: !!block.optional ? '#e8f5e9' : '#f5f5f5', padding: 8, borderRadius: 4, border: `1px solid ${!!block.optional ? '#8bc34a' : '#ccc'}` }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: !!block.optional ? '#2e7d32' : '#666' }}>
-              <input
-                type="checkbox"
-                checked={!!block.optional}
-                onChange={(e) => update('optional', e.target.checked)}
-              />
-              {block.optional ? '🔓 任意効果（〜できる / 発動前に確認ダイアログあり）' : '🔒 強制効果（〜する）'}
-            </label>
-          </div>
-        )}
-
-        {/* 効果発動ポップアップの表示テキスト: 空欄なら効果テキストから自動抽出にフォールバック。
-            強制効果のみ「表示しない」を選べる（任意効果は確認ダイアログが必須のため対象外） */}
-        {block.trigger !== 'alt_evolve' && block.action && (
-          <div className="field" style={{ marginTop: 8 }}>
-            <label>💬 効果発動ポップアップの表示テキスト（空欄なら効果テキストから自動抽出）</label>
-            <textarea
-              value={block.displayText || ''}
-              onChange={(e) => update('displayText', e.target.value)}
-              rows={2}
-              placeholder="例: このデジモンは、進化元を持たない相手のデジモンにはブロックされない。"
-            />
-            {!block.optional && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 4, fontSize: 12, color: '#666' }}>
-                <input
-                  type="checkbox"
-                  checked={!!block.noAnnounce}
-                  onChange={(e) => update('noAnnounce', e.target.checked)}
-                />
-                🔕 効果発動ポップアップを表示しない
-              </label>
-            )}
-            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 11, color: '#666' }}>🎨 枠色（空欄ならアクションコードから自動推測）</label>
-                <select value={block.frameColor || ''} onChange={(e) => update('frameColor', e.target.value)}>
-                  <option value="">（自動推測）</option>
-                  <option value="赤">赤</option>
-                  <option value="緑">緑</option>
-                  <option value="シアン">シアン</option>
-                  <option value="オレンジ">オレンジ</option>
-                  <option value="黄">黄</option>
-                  <option value="紫">紫</option>
-                </select>
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 11, color: '#666' }}>✨ 演出タイプ（空欄ならアクションコードから自動推測）</label>
-                <select value={block.visualType || ''} onChange={(e) => update('visualType', e.target.value)}>
-                  <option value="">（自動推測）</option>
-                  <option value="数値ポップアップ">数値ポップアップ</option>
-                  <option value="消滅演出">消滅演出</option>
-                  <option value="ドロー演出">ドロー演出</option>
-                  <option value="カード登場">カード登場</option>
-                  <option value="カード移動">カード移動</option>
-                  <option value="状態付与演出">状態付与演出</option>
-                  <option value="Sアタック+">Sアタック+</option>
-                  <option value="ジョグレス進化">ジョグレス進化</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* summon / summon_from_trash 専用: コストを支払わずに登場 / 登場時効果を発揮しない */}
         {(block.action === 'summon' || block.action === 'summon_from_trash') && (

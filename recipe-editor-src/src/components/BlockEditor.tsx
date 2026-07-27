@@ -415,7 +415,7 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'grant_keyword', label: 'キーワード付与' },
   { code: 'destroy', label: '消滅' },
   { code: 'deck_open', label: 'デッキオープン' },
-  { code: 'recover', label: '回復' },
+  { code: 'recover', label: 'リカバリー' },
 ];
 // 現在選択中のtriggers/triggerConditionsから、共有の発動タイミングを逆算する
 function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair[], families: TriggerFamily[] = COMMON_TRIGGER_FAMILIES): TimingKey {

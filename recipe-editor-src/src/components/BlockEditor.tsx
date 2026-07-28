@@ -3551,7 +3551,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'name' | 'zone' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'name' | 'zone' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -3559,6 +3559,7 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'feature', label: '特徴' },
   { value: 'lv', label: 'Lv' },
   { value: 'dp', label: 'DP' },
+  { value: 'cost', label: '登場/使用コスト' },
   { value: 'name', label: '名前' },
   { value: 'zone', label: '場所' },
   { value: 'other', label: 'その他' },
@@ -3575,6 +3576,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   zone: 'cond_from_zone',
   lv: 'cond_lv_ge',
   dp: 'cond_dp_ge',
+  cost: 'cond_cost_ge',
   name: 'cond_name',
 };
 
@@ -3592,6 +3594,11 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_attack_target_highest_dp', label: '最も高い（アタック対象専用）' },
     { value: 'cond_attack_target_lowest_dp', label: '最も低い（アタック対象専用）' },
   ],
+  cost: [
+    { value: 'cond_cost_ge', label: '以上' },
+    { value: 'cond_cost_le', label: '以下' },
+    { value: 'cond_cost', label: '完全一致' },
+  ],
   name: [
     { value: 'cond_name', label: '完全一致' },
     { value: 'cond_name_contains', label: '含む' },
@@ -3608,6 +3615,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_lv_ge' || base === 'cond_lv_le' || base === 'cond_lv') return 'lv';
   if (base === 'cond_dp_ge' || base === 'cond_dp_le' || base === 'cond_dp'
     || base === 'cond_attack_target_highest_dp' || base === 'cond_attack_target_lowest_dp') return 'dp';
+  if (base === 'cond_cost_ge' || base === 'cond_cost_le' || base === 'cond_cost') return 'cost';
   if (base === 'cond_name' || base === 'cond_name_contains') return 'name';
   return 'other';
 }
@@ -3630,6 +3638,7 @@ function ConditionsHybridEditor({
     'cond_color', 'cond_type', 'cond_feature_contains', 'cond_feature', 'cond_from_zone',
     'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_dp_ge', 'cond_dp_le', 'cond_dp',
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
+    'cond_cost_ge', 'cond_cost_le', 'cond_cost',
     'cond_name', 'cond_name_contains',
     // トリガーボックス側の専用「アタック対象」ボタンで管理するため、その他の追加候補にも出さない
     'cond_attack_target_player', 'cond_attack_target_digimon',

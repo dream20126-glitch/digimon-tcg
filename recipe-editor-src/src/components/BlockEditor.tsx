@@ -1742,8 +1742,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const cardCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':card'];
           // 現在の複数選択状態を、target(+targetFilter/altActions)から逆算する
           const isOrMode = curTgt.l2 === 'card' && targetFilter.some((c) => c.base === 'cond_type' && /デジモン/.test(c.value || '') && /テイマー/.test(c.value || ''));
-          const isAndMode = curTgt.l2 === 'digimon' && block.altActionsOp === 'and' && (block.altActions || []).length === 1
-            && block.altActions![0].action === block.action && block.altActions![0].target === tamerCode;
+          const isAndMode = curTgt.l2 === 'digimon' && block.altActionsOp === 'and'
+            && (block.altActions || []).length === 1 && block.altActions![0].target === tamerCode;
           const digimonChecked = hasDigimonTamer && (curTgt.l2 === 'digimon' || isOrMode || isAndMode);
           const tamerChecked = hasDigimonTamer && (curTgt.l2 === 'tamer' || isOrMode || isAndMode);
           const combineMode: 'or' | 'and' = isAndMode ? 'and' : 'or';

@@ -478,7 +478,7 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'memory_minus', label: 'メモリー-' },
   { code: 'rest', label: 'レスト' },
   { code: 'active', label: 'アクティブ' },
-  { code: 'summon', label: '登場' },
+  { code: 'summon', label: '登場/使用' },
   { code: 'draw', label: 'ドロー' },
   { code: 'grant_keyword', label: 'キーワード付与' },
   { code: 'destroy', label: '消滅' },

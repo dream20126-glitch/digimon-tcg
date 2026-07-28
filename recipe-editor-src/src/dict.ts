@@ -268,7 +268,7 @@ export const ACTIONS: DictEntry[] = [
   { code: 'evo_discard', kind: 'action', label: '進化元を破棄' },
   { code: 'evo_discard_bottom', kind: 'action', label: '進化元の下から破棄' },
   { code: 'summon', kind: 'action', label: '登場させる' },
-  { code: 'summon_from_trash', kind: 'action', label: 'トラッシュから登場' },
+  { code: 'summon_from_trash', kind: 'action', label: 'トラッシュから登場/使用' },
   { code: 'summon_token', kind: 'action', label: 'トークンを登場させる（値=トークンのカードNo）' },
   { code: 'deck_open', kind: 'action', label: 'デッキの上からオープン' },
   { code: 'deck_trash_top', kind: 'action', label: 'デッキの上から破棄' },
@@ -306,7 +306,7 @@ export const ACTIONS: DictEntry[] = [
   { code: 'dedigivolve', kind: 'action', label: '退化' },
   { code: 'cost_digiburst', kind: 'action', label: 'デジバースト' },
   { code: 'trash_to_hand', kind: 'action', label: 'トラッシュから手札に戻す' },
-  { code: 'summon_from_evo_source', kind: 'action', label: '進化元から登場' },
+  { code: 'summon_from_evo_source', kind: 'action', label: '進化元から登場/使用' },
 ];
 
 // 修飾子（種類: option）— アクションの実行方法を変える

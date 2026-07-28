@@ -6079,6 +6079,33 @@ function runRecipe(steps, ctx, callback) {
   nextStep();
 }
 
+// summon 系アクションで対象がオプションカードだった場合の「使用」処理。
+// 手動プレイ(battle-combat.js doPlay)と同じ順序で解決する:
+// 演出 → 自身の main トリガーを発動 → 効果解決後にトラッシュへ送る。
+// ※呼び出し元で既に手札/トラッシュ等の元ゾーンからは取り除かれていること
+function _useOptionCardFromEffect(card, ctx, callback) {
+  const p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+  ctx.addLog && ctx.addLog('✦ 「' + card.name + '」を使用！');
+  ctx.renderAll && ctx.renderAll();
+  const afterAnim = () => {
+    try {
+      scanTriggers('main', card, ctx.side, ctx);
+      processQueue(ctx, () => {
+        if (!p.trash.includes(card)) p.trash.push(card);
+        ctx.addLog && ctx.addLog('✦ 「' + card.name + '」をトラッシュへ');
+        ctx.renderAll && ctx.renderAll();
+        callback();
+      });
+    } catch (_) {
+      if (!p.trash.includes(card)) p.trash.push(card);
+      callback();
+    }
+  };
+  const showFn = (ctx && ctx.showOptionEffect) || (typeof window !== 'undefined' && window.showOptionEffect);
+  if (showFn) showFn(card, afterAnim);
+  else setTimeout(afterAnim, 300);
+}
+
 // レシピの1ステップを実行
 function executeRecipeStep(step, ctx, store, callback) {
   // trigger_conditions ゲート: 発火元カードへのフィルタが NG ならステップスキップ
@@ -6449,6 +6476,11 @@ function executeRecipeStep(step, ctx, store, callback) {
         const cardToSummon = ctx.card;
         if (!cardToSummon) { callback(); break; }
         const p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+        // オプションカードは「登場」ではなく「使用」として解決する
+        if (String(cardToSummon.type || '') === 'オプション') {
+          _useOptionCardFromEffect(cardToSummon, ctx, callback);
+          break;
+        }
         // テイマー判定: type プロパティ揺らぎ(Firebase復元時に落ちる事例)に備え、
         // セキュリティ/効果テキストに【メイン】が無く Lv が無い等のヒントも併用
         const typeStr = String(cardToSummon.type || '');
@@ -6495,6 +6527,11 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (!c) { callback(); return; }
             const hi = player.hand.indexOf(c); if (hi !== -1) player.hand.splice(hi, 1);
             const ti = player.trash.indexOf(c); if (ti !== -1) player.trash.splice(ti, 1);
+            // オプションカードは「登場」ではなく「使用」として解決する
+            if (String(c.type || '') === 'オプション') {
+              _useOptionCardFromEffect(c, ctx, callback);
+              return;
+            }
             // テイマーはテイマーエリアへ、それ以外はバトルエリアへ
             // （ライズグレイモン「手札から黄のテイマーを登場」等でバトルエリアに
             //  誤配置されるのを防ぐ）
@@ -6564,6 +6601,11 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (srcData.parentCard && srcData.parentCard.stack) {
         const stackIdx = srcData.parentCard.stack.indexOf(cardToSummon);
         if (stackIdx !== -1) srcData.parentCard.stack.splice(stackIdx, 1);
+      }
+      // オプションカードは「登場」ではなく「使用」として解決する
+      if (String(cardToSummon.type || '') === 'オプション') {
+        _useOptionCardFromEffect(cardToSummon, ctx, callback);
+        break;
       }
       // バトルエリアの空きスロットに登場
       const emptyIdx = player.battleArea.indexOf(null);
@@ -6952,6 +6994,11 @@ function executeRecipeStep(step, ctx, store, callback) {
           const c = chosen[i++];
           const ti = player.trash.indexOf(c);
           if (ti !== -1) player.trash.splice(ti, 1);
+          // オプションカードは「登場」ではなく「使用」として解決する
+          if (String(c.type || '') === 'オプション') {
+            _useOptionCardFromEffect(c, ctx, () => summonNext());
+            return;
+          }
           // type別に配置先を決定
           const isTamer = String(c.type || '') === 'テイマー';
           if (isTamer) {
@@ -7064,6 +7111,11 @@ function executeRecipeStep(step, ctx, store, callback) {
           // self.stack から除去
           const si = self.stack.indexOf(c);
           if (si >= 0) self.stack.splice(si, 1);
+          // オプションカードは「登場」ではなく「使用」として解決する
+          if (String(c.type || '') === 'オプション') {
+            _useOptionCardFromEffect(c, ctx, () => summonNext());
+            return;
+          }
           // battleArea 空きスロットへ配置（テイマーは tamerArea へ。ただし通常はデジモンのみ）
           const isTamer = String(c.type || '') === 'テイマー';
           if (isTamer) {

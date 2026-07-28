@@ -328,7 +328,7 @@ const TARGET_SEL_L1 = [
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
   { code: 'other_own', label: '他' },
-  { code: 'same_target', label: '直前選択' },
+  { code: 'same_target', label: 'そのデジモン' },
 ];
 const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
   own: [

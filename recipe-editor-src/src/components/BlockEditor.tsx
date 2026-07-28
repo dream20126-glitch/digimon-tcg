@@ -1507,12 +1507,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </label>
                 )}
               </div>
-              <textarea
-                value={block.displayText || ''}
-                onChange={(e) => update('displayText', e.target.value)}
-                rows={2}
-                placeholder="例: このデジモンは、進化元を持たない相手のデジモンにはブロックされない。"
-              />
+              {!block.noAnnounce && (
+                <textarea
+                  value={block.displayText || ''}
+                  onChange={(e) => update('displayText', e.target.value)}
+                  rows={2}
+                  placeholder="例: このデジモンは、進化元を持たない相手のデジモンにはブロックされない。"
+                />
+              )}
             </div>
           )}
 

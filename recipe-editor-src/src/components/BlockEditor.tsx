@@ -1620,26 +1620,47 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           }
 
           const showCostCheckboxes = block.action === 'summon' || block.action === 'summon_from_trash' || block.action === 'evolve';
-          const gridCols = ['2fr'];
-          if (showCostCheckboxes) gridCols.push('1.4fr');
-          if (isPositional && variantOptions.length > 0) gridCols.push('1fr');
-          gridCols.push('1fr');
 
           return (
             <div style={{
               display: 'grid',
-              gridTemplateColumns: gridCols.join(' '),
+              gridTemplateColumns: isPositional && variantOptions.length > 0 ? '2fr 1fr 1fr' : '2fr 1fr',
               gap: 8,
             }}>
               <div className="field">
-                <label>
-                  アクション
-                  {block.action && (
-                    isActionImplemented(block.action, dict.actions.find((a) => a.code === block.action)?.logicCode)
-                      ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 6 }}>✅実装済</span>
-                      : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <label>
+                    アクション
+                    {block.action && (
+                      isActionImplemented(block.action, dict.actions.find((a) => a.code === block.action)?.logicCode)
+                        ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 6 }}>✅実装済</span>
+                        : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
+                    )}
+                  </label>
+                  {/* summon / summon_from_trash / evolve 専用: コストを支払わず / 登場時効果は発揮しない */}
+                  {showCostCheckboxes && (
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
+                        <input
+                          type="checkbox"
+                          checked={!!block.costFree}
+                          onChange={(e) => update('costFree', e.target.checked)}
+                        />
+                        コストを支払わず
+                      </label>
+                      {block.action !== 'evolve' && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
+                          <input
+                            type="checkbox"
+                            checked={!!block.skipOnPlay}
+                            onChange={(e) => update('skipOnPlay', e.target.checked)}
+                          />
+                          登場時効果は発揮しない
+                        </label>
+                      )}
+                    </div>
                   )}
-                </label>
+                </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {COMMON_ACTIONS.map((a) => {
                     const active = block.action === a.code;
@@ -1682,32 +1703,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </div>
                 )}
               </div>
-              {/* summon / summon_from_trash / evolve 専用: コストを支払わず / 登場時効果は発揮しない（横並び） */}
-              {showCostCheckboxes && (
-                <div className="field">
-                  <label>&nbsp;</label>
-                  <div style={{ display: 'flex', flexDirection: 'row', gap: 14, flexWrap: 'wrap' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>
-                      <input
-                        type="checkbox"
-                        checked={!!block.costFree}
-                        onChange={(e) => update('costFree', e.target.checked)}
-                      />
-                      コストを支払わず
-                    </label>
-                    {block.action !== 'evolve' && (
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>
-                        <input
-                          type="checkbox"
-                          checked={!!block.skipOnPlay}
-                          onChange={(e) => update('skipOnPlay', e.target.checked)}
-                        />
-                        登場時効果は発揮しない
-                      </label>
-                    )}
-                  </div>
-                </div>
-              )}
               {/* 位置バリアント pulldown: フラグ駆動 or 自動グループ化時のみ */}
               {isPositional && variantOptions.length > 0 && (
                 <div className="field">

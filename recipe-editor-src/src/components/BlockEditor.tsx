@@ -3808,6 +3808,11 @@ function ConditionsHybridEditor({
           <div key={cat.code} style={{ marginTop: 6 }}>
             {rows.map(({ c, i }) => {
               const def = COMMON_CONDS.find((cc) => cc.code === c.base);
+              // 「タイプ」カテゴリのみ: 対象(subject)側で既にデジモン/テイマーと確定している場合、
+              // このタイプ判定は常に自明(true)になり無意味なため、値ピッカーを出さず注記のみ表示する。
+              // 対象=カード(種別問わず)/未設定のときは、オプション等の絞り込みに実用性があるため通常表示する
+              const rowSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };
+              const typeRedundant = cat.code === 'type' && (rowSub.l2 === 'digimon' || rowSub.l2 === 'tamer');
               return (
                 <div key={i} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start', marginBottom: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
                   <div style={{ fontSize: 11, fontWeight: 'bold', color: colors.accent, paddingTop: 6, whiteSpace: 'nowrap' }}>
@@ -3843,7 +3848,11 @@ function ConditionsHybridEditor({
                   )}
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                    {c.base === 'cond_same_as_picked' || c.base === 'cond_from_zone'
+                    {typeRedundant ? (
+                      <div style={{ fontSize: 11, color: '#888', padding: '4px 6px' }}>
+                        （対象で種別を指定済みのため不要）
+                      </div>
+                    ) : c.base === 'cond_same_as_picked' || c.base === 'cond_from_zone'
                       || (supportsMultiValue && c.base === 'cond_type') ? (
                       /* 「選んだデジモンと同じ」「取得元」「タイプ(複数可・ターゲットフィルタ限定)」:
                          複数選択チェックボックス群（カンマ区切りで保存）。
@@ -3910,14 +3919,18 @@ function ConditionsHybridEditor({
                       {(() => {
                         const curSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };
                         const l2Options = COND_SUBJECT_L2[curSub.l1] || [];
+                        // タイプカテゴリの行で対象がデジモン/テイマーに確定した場合、値ピッカーを隠す
+                        // (typeRedundant)のに合わせて値も破棄する。古い値が残っていると
+                        // 「対象=デジモンなのに値=テイマー」のような矛盾で常にfalseになってしまうため
+                        const clearIfRedundant = (l2: string) => (cat.code === 'type' && (l2 === 'digimon' || l2 === 'tamer')) ? { value: '' } : {};
                         const handleSubL1 = (l1: string) => {
                           if (!l1) { updateAt(i, { subject: undefined }); return; }
                           if (!COND_SUBJECT_L2[l1]) { updateAt(i, { subject: 'other_own' }); return; }
                           const l2 = curSub.l1 === l1 && curSub.l2 ? curSub.l2 : 'digimon';
-                          updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] });
+                          updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2], ...clearIfRedundant(l2) });
                         };
                         const handleSubL2 = (l2: string) => {
-                          updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2] });
+                          updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2], ...clearIfRedundant(l2) });
                         };
                         return (
                           <>

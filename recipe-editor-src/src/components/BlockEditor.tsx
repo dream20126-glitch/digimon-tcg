@@ -1494,23 +1494,25 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               強制/任意ボタンと同様、アクション選択前から常に表示する */}
           {block.trigger !== 'alt_evolve' && (
             <div className="field" style={{ marginBottom: 8 }}>
-              <label>💬 効果発動ポップアップの表示テキスト（空欄なら効果テキストから自動抽出）</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <label>💬 効果発動ポップアップの表示テキスト（空欄なら効果テキストから自動抽出）</label>
+                {!block.optional && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, color: '#666' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!block.noAnnounce}
+                      onChange={(e) => update('noAnnounce', e.target.checked)}
+                    />
+                    表示しない
+                  </label>
+                )}
+              </div>
               <textarea
                 value={block.displayText || ''}
                 onChange={(e) => update('displayText', e.target.value)}
                 rows={2}
                 placeholder="例: このデジモンは、進化元を持たない相手のデジモンにはブロックされない。"
               />
-              {!block.optional && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 4, fontSize: 12, color: '#666' }}>
-                  <input
-                    type="checkbox"
-                    checked={!!block.noAnnounce}
-                    onChange={(e) => update('noAnnounce', e.target.checked)}
-                  />
-                  🔕 効果発動ポップアップを表示しない
-                </label>
-              )}
             </div>
           )}
 

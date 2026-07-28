@@ -1868,6 +1868,54 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     ⚠ {(isOrMode || isAndMode) ? '複数対象（OR/AND）は' : 'この対象は'}エンジン未実装です（保存はできますが動作しません）
                   </div>
                 )}
+                {/* === 🔍 対象の条件（対象の選択と同じ枠内に配置してわかりやすくする） ===
+                    対象が 自分→デジモン/カード/テイマー・相手→デジモン/テイマー・他→デジモン のときのみ表示 */}
+                {showTargetFilter && (
+                <details style={{ marginTop: 8 }} open={targetFilter.length > 0}>
+                  <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#0d7377' }}>
+                    🔍 対象の条件{targetFilter.length > 0 ? ` (${targetFilter.length})` : ''}
+                  </summary>
+                  <div style={{ border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', marginTop: 4, padding: 8 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 6 }}>
+                      対象カードの絞り込み条件（「レスト状態の」「進化元を持たない」「青の」等）
+                    </div>
+                    {/* よく使う状態（クイックチェックボックス） */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 6, padding: '4px 6px', background: 'white', borderRadius: 3, border: '1px solid #b2dfdb' }}>
+                      {[
+                        { code: 'cond_self_rest',   label: 'レスト状態' },
+                        { code: 'cond_self_active', label: 'アクティブ状態' },
+                      ].map((f) => {
+                        const checked = targetFilter.some((c) => c.base === f.code);
+                        return (
+                          <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                if (e.target.checked) { if (!checked) update('targetFilter', [...targetFilter, { base: f.code, value: '' }]); }
+                                else update('targetFilter', targetFilter.filter((c) => c.base !== f.code));
+                              }}
+                              style={{ margin: 0 }}
+                            />
+                            {f.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <ConditionsHybridEditor
+                      conditions={targetFilter}
+                      onChange={(next) => update('targetFilter', next)}
+                      dict={dict}
+                      title="対象の条件"
+                      hint="（対象カードの絞り込み条件・複数 AND）"
+                      theme="action"
+                      defaultSubject=""
+                      showSubjectSelector={false}
+                      supportsMultiValue={true}
+                    />
+                  </div>
+                </details>
+                )}
               </div>
               {!hideCount && (
                 <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
@@ -1888,55 +1936,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
           );
         })()}
-
-        {/* === 🔍 対象の条件（対象の直下・step.filter に出力） ===
-            対象が 自分→デジモン/カード/テイマー・相手→デジモン/テイマー・他→デジモン のときのみ表示 */}
-        {showTargetFilter && (
-        <details className="field" style={{ marginTop: 8 }} open={targetFilter.length > 0}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#0d7377' }}>
-            🔍 対象の条件{targetFilter.length > 0 ? ` (${targetFilter.length})` : ''}
-          </summary>
-          <div style={{ border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', marginTop: 4, padding: 8 }}>
-            <div style={{ fontSize: 10, color: '#555', marginBottom: 6 }}>
-              対象カードの絞り込み条件（「レスト状態の」「進化元を持たない」「青の」等）
-            </div>
-            {/* よく使う状態（クイックチェックボックス） */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 6, padding: '4px 6px', background: 'white', borderRadius: 3, border: '1px solid #b2dfdb' }}>
-              {[
-                { code: 'cond_self_rest',   label: 'レスト状態' },
-                { code: 'cond_self_active', label: 'アクティブ状態' },
-              ].map((f) => {
-                const checked = targetFilter.some((c) => c.base === f.code);
-                return (
-                  <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        if (e.target.checked) { if (!checked) update('targetFilter', [...targetFilter, { base: f.code, value: '' }]); }
-                        else update('targetFilter', targetFilter.filter((c) => c.base !== f.code));
-                      }}
-                      style={{ margin: 0 }}
-                    />
-                    {f.label}
-                  </label>
-                );
-              })}
-            </div>
-            <ConditionsHybridEditor
-              conditions={targetFilter}
-              onChange={(next) => update('targetFilter', next)}
-              dict={dict}
-              title="対象の条件"
-              hint="（対象カードの絞り込み条件・複数 AND）"
-              theme="action"
-              defaultSubject=""
-              showSubjectSelector={false}
-              supportsMultiValue={true}
-            />
-          </div>
-        </details>
-        )}
 
         {/* === 🎯 発動条件（常時表示・デフォルト折りたたみ・データあれば展開） ===
             コスト軽減トリガーは同内容の編集欄を上の💰バナー内に直接表示しているため、

@@ -1852,7 +1852,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 11, color: '#666' }}>対象の結合:</span>
                     <ButtonGroup
-                      options={[{ code: 'or', label: 'どちらか1体（OR）' }, { code: 'and', label: 'それぞれ1体（AND）' }]}
+                      options={[{ code: 'or', label: 'OR' }, { code: 'and', label: 'AND' }]}
                       value={combineMode}
                       onChange={(v) => applyDigiTamerSelection(true, true, v as 'or' | 'and')}
                       accentColor="#b76e00"

@@ -321,6 +321,7 @@ const COND_SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
 //   エンジン未実装のプレースホルダー（選べるが⚠警告を出す。既存の実装パターンと同様）
 const TARGET_SEL_UNIMPLEMENTED = new Set([
   'opp_security', 'target_other_own_card', 'target_other_own_tamer', 'opponent_tamer',
+  'own_option', 'opponent_option',
 ]);
 const TARGET_SEL_L1 = [
   { code: '', label: '既定' },
@@ -335,12 +336,14 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'digimon', label: 'デジモン' },
     { code: 'card', label: 'カード' },
     { code: 'tamer', label: 'テイマー' },
+    { code: 'option', label: 'オプション' },
     { code: 'security', label: 'セキュリティ' },
   ],
   opp: [
     { code: 'digimon', label: 'デジモン' },
     { code: 'card', label: 'カード' },
     { code: 'tamer', label: 'テイマー' },
+    { code: 'option', label: 'オプション' },
     { code: 'player', label: 'プレイヤー' },
     { code: 'security', label: 'セキュリティ' },
   ],
@@ -351,8 +354,8 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
   ],
 };
 const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
-  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:security': 'own_security',
-  'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:tamer': 'opponent_tamer', 'opp:player': 'opp_player', 'opp:security': 'opp_security',
+  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:option': 'own_option', 'own:security': 'own_security',
+  'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:tamer': 'opponent_tamer', 'opp:option': 'opponent_option', 'opp:player': 'opp_player', 'opp:security': 'opp_security',
   'other_own:digimon': 'target_other_own', 'other_own:card': 'target_other_own_card', 'other_own:tamer': 'target_other_own_tamer',
 };
 const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
@@ -362,10 +365,12 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   own: { l1: 'own', l2: 'digimon' },
   own_card: { l1: 'own', l2: 'card' },
   own_tamer: { l1: 'own', l2: 'tamer' },
+  own_option: { l1: 'own', l2: 'option' },
   own_security: { l1: 'own', l2: 'security' },
   opponent: { l1: 'opp', l2: 'digimon' },
   opponent_card: { l1: 'opp', l2: 'card' },
   opponent_tamer: { l1: 'opp', l2: 'tamer' },
+  opponent_option: { l1: 'opp', l2: 'option' },
   opp_player: { l1: 'opp', l2: 'player' },
   opp_security: { l1: 'opp', l2: 'security' },
   target_other_own: { l1: 'other_own', l2: 'digimon' },
@@ -479,6 +484,7 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'destroy', label: '消滅' },
   { code: 'deck_open', label: 'デッキオープン' },
   { code: 'recover', label: 'リカバリー' },
+  { code: 'evolve', label: '進化' },
 ];
 // 現在選択中のtriggers/triggerConditionsから、共有の発動タイミングを逆算する
 function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair[], families: TriggerFamily[] = COMMON_TRIGGER_FAMILIES): TimingKey {
@@ -3602,7 +3608,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'name' | 'zone' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'zone' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -3611,6 +3617,7 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'lv', label: 'Lv' },
   { value: 'dp', label: 'DP' },
   { value: 'cost', label: 'コスト' },
+  { value: 'cost_mod', label: 'コスト増減' },
   { value: 'name', label: '名前' },
   { value: 'zone', label: '場所' },
   { value: 'other', label: 'その他' },
@@ -3628,6 +3635,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   lv: 'cond_lv_ge',
   dp: 'cond_dp_ge',
   cost: 'cond_cost_ge',
+  cost_mod: 'cond_cost_mod',
   name: 'cond_name',
 };
 
@@ -3667,8 +3675,22 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_dp_ge' || base === 'cond_dp_le' || base === 'cond_dp'
     || base === 'cond_attack_target_highest_dp' || base === 'cond_attack_target_lowest_dp') return 'dp';
   if (base === 'cond_cost_ge' || base === 'cond_cost_le' || base === 'cond_cost') return 'cost';
+  if (base === 'cond_cost_mod') return 'cost_mod';
   if (base === 'cond_name' || base === 'cond_name_contains') return 'name';
   return 'other';
+}
+
+// 「コスト増減」用: value を "符号+数値|N|参照対象" 形式でエンコードして保存する
+// （+1 のみ／+1を自分のトラッシュ5枚ごとに、のような「～ごとに」倍率も1行で表現するため）
+// ※エンジン未対応のためこの形式はエディタ内でのみ解釈する（保存はできるが動作しない）
+function parseCostMod(value: string | undefined): { sign: '+' | '-'; amount: string; perCount: string; perRef: string } {
+  const [head, perCount, perRef] = String(value || '').split('|');
+  const sign: '+' | '-' = head.trim().startsWith('-') ? '-' : '+';
+  const amount = head.replace(/^[+-]/, '').trim();
+  return { sign, amount, perCount: perCount || '', perRef: perRef || '' };
+}
+function formatCostMod(sign: '+' | '-', amount: string, perCount: string, perRef: string): string {
+  return `${sign}${amount}|${perCount}|${perRef}`;
 }
 
 function ConditionsHybridEditor({
@@ -3695,7 +3717,7 @@ function ConditionsHybridEditor({
     'cond_color', 'cond_type', 'cond_feature_contains', 'cond_feature', 'cond_from_zone',
     'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_dp_ge', 'cond_dp_le', 'cond_dp',
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
-    'cond_cost_ge', 'cond_cost_le', 'cond_cost',
+    'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod',
     'cond_name', 'cond_name_contains',
     // トリガーボックス側の専用「アタック対象」ボタンで管理するため、その他の追加候補にも出さない
     'cond_attack_target_player', 'cond_attack_target_digimon',
@@ -3848,7 +3870,57 @@ function ConditionsHybridEditor({
                   )}
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                    {typeRedundant ? (
+                    {cat.code === 'cost_mod' ? (
+                      /* コスト増減: 「登場コストX以下」等のしきい値そのものを+/-する。
+                         ⚠エンジン未対応（コスト条件のしきい値に per_count 相当の倍率を
+                         掛ける処理が無い）。エディタで保存はできるが動作しないプレースホルダー */
+                      (() => {
+                        const cm = parseCostMod(c.value);
+                        const setCm = (patch: Partial<typeof cm>) => {
+                          const next = { ...cm, ...patch };
+                          updateAt(i, { value: formatCostMod(next.sign, next.amount, next.perCount, next.perRef) });
+                        };
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <ButtonGroup
+                                options={[{ code: '+', label: '+' }, { code: '-', label: '-' }]}
+                                value={cm.sign}
+                                onChange={(v) => setCm({ sign: v as '+' | '-' })}
+                                accentColor={colors.accent}
+                              />
+                              <input
+                                type="number"
+                                value={cm.amount}
+                                onChange={(e) => setCm({ amount: e.target.value })}
+                                placeholder="コスト"
+                                style={{ width: 80, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 10, color: '#555' }}>（任意）</span>
+                              <input
+                                type="number"
+                                min={1}
+                                value={cm.perCount}
+                                onChange={(e) => setCm({ perCount: e.target.value })}
+                                placeholder="枚数"
+                                style={{ width: 60, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                              />
+                              <span style={{ fontSize: 10, color: '#555' }}>枚ごとに</span>
+                              <div style={{ minWidth: 160 }}>
+                                <SearchSelect
+                                  value={cm.perRef}
+                                  onChange={(v) => setCm({ perRef: v })}
+                                  options={toOpts(REF_SUBJECTS)}
+                                  placeholder="--対象--"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()
+                    ) : typeRedundant ? (
                       <div style={{ fontSize: 11, color: '#888', padding: '4px 6px' }}>
                         （対象で種別を指定済みのため不要）
                       </div>

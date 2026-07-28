@@ -679,17 +679,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   }
 
   // === 折りたたみ state ===
-  // 追加オプション（期間/取得元/修飾子/～ごとに/コスト/追加JSON）にデータがあれば展開
+  // 追加オプション（期間/取得元/修飾子/～ごとに/コスト）にデータがあれば展開
   const _hasActionExtras = !!(
     (block.options || []).length > 0 ||
     (block.fromZones || []).length > 0 ||
     (block.costs || []).length > 0 ||
     block.duration ||
-    block.perCount ||
-    block.extras
+    block.perCount
   );
   const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
   const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
+  // 発動条件に付随する追加設定（代替アクション/付与する効果/追加オプション）の
+  // 選択肢出し入れ用トグル。実データが既にある場合は既存の open={...} 相当として自動でON扱いにする
+  const [showAltActionsPanel, setShowAltActionsPanel] = useState<boolean>(false);
+  const [showGrantedStepPanel, setShowGrantedStepPanel] = useState<boolean>(false);
+  const [showExtraOptionsPanel, setShowExtraOptionsPanel] = useState<boolean>(false);
   const [otherActionOpen, setOtherActionOpen] = useState<boolean>(false);
   // 「対象の条件」をアクションの対象/対象数の2箇所に分けて描画するため、
   // その他チェックボックスの開閉状態をここで共有する
@@ -2020,13 +2024,48 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </div>
         )}
 
+        {/* === 発動条件に付随する追加設定（選択肢出し入れ方式） ===
+            代替アクション/付与する効果/追加オプションをボタンでまとめて出し入れする。
+            既にデータが入っている場合はボタンを押さなくても自動でON扱いになる */}
+        {(() => {
+          const altActive = showAltActionsPanel || altActions.length > 0;
+          const grantActive = showGrantedStepPanel || !!block.grantedStep;
+          const extraActive = showExtraOptionsPanel || _hasActionExtras;
+          const EXTRA_FEATURE_BUTTONS = [
+            { key: 'alt', label: '代替アクション', active: altActive, onClick: () => setShowAltActionsPanel((v) => !v) },
+            { key: 'grant', label: '付与する効果', active: grantActive, onClick: () => setShowGrantedStepPanel((v) => !v) },
+            { key: 'extra', label: '追加オプション', active: extraActive, onClick: () => setShowExtraOptionsPanel((v) => !v) },
+          ];
+          return (
+            <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {EXTRA_FEATURE_BUTTONS.map((b) => (
+                <button
+                  key={b.key}
+                  type="button"
+                  onClick={b.onClick}
+                  style={{
+                    padding: '3px 9px', borderRadius: 5,
+                    border: b.active ? '2px solid #9333ea' : '1px solid #bbb',
+                    background: b.active ? '#9333ea' : '#f5f5f5',
+                    color: b.active ? '#fff' : '#333',
+                    fontWeight: b.active ? 'bold' : 'normal',
+                    cursor: 'pointer', fontSize: 11,
+                  }}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* === 🔀 代替アクション (OR / AND) === */}
         {/* 「〇〇するか〇〇する」「〇〇する＆〇〇する」の表現用 */}
-        <details style={{ marginTop: 8 }} open={altActions.length > 0}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', fontSize: 12, color: '#9333ea' }}>
-            🔀 代替アクション{altActions.length > 0 ? ` (${altActions.length}・${altOp.toUpperCase()})` : ''}
-          </summary>
-          <div style={{ padding: 8, border: '1px solid #d4b8f0', borderRadius: 4, background: '#faf5ff', marginTop: 4 }}>
+        {(showAltActionsPanel || altActions.length > 0) && (
+          <div style={{ padding: 8, border: '1px solid #d4b8f0', borderRadius: 4, background: '#faf5ff', marginTop: 8 }}>
+            <div style={{ fontWeight: 'bold', fontSize: 12, color: '#9333ea', marginBottom: 6 }}>
+              🔀 代替アクション{altActions.length > 0 ? ` (${altActions.length}・${altOp.toUpperCase()})` : ''}
+            </div>
             <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
               💡 メインアクションと組み合わせて使用。OR=プレイヤー選択 / AND=順次実行。
             </div>
@@ -2360,15 +2399,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               ＋ 代替アクションを追加
             </button>
           </div>
-        </details>
+        )}
 
         {/* === 🎁 付与する効果（grant_effect 用ネスト） === */}
         {/* 「自分のデジモン全ては『【アタック時】〜』を得る」のような一時的トリガー効果付与の表現 */}
-        <details style={{ marginTop: 8 }} open={!!block.grantedStep}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', fontSize: 12, color: '#0d9488' }}>
-            🎁 付与する効果{block.grantedStep ? ' (有効)' : ''}
-          </summary>
-          <div style={{ padding: 8, border: '1px solid #5eead4', borderRadius: 4, background: '#f0fdfa', marginTop: 4 }}>
+        {(showGrantedStepPanel || !!block.grantedStep) && (
+          <div style={{ padding: 8, border: '1px solid #5eead4', borderRadius: 4, background: '#f0fdfa', marginTop: 8 }}>
+            <div style={{ fontWeight: 'bold', fontSize: 12, color: '#0d9488', marginBottom: 6 }}>
+              🎁 付与する効果{block.grantedStep ? ' (有効)' : ''}
+            </div>
             <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
               💡 アクション=<code>grant_effect</code> 等で対象に付与するトリガー効果。例: 「【アタック時】相手DP-2000」
             </div>
@@ -2497,14 +2536,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               </>
             )}
           </div>
-        </details>
+        )}
 
-        {/* ⚙ 追加オプション（期間・取得元・修飾子・～ごとに・コスト・追加JSON） */}
-        <details style={{ marginTop: 10 }} open={_hasActionExtras}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 12, color: '#1976d2', padding: '4px 0' }}>
-            ⚙ 追加オプション（期間・取得元・修飾子・倍率・コスト・追加JSON）
-          </summary>
-        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* ⚙ 追加オプション（期間・取得元・修飾子・～ごとに・コスト） */}
+        {(showExtraOptionsPanel || _hasActionExtras) && (
+        <div style={{ marginTop: 8, padding: 8, border: '1px solid #b9c8e0', borderRadius: 4, background: '#eff5fd' }}>
+          <div style={{ fontWeight: 'bold', fontSize: 12, color: '#1976d2', marginBottom: 6 }}>
+            ⚙ 追加オプション（期間・取得元・修飾子・倍率・コスト）
+          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
 
         <div className="field">
           <label>期間</label>
@@ -2949,21 +2989,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           )}
         </details>
 
-        {/* 追加JSON: 通常は使わないが、特殊ネスト構造の手動入力用に残す */}
-        <details className="field" open={!!block.extras}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0' }}>
-            📜 追加JSON（特殊なネスト構造のみ・上級者向け）
-          </summary>
-          <textarea
-            value={block.extras || ''}
-            onChange={(e) => update('extras', e.target.value)}
-            rows={2}
-            placeholder='例: {"some_special_nested_field":...}'
-          />
-        </details>
-
         </div>
-        </details>
+        </div>
+        )}
         </div>
         )}
         {/* === アクショングループここまで === */}

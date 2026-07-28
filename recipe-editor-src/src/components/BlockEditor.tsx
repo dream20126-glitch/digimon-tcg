@@ -691,6 +691,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
   const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
   const [otherActionOpen, setOtherActionOpen] = useState<boolean>(false);
+  // 「対象の条件」をアクションの対象/対象数の2箇所に分けて描画するため、
+  // その他チェックボックスの開閉状態をここで共有する
+  const [targetFilterOtherOpen, setTargetFilterOtherOpen] = useState<boolean>(false);
 
   // ✖ ～ごとに（倍率設定）: 値 × floor(count / N) でスケーリング。
   // 通常は⚙追加オプション内に表示するが、コスト軽減トリガーでは💰バナー内（発動条件の隣）
@@ -1868,17 +1871,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     ⚠ {(isOrMode || isAndMode) ? '複数対象（OR/AND）は' : 'この対象は'}エンジン未実装です（保存はできますが動作しません）
                   </div>
                 )}
-                {/* === 🔍 対象の条件（対象の選択と同じ枠内に配置してわかりやすくする） ===
+                {/* === 🔍 対象の条件: ボタン列はここ（対象ボックス側）、詳細パネルは
+                    右の対象数ボックス側に表示する（対象条件を開いたときの縦の余白を防ぐため）。
                     対象が 自分→デジモン/カード/テイマー・相手→デジモン/テイマー・他→デジモン のときのみ表示 */}
                 {showTargetFilter && (
-                <details style={{ marginTop: 8 }} open={targetFilter.length > 0}>
-                  <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#0d7377' }}>
-                    🔍 対象の条件{targetFilter.length > 0 ? ` (${targetFilter.length})` : ''}
-                  </summary>
-                  <div style={{ border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', marginTop: 4, padding: 8 }}>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 6 }}>
-                      対象カードの絞り込み条件（「レスト状態の」「進化元を持たない」「青の」等）
-                    </div>
+                  <div style={{ marginTop: 8 }}>
                     {/* よく使う状態（クイックチェックボックス） */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 6, padding: '4px 6px', background: 'white', borderRadius: 3, border: '1px solid #b2dfdb' }}>
                       {[
@@ -1912,9 +1909,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       defaultSubject=""
                       showSubjectSelector={false}
                       supportsMultiValue={true}
+                      part="buttons"
+                      otherOpen={targetFilterOtherOpen}
+                      onOtherOpenChange={setTargetFilterOtherOpen}
                     />
                   </div>
-                </details>
                 )}
               </div>
               {!hideCount && (
@@ -1931,6 +1930,24 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     onChange={(v) => setTarget(tgtBase, v)}
                     accentColor="#b76e00"
                   />
+                  {showTargetFilter && (
+                    <div style={{ marginTop: 8, border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', padding: 8 }}>
+                      <ConditionsHybridEditor
+                        conditions={targetFilter}
+                        onChange={(next) => update('targetFilter', next)}
+                        dict={dict}
+                        title="対象の条件"
+                        hint=""
+                        theme="action"
+                        defaultSubject=""
+                        showSubjectSelector={false}
+                        supportsMultiValue={true}
+                        part="panels"
+                        otherOpen={targetFilterOtherOpen}
+                        onOtherOpenChange={setTargetFilterOtherOpen}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -3537,6 +3554,12 @@ interface ConditionsHybridEditorProps {
   // true のとき、DPの「最も高い/最も低い（アタック対象専用）」バリアントを選べるようにする。
   // これはbs._lastAttackTargetを見る条件で、【アタック時】【アタック終了時】以外では意味を成さない
   attackContextActive?: boolean;
+  // 'full'(既定) = よく使う条件ボタン+詳細パネルを1つの枠にまとめて表示（従来通り）。
+  // 'buttons' / 'panels' = ボタン列と詳細パネルを別々の場所（例: 対象ボックスと対象数ボックス）
+  // に分けて配置したいときに使う。この場合、otherOpen状態を呼び出し側で共有する必要がある
+  part?: 'full' | 'buttons' | 'panels';
+  otherOpen?: boolean;
+  onOtherOpenChange?: (v: boolean) => void;
 }
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
@@ -3559,7 +3582,7 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'feature', label: '特徴' },
   { value: 'lv', label: 'Lv' },
   { value: 'dp', label: 'DP' },
-  { value: 'cost', label: '登場/使用コスト' },
+  { value: 'cost', label: 'コスト' },
   { value: 'name', label: '名前' },
   { value: 'zone', label: '場所' },
   { value: 'other', label: 'その他' },
@@ -3623,6 +3646,7 @@ function baseToCategory(base: string): CondCategory {
 function ConditionsHybridEditor({
   conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true,
   supportsMultiValue = false, attackContextActive = false,
+  part = 'full', otherOpen: otherOpenProp, onOtherOpenChange,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
@@ -3645,7 +3669,26 @@ function ConditionsHybridEditor({
   ]);
   const otherCondOptions = toOpts(dict.conditions.filter((c) => !CATEGORIZED_CODES.has(c.code)));
 
-  const [otherOpen, setOtherOpen] = useState(false);
+  const [localOtherOpen, setLocalOtherOpen] = useState(false);
+  const otherOpen = otherOpenProp !== undefined ? otherOpenProp : localOtherOpen;
+  const setOtherOpen = onOtherOpenChange || setLocalOtherOpen;
+
+  // 「コスト」カテゴリ専用: 登場/使用/両方でカード種別を絞り込む（対象の条件=supportsMultiValue時のみ）。
+  // 登場=デジモン/テイマー（場に出す）・使用=オプション（使用して手放す）・両方=絞り込みなし
+  function getCostTypeScope(): 'summon' | 'use' | 'both' {
+    const t = conditions.find((c) => c.base === 'cond_type');
+    if (!t) return 'both';
+    const vals = String(t.value || '').split(',').map((s) => s.trim());
+    if (vals.length === 1 && vals[0] === 'オプション') return 'use';
+    if (vals.includes('デジモン')) return 'summon';
+    return 'both';
+  }
+  function setCostTypeScope(mode: 'summon' | 'use' | 'both') {
+    const withoutType = conditions.filter((c) => c.base !== 'cond_type');
+    if (mode === 'both') { onChange(withoutType); return; }
+    const value = mode === 'summon' ? 'デジモン,テイマー' : 'オプション';
+    onChange([...withoutType, { base: 'cond_type', value }]);
+  }
 
   function updateAt(i: number, patch: Partial<ConditionPair>) {
     const next = conditions.slice();
@@ -3674,8 +3717,11 @@ function ConditionsHybridEditor({
     .filter(({ c }) => baseToCategory(c.base) === 'other'
       && c.base !== 'cond_attack_target_player' && c.base !== 'cond_attack_target_digimon');
 
-  return (
-    <div className="field" style={{ gridColumn: '1 / span 2', background: colors.bg, padding: 8, borderRadius: 4, border: `1px solid ${colors.border}` }}>
+  // buttonsNode/panelsNode に分けているのは、対象の条件（対象ボックスにボタン列・
+  // 対象数ボックスに詳細パネル）のように別々の場所へ配置したい呼び出し元がいるため。
+  // part='full'（既定）のときは両方まとめて1つの枠に描画する（従来通り）
+  const buttonsNode = (
+    <>
       <label style={{ fontWeight: 'bold', color: colors.accent }}>
         {colors.icon} {title}
         <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>{hint}</span>
@@ -3708,6 +3754,19 @@ function ConditionsHybridEditor({
         })}
       </div>
 
+      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 8, color: '#666' }}>
+        <input
+          type="checkbox"
+          checked={otherOpen || otherRows.length > 0}
+          onChange={(e) => setOtherOpen(e.target.checked)}
+        />
+        その他の条件
+      </label>
+    </>
+  );
+
+  const panelsNode = (
+    <>
       {/* アクティブなカテゴリごとの詳細設定（値・対象） */}
       {CATEGORY_BUTTON_OPTIONS.map((cat) => {
         const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => baseToCategory(c.base) === cat.code);
@@ -3734,6 +3793,20 @@ function ConditionsHybridEditor({
                       onChange={(v) => updateAt(i, { base: v })}
                       accentColor={colors.accent}
                     />
+                  )}
+                  {/* コストのみ: 登場(デジモン/テイマー)/使用(オプション)/両方でカード種別を絞り込む。
+                      対象の条件（supportsMultiValue）でのみ有効（cond_typeの複数値がtype_inとして
+                      解釈されるのはこの文脈だけのため） */}
+                  {cat.code === 'cost' && supportsMultiValue && (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>カード種別</div>
+                      <ButtonGroup
+                        options={[{ code: 'summon', label: '登場' }, { code: 'use', label: '使用' }, { code: 'both', label: '両方' }]}
+                        value={getCostTypeScope()}
+                        onChange={(v) => setCostTypeScope(v as 'summon' | 'use' | 'both')}
+                        accentColor={colors.accent}
+                      />
+                    </div>
                   )}
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
@@ -3839,16 +3912,8 @@ function ConditionsHybridEditor({
         );
       })}
 
-      {/* その他: よく使う条件に無いものは、トリガーの「その他のトリガー」と同様に
-          チェックボックスで開いたプルダウンから選ぶ（辞書への新規登録も可能） */}
-      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 8, color: '#666' }}>
-        <input
-          type="checkbox"
-          checked={otherOpen || otherRows.length > 0}
-          onChange={(e) => setOtherOpen(e.target.checked)}
-        />
-        その他の条件
-      </label>
+      {/* その他の条件（トリガー発火元カードへのフィルタ）: チェックボックス自体はbuttonsNode側にあり、
+          ここでは実際のピッカー/行のみを表示する */}
       {(otherOpen || otherRows.length > 0) && (
         <div style={{ marginTop: 4 }}>
           {otherRows.map(({ c, i }) => (
@@ -3925,6 +3990,19 @@ function ConditionsHybridEditor({
           <InlineDictAdd kind="conditions" dict={dict} onRegistered={(v) => addRow(v)} />
         </div>
       )}
+    </>
+  );
+
+  if (part === 'buttons') {
+    return <div className="field" style={{ marginBottom: 4 }}>{buttonsNode}</div>;
+  }
+  if (part === 'panels') {
+    return <div className="field">{panelsNode}</div>;
+  }
+  return (
+    <div className="field" style={{ gridColumn: '1 / span 2', background: colors.bg, padding: 8, borderRadius: 4, border: `1px solid ${colors.border}` }}>
+      {buttonsNode}
+      {panelsNode}
     </div>
   );
 }

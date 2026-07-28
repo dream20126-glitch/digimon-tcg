@@ -315,12 +315,12 @@ const COND_SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
 // - 発動主体/条件対象とはコード名が異なる（相手のデジモン=opponent 等）
 // - このカード(self)/他(other_own)/直前選択(same_target) はL2を持たない単独コード
 //   （このカードは「デジモンでもテイマーでも同じ」ため self_card 固定でL2自体を出さない）
-// - レスト/アクティブ状態は、コード自体が分かれているため（例: opponent_suspended）
-//   L1/L2ではなくチェックボックス（発動主体と同じ見た目）で切り替える
-//   own_suspended/own_active/opp_security/target_other_own_card/target_other_own_tamer は
+// - レスト/アクティブ状態は「対象の条件（ターゲットフィルタ）」側のチェックボックスで指定する
+//   （対象コード自体に持たせる opponent_suspended 等の専用コードは使わない）
+// - opp_security/target_other_own_card/target_other_own_tamer/opponent_tamer は
 //   エンジン未実装のプレースホルダー（選べるが⚠警告を出す。既存の実装パターンと同様）
 const TARGET_SEL_UNIMPLEMENTED = new Set([
-  'own_suspended', 'own_active', 'opp_security', 'target_other_own_card', 'target_other_own_tamer',
+  'opp_security', 'target_other_own_card', 'target_other_own_tamer', 'opponent_tamer',
 ]);
 const TARGET_SEL_L1 = [
   { code: '', label: '既定' },
@@ -340,6 +340,7 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
   opp: [
     { code: 'digimon', label: 'デジモン' },
     { code: 'card', label: 'カード' },
+    { code: 'tamer', label: 'テイマー' },
     { code: 'player', label: 'プレイヤー' },
     { code: 'security', label: 'セキュリティ' },
   ],
@@ -351,7 +352,7 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
 };
 const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
   'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:security': 'own_security',
-  'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:player': 'opp_player', 'opp:security': 'opp_security',
+  'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:tamer': 'opponent_tamer', 'opp:player': 'opp_player', 'opp:security': 'opp_security',
   'other_own:digimon': 'target_other_own', 'other_own:card': 'target_other_own_card', 'other_own:tamer': 'target_other_own_tamer',
 };
 const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
@@ -359,15 +360,12 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   self: { l1: 'self', l2: '' },
   self_card: { l1: 'self', l2: '' },
   own: { l1: 'own', l2: 'digimon' },
-  own_suspended: { l1: 'own', l2: 'digimon' },
-  own_active: { l1: 'own', l2: 'digimon' },
   own_card: { l1: 'own', l2: 'card' },
   own_tamer: { l1: 'own', l2: 'tamer' },
   own_security: { l1: 'own', l2: 'security' },
   opponent: { l1: 'opp', l2: 'digimon' },
-  opponent_suspended: { l1: 'opp', l2: 'digimon' },
-  opponent_active: { l1: 'opp', l2: 'digimon' },
   opponent_card: { l1: 'opp', l2: 'card' },
+  opponent_tamer: { l1: 'opp', l2: 'tamer' },
   opp_player: { l1: 'opp', l2: 'player' },
   opp_security: { l1: 'opp', l2: 'security' },
   target_other_own: { l1: 'other_own', l2: 'digimon' },
@@ -551,6 +549,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // target は base + count の合成
   const tgtBase = (block.target || '').split(':')[0];
   const tgtSuffix = (block.target || '').substring(tgtBase.length);
+  // 対象のL1/L2（「対象の条件」を表示すべきかの判定にも使うため、コンポーネント直下で保持）
+  const curTgt = TARGET_SEL_CODE_TO_L1L2[tgtBase] || { l1: '', l2: '' };
+  // 「対象の条件」は対象が下記の場合のみ表示する:
+  // 自分→デジモン/カード/テイマー・相手→デジモン/テイマー・他→デジモン
+  const showTargetFilter =
+    (curTgt.l1 === 'own' && ['digimon', 'card', 'tamer'].includes(curTgt.l2)) ||
+    (curTgt.l1 === 'opp' && ['digimon', 'tamer'].includes(curTgt.l2)) ||
+    (curTgt.l1 === 'other_own' && curTgt.l2 === 'digimon');
 
   function setTarget(base: string, suffix: string) {
     if (!base) return update('target', '');
@@ -1726,12 +1732,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* 対象 / 対象数 (アクションのターゲット) */}
         {(() => {
-          const curTgt = TARGET_SEL_CODE_TO_L1L2[tgtBase] || { l1: '', l2: '' };
           const tgtL2Options = TARGET_SEL_L2[curTgt.l1] || [];
-          const showState = (curTgt.l1 === 'own' || curTgt.l1 === 'opp') && curTgt.l2 === 'digimon';
-          const statePrefix = curTgt.l1 === 'own' ? 'own' : 'opponent';
-          const isRest = tgtBase === statePrefix + '_suspended';
-          const isActive = tgtBase === statePrefix + '_active';
           const hideCount = tgtBase === 'self' || tgtBase === 'self_card';
           const isUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(tgtBase);
 
@@ -1745,34 +1746,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const handleTgtL2 = (l2: string) => {
             setTarget(TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':' + l2] || '', tgtSuffix);
           };
-          const setState = (mode: 'rest' | 'active' | null) => {
-            const base = curTgt.l1 === 'own' ? 'own' : 'opponent';
-            setTarget(mode === 'rest' ? base + '_suspended' : mode === 'active' ? base + '_active' : base, tgtSuffix);
-          };
 
           return (
             <div style={{ display: 'grid', gridTemplateColumns: hideCount ? '1fr' : '1fr 1fr', gap: 8, marginTop: 8 }}>
               <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
-                    🎯 アクションの対象
-                    <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
-                      （このアクションが効果を与えるカード／デジモン）
-                    </span>
-                  </label>
-                  {showState && (
-                    <>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'normal' }}>
-                        <input type="checkbox" checked={isRest} onChange={(e) => setState(e.target.checked ? 'rest' : null)} />
-                        レスト状態
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'normal' }}>
-                        <input type="checkbox" checked={isActive} onChange={(e) => setState(e.target.checked ? 'active' : null)} />
-                        アクティブ状態
-                      </label>
-                    </>
-                  )}
-                </div>
+                <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
+                  🎯 アクションの対象
+                  <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
+                    （このアクションが効果を与えるカード／デジモン）
+                  </span>
+                </label>
                 <ButtonGroup options={TARGET_SEL_L1} value={curTgt.l1} onChange={handleTgtL1} accentColor="#b76e00" />
                 {tgtL2Options.length > 0 && (
                   <div style={{ marginTop: 4 }}>
@@ -1805,10 +1788,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
-        {/* === 🔍 ターゲットフィルタ（対象の直下・step.filter に出力） === */}
+        {/* === 🔍 対象の条件（対象の直下・step.filter に出力） ===
+            対象が 自分→デジモン/カード/テイマー・相手→デジモン/テイマー・他→デジモン のときのみ表示 */}
+        {showTargetFilter && (
         <details className="field" style={{ marginTop: 8 }} open={targetFilter.length > 0}>
           <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#0d7377' }}>
-            🔍 ターゲットフィルタ{targetFilter.length > 0 ? ` (${targetFilter.length})` : ''} <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666' }}>step.filter に出力</span>
+            🔍 対象の条件{targetFilter.length > 0 ? ` (${targetFilter.length})` : ''}
           </summary>
           <div style={{ border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', marginTop: 4, padding: 8 }}>
             <div style={{ fontSize: 10, color: '#555', marginBottom: 6 }}>
@@ -1841,7 +1826,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               conditions={targetFilter}
               onChange={(next) => update('targetFilter', next)}
               dict={dict}
-              title="ターゲットフィルタ"
+              title="対象の条件"
               hint="（対象カードの絞り込み条件・複数 AND）"
               theme="action"
               defaultSubject=""
@@ -1850,6 +1835,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             />
           </div>
         </details>
+        )}
 
         {/* === 🎯 発動条件（常時表示・デフォルト折りたたみ・データあれば展開） ===
             コスト軽減トリガーは同内容の編集欄を上の💰バナー内に直接表示しているため、

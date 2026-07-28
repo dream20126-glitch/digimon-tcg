@@ -1656,6 +1656,29 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     );
                   })}
                 </div>
+                {/* summon / summon_from_trash / evolve 専用: コストを支払わず / 登場時効果は発揮しない */}
+                {(block.action === 'summon' || block.action === 'summon_from_trash' || block.action === 'evolve') && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 6 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
+                      <input
+                        type="checkbox"
+                        checked={!!block.costFree}
+                        onChange={(e) => update('costFree', e.target.checked)}
+                      />
+                      コストを支払わず
+                    </label>
+                    {block.action !== 'evolve' && (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
+                        <input
+                          type="checkbox"
+                          checked={!!block.skipOnPlay}
+                          onChange={(e) => update('skipOnPlay', e.target.checked)}
+                        />
+                        登場時効果は発揮しない
+                      </label>
+                    )}
+                  </div>
+                )}
                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 6, color: '#666' }}>
                   <input
                     type="checkbox"
@@ -1704,33 +1727,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
           );
         })()}
-
-        {/* summon / summon_from_trash / evolve 専用: コストを支払わず / 登場時効果を発揮しない */}
-        {(block.action === 'summon' || block.action === 'summon_from_trash' || block.action === 'evolve') && (
-          <div className="field" style={{ marginTop: 8, background: '#fff3e0', padding: 8, borderRadius: 4, border: '1px solid #ffd591' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#b76e00' }}>
-              <input
-                type="checkbox"
-                checked={!!block.costFree}
-                onChange={(e) => update('costFree', e.target.checked)}
-              />
-              コストを支払わず（cost_free）
-            </label>
-            <span style={{ fontSize: 10, color: '#666', marginLeft: 24 }}>
-              対象「このデジモン(self)」「このカード(self_card)」の自己登場、または取得元(手札/トラッシュ)からの登場、どちらにも使えます
-            </span>
-            {block.action !== 'evolve' && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#b76e00', marginTop: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={!!block.skipOnPlay}
-                  onChange={(e) => update('skipOnPlay', e.target.checked)}
-                />
-                この効果で登場したデジモンの【登場時】効果は発揮しない（skip_on_play）
-              </label>
-            )}
-          </div>
-        )}
 
         {/* memory_plus 専用: このターン終了時メモリー-N */}
         {block.action === 'memory_plus' && (

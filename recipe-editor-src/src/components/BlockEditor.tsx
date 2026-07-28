@@ -1619,10 +1619,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             onChange(next);
           }
 
+          const showCostCheckboxes = block.action === 'summon' || block.action === 'summon_from_trash' || block.action === 'evolve';
+          const gridCols = ['2fr'];
+          if (showCostCheckboxes) gridCols.push('1.4fr');
+          if (isPositional && variantOptions.length > 0) gridCols.push('1fr');
+          gridCols.push('1fr');
+
           return (
             <div style={{
               display: 'grid',
-              gridTemplateColumns: isPositional && variantOptions.length > 0 ? '2fr 1fr 1fr' : '2fr 1fr',
+              gridTemplateColumns: gridCols.join(' '),
               gap: 8,
             }}>
               <div className="field">
@@ -1656,29 +1662,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     );
                   })}
                 </div>
-                {/* summon / summon_from_trash / evolve 専用: コストを支払わず / 登場時効果は発揮しない */}
-                {(block.action === 'summon' || block.action === 'summon_from_trash' || block.action === 'evolve') && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 6 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
-                      <input
-                        type="checkbox"
-                        checked={!!block.costFree}
-                        onChange={(e) => update('costFree', e.target.checked)}
-                      />
-                      コストを支払わず
-                    </label>
-                    {block.action !== 'evolve' && (
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
-                        <input
-                          type="checkbox"
-                          checked={!!block.skipOnPlay}
-                          onChange={(e) => update('skipOnPlay', e.target.checked)}
-                        />
-                        登場時効果は発揮しない
-                      </label>
-                    )}
-                  </div>
-                )}
                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 6, color: '#666' }}>
                   <input
                     type="checkbox"
@@ -1699,6 +1682,32 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </div>
                 )}
               </div>
+              {/* summon / summon_from_trash / evolve 専用: コストを支払わず / 登場時効果は発揮しない（横並び） */}
+              {showCostCheckboxes && (
+                <div className="field">
+                  <label>&nbsp;</label>
+                  <div style={{ display: 'flex', flexDirection: 'row', gap: 14, flexWrap: 'wrap' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!block.costFree}
+                        onChange={(e) => update('costFree', e.target.checked)}
+                      />
+                      コストを支払わず
+                    </label>
+                    {block.action !== 'evolve' && (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>
+                        <input
+                          type="checkbox"
+                          checked={!!block.skipOnPlay}
+                          onChange={(e) => update('skipOnPlay', e.target.checked)}
+                        />
+                        登場時効果は発揮しない
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
               {/* 位置バリアント pulldown: フラグ駆動 or 自動グループ化時のみ */}
               {isPositional && variantOptions.length > 0 && (
                 <div className="field">

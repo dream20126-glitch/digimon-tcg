@@ -311,6 +311,70 @@ const COND_SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   other_own: { l1: 'other_own', l2: 'digimon' },
 };
 
+// 「アクションの対象」用の2段階ボタン選択（TARGETS辞書のコード体系専用テーブル）。
+// - 発動主体/条件対象とはコード名が異なる（このデジモン=self・相手のデジモン=opponent 等）
+// - 他(other_own)/プレイヤー(player)/直前選択(same_target) はL2を持たない単独コード
+// - 相手のレスト/アクティブ状態(opponent_suspended/opponent_active)は、コード自体が別れているため
+//   L1/L2ではなくチェックボックス（発動主体のレスト状態/アクティブ状態と同じ見た目）で切り替える
+const TARGET_SEL_L1 = [
+  { code: '', label: '既定' },
+  { code: 'self', label: 'このカード' },
+  { code: 'own', label: '自分' },
+  { code: 'opp', label: '相手' },
+  { code: 'other_own', label: '他' },
+  { code: 'player', label: 'プレイヤー' },
+  { code: 'same_target', label: '直前選択' },
+];
+const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
+  self: [
+    { code: 'digimon', label: 'デジモン' },
+    { code: 'card', label: 'カード' },
+  ],
+  own: [
+    { code: 'digimon', label: 'デジモン' },
+    { code: 'card', label: 'カード' },
+    { code: 'tamer', label: 'テイマー' },
+    { code: 'player', label: 'プレイヤー' },
+    { code: 'security', label: 'セキュリティ' },
+    { code: 'any', label: '指定なし' },
+  ],
+  opp: [
+    { code: 'digimon', label: 'デジモン' },
+    { code: 'card', label: 'カード' },
+    { code: 'player', label: 'プレイヤー' },
+    { code: 'highest_dp', label: '最もDPが高い' },
+    { code: 'battle_opponent', label: 'バトルした対象' },
+    { code: 'any', label: '指定なし' },
+  ],
+};
+const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
+  'self:digimon': 'self', 'self:card': 'self_card',
+  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:player': 'own_player', 'own:security': 'own_security', 'own:any': 'own_any',
+  'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:player': 'opp_player', 'opp:highest_dp': 'target_highest_dp', 'opp:battle_opponent': 'target_battle_opponent', 'opp:any': 'opp_any',
+};
+const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
+  '': { l1: '', l2: '' },
+  self: { l1: 'self', l2: 'digimon' },
+  self_card: { l1: 'self', l2: 'card' },
+  own: { l1: 'own', l2: 'digimon' },
+  own_card: { l1: 'own', l2: 'card' },
+  own_tamer: { l1: 'own', l2: 'tamer' },
+  own_player: { l1: 'own', l2: 'player' },
+  own_security: { l1: 'own', l2: 'security' },
+  own_any: { l1: 'own', l2: 'any' },
+  opponent: { l1: 'opp', l2: 'digimon' },
+  opponent_suspended: { l1: 'opp', l2: 'digimon' },
+  opponent_active: { l1: 'opp', l2: 'digimon' },
+  opponent_card: { l1: 'opp', l2: 'card' },
+  opp_player: { l1: 'opp', l2: 'player' },
+  opp_any: { l1: 'opp', l2: 'any' },
+  target_highest_dp: { l1: 'opp', l2: 'highest_dp' },
+  target_battle_opponent: { l1: 'opp', l2: 'battle_opponent' },
+  target_other_own: { l1: 'other_own', l2: '' },
+  player: { l1: 'player', l2: '' },
+  same_target: { l1: 'same_target', l2: '' },
+};
+
 // よく使うトリガー:
 // - 'event' 種別（登場時/進化時/アタック時/アタック終了時/消滅時）は実際に起きる出来事。
 //   発動タイミング(自分/相手/お互い)を選ぶと、トリガーコード自体は変えず
@@ -1660,36 +1724,80 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         )}
 
         {/* 対象 / 対象数 (アクションのターゲット) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-          <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
-            <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
-              🎯 アクションの対象
-              <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
-                （このアクションが効果を与えるカード／デジモン）
-              </span>
-            </label>
-            <SearchSelect
-              value={tgtBase}
-              onChange={(v) => setTarget(v, tgtSuffix)}
-              options={toOpts(TARGETS)}
-              allowFreeText
-            />
-          </div>
-          <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
-            <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
-              🎯 アクションの対象数
-              <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
-                （何体に適用するか・記述も可）
-              </span>
-            </label>
-            <SearchSelect
-              value={tgtSuffix}
-              onChange={(v) => setTarget(tgtBase, v)}
-              options={toOpts(TARGET_COUNTS)}
-              allowFreeText
-            />
-          </div>
-        </div>
+        {(() => {
+          const curTgt = TARGET_SEL_CODE_TO_L1L2[tgtBase] || { l1: '', l2: '' };
+          const tgtL2Options = TARGET_SEL_L2[curTgt.l1] || [];
+          const isOppRest = tgtBase === 'opponent_suspended';
+          const isOppActive = tgtBase === 'opponent_active';
+          const showOppState = curTgt.l1 === 'opp' && curTgt.l2 === 'digimon';
+          const hideCount = tgtBase === 'self' || tgtBase === 'self_card';
+
+          const handleTgtL1 = (l1: string) => {
+            if (!l1) { setTarget('', tgtSuffix); return; }
+            if (!TARGET_SEL_L2[l1]) {
+              // L2を持たない単独コード（他/プレイヤー/直前選択）
+              setTarget(l1 === 'other_own' ? 'target_other_own' : l1, tgtSuffix);
+              return;
+            }
+            const l2 = curTgt.l1 === l1 && curTgt.l2 ? curTgt.l2 : 'digimon';
+            setTarget(TARGET_SEL_L1L2_TO_CODE[l1 + ':' + l2] || '', tgtSuffix);
+          };
+          const handleTgtL2 = (l2: string) => {
+            setTarget(TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':' + l2] || '', tgtSuffix);
+          };
+          const setOppState = (mode: 'rest' | 'active' | null) => {
+            setTarget(mode === 'rest' ? 'opponent_suspended' : mode === 'active' ? 'opponent_active' : 'opponent', tgtSuffix);
+          };
+
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: hideCount ? '1fr' : '1fr 1fr', gap: 8, marginTop: 8 }}>
+              <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
+                    🎯 アクションの対象
+                    <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
+                      （このアクションが効果を与えるカード／デジモン）
+                    </span>
+                  </label>
+                  {showOppState && (
+                    <>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'normal' }}>
+                        <input type="checkbox" checked={isOppRest} onChange={(e) => setOppState(e.target.checked ? 'rest' : null)} />
+                        レスト状態
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'normal' }}>
+                        <input type="checkbox" checked={isOppActive} onChange={(e) => setOppState(e.target.checked ? 'active' : null)} />
+                        アクティブ状態
+                      </label>
+                    </>
+                  )}
+                </div>
+                <ButtonGroup options={TARGET_SEL_L1} value={curTgt.l1} onChange={handleTgtL1} accentColor="#b76e00" />
+                {tgtL2Options.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <ButtonGroup options={tgtL2Options} value={curTgt.l2} onChange={handleTgtL2} accentColor="#b76e00" />
+                  </div>
+                )}
+              </div>
+              {!hideCount && (
+                <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
+                  <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
+                    🎯 アクションの対象数
+                    <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
+                      （何体に適用するか）
+                    </span>
+                  </label>
+                  <ButtonGroup
+                    options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
+                    value={tgtSuffix}
+                    onChange={(v) => setTarget(tgtBase, v)}
+                    accentColor="#b76e00"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* === 🔍 ターゲットフィルタ（対象の直下・step.filter に出力） === */}
         <details className="field" style={{ marginTop: 8 }} open={targetFilter.length > 0}>

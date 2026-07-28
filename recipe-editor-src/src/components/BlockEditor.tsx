@@ -1804,15 +1804,35 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </label>
                 <ButtonGroup options={TARGET_SEL_L1} value={curTgt.l1} onChange={handleTgtL1} accentColor="#b76e00" />
                 {hasDigimonTamer && (
-                  <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
-                      <input type="checkbox" checked={digimonChecked} onChange={(e) => applyDigiTamerSelection(e.target.checked, tamerChecked, combineMode)} />
+                  <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => applyDigiTamerSelection(!digimonChecked, tamerChecked, combineMode)}
+                      style={{
+                        padding: '3px 9px', borderRadius: 5,
+                        border: digimonChecked ? '2px solid #b76e00' : '1px solid #bbb',
+                        background: digimonChecked ? '#b76e00' : '#f5f5f5',
+                        color: digimonChecked ? '#fff' : '#333',
+                        fontWeight: digimonChecked ? 'bold' : 'normal',
+                        cursor: 'pointer', fontSize: 11,
+                      }}
+                    >
                       デジモン
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
-                      <input type="checkbox" checked={tamerChecked} onChange={(e) => applyDigiTamerSelection(digimonChecked, e.target.checked, combineMode)} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyDigiTamerSelection(digimonChecked, !tamerChecked, combineMode)}
+                      style={{
+                        padding: '3px 9px', borderRadius: 5,
+                        border: tamerChecked ? '2px solid #b76e00' : '1px solid #bbb',
+                        background: tamerChecked ? '#b76e00' : '#f5f5f5',
+                        color: tamerChecked ? '#fff' : '#333',
+                        fontWeight: tamerChecked ? 'bold' : 'normal',
+                        cursor: 'pointer', fontSize: 11,
+                      }}
+                    >
                       テイマー
-                    </label>
+                    </button>
                     {exclusiveL2Options.length > 0 && (
                       <ButtonGroup
                         options={exclusiveL2Options}

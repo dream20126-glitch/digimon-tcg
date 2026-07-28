@@ -1733,18 +1733,64 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         {/* 対象 / 対象数 (アクションのターゲット) */}
         {(() => {
           const tgtL2Options = TARGET_SEL_L2[curTgt.l1] || [];
+          // デジモン/テイマーだけは複数選択可（例:「相手のデジモン/テイマーを1体消滅させる」）。
+          // カード/セキュリティ/プレイヤーは従来通り単一選択（デジモン/テイマーの複数選択とは排他）
+          const exclusiveL2Options = tgtL2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer');
+          const hasDigimonTamer = (curTgt.l1 === 'own' || curTgt.l1 === 'opp' || curTgt.l1 === 'other_own');
+          const digimonCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':digimon'];
+          const tamerCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':tamer'];
+          const cardCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':card'];
+          // 現在の複数選択状態を、target(+targetFilter/altActions)から逆算する
+          const isOrMode = curTgt.l2 === 'card' && targetFilter.some((c) => c.base === 'cond_type' && /デジモン/.test(c.value || '') && /テイマー/.test(c.value || ''));
+          const isAndMode = curTgt.l2 === 'digimon' && block.altActionsOp === 'and' && (block.altActions || []).length === 1
+            && block.altActions![0].action === block.action && block.altActions![0].target === tamerCode;
+          const digimonChecked = hasDigimonTamer && (curTgt.l2 === 'digimon' || isOrMode || isAndMode);
+          const tamerChecked = hasDigimonTamer && (curTgt.l2 === 'tamer' || isOrMode || isAndMode);
+          const combineMode: 'or' | 'and' = isAndMode ? 'and' : 'or';
           const hideCount = tgtBase === 'self' || tgtBase === 'self_card';
-          const isUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(tgtBase);
+          const isUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(tgtBase) || isOrMode || isAndMode;
 
           const handleTgtL1 = (l1: string) => {
-            if (!l1) { setTarget('', tgtSuffix); return; }
-            if (l1 === 'self') { setTarget('self_card', tgtSuffix); return; }
-            if (l1 === 'same_target') { setTarget('same_target', tgtSuffix); return; }
+            // OR/ANDで自動設定していたフィルタ/代替アクションはL1切替時に一旦クリアする
+            const cleared = (isOrMode || isAndMode)
+              ? { altActions: [], altActionsOp: undefined, targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') }
+              : {};
+            if (!l1) { onChange({ ...block, ...cleared, target: '' }); return; }
+            if (l1 === 'self') { onChange({ ...block, ...cleared, target: 'self_card' + tgtSuffix }); return; }
+            if (l1 === 'same_target') { onChange({ ...block, ...cleared, target: 'same_target' + tgtSuffix }); return; }
             const l2 = curTgt.l1 === l1 && curTgt.l2 ? curTgt.l2 : 'digimon';
-            setTarget(TARGET_SEL_L1L2_TO_CODE[l1 + ':' + l2] || '', tgtSuffix);
+            onChange({ ...block, ...cleared, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + l2] || '') + tgtSuffix });
           };
           const handleTgtL2 = (l2: string) => {
-            setTarget(TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':' + l2] || '', tgtSuffix);
+            const next = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':' + l2] || '';
+            if (isAndMode) {
+              // デジモン+テイマー(AND)で自動設定した代替アクションを解除してから切り替える
+              onChange({ ...block, target: next + tgtSuffix, altActions: [], altActionsOp: undefined });
+            } else {
+              setTarget(next, tgtSuffix);
+            }
+          };
+          // デジモン/テイマーの複数選択（OR=同一対象コード+タイプフィルタ／AND=代替アクションで2体別々に指定）を反映
+          const applyDigiTamerSelection = (nextDigimon: boolean, nextTamer: boolean, mode: 'or' | 'and') => {
+            if (nextDigimon && nextTamer) {
+              if (mode === 'or') {
+                onChange({ ...block, target: cardCode + tgtSuffix, altActions: [], altActionsOp: undefined,
+                  targetFilter: [...targetFilter.filter((c) => c.base !== 'cond_type'), { base: 'cond_type', value: 'デジモン,テイマー' }] });
+              } else {
+                onChange({ ...block, target: digimonCode + tgtSuffix,
+                  targetFilter: targetFilter.filter((c) => c.base !== 'cond_type'),
+                  altActions: [{ action: block.action || '', value: block.value, target: tamerCode }], altActionsOp: 'and' });
+              }
+            } else if (nextDigimon) {
+              onChange({ ...block, target: digimonCode + tgtSuffix, altActions: [], altActionsOp: undefined,
+                targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') });
+            } else if (nextTamer) {
+              onChange({ ...block, target: tamerCode + tgtSuffix, altActions: [], altActionsOp: undefined,
+                targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') });
+            } else {
+              onChange({ ...block, target: '', altActions: [], altActionsOp: undefined,
+                targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') });
+            }
           };
 
           return (
@@ -1757,14 +1803,45 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </span>
                 </label>
                 <ButtonGroup options={TARGET_SEL_L1} value={curTgt.l1} onChange={handleTgtL1} accentColor="#b76e00" />
-                {tgtL2Options.length > 0 && (
+                {hasDigimonTamer && (
+                  <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
+                      <input type="checkbox" checked={digimonChecked} onChange={(e) => applyDigiTamerSelection(e.target.checked, tamerChecked, combineMode)} />
+                      デジモン
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
+                      <input type="checkbox" checked={tamerChecked} onChange={(e) => applyDigiTamerSelection(digimonChecked, e.target.checked, combineMode)} />
+                      テイマー
+                    </label>
+                    {exclusiveL2Options.length > 0 && (
+                      <ButtonGroup
+                        options={exclusiveL2Options}
+                        value={!digimonChecked && !tamerChecked ? curTgt.l2 : ''}
+                        onChange={handleTgtL2}
+                        accentColor="#b76e00"
+                      />
+                    )}
+                  </div>
+                )}
+                {!hasDigimonTamer && tgtL2Options.length > 0 && (
                   <div style={{ marginTop: 4 }}>
                     <ButtonGroup options={tgtL2Options} value={curTgt.l2} onChange={handleTgtL2} accentColor="#b76e00" />
                   </div>
                 )}
+                {digimonChecked && tamerChecked && (
+                  <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 11, color: '#666' }}>対象の結合:</span>
+                    <ButtonGroup
+                      options={[{ code: 'or', label: 'どちらか1体（OR）' }, { code: 'and', label: 'それぞれ1体（AND）' }]}
+                      value={combineMode}
+                      onChange={(v) => applyDigiTamerSelection(true, true, v as 'or' | 'and')}
+                      accentColor="#b76e00"
+                    />
+                  </div>
+                )}
                 {isUnimplemented && (
                   <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
-                    ⚠ この対象はエンジン未実装です（保存はできますが動作しません）
+                    ⚠ {(isOrMode || isAndMode) ? '複数対象（OR/AND）は' : 'この対象は'}エンジン未実装です（保存はできますが動作しません）
                   </div>
                 )}
               </div>

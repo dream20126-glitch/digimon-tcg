@@ -1705,8 +1705,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
-        {/* summon / summon_from_trash 専用: コストを支払わずに登場 / 登場時効果を発揮しない */}
-        {(block.action === 'summon' || block.action === 'summon_from_trash') && (
+        {/* summon / summon_from_trash / evolve 専用: コストを支払わず / 登場時効果を発揮しない */}
+        {(block.action === 'summon' || block.action === 'summon_from_trash' || block.action === 'evolve') && (
           <div className="field" style={{ marginTop: 8, background: '#fff3e0', padding: 8, borderRadius: 4, border: '1px solid #ffd591' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#b76e00' }}>
               <input
@@ -1714,19 +1714,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 checked={!!block.costFree}
                 onChange={(e) => update('costFree', e.target.checked)}
               />
-              コストを支払わずに登場させる（cost_free）
+              コストを支払わず（cost_free）
             </label>
             <span style={{ fontSize: 10, color: '#666', marginLeft: 24 }}>
               対象「このデジモン(self)」「このカード(self_card)」の自己登場、または取得元(手札/トラッシュ)からの登場、どちらにも使えます
             </span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#b76e00', marginTop: 6 }}>
-              <input
-                type="checkbox"
-                checked={!!block.skipOnPlay}
-                onChange={(e) => update('skipOnPlay', e.target.checked)}
-              />
-              この効果で登場したデジモンの【登場時】効果は発揮しない（skip_on_play）
-            </label>
+            {block.action !== 'evolve' && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#b76e00', marginTop: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={!!block.skipOnPlay}
+                  onChange={(e) => update('skipOnPlay', e.target.checked)}
+                />
+                この効果で登場したデジモンの【登場時】効果は発揮しない（skip_on_play）
+              </label>
+            )}
           </div>
         )}
 
@@ -1988,6 +1990,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             theme="action"
             defaultSubject=""
             attackContextActive={isAttackTrigger}
+            showCostMod={block.action === 'summon' || block.action === 'evolve' || block.action === 'destroy'}
           />
         </details>
         )}
@@ -2956,7 +2959,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             {dict.options.length === 0 && (
               <div style={{ color: '#888', fontSize: 11 }}>修飾子辞書が空です</div>
             )}
-            {dict.options.map((o) => {
+            {dict.options
+              // 「コストを支払わず」は登場/登場(トラッシュ)/進化では専用チェックボックス(costFree)で
+              // 設定するため、修飾子の一覧には二重表示しない
+              .filter((o) => !(o.code === 'ignore_cost'
+                && (block.action === 'summon' || block.action === 'summon_from_trash' || block.action === 'evolve')))
+              .map((o) => {
               const checked = opts.includes(o.code);
               const implemented = isOptionImplemented(o.code, o.logicCode);
               return (
@@ -3594,6 +3602,9 @@ interface ConditionsHybridEditorProps {
   part?: 'full' | 'buttons' | 'panels';
   otherOpen?: boolean;
   onOtherOpenChange?: (v: boolean) => void;
+  // true のときのみ「コスト増減」カテゴリを表示する。アクションが登場/進化/消滅のときだけ
+  // 意味を持つ（コストしきい値そのものを+/-する機能のため）。既定は非表示
+  showCostMod?: boolean;
 }
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
@@ -3696,7 +3707,7 @@ function formatCostMod(sign: '+' | '-', amount: string, perCount: string, perRef
 function ConditionsHybridEditor({
   conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true,
   supportsMultiValue = false, attackContextActive = false,
-  part = 'full', otherOpen: otherOpenProp, onOtherOpenChange,
+  part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
@@ -3707,10 +3718,14 @@ function ConditionsHybridEditor({
     attackContextActive || (v.value !== 'cond_attack_target_highest_dp' && v.value !== 'cond_attack_target_lowest_dp')
   );
   // 対象の条件（supportsMultiValue）では「対象」ボタン側にデジモン/カード/テイマー等を
-  // 既に選べるため、同じ役割の「タイプ」カテゴリはよく使う条件から除外して重複を避ける
-  const visibleCategoryOptions = supportsMultiValue
-    ? CATEGORY_BUTTON_OPTIONS.filter((c) => c.code !== 'type')
-    : CATEGORY_BUTTON_OPTIONS;
+  // 既に選べるため、同じ役割の「タイプ」カテゴリはよく使う条件から除外して重複を避ける。
+  // 「コスト増減」は登場/進化/消滅アクション選択時の発動条件でのみ意味を持つため、
+  // showCostMod=true のとき以外は非表示にする
+  const visibleCategoryOptions = CATEGORY_BUTTON_OPTIONS.filter((c) => {
+    if (c.code === 'type' && supportsMultiValue) return false;
+    if (c.code === 'cost_mod' && !showCostMod) return false;
+    return true;
+  });
 
   // 「その他」用: 色/タイプ/特徴/Lv/DP/名前/場所として直接選べるコード群を除いた残り
   const CATEGORIZED_CODES = new Set<string>([

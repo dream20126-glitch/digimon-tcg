@@ -312,66 +312,67 @@ const COND_SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
 };
 
 // 「アクションの対象」用の2段階ボタン選択（TARGETS辞書のコード体系専用テーブル）。
-// - 発動主体/条件対象とはコード名が異なる（このデジモン=self・相手のデジモン=opponent 等）
-// - 他(other_own)/プレイヤー(player)/直前選択(same_target) はL2を持たない単独コード
-// - 相手のレスト/アクティブ状態(opponent_suspended/opponent_active)は、コード自体が別れているため
-//   L1/L2ではなくチェックボックス（発動主体のレスト状態/アクティブ状態と同じ見た目）で切り替える
+// - 発動主体/条件対象とはコード名が異なる（相手のデジモン=opponent 等）
+// - このカード(self)/他(other_own)/直前選択(same_target) はL2を持たない単独コード
+//   （このカードは「デジモンでもテイマーでも同じ」ため self_card 固定でL2自体を出さない）
+// - レスト/アクティブ状態は、コード自体が分かれているため（例: opponent_suspended）
+//   L1/L2ではなくチェックボックス（発動主体と同じ見た目）で切り替える
+//   own_suspended/own_active/opp_security/target_other_own_card/target_other_own_tamer は
+//   エンジン未実装のプレースホルダー（選べるが⚠警告を出す。既存の実装パターンと同様）
+const TARGET_SEL_UNIMPLEMENTED = new Set([
+  'own_suspended', 'own_active', 'opp_security', 'target_other_own_card', 'target_other_own_tamer',
+]);
 const TARGET_SEL_L1 = [
   { code: '', label: '既定' },
   { code: 'self', label: 'このカード' },
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
   { code: 'other_own', label: '他' },
-  { code: 'player', label: 'プレイヤー' },
   { code: 'same_target', label: '直前選択' },
 ];
 const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
-  self: [
-    { code: 'digimon', label: 'デジモン' },
-    { code: 'card', label: 'カード' },
-  ],
   own: [
     { code: 'digimon', label: 'デジモン' },
     { code: 'card', label: 'カード' },
     { code: 'tamer', label: 'テイマー' },
-    { code: 'player', label: 'プレイヤー' },
     { code: 'security', label: 'セキュリティ' },
-    { code: 'any', label: '指定なし' },
   ],
   opp: [
     { code: 'digimon', label: 'デジモン' },
     { code: 'card', label: 'カード' },
     { code: 'player', label: 'プレイヤー' },
-    { code: 'highest_dp', label: '最もDPが高い' },
-    { code: 'battle_opponent', label: 'バトルした対象' },
-    { code: 'any', label: '指定なし' },
+    { code: 'security', label: 'セキュリティ' },
+  ],
+  other_own: [
+    { code: 'digimon', label: 'デジモン' },
+    { code: 'card', label: 'カード' },
+    { code: 'tamer', label: 'テイマー' },
   ],
 };
 const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
-  'self:digimon': 'self', 'self:card': 'self_card',
-  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:player': 'own_player', 'own:security': 'own_security', 'own:any': 'own_any',
-  'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:player': 'opp_player', 'opp:highest_dp': 'target_highest_dp', 'opp:battle_opponent': 'target_battle_opponent', 'opp:any': 'opp_any',
+  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:security': 'own_security',
+  'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:player': 'opp_player', 'opp:security': 'opp_security',
+  'other_own:digimon': 'target_other_own', 'other_own:card': 'target_other_own_card', 'other_own:tamer': 'target_other_own_tamer',
 };
 const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   '': { l1: '', l2: '' },
-  self: { l1: 'self', l2: 'digimon' },
-  self_card: { l1: 'self', l2: 'card' },
+  self: { l1: 'self', l2: '' },
+  self_card: { l1: 'self', l2: '' },
   own: { l1: 'own', l2: 'digimon' },
+  own_suspended: { l1: 'own', l2: 'digimon' },
+  own_active: { l1: 'own', l2: 'digimon' },
   own_card: { l1: 'own', l2: 'card' },
   own_tamer: { l1: 'own', l2: 'tamer' },
-  own_player: { l1: 'own', l2: 'player' },
   own_security: { l1: 'own', l2: 'security' },
-  own_any: { l1: 'own', l2: 'any' },
   opponent: { l1: 'opp', l2: 'digimon' },
   opponent_suspended: { l1: 'opp', l2: 'digimon' },
   opponent_active: { l1: 'opp', l2: 'digimon' },
   opponent_card: { l1: 'opp', l2: 'card' },
   opp_player: { l1: 'opp', l2: 'player' },
-  opp_any: { l1: 'opp', l2: 'any' },
-  target_highest_dp: { l1: 'opp', l2: 'highest_dp' },
-  target_battle_opponent: { l1: 'opp', l2: 'battle_opponent' },
-  target_other_own: { l1: 'other_own', l2: '' },
-  player: { l1: 'player', l2: '' },
+  opp_security: { l1: 'opp', l2: 'security' },
+  target_other_own: { l1: 'other_own', l2: 'digimon' },
+  target_other_own_card: { l1: 'other_own', l2: 'card' },
+  target_other_own_tamer: { l1: 'other_own', l2: 'tamer' },
   same_target: { l1: 'same_target', l2: '' },
 };
 
@@ -1727,26 +1728,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         {(() => {
           const curTgt = TARGET_SEL_CODE_TO_L1L2[tgtBase] || { l1: '', l2: '' };
           const tgtL2Options = TARGET_SEL_L2[curTgt.l1] || [];
-          const isOppRest = tgtBase === 'opponent_suspended';
-          const isOppActive = tgtBase === 'opponent_active';
-          const showOppState = curTgt.l1 === 'opp' && curTgt.l2 === 'digimon';
+          const showState = (curTgt.l1 === 'own' || curTgt.l1 === 'opp') && curTgt.l2 === 'digimon';
+          const statePrefix = curTgt.l1 === 'own' ? 'own' : 'opponent';
+          const isRest = tgtBase === statePrefix + '_suspended';
+          const isActive = tgtBase === statePrefix + '_active';
           const hideCount = tgtBase === 'self' || tgtBase === 'self_card';
+          const isUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(tgtBase);
 
           const handleTgtL1 = (l1: string) => {
             if (!l1) { setTarget('', tgtSuffix); return; }
-            if (!TARGET_SEL_L2[l1]) {
-              // L2を持たない単独コード（他/プレイヤー/直前選択）
-              setTarget(l1 === 'other_own' ? 'target_other_own' : l1, tgtSuffix);
-              return;
-            }
+            if (l1 === 'self') { setTarget('self_card', tgtSuffix); return; }
+            if (l1 === 'same_target') { setTarget('same_target', tgtSuffix); return; }
             const l2 = curTgt.l1 === l1 && curTgt.l2 ? curTgt.l2 : 'digimon';
             setTarget(TARGET_SEL_L1L2_TO_CODE[l1 + ':' + l2] || '', tgtSuffix);
           };
           const handleTgtL2 = (l2: string) => {
             setTarget(TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':' + l2] || '', tgtSuffix);
           };
-          const setOppState = (mode: 'rest' | 'active' | null) => {
-            setTarget(mode === 'rest' ? 'opponent_suspended' : mode === 'active' ? 'opponent_active' : 'opponent', tgtSuffix);
+          const setState = (mode: 'rest' | 'active' | null) => {
+            const base = curTgt.l1 === 'own' ? 'own' : 'opponent';
+            setTarget(mode === 'rest' ? base + '_suspended' : mode === 'active' ? base + '_active' : base, tgtSuffix);
           };
 
           return (
@@ -1759,14 +1760,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       （このアクションが効果を与えるカード／デジモン）
                     </span>
                   </label>
-                  {showOppState && (
+                  {showState && (
                     <>
                       <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'normal' }}>
-                        <input type="checkbox" checked={isOppRest} onChange={(e) => setOppState(e.target.checked ? 'rest' : null)} />
+                        <input type="checkbox" checked={isRest} onChange={(e) => setState(e.target.checked ? 'rest' : null)} />
                         レスト状態
                       </label>
                       <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'normal' }}>
-                        <input type="checkbox" checked={isOppActive} onChange={(e) => setOppState(e.target.checked ? 'active' : null)} />
+                        <input type="checkbox" checked={isActive} onChange={(e) => setState(e.target.checked ? 'active' : null)} />
                         アクティブ状態
                       </label>
                     </>
@@ -1776,6 +1777,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 {tgtL2Options.length > 0 && (
                   <div style={{ marginTop: 4 }}>
                     <ButtonGroup options={tgtL2Options} value={curTgt.l2} onChange={handleTgtL2} accentColor="#b76e00" />
+                  </div>
+                )}
+                {isUnimplemented && (
+                  <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
+                    ⚠ この対象はエンジン未実装です（保存はできますが動作しません）
                   </div>
                 )}
               </div>

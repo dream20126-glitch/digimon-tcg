@@ -3656,6 +3656,11 @@ function ConditionsHybridEditor({
   const dpVariantOptions = (CATEGORY_VARIANTS.dp || []).filter((v) =>
     attackContextActive || (v.value !== 'cond_attack_target_highest_dp' && v.value !== 'cond_attack_target_lowest_dp')
   );
+  // 対象の条件（supportsMultiValue）では「対象」ボタン側にデジモン/カード/テイマー等を
+  // 既に選べるため、同じ役割の「タイプ」カテゴリはよく使う条件から除外して重複を避ける
+  const visibleCategoryOptions = supportsMultiValue
+    ? CATEGORY_BUTTON_OPTIONS.filter((c) => c.code !== 'type')
+    : CATEGORY_BUTTON_OPTIONS;
 
   // 「その他」用: 色/タイプ/特徴/Lv/DP/名前/場所として直接選べるコード群を除いた残り
   const CATEGORIZED_CODES = new Set<string>([
@@ -3732,7 +3737,7 @@ function ConditionsHybridEditor({
 
       {/* よく使う条件: ボタンを押すとその場に詳細設定が展開する（よく使うトリガーと同じ操作感） */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {CATEGORY_BUTTON_OPTIONS.map((cat) => {
+        {visibleCategoryOptions.map((cat) => {
           const active = conditions.some((c) => baseToCategory(c.base) === cat.code);
           return (
             <button
@@ -3768,7 +3773,7 @@ function ConditionsHybridEditor({
   const panelsNode = (
     <>
       {/* アクティブなカテゴリごとの詳細設定（値・対象） */}
-      {CATEGORY_BUTTON_OPTIONS.map((cat) => {
+      {visibleCategoryOptions.map((cat) => {
         const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => baseToCategory(c.base) === cat.code);
         if (rows.length === 0) return null;
         return (

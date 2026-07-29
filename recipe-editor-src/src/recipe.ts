@@ -143,6 +143,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.costFree) step.cost_free = true;
   // summon_from_trash の「登場したデジモンの【登場時】効果は発揮しない」フラグ
   if (b.skipOnPlay) step.skip_on_play = true;
+  // 上/下（デッキに戻す位置等・hasDeckPosition用）。'both'（どちらか選んで）はエンジン未対応の
+  // ため 'select' として出力する（エンジンは 'top' 以外を全て「下」として扱うので注意）
+  if (b.deckPosition === 'top') step.position = 'top';
+  else if (b.deckPosition === 'bottom') step.position = 'bottom';
+  else if (b.deckPosition === 'both') step.position = 'select';
   // 「〜できる」任意効果フラグ
   if (b.optional) step.optional = true;
   // 効果発動ポップアップの表示テキスト明示指定 / 非表示フラグ
@@ -485,6 +490,10 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
     revertAtTurnEnd: !!step?.revert_at_turn_end,
     costFree: !!step?.cost_free,
     skipOnPlay: !!step?.skip_on_play,
+    deckPosition: step?.position === 'top' ? 'top'
+      : step?.position === 'bottom' ? 'bottom'
+      : step?.position === 'select' ? 'both'
+      : undefined,
     optional: !!step?.optional,
     displayText: step?.display_text || '',
     noAnnounce: !!step?.no_announce,

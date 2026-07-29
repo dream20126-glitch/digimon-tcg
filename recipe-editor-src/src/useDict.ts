@@ -10,9 +10,9 @@ const VT_STORAGE_KEY = 'recipe_editor_visual_types';
 const CACHE_KEY = 'recipe_editor_dict_cache';
 const ACTION_FLAGS_KEY = 'recipe_editor_action_flags';
 
-// アクション単位のフラグ（allowsRules / hasPositionVariant）を localStorage で永続化。
-// スプシ側に該当列が無くてもエディタ内では保持される。
-type ActionFlags = Record<string, { allowsRules?: boolean; hasPositionVariant?: boolean }>;
+// アクション単位のフラグ（allowsRules / hasPositionVariant / hasFromZones / hasDeckPosition）
+// を localStorage で永続化。スプシ側に該当列が無くてもエディタ内では保持される。
+type ActionFlags = Record<string, { allowsRules?: boolean; hasPositionVariant?: boolean; hasFromZones?: boolean; hasDeckPosition?: boolean }>;
 function loadActionFlags(): ActionFlags {
   try { return JSON.parse(localStorage.getItem(ACTION_FLAGS_KEY) || '{}') || {}; }
   catch (_) { return {}; }
@@ -20,7 +20,7 @@ function loadActionFlags(): ActionFlags {
 function saveActionFlags(flags: ActionFlags) {
   try { localStorage.setItem(ACTION_FLAGS_KEY, JSON.stringify(flags)); } catch (_) {}
 }
-function setActionFlagsForCode(code: string, patch: { allowsRules?: boolean; hasPositionVariant?: boolean }) {
+function setActionFlagsForCode(code: string, patch: { allowsRules?: boolean; hasPositionVariant?: boolean; hasFromZones?: boolean; hasDeckPosition?: boolean }) {
   const all = loadActionFlags();
   all[code] = { ...(all[code] || {}), ...patch };
   saveActionFlags(all);
@@ -73,6 +73,16 @@ function categorize(rows: any[]): { triggers: DictEntry[]; conditions: DictEntry
       // 位置指定フラグ: 「位置指定」列に "1"/"true" 等で 位置 pulldown を表示
       hasPositionVariant: (() => {
         const v = String(r['位置指定'] || '').trim().toLowerCase();
+        return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+      })(),
+      // 場所指定フラグ: 「場所指定」列に "1"/"true" 等で「場所」(取得元エリア) ボタンを表示
+      hasFromZones: (() => {
+        const v = String(r['場所指定'] || '').trim().toLowerCase();
+        return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+      })(),
+      // 上下指定フラグ: 「上下指定」列に "1"/"true" 等で「上/下」ボタンを表示
+      hasDeckPosition: (() => {
+        const v = String(r['上下指定'] || '').trim().toLowerCase();
         return v === '1' || v === 'true' || v === 'yes' || v === 'on';
       })(),
     };
@@ -200,6 +210,8 @@ export function useDict(password: string): DictAPI {
       'ロジックコード': entry.logicCode || '',
       'ルール許可': entry.allowsRules ? '1' : '',
       '位置指定': entry.hasPositionVariant ? '1' : '',
+      '場所指定': entry.hasFromZones ? '1' : '',
+      '上下指定': entry.hasDeckPosition ? '1' : '',
       'キーワードレシピ': entry.recipeTemplate || '',
     };
     const r = await apiAdd('dict', row, password);
@@ -208,6 +220,8 @@ export function useDict(password: string): DictAPI {
       setActionFlagsForCode(entry.code, {
         allowsRules: !!entry.allowsRules,
         hasPositionVariant: !!entry.hasPositionVariant,
+        hasFromZones: !!entry.hasFromZones,
+        hasDeckPosition: !!entry.hasDeckPosition,
       });
     }
     if (r.ok) await refresh();
@@ -241,6 +255,14 @@ export function useDict(password: string): DictAPI {
     if (Object.prototype.hasOwnProperty.call(patch, 'hasPositionVariant')) {
       row['位置指定'] = (patch as any).hasPositionVariant ? '1' : '';
       setActionFlagsForCode(code, { hasPositionVariant: !!(patch as any).hasPositionVariant });
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'hasFromZones')) {
+      row['場所指定'] = (patch as any).hasFromZones ? '1' : '';
+      setActionFlagsForCode(code, { hasFromZones: !!(patch as any).hasFromZones });
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'hasDeckPosition')) {
+      row['上下指定'] = (patch as any).hasDeckPosition ? '1' : '';
+      setActionFlagsForCode(code, { hasDeckPosition: !!(patch as any).hasDeckPosition });
     }
     const r = await apiUpdate('dict', code, row, password);
     if (r.ok) await refresh();
@@ -305,6 +327,8 @@ export function useDict(password: string): DictAPI {
         ...merged,
         allowsRules: local.allowsRules !== undefined ? local.allowsRules : merged.allowsRules,
         hasPositionVariant: local.hasPositionVariant !== undefined ? local.hasPositionVariant : merged.hasPositionVariant,
+        hasFromZones: local.hasFromZones !== undefined ? local.hasFromZones : merged.hasFromZones,
+        hasDeckPosition: local.hasDeckPosition !== undefined ? local.hasDeckPosition : merged.hasDeckPosition,
       };
     }
     return merged;

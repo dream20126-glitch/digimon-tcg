@@ -483,10 +483,6 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'recover', label: 'リカバリー' },
   { code: 'evolve', label: '進化' },
 ];
-// 「場所」（取得元エリア=手札/トラッシュ/デッキ/セキュリティ/進化元）が意味を持つアクションのみ表示する。
-// エンジンで step.from を実際に読むのは summon(登場/使用) / summon_from_trash / bounce(進化元からの回収)。
-// evolve は現状エンジン未実装だが、将来的に手札/トラッシュから進化先を取得する用途を想定して含める
-const FROM_ZONE_ACTIONS = new Set(['summon', 'summon_from_trash', 'evolve', 'bounce']);
 // よく使う期間（対象と同じ2段ボタン式）: 「〜の間（汎用）」は条件寄りの意味を持つため、
 // ひとまず発動条件側で表現する想定として、ここには含めない
 const DURATION_L1 = [
@@ -2664,7 +2660,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           />
         </div>
 
-        {FROM_ZONE_ACTIONS.has(block.action || '') && (
+        {!!dict.actions.find((a) => a.code === block.action)?.hasFromZones && (
         <details className="field" open={!!(block.fromZones && block.fromZones.length > 0)}>
           <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0' }}>
             📍 場所{block.fromZones && block.fromZones.length > 0 ? ` (${block.fromZones.length})` : ''}
@@ -2750,6 +2746,37 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           })()}
         </details>
         )}
+
+        {/* 上/下（デッキに戻す位置など）: 辞書の hasDeckPosition=true なアクションのみ表示。
+            両方チェック＝「どちらか選んで」はエンジン未対応（'top'以外は全て下として扱われる） */}
+        {!!dict.actions.find((a) => a.code === block.action)?.hasDeckPosition && (() => {
+          const top = block.deckPosition === 'top' || block.deckPosition === 'both';
+          const bottom = block.deckPosition === 'bottom' || block.deckPosition === 'both';
+          const setPos = (nextTop: boolean, nextBottom: boolean) => {
+            const v = nextTop && nextBottom ? 'both' : nextTop ? 'top' : nextBottom ? 'bottom' : undefined;
+            update('deckPosition', v);
+          };
+          return (
+            <div className="field" style={{ marginTop: 8 }}>
+              <label>📍 上/下</label>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
+                  <input type="checkbox" checked={top} onChange={(e) => setPos(e.target.checked, bottom)} />
+                  上
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
+                  <input type="checkbox" checked={bottom} onChange={(e) => setPos(top, e.target.checked)} />
+                  下
+                </label>
+                {top && bottom && (
+                  <span style={{ fontSize: 11, color: '#c62828' }}>
+                    ⚠ 両方選択（どちらか選んで）はエンジン未対応です（保存はできますが「下」と同じ動作になります）
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {renderPerCountEditor()}
 

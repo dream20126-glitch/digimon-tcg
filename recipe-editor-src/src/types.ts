@@ -70,6 +70,10 @@ export interface EffectBlock {
   grantedStep?: GrantedStep;
   extras?: string; // フリー入力 JSON 文字列
   targetFilter?: ConditionPair[]; // アクション対象の絞り込み → step.filter に serialize
+  // アクション辞書の hasDeckPosition=true のアクション専用（例: return_deck）。
+  // JSON では step.position ('top'/'bottom') に serialize。'both' はエンジン未対応
+  // （'top' 以外は全て下扱いになるため、選ぶと実際は「下」と同じ動作になる）
+  deckPosition?: 'top' | 'bottom' | 'both';
 }
 
 // 付与される効果（grant_effect 用のネスト 1ステップ）
@@ -153,6 +157,15 @@ export interface DictEntry {
   // 例: code='security_trash' + hasPositionVariant=true → 位置pulldownで _top/_bottom/_select を選ぶ
   // 保存時のJSON action コード = base + '_top' / '_bottom' / '_select' に自動結合
   hasPositionVariant?: boolean;
+  // アクション辞書専用: このアクションを選んだとき、レシピエディタで「場所」(取得元エリア =
+  // 手札/トラッシュ/デッキ/セキュリティ/進化元) ボタンを表示する。例: summon / bounce
+  hasFromZones?: boolean;
+  // アクション辞書専用: このアクションを選んだとき、レシピエディタで「上/下」ボタン
+  // (デッキに戻す位置等) を表示する。hasPositionVariant とは別物:
+  // アクションコード自体は変えず、block.deckPosition ('top'/'bottom'/'both') → step.position
+  // というフィールドで表現する（例: return_deck）。'both'（両方選択=どちらか選んで）は
+  // エンジンが step.position の値を 'top' 以外は全て「下」として扱うため未対応
+  hasDeckPosition?: boolean;
   // キーワード辞書専用: このキーワードの実体となるレシピ（EffectBlock[]をJSON文字列化したもの）。
   // カード側でtrigger='passive'+このキーワードを選んだとき、blocksToRecipeがこれを展開して
   // カード自身のレシピに埋め込む。エンジンが未対応の出来事（アクティブフェイズ開始時等）しか

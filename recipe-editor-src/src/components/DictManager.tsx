@@ -643,6 +643,35 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                       レシピエディタで本アクション選択時に「📍 位置」プルダウンが出現し、保存時のJSONコードに <code>_top</code> / <code>_bottom</code> / <code>_select</code> が自動付与されます。
                     </div>
                   </div>
+                  <div className="field" style={{ gridColumn: '1 / span 2' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!form.hasFromZones}
+                        onChange={(e) => update({ hasFromZones: e.target.checked })}
+                      />
+                      <b>📥 場所を指定する（取得元エリア: 手札/トラッシュ/デッキ/セキュリティ/進化元）</b>
+                    </label>
+                    <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+                      💡 「登場/使用」「手札に戻す」など、場のカードではなく特定ゾーンからカードを取得/選択するアクションだけ ☑ してください。
+                      レシピエディタで本アクション選択時に「📍 場所」ボタンが出現します（アクションコード自体は変わらず、<code>step.from</code> に反映）。
+                    </div>
+                  </div>
+                  <div className="field" style={{ gridColumn: '1 / span 2' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!form.hasDeckPosition}
+                        onChange={(e) => update({ hasDeckPosition: e.target.checked })}
+                      />
+                      <b>⬆️⬇️ 上下を指定する（デッキに戻す位置など）</b>
+                    </label>
+                    <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+                      💡 「デッキに戻す」のように、上/下どちらに置くかを選ぶアクションだけ ☑ してください。
+                      レシピエディタで本アクション選択時に「上」「下」ボタンが出現します（<code>step.position</code> に反映。
+                      両方選ぶ＝「どちらか選んで」は現状エンジン未対応で、選んでも「下」と同じ動作になります）。
+                    </div>
+                  </div>
                 </>
               )}
               {kind === 'keywords' && (
@@ -773,7 +802,23 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                             📍 位置
                           </span>
                         )}
-                        {!e.allowsRules && !e.hasPositionVariant && (
+                        {e.hasFromZones && (
+                          <span
+                            style={{ display: 'inline-block', padding: '2px 6px', background: '#eff5fd', color: '#1a4f8a', border: '1px solid #b9c8e0', borderRadius: 10, fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                            title="このアクション選択時に「📍 場所」ボタンを表示"
+                          >
+                            📥 場所
+                          </span>
+                        )}
+                        {e.hasDeckPosition && (
+                          <span
+                            style={{ display: 'inline-block', padding: '2px 6px', background: '#f0fdfa', color: '#0d9488', border: '1px solid #99f6e4', borderRadius: 10, fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                            title="このアクション選択時に「上/下」ボタンを表示"
+                          >
+                            ⬆️⬇️ 上下
+                          </span>
+                        )}
+                        {!e.allowsRules && !e.hasPositionVariant && !e.hasFromZones && !e.hasDeckPosition && (
                           <span style={{ color: '#bbb', fontSize: 11 }}>-</span>
                         )}
                       </span>

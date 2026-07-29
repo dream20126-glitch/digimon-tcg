@@ -1756,92 +1756,66 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* 📍 場所（取得元エリア）: 登場/使用・進化はビルトインのため常時対象、
             それ以外は辞書の hasFromZones=true のアクションのみ表示 */}
-        {(BUILTIN_FROM_ZONE_ACTIONS.has(block.action || '') || !!dict.actions.find((a) => a.code === block.action)?.hasFromZones) && (
-        <details className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }} open={!!(block.fromZones && block.fromZones.length > 0)}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0' }}>
-            📍 場所{block.fromZones && block.fromZones.length > 0 ? ` (${block.fromZones.length})` : ''}
-          </summary>
-          {(() => {
-            const zones = block.fromZones || [];
-            const op = block.fromZonesOp || 'or';
-            const available = FROM_ZONES.filter((z) => !zones.includes(z.code));
-            return (
-              <div style={{ border: '1px solid #d8e0f0', borderRadius: 4, padding: 6, background: '#f3f6fc' }}>
-                {/* 選択済みチップ群 + 結合演算子 */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', minHeight: 26 }}>
-                  {zones.length === 0 && (
-                    <span style={{ color: '#888', fontSize: 11 }}>（指定なし）</span>
-                  )}
-                  {zones.map((zCode, i) => {
-                    const z = FROM_ZONES.find((x) => x.code === zCode);
-                    const label = z ? z.label : zCode;
-                    return (
-                      <span key={zCode} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', background: 'white', border: '1px solid #88a', borderRadius: 12, fontSize: 11 }}>
-                          {label}
-                          <button
-                            onClick={() => update('fromZones', zones.filter((x) => x !== zCode))}
-                            style={{ padding: '0 4px', border: 'none', background: 'transparent', color: '#d33', cursor: 'pointer', fontSize: 11 }}
-                            title="削除"
-                          >
-                            ✕
-                          </button>
-                        </span>
-                        {i < zones.length - 1 && (
-                          <span style={{ fontSize: 10, color: '#666', fontWeight: 'bold' }}>{op === 'and' ? 'AND' : 'OR'}</span>
-                        )}
-                      </span>
-                    );
-                  })}
-                </div>
-                {/* 追加プルダウン + 結合切替 */}
-                <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center' }}>
-                  {available.length > 0 && (
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        if (e.target.value) update('fromZones', [...zones, e.target.value]);
-                        e.target.value = '';
+        {(BUILTIN_FROM_ZONE_ACTIONS.has(block.action || '') || !!dict.actions.find((a) => a.code === block.action)?.hasFromZones) && (() => {
+          const zones = block.fromZones || [];
+          const op = block.fromZonesOp || 'or';
+          const toggleZone = (code: string) => {
+            const next = zones.includes(code) ? zones.filter((z) => z !== code) : [...zones, code];
+            update('fromZones', next);
+          };
+          return (
+            <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
+              <label>📍 場所</label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {FROM_ZONES.map((z) => {
+                  const active = zones.includes(z.code);
+                  return (
+                    <button
+                      key={z.code}
+                      type="button"
+                      onClick={() => toggleZone(z.code)}
+                      style={{
+                        padding: '3px 9px', borderRadius: 5,
+                        border: active ? '2px solid #1a4f8a' : '1px solid #bbb',
+                        background: active ? '#1a4f8a' : '#f5f5f5',
+                        color: active ? '#fff' : '#333',
+                        fontWeight: active ? 'bold' : 'normal',
+                        cursor: 'pointer', fontSize: 11,
                       }}
-                      style={{ padding: '3px 6px', border: '1px dashed #88a', borderRadius: 3, fontSize: 11, background: 'white', cursor: 'pointer' }}
                     >
-                      <option value="">＋ エリア追加...</option>
-                      {available.map((z) => (
-                        <option key={z.code} value={z.code}>{z.label}</option>
-                      ))}
-                    </select>
-                  )}
-                  {zones.length >= 2 && (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-                      <span style={{ color: '#666' }}>結合:</span>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                        <input
-                          type="radio"
-                          name={`fromZonesOp_${index}`}
-                          checked={op === 'or'}
-                          onChange={() => update('fromZonesOp', 'or')}
-                          style={{ margin: 0 }}
-                        />
-                        OR（いずれか）
-                      </label>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                        <input
-                          type="radio"
-                          name={`fromZonesOp_${index}`}
-                          checked={op === 'and'}
-                          onChange={() => update('fromZonesOp', 'and')}
-                          style={{ margin: 0 }}
-                        />
-                        AND（全て）
-                      </label>
-                    </span>
-                  )}
-                </div>
+                      {z.label}
+                    </button>
+                  );
+                })}
               </div>
-            );
-          })()}
-        </details>
-        )}
+              {zones.length >= 2 && (
+                <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                  <span style={{ color: '#666' }}>結合:</span>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name={`fromZonesOp_${index}`}
+                      checked={op === 'or'}
+                      onChange={() => update('fromZonesOp', 'or')}
+                      style={{ margin: 0 }}
+                    />
+                    OR（いずれか）
+                  </label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name={`fromZonesOp_${index}`}
+                      checked={op === 'and'}
+                      onChange={() => update('fromZonesOp', 'and')}
+                      style={{ margin: 0 }}
+                    />
+                    AND（全て）
+                  </label>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* 上/下（デッキに戻す位置など）: 辞書の hasDeckPosition=true なアクションのみ表示。
             両方チェック＝「どちらか選んで」はエンジン未対応（'top'以外は全て下として扱われる） */}

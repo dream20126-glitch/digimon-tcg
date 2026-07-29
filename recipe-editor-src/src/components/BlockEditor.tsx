@@ -483,6 +483,15 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'recover', label: 'リカバリー' },
   { code: 'evolve', label: '進化' },
 ];
+// よく使う期間（ボタン式）: 「〜の間（汎用）」は条件寄りの意味を持つため、
+// ひとまず発動条件側で表現する想定として、ここには含めない
+const QUICK_DURATIONS: { code: string; label: string }[] = [
+  { code: 'dur_this_turn', label: 'このターン中' },
+  { code: 'dur_next_own_turn', label: 'ターン終了まで（自分）' },
+  { code: 'dur_next_opp_turn', label: 'ターン終了まで（相手）' },
+  { code: 'dur_next_own_unsuspend', label: 'アクティブフェイズまで（自分）' },
+  { code: 'dur_next_opp_unsuspend', label: 'アクティブフェイズまで（相手）' },
+];
 // 現在選択中のtriggers/triggerConditionsから、共有の発動タイミングを逆算する
 function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair[], families: TriggerFamily[] = COMMON_TRIGGER_FAMILIES): TimingKey {
   for (const fam of families) {
@@ -701,6 +710,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // 「対象の条件」をアクションの対象/対象数の2箇所に分けて描画するため、
   // その他チェックボックスの開閉状態をここで共有する
   const [targetFilterOtherOpen, setTargetFilterOtherOpen] = useState<boolean>(false);
+  // ⏳ 期間（クイックボタン）: ✅を入れるとボタンが現れる。データがあれば初期表示ONにする
+  const [showDurationPanel, setShowDurationPanel] = useState<boolean>(!!block.duration);
 
   // ✖ ～ごとに（倍率設定）: 値 × floor(count / N) でスケーリング。
   // 通常は⚙追加オプション内に表示するが、コスト軽減トリガーでは💰バナー内（発動条件の隣）
@@ -1962,6 +1973,32 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
           );
         })()}
+
+        {/* ⏳ 期間（クイックボタン）: ✅を入れるとボタンが現れる。「〜の間（汎用）」等は
+            ⚙追加オプション内の期間プルダウンで従来通り設定可能 */}
+        <div className="field" style={{ marginTop: 8 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={showDurationPanel}
+              onChange={(e) => {
+                setShowDurationPanel(e.target.checked);
+                if (!e.target.checked) update('duration', undefined);
+              }}
+            />
+            ⏳ 期間
+          </label>
+          {showDurationPanel && (
+            <div style={{ marginTop: 4 }}>
+              <ButtonGroup
+                options={QUICK_DURATIONS}
+                value={block.duration || ''}
+                onChange={(v) => update('duration', v)}
+                accentColor="#1a4f8a"
+              />
+            </div>
+          )}
+        </div>
 
         {/* === 🎯 発動条件（常時表示・デフォルト折りたたみ・データあれば展開） ===
             コスト軽減トリガーは同内容の編集欄を上の💰バナー内に直接表示しているため、
@@ -4023,10 +4060,10 @@ function ConditionsHybridEditor({
                         const handleSubL2 = (l2: string) => {
                           updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2], ...clearIfRedundant(l2) });
                         };
-                        // 自分+デジモンのときのみ「このカードを含める/含めない」を選べる
+                        // 自分+デジモンのときのみ「このカードを含めない」を選べる
                         // （含めない＝他の自分のデジモン。旧 other_own コードをそのまま使う）
                         const showIncludeSelfToggle = curSub.l1 === 'own' && curSub.l2 === 'digimon';
-                        const includeSelfValue = c.subject === 'other_own' ? 'other_own' : 'own';
+                        const excludeSelf = c.subject === 'other_own';
                         return (
                           <>
                             <ButtonGroup options={subjectL1Options} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
@@ -4036,17 +4073,14 @@ function ConditionsHybridEditor({
                               </div>
                             )}
                             {showIncludeSelfToggle && (
-                              <div style={{ marginTop: 4 }}>
-                                <ButtonGroup
-                                  options={[
-                                    { code: 'own', label: 'このカードを含める' },
-                                    { code: 'other_own', label: 'このカードを含めない' },
-                                  ]}
-                                  value={includeSelfValue}
-                                  onChange={(v) => updateAt(i, { subject: v })}
-                                  accentColor={colors.accent}
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 4 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={excludeSelf}
+                                  onChange={(e) => updateAt(i, { subject: e.target.checked ? 'other_own' : 'own' })}
                                 />
-                              </div>
+                                このカードを含めない
+                              </label>
                             )}
                           </>
                         );
@@ -4113,7 +4147,7 @@ function ConditionsHybridEditor({
                       updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2] });
                     };
                     const showIncludeSelfToggle = curSub.l1 === 'own' && curSub.l2 === 'digimon';
-                    const includeSelfValue = c.subject === 'other_own' ? 'other_own' : 'own';
+                    const excludeSelf = c.subject === 'other_own';
                     return (
                       <>
                         <ButtonGroup options={COND_SUBJECT_L1} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
@@ -4123,17 +4157,14 @@ function ConditionsHybridEditor({
                           </div>
                         )}
                         {showIncludeSelfToggle && (
-                          <div style={{ marginTop: 4 }}>
-                            <ButtonGroup
-                              options={[
-                                { code: 'own', label: 'このカードを含める' },
-                                { code: 'other_own', label: 'このカードを含めない' },
-                              ]}
-                              value={includeSelfValue}
-                              onChange={(v) => updateAt(i, { subject: v })}
-                              accentColor={colors.accent}
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 4 }}>
+                            <input
+                              type="checkbox"
+                              checked={excludeSelf}
+                              onChange={(e) => updateAt(i, { subject: e.target.checked ? 'other_own' : 'own' })}
                             />
-                          </div>
+                            このカードを含めない
+                          </label>
                         )}
                       </>
                     );

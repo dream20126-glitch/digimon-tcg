@@ -258,13 +258,13 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
 // CONDITION_SUBJECTS のコード体系が発動主体と異なる＝別テーブルで持つ）
 // - '既定'（空文字）= 対象を指定しない（アクション対象そのものを見る）
 // - このカード配下は self（このデジモン）/ self_card（このカード全般）の2択のみ
-// - 他 は other_own の1択のみ（other_own_card/tamer は条件対象としては未定義）
+// - 「他の自分のデジモン」は独立したL1ボタンではなく、自分+デジモン選択時の
+//   「このカードを含める/含めない」トグルとして表現する（旧 other_own コード）
 const COND_SUBJECT_L1 = [
   { code: '', label: '既定' },
   { code: 'self', label: 'このカード' },
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
-  { code: 'other_own', label: '他' },
 ];
 const COND_SUBJECT_L2: Record<string, { code: string; label: string }[]> = {
   self: [
@@ -275,24 +275,23 @@ const COND_SUBJECT_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'digimon', label: 'デジモン' },
     { code: 'card', label: 'カード' },
     { code: 'tamer', label: 'テイマー' },
-    { code: 'player', label: 'プレイヤー' },
     { code: 'any', label: '指定なし' },
   ],
   opp: [
     { code: 'digimon', label: 'デジモン' },
     { code: 'card', label: 'カード' },
     { code: 'tamer', label: 'テイマー' },
-    { code: 'player', label: 'プレイヤー' },
     { code: 'any', label: '指定なし' },
     { code: 'blocker', label: 'ブロッカー' },
   ],
 };
 const COND_SUBJECT_L1L2_TO_CODE: Record<string, string> = {
   'self:digimon': 'self', 'self:card': 'self_card',
-  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:player': 'own_player', 'own:any': 'own_any',
-  'opp:digimon': 'opp', 'opp:card': 'opp_card', 'opp:tamer': 'opp_tamer', 'opp:player': 'opp_player', 'opp:any': 'opp_any', 'opp:blocker': 'opp_blocker',
-  'other_own:digimon': 'other_own',
+  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:any': 'own_any',
+  'opp:digimon': 'opp', 'opp:card': 'opp_card', 'opp:tamer': 'opp_tamer', 'opp:any': 'opp_any', 'opp:blocker': 'opp_blocker',
 };
+// other_own: 旧「他」L1ボタンの単独コード。現在は 自分+デジモン 選択時の
+// 「このカードを含めない」トグルとして残す（表示上は own+digimon と同じ扱い）
 const COND_SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   '': { l1: '', l2: '' },
   self: { l1: 'self', l2: 'digimon' },
@@ -300,15 +299,13 @@ const COND_SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   own: { l1: 'own', l2: 'digimon' },
   own_card: { l1: 'own', l2: 'card' },
   own_tamer: { l1: 'own', l2: 'tamer' },
-  own_player: { l1: 'own', l2: 'player' },
   own_any: { l1: 'own', l2: 'any' },
   opp: { l1: 'opp', l2: 'digimon' },
   opp_card: { l1: 'opp', l2: 'card' },
   opp_tamer: { l1: 'opp', l2: 'tamer' },
-  opp_player: { l1: 'opp', l2: 'player' },
   opp_any: { l1: 'opp', l2: 'any' },
   opp_blocker: { l1: 'opp', l2: 'blocker' },
-  other_own: { l1: 'other_own', l2: 'digimon' },
+  other_own: { l1: 'own', l2: 'digimon' },
 };
 
 // 「アクションの対象」用の2段階ボタン選択（TARGETS辞書のコード体系専用テーブル）。
@@ -4007,12 +4004,12 @@ function ConditionsHybridEditor({
                         const curSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };
                         // 「コスト」カテゴリは登場/使用コストを持つカードのみが対象になるため、
                         // 「このカード(self)」（参照コストなので自分自身を指すことは通常ない）と、
-                        // L2の「プレイヤー」「ブロッカー」（コストを持たない/対象外）は選択肢から外す
+                        // L2の「ブロッカー」（コストを持たない/対象外）は選択肢から外す
                         const subjectL1Options = cat.code === 'cost'
                           ? COND_SUBJECT_L1.filter((o) => o.code !== 'self')
                           : COND_SUBJECT_L1;
                         const l2Options = (COND_SUBJECT_L2[curSub.l1] || []).filter((o) =>
-                          !(cat.code === 'cost' && (o.code === 'player' || o.code === 'blocker'))
+                          !(cat.code === 'cost' && o.code === 'blocker')
                         );
                         // タイプカテゴリの行で対象がデジモン/テイマーに確定した場合、値ピッカーを隠す
                         // (typeRedundant)のに合わせて値も破棄する。古い値が残っていると
@@ -4020,19 +4017,35 @@ function ConditionsHybridEditor({
                         const clearIfRedundant = (l2: string) => (cat.code === 'type' && (l2 === 'digimon' || l2 === 'tamer')) ? { value: '' } : {};
                         const handleSubL1 = (l1: string) => {
                           if (!l1) { updateAt(i, { subject: undefined }); return; }
-                          if (!COND_SUBJECT_L2[l1]) { updateAt(i, { subject: 'other_own' }); return; }
                           const l2 = curSub.l1 === l1 && curSub.l2 ? curSub.l2 : 'digimon';
                           updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2], ...clearIfRedundant(l2) });
                         };
                         const handleSubL2 = (l2: string) => {
                           updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2], ...clearIfRedundant(l2) });
                         };
+                        // 自分+デジモンのときのみ「このカードを含める/含めない」を選べる
+                        // （含めない＝他の自分のデジモン。旧 other_own コードをそのまま使う）
+                        const showIncludeSelfToggle = curSub.l1 === 'own' && curSub.l2 === 'digimon';
+                        const includeSelfValue = c.subject === 'other_own' ? 'other_own' : 'own';
                         return (
                           <>
                             <ButtonGroup options={subjectL1Options} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
                             {l2Options.length > 0 && (
                               <div style={{ marginTop: 4 }}>
                                 <ButtonGroup options={l2Options} value={curSub.l2} onChange={handleSubL2} accentColor={colors.accent} />
+                              </div>
+                            )}
+                            {showIncludeSelfToggle && (
+                              <div style={{ marginTop: 4 }}>
+                                <ButtonGroup
+                                  options={[
+                                    { code: 'own', label: 'このカードを含める' },
+                                    { code: 'other_own', label: 'このカードを含めない' },
+                                  ]}
+                                  value={includeSelfValue}
+                                  onChange={(v) => updateAt(i, { subject: v })}
+                                  accentColor={colors.accent}
+                                />
                               </div>
                             )}
                           </>
@@ -4093,19 +4106,33 @@ function ConditionsHybridEditor({
                     const l2Options = COND_SUBJECT_L2[curSub.l1] || [];
                     const handleSubL1 = (l1: string) => {
                       if (!l1) { updateAt(i, { subject: undefined }); return; }
-                      if (!COND_SUBJECT_L2[l1]) { updateAt(i, { subject: 'other_own' }); return; }
                       const l2 = curSub.l1 === l1 && curSub.l2 ? curSub.l2 : 'digimon';
                       updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] });
                     };
                     const handleSubL2 = (l2: string) => {
                       updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2] });
                     };
+                    const showIncludeSelfToggle = curSub.l1 === 'own' && curSub.l2 === 'digimon';
+                    const includeSelfValue = c.subject === 'other_own' ? 'other_own' : 'own';
                     return (
                       <>
                         <ButtonGroup options={COND_SUBJECT_L1} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
                         {l2Options.length > 0 && (
                           <div style={{ marginTop: 4 }}>
                             <ButtonGroup options={l2Options} value={curSub.l2} onChange={handleSubL2} accentColor={colors.accent} />
+                          </div>
+                        )}
+                        {showIncludeSelfToggle && (
+                          <div style={{ marginTop: 4 }}>
+                            <ButtonGroup
+                              options={[
+                                { code: 'own', label: 'このカードを含める' },
+                                { code: 'other_own', label: 'このカードを含めない' },
+                              ]}
+                              value={includeSelfValue}
+                              onChange={(v) => updateAt(i, { subject: v })}
+                              accentColor={colors.accent}
+                            />
                           </div>
                         )}
                       </>

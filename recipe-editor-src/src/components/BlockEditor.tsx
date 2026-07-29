@@ -483,6 +483,9 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'recover', label: 'リカバリー' },
   { code: 'evolve', label: '進化' },
 ];
+// COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
+// 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
+const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'evolve']);
 // よく使う期間（対象と同じ2段ボタン式）: 「〜の間（汎用）」は条件寄りの意味を持つため、
 // ひとまず発動条件側で表現する想定として、ここには含めない
 const DURATION_L1 = [
@@ -2660,7 +2663,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           />
         </div>
 
-        {!!dict.actions.find((a) => a.code === block.action)?.hasFromZones && (
+        {(BUILTIN_FROM_ZONE_ACTIONS.has(block.action || '') || !!dict.actions.find((a) => a.code === block.action)?.hasFromZones) && (
         <details className="field" open={!!(block.fromZones && block.fromZones.length > 0)}>
           <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0' }}>
             📍 場所{block.fromZones && block.fromZones.length > 0 ? ` (${block.fromZones.length})` : ''}

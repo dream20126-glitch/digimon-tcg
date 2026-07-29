@@ -483,6 +483,10 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'recover', label: 'リカバリー' },
   { code: 'evolve', label: '進化' },
 ];
+// 「場所」（取得元エリア=手札/トラッシュ/デッキ/セキュリティ/進化元）が意味を持つアクションのみ表示する。
+// エンジンで step.from を実際に読むのは summon(登場/使用) / summon_from_trash / bounce(進化元からの回収)。
+// evolve は現状エンジン未実装だが、将来的に手札/トラッシュから進化先を取得する用途を想定して含める
+const FROM_ZONE_ACTIONS = new Set(['summon', 'summon_from_trash', 'evolve', 'bounce']);
 // よく使う期間（対象と同じ2段ボタン式）: 「〜の間（汎用）」は条件寄りの意味を持つため、
 // ひとまず発動条件側で表現する想定として、ここには含めない
 const DURATION_L1 = [
@@ -2660,9 +2664,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           />
         </div>
 
+        {FROM_ZONE_ACTIONS.has(block.action || '') && (
         <details className="field" open={!!(block.fromZones && block.fromZones.length > 0)}>
           <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0' }}>
-            📥 取得元エリア{block.fromZones && block.fromZones.length > 0 ? ` (${block.fromZones.length})` : ''}
+            📍 場所{block.fromZones && block.fromZones.length > 0 ? ` (${block.fromZones.length})` : ''}
           </summary>
           {(() => {
             const zones = block.fromZones || [];
@@ -2744,6 +2749,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             );
           })()}
         </details>
+        )}
 
         {renderPerCountEditor()}
 

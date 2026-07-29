@@ -3343,10 +3343,6 @@ const COMMON_CONDS: CommonCondDef[] = [
   { code: 'cond_feature_contains', label: '特徴を含む',   input: 'text' },
   { code: 'cond_name',             label: '名前（完全一致）', input: 'text' },
   { code: 'cond_name_contains',    label: '名前を含む',   input: 'text' },
-  // 取得元（手札/トラッシュ等）。タイガ(BT2-088)「手札の名称に〜」等、進化元カードの
-  // 所在ゾーンを限定したいケース用。判定ロジックはエンジン未実装（before_evolve 等の
-  // 割り込みトリガーと合わせて対応予定）で、現状は常に'hand'扱いになる想定。
-  { code: 'cond_from_zone',        label: '取得元',       input: 'select', options: toOpts(FROM_ZONES) },
 ];
 // ルール上部フィールド (step 直下) のみ。条件は ConditionsHybridEditor に統一。
 const RULE_FIELDS: RuleFieldDef[] = [
@@ -3728,7 +3724,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'zone' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -3739,7 +3735,6 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'cost', label: 'コスト' },
   { value: 'cost_mod', label: 'コスト増減' },
   { value: 'name', label: '名前' },
-  { value: 'zone', label: '場所' },
   { value: 'other', label: 'その他' },
 ];
 // 種別ボタン用（「その他」はトリガー同様、別枠のチェックボックスで扱うため除外）
@@ -3751,7 +3746,6 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   color: 'cond_color',
   type: 'cond_type',
   feature: 'cond_feature_contains',
-  zone: 'cond_from_zone',
   lv: 'cond_lv_ge',
   dp: 'cond_dp_ge',
   cost: 'cond_cost_ge',
@@ -3790,7 +3784,6 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_color') return 'color';
   if (base === 'cond_type') return 'type';
   if (base === 'cond_feature_contains' || base === 'cond_feature') return 'feature';
-  if (base === 'cond_from_zone') return 'zone';
   if (base === 'cond_lv_ge' || base === 'cond_lv_le' || base === 'cond_lv') return 'lv';
   if (base === 'cond_dp_ge' || base === 'cond_dp_le' || base === 'cond_dp'
     || base === 'cond_attack_target_highest_dp' || base === 'cond_attack_target_lowest_dp') return 'dp';
@@ -3836,9 +3829,9 @@ function ConditionsHybridEditor({
     return true;
   });
 
-  // 「その他」用: 色/タイプ/特徴/Lv/DP/名前/場所として直接選べるコード群を除いた残り
+  // 「その他」用: 色/タイプ/特徴/Lv/DP/名前として直接選べるコード群を除いた残り
   const CATEGORIZED_CODES = new Set<string>([
-    'cond_color', 'cond_type', 'cond_feature_contains', 'cond_feature', 'cond_from_zone',
+    'cond_color', 'cond_type', 'cond_feature_contains', 'cond_feature',
     'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_dp_ge', 'cond_dp_le', 'cond_dp',
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
     'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod',
@@ -4048,17 +4041,16 @@ function ConditionsHybridEditor({
                       <div style={{ fontSize: 11, color: '#888', padding: '4px 6px' }}>
                         （対象で種別を指定済みのため不要）
                       </div>
-                    ) : c.base === 'cond_same_as_picked' || c.base === 'cond_from_zone'
+                    ) : c.base === 'cond_same_as_picked'
                       || (supportsMultiValue && c.base === 'cond_type') ? (
-                      /* 「選んだデジモンと同じ」「取得元」「タイプ(複数可・ターゲットフィルタ限定)」:
+                      /* 「選んだデジモンと同じ」「タイプ(複数可・ターゲットフィルタ限定)」:
                          複数選択チェックボックス群（カンマ区切りで保存）。
-                         カードは同時に複数ゾーンやタイプを持てないため、複数選択=常にOR判定でよい
+                         カードは同時に複数タイプを持てないため、複数選択=常にOR判定でよい
                          （「紫のデジモンかオプション」はタイプで デジモン,オプション を両方チェックするだけで表現可能）
                          ※ cond_type の複数値は step.filter (type_in配列) でのみ解釈される。
                            トリガー条件/発動条件側は単一値exact-match想定なのでそちらでは使わないこと */
                       (() => {
-                        const optList = c.base === 'cond_from_zone' ? FROM_ZONES
-                          : c.base === 'cond_type' ? RULE_TYPE_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
+                        const optList = c.base === 'cond_type' ? RULE_TYPE_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
                           : SAME_AS_PICKED_FIELDS;
                         const sel = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
                         const isCheckedAttr = (code: string) => sel.includes(code);

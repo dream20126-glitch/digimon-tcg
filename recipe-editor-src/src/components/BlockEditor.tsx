@@ -483,15 +483,30 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'recover', label: 'リカバリー' },
   { code: 'evolve', label: '進化' },
 ];
-// よく使う期間（ボタン式）: 「〜の間（汎用）」は条件寄りの意味を持つため、
+// よく使う期間（対象と同じ2段ボタン式）: 「〜の間（汎用）」は条件寄りの意味を持つため、
 // ひとまず発動条件側で表現する想定として、ここには含めない
-const QUICK_DURATIONS: { code: string; label: string }[] = [
+const DURATION_L1 = [
   { code: 'dur_this_turn', label: 'このターン中' },
-  { code: 'dur_next_own_turn', label: 'ターン終了まで（自分）' },
-  { code: 'dur_next_opp_turn', label: 'ターン終了まで（相手）' },
-  { code: 'dur_next_own_unsuspend', label: 'アクティブフェイズまで（自分）' },
-  { code: 'dur_next_opp_unsuspend', label: 'アクティブフェイズまで（相手）' },
+  { code: 'turn_end', label: 'ターン終了まで' },
+  { code: 'active_phase', label: 'アクティブフェイズ開始まで' },
 ];
+const DURATION_L2: Record<string, { code: string; label: string }[]> = {
+  turn_end: [
+    { code: 'dur_next_own_turn', label: '自分' },
+    { code: 'dur_next_opp_turn', label: '相手' },
+  ],
+  active_phase: [
+    { code: 'dur_next_own_unsuspend', label: '自分' },
+    { code: 'dur_next_opp_unsuspend', label: '相手' },
+  ],
+};
+// duration コード → L1 の逆引き
+function durationToL1(dur?: string): string {
+  if (dur === 'dur_this_turn') return 'dur_this_turn';
+  if (dur === 'dur_next_own_turn' || dur === 'dur_next_opp_turn') return 'turn_end';
+  if (dur === 'dur_next_own_unsuspend' || dur === 'dur_next_opp_unsuspend') return 'active_phase';
+  return '';
+}
 // 現在選択中のtriggers/triggerConditionsから、共有の発動タイミングを逆算する
 function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair[], families: TriggerFamily[] = COMMON_TRIGGER_FAMILIES): TimingKey {
   for (const fam of families) {
@@ -672,9 +687,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   function updateGrantedStep(patch: Partial<GrantedStep>) {
     onChange({ ...block, grantedStep: { ...grantedStep, ...patch } });
   }
-  function clearGrantedStep() {
-    onChange({ ...block, grantedStep: undefined });
-  }
 
   // コスト操作
   const costs = block.costs || [];
@@ -704,7 +716,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // 発動条件に付随する追加設定（代替アクション/付与する効果/追加オプション）の
   // 選択肢出し入れ用トグル。実データが既にある場合は既存の open={...} 相当として自動でON扱いにする
   const [showAltActionsPanel, setShowAltActionsPanel] = useState<boolean>(false);
-  const [showGrantedStepPanel, setShowGrantedStepPanel] = useState<boolean>(false);
   const [showExtraOptionsPanel, setShowExtraOptionsPanel] = useState<boolean>(false);
   const [otherActionOpen, setOtherActionOpen] = useState<boolean>(false);
   // 「対象の条件」をアクションの対象/対象数の2箇所に分けて描画するため、
@@ -1988,16 +1999,35 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             />
             ⏳ 期間
           </label>
-          {showDurationPanel && (
-            <div style={{ marginTop: 4 }}>
-              <ButtonGroup
-                options={QUICK_DURATIONS}
-                value={block.duration || ''}
-                onChange={(v) => update('duration', v)}
-                accentColor="#1a4f8a"
-              />
-            </div>
-          )}
+          {showDurationPanel && (() => {
+            const durL1 = durationToL1(block.duration);
+            const durL2Options = DURATION_L2[durL1] || [];
+            const durL2Value = durL2Options.some((o) => o.code === block.duration) ? (block.duration || '') : '';
+            return (
+              <div style={{ marginTop: 4 }}>
+                <ButtonGroup
+                  options={DURATION_L1}
+                  value={durL1}
+                  onChange={(l1) => {
+                    if (!DURATION_L2[l1]) { update('duration', l1); return; }
+                    // 既に同じグループ内なら自分/相手の選択を保持、そうでなければ「自分」を既定に
+                    update('duration', durL1 === l1 ? (block.duration || DURATION_L2[l1][0].code) : DURATION_L2[l1][0].code);
+                  }}
+                  accentColor="#1a4f8a"
+                />
+                {durL2Options.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <ButtonGroup
+                      options={durL2Options}
+                      value={durL2Value}
+                      onChange={(v) => update('duration', v)}
+                      accentColor="#1a4f8a"
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* === 🎯 発動条件（常時表示・デフォルト折りたたみ・データあれば展開） ===
@@ -2068,15 +2098,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         )}
 
         {/* === 発動条件に付随する追加設定（選択肢出し入れ方式） ===
-            代替アクション/付与する効果/追加オプションをボタンでまとめて出し入れする。
-            既にデータが入っている場合はボタンを押さなくても自動でON扱いになる */}
+            代替アクション/追加オプションをボタンでまとめて出し入れする。
+            既にデータが入っている場合はボタンを押さなくても自動でON扱いになる。
+            付与する効果は「アクション=キーワード付与/効果を付与」選択時のみ自動表示（別枠） */}
         {(() => {
           const altActive = showAltActionsPanel || altActions.length > 0;
-          const grantActive = showGrantedStepPanel || !!block.grantedStep;
           const extraActive = showExtraOptionsPanel || _hasActionExtras;
           const EXTRA_FEATURE_BUTTONS = [
             { key: 'alt', label: '代替アクション', active: altActive, onClick: () => setShowAltActionsPanel((v) => !v) },
-            { key: 'grant', label: '付与する効果', active: grantActive, onClick: () => setShowGrantedStepPanel((v) => !v) },
             { key: 'extra', label: '追加オプション', active: extraActive, onClick: () => setShowExtraOptionsPanel((v) => !v) },
           ];
           return (
@@ -2444,33 +2473,66 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </div>
         )}
 
-        {/* === 🎁 付与する効果（grant_effect 用ネスト） === */}
-        {/* 「自分のデジモン全ては『【アタック時】〜』を得る」のような一時的トリガー効果付与の表現 */}
-        {(showGrantedStepPanel || !!block.grantedStep) && (
+        {/* === 🎁 付与する効果（キーワード付与 / 独自の効果付与） ===
+            アクションが grant_keyword(_to) / grant_effect のときだけ自動表示。
+            パターン切替でどちらの action コードを使うか（block.action）を直接切り替える */}
+        {(block.action === 'grant_effect' || block.action === 'grant_keyword' || block.action === 'grant_keyword_to') && (
           <div style={{ padding: 8, border: '1px solid #5eead4', borderRadius: 4, background: '#f0fdfa', marginTop: 8 }}>
             <div style={{ fontWeight: 'bold', fontSize: 12, color: '#0d9488', marginBottom: 6 }}>
-              🎁 付与する効果{block.grantedStep ? ' (有効)' : ''}
+              🎁 付与する効果
             </div>
-            <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
-              💡 アクション=<code>grant_effect</code> 等で対象に付与するトリガー効果。例: 「【アタック時】相手DP-2000」
-            </div>
-            {/* 有効化トグル */}
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, marginBottom: 8 }}>
-              <input
-                type="checkbox"
-                checked={!!block.grantedStep}
-                onChange={(e) => {
-                  if (e.target.checked) {
-                    onChange({ ...block, grantedStep: { trigger: 'on_attack', action: '', conditions: [], options: [] } });
+            <div style={{ marginBottom: 8 }}>
+              <ButtonGroup
+                options={[
+                  { code: 'keyword', label: 'キーワードを付与' },
+                  { code: 'custom', label: '独自の効果を付与' },
+                ]}
+                value={block.action === 'grant_effect' ? 'custom' : 'keyword'}
+                onChange={(v) => {
+                  if (v === 'keyword') {
+                    onChange({ ...block, action: 'grant_keyword', grantedStep: undefined });
                   } else {
-                    clearGrantedStep();
+                    onChange({
+                      ...block,
+                      action: 'grant_effect',
+                      keyword: undefined,
+                      grantedStep: block.grantedStep || { trigger: 'on_attack', action: '', conditions: [], options: [] },
+                    });
                   }
                 }}
+                accentColor="#0d9488"
               />
-              <span>付与効果を有効化</span>
-            </label>
-            {block.grantedStep && (
+            </div>
+
+            {block.action === 'grant_keyword' || block.action === 'grant_keyword_to' ? (
               <>
+                <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
+                  💡 対象にキーワード（既存キーワードまたは辞書登録済みのキーワード効果）を付与する。
+                  値・対象・対象数・期間は上の通常のアクション欄で設定してください。
+                </div>
+                <div>
+                  <label>
+                    付与するキーワード
+                    {block.keyword && (
+                      isKeywordImplemented(block.keyword)
+                        ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 6 }}>✅実装済</span>
+                        : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
+                    )}
+                  </label>
+                  <SearchSelect
+                    value={block.keyword || ''}
+                    onChange={(v) => update('keyword', v)}
+                    options={toOpts(dict.keywords)}
+                    allowFreeText
+                  />
+                  <InlineDictAdd kind="keywords" dict={dict} onRegistered={(v) => update('keyword', v)} />
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
+                  💡 対象に一時的なトリガー効果を付与する。例: 「【アタック時】相手DP-2000」
+                </div>
                 {/* 内側トリガー / アクション / 値 / 対象 / 期間 */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
                   <div>
@@ -3043,29 +3105,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         </div>
         )}
         {/* === アクショングループここまで === */}
-
-        {/* === キーワード（最下段） ===
-            trigger='passive'（キーワード効果）は上の🔑バナー内で同じ項目を編集できるため、
-            ここでの二重表示は避ける。grant_keywordアクションの対象キーワード指定用に残す */}
-        {block.trigger !== 'passive' && (
-        <div className="field" style={{ gridColumn: '1 / span 2' }}>
-          <label>
-            キーワード（grant_keyword 用）
-            {block.keyword && (
-              isKeywordImplemented(block.keyword)
-                ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 6 }}>✅実装済</span>
-                : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
-            )}
-          </label>
-          <SearchSelect
-            value={block.keyword || ''}
-            onChange={(v) => update('keyword', v)}
-            options={toOpts(dict.keywords)}
-            allowFreeText
-          />
-          <InlineDictAdd kind="keywords" dict={dict} onRegistered={(v) => update('keyword', v)} />
-        </div>
-        )}
       </div>
     </div>
   );

@@ -4005,7 +4005,15 @@ function ConditionsHybridEditor({
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
                       {(() => {
                         const curSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };
-                        const l2Options = COND_SUBJECT_L2[curSub.l1] || [];
+                        // 「コスト」カテゴリは登場/使用コストを持つカードのみが対象になるため、
+                        // 「このカード(self)」（参照コストなので自分自身を指すことは通常ない）と、
+                        // L2の「プレイヤー」「ブロッカー」（コストを持たない/対象外）は選択肢から外す
+                        const subjectL1Options = cat.code === 'cost'
+                          ? COND_SUBJECT_L1.filter((o) => o.code !== 'self')
+                          : COND_SUBJECT_L1;
+                        const l2Options = (COND_SUBJECT_L2[curSub.l1] || []).filter((o) =>
+                          !(cat.code === 'cost' && (o.code === 'player' || o.code === 'blocker'))
+                        );
                         // タイプカテゴリの行で対象がデジモン/テイマーに確定した場合、値ピッカーを隠す
                         // (typeRedundant)のに合わせて値も破棄する。古い値が残っていると
                         // 「対象=デジモンなのに値=テイマー」のような矛盾で常にfalseになってしまうため
@@ -4021,7 +4029,7 @@ function ConditionsHybridEditor({
                         };
                         return (
                           <>
-                            <ButtonGroup options={COND_SUBJECT_L1} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
+                            <ButtonGroup options={subjectL1Options} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
                             {l2Options.length > 0 && (
                               <div style={{ marginTop: 4 }}>
                                 <ButtonGroup options={l2Options} value={curSub.l2} onChange={handleSubL2} accentColor={colors.accent} />

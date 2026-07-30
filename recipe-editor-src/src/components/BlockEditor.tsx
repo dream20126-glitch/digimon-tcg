@@ -859,8 +859,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [costOtherOpen, setCostOtherOpen] = useState<Record<number, boolean>>({});
   // ～ごとにの「状態（条件）」その他プルダウン開閉状態
   const [perStateOtherOpen, setPerStateOtherOpen] = useState<boolean>(false);
-  // ～ごとにの「対象」その他プルダウン開閉状態（PERREF_L1/L2に収まらない特殊枠用）
-  const [perRefOtherOpen, setPerRefOtherOpen] = useState<boolean>(false);
   // 「対象の条件」をアクションの対象/対象数の2箇所に分けて描画するため、
   // その他チェックボックスの開閉状態をここで共有する
   const [targetFilterOtherOpen, setTargetFilterOtherOpen] = useState<boolean>(false);
@@ -994,32 +992,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     const keepCurrent = opts.some((o) => o.code === refSubject);
                     setSubject(keepCurrent ? refSubject : opts[0].code);
                   };
-                  const specialCodes = REF_SUBJECTS.filter((o) => o.code && !PERREF_L2_CODES.has(o.code));
-                  const isSpecial = !!refSubject && !PERREF_L2_CODES.has(refSubject);
                   return (
                     <>
                       <ButtonGroup options={PERREF_L1} value={curL1} onChange={handleL1} accentColor="#1a4f8a" />
                       {l2Options.length > 1 && (
                         <div style={{ marginTop: 4 }}>
                           <ButtonGroup options={l2Options} value={refSubject} onChange={setSubject} accentColor="#1a4f8a" />
-                        </div>
-                      )}
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, marginTop: 4, color: '#666' }}>
-                        <input
-                          type="checkbox"
-                          checked={perRefOtherOpen || isSpecial}
-                          onChange={(e) => setPerRefOtherOpen(e.target.checked)}
-                        />
-                        その他の対象
-                      </label>
-                      {(perRefOtherOpen || isSpecial) && (
-                        <div style={{ marginTop: 2 }}>
-                          <SearchSelect
-                            value={refSubject}
-                            onChange={setSubject}
-                            options={toOpts(specialCodes)}
-                            allowFreeText
-                          />
                         </div>
                       )}
                     </>
@@ -1051,7 +1029,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <input
                       type="checkbox"
                       checked={perStateOtherOpen || (!!currentStateCond.base && !['cond_self_rest', 'cond_self_active'].includes(currentStateCond.base))}
-                      onChange={(e) => setPerStateOtherOpen(e.target.checked)}
+                      onChange={(e) => {
+                        setPerStateOtherOpen(e.target.checked);
+                        // ✅を入れたら上のボタン(レスト/アクティブ)は未選択状態にする
+                        if (e.target.checked && ['cond_self_rest', 'cond_self_active'].includes(currentStateCond.base)) {
+                          setStateBase('');
+                        }
+                      }}
                     />
                     その他の状態（辞書の条件を流用）
                   </label>
@@ -1063,6 +1047,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         options={stateCondOptions}
                         allowFreeText
                       />
+                      <InlineDictAdd kind="conditions" dict={dict} onRegistered={setStateBase} />
                     </div>
                   )}
                   {/* 値が必要な条件（cond_lv_le など）の値入力 */}
@@ -1107,88 +1092,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <span style={{ color: '#888', fontSize: 10 }}>例: DP-4000 を2回（対象を毎回選べる）</span>
               </label>
             </div>
-            {/* フィルタ: カウント時に追加で絞り込み（COMMON_CONDS と項目共通） */}
-            {(() => {
-              // 発動条件と同じ COMMON_CONDS を共有（項目統一）
-              const FILTER_FIELDS: CommonCondDef[] = COMMON_CONDS;
-              const filterArr = curPerRefFilter;
-              const isFilterChecked = (code: string) => filterArr.some((c) => c.base === code);
-              const getFilterValue = (code: string) => {
-                const c = filterArr.find((cc) => cc.base === code);
-                return c ? (c.value || '') : '';
-              };
-              const setFilterChecked = (code: string, enabled: boolean) => {
-                if (enabled) {
-                  if (!isFilterChecked(code)) {
-                    setFields({ perRefFilter: [...filterArr, { base: code, value: '' }] });
-                  }
-                } else {
-                  setFields({ perRefFilter: filterArr.filter((c) => c.base !== code) });
-                }
-              };
-              const setFilterValue = (code: string, val: string) => {
-                const i = filterArr.findIndex((c) => c.base === code);
-                if (i >= 0) {
-                  const next = filterArr.slice();
-                  next[i] = { ...next[i], value: val };
-                  setFields({ perRefFilter: next });
-                } else {
-                  setFields({ perRefFilter: [...filterArr, { base: code, value: val }] });
-                }
-              };
-              return (
-                <div style={{ marginTop: 8, padding: 6, background: 'white', borderRadius: 4, border: '1px solid #c5d4ea' }}>
-                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#1976d2', marginBottom: 4 }}>
-                    🔍 さらに絞り込み（チェックで有効化・複数で AND）
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-                    {FILTER_FIELDS.map((f) => (
-                      <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={isFilterChecked(f.code)}
-                          onChange={(e) => setFilterChecked(f.code, e.target.checked)}
-                          style={{ margin: 0 }}
-                        />
-                        {f.label}
-                      </label>
-                    ))}
-                  </div>
-                  {FILTER_FIELDS.some((f) => isFilterChecked(f.code)) && (
-                    <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6 }}>
-                      {FILTER_FIELDS.filter((f) => isFilterChecked(f.code)).map((f) => (
-                        <div key={f.code}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{f.label}</div>
-                          {f.input === 'select' ? (
-                            <select
-                              value={getFilterValue(f.code)}
-                              onChange={(e) => setFilterValue(f.code, e.target.value)}
-                              style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}
-                            >
-                              {(f.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                            </select>
-                          ) : f.input === 'number' ? (
-                            <input
-                              type="number"
-                              value={getFilterValue(f.code)}
-                              onChange={(e) => setFilterValue(f.code, e.target.value)}
-                              style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                            />
-                          ) : (
-                            <input
-                              type="text"
-                              value={getFilterValue(f.code)}
-                              onChange={(e) => setFilterValue(f.code, e.target.value)}
-                              style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                            />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+            {/* フィルタ: カウント時に追加で絞り込み（発動条件と同じボタン式のConditionsHybridEditorを再利用） */}
+            <div style={{ marginTop: 8 }}>
+              <ConditionsHybridEditor
+                conditions={curPerRefFilter}
+                onChange={(next) => setFields({ perRefFilter: next })}
+                dict={dict}
+                title="さらに絞り込み"
+                hint="（カウント対象の絞り込み・複数 AND）"
+                theme="action"
+                defaultSubject=""
+                showSubjectSelector={false}
+              />
+            </div>
           </div>
         )}
       </div>

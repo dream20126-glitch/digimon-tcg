@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep } from '../types';
 import {
   SECTIONS,
@@ -713,6 +713,75 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     if (isEditingAlt) { updateEffect({ action: newAction }); return; }
     changeAction(newAction);
   }
+
+  // 🔀 代替アクション（OR/AND）: OR=プレイヤーがどちらかを選ぶ / AND=両方行う。
+  // チェックボックス自体は「その他の条件」の隣（発動条件内・extraToggle経由）に表示し、
+  // 「編集中」選択・設定内容の一覧はアクション欄の近くに別途表示する
+  const isOrChecked = altOp === 'or' && altActions.length > 0;
+  const isAndChecked = altOp === 'and' && altActions.length > 0;
+  const setAltMode = (mode: 'or' | 'and' | null) => {
+    if (!mode) {
+      onChange({ ...block, altActions: [], altActionsOp: undefined });
+      setEditingEffect(0);
+      return;
+    }
+    if (altActions.length === 0) {
+      onChange({ ...block, altActions: [{ action: '', value: '', target: '', conditions: [], fromZones: [] }], altActionsOp: mode });
+      setEditingEffect(1);
+    } else {
+      update('altActionsOp', mode);
+    }
+  };
+  const summarizeAction = (act?: string, val?: number | string) => {
+    if (!act) return '(未設定)';
+    const label = dict.actions.find((d) => d.code === act)?.label || act;
+    const valPart = (val !== undefined && val !== '') ? ` ${val}` : '';
+    return `${label}${valPart}`;
+  };
+  // 対象コード（例: "own_tamer:1"）→「自分のテイマー 1体」のような表記に復元
+  const describeTarget = (targetStr?: string) => {
+    if (!targetStr) return '';
+    const base = targetStr.split(':')[0];
+    const suffix = targetStr.substring(base.length);
+    const l1l2 = TARGET_SEL_CODE_TO_L1L2[base];
+    let label = base;
+    if (l1l2) {
+      const l1Label = TARGET_SEL_L1.find((o) => o.code === l1l2.l1)?.label || '';
+      const l2Label = l1l2.l2 ? (TARGET_SEL_L2[l1l2.l1] || []).find((o) => o.code === l1l2.l2)?.label || '' : '';
+      label = [l1Label, l2Label].filter(Boolean).join('の');
+    }
+    const countLabel = suffix ? (TARGET_COUNTS.find((o) => o.code === suffix)?.label || '') : '';
+    return [label, countLabel].filter(Boolean).join(' ');
+  };
+  // 条件配列 → ボタン表記をそのまま連結した文字列に復元（例:「テイマーの色:黄」）
+  const describeConditions = (conds?: ConditionPair[]) => {
+    if (!conds || conds.length === 0) return '';
+    return conds.map((c) => {
+      if (!c.base) return '';
+      const def = COMMON_CONDS.find((cc) => cc.code === c.base);
+      const label = def?.label || dict.conditions.find((d) => d.code === c.base)?.label || c.base;
+      const valuePart = (c.value && !NO_VALUE_CONDS.has(c.base)) ? String(c.value) : '';
+      const sl = c.subject ? COND_SUBJECT_CODE_TO_L1L2[c.subject] : undefined;
+      const subjLabel = sl
+        ? [
+            COND_SUBJECT_L1.find((o) => o.code === sl.l1)?.label || '',
+            sl.l2 ? (COND_SUBJECT_L2[sl.l1] || []).find((o) => o.code === sl.l2)?.label || '' : '',
+          ].filter(Boolean).join('の')
+        : '';
+      return [subjLabel, label, valuePart].filter(Boolean).join(' ');
+    }).filter(Boolean).join('・');
+  };
+  const describeEffect = (act?: string, val?: number | string, tgt?: string, conds?: ConditionPair[]) => {
+    return [summarizeAction(act, val), describeTarget(tgt), describeConditions(conds)].filter(Boolean).join('　');
+  };
+  const altBtnStyle = (active: boolean) => ({
+    padding: '4px 10px', borderRadius: 5,
+    border: active ? '2px solid #9333ea' : '1px solid #bbb',
+    background: active ? '#9333ea' : '#f5f5f5',
+    color: active ? '#fff' : '#333',
+    fontWeight: active ? 'bold' : 'normal',
+    cursor: 'pointer', fontSize: 12,
+  });
 
   // 付与効果操作（grantedStep）
   const grantedStep: GrantedStep = block.grantedStep || { trigger: '', action: '', conditions: [], options: [] };
@@ -1796,143 +1865,53 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
-        {/* 🔀 代替アクション（OR/AND）: OR=プレイヤーがどちらかを選ぶ / AND=両方行う。
-            「編集中」ボタンで効果1（このアクション自体）〜効果Nを切り替えると、上の
-            アクション/対象/対象数/発動条件/場所/期間の各ボタン群がその効果に対して
-            読み書きされる（ボタン群は1箇所のみで、編集対象を切り替えて使う） */}
-        {(() => {
-          const isOrChecked = altOp === 'or' && altActions.length > 0;
-          const isAndChecked = altOp === 'and' && altActions.length > 0;
-          const setMode = (mode: 'or' | 'and' | null) => {
-            if (!mode) {
-              onChange({ ...block, altActions: [], altActionsOp: undefined });
-              setEditingEffect(0);
-              return;
-            }
-            if (altActions.length === 0) {
-              onChange({ ...block, altActions: [{ action: '', value: '', target: '', conditions: [], fromZones: [] }], altActionsOp: mode });
-              setEditingEffect(1);
-            } else {
-              update('altActionsOp', mode);
-            }
-          };
-          const summarizeAction = (act?: string, val?: number | string) => {
-            if (!act) return '(未設定)';
-            const label = dict.actions.find((d) => d.code === act)?.label || act;
-            const valPart = (val !== undefined && val !== '') ? ` ${val}` : '';
-            return `${label}${valPart}`;
-          };
-          // 対象コード（例: "own_tamer:1"）→「自分のテイマー 1体」のような表記に復元
-          const describeTarget = (targetStr?: string) => {
-            if (!targetStr) return '';
-            const base = targetStr.split(':')[0];
-            const suffix = targetStr.substring(base.length);
-            const l1l2 = TARGET_SEL_CODE_TO_L1L2[base];
-            let label = base;
-            if (l1l2) {
-              const l1Label = TARGET_SEL_L1.find((o) => o.code === l1l2.l1)?.label || '';
-              const l2Label = l1l2.l2 ? (TARGET_SEL_L2[l1l2.l1] || []).find((o) => o.code === l1l2.l2)?.label || '' : '';
-              label = [l1Label, l2Label].filter(Boolean).join('の');
-            }
-            const countLabel = suffix ? (TARGET_COUNTS.find((o) => o.code === suffix)?.label || '') : '';
-            return [label, countLabel].filter(Boolean).join(' ');
-          };
-          // 条件配列 → ボタン表記をそのまま連結した文字列に復元（例:「テイマーの色:黄」）
-          const describeConditions = (conds?: ConditionPair[]) => {
-            if (!conds || conds.length === 0) return '';
-            return conds.map((c) => {
-              if (!c.base) return '';
-              const def = COMMON_CONDS.find((cc) => cc.code === c.base);
-              const label = def?.label || dict.conditions.find((d) => d.code === c.base)?.label || c.base;
-              const valuePart = (c.value && !NO_VALUE_CONDS.has(c.base)) ? String(c.value) : '';
-              const sl = c.subject ? COND_SUBJECT_CODE_TO_L1L2[c.subject] : undefined;
-              const subjLabel = sl
-                ? [
-                    COND_SUBJECT_L1.find((o) => o.code === sl.l1)?.label || '',
-                    sl.l2 ? (COND_SUBJECT_L2[sl.l1] || []).find((o) => o.code === sl.l2)?.label || '' : '',
-                  ].filter(Boolean).join('の')
-                : '';
-              return [subjLabel, label, valuePart].filter(Boolean).join(' ');
-            }).filter(Boolean).join('・');
-          };
-          const describeEffect = (act?: string, val?: number | string, tgt?: string, conds?: ConditionPair[]) => {
-            return [summarizeAction(act, val), describeTarget(tgt), describeConditions(conds)].filter(Boolean).join('　');
-          };
-          const btnStyle = (active: boolean) => ({
-            padding: '4px 10px', borderRadius: 5,
-            border: active ? '2px solid #9333ea' : '1px solid #bbb',
-            background: active ? '#9333ea' : '#f5f5f5',
-            color: active ? '#fff' : '#333',
-            fontWeight: active ? 'bold' : 'normal',
-            cursor: 'pointer', fontSize: 12,
-          });
-          return (
-            <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
-              <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
-                  <input
-                    type="checkbox"
-                    checked={isOrChecked}
-                    onChange={(e) => setMode(e.target.checked ? 'or' : (isAndChecked ? 'and' : null))}
-                  />
-                  OR（どちらかを選ぶ）
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
-                  <input
-                    type="checkbox"
-                    checked={isAndChecked}
-                    onChange={(e) => setMode(e.target.checked ? 'and' : (isOrChecked ? 'or' : null))}
-                  />
-                  AND（両方行う）
-                </label>
-              </div>
-              {(isOrChecked || isAndChecked) && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
-                    💡 編集中の効果を選んでください。上のアクション/対象/対象数/発動条件/場所/期間は選んだ効果に反映されます。
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <button type="button" onClick={() => setEditingEffect(0)} style={btnStyle(editingEffect === 0)}>
-                      効果1
-                    </button>
-                    {altActions.map((a, i) => (
-                      <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                        <button type="button" onClick={() => setEditingEffect(i + 1)} style={btnStyle(editingEffect === i + 1)}>
-                          効果{i + 2}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeAltAction(i)}
-                          title="この効果を削除"
-                          style={{ padding: '2px 6px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 10 }}
-                        >
-                          ✕
-                        </button>
-                      </span>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => { addAltAction(); setEditingEffect(altActions.length + 1); }}
-                      style={{ padding: '4px 10px', border: '1px dashed #9333ea', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#9333ea' }}
-                    >
-                      ＋ 効果を追加
-                    </button>
-                  </div>
-                  {/* 選択内容の一覧表示: 押したボタンの表記をそのまま連結して書き出す */}
-                  <div style={{ marginTop: 8, padding: 8, background: 'white', border: '1px solid #d4b8f0', borderRadius: 4 }}>
-                    <div style={{ fontSize: 11, color: '#9333ea', fontWeight: 'bold', marginBottom: 4 }}>📋 設定内容</div>
-                    <div style={{ fontSize: 12, color: '#333', lineHeight: 1.8 }}>
-                      <div>効果1：{describeEffect(block.action, block.value, block.target, block.conditions) || '(未設定)'}</div>
-                      {altActions.map((a, i) => (
-                        <div key={i}>効果{i + 2}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}</div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+        {/* 「編集中」の効果切替 + 設定内容一覧。OR/ANDのチェックボックス自体は
+            発動条件ボックス内「その他の条件」の隣に表示する（extraToggle経由） */}
+        {(isOrChecked || isAndChecked) && (
+          <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
+              💡 編集中の効果を選んでください。上のアクション/対象/対象数/発動条件/場所/期間は選んだ効果に反映されます。
             </div>
-          );
-        })()}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button type="button" onClick={() => setEditingEffect(0)} style={altBtnStyle(editingEffect === 0)}>
+                効果1
+              </button>
+              {altActions.map((a, i) => (
+                <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                  <button type="button" onClick={() => setEditingEffect(i + 1)} style={altBtnStyle(editingEffect === i + 1)}>
+                    効果{i + 2}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeAltAction(i)}
+                    title="この効果を削除"
+                    style={{ padding: '2px 6px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 10 }}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={() => { addAltAction(); setEditingEffect(altActions.length + 1); }}
+                style={{ padding: '4px 10px', border: '1px dashed #9333ea', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#9333ea' }}
+              >
+                ＋ 効果を追加
+              </button>
+            </div>
+            {/* 選択内容の一覧表示: 押したボタンの表記をそのまま連結して書き出す */}
+            <div style={{ marginTop: 8, padding: 8, background: 'white', border: '1px solid #d4b8f0', borderRadius: 4 }}>
+              <div style={{ fontSize: 11, color: '#9333ea', fontWeight: 'bold', marginBottom: 4 }}>📋 設定内容</div>
+              <div style={{ fontSize: 12, color: '#333', lineHeight: 1.8 }}>
+                <div>効果1：{describeEffect(block.action, block.value, block.target, block.conditions) || '(未設定)'}</div>
+                {altActions.map((a, i) => (
+                  <div key={i}>効果{i + 2}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
 
 
         {/* 📍 場所（取得元エリア）: 登場/使用・進化はビルトインのため常時対象、
@@ -2381,6 +2360,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             defaultSubject=""
             attackContextActive={isAttackTrigger}
             showCostMod={effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'destroy'}
+            extraToggle={
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                  <input
+                    type="checkbox"
+                    checked={isOrChecked}
+                    onChange={(e) => setAltMode(e.target.checked ? 'or' : (isAndChecked ? 'and' : null))}
+                  />
+                  OR（どちらかを選ぶ）
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                  <input
+                    type="checkbox"
+                    checked={isAndChecked}
+                    onChange={(e) => setAltMode(e.target.checked ? 'and' : (isOrChecked ? 'or' : null))}
+                  />
+                  AND（両方行う）
+                </label>
+              </div>
+            }
           />
 
         {renderPerCountEditor(isEditingAlt)}
@@ -3483,6 +3482,10 @@ interface ConditionsHybridEditorProps {
   // true のときのみ「コスト増減」カテゴリを表示する。アクションが登場/進化/消滅のときだけ
   // 意味を持つ（コストしきい値そのものを+/-する機能のため）。既定は非表示
   showCostMod?: boolean;
+  // 「その他の条件」チェックボックスの隣に追加で表示したいUI（例: 発動条件専用のOR/AND切替）。
+  // このコンポーネント自体は複数箇所（トリガー条件/発動条件/ルール条件等）で共有するため、
+  // 呼び出し元ごとに異なる専用UIを注入できるようにするための汎用スロット
+  extraToggle?: ReactNode;
 }
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
@@ -3582,7 +3585,7 @@ function formatCostMod(sign: '+' | '-', amount: string, perCount: string, perRef
 function ConditionsHybridEditor({
   conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true,
   supportsMultiValue = false, attackContextActive = false,
-  part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false,
+  part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false, extraToggle,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
@@ -3699,14 +3702,17 @@ function ConditionsHybridEditor({
         })}
       </div>
 
-      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 8, color: '#666' }}>
-        <input
-          type="checkbox"
-          checked={otherOpen || otherRows.length > 0}
-          onChange={(e) => setOtherOpen(e.target.checked)}
-        />
-        その他の条件
-      </label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+          <input
+            type="checkbox"
+            checked={otherOpen || otherRows.length > 0}
+            onChange={(e) => setOtherOpen(e.target.checked)}
+          />
+          その他の条件
+        </label>
+        {extraToggle}
+      </div>
     </>
   );
 

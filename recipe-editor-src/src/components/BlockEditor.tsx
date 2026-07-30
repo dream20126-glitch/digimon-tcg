@@ -486,12 +486,12 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
 const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'evolve']);
-// よく使う期間（対象と同じ2段ボタン式）: 「〜の間（汎用）」は条件寄りの意味を持つため、
-// ひとまず発動条件側で表現する想定として、ここには含めない
+// よく使う期間（対象と同じ2段ボタン式）
 const DURATION_L1 = [
   { code: 'dur_this_turn', label: 'このターン中' },
   { code: 'turn_end', label: 'ターン終了まで' },
   { code: 'active_phase', label: 'アクティブフェイズ開始まで' },
+  { code: 'dur_while', label: '〜の間（汎用）' },
 ];
 const DURATION_L2: Record<string, { code: string; label: string }[]> = {
   turn_end: [
@@ -508,6 +508,7 @@ function durationToL1(dur?: string): string {
   if (dur === 'dur_this_turn') return 'dur_this_turn';
   if (dur === 'dur_next_own_turn' || dur === 'dur_next_opp_turn') return 'turn_end';
   if (dur === 'dur_next_own_unsuspend' || dur === 'dur_next_opp_unsuspend') return 'active_phase';
+  if (dur === 'dur_while') return 'dur_while';
   return '';
 }
 // 現在選択中のtriggers/triggerConditionsから、共有の発動タイミングを逆算する
@@ -706,17 +707,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   }
 
   // === 折りたたみ state ===
-  // 追加オプション（期間/取得元/修飾子/～ごとに/コスト）にデータがあれば展開
-  const _hasActionExtras = !!(
-    (block.options || []).length > 0 ||
-    block.duration
-  );
   const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
   const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
-  // 発動条件に付随する追加設定（代替アクション/付与する効果/追加オプション）の
-  // 選択肢出し入れ用トグル。実データが既にある場合は既存の open={...} 相当として自動でON扱いにする
+  // 発動条件に付随する追加設定（代替アクション）の選択肢出し入れ用トグル。
+  // 実データが既にある場合は既存の open={...} 相当として自動でON扱いにする
   const [showAltActionsPanel, setShowAltActionsPanel] = useState<boolean>(false);
-  const [showExtraOptionsPanel, setShowExtraOptionsPanel] = useState<boolean>(false);
   const [otherActionOpen, setOtherActionOpen] = useState<boolean>(false);
   // 「対象の条件」をアクションの対象/対象数の2箇所に分けて描画するため、
   // その他チェックボックスの開閉状態をここで共有する
@@ -1638,7 +1633,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             onChange(next);
           }
 
-          const showCostCheckboxes = block.action === 'summon' || block.action === 'summon_from_trash' || block.action === 'evolve';
+          const showCostCheckboxes = block.action === 'summon' || block.action === 'summon_from_trash' || block.action === 'evolve' || block.action === 'summon_from_evo_source';
+          const showSkipOnPlay = block.action === 'summon' || block.action === 'summon_from_trash';
 
           return (
             <div style={{
@@ -1656,18 +1652,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
                     )}
                   </label>
-                  {/* summon / summon_from_trash / evolve 専用: コストを支払わず / 登場時効果は発揮しない */}
-                  {showCostCheckboxes && (
+                  {/* summon / summon_from_trash / evolve / summon_from_evo_source 専用:
+                      コストを支払わず / 登場時効果は発揮しない / 裏向きで(place_on_security_top) */}
+                  {(showCostCheckboxes || block.action === 'place_on_security_top') && (
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
-                        <input
-                          type="checkbox"
-                          checked={!!block.costFree}
-                          onChange={(e) => update('costFree', e.target.checked)}
-                        />
-                        コストを支払わず
-                      </label>
-                      {block.action !== 'evolve' && (
+                      {showCostCheckboxes && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
+                          <input
+                            type="checkbox"
+                            checked={!!block.costFree}
+                            onChange={(e) => update('costFree', e.target.checked)}
+                          />
+                          コストを支払わず
+                        </label>
+                      )}
+                      {showSkipOnPlay && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
                           <input
                             type="checkbox"
@@ -1675,6 +1674,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             onChange={(e) => update('skipOnPlay', e.target.checked)}
                           />
                           登場時効果は発揮しない
+                        </label>
+                      )}
+                      {block.action === 'place_on_security_top' && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
+                          <input
+                            type="checkbox"
+                            checked={(block.options || []).includes('face_down')}
+                            onChange={(e) => {
+                              const opts = block.options || [];
+                              update('options', e.target.checked ? [...opts, 'face_down'] : opts.filter((o) => o !== 'face_down'));
+                            }}
+                          />
+                          裏向きで
                         </label>
                       )}
                     </div>
@@ -2593,10 +2605,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             付与する効果は「アクション=キーワード付与/効果を付与」選択時のみ自動表示（別枠） */}
         {(() => {
           const altActive = showAltActionsPanel || altActions.length > 0;
-          const extraActive = showExtraOptionsPanel || _hasActionExtras;
           const EXTRA_FEATURE_BUTTONS = [
             { key: 'alt', label: '代替アクション', active: altActive, onClick: () => setShowAltActionsPanel((v) => !v) },
-            { key: 'extra', label: '追加オプション', active: extraActive, onClick: () => setShowExtraOptionsPanel((v) => !v) },
           ];
           return (
             <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -3133,81 +3143,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </div>
         )}
 
-        {/* ⚙ 追加オプション（期間・取得元・修飾子・～ごとに・コスト） */}
-        {(showExtraOptionsPanel || _hasActionExtras) && (
-        <div style={{ marginTop: 8, padding: 8, border: '1px solid #b9c8e0', borderRadius: 4, background: '#eff5fd' }}>
-          <div style={{ fontWeight: 'bold', fontSize: 12, color: '#1976d2', marginBottom: 6 }}>
-            ⚙ 追加オプション（期間・修飾子）
+        {/* その他の修飾子（実カードで使用実績あり・他に設定手段がないもののみ）:
+            continue_on_fail=前段が失敗しても実行 / once_only=次の1回限定（消費型） */}
+        <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
+              <input type="checkbox" checked={opts.includes('continue_on_fail')} onChange={() => toggleOption('continue_on_fail')} />
+              その後（前段が失敗しても実行）
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
+              <input type="checkbox" checked={opts.includes('once_only')} onChange={() => toggleOption('once_only')} />
+              次の1回限定（消費型）
+              {!isOptionImplemented('once_only') && <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠</span>}
+            </label>
           </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-
-        <div className="field">
-          <label>期間</label>
-          <SearchSelect
-            value={block.duration || ''}
-            onChange={(v) => update('duration', v)}
-            options={toOpts(DURATIONS)}
-          />
         </div>
-
-
-        {/* 修飾子: 「コストを支払わず」「裏向きで」等。複数選択可 */}
-        <details className="field" open={(block.options || []).length > 0} style={{ gridColumn: '1 / span 2' }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0' }}>
-            🛡 修飾子{(block.options || []).length > 0 ? ` (${block.options!.length})` : ''}
-          </summary>
-          <label style={{ fontSize: 11, color: '#666' }}>（複数選択可・アクションの実行方法を変える）</label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: 6, border: '1px solid #d8e0f0', borderRadius: 4, background: '#f3f6fc' }}>
-            {dict.options.length === 0 && (
-              <div style={{ color: '#888', fontSize: 11 }}>修飾子辞書が空です</div>
-            )}
-            {dict.options
-              // 「コストを支払わず」は登場/登場(トラッシュ)/進化では専用チェックボックス(costFree)で
-              // 設定するため、修飾子の一覧には二重表示しない
-              .filter((o) => !(o.code === 'ignore_cost'
-                && (block.action === 'summon' || block.action === 'summon_from_trash' || block.action === 'evolve')))
-              .map((o) => {
-              const checked = opts.includes(o.code);
-              const implemented = isOptionImplemented(o.code, o.logicCode);
-              return (
-                <label
-                  key={o.code}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '3px 8px',
-                    border: checked ? '1px solid #3b6cd1' : '1px solid #c5cfe0',
-                    borderRadius: 12,
-                    background: checked ? '#dde7fb' : 'white',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleOption(o.code)}
-                    style={{ margin: 0 }}
-                  />
-                  <span>{o.label}</span>
-                  {implemented
-                    ? <span style={{ color: '#2e7d32', fontSize: 10 }}>✅</span>
-                    : <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠</span>}
-                </label>
-              );
-            })}
-          </div>
-          {opts.length > 0 && (
-            <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>
-              選択中: {opts.join(', ')}
-            </div>
-          )}
-        </details>
-
-        </div>
-        </div>
-        )}
         </div>
         )}
         {/* === アクショングループここまで === */}

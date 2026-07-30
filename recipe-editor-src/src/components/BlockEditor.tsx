@@ -684,6 +684,34 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   }
   function removeAltAction(i: number) {
     update('altActions', altActions.filter((_, idx) => idx !== i));
+    if (editingEffect > i + 1) setEditingEffect(editingEffect - 1);
+    else if (editingEffect === i + 1) setEditingEffect(0);
+  }
+
+  // 「編集中」の効果スロット: 0=このステップ自体（効果1）/ 1..N=altActions[i-1]（効果2以降）。
+  // OR/AND有効時、共通のアクション/対象/発動条件ボタン群がこのスロットに対して読み書きする
+  const [editingEffect, setEditingEffect] = useState(0);
+  const isEditingAlt = editingEffect > 0 && !!altActions[editingEffect - 1];
+  const editingAlt = isEditingAlt ? altActions[editingEffect - 1] : undefined;
+  const effectAction = isEditingAlt ? (editingAlt!.action || '') : (block.action || '');
+  const effectValue = isEditingAlt ? editingAlt!.value : block.value;
+  const effectTarget = isEditingAlt ? (editingAlt!.target || '') : (block.target || '');
+  const effectConditions = isEditingAlt ? (editingAlt!.conditions || []) : conditions;
+  const effectFromZones = isEditingAlt ? (editingAlt!.fromZones || []) : (block.fromZones || []);
+  const effectFromZonesOp = isEditingAlt ? (editingAlt!.fromZonesOp || 'or') : (block.fromZonesOp || 'or');
+  const effectDuration = isEditingAlt ? editingAlt!.duration : block.duration;
+  const effectPerCount = isEditingAlt ? editingAlt!.perCount : block.perCount;
+  const effectPerRef = isEditingAlt ? editingAlt!.perRef : block.perRef;
+  const effectPerCountMode = isEditingAlt ? editingAlt!.perCountMode : block.perCountMode;
+  const effectPerRefFilter = isEditingAlt ? (editingAlt!.perRefFilter || []) : (block.perRefFilter || []);
+  function updateEffect(patch: Record<string, any>) {
+    if (isEditingAlt) updateAltAction(editingEffect - 1, patch);
+    else onChange({ ...block, ...patch });
+  }
+  // アクション変更（ルールクリア判定は効果1=block自身のときのみ。代替アクションにルールは無い）
+  function changeEffectAction(newAction: string) {
+    if (isEditingAlt) { updateEffect({ action: newAction }); return; }
+    changeAction(newAction);
   }
 
   // 付与効果操作（grantedStep）
@@ -719,7 +747,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // ✖ ～ごとに（倍率設定）: 値 × floor(count / N) でスケーリング。
   // 通常は⚙追加オプション内に表示するが、コスト軽減トリガーでは💰バナー内（発動条件の隣）
   // に直接埋め込むため、関数として切り出して2箇所から呼べるようにしている
-  function renderPerCountEditor() {
+  function renderPerCountEditor(forEffect: boolean = false) {
+    // forEffect=true のとき、効果1(block)ではなく「編集中」の効果（effect*/updateEffect）に対して
+    // 読み書きする。AltActionにはperRefStateCondが無いため、その場合は状態(条件)UIを出さない
+    const curPerRef = forEffect ? (effectPerRef || '') : (block.perRef || '');
+    const curPerCount = forEffect ? effectPerCount : block.perCount;
+    const curPerCountMode = forEffect ? effectPerCountMode : block.perCountMode;
+    const curPerRefFilter = forEffect ? effectPerRefFilter : (block.perRefFilter || []);
+    const setFields = (patch: Record<string, any>) => {
+      if (forEffect) updateEffect(patch);
+      else onChange({ ...block, ...patch });
+    };
     // 旧形式 (own_rest_digimon 等) を subject + 状態cond に分解（読み込み時の互換）
     const decomposeRef = (ref: string): { subject: string; legacyState: string } => {
       switch (ref) {
@@ -730,12 +768,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         default: return { subject: ref || '', legacyState: '' };
       }
     };
-    const { subject: legacySubject, legacyState } = decomposeRef(block.perRef || '');
+    const { subject: legacySubject, legacyState } = decomposeRef(curPerRef);
     const refSubject = legacySubject;
-    const isDigimonSubject = refSubject === 'own_digimon' || refSubject === 'opp_digimon';
-    const isEnabled = !!(block.perCount && block.perRef);
+    // 効果2以降(AltAction)はperRefStateCondを持てないため、状態(条件)UIは効果1限定
+    const isDigimonSubject = !forEffect && (refSubject === 'own_digimon' || refSubject === 'opp_digimon');
+    const isEnabled = !!(curPerCount && curPerRef);
     // 現在の状態 cond（perRefStateCond > legacyState の優先順）
-    const currentStateCond: ConditionPair = block.perRefStateCond
+    const currentStateCond: ConditionPair = (!forEffect && block.perRefStateCond)
       || (legacyState ? { base: legacyState, value: '' } : { base: '', value: '' });
 
     // 状態 pulldown 候補: dict.conditions のうちカード単体に適用できるものをフィルタ
@@ -757,6 +796,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     ];
 
     function setSubject(newSubject: string) {
+      if (forEffect) { setFields({ perRef: newSubject }); return; }
       // 2フィールド同時更新: update を2回呼ぶと古い block 参照で2回目が1回目を上書きするため
       // onChange でまとめて反映する
       const isDigimonRef = (newSubject === 'own_digimon' || newSubject === 'opp_digimon');
@@ -792,19 +832,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             type="checkbox"
             checked={isEnabled}
             onChange={(e) => {
-              // 2フィールドを同時更新する必要があるため、update を2回呼ばず onChange でまとめる
+              // 2フィールドを同時更新する必要があるため、update を2回呼ばず setFields でまとめる
               if (e.target.checked) {
-                onChange({
-                  ...block,
-                  perCount: block.perCount || 1,
-                  perRef: block.perRef || 'opp_digimon',
-                });
+                setFields({ perCount: curPerCount || 1, perRef: curPerRef || 'opp_digimon' });
               } else {
-                onChange({
-                  ...block,
-                  perCount: undefined,
-                  perRef: '',
-                });
+                setFields({ perCount: undefined, perRef: '' });
               }
             }}
           />
@@ -820,8 +852,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <input
                   type="number"
                   min={1}
-                  value={block.perCount || 1}
-                  onChange={(e) => update('perCount', Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  value={curPerCount || 1}
+                  onChange={(e) => setFields({ perCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
                   style={{ width: 50, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
                 />
                 <span style={{ fontSize: 11, color: '#555' }}>枚ごと、</span>
@@ -875,9 +907,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
                 <input
                   type="radio"
-                  name={`perCountMode_${index}`}
-                  checked={block.perCountMode !== 'repeat'}
-                  onChange={() => update('perCountMode', undefined)}
+                  name={`perCountMode_${index}_${forEffect ? 'alt' : 'main'}`}
+                  checked={curPerCountMode !== 'repeat'}
+                  onChange={() => setFields({ perCountMode: undefined })}
                   style={{ margin: 0 }}
                 />
                 <span>値 × N（合計）</span>
@@ -886,12 +918,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
                 <input
                   type="radio"
-                  name={`perCountMode_${index}`}
-                  checked={block.perCountMode === 'repeat'}
-                  onChange={() => update('perCountMode', 'repeat')}
+                  name={`perCountMode_${index}_${forEffect ? 'alt' : 'main'}`}
+                  checked={curPerCountMode === 'repeat'}
+                  onChange={() => setFields({ perCountMode: 'repeat' })}
                   style={{ margin: 0 }}
                 />
-                <span style={{ fontWeight: block.perCountMode === 'repeat' ? 'bold' : 'normal', color: block.perCountMode === 'repeat' ? '#1a4f8a' : 'inherit' }}>N 回発動</span>
+                <span style={{ fontWeight: curPerCountMode === 'repeat' ? 'bold' : 'normal', color: curPerCountMode === 'repeat' ? '#1a4f8a' : 'inherit' }}>N 回発動</span>
                 <span style={{ color: '#888', fontSize: 10 }}>例: DP-4000 を2回（対象を毎回選べる）</span>
               </label>
             </div>
@@ -899,7 +931,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             {(() => {
               // 発動条件と同じ COMMON_CONDS を共有（項目統一）
               const FILTER_FIELDS: CommonCondDef[] = COMMON_CONDS;
-              const filterArr = block.perRefFilter || [];
+              const filterArr = curPerRefFilter;
               const isFilterChecked = (code: string) => filterArr.some((c) => c.base === code);
               const getFilterValue = (code: string) => {
                 const c = filterArr.find((cc) => cc.base === code);
@@ -908,10 +940,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               const setFilterChecked = (code: string, enabled: boolean) => {
                 if (enabled) {
                   if (!isFilterChecked(code)) {
-                    update('perRefFilter', [...filterArr, { base: code, value: '' }]);
+                    setFields({ perRefFilter: [...filterArr, { base: code, value: '' }] });
                   }
                 } else {
-                  update('perRefFilter', filterArr.filter((c) => c.base !== code));
+                  setFields({ perRefFilter: filterArr.filter((c) => c.base !== code) });
                 }
               };
               const setFilterValue = (code: string, val: string) => {
@@ -919,9 +951,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 if (i >= 0) {
                   const next = filterArr.slice();
                   next[i] = { ...next[i], value: val };
-                  update('perRefFilter', next);
+                  setFields({ perRefFilter: next });
                 } else {
-                  update('perRefFilter', [...filterArr, { base: code, value: val }]);
+                  setFields({ perRefFilter: [...filterArr, { base: code, value: val }] });
                 }
               };
               return (
@@ -1552,12 +1584,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
           ) : (() => {
           // アクションのグループ表示処理（_top/_bottom/_select 系を1エントリに）
+          // ※ effectAction/effectValue = 編集中の効果（効果1=block自身 / 効果2以降=altActions[i]）
           const { options: actionDisplayOptions, flaggedBases, autoGroupBases } = buildActionDisplay(dict.actions);
-          const curVariant = getActionVariant(block.action || '');
-          // 現在 block.action が「位置バリアント表示」の対象か判定
-          // ケースA: block.action がフラグ付き base そのもの（例: "security_trash"）
-          const isFlaggedBaseDirect = flaggedBases.has(block.action || '');
-          // ケースB: block.action が <base>_<suffix> で base がフラグ付き or 自動グループ化対象
+          const curVariant = getActionVariant(effectAction);
+          // 現在 effectAction が「位置バリアント表示」の対象か判定
+          // ケースA: effectAction がフラグ付き base そのもの（例: "security_trash"）
+          const isFlaggedBaseDirect = flaggedBases.has(effectAction);
+          // ケースB: effectAction が <base>_<suffix> で base がフラグ付き or 自動グループ化対象
           const isVariantOfFlagged = !!(curVariant && (flaggedBases.has(curVariant.base) || autoGroupBases.has(curVariant.base)));
           const isPositional = isFlaggedBaseDirect || isVariantOfFlagged;
 
@@ -1565,10 +1598,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // - フラグ付き base 直: そのまま
           // - suffix 付き: 自動グループ化なら代表 code（autoGroupBases）、フラグ付き base なら base コード
           const normalizedActionValue = (() => {
-            if (isFlaggedBaseDirect) return block.action || '';
+            if (isFlaggedBaseDirect) return effectAction;
             if (curVariant && flaggedBases.has(curVariant.base)) return curVariant.base;
             if (curVariant && autoGroupBases.has(curVariant.base)) return curVariant.base + '_top'; // 代表
-            return block.action || '';
+            return effectAction;
           })();
 
           // 位置 pulldown の選択肢（フラグ付き base は3種固定、autoGroup は dict にあるバリアントのみ）
@@ -1595,7 +1628,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           function onActionPulldownChange(newCode: string) {
             const newIsFlaggedBase = flaggedBases.has(newCode);
             const newV = getActionVariant(newCode);
-            const cur = block.action || '';
+            const cur = effectAction;
             const curV = getActionVariant(cur);
 
             // 同じ base なら何もしない（バリアント保持）
@@ -1605,24 +1638,25 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
             // フラグ付き base を新規選択 → デフォルト _top を付与
             if (newIsFlaggedBase) {
-              changeAction(newCode + '_top');
+              changeEffectAction(newCode + '_top');
               return;
             }
             // 自動グループ化の代表 code (newCode = base + '_top')
-            changeAction(newCode);
+            changeEffectAction(newCode);
           }
           function onVariantChange(newSuffix: string) {
             if (!newSuffix) return;
             // 現在の base を特定
-            const base = isFlaggedBaseDirect ? (block.action || '') : (curVariant ? curVariant.base : '');
+            const base = isFlaggedBaseDirect ? effectAction : (curVariant ? curVariant.base : '');
             if (!base) return;
-            changeAction(base + newSuffix);
+            changeEffectAction(base + newSuffix);
           }
 
           // よく使うアクション（トリガー家族ボタンと同じ操作感）: 該当すればボタン1つで即選択、
           // 無ければ「その他のアクション」を開いて既存のプルダウン(+位置バリアント)から選ぶ
-          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === (block.action || ''));
+          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction);
           function selectCommonAction(code: string) {
+            if (isEditingAlt) { updateEffect({ action: code, value: '' }); return; }
             const dictEntry = findActionEntry(code);
             const allowsRules = !!(dictEntry && dictEntry.allowsRules) || hasRuleTranslator(code);
             const next: EffectBlock = { ...block, action: code, value: '' };
@@ -1630,8 +1664,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             onChange(next);
           }
 
-          const showCostCheckboxes = block.action === 'summon' || block.action === 'summon_from_trash' || block.action === 'evolve' || block.action === 'summon_from_evo_source';
-          const showSkipOnPlay = block.action === 'summon' || block.action === 'summon_from_trash';
+          // コストを支払わず/登場時効果は発揮しない/裏向きで は効果1（メインアクション）専用。
+          // 代替アクション（効果2以降）にはまだ対応していない
+          const showCostCheckboxes = !isEditingAlt && (effectAction === 'summon' || effectAction === 'summon_from_trash' || effectAction === 'evolve' || effectAction === 'summon_from_evo_source');
+          const showSkipOnPlay = !isEditingAlt && (effectAction === 'summon' || effectAction === 'summon_from_trash');
 
           return (
             <div style={{
@@ -1643,15 +1679,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <label>
                     アクション
-                    {block.action && (
-                      isActionImplemented(block.action, dict.actions.find((a) => a.code === block.action)?.logicCode)
+                    {effectAction && (
+                      isActionImplemented(effectAction, dict.actions.find((a) => a.code === effectAction)?.logicCode)
                         ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 6 }}>✅実装済</span>
                         : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
                     )}
                   </label>
-                  {/* summon / summon_from_trash / evolve / summon_from_evo_source 専用:
+                  {/* summon / summon_from_trash / evolve / summon_from_evo_source 専用（効果1のみ）:
                       コストを支払わず / 登場時効果は発揮しない / 裏向きで(place_on_security_top) */}
-                  {(showCostCheckboxes || block.action === 'place_on_security_top') && (
+                  {(showCostCheckboxes || (!isEditingAlt && effectAction === 'place_on_security_top')) && (
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                       {showCostCheckboxes && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
@@ -1673,7 +1709,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           登場時効果は発揮しない
                         </label>
                       )}
-                      {block.action === 'place_on_security_top' && (
+                      {!isEditingAlt && effectAction === 'place_on_security_top' && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
                           <input
                             type="checkbox"
@@ -1691,7 +1727,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {COMMON_ACTIONS.map((a) => {
-                    const active = block.action === a.code;
+                    const active = effectAction === a.code;
                     return (
                       <button
                         key={a.code}
@@ -1714,12 +1750,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 6, color: '#666' }}>
                   <input
                     type="checkbox"
-                    checked={otherActionOpen || (!!block.action && !isCommonAction)}
+                    checked={otherActionOpen || (!!effectAction && !isCommonAction)}
                     onChange={(e) => setOtherActionOpen(e.target.checked)}
                   />
                   その他のアクション
                 </label>
-                {(otherActionOpen || (!!block.action && !isCommonAction)) && (
+                {(otherActionOpen || (!!effectAction && !isCommonAction)) && (
                   <div style={{ marginTop: 4 }}>
                     <SearchSelect
                       value={normalizedActionValue}
@@ -1746,14 +1782,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <label>値</label>
                 <input
                   type="text"
-                  value={block.value === undefined ? '' : String(block.value)}
+                  value={effectValue === undefined ? '' : String(effectValue)}
                   onChange={(e) => {
                     const v = e.target.value;
-                    if (v === '') update('value', undefined);
-                    else if (/^\d+$/.test(v)) update('value', Number(v));
-                    else update('value', v);
+                    if (v === '') updateEffect({ value: undefined });
+                    else if (/^\d+$/.test(v)) updateEffect({ value: Number(v) });
+                    else updateEffect({ value: v });
                   }}
-                  placeholder={block.action === 'summon_token' ? 'トークンのカードNo (例: TK-01)' : '数値 (例: 1000)'}
+                  placeholder={effectAction === 'summon_token' ? 'トークンのカードNo (例: TK-01)' : '数値 (例: 1000)'}
                 />
               </div>
             </div>
@@ -1761,19 +1797,39 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         })()}
 
         {/* 🔀 代替アクション（OR/AND）: OR=プレイヤーがどちらかを選ぶ / AND=両方行う。
-            「効果2」以降はそれぞれ専用のアクション/値/対象/対象数/条件/取得元を持てる。
-            「効果1」＝このステップのメインアクション（上のアクション欄・下の発動条件） */}
+            「編集中」ボタンで効果1（このアクション自体）〜効果Nを切り替えると、上の
+            アクション/対象/対象数/発動条件/場所/期間の各ボタン群がその効果に対して
+            読み書きされる（ボタン群は1箇所のみで、編集対象を切り替えて使う） */}
         {(() => {
           const isOrChecked = altOp === 'or' && altActions.length > 0;
           const isAndChecked = altOp === 'and' && altActions.length > 0;
           const setMode = (mode: 'or' | 'and' | null) => {
-            if (!mode) { onChange({ ...block, altActions: [], altActionsOp: undefined }); return; }
+            if (!mode) {
+              onChange({ ...block, altActions: [], altActionsOp: undefined });
+              setEditingEffect(0);
+              return;
+            }
             if (altActions.length === 0) {
               onChange({ ...block, altActions: [{ action: '', value: '', target: '', conditions: [], fromZones: [] }], altActionsOp: mode });
+              setEditingEffect(1);
             } else {
               update('altActionsOp', mode);
             }
           };
+          const summarizeAction = (act?: string, val?: number | string) => {
+            if (!act) return '(未設定)';
+            const label = dict.actions.find((d) => d.code === act)?.label || act;
+            const valPart = (val !== undefined && val !== '') ? ` ${val}` : '';
+            return `${label}${valPart}`;
+          };
+          const btnStyle = (active: boolean) => ({
+            padding: '4px 10px', borderRadius: 5,
+            border: active ? '2px solid #9333ea' : '1px solid #bbb',
+            background: active ? '#9333ea' : '#f5f5f5',
+            color: active ? '#fff' : '#333',
+            fontWeight: active ? 'bold' : 'normal',
+            cursor: 'pointer', fontSize: 12,
+          });
           return (
             <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
               <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
@@ -1795,201 +1851,52 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </label>
               </div>
               {(isOrChecked || isAndChecked) && (
-                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {altActions.map((a, i) => {
-                    const aTgtBase = (a.target || '').split(':')[0];
-                    const aTgtSuffix = (a.target || '').substring(aTgtBase.length);
-                    const aZones = a.fromZones || [];
-                    const aZoneOp = a.fromZonesOp || 'or';
-                    const toggleAZone = (code: string) => {
-                      const next = aZones.includes(code) ? aZones.filter((z) => z !== code) : [...aZones, code];
-                      updateAltAction(i, { fromZones: next });
-                    };
-                    const isPerEnabled = !!(a.perCount && a.perRef);
-                    return (
-                      <div key={i} style={{ padding: 8, border: '1px solid #d4b8f0', borderRadius: 4, background: '#faf5ff' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <span style={{ fontWeight: 'bold', fontSize: 12, color: '#9333ea' }}>効果{i + 2}</span>
-                          <button
-                            onClick={() => removeAltAction(i)}
-                            style={{ padding: '0 6px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 10 }}
-                          >
-                            ✕ 削除
-                          </button>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 6 }}>
-                          <div>
-                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>アクション</div>
-                            <SearchSelect
-                              value={a.action}
-                              onChange={(v) => updateAltAction(i, { action: v })}
-                              options={toOpts(dict.actions)}
-                              allowFreeText
-                            />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                            <input
-                              type="text"
-                              value={a.value === undefined ? '' : String(a.value)}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                if (v === '') updateAltAction(i, { value: undefined });
-                                else if (/^\d+$/.test(v)) updateAltAction(i, { value: Number(v) });
-                                else updateAltAction(i, { value: v });
-                              }}
-                              style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-                            />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                            <SearchSelect
-                              value={aTgtBase}
-                              onChange={(v) => updateAltAction(i, { target: v + (aTgtSuffix || '') })}
-                              options={toOpts(TARGETS)}
-                              allowFreeText
-                            />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象数</div>
-                            <SearchSelect
-                              value={aTgtSuffix}
-                              onChange={(v) => updateAltAction(i, { target: aTgtBase + v })}
-                              options={toOpts(TARGET_COUNTS)}
-                              allowFreeText
-                            />
-                          </div>
-                        </div>
-                        {/* 📍 場所（この効果専用の取得元エリア） */}
-                        <div style={{ marginTop: 6 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 場所</div>
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            {FROM_ZONES.map((z) => {
-                              const active = aZones.includes(z.code);
-                              return (
-                                <button
-                                  key={z.code}
-                                  type="button"
-                                  onClick={() => toggleAZone(z.code)}
-                                  style={{
-                                    padding: '2px 8px', borderRadius: 5,
-                                    border: active ? '2px solid #9333ea' : '1px solid #bbb',
-                                    background: active ? '#9333ea' : '#f5f5f5',
-                                    color: active ? '#fff' : '#333',
-                                    fontWeight: active ? 'bold' : 'normal',
-                                    cursor: 'pointer', fontSize: 10,
-                                  }}
-                                >
-                                  {z.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          {aZones.length >= 2 && (
-                            <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-                              <span style={{ color: '#666' }}>結合:</span>
-                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                                <input type="radio" name={`altFromOp_${index}_${i}`} checked={aZoneOp === 'or'} onChange={() => updateAltAction(i, { fromZonesOp: 'or' })} style={{ margin: 0 }} />
-                                OR
-                              </label>
-                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                                <input type="radio" name={`altFromOp_${index}_${i}`} checked={aZoneOp === 'and'} onChange={() => updateAltAction(i, { fromZonesOp: 'and' })} style={{ margin: 0 }} />
-                                AND
-                              </label>
-                            </div>
-                          )}
-                        </div>
-                        {/* 🎯 この効果専用の条件 */}
-                        <div style={{ marginTop: 6 }}>
-                          <ConditionsHybridEditor
-                            conditions={a.conditions || []}
-                            onChange={(next) => updateAltAction(i, { conditions: next })}
-                            dict={dict}
-                            title={`効果${i + 2}の条件`}
-                            hint="（この効果を発動するための条件・複数 AND）"
-                            theme="action"
-                            defaultSubject=""
-                            showSubjectSelector={false}
-                            attackContextActive={isAttackTrigger}
-                          />
-                        </div>
-                        {/* ⚙ 期間・～ごとに（この効果専用） */}
-                        <details style={{ marginTop: 6 }} open={!!(a.duration || isPerEnabled)}>
-                          <summary style={{ cursor: 'pointer', fontSize: 11, color: '#9333ea', padding: '2px 0', fontWeight: 'bold' }}>
-                            ⚙ 期間・～ごとに（この効果専用）
-                          </summary>
-                          <div style={{ padding: 6, border: '1px solid #d4b8f0', borderRadius: 4, background: 'white', marginTop: 4 }}>
-                            <div style={{ marginBottom: 6 }}>
-                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>期間</div>
-                              <SearchSelect
-                                value={a.duration || ''}
-                                onChange={(v) => updateAltAction(i, { duration: v })}
-                                options={toOpts(DURATIONS)}
-                              />
-                            </div>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#9333ea' }}>
-                              <input
-                                type="checkbox"
-                                checked={isPerEnabled}
-                                onChange={(e) => {
-                                  if (e.target.checked) updateAltAction(i, { perCount: 1, perRef: 'opp_digimon' });
-                                  else updateAltAction(i, { perCount: undefined, perRef: '' });
-                                }}
-                                style={{ margin: 0 }}
-                              />
-                              ✖ ～ごとに（倍率設定）
-                            </label>
-                            {isPerEnabled && (
-                              <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                                <input
-                                  type="number" min={1}
-                                  value={a.perCount || 1}
-                                  onChange={(e) => updateAltAction(i, { perCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                                  style={{ width: 50, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
-                                />
-                                <span style={{ fontSize: 11, color: '#555' }}>枚ごと、</span>
-                                <div style={{ minWidth: 180 }}>
-                                  <SearchSelect
-                                    value={a.perRef || ''}
-                                    onChange={(v) => updateAltAction(i, { perRef: v })}
-                                    options={toOpts(REF_SUBJECTS)}
-                                  />
-                                </div>
-                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 11 }}>
-                                  <input type="radio" name={`altPerMode_${index}_${i}`} checked={a.perCountMode !== 'repeat'} onChange={() => updateAltAction(i, { perCountMode: undefined })} style={{ margin: 0 }} />
-                                  値×N
-                                </label>
-                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 11 }}>
-                                  <input type="radio" name={`altPerMode_${index}_${i}`} checked={a.perCountMode === 'repeat'} onChange={() => updateAltAction(i, { perCountMode: 'repeat' })} style={{ margin: 0 }} />
-                                  N回発動
-                                </label>
-                              </div>
-                            )}
-                          </div>
-                        </details>
-                      </div>
-                    );
-                  })}
-                  <button
-                    onClick={addAltAction}
-                    style={{ padding: '4px 10px', border: '1px dashed #9333ea', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#9333ea' }}
-                  >
-                    ＋ 効果を追加
-                  </button>
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
+                    💡 編集中の効果を選んでください。上のアクション/対象/対象数/発動条件/場所/期間は選んだ効果に反映されます。
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button type="button" onClick={() => setEditingEffect(0)} style={btnStyle(editingEffect === 0)}>
+                      効果1: {summarizeAction(block.action, block.value)}
+                    </button>
+                    {altActions.map((a, i) => (
+                      <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                        <button type="button" onClick={() => setEditingEffect(i + 1)} style={btnStyle(editingEffect === i + 1)}>
+                          効果{i + 2}: {summarizeAction(a.action, a.value)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeAltAction(i)}
+                          title="この効果を削除"
+                          style={{ padding: '2px 6px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 10 }}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => { addAltAction(); setEditingEffect(altActions.length + 1); }}
+                      style={{ padding: '4px 10px', border: '1px dashed #9333ea', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#9333ea' }}
+                    >
+                      ＋ 効果を追加
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           );
         })()}
 
+
         {/* 📍 場所（取得元エリア）: 登場/使用・進化はビルトインのため常時対象、
-            それ以外は辞書の hasFromZones=true のアクションのみ表示 */}
-        {(BUILTIN_FROM_ZONE_ACTIONS.has(block.action || '') || !!dict.actions.find((a) => a.code === block.action)?.hasFromZones) && (() => {
-          const zones = block.fromZones || [];
-          const op = block.fromZonesOp || 'or';
+            それ以外は辞書の hasFromZones=true のアクションのみ表示。編集中の効果に対して読み書き */}
+        {(BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || !!dict.actions.find((a) => a.code === effectAction)?.hasFromZones) && (() => {
+          const zones = effectFromZones;
+          const op = effectFromZonesOp;
           const toggleZone = (code: string) => {
             const next = zones.includes(code) ? zones.filter((z) => z !== code) : [...zones, code];
-            update('fromZones', next);
+            updateEffect({ fromZones: next });
           };
           return (
             <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
@@ -2022,9 +1929,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
                     <input
                       type="radio"
-                      name={`fromZonesOp_${index}`}
+                      name={`fromZonesOp_${index}_${editingEffect}`}
                       checked={op === 'or'}
-                      onChange={() => update('fromZonesOp', 'or')}
+                      onChange={() => updateEffect({ fromZonesOp: 'or' })}
                       style={{ margin: 0 }}
                     />
                     OR（いずれか）
@@ -2032,9 +1939,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
                     <input
                       type="radio"
-                      name={`fromZonesOp_${index}`}
+                      name={`fromZonesOp_${index}_${editingEffect}`}
                       checked={op === 'and'}
-                      onChange={() => update('fromZonesOp', 'and')}
+                      onChange={() => updateEffect({ fromZonesOp: 'and' })}
                       style={{ margin: 0 }}
                     />
                     AND（全て）
@@ -2095,6 +2002,52 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* 対象 / 対象数 (アクションのターゲット) */}
         {(() => {
+          // 効果2以降（代替アクション）を編集中は簡易版のみ（デジモン+テイマー複数選択・
+          // 対象の条件は効果1専用のため、混線を避けてここでは提供しない）
+          if (isEditingAlt) {
+            const eBase = (effectTarget || '').split(':')[0];
+            const eSuffix = (effectTarget || '').substring(eBase.length);
+            const eCurTgt = TARGET_SEL_CODE_TO_L1L2[eBase] || { l1: '', l2: '' };
+            const eL2Options = TARGET_SEL_L2[eCurTgt.l1] || [];
+            const eHideCount = eBase === 'self' || eBase === 'self_card';
+            const eIsUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(eBase);
+            const setEffTgt = (l1: string, l2?: string) => {
+              if (!l1) { updateEffect({ target: '' }); return; }
+              if (l1 === 'self') { updateEffect({ target: 'self_card' + eSuffix }); return; }
+              if (l1 === 'same_target') { updateEffect({ target: 'same_target' + eSuffix }); return; }
+              const useL2 = l2 || (eCurTgt.l1 === l1 && eCurTgt.l2 ? eCurTgt.l2 : 'digimon');
+              updateEffect({ target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '') + eSuffix });
+            };
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: eHideCount ? '1fr' : '1fr 1fr', gap: 8, marginTop: 8 }}>
+                <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
+                  <label style={{ fontWeight: 'bold', color: '#b76e00' }}>🎯 対象</label>
+                  <ButtonGroup options={TARGET_SEL_L1} value={eCurTgt.l1} onChange={(l1) => setEffTgt(l1)} accentColor="#b76e00" />
+                  {eL2Options.length > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                      <ButtonGroup options={eL2Options} value={eCurTgt.l2} onChange={(l2) => setEffTgt(eCurTgt.l1, l2)} accentColor="#b76e00" />
+                    </div>
+                  )}
+                  {eIsUnimplemented && (
+                    <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
+                      ⚠ この対象はエンジン未実装です（保存はできますが動作しません）
+                    </div>
+                  )}
+                </div>
+                {!eHideCount && (
+                  <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
+                    <label style={{ fontWeight: 'bold', color: '#b76e00' }}>🎯 対象数</label>
+                    <ButtonGroup
+                      options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
+                      value={eSuffix}
+                      onChange={(v) => updateEffect({ target: eBase + v })}
+                      accentColor="#b76e00"
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          }
           const tgtL2Options = TARGET_SEL_L2[curTgt.l1] || [];
           // デジモン/テイマーだけは複数選択可（例:「相手のデジモン/テイマーを1体消滅させる」）。
           // カード/セキュリティ/プレイヤーは従来通り単一選択（デジモン/テイマーの複数選択とは排他）
@@ -2310,33 +2263,33 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
-        {/* ⏳ 期間（クイックボタン）: ✅を入れるとボタンが現れる。「〜の間（汎用）」等は
-            ⚙追加オプション内の期間プルダウンで従来通り設定可能 */}
+        {/* ⏳ 期間（クイックボタン）: ✅を入れるとボタンが現れる。編集中の効果（効果1/効果2以降）
+            に対して読み書きする。「〜の間（汎用）」等もL1に含む */}
         <div className="field" style={{ marginTop: 8 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
             <input
               type="checkbox"
-              checked={showDurationPanel}
+              checked={showDurationPanel || !!effectDuration}
               onChange={(e) => {
                 setShowDurationPanel(e.target.checked);
-                if (!e.target.checked) update('duration', undefined);
+                if (!e.target.checked) updateEffect({ duration: undefined });
               }}
             />
             ⏳ 期間
           </label>
-          {showDurationPanel && (() => {
-            const durL1 = durationToL1(block.duration);
+          {(showDurationPanel || !!effectDuration) && (() => {
+            const durL1 = durationToL1(effectDuration);
             const durL2Options = DURATION_L2[durL1] || [];
-            const durL2Value = durL2Options.some((o) => o.code === block.duration) ? (block.duration || '') : '';
+            const durL2Value = durL2Options.some((o) => o.code === effectDuration) ? (effectDuration || '') : '';
             return (
               <div style={{ marginTop: 4 }}>
                 <ButtonGroup
                   options={DURATION_L1}
                   value={durL1}
                   onChange={(l1) => {
-                    if (!DURATION_L2[l1]) { update('duration', l1); return; }
+                    if (!DURATION_L2[l1]) { updateEffect({ duration: l1 }); return; }
                     // 既に同じグループ内なら自分/相手の選択を保持、そうでなければ「自分」を既定に
-                    update('duration', durL1 === l1 ? (block.duration || DURATION_L2[l1][0].code) : DURATION_L2[l1][0].code);
+                    updateEffect({ duration: durL1 === l1 ? (effectDuration || DURATION_L2[l1][0].code) : DURATION_L2[l1][0].code });
                   }}
                   accentColor="#1a4f8a"
                 />
@@ -2345,7 +2298,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <ButtonGroup
                       options={durL2Options}
                       value={durL2Value}
-                      onChange={(v) => update('duration', v)}
+                      onChange={(v) => updateEffect({ duration: v })}
                       accentColor="#1a4f8a"
                     />
                   </div>
@@ -2367,24 +2320,27 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             このカード自身やゲーム状況を確認する条件。対象カードを色/タイプで絞る場合は「ターゲットフィルタ」を使用
           </div>
           <ConditionsHybridEditor
-            conditions={conditions}
-            onChange={(next) => update('conditions', next)}
+            conditions={effectConditions}
+            onChange={(next) => updateEffect({ conditions: next })}
             dict={dict}
-            title="発動条件"
+            title={isEditingAlt ? `発動条件（効果${editingEffect + 1}）` : '発動条件'}
             hint={
-              block.trigger === 'alt_evolve'
+              isEditingAlt
+                ? '（この効果を発動するための条件・複数指定可・AND結合）'
+                : block.trigger === 'alt_evolve'
                 ? '（代替進化専用の意味: 条件1=発動条件 / 条件2=進化元の絞り込み・複数追加時は3個目以降は無視されます）'
                 : '（このアクションを発動するために満たすべき条件・複数指定可・AND結合）'
             }
             theme="action"
             defaultSubject=""
             attackContextActive={isAttackTrigger}
-            showCostMod={block.action === 'summon' || block.action === 'evolve' || block.action === 'destroy'}
+            showCostMod={effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'destroy'}
           />
 
-        {renderPerCountEditor()}
+        {renderPerCountEditor(isEditingAlt)}
 
-        {/* コスト: 「〇〇することで」を表現 */}
+        {/* コスト: 「〇〇することで」を表現（効果1専用。AltActionにcostsフィールドは無い） */}
+        {!isEditingAlt && (
         <div className="field" style={{ gridColumn: '1 / span 2' }}>
           <label>コスト（「〇〇することで」発動）</label>
           {costs.length === 0 && (
@@ -2681,6 +2637,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             ＋ コストを追加
           </button>
         </div>
+        )}
 
         </details>
         )}

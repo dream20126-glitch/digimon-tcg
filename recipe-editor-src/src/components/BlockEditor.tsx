@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep } from '../types';
 import {
   SECTIONS,
@@ -715,7 +715,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   }
 
   // 🔀 代替アクション（OR/AND）: OR=プレイヤーがどちらかを選ぶ / AND=両方行う。
-  // チェックボックス自体は「その他の条件」の隣（発動条件内・extraToggle経由）に表示し、
+  // チェックボックス自体は「その他のアクション」の隣に表示し、
   // 「編集中」選択・設定内容の一覧はアクション欄の近くに別途表示する
   const isOrChecked = altOp === 'or' && altActions.length > 0;
   const isAndChecked = altOp === 'and' && altActions.length > 0;
@@ -1816,14 +1816,32 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     );
                   })}
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 6, color: '#666' }}>
-                  <input
-                    type="checkbox"
-                    checked={otherActionOpen || (!!effectAction && !isCommonAction)}
-                    onChange={(e) => setOtherActionOpen(e.target.checked)}
-                  />
-                  その他のアクション
-                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 6 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                    <input
+                      type="checkbox"
+                      checked={otherActionOpen || (!!effectAction && !isCommonAction)}
+                      onChange={(e) => setOtherActionOpen(e.target.checked)}
+                    />
+                    その他のアクション
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                    <input
+                      type="checkbox"
+                      checked={isOrChecked}
+                      onChange={(e) => setAltMode(e.target.checked ? 'or' : (isAndChecked ? 'and' : null))}
+                    />
+                    OR（どちらかを選ぶ）
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                    <input
+                      type="checkbox"
+                      checked={isAndChecked}
+                      onChange={(e) => setAltMode(e.target.checked ? 'and' : (isOrChecked ? 'or' : null))}
+                    />
+                    AND（両方行う）
+                  </label>
+                </div>
                 {(otherActionOpen || (!!effectAction && !isCommonAction)) && (
                   <div style={{ marginTop: 4 }}>
                     <SearchSelect
@@ -1866,7 +1884,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         })()}
 
         {/* 「編集中」の効果切替 + 設定内容一覧。OR/ANDのチェックボックス自体は
-            発動条件ボックス内「その他の条件」の隣に表示する（extraToggle経由） */}
+            アクション欄「その他のアクション」の隣に表示する */}
         {(isOrChecked || isAndChecked) && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
             <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
@@ -2360,26 +2378,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             defaultSubject=""
             attackContextActive={isAttackTrigger}
             showCostMod={effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'destroy'}
-            extraToggle={
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
-                  <input
-                    type="checkbox"
-                    checked={isOrChecked}
-                    onChange={(e) => setAltMode(e.target.checked ? 'or' : (isAndChecked ? 'and' : null))}
-                  />
-                  OR（どちらかを選ぶ）
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
-                  <input
-                    type="checkbox"
-                    checked={isAndChecked}
-                    onChange={(e) => setAltMode(e.target.checked ? 'and' : (isOrChecked ? 'or' : null))}
-                  />
-                  AND（両方行う）
-                </label>
-              </div>
-            }
           />
 
         {renderPerCountEditor(isEditingAlt)}
@@ -3482,10 +3480,6 @@ interface ConditionsHybridEditorProps {
   // true のときのみ「コスト増減」カテゴリを表示する。アクションが登場/進化/消滅のときだけ
   // 意味を持つ（コストしきい値そのものを+/-する機能のため）。既定は非表示
   showCostMod?: boolean;
-  // 「その他の条件」チェックボックスの隣に追加で表示したいUI（例: 発動条件専用のOR/AND切替）。
-  // このコンポーネント自体は複数箇所（トリガー条件/発動条件/ルール条件等）で共有するため、
-  // 呼び出し元ごとに異なる専用UIを注入できるようにするための汎用スロット
-  extraToggle?: ReactNode;
 }
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
@@ -3585,7 +3579,7 @@ function formatCostMod(sign: '+' | '-', amount: string, perCount: string, perRef
 function ConditionsHybridEditor({
   conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true,
   supportsMultiValue = false, attackContextActive = false,
-  part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false, extraToggle,
+  part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
@@ -3702,17 +3696,14 @@ function ConditionsHybridEditor({
         })}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
-          <input
-            type="checkbox"
-            checked={otherOpen || otherRows.length > 0}
-            onChange={(e) => setOtherOpen(e.target.checked)}
-          />
-          その他の条件
-        </label>
-        {extraToggle}
-      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 8, color: '#666' }}>
+        <input
+          type="checkbox"
+          checked={otherOpen || otherRows.length > 0}
+          onChange={(e) => setOtherOpen(e.target.checked)}
+        />
+        その他の条件
+      </label>
     </>
   );
 

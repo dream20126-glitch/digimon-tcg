@@ -483,6 +483,15 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'recover', label: 'リカバリー' },
   { code: 'evolve', label: '進化' },
 ];
+// よく使うコストアクション（「〇〇することで」の〇〇部分）
+const COMMON_COST_ACTIONS: { code: string; label: string }[] = [
+  { code: 'rest', label: 'レストさせる' },
+  { code: 'cost_discard', label: '手札を捨てる' },
+  { code: 'cost_trash_self', label: '自身をトラッシュ' },
+  { code: 'evo_discard', label: '進化元を破棄' },
+  { code: 'cost_destroy_other', label: '他の自分のデジモンを消滅' },
+  { code: 'cost_digiburst', label: 'デジバースト' },
+];
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
 const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'evolve']);
@@ -807,6 +816,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
   const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
   const [otherActionOpen, setOtherActionOpen] = useState<boolean>(false);
+  // コスト各行の「その他のアクション」開閉状態（行indexごとに管理）
+  const [costOtherOpen, setCostOtherOpen] = useState<Record<number, boolean>>({});
+  // ～ごとにの「状態（条件）」その他プルダウン開閉状態
+  const [perStateOtherOpen, setPerStateOtherOpen] = useState<boolean>(false);
   // 「対象の条件」をアクションの対象/対象数の2箇所に分けて描画するため、
   // その他チェックボックスの開閉状態をここで共有する
   const [targetFilterOtherOpen, setTargetFilterOtherOpen] = useState<boolean>(false);
@@ -927,16 +940,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 />
                 <span style={{ fontSize: 11, color: '#555' }}>枚ごと、</span>
               </div>
-              {/* 対象プルダウン */}
-              <div style={{ minWidth: 200 }}>
+              {/* 対象（ボタン方式） */}
+              <div>
                 <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                <SearchSelect
-                  value={refSubject}
-                  onChange={setSubject}
-                  options={toOpts(REF_SUBJECTS)}
-                />
+                <ButtonGroup options={REF_SUBJECTS.filter((o) => o.code).map((o) => ({ code: o.code, label: o.label }))} value={refSubject} onChange={setSubject} accentColor="#1a4f8a" />
               </div>
-              {/* 状態プルダウン: デジモン系のみ表示。dict.conditions から動的に選択肢生成 */}
+              {/* 状態: デジモン系のみ表示。よく使う2状態はボタン、他は辞書からその他選択 */}
               {isDigimonSubject && (
                 <div style={{ minWidth: 200 }}>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -946,14 +955,35 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         ? <span style={{ color: '#2e7d32', fontSize: 9 }}>✅</span>
                         : <span style={{ color: '#e65100', fontSize: 9 }} title="エンジン未実装">⚠</span>
                     )}
-                    <span style={{ marginLeft: 'auto', fontSize: 9, color: '#888' }}>辞書の条件を流用</span>
                   </div>
-                  <SearchSelect
-                    value={currentStateCond.base}
+                  <ButtonGroup
+                    options={[
+                      { code: '', label: '状態問わず' },
+                      { code: 'cond_self_rest', label: 'レスト状態' },
+                      { code: 'cond_self_active', label: 'アクティブ状態' },
+                    ]}
+                    value={['cond_self_rest', 'cond_self_active'].includes(currentStateCond.base) ? currentStateCond.base : ''}
                     onChange={setStateBase}
-                    options={stateCondOptions}
-                    allowFreeText
+                    accentColor="#1a4f8a"
                   />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, marginTop: 4, color: '#666' }}>
+                    <input
+                      type="checkbox"
+                      checked={perStateOtherOpen || (!!currentStateCond.base && !['cond_self_rest', 'cond_self_active'].includes(currentStateCond.base))}
+                      onChange={(e) => setPerStateOtherOpen(e.target.checked)}
+                    />
+                    その他の状態（辞書の条件を流用）
+                  </label>
+                  {(perStateOtherOpen || (!!currentStateCond.base && !['cond_self_rest', 'cond_self_active'].includes(currentStateCond.base))) && (
+                    <div style={{ marginTop: 2 }}>
+                      <SearchSelect
+                        value={currentStateCond.base}
+                        onChange={setStateBase}
+                        options={stateCondOptions}
+                        allowFreeText
+                      />
+                    </div>
+                  )}
                   {/* 値が必要な条件（cond_lv_le など）の値入力 */}
                   {currentStateCond.base && (
                     <input
@@ -2390,7 +2420,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>コストなし</div>
           )}
           {costs.map((c, i) => {
-            // コストアクションにも位置指定対応（フラグ駆動 + 自動グループ化）
+            const isCommonCostAction = COMMON_COST_ACTIONS.some((a) => a.code === (c.action || ''));
+            // 位置バリアント対応（フラグ駆動+自動グループ化）は「その他」経由選択時のみ引き続き使う
             const { options: costActionOptions, flaggedBases: costFlaggedBases, autoGroupBases: costAutoGroupBases } = buildActionDisplay(dict.actions);
             const costCurVariant = getActionVariant(c.action || '');
             const costIsFlaggedBaseDirect = costFlaggedBases.has(c.action || '');
@@ -2439,29 +2470,97 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               updateCost(i, { ...c, action: base + newSuffix });
             }
 
+            // 対象（TARGET_SELのL1/L2ボタン方式。アクションの対象と同じ体系）
+            const cTgtBase = (c.target || '').split(':')[0];
+            const cTgtSuffix = (c.target || '').substring(cTgtBase.length);
+            const cCurTgt = TARGET_SEL_CODE_TO_L1L2[cTgtBase] || { l1: '', l2: '' };
+            const cTgtL2Options = TARGET_SEL_L2[cCurTgt.l1] || [];
+            const cHideCount = cTgtBase === 'self' || cTgtBase === 'self_card';
+            const setCostTgt = (l1: string, l2?: string) => {
+              if (!l1) { updateCost(i, { ...c, target: '' }); return; }
+              if (l1 === 'self') { updateCost(i, { ...c, target: 'self_card' + cTgtSuffix }); return; }
+              if (l1 === 'same_target') { updateCost(i, { ...c, target: 'same_target' + cTgtSuffix }); return; }
+              const useL2 = l2 || (cCurTgt.l1 === l1 && cCurTgt.l2 ? cCurTgt.l2 : 'digimon');
+              updateCost(i, { ...c, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '') + cTgtSuffix });
+            };
+
+            // 取得元エリア（ボタン方式。アクションの「場所」と同じ体系）
+            const czones = c.fromZones || [];
+            const cop = c.fromZonesOp || 'or';
+            const toggleCZone = (code: string) => {
+              const next = czones.includes(code) ? czones.filter((z) => z !== code) : [...czones, code];
+              updateCost(i, { ...c, fromZones: next });
+            };
+
             return (
               <div key={i} style={{ marginBottom: 6, padding: 6, border: '1px solid #ffe0b2', borderRadius: 4, background: '#fffbe6' }}>
-                <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
-                  <div style={{ flex: 2 }}>
-                    <SearchSelect
-                      value={costNormalizedActionValue}
-                      onChange={onCostActionChange}
-                      options={costActionOptions}
-                      allowFreeText
-                      placeholder="--コストアクション--"
-                    />
-                    {/* 📍 位置 pulldown: フラグ付き or 自動グループ時のみ */}
-                    {costIsPositional && costVariantOptions.length > 0 && (
-                      <div style={{ marginTop: 2 }}>
-                        <SearchSelect
-                          value={costCurrentSuffix}
-                          onChange={onCostVariantChange}
-                          options={costVariantOptions}
-                          placeholder="📍 位置"
-                        />
-                      </div>
-                    )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#b76e00', fontWeight: 'bold' }}>コスト{i + 1}</div>
+                  <button
+                    onClick={() => removeCost(i)}
+                    style={{ padding: '0 8px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, height: 22 }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                {/* アクション（よく使うコストアクション + その他） */}
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>アクション</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {COMMON_COST_ACTIONS.map((a) => {
+                      const active = c.action === a.code;
+                      return (
+                        <button
+                          key={a.code}
+                          type="button"
+                          onClick={() => updateCost(i, { ...c, action: a.code })}
+                          style={{
+                            padding: '3px 9px', borderRadius: 5,
+                            border: active ? '2px solid #b76e00' : '1px solid #bbb',
+                            background: active ? '#b76e00' : '#f5f5f5',
+                            color: active ? '#fff' : '#333',
+                            fontWeight: active ? 'bold' : 'normal',
+                            cursor: 'pointer', fontSize: 11,
+                          }}
+                        >
+                          {a.label}
+                        </button>
+                      );
+                    })}
                   </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, marginTop: 4, color: '#666' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!costOtherOpen[i] || (!!c.action && !isCommonCostAction)}
+                      onChange={(e) => setCostOtherOpen((prev) => ({ ...prev, [i]: e.target.checked }))}
+                    />
+                    その他のアクション
+                  </label>
+                  {(!!costOtherOpen[i] || (!!c.action && !isCommonCostAction)) && (
+                    <div style={{ marginTop: 2 }}>
+                      <SearchSelect
+                        value={costNormalizedActionValue}
+                        onChange={onCostActionChange}
+                        options={costActionOptions}
+                        allowFreeText
+                        placeholder="--コストアクション--"
+                      />
+                      {costIsPositional && costVariantOptions.length > 0 && (
+                        <div style={{ marginTop: 2 }}>
+                          <SearchSelect
+                            value={costCurrentSuffix}
+                            onChange={onCostVariantChange}
+                            options={costVariantOptions}
+                            placeholder="📍 位置"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* 値 */}
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
                   <input
                     type="text"
                     value={c.value === undefined ? '' : String(c.value)}
@@ -2472,114 +2571,81 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       else updateCost(i, { ...c, value: v });
                     }}
                     placeholder="値（枚数等）"
-                    style={{ flex: 1, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                    style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
                   />
-                  <div style={{ flex: 1.5 }}>
-                    <SearchSelect
-                      value={(c.target || '').split(':')[0]}
-                      onChange={(v) => updateCost(i, { ...c, target: v })}
-                      options={toOpts(TARGETS)}
-                      allowFreeText
-                      placeholder="--対象--"
-                    />
+                </div>
+                {/* 対象（ボタン方式） */}
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                  <ButtonGroup options={TARGET_SEL_L1} value={cCurTgt.l1} onChange={(l1) => setCostTgt(l1)} accentColor="#b76e00" />
+                  {cTgtL2Options.length > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                      <ButtonGroup options={cTgtL2Options} value={cCurTgt.l2} onChange={(l2) => setCostTgt(cCurTgt.l1, l2)} accentColor="#b76e00" />
+                    </div>
+                  )}
+                  {!cHideCount && cCurTgt.l1 && (
+                    <div style={{ marginTop: 4 }}>
+                      <ButtonGroup
+                        options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
+                        value={cTgtSuffix}
+                        onChange={(v) => updateCost(i, { ...c, target: cTgtBase + v })}
+                        accentColor="#b76e00"
+                      />
+                    </div>
+                  )}
+                </div>
+                {/* 取得元エリア（ボタン方式） */}
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所</div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {FROM_ZONES.map((z) => {
+                      const active = czones.includes(z.code);
+                      return (
+                        <button
+                          key={z.code}
+                          type="button"
+                          onClick={() => toggleCZone(z.code)}
+                          style={{
+                            padding: '2px 8px', borderRadius: 5,
+                            border: active ? '2px solid #1976d2' : '1px solid #bbb',
+                            background: active ? '#1976d2' : '#f5f5f5',
+                            color: active ? '#fff' : '#333',
+                            fontWeight: active ? 'bold' : 'normal',
+                            cursor: 'pointer', fontSize: 10,
+                          }}
+                        >
+                          {z.label}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <button
-                    onClick={() => removeCost(i)}
-                    style={{
-                      padding: '0 8px',
-                      border: '1px solid #d33',
-                      color: '#d33',
-                      background: 'white',
-                      borderRadius: 3,
-                      cursor: 'pointer',
-                      height: 26,
-                    }}
-                  >
-                    ✕
-                  </button>
+                  {czones.length >= 2 && (
+                    <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
+                      <span style={{ color: '#666' }}>結合:</span>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name={`costFromOp_${index}_${i}`}
+                          checked={cop === 'or'}
+                          onChange={() => updateCost(i, { ...c, fromZonesOp: 'or' })}
+                          style={{ margin: 0 }}
+                        />
+                        OR
+                      </label>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name={`costFromOp_${index}_${i}`}
+                          checked={cop === 'and'}
+                          onChange={() => updateCost(i, { ...c, fromZonesOp: 'and' })}
+                          style={{ margin: 0 }}
+                        />
+                        AND
+                      </label>
+                    </div>
+                  )}
                 </div>
 
-                {/* === コスト対象の取得元エリア === */}
-                {(() => {
-                  const czones = c.fromZones || [];
-                  const cop = c.fromZonesOp || 'or';
-                  const cAvailable = FROM_ZONES.filter((z) => !czones.includes(z.code));
-                  return (
-                    <div style={{ marginTop: 6, padding: 6, background: '#f3f6fc', borderRadius: 4, border: '1px solid #d8e0f0' }}>
-                      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#1976d2', marginBottom: 4 }}>
-                        📥 取得元エリア{czones.length > 0 ? ` (${czones.length})` : ''}
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', minHeight: 26 }}>
-                        {czones.length === 0 && (
-                          <span style={{ color: '#888', fontSize: 11 }}>（指定なし）</span>
-                        )}
-                        {czones.map((zCode, zi) => {
-                          const z = FROM_ZONES.find((x) => x.code === zCode);
-                          const label = z ? z.label : zCode;
-                          return (
-                            <span key={zCode} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', background: 'white', border: '1px solid #88a', borderRadius: 12, fontSize: 11 }}>
-                                {label}
-                                <button
-                                  onClick={() => updateCost(i, { ...c, fromZones: czones.filter((x) => x !== zCode) })}
-                                  style={{ padding: '0 4px', border: 'none', background: 'transparent', color: '#d33', cursor: 'pointer', fontSize: 11 }}
-                                  title="削除"
-                                >
-                                  ✕
-                                </button>
-                              </span>
-                              {zi < czones.length - 1 && (
-                                <span style={{ fontSize: 10, color: '#666', fontWeight: 'bold' }}>{cop === 'and' ? 'AND' : 'OR'}</span>
-                              )}
-                            </span>
-                          );
-                        })}
-                      </div>
-                      <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center' }}>
-                        {cAvailable.length > 0 && (
-                          <select
-                            value=""
-                            onChange={(e) => {
-                              if (e.target.value) updateCost(i, { ...c, fromZones: [...czones, e.target.value] });
-                              e.target.value = '';
-                            }}
-                            style={{ padding: '3px 6px', border: '1px dashed #88a', borderRadius: 3, fontSize: 11, background: 'white', cursor: 'pointer' }}
-                          >
-                            <option value="">＋ エリア追加...</option>
-                            {cAvailable.map((z) => (
-                              <option key={z.code} value={z.code}>{z.label}</option>
-                            ))}
-                          </select>
-                        )}
-                        {czones.length >= 2 && (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-                            <span style={{ color: '#666' }}>結合:</span>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                              <input
-                                type="radio"
-                                name={`costFromOp_${index}_${i}`}
-                                checked={cop === 'or'}
-                                onChange={() => updateCost(i, { ...c, fromZonesOp: 'or' })}
-                                style={{ margin: 0 }}
-                              />
-                              OR
-                            </label>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                              <input
-                                type="radio"
-                                name={`costFromOp_${index}_${i}`}
-                                checked={cop === 'and'}
-                                onChange={() => updateCost(i, { ...c, fromZonesOp: 'and' })}
-                                style={{ margin: 0 }}
-                              />
-                              AND
-                            </label>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
 
                 {/* === コスト対象の絞り込み条件 (チェックボックス・複数AND) === */}
                 {(() => {

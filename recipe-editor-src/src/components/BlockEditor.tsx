@@ -522,7 +522,11 @@ function durationToL1(dur?: string): string {
 }
 // 「～ごとに」の対象（REF_SUBJECTS）も2段ボタン式に統一。L2のコードはそのままREF_SUBJECTSの
 // コードを使う（TARGET_SELのようなL1+L2合成は不要）。opp_no_evo_digimon/last_rest_count は
-// このL1/L2に収まらない特殊枠のため「その他の対象」プルダウン側に残す
+// このL1/L2に収まらない特殊枠のため「その他の対象」プルダウン側に残す。
+// デジモン/テイマーは「デジモン/テイマー」という効果表現があるため複数選択可（両方チェック
+// → own_digimon_tamer / opp_digimon_tamer という組合せコードになる。「全カード」は
+// このデジモン+テイマー両方チェック状態のショートカットボタン。エンジン未対応のためこの
+// 組合せコードは⚠未実装扱い（保存はできるが動作しない）
 const PERREF_L1 = [
   { code: 'self', label: 'このカード' },
   { code: 'own', label: '自分' },
@@ -535,6 +539,7 @@ const PERREF_L2: Record<string, { code: string; label: string }[]> = {
   own: [
     { code: 'own_digimon', label: 'デジモン' },
     { code: 'own_tamer', label: 'テイマー' },
+    { code: 'own_digimon_tamer', label: '全カード' },
     { code: 'own_hand', label: '手札' },
     { code: 'own_trash', label: 'トラッシュ' },
     { code: 'own_security', label: 'セキュリティ' },
@@ -543,12 +548,15 @@ const PERREF_L2: Record<string, { code: string; label: string }[]> = {
   opp: [
     { code: 'opp_digimon', label: 'デジモン' },
     { code: 'opp_tamer', label: 'テイマー' },
+    { code: 'opp_digimon_tamer', label: '全カード' },
     { code: 'opp_hand', label: '手札' },
     { code: 'opp_trash', label: 'トラッシュ' },
     { code: 'opp_security', label: 'セキュリティ' },
     { code: 'opp_battle_area', label: 'バトルエリア' },
   ],
 };
+// デジモン+テイマー複数選択の結合コード（エンジン未対応・⚠表示用）
+const PERREF_COMBO_CODES = new Set(['own_digimon_tamer', 'opp_digimon_tamer']);
 const PERREF_L2_CODES = new Set(
   Object.values(PERREF_L2).flatMap((opts) => opts.map((o) => o.code))
 );
@@ -992,12 +1000,49 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     const keepCurrent = opts.some((o) => o.code === refSubject);
                     setSubject(keepCurrent ? refSubject : opts[0].code);
                   };
+                  // デジモン/テイマーは「デジモン/テイマー」表現があるため複数選択可（両方＝全カード）
+                  const digimonCode = curL1 === 'own' ? 'own_digimon' : curL1 === 'opp' ? 'opp_digimon' : '';
+                  const tamerCode = curL1 === 'own' ? 'own_tamer' : curL1 === 'opp' ? 'opp_tamer' : '';
+                  const comboCode = curL1 === 'own' ? 'own_digimon_tamer' : curL1 === 'opp' ? 'opp_digimon_tamer' : '';
+                  const hasDigiTamer = curL1 === 'own' || curL1 === 'opp';
+                  const digimonChecked = refSubject === digimonCode || refSubject === comboCode;
+                  const tamerChecked = refSubject === tamerCode || refSubject === comboCode;
+                  const applyDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
+                    if (nextDigimon && nextTamer) setSubject(comboCode);
+                    else if (nextDigimon) setSubject(digimonCode);
+                    else if (nextTamer) setSubject(tamerCode);
+                    else setSubject('');
+                  };
+                  const exclusiveL2Options = l2Options.filter((o) => o.code !== digimonCode && o.code !== tamerCode && o.code !== comboCode);
+                  const toggleBtnStyle = (active: boolean) => ({
+                    padding: '3px 9px', borderRadius: 5,
+                    border: active ? '2px solid #1a4f8a' : '1px solid #bbb',
+                    background: active ? '#1a4f8a' : '#f5f5f5',
+                    color: active ? '#fff' : '#333',
+                    fontWeight: active ? 'bold' : 'normal',
+                    cursor: 'pointer', fontSize: 11,
+                  });
                   return (
                     <>
                       <ButtonGroup options={PERREF_L1} value={curL1} onChange={handleL1} accentColor="#1a4f8a" />
-                      {l2Options.length > 1 && (
+                      {hasDigiTamer && (
+                        <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <button type="button" onClick={() => applyDigiTamer(!digimonChecked, tamerChecked)} style={toggleBtnStyle(digimonChecked)}>デジモン</button>
+                          <button type="button" onClick={() => applyDigiTamer(digimonChecked, !tamerChecked)} style={toggleBtnStyle(tamerChecked)}>テイマー</button>
+                          <button type="button" onClick={() => setSubject(comboCode)} style={toggleBtnStyle(refSubject === comboCode)}>全カード</button>
+                          {exclusiveL2Options.length > 0 && (
+                            <ButtonGroup options={exclusiveL2Options} value={!digimonChecked && !tamerChecked ? refSubject : ''} onChange={setSubject} accentColor="#1a4f8a" />
+                          )}
+                        </div>
+                      )}
+                      {!hasDigiTamer && l2Options.length > 1 && (
                         <div style={{ marginTop: 4 }}>
                           <ButtonGroup options={l2Options} value={refSubject} onChange={setSubject} accentColor="#1a4f8a" />
+                        </div>
+                      )}
+                      {PERREF_COMBO_CODES.has(refSubject) && (
+                        <div style={{ marginTop: 4, fontSize: 10, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '3px 6px' }}>
+                          ⚠ 「全カード」（デジモン+テイマー）はエンジン未実装です（保存はできますが動作しません）
                         </div>
                       )}
                     </>

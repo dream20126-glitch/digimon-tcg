@@ -1822,6 +1822,42 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const valPart = (val !== undefined && val !== '') ? ` ${val}` : '';
             return `${label}${valPart}`;
           };
+          // 対象コード（例: "own_tamer:1"）→「自分のテイマー 1体」のような表記に復元
+          const describeTarget = (targetStr?: string) => {
+            if (!targetStr) return '';
+            const base = targetStr.split(':')[0];
+            const suffix = targetStr.substring(base.length);
+            const l1l2 = TARGET_SEL_CODE_TO_L1L2[base];
+            let label = base;
+            if (l1l2) {
+              const l1Label = TARGET_SEL_L1.find((o) => o.code === l1l2.l1)?.label || '';
+              const l2Label = l1l2.l2 ? (TARGET_SEL_L2[l1l2.l1] || []).find((o) => o.code === l1l2.l2)?.label || '' : '';
+              label = [l1Label, l2Label].filter(Boolean).join('の');
+            }
+            const countLabel = suffix ? (TARGET_COUNTS.find((o) => o.code === suffix)?.label || '') : '';
+            return [label, countLabel].filter(Boolean).join(' ');
+          };
+          // 条件配列 → ボタン表記をそのまま連結した文字列に復元（例:「テイマーの色:黄」）
+          const describeConditions = (conds?: ConditionPair[]) => {
+            if (!conds || conds.length === 0) return '';
+            return conds.map((c) => {
+              if (!c.base) return '';
+              const def = COMMON_CONDS.find((cc) => cc.code === c.base);
+              const label = def?.label || dict.conditions.find((d) => d.code === c.base)?.label || c.base;
+              const valuePart = (c.value && !NO_VALUE_CONDS.has(c.base)) ? String(c.value) : '';
+              const sl = c.subject ? COND_SUBJECT_CODE_TO_L1L2[c.subject] : undefined;
+              const subjLabel = sl
+                ? [
+                    COND_SUBJECT_L1.find((o) => o.code === sl.l1)?.label || '',
+                    sl.l2 ? (COND_SUBJECT_L2[sl.l1] || []).find((o) => o.code === sl.l2)?.label || '' : '',
+                  ].filter(Boolean).join('の')
+                : '';
+              return [subjLabel, label, valuePart].filter(Boolean).join(' ');
+            }).filter(Boolean).join('・');
+          };
+          const describeEffect = (act?: string, val?: number | string, tgt?: string, conds?: ConditionPair[]) => {
+            return [summarizeAction(act, val), describeTarget(tgt), describeConditions(conds)].filter(Boolean).join('　');
+          };
           const btnStyle = (active: boolean) => ({
             padding: '4px 10px', borderRadius: 5,
             border: active ? '2px solid #9333ea' : '1px solid #bbb',
@@ -1857,12 +1893,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <button type="button" onClick={() => setEditingEffect(0)} style={btnStyle(editingEffect === 0)}>
-                      効果1: {summarizeAction(block.action, block.value)}
+                      効果1
                     </button>
                     {altActions.map((a, i) => (
                       <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                         <button type="button" onClick={() => setEditingEffect(i + 1)} style={btnStyle(editingEffect === i + 1)}>
-                          効果{i + 2}: {summarizeAction(a.action, a.value)}
+                          効果{i + 2}
                         </button>
                         <button
                           type="button"
@@ -1881,6 +1917,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     >
                       ＋ 効果を追加
                     </button>
+                  </div>
+                  {/* 選択内容の一覧表示: 押したボタンの表記をそのまま連結して書き出す */}
+                  <div style={{ marginTop: 8, padding: 8, background: 'white', border: '1px solid #d4b8f0', borderRadius: 4 }}>
+                    <div style={{ fontSize: 11, color: '#9333ea', fontWeight: 'bold', marginBottom: 4 }}>📋 設定内容</div>
+                    <div style={{ fontSize: 12, color: '#333', lineHeight: 1.8 }}>
+                      <div>効果1：{describeEffect(block.action, block.value, block.target, block.conditions) || '(未設定)'}</div>
+                      {altActions.map((a, i) => (
+                        <div key={i}>効果{i + 2}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}</div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

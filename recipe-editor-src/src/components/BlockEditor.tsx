@@ -709,10 +709,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // 追加オプション（期間/取得元/修飾子/～ごとに/コスト）にデータがあれば展開
   const _hasActionExtras = !!(
     (block.options || []).length > 0 ||
-    (block.fromZones || []).length > 0 ||
-    (block.costs || []).length > 0 ||
-    block.duration ||
-    block.perCount
+    block.duration
   );
   const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
   const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
@@ -1754,6 +1751,101 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
+        {/* 🔀 代替アクション クイック版: OR/ANDチェックボックスで2つ目のアクションを
+            その場で選べる（例: 「DP+1000し、アクティブにする」＝AND）。
+            3つ以上のアクション・条件付き代替・取得元指定等は下の「代替アクション」ボタンから */}
+        {(() => {
+          const alt0 = altActions[0];
+          const isOrChecked = altOp === 'or' && altActions.length > 0;
+          const isAndChecked = altOp === 'and' && altActions.length > 0;
+          const setMode = (mode: 'or' | 'and' | null) => {
+            if (!mode) { onChange({ ...block, altActions: [], altActionsOp: undefined }); return; }
+            if (altActions.length === 0) {
+              onChange({ ...block, altActions: [{ action: '', value: '', target: '', conditions: [], options: [], fromZones: [] }], altActionsOp: mode });
+            } else {
+              update('altActionsOp', mode);
+            }
+          };
+          return (
+            <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={isOrChecked}
+                    onChange={(e) => setMode(e.target.checked ? 'or' : (isAndChecked ? 'and' : null))}
+                  />
+                  OR（どちらかを選ぶ）
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={isAndChecked}
+                    onChange={(e) => setMode(e.target.checked ? 'and' : (isOrChecked ? 'or' : null))}
+                  />
+                  AND（両方行う）
+                </label>
+              </div>
+              {alt0 && (isOrChecked || isAndChecked) && (
+                <div style={{ marginTop: 6, padding: 6, border: '1px solid #d4b8f0', borderRadius: 4, background: '#faf5ff', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 6 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>2つ目のアクション</div>
+                    <SearchSelect
+                      value={alt0.action}
+                      onChange={(v) => updateAltAction(0, { action: v })}
+                      options={toOpts(dict.actions)}
+                      allowFreeText
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
+                    <input
+                      type="text"
+                      value={alt0.value === undefined ? '' : String(alt0.value)}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '') updateAltAction(0, { value: undefined });
+                        else if (/^\d+$/.test(v)) updateAltAction(0, { value: Number(v) });
+                        else updateAltAction(0, { value: v });
+                      }}
+                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                    <SearchSelect
+                      value={(alt0.target || '').split(':')[0]}
+                      onChange={(v) => {
+                        const suffix = (alt0.target || '').substring((alt0.target || '').split(':')[0].length);
+                        updateAltAction(0, { target: v + (suffix || '') });
+                      }}
+                      options={toOpts(TARGETS)}
+                      allowFreeText
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象数</div>
+                    <SearchSelect
+                      value={(alt0.target || '').substring((alt0.target || '').split(':')[0].length)}
+                      onChange={(v) => {
+                        const base = (alt0.target || '').split(':')[0];
+                        updateAltAction(0, { target: base + v });
+                      }}
+                      options={toOpts(TARGET_COUNTS)}
+                      allowFreeText
+                    />
+                  </div>
+                </div>
+              )}
+              {(isOrChecked || isAndChecked) && (
+                <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>
+                  💡 3つ以上のアクション・条件付き代替・取得元指定などは下の「代替アクション」ボタンから詳細設定できます
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* 📍 場所（取得元エリア）: 登場/使用・進化はビルトインのため常時対象、
             それ以外は辞書の hasFromZones=true のアクションのみ表示 */}
         {(BUILTIN_FROM_ZONE_ACTIONS.has(block.action || '') || !!dict.actions.find((a) => a.code === block.action)?.hasFromZones) && (() => {
@@ -2131,7 +2223,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             コスト軽減トリガーは同内容の編集欄を上の💰バナー内に直接表示しているため、
             ここでの二重表示は避ける */}
         {!COST_REDUCTION_TRIGGERS.has(block.trigger) && (
-        <details className="field" style={{ marginTop: 8 }} open={conditions.length > 0}>
+        <details className="field" style={{ marginTop: 8 }} open={conditions.length > 0 || (block.costs || []).length > 0 || !!block.perCount}>
           <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#1a4f8a' }}>
             🎯 発動条件{conditions.length > 0 ? ` (${conditions.length})` : ''}
           </summary>
@@ -2153,6 +2245,307 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             attackContextActive={isAttackTrigger}
             showCostMod={block.action === 'summon' || block.action === 'evolve' || block.action === 'destroy'}
           />
+
+        {renderPerCountEditor()}
+
+        {/* コスト: 「〇〇することで」を表現 */}
+        <div className="field" style={{ gridColumn: '1 / span 2' }}>
+          <label>コスト（「〇〇することで」発動）</label>
+          {costs.length === 0 && (
+            <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>コストなし</div>
+          )}
+          {costs.map((c, i) => {
+            // コストアクションにも位置指定対応（フラグ駆動 + 自動グループ化）
+            const { options: costActionOptions, flaggedBases: costFlaggedBases, autoGroupBases: costAutoGroupBases } = buildActionDisplay(dict.actions);
+            const costCurVariant = getActionVariant(c.action || '');
+            const costIsFlaggedBaseDirect = costFlaggedBases.has(c.action || '');
+            const costIsVariantOfFlagged = !!(costCurVariant && (costFlaggedBases.has(costCurVariant.base) || costAutoGroupBases.has(costCurVariant.base)));
+            const costIsPositional = costIsFlaggedBaseDirect || costIsVariantOfFlagged;
+
+            const costNormalizedActionValue = (() => {
+              if (costIsFlaggedBaseDirect) return c.action || '';
+              if (costCurVariant && costFlaggedBases.has(costCurVariant.base)) return costCurVariant.base;
+              if (costCurVariant && costAutoGroupBases.has(costCurVariant.base)) return costCurVariant.base + '_top';
+              return c.action || '';
+            })();
+
+            const costVariantOptions: SelectOption[] = (() => {
+              if (!costIsPositional) return [];
+              if (costIsFlaggedBaseDirect || (costCurVariant && costFlaggedBases.has(costCurVariant.base))) {
+                return POSITION_VARIANTS.map((v) => ({ value: v.suffix, label: v.label }));
+              }
+              if (costCurVariant && costAutoGroupBases.has(costCurVariant.base)) {
+                return POSITION_VARIANTS
+                  .filter((v) => dict.actions.some((a) => a.code === costCurVariant.base + v.suffix))
+                  .map((v) => ({ value: v.suffix, label: v.label }));
+              }
+              return [];
+            })();
+            const costCurrentSuffix = costCurVariant ? costCurVariant.suffix : '';
+
+            function onCostActionChange(newCode: string) {
+              const newIsFlaggedBase = costFlaggedBases.has(newCode);
+              const newV = getActionVariant(newCode);
+              const cur = c.action || '';
+              const curV = getActionVariant(cur);
+              const newBase = newIsFlaggedBase ? newCode : (newV ? newV.base : null);
+              const curBase = curV ? curV.base : (costFlaggedBases.has(cur) ? cur : null);
+              if (newBase && curBase && newBase === curBase) return;
+              if (newIsFlaggedBase) {
+                updateCost(i, { ...c, action: newCode + '_top' });
+                return;
+              }
+              updateCost(i, { ...c, action: newCode });
+            }
+            function onCostVariantChange(newSuffix: string) {
+              if (!newSuffix) return;
+              const base = costIsFlaggedBaseDirect ? (c.action || '') : (costCurVariant ? costCurVariant.base : '');
+              if (!base) return;
+              updateCost(i, { ...c, action: base + newSuffix });
+            }
+
+            return (
+              <div key={i} style={{ marginBottom: 6, padding: 6, border: '1px solid #ffe0b2', borderRadius: 4, background: '#fffbe6' }}>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
+                  <div style={{ flex: 2 }}>
+                    <SearchSelect
+                      value={costNormalizedActionValue}
+                      onChange={onCostActionChange}
+                      options={costActionOptions}
+                      allowFreeText
+                      placeholder="--コストアクション--"
+                    />
+                    {/* 📍 位置 pulldown: フラグ付き or 自動グループ時のみ */}
+                    {costIsPositional && costVariantOptions.length > 0 && (
+                      <div style={{ marginTop: 2 }}>
+                        <SearchSelect
+                          value={costCurrentSuffix}
+                          onChange={onCostVariantChange}
+                          options={costVariantOptions}
+                          placeholder="📍 位置"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={c.value === undefined ? '' : String(c.value)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === '') updateCost(i, { ...c, value: undefined });
+                      else if (/^\d+$/.test(v)) updateCost(i, { ...c, value: Number(v) });
+                      else updateCost(i, { ...c, value: v });
+                    }}
+                    placeholder="値（枚数等）"
+                    style={{ flex: 1, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                  />
+                  <div style={{ flex: 1.5 }}>
+                    <SearchSelect
+                      value={(c.target || '').split(':')[0]}
+                      onChange={(v) => updateCost(i, { ...c, target: v })}
+                      options={toOpts(TARGETS)}
+                      allowFreeText
+                      placeholder="--対象--"
+                    />
+                  </div>
+                  <button
+                    onClick={() => removeCost(i)}
+                    style={{
+                      padding: '0 8px',
+                      border: '1px solid #d33',
+                      color: '#d33',
+                      background: 'white',
+                      borderRadius: 3,
+                      cursor: 'pointer',
+                      height: 26,
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* === コスト対象の取得元エリア === */}
+                {(() => {
+                  const czones = c.fromZones || [];
+                  const cop = c.fromZonesOp || 'or';
+                  const cAvailable = FROM_ZONES.filter((z) => !czones.includes(z.code));
+                  return (
+                    <div style={{ marginTop: 6, padding: 6, background: '#f3f6fc', borderRadius: 4, border: '1px solid #d8e0f0' }}>
+                      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#1976d2', marginBottom: 4 }}>
+                        📥 取得元エリア{czones.length > 0 ? ` (${czones.length})` : ''}
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', minHeight: 26 }}>
+                        {czones.length === 0 && (
+                          <span style={{ color: '#888', fontSize: 11 }}>（指定なし）</span>
+                        )}
+                        {czones.map((zCode, zi) => {
+                          const z = FROM_ZONES.find((x) => x.code === zCode);
+                          const label = z ? z.label : zCode;
+                          return (
+                            <span key={zCode} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', background: 'white', border: '1px solid #88a', borderRadius: 12, fontSize: 11 }}>
+                                {label}
+                                <button
+                                  onClick={() => updateCost(i, { ...c, fromZones: czones.filter((x) => x !== zCode) })}
+                                  style={{ padding: '0 4px', border: 'none', background: 'transparent', color: '#d33', cursor: 'pointer', fontSize: 11 }}
+                                  title="削除"
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                              {zi < czones.length - 1 && (
+                                <span style={{ fontSize: 10, color: '#666', fontWeight: 'bold' }}>{cop === 'and' ? 'AND' : 'OR'}</span>
+                              )}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center' }}>
+                        {cAvailable.length > 0 && (
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              if (e.target.value) updateCost(i, { ...c, fromZones: [...czones, e.target.value] });
+                              e.target.value = '';
+                            }}
+                            style={{ padding: '3px 6px', border: '1px dashed #88a', borderRadius: 3, fontSize: 11, background: 'white', cursor: 'pointer' }}
+                          >
+                            <option value="">＋ エリア追加...</option>
+                            {cAvailable.map((z) => (
+                              <option key={z.code} value={z.code}>{z.label}</option>
+                            ))}
+                          </select>
+                        )}
+                        {czones.length >= 2 && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                            <span style={{ color: '#666' }}>結合:</span>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                              <input
+                                type="radio"
+                                name={`costFromOp_${index}_${i}`}
+                                checked={cop === 'or'}
+                                onChange={() => updateCost(i, { ...c, fromZonesOp: 'or' })}
+                                style={{ margin: 0 }}
+                              />
+                              OR
+                            </label>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                              <input
+                                type="radio"
+                                name={`costFromOp_${index}_${i}`}
+                                checked={cop === 'and'}
+                                onChange={() => updateCost(i, { ...c, fromZonesOp: 'and' })}
+                                style={{ margin: 0 }}
+                              />
+                              AND
+                            </label>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* === コスト対象の絞り込み条件 (チェックボックス・複数AND) === */}
+                {(() => {
+                  const condArr = c.conditions || [];
+                  const isCondChecked = (code: string) => condArr.some((cc) => cc.base === code);
+                  const getCondValue = (code: string) => {
+                    const cc = condArr.find((x) => x.base === code);
+                    return cc ? (cc.value || '') : '';
+                  };
+                  const setCondChecked = (code: string, enabled: boolean) => {
+                    if (enabled) {
+                      if (!isCondChecked(code)) {
+                        updateCost(i, { ...c, conditions: [...condArr, { base: code, value: '' }] });
+                      }
+                    } else {
+                      updateCost(i, { ...c, conditions: condArr.filter((x) => x.base !== code) });
+                    }
+                  };
+                  const setCondValue = (code: string, val: string) => {
+                    const idx = condArr.findIndex((x) => x.base === code);
+                    if (idx >= 0) {
+                      const next = condArr.slice();
+                      next[idx] = { ...next[idx], value: val };
+                      updateCost(i, { ...c, conditions: next });
+                    } else {
+                      updateCost(i, { ...c, conditions: [...condArr, { base: code, value: val }] });
+                    }
+                  };
+                  return (
+                    <div style={{ marginTop: 6, padding: 6, background: 'white', borderRadius: 4, border: '1px solid #ffe0b2' }}>
+                      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#b76e00', marginBottom: 4 }}>
+                        🔍 コスト対象の絞り込み（チェックで有効化・複数で AND）
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+                        {COMMON_CONDS.map((f) => (
+                          <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={isCondChecked(f.code)}
+                              onChange={(e) => setCondChecked(f.code, e.target.checked)}
+                              style={{ margin: 0 }}
+                            />
+                            {f.label}
+                          </label>
+                        ))}
+                      </div>
+                      {COMMON_CONDS.some((f) => isCondChecked(f.code)) && (
+                        <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6 }}>
+                          {COMMON_CONDS.filter((f) => isCondChecked(f.code)).map((f) => (
+                            <div key={f.code}>
+                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{f.label}</div>
+                              {f.input === 'select' ? (
+                                <select
+                                  value={getCondValue(f.code)}
+                                  onChange={(e) => setCondValue(f.code, e.target.value)}
+                                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}
+                                >
+                                  {(f.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                              ) : f.input === 'number' ? (
+                                <input
+                                  type="number"
+                                  value={getCondValue(f.code)}
+                                  onChange={(e) => setCondValue(f.code, e.target.value)}
+                                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
+                                />
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={getCondValue(f.code)}
+                                  onChange={(e) => setCondValue(f.code, e.target.value)}
+                                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
+                                />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })}
+          <button
+            onClick={addCost}
+            style={{
+              padding: '4px 8px',
+              border: '1px dashed #f9a825',
+              background: 'white',
+              borderRadius: 3,
+              cursor: 'pointer',
+              fontSize: 11,
+              marginTop: 2,
+              color: '#e65100',
+            }}
+          >
+            ＋ コストを追加
+          </button>
+        </div>
+
         </details>
         )}
 
@@ -2744,7 +3137,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         {(showExtraOptionsPanel || _hasActionExtras) && (
         <div style={{ marginTop: 8, padding: 8, border: '1px solid #b9c8e0', borderRadius: 4, background: '#eff5fd' }}>
           <div style={{ fontWeight: 'bold', fontSize: 12, color: '#1976d2', marginBottom: 6 }}>
-            ⚙ 追加オプション（期間・取得元・修飾子・倍率・コスト）
+            ⚙ 追加オプション（期間・修飾子）
           </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
 
@@ -2757,305 +3150,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           />
         </div>
 
-        {renderPerCountEditor()}
-
-        {/* コスト: 「〇〇することで」を表現 */}
-        <div className="field" style={{ gridColumn: '1 / span 2' }}>
-          <label>コスト（「〇〇することで」発動）</label>
-          {costs.length === 0 && (
-            <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>コストなし</div>
-          )}
-          {costs.map((c, i) => {
-            // コストアクションにも位置指定対応（フラグ駆動 + 自動グループ化）
-            const { options: costActionOptions, flaggedBases: costFlaggedBases, autoGroupBases: costAutoGroupBases } = buildActionDisplay(dict.actions);
-            const costCurVariant = getActionVariant(c.action || '');
-            const costIsFlaggedBaseDirect = costFlaggedBases.has(c.action || '');
-            const costIsVariantOfFlagged = !!(costCurVariant && (costFlaggedBases.has(costCurVariant.base) || costAutoGroupBases.has(costCurVariant.base)));
-            const costIsPositional = costIsFlaggedBaseDirect || costIsVariantOfFlagged;
-
-            const costNormalizedActionValue = (() => {
-              if (costIsFlaggedBaseDirect) return c.action || '';
-              if (costCurVariant && costFlaggedBases.has(costCurVariant.base)) return costCurVariant.base;
-              if (costCurVariant && costAutoGroupBases.has(costCurVariant.base)) return costCurVariant.base + '_top';
-              return c.action || '';
-            })();
-
-            const costVariantOptions: SelectOption[] = (() => {
-              if (!costIsPositional) return [];
-              if (costIsFlaggedBaseDirect || (costCurVariant && costFlaggedBases.has(costCurVariant.base))) {
-                return POSITION_VARIANTS.map((v) => ({ value: v.suffix, label: v.label }));
-              }
-              if (costCurVariant && costAutoGroupBases.has(costCurVariant.base)) {
-                return POSITION_VARIANTS
-                  .filter((v) => dict.actions.some((a) => a.code === costCurVariant.base + v.suffix))
-                  .map((v) => ({ value: v.suffix, label: v.label }));
-              }
-              return [];
-            })();
-            const costCurrentSuffix = costCurVariant ? costCurVariant.suffix : '';
-
-            function onCostActionChange(newCode: string) {
-              const newIsFlaggedBase = costFlaggedBases.has(newCode);
-              const newV = getActionVariant(newCode);
-              const cur = c.action || '';
-              const curV = getActionVariant(cur);
-              const newBase = newIsFlaggedBase ? newCode : (newV ? newV.base : null);
-              const curBase = curV ? curV.base : (costFlaggedBases.has(cur) ? cur : null);
-              if (newBase && curBase && newBase === curBase) return;
-              if (newIsFlaggedBase) {
-                updateCost(i, { ...c, action: newCode + '_top' });
-                return;
-              }
-              updateCost(i, { ...c, action: newCode });
-            }
-            function onCostVariantChange(newSuffix: string) {
-              if (!newSuffix) return;
-              const base = costIsFlaggedBaseDirect ? (c.action || '') : (costCurVariant ? costCurVariant.base : '');
-              if (!base) return;
-              updateCost(i, { ...c, action: base + newSuffix });
-            }
-
-            return (
-              <div key={i} style={{ marginBottom: 6, padding: 6, border: '1px solid #ffe0b2', borderRadius: 4, background: '#fffbe6' }}>
-                <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
-                  <div style={{ flex: 2 }}>
-                    <SearchSelect
-                      value={costNormalizedActionValue}
-                      onChange={onCostActionChange}
-                      options={costActionOptions}
-                      allowFreeText
-                      placeholder="--コストアクション--"
-                    />
-                    {/* 📍 位置 pulldown: フラグ付き or 自動グループ時のみ */}
-                    {costIsPositional && costVariantOptions.length > 0 && (
-                      <div style={{ marginTop: 2 }}>
-                        <SearchSelect
-                          value={costCurrentSuffix}
-                          onChange={onCostVariantChange}
-                          options={costVariantOptions}
-                          placeholder="📍 位置"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={c.value === undefined ? '' : String(c.value)}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v === '') updateCost(i, { ...c, value: undefined });
-                      else if (/^\d+$/.test(v)) updateCost(i, { ...c, value: Number(v) });
-                      else updateCost(i, { ...c, value: v });
-                    }}
-                    placeholder="値（枚数等）"
-                    style={{ flex: 1, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
-                  />
-                  <div style={{ flex: 1.5 }}>
-                    <SearchSelect
-                      value={(c.target || '').split(':')[0]}
-                      onChange={(v) => updateCost(i, { ...c, target: v })}
-                      options={toOpts(TARGETS)}
-                      allowFreeText
-                      placeholder="--対象--"
-                    />
-                  </div>
-                  <button
-                    onClick={() => removeCost(i)}
-                    style={{
-                      padding: '0 8px',
-                      border: '1px solid #d33',
-                      color: '#d33',
-                      background: 'white',
-                      borderRadius: 3,
-                      cursor: 'pointer',
-                      height: 26,
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                {/* === コスト対象の取得元エリア === */}
-                {(() => {
-                  const czones = c.fromZones || [];
-                  const cop = c.fromZonesOp || 'or';
-                  const cAvailable = FROM_ZONES.filter((z) => !czones.includes(z.code));
-                  return (
-                    <div style={{ marginTop: 6, padding: 6, background: '#f3f6fc', borderRadius: 4, border: '1px solid #d8e0f0' }}>
-                      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#1976d2', marginBottom: 4 }}>
-                        📥 取得元エリア{czones.length > 0 ? ` (${czones.length})` : ''}
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', minHeight: 26 }}>
-                        {czones.length === 0 && (
-                          <span style={{ color: '#888', fontSize: 11 }}>（指定なし）</span>
-                        )}
-                        {czones.map((zCode, zi) => {
-                          const z = FROM_ZONES.find((x) => x.code === zCode);
-                          const label = z ? z.label : zCode;
-                          return (
-                            <span key={zCode} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', background: 'white', border: '1px solid #88a', borderRadius: 12, fontSize: 11 }}>
-                                {label}
-                                <button
-                                  onClick={() => updateCost(i, { ...c, fromZones: czones.filter((x) => x !== zCode) })}
-                                  style={{ padding: '0 4px', border: 'none', background: 'transparent', color: '#d33', cursor: 'pointer', fontSize: 11 }}
-                                  title="削除"
-                                >
-                                  ✕
-                                </button>
-                              </span>
-                              {zi < czones.length - 1 && (
-                                <span style={{ fontSize: 10, color: '#666', fontWeight: 'bold' }}>{cop === 'and' ? 'AND' : 'OR'}</span>
-                              )}
-                            </span>
-                          );
-                        })}
-                      </div>
-                      <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center' }}>
-                        {cAvailable.length > 0 && (
-                          <select
-                            value=""
-                            onChange={(e) => {
-                              if (e.target.value) updateCost(i, { ...c, fromZones: [...czones, e.target.value] });
-                              e.target.value = '';
-                            }}
-                            style={{ padding: '3px 6px', border: '1px dashed #88a', borderRadius: 3, fontSize: 11, background: 'white', cursor: 'pointer' }}
-                          >
-                            <option value="">＋ エリア追加...</option>
-                            {cAvailable.map((z) => (
-                              <option key={z.code} value={z.code}>{z.label}</option>
-                            ))}
-                          </select>
-                        )}
-                        {czones.length >= 2 && (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-                            <span style={{ color: '#666' }}>結合:</span>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                              <input
-                                type="radio"
-                                name={`costFromOp_${index}_${i}`}
-                                checked={cop === 'or'}
-                                onChange={() => updateCost(i, { ...c, fromZonesOp: 'or' })}
-                                style={{ margin: 0 }}
-                              />
-                              OR
-                            </label>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                              <input
-                                type="radio"
-                                name={`costFromOp_${index}_${i}`}
-                                checked={cop === 'and'}
-                                onChange={() => updateCost(i, { ...c, fromZonesOp: 'and' })}
-                                style={{ margin: 0 }}
-                              />
-                              AND
-                            </label>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* === コスト対象の絞り込み条件 (チェックボックス・複数AND) === */}
-                {(() => {
-                  const condArr = c.conditions || [];
-                  const isCondChecked = (code: string) => condArr.some((cc) => cc.base === code);
-                  const getCondValue = (code: string) => {
-                    const cc = condArr.find((x) => x.base === code);
-                    return cc ? (cc.value || '') : '';
-                  };
-                  const setCondChecked = (code: string, enabled: boolean) => {
-                    if (enabled) {
-                      if (!isCondChecked(code)) {
-                        updateCost(i, { ...c, conditions: [...condArr, { base: code, value: '' }] });
-                      }
-                    } else {
-                      updateCost(i, { ...c, conditions: condArr.filter((x) => x.base !== code) });
-                    }
-                  };
-                  const setCondValue = (code: string, val: string) => {
-                    const idx = condArr.findIndex((x) => x.base === code);
-                    if (idx >= 0) {
-                      const next = condArr.slice();
-                      next[idx] = { ...next[idx], value: val };
-                      updateCost(i, { ...c, conditions: next });
-                    } else {
-                      updateCost(i, { ...c, conditions: [...condArr, { base: code, value: val }] });
-                    }
-                  };
-                  return (
-                    <div style={{ marginTop: 6, padding: 6, background: 'white', borderRadius: 4, border: '1px solid #ffe0b2' }}>
-                      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#b76e00', marginBottom: 4 }}>
-                        🔍 コスト対象の絞り込み（チェックで有効化・複数で AND）
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-                        {COMMON_CONDS.map((f) => (
-                          <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-                            <input
-                              type="checkbox"
-                              checked={isCondChecked(f.code)}
-                              onChange={(e) => setCondChecked(f.code, e.target.checked)}
-                              style={{ margin: 0 }}
-                            />
-                            {f.label}
-                          </label>
-                        ))}
-                      </div>
-                      {COMMON_CONDS.some((f) => isCondChecked(f.code)) && (
-                        <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6 }}>
-                          {COMMON_CONDS.filter((f) => isCondChecked(f.code)).map((f) => (
-                            <div key={f.code}>
-                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{f.label}</div>
-                              {f.input === 'select' ? (
-                                <select
-                                  value={getCondValue(f.code)}
-                                  onChange={(e) => setCondValue(f.code, e.target.value)}
-                                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}
-                                >
-                                  {(f.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                </select>
-                              ) : f.input === 'number' ? (
-                                <input
-                                  type="number"
-                                  value={getCondValue(f.code)}
-                                  onChange={(e) => setCondValue(f.code, e.target.value)}
-                                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                                />
-                              ) : (
-                                <input
-                                  type="text"
-                                  value={getCondValue(f.code)}
-                                  onChange={(e) => setCondValue(f.code, e.target.value)}
-                                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                                />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            );
-          })}
-          <button
-            onClick={addCost}
-            style={{
-              padding: '4px 8px',
-              border: '1px dashed #f9a825',
-              background: 'white',
-              borderRadius: 3,
-              cursor: 'pointer',
-              fontSize: 11,
-              marginTop: 2,
-              color: '#e65100',
-            }}
-          >
-            ＋ コストを追加
-          </button>
-        </div>
 
         {/* 修飾子: 「コストを支払わず」「裏向きで」等。複数選択可 */}
         <details className="field" open={(block.options || []).length > 0} style={{ gridColumn: '1 / span 2' }}>

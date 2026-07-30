@@ -524,13 +524,14 @@ function durationToL1(dur?: string): string {
 // コードを使う（TARGET_SELのようなL1+L2合成は不要）。opp_no_evo_digimon/last_rest_count は
 // このL1/L2に収まらない特殊枠のため「その他の対象」プルダウン側に残す。
 // デジモン/テイマーは「デジモン/テイマー」という効果表現があるため複数選択可（両方チェック
-// → own_digimon_tamer / opp_digimon_tamer という組合せコードになる。「全カード」は
-// このデジモン+テイマー両方チェック状態のショートカットボタン。エンジン未対応のためこの
-// 組合せコードは⚠未実装扱い（保存はできるが動作しない）
+// → own_digimon_tamer / opp_digimon_tamer という組合せコードになる）。
+// 「全カード」は自分/相手を問わず両方のカード全てを数える第一ボタン（all_cards、L2無し）。
+// いずれもエンジン未対応のため⚠未実装扱い（保存はできるが動作しない）
 const PERREF_L1 = [
   { code: 'self', label: 'このカード' },
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
+  { code: 'all_cards', label: '全カード' },
 ];
 const PERREF_L2: Record<string, { code: string; label: string }[]> = {
   self: [
@@ -539,7 +540,7 @@ const PERREF_L2: Record<string, { code: string; label: string }[]> = {
   own: [
     { code: 'own_digimon', label: 'デジモン' },
     { code: 'own_tamer', label: 'テイマー' },
-    { code: 'own_digimon_tamer', label: '全カード' },
+    { code: 'own_digimon_tamer', label: 'デジモン+テイマー' },
     { code: 'own_hand', label: '手札' },
     { code: 'own_trash', label: 'トラッシュ' },
     { code: 'own_security', label: 'セキュリティ' },
@@ -548,21 +549,22 @@ const PERREF_L2: Record<string, { code: string; label: string }[]> = {
   opp: [
     { code: 'opp_digimon', label: 'デジモン' },
     { code: 'opp_tamer', label: 'テイマー' },
-    { code: 'opp_digimon_tamer', label: '全カード' },
+    { code: 'opp_digimon_tamer', label: 'デジモン+テイマー' },
     { code: 'opp_hand', label: '手札' },
     { code: 'opp_trash', label: 'トラッシュ' },
     { code: 'opp_security', label: 'セキュリティ' },
     { code: 'opp_battle_area', label: 'バトルエリア' },
   ],
 };
-// デジモン+テイマー複数選択の結合コード（エンジン未対応・⚠表示用）
-const PERREF_COMBO_CODES = new Set(['own_digimon_tamer', 'opp_digimon_tamer']);
+// デジモン+テイマー複数選択の結合コード、および「全カード」は、いずれもエンジン未対応・⚠表示用
+const PERREF_COMBO_CODES = new Set(['own_digimon_tamer', 'opp_digimon_tamer', 'all_cards']);
 const PERREF_L2_CODES = new Set(
   Object.values(PERREF_L2).flatMap((opts) => opts.map((o) => o.code))
 );
 // REF_SUBJECTSコード → PERREF_L1 の逆引き
 function perRefToL1(code: string): string {
   if (code === 'evo_source') return 'self';
+  if (code === 'all_cards') return 'all_cards';
   if (code.startsWith('own_') && PERREF_L2_CODES.has(code)) return 'own';
   if (code.startsWith('opp_') && PERREF_L2_CODES.has(code)) return 'opp';
   return '';
@@ -995,12 +997,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   const l2Options = PERREF_L2[curL1] || [];
                   const handleL1 = (l1: string) => {
                     if (!l1) { setSubject(''); return; }
+                    if (l1 === 'all_cards') { setSubject('all_cards'); return; }
                     const opts = PERREF_L2[l1] || [];
                     if (opts.length === 0) return;
                     const keepCurrent = opts.some((o) => o.code === refSubject);
                     setSubject(keepCurrent ? refSubject : opts[0].code);
                   };
-                  // デジモン/テイマーは「デジモン/テイマー」表現があるため複数選択可（両方＝全カード）
+                  // デジモン/テイマーは「デジモン/テイマー」表現があるため複数選択可
                   const digimonCode = curL1 === 'own' ? 'own_digimon' : curL1 === 'opp' ? 'opp_digimon' : '';
                   const tamerCode = curL1 === 'own' ? 'own_tamer' : curL1 === 'opp' ? 'opp_tamer' : '';
                   const comboCode = curL1 === 'own' ? 'own_digimon_tamer' : curL1 === 'opp' ? 'opp_digimon_tamer' : '';
@@ -1029,7 +1032,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                           <button type="button" onClick={() => applyDigiTamer(!digimonChecked, tamerChecked)} style={toggleBtnStyle(digimonChecked)}>デジモン</button>
                           <button type="button" onClick={() => applyDigiTamer(digimonChecked, !tamerChecked)} style={toggleBtnStyle(tamerChecked)}>テイマー</button>
-                          <button type="button" onClick={() => setSubject(comboCode)} style={toggleBtnStyle(refSubject === comboCode)}>全カード</button>
                           {exclusiveL2Options.length > 0 && (
                             <ButtonGroup options={exclusiveL2Options} value={!digimonChecked && !tamerChecked ? refSubject : ''} onChange={setSubject} accentColor="#1a4f8a" />
                           )}

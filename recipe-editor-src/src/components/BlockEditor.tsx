@@ -709,9 +709,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // === 折りたたみ state ===
   const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
   const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
-  // 発動条件に付随する追加設定（代替アクション）の選択肢出し入れ用トグル。
-  // 実データが既にある場合は既存の open={...} 相当として自動でON扱いにする
-  const [showAltActionsPanel, setShowAltActionsPanel] = useState<boolean>(false);
   const [otherActionOpen, setOtherActionOpen] = useState<boolean>(false);
   // 「対象の条件」をアクションの対象/対象数の2箇所に分けて描画するため、
   // その他チェックボックスの開閉状態をここで共有する
@@ -1763,17 +1760,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
-        {/* 🔀 代替アクション クイック版: OR/ANDチェックボックスで2つ目のアクションを
-            その場で選べる（例: 「DP+1000し、アクティブにする」＝AND）。
-            3つ以上のアクション・条件付き代替・取得元指定等は下の「代替アクション」ボタンから */}
+        {/* 🔀 代替アクション（OR/AND）: OR=プレイヤーがどちらかを選ぶ / AND=両方行う。
+            「効果2」以降はそれぞれ専用のアクション/値/対象/対象数/条件/取得元を持てる。
+            「効果1」＝このステップのメインアクション（上のアクション欄・下の発動条件） */}
         {(() => {
-          const alt0 = altActions[0];
           const isOrChecked = altOp === 'or' && altActions.length > 0;
           const isAndChecked = altOp === 'and' && altActions.length > 0;
           const setMode = (mode: 'or' | 'and' | null) => {
             if (!mode) { onChange({ ...block, altActions: [], altActionsOp: undefined }); return; }
             if (altActions.length === 0) {
-              onChange({ ...block, altActions: [{ action: '', value: '', target: '', conditions: [], options: [], fromZones: [] }], altActionsOp: mode });
+              onChange({ ...block, altActions: [{ action: '', value: '', target: '', conditions: [], fromZones: [] }], altActionsOp: mode });
             } else {
               update('altActionsOp', mode);
             }
@@ -1798,60 +1794,188 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   AND（両方行う）
                 </label>
               </div>
-              {alt0 && (isOrChecked || isAndChecked) && (
-                <div style={{ marginTop: 6, padding: 6, border: '1px solid #d4b8f0', borderRadius: 4, background: '#faf5ff', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 6 }}>
-                  <div>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>2つ目のアクション</div>
-                    <SearchSelect
-                      value={alt0.action}
-                      onChange={(v) => updateAltAction(0, { action: v })}
-                      options={toOpts(dict.actions)}
-                      allowFreeText
-                    />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                    <input
-                      type="text"
-                      value={alt0.value === undefined ? '' : String(alt0.value)}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === '') updateAltAction(0, { value: undefined });
-                        else if (/^\d+$/.test(v)) updateAltAction(0, { value: Number(v) });
-                        else updateAltAction(0, { value: v });
-                      }}
-                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-                    />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                    <SearchSelect
-                      value={(alt0.target || '').split(':')[0]}
-                      onChange={(v) => {
-                        const suffix = (alt0.target || '').substring((alt0.target || '').split(':')[0].length);
-                        updateAltAction(0, { target: v + (suffix || '') });
-                      }}
-                      options={toOpts(TARGETS)}
-                      allowFreeText
-                    />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象数</div>
-                    <SearchSelect
-                      value={(alt0.target || '').substring((alt0.target || '').split(':')[0].length)}
-                      onChange={(v) => {
-                        const base = (alt0.target || '').split(':')[0];
-                        updateAltAction(0, { target: base + v });
-                      }}
-                      options={toOpts(TARGET_COUNTS)}
-                      allowFreeText
-                    />
-                  </div>
-                </div>
-              )}
               {(isOrChecked || isAndChecked) && (
-                <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>
-                  💡 3つ以上のアクション・条件付き代替・取得元指定などは下の「代替アクション」ボタンから詳細設定できます
+                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {altActions.map((a, i) => {
+                    const aTgtBase = (a.target || '').split(':')[0];
+                    const aTgtSuffix = (a.target || '').substring(aTgtBase.length);
+                    const aZones = a.fromZones || [];
+                    const aZoneOp = a.fromZonesOp || 'or';
+                    const toggleAZone = (code: string) => {
+                      const next = aZones.includes(code) ? aZones.filter((z) => z !== code) : [...aZones, code];
+                      updateAltAction(i, { fromZones: next });
+                    };
+                    const isPerEnabled = !!(a.perCount && a.perRef);
+                    return (
+                      <div key={i} style={{ padding: 8, border: '1px solid #d4b8f0', borderRadius: 4, background: '#faf5ff' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <span style={{ fontWeight: 'bold', fontSize: 12, color: '#9333ea' }}>効果{i + 2}</span>
+                          <button
+                            onClick={() => removeAltAction(i)}
+                            style={{ padding: '0 6px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 10 }}
+                          >
+                            ✕ 削除
+                          </button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 6 }}>
+                          <div>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>アクション</div>
+                            <SearchSelect
+                              value={a.action}
+                              onChange={(v) => updateAltAction(i, { action: v })}
+                              options={toOpts(dict.actions)}
+                              allowFreeText
+                            />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
+                            <input
+                              type="text"
+                              value={a.value === undefined ? '' : String(a.value)}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === '') updateAltAction(i, { value: undefined });
+                                else if (/^\d+$/.test(v)) updateAltAction(i, { value: Number(v) });
+                                else updateAltAction(i, { value: v });
+                              }}
+                              style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                            />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                            <SearchSelect
+                              value={aTgtBase}
+                              onChange={(v) => updateAltAction(i, { target: v + (aTgtSuffix || '') })}
+                              options={toOpts(TARGETS)}
+                              allowFreeText
+                            />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象数</div>
+                            <SearchSelect
+                              value={aTgtSuffix}
+                              onChange={(v) => updateAltAction(i, { target: aTgtBase + v })}
+                              options={toOpts(TARGET_COUNTS)}
+                              allowFreeText
+                            />
+                          </div>
+                        </div>
+                        {/* 📍 場所（この効果専用の取得元エリア） */}
+                        <div style={{ marginTop: 6 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 場所</div>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {FROM_ZONES.map((z) => {
+                              const active = aZones.includes(z.code);
+                              return (
+                                <button
+                                  key={z.code}
+                                  type="button"
+                                  onClick={() => toggleAZone(z.code)}
+                                  style={{
+                                    padding: '2px 8px', borderRadius: 5,
+                                    border: active ? '2px solid #9333ea' : '1px solid #bbb',
+                                    background: active ? '#9333ea' : '#f5f5f5',
+                                    color: active ? '#fff' : '#333',
+                                    fontWeight: active ? 'bold' : 'normal',
+                                    cursor: 'pointer', fontSize: 10,
+                                  }}
+                                >
+                                  {z.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {aZones.length >= 2 && (
+                            <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
+                              <span style={{ color: '#666' }}>結合:</span>
+                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                                <input type="radio" name={`altFromOp_${index}_${i}`} checked={aZoneOp === 'or'} onChange={() => updateAltAction(i, { fromZonesOp: 'or' })} style={{ margin: 0 }} />
+                                OR
+                              </label>
+                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                                <input type="radio" name={`altFromOp_${index}_${i}`} checked={aZoneOp === 'and'} onChange={() => updateAltAction(i, { fromZonesOp: 'and' })} style={{ margin: 0 }} />
+                                AND
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                        {/* 🎯 この効果専用の条件 */}
+                        <div style={{ marginTop: 6 }}>
+                          <ConditionsHybridEditor
+                            conditions={a.conditions || []}
+                            onChange={(next) => updateAltAction(i, { conditions: next })}
+                            dict={dict}
+                            title={`効果${i + 2}の条件`}
+                            hint="（この効果を発動するための条件・複数 AND）"
+                            theme="action"
+                            defaultSubject=""
+                            showSubjectSelector={false}
+                            attackContextActive={isAttackTrigger}
+                          />
+                        </div>
+                        {/* ⚙ 期間・～ごとに（この効果専用） */}
+                        <details style={{ marginTop: 6 }} open={!!(a.duration || isPerEnabled)}>
+                          <summary style={{ cursor: 'pointer', fontSize: 11, color: '#9333ea', padding: '2px 0', fontWeight: 'bold' }}>
+                            ⚙ 期間・～ごとに（この効果専用）
+                          </summary>
+                          <div style={{ padding: 6, border: '1px solid #d4b8f0', borderRadius: 4, background: 'white', marginTop: 4 }}>
+                            <div style={{ marginBottom: 6 }}>
+                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>期間</div>
+                              <SearchSelect
+                                value={a.duration || ''}
+                                onChange={(v) => updateAltAction(i, { duration: v })}
+                                options={toOpts(DURATIONS)}
+                              />
+                            </div>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#9333ea' }}>
+                              <input
+                                type="checkbox"
+                                checked={isPerEnabled}
+                                onChange={(e) => {
+                                  if (e.target.checked) updateAltAction(i, { perCount: 1, perRef: 'opp_digimon' });
+                                  else updateAltAction(i, { perCount: undefined, perRef: '' });
+                                }}
+                                style={{ margin: 0 }}
+                              />
+                              ✖ ～ごとに（倍率設定）
+                            </label>
+                            {isPerEnabled && (
+                              <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <input
+                                  type="number" min={1}
+                                  value={a.perCount || 1}
+                                  onChange={(e) => updateAltAction(i, { perCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                                  style={{ width: 50, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                                />
+                                <span style={{ fontSize: 11, color: '#555' }}>枚ごと、</span>
+                                <div style={{ minWidth: 180 }}>
+                                  <SearchSelect
+                                    value={a.perRef || ''}
+                                    onChange={(v) => updateAltAction(i, { perRef: v })}
+                                    options={toOpts(REF_SUBJECTS)}
+                                  />
+                                </div>
+                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 11 }}>
+                                  <input type="radio" name={`altPerMode_${index}_${i}`} checked={a.perCountMode !== 'repeat'} onChange={() => updateAltAction(i, { perCountMode: undefined })} style={{ margin: 0 }} />
+                                  値×N
+                                </label>
+                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontSize: 11 }}>
+                                  <input type="radio" name={`altPerMode_${index}_${i}`} checked={a.perCountMode === 'repeat'} onChange={() => updateAltAction(i, { perCountMode: 'repeat' })} style={{ margin: 0 }} />
+                                  N回発動
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      </div>
+                    );
+                  })}
+                  <button
+                    onClick={addAltAction}
+                    style={{ padding: '4px 10px', border: '1px dashed #9333ea', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#9333ea' }}
+                  >
+                    ＋ 効果を追加
+                  </button>
                 </div>
               )}
             </div>
@@ -2596,380 +2720,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 ＋ ルールを追加
               </button>
             </div>
-          </div>
-        )}
-
-        {/* === 発動条件に付随する追加設定（選択肢出し入れ方式） ===
-            代替アクション/追加オプションをボタンでまとめて出し入れする。
-            既にデータが入っている場合はボタンを押さなくても自動でON扱いになる。
-            付与する効果は「アクション=キーワード付与/効果を付与」選択時のみ自動表示（別枠） */}
-        {(() => {
-          const altActive = showAltActionsPanel || altActions.length > 0;
-          const EXTRA_FEATURE_BUTTONS = [
-            { key: 'alt', label: '代替アクション', active: altActive, onClick: () => setShowAltActionsPanel((v) => !v) },
-          ];
-          return (
-            <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {EXTRA_FEATURE_BUTTONS.map((b) => (
-                <button
-                  key={b.key}
-                  type="button"
-                  onClick={b.onClick}
-                  style={{
-                    padding: '3px 9px', borderRadius: 5,
-                    border: b.active ? '2px solid #9333ea' : '1px solid #bbb',
-                    background: b.active ? '#9333ea' : '#f5f5f5',
-                    color: b.active ? '#fff' : '#333',
-                    fontWeight: b.active ? 'bold' : 'normal',
-                    cursor: 'pointer', fontSize: 11,
-                  }}
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
-          );
-        })()}
-
-        {/* === 🔀 代替アクション (OR / AND) === */}
-        {/* 「〇〇するか〇〇する」「〇〇する＆〇〇する」の表現用 */}
-        {(showAltActionsPanel || altActions.length > 0) && (
-          <div style={{ padding: 8, border: '1px solid #d4b8f0', borderRadius: 4, background: '#faf5ff', marginTop: 8 }}>
-            <div style={{ fontWeight: 'bold', fontSize: 12, color: '#9333ea', marginBottom: 6 }}>
-              🔀 代替アクション{altActions.length > 0 ? ` (${altActions.length}・${altOp.toUpperCase()})` : ''}
-            </div>
-            <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
-              💡 メインアクションと組み合わせて使用。OR=プレイヤー選択 / AND=順次実行。
-            </div>
-            {/* 結合演算子切替 */}
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6, fontSize: 11 }}>
-              <span style={{ color: '#666' }}>結合:</span>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
-                <input
-                  type="radio"
-                  name={`altOp_${index}`}
-                  checked={altOp === 'or'}
-                  onChange={() => update('altActionsOp', 'or')}
-                  style={{ margin: 0 }}
-                />
-                OR（〇〇するか〇〇する・選択）
-              </label>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
-                <input
-                  type="radio"
-                  name={`altOp_${index}`}
-                  checked={altOp === 'and'}
-                  onChange={() => update('altActionsOp', 'and')}
-                  style={{ margin: 0 }}
-                />
-                AND（〇〇する＆〇〇する・両方）
-              </label>
-            </div>
-            {altActions.length === 0 && (
-              <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>（代替アクション未追加）</div>
-            )}
-            {altActions.map((a, i) => {
-              const aTgtBase = (a.target || '').split(':')[0];
-              const aTgtSuffix = (a.target || '').substring(aTgtBase.length);
-              return (
-                <div key={i} style={{ marginBottom: 6, padding: 6, border: '1px solid #d4b8f0', borderRadius: 4, background: 'white' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <span style={{ fontWeight: 'bold', fontSize: 12, color: '#9333ea' }}>代替 {i + 1}</span>
-                    <button
-                      onClick={() => removeAltAction(i)}
-                      style={{ padding: '0 6px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 10 }}
-                    >
-                      ✕ 削除
-                    </button>
-                  </div>
-                  {/* アクション + 値 + 対象 + 対象数 */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 4 }}>
-                    <div>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>アクション</div>
-                      <SearchSelect
-                        value={a.action}
-                        onChange={(v) => updateAltAction(i, { action: v })}
-                        options={toOpts(dict.actions)}
-                        allowFreeText
-                        placeholder="--アクション--"
-                      />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                      <input
-                        type="text"
-                        value={a.value === undefined ? '' : String(a.value)}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === '') updateAltAction(i, { value: undefined });
-                          else if (/^\d+$/.test(v)) updateAltAction(i, { value: Number(v) });
-                          else updateAltAction(i, { value: v });
-                        }}
-                        placeholder="値"
-                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-                      />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                      <SearchSelect
-                        value={aTgtBase}
-                        onChange={(v) => updateAltAction(i, { target: v + (aTgtSuffix || '') })}
-                        options={toOpts(TARGETS)}
-                        allowFreeText
-                      />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象数</div>
-                      <SearchSelect
-                        value={aTgtSuffix}
-                        onChange={(v) => updateAltAction(i, { target: aTgtBase + v })}
-                        options={toOpts(TARGET_COUNTS)}
-                        allowFreeText
-                      />
-                    </div>
-                  </div>
-                  {/* 取得元エリア（簡易・1件のみ select で OK） */}
-                  <details style={{ marginTop: 4 }} open={(a.fromZones || []).length > 0}>
-                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#9333ea', padding: '2px 0' }}>
-                      📥 取得元エリア{(a.fromZones || []).length > 0 ? ` (${(a.fromZones || []).length})` : ''}
-                    </summary>
-                    {(() => {
-                      const zones = a.fromZones || [];
-                      const zop = a.fromZonesOp || 'or';
-                      const avail = FROM_ZONES.filter((z) => !zones.includes(z.code));
-                      return (
-                        <div style={{ padding: 4, marginTop: 2, border: '1px solid #e9d5ff', borderRadius: 3, background: '#faf5ff' }}>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', minHeight: 22 }}>
-                            {zones.length === 0 && <span style={{ color: '#888', fontSize: 11 }}>（指定なし）</span>}
-                            {zones.map((zCode, zi) => {
-                              const z = FROM_ZONES.find((x) => x.code === zCode);
-                              return (
-                                <span key={zCode} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', background: 'white', border: '1px solid #c4b5fd', borderRadius: 10, fontSize: 11 }}>
-                                  {z ? z.label : zCode}
-                                  <button
-                                    onClick={() => updateAltAction(i, { fromZones: zones.filter((x) => x !== zCode) })}
-                                    style={{ padding: '0 3px', border: 'none', background: 'transparent', color: '#d33', cursor: 'pointer' }}
-                                  >✕</button>
-                                  {zi < zones.length - 1 && (
-                                    <span style={{ fontSize: 9, color: '#666', fontWeight: 'bold', marginLeft: 4 }}>{zop === 'and' ? 'AND' : 'OR'}</span>
-                                  )}
-                                </span>
-                              );
-                            })}
-                          </div>
-                          {avail.length > 0 && (
-                            <select
-                              value=""
-                              onChange={(e) => { if (e.target.value) updateAltAction(i, { fromZones: [...zones, e.target.value] }); e.target.value = ''; }}
-                              style={{ marginTop: 4, padding: '2px 4px', border: '1px dashed #c4b5fd', borderRadius: 3, fontSize: 11, background: 'white' }}
-                            >
-                              <option value="">＋ エリア追加...</option>
-                              {avail.map((z) => <option key={z.code} value={z.code}>{z.label}</option>)}
-                            </select>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </details>
-                  {/* 修飾子（簡易・チェックボックス） */}
-                  {dict.options.length > 0 && (
-                    <details style={{ marginTop: 4 }} open={(a.options || []).length > 0}>
-                      <summary style={{ cursor: 'pointer', fontSize: 11, color: '#9333ea', padding: '2px 0' }}>
-                        🛡 修飾子{(a.options || []).length > 0 ? ` (${(a.options || []).length})` : ''}
-                      </summary>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: 4, marginTop: 2, background: '#faf5ff', borderRadius: 3, border: '1px solid #e9d5ff' }}>
-                        {dict.options.map((o) => {
-                          const arr = a.options || [];
-                          const checked = arr.includes(o.code);
-                          return (
-                            <label key={o.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, padding: '1px 4px', border: checked ? '1px solid #9333ea' : '1px solid #d4b8f0', borderRadius: 8, background: checked ? '#ede4fb' : 'white', cursor: 'pointer' }}>
-                              <input type="checkbox" checked={checked} onChange={() => {
-                                const next = checked ? arr.filter((x) => x !== o.code) : [...arr, o.code];
-                                updateAltAction(i, { options: next });
-                              }} style={{ margin: 0 }} />
-                              {o.label}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </details>
-                  )}
-                  {/* ☑ 代わりに: ONにすると「条件成立時、メインの代わりに自動でこちらを実行」
-                      という自動選択モードになる。OFF(未チェック)のままなら従来通り
-                      プレイヤーが「🔀 どちらを実行しますか？」で手動選択するモード */}
-                  {(() => {
-                    const gateConds = a.gateConditions || [];
-                    const gateEnabled = gateConds.length > 0;
-                    return (
-                      <div style={{ marginTop: 6, padding: 6, background: gateEnabled ? '#fff3e0' : '#faf5ff', borderRadius: 4, border: '1px solid #ffd591' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 'bold', color: '#b76e00', fontSize: 12 }}>
-                          <input
-                            type="checkbox"
-                            checked={gateEnabled}
-                            onChange={(e) => updateAltAction(i, { gateConditions: e.target.checked ? [{ base: '', value: '' }] : [] })}
-                          />
-                          ☑ 代わりに（条件成立時、プレイヤーに確認せずメインの代わりに自動実行）
-                        </label>
-                        {!gateEnabled && (
-                          <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
-                            未チェックの場合は従来通り「🔀 どちらを実行しますか？」でプレイヤーが手動選択します
-                          </div>
-                        )}
-                        {gateEnabled && (
-                          <div style={{ marginTop: 6 }}>
-                            <ConditionsHybridEditor
-                              conditions={gateConds}
-                              onChange={(next) => updateAltAction(i, { gateConditions: next })}
-                              dict={dict}
-                              title="条件"
-                              hint="（すべて成立している間だけ「代わりに」が有効・複数AND。対象選択のフィルタには使わない）"
-                              theme="action"
-                              defaultSubject=""
-                              attackContextActive={isAttackTrigger}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  {/* 条件: ハイブリッドエディタ（メインの発動条件と同UI） */}
-                  <div style={{ marginTop: 6 }}>
-                    <ConditionsHybridEditor
-                      conditions={a.conditions || []}
-                      onChange={(next) => updateAltAction(i, { conditions: next })}
-                      dict={dict}
-                      title="代替アクション条件"
-                      hint="（この代替アクションを発動するための条件・複数 AND）"
-                      theme="action"
-                      defaultSubject=""
-                      showSubjectSelector={false}
-                      attackContextActive={isAttackTrigger}
-                    />
-                  </div>
-                  {/* ⚙ 期間・倍率（AND実行時の追加設定） */}
-                  <details style={{ marginTop: 6 }} open={!!(a.duration || (a.perCount && a.perRef))}>
-                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#9333ea', padding: '2px 0', fontWeight: 'bold' }}>
-                      ⚙ 期間・倍率（AND実行時の追加設定）
-                    </summary>
-                    <div style={{ padding: 6, border: '1px solid #d4b8f0', borderRadius: 4, background: '#faf5ff', marginTop: 4 }}>
-                      {/* 期間 */}
-                      <div style={{ marginBottom: 6 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>期間</div>
-                        <SearchSelect
-                          value={a.duration || ''}
-                          onChange={(v) => updateAltAction(i, { duration: v })}
-                          options={toOpts(DURATIONS)}
-                        />
-                      </div>
-                      {/* ✖ ～ごとに */}
-                      {(() => {
-                        const isPerEnabled = !!(a.perCount && a.perRef);
-                        const afArr = a.perRefFilter || [];
-                        const PER_FILTER_CONDS: CommonCondDef[] = COMMON_CONDS.filter((c) =>
-                          ['cond_color','cond_type','cond_lv','cond_lv_le','cond_lv_ge'].includes(c.code)
-                        );
-                        const isAFChecked = (code: string) => afArr.some((c) => c.base === code);
-                        const getAFValue = (code: string) => { const c = afArr.find((cc) => cc.base === code); return c ? (c.value || '') : ''; };
-                        const setAFChecked = (code: string, enabled: boolean) => {
-                          if (enabled) { if (!isAFChecked(code)) updateAltAction(i, { perRefFilter: [...afArr, { base: code, value: '' }] }); }
-                          else updateAltAction(i, { perRefFilter: afArr.filter((c) => c.base !== code) });
-                        };
-                        const setAFValue = (code: string, val: string) => {
-                          const idx = afArr.findIndex((c) => c.base === code);
-                          if (idx >= 0) { const next = afArr.slice(); next[idx] = { ...next[idx], value: val }; updateAltAction(i, { perRefFilter: next }); }
-                          else updateAltAction(i, { perRefFilter: [...afArr, { base: code, value: val }] });
-                        };
-                        return (
-                          <div>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#9333ea' }}>
-                              <input
-                                type="checkbox"
-                                checked={isPerEnabled}
-                                onChange={(e) => {
-                                  if (e.target.checked) updateAltAction(i, { perCount: 1, perRef: 'opp_digimon' });
-                                  else updateAltAction(i, { perCount: undefined, perRef: '' });
-                                }}
-                                style={{ margin: 0 }}
-                              />
-                              ✖ ～ごとに（倍率設定）
-                            </label>
-                            {isPerEnabled && (
-                              <div style={{ marginTop: 6, padding: 6, background: 'white', borderRadius: 4, border: '1px solid #d4b8f0' }}>
-                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <input
-                                      type="number" min={1}
-                                      value={a.perCount || 1}
-                                      onChange={(e) => updateAltAction(i, { perCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                                      style={{ width: 50, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
-                                    />
-                                    <span style={{ fontSize: 11, color: '#555' }}>枚ごと、</span>
-                                  </div>
-                                  <div style={{ minWidth: 180 }}>
-                                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                                    <SearchSelect
-                                      value={a.perRef || ''}
-                                      onChange={(v) => updateAltAction(i, { perRef: v })}
-                                      options={toOpts(REF_SUBJECTS)}
-                                    />
-                                  </div>
-                                </div>
-                                {/* 発動モード */}
-                                <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '4px 6px', background: '#eaf0fb', borderRadius: 4, border: '1px solid #b3c8ff', fontSize: 11, marginBottom: 4 }}>
-                                  <span style={{ color: '#1a4f8a', fontWeight: 'bold' }}>発動モード:</span>
-                                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
-                                    <input type="radio" name={`altPerMode_${index}_${i}`} checked={a.perCountMode !== 'repeat'} onChange={() => updateAltAction(i, { perCountMode: undefined })} style={{ margin: 0 }} />
-                                    <span>○ 値×N</span>
-                                  </label>
-                                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
-                                    <input type="radio" name={`altPerMode_${index}_${i}`} checked={a.perCountMode === 'repeat'} onChange={() => updateAltAction(i, { perCountMode: 'repeat' })} style={{ margin: 0 }} />
-                                    <span>● N回発動</span>
-                                  </label>
-                                </div>
-                                {/* 絞り込み */}
-                                <div style={{ padding: 4, background: '#faf5ff', borderRadius: 4, border: '1px solid #d4b8f0' }}>
-                                  <div style={{ fontSize: 10, fontWeight: 'bold', color: '#9333ea', marginBottom: 3 }}>🔍 絞り込み</div>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 10px', marginBottom: 3 }}>
-                                    {PER_FILTER_CONDS.map((f) => (
-                                      <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 10, cursor: 'pointer' }}>
-                                        <input type="checkbox" checked={isAFChecked(f.code)} onChange={(e) => setAFChecked(f.code, e.target.checked)} style={{ margin: 0 }} />
-                                        {f.label}
-                                      </label>
-                                    ))}
-                                  </div>
-                                  {PER_FILTER_CONDS.some((f) => isAFChecked(f.code)) && (
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 4 }}>
-                                      {PER_FILTER_CONDS.filter((f) => isAFChecked(f.code)).map((f) => (
-                                        <div key={f.code}>
-                                          <div style={{ fontSize: 9, color: '#555', marginBottom: 1 }}>{f.label}</div>
-                                          {f.input === 'select' ? (
-                                            <select value={getAFValue(f.code)} onChange={(e) => setAFValue(f.code, e.target.value)} style={{ padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 11, width: '100%' }}>
-                                              {(f.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                            </select>
-                                          ) : (
-                                            <input type={f.input === 'number' ? 'number' : 'text'} value={getAFValue(f.code)} onChange={(e) => setAFValue(f.code, e.target.value)} style={{ padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 11, width: '100%', boxSizing: 'border-box' }} />
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </details>
-                </div>
-              );
-            })}
-            <button
-              onClick={addAltAction}
-              style={{ padding: '4px 10px', border: '1px dashed #9333ea', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#9333ea', marginTop: 4 }}
-            >
-              ＋ 代替アクションを追加
-            </button>
           </div>
         )}
 

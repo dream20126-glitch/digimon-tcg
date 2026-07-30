@@ -520,6 +520,45 @@ function durationToL1(dur?: string): string {
   if (dur === 'dur_while') return 'dur_while';
   return '';
 }
+// 「～ごとに」の対象（REF_SUBJECTS）も2段ボタン式に統一。L2のコードはそのままREF_SUBJECTSの
+// コードを使う（TARGET_SELのようなL1+L2合成は不要）。opp_no_evo_digimon/last_rest_count は
+// このL1/L2に収まらない特殊枠のため「その他の対象」プルダウン側に残す
+const PERREF_L1 = [
+  { code: 'self', label: 'このカード' },
+  { code: 'own', label: '自分' },
+  { code: 'opp', label: '相手' },
+];
+const PERREF_L2: Record<string, { code: string; label: string }[]> = {
+  self: [
+    { code: 'evo_source', label: '進化元' },
+  ],
+  own: [
+    { code: 'own_digimon', label: 'デジモン' },
+    { code: 'own_tamer', label: 'テイマー' },
+    { code: 'own_hand', label: '手札' },
+    { code: 'own_trash', label: 'トラッシュ' },
+    { code: 'own_security', label: 'セキュリティ' },
+    { code: 'own_battle_area', label: 'バトルエリア' },
+  ],
+  opp: [
+    { code: 'opp_digimon', label: 'デジモン' },
+    { code: 'opp_tamer', label: 'テイマー' },
+    { code: 'opp_hand', label: '手札' },
+    { code: 'opp_trash', label: 'トラッシュ' },
+    { code: 'opp_security', label: 'セキュリティ' },
+    { code: 'opp_battle_area', label: 'バトルエリア' },
+  ],
+};
+const PERREF_L2_CODES = new Set(
+  Object.values(PERREF_L2).flatMap((opts) => opts.map((o) => o.code))
+);
+// REF_SUBJECTSコード → PERREF_L1 の逆引き
+function perRefToL1(code: string): string {
+  if (code === 'evo_source') return 'self';
+  if (code.startsWith('own_') && PERREF_L2_CODES.has(code)) return 'own';
+  if (code.startsWith('opp_') && PERREF_L2_CODES.has(code)) return 'opp';
+  return '';
+}
 // 現在選択中のtriggers/triggerConditionsから、共有の発動タイミングを逆算する
 function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair[], families: TriggerFamily[] = COMMON_TRIGGER_FAMILIES): TimingKey {
   for (const fam of families) {
@@ -820,6 +859,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [costOtherOpen, setCostOtherOpen] = useState<Record<number, boolean>>({});
   // ～ごとにの「状態（条件）」その他プルダウン開閉状態
   const [perStateOtherOpen, setPerStateOtherOpen] = useState<boolean>(false);
+  // ～ごとにの「対象」その他プルダウン開閉状態（PERREF_L1/L2に収まらない特殊枠用）
+  const [perRefOtherOpen, setPerRefOtherOpen] = useState<boolean>(false);
   // 「対象の条件」をアクションの対象/対象数の2箇所に分けて描画するため、
   // その他チェックボックスの開閉状態をここで共有する
   const [targetFilterOtherOpen, setTargetFilterOtherOpen] = useState<boolean>(false);
@@ -940,10 +981,50 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 />
                 <span style={{ fontSize: 11, color: '#555' }}>枚ごと、</span>
               </div>
-              {/* 対象（ボタン方式） */}
+              {/* 対象（2段ボタン方式: このカード/自分/相手 → 進化元/デジモン/テイマー/手札/トラッシュ/セキュリティ/バトルエリア） */}
               <div>
                 <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                <ButtonGroup options={REF_SUBJECTS.filter((o) => o.code).map((o) => ({ code: o.code, label: o.label }))} value={refSubject} onChange={setSubject} accentColor="#1a4f8a" />
+                {(() => {
+                  const curL1 = perRefToL1(refSubject);
+                  const l2Options = PERREF_L2[curL1] || [];
+                  const handleL1 = (l1: string) => {
+                    if (!l1) { setSubject(''); return; }
+                    const opts = PERREF_L2[l1] || [];
+                    if (opts.length === 0) return;
+                    const keepCurrent = opts.some((o) => o.code === refSubject);
+                    setSubject(keepCurrent ? refSubject : opts[0].code);
+                  };
+                  const specialCodes = REF_SUBJECTS.filter((o) => o.code && !PERREF_L2_CODES.has(o.code));
+                  const isSpecial = !!refSubject && !PERREF_L2_CODES.has(refSubject);
+                  return (
+                    <>
+                      <ButtonGroup options={PERREF_L1} value={curL1} onChange={handleL1} accentColor="#1a4f8a" />
+                      {l2Options.length > 1 && (
+                        <div style={{ marginTop: 4 }}>
+                          <ButtonGroup options={l2Options} value={refSubject} onChange={setSubject} accentColor="#1a4f8a" />
+                        </div>
+                      )}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, marginTop: 4, color: '#666' }}>
+                        <input
+                          type="checkbox"
+                          checked={perRefOtherOpen || isSpecial}
+                          onChange={(e) => setPerRefOtherOpen(e.target.checked)}
+                        />
+                        その他の対象
+                      </label>
+                      {(perRefOtherOpen || isSpecial) && (
+                        <div style={{ marginTop: 2 }}>
+                          <SearchSelect
+                            value={refSubject}
+                            onChange={setSubject}
+                            options={toOpts(specialCodes)}
+                            allowFreeText
+                          />
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
               {/* 状態: デジモン系のみ表示。よく使う2状態はボタン、他は辞書からその他選択 */}
               {isDigimonSubject && (

@@ -1299,6 +1299,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       accentColor="#d6336c"
                     />
                   )}
+                  {/* 「その後」: 2つめ以降の効果ステップにのみ表示。前段が失敗しても
+                      このステップを実行する（runRecipe.nextStep が options を参照） */}
+                  {index > 0 && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, fontWeight: 'bold', marginLeft: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={opts.includes('continue_on_fail')}
+                        onChange={() => toggleOption('continue_on_fail')}
+                      />
+                      その後（前段が失敗しても実行）
+                    </label>
+                  )}
                 </div>
               );
             })()}
@@ -3050,21 +3062,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </div>
         )}
 
-        {/* その他の修飾子（実カードで使用実績あり・他に設定手段がないもののみ）:
-            continue_on_fail=前段が失敗しても実行 / once_only=次の1回限定（消費型） */}
-        <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
-              <input type="checkbox" checked={opts.includes('continue_on_fail')} onChange={() => toggleOption('continue_on_fail')} />
-              その後（前段が失敗しても実行）
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
-              <input type="checkbox" checked={opts.includes('once_only')} onChange={() => toggleOption('once_only')} />
-              次の1回限定（消費型）
-              {!isOptionImplemented('once_only') && <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠</span>}
-            </label>
-          </div>
-        </div>
         </div>
         )}
         {/* === アクショングループここまで === */}

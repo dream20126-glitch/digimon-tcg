@@ -2691,86 +2691,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
 
 
-                {/* === コスト対象の絞り込み条件 (チェックボックス・複数AND) === */}
-                {(() => {
-                  const condArr = c.conditions || [];
-                  const isCondChecked = (code: string) => condArr.some((cc) => cc.base === code);
-                  const getCondValue = (code: string) => {
-                    const cc = condArr.find((x) => x.base === code);
-                    return cc ? (cc.value || '') : '';
-                  };
-                  const setCondChecked = (code: string, enabled: boolean) => {
-                    if (enabled) {
-                      if (!isCondChecked(code)) {
-                        updateCost(i, { ...c, conditions: [...condArr, { base: code, value: '' }] });
-                      }
-                    } else {
-                      updateCost(i, { ...c, conditions: condArr.filter((x) => x.base !== code) });
-                    }
-                  };
-                  const setCondValue = (code: string, val: string) => {
-                    const idx = condArr.findIndex((x) => x.base === code);
-                    if (idx >= 0) {
-                      const next = condArr.slice();
-                      next[idx] = { ...next[idx], value: val };
-                      updateCost(i, { ...c, conditions: next });
-                    } else {
-                      updateCost(i, { ...c, conditions: [...condArr, { base: code, value: val }] });
-                    }
-                  };
-                  return (
-                    <div style={{ marginTop: 6, padding: 6, background: 'white', borderRadius: 4, border: '1px solid #ffe0b2' }}>
-                      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#b76e00', marginBottom: 4 }}>
-                        🔍 コスト対象の絞り込み（チェックで有効化・複数で AND）
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-                        {COMMON_CONDS.map((f) => (
-                          <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-                            <input
-                              type="checkbox"
-                              checked={isCondChecked(f.code)}
-                              onChange={(e) => setCondChecked(f.code, e.target.checked)}
-                              style={{ margin: 0 }}
-                            />
-                            {f.label}
-                          </label>
-                        ))}
-                      </div>
-                      {COMMON_CONDS.some((f) => isCondChecked(f.code)) && (
-                        <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6 }}>
-                          {COMMON_CONDS.filter((f) => isCondChecked(f.code)).map((f) => (
-                            <div key={f.code}>
-                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{f.label}</div>
-                              {f.input === 'select' ? (
-                                <select
-                                  value={getCondValue(f.code)}
-                                  onChange={(e) => setCondValue(f.code, e.target.value)}
-                                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}
-                                >
-                                  {(f.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                </select>
-                              ) : f.input === 'number' ? (
-                                <input
-                                  type="number"
-                                  value={getCondValue(f.code)}
-                                  onChange={(e) => setCondValue(f.code, e.target.value)}
-                                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                                />
-                              ) : (
-                                <input
-                                  type="text"
-                                  value={getCondValue(f.code)}
-                                  onChange={(e) => setCondValue(f.code, e.target.value)}
-                                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                                />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
+                {/* === コスト対象の絞り込み条件（発動条件と同じConditionsHybridEditorを再利用） === */}
+                <div style={{ marginTop: 6 }}>
+                  <ConditionsHybridEditor
+                    conditions={c.conditions || []}
+                    onChange={(next) => updateCost(i, { ...c, conditions: next })}
+                    dict={dict}
+                    title="コスト対象の絞り込み"
+                    hint="（複数指定可・AND結合）"
+                    theme="action"
+                    defaultSubject=""
+                    showSubjectSelector={false}
+                  />
+                </div>
               </div>
             );
           })}
@@ -3922,15 +3855,19 @@ function ConditionsHybridEditor({
                         （対象で種別を指定済みのため不要）
                       </div>
                     ) : c.base === 'cond_same_as_picked'
-                      || (supportsMultiValue && c.base === 'cond_type') ? (
-                      /* 「選んだデジモンと同じ」「タイプ(複数可・ターゲットフィルタ限定)」:
+                      || (supportsMultiValue && c.base === 'cond_type')
+                      || c.base === 'cond_color' ? (
+                      /* 「選んだデジモンと同じ」「タイプ(複数可・ターゲットフィルタ限定)」「色(複数可・全箇所共通)」:
                          複数選択チェックボックス群（カンマ区切りで保存）。
                          カードは同時に複数タイプを持てないため、複数選択=常にOR判定でよい
                          （「紫のデジモンかオプション」はタイプで デジモン,オプション を両方チェックするだけで表現可能）
                          ※ cond_type の複数値は step.filter (type_in配列) でのみ解釈される。
-                           トリガー条件/発動条件側は単一値exact-match想定なのでそちらでは使わないこと */
+                           トリガー条件/発動条件側は単一値exact-match想定なのでそちらでは使わないこと。
+                         ※ cond_color の複数値（2色以上選択）は現状どの箇所でもエンジン未対応
+                           （多色カードは1枚で複数の色を持てるため、type_inと単純に同じ扱いにはできない） */
                       (() => {
                         const optList = c.base === 'cond_type' ? RULE_TYPE_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
+                          : c.base === 'cond_color' ? RULE_COLOR_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
                           : SAME_AS_PICKED_FIELDS;
                         const sel = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
                         const isCheckedAttr = (code: string) => sel.includes(code);
@@ -3941,19 +3878,26 @@ function ConditionsHybridEditor({
                           updateAt(i, { value: next.join(',') });
                         };
                         return (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, background: 'white' }}>
-                            {optList.map((f) => (
-                              <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, cursor: 'pointer' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={isCheckedAttr(f.code)}
-                                  onChange={(e) => toggleAttr(f.code, e.target.checked)}
-                                  style={{ margin: 0 }}
-                                />
-                                {f.label}
-                              </label>
-                            ))}
-                          </div>
+                          <>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, background: 'white' }}>
+                              {optList.map((f) => (
+                                <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, cursor: 'pointer' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isCheckedAttr(f.code)}
+                                    onChange={(e) => toggleAttr(f.code, e.target.checked)}
+                                    style={{ margin: 0 }}
+                                  />
+                                  {f.label}
+                                </label>
+                              ))}
+                            </div>
+                            {c.base === 'cond_color' && sel.length > 1 && (
+                              <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
+                                ⚠ 2色以上の選択はエンジン未対応です（保存はできますが動作しません）
+                              </div>
+                            )}
+                          </>
                         );
                       })()
                     ) : def && def.input === 'select' ? (

@@ -3927,22 +3927,33 @@ function ConditionsHybridEditor({
                     ) : c.base === 'cond_same_as_picked'
                       || (supportsMultiValue && c.base === 'cond_type')
                       || c.base === 'cond_color'
-                      || (supportsMultiValue && c.base === 'cond_feature_contains') ? (
-                      /* 「選んだデジモンと同じ」「タイプ(複数可・ターゲットフィルタ限定)」「色(複数可・全箇所共通)」
-                         「特徴を含む(複数可・ターゲットフィルタ限定)」:
+                      || c.base === 'cond_feature_contains' ? (
+                      /* 「選んだデジモンと同じ」「タイプ(複数可・ターゲットフィルタ限定)」
+                         「色(複数可・全箇所共通)」「特徴を含む(複数可・全箇所共通)」:
                          複数選択（カンマ区切りで保存）。
                          カードは同時に複数タイプを持てないため、複数選択=常にOR判定でよい
                          （「紫のデジモンかオプション」はタイプで デジモン,オプション を両方トグルするだけで表現可能）
                          ※ cond_type の複数値は step.filter (type_in配列) でのみ解釈される。
                            トリガー条件/発動条件側は単一値exact-match想定なのでそちらでは使わないこと。
-                         ※ cond_feature_contains の複数値も同様に step.filter (feature_includes配列)
-                           でのみ解釈される（"/" 区切りの特徴を分割してOR部分一致）。
+                         ※ cond_feature_contains の複数値は、対象の絞り込み(supportsMultiValue)の
+                           文脈でのみ step.filter (feature_includes配列・"/" 区切りの特徴をOR部分一致)
+                           として実際に解釈される。トリガー条件/発動条件側(checkConditions)は単一値の
+                           部分一致想定のため、そちらで2つ以上選ぶとエンジン未対応（保存のみ可）。
                          ※ cond_color の複数値（2色以上選択）は現状どの箇所でもエンジン未対応
                            （多色カードは1枚で複数の色を持てるため、type_inと単純に同じ扱いにはできない） */
                       c.base === 'cond_feature_contains' ? (() => {
                         const feats = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
                         const setFeats = (next: string[]) => updateAt(i, { value: next.join(',') });
-                        return <MultiTextTags values={feats} onChange={setFeats} placeholder="例: サイボーグ型" accentColor={colors.accent} />;
+                        return (
+                          <>
+                            <MultiTextTags values={feats} onChange={setFeats} placeholder="例: サイボーグ型" accentColor={colors.accent} />
+                            {!supportsMultiValue && feats.length > 1 && (
+                              <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
+                                ⚠ 対象の絞り込み以外の場所で2つ以上指定した場合はエンジン未対応です（保存はできますが動作しません）
+                              </div>
+                            )}
+                          </>
+                        );
                       })() : (() => {
                         const optList = c.base === 'cond_type' ? RULE_TYPE_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
                           : c.base === 'cond_color' ? RULE_COLOR_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))

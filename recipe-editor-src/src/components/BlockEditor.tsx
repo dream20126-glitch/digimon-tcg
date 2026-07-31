@@ -2612,7 +2612,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const cTgtBase = (c.target || '').split(':')[0];
             const cTgtSuffix = (c.target || '').substring(cTgtBase.length);
             const cCurTgt = TARGET_SEL_CODE_TO_L1L2[cTgtBase] || { l1: '', l2: '' };
-            const cTgtL2Options = TARGET_SEL_L2[cCurTgt.l1] || [];
+            // コストの対象では「オプション/プレイヤー/セキュリティ」を選択肢から除外
+            const cTgtL2Options = (TARGET_SEL_L2[cCurTgt.l1] || []).filter((o) => !['option', 'player', 'security'].includes(o.code));
             const cHideCount = cTgtBase === 'self' || cTgtBase === 'self_card';
             const setCostTgt = (l1: string, l2?: string) => {
               if (!l1) { updateCost(i, { ...c, target: '' }); return; }

@@ -281,7 +281,13 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
         case 'cond_lv':       { const n = num(c.value); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
         case 'cond_lv_le':    { const n = num(c.value); if (n !== undefined) f.lv_le = n; break; }
         case 'cond_lv_ge':    { const n = num(c.value); if (n !== undefined) f.lv_ge = n; break; }
-        case 'cond_feature_contains': f.feature_contains = c.value; break;
+        // カンマ区切り(複数チェック)なら feature_includes 配列(OR・特徴を "/" で分割して部分一致)、
+        // 単一値でも feature_includes を使う（cardMatchesFilter は feature_contains を見ないため）
+        case 'cond_feature_contains': {
+          const feats = String(c.value).split(',').map((s) => s.trim()).filter(Boolean);
+          if (feats.length > 0) f.feature_includes = feats;
+          break;
+        }
         case 'cond_name':             f.name = c.value; break;
         case 'cond_name_contains':    f.name_contains = c.value; break;
       }
@@ -636,7 +642,11 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
       } else if (f.type) {
         out.push({ base: 'cond_type', value: String(f.type) });
       }
-      if (f.feature_contains) out.push({ base: 'cond_feature_contains', value: String(f.feature_contains) });
+      if (Array.isArray(f.feature_includes) && f.feature_includes.length > 0) {
+        out.push({ base: 'cond_feature_contains', value: f.feature_includes.join(',') });
+      } else if (f.feature_contains) {
+        out.push({ base: 'cond_feature_contains', value: String(f.feature_contains) });
+      }
       if (f.name_contains)    out.push({ base: 'cond_name_contains',    value: String(f.name_contains) });
       if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
         out.push({ base: 'cond_lv', value: String(f.lv_le) });

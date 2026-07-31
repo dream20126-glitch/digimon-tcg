@@ -66,6 +66,39 @@ function ButtonGroup({ options, value, onChange, accentColor }: { options: { cod
   );
 }
 
+// ボタン式の複数選択グループ（色・タイプなど、複数トグルしてOR条件を作る項目用）
+function MultiButtonGroup({ options, values, onToggle, accentColor }: { options: { code: string; label: string }[]; values: string[]; onToggle: (code: string, on: boolean) => void; accentColor?: string }) {
+  const accent = accentColor || '#d81b60';
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {options.map((o) => {
+        const active = values.includes(o.code);
+        return (
+          <button
+            key={o.code || '(empty)'}
+            type="button"
+            onClick={() => onToggle(o.code, !active)}
+            style={{
+              padding: '3px 9px',
+              borderRadius: 5,
+              border: active ? `2px solid ${accent}` : '1px solid #bbb',
+              background: active ? accent : '#f5f5f5',
+              color: active ? '#fff' : '#333',
+              fontWeight: active ? 'bold' : 'normal',
+              cursor: 'pointer',
+              fontSize: 11,
+              boxShadow: active ? `0 0 6px ${accent}99` : 'none',
+              transition: 'all 0.12s ease',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 const DICT_KIND_LABELS: Record<DictKind, string> = {
   triggers: 'トリガー', conditions: '条件', actions: 'アクション', keywords: 'キーワード', options: '修飾子',
 };
@@ -3858,9 +3891,9 @@ function ConditionsHybridEditor({
                       || (supportsMultiValue && c.base === 'cond_type')
                       || c.base === 'cond_color' ? (
                       /* 「選んだデジモンと同じ」「タイプ(複数可・ターゲットフィルタ限定)」「色(複数可・全箇所共通)」:
-                         複数選択チェックボックス群（カンマ区切りで保存）。
+                         ボタン式の複数選択（カンマ区切りで保存）。
                          カードは同時に複数タイプを持てないため、複数選択=常にOR判定でよい
-                         （「紫のデジモンかオプション」はタイプで デジモン,オプション を両方チェックするだけで表現可能）
+                         （「紫のデジモンかオプション」はタイプで デジモン,オプション を両方トグルするだけで表現可能）
                          ※ cond_type の複数値は step.filter (type_in配列) でのみ解釈される。
                            トリガー条件/発動条件側は単一値exact-match想定なのでそちらでは使わないこと。
                          ※ cond_color の複数値（2色以上選択）は現状どの箇所でもエンジン未対応
@@ -3870,7 +3903,6 @@ function ConditionsHybridEditor({
                           : c.base === 'cond_color' ? RULE_COLOR_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
                           : SAME_AS_PICKED_FIELDS;
                         const sel = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
-                        const isCheckedAttr = (code: string) => sel.includes(code);
                         const toggleAttr = (code: string, on: boolean) => {
                           const next = on
                             ? Array.from(new Set([...sel, code]))
@@ -3879,19 +3911,7 @@ function ConditionsHybridEditor({
                         };
                         return (
                           <>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, background: 'white' }}>
-                              {optList.map((f) => (
-                                <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, cursor: 'pointer' }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isCheckedAttr(f.code)}
-                                    onChange={(e) => toggleAttr(f.code, e.target.checked)}
-                                    style={{ margin: 0 }}
-                                  />
-                                  {f.label}
-                                </label>
-                              ))}
-                            </div>
+                            <MultiButtonGroup options={optList} values={sel} onToggle={toggleAttr} accentColor={colors.accent} />
                             {c.base === 'cond_color' && sel.length > 1 && (
                               <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
                                 ⚠ 2色以上の選択はエンジン未対応です（保存はできますが動作しません）

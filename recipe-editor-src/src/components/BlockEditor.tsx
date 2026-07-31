@@ -2775,42 +2775,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
                 </div>
-                {/* 値 */}
-                <div style={{ marginTop: 4 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                  <input
-                    type="text"
-                    value={c.value === undefined ? '' : String(c.value)}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v === '') updateCost(i, { ...c, value: undefined });
-                      else if (/^\d+$/.test(v)) updateCost(i, { ...c, value: Number(v) });
-                      else updateCost(i, { ...c, value: v });
-                    }}
-                    placeholder="値（枚数等）"
-                    style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-                  />
-                </div>
-                {/* 対象（ボタン方式） */}
-                <div style={{ marginTop: 4 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                  <ButtonGroup options={TARGET_SEL_L1} value={cCurTgt.l1} onChange={(l1) => setCostTgt(l1)} accentColor="#b76e00" />
-                  {cTgtL2Options.length > 0 && (
-                    <div style={{ marginTop: 4 }}>
-                      <ButtonGroup options={cTgtL2Options} value={cCurTgt.l2} onChange={(l2) => setCostTgt(cCurTgt.l1, l2)} accentColor="#b76e00" />
-                    </div>
-                  )}
-                  {!cHideCount && cCurTgt.l1 && (
-                    <div style={{ marginTop: 4 }}>
-                      <ButtonGroup
-                        options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
-                        value={cTgtSuffix}
-                        onChange={(v) => updateCost(i, { ...c, target: cTgtBase + v })}
-                        accentColor="#b76e00"
-                      />
-                    </div>
-                  )}
-                </div>
                 {/* 取得元エリア（ボタン方式）。「破棄」選択時は上の専用「場所」ボタンで代替するため非表示 */}
                 {!isDiscardActive && (
                 <div style={{ marginTop: 6 }}>
@@ -2864,6 +2828,42 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   )}
                 </div>
                 )}
+                {/* 値 */}
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
+                  <input
+                    type="text"
+                    value={c.value === undefined ? '' : String(c.value)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === '') updateCost(i, { ...c, value: undefined });
+                      else if (/^\d+$/.test(v)) updateCost(i, { ...c, value: Number(v) });
+                      else updateCost(i, { ...c, value: v });
+                    }}
+                    placeholder="値（枚数等）"
+                    style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                  />
+                </div>
+                {/* 対象（ボタン方式） */}
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                  <ButtonGroup options={TARGET_SEL_L1} value={cCurTgt.l1} onChange={(l1) => setCostTgt(l1)} accentColor="#b76e00" />
+                  {cTgtL2Options.length > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                      <ButtonGroup options={cTgtL2Options} value={cCurTgt.l2} onChange={(l2) => setCostTgt(cCurTgt.l1, l2)} accentColor="#b76e00" />
+                    </div>
+                  )}
+                  {!cHideCount && cCurTgt.l1 && (
+                    <div style={{ marginTop: 4 }}>
+                      <ButtonGroup
+                        options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
+                        value={cTgtSuffix}
+                        onChange={(v) => updateCost(i, { ...c, target: cTgtBase + v })}
+                        accentColor="#b76e00"
+                      />
+                    </div>
+                  )}
+                </div>
 
 
                 {/* === コスト対象の絞り込み条件（発動条件と同じConditionsHybridEditorを再利用） === */}

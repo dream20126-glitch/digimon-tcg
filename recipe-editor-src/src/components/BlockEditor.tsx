@@ -554,13 +554,32 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'evolve', label: '進化' },
 ];
 // よく使うコストアクション（「〇〇することで」の〇〇部分）
+// 「破棄」と「デッキに戻す/セキュリティに置く」は下の DISCARD_ZONE_MAP / DECKPOS_COST_ACTIONS で
+// 第二ボタン（場所・位置）付きで個別にレンダリングするため、ここには含めない
 const COMMON_COST_ACTIONS: { code: string; label: string }[] = [
   { code: 'rest', label: 'レストさせる' },
-  { code: 'cost_discard', label: '手札を捨てる' },
-  { code: 'cost_trash_self', label: '自身をトラッシュ' },
-  { code: 'evo_discard', label: '進化元を破棄' },
-  { code: 'cost_destroy_other', label: '他の自分のデジモンを消滅' },
-  { code: 'cost_digiburst', label: 'デジバースト' },
+  { code: 'cost_destroy_other', label: '消滅させる' },
+];
+// 「破棄」ボタン: 押すと「どこから破棄するか」の第二ボタン（場所）が現れ、選んだ場所に応じて
+// 実際のアクションコードに切り替える（エンジンには「破棄+場所」の汎用実装が無く、手札/進化元/
+// セキュリティ/デッキそれぞれ別のアクションコードで実装されているため）。
+// target: 'own' 系にしておくと自分側を破棄する意図を保存できる。
+//   - hand/deck (cost_discard/deck_trash_top) は元から自分側の実装なので target 不要
+//   - security (security_trash_select) は step.target が 'own' で始まれば自分側になる実装済み
+//   - evo_source (evo_discard) は現状エンジンが常に「相手」の進化元を破棄する実装のため、
+//     target:'own' を保存しておいても今は反映されない（⚠未実装。該当カードが来たら追加実装する）
+const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: string; warn?: string }[] = [
+  { code: 'evo_source', label: '進化元', action: 'evo_discard', target: 'own', warn: '⚠ エンジン未対応: 現在は相手の進化元を破棄する動作になります（自分側の実装は該当カードが来たら追加予定）' },
+  { code: 'hand', label: '手札', action: 'cost_discard' },
+  { code: 'security', label: 'セキュリティ', action: 'security_trash_select', target: 'own_security' },
+  { code: 'deck', label: 'デッキ', action: 'deck_trash_top' },
+];
+const DISCARD_ACTION_CODES = new Set(DISCARD_ZONE_MAP.map((z) => z.action));
+// 「デッキに戻す」「セキュリティに置く」: 押すと「下/上/下か上」の位置ボタンが現れる（CostStep.deckPosition）。
+// セキュリティに置くは現状エンジンが常に「上」固定のため、下/下か上を選んでも保存のみで動作は上になる
+const DECKPOS_COST_ACTIONS: { code: string; label: string }[] = [
+  { code: 'return_deck', label: 'デッキに戻す' },
+  { code: 'place_on_security_top', label: 'セキュリティに置く' },
 ];
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
@@ -2534,7 +2553,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>コストなし</div>
           )}
           {costs.map((c, i) => {
-            const isCommonCostAction = COMMON_COST_ACTIONS.some((a) => a.code === (c.action || ''));
+            const isCommonCostAction = COMMON_COST_ACTIONS.some((a) => a.code === (c.action || ''))
+              || DISCARD_ACTION_CODES.has(c.action || '')
+              || DECKPOS_COST_ACTIONS.some((a) => a.code === (c.action || ''));
+            const isDiscardActive = DISCARD_ACTION_CODES.has(c.action || '');
+            const activeDiscardZone = DISCARD_ZONE_MAP.find((z) => z.action === c.action)?.code || '';
+            const isDeckPosAction = c.action === 'return_deck' || c.action === 'place_on_security_top';
             // 位置バリアント対応（フラグ駆動+自動グループ化）は「その他」経由選択時のみ引き続き使う
             const { options: costActionOptions, flaggedBases: costFlaggedBases, autoGroupBases: costAutoGroupBases } = buildActionDisplay(dict.actions);
             const costCurVariant = getActionVariant(c.action || '');
@@ -2617,7 +2641,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     ✕
                   </button>
                 </div>
-                {/* アクション（よく使うコストアクション + その他） */}
+                {/* アクション（よく使うコストアクション + 破棄(場所) + デッキに戻す/セキュリティに置く(位置) + その他） */}
                 <div style={{ marginTop: 4 }}>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>アクション</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -2641,7 +2665,85 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         </button>
                       );
                     })}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isDiscardActive) return;
+                        const z = DISCARD_ZONE_MAP.find((zz) => zz.code === 'hand')!;
+                        updateCost(i, { ...c, action: z.action, target: z.target || c.target, fromZones: [z.code] });
+                      }}
+                      style={{
+                        padding: '3px 9px', borderRadius: 5,
+                        border: isDiscardActive ? '2px solid #b76e00' : '1px solid #bbb',
+                        background: isDiscardActive ? '#b76e00' : '#f5f5f5',
+                        color: isDiscardActive ? '#fff' : '#333',
+                        fontWeight: isDiscardActive ? 'bold' : 'normal',
+                        cursor: 'pointer', fontSize: 11,
+                      }}
+                    >
+                      破棄
+                    </button>
+                    {DECKPOS_COST_ACTIONS.map((a) => {
+                      const active = c.action === a.code;
+                      return (
+                        <button
+                          key={a.code}
+                          type="button"
+                          onClick={() => updateCost(i, { ...c, action: a.code })}
+                          style={{
+                            padding: '3px 9px', borderRadius: 5,
+                            border: active ? '2px solid #b76e00' : '1px solid #bbb',
+                            background: active ? '#b76e00' : '#f5f5f5',
+                            color: active ? '#fff' : '#333',
+                            fontWeight: active ? 'bold' : 'normal',
+                            cursor: 'pointer', fontSize: 11,
+                          }}
+                        >
+                          {a.label}
+                        </button>
+                      );
+                    })}
                   </div>
+                  {/* 破棄: 場所ボタン（選んだ場所に応じて実アクションコードを切り替える） */}
+                  {isDiscardActive && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから破棄するか）</div>
+                      <ButtonGroup
+                        options={DISCARD_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
+                        value={activeDiscardZone}
+                        onChange={(zoneCode) => {
+                          const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
+                          if (!z) return;
+                          updateCost(i, { ...c, action: z.action, target: z.target || '', fromZones: [z.code] });
+                        }}
+                        accentColor="#b76e00"
+                      />
+                      {(() => {
+                        const z = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                        return z?.warn ? (
+                          <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
+                        ) : null;
+                      })()}
+                    </div>
+                  )}
+                  {/* デッキに戻す/セキュリティに置く: 位置ボタン（下/上/下か上） */}
+                  {isDeckPosAction && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                      <ButtonGroup
+                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
+                        value={c.deckPosition || ''}
+                        onChange={(v) => updateCost(i, { ...c, deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
+                        accentColor="#b76e00"
+                      />
+                      {c.action === 'return_deck' && c.deckPosition === 'both' && (
+                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ エンジン未対応です（保存はできますが「下」として動作します）</div>
+                      )}
+                      {c.action === 'place_on_security_top' && !!c.deckPosition && c.deckPosition !== 'top' && (
+                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ エンジン未対応です（保存はできますが常に「上」として動作します）</div>
+                      )}
+                    </div>
+                  )}
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, marginTop: 4, color: '#666' }}>
                     <input
                       type="checkbox"
@@ -2708,7 +2810,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
                 </div>
-                {/* 取得元エリア（ボタン方式） */}
+                {/* 取得元エリア（ボタン方式）。「破棄」選択時は上の専用「場所」ボタンで代替するため非表示 */}
+                {!isDiscardActive && (
                 <div style={{ marginTop: 6 }}>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所</div>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -2759,6 +2862,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
                 </div>
+                )}
 
 
                 {/* === コスト対象の絞り込み条件（発動条件と同じConditionsHybridEditorを再利用） === */}

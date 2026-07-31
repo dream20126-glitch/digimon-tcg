@@ -110,6 +110,12 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
         cs.value = isNaN(n) ? c.value : n;
       }
       if (c.target) cs.target = c.target;
+      // 上/下（デッキに戻す/セキュリティに置く用）。'both'（どちらか選んで）はエンジン未対応の
+      // ため 'select' として出力する（return_deck は 'top' 以外を全て「下」、
+      // place_on_security_top は現状常に「上」として扱うので注意）
+      if (c.deckPosition === 'top') cs.position = 'top';
+      else if (c.deckPosition === 'bottom') cs.position = 'bottom';
+      else if (c.deckPosition === 'both') cs.position = 'select';
       // コスト対象の取得元エリア (1件→string / 2件以上→array + from_op)
       if (Array.isArray(c.fromZones) && c.fromZones.length > 0) {
         const cz = c.fromZones.filter((z) => !!z);
@@ -468,6 +474,10 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
           return [s];
         })();
         const fromZonesOp: 'or' | 'and' = c?.from_op === 'and' ? 'and' : 'or';
+        const deckPosition: 'top' | 'bottom' | 'both' | undefined = c?.position === 'top' ? 'top'
+          : c?.position === 'bottom' ? 'bottom'
+          : c?.position === 'select' ? 'both'
+          : undefined;
         return {
           action: c?.action || '',
           value: c?.value,
@@ -475,6 +485,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
           conditions: condArr,
           fromZones,
           fromZonesOp,
+          deckPosition,
         };
       })
     : [];

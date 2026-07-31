@@ -183,6 +183,9 @@ export interface CostStep {
   // コスト対象の取得元エリア（'evo_source' / 'hand' / 'trash' 等）。複数指定可
   fromZones?: string[];
   fromZonesOp?: 'or' | 'and';
+  // 上/下（デッキに戻す/セキュリティに置く 用）。JSON では step.cost[].position に serialize。
+  // 'both' はエンジン未対応（'top' 以外は全て「下」/常に「上」扱いになる）
+  deckPosition?: 'top' | 'bottom' | 'both';
 }
 
 // 演出タイプ自体の定義（小辞書）

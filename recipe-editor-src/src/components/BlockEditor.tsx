@@ -2623,14 +2623,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               updateCost(i, { ...c, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '') + cTgtSuffix });
             };
 
-            // 取得元エリア（ボタン方式。アクションの「場所」と同じ体系）
-            const czones = c.fromZones || [];
-            const cop = c.fromZonesOp || 'or';
-            const toggleCZone = (code: string) => {
-              const next = czones.includes(code) ? czones.filter((z) => z !== code) : [...czones, code];
-              updateCost(i, { ...c, fromZones: next });
-            };
-
             return (
               <div key={i} style={{ marginBottom: 6, padding: 6, border: '1px solid #ffe0b2', borderRadius: 4, background: '#fffbe6' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2775,59 +2767,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
                 </div>
-                {/* 取得元エリア（ボタン方式）。「破棄」選択時は上の専用「場所」ボタンで代替するため非表示 */}
-                {!isDiscardActive && (
-                <div style={{ marginTop: 6 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所</div>
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {FROM_ZONES.map((z) => {
-                      const active = czones.includes(z.code);
-                      return (
-                        <button
-                          key={z.code}
-                          type="button"
-                          onClick={() => toggleCZone(z.code)}
-                          style={{
-                            padding: '2px 8px', borderRadius: 5,
-                            border: active ? '2px solid #1976d2' : '1px solid #bbb',
-                            background: active ? '#1976d2' : '#f5f5f5',
-                            color: active ? '#fff' : '#333',
-                            fontWeight: active ? 'bold' : 'normal',
-                            cursor: 'pointer', fontSize: 10,
-                          }}
-                        >
-                          {z.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {czones.length >= 2 && (
-                    <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-                      <span style={{ color: '#666' }}>結合:</span>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                        <input
-                          type="radio"
-                          name={`costFromOp_${index}_${i}`}
-                          checked={cop === 'or'}
-                          onChange={() => updateCost(i, { ...c, fromZonesOp: 'or' })}
-                          style={{ margin: 0 }}
-                        />
-                        OR
-                      </label>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                        <input
-                          type="radio"
-                          name={`costFromOp_${index}_${i}`}
-                          checked={cop === 'and'}
-                          onChange={() => updateCost(i, { ...c, fromZonesOp: 'and' })}
-                          style={{ margin: 0 }}
-                        />
-                        AND
-                      </label>
-                    </div>
-                  )}
-                </div>
-                )}
                 {/* 値 */}
                 <div style={{ marginTop: 4 }}>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>

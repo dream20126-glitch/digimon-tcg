@@ -190,7 +190,7 @@ export function sendStateSync() {
       effect: c.effect || '', evoSourceEffect: c.evoSourceEffect || '', securityEffect: c.securityEffect || '',
       suspended: !!c.suspended, summonedThisTurn: !!c.summonedThisTurn,
       cantAttack: !!c.cantAttack, cantBlock: !!c.cantBlock, cantEvolve: !!c.cantEvolve,
-      imgSrc: c.imgSrc || '', imageUrl: c.imageUrl || '', color: c.color || '', feature: c.feature || '',
+      imgSrc: c.imgSrc || '', imageUrl: c.imageUrl || '', color: c.color || '', feature: c.feature || '', isLink: !!c.isLink,
       evolveCond: c.evolveCond || '', buffs: c.buffs || [],
       stack: (c.stack || []).map(serializeCard),
       recipe: c.recipe || null,
@@ -445,7 +445,7 @@ function onRemoteCommand(cmd) {
         name: cmd.cardName || '???', cardNo: cmd.cardNo || '', type: 'テイマー',
         effect: cmd.effect || '', securityEffect: cmd.securityEffect || '',
         dp: cmd.dp || 0, level: cmd.level || '', color: cmd.color || '',
-        feature: cmd.feature || '', imgSrc: cmd.cardImg || cmd.imgSrc || '',
+        feature: cmd.feature || '', isLink: !!cmd.isLink, imgSrc: cmd.cardImg || cmd.imgSrc || '',
         cost: cmd.cost || 0, playCost: cmd.playCost || 0,
         suspended: false, buffs: [], stack: [],
       };
@@ -604,7 +604,7 @@ function onRemoteCommand(cmd) {
         name: cmd.cardName, cardNo: cmd.cardNo || '', type: cmd.cardType || 'オプション',
         effect: cmd.effect || '', securityEffect: cmd.securityEffect || '',
         recipe: cmd.recipe || null, imgSrc: cmd.cardImg || '',
-        dp: cmd.dp || 0, level: cmd.level || '', color: cmd.color || '', feature: cmd.feature || '',
+        dp: cmd.dp || 0, level: cmd.level || '', color: cmd.color || '', feature: cmd.feature || '', isLink: !!cmd.isLink,
         cost: cmd.cost || 0, playCost: cmd.playCost || 0,
         stack: [], buffs: [], suspended: false,
       };

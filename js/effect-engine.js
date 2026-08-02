@@ -4486,11 +4486,14 @@ export function hasNoAnnounceOverride(recipeSteps) {
   return Array.isArray(recipeSteps) && recipeSteps.some(s => s && s.no_announce === true);
 }
 
-// 「進化元効果」欄のUIラベル。タイプによって進化元の意味が異なるため表示を切り替える
-// （デュアルカード＝進化元を持たずオプション効果、リンクカード＝進化元を持たずリンク効果）
+// 「進化元効果」欄のUIラベル。タイプ/フラグによって進化元の意味が異なるため表示を切り替える
+// （デュアルカード＝進化元を持たずオプション効果、リンクカード＝進化元を持たずリンク効果。
+//  リンクはデジモン/オプションどちらにも付き得る独立フラグ(card.isLink)なので、
+//  card.type自体は従来通りデジモン/オプション/テイマー/デジタマ/デュアルのまま）
 export function evoSourceEffectLabel(card) {
-  if (card && card.type === 'デュアル') return 'オプション効果';
-  if (card && card.type === 'リンク') return 'リンク効果';
+  if (!card) return '進化元効果';
+  if (card.isLink) return 'リンク効果';
+  if (card.type === 'デュアル') return 'オプション効果';
   return '進化元効果';
 }
 

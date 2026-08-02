@@ -168,6 +168,7 @@ function findCardByName(idOrName) {
     type,
     color: card['色'] || '',
     feature: card['特徴'] || '',
+    isLink: card['リンク'] === 'あり',
     stack: [],
     suspended: false,
     buffs: [],

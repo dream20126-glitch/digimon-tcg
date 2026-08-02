@@ -430,6 +430,23 @@ function removeOwnCard(slotIdx, reason) {
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'own_card_removed', slotIdx, reason: reason || 'destroy' });
 }
 
+// ===== オプション使用の色条件チェック =====
+// 公式ルール: オプションカードを使用するには、場（バトルエリア/テイマーエリア/育成エリア）に
+// そのオプションと同じ色のカードが1枚以上必要（無ければ使用できない）。
+// 「使用条件」を満たせばこの色条件を無視できるカードもあるが、それは別途対応。
+function hasMatchingColorInPlay(optionCard, side) {
+  const p = side === 'player' ? bs.player : bs.ai;
+  if (!p) return true;
+  const optColors = String(optionCard.color || '').split('').filter(Boolean);
+  if (optColors.length === 0) return true; // 色情報が無いカードはチェック対象外
+  const areaCards = [...(p.battleArea || []), ...(p.tamerArea || [])].filter(Boolean);
+  if (p.ikusei) areaCards.push(p.ikusei);
+  return areaCards.some(c => {
+    const cColors = String(c.color || '');
+    return optColors.some(oc => cColors.includes(oc));
+  });
+}
+
 // ===== 進化条件チェック =====
 
 export function canEvolveOnto(evoCard, baseCard) {
@@ -494,6 +511,11 @@ export function doPlay(card, handIdx, slotIdx) {
   if (_attackInProgress) { console.log('[doPlay] skip: attack in progress'); return; }
   if (card.level === '2') { addLog('🚨 デジタマはバトルエリアに出せません'); return; }
   if (card.playCost === null) { addLog('🚨 「' + card.name + '」は進化専用カードです'); return; }
+  // オプション使用の色条件（場に同色のカードが無ければ使用不可）
+  if (card.type === 'オプション' && !hasMatchingColorInPlay(card, 'player')) {
+    addLog('🚨 「' + card.name + '」と同じ色のカードが場に無いため使用できません');
+    return;
+  }
   // recipe の summon_cost（条件付き登場コスト軽減）を反映した実効登場コスト
   // 例: ブラックウォーグレイモン「DP10000以上の相手がいる間、登場コスト-6」
   const _effPlayCost = _getEffectivePlayCost(card, bs, 'player');
@@ -2521,10 +2543,11 @@ function aiPlayAuto(callback) {
 
   const available = aiAvailableMemory();
 
-  // ③ オプション/テイマー
+  // ③ オプション/テイマー（オプションは場に同色が無ければ使用不可）
   const optionOrTamer = bs.ai.hand.find(c =>
     (c.type === 'オプション' || c.type === 'テイマー') &&
-    c.playCost !== null && c.playCost <= available
+    c.playCost !== null && c.playCost <= available &&
+    (c.type !== 'オプション' || hasMatchingColorInPlay(c, 'ai'))
   );
   if (optionOrTamer) {
     const handIdx = bs.ai.hand.indexOf(optionOrTamer);

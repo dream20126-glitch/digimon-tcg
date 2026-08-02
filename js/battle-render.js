@@ -8,7 +8,7 @@
 import { bs, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { updateScrollArrows, addLog } from './battle-ui.js';
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
-import { isTargetSelecting, hasRecipeTrigger } from './effect-engine.js';
+import { isTargetSelecting, hasRecipeTrigger, evoSourceEffectLabel } from './effect-engine.js';
 
 // ===== カード画像ヘルパー =====
 const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
@@ -593,7 +593,7 @@ window.activateEffect = function(slotIdx, effectSource) {
   if (effectSource && effectSource.startsWith('evo-')) {
     const evoIdx = parseInt(effectSource.split('-')[1]);
     const evoCard = card.stack && card.stack[evoIdx];
-    if (evoCard && evoCard.evoSourceEffect) { effectText = evoCard.evoSourceEffect; effectName = evoCard.name + '（進化元効果）'; }
+    if (evoCard && evoCard.evoSourceEffect) { effectText = evoCard.evoSourceEffect; effectName = evoCard.name + '（' + evoSourceEffectLabel(evoCard) + '）'; }
   }
   // 効果発動はレストを伴わない（公式ルール: 起動型効果は通常レストを要求しない）
   // 長押しメニューで仮レストされた状態を解除（元々アクティブだった場合）
@@ -1157,11 +1157,12 @@ export function showBCD(idxOrCard, source) {
     ? '<div style="color:var(--main-cyan);font-size:10px;margin-bottom:4px;font-weight:bold;">効果</div>' + card.effect
     : '<span style="color:#555;">効果なし</span>';
 
-  // 進化元効果
+  // 進化元効果（タイプにより表示ラベルが変わる: デュアル=オプション効果/リンク=リンク効果）
   const evoEl = document.getElementById('bcd-evo-source');
+  const evoLabel = evoSourceEffectLabel(card);
   let evoHtml = '';
   if (card.evoSourceEffect && card.evoSourceEffect.trim() && card.evoSourceEffect !== 'なし') {
-    evoHtml += '<div style="color:#ffaa00;font-size:10px;margin-bottom:4px;font-weight:bold;">進化元効果</div>' + card.evoSourceEffect;
+    evoHtml += '<div style="color:#ffaa00;font-size:10px;margin-bottom:4px;font-weight:bold;">' + evoLabel + '</div>' + card.evoSourceEffect;
   }
   // スタック内の全進化元カードを表示（効果なしでもカード名+なしと表示）
   // 表示順: 直前の進化形 (stack[0]) → Lv.2 デジタマ (stack[N-1]) ← 物理的な重なり順
@@ -1172,14 +1173,15 @@ export function showBCD(idxOrCard, source) {
     card.stack.forEach((s, i) => {
       const idForDom = card.stack.length - 1 - i; // 一番下=0, 直前=N-1
       const hasEvo = s.evoSourceEffect && s.evoSourceEffect.trim() && s.evoSourceEffect !== 'なし';
+      const sLabel = evoSourceEffectLabel(s);
       stackHtml += '<div id="bcd-evo-source-stack-' + idForDom + '" style="margin-top:6px;border-top:1px solid #222;padding-top:4px;">'
-        + '<div style="color:#ffaa00;font-size:9px;margin-bottom:2px;">進化元: ' + s.name + ' (Lv.' + (s.level || '?') + ')</div>'
+        + '<div style="color:#ffaa00;font-size:9px;margin-bottom:2px;">' + sLabel + ': ' + s.name + ' (Lv.' + (s.level || '?') + ')</div>'
         + '<div style="font-size:10px;color:' + (hasEvo ? '#ddd' : '#555') + ';">' + (hasEvo ? s.evoSourceEffect : 'なし') + '</div></div>';
     });
     stackHtml += '</div>';
     evoHtml += stackHtml;
   }
-  if (!evoHtml) evoHtml = '<div style="color:#555;font-size:10px;">進化元効果なし</div>';
+  if (!evoHtml) evoHtml = '<div style="color:#555;font-size:10px;">' + evoLabel + 'なし</div>';
   evoEl.innerHTML = evoHtml;
   evoEl.style.display = 'block';
 

@@ -2029,10 +2029,10 @@ function showTargetSelection(targetSide, validIndices, conditions, borderColor, 
       box.innerHTML += '<div style="font-size:11px;color:#ddd;line-height:1.7;margin-bottom:10px;text-align:left;background:#111;padding:10px;border-radius:6px;border:1px solid #333;">'
         + '<div style="color:'+borderColor+';font-size:10px;margin-bottom:4px;font-weight:bold;">効果</div>' + card.effect + '</div>';
     }
-    // 進化元効果
+    // 進化元効果（タイプにより表示ラベルが変わる）
     if (card.evoSourceEffect && card.evoSourceEffect !== 'なし') {
       box.innerHTML += '<div style="font-size:11px;color:#aaa;line-height:1.7;margin-bottom:10px;text-align:left;background:#0a0a0a;padding:10px;border-radius:6px;border:1px solid #222;">'
-        + '<div style="color:#ffaa00;font-size:10px;margin-bottom:4px;font-weight:bold;">進化元効果</div>' + card.evoSourceEffect + '</div>';
+        + '<div style="color:#ffaa00;font-size:10px;margin-bottom:4px;font-weight:bold;">' + evoSourceEffectLabel(card) + '</div>' + card.evoSourceEffect + '</div>';
     }
 
     // 確認ボタン
@@ -2194,7 +2194,7 @@ function _showCardConfirmDialog(card, onConfirm) {
     ? `<div style="color:#00fbff;font-size:10px;margin-bottom:4px;font-weight:bold;">効果</div>${card.effect}`
     : '<span style="color:#666;">効果なし</span>';
   const evoHtml = (card.evoSourceEffect && card.evoSourceEffect !== 'なし')
-    ? `<div style="margin-top:8px;color:#ffaa00;font-size:10px;font-weight:bold;">進化元効果</div>${card.evoSourceEffect}`
+    ? `<div style="margin-top:8px;color:#ffaa00;font-size:10px;font-weight:bold;">${evoSourceEffectLabel(card)}</div>${card.evoSourceEffect}`
     : '';
   const cardBox = document.createElement('div');
   cardBox.style.cssText = 'background:#0a0a0a;border:2px solid #ffcc00;border-radius:12px;padding:18px;max-width:300px;width:90%;text-align:center;box-shadow:0 0 30px rgba(255,204,0,0.45);max-height:70vh;overflow-y:auto;';
@@ -4486,6 +4486,14 @@ export function hasNoAnnounceOverride(recipeSteps) {
   return Array.isArray(recipeSteps) && recipeSteps.some(s => s && s.no_announce === true);
 }
 
+// 「進化元効果」欄のUIラベル。タイプによって進化元の意味が異なるため表示を切り替える
+// （デュアルカード＝進化元を持たずオプション効果、リンクカード＝進化元を持たずリンク効果）
+export function evoSourceEffectLabel(card) {
+  if (card && card.type === 'デュアル') return 'オプション効果';
+  if (card && card.type === 'リンク') return 'リンク効果';
+  return '進化元効果';
+}
+
 export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
   const override = _findDisplayTextOverride(recipeSteps);
   if (override) return override;
@@ -4547,7 +4555,7 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
   if (evoSourceCard) {
     const sub = document.createElement('div');
     sub.style.cssText = 'color:#ffaa00;font-size:11px;font-weight:bold;margin-bottom:8px;text-shadow:0 0 4px #ffaa0066;';
-    sub.innerText = '◇ 「' + card.name + '」の進化元効果 ◇';
+    sub.innerText = '◇ 「' + card.name + '」の' + evoSourceEffectLabel(card) + ' ◇';
     box.appendChild(sub);
   }
 

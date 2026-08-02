@@ -140,7 +140,9 @@ function findCardByName(idOrName) {
     return null;
   }
   const level = cardField(card, 'レベル', 'Lv');
-  const playCost = cardField(card, '登場コスト', '登場\nコスト');
+  const type = card['タイプ'] || '';
+  const isUseCostType = type === 'オプション' || type === 'デュアル';
+  const playCost = isUseCostType ? cardField(card, '使用コスト', '使用\nコスト') : cardField(card, '登場コスト', '登場\nコスト');
   const evolveCost = cardField(card, '進化コスト', '進化\nコスト');
   // 「なし」「-」等の文字列はコストなしとして null に正規化
   const isNoCost = (v) => v === undefined || v === null || v === '' || v === 'なし' || v === '-';
@@ -163,7 +165,7 @@ function findCardByName(idOrName) {
     recipe: card['レシピ'] || card['効果レシピ'] || null,
     imageUrl: card['ImageURL'] || '',
     imgSrc: getCardImageUrl(card) || '',
-    type: card['タイプ'] || '',
+    type,
     color: card['色'] || '',
     feature: card['特徴'] || '',
     stack: [],

@@ -1073,6 +1073,13 @@ export function formatCardStats(card) {
   const costStr = (playCost != null ? playCost : '—');
   if (card.type === 'テイマー') return '登場コスト:' + costStr;
   if (card.type === 'オプション') return '使用コスト:' + costStr;
+  if (card.type === 'デュアル') {
+    const evoStr = (card.evolveCost != null ? card.evolveCost : '—');
+    return 'Lv.' + (card.level || '?')
+         + ' ／ DP:' + (card.dp || '?')
+         + ' ／ 使用コスト:' + costStr
+         + ' ／ 進化コスト:' + evoStr;
+  }
   return 'Lv.' + (card.level || '?')
        + ' ／ DP:' + (card.dp || '?')
        + ' ／ 登場コスト:' + costStr;

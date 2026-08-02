@@ -87,7 +87,11 @@ function parseDeck(deckData) {
     if (!m) return;
     const cardNo = m[2], count = parseInt(m[3]);
     const obj = allCards.find(c => c["カードNo"] === cardNo) || {};
-    const playCost = _f(obj, '登場コスト', '登場\nコスト');
+    const type = obj["タイプ"] || '';
+    // タイプ=オプション/デュアルは「使用コスト」列、それ以外(デジモン/テイマー)は
+    // 「登場コスト」列を実効コストの元にする（デュアルは登場コストを持たないため）
+    const isUseCostType = type === 'オプション' || type === 'デュアル';
+    const playCost = isUseCostType ? _f(obj, '使用コスト', '使用\nコスト') : _f(obj, '登場コスト', '登場\nコスト');
     const evolveCost = _f(obj, '進化コスト', '進化\nコスト');
     const level = _f(obj, 'レベル', 'Lv');
     // 「なし」「-」等の文字列はコストなしとして null に正規化
@@ -104,7 +108,7 @@ function parseDeck(deckData) {
       effect: obj["効果テキスト"] || obj["効果"] || '', evoSourceEffect: obj["進化元テキスト"] || obj["進化元効果"] || '',
       securityEffect: obj["セキュリティテキスト"] || obj["セキュリティ効果"] || '', recipe: obj["レシピ"] || obj["効果レシピ"] || null,
       imageUrl: obj["ImageURL"] || '', imgSrc: getCardImageUrl(obj) || '',
-      type: obj["タイプ"] || '', color: obj["色"] || '', feature: obj["特徴"] || '',
+      type, color: obj["色"] || '', feature: obj["特徴"] || '',
       stack: [], suspended: false, buffs: [],
       cantBeActive: false, cantAttack: false, cantBlock: false,
       summonedThisTurn: false, _pendingDestroy: false,
@@ -330,7 +334,9 @@ window.acceptHand = function() {
           const obj = (window.allCards || []).find(c => c['名前'] === targetName);
           if (obj) {
             const _f = (o, k1, k2) => o[k1] !== undefined ? o[k1] : o[k2];
-            const playCost = _f(obj, '登場コスト', '登場\nコスト');
+            const type = obj['タイプ'] || '';
+            const isUseCostType = type === 'オプション' || type === 'デュアル';
+            const playCost = isUseCostType ? _f(obj, '使用コスト', '使用\nコスト') : _f(obj, '登場コスト', '登場\nコスト');
             const evolveCost = _f(obj, '進化コスト', '進化\nコスト');
             const level = _f(obj, 'レベル', 'Lv');
             const isNoCost = (v) => v === undefined || v === null || v === '' || v === 'なし' || v === '-';
@@ -348,7 +354,7 @@ window.acceptHand = function() {
               securityEffect: obj['セキュリティテキスト'] || obj['セキュリティ効果'] || '',
               recipe: obj['レシピ'] || obj['効果レシピ'] || null,
               imageUrl: obj['ImageURL'] || '', imgSrc: getCardImageUrl(obj) || '',
-              type: obj['タイプ'] || '', color: obj['色'] || '', feature: obj['特徴'] || '',
+              type, color: obj['色'] || '', feature: obj['特徴'] || '',
               stack: [], suspended: false, buffs: [],
               cantBeActive: false, cantAttack: false, cantBlock: false,
               summonedThisTurn: false, _pendingDestroy: false,

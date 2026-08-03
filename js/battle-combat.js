@@ -576,8 +576,9 @@ export function doPlay(card, handIdx, slotIdx) {
   if (_attackInProgress) { console.log('[doPlay] skip: attack in progress'); return; }
   if (card.level === '2') { addLog('🚨 デジタマはバトルエリアに出せません'); return; }
   if (card.playCost === null) { addLog('🚨 「' + card.name + '」は進化専用カードです'); return; }
-  // オプション使用の色条件（場に同色のカードが無ければ使用不可。使用条件を満たせば無視できる）
-  if (card.type === 'オプション' && !hasMatchingColorInPlay(card, 'player') && !meetsUseCondition(card, 'player')) {
+  // オプション使用の色条件（場に同色のカードが無ければ使用不可。使用条件を満たせば無視できる）。
+  // デュアルカードもオプションとして使う際は同じ色条件を満たす必要がある
+  if ((card.type === 'オプション' || card.type === 'デュアル') && !hasMatchingColorInPlay(card, 'player') && !meetsUseCondition(card, 'player')) {
     addLog('🚨 「' + card.name + '」と同じ色のカードが場に無いため使用できません');
     return;
   }
@@ -617,6 +618,35 @@ export function doPlay(card, handIdx, slotIdx) {
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('use_effect');
         if (window._tutorialBattleDone) window._tutorialBattleDone();
         checkPlayerPendingTurnEnd();
+      }, 'player');
+    });
+    return;
+  }
+
+  // ----- デュアルカード（オプションとして使用。使用後アーツ進化を提示） -----
+  // 登場コストを持たないため常にこちらの分岐（空きスロットへドロップ=使用）。
+  // 通常進化（既存のデジモンへドロップ）はdoEvolve/doEvolveIkuが型に依らず処理する
+  if (card.type === 'デュアル') {
+    bs.player.hand.splice(handIdx, 1); bs.selHand = null;
+    addLog('✦ 「' + card.name + '」を使用！（コスト ' + _effPlayCost + '）');
+    if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
+      try { window._tutorialHideInstruction(); } catch (e) {}
+    }
+    renderAll();
+    showOptionEffect(card, async () => {
+      playerSpendMemory(_effPlayCost, true);
+      if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
+      if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play_cost');
+      _hooks.checkAndTriggerEffect(card, '【メイン】', () => {
+        renderAll();
+        _offerArtsEvolve(card, (evolved) => {
+          if (!evolved) {
+            bs.player.trash.push(card);
+            addLog('✦ 「' + card.name + '」をトラッシュへ');
+            renderAll();
+          }
+          checkPlayerPendingTurnEnd();
+        });
       }, 'player');
     });
     return;
@@ -726,6 +756,8 @@ export function doEvolve(card, handIdx, slotIdx) {
 
 function _finishDoEvolve(card, base, handIdx, slotIdx, cost) {
   const evolved = Object.assign({}, card, {
+    // デュアルカードは進化後デジモンとして扱う（アタック/ブロック判定等はtype==='デジモン'固定のため）
+    type: card.type === 'デュアル' ? 'デジモン' : card.type,
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,
     buffs: base.buffs || [],
@@ -792,6 +824,7 @@ export function doEvolveIku(card, handIdx) {
   const _evoDisc = _consumePendingEvoCostReduction(card, base);
   if (_evoDisc > 0) { cost = Math.max(0, cost - _evoDisc); addLog('💠 進化コスト-' + _evoDisc + '（コスト' + cost + 'で進化）'); }
   const evolved = Object.assign({}, card, {
+    type: card.type === 'デュアル' ? 'デジモン' : card.type,
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,
     buffs: base.buffs || [],
@@ -836,6 +869,74 @@ export function doEvolveIku(card, handIdx) {
       }
     }, { deferDismiss: true });
   });
+}
+
+// ===== アーツ進化（デュアルカード専用） =====
+// オプションとして使用した後、進化コストを支払わず進化できる（任意）。
+// 進化条件を満たす自分のデジモンが場（バトルエリア/育成エリア）にいる場合のみ提示する
+function _findArtsEvolveCandidates(card, side) {
+  const p = side === 'ai' ? bs.ai : bs.player;
+  const candidates = [];
+  (p.battleArea || []).forEach((base, i) => {
+    if (base && base.type === 'デジモン' && canEvolveOnto(card, base)) {
+      candidates.push({ base, area: 'battle', idx: i });
+    }
+  });
+  if (p.ikusei && p.ikusei.type === 'デジモン' && canEvolveOnto(card, p.ikusei)) {
+    candidates.push({ base: p.ikusei, area: 'ikusei', idx: -1 });
+  }
+  return candidates;
+}
+
+function _placeArtsEvolve(card, target, side) {
+  const p = side === 'ai' ? bs.ai : bs.player;
+  const { base, area, idx } = target;
+  const evolved = Object.assign({}, card, {
+    type: 'デジモン', // デュアルカードは進化後デジモンとして扱う
+    suspended: base.suspended,
+    summonedThisTurn: base.summonedThisTurn,
+    buffs: base.buffs || [],
+    dpModifier: base.dpModifier || 0,
+    stack: [base].concat(base.stack || []),
+  });
+  evolved.dp = evolved.baseDp + evolved.dpModifier;
+  if (area === 'battle') p.battleArea[idx] = evolved;
+  else p.ikusei = evolved;
+  bs._evolveCountThisTurn = (bs._evolveCountThisTurn || 0) + 1;
+  addLog((side === 'ai' ? '🤖 AIが' : '') + '「' + base.name + '」→「' + evolved.name + '」にアーツ進化！（コスト無し）');
+  renderAll();
+  return evolved;
+}
+
+// candidates を1件ずつ「アーツ進化しますか？」で確認し、承諾されたらそこへ進化させる（プレイヤー専用）。
+// onDone(evolved) — 進化した場合は進化後カード、しなかった場合は null/undefined を渡す
+function _offerArtsEvolve(card, onDone) {
+  const candidates = _findArtsEvolveCandidates(card, 'player');
+  if (candidates.length === 0) { onDone(); return; }
+  const tryNext = (i) => {
+    if (i >= candidates.length) { onDone(); return; }
+    const cand = candidates[i];
+    showConfirm({
+      title: '✨ アーツ進化',
+      message: '「' + cand.base.name + '」にコストを支払わず進化しますか？',
+      yesText: 'はい', noText: 'いいえ', color: '#ffcc00',
+    }).then((yes) => {
+      if (!yes) { tryNext(i + 1); return; }
+      const evolved = _placeArtsEvolve(card, cand, 'player');
+      if (hasKeyword(evolved, '【進化時】')) {
+        _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
+          _hooks.applyPermanentEffects('player');
+          renderAll(true);
+          onDone(evolved);
+        });
+      } else {
+        _hooks.applyPermanentEffects('player');
+        renderAll(true);
+        onDone(evolved);
+      }
+    });
+  };
+  tryNext(0);
 }
 
 // ===== メモリー消費（プレイヤー） =====
@@ -2495,6 +2596,35 @@ function aiPlayCard(c, handIdx, onDone) {
     return;
   }
 
+  // ----- デュアルカード（AIはオプションとして使用。アーツ進化できるなら常に受け入れる） -----
+  if (c.type === 'デュアル') {
+    bs.ai.hand.splice(handIdx, 1);
+    addLog('🤖 AIが「' + c.name + '」を使用！（コスト' + c.playCost + '）');
+    renderAll();
+    showOptionEffect(c, () => {
+      const turnEnded = aiSpendMemory(c.playCost);
+      _hooks.checkAndTriggerEffect(c, '【メイン】', () => {
+        const candidates = _findArtsEvolveCandidates(c, 'ai');
+        if (candidates.length > 0) {
+          const evolved = _placeArtsEvolve(c, candidates[0], 'ai');
+          if (hasKeyword(evolved, '【進化時】')) {
+            _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
+              _hooks.applyPermanentEffects('ai'); renderAll(true);
+              onDone(turnEnded);
+            }, 'ai');
+            return;
+          }
+          _hooks.applyPermanentEffects('ai'); renderAll(true);
+          onDone(turnEnded);
+          return;
+        }
+        bs.ai.trash.push(c); renderAll(true);
+        onDone(turnEnded);
+      }, 'ai');
+    });
+    return;
+  }
+
   if (c.type === 'テイマー') {
     bs.ai.hand.splice(handIdx, 1);
     bs.ai.tamerArea.push(c);
@@ -2610,11 +2740,11 @@ function aiPlayAuto(callback) {
 
   const available = aiAvailableMemory();
 
-  // ③ オプション/テイマー（オプションは場に同色が無ければ使用不可。使用条件を満たせば無視できる）
+  // ③ オプション/テイマー/デュアル（オプション・デュアルは場に同色が無ければ使用不可。使用条件を満たせば無視できる）
   const optionOrTamer = bs.ai.hand.find(c =>
-    (c.type === 'オプション' || c.type === 'テイマー') &&
+    (c.type === 'オプション' || c.type === 'テイマー' || c.type === 'デュアル') &&
     c.playCost !== null && c.playCost <= available &&
-    (c.type !== 'オプション' || hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai'))
+    (c.type === 'テイマー' || hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai'))
   );
   if (optionOrTamer) {
     const handIdx = bs.ai.hand.indexOf(optionOrTamer);

@@ -1346,15 +1346,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           }}>
             🔒 セキュリティ効果は「セキュリティでめくれたとき」に自動で発動します。トリガーの指定は不要です。
           </div>
-        ) : block.section === 'link' ? (
-          <div style={{
-            gridColumn: '1 / span 2', padding: 10, background: '#f0f9f0',
-            border: '2px solid #93c693', borderRadius: 6,
-            fontSize: 12, color: '#1a5a1a',
-          }}>
-            🔗 リンク効果は「リンクしている間」常に有効になります。トリガーの指定は不要です。
-            ⚠ エンジン未実装のため、現時点では保存のみ可能です。
-          </div>
         ) : block.trigger === 'alt_evolve' ? (
           <div style={{
             gridColumn: '1 / span 2', padding: 10, background: '#f0f9f0',

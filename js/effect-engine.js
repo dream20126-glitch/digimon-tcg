@@ -3315,7 +3315,7 @@ export function applyPermanentEffects(bs, side, context) {
   // 継続的（during_X）由来のセキュリティバフもクリア（再評価のため）
   // source='recipe_perm_security' / 'evo_recipe_perm_security' は applyPermanentEffects で毎回再構築される
   if (bs._securityBuffs && bs._securityBuffs.length > 0) {
-    bs._securityBuffs = bs._securityBuffs.filter(b => !((b.source === 'recipe_perm_security' || b.source === 'evo_recipe_perm_security') && b.owner === side));
+    bs._securityBuffs = bs._securityBuffs.filter(b => !((b.source === 'recipe_perm_security' || b.source === 'evo_recipe_perm_security' || b.source === 'link_recipe_perm_security') && b.owner === side));
   }
 
   // ② 永続効果を全て再適用
@@ -3632,6 +3632,137 @@ export function applyPermanentEffects(bs, side, context) {
             else if (flag === 'absorb_evolve') { card._permEffects.absorbEvolve = true; }
             else if (flag === 'blast_evolve') { card._permEffects.blastEvolve = true; }
             else if (flag === 'blast_jogress') { card._permEffects.blastJogress = true; }
+            else if (flag === 'mind_link') { card._permEffects.mindLink = true; }
+            else if (flag === 'partition') { card._permEffects.partition = true; }
+            else if (flag === 'overclock') { card._permEffects.overclock = true; }
+          });
+        }
+      });
+    }
+
+    // ⑤ リンクカードのレシピ永続効果
+    // リンクしている間のみ有効な効果は recipe.link のみを参照する（構造は④の進化元と同じ）。
+    if (Array.isArray(card.linkedCards)) {
+      card.linkedCards.forEach(linkCard => {
+        if (!linkCard || !linkCard.recipe) return;
+        if (typeof linkCard.recipe === 'string') {
+          try { linkCard.recipe = JSON.parse(linkCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')); } catch (_) { linkCard.recipe = null; }
+        }
+        if (!linkCard.recipe || !linkCard.recipe.link) return;
+        const linkRecipe = linkCard.recipe.link;
+        const turnKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
+        turnKeys.forEach(tk => {
+          if (!linkRecipe[tk]) return;
+          if (tk === 'during_own_turn' && side !== turnSide) return;
+          if (tk === 'during_opp_turn' && side === turnSide) return;
+          const steps = Array.isArray(linkRecipe[tk]) ? linkRecipe[tk] : [linkRecipe[tk]];
+          steps.forEach(step => {
+            if (step.action === 'custom') {
+              const cs = String(step.condition || '');
+              if (cs.includes('cond_no_evo') && cs.includes('opp_blocker')) {
+                if (!card._permEffects) card._permEffects = {};
+                card._permEffects.cantBeBlockedByNoEvo = true;
+              }
+              return;
+            }
+            if (step.condition) {
+              const conds = parseRecipeCondition(step.condition);
+              if (!checkConditions(conds, card, bs, side)) return;
+            }
+            let value = step.value != null ? step.value : (step.per_count ? 1 : null);
+            if (step.per_count && value != null) {
+              const refSource = step.ref || 'evo_source';
+              const count = getRefSourceCountDirect(refSource, card, bs, side, step.ref_filter, step.ref_state);
+              value = value * Math.floor(count / step.per_count);
+            }
+            if (step.action === 'dp_plus') {
+              const target = step.target || 'self';
+              if (target === 'self') {
+                if (!card.buffs) card.buffs = [];
+                card.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'link_recipe_perm' });
+                recalcDp(card);
+              } else if (target === 'own:all') {
+                bs[side].battleArea.forEach(tgt => {
+                  if (!tgt) return;
+                  if (!tgt.buffs) tgt.buffs = [];
+                  tgt.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'link_recipe_perm' });
+                  recalcDp(tgt);
+                });
+              } else if (target === 'own_security:all') {
+                if (!bs._securityBuffs) bs._securityBuffs = [];
+                bs._securityBuffs.push({
+                  type: 'dp_plus', value: value, duration: 'permanent',
+                  source: 'link_recipe_perm_security', owner: side,
+                  _appliedDuringOwnTurn: false,
+                });
+              }
+            } else if (step.action === 'security_attack_plus') {
+              if (!card._permEffects) card._permEffects = {};
+              card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + (value || 1);
+            } else if (step.action === 'grant_keyword' || step.action === 'grant_keyword_to') {
+              const kw = step.keyword || step.flag || '';
+              const gv = value != null ? value : 1;
+              if (!card._permEffects) card._permEffects = {};
+              if (kw === 'security_attack_plus' || /Sアタック/.test(String(kw))) {
+                card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + gv;
+              } else if (kw === 'jamming')      { card._permEffects.jamming = true; }
+              else if (kw === 'reboot')         { card._permEffects.reboot = true; }
+              else if (kw === 'blocker')        { card._permEffects.blocker = true; }
+              else if (kw === 'rush')           { card._permEffects.rush = true; }
+              else if (kw === 'penetrate')      { card._permEffects.penetrate = true; }
+              else if (kw === 'piercing')       { card._permEffects.piercing = true; }
+              else if (kw === 'michizure')      { card._permEffects.michizure = true; }
+              else if (kw === 'barrier')        { card._permEffects.barrier = true; }
+              else if (kw === 'evade')          { card._permEffects.evade = true; }
+              else if (kw === 'armor_break')    { card._permEffects.armor_break = true; }
+              else if (kw === 'indomitable')    { card._permEffects.indomitable = true; }
+              // リンク由来の「条件成立時のみ」の付与もバッジ表示対象として記録する（④と同じ扱い）
+              if (kw !== 'security_attack_plus' && !/Sアタック/.test(String(kw))) {
+                if (!card._evoGrantedKeywords) card._evoGrantedKeywords = new Set();
+                card._evoGrantedKeywords.add(kw);
+              }
+            }
+          });
+        });
+        // リンクカードのpassiveフラグ（③④と同等）
+        if (linkRecipe.passive) {
+          const passives = Array.isArray(linkRecipe.passive) ? linkRecipe.passive : [linkRecipe.passive];
+          passives.forEach(p => {
+            const flag = typeof p === 'string' ? p : (p.flag || p.action || '');
+            if (!card._permEffects) card._permEffects = {};
+            if (flag === 'security_attack_plus') {
+              const val = (typeof p === 'object' && p.value) ? p.value : 1;
+              card._permEffects.securityAttackPlus = (card._permEffects.securityAttackPlus || 0) + val;
+            } else if (flag === 'blocker') { card._permEffects.blocker = true; }
+            else if (flag === 'piercing') { card._permEffects.piercing = true; }
+            else if (flag === 'rush') { card._permEffects.rush = true; }
+            else if (flag === 'penetrate') { card._permEffects.penetrate = true; }
+            else if (flag === 'jamming') { card._permEffects.jamming = true; }
+            else if (flag === 'reboot') { card._permEffects.reboot = true; }
+            else if (flag === 'michizure') { card._permEffects.michizure = true; }
+            else if (flag === 'barrier') { card._permEffects.barrier = true; }
+            else if (flag === 'evade') { card._permEffects.evade = true; }
+            else if (flag === 'armor_break') { card._permEffects.armor_break = true; }
+            else if (flag === 'indomitable') { card._permEffects.indomitable = true; }
+            else if (flag === 'progress') { card._permEffects.progress = true; }
+            else if (flag === 'ice_armor') { card._permEffects.iceArmor = true; }
+            else if (flag === 'advance') { card._permEffects.advance = true; card._permEffects.charge = true; }
+            else if (flag === 'security_attack_minus') {
+              const val = (typeof p === 'object' && p.value) ? p.value : 1;
+              card._permEffects.securityAttackMinus = (card._permEffects.securityAttackMinus || 0) + val;
+            }
+            else if (flag === 'cant_be_blocked' || flag === 'custom') { card._permEffects.cantBeBlocked = true; }
+            else if (flag === 'suppress_opt_security_effect' || flag === 'security_effect') { card._permEffects.suppressOptSecurityEffect = true; }
+            else if (flag === 'delay') { card._permEffects.delay = true; }
+            else if (flag === 'save') { card._permEffects.save = true; }
+            else if (flag === 'decoy') { card._permEffects.decoy = true; }
+            else if (flag === 'fragment') { card._permEffects.fragment = true; }
+            else if (flag === 'scapegoat') { card._permEffects.scapegoat = true; }
+            else if (flag === 'material_save') { card._permEffects.materialSave = true; }
+            else if (flag === 'vortex') { card._permEffects.vortex = true; }
+            else if (flag === 'execute') { card._permEffects.execute = true; }
+            else if (flag === 'decode') { card._permEffects.decode = true; }
+            else if (flag === 'training') { card._permEffects.training = true; }
             else if (flag === 'mind_link') { card._permEffects.mindLink = true; }
             else if (flag === 'partition') { card._permEffects.partition = true; }
             else if (flag === 'overclock') { card._permEffects.overclock = true; }

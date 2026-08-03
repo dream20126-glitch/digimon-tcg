@@ -24,12 +24,6 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
       appendStep(recipe, { ...b, trigger: 'security' }, keywordDict);
       return;
     }
-    // リンク効果（リンクしている間有効）も同様にトリガー不要・常に 'link' キーに出力
-    // （エンジン未対応・エディタでの保存のみ対応。⚠未実装）
-    if (b.section === 'link') {
-      appendStep(recipe, { ...b, trigger: 'link' }, keywordDict);
-      return;
-    }
     // トリガー複数選択: 「登場時/進化時どちらでも同じ効果」のように、選択された
     // 各トリガーコードへ同一内容のstepをそれぞれ出力する
     const triggerList = (b.triggers && b.triggers.length > 0) ? b.triggers : (b.trigger ? [b.trigger] : []);
@@ -37,6 +31,12 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
       if (b.section === 'evo_source') {
         recipe.evo_source = recipe.evo_source || {};
         appendStep(recipe.evo_source, { ...b, trigger: trig }, keywordDict);
+      } else if (b.section === 'link') {
+        // リンク効果は進化元効果と同じ構造（during_own_turn等のトリガーでネスト）。
+        // 「リンクしている間」という状態はcard.linkedCardsで表現されるため、
+        // トリガー自体は進化元と同様に発動タイミングの指定として使う
+        recipe.link = recipe.link || {};
+        appendStep(recipe.link, { ...b, trigger: trig }, keywordDict);
       } else {
         appendStep(recipe, { ...b, trigger: trig }, keywordDict);
       }
@@ -373,13 +373,11 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
     });
   }
   Object.keys(recipe).forEach((k) => {
-    if (k === 'evo_source' || k === 'passive') return;
+    if (k === 'evo_source' || k === 'link' || k === 'passive') return;
     const arr = recipe[k];
     if (!Array.isArray(arr)) return;
     if (k === 'security') {
       arr.forEach((step: any) => blocks.push(stepToBlock('security', 'security', step)));
-    } else if (k === 'link') {
-      arr.forEach((step: any) => blocks.push(stepToBlock('link', 'link', step)));
     } else {
       arr.forEach((step: any) => blocks.push(stepToBlock('main', k, step)));
     }
@@ -397,10 +395,24 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
       arr.forEach((step: any) => blocks.push(stepToBlock('evo_source', k, step)));
     });
   }
+  // リンク効果（進化元効果と同じ、トリガーでネストされた構造）
+  if (recipe.link && typeof recipe.link === 'object' && !Array.isArray(recipe.link)) {
+    if (Array.isArray(recipe.link.passive)) {
+      recipe.link.passive.forEach((p: any) => {
+        blocks.push(passiveToBlock('link', p));
+      });
+    }
+    Object.keys(recipe.link).forEach((k) => {
+      if (k === 'passive') return;
+      const arr = recipe.link[k];
+      if (!Array.isArray(arr)) return;
+      arr.forEach((step: any) => blocks.push(stepToBlock('link', k, step)));
+    });
+  }
   return blocks;
 }
 
-function passiveToBlock(section: 'main' | 'evo_source', p: any): EffectBlock {
+function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): EffectBlock {
   const extras: any = {};
   Object.keys(p || {}).forEach((k) => {
     if (k !== 'flag' && k !== 'in_zone' && k !== 'value') extras[k] = p[k];

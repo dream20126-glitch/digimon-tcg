@@ -158,6 +158,7 @@ function findCardByName(idOrName) {
     playCost: hasPlay ? parseInt(playCost) : null,
     evolveCost: hasEvolve ? parseInt(evolveCost) : null,
     evolveCond: card['進化条件'] || '',
+    useCond: card['使用条件（オプション）'] || '',
     cost: hasPlay ? parseInt(playCost) : hasEvolve ? parseInt(evolveCost) : 0,
     effect: card['効果テキスト'] || card['効果'] || '',
     evoSourceEffect: card['進化元テキスト'] || card['進化元効果'] || '',

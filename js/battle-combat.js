@@ -433,7 +433,8 @@ function removeOwnCard(slotIdx, reason) {
 // ===== オプション使用の色条件チェック =====
 // 公式ルール: オプションカードを使用するには、場（バトルエリア/テイマーエリア/育成エリア）に
 // そのオプションと同じ色のカードが1枚以上必要（無ければ使用できない）。
-// 「使用条件」を満たせばこの色条件を無視できるカードもあるが、それは別途対応。
+// 「使用条件」（基本形=「特徴：〇〇」）を満たせばこの色条件を無視できる。
+// 複雑な文章形式の使用条件はレシピ側（use_cond）で個別対応する想定（現状は基本形のみ）。
 function hasMatchingColorInPlay(optionCard, side) {
   const p = side === 'player' ? bs.player : bs.ai;
   if (!p) return true;
@@ -445,6 +446,24 @@ function hasMatchingColorInPlay(optionCard, side) {
     const cColors = String(c.color || '');
     return optColors.some(oc => cColors.includes(oc));
   });
+}
+
+// 「使用条件」欄（基本形）から特徴名を取り出す。"特徴：〇〇" / "特徴:〇〇" のみ対応
+function parseUseCondFeature(useCond) {
+  if (!useCond) return null;
+  const m = String(useCond).match(/特徴[:：]\s*(.+)/);
+  return m ? m[1].trim() : null;
+}
+
+// 使用条件（特徴：〇〇）を満たすか＝場に該当特徴を持つカードがあれば色条件を無視できる
+function meetsUseCondition(optionCard, side) {
+  const feature = parseUseCondFeature(optionCard.useCond);
+  if (!feature) return false;
+  const p = side === 'player' ? bs.player : bs.ai;
+  if (!p) return false;
+  const areaCards = [...(p.battleArea || []), ...(p.tamerArea || [])].filter(Boolean);
+  if (p.ikusei) areaCards.push(p.ikusei);
+  return areaCards.some(c => String(c.feature || '').includes(feature));
 }
 
 // ===== 進化条件チェック =====
@@ -511,8 +530,8 @@ export function doPlay(card, handIdx, slotIdx) {
   if (_attackInProgress) { console.log('[doPlay] skip: attack in progress'); return; }
   if (card.level === '2') { addLog('🚨 デジタマはバトルエリアに出せません'); return; }
   if (card.playCost === null) { addLog('🚨 「' + card.name + '」は進化専用カードです'); return; }
-  // オプション使用の色条件（場に同色のカードが無ければ使用不可）
-  if (card.type === 'オプション' && !hasMatchingColorInPlay(card, 'player')) {
+  // オプション使用の色条件（場に同色のカードが無ければ使用不可。使用条件を満たせば無視できる）
+  if (card.type === 'オプション' && !hasMatchingColorInPlay(card, 'player') && !meetsUseCondition(card, 'player')) {
     addLog('🚨 「' + card.name + '」と同じ色のカードが場に無いため使用できません');
     return;
   }
@@ -2543,11 +2562,11 @@ function aiPlayAuto(callback) {
 
   const available = aiAvailableMemory();
 
-  // ③ オプション/テイマー（オプションは場に同色が無ければ使用不可）
+  // ③ オプション/テイマー（オプションは場に同色が無ければ使用不可。使用条件を満たせば無視できる）
   const optionOrTamer = bs.ai.hand.find(c =>
     (c.type === 'オプション' || c.type === 'テイマー') &&
     c.playCost !== null && c.playCost <= available &&
-    (c.type !== 'オプション' || hasMatchingColorInPlay(c, 'ai'))
+    (c.type !== 'オプション' || hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai'))
   );
   if (optionOrTamer) {
     const handIdx = bs.ai.hand.indexOf(optionOrTamer);

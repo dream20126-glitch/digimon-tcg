@@ -1272,6 +1272,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <ButtonGroup options={SECTIONS} value={block.section} onChange={(v) => update('section', v)} accentColor="#d6336c" />
           </div>
 
+          {/* タイプ: この効果ステップが「デジモンの効果」か「オプションの効果」かのメモ書き。
+              trigger='main'はオプション使用時の効果とデジモンの起動効果の両方に使われる
+              コードのため、デュアルカードのように1枚に両方の効果が混在する場合に
+              区別しやすくする目的の編集時の目印（エンジンには影響しない・保存のみ） */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>
+              タイプ
+              <span style={{ fontSize: 10, fontWeight: 'normal', color: '#888', marginLeft: 2 }} title="デュアルカード等、1枚に両方の効果が混在する場合の目印（保存のみ・エンジンには影響しません）">ℹ</span>
+            </label>
+            <ButtonGroup
+              options={[{ code: '', label: '未指定' }, { code: 'digimon', label: 'デジモン' }, { code: 'option', label: 'オプション' }]}
+              value={block.asType || ''}
+              onChange={(v) => update('asType', v || undefined)}
+              accentColor="#d6336c"
+            />
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>発動領域</label>
             <ButtonGroup options={ZONE_BUTTONS} value={block.zone || ''} onChange={(v) => update('zone', v)} accentColor="#d6336c" />
@@ -1328,6 +1345,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             fontSize: 12, color: '#1a5a1a',
           }}>
             🔒 セキュリティ効果は「セキュリティでめくれたとき」に自動で発動します。トリガーの指定は不要です。
+          </div>
+        ) : block.section === 'link' ? (
+          <div style={{
+            gridColumn: '1 / span 2', padding: 10, background: '#f0f9f0',
+            border: '2px solid #93c693', borderRadius: 6,
+            fontSize: 12, color: '#1a5a1a',
+          }}>
+            🔗 リンク効果は「リンクしている間」常に有効になります。トリガーの指定は不要です。
+            ⚠ エンジン未実装のため、現時点では保存のみ可能です。
           </div>
         ) : block.trigger === 'alt_evolve' ? (
           <div style={{

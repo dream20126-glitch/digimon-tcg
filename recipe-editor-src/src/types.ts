@@ -7,7 +7,13 @@ export interface ConditionPair {
 
 // 効果ブロック1ステップの構造（コードブロックシートと同等）
 export interface EffectBlock {
-  section: 'main' | 'evo_source' | 'security';
+  section: 'main' | 'evo_source' | 'security' | 'link';
+  // この効果ステップが「デジモンとしての効果」か「オプションとしての効果」かのメモ書き。
+  // デュアルカードのように1枚のカードにオプション使用時の効果とデジモン側の効果が
+  // 混在する場合、trigger='main'だけでは（オプション使用時のmainとデジモンの起動効果の
+  // main、両方に使われるコードのため）どちらの意味かが分かりにくいので、
+  // 編集時の目印として記録する。エンジンは参照しない（保存はするが動作に影響しない）
+  asType?: 'digimon' | 'option';
   zone?: string; // '' | 'security' | 'trash' | 'hand' | 'breed'
   trigger: string; // code (e.g., 'on_play', 'during_own_turn', 'passive', 'main')。複数選択時はtriggers[0]と一致させる
   // トリガーの複数選択（例: 登場時/進化時どちらでも同じ効果）。2件以上のときのみ意味を持つ。

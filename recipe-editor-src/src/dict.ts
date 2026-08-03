@@ -6,6 +6,7 @@ export const SECTIONS = [
   { code: 'main', label: 'メイン' },
   { code: 'evo_source', label: '進化元' },
   { code: 'security', label: 'セキュリティ' },
+  { code: 'link', label: 'リンク' },
 ];
 
 export const ZONES = [

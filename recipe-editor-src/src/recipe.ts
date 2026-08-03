@@ -24,6 +24,12 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
       appendStep(recipe, { ...b, trigger: 'security' }, keywordDict);
       return;
     }
+    // リンク効果（リンクしている間有効）も同様にトリガー不要・常に 'link' キーに出力
+    // （エンジン未対応・エディタでの保存のみ対応。⚠未実装）
+    if (b.section === 'link') {
+      appendStep(recipe, { ...b, trigger: 'link' }, keywordDict);
+      return;
+    }
     // トリガー複数選択: 「登場時/進化時どちらでも同じ効果」のように、選択された
     // 各トリガーコードへ同一内容のstepをそれぞれ出力する
     const triggerList = (b.triggers && b.triggers.length > 0) ? b.triggers : (b.trigger ? [b.trigger] : []);
@@ -88,6 +94,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     return;
   }
   const step: any = {};
+
+  // 「デジモン/オプションどちらの効果か」の編集時メモ書き。エンジンは参照しない
+  if (b.asType) step.as_type = b.asType;
 
   // 条件: 1つ目→condition, 2つ目→when, 3つ目以降→extra_conditions[]
   const validConds = (b.conditions || []).filter((p) => p.base);
@@ -369,6 +378,8 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
     if (!Array.isArray(arr)) return;
     if (k === 'security') {
       arr.forEach((step: any) => blocks.push(stepToBlock('security', 'security', step)));
+    } else if (k === 'link') {
+      arr.forEach((step: any) => blocks.push(stepToBlock('link', 'link', step)));
     } else {
       arr.forEach((step: any) => blocks.push(stepToBlock('main', k, step)));
     }
@@ -404,8 +415,9 @@ function passiveToBlock(section: 'main' | 'evo_source', p: any): EffectBlock {
   };
 }
 
-function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: string, step: any): EffectBlock {
+function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigger: string, step: any): EffectBlock {
   const KNOWN: Record<string, boolean> = {
+    as_type: true,
     action: true,
     condition: true,
     when: true,
@@ -491,6 +503,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security', trigger: strin
     : [];
   return {
     section,
+    asType: step?.as_type === 'digimon' || step?.as_type === 'option' ? step.as_type : undefined,
     zone: step?.in_zone || '',
     trigger,
     // JSON に subject 無ければ 'self' (このデジモン) としてロード

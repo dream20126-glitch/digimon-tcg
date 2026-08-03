@@ -1867,7 +1867,7 @@ function doBounce(targetSide, slotIdx, ctx) {
 let _targetSelecting = false; // 対象選択中フラグ（renderAll抑制用）
 export function isTargetSelecting() { return _targetSelecting; }
 
-function showTargetSelection(targetSide, validIndices, conditions, borderColor, callback, extraLabel) {
+export function showTargetSelection(targetSide, validIndices, conditions, borderColor, callback, extraLabel) {
   // ★ チュートリアル AI 対象選択 intent: スクリプトで指定したカードがあれば自動選択
   //   _tutorialAiSelectTarget = カードNo or カード名 (部分一致対応)
   //   ※ AI が効果を使う時のみ消費する（AI のターン中、または targetSide='player' で AI が

@@ -9,7 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -908,35 +908,45 @@ function _placeArtsEvolve(card, target, side) {
   return evolved;
 }
 
-// candidates を1件ずつ「アーツ進化しますか？」で確認し、承諾されたらそこへ進化させる（プレイヤー専用）。
+// 「アーツ進化しますか？」を確認し、承諾かつ対象が複数いれば他の効果と同じ対象選択UI
+// （場のカードを直接タップして選ぶ）で選ばせてから進化させる（プレイヤー専用）。
 // onDone(evolved) — 進化した場合は進化後カード、しなかった場合は null/undefined を渡す
 function _offerArtsEvolve(card, onDone) {
   const candidates = _findArtsEvolveCandidates(card, 'player');
   if (candidates.length === 0) { onDone(); return; }
-  const tryNext = (i) => {
-    if (i >= candidates.length) { onDone(); return; }
-    const cand = candidates[i];
-    showConfirm({
-      title: '✨ アーツ進化',
-      message: '「' + cand.base.name + '」にコストを支払わず進化しますか？',
-      yesText: 'はい', noText: 'いいえ', color: '#ffcc00',
-    }).then((yes) => {
-      if (!yes) { tryNext(i + 1); return; }
-      const evolved = _placeArtsEvolve(card, cand, 'player');
-      if (hasKeyword(evolved, '【進化時】')) {
-        _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
-          _hooks.applyPermanentEffects('player');
-          renderAll(true);
-          onDone(evolved);
-        });
-      } else {
+
+  const finishWith = (cand) => {
+    const evolved = _placeArtsEvolve(card, cand, 'player');
+    if (hasKeyword(evolved, '【進化時】')) {
+      _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
         _hooks.applyPermanentEffects('player');
         renderAll(true);
         onDone(evolved);
-      }
-    });
+      });
+    } else {
+      _hooks.applyPermanentEffects('player');
+      renderAll(true);
+      onDone(evolved);
+    }
   };
-  tryNext(0);
+
+  showConfirm({
+    title: '✨ アーツ進化',
+    message: 'コストを支払わず進化しますか？',
+    yesText: 'はい', noText: 'いいえ', color: '#ffcc00',
+  }).then((yes) => {
+    if (!yes) { onDone(); return; }
+    if (candidates.length === 1) { finishWith(candidates[0]); return; }
+    // 対象選択UIはバトルエリアのスロットしか対象にできないため、バトルエリア候補が
+    // 無い場合（育成エリアのみ複数、という現状あり得ないケース含む）は先頭を確定させる
+    const battleCandidates = candidates.filter(c => c.area === 'battle');
+    if (battleCandidates.length === 0) { finishWith(candidates[0]); return; }
+    const validIndices = battleCandidates.map(c => c.idx);
+    _showTargetSelection('pl', validIndices, null, '#ffcc00', (selectedIdx) => {
+      const cand = battleCandidates.find(c => c.idx === selectedIdx) || battleCandidates[0];
+      finishWith(cand);
+    }, '（アーツ進化させるデジモン）');
+  });
 }
 
 // ===== メモリー消費（プレイヤー） =====

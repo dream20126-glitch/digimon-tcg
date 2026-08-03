@@ -468,13 +468,15 @@ function meetsUseCondition(optionCard, side) {
 
 // ===== 進化条件チェック =====
 
-export function canEvolveOnto(evoCard, baseCard) {
-  // 代替進化（alt_evolve / 進化条件を無視）が成立するなら進化可
-  try { if (_getAltEvolve(evoCard, baseCard, bs, 'player')) return true; } catch (_) {}
+// 進化条件（evolveCond）の「/」区切りclauseのうち、どれがbaseCardに一致するかを返す。
+// 一致するclauseが無ければ -1。canEvolveOntoの判定本体（進化コストの条件別出し分け
+// getEvolveCostForでも同じマッチングを再利用するために分離）
+function _matchEvolveClauseIndex(evoCard, baseCard) {
   const cond = evoCard.evolveCond || '';
-  if (!cond || cond === 'なし' || cond === '') return false;
+  if (!cond || cond === 'なし' || cond === '') return -1;
   const conditions = cond.split('/').map(s => s.trim());
-  for (const c of conditions) {
+  for (let i = 0; i < conditions.length; i++) {
+    const c = conditions[i];
     // 特徴指定（例: "特徴:グローイングドーンLv.5"）: 色の代わりに特徴でマッチさせる。
     // 「特徴」の文字列自体が赤青黄緑黒紫白を含まないとは限らないため、色条件のフォール
     // スルーで誤判定（特徴指定なのに色なしLv一致だけで通ってしまう）しないよう、
@@ -494,7 +496,7 @@ export function canEvolveOnto(evoCard, baseCard) {
           (baseCard.stack && baseCard.stack.some(s => s.name.includes(reqName)));
         if (!hasName) continue;
       }
-      return true;
+      return i;
     }
     const m = c.match(/([赤青黄緑黒紫白]+)?Lv\.(\d+)/);
     if (m) {
@@ -513,10 +515,28 @@ export function canEvolveOnto(evoCard, baseCard) {
           (baseCard.stack && baseCard.stack.some(s => s.name.includes(reqName)));
         if (!hasName) continue;
       }
-      return true;
+      return i;
     }
   }
-  return false;
+  return -1;
+}
+
+export function canEvolveOnto(evoCard, baseCard) {
+  // 代替進化（alt_evolve / 進化条件を無視）が成立するなら進化可
+  try { if (_getAltEvolve(evoCard, baseCard, bs, 'player')) return true; } catch (_) {}
+  return _matchEvolveClauseIndex(evoCard, baseCard) !== -1;
+}
+
+// 進化コストの条件別出し分け。進化コスト欄が「・」区切りで複数指定されている場合、
+// 進化条件のどのclauseが一致したかに対応する値を選ぶ（1番目のclause↔1番目のコスト...）。
+// 単一値のみの場合は従来通りevoCard.evolveCostをそのまま返す
+export function getEvolveCostFor(evoCard, baseCard) {
+  const raw = evoCard.evolveCostRaw != null ? String(evoCard.evolveCostRaw) : '';
+  const costs = raw.split('・').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+  if (costs.length <= 1) return evoCard.evolveCost;
+  const idx = _matchEvolveClauseIndex(evoCard, baseCard);
+  if (idx === -1 || idx >= costs.length) return evoCard.evolveCost; // フォールバック（代替進化等）
+  return costs[idx];
 }
 
 // 保留中の進化コスト軽減（スマッシュポテト等）を消費して合計軽減値を返す。
@@ -681,7 +701,8 @@ export function doEvolve(card, handIdx, slotIdx) {
   if (card.evolveCost === null) { addLog('🚨 「' + card.name + '」は進化できません‼'); return; }
   if (!canEvolveOnto(card, base)) { addLog('🚨 進化条件を満たしていません‼（' + card.evolveCond + '）'); return; }
 
-  let cost = card.evolveCost;
+  // 進化条件が複数(OR)ある場合、成立したclauseに対応するコスト（進化コスト欄の「・」区切り）を選ぶ
+  let cost = getEvolveCostFor(card, base);
   // 代替進化（alt_evolve・進化条件を無視）が成立していれば、その指定コストを使う
   const _altEvo = _getAltEvolve(card, base, bs, 'player');
   if (_altEvo) { cost = _altEvo.cost; addLog('⬆ 代替進化（進化条件を無視）コスト' + cost); }
@@ -758,7 +779,8 @@ export function doEvolveIku(card, handIdx) {
   if (card.evolveCost === null) { addLog('🚨 「' + card.name + '」は進化できません‼'); return; }
   if (!canEvolveOnto(card, base)) { addLog('🚨 進化条件を満たしていません‼（' + card.evolveCond + '）'); return; }
 
-  let cost = card.evolveCost;
+  // 進化条件が複数(OR)ある場合、成立したclauseに対応するコスト（進化コスト欄の「・」区切り）を選ぶ
+  let cost = getEvolveCostFor(card, base);
   // 代替進化（alt_evolve・進化条件を無視）が成立していれば、その指定コストを使う
   const _altEvo = _getAltEvolve(card, base, bs, 'player');
   if (_altEvo) { cost = _altEvo.cost; addLog('⬆ 代替進化（進化条件を無視）コスト' + cost); }

@@ -475,6 +475,27 @@ export function canEvolveOnto(evoCard, baseCard) {
   if (!cond || cond === 'なし' || cond === '') return false;
   const conditions = cond.split('/').map(s => s.trim());
   for (const c of conditions) {
+    // 特徴指定（例: "特徴:グローイングドーンLv.5"）: 色の代わりに特徴でマッチさせる。
+    // 「特徴」の文字列自体が赤青黄緑黒紫白を含まないとは限らないため、色条件のフォール
+    // スルーで誤判定（特徴指定なのに色なしLv一致だけで通ってしまう）しないよう、
+    // 特徴指定を検出した時点でこのclauseの判定を終える（continue/returnのみ、下の色判定に落ちない）
+    const featureMatch = c.match(/特徴[:：]\s*(.+?)Lv\.(\d+)/);
+    if (featureMatch) {
+      const reqFeature = featureMatch[1].trim();
+      const reqLevel = featureMatch[2];
+      const baseLevel = String(baseCard.level).trim();
+      if (baseLevel !== reqLevel) continue;
+      const baseFeature = String(baseCard.feature || '');
+      if (!baseFeature.includes(reqFeature)) continue;
+      const nameMatch = c.match(/「(.+?)」/);
+      if (nameMatch) {
+        const reqName = nameMatch[1];
+        const hasName = baseCard.name.includes(reqName) ||
+          (baseCard.stack && baseCard.stack.some(s => s.name.includes(reqName)));
+        if (!hasName) continue;
+      }
+      return true;
+    }
     const m = c.match(/([赤青黄緑黒紫白]+)?Lv\.(\d+)/);
     if (m) {
       const reqColor = m[1] || '';

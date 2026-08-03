@@ -503,7 +503,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     : [];
   return {
     section,
-    asType: step?.as_type === 'digimon' || step?.as_type === 'option' ? step.as_type : undefined,
+    asType: step?.as_type === 'digimon' || step?.as_type === 'tamer' || step?.as_type === 'option' ? step.as_type : undefined,
     zone: step?.in_zone || '',
     trigger,
     // JSON に subject 無ければ 'self' (このデジモン) としてロード

@@ -1282,7 +1282,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <span style={{ fontSize: 10, fontWeight: 'normal', color: '#888', marginLeft: 2 }} title="デュアルカード等、1枚に両方の効果が混在する場合の目印（保存のみ・エンジンには影響しません）">ℹ</span>
             </label>
             <ButtonGroup
-              options={[{ code: '', label: '未指定' }, { code: 'digimon', label: 'デジモン' }, { code: 'option', label: 'オプション' }]}
+              options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }, { code: 'option', label: 'オプション' }]}
               value={block.asType || ''}
               onChange={(v) => update('asType', v || undefined)}
               accentColor="#d6336c"

@@ -470,13 +470,18 @@ function meetsUseCondition(optionCard, side) {
 
 // 進化条件（evolveCond）の「/」区切りclauseのうち、どれがbaseCardに一致するかを返す。
 // 一致するclauseが無ければ -1。canEvolveOntoの判定本体（進化コストの条件別出し分け
-// getEvolveCostForでも同じマッチングを再利用するために分離）
+// getEvolveCostForでも同じマッチングを再利用するために分離）。
+// 優先順位: 特徴指定のclauseを色指定のclauseより先に判定する（書かれている順序に関わらず）。
+// 例: 進化先が「黄Lv.5」かつ「特徴:グローイングドーンLv.5」の両方に当てはまる場合でも、
+// 特徴側（グローイングドーン）を優先して採用する
 function _matchEvolveClauseIndex(evoCard, baseCard) {
   const cond = evoCard.evolveCond || '';
   if (!cond || cond === 'なし' || cond === '') return -1;
   const conditions = cond.split('/').map(s => s.trim());
-  for (let i = 0; i < conditions.length; i++) {
-    const c = conditions[i];
+  const order = conditions
+    .map((c, i) => ({ c, i, isFeature: /特徴[:：]/.test(c) }))
+    .sort((a, b) => (a.isFeature === b.isFeature) ? 0 : (a.isFeature ? -1 : 1));
+  for (const { c, i } of order) {
     // 特徴指定（例: "特徴:グローイングドーンLv.5"）: 色の代わりに特徴でマッチさせる。
     // 「特徴」の文字列自体が赤青黄緑黒紫白を含まないとは限らないため、色条件のフォール
     // スルーで誤判定（特徴指定なのに色なしLv一致だけで通ってしまう）しないよう、

@@ -401,7 +401,10 @@ function showLongpressMenu(card, slotIdx, el) {
     }
   }
   if (!card._usedEffects) card._usedEffects = [];
-  if (hasRecipeTrigger(card, 'main')) {
+  // デュアルカードが進化してデジモンになった場合、recipe.mainはオプション使用時の
+  // 効果であり進化後に再発動できるものではないため、_noMainAbilityが立っていれば
+  // 「⚡ 効果」ボタン自体を出さない
+  if (hasRecipeTrigger(card, 'main') && !card._noMainAbility) {
     const used = card._usedEffects.includes('self');
     html += used
       ? '<button class="lp-action-btn lp-effect-btn" disabled style="opacity:0.3;">⚡ 効果（使用済み）</button>'

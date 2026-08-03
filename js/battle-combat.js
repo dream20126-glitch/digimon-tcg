@@ -758,6 +758,9 @@ function _finishDoEvolve(card, base, handIdx, slotIdx, cost) {
   const evolved = Object.assign({}, card, {
     // デュアルカードは進化後デジモンとして扱う（アタック/ブロック判定等はtype==='デジモン'固定のため）
     type: card.type === 'デュアル' ? 'デジモン' : card.type,
+    // デュアルカードのrecipe.mainはオプション使用時の効果であり、進化後に「⚡ 効果」
+    // として再発動できるものではないため、進化後は抑制する
+    _noMainAbility: card.type === 'デュアル',
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,
     buffs: base.buffs || [],
@@ -825,6 +828,9 @@ export function doEvolveIku(card, handIdx) {
   if (_evoDisc > 0) { cost = Math.max(0, cost - _evoDisc); addLog('💠 進化コスト-' + _evoDisc + '（コスト' + cost + 'で進化）'); }
   const evolved = Object.assign({}, card, {
     type: card.type === 'デュアル' ? 'デジモン' : card.type,
+    // デュアルカードのrecipe.mainはオプション使用時の効果であり、進化後に「⚡ 効果」
+    // として再発動できるものではないため、進化後は抑制する
+    _noMainAbility: card.type === 'デュアル',
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,
     buffs: base.buffs || [],
@@ -893,6 +899,7 @@ function _placeArtsEvolve(card, target, side) {
   const { base, area, idx } = target;
   const evolved = Object.assign({}, card, {
     type: 'デジモン', // デュアルカードは進化後デジモンとして扱う
+    _noMainAbility: true, // recipe.mainはオプション使用時の効果のため進化後は再発動不可にする
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,
     buffs: base.buffs || [],

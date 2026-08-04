@@ -1,7 +1,6 @@
 // 効果エンジン v2（レシピJSON方式。枠色/演出タイプはアクションコードから自動推測するため
 // 効果辞書スプレッドシートの読み込みは不要）
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
-import { showConfirm } from './battle-ui.js';
 
 // ===== 効果キュー =====
 let _effectQueue = [];
@@ -1919,9 +1918,10 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
   const _combatBackdropWasVisible = !!(_combatBackdrop && _combatBackdrop.style.display !== 'none');
   if (_combatBackdropWasVisible) _combatBackdrop.style.display = 'none';
 
-  // オンライン: 相手画面に「対象選択中」専用ポップアップを表示
+  // オンライン: 相手画面に「対象選択中」専用ポップアップを表示（extraLabelがあれば
+  // 「吸収進化-N: 対象選択中」のように具体的な内容を伝える）
   if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-    try { window._onlineSendCommand({ type: 'fx_targetSelectStart' }); } catch (_) {}
+    try { window._onlineSendCommand({ type: 'fx_targetSelectStart', label: extraLabel || '' }); } catch (_) {}
   }
 
   // メッセージを画面中央に表示
@@ -9302,19 +9302,14 @@ export function checkAbsorbEvolveDiscount(evoCard, bs, side, callback) {
     doRest(candidates[0].i);
     return;
   }
-  if (typeof showConfirm !== 'function' || typeof showTargetSelection !== 'function') { finish(0); return; }
-  showConfirm({
-    title: '💠 吸収進化',
-    message: '自分のデジモン1体をレストさせることで、進化コストを-' + amount + 'しますか？',
-    yesText: 'はい', noText: 'いいえ', color: '#ffcc00',
-  }).then((yes) => {
-    if (!yes) { finish(0); return; }
-    const validIndices = candidates.map((x) => x.i);
-    showTargetSelection('pl', validIndices, null, '#ffcc00', (selectedIdx) => {
-      if (selectedIdx == null) { finish(0); return; }
-      doRest(selectedIdx);
-    }, '（レストさせる自分のデジモンを選択）');
-  });
+  // 吸収進化は強制効果（「〜することで」の任意確認は不要）。レストできるデジモンが
+  // いれば、確認を挟まず直接対象選択に入る
+  if (typeof showTargetSelection !== 'function') { finish(0); return; }
+  const validIndices = candidates.map((x) => x.i);
+  showTargetSelection('pl', validIndices, null, '#ffcc00', (selectedIdx) => {
+    if (selectedIdx == null) { finish(0); return; }
+    doRest(selectedIdx);
+  }, '（吸収進化-' + amount + '：レストさせる自分のデジモンを選択）');
 }
 
 // stack 内の進化元カードに該当トリガーのレシピがあるか

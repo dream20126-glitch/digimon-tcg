@@ -734,7 +734,8 @@ export function doPlay(card, handIdx, slotIdx) {
 export function doEvolve(card, handIdx, slotIdx) {
   if (bs.phase !== 'main') return;
   if (_attackInProgress) return;
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'evolve', handIdx, slotIdx, cardName: card.name, baseName: bs.player.battleArea[slotIdx]?.name || '', cardImg: card.imgSrc || '', evolveCost: card.evolveCost || 0 });
+  // ★ オンライン通知は最終コスト確定後（_finishDoEvolve内）で送る。ここで送ると
+  // 吸収進化等の軽減が確定する前の生コストが相手画面に表示されてしまうため
   const base = bs.player.battleArea[slotIdx];
   if (!base) return;
   if (card.evolveCost === null) { addLog('🚨 「' + card.name + '」は進化できません‼'); return; }
@@ -767,6 +768,8 @@ export function doEvolve(card, handIdx, slotIdx) {
 }
 
 function _finishDoEvolve(card, base, handIdx, slotIdx, cost) {
+  // 最終コスト（吸収進化等の軽減を反映済み）が確定した時点で相手画面に通知する
+  if (_onlineMode && _sendCommand) _sendCommand({ type: 'evolve', handIdx, slotIdx, cardName: card.name, baseName: base.name || '', cardImg: card.imgSrc || '', evolveCost: cost });
   const evolved = Object.assign({}, card, {
     // デュアルカードは進化後デジモンとして扱う（アタック/ブロック判定等はtype==='デジモン'固定のため）
     type: card.type === 'デュアル' ? 'デジモン' : card.type,

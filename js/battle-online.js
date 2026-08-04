@@ -958,7 +958,7 @@ function onRemoteCommand(cmd) {
         ov.style.cssText = 'position:fixed;top:15%;left:50%;transform:translateX(-50%);z-index:55000;background:rgba(0,0,0,0.9);border:1px solid #ff00fb;border-radius:10px;padding:10px 20px;color:#ff00fb;font-size:13px;font-weight:bold;text-align:center;box-shadow:0 0 20px #ff00fb44;pointer-events:none;animation:fadeIn 0.2s ease;';
         document.body.appendChild(ov);
       }
-      ov.innerText = '🎯 相手が対象を選択中...';
+      ov.innerText = '🎯 相手が対象を選択中...' + (cmd.label || '');
       break;
     }
     case 'fx_targetSelectEnd': {

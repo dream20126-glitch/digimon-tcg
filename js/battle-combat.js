@@ -881,6 +881,33 @@ export function doEvolveIku(card, handIdx) {
   });
 }
 
+// リンク容量が上限に達している時、どのリンクカードを外すか選ばせる（2枚以上いる場合のみ）。
+// Promise<card> — 選ばれたリンクカードを返す
+function showLinkReplaceChoice(linkedCards) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65500;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;';
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#ffaa00;font-size:14px;font-weight:bold;margin-bottom:16px;text-shadow:0 0 8px #ffaa0066;text-align:center;';
+    title.innerText = '🔗 リンク上限です。外すカードを選んでください';
+    overlay.appendChild(title);
+    const list = document.createElement('div');
+    list.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;justify-content:center;';
+    linkedCards.forEach((lc) => {
+      const btn = document.createElement('div');
+      btn.style.cssText = 'width:100px;height:140px;border-radius:8px;border:2px solid #ffaa00;overflow:hidden;cursor:pointer;box-shadow:0 0 10px #ffaa0044;';
+      const src = cardImg(lc);
+      btn.innerHTML = src
+        ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">'
+        : '<div style="color:#ffaa00;font-size:10px;padding:8px;">' + (lc.name || '?') + '</div>';
+      btn.onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); resolve(lc); };
+      list.appendChild(btn);
+    });
+    overlay.appendChild(list);
+    document.body.appendChild(overlay);
+  });
+}
+
 // ===== リンク =====
 // リンクありのカードをバトルエリアの既存デジモンにドラッグした際、進化の代わりに
 // 選べる操作。進化コストの代わりにリンクコストを支払い、対象デジモンの横に
@@ -891,44 +918,60 @@ export function doLink(card, handIdx, slotIdx) {
   const base = bs.player.battleArea[slotIdx];
   if (!base) return;
   if (card.linkCost == null) { addLog('🚨 「' + card.name + '」はリンクできません‼'); return; }
-  // リンク容量チェック（cond_link_eligible と同じ計算式）。上限に達している場合は
-  // 差し替え扱いで、一番古いリンクカードを自動的にトラッシュへ送って空きを作る
-  // （「破棄された時」の効果ではないため、消滅トリガー等は発生させず直接trashへ送る）
-  const cap = (base._linkCapacityBonus || 0) + 1;
   if (!base.linkedCards) base.linkedCards = [];
+
+  const proceedLink = () => {
+    const cost = card.linkCost;
+    if (_onlineMode && _sendCommand) _sendCommand({ type: 'link', handIdx, slotIdx, cardName: card.name, baseName: base.name, cardImg: card.imgSrc || '', linkCost: cost });
+    bs.player.hand.splice(handIdx, 1); bs.selHand = null;
+    base.linkedCards.push(card);
+    addLog('🔗 「' + base.name + '」に「' + card.name + '」をリンク！（コスト ' + cost + '）');
+    if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
+      try { window._tutorialHideInstruction(); } catch (e) {}
+    }
+    renderAll();
+    fxLinkEffect(base, card, () => {
+      // ★ 登場/進化と同じ順序: コスト支払い → 永続効果再計算 → リンク時効果 → ターン終了判定
+      playerSpendMemory(cost, true); // defer=true
+      _hooks.applyPermanentEffects('player');
+      renderAll(true);
+      const finishLink = () => {
+        checkPlayerPendingTurnEnd();
+      };
+      if (hasKeyword(card, '【リンク時】')) {
+        _hooks.checkAndTriggerEffect(card, '【リンク時】', () => {
+          renderAll(true);
+          finishLink();
+        });
+      } else {
+        finishLink();
+      }
+    });
+  };
+
+  // リンク容量チェック（cond_link_eligible と同じ計算式）。上限に達している場合は
+  // 差し替え扱いで、既存のリンクカードを1枚トラッシュへ送って空きを作る
+  // （「破棄された時」の効果ではないため、消滅トリガー等は発生させず直接trashへ送る）。
+  // 2枚以上リンクされている場合はどちらを外すか選ばせる
+  const cap = (base._linkCapacityBonus || 0) + 1;
   if (base.linkedCards.length >= cap) {
-    const replaced = base.linkedCards.shift();
-    if (replaced) {
+    const doReplace = (replaced) => {
+      if (!replaced) { proceedLink(); return; }
+      const ri = base.linkedCards.indexOf(replaced);
+      if (ri >= 0) base.linkedCards.splice(ri, 1);
       bs.player.trash.push(replaced);
       addLog('🔄 リンク上限のため「' + replaced.name + '」がリンクから外れてトラッシュへ');
-    }
-  }
-  const cost = card.linkCost;
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'link', handIdx, slotIdx, cardName: card.name, baseName: base.name, cardImg: card.imgSrc || '', linkCost: cost });
-  bs.player.hand.splice(handIdx, 1); bs.selHand = null;
-  base.linkedCards.push(card);
-  addLog('🔗 「' + base.name + '」に「' + card.name + '」をリンク！（コスト ' + cost + '）');
-  if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
-    try { window._tutorialHideInstruction(); } catch (e) {}
-  }
-  renderAll();
-  fxLinkEffect(base, card, () => {
-    // ★ 登場/進化と同じ順序: コスト支払い → 永続効果再計算 → リンク時効果 → ターン終了判定
-    playerSpendMemory(cost, true); // defer=true
-    _hooks.applyPermanentEffects('player');
-    renderAll(true);
-    const finishLink = () => {
-      checkPlayerPendingTurnEnd();
+      renderAll();
+      proceedLink();
     };
-    if (hasKeyword(card, '【リンク時】')) {
-      _hooks.checkAndTriggerEffect(card, '【リンク時】', () => {
-        renderAll(true);
-        finishLink();
-      });
+    if (base.linkedCards.length === 1) {
+      doReplace(base.linkedCards[0]);
     } else {
-      finishLink();
+      showLinkReplaceChoice(base.linkedCards).then(doReplace);
     }
-  });
+    return;
+  }
+  proceedLink();
 }
 
 // ===== アーツ進化（デュアルカード専用） =====

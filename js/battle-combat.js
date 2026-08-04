@@ -197,6 +197,7 @@ function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle) {
   // 不屈（進化元を持つこのデジモンが消滅したとき、コスト無しで再登場）
   if (hasIndomitable(card) && card.stack && card.stack.length > 0) {
     card.stack.forEach(function(s){ ownerSidePlayer.trash.push(s); });
+    if (card.linkedCards) card.linkedCards.forEach(function(s){ ownerSidePlayer.trash.push(s); });
     card.stack = [];
     card.suspended = false;
     card.summonedThisTurn = false;
@@ -288,6 +289,7 @@ function _tryScapegoat(destroyTarget, ownerSidePlayer) {
     ba[i] = null;
     ownerSidePlayer.trash.push(c);
     if (c.stack) c.stack.forEach(function(s){ ownerSidePlayer.trash.push(s); });
+    if (c.linkedCards) c.linkedCards.forEach(function(s){ ownerSidePlayer.trash.push(s); });
     addLog('🛡 【スケープゴート】「' + destroyTarget.name + '」が「' + c.name + '」を身代わりにして回避');
     return true;
   }
@@ -428,6 +430,7 @@ function removeOwnCard(slotIdx, reason) {
   bs.player.battleArea[slotIdx] = null;
   bs.player.trash.push(card);
   if (card.stack) card.stack.forEach(s => bs.player.trash.push(s));
+  if (card.linkedCards) card.linkedCards.forEach(s => bs.player.trash.push(s));
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'own_card_removed', slotIdx, reason: reason || 'destroy' });
 }
 
@@ -888,16 +891,21 @@ export function doLink(card, handIdx, slotIdx) {
   const base = bs.player.battleArea[slotIdx];
   if (!base) return;
   if (card.linkCost == null) { addLog('🚨 「' + card.name + '」はリンクできません‼'); return; }
-  // リンク容量チェック（cond_link_eligible と同じ計算式）
+  // リンク容量チェック（cond_link_eligible と同じ計算式）。上限に達している場合は
+  // 差し替え扱いで、一番古いリンクカードを自動的にトラッシュへ送って空きを作る
+  // （「破棄された時」の効果ではないため、消滅トリガー等は発生させず直接trashへ送る）
   const cap = (base._linkCapacityBonus || 0) + 1;
-  if ((base.linkedCards || []).length >= cap) {
-    addLog('🚨 「' + base.name + '」はこれ以上リンクできません（容量上限 ' + cap + '）');
-    return;
+  if (!base.linkedCards) base.linkedCards = [];
+  if (base.linkedCards.length >= cap) {
+    const replaced = base.linkedCards.shift();
+    if (replaced) {
+      bs.player.trash.push(replaced);
+      addLog('🔄 リンク上限のため「' + replaced.name + '」がリンクから外れてトラッシュへ');
+    }
   }
   const cost = card.linkCost;
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'link', handIdx, slotIdx, cardName: card.name, baseName: base.name, cardImg: card.imgSrc || '', linkCost: cost });
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
-  if (!base.linkedCards) base.linkedCards = [];
   base.linkedCards.push(card);
   addLog('🔗 「' + base.name + '」に「' + card.name + '」をリンク！（コスト ' + cost + '）');
   if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
@@ -1834,6 +1842,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
       bs.ai.battleArea[defIdx] = null;
       bs.ai.trash.push(def);
       if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
+      if (def.linkedCards) def.linkedCards.forEach(s => bs.ai.trash.push(s));
       if (_onlineMode && _sendCommand) {
         _sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: defIdx, reason: 'destroy' });
         if (window._markDestroyed) window._markDestroyed('ai', defIdx);
@@ -1920,6 +1929,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
                 bs.player.battleArea[atkIdx] = null;
                 bs.player.trash.push(atk);
                 if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
+                if (atk.linkedCards) atk.linkedCards.forEach(function(s){ bs.player.trash.push(s); });
                 renderAll();
                 showDestroyEffect(atk, function() {
                   _fireDestroyChain(['player'], function() { checkPendingTurnEnd(); }, { player: atk });
@@ -1966,6 +1976,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
                 bs.ai.battleArea[defIdx2] = null;
                 bs.ai.trash.push(def);
                 if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
+      if (def.linkedCards) def.linkedCards.forEach(s => bs.ai.trash.push(s));
                 renderAll();
                 showMichizureAnnounce(() => {
                   showDestroyEffect(def, () => {
@@ -2013,8 +2024,10 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           // 両者とも回避せず → 両者消滅
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+          if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
           bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
           if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
+          if (def.linkedCards) def.linkedCards.forEach(s => bs.player.trash.push(s));
           renderAll();
           showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
             // ターンプレイヤー（ai）側の reactions を先 → 'player' destroyed が reactSide='ai'
@@ -2026,6 +2039,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           // atk のみコストを払い消滅回避 → def のみ消滅
           bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
           if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
+          if (def.linkedCards) def.linkedCards.forEach(s => bs.player.trash.push(s));
           renderAll();
           showDestroyEffect(def, () => {
             _fireDestroyChain(['player'], () => {
@@ -2038,6 +2052,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           // def のみコストを払い消滅回避 → atk のみ消滅
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+          if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
           renderAll();
           showDestroyEffect(atk, () => {
             _fireDestroyChain(['ai'], () => {
@@ -2062,6 +2077,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         () => {
           bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
           if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
+          if (def.linkedCards) def.linkedCards.forEach(s => bs.player.trash.push(s));
           renderAll();
           showDestroyEffect(def, () => {
             _fireDestroyChain(['player'], () => {
@@ -2076,6 +2092,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
               bs.ai.battleArea[atkIdx] = null;
               bs.ai.trash.push(atk);
               if (atk.stack) atk.stack.forEach(function(s){ bs.ai.trash.push(s); });
+              if (atk.linkedCards) atk.linkedCards.forEach(function(s){ bs.ai.trash.push(s); });
               renderAll();
               showDestroyEffect(atk, function() {
                 _fireDestroyChain(['ai'], function() {
@@ -2117,6 +2134,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         () => {
       bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
       if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+      if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
       renderAll();
       // ≪道連れ≫: AI のアタッカーが消滅したとき、防御側 (player の def) も巻き込む
       if (hasMichizure(atk) && def && bs.player.battleArea.indexOf(def) >= 0) {
@@ -2124,6 +2142,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         bs.player.battleArea[defIdx2] = null;
         bs.player.trash.push(def);
         if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
+        if (def.linkedCards) def.linkedCards.forEach(s => bs.player.trash.push(s));
         addLog('💀 【道連れ】「' + atk.name + '」が「' + def.name + '」を巻き込んで消滅！');
         renderAll();
         showDestroyEffect(atk, () => {
@@ -2534,6 +2553,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
         if (atk.dp === sec.dp) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+          if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
           bs.player.trash.push(sec);
           showDestroyEffect(atk, () => {
             addLog('💥 両者消滅！'); renderAll();
@@ -2542,6 +2562,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
         } else if (sec.dp > atk.dp) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+          if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
           bs.player.trash.push(sec);
           showDestroyEffect(atk, () => {
             addLog('💥 「' + atk.name + '」が撃破された'); renderAll();

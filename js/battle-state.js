@@ -162,6 +162,7 @@ export function removeFromBattleArea(side, slotIdx) {
   bs[side].battleArea[slotIdx] = null;
   bs[side].trash.push(card);
   if (card.stack) card.stack.forEach(s => bs[side].trash.push(s));
+  if (card.linkedCards) card.linkedCards.forEach(s => bs[side].trash.push(s));
   return card;
 }
 
@@ -181,5 +182,6 @@ export function bounceCard(side, slotIdx) {
   bs[side].battleArea[slotIdx] = null;
   bs[side].hand.push(card);
   if (card.stack) card.stack.forEach(s => bs[side].trash.push(s));
+  if (card.linkedCards) card.linkedCards.forEach(s => bs[side].trash.push(s));
   return card;
 }

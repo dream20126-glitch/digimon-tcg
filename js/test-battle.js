@@ -161,6 +161,7 @@ function findCardByName(idOrName) {
     evolveCost: hasEvolve ? parseInt(evolveCost) : null,
     evolveCostRaw: hasEvolve ? String(evolveCost) : null,
     linkCost: hasLink ? parseInt(linkCost) : null,
+    linkDp: parseInt(card['リンクDP'] || 0) || 0,
     evolveCond: card['進化条件'] || '',
     useCond: card['使用条件（オプション）'] || '',
     cost: hasPlay ? parseInt(playCost) : hasEvolve ? parseInt(evolveCost) : 0,

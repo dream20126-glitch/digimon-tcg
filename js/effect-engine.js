@@ -1801,6 +1801,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       targetSide.battleArea[di] = null;
       targetSide.trash.push(dc);
       if (dc.stack) dc.stack.forEach(function(s){ targetSide.trash.push(s); });
+      if (dc.linkedCards) dc.linkedCards.forEach(function(s){ targetSide.trash.push(s); });
       ctx.renderAll && ctx.renderAll();
       // デコイ自身の消滅で on_destroy 発火
       const decoyOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
@@ -1824,6 +1825,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
   targetSide.battleArea[slotIdx] = null;
   targetSide.trash.push(destroyed);
   if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));
+  if (destroyed.linkedCards) destroyed.linkedCards.forEach(s => targetSide.trash.push(s));
   ctx.addLog('💀 「' + destroyed.name + '」を消滅');
   // オンライン: 相手のカードを消滅させた場合、直接通知 + 復活防止マーク
   if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
@@ -1853,7 +1855,9 @@ function doBounce(targetSide, slotIdx, ctx) {
   bounced.summonedThisTurn = false;
   targetSide.hand.push(bounced);
   if (bounced.stack) bounced.stack.forEach(s => targetSide.trash.push(s));
+  if (bounced.linkedCards) bounced.linkedCards.forEach(s => targetSide.trash.push(s));
   bounced.stack = [];
+  bounced.linkedCards = [];
   ctx.addLog('↩ 「' + bounced.name + '」を手札に戻した');
   // オンライン: 相手のカードをバウンスした場合、直接通知 + 復活防止マーク
   if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
@@ -3643,6 +3647,15 @@ export function applyPermanentEffects(bs, side, context) {
     // ⑤ リンクカードのレシピ永続効果
     // リンクしている間のみ有効な効果は recipe.link のみを参照する（構造は④の進化元と同じ）。
     if (Array.isArray(card.linkedCards)) {
+      // リンクカード共通のDP+（カード一覧の「リンクDP」列。全リンクカードに共通する
+      // 「リンクしている間ずっとDPが上がる」効果はレシピ不要でここで一律処理する）
+      card.linkedCards.forEach(linkCard => {
+        if (linkCard && linkCard.linkDp) {
+          if (!card.buffs) card.buffs = [];
+          card.buffs.push({ type: 'dp_plus', value: linkCard.linkDp, duration: 'permanent', source: 'link_dp' });
+          recalcDp(card);
+        }
+      });
       card.linkedCards.forEach(linkCard => {
         if (!linkCard || !linkCard.recipe) return;
         if (typeof linkCard.recipe === 'string') {
@@ -4532,6 +4545,7 @@ function checkPendingDestroys(ctx, callback) {
         ctx.bs[side].battleArea[slot] = null;
         ctx.bs[side].trash.push(card);
         if (card.stack) card.stack.forEach(s => ctx.bs[side].trash.push(s));
+        if (card.linkedCards) card.linkedCards.forEach(s => ctx.bs[side].trash.push(s));
       }
       ctx.addLog('💀 「' + card.name + '」消滅');
       // オンライン: DP0消滅を即時通知（state_sync遅延による復活を防止）
@@ -6790,6 +6804,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           opponent.battleArea[t.idx] = null;
           opponent.trash.push(c);
           if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
+          if (c.linkedCards) c.linkedCards.forEach(s => opponent.trash.push(s));
           ctx.addLog('💥 「' + c.name + '」を消滅させた！');
           // オンライン同期
           if (window._isOnlineMode && window._isOnlineMode()) {
@@ -6834,6 +6849,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           tgtPlayer.battleArea[idx] = null;
           tgtPlayer.trash.push(c);
           if (c.stack) c.stack.forEach(s => tgtPlayer.trash.push(s));
+          if (c.linkedCards) c.linkedCards.forEach(s => tgtPlayer.trash.push(s));
           ctx.addLog('💥 「' + c.name + '」を消滅させた！');
           if (window._isOnlineMode && window._isOnlineMode()) {
             window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'destroy' });
@@ -8320,6 +8336,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           player.battleArea[idx] = null;
           player.trash.push(ctx.card);
           if (ctx.card.stack) ctx.card.stack.forEach(s => player.trash.push(s));
+          if (ctx.card.linkedCards) ctx.card.linkedCards.forEach(s => player.trash.push(s));
           ctx.addLog('🗑 「' + ctx.card.name + '」を破棄');
           ctx.renderAll();
         }
@@ -8495,6 +8512,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (!c) return;
           opponent.battleArea[idx] = null;
           if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
+          if (c.linkedCards) c.linkedCards.forEach(s => opponent.trash.push(s));
           if (_rdTop) opponent.deck.unshift(c); else opponent.deck.push(c);
           ctx.addLog('🔄 「' + c.name + '」を持ち主のデッキの' + (_rdTop ? '上' : '下') + 'に戻す');
           if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {

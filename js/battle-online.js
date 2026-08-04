@@ -287,6 +287,7 @@ function onRemoteCommand(cmd) {
           bs.ai.battleArea[cmd.slotIdx] = null;
           bs.ai.trash.push(card);
           if (card.stack) card.stack.forEach(s => bs.ai.trash.push(s));
+          if (card.linkedCards) card.linkedCards.forEach(s => bs.ai.trash.push(s));
           markDestroyed('ai', cmd.slotIdx);
           renderAll();
         }
@@ -304,6 +305,7 @@ function onRemoteCommand(cmd) {
             bs.player.trash.push(card);
           }
           if (card.stack) card.stack.forEach(s => bs.player.trash.push(s));
+          if (card.linkedCards) card.linkedCards.forEach(s => bs.player.trash.push(s));
           markDestroyed('player', cmd.slotIdx);
           renderAll();
         }
@@ -534,6 +536,7 @@ function onRemoteCommand(cmd) {
           bs.player.battleArea[atkIdx] = null;
           bs.player.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
+          if (atk.linkedCards) atk.linkedCards.forEach(s => bs.player.trash.push(s));
           markDestroyed('player', atkIdx);
           renderAll();
         }
@@ -1451,8 +1454,8 @@ function resolveOnlineBlock(blockerIdx, cmd) {
       const _atkDp = atk.dp, _blkDp = blocker.dp;
       removeBattleBuffs(battleBuffs);
       if (_atkDp === _blkDp) {
-        bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-        bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
+        bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s)); if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
+        bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s)); if (blocker.linkedCards) blocker.linkedCards.forEach(s => bs.player.trash.push(s));
         sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
         // 攻撃側 atk の消滅を相手(攻撃側オーナー)に通知 → 受信側で on_destroy 等を発火
         // 送信側 (防御側) で観測している atk のフルカード情報を含める。
@@ -1481,7 +1484,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           }); });
         });
       } else if (_atkDp > _blkDp) {
-        bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
+        bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s)); if (blocker.linkedCards) blocker.linkedCards.forEach(s => bs.player.trash.push(s));
         sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
         renderAll();
         // ≪道連れ≫: ブロッカーが「自分だけバトルで消滅」したとき相手(atk)も消滅
@@ -1494,6 +1497,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           bs.ai.battleArea[cmd.atkIdx] = null;
           bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+          if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
           // 相手機にも atk 消滅を通知
           // 送信側 (防御側) で観測している atk のフルカード情報を含める。
         // 受信側 (オーナー機) のローカル状態が同期遅延でずれていても、
@@ -1540,7 +1544,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           });
         });
       } else {
-        bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
+        bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s)); if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
         // 攻撃側 atk の消滅を相手(攻撃側オーナー)に通知
         // 送信側 (防御側) で観測している atk のフルカード情報を含める。
         // 受信側 (オーナー機) のローカル状態が同期遅延でずれていても、
@@ -1560,6 +1564,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           bs.player.battleArea[blockerIdx] = null;
           bs.player.trash.push(blocker);
           if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s));
+          if (blocker.linkedCards) blocker.linkedCards.forEach(s => bs.player.trash.push(s));
           sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
           renderAll();
           sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '道連れで両者消滅！' });

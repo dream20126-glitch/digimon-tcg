@@ -1,6 +1,7 @@
 // 効果エンジン v2（レシピJSON方式。枠色/演出タイプはアクションコードから自動推測するため
 // 効果辞書スプレッドシートの読み込みは不要）
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
+import { showConfirm } from './battle-ui.js';
 
 // ===== 効果キュー =====
 let _effectQueue = [];
@@ -9263,6 +9264,57 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback) {
   } else {
     applyDiscount();
   }
+}
+
+// 【吸収進化-N】: 手札のこの進化先カード自身が持つ能力（アルゴモン BT2-045等）。
+// 「自分のデジモンが、手札のこのカードに進化するとき、自分のデジモン1体をレストさせる
+// ことで、進化コストをNマイナスする」。checkBeforeEvolveDiscountとは違い、能力は
+// 「既に場にいるカード」ではなく「進化先(evoCard)自身」の recipe.passive に
+// {flag:'absorb_evolve', value:N} として持たせる。レストする対象はプレイヤーが
+// 自分のデジモンから選ぶ（このカード自身も対象を選ぶ時点ではまだ場にいないので除外不要）。
+// callback(discountAmount)
+export function checkAbsorbEvolveDiscount(evoCard, bs, side, callback) {
+  const finish = (amount) => { try { callback(amount || 0); } catch (_) {} };
+  if (!bs || !evoCard || !evoCard.recipe) { finish(0); return; }
+  const sidePl = bs[side];
+  if (!sidePl) { finish(0); return; }
+  let recipe;
+  try {
+    const raw = typeof evoCard.recipe === 'string' ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
+    recipe = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (_) { finish(0); return; }
+  const passives = Array.isArray(recipe.passive) ? recipe.passive : (recipe.passive ? [recipe.passive] : []);
+  const ap = passives.find((p) => (typeof p === 'string' ? p : (p && p.flag)) === 'absorb_evolve');
+  if (!ap) { finish(0); return; }
+  const amount = (typeof ap === 'object' && ap.value) ? (parseInt(ap.value, 10) || 0) : 0;
+  if (amount <= 0) { finish(0); return; }
+  const candidates = (sidePl.battleArea || [])
+    .map((c, i) => ({ c, i }))
+    .filter((x) => x.c && x.c.type === 'デジモン' && !x.c.suspended);
+  if (candidates.length === 0) { finish(0); return; }
+  const doRest = (idx) => {
+    const target = sidePl.battleArea[idx];
+    if (target) target.suspended = true;
+    finish(amount);
+  };
+  if (side !== 'player') {
+    // AI: 自動的に先頭候補をレストして採用
+    doRest(candidates[0].i);
+    return;
+  }
+  if (typeof showConfirm !== 'function' || typeof showTargetSelection !== 'function') { finish(0); return; }
+  showConfirm({
+    title: '💠 吸収進化',
+    message: '自分のデジモン1体をレストさせることで、進化コストを-' + amount + 'しますか？',
+    yesText: 'はい', noText: 'いいえ', color: '#ffcc00',
+  }).then((yes) => {
+    if (!yes) { finish(0); return; }
+    const validIndices = candidates.map((x) => x.i);
+    showTargetSelection('pl', validIndices, null, '#ffcc00', (selectedIdx) => {
+      if (selectedIdx == null) { finish(0); return; }
+      doRest(selectedIdx);
+    }, '（レストさせる自分のデジモンを選択）');
+  });
 }
 
 // stack 内の進化元カードに該当トリガーのレシピがあるか

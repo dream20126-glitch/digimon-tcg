@@ -144,10 +144,12 @@ function findCardByName(idOrName) {
   const isUseCostType = type === 'オプション' || type === 'デュアル';
   const playCost = isUseCostType ? cardField(card, '使用コスト', '使用\nコスト') : cardField(card, '登場コスト', '登場\nコスト');
   const evolveCost = cardField(card, '進化コスト', '進化\nコスト');
+  const linkCost = cardField(card, 'リンクコスト', 'リンク\nコスト');
   // 「なし」「-」等の文字列はコストなしとして null に正規化
   const isNoCost = (v) => v === undefined || v === null || v === '' || v === 'なし' || v === '-';
   const hasPlay = !isNoCost(playCost) && !isNaN(parseInt(playCost));
   const hasEvolve = !isNoCost(evolveCost) && !isNaN(parseInt(evolveCost));
+  const hasLink = !isNoCost(linkCost) && !isNaN(parseInt(linkCost));
   return {
     name: card['名前'] || name,
     cardNo: card['カードNo'] || '',
@@ -158,6 +160,7 @@ function findCardByName(idOrName) {
     playCost: hasPlay ? parseInt(playCost) : null,
     evolveCost: hasEvolve ? parseInt(evolveCost) : null,
     evolveCostRaw: hasEvolve ? String(evolveCost) : null,
+    linkCost: hasLink ? parseInt(linkCost) : null,
     evolveCond: card['進化条件'] || '',
     useCond: card['使用条件（オプション）'] || '',
     cost: hasPlay ? parseInt(playCost) : hasEvolve ? parseInt(evolveCost) : 0,

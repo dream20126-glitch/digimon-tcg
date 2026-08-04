@@ -53,7 +53,7 @@ let _hooks = {
       '【アタック時】': 'on_attack', '【アタック終了時】': 'on_attack_end',
       '【消滅時】': 'on_destroy', '【セキュリティ】': 'security',
       '【自分のターン終了時】': 'on_own_turn_end', '【相手のターン終了時】': 'on_opp_turn_end',
-      '【メイン】': 'main',
+      '【メイン】': 'main', '【リンク時】': 'on_link', 'リンク時': 'on_link',
     };
     const trig = map[kw];
     return trig ? _hasRecipeTrigger(card, trig) : false;

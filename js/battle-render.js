@@ -6,7 +6,7 @@
  */
 
 import { bs, MEM_MIN, MEM_MAX } from './battle-state.js';
-import { updateScrollArrows, addLog } from './battle-ui.js';
+import { updateScrollArrows, addLog, showConfirm } from './battle-ui.js';
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
 import { isTargetSelecting, hasRecipeTrigger, evoSourceEffectLabel } from './effect-engine.js';
 
@@ -967,7 +967,17 @@ export function renderHand() {
             if (inside) {
               const occupied = !!bs.player.battleArea[si];
               console.log('[handDrag] drop on slot ' + si + ' occupied=' + occupied + ' hasDoPlay=' + !!window.doPlay + ' hasDoEvolve=' + !!window.doEvolve);
-              if (occupied) { if (window.doEvolve) window.doEvolve(card, idx, si); }
+              if (occupied && card.isLink) {
+                // リンクありのカードを既存デジモンにドロップ → 進化かリンクかを選ばせる
+                showConfirm({
+                  title: '進化 or リンク',
+                  message: '「' + card.name + '」をどうしますか？',
+                  yesText: '⬆ 進化', noText: '🔗 リンク', color: '#00fbff',
+                }).then((evolve) => {
+                  if (evolve) { if (window.doEvolve) window.doEvolve(card, idx, si); }
+                  else { if (window.doLink) window.doLink(card, idx, si); }
+                });
+              } else if (occupied) { if (window.doEvolve) window.doEvolve(card, idx, si); }
               else { if (window.doPlay) window.doPlay(card, idx, si); }
               dropped = true;
             }

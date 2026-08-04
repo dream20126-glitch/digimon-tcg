@@ -93,17 +93,20 @@ function parseDeck(deckData) {
     const isUseCostType = type === 'オプション' || type === 'デュアル';
     const playCost = isUseCostType ? _f(obj, '使用コスト', '使用\nコスト') : _f(obj, '登場コスト', '登場\nコスト');
     const evolveCost = _f(obj, '進化コスト', '進化\nコスト');
+    const linkCost = _f(obj, 'リンクコスト', 'リンク\nコスト');
     const level = _f(obj, 'レベル', 'Lv');
     // 「なし」「-」等の文字列はコストなしとして null に正規化
     const isNoCost = (v) => v === undefined || v === null || v === '' || v === 'なし' || v === '-';
     const hasPlay = !isNoCost(playCost) && !isNaN(parseInt(playCost));
     const hasEvolve = !isNoCost(evolveCost) && !isNaN(parseInt(evolveCost));
+    const hasLink = !isNoCost(linkCost) && !isNaN(parseInt(linkCost));
     for (let i = 0; i < count; i++) out.push({
       name: obj["名前"] || m[1], cardNo, level: String(level ?? '?'),
       dp: parseInt(obj["DP"] || 0), baseDp: parseInt(obj["DP"] || 0), dpModifier: 0,
       playCost: hasPlay ? parseInt(playCost) : null,
       evolveCost: hasEvolve ? parseInt(evolveCost) : null,
       evolveCostRaw: hasEvolve ? String(evolveCost) : null,
+      linkCost: hasLink ? parseInt(linkCost) : null,
       evolveCond: obj["進化条件"] || '',
       useCond: obj["使用条件（オプション）"] || '',
       cost: hasPlay ? parseInt(playCost) : hasEvolve ? parseInt(evolveCost) : 0,
@@ -341,16 +344,19 @@ window.acceptHand = function() {
             const isUseCostType = type === 'オプション' || type === 'デュアル';
             const playCost = isUseCostType ? _f(obj, '使用コスト', '使用\nコスト') : _f(obj, '登場コスト', '登場\nコスト');
             const evolveCost = _f(obj, '進化コスト', '進化\nコスト');
+            const linkCost = _f(obj, 'リンクコスト', 'リンク\nコスト');
             const level = _f(obj, 'レベル', 'Lv');
             const isNoCost = (v) => v === undefined || v === null || v === '' || v === 'なし' || v === '-';
             const hasPlay = !isNoCost(playCost) && !isNaN(parseInt(playCost));
             const hasEvolve = !isNoCost(evolveCost) && !isNaN(parseInt(evolveCost));
+            const hasLink = !isNoCost(linkCost) && !isNaN(parseInt(linkCost));
             card = {
               name: obj['名前'], cardNo: obj['カードNo'] || '', level: String(level ?? '?'),
               dp: parseInt(obj['DP'] || 0), baseDp: parseInt(obj['DP'] || 0), dpModifier: 0,
               playCost: hasPlay ? parseInt(playCost) : null,
               evolveCost: hasEvolve ? parseInt(evolveCost) : null,
               evolveCostRaw: hasEvolve ? String(evolveCost) : null,
+              linkCost: hasLink ? parseInt(linkCost) : null,
               evolveCond: obj['進化条件'] || '',
               useCond: obj['使用条件（オプション）'] || '',
               cost: hasPlay ? parseInt(playCost) : hasEvolve ? parseInt(evolveCost) : 0,

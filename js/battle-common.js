@@ -9,7 +9,7 @@ import { bs } from './battle-state.js';
 import { addLog } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallbacks, doIkuMove } from './battle-render.js';
 import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, showDrawEffect } from './battle-phase.js';
-import { doPlay, doEvolve, doEvolveIku, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, showOptionEffect, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack } from './battle-combat.js';
+import { doPlay, doEvolve, doEvolveIku, doLink, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, showOptionEffect, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack } from './battle-combat.js';
 import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxBuffStatus, fxShuffle } from './battle-fx.js';
 import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js';
@@ -24,6 +24,7 @@ export const TRIGGER_CODE_MAP = {
   '【レストしたとき】': 'when_rest', '【アタックされたとき】': 'when_attacked',
   '【ブロックされたとき】': 'when_blocked', 'ブロックされた時': 'when_blocked',
   'アタックされた時': 'when_attacked',
+  '【リンク時】': 'on_link', 'リンク時': 'on_link',
 };
 
 // ===== makeEffectContext =====
@@ -202,7 +203,7 @@ export function buildCombatHooks() {
         '【アタック時】': 'on_attack', '【アタック終了時】': 'on_attack_end',
         '【消滅時】': 'on_destroy', '【セキュリティ】': 'security',
         '【自分のターン終了時】': 'on_own_turn_end', '【相手のターン終了時】': 'on_opp_turn_end',
-        '【メイン】': 'main',
+        '【メイン】': 'main', '【リンク時】': 'on_link', 'リンク時': 'on_link',
       };
       const trig = map[kw];
       return trig ? _hasRecipeTriggerEE(card, trig) : false;
@@ -287,6 +288,7 @@ export function setupCommonWindowExports() {
   window.doPlay = doPlay;
   window.doEvolve = doEvolve;
   window.doEvolveIku = doEvolveIku;
+  window.doLink = doLink;
   window.canEvolveOnto = canEvolveOnto;
   window.startAttack = startAttack;
   window.cancelAttack = cancelAttack;

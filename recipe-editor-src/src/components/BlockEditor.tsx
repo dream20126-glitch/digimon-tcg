@@ -465,6 +465,7 @@ interface TriggerFamily {
 const COMMON_TRIGGER_FAMILIES: TriggerFamily[] = [
   { code: 'on_play', label: '登場時', kind: 'event' },
   { code: 'on_evolve', label: '進化時', kind: 'event' },
+  { code: 'on_link', label: 'リンク時', kind: 'event' },
   {
     code: 'on_attack', label: 'アタック時', kind: 'timing',
     // 自分=このカードがアタックしたとき(on_attack) / 相手=相手のデジモンがアタックしたとき(when_opp_attack、ロゼモン等)

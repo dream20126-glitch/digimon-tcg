@@ -8,6 +8,7 @@
 import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
+import { fxLinkEffect } from './battle-fx.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
 import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection } from './effect-engine.js';
 
@@ -26,7 +27,7 @@ let _hooks = {
       '【消滅時】': 'on_destroy', '【セキュリティ】': 'security',
       '【自分のターン終了時】': 'on_own_turn_end', '【相手のターン終了時】': 'on_opp_turn_end',
       '【自分のターン開始時】': 'on_own_turn_start', '【相手のターン開始時】': 'on_opp_turn_start',
-      '【メイン】': 'main',
+      '【メイン】': 'main', '【リンク時】': 'on_link', 'リンク時': 'on_link',
     };
     const trig = map[kw];
     return trig ? _hasRecipeTrigger(card, trig) : false;
@@ -874,6 +875,51 @@ export function doEvolveIku(card, handIdx) {
         finishEvolveIku();
       }
     }, { deferDismiss: true });
+  });
+}
+
+// ===== リンク =====
+// リンクありのカードをバトルエリアの既存デジモンにドラッグした際、進化の代わりに
+// 選べる操作。進化コストの代わりにリンクコストを支払い、対象デジモンの横に
+// リンクする（card.linkedCards に追加）。リンク時効果（【リンク時】）があれば発動する。
+export function doLink(card, handIdx, slotIdx) {
+  if (bs.phase !== 'main') return;
+  if (_attackInProgress) return;
+  const base = bs.player.battleArea[slotIdx];
+  if (!base) return;
+  if (card.linkCost == null) { addLog('🚨 「' + card.name + '」はリンクできません‼'); return; }
+  // リンク容量チェック（cond_link_eligible と同じ計算式）
+  const cap = (base._linkCapacityBonus || 0) + 1;
+  if ((base.linkedCards || []).length >= cap) {
+    addLog('🚨 「' + base.name + '」はこれ以上リンクできません（容量上限 ' + cap + '）');
+    return;
+  }
+  const cost = card.linkCost;
+  if (_onlineMode && _sendCommand) _sendCommand({ type: 'link', handIdx, slotIdx, cardName: card.name, baseName: base.name, cardImg: card.imgSrc || '', linkCost: cost });
+  bs.player.hand.splice(handIdx, 1); bs.selHand = null;
+  if (!base.linkedCards) base.linkedCards = [];
+  base.linkedCards.push(card);
+  addLog('🔗 「' + base.name + '」に「' + card.name + '」をリンク！（コスト ' + cost + '）');
+  if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
+    try { window._tutorialHideInstruction(); } catch (e) {}
+  }
+  renderAll();
+  fxLinkEffect(base, card, () => {
+    // ★ 登場/進化と同じ順序: コスト支払い → 永続効果再計算 → リンク時効果 → ターン終了判定
+    playerSpendMemory(cost, true); // defer=true
+    _hooks.applyPermanentEffects('player');
+    renderAll(true);
+    const finishLink = () => {
+      checkPlayerPendingTurnEnd();
+    };
+    if (hasKeyword(card, '【リンク時】')) {
+      _hooks.checkAndTriggerEffect(card, '【リンク時】', () => {
+        renderAll(true);
+        finishLink();
+      });
+    } else {
+      finishLink();
+    }
   });
 }
 

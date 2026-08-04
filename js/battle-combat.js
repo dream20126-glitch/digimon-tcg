@@ -9,7 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { fxLinkEffect } from './battle-fx.js';
-import { showYourTurn, showPhaseAnnounce, doDraw, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
+import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
 import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection } from './effect-engine.js';
 
 // ===== 戦闘フック =====
@@ -1136,6 +1136,10 @@ export function startAttack(card, slotIdx) {
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   _atkState = { card, slotIdx };
   addLog('⚔ 「' + card.name + '」でアタック！');
+  // アタック宣言による自身のレスト → 相手側の when_opp_rest 誘発（ヴェノムヴァンデモン等）
+  // ブロック時のレストと同じ反応経路。ここで発火しなければ「アタックでレスト」は
+  // when_opp_rest を一切拾えない
+  fireOppRestThen('player', () => {});
   // ≪連携≫: アタック時に他デジモンレストでバフ（自動発動・他に対象なければスキップ）
   _tryCombo(card, bs.player);
   renderAll();
@@ -1857,7 +1861,7 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide) {
     // 演出コールバックも渡す。これが無いと on_destroy レシピの summon_from_trash /
     // summon_token 等で登場演出（showPlayEffect）が発火しない。
     const ctxBase = {
-      bs, addLog, renderAll, updateMemGauge, doDraw,
+      bs, addLog, renderAll, updateMemGauge, doDraw, showDrawEffect,
       showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult,
     };
     const destroyedCard = destroyedCardsBySide && destroyedCardsBySide[s];
@@ -2431,6 +2435,8 @@ export function aiAttackPhase(callback) {
   // ≪連携≫: AI 側もバフ自動発動
   _tryCombo(atk, bs.ai);
   renderAll();
+  // アタック宣言による自身のレスト → プレイヤー側の when_opp_rest 誘発（ヴェノムヴァンデモン等）
+  fireOppRestThen('ai', () => {});
 
   showPhaseAnnounce('⚔ AIアタック！', '#ff4444', () => {
     const doAfterAtkEffect = (cb) => {
@@ -3619,6 +3625,8 @@ export function aiScriptAttack(attackerKey, target, onDone) {
   // ≪連携≫: AI 側もバフ自動発動
   _tryCombo(atk, bs.ai);
   renderAll();
+  // アタック宣言による自身のレスト → プレイヤー側の when_opp_rest 誘発（ヴェノムヴァンデモン等）
+  fireOppRestThen('ai', () => {});
 
   const _aiIsDirect = targetMode === 'security' && (bs.player.battleArea || []).filter(c => c).length === 0;
   bs._lastAttackIsDirect = _aiIsDirect;

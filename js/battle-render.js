@@ -1181,7 +1181,9 @@ export function showBCD(idxOrCard, source) {
   // 表示順: 直前の進化形 (stack[0]) → Lv.2 デジタマ (stack[N-1]) ← 物理的な重なり順
   // ID 番号: ID 0 = 一番下 (デジタマ) → ID N-1 = 直前の進化形
   // (admin UI で「1枚目=一番下」で指定できるように、ID を逆順に割り当て)
-  if (card.stack && card.stack.length > 0) {
+  // トラッシュのカードは消滅時にstackがクリアされないため、トラッシュ表示時だけ
+  // 内訳を出さない（進化元カードは別々にトラッシュへ送られている実際の状態と合わせる）
+  if (source !== 'trash' && card.stack && card.stack.length > 0) {
     let stackHtml = '<div id="bcd-evo-source-stack">';
     card.stack.forEach((s, i) => {
       const idForDom = card.stack.length - 1 - i; // 一番下=0, 直前=N-1

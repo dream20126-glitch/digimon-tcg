@@ -4609,11 +4609,19 @@ function _narrowBySentence(blockText, triggerCode) {
   if (!family) return blockText;
   const sentences = blockText.split(/(?<=。)/).map(s => s.trim()).filter(Boolean);
   if (sentences.length <= 1) return blockText;
-  const matched = sentences.filter(s => s.includes(family));
-  if (matched.length === 0 || matched.length === sentences.length) return blockText;
-  // 他の系統キーワードが1つも入っていない文だけを対象にする（複数系統が同居する文は除外しない）
-  let result = matched.join('');
+  // 括弧ラベル自身のテキスト（例:「【登場時】」に含まれる「登場」）は判定対象から除く。
+  // ラベル文字列との一致だけで「他の系統と同居している」と誤判定し、単一トリガーの
+  // 2文目以降を誤って絞り込んでしまうのを防ぐ
   const labelPrefixMatch = blockText.match(/^【[^】]+】/);
+  const stripLabel = (s, idx) => (idx === 0 && labelPrefixMatch) ? s.slice(labelPrefixMatch[0].length) : s;
+  const otherFamilies = _ALL_REACTIVE_FAMILIES.filter(f => f !== family);
+  // 他の系統キーワードが実際に混在している場合だけ文単位で絞り込む。混在がなければ
+  // （＝同一トリガーの複数文が並んでいるだけ）絞り込まずそのまま全文を返す
+  const hasOtherFamilyMix = sentences.some((s, idx) => otherFamilies.some(f => stripLabel(s, idx).includes(f)));
+  if (!hasOtherFamilyMix) return blockText;
+  const matched = sentences.filter((s, idx) => stripLabel(s, idx).includes(family));
+  if (matched.length === 0 || matched.length === sentences.length) return blockText;
+  let result = matched.join('');
   if (labelPrefixMatch && !result.startsWith('【')) result = labelPrefixMatch[0] + result;
   return result;
 }
@@ -5100,55 +5108,83 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
   if (!reactPlayer) { finish(); return; }
   const cards = [...(reactPlayer.battleArea || []), ...(reactPlayer.tamerArea || [])].filter(c => c);
   const reactions = [];
-  cards.forEach(card => {
-    if (!card.recipe) return;
+  const parseRecipe = (recipe) => {
+    if (!recipe) return null;
     try {
-      const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
-      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      const recipe = r[recipeKey];
-      if (recipe && Array.isArray(recipe)) {
-        const willRun = recipe.some(step => {
-          if (stepFilter && !stepFilter(step, reactSide)) return false;
-          if (step.condition) {
-            const conds = parseRecipeCondition(step.condition);
-            if (!checkConditions(conds, card, bs, reactSide)) return false;
-          }
-          // gate: 発動可否のみを判定する条件。step.condition と違い対象選択の
-          // フィルタには使われない（「自身がレスト中なら相手1体をレスト」等で、
-          // 自身の状態判定が相手側の対象フィルタに漏れるのを防ぐ）。
-          if (step.gate) {
-            const gconds = parseRecipeCondition(step.gate);
-            if (!checkConditions(gconds, card, bs, reactSide)) return false;
-          }
-          if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
-            const sourceId = card.cardNo || card.name || 'unknown';
-            const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
-            if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
-          }
-          // コスト feasibility チェック: 「自身をレスト」コストがあるが既にレスト中ならスキップ
-          // （八神太一(黒) 等が既にレスト状態で再発動できないように）
-          if (Array.isArray(step.cost)) {
-            for (const c of step.cost) {
-              if (c && c.action === 'rest' && (c.target === 'self' || !c.target) && card.suspended) {
-                return false;
-              }
-            }
-          }
-          return true;
-        });
-        if (willRun) reactions.push({ card, recipe });
+      const raw = typeof recipe === 'string' ? recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : recipe;
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (_) { return null; }
+  };
+  // carrier: 発動可否判定の基準になるカード（進化元由来効果の場合も、状態を持つのは
+  // 進化元を抱えている本体側なので carrier で判定する）
+  const evalSteps = (carrier, recipe) => {
+    if (!Array.isArray(recipe)) return false;
+    return recipe.some(step => {
+      if (stepFilter && !stepFilter(step, reactSide)) return false;
+      if (step.condition) {
+        const conds = parseRecipeCondition(step.condition);
+        if (!checkConditions(conds, carrier, bs, reactSide)) return false;
       }
-    } catch (_) {}
+      // gate: 発動可否のみを判定する条件。step.condition と違い対象選択の
+      // フィルタには使われない（「自身がレスト中なら相手1体をレスト」等で、
+      // 自身の状態判定が相手側の対象フィルタに漏れるのを防ぐ）。
+      if (step.gate) {
+        const gconds = parseRecipeCondition(step.gate);
+        if (!checkConditions(gconds, carrier, bs, reactSide)) return false;
+      }
+      if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
+        const sourceId = carrier.cardNo || carrier.name || 'unknown';
+        const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
+        if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
+      }
+      // コスト feasibility チェック: 「自身をレスト」コストがあるが既にレスト中ならスキップ
+      // （八神太一(黒) 等が既にレスト状態で再発動できないように）
+      if (Array.isArray(step.cost)) {
+        for (const c of step.cost) {
+          if (c && c.action === 'rest' && (c.target === 'self' || !c.target) && carrier.suspended) {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+  };
+  cards.forEach(card => {
+    // 本体カードの top-level recipe
+    if (card.recipe) {
+      const r = parseRecipe(card.recipe);
+      const recipe = r && r[recipeKey];
+      if (recipe && evalSteps(card, recipe)) reactions.push({ card, sourceCard: card, recipe });
+    }
+    // 進化元カードの evo_source ネストされたレシピ（例: ガルルモン「進化元にいるとき、
+    // 自分の他のデジモンが消滅したらメモリー+1」）。_fireSelfDestroyEffects と同じ構造。
+    if (Array.isArray(card.stack)) {
+      card.stack.forEach(evoCard => {
+        if (!evoCard || !evoCard.recipe) return;
+        const r = parseRecipe(evoCard.recipe);
+        const recipe = r && r.evo_source && r.evo_source[recipeKey];
+        if (recipe && evalSteps(card, recipe)) reactions.push({ card, sourceCard: evoCard, recipe });
+      });
+    }
   });
   if (reactions.length === 0) { finish(); return; }
   let idx = 0;
   function nextReaction() {
     if (idx >= reactions.length) { finish(); return; }
-    const { card, recipe } = reactions[idx++];
+    const { card, sourceCard, recipe } = reactions[idx++];
     const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side: reactSide };
+    const isEvoSource = sourceCard !== card;
+    const effText = isEvoSource
+      ? (sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし' ? sourceCard.evoSourceEffect : (sourceCard.effect || card.effect || ''))
+      : (card.effect || '');
+    const evoSourceArg = isEvoSource ? sourceCard : undefined;
     const proceed = () => {
-      ctx.addLog && ctx.addLog('⚡ 「' + card.name + '」の効果発動');
-      showEffectAnnounce(card, card.effect || '', reactSide, () => {
+      if (isEvoSource) {
+        ctx.addLog && ctx.addLog('⚡ 「' + sourceCard.name + '」（「' + (card.name || '?') + '」の進化元）の効果発動');
+      } else {
+        ctx.addLog && ctx.addLog('⚡ 「' + card.name + '」の効果発動');
+      }
+      showEffectAnnounce(card, effText, reactSide, () => {
         runRecipe(recipe, ctx, () => {
           ctx.renderAll && ctx.renderAll();
           if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
@@ -5156,14 +5192,14 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
           }
           nextReaction();
         });
-      });
+      }, evoSourceArg);
     };
     const isOptional = recipe.some(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0)));
     if (isOptional) {
       if (reactSide === 'player') {
-        showConfirmDialog(card, card.effect || '', (yes) => {
+        showConfirmDialog(card, effText, (yes) => {
           if (yes) proceed();
-          else { ctx.addLog && ctx.addLog('☓ 「' + card.name + '」の効果は発動しなかった'); nextReaction(); }
+          else { ctx.addLog && ctx.addLog('☓ 「' + (isEvoSource ? sourceCard.name : card.name) + '」の効果は発動しなかった'); nextReaction(); }
         });
       } else {
         ctx.addLog && ctx.addLog('☓ AI: 「' + card.name + '」の効果は発動しなかった');

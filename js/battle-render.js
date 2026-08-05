@@ -529,7 +529,7 @@ function startAttackModeUI(slotIdx) {
       const r = s.getBoundingClientRect();
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
         resolved = true;
-        if (window.startAttack && window.startAttack(card, slotIdx)) window.resolveAttackTarget('digimon', di);
+        if (window.startAttack) window.startAttack(card, slotIdx, (ok) => { if (ok) window.resolveAttackTarget('digimon', di); });
       }
     });
     // セキュリティ
@@ -537,7 +537,7 @@ function startAttackModeUI(slotIdx) {
       const r = secArea.getBoundingClientRect();
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
         resolved = true;
-        if (window.startAttack && window.startAttack(card, slotIdx)) window.resolveAttackTarget('security');
+        if (window.startAttack) window.startAttack(card, slotIdx, (ok) => { if (ok) window.resolveAttackTarget('security'); });
       }
     }
     // 上方向全体 → セキュリティ
@@ -547,7 +547,7 @@ function startAttackModeUI(slotIdx) {
         const r = aiZone.getBoundingClientRect();
         if (cy >= r.top && cy <= r.bottom) {
           resolved = true;
-          if (window.startAttack && window.startAttack(card, slotIdx)) window.resolveAttackTarget('security');
+          if (window.startAttack) window.startAttack(card, slotIdx, (ok) => { if (ok) window.resolveAttackTarget('security'); });
         }
       }
     }

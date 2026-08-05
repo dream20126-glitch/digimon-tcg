@@ -1121,29 +1121,37 @@ if (typeof window !== 'undefined') {
   window._tutorialResetCombatLocks = resetCombatLocks;
 }
 
-export function startAttack(card, slotIdx) {
+// callback(ok): アタック宣言そのものの成否を非同期で通知する。when_opp_rest 誘発
+// （オンラインでは相手機への委譲を含む）が完全に解決してからでないと、対象選択・
+// バトル進行に進めない（効果発動ポップアップのOKを待たずバトルが進んでしまう不具合の修正）
+export function startAttack(card, slotIdx, callback) {
   // ≪進撃≫: メモリーが相手側のとき（bs.memory < 0）でも進撃持ちならアタック可（公式ルール 18-16）
   var chargeAllowed = card && hasCharge(card) && bs.memory < 0;
-  if (bs.phase !== 'main' && !chargeAllowed) return false;
-  if (!card) return false;
-  if (_attackInProgress) return false;
+  if (bs.phase !== 'main' && !chargeAllowed) { callback && callback(false); return false; }
+  if (!card) { callback && callback(false); return false; }
+  if (_attackInProgress) { callback && callback(false); return false; }
   if (chargeAllowed) addLog('⚔ 【進撃】「' + card.name + '」がメモリー相手側でアタック宣言');
   // suspended チェックは行わない（長押しメニューで既にレスト済み）
-  if (card.cantAttack) return false;
+  if (card.cantAttack) { callback && callback(false); return false; }
 
+  // when_opp_rest の解決待ちの間、別の攻撃宣言で状態が競合しないようロックする
+  // （resolveAttackTarget 到達時に改めて true になるが、多重にしても問題ない）
+  _attackInProgress = true;
   card.suspended = true;
   card._attackedOnTurn = bs.turn; // cond_self_attacked 用（このターンにアタックしたか）
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   _atkState = { card, slotIdx };
   addLog('⚔ 「' + card.name + '」でアタック！');
-  // アタック宣言による自身のレスト → 相手側の when_opp_rest 誘発（ヴェノムヴァンデモン等）
-  // ブロック時のレストと同じ反応経路。ここで発火しなければ「アタックでレスト」は
-  // when_opp_rest を一切拾えない
-  fireOppRestThen('player', () => {});
   // ≪連携≫: アタック時に他デジモンレストでバフ（自動発動・他に対象なければスキップ）
   _tryCombo(card, bs.player);
   renderAll();
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'attack_start', atkIdx: slotIdx, atkName: card.name, atkDp: card.dp, atkImg: cardImg(card) });
+  // アタック宣言による自身のレスト → 相手側の when_opp_rest 誘発（ヴェノムヴァンデモン等）。
+  // ブロック時のレストと同じ反応経路。ここで発火しなければ「アタックでレスト」は
+  // when_opp_rest を一切拾えない
+  fireOppRestThen('player', () => {
+    if (_onlineMode && _sendCommand) _sendCommand({ type: 'attack_start', atkIdx: slotIdx, atkName: card.name, atkDp: card.dp, atkImg: cardImg(card) });
+    callback && callback(true);
+  });
   return true;
 }
 
@@ -2439,8 +2447,9 @@ export function aiAttackPhase(callback) {
   // ≪連携≫: AI 側もバフ自動発動
   _tryCombo(atk, bs.ai);
   renderAll();
-  // アタック宣言による自身のレスト → プレイヤー側の when_opp_rest 誘発（ヴェノムヴァンデモン等）
-  fireOppRestThen('ai', () => {});
+  // アタック宣言による自身のレスト → プレイヤー側の when_opp_rest 誘発（ヴェノムヴァンデモン等）。
+  // この誘発（効果発動ポップアップのOK待ち）が解決するまでアタック演出・バトル進行に進めない
+  fireOppRestThen('ai', () => {
 
   showPhaseAnnounce('⚔ AIアタック！', '#ff4444', () => {
     const doAfterAtkEffect = (cb) => {
@@ -2551,6 +2560,7 @@ export function aiAttackPhase(callback) {
       _afterAnnounce();
     }
   });
+  }); // fireOppRestThen
 }
 
 // ===== AIセキュリティチェック =====
@@ -3629,8 +3639,9 @@ export function aiScriptAttack(attackerKey, target, onDone) {
   // ≪連携≫: AI 側もバフ自動発動
   _tryCombo(atk, bs.ai);
   renderAll();
-  // アタック宣言による自身のレスト → プレイヤー側の when_opp_rest 誘発（ヴェノムヴァンデモン等）
-  fireOppRestThen('ai', () => {});
+  // アタック宣言による自身のレスト → プレイヤー側の when_opp_rest 誘発（ヴェノムヴァンデモン等）。
+  // この誘発（効果発動ポップアップのOK待ち）が解決するまでアタック演出・バトル進行に進めない
+  fireOppRestThen('ai', () => {
 
   const _aiIsDirect = targetMode === 'security' && (bs.player.battleArea || []).filter(c => c).length === 0;
   bs._lastAttackIsDirect = _aiIsDirect;
@@ -3730,4 +3741,5 @@ export function aiScriptAttack(attackerKey, target, onDone) {
       }
     });
   });
+  }); // fireOppRestThen
 }

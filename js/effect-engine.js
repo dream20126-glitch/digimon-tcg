@@ -5178,6 +5178,21 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
 function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, stepFilter) {
   const finish = () => { try { done && done(); } catch(_) {} };
   if (!bs) { finish(); return; }
+  // オンライン対戦: reactSide='ai'（＝実際のカードの持ち主は対戦相手）の場合、この場でローカル
+  // シミュレートすると効果発動ポップアップ(OKボタン)が本来の持ち主ではなく自機に出てしまう
+  // （ブロック確認/セキュリティ効果には既に「相手機に委譲する」経路があるが、この系統の反応
+  // トリガー全般には無かった）。同じ request/response パターンで相手機に委譲し、相手自身の
+  // 画面で本物のUIを操作してもらう。stepFilter（restedCard参照等）を使う呼び出しは対象カードを
+  // 単純に再現できないため対象外（従来通りローカル実行、既知の残課題）。
+  if (reactSide === 'ai' && !stepFilter && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    window._onlineSendCommand({ type: 'fx_reactionDelegate', recipeKey });
+    if (typeof window._waitForReactionDelegate === 'function') {
+      window._waitForReactionDelegate(finish);
+    } else {
+      finish();
+    }
+    return;
+  }
   const reactPlayer = bs[reactSide];
   if (!reactPlayer) { finish(); return; }
   const cards = [...(reactPlayer.battleArea || []), ...(reactPlayer.tamerArea || [])].filter(c => c);
@@ -5249,6 +5264,13 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
     _runReactionEffect(reaction, reactSide, bs, ctxBase, nextReaction);
   }
   nextReaction();
+}
+
+// オンライン対戦: _fireSidedReactionTriggers が相手機に委譲した反応系トリガーを、
+// 相手機（＝カードの本当の持ち主）側で side='player' として実際に発揮するためのエントリー
+// ポイント。battle-online.js の fx_reactionDelegate 受信ハンドラから呼ばれる。
+export function fireDelegatedReactionTriggers(recipeKey, bs, ctxBase, done) {
+  return _fireSidedReactionTriggers('player', recipeKey, bs, ctxBase, done);
 }
 
 // 自分のブロッカーがレストしたとき → blockOwnerSide のテイマー/デジモンが反応

@@ -21,6 +21,8 @@ let _pendingBlockCallback = null;
 let _pendingBlockResponse = null;
 let _pendingSecEffectCallback = null;
 let _pendingSecEffectResponse = null;
+let _pendingReactionDelegateCallback = null;
+let _pendingReactionDelegateResponse = null;
 
 // 最近消滅したスロットの追跡（state_syncによるカード復活を防止）
 // { side: 'ai'|'player', slotIdx: number, time: number }
@@ -254,6 +256,8 @@ export async function initOnline(roomId, myKey) {
   _pendingBlockResponse = null;
   _pendingSecEffectCallback = null;
   _pendingSecEffectResponse = null;
+  _pendingReactionDelegateCallback = null;
+  _pendingReactionDelegateResponse = null;
   _recentlyDestroyed = [];
   _fxQueue = [];
   _fxRunning = false;
@@ -683,6 +687,32 @@ function onRemoteCommand(cmd) {
         const cb = _pendingSecEffectCallback; _pendingSecEffectCallback = null; cb();
       } else {
         _pendingSecEffectResponse = true;
+      }
+      break;
+    }
+
+    // --- 反応系トリガー委譲（when_opp_rest等、相手が本当の持ち主のカードの効果） ---
+    case 'fx_reactionDelegate': {
+      // こちら（本当の持ち主）側で side='player' として本物のUIを操作し、
+      // 完了したらメモリー等の変動を相手に返してあげる
+      const ctx = { bs, addLog, renderAll, updateMemGauge };
+      const done = () => {
+        sendMemoryUpdate();
+        sendStateSync();
+        sendCommand({ type: 'fx_reactionDelegateDone' });
+      };
+      try {
+        if (window._fireDelegatedReactionTriggers) window._fireDelegatedReactionTriggers(cmd.recipeKey, bs, ctx, done);
+        else done();
+      } catch (_) { done(); }
+      break;
+    }
+    case 'fx_reactionDelegateDone': {
+      // メモリー等の変動は直前に送られる memory_update/state_sync で既に反映されている
+      if (_pendingReactionDelegateCallback) {
+        const cb = _pendingReactionDelegateCallback; _pendingReactionDelegateCallback = null; cb();
+      } else {
+        _pendingReactionDelegateResponse = true;
       }
       break;
     }
@@ -1326,6 +1356,31 @@ export function waitForSecurityEffect(callback) {
   }, 30000);
 }
 
+// ===== 反応系トリガー委譲待機（相手のカードの効果を相手機に委譲した側が完了を待つ） =====
+// when_opp_rest等、相手が本当の持ち主のカードの効果は、相手機に委譲して相手自身に
+// 本物のUI（OKボタン等）を操作してもらう。ブロック確認/セキュリティ効果と同じ設計。
+export function waitForReactionDelegate(callback) {
+  const waitOv = document.createElement('div');
+  waitOv.id = '_reaction-delegate-wait-overlay';
+  waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
+  waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手が効果を確認中...</div>';
+  document.body.appendChild(waitOv);
+
+  function onDone() {
+    if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
+    callback();
+  }
+  if (_pendingReactionDelegateResponse !== null) {
+    _pendingReactionDelegateResponse = null; onDone();
+  } else {
+    _pendingReactionDelegateCallback = onDone;
+  }
+  // 30秒タイムアウト（相手の切断等でackが来ない場合にゲームが止まらないように）
+  setTimeout(() => {
+    if (_pendingReactionDelegateCallback === onDone) { _pendingReactionDelegateCallback = null; onDone(); }
+  }, 30000);
+}
+
 function checkOnlineBlock(cmd) {
   // ブロッカー判定: テキスト一致は「【ブロッカー】を得る」「【ブロッカー】を持つ間」等の
   // 言及にも誤マッチするため、構造的な情報（_permEffects / buffs / recipe.passive /
@@ -1672,6 +1727,7 @@ window._onlineSendStateSync = () => sendStateSync();
 window._sendMemoryUpdate = () => sendMemoryUpdate();
 window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
 window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
+window._waitForReactionDelegate = (cb) => waitForReactionDelegate(cb);
 window._clearPendingBlock = () => { _pendingBlockCallback = null; _pendingBlockResponse = null; };
 window._markDestroyed = (side, slotIdx) => markDestroyed(side, slotIdx);
 window._markEvoModified = (side, slotIdx) => markEvoModified(side, slotIdx);

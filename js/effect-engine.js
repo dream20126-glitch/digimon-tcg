@@ -1036,18 +1036,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         let ri = 0;
         function nextReaction() {
           if (ri >= reactions.length) { finish(); return; }
-          const { card, recipe, sourceCard } = reactions[ri++];
-          const rctx = { ...ctx, card };
-          const _isEvo = sourceCard !== card;
-          rctx.addLog && rctx.addLog(_isEvo
-            ? '⚡ 「' + sourceCard.name + '」（「' + card.name + '」の進化元）の効果発動'
-            : '⚡ 「' + card.name + '」の効果発動');
-          showEffectAnnounce(card, (_isEvo ? sourceCard.evoSourceEffect : card.effect) || '', _side, () => {
-            runRecipe(recipe, rctx, () => {
-              rctx.renderAll && rctx.renderAll();
-              nextReaction();
-            });
-          }, _isEvo ? sourceCard : undefined);
+          const reaction = reactions[ri++];
+          // ctx をそのまま ctxBase として渡す（addLog/renderAll等は共通ヘルパー側で拾われる）。
+          // 以前はここで fx_effectClose 送信が漏れており、オンライン対戦で相手画面の
+          // ポップアップが残留するバグになっていた（共通ヘルパー化で構造的に解消）。
+          _runReactionEffect(reaction, _side, _bs, ctx, nextReaction);
         }
         nextReaction();
       };
@@ -5087,6 +5080,87 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
   } catch(e) { return null; }
 }
 
+// ===== 反応系効果 共通実行ヘルパー =====
+// 誘発型の反応効果（消滅時/ブロック時/レスト時/進化元効果等）はこれまで発火経路ごとに
+// 「アナウンス（またはno_announce省略）→（任意効果は確認ダイアログ）→runRecipe→
+// renderAll+fx_effectClose送信→次へ」という同じ定型処理を6箇所前後で個別に書いていた
+// （コピペ由来で1箇所ずつ微妙に違い、close送信漏れ等のズレの温床になっていた）。
+// ここに一元化し、以後の反応系トリガーは reactions 配列を組み立てて呼ぶだけにする。
+//
+// reaction: { card, recipe, sourceCard?, effectText? }
+//   card:       効果を実行する主体（carrier）。ctx.card や表示演出の基準になる。
+//   recipe:     実行するレシピステップ配列。
+//   sourceCard: 進化元由来効果の場合、実際に効果を持つカード（省略時は card 自身＝自己効果）。
+//   effectText: ポップアップに出す効果テキスト（省略時は sourceCard/card の効果テキストを自動選択）。
+// side:    リアクション側 ('player'/'ai')。この側の効果として発動する。
+// bs/ctxBase: コンテキスト構築用。
+// done:    このリアクション1件が完了（発動 or 不発）した時のコールバック。
+// opts.alwaysConfirm: true にすると任意効果はside('ai'含む)を問わず必ず確認ダイアログを出す
+// （メインキュー executeQueueEntry と同じ挙動）。省略/false時は従来の反応系トリガーと同じく
+// AI側は自動スキップする（AI判断ロジック未実装のための暫定挙動）。呼び出し側の既存挙動を
+// 変えないためオプション化している（挙動そのものの統一は別課題）。
+function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
+  const finish = () => { try { done && done(); } catch (_) {} };
+  const card = reaction.card;
+  const recipe = reaction.recipe;
+  const sourceCard = reaction.sourceCard || card;
+  const isEvo = sourceCard !== card;
+  const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side };
+  // once_per_turn等のlimitキーは呼び出し元の事前フィルタと同じ基準（card基準/sourceCard基準）で
+  // 揃える必要がある。_fireDestroyTriggersImpl は sourceCard 基準で事前フィルタしているため
+  // opts.trackLimitBySourceCard:true を渡す。他は card(carrier) 基準のまま（省略時デフォルト）。
+  if (opts && opts.trackLimitBySourceCard && isEvo) ctx._sourceCard = sourceCard;
+  const effectText = reaction.effectText != null ? reaction.effectText
+    : (isEvo
+        ? (sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし' ? sourceCard.evoSourceEffect : (sourceCard.effect || card.effect || ''))
+        : (card.effect || ''));
+  const evoSourceArg = isEvo ? sourceCard : undefined;
+  const alwaysConfirm = !!(opts && opts.alwaysConfirm);
+  const logActivated = () => {
+    ctx.addLog && ctx.addLog(isEvo
+      ? '⚡ 「' + sourceCard.name + '」（「' + (card.name || '?') + '」の進化元）の効果発動'
+      : '⚡ 「' + card.name + '」の効果発動');
+  };
+  const runNow = () => {
+    runRecipe(recipe, ctx, () => {
+      ctx.renderAll && ctx.renderAll();
+      // 相手画面のポップアップは必ずこの close 送信ペアでのみ消える（自動タイムアウト無し）ため、
+      // このヘルパー経由に統一することで送信漏れ（残留バグ）を構造的に防ぐ
+      if (window._isOnlineMode && window._isOnlineMode() && side === 'player' && window._onlineSendCommand) {
+        window._onlineSendCommand({ type: 'fx_effectClose' });
+      }
+      finish();
+    });
+  };
+  const isOptional = Array.isArray(recipe) && recipe.some(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0)));
+  if (isOptional) {
+    if (side === 'player' || alwaysConfirm) {
+      showConfirmDialog(card, effectText, (accepted) => {
+        if (accepted) {
+          // 確認ダイアログでカード名・効果テキストは既に見せているので、承諾後に
+          // 同じ内容のアナウンス演出を重ねて出さずそのまま実行する
+          logActivated();
+          runNow();
+          return;
+        }
+        ctx.addLog && ctx.addLog('☓ 「' + (isEvo ? sourceCard.name : card.name) + '」の効果は発動しなかった');
+        if (window._isOnlineMode && window._isOnlineMode() && side === 'player' && window._onlineSendCommand) {
+          window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: card.name });
+        }
+        finish();
+      });
+    } else {
+      ctx.addLog && ctx.addLog('☓ AI: 「' + card.name + '」の効果は発動しなかった');
+      finish();
+    }
+    return;
+  }
+  // 強制効果: アナウンス演出を挟んでから実行（no_announce:true 指定時は省略）
+  logActivated();
+  if (hasNoAnnounceOverride(recipe)) { runNow(); return; }
+  showEffectAnnounce(card, effectText, side, runNow, evoSourceArg);
+}
+
 // ===== when_opp_rest グローバル発火 =====
 // 相手のデジモンがレスト状態になった瞬間に呼ぶ。
 // 反対側 (= レストしたデジモンの相手) のバトル/テイマーエリアの when_opp_rest レシピを発動。
@@ -5171,43 +5245,8 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
   let idx = 0;
   function nextReaction() {
     if (idx >= reactions.length) { finish(); return; }
-    const { card, sourceCard, recipe } = reactions[idx++];
-    const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side: reactSide };
-    const isEvoSource = sourceCard !== card;
-    const effText = isEvoSource
-      ? (sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし' ? sourceCard.evoSourceEffect : (sourceCard.effect || card.effect || ''))
-      : (card.effect || '');
-    const evoSourceArg = isEvoSource ? sourceCard : undefined;
-    const proceed = () => {
-      if (isEvoSource) {
-        ctx.addLog && ctx.addLog('⚡ 「' + sourceCard.name + '」（「' + (card.name || '?') + '」の進化元）の効果発動');
-      } else {
-        ctx.addLog && ctx.addLog('⚡ 「' + card.name + '」の効果発動');
-      }
-      showEffectAnnounce(card, effText, reactSide, () => {
-        runRecipe(recipe, ctx, () => {
-          ctx.renderAll && ctx.renderAll();
-          if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
-            window._onlineSendCommand({ type: 'fx_effectClose' });
-          }
-          nextReaction();
-        });
-      }, evoSourceArg);
-    };
-    const isOptional = recipe.some(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0)));
-    if (isOptional) {
-      if (reactSide === 'player') {
-        showConfirmDialog(card, effText, (yes) => {
-          if (yes) proceed();
-          else { ctx.addLog && ctx.addLog('☓ 「' + (isEvoSource ? sourceCard.name : card.name) + '」の効果は発動しなかった'); nextReaction(); }
-        });
-      } else {
-        ctx.addLog && ctx.addLog('☓ AI: 「' + card.name + '」の効果は発動しなかった');
-        nextReaction();
-      }
-      return;
-    }
-    proceed();
+    const reaction = reactions[idx++];
+    _runReactionEffect(reaction, reactSide, bs, ctxBase, nextReaction);
   }
   nextReaction();
 }
@@ -5316,106 +5355,11 @@ export function fireCounterTriggers(attackerSide, bs, ctxBase, done) {
 }
 
 export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
-  const finish = () => { try { done && done(); } catch(_) {} };
-  console.log('[fireWhenOppRest] called restedSide=' + restedSide + ' isPlayerTurn=' + (bs && bs.isPlayerTurn));
-  if (!bs) { finish(); return; }
+  // reactSide（レストしたデジモンの相手側）が発動主体。_fireSidedReactionTriggers に委譲する
+  // ことで、evo_source ネストされた反応（ガルルモン等と同種の構造）も自動的に拾えるようになり、
+  // アナウンス/確認/close送信の定型処理も他の反応系トリガーと完全に統一される
   const reactSide = restedSide === 'player' ? 'ai' : 'player';
-  const reactPlayer = bs[reactSide];
-  if (!reactPlayer) { finish(); return; }
-  // バトルエリア + テイマーエリアをスキャン
-  const cards = [...(reactPlayer.battleArea || []), ...(reactPlayer.tamerArea || [])].filter(c => c);
-  console.log('[fireWhenOppRest] reactSide=' + reactSide + ' scan対象=' + cards.map(c => c.name).join(','));
-  const reactions = [];
-  cards.forEach(card => {
-    if (!card.recipe) {
-      console.log('  [fireWhenOppRest] skip ' + card.name + ' (recipe無し)');
-      return;
-    }
-    try {
-      const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
-      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      const recipe = r.when_opp_rest;
-      if (recipe && Array.isArray(recipe)) {
-        // 実行可能性事前チェック (条件 + once_per_turn)
-        const willRun = recipe.some(step => {
-          if (step.condition) {
-            const conds = parseRecipeCondition(step.condition);
-            const ok = checkConditions(conds, card, bs, reactSide);
-            console.log('  [fireWhenOppRest] ' + card.name + ' condition=' + step.condition + ' result=' + ok);
-            if (!ok) return false;
-          }
-          if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
-            const sourceId = card.cardNo || card.name || 'unknown';
-            const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
-            if (bs._usedLimits && bs._usedLimits[limitKey]) {
-              console.log('  [fireWhenOppRest] ' + card.name + ' limit済');
-              return false;
-            }
-          }
-          return true;
-        });
-        console.log('  [fireWhenOppRest] ' + card.name + ' willRun=' + willRun);
-        if (willRun) reactions.push({ card, recipe });
-      } else {
-        console.log('  [fireWhenOppRest] ' + card.name + ' when_opp_rest無し');
-      }
-    } catch (e) {
-      console.log('  [fireWhenOppRest] ' + card.name + ' parse error', e.message);
-    }
-  });
-  console.log('[fireWhenOppRest] reactions.length=' + reactions.length);
-  if (reactions.length === 0) { finish(); return; }
-  let idx = 0;
-  function nextReaction() {
-    if (idx >= reactions.length) { finish(); return; }
-    const { card, recipe } = reactions[idx++];
-    const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side: reactSide };
-
-    const proceed = () => {
-      ctx.addLog && ctx.addLog('⚡ 「' + card.name + '」の効果発動');
-      showEffectAnnounce(card, card.effect || '', reactSide, () => {
-        runRecipe(recipe, ctx, () => {
-          ctx.renderAll && ctx.renderAll();
-          if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
-            window._onlineSendCommand({ type: 'fx_effectClose' });
-          }
-          nextReaction();
-        });
-      });
-    };
-
-    // 任意効果（コストを伴うレストや手札捨て等）→ プレイヤー側のみ確認ダイアログを出す
-    // AI 側は自動でスキップ判定（AI ロジック未実装のため、現状は発動しない方を選ぶ）
-    const isOptional = recipe.some(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0)));
-    if (isOptional) {
-      if (reactSide === 'player') {
-        showConfirmDialog(card, card.effect || '', (yes) => {
-          if (yes) proceed();
-          else {
-            ctx.addLog && ctx.addLog('☓ 「' + card.name + '」の効果は発動しなかった');
-            nextReaction();
-          }
-        });
-      } else {
-        // AI: 任意効果はスキップ（将来 AI 判断ロジックを実装する場所）
-        ctx.addLog && ctx.addLog('☓ AI: 「' + card.name + '」の効果は発動しなかった');
-        nextReaction();
-      }
-      return;
-    }
-    // 強制効果 → そのまま実行（旧パスとの互換のためここでは旧構造を踏襲）
-    ctx.addLog && ctx.addLog('⚡ 「' + card.name + '」の効果発動');
-    showEffectAnnounce(card, card.effect || '', reactSide, () => {
-      runRecipe(recipe, ctx, () => {
-        ctx.renderAll && ctx.renderAll();
-        if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
-          window._onlineSendCommand({ type: 'fx_effectClose' });
-        }
-        nextReaction();
-      });
-    });
-  }
-  nextReaction();
+  return _fireSidedReactionTriggers(reactSide, 'when_opp_rest', bs, ctxBase, done);
 }
 
 // ===== when_rest グローバル発火 =====
@@ -5426,66 +5370,24 @@ export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
 // restedSide: レストしたカードがいる側（反応するのも同じ側）
 // restedCard: レストしたカード本体（trigger_conditions の評価対象）
 export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) {
-  const finish = () => { try { done && done(); } catch(_) {} };
-  if (!bs || !restedCard) { finish(); return; }
-  const reactPlayer = bs[restedSide];
-  if (!reactPlayer) { finish(); return; }
-  const cards = [...(reactPlayer.battleArea || []), ...(reactPlayer.tamerArea || [])].filter(c => c);
-  const reactions = [];
-  cards.forEach(card => {
-    if (!card.recipe) return;
-    try {
-      const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
-      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      const recipe = r.when_rest;
-      if (!Array.isArray(recipe)) return;
-      const willRun = recipe.some(step => {
-        if (!step) return false;
-        // subject: "own_tamer"/"own_digimon" 等でレストしたカードの種別を絞り込む
-        if (step.subject) {
-          const s = String(step.subject);
-          if (s.includes('tamer') && restedCard.type !== 'テイマー') return false;
-          if (s.includes('digimon') && restedCard.type !== 'デジモン') return false;
-        }
-        if (Array.isArray(step.trigger_conditions) && step.trigger_conditions.length > 0) {
-          const ok = step.trigger_conditions.every((cs) => {
-            const conds = parseRecipeCondition(String(cs));
-            return checkConditions(conds, restedCard, bs, restedSide);
-          });
-          if (!ok) return false;
-        }
-        if (step.condition) {
-          const conds = parseRecipeCondition(step.condition);
-          if (!checkConditions(conds, card, bs, restedSide)) return false;
-        }
-        if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
-          const sourceId = card.cardNo || card.name || 'unknown';
-          const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
-          if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
-        }
-        return true;
-      });
-      if (willRun) reactions.push({ card, recipe });
-    } catch (_) {}
-  });
-  if (reactions.length === 0) { finish(); return; }
-  let idx = 0;
-  function nextReaction() {
-    if (idx >= reactions.length) { finish(); return; }
-    const { card, recipe } = reactions[idx++];
-    const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side: restedSide };
-    ctx.addLog && ctx.addLog('⚡ 「' + card.name + '」の効果発動');
-    showEffectAnnounce(card, card.effect || '', restedSide, () => {
-      runRecipe(recipe, ctx, () => {
-        ctx.renderAll && ctx.renderAll();
-        if (window._isOnlineMode && window._isOnlineMode() && restedSide === 'player' && window._onlineSendCommand) {
-          window._onlineSendCommand({ type: 'fx_effectClose' });
-        }
-        nextReaction();
-      });
-    });
-  }
-  nextReaction();
+  if (!restedCard) { try { done && done(); } catch(_) {} return; }
+  // subject/trigger_conditions はレストしたカード本体(restedCard)に対して判定する必要があるため
+  // stepFilter として _fireSidedReactionTriggers に渡す（carrier=反応するカード自身の判定は
+  // 既存の condition/gate/limit チェックに委譲される）
+  const stepFilter = (step) => {
+    if (!step) return false;
+    if (step.subject) {
+      const s = String(step.subject);
+      if (s.includes('tamer') && restedCard.type !== 'テイマー') return false;
+      if (s.includes('digimon') && restedCard.type !== 'デジモン') return false;
+    }
+    if (Array.isArray(step.trigger_conditions) && step.trigger_conditions.length > 0) {
+      const ok = step.trigger_conditions.every((cs) => checkConditions(parseRecipeCondition(String(cs)), restedCard, bs, restedSide));
+      if (!ok) return false;
+    }
+    return true;
+  };
+  return _fireSidedReactionTriggers(restedSide, 'when_rest', bs, ctxBase, done, stepFilter);
 }
 
 // ===== when_summon グローバル発火 =====
@@ -5549,21 +5451,8 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
   let idx = 0;
   function nextReaction() {
     if (idx >= reactions.length) { finish(); return; }
-    const { card, recipe, sourceCard } = reactions[idx++];
-    const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side: summonedSide };
-    const _isEvo = sourceCard !== card;
-    ctx.addLog && ctx.addLog(_isEvo
-      ? '⚡ 「' + sourceCard.name + '」（「' + card.name + '」の進化元）の効果発動'
-      : '⚡ 「' + card.name + '」の効果発動');
-    showEffectAnnounce(card, (_isEvo ? sourceCard.evoSourceEffect : card.effect) || '', summonedSide, () => {
-      runRecipe(recipe, ctx, () => {
-        ctx.renderAll && ctx.renderAll();
-        if (window._isOnlineMode && window._isOnlineMode() && summonedSide === 'player' && window._onlineSendCommand) {
-          window._onlineSendCommand({ type: 'fx_effectClose' });
-        }
-        nextReaction();
-      });
-    }, _isEvo ? sourceCard : undefined);
+    const reaction = reactions[idx++];
+    _runReactionEffect(reaction, summonedSide, bs, ctxBase, nextReaction);
   }
   nextReaction();
 }
@@ -5599,8 +5488,13 @@ export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, call
     _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, () => {
       _fireSidedReactionTriggers(destroyedSide, 'when_own_destroyed', bs, ctxBase, () => {
         _fireSidedReactionTriggers(oppSide, 'when_opp_destroyed', bs, ctxBase, () => {
-          _fireSidedReactionTriggers('player', 'when_other_destroyed', bs, ctxBase, () => {
-            _fireSidedReactionTriggers('ai', 'when_other_destroyed', bs, ctxBase, finish);
+          // when_other_destroyed は「両陣営どちらの他デジモンが消滅しても反応する」トリガーで、
+          // destroyedSide/oppSideのような固定の因果関係が無いため、メインキュー(sortQueue)と
+          // 同じ「ターンプレイヤー優先」で発動順を揃える（以前は player→ai の固定順だった）
+          const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+          const nonTurnSide = turnSide === 'player' ? 'ai' : 'player';
+          _fireSidedReactionTriggers(turnSide, 'when_other_destroyed', bs, ctxBase, () => {
+            _fireSidedReactionTriggers(nonTurnSide, 'when_other_destroyed', bs, ctxBase, finish);
           });
         });
       });
@@ -5643,7 +5537,7 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
   // 1) 本体カードの on_destroy
   const ownR = parseRecipe(destroyedCard.recipe);
   if (ownR && Array.isArray(ownR[triggerKey])) {
-    reactions.push({ sourceCard: destroyedCard, recipe: ownR[triggerKey], carrier: destroyedCard });
+    reactions.push({ card: destroyedCard, sourceCard: destroyedCard, recipe: ownR[triggerKey] });
   }
   // 2) 進化元カードの evo_source.on_destroy
   if (Array.isArray(destroyedCard.stack)) {
@@ -5651,72 +5545,30 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
       if (!evoCard) return;
       const r = parseRecipe(evoCard.recipe);
       if (r && r.evo_source && Array.isArray(r.evo_source[triggerKey])) {
-        reactions.push({ sourceCard: evoCard, recipe: r.evo_source[triggerKey], carrier: destroyedCard });
+        reactions.push({ card: destroyedCard, sourceCard: evoCard, recipe: r.evo_source[triggerKey] });
       }
     });
   }
   // 事前条件チェック: 全ステップが条件で弾かれるレシピは演出ポップアップも出さない
   // 例: ピヨモン「自分のターンのとき、メモリー+1」を相手のターン中に消滅させても
   //     ポップアップだけ出て何も起きない、という見え方を防ぐ
-  const _reactionsToRun = reactions.filter(({ carrier, recipe }) =>
-    recipeWillExecuteAnything(recipe, { card: carrier, bs, side: destroyedSide })
-  );
+  const _reactionsToRun = reactions.filter(({ card, recipe }) =>
+    recipeWillExecuteAnything(recipe, { card, bs, side: destroyedSide })
+  ).map(({ card, sourceCard, recipe }) => {
+    const fullEffText = (sourceCard !== card && sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
+      ? sourceCard.evoSourceEffect : (sourceCard.effect || card.effect || '');
+    // ポップアップ表示用: display_text指定があれば最優先。無ければ他のトリガー
+    // （進化時/アタック時等）の文言まで一緒に出さないよう抜粋
+    return { card, sourceCard, recipe, effectText: extractTriggerSectionText(fullEffText, triggerKey, recipe) };
+  });
   if (_reactionsToRun.length === 0) { finish(); return; }
   let i = 0;
   const runOne = () => {
     if (i >= _reactionsToRun.length) { finish(); return; }
-    const { sourceCard, recipe, carrier } = _reactionsToRun[i++];
-    const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: destroyedSide };
-    const fullEffText = (sourceCard !== carrier && sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
-      ? sourceCard.evoSourceEffect : (sourceCard.effect || carrier.effect || '');
-    // ポップアップ表示用: display_text指定があれば最優先。無ければ他のトリガー
-    // （進化時/アタック時等）の文言まで一緒に出さないよう抜粋
-    const effText = extractTriggerSectionText(fullEffText, triggerKey, recipe);
-    const evoSourceArg = sourceCard !== carrier ? sourceCard : undefined;
-
-    const runNow = () => {
-      if (sourceCard !== carrier) {
-        ctx.addLog && ctx.addLog('⚡ 「' + sourceCard.name + '」（「' + (carrier.name||'?') + '」の進化元）の効果発動');
-      } else {
-        ctx.addLog && ctx.addLog('⚡ 「' + (carrier.name||'?') + '」の効果発動');
-      }
-      runRecipe(recipe, ctx, () => {
-        ctx.renderAll && ctx.renderAll();
-        // 確認ダイアログ/アナウンスで相手機に開いたオーバーレイを閉じる
-        if (window._isOnlineMode && window._isOnlineMode() && destroyedSide === 'player' && window._onlineSendCommand) {
-          window._onlineSendCommand({ type: 'fx_effectClose' });
-        }
-        runOne();
-      });
-    };
-    // 強制効果用: カード&効果テキストを表示するアナウンス演出を挟んでから実行
-    // （no_announce:true 指定時はアナウンス自体を省略）
-    const doAnnounceAndRun = () => {
-      if (hasNoAnnounceOverride(recipe)) { runNow(); return; }
-      showEffectAnnounce(carrier, effText, destroyedSide, runNow, evoSourceArg);
-    };
-
-    // 任意効果（「〜できる」= step.optional / コスト持ち）は発動前に確認ダイアログを挟む。
-    // 通常の効果ディスパッチ（executeQueueEntry）と同じ判定・同じ確認フローに揃える。
-    // 確認ダイアログでカード名・効果テキストは既に表示済みのため、「はい」を選んだ後に
-    // 別途アナウンス演出は挟まず、その場で実行する。
-    const isOptional = Array.isArray(recipe) && recipe.some(s =>
-      s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0))
-    );
-    if (isOptional) {
-      showConfirmDialog(carrier, effText, (accepted) => {
-        if (accepted) {
-          runNow();
-        } else {
-          if (window._isOnlineMode && window._isOnlineMode() && destroyedSide === 'player' && window._onlineSendCommand) {
-            window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: carrier.name });
-          }
-          runOne();
-        }
-      });
-    } else {
-      doAnnounceAndRun();
-    }
+    const reaction = _reactionsToRun[i++];
+    // 通常の効果ディスパッチ（executeQueueEntry）と同じ判定・同じ確認フローに揃えるため
+    // alwaysConfirm:true（任意効果は side を問わず必ず確認ダイアログを出す）
+    _runReactionEffect(reaction, destroyedSide, bs, ctxBase, runOne, { alwaysConfirm: true });
   };
   runOne();
 }
@@ -5801,48 +5653,15 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
 
   function runOne(reaction, afterDone) {
     const { sourceCard, recipe, carrier } = reaction;
-    const ctx = { ..._buildBaseCtx(ctxBase, bs), card: carrier, side: reactSide, _sourceCard: sourceCard };
     const fullEffectText = sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし'
       ? sourceCard.evoSourceEffect
       : (sourceCard.effect || '');
     // ポップアップ表示用: display_text指定があれば最優先。無ければ他のトリガーの文言まで
     // 一緒に出さないよう抜粋
     const effectText = extractTriggerSectionText(fullEffectText, triggerKey, recipe);
-
-    const runNow = () => {
-      ctx.addLog && ctx.addLog('⚡ 「' + sourceCard.name + '」の効果発動');
-      runRecipe(recipe, ctx, () => {
-        ctx.renderAll && ctx.renderAll();
-        if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
-          window._onlineSendCommand({ type: 'fx_effectClose' });
-        }
-        afterDone();
-      });
-    };
-    // 強制効果用: アナウンス演出を挟んでから実行（no_announce:true 指定時は省略）
-    const doAnnounceAndRun = () => {
-      if (hasNoAnnounceOverride(recipe)) { runNow(); return; }
-      showEffectAnnounce(sourceCard, effectText, reactSide, runNow);
-    };
-
-    // 任意効果（「〜できる」= step.optional / コスト持ち）は発動前に確認ダイアログを挟む
-    const isOptional = Array.isArray(recipe) && recipe.some(s =>
-      s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0))
-    );
-    if (isOptional) {
-      showConfirmDialog(sourceCard, effectText, (accepted) => {
-        if (accepted) {
-          runNow();
-        } else {
-          if (window._isOnlineMode && window._isOnlineMode() && reactSide === 'player' && window._onlineSendCommand) {
-            window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: sourceCard.name });
-          }
-          afterDone();
-        }
-      });
-    } else {
-      doAnnounceAndRun();
-    }
+    // 通常の効果ディスパッチ（executeQueueEntry）と同じ判定・同じ確認フローに揃えるため
+    // alwaysConfirm:true（任意効果は side を問わず必ず確認ダイアログを出す）
+    _runReactionEffect({ card: carrier, sourceCard, recipe, effectText }, reactSide, bs, ctxBase, afterDone, { alwaysConfirm: true, trackLimitBySourceCard: true });
   }
 
   function nextReaction() {
@@ -5873,7 +5692,15 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
       runOne(r, nextReaction);
       return;
     }
+    // オンライン: 発動順選択中は相手画面にも「選択中」を表示する（選択が終わるまで、
+    // 相手画面には何も出ないまま固まって見える問題があったため）
+    if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+      window._onlineSendCommand({ type: 'fx_targetSelectStart', label: '（発動順を選択中）' });
+    }
     showReactionOrderSelect(remaining, triggerKey, (chosenIdx) => {
+      if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+        window._onlineSendCommand({ type: 'fx_targetSelectEnd' });
+      }
       const [r] = remaining.splice(chosenIdx, 1);
       runOne(r, nextReaction);
     });
@@ -6527,6 +6354,11 @@ function executeRecipeStep(step, ctx, store, callback) {
           + '</div>';
         overlay.appendChild(box);
         document.body.appendChild(overlay);
+        // オンライン: 相手画面にも「確認中」を表示（この確認ダイアログは自作のため、
+        // 通常の showConfirmDialog と違い自前で fx_confirmShow/Close を送る必要がある）
+        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && ctx.card) {
+          window._onlineSendCommand({ type: 'fx_confirmShow', cardName: ctx.card.name, effectText: msgText });
+        }
         const _notifyClose = (yes) => {
           const r = (typeof window !== 'undefined') ? window._tutorialRunner : null;
           if (r && r.active) {
@@ -6538,8 +6370,13 @@ function executeRecipeStep(step, ctx, store, callback) {
             } catch (_) {}
           }
         };
-        document.getElementById('_select-multi-yes').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); _notifyClose(true); onYes(); };
-        document.getElementById('_select-multi-no').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); _notifyClose(false); onNo(); };
+        const _notifyOnlineClose = (yes) => {
+          if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+            window._onlineSendCommand({ type: 'fx_confirmClose', accepted: yes });
+          }
+        };
+        document.getElementById('_select-multi-yes').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); _notifyClose(true); _notifyOnlineClose(true); onYes(); };
+        document.getElementById('_select-multi-no').onclick = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); _notifyClose(false); _notifyOnlineClose(false); onNo(); };
         // チュートリアル割り込み: 確認ダイアログとして発火（既存 confirm_dialog と統合）
         const _runner = (typeof window !== 'undefined') ? window._tutorialRunner : null;
         if (_runner && _runner.active && typeof _runner.checkInterrupt === 'function') {
@@ -6569,9 +6406,14 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
 
       // 全選択完了時に呼ぶ（フラグ解除 + オンラインに効果終了通知）
+      // 選択中は毎回 _skipFxEffectClose=true にしているため showTargetSelection.cleanup() は
+      // fx_targetSelectEnd を送らない（複数選択の合間で「対象選択中」表示が消えないように）。
+      // そのため「相手が対象を選択中...」オーバーレイを閉じる fx_targetSelectEnd は
+      // 全選択完了時にここで必ず1回送る（送り漏れると相手画面に残留してしまう）。
       const finishSelectMulti = () => {
         window._skipFxEffectClose = false;
         if (window._isOnlineMode && window._isOnlineMode()) {
+          window._onlineSendCommand({ type: 'fx_targetSelectEnd' });
           window._onlineSendCommand({ type: 'fx_effectClose' });
         }
         callback();

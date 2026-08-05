@@ -23,6 +23,7 @@ let _pendingSecEffectCallback = null;
 let _pendingSecEffectResponse = null;
 let _pendingReactionDelegateCallback = null;
 let _pendingReactionDelegateResponse = null;
+let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
 
 // 最近消滅したスロットの追跡（state_syncによるカード復活を防止）
 // { side: 'ai'|'player', slotIdx: number, time: number }
@@ -319,15 +320,20 @@ function onRemoteCommand(cmd) {
         if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
           const cardForChain = card || cmd.cardData;
           if (cardForChain) {
-            // 消滅演出 (showDestroyEffect = 1900ms) と被らないよう、十分待ってから発火。
-            // fx_battleResult (showBR, 約1.7s) → fx_destroy (showDE, 1.9s) のキュー処理の
-            // 完了タイミングを見越して 3500ms 後に発火する。
-            setTimeout(() => {
+            let fired = false;
+            const fireOnce = () => {
+              if (fired) return; fired = true;
               try {
                 // on_destroy 完了時に盤面を同期（summon_from_trash 等で盤面が変化するケースがあるため）
                 window._fireOnlineDestroyChain(['player'], { player: cardForChain }, () => { sendStateSync(); });
               } catch (_) {}
-            }, 3500);
+            };
+            // 本来は相手機からの fx_ownDestroyReady（on_battle_win等の解決完了後に送られる）で
+            // 発火する。ただしバトル以外の消滅経路（効果による直接破棄等）はまだこの信号を送らない
+            // ため、来なかった場合のフォールバックとして固定3500ms後にも発火する
+            // （fx_battleResult約1.7s→fx_destroy約1.9sの演出完了を見越した保険）。
+            _pendingOwnDestroyFire = fireOnce;
+            setTimeout(fireOnce, 3500);
           }
         }
       }
@@ -713,6 +719,14 @@ function onRemoteCommand(cmd) {
         const cb = _pendingReactionDelegateCallback; _pendingReactionDelegateCallback = null; cb();
       } else {
         _pendingReactionDelegateResponse = true;
+      }
+      break;
+    }
+    case 'fx_ownDestroyReady': {
+      // 相手（攻撃側）機がon_battle_win等の解決を終え、こちら（本当の持ち主）の
+      // on_destroy発火に進んでよいと明示的に伝えてきた。固定タイマーを待たずに今すぐ発火する
+      if (_pendingOwnDestroyFire) {
+        const fn = _pendingOwnDestroyFire; _pendingOwnDestroyFire = null; fn();
       }
       break;
     }

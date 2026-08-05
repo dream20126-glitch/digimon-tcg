@@ -1881,7 +1881,17 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide) {
     // これらは従来通りここで発火する。
     const skipLocalOnDestroy = _onlineMode && s === 'ai';
     const afterOnDestroy = (cb) => {
-      if (skipLocalOnDestroy) { cb(); return; }
+      if (skipLocalOnDestroy) {
+        // 相手（カードの本当の持ち主）の機械に「on_destroyを発火してよい」と明示的に伝える。
+        // 従来は card_removed 受信からの固定3500ms待ちに任せていたが、on_battle_win等に
+        // ユーザー操作待ちの演出（メタルティラノモンのアクティブ化ポップアップ等）が挟まると
+        // 間に合わず、消滅時ポップアップが重ねて表示されてしまっていた。
+        if (_onlineMode && _sendCommand) {
+          try { _sendCommand({ type: 'fx_ownDestroyReady' }); } catch (_) {}
+        }
+        cb();
+        return;
+      }
       try { _fireOnDestroy(s, bs, ctxBase, cb, destroyedCard); } catch (_) { cb(); }
     };
     try {

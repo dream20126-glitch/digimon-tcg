@@ -473,7 +473,19 @@ function onRemoteCommand(cmd) {
       } catch (_) {}
       if (_stHasOnPlay && window._triggerEffectFn) {
         const _stCtx = { card: tamer, side: 'player', bs, addLog, renderAll: () => renderAll(), updateMemGauge: () => {} };
-        try { window._triggerEffectFn('on_play', tamer, 'player', _stCtx, () => renderAll()); } catch (_) {}
+        const _fireStOnPlay = (doneCb) => {
+          try { window._triggerEffectFn('on_play', tamer, 'player', _stCtx, () => { renderAll(); doneCb && doneCb(); }); }
+          catch (_) { doneCb && doneCb(); }
+        };
+        // ≪貫通≫等でまだターンプレイヤー側(攻撃側)の同時誘発効果が解決していない場合は
+        // 保留する（公式ルール15-4-3-3）。fx_deferOppNonTurnPlayerTriggers(active:false)
+        // 受信時にまとめて発動する（effect-engine.jsのsummonアクションと同じ仕組み）
+        if (bs._deferNonTurnPlayerTriggers) {
+          if (!bs._deferredOnPlayTriggers) bs._deferredOnPlayTriggers = [];
+          bs._deferredOnPlayTriggers.push((next) => _fireStOnPlay(next));
+        } else {
+          _fireStOnPlay();
+        }
       }
       break;
     }

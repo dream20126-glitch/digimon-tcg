@@ -1641,7 +1641,19 @@ export function resolveSecurityCheck(atk, atkIdx) {
         // ここでは発動せず、security_tamer_play 受信側(所有者)で発動する。
         // （攻撃側で発動するとセキュリティ中身が攻撃側に見えてしまう）
         if (!_onlineMode && (hasKeyword(sec, '【登場時】') || _hasRecipeTrigger(sec, 'on_play'))) {
-          _hooks.checkAndTriggerEffect(sec, '【登場時】', () => { renderAll(); _afterSecTamer(); }, 'ai');
+          const fireSecTamerOnPlay = (doneCb) => {
+            _hooks.checkAndTriggerEffect(sec, '【登場時】', () => { renderAll(); doneCb && doneCb(); }, 'ai');
+          };
+          // ≪貫通≫等でまだターンプレイヤー側の同時誘発効果(on_battle_win等)が解決
+          // していない場合は、この登場時効果をそちらが終わった後に合流させる
+          // （公式ルール15-4-3-3。オンライン版のsecurity_tamer_playハンドラと同じ仕組み）
+          if (bs._pendingNonTurnPlayerBattleTrigger) {
+            const existingNonTurnPlayerPhase = bs._pendingNonTurnPlayerBattleTrigger;
+            bs._pendingNonTurnPlayerBattleTrigger = (proceed) => { fireSecTamerOnPlay(() => existingNonTurnPlayerPhase(proceed)); };
+            _afterSecTamer();
+          } else {
+            fireSecTamerOnPlay(_afterSecTamer);
+          }
         } else {
           _afterSecTamer();
         }
@@ -2758,7 +2770,18 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
         renderAll();
         // セキュリティから登場したテイマーの【登場時】効果を発動（高石タケル等）
         if (hasKeyword(sec, '【登場時】') || _hasRecipeTrigger(sec, 'on_play')) {
-          _hooks.checkAndTriggerEffect(sec, '【登場時】', () => { renderAll(); _afterOne(); }, 'player');
+          const fireSecTamerOnPlay = (doneCb) => {
+            _hooks.checkAndTriggerEffect(sec, '【登場時】', () => { renderAll(); doneCb && doneCb(); }, 'player');
+          };
+          // ≪貫通≫等でまだターンプレイヤー側(AI)の同時誘発効果が解決していない場合は、
+          // この登場時効果をそちらが終わった後に合流させる（公式ルール15-4-3-3）
+          if (bs._pendingNonTurnPlayerBattleTrigger) {
+            const existingNonTurnPlayerPhase = bs._pendingNonTurnPlayerBattleTrigger;
+            bs._pendingNonTurnPlayerBattleTrigger = (proceed) => { fireSecTamerOnPlay(() => existingNonTurnPlayerPhase(proceed)); };
+            _afterOne();
+          } else {
+            fireSecTamerOnPlay(_afterOne);
+          }
         } else {
           _afterOne();
         }

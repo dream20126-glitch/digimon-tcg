@@ -761,8 +761,11 @@ export function doEvolve(card, handIdx, slotIdx) {
       if (discount2 > 0) {
         cost = Math.max(0, cost - discount2);
         addLog('💠 吸収進化で進化コスト-' + discount2 + '（コスト' + cost + 'で進化）');
+        // 吸収進化で自分のデジモンをレスト → 相手側の when_opp_rest 誘発（ヴェノムヴァンデモン等）
+        fireOppRestThen('player', () => { _finishDoEvolve(card, base, handIdx, slotIdx, cost); });
+      } else {
+        _finishDoEvolve(card, base, handIdx, slotIdx, cost);
       }
-      _finishDoEvolve(card, base, handIdx, slotIdx, cost);
     });
   });
 }

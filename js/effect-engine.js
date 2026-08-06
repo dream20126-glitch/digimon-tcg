@@ -1824,6 +1824,9 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
   if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
     window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'destroy' });
     if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
+    // このパスは on_battle_win 等のユーザー操作待ちを挟まないため、相手機の
+    // card_removed 側フォールバック待ち（最大30秒）に頼らず即座に発火してよいと伝える
+    window._onlineSendCommand({ type: 'fx_ownDestroyReady' });
   }
   ctx.renderAll();
   // on_destroy グローバル発火（消滅した側を引数に）
@@ -4547,6 +4550,7 @@ function checkPendingDestroys(ctx, callback) {
         if (side === 'ai') {
           window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slot, reason: 'destroy' });
           if (window._markDestroyed) window._markDestroyed('ai', slot);
+          window._onlineSendCommand({ type: 'fx_ownDestroyReady' });
         } else if (side === 'player') {
           window._onlineSendCommand({ type: 'own_card_removed', slotIdx: slot, reason: 'destroy' });
         }
@@ -6711,6 +6715,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (window._isOnlineMode && window._isOnlineMode()) {
             window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: t.idx, reason: 'destroy' });
             if (window._markDestroyed) window._markDestroyed('ai', t.idx);
+            window._onlineSendCommand({ type: 'fx_ownDestroyReady' });
           }
           ctx.renderAll();
           // 消滅演出 → 完了後に次の1体
@@ -6755,6 +6760,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (window._isOnlineMode && window._isOnlineMode()) {
             window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'destroy' });
             if (window._markDestroyed) window._markDestroyed(isOwnAll ? 'player' : 'ai', idx);
+            window._onlineSendCommand({ type: 'fx_ownDestroyReady' });
           }
           ctx.renderAll();
           if (ctx.showDestroyEffect) {

@@ -6593,8 +6593,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (ctx.bs && ctx.bs._deferNonTurnPlayerTriggers) {
           // オンライン対戦: 相手機（ターンプレイヤー側）からの信号(fx_deferOppNonTurnPlayerTriggers)
           // で保留中。相手機側でon_battle_win等が解決し信号解除されるまで登場時効果を貯めておく
-          if (!ctx.bs._deferredOnPlayTriggers) ctx.bs._deferredOnPlayTriggers = [];
-          ctx.bs._deferredOnPlayTriggers.push((next) => {
+          if (!ctx.bs._pendingNonTurnPlayerReactions) ctx.bs._pendingNonTurnPlayerReactions = [];
+          ctx.bs._pendingNonTurnPlayerReactions.push((next) => {
             scanTriggers('on_play', cardToSummon, ctx.side, ctx);
             processQueue(ctx, () => next());
           });

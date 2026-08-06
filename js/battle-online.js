@@ -42,6 +42,23 @@ let _pendingSecEffectResponse = null;
 let _pendingReactionDelegateCallback = null;
 let _pendingReactionDelegateResponse = null;
 let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
+let _nonTurnPlayerReactionDraining = false; // bs._pendingNonTurnPlayerReactionsを順に発揮中かどうか
+
+// 非ターンプレイヤー側の発揮待ち効果（セキュリティで登場したカードの登場時、消滅時等）を
+// 1件ずつ順番に発揮する（公式ルール15-4-4「発揮待ち」）。テイマーの登場時効果ポップアップの
+// 上に消滅時効果ポップアップが重なって表示されるのを防ぐため、fx_ownDestroyReady側も
+// この同じ待ち行列を経由させ、既に発揮中の効果が終わるまで割り込ませない。
+function _drainNonTurnPlayerReactionQueue() {
+  if (_nonTurnPlayerReactionDraining) return;
+  _nonTurnPlayerReactionDraining = true;
+  const step = () => {
+    const queue = bs._pendingNonTurnPlayerReactions;
+    if (!queue || queue.length === 0) { _nonTurnPlayerReactionDraining = false; return; }
+    const fn = queue.shift();
+    try { fn(step); } catch (_) { step(); }
+  };
+  step();
+}
 
 // 最近消滅したスロットの追跡（state_syncによるカード復活を防止）
 // { side: 'ai'|'player', slotIdx: number, time: number }
@@ -347,11 +364,11 @@ function onRemoteCommand(cmd) {
         if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
           const cardForChain = card || cmd.cardData;
           if (cardForChain) {
-            _pendingOwnDestroyFire = () => {
+            _pendingOwnDestroyFire = (afterDone) => {
               try {
                 // on_destroy 完了時に盤面を同期（summon_from_trash 等で盤面が変化するケースがあるため）
-                window._fireOnlineDestroyChain(['player'], { player: cardForChain }, () => { sendStateSync(); });
-              } catch (_) {}
+                window._fireOnlineDestroyChain(['player'], { player: cardForChain }, () => { sendStateSync(); afterDone && afterDone(); });
+              } catch (_) { afterDone && afterDone(); }
             };
           }
         }
@@ -505,8 +522,8 @@ function onRemoteCommand(cmd) {
         // 保留する（公式ルール15-4-3-3）。fx_deferOppNonTurnPlayerTriggers(active:false)
         // 受信時にまとめて発動する（effect-engine.jsのsummonアクションと同じ仕組み）
         if (bs._deferNonTurnPlayerTriggers) {
-          if (!bs._deferredOnPlayTriggers) bs._deferredOnPlayTriggers = [];
-          bs._deferredOnPlayTriggers.push((next) => _fireStOnPlay(next));
+          if (!bs._pendingNonTurnPlayerReactions) bs._pendingNonTurnPlayerReactions = [];
+          bs._pendingNonTurnPlayerReactions.push((next) => _fireStOnPlay(next));
         } else {
           _fireStOnPlay();
         }
@@ -755,9 +772,15 @@ function onRemoteCommand(cmd) {
     }
     case 'fx_ownDestroyReady': {
       // 相手（攻撃側）機がon_battle_win等の解決を終え、こちら（本当の持ち主）の
-      // on_destroy発火に進んでよいと明示的に伝えてきた。固定タイマーを待たずに今すぐ発火する
+      // on_destroy発火に進んでよいと明示的に伝えてきた。
+      // ただし、テイマーの登場時等（bs._pendingNonTurnPlayerReactions）がまだ発揮待ちの
+      // 場合は、それを飛び越えて重ねて表示せず、同じ非ターンプレイヤー側の待ち行列に
+      // 積んで順番を守る（公式ルール15-4-4「発揮待ち」は1つずつ発揮させる）
       if (_pendingOwnDestroyFire) {
-        const fn = _pendingOwnDestroyFire; _pendingOwnDestroyFire = null; fn();
+        const fn = _pendingOwnDestroyFire; _pendingOwnDestroyFire = null;
+        if (!bs._pendingNonTurnPlayerReactions) bs._pendingNonTurnPlayerReactions = [];
+        bs._pendingNonTurnPlayerReactions.push((next) => fn(next));
+        _drainNonTurnPlayerReactionQueue();
       }
       break;
     }
@@ -767,16 +790,7 @@ function onRemoteCommand(cmd) {
       // （セキュリティ効果で登場したカードの登場時等）は即座に発動せず保留する
       // （公式ルール15-4-3-5: ターンプレイヤー側を全て解決してから非ターンプレイヤー側へ）。
       bs._deferNonTurnPlayerTriggers = !!cmd.active;
-      if (!cmd.active && bs._deferredOnPlayTriggers && bs._deferredOnPlayTriggers.length) {
-        const queued = bs._deferredOnPlayTriggers;
-        bs._deferredOnPlayTriggers = [];
-        const runNext = () => {
-          if (queued.length === 0) return;
-          const fn = queued.shift();
-          fn(runNext);
-        };
-        runNext();
-      }
+      if (!cmd.active) _drainNonTurnPlayerReactionQueue();
       break;
     }
 

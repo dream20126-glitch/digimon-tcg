@@ -3373,7 +3373,10 @@ export function applyPermanentEffects(bs, side, context) {
               // 道連れを得る」等、条件付きで得ているキーワードが盤面上で見えるように）。
               // buffsは①で毎回'permanent'をクリアしてから②で再構築されるため、
               // 累積せず条件成立時のみ表示される。
-              if (kw !== 'security_attack_plus' && !/Sアタック/.test(String(kw))) {
+              // ラストティラノモン等、カードテキストが【突進】のようなキーワード名を明記せず
+              // 長文でその効果と同じ挙動を説明しているだけの場合は、実在しないキーワード名の
+              // バッジを表示しないよう step.no_badge:true でこの表示だけ抑制できる
+              if (!step.no_badge && kw !== 'security_attack_plus' && !/Sアタック/.test(String(kw))) {
                 if (!tgt.buffs) tgt.buffs = [];
                 tgt.buffs.push({ type: 'keyword_' + kw, value: 0, duration: 'permanent', source: 'recipe_perm' });
               }
@@ -4576,6 +4579,7 @@ const TRIGGER_LABEL_MAP = {
   on_own_turn_end: '自分のターン終了時', on_opp_turn_end: '相手のターン終了時',
   on_own_turn_start: '自分のターン開始時', on_opp_turn_start: '相手のターン開始時',
   main: 'メイン', during_own_turn: '自分のターン', during_opp_turn: '相手のターン', during_any_turn: 'お互いのターン',
+  on_battle_win: 'バトルで勝利した時',
 };
 const _ALL_TRIGGER_LABELS = Array.from(new Set(Object.values(TRIGGER_LABEL_MAP)));
 
@@ -4596,6 +4600,10 @@ const REACTIVE_TRIGGER_FAMILY = {
   // 「進化元を持たない相手のデジモンにはブロックされない」等、during_own_turn 文中に
   // 他の【自分のターン】効果と同居していても、この一文だけに絞り込めるようにする
   during_own_turn: 'ブロックされ',
+  // ラストティラノモン等「【自分のターン】...アタックできる。【自分のターン】...消滅させた
+  // とき、...」のように、on_battle_win系の文が during_own_turn の別ability文と同じ
+  // 【自分のターン】括弧に同居しているケースがあるため、専用の絞り込みキーワードを設定する
+  on_battle_win: '消滅させた',
 };
 const _ALL_REACTIVE_FAMILIES = Array.from(new Set(Object.values(REACTIVE_TRIGGER_FAMILY)));
 

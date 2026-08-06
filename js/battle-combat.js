@@ -2005,45 +2005,55 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
       showBattleResult('Win!!', '#00ff88', '「' + def.name + '」を撃破！', () => {
         showDestroyEffect(def, () => {
           addLog('💥 「' + def.name + '」を撃破！'); renderAll();
-          // バトル勝利トリガー（atk側=ターンプレイヤー）を、defの消滅チェーン（非ターンプレイヤー側）
-          // より先に解決する（公式ルール15-4-3-5: 同時誘発した効果はターンプレイヤー側の
-          // 発揮待ち効果を全て解決してから非ターンプレイヤー側を解決する）
-          bs._lastBattleWinner = atk;
-          const winCtx = _hooks.makeEffectContext(atk, 'player');
-          _hooks.triggerEffect('on_battle_win', atk, 'player', winCtx, () => {
-            bs._lastBattleWinner = null;
-            // ≪衝突≫/≪貫通≫も on_battle_win と同じ「バトル勝利」から同時誘発する
-            // ターンプレイヤー(atk)側の効果なので、defの消滅チェーン（非ターンプレイヤー側）
-            // より先に解決する（公式ルール15-4-3-5）
-            // ≪衝突≫: アタックで相手デジモン撃破 → 自身も消滅 (公式 18-30 推定: 相互道連れ)
-            if (hasCollision(atk)) {
-              addLog('💥 【衝突】「' + atk.name + '」が相手撃破とともに消滅！');
-              bs.player.battleArea[atkIdx] = null;
-              bs.player.trash.push(atk);
-              if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
-              if (atk.linkedCards) atk.linkedCards.forEach(function(s){ bs.player.trash.push(s); });
-              renderAll();
-              showDestroyEffect(atk, function() {
-                _fireDestroyChain(['player'], function() {
-                  // atk側(ターンプレイヤー)の消滅処理が終わってから、def側(非ターンプレイヤー)へ
+          // on_battle_win（本体+進化元）を発火するヘルパー。≪衝突≫/≪貫通≫も同じ
+          // 「バトル勝利」から同時誘発するターンプレイヤー(atk)側の効果なので、
+          // defの消滅チェーン（非ターンプレイヤー側）より前に、ターンプレイヤー側の
+          // 効果同士（≪衝突≫/≪貫通≫→on_battle_win、の順で解決）を先に済ませる
+          // （公式ルール15-4-3-5: 同時誘発はターンプレイヤー側を全て解決してから
+          // 非ターンプレイヤー側に進む）
+          const fireOnBattleWin = (afterDone) => {
+            bs._lastBattleWinner = atk;
+            const winCtx = _hooks.makeEffectContext(atk, 'player');
+            _hooks.triggerEffect('on_battle_win', atk, 'player', winCtx, () => {
+              bs._lastBattleWinner = null;
+              afterDone();
+            });
+          };
+          // ≪衝突≫: アタックで相手デジモン撃破 → 自身も消滅 (公式 18-30 推定: 相互道連れ)
+          if (hasCollision(atk)) {
+            addLog('💥 【衝突】「' + atk.name + '」が相手撃破とともに消滅！');
+            bs.player.battleArea[atkIdx] = null;
+            bs.player.trash.push(atk);
+            if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
+            if (atk.linkedCards) atk.linkedCards.forEach(function(s){ bs.player.trash.push(s); });
+            renderAll();
+            showDestroyEffect(atk, function() {
+              _fireDestroyChain(['player'], function() {
+                fireOnBattleWin(() => {
+                  // ターンプレイヤー側が全て終わってから、def側(非ターンプレイヤー)へ
                   _fireDestroyChain(['ai'], function() { checkPendingTurnEnd(); }, { ai: def });
-                }, { player: atk });
-              });
-              return;
-            }
-            // ≪貫通≫: アタックで相手デジモン撃破 → アタック終了直前に追加セキュリティチェック
-            if (hasPenetrate(atk)) {
-              addLog('🗡 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
-              // resolveSecurityCheckは完了コールバックを持たないため、必ず内部で
-              // 最終的に到達するcheckAttackEndにdefの消滅チェーンをフックしておく
-              bs._pendingBeforeAttackEnd = (proceed) => { _fireDestroyChain(['ai'], proceed, { ai: def }); };
-              showPenetrateAnnounce(() => {
-                resolveSecurityCheck(atk, atkIdx);
-              });
-            } else {
+                });
+              }, { player: atk });
+            });
+            return;
+          }
+          // ≪貫通≫: アタックで相手デジモン撃破 → アタック終了直前に追加セキュリティチェック
+          if (hasPenetrate(atk)) {
+            addLog('🗡 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
+            // resolveSecurityCheckは完了コールバックを持たないため、必ず内部で
+            // 最終的に到達するcheckAttackEndに「on_battle_win → defの消滅チェーン」を
+            // フックしておく（貫通のセキュリティ解決が先、on_battle_winはその後）
+            bs._pendingBeforeAttackEnd = (proceed) => {
+              fireOnBattleWin(() => { _fireDestroyChain(['ai'], proceed, { ai: def }); });
+            };
+            showPenetrateAnnounce(() => {
+              resolveSecurityCheck(atk, atkIdx);
+            });
+          } else {
+            fireOnBattleWin(() => {
               _fireDestroyChain(['ai'], () => { checkAttackEnd(atk, atkIdx); }, { ai: def });
-            }
-          });
+            });
+          }
         });
       }, 'Lose...', '#ff4444');
         },
@@ -2177,52 +2187,58 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           if (def.linkedCards) def.linkedCards.forEach(s => bs.player.trash.push(s));
           renderAll();
           showDestroyEffect(def, () => {
-            // AI が attacker として勝利 → on_battle_win（ターンプレイヤー=AI側）を、
-            // defの消滅チェーン（非ターンプレイヤー側）より先に解決する
-            // （公式ルール15-4-3-5: 同時誘発した効果はターンプレイヤー側から解決する）
-            bs._lastBattleWinner = atk;
-            const winCtx = _hooks.makeEffectContext(atk, 'ai');
-            _hooks.triggerEffect('on_battle_win', atk, 'ai', winCtx, () => {
-              bs._lastBattleWinner = null;
-              // ≪衝突≫/≪貫通≫も on_battle_win と同じ「バトル勝利」から同時誘発する
-              // ターンプレイヤー(atk=ai)側の効果なので、defの消滅チェーン（非ターンプレイヤー側）
-              // より先に解決する（公式ルール15-4-3-5）
-              // ≪衝突≫: AI アタッカーが撃破したら自身も消滅
-              if (hasCollision(atk)) {
-                addLog('💥 【衝突】相手「' + atk.name + '」が撃破とともに消滅！');
-                bs.ai.battleArea[atkIdx] = null;
-                bs.ai.trash.push(atk);
-                if (atk.stack) atk.stack.forEach(function(s){ bs.ai.trash.push(s); });
-                if (atk.linkedCards) atk.linkedCards.forEach(function(s){ bs.ai.trash.push(s); });
-                renderAll();
-                showDestroyEffect(atk, function() {
-                  _fireDestroyChain(['ai'], function() {
-                    // atk側(ターンプレイヤー)の消滅処理が終わってから、def側(非ターンプレイヤー)へ
+            // on_battle_win（本体+進化元）を発火するヘルパー。≪衝突≫/≪貫通≫も同じ
+            // 「バトル勝利」から同時誘発するターンプレイヤー(atk=ai)側の効果なので、
+            // defの消滅チェーン（非ターンプレイヤー側）より前に、ターンプレイヤー側の
+            // 効果同士（≪衝突≫/≪貫通≫→on_battle_win、の順で解決）を先に済ませる
+            // （公式ルール15-4-3-5）
+            const fireOnBattleWin = (afterDone) => {
+              bs._lastBattleWinner = atk;
+              const winCtx = _hooks.makeEffectContext(atk, 'ai');
+              _hooks.triggerEffect('on_battle_win', atk, 'ai', winCtx, () => {
+                bs._lastBattleWinner = null;
+                afterDone();
+              });
+            };
+            // ≪衝突≫: AI アタッカーが撃破したら自身も消滅
+            if (hasCollision(atk)) {
+              addLog('💥 【衝突】相手「' + atk.name + '」が撃破とともに消滅！');
+              bs.ai.battleArea[atkIdx] = null;
+              bs.ai.trash.push(atk);
+              if (atk.stack) atk.stack.forEach(function(s){ bs.ai.trash.push(s); });
+              if (atk.linkedCards) atk.linkedCards.forEach(function(s){ bs.ai.trash.push(s); });
+              renderAll();
+              showDestroyEffect(atk, function() {
+                _fireDestroyChain(['ai'], function() {
+                  fireOnBattleWin(() => {
+                    // ターンプレイヤー側が全て終わってから、def側(非ターンプレイヤー)へ
                     _fireDestroyChain(['player'], function() {
                       showBattleResult('両者消滅', '#ff4444', '衝突で両者消滅', function() { renderAll(); callback(); }, '両者消滅', '#ff4444');
                     }, { player: def });
-                  }, { ai: atk });
-                });
-                return;
-              }
-              // ≪貫通≫: AI アタッカーが撃破したら追加セキュリティチェック
-              if (hasPenetrate(atk)) {
-                addLog('🗡 [AI] 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
-                showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => {
-                  addLog('💥 「' + def.name + '」が撃破された'); renderAll();
-                  showPenetrateAnnounce(() => {
-                    // doAiSecurityCheckは完了コールバックを取れるので、その中でdefの
-                    // 消滅チェーンを発火してから元のcallbackへ繋ぐ
-                    doAiSecurityCheck(atk, atkIdx, () => { _fireDestroyChain(['player'], callback, { player: def }); });
                   });
-                }, 'Win!!', '#00ff88');
-              } else {
-                showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => {
-                  addLog('💥 「' + def.name + '」が撃破された'); renderAll();
-                  _fireDestroyChain(['player'], callback, { player: def });
-                }, 'Win!!', '#00ff88');
-              }
-            });
+                }, { ai: atk });
+              });
+              return;
+            }
+            // ≪貫通≫: AI アタッカーが撃破したら追加セキュリティチェック
+            if (hasPenetrate(atk)) {
+              addLog('🗡 [AI] 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
+              showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => {
+                addLog('💥 「' + def.name + '」が撃破された'); renderAll();
+                showPenetrateAnnounce(() => {
+                  // doAiSecurityCheckは完了コールバックを取れるので、貫通のセキュリティ解決
+                  // が終わってからon_battle_win→defの消滅チェーンの順に繋ぐ
+                  doAiSecurityCheck(atk, atkIdx, () => {
+                    fireOnBattleWin(() => { _fireDestroyChain(['player'], callback, { player: def }); });
+                  });
+                });
+              }, 'Win!!', '#00ff88');
+            } else {
+              showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => {
+                addLog('💥 「' + def.name + '」が撃破された'); renderAll();
+                fireOnBattleWin(() => { _fireDestroyChain(['player'], callback, { player: def }); });
+              }, 'Win!!', '#00ff88');
+            }
           });
         },
         () => {

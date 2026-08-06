@@ -725,6 +725,24 @@ function onRemoteCommand(cmd) {
       }
       break;
     }
+    case 'fx_deferOppNonTurnPlayerTriggers': {
+      // 相手（攻撃側）がon_battle_win等のターンプレイヤー側同時誘発を解決中/解決完了。
+      // active:true の間、こちら側でローカルに誘発する非ターンプレイヤー側トリガー
+      // （セキュリティ効果で登場したカードの登場時等）は即座に発動せず保留する
+      // （公式ルール15-4-3-5: ターンプレイヤー側を全て解決してから非ターンプレイヤー側へ）。
+      bs._deferNonTurnPlayerTriggers = !!cmd.active;
+      if (!cmd.active && bs._deferredOnPlayTriggers && bs._deferredOnPlayTriggers.length) {
+        const queued = bs._deferredOnPlayTriggers;
+        bs._deferredOnPlayTriggers = [];
+        const runNext = () => {
+          if (queued.length === 0) return;
+          const fn = queued.shift();
+          fn(runNext);
+        };
+        runNext();
+      }
+      break;
+    }
 
     // --- ゲーム終了 ---
     case 'game_end': {

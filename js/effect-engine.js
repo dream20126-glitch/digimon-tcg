@@ -6580,11 +6580,24 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 時点で誘発していた効果と同時誘発になる）。通常時は即座に発動する。
         if (step.skip_on_play) { callback(); break; }
         if (ctx.bs && ctx.bs._pendingNonTurnPlayerBattleTrigger) {
+          // 同一マシン内（シングルプレイ/AI対戦、またはターンプレイヤー側の機械自身）で
+          // 保留を解決するケース
           const existingNonTurnPlayerPhase = ctx.bs._pendingNonTurnPlayerBattleTrigger;
           ctx.bs._pendingNonTurnPlayerBattleTrigger = (proceed) => {
             scanTriggers('on_play', cardToSummon, ctx.side, ctx);
             processQueue(ctx, () => existingNonTurnPlayerPhase(proceed));
           };
+          callback();
+          break;
+        }
+        if (ctx.bs && ctx.bs._deferNonTurnPlayerTriggers) {
+          // オンライン対戦: 相手機（ターンプレイヤー側）からの信号(fx_deferOppNonTurnPlayerTriggers)
+          // で保留中。相手機側でon_battle_win等が解決し信号解除されるまで登場時効果を貯めておく
+          if (!ctx.bs._deferredOnPlayTriggers) ctx.bs._deferredOnPlayTriggers = [];
+          ctx.bs._deferredOnPlayTriggers.push((next) => {
+            scanTriggers('on_play', cardToSummon, ctx.side, ctx);
+            processQueue(ctx, () => next());
+          });
           callback();
           break;
         }

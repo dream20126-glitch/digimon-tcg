@@ -1388,6 +1388,19 @@ function afterBlockedEffect(atk, atkSlotIdx, side, callback) {
 // が合流できるよう、effect-engine.js 側からも直接参照・上書きされる
 // （公式ルール15-4-3-3: ルールチェックで誘発した効果は、その時点で誘発していた
 // 効果と同時誘発になる）。
+// ≪貫通≫等でターンプレイヤー側/非ターンプレイヤー側の同時誘発を保留するときに
+// このペアで登録する。オンライン対戦では、非ターンプレイヤー側（相手機）にも
+// 「まだ発動しないで」と信号で伝える（相手機のセキュリティ効果解決で誘発する登場時
+// 等は相手機ローカルの処理のため、こちらのbs._pendingNonTurnPlayerBattleTriggerを
+// 直接参照できない）
+function _setPendingBattleTriggers(turnPlayerHook, nonTurnPlayerHook) {
+  bs._pendingTurnPlayerBattleTrigger = turnPlayerHook;
+  bs._pendingNonTurnPlayerBattleTrigger = nonTurnPlayerHook;
+  if (_onlineMode && _sendCommand) {
+    _sendCommand({ type: 'fx_deferOppNonTurnPlayerTriggers', active: true });
+  }
+}
+
 function _consumePendingBattleTriggers(finalCallback) {
   if (bs._pendingTurnPlayerBattleTrigger) {
     const pending = bs._pendingTurnPlayerBattleTrigger;
@@ -1396,6 +1409,10 @@ function _consumePendingBattleTriggers(finalCallback) {
     return;
   }
   if (bs._pendingNonTurnPlayerBattleTrigger) {
+    // ターンプレイヤー側が全て解決した → 相手機（非ターンプレイヤー側）に保留解除を伝える
+    if (_onlineMode && _sendCommand) {
+      _sendCommand({ type: 'fx_deferOppNonTurnPlayerTriggers', active: false });
+    }
     const pending = bs._pendingNonTurnPlayerBattleTrigger;
     bs._pendingNonTurnPlayerBattleTrigger = null;
     pending(() => _consumePendingBattleTriggers(finalCallback));
@@ -2064,8 +2081,10 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
             // 非ターンプレイヤー側フックは、貫通のセキュリティ効果解決中に新たな非ターン
             // プレイヤー側トリガー（登場したテイマーの登場時等）が誘発した場合、
             // effect-engine.js側から合流できるよう分けて保持する
-            bs._pendingTurnPlayerBattleTrigger = (proceed) => { fireOnBattleWin(proceed); };
-            bs._pendingNonTurnPlayerBattleTrigger = (proceed) => { _fireDestroyChain(['ai'], proceed, { ai: def }); };
+            _setPendingBattleTriggers(
+              (proceed) => { fireOnBattleWin(proceed); },
+              (proceed) => { _fireDestroyChain(['ai'], proceed, { ai: def }); }
+            );
             showPenetrateAnnounce(() => {
               resolveSecurityCheck(atk, atkIdx);
             });
@@ -2251,8 +2270,10 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
                   // プレイヤー)の順に繋ぐ。非ターンプレイヤー側フックは、セキュリティ効果解決中に
                   // 新たな非ターンプレイヤー側トリガーが誘発した場合、effect-engine.js側から
                   // 合流できるよう分けて保持する（checkAttackEnd側と同じ仕組みを共有）
-                  bs._pendingTurnPlayerBattleTrigger = (proceed) => { fireOnBattleWin(proceed); };
-                  bs._pendingNonTurnPlayerBattleTrigger = (proceed) => { _fireDestroyChain(['player'], proceed, { player: def }); };
+                  _setPendingBattleTriggers(
+                    (proceed) => { fireOnBattleWin(proceed); },
+                    (proceed) => { _fireDestroyChain(['player'], proceed, { player: def }); }
+                  );
                   doAiSecurityCheck(atk, atkIdx, () => { _consumePendingBattleTriggers(callback); });
                 });
               }, 'Win!!', '#00ff88');

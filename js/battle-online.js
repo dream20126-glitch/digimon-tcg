@@ -517,9 +517,14 @@ function onRemoteCommand(cmd) {
       } catch (_) {}
       if (_stHasOnPlay && window._triggerEffectFn) {
         const _stCtx = { card: tamer, side: 'player', bs, addLog, renderAll: () => renderAll(), updateMemGauge: () => {} };
+        const _ackSecTamerDone = () => {
+          sendMemoryUpdate();
+          sendStateSync();
+          sendCommand({ type: 'security_effect_done', memory: bs.memory });
+        };
         const _fireStOnPlay = (doneCb) => {
-          try { window._triggerEffectFn('on_play', tamer, 'player', _stCtx, () => { renderAll(); doneCb && doneCb(); }); }
-          catch (_) { doneCb && doneCb(); }
+          try { window._triggerEffectFn('on_play', tamer, 'player', _stCtx, () => { renderAll(); _ackSecTamerDone(); doneCb && doneCb(); }); }
+          catch (_) { _ackSecTamerDone(); doneCb && doneCb(); }
         };
         // 必ず非ターンプレイヤー側の待ち行列を経由させる（直接発火する分岐を持たない）。
         // ≪貫通≫等でまだターンプレイヤー側の同時誘発効果が解決していない場合は
@@ -527,6 +532,8 @@ function onRemoteCommand(cmd) {
         // 15-4-3-3）。そうでない通常時は即座に排出される。これを経由しない「即時発火」の
         // 分岐が残っていると、後から届くfx_ownDestroyReady等が「発揮中の効果」を認識できず、
         // ポップアップが重ねて表示されてしまう。
+        // 効果解決後にsecurity_effect_doneで攻撃側へackし、攻撃側の2枚目以降のセキュリティ
+        // チェック（_waitForSecurityEffect待機）を進める。
         if (!bs._pendingNonTurnPlayerReactions) bs._pendingNonTurnPlayerReactions = [];
         bs._pendingNonTurnPlayerReactions.push((next) => _fireStOnPlay(next));
         _drainNonTurnPlayerReactionQueue();

@@ -1543,11 +1543,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       if(restTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
       const restColor = uiColor;
-      // 相手デジモンがレスト → when_opp_rest 発火（restedSide = 相手側）
-      const restedSide = ctx.side === 'player' ? 'ai' : 'player';
-      const finishWithTrigger = () => {
-        fireWhenOppRestTriggers(restedSide, ctx.bs, ctx, callback);
-      };
+      // when_opp_rest は「アタック/ブロック宣言によるレスト」専用の誘発（公式ルール15-8-3-1の
+      // 「効果でレストしたとき」という区別された言い回しの通り、効果でレストさせた場合は含まない）。
+      // このrestアクションは効果によるレストなので発火しない
+      const finishWithTrigger = () => { callback(); };
       // 自分側プレイヤーが相手のカードをレストさせた場合、両者の画面で suspended を同期する
       // - 自分側: state_sync で false に戻されないよう保護フラグ
       // - 相手側: 個別 fx_remoteSuspend コマンドで反映
@@ -4968,6 +4967,12 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
     if (sourceCard && (triggerCode === 'on_play' || triggerCode === 'on_evolve' || triggerCode === 'on_attack')) {
       _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide, ctx, turnPlayer);
     }
+    // on_battle_win の trigger_conditions（例: cond_lv_ge:6@opp「Lv6以上の相手だけを
+    // 消滅させたとき」）は、勝者自身ではなく「バトルで消滅させた相手デジモン」を対象に
+    // 評価する必要がある。_eventSourceCard を明示しないと checkStepTriggerConditions が
+    // ctx.card=勝者自身にフォールバックしてしまい、常に条件を満たしてしまう不具合になる
+    // （メタルティラノモン: Lv3を消滅させてもLv6以上の自分自身に対して判定されてしまう等）。
+    const battleWinEventSourceCard = triggerCode === 'on_battle_win' ? (ctx.bs && ctx.bs._lastBattleDefeatedCard) : null;
     if (sourceCard) {
       const mainRecipe = getRecipeForTrigger(sourceCard, triggerCode);
       if (mainRecipe) {
@@ -4978,6 +4983,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
           trigger: { code: triggerCode },
           actions: [], conditions: [],
         };
+        if (battleWinEventSourceCard) dummyBlock._eventSourceCard = battleWinEventSourceCard;
         addToQueue(sourceCard, dummyBlock,
           sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
         );
@@ -5011,6 +5017,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
             raw: evoCard.evoSourceEffect || '', trigger: { code: triggerCode },
             actions: [], conditions: [], _recipeCard: evoCard,
           };
+          if (battleWinEventSourceCard) dummyBlock._eventSourceCard = battleWinEventSourceCard;
           addToQueue(sourceCard, dummyBlock,
             sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
           );
@@ -6681,7 +6688,9 @@ function executeRecipeStep(step, ctx, store, callback) {
               const empty = player.battleArea.indexOf(null);
               if (empty !== -1) player.battleArea[empty] = c; else player.battleArea.push(c);
             }
-            c.summonedThisTurn = true; c.suspended = false; c.buffs = []; c.stack = [];
+            // アルゴモン(BT2-047)「レスト状態で登場できる」等、レスト状態での登場を
+            // 指定できるようにする（step.enter_suspended:true）。省略時は従来通り活動状態で登場
+            c.summonedThisTurn = true; c.suspended = !!step.enter_suspended; c.buffs = []; c.stack = [];
             // skip_on_play 指定時は登場時効果を発動しない
             if (step.skip_on_play) {
               c._skipOnPlayEffect = true;
@@ -7506,9 +7515,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
       };
       const rcFinish = () => {
+        // when_opp_rest はアタック/ブロック宣言によるレストのみ誘発（効果によるレストは含まない）
         ctx.renderAll && ctx.renderAll();
-        const restedSide = ctx.side === 'player' ? 'ai' : 'player';
-        try { fireWhenOppRestTriggers(restedSide, ctx.bs, ctx, () => callback()); return; } catch (_) {}
         callback();
       };
       const rcV1 = rcActive();
@@ -8861,13 +8869,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
         });
         if (!_restedAny) ctx.addLog('⚠ レスト対象がいません');
+        // when_opp_rest はアタック/ブロック宣言によるレストのみ誘発（効果によるレストは含まない）
         ctx.renderAll();
-        if (!_isOwnAll && _restedAny) {
-          // 相手デジモンをレストさせた → when_opp_rest 反応を発火
-          const _restedSide = ctx.side === 'player' ? 'ai' : 'player';
-          try { fireWhenOppRestTriggers(_restedSide, ctx.bs, ctx, () => callback()); return; }
-          catch (_) {}
-        }
         callback();
         break;
       }

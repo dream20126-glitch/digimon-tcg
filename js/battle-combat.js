@@ -1640,7 +1640,8 @@ export function resolveSecurityCheck(atk, atkIdx) {
         // オンラインでは「カード所有者(相手)」の機械で発動させる必要があるため
         // ここでは発動せず、security_tamer_play 受信側(所有者)で発動する。
         // （攻撃側で発動するとセキュリティ中身が攻撃側に見えてしまう）
-        if (!_onlineMode && (hasKeyword(sec, '【登場時】') || _hasRecipeTrigger(sec, 'on_play'))) {
+        const _secTamerHasOnPlay = hasKeyword(sec, '【登場時】') || _hasRecipeTrigger(sec, 'on_play');
+        if (!_onlineMode && _secTamerHasOnPlay) {
           const fireSecTamerOnPlay = (doneCb) => {
             _hooks.checkAndTriggerEffect(sec, '【登場時】', () => { renderAll(); doneCb && doneCb(); }, 'ai');
           };
@@ -1654,6 +1655,14 @@ export function resolveSecurityCheck(atk, atkIdx) {
           } else {
             fireSecTamerOnPlay(_afterSecTamer);
           }
+        } else if (_onlineMode && _secTamerHasOnPlay && typeof window._waitForSecurityEffect === 'function') {
+          // 相手(所有者)機でテイマーの【登場時】効果が解決するまで、2枚目以降のセキュリティ
+          // チェックに進まず待機する（security_tamer_play受信側からのsecurity_effect_done待ち）
+          addLog('⏳ 相手がテイマーの効果を処理中...');
+          window._waitForSecurityEffect(() => {
+            _dispatchStateSync();
+            _afterSecTamer();
+          });
         } else {
           _afterSecTamer();
         }
@@ -2063,9 +2072,13 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
           // 非ターンプレイヤー側に進む）
           const fireOnBattleWin = (afterDone) => {
             bs._lastBattleWinner = atk;
+            // trigger_conditions（例: cond_lv_ge:6@opp）が「バトルで消滅させた相手」を
+            // 正しく参照できるようにする（メタルティラノモン等）
+            bs._lastBattleDefeatedCard = def;
             const winCtx = _hooks.makeEffectContext(atk, 'player');
             _hooks.triggerEffect('on_battle_win', atk, 'player', winCtx, () => {
               bs._lastBattleWinner = null;
+              bs._lastBattleDefeatedCard = null;
               afterDone();
             });
           };
@@ -2248,9 +2261,13 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
             // （公式ルール15-4-3-5）
             const fireOnBattleWin = (afterDone) => {
               bs._lastBattleWinner = atk;
+              // trigger_conditions（例: cond_lv_ge:6@opp）が「バトルで消滅させた相手」を
+              // 正しく参照できるようにする（メタルティラノモン等）
+              bs._lastBattleDefeatedCard = def;
               const winCtx = _hooks.makeEffectContext(atk, 'ai');
               _hooks.triggerEffect('on_battle_win', atk, 'ai', winCtx, () => {
                 bs._lastBattleWinner = null;
+                bs._lastBattleDefeatedCard = null;
                 afterDone();
               });
             };
@@ -2344,9 +2361,13 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         _fireDestroyChain(['ai'], () => {
           // 防御側 (def, player) が atk を撃破して生存 → on_battle_win on def
           bs._lastBattleWinner = def;
+          // trigger_conditions（例: cond_lv_ge:6@opp）が「バトルで消滅させた相手」を
+          // 正しく参照できるようにする
+          bs._lastBattleDefeatedCard = atk;
           const winCtx = _hooks.makeEffectContext(def, 'player');
           _hooks.triggerEffect('on_battle_win', def, 'player', winCtx, () => {
             bs._lastBattleWinner = null;
+            bs._lastBattleDefeatedCard = null;
             showBattleResult('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => { addLog('💥 「' + atk.name + '」を撃破！'); renderAll(); callback(); }, 'Lost...', '#ff4444');
           });
         }, { ai: atk });

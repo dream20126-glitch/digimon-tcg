@@ -16,7 +16,25 @@ let _onlineMode = false;
 let _onlineRoomId = null;
 let _onlineMyKey = null;       // 'player1' | 'player2'
 let _onlineCmdListener = null; // Firebaseリスナー解除関数
-let _onlineCmdSeq = 0;         // コマンド連番
+let _onlineCmdSeq = 0;         // 自分の送信専用連番（受信側のしきい値とは完全に分離する）
+// 送信者ごとの受信済み連番しきい値（重複排除用）。かつては_onlineCmdSeq 1変数を送信/受信
+// 両方に使い回していたため、双方が相手の最新連番を受信する前に連続送信すると同じ
+// Firebaseパス（rooms/{roomId}/commands/{seq}）に書き込んで片方が消えることがあった。
+// 送信者ごとにパス(commands/{fromKey}/{seq})と連番空間を完全に分離して解消する。
+let _lastSeqBySender = {};
+
+// commands ノード（送信者ごとにネストされた {fromKey: {seq: cmd}} 構造）を
+// フラットなコマンド配列に変換する
+function _flattenCommandsSnapshot(bySender) {
+  const all = [];
+  if (!bySender) return all;
+  Object.keys(bySender).forEach((fromKey) => {
+    const cmdsForSender = bySender[fromKey];
+    if (!cmdsForSender) return;
+    Object.values(cmdsForSender).forEach((cmd) => { if (cmd) all.push(cmd); });
+  });
+  return all;
+}
 let _pendingBlockCallback = null;
 let _pendingBlockResponse = null;
 let _pendingSecEffectCallback = null;
@@ -176,7 +194,8 @@ function serializeCardForCmd(c) {
 export function sendCommand(cmd) {
   if (!_onlineMode || !_onlineRoomId) return;
   _onlineCmdSeq++;
-  const path = `rooms/${_onlineRoomId}/commands/${_onlineCmdSeq}`;
+  // 送信者ごとに独立したパス・連番空間に書き込むため、相手と同時に送信しても衝突しない
+  const path = `rooms/${_onlineRoomId}/commands/${_onlineMyKey}/${_onlineCmdSeq}`;
   set(ref(rtdb, path), { ...cmd, from: _onlineMyKey, seq: _onlineCmdSeq, time: Date.now() });
 }
 
@@ -233,16 +252,20 @@ export function sendMemoryUpdate() {
 export function startOnlineListener() {
   if (_onlineCmdListener) _onlineCmdListener();
   const startTime = Date.now();
+  _lastSeqBySender = {};
   _onlineCmdListener = onValue(ref(rtdb, `rooms/${_onlineRoomId}/commands`), (snap) => {
-    const cmds = snap.val();
-    if (!cmds) return;
-    Object.values(cmds).sort((a, b) => a.seq - b.seq).forEach(cmd => {
-      if (cmd.from === _onlineMyKey) return;
-      if (cmd.seq <= _onlineCmdSeq) return;
-      if (cmd.time && cmd.time < startTime) return;
-      _onlineCmdSeq = cmd.seq;
-      onRemoteCommand(cmd);
-    });
+    const bySender = snap.val();
+    if (!bySender) return;
+    _flattenCommandsSnapshot(bySender)
+      .filter(cmd => cmd.from !== _onlineMyKey)
+      .sort((a, b) => a.seq - b.seq)
+      .forEach(cmd => {
+        const lastSeq = _lastSeqBySender[cmd.from] || 0;
+        if (cmd.seq <= lastSeq) return;
+        if (cmd.time && cmd.time < startTime) return;
+        _lastSeqBySender[cmd.from] = cmd.seq;
+        onRemoteCommand(cmd);
+      });
   });
 }
 
@@ -253,6 +276,7 @@ export async function initOnline(roomId, myKey) {
   _onlineRoomId = roomId;
   _onlineMyKey = myKey;
   _onlineCmdSeq = 0;
+  _lastSeqBySender = {};
   _pendingBlockCallback = null;
   _pendingBlockResponse = null;
   _pendingSecEffectCallback = null;
@@ -1723,15 +1747,11 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   unsubBlockedDone = onValue(ref(rtdb, `rooms/${_onlineRoomId}/commands`), (snap) => {
     if (battleStarted) return;
     if (!unsubBlockedDone) return; // 初期化前の即時コールバックをスキップ
-    const cmds = snap.val();
-    if (!cmds) return;
-    const keys = Object.keys(cmds);
-    for (const k of keys) {
-      if (cmds[k] && cmds[k].type === 'blocked_effect_done' && cmds[k].from !== _onlineMyKey) {
-        goResolution();
-        return;
-      }
-    }
+    const bySender = snap.val();
+    if (!bySender) return;
+    const found = _flattenCommandsSnapshot(bySender)
+      .some(c => c && c.type === 'blocked_effect_done' && c.from !== _onlineMyKey);
+    if (found) goResolution();
   });
   // タイムアウト: 10秒待っても来なければバトル開始
   setTimeout(() => { goResolution(); }, 10000);

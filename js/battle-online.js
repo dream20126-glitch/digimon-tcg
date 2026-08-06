@@ -317,26 +317,18 @@ function onRemoteCommand(cmd) {
         // 消滅 (destroy) の場合は on_destroy / on_battle_destroy / when_own_destroyed を
         // 自分側 (player) で発火する。受信側のローカルでカードが見つからないケース (同期ずれ等)
         // でも cmd.cardData にフルカード情報があれば、そちらを使って destroy chain を発火する。
+        // タイマーによる推測発火はやめ、相手機からの fx_ownDestroyReady（on_battle_win等の
+        // 解決完了後に送られる）を受け取ってから発火する。全ての card_removed(destroy) 送信元は
+        // 対になる fx_ownDestroyReady も送るように統一済み。
         if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
           const cardForChain = card || cmd.cardData;
           if (cardForChain) {
-            let fired = false;
-            const fireOnce = () => {
-              if (fired) return; fired = true;
+            _pendingOwnDestroyFire = () => {
               try {
                 // on_destroy 完了時に盤面を同期（summon_from_trash 等で盤面が変化するケースがあるため）
                 window._fireOnlineDestroyChain(['player'], { player: cardForChain }, () => { sendStateSync(); });
               } catch (_) {}
             };
-            // 本来は相手機からの fx_ownDestroyReady（on_battle_win等の解決完了後に送られる）で
-            // 発火する。ただしバトル以外の消滅経路（効果による直接破棄等）はまだこの信号を送らない
-            // ため、来なかった場合の保険として長めのフォールバックも仕込む。
-            // ★ 3500ms等の短い値にすると、on_battle_win側にユーザー操作待ちの演出（進化元の
-            // アクティブ化ポップアップ等）が挟まった場合、相手がOKを押す前にこちらが先に発火して
-            // しまう（実際に発生した不具合）。あくまで「信号が来ない場合の最終手段」なので、
-            // ブロック確認等の他のオンライン往復と同じ30秒を採用する。
-            _pendingOwnDestroyFire = fireOnce;
-            setTimeout(fireOnce, 30000);
           }
         }
       }
@@ -1537,6 +1529,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy',
           cardData: serializeCardForCmd(atk),
         });
+        sendCommand({ type: 'fx_ownDestroyReady' });
         renderAll();
         sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '両者消滅！' });
         // 両者の消滅演出を相手機にも明示送信
@@ -1578,6 +1571,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy',
           cardData: serializeCardForCmd(atk),
         });
+          sendCommand({ type: 'fx_ownDestroyReady' });
           renderAll();
           sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '道連れで両者消滅！' });
           showBR('両者消滅', '#ff4444', '道連れで両者消滅！', () => {
@@ -1625,6 +1619,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy',
           cardData: serializeCardForCmd(atk),
         });
+        sendCommand({ type: 'fx_ownDestroyReady' });
         renderAll();
         // ≪道連れ≫: 攻撃側 atk が「自分だけバトルで消滅」したとき blocker も消滅
         const atkHasMichizure = !!(

@@ -6590,15 +6590,20 @@ function executeRecipeStep(step, ctx, store, callback) {
           callback();
           break;
         }
-        if (ctx.bs && ctx.bs._deferNonTurnPlayerTriggers) {
-          // オンライン対戦: 相手機（ターンプレイヤー側）からの信号(fx_deferOppNonTurnPlayerTriggers)
-          // で保留中。相手機側でon_battle_win等が解決し信号解除されるまで登場時効果を貯めておく
+        // オンライン対戦: 必ず非ターンプレイヤー側の待ち行列を経由させる（直接発火する
+        // 分岐を残さない）。≪貫通≫等でまだターンプレイヤー側の同時誘発効果が解決して
+        // いない場合はwindow._drainNonTurnPlayerReactionQueue側でactive:false受信まで
+        // 排出を待つ（公式ルール15-4-3-3）。そうでない通常時は即座に排出される。
+        // これを経由しない「即時発火」の分岐を残すと、後から届く消滅時効果等が
+        // 「発揮中」と認識できずポップアップが重なって表示されてしまう。
+        if (ctx.bs) {
           if (!ctx.bs._pendingNonTurnPlayerReactions) ctx.bs._pendingNonTurnPlayerReactions = [];
           ctx.bs._pendingNonTurnPlayerReactions.push((next) => {
             scanTriggers('on_play', cardToSummon, ctx.side, ctx);
             processQueue(ctx, () => next());
           });
           callback();
+          if (typeof window !== 'undefined' && window._drainNonTurnPlayerReactionQueue) window._drainNonTurnPlayerReactionQueue();
           break;
         }
         try { scanTriggers('on_play', cardToSummon, ctx.side, ctx); processQueue(ctx, () => callback()); }

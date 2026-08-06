@@ -50,6 +50,9 @@ let _nonTurnPlayerReactionDraining = false; // bs._pendingNonTurnPlayerReactions
 // この同じ待ち行列を経由させ、既に発揮中の効果が終わるまで割り込ませない。
 function _drainNonTurnPlayerReactionQueue() {
   if (_nonTurnPlayerReactionDraining) return;
+  // まだターンプレイヤー側の同時誘発が解決中（active:trueの間）は、ここでは発揮を開始しない。
+  // active:false受信時に改めてこの関数が呼ばれて排出される
+  if (bs._deferNonTurnPlayerTriggers) return;
   _nonTurnPlayerReactionDraining = true;
   const step = () => {
     const queue = bs._pendingNonTurnPlayerReactions;
@@ -518,15 +521,15 @@ function onRemoteCommand(cmd) {
           try { window._triggerEffectFn('on_play', tamer, 'player', _stCtx, () => { renderAll(); doneCb && doneCb(); }); }
           catch (_) { doneCb && doneCb(); }
         };
-        // ≪貫通≫等でまだターンプレイヤー側(攻撃側)の同時誘発効果が解決していない場合は
-        // 保留する（公式ルール15-4-3-3）。fx_deferOppNonTurnPlayerTriggers(active:false)
-        // 受信時にまとめて発動する（effect-engine.jsのsummonアクションと同じ仕組み）
-        if (bs._deferNonTurnPlayerTriggers) {
-          if (!bs._pendingNonTurnPlayerReactions) bs._pendingNonTurnPlayerReactions = [];
-          bs._pendingNonTurnPlayerReactions.push((next) => _fireStOnPlay(next));
-        } else {
-          _fireStOnPlay();
-        }
+        // 必ず非ターンプレイヤー側の待ち行列を経由させる（直接発火する分岐を持たない）。
+        // ≪貫通≫等でまだターンプレイヤー側の同時誘発効果が解決していない場合は
+        // _drainNonTurnPlayerReactionQueue側でactive:false受信まで排出を待つ（公式ルール
+        // 15-4-3-3）。そうでない通常時は即座に排出される。これを経由しない「即時発火」の
+        // 分岐が残っていると、後から届くfx_ownDestroyReady等が「発揮中の効果」を認識できず、
+        // ポップアップが重ねて表示されてしまう。
+        if (!bs._pendingNonTurnPlayerReactions) bs._pendingNonTurnPlayerReactions = [];
+        bs._pendingNonTurnPlayerReactions.push((next) => _fireStOnPlay(next));
+        _drainNonTurnPlayerReactionQueue();
       }
       break;
     }
@@ -1804,6 +1807,7 @@ window._sendMemoryUpdate = () => sendMemoryUpdate();
 window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
 window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._waitForReactionDelegate = (cb) => waitForReactionDelegate(cb);
+window._drainNonTurnPlayerReactionQueue = () => _drainNonTurnPlayerReactionQueue();
 window._clearPendingBlock = () => { _pendingBlockCallback = null; _pendingBlockResponse = null; };
 window._markDestroyed = (side, slotIdx) => markDestroyed(side, slotIdx);
 window._markEvoModified = (side, slotIdx) => markEvoModified(side, slotIdx);

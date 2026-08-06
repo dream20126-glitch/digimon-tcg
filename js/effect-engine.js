@@ -64,11 +64,17 @@ function sortQueue() {
 }
 
 // キュー処理メインループ
-// 対象選択・コスト等でプレイヤー入力が必要なアクション
+// 対象選択・コスト等でプレイヤー入力が必要なアクション、および対象選択は不要でも
+// デッキ/トラッシュ/手札/セキュリティ/進化元等の共有ゾーンを読み書きするため、他の同時誘発
+// 効果と解決順によって結果が変わり得るアクション（パグモン「デッキ上から1枚破棄」→
+// メタルガルルモン「トラッシュから登場」のように、先に解決した方が後の効果の対象を変える例）。
+// これらは「対象選択が不要だから自動発動でよい」と誤判定されないよう、ここに含めて
+// 同時誘発の発動順選択UIの対象に含める。
 var MANUAL_INPUT_ACTIONS = {
   'destroy': 1, 'bounce': 1, 'evo_discard': 1, 'evo_discard_bottom': 1,
+  'evo_discard_top': 1, 'evo_discard_select': 1, 'evo_discard_all': 1,
   'cost_discard': 1, 'cost_trash_self': 1, 'cost_digiburst': 1,
-  'select': 1, 'select_multi': 1, 'select_evo_source': 1,
+  'select': 1, 'select_multi': 1, 'select_evo_source': 1, 'select_from_hand_trash': 1,
   'place_under_tamer': 1, 'place_under_digimon': 1, 'place_on_security_top': 1,
   'jogress_evolve': 1, 'app_gattai_evolve': 1, 'return_deck': 1,
   'add_to_hand': 1, 'security_trash_select': 1,
@@ -77,6 +83,11 @@ var MANUAL_INPUT_ACTIONS = {
   'cant_evolve': 1, 'change_attack_target': 1,
   'trash_to_hand': 1, 'summon_from_trash': 1, 'summon': 1,
   'dedigivolve': 1, 'deck_open': 1, 'force_block': 1,
+  // 共有ゾーンを読み書きするため対象選択が無くても自動発動NGなアクション
+  'draw': 1, 'deck_trash_top': 1, 'trash_top_card': 1, 'security_trash_top': 1,
+  'security_trash_bottom': 1, 'security_discard': 1, 'security_open': 1,
+  'deck_to_evo_bottom': 1, 'summon_from_evo_source': 1, 'add_to_evo_source': 1,
+  'hatch': 1, 'place_security': 1,
 };
 
 // キューエントリがプレイヤー入力（対象選択・コスト等）を必要とするか
@@ -101,6 +112,9 @@ function _entryNeedsUserInput(entry, ctx) {
     if (Array.isArray(step.cost) && step.cost.length > 0) return true;
     if (step.optional === true) return true;
     if (step.action && MANUAL_INPUT_ACTIONS[step.action]) return true;
+    // per_count（1体ごとに等）は参照先ゾーンの状態次第で結果が変わるため、他の同時誘発
+    // 効果の解決順に影響され得る（対象選択の有無に関わらず自動発動NG）
+    if (step.per_count) return true;
     if (step.target) {
       const t = String(step.target);
       if (t === 'self') return false;
@@ -5769,6 +5783,8 @@ function _reactionNeedsUserInput(reaction) {
     if (Array.isArray(step.cost) && step.cost.length > 0) return true;
     if (step.optional === true) return true;
     if (step.action && MANUAL_INPUT_ACTIONS && MANUAL_INPUT_ACTIONS[step.action]) return true;
+    // per_countは参照先ゾーンの状態次第で結果が変わるため自動発動NG（_entryNeedsUserInputと同じ）
+    if (step.per_count) return true;
     if (step.target) {
       const t = String(step.target);
       if (t === 'self') return false;

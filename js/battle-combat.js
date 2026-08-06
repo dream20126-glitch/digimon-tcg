@@ -1953,14 +1953,17 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide) {
       }
       try { _fireOnDestroy(s, bs, ctxBase, cb, destroyedCard); } catch (_) { cb(); }
     };
+    // 「消滅した時」（when_own_destroyed=同sideの他カードの反応）を先に解決し、
+    // 「消滅時」（on_destroy/on_battle_destroy=消滅したカード自体の効果）を最後に解決する。
+    // on_battle_destroy/when_own_destroyed には対応する所有者側発火経路が無いため、
+    // これらは従来通りここ（消滅させた側の機械）で発火する。
     try {
-      afterOnDestroy(() => {
-        try {
-          _fireOnBattleDestroy(s, bs, ctxBase, () => {
-            // 自分のデジモンが消滅したとき（同 side のテイマー/デジモンが反応）
-            try { _fireWhenOwnDestroyed(s, bs, ctxBase, next); } catch (_) { next(); }
-          }, destroyedCard);
-        } catch (_) { next(); }
+      _fireWhenOwnDestroyed(s, bs, ctxBase, () => {
+        afterOnDestroy(() => {
+          try {
+            _fireOnBattleDestroy(s, bs, ctxBase, next, destroyedCard);
+          } catch (_) { next(); }
+        });
       });
     } catch (_) { next(); }
   }

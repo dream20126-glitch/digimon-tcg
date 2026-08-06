@@ -5523,34 +5523,37 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
 //   ctxBase:       元の context（addLog/renderAll/updateMemGauge 等を引き継ぐ）
 //   done:          全リアクション完了時に呼ぶコールバック（省略時は no-op）
 // 共通: 消滅後のトリガーチェーン
-// 順序: 自身のon_destroy → when_own_destroyed → when_opp_destroyed → when_other_destroyed
+// 順序: when_own_destroyed → when_opp_destroyed → when_other_destroyed → 自身のon_destroy
+// 「消滅した時」（他カードが消滅に反応する誘発型効果）を「消滅時」（消滅したカード自体の
+// 効果）より先に解決する。消滅時効果は何があっても必ず一番最後に発動する（ユーザー確認済み）。
 // destroyedCard: 消滅したカード（必須）
 // destroyedSide: 'player'/'ai'
 export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, callback) {
   const finish = () => { try { callback && callback(); } catch(_) {} };
   if (!destroyedCard || !bs) { finish(); return; }
   const oppSide = destroyedSide === 'player' ? 'ai' : 'player';
-  // 1) 消滅したカード自身＋その進化元の on_destroy
-  fireOnDestroyTriggers(destroyedSide, bs, ctxBase, () => {
-    // 2) 反対側のカード（本体＋進化元）の on_destroy 反応も発火する。
-    //    例: ラブラモン進化元「相手デジモンがDP0で消滅したとき1ドロー」。
-    //    効果によるDP0消滅でも、セキュリティチェック消滅と同じ反応経路
-    //    （_fireDestroyTriggersImpl）に揃える。
-    _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, () => {
-      _fireSidedReactionTriggers(destroyedSide, 'when_own_destroyed', bs, ctxBase, () => {
-        _fireSidedReactionTriggers(oppSide, 'when_opp_destroyed', bs, ctxBase, () => {
-          // when_other_destroyed は「両陣営どちらの他デジモンが消滅しても反応する」トリガーで、
-          // destroyedSide/oppSideのような固定の因果関係が無いため、メインキュー(sortQueue)と
-          // 同じ「ターンプレイヤー優先」で発動順を揃える（以前は player→ai の固定順だった）
-          const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
-          const nonTurnSide = turnSide === 'player' ? 'ai' : 'player';
-          _fireSidedReactionTriggers(turnSide, 'when_other_destroyed', bs, ctxBase, () => {
-            _fireSidedReactionTriggers(nonTurnSide, 'when_other_destroyed', bs, ctxBase, finish);
-          });
+  _fireSidedReactionTriggers(destroyedSide, 'when_own_destroyed', bs, ctxBase, () => {
+    _fireSidedReactionTriggers(oppSide, 'when_opp_destroyed', bs, ctxBase, () => {
+      // when_other_destroyed は「両陣営どちらの他デジモンが消滅しても反応する」トリガーで、
+      // destroyedSide/oppSideのような固定の因果関係が無いため、メインキュー(sortQueue)と
+      // 同じ「ターンプレイヤー優先」で発動順を揃える
+      const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+      const nonTurnSide = turnSide === 'player' ? 'ai' : 'player';
+      _fireSidedReactionTriggers(turnSide, 'when_other_destroyed', bs, ctxBase, () => {
+        _fireSidedReactionTriggers(nonTurnSide, 'when_other_destroyed', bs, ctxBase, () => {
+          // 消滅時効果（on_destroy）を最後に解決する
+          // 1) 消滅したカード自身＋その進化元の on_destroy
+          fireOnDestroyTriggers(destroyedSide, bs, ctxBase, () => {
+            // 2) 反対側のカード（本体＋進化元）の on_destroy 反応（subject:opp）。
+            //    例: ラブラモン進化元「相手デジモンがDP0で消滅したとき1ドロー」。
+            //    効果によるDP0消滅でも、セキュリティチェック消滅と同じ反応経路
+            //    （_fireDestroyTriggersImpl）に揃える。
+            _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, finish, 'on_destroy');
+          }, destroyedCard);
         });
       });
-    }, 'on_destroy');
-  }, destroyedCard);
+    });
+  });
 }
 
 export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase, done, destroyedCard) {

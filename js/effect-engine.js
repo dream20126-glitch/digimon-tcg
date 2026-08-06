@@ -3348,7 +3348,24 @@ export function applyPermanentEffects(bs, side, context) {
           // grant_keyword for own:all（八神太一等）: condition/when はターゲット個別フィルタとして評価
           if (step.action === 'grant_keyword' || step.action === 'grant_keyword_to') {
             const kw = step.keyword || step.flag || '';
-            const gv = step.value != null ? step.value : 1;
+            // per_count倍率（アルゴモン「他の自分のレスト状態のデジモン1体ごとにSアタック+1」等）。
+            // dp_plus等の他アクションと同じ計算方法だが、このセクションではgrant_keywordが
+            // 他アクションと共有のvalue計算より先に分岐しているため、ここで個別に計算する
+            let gv = step.value != null ? step.value : (step.per_count ? 1 : 1);
+            if (step.per_count) {
+              const refSource = step.ref || 'evo_source';
+              let refCount = getRefSourceCountDirect(refSource, card, bs, side, step.ref_filter, step.ref_state);
+              // 「他の自分の〜」等、参照範囲に自身(card)が含まれてしまう自陣盤面全体系の参照では、
+              // このgrant_keyword自体を持つcard自身を二重に数えないよう1体分除外する
+              const selfInclusiveRefs = ['own_digimon', 'own_rest_digimon', 'own_active_digimon', 'own_battle_area', 'battle_area'];
+              if (selfInclusiveRefs.includes(refSource) && card && card.type === 'デジモン') {
+                const selfConds = step.ref_state ? parseRecipeCondition(String(step.ref_state)) : null;
+                const selfMatchesState = !selfConds || checkConditions(selfConds, card, bs, side);
+                const selfMatchesFilter = !step.ref_filter || (typeof cardMatchesFilter !== 'function' || cardMatchesFilter(card, step.ref_filter));
+                if (selfMatchesState && selfMatchesFilter) refCount = Math.max(0, refCount - 1);
+              }
+              gv = (step.value != null ? step.value : 1) * Math.floor(refCount / step.per_count);
+            }
             const filterConds = [];
             if (step.condition) filterConds.push(...parseRecipeCondition(step.condition));
             if (step.when) filterConds.push(...parseRecipeCondition(step.when));

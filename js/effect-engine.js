@@ -1543,10 +1543,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       if(restTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
       const restColor = uiColor;
-      // when_opp_rest は「アタック/ブロック宣言によるレスト」専用の誘発（公式ルール15-8-3-1の
-      // 「効果でレストしたとき」という区別された言い回しの通り、効果でレストさせた場合は含まない）。
-      // このrestアクションは効果によるレストなので発火しない
-      const finishWithTrigger = () => { callback(); };
+      // 相手デジモンがレスト → when_opp_rest 発火（restedSide = 相手側。効果によるレストも含む）
+      const restedSide = ctx.side === 'player' ? 'ai' : 'player';
+      const finishWithTrigger = () => {
+        fireWhenOppRestTriggers(restedSide, ctx.bs, ctx, callback);
+      };
       // 自分側プレイヤーが相手のカードをレストさせた場合、両者の画面で suspended を同期する
       // - 自分側: state_sync で false に戻されないよう保護フラグ
       // - 相手側: 個別 fx_remoteSuspend コマンドで反映
@@ -7515,8 +7516,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
       };
       const rcFinish = () => {
-        // when_opp_rest はアタック/ブロック宣言によるレストのみ誘発（効果によるレストは含まない）
         ctx.renderAll && ctx.renderAll();
+        const restedSide = ctx.side === 'player' ? 'ai' : 'player';
+        try { fireWhenOppRestTriggers(restedSide, ctx.bs, ctx, () => callback()); return; } catch (_) {}
         callback();
       };
       const rcV1 = rcActive();
@@ -8869,8 +8871,13 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
         });
         if (!_restedAny) ctx.addLog('⚠ レスト対象がいません');
-        // when_opp_rest はアタック/ブロック宣言によるレストのみ誘発（効果によるレストは含まない）
         ctx.renderAll();
+        if (!_isOwnAll && _restedAny) {
+          // 相手デジモンをレストさせた → when_opp_rest 反応を発火
+          const _restedSide = ctx.side === 'player' ? 'ai' : 'player';
+          try { fireWhenOppRestTriggers(_restedSide, ctx.bs, ctx, () => callback()); return; }
+          catch (_) {}
+        }
         callback();
         break;
       }

@@ -1377,21 +1377,39 @@ function afterBlockedEffect(atk, atkSlotIdx, side, callback) {
 
 // アタック終了時効果
 // ≪貫通≫のセキュリティチェック(resolveSecurityCheck)は完了コールバックを持たず、
-// 内部の全終了経路が最終的にここへ到達する。バトル勝利(defの消滅チェーン=非ターン
-// プレイヤー側)を、ターンプレイヤー側の同時誘発効果(≪貫通≫のセキュリティ効果等)の
-// 解決が終わるまで遅らせたい場合、ここに一度だけ実行するフックを積んでおく
-// （公式ルール15-4-3-5: 同時誘発はターンプレイヤー側を全て解決してから非ターン
+// 内部の全終了経路が最終的にここへ到達する。バトル勝利から同時誘発した効果
+// （ターンプレイヤー側: on_battle_win等 → 非ターンプレイヤー側: defの消滅時チェーン）
+// の解決を、≪貫通≫のセキュリティ効果解決が終わるまで遅らせたい場合、ここに積んで
+// おく（公式ルール15-4-3-5: 同時誘発はターンプレイヤー側を全て解決してから非ターン
 // プレイヤー側に進む）。通常のアタックでは未設定なので挙動は変わらない。
-function checkAttackEnd(atk, atkIdx) {
-  if (bs._pendingBeforeAttackEnd) {
-    const pending = bs._pendingBeforeAttackEnd;
-    bs._pendingBeforeAttackEnd = null;
-    pending(() => checkAttackEnd(atk, atkIdx));
+//
+// bs._pendingNonTurnPlayerBattleTrigger は、貫通のセキュリティ効果解決中に新たに
+// 誘発した非ターンプレイヤー側効果（例: セキュリティで登場したテイマーの登場時効果）
+// が合流できるよう、effect-engine.js 側からも直接参照・上書きされる
+// （公式ルール15-4-3-3: ルールチェックで誘発した効果は、その時点で誘発していた
+// 効果と同時誘発になる）。
+function _consumePendingBattleTriggers(finalCallback) {
+  if (bs._pendingTurnPlayerBattleTrigger) {
+    const pending = bs._pendingTurnPlayerBattleTrigger;
+    bs._pendingTurnPlayerBattleTrigger = null;
+    pending(() => _consumePendingBattleTriggers(finalCallback));
     return;
   }
-  if (hasKeyword(atk, '【アタック終了時】') && bs.player.battleArea[atkIdx]) {
-    _hooks.checkAndTriggerEffect(atk, '【アタック終了時】', () => checkPendingTurnEnd());
-  } else { checkPendingTurnEnd(); }
+  if (bs._pendingNonTurnPlayerBattleTrigger) {
+    const pending = bs._pendingNonTurnPlayerBattleTrigger;
+    bs._pendingNonTurnPlayerBattleTrigger = null;
+    pending(() => _consumePendingBattleTriggers(finalCallback));
+    return;
+  }
+  finalCallback();
+}
+
+function checkAttackEnd(atk, atkIdx) {
+  _consumePendingBattleTriggers(() => {
+    if (hasKeyword(atk, '【アタック終了時】') && bs.player.battleArea[atkIdx]) {
+      _hooks.checkAndTriggerEffect(atk, '【アタック終了時】', () => checkPendingTurnEnd());
+    } else { checkPendingTurnEnd(); }
+  });
 }
 
 // ===== セキュリティチェック =====
@@ -2040,12 +2058,14 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
           // ≪貫通≫: アタックで相手デジモン撃破 → アタック終了直前に追加セキュリティチェック
           if (hasPenetrate(atk)) {
             addLog('🗡 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
-            // resolveSecurityCheckは完了コールバックを持たないため、必ず内部で
-            // 最終的に到達するcheckAttackEndに「on_battle_win → defの消滅チェーン」を
-            // フックしておく（貫通のセキュリティ解決が先、on_battle_winはその後）
-            bs._pendingBeforeAttackEnd = (proceed) => {
-              fireOnBattleWin(() => { _fireDestroyChain(['ai'], proceed, { ai: def }); });
-            };
+            // resolveSecurityCheckは完了コールバックを持たないため、必ず内部で最終的に
+            // 到達するcheckAttackEndに「on_battle_win(ターンプレイヤー) → defの消滅チェーン
+            // (非ターンプレイヤー)」をフックしておく（貫通のセキュリティ解決が先）。
+            // 非ターンプレイヤー側フックは、貫通のセキュリティ効果解決中に新たな非ターン
+            // プレイヤー側トリガー（登場したテイマーの登場時等）が誘発した場合、
+            // effect-engine.js側から合流できるよう分けて保持する
+            bs._pendingTurnPlayerBattleTrigger = (proceed) => { fireOnBattleWin(proceed); };
+            bs._pendingNonTurnPlayerBattleTrigger = (proceed) => { _fireDestroyChain(['ai'], proceed, { ai: def }); };
             showPenetrateAnnounce(() => {
               resolveSecurityCheck(atk, atkIdx);
             });
@@ -2226,11 +2246,14 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
               showBattleResult('Lost...', '#ff4444', '「' + def.name + '」が撃破された', () => {
                 addLog('💥 「' + def.name + '」が撃破された'); renderAll();
                 showPenetrateAnnounce(() => {
-                  // doAiSecurityCheckは完了コールバックを取れるので、貫通のセキュリティ解決
-                  // が終わってからon_battle_win→defの消滅チェーンの順に繋ぐ
-                  doAiSecurityCheck(atk, atkIdx, () => {
-                    fireOnBattleWin(() => { _fireDestroyChain(['player'], callback, { player: def }); });
-                  });
+                  // doAiSecurityCheckは完了コールバックを取れるので、貫通のセキュリティ解決が
+                  // 終わってからon_battle_win(ターンプレイヤー)→defの消滅チェーン(非ターン
+                  // プレイヤー)の順に繋ぐ。非ターンプレイヤー側フックは、セキュリティ効果解決中に
+                  // 新たな非ターンプレイヤー側トリガーが誘発した場合、effect-engine.js側から
+                  // 合流できるよう分けて保持する（checkAttackEnd側と同じ仕組みを共有）
+                  bs._pendingTurnPlayerBattleTrigger = (proceed) => { fireOnBattleWin(proceed); };
+                  bs._pendingNonTurnPlayerBattleTrigger = (proceed) => { _fireDestroyChain(['player'], proceed, { player: def }); };
+                  doAiSecurityCheck(atk, atkIdx, () => { _consumePendingBattleTriggers(callback); });
                 });
               }, 'Win!!', '#00ff88');
             } else {

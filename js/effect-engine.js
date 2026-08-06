@@ -6573,7 +6573,23 @@ function executeRecipeStep(step, ctx, store, callback) {
           ctx.addLog('🌟 「' + cardToSummon.name + '」をバトルエリアに登場');
         }
         ctx.renderAll();
-        callback();
+        // 登場時効果を発動（skip_on_play指定時は発動しない）。
+        // ≪貫通≫のセキュリティ効果解決中等、まだターンプレイヤー側の同時誘発効果
+        // (on_battle_win等)が解決していない場合は、この登場時効果をそちらが終わった
+        // 後に合流させる（公式ルール15-4-3-3: ルールチェックで誘発した効果は、その
+        // 時点で誘発していた効果と同時誘発になる）。通常時は即座に発動する。
+        if (step.skip_on_play) { callback(); break; }
+        if (ctx.bs && ctx.bs._pendingNonTurnPlayerBattleTrigger) {
+          const existingNonTurnPlayerPhase = ctx.bs._pendingNonTurnPlayerBattleTrigger;
+          ctx.bs._pendingNonTurnPlayerBattleTrigger = (proceed) => {
+            scanTriggers('on_play', cardToSummon, ctx.side, ctx);
+            processQueue(ctx, () => existingNonTurnPlayerPhase(proceed));
+          };
+          callback();
+          break;
+        }
+        try { scanTriggers('on_play', cardToSummon, ctx.side, ctx); processQueue(ctx, () => callback()); }
+        catch (_) { callback(); }
         break;
       }
       // 手札/トラッシュから filter 一致のカードを登場（ピーターモン「ティンカーモン」等）

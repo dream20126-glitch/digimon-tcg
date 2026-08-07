@@ -4696,7 +4696,11 @@ export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
   let block = fullText;
   if (label) {
     try {
-      const re = new RegExp('【' + esc(label) + '】[\\s\\S]*?(?=\\n*【(?:' + _ALL_TRIGGER_LABELS.map(esc).join('|') + ')】|$)');
+      // 次のセクション見出しとして扱うのは改行の直後にある「【ラベル】」だけにする。
+      // \n* (0回以上)だと、文中で他ラベルに言及しているだけの箇所（例:「このカードの
+      // 【メイン】効果を発揮する」というセキュリティ効果テキスト中の「【メイン】」）まで
+      // 区切りと誤認識し、そこで切り詰められてしまう不具合があった（チェリーボム等）
+      const re = new RegExp('【' + esc(label) + '】[\\s\\S]*?(?=\\n【(?:' + _ALL_TRIGGER_LABELS.map(esc).join('|') + ')】|$)');
       const m = fullText.match(re);
       block = m ? m[0].trim() : fullText;
     } catch (_) { block = fullText; }
@@ -4713,7 +4717,7 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
   // card.effect 内の【メイン】ブロックを抽出して併記（プレイヤーがメイン効果の中身を確認できるように）
   const mentionsMain = /このカードの\s*【メイン】\s*効果/.test(displayText);
   if (mentionsMain && card.effect) {
-    const mainMatch = card.effect.match(/【メイン】[\s\S]*?(?=\n*【(?:セキュリティ|アタック時|消滅時|登場時|進化時|自分のターン|相手のターン|お互いのターン)】|$)/);
+    const mainMatch = card.effect.match(/【メイン】[\s\S]*?(?=\n【(?:セキュリティ|アタック時|消滅時|登場時|進化時|自分のターン|相手のターン|お互いのターン)】|$)/);
     if (mainMatch) {
       const mainBlock = mainMatch[0].trim();
       if (mainBlock && !displayText.includes(mainBlock)) {

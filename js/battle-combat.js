@@ -71,7 +71,7 @@ if (typeof window !== 'undefined') {
 function fireOppRestThen(restedOwnerSide, cb) {
   const ctxBase = { bs, addLog, renderAll, updateMemGauge };
   try { _fireWhenOppRest(restedOwnerSide, bs, ctxBase, () => cb && cb()); }
-  catch (_) { cb && cb(); }
+  catch (e) { console.error('[fireOppRestThen]', restedOwnerSide, e); cb && cb(); }
 }
 
 // ブロック専用: blocker のオーナー側のテイマー/デジモンを反応させる

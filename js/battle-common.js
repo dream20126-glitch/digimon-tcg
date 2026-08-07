@@ -344,7 +344,7 @@ export function setupCommonWindowExports() {
   // （battle-online.js の fx_reactionDelegate 受信ハンドラから呼ばれる）
   window._fireDelegatedReactionTriggers = function(recipeKey, _bs, ctxBase, done) {
     try { _fireDelegatedReactionEE(recipeKey, _bs || bs, ctxBase || { bs, addLog, renderAll, updateMemGauge }, done); }
-    catch (_) { done && done(); }
+    catch (e) { console.error('[_fireDelegatedReactionTriggers]', recipeKey, e); done && done(); }
   };
 
   // 消滅時/バトル消滅時/自分のデジモンが消滅したとき の誘発をまとめて発火する

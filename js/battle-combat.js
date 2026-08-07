@@ -2091,6 +2091,23 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
               afterDone();
             });
           };
+          // ≪道連れ≫: 撃破した相手(def)が【道連れ】を持つ場合、DPで上回っていても
+          // 撃破した側(atk)も巻き込んで消滅する。道連れが優先されるため≪貫通≫の
+          // ボーナスチェックは発揮せず、on_battle_winも発火しない（両者消滅と同じ扱い）
+          if (hasMichizure(def)) {
+            addLog('💀 【道連れ】「' + def.name + '」が「' + atk.name + '」を巻き込んで消滅！');
+            bs.player.battleArea[atkIdx] = null;
+            bs.player.trash.push(atk);
+            if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
+            if (atk.linkedCards) atk.linkedCards.forEach(function(s){ bs.player.trash.push(s); });
+            renderAll();
+            showMichizureAnnounce(() => {
+              showDestroyEffect(atk, function() {
+                _fireDestroyChain(['ai', 'player'], function() { checkPendingTurnEnd(); }, { ai: def, player: atk });
+              });
+            });
+            return;
+          }
           // ≪衝突≫: アタックで相手デジモン撃破 → 自身も消滅 (公式 18-30 推定: 相互道連れ)
           if (hasCollision(atk)) {
             addLog('💥 【衝突】「' + atk.name + '」が相手撃破とともに消滅！');
@@ -2280,6 +2297,25 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
                 afterDone();
               });
             };
+            // ≪道連れ≫: 撃破した相手(def)が【道連れ】を持つ場合、DPで上回っていても
+            // 撃破した側(atk)も巻き込んで消滅する。道連れが優先されるため≪貫通≫の
+            // ボーナスチェックは発揮せず、on_battle_winも発火しない（両者消滅と同じ扱い）
+            if (hasMichizure(def)) {
+              addLog('💀 【道連れ】「' + def.name + '」が「' + atk.name + '」を巻き込んで消滅！');
+              bs.ai.battleArea[atkIdx] = null;
+              bs.ai.trash.push(atk);
+              if (atk.stack) atk.stack.forEach(function(s){ bs.ai.trash.push(s); });
+              if (atk.linkedCards) atk.linkedCards.forEach(function(s){ bs.ai.trash.push(s); });
+              renderAll();
+              showMichizureAnnounce(() => {
+                showDestroyEffect(atk, function() {
+                  _fireDestroyChain(['player', 'ai'], function() {
+                    showBattleResult('両者消滅', '#ff4444', '両者消滅（道連れ）！', function() { renderAll(); callback(); }, '両者消滅', '#ff4444');
+                  }, { player: def, ai: atk });
+                });
+              });
+              return;
+            }
             // ≪衝突≫: AI アタッカーが撃破したら自身も消滅
             if (hasCollision(atk)) {
               addLog('💥 【衝突】相手「' + atk.name + '」が撃破とともに消滅！');

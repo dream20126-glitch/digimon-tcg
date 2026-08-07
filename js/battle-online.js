@@ -409,7 +409,15 @@ function onRemoteCommand(cmd) {
 
     // --- メモリー ---
     case 'memory_update': {
-      if (cmd.memory !== undefined) { bs.memory = -cmd.memory; updateMemGauge(); }
+      if (cmd.memory !== undefined) {
+        bs.memory = -cmd.memory;
+        updateMemGauge();
+        // 相手機での効果（ヴェノムヴァンデモンの進化元効果等）によりこちらのメモリーが
+        // 相手側へ渡った場合、こちらが自分のターン中ならターン終了フラグを立てる。
+        // ここは_memoryOverflow経由のprocessQueue完了処理を通らない別経路（ネットワーク
+        // 経由でbs.memoryが変化する唯一の場所）なので、ここで直接判定する必要がある
+        if (bs.isPlayerTurn && bs.memory < 0) bs._pendingTurnEnd = true;
+      }
       break;
     }
 

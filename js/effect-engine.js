@@ -5932,18 +5932,20 @@ function recipeWillExecuteAnything(recipe, ctx) {
       );
       if (_costInfeasible) continue;
     }
-    // summon（手札/トラッシュから filter 一致で登場）/ summon_from_trash: フィルタに
-    // 一致する候補が1枚も無ければ、条件を満たしていても効果不発なので演出ポップアップも
-    // 出さない（ホーリードラモン「黄色のLv3のデジモン」等が手札に無い場合に該当）
-    if ((step.action === 'summon' && !step.card) || step.action === 'summon_from_trash') {
-      const _fromZones = step.action === 'summon_from_trash'
-        ? ['trash']
-        : (Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []));
-      if (_fromZones.includes('hand') || _fromZones.includes('trash')) {
+    // summon（手札から filter 一致で登場）: フィルタに一致する候補が1枚も無ければ、
+    // 条件を満たしていても効果不発なので演出ポップアップも出さない
+    // （ホーリードラモン「黄色のLv3のデジモン」等が手札に無い場合に該当）。
+    // ※ トラッシュ(summon_from_trash)はここでは判定しない：パグモン「デッキ上から
+    // 1枚破棄」→メタルガルルモン「トラッシュから登場」のように、同時誘発の中で先に
+    // 解決した別の効果がトラッシュに対象を追加してから発動する場合があるため、
+    // 「今トラッシュに候補が無い」だけで発動順選択の候補から除外してはいけない
+    // （対象が無ければ実行時にsummon_from_trash自身が失敗演出を出す）
+    if (step.action === 'summon' && !step.card) {
+      const _fromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
+      if (_fromZones.includes('hand')) {
         const _filter = step.filter || {};
         const _p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
-        const _hasCand = (_fromZones.includes('hand') && (_p.hand || []).some(c => c && cardMatchesFilter(c, _filter)))
-          || (_fromZones.includes('trash') && (_p.trash || []).some(c => c && cardMatchesFilter(c, _filter)));
+        const _hasCand = (_p.hand || []).some(c => c && cardMatchesFilter(c, _filter));
         if (!_hasCand) {
           console.log('[recipeWillExecute] reactor=' + _reactor + ' summon filter has no candidate → skip', 'action=' + step.action);
           continue;

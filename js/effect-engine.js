@@ -6216,11 +6216,14 @@ function executeRecipeStep(step, ctx, store, callback) {
   // ターン回数制限チェック（once_per_turn=1回 / per_turn:N=N回）
   // active 等の専用 case は default の limit-check を通らないため、ここで共通的に判定する
   {
-    // コスト持ち step は cost 完了後の本体実行段階(_costsResolved)でのみ判定する。
-    // cost 処理は本体を executeRecipeStep で再帰呼び出しするため、判定しないと
-    // limit-check が1アタックで2回走り使用回数が二重カウントされる。
+    // コスト持ち step は使用回数の加算自体は cost 完了後の本体実行段階(_costsResolved)でのみ
+    // 行う（cost処理は本体を executeRecipeStep で再帰呼び出しするため、ここで毎回加算すると
+    // 1アタックで2回加算されてしまう）。ただし「既に制限に達しているか」の判定自体は
+    // コスト実行前（cost未解決の1回目の呼び出し）でも行う。ワーガルルモン(BT2-078)等、
+    // 【ターンに1回】かつコスト持ちの効果は、こうしないと制限到達後もコスト（他の自分の
+    // デジモンを消滅させる等）の対象選択が一度提示されてしまう。
     const _hasCost = Array.isArray(step.cost) && step.cost.length > 0;
-    const _limitMax = (!_hasCost || step._costsResolved) ? getLimitMaxUses(step) : 0;
+    const _limitMax = getLimitMaxUses(step);
     if (_limitMax > 0 && ctx.bs) {
       const _srcCard = ctx._sourceCard || ctx.card;
       const _srcId = (_srcCard && (_srcCard.cardNo || _srcCard.name)) || 'unknown';
@@ -6233,7 +6236,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         callback && callback();
         return;
       }
-      ctx.bs._usedLimits[_limitKey] = _used + 1;
+      // 加算はコスト解決後の本体実行段階でのみ行う（コストが無いstepは常にここで加算）
+      if (!_hasCost || step._costsResolved) {
+        ctx.bs._usedLimits[_limitKey] = _used + 1;
+      }
     }
   }
 

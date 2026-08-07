@@ -771,7 +771,12 @@ function onRemoteCommand(cmd) {
       if (_pendingSecEffectCallback) {
         const cb = _pendingSecEffectCallback; _pendingSecEffectCallback = null; cb();
       } else {
+        // 誰も待っていない状態で届いたack（例: セキュリティ最終チェックで登場したテイマーの
+        // 【登場時】効果は、こちらは待たずに次へ進んでいるため）。waitForSecurityEffect呼び出し
+        // 前にackが届く短い競合状態のためだけの一時フラグなので、無関係な将来のwaitForSecurityEffect
+        // 呼び出しを誤って即完了させてしまわないよう、短時間で自動的に消す
         _pendingSecEffectResponse = true;
+        setTimeout(() => { _pendingSecEffectResponse = null; }, 3000);
       }
       break;
     }
@@ -797,7 +802,10 @@ function onRemoteCommand(cmd) {
       if (_pendingReactionDelegateCallback) {
         const cb = _pendingReactionDelegateCallback; _pendingReactionDelegateCallback = null; cb();
       } else {
+        // 誰も待っていない状態で届いたack。短い競合状態のためだけの一時フラグなので、
+        // 無関係な将来のwaitForReactionDelegate呼び出しを誤って即完了させないよう自動で消す
         _pendingReactionDelegateResponse = true;
+        setTimeout(() => { _pendingReactionDelegateResponse = null; }, 3000);
       }
       break;
     }

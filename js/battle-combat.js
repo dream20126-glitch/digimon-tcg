@@ -1658,9 +1658,15 @@ export function resolveSecurityCheck(atk, atkIdx) {
           } else {
             fireSecTamerOnPlay(_afterSecTamer);
           }
-        } else if (_onlineMode && _secTamerHasOnPlay && typeof window._waitForSecurityEffect === 'function') {
+        } else if (_onlineMode && _secTamerHasOnPlay && checksRemaining > 0 && typeof window._waitForSecurityEffect === 'function') {
           // 相手(所有者)機でテイマーの【登場時】効果が解決するまで、2枚目以降のセキュリティ
-          // チェックに進まず待機する（security_tamer_play受信側からのsecurity_effect_done待ち）
+          // チェックに進まず待機する（security_tamer_play受信側からのsecurity_effect_done待ち）。
+          // ただしこれは「次のチェックがある場合」のみ必要。このチェックが最後（checksRemaining
+          // <= 0）でcheckAttackEndに進む場合は待たない：≪貫通≫等でbs._deferNonTurnPlayerTriggers
+          // が立っている（=まだターンプレイヤー側の同時誘発が解決していない）と、相手機の
+          // テイマー効果はそのフラグが解除されるまで発揮されない。一方こちらがここで相手の
+          // 効果完了を待ってしまうと、そのフラグ解除自体（checkAttackEnd経由）を待っている
+          // ことになり、お互いが相手を待ち続ける相互デッドロックになってしまう。
           addLog('⏳ 相手がテイマーの効果を処理中...');
           window._waitForSecurityEffect(() => {
             _dispatchStateSync();

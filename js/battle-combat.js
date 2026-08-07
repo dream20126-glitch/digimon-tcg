@@ -3153,6 +3153,20 @@ export async function checkPendingTurnEnd() {
   }
 }
 
+// checkPendingTurnEnd からアタック解決の付随処理（_attackInProgress解除・
+// combat backdrop非表示・チュートリアル通知等）を除いた、判定部分のみの版。
+// 非ターンプレイヤー側の反応キュー(_pendingNonTurnPlayerReactions)がドレインを
+// 終えたタイミング等、アタック解決の文脈外からも安全に呼べるようにするため
+// battle-online.js に公開する（相手機に委譲された消滅時効果等が、通常の
+// checkPendingTurnEnd呼び出し地点より後に解決してターンを持ち越されるのを防ぐ）
+function checkPendingTurnEndOnly() {
+  if (bs._pendingTurnEnd) {
+    bs._pendingTurnEnd = false;
+    checkAutoTurnEnd();
+  }
+}
+if (typeof window !== 'undefined') window._checkPendingTurnEndOnly = checkPendingTurnEndOnly;
+
 // ===== 勝敗判定 =====
 
 export function battleVictory() {

@@ -77,7 +77,16 @@ function _drainNonTurnPlayerReactionQueue() {
   _nonTurnPlayerReactionDraining = true;
   const step = () => {
     const queue = bs._pendingNonTurnPlayerReactions;
-    if (!queue || queue.length === 0) { _nonTurnPlayerReactionDraining = false; return; }
+    if (!queue || queue.length === 0) {
+      _nonTurnPlayerReactionDraining = false;
+      // 相手機に委譲された消滅時効果等（memory_plus等でbs._pendingTurnEndが立つ場合が
+      // ある）が、通常のcheckPendingTurnEnd呼び出し地点より後にここで解決することがある。
+      // キューが完全に空になったこのタイミングで改めて判定し、ターン終了の持ち越しを防ぐ
+      if (bs._pendingTurnEnd && window._checkPendingTurnEndOnly) {
+        try { window._checkPendingTurnEndOnly(); } catch (_) {}
+      }
+      return;
+    }
     const fn = queue.shift();
     try { fn(step); } catch (e) { console.error('[_drainNonTurnPlayerReactionQueue] 反応実行中に例外', e); step(); }
   };

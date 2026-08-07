@@ -364,14 +364,18 @@ export function setupCommonWindowExports() {
       if (i >= sides.length) { done && done(); return; }
       const s = sides[i++];
       const dc = destroyedCardsBySide && destroyedCardsBySide[s];
+      // 「消滅した時」（when_own_destroyed=同sideの他カードの反応）を先に解決し、
+      // 「消滅時」（on_destroy/on_battle_destroy=消滅したカード自体の効果）を最後に解決する
+      // （effect-engine.js の fireDestroyChain / battle-combat.js の _fireDestroyChain と
+      // 同じ順序。ここだけ従来のon_destroy優先の順序が残っていたため統一した）
       try {
-        _fireOnDestroyEE(s, bs, ctxBase, () => {
+        _fireWhenOwnDestroyedEE(s, bs, ctxBase, () => {
           try {
-            _fireOnBattleDestroyEE(s, bs, ctxBase, () => {
-              try { _fireWhenOwnDestroyedEE(s, bs, ctxBase, next); } catch(_) { next(); }
+            _fireOnDestroyEE(s, bs, ctxBase, () => {
+              try { _fireOnBattleDestroyEE(s, bs, ctxBase, next, dc); } catch(_) { next(); }
             }, dc);
           } catch(_) { next(); }
-        }, dc);
+        });
       } catch(_) { next(); }
     };
     next();

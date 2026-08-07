@@ -43,22 +43,43 @@ let _pendingReactionDelegateCallback = null;
 let _pendingReactionDelegateResponse = null;
 let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
 let _nonTurnPlayerReactionDraining = false; // bs._pendingNonTurnPlayerReactionsを順に発揮中かどうか
+let _deferStuckWatchdog = null; // active:false未受信のまま保留し続けるのを防ぐフェイルセーフタイマー
 
 // 非ターンプレイヤー側の発揮待ち効果（セキュリティで登場したカードの登場時、消滅時等）を
 // 1件ずつ順番に発揮する（公式ルール15-4-4「発揮待ち」）。テイマーの登場時効果ポップアップの
 // 上に消滅時効果ポップアップが重なって表示されるのを防ぐため、fx_ownDestroyReady側も
 // この同じ待ち行列を経由させ、既に発揮中の効果が終わるまで割り込ませない。
 function _drainNonTurnPlayerReactionQueue() {
-  if (_nonTurnPlayerReactionDraining) return;
+  const queueLenAtCall = (bs._pendingNonTurnPlayerReactions || []).length;
+  if (_nonTurnPlayerReactionDraining) {
+    if (queueLenAtCall > 0) console.warn('[_drainNonTurnPlayerReactionQueue] 既に排出中のためスキップ (queue=' + queueLenAtCall + ')');
+    return;
+  }
   // まだターンプレイヤー側の同時誘発が解決中（active:trueの間）は、ここでは発揮を開始しない。
   // active:false受信時に改めてこの関数が呼ばれて排出される
-  if (bs._deferNonTurnPlayerTriggers) return;
+  if (bs._deferNonTurnPlayerTriggers) {
+    if (queueLenAtCall > 0) console.warn('[_drainNonTurnPlayerReactionQueue] active:false待ちのためスキップ (queue=' + queueLenAtCall + ')');
+    // フェイルセーフ: active:false受信の見逃し等でここが永久にブロックされないよう、
+    // 一定時間後に強制的に保留を解除して排出する（本来は fx_deferOppNonTurnPlayerTriggers
+    // の active:false 受信で解除されるのが正常系）
+    if (!_deferStuckWatchdog) {
+      _deferStuckWatchdog = setTimeout(() => {
+        _deferStuckWatchdog = null;
+        if (bs._deferNonTurnPlayerTriggers) {
+          console.warn('[_drainNonTurnPlayerReactionQueue] active:false未受信のまま10秒経過 → 強制解除');
+          bs._deferNonTurnPlayerTriggers = false;
+          _drainNonTurnPlayerReactionQueue();
+        }
+      }, 10000);
+    }
+    return;
+  }
   _nonTurnPlayerReactionDraining = true;
   const step = () => {
     const queue = bs._pendingNonTurnPlayerReactions;
     if (!queue || queue.length === 0) { _nonTurnPlayerReactionDraining = false; return; }
     const fn = queue.shift();
-    try { fn(step); } catch (_) { step(); }
+    try { fn(step); } catch (e) { console.error('[_drainNonTurnPlayerReactionQueue] 反応実行中に例外', e); step(); }
   };
   step();
 }
@@ -800,7 +821,10 @@ function onRemoteCommand(cmd) {
       // （セキュリティ効果で登場したカードの登場時等）は即座に発動せず保留する
       // （公式ルール15-4-3-5: ターンプレイヤー側を全て解決してから非ターンプレイヤー側へ）。
       bs._deferNonTurnPlayerTriggers = !!cmd.active;
-      if (!cmd.active) _drainNonTurnPlayerReactionQueue();
+      if (!cmd.active) {
+        if (_deferStuckWatchdog) { clearTimeout(_deferStuckWatchdog); _deferStuckWatchdog = null; }
+        _drainNonTurnPlayerReactionQueue();
+      }
       break;
     }
 

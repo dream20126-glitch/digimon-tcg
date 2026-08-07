@@ -293,7 +293,13 @@ function executeQueueEntry(entry, context, callback) {
   const { card, block, side } = entry;
   // sideを実際のplayer/aiに変換
   const actualSide = entry.actualSide || (side === 'turnPlayer' ? (context.bs.isPlayerTurn ? 'player' : 'ai') : (context.bs.isPlayerTurn ? 'ai' : 'player'));
-  const ctx = { ...context, card, side: actualSide, block, _parentContext: context };
+  // _sourceCard: 進化元効果なら進化元カード自身（例: ワーガルルモン）、そうでなければcardと同じ。
+  // recipeWillExecuteAnything（_entryWillExecuteのターン制限チェック）が
+  // _sourceCard@card_recipe_actionというキーで使用回数を見るため、実行時（ここ）でも
+  // 同じキーになるよう揃える必要がある。無いとexecuteRecipeStep側はctx.cardのみに
+  // フォールバックしてしまい、キーが食い違って制限が別カウントとして扱われ、
+  // 2回目以降も同時誘発の選択肢に出てきてしまう不具合になる
+  const ctx = { ...context, card, side: actualSide, block, _parentContext: context, _sourceCard: block._recipeCard || card };
   // このトリガーで実際に実行されるレシピステップ配列（display_text/no_announce/optional/事前条件チェックで共用）
   const _recipeCardForLookup = block._recipeCard || card;
   const _trigCodeForLookup = block.trigger ? block.trigger.code : null;
@@ -364,8 +370,11 @@ function executeQueueEntry(entry, context, callback) {
   // 例: 石田ヤマトの「進化元を持たない相手デジモンがいるとき、メモリー+1」で
   //     条件を満たす相手デジモンがいない場合、ポップアップ自体を出さない
   if (Array.isArray(_recipeStepsForLookup)) {
-    // block を渡す: trigger_conditions を発火元カード(_eventSourceCard)に対して評価するため
-    const willExecute = recipeWillExecuteAnything(_recipeStepsForLookup, { card, bs: context.bs, side: actualSide, block });
+    // block を渡す: trigger_conditions を発火元カード(_eventSourceCard)に対して評価するため。
+    // _sourceCard も _entryWillExecute / executeRecipeStep の使用回数キーと同じ
+    // 進化元カード（例: ワーガルルモン）を渡す。省略するとcard（進化先の現在カード）に
+    // フォールバックしてキーが食い違い、【ターンに1回】の判定がここだけ効かなくなる
+    const willExecute = recipeWillExecuteAnything(_recipeStepsForLookup, { card, bs: context.bs, side: actualSide, block, _sourceCard: block._recipeCard || card });
     if (!willExecute) {
       callback();
       return;

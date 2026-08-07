@@ -42,6 +42,8 @@ let _pendingSecEffectResponse = null;
 let _pendingReactionDelegateCallback = null;
 let _pendingReactionDelegateResponse = null;
 let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
+let _pendingOwnDestroyDoneCallback = null;
+let _pendingOwnDestroyDoneResponse = null;
 let _nonTurnPlayerReactionDraining = false; // bs._pendingNonTurnPlayerReactionsを順に発揮中かどうか
 let _deferStuckWatchdog = null; // active:false未受信のまま保留し続けるのを防ぐフェイルセーフタイマー
 
@@ -398,10 +400,20 @@ function onRemoteCommand(cmd) {
           const cardForChain = card || cmd.cardData;
           if (cardForChain) {
             _pendingOwnDestroyFire = (afterDone) => {
+              const _finishOwnDestroy = () => {
+                sendMemoryUpdate();
+                sendStateSync();
+                // こちら（本当の持ち主）側の消滅時チェーンが完全に解決したことを相手
+                // （消滅させた側）機に伝える。相手はこれを待ってから次（ターン終了判定等）へ
+                // 進むため、これが無いとfx_ownDestroyReady送信直後に相手が先に進んでしまい、
+                // こちら側の消滅時効果（メモリー+1等）が終わる前にターンが持ち越されてしまう
+                sendCommand({ type: 'fx_ownDestroyDone' });
+                afterDone && afterDone();
+              };
               try {
                 // on_destroy 完了時に盤面を同期（summon_from_trash 等で盤面が変化するケースがあるため）
-                window._fireOnlineDestroyChain(['player'], { player: cardForChain }, () => { sendStateSync(); afterDone && afterDone(); });
-              } catch (_) { afterDone && afterDone(); }
+                window._fireOnlineDestroyChain(['player'], { player: cardForChain }, _finishOwnDestroy);
+              } catch (_) { _finishOwnDestroy(); }
             };
           }
         }
@@ -823,6 +835,17 @@ function onRemoteCommand(cmd) {
         // 無関係な将来のwaitForReactionDelegate呼び出しを誤って即完了させないよう自動で消す
         _pendingReactionDelegateResponse = true;
         setTimeout(() => { _pendingReactionDelegateResponse = null; }, 3000);
+      }
+      break;
+    }
+    case 'fx_ownDestroyDone': {
+      // 相手（カードの本当の持ち主）機の消滅時チェーンが完全に解決した
+      // （メモリー等は直前のmemory_update/state_syncで既に反映されている）
+      if (_pendingOwnDestroyDoneCallback) {
+        const cb = _pendingOwnDestroyDoneCallback; _pendingOwnDestroyDoneCallback = null; cb();
+      } else {
+        _pendingOwnDestroyDoneResponse = true;
+        setTimeout(() => { _pendingOwnDestroyDoneResponse = null; }, 3000);
       }
       break;
     }
@@ -1517,6 +1540,34 @@ export function waitForReactionDelegate(callback) {
   }, 30000);
 }
 
+// ===== 相手（カードの本当の持ち主）機の消滅時チェーン完了待ち =====
+// fx_ownDestroyReady送信後、相手側のon_destroy/when_own_destroyed等（メモリー+1等を
+// 含む）が完全に解決するまで、こちら（消滅させた側）はアタック終了・ターン終了判定に
+// 進まず待機する。これが無いと、相手側の消滅時効果が終わる前にこちらが先に進んでしまい、
+// メモリーが相手側へ渡ったことによるターン終了判定を取りこぼしていた
+// （バトル終了直後に本来ではないアクティブフェイズへ入ってしまう不具合）
+export function waitForOwnDestroyDone(callback) {
+  if (_pendingOwnDestroyDoneResponse !== null) {
+    _pendingOwnDestroyDoneResponse = null; callback();
+    return;
+  }
+  const waitOv = document.createElement('div');
+  waitOv.id = '_own-destroy-wait-overlay';
+  waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
+  waitOv.innerHTML = '<div style="color:#ff4444;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ff4444;">⏳ 相手が消滅時効果を処理中...</div>';
+  document.body.appendChild(waitOv);
+
+  function onDone() {
+    if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
+    callback();
+  }
+  _pendingOwnDestroyDoneCallback = onDone;
+  // 30秒タイムアウト（相手の切断等でackが来ない場合にゲームが止まらないように）
+  setTimeout(() => {
+    if (_pendingOwnDestroyDoneCallback === onDone) { _pendingOwnDestroyDoneCallback = null; onDone(); }
+  }, 30000);
+}
+
 function checkOnlineBlock(cmd) {
   // ブロッカー判定: テキスト一致は「【ブロッカー】を得る」「【ブロッカー】を持つ間」等の
   // 言及にも誤マッチするため、構造的な情報（_permEffects / buffs / recipe.passive /
@@ -1670,9 +1721,17 @@ function resolveOnlineBlock(blockerIdx, cmd) {
             // ので、ここで 'ai' を発火すると「相手の効果」が自機側にもポップアップ表示されて
             // 「P1 と P2 で popup が逆」状態になるため発火しない。
             const fire = window._fireOnlineDestroyChain;
-            const finish = () => { window._suppressFxSend = false; sendStateSync(); };
-            if (fire) fire(['player'], { player: blocker }, finish);
-            else finish();
+            const finishAfterOwn = () => {
+              // 相手(atk所有者)側の消滅時チェーンが解決するまで待つ（fx_ownDestroyReady済み）。
+              // これが無いと相手側の効果でメモリーが動いてもターン終了判定を取りこぼす
+              if (typeof window._waitForOwnDestroyDone === 'function') {
+                window._waitForOwnDestroyDone(() => { window._suppressFxSend = false; sendStateSync(); });
+              } else {
+                window._suppressFxSend = false; sendStateSync();
+              }
+            };
+            if (fire) fire(['player'], { player: blocker }, finishAfterOwn);
+            else finishAfterOwn();
           }); });
         });
       } else if (_atkDp > _blkDp) {
@@ -1711,9 +1770,15 @@ function resolveOnlineBlock(blockerIdx, cmd) {
                   addLog('💥 両者消滅（道連れ）！');
                   // blocker (player) のみ発火。atk の on_destroy はオーナー機側で発火される。
                   const fire = window._fireOnlineDestroyChain;
-                  const finish = () => { window._suppressFxSend = false; sendStateSync(); };
-                  if (fire) fire(['player'], { player: blocker }, finish);
-                  else finish();
+                  const finishAfterOwn = () => {
+                    if (typeof window._waitForOwnDestroyDone === 'function') {
+                      window._waitForOwnDestroyDone(() => { window._suppressFxSend = false; sendStateSync(); });
+                    } else {
+                      window._suppressFxSend = false; sendStateSync();
+                    }
+                  };
+                  if (fire) fire(['player'], { player: blocker }, finishAfterOwn);
+                  else finishAfterOwn();
                 });
               });
             });
@@ -1772,9 +1837,15 @@ function resolveOnlineBlock(blockerIdx, cmd) {
                   addLog('💥 両者消滅（道連れ）！');
                   // blocker (player) のみ発火。atk の on_destroy はオーナー機側で発火される。
                   const fire = window._fireOnlineDestroyChain;
-                  const finish = () => { window._suppressFxSend = false; sendStateSync(); };
-                  if (fire) fire(['player'], { player: blocker }, finish);
-                  else finish();
+                  const finishAfterOwn = () => {
+                    if (typeof window._waitForOwnDestroyDone === 'function') {
+                      window._waitForOwnDestroyDone(() => { window._suppressFxSend = false; sendStateSync(); });
+                    } else {
+                      window._suppressFxSend = false; sendStateSync();
+                    }
+                  };
+                  if (fire) fire(['player'], { player: blocker }, finishAfterOwn);
+                  else finishAfterOwn();
                 });
               });
             });
@@ -1788,9 +1859,12 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         showBR('Win!!', '#00ff88', '「' + atk.name + '」を撃破！', () => {
           showDE(atk, () => {
             addLog('💥 「' + atk.name + '」を撃破！');
-            // atk の on_destroy はカード所有者 (相手機) で card_removed 受信時に発火される
-            window._suppressFxSend = false;
-            sendStateSync();
+            // atk の on_destroy はカード所有者 (相手機) で card_removed 受信時に発火される。
+            // fx_ownDestroyReady送信済みなので、相手側の消滅時チェーンが完全に解決する
+            // (fx_ownDestroyDone受信)まで待ってから次へ進む
+            const finishAfterOwn = () => { window._suppressFxSend = false; sendStateSync(); };
+            if (typeof window._waitForOwnDestroyDone === 'function') window._waitForOwnDestroyDone(finishAfterOwn);
+            else finishAfterOwn();
           });
         });
       }
@@ -1863,6 +1937,7 @@ window._sendMemoryUpdate = () => sendMemoryUpdate();
 window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
 window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._waitForReactionDelegate = (cb) => waitForReactionDelegate(cb);
+window._waitForOwnDestroyDone = (cb) => waitForOwnDestroyDone(cb);
 window._drainNonTurnPlayerReactionQueue = () => _drainNonTurnPlayerReactionQueue();
 window._clearPendingBlock = () => { _pendingBlockCallback = null; _pendingBlockResponse = null; };
 window._markDestroyed = (side, slotIdx) => markDestroyed(side, slotIdx);

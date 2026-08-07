@@ -1966,7 +1966,16 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide) {
         if (_onlineMode && _sendCommand) {
           try { _sendCommand({ type: 'fx_ownDestroyReady' }); } catch (_) {}
         }
-        cb();
+        // 相手側の消滅時チェーン（メモリー+1等のwhen_own_destroyed/on_destroy）が完全に
+        // 解決するまで待ってから次へ進む。これが無いと、相手側の効果が終わる前に
+        // こちらがcheckAttackEnd/ターン終了判定へ進んでしまい、相手側の効果で相手側へ
+        // 渡ったメモリーによるターン終了判定を取りこぼす（バトル終了直後に本来ではない
+        // アクティブフェイズに入ってしまう不具合の原因だった）
+        if (typeof window !== 'undefined' && typeof window._waitForOwnDestroyDone === 'function') {
+          window._waitForOwnDestroyDone(cb);
+        } else {
+          cb();
+        }
         return;
       }
       try { _fireOnDestroy(s, bs, ctxBase, cb, destroyedCard); } catch (_) { cb(); }

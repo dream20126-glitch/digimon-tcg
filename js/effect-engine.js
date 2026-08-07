@@ -863,6 +863,19 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       ctx.updateMemGauge();
       if (window._sendMemoryUpdate) window._sendMemoryUpdate(); // 相手に即時通知
+      // メモリー超過チェック（効果処理は完了させてからターン終了）。
+      // ctx.side!=='player'側（相手側）へのmemory_plusはbs.memoryを減算する分岐なので、
+      // memory_minusと同じくここで相手側へ超過していないか確認する必要がある
+      // （ヴェノムヴァンデモンの進化元効果でメモリーが相手側に渡ってもターンが終了しない不具合）。
+      // when_opp_rest等の反応系トリガー（_fireSidedReactionTriggers経由）はprocessQueueの
+      // 完了処理を通らないため、_memoryOverflow経由の変換だけでは拾えない。
+      // bs._pendingTurnEndを直接立てておくことで、経路によらずcheckPendingTurnEndで
+      // 確実にターン終了判定される
+      if (ctx.side !== 'player' && ctx.bs.memory < 0) {
+        ctx._memoryOverflow = true;
+        if (ctx._parentContext) ctx._parentContext._memoryOverflow = true;
+        ctx.bs._pendingTurnEnd = true;
+      }
       ctx.renderAll();
       callback();
       break;
@@ -873,10 +886,13 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       ctx.addLog('💎 ' + sideLabel + 'のメモリー-' + val);
       ctx.updateMemGauge();
       if (window._sendMemoryUpdate) window._sendMemoryUpdate(); // 相手に即時通知
-      // メモリー超過チェック（効果処理は完了させてからターン終了）
+      // メモリー超過チェック（効果処理は完了させてからターン終了）。
+      // when_opp_rest等の反応系トリガー経由の場合はprocessQueue完了処理を通らないため、
+      // bs._pendingTurnEndも直接立てておく
       if (ctx.side === 'player' && ctx.bs.memory < 0) {
         ctx._memoryOverflow = true;
         if (ctx._parentContext) ctx._parentContext._memoryOverflow = true;
+        ctx.bs._pendingTurnEnd = true;
       }
       callback();
       break;

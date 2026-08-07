@@ -8539,9 +8539,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         // executeRecipeStep では opponentRowSide / uiColor が未定義のため、ここで構築する
         const _rdRowId = ctx.side === 'player' ? 'ai' : 'pl';
         const _rdColor = getUIColor(step.action, '#ff4444', step.frame_color);
-        const _doReturnDeck = (idx) => {
+        const _doReturnDeck = (idx, doneCb) => {
           const c = opponent.battleArea[idx];
-          if (!c) return;
+          if (!c) { doneCb && doneCb(); return; }
           opponent.battleArea[idx] = null;
           if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
           if (c.linkedCards) c.linkedCards.forEach(s => opponent.trash.push(s));
@@ -8550,15 +8550,22 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
             window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'return_deck' });
           }
+          ctx.renderAll();
+          // デッキへ戻る演出（テラーズクラスター等）
+          if (window._fxCardMove) window._fxCardMove(c, 'バトルエリア', 'デッキ' + (_rdTop ? '(上)' : '(下)'), doneCb);
+          else setTimeout(() => doneCb && doneCb(), 300);
         };
         if (effectiveSide === 'ai') {
-          _doReturnDeck(ctx._forceTargetIdx ?? _rdCands[0]);
-          ctx.renderAll(); callback(); break;
+          _doReturnDeck(ctx._forceTargetIdx ?? _rdCands[0], () => callback());
+          break;
         }
         showTargetSelection(_rdRowId, _rdCands, null, _rdColor, (selectedIdx) => {
-          if (selectedIdx !== null) _doReturnDeck(selectedIdx);
-          ctx.renderAll();
-          callback();
+          if (selectedIdx !== null) {
+            _doReturnDeck(selectedIdx, () => callback());
+          } else {
+            ctx.renderAll();
+            callback();
+          }
         });
         break;
       }

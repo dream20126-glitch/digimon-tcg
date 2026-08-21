@@ -583,35 +583,31 @@ function _matchPlayCostClause(c, baseCard) {
   return _cardOrStackHasName(baseCard, nameSuffix.name, nameSuffix.exact);
 }
 
-// 特徴＋登場コストクローズ（例: "巨神兵器：コスト5"）がbaseCardに一致するか判定する。
-// Lv指定が無いクローズなので、コスト列は名称クローズと共用する（_clauseTypeで'name'扱い）。
-function _matchFeatureCostClause(c, baseCard) {
-  const m = c.match(/^(.+?)：コスト(\d+)$/);
+// 名称＋登場コストクローズ（例: "巨神兵器：コスト5" = "名称：巨神兵器"と同義で、
+// 「：コストN」部分はbaseCardの絞り込みには使わない（進化コスト（名称）列に転記済みの
+// 値を条件文中でも明示しているだけ）。名前一致のみで判定する。
+function _matchNameCostClause(c, baseCard) {
+  const m = c.match(/^(.+?)：コスト\d+$/);
   if (!m) return false;
-  const reqFeature = m[1].trim();
-  const reqCost = parseInt(m[2], 10);
-  if (!String(baseCard.feature || '').includes(reqFeature)) return false;
-  const baseCost = (baseCard.playCost != null) ? baseCard.playCost : (baseCard.cost || 0);
-  return baseCost === reqCost;
+  return _cardOrStackHasName(baseCard, m[1].trim(), true);
 }
 
 // クローズの文字列から種別（'feature'|'name'|'color'）を判定する。
-// 「登場コストNの『XXX』」（登場コスト＋名称の複合クローズ）「特徴名：コストN」
-// （特徴＋登場コストの複合クローズ、例:"巨神兵器：コスト5"）も、いずれもLv指定が
+// 「登場コストNの『XXX』」（登場コスト＋名称の複合クローズ）「XXX：コストN」
+// （名称＋登場コストの複合クローズ、例:"巨神兵器：コスト5"）も、いずれもLv指定が
 // 無いクローズなので、コスト列は名称クローズと共用する（進化コスト列を増やしすぎない
-// ため）ので 'name' に含める。判定ロジック自体（_matchPlayCostClause /
-// _matchFeatureCostClause）はそれぞれ登場コスト・特徴も見ているので、正しさは変わらない。
+// ため）ので 'name' に含める。
 function _clauseType(c) {
   if (/特徴[:：「]/.test(c)) return 'feature';
   if (/登場コスト\d+の/.test(c) || /名称[:：「]/.test(c) || /^.+：コスト\d+$/.test(c)) return 'name';
   return 'color';
 }
 
-// 種別が'name'のクローズは、実際には「登場コスト＋名称」「特徴＋登場コスト」「名称のみ」の
+// 種別が'name'のクローズは、実際には「登場コスト＋名称」「名称＋登場コスト」「名称のみ」の
 // 3パターンがあるので、書かれている内容によって判定関数を振り分ける
 function _matchNameTypeClause(c, baseCard) {
   if (/登場コスト\d+の/.test(c)) return _matchPlayCostClause(c, baseCard);
-  if (/^.+：コスト\d+$/.test(c)) return _matchFeatureCostClause(c, baseCard);
+  if (/^.+：コスト\d+$/.test(c)) return _matchNameCostClause(c, baseCard);
   return _matchNameClause(c, baseCard);
 }
 

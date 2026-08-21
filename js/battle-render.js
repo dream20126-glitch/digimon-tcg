@@ -1106,6 +1106,16 @@ export function formatEvolveCost(card) {
   return '進化コスト：' + (cond ? esc(cond) + 'から' : '') + card.evolveCost;
 }
 
+// リンクコスト行: "リンクコスト：[リンク条件を持つデジモンに]N（リンク時DP+M）"（リンク不可なら null）
+export function formatLinkCost(card) {
+  if (!card || card.linkCost == null) return null;
+  const esc = (s) => String(s).replace(/[&<>]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
+  const cond = (card.linkCond || '').trim();
+  let text = 'リンクコスト：' + (cond ? esc(cond) + 'を持つデジモンに' : '') + card.linkCost;
+  if (card.linkDp) text += '（リンク時DP+' + card.linkDp + '）';
+  return text;
+}
+
 // ===== カード詳細画面 =====
 export function showBCD(idxOrCard, source) {
   // 対象選択中はカード詳細を開かない（タップ干渉防止）
@@ -1162,6 +1172,22 @@ export function showBCD(idxOrCard, source) {
     grantEl.style.display = 'flex';
   } else {
     grantEl.style.display = 'none';
+  }
+
+  // リンクコスト（リンク可能なカードのみ表示。カード一覧の「リンク条件」「リンクDP」を反映）
+  let linkCostEl = document.getElementById('bcd-link-cost');
+  if (!linkCostEl) {
+    linkCostEl = document.createElement('div');
+    linkCostEl.id = 'bcd-link-cost';
+    linkCostEl.style.cssText = 'font-size:12px; color:#4ad8ff; margin-top:-4px; margin-bottom:10px;';
+    grantEl.parentNode.insertBefore(linkCostEl, grantEl.nextSibling);
+  }
+  const linkCostText = formatLinkCost(card);
+  if (linkCostText) {
+    linkCostEl.innerText = linkCostText;
+    linkCostEl.style.display = 'block';
+  } else {
+    linkCostEl.style.display = 'none';
   }
 
   // 効果

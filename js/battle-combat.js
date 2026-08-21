@@ -452,10 +452,10 @@ function hasMatchingColorInPlay(optionCard, side) {
   });
 }
 
-// 「使用条件」欄（基本形）から特徴名を取り出す。"特徴：〇〇" / "特徴:〇〇" のみ対応
+// 「使用条件」欄（基本形）から特徴名を取り出す。"特徴：〇〇" / "特徴:〇〇" / "特徴「〇〇」" に対応
 function parseUseCondFeature(useCond) {
   if (!useCond) return null;
-  const m = String(useCond).match(/特徴[:：]\s*(.+)/);
+  const m = String(useCond).match(/特徴[:：「]\s*(.+?)」?\s*$/);
   return m ? m[1].trim() : null;
 }
 
@@ -472,80 +472,223 @@ function meetsUseCondition(optionCard, side) {
 
 // ===== 進化条件チェック =====
 
-// 進化条件（evolveCond）の「/」区切りclauseのうち、どれがbaseCardに一致するかを返す。
-// 一致するclauseが無ければ -1。canEvolveOntoの判定本体（進化コストの条件別出し分け
-// getEvolveCostForでも同じマッチングを再利用するために分離）。
-// 優先順位: 特徴指定のclauseを色指定のclauseより先に判定する（書かれている順序に関わらず）。
+// 名称マッチング用に、カード名から「：」以降（サブタイトル/派生形表記）を除いた
+// 基本名を取り出す。例: "アイギオテュースモン：ホーリー" → "アイギオテュースモン"。
+// 「：」が無い名前（例: "オメガモンX抗体"）はそのまま1つの名称として扱う。
+function _baseCardName(name) {
+  const s = String(name || '');
+  const i = s.indexOf('：');
+  return i === -1 ? s : s.slice(0, i);
+}
+
+// baseCard自身、またはその進化元スタックのいずれかが reqName に一致するか判定する
+// （いずれも「：」以降を除いた基本名で比較する）。
+// exact=true: 基本名がreqNameと完全一致（デフォルト。例: "アイギオモン"→"アイギオモン"のみ）
+// exact=false: 基本名がreqNameを含む（部分一致。"〜を含む"と書かれたときだけ使う。
+//              例: "アイギオモンを含む"→"コアイギオモン"等も対象になる）
+function _cardOrStackHasName(baseCard, reqName, exact) {
+  const test = exact ? (n => n === reqName) : (n => n.includes(reqName));
+  if (test(_baseCardName(baseCard.name))) return true;
+  return !!(baseCard.stack && baseCard.stack.some(s => test(_baseCardName(s.name))));
+}
+
+// 「〜の記述がある」判定用。baseCard自身のカード情報一覧の各テキスト列
+// （名前・特徴・効果テキスト・進化元テキスト・セキュリティテキスト）のいずれかに
+// reqText という文字列が含まれていればtrue（公式ルール：カード上のどこかに記述が
+// あればOK）。
+function _cardHasDescription(baseCard, reqText) {
+  const fields = [baseCard.name, baseCard.feature, baseCard.effect, baseCard.evoSourceEffect, baseCard.securityEffect];
+  return fields.some(f => String(f || '').includes(reqText));
+}
+
+// クローズ末尾の「カード名」指定を読み取る。"「アイギオモン」を含む" のように末尾に
+// "を含む" が付いていれば部分一致、無ければ完全一致（デフォルト）として扱う。
+// 戻り値: マッチが無ければ null、あれば { name, exact }
+function _parseNameSuffix(text) {
+  const m = text.match(/「(.+?)」\s*(を含む)?\s*$/);
+  if (!m) return null;
+  return { name: m[1], exact: !m[2] };
+}
+
+// 特徴クローズ（例: "特徴:グローイングドーンLv.5" / "特徴「グローイングドーン」Lv.5"）が
+// baseCardに一致するか判定する。
+function _matchFeatureClause(c, baseCard) {
+  const featureMatch = c.match(/特徴[:：「]\s*(.+?)」?\s*Lv\.(\d+)/);
+  if (!featureMatch) return false;
+  const reqFeature = featureMatch[1].trim();
+  const reqLevel = featureMatch[2];
+  const baseLevel = String(baseCard.level).trim();
+  if (baseLevel !== reqLevel) return false;
+  const baseFeature = String(baseCard.feature || '');
+  if (!baseFeature.includes(reqFeature)) return false;
+  // カード名の追加指定（例: "特徴:XLv.5「カード名」"）。特徴名自体の「」と混同しない
+  // よう、featureMatch本体より後ろの残り文字列だけを対象に判定する
+  const remainder = c.slice(featureMatch.index + featureMatch[0].length);
+  const nameSuffix = _parseNameSuffix(remainder);
+  if (nameSuffix && !_cardOrStackHasName(baseCard, nameSuffix.name, nameSuffix.exact)) return false;
+  return true;
+}
+
+// 色クローズ（例: "赤Lv.5" / "Lv.5"=色不問 / "「XXX」の記述があるLv.5"=カード情報一覧の
+// どこかにXXXという記述があればOK）がbaseCardに一致するか判定する。
+function _matchColorClause(c, baseCard) {
+  const descMatch = c.match(/^([赤青黄緑黒紫白]+)?「(.+?)」の記述がある(?:Lv\.(\d+))?$/);
+  if (descMatch) {
+    const reqColor = descMatch[1] || '';
+    const reqText = descMatch[2];
+    const reqLevel = descMatch[3];
+    if (reqLevel != null && String(baseCard.level).trim() !== reqLevel) return false;
+    if (reqColor && !String(baseCard.color || '').includes(reqColor)) return false;
+    return _cardHasDescription(baseCard, reqText);
+  }
+  const m = c.match(/([赤青黄緑黒紫白]+)?Lv\.(\d+)/);
+  if (!m) return false;
+  const reqColor = m[1] || '';
+  const reqLevel = m[2];
+  // baseCard.level にスプレッドシート由来の前後空白（全角スペース含む）が
+  // 混入していると文字列比較が外れるため trim で正規化する
+  const baseLevel = String(baseCard.level).trim();
+  const baseColor = baseCard.color || '';
+  if (baseLevel !== reqLevel) return false;
+  if (reqColor && !baseColor.includes(reqColor)) return false;
+  const remainder = c.slice(m.index + m[0].length);
+  const nameSuffix = _parseNameSuffix(remainder);
+  if (nameSuffix && !_cardOrStackHasName(baseCard, nameSuffix.name, nameSuffix.exact)) return false;
+  return true;
+}
+
+// 名称クローズ（例: "名称「アイギオモン」"=完全一致 / "名称「アイギオモン」を含む"=部分一致）が
+// baseCardに一致するか判定する。色クローズ・特徴クローズと違ってLv指定が無い（レベル不問）。
+// コロン記法（"名称:アイギオモン"）はブラケット無しなので常に完全一致扱い。
+function _matchNameClause(c, baseCard) {
+  const bracket = c.match(/名称[:：]?\s*「(.+?)」\s*(を含む)?\s*$/);
+  if (bracket) return _cardOrStackHasName(baseCard, bracket[1].trim(), !bracket[2]);
+  const plain = c.match(/名称[:：]\s*(.+?)\s*$/);
+  if (!plain) return false;
+  return _cardOrStackHasName(baseCard, plain[1].trim(), true);
+}
+
+// 登場コスト＋名称クローズ（例: "登場コスト12の「ケレスモン」"）がbaseCardに一致するか判定する。
+// Lv・色は問わず、進化元の「登場コスト」の値とカード名の両方で絞り込む特殊パターン。
+// 名称部分は「を含む」の有無で完全一致/部分一致を切り分ける（他のクローズと同様）。
+function _matchPlayCostClause(c, baseCard) {
+  const m = c.match(/登場コスト(\d+)の/);
+  if (!m) return false;
+  const reqCost = parseInt(m[1], 10);
+  const baseCost = (baseCard.playCost != null) ? baseCard.playCost : (baseCard.cost || 0);
+  if (baseCost !== reqCost) return false;
+  const remainder = c.slice(m.index + m[0].length);
+  const nameSuffix = _parseNameSuffix(remainder);
+  if (!nameSuffix) return false; // 名称指定が無いと進化元を絞りきれないため不成立
+  return _cardOrStackHasName(baseCard, nameSuffix.name, nameSuffix.exact);
+}
+
+// 特徴＋登場コストクローズ（例: "巨神兵器：コスト5"）がbaseCardに一致するか判定する。
+// Lv指定が無いクローズなので、コスト列は名称クローズと共用する（_clauseTypeで'name'扱い）。
+function _matchFeatureCostClause(c, baseCard) {
+  const m = c.match(/^(.+?)：コスト(\d+)$/);
+  if (!m) return false;
+  const reqFeature = m[1].trim();
+  const reqCost = parseInt(m[2], 10);
+  if (!String(baseCard.feature || '').includes(reqFeature)) return false;
+  const baseCost = (baseCard.playCost != null) ? baseCard.playCost : (baseCard.cost || 0);
+  return baseCost === reqCost;
+}
+
+// クローズの文字列から種別（'feature'|'name'|'color'）を判定する。
+// 「登場コストNの『XXX』」（登場コスト＋名称の複合クローズ）「特徴名：コストN」
+// （特徴＋登場コストの複合クローズ、例:"巨神兵器：コスト5"）も、いずれもLv指定が
+// 無いクローズなので、コスト列は名称クローズと共用する（進化コスト列を増やしすぎない
+// ため）ので 'name' に含める。判定ロジック自体（_matchPlayCostClause /
+// _matchFeatureCostClause）はそれぞれ登場コスト・特徴も見ているので、正しさは変わらない。
+function _clauseType(c) {
+  if (/特徴[:：「]/.test(c)) return 'feature';
+  if (/登場コスト\d+の/.test(c) || /名称[:：「]/.test(c) || /^.+：コスト\d+$/.test(c)) return 'name';
+  return 'color';
+}
+
+// 種別が'name'のクローズは、実際には「登場コスト＋名称」「特徴＋登場コスト」「名称のみ」の
+// 3パターンがあるので、書かれている内容によって判定関数を振り分ける
+function _matchNameTypeClause(c, baseCard) {
+  if (/登場コスト\d+の/.test(c)) return _matchPlayCostClause(c, baseCard);
+  if (/^.+：コスト\d+$/.test(c)) return _matchFeatureCostClause(c, baseCard);
+  return _matchNameClause(c, baseCard);
+}
+
+// 進化条件マッチング本体。evolveCond（進化条件列）1本に色クローズ・特徴クローズ・
+// 名称クローズを混在させて書く（今まで通り）。各クローズはテキストから自動で種別判定
+// され、マッチしたクローズについて { type, typeIdx } を返す（typeIdxは「同じ種別の
+// クローズの中で何番目に書かれているか」＝0始まりの通し番号。書かれている順序で
+// 振るため、種別が入り混じっていても種別ごとに独立して数える）。
+// getEvolveCostForはこのtypeIdxを使って、進化コスト（色）/進化コスト（特徴）/
+// 進化コスト（名称）のどの列の何番目の値を引くかを決める。
+// 優先順位: 名称・特徴クローズを色クローズより先に判定する（書かれている順序に関わらず）。
 // 例: 進化先が「黄Lv.5」かつ「特徴:グローイングドーンLv.5」の両方に当てはまる場合でも、
 // 特徴側（グローイングドーン）を優先して採用する
-function _matchEvolveClauseIndex(evoCard, baseCard) {
+function _resolveEvolveMatch(evoCard, baseCard) {
   const cond = evoCard.evolveCond || '';
-  if (!cond || cond === 'なし' || cond === '') return -1;
-  const conditions = cond.split('/').map(s => s.trim());
-  const order = conditions
-    .map((c, i) => ({ c, i, isFeature: /特徴[:：]/.test(c) }))
-    .sort((a, b) => (a.isFeature === b.isFeature) ? 0 : (a.isFeature ? -1 : 1));
-  for (const { c, i } of order) {
-    // 特徴指定（例: "特徴:グローイングドーンLv.5"）: 色の代わりに特徴でマッチさせる。
-    // 「特徴」の文字列自体が赤青黄緑黒紫白を含まないとは限らないため、色条件のフォール
-    // スルーで誤判定（特徴指定なのに色なしLv一致だけで通ってしまう）しないよう、
-    // 特徴指定を検出した時点でこのclauseの判定を終える（continue/returnのみ、下の色判定に落ちない）
-    const featureMatch = c.match(/特徴[:：]\s*(.+?)Lv\.(\d+)/);
-    if (featureMatch) {
-      const reqFeature = featureMatch[1].trim();
-      const reqLevel = featureMatch[2];
-      const baseLevel = String(baseCard.level).trim();
-      if (baseLevel !== reqLevel) continue;
-      const baseFeature = String(baseCard.feature || '');
-      if (!baseFeature.includes(reqFeature)) continue;
-      const nameMatch = c.match(/「(.+?)」/);
-      if (nameMatch) {
-        const reqName = nameMatch[1];
-        const hasName = baseCard.name.includes(reqName) ||
-          (baseCard.stack && baseCard.stack.some(s => s.name.includes(reqName)));
-        if (!hasName) continue;
-      }
-      return i;
-    }
-    const m = c.match(/([赤青黄緑黒紫白]+)?Lv\.(\d+)/);
-    if (m) {
-      const reqColor = m[1] || '';
-      const reqLevel = m[2];
-      // baseCard.level にスプレッドシート由来の前後空白（全角スペース含む）が
-      // 混入していると文字列比較が外れるため trim で正規化する
-      const baseLevel = String(baseCard.level).trim();
-      const baseColor = baseCard.color || '';
-      if (baseLevel !== reqLevel) continue;
-      if (reqColor && !baseColor.includes(reqColor)) continue;
-      const nameMatch = c.match(/「(.+?)」/);
-      if (nameMatch) {
-        const reqName = nameMatch[1];
-        const hasName = baseCard.name.includes(reqName) ||
-          (baseCard.stack && baseCard.stack.some(s => s.name.includes(reqName)));
-        if (!hasName) continue;
-      }
-      return i;
-    }
+  if (!cond || cond === 'なし') return null;
+  const clauses = cond.split('/').map(s => s.trim());
+
+  const seen = { color: 0, feature: 0, name: 0 };
+  const entries = clauses.map((c) => {
+    const type = _clauseType(c);
+    const typeIdx = seen[type]++;
+    return { c, type, typeIdx };
+  });
+
+  const order = entries.slice().sort((a, b) => {
+    const aFirst = a.type !== 'color', bFirst = b.type !== 'color';
+    return (aFirst === bFirst) ? 0 : (aFirst ? -1 : 1);
+  });
+  const MATCHERS = { color: _matchColorClause, feature: _matchFeatureClause, name: _matchNameTypeClause };
+  for (const entry of order) {
+    if (MATCHERS[entry.type](entry.c, baseCard)) return entry;
   }
-  return -1;
+  return null;
 }
 
 export function canEvolveOnto(evoCard, baseCard) {
   // 代替進化（alt_evolve / 進化条件を無視）が成立するなら進化可
   try { if (_getAltEvolve(evoCard, baseCard, bs, 'player')) return true; } catch (_) {}
-  return _matchEvolveClauseIndex(evoCard, baseCard) !== -1;
+  return _resolveEvolveMatch(evoCard, baseCard) !== null;
 }
 
-// 進化コストの条件別出し分け。進化コスト欄が「・」区切りで複数指定されている場合、
-// 進化条件のどのclauseが一致したかに対応する値を選ぶ（1番目のclause↔1番目のコスト...）。
-// 単一値のみの場合は従来通りevoCard.evolveCostをそのまま返す
+// 「・」区切りのコスト欄から、マッチしたクローズ（同種別内でtypeIdx番目）のコストを選ぶ。
+// 「値×回数」で連続コストをまとめて書ける（例: 4×2・3×2 → [4,4,3,3]）。
+// 値が1個だけならその種別の全クローズ共通コストとして扱う。
+// 値が同種別のクローズ数と一致すれば1対1対応。それ以外（数が合わない）は1個目にフォールバック。
+function _pickCostFromList(raw, typeIdx, sameTypeCount) {
+  const costs = String(raw || '').split('・').flatMap(part => {
+    const repeat = part.trim().match(/^(\d+)[×x](\d+)$/);
+    if (repeat) return Array(parseInt(repeat[2], 10)).fill(parseInt(repeat[1], 10));
+    const n = parseInt(part.trim(), 10);
+    return isNaN(n) ? [] : [n];
+  });
+  if (costs.length === 0) return null;
+  if (costs.length === 1) return costs[0];
+  if (costs.length === sameTypeCount) return costs[typeIdx];
+  return costs[0];
+}
+
+// 進化コストの条件別出し分け。マッチしたクローズの種別に応じて、進化コスト（色）列
+// （evolveCostRaw）/進化コスト（特徴）列（evolveCostFeatureRaw）/進化コスト（名称）列
+// （evolveCostNameRaw）のいずれかから値を選ぶ（「登場コストNの『XXX』」クローズも
+// name種別としてこの名称列を共用する）。列ごとに単一値/同種別クローズ数分だけ・区切り、
+// を選べる。他の種別の列数は互いに影響しない。
 export function getEvolveCostFor(evoCard, baseCard) {
-  const raw = evoCard.evolveCostRaw != null ? String(evoCard.evolveCostRaw) : '';
-  const costs = raw.split('・').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-  if (costs.length <= 1) return evoCard.evolveCost;
-  const idx = _matchEvolveClauseIndex(evoCard, baseCard);
-  if (idx === -1 || idx >= costs.length) return evoCard.evolveCost; // フォールバック（代替進化等）
-  return costs[idx];
+  const match = _resolveEvolveMatch(evoCard, baseCard);
+  if (!match) return evoCard.evolveCost; // フォールバック（代替進化等）
+
+  const clauses = String(evoCard.evolveCond || '').split('/').map(s => s.trim()).filter(Boolean);
+  const sameTypeCount = clauses.filter(c => _clauseType(c) === match.type).length;
+
+  const RAW_BY_TYPE = {
+    color: evoCard.evolveCostRaw, feature: evoCard.evolveCostFeatureRaw,
+    name: evoCard.evolveCostNameRaw,
+  };
+  const picked = _pickCostFromList(RAW_BY_TYPE[match.type], match.typeIdx, sameTypeCount);
+  return picked != null ? picked : evoCard.evolveCost;
 }
 
 // 保留中の進化コスト軽減（スマッシュポテト等）を消費して合計軽減値を返す。
@@ -922,6 +1065,17 @@ function showLinkReplaceChoice(linkedCards) {
   });
 }
 
+// リンク条件（linkCond）を満たすか判定。「特徴:XXX」「特徴「XXX」」形式に対応（Lv指定は無し＝色/レベル不問）。
+// 条件が空なら誰にでもリンク可
+export function meetsLinkCondition(card, base) {
+  const cond = String(card.linkCond || '').trim();
+  if (!cond) return true;
+  const m = cond.match(/特徴[:：「]\s*(.+?)」?\s*$/);
+  if (!m) return true; // 未知の形式は素通り（今後拡張）
+  const reqFeature = m[1].trim();
+  return String(base.feature || '').includes(reqFeature);
+}
+
 // ===== リンク =====
 // リンクありのカードをバトルエリアの既存デジモンにドラッグした際、進化の代わりに
 // 選べる操作。進化コストの代わりにリンクコストを支払い、対象デジモンの横に
@@ -932,6 +1086,7 @@ export function doLink(card, handIdx, slotIdx) {
   const base = bs.player.battleArea[slotIdx];
   if (!base) return;
   if (card.linkCost == null) { addLog('🚨 「' + card.name + '」はリンクできません‼'); return; }
+  if (!meetsLinkCondition(card, base)) { addLog('🚨 リンク条件を満たしていません‼（' + card.linkCond + '）'); return; }
   if (!base.linkedCards) base.linkedCards = [];
 
   const proceedLink = () => {

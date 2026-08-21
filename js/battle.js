@@ -92,7 +92,10 @@ function parseDeck(deckData) {
     // 「登場コスト」列を実効コストの元にする（デュアルは登場コストを持たないため）
     const isUseCostType = type === 'オプション' || type === 'デュアル';
     const playCost = isUseCostType ? _f(obj, '使用コスト', '使用\nコスト') : _f(obj, '登場コスト', '登場\nコスト');
-    const evolveCost = _f(obj, '進化コスト', '進化\nコスト');
+    // 進化コスト（色）が無い（＝色/特徴分割前の旧カード）場合は従来通り「進化コスト」列にフォールバック
+    const evolveCost = obj["進化コスト（色）"] !== undefined ? obj["進化コスト（色）"] : _f(obj, '進化コスト', '進化\nコスト');
+    const evolveCostFeature = obj["進化コスト（特徴）"];
+    const evolveCostName = obj["進化コスト（名称）"];
     const linkCost = _f(obj, 'リンクコスト', 'リンク\nコスト');
     const level = _f(obj, 'レベル', 'Lv');
     // 「なし」「-」等の文字列はコストなしとして null に正規化
@@ -106,8 +109,11 @@ function parseDeck(deckData) {
       playCost: hasPlay ? parseInt(playCost) : null,
       evolveCost: hasEvolve ? parseInt(evolveCost) : null,
       evolveCostRaw: hasEvolve ? String(evolveCost) : null,
+      evolveCostFeatureRaw: (evolveCostFeature !== undefined && evolveCostFeature !== null && evolveCostFeature !== '') ? String(evolveCostFeature) : null,
+      evolveCostNameRaw: (evolveCostName !== undefined && evolveCostName !== null && evolveCostName !== '') ? String(evolveCostName) : null,
       linkCost: hasLink ? parseInt(linkCost) : null,
       linkDp: parseInt(obj["リンクDP"] || 0) || 0,
+      linkCond: obj["リンク条件"] || '',
       evolveCond: obj["進化条件"] || '',
       useCond: obj["使用条件（オプション）"] || '',
       cost: hasPlay ? parseInt(playCost) : hasEvolve ? parseInt(evolveCost) : 0,
@@ -115,7 +121,7 @@ function parseDeck(deckData) {
       securityEffect: obj["セキュリティテキスト"] || obj["セキュリティ効果"] || '', recipe: obj["レシピ"] || obj["効果レシピ"] || null,
       imageUrl: obj["ImageURL"] || '', imgSrc: getCardImageUrl(obj) || '',
       type, color: obj["色"] || '', feature: obj["特徴"] || '',
-      isLink: obj["リンク"] === 'あり',
+      isLink: hasLink,
       stack: [], suspended: false, buffs: [],
       cantBeActive: false, cantAttack: false, cantBlock: false,
       summonedThisTurn: false, _pendingDestroy: false,
@@ -344,7 +350,9 @@ window.acceptHand = function() {
             const type = obj['タイプ'] || '';
             const isUseCostType = type === 'オプション' || type === 'デュアル';
             const playCost = isUseCostType ? _f(obj, '使用コスト', '使用\nコスト') : _f(obj, '登場コスト', '登場\nコスト');
-            const evolveCost = _f(obj, '進化コスト', '進化\nコスト');
+            const evolveCost = obj['進化コスト（色）'] !== undefined ? obj['進化コスト（色）'] : _f(obj, '進化コスト', '進化\nコスト');
+            const evolveCostFeature = obj['進化コスト（特徴）'];
+            const evolveCostName = obj['進化コスト（名称）'];
             const linkCost = _f(obj, 'リンクコスト', 'リンク\nコスト');
             const level = _f(obj, 'レベル', 'Lv');
             const isNoCost = (v) => v === undefined || v === null || v === '' || v === 'なし' || v === '-';
@@ -357,8 +365,11 @@ window.acceptHand = function() {
               playCost: hasPlay ? parseInt(playCost) : null,
               evolveCost: hasEvolve ? parseInt(evolveCost) : null,
               evolveCostRaw: hasEvolve ? String(evolveCost) : null,
+              evolveCostFeatureRaw: (evolveCostFeature !== undefined && evolveCostFeature !== null && evolveCostFeature !== '') ? String(evolveCostFeature) : null,
+              evolveCostNameRaw: (evolveCostName !== undefined && evolveCostName !== null && evolveCostName !== '') ? String(evolveCostName) : null,
               linkCost: hasLink ? parseInt(linkCost) : null,
               linkDp: parseInt(obj['リンクDP'] || 0) || 0,
+              linkCond: obj['リンク条件'] || '',
               evolveCond: obj['進化条件'] || '',
               useCond: obj['使用条件（オプション）'] || '',
               cost: hasPlay ? parseInt(playCost) : hasEvolve ? parseInt(evolveCost) : 0,
@@ -368,7 +379,7 @@ window.acceptHand = function() {
               recipe: obj['レシピ'] || obj['効果レシピ'] || null,
               imageUrl: obj['ImageURL'] || '', imgSrc: getCardImageUrl(obj) || '',
               type, color: obj['色'] || '', feature: obj['特徴'] || '',
-              isLink: obj['リンク'] === 'あり',
+              isLink: hasLink,
               stack: [], suspended: false, buffs: [],
               cantBeActive: false, cantAttack: false, cantBlock: false,
               summonedThisTurn: false, _pendingDestroy: false,

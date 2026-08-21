@@ -143,7 +143,9 @@ function findCardByName(idOrName) {
   const type = card['タイプ'] || '';
   const isUseCostType = type === 'オプション' || type === 'デュアル';
   const playCost = isUseCostType ? cardField(card, '使用コスト', '使用\nコスト') : cardField(card, '登場コスト', '登場\nコスト');
-  const evolveCost = cardField(card, '進化コスト', '進化\nコスト');
+  const evolveCost = card['進化コスト（色）'] !== undefined ? card['進化コスト（色）'] : cardField(card, '進化コスト', '進化\nコスト');
+  const evolveCostFeature = card['進化コスト（特徴）'];
+  const evolveCostName = card['進化コスト（名称）'];
   const linkCost = cardField(card, 'リンクコスト', 'リンク\nコスト');
   // 「なし」「-」等の文字列はコストなしとして null に正規化
   const isNoCost = (v) => v === undefined || v === null || v === '' || v === 'なし' || v === '-';
@@ -160,8 +162,11 @@ function findCardByName(idOrName) {
     playCost: hasPlay ? parseInt(playCost) : null,
     evolveCost: hasEvolve ? parseInt(evolveCost) : null,
     evolveCostRaw: hasEvolve ? String(evolveCost) : null,
+    evolveCostFeatureRaw: (evolveCostFeature !== undefined && evolveCostFeature !== null && evolveCostFeature !== '') ? String(evolveCostFeature) : null,
+    evolveCostNameRaw: (evolveCostName !== undefined && evolveCostName !== null && evolveCostName !== '') ? String(evolveCostName) : null,
     linkCost: hasLink ? parseInt(linkCost) : null,
     linkDp: parseInt(card['リンクDP'] || 0) || 0,
+    linkCond: card['リンク条件'] || '',
     evolveCond: card['進化条件'] || '',
     useCond: card['使用条件（オプション）'] || '',
     cost: hasPlay ? parseInt(playCost) : hasEvolve ? parseInt(evolveCost) : 0,
@@ -174,7 +179,7 @@ function findCardByName(idOrName) {
     type,
     color: card['色'] || '',
     feature: card['特徴'] || '',
-    isLink: card['リンク'] === 'あり',
+    isLink: hasLink,
     stack: [],
     suspended: false,
     buffs: [],

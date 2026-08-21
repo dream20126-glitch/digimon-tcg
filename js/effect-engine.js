@@ -4548,6 +4548,26 @@ function checkConditions(conditions, card, bs, side) {
         if (card.linkedCards && card.linkedCards.length >= cap) return false;
         break;
       }
+      case 'cond_linked_names': {
+        // 指定した名称（カンマ区切り）を持つカードが全てこのカードにリンクされているか
+        // 例: "cond_linked_names:サブリモン,スバモン" → 両方がlinkedCardsに揃っている必要がある
+        // （進化条件を無視するalt_evolveのbase_condとして使う想定）
+        const names = String(cond.value || '').split(',').map(s => s.trim()).filter(Boolean);
+        const linked = card.linkedCards || [];
+        const allFound = names.every(n => linked.some(lc => lc && String(lc.name || '').includes(n)));
+        if (!allFound) return false;
+        break;
+      }
+      case 'cond_linked_any_name': {
+        // 指定した名称（カンマ区切り）のうちどれか1つを持つカードがこのカードに
+        // リンクされていればOK（OR判定）。例: "cond_linked_any_name:エイドモン,サブリモン,スバモン"
+        // → アプ合体のように「候補3体のうちどれかがリンクされていればよい」パターン用
+        const anyNames = String(cond.value || '').split(',').map(s => s.trim()).filter(Boolean);
+        const anyLinked = card.linkedCards || [];
+        const anyFound = anyNames.some(n => anyLinked.some(lc => lc && String(lc.name || '').includes(n)));
+        if (!anyFound) return false;
+        break;
+      }
       case 'cond_assembly_eligible': {
         // アセンブリ条件を満たす（カード固有のフラグを参照）
         if (!card._assemblyEligible) return false;
@@ -4981,8 +5001,14 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
     if (sourceCard) {
       const recipe = getRecipeForTrigger(sourceCard, triggerCode);
       if (recipe) {
+        // デュアルカードのmain（オプション効果）は、効果テキスト欄ではなく
+        // 進化元テキスト欄（カード詳細では「オプション効果」ラベルで表示）を
+        // 表示テキストの元にする。デジモン側の効果（on_evolve等）は進化後は
+        // type='デジモン'に変わっているため、通常通りsourceCard.effectを使う
+        const displayText = (sourceCard.type === 'デュアル')
+          ? sourceCard.evoSourceEffect : sourceCard.effect;
         const dummyBlock = {
-          raw: sourceCard.effect || '', trigger: { code: triggerCode },
+          raw: displayText || '', trigger: { code: triggerCode },
           actions: [], conditions: [],
         };
         addToQueue(sourceCard, dummyBlock,
@@ -9210,8 +9236,14 @@ export function getAltEvolve(evoCard, baseCard, bs, side) {
       if (!checkConditions(conds, evoCard, bs, side || 'player')) continue;
     }
     // 進化元フィルタ（名前/色/Lv） — base_filter オブジェクト形式
+    // name はカンマ区切りで複数指定するとOR判定になる（例: "エイドモン,サブリモン,スバモン"
+    // →進化元がこの3体のうちどれか1体の名称を含んでいればOK。アプ合体等の複数候補パターン用）
     const bf = entry.base_filter || {};
-    if (bf.name && !String(baseCard.name || '').includes(bf.name)) continue;
+    if (bf.name) {
+      const names = String(bf.name).split(',').map(s => s.trim()).filter(Boolean);
+      const baseName = String(baseCard.name || '');
+      if (!names.some(n => baseName.includes(n))) continue;
+    }
     if (bf.color && !String(baseCard.color || '').includes(bf.color)) continue;
     if (bf.lv != null && (parseInt(baseCard.level) || 0) !== bf.lv) continue;
     // 進化元フィルタ — エディタ形式（条件文字列を進化元カードに対し評価）

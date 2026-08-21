@@ -529,18 +529,8 @@ function _matchFeatureClause(c, baseCard) {
   return true;
 }
 
-// 色クローズ（例: "赤Lv.5" / "Lv.5"=色不問 / "「XXX」の記述があるLv.5"=カード情報一覧の
-// どこかにXXXという記述があればOK）がbaseCardに一致するか判定する。
+// 色クローズ（例: "赤Lv.5" / "Lv.5"=色不問）がbaseCardに一致するか判定する。
 function _matchColorClause(c, baseCard) {
-  const descMatch = c.match(/^([赤青黄緑黒紫白]+)?「(.+?)」の記述がある(?:Lv\.(\d+))?$/);
-  if (descMatch) {
-    const reqColor = descMatch[1] || '';
-    const reqText = descMatch[2];
-    const reqLevel = descMatch[3];
-    if (reqLevel != null && String(baseCard.level).trim() !== reqLevel) return false;
-    if (reqColor && !String(baseCard.color || '').includes(reqColor)) return false;
-    return _cardHasDescription(baseCard, reqText);
-  }
   const m = c.match(/([赤青黄緑黒紫白]+)?Lv\.(\d+)/);
   if (!m) return false;
   const reqColor = m[1] || '';
@@ -592,22 +582,38 @@ function _matchNameCostClause(c, baseCard) {
   return _cardOrStackHasName(baseCard, m[1].trim(), true);
 }
 
+// 「「XXX」の記述があるLvN」クローズ（例: "「クロノモン」の記述があるLv.6"）が
+// baseCardに一致するか判定する。「記述がある」はカード情報一覧の各テキスト列の
+// いずれかにXXXがあればOKという公式ルール。色指定が無いことが多く名称クローズに近い
+// ため 'name' 種別に含める（コスト列は進化コスト（名称）列を共用）。
+function _matchDescriptionClause(c, baseCard) {
+  const m = c.match(/^([赤青黄緑黒紫白]+)?「(.+?)」の記述がある(?:Lv\.(\d+))?$/);
+  if (!m) return false;
+  const reqColor = m[1] || '';
+  const reqText = m[2];
+  const reqLevel = m[3];
+  if (reqLevel != null && String(baseCard.level).trim() !== reqLevel) return false;
+  if (reqColor && !String(baseCard.color || '').includes(reqColor)) return false;
+  return _cardHasDescription(baseCard, reqText);
+}
+
 // クローズの文字列から種別（'feature'|'name'|'color'）を判定する。
 // 「登場コストNの『XXX』」（登場コスト＋名称の複合クローズ）「XXX：コストN」
-// （名称＋登場コストの複合クローズ、例:"巨神兵器：コスト5"）も、いずれもLv指定が
-// 無いクローズなので、コスト列は名称クローズと共用する（進化コスト列を増やしすぎない
-// ため）ので 'name' に含める。
+// （名称＋登場コストの複合クローズ、例:"巨神兵器：コスト5"）「「XXX」の記述がある」
+// （記述クローズ）も、いずれも色指定が無い（or 必須ではない）クローズなので、コスト列は
+// 名称クローズと共用する（進化コスト列を増やしすぎないため）ので 'name' に含める。
 function _clauseType(c) {
   if (/特徴[:：「]/.test(c)) return 'feature';
-  if (/登場コスト\d+の/.test(c) || /名称[:：「]/.test(c) || /^.+：コスト\d+$/.test(c)) return 'name';
+  if (/登場コスト\d+の/.test(c) || /名称[:：「]/.test(c) || /^.+：コスト\d+$/.test(c) || /「.+」の記述がある/.test(c)) return 'name';
   return 'color';
 }
 
-// 種別が'name'のクローズは、実際には「登場コスト＋名称」「名称＋登場コスト」「名称のみ」の
-// 3パターンがあるので、書かれている内容によって判定関数を振り分ける
+// 種別が'name'のクローズは、実際には「登場コスト＋名称」「名称＋登場コスト」「記述」
+// 「名称のみ」の4パターンがあるので、書かれている内容によって判定関数を振り分ける
 function _matchNameTypeClause(c, baseCard) {
   if (/登場コスト\d+の/.test(c)) return _matchPlayCostClause(c, baseCard);
   if (/^.+：コスト\d+$/.test(c)) return _matchNameCostClause(c, baseCard);
+  if (/「.+」の記述がある/.test(c)) return _matchDescriptionClause(c, baseCard);
   return _matchNameClause(c, baseCard);
 }
 

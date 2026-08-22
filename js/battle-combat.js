@@ -9,6 +9,7 @@ import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleA
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { fxLinkEffect } from './battle-fx.js';
+import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
 import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection } from './effect-engine.js';
 
@@ -488,8 +489,11 @@ function _baseCardName(name) {
 //              例: "アイギオモンを含む"→"コアイギオモン"等も対象になる）
 function _cardOrStackHasName(baseCard, reqName, exact) {
   const test = exact ? (n => n === reqName) : (n => n.includes(reqName));
-  if (test(_baseCardName(baseCard.name))) return true;
-  return !!(baseCard.stack && baseCard.stack.some(s => test(_baseCardName(s.name))));
+  // 「各名称『XXX』を含むものとしても扱う」ルール（メイン効果欄に印刷）による
+  // エイリアス名も、本来の名前と同様にチェックする
+  const matches = (c) => test(_baseCardName(c.name)) || getNameAliases(c).some(test);
+  if (matches(baseCard)) return true;
+  return !!(baseCard.stack && baseCard.stack.some(matches));
 }
 
 // 「〜の記述がある」判定用。baseCard自身のカード情報一覧の各テキスト列

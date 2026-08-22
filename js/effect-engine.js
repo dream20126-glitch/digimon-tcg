@@ -1,6 +1,7 @@
 // 効果エンジン v2（レシピJSON方式。枠色/演出タイプはアクションコードから自動推測するため
 // 効果辞書スプレッドシートの読み込みは不要）
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
+import { cardHasName } from './name-alias.js';
 
 // ===== 効果キュー =====
 let _effectQueue = [];
@@ -2498,9 +2499,9 @@ function cardMatchesFilter(card, filter) {
   if (filter.color && card.color !== filter.color) return false;
   if (filter.cardno && card.cardNo !== filter.cardno) return false;
   if (filter.cardno_includes && !(card.cardNo || '').includes(filter.cardno_includes)) return false;
-  if (filter.name && card.name !== filter.name) return false;
+  if (filter.name && !cardHasName(card, filter.name, true)) return false;
   const _nameInc = filter.name_includes || filter.name_contains;
-  if (_nameInc && !(card.name || '').includes(_nameInc)) return false;
+  if (_nameInc && !cardHasName(card, _nameInc, false)) return false;
   if (filter.lv_ge != null && (parseInt(card.level) || 0) < filter.lv_ge) return false;
   if (filter.lv_le != null && (parseInt(card.level) || 0) > filter.lv_le) return false;
   if (filter.lv != null && (parseInt(card.level) || 0) !== filter.lv) return false;
@@ -4223,9 +4224,10 @@ function checkConditions(conditions, card, bs, side) {
         break;
       }
       case 'cond_name': {
-        // 「名前（完全一致）」: card.name === cond.value で判定
+        // 「名前（完全一致）」: card.name === cond.value、または「各名称『XXX』を
+        // 含むものとしても扱う」ルールによるエイリアス一致で判定
         if (!cond.value) break;
-        if (!card || String(card.name || '') !== String(cond.value)) return false;
+        if (!card || !cardHasName(card, String(cond.value), true)) return false;
         break;
       }
       case 'cond_during_opp_turn': {
@@ -4528,8 +4530,8 @@ function checkConditions(conditions, card, bs, side) {
         break;
       }
       case 'cond_name_contains': {
-        // 名称に指定文字列を含む
-        if (cond.value && card.name && !String(card.name).includes(cond.value)) return false;
+        // 名称に指定文字列を含む（エイリアス名も対象）
+        if (cond.value && !cardHasName(card, cond.value, false)) return false;
         break;
       }
       case 'cond_feature_contains': {
@@ -4554,7 +4556,7 @@ function checkConditions(conditions, card, bs, side) {
         // （進化条件を無視するalt_evolveのbase_condとして使う想定）
         const names = String(cond.value || '').split(',').map(s => s.trim()).filter(Boolean);
         const linked = card.linkedCards || [];
-        const allFound = names.every(n => linked.some(lc => lc && String(lc.name || '').includes(n)));
+        const allFound = names.every(n => linked.some(lc => lc && cardHasName(lc, n, false)));
         if (!allFound) return false;
         break;
       }
@@ -4564,7 +4566,7 @@ function checkConditions(conditions, card, bs, side) {
         // → アプ合体のように「候補3体のうちどれかがリンクされていればよい」パターン用
         const anyNames = String(cond.value || '').split(',').map(s => s.trim()).filter(Boolean);
         const anyLinked = card.linkedCards || [];
-        const anyFound = anyNames.some(n => anyLinked.some(lc => lc && String(lc.name || '').includes(n)));
+        const anyFound = anyNames.some(n => anyLinked.some(lc => lc && cardHasName(lc, n, false)));
         if (!anyFound) return false;
         break;
       }
@@ -9241,8 +9243,7 @@ export function getAltEvolve(evoCard, baseCard, bs, side) {
     const bf = entry.base_filter || {};
     if (bf.name) {
       const names = String(bf.name).split(',').map(s => s.trim()).filter(Boolean);
-      const baseName = String(baseCard.name || '');
-      if (!names.some(n => baseName.includes(n))) continue;
+      if (!names.some(n => cardHasName(baseCard, n, false))) continue;
     }
     if (bf.color && !String(baseCard.color || '').includes(bf.color)) continue;
     if (bf.lv != null && (parseInt(baseCard.level) || 0) !== bf.lv) continue;

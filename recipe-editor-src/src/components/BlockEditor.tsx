@@ -397,6 +397,28 @@ const COND_SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
 //   （対象コード自体に持たせる opponent_suspended 等の専用コードは使わない）
 // - opp_security/target_other_own_card/target_other_own_tamer/opponent_tamer は
 //   エンジン未実装のプレースホルダー（選べるが⚠警告を出す。既存の実装パターンと同様）
+// === スタック位置（進化元／テイマーの下のカード）===
+// 発動主体・対象で「デジモン」「テイマー」を指しているとき、それ自身ではなく
+// 「その下に積まれているカード（進化元／テイマーの下のカード）」を指したい場合に使う。
+// L1/L2の組合せコード表を位置ごとに増やす（combinatorial explosion）代わりに、
+// 既存のコード文字列にサフィックス(_stack / _stack_bottom)を後付けする方式にしている。
+// 「下」=進化元/テイマー下のスタック全体（任意の1枚）、「一番下」=スタックの一番下（末尾）の1枚。
+// 例:「自分のテイマーの下のカードが破棄されたとき」→ subject: 'own_tamer_stack'
+type StackPos = '' | 'stack' | 'stack_bottom';
+const STACK_POS_OPTIONS: { code: StackPos; label: string }[] = [
+  { code: '', label: '本体' },
+  { code: 'stack', label: '下' },
+  { code: 'stack_bottom', label: '一番下' },
+];
+function splitStackSuffix(code: string): { base: string; pos: StackPos } {
+  if (code.endsWith('_stack_bottom')) return { base: code.slice(0, -('_stack_bottom'.length)), pos: 'stack_bottom' };
+  if (code.endsWith('_stack')) return { base: code.slice(0, -('_stack'.length)), pos: 'stack' };
+  return { base: code, pos: '' };
+}
+function joinStackSuffix(base: string, pos: StackPos): string {
+  return pos ? base + '_' + pos : base;
+}
+
 const TARGET_SEL_UNIMPLEMENTED = new Set([
   'opp_security', 'target_other_own_card', 'target_other_own_tamer', 'opponent_tamer',
   'own_option', 'opponent_option',
@@ -1593,7 +1615,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               return currentTriggers.includes(variant) && fam.implemented?.[timing] === false;
             });
 
-            const cur = SUBJECT_CODE_TO_L1L2[block.triggerSubject || ''] || { l1: 'self', l2: '' };
+            const rawTriggerSubject = splitStackSuffix(block.triggerSubject || '');
+            const cur = SUBJECT_CODE_TO_L1L2[rawTriggerSubject.base] || { l1: 'self', l2: '' };
+            const triggerStackPos = rawTriggerSubject.pos;
+            const showTriggerStackPos = cur.l1 === 'self' || cur.l2 === 'digimon' || cur.l2 === 'tamer';
+            const setTriggerStackPos = (pos: StackPos) => update('triggerSubject', joinStackSuffix(rawTriggerSubject.base, pos));
             const handleL1 = (l1: string) => {
               if (l1 === 'self' || l1 === 'both') { update('triggerSubject', l1); return; }
               const l2 = cur.l1 === l1 && cur.l2 ? cur.l2 : 'digimon';
@@ -1764,6 +1790,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {cur.l1 !== 'self' && cur.l1 !== 'both' && (
                     <div style={{ marginTop: 4 }}>
                       <ButtonGroup options={l2Options} value={cur.l2} onChange={handleL2} accentColor="#2e7d32" />
+                    </div>
+                  )}
+                  {/* デジモン/テイマーのときだけ「本体/下/一番下」を選べる（進化元・テイマーの
+                      下のカードを指す）。例:「自分のテイマーの下のカードが破棄されたとき」 */}
+                  {showTriggerStackPos && (
+                    <div style={{ marginTop: 4 }}>
+                      <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
+                      <ButtonGroup options={STACK_POS_OPTIONS} value={triggerStackPos} onChange={(v) => setTriggerStackPos(v as StackPos)} accentColor="#2e7d32" />
                     </div>
                   )}
                 </div>
@@ -4168,7 +4202,10 @@ function ConditionsHybridEditor({
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
                       {(() => {
-                        const curSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };
+                        const rawSub = splitStackSuffix(c.subject || '');
+                        const curSub = COND_SUBJECT_CODE_TO_L1L2[rawSub.base] || { l1: '', l2: '' };
+                        const stackPos = rawSub.pos;
+                        const showStackPos = curSub.l1 === 'self' || curSub.l2 === 'digimon' || curSub.l2 === 'tamer';
                         // 「コスト」カテゴリは登場/使用コストを持つカードのみが対象になるため、
                         // 「このカード(self)」（参照コストなので自分自身を指すことは通常ない）と、
                         // L2の「ブロッカー」（コストを持たない/対象外）は選択肢から外す
@@ -4190,16 +4227,23 @@ function ConditionsHybridEditor({
                         const handleSubL2 = (l2: string) => {
                           updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2], ...clearIfRedundant(l2) });
                         };
+                        const setStackPos = (pos: StackPos) => updateAt(i, { subject: joinStackSuffix(rawSub.base, pos) });
                         // 自分+デジモンのときのみ「このカードを含めない」を選べる
                         // （含めない＝他の自分のデジモン。旧 other_own コードをそのまま使う）
                         const showIncludeSelfToggle = curSub.l1 === 'own' && curSub.l2 === 'digimon';
-                        const excludeSelf = c.subject === 'other_own';
+                        const excludeSelf = rawSub.base === 'other_own';
                         return (
                           <>
                             <ButtonGroup options={subjectL1Options} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
                             {l2Options.length > 0 && (
                               <div style={{ marginTop: 4 }}>
                                 <ButtonGroup options={l2Options} value={curSub.l2} onChange={handleSubL2} accentColor={colors.accent} />
+                              </div>
+                            )}
+                            {showStackPos && (
+                              <div style={{ marginTop: 4 }}>
+                                <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
+                                <ButtonGroup options={STACK_POS_OPTIONS} value={stackPos} onChange={(v) => setStackPos(v as StackPos)} accentColor={colors.accent} />
                               </div>
                             )}
                             {showIncludeSelfToggle && (
@@ -4266,7 +4310,10 @@ function ConditionsHybridEditor({
                 <div>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
                   {(() => {
-                    const curSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };
+                    const rawSub = splitStackSuffix(c.subject || '');
+                    const curSub = COND_SUBJECT_CODE_TO_L1L2[rawSub.base] || { l1: '', l2: '' };
+                    const stackPos = rawSub.pos;
+                    const showStackPos = curSub.l1 === 'self' || curSub.l2 === 'digimon' || curSub.l2 === 'tamer';
                     const l2Options = COND_SUBJECT_L2[curSub.l1] || [];
                     const handleSubL1 = (l1: string) => {
                       if (!l1 || l1 === 'both') { updateAt(i, { subject: l1 || undefined }); return; }
@@ -4276,14 +4323,21 @@ function ConditionsHybridEditor({
                     const handleSubL2 = (l2: string) => {
                       updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2] });
                     };
+                    const setStackPos = (pos: StackPos) => updateAt(i, { subject: joinStackSuffix(rawSub.base, pos) });
                     const showIncludeSelfToggle = curSub.l1 === 'own' && curSub.l2 === 'digimon';
-                    const excludeSelf = c.subject === 'other_own';
+                    const excludeSelf = rawSub.base === 'other_own';
                     return (
                       <>
                         <ButtonGroup options={COND_SUBJECT_L1} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
                         {l2Options.length > 0 && (
                           <div style={{ marginTop: 4 }}>
                             <ButtonGroup options={l2Options} value={curSub.l2} onChange={handleSubL2} accentColor={colors.accent} />
+                          </div>
+                        )}
+                        {showStackPos && (
+                          <div style={{ marginTop: 4 }}>
+                            <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
+                            <ButtonGroup options={STACK_POS_OPTIONS} value={stackPos} onChange={(v) => setStackPos(v as StackPos)} accentColor={colors.accent} />
                           </div>
                         )}
                         {showIncludeSelfToggle && (

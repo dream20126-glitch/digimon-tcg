@@ -2494,6 +2494,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       defaultSubject=""
                       showSubjectSelector={false}
                       supportsMultiValue={true}
+                      showTypeInTargetFilter={curTgt.l2 !== 'digimon' && curTgt.l2 !== 'tamer'}
                       part="buttons"
                       otherOpen={targetFilterOtherOpen}
                       onOtherOpenChange={setTargetFilterOtherOpen}
@@ -2531,6 +2532,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         defaultSubject=""
                         showSubjectSelector={false}
                         supportsMultiValue={true}
+                        showTypeInTargetFilter={curTgt.l2 !== 'digimon' && curTgt.l2 !== 'tamer'}
                         part="panels"
                         otherOpen={targetFilterOtherOpen}
                         onOtherOpenChange={setTargetFilterOtherOpen}
@@ -3716,6 +3718,11 @@ interface ConditionsHybridEditorProps {
   // true のときのみ「コスト増減」カテゴリを表示する。アクションが登場/進化/消滅のときだけ
   // 意味を持つ（コストしきい値そのものを+/-する機能のため）。既定は非表示
   showCostMod?: boolean;
+  // true のとき「タイプ」カテゴリを対象の条件（supportsMultiValue）でも表示する。
+  // 通常は対象ボタン側（自分→デジモン/テイマー等）で種別が既に決まるため重複を避けて隠すが、
+  // 進化/登場アクション（対象=このカード）のように対象ボタンが取得元カードの種別を
+  // 決めていないケースでは、「クロノモンの記述がある【何の】カードか」を明示するために必要
+  showTypeInTargetFilter?: boolean;
 }
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
@@ -3826,6 +3833,7 @@ function ConditionsHybridEditor({
   conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true,
   supportsMultiValue = false, attackContextActive = false,
   part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false,
+  showTypeInTargetFilter = false,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
@@ -3840,7 +3848,7 @@ function ConditionsHybridEditor({
   // 「コスト増減」は登場/進化/消滅アクション選択時の発動条件でのみ意味を持つため、
   // showCostMod=true のとき以外は非表示にする
   const visibleCategoryOptions = CATEGORY_BUTTON_OPTIONS.filter((c) => {
-    if (c.code === 'type' && supportsMultiValue) return false;
+    if (c.code === 'type' && supportsMultiValue && !showTypeInTargetFilter) return false;
     if (c.code === 'cost_mod' && !showCostMod) return false;
     // 「場所」は対象の条件（対象フィルタ・supportsMultiValue）専用。トリガー条件/発動条件
     // ではエンジンが「どのカードの場所を見るか」を特定できないため意味を持たない

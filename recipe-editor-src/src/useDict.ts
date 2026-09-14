@@ -85,6 +85,12 @@ function categorize(rows: any[]): { triggers: DictEntry[]; conditions: DictEntry
         const v = String(r['上下指定'] || '').trim().toLowerCase();
         return v === '1' || v === 'true' || v === 'yes' || v === 'on';
       })(),
+      // 対象指定フラグ: 「対象指定」列に "1"/"true" 等で「🗄 対象」（自分/相手/お互い）ボタンを表示
+      // （トリガー/条件どちらの辞書行にも使う）
+      hasZoneOwner: (() => {
+        const v = String(r['対象指定'] || '').trim().toLowerCase();
+        return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+      })(),
     };
     if (kind === 'trigger' || kind === 'continuous') triggers.push(entry);
     else if (kind === 'condition') conditions.push(entry);
@@ -212,6 +218,7 @@ export function useDict(password: string): DictAPI {
       '位置指定': entry.hasPositionVariant ? '1' : '',
       '場所指定': entry.hasFromZones ? '1' : '',
       '上下指定': entry.hasDeckPosition ? '1' : '',
+      '対象指定': entry.hasZoneOwner ? '1' : '',
       'キーワードレシピ': entry.recipeTemplate || '',
     };
     const r = await apiAdd('dict', row, password);
@@ -263,6 +270,9 @@ export function useDict(password: string): DictAPI {
     if (Object.prototype.hasOwnProperty.call(patch, 'hasDeckPosition')) {
       row['上下指定'] = (patch as any).hasDeckPosition ? '1' : '';
       setActionFlagsForCode(code, { hasDeckPosition: !!(patch as any).hasDeckPosition });
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'hasZoneOwner')) {
+      row['対象指定'] = (patch as any).hasZoneOwner ? '1' : '';
     }
     const r = await apiUpdate('dict', code, row, password);
     if (r.ok) await refresh();

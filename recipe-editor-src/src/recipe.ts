@@ -307,6 +307,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
         case 'cond_name_contains':    f.name_contains = c.value; break;
         case 'cond_description':          f.description = c.value; break;
         case 'cond_description_contains': f.description_contains = c.value; break;
+        case 'cond_zone':                  f.zone = c.value; break;
       }
     });
     if (Object.keys(f).length > 0) step.filter = f;
@@ -688,6 +689,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       if (f.name_contains)    out.push({ base: 'cond_name_contains',    value: String(f.name_contains) });
       if (f.description)          out.push({ base: 'cond_description',          value: String(f.description) });
       if (f.description_contains) out.push({ base: 'cond_description_contains', value: String(f.description_contains) });
+      if (f.zone)                 out.push({ base: 'cond_zone',                 value: String(f.zone) });
       if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
         out.push({ base: 'cond_lv', value: String(f.lv_le) });
       } else {

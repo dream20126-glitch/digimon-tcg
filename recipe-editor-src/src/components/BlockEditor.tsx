@@ -3167,6 +3167,18 @@ const RULE_VALUE_OPTS: SelectOption[] = [
   { value: 'all', label: '全て' },
   { value: '__custom__', label: '記述（自由入力）' },
 ];
+// 「対象の条件」の「場所」カテゴリ用: 対象カードがどのエリアにあるかの絞り込み
+// （例:「手札の『クロノモン』の記述があるデジモンカード」の「手札」部分）
+const RULE_ZONE_OPTS: SelectOption[] = [
+  { value: '', label: '（選択）' },
+  { value: 'hand', label: '手札' },
+  { value: 'trash', label: 'トラッシュ' },
+  { value: 'deck', label: 'デッキ' },
+  { value: 'security', label: 'セキュリティ' },
+  { value: 'battle_area', label: 'バトルエリア' },
+  { value: 'breed', label: '育成エリア' },
+  { value: 'evo_source', label: '進化元' },
+];
 
 // === アクション「位置バリアント」グループ化 ===
 // アクションコード末尾が _top / _bottom / _select で、
@@ -3314,6 +3326,9 @@ const COMMON_CONDS: CommonCondDef[] = [
   // cond_name(_contains) とは別物）
   { code: 'cond_description',          label: '記述（完全一致）', input: 'text' },
   { code: 'cond_description_contains', label: '記述に含む',   input: 'text' },
+  // 対象カードの所在エリア（例:「手札の」「デッキの」）。対象の条件（対象フィルタ）専用。
+  // 発動条件/トリガー条件の文脈ではエンジンが評価対象を特定できないため意味を持たない
+  { code: 'cond_zone',                 label: '場所',         input: 'select', options: RULE_ZONE_OPTS },
 ];
 // ルール上部フィールド (step 直下) のみ。条件は ConditionsHybridEditor に統一。
 const RULE_FIELDS: RuleFieldDef[] = [
@@ -3695,7 +3710,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'description' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'description' | 'zone' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -3707,6 +3722,7 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'cost_mod', label: 'コスト増減' },
   { value: 'name', label: '名前' },
   { value: 'description', label: '記述' },
+  { value: 'zone', label: '場所' },
   { value: 'other', label: 'その他' },
 ];
 // 種別ボタン用（「その他」はトリガー同様、別枠のチェックボックスで扱うため除外）
@@ -3724,6 +3740,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   cost_mod: 'cond_cost_mod',
   name: 'cond_name',
   description: 'cond_description',
+  zone: 'cond_zone',
 };
 
 // バリアント選択が必要なカテゴリのプルダウン候補
@@ -3768,6 +3785,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_cost_mod') return 'cost_mod';
   if (base === 'cond_name' || base === 'cond_name_contains') return 'name';
   if (base === 'cond_description' || base === 'cond_description_contains') return 'description';
+  if (base === 'cond_zone') return 'zone';
   return 'other';
 }
 
@@ -3804,6 +3822,9 @@ function ConditionsHybridEditor({
   const visibleCategoryOptions = CATEGORY_BUTTON_OPTIONS.filter((c) => {
     if (c.code === 'type' && supportsMultiValue) return false;
     if (c.code === 'cost_mod' && !showCostMod) return false;
+    // 「場所」は対象の条件（対象フィルタ・supportsMultiValue）専用。トリガー条件/発動条件
+    // ではエンジンが「どのカードの場所を見るか」を特定できないため意味を持たない
+    if (c.code === 'zone' && !supportsMultiValue) return false;
     return true;
   });
 
@@ -3813,7 +3834,7 @@ function ConditionsHybridEditor({
     'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_dp_ge', 'cond_dp_le', 'cond_dp',
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
     'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod',
-    'cond_name', 'cond_name_contains', 'cond_description', 'cond_description_contains',
+    'cond_name', 'cond_name_contains', 'cond_description', 'cond_description_contains', 'cond_zone',
     // トリガーボックス側の専用「アタック対象」ボタンで管理するため、その他の追加候補にも出さない
     'cond_attack_target_player', 'cond_attack_target_digimon',
   ]);

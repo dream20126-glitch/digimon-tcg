@@ -750,12 +750,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // 加えて、進化/登場(BUILTIN_FROM_ZONE_ACTIONS)のように「対象=このカード自身」だが
   // 実際に絞り込みたいのは取得元エリア（手札等）から選ぶカードの方、という場合にも表示する
   // （例:「このデジモンを手札の『クロノモン』の記述があるカードに進化できる」→
-  // target=self_card（進化する側）だが、進化先の絞り込みは対象の条件で行う）
+  // target=self_card（進化する側）だが、進化先の絞り込みは対象の条件で行う）。
+  // アクションの「場所」ボタン(fromZones)を使っているかは問わない
+  // （「場所」ボタンを使わず、対象の条件側の「場所」カテゴリでまとめて指定する運用も可のため）
   const showTargetFilter =
     (curTgt.l1 === 'own' && ['digimon', 'card', 'tamer'].includes(curTgt.l2)) ||
     (curTgt.l1 === 'opp' && ['digimon', 'tamer'].includes(curTgt.l2)) ||
     (curTgt.l1 === 'other_own' && curTgt.l2 === 'digimon') ||
-    (!!block.action && BUILTIN_FROM_ZONE_ACTIONS.has(block.action) && Array.isArray(block.fromZones) && block.fromZones.some((z) => !!z));
+    (!!block.action && BUILTIN_FROM_ZONE_ACTIONS.has(block.action));
 
   function setTarget(base: string, suffix: string) {
     if (!base) return update('target', '');

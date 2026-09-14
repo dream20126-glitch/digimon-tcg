@@ -749,19 +749,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const tgtSuffix = (block.target || '').substring(tgtBase.length);
   // 対象のL1/L2（「対象の条件」を表示すべきかの判定にも使うため、コンポーネント直下で保持）
   const curTgt = TARGET_SEL_CODE_TO_L1L2[tgtBase] || { l1: '', l2: '' };
-  // 「対象の条件」は対象が下記の場合のみ表示する:
+  // 「対象の条件」は対象が下記の場合のみ表示する（＝アクションが実際に処理する対象自身に
+  // 掛かる条件。例:「レスト状態のこのデジモン」）:
   // 自分→デジモン/カード/テイマー・相手→デジモン/テイマー・他→デジモン
-  // 加えて、進化/登場(BUILTIN_FROM_ZONE_ACTIONS)のように「対象=このカード自身」だが
-  // 実際に絞り込みたいのは取得元エリア（手札等）から選ぶカードの方、という場合にも表示する
-  // （例:「このデジモンを手札の『クロノモン』の記述があるカードに進化できる」→
-  // target=self_card（進化する側）だが、進化先の絞り込みは対象の条件で行う）。
-  // アクションの「場所」ボタン(fromZones)を使っているかは問わない
-  // （「場所」ボタンを使わず、対象の条件側の「場所」カテゴリでまとめて指定する運用も可のため）
   const showTargetFilter =
     (curTgt.l1 === 'own' && ['digimon', 'card', 'tamer'].includes(curTgt.l2)) ||
     (curTgt.l1 === 'opp' && ['digimon', 'tamer'].includes(curTgt.l2)) ||
-    (curTgt.l1 === 'other_own' && curTgt.l2 === 'digimon') ||
-    (!!block.action && BUILTIN_FROM_ZONE_ACTIONS.has(block.action));
+    (curTgt.l1 === 'other_own' && curTgt.l2 === 'digimon');
+  // 「取得元カードの条件」は進化/登場(BUILTIN_FROM_ZONE_ACTIONS)専用。対象＝このカード自身
+  // （進化する側）であっても、実際に絞り込みたいのは取得元エリア（手札等）から選ぶカードの方
+  // なので、「対象の条件」とは別枠・別データ（block.fromFilter → step.from_filter）として扱う
+  // （例:「このデジモンを手札の『クロノモン』の記述があるカードに進化できる」）
+  const showRetrievalFilter = !!block.action && BUILTIN_FROM_ZONE_ACTIONS.has(block.action);
 
   function setTarget(base: string, suffix: string) {
     if (!base) return update('target', '');
@@ -783,6 +782,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     update('conditions', conditions.filter((_, idx) => idx !== i));
   }
 
+  // 取得元カードの条件（進化/登場アクション専用。対象＝このカード自身の条件とは別物。
+  // step.from_filter に serialize）
+  const fromFilter = block.fromFilter || [];
   // ターゲットフィルタ操作（step.filter に serialize）
   const targetFilter = block.targetFilter || [];
   function updateTargetFilter(i: number, p: ConditionPair) {
@@ -2494,7 +2496,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       defaultSubject=""
                       showSubjectSelector={false}
                       supportsMultiValue={true}
-                      showTypeInTargetFilter={curTgt.l2 !== 'digimon' && curTgt.l2 !== 'tamer'}
                       part="buttons"
                       otherOpen={targetFilterOtherOpen}
                       onOtherOpenChange={setTargetFilterOtherOpen}
@@ -2502,24 +2503,20 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </div>
                 )}
               </div>
-              {(!hideCount || showTargetFilter) && (
+              {!hideCount && (
                 <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
-                  {!hideCount && (
-                    <>
-                      <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
-                        🎯 アクションの対象数
-                        <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
-                          （何体に適用するか）
-                        </span>
-                      </label>
-                      <ButtonGroup
-                        options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
-                        value={tgtSuffix}
-                        onChange={(v) => setTarget(tgtBase, v)}
-                        accentColor="#b76e00"
-                      />
-                    </>
-                  )}
+                  <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
+                    🎯 アクションの対象数
+                    <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
+                      （何体に適用するか）
+                    </span>
+                  </label>
+                  <ButtonGroup
+                    options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
+                    value={tgtSuffix}
+                    onChange={(v) => setTarget(tgtBase, v)}
+                    accentColor="#b76e00"
+                  />
                   {showTargetFilter && (
                     <div style={{ marginTop: 8, border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', padding: 8 }}>
                       <ConditionsHybridEditor
@@ -2532,7 +2529,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         defaultSubject=""
                         showSubjectSelector={false}
                         supportsMultiValue={true}
-                        showTypeInTargetFilter={curTgt.l2 !== 'digimon' && curTgt.l2 !== 'tamer'}
                         part="panels"
                         otherOpen={targetFilterOtherOpen}
                         onOtherOpenChange={setTargetFilterOtherOpen}
@@ -2544,6 +2540,29 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
           );
         })()}
+
+        {/* 📥 取得元カードの条件: 進化/登場アクション専用。対象＝このカード自身であっても、
+            実際に絞り込みたいのは取得元エリア（手札等）から選ぶカードの方（例:「このデジモンを
+            手札の『クロノモン』の記述があるデジモンカードに進化できる」）。「対象の条件」
+            （このカード自身に掛かる条件）とは別データ（block.fromFilter）で持つ。
+            効果2以降（代替アクション）は対象の条件と同様に効果1専用のため対象外 */}
+        {!isEditingAlt && showRetrievalFilter && (
+          <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8, background: '#e0f7f5', border: '1px solid #b2dfdb', borderRadius: 4, padding: 8 }}>
+            <ConditionsHybridEditor
+              conditions={fromFilter}
+              onChange={(next) => update('fromFilter', next)}
+              dict={dict}
+              title="取得元カードの条件"
+              hint="（進化先/登場先として取得元エリアから選ぶカードの絞り込み。対象＝このカード自身の条件とは別物）"
+              theme="action"
+              defaultSubject=""
+              showSubjectSelector={false}
+              supportsMultiValue={true}
+              showTypeInTargetFilter={true}
+              part="full"
+            />
+          </div>
+        )}
 
         {/* ⏳ 期間（クイックボタン）: ✅を入れるとボタンが現れる。編集中の効果（効果1/効果2以降）
             に対して読み書きする。「〜の間（汎用）」等もL1に含む */}

@@ -11,6 +11,72 @@ function pairToString(p: ConditionPair): string {
   return s;
 }
 
+// ConditionPair[] → カード絞り込み用フィルタオブジェクト（step.filter / step.from_filter 共通）。
+// targetFilter（アクション対象自身の絞り込み）・fromFilter（進化/登場アクションの取得元
+// エリアから選ぶカードの絞り込み）の両方で同じ形を使うため共通化している
+function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, any> | null {
+  if (!Array.isArray(pairs) || pairs.length === 0) return null;
+  const f: Record<string, any> = {};
+  pairs.forEach((c) => {
+    if (!c || !c.base || !c.value) return;
+    const num = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
+    switch (c.base) {
+      case 'cond_color':            f.color = c.value; break;
+      // カンマ区切り(複数チェック)なら type_in 配列(OR)、単一値ならこれまで通り type
+      case 'cond_type': {
+        const types = String(c.value).split(',').map((s) => s.trim()).filter(Boolean);
+        if (types.length > 1) f.type_in = types; else f.type = types[0];
+        break;
+      }
+      case 'cond_lv':       { const n = num(c.value); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
+      case 'cond_lv_le':    { const n = num(c.value); if (n !== undefined) f.lv_le = n; break; }
+      case 'cond_lv_ge':    { const n = num(c.value); if (n !== undefined) f.lv_ge = n; break; }
+      // カンマ区切り(複数チェック)なら feature_includes 配列(OR・特徴を "/" で分割して部分一致)、
+      // 単一値でも feature_includes を使う（cardMatchesFilter は feature_contains を見ないため）
+      case 'cond_feature_contains': {
+        const feats = String(c.value).split(',').map((s) => s.trim()).filter(Boolean);
+        if (feats.length > 0) f.feature_includes = feats;
+        break;
+      }
+      case 'cond_name':             f.name = c.value; break;
+      case 'cond_name_contains':    f.name_contains = c.value; break;
+      case 'cond_description':          f.description = c.value; break;
+      case 'cond_description_contains': f.description_contains = c.value; break;
+      case 'cond_zone':                  f.zone = c.value; break;
+    }
+  });
+  return Object.keys(f).length > 0 ? f : null;
+}
+
+// フィルタオブジェクト（step.filter / step.from_filter）→ ConditionPair[]（buildFilterObject の逆変換）
+function parseFilterObject(f: any): ConditionPair[] {
+  if (!f || typeof f !== 'object') return [];
+  const out: ConditionPair[] = [];
+  if (f.color)            out.push({ base: 'cond_color',            value: String(f.color) });
+  if (Array.isArray(f.type_in) && f.type_in.length > 0) {
+    out.push({ base: 'cond_type', value: f.type_in.join(',') });
+  } else if (f.type) {
+    out.push({ base: 'cond_type', value: String(f.type) });
+  }
+  if (Array.isArray(f.feature_includes) && f.feature_includes.length > 0) {
+    out.push({ base: 'cond_feature_contains', value: f.feature_includes.join(',') });
+  } else if (f.feature_contains) {
+    out.push({ base: 'cond_feature_contains', value: String(f.feature_contains) });
+  }
+  if (f.name)             out.push({ base: 'cond_name',             value: String(f.name) });
+  if (f.name_contains)    out.push({ base: 'cond_name_contains',    value: String(f.name_contains) });
+  if (f.description)          out.push({ base: 'cond_description',          value: String(f.description) });
+  if (f.description_contains) out.push({ base: 'cond_description_contains', value: String(f.description_contains) });
+  if (f.zone)                 out.push({ base: 'cond_zone',                 value: String(f.zone) });
+  if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
+    out.push({ base: 'cond_lv', value: String(f.lv_le) });
+  } else {
+    if (f.lv_le !== undefined) out.push({ base: 'cond_lv_le', value: String(f.lv_le) });
+    if (f.lv_ge !== undefined) out.push({ base: 'cond_lv_ge', value: String(f.lv_ge) });
+  }
+  return out;
+}
+
 // keywordDict を渡すと、trigger='passive' のキーワードに recipeTemplate が登録されていれば
 // カード自身のレシピにそのテンプレートの中身を展開・合流させる（キーワード効果登録機能）。
 // テンプレートが無いキーワード（エンジン側が名前で直接認識する既存キーワード）は
@@ -279,39 +345,13 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       step.alt_actions_op = b.altActionsOp || 'or';
     }
   }
-  // === targetFilter → step.filter ===
-  if (Array.isArray(b.targetFilter) && b.targetFilter.length > 0) {
-    const f: Record<string, any> = {};
-    b.targetFilter.forEach((c) => {
-      if (!c || !c.base || !c.value) return;
-      const num = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
-      switch (c.base) {
-        case 'cond_color':            f.color = c.value; break;
-        // カンマ区切り(複数チェック)なら type_in 配列(OR)、単一値ならこれまで通り type
-        case 'cond_type': {
-          const types = String(c.value).split(',').map((s) => s.trim()).filter(Boolean);
-          if (types.length > 1) f.type_in = types; else f.type = types[0];
-          break;
-        }
-        case 'cond_lv':       { const n = num(c.value); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
-        case 'cond_lv_le':    { const n = num(c.value); if (n !== undefined) f.lv_le = n; break; }
-        case 'cond_lv_ge':    { const n = num(c.value); if (n !== undefined) f.lv_ge = n; break; }
-        // カンマ区切り(複数チェック)なら feature_includes 配列(OR・特徴を "/" で分割して部分一致)、
-        // 単一値でも feature_includes を使う（cardMatchesFilter は feature_contains を見ないため）
-        case 'cond_feature_contains': {
-          const feats = String(c.value).split(',').map((s) => s.trim()).filter(Boolean);
-          if (feats.length > 0) f.feature_includes = feats;
-          break;
-        }
-        case 'cond_name':             f.name = c.value; break;
-        case 'cond_name_contains':    f.name_contains = c.value; break;
-        case 'cond_description':          f.description = c.value; break;
-        case 'cond_description_contains': f.description_contains = c.value; break;
-        case 'cond_zone':                  f.zone = c.value; break;
-      }
-    });
-    if (Object.keys(f).length > 0) step.filter = f;
-  }
+  // === targetFilter → step.filter（対象自身の絞り込み。例:レスト状態のこのデジモン） ===
+  const targetFilterObj = buildFilterObject(b.targetFilter);
+  if (targetFilterObj) step.filter = targetFilterObj;
+  // === fromFilter → step.from_filter（進化/登場アクション専用。取得元エリアから選ぶ
+  // カードの絞り込み。対象＝このカード自身の条件(filter)とは別データ） ===
+  const fromFilterObj = buildFilterObject(b.fromFilter);
+  if (fromFilterObj) step.from_filter = fromFilterObj;
   // === 付与効果 (granted_recipe) ===
   // 対象に一時的にトリガー効果を付与（grant_effect 等で使用）
   if (b.grantedStep && b.grantedStep.trigger && b.grantedStep.action) {
@@ -671,33 +711,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
         options: Array.isArray(inner?.options) ? inner.options.slice() : [],
       };
     })(),
-    targetFilter: (() => {
-      const f = step?.filter;
-      if (!f || typeof f !== 'object') return [];
-      const out: ConditionPair[] = [];
-      if (f.color)            out.push({ base: 'cond_color',            value: String(f.color) });
-      if (Array.isArray(f.type_in) && f.type_in.length > 0) {
-        out.push({ base: 'cond_type', value: f.type_in.join(',') });
-      } else if (f.type) {
-        out.push({ base: 'cond_type', value: String(f.type) });
-      }
-      if (Array.isArray(f.feature_includes) && f.feature_includes.length > 0) {
-        out.push({ base: 'cond_feature_contains', value: f.feature_includes.join(',') });
-      } else if (f.feature_contains) {
-        out.push({ base: 'cond_feature_contains', value: String(f.feature_contains) });
-      }
-      if (f.name_contains)    out.push({ base: 'cond_name_contains',    value: String(f.name_contains) });
-      if (f.description)          out.push({ base: 'cond_description',          value: String(f.description) });
-      if (f.description_contains) out.push({ base: 'cond_description_contains', value: String(f.description_contains) });
-      if (f.zone)                 out.push({ base: 'cond_zone',                 value: String(f.zone) });
-      if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
-        out.push({ base: 'cond_lv', value: String(f.lv_le) });
-      } else {
-        if (f.lv_le !== undefined) out.push({ base: 'cond_lv_le', value: String(f.lv_le) });
-        if (f.lv_ge !== undefined) out.push({ base: 'cond_lv_ge', value: String(f.lv_ge) });
-      }
-      return out;
-    })(),
+    targetFilter: parseFilterObject(step?.filter),
+    fromFilter: parseFilterObject(step?.from_filter),
     extras: Object.keys(extras).length > 0 ? JSON.stringify(extras) : '',
   };
 }

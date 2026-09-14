@@ -77,7 +77,11 @@ export interface EffectBlock {
   // 例: 「自分のデジモン全ては『【アタック時】相手DP-2000』を得る」
   grantedStep?: GrantedStep;
   extras?: string; // フリー入力 JSON 文字列
-  targetFilter?: ConditionPair[]; // アクション対象の絞り込み → step.filter に serialize
+  targetFilter?: ConditionPair[]; // アクション対象自身の絞り込み（例:レスト状態のこのデジモン）→ step.filter に serialize
+  // 進化/登場アクション専用。対象＝このカード自身であっても、取得元エリア（手札等）から
+  // 選ぶカードの絞り込みは別物（例:「手札の『クロノモン』の記述があるデジモンカード」）
+  // なので targetFilter とは別データとして持つ → step.from_filter に serialize
+  fromFilter?: ConditionPair[];
   // アクション辞書の hasDeckPosition=true のアクション専用（例: return_deck）。
   // JSON では step.position ('top'/'bottom') に serialize。'both' はエンジン未対応
   // （'top' 以外は全て下扱いになるため、選ぶと実際は「下」と同じ動作になる）

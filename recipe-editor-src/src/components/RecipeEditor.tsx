@@ -129,6 +129,7 @@ export function RecipeEditor({
             onRemove={() => removeBlock(i)}
             onMoveUp={i > 0 ? () => moveBlock(i, -1) : undefined}
             onMoveDown={i < blocks.length - 1 ? () => moveBlock(i, 1) : undefined}
+            hasNoEvoText={!isMeaningfulText(card.evoText)}
           />
         ))}
         <div className="add-block" onClick={addBlock}>＋ 効果ステップを追加</div>

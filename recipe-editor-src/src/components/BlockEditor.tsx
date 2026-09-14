@@ -26,6 +26,10 @@ interface Props {
   // true のとき、キーワード効果のレシピ作成専用トリガー（アクティブフェイズ開始時 等）も
   // よく使うトリガーに追加表示する（通常のカードレシピ編集画面では出さない）
   isKeywordMode?: boolean;
+  // true のとき、このカードの「進化元テキスト」欄が空/なし（＝実際には進化元由来の効果を
+  // 持たないカード）であることを示す。区分=進化元 が選ばれているのに true な場合、
+  // 「効果テキスト（メイン）由来の効果を誤って進化元区分にしていないか」の注意書きを出す
+  hasNoEvoText?: boolean;
 }
 
 // 共通ヘルパ: code/label の配列 → SelectOption[]
@@ -713,7 +717,7 @@ function combineLimit(type: string, count: number): string {
   return type;
 }
 
-export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, onMoveDown, isKeywordMode }: Props) {
+export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, onMoveDown, isKeywordMode, hasNoEvoText }: Props) {
   const effectiveTriggerFamilies = isKeywordMode ? [...COMMON_TRIGGER_FAMILIES, ...KEYWORD_ONLY_TRIGGER_FAMILIES] : COMMON_TRIGGER_FAMILIES;
   function update(key: keyof EffectBlock, value: any) {
     onChange({ ...block, [key]: value });
@@ -1290,10 +1294,24 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           gridColumn: '1 / span 2', padding: 10, background: '#fdeef2',
           border: '1px solid #f3b8ce', borderRadius: 6,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
             <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>区分 *</label>
             <ButtonGroup options={SECTIONS} value={block.section} onChange={(v) => update('section', v)} accentColor="#d6336c" />
           </div>
+          <div style={{ fontSize: 10, color: '#666', marginBottom: 6, marginLeft: 64 }}>
+            {block.section === 'evo_source'
+              ? '「進化元」＝このカードが他のカードの進化元（下敷き）になったときに発揮する効果（カード情報一覧の「進化元テキスト」欄の内容）専用です。'
+              : block.section === 'security'
+              ? '「セキュリティ」＝このカードがセキュリティとして表向きになったときの効果（セキュリティテキスト欄）専用です。'
+              : block.section === 'link'
+              ? '「リンク」＝このカードがリンクしている間に発揮する効果専用です。'
+              : '「メイン」＝このカード自身の効果テキストです（進化元になったときの効果ではありません）。'}
+          </div>
+          {block.section === 'evo_source' && hasNoEvoText && (
+            <div style={{ fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px', marginBottom: 6 }}>
+              ⚠ このカードの「進化元テキスト」欄は空/なしです。効果テキスト（メイン）由来の効果を誤って「進化元」区分にしていませんか？
+            </div>
+          )}
 
           {/* タイプ: この効果ステップが「デジモンの効果」か「オプションの効果」かのメモ書き。
               trigger='main'はオプション使用時の効果とデジモンの起動効果の両方に使われる

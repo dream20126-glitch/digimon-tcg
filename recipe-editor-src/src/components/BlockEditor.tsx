@@ -151,7 +151,7 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
   // キーワード専用: このキーワードの実体となるレシピ（エンジンが対応する出来事の組み合わせで
   // 表現できる場合のみ）。空のままなら今まで通り passive:[{flag}] のみで出力される
   const [templateBlocks, setTemplateBlocks] = useState<EffectBlock[]>([]);
-  // トリガー専用: DictManagerの「🗄 対象を指定する」チェックボックスと同じフラグを、
+  // トリガー/条件専用: DictManagerの「🗄 対象を指定する」チェックボックスと同じフラグを、
   // このインライン登録フォームからも設定できるようにする
   const [hasZoneOwner, setHasZoneOwner] = useState(false);
 
@@ -183,7 +183,7 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
         const recipe = blocksToRecipe(templateBlocks);
         if (Object.keys(recipe).length > 0) extra.recipeTemplate = JSON.stringify(recipe);
       }
-      if (kind === 'triggers' && hasZoneOwner) extra.hasZoneOwner = true;
+      if ((kind === 'triggers' || kind === 'conditions') && hasZoneOwner) extra.hasZoneOwner = true;
       const r = await dict.addEntry(kind, { code: code.trim(), label: label.trim(), kind: kindToSingular(kind), ...extra });
       if (r.ok) {
         setMsg('✅ 登録しました: ' + code.trim());
@@ -245,10 +245,10 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
           キャンセル
         </button>
       </div>
-      {kind === 'triggers' && (
+      {(kind === 'triggers' || kind === 'conditions') && (
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 6, fontSize: 11, color: '#8a6d00' }}>
           <input type="checkbox" checked={hasZoneOwner} onChange={(e) => setHasZoneOwner(e.target.checked)} />
-          🗄 対象を指定する（自分/相手/両方。「デッキが増えたとき」のように自分/相手どちらの出来事かカードのテキストが明示しないトリガーだけ☑）
+          🗄 対象を指定する（自分/相手/お互い。「デッキが増えたとき」「自分の効果で」のように自分/相手どちらの出来事かカードのテキストが明示しない{kind === 'triggers' ? 'トリガー' : '条件'}だけ☑）
         </label>
       )}
       {kind === 'keywords' && (
@@ -4181,17 +4181,29 @@ function ConditionsHybridEditor({
                     : <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠未実装</span>
                 )}
               </div>
-              <div>
-                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                <input
-                  type="text"
-                  value={c.value || ''}
-                  onChange={(e) => updateAt(i, { value: e.target.value })}
-                  placeholder={NO_VALUE_CONDS.has(c.base) ? '（値不要）' : '（必要なら）'}
-                  disabled={NO_VALUE_CONDS.has(c.base)}
-                  style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-                />
-              </div>
+              {dict.conditions.find((d) => d.code === c.base)?.hasZoneOwner ? (
+                <div>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🗄 対象</div>
+                  <ButtonGroup
+                    options={[{ code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'both', label: 'お互い' }]}
+                    value={c.value === 'own' || c.value === 'opp' ? c.value : 'both'}
+                    onChange={(v) => updateAt(i, { value: v })}
+                    accentColor={colors.accent}
+                  />
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
+                  <input
+                    type="text"
+                    value={c.value || ''}
+                    onChange={(e) => updateAt(i, { value: e.target.value })}
+                    placeholder={NO_VALUE_CONDS.has(c.base) ? '（値不要）' : '（必要なら）'}
+                    disabled={NO_VALUE_CONDS.has(c.base)}
+                    style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                  />
+                </div>
+              )}
               {showSubjectSelector && (
                 <div>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>

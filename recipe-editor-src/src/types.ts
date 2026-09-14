@@ -175,11 +175,13 @@ export interface DictEntry {
   // というフィールドで表現する（例: return_deck）。'both'（両方選択=どちらか選んで）は
   // エンジンが step.position の値を 'top' 以外は全て「下」として扱うため未対応
   hasDeckPosition?: boolean;
-  // トリガー辞書専用: このトリガーを選んだとき、レシピエディタで「対象: 自分/相手/両方」
-  // ボタンを表示する。「デッキが増えたとき」のように、どちら側のゾーンで起きた出来事かを
-  // カードのテキストが明示していない（＝両方に反応する）トリガーで☑する。
-  // block.triggerZoneOwner ('own'/'opp'/'both') → JSON では step.zone_owner に反映
-  // （'both' は既定値なのでJSONには出力しない）
+  // トリガー/条件辞書共通: このトリガー・条件を選んだとき、レシピエディタで
+  // 「対象: 自分/相手/お互い（両方）」ボタンを表示する。「デッキが増えたとき」「自分の効果で」
+  // のように、どちら側の出来事かをカードのテキストが明示していない（＝両方に反応しうる）
+  // トリガー・条件で☑する。
+  // - トリガー: block.triggerZoneOwner ('own'/'opp'/'both') → JSON では step.zone_owner
+  //   （'both' は既定値なのでJSONには出力しない）
+  // - 条件: ConditionPair.value ('own'/'opp'/'both') に格納（他の条件と同じ「値」欄を流用）
   hasZoneOwner?: boolean;
   // キーワード辞書専用: このキーワードの実体となるレシピ（EffectBlock[]をJSON文字列化したもの）。
   // カード側でtrigger='passive'+このキーワードを選んだとき、blocksToRecipeがこれを展開して

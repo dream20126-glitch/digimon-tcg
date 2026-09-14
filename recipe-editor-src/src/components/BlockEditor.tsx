@@ -3319,6 +3319,11 @@ const COMMON_CONDS: CommonCondDef[] = [
   { code: 'cond_feature_contains', label: '特徴を含む',   input: 'text' },
   { code: 'cond_name',             label: '名前（完全一致）', input: 'text' },
   { code: 'cond_name_contains',    label: '名前を含む',   input: 'text' },
+  // 「記述」= カード上のどこか（名前/特徴/効果テキスト/進化元テキスト/セキュリティテキスト）に
+  // 指定文字列があるか（公式ルールの「「XXX」の記述がある」表記に対応。名前限定の
+  // cond_name(_contains) とは別物）
+  { code: 'cond_description',          label: '記述（完全一致）', input: 'text' },
+  { code: 'cond_description_contains', label: '記述に含む',   input: 'text' },
 ];
 // ルール上部フィールド (step 直下) のみ。条件は ConditionsHybridEditor に統一。
 const RULE_FIELDS: RuleFieldDef[] = [
@@ -3700,7 +3705,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'description' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -3711,6 +3716,7 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'cost', label: 'コスト' },
   { value: 'cost_mod', label: 'コスト増減' },
   { value: 'name', label: '名前' },
+  { value: 'description', label: '記述' },
   { value: 'other', label: 'その他' },
 ];
 // 種別ボタン用（「その他」はトリガー同様、別枠のチェックボックスで扱うため除外）
@@ -3727,6 +3733,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   cost: 'cond_cost_ge',
   cost_mod: 'cond_cost_mod',
   name: 'cond_name',
+  description: 'cond_description',
 };
 
 // バリアント選択が必要なカテゴリのプルダウン候補
@@ -3752,6 +3759,10 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_name', label: '完全一致' },
     { value: 'cond_name_contains', label: '含む' },
   ],
+  description: [
+    { value: 'cond_description', label: '完全一致' },
+    { value: 'cond_description_contains', label: '含む' },
+  ],
 };
 
 // 条件コード → カテゴリ の逆引き（既存レシピ読込時・行の見た目復元用）
@@ -3766,6 +3777,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_cost_ge' || base === 'cond_cost_le' || base === 'cond_cost') return 'cost';
   if (base === 'cond_cost_mod') return 'cost_mod';
   if (base === 'cond_name' || base === 'cond_name_contains') return 'name';
+  if (base === 'cond_description' || base === 'cond_description_contains') return 'description';
   return 'other';
 }
 
@@ -3811,7 +3823,7 @@ function ConditionsHybridEditor({
     'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_dp_ge', 'cond_dp_le', 'cond_dp',
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
     'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod',
-    'cond_name', 'cond_name_contains',
+    'cond_name', 'cond_name_contains', 'cond_description', 'cond_description_contains',
     // トリガーボックス側の専用「アタック対象」ボタンで管理するため、その他の追加候補にも出さない
     'cond_attack_target_player', 'cond_attack_target_digimon',
   ]);

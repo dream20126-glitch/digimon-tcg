@@ -334,6 +334,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.limit) step.limit = b.limit;
   // subject='self' はデフォルトなのでJSONに含めない（既存レシピと互換）
   if (b.triggerSubject && b.triggerSubject !== 'self') step.subject = b.triggerSubject;
+  // ゾーン所有者（辞書のhasZoneOwner=trueなトリガー専用。例:「デッキが増えたとき」の
+  // どちら側のデッキか）。'both'（自分/相手どちらでも）はデフォルトなのでJSONに含めない
+  if (b.triggerZoneOwner && b.triggerZoneOwner !== 'both') step.zone_owner = b.triggerZoneOwner;
   if (b.extras) {
     try {
       const ex = JSON.parse(b.extras);
@@ -520,6 +523,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     trigger,
     // JSON に subject 無ければ 'self' (このデジモン) としてロード
     triggerSubject: step?.subject || 'self',
+    // JSON に zone_owner 無ければ 'both' (自分/相手どちらでも) としてロード
+    triggerZoneOwner: step?.zone_owner === 'own' || step?.zone_owner === 'opp' ? step.zone_owner : 'both',
     limit: step?.limit || '',
     triggerConditions,
     conditions,

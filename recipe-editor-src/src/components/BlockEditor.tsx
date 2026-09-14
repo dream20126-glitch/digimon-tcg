@@ -151,6 +151,9 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
   // キーワード専用: このキーワードの実体となるレシピ（エンジンが対応する出来事の組み合わせで
   // 表現できる場合のみ）。空のままなら今まで通り passive:[{flag}] のみで出力される
   const [templateBlocks, setTemplateBlocks] = useState<EffectBlock[]>([]);
+  // トリガー専用: DictManagerの「🗄 対象を指定する」チェックボックスと同じフラグを、
+  // このインライン登録フォームからも設定できるようにする
+  const [hasZoneOwner, setHasZoneOwner] = useState(false);
 
   function autoSuggest() {
     if (!label.trim()) { setMsg('❌ 先に日本語名を入力してください'); return; }
@@ -180,6 +183,7 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
         const recipe = blocksToRecipe(templateBlocks);
         if (Object.keys(recipe).length > 0) extra.recipeTemplate = JSON.stringify(recipe);
       }
+      if (kind === 'triggers' && hasZoneOwner) extra.hasZoneOwner = true;
       const r = await dict.addEntry(kind, { code: code.trim(), label: label.trim(), kind: kindToSingular(kind), ...extra });
       if (r.ok) {
         setMsg('✅ 登録しました: ' + code.trim());
@@ -188,6 +192,7 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
         setLabel('');
         setCode('');
         setTemplateBlocks([]);
+        setHasZoneOwner(false);
       } else {
         setMsg('❌ ' + (r.msg || '登録失敗'));
       }
@@ -240,6 +245,12 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
           キャンセル
         </button>
       </div>
+      {kind === 'triggers' && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 6, fontSize: 11, color: '#8a6d00' }}>
+          <input type="checkbox" checked={hasZoneOwner} onChange={(e) => setHasZoneOwner(e.target.checked)} />
+          🗄 対象を指定する（自分/相手/両方。「デッキが増えたとき」のように自分/相手どちらの出来事かカードのテキストが明示しないトリガーだけ☑）
+        </label>
+      )}
       {kind === 'keywords' && (
         <div style={{ marginTop: 8, padding: 8, background: 'white', border: '1px solid #e0c847', borderRadius: 4 }}>
           <div style={{ fontSize: 11, fontWeight: 'bold', color: '#8a6d00', marginBottom: 4 }}>
@@ -465,6 +476,7 @@ interface TriggerFamily {
 const COMMON_TRIGGER_FAMILIES: TriggerFamily[] = [
   { code: 'on_play', label: '登場時', kind: 'event' },
   { code: 'on_evolve', label: '進化時', kind: 'event' },
+  { code: 'on_move', label: '移動時', kind: 'event' },
   { code: 'on_link', label: 'リンク時', kind: 'event' },
   {
     code: 'on_attack', label: 'アタック時', kind: 'timing',
@@ -665,9 +677,16 @@ function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair
     if (fam.kind !== 'timing' || !fam.variants) continue;
     if (currentTriggers.includes(fam.variants.opp)) return 'opp';
     if (currentTriggers.includes(fam.variants.any)) return 'any';
+    if (currentTriggers.includes(fam.variants.self)) return 'self';
   }
+  // どのファミリーのバリアントにも該当しない（=単発の通常トリガー）場合は、
+  // トリガー条件の cond_during_own_turn / cond_during_opp_turn の有無だけで判定する。
+  // どちらも無ければ「お互い」（未設定・ターンを問わない）が正しい既定値
+  // （以前はここで一律 'self' を返しており、単発トリガーで「お互い」を選んでも
+  // 再描画時に「自分」表示へ巻き戻ってしまう不具合があった）
+  if (triggerConditions.some((c) => c.base === 'cond_during_own_turn')) return 'self';
   if (triggerConditions.some((c) => c.base === 'cond_during_opp_turn')) return 'opp';
-  return 'self';
+  return 'any';
 }
 // 辞書に存在しない可能性がある新規プレースホルダーコード（メイン+相手 等）の表示名フォールバック
 const FAMILY_VARIANT_FALLBACK_LABELS: Record<string, string> = {};
@@ -1660,6 +1679,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             : rest;
                           update('triggerConditions', withNew);
                         }}
+                        accentColor="#2e7d32"
+                      />
+                    </div>
+                  )}
+
+                  {/* 辞書で hasZoneOwner=true が付いているトリガー（例:「デッキが増えたとき」）
+                      だけ、どちら側のゾーンで起きた出来事かを選べる。カードのテキストが
+                      「自分」「相手」を明示しない＝両方に反応する場合は既定の「両方」のままでよい */}
+                  {currentTriggers.some((t) => dict.triggers.find((d) => d.code === t)?.hasZoneOwner) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                      <span style={{ fontSize: 11, color: '#666' }}>🗄 対象:</span>
+                      <ButtonGroup
+                        options={[{ code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'both', label: '両方' }]}
+                        value={block.triggerZoneOwner || 'both'}
+                        onChange={(v) => update('triggerZoneOwner', v as 'own' | 'opp' | 'both')}
                         accentColor="#2e7d32"
                       />
                     </div>

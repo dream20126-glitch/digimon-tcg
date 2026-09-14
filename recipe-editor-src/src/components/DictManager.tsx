@@ -692,6 +692,25 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
             </>
           )}
 
+          {kind === 'triggers' && (
+            <div className="field" style={{ gridColumn: '1 / span 2' }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={!!form.hasZoneOwner}
+                  onChange={(e) => update({ hasZoneOwner: e.target.checked })}
+                />
+                <b>🗄 対象を指定する（自分/相手/両方）</b>
+              </label>
+              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+                💡 「デッキが増えたとき」のように、カードのテキストが自分/相手のどちらの
+                出来事かを明示していない（＝両方に反応しうる）トリガーだけ ☑ してください。
+                レシピエディタで本トリガー選択時に「🗄 対象」ボタン（自分/相手/両方）が出現します
+                （<code>step.zone_owner</code> に反映。「両方」は既定値のため保存しません）。
+              </div>
+            </div>
+          )}
+
           {/* 修飾子: ロジックコード + 実装ステータス（演出系は不要） */}
           {kind === 'options' && (
             <>
@@ -771,7 +790,7 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
               <tr style={{ background: '#f0f4f8', position: 'sticky', top: 0 }}>
                 <th style={th()}>コード</th>
                 <th style={th()}>日本語名</th>
-                {kind === 'actions' && <th style={th()}>フラグ</th>}
+                {(kind === 'actions' || kind === 'triggers') && <th style={th()}>フラグ</th>}
                 {isActionOrKeyword && <th style={th()}>演出タイプ</th>}
                 {isActionOrKeyword && <th style={th()}>自動/手動</th>}
                 {hasImplBadge && <th style={th()}>エンジン</th>}
@@ -822,6 +841,20 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                           <span style={{ color: '#bbb', fontSize: 11 }}>-</span>
                         )}
                       </span>
+                    </td>
+                  )}
+                  {kind === 'triggers' && (
+                    <td style={td()}>
+                      {e.hasZoneOwner ? (
+                        <span
+                          style={{ display: 'inline-block', padding: '2px 6px', background: '#f0fdfa', color: '#0d9488', border: '1px solid #99f6e4', borderRadius: 10, fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                          title="このトリガー選択時に「🗄 対象」（自分/相手/両方）ボタンを表示"
+                        >
+                          🗄 対象
+                        </span>
+                      ) : (
+                        <span style={{ color: '#bbb', fontSize: 11 }}>-</span>
+                      )}
                     </td>
                   )}
                   {isActionOrKeyword && <td style={td()}>{e.visualType || '-'}</td>}

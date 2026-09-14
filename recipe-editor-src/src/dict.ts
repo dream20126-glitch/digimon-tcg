@@ -149,6 +149,7 @@ export const TRIGGERS: DictEntry[] = [
   // 即時系
   { code: 'on_play', kind: 'trigger', label: '登場時' },
   { code: 'on_evolve', kind: 'trigger', label: '進化時' },
+  { code: 'on_move', kind: 'trigger', label: '移動時' },
   { code: 'on_attack', kind: 'trigger', label: 'アタック時' },
   { code: 'on_attack_end', kind: 'trigger', label: 'アタック終了時' },
   { code: 'on_destroy', kind: 'trigger', label: '消滅時' },
@@ -169,6 +170,7 @@ export const TRIGGERS: DictEntry[] = [
   { code: 'when_own_block', kind: 'trigger', label: '自分のブロッカーがレストしたとき' },
   { code: 'when_opp_rest', kind: 'trigger', label: '相手のデジモンがレストしたとき' },
   { code: 'when_evo_discard', kind: 'trigger', label: '進化元を破棄したとき（発動主体で誰の進化元か指定）' },
+  { code: 'when_deck_increase', kind: 'trigger', label: 'デッキが増えたとき', hasZoneOwner: true },
   // ターン境界
   { code: 'on_own_turn_start', kind: 'trigger', label: '自分のターン開始時' },
   { code: 'on_own_turn_end', kind: 'trigger', label: '自分のターン終了時' },
@@ -217,6 +219,7 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_memory_le', kind: 'condition', label: 'メモリーがN以下の間' },
   { code: 'cond_no_tamer_evo', kind: 'condition', label: '進化元にテイマーカードが無い' },
   { code: 'cond_not_own_effect', kind: 'condition', label: '自分の効果以外' },
+  { code: 'cond_own_effect', kind: 'condition', label: '自分の効果で' },
   { code: 'cond_name', kind: 'condition', label: '名前（完全一致）' },
   { code: 'cond_name_contains', kind: 'condition', label: '名称に含む' },
   { code: 'cond_feature_contains', kind: 'condition', label: '特徴に含む' },

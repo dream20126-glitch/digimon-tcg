@@ -61,6 +61,19 @@ export async function loadCards() {
   return r;
 }
 
+// 一覧表示専用の軽量取得（カードNo・名前・レシピの3列だけ）。
+// 全列読むloadCards()より大幅に速い（1〜2秒程度）
+export async function loadCardList() {
+  const r = await gasGet('getCardList');
+  return r;
+}
+
+// カードを1枚選んだときだけ呼ぶ、その1行の全列詳細取得
+export async function loadCardDetail(cardNo: string) {
+  const r = await gasGet('getCardDetail', { cardNo });
+  return r;
+}
+
 export async function saveRecipe(cardNo: string, recipe: string, password: string) {
   return gasPost('saveRecipe', { cardNo, recipe, password });
 }

@@ -19,10 +19,9 @@ export interface EffectBlock {
   // トリガーの複数選択（例: 登場時/進化時どちらでも同じ効果）。2件以上のときのみ意味を持つ。
   // blocksToRecipeで各コードごとに同じstepを複製して出力する。1件以下ならtriggerのみを見る
   triggers?: string[];
-  triggerSubject?: string; // '' = このデジモン / 'own' / 'other_own' / 'opp' / 'own_tamer'
-  // 辞書のトリガーで hasZoneOwner=true が付いているとき（例:「デッキが増えたとき」）だけ表示される
-  // 「どちら側のゾーンか」の選択。'both'（自分/相手どちらでも）が既定。JSON では step.zone_owner
-  triggerZoneOwner?: 'own' | 'opp' | 'both';
+  // '' = このデジモン / 'own' / 'other_own' / 'opp' / 'own_tamer' / 'both'（自分/相手どちらでも。
+  // 「デッキが増えたとき」のようにデジモン/カード/テイマー等に分解できないゾーン系トリガー用）
+  triggerSubject?: string;
   limit?: string; // '' | 'once_per_turn'
   // トリガー条件: トリガー発火元のカード（登場/消滅したカード等）に対するフィルタ
   // 「黄のLv.3デジモンが登場したとき」等の "このトリガーが発火する条件" を表現
@@ -175,14 +174,6 @@ export interface DictEntry {
   // というフィールドで表現する（例: return_deck）。'both'（両方選択=どちらか選んで）は
   // エンジンが step.position の値を 'top' 以外は全て「下」として扱うため未対応
   hasDeckPosition?: boolean;
-  // トリガー/条件辞書共通: このトリガー・条件を選んだとき、レシピエディタで
-  // 「対象: 自分/相手/お互い（両方）」ボタンを表示する。「デッキが増えたとき」「自分の効果で」
-  // のように、どちら側の出来事かをカードのテキストが明示していない（＝両方に反応しうる）
-  // トリガー・条件で☑する。
-  // - トリガー: block.triggerZoneOwner ('own'/'opp'/'both') → JSON では step.zone_owner
-  //   （'both' は既定値なのでJSONには出力しない）
-  // - 条件: ConditionPair.value ('own'/'opp'/'both') に格納（他の条件と同じ「値」欄を流用）
-  hasZoneOwner?: boolean;
   // キーワード辞書専用: このキーワードの実体となるレシピ（EffectBlock[]をJSON文字列化したもの）。
   // カード側でtrigger='passive'+このキーワードを選んだとき、blocksToRecipeがこれを展開して
   // カード自身のレシピに埋め込む。エンジンが未対応の出来事（アクティブフェイズ開始時等）しか

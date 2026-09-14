@@ -151,9 +151,6 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
   // キーワード専用: このキーワードの実体となるレシピ（エンジンが対応する出来事の組み合わせで
   // 表現できる場合のみ）。空のままなら今まで通り passive:[{flag}] のみで出力される
   const [templateBlocks, setTemplateBlocks] = useState<EffectBlock[]>([]);
-  // トリガー/条件専用: DictManagerの「🗄 対象を指定する」チェックボックスと同じフラグを、
-  // このインライン登録フォームからも設定できるようにする
-  const [hasZoneOwner, setHasZoneOwner] = useState(false);
 
   function autoSuggest() {
     if (!label.trim()) { setMsg('❌ 先に日本語名を入力してください'); return; }
@@ -183,7 +180,6 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
         const recipe = blocksToRecipe(templateBlocks);
         if (Object.keys(recipe).length > 0) extra.recipeTemplate = JSON.stringify(recipe);
       }
-      if ((kind === 'triggers' || kind === 'conditions') && hasZoneOwner) extra.hasZoneOwner = true;
       const r = await dict.addEntry(kind, { code: code.trim(), label: label.trim(), kind: kindToSingular(kind), ...extra });
       if (r.ok) {
         setMsg('✅ 登録しました: ' + code.trim());
@@ -192,7 +188,6 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
         setLabel('');
         setCode('');
         setTemplateBlocks([]);
-        setHasZoneOwner(false);
       } else {
         setMsg('❌ ' + (r.msg || '登録失敗'));
       }
@@ -245,12 +240,6 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
           キャンセル
         </button>
       </div>
-      {(kind === 'triggers' || kind === 'conditions') && (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 6, fontSize: 11, color: '#8a6d00' }}>
-          <input type="checkbox" checked={hasZoneOwner} onChange={(e) => setHasZoneOwner(e.target.checked)} />
-          🗄 対象を指定する（自分/相手/お互い。「デッキが増えたとき」「自分の効果で」のように自分/相手どちらの出来事かカードのテキストが明示しない{kind === 'triggers' ? 'トリガー' : '条件'}だけ☑）
-        </label>
-      )}
       {kind === 'keywords' && (
         <div style={{ marginTop: 8, padding: 8, background: 'white', border: '1px solid #e0c847', borderRadius: 4 }}>
           <div style={{ fontSize: 11, fontWeight: 'bold', color: '#8a6d00', marginBottom: 4 }}>
@@ -299,14 +288,17 @@ const ZONE_BUTTONS = [
 ];
 
 // 発動主体の2段階ボタン選択:
-// 1段目「このカード/自分/相手/他」→ 2段目「デジモン/カード/テイマー/プレイヤー」
+// 1段目「このカード/自分/相手/他/両方」→ 2段目「デジモン/カード/テイマー/プレイヤー」
 // own_card/opp_card/other_own_card/other_own_tamer はエディタ側でのみ選べる新コード
 // （エンジン側は未実装。実際にこの範囲を使うカードが出てきたら実装する）
+// 「両方」は「デッキが増えたとき」のように、対象がデジモン/カード/テイマー等に
+// 分解できないゾーン系トリガーで「自分/相手どちらでも」を表すための単独選択（L2無し）
 const SUBJECT_L1 = [
   { code: 'self', label: 'このカード' },
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
   { code: 'other_own', label: '他' },
+  { code: 'both', label: '両方' },
 ];
 const SUBJECT_L2 = [
   { code: 'digimon', label: 'デジモン' },
@@ -333,6 +325,7 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   other_own: { l1: 'other_own', l2: 'digimon' },
   other_own_card: { l1: 'other_own', l2: 'card' },
   other_own_tamer: { l1: 'other_own', l2: 'tamer' },
+  both: { l1: 'both', l2: '' },
 };
 
 // 条件の「対象」用の2段階ボタン選択（発動主体と同じ見た目のパターンだが、
@@ -341,11 +334,13 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
 // - このカード配下は self（このデジモン）/ self_card（このカード全般）の2択のみ
 // - 「他の自分のデジモン」は独立したL1ボタンではなく、自分+デジモン選択時の
 //   「このカードを含める/含めない」トグルとして表現する（旧 other_own コード）
+// 「両方」は「自分の効果で」のように自分/相手どちらでも成立しうる条件で使う単独選択（L2無し）
 const COND_SUBJECT_L1 = [
   { code: '', label: '既定' },
   { code: 'self', label: 'このカード' },
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
+  { code: 'both', label: '両方' },
 ];
 const COND_SUBJECT_L2: Record<string, { code: string; label: string }[]> = {
   self: [
@@ -387,6 +382,7 @@ const COND_SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   opp_any: { l1: 'opp', l2: 'any' },
   opp_blocker: { l1: 'opp', l2: 'blocker' },
   other_own: { l1: 'own', l2: 'digimon' },
+  both: { l1: 'both', l2: '' },
 };
 
 // 「アクションの対象」用の2段階ボタン選択（TARGETS辞書のコード体系専用テーブル）。
@@ -1572,7 +1568,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
             const cur = SUBJECT_CODE_TO_L1L2[block.triggerSubject || ''] || { l1: 'self', l2: '' };
             const handleL1 = (l1: string) => {
-              if (l1 === 'self') { update('triggerSubject', 'self'); return; }
+              if (l1 === 'self' || l1 === 'both') { update('triggerSubject', l1); return; }
               const l2 = cur.l1 === l1 && cur.l2 ? cur.l2 : 'digimon';
               update('triggerSubject', SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon']);
             };
@@ -1684,21 +1680,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
 
-                  {/* 辞書で hasZoneOwner=true が付いているトリガー（例:「デッキが増えたとき」）
-                      だけ、どちら側のゾーンで起きた出来事かを選べる。カードのテキストが
-                      「自分」「相手」を明示しない＝両方に反応する場合は既定の「両方」のままでよい */}
-                  {currentTriggers.some((t) => dict.triggers.find((d) => d.code === t)?.hasZoneOwner) && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                      <span style={{ fontSize: 11, color: '#666' }}>🗄 対象:</span>
-                      <ButtonGroup
-                        options={[{ code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'both', label: '両方' }]}
-                        value={block.triggerZoneOwner || 'both'}
-                        onChange={(v) => update('triggerZoneOwner', v as 'own' | 'opp' | 'both')}
-                        accentColor="#2e7d32"
-                      />
-                    </div>
-                  )}
-
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 6, color: '#666' }}>
                     <input
                       type="checkbox"
@@ -1753,7 +1734,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     )}
                   </div>
                   <ButtonGroup options={SUBJECT_L1} value={cur.l1} onChange={handleL1} accentColor="#2e7d32" />
-                  {cur.l1 !== 'self' && (
+                  {cur.l1 !== 'self' && cur.l1 !== 'both' && (
                     <div style={{ marginTop: 4 }}>
                       <ButtonGroup options={l2Options} value={cur.l2} onChange={handleL2} accentColor="#2e7d32" />
                     </div>
@@ -4125,7 +4106,7 @@ function ConditionsHybridEditor({
                         // 「対象=デジモンなのに値=テイマー」のような矛盾で常にfalseになってしまうため
                         const clearIfRedundant = (l2: string) => (cat.code === 'type' && (l2 === 'digimon' || l2 === 'tamer')) ? { value: '' } : {};
                         const handleSubL1 = (l1: string) => {
-                          if (!l1) { updateAt(i, { subject: undefined }); return; }
+                          if (!l1 || l1 === 'both') { updateAt(i, { subject: l1 || undefined }); return; }
                           const l2 = curSub.l1 === l1 && curSub.l2 ? curSub.l2 : 'digimon';
                           updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2], ...clearIfRedundant(l2) });
                         };
@@ -4193,29 +4174,17 @@ function ConditionsHybridEditor({
                     : <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠未実装</span>
                 )}
               </div>
-              {dict.conditions.find((d) => d.code === c.base)?.hasZoneOwner ? (
-                <div>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🗄 対象</div>
-                  <ButtonGroup
-                    options={[{ code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'both', label: 'お互い' }]}
-                    value={c.value === 'own' || c.value === 'opp' ? c.value : 'both'}
-                    onChange={(v) => updateAt(i, { value: v })}
-                    accentColor={colors.accent}
-                  />
-                </div>
-              ) : (
-                <div>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                  <input
-                    type="text"
-                    value={c.value || ''}
-                    onChange={(e) => updateAt(i, { value: e.target.value })}
-                    placeholder={NO_VALUE_CONDS.has(c.base) ? '（値不要）' : '（必要なら）'}
-                    disabled={NO_VALUE_CONDS.has(c.base)}
-                    style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-                  />
-                </div>
-              )}
+              <div>
+                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
+                <input
+                  type="text"
+                  value={c.value || ''}
+                  onChange={(e) => updateAt(i, { value: e.target.value })}
+                  placeholder={NO_VALUE_CONDS.has(c.base) ? '（値不要）' : '（必要なら）'}
+                  disabled={NO_VALUE_CONDS.has(c.base)}
+                  style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                />
+              </div>
               {showSubjectSelector && (
                 <div>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
@@ -4223,7 +4192,7 @@ function ConditionsHybridEditor({
                     const curSub = COND_SUBJECT_CODE_TO_L1L2[c.subject || ''] || { l1: '', l2: '' };
                     const l2Options = COND_SUBJECT_L2[curSub.l1] || [];
                     const handleSubL1 = (l1: string) => {
-                      if (!l1) { updateAt(i, { subject: undefined }); return; }
+                      if (!l1 || l1 === 'both') { updateAt(i, { subject: l1 || undefined }); return; }
                       const l2 = curSub.l1 === l1 && curSub.l2 ? curSub.l2 : 'digimon';
                       updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] });
                     };

@@ -61,10 +61,11 @@ export async function loadCards() {
   return r;
 }
 
-// 一覧表示専用の軽量取得（カードNo・名前・レシピの3列だけ）。
-// 全列読むloadCards()より大幅に速い（1〜2秒程度）
+// 一覧表示専用の軽量取得（カードNo・名前・レシピ・挙動OKの4列だけ）。
+// 全列読むloadCards()より大幅に速い（1〜2秒程度）。
+// 「挙動OK」列がtrueの行（挙動確認済み＝編集不要）は既定でGAS側で除外して返す
 export async function loadCardList() {
-  const r = await gasGet('getCardList');
+  const r = await gasGet('getCardList', { excludeVerified: '1' });
   return r;
 }
 

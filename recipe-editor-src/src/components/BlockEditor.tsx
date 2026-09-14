@@ -747,10 +747,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const curTgt = TARGET_SEL_CODE_TO_L1L2[tgtBase] || { l1: '', l2: '' };
   // 「対象の条件」は対象が下記の場合のみ表示する:
   // 自分→デジモン/カード/テイマー・相手→デジモン/テイマー・他→デジモン
+  // 加えて、進化/登場(BUILTIN_FROM_ZONE_ACTIONS)のように「対象=このカード自身」だが
+  // 実際に絞り込みたいのは取得元エリア（手札等）から選ぶカードの方、という場合にも表示する
+  // （例:「このデジモンを手札の『クロノモン』の記述があるカードに進化できる」→
+  // target=self_card（進化する側）だが、進化先の絞り込みは対象の条件で行う）
   const showTargetFilter =
     (curTgt.l1 === 'own' && ['digimon', 'card', 'tamer'].includes(curTgt.l2)) ||
     (curTgt.l1 === 'opp' && ['digimon', 'tamer'].includes(curTgt.l2)) ||
-    (curTgt.l1 === 'other_own' && curTgt.l2 === 'digimon');
+    (curTgt.l1 === 'other_own' && curTgt.l2 === 'digimon') ||
+    (!!block.action && BUILTIN_FROM_ZONE_ACTIONS.has(block.action) && Array.isArray(block.fromZones) && block.fromZones.some((z) => !!z));
 
   function setTarget(base: string, suffix: string) {
     if (!base) return update('target', '');
@@ -2476,20 +2481,24 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </div>
                 )}
               </div>
-              {!hideCount && (
+              {(!hideCount || showTargetFilter) && (
                 <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
-                  <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
-                    🎯 アクションの対象数
-                    <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
-                      （何体に適用するか）
-                    </span>
-                  </label>
-                  <ButtonGroup
-                    options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
-                    value={tgtSuffix}
-                    onChange={(v) => setTarget(tgtBase, v)}
-                    accentColor="#b76e00"
-                  />
+                  {!hideCount && (
+                    <>
+                      <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
+                        🎯 アクションの対象数
+                        <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
+                          （何体に適用するか）
+                        </span>
+                      </label>
+                      <ButtonGroup
+                        options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
+                        value={tgtSuffix}
+                        onChange={(v) => setTarget(tgtBase, v)}
+                        accentColor="#b76e00"
+                      />
+                    </>
+                  )}
                   {showTargetFilter && (
                     <div style={{ marginTop: 8, border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', padding: 8 }}>
                       <ConditionsHybridEditor

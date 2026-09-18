@@ -674,24 +674,25 @@ const DECKPOS_COST_ACTIONS: { code: string; label: string }[] = [
 // BT24-093「はじまりの神殿」等のオプション「その後、このカードをバトルエリアに置く」）。
 // 対応する既存アクションが無いため place_in_battle_area を新規コードとして想定（要辞書登録）。
 // 対象は「このカード自身」が置かれるので target:'self_card'（位置/裏表の概念は無い）
-const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: string; hasPosition?: boolean; hasFace?: boolean; warn?: string }[] = [
+const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: string; hasPosition?: boolean; hasFace?: boolean; hasFromZones?: boolean; warn?: string }[] = [
   {
     code: 'security', label: 'セキュリティ', action: 'place_on_security_top', target: 'own_security',
-    hasPosition: true, hasFace: true,
+    hasPosition: true, hasFace: true, hasFromZones: true,
     warn: '⚠ エンジン未対応: 現状「上」固定・常に表向きで動作します（position/options未反映）',
   },
   {
     code: 'tamer', label: 'テイマー', action: 'place_under_tamer', target: 'own_tamer',
-    hasPosition: true, hasFace: true,
-    warn: '⚠ エンジン未対応: target/位置/裏表のいずれも反映されません（該当カードが来たら追加実装）',
+    hasPosition: true, hasFace: true, hasFromZones: true,
+    warn: '⚠ エンジン未対応: target/位置/裏表/場所のいずれも反映されません（該当カードが来たら追加実装）',
   },
   {
     code: 'evo_source', label: '進化元', action: 'place_under_digimon', target: 'own',
-    hasPosition: true, hasFace: true,
-    warn: '⚠ エンジン未対応: target/位置/裏表のいずれも反映されません（該当カードが来たら追加実装）',
+    hasPosition: true, hasFace: true, hasFromZones: true,
+    warn: '⚠ エンジン未対応: target/位置/裏表/場所のいずれも反映されません（該当カードが来たら追加実装）',
   },
   {
     code: 'battle_area', label: 'バトルエリア', action: 'place_in_battle_area', target: 'self_card',
+    // 「このカード自身」が置かれる（BT24-089等）ため、取得元(場所)の概念は無い
     warn: '⚠ このボタン自体は今すぐ使えます（保存はできます）が、place_in_battle_area は辞書未登録・エンジンも未実装の新規アクションです。辞書に登録すると実装状況バッジ等でも認識されます（このカード自身をテイマーエリアに永続カードとして残す想定）',
   },
 ];
@@ -3045,15 +3046,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       選んだ場所に応じて実アクションコード・対象を切り替える） */}
                   {isPlaceActive && (
                     <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこに置くか）</div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🎯 置き場所（どこに置くか）</div>
                       <ButtonGroup
                         options={PLACE_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
                         value={activePlaceZone}
                         onChange={(zoneCode) => {
-                          if (zoneCode === activePlaceZone) return; // 選び直し済みの位置/裏表を巻き戻さない
+                          if (zoneCode === activePlaceZone) return; // 選び直し済みの位置/裏表/場所を巻き戻さない
                           const z = PLACE_ZONE_MAP.find((zz) => zz.code === zoneCode);
                           if (!z) return;
-                          updateCost(i, { ...c, action: z.action, target: z.target || '', deckPosition: undefined, options: [] });
+                          updateCost(i, { ...c, action: z.action, target: z.target || '', deckPosition: undefined, options: [], fromZones: [] });
                         }}
                         accentColor="#b76e00"
                       />
@@ -3062,6 +3063,57 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         return z?.warn ? (
                           <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
                         ) : null;
+                      })()}
+                      {/* セキュリティ/テイマー/進化元のときだけ、置くカードの取得元（手札等）を選べる。
+                          辞書のhasFromZonesフラグには頼らずPLACE_ZONE_MAP側で直接持たせている
+                          （このボタン自体が辞書未登録のハードコードのため） */}
+                      {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFromZones && (() => {
+                        const zones = c.fromZones || [];
+                        const op = c.fromZonesOp || 'or';
+                        const toggleZone = (code: string) => {
+                          const next = zones.includes(code) ? zones.filter((z) => z !== code) : [...zones, code];
+                          updateCost(i, { ...c, fromZones: next });
+                        };
+                        return (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから置くか）</div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {FROM_ZONES.map((z) => {
+                                const active = zones.includes(z.code);
+                                return (
+                                  <button
+                                    key={z.code}
+                                    type="button"
+                                    onClick={() => toggleZone(z.code)}
+                                    style={{
+                                      padding: '3px 9px', borderRadius: 5,
+                                      border: active ? '2px solid #b76e00' : '1px solid #bbb',
+                                      background: active ? '#b76e00' : '#f5f5f5',
+                                      color: active ? '#fff' : '#333',
+                                      fontWeight: active ? 'bold' : 'normal',
+                                      cursor: 'pointer', fontSize: 11,
+                                    }}
+                                  >
+                                    {z.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {zones.length >= 2 && (
+                              <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                                <span style={{ color: '#666' }}>結合:</span>
+                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                                  <input type="radio" name={`placeFromZonesOp_${i}`} checked={op === 'or'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'or' })} style={{ margin: 0 }} />
+                                  OR（いずれか）
+                                </label>
+                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                                  <input type="radio" name={`placeFromZonesOp_${i}`} checked={op === 'and'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'and' })} style={{ margin: 0 }} />
+                                  AND（全て）
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                        );
                       })()}
                       {/* セキュリティ/テイマーのときだけ「上/下/下か上」を選べる */}
                       {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasPosition && (

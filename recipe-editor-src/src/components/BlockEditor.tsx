@@ -659,14 +659,33 @@ const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: 
   { code: 'deck', label: 'デッキ', action: 'deck_trash_top' },
 ];
 const DISCARD_ACTION_CODES = new Set(DISCARD_ZONE_MAP.map((z) => z.action));
-// 「デッキに戻す」「セキュリティに置く」: 押すと「下/上/下か上」の位置ボタンが現れる（CostStep.deckPosition）。
-// セキュリティに置くは現状エンジンが常に「上」固定のため、下/下か上を選んでも保存のみで動作は上になる
-// hasFaceOption: 辞書に登録されていないハードコードのボタンのため、辞書のフラグではなく
-// ここで直接指定する（例:「セキュリティに置く」＝自分のセキュリティの上に裏向き/表向きで置ける）
-const DECKPOS_COST_ACTIONS: { code: string; label: string; hasFaceOption?: boolean }[] = [
+// 「デッキに戻す」: 押すと「下/上/下か上」の位置ボタンが現れる（CostStep.deckPosition）。
+const DECKPOS_COST_ACTIONS: { code: string; label: string }[] = [
   { code: 'return_deck', label: 'デッキに戻す' },
-  { code: 'place_on_security_top', label: 'セキュリティに置く', hasFaceOption: true },
 ];
+// 「〇〇に置く」ボタン: 押すと「どこに置くか」の場所ボタン（セキュリティ/テイマー/バトルエリア）
+// が現れ、選んだ場所に応じて実際のアクションコード・対象を切り替える（破棄のDISCARD_ZONE_MAPと
+// 同じパターン）。位置(上/下/下か上・CostStep.deckPosition)と裏表(裏向き/表向き・
+// CostStep.options=['face_down'])は、場所ごとに hasPosition/hasFace で出し分ける
+// （セキュリティ/テイマーの下は位置も裏表も意味を持つが、バトルエリア＝進化元の下は
+// 常に表向き・スタック先頭固定という想定のためどちらも出さない）
+const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: string; hasPosition?: boolean; hasFace?: boolean; warn?: string }[] = [
+  {
+    code: 'security', label: 'セキュリティ', action: 'place_on_security_top', target: 'own_security',
+    hasPosition: true, hasFace: true,
+    warn: '⚠ エンジン未対応: 現状「上」固定・常に表向きで動作します（position/options未反映）',
+  },
+  {
+    code: 'tamer', label: 'テイマー', action: 'place_under_tamer', target: 'own_tamer',
+    hasPosition: true, hasFace: true,
+    warn: '⚠ エンジン未対応: target/位置/裏表のいずれも反映されません（該当カードが来たら追加実装）',
+  },
+  {
+    code: 'battle_area', label: 'バトルエリア', action: 'place_under_digimon', target: 'own',
+    warn: '⚠ エンジン未対応: targetを反映する実装が必要です（該当カードが来たら追加実装）',
+  },
+];
+const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
 const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'evolve']);
@@ -2789,7 +2808,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const cActionBase = getActionVariant(c.action || '')?.base || (c.action || '');
             const isCommonCostAction = COMMON_COST_ACTIONS.some((a) => a.code === (c.action || ''))
               || discardZoneBases.has(cActionBase)
-              || DECKPOS_COST_ACTIONS.some((a) => a.code === (c.action || ''));
+              || DECKPOS_COST_ACTIONS.some((a) => a.code === (c.action || ''))
+              || PLACE_ACTION_CODES.has(c.action || '');
             const isDiscardActive = discardZoneBases.has(cActionBase);
             // 「進化元」と「テイマー」はどちらも evo_discard 系を流用していてアクションの
             // ベースコードだけでは区別できないため、target も一致条件に加えて逆引きする
@@ -2801,11 +2821,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               if (z.target !== undefined && splitStackSuffix((c.target || '').split(':')[0]).base !== z.target) return false;
               return true;
             })?.code || '';
-            const isDeckPosAction = c.action === 'return_deck' || c.action === 'place_on_security_top';
+            // 「〇〇に置く」: PLACE_ZONE_MAP は各ゾーンのアクションコードが全て異なる
+            // （place_on_security_top/place_under_tamer/place_under_digimon）ため、
+            // 破棄のようなtarget逆引きは不要でアクションコードだけで一意に決まる
+            const isPlaceActive = PLACE_ACTION_CODES.has(c.action || '');
+            const activePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === c.action)?.code || '';
+            const isDeckPosAction = c.action === 'return_deck';
             // 位置バリアント対応（フラグ駆動+自動グループ化）は「その他」経由選択時のみ引き続き使う
             const { options: costActionOptions, flaggedBases: costFlaggedBases, autoGroupBases: costAutoGroupBases } = buildActionDisplay(dict.actions);
             const costCurVariant = getActionVariant(c.action || '');
-            // 📥場所/🂠裏表 フラグ判定用: まずアクションコード完全一致で辞書を引き、無ければ
+            // 📥場所 フラグ判定用（hasFromZones。テイマーの下に置く等、辞書登録された新規
+            // アクション向け）: まずアクションコード完全一致で辞書を引き、無ければ
             // 位置バリアントのベースコードでも引く（両対応）。
             // ※ 'place_on_security_top' のように、位置バリアントの一種ではないのに
             //   たまたま "_top" で終わるアクション名だと costCurVariant.base が
@@ -2814,10 +2840,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               const exact = dict.actions.find((a) => a.code === (c.action || ''));
               if (exact?.[flag]) return true;
               const base = costCurVariant ? dict.actions.find((a) => a.code === costCurVariant!.base) : undefined;
-              if (base?.[flag]) return true;
-              // 辞書に登録されていないハードコードのボタン（DECKPOS_COST_ACTIONS等）用
-              const deckPosEntry = DECKPOS_COST_ACTIONS.find((a) => a.code === (c.action || ''));
-              return flag === 'hasFaceOption' && !!deckPosEntry?.hasFaceOption;
+              return !!base?.[flag];
             };
             const costIsFlaggedBaseDirect = costFlaggedBases.has(c.action || '');
             const costIsVariantOfFlagged = !!(costCurVariant && (costFlaggedBases.has(costCurVariant.base) || costAutoGroupBases.has(costCurVariant.base)));
@@ -2989,7 +3012,73 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         </button>
                       );
                     })}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isPlaceActive) return;
+                        const z = PLACE_ZONE_MAP.find((zz) => zz.code === 'security')!;
+                        updateCost(i, { ...c, action: z.action, target: z.target || '' });
+                      }}
+                      style={{
+                        padding: '3px 9px', borderRadius: 5,
+                        border: isPlaceActive ? '2px solid #b76e00' : '1px solid #bbb',
+                        background: isPlaceActive ? '#b76e00' : '#f5f5f5',
+                        color: isPlaceActive ? '#fff' : '#333',
+                        fontWeight: isPlaceActive ? 'bold' : 'normal',
+                        cursor: 'pointer', fontSize: 11,
+                      }}
+                    >
+                      〇〇に置く
+                    </button>
                   </div>
+                  {/* 〇〇に置く: 場所ボタン（セキュリティ/テイマー/バトルエリア。
+                      選んだ場所に応じて実アクションコード・対象を切り替える） */}
+                  {isPlaceActive && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこに置くか）</div>
+                      <ButtonGroup
+                        options={PLACE_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
+                        value={activePlaceZone}
+                        onChange={(zoneCode) => {
+                          if (zoneCode === activePlaceZone) return; // 選び直し済みの位置/裏表を巻き戻さない
+                          const z = PLACE_ZONE_MAP.find((zz) => zz.code === zoneCode);
+                          if (!z) return;
+                          updateCost(i, { ...c, action: z.action, target: z.target || '', deckPosition: undefined, options: [] });
+                        }}
+                        accentColor="#b76e00"
+                      />
+                      {(() => {
+                        const z = PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone);
+                        return z?.warn ? (
+                          <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
+                        ) : null;
+                      })()}
+                      {/* セキュリティ/テイマーのときだけ「上/下/下か上」を選べる */}
+                      {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasPosition && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                          <ButtonGroup
+                            options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
+                            value={c.deckPosition || ''}
+                            onChange={(v) => updateCost(i, { ...c, deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                      )}
+                      {/* セキュリティ/テイマーのときだけ「裏向き/表向き」を選べる */}
+                      {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFace && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                          <ButtonGroup
+                            options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
+                            value={(c.options || []).includes('face_down') ? 'face_down' : ''}
+                            onChange={(v) => updateCost(i, { ...c, options: v ? [v] : [] })}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {/* 破棄: 場所ボタン（選んだ場所に応じて実アクションコードを切り替える） */}
                   {isDiscardActive && (
                     <div style={{ marginTop: 4 }}>
@@ -3034,7 +3123,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       })()}
                     </div>
                   )}
-                  {/* デッキに戻す/セキュリティに置く: 位置ボタン（下/上/下か上） */}
+                  {/* デッキに戻す: 位置ボタン（下/上/下か上） */}
                   {isDeckPosAction && (
                     <div style={{ marginTop: 4 }}>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
@@ -3044,11 +3133,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         onChange={(v) => updateCost(i, { ...c, deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
                         accentColor="#b76e00"
                       />
-                      {c.action === 'return_deck' && c.deckPosition === 'both' && (
+                      {c.deckPosition === 'both' && (
                         <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ エンジン未対応です（保存はできますが「下」として動作します）</div>
-                      )}
-                      {c.action === 'place_on_security_top' && !!c.deckPosition && c.deckPosition !== 'top' && (
-                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ エンジン未対応です（保存はできますが常に「上」として動作します）</div>
                       )}
                     </div>
                   )}

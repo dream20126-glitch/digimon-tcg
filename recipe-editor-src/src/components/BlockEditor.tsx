@@ -628,6 +628,7 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'deck_open', label: 'デッキオープン' },
   { code: 'recover', label: 'リカバリー' },
   { code: 'evolve', label: '進化' },
+  { code: 'link', label: 'リンク' },
 ];
 // よく使うコストアクション（「〇〇することで」の〇〇部分）
 // 「破棄」と「デッキに戻す/セキュリティに置く」は下の DISCARD_ZONE_MAP / DECKPOS_COST_ACTIONS で
@@ -2130,7 +2131,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           // コストを支払わず/登場時効果は発揮しない/裏向きで は効果1（メインアクション）専用。
           // 代替アクション（効果2以降）にはまだ対応していない
-          const showCostCheckboxes = !isEditingAlt && (effectAction === 'summon' || effectAction === 'summon_from_trash' || effectAction === 'evolve' || effectAction === 'summon_from_evo_source');
+          const showCostCheckboxes = !isEditingAlt && (effectAction === 'summon' || effectAction === 'summon_from_trash' || effectAction === 'evolve' || effectAction === 'summon_from_evo_source' || effectAction === 'link');
           const showSkipOnPlay = !isEditingAlt && (effectAction === 'summon' || effectAction === 'summon_from_trash');
 
           return (
@@ -2262,12 +2263,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   />
                 </div>
               )}
-              {/* 登場/使用・進化のときだけ「💰 コスト増減」を出し、通常の「値」入力は隠す
+              {/* 登場/使用・進化・リンクのときだけ「💰 コスト増減」を出し、通常の「値」入力は隠す
                   （同じ block.value を使うが、符号付き数値を直接入力させるより
                   増/減ボタン+絶対値入力の方が分かりやすいため）。
-                  ※ エンジン側は現状 summon の value を未参照（要実装）。
+                  ※ エンジン側は現状 evolve/link の value を未参照（要実装）。
                   増=+N（コスト+N）/ 減=-N（コスト-N）として value に符号付きで保存する */}
-              {!isEditingAlt && (effectAction === 'summon' || effectAction === 'evolve') ? (
+              {!isEditingAlt && (effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'link') ? (
                 <div className="field">
                   <label>💰 コスト増減</label>
                   {(() => {

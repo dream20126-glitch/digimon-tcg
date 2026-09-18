@@ -260,6 +260,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       step.from = zones;
       if (b.fromZonesOp && b.fromZonesOp !== 'or') step.from_op = b.fromZonesOp;
     }
+    // 場所に「進化元」を含む場合のみ: どのデジモンの進化元から探すか
+    // ('self'=このデジモン / 'other'=他のデジモン。未指定='指定なし'=絞り込まない)
+    if (zones.includes('evo_source') && (b.evoSourceOwner === 'self' || b.evoSourceOwner === 'other')) {
+      step.evo_source_owner = b.evoSourceOwner;
+    }
   }
   if (b.options && b.options.length > 0) step.options = b.options.slice();
   // 「～ごとに」倍率設定の serialize
@@ -615,6 +620,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       if (typeof f === 'string' && f.includes('_or_')) return 'or' as const;
       return 'or' as const;
     })(),
+    evoSourceOwner: step?.evo_source_owner === 'self' || step?.evo_source_owner === 'other' ? step.evo_source_owner : undefined,
     options: Array.isArray(step?.options) ? step.options.slice() : [],
     perCount: step?.per_count !== undefined && step?.per_count !== null ? Number(step.per_count) : undefined,
     perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : undefined,

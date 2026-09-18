@@ -2432,6 +2432,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </label>
                 </div>
               )}
+              {/* 場所に「進化元」を含む場合のみ: どのデジモンの進化元から探すか
+                  ('self'=このデジモン / 'other'=他のデジモン / 未指定='指定なし') */}
+              {zones.includes('evo_source') && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>進化元の対象</div>
+                  <ButtonGroup
+                    options={[
+                      { code: '', label: '指定なし' },
+                      { code: 'self', label: 'このデジモン' },
+                      { code: 'other', label: '他のデジモン' },
+                    ]}
+                    value={block.evoSourceOwner || ''}
+                    onChange={(v) => update('evoSourceOwner', (v || undefined) as 'self' | 'other' | undefined)}
+                    accentColor="#1a4f8a"
+                  />
+                </div>
+              )}
             </div>
           );
         })()}

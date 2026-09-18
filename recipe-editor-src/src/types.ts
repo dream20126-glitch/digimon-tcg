@@ -60,6 +60,10 @@ export interface EffectBlock {
   visualType?: string;
   fromZones?: string[]; // アクションの取得元エリア（'hand' / 'trash' / 'deck' 等）。複数指定可。JSON では step.from
   fromZonesOp?: 'or' | 'and'; // 複数取得元の結合演算子（既定は 'or'）
+  // 取得元エリアに「進化元」(evo_source) を含む場合のみ有効: どのデジモンの進化元から探すか。
+  // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし（絞り込まない）
+  // JSON では step.evo_source_owner に serialize
+  evoSourceOwner?: 'self' | 'other';
   // 「～ごとに」倍率設定。perRef を数えて value × floor(count / perCount) を計算
   perCount?: number;  // N体ごとの N（'1体ごと' なら 1）
   perRef?: string;    // カウント対象 subject ('own_digimon' / 'opp_digimon' / 'own_hand' 等)

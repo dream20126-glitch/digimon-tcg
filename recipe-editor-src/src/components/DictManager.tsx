@@ -672,6 +672,23 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                       両方選ぶ＝「どちらか選んで」は現状エンジン未対応で、選んでも「下」と同じ動作になります）。
                     </div>
                   </div>
+                  <div className="field" style={{ gridColumn: '1 / span 2' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!form.hasFaceOption}
+                        onChange={(e) => update({ hasFaceOption: e.target.checked })}
+                      />
+                      <b>🂠 裏表を指定する（コスト専用）</b>
+                    </label>
+                    <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+                      💡 「テイマーの下に置く」のように、コストとして実行する際に裏向き/表向きを
+                      選ぶ必要があるアクションだけ ☑ してください。コストエディタで本アクション
+                      選択時に「裏向き」「表向き」ボタンが出現します（既存の修飾子コード
+                      <code>face_down</code> を <code>step.cost[].options</code> に反映。「表向き」は
+                      指定なし＝デフォルトとして扱います）。
+                    </div>
+                  </div>
                 </>
               )}
               {kind === 'keywords' && (
@@ -818,7 +835,15 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                             ⬆️⬇️ 上下
                           </span>
                         )}
-                        {!e.allowsRules && !e.hasPositionVariant && !e.hasFromZones && !e.hasDeckPosition && (
+                        {e.hasFaceOption && (
+                          <span
+                            style={{ display: 'inline-block', padding: '2px 6px', background: '#f5f0fd', color: '#6b21a8', border: '1px solid #d8b4fe', borderRadius: 10, fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                            title="コストで本アクション選択時に「裏向き/表向き」ボタンを表示"
+                          >
+                            🂠 裏表
+                          </span>
+                        )}
+                        {!e.allowsRules && !e.hasPositionVariant && !e.hasFromZones && !e.hasDeckPosition && !e.hasFaceOption && (
                           <span style={{ color: '#bbb', fontSize: 11 }}>-</span>
                         )}
                       </span>

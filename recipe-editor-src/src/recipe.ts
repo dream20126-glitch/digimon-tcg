@@ -191,6 +191,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       if (c.deckPosition === 'top') cs.position = 'top';
       else if (c.deckPosition === 'bottom') cs.position = 'bottom';
       else if (c.deckPosition === 'both') cs.position = 'select';
+      // 修飾子（'face_down' 等）
+      if (Array.isArray(c.options) && c.options.length > 0) cs.options = c.options.slice();
       // コスト対象の取得元エリア (1件→string / 2件以上→array + from_op)
       if (Array.isArray(c.fromZones) && c.fromZones.length > 0) {
         const cz = c.fromZones.filter((z) => !!z);
@@ -553,6 +555,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
           fromZones,
           fromZonesOp,
           deckPosition,
+          options: Array.isArray(c?.options) ? c.options.slice() : undefined,
         };
       })
     : [];

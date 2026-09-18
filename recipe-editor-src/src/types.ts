@@ -178,6 +178,10 @@ export interface DictEntry {
   // というフィールドで表現する（例: return_deck）。'both'（両方選択=どちらか選んで）は
   // エンジンが step.position の値を 'top' 以外は全て「下」として扱うため未対応
   hasDeckPosition?: boolean;
+  // アクション辞書専用（コストのみ）: このアクションを選んだとき、コストエディタで
+  // 「裏向き/表向き」ボタンを表示する。既存の options コード 'face_down' を
+  // CostStep.options に書き込む（例: place_under_tamer「テイマーの下に置く」）
+  hasFaceOption?: boolean;
   // キーワード辞書専用: このキーワードの実体となるレシピ（EffectBlock[]をJSON文字列化したもの）。
   // カード側でtrigger='passive'+このキーワードを選んだとき、blocksToRecipeがこれを展開して
   // カード自身のレシピに埋め込む。エンジンが未対応の出来事（アクティブフェイズ開始時等）しか
@@ -198,6 +202,9 @@ export interface CostStep {
   // 上/下（デッキに戻す/セキュリティに置く 用）。JSON では step.cost[].position に serialize。
   // 'both' はエンジン未対応（'top' 以外は全て「下」/常に「上」扱いになる）
   deckPosition?: 'top' | 'bottom' | 'both';
+  // 修飾子コード配列（'face_down' 等）。辞書側 hasFaceOption=true のアクション選択時のみ
+  // 「裏向き/表向き」ボタンとして編集可能になる（例:「テイマーの下に裏向きで置く」コスト）
+  options?: string[];
 }
 
 // 演出タイプ自体の定義（小辞書）

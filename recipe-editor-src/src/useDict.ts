@@ -10,9 +10,9 @@ const VT_STORAGE_KEY = 'recipe_editor_visual_types';
 const CACHE_KEY = 'recipe_editor_dict_cache';
 const ACTION_FLAGS_KEY = 'recipe_editor_action_flags';
 
-// アクション単位のフラグ（allowsRules / hasPositionVariant / hasFromZones / hasDeckPosition）
+// アクション単位のフラグ（allowsRules / hasPositionVariant / hasFromZones / hasDeckPosition / hasFaceOption）
 // を localStorage で永続化。スプシ側に該当列が無くてもエディタ内では保持される。
-type ActionFlags = Record<string, { allowsRules?: boolean; hasPositionVariant?: boolean; hasFromZones?: boolean; hasDeckPosition?: boolean }>;
+type ActionFlags = Record<string, { allowsRules?: boolean; hasPositionVariant?: boolean; hasFromZones?: boolean; hasDeckPosition?: boolean; hasFaceOption?: boolean }>;
 function loadActionFlags(): ActionFlags {
   try { return JSON.parse(localStorage.getItem(ACTION_FLAGS_KEY) || '{}') || {}; }
   catch (_) { return {}; }
@@ -20,7 +20,7 @@ function loadActionFlags(): ActionFlags {
 function saveActionFlags(flags: ActionFlags) {
   try { localStorage.setItem(ACTION_FLAGS_KEY, JSON.stringify(flags)); } catch (_) {}
 }
-function setActionFlagsForCode(code: string, patch: { allowsRules?: boolean; hasPositionVariant?: boolean; hasFromZones?: boolean; hasDeckPosition?: boolean }) {
+function setActionFlagsForCode(code: string, patch: { allowsRules?: boolean; hasPositionVariant?: boolean; hasFromZones?: boolean; hasDeckPosition?: boolean; hasFaceOption?: boolean }) {
   const all = loadActionFlags();
   all[code] = { ...(all[code] || {}), ...patch };
   saveActionFlags(all);
@@ -83,6 +83,11 @@ function categorize(rows: any[]): { triggers: DictEntry[]; conditions: DictEntry
       // 上下指定フラグ: 「上下指定」列に "1"/"true" 等で「上/下」ボタンを表示
       hasDeckPosition: (() => {
         const v = String(r['上下指定'] || '').trim().toLowerCase();
+        return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+      })(),
+      // 裏表指定フラグ（コスト専用）: 「裏表指定」列に "1"/"true" 等で「裏向き/表向き」ボタンを表示
+      hasFaceOption: (() => {
+        const v = String(r['裏表指定'] || '').trim().toLowerCase();
         return v === '1' || v === 'true' || v === 'yes' || v === 'on';
       })(),
     };
@@ -212,6 +217,7 @@ export function useDict(password: string): DictAPI {
       '位置指定': entry.hasPositionVariant ? '1' : '',
       '場所指定': entry.hasFromZones ? '1' : '',
       '上下指定': entry.hasDeckPosition ? '1' : '',
+      '裏表指定': entry.hasFaceOption ? '1' : '',
       'キーワードレシピ': entry.recipeTemplate || '',
     };
     const r = await apiAdd('dict', row, password);
@@ -222,6 +228,7 @@ export function useDict(password: string): DictAPI {
         hasPositionVariant: !!entry.hasPositionVariant,
         hasFromZones: !!entry.hasFromZones,
         hasDeckPosition: !!entry.hasDeckPosition,
+        hasFaceOption: !!entry.hasFaceOption,
       });
     }
     if (r.ok) await refresh();
@@ -259,6 +266,10 @@ export function useDict(password: string): DictAPI {
     if (Object.prototype.hasOwnProperty.call(patch, 'hasFromZones')) {
       row['場所指定'] = (patch as any).hasFromZones ? '1' : '';
       setActionFlagsForCode(code, { hasFromZones: !!(patch as any).hasFromZones });
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'hasFaceOption')) {
+      row['裏表指定'] = (patch as any).hasFaceOption ? '1' : '';
+      setActionFlagsForCode(code, { hasFaceOption: !!(patch as any).hasFaceOption });
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'hasDeckPosition')) {
       row['上下指定'] = (patch as any).hasDeckPosition ? '1' : '';
@@ -329,6 +340,7 @@ export function useDict(password: string): DictAPI {
         hasPositionVariant: local.hasPositionVariant !== undefined ? local.hasPositionVariant : merged.hasPositionVariant,
         hasFromZones: local.hasFromZones !== undefined ? local.hasFromZones : merged.hasFromZones,
         hasDeckPosition: local.hasDeckPosition !== undefined ? local.hasDeckPosition : merged.hasDeckPosition,
+        hasFaceOption: local.hasFaceOption !== undefined ? local.hasFaceOption : merged.hasFaceOption,
       };
     }
     return merged;

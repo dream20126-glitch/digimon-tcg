@@ -3025,6 +3025,77 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       )}
                     </div>
                   )}
+                  {/* 📥場所: 辞書の hasFromZones=true なアクション（例:「テイマーの下に置く」）
+                      選択時のみ表示。破棄ボタン(DISCARD_ZONE_MAP)とは独立した汎用機構 */}
+                  {(() => {
+                    const actEntry = dict.actions.find((a) => a.code === (costCurVariant?.base || c.action || ''));
+                    if (!actEntry?.hasFromZones) return null;
+                    const zones = c.fromZones || [];
+                    const op = c.fromZonesOp || 'or';
+                    const toggleZone = (code: string) => {
+                      const next = zones.includes(code) ? zones.filter((z) => z !== code) : [...zones, code];
+                      updateCost(i, { ...c, fromZones: next });
+                    };
+                    return (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所</div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {FROM_ZONES.map((z) => {
+                            const active = zones.includes(z.code);
+                            return (
+                              <button
+                                key={z.code}
+                                type="button"
+                                onClick={() => toggleZone(z.code)}
+                                style={{
+                                  padding: '3px 9px', borderRadius: 5,
+                                  border: active ? '2px solid #1a4f8a' : '1px solid #bbb',
+                                  background: active ? '#1a4f8a' : '#f5f5f5',
+                                  color: active ? '#fff' : '#333',
+                                  fontWeight: active ? 'bold' : 'normal',
+                                  cursor: 'pointer', fontSize: 11,
+                                }}
+                              >
+                                {z.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {zones.length >= 2 && (
+                          <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                            <span style={{ color: '#666' }}>結合:</span>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                              <input type="radio" name={`costFromZonesOp_${i}`} checked={op === 'or'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'or' })} style={{ margin: 0 }} />
+                              OR（いずれか）
+                            </label>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                              <input type="radio" name={`costFromZonesOp_${i}`} checked={op === 'and'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'and' })} style={{ margin: 0 }} />
+                              AND（全て）
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  {/* 🂠裏表: 辞書の hasFaceOption=true なアクション選択時のみ表示。
+                      既存の修飾子コード face_down を c.options に書き込む
+                      （「表向き」は指定なし＝デフォルトなので、options を空にするだけ） */}
+                  {(() => {
+                    const actEntry = dict.actions.find((a) => a.code === (costCurVariant?.base || c.action || ''));
+                    if (!actEntry?.hasFaceOption) return null;
+                    const isFaceDown = (c.options || []).includes('face_down');
+                    return (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                        <ButtonGroup
+                          options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
+                          value={isFaceDown ? 'face_down' : ''}
+                          onChange={(v) => updateCost(i, { ...c, options: v ? [v] : [] })}
+                          accentColor="#b76e00"
+                        />
+                      </div>
+                    );
+                  })()}
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, marginTop: 4, color: '#666' }}>
                     <input
                       type="checkbox"

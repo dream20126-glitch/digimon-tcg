@@ -517,18 +517,17 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
 };
 
 // よく使うトリガー:
-// - 'event' 種別（登場時/進化時/消滅時 等）は実際に起きる出来事。
+// - 'event' 種別（登場時/進化時/アタック時/アタック終了時/消滅時）は実際に起きる出来事。
 //   発動ターン(自分/相手/お互い)を選ぶと、トリガーコード自体は変えず
 //   cond_during_own_turn/cond_during_opp_turnを条件として追加する（お互い=条件なし）。
+//   「誰がアタックしたか」等の主体は発動ターンではなく発動主体(subject)で表現する
+//   （on_attack 等の source-only トリガーは、他カードの subject 付き反応レシピも
+//    _scanReactiveSubjectsForSourceOnly が拾うため、when_opp_attack 等の専用トリガー
+//    コードに切り替える必要が無い。かつ trigger_conditions も使えるためこちらが高機能）。
 // - 'timing' 種別（メイン/ターン開始時/ターン終了時/継続効果/メインフェイズ開始時）は
-//   発動ターンによってトリガーコード自体が切り替わる（variantAxis既定='turn'）。
+//   発動ターンによってトリガーコード自体が切り替わる。
 //   engine未実装の組み合わせ（例: メイン+相手）も選べるようにするため、実在しない
 //   プレースホルダーコードを用意している（isImplemented:falseの箇所）。
-// - 'timing' 種別のうち variantAxis:'actor'（アタック時/アタック終了時）だけは例外で、
-//   variants切り替えは「発動ターン」ではなく別軸「アタック主体」が担当する。
-//   「アタック時/終了時」は"誰がアタックしたか"(on_attack/when_opp_attack)を表すコードで、
-//   "誰のターンか"とは独立（相手のターンに誘発効果で自分がアタックする等がありうるため）。
-//   誰のターンかは発動ターンが付与する cond_during_own_turn/opp_turn の方で別途表現する。
 type TimingKey = 'self' | 'opp' | 'any';
 interface TriggerFamily {
   code: string; // ボタンのkey
@@ -536,30 +535,23 @@ interface TriggerFamily {
   kind: 'event' | 'timing';
   variants?: Record<TimingKey, string>; // kind='timing'のときのみ
   implemented?: Partial<Record<TimingKey, boolean>>; // 未指定=true扱い
-  // variants をどちらの軸で切り替えるか。既定('turn')は「発動ターン」で切り替える
-  // （メイン/ターン開始時 等）。'actor' は「発動ターン」では触らず、別軸の
-  // 「アタック主体」ボタンで切り替える（アタック時/アタック終了時）。
-  // 相手のターンに自分のデジモンがアタックする（誘発効果等）ような、
-  // 「誰のターンか」と「誰がアタックしたか」が一致しないケースを表現するための分離。
-  variantAxis?: 'turn' | 'actor';
 }
 const COMMON_TRIGGER_FAMILIES: TriggerFamily[] = [
   { code: 'on_play', label: '登場時', kind: 'event' },
   { code: 'on_evolve', label: '進化時', kind: 'event' },
   { code: 'on_move', label: '移動時', kind: 'event' },
   { code: 'on_link', label: 'リンク時', kind: 'event' },
-  {
-    code: 'on_attack', label: 'アタック時', kind: 'timing', variantAxis: 'actor',
-    // 自分=このカードがアタックしたとき(on_attack) / 相手=相手のデジモンがアタックしたとき(when_opp_attack、ロゼモン等)
-    // ※「発動ターン」とは別軸（アタック主体）。誰のターンかは別途 cond_during_own_turn 等で指定する
-    variants: { self: 'on_attack', opp: 'when_opp_attack', any: 'on_any_attack' },
-    implemented: { self: true, opp: true, any: false },
-  },
-  {
-    code: 'on_attack_end', label: 'アタック終了時', kind: 'timing', variantAxis: 'actor',
-    variants: { self: 'on_attack_end', opp: 'when_opp_attack_end', any: 'on_any_attack_end' },
-    implemented: { self: true, opp: false, any: false },
-  },
+  // アタック時/アタック終了時は event 種別（トリガーコード自体は on_attack/on_attack_end 固定）。
+  // 「誰がアタックしたか」は発動主体（subject: self/own/other_own/opp）で表現する
+  // （on_attack は source-only トリガーだが、subject 付きの他カードの反応レシピも
+  //   _scanReactiveSubjectsForSourceOnly が拾ってくれるため、when_opp_attack 等の
+  //   専用トリガーコードに切り替える必要が無い。かつ trigger_conditions もそちらでは
+  //   使えないため、subject 方式の方が高機能）。「誰のターンか」は発動ターンが
+  //   別途 cond_during_own_turn/opp_turn を付与する。
+  // ※ on_attack_end は現状 _scanReactiveSubjectsForSourceOnly の対象外のため、
+  //   subject:'opp' 等の他カード反応は拾えない（要エンジン対応）
+  { code: 'on_attack', label: 'アタック時', kind: 'event' },
+  { code: 'on_attack_end', label: 'アタック終了時', kind: 'event' },
   { code: 'on_destroy', label: '消滅時', kind: 'event' },
   {
     code: 'main', label: 'メイン', kind: 'timing',
@@ -743,12 +735,9 @@ function perRefToL1(code: string): string {
   return '';
 }
 // 現在選択中のtriggers/triggerConditionsから、共有の発動ターンを逆算する
-// variantAxis:'actor'（アタック時/アタック終了時）はこの軸の対象外
-// （そちらのvariant切り替えは別軸「アタック主体」が担当するため、ここで拾うと
-// 「発動ターン」表示がアタック主体につられて誤表示されてしまう）
 function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair[], families: TriggerFamily[] = COMMON_TRIGGER_FAMILIES): TimingKey {
   for (const fam of families) {
-    if (fam.kind !== 'timing' || !fam.variants || fam.variantAxis === 'actor') continue;
+    if (fam.kind !== 'timing' || !fam.variants) continue;
     if (currentTriggers.includes(fam.variants.opp)) return 'opp';
     if (currentTriggers.includes(fam.variants.any)) return 'any';
     if (currentTriggers.includes(fam.variants.self)) return 'self';
@@ -761,18 +750,6 @@ function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair
   if (triggerConditions.some((c) => c.base === 'cond_during_own_turn')) return 'self';
   if (triggerConditions.some((c) => c.base === 'cond_during_opp_turn')) return 'opp';
   return 'any';
-}
-// 現在選択中のtriggersから「アタック主体」（アタックしているのが自分/相手/お互いのデジモンか）
-// を逆算する。variantAxis:'actor' のファミリー（アタック時/アタック終了時）専用の軸で、
-// 「発動ターン」（inferTiming・cond_during_own_turn等）とは完全に独立している。
-function inferAttackSubject(currentTriggers: string[], families: TriggerFamily[] = COMMON_TRIGGER_FAMILIES): TimingKey {
-  for (const fam of families) {
-    if (fam.kind !== 'timing' || !fam.variants || fam.variantAxis !== 'actor') continue;
-    if (currentTriggers.includes(fam.variants.opp)) return 'opp';
-    if (currentTriggers.includes(fam.variants.any)) return 'any';
-    if (currentTriggers.includes(fam.variants.self)) return 'self';
-  }
-  return 'self';
 }
 // 辞書に存在しない可能性がある新規プレースホルダーコード（メイン+相手 等）の表示名フォールバック
 const FAMILY_VARIANT_FALLBACK_LABELS: Record<string, string> = {};
@@ -1634,9 +1611,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             };
 
             const timing = inferTiming(currentTriggers, triggerConditions, effectiveTriggerFamilies);
-            // 「アタック主体」（アタックしているのが自分/相手/お互いのデジモンか）。
-            // 「発動ターン」(timing) とは完全に独立した軸 — アタック時/アタック終了時のみ使う
-            const attackSubject = inferAttackSubject(currentTriggers, effectiveTriggerFamilies);
             const isFamilyActive = (fam: TriggerFamily): boolean =>
               fam.kind === 'event' ? currentTriggers.includes(fam.code)
                 : Object.values(fam.variants!).some((v) => currentTriggers.includes(v));
@@ -1646,21 +1620,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 if (currentTriggers.includes(fam.code)) removeTrigger(fam.code); else addTrigger(fam.code);
                 return;
               }
-              // variantAxis:'actor'（アタック時/アタック終了時）は「アタック主体」で、
-              // それ以外は「発動ターン」で、どのvariantを初期選択するか決める
-              const variant = fam.variants![fam.variantAxis === 'actor' ? attackSubject : timing];
+              const variant = fam.variants![timing];
               if (currentTriggers.includes(variant)) { removeTrigger(variant); return; }
               const others = Object.values(fam.variants!).filter((v) => v !== variant);
               const next = [...currentTriggers.filter((t) => !others.includes(t)), variant];
               onChange({ ...block, trigger: next[0], triggers: next });
             };
 
-            // 「発動ターン」変更: variantAxis:'actor' のファミリーは対象外
-            // （トリガーコードは変えず、cond_during_own_turn/opp_turn の付け外しだけ行う）
             const setTiming = (newTiming: TimingKey) => {
               let next = [...currentTriggers];
               effectiveTriggerFamilies.forEach((fam) => {
-                if (fam.kind !== 'timing' || !fam.variants || fam.variantAxis === 'actor') return;
+                if (fam.kind !== 'timing' || !fam.variants) return;
                 const oldVariant = Object.values(fam.variants).find((v) => next.includes(v));
                 if (!oldVariant) return;
                 const newVariant = fam.variants[newTiming];
@@ -1673,22 +1643,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               onChange({ ...block, trigger: next[0] || '', triggers: next, triggerConditions: nextConds });
             };
 
-            // 「アタック主体」変更: variantAxis:'actor' のファミリー（アタック時/アタック終了時）
-            // のトリガーコードだけ切り替える。「発動ターン」(cond_during_own_turn等)には一切触れない
-            // ＝ 相手のターンに自分のデジモンがアタックする、のような組み合わせも独立して選べる
-            const setAttackSubject = (newSubject: TimingKey) => {
-              let next = [...currentTriggers];
-              effectiveTriggerFamilies.forEach((fam) => {
-                if (fam.kind !== 'timing' || !fam.variants || fam.variantAxis !== 'actor') return;
-                const oldVariant = Object.values(fam.variants).find((v) => next.includes(v));
-                if (!oldVariant) return;
-                const newVariant = fam.variants[newSubject];
-                next = next.filter((t) => t !== oldVariant);
-                if (!next.includes(newVariant)) next.push(newVariant);
-              });
-              onChange({ ...block, trigger: next[0] || '', triggers: next });
-            };
-
             const allFamilyCodes = new Set<string>();
             effectiveTriggerFamilies.forEach((fam) => {
               if (fam.kind === 'event') allFamilyCodes.add(fam.code);
@@ -1696,12 +1650,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             });
             const hasOtherSelected = currentTriggers.some((t) => !allFamilyCodes.has(t));
 
-            // variantAxis:'actor' のファミリーは attackSubject で、それ以外は timing で
-            // 現在選択中のvariantの実装状況を判定する（軸を間違えると警告が出ない/誤爆する）
             const unimplementedActive = effectiveTriggerFamilies
               .map((fam) => {
                 if (fam.kind !== 'timing' || !fam.variants) return null;
-                const axisVal = fam.variantAxis === 'actor' ? attackSubject : timing;
+                const axisVal = timing;
                 const variant = fam.variants[axisVal];
                 if (!currentTriggers.includes(variant) || fam.implemented?.[axisVal] !== false) return null;
                 return { fam, axisLabel: TIMING_OPTIONS.find((t) => t.code === axisVal)?.label || axisVal };
@@ -1796,17 +1748,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <span style={{ fontSize: 11, color: '#666' }}>発動ターン:</span>
                     <ButtonGroup options={TIMING_OPTIONS.map((t) => ({ code: t.code, label: t.label }))} value={timing} onChange={(v) => setTiming(v as TimingKey)} accentColor="#2e7d32" />
                   </div>
-
-                  {/* 【アタック時】【アタック終了時】のときだけ、「発動ターン」とは独立した
-                      「アタック主体」（アタックしているのが自分/相手/お互いのデジモンか）を選べる。
-                      相手のターンに誘発効果で自分のデジモンがアタックするようなケースも、
-                      発動ターン=相手 + アタック主体=自分 で独立して表現できる */}
-                  {currentTriggers.some((t) => ATTACK_TRIGGER_CODES.includes(t)) && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                      <span style={{ fontSize: 11, color: '#666' }}>アタック主体:</span>
-                      <ButtonGroup options={TIMING_OPTIONS.map((t) => ({ code: t.code, label: t.label }))} value={attackSubject} onChange={(v) => setAttackSubject(v as TimingKey)} accentColor="#2e7d32" />
-                    </div>
-                  )}
 
                   {unimplementedActive.length > 0 && (
                     <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>

@@ -692,7 +692,7 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
   },
   {
     code: 'battle_area', label: 'バトルエリア', action: 'place_in_battle_area', target: 'self_card',
-    warn: '⚠ 未実装の新規アクションです。まず辞書登録（コード例: place_in_battle_area）が必要です。エンジンも未実装（このカード自身をテイマーエリアに永続カードとして残す想定）',
+    warn: '⚠ このボタン自体は今すぐ使えます（保存はできます）が、place_in_battle_area は辞書未登録・エンジンも未実装の新規アクションです。辞書に登録すると実装状況バッジ等でも認識されます（このカード自身をテイマーエリアに永続カードとして残す想定）',
   },
 ];
 const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));

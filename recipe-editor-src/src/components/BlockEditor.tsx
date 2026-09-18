@@ -2910,8 +2910,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const cTgtL2Options = (TARGET_SEL_L2[cCurTgt.l1] || []).filter((o) => !['option', 'player', 'security'].includes(o.code));
             const cHideCount = cTgtBase === 'self' || cTgtBase === 'self_card' || cTgtBase === 'same_target';
             // デジモン/テイマー本体のときだけ「本体/下/一番下」を選べる（進化元／テイマーの
-            // 下のカードを指す。self=このカード自身の下も含む）
-            const showCostStackPos = cCurTgt.l1 === 'self' || cCurTgt.l2 === 'digimon' || cCurTgt.l2 === 'tamer';
+            // 下の"既存の"カードを指す。self=このカード自身の下も含む）。
+            // 「〇〇に置く」系アクション（place_under_tamer 等）は新しいカードを追加する側で
+            // 既存スタック内カードを指す概念が無い（位置は📍位置/deckPositionで別途指定する）
+            // ため、対象がテイマー等でもこの欄自体を出さない
+            const showCostStackPos = !PLACE_ACTION_CODES.has(c.action || '')
+              && (cCurTgt.l1 === 'self' || cCurTgt.l2 === 'digimon' || cCurTgt.l2 === 'tamer');
             const setCostStackPos = (pos: StackPos) => updateCost(i, { ...c, target: joinStackSuffix(cTgtBase, pos) + cTgtSuffix });
             const setCostTgt = (l1: string, l2?: string) => {
               if (!l1) { updateCost(i, { ...c, target: '' }); return; }

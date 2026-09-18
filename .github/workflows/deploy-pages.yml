@@ -22,6 +22,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # レシピエディタを CI（Linux / Node 20）でビルドして recipe-editor/ を更新する。
+      # Windows ローカルでは vite build がネイティブクラッシュするため CI ビルドに一本化。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'recipe-editor-src/package-lock.json'
+      - name: Build recipe editor
+        working-directory: recipe-editor-src
+        run: |
+          npm ci
+          npm run build
+          rm -rf node_modules
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:

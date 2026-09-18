@@ -311,6 +311,7 @@ export const ACTIONS: DictEntry[] = [
   { code: 'attack_player', kind: 'action', label: 'プレイヤーにアタック' },
   { code: 'attack_digimon', kind: 'action', label: 'デジモンにアタック' },
   { code: 'change_attack_target', kind: 'action', label: 'アタック対象を変更' },
+  { code: 'redirect_attack', kind: 'action', label: 'アタック対象を差し替える（反応）' },
   { code: 'dedigivolve', kind: 'action', label: '退化' },
   { code: 'cost_digiburst', kind: 'action', label: 'デジバースト' },
   { code: 'trash_to_hand', kind: 'action', label: 'トラッシュから手札に戻す' },

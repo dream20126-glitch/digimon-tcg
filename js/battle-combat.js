@@ -714,6 +714,7 @@ function _consumePendingEvoCostReduction(evolved, base) {
     if (r.baseLv != null && r.baseLv !== baseLv) return;
     if (r.evoLv != null && r.evoLv !== evLv) return;
     if (r.name && evName !== r.name) return;
+    if (r.nameContains && !evName.includes(r.nameContains)) return;
     total += r.value || 0;
     if (r.once) r._used = true;
   });

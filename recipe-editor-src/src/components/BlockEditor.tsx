@@ -410,6 +410,21 @@ const STACK_POS_OPTIONS: { code: StackPos; label: string }[] = [
   { code: 'stack', label: '下' },
   { code: 'stack_bottom', label: '一番下' },
 ];
+
+// 「下」「一番下」を選んだときだけ出す、そのスタック内カードの種別絞り込み。
+// 例:「自分のテイマーの下の“デジモンカード”が破棄されたとき」のように、進化元/テイマー
+// 下のカードの中身をデジモン/テイマー/オプションで限定したいケース向け。
+// 実体は trigger_conditions（発火元カードへのフィルタ）に cond_type として追加するだけ
+// （RULE_TYPE_OPTS と同じ値セットを使い回す）。位置が「本体」のときは種別がL2選択
+// （デジモン/テイマー）で既に確定しているため表示しない。
+// ★エンジン未実装: when_evo_discard 系（_fireSidedReactionTriggers）は現状
+//   trigger_conditions 自体を評価しないため、保存はできても動作しない（要エンジン対応）。
+const STACK_CARD_TYPE_OPTS: { code: string; label: string }[] = [
+  { code: '', label: '指定なし' },
+  { code: 'デジモン', label: 'デジモン' },
+  { code: 'テイマー', label: 'テイマー' },
+  { code: 'オプション', label: 'オプション' },
+];
 function splitStackSuffix(code: string): { base: string; pos: StackPos } {
   if (code.endsWith('_stack_bottom')) return { base: code.slice(0, -('_stack_bottom'.length)), pos: 'stack_bottom' };
   if (code.endsWith('_stack')) return { base: code.slice(0, -('_stack'.length)), pos: 'stack' };
@@ -1798,6 +1813,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <div style={{ marginTop: 4 }}>
                       <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
                       <ButtonGroup options={STACK_POS_OPTIONS} value={triggerStackPos} onChange={(v) => setTriggerStackPos(v as StackPos)} accentColor="#2e7d32" />
+                    </div>
+                  )}
+                  {/* 「下」「一番下」のときだけ、積まれているカードの種別で絞り込める
+                      （例:「自分のテイマーの下のデジモンカードが破棄されたとき」）。
+                      本体を指しているとき（位置未選択）はL2選択自体が種別を兼ねるため出さない。 */}
+                  {showTriggerStackPos && triggerStackPos !== '' && (
+                    <div style={{ marginTop: 4 }}>
+                      <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>下のカード種別:</span>
+                      <ButtonGroup
+                        options={STACK_CARD_TYPE_OPTS}
+                        value={triggerConditions.find((c) => c.base === 'cond_type')?.value || ''}
+                        onChange={(v) => {
+                          const rest = triggerConditions.filter((c) => c.base !== 'cond_type');
+                          update('triggerConditions', v ? [...rest, { base: 'cond_type', value: v }] : rest);
+                        }}
+                        accentColor="#2e7d32"
+                      />
                     </div>
                   )}
                 </div>

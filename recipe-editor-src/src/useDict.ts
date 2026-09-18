@@ -228,7 +228,7 @@ export function useDict(password: string): DictAPI {
     return { ok: !!r.ok, msg: r.error || '' };
   }, [password, refresh]);
 
-  const updateEntry = useCallback(async (_kind: DictKind, code: string, patch: Partial<DictEntry>) => {
+  const updateEntry = useCallback(async (kind: DictKind, code: string, patch: Partial<DictEntry>) => {
     // patch のキーをスプシ列名に変換
     const colMap: Record<string, string> = {
       label: '表示名',
@@ -264,13 +264,13 @@ export function useDict(password: string): DictAPI {
       row['上下指定'] = (patch as any).hasDeckPosition ? '1' : '';
       setActionFlagsForCode(code, { hasDeckPosition: !!(patch as any).hasDeckPosition });
     }
-    const r = await apiUpdate('dict', code, row, password);
+    const r = await apiUpdate('dict', code, kindToSingular(kind), row, password);
     if (r.ok) await refresh();
     return { ok: !!r.ok, msg: r.error || '' };
   }, [password, refresh]);
 
-  const removeEntry = useCallback(async (_kind: DictKind, code: string) => {
-    const r = await apiRemove('dict', code, password);
+  const removeEntry = useCallback(async (kind: DictKind, code: string) => {
+    const r = await apiRemove('dict', code, kindToSingular(kind), password);
     if (r.ok) await refresh();
     return { ok: !!r.ok, msg: r.error || '' };
   }, [password, refresh]);

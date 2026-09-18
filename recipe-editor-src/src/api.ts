@@ -88,10 +88,12 @@ export async function addDictEntry(target: 'dict' | 'keywords', entry: Record<st
   return gasPost('addDictEntry', { target, entry, password });
 }
 
-export async function updateDictEntry(target: 'dict' | 'keywords', code: string, entry: Record<string, any>, password: string) {
-  return gasPost('updateDictEntry', { target, code, entry, password });
+// kind: 'trigger'/'condition'/'action'/'keyword'/'option'（target='dict'のときのみ意味を持つ）。
+// 種類が違えば同じコードの行が複数存在しうるため、更新/削除対象の行特定に必須
+export async function updateDictEntry(target: 'dict' | 'keywords', code: string, kind: string, entry: Record<string, any>, password: string) {
+  return gasPost('updateDictEntry', { target, code, kind, entry, password });
 }
 
-export async function removeDictEntry(target: 'dict' | 'keywords', code: string, password: string) {
-  return gasPost('removeDictEntry', { target, code, password });
+export async function removeDictEntry(target: 'dict' | 'keywords', code: string, kind: string, password: string) {
+  return gasPost('removeDictEntry', { target, code, kind, password });
 }

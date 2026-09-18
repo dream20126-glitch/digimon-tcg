@@ -2975,19 +2975,27 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
                         ) : null;
                       })()}
-                      {/* 進化元/テイマー/セキュリティのときだけ、積まれたカードのどこから破棄するか選べる */}
-                      {DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone)?.hasPosition
-                        && costIsPositional && costVariantOptions.length > 0 && (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
-                          <ButtonGroup
-                            options={costVariantOptions.map((o) => ({ code: String(o.value), label: o.label }))}
-                            value={costCurrentSuffix}
-                            onChange={onCostVariantChange}
-                            accentColor="#b76e00"
-                          />
-                        </div>
-                      )}
+                      {/* 進化元/テイマー/セキュリティのときだけ、積まれたカードのどこから破棄するか選べる。
+                          ※ 辞書側の hasPositionVariant フラグ（costIsPositional等）には依存しない。
+                          DISCARD_ZONE_MAP はこのエディタ内で完結したハードコード機構であり、
+                          辞書の設定状態に関わらず常に POSITION_VARIANTS 4種を出す */}
+                      {(() => {
+                        const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                        if (!zone?.hasPosition) return null;
+                        const zoneBase = getActionVariant(zone.action)?.base || zone.action;
+                        const curSuffix = getActionVariant(c.action || '')?.suffix || '';
+                        return (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                            <ButtonGroup
+                              options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
+                              value={curSuffix}
+                              onChange={(suffix) => { if (!suffix) return; updateCost(i, { ...c, action: zoneBase + suffix }); }}
+                              accentColor="#b76e00"
+                            />
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                   {/* デッキに戻す/セキュリティに置く: 位置ボタン（下/上/下か上） */}

@@ -700,7 +700,7 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
 const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
-const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'evolve']);
+const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'evolve', 'link']);
 // よく使う期間（対象と同じ2段ボタン式）
 const DURATION_L1 = [
   { code: 'dur_this_turn', label: 'このターン中' },

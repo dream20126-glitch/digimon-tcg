@@ -161,8 +161,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   }
   const step: any = {};
 
-  // 「デジモン/オプションどちらの効果か」の編集時メモ書き。エンジンは参照しない
-  if (b.asType) step.as_type = b.asType;
+  // 「デジモン/テイマー/オプションどちらの効果か」は編集時（このエディタ内）だけのメモ書きで、
+  // エンジンは参照しないため意図的にJSON出力しない（block.asTypeとしてエディタ内では保持され続ける）
 
   // 条件: 1つ目→condition, 2つ目→when, 3つ目以降→extra_conditions[]
   const validConds = (b.conditions || []).filter((p) => p.base);

@@ -420,7 +420,7 @@ const STACK_POS_OPTIONS: { code: StackPos; label: string }[] = [
 // ★エンジン未実装: when_evo_discard 系（_fireSidedReactionTriggers）は現状
 //   trigger_conditions 自体を評価しないため、保存はできても動作しない（要エンジン対応）。
 const STACK_CARD_TYPE_OPTS: { code: string; label: string }[] = [
-  { code: '', label: '指定なし' },
+  { code: '', label: 'カード' },
   { code: 'デジモン', label: 'デジモン' },
   { code: 'テイマー', label: 'テイマー' },
   { code: 'オプション', label: 'オプション' },

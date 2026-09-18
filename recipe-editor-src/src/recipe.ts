@@ -31,6 +31,10 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       case 'cond_lv':       { const n = num(c.value); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
       case 'cond_lv_le':    { const n = num(c.value); if (n !== undefined) f.lv_le = n; break; }
       case 'cond_lv_ge':    { const n = num(c.value); if (n !== undefined) f.lv_ge = n; break; }
+      // 登場/使用コスト（cardMatchesFilterがfilter.cost/cost_le/cost_geを読む）
+      case 'cond_cost':     { const n = num(c.value); if (n !== undefined) { f.cost_le = n; f.cost_ge = n; } break; }
+      case 'cond_cost_le':  { const n = num(c.value); if (n !== undefined) f.cost_le = n; break; }
+      case 'cond_cost_ge':  { const n = num(c.value); if (n !== undefined) f.cost_ge = n; break; }
       // カンマ区切り(複数チェック)なら feature_includes 配列(OR・特徴を "/" で分割して部分一致)、
       // 単一値でも feature_includes を使う（cardMatchesFilter は feature_contains を見ないため）
       case 'cond_feature_contains': {
@@ -73,6 +77,12 @@ function parseFilterObject(f: any): ConditionPair[] {
   } else {
     if (f.lv_le !== undefined) out.push({ base: 'cond_lv_le', value: String(f.lv_le) });
     if (f.lv_ge !== undefined) out.push({ base: 'cond_lv_ge', value: String(f.lv_ge) });
+  }
+  if (f.cost_le !== undefined && f.cost_ge !== undefined && f.cost_le === f.cost_ge) {
+    out.push({ base: 'cond_cost', value: String(f.cost_le) });
+  } else {
+    if (f.cost_le !== undefined) out.push({ base: 'cond_cost_le', value: String(f.cost_le) });
+    if (f.cost_ge !== undefined) out.push({ base: 'cond_cost_ge', value: String(f.cost_ge) });
   }
   return out;
 }

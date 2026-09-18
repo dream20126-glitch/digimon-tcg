@@ -669,6 +669,11 @@ const DECKPOS_COST_ACTIONS: { code: string; label: string }[] = [
 // CostStep.options=['face_down'])は、場所ごとに hasPosition/hasFace で出し分ける
 // （セキュリティ/テイマーの下は位置も裏表も意味を持つが、バトルエリア＝進化元の下は
 // 常に表向き・スタック先頭固定という想定のためどちらも出さない）
+// 「バトルエリア」＝進化元/テイマーの下のような「下に積む」置き方ではなく、このカード自身が
+// テイマーエリアに永続カードとして留まる置き方（BT24-089「ユニークエンブレム：烈火の指揮者」/
+// BT24-093「はじまりの神殿」等のオプション「その後、このカードをバトルエリアに置く」）。
+// 対応する既存アクションが無いため place_in_battle_area を新規コードとして想定（要辞書登録）。
+// 対象は「このカード自身」が置かれるので target:'self_card'（位置/裏表の概念は無い）
 const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: string; hasPosition?: boolean; hasFace?: boolean; warn?: string }[] = [
   {
     code: 'security', label: 'セキュリティ', action: 'place_on_security_top', target: 'own_security',
@@ -681,8 +686,13 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
     warn: '⚠ エンジン未対応: target/位置/裏表のいずれも反映されません（該当カードが来たら追加実装）',
   },
   {
-    code: 'battle_area', label: 'バトルエリア', action: 'place_under_digimon', target: 'own',
-    warn: '⚠ エンジン未対応: targetを反映する実装が必要です（該当カードが来たら追加実装）',
+    code: 'evo_source', label: '進化元', action: 'place_under_digimon', target: 'own',
+    hasPosition: true, hasFace: true,
+    warn: '⚠ エンジン未対応: target/位置/裏表のいずれも反映されません（該当カードが来たら追加実装）',
+  },
+  {
+    code: 'battle_area', label: 'バトルエリア', action: 'place_in_battle_area', target: 'self_card',
+    warn: '⚠ 未実装の新規アクションです。まず辞書登録（コード例: place_in_battle_area）が必要です。エンジンも未実装（このカード自身をテイマーエリアに永続カードとして残す想定）',
   },
 ];
 const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));

@@ -237,6 +237,10 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_during_any_turn', kind: 'condition', label: 'お互いのターン中' },
   { code: 'cond_self_active', kind: 'condition', label: 'このデジモンがアクティブの間' },
   { code: 'cond_self_rest', kind: 'condition', label: 'このデジモンがレスト状態' },
+  // コスト対象（進化元/テイマーの下のカード）の裏表判定。エンジン未実装（カードの
+  // 表裏状態自体が現状どこにも保持されていないため、将来の状態管理追加とセットで対応要）
+  { code: 'cond_face_down', kind: 'condition', label: '裏向きである' },
+  { code: 'cond_face_up', kind: 'condition', label: '表向きである' },
   { code: 'cond_opp_no_attack_this_turn', kind: 'condition', label: '相手がアタックしていない' },
   { code: 'cond_own_trash_ge', kind: 'condition', label: '自分のトラッシュN枚以上' },
   { code: 'cond_self_keyword', kind: 'condition', label: '指定キーワードを持つ間' },

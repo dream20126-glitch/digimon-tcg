@@ -425,6 +425,28 @@ const STACK_CARD_TYPE_OPTS: { code: string; label: string }[] = [
   { code: 'テイマー', label: 'テイマー' },
   { code: 'オプション', label: 'オプション' },
 ];
+
+// コスト対象の「下/一番下」選択時に出す、積まれているカードの裏表・種別の
+// 絞り込みボタン（複数選択見た目だが、内部は face/type 各グループ排他の1件ずつ）。
+// 例:「テイマーの下にある裏向きのカードを1枚破棄することで」→ 裏向き + カード
+// ★エンジン未実装: 表裏の状態自体がカードデータのどこにも保持されていないため、
+//   cond_face_down/cond_face_up は将来の状態管理追加とセットでの対応が必要。
+const COST_STACK_FACE_TYPE_OPTS: { code: string; label: string; group: 'face' | 'type' }[] = [
+  { code: 'face_down', label: '裏向き', group: 'face' },
+  { code: 'face_up', label: '表向き', group: 'face' },
+  { code: 'card', label: 'カード', group: 'type' },
+  { code: 'digimon', label: 'デジモン', group: 'type' },
+  { code: 'tamer', label: 'テイマー', group: 'type' },
+  { code: 'option', label: 'オプション', group: 'type' },
+];
+// COST_STACK_FACE_TYPE_OPTS の type 系ボタンコード ⇄ cond_type の実値（RULE_TYPE_OPTSと同じ表記）
+const COST_STACK_TYPE_CODE_TO_VALUE: Record<string, string> = {
+  card: 'カード', digimon: 'デジモン', tamer: 'テイマー', option: 'オプション',
+};
+const COST_STACK_TYPE_VALUE_TO_CODE: Record<string, string> = {
+  'カード': 'card', 'デジモン': 'digimon', 'テイマー': 'tamer', 'オプション': 'option',
+};
+
 function splitStackSuffix(code: string): { base: string; pos: StackPos } {
   if (code.endsWith('_stack_bottom')) return { base: code.slice(0, -('_stack_bottom'.length)), pos: 'stack_bottom' };
   if (code.endsWith('_stack')) return { base: code.slice(0, -('_stack'.length)), pos: 'stack' };
@@ -2840,18 +2862,54 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             }
 
             // 対象（TARGET_SELのL1/L2ボタン方式。アクションの対象と同じ体系）
-            const cTgtBase = (c.target || '').split(':')[0];
-            const cTgtSuffix = (c.target || '').substring(cTgtBase.length);
+            // 位置（本体/下/一番下）はカウント接尾辞(:1等)より前のbase側に付くので、
+            // カウント分離の前にまずstackサフィックスを剥がす
+            const cTgtRaw = (c.target || '').split(':')[0];
+            const cTgtSuffix = (c.target || '').substring(cTgtRaw.length);
+            const { base: cTgtBase, pos: cTgtStackPos } = splitStackSuffix(cTgtRaw);
             const cCurTgt = TARGET_SEL_CODE_TO_L1L2[cTgtBase] || { l1: '', l2: '' };
             // コストの対象では「オプション/プレイヤー/セキュリティ」を選択肢から除外
             const cTgtL2Options = (TARGET_SEL_L2[cCurTgt.l1] || []).filter((o) => !['option', 'player', 'security'].includes(o.code));
             const cHideCount = cTgtBase === 'self' || cTgtBase === 'self_card' || cTgtBase === 'same_target';
+            // デジモン/テイマー本体のときだけ「本体/下/一番下」を選べる（進化元／テイマーの
+            // 下のカードを指す。self=このカード自身の下も含む）
+            const showCostStackPos = cCurTgt.l1 === 'self' || cCurTgt.l2 === 'digimon' || cCurTgt.l2 === 'tamer';
+            const setCostStackPos = (pos: StackPos) => updateCost(i, { ...c, target: joinStackSuffix(cTgtBase, pos) + cTgtSuffix });
             const setCostTgt = (l1: string, l2?: string) => {
               if (!l1) { updateCost(i, { ...c, target: '' }); return; }
-              if (l1 === 'self') { updateCost(i, { ...c, target: 'self_card' + cTgtSuffix }); return; }
+              if (l1 === 'self') { updateCost(i, { ...c, target: joinStackSuffix('self_card', cTgtStackPos) + cTgtSuffix }); return; }
               if (l1 === 'same_target') { updateCost(i, { ...c, target: 'same_target' + cTgtSuffix }); return; }
               const useL2 = l2 || (cCurTgt.l1 === l1 && cCurTgt.l2 ? cCurTgt.l2 : 'digimon');
-              updateCost(i, { ...c, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '') + cTgtSuffix });
+              const newBase = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '';
+              // 位置は「デジモン/テイマー」を維持したときだけ引き継ぐ（カード/オプション等に
+              // 切り替えたら位置指定自体が無意味になるため破棄する）
+              const keepPos = useL2 === 'digimon' || useL2 === 'tamer';
+              updateCost(i, { ...c, target: joinStackSuffix(newBase, keepPos ? cTgtStackPos : '') + cTgtSuffix });
+            };
+            // 「下/一番下」を選んだときだけ、積まれているカードの裏表・種別で絞り込める
+            // （例:「テイマーの下にある裏向きのカードを破棄する」コスト）。
+            // 実体は c.conditions への cond_face_down/cond_face_up + cond_type の追加。
+            // 裏表・種別はそれぞれ単独項目（同時に2種類を選ぶ意味は無い）なので、
+            // 見た目は横並びの複数選択ボタンだが内部では各グループ排他で1件ずつ管理する
+            const costFaceType = (c.conditions || []).reduce((acc: { face: string; type: string }, p) => {
+              if (p.base === 'cond_face_down') acc.face = 'face_down';
+              else if (p.base === 'cond_face_up') acc.face = 'face_up';
+              else if (p.base === 'cond_type') acc.type = COST_STACK_TYPE_VALUE_TO_CODE[p.value || ''] || '';
+              return acc;
+            }, { face: '', type: '' });
+            const costFaceTypeActive = [costFaceType.face, costFaceType.type].filter(Boolean);
+            const toggleCostFaceType = (code: string, on: boolean) => {
+              const opt = COST_STACK_FACE_TYPE_OPTS.find((o) => o.code === code);
+              if (!opt) return;
+              let next = (c.conditions || []).filter((p) =>
+                opt.group === 'face' ? (p.base !== 'cond_face_down' && p.base !== 'cond_face_up') : p.base !== 'cond_type'
+              );
+              if (on) {
+                next = opt.group === 'face'
+                  ? [...next, { base: code === 'face_down' ? 'cond_face_down' : 'cond_face_up' }]
+                  : [...next, { base: 'cond_type', value: COST_STACK_TYPE_CODE_TO_VALUE[code] }];
+              }
+              updateCost(i, { ...c, conditions: next });
             };
 
             return (
@@ -3023,12 +3081,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       <ButtonGroup options={cTgtL2Options} value={cCurTgt.l2} onChange={(l2) => setCostTgt(cCurTgt.l1, l2)} accentColor="#b76e00" />
                     </div>
                   )}
+                  {/* デジモン/テイマー本体のときだけ「本体/下/一番下」を選べる（進化元／テイマーの下のカードを指す） */}
+                  {showCostStackPos && (
+                    <div style={{ marginTop: 4 }}>
+                      <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
+                      <ButtonGroup options={STACK_POS_OPTIONS} value={cTgtStackPos} onChange={(v) => setCostStackPos(v as StackPos)} accentColor="#b76e00" />
+                    </div>
+                  )}
+                  {/* 「下/一番下」のときだけ、積まれているカードの裏表・種別で絞り込める */}
+                  {showCostStackPos && cTgtStackPos !== '' && (
+                    <div style={{ marginTop: 4 }}>
+                      <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>裏表/種別:</span>
+                      <MultiButtonGroup options={COST_STACK_FACE_TYPE_OPTS} values={costFaceTypeActive} onToggle={toggleCostFaceType} accentColor="#b76e00" />
+                    </div>
+                  )}
                   {!cHideCount && cCurTgt.l1 && (
                     <div style={{ marginTop: 4 }}>
                       <ButtonGroup
                         options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
                         value={cTgtSuffix}
-                        onChange={(v) => updateCost(i, { ...c, target: cTgtBase + v })}
+                        onChange={(v) => updateCost(i, { ...c, target: joinStackSuffix(cTgtBase, cTgtStackPos) + v })}
                         accentColor="#b76e00"
                       />
                     </div>
@@ -3886,6 +3958,7 @@ const NO_VALUE_CONDS = new Set([
   'cond_during_any_turn', 'cond_self_active', 'cond_self_rest', 'cond_opp_no_attack_this_turn',
   'cond_evolved_this_turn', 'cond_no_tamer_evo', 'cond_not_own_effect', 'cond_has_evo_digimon',
   'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
+  'cond_face_down', 'cond_face_up',
 ]);
 
 // === 条件の「種別」を大分類(カテゴリ)+詳細(バリアント)の2段構成にする ===

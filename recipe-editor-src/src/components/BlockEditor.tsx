@@ -2778,7 +2778,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               || discardZoneBases.has(cActionBase)
               || DECKPOS_COST_ACTIONS.some((a) => a.code === (c.action || ''));
             const isDiscardActive = discardZoneBases.has(cActionBase);
-            const activeDiscardZone = DISCARD_ZONE_MAP.find((z) => (getActionVariant(z.action)?.base || z.action) === cActionBase)?.code || '';
+            // 「進化元」と「テイマー」はどちらも evo_discard 系を流用していてアクションの
+            // ベースコードだけでは区別できないため、target も一致条件に加えて逆引きする
+            // （target が無い場所=手札/デッキはアクションのみで一意に決まる）
+            const activeDiscardZone = DISCARD_ZONE_MAP.find((z) => {
+              if ((getActionVariant(z.action)?.base || z.action) !== cActionBase) return false;
+              if (z.target !== undefined && (c.target || '') !== z.target) return false;
+              return true;
+            })?.code || '';
             const isDeckPosAction = c.action === 'return_deck' || c.action === 'place_on_security_top';
             // 位置バリアント対応（フラグ駆動+自動グループ化）は「その他」経由選択時のみ引き続き使う
             const { options: costActionOptions, flaggedBases: costFlaggedBases, autoGroupBases: costAutoGroupBases } = buildActionDisplay(dict.actions);

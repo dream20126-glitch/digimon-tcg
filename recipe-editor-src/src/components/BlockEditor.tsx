@@ -2262,20 +2262,63 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   />
                 </div>
               )}
-              <div className="field">
-                <label>値</label>
-                <input
-                  type="text"
-                  value={effectValue === undefined ? '' : String(effectValue)}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === '') updateEffect({ value: undefined });
-                    else if (/^\d+$/.test(v)) updateEffect({ value: Number(v) });
-                    else updateEffect({ value: v });
-                  }}
-                  placeholder={effectAction === 'summon_token' ? 'トークンのカードNo (例: TK-01)' : '数値 (例: 1000)'}
-                />
-              </div>
+              {/* 登場/使用・進化のときだけ「💰 コスト増減」を出し、通常の「値」入力は隠す
+                  （同じ block.value を使うが、符号付き数値を直接入力させるより
+                  増/減ボタン+絶対値入力の方が分かりやすいため）。
+                  ※ エンジン側は現状 summon の value を未参照（要実装）。
+                  増=+N（コスト+N）/ 減=-N（コスト-N）として value に符号付きで保存する */}
+              {!isEditingAlt && (effectAction === 'summon' || effectAction === 'evolve') ? (
+                <div className="field">
+                  <label>💰 コスト増減</label>
+                  {(() => {
+                    const raw = block.value;
+                    const num = raw === undefined || raw === '' ? undefined : Number(raw);
+                    const sign: 'plus' | 'minus' | '' = num === undefined || isNaN(num) || num === 0 ? '' : (num > 0 ? 'plus' : 'minus');
+                    const magnitude = num === undefined || isNaN(num) ? '' : String(Math.abs(num));
+                    const applyValue = (nextSign: 'plus' | 'minus', nextMagnitudeStr: string) => {
+                      const m = nextMagnitudeStr === '' ? undefined : Number(nextMagnitudeStr);
+                      if (m === undefined || isNaN(m) || m === 0) { update('value', undefined); return; }
+                      update('value', nextSign === 'minus' ? -m : m);
+                    };
+                    return (
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <ButtonGroup
+                          options={[{ code: 'minus', label: '減' }, { code: 'plus', label: '増' }]}
+                          value={sign}
+                          onChange={(v) => applyValue((v || 'minus') as 'plus' | 'minus', magnitude || '1')}
+                          accentColor="#1976d2"
+                        />
+                        <input
+                          type="text"
+                          value={magnitude}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v !== '' && !/^\d+$/.test(v)) return;
+                            applyValue(sign === 'plus' ? 'plus' : 'minus', v);
+                          }}
+                          placeholder="数値 (例: 2)"
+                          style={{ width: 90 }}
+                        />
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="field">
+                  <label>値</label>
+                  <input
+                    type="text"
+                    value={effectValue === undefined ? '' : String(effectValue)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === '') updateEffect({ value: undefined });
+                      else if (/^\d+$/.test(v)) updateEffect({ value: Number(v) });
+                      else updateEffect({ value: v });
+                    }}
+                    placeholder={effectAction === 'summon_token' ? 'トークンのカードNo (例: TK-01)' : '数値 (例: 1000)'}
+                  />
+                </div>
+              )}
             </div>
           );
         })()}

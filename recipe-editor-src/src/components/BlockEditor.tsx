@@ -2781,9 +2781,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             // 「進化元」と「テイマー」はどちらも evo_discard 系を流用していてアクションの
             // ベースコードだけでは区別できないため、target も一致条件に加えて逆引きする
             // （target が無い場所=手札/デッキはアクションのみで一意に決まる）
+            // 対象セクション側で「下/一番下」(_stack/_stack_bottom サフィックス)を付けても
+            // 場所の判定が巻き戻らないよう、target 比較はサフィックスを剥がしたベースで行う
             const activeDiscardZone = DISCARD_ZONE_MAP.find((z) => {
               if ((getActionVariant(z.action)?.base || z.action) !== cActionBase) return false;
-              if (z.target !== undefined && (c.target || '') !== z.target) return false;
+              if (z.target !== undefined && splitStackSuffix((c.target || '').split(':')[0]).base !== z.target) return false;
               return true;
             })?.code || '';
             const isDeckPosAction = c.action === 'return_deck' || c.action === 'place_on_security_top';

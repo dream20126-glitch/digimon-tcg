@@ -2066,9 +2066,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             return effectAction;
           })();
 
+          // hasFromZones も持つアクション（例:「破棄する」+ 場所=進化元/デッキ/手札/セキュリティ）では、
+          // 順序が意味を持つ場所（進化元/セキュリティ）を選んだとき、または対象がテイマー
+          // （テイマーの下＝進化元と同じ仕組みのスタック）のときだけ位置pulldownを出す。
+          // デッキ/手札には「上から/下から/選んで」の概念が無いため。
+          // hasFromZones が無いアクション（evo_discard等の既存zone専用アクション）は従来通り常時表示
+          const positionalBase = isFlaggedBaseDirect ? effectAction : (curVariant ? curVariant.base : effectAction);
+          const positionalActionEntry = dict.actions.find((a) => a.code === positionalBase);
+          const effectiveTargetForPosition = isEditingAlt ? (editingAlt!.target || '') : (block.target || '');
+          const effectiveTargetL2ForPosition = TARGET_SEL_CODE_TO_L1L2[effectiveTargetForPosition.split(':')[0]]?.l2 || '';
+          const zoneGatesPosition = !positionalActionEntry?.hasFromZones
+            || effectFromZones.some((z) => z === 'evo_source' || z === 'security')
+            || effectiveTargetL2ForPosition === 'tamer';
           // 位置 pulldown の選択肢（フラグ付き base は3種固定、autoGroup は dict にあるバリアントのみ）
           const variantOptions: SelectOption[] = (() => {
-            if (!isPositional) return [];
+            if (!isPositional || !zoneGatesPosition) return [];
             if (isFlaggedBaseDirect || (curVariant && flaggedBases.has(curVariant.base))) {
               // フラグ付き base: 3種固定
               return POSITION_VARIANTS.map((v) => ({ value: v.suffix, label: v.label }));

@@ -2000,6 +2000,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // ※ effectAction/effectValue = 編集中の効果（効果1=block自身 / 効果2以降=altActions[i]）
           const { options: actionDisplayOptions, flaggedBases, autoGroupBases } = buildActionDisplay(dict.actions);
           const curVariant = getActionVariant(effectAction);
+          // 🂠裏表フラグ判定: コスト側(costActionHasFlag)と同じロジック。完全一致を優先し、
+          // 無ければ位置バリアントのベースコードでも引く（'place_on_security_top' のように
+          // 位置バリアントではないのに語尾が "_top" と一致するケースの誤爆防止のため）
+          const effectActionHasFaceOption = (() => {
+            const exact = dict.actions.find((a) => a.code === effectAction);
+            if (exact?.hasFaceOption) return true;
+            const base = curVariant ? dict.actions.find((a) => a.code === curVariant!.base) : undefined;
+            return !!base?.hasFaceOption;
+          })();
           // 現在 effectAction が「位置バリアント表示」の対象か判定
           // ケースA: effectAction がフラグ付き base そのもの（例: "security_trash"）
           const isFlaggedBaseDirect = flaggedBases.has(effectAction);
@@ -2111,8 +2120,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     )}
                   </label>
                   {/* summon / summon_from_trash / evolve / summon_from_evo_source 専用（効果1のみ）:
-                      コストを支払わず / 登場時効果は発揮しない / 裏向きで(place_on_security_top) */}
-                  {(showCostCheckboxes || (!isEditingAlt && effectAction === 'place_on_security_top')) && (
+                      コストを支払わず / 登場時効果は発揮しない
+                      裏向きで: place_on_security_top（辞書未登録のハードコード）に加え、
+                      辞書側 hasFaceOption=true なアクション（例:「テイマーの下に置く」）でも表示 */}
+                  {(showCostCheckboxes || (!isEditingAlt && (effectAction === 'place_on_security_top' || effectActionHasFaceOption))) && (
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                       {showCostCheckboxes && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
@@ -2134,7 +2145,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           登場時効果は発揮しない
                         </label>
                       )}
-                      {!isEditingAlt && effectAction === 'place_on_security_top' && (
+                      {!isEditingAlt && (effectAction === 'place_on_security_top' || effectActionHasFaceOption) && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
                           <input
                             type="checkbox"

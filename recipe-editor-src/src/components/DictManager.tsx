@@ -679,14 +679,15 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                         checked={!!form.hasFaceOption}
                         onChange={(e) => update({ hasFaceOption: e.target.checked })}
                       />
-                      <b>🂠 裏表を指定する（コスト専用）</b>
+                      <b>🂠 裏表を指定する</b>
                     </label>
                     <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-                      💡 「テイマーの下に置く」のように、コストとして実行する際に裏向き/表向きを
-                      選ぶ必要があるアクションだけ ☑ してください。コストエディタで本アクション
-                      選択時に「裏向き」「表向き」ボタンが出現します（既存の修飾子コード
-                      <code>face_down</code> を <code>step.cost[].options</code> に反映。「表向き」は
-                      指定なし＝デフォルトとして扱います）。
+                      💡 「テイマーの下に置く」のように、裏向き/表向きを選ぶ必要があるアクション
+                      だけ ☑ してください。レシピエディタで本アクション選択時に「裏向き」「表向き」
+                      ボタンが出現します（コストの場合は<code>step.cost[].options</code>、
+                      通常のアクション欄（効果1）の場合は<code>step.options</code>に、既存の
+                      修飾子コード<code>face_down</code>を反映。「表向き」は指定なし＝デフォルト
+                      として扱います）。
                     </div>
                   </div>
                 </>

@@ -2792,6 +2792,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             // 位置バリアント対応（フラグ駆動+自動グループ化）は「その他」経由選択時のみ引き続き使う
             const { options: costActionOptions, flaggedBases: costFlaggedBases, autoGroupBases: costAutoGroupBases } = buildActionDisplay(dict.actions);
             const costCurVariant = getActionVariant(c.action || '');
+            // 📥場所/🂠裏表 フラグ判定用: まずアクションコード完全一致で辞書を引き、無ければ
+            // 位置バリアントのベースコードでも引く（両対応）。
+            // ※ 'place_on_security_top' のように、位置バリアントの一種ではないのに
+            //   たまたま "_top" で終わるアクション名だと costCurVariant.base が
+            //   実在しない 'place_on_security' になってしまうため、完全一致を優先する
+            const costActionHasFlag = (flag: 'hasFromZones' | 'hasFaceOption'): boolean => {
+              const exact = dict.actions.find((a) => a.code === (c.action || ''));
+              if (exact?.[flag]) return true;
+              const base = costCurVariant ? dict.actions.find((a) => a.code === costCurVariant!.base) : undefined;
+              return !!base?.[flag];
+            };
             const costIsFlaggedBaseDirect = costFlaggedBases.has(c.action || '');
             const costIsVariantOfFlagged = !!(costCurVariant && (costFlaggedBases.has(costCurVariant.base) || costAutoGroupBases.has(costCurVariant.base)));
             const costIsPositional = costIsFlaggedBaseDirect || costIsVariantOfFlagged;
@@ -3028,8 +3039,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {/* 📥場所: 辞書の hasFromZones=true なアクション（例:「テイマーの下に置く」）
                       選択時のみ表示。破棄ボタン(DISCARD_ZONE_MAP)とは独立した汎用機構 */}
                   {(() => {
-                    const actEntry = dict.actions.find((a) => a.code === (costCurVariant?.base || c.action || ''));
-                    if (!actEntry?.hasFromZones) return null;
+                    if (!costActionHasFlag('hasFromZones')) return null;
                     const zones = c.fromZones || [];
                     const op = c.fromZonesOp || 'or';
                     const toggleZone = (code: string) => {
@@ -3081,8 +3091,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       既存の修飾子コード face_down を c.options に書き込む
                       （「表向き」は指定なし＝デフォルトなので、options を空にするだけ） */}
                   {(() => {
-                    const actEntry = dict.actions.find((a) => a.code === (costCurVariant?.base || c.action || ''));
-                    if (!actEntry?.hasFaceOption) return null;
+                    if (!costActionHasFlag('hasFaceOption')) return null;
                     const isFaceDown = (c.options || []).includes('face_down');
                     return (
                       <div style={{ marginTop: 4 }}>

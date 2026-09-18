@@ -659,10 +659,6 @@ const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: 
   { code: 'deck', label: 'デッキ', action: 'deck_trash_top' },
 ];
 const DISCARD_ACTION_CODES = new Set(DISCARD_ZONE_MAP.map((z) => z.action));
-// 位置サフィックス違い（evo_discard_top/_bottom/_select/_all 等）を同一ゾーンとして
-// 認識するためのベースコード集合。getActionVariant は POSITION_VARIANTS 定義より前に
-// 呼んでも問題ない（function 宣言は巻き上げられるため）
-const DISCARD_ZONE_BASES = new Set(DISCARD_ZONE_MAP.map((z) => getActionVariant(z.action)?.base || z.action));
 // 「デッキに戻す」「セキュリティに置く」: 押すと「下/上/下か上」の位置ボタンが現れる（CostStep.deckPosition）。
 // セキュリティに置くは現状エンジンが常に「上」固定のため、下/下か上を選んでも保存のみで動作は上になる
 const DECKPOS_COST_ACTIONS: { code: string; label: string }[] = [
@@ -2772,12 +2768,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           )}
           {costs.map((c, i) => {
             // 位置サフィックス違い（evo_discard_top/_bottom/_select/_all 等）も同じ場所として
-            // 扱えるよう、比較は常にベースコード（サフィックスを剥がしたもの）で行う
+            // 扱えるよう、比較は常にベースコード（サフィックスを剥がしたもの）で行う。
+            // ※ getActionVariant は POSITION_VARIANTS（このファイル下部でconst定義）を参照するため、
+            //   モジュール読み込み時（top-level）には呼べない（TDZエラーで画面が真っ白になる）。
+            //   ここ（コンポーネントのレンダー時＝モジュール読み込み完了後）で計算する
+            const discardZoneBases = new Set(DISCARD_ZONE_MAP.map((z) => getActionVariant(z.action)?.base || z.action));
             const cActionBase = getActionVariant(c.action || '')?.base || (c.action || '');
             const isCommonCostAction = COMMON_COST_ACTIONS.some((a) => a.code === (c.action || ''))
-              || DISCARD_ZONE_BASES.has(cActionBase)
+              || discardZoneBases.has(cActionBase)
               || DECKPOS_COST_ACTIONS.some((a) => a.code === (c.action || ''));
-            const isDiscardActive = DISCARD_ZONE_BASES.has(cActionBase);
+            const isDiscardActive = discardZoneBases.has(cActionBase);
             const activeDiscardZone = DISCARD_ZONE_MAP.find((z) => (getActionVariant(z.action)?.base || z.action) === cActionBase)?.code || '';
             const isDeckPosAction = c.action === 'return_deck' || c.action === 'place_on_security_top';
             // 位置バリアント対応（フラグ駆動+自動グループ化）は「その他」経由選択時のみ引き続き使う

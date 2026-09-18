@@ -8968,16 +8968,43 @@ function executeRecipeStep(step, ctx, store, callback) {
       const linkTarget = ctx.card; // 対象は常にこのカード自身（target: self/self_card 前提）
       if (!linkTarget) { callback(); break; }
 
+      // リンク容量チェック（手動リンクのdoLinkと同じ計算式）。上限到達時は既存のリンクカードを
+      // 1枚選んでトラッシュへ送ってから空きを作る（2枚以上いる場合は選択UIを出す）
+      const _linkMakeRoom = (afterRoom) => {
+        if (!linkTarget.linkedCards) linkTarget.linkedCards = [];
+        const _cap = (linkTarget._linkCapacityBonus || 0) + 1;
+        if (linkTarget.linkedCards.length < _cap) { afterRoom(); return; }
+        const _doReplace = (replaced) => {
+          if (!replaced) { afterRoom(); return; }
+          const ri = linkTarget.linkedCards.indexOf(replaced);
+          if (ri !== -1) linkTarget.linkedCards.splice(ri, 1);
+          player.trash.push(replaced);
+          ctx.addLog('🔄 リンク上限のため「' + replaced.name + '」がリンクから外れてトラッシュへ');
+          ctx.renderAll();
+          afterRoom();
+        };
+        if (linkTarget.linkedCards.length === 1 || effectiveSide === 'ai') {
+          _doReplace(linkTarget.linkedCards[0]);
+        } else {
+          const _existing = linkTarget.linkedCards.slice();
+          showTrashCardPicker(_existing, 1, false, '🔗 リンク上限です。外すカードを選んでください', (picked) => {
+            _doReplace(picked && picked[0]);
+          }, _existing);
+        }
+      };
+
       // 従来パス: store経由で事前に選択済みのカードをそのままリンクする
       if (step.card) {
         const sd = store[step.card];
         const linkCard = sd && (sd.card || sd);
         if (!linkCard) { callback(); break; }
-        if (!linkTarget.linkedCards) linkTarget.linkedCards = [];
-        linkTarget.linkedCards.push(linkCard);
-        ctx.addLog('🔗 「' + linkTarget.name + '」に「' + linkCard.name + '」をリンク');
-        ctx.renderAll();
-        callback();
+        _linkMakeRoom(() => {
+          if (!linkTarget.linkedCards) linkTarget.linkedCards = [];
+          linkTarget.linkedCards.push(linkCard);
+          ctx.addLog('🔗 「' + linkTarget.name + '」に「' + linkCard.name + '」をリンク');
+          ctx.renderAll();
+          callback();
+        });
         break;
       }
 
@@ -9030,25 +9057,27 @@ function executeRecipeStep(step, ctx, store, callback) {
         } else if (entry.zone === 'evo_source' && entry.holder && Array.isArray(entry.holder.stack)) {
           const si = entry.holder.stack.indexOf(c); if (si !== -1) entry.holder.stack.splice(si, 1);
         }
-        // step.value は「💰コスト増減」UIが符号付きで保存する（減=-N/増=+N）ためそのまま加算する
-        const _linkDelta = (typeof step.value === 'number' && step.value !== 0) ? step.value : 0;
-        if (_linkDelta !== 0 && ctx.bs) {
-          const _baseCost = parseInt(c.playCost != null ? c.playCost : (c.cost || 0), 10) || 0;
-          const _payCost = Math.max(0, _baseCost + _linkDelta);
-          if (_payCost > 0) {
-            if (ctx.side === 'player') ctx.bs.memory -= _payCost; else ctx.bs.memory += _payCost;
-            ctx.addLog('💾 コストを' + (_linkDelta > 0 ? '+' : '') + _linkDelta + '軽減して' + _payCost + '支払う');
-          } else {
-            ctx.addLog('💾 支払いコスト0');
+        _linkMakeRoom(() => {
+          // step.value は「💰コスト増減」UIが符号付きで保存する（減=-N/増=+N）ためそのまま加算する
+          const _linkDelta = (typeof step.value === 'number' && step.value !== 0) ? step.value : 0;
+          if (_linkDelta !== 0 && ctx.bs) {
+            const _baseCost = parseInt(c.playCost != null ? c.playCost : (c.cost || 0), 10) || 0;
+            const _payCost = Math.max(0, _baseCost + _linkDelta);
+            if (_payCost > 0) {
+              if (ctx.side === 'player') ctx.bs.memory -= _payCost; else ctx.bs.memory += _payCost;
+              ctx.addLog('💾 コストを' + (_linkDelta > 0 ? '+' : '') + _linkDelta + '軽減して' + _payCost + '支払う');
+            } else {
+              ctx.addLog('💾 支払いコスト0');
+            }
+            ctx.updateMemGauge && ctx.updateMemGauge();
+            if (window._sendMemoryUpdate) window._sendMemoryUpdate();
           }
-          ctx.updateMemGauge && ctx.updateMemGauge();
-          if (window._sendMemoryUpdate) window._sendMemoryUpdate();
-        }
-        if (!linkTarget.linkedCards) linkTarget.linkedCards = [];
-        linkTarget.linkedCards.push(c);
-        ctx.addLog('🔗 「' + linkTarget.name + '」に「' + c.name + '」をリンク');
-        ctx.renderAll();
-        callback();
+          if (!linkTarget.linkedCards) linkTarget.linkedCards = [];
+          linkTarget.linkedCards.push(c);
+          ctx.addLog('🔗 「' + linkTarget.name + '」に「' + c.name + '」をリンク');
+          ctx.renderAll();
+          callback();
+        });
       };
 
       if (effectiveSide === 'ai') { _doLink(_linkCands[0]); break; }

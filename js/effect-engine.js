@@ -6786,23 +6786,24 @@ function executeRecipeStep(step, ctx, store, callback) {
             return;
           }
           // step.value が指定されている場合は「コストを支払わず」ではなく「支払うコストを
-          // N軽減して登場/使用」（モニモン BT26-006等）。未指定時は従来通り完全無償のまま
-          // （既存カードの挙動を変えない）
-          const _summonReduction = (typeof step.value === 'number' && step.value > 0) ? step.value : 0;
+          // 軽減して登場/使用」（モニモン BT26-006等）。未指定時は従来通り完全無償のまま
+          // （既存カードの挙動を変えない）。エディタの「💰コスト増減」UIは符号付きで保存する
+          // （減=-N・増=+N）ため、ここでは value をそのままコストの増減量として扱う
+          const _summonDelta = (typeof step.value === 'number' && step.value !== 0) ? step.value : 0;
           const _doSummonHT = (c) => {
             if (!c) { callback(); return; }
             const hi = player.hand.indexOf(c); if (hi !== -1) player.hand.splice(hi, 1);
             const ti = player.trash.indexOf(c); if (ti !== -1) player.trash.splice(ti, 1);
-            if (_summonReduction > 0) {
+            if (_summonDelta !== 0) {
               const _baseCost = parseInt(c.playCost != null ? c.playCost : (c.cost || 0), 10) || 0;
-              const _payCost = Math.max(0, _baseCost - _summonReduction);
+              const _payCost = Math.max(0, _baseCost + _summonDelta);
               if (_payCost > 0 && ctx.bs) {
                 if (ctx.side === 'player') ctx.bs.memory -= _payCost; else ctx.bs.memory += _payCost;
-                ctx.addLog('💾 コストを' + _summonReduction + '軽減して' + _payCost + '支払う');
+                ctx.addLog('💾 コストを' + (_summonDelta > 0 ? '+' : '') + _summonDelta + '軽減して' + _payCost + '支払う');
                 ctx.updateMemGauge && ctx.updateMemGauge();
                 if (window._sendMemoryUpdate) window._sendMemoryUpdate();
               } else {
-                ctx.addLog('💾 コストを' + _summonReduction + '軽減（支払いコスト0）');
+                ctx.addLog('💾 支払いコスト0');
               }
             }
             // オプションカードは「登場」ではなく「使用」として解決する
@@ -8964,14 +8965,101 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === リンク（手札/Bエリアからリンク） ===
     case 'link': {
-      const sd = step.card ? store[step.card] : null;
-      const linkCard = sd && (sd.card || sd);
-      if (!linkCard || !ctx.card) { callback(); break; }
-      if (!ctx.card.linkedCards) ctx.card.linkedCards = [];
-      ctx.card.linkedCards.push(linkCard);
-      ctx.addLog('🔗 「' + ctx.card.name + '」に「' + linkCard.name + '」をリンク');
-      ctx.renderAll();
-      callback();
+      const linkTarget = ctx.card; // 対象は常にこのカード自身（target: self/self_card 前提）
+      if (!linkTarget) { callback(); break; }
+
+      // 従来パス: store経由で事前に選択済みのカードをそのままリンクする
+      if (step.card) {
+        const sd = store[step.card];
+        const linkCard = sd && (sd.card || sd);
+        if (!linkCard) { callback(); break; }
+        if (!linkTarget.linkedCards) linkTarget.linkedCards = [];
+        linkTarget.linkedCards.push(linkCard);
+        ctx.addLog('🔗 「' + linkTarget.name + '」に「' + linkCard.name + '」をリンク');
+        ctx.renderAll();
+        callback();
+        break;
+      }
+
+      // 新パス: from(取得元ゾーン) + from_filter で手札/進化元等から探して選ばせる
+      // （セブンコード系「手札かこのデジモンの進化元から〜コスト-Nでリンクできる」用）
+      const _linkFromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
+      if (_linkFromZones.length === 0) { callback(); break; }
+      const _linkFilter = step.from_filter || step.filter || {};
+      const _linkOptional = !!step.optional;
+
+      const _linkCands = [];
+      if (_linkFromZones.includes('hand')) {
+        (player.hand || []).forEach(c => {
+          if (c && cardMatchesFilter(c, _linkFilter)) _linkCands.push({ card: c, zone: 'hand' });
+        });
+      }
+      if (_linkFromZones.includes('trash')) {
+        (player.trash || []).forEach(c => {
+          if (c && cardMatchesFilter(c, _linkFilter)) _linkCands.push({ card: c, zone: 'trash' });
+        });
+      }
+      if (_linkFromZones.includes('evo_source')) {
+        // evo_source_owner: 'self'=このデジモン自身の進化元のみ / 'other'=他の自分のデジモンの
+        // 進化元のみ / 未指定=自分の全デジモン(このデジモン含む)の進化元から探す
+        const _owner = step.evo_source_owner;
+        (player.battleArea || []).forEach(holder => {
+          if (!holder || !Array.isArray(holder.stack)) return;
+          if (_owner === 'self' && holder !== linkTarget) return;
+          if (_owner === 'other' && holder === linkTarget) return;
+          holder.stack.forEach(s => {
+            if (s && cardMatchesFilter(s, _linkFilter)) _linkCands.push({ card: s, zone: 'evo_source', holder });
+          });
+        });
+      }
+
+      if (_linkCands.length === 0) {
+        ctx.addLog('💨 条件を満たすカードがありません');
+        if (_linkOptional) { ctx.addLog('☓ 「使わない」を選択'); callback(); }
+        else showEffectFailed('効果を発動できませんでした', callback);
+        return;
+      }
+
+      const _doLink = (entry) => {
+        if (!entry) { callback(); return; }
+        const c = entry.card;
+        if (entry.zone === 'hand') {
+          const hi = player.hand.indexOf(c); if (hi !== -1) player.hand.splice(hi, 1);
+        } else if (entry.zone === 'trash') {
+          const ti = player.trash.indexOf(c); if (ti !== -1) player.trash.splice(ti, 1);
+        } else if (entry.zone === 'evo_source' && entry.holder && Array.isArray(entry.holder.stack)) {
+          const si = entry.holder.stack.indexOf(c); if (si !== -1) entry.holder.stack.splice(si, 1);
+        }
+        // step.value は「💰コスト増減」UIが符号付きで保存する（減=-N/増=+N）ためそのまま加算する
+        const _linkDelta = (typeof step.value === 'number' && step.value !== 0) ? step.value : 0;
+        if (_linkDelta !== 0 && ctx.bs) {
+          const _baseCost = parseInt(c.playCost != null ? c.playCost : (c.cost || 0), 10) || 0;
+          const _payCost = Math.max(0, _baseCost + _linkDelta);
+          if (_payCost > 0) {
+            if (ctx.side === 'player') ctx.bs.memory -= _payCost; else ctx.bs.memory += _payCost;
+            ctx.addLog('💾 コストを' + (_linkDelta > 0 ? '+' : '') + _linkDelta + '軽減して' + _payCost + '支払う');
+          } else {
+            ctx.addLog('💾 支払いコスト0');
+          }
+          ctx.updateMemGauge && ctx.updateMemGauge();
+          if (window._sendMemoryUpdate) window._sendMemoryUpdate();
+        }
+        if (!linkTarget.linkedCards) linkTarget.linkedCards = [];
+        linkTarget.linkedCards.push(c);
+        ctx.addLog('🔗 「' + linkTarget.name + '」に「' + c.name + '」をリンク');
+        ctx.renderAll();
+        callback();
+      };
+
+      if (effectiveSide === 'ai') { _doLink(_linkCands[0]); break; }
+      if (_linkCands.length === 1 && !_linkOptional) { _doLink(_linkCands[0]); break; }
+      const _linkCardList = _linkCands.map(e => e.card);
+      showTrashCardPicker(_linkCardList, 1, _linkOptional, '🔗 リンクするカードを選んでください', (picked) => {
+        if (_linkOptional && (!picked || picked.length === 0)) { ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
+        const chosen = picked && picked[0];
+        const entry = _linkCands.find(e => e.card === chosen);
+        _doLink(entry || null);
+      }, _linkCardList);
       break;
     }
 

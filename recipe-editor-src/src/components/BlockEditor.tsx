@@ -2266,7 +2266,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               {/* 登場/使用・進化・リンクのときだけ「💰 コスト増減」を出し、通常の「値」入力は隠す
                   （同じ block.value を使うが、符号付き数値を直接入力させるより
                   増/減ボタン+絶対値入力の方が分かりやすいため）。
-                  ※ エンジン側は現状 evolve/link の value を未参照（要実装）。
+                  ※ エンジン側は現状 evolve の value を未参照（要実装）。link は対応済み。
                   増=+N（コスト+N）/ 減=-N（コスト-N）として value に符号付きで保存する */}
               {!isEditingAlt && (effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'link') ? (
                 <div className="field">

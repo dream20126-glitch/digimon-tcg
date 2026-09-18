@@ -644,13 +644,25 @@ const COMMON_COST_ACTIONS: { code: string; label: string }[] = [
 //   - security (security_trash_select) は step.target が 'own' で始まれば自分側になる実装済み
 //   - evo_source (evo_discard) は現状エンジンが常に「相手」の進化元を破棄する実装のため、
 //     target:'own' を保存しておいても今は反映されない（⚠未実装。該当カードが来たら追加実装する）
-const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: string; warn?: string }[] = [
-  { code: 'evo_source', label: '進化元', action: 'evo_discard', target: 'own', warn: '⚠ エンジン未対応: 現在は相手の進化元を破棄する動作になります（自分側の実装は該当カードが来たら追加予定）' },
+// hasPosition:true の場所は「進化元/テイマー/セキュリティ」のように積まれたカードから
+// 1枚選ぶ概念があるため、下に「上から/下から/選んで/全て」ボタンを追加表示する
+// （実体は POSITION_VARIANTS と同じ仕組みでアクションコードのsuffixを切り替える。
+// costIsPositional/costVariantOptions/onCostVariantChange を流用）。
+// 手札/デッキには順序の概念が無い（デッキは上からのみ固定）ため出さない。
+const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: string; warn?: string; hasPosition?: boolean }[] = [
+  { code: 'evo_source', label: '進化元', action: 'evo_discard_top', target: 'own', warn: '⚠ エンジン未対応: 現在は相手の進化元を破棄する動作になります（自分側の実装は該当カードが来たら追加予定）', hasPosition: true },
+  // テイマーの下＝進化元と同じスタック機構のため、evo_discard系アクションを流用
+  // （エンジン側は現状 target を見ておらず常に相手デジモンの進化元を対象にするため要実装）
+  { code: 'tamer', label: 'テイマー', action: 'evo_discard_top', target: 'own_tamer', warn: '⚠ エンジン未対応: テイマーの下からの破棄は現状動作しません（該当カードが来たら追加実装します）', hasPosition: true },
   { code: 'hand', label: '手札', action: 'cost_discard' },
-  { code: 'security', label: 'セキュリティ', action: 'security_trash_select', target: 'own_security' },
+  { code: 'security', label: 'セキュリティ', action: 'security_trash_select', target: 'own_security', hasPosition: true },
   { code: 'deck', label: 'デッキ', action: 'deck_trash_top' },
 ];
 const DISCARD_ACTION_CODES = new Set(DISCARD_ZONE_MAP.map((z) => z.action));
+// 位置サフィックス違い（evo_discard_top/_bottom/_select/_all 等）を同一ゾーンとして
+// 認識するためのベースコード集合。getActionVariant は POSITION_VARIANTS 定義より前に
+// 呼んでも問題ない（function 宣言は巻き上げられるため）
+const DISCARD_ZONE_BASES = new Set(DISCARD_ZONE_MAP.map((z) => getActionVariant(z.action)?.base || z.action));
 // 「デッキに戻す」「セキュリティに置く」: 押すと「下/上/下か上」の位置ボタンが現れる（CostStep.deckPosition）。
 // セキュリティに置くは現状エンジンが常に「上」固定のため、下/下か上を選んでも保存のみで動作は上になる
 const DECKPOS_COST_ACTIONS: { code: string; label: string }[] = [
@@ -2759,11 +2771,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>コストなし</div>
           )}
           {costs.map((c, i) => {
+            // 位置サフィックス違い（evo_discard_top/_bottom/_select/_all 等）も同じ場所として
+            // 扱えるよう、比較は常にベースコード（サフィックスを剥がしたもの）で行う
+            const cActionBase = getActionVariant(c.action || '')?.base || (c.action || '');
             const isCommonCostAction = COMMON_COST_ACTIONS.some((a) => a.code === (c.action || ''))
-              || DISCARD_ACTION_CODES.has(c.action || '')
+              || DISCARD_ZONE_BASES.has(cActionBase)
               || DECKPOS_COST_ACTIONS.some((a) => a.code === (c.action || ''));
-            const isDiscardActive = DISCARD_ACTION_CODES.has(c.action || '');
-            const activeDiscardZone = DISCARD_ZONE_MAP.find((z) => z.action === c.action)?.code || '';
+            const isDiscardActive = DISCARD_ZONE_BASES.has(cActionBase);
+            const activeDiscardZone = DISCARD_ZONE_MAP.find((z) => (getActionVariant(z.action)?.base || z.action) === cActionBase)?.code || '';
             const isDeckPosAction = c.action === 'return_deck' || c.action === 'place_on_security_top';
             // 位置バリアント対応（フラグ駆動+自動グループ化）は「その他」経由選択時のみ引き続き使う
             const { options: costActionOptions, flaggedBases: costFlaggedBases, autoGroupBases: costAutoGroupBases } = buildActionDisplay(dict.actions);
@@ -2947,6 +2962,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         options={DISCARD_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
                         value={activeDiscardZone}
                         onChange={(zoneCode) => {
+                          if (zoneCode === activeDiscardZone) return; // 選び直し済みの位置指定を巻き戻さない
                           const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
                           if (!z) return;
                           updateCost(i, { ...c, action: z.action, target: z.target || '', fromZones: [z.code] });
@@ -2959,6 +2975,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
                         ) : null;
                       })()}
+                      {/* 進化元/テイマー/セキュリティのときだけ、積まれたカードのどこから破棄するか選べる */}
+                      {DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone)?.hasPosition
+                        && costIsPositional && costVariantOptions.length > 0 && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                          <ButtonGroup
+                            options={costVariantOptions.map((o) => ({ code: String(o.value), label: o.label }))}
+                            value={costCurrentSuffix}
+                            onChange={onCostVariantChange}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                   {/* デッキに戻す/セキュリティに置く: 位置ボタン（下/上/下か上） */}

@@ -661,9 +661,11 @@ const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: 
 const DISCARD_ACTION_CODES = new Set(DISCARD_ZONE_MAP.map((z) => z.action));
 // 「デッキに戻す」「セキュリティに置く」: 押すと「下/上/下か上」の位置ボタンが現れる（CostStep.deckPosition）。
 // セキュリティに置くは現状エンジンが常に「上」固定のため、下/下か上を選んでも保存のみで動作は上になる
-const DECKPOS_COST_ACTIONS: { code: string; label: string }[] = [
+// hasFaceOption: 辞書に登録されていないハードコードのボタンのため、辞書のフラグではなく
+// ここで直接指定する（例:「セキュリティに置く」＝自分のセキュリティの上に裏向き/表向きで置ける）
+const DECKPOS_COST_ACTIONS: { code: string; label: string; hasFaceOption?: boolean }[] = [
   { code: 'return_deck', label: 'デッキに戻す' },
-  { code: 'place_on_security_top', label: 'セキュリティに置く' },
+  { code: 'place_on_security_top', label: 'セキュリティに置く', hasFaceOption: true },
 ];
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
@@ -2801,7 +2803,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               const exact = dict.actions.find((a) => a.code === (c.action || ''));
               if (exact?.[flag]) return true;
               const base = costCurVariant ? dict.actions.find((a) => a.code === costCurVariant!.base) : undefined;
-              return !!base?.[flag];
+              if (base?.[flag]) return true;
+              // 辞書に登録されていないハードコードのボタン（DECKPOS_COST_ACTIONS等）用
+              const deckPosEntry = DECKPOS_COST_ACTIONS.find((a) => a.code === (c.action || ''));
+              return flag === 'hasFaceOption' && !!deckPosEntry?.hasFaceOption;
             };
             const costIsFlaggedBaseDirect = costFlaggedBases.has(c.action || '');
             const costIsVariantOfFlagged = !!(costCurVariant && (costFlaggedBases.has(costCurVariant.base) || costAutoGroupBases.has(costCurVariant.base)));

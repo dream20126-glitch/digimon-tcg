@@ -2514,8 +2514,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eIsUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(eBase);
             const setEffTgt = (l1: string, l2?: string) => {
               if (!l1) { updateEffect({ target: '' }); return; }
-              if (l1 === 'self') { updateEffect({ target: 'self_card' + eSuffix }); return; }
-              if (l1 === 'same_target') { updateEffect({ target: 'same_target' + eSuffix }); return; }
+              // self/self_card・same_target は「対象数」UIを表示しない（eHideCount）ため、
+              // 直前の対象で付いていた数指定を持ち越さないようここで破棄する
+              if (l1 === 'self') { updateEffect({ target: 'self_card' }); return; }
+              if (l1 === 'same_target') { updateEffect({ target: 'same_target' }); return; }
               const useL2 = l2 || (eCurTgt.l1 === l1 && eCurTgt.l2 ? eCurTgt.l2 : 'digimon');
               updateEffect({ target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '') + eSuffix });
             };
@@ -2573,8 +2575,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               ? { altActions: [], altActionsOp: undefined, targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') }
               : {};
             if (!l1) { onChange({ ...block, ...cleared, target: '' }); return; }
-            if (l1 === 'self') { onChange({ ...block, ...cleared, target: 'self_card' + tgtSuffix }); return; }
-            if (l1 === 'same_target') { onChange({ ...block, ...cleared, target: 'same_target' + tgtSuffix }); return; }
+            // self/self_card・same_target は「対象数」UI自体を表示しない（hideCount）ため、
+            // 直前に他の対象で付いていた数指定(例: ":1")を持ち越さないようここで破棄する
+            if (l1 === 'self') { onChange({ ...block, ...cleared, target: 'self_card' }); return; }
+            if (l1 === 'same_target') { onChange({ ...block, ...cleared, target: 'same_target' }); return; }
             const l2 = curTgt.l1 === l1 && curTgt.l2 ? curTgt.l2 : 'digimon';
             onChange({ ...block, ...cleared, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + l2] || '') + tgtSuffix });
           };

@@ -3149,7 +3149,7 @@ function _keywordJpName(flag) {
     material_save:'マテリアルセーブ', blast_evolve:'ブラスト進化',
     blast_jogress:'ブラストジョグレス', vortex:'ヴォルテクス',
     overclock:'オーバークロック', ice_armor:'氷装', decode:'デコード',
-    fragment:'フラグメント', execute:'エグゼキュート', progress:'プログレス',
+    fragment:'フラグメント', execute:'エグゼキュート', attack_immunity:'プログレス',
     training:'トレーニング', prevent_destroy:'消滅耐性',
     prevent_battle_destroy:'バトル耐性', immune:'効果耐性',
     security_attack_plus:'Sアタック+',
@@ -3550,7 +3550,7 @@ export function applyPermanentEffects(bs, side, context) {
           else if (flag === 'indomitable') { card._permEffects.indomitable = true; }
           else if (flag === 'combo') { card._permEffects.combo = true; }
           // 新規追加
-          else if (flag === 'progress') { card._permEffects.progress = true; }
+          else if (flag === 'attack_immunity') { card._permEffects.attack_immunity = true; }
           else if (flag === 'link_plus') {
             const val = (typeof p === 'object' && p.value) ? p.value : 1;
             card._permEffects.linkPlus = (card._permEffects.linkPlus || 0) + val;
@@ -3694,7 +3694,7 @@ export function applyPermanentEffects(bs, side, context) {
             else if (flag === 'jamming') { card._permEffects.jamming = true; }
             else if (flag === 'reboot') { card._permEffects.reboot = true; }
             // 新規追加（進化元由来も同等扱い）
-            else if (flag === 'progress') { card._permEffects.progress = true; }
+            else if (flag === 'attack_immunity') { card._permEffects.attack_immunity = true; }
             else if (flag === 'link_plus') {
               const val = (typeof p === 'object' && p.value) ? p.value : 1;
               card._permEffects.linkPlus = (card._permEffects.linkPlus || 0) + val;
@@ -3843,7 +3843,7 @@ export function applyPermanentEffects(bs, side, context) {
             else if (flag === 'evade') { card._permEffects.evade = true; }
             else if (flag === 'armor_break') { card._permEffects.armor_break = true; }
             else if (flag === 'indomitable') { card._permEffects.indomitable = true; }
-            else if (flag === 'progress') { card._permEffects.progress = true; }
+            else if (flag === 'attack_immunity') { card._permEffects.attack_immunity = true; }
             else if (flag === 'ice_armor') { card._permEffects.iceArmor = true; }
             else if (flag === 'advance') { card._permEffects.advance = true; card._permEffects.charge = true; }
             else if (flag === 'security_attack_minus') {
@@ -4570,8 +4570,12 @@ function checkConditions(conditions, card, bs, side) {
         break;
       }
       case 'cond_feature_contains': {
-        // 特徴に指定文字列を含む
-        if (cond.value && card.feature && !String(card.feature).includes(cond.value)) return false;
+        // 特徴に指定文字列を含む。カンマ区切りで複数指定した場合はOR
+        // （いずれか1つでも含んでいればOK。エディタの「特徴」複数タグ入力に対応）
+        if (cond.value && card.feature) {
+          const feats = String(cond.value).split(',').map(s => s.trim()).filter(Boolean);
+          if (feats.length > 0 && !feats.some(f => String(card.feature).includes(f))) return false;
+        }
         break;
       }
       case 'cond_link_state': {

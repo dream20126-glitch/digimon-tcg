@@ -54,7 +54,7 @@ export const IMPLEMENTED_KEYWORDS = new Set<string>([
   'michizure', 'armor_break', 'evade', 'barrier', 'indomitable',
   'combo', 'collision', 'charge', 'security_attack_plus',
   // Stage 1 で追加（passive flag のみ・状態保持型）
-  'progress', 'link_plus', 'ice_armor', 'advance', 'security_attack_minus',
+  'attack_immunity', 'link_plus', 'ice_armor', 'advance', 'security_attack_minus',
   // Stage 2 追加
   'cant_be_blocked',
   // Stage 4 追加（destroy chain 統合済）

@@ -4878,24 +4878,17 @@ function ConditionsHybridEditor({
                          （「紫のデジモンかオプション」はタイプで デジモン,オプション を両方トグルするだけで表現可能）
                          ※ cond_type の複数値は step.filter (type_in配列) でのみ解釈される。
                            トリガー条件/発動条件側は単一値exact-match想定なのでそちらでは使わないこと。
-                         ※ cond_feature_contains の複数値は、対象の絞り込み(supportsMultiValue)の
-                           文脈でのみ step.filter (feature_includes配列・"/" 区切りの特徴をOR部分一致)
-                           として実際に解釈される。トリガー条件/発動条件側(checkConditions)は単一値の
-                           部分一致想定のため、そちらで2つ以上選ぶとエンジン未対応（保存のみ可）。
+                         ※ cond_feature_contains の複数値（カンマ区切り）は、対象の絞り込み文脈では
+                           step.filter (feature_includes配列) として、トリガー条件/発動条件/コスト対象の
+                           絞り込み文脈(checkConditions)ではカンマ区切りのOR判定として、どちらも
+                           「いずれか1つを含む」の意味で解釈される（全箇所対応済み）
                          ※ cond_color の複数値（2色以上選択）は現状どの箇所でもエンジン未対応
                            （多色カードは1枚で複数の色を持てるため、type_inと単純に同じ扱いにはできない） */
                       c.base === 'cond_feature_contains' ? (() => {
                         const feats = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
                         const setFeats = (next: string[]) => updateAt(i, { value: next.join(',') });
                         return (
-                          <>
-                            <MultiTextTags values={feats} onChange={setFeats} placeholder="例: サイボーグ型" accentColor={colors.accent} />
-                            {!supportsMultiValue && feats.length > 1 && (
-                              <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
-                                ⚠ 対象の絞り込み以外の場所で2つ以上指定した場合はエンジン未対応です（保存はできますが動作しません）
-                              </div>
-                            )}
-                          </>
+                          <MultiTextTags values={feats} onChange={setFeats} placeholder="例: サイボーグ型" accentColor={colors.accent} />
                         );
                       })() : (() => {
                         const optList = c.base === 'cond_type' ? RULE_TYPE_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))

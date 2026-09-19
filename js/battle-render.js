@@ -52,7 +52,7 @@ const KEYWORD_DISPLAY_NAMES = {
   blast_evolve: 'ブラスト進化', blast_jogress: 'ブラストジョグレス',
   vortex: 'ヴォルテクス', overclock: 'オーバークロック',
   ice_armor: '氷装', decode: 'デコード', fragment: 'フラグメント',
-  execute: 'エグゼキュート', progress: 'プログレス', training: 'トレーニング',
+  execute: 'エグゼキュート', attack_immunity: 'プログレス', training: 'トレーニング',
   prevent_destroy: '消滅耐性', prevent_battle_destroy: 'バトル耐性',
   immune: '効果耐性',
 };
@@ -62,7 +62,7 @@ function _keywordColor(code) {
   if (['michizure', 'penetrate', 'piercing', 'rush', 'charge', 'execute', 'vortex', 'overclock'].includes(code)) return '#ff5577'; // 攻撃系
   if (['barrier', 'evade', 'armor_break', 'indomitable', 'scapegoat', 'fragment', 'prevent_destroy', 'prevent_battle_destroy', 'ice_armor'].includes(code)) return '#5599ff'; // 防御系
   if (['blocker', 'combo', 'collision', 'decoy', 'force_block'].includes(code)) return '#44dd88'; // ブロック・支援系
-  if (['jamming', 'progress', 'immune', 'reboot'].includes(code)) return '#44ddcc'; // 状態系
+  if (['jamming', 'attack_immunity', 'immune', 'reboot'].includes(code)) return '#44ddcc'; // 状態系
   if (['absorb_evolve', 'blast_evolve', 'blast_jogress', 'save', 'material_save', 'mind_link', 'partition', 'delay'].includes(code)) return '#cc77ff'; // 進化・配置系
   return '#aaaaaa';
 }

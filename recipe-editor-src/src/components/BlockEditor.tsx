@@ -440,6 +440,608 @@ function KeywordEntriesEditor({
   );
 }
 
+// コスト（「〇〇することで」発動）欄。通常のカードレシピ編集（発動条件の下）と
+// コスト軽減トリガー（アセンブリ等）の両方から同じ見た目・同じ機能で使えるよう共通化した。
+// action/target/fromZones/conditions等の意味はどちらの文脈でも同じ（block.costs → step.cost[]）
+function CostListEditor({
+  dict, costs, updateCost, addCost, removeCost, noCostLabel,
+}: {
+  dict: DictAPI;
+  costs: CostStep[];
+  updateCost: (i: number, c: CostStep) => void;
+  addCost: () => void;
+  removeCost: (i: number) => void;
+  noCostLabel?: string;
+}) {
+  const [costOtherOpen, setCostOtherOpen] = useState<Record<number, boolean>>({});
+  return (
+    <>
+      {costs.length === 0 && (
+        <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>{noCostLabel || 'コストなし'}</div>
+      )}
+      {costs.map((c, i) => {
+        // 位置サフィックス違い（evo_discard_top/_bottom/_select/_all 等）も同じ場所として
+        // 扱えるよう、比較は常にベースコード（サフィックスを剥がしたもの）で行う。
+        // ※ getActionVariant は POSITION_VARIANTS（このファイル下部でconst定義）を参照するため、
+        //   モジュール読み込み時（top-level）には呼べない（TDZエラーで画面が真っ白になる）。
+        //   ここ（コンポーネントのレンダー時＝モジュール読み込み完了後）で計算する
+        const discardZoneBases = new Set(DISCARD_ZONE_MAP.map((z) => getActionVariant(z.action)?.base || z.action));
+        const cActionBase = getActionVariant(c.action || '')?.base || (c.action || '');
+        const isCommonCostAction = COMMON_COST_ACTIONS.some((a) => a.code === (c.action || ''))
+          || discardZoneBases.has(cActionBase)
+          || DECKPOS_COST_ACTIONS.some((a) => a.code === (c.action || ''))
+          || PLACE_ACTION_CODES.has(c.action || '');
+        const isDiscardActive = discardZoneBases.has(cActionBase);
+        // 「進化元」と「テイマー」はどちらも evo_discard 系を流用していてアクションの
+        // ベースコードだけでは区別できないため、target も一致条件に加えて逆引きする
+        // （target が無い場所=手札/デッキはアクションのみで一意に決まる）
+        // 対象セクション側で「下/一番下」(_stack/_stack_bottom サフィックス)を付けても
+        // 場所の判定が巻き戻らないよう、target 比較はサフィックスを剥がしたベースで行う
+        const activeDiscardZone = DISCARD_ZONE_MAP.find((z) => {
+          if ((getActionVariant(z.action)?.base || z.action) !== cActionBase) return false;
+          if (z.target !== undefined && splitStackSuffix((c.target || '').split(':')[0]).base !== z.target) return false;
+          return true;
+        })?.code || '';
+        // 「〇〇に置く」: PLACE_ZONE_MAP は各ゾーンのアクションコードが全て異なる
+        // （place_on_security_top/place_under_tamer/place_under_digimon）ため、
+        // 破棄のようなtarget逆引きは不要でアクションコードだけで一意に決まる
+        const isPlaceActive = PLACE_ACTION_CODES.has(c.action || '');
+        const activePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === c.action)?.code || '';
+        const isDeckPosAction = c.action === 'return_deck';
+        // 位置バリアント対応（フラグ駆動+自動グループ化）は「その他」経由選択時のみ引き続き使う
+        const { options: costActionOptions, flaggedBases: costFlaggedBases, autoGroupBases: costAutoGroupBases } = buildActionDisplay(dict.actions);
+        const costCurVariant = getActionVariant(c.action || '');
+        // 📥場所 フラグ判定用（hasFromZones。テイマーの下に置く等、辞書登録された新規
+        // アクション向け）: まずアクションコード完全一致で辞書を引き、無ければ
+        // 位置バリアントのベースコードでも引く（両対応）。
+        // ※ 'place_on_security_top' のように、位置バリアントの一種ではないのに
+        //   たまたま "_top" で終わるアクション名だと costCurVariant.base が
+        //   実在しない 'place_on_security' になってしまうため、完全一致を優先する
+        const costActionHasFlag = (flag: 'hasFromZones' | 'hasFaceOption'): boolean => {
+          const exact = dict.actions.find((a) => a.code === (c.action || ''));
+          if (exact?.[flag]) return true;
+          const base = costCurVariant ? dict.actions.find((a) => a.code === costCurVariant!.base) : undefined;
+          return !!base?.[flag];
+        };
+        const costIsFlaggedBaseDirect = costFlaggedBases.has(c.action || '');
+        const costIsVariantOfFlagged = !!(costCurVariant && (costFlaggedBases.has(costCurVariant.base) || costAutoGroupBases.has(costCurVariant.base)));
+        const costIsPositional = costIsFlaggedBaseDirect || costIsVariantOfFlagged;
+
+        const costNormalizedActionValue = (() => {
+          if (costIsFlaggedBaseDirect) return c.action || '';
+          if (costCurVariant && costFlaggedBases.has(costCurVariant.base)) return costCurVariant.base;
+          if (costCurVariant && costAutoGroupBases.has(costCurVariant.base)) return costCurVariant.base + '_top';
+          return c.action || '';
+        })();
+
+        const costVariantOptions: SelectOption[] = (() => {
+          if (!costIsPositional) return [];
+          if (costIsFlaggedBaseDirect || (costCurVariant && costFlaggedBases.has(costCurVariant.base))) {
+            return POSITION_VARIANTS.map((v) => ({ value: v.suffix, label: v.label }));
+          }
+          if (costCurVariant && costAutoGroupBases.has(costCurVariant.base)) {
+            return POSITION_VARIANTS
+              .filter((v) => dict.actions.some((a) => a.code === costCurVariant.base + v.suffix))
+              .map((v) => ({ value: v.suffix, label: v.label }));
+          }
+          return [];
+        })();
+        const costCurrentSuffix = costCurVariant ? costCurVariant.suffix : '';
+
+        function onCostActionChange(newCode: string) {
+          const newIsFlaggedBase = costFlaggedBases.has(newCode);
+          const newV = getActionVariant(newCode);
+          const cur = c.action || '';
+          const curV = getActionVariant(cur);
+          const newBase = newIsFlaggedBase ? newCode : (newV ? newV.base : null);
+          const curBase = curV ? curV.base : (costFlaggedBases.has(cur) ? cur : null);
+          if (newBase && curBase && newBase === curBase) return;
+          if (newIsFlaggedBase) {
+            updateCost(i, { ...c, action: newCode + '_top' });
+            return;
+          }
+          updateCost(i, { ...c, action: newCode });
+        }
+        function onCostVariantChange(newSuffix: string) {
+          if (!newSuffix) return;
+          const base = costIsFlaggedBaseDirect ? (c.action || '') : (costCurVariant ? costCurVariant.base : '');
+          if (!base) return;
+          updateCost(i, { ...c, action: base + newSuffix });
+        }
+
+        // 対象（TARGET_SELのL1/L2ボタン方式。アクションの対象と同じ体系）
+        // 位置（本体/下/一番下）はカウント接尾辞(:1等)より前のbase側に付くので、
+        // カウント分離の前にまずstackサフィックスを剥がす
+        const cTgtRaw = (c.target || '').split(':')[0];
+        const cTgtSuffix = (c.target || '').substring(cTgtRaw.length);
+        const { base: cTgtBase, pos: cTgtStackPos } = splitStackSuffix(cTgtRaw);
+        const cCurTgt = TARGET_SEL_CODE_TO_L1L2[cTgtBase] || { l1: '', l2: '' };
+        // コストの対象では「オプション/プレイヤー/セキュリティ」を選択肢から除外
+        const cTgtL2Options = (TARGET_SEL_L2[cCurTgt.l1] || []).filter((o) => !['option', 'player', 'security'].includes(o.code));
+        const cHideCount = cTgtBase === 'self' || cTgtBase === 'self_card' || cTgtBase === 'same_target';
+        // デジモン/テイマー本体のときだけ「本体/下/一番下」を選べる（進化元／テイマーの
+        // 下の"既存の"カードを指す。self=このカード自身の下も含む）。
+        // 「〇〇に置く」系アクション（place_under_tamer 等）は新しいカードを追加する側で
+        // 既存スタック内カードを指す概念が無い（位置は📍位置/deckPositionで別途指定する）
+        // ため、対象がテイマー等でもこの欄自体を出さない
+        const showCostStackPos = !PLACE_ACTION_CODES.has(c.action || '')
+          && (cCurTgt.l1 === 'self' || cCurTgt.l2 === 'digimon' || cCurTgt.l2 === 'tamer');
+        const setCostStackPos = (pos: StackPos) => updateCost(i, { ...c, target: joinStackSuffix(cTgtBase, pos) + cTgtSuffix });
+        const setCostTgt = (l1: string, l2?: string) => {
+          if (!l1) { updateCost(i, { ...c, target: '' }); return; }
+          if (l1 === 'self') { updateCost(i, { ...c, target: joinStackSuffix('self_card', cTgtStackPos) + cTgtSuffix }); return; }
+          if (l1 === 'same_target') { updateCost(i, { ...c, target: 'same_target' + cTgtSuffix }); return; }
+          const useL2 = l2 || (cCurTgt.l1 === l1 && cCurTgt.l2 ? cCurTgt.l2 : 'digimon');
+          const newBase = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '';
+          // 位置は「デジモン/テイマー」を維持したときだけ引き継ぐ（カード/オプション等に
+          // 切り替えたら位置指定自体が無意味になるため破棄する）
+          const keepPos = useL2 === 'digimon' || useL2 === 'tamer';
+          updateCost(i, { ...c, target: joinStackSuffix(newBase, keepPos ? cTgtStackPos : '') + cTgtSuffix });
+        };
+        // 「下/一番下」を選んだときだけ、積まれているカードの裏表・種別で絞り込める
+        // （例:「テイマーの下にある裏向きのカードを破棄する」コスト）。
+        // 実体は c.conditions への cond_face_down/cond_face_up + cond_type の追加。
+        // 裏表・種別はそれぞれ単独項目（同時に2種類を選ぶ意味は無い）なので、
+        // 見た目は横並びの複数選択ボタンだが内部では各グループ排他で1件ずつ管理する
+        const costFaceType = (c.conditions || []).reduce((acc: { face: string; type: string }, p) => {
+          if (p.base === 'cond_face_down') acc.face = 'face_down';
+          else if (p.base === 'cond_face_up') acc.face = 'face_up';
+          else if (p.base === 'cond_type') acc.type = COST_STACK_TYPE_VALUE_TO_CODE[p.value || ''] || '';
+          return acc;
+        }, { face: '', type: '' });
+        const costFaceTypeActive = [costFaceType.face, costFaceType.type].filter(Boolean);
+        const toggleCostFaceType = (code: string, on: boolean) => {
+          const opt = COST_STACK_FACE_TYPE_OPTS.find((o) => o.code === code);
+          if (!opt) return;
+          let next = (c.conditions || []).filter((p) =>
+            opt.group === 'face' ? (p.base !== 'cond_face_down' && p.base !== 'cond_face_up') : p.base !== 'cond_type'
+          );
+          if (on) {
+            next = opt.group === 'face'
+              ? [...next, { base: code === 'face_down' ? 'cond_face_down' : 'cond_face_up' }]
+              : [...next, { base: 'cond_type', value: COST_STACK_TYPE_CODE_TO_VALUE[code] }];
+          }
+          updateCost(i, { ...c, conditions: next });
+        };
+
+        return (
+          <div key={i} style={{ marginBottom: 6, padding: 6, border: '1px solid #ffe0b2', borderRadius: 4, background: '#fffbe6' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 11, color: '#b76e00', fontWeight: 'bold' }}>コスト{i + 1}</div>
+              <button
+                onClick={() => removeCost(i)}
+                style={{ padding: '0 8px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, height: 22 }}
+              >
+                ✕
+              </button>
+            </div>
+            {/* アクション（よく使うコストアクション + 破棄(場所) + デッキに戻す/セキュリティに置く(位置) + その他） */}
+            <div style={{ marginTop: 4 }}>
+              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>アクション</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {COMMON_COST_ACTIONS.map((a) => {
+                  const active = c.action === a.code;
+                  return (
+                    <button
+                      key={a.code}
+                      type="button"
+                      onClick={() => updateCost(i, { ...c, action: a.code })}
+                      style={{
+                        padding: '3px 9px', borderRadius: 5,
+                        border: active ? '2px solid #b76e00' : '1px solid #bbb',
+                        background: active ? '#b76e00' : '#f5f5f5',
+                        color: active ? '#fff' : '#333',
+                        fontWeight: active ? 'bold' : 'normal',
+                        cursor: 'pointer', fontSize: 11,
+                      }}
+                    >
+                      {a.label}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isDiscardActive) return;
+                    const z = DISCARD_ZONE_MAP.find((zz) => zz.code === 'hand')!;
+                    updateCost(i, { ...c, action: z.action, target: z.target || c.target, fromZones: [z.code] });
+                  }}
+                  style={{
+                    padding: '3px 9px', borderRadius: 5,
+                    border: isDiscardActive ? '2px solid #b76e00' : '1px solid #bbb',
+                    background: isDiscardActive ? '#b76e00' : '#f5f5f5',
+                    color: isDiscardActive ? '#fff' : '#333',
+                    fontWeight: isDiscardActive ? 'bold' : 'normal',
+                    cursor: 'pointer', fontSize: 11,
+                  }}
+                >
+                  破棄
+                </button>
+                {DECKPOS_COST_ACTIONS.map((a) => {
+                  const active = c.action === a.code;
+                  return (
+                    <button
+                      key={a.code}
+                      type="button"
+                      onClick={() => updateCost(i, { ...c, action: a.code })}
+                      style={{
+                        padding: '3px 9px', borderRadius: 5,
+                        border: active ? '2px solid #b76e00' : '1px solid #bbb',
+                        background: active ? '#b76e00' : '#f5f5f5',
+                        color: active ? '#fff' : '#333',
+                        fontWeight: active ? 'bold' : 'normal',
+                        cursor: 'pointer', fontSize: 11,
+                      }}
+                    >
+                      {a.label}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isPlaceActive) return;
+                    const z = PLACE_ZONE_MAP.find((zz) => zz.code === 'security')!;
+                    updateCost(i, { ...c, action: z.action, target: z.target || '' });
+                  }}
+                  style={{
+                    padding: '3px 9px', borderRadius: 5,
+                    border: isPlaceActive ? '2px solid #b76e00' : '1px solid #bbb',
+                    background: isPlaceActive ? '#b76e00' : '#f5f5f5',
+                    color: isPlaceActive ? '#fff' : '#333',
+                    fontWeight: isPlaceActive ? 'bold' : 'normal',
+                    cursor: 'pointer', fontSize: 11,
+                  }}
+                >
+                  〇〇に置く
+                </button>
+              </div>
+              {/* 〇〇に置く: 場所ボタン（セキュリティ/テイマー/バトルエリア。
+                  選んだ場所に応じて実アクションコード・対象を切り替える） */}
+              {isPlaceActive && (
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🎯 置き場所（どこに置くか）</div>
+                  <ButtonGroup
+                    options={PLACE_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
+                    value={activePlaceZone}
+                    onChange={(zoneCode) => {
+                      if (zoneCode === activePlaceZone) return; // 選び直し済みの位置/裏表/場所を巻き戻さない
+                      const z = PLACE_ZONE_MAP.find((zz) => zz.code === zoneCode);
+                      if (!z) return;
+                      updateCost(i, { ...c, action: z.action, target: z.target || '', deckPosition: undefined, options: [], fromZones: [] });
+                    }}
+                    accentColor="#b76e00"
+                  />
+                  {(() => {
+                    const z = PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone);
+                    return z?.warn ? (
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
+                    ) : null;
+                  })()}
+                  {/* セキュリティ/テイマー/進化元のときだけ、置くカードの取得元（手札等）を選べる。
+                      辞書のhasFromZonesフラグには頼らずPLACE_ZONE_MAP側で直接持たせている
+                      （このボタン自体が辞書未登録のハードコードのため） */}
+                  {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFromZones && (() => {
+                    const zones = c.fromZones || [];
+                    const op = c.fromZonesOp || 'or';
+                    const toggleZone = (code: string) => {
+                      const next = zones.includes(code) ? zones.filter((z) => z !== code) : [...zones, code];
+                      updateCost(i, { ...c, fromZones: next });
+                    };
+                    return (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから置くか）</div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {FROM_ZONES.map((z) => {
+                            const active = zones.includes(z.code);
+                            return (
+                              <button
+                                key={z.code}
+                                type="button"
+                                onClick={() => toggleZone(z.code)}
+                                style={{
+                                  padding: '3px 9px', borderRadius: 5,
+                                  border: active ? '2px solid #b76e00' : '1px solid #bbb',
+                                  background: active ? '#b76e00' : '#f5f5f5',
+                                  color: active ? '#fff' : '#333',
+                                  fontWeight: active ? 'bold' : 'normal',
+                                  cursor: 'pointer', fontSize: 11,
+                                }}
+                              >
+                                {z.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {zones.length >= 2 && (
+                          <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                            <span style={{ color: '#666' }}>結合:</span>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                              <input type="radio" name={`placeFromZonesOp_${i}`} checked={op === 'or'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'or' })} style={{ margin: 0 }} />
+                              OR（いずれか）
+                            </label>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                              <input type="radio" name={`placeFromZonesOp_${i}`} checked={op === 'and'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'and' })} style={{ margin: 0 }} />
+                              AND（全て）
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  {/* セキュリティ/テイマーのときだけ「上/下/下か上」を選べる */}
+                  {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasPosition && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                      <ButtonGroup
+                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
+                        value={c.deckPosition || ''}
+                        onChange={(v) => updateCost(i, { ...c, deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
+                        accentColor="#b76e00"
+                      />
+                    </div>
+                  )}
+                  {/* セキュリティ/テイマーのときだけ「裏向き/表向き」を選べる */}
+                  {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFace && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                      <ButtonGroup
+                        options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
+                        value={(c.options || []).includes('face_down') ? 'face_down' : ''}
+                        onChange={(v) => updateCost(i, { ...c, options: v ? [v] : [] })}
+                        accentColor="#b76e00"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* 破棄: 場所ボタン（選んだ場所に応じて実アクションコードを切り替える） */}
+              {isDiscardActive && (
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから破棄するか）</div>
+                  <ButtonGroup
+                    options={DISCARD_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
+                    value={activeDiscardZone}
+                    onChange={(zoneCode) => {
+                      if (zoneCode === activeDiscardZone) return; // 選び直し済みの位置指定を巻き戻さない
+                      const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
+                      if (!z) return;
+                      updateCost(i, { ...c, action: z.action, target: z.target || '', fromZones: [z.code] });
+                    }}
+                    accentColor="#b76e00"
+                  />
+                  {(() => {
+                    const z = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                    return z?.warn ? (
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
+                    ) : null;
+                  })()}
+                  {/* 進化元/テイマー/セキュリティのときだけ、積まれたカードのどこから破棄するか選べる。
+                      ※ 辞書側の hasPositionVariant フラグ（costIsPositional等）には依存しない。
+                      DISCARD_ZONE_MAP はこのエディタ内で完結したハードコード機構であり、
+                      辞書の設定状態に関わらず常に POSITION_VARIANTS 4種を出す */}
+                  {(() => {
+                    const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                    if (!zone?.hasPosition) return null;
+                    const zoneBase = getActionVariant(zone.action)?.base || zone.action;
+                    const curSuffix = getActionVariant(c.action || '')?.suffix || '';
+                    return (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                        <ButtonGroup
+                          options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
+                          value={curSuffix}
+                          onChange={(suffix) => { if (!suffix) return; updateCost(i, { ...c, action: zoneBase + suffix }); }}
+                          accentColor="#b76e00"
+                        />
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+              {/* デッキに戻す: 位置ボタン（下/上/下か上） */}
+              {isDeckPosAction && (
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                  <ButtonGroup
+                    options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
+                    value={c.deckPosition || ''}
+                    onChange={(v) => updateCost(i, { ...c, deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
+                    accentColor="#b76e00"
+                  />
+                  {c.deckPosition === 'both' && (
+                    <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ エンジン未対応です（保存はできますが「下」として動作します）</div>
+                  )}
+                </div>
+              )}
+              {/* 📥場所: 辞書の hasFromZones=true なアクション（例:「テイマーの下に置く」）
+                  選択時のみ表示。破棄ボタン(DISCARD_ZONE_MAP)とは独立した汎用機構 */}
+              {(() => {
+                if (!costActionHasFlag('hasFromZones')) return null;
+                const zones = c.fromZones || [];
+                const op = c.fromZonesOp || 'or';
+                const toggleZone = (code: string) => {
+                  const next = zones.includes(code) ? zones.filter((z) => z !== code) : [...zones, code];
+                  updateCost(i, { ...c, fromZones: next });
+                };
+                return (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {FROM_ZONES.map((z) => {
+                        const active = zones.includes(z.code);
+                        return (
+                          <button
+                            key={z.code}
+                            type="button"
+                            onClick={() => toggleZone(z.code)}
+                            style={{
+                              padding: '3px 9px', borderRadius: 5,
+                              border: active ? '2px solid #1a4f8a' : '1px solid #bbb',
+                              background: active ? '#1a4f8a' : '#f5f5f5',
+                              color: active ? '#fff' : '#333',
+                              fontWeight: active ? 'bold' : 'normal',
+                              cursor: 'pointer', fontSize: 11,
+                            }}
+                          >
+                            {z.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {zones.length >= 2 && (
+                      <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                        <span style={{ color: '#666' }}>結合:</span>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                          <input type="radio" name={`costFromZonesOp_${i}`} checked={op === 'or'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'or' })} style={{ margin: 0 }} />
+                          OR（いずれか）
+                        </label>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                          <input type="radio" name={`costFromZonesOp_${i}`} checked={op === 'and'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'and' })} style={{ margin: 0 }} />
+                          AND（全て）
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+              {/* 🂠裏表: 辞書の hasFaceOption=true なアクション選択時のみ表示。
+                  既存の修飾子コード face_down を c.options に書き込む
+                  （「表向き」は指定なし＝デフォルトなので、options を空にするだけ） */}
+              {(() => {
+                if (!costActionHasFlag('hasFaceOption')) return null;
+                const isFaceDown = (c.options || []).includes('face_down');
+                return (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                    <ButtonGroup
+                      options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
+                      value={isFaceDown ? 'face_down' : ''}
+                      onChange={(v) => updateCost(i, { ...c, options: v ? [v] : [] })}
+                      accentColor="#b76e00"
+                    />
+                  </div>
+                );
+              })()}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, marginTop: 4, color: '#666' }}>
+                <input
+                  type="checkbox"
+                  checked={!!costOtherOpen[i] || (!!c.action && !isCommonCostAction)}
+                  onChange={(e) => setCostOtherOpen((prev) => ({ ...prev, [i]: e.target.checked }))}
+                />
+                その他のアクション
+              </label>
+              {(!!costOtherOpen[i] || (!!c.action && !isCommonCostAction)) && (
+                <div style={{ marginTop: 2 }}>
+                  <SearchSelect
+                    value={costNormalizedActionValue}
+                    onChange={onCostActionChange}
+                    options={costActionOptions}
+                    allowFreeText
+                    placeholder="--コストアクション--"
+                  />
+                  {costIsPositional && costVariantOptions.length > 0 && (
+                    <div style={{ marginTop: 2 }}>
+                      <SearchSelect
+                        value={costCurrentSuffix}
+                        onChange={onCostVariantChange}
+                        options={costVariantOptions}
+                        placeholder="📍 位置"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* 値 */}
+            <div style={{ marginTop: 4 }}>
+              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
+              <input
+                type="text"
+                value={c.value === undefined ? '' : String(c.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '') updateCost(i, { ...c, value: undefined });
+                  else if (/^\d+$/.test(v)) updateCost(i, { ...c, value: Number(v) });
+                  else updateCost(i, { ...c, value: v });
+                }}
+                placeholder="値（枚数等）"
+                style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+              />
+            </div>
+            {/* 対象（ボタン方式） */}
+            <div style={{ marginTop: 4 }}>
+              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+              <ButtonGroup options={TARGET_SEL_L1} value={cCurTgt.l1} onChange={(l1) => setCostTgt(l1)} accentColor="#b76e00" />
+              {cTgtL2Options.length > 0 && (
+                <div style={{ marginTop: 4 }}>
+                  <ButtonGroup options={cTgtL2Options} value={cCurTgt.l2} onChange={(l2) => setCostTgt(cCurTgt.l1, l2)} accentColor="#b76e00" />
+                </div>
+              )}
+              {/* デジモン/テイマー本体のときだけ「本体/下/一番下」を選べる（進化元／テイマーの下のカードを指す） */}
+              {showCostStackPos && (
+                <div style={{ marginTop: 4 }}>
+                  <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
+                  <ButtonGroup options={STACK_POS_OPTIONS} value={cTgtStackPos} onChange={(v) => setCostStackPos(v as StackPos)} accentColor="#b76e00" />
+                </div>
+              )}
+              {/* 「下/一番下」のときだけ、積まれているカードの裏表・種別で絞り込める */}
+              {showCostStackPos && cTgtStackPos !== '' && (
+                <div style={{ marginTop: 4 }}>
+                  <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>裏表/種別:</span>
+                  <MultiButtonGroup options={COST_STACK_FACE_TYPE_OPTS} values={costFaceTypeActive} onToggle={toggleCostFaceType} accentColor="#b76e00" />
+                </div>
+              )}
+              {!cHideCount && cCurTgt.l1 && (
+                <div style={{ marginTop: 4 }}>
+                  <ButtonGroup
+                    options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
+                    value={cTgtSuffix}
+                    onChange={(v) => updateCost(i, { ...c, target: joinStackSuffix(cTgtBase, cTgtStackPos) + v })}
+                    accentColor="#b76e00"
+                  />
+                </div>
+              )}
+            </div>
+
+
+            {/* === コスト対象の絞り込み条件（発動条件と同じConditionsHybridEditorを再利用） === */}
+            <div style={{ marginTop: 6 }}>
+              <ConditionsHybridEditor
+                conditions={c.conditions || []}
+                onChange={(next) => updateCost(i, { ...c, conditions: next })}
+                dict={dict}
+                title="コスト対象の絞り込み"
+                hint="（複数指定可）"
+                theme="action"
+                defaultSubject=""
+                showSubjectSelector={false}
+                conditionsOp={c.conditionsOp || 'and'}
+                onConditionsOpChange={(op) => updateCost(i, { ...c, conditionsOp: op })}
+              />
+            </div>
+          </div>
+        );
+      })}
+      <button
+        onClick={addCost}
+        style={{
+          padding: '4px 8px',
+          border: '1px dashed #f9a825',
+          background: 'white',
+          borderRadius: 3,
+          cursor: 'pointer',
+          fontSize: 11,
+          marginTop: 2,
+          color: '#e65100',
+        }}
+      >
+        ＋ コストを追加
+      </button>
+    </>
+  );
+}
+
 // 発動領域ボタンの表示順・ラベル（ZONESの code:'' はバトルエリアを指す）
 const ZONE_BUTTONS = [
   { code: 'hand', label: '手札' },
@@ -1247,8 +1849,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
   const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
   const [otherActionOpen, setOtherActionOpen] = useState<boolean>(false);
-  // コスト各行の「その他のアクション」開閉状態（行indexごとに管理）
-  const [costOtherOpen, setCostOtherOpen] = useState<Record<number, boolean>>({});
   // ～ごとにの「状態（条件）」その他プルダウン開閉状態
   const [perStateOtherOpen, setPerStateOtherOpen] = useState<boolean>(false);
   // 「対象の条件」をアクションの対象/対象数の2箇所に分けて描画するため、
@@ -1722,88 +2322,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             下の「コスト」を設定すると、アセンブリ等の「〇〇することで軽減」という任意効果になります。
             <div style={{ marginTop: 8 }}>
               <label style={{ fontWeight: 'bold', fontSize: 12 }}>コスト（「〇〇することで軽減」の場合のみ・任意）</label>
-              {costs.length === 0 && (
-                <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>コストなし（常に軽減）</div>
-              )}
-              {costs.map((c, i) => (
-                <div key={i} style={{ marginTop: 6, padding: 8, background: 'white', border: '1px solid #ffcc80', borderRadius: 4 }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div style={{ minWidth: 160 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>アクション</div>
-                      <SearchSelect
-                        value={c.action || ''}
-                        onChange={(v) => updateCost(i, { ...c, action: v })}
-                        options={toOpts(dict.actions)}
-                        allowFreeText
-                      />
-                    </div>
-                    <div style={{ minWidth: 140 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                      <SearchSelect
-                        value={c.target || ''}
-                        onChange={(v) => updateCost(i, { ...c, target: v })}
-                        options={toOpts(TARGETS)}
-                        allowFreeText
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeCost(i)}
-                      style={{ border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '3px 9px', cursor: 'pointer', fontSize: 11 }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div style={{ marginTop: 6 }}>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>場所</div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {FROM_ZONES.map((z) => {
-                        const zones = c.fromZones || [];
-                        const active = zones.includes(z.code);
-                        return (
-                          <button
-                            key={z.code}
-                            type="button"
-                            onClick={() => {
-                              const next = active ? zones.filter((x) => x !== z.code) : [...zones, z.code];
-                              updateCost(i, { ...c, fromZones: next });
-                            }}
-                            style={{
-                              padding: '3px 9px', borderRadius: 5,
-                              border: active ? '2px solid #ef6c00' : '1px solid #bbb',
-                              background: active ? '#ef6c00' : '#f5f5f5',
-                              color: active ? '#fff' : '#333', cursor: 'pointer', fontSize: 11,
-                            }}
-                          >
-                            {z.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div style={{ marginTop: 6 }}>
-                    <ConditionsHybridEditor
-                      conditions={c.conditions || []}
-                      onChange={(next) => updateCost(i, { ...c, conditions: next })}
-                      dict={dict}
-                      title="コスト対象の絞り込み"
-                      hint="（複数指定可）"
-                      theme="action"
-                      defaultSubject=""
-                      showSubjectSelector={false}
-                      conditionsOp={c.conditionsOp || 'and'}
-                      onConditionsOpChange={(op) => updateCost(i, { ...c, conditionsOp: op })}
-                    />
-                  </div>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={addCost}
-                style={{ marginTop: 6, padding: '4px 8px', border: '1px dashed #f9a825', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#e65100' }}
-              >
-                ＋ コストを追加
-              </button>
+              <CostListEditor
+                dict={dict}
+                costs={costs}
+                updateCost={updateCost}
+                addCost={addCost}
+                removeCost={removeCost}
+                noCostLabel="コストなし（常に軽減）"
+              />
             </div>
             <div style={{ marginTop: 8 }}>
               <ConditionsHybridEditor
@@ -3145,590 +3671,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         {!isEditingAlt && (
         <div className="field" style={{ gridColumn: '1 / span 2' }}>
           <label>コスト（「〇〇することで」発動）</label>
-          {costs.length === 0 && (
-            <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>コストなし</div>
-          )}
-          {costs.map((c, i) => {
-            // 位置サフィックス違い（evo_discard_top/_bottom/_select/_all 等）も同じ場所として
-            // 扱えるよう、比較は常にベースコード（サフィックスを剥がしたもの）で行う。
-            // ※ getActionVariant は POSITION_VARIANTS（このファイル下部でconst定義）を参照するため、
-            //   モジュール読み込み時（top-level）には呼べない（TDZエラーで画面が真っ白になる）。
-            //   ここ（コンポーネントのレンダー時＝モジュール読み込み完了後）で計算する
-            const discardZoneBases = new Set(DISCARD_ZONE_MAP.map((z) => getActionVariant(z.action)?.base || z.action));
-            const cActionBase = getActionVariant(c.action || '')?.base || (c.action || '');
-            const isCommonCostAction = COMMON_COST_ACTIONS.some((a) => a.code === (c.action || ''))
-              || discardZoneBases.has(cActionBase)
-              || DECKPOS_COST_ACTIONS.some((a) => a.code === (c.action || ''))
-              || PLACE_ACTION_CODES.has(c.action || '');
-            const isDiscardActive = discardZoneBases.has(cActionBase);
-            // 「進化元」と「テイマー」はどちらも evo_discard 系を流用していてアクションの
-            // ベースコードだけでは区別できないため、target も一致条件に加えて逆引きする
-            // （target が無い場所=手札/デッキはアクションのみで一意に決まる）
-            // 対象セクション側で「下/一番下」(_stack/_stack_bottom サフィックス)を付けても
-            // 場所の判定が巻き戻らないよう、target 比較はサフィックスを剥がしたベースで行う
-            const activeDiscardZone = DISCARD_ZONE_MAP.find((z) => {
-              if ((getActionVariant(z.action)?.base || z.action) !== cActionBase) return false;
-              if (z.target !== undefined && splitStackSuffix((c.target || '').split(':')[0]).base !== z.target) return false;
-              return true;
-            })?.code || '';
-            // 「〇〇に置く」: PLACE_ZONE_MAP は各ゾーンのアクションコードが全て異なる
-            // （place_on_security_top/place_under_tamer/place_under_digimon）ため、
-            // 破棄のようなtarget逆引きは不要でアクションコードだけで一意に決まる
-            const isPlaceActive = PLACE_ACTION_CODES.has(c.action || '');
-            const activePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === c.action)?.code || '';
-            const isDeckPosAction = c.action === 'return_deck';
-            // 位置バリアント対応（フラグ駆動+自動グループ化）は「その他」経由選択時のみ引き続き使う
-            const { options: costActionOptions, flaggedBases: costFlaggedBases, autoGroupBases: costAutoGroupBases } = buildActionDisplay(dict.actions);
-            const costCurVariant = getActionVariant(c.action || '');
-            // 📥場所 フラグ判定用（hasFromZones。テイマーの下に置く等、辞書登録された新規
-            // アクション向け）: まずアクションコード完全一致で辞書を引き、無ければ
-            // 位置バリアントのベースコードでも引く（両対応）。
-            // ※ 'place_on_security_top' のように、位置バリアントの一種ではないのに
-            //   たまたま "_top" で終わるアクション名だと costCurVariant.base が
-            //   実在しない 'place_on_security' になってしまうため、完全一致を優先する
-            const costActionHasFlag = (flag: 'hasFromZones' | 'hasFaceOption'): boolean => {
-              const exact = dict.actions.find((a) => a.code === (c.action || ''));
-              if (exact?.[flag]) return true;
-              const base = costCurVariant ? dict.actions.find((a) => a.code === costCurVariant!.base) : undefined;
-              return !!base?.[flag];
-            };
-            const costIsFlaggedBaseDirect = costFlaggedBases.has(c.action || '');
-            const costIsVariantOfFlagged = !!(costCurVariant && (costFlaggedBases.has(costCurVariant.base) || costAutoGroupBases.has(costCurVariant.base)));
-            const costIsPositional = costIsFlaggedBaseDirect || costIsVariantOfFlagged;
-
-            const costNormalizedActionValue = (() => {
-              if (costIsFlaggedBaseDirect) return c.action || '';
-              if (costCurVariant && costFlaggedBases.has(costCurVariant.base)) return costCurVariant.base;
-              if (costCurVariant && costAutoGroupBases.has(costCurVariant.base)) return costCurVariant.base + '_top';
-              return c.action || '';
-            })();
-
-            const costVariantOptions: SelectOption[] = (() => {
-              if (!costIsPositional) return [];
-              if (costIsFlaggedBaseDirect || (costCurVariant && costFlaggedBases.has(costCurVariant.base))) {
-                return POSITION_VARIANTS.map((v) => ({ value: v.suffix, label: v.label }));
-              }
-              if (costCurVariant && costAutoGroupBases.has(costCurVariant.base)) {
-                return POSITION_VARIANTS
-                  .filter((v) => dict.actions.some((a) => a.code === costCurVariant.base + v.suffix))
-                  .map((v) => ({ value: v.suffix, label: v.label }));
-              }
-              return [];
-            })();
-            const costCurrentSuffix = costCurVariant ? costCurVariant.suffix : '';
-
-            function onCostActionChange(newCode: string) {
-              const newIsFlaggedBase = costFlaggedBases.has(newCode);
-              const newV = getActionVariant(newCode);
-              const cur = c.action || '';
-              const curV = getActionVariant(cur);
-              const newBase = newIsFlaggedBase ? newCode : (newV ? newV.base : null);
-              const curBase = curV ? curV.base : (costFlaggedBases.has(cur) ? cur : null);
-              if (newBase && curBase && newBase === curBase) return;
-              if (newIsFlaggedBase) {
-                updateCost(i, { ...c, action: newCode + '_top' });
-                return;
-              }
-              updateCost(i, { ...c, action: newCode });
-            }
-            function onCostVariantChange(newSuffix: string) {
-              if (!newSuffix) return;
-              const base = costIsFlaggedBaseDirect ? (c.action || '') : (costCurVariant ? costCurVariant.base : '');
-              if (!base) return;
-              updateCost(i, { ...c, action: base + newSuffix });
-            }
-
-            // 対象（TARGET_SELのL1/L2ボタン方式。アクションの対象と同じ体系）
-            // 位置（本体/下/一番下）はカウント接尾辞(:1等)より前のbase側に付くので、
-            // カウント分離の前にまずstackサフィックスを剥がす
-            const cTgtRaw = (c.target || '').split(':')[0];
-            const cTgtSuffix = (c.target || '').substring(cTgtRaw.length);
-            const { base: cTgtBase, pos: cTgtStackPos } = splitStackSuffix(cTgtRaw);
-            const cCurTgt = TARGET_SEL_CODE_TO_L1L2[cTgtBase] || { l1: '', l2: '' };
-            // コストの対象では「オプション/プレイヤー/セキュリティ」を選択肢から除外
-            const cTgtL2Options = (TARGET_SEL_L2[cCurTgt.l1] || []).filter((o) => !['option', 'player', 'security'].includes(o.code));
-            const cHideCount = cTgtBase === 'self' || cTgtBase === 'self_card' || cTgtBase === 'same_target';
-            // デジモン/テイマー本体のときだけ「本体/下/一番下」を選べる（進化元／テイマーの
-            // 下の"既存の"カードを指す。self=このカード自身の下も含む）。
-            // 「〇〇に置く」系アクション（place_under_tamer 等）は新しいカードを追加する側で
-            // 既存スタック内カードを指す概念が無い（位置は📍位置/deckPositionで別途指定する）
-            // ため、対象がテイマー等でもこの欄自体を出さない
-            const showCostStackPos = !PLACE_ACTION_CODES.has(c.action || '')
-              && (cCurTgt.l1 === 'self' || cCurTgt.l2 === 'digimon' || cCurTgt.l2 === 'tamer');
-            const setCostStackPos = (pos: StackPos) => updateCost(i, { ...c, target: joinStackSuffix(cTgtBase, pos) + cTgtSuffix });
-            const setCostTgt = (l1: string, l2?: string) => {
-              if (!l1) { updateCost(i, { ...c, target: '' }); return; }
-              if (l1 === 'self') { updateCost(i, { ...c, target: joinStackSuffix('self_card', cTgtStackPos) + cTgtSuffix }); return; }
-              if (l1 === 'same_target') { updateCost(i, { ...c, target: 'same_target' + cTgtSuffix }); return; }
-              const useL2 = l2 || (cCurTgt.l1 === l1 && cCurTgt.l2 ? cCurTgt.l2 : 'digimon');
-              const newBase = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '';
-              // 位置は「デジモン/テイマー」を維持したときだけ引き継ぐ（カード/オプション等に
-              // 切り替えたら位置指定自体が無意味になるため破棄する）
-              const keepPos = useL2 === 'digimon' || useL2 === 'tamer';
-              updateCost(i, { ...c, target: joinStackSuffix(newBase, keepPos ? cTgtStackPos : '') + cTgtSuffix });
-            };
-            // 「下/一番下」を選んだときだけ、積まれているカードの裏表・種別で絞り込める
-            // （例:「テイマーの下にある裏向きのカードを破棄する」コスト）。
-            // 実体は c.conditions への cond_face_down/cond_face_up + cond_type の追加。
-            // 裏表・種別はそれぞれ単独項目（同時に2種類を選ぶ意味は無い）なので、
-            // 見た目は横並びの複数選択ボタンだが内部では各グループ排他で1件ずつ管理する
-            const costFaceType = (c.conditions || []).reduce((acc: { face: string; type: string }, p) => {
-              if (p.base === 'cond_face_down') acc.face = 'face_down';
-              else if (p.base === 'cond_face_up') acc.face = 'face_up';
-              else if (p.base === 'cond_type') acc.type = COST_STACK_TYPE_VALUE_TO_CODE[p.value || ''] || '';
-              return acc;
-            }, { face: '', type: '' });
-            const costFaceTypeActive = [costFaceType.face, costFaceType.type].filter(Boolean);
-            const toggleCostFaceType = (code: string, on: boolean) => {
-              const opt = COST_STACK_FACE_TYPE_OPTS.find((o) => o.code === code);
-              if (!opt) return;
-              let next = (c.conditions || []).filter((p) =>
-                opt.group === 'face' ? (p.base !== 'cond_face_down' && p.base !== 'cond_face_up') : p.base !== 'cond_type'
-              );
-              if (on) {
-                next = opt.group === 'face'
-                  ? [...next, { base: code === 'face_down' ? 'cond_face_down' : 'cond_face_up' }]
-                  : [...next, { base: 'cond_type', value: COST_STACK_TYPE_CODE_TO_VALUE[code] }];
-              }
-              updateCost(i, { ...c, conditions: next });
-            };
-
-            return (
-              <div key={i} style={{ marginBottom: 6, padding: 6, border: '1px solid #ffe0b2', borderRadius: 4, background: '#fffbe6' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: 11, color: '#b76e00', fontWeight: 'bold' }}>コスト{i + 1}</div>
-                  <button
-                    onClick={() => removeCost(i)}
-                    style={{ padding: '0 8px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, height: 22 }}
-                  >
-                    ✕
-                  </button>
-                </div>
-                {/* アクション（よく使うコストアクション + 破棄(場所) + デッキに戻す/セキュリティに置く(位置) + その他） */}
-                <div style={{ marginTop: 4 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>アクション</div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {COMMON_COST_ACTIONS.map((a) => {
-                      const active = c.action === a.code;
-                      return (
-                        <button
-                          key={a.code}
-                          type="button"
-                          onClick={() => updateCost(i, { ...c, action: a.code })}
-                          style={{
-                            padding: '3px 9px', borderRadius: 5,
-                            border: active ? '2px solid #b76e00' : '1px solid #bbb',
-                            background: active ? '#b76e00' : '#f5f5f5',
-                            color: active ? '#fff' : '#333',
-                            fontWeight: active ? 'bold' : 'normal',
-                            cursor: 'pointer', fontSize: 11,
-                          }}
-                        >
-                          {a.label}
-                        </button>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (isDiscardActive) return;
-                        const z = DISCARD_ZONE_MAP.find((zz) => zz.code === 'hand')!;
-                        updateCost(i, { ...c, action: z.action, target: z.target || c.target, fromZones: [z.code] });
-                      }}
-                      style={{
-                        padding: '3px 9px', borderRadius: 5,
-                        border: isDiscardActive ? '2px solid #b76e00' : '1px solid #bbb',
-                        background: isDiscardActive ? '#b76e00' : '#f5f5f5',
-                        color: isDiscardActive ? '#fff' : '#333',
-                        fontWeight: isDiscardActive ? 'bold' : 'normal',
-                        cursor: 'pointer', fontSize: 11,
-                      }}
-                    >
-                      破棄
-                    </button>
-                    {DECKPOS_COST_ACTIONS.map((a) => {
-                      const active = c.action === a.code;
-                      return (
-                        <button
-                          key={a.code}
-                          type="button"
-                          onClick={() => updateCost(i, { ...c, action: a.code })}
-                          style={{
-                            padding: '3px 9px', borderRadius: 5,
-                            border: active ? '2px solid #b76e00' : '1px solid #bbb',
-                            background: active ? '#b76e00' : '#f5f5f5',
-                            color: active ? '#fff' : '#333',
-                            fontWeight: active ? 'bold' : 'normal',
-                            cursor: 'pointer', fontSize: 11,
-                          }}
-                        >
-                          {a.label}
-                        </button>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (isPlaceActive) return;
-                        const z = PLACE_ZONE_MAP.find((zz) => zz.code === 'security')!;
-                        updateCost(i, { ...c, action: z.action, target: z.target || '' });
-                      }}
-                      style={{
-                        padding: '3px 9px', borderRadius: 5,
-                        border: isPlaceActive ? '2px solid #b76e00' : '1px solid #bbb',
-                        background: isPlaceActive ? '#b76e00' : '#f5f5f5',
-                        color: isPlaceActive ? '#fff' : '#333',
-                        fontWeight: isPlaceActive ? 'bold' : 'normal',
-                        cursor: 'pointer', fontSize: 11,
-                      }}
-                    >
-                      〇〇に置く
-                    </button>
-                  </div>
-                  {/* 〇〇に置く: 場所ボタン（セキュリティ/テイマー/バトルエリア。
-                      選んだ場所に応じて実アクションコード・対象を切り替える） */}
-                  {isPlaceActive && (
-                    <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🎯 置き場所（どこに置くか）</div>
-                      <ButtonGroup
-                        options={PLACE_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
-                        value={activePlaceZone}
-                        onChange={(zoneCode) => {
-                          if (zoneCode === activePlaceZone) return; // 選び直し済みの位置/裏表/場所を巻き戻さない
-                          const z = PLACE_ZONE_MAP.find((zz) => zz.code === zoneCode);
-                          if (!z) return;
-                          updateCost(i, { ...c, action: z.action, target: z.target || '', deckPosition: undefined, options: [], fromZones: [] });
-                        }}
-                        accentColor="#b76e00"
-                      />
-                      {(() => {
-                        const z = PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone);
-                        return z?.warn ? (
-                          <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
-                        ) : null;
-                      })()}
-                      {/* セキュリティ/テイマー/進化元のときだけ、置くカードの取得元（手札等）を選べる。
-                          辞書のhasFromZonesフラグには頼らずPLACE_ZONE_MAP側で直接持たせている
-                          （このボタン自体が辞書未登録のハードコードのため） */}
-                      {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFromZones && (() => {
-                        const zones = c.fromZones || [];
-                        const op = c.fromZonesOp || 'or';
-                        const toggleZone = (code: string) => {
-                          const next = zones.includes(code) ? zones.filter((z) => z !== code) : [...zones, code];
-                          updateCost(i, { ...c, fromZones: next });
-                        };
-                        return (
-                          <div style={{ marginTop: 4 }}>
-                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから置くか）</div>
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              {FROM_ZONES.map((z) => {
-                                const active = zones.includes(z.code);
-                                return (
-                                  <button
-                                    key={z.code}
-                                    type="button"
-                                    onClick={() => toggleZone(z.code)}
-                                    style={{
-                                      padding: '3px 9px', borderRadius: 5,
-                                      border: active ? '2px solid #b76e00' : '1px solid #bbb',
-                                      background: active ? '#b76e00' : '#f5f5f5',
-                                      color: active ? '#fff' : '#333',
-                                      fontWeight: active ? 'bold' : 'normal',
-                                      cursor: 'pointer', fontSize: 11,
-                                    }}
-                                  >
-                                    {z.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            {zones.length >= 2 && (
-                              <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-                                <span style={{ color: '#666' }}>結合:</span>
-                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                                  <input type="radio" name={`placeFromZonesOp_${i}`} checked={op === 'or'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'or' })} style={{ margin: 0 }} />
-                                  OR（いずれか）
-                                </label>
-                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                                  <input type="radio" name={`placeFromZonesOp_${i}`} checked={op === 'and'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'and' })} style={{ margin: 0 }} />
-                                  AND（全て）
-                                </label>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                      {/* セキュリティ/テイマーのときだけ「上/下/下か上」を選べる */}
-                      {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasPosition && (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
-                          <ButtonGroup
-                            options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
-                            value={c.deckPosition || ''}
-                            onChange={(v) => updateCost(i, { ...c, deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
-                            accentColor="#b76e00"
-                          />
-                        </div>
-                      )}
-                      {/* セキュリティ/テイマーのときだけ「裏向き/表向き」を選べる */}
-                      {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFace && (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
-                          <ButtonGroup
-                            options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
-                            value={(c.options || []).includes('face_down') ? 'face_down' : ''}
-                            onChange={(v) => updateCost(i, { ...c, options: v ? [v] : [] })}
-                            accentColor="#b76e00"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {/* 破棄: 場所ボタン（選んだ場所に応じて実アクションコードを切り替える） */}
-                  {isDiscardActive && (
-                    <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから破棄するか）</div>
-                      <ButtonGroup
-                        options={DISCARD_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
-                        value={activeDiscardZone}
-                        onChange={(zoneCode) => {
-                          if (zoneCode === activeDiscardZone) return; // 選び直し済みの位置指定を巻き戻さない
-                          const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
-                          if (!z) return;
-                          updateCost(i, { ...c, action: z.action, target: z.target || '', fromZones: [z.code] });
-                        }}
-                        accentColor="#b76e00"
-                      />
-                      {(() => {
-                        const z = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                        return z?.warn ? (
-                          <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
-                        ) : null;
-                      })()}
-                      {/* 進化元/テイマー/セキュリティのときだけ、積まれたカードのどこから破棄するか選べる。
-                          ※ 辞書側の hasPositionVariant フラグ（costIsPositional等）には依存しない。
-                          DISCARD_ZONE_MAP はこのエディタ内で完結したハードコード機構であり、
-                          辞書の設定状態に関わらず常に POSITION_VARIANTS 4種を出す */}
-                      {(() => {
-                        const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                        if (!zone?.hasPosition) return null;
-                        const zoneBase = getActionVariant(zone.action)?.base || zone.action;
-                        const curSuffix = getActionVariant(c.action || '')?.suffix || '';
-                        return (
-                          <div style={{ marginTop: 4 }}>
-                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
-                            <ButtonGroup
-                              options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
-                              value={curSuffix}
-                              onChange={(suffix) => { if (!suffix) return; updateCost(i, { ...c, action: zoneBase + suffix }); }}
-                              accentColor="#b76e00"
-                            />
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-                  {/* デッキに戻す: 位置ボタン（下/上/下か上） */}
-                  {isDeckPosAction && (
-                    <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
-                      <ButtonGroup
-                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
-                        value={c.deckPosition || ''}
-                        onChange={(v) => updateCost(i, { ...c, deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
-                        accentColor="#b76e00"
-                      />
-                      {c.deckPosition === 'both' && (
-                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ エンジン未対応です（保存はできますが「下」として動作します）</div>
-                      )}
-                    </div>
-                  )}
-                  {/* 📥場所: 辞書の hasFromZones=true なアクション（例:「テイマーの下に置く」）
-                      選択時のみ表示。破棄ボタン(DISCARD_ZONE_MAP)とは独立した汎用機構 */}
-                  {(() => {
-                    if (!costActionHasFlag('hasFromZones')) return null;
-                    const zones = c.fromZones || [];
-                    const op = c.fromZonesOp || 'or';
-                    const toggleZone = (code: string) => {
-                      const next = zones.includes(code) ? zones.filter((z) => z !== code) : [...zones, code];
-                      updateCost(i, { ...c, fromZones: next });
-                    };
-                    return (
-                      <div style={{ marginTop: 4 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所</div>
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          {FROM_ZONES.map((z) => {
-                            const active = zones.includes(z.code);
-                            return (
-                              <button
-                                key={z.code}
-                                type="button"
-                                onClick={() => toggleZone(z.code)}
-                                style={{
-                                  padding: '3px 9px', borderRadius: 5,
-                                  border: active ? '2px solid #1a4f8a' : '1px solid #bbb',
-                                  background: active ? '#1a4f8a' : '#f5f5f5',
-                                  color: active ? '#fff' : '#333',
-                                  fontWeight: active ? 'bold' : 'normal',
-                                  cursor: 'pointer', fontSize: 11,
-                                }}
-                              >
-                                {z.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {zones.length >= 2 && (
-                          <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-                            <span style={{ color: '#666' }}>結合:</span>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                              <input type="radio" name={`costFromZonesOp_${i}`} checked={op === 'or'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'or' })} style={{ margin: 0 }} />
-                              OR（いずれか）
-                            </label>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                              <input type="radio" name={`costFromZonesOp_${i}`} checked={op === 'and'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'and' })} style={{ margin: 0 }} />
-                              AND（全て）
-                            </label>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  {/* 🂠裏表: 辞書の hasFaceOption=true なアクション選択時のみ表示。
-                      既存の修飾子コード face_down を c.options に書き込む
-                      （「表向き」は指定なし＝デフォルトなので、options を空にするだけ） */}
-                  {(() => {
-                    if (!costActionHasFlag('hasFaceOption')) return null;
-                    const isFaceDown = (c.options || []).includes('face_down');
-                    return (
-                      <div style={{ marginTop: 4 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
-                        <ButtonGroup
-                          options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
-                          value={isFaceDown ? 'face_down' : ''}
-                          onChange={(v) => updateCost(i, { ...c, options: v ? [v] : [] })}
-                          accentColor="#b76e00"
-                        />
-                      </div>
-                    );
-                  })()}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 10, marginTop: 4, color: '#666' }}>
-                    <input
-                      type="checkbox"
-                      checked={!!costOtherOpen[i] || (!!c.action && !isCommonCostAction)}
-                      onChange={(e) => setCostOtherOpen((prev) => ({ ...prev, [i]: e.target.checked }))}
-                    />
-                    その他のアクション
-                  </label>
-                  {(!!costOtherOpen[i] || (!!c.action && !isCommonCostAction)) && (
-                    <div style={{ marginTop: 2 }}>
-                      <SearchSelect
-                        value={costNormalizedActionValue}
-                        onChange={onCostActionChange}
-                        options={costActionOptions}
-                        allowFreeText
-                        placeholder="--コストアクション--"
-                      />
-                      {costIsPositional && costVariantOptions.length > 0 && (
-                        <div style={{ marginTop: 2 }}>
-                          <SearchSelect
-                            value={costCurrentSuffix}
-                            onChange={onCostVariantChange}
-                            options={costVariantOptions}
-                            placeholder="📍 位置"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                {/* 値 */}
-                <div style={{ marginTop: 4 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                  <input
-                    type="text"
-                    value={c.value === undefined ? '' : String(c.value)}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v === '') updateCost(i, { ...c, value: undefined });
-                      else if (/^\d+$/.test(v)) updateCost(i, { ...c, value: Number(v) });
-                      else updateCost(i, { ...c, value: v });
-                    }}
-                    placeholder="値（枚数等）"
-                    style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-                  />
-                </div>
-                {/* 対象（ボタン方式） */}
-                <div style={{ marginTop: 4 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                  <ButtonGroup options={TARGET_SEL_L1} value={cCurTgt.l1} onChange={(l1) => setCostTgt(l1)} accentColor="#b76e00" />
-                  {cTgtL2Options.length > 0 && (
-                    <div style={{ marginTop: 4 }}>
-                      <ButtonGroup options={cTgtL2Options} value={cCurTgt.l2} onChange={(l2) => setCostTgt(cCurTgt.l1, l2)} accentColor="#b76e00" />
-                    </div>
-                  )}
-                  {/* デジモン/テイマー本体のときだけ「本体/下/一番下」を選べる（進化元／テイマーの下のカードを指す） */}
-                  {showCostStackPos && (
-                    <div style={{ marginTop: 4 }}>
-                      <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
-                      <ButtonGroup options={STACK_POS_OPTIONS} value={cTgtStackPos} onChange={(v) => setCostStackPos(v as StackPos)} accentColor="#b76e00" />
-                    </div>
-                  )}
-                  {/* 「下/一番下」のときだけ、積まれているカードの裏表・種別で絞り込める */}
-                  {showCostStackPos && cTgtStackPos !== '' && (
-                    <div style={{ marginTop: 4 }}>
-                      <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>裏表/種別:</span>
-                      <MultiButtonGroup options={COST_STACK_FACE_TYPE_OPTS} values={costFaceTypeActive} onToggle={toggleCostFaceType} accentColor="#b76e00" />
-                    </div>
-                  )}
-                  {!cHideCount && cCurTgt.l1 && (
-                    <div style={{ marginTop: 4 }}>
-                      <ButtonGroup
-                        options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
-                        value={cTgtSuffix}
-                        onChange={(v) => updateCost(i, { ...c, target: joinStackSuffix(cTgtBase, cTgtStackPos) + v })}
-                        accentColor="#b76e00"
-                      />
-                    </div>
-                  )}
-                </div>
-
-
-                {/* === コスト対象の絞り込み条件（発動条件と同じConditionsHybridEditorを再利用） === */}
-                <div style={{ marginTop: 6 }}>
-                  <ConditionsHybridEditor
-                    conditions={c.conditions || []}
-                    onChange={(next) => updateCost(i, { ...c, conditions: next })}
-                    dict={dict}
-                    title="コスト対象の絞り込み"
-                    hint="（複数指定可）"
-                    theme="action"
-                    defaultSubject=""
-                    showSubjectSelector={false}
-                    conditionsOp={c.conditionsOp || 'and'}
-                    onConditionsOpChange={(op) => updateCost(i, { ...c, conditionsOp: op })}
-                  />
-                </div>
-              </div>
-            );
-          })}
-          <button
-            onClick={addCost}
-            style={{
-              padding: '4px 8px',
-              border: '1px dashed #f9a825',
-              background: 'white',
-              borderRadius: 3,
-              cursor: 'pointer',
-              fontSize: 11,
-              marginTop: 2,
-              color: '#e65100',
-            }}
-          >
-            ＋ コストを追加
-          </button>
+          <CostListEditor
+            dict={dict}
+            costs={costs}
+            updateCost={updateCost}
+            addCost={addCost}
+            removeCost={removeCost}
+          />
         </div>
         )}
+
 
         </details>
         )}

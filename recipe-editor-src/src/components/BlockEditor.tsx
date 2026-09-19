@@ -4325,16 +4325,17 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'other', label: 'その他' },
 ];
 
-// 「効果で」: 「以外」チェック(cond_by_effect/cond_not_by_effect)＋自分/相手/互い(subject)の
-// 2軸で表現する。旧cond_own_effect/cond_not_own_effect（自分固定・subjectなし）も
-// 同じカテゴリとして読み込めるようにし、操作すると新コードに正規化される
+// 「効果で」: 辞書登録済みの cond_effect 1コードのみを使い、「以外」はvalue:'not'、
+// 自分/相手/互いはsubjectで表現する（別コードを増やさない）。
+// 旧cond_own_effect/cond_not_own_effect（自分固定・別コード）も同じカテゴリとして
+// 読み込めるようにし、操作すると cond_effect + value/subject の形に正規化される
 const BY_EFFECT_SUBJECT_OPTIONS: { code: string; label: string }[] = [
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
   { code: 'both', label: '互い' },
 ];
-function byEffectIsNot(base: string): boolean {
-  return base === 'cond_not_by_effect' || base === 'cond_not_own_effect';
+function byEffectIsNot(c: ConditionPair): boolean {
+  return c.base === 'cond_not_own_effect' || (c.base === 'cond_effect' && c.value === 'not');
 }
 function byEffectSubject(c: ConditionPair): string {
   if (c.base === 'cond_own_effect' || c.base === 'cond_not_own_effect') return 'own';
@@ -4378,7 +4379,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   description: 'cond_description',
   zone: 'cond_zone',
   ref: 'cond_hand_ge',
-  by_effect: 'cond_by_effect',
+  by_effect: 'cond_effect',
 };
 
 // バリアント選択が必要なカテゴリのプルダウン候補
@@ -4425,7 +4426,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_description' || base === 'cond_description_contains') return 'description';
   if (base === 'cond_zone') return 'zone';
   if (REF_CODE_TO_ZONE_QUANT[base]) return 'ref';
-  if (base === 'cond_by_effect' || base === 'cond_not_by_effect' || base === 'cond_own_effect' || base === 'cond_not_own_effect') return 'by_effect';
+  if (base === 'cond_effect' || base === 'cond_own_effect' || base === 'cond_not_own_effect') return 'by_effect';
   return 'other';
 }
 
@@ -4482,7 +4483,7 @@ function ConditionsHybridEditor({
     'cond_hand_ge', 'cond_hand_le', 'cond_trash_ge', 'cond_trash_le',
     'cond_security_ge', 'cond_security_le', 'cond_has_evo', 'cond_has_evo_le',
     // 「効果で」カテゴリで扱う（新コード+旧固定コード両方）
-    'cond_by_effect', 'cond_not_by_effect', 'cond_own_effect', 'cond_not_own_effect',
+    'cond_effect', 'cond_own_effect', 'cond_not_own_effect',
   ]);
   const otherCondOptions = toOpts(dict.conditions.filter((c) => !CATEGORIZED_CODES.has(c.code)));
 
@@ -4637,7 +4638,8 @@ function ConditionsHybridEditor({
                       options={BY_EFFECT_SUBJECT_OPTIONS}
                       value={byEffectSubject(c)}
                       onChange={(subject) => updateAt(i, {
-                        base: byEffectIsNot(c.base) ? 'cond_not_by_effect' : 'cond_by_effect',
+                        base: 'cond_effect',
+                        value: byEffectIsNot(c) ? 'not' : undefined,
                         subject,
                       })}
                       accentColor={colors.accent}
@@ -4673,9 +4675,10 @@ function ConditionsHybridEditor({
                       <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
                         <input
                           type="checkbox"
-                          checked={byEffectIsNot(c.base)}
+                          checked={byEffectIsNot(c)}
                           onChange={(e) => updateAt(i, {
-                            base: e.target.checked ? 'cond_not_by_effect' : 'cond_by_effect',
+                            base: 'cond_effect',
+                            value: e.target.checked ? 'not' : undefined,
                             subject: byEffectSubject(c),
                           })}
                         />

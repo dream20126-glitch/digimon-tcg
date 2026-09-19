@@ -803,50 +803,36 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                   <td style={td()}>{e.label}</td>
                   {kind === 'actions' && (
                     <td style={td()}>
+                      {/* クリックでトグル保存（既存エントリのフラグは「新規追加」フォームでは変更できず、
+                          ここが唯一の変更手段のため）。オフのフラグも常に表示してクリックでオンにできる */}
                       <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {e.allowsRules && (
-                          <span
-                            style={{ display: 'inline-block', padding: '2px 6px', background: '#e3f2fd', color: '#1976d2', border: '1px solid #93b5e5', borderRadius: 10, fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap' }}
-                            title="このアクション選択時に「+ ルール」を表示"
-                          >
-                            📐 ルール
-                          </span>
-                        )}
-                        {e.hasPositionVariant && (
-                          <span
-                            style={{ display: 'inline-block', padding: '2px 6px', background: '#fff3e0', color: '#b76e00', border: '1px solid #ffd591', borderRadius: 10, fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap' }}
-                            title="このアクション選択時に「📍 位置」プルダウンを表示"
-                          >
-                            📍 位置
-                          </span>
-                        )}
-                        {e.hasFromZones && (
-                          <span
-                            style={{ display: 'inline-block', padding: '2px 6px', background: '#eff5fd', color: '#1a4f8a', border: '1px solid #b9c8e0', borderRadius: 10, fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap' }}
-                            title="このアクション選択時に「📍 場所」ボタンを表示"
-                          >
-                            📥 場所
-                          </span>
-                        )}
-                        {e.hasDeckPosition && (
-                          <span
-                            style={{ display: 'inline-block', padding: '2px 6px', background: '#f0fdfa', color: '#0d9488', border: '1px solid #99f6e4', borderRadius: 10, fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap' }}
-                            title="このアクション選択時に「上/下」ボタンを表示"
-                          >
-                            ⬆️⬇️ 上下
-                          </span>
-                        )}
-                        {e.hasFaceOption && (
-                          <span
-                            style={{ display: 'inline-block', padding: '2px 6px', background: '#f5f0fd', color: '#6b21a8', border: '1px solid #d8b4fe', borderRadius: 10, fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap' }}
-                            title="コストで本アクション選択時に「裏向き/表向き」ボタンを表示"
-                          >
-                            🂠 裏表
-                          </span>
-                        )}
-                        {!e.allowsRules && !e.hasPositionVariant && !e.hasFromZones && !e.hasDeckPosition && !e.hasFaceOption && (
-                          <span style={{ color: '#bbb', fontSize: 11 }}>-</span>
-                        )}
+                        {([
+                          { flag: 'allowsRules' as const, icon: '📐', label: 'ルール', on: { bg: '#e3f2fd', color: '#1976d2', border: '#93b5e5' }, title: 'このアクション選択時に「+ ルール」を表示' },
+                          { flag: 'hasPositionVariant' as const, icon: '📍', label: '位置', on: { bg: '#fff3e0', color: '#b76e00', border: '#ffd591' }, title: 'このアクション選択時に「📍 位置」プルダウンを表示' },
+                          { flag: 'hasFromZones' as const, icon: '📥', label: '場所', on: { bg: '#eff5fd', color: '#1a4f8a', border: '#b9c8e0' }, title: 'このアクション選択時に「📍 場所」ボタンを表示' },
+                          { flag: 'hasDeckPosition' as const, icon: '⬆️⬇️', label: '上下', on: { bg: '#f0fdfa', color: '#0d9488', border: '#99f6e4' }, title: 'このアクション選択時に「上/下」ボタンを表示' },
+                          { flag: 'hasFaceOption' as const, icon: '🂠', label: '裏表', on: { bg: '#f5f0fd', color: '#6b21a8', border: '#d8b4fe' }, title: 'コストで本アクション選択時に「裏向き/表向き」ボタンを表示' },
+                        ]).map(({ flag, icon, label, on, title }) => {
+                          const active = !!e[flag];
+                          return (
+                            <button
+                              key={flag}
+                              type="button"
+                              title={title + '（クリックで' + (active ? 'オフ' : 'オン') + 'に切替）'}
+                              onClick={() => dict.updateEntry(kind, e.code, { [flag]: !active } as Partial<DictEntry>)}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 3,
+                                padding: '2px 6px', borderRadius: 10, fontSize: 11, fontWeight: 'bold',
+                                whiteSpace: 'nowrap', cursor: 'pointer',
+                                background: active ? on.bg : '#f5f5f5',
+                                color: active ? on.color : '#999',
+                                border: '1px solid ' + (active ? on.border : '#ddd'),
+                              }}
+                            >
+                              {icon} {label}
+                            </button>
+                          );
+                        })}
                       </span>
                     </td>
                   )}

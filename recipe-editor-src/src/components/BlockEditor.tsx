@@ -252,8 +252,13 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
           <div style={{ fontSize: 10, color: '#666', marginBottom: 6 }}>
             登場時/継続効果 等、既存のトリガー/アクションの組み合わせで表現できる場合のみ作成してください。
             空のままなら今まで通り「フラグとしてキーワード名を持つだけ」で登録されます（エンジン側の対応が別途必要）。
+            ここで組んだ効果は、そのカード自身が「パッシブ」でこのキーワードを持つ場合だけでなく、
+            他のカードが「キーワード付与」アクションでこのキーワードを対象に付与する場合にも、
+            自動でその通りに発動するようになります（保存時に付与効果として変換されます）。
             <br />※【セキュリティアタック+2】のように数値がカードごとに変わる場合、ここでは値欄を空欄のままにしてください。
             カード側の「キーワード効果」バナーで入力した数値が、保存時にこの空欄部分へ自動で差し込まれます。
+            <br />※「キーワード付与」での利用時は、効果ステップは1つ・トリガーも1種類にとどめてください
+            （2つ目以降のステップは、そのカードを後で開き直して保存し直した際に失われるおそれがあります）。
           </div>
           {templateBlocks.map((b, i) => (
             <BlockEditor
@@ -1598,7 +1603,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <label style={{ display: 'block', fontWeight: 'bold', color: '#6b21a8', marginBottom: 4 }}>
                 🔑 キーワード
                 {block.keyword && (
-                  isKeywordImplemented(block.keyword)
+                  isKeywordImplemented(block.keyword, !!dict.keywords.find((k) => k.code === block.keyword)?.recipeTemplate)
                     ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 6 }}>✅実装済</span>
                     : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
                 )}
@@ -3529,14 +3534,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             {block.action === 'grant_keyword' || block.action === 'grant_keyword_to' ? (
               <>
                 <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
-                  💡 対象にキーワード（既存キーワードまたは辞書登録済みのキーワード効果）を付与する。
-                  値・対象・対象数・期間は上の通常のアクション欄で設定してください。
+                  💡 対象にキーワードを付与する。値・対象・対象数・期間は上の通常のアクション欄で設定してください。
+                  選んだキーワードに辞書側でレシピ（効果ステップ）が登録済みの場合、保存時に自動で
+                  grant_effect（付与効果）へ変換され、そのレシピ通りに実際に発動します。
+                  レシピが空のキーワード（貫通等、エンジンに直接実装済みのもの）は従来通りフラグのみ付与します。
                 </div>
                 <div>
                   <label>
                     付与するキーワード
                     {block.keyword && (
-                      isKeywordImplemented(block.keyword)
+                      isKeywordImplemented(block.keyword, !!dict.keywords.find((k) => k.code === block.keyword)?.recipeTemplate)
                         ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 6 }}>✅実装済</span>
                         : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
                     )}

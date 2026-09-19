@@ -400,6 +400,35 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       Object.keys(ex).forEach((k) => (step[k] = ex[k]));
     } catch (_) {}
   }
+  // === grant_keyword(_to) のキーワードにレシピテンプレートが登録済みなら、
+  // grant_effect + granted_recipe（既存の付与効果ランタイム）に変換して実発動させる。
+  // テンプレートを持たない既存キーワード（貫通等・エンジン側に直接実装済み）は
+  // 従来通り action:"grant_keyword" + keyword のフラグ出力のまま変えない
+  if ((step.action === 'grant_keyword' || step.action === 'grant_keyword_to') && b.keyword) {
+    const kwEntry = keywordDict && keywordDict.find((k) => k.code === b.keyword);
+    if (kwEntry && kwEntry.recipeTemplate) {
+      try {
+        const template = JSON.parse(kwEntry.recipeTemplate);
+        if (template && typeof template === 'object' && Object.keys(template).length > 0) {
+          const cv = b.value !== undefined && b.value !== '' && b.value !== null
+            ? (isNaN(Number(b.value)) ? b.value : Number(b.value))
+            : undefined;
+          const filledTemplate: Record<string, any> = {};
+          Object.keys(template).forEach((k) => {
+            const steps = template[k];
+            if (!Array.isArray(steps)) return;
+            filledTemplate[k] = cv === undefined
+              ? steps
+              : steps.map((s: any) => (s && s.value === undefined ? { ...s, value: cv } : s));
+          });
+          step.action = 'grant_effect';
+          step.granted_recipe = filledTemplate;
+          delete step.keyword;
+          delete step.value;
+        }
+      } catch (_) { /* パース失敗時は従来通り grant_keyword のまま出力 */ }
+    }
+  }
   container[b.trigger] = container[b.trigger] || [];
   container[b.trigger].push(step);
 }

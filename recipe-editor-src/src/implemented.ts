@@ -137,8 +137,12 @@ export function isActionImplemented(code: string, logicCode?: string): boolean {
   return IMPLEMENTED_ACTIONS.has(target);
 }
 
-export function isKeywordImplemented(code: string): boolean {
-  return IMPLEMENTED_KEYWORDS.has(code);
+// hasRecipeTemplate: true を渡すと、辞書にレシピテンプレートが登録済みのキーワード
+// （grant_keyword(_to) 時に自動で grant_effect+granted_recipe へ変換されて実発動する）
+// も実装済み扱いにする。エンジンのハードコード実装(IMPLEMENTED_KEYWORDS)を持たない
+// 新規キーワードでも、レシピさえ組んであれば ✅実装済 と表示するため
+export function isKeywordImplemented(code: string, hasRecipeTemplate?: boolean): boolean {
+  return IMPLEMENTED_KEYWORDS.has(code) || !!hasRecipeTemplate;
 }
 
 export function isOptionImplemented(code: string, logicCode?: string): boolean {

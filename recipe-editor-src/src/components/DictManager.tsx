@@ -396,7 +396,7 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
 
   function checkImpl(e: DictEntry): boolean {
     if (kind === 'actions') return isActionImplemented(e.code, e.logicCode);
-    if (kind === 'keywords') return isKeywordImplemented(e.code);
+    if (kind === 'keywords') return isKeywordImplemented(e.code, !!e.recipeTemplate);
     if (kind === 'options') return isOptionImplemented(e.code, e.logicCode);
     if (kind === 'conditions') return isConditionImplemented(e.code);
     return true;
@@ -852,7 +852,7 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                   )}
                   {isActionOrKeyword && <td style={td()}>{e.visualType || '-'}</td>}
                   {isActionOrKeyword && <td style={td()}>{e.autoManual || '-'}</td>}
-                  {hasImplBadge && <td style={td()}><ImplBadgeSmall kind={kind} code={e.code} logicCode={e.logicCode} /></td>}
+                  {hasImplBadge && <td style={td()}><ImplBadgeSmall kind={kind} code={e.code} logicCode={e.logicCode} hasRecipeTemplate={!!e.recipeTemplate} /></td>}
                   <td style={td()}>
                     <button onClick={() => handleEditLabel(e)} style={{ ...btn(), fontSize: 11, marginRight: 4 }}>✏ 編集</button>
                     <button onClick={() => handleRemove(e.code)} style={{ ...btn(), borderColor: '#d33', color: '#d33', fontSize: 11 }}>削除</button>
@@ -956,10 +956,10 @@ function VisualTypePanel({ dict, setMsg }: { dict: DictAPI; setMsg: (s: string) 
 }
 
 // 実装ステータス バッジ（フォーム内・大型）
-function ImplStatusBadge({ kind, code, logicCode }: { kind: DictKind; code: string; logicCode?: string }) {
+function ImplStatusBadge({ kind, code, logicCode, hasRecipeTemplate }: { kind: DictKind; code: string; logicCode?: string; hasRecipeTemplate?: boolean }) {
   if (kind !== 'actions' && kind !== 'keywords' && kind !== 'options') return null;
   const implemented = kind === 'actions' ? isActionImplemented(code, logicCode)
-                    : kind === 'keywords' ? isKeywordImplemented(code)
+                    : kind === 'keywords' ? isKeywordImplemented(code, hasRecipeTemplate)
                     : isOptionImplemented(code, logicCode);
   if (implemented) {
     return (
@@ -983,9 +983,9 @@ function ImplStatusBadge({ kind, code, logicCode }: { kind: DictKind; code: stri
 // （旧 RulesPanel / SchemaBuilder / SchemaValidator はルール方式への移行で全削除）
 
 // 一覧テーブル内・小型バッジ
-function ImplBadgeSmall({ kind, code, logicCode }: { kind: DictKind; code: string; logicCode?: string }) {
+function ImplBadgeSmall({ kind, code, logicCode, hasRecipeTemplate }: { kind: DictKind; code: string; logicCode?: string; hasRecipeTemplate?: boolean }) {
   const implemented = kind === 'actions' ? isActionImplemented(code, logicCode)
-                    : kind === 'keywords' ? isKeywordImplemented(code)
+                    : kind === 'keywords' ? isKeywordImplemented(code, hasRecipeTemplate)
                     : kind === 'options' ? isOptionImplemented(code, logicCode)
                     : isConditionImplemented(code);
   return implemented
@@ -997,7 +997,7 @@ function ImplBadgeSmall({ kind, code, logicCode }: { kind: DictKind; code: strin
 function buildUnimplementedReport(dict: DictAPI): string {
   const unimplActions = dict.actions.filter((a) => !isActionImplemented(a.code, a.logicCode));
   const unimplConditions = dict.conditions.filter((c) => !isConditionImplemented(c.code));
-  const unimplKeywords = dict.keywords.filter((k) => !isKeywordImplemented(k.code));
+  const unimplKeywords = dict.keywords.filter((k) => !isKeywordImplemented(k.code, !!k.recipeTemplate));
   const unimplOptions = dict.options.filter((o) => !isOptionImplemented(o.code, o.logicCode));
 
   const lines: string[] = [];

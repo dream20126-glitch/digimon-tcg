@@ -3275,6 +3275,11 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
             shouldRemove = b._ticks >= needed;
             if (!shouldRemove) return true;
           }
+          // dur_until_battle_end: ターン非依存。バトル解決時（resolveBattle/resolveBattleAI）に
+          // 呼ばれた時点で無条件削除（例:「アタック中は相手の効果を受けない」等）
+          else if (timing === 'dur_until_battle_end') {
+            shouldRemove = true;
+          }
           if (shouldRemove) {
             removedBuffs.push({ type: b.type, duration: b.duration });
           }

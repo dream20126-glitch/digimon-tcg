@@ -2191,6 +2191,9 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
       addLog('🧊 ≪氷装≫: 進化元枚数比較 (atk=' + _atkDp + ' / def=' + _defDp + ')');
     }
     removeBattleBuffs(battleBuffs);
+    // 「バトル終了まで」（dur_until_battle_end）のバフはここで期限切れにする
+    // （例:「アタック中のこのデジモンは相手の効果を受けない」＝immune_effects）
+    _expireBuffs(bs, 'dur_until_battle_end');
     if (_atkDp === _defDp) {
       // 両者消滅の前に、双方独立に when_battle_destroy（消滅回避コスト）を確認する
       _runWhenBattleDestroy('ai', def, () => {
@@ -2388,6 +2391,9 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
       addLog('🧊 ≪氷装≫: 進化元枚数比較 (atk=' + _atkDp + ' / def=' + _defDp + ')');
     }
     removeBattleBuffs(battleBuffs);
+    // 「バトル終了まで」（dur_until_battle_end）のバフはここで期限切れにする
+    // （例:「アタック中のこのデジモンは相手の効果を受けない」＝immune_effects）
+    _expireBuffs(bs, 'dur_until_battle_end');
     if (_atkDp === _defDp) {
       // 両者消滅の前に、双方独立に when_battle_destroy（消滅回避コスト）を確認する
       _runWhenBattleDestroy('player', def, () => {

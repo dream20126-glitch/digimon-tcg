@@ -74,6 +74,7 @@ export const DURATIONS = [
   { code: 'dur_next_own_turn', label: '次の自分ターン終了まで' },
   { code: 'dur_next_opp_unsuspend', label: '次の相手のアクティブフェイズまで' },
   { code: 'dur_next_own_unsuspend', label: '次の自分のアクティブフェイズまで' },
+  { code: 'dur_until_battle_end', label: 'バトル終了まで' },
   { code: 'dur_while', label: '〜の間（汎用）' },
 ];
 

@@ -849,6 +849,7 @@ const DURATION_L1 = [
   { code: 'dur_this_turn', label: 'このターン中' },
   { code: 'turn_end', label: 'ターン終了まで' },
   { code: 'active_phase', label: 'アクティブフェイズ開始まで' },
+  { code: 'dur_until_battle_end', label: 'バトル終了まで' },
   { code: 'dur_while', label: '〜の間（汎用）' },
 ];
 const DURATION_L2: Record<string, { code: string; label: string }[]> = {
@@ -866,6 +867,7 @@ function durationToL1(dur?: string): string {
   if (dur === 'dur_this_turn') return 'dur_this_turn';
   if (dur === 'dur_next_own_turn' || dur === 'dur_next_opp_turn') return 'turn_end';
   if (dur === 'dur_next_own_unsuspend' || dur === 'dur_next_opp_unsuspend') return 'active_phase';
+  if (dur === 'dur_until_battle_end') return 'dur_until_battle_end';
   if (dur === 'dur_while') return 'dur_while';
   return '';
 }

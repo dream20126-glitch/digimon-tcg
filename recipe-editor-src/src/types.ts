@@ -122,6 +122,10 @@ export interface AltAction {
   options?: string[];
   fromZones?: string[];
   fromZonesOp?: 'or' | 'and';
+  // 辞書の hasDeckPosition=true のアクション専用（例: return_deck）。JSON では
+  // 対応するstep（alt_actions[]の要素、または'then'モード時は独立した後続step）の
+  // position ('top'/'bottom') に serialize
+  deckPosition?: 'top' | 'bottom' | 'both';
   // 期間・倍率（AND実行時の追加設定）
   duration?: string;
   perCount?: number;

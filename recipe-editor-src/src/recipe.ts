@@ -38,6 +38,11 @@ function altActionToStepObject(a: AltAction): any {
     }
   }
   if (Array.isArray(a.options) && a.options.length > 0) out.options = a.options.slice();
+  // 上/下（デッキに戻す位置等・hasDeckPosition用）。'both'（どちらか選んで）はエンジン未対応の
+  // ため 'select' として出力する（メイン側の serialize と同じ変換規則）
+  if (a.deckPosition === 'top') out.position = 'top';
+  else if (a.deckPosition === 'bottom') out.position = 'bottom';
+  else if (a.deckPosition === 'both') out.position = 'select';
   // per_count / duration / ref / ref_filter
   if (a.perCount && a.perCount > 0 && a.perRef) {
     out.per_count = a.perCount;
@@ -582,6 +587,10 @@ function stepObjectToAltAction(step: any): AltAction {
     options,
     fromZones,
     fromZonesOp: step?.from_op === 'and' ? 'and' : 'or',
+    deckPosition: step?.position === 'top' ? 'top'
+      : step?.position === 'bottom' ? 'bottom'
+      : step?.position === 'select' ? 'both'
+      : undefined,
     duration: step?.duration || '',
     perCount: step?.per_count != null ? Number(step.per_count) : undefined,
     perRef: step?.ref || '',
@@ -805,9 +814,14 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             target: a?.target || '',
             gateConditions: gateArr,
             conditions: condArr,
+            conditionsOp: a?.condition_op === 'or' ? 'or' as const : 'and' as const,
             options: Array.isArray(a?.options) ? a.options.slice() : [],
             fromZones: fromZ,
             fromZonesOp: a?.from_op === 'and' ? 'and' as const : 'or' as const,
+            deckPosition: a?.position === 'top' ? 'top' as const
+              : a?.position === 'bottom' ? 'bottom' as const
+              : a?.position === 'select' ? 'both' as const
+              : undefined,
             duration: a?.duration || '',
             perCount: a?.per_count != null ? Number(a.per_count) : undefined,
             perRef: a?.ref || '',

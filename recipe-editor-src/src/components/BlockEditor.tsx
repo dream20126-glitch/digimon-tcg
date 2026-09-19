@@ -2470,13 +2470,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         })()}
 
         {/* 上/下（デッキに戻す位置など）: 辞書の hasDeckPosition=true なアクションのみ表示。
-            両方チェック＝「どちらか選んで」はエンジン未対応（'top'以外は全て下として扱われる） */}
-        {!!dict.actions.find((a) => a.code === block.action)?.hasDeckPosition && (() => {
-          const top = block.deckPosition === 'top' || block.deckPosition === 'both';
-          const bottom = block.deckPosition === 'bottom' || block.deckPosition === 'both';
+            両方チェック＝「どちらか選んで」はエンジン未対応（'top'以外は全て下として扱われる）。
+            OR/AND/その後で「効果2」以降を編集中のときは、そちらのアクション/位置を見る
+            （常にblock=効果1側を見てしまうと、効果2で「デッキに戻す」を選んでも出てこない） */}
+        {!!dict.actions.find((a) => a.code === effectAction)?.hasDeckPosition && (() => {
+          const effectDeckPosition = isEditingAlt ? editingAlt!.deckPosition : block.deckPosition;
+          const top = effectDeckPosition === 'top' || effectDeckPosition === 'both';
+          const bottom = effectDeckPosition === 'bottom' || effectDeckPosition === 'both';
           const setPos = (nextTop: boolean, nextBottom: boolean) => {
             const v = nextTop && nextBottom ? 'both' : nextTop ? 'top' : nextBottom ? 'bottom' : undefined;
-            update('deckPosition', v);
+            updateEffect({ deckPosition: v });
           };
           return (
             <div className="field" style={{ marginTop: 8 }}>

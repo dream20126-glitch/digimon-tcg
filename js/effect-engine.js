@@ -8916,12 +8916,19 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
 
     // === 効果を受けない（バフ付与） ===
+    // step.source_type: 'digimon' なら「相手のデジモンの効果」のみ、省略なら相手の効果全て
+    // （デジモン/テイマー/オプション問わず）が対象。⚠ この絞り込み自体は保持されるが、
+    // 相手の効果処理側でこのバフ（およびsourceType）を参照する判定がまだ無いため、
+    // 実際に効果を防ぐ動作はしない（エンジン未実装）
     case 'immune_effects': {
       const tgt = ctx.card;
       if (tgt) {
         const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
         addBuffDirect(tgt, 'keyword_immune', 0, dur, ctx);
-        ctx.addLog('🪄 「' + tgt.name + '」は相手の効果を受けない');
+        const isDigimonOnly = step.source_type === 'digimon';
+        const lastBuff = tgt.buffs[tgt.buffs.length - 1];
+        if (lastBuff && isDigimonOnly) lastBuff.sourceType = 'digimon';
+        ctx.addLog('🪄 「' + tgt.name + '」は相手の' + (isDigimonOnly ? 'デジモンの' : '') + '効果を受けない');
       }
       callback();
       break;

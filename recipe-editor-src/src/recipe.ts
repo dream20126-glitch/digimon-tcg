@@ -333,6 +333,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.keyword) step.keyword = b.keyword;
   // memory_plus の「このターン終了時メモリー-N」フラグ
   if (b.revertAtTurnEnd) step.revert_at_turn_end = true;
+  // immune_effects 専用:「相手の効果を受けない」の対象範囲。
+  // 省略(既定) = 相手の効果全て（デジモン/テイマー/オプション問わず）
+  // 'digimon' = 相手の「デジモン」の効果のみ（テイマー/オプションは対象外）
+  if (b.action === 'immune_effects' && b.immuneCardType === 'digimon') step.source_type = 'digimon';
   // summon の「コストを支払わずに登場」フラグ
   if (b.costFree) step.cost_free = true;
   // summon_from_trash の「登場したデジモンの【登場時】効果は発揮しない」フラグ
@@ -688,6 +692,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     value: true,
     keyword: true,
     revert_at_turn_end: true,
+    source_type: true,
     cost_free: true,
     skip_on_play: true,
     optional: true,
@@ -788,6 +793,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       return { keywordParamConditions: conds, keywordParamConditionsOp: op };
     })(),
     revertAtTurnEnd: !!step?.revert_at_turn_end,
+    immuneCardType: step?.source_type === 'digimon' ? 'digimon' : undefined,
     costFree: !!step?.cost_free,
     skipOnPlay: !!step?.skip_on_play,
     deckPosition: step?.position === 'top' ? 'top'

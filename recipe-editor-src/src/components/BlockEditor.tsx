@@ -2614,6 +2614,25 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
+        {/* immune_effects 専用:「相手の効果を受けない」の対象範囲
+            （デジモン/テイマー/オプション全て なのか、デジモンの効果のみ なのか） */}
+        {block.action === 'immune_effects' && (
+          <div className="field" style={{ marginTop: 8, background: '#fdf2f8', padding: 8, borderRadius: 4, border: '1px solid #f5b8d8' }}>
+            <div style={{ fontWeight: 'bold', color: '#9d174d', marginBottom: 4, fontSize: 12 }}>
+              🛡 相手のどの効果を受けないか
+            </div>
+            <ButtonGroup
+              options={[
+                { code: '', label: 'カード（デジモン/テイマー/オプション問わず）' },
+                { code: 'digimon', label: 'デジモンの効果のみ' },
+              ]}
+              value={block.immuneCardType || ''}
+              onChange={(v) => update('immuneCardType', (v || '') as 'digimon' | '')}
+              accentColor="#9d174d"
+            />
+          </div>
+        )}
+
         {/* memory_plus 専用: このターン終了時メモリー-N */}
         {block.action === 'memory_plus' && (
           <div className="field" style={{ marginTop: 8, background: '#eef4ff', padding: 8, borderRadius: 4, border: '1px solid #b3c8ff' }}>

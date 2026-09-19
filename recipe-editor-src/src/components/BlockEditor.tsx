@@ -4307,7 +4307,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'description' | 'zone' | 'ref' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'description' | 'zone' | 'ref' | 'by_effect' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -4321,8 +4321,25 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'description', label: '記述' },
   { value: 'zone', label: '場所' },
   { value: 'ref', label: '参照' },
+  { value: 'by_effect', label: '効果で' },
   { value: 'other', label: 'その他' },
 ];
+
+// 「効果で」: 「以外」チェック(cond_by_effect/cond_not_by_effect)＋自分/相手/互い(subject)の
+// 2軸で表現する。旧cond_own_effect/cond_not_own_effect（自分固定・subjectなし）も
+// 同じカテゴリとして読み込めるようにし、操作すると新コードに正規化される
+const BY_EFFECT_SUBJECT_OPTIONS: { code: string; label: string }[] = [
+  { code: 'own', label: '自分' },
+  { code: 'opp', label: '相手' },
+  { code: 'both', label: '互い' },
+];
+function byEffectIsNot(base: string): boolean {
+  return base === 'cond_not_by_effect' || base === 'cond_not_own_effect';
+}
+function byEffectSubject(c: ConditionPair): string {
+  if (c.base === 'cond_own_effect' || c.base === 'cond_not_own_effect') return 'own';
+  return c.subject || 'own';
+}
 
 // 「参照」: 手札/トラッシュ/セキュリティ/進化元の枚数を条件にする（例:「手札が6枚以上」）。
 // ゾーン×以上/以下の2軸をコードの組合せで表現するため、専用の相互変換テーブルを持つ
@@ -4361,6 +4378,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   description: 'cond_description',
   zone: 'cond_zone',
   ref: 'cond_hand_ge',
+  by_effect: 'cond_by_effect',
 };
 
 // バリアント選択が必要なカテゴリのプルダウン候補
@@ -4407,6 +4425,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_description' || base === 'cond_description_contains') return 'description';
   if (base === 'cond_zone') return 'zone';
   if (REF_CODE_TO_ZONE_QUANT[base]) return 'ref';
+  if (base === 'cond_by_effect' || base === 'cond_not_by_effect' || base === 'cond_own_effect' || base === 'cond_not_own_effect') return 'by_effect';
   return 'other';
 }
 
@@ -4462,6 +4481,8 @@ function ConditionsHybridEditor({
     // 「参照」カテゴリで扱う手札/トラッシュ/セキュリティ/進化元の枚数条件
     'cond_hand_ge', 'cond_hand_le', 'cond_trash_ge', 'cond_trash_le',
     'cond_security_ge', 'cond_security_le', 'cond_has_evo', 'cond_has_evo_le',
+    // 「効果で」カテゴリで扱う（新コード+旧固定コード両方）
+    'cond_by_effect', 'cond_not_by_effect', 'cond_own_effect', 'cond_not_own_effect',
   ]);
   const otherCondOptions = toOpts(dict.conditions.filter((c) => !CATEGORIZED_CODES.has(c.code)));
 
@@ -4610,6 +4631,18 @@ function ConditionsHybridEditor({
                       accentColor={colors.accent}
                     />
                   )}
+                  {/* 効果で: 自分/相手/互い（subjectで指定） */}
+                  {cat.code === 'by_effect' && (
+                    <ButtonGroup
+                      options={BY_EFFECT_SUBJECT_OPTIONS}
+                      value={byEffectSubject(c)}
+                      onChange={(subject) => updateAt(i, {
+                        base: byEffectIsNot(c.base) ? 'cond_not_by_effect' : 'cond_by_effect',
+                        subject,
+                      })}
+                      accentColor={colors.accent}
+                    />
+                  )}
                   {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントボタン（コンテンツ幅のみ使用・空なら詰める） */}
                   {(cat.code === 'dp' ? dpVariantOptions : CATEGORY_VARIANTS[cat.code as CondCategory]) && (
                     <ButtonGroup
@@ -4635,7 +4668,20 @@ function ConditionsHybridEditor({
                   )}
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                    {cat.code === 'ref' ? (
+                    {cat.code === 'by_effect' ? (
+                      /* 効果で: 「以外」チェックのみ（数値等は不要） */
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
+                        <input
+                          type="checkbox"
+                          checked={byEffectIsNot(c.base)}
+                          onChange={(e) => updateAt(i, {
+                            base: e.target.checked ? 'cond_not_by_effect' : 'cond_by_effect',
+                            subject: byEffectSubject(c),
+                          })}
+                        />
+                        以外
+                      </label>
+                    ) : cat.code === 'ref' ? (
                       /* 参照: 以上/以下ボタン + 枚数入力 */
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                         <ButtonGroup
@@ -4788,7 +4834,9 @@ function ConditionsHybridEditor({
                       />
                     )}
                   </div>
-                  {showSubjectSelector && (
+                  {/* 「効果で」は専用の自分/相手/互いボタンでsubjectを管理するため、
+                      汎用の「対象」セレクタ（別のコード体系でsubjectを上書きしてしまう）は出さない */}
+                  {showSubjectSelector && cat.code !== 'by_effect' && (
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
                       {(() => {

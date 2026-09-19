@@ -221,6 +221,10 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_no_tamer_evo', kind: 'condition', label: '進化元にテイマーカードが無い' },
   { code: 'cond_not_own_effect', kind: 'condition', label: '自分の効果以外' },
   { code: 'cond_own_effect', kind: 'condition', label: '自分の効果で' },
+  // 汎用版:「効果で」/「効果以外で」+ 自分/相手/互い（@subjectで指定）。エディタでは
+  // 専用の「効果で」カテゴリボタン（「以外」チェック+自分/相手/互いボタン）で編集する
+  { code: 'cond_by_effect', kind: 'condition', label: '効果で' },
+  { code: 'cond_not_by_effect', kind: 'condition', label: '効果以外で' },
   { code: 'cond_name', kind: 'condition', label: '名前（完全一致）' },
   { code: 'cond_name_contains', kind: 'condition', label: '名称に含む' },
   { code: 'cond_feature_contains', kind: 'condition', label: '特徴に含む' },

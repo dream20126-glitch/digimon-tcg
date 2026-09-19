@@ -975,6 +975,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectValue = isEditingAlt ? editingAlt!.value : block.value;
   const effectTarget = isEditingAlt ? (editingAlt!.target || '') : (block.target || '');
   const effectConditions = isEditingAlt ? (editingAlt!.conditions || []) : conditions;
+  const effectConditionsOp: 'and' | 'or' = isEditingAlt ? (editingAlt!.conditionsOp || 'and') : (block.conditionsOp || 'and');
   const effectFromZones = isEditingAlt ? (editingAlt!.fromZones || []) : (block.fromZones || []);
   const effectFromZonesOp = isEditingAlt ? (editingAlt!.fromZonesOp || 'or') : (block.fromZonesOp || 'or');
   const effectDuration = isEditingAlt ? editingAlt!.duration : block.duration;
@@ -2869,15 +2870,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             title={isEditingAlt ? `発動条件（効果${editingEffect + 1}）` : '発動条件'}
             hint={
               isEditingAlt
-                ? '（この効果を発動するための条件・複数指定可・AND結合）'
+                ? '（この効果を発動するための条件・複数指定可）'
                 : block.trigger === 'alt_evolve'
                 ? '（代替進化専用の意味: 条件1=発動条件 / 条件2=進化元の絞り込み・複数追加時は3個目以降は無視されます）'
-                : '（このアクションを発動するために満たすべき条件・複数指定可・AND結合）'
+                : '（このアクションを発動するために満たすべき条件・複数指定可）'
             }
             theme="action"
             defaultSubject=""
             attackContextActive={isAttackTrigger}
             showCostMod={effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'destroy'}
+            conditionsOp={effectConditionsOp}
+            onConditionsOpChange={(op) => updateEffect({ conditionsOp: op })}
           />
 
         {renderPerCountEditor(isEditingAlt)}
@@ -3442,10 +3445,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     onChange={(next) => updateCost(i, { ...c, conditions: next })}
                     dict={dict}
                     title="コスト対象の絞り込み"
-                    hint="（複数指定可・AND結合）"
+                    hint="（複数指定可）"
                     theme="action"
                     defaultSubject=""
                     showSubjectSelector={false}
+                    conditionsOp={c.conditionsOp || 'and'}
+                    onConditionsOpChange={(op) => updateCost(i, { ...c, conditionsOp: op })}
                   />
                 </div>
               </div>
@@ -4279,6 +4284,11 @@ interface ConditionsHybridEditorProps {
   // 進化/登場アクション（対象=このカード）のように対象ボタンが取得元カードの種別を
   // 決めていないケースでは、「クロノモンの記述がある【何の】カードか」を明示するために必要
   showTypeInTargetFilter?: boolean;
+  // 複数条件の結合方法をAND/ORで選べるようにする（未指定時は常にAND・従来通りの固定表記）。
+  // 呼び出し元が保持するデータ（block.conditionsOp / cost.conditionsOp 等）と結び付けるため
+  // 両方セットで渡す。現状は発動条件・コスト対象の絞り込みでのみ有効化している
+  conditionsOp?: 'and' | 'or';
+  onConditionsOpChange?: (op: 'and' | 'or') => void;
 }
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
@@ -4414,7 +4424,7 @@ function ConditionsHybridEditor({
   conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true,
   supportsMultiValue = false, attackContextActive = false,
   part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false,
-  showTypeInTargetFilter = false,
+  showTypeInTargetFilter = false, conditionsOp, onConditionsOpChange,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
@@ -4509,9 +4519,21 @@ function ConditionsHybridEditor({
         {colors.icon} {title}
         <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>{hint}</span>
       </label>
-      <div style={{ fontSize: 10, color: '#666', margin: '2px 0 6px' }}>
-        複数指定した場合はすべて AND（全部を満たしたときだけ発動）。
-      </div>
+      {onConditionsOpChange ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0 6px' }}>
+          <span style={{ fontSize: 10, color: '#666' }}>複数指定した場合の結合方法:</span>
+          <ButtonGroup
+            options={[{ code: 'and', label: 'AND（全部満たす）' }, { code: 'or', label: 'OR（いずれか満たす）' }]}
+            value={conditionsOp || 'and'}
+            onChange={(v) => onConditionsOpChange((v || 'and') as 'and' | 'or')}
+            accentColor={colors.accent}
+          />
+        </div>
+      ) : (
+        <div style={{ fontSize: 10, color: '#666', margin: '2px 0 6px' }}>
+          複数指定した場合はすべて AND（全部を満たしたときだけ発動）。
+        </div>
+      )}
 
       {/* よく使う条件: ボタンを押すとその場に詳細設定が展開する（よく使うトリガーと同じ操作感） */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

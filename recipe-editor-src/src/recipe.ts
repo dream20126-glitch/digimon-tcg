@@ -28,6 +28,7 @@ function altActionToStepObject(a: AltAction): any {
   if (validC.length >= 1) out.condition = pairToString(validC[0]);
   if (validC.length >= 2) out.when = pairToString(validC[1]);
   if (validC.length >= 3) out.extra_conditions = validC.slice(2).map(pairToString);
+  if (validC.length >= 2 && a.conditionsOp === 'or') out.condition_op = 'or';
   if (Array.isArray(a.fromZones) && a.fromZones.length > 0) {
     const az = a.fromZones.filter((z) => !!z);
     if (az.length === 1) out.from = az[0];
@@ -234,6 +235,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (validConds.length >= 1) step.condition = pairToString(validConds[0]);
   if (validConds.length >= 2) step.when = pairToString(validConds[1]);
   if (validConds.length >= 3) step.extra_conditions = validConds.slice(2).map(pairToString);
+  if (validConds.length >= 2 && b.conditionsOp === 'or') step.condition_op = 'or';
 
   // トリガー条件: 配列で出力 (step.trigger_conditions[])
   // エンジンは「トリガー発火元のカード」に対してこれらの条件を AND 評価する想定
@@ -273,6 +275,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       if (validCondPairs.length >= 1) cs.condition = pairToString(validCondPairs[0]);
       if (validCondPairs.length >= 2) cs.when = pairToString(validCondPairs[1]);
       if (validCondPairs.length >= 3) cs.extra_conditions = validCondPairs.slice(2).map(pairToString);
+      if (validCondPairs.length >= 2 && c.conditionsOp === 'or') cs.condition_op = 'or';
       return cs;
     });
   }
@@ -575,6 +578,7 @@ function stepObjectToAltAction(step: any): AltAction {
     target: step?.target || '',
     gateConditions,
     conditions,
+    conditionsOp: step?.condition_op === 'or' ? 'or' : 'and',
     options,
     fromZones,
     fromZonesOp: step?.from_op === 'and' ? 'and' : 'or',
@@ -610,6 +614,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     as_type: true,
     action: true,
     condition: true,
+    condition_op: true,
     when: true,
     extra_conditions: true,
     trigger_conditions: true,
@@ -685,6 +690,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
           value: c?.value,
           target: c?.target || '',
           conditions: condArr,
+          conditionsOp: c?.condition_op === 'or' ? 'or' as const : 'and' as const,
           fromZones,
           fromZonesOp,
           deckPosition,
@@ -703,6 +709,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     limit: step?.limit || '',
     triggerConditions,
     conditions,
+    conditionsOp: step?.condition_op === 'or' ? 'or' : 'and',
     costs,
     duration: step?.duration || '',
     action: step?.action || '',

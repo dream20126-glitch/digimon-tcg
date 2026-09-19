@@ -26,7 +26,10 @@ export interface EffectBlock {
   // トリガー条件: トリガー発火元のカード（登場/消滅したカード等）に対するフィルタ
   // 「黄のLv.3デジモンが登場したとき」等の "このトリガーが発火する条件" を表現
   triggerConditions?: ConditionPair[];
-  conditions?: ConditionPair[]; // 0〜N個のAND条件（self や全体状況に対するゲート）
+  conditions?: ConditionPair[]; // 0〜N個の条件（self や全体状況に対するゲート）
+  // 複数条件の結合方法。既定'and'=全部満たす／'or'=いずれか1つ満たす。
+  // JSON では conditions.length>=2 のときだけ step.condition_op:'or' として出力する
+  conditionsOp?: 'and' | 'or';
   costs?: CostStep[]; // 0〜N個のコスト（〜することで）
   duration?: string;
   action?: string;
@@ -115,6 +118,7 @@ export interface AltAction {
   // メインの代わりにこちらが自動実行される（ネガモン等）
   gateConditions?: ConditionPair[];
   conditions?: ConditionPair[];
+  conditionsOp?: 'and' | 'or';
   options?: string[];
   fromZones?: string[];
   fromZonesOp?: 'or' | 'and';
@@ -200,6 +204,7 @@ export interface CostStep {
   target?: string;
   // コスト対象の絞り込み条件（例: 進化元のLv.6のデジモンを手札に戻す → cond_lv:6）
   conditions?: ConditionPair[];
+  conditionsOp?: 'and' | 'or';
   // コスト対象の取得元エリア（'evo_source' / 'hand' / 'trash' 等）。複数指定可
   fromZones?: string[];
   fromZonesOp?: 'or' | 'and';

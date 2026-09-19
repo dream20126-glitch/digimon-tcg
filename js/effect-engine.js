@@ -3948,6 +3948,12 @@ function resolveSubjectSide(subject, currentSide) {
 
 function checkConditions(conditions, card, bs, side) {
   if (!conditions || conditions.length === 0) return true;
+  // OR結合（conditions._op==='or'）: 各条件を独立に(1件ずつ)評価し、いずれか1つでも
+  // 満たせば true。エディタの「AND/OR」トグルで生成される（step.condition_op:'or'から
+  // 呼び出し元がこの配列に印を付ける）。印が無ければ従来通り全件ANDで評価する
+  if (conditions._op === 'or') {
+    return conditions.some(c => checkConditions([c], card, bs, side));
+  }
   // cond_exists / cond_has_evo_digimon (メタ条件) があれば先に評価し、
   // 他の条件はその候補集合に対して適用する
   const hasExists = conditions.some(c => c.code === 'cond_exists');
@@ -7031,7 +7037,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       else if (_t.startsWith('other_own:')) _targetObj = { code: 'target_other_own', count: parseInt(_t.split(':')[1]) || 1 };
       if (step.condition) {
         if (!ctx.block) ctx.block = {};
-        ctx.block.conditions = parseRecipeCondition(step.condition);
+        const _dConds = parseRecipeCondition(step.condition);
+        if (step.condition_op === 'or') _dConds._op = 'or';
+        ctx.block.conditions = _dConds;
       }
       runOneAction(_actionObj, _targetObj, ctx, callback);
       break;
@@ -8107,7 +8115,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       // 条件をctx.blockに伝搬（対象フィルタリング用）
       if (step.condition) {
-        ctx.block.conditions = parseRecipeCondition(step.condition);
+        const _sConds = parseRecipeCondition(step.condition);
+        if (step.condition_op === 'or') _sConds._op = 'or';
+        ctx.block.conditions = _sConds;
       }
       runOneAction(action, null, ctx, callback);
       break;
@@ -8324,6 +8334,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _bAction = { code: 'bounce', value: step.value || null };
       if (step.condition) {
         _bAction.conditions = parseRecipeCondition(step.condition);
+        if (step.condition_op === 'or') _bAction.conditions._op = 'or';
         if (!ctx.block) ctx.block = {};
         ctx.block.conditions = _bAction.conditions;
       }
@@ -9343,11 +9354,13 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (step.condition) edConds2.push(...parseRecipeCondition(step.condition));
         if (step.when) edConds2.push(...parseRecipeCondition(step.when));
         if (Array.isArray(step.extra_conditions)) step.extra_conditions.forEach(cs => edConds2.push(...parseRecipeCondition(cs)));
+        if (step.condition_op === 'or') edConds2._op = 'or';
         action.conditions = edConds2;
         if (!ctx.block) ctx.block = {};
         ctx.block.conditions = edConds2;
       } else if (step.condition) {
         const conds = parseRecipeCondition(step.condition);
+        if (step.condition_op === 'or') conds._op = 'or';
         const _isSelfTgt = !step.target || step.target === 'self' || step.target === 'self_card';
         // 盤面全体・メモリー等の状態を見る条件（cond_tamer/cond_memory_ge等、対象カード
         // 自身の性質ではないもの）は、target指定があっても対象フィルタとして流用せず、

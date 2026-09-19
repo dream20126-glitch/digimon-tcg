@@ -352,7 +352,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
 
   if (b.duration) step.duration = b.duration;
   if (b.action) step.action = b.action;
-  if (b.value !== undefined && b.value !== '' && b.value !== null) {
+  // '-'/'+' は💰コスト増減UIの「符号だけ決めて数値は空欄」プレースホルダー
+  // （キーワードのレシピテンプレート登録時用）。実際の数値ではないため出力しない
+  if (b.value !== undefined && b.value !== '' && b.value !== null && b.value !== '-' && b.value !== '+') {
     const v = Number(b.value);
     step.value = isNaN(v) ? b.value : v;
   }

@@ -2417,12 +2417,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   <label>💰 コスト増減</label>
                   {(() => {
                     const raw = block.value;
-                    const num = raw === undefined || raw === '' ? undefined : Number(raw);
-                    const sign: 'plus' | 'minus' | '' = num === undefined || isNaN(num) || num === 0 ? '' : (num > 0 ? 'plus' : 'minus');
+                    // '-'/'+' は「符号だけ決まっていて数値は未定」のプレースホルダー
+                    // （キーワードのレシピテンプレート登録時、実際の数値はカードごとに保存された
+                    // 値が保存時に差し込まれるため、テンプレート側では数値を空にしておきたい場合に使う。
+                    // 保存時（appendStep）はこの2文字をstep.valueへは出力せず、素通りさせる）
+                    const isPlaceholder = raw === '-' || raw === '+';
+                    const num = raw === undefined || raw === '' || isPlaceholder ? undefined : Number(raw);
+                    const sign: 'plus' | 'minus' | '' = isPlaceholder
+                      ? (raw === '-' ? 'minus' : 'plus')
+                      : (num === undefined || isNaN(num) || num === 0 ? '' : (num > 0 ? 'plus' : 'minus'));
                     const magnitude = num === undefined || isNaN(num) ? '' : String(Math.abs(num));
                     const applyValue = (nextSign: 'plus' | 'minus', nextMagnitudeStr: string) => {
                       const m = nextMagnitudeStr === '' ? undefined : Number(nextMagnitudeStr);
-                      if (m === undefined || isNaN(m) || m === 0) { update('value', undefined); return; }
+                      if (m === undefined || isNaN(m) || m === 0) {
+                        // 数値未入力でも符号の選択だけは保持する（テンプレート用プレースホルダー）
+                        update('value', nextSign === 'minus' ? '-' : '+');
+                        return;
+                      }
                       update('value', nextSign === 'minus' ? -m : m);
                     };
                     return (
@@ -2430,7 +2441,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         <ButtonGroup
                           options={[{ code: 'minus', label: '減' }, { code: 'plus', label: '増' }]}
                           value={sign}
-                          onChange={(v) => applyValue((v || 'minus') as 'plus' | 'minus', magnitude || '1')}
+                          onChange={(v) => applyValue((v || 'minus') as 'plus' | 'minus', magnitude)}
                           accentColor="#1976d2"
                         />
                         <input
@@ -2441,8 +2452,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             if (v !== '' && !/^\d+$/.test(v)) return;
                             applyValue(sign === 'plus' ? 'plus' : 'minus', v);
                           }}
-                          placeholder="数値 (例: 2)"
-                          style={{ width: 90 }}
+                          placeholder="空欄可（キーワード登録時等）"
+                          style={{ width: 150 }}
                         />
                       </div>
                     );

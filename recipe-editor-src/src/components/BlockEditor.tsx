@@ -1675,17 +1675,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
             const setTiming = (newTiming: TimingKey) => {
               let next = [...currentTriggers];
+              let matchedTimingFamily = false;
               effectiveTriggerFamilies.forEach((fam) => {
                 if (fam.kind !== 'timing' || !fam.variants) return;
                 const oldVariant = Object.values(fam.variants).find((v) => next.includes(v));
                 if (!oldVariant) return;
+                matchedTimingFamily = true;
                 const newVariant = fam.variants[newTiming];
                 next = next.filter((t) => t !== oldVariant);
                 if (!next.includes(newVariant)) next.push(newVariant);
               });
+              // 「継続効果」「メイン」等のタイミング系ファミリーは、バリアントのコード自体に
+              // 自分/相手/お互いが直接エンコードされている（during_own_turn 等）ため、
+              // cond_during_own_turn等を重ねて追加すると完全な重複になる。
+              // 単発トリガー（on_play 等、自分/相手の区別を持たないイベント系）のときだけ、
+              // このトリガー条件で自分/相手ターンを絞り込む
               let nextConds = triggerConditions.filter((c) => c.base !== 'cond_during_own_turn' && c.base !== 'cond_during_opp_turn');
-              if (newTiming === 'self') nextConds = [...nextConds, { base: 'cond_during_own_turn' }];
-              else if (newTiming === 'opp') nextConds = [...nextConds, { base: 'cond_during_opp_turn' }];
+              if (!matchedTimingFamily) {
+                if (newTiming === 'self') nextConds = [...nextConds, { base: 'cond_during_own_turn' }];
+                else if (newTiming === 'opp') nextConds = [...nextConds, { base: 'cond_during_opp_turn' }];
+              }
               onChange({ ...block, trigger: next[0] || '', triggers: next, triggerConditions: nextConds });
             };
 

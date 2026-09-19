@@ -144,10 +144,10 @@ function parseFilterObject(f: any): ConditionPair[] {
   return out;
 }
 
-// keywordDict を渡すと、trigger='passive' のキーワードに recipeTemplate が登録されていれば
-// カード自身のレシピにそのテンプレートの中身を展開・合流させる（キーワード効果登録機能）。
-// テンプレートが無いキーワード（エンジン側が名前で直接認識する既存キーワード）は
-// 今まで通り passive:[{flag}] のみで出力する（既存カードへの影響なし）
+// keywordDict は「対象」(hasNamedParam) 付きキーワードの絞り込み条件(designated)を
+// 組み立てるために使う（passive:[{flag,value,designated}] / grant_keyword等のstep.designated）。
+// レシピテンプレートの中身自体はカードのJSONにはベタ展開しない＝常にコード参照のみを
+// 保存する。実際の展開はゲームエンジン側がキーワード辞書を実行時に見に行って行う
 export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
   const recipe: Record<string, any> = {};
   blocks.forEach((b) => {
@@ -196,69 +196,40 @@ function buildDesignatedConditionFields(conds: ConditionPair[], op: 'and' | 'or'
   return out;
 }
 
-// テンプレート内のプレースホルダー条件 cond_designated_name（「指定」ボタンで挿入）を持つ
-// stepを見つけ、その条件一式(condition/when/extra_conditions/condition_op)を、カード側で
-// 組み立てた「対象」の絞り込み条件(replacement)で丸ごと置き換える。
-// step.cost[] の各コストアイテムも再帰的に処理する（コスト対象の絞り込みの「指定」用）
-function substituteDesignatedName(step: any, replacement: { condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or' }): any {
-  if (!step || typeof step !== 'object') return step;
-  const hasMarker = step.condition === 'cond_designated_name'
-    || step.when === 'cond_designated_name'
-    || (Array.isArray(step.extra_conditions) && step.extra_conditions.includes('cond_designated_name'));
-  const out: any = { ...step };
-  if (hasMarker) {
-    delete out.condition; delete out.when; delete out.extra_conditions; delete out.condition_op;
-    Object.assign(out, replacement);
+// designated（{condition, when, extra_conditions, condition_op}）→ ConditionPair[]+AND/OR
+// buildDesignatedConditionFields の逆変換（パッシブキーワードの「対象」欄をカード編集画面で
+// 再度開いた時に、保存済みの絞り込み条件をUIへ復元するために使う）
+function parseDesignatedFields(d: any): { conds: ConditionPair[]; op: 'and' | 'or' } {
+  const conds: ConditionPair[] = [];
+  if (d?.condition) conds.push(stringToPair(String(d.condition)));
+  if (d?.when) conds.push(stringToPair(String(d.when)));
+  if (Array.isArray(d?.extra_conditions)) {
+    d.extra_conditions.forEach((s: string) => conds.push(stringToPair(String(s))));
   }
-  if (Array.isArray(out.cost)) {
-    out.cost = out.cost.map((c: any) => substituteDesignatedName(c, replacement));
-  }
-  return out;
-}
-
-// テンプレートrecipeの各トリガーキーの配列を、containerの同じキーへ追記合流する。
-// テンプレート側で値を空にしておいたstep（例:「DP+」までで数値未設定）には、
-// カード側でキーワード効果に入力した数値(cardValue)をそのまま差し込む
-// （＝「Nはカードごとに違う」ケースをテンプレート側で固定せずに済む）。
-// designated が指定されていれば、cond_designated_name プレースホルダーを持つstepの
-// 条件一式を、カード側の「対象」絞り込み条件で丸ごと置き換える
-function mergeTemplateRecipe(container: Record<string, any>, template: Record<string, any>, cardValue?: number | string, designated?: { condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or' }) {
-  Object.keys(template).forEach((key) => {
-    const steps = template[key];
-    if (!Array.isArray(steps) || steps.length === 0) return;
-    if (key === 'evo_source' || key === 'passive') return; // 未対応の入れ子は無視（v1では単純なトリガーキーのみ）
-    let filled = cardValue === undefined || cardValue === ''
-      ? steps
-      : steps.map((s: any) => (s && s.value === undefined ? { ...s, value: cardValue } : s));
-    if (designated) filled = filled.map((s: any) => substituteDesignatedName(s, designated));
-    container[key] = Array.isArray(container[key]) ? [...container[key], ...filled] : filled.slice();
-  });
+  return { conds, op: d?.condition_op === 'or' ? 'or' : 'and' };
 }
 
 function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?: DictEntry[]) {
   if (b.trigger === 'passive') {
+    // キーワードのレシピテンプレートはカードのJSONにはベタ展開しない（コード参照のみ保存）。
+    // 実際の展開（value/対象の差し込み含む）はゲームエンジン側が、キーワード辞書
+    // （スプシ「効果辞書」→cards.json同梱のkeywords）を実行時に見に行って行う。
+    // こうすることでキーワードのレシピを後から直しても、そのキーワードを使う全カードに
+    // 再保存なしで反映される（カード側は常に flag 参照のみを持つ）
     const kwEntry = keywordDict && b.keyword ? keywordDict.find((k) => k.code === b.keyword) : undefined;
-    if (kwEntry && kwEntry.recipeTemplate) {
-      try {
-        const template = JSON.parse(kwEntry.recipeTemplate);
-        if (template && typeof template === 'object') {
-          const cv = b.value !== undefined && b.value !== '' && b.value !== null
-            ? (isNaN(Number(b.value)) ? b.value : Number(b.value))
-            : undefined;
-          const designated = kwEntry.hasNamedParam && Array.isArray(b.keywordParamConditions) && b.keywordParamConditions.length > 0
-            ? buildDesignatedConditionFields(b.keywordParamConditions, b.keywordParamConditionsOp || 'and')
-            : undefined;
-          mergeTemplateRecipe(container, template, cv, designated);
-          return;
-        }
-      } catch (_) { /* パース失敗時は下のpassive出力にフォールバック */ }
-    }
     container.passive = container.passive || [];
     const p: any = { flag: b.keyword };
     // 値 (例: 【Sアタック+2】 の "2"): 数値化できれば number、そうでなければそのまま
     if (b.value !== undefined && b.value !== '' && b.value !== null) {
       const n = Number(b.value);
       p.value = isNaN(n) ? b.value : n;
+    }
+    // 「対象」絞り込み条件: テンプレート内の cond_designated_name プレースホルダーを
+    // エンジン側が実行時に置き換えるための材料。ここでは組み立てた条件一式を
+    // designated として保存するだけで、置き換え自体は行わない
+    if (kwEntry?.hasNamedParam && Array.isArray(b.keywordParamConditions) && b.keywordParamConditions.length > 0) {
+      const designated = buildDesignatedConditionFields(b.keywordParamConditions, b.keywordParamConditionsOp || 'and');
+      if (Object.keys(designated).length > 0) p.designated = designated;
     }
     if (b.zone) p.in_zone = b.zone;
     if (b.extras) {
@@ -456,38 +427,15 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       Object.keys(ex).forEach((k) => (step[k] = ex[k]));
     } catch (_) {}
   }
-  // === grant_keyword(_to) のキーワードにレシピテンプレートが登録済みなら、
-  // grant_effect + granted_recipe（既存の付与効果ランタイム）に変換して実発動させる。
-  // テンプレートを持たない既存キーワード（貫通等・エンジン側に直接実装済み）は
-  // 従来通り action:"grant_keyword" + keyword のフラグ出力のまま変えない
+  // === grant_keyword(_to) で「対象」絞り込み条件を持つキーワードを選んでいれば、
+  // その条件一式を designated として添える（置き換え自体はエンジン側が実行時に、
+  // キーワード辞書のレシピテンプレートを見に行った時点で行う。カードのJSONには
+  // キーワードのコード参照のみを保存し、レシピ本体はベタ展開しない） ===
   if ((step.action === 'grant_keyword' || step.action === 'grant_keyword_to') && b.keyword) {
     const kwEntry = keywordDict && keywordDict.find((k) => k.code === b.keyword);
-    if (kwEntry && kwEntry.recipeTemplate) {
-      try {
-        const template = JSON.parse(kwEntry.recipeTemplate);
-        if (template && typeof template === 'object' && Object.keys(template).length > 0) {
-          const cv = b.value !== undefined && b.value !== '' && b.value !== null
-            ? (isNaN(Number(b.value)) ? b.value : Number(b.value))
-            : undefined;
-          const designated = kwEntry.hasNamedParam && Array.isArray(b.keywordParamConditions) && b.keywordParamConditions.length > 0
-            ? buildDesignatedConditionFields(b.keywordParamConditions, b.keywordParamConditionsOp || 'and')
-            : undefined;
-          const filledTemplate: Record<string, any> = {};
-          Object.keys(template).forEach((k) => {
-            const steps = template[k];
-            if (!Array.isArray(steps)) return;
-            let filledSteps = cv === undefined
-              ? steps
-              : steps.map((s: any) => (s && s.value === undefined ? { ...s, value: cv } : s));
-            if (designated) filledSteps = filledSteps.map((s: any) => substituteDesignatedName(s, designated));
-            filledTemplate[k] = filledSteps;
-          });
-          step.action = 'grant_effect';
-          step.granted_recipe = filledTemplate;
-          delete step.keyword;
-          delete step.value;
-        }
-      } catch (_) { /* パース失敗時は従来通り grant_keyword のまま出力 */ }
+    if (kwEntry?.hasNamedParam && Array.isArray(b.keywordParamConditions) && b.keywordParamConditions.length > 0) {
+      const designated = buildDesignatedConditionFields(b.keywordParamConditions, b.keywordParamConditionsOp || 'and');
+      if (Object.keys(designated).length > 0) step.designated = designated;
     }
   }
   container[b.trigger] = container[b.trigger] || [];
@@ -647,14 +595,17 @@ function stepObjectToAltAction(step: any): AltAction {
 function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): EffectBlock {
   const extras: any = {};
   Object.keys(p || {}).forEach((k) => {
-    if (k !== 'flag' && k !== 'in_zone' && k !== 'value') extras[k] = p[k];
+    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated') extras[k] = p[k];
   });
+  const { conds, op } = p?.designated ? parseDesignatedFields(p.designated) : { conds: [], op: 'and' as const };
   return {
     section,
     zone: p?.in_zone || '',
     trigger: 'passive',
     keyword: (p && p.flag) || '',
     value: p?.value,
+    keywordParamConditions: conds.length > 0 ? conds : undefined,
+    keywordParamConditionsOp: conds.length > 0 ? op : undefined,
     extras: Object.keys(extras).length > 0 ? JSON.stringify(extras) : '',
   };
 }
@@ -699,6 +650,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     alt_actions_op: true,
     granted_recipe: true,
     filter: true,
+    designated: true,
   };
   const extras: any = {};
   Object.keys(step || {}).forEach((k) => {
@@ -770,6 +722,11 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     value: step?.value,
     target: step?.target || '',
     keyword: step?.keyword || '',
+    ...(() => {
+      if (!step?.designated) return {};
+      const { conds, op } = parseDesignatedFields(step.designated);
+      return { keywordParamConditions: conds, keywordParamConditionsOp: op };
+    })(),
     revertAtTurnEnd: !!step?.revert_at_turn_end,
     costFree: !!step?.cost_free,
     skipOnPlay: !!step?.skip_on_play,

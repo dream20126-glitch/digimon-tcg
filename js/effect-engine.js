@@ -5173,13 +5173,74 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
 
 // ===== レシピ実行エンジン =====
 
+// キーワード辞書（スプシ「効果辞書」の種類=keyword行。data/cards.json 同梱の
+// window.keywords から取得）→ { コード: { recipeTemplate } } のマップ。
+// カード側は常にキーワードの「コード」しか持たず、実際のレシピはここで実行時に
+// 引く（キーワードのレシピを直しても、そのキーワードを使う全カードに再保存なしで
+// 反映される）。window.keywords の参照が変わらない限りキャッシュを使い回す
+let _keywordDictCache = null;
+let _keywordDictCacheSrc = null;
+function getKeywordDict() {
+  const src = (typeof window !== 'undefined' && window.keywords) || [];
+  if (_keywordDictCache && _keywordDictCacheSrc === src) return _keywordDictCache;
+  const map = {};
+  src.forEach(row => {
+    if (!row || String(row['種類'] || '').trim() !== 'keyword') return;
+    const code = String(row['コード'] || '').trim();
+    if (!code) return;
+    const tplStr = String(row['キーワードレシピ'] || '').trim();
+    if (!tplStr) return;
+    let recipeTemplate;
+    try { recipeTemplate = JSON.parse(tplStr.replace(/[\x00-\x1F\x7F]\s*/g, '')); }
+    catch (_) { return; }
+    if (!recipeTemplate || typeof recipeTemplate !== 'object') return;
+    map[code] = { recipeTemplate };
+  });
+  _keywordDictCache = map;
+  _keywordDictCacheSrc = src;
+  return map;
+}
+
+// テンプレート内のプレースホルダー条件 cond_designated_name（エディタの「指定」ボタン）を
+// 持つ step を見つけ、その条件一式(condition/when/extra_conditions/condition_op)を
+// カード側で保存された designated（実際の絞り込み条件）へ丸ごと置き換える。
+// step.cost[] も再帰的に処理する（recipe-editor-src/src/recipe.ts の同名関数と対応）
+function _substituteDesignatedNameJS(step, replacement) {
+  if (!step || typeof step !== 'object') return step;
+  const hasMarker = step.condition === 'cond_designated_name'
+    || step.when === 'cond_designated_name'
+    || (Array.isArray(step.extra_conditions) && step.extra_conditions.includes('cond_designated_name'));
+  const out = Object.assign({}, step);
+  if (hasMarker) {
+    delete out.condition; delete out.when; delete out.extra_conditions; delete out.condition_op;
+    Object.assign(out, replacement);
+  }
+  if (Array.isArray(out.cost)) {
+    out.cost = out.cost.map(c => _substituteDesignatedNameJS(c, replacement));
+  }
+  return out;
+}
+
+// キーワードテンプレートの steps に、カード側の value（数値未設定のstepにのみ差し込む）と
+// designated（cond_designated_name の置き換え）を適用したコピーを返す
+function _fillKeywordTemplateSteps(steps, value, designated) {
+  return (steps || []).map(s => {
+    let out = s;
+    if (value !== undefined && value !== '' && value !== null && out && out.value === undefined) {
+      out = Object.assign({}, out, { value });
+    }
+    if (designated) out = _substituteDesignatedNameJS(out, designated);
+    return out;
+  });
+}
+
 // レシピオブジェクトから triggerCode に対応する steps を取得する共通ヘルパー。
 // 通常は完全一致キーだが、"on_move,on_play" のようにカンマ区切りで複数トリガーを
 // 1つのキーにまとめて記述した場合もマッチさせる（複数トリガー選択時にレシピを重複
 // 記述しなくて済むようにするため）。完全一致キーとカンマ区切りキーが両方存在する
 // 場合（例: 別々のブロックが on_move 単体 / on_move,on_play 併記の両方を持つ）は
 // 両方の steps を結合して返す。既存の（カンマを含まない）レシピの挙動には影響しない
-function _lookupTriggerSteps(recipeObj, triggerCode) {
+function _lookupTriggerStepsBase(recipeObj, triggerCode) {
   if (!recipeObj || !triggerCode) return undefined;
   let result;
   const exact = recipeObj[triggerCode];
@@ -5190,6 +5251,27 @@ function _lookupTriggerSteps(recipeObj, triggerCode) {
     const steps = recipeObj[key];
     if (!Array.isArray(steps)) continue;
     result = result ? result.concat(steps) : steps.slice();
+  }
+  return result;
+}
+
+// _lookupTriggerStepsBase に加えて、recipeObj.passive（{flag, value, designated}[]）の
+// 各キーワードにレシピテンプレートが登録されていれば、そのテンプレート内の該当トリガー分も
+// マージする（カードが「対象」欄を持つキーワードを選んでいる場合は designated を差し込む）。
+// _lookupTriggerSteps は多数の呼び出し元（getRecipeForCard/getRecipeForTrigger/
+// hasRecipeTrigger 等）で共用されているため、ここで対応すれば全箇所に自動で波及する
+function _lookupTriggerSteps(recipeObj, triggerCode) {
+  let result = _lookupTriggerStepsBase(recipeObj, triggerCode);
+  if (recipeObj && Array.isArray(recipeObj.passive)) {
+    const dict = getKeywordDict();
+    for (const p of recipeObj.passive) {
+      const kw = p && p.flag && dict[p.flag];
+      if (!kw) continue;
+      const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
+      if (!tplSteps) continue;
+      const filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated);
+      result = result ? result.concat(filled) : filled;
+    }
   }
   return result;
 }
@@ -8128,6 +8210,27 @@ function executeRecipeStep(step, ctx, store, callback) {
     // grant_keyword_all: 全体（step.keyword="Sアタック+1"等のテキストで指定、step.target="own_all_digimon"等）
     case 'grant_keyword':
     case 'grant_keyword_to': {
+      // キーワードにレシピテンプレートが登録されていれば、単純なバフ付与ではなく
+      // grant_effect(granted_recipe)に委譲して実際の効果レシピを対象に一時付与する。
+      // カード側は常にキーワードの「コード」しか持たないため、実際のレシピ展開
+      // （value/対象の差し込み含む）はここで実行時に行う
+      {
+        const _kwCode = step.keyword || step.flag;
+        const _kwEntry = _kwCode && getKeywordDict()[_kwCode];
+        if (_kwEntry && _kwEntry.recipeTemplate) {
+          const _cv = step.value !== undefined && step.value !== '' && step.value !== null
+            ? (isNaN(Number(step.value)) ? step.value : Number(step.value))
+            : undefined;
+          const _filledTemplate = {};
+          Object.keys(_kwEntry.recipeTemplate).forEach(k => {
+            const tplSteps = _kwEntry.recipeTemplate[k];
+            if (Array.isArray(tplSteps)) _filledTemplate[k] = _fillKeywordTemplateSteps(tplSteps, _cv, step.designated);
+          });
+          const _grantStep = Object.assign({}, step, { action: 'grant_effect', granted_recipe: _filledTemplate });
+          executeRecipeStep(_grantStep, ctx, store, callback);
+          break;
+        }
+      }
       // step.flag(英語) または step.keyword(日本語/「Sアタック+1」等)から flag を抽出
       let flag = step.flag || '';
       let val = step.value || 1;

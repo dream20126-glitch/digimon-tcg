@@ -202,14 +202,17 @@ export interface DictEntry {
   // CostStep.options に書き込む（例: place_under_tamer「テイマーの下に置く」）
   hasFaceOption?: boolean;
   // キーワード辞書専用: このキーワードの実体となるレシピ（EffectBlock[]をJSON文字列化したもの）。
-  // カード側でtrigger='passive'+このキーワードを選んだとき、blocksToRecipeがこれを展開して
-  // カード自身のレシピに埋め込む。エンジンが未対応の出来事（アクティブフェイズ開始時等）しか
-  // 表現できないキーワードは、これを空欄のままにして今まで通りpassive:[{flag}]で出力する
+  // カード側はこのレシピをベタ展開せず、常にキーワードの「コード」参照のみを保存する
+  // （passive:[{flag}] / grant_keyword+keyword）。実際の展開はゲームエンジン側が、
+  // 対戦中にキーワード辞書（このrecipeTemplate。data/cards.json同梱のkeywords経由で取得）を
+  // 見に行って行う。エンジンが未対応の出来事（アクティブフェイズ開始時等）しか表現できない
+  // キーワードは、これを空欄のままにする
   recipeTemplate?: string;
   // キーワード辞書専用: このキーワードを選ぶと、カード側に「対象」の絞り込み条件欄が出現する。
-  // recipeTemplate内のcond_designated_name（プレースホルダー条件）を持つstepの
-  // 条件一式が、保存時にこの絞り込み内容で丸ごと置き換えられる（例:「分離」の
-  // 「指定のリンクカード」等、キーワードごとにカードで対象が異なる場合に使う）
+  // 組み立てた条件一式はカード側のstepに designated として保存され（recipeTemplateの中身は
+  // 置き換えない）、recipeTemplate内のcond_designated_name（プレースホルダー条件）を持つstepの
+  // 条件一式への置き換えは、ゲームエンジンが実行時に行う（例:「分離」の「指定のリンクカード」等、
+  // キーワードごとにカードで対象が異なる場合に使う）
   hasNamedParam?: boolean;
 }
 

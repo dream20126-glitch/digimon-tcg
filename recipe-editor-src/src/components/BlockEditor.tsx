@@ -1977,34 +1977,34 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         </button>
                       );
                     })}
-                    {/* コスト軽減/キーワード効果はカード自身の特殊トリガーのため、
-                        キーワードのテンプレート編集(isKeywordMode)では出さない
-                        （キーワード内でさらにキーワードやコスト軽減を使うことは想定しない） */}
+                    {/* コスト軽減: アセンブリ等、キーワード自体が「登場/使用コストを軽減する」効果
+                        （＋それに伴うコスト）を持つことがあるため、キーワードのテンプレート
+                        編集(isKeywordMode)でも出す */}
+                    <button
+                      type="button"
+                      onClick={() => onChange({ ...block, trigger: 'summon_cost', triggers: ['summon_cost'], zone: block.zone || 'hand' })}
+                      style={{
+                        padding: '3px 9px', borderRadius: 5,
+                        border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
+                        fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
+                      }}
+                    >
+                      コスト軽減
+                    </button>
+                    {/* キーワード効果(passive)は、キーワード内でさらにキーワードを使うことは
+                        想定しないため、テンプレート編集(isKeywordMode)では出さない */}
                     {!isKeywordMode && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => onChange({ ...block, trigger: 'summon_cost', triggers: ['summon_cost'], zone: block.zone || 'hand' })}
-                          style={{
-                            padding: '3px 9px', borderRadius: 5,
-                            border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
-                            fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
-                          }}
-                        >
-                          コスト軽減
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onChange({ ...block, trigger: 'passive', triggers: ['passive'] })}
-                          style={{
-                            padding: '3px 9px', borderRadius: 5,
-                            border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
-                            fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
-                          }}
-                        >
-                          キーワード効果
-                        </button>
-                      </>
+                      <button
+                        type="button"
+                        onClick={() => onChange({ ...block, trigger: 'passive', triggers: ['passive'] })}
+                        style={{
+                          padding: '3px 9px', borderRadius: 5,
+                          border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
+                          fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
+                        }}
+                      >
+                        キーワード効果
+                      </button>
                     )}
                   </div>
 

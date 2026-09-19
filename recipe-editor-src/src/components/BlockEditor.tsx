@@ -1552,9 +1552,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
       </div>
 
       <div className="block-grid">
-        {/* === ＜前提＞ブロック: 区分 / 発動領域 / 限定 をボタン式で選択 ===
+        {/* === 発動領域 ===
+            「セキュリティにある間、常に発動」のようにキーワード自体の定義（テンプレート）に
+            発動領域の指定が必要になるケースがあるため、isKeywordModeでも常に表示する
+            （区分/タイプ/限定はカード固有の概念のため、そちらは従来通り非表示のまま） */}
+        <div style={{
+          gridColumn: '1 / span 2', padding: 10, background: '#fdeef2',
+          border: '1px solid #f3b8ce', borderRadius: 6, marginBottom: isKeywordMode ? 8 : 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>発動領域</label>
+            <ButtonGroup options={ZONE_BUTTONS} value={block.zone || ''} onChange={(v) => update('zone', v)} accentColor="#d6336c" />
+          </div>
+        </div>
+
+        {/* === ＜前提＞ブロック: 区分 / タイプ / 限定 をボタン式で選択 ===
             キーワード効果のテンプレート編集(isKeywordMode)では、カード固有の概念（区分/
-            発動領域/ターン制限）は不要なため非表示にする */}
+            ターン制限）は不要なため非表示にする */}
         {!isKeywordMode && (
         <div style={{
           gridColumn: '1 / span 2', padding: 10, background: '#fdeef2',
@@ -1594,11 +1608,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               onChange={(v) => update('asType', v || undefined)}
               accentColor="#d6336c"
             />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>発動領域</label>
-            <ButtonGroup options={ZONE_BUTTONS} value={block.zone || ''} onChange={(v) => update('zone', v)} accentColor="#d6336c" />
           </div>
 
           <div>

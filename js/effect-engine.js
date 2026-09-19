@@ -6897,7 +6897,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       {
         const _fromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
         if (!step.card && (_fromZones.includes('hand') || _fromZones.includes('trash'))) {
-          const _filter = step.filter || {};
+          // 取得元カードの条件(from_filter)を優先し、対象の条件(filter)はフォールバック
+          // （linkアクションの読み順と統一。取得元＝手札/トラッシュから選ぶカード自体の
+          // 絞り込みなので、本来こちらが正）
+          const _filter = step.from_filter || step.filter || {};
           const _optional = !!step.optional;
           const _handCands = _fromZones.includes('hand')
             ? (player.hand || []).filter(c => c && cardMatchesFilter(c, _filter)) : [];

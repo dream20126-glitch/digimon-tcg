@@ -673,6 +673,8 @@ const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: 
   { code: 'hand', label: '手札', action: 'cost_discard' },
   { code: 'security', label: 'セキュリティ', action: 'security_trash_select', target: 'own_security', hasPosition: true },
   { code: 'deck', label: 'デッキ', action: 'deck_trash_top' },
+  // リンクカード: このカード自身がリンクしているカードを破棄する（unlinkアクションを流用）
+  { code: 'linked', label: 'リンクカード', action: 'unlink', warn: '⚠ エンジン未対応: 現状は対象を選べず、リンクしている先頭のカードから自動で破棄されます（指定/絞り込みは未反映）' },
 ];
 const DISCARD_ACTION_CODES = new Set(DISCARD_ZONE_MAP.map((z) => z.action));
 // 「デッキに戻す」: 押すと「下/上/下か上」の位置ボタンが現れる（CostStep.deckPosition）。

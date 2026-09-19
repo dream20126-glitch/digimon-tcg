@@ -11,6 +11,9 @@ export interface KeywordEntry {
   value?: number | string;
   keywordParamConditions?: ConditionPair[];
   keywordParamConditionsOp?: 'and' | 'or';
+  // アセンブリ等、絞り込んだカードを何枚使うか（省略時は1枚として扱う想定）。
+  // JSONへは p.count / step.count として出力する
+  count?: number | string;
 }
 
 // 効果ブロック1ステップの構造（コードブロックシートと同等）
@@ -51,6 +54,9 @@ export interface EffectBlock {
   // （エディタ内限定の値）
   keywordParamConditions?: ConditionPair[];
   keywordParamConditionsOp?: 'and' | 'or';
+  // アセンブリ等、絞り込んだカードを何枚使うか（keywordEntries[0].count のミラー。
+  // 省略時は1枚として扱う想定）。JSONへは p.count / step.count として出力する
+  keywordCount?: number | string;
   // 複数キーワード選択（パッシブ/キーワード付与 共通）。1件のブロックで複数のキーワードを
   // 同時に持たせたい場合（例: 進化元効果で【貫通】【分離】を両方常に持つ）に使う。
   // これが1件以上あればこちらを優先し、上の keyword/value/keywordParamConditions*は

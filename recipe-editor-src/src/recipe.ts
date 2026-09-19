@@ -237,6 +237,7 @@ export function getKeywordEntries(b: {
   value?: number | string;
   keywordParamConditions?: ConditionPair[];
   keywordParamConditionsOp?: 'and' | 'or';
+  keywordCount?: number | string;
   keywordEntries?: KeywordEntry[];
 }): KeywordEntry[] {
   if (Array.isArray(b.keywordEntries) && b.keywordEntries.length > 0) return b.keywordEntries;
@@ -246,6 +247,7 @@ export function getKeywordEntries(b: {
       value: b.value,
       keywordParamConditions: b.keywordParamConditions,
       keywordParamConditionsOp: b.keywordParamConditionsOp,
+      count: b.keywordCount,
     }];
   }
   return [];
@@ -276,6 +278,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       if (kwEntry?.hasNamedParam && Array.isArray(entry.keywordParamConditions) && entry.keywordParamConditions.length > 0) {
         const designated = buildDesignatedConditionFields(entry.keywordParamConditions, entry.keywordParamConditionsOp || 'and');
         if (Object.keys(designated).length > 0) p.designated = designated;
+      }
+      // 枚数（アセンブリ等、絞り込んだカードを何枚使うか。省略時は1枚として扱う想定）
+      if (entry.count !== undefined && entry.count !== '' && entry.count !== null) {
+        const n = Number(entry.count);
+        p.count = isNaN(n) ? entry.count : n;
       }
       if (b.zone) p.in_zone = b.zone;
       if (b.extras) {
@@ -489,6 +496,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       const designated = buildDesignatedConditionFields(b.keywordParamConditions, b.keywordParamConditionsOp || 'and');
       if (Object.keys(designated).length > 0) step.designated = designated;
     }
+    if (b.keywordCount !== undefined && b.keywordCount !== '' && b.keywordCount !== null) {
+      const n = Number(b.keywordCount);
+      step.count = isNaN(n) ? b.keywordCount : n;
+    }
   }
   container[b.trigger] = container[b.trigger] || [];
   container[b.trigger].push(step);
@@ -518,6 +529,12 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
         if (kwEntry2?.hasNamedParam && Array.isArray(entry.keywordParamConditions) && entry.keywordParamConditions.length > 0) {
           const designated2 = buildDesignatedConditionFields(entry.keywordParamConditions, entry.keywordParamConditionsOp || 'and');
           if (Object.keys(designated2).length > 0) extraStep.designated = designated2;
+        }
+        if (entry.count !== undefined && entry.count !== '' && entry.count !== null) {
+          const n = Number(entry.count);
+          extraStep.count = isNaN(n) ? entry.count : n;
+        } else {
+          delete extraStep.count;
         }
         if (isSinglePickTarget) extraStep.target = 'same_target';
         container[b.trigger].push(extraStep);
@@ -679,7 +696,7 @@ function stepObjectToAltAction(step: any): AltAction {
 function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): EffectBlock {
   const extras: any = {};
   Object.keys(p || {}).forEach((k) => {
-    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated') extras[k] = p[k];
+    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'count') extras[k] = p[k];
   });
   const { conds, op } = p?.designated ? parseDesignatedFields(p.designated) : { conds: [], op: 'and' as const };
   return {
@@ -690,6 +707,7 @@ function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): Effect
     value: p?.value,
     keywordParamConditions: conds.length > 0 ? conds : undefined,
     keywordParamConditionsOp: conds.length > 0 ? op : undefined,
+    keywordCount: p?.count,
     extras: Object.keys(extras).length > 0 ? JSON.stringify(extras) : '',
   };
 }
@@ -741,6 +759,12 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
   Object.keys(step || {}).forEach((k) => {
     if (!KNOWN[k]) extras[k] = step[k];
   });
+  // grant_keyword(_to) の count（アセンブリ等の枚数）だけ専用フィールドへ復元する。
+  // count は他の複数アクション（N枚引く/選ぶ等）でも使われる汎用フィールドのため、
+  // grant_keyword以外はそのままextrasに残す（値を消さない）
+  const _isGrantKeywordStep = step?.action === 'grant_keyword' || step?.action === 'grant_keyword_to';
+  const _stepCount = _isGrantKeywordStep && extras.count !== undefined ? extras.count : undefined;
+  if (_isGrantKeywordStep && extras.count !== undefined) delete extras.count;
   // 条件復元
   const conditions: ConditionPair[] = [];
   if (step?.condition) conditions.push(stringToPair(String(step.condition)));
@@ -807,6 +831,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     value: step?.value,
     target: step?.target || '',
     keyword: step?.keyword || '',
+    keywordCount: _stepCount,
     ...(() => {
       if (!step?.designated) return {};
       const { conds, op } = parseDesignatedFields(step.designated);

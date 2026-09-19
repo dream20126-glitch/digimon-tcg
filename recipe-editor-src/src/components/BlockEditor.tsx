@@ -331,6 +331,7 @@ function KeywordEntriesEditor({
       value: next[0]?.value,
       keywordParamConditions: next[0]?.keywordParamConditions,
       keywordParamConditionsOp: next[0]?.keywordParamConditionsOp,
+      keywordCount: next[0]?.count,
     });
   }
   function updateEntry(i: number, patch: Partial<KeywordEntry>) {
@@ -388,6 +389,22 @@ function KeywordEntriesEditor({
                 conditionsOp={entry.keywordParamConditionsOp || 'and'}
                 onConditionsOpChange={(op) => updateEntry(i, { keywordParamConditionsOp: op })}
               />
+              <div style={{ marginTop: 6 }}>
+                <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
+                  枚数（アセンブリ等、絞り込んだカードを何枚使うか・省略時は1枚）
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={entry.count === undefined ? '' : String(entry.count)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updateEntry(i, { count: v === '' ? undefined : Number(v) });
+                  }}
+                  placeholder="例: 1"
+                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 80 }}
+                />
+              </div>
             </div>
           )}
           {!(primaryValueElsewhere && i === 0) && (

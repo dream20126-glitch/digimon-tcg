@@ -1719,6 +1719,92 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               </div>
             )}
             常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。
+            下の「コスト」を設定すると、アセンブリ等の「〇〇することで軽減」という任意効果になります。
+            <div style={{ marginTop: 8 }}>
+              <label style={{ fontWeight: 'bold', fontSize: 12 }}>コスト（「〇〇することで軽減」の場合のみ・任意）</label>
+              {costs.length === 0 && (
+                <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>コストなし（常に軽減）</div>
+              )}
+              {costs.map((c, i) => (
+                <div key={i} style={{ marginTop: 6, padding: 8, background: 'white', border: '1px solid #ffcc80', borderRadius: 4 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 160 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>アクション</div>
+                      <SearchSelect
+                        value={c.action || ''}
+                        onChange={(v) => updateCost(i, { ...c, action: v })}
+                        options={toOpts(dict.actions)}
+                        allowFreeText
+                      />
+                    </div>
+                    <div style={{ minWidth: 140 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                      <SearchSelect
+                        value={c.target || ''}
+                        onChange={(v) => updateCost(i, { ...c, target: v })}
+                        options={toOpts(TARGETS)}
+                        allowFreeText
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeCost(i)}
+                      style={{ border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '3px 9px', cursor: 'pointer', fontSize: 11 }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>場所</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {FROM_ZONES.map((z) => {
+                        const zones = c.fromZones || [];
+                        const active = zones.includes(z.code);
+                        return (
+                          <button
+                            key={z.code}
+                            type="button"
+                            onClick={() => {
+                              const next = active ? zones.filter((x) => x !== z.code) : [...zones, z.code];
+                              updateCost(i, { ...c, fromZones: next });
+                            }}
+                            style={{
+                              padding: '3px 9px', borderRadius: 5,
+                              border: active ? '2px solid #ef6c00' : '1px solid #bbb',
+                              background: active ? '#ef6c00' : '#f5f5f5',
+                              color: active ? '#fff' : '#333', cursor: 'pointer', fontSize: 11,
+                            }}
+                          >
+                            {z.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    <ConditionsHybridEditor
+                      conditions={c.conditions || []}
+                      onChange={(next) => updateCost(i, { ...c, conditions: next })}
+                      dict={dict}
+                      title="コスト対象の絞り込み"
+                      hint="（複数指定可）"
+                      theme="action"
+                      defaultSubject=""
+                      showSubjectSelector={false}
+                      conditionsOp={c.conditionsOp || 'and'}
+                      onConditionsOpChange={(op) => updateCost(i, { ...c, conditionsOp: op })}
+                    />
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addCost}
+                style={{ marginTop: 6, padding: '4px 8px', border: '1px dashed #f9a825', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#e65100' }}
+              >
+                ＋ コストを追加
+              </button>
+            </div>
             <div style={{ marginTop: 8 }}>
               <ConditionsHybridEditor
                 conditions={conditions}

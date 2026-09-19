@@ -76,7 +76,7 @@ export interface EffectBlock {
   // OR: プレイヤーがメインと alt から1つ選んで実行
   // AND: メイン → alt[0] → alt[1] と順次実行
   altActions?: AltAction[];
-  altActionsOp?: 'or' | 'and';
+  altActionsOp?: 'or' | 'and' | 'then';
   // 付与効果: grant_effect 等で「対象に一時的にトリガー効果を付与する」ためのネスト効果
   // 例: 「自分のデジモン全ては『【アタック時】相手DP-2000』を得る」
   grantedStep?: GrantedStep;

@@ -1,5 +1,5 @@
 // EffectBlock[] ⇄ recipe JSON 変換
-import type { ConditionPair, DictEntry, EffectBlock } from './types';
+import type { AltAction, ConditionPair, DictEntry, EffectBlock } from './types';
 import { applyRulesToStep } from './ruleTranslator';
 
 // 条件pairを「base:value@subject」形式の文字列に変換
@@ -9,6 +9,57 @@ function pairToString(p: ConditionPair): string {
   let s = p.value ? p.base + ':' + p.value : p.base;
   if (p.subject) s += '@' + p.subject;
   return s;
+}
+
+// AltAction 1件を JSON のステップオブジェクトに変換する（alt_actions[] の各要素、
+// および 'then'（その後）モードで独立した後続stepとして出力する場合の両方で共用）
+function altActionToStepObject(a: AltAction): any {
+  const out: any = { action: a.action };
+  if (a.value !== undefined && a.value !== '' && a.value !== null) {
+    const n = Number(a.value);
+    out.value = isNaN(n) ? a.value : n;
+  }
+  if (a.target) out.target = a.target;
+  const validGate = (a.gateConditions || []).filter((p) => p.base);
+  if (validGate.length >= 1) out.gate = pairToString(validGate[0]);
+  if (validGate.length >= 2) out.gate_when = pairToString(validGate[1]);
+  if (validGate.length >= 3) out.gate_extra_conditions = validGate.slice(2).map(pairToString);
+  const validC = (a.conditions || []).filter((p) => p.base);
+  if (validC.length >= 1) out.condition = pairToString(validC[0]);
+  if (validC.length >= 2) out.when = pairToString(validC[1]);
+  if (validC.length >= 3) out.extra_conditions = validC.slice(2).map(pairToString);
+  if (Array.isArray(a.fromZones) && a.fromZones.length > 0) {
+    const az = a.fromZones.filter((z) => !!z);
+    if (az.length === 1) out.from = az[0];
+    else if (az.length > 1) {
+      out.from = az;
+      if (a.fromZonesOp && a.fromZonesOp !== 'or') out.from_op = a.fromZonesOp;
+    }
+  }
+  if (Array.isArray(a.options) && a.options.length > 0) out.options = a.options.slice();
+  // per_count / duration / ref / ref_filter
+  if (a.perCount && a.perCount > 0 && a.perRef) {
+    out.per_count = a.perCount;
+    out.ref = a.perRef;
+    if (a.perCountMode === 'repeat') out.per_count_mode = 'repeat';
+    if (Array.isArray(a.perRefFilter) && a.perRefFilter.length > 0) {
+      const af: Record<string, any> = {};
+      a.perRefFilter.forEach((c) => {
+        if (!c || !c.base || !c.value) return;
+        const num2 = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
+        switch (c.base) {
+          case 'cond_color': af.color = c.value; break;
+          case 'cond_type':  af.type = c.value; break;
+          case 'cond_lv': { const n = num2(c.value); if (n !== undefined) { af.lv_le = n; af.lv_ge = n; } break; }
+          case 'cond_lv_le': { const n = num2(c.value); if (n !== undefined) af.lv_le = n; break; }
+          case 'cond_lv_ge': { const n = num2(c.value); if (n !== undefined) af.lv_ge = n; break; }
+        }
+      });
+      if (Object.keys(af).length > 0) out.ref_filter = af;
+    }
+  }
+  if (a.duration) out.duration = a.duration;
+  return out;
 }
 
 // ConditionPair[] → カード絞り込み用フィルタオブジェクト（step.filter / step.from_filter 共通）。
@@ -310,58 +361,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     }
   }
   // === 代替アクション (alt_actions[]) ===
-  // 「〇〇するか〇〇する」「〇〇する＆〇〇する」を表現するための同ステップ内代替アクション群
-  if (Array.isArray(b.altActions) && b.altActions.length > 0) {
-    step.alt_actions = b.altActions
-      .filter((a) => a && a.action)
-      .map((a) => {
-        const out: any = { action: a.action };
-        if (a.value !== undefined && a.value !== '' && a.value !== null) {
-          const n = Number(a.value);
-          out.value = isNaN(n) ? a.value : n;
-        }
-        if (a.target) out.target = a.target;
-        const validGate = (a.gateConditions || []).filter((p) => p.base);
-        if (validGate.length >= 1) out.gate = pairToString(validGate[0]);
-        if (validGate.length >= 2) out.gate_when = pairToString(validGate[1]);
-        if (validGate.length >= 3) out.gate_extra_conditions = validGate.slice(2).map(pairToString);
-        const validC = (a.conditions || []).filter((p) => p.base);
-        if (validC.length >= 1) out.condition = pairToString(validC[0]);
-        if (validC.length >= 2) out.when = pairToString(validC[1]);
-        if (validC.length >= 3) out.extra_conditions = validC.slice(2).map(pairToString);
-        if (Array.isArray(a.fromZones) && a.fromZones.length > 0) {
-          const az = a.fromZones.filter((z) => !!z);
-          if (az.length === 1) out.from = az[0];
-          else if (az.length > 1) {
-            out.from = az;
-            if (a.fromZonesOp && a.fromZonesOp !== 'or') out.from_op = a.fromZonesOp;
-          }
-        }
-        if (Array.isArray(a.options) && a.options.length > 0) out.options = a.options.slice();
-        // per_count / duration / ref / ref_filter
-        if (a.perCount && a.perCount > 0 && a.perRef) {
-          out.per_count = a.perCount;
-          out.ref = a.perRef;
-          if (a.perCountMode === 'repeat') out.per_count_mode = 'repeat';
-          if (Array.isArray(a.perRefFilter) && a.perRefFilter.length > 0) {
-            const af: Record<string, any> = {};
-            a.perRefFilter.forEach((c) => {
-              if (!c || !c.base || !c.value) return;
-              const num2 = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
-              switch (c.base) {
-                case 'cond_color': af.color = c.value; break;
-                case 'cond_type':  af.type = c.value; break;
-                case 'cond_lv': { const n = num2(c.value); if (n !== undefined) { af.lv_le = n; af.lv_ge = n; } break; }
-                case 'cond_lv_le': { const n = num2(c.value); if (n !== undefined) af.lv_le = n; break; }
-                case 'cond_lv_ge': { const n = num2(c.value); if (n !== undefined) af.lv_ge = n; break; }
-              }
-            });
-            if (Object.keys(af).length > 0) out.ref_filter = af;
-          }
-        }
-        if (a.duration) out.duration = a.duration;
-        return out;
-      });
+  // 'or'/'and' = 「〇〇するか〇〇する」「〇〇する＆〇〇する」を表現する同ステップ内代替アクション群。
+  // 'then' = 「その後」連結。同じstep内には入れず、同じトリガー配列内の独立した後続stepとして
+  // 出力する（公式ルールの「その後」はcontinue_on_fail修飾子を持つ次stepとして実装されているため）
+  if (Array.isArray(b.altActions) && b.altActions.length > 0 && b.altActionsOp !== 'then') {
+    step.alt_actions = b.altActions.filter((a) => a && a.action).map(altActionToStepObject);
     if (step.alt_actions.length > 0) {
       step.alt_actions_op = b.altActionsOp || 'or';
     }
@@ -435,6 +439,21 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   }
   container[b.trigger] = container[b.trigger] || [];
   container[b.trigger].push(step);
+
+  // 'then'（その後）モードのalt_actionsは、同じトリガー配列内の独立した後続stepとして
+  // 続けて出力する。各stepにはcontinue_on_fail修飾子を自動付与し（前段が不発でも継続する
+  // ＝「その後」の公式ルール表現）、limitを個別指定していなければ本体stepのlimitを
+  // 引き継ぐ（「ターンに1回」等がこの一連の効果全体に掛かるようにするため）
+  if (b.altActionsOp === 'then' && Array.isArray(b.altActions) && b.altActions.length > 0) {
+    b.altActions.filter((a) => a && a.action).forEach((a) => {
+      const thenStep = altActionToStepObject(a);
+      const opts: string[] = Array.isArray(thenStep.options) ? thenStep.options.slice() : [];
+      if (!opts.includes('continue_on_fail')) opts.push('continue_on_fail');
+      thenStep.options = opts;
+      if (thenStep.limit === undefined && b.limit) thenStep.limit = b.limit;
+      container[b.trigger].push(thenStep);
+    });
+  }
 }
 
 // 「base:value@subject」形式を ConditionPair に分解
@@ -470,9 +489,9 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
     const arr = recipe[k];
     if (!Array.isArray(arr)) return;
     if (k === 'security') {
-      arr.forEach((step: any) => blocks.push(stepToBlock('security', 'security', step)));
+      blocks.push(...stepsArrayToBlocks('security', 'security', arr));
     } else {
-      arr.forEach((step: any) => blocks.push(stepToBlock('main', k, step)));
+      blocks.push(...stepsArrayToBlocks('main', k, arr));
     }
   });
   if (recipe.evo_source && typeof recipe.evo_source === 'object') {
@@ -485,7 +504,7 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
       if (k === 'passive') return;
       const arr = recipe.evo_source[k];
       if (!Array.isArray(arr)) return;
-      arr.forEach((step: any) => blocks.push(stepToBlock('evo_source', k, step)));
+      blocks.push(...stepsArrayToBlocks('evo_source', k, arr));
     });
   }
   // リンク効果（進化元効果と同じ、トリガーでネストされた構造）
@@ -499,10 +518,72 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
       if (k === 'passive') return;
       const arr = recipe.link[k];
       if (!Array.isArray(arr)) return;
-      arr.forEach((step: any) => blocks.push(stepToBlock('link', k, step)));
+      blocks.push(...stepsArrayToBlocks('link', k, arr));
     });
   }
   return blocks;
+}
+
+// 1つのトリガー配列を EffectBlock[] に変換する。配列内で continue_on_fail 修飾子を
+// 持つstepは「その後」連結として直前のブロックへ altActions(op:'then') で吸収し、
+// 独立したブロックにはしない（blocksToRecipeの'then'出力の逆変換）
+function stepsArrayToBlocks(section: 'main' | 'evo_source' | 'security' | 'link', triggerKey: string, arr: any[]): EffectBlock[] {
+  const blocks: EffectBlock[] = [];
+  arr.forEach((step: any) => {
+    const isChainStep = Array.isArray(step?.options) && step.options.includes('continue_on_fail');
+    if (isChainStep && blocks.length > 0) {
+      const prev = blocks[blocks.length - 1];
+      prev.altActions = [...(prev.altActions || []), stepObjectToAltAction(step)];
+      prev.altActionsOp = 'then';
+      return;
+    }
+    blocks.push(stepToBlock(section, triggerKey, step));
+  });
+  return blocks;
+}
+
+// レシピJSONのstepオブジェクト（'then'連結の後続要素）を AltAction に変換する
+// （altActionToStepObjectの逆変換。continue_on_failは'then'モードで暗黙付与されるため、
+// UI上のoptions一覧には出さないよう除去する）
+function stepObjectToAltAction(step: any): AltAction {
+  const conditions: ConditionPair[] = [];
+  if (step?.condition) conditions.push(stringToPair(String(step.condition)));
+  if (step?.when) conditions.push(stringToPair(String(step.when)));
+  if (Array.isArray(step?.extra_conditions)) {
+    step.extra_conditions.forEach((s: string) => conditions.push(stringToPair(String(s))));
+  }
+  const gateConditions: ConditionPair[] = [];
+  if (step?.gate) gateConditions.push(stringToPair(String(step.gate)));
+  if (step?.gate_when) gateConditions.push(stringToPair(String(step.gate_when)));
+  if (Array.isArray(step?.gate_extra_conditions)) {
+    step.gate_extra_conditions.forEach((s: string) => gateConditions.push(stringToPair(String(s))));
+  }
+  const fromZones: string[] = (() => {
+    const f = step?.from;
+    if (!f) return [];
+    if (Array.isArray(f)) return f.slice();
+    const s = String(f);
+    if (s.includes('_or_')) return s.split('_or_');
+    return [s];
+  })();
+  const options = Array.isArray(step?.options)
+    ? step.options.filter((o: string) => o !== 'continue_on_fail')
+    : [];
+  return {
+    action: step?.action || '',
+    value: step?.value,
+    target: step?.target || '',
+    gateConditions,
+    conditions,
+    options,
+    fromZones,
+    fromZonesOp: step?.from_op === 'and' ? 'and' : 'or',
+    duration: step?.duration || '',
+    perCount: step?.per_count != null ? Number(step.per_count) : undefined,
+    perRef: step?.ref || '',
+    perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : undefined,
+    perRefFilter: [],
+  };
 }
 
 function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): EffectBlock {

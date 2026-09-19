@@ -999,12 +999,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     changeAction(newAction);
   }
 
-  // 🔀 代替アクション（OR/AND）: OR=プレイヤーがどちらかを選ぶ / AND=両方行う。
+  // 🔀 代替アクション（OR/AND/その後）: OR=プレイヤーがどちらかを選ぶ / AND=両方行う（同じ対象に
+  // 重ねて適用） / その後=「その後」公式ルール連結（同じトリガー配列内の独立した後続stepとして
+  // 出力し、continue_on_fail修飾子で前段の成否に関わらず継続する。トリガー/発動主体/limitは
+  // 本体stepと共有され、後続step側で個別に再設定する必要が無い）。
   // チェックボックス自体は「その他のアクション」の隣に表示し、
   // 「編集中」選択・設定内容の一覧はアクション欄の近くに別途表示する
   const isOrChecked = altOp === 'or' && altActions.length > 0;
   const isAndChecked = altOp === 'and' && altActions.length > 0;
-  const setAltMode = (mode: 'or' | 'and' | null) => {
+  const isThenChecked = altOp === 'then' && altActions.length > 0;
+  const setAltMode = (mode: 'or' | 'and' | 'then' | null) => {
     if (!mode) {
       onChange({ ...block, altActions: [], altActionsOp: undefined });
       setEditingEffect(0);
@@ -2241,7 +2245,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <input
                       type="checkbox"
                       checked={isOrChecked}
-                      onChange={(e) => setAltMode(e.target.checked ? 'or' : (isAndChecked ? 'and' : null))}
+                      onChange={(e) => setAltMode(e.target.checked ? 'or' : (isAndChecked ? 'and' : (isThenChecked ? 'then' : null)))}
                     />
                     OR（どちらかを選ぶ）
                   </label>
@@ -2249,9 +2253,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <input
                       type="checkbox"
                       checked={isAndChecked}
-                      onChange={(e) => setAltMode(e.target.checked ? 'and' : (isOrChecked ? 'or' : null))}
+                      onChange={(e) => setAltMode(e.target.checked ? 'and' : (isOrChecked ? 'or' : (isThenChecked ? 'then' : null)))}
                     />
                     AND（両方行う）
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                    <input
+                      type="checkbox"
+                      checked={isThenChecked}
+                      onChange={(e) => setAltMode(e.target.checked ? 'then' : (isOrChecked ? 'or' : (isAndChecked ? 'and' : null)))}
+                    />
+                    その後（失敗/未発動でも継続）
                   </label>
                 </div>
                 {(otherActionOpen || (!!effectAction && !isCommonAction)) && (
@@ -2340,7 +2352,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* 「編集中」の効果切替 + 設定内容一覧。OR/ANDのチェックボックス自体は
             アクション欄「その他のアクション」の隣に表示する */}
-        {(isOrChecked || isAndChecked) && (
+        {(isOrChecked || isAndChecked || isThenChecked) && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
             <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
               💡 編集中の効果を選んでください。上のアクション/対象/対象数/発動条件/場所/期間は選んだ効果に反映されます。

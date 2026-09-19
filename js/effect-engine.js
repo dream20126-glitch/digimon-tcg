@@ -105,7 +105,7 @@ function _entryNeedsUserInput(entry, ctx) {
         ? recipeCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')
         : recipeCard.recipe;
       const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      recipe = isEvoSource ? (r.evo_source && r.evo_source[triggerCode]) : r[triggerCode];
+      recipe = isEvoSource ? (r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode)) : _lookupTriggerSteps(r, triggerCode);
     }
   } catch(_) {}
   if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
@@ -147,7 +147,7 @@ function _entryWillExecute(entry, ctx) {
           ? recipeCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')
           : recipeCard.recipe;
         const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        recipe = isEvoSource ? (r.evo_source && r.evo_source[triggerCode]) : r[triggerCode];
+        recipe = isEvoSource ? (r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode)) : _lookupTriggerSteps(r, triggerCode);
       }
     } catch(_) {}
   }
@@ -3398,13 +3398,14 @@ export function applyPermanentEffects(bs, side, context) {
       const turnKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
       const turnTextMap = { 'during_own_turn': '【自分のターン】', 'during_opp_turn': '【相手のターン】', 'during_any_turn': '【お互いのターン】' };
       turnKeys.forEach(tk => {
-        if (!card.recipe[tk]) return;
+        const tkSteps = _lookupTriggerSteps(card.recipe, tk);
+        if (!tkSteps) return;
         // 進化元効果のみのカード（メイン効果にターントリガーなし）はスキップ
         const triggerText = turnTextMap[tk];
         if (!cardMainEffect.includes(triggerText) && cardEvoEffect.includes(triggerText)) return;
         if (tk === 'during_own_turn' && side !== turnSide) return;
         if (tk === 'during_opp_turn' && side === turnSide) return;
-        const steps = Array.isArray(card.recipe[tk]) ? card.recipe[tk] : [card.recipe[tk]];
+        const steps = Array.isArray(tkSteps) ? tkSteps : [tkSteps];
         steps.forEach(step => {
           // grant_keyword for own:all（八神太一等）: condition/when はターゲット個別フィルタとして評価
           if (step.action === 'grant_keyword' || step.action === 'grant_keyword_to') {
@@ -3594,10 +3595,11 @@ export function applyPermanentEffects(bs, side, context) {
         const evoRecipe = evoCard.recipe.evo_source;
         const turnKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
         turnKeys.forEach(tk => {
-          if (!evoRecipe[tk]) return;
+          const tkSteps = _lookupTriggerSteps(evoRecipe, tk);
+          if (!tkSteps) return;
           if (tk === 'during_own_turn' && side !== turnSide) return;
           if (tk === 'during_opp_turn' && side === turnSide) return;
-          const steps = Array.isArray(evoRecipe[tk]) ? evoRecipe[tk] : [evoRecipe[tk]];
+          const steps = Array.isArray(tkSteps) ? tkSteps : [tkSteps];
           steps.forEach(step => {
             // custom: 進化元由来の特殊効果。condition はブロック判定用フィルタなので前提条件として評価しない
             if (step.action === 'custom') {
@@ -3743,10 +3745,11 @@ export function applyPermanentEffects(bs, side, context) {
         const linkRecipe = linkCard.recipe.link;
         const turnKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
         turnKeys.forEach(tk => {
-          if (!linkRecipe[tk]) return;
+          const tkSteps = _lookupTriggerSteps(linkRecipe, tk);
+          if (!tkSteps) return;
           if (tk === 'during_own_turn' && side !== turnSide) return;
           if (tk === 'during_opp_turn' && side === turnSide) return;
-          const steps = Array.isArray(linkRecipe[tk]) ? linkRecipe[tk] : [linkRecipe[tk]];
+          const steps = Array.isArray(tkSteps) ? tkSteps : [tkSteps];
           steps.forEach(step => {
             if (step.action === 'custom') {
               const cs = String(step.condition || '');
@@ -5071,7 +5074,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
       // 例: ヘブンズリッパーで全デジモンが得る「【アタック時】DP-2000」
       if (Array.isArray(sourceCard._grantedRecipes)) {
         sourceCard._grantedRecipes.forEach(g => {
-          const gSteps = g && g.recipe && g.recipe[triggerCode];
+          const gSteps = g && g.recipe && _lookupTriggerSteps(g.recipe, triggerCode);
           if (gSteps && Array.isArray(gSteps)) {
             const gBlock = {
               raw: (g.granterText || ('付与効果（' + (g.granterName || '') + '）')),
@@ -5164,13 +5167,34 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
 
 // ===== レシピ実行エンジン =====
 
+// レシピオブジェクトから triggerCode に対応する steps を取得する共通ヘルパー。
+// 通常は完全一致キーだが、"on_move,on_play" のようにカンマ区切りで複数トリガーを
+// 1つのキーにまとめて記述した場合もマッチさせる（複数トリガー選択時にレシピを重複
+// 記述しなくて済むようにするため）。完全一致キーとカンマ区切りキーが両方存在する
+// 場合（例: 別々のブロックが on_move 単体 / on_move,on_play 併記の両方を持つ）は
+// 両方の steps を結合して返す。既存の（カンマを含まない）レシピの挙動には影響しない
+function _lookupTriggerSteps(recipeObj, triggerCode) {
+  if (!recipeObj || !triggerCode) return undefined;
+  let result;
+  const exact = recipeObj[triggerCode];
+  if (Array.isArray(exact)) result = exact.slice();
+  for (const key in recipeObj) {
+    if (key === triggerCode || key.indexOf(',') === -1) continue;
+    if (!key.split(',').some(k => k.trim() === triggerCode)) continue;
+    const steps = recipeObj[key];
+    if (!Array.isArray(steps)) continue;
+    result = result ? result.concat(steps) : steps.slice();
+  }
+  return result;
+}
+
 // カードから指定トリガーのレシピを直接取得（use_main_effect用）
 function getRecipeForCard(card, triggerCode) {
   if (!card || !card.recipe) return null;
   try {
     const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
     const recipes = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return recipes[triggerCode] || null;
+    return _lookupTriggerSteps(recipes, triggerCode) || null;
   } catch(e) { return null; }
 }
 
@@ -5194,11 +5218,13 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
     const recipes = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (inEvoSource) {
       // 進化元コンテキスト: evo_source.X のみ（top-level は見ない）
-      if (recipes['evo_source'] && recipes['evo_source'][triggerCode]) return recipes['evo_source'][triggerCode];
+      const evoSteps = recipes['evo_source'] && _lookupTriggerSteps(recipes['evo_source'], triggerCode);
+      if (evoSteps) return evoSteps;
       return null;
     }
     // メインコンテキスト: top-level のみ
-    if (recipes[triggerCode]) return recipes[triggerCode];
+    const mainSteps = _lookupTriggerSteps(recipes, triggerCode);
+    if (mainSteps) return mainSteps;
     // セキュリティ効果でuse_main_effectの場合、mainレシピを返す
     if (triggerCode === 'security' && recipes['main']) {
       // セキュリティ効果テキストに「メイン効果を発揮」があるか確認
@@ -5371,7 +5397,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
     // 本体カードの top-level recipe
     if (card.recipe) {
       const r = parseRecipe(card.recipe);
-      const recipe = r && r[recipeKey];
+      const recipe = r && _lookupTriggerSteps(r, recipeKey);
       if (recipe && evalSteps(card, recipe)) reactions.push({ card, sourceCard: card, recipe });
     }
     // 進化元カードの evo_source ネストされたレシピ（例: ガルルモン「進化元にいるとき、
@@ -5380,7 +5406,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       card.stack.forEach(evoCard => {
         if (!evoCard || !evoCard.recipe) return;
         const r = parseRecipe(evoCard.recipe);
-        const recipe = r && r.evo_source && r.evo_source[recipeKey];
+        const recipe = r && r.evo_source && _lookupTriggerSteps(r.evo_source, recipeKey);
         if (recipe && evalSteps(card, recipe)) reactions.push({ card, sourceCard: evoCard, recipe });
       });
     }
@@ -9500,8 +9526,8 @@ export function hasRecipeTrigger(card, triggerCode) {
     const r = typeof card.recipe === 'string'
       ? JSON.parse(card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, ''))
       : card.recipe;
-    if (r[triggerCode]) return true;
-    if (r.evo_source && r.evo_source[triggerCode]) return true;
+    if (_lookupTriggerSteps(r, triggerCode)) return true;
+    if (r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode)) return true;
     return false;
   } catch (_) { return false; }
 }
@@ -9714,7 +9740,7 @@ export function hasEvoStackTrigger(card, triggerCode) {
       const r = typeof s.recipe === 'string'
         ? JSON.parse(s.recipe.replace(/[\x00-\x1F\x7F]\s*/g, ''))
         : s.recipe;
-      return !!(r.evo_source && r.evo_source[triggerCode]);
+      return !!(r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode));
     } catch (_) { return false; }
   });
 }

@@ -100,23 +100,27 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
       appendStep(recipe, { ...b, trigger: 'security' }, keywordDict);
       return;
     }
-    // トリガー複数選択: 「登場時/進化時どちらでも同じ効果」のように、選択された
-    // 各トリガーコードへ同一内容のstepをそれぞれ出力する
+    // トリガー複数選択: 「登場時/進化時どちらでも同じ効果」のように、複数トリガーで
+    // 同一内容のstepを発動する場合。冗長な重複出力を避けるため、"on_move,on_play"の
+    // ようにカンマ区切りの1キーへまとめて出力する（エンジン側は_lookupTriggerStepsで
+    // カンマ区切りキーも解決できる。1件のみなら従来通り単一トリガーコードのまま）。
+    // 'passive'（キーワードのパッシブ宣言）は常に単一選択のため、まとめ対象にはならない
     const triggerList = (b.triggers && b.triggers.length > 0) ? b.triggers : (b.trigger ? [b.trigger] : []);
-    triggerList.forEach((trig) => {
+    if (triggerList.length > 0) {
+      const combinedTrig = triggerList.join(',');
       if (b.section === 'evo_source') {
         recipe.evo_source = recipe.evo_source || {};
-        appendStep(recipe.evo_source, { ...b, trigger: trig }, keywordDict);
+        appendStep(recipe.evo_source, { ...b, trigger: combinedTrig }, keywordDict);
       } else if (b.section === 'link') {
         // リンク効果は進化元効果と同じ構造（during_own_turn等のトリガーでネスト）。
         // 「リンクしている間」という状態はcard.linkedCardsで表現されるため、
         // トリガー自体は進化元と同様に発動タイミングの指定として使う
         recipe.link = recipe.link || {};
-        appendStep(recipe.link, { ...b, trigger: trig }, keywordDict);
+        appendStep(recipe.link, { ...b, trigger: combinedTrig }, keywordDict);
       } else {
-        appendStep(recipe, { ...b, trigger: trig }, keywordDict);
+        appendStep(recipe, { ...b, trigger: combinedTrig }, keywordDict);
       }
-    });
+    }
   });
   return recipe;
 }
@@ -517,6 +521,10 @@ function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): Effect
 }
 
 function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigger: string, step: any): EffectBlock {
+  // "on_move,on_play" のようなカンマ区切りの複数トリガーまとめキーを、
+  // トリガー複数選択(triggers[])として復元する（blocksToRecipeの出力の逆変換）
+  const triggerParts = trigger.split(',').map((t) => t.trim()).filter(Boolean);
+  const primaryTrigger = triggerParts[0] || trigger;
   const KNOWN: Record<string, boolean> = {
     as_type: true,
     action: true,
@@ -607,7 +615,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     section,
     asType: step?.as_type === 'digimon' || step?.as_type === 'tamer' || step?.as_type === 'option' ? step.as_type : undefined,
     zone: step?.in_zone || '',
-    trigger,
+    trigger: primaryTrigger,
+    triggers: triggerParts.length > 1 ? triggerParts : undefined,
     // JSON に subject 無ければ 'self' (このデジモン) としてロード
     triggerSubject: step?.subject || 'self',
     limit: step?.limit || '',

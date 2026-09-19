@@ -4423,6 +4423,7 @@ const NO_VALUE_CONDS = new Set([
   'cond_during_any_turn', 'cond_self_active', 'cond_self_rest', 'cond_opp_no_attack_this_turn',
   'cond_evolved_this_turn', 'cond_no_tamer_evo', 'cond_not_own_effect', 'cond_has_evo_digimon',
   'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
+  'cond_dp_highest', 'cond_dp_lowest',
   'cond_face_down', 'cond_face_up', 'cond_designated_name',
 ]);
 
@@ -4525,6 +4526,8 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_dp_ge', label: '以上' },
     { value: 'cond_dp_le', label: '以下' },
     { value: 'cond_dp', label: '完全一致' },
+    { value: 'cond_dp_highest', label: '最も高い' },
+    { value: 'cond_dp_lowest', label: '最も低い' },
     { value: 'cond_attack_target_highest_dp', label: '最も高い（アタック対象専用）' },
     { value: 'cond_attack_target_lowest_dp', label: '最も低い（アタック対象専用）' },
   ],
@@ -4551,6 +4554,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_feature_contains' || base === 'cond_feature') return 'feature';
   if (base === 'cond_lv_ge' || base === 'cond_lv_le' || base === 'cond_lv') return 'lv';
   if (base === 'cond_dp_ge' || base === 'cond_dp_le' || base === 'cond_dp'
+    || base === 'cond_dp_highest' || base === 'cond_dp_lowest'
     || base === 'cond_attack_target_highest_dp' || base === 'cond_attack_target_lowest_dp') return 'dp';
   if (base === 'cond_cost_ge' || base === 'cond_cost_le' || base === 'cond_cost') return 'cost';
   if (base === 'cond_cost_mod') return 'cost_mod';
@@ -4606,6 +4610,7 @@ function ConditionsHybridEditor({
   const CATEGORIZED_CODES = new Set<string>([
     'cond_color', 'cond_type', 'cond_feature_contains', 'cond_feature',
     'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_dp_ge', 'cond_dp_le', 'cond_dp',
+    'cond_dp_highest', 'cond_dp_lowest',
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
     'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod',
     'cond_name', 'cond_name_contains', 'cond_description', 'cond_description_contains', 'cond_zone',

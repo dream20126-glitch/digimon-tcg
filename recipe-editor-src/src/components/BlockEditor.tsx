@@ -155,8 +155,8 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
   // キーワード専用: このキーワードの実体となるレシピ（エンジンが対応する出来事の組み合わせで
   // 表現できる場合のみ）。空のままなら今まで通り passive:[{flag}] のみで出力される
   const [templateBlocks, setTemplateBlocks] = useState<EffectBlock[]>([]);
-  // キーワード専用:「指定記入」。true のとき、カード側でこのキーワードを選んだ際に
-  // 「指定名」記入欄が出現し、templateBlocks内のcond_designated_nameがその値で置き換わる
+  // キーワード専用:「対象」。true のとき、カード側でこのキーワードを選んだ際に
+  // 「対象」絞り込み条件欄が出現し、templateBlocks内のcond_designated_nameがその内容で置き換わる
   const [hasNamedParam, setHasNamedParam] = useState(false);
 
   function autoSuggest() {
@@ -267,8 +267,8 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#8a6d00', marginBottom: 6 }}>
             <input type="checkbox" checked={hasNamedParam} onChange={(e) => setHasNamedParam(e.target.checked)} />
-            指定記入（カード側でこのキーワードを選ぶと「指定名」記入欄が出現し、下の発動条件/コスト
-            対象の絞り込みで「指定」ボタンを使った箇所がその記入内容で置き換わります）
+            対象（カード側でこのキーワードを選ぶと「対象」の絞り込み条件欄が出現し、下の発動条件/コスト
+            対象の絞り込みで「指定」ボタンを使った箇所がその内容で置き換わります）
           </label>
           {templateBlocks.map((b, i) => (
             <BlockEditor
@@ -1612,14 +1612,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               />
               <InlineDictAdd kind="keywords" dict={dict} onRegistered={(v) => update('keyword', v)} />
               {!!dict.keywords.find((k) => k.code === block.keyword)?.hasNamedParam && (
-                <div style={{ marginTop: 6 }}>
-                  <label style={{ display: 'block', fontSize: 11, color: '#6b21a8', marginBottom: 2 }}>指定名</label>
-                  <input
-                    type="text"
-                    value={block.keywordParam || ''}
-                    onChange={(e) => update('keywordParam', e.target.value)}
-                    placeholder="例: モノドラモン"
-                    style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                <div style={{ marginTop: 6, padding: 6, background: '#fff', border: '1px solid #d8b4fe', borderRadius: 4 }}>
+                  <ConditionsHybridEditor
+                    conditions={block.keywordParamConditions || []}
+                    onChange={(next) => update('keywordParamConditions', next)}
+                    dict={dict}
+                    title="対象"
+                    hint="（このキーワードが参照する対象の絞り込み・カードごとに指定）"
+                    theme="action"
+                    defaultSubject=""
+                    showSubjectSelector={false}
+                    conditionsOp={block.keywordParamConditionsOp || 'and'}
+                    onConditionsOpChange={(op) => update('keywordParamConditionsOp', op)}
                   />
                 </div>
               )}
@@ -3596,14 +3600,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   />
                   <InlineDictAdd kind="keywords" dict={dict} onRegistered={(v) => update('keyword', v)} />
                   {!!dict.keywords.find((k) => k.code === block.keyword)?.hasNamedParam && (
-                    <div style={{ marginTop: 6 }}>
-                      <label style={{ display: 'block', fontSize: 11, color: '#0d9488', marginBottom: 2 }}>指定名</label>
-                      <input
-                        type="text"
-                        value={block.keywordParam || ''}
-                        onChange={(e) => update('keywordParam', e.target.value)}
-                        placeholder="例: モノドラモン"
-                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                    <div style={{ marginTop: 6, padding: 6, background: '#fff', border: '1px solid #99f6e4', borderRadius: 4 }}>
+                      <ConditionsHybridEditor
+                        conditions={block.keywordParamConditions || []}
+                        onChange={(next) => update('keywordParamConditions', next)}
+                        dict={dict}
+                        title="対象"
+                        hint="（このキーワードが参照する対象の絞り込み・カードごとに指定）"
+                        theme="action"
+                        defaultSubject=""
+                        showSubjectSelector={false}
+                        conditionsOp={block.keywordParamConditionsOp || 'and'}
+                        onConditionsOpChange={(op) => update('keywordParamConditionsOp', op)}
                       />
                     </div>
                   )}
@@ -4358,10 +4366,10 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'designated', label: '指定' },
   { value: 'other', label: 'その他' },
 ];
-// 「指定」: キーワードの「指定記入」欄に入力された名前を参照するプレースホルダー条件
-// (cond_designated_name)。キーワードのレシピテンプレート内でのみ意味を持ち、
-// そのキーワードを実際のカードで選んだ際に、指定記入欄の値で cond_name_contains:<名前>
-// へ自動的に置き換えられる（保存時にblocksToRecipe側で実施）
+// 「指定」: キーワードの「対象」欄で組み立てた絞り込み条件一式を参照するプレースホルダー
+// (cond_designated_name)。キーワードのレシピテンプレート内でのみ意味を持ち、そのキーワードを
+// 実際のカードで選んだ際に、この条件を含むstepの条件一式が「対象」欄の内容で丸ごと
+// 置き換えられる（保存時にblocksToRecipe側で実施）
 const DESIGNATED_NAME_COND = 'cond_designated_name';
 
 // 「効果で」(cond_effect、辞書の「その他条件」で選択): 「以外」はvalue:'not'、

@@ -700,7 +700,7 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                   </label>
                   <label style={{ display: 'block', marginTop: 4 }}>
                     <input type="checkbox" checked={!!form.hasNamedParam} onChange={(e) => update({ hasNamedParam: e.target.checked })} />
-                    {' '}指定記入（カード側でこのキーワードを選ぶと「指定名」記入欄が出現する）
+                    {' '}対象（カード側でこのキーワードを選ぶと「対象」の絞り込み条件欄が出現する）
                   </label>
                 </div>
               )}
@@ -817,7 +817,7 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                           { flag: 'hasDeckPosition' as const, icon: '⬆️⬇️', label: '上下', on: { bg: '#f0fdfa', color: '#0d9488', border: '#99f6e4' }, title: 'このアクション選択時に「上/下」ボタンを表示' },
                           { flag: 'hasFaceOption' as const, icon: '🂠', label: '裏表', on: { bg: '#f5f0fd', color: '#6b21a8', border: '#d8b4fe' }, title: 'コストで本アクション選択時に「裏向き/表向き」ボタンを表示' },
                         ] : [
-                          { flag: 'hasNamedParam' as const, icon: '📝', label: '指定記入', on: { bg: '#fef3e7', color: '#b76e00', border: '#ffd591' }, title: 'カード側でこのキーワードを選ぶと「指定名」記入欄を表示' },
+                          { flag: 'hasNamedParam' as const, icon: '📝', label: '対象', on: { bg: '#fef3e7', color: '#b76e00', border: '#ffd591' }, title: 'カード側でこのキーワードを選ぶと「対象」の絞り込み条件欄を表示' },
                         ]).map(({ flag, icon, label, on, title }) => {
                           const active = !!e[flag];
                           return (

@@ -36,10 +36,13 @@ export interface EffectBlock {
   value?: number | string;
   target?: string; // 'self' | 'own:1' | 'opponent:all' 等
   keyword?: string;
-  // 選んだキーワードの辞書側hasNamedParam=trueのときのみ入力欄が出る「指定名」。
-  // JSON自体には出力せず、保存時にrecipeTemplate内のcond_designated_nameを
-  // cond_name_contains:<この値>へ置き換えるためだけに使う（エディタ内限定の値）
-  keywordParam?: string;
+  // 選んだキーワードの辞書側hasNamedParam=trueのときのみ出現する「対象」の絞り込み条件。
+  // 発動条件と同じボタン配列(特徴/名称/記述/Lv等)+AND/ORで組み立てる。JSON自体には
+  // 出力せず、保存時にrecipeTemplate内のcond_designated_nameが現れるstepの
+  // condition/when/extra_conditions/condition_opを、これで丸ごと置き換えるためだけに使う
+  // （エディタ内限定の値）
+  keywordParamConditions?: ConditionPair[];
+  keywordParamConditionsOp?: 'and' | 'or';
   // memory_plus 専用:「メモリー+Nする。このターン終了時、メモリーを-Nする。」
   // true のとき JSON へ step.revert_at_turn_end:true を出力する
   revertAtTurnEnd?: boolean;
@@ -203,10 +206,10 @@ export interface DictEntry {
   // カード自身のレシピに埋め込む。エンジンが未対応の出来事（アクティブフェイズ開始時等）しか
   // 表現できないキーワードは、これを空欄のままにして今まで通りpassive:[{flag}]で出力する
   recipeTemplate?: string;
-  // キーワード辞書専用: このキーワードを選ぶと、カード側に「指定名」の記入欄が出現する。
-  // recipeTemplate内のcond_designated_name（プレースホルダー条件）が、保存時にこの
-  // 記入内容でcond_name_contains:<記入内容>へ自動的に置き換えられる（例:「分離」の
-  // 「指定のリンクカード」等、キーワードごとにカードで指定する名称が異なる場合に使う）
+  // キーワード辞書専用: このキーワードを選ぶと、カード側に「対象」の絞り込み条件欄が出現する。
+  // recipeTemplate内のcond_designated_name（プレースホルダー条件）を持つstepの
+  // 条件一式が、保存時にこの絞り込み内容で丸ごと置き換えられる（例:「分離」の
+  // 「指定のリンクカード」等、キーワードごとにカードで対象が異なる場合に使う）
   hasNamedParam?: boolean;
 }
 

@@ -182,19 +182,36 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
   return recipe;
 }
 
-// テンプレート内のプレースホルダー条件 cond_designated_name（「指定」ボタンで挿入）を、
-// カード側で入力された「指定名」で cond_name_contains:<name> へ置き換える。
+// ConditionPair[]（+AND/OR）から、条件一式のJSONフィールド（condition/when/
+// extra_conditions/condition_op）を組み立てる（appendStepの発動条件serializeと同じ規則）
+function buildDesignatedConditionFields(conds: ConditionPair[], op: 'and' | 'or'): {
+  condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or';
+} {
+  const valid = (conds || []).filter((p) => p.base);
+  const out: { condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or' } = {};
+  if (valid.length >= 1) out.condition = pairToString(valid[0]);
+  if (valid.length >= 2) out.when = pairToString(valid[1]);
+  if (valid.length >= 3) out.extra_conditions = valid.slice(2).map(pairToString);
+  if (valid.length >= 2 && op === 'or') out.condition_op = 'or';
+  return out;
+}
+
+// テンプレート内のプレースホルダー条件 cond_designated_name（「指定」ボタンで挿入）を持つ
+// stepを見つけ、その条件一式(condition/when/extra_conditions/condition_op)を、カード側で
+// 組み立てた「対象」の絞り込み条件(replacement)で丸ごと置き換える。
 // step.cost[] の各コストアイテムも再帰的に処理する（コスト対象の絞り込みの「指定」用）
-function substituteDesignatedName(step: any, name: string): any {
+function substituteDesignatedName(step: any, replacement: { condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or' }): any {
   if (!step || typeof step !== 'object') return step;
+  const hasMarker = step.condition === 'cond_designated_name'
+    || step.when === 'cond_designated_name'
+    || (Array.isArray(step.extra_conditions) && step.extra_conditions.includes('cond_designated_name'));
   const out: any = { ...step };
-  if (out.condition === 'cond_designated_name') out.condition = 'cond_name_contains:' + name;
-  if (out.when === 'cond_designated_name') out.when = 'cond_name_contains:' + name;
-  if (Array.isArray(out.extra_conditions)) {
-    out.extra_conditions = out.extra_conditions.map((s: string) => (s === 'cond_designated_name' ? 'cond_name_contains:' + name : s));
+  if (hasMarker) {
+    delete out.condition; delete out.when; delete out.extra_conditions; delete out.condition_op;
+    Object.assign(out, replacement);
   }
   if (Array.isArray(out.cost)) {
-    out.cost = out.cost.map((c: any) => substituteDesignatedName(c, name));
+    out.cost = out.cost.map((c: any) => substituteDesignatedName(c, replacement));
   }
   return out;
 }
@@ -203,8 +220,9 @@ function substituteDesignatedName(step: any, name: string): any {
 // テンプレート側で値を空にしておいたstep（例:「DP+」までで数値未設定）には、
 // カード側でキーワード効果に入力した数値(cardValue)をそのまま差し込む
 // （＝「Nはカードごとに違う」ケースをテンプレート側で固定せずに済む）。
-// cardName が指定されていれば、cond_designated_name プレースホルダーも同様に置き換える
-function mergeTemplateRecipe(container: Record<string, any>, template: Record<string, any>, cardValue?: number | string, cardName?: string) {
+// designated が指定されていれば、cond_designated_name プレースホルダーを持つstepの
+// 条件一式を、カード側の「対象」絞り込み条件で丸ごと置き換える
+function mergeTemplateRecipe(container: Record<string, any>, template: Record<string, any>, cardValue?: number | string, designated?: { condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or' }) {
   Object.keys(template).forEach((key) => {
     const steps = template[key];
     if (!Array.isArray(steps) || steps.length === 0) return;
@@ -212,7 +230,7 @@ function mergeTemplateRecipe(container: Record<string, any>, template: Record<st
     let filled = cardValue === undefined || cardValue === ''
       ? steps
       : steps.map((s: any) => (s && s.value === undefined ? { ...s, value: cardValue } : s));
-    if (cardName) filled = filled.map((s: any) => substituteDesignatedName(s, cardName));
+    if (designated) filled = filled.map((s: any) => substituteDesignatedName(s, designated));
     container[key] = Array.isArray(container[key]) ? [...container[key], ...filled] : filled.slice();
   });
 }
@@ -227,8 +245,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
           const cv = b.value !== undefined && b.value !== '' && b.value !== null
             ? (isNaN(Number(b.value)) ? b.value : Number(b.value))
             : undefined;
-          const cardName = kwEntry.hasNamedParam && b.keywordParam ? b.keywordParam.trim() : undefined;
-          mergeTemplateRecipe(container, template, cv, cardName);
+          const designated = kwEntry.hasNamedParam && Array.isArray(b.keywordParamConditions) && b.keywordParamConditions.length > 0
+            ? buildDesignatedConditionFields(b.keywordParamConditions, b.keywordParamConditionsOp || 'and')
+            : undefined;
+          mergeTemplateRecipe(container, template, cv, designated);
           return;
         }
       } catch (_) { /* パース失敗時は下のpassive出力にフォールバック */ }
@@ -449,7 +469,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
           const cv = b.value !== undefined && b.value !== '' && b.value !== null
             ? (isNaN(Number(b.value)) ? b.value : Number(b.value))
             : undefined;
-          const cardName = kwEntry.hasNamedParam && b.keywordParam ? b.keywordParam.trim() : undefined;
+          const designated = kwEntry.hasNamedParam && Array.isArray(b.keywordParamConditions) && b.keywordParamConditions.length > 0
+            ? buildDesignatedConditionFields(b.keywordParamConditions, b.keywordParamConditionsOp || 'and')
+            : undefined;
           const filledTemplate: Record<string, any> = {};
           Object.keys(template).forEach((k) => {
             const steps = template[k];
@@ -457,7 +479,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
             let filledSteps = cv === undefined
               ? steps
               : steps.map((s: any) => (s && s.value === undefined ? { ...s, value: cv } : s));
-            if (cardName) filledSteps = filledSteps.map((s: any) => substituteDesignatedName(s, cardName));
+            if (designated) filledSteps = filledSteps.map((s: any) => substituteDesignatedName(s, designated));
             filledTemplate[k] = filledSteps;
           });
           step.action = 'grant_effect';

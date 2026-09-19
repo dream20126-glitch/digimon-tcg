@@ -5230,15 +5230,21 @@ function _substituteDesignatedNameJS(step, replacement) {
   return out;
 }
 
-// キーワードテンプレートの steps に、カード側の value（数値未設定のstepにのみ差し込む）と
-// designated（cond_designated_name の置き換え）を適用したコピーを返す
-function _fillKeywordTemplateSteps(steps, value, designated) {
+// キーワードテンプレートの steps に、カード側の value（数値未設定のstepにのみ差し込む）・
+// designated（cond_designated_name の置き換え）・count（アセンブリ等、cost[]内のcount未設定
+// アイテムにのみ差し込む「何枚使うか」）を適用したコピーを返す
+function _fillKeywordTemplateSteps(steps, value, designated, count) {
   return (steps || []).map(s => {
     let out = s;
     if (value !== undefined && value !== '' && value !== null && out && out.value === undefined) {
       out = Object.assign({}, out, { value });
     }
     if (designated) out = _substituteDesignatedNameJS(out, designated);
+    if (count !== undefined && count !== '' && count !== null && Array.isArray(out.cost)) {
+      out = Object.assign({}, out, {
+        cost: out.cost.map(c => (c && c.count === undefined ? Object.assign({}, c, { count }) : c)),
+      });
+    }
     return out;
   });
 }
@@ -5278,7 +5284,7 @@ function _lookupTriggerSteps(recipeObj, triggerCode) {
       if (!kw) continue;
       const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
       if (!tplSteps) continue;
-      const filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated);
+      const filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count);
       result = result ? result.concat(filled) : filled;
     }
   }
@@ -8247,7 +8253,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _filledTemplate = {};
           Object.keys(_kwEntry.recipeTemplate).forEach(k => {
             const tplSteps = _kwEntry.recipeTemplate[k];
-            if (Array.isArray(tplSteps)) _filledTemplate[k] = _fillKeywordTemplateSteps(tplSteps, _cv, step.designated);
+            if (Array.isArray(tplSteps)) _filledTemplate[k] = _fillKeywordTemplateSteps(tplSteps, _cv, step.designated, step.count);
           });
           const _grantStep = Object.assign({}, step, { action: 'grant_effect', granted_recipe: _filledTemplate });
           executeRecipeStep(_grantStep, ctx, store, callback);

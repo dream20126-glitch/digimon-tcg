@@ -2222,30 +2222,38 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     />
                     その他のアクション
                   </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
-                    <input
-                      type="checkbox"
-                      checked={isOrChecked}
-                      onChange={(e) => setAltMode(e.target.checked ? 'or' : (isAndChecked ? 'and' : (isThenChecked ? 'then' : null)))}
-                    />
-                    OR（どちらかを選ぶ）
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
-                    <input
-                      type="checkbox"
-                      checked={isAndChecked}
-                      onChange={(e) => setAltMode(e.target.checked ? 'and' : (isOrChecked ? 'or' : (isThenChecked ? 'then' : null)))}
-                    />
-                    AND（両方行う）
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
-                    <input
-                      type="checkbox"
-                      checked={isThenChecked}
-                      onChange={(e) => setAltMode(e.target.checked ? 'then' : (isOrChecked ? 'or' : (isAndChecked ? 'and' : null)))}
-                    />
-                    その後（失敗/未発動でも継続）
-                  </label>
+                  {/* OR/AND/その後は「その他のアクション」とは別の設定（複数アクションの組合せ方）
+                      なので、混同しないよう枠と背景色で視覚的に分ける */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                    padding: '4px 10px', background: '#f5eefc', border: '1px solid #d8b4fe', borderRadius: 14,
+                  }}>
+                    <span style={{ fontSize: 10, color: '#9333ea', fontWeight: 'bold' }}>🔀 複数アクション</span>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                      <input
+                        type="checkbox"
+                        checked={isOrChecked}
+                        onChange={(e) => setAltMode(e.target.checked ? 'or' : (isAndChecked ? 'and' : (isThenChecked ? 'then' : null)))}
+                      />
+                      OR（どちらかを選ぶ）
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                      <input
+                        type="checkbox"
+                        checked={isAndChecked}
+                        onChange={(e) => setAltMode(e.target.checked ? 'and' : (isOrChecked ? 'or' : (isThenChecked ? 'then' : null)))}
+                      />
+                      AND（両方行う）
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                      <input
+                        type="checkbox"
+                        checked={isThenChecked}
+                        onChange={(e) => setAltMode(e.target.checked ? 'then' : (isOrChecked ? 'or' : (isAndChecked ? 'and' : null)))}
+                      />
+                      その後（失敗/未発動でも継続）
+                    </label>
+                  </div>
                 </div>
                 {(otherActionOpen || (!!effectAction && !isCommonAction)) && (
                   <div style={{ marginTop: 4 }}>

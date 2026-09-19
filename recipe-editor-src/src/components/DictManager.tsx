@@ -698,6 +698,10 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                     <input type="checkbox" checked={!!form.isPassive} onChange={(e) => update({ isPassive: e.target.checked })} />
                     {' '}passive flag として動作する（常時持続キーワード）
                   </label>
+                  <label style={{ display: 'block', marginTop: 4 }}>
+                    <input type="checkbox" checked={!!form.hasNamedParam} onChange={(e) => update({ hasNamedParam: e.target.checked })} />
+                    {' '}指定記入（カード側でこのキーワードを選ぶと「指定名」記入欄が出現する）
+                  </label>
                 </div>
               )}
 
@@ -789,7 +793,7 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
               <tr style={{ background: '#f0f4f8', position: 'sticky', top: 0 }}>
                 <th style={th()}>コード</th>
                 <th style={th()}>日本語名</th>
-                {kind === 'actions' && <th style={th()}>フラグ</th>}
+                {(kind === 'actions' || kind === 'keywords') && <th style={th()}>フラグ</th>}
                 {isActionOrKeyword && <th style={th()}>演出タイプ</th>}
                 {isActionOrKeyword && <th style={th()}>自動/手動</th>}
                 {hasImplBadge && <th style={th()}>エンジン</th>}
@@ -801,17 +805,19 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                 <tr key={e.code} style={{ borderBottom: '1px solid #eee' }}>
                   <td style={td('mono')}>{e.code}</td>
                   <td style={td()}>{e.label}</td>
-                  {kind === 'actions' && (
+                  {(kind === 'actions' || kind === 'keywords') && (
                     <td style={td()}>
                       {/* クリックでトグル保存（既存エントリのフラグは「新規追加」フォームでは変更できず、
                           ここが唯一の変更手段のため）。オフのフラグも常に表示してクリックでオンにできる */}
                       <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {([
+                        {(kind === 'actions' ? [
                           { flag: 'allowsRules' as const, icon: '📐', label: 'ルール', on: { bg: '#e3f2fd', color: '#1976d2', border: '#93b5e5' }, title: 'このアクション選択時に「+ ルール」を表示' },
                           { flag: 'hasPositionVariant' as const, icon: '📍', label: '位置', on: { bg: '#fff3e0', color: '#b76e00', border: '#ffd591' }, title: 'このアクション選択時に「📍 位置」プルダウンを表示' },
                           { flag: 'hasFromZones' as const, icon: '📥', label: '場所', on: { bg: '#eff5fd', color: '#1a4f8a', border: '#b9c8e0' }, title: 'このアクション選択時に「📍 場所」ボタンを表示' },
                           { flag: 'hasDeckPosition' as const, icon: '⬆️⬇️', label: '上下', on: { bg: '#f0fdfa', color: '#0d9488', border: '#99f6e4' }, title: 'このアクション選択時に「上/下」ボタンを表示' },
                           { flag: 'hasFaceOption' as const, icon: '🂠', label: '裏表', on: { bg: '#f5f0fd', color: '#6b21a8', border: '#d8b4fe' }, title: 'コストで本アクション選択時に「裏向き/表向き」ボタンを表示' },
+                        ] : [
+                          { flag: 'hasNamedParam' as const, icon: '📝', label: '指定記入', on: { bg: '#fef3e7', color: '#b76e00', border: '#ffd591' }, title: 'カード側でこのキーワードを選ぶと「指定名」記入欄を表示' },
                         ]).map(({ flag, icon, label, on, title }) => {
                           const active = !!e[flag];
                           return (

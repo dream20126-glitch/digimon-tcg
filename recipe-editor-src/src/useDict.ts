@@ -90,6 +90,12 @@ function categorize(rows: any[]): { triggers: DictEntry[]; conditions: DictEntry
         const v = String(r['裏表指定'] || '').trim().toLowerCase();
         return v === '1' || v === 'true' || v === 'yes' || v === 'on';
       })(),
+      // 指定記入フラグ（キーワード専用）: 「指定記入」列に "1"/"true" 等で、カード側の
+      // キーワード選択時に「指定名」記入欄を表示する
+      hasNamedParam: (() => {
+        const v = String(r['指定記入'] || '').trim().toLowerCase();
+        return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+      })(),
     };
     if (kind === 'trigger' || kind === 'continuous') triggers.push(entry);
     else if (kind === 'condition') conditions.push(entry);
@@ -219,6 +225,7 @@ export function useDict(password: string): DictAPI {
       '上下指定': entry.hasDeckPosition ? '1' : '',
       '裏表指定': entry.hasFaceOption ? '1' : '',
       'キーワードレシピ': entry.recipeTemplate || '',
+      '指定記入': entry.hasNamedParam ? '1' : '',
     };
     const r = await apiAdd('dict', row, password);
     // アクションのフラグを localStorage に保存（スプシ側に列がなくてもエディタ内で保持）
@@ -274,6 +281,9 @@ export function useDict(password: string): DictAPI {
     if (Object.prototype.hasOwnProperty.call(patch, 'hasDeckPosition')) {
       row['上下指定'] = (patch as any).hasDeckPosition ? '1' : '';
       setActionFlagsForCode(code, { hasDeckPosition: !!(patch as any).hasDeckPosition });
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'hasNamedParam')) {
+      row['指定記入'] = (patch as any).hasNamedParam ? '1' : '';
     }
     const r = await apiUpdate('dict', code, kindToSingular(kind), row, password);
     if (r.ok) await refresh();

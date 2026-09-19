@@ -155,6 +155,9 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
   // キーワード専用: このキーワードの実体となるレシピ（エンジンが対応する出来事の組み合わせで
   // 表現できる場合のみ）。空のままなら今まで通り passive:[{flag}] のみで出力される
   const [templateBlocks, setTemplateBlocks] = useState<EffectBlock[]>([]);
+  // キーワード専用:「指定記入」。true のとき、カード側でこのキーワードを選んだ際に
+  // 「指定名」記入欄が出現し、templateBlocks内のcond_designated_nameがその値で置き換わる
+  const [hasNamedParam, setHasNamedParam] = useState(false);
 
   function autoSuggest() {
     if (!label.trim()) { setMsg('❌ 先に日本語名を入力してください'); return; }
@@ -184,6 +187,7 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
         const recipe = blocksToRecipe(templateBlocks);
         if (Object.keys(recipe).length > 0) extra.recipeTemplate = JSON.stringify(recipe);
       }
+      if (kind === 'keywords' && hasNamedParam) extra.hasNamedParam = true;
       const r = await dict.addEntry(kind, { code: code.trim(), label: label.trim(), kind: kindToSingular(kind), ...extra });
       if (r.ok) {
         setMsg('✅ 登録しました: ' + code.trim());
@@ -192,6 +196,7 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
         setLabel('');
         setCode('');
         setTemplateBlocks([]);
+        setHasNamedParam(false);
       } else {
         setMsg('❌ ' + (r.msg || '登録失敗'));
       }
@@ -260,6 +265,11 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
             <br />※「キーワード付与」での利用時は、効果ステップは1つ・トリガーも1種類にとどめてください
             （2つ目以降のステップは、そのカードを後で開き直して保存し直した際に失われるおそれがあります）。
           </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#8a6d00', marginBottom: 6 }}>
+            <input type="checkbox" checked={hasNamedParam} onChange={(e) => setHasNamedParam(e.target.checked)} />
+            指定記入（カード側でこのキーワードを選ぶと「指定名」記入欄が出現し、下の発動条件/コスト
+            対象の絞り込みで「指定」ボタンを使った箇所がその記入内容で置き換わります）
+          </label>
           {templateBlocks.map((b, i) => (
             <BlockEditor
               key={i}
@@ -1601,6 +1611,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 allowFreeText
               />
               <InlineDictAdd kind="keywords" dict={dict} onRegistered={(v) => update('keyword', v)} />
+              {!!dict.keywords.find((k) => k.code === block.keyword)?.hasNamedParam && (
+                <div style={{ marginTop: 6 }}>
+                  <label style={{ display: 'block', fontSize: 11, color: '#6b21a8', marginBottom: 2 }}>指定名</label>
+                  <input
+                    type="text"
+                    value={block.keywordParam || ''}
+                    onChange={(e) => update('keywordParam', e.target.value)}
+                    placeholder="例: モノドラモン"
+                    style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                  />
+                </div>
+              )}
               <div style={{ marginTop: 8 }}>
                 <label style={{ display: 'block', fontWeight: 'bold', color: '#6b21a8', marginBottom: 4 }}>
                   数値（【セキュリティアタック+2】等の数値がある場合のみ）
@@ -3573,6 +3595,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     allowFreeText
                   />
                   <InlineDictAdd kind="keywords" dict={dict} onRegistered={(v) => update('keyword', v)} />
+                  {!!dict.keywords.find((k) => k.code === block.keyword)?.hasNamedParam && (
+                    <div style={{ marginTop: 6 }}>
+                      <label style={{ display: 'block', fontSize: 11, color: '#0d9488', marginBottom: 2 }}>指定名</label>
+                      <input
+                        type="text"
+                        value={block.keywordParam || ''}
+                        onChange={(e) => update('keywordParam', e.target.value)}
+                        placeholder="例: モノドラモン"
+                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
@@ -4300,14 +4334,14 @@ const NO_VALUE_CONDS = new Set([
   'cond_during_any_turn', 'cond_self_active', 'cond_self_rest', 'cond_opp_no_attack_this_turn',
   'cond_evolved_this_turn', 'cond_no_tamer_evo', 'cond_not_own_effect', 'cond_has_evo_digimon',
   'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
-  'cond_face_down', 'cond_face_up',
+  'cond_face_down', 'cond_face_up', 'cond_designated_name',
 ]);
 
 // === 条件の「種別」を大分類(カテゴリ)+詳細(バリアント)の2段構成にする ===
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'description' | 'zone' | 'ref' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'description' | 'zone' | 'ref' | 'designated' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -4321,8 +4355,14 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'description', label: '記述' },
   { value: 'zone', label: '場所' },
   { value: 'ref', label: '参照' },
+  { value: 'designated', label: '指定' },
   { value: 'other', label: 'その他' },
 ];
+// 「指定」: キーワードの「指定記入」欄に入力された名前を参照するプレースホルダー条件
+// (cond_designated_name)。キーワードのレシピテンプレート内でのみ意味を持ち、
+// そのキーワードを実際のカードで選んだ際に、指定記入欄の値で cond_name_contains:<名前>
+// へ自動的に置き換えられる（保存時にblocksToRecipe側で実施）
+const DESIGNATED_NAME_COND = 'cond_designated_name';
 
 // 「効果で」(cond_effect、辞書の「その他条件」で選択): 「以外」はvalue:'not'、
 // 自分/相手/互いはsubjectで表現する（別コードを増やさない）。専用のカテゴリボタンは
@@ -4382,6 +4422,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   description: 'cond_description',
   zone: 'cond_zone',
   ref: 'cond_hand_ge',
+  designated: DESIGNATED_NAME_COND,
 };
 
 // バリアント選択が必要なカテゴリのプルダウン候補
@@ -4428,6 +4469,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_description' || base === 'cond_description_contains') return 'description';
   if (base === 'cond_zone') return 'zone';
   if (REF_CODE_TO_ZONE_QUANT[base]) return 'ref';
+  if (base === DESIGNATED_NAME_COND) return 'designated';
   return 'other';
 }
 
@@ -4485,6 +4527,8 @@ function ConditionsHybridEditor({
     'cond_security_ge', 'cond_security_le', 'cond_has_evo', 'cond_has_evo_le',
     // 「効果で」(cond_effect等)は専用カテゴリボタンを設けず「その他条件」内に留める
     // ため、ここでは除外しない（isByEffectCondでその行だけ専用UIを重ねて表示する）
+    // 「指定」カテゴリで扱うプレースホルダー
+    'cond_designated_name',
   ]);
   const otherCondOptions = toOpts(dict.conditions.filter((c) => !CATEGORIZED_CODES.has(c.code)));
 

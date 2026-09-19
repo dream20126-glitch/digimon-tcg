@@ -25,6 +25,7 @@ export const FROM_ZONES = [
   { code: 'deck',       label: 'デッキ' },
   { code: 'security',   label: 'セキュリティ' },
   { code: 'evo_source', label: '進化元' },
+  { code: 'linked',     label: 'リンクカード' },
 ];
 
 // 「～ごとに（倍率設定）」のカウント対象 (subject) と 状態 (state)

@@ -161,7 +161,12 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
 
   function autoSuggest() {
     if (!label.trim()) { setMsg('❌ 先に日本語名を入力してください'); return; }
-    setCode(suggestCode(label, kind, dict));
+    const suggested = suggestCode(label, kind, dict);
+    if (!suggested) {
+      setMsg('❌ 自動変換できませんでした。コードを手入力してください（英数字推奨）');
+      return;
+    }
+    setCode(suggested);
     setMsg('');
   }
 

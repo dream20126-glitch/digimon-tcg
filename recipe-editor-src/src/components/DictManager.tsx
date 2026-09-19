@@ -296,7 +296,12 @@ export function suggestCode(label: string, kind: Tab, dict?: DictAPI): string {
   tokens.forEach((t) => {
     if (dedup[dedup.length - 1] !== t) dedup.push(t);
   });
-  let stem = dedup.join('_').replace(/^_+|_+$/g, '').replace(/_+/g, '_') || 'custom';
+  const stem = dedup.join('_').replace(/^_+|_+$/g, '').replace(/_+/g, '_');
+  // トークン化に1つも成功しなかった場合（漢字のみの単語等、TOKEN_MAPに無い語）は
+  // 空文字を返す。かつて 'custom' という固定文字列にフォールバックしていたが、
+  // これだと見た目は正常なコードに見えてしまい、複数のキーワードがトークン化に
+  // 失敗すると全て同じ 'custom' コードに衝突してしまう不具合があった
+  if (!stem) return '';
   return prefix + stem;
 }
 
@@ -449,6 +454,10 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
       return;
     }
     const code = suggestCode(form.label, kind, dict);
+    if (!code) {
+      setMsg('❌ 自動変換できませんでした。コードを手入力してください（英数字推奨）');
+      return;
+    }
     let auto: Partial<DictEntry> = { code };
     if (isActionOrKeyword) {
       const v = suggestVisualType(code);

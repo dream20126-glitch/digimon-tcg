@@ -71,14 +71,26 @@ function altActionToStepObject(a: AltAction): any {
 // ConditionPair[] → カード絞り込み用フィルタオブジェクト（step.filter / step.from_filter 共通）。
 // targetFilter（アクション対象自身の絞り込み）・fromFilter（進化/登場アクションの取得元
 // エリアから選ぶカードの絞り込み）の両方で同じ形を使うため共通化している
+// 値を持たない（チェックのみの）条件コード。buildFilterObject の value 必須ガードを迂回する
+const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest']);
+
 function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, any> | null {
   if (!Array.isArray(pairs) || pairs.length === 0) return null;
   const f: Record<string, any> = {};
   pairs.forEach((c) => {
-    if (!c || !c.base || !c.value) return;
+    if (!c || !c.base) return;
+    if (!c.value && !NO_VALUE_FILTER_CONDS.has(c.base)) return;
     const num = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
     switch (c.base) {
       case 'cond_color':            f.color = c.value; break;
+      case 'cond_dp':       { const n = num(c.value); if (n !== undefined) { f.dp_le = n; f.dp_ge = n; } break; }
+      case 'cond_dp_le':    { const n = num(c.value); if (n !== undefined) f.dp_le = n; break; }
+      case 'cond_dp_ge':    { const n = num(c.value); if (n !== undefined) f.dp_ge = n; break; }
+      // 対象候補プール全体との比較が必要なため cardMatchesFilter（カード単体評価）では
+      // 判定できず、対象選択処理側で別途「候補一覧の中から絞り込む」実装が必要
+      // （エンジン未対応・保存のみ可。現状のところ値は不要なので c.value は見ない）
+      case 'cond_dp_highest': f.dp_extreme = 'highest'; break;
+      case 'cond_dp_lowest':  f.dp_extreme = 'lowest'; break;
       // カンマ区切り(複数チェック)なら type_in 配列(OR)、単一値ならこれまで通り type
       case 'cond_type': {
         const types = String(c.value).split(',').map((s) => s.trim()).filter(Boolean);
@@ -141,6 +153,14 @@ function parseFilterObject(f: any): ConditionPair[] {
     if (f.cost_le !== undefined) out.push({ base: 'cond_cost_le', value: String(f.cost_le) });
     if (f.cost_ge !== undefined) out.push({ base: 'cond_cost_ge', value: String(f.cost_ge) });
   }
+  if (f.dp_le !== undefined && f.dp_ge !== undefined && f.dp_le === f.dp_ge) {
+    out.push({ base: 'cond_dp', value: String(f.dp_le) });
+  } else {
+    if (f.dp_le !== undefined) out.push({ base: 'cond_dp_le', value: String(f.dp_le) });
+    if (f.dp_ge !== undefined) out.push({ base: 'cond_dp_ge', value: String(f.dp_ge) });
+  }
+  if (f.dp_extreme === 'highest') out.push({ base: 'cond_dp_highest' });
+  else if (f.dp_extreme === 'lowest') out.push({ base: 'cond_dp_lowest' });
   return out;
 }
 

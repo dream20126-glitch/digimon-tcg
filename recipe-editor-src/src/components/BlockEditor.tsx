@@ -927,13 +927,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     update('triggerConditions', triggerConditions.filter((_, idx) => idx !== i));
   }
 
-  // 修飾子操作（複数選択可）
-  const opts = block.options || [];
-  function toggleOption(code: string) {
-    const next = opts.includes(code) ? opts.filter((o) => o !== code) : [...opts, code];
-    update('options', next);
-  }
-
   // ルール操作 (MiniStep[])
   const ruleSteps: MiniStep[] = block.rules || [];
   // メインアクションが rules 対応か判定（dict 由来の allowsRules または翻訳器あり）
@@ -1471,18 +1464,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       onChange={(v) => update('limit', combineLimit('per_turn', parseInt(v, 10)))}
                       accentColor="#d6336c"
                     />
-                  )}
-                  {/* 「その後」: 2つめ以降の効果ステップにのみ表示。前段が失敗しても
-                      このステップを実行する（runRecipe.nextStep が options を参照） */}
-                  {index > 0 && (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, fontWeight: 'bold', marginLeft: 8 }}>
-                      <input
-                        type="checkbox"
-                        checked={opts.includes('continue_on_fail')}
-                        onChange={() => toggleOption('continue_on_fail')}
-                      />
-                      その後（前段が失敗しても実行）
-                    </label>
                   )}
                 </div>
               );
@@ -4305,7 +4286,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'description' | 'zone' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'description' | 'zone' | 'ref' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -4318,8 +4299,30 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'name', label: '名前' },
   { value: 'description', label: '記述' },
   { value: 'zone', label: '場所' },
+  { value: 'ref', label: '参照' },
   { value: 'other', label: 'その他' },
 ];
+
+// 「参照」: 手札/トラッシュ/セキュリティ/進化元の枚数を条件にする（例:「手札が6枚以上」）。
+// ゾーン×以上/以下の2軸をコードの組合せで表現するため、専用の相互変換テーブルを持つ
+const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
+  { code: 'hand', label: '手札' },
+  { code: 'trash', label: 'トラッシュ' },
+  { code: 'security', label: 'セキュリティ' },
+  { code: 'evo_source', label: '進化元' },
+];
+const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
+  'hand:ge': 'cond_hand_ge', 'hand:le': 'cond_hand_le',
+  'trash:ge': 'cond_trash_ge', 'trash:le': 'cond_trash_le',
+  'security:ge': 'cond_security_ge', 'security:le': 'cond_security_le',
+  'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le',
+};
+const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: 'ge' | 'le' }> = {
+  cond_hand_ge: { zone: 'hand', quant: 'ge' }, cond_hand_le: { zone: 'hand', quant: 'le' },
+  cond_trash_ge: { zone: 'trash', quant: 'ge' }, cond_trash_le: { zone: 'trash', quant: 'le' },
+  cond_security_ge: { zone: 'security', quant: 'ge' }, cond_security_le: { zone: 'security', quant: 'le' },
+  cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' },
+};
 // 種別ボタン用（「その他」はトリガー同様、別枠のチェックボックスで扱うため除外）
 const CATEGORY_BUTTON_OPTIONS = CATEGORY_OPTIONS.filter((c) => c.value !== 'other')
   .map((c) => ({ code: c.value, label: c.label }));
@@ -4336,6 +4339,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   name: 'cond_name',
   description: 'cond_description',
   zone: 'cond_zone',
+  ref: 'cond_hand_ge',
 };
 
 // バリアント選択が必要なカテゴリのプルダウン候補
@@ -4381,6 +4385,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_name' || base === 'cond_name_contains') return 'name';
   if (base === 'cond_description' || base === 'cond_description_contains') return 'description';
   if (base === 'cond_zone') return 'zone';
+  if (REF_CODE_TO_ZONE_QUANT[base]) return 'ref';
   return 'other';
 }
 
@@ -4433,6 +4438,9 @@ function ConditionsHybridEditor({
     'cond_name', 'cond_name_contains', 'cond_description', 'cond_description_contains', 'cond_zone',
     // トリガーボックス側の専用「アタック対象」ボタンで管理するため、その他の追加候補にも出さない
     'cond_attack_target_player', 'cond_attack_target_digimon',
+    // 「参照」カテゴリで扱う手札/トラッシュ/セキュリティ/進化元の枚数条件
+    'cond_hand_ge', 'cond_hand_le', 'cond_trash_ge', 'cond_trash_le',
+    'cond_security_ge', 'cond_security_le', 'cond_has_evo', 'cond_has_evo_le',
   ]);
   const otherCondOptions = toOpts(dict.conditions.filter((c) => !CATEGORIZED_CODES.has(c.code)));
 
@@ -4557,6 +4565,18 @@ function ConditionsHybridEditor({
                         : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 4 }} title="エンジン未実装">⚠</span>
                     )}
                   </div>
+                  {/* 参照: 手札/トラッシュ/セキュリティ/進化元のどれを見るか（ゾーン選択） */}
+                  {cat.code === 'ref' && (
+                    <ButtonGroup
+                      options={REF_ZONE_OPTIONS}
+                      value={REF_CODE_TO_ZONE_QUANT[c.base]?.zone || 'hand'}
+                      onChange={(zone) => {
+                        const quant = REF_CODE_TO_ZONE_QUANT[c.base]?.quant || 'ge';
+                        updateAt(i, { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant] });
+                      }}
+                      accentColor={colors.accent}
+                    />
+                  )}
                   {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントボタン（コンテンツ幅のみ使用・空なら詰める） */}
                   {(cat.code === 'dp' ? dpVariantOptions : CATEGORY_VARIANTS[cat.code as CondCategory]) && (
                     <ButtonGroup
@@ -4582,7 +4602,29 @@ function ConditionsHybridEditor({
                   )}
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                    {cat.code === 'cost_mod' ? (
+                    {cat.code === 'ref' ? (
+                      /* 参照: 以上/以下ボタン + 枚数入力 */
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <ButtonGroup
+                          options={[{ code: 'ge', label: '以上' }, { code: 'le', label: '以下' }]}
+                          value={REF_CODE_TO_ZONE_QUANT[c.base]?.quant || 'ge'}
+                          onChange={(quant) => {
+                            const zone = REF_CODE_TO_ZONE_QUANT[c.base]?.zone || 'hand';
+                            updateAt(i, { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant] });
+                          }}
+                          accentColor={colors.accent}
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          value={c.value || ''}
+                          onChange={(e) => updateAt(i, { value: e.target.value })}
+                          placeholder="枚数"
+                          style={{ width: 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                        />
+                        <span style={{ fontSize: 10, color: '#555' }}>枚</span>
+                      </div>
+                    ) : cat.code === 'cost_mod' ? (
                       /* コスト増減: 「登場コストX以下」等のしきい値そのものを+/-する。
                          ⚠エンジン未対応（コスト条件のしきい値に per_count 相当の倍率を
                          掛ける処理が無い）。エディタで保存はできるが動作しないプレースホルダー */

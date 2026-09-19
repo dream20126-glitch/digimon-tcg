@@ -205,6 +205,7 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_cost_ge', kind: 'condition', label: 'コスト以上' },
   { code: 'cond_no_evo', kind: 'condition', label: '進化元を持たない' },
   { code: 'cond_has_evo', kind: 'condition', label: '進化元をN枚以上持つ' },
+  { code: 'cond_has_evo_le', kind: 'condition', label: '進化元をN枚以下持つ' },
   { code: 'cond_exists', kind: 'condition', label: 'いるとき' },
   { code: 'cond_opp_exists', kind: 'condition', label: '相手のデジモンがいるとき' },
   { code: 'cond_own_exists', kind: 'condition', label: '自分のデジモンがいるとき' },

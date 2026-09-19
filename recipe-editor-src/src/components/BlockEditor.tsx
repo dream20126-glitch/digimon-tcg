@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep } from '../types';
+import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry } from '../types';
 import {
   SECTIONS,
   DURATIONS,
@@ -13,7 +13,7 @@ import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOp
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
-import { blocksToRecipe } from '../recipe';
+import { blocksToRecipe, getKeywordEntries } from '../recipe';
 
 interface Props {
   block: EffectBlock;
@@ -299,6 +299,127 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
         <div style={{ fontSize: 11, marginTop: 4, color: msg.startsWith('✅') ? '#2e7d32' : '#c62828' }}>{msg}</div>
       )}
     </div>
+  );
+}
+
+// キーワード選択欄（パッシブ/キーワード付与 共通）。1ブロックで複数キーワードを同時に
+// 持たせたい場合（例: 進化元効果で【貫通】【分離】を両方常に持つ）に、行を追加して複数選択
+// できるようにする。書き込みは keywordEntries[] を正とし、1件目は後方互換のため既存の
+// keyword/value/keywordParamConditions* フィールドにも同期して書く（appendStepの通常の
+// grant_keyword step構築ロジックが、今まで通りそれらのフィールドを読むだけで済むように
+// するため。2件目以降は appendStep 側で getKeywordEntries().slice(1) から個別に処理する）
+function KeywordEntriesEditor({
+  block, onChange, dict, accentBorder, primaryValueElsewhere,
+}: {
+  block: EffectBlock;
+  onChange: (b: EffectBlock) => void;
+  dict: DictAPI;
+  accentBorder: string;
+  // true の場合、1件目（インデックス0）の数値欄はこのコンポーネント内では出さない
+  // （grant_keyword: 通常のアクション「値」欄が既に block.value を管理しているため、
+  // 二重の入力欄になってしまうのを避ける。2件目以降は他に置き場が無いのでここで出す）
+  primaryValueElsewhere?: boolean;
+}) {
+  const entries = getKeywordEntries(block);
+  const list: KeywordEntry[] = entries.length > 0 ? entries : [{ keyword: '' }];
+
+  function commit(next: KeywordEntry[]) {
+    onChange({
+      ...block,
+      keywordEntries: next,
+      keyword: next[0]?.keyword || '',
+      value: next[0]?.value,
+      keywordParamConditions: next[0]?.keywordParamConditions,
+      keywordParamConditionsOp: next[0]?.keywordParamConditionsOp,
+    });
+  }
+  function updateEntry(i: number, patch: Partial<KeywordEntry>) {
+    const next = list.slice();
+    next[i] = { ...next[i], ...patch };
+    commit(next);
+  }
+  function removeEntry(i: number) {
+    commit(list.length <= 1 ? [{ keyword: '' }] : list.filter((_, idx) => idx !== i));
+  }
+  function addEntry(keyword?: string) {
+    commit([...list, { keyword: keyword || '' }]);
+  }
+
+  return (
+    <>
+      {list.map((entry, i) => (
+        <div key={i} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: i < list.length - 1 ? `1px dashed ${accentBorder}` : 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+            <label style={{ fontWeight: 'bold' }}>
+              🔑 キーワード{list.length > 1 ? `（${i + 1}）` : ''}
+              {entry.keyword && (
+                isKeywordImplemented(entry.keyword, !!dict.keywords.find((k) => k.code === entry.keyword)?.recipeTemplate)
+                  ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 6 }}>✅実装済</span>
+                  : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
+              )}
+            </label>
+            {list.length > 1 && (
+              <button
+                type="button"
+                onClick={() => removeEntry(i)}
+                style={{ marginLeft: 'auto', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '1px 7px', cursor: 'pointer', fontSize: 11 }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <SearchSelect
+            value={entry.keyword || ''}
+            onChange={(v) => updateEntry(i, { keyword: v })}
+            options={toOpts(dict.keywords)}
+            allowFreeText
+          />
+          {!!dict.keywords.find((k) => k.code === entry.keyword)?.hasNamedParam && (
+            <div style={{ marginTop: 6, padding: 6, background: '#fff', border: `1px solid ${accentBorder}`, borderRadius: 4 }}>
+              <ConditionsHybridEditor
+                conditions={entry.keywordParamConditions || []}
+                onChange={(next) => updateEntry(i, { keywordParamConditions: next })}
+                dict={dict}
+                title="対象"
+                hint="（このキーワードが参照する対象の絞り込み・カードごとに指定）"
+                theme="action"
+                defaultSubject=""
+                showSubjectSelector={false}
+                conditionsOp={entry.keywordParamConditionsOp || 'and'}
+                onConditionsOpChange={(op) => updateEntry(i, { keywordParamConditionsOp: op })}
+              />
+            </div>
+          )}
+          {!(primaryValueElsewhere && i === 0) && (
+            <div style={{ marginTop: 6 }}>
+              <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
+                数値（【セキュリティアタック+2】等の数値がある場合のみ）
+              </label>
+              <input
+                type="number"
+                value={entry.value === undefined ? '' : String(entry.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  updateEntry(i, { value: v === '' ? undefined : Number(v) });
+                }}
+                placeholder="例: 2"
+                style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
+              />
+            </div>
+          )}
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          onClick={() => addEntry()}
+          style={{ padding: '3px 9px', border: `1px dashed ${accentBorder}`, background: 'white', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+        >
+          ＋ キーワードを追加（複数同時に持たせる）
+        </button>
+        <InlineDictAdd kind="keywords" dict={dict} onRegistered={(v) => addEntry(v)} />
+      </div>
+    </>
   );
 }
 
@@ -1603,52 +1724,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             【再起動】【セキュリティアタック+】のような、それ自体で1つの効果を表すキーワードです。
             常時判定される特殊トリガーです。アクション/対象/発動条件は不要（空のままでOK）。
             <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #d8b4fe' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', color: '#6b21a8', marginBottom: 4 }}>
-                🔑 キーワード
-                {block.keyword && (
-                  isKeywordImplemented(block.keyword, !!dict.keywords.find((k) => k.code === block.keyword)?.recipeTemplate)
-                    ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 6 }}>✅実装済</span>
-                    : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
-                )}
-              </label>
-              <SearchSelect
-                value={block.keyword || ''}
-                onChange={(v) => update('keyword', v)}
-                options={toOpts(dict.keywords)}
-                allowFreeText
-              />
-              <InlineDictAdd kind="keywords" dict={dict} onRegistered={(v) => update('keyword', v)} />
-              {!!dict.keywords.find((k) => k.code === block.keyword)?.hasNamedParam && (
-                <div style={{ marginTop: 6, padding: 6, background: '#fff', border: '1px solid #d8b4fe', borderRadius: 4 }}>
-                  <ConditionsHybridEditor
-                    conditions={block.keywordParamConditions || []}
-                    onChange={(next) => update('keywordParamConditions', next)}
-                    dict={dict}
-                    title="対象"
-                    hint="（このキーワードが参照する対象の絞り込み・カードごとに指定）"
-                    theme="action"
-                    defaultSubject=""
-                    showSubjectSelector={false}
-                    conditionsOp={block.keywordParamConditionsOp || 'and'}
-                    onConditionsOpChange={(op) => update('keywordParamConditionsOp', op)}
-                  />
-                </div>
-              )}
-              <div style={{ marginTop: 8 }}>
-                <label style={{ display: 'block', fontWeight: 'bold', color: '#6b21a8', marginBottom: 4 }}>
-                  数値（【セキュリティアタック+2】等の数値がある場合のみ）
-                </label>
-                <input
-                  type="number"
-                  value={block.value === undefined ? '' : String(block.value)}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    update('value', v === '' ? undefined : Number(v));
-                  }}
-                  placeholder="例: 2"
-                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
-                />
-              </div>
+              <KeywordEntriesEditor block={block} onChange={onChange} dict={dict} accentBorder="#d8b4fe" />
             </div>
           </div>
         ) : (
@@ -3591,35 +3667,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   レシピが空のキーワード（貫通等、エンジンに直接実装済みのもの）は従来通りフラグのみ付与します。
                 </div>
                 <div>
-                  <label>
-                    付与するキーワード
-                    {block.keyword && (
-                      isKeywordImplemented(block.keyword, !!dict.keywords.find((k) => k.code === block.keyword)?.recipeTemplate)
-                        ? <span style={{ color: '#2e7d32', fontSize: 10, marginLeft: 6 }}>✅実装済</span>
-                        : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
-                    )}
-                  </label>
-                  <SearchSelect
-                    value={block.keyword || ''}
-                    onChange={(v) => update('keyword', v)}
-                    options={toOpts(dict.keywords)}
-                    allowFreeText
-                  />
-                  <InlineDictAdd kind="keywords" dict={dict} onRegistered={(v) => update('keyword', v)} />
-                  {!!dict.keywords.find((k) => k.code === block.keyword)?.hasNamedParam && (
-                    <div style={{ marginTop: 6, padding: 6, background: '#fff', border: '1px solid #99f6e4', borderRadius: 4 }}>
-                      <ConditionsHybridEditor
-                        conditions={block.keywordParamConditions || []}
-                        onChange={(next) => update('keywordParamConditions', next)}
-                        dict={dict}
-                        title="対象"
-                        hint="（このキーワードが参照する対象の絞り込み・カードごとに指定）"
-                        theme="action"
-                        defaultSubject=""
-                        showSubjectSelector={false}
-                        conditionsOp={block.keywordParamConditionsOp || 'and'}
-                        onConditionsOpChange={(op) => update('keywordParamConditionsOp', op)}
-                      />
+                  <label style={{ display: 'block', marginBottom: 4 }}>付与するキーワード（複数選択可）</label>
+                  <KeywordEntriesEditor block={block} onChange={onChange} dict={dict} accentBorder="#99f6e4" primaryValueElsewhere />
+                  {getKeywordEntries(block).length > 1 && (
+                    <div style={{ fontSize: 10, color: '#0d9488', marginTop: 2 }}>
+                      💡 2つ目以降のキーワードは、1つ目で選んだ「対象」欄の指定に応じて、1体選択系の対象なら
+                      同じ対象へ自動で付与されます（対象選択は1回だけ）
                     </div>
                   )}
                 </div>

@@ -1,5 +1,5 @@
 // EffectBlock[] ⇄ recipe JSON 変換
-import type { AltAction, ConditionPair, DictEntry, EffectBlock } from './types';
+import type { AltAction, ConditionPair, DictEntry, EffectBlock, KeywordEntry } from './types';
 import { applyRulesToStep } from './ruleTranslator';
 
 // 条件pairを「base:value@subject」形式の文字列に変換
@@ -209,6 +209,28 @@ function parseDesignatedFields(d: any): { conds: ConditionPair[]; op: 'and' | 'o
   return { conds, op: d?.condition_op === 'or' ? 'or' : 'and' };
 }
 
+// ブロックが持つキーワードの一覧を返す（パッシブ/キーワード付与 共通）。
+// keywordEntries（複数選択UI）があればそちらを優先し、無ければ従来の単一
+// keyword/value/keywordParamConditions* から1件だけのリストを合成する（後方互換）
+export function getKeywordEntries(b: {
+  keyword?: string;
+  value?: number | string;
+  keywordParamConditions?: ConditionPair[];
+  keywordParamConditionsOp?: 'and' | 'or';
+  keywordEntries?: KeywordEntry[];
+}): KeywordEntry[] {
+  if (Array.isArray(b.keywordEntries) && b.keywordEntries.length > 0) return b.keywordEntries;
+  if (b.keyword) {
+    return [{
+      keyword: b.keyword,
+      value: b.value,
+      keywordParamConditions: b.keywordParamConditions,
+      keywordParamConditionsOp: b.keywordParamConditionsOp,
+    }];
+  }
+  return [];
+}
+
 function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?: DictEntry[]) {
   if (b.trigger === 'passive') {
     // キーワードのレシピテンプレートはカードのJSONにはベタ展開しない（コード参照のみ保存）。
@@ -216,29 +238,34 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     // （スプシ「効果辞書」→cards.json同梱のkeywords）を実行時に見に行って行う。
     // こうすることでキーワードのレシピを後から直しても、そのキーワードを使う全カードに
     // 再保存なしで反映される（カード側は常に flag 参照のみを持つ）
-    const kwEntry = keywordDict && b.keyword ? keywordDict.find((k) => k.code === b.keyword) : undefined;
+    // 複数キーワード選択時（進化元効果で【貫通】【分離】を両方常に持つ等）は、
+    // 1ブロックから複数のpassiveエントリを出力する（エンジン側は元々配列を
+    // 独立にスキャンするので、1ブロック由来かN個のブロック由来かは区別しない）
     container.passive = container.passive || [];
-    const p: any = { flag: b.keyword };
-    // 値 (例: 【Sアタック+2】 の "2"): 数値化できれば number、そうでなければそのまま
-    if (b.value !== undefined && b.value !== '' && b.value !== null) {
-      const n = Number(b.value);
-      p.value = isNaN(n) ? b.value : n;
-    }
-    // 「対象」絞り込み条件: テンプレート内の cond_designated_name プレースホルダーを
-    // エンジン側が実行時に置き換えるための材料。ここでは組み立てた条件一式を
-    // designated として保存するだけで、置き換え自体は行わない
-    if (kwEntry?.hasNamedParam && Array.isArray(b.keywordParamConditions) && b.keywordParamConditions.length > 0) {
-      const designated = buildDesignatedConditionFields(b.keywordParamConditions, b.keywordParamConditionsOp || 'and');
-      if (Object.keys(designated).length > 0) p.designated = designated;
-    }
-    if (b.zone) p.in_zone = b.zone;
-    if (b.extras) {
-      try {
-        const ex = JSON.parse(b.extras);
-        Object.keys(ex).forEach((k) => (p[k] = ex[k]));
-      } catch (_) {}
-    }
-    container.passive.push(p);
+    getKeywordEntries(b).filter((entry) => entry.keyword).forEach((entry) => {
+      const kwEntry = keywordDict && entry.keyword ? keywordDict.find((k) => k.code === entry.keyword) : undefined;
+      const p: any = { flag: entry.keyword };
+      // 値 (例: 【Sアタック+2】 の "2"): 数値化できれば number、そうでなければそのまま
+      if (entry.value !== undefined && entry.value !== '' && entry.value !== null) {
+        const n = Number(entry.value);
+        p.value = isNaN(n) ? entry.value : n;
+      }
+      // 「対象」絞り込み条件: テンプレート内の cond_designated_name プレースホルダーを
+      // エンジン側が実行時に置き換えるための材料。ここでは組み立てた条件一式を
+      // designated として保存するだけで、置き換え自体は行わない
+      if (kwEntry?.hasNamedParam && Array.isArray(entry.keywordParamConditions) && entry.keywordParamConditions.length > 0) {
+        const designated = buildDesignatedConditionFields(entry.keywordParamConditions, entry.keywordParamConditionsOp || 'and');
+        if (Object.keys(designated).length > 0) p.designated = designated;
+      }
+      if (b.zone) p.in_zone = b.zone;
+      if (b.extras) {
+        try {
+          const ex = JSON.parse(b.extras);
+          Object.keys(ex).forEach((k) => (p[k] = ex[k]));
+        } catch (_) {}
+      }
+      container.passive.push(p);
+    });
     return;
   }
   const step: any = {};
@@ -431,7 +458,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // その条件一式を designated として添える（置き換え自体はエンジン側が実行時に、
   // キーワード辞書のレシピテンプレートを見に行った時点で行う。カードのJSONには
   // キーワードのコード参照のみを保存し、レシピ本体はベタ展開しない） ===
-  if ((step.action === 'grant_keyword' || step.action === 'grant_keyword_to') && b.keyword) {
+  const isGrantKeyword = step.action === 'grant_keyword' || step.action === 'grant_keyword_to';
+  if (isGrantKeyword && b.keyword) {
     const kwEntry = keywordDict && keywordDict.find((k) => k.code === b.keyword);
     if (kwEntry?.hasNamedParam && Array.isArray(b.keywordParamConditions) && b.keywordParamConditions.length > 0) {
       const designated = buildDesignatedConditionFields(b.keywordParamConditions, b.keywordParamConditionsOp || 'and');
@@ -440,6 +468,38 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   }
   container[b.trigger] = container[b.trigger] || [];
   container[b.trigger].push(step);
+
+  // 複数キーワード選択時（1ブロックで複数キーワードを同時付与）: 2件目以降は
+  // 同じ効果ステップの内容を引き継いだ独立stepとして同じtrigger配列に追加する。
+  // 元のtargetが「N体選択」系（own:N / opponent:N / up_to）なら、2件目以降は
+  // target:'same_target' にして1件目で選んだのと同じ対象へ自動適用する（対象選択
+  // UIが人数分出てしまうのを防ぐ。エンジンの同一対象連続適用の仕組みを流用）
+  if (isGrantKeyword) {
+    const entries = getKeywordEntries(b).filter((entry) => entry.keyword);
+    if (entries.length > 1) {
+      // 「N体まで/2体等」の複数対象選択は _lastPickedCard が最後の1体しか
+      // 覚えていないため same_target 化の対象外（安全側に倒し、2件目以降も独立して
+      // 対象選択させる）。ちょうど1体選択（own:1/opponent:1）の時だけ同一対象化する
+      const isSinglePickTarget = /^(own|opponent):1$/.test(String(b.target || ''));
+      entries.slice(1).forEach((entry) => {
+        const extraStep: any = { ...step, keyword: entry.keyword };
+        delete extraStep.designated;
+        if (entry.value !== undefined && entry.value !== '' && entry.value !== null) {
+          const n = Number(entry.value);
+          extraStep.value = isNaN(n) ? entry.value : n;
+        } else {
+          delete extraStep.value;
+        }
+        const kwEntry2 = keywordDict && keywordDict.find((k) => k.code === entry.keyword);
+        if (kwEntry2?.hasNamedParam && Array.isArray(entry.keywordParamConditions) && entry.keywordParamConditions.length > 0) {
+          const designated2 = buildDesignatedConditionFields(entry.keywordParamConditions, entry.keywordParamConditionsOp || 'and');
+          if (Object.keys(designated2).length > 0) extraStep.designated = designated2;
+        }
+        if (isSinglePickTarget) extraStep.target = 'same_target';
+        container[b.trigger].push(extraStep);
+      });
+    }
+  }
 
   // 'then'（その後）モードのalt_actionsは、同じトリガー配列内の独立した後続stepとして
   // 続けて出力する。各stepにはcontinue_on_fail修飾子を自動付与し（前段が不発でも継続する

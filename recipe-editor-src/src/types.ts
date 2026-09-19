@@ -5,6 +5,14 @@ export interface ConditionPair {
   subject?: string; // 条件対象: '' = アクション対象 / 'self' / 'own' / 'other_own' / 'opp' / 'opp_blocker' 等
 }
 
+// パッシブ/キーワード付与で複数キーワードを1ブロックにまとめる際の1件分
+export interface KeywordEntry {
+  keyword: string;
+  value?: number | string;
+  keywordParamConditions?: ConditionPair[];
+  keywordParamConditionsOp?: 'and' | 'or';
+}
+
 // 効果ブロック1ステップの構造（コードブロックシートと同等）
 export interface EffectBlock {
   section: 'main' | 'evo_source' | 'security' | 'link';
@@ -43,6 +51,14 @@ export interface EffectBlock {
   // （エディタ内限定の値）
   keywordParamConditions?: ConditionPair[];
   keywordParamConditionsOp?: 'and' | 'or';
+  // 複数キーワード選択（パッシブ/キーワード付与 共通）。1件のブロックで複数のキーワードを
+  // 同時に持たせたい場合（例: 進化元効果で【貫通】【分離】を両方常に持つ）に使う。
+  // これが1件以上あればこちらを優先し、上の keyword/value/keywordParamConditions*は
+  // 無視される（後方互換のためkeyword単体のブロックも引き続き動作する）。
+  // 保存時、passiveは配列の各要素をそのまま1件ずつ container.passive に積む。
+  // grant_keyword(_to)は1件目を通常のstepに、2件目以降は「同じ対象に付与」するため
+  // target:'same_target'（single-target選択時のみ）の独立stepとして同じtrigger配列に積む
+  keywordEntries?: KeywordEntry[];
   // memory_plus 専用:「メモリー+Nする。このターン終了時、メモリーを-Nする。」
   // true のとき JSON へ step.revert_at_turn_end:true を出力する
   revertAtTurnEnd?: boolean;

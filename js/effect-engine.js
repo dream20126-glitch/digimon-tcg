@@ -6916,8 +6916,13 @@ function executeRecipeStep(step, ctx, store, callback) {
           // （既存カードの挙動を変えない）。エディタの「💰コスト増減」UIは符号付きで保存する
           // （減=-N・増=+N）ため、ここでは value をそのままコストの増減量として扱う
           const _summonDelta = (typeof step.value === 'number' && step.value !== 0) ? step.value : 0;
-          const _doSummonHT = (c) => {
-            if (!c) { callback(); return; }
+          // 何枚登場させるか: 対象欄の末尾数値サフィックス（例: "own_card:2"）から読む。
+          // 未指定時は従来通り1枚（既存カードの挙動を変えない）
+          const _summonCountMatch = /:(\d+)$/.exec(String(step.target || ''));
+          const _summonCount = _summonCountMatch ? Math.max(1, parseInt(_summonCountMatch[1], 10)) : 1;
+          const _doSummonHT = (c, done) => {
+            done = done || callback;
+            if (!c) { done(); return; }
             const hi = player.hand.indexOf(c); if (hi !== -1) player.hand.splice(hi, 1);
             const ti = player.trash.indexOf(c); if (ti !== -1) player.trash.splice(ti, 1);
             if (_summonDelta !== 0) {
@@ -6934,7 +6939,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             }
             // オプションカードは「登場」ではなく「使用」として解決する
             if (String(c.type || '') === 'オプション') {
-              _useOptionCardFromEffect(c, ctx, callback);
+              _useOptionCardFromEffect(c, ctx, done);
               return;
             }
             // テイマーはテイマーエリアへ、それ以外はバトルエリアへ
@@ -6960,9 +6965,9 @@ function executeRecipeStep(step, ctx, store, callback) {
             ctx.renderAll();
             const showFn = (ctx && ctx.showPlayEffect) || (typeof window !== 'undefined' && window.showPlayEffect);
             const afterAnim = () => {
-              if (step.skip_on_play) { callback(); return; }
-              try { scanTriggers('on_play', c, ctx.side, ctx); processQueue(ctx, () => callback()); }
-              catch (_) { callback(); }
+              if (step.skip_on_play) { done(); return; }
+              try { scanTriggers('on_play', c, ctx.side, ctx); processQueue(ctx, () => done()); }
+              catch (_) { done(); }
             };
             if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
               try { window._onlineSendCommand({ type: 'play', cardName: c.name, cardImg: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '', cardType: c.type, playCost: 0 }); } catch (_) {}
@@ -6970,22 +6975,28 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (showFn) showFn({ name: c.name, imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '', type: c.type || 'デジモン', playCost: 0 }, afterAnim);
             else setTimeout(afterAnim, 300);
           };
-          // 指定ゾーンのカードから1枚選んで登場（1枚なら即時。ただし「できる」(optional)
-          // 指定時は1枚だけでも「使わない」を選べるよう必ずピッカーを経由させる）
+          // 選ばれたカード群を1枚ずつ順番に登場させる（on_play解決等を挟むため直列実行）
+          const _summonSequential = (cards, i, done) => {
+            if (i >= cards.length) { done(); return; }
+            _doSummonHT(cards[i], () => _summonSequential(cards, i + 1, done));
+          };
+          // 指定ゾーンのカードから最大 _summonCount 枚選んで登場（候補が枚数以内なら即時。
+          // ただし「できる」(optional) 指定時は必ずピッカーを経由させ「使わない」を選べるようにする）
           const _pickFromZone = (zoneCands) => {
             if (!zoneCands || zoneCands.length === 0) { callback(); return; }
-            if (zoneCands.length === 1 && !_optional) { _doSummonHT(zoneCands[0]); return; }
-            showTrashCardPicker(zoneCands, 1, _optional, '🌟 登場させるカードを選んでください', (picked) => {
-              if (_optional && (!picked || picked.length === 0)) {
+            if (zoneCands.length <= _summonCount && !_optional) { _summonSequential(zoneCands, 0, callback); return; }
+            showTrashCardPicker(zoneCands, _summonCount, _optional, '🌟 登場させるカードを選んでください', (picked) => {
+              if (!picked || picked.length === 0) {
                 ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
                 callback();
                 return;
               }
-              _doSummonHT(picked && picked.length > 0 ? picked[0] : null);
+              _summonSequential(picked, 0, callback);
             }, zoneCands);
           };
           if (effectiveSide === 'ai') {
-            _doSummonHT(_handCands[0] || _trashCands[0]);
+            const _aiPicks = [..._handCands, ..._trashCands].slice(0, _summonCount);
+            _summonSequential(_aiPicks, 0, callback);
           } else if (_handCands.length > 0 && _trashCands.length > 0) {
             // 手札・トラッシュ両方に対象がある → どちらから登場するか選択
             const _zoneLabels = ['手札から', 'トラッシュから'];

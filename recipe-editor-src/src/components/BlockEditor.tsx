@@ -2930,6 +2930,24 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         </div>
         )}
 
+        {/* === 💰 コスト（トリガー/アクションの間に独立配置。コストを伴う効果が多いため
+            折りたたみトグルで表示/非表示できるようにする。効果1・代替アクション（その後/
+            OR/AND）とも同じCostListEditorを使い回す） === */}
+        {!COST_REDUCTION_TRIGGERS.has(block.trigger) && block.trigger !== 'passive' && (
+        <details className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }} open={costs.length > 0}>
+          <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#b76e00' }}>
+            💰 コスト（「〇〇することで」発動）{costs.length > 0 ? ` (${costs.length})` : ''}
+          </summary>
+          <CostListEditor
+            dict={dict}
+            costs={costs}
+            updateCost={updateCost}
+            addCost={addCost}
+            removeCost={removeCost}
+          />
+        </details>
+        )}
+
         {/* === ⚡ アクショングループ ===（コスト軽減・キーワード効果トリガーはアクション不要のため
             丸ごと非表示。条件・～ごとに は💰バナー側に埋め込み済み・キーワードは対象/条件が無い） */}
         {!COST_REDUCTION_TRIGGERS.has(block.trigger) && block.trigger !== 'passive' && (
@@ -3424,6 +3442,45 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
           );
         })()}
+
+        {/* === 📐 ルール（アクション欄＝「その他のアクション」欄のすぐ下に配置。
+            メインアクションが対応している場合のみ） === */}
+        {actionAllowsRules && (
+          <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
+            <label>📐 ルール（メインアクションに紐づく追加処理）</label>
+            <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
+              💡 各ルール = メインアクションと同じ「アクション + 対象 + 値 + 条件」の構造。
+              例（デッキオープン）: ルール「アクション=手札に加える / 値=1 / 条件: 色=緑, タイプ=デジモン」
+            </div>
+            <div style={{ border: '1px solid #d8e0f0', borderRadius: 4, padding: 8, background: '#f3f6fc' }}>
+              {ruleSteps.length === 0 && (
+                <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>（ルール未追加）</div>
+              )}
+              {ruleSteps.map((rs, i) => (
+                <RuleStepEditor
+                  key={i}
+                  index={i}
+                  step={rs}
+                  dict={dict}
+                  onChange={(patch) => updateRuleStep(i, patch)}
+                  onRemove={() => removeRuleStep(i)}
+                  onUp={i > 0 ? () => moveRuleStep(i, -1) : undefined}
+                  onDown={i < ruleSteps.length - 1 ? () => moveRuleStep(i, 1) : undefined}
+                  isAttackTrigger={isAttackTrigger}
+                />
+              ))}
+              <button
+                onClick={addRuleStep}
+                style={{
+                  padding: '4px 10px', border: '1px dashed #88a', background: 'white',
+                  borderRadius: 3, cursor: 'pointer', fontSize: 12, color: '#3b6cd1', marginTop: 4,
+                }}
+              >
+                ＋ ルールを追加
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 「編集中」の効果切替 + 設定内容一覧。OR/ANDのチェックボックス自体は
             アクション欄「その他のアクション」の隣に表示する */}
@@ -4052,7 +4109,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             コスト軽減トリガーは同内容の編集欄を上の💰バナー内に直接表示しているため、
             ここでの二重表示は避ける */}
         {!COST_REDUCTION_TRIGGERS.has(block.trigger) && (
-        <details className="field" style={{ marginTop: 8 }} open={conditions.length > 0 || (block.costs || []).length > 0 || !!block.perCount}>
+        <details className="field" style={{ marginTop: 8 }} open={conditions.length > 0 || !!block.perCount}>
           <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#1a4f8a' }}>
             🎯 発動条件{conditions.length > 0 ? ` (${conditions.length})` : ''}
           </summary>
@@ -4080,60 +4137,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           />
 
         {renderPerCountEditor(isEditingAlt)}
-
-        {/* コスト: 「〇〇することで」を表現。効果1・代替アクション（その後/OR/AND）とも
-            同じ CostListEditor を使い回す */}
-        <div className="field" style={{ gridColumn: '1 / span 2' }}>
-          <label>コスト（「〇〇することで」発動）</label>
-          <CostListEditor
-            dict={dict}
-            costs={costs}
-            updateCost={updateCost}
-            addCost={addCost}
-            removeCost={removeCost}
-          />
-        </div>
-
-
         </details>
-        )}
-
-        {/* === 📐 ルール（アクション直下に配置・メインアクションが対応している場合のみ） === */}
-        {actionAllowsRules && (
-          <div className="field" style={{ marginTop: 8 }}>
-            <label>📐 ルール（メインアクションに紐づく追加処理）</label>
-            <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
-              💡 各ルール = メインアクションと同じ「アクション + 対象 + 値 + 条件」の構造。
-              例（デッキオープン）: ルール「アクション=手札に加える / 値=1 / 条件: 色=緑, タイプ=デジモン」
-            </div>
-            <div style={{ border: '1px solid #d8e0f0', borderRadius: 4, padding: 8, background: '#f3f6fc' }}>
-              {ruleSteps.length === 0 && (
-                <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>（ルール未追加）</div>
-              )}
-              {ruleSteps.map((rs, i) => (
-                <RuleStepEditor
-                  key={i}
-                  index={i}
-                  step={rs}
-                  dict={dict}
-                  onChange={(patch) => updateRuleStep(i, patch)}
-                  onRemove={() => removeRuleStep(i)}
-                  onUp={i > 0 ? () => moveRuleStep(i, -1) : undefined}
-                  onDown={i < ruleSteps.length - 1 ? () => moveRuleStep(i, 1) : undefined}
-                  isAttackTrigger={isAttackTrigger}
-                />
-              ))}
-              <button
-                onClick={addRuleStep}
-                style={{
-                  padding: '4px 10px', border: '1px dashed #88a', background: 'white',
-                  borderRadius: 3, cursor: 'pointer', fontSize: 12, color: '#3b6cd1', marginTop: 4,
-                }}
-              >
-                ＋ ルールを追加
-              </button>
-            </div>
-          </div>
         )}
 
         {/* === 🎁 付与する効果（キーワード付与 / 独自の効果付与） ===
@@ -4609,6 +4613,8 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
   const valueStr = valueRaw === undefined || valueRaw === null ? '' : String(valueRaw);
   const isPresetValue = ['', '1', '2', '3', 'all'].includes(valueStr);
   const [customMode, setCustomMode] = useState<boolean>(!isPresetValue && valueRaw !== undefined);
+  // 「その他のアクション」開閉状態（手札に加える/破棄/〇〇に置く 以外を選んでいるときは自動で開く）
+  const [ruleOtherOpen, setRuleOtherOpen] = useState(false);
 
   // 「対象」のオプションは TARGETS から動的に取得（コンパイル時の動的依存避け）
   const targetOptions = toOpts(TARGETS);
@@ -4674,24 +4680,133 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
           onChange({ action: base + newSuffix });
         }
 
+        // よく使うアクション: 手札に加える / 破棄 / 〇〇に置く（PLACE_ZONE_MAP、コスト側
+        // 「〇〇に置く」と全く同じセキュリティ/テイマー/進化元/バトルエリアの4択）。
+        // これら以外は「その他のアクション」から選ぶ
+        const isRulePlaceActive = PLACE_ACTION_CODES.has(step.action || '');
+        const activeRulePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === step.action)?.code || '';
+        const isRuleCommonAction = step.action === 'add_to_hand' || step.action === 'destroy' || isRulePlaceActive;
+
         return (
           <div style={{ marginBottom: 8 }}>
             <div style={miniLbl()}>アクション *</div>
-            <SearchSelect
-              value={ruleNormalizedActionValue}
-              onChange={onRuleActionChange}
-              options={ruleActionOptions}
-              allowFreeText
-              placeholder="例: 手札に加える"
-            />
-            {ruleIsPositional && ruleVariantOptions.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {[{ code: 'add_to_hand', label: '手札に加える' }, { code: 'destroy', label: '破棄' }].map((a) => {
+                const active = step.action === a.code;
+                return (
+                  <button
+                    key={a.code}
+                    type="button"
+                    onClick={() => onChange({ action: a.code })}
+                    style={{
+                      padding: '3px 9px', borderRadius: 5,
+                      border: active ? '2px solid #1976d2' : '1px solid #bbb',
+                      background: active ? '#1976d2' : '#f5f5f5',
+                      color: active ? '#fff' : '#333',
+                      fontWeight: active ? 'bold' : 'normal',
+                      cursor: 'pointer', fontSize: 11,
+                    }}
+                  >
+                    {a.label}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => {
+                  if (isRulePlaceActive) return;
+                  const z = PLACE_ZONE_MAP.find((zz) => zz.code === 'security')!;
+                  onChange({ action: z.action, target: z.target || step.target });
+                }}
+                style={{
+                  padding: '3px 9px', borderRadius: 5,
+                  border: isRulePlaceActive ? '2px solid #1976d2' : '1px solid #bbb',
+                  background: isRulePlaceActive ? '#1976d2' : '#f5f5f5',
+                  color: isRulePlaceActive ? '#fff' : '#333',
+                  fontWeight: isRulePlaceActive ? 'bold' : 'normal',
+                  cursor: 'pointer', fontSize: 11,
+                }}
+              >
+                〇〇に置く
+              </button>
+            </div>
+            {isRulePlaceActive && (
               <div style={{ marginTop: 4 }}>
-                <div style={miniLbl()}>📍 位置</div>
-                <SearchSelect
-                  value={ruleCurrentSuffix}
-                  onChange={onRuleVariantChange}
-                  options={ruleVariantOptions}
+                <div style={miniLbl()}>📥 場所（どこに置くか）</div>
+                <ButtonGroup
+                  options={PLACE_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
+                  value={activeRulePlaceZone}
+                  onChange={(zoneCode) => {
+                    if (zoneCode === activeRulePlaceZone) return;
+                    const z = PLACE_ZONE_MAP.find((zz) => zz.code === zoneCode);
+                    if (!z) return;
+                    onChange({ action: z.action, target: z.target || '' });
+                  }}
+                  accentColor="#1976d2"
                 />
+                {(() => {
+                  const z = PLACE_ZONE_MAP.find((zz) => zz.code === activeRulePlaceZone);
+                  return z?.warn ? <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div> : null;
+                })()}
+                {(() => {
+                  const z = PLACE_ZONE_MAP.find((zz) => zz.code === activeRulePlaceZone);
+                  if (!z?.hasPosition) return null;
+                  return (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={miniLbl()}>📍 位置</div>
+                      <ButtonGroup
+                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
+                        value={step.deckPosition || ''}
+                        onChange={(v) => onChange({ deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
+                        accentColor="#1976d2"
+                      />
+                    </div>
+                  );
+                })()}
+                {(() => {
+                  const z = PLACE_ZONE_MAP.find((zz) => zz.code === activeRulePlaceZone);
+                  if (!z?.hasFace) return null;
+                  return (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={miniLbl()}>🂠 裏表</div>
+                      <ButtonGroup
+                        options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
+                        value={(step.options || []).includes('face_down') ? 'face_down' : ''}
+                        onChange={(v) => onChange({ options: v ? [v] : [] })}
+                        accentColor="#1976d2"
+                      />
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666', marginTop: 6 }}>
+              <input
+                type="checkbox"
+                checked={ruleOtherOpen || (!!step.action && !isRuleCommonAction)}
+                onChange={(e) => setRuleOtherOpen(e.target.checked)}
+              />
+              その他のアクション
+            </label>
+            {(ruleOtherOpen || (!!step.action && !isRuleCommonAction)) && (
+              <div style={{ marginTop: 4 }}>
+                <SearchSelect
+                  value={ruleNormalizedActionValue}
+                  onChange={onRuleActionChange}
+                  options={ruleActionOptions}
+                  allowFreeText
+                  placeholder="例: 手札に加える"
+                />
+                {ruleIsPositional && ruleVariantOptions.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={miniLbl()}>📍 位置</div>
+                    <SearchSelect
+                      value={ruleCurrentSuffix}
+                      onChange={onRuleVariantChange}
+                      options={ruleVariantOptions}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>

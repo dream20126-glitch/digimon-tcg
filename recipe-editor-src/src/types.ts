@@ -246,9 +246,13 @@ export interface MiniStep {
   type?: string;                    // タイプ（デジモン / テイマー / オプション / 全カード = ''）
   value?: number | string;          // 値（枚数 / variant コード / 'all' / 任意の文字列）
   conditions?: ConditionPair[];     // フィルタ条件（複数 AND）
-  options?: string[];               // 修飾子コード配列
+  options?: string[];               // 修飾子コード配列（'face_down' 等）
   // 「残ったカード全てに対して」フラグ。例: deck_open 時は return_to の指定として解釈される
   isRemaining?: boolean;
+  // 「〇〇に置く」(PLACE_ZONE_MAP。action が place_on_security_top/place_under_tamer/
+  // place_under_digimon 等のとき) 専用: 上/下/下か上。ruleTranslator が
+  // selections[].position（無指定時は従来通りアクションコード自体で決定）に反映する
+  deckPosition?: 'top' | 'bottom' | 'both';
 }
 
 export interface CardData {

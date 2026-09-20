@@ -146,6 +146,19 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
     if (Array.isArray(rule.options) && rule.options.length > 0) sel.options = rule.options.slice();
     step.selections.push(sel);
   };
+  // 「〇〇に置く」(PLACE_ZONE_MAP。コスト側「〇〇に置く」と同じ4択:
+  // セキュリティ/テイマー/進化元/バトルエリア) 専用の選択肢を積む。
+  // deck_open では常に「今めくったカード」が対象のため、コスト側のfromZones
+  // （どこから持ってくるか）に相当する概念は無く、置き先(destination)と
+  // 位置(position)・裏表(options)のみを反映する
+  const pushPlaceSelection = (destination: string) => {
+    if (!Array.isArray(step.selections)) step.selections = [];
+    const sel: Record<string, any> = { count, destination };
+    if (Object.keys(filter).length > 0) sel.filter = filter;
+    if (rule.deckPosition) sel.position = rule.deckPosition;
+    if (Array.isArray(rule.options) && rule.options.length > 0) sel.options = rule.options.slice();
+    step.selections.push(sel);
+  };
   switch (rule.action) {
     case 'add_to_hand':
     case 'bounce':
@@ -155,9 +168,19 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
     case 'add_to_evo_source':
       pushSelection('evo_source'); return;
     case 'place_on_security_top':
-      pushSelection('security_top'); return;
-    case 'place_on_security_bottom':
-      pushSelection('security_bottom'); return;
+    case 'place_on_security_bottom': {
+      // deckPosition指定（PLACE_ZONE_MAP「セキュリティ」ボタン経由）があればそちらを優先。
+      // 無指定時は従来通りアクションコード自体（_top/_bottom）で決定（既存レシピ互換）
+      const pos = rule.deckPosition || (rule.action === 'place_on_security_bottom' ? 'bottom' : 'top');
+      pushPlaceSelection(pos === 'bottom' ? 'security_bottom' : 'security_top');
+      return;
+    }
+    case 'place_under_tamer':
+      pushPlaceSelection('tamer'); return;
+    case 'place_under_digimon':
+      pushPlaceSelection('evo_source'); return;
+    case 'place_in_battle_area':
+      pushPlaceSelection('battle_area'); return;
     case 'return_deck': {
       // value で variant 指定。空なら 'deck_choice' 既定
       const variant = String(rule.value ?? 'choice');

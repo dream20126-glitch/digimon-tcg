@@ -5230,20 +5230,60 @@ function _substituteDesignatedNameJS(step, replacement) {
   return out;
 }
 
+// designated_groups（絞り込み条件＋枚数の組を複数持つ場合。例:「TBかつLv3を1枚・
+// TBかつLv4を1枚・TBかつLv5を1枚」のように異なる条件を複数要求するアセンブリ）に対応。
+// cond_designated_name マーカーを持つ cost item を groups の数だけ複製し、
+// それぞれの条件・枚数を割り当てる（recipe-editor-src/src/recipe.ts の
+// buildDesignatedGroupsFields で組み立てられたのと同じ形の各要素を想定）
+function _expandDesignatedGroupsJS(step, groups) {
+  if (!step || typeof step !== 'object') return step;
+  const out = Object.assign({}, step);
+  if (Array.isArray(out.cost)) {
+    const newCost = [];
+    out.cost.forEach(c => {
+      const hasMarker = c && (c.condition === 'cond_designated_name'
+        || c.when === 'cond_designated_name'
+        || (Array.isArray(c.extra_conditions) && c.extra_conditions.includes('cond_designated_name')));
+      if (hasMarker) {
+        groups.forEach(g => {
+          const replaced = Object.assign({}, c);
+          delete replaced.condition; delete replaced.when; delete replaced.extra_conditions; delete replaced.condition_op; delete replaced.count;
+          if (g.condition !== undefined) replaced.condition = g.condition;
+          if (g.when !== undefined) replaced.when = g.when;
+          if (g.extra_conditions !== undefined) replaced.extra_conditions = g.extra_conditions;
+          if (g.condition_op !== undefined) replaced.condition_op = g.condition_op;
+          if (g.count !== undefined) replaced.count = g.count;
+          newCost.push(replaced);
+        });
+      } else {
+        newCost.push(c);
+      }
+    });
+    out.cost = newCost;
+  }
+  return out;
+}
+
 // キーワードテンプレートの steps に、カード側の value（数値未設定のstepにのみ差し込む）・
 // designated（cond_designated_name の置き換え）・count（アセンブリ等、cost[]内のcount未設定
-// アイテムにのみ差し込む「何枚使うか」）を適用したコピーを返す
-function _fillKeywordTemplateSteps(steps, value, designated, count) {
+// アイテムにのみ差し込む「何枚使うか」）を適用したコピーを返す。designatedGroups
+// （絞り込み条件＋枚数の組が複数）が指定された場合は designated/count の代わりに
+// cost item をgroups数ぶん複製する
+function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGroups) {
   return (steps || []).map(s => {
     let out = s;
     if (value !== undefined && value !== '' && value !== null && out && out.value === undefined) {
       out = Object.assign({}, out, { value });
     }
-    if (designated) out = _substituteDesignatedNameJS(out, designated);
-    if (count !== undefined && count !== '' && count !== null && Array.isArray(out.cost)) {
-      out = Object.assign({}, out, {
-        cost: out.cost.map(c => (c && c.count === undefined ? Object.assign({}, c, { count }) : c)),
-      });
+    if (Array.isArray(designatedGroups) && designatedGroups.length > 0) {
+      out = _expandDesignatedGroupsJS(out, designatedGroups);
+    } else {
+      if (designated) out = _substituteDesignatedNameJS(out, designated);
+      if (count !== undefined && count !== '' && count !== null && Array.isArray(out.cost)) {
+        out = Object.assign({}, out, {
+          cost: out.cost.map(c => (c && c.count === undefined ? Object.assign({}, c, { count }) : c)),
+        });
+      }
     }
     return out;
   });
@@ -5284,7 +5324,7 @@ function _lookupTriggerSteps(recipeObj, triggerCode) {
       if (!kw) continue;
       const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
       if (!tplSteps) continue;
-      const filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count);
+      const filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups);
       result = result ? result.concat(filled) : filled;
     }
   }
@@ -8253,7 +8293,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _filledTemplate = {};
           Object.keys(_kwEntry.recipeTemplate).forEach(k => {
             const tplSteps = _kwEntry.recipeTemplate[k];
-            if (Array.isArray(tplSteps)) _filledTemplate[k] = _fillKeywordTemplateSteps(tplSteps, _cv, step.designated, step.count);
+            if (Array.isArray(tplSteps)) _filledTemplate[k] = _fillKeywordTemplateSteps(tplSteps, _cv, step.designated, step.count, step.designated_groups);
           });
           const _grantStep = Object.assign({}, step, { action: 'grant_effect', granted_recipe: _filledTemplate });
           executeRecipeStep(_grantStep, ctx, store, callback);

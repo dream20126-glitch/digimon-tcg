@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry } from '../types';
+import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup } from '../types';
 import {
   SECTIONS,
   DURATIONS,
@@ -13,7 +13,7 @@ import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOp
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
-import { blocksToRecipe, getKeywordEntries } from '../recipe';
+import { blocksToRecipe, getKeywordEntries, getDesignatedGroups } from '../recipe';
 
 interface Props {
   block: EffectBlock;
@@ -332,6 +332,7 @@ function KeywordEntriesEditor({
       keywordParamConditions: next[0]?.keywordParamConditions,
       keywordParamConditionsOp: next[0]?.keywordParamConditionsOp,
       keywordCount: next[0]?.count,
+      keywordDesignatedGroups: next[0]?.designatedGroups,
     });
   }
   function updateEntry(i: number, patch: Partial<KeywordEntry>) {
@@ -375,38 +376,77 @@ function KeywordEntriesEditor({
             options={toOpts(dict.keywords)}
             allowFreeText
           />
-          {!!dict.keywords.find((k) => k.code === entry.keyword)?.hasNamedParam && (
-            <div style={{ marginTop: 6, padding: 6, background: '#fff', border: `1px solid ${accentBorder}`, borderRadius: 4 }}>
-              <ConditionsHybridEditor
-                conditions={entry.keywordParamConditions || []}
-                onChange={(next) => updateEntry(i, { keywordParamConditions: next })}
-                dict={dict}
-                title="対象"
-                hint="（このキーワードが参照する対象の絞り込み・カードごとに指定）"
-                theme="action"
-                defaultSubject=""
-                showSubjectSelector={false}
-                conditionsOp={entry.keywordParamConditionsOp || 'and'}
-                onConditionsOpChange={(op) => updateEntry(i, { keywordParamConditionsOp: op })}
-              />
-              <div style={{ marginTop: 6 }}>
-                <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
-                  枚数（アセンブリ等、絞り込んだカードを何枚使うか・省略時は1枚）
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={entry.count === undefined ? '' : String(entry.count)}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    updateEntry(i, { count: v === '' ? undefined : Number(v) });
-                  }}
-                  placeholder="例: 1"
-                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 80 }}
-                />
+          {!!dict.keywords.find((k) => k.code === entry.keyword)?.hasNamedParam && (() => {
+            const groups = getDesignatedGroups(entry);
+            const groupList: DesignatedGroup[] = groups.length > 0 ? groups : [{ conditions: [], conditionsOp: 'and' }];
+            const setGroups = (next: DesignatedGroup[]) => updateEntry(i, { designatedGroups: next });
+            const updateGroup = (gi: number, patch: Partial<DesignatedGroup>) => {
+              const next = groupList.slice();
+              next[gi] = { ...next[gi], ...patch };
+              setGroups(next);
+            };
+            const removeGroup = (gi: number) => {
+              setGroups(groupList.length <= 1 ? [{ conditions: [], conditionsOp: 'and' }] : groupList.filter((_, idx) => idx !== gi));
+            };
+            const addGroup = () => setGroups([...groupList, { conditions: [], conditionsOp: 'and' }]);
+            return (
+              <div style={{ marginTop: 6, padding: 6, background: '#fff', border: `1px solid ${accentBorder}`, borderRadius: 4 }}>
+                {groupList.map((g, gi) => (
+                  <div key={gi} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: gi < groupList.length - 1 ? `1px dashed ${accentBorder}` : 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 'bold', color: '#666' }}>
+                        対象{groupList.length > 1 ? `（${gi + 1}）` : ''}
+                      </span>
+                      {groupList.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeGroup(gi)}
+                          style={{ marginLeft: 'auto', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '1px 7px', cursor: 'pointer', fontSize: 11 }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    <ConditionsHybridEditor
+                      conditions={g.conditions || []}
+                      onChange={(next) => updateGroup(gi, { conditions: next })}
+                      dict={dict}
+                      title="対象"
+                      hint="（このキーワードが参照する対象の絞り込み・カードごとに指定）"
+                      theme="action"
+                      defaultSubject=""
+                      showSubjectSelector={false}
+                      conditionsOp={g.conditionsOp || 'and'}
+                      onConditionsOpChange={(op) => updateGroup(gi, { conditionsOp: op })}
+                    />
+                    <div style={{ marginTop: 6 }}>
+                      <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
+                        枚数（アセンブリ等、絞り込んだカードを何枚使うか・省略時は1枚）
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={g.count === undefined ? '' : String(g.count)}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          updateGroup(gi, { count: v === '' ? undefined : Number(v) });
+                        }}
+                        placeholder="例: 1"
+                        style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 80 }}
+                      />
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addGroup}
+                  style={{ padding: '3px 9px', border: `1px dashed ${accentBorder}`, background: 'white', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                >
+                  ＋ 条件グループを追加（別の絞り込み＋枚数を追加）
+                </button>
               </div>
-            </div>
-          )}
+            );
+          })()}
           {!(primaryValueElsewhere && i === 0) && (
             <div style={{ marginTop: 6 }}>
               <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>

@@ -1,5 +1,5 @@
 // EffectBlock[] ⇄ recipe JSON 変換
-import type { AltAction, ConditionPair, DictEntry, EffectBlock, KeywordEntry } from './types';
+import type { AltAction, ConditionPair, DictEntry, EffectBlock, KeywordEntry, DesignatedGroup } from './types';
 import { applyRulesToStep } from './ruleTranslator';
 
 // 条件pairを「base:value@subject」形式の文字列に変換
@@ -238,6 +238,7 @@ export function getKeywordEntries(b: {
   keywordParamConditions?: ConditionPair[];
   keywordParamConditionsOp?: 'and' | 'or';
   keywordCount?: number | string;
+  keywordDesignatedGroups?: DesignatedGroup[];
   keywordEntries?: KeywordEntry[];
 }): KeywordEntry[] {
   if (Array.isArray(b.keywordEntries) && b.keywordEntries.length > 0) return b.keywordEntries;
@@ -248,9 +249,57 @@ export function getKeywordEntries(b: {
       keywordParamConditions: b.keywordParamConditions,
       keywordParamConditionsOp: b.keywordParamConditionsOp,
       count: b.keywordCount,
+      designatedGroups: b.keywordDesignatedGroups,
     }];
   }
   return [];
+}
+
+// entry の「対象」絞り込み条件＋枚数を、常に1組以上のグループ配列として返す。
+// designatedGroups があればそのまま、無ければ従来の単一 keywordParamConditions/count
+// から1組だけのグループを合成する（後方互換）
+export function getDesignatedGroups(entry: KeywordEntry): DesignatedGroup[] {
+  if (Array.isArray(entry.designatedGroups) && entry.designatedGroups.length > 0) return entry.designatedGroups;
+  if (Array.isArray(entry.keywordParamConditions) && entry.keywordParamConditions.length > 0) {
+    return [{
+      conditions: entry.keywordParamConditions,
+      conditionsOp: entry.keywordParamConditionsOp || 'and',
+      count: entry.count,
+    }];
+  }
+  return [];
+}
+
+// DesignatedGroup[] → JSON出力用の配列（各要素が {condition?,when?,extra_conditions?,
+// condition_op?,count?}）。1組だけなら呼び出し側で従来のdesignated/countとして
+// 単純出力し、2組以上のときだけこの配列(p.designated_groups)を使う
+function buildDesignatedGroupsFields(groups: DesignatedGroup[]): Array<{
+  condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; count?: number | string;
+}> {
+  return groups.map((g) => {
+    const fields = buildDesignatedConditionFields(g.conditions, g.conditionsOp || 'and');
+    const out: any = { ...fields };
+    if (g.count !== undefined && g.count !== '' && g.count !== null) {
+      const n = Number(g.count);
+      out.count = isNaN(n) ? g.count : n;
+    }
+    return out;
+  });
+}
+
+// entry の「対象」絞り込み条件＋枚数を target（passiveのp、またはgrant_keywordのstep）へ
+// 書き込む。1組なら designated/count、2組以上なら designated_groups として出力する
+function applyDesignatedGroupsTo(target: any, entry: KeywordEntry, kwEntry?: DictEntry): void {
+  if (!kwEntry?.hasNamedParam) return;
+  const groups = getDesignatedGroups(entry);
+  if (groups.length === 1) {
+    const fields = buildDesignatedGroupsFields(groups)[0];
+    const { count: gCount, ...designated } = fields;
+    if (Object.keys(designated).length > 0) target.designated = designated;
+    if (gCount !== undefined) target.count = gCount;
+  } else if (groups.length > 1) {
+    target.designated_groups = buildDesignatedGroupsFields(groups);
+  }
 }
 
 function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?: DictEntry[]) {
@@ -272,18 +321,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
         const n = Number(entry.value);
         p.value = isNaN(n) ? entry.value : n;
       }
-      // 「対象」絞り込み条件: テンプレート内の cond_designated_name プレースホルダーを
-      // エンジン側が実行時に置き換えるための材料。ここでは組み立てた条件一式を
-      // designated として保存するだけで、置き換え自体は行わない
-      if (kwEntry?.hasNamedParam && Array.isArray(entry.keywordParamConditions) && entry.keywordParamConditions.length > 0) {
-        const designated = buildDesignatedConditionFields(entry.keywordParamConditions, entry.keywordParamConditionsOp || 'and');
-        if (Object.keys(designated).length > 0) p.designated = designated;
-      }
-      // 枚数（アセンブリ等、絞り込んだカードを何枚使うか。省略時は1枚として扱う想定）
-      if (entry.count !== undefined && entry.count !== '' && entry.count !== null) {
-        const n = Number(entry.count);
-        p.count = isNaN(n) ? entry.count : n;
-      }
+      // 「対象」絞り込み条件（＋枚数）: テンプレート内の cond_designated_name
+      // プレースホルダーをエンジン側が実行時に置き換えるための材料。ここでは組み立てた
+      // 条件一式を designated（1組）/designated_groups（2組以上）として保存するだけで、
+      // 置き換え自体は行わない
+      applyDesignatedGroupsTo(p, entry, kwEntry);
       if (b.zone) p.in_zone = b.zone;
       if (b.extras) {
         try {
@@ -494,14 +536,13 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   const isGrantKeyword = step.action === 'grant_keyword' || step.action === 'grant_keyword_to';
   if (isGrantKeyword && b.keyword) {
     const kwEntry = keywordDict && keywordDict.find((k) => k.code === b.keyword);
-    if (kwEntry?.hasNamedParam && Array.isArray(b.keywordParamConditions) && b.keywordParamConditions.length > 0) {
-      const designated = buildDesignatedConditionFields(b.keywordParamConditions, b.keywordParamConditionsOp || 'and');
-      if (Object.keys(designated).length > 0) step.designated = designated;
-    }
-    if (b.keywordCount !== undefined && b.keywordCount !== '' && b.keywordCount !== null) {
-      const n = Number(b.keywordCount);
-      step.count = isNaN(n) ? b.keywordCount : n;
-    }
+    applyDesignatedGroupsTo(step, {
+      keyword: b.keyword,
+      keywordParamConditions: b.keywordParamConditions,
+      keywordParamConditionsOp: b.keywordParamConditionsOp,
+      count: b.keywordCount,
+      designatedGroups: b.keywordDesignatedGroups,
+    }, kwEntry);
   }
   container[b.trigger] = container[b.trigger] || [];
   container[b.trigger].push(step);
@@ -521,6 +562,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       entries.slice(1).forEach((entry) => {
         const extraStep: any = { ...step, keyword: entry.keyword };
         delete extraStep.designated;
+        delete extraStep.designated_groups;
+        delete extraStep.count;
         if (entry.value !== undefined && entry.value !== '' && entry.value !== null) {
           const n = Number(entry.value);
           extraStep.value = isNaN(n) ? entry.value : n;
@@ -528,16 +571,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
           delete extraStep.value;
         }
         const kwEntry2 = keywordDict && keywordDict.find((k) => k.code === entry.keyword);
-        if (kwEntry2?.hasNamedParam && Array.isArray(entry.keywordParamConditions) && entry.keywordParamConditions.length > 0) {
-          const designated2 = buildDesignatedConditionFields(entry.keywordParamConditions, entry.keywordParamConditionsOp || 'and');
-          if (Object.keys(designated2).length > 0) extraStep.designated = designated2;
-        }
-        if (entry.count !== undefined && entry.count !== '' && entry.count !== null) {
-          const n = Number(entry.count);
-          extraStep.count = isNaN(n) ? entry.count : n;
-        } else {
-          delete extraStep.count;
-        }
+        applyDesignatedGroupsTo(extraStep, entry, kwEntry2);
         if (isSinglePickTarget) extraStep.target = 'same_target';
         container[b.trigger].push(extraStep);
       });
@@ -695,21 +729,40 @@ function stepObjectToAltAction(step: any): AltAction {
   };
 }
 
+// designated（1組）/designated_groups（2組以上）のどちらで保存されていても、
+// 常に DesignatedGroup[] として読み出す（passiveToBlock/stepToBlock共通の復元ロジック）
+function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
+  if (Array.isArray(raw?.designated_groups) && raw.designated_groups.length > 0) {
+    return raw.designated_groups.map((g: any) => {
+      const { conds, op } = parseDesignatedFields(g);
+      return { conditions: conds, conditionsOp: op, count: g?.count };
+    });
+  }
+  if (raw?.designated || raw?.count !== undefined) {
+    const { conds, op } = raw?.designated ? parseDesignatedFields(raw.designated) : { conds: [], op: 'and' as const };
+    if (conds.length === 0 && raw?.count === undefined) return [];
+    return [{ conditions: conds, conditionsOp: op, count: raw?.count }];
+  }
+  return [];
+}
+
 function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): EffectBlock {
   const extras: any = {};
   Object.keys(p || {}).forEach((k) => {
-    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'count') extras[k] = p[k];
+    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'count') extras[k] = p[k];
   });
-  const { conds, op } = p?.designated ? parseDesignatedFields(p.designated) : { conds: [], op: 'and' as const };
+  const groups = parseDesignatedGroupsField(p);
+  const single = groups.length === 1 ? groups[0] : undefined;
   return {
     section,
     zone: p?.in_zone || '',
     trigger: 'passive',
     keyword: (p && p.flag) || '',
     value: p?.value,
-    keywordParamConditions: conds.length > 0 ? conds : undefined,
-    keywordParamConditionsOp: conds.length > 0 ? op : undefined,
-    keywordCount: p?.count,
+    keywordParamConditions: single && single.conditions.length > 0 ? single.conditions : undefined,
+    keywordParamConditionsOp: single && single.conditions.length > 0 ? single.conditionsOp : undefined,
+    keywordCount: single ? single.count : undefined,
+    keywordDesignatedGroups: groups.length > 1 ? groups : undefined,
     extras: Object.keys(extras).length > 0 ? JSON.stringify(extras) : '',
   };
 }
@@ -756,6 +809,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     granted_recipe: true,
     filter: true,
     designated: true,
+    designated_groups: true,
   };
   const extras: any = {};
   Object.keys(step || {}).forEach((k) => {
@@ -767,6 +821,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
   const _isGrantKeywordStep = step?.action === 'grant_keyword' || step?.action === 'grant_keyword_to';
   const _stepCount = _isGrantKeywordStep && extras.count !== undefined ? extras.count : undefined;
   if (_isGrantKeywordStep && extras.count !== undefined) delete extras.count;
+  const _stepDesignatedGroups = _isGrantKeywordStep ? parseDesignatedGroupsField(step) : [];
+  const _stepSingleGroup = _stepDesignatedGroups.length === 1 ? _stepDesignatedGroups[0] : undefined;
   // 条件復元
   const conditions: ConditionPair[] = [];
   if (step?.condition) conditions.push(stringToPair(String(step.condition)));
@@ -833,12 +889,10 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     value: step?.value,
     target: step?.target || '',
     keyword: step?.keyword || '',
-    keywordCount: _stepCount,
-    ...(() => {
-      if (!step?.designated) return {};
-      const { conds, op } = parseDesignatedFields(step.designated);
-      return { keywordParamConditions: conds, keywordParamConditionsOp: op };
-    })(),
+    keywordCount: _stepSingleGroup ? _stepSingleGroup.count : _stepCount,
+    keywordParamConditions: _stepSingleGroup && _stepSingleGroup.conditions.length > 0 ? _stepSingleGroup.conditions : undefined,
+    keywordParamConditionsOp: _stepSingleGroup && _stepSingleGroup.conditions.length > 0 ? _stepSingleGroup.conditionsOp : undefined,
+    keywordDesignatedGroups: _stepDesignatedGroups.length > 1 ? _stepDesignatedGroups : undefined,
     revertAtTurnEnd: !!step?.revert_at_turn_end,
     immuneCardType: step?.source_type === 'digimon' ? 'digimon' : undefined,
     costFree: !!step?.cost_free,

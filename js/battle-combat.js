@@ -735,32 +735,55 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
   for (const opt of options) {
     // 発動領域指定があれば、手札にある時だけ対象（登場前の今がまさにそれ）
     if (opt.in_zone && opt.in_zone !== 'hand') continue;
-    const costItem = Array.isArray(opt.cost) ? opt.cost[0] : null;
-    if (!costItem) continue;
-    const fromZones = Array.isArray(costItem.from) ? costItem.from : (costItem.from ? [costItem.from] : []);
-    if (!fromZones.includes('trash')) continue; // 現状トラッシュ由来のみ対応
-    const wantCount = parseInt(costItem.count, 10) || 1;
-    const candidates = _filterAssemblyCandidates(costItem, bs.player.trash, bs, 'player');
-    if (candidates.length < wantCount) continue; // 対象不足のため発動不可（次の候補へ）
+    const costItems = Array.isArray(opt.cost) ? opt.cost.filter(c => c) : [];
+    if (costItems.length === 0) continue;
+    // 複数条件グループ（例: TB+Lv3を1枚・TB+Lv4を1枚・TB+Lv5を1枚）に対応するため、
+    // cost[] の各アイテムごとに候補・必要枚数を事前計算する。1つでも満たせなければ
+    // このオプションは発動不可（次の候補オプションへ）
+    let eligible = true;
+    const plan = costItems.map((costItem) => {
+      const fromZones = Array.isArray(costItem.from) ? costItem.from : (costItem.from ? [costItem.from] : []);
+      if (!fromZones.includes('trash')) { eligible = false; return null; } // 現状トラッシュ由来のみ対応
+      const wantCount = parseInt(costItem.count, 10) || 1;
+      const candidates = _filterAssemblyCandidates(costItem, bs.player.trash, bs, 'player');
+      if (candidates.length < wantCount) { eligible = false; return null; }
+      return { wantCount, candidates };
+    });
+    if (!eligible) continue;
+    const totalWant = plan.reduce((sum, p) => sum + p.wantCount, 0);
 
     showConfirm({
       title: '💠 アセンブリ',
-      message: '「' + card.name + '」をアセンブリで登場させますか？（トラッシュのカードを' + wantCount + '枚使用）',
+      message: '「' + card.name + '」をアセンブリで登場させますか？（トラッシュのカードを' + totalWant + '枚使用）',
       yesText: '発動する', noText: '発動しない',
     }).then((yes) => {
       if (!yes) { doPlay(card, handIdx, slotIdx); return; }
-      _showTrashCardPicker(candidates, wantCount, false, '💠 アセンブリで使うカードを選んでください', (picked) => {
-        if (!picked || picked.length < wantCount) { doPlay(card, handIdx, slotIdx); return; }
-        picked.forEach((p) => {
-          const ti = bs.player.trash.indexOf(p);
-          if (ti !== -1) bs.player.trash.splice(ti, 1);
-        });
-        if (!card.stack) card.stack = [];
-        card.stack = [...picked, ...card.stack];
-        card._assemblyDiscount = (parseInt(card._assemblyDiscount, 10) || 0) + (parseInt(opt.value, 10) || 0);
-        addLog('💠 「' + card.name + '」のアセンブリを発動（トラッシュから' + wantCount + '枚使用）');
-        doPlay(card, handIdx, slotIdx);
-      }, candidates);
+      const allPicked = [];
+      const pickNext = (idx) => {
+        if (idx >= plan.length) {
+          // 全グループ分の選択が完了 → まとめてトラッシュから外し、このカードの下に置く
+          allPicked.forEach((p) => {
+            const ti = bs.player.trash.indexOf(p);
+            if (ti !== -1) bs.player.trash.splice(ti, 1);
+          });
+          if (!card.stack) card.stack = [];
+          card.stack = [...allPicked, ...card.stack];
+          card._assemblyDiscount = (parseInt(card._assemblyDiscount, 10) || 0) + (parseInt(opt.value, 10) || 0);
+          addLog('💠 「' + card.name + '」のアセンブリを発動（トラッシュから' + allPicked.length + '枚使用）');
+          doPlay(card, handIdx, slotIdx);
+          return;
+        }
+        const { wantCount, candidates } = plan[idx];
+        // 既に別グループで選んだカードは重複選択できないよう候補から除外
+        const remaining = candidates.filter(c => !allPicked.includes(c));
+        if (remaining.length < wantCount) { doPlay(card, handIdx, slotIdx); return; } // 念のための保険
+        _showTrashCardPicker(remaining, wantCount, false, '💠 アセンブリ（' + (idx + 1) + '/' + plan.length + '）: 使うカードを選んでください', (picked) => {
+          if (!picked || picked.length < wantCount) { doPlay(card, handIdx, slotIdx); return; }
+          allPicked.push(...picked);
+          pickNext(idx + 1);
+        }, remaining);
+      };
+      pickNext(0);
     });
     return;
   }

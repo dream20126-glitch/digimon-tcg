@@ -139,7 +139,9 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
 
   // designatedGroups（1つのルール内に「条件+枚数」の組を複数持つモード。例:「特徴TBを
   // 持つカード1枚と、緑のカード1枚」）が指定されていれば、グループの数だけ選択肢を積む。
-  // 共通条件(commonConditions)は各グループのフィルタ条件へAND合成する
+  // 共通条件(commonConditions)は各グループのフィルタ条件へAND合成する。
+  // グループごとに action/deckPosition/options を個別指定していれば、そちらを優先する
+  // （例:「1枚を手札に加え、1枚をセキュリティの上に置く」を1行の2グループで表現）
   if (Array.isArray(rule.designatedGroups) && rule.designatedGroups.length > 0) {
     const { filterConds: commonFilterConds } = splitConds(rule.commonConditions);
     rule.designatedGroups.forEach((g) => {
@@ -147,7 +149,13 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
       const gFilter = condsToFilter([...commonFilterConds, ...gFilterConds]);
       if (rule.type && !gFilter.type) gFilter.type = rule.type;
       const gCount = asNumberOrPass(g.count) ?? 1;
-      applyOneSelection(step, rule, gFilter, gCount);
+      const effectiveRule: MiniStep = {
+        ...rule,
+        action: g.action || rule.action,
+        deckPosition: g.deckPosition ?? rule.deckPosition,
+        options: g.options ?? rule.options,
+      };
+      applyOneSelection(step, effectiveRule, gFilter, gCount);
     });
     return;
   }

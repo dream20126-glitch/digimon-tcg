@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup } from '../types';
+import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup } from '../types';
 import {
   SECTIONS,
   DURATIONS,
@@ -4977,11 +4977,11 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
           条件ごとに枚数を分ける（例:「特徴TBを持つカード1枚と、緑のカード1枚」）
         </label>
         {hasDesignatedGroups && (() => {
-          const groupList: DesignatedGroup[] = (step.designatedGroups && step.designatedGroups.length > 0)
+          const groupList: RuleGroup[] = (step.designatedGroups && step.designatedGroups.length > 0)
             ? step.designatedGroups
             : [{ conditions: [], conditionsOp: 'and' }];
-          const setGroups = (next: DesignatedGroup[]) => onChange({ designatedGroups: next });
-          const updateGroup = (gi: number, patch: Partial<DesignatedGroup>) => {
+          const setGroups = (next: RuleGroup[]) => onChange({ designatedGroups: next });
+          const updateGroup = (gi: number, patch: Partial<RuleGroup>) => {
             const next = groupList.slice();
             next[gi] = { ...next[gi], ...patch };
             setGroups(next);
@@ -5027,6 +5027,119 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                       </button>
                     )}
                   </div>
+                  {/* グループごとのアクション（省略時はルール本体のアクションを使う）。
+                      例:「1枚を手札に加え、1枚をセキュリティの上に置く」を2グループで表現 */}
+                  {(() => {
+                    const gAction = g.action || step.action;
+                    const gIsPlaceActive = PLACE_ACTION_CODES.has(gAction || '');
+                    const gActivePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === gAction)?.code || '';
+                    const gIsCommon = gAction === 'add_to_hand' || gAction === 'destroy' || gIsPlaceActive;
+                    return (
+                      <div style={{ marginBottom: 6 }}>
+                        <div style={miniLbl()}>アクション（省略時はルール本体と同じ）</div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {[{ code: 'add_to_hand', label: '手札に加える' }, { code: 'destroy', label: '破棄' }].map((a) => {
+                            const active = (g.action || step.action) === a.code;
+                            return (
+                              <button
+                                key={a.code}
+                                type="button"
+                                onClick={() => updateGroup(gi, { action: a.code })}
+                                style={{
+                                  padding: '2px 8px', borderRadius: 5,
+                                  border: active ? '2px solid #946200' : '1px solid #bbb',
+                                  background: active ? '#946200' : '#f5f5f5',
+                                  color: active ? '#fff' : '#333',
+                                  fontWeight: active ? 'bold' : 'normal',
+                                  cursor: 'pointer', fontSize: 11,
+                                }}
+                              >
+                                {a.label}
+                              </button>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (gIsPlaceActive) return;
+                              const z = PLACE_ZONE_MAP.find((zz) => zz.code === 'security')!;
+                              updateGroup(gi, { action: z.action });
+                            }}
+                            style={{
+                              padding: '2px 8px', borderRadius: 5,
+                              border: gIsPlaceActive ? '2px solid #946200' : '1px solid #bbb',
+                              background: gIsPlaceActive ? '#946200' : '#f5f5f5',
+                              color: gIsPlaceActive ? '#fff' : '#333',
+                              fontWeight: gIsPlaceActive ? 'bold' : 'normal',
+                              cursor: 'pointer', fontSize: 11,
+                            }}
+                          >
+                            〇〇に置く
+                          </button>
+                        </div>
+                        {gIsPlaceActive && (
+                          <div style={{ marginTop: 4 }}>
+                            <ButtonGroup
+                              options={PLACE_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
+                              value={gActivePlaceZone}
+                              onChange={(zoneCode) => {
+                                if (zoneCode === gActivePlaceZone) return;
+                                const z = PLACE_ZONE_MAP.find((zz) => zz.code === zoneCode);
+                                if (!z) return;
+                                updateGroup(gi, { action: z.action });
+                              }}
+                              accentColor="#946200"
+                            />
+                            {(() => {
+                              const z = PLACE_ZONE_MAP.find((zz) => zz.code === gActivePlaceZone);
+                              return z?.warn ? <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div> : null;
+                            })()}
+                            {(() => {
+                              const z = PLACE_ZONE_MAP.find((zz) => zz.code === gActivePlaceZone);
+                              if (!z?.hasPosition) return null;
+                              return (
+                                <div style={{ marginTop: 4 }}>
+                                  <div style={miniLbl()}>📍 位置</div>
+                                  <ButtonGroup
+                                    options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
+                                    value={g.deckPosition || ''}
+                                    onChange={(v) => updateGroup(gi, { deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
+                                    accentColor="#946200"
+                                  />
+                                </div>
+                              );
+                            })()}
+                            {(() => {
+                              const z = PLACE_ZONE_MAP.find((zz) => zz.code === gActivePlaceZone);
+                              if (!z?.hasFace) return null;
+                              return (
+                                <div style={{ marginTop: 4 }}>
+                                  <div style={miniLbl()}>🂠 裏表</div>
+                                  <ButtonGroup
+                                    options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
+                                    value={(g.options || []).includes('face_down') ? 'face_down' : ''}
+                                    onChange={(v) => updateGroup(gi, { options: v ? [v] : [] })}
+                                    accentColor="#946200"
+                                  />
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
+                        {!gIsCommon && (
+                          <div style={{ marginTop: 4 }}>
+                            <SearchSelect
+                              value={gAction}
+                              onChange={(v) => updateGroup(gi, { action: v })}
+                              options={toOpts(dict.actions)}
+                              allowFreeText
+                              placeholder="その他のアクション"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <ConditionsHybridEditor
                     conditions={g.conditions || []}
                     onChange={(next) => updateGroup(gi, { conditions: next })}

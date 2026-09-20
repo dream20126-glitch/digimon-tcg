@@ -237,6 +237,16 @@ export interface AltAction {
   optional?: boolean;
 }
 
+// MiniStep.designatedGroups 専用: 通常のDesignatedGroup（条件+枚数）に加えて、
+// グループごとに異なる置き先（action）を持たせられる。例:「1枚を手札に加え、
+// 1枚をセキュリティの上に置く」を1ルール行の中の2グループとして表現する。
+// action/deckPosition/optionsを省略した場合はルール本体（MiniStep側）の値を使う
+export interface RuleGroup extends DesignatedGroup {
+  action?: string;
+  deckPosition?: 'top' | 'bottom' | 'both';
+  options?: string[];
+}
+
 // ルール = メインアクションに紐づく「ミニ effect step」
 // 構造はメインの effect step と同じだが、編集 UI ではコンパクト表示
 // recipe.ts で メインアクション毎の翻訳ルール (B方式) に従って既存 JSON 形式へ変換される
@@ -254,10 +264,11 @@ export interface MiniStep {
   // selections[].position（無指定時は従来通りアクションコード自体で決定）に反映する
   deckPosition?: 'top' | 'bottom' | 'both';
   // 1つのルールの中に「条件＋枚数」の組を複数持たせたい場合（例:「特徴TBを持つカード1枚と、
-  // 緑のカード1枚」）に使う。指定時は conditions/value の代わりにこちらを使い、
+  // 緑のカード1枚」、さらにグループごとに置き先を変えて「1枚を手札に加え、1枚を
+  // セキュリティの上に置く」）に使う。指定時は conditions/value の代わりにこちらを使い、
   // グループの数だけ selections[] を積む（grant_keyword等のdesignatedGroupsと同じ仕組み）。
   // 空/未指定時は従来通り conditions + value の単一条件として扱う
-  designatedGroups?: DesignatedGroup[];
+  designatedGroups?: RuleGroup[];
   // 全グループ共通の絞り込み条件（designatedGroupsが2件以上のときのみ意味を持つ）
   commonConditions?: ConditionPair[];
   commonConditionsOp?: 'and' | 'or';

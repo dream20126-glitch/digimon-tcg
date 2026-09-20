@@ -906,7 +906,9 @@ function CostListEditor({
                       if (zoneCode === activeDiscardZone) return; // 選び直し済みの位置指定を巻き戻さない
                       const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
                       if (!z) return;
-                      updateCost(i, { ...c, action: z.action, target: z.target || '', fromZones: [z.code] });
+                      // z.targetが無い場所（進化元/テイマー/手札/デッキ/リンクカード）では既存のtargetを
+                      // そのまま維持する（「対象」欄で選んだ自分/相手を場所切替で巻き戻さないため）
+                      updateCost(i, { ...c, action: z.action, target: z.target || c.target, fromZones: [z.code] });
                     }}
                     accentColor="#b76e00"
                   />
@@ -1554,21 +1556,26 @@ const COMMON_COST_ACTIONS: { code: string; label: string }[] = [
 // 「破棄」ボタン: 押すと「どこから破棄するか」の第二ボタン（場所）が現れ、選んだ場所に応じて
 // 実際のアクションコードに切り替える（エンジンには「破棄+場所」の汎用実装が無く、手札/進化元/
 // セキュリティ/デッキそれぞれ別のアクションコードで実装されているため）。
-// target: 'own' 系にしておくと自分側を破棄する意図を保存できる。
-//   - hand/deck (cost_discard/deck_trash_top) は元から自分側の実装なので target 不要
-//   - security (security_trash_select) は step.target が 'own' で始まれば自分側になる実装済み
-//   - evo_source (evo_discard) は現状エンジンが常に「相手」の進化元を破棄する実装のため、
-//     target:'own' を保存しておいても今は反映されない（⚠未実装。該当カードが来たら追加実装する）
+// target は「対象」欄（自分/相手デジモン等）と共有のフィールドなので、ここでは基本的に
+// 触らない（場所を選んでも対象欄の値を上書きしない・対象欄を変えても場所の選択状態が
+// 崩れないようにするため）。
+//   - hand/deck (cost_discard/deck_trash_top) はもともとtarget不要
+//   - security (security_trash_select) だけは、step.targetが'own'始まりなら自分側に
+//     破棄する実装が既にあるため、target:'own_security'を初期値として設定する
+//     （このアクション専用の意味で、対象欄と衝突しても実害が小さいため許容）
+//   - evo_source/tamer (evo_discard系) はエンジン未対応のためtargetを持たせない。
+//     evo_sourceとtamerは同じスタック機構だが、targetで区別する代わりに
+//     アクションコード自体を分ける（evo_discard_top / evo_discard_tamer_top）
 // hasPosition:true の場所は「進化元/テイマー/セキュリティ」のように積まれたカードから
 // 1枚選ぶ概念があるため、下に「上から/下から/選んで/全て」ボタンを追加表示する
 // （実体は POSITION_VARIANTS と同じ仕組みでアクションコードのsuffixを切り替える。
 // costIsPositional/costVariantOptions/onCostVariantChange を流用）。
 // 手札/デッキには順序の概念が無い（デッキは上からのみ固定）ため出さない。
 const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: string; warn?: string; hasPosition?: boolean }[] = [
-  { code: 'evo_source', label: '進化元', action: 'evo_discard_top', target: 'own', warn: '⚠ エンジン未対応: 現在は相手の進化元を破棄する動作になります（自分側の実装は該当カードが来たら追加予定）', hasPosition: true },
-  // テイマーの下＝進化元と同じスタック機構のため、evo_discard系アクションを流用
-  // （エンジン側は現状 target を見ておらず常に相手デジモンの進化元を対象にするため要実装）
-  { code: 'tamer', label: 'テイマー', action: 'evo_discard_top', target: 'own_tamer', warn: '⚠ エンジン未対応: テイマーの下からの破棄は現状動作しません（該当カードが来たら追加実装します）', hasPosition: true },
+  { code: 'evo_source', label: '進化元', action: 'evo_discard_top', warn: '⚠ エンジン未対応: 現在は相手の進化元を破棄する動作になります（自分側の実装は該当カードが来たら追加予定）', hasPosition: true },
+  // テイマーの下＝進化元と同じスタック機構のため、evo_discard系アクションを流用するが、
+  // targetで区別せず専用のアクションコード（evo_discard_tamer_top）を使う
+  { code: 'tamer', label: 'テイマー', action: 'evo_discard_tamer_top', warn: '⚠ エンジン未対応: テイマーの下からの破棄は現状動作しません（該当カードが来たら追加実装します）', hasPosition: true },
   { code: 'hand', label: '手札', action: 'cost_discard' },
   { code: 'security', label: 'セキュリティ', action: 'security_trash_select', target: 'own_security', hasPosition: true },
   { code: 'deck', label: 'デッキ', action: 'deck_trash_top' },
@@ -3276,7 +3283,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         if (zoneCode === activeDiscardZone) return;
                         const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
                         if (!z) return;
-                        updateEffect({ action: z.action, target: z.target || '', fromZones: [z.code] });
+                        // z.targetが無い場所（進化元/テイマー/手札/デッキ/リンクカード）では既存のtargetを
+                        // そのまま維持する（「対象」欄で選んだ自分/相手を場所切替で巻き戻さないため）
+                        updateEffect({ action: z.action, target: z.target || effectTarget, fromZones: [z.code] });
                       }}
                       accentColor="#1976d2"
                     />
@@ -3412,8 +3421,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         })()}
 
         {/* === 📐 ルール（アクション欄＝「その他のアクション」欄のすぐ下に配置。
-            メインアクションが対応している場合のみ） === */}
-        {actionAllowsRules && (
+            メインアクションが対応している場合のみ。block.action（効果1）に紐づく設定のため、
+            効果2以降を編集中は非表示にする（効果1を選び直せば再表示される） === */}
+        {actionAllowsRules && !isEditingAlt && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
             <label>📐 ルール（メインアクションに紐づく追加処理）</label>
             <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
@@ -4144,8 +4154,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* === 🎁 付与する効果（キーワード付与 / 独自の効果付与） ===
             アクションが grant_keyword(_to) / grant_effect のときだけ自動表示。
-            パターン切替でどちらの action コードを使うか（block.action）を直接切り替える */}
-        {(block.action === 'grant_effect' || block.action === 'grant_keyword' || block.action === 'grant_keyword_to') && (
+            パターン切替でどちらの action コードを使うか（block.action）を直接切り替える。
+            block（効果1）専用の設定（AltActionにはkeyword/grantedStepの保存先が無い）のため、
+            効果2以降を編集中は非表示にする */}
+        {!isEditingAlt && (block.action === 'grant_effect' || block.action === 'grant_keyword' || block.action === 'grant_keyword_to') && (
           <div style={{ padding: 8, border: '1px solid #5eead4', borderRadius: 4, background: '#f0fdfa', marginTop: 8 }}>
             <div style={{ fontWeight: 'bold', fontSize: 12, color: '#0d9488', marginBottom: 6 }}>
               🎁 付与する効果

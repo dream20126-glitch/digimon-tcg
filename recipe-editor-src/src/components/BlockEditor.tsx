@@ -3305,7 +3305,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     })()}
                   </div>
                 )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 6 }}>
+                <div style={{ marginTop: 6 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
                     <input
                       type="checkbox"
@@ -3314,38 +3314,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     />
                     その他のアクション
                   </label>
-                  {/* OR/AND/その後は「その他のアクション」とは別の設定（複数アクションの組合せ方）
-                      なので、混同しないよう枠と背景色で視覚的に分ける */}
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-                    padding: '4px 10px', background: '#f5eefc', border: '1px solid #d8b4fe', borderRadius: 14,
-                  }}>
-                    <span style={{ fontSize: 10, color: '#9333ea', fontWeight: 'bold' }}>🔀 複数アクション</span>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
-                      <input
-                        type="checkbox"
-                        checked={isOrChecked}
-                        onChange={(e) => setAltMode(e.target.checked ? 'or' : (isAndChecked ? 'and' : (isThenChecked ? 'then' : null)))}
-                      />
-                      OR（どちらかを選ぶ）
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
-                      <input
-                        type="checkbox"
-                        checked={isAndChecked}
-                        onChange={(e) => setAltMode(e.target.checked ? 'and' : (isOrChecked ? 'or' : (isThenChecked ? 'then' : null)))}
-                      />
-                      AND（両方行う）
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
-                      <input
-                        type="checkbox"
-                        checked={isThenChecked}
-                        onChange={(e) => setAltMode(e.target.checked ? 'then' : (isOrChecked ? 'or' : (isAndChecked ? 'and' : null)))}
-                      />
-                      その後（失敗/未発動でも継続）
-                    </label>
-                  </div>
                 </div>
                 {(otherActionOpen || (!!effectAction && !isCommonAction)) && (
                   <div style={{ marginTop: 4 }}>
@@ -3482,8 +3450,42 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </div>
         )}
 
-        {/* 「編集中」の効果切替 + 設定内容一覧。OR/ANDのチェックボックス自体は
-            アクション欄「その他のアクション」の隣に表示する */}
+        {/* OR/AND/その後（複数アクションの組合せ方）: 📐ルールより下に配置
+            （その他のアクションとは別の設定なので、混同しないよう枠と背景色で視覚的に分ける） */}
+        <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+            padding: '4px 10px', background: '#f5eefc', border: '1px solid #d8b4fe', borderRadius: 14,
+          }}>
+            <span style={{ fontSize: 10, color: '#9333ea', fontWeight: 'bold' }}>🔀 複数アクション</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+              <input
+                type="checkbox"
+                checked={isOrChecked}
+                onChange={(e) => setAltMode(e.target.checked ? 'or' : (isAndChecked ? 'and' : (isThenChecked ? 'then' : null)))}
+              />
+              OR（どちらかを選ぶ）
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+              <input
+                type="checkbox"
+                checked={isAndChecked}
+                onChange={(e) => setAltMode(e.target.checked ? 'and' : (isOrChecked ? 'or' : (isThenChecked ? 'then' : null)))}
+              />
+              AND（両方行う）
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+              <input
+                type="checkbox"
+                checked={isThenChecked}
+                onChange={(e) => setAltMode(e.target.checked ? 'then' : (isOrChecked ? 'or' : (isAndChecked ? 'and' : null)))}
+              />
+              その後（失敗/未発動でも継続）
+            </label>
+          </div>
+        </div>
+
+        {/* 「編集中」の効果切替 + 設定内容一覧 */}
         {(isOrChecked || isAndChecked || isThenChecked) && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
             <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
@@ -4532,10 +4534,11 @@ const COMMON_CONDS: CommonCondDef[] = [
   { code: 'cond_zone',                 label: '場所',         input: 'select', options: RULE_ZONE_OPTS },
 ];
 // ルール上部フィールド (step 直下) のみ。条件は ConditionsHybridEditor に統一。
+// 「残ったカード」(isRemaining) は「アクション」ラベルの隣に単独チェックボックスで表示する
+// （このチェックリストからは除外）。「タイプ」は条件（cond_type）側で指定できるため、
+// このチェックリストには含めない（二重管理を避ける）
 const RULE_FIELDS: RuleFieldDef[] = [
-  { key: 'is_remaining', label: '残ったカード', kind: 'top', topKey: 'isRemaining', input: 'flag' },
   { key: 'target', label: '対象',       kind: 'top', topKey: 'target', input: 'select', options: [] /* TARGETS で動的設定 */ },
-  { key: 'type',   label: 'タイプ',     kind: 'top', topKey: 'type',   input: 'select', options: RULE_TYPE_OPTS },
   { key: 'value',  label: '値（枚数）', kind: 'top', topKey: 'value',  input: 'value' },
 ];
 
@@ -4689,7 +4692,18 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
 
         return (
           <div style={{ marginBottom: 8 }}>
-            <div style={miniLbl()}>アクション *</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 2 }}>
+              <div style={miniLbl()}>アクション *</div>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none', color: '#666' }}>
+                <input
+                  type="checkbox"
+                  checked={!!step.isRemaining}
+                  onChange={(e) => onChange({ isRemaining: e.target.checked || undefined })}
+                  style={{ margin: 0 }}
+                />
+                残ったカード
+              </label>
+            </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {[{ code: 'add_to_hand', label: '手札に加える' }, { code: 'destroy', label: '破棄' }].map((a) => {
                 const active = step.action === a.code;

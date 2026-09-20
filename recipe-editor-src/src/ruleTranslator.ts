@@ -137,7 +137,28 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
     }
   }
 
+  // designatedGroups（1つのルール内に「条件+枚数」の組を複数持つモード。例:「特徴TBを
+  // 持つカード1枚と、緑のカード1枚」）が指定されていれば、グループの数だけ選択肢を積む。
+  // 共通条件(commonConditions)は各グループのフィルタ条件へAND合成する
+  if (Array.isArray(rule.designatedGroups) && rule.designatedGroups.length > 0) {
+    const { filterConds: commonFilterConds } = splitConds(rule.commonConditions);
+    rule.designatedGroups.forEach((g) => {
+      const { filterConds: gFilterConds } = splitConds(g.conditions);
+      const gFilter = condsToFilter([...commonFilterConds, ...gFilterConds]);
+      if (rule.type && !gFilter.type) gFilter.type = rule.type;
+      const gCount = asNumberOrPass(g.count) ?? 1;
+      applyOneSelection(step, rule, gFilter, gCount);
+    });
+    return;
+  }
+
   const count = asNumberOrPass(rule.value) ?? 1;
+  applyOneSelection(step, rule, filter, count);
+}
+
+// filter/count 1組分を、rule.action に応じて selections[]（または return_to）へ反映する。
+// designatedGroups使用時はグループの数だけ呼ばれ、未使用時は1回だけ呼ばれる
+function applyOneSelection(step: any, rule: MiniStep, filter: Record<string, any>, count: number | string): void {
   const pushSelection = (destination: string) => {
     if (!Array.isArray(step.selections)) step.selections = [];
     const sel: Record<string, any> = { count, destination };

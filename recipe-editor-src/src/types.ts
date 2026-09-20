@@ -253,6 +253,14 @@ export interface MiniStep {
   // place_under_digimon 等のとき) 専用: 上/下/下か上。ruleTranslator が
   // selections[].position（無指定時は従来通りアクションコード自体で決定）に反映する
   deckPosition?: 'top' | 'bottom' | 'both';
+  // 1つのルールの中に「条件＋枚数」の組を複数持たせたい場合（例:「特徴TBを持つカード1枚と、
+  // 緑のカード1枚」）に使う。指定時は conditions/value の代わりにこちらを使い、
+  // グループの数だけ selections[] を積む（grant_keyword等のdesignatedGroupsと同じ仕組み）。
+  // 空/未指定時は従来通り conditions + value の単一条件として扱う
+  designatedGroups?: DesignatedGroup[];
+  // 全グループ共通の絞り込み条件（designatedGroupsが2件以上のときのみ意味を持つ）
+  commonConditions?: ConditionPair[];
+  commonConditionsOp?: 'and' | 'or';
 }
 
 export interface CardData {

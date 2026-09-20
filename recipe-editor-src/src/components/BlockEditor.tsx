@@ -4543,6 +4543,9 @@ const RULE_FIELDS: RuleFieldDef[] = [
 ];
 
 function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, isAttackTrigger }: RuleStepEditorProps) {
+  // 「条件ごとに枚数を分ける」がONか（1つのルール内に条件+枚数の組を複数持つモード）
+  const hasDesignatedGroups = Array.isArray(step.designatedGroups) && step.designatedGroups.length > 0;
+
   // === フィールドの「有効化」判定 ===
   // top: step[topKey] が undefined でなければ有効
   // condition: step.conditions に condCode がある entry があれば有効
@@ -4827,11 +4830,12 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
         );
       })()}
 
-      {/* チェックボックス: 必要なフィールドだけ ☑ */}
+      {/* チェックボックス: 必要なフィールドだけ ☑
+          「条件ごとに枚数を分ける」ON時は「値」はグループごとの枚数で代替されるため除外 */}
       <div style={{ marginBottom: 6, padding: 6, background: '#f3f6fc', borderRadius: 4, border: '1px solid #d8e0f0' }}>
         <div style={{ ...miniLbl(), marginBottom: 4 }}>有効化する項目（必要なものに ☑）</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px' }}>
-          {RULE_FIELDS.map((f) => (
+          {RULE_FIELDS.filter((f) => !(hasDesignatedGroups && f.key === 'value')).map((f) => (
             <label key={f.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
               <input
                 type="checkbox"
@@ -4846,9 +4850,9 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
       </div>
 
       {/* 有効化されたフィールドの入力欄（flag型は値入力不要なので除外） */}
-      {RULE_FIELDS.filter((f) => f.input !== 'flag').some(isFieldEnabled) && (
+      {RULE_FIELDS.filter((f) => f.input !== 'flag' && !(hasDesignatedGroups && f.key === 'value')).some(isFieldEnabled) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 6 }}>
-          {RULE_FIELDS.filter((f) => f.input !== 'flag' && isFieldEnabled(f)).map((f) => (
+          {RULE_FIELDS.filter((f) => f.input !== 'flag' && !(hasDesignatedGroups && f.key === 'value') && isFieldEnabled(f)).map((f) => (
             <div key={f.key}>
               <div style={miniLbl()}>{f.label}</div>
               {/* input: select */}
@@ -4929,20 +4933,139 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
         </div>
       )}
 
-      {/* === ルール条件: トリガー条件 / 発動条件と同じハイブリッドUI === */}
-      {/* チェックボックス (色 / Lv / DP 等) + プルダウン (cond_picked_color 等の高度条件) */}
-      <div style={{ marginTop: 8 }}>
-        <ConditionsHybridEditor
-          conditions={step.conditions || []}
-          onChange={(next) => onChange({ conditions: next })}
-          dict={dict}
-          title="ルール条件"
-          hint="（このルールが発動する条件・cond_picked_color 等で直前選択を参照可・複数 AND）"
-          theme="action"
-          defaultSubject=""
-          showSubjectSelector={false}
-          attackContextActive={!!isAttackTrigger}
-        />
+      {/* === ルール条件: トリガー条件 / 発動条件と同じハイブリッドUI ===
+          「条件ごとに枚数を分ける」がOFFのときだけ表示（ONのときは下の対象グループ内で
+          グループごとに条件を持つため、こちらは使わない） */}
+      {!hasDesignatedGroups && (
+        <div style={{ marginTop: 8 }}>
+          <ConditionsHybridEditor
+            conditions={step.conditions || []}
+            onChange={(next) => onChange({ conditions: next })}
+            dict={dict}
+            title="ルール条件"
+            hint="（このルールが発動する条件・cond_picked_color 等で直前選択を参照可・複数 AND）"
+            theme="action"
+            defaultSubject=""
+            showSubjectSelector={false}
+            attackContextActive={!!isAttackTrigger}
+          />
+        </div>
+      )}
+
+      {/* === 条件ごとに枚数を分ける（designatedGroups）===
+          例:「特徴TBを持つカード1枚と、緑のカード1枚」のように、1つのルールの中で
+          複数の(条件+枚数)を指定したい場合に使う。ONにすると上の「ルール条件」/「値」の
+          代わりにこちらのグループ一覧を使う（grant_keyword等の対象グループと同じ仕組み） */}
+      <div style={{ marginTop: 8, padding: 6, background: '#fdf6ec', border: '1px solid #f0d9a8', borderRadius: 4 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#946200' }}>
+          <input
+            type="checkbox"
+            checked={hasDesignatedGroups}
+            onChange={(e) => {
+              if (e.target.checked) {
+                onChange({
+                  designatedGroups: [
+                    { conditions: step.conditions || [], conditionsOp: 'and', count: step.value },
+                    { conditions: [], conditionsOp: 'and' },
+                  ],
+                });
+              } else {
+                onChange({ designatedGroups: undefined, commonConditions: undefined, commonConditionsOp: undefined });
+              }
+            }}
+          />
+          条件ごとに枚数を分ける（例:「特徴TBを持つカード1枚と、緑のカード1枚」）
+        </label>
+        {hasDesignatedGroups && (() => {
+          const groupList: DesignatedGroup[] = (step.designatedGroups && step.designatedGroups.length > 0)
+            ? step.designatedGroups
+            : [{ conditions: [], conditionsOp: 'and' }];
+          const setGroups = (next: DesignatedGroup[]) => onChange({ designatedGroups: next });
+          const updateGroup = (gi: number, patch: Partial<DesignatedGroup>) => {
+            const next = groupList.slice();
+            next[gi] = { ...next[gi], ...patch };
+            setGroups(next);
+          };
+          const removeGroup = (gi: number) => {
+            setGroups(groupList.length <= 1 ? [{ conditions: [], conditionsOp: 'and' }] : groupList.filter((_, idx) => idx !== gi));
+          };
+          const addGroup = () => setGroups([...groupList, { conditions: [], conditionsOp: 'and' }]);
+          return (
+            <div style={{ marginTop: 6 }}>
+              {groupList.length > 1 && (
+                <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px dashed #f0d9a8' }}>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#666', marginBottom: 2 }}>
+                    共通の絞り込み条件（全グループに自動でAND合成される）
+                  </div>
+                  <ConditionsHybridEditor
+                    conditions={step.commonConditions || []}
+                    onChange={(next) => onChange({ commonConditions: next })}
+                    dict={dict}
+                    title="共通条件"
+                    hint="（例:「特徴TB」を各グループで繰り返し書かなくて済むように、ここに1回だけ設定する）"
+                    theme="action"
+                    defaultSubject=""
+                    showSubjectSelector={false}
+                    conditionsOp={step.commonConditionsOp || 'and'}
+                    onConditionsOpChange={(op) => onChange({ commonConditionsOp: op })}
+                  />
+                </div>
+              )}
+              {groupList.map((g, gi) => (
+                <div key={gi} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: gi < groupList.length - 1 ? '1px dashed #f0d9a8' : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, fontWeight: 'bold', color: '#666' }}>
+                      グループ{groupList.length > 1 ? `（${gi + 1}）` : ''}
+                    </span>
+                    {groupList.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeGroup(gi)}
+                        style={{ marginLeft: 'auto', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '1px 7px', cursor: 'pointer', fontSize: 11 }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  <ConditionsHybridEditor
+                    conditions={g.conditions || []}
+                    onChange={(next) => updateGroup(gi, { conditions: next })}
+                    dict={dict}
+                    title="条件"
+                    hint="（このグループの絞り込み条件・複数指定可）"
+                    theme="action"
+                    defaultSubject=""
+                    showSubjectSelector={false}
+                    conditionsOp={g.conditionsOp || 'and'}
+                    onConditionsOpChange={(op) => updateGroup(gi, { conditionsOp: op })}
+                    allowDistinctVariants
+                  />
+                  <div style={{ marginTop: 6 }}>
+                    <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>枚数（省略時は1枚）</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={g.count === undefined ? '' : String(g.count)}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        updateGroup(gi, { count: v === '' ? undefined : Number(v) });
+                      }}
+                      placeholder="例: 1"
+                      style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 80 }}
+                    />
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addGroup}
+                style={{ padding: '3px 9px', border: '1px dashed #f0d9a8', background: 'white', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+              >
+                ＋ グループを追加（別の条件＋枚数を追加）
+              </button>
+            </div>
+          );
+        })()}
       </div>
 
       {/* === ルール内 修飾子: このルール限定で適用される options === */}

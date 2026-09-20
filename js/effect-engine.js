@@ -970,33 +970,40 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 複数対象（opponent:N / opponent:up_to_N）
       const bounceNeed = (defaultTarget && defaultTarget.count) || 1;
       const bounceUpTo = !!(defaultTarget && defaultTarget.upTo);
+      // 複数体を1体ずつ順に処理（when_leave_battle等の解決完了を待ってから次へ）
+      const _bounceSequential = (idxs, doneCb) => {
+        let bi = 0;
+        const next = () => {
+          if (bi >= idxs.length) { doneCb(); return; }
+          doBounce(opponent, idxs[bi++], ctx, next);
+        };
+        next();
+      };
       if (bounceNeed > 1 || bounceUpTo) {
         if (effectiveSide === 'ai') {
           const picks = bounceTargets.slice(0, bounceNeed);
-          picks.forEach(idx => doBounce(opponent, idx, ctx));
-          ctx.renderAll(); callback(); break;
+          _bounceSequential(picks, () => { ctx.renderAll(); callback(); });
+          break;
         }
         const rowId = ctx.side === 'player' ? 'ai' : 'pl';
         pickUpToNTargets(rowId, bounceTargets, bounceNeed, bounceColor, (idxs) => {
-          idxs.forEach(idx => {
-            sendEffectResult(opponent.battleArea[idx], 'bounce', ctx);
-            doBounce(opponent, idx, ctx);
-          });
-          callback();
+          idxs.forEach(idx => sendEffectResult(opponent.battleArea[idx], 'bounce', ctx));
+          _bounceSequential(idxs, callback);
         });
         break;
       }
       if(effectiveSide === 'ai') {
-        doBounce(opponent, ctx._forceTargetIdx ?? bounceTargets[0], ctx);
-        callback(); break;
+        doBounce(opponent, ctx._forceTargetIdx ?? bounceTargets[0], ctx, callback);
+        break;
       }
       ctx.addLog('🎯 手札に戻す対象を選んでください' + (onlySuspended ? '（レスト状態のみ）' : ''));
       showTargetSelection(opponentRowSide, bounceTargets, null, bounceColor, (selectedIdx) => {
         if(selectedIdx !== null) {
           sendEffectResult(opponent.battleArea[selectedIdx], 'bounce', ctx);
-          doBounce(opponent, selectedIdx, ctx);
+          doBounce(opponent, selectedIdx, ctx, callback);
+        } else {
+          callback();
         }
-        callback();
       });
       break;
     }
@@ -1828,6 +1835,39 @@ function runOneAction(action, defaultTarget, ctx, callback) {
 
 // ===== ヘルパー関数 =====
 
+// 【分離】等、レシピの passive 配列に flag:'protection' を持つか
+// （_permEffects/buffs経由でこのフラグが立つ経路が無いためレシピ構造のみで判定）
+function _hasProtectionFlag(card) {
+  const recipe = _parseCardRecipe(card);
+  return !!(recipe && Array.isArray(recipe.passive) && recipe.passive.some(p => p && p.flag === 'protection'));
+}
+
+// リンクカードをトラッシュへ送る（消滅・バウンス・デッキ戻し等、バトルエリアを離れる
+// 全処理の共通部分）。【分離】等 when_leave_battle でリンクカードの処遇（どれを破棄するか等）
+// を自前で処理するキーワードを持つカードは、ここでの自動一括破棄をスキップする
+// （fireDestroyChain/doBounce/return_deck 側で発火する when_leave_battle の
+// unlink アクションに処理を委ねる）。オンライン対戦は未対応のため、二重発火/カード紛失を
+// 避けるためオンライン時は常に従来通り即座に一括破棄する
+// 戻り値: true = このタイミングで実際に一括破棄した（またはリンクカードが無かった）/
+// false = 【分離】等のため保留した（呼び出し側は when_leave_battle 解決後に
+// _sweepRemainingLinkedCards で後始末すること）
+function _dumpLinkedCardsUnlessDeferred(card, trashArr) {
+  if (!card || !Array.isArray(card.linkedCards) || card.linkedCards.length === 0) return true;
+  const isOnline = !!(window._isOnlineMode && window._isOnlineMode());
+  if (!isOnline && _hasProtectionFlag(card)) return false;
+  card.linkedCards.forEach(s => trashArr.push(s));
+  return true;
+}
+
+// _dumpLinkedCardsUnlessDeferred が保留した場合の後始末。when_leave_battle の
+// unlink アクションが選んだ分だけ既に card.linkedCards から取り除かれている前提で、
+// 残り（選ばれなかった分、または効果を発動しなかった場合は全部）をまとめてトラッシュへ送る
+function _sweepRemainingLinkedCards(card, trashArr) {
+  if (!card || !Array.isArray(card.linkedCards) || card.linkedCards.length === 0) return;
+  card.linkedCards.forEach(s => trashArr.push(s));
+  card.linkedCards = [];
+}
+
 function doDestroy(targetSide, slotIdx, ctx, callback) {
   const destroyed = targetSide.battleArea[slotIdx];
   if (!destroyed) { callback && callback(); return; }
@@ -1843,7 +1883,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       targetSide.battleArea[di] = null;
       targetSide.trash.push(dc);
       if (dc.stack) dc.stack.forEach(function(s){ targetSide.trash.push(s); });
-      if (dc.linkedCards) dc.linkedCards.forEach(function(s){ targetSide.trash.push(s); });
+      _dumpLinkedCardsUnlessDeferred(dc, targetSide.trash);
       ctx.renderAll && ctx.renderAll();
       // デコイ自身の消滅で on_destroy 発火
       const decoyOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
@@ -1867,7 +1907,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
   targetSide.battleArea[slotIdx] = null;
   targetSide.trash.push(destroyed);
   if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));
-  if (destroyed.linkedCards) destroyed.linkedCards.forEach(s => targetSide.trash.push(s));
+  _dumpLinkedCardsUnlessDeferred(destroyed, targetSide.trash);
   ctx.addLog('💀 「' + destroyed.name + '」を消滅');
   // オンライン: 相手のカードを消滅させた場合、直接通知 + 復活防止マーク
   if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
@@ -1885,9 +1925,12 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
   fireDestroyChain(destroyed, destroyedSideName, ctx.bs, ctx, callback);
 }
 
-function doBounce(targetSide, slotIdx, ctx) {
+// callback は省略可（従来呼び出し元は fire-and-forget のまま動く）。
+// 【分離】等 when_leave_battle を発火させたい呼び出し元は callback を渡して完了を待つこと
+function doBounce(targetSide, slotIdx, ctx, callback) {
+  const finish = () => { try { callback && callback(); } catch (_) {} };
   const bounced = targetSide.battleArea[slotIdx];
-  if (!bounced) return;
+  if (!bounced) { finish(); return; }
   targetSide.battleArea[slotIdx] = null;
   // 手札に戻る = 一時的な状態（バフ/DP修整/永続効果/レスト等）は全てリセットされる
   // （八神太一のDP+1000等が手札に戻った後も残ってしまう不具合の修正）
@@ -1900,9 +1943,9 @@ function doBounce(targetSide, slotIdx, ctx) {
   bounced.summonedThisTurn = false;
   targetSide.hand.push(bounced);
   if (bounced.stack) bounced.stack.forEach(s => targetSide.trash.push(s));
-  if (bounced.linkedCards) bounced.linkedCards.forEach(s => targetSide.trash.push(s));
   bounced.stack = [];
-  bounced.linkedCards = [];
+  const _dumped = _dumpLinkedCardsUnlessDeferred(bounced, targetSide.trash);
+  if (_dumped) bounced.linkedCards = [];
   ctx.addLog('↩ 「' + bounced.name + '」を手札に戻した');
   // オンライン: 相手のカードをバウンスした場合、直接通知 + 復活防止マーク
   if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
@@ -1910,6 +1953,20 @@ function doBounce(targetSide, slotIdx, ctx) {
     if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
   }
   ctx.renderAll();
+  if (_dumped) { finish(); return; }
+  // 【分離】: when_leave_battle（バトルエリアを離れた本人効果）を発火してから残りを後始末
+  const targetSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  try {
+    fireWhenLeaveBattleTriggers(bounced, targetSideName, ctx.bs, ctxBase, () => {
+      _sweepRemainingLinkedCards(bounced, targetSide.trash);
+      ctx.renderAll();
+      finish();
+    });
+  } catch (_) {
+    _sweepRemainingLinkedCards(bounced, targetSide.trash);
+    finish();
+  }
 }
 
 // ===== 対象選択UI =====
@@ -4708,7 +4765,7 @@ function checkPendingDestroys(ctx, callback) {
         ctx.bs[side].battleArea[slot] = null;
         ctx.bs[side].trash.push(card);
         if (card.stack) card.stack.forEach(s => ctx.bs[side].trash.push(s));
-        if (card.linkedCards) card.linkedCards.forEach(s => ctx.bs[side].trash.push(s));
+        _dumpLinkedCardsUnlessDeferred(card, ctx.bs[side].trash);
       }
       ctx.addLog('💀 「' + card.name + '」消滅');
       // オンライン: DP0消滅を即時通知（state_sync遅延による復活を防止）
@@ -5390,9 +5447,16 @@ function _lookupTriggerStepsBase(recipeObj, triggerCode) {
 // マージする（カードが「対象」欄を持つキーワードを選んでいる場合は designated を差し込む）。
 // _lookupTriggerSteps は多数の呼び出し元（getRecipeForCard/getRecipeForTrigger/
 // hasRecipeTrigger 等）で共用されているため、ここで対応すれば全箇所に自動で波及する
+// on_attack: 突進のようにキーワード側のテンプレートをカード自身の【アタック時】効果と
+// マージすると、任意/強制判定・確認ダイアログが1つに巻き込まれてしまう
+// （カードの効果が強制でも、突進がoptionalだと丸ごと確認ダイアログ扱いになる等）。
+// カード自身のアタック時効果を優先して解決し終えてから、キーワード側は
+// fireKeywordAttackEffects で完全に別の確認ダイアログとして発動させたいため、
+// on_attack のみここでのマージ対象から除外する
+const _NO_MERGE_TRIGGER_CODES = new Set(['on_attack']);
 function _lookupTriggerSteps(recipeObj, triggerCode) {
   let result = _lookupTriggerStepsBase(recipeObj, triggerCode);
-  if (recipeObj && Array.isArray(recipeObj.passive)) {
+  if (recipeObj && Array.isArray(recipeObj.passive) && !_NO_MERGE_TRIGGER_CODES.has(triggerCode)) {
     const dict = getKeywordDict();
     for (const p of recipeObj.passive) {
       const kw = p && p.flag && dict[p.flag];
@@ -5404,6 +5468,43 @@ function _lookupTriggerSteps(recipeObj, triggerCode) {
     }
   }
   return result;
+}
+
+// card.recipe.passive に登録されたキーワードのうち on_attack 型テンプレート
+// （突進のredirect_attack等）だけを抽出する。カード自身の【アタック時】効果とは
+// 完全に切り離し、fireKeywordAttackEffects 側で別の確認ダイアログとして発動させるため。
+// flagsOut を渡すと、実際に on_attack ステップを提供したキーワードの flag 名を積む
+// （確認ダイアログの表示ラベル用。アセンブリ等 on_attack と無関係なキーワードは含めない）
+function _getKeywordOnAttackSteps(card, flagsOut) {
+  const recipe = _parseCardRecipe(card);
+  if (!recipe || !Array.isArray(recipe.passive)) return [];
+  const dict = getKeywordDict();
+  let result = [];
+  for (const p of recipe.passive) {
+    const kw = p && p.flag && dict[p.flag];
+    if (!kw) continue;
+    const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, 'on_attack');
+    if (!tplSteps) continue;
+    const filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common);
+    result = result.concat(filled);
+    if (flagsOut) flagsOut.push(p.flag);
+  }
+  return result;
+}
+
+// 突進等、card.recipe.passive のキーワードが持つ on_attack 型テンプレートを、
+// カード自身の【アタック時】効果とは独立した確認ダイアログで発動する。
+// battle-combat.js の afterAtkEffect から、カード自身の【アタック時】効果解決後に呼ぶ
+export function fireKeywordAttackEffects(card, side, bs, ctxBase, done) {
+  const finish = () => { try { done && done(); } catch (_) {} };
+  if (!card) { finish(); return; }
+  const flags = [];
+  const steps = _getKeywordOnAttackSteps(card, flags);
+  if (steps.length === 0) { finish(); return; }
+  const label = flags.map(f => '【' + _keywordJpName(f) + '】').join('');
+  const reaction = { card, sourceCard: card, recipe: steps, effectText: label + 'の効果を発動しますか？' };
+  try { _runReactionEffect(reaction, side, bs, ctxBase, finish, { alwaysConfirm: true }); }
+  catch (_) { finish(); }
 }
 
 // カードから指定トリガーのレシピを直接取得（use_main_effect用）
@@ -5902,6 +6003,14 @@ export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, call
   const finish = () => { try { callback && callback(); } catch(_) {} };
   if (!destroyedCard || !bs) { finish(); return; }
   const oppSide = destroyedSide === 'player' ? 'ai' : 'player';
+  // 【分離】等 when_leave_battle（バトルエリアを離れたカード自身の効果）を最初に解決する。
+  // オンライン対戦は未対応（意図的にスコープ外）
+  const _isOnline = !!(window._isOnlineMode && window._isOnlineMode());
+  const afterLeaveBattle = (cb) => {
+    if (_isOnline) { cb(); return; }
+    try { fireWhenLeaveBattleTriggers(destroyedCard, destroyedSide, bs, ctxBase, cb); } catch (_) { cb(); }
+  };
+  afterLeaveBattle(() => {
   _fireSidedReactionTriggers(destroyedSide, 'when_own_destroyed', bs, ctxBase, () => {
     _fireSidedReactionTriggers(oppSide, 'when_opp_destroyed', bs, ctxBase, () => {
       // when_other_destroyed は「両陣営どちらの他デジモンが消滅しても反応する」トリガーで、
@@ -5923,6 +6032,7 @@ export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, call
         });
       });
     });
+  });
   });
 }
 
@@ -9001,16 +9111,33 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (!c) { doneCb && doneCb(); return; }
           opponent.battleArea[idx] = null;
           if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
-          if (c.linkedCards) c.linkedCards.forEach(s => opponent.trash.push(s));
+          const _rdDumped = _dumpLinkedCardsUnlessDeferred(c, opponent.trash);
+          if (_rdDumped) c.linkedCards = [];
           if (_rdTop) opponent.deck.unshift(c); else opponent.deck.push(c);
           ctx.addLog('🔄 「' + c.name + '」を持ち主のデッキの' + (_rdTop ? '上' : '下') + 'に戻す');
           if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
             window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'return_deck' });
           }
           ctx.renderAll();
+          const _afterMove = () => {
+            if (_rdDumped) { doneCb && doneCb(); return; }
+            // 【分離】: when_leave_battle（バトルエリアを離れた本人効果）を発火してから残りを後始末
+            const _rdSideName = (ctx.bs && opponent === ctx.bs.player) ? 'player' : 'ai';
+            const _rdCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+            try {
+              fireWhenLeaveBattleTriggers(c, _rdSideName, ctx.bs, _rdCtxBase, () => {
+                _sweepRemainingLinkedCards(c, opponent.trash);
+                ctx.renderAll();
+                doneCb && doneCb();
+              });
+            } catch (_) {
+              _sweepRemainingLinkedCards(c, opponent.trash);
+              doneCb && doneCb();
+            }
+          };
           // デッキへ戻る演出（テラーズクラスター等）
-          if (window._fxCardMove) window._fxCardMove(c, 'バトルエリア', 'デッキ' + (_rdTop ? '(上)' : '(下)'), doneCb);
-          else setTimeout(() => doneCb && doneCb(), 300);
+          if (window._fxCardMove) window._fxCardMove(c, 'バトルエリア', 'デッキ' + (_rdTop ? '(上)' : '(下)'), _afterMove);
+          else setTimeout(_afterMove, 300);
         };
         if (effectiveSide === 'ai') {
           _doReturnDeck(ctx._forceTargetIdx ?? _rdCands[0], () => callback());

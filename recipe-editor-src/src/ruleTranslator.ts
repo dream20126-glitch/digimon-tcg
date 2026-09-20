@@ -127,6 +127,13 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
       case 'return_deck':
       case 'add_to_hand': // 「残りを手札へ」は珍しいが許可
       default: {
+        // 「デッキに戻す」ボタン（📍位置: 上/下/上か下）が指定されていればそちらを優先
+        if (rule.deckPosition) {
+          step.return_to = rule.deckPosition === 'top' ? 'deck_top'
+            : rule.deckPosition === 'bottom' ? 'deck_bottom'
+            : 'deck_top_or_bottom';
+          return;
+        }
         // value で variant 指定。空なら 'deck_choice' 既定
         const variant = String(rule.value ?? 'choice');
         step.return_to = (variant.startsWith('deck_') || variant === 'trash')
@@ -211,7 +218,14 @@ function applyOneSelection(step: any, rule: MiniStep, filter: Record<string, any
     case 'place_in_battle_area':
       pushPlaceSelection('battle_area'); return;
     case 'return_deck': {
-      // value で variant 指定。空なら 'deck_choice' 既定
+      // 「デッキに戻す」ボタン（📍位置: 上/下/上か下）が指定されていればそちらを優先。
+      // 無指定時は従来通りvalueでのvariant指定（記述入力）にフォールバック
+      if (rule.deckPosition) {
+        step.return_to = rule.deckPosition === 'top' ? 'deck_top'
+          : rule.deckPosition === 'bottom' ? 'deck_bottom'
+          : 'deck_top_or_bottom';
+        return;
+      }
       const variant = String(rule.value ?? 'choice');
       step.return_to = variant.startsWith('deck_') || variant === 'trash' ? variant : 'deck_' + variant;
       return;

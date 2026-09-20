@@ -4582,7 +4582,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
         // これら以外は「その他のアクション」から選ぶ
         const isRulePlaceActive = PLACE_ACTION_CODES.has(step.action || '');
         const activeRulePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === step.action)?.code || '';
-        const isRuleCommonAction = step.action === 'add_to_hand' || step.action === 'destroy' || isRulePlaceActive;
+        const isRuleCommonAction = step.action === 'add_to_hand' || step.action === 'destroy' || step.action === 'return_deck' || isRulePlaceActive;
 
         return (
           <div style={{ marginBottom: 8 }}>
@@ -4637,7 +4637,32 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
               >
                 〇〇に置く
               </button>
+              <button
+                type="button"
+                onClick={() => onChange({ action: 'return_deck' })}
+                style={{
+                  padding: '3px 9px', borderRadius: 5,
+                  border: step.action === 'return_deck' ? '2px solid #1976d2' : '1px solid #bbb',
+                  background: step.action === 'return_deck' ? '#1976d2' : '#f5f5f5',
+                  color: step.action === 'return_deck' ? '#fff' : '#333',
+                  fontWeight: step.action === 'return_deck' ? 'bold' : 'normal',
+                  cursor: 'pointer', fontSize: 11,
+                }}
+              >
+                デッキに戻す
+              </button>
             </div>
+            {step.action === 'return_deck' && (
+              <div style={{ marginTop: 4 }}>
+                <div style={miniLbl()}>📍 位置</div>
+                <ButtonGroup
+                  options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '上か下' }]}
+                  value={step.deckPosition || ''}
+                  onChange={(v) => onChange({ deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
+                  accentColor="#1976d2"
+                />
+              </div>
+            )}
             {isRulePlaceActive && (
               <div style={{ marginTop: 4 }}>
                 <div style={miniLbl()}>📥 場所（どこに置くか）</div>
@@ -4873,7 +4898,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                     const gAction = g.action || step.action;
                     const gIsPlaceActive = PLACE_ACTION_CODES.has(gAction || '');
                     const gActivePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === gAction)?.code || '';
-                    const gIsCommon = gAction === 'add_to_hand' || gAction === 'destroy' || gIsPlaceActive;
+                    const gIsCommon = gAction === 'add_to_hand' || gAction === 'destroy' || gAction === 'return_deck' || gIsPlaceActive;
                     return (
                       <div style={{ marginBottom: 6 }}>
                         <div style={miniLbl()}>アクション（省略時はルール本体と同じ）</div>
@@ -4916,7 +4941,32 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                           >
                             〇〇に置く
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => updateGroup(gi, { action: 'return_deck' })}
+                            style={{
+                              padding: '2px 8px', borderRadius: 5,
+                              border: gAction === 'return_deck' ? '2px solid #946200' : '1px solid #bbb',
+                              background: gAction === 'return_deck' ? '#946200' : '#f5f5f5',
+                              color: gAction === 'return_deck' ? '#fff' : '#333',
+                              fontWeight: gAction === 'return_deck' ? 'bold' : 'normal',
+                              cursor: 'pointer', fontSize: 11,
+                            }}
+                          >
+                            デッキに戻す
+                          </button>
                         </div>
+                        {gAction === 'return_deck' && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={miniLbl()}>📍 位置</div>
+                            <ButtonGroup
+                              options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '上か下' }]}
+                              value={g.deckPosition || ''}
+                              onChange={(v) => updateGroup(gi, { deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
+                              accentColor="#946200"
+                            />
+                          </div>
+                        )}
                         {gIsPlaceActive && (
                           <div style={{ marginTop: 4 }}>
                             <ButtonGroup

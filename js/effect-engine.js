@@ -9348,9 +9348,13 @@ function executeRecipeStep(step, ctx, store, callback) {
               window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'return_deck' });
             }
             ctx.renderAll();
+            const _fireDeckIncrease = (next) => {
+              try { fireWhenDeckIncreaseTriggers(_rdSideName, ctx.bs, _rdCtxBase, next); }
+              catch (_) { next(); }
+            };
             // デッキへ戻る演出（テラーズクラスター等）
-            if (window._fxCardMove) window._fxCardMove(c, 'バトルエリア', 'デッキ' + (_rdTop ? '(上)' : '(下)'), doneCb);
-            else setTimeout(() => doneCb && doneCb(), 300);
+            if (window._fxCardMove) window._fxCardMove(c, 'バトルエリア', 'デッキ' + (_rdTop ? '(上)' : '(下)'), () => _fireDeckIncrease(() => doneCb && doneCb()));
+            else setTimeout(() => _fireDeckIncrease(() => doneCb && doneCb()), 300);
           });
         };
         if (effectiveSide === 'ai') {
@@ -9403,10 +9407,12 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _rdWantCount = Math.max(1, parseInt(step.value, 10) || 1);
         const _rdFiltered = _rdCandList.filter(({ card: c }) => _rdConds2.length === 0 || checkConditions(_rdConds2, c, ctx.bs, _rdOwnerSideTag));
         if (_rdFiltered.length === 0) { callback(false); break; }
+        let _rdReturnedCount = 0;
         const _doReturn2 = (entry, doneCb) => {
           if (!entry) { doneCb(false); return; }
           entry.remove();
           if (_rdTop2) _rdOwnerP.deck.unshift(entry.card); else _rdOwnerP.deck.push(entry.card);
+          _rdReturnedCount++;
           ctx.addLog('🔄 「' + entry.card.name + '」をデッキの' + (_rdTop2 ? '上' : '下') + 'に戻す');
           ctx.renderAll();
           doneCb(true);
@@ -9428,7 +9434,12 @@ function executeRecipeStep(step, ctx, store, callback) {
             }, pool.map((e) => e.card));
           }
         };
-        _rdSequential(Math.min(_rdWantCount, _rdFiltered.length), _rdFiltered, () => callback(true));
+        _rdSequential(Math.min(_rdWantCount, _rdFiltered.length), _rdFiltered, () => {
+          if (_rdReturnedCount === 0) { callback(false); return; }
+          const _rdCtxBase2 = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+          try { fireWhenDeckIncreaseTriggers(_rdOwnerSideTag, ctx.bs, _rdCtxBase2, () => callback(true)); }
+          catch (_) { callback(true); }
+        });
         break;
       }
       callback();

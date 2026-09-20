@@ -270,20 +270,38 @@ export function getDesignatedGroups(entry: KeywordEntry): DesignatedGroup[] {
   return [];
 }
 
+// 「名前/Lv/記述/色」カテゴリの「異なる」バリアント（値不要のプレースホルダー条件）→
+// distinct_by に書き出す属性名。エディタのCATEGORY_VARIANTSに追加したコードと対応する
+export const DISTINCT_MARKER_TO_ATTR: Record<string, string> = {
+  cond_name_distinct: 'name',
+  cond_lv_distinct: 'lv',
+  cond_description_distinct: 'description',
+  cond_color_distinct: 'color',
+};
+export const DISTINCT_ATTR_TO_MARKER: Record<string, string> = Object.fromEntries(
+  Object.entries(DISTINCT_MARKER_TO_ATTR).map(([k, v]) => [v, k])
+);
+
 // DesignatedGroup[] → JSON出力用の配列（各要素が {condition?,when?,extra_conditions?,
-// condition_op?,count?}）。1組だけなら呼び出し側で従来のdesignated/countとして
-// 単純出力し、2組以上のときだけこの配列(p.designated_groups)を使う
+// condition_op?,count?,distinct_by?}）。1組だけなら呼び出し側で従来のdesignated/count
+// として単純出力し、2組以上のときだけこの配列(p.designated_groups)を使う。
+// conditions に「異なる」プレースホルダー（cond_name_distinct等）が混ざっていれば、
+// 通常のcondition/when/extra_conditionsには含めず distinct_by（属性名の配列）へ抜き出す
 function buildDesignatedGroupsFields(groups: DesignatedGroup[]): Array<{
-  condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; count?: number | string; distinct_names?: true;
+  condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; count?: number | string; distinct_by?: string[];
 }> {
   return groups.map((g) => {
-    const fields = buildDesignatedConditionFields(g.conditions, g.conditionsOp || 'and');
+    const realConds = (g.conditions || []).filter((c) => !DISTINCT_MARKER_TO_ATTR[c.base]);
+    const distinctAttrs = (g.conditions || [])
+      .filter((c) => DISTINCT_MARKER_TO_ATTR[c.base])
+      .map((c) => DISTINCT_MARKER_TO_ATTR[c.base]);
+    const fields = buildDesignatedConditionFields(realConds, g.conditionsOp || 'and');
     const out: any = { ...fields };
     if (g.count !== undefined && g.count !== '' && g.count !== null) {
       const n = Number(g.count);
       out.count = isNaN(n) ? g.count : n;
     }
-    if (g.distinctNames) out.distinct_names = true;
+    if (distinctAttrs.length > 0) out.distinct_by = distinctAttrs;
     return out;
   });
 }
@@ -732,17 +750,27 @@ function stepObjectToAltAction(step: any): AltAction {
 
 // designated（1組）/designated_groups（2組以上）のどちらで保存されていても、
 // 常に DesignatedGroup[] として読み出す（passiveToBlock/stepToBlock共通の復元ロジック）
+// distinct_by（属性名の配列）→ ConditionPair[]（cond_name_distinct等のプレースホルダー）。
+// buildDesignatedGroupsFields の逆変換
+function distinctByToConditions(distinctBy: any): ConditionPair[] {
+  if (!Array.isArray(distinctBy)) return [];
+  return distinctBy
+    .filter((attr: string) => DISTINCT_ATTR_TO_MARKER[attr])
+    .map((attr: string) => ({ base: DISTINCT_ATTR_TO_MARKER[attr] }));
+}
+
 function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
   if (Array.isArray(raw?.designated_groups) && raw.designated_groups.length > 0) {
     return raw.designated_groups.map((g: any) => {
       const { conds, op } = parseDesignatedFields(g);
-      return { conditions: conds, conditionsOp: op, count: g?.count, distinctNames: g?.distinct_names === true };
+      return { conditions: [...conds, ...distinctByToConditions(g?.distinct_by)], conditionsOp: op, count: g?.count };
     });
   }
   if (raw?.designated || raw?.count !== undefined) {
     const { conds, op } = raw?.designated ? parseDesignatedFields(raw.designated) : { conds: [], op: 'and' as const };
-    if (conds.length === 0 && raw?.count === undefined) return [];
-    return [{ conditions: conds, conditionsOp: op, count: raw?.count, distinctNames: raw?.designated?.distinct_names === true }];
+    const distinctConds = distinctByToConditions(raw?.designated?.distinct_by);
+    if (conds.length === 0 && distinctConds.length === 0 && raw?.count === undefined) return [];
+    return [{ conditions: [...conds, ...distinctConds], conditionsOp: op, count: raw?.count }];
   }
   return [];
 }

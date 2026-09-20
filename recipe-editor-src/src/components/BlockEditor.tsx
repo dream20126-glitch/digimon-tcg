@@ -412,12 +412,13 @@ function KeywordEntriesEditor({
                       onChange={(next) => updateGroup(gi, { conditions: next })}
                       dict={dict}
                       title="対象"
-                      hint="（このキーワードが参照する対象の絞り込み・カードごとに指定）"
+                      hint="（このキーワードが参照する対象の絞り込み・カードごとに指定。名前/Lv/記述/色は「異なる」も選べます）"
                       theme="action"
                       defaultSubject=""
                       showSubjectSelector={false}
                       conditionsOp={g.conditionsOp || 'and'}
                       onConditionsOpChange={(op) => updateGroup(gi, { conditionsOp: op })}
+                      allowDistinctVariants
                     />
                     <div style={{ marginTop: 6 }}>
                       <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
@@ -435,16 +436,6 @@ function KeywordEntriesEditor({
                         style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 80 }}
                       />
                     </div>
-                    {(g.count === undefined ? 1 : Number(g.count)) > 1 && (
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 4, color: '#666' }}>
-                        <input
-                          type="checkbox"
-                          checked={!!g.distinctNames}
-                          onChange={(e) => updateGroup(gi, { distinctNames: e.target.checked })}
-                        />
-                        枚数分選ぶカードは互いに名称が異なる必要がある（例:「名称の異なるカードN枚」）
-                      </label>
-                    )}
                   </div>
                 ))}
                 <button
@@ -4540,7 +4531,20 @@ interface ConditionsHybridEditorProps {
   // 両方セットで渡す。現状は発動条件・コスト対象の絞り込みでのみ有効化している
   conditionsOp?: 'and' | 'or';
   onConditionsOpChange?: (op: 'and' | 'or') => void;
+  // true のとき、名前/Lv/記述/色カテゴリのバリアントボタンに「異なる」を追加する。
+  // 「異なる」は単体カードの判定ではなく、複数枚選ぶ際に選んだカード同士がその属性で
+  // 異なる必要があるという集合レベルの制約（例:「名称の異なるカードN枚」）を表す
+  // プレースホルダーのため、意味を持つ「対象」（DesignatedGroup）欄でのみ有効にすること
+  allowDistinctVariants?: boolean;
 }
+// 「異なる」バリアント（名前/Lv/記述/色）。値は不要で、あくまで複数枚選択時の
+// 「互いにこの属性が異なる」という制約を表すプレースホルダー
+const DISTINCT_VARIANT_BY_CATEGORY: Partial<Record<CondCategory, { value: string; label: string }>> = {
+  name: { value: 'cond_name_distinct', label: '異なる' },
+  lv: { value: 'cond_lv_distinct', label: '異なる' },
+  description: { value: 'cond_description_distinct', label: '異なる' },
+  color: { value: 'cond_color_distinct', label: '異なる' },
+};
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
   'cond_attack_target_player', 'cond_attack_target_digimon', 'cond_no_evo',
@@ -4550,6 +4554,7 @@ const NO_VALUE_CONDS = new Set([
   'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
   'cond_dp_highest', 'cond_dp_lowest',
   'cond_face_down', 'cond_face_up', 'cond_designated_name',
+  'cond_name_distinct', 'cond_lv_distinct', 'cond_description_distinct', 'cond_color_distinct',
 ]);
 
 // === 条件の「種別」を大分類(カテゴリ)+詳細(バリアント)の2段構成にする ===
@@ -4674,17 +4679,17 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
 // 条件コード → カテゴリ の逆引き（既存レシピ読込時・行の見た目復元用）
 function baseToCategory(base: string): CondCategory {
   if (!base) return '';
-  if (base === 'cond_color') return 'color';
+  if (base === 'cond_color' || base === 'cond_color_distinct') return 'color';
   if (base === 'cond_type') return 'type';
   if (base === 'cond_feature_contains' || base === 'cond_feature') return 'feature';
-  if (base === 'cond_lv_ge' || base === 'cond_lv_le' || base === 'cond_lv') return 'lv';
+  if (base === 'cond_lv_ge' || base === 'cond_lv_le' || base === 'cond_lv' || base === 'cond_lv_distinct') return 'lv';
   if (base === 'cond_dp_ge' || base === 'cond_dp_le' || base === 'cond_dp'
     || base === 'cond_dp_highest' || base === 'cond_dp_lowest'
     || base === 'cond_attack_target_highest_dp' || base === 'cond_attack_target_lowest_dp') return 'dp';
   if (base === 'cond_cost_ge' || base === 'cond_cost_le' || base === 'cond_cost') return 'cost';
   if (base === 'cond_cost_mod') return 'cost_mod';
-  if (base === 'cond_name' || base === 'cond_name_contains') return 'name';
-  if (base === 'cond_description' || base === 'cond_description_contains') return 'description';
+  if (base === 'cond_name' || base === 'cond_name_contains' || base === 'cond_name_distinct') return 'name';
+  if (base === 'cond_description' || base === 'cond_description_contains' || base === 'cond_description_distinct') return 'description';
   if (base === 'cond_zone') return 'zone';
   if (REF_CODE_TO_ZONE_QUANT[base]) return 'ref';
   if (base === DESIGNATED_NAME_COND) return 'designated';
@@ -4708,7 +4713,7 @@ function ConditionsHybridEditor({
   conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true,
   supportsMultiValue = false, attackContextActive = false,
   part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false,
-  showTypeInTargetFilter = false, conditionsOp, onConditionsOpChange,
+  showTypeInTargetFilter = false, conditionsOp, onConditionsOpChange, allowDistinctVariants = false,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
@@ -4718,6 +4723,14 @@ function ConditionsHybridEditor({
   const dpVariantOptions = (CATEGORY_VARIANTS.dp || []).filter((v) =>
     attackContextActive || (v.value !== 'cond_attack_target_highest_dp' && v.value !== 'cond_attack_target_lowest_dp')
   );
+  // カテゴリごとのバリアント選択肢（以上/以下/完全一致 等）。allowDistinctVariants時のみ、
+  // 名前/Lv/記述/色に「異なる」（複数枚選択時の集合レベルの制約）を追加する
+  const variantOptionsFor = (catCode: CondCategory): { value: string; label: string }[] | undefined => {
+    const base = catCode === 'dp' ? dpVariantOptions : CATEGORY_VARIANTS[catCode];
+    const distinct = allowDistinctVariants ? DISTINCT_VARIANT_BY_CATEGORY[catCode] : undefined;
+    if (!base && !distinct) return undefined;
+    return distinct ? [...(base || []), distinct] : base;
+  };
   // 対象の条件（supportsMultiValue）では「対象」ボタン側にデジモン/カード/テイマー等を
   // 既に選べるため、同じ役割の「タイプ」カテゴリはよく使う条件から除外して重複を避ける。
   // 「コスト増減」は登場/進化/消滅アクション選択時の発動条件でのみ意味を持つため、
@@ -4739,6 +4752,7 @@ function ConditionsHybridEditor({
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
     'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod',
     'cond_name', 'cond_name_contains', 'cond_description', 'cond_description_contains', 'cond_zone',
+    'cond_name_distinct', 'cond_lv_distinct', 'cond_description_distinct', 'cond_color_distinct',
     // トリガーボックス側の専用「アタック対象」ボタンで管理するため、その他の追加候補にも出さない
     'cond_attack_target_player', 'cond_attack_target_digimon',
     // 「参照」カテゴリで扱う手札/トラッシュ/セキュリティ/進化元の枚数条件
@@ -4897,9 +4911,9 @@ function ConditionsHybridEditor({
                     />
                   )}
                   {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントボタン（コンテンツ幅のみ使用・空なら詰める） */}
-                  {(cat.code === 'dp' ? dpVariantOptions : CATEGORY_VARIANTS[cat.code as CondCategory]) && (
+                  {variantOptionsFor(cat.code as CondCategory) && (
                     <ButtonGroup
-                      options={(cat.code === 'dp' ? dpVariantOptions : CATEGORY_VARIANTS[cat.code as CondCategory]!).map((v) => ({ code: v.value, label: v.label }))}
+                      options={variantOptionsFor(cat.code as CondCategory)!.map((v) => ({ code: v.value, label: v.label }))}
                       value={c.base}
                       onChange={(v) => updateAt(i, { base: v })}
                       accentColor={colors.accent}

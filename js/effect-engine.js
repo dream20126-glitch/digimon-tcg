@@ -5247,13 +5247,13 @@ function _expandDesignatedGroupsJS(step, groups) {
       if (hasMarker) {
         groups.forEach(g => {
           const replaced = Object.assign({}, c);
-          delete replaced.condition; delete replaced.when; delete replaced.extra_conditions; delete replaced.condition_op; delete replaced.count; delete replaced.distinct_names;
+          delete replaced.condition; delete replaced.when; delete replaced.extra_conditions; delete replaced.condition_op; delete replaced.count; delete replaced.distinct_by;
           if (g.condition !== undefined) replaced.condition = g.condition;
           if (g.when !== undefined) replaced.when = g.when;
           if (g.extra_conditions !== undefined) replaced.extra_conditions = g.extra_conditions;
           if (g.condition_op !== undefined) replaced.condition_op = g.condition_op;
           if (g.count !== undefined) replaced.count = g.count;
-          if (g.distinct_names) replaced.distinct_names = true;
+          if (Array.isArray(g.distinct_by) && g.distinct_by.length > 0) replaced.distinct_by = g.distinct_by;
           newCost.push(replaced);
         });
       } else {

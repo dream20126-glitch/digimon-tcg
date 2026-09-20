@@ -9,13 +9,13 @@ export interface ConditionPair {
 // TBかつLv4を1枚、TBかつLv5を1枚」のように条件が異なる複数組を要求するキーワードに
 // 対応するため、KeywordEntry.designatedGroups は複数保持できる
 export interface DesignatedGroup {
+  // 「名前/Lv/記述/色」カテゴリで「異なる」バリアントを選ぶと、通常の値付き条件の代わりに
+  // cond_name_distinct 等のプレースホルダーがここに混ざる（値は不要）。ビルド時に
+  // これらだけ抜き出して distinct_by（下記の説明）に変換し、通常のcondition/when/
+  // extra_conditionsには含めない
   conditions: ConditionPair[];
   conditionsOp?: 'and' | 'or';
   count?: number | string;
-  // true のとき、この組でcount枚選ぶカード同士は互いに名称が異なる必要がある
-  // （例:「特徴『セブンコード』を持つ名称の異なるカード7枚」）。
-  // JSONへは true のときのみ distinct_names:true として出力する
-  distinctNames?: boolean;
 }
 
 // パッシブ/キーワード付与で複数キーワードを1ブロックにまとめる際の1件分

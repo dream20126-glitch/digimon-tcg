@@ -724,6 +724,12 @@ function _consumePendingEvoCostReduction(evolved, base) {
 
 // ===== カード登場 =====
 
+// distinct_by（recipe-editor-src側のcond_name_distinct等）の属性名 → 実際のcardプロパティ名 /
+// 表示ラベル。名前/Lv/記述/色の4属性に対応（recipe-editor-src/src/recipe.tsの
+// DISTINCT_MARKER_TO_ATTRと対応する属性名を使う）
+const ASSEMBLY_DISTINCT_FIELD = { name: 'name', lv: 'level', description: 'effect', color: 'color' };
+const ASSEMBLY_DISTINCT_LABEL = { name: '名称', lv: 'Lv', description: '記述', color: '色' };
+
 // アセンブリ等「トラッシュのカードを使うことで登場コストを軽減できる」パッシブキーワード:
 // 手札のカードをバトルエリアへドロップした瞬間（＝実際に登場させる直前）にこの関数を経由させる。
 // 発動できる条件（発動領域が手札、対象となるカードがトラッシュに規定枚数ある）を満たしていれば
@@ -747,7 +753,7 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
       const wantCount = parseInt(costItem.count, 10) || 1;
       const candidates = _filterAssemblyCandidates(costItem, bs.player.trash, bs, 'player');
       if (candidates.length < wantCount) { eligible = false; return null; }
-      return { wantCount, candidates, distinctNames: !!costItem.distinct_names };
+      return { wantCount, candidates, distinctBy: Array.isArray(costItem.distinct_by) ? costItem.distinct_by : [] };
     });
     if (!eligible) continue;
     const totalWant = plan.reduce((sum, p) => sum + p.wantCount, 0);
@@ -771,19 +777,27 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
         addLog('💠 「' + card.name + '」のアセンブリを発動（トラッシュから' + allPicked.length + '枚使用）');
         doPlay(card, handIdx, slotIdx);
       };
-      // グループ内で1枚ずつ順番に選ばせる（distinctNames時は、同グループ内で既に
-      // 選んだカードと同じ名称の候補を都度除外して重複名称を防ぐ）
+      // グループ内で1枚ずつ順番に選ばせる（distinctBy指定時は、同グループ内で既に選んだ
+      // カードと指定属性（名前/Lv/記述/色）が同じ候補を都度除外して重複を防ぐ）
       const pickWithinGroup = (groupIdx, group, pickedInGroup, remainingWant, onGroupDone) => {
         if (remainingWant <= 0) { onGroupDone(pickedInGroup); return; }
-        const excludeNames = group.distinctNames ? pickedInGroup.map(c => c.name) : [];
-        const remaining = group.candidates.filter(c =>
-          !allPicked.includes(c) && !pickedInGroup.includes(c) && !excludeNames.includes(c.name)
-        );
+        const distinctBy = group.distinctBy || [];
+        const remaining = group.candidates.filter(c => {
+          if (allPicked.includes(c) || pickedInGroup.includes(c)) return false;
+          if (distinctBy.length === 0) return true;
+          return !pickedInGroup.some(p => distinctBy.some(attr => {
+            const field = ASSEMBLY_DISTINCT_FIELD[attr];
+            return field && p[field] === c[field];
+          }));
+        });
         if (remaining.length < remainingWant) { doPlay(card, handIdx, slotIdx); return; } // 念のための保険
-        const pickCount = group.distinctNames ? 1 : remainingWant;
+        const pickCount = distinctBy.length > 0 ? 1 : remainingWant;
         let title = '💠 アセンブリ: 使うカードを選んでください';
         if (plan.length > 1) title += '（グループ' + (groupIdx + 1) + '/' + plan.length + '）';
-        if (group.distinctNames && group.wantCount > 1) title += '（' + (pickedInGroup.length + 1) + '/' + group.wantCount + '枚目・名称が異なるカードのみ）';
+        if (distinctBy.length > 0 && group.wantCount > 1) {
+          const labels = distinctBy.map(attr => ASSEMBLY_DISTINCT_LABEL[attr] || attr).join('・');
+          title += '（' + (pickedInGroup.length + 1) + '/' + group.wantCount + '枚目・' + labels + 'が異なるカードのみ）';
+        }
         _showTrashCardPicker(remaining, pickCount, false, title, (picked) => {
           if (!picked || picked.length < pickCount) { doPlay(card, handIdx, slotIdx); return; }
           const nextPicked = [...pickedInGroup, ...picked];

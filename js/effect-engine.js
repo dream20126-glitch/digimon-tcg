@@ -741,6 +741,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const _dc = opponent.battleArea[i];
         if (!_dc) continue;
         if (_dpmConds.length > 0 && !checkConditions(_dpmConds, _dc, ctx.bs, _dpmCondSide)) continue;
+        if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(_dc, defaultTarget.filter)) continue;
         dpTargets.push(i);
       }
       if(dpTargets.length === 0) { callback(); break; }
@@ -922,6 +923,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if(!c) continue;
         // 条件フィルタ（cond_keyword / cond_lv_le / cond_no_evo 等）を checkConditions で一括評価
         if (dConds.length > 0 && !checkConditions(dConds, c, ctx.bs, _dSideTag)) continue;
+        // 対象の条件エディタ由来のfilterオブジェクト（DP以下等）も併せて評価
+        if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) continue;
         destroyTargets.push(i);
       }
       if(destroyTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', () => callback(false)); break; }
@@ -963,6 +966,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (!c) continue;
         if (onlySuspended && !c.suspended) continue;
         if (_bounceConds.length > 0 && !checkConditions(_bounceConds, c, ctx.bs, _bounceCondSide)) continue;
+        if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) continue;
         bounceTargets.push(i);
       }
       if(bounceTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
@@ -1105,7 +1109,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 追加の条件フィルタ（例: cond_blocker:1 で「ブロッカーを持つ」デジモンのみ対象）
       const _activeConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
       const _activeCondSide = ctx.side;
-      const _activeCondPass = (c) => _activeConds.length === 0 || checkConditions(_activeConds, c, ctx.bs, _activeCondSide);
+      const _activeCondPass = (c) => (_activeConds.length === 0 || checkConditions(_activeConds, c, ctx.bs, _activeCondSide))
+        && (!defaultTarget || !defaultTarget.filter || cardMatchesFilter(c, defaultTarget.filter));
       if (tCode === 'target_all_own') {
         const activated = [];
         (player.battleArea || []).forEach(c => {
@@ -1581,6 +1586,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const _rc = opponent.battleArea[i];
         if(!_rc || _rc.suspended) continue;
         if(_restConds.length > 0 && !checkConditions(_restConds, _rc, ctx.bs, _restCondTag)) continue;
+        if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(_rc, defaultTarget.filter)) continue;
         restTargets.push(i);
       }
       if(restTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
@@ -2534,6 +2540,23 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
   document.body.appendChild(overlay);
 }
 
+// DP参照マーカー（'self'等）を実数値に変換した新しいfilterオブジェクトを返す。
+// 元のfilterは変更しない（同じstep.filterが複数回・複数対象に対して再利用されるため）。
+// 現状「self」（このデジモン＝selfCardの現在DP）のみ対応。'own'/'opp'/'other'は
+// どの1体を指すか未確定のため今後の対応課題（値があっても無視＝絞り込まない）
+function resolveDpFilterMarkers(filter, selfCard) {
+  if (!filter || typeof filter !== 'object') return filter;
+  const hasMarker = ['dp_le', 'dp_ge', 'dp'].some((k) => typeof filter[k] === 'string');
+  if (!hasMarker) return filter;
+  const out = { ...filter };
+  ['dp_le', 'dp_ge', 'dp'].forEach((k) => {
+    if (typeof out[k] !== 'string') return;
+    if (out[k] === 'self' && selfCard) out[k] = selfCard.dp || 0;
+    else delete out[k];
+  });
+  return out;
+}
+
 function cardMatchesFilter(card, filter) {
   if (!filter) return true;
   if (filter.type && card.type !== filter.type) return false;
@@ -2547,6 +2570,13 @@ function cardMatchesFilter(card, filter) {
   if (filter.lv_ge != null && (parseInt(card.level) || 0) < filter.lv_ge) return false;
   if (filter.lv_le != null && (parseInt(card.level) || 0) > filter.lv_le) return false;
   if (filter.lv != null && (parseInt(card.level) || 0) !== filter.lv) return false;
+  // DP系: dp_le/dp_ge/dp（対象の条件エディタの「DP」カテゴリが出力する形式）。
+  // 値が数値でなく DP参照マーカー文字列（'self'/'own'/'opp'/'other'）の場合は、
+  // 呼び出し側が事前に resolveDpFilterMarkers() で数値化してから渡すこと
+  // （ここでは非数値は判定不能として無視＝絞り込まない、フェイルセーフ）
+  if (filter.dp_ge != null && typeof filter.dp_ge === 'number' && (card.dp || 0) < filter.dp_ge) return false;
+  if (filter.dp_le != null && typeof filter.dp_le === 'number' && (card.dp || 0) > filter.dp_le) return false;
+  if (filter.dp != null && typeof filter.dp === 'number' && (card.dp || 0) !== filter.dp) return false;
   // コスト系: cost (登場/使用コスト) のフィルタ
   const cardCost = (card.playCost != null ? card.playCost : (card.cost || 0));
   if (filter.cost != null && cardCost !== filter.cost) return false;
@@ -9043,8 +9073,14 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _bi = player.battleArea.indexOf(cardToPlace);
         if (_bi !== -1) player.battleArea[_bi] = null;
       }
-      player.security.unshift(cardToPlace);
-      ctx.addLog('🛡 「' + cardToPlace.name + '」をセキュリティの上に置く');
+      // step.position（'bottom'指定）があればセキュリティの下に置く。未指定/'top'なら従来通り上
+      if (step.position === 'bottom') {
+        player.security.push(cardToPlace);
+        ctx.addLog('🛡 「' + cardToPlace.name + '」をセキュリティの下に置く');
+      } else {
+        player.security.unshift(cardToPlace);
+        ctx.addLog('🛡 「' + cardToPlace.name + '」をセキュリティの上に置く');
+      }
       ctx.renderAll();
       callback();
       break;
@@ -9741,7 +9777,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         else target = { code: 'target_' + t };
       }
       // step.filter（色/タイプ/名前等）を target に引き継ぐ（target_all_own 等の絞り込みに使用）
-      if (target && step.filter) target.filter = step.filter;
+      if (target && step.filter) target.filter = resolveDpFilterMarkers(step.filter, ctx.card);
       // 持続期間をctx.blockに設定（runOneAction内のapplyDpBuff等で参照）
       // レシピのコード（this_turn等）→ エンジン内部コード（dur_this_turn等）に正規化
       if (step.duration) {

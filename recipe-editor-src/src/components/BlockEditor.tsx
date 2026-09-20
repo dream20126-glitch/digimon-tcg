@@ -2525,6 +2525,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               if (fam.kind === 'event') allFamilyCodes.add(fam.code);
               else Object.values(fam.variants!).forEach((v) => allFamilyCodes.add(v));
             });
+            // パッシブ(passive)は専用のよく使うボタンから選ぶため、
+            // 「その他のトリガー」には重複して出さない
+            allFamilyCodes.add('passive');
             const hasOtherSelected = currentTriggers.some((t) => !allFamilyCodes.has(t));
 
             const unimplementedActive = effectiveTriggerFamilies
@@ -2604,7 +2607,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     >
                       コスト軽減
                     </button>
-                    {/* キーワード効果(passive)は、キーワード内でさらにキーワードを使うことは
+                    {/* パッシブ(passive)は、キーワード内でさらにキーワードを使うことは
                         想定しないため、テンプレート編集(isKeywordMode)では出さない */}
                     {!isKeywordMode && (
                       <button
@@ -2616,7 +2619,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
                         }}
                       >
-                        キーワード効果
+                        パッシブ（常時キーワード効果付与）
                       </button>
                     )}
                   </div>

@@ -137,14 +137,11 @@ export function checkTurnStartEffects(side, cb) {
   const area = [...p.battleArea, ...(p.tamerArea || [])];
   const trigger = side === 'player' ? '【自分のターン開始時】' : '【相手のターン開始時】';
   const triggerCode = side === 'player' ? 'on_own_turn_start' : 'on_opp_turn_start';
-  const hasRecipeTrigger = (c) => {
-    if (!c.recipe) return false;
-    try {
-      const r = typeof c.recipe === 'string' ? JSON.parse(c.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : c.recipe;
-      return !!(r[triggerCode]);
-    } catch(_) { return false; }
-  };
-  const cardsWithEffect = area.filter(c => c && hasRecipeTrigger(c));
+  // _hasRecipeTriggerEE はカード自身の recipe だけでなく、passive配列のキーワード
+  // （辞書のレシピテンプレート）から解決されるトリガーも拾う（例: 急襲のon_own_turn_end）。
+  // 文字列プロパティの有無だけを見る素朴なチェックだと、キーワード由来のトリガーを
+  // 持つカードが対象カード一覧から漏れてしまう
+  const cardsWithEffect = area.filter(c => c && _hasRecipeTriggerEE(c, triggerCode));
   if (cardsWithEffect.length === 0) { cb(); return; }
   let idx = 0;
   function next() {
@@ -161,11 +158,9 @@ export function checkTurnEndEffects(cb) {
     try { window._tutorialRunner.notifyEvent('turn_end', { side: 'player' }); } catch (e) { console.error('[tutorial turn_end]', e); }
   }
   const allCards = [...bs.player.battleArea, ...(bs.player.tamerArea || [])];
-  const hasEndRecipe = (c) => {
-    if (!c.recipe) return false;
-    try { const r = typeof c.recipe === 'string' ? JSON.parse(c.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : c.recipe; return !!(r['on_own_turn_end']); } catch(_) { return false; }
-  };
-  const cardsWithEffect = allCards.filter(c => c && hasEndRecipe(c));
+  // _hasRecipeTriggerEE はキーワード（passive配列のレシピテンプレート）由来のトリガーも
+  // 拾う（急襲＝attack_at_end_phaseのon_own_turn_end等。checkTurnStartEffectsと同じ理由）
+  const cardsWithEffect = allCards.filter(c => c && _hasRecipeTriggerEE(c, 'on_own_turn_end'));
   if (cardsWithEffect.length === 0) { cb(); return; }
   let idx = 0;
   function next() {

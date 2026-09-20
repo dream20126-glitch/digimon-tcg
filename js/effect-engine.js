@@ -742,6 +742,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (!_dc) continue;
         if (_dpmConds.length > 0 && !checkConditions(_dpmConds, _dc, ctx.bs, _dpmCondSide)) continue;
         if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(_dc, defaultTarget.filter)) continue;
+        if (hasActiveImmuneEffects(_dc, ctx.side)) continue;
         dpTargets.push(i);
       }
       if(dpTargets.length === 0) { callback(); break; }
@@ -925,6 +926,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (dConds.length > 0 && !checkConditions(dConds, c, ctx.bs, _dSideTag)) continue;
         // 対象の条件エディタ由来のfilterオブジェクト（DP以下等）も併せて評価
         if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) continue;
+        // 【プログレス】等「相手の効果を受けない」: isOwn（自分のデジモンが対象）のときは
+        // 自分の効果なので対象外にしない
+        if (!isOwn && hasActiveImmuneEffects(c, ctx.side)) continue;
         destroyTargets.push(i);
       }
       if(destroyTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', () => callback(false)); break; }
@@ -967,6 +971,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (onlySuspended && !c.suspended) continue;
         if (_bounceConds.length > 0 && !checkConditions(_bounceConds, c, ctx.bs, _bounceCondSide)) continue;
         if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) continue;
+        if (hasActiveImmuneEffects(c, ctx.side)) continue;
         bounceTargets.push(i);
       }
       if(bounceTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
@@ -1591,6 +1596,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if(!_rc || _rc.suspended) continue;
         if(_restConds.length > 0 && !checkConditions(_restConds, _rc, ctx.bs, _restCondTag)) continue;
         if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(_rc, defaultTarget.filter)) continue;
+        if (hasActiveImmuneEffects(_rc, ctx.side)) continue;
         restTargets.push(i);
       }
       if(restTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
@@ -2562,6 +2568,21 @@ function resolveDpFilterMarkers(filter, selfCard) {
     else delete out[k];
   });
   return out;
+}
+
+// 【プログレス】(attack_immunity) 等の「相手の効果を受けない」(immune_effects)バフを
+// 持つカードかどうか。buff._appliedSide（付与した側＝カードの持ち主側）と、今まさに
+// 解決しようとしている効果の側(effectSide)が異なる場合のみ「相手の効果」とみなす
+// （自分の効果はimmune_effectsの影響を受けない）。source_type:'digimon'指定時は
+// デジモンの効果のみ対象（他の効果は防がない）— effectSourceTypeで渡す
+function hasActiveImmuneEffects(card, effectSide, effectSourceType) {
+  if (!card || !Array.isArray(card.buffs)) return false;
+  return card.buffs.some((b) => {
+    if (!b || b.type !== 'keyword_immune') return false;
+    if (!b._appliedSide || b._appliedSide === effectSide) return false;
+    if (b.sourceType === 'digimon' && effectSourceType && effectSourceType !== 'digimon') return false;
+    return true;
+  });
 }
 
 function cardMatchesFilter(card, filter) {
@@ -9422,6 +9443,52 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (ctx.card) ctx.card._canChangeAttackTarget = true;
       ctx.addLog('🎯 アタック対象を変更');
       callback();
+      break;
+    }
+
+    // === 効果でアタックを宣言する（急襲＝attack_at_end_phase、BT26-015のalt_actions等用） ===
+    // 通常の宣言UIと同じ startAttack→resolveAttackTarget を効果から直接呼び出す。
+    // 対象はセキュリティ、またはレスト中の相手デジモン（公式ルール上、アクティブな相手
+    // デジモンは通常アタック対象にできない）。複数の legal target があれば選択UIを出す。
+    // ⚠ 現状 startAttack/resolveAttackTarget がプレイヤー側専用実装のため、このアクションも
+    // プレイヤー側のみ対応（ctx.side==='ai'の場合は何もせず終了）。
+    // ⚠ resolveAttackTarget以降のバトル解決（ブロック/消滅等）は独立した非同期UIフローで
+    // 進行し、このstep自身への完了コールバックは持たないため、宣言が成立した時点で
+    // このrecipeステップのcallbackを呼ぶ（バトル解決の完了までは待たない）
+    case 'attack': {
+      if (ctx.side !== 'player' || typeof window.startAttack !== 'function' || typeof window.resolveAttackTarget !== 'function') {
+        callback();
+        break;
+      }
+      let _atkCard = ctx.card;
+      if (ctx._forceTargetIdx !== undefined && (step.target === 'own:1' || step.target === 'same_target' || step.target === 'picked')) {
+        _atkCard = player.battleArea[ctx._forceTargetIdx] || ctx.card;
+      }
+      const _atkSlotIdx = _atkCard ? player.battleArea.indexOf(_atkCard) : -1;
+      if (_atkSlotIdx === -1) { callback(); break; }
+      const _atkRestTargets = [];
+      (opponent.battleArea || []).forEach((c, i) => { if (c && c.suspended) _atkRestTargets.push(i); });
+      const _hasSecurity = (opponent.security || []).length > 0;
+      const _declareAttack = (targetType, targetIdx) => {
+        window.startAttack(_atkCard, _atkSlotIdx, (ok) => {
+          if (!ok) { callback(); return; }
+          window.resolveAttackTarget(targetType, targetIdx);
+          callback();
+        });
+      };
+      if (_atkRestTargets.length === 0) {
+        if (!_hasSecurity) { callback(); break; }
+        _declareAttack('security', -1);
+      } else if (_atkRestTargets.length === 1 && !_hasSecurity) {
+        _declareAttack('digimon', _atkRestTargets[0]);
+      } else {
+        const _atkRowId = ctx.side === 'player' ? 'ai' : 'pl';
+        showTargetSelection(_atkRowId, _atkRestTargets, null, '#ff4444', (selectedIdx) => {
+          if (selectedIdx !== null) { _declareAttack('digimon', selectedIdx); return; }
+          if (_hasSecurity) { _declareAttack('security', -1); return; }
+          callback();
+        }, 'キャンセル＝セキュリティを攻撃');
+      }
       break;
     }
 

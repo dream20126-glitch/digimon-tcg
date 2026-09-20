@@ -5235,7 +5235,32 @@ function _substituteDesignatedNameJS(step, replacement) {
 // cond_designated_name マーカーを持つ cost item を groups の数だけ複製し、
 // それぞれの条件・枚数を割り当てる（recipe-editor-src/src/recipe.ts の
 // buildDesignatedGroupsFields で組み立てられたのと同じ形の各要素を想定）
-function _expandDesignatedGroupsJS(step, groups) {
+// designated_common（全グループ共通の絞り込み条件。recipe-editor-src の「対象」共通条件欄
+// に対応）を、展開済みの1グループ分のcost item（既にそのグループ固有の条件が入っている）
+// にAND合成する。common/グループ双方が単一条件であるケース（実運用上の主用途:「特徴TBが
+// 共通、Lv3/Lv4/Lv5がグループ固有」等）を正しく扱う単純結合で、双方が複数条件かつOR混在の
+// ケースまでは表現できない
+function _mergeDesignatedCommonJS(item, common) {
+  if (!common) return item;
+  const commonConds = [];
+  if (common.condition !== undefined) commonConds.push(common.condition);
+  if (common.when !== undefined) commonConds.push(common.when);
+  if (Array.isArray(common.extra_conditions)) commonConds.push(...common.extra_conditions);
+  if (commonConds.length === 0) return item;
+  const groupConds = [];
+  if (item.condition !== undefined) groupConds.push(item.condition);
+  if (item.when !== undefined) groupConds.push(item.when);
+  if (Array.isArray(item.extra_conditions)) groupConds.push(...item.extra_conditions);
+  const all = commonConds.concat(groupConds);
+  const out = Object.assign({}, item);
+  delete out.condition; delete out.when; delete out.extra_conditions; delete out.condition_op;
+  if (all.length >= 1) out.condition = all[0];
+  if (all.length >= 2) out.when = all[1];
+  if (all.length >= 3) out.extra_conditions = all.slice(2);
+  return out;
+}
+
+function _expandDesignatedGroupsJS(step, groups, common) {
   if (!step || typeof step !== 'object') return step;
   const out = Object.assign({}, step);
   if (Array.isArray(out.cost)) {
@@ -5254,7 +5279,7 @@ function _expandDesignatedGroupsJS(step, groups) {
           if (g.condition_op !== undefined) replaced.condition_op = g.condition_op;
           if (g.count !== undefined) replaced.count = g.count;
           if (Array.isArray(g.distinct_by) && g.distinct_by.length > 0) replaced.distinct_by = g.distinct_by;
-          newCost.push(replaced);
+          newCost.push(_mergeDesignatedCommonJS(replaced, common));
         });
       } else {
         newCost.push(c);
@@ -5269,15 +5294,18 @@ function _expandDesignatedGroupsJS(step, groups) {
 // designated（cond_designated_name の置き換え）・count（アセンブリ等、cost[]内のcount未設定
 // アイテムにのみ差し込む「何枚使うか」）を適用したコピーを返す。designatedGroups
 // （絞り込み条件＋枚数の組が複数）が指定された場合は designated/count の代わりに
-// cost item をgroups数ぶん複製する
-function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGroups) {
+// cost item をgroups数ぶん複製する。designatedCommon（全グループ共通の絞り込み条件、
+// recipe-editor-src の「共通条件」欄）が指定されていれば、複製した各cost itemの条件に
+// AND合成する（カードのJSON上は各グループへ展開せず designated_common として1回だけ
+// 保存されているが、実行時にここで初めて各グループの条件へ合成される）
+function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGroups, designatedCommon) {
   return (steps || []).map(s => {
     let out = s;
     if (value !== undefined && value !== '' && value !== null && out && out.value === undefined) {
       out = Object.assign({}, out, { value });
     }
     if (Array.isArray(designatedGroups) && designatedGroups.length > 0) {
-      out = _expandDesignatedGroupsJS(out, designatedGroups);
+      out = _expandDesignatedGroupsJS(out, designatedGroups, designatedCommon);
     } else {
       if (designated) out = _substituteDesignatedNameJS(out, designated);
       if (count !== undefined && count !== '' && count !== null && Array.isArray(out.cost)) {
@@ -5325,7 +5353,7 @@ function _lookupTriggerSteps(recipeObj, triggerCode) {
       if (!kw) continue;
       const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
       if (!tplSteps) continue;
-      const filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups);
+      const filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common);
       result = result ? result.concat(filled) : filled;
     }
   }
@@ -8294,7 +8322,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _filledTemplate = {};
           Object.keys(_kwEntry.recipeTemplate).forEach(k => {
             const tplSteps = _kwEntry.recipeTemplate[k];
-            if (Array.isArray(tplSteps)) _filledTemplate[k] = _fillKeywordTemplateSteps(tplSteps, _cv, step.designated, step.count, step.designated_groups);
+            if (Array.isArray(tplSteps)) _filledTemplate[k] = _fillKeywordTemplateSteps(tplSteps, _cv, step.designated, step.count, step.designated_groups, step.designated_common);
           });
           const _grantStep = Object.assign({}, step, { action: 'grant_effect', granted_recipe: _filledTemplate });
           executeRecipeStep(_grantStep, ctx, store, callback);

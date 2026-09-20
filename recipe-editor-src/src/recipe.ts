@@ -291,27 +291,18 @@ export const DISTINCT_ATTR_TO_MARKER: Record<string, string> = Object.fromEntrie
 // として単純出力し、2組以上のときだけこの配列(p.designated_groups)を使う。
 // conditions に「異なる」プレースホルダー（cond_name_distinct等）が混ざっていれば、
 // 通常のcondition/when/extra_conditionsには含めず distinct_by（属性名の配列）へ抜き出す。
-// commonConditions が指定されていれば、各グループの条件の前にAND結合で合成してから
-// 出力する（例:「特徴TB」を全グループ共通にして、各グループにはLv違いだけ書けばよい
-// ようにするエディタ入力の利便性のため。JSON上は各グループへ展開済みの形で出力される）
-function buildDesignatedGroupsFields(
-  groups: DesignatedGroup[],
-  commonConditions?: ConditionPair[],
-  commonConditionsOp?: 'and' | 'or'
-): Array<{
+// 各グループにはそのグループ固有の条件だけを積む（共通条件は混ぜ込まない）。
+// 共通条件は呼び出し側(applyDesignatedGroupsTo)が designated_common として別枠出力する
+function buildDesignatedGroupsFields(groups: DesignatedGroup[]): Array<{
   condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; count?: number | string; distinct_by?: string[];
 }> {
-  const validCommon = (commonConditions || []).filter((c) => c.base);
   return groups.map((g) => {
-    const merged = [...validCommon, ...(g.conditions || [])];
-    const realConds = merged.filter((c) => !DISTINCT_MARKER_TO_ATTR[c.base]);
-    const distinctAttrs = merged
+    const conds = g.conditions || [];
+    const realConds = conds.filter((c) => !DISTINCT_MARKER_TO_ATTR[c.base]);
+    const distinctAttrs = conds
       .filter((c) => DISTINCT_MARKER_TO_ATTR[c.base])
       .map((c) => DISTINCT_MARKER_TO_ATTR[c.base]);
-    // 共通条件・グループ条件のどちらかでORが指定されていれば、合成後もORとして扱う
-    // （両方AND指定、またはどちらか未指定＝既定ANDのときのみANDのまま）
-    const op: 'and' | 'or' = (commonConditionsOp === 'or' || g.conditionsOp === 'or') ? 'or' : 'and';
-    const fields = buildDesignatedConditionFields(realConds, op);
+    const fields = buildDesignatedConditionFields(realConds, g.conditionsOp || 'and');
     const out: any = { ...fields };
     if (g.count !== undefined && g.count !== '' && g.count !== null) {
       const n = Number(g.count);
@@ -323,17 +314,25 @@ function buildDesignatedGroupsFields(
 }
 
 // entry の「対象」絞り込み条件＋枚数を target（passiveのp、またはgrant_keywordのstep）へ
-// 書き込む。1組なら designated/count、2組以上なら designated_groups として出力する
+// 書き込む。1組なら designated/count、2組以上なら designated_groups として出力する。
+// 2組以上のとき、共通条件（entry.commonConditions）があれば designated_common として
+// 別枠で出力する（各グループの条件には混ぜ込まない＝JSON上も「共通」のまま保持される。
+// エンジン側が実行時に、この共通条件を各コストアイテムの判定にAND合成する）
 function applyDesignatedGroupsTo(target: any, entry: KeywordEntry, kwEntry?: DictEntry): void {
   if (!kwEntry?.hasNamedParam) return;
   const groups = getDesignatedGroups(entry);
   if (groups.length === 1) {
-    const fields = buildDesignatedGroupsFields(groups, entry.commonConditions, entry.commonConditionsOp)[0];
+    const fields = buildDesignatedGroupsFields(groups)[0];
     const { count: gCount, ...designated } = fields;
     if (Object.keys(designated).length > 0) target.designated = designated;
     if (gCount !== undefined) target.count = gCount;
   } else if (groups.length > 1) {
-    target.designated_groups = buildDesignatedGroupsFields(groups, entry.commonConditions, entry.commonConditionsOp);
+    target.designated_groups = buildDesignatedGroupsFields(groups);
+    const validCommon = (entry.commonConditions || []).filter((c) => c.base);
+    if (validCommon.length > 0) {
+      const common = buildDesignatedConditionFields(validCommon, entry.commonConditionsOp || 'and');
+      if (Object.keys(common).length > 0) target.designated_common = common;
+    }
   }
 }
 
@@ -577,6 +576,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       keywordParamConditionsOp: b.keywordParamConditionsOp,
       count: b.keywordCount,
       designatedGroups: b.keywordDesignatedGroups,
+      commonConditions: b.keywordCommonConditions,
+      commonConditionsOp: b.keywordCommonConditionsOp,
     }, kwEntry);
   }
   container[b.trigger] = container[b.trigger] || [];
@@ -598,6 +599,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
         const extraStep: any = { ...step, keyword: entry.keyword };
         delete extraStep.designated;
         delete extraStep.designated_groups;
+        delete extraStep.designated_common;
         delete extraStep.count;
         if (entry.value !== undefined && entry.value !== '' && entry.value !== null) {
           const n = Number(entry.value);
@@ -794,10 +796,11 @@ function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
 function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): EffectBlock {
   const extras: any = {};
   Object.keys(p || {}).forEach((k) => {
-    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'count') extras[k] = p[k];
+    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'designated_common' && k !== 'count') extras[k] = p[k];
   });
   const groups = parseDesignatedGroupsField(p);
   const single = groups.length === 1 ? groups[0] : undefined;
+  const commonPairs = groups.length > 1 && p?.designated_common ? parseDesignatedFields(p.designated_common) : undefined;
   return {
     section,
     zone: p?.in_zone || '',
@@ -808,6 +811,8 @@ function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): Effect
     keywordParamConditionsOp: single && single.conditions.length > 0 ? single.conditionsOp : undefined,
     keywordCount: single ? single.count : undefined,
     keywordDesignatedGroups: groups.length > 1 ? groups : undefined,
+    keywordCommonConditions: commonPairs && commonPairs.conds.length > 0 ? commonPairs.conds : undefined,
+    keywordCommonConditionsOp: commonPairs && commonPairs.conds.length > 0 ? commonPairs.op : undefined,
     extras: Object.keys(extras).length > 0 ? JSON.stringify(extras) : '',
   };
 }
@@ -855,6 +860,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     filter: true,
     designated: true,
     designated_groups: true,
+    designated_common: true,
   };
   const extras: any = {};
   Object.keys(step || {}).forEach((k) => {
@@ -868,6 +874,9 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
   if (_isGrantKeywordStep && extras.count !== undefined) delete extras.count;
   const _stepDesignatedGroups = _isGrantKeywordStep ? parseDesignatedGroupsField(step) : [];
   const _stepSingleGroup = _stepDesignatedGroups.length === 1 ? _stepDesignatedGroups[0] : undefined;
+  const _stepCommonPairs = _isGrantKeywordStep && _stepDesignatedGroups.length > 1 && step?.designated_common
+    ? parseDesignatedFields(step.designated_common)
+    : undefined;
   // 条件復元
   const conditions: ConditionPair[] = [];
   if (step?.condition) conditions.push(stringToPair(String(step.condition)));
@@ -938,6 +947,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     keywordParamConditions: _stepSingleGroup && _stepSingleGroup.conditions.length > 0 ? _stepSingleGroup.conditions : undefined,
     keywordParamConditionsOp: _stepSingleGroup && _stepSingleGroup.conditions.length > 0 ? _stepSingleGroup.conditionsOp : undefined,
     keywordDesignatedGroups: _stepDesignatedGroups.length > 1 ? _stepDesignatedGroups : undefined,
+    keywordCommonConditions: _stepCommonPairs && _stepCommonPairs.conds.length > 0 ? _stepCommonPairs.conds : undefined,
+    keywordCommonConditionsOp: _stepCommonPairs && _stepCommonPairs.conds.length > 0 ? _stepCommonPairs.op : undefined,
     revertAtTurnEnd: !!step?.revert_at_turn_end,
     immuneCardType: step?.source_type === 'digimon' ? 'digimon' : undefined,
     costFree: !!step?.cost_free,

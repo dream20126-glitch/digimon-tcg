@@ -5441,11 +5441,21 @@ function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGr
 // 記述しなくて済むようにするため）。完全一致キーとカンマ区切りキーが両方存在する
 // 場合（例: 別々のブロックが on_move 単体 / on_move,on_play 併記の両方を持つ）は
 // 両方の steps を結合して返す。既存の（カンマを含まない）レシピの挙動には影響しない
+// 辞書側で正式登録されているが、実際のトリガー発火コードとは別名になっているキーの対応表。
+// 例: 効果辞書には「破棄されたとき＝discard」で登録されているが、evo_source側の
+// 実際の発火は'when_evo_discard'で行われる（fireWhenEvoDiscardTriggers）。
+// カード側レシピを書き換えずに辞書登録名のまま動くよう、ここで吸収する
+const TRIGGER_KEY_ALIASES = { when_evo_discard: 'discard' };
 function _lookupTriggerStepsBase(recipeObj, triggerCode) {
   if (!recipeObj || !triggerCode) return undefined;
   let result;
   const exact = recipeObj[triggerCode];
   if (Array.isArray(exact)) result = exact.slice();
+  const aliasKey = TRIGGER_KEY_ALIASES[triggerCode];
+  if (aliasKey) {
+    const aliasSteps = recipeObj[aliasKey];
+    if (Array.isArray(aliasSteps)) result = result ? result.concat(aliasSteps) : aliasSteps.slice();
+  }
   for (const key in recipeObj) {
     if (key === triggerCode || key.indexOf(',') === -1) continue;
     if (!key.split(',').some(k => k.trim() === triggerCode)) continue;
@@ -7410,6 +7420,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (step.condition_op === 'or') _dConds._op = 'or';
         ctx.block.conditions = _dConds;
       }
+      // 対象の条件エディタ由来のfilterオブジェクト（DP以下等）もrunOneAction側の
+      // destroyハンドラに引き継ぐ（これが無いとfilterが黙って無視されていた）
+      if (_targetObj && step.filter) _targetObj.filter = resolveDpFilterMarkers(step.filter, ctx.card);
       runOneAction(_actionObj, _targetObj, ctx, callback);
       break;
     }
@@ -7600,6 +7613,82 @@ function executeRecipeStep(step, ctx, store, callback) {
             pickEx();
           });
         })();
+      }
+      break;
+    }
+
+    // === 手札に戻す（辞書登録コード。文脈により「自分のトラッシュ→手札」/
+    //     「相手のバトルエリア→手札」のどちらかに振り分ける） ===
+    // 自分のトラッシュから: step: { action:'return_hand', from:'trash', target:'own:N'（省略時1）,
+    //   filter:{...}, optional:bool } — target.count か count のどちらでも受け付ける
+    // 相手のバトルエリアから: step: { action:'return_hand', target:'opponent:N', condition/filter... }
+    //   → 既存の bounce（opponent.battleArea → 相手の手札）にそのまま委譲
+    case 'return_hand': {
+      const _rhFromTrash = step.from === 'trash'
+        || (Array.isArray(step.from) && step.from.indexOf('trash') >= 0)
+        || (!step.from && String(step.target || '').startsWith('own'));
+      if (!_rhFromTrash) {
+        const _rhAction = { code: 'bounce', value: step.value || null };
+        if (step.condition) {
+          _rhAction.conditions = parseRecipeCondition(step.condition);
+          if (step.condition_op === 'or') _rhAction.conditions._op = 'or';
+          if (!ctx.block) ctx.block = {};
+          ctx.block.conditions = _rhAction.conditions;
+        }
+        let _rhTarget = null;
+        const _rht = step.target || '';
+        if (_rht.startsWith('opponent_suspended:')) _rhTarget = { code: 'target_opponent_suspended', count: parseInt(_rht.split(':')[1]) || 1 };
+        else if (_rht.startsWith('opponent:up_to_')) _rhTarget = { code: 'target_opponent', count: parseInt(_rht.split('opponent:up_to_')[1]) || 1, upTo: true };
+        else if (_rht.startsWith('opponent:')) _rhTarget = { code: 'target_opponent', count: parseInt(_rht.split(':')[1]) || 1 };
+        if (_rhTarget && step.filter) _rhTarget.filter = resolveDpFilterMarkers(step.filter, ctx.card);
+        runOneAction(_rhAction, _rhTarget, ctx, callback);
+        break;
+      }
+      // 自分のトラッシュ → 手札（trash_to_handと同じロジック。targetのN指定もcountとして受ける）
+      const _rhFilter = step.filter || {};
+      const _rhT = String(step.target || '');
+      const _rhCountFromTarget = _rhT.includes(':') ? parseInt(_rhT.split(':')[1]) : NaN;
+      const _rhWantCount = step.count || (isNaN(_rhCountFromTarget) ? 1 : _rhCountFromTarget);
+      const _rhOptional = !!step.optional;
+      const _rhCandidates = (player.trash || []).filter(c => cardMatchesFilter(c, _rhFilter));
+      if (_rhCandidates.length === 0) {
+        ctx.addLog && ctx.addLog('💨 条件を満たすカードがトラッシュにありません');
+        showEffectFailed(null, () => callback());
+        return;
+      }
+      const _rhOnPicked = (chosen) => {
+        if (!chosen || chosen.length === 0) {
+          if (_rhOptional) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); }
+          else { showEffectFailed(null, () => callback()); }
+          return;
+        }
+        let ri = 0;
+        function _rhMoveNext() {
+          if (ri >= chosen.length) { ctx.renderAll(); callback(); return; }
+          const c = chosen[ri++];
+          const ti = player.trash.indexOf(c);
+          if (ti !== -1) player.trash.splice(ti, 1);
+          player.hand.push(c);
+          ctx.addLog && ctx.addLog('🃏 「' + c.name + '」をトラッシュから手札に戻した');
+          if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+            try {
+              window._onlineSendCommand({
+                type: 'fx_remoteCardMove',
+                cardName: c.name, cardNo: c.cardNo,
+                cardImg: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '',
+                fromLabel: 'トラッシュ', toLabel: '手札',
+              });
+            } catch(_) {}
+          }
+          if (window._fxCardMove) window._fxCardMove(c, 'トラッシュ', '手札', _rhMoveNext);
+          else setTimeout(_rhMoveNext, 300);
+        }
+        _rhMoveNext();
+      };
+      if (effectiveSide === 'ai') {
+        _rhOnPicked(_rhCandidates.slice(0, _rhWantCount));
+      } else {
+        showTrashCardPicker(_rhCandidates, _rhWantCount, _rhOptional, '🃏 手札に戻すカードを選んでください', _rhOnPicked, player.trash);
       }
       break;
     }
@@ -8737,6 +8826,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         else if (_bt.startsWith('opponent:up_to_')) _bTarget = { code: 'target_opponent', count: parseInt(_bt.split('opponent:up_to_')[1]) || 1, upTo: true };
         else if (_bt.startsWith('opponent:')) _bTarget = { code: 'target_opponent', count: parseInt(_bt.split(':')[1]) || 1 };
       }
+      if (_bTarget && step.filter) _bTarget.filter = resolveDpFilterMarkers(step.filter, ctx.card);
       runOneAction(_bAction, _bTarget, ctx, callback);
       break;
     }

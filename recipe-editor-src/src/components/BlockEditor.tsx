@@ -3116,9 +3116,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             changeEffectAction(base + newSuffix);
           }
 
+          // 破棄（DISCARD_ZONE_MAP）: コスト側(CostListEditor)と全く同じ「場所ごとに実アクション
+          // コードを切り替える」仕組みを効果1/代替アクションでも使えるようにする。
+          // 辞書のhasPositionVariantフラグには頼らず、コスト側と同じくこのエディタ内で
+          // 完結したハードコード機構として扱う（📍位置の二重表示を避けるため、下の
+          // 汎用位置バリアントpulldownとisPositionalの判定からは除外する）
+          const discardZoneBases = new Set(DISCARD_ZONE_MAP.map((z) => getActionVariant(z.action)?.base || z.action));
+          const effectActionBase = getActionVariant(effectAction || '')?.base || (effectAction || '');
+          const isDiscardActive = discardZoneBases.has(effectActionBase);
+          const activeDiscardZone = DISCARD_ZONE_MAP.find((z) => {
+            if ((getActionVariant(z.action)?.base || z.action) !== effectActionBase) return false;
+            if (z.target !== undefined && splitStackSuffix((effectTarget || '').split(':')[0]).base !== z.target) return false;
+            return true;
+          })?.code || '';
+
           // よく使うアクション（トリガー家族ボタンと同じ操作感）: 該当すればボタン1つで即選択、
           // 無ければ「その他のアクション」を開いて既存のプルダウン(+位置バリアント)から選ぶ
-          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction);
+          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || isDiscardActive;
           function selectCommonAction(code: string) {
             if (isEditingAlt) { updateEffect({ action: code, value: '' }); return; }
             const dictEntry = findActionEntry(code);
@@ -3136,7 +3150,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           return (
             <div style={{
               display: 'grid',
-              gridTemplateColumns: isPositional && variantOptions.length > 0 ? '2fr 1fr 1fr' : '2fr 1fr',
+              gridTemplateColumns: !isDiscardActive && isPositional && variantOptions.length > 0 ? '2fr 1fr 1fr' : '2fr 1fr',
               gap: 8,
             }}>
               <div className="field">
@@ -3212,7 +3226,67 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </button>
                     );
                   })}
+                  {/* 破棄: コスト側(CostListEditor)と同じ「場所ごとに実アクションコードを
+                      切り替える」ボタン。押すと下に📥場所（+進化元/テイマー/セキュリティなら
+                      📍位置）の選択が現れる */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isDiscardActive) return;
+                      const z = DISCARD_ZONE_MAP.find((zz) => zz.code === 'hand')!;
+                      updateEffect({ action: z.action, target: z.target || effectTarget, fromZones: [z.code], value: '' });
+                    }}
+                    style={{
+                      padding: '3px 9px', borderRadius: 5,
+                      border: isDiscardActive ? '2px solid #1976d2' : '1px solid #bbb',
+                      background: isDiscardActive ? '#1976d2' : '#f5f5f5',
+                      color: isDiscardActive ? '#fff' : '#333',
+                      fontWeight: isDiscardActive ? 'bold' : 'normal',
+                      cursor: 'pointer', fontSize: 11,
+                    }}
+                  >
+                    破棄
+                  </button>
                 </div>
+                {isDiscardActive && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから破棄するか）</div>
+                    <ButtonGroup
+                      options={DISCARD_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
+                      value={activeDiscardZone}
+                      onChange={(zoneCode) => {
+                        if (zoneCode === activeDiscardZone) return;
+                        const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
+                        if (!z) return;
+                        updateEffect({ action: z.action, target: z.target || '', fromZones: [z.code] });
+                      }}
+                      accentColor="#1976d2"
+                    />
+                    {(() => {
+                      const z = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                      return z?.warn ? (
+                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
+                      ) : null;
+                    })()}
+                    {(() => {
+                      const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                      if (!zone?.hasPosition) return null;
+                      const zoneBase = getActionVariant(zone.action)?.base || zone.action;
+                      const curSuffix = getActionVariant(effectAction || '')?.suffix || '';
+                      return (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                          <ButtonGroup
+                            options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
+                            value={curSuffix}
+                            onChange={(suffix) => { if (!suffix) return; changeEffectAction(zoneBase + suffix); }}
+                            accentColor="#1976d2"
+                          />
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 6 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
                     <input
@@ -3267,8 +3341,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </div>
                 )}
               </div>
-              {/* 位置バリアント pulldown: フラグ駆動 or 自動グループ化時のみ */}
-              {isPositional && variantOptions.length > 0 && (
+              {/* 位置バリアント pulldown: フラグ駆動 or 自動グループ化時のみ。
+                  破棄（isDiscardActive）は専用の📍位置ボタンを別途表示するため、ここでは除外 */}
+              {!isDiscardActive && isPositional && variantOptions.length > 0 && (
                 <div className="field">
                   <label>📍 位置</label>
                   <SearchSelect

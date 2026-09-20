@@ -239,6 +239,8 @@ export function getKeywordEntries(b: {
   keywordParamConditionsOp?: 'and' | 'or';
   keywordCount?: number | string;
   keywordDesignatedGroups?: DesignatedGroup[];
+  keywordCommonConditions?: ConditionPair[];
+  keywordCommonConditionsOp?: 'and' | 'or';
   keywordEntries?: KeywordEntry[];
 }): KeywordEntry[] {
   if (Array.isArray(b.keywordEntries) && b.keywordEntries.length > 0) return b.keywordEntries;
@@ -250,6 +252,8 @@ export function getKeywordEntries(b: {
       keywordParamConditionsOp: b.keywordParamConditionsOp,
       count: b.keywordCount,
       designatedGroups: b.keywordDesignatedGroups,
+      commonConditions: b.keywordCommonConditions,
+      commonConditionsOp: b.keywordCommonConditionsOp,
     }];
   }
   return [];
@@ -286,16 +290,28 @@ export const DISTINCT_ATTR_TO_MARKER: Record<string, string> = Object.fromEntrie
 // condition_op?,count?,distinct_by?}）。1組だけなら呼び出し側で従来のdesignated/count
 // として単純出力し、2組以上のときだけこの配列(p.designated_groups)を使う。
 // conditions に「異なる」プレースホルダー（cond_name_distinct等）が混ざっていれば、
-// 通常のcondition/when/extra_conditionsには含めず distinct_by（属性名の配列）へ抜き出す
-function buildDesignatedGroupsFields(groups: DesignatedGroup[]): Array<{
+// 通常のcondition/when/extra_conditionsには含めず distinct_by（属性名の配列）へ抜き出す。
+// commonConditions が指定されていれば、各グループの条件の前にAND結合で合成してから
+// 出力する（例:「特徴TB」を全グループ共通にして、各グループにはLv違いだけ書けばよい
+// ようにするエディタ入力の利便性のため。JSON上は各グループへ展開済みの形で出力される）
+function buildDesignatedGroupsFields(
+  groups: DesignatedGroup[],
+  commonConditions?: ConditionPair[],
+  commonConditionsOp?: 'and' | 'or'
+): Array<{
   condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; count?: number | string; distinct_by?: string[];
 }> {
+  const validCommon = (commonConditions || []).filter((c) => c.base);
   return groups.map((g) => {
-    const realConds = (g.conditions || []).filter((c) => !DISTINCT_MARKER_TO_ATTR[c.base]);
-    const distinctAttrs = (g.conditions || [])
+    const merged = [...validCommon, ...(g.conditions || [])];
+    const realConds = merged.filter((c) => !DISTINCT_MARKER_TO_ATTR[c.base]);
+    const distinctAttrs = merged
       .filter((c) => DISTINCT_MARKER_TO_ATTR[c.base])
       .map((c) => DISTINCT_MARKER_TO_ATTR[c.base]);
-    const fields = buildDesignatedConditionFields(realConds, g.conditionsOp || 'and');
+    // 共通条件・グループ条件のどちらかでORが指定されていれば、合成後もORとして扱う
+    // （両方AND指定、またはどちらか未指定＝既定ANDのときのみANDのまま）
+    const op: 'and' | 'or' = (commonConditionsOp === 'or' || g.conditionsOp === 'or') ? 'or' : 'and';
+    const fields = buildDesignatedConditionFields(realConds, op);
     const out: any = { ...fields };
     if (g.count !== undefined && g.count !== '' && g.count !== null) {
       const n = Number(g.count);
@@ -312,12 +328,12 @@ function applyDesignatedGroupsTo(target: any, entry: KeywordEntry, kwEntry?: Dic
   if (!kwEntry?.hasNamedParam) return;
   const groups = getDesignatedGroups(entry);
   if (groups.length === 1) {
-    const fields = buildDesignatedGroupsFields(groups)[0];
+    const fields = buildDesignatedGroupsFields(groups, entry.commonConditions, entry.commonConditionsOp)[0];
     const { count: gCount, ...designated } = fields;
     if (Object.keys(designated).length > 0) target.designated = designated;
     if (gCount !== undefined) target.count = gCount;
   } else if (groups.length > 1) {
-    target.designated_groups = buildDesignatedGroupsFields(groups);
+    target.designated_groups = buildDesignatedGroupsFields(groups, entry.commonConditions, entry.commonConditionsOp);
   }
 }
 

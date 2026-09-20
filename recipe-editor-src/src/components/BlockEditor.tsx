@@ -333,6 +333,8 @@ function KeywordEntriesEditor({
       keywordParamConditionsOp: next[0]?.keywordParamConditionsOp,
       keywordCount: next[0]?.count,
       keywordDesignatedGroups: next[0]?.designatedGroups,
+      keywordCommonConditions: next[0]?.commonConditions,
+      keywordCommonConditionsOp: next[0]?.commonConditionsOp,
     });
   }
   function updateEntry(i: number, patch: Partial<KeywordEntry>) {
@@ -391,6 +393,25 @@ function KeywordEntriesEditor({
             const addGroup = () => setGroups([...groupList, { conditions: [], conditionsOp: 'and' }]);
             return (
               <div style={{ marginTop: 6, padding: 6, background: '#fff', border: `1px solid ${accentBorder}`, borderRadius: 4 }}>
+                {groupList.length > 1 && (
+                  <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: `1px dashed ${accentBorder}` }}>
+                    <div style={{ fontSize: 11, fontWeight: 'bold', color: '#666', marginBottom: 2 }}>
+                      共通の絞り込み条件（全グループに自動でAND合成される）
+                    </div>
+                    <ConditionsHybridEditor
+                      conditions={entry.commonConditions || []}
+                      onChange={(next) => updateEntry(i, { commonConditions: next })}
+                      dict={dict}
+                      title="共通条件"
+                      hint="（例:「特徴TB」を各グループで繰り返し書かなくて済むように、ここに1回だけ設定する）"
+                      theme="action"
+                      defaultSubject=""
+                      showSubjectSelector={false}
+                      conditionsOp={entry.commonConditionsOp || 'and'}
+                      onConditionsOpChange={(op) => updateEntry(i, { commonConditionsOp: op })}
+                    />
+                  </div>
+                )}
                 {groupList.map((g, gi) => (
                   <div key={gi} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: gi < groupList.length - 1 ? `1px dashed ${accentBorder}` : 'none' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

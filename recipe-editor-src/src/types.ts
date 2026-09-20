@@ -26,6 +26,12 @@ export interface KeywordEntry {
   // 複数並べる場合）。1組だけの場合は後方互換のため keywordParamConditions/count
   // （下記）と同じJSON出力になる
   designatedGroups?: DesignatedGroup[];
+  // 全グループに共通する絞り込み条件（例:「特徴TB」を各グループで繰り返し書かなくて済むように）。
+  // 保存時に各グループの条件へAND結合で合成してから出力する（JSON上は各グループの
+  // condition/when/extra_conditionsに展開済みの形で出るだけで、共通条件という概念自体は
+  // JSONには残らない＝エディタ入力の利便性のためだけの機能）
+  commonConditions?: ConditionPair[];
+  commonConditionsOp?: 'and' | 'or';
   // 後方互換用（designatedGroupsが無い/1組のときの単純ケース）
   keywordParamConditions?: ConditionPair[];
   keywordParamConditionsOp?: 'and' | 'or';
@@ -79,6 +85,9 @@ export interface EffectBlock {
   // のミラー）。2組以上あればこちらを優先し、上の keywordParamConditions*/keywordCount は
   // 無視される
   keywordDesignatedGroups?: DesignatedGroup[];
+  // 全グループ共通の絞り込み条件（keywordEntries[0].commonConditions のミラー）
+  keywordCommonConditions?: ConditionPair[];
+  keywordCommonConditionsOp?: 'and' | 'or';
   // 複数キーワード選択（パッシブ/キーワード付与 共通）。1件のブロックで複数のキーワードを
   // 同時に持たせたい場合（例: 進化元効果で【貫通】【分離】を両方常に持つ）に使う。
   // これが1件以上あればこちらを優先し、上の keyword/value/keywordParamConditions*は

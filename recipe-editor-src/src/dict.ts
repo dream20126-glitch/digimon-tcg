@@ -172,7 +172,9 @@ export const TRIGGERS: DictEntry[] = [
   { code: 'when_own_block', kind: 'trigger', label: '自分のブロッカーがレストしたとき' },
   { code: 'when_opp_rest', kind: 'trigger', label: '相手のデジモンがレストしたとき' },
   { code: 'when_evo_discard', kind: 'trigger', label: '進化元を破棄したとき（発動主体で誰の進化元か指定）' },
-  { code: 'when_deck_increase', kind: 'trigger', label: 'デッキが増えたとき' },
+  // 選択後、BlockEditor側で「増えた先」ボタン（デッキ/手札/セキュリティ/トラッシュ/進化元）
+  // から実際のトリガーキー(when_deck_increase/when_hand_increase/...)を選び直せる
+  { code: 'when_deck_increase', kind: 'trigger', label: '〇〇が増えたとき' },
   // ターン境界
   { code: 'on_own_turn_start', kind: 'trigger', label: '自分のターン開始時' },
   { code: 'on_own_turn_end', kind: 'trigger', label: '自分のターン終了時' },

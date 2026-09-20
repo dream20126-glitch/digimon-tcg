@@ -1432,6 +1432,19 @@ const COST_REDUCTION_VARIANTS: { code: string; label: string; trigger: string; i
 ];
 const COST_REDUCTION_TRIGGERS = new Set(COST_REDUCTION_VARIANTS.map((v) => v.trigger));
 
+// 【〇〇が増えたとき】: 元々「デッキが増えたとき」(when_deck_increase) 専用だったトリガーを、
+// どのゾーンが増えたときかを選べるように一般化したもの。COST_REDUCTION_VARIANTS と違い、
+// こちらは通常の「〇〇したとき」系トリガーと同じくアクション/対象/条件を普通に編集する
+// （常時判定される特殊トリガーではないため、専用パネルには置き換えない）
+const ZONE_INCREASE_VARIANTS: { code: string; label: string; trigger: string; implemented: boolean }[] = [
+  { code: 'deck', label: 'デッキ', trigger: 'when_deck_increase', implemented: true },
+  { code: 'hand', label: '手札', trigger: 'when_hand_increase', implemented: false },
+  { code: 'security', label: 'セキュリティ', trigger: 'when_security_increase', implemented: false },
+  { code: 'trash', label: 'トラッシュ', trigger: 'when_trash_increase', implemented: false },
+  { code: 'evo_source', label: '進化元', trigger: 'when_evo_source_increase', implemented: false },
+];
+const ZONE_INCREASE_TRIGGERS = new Set(ZONE_INCREASE_VARIANTS.map((v) => v.trigger));
+
 // よく使うアクション: カードDB(data/cards.json)のレシピ内action出現数を集計し、
 // 上位のものをボタン化（トリガー家族ボタンと同じ操作感にするため）。
 // 出現数目安: DP+84 / メモリー+48 / レスト40 / 登場36 / ドロー35 / キーワード付与33 /
@@ -2233,6 +2246,24 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>発動領域</label>
             <ButtonGroup options={ZONE_BUTTONS} value={block.zone || ''} onChange={(v) => update('zone', v)} accentColor="#d6336c" />
           </div>
+          {/* 【〇〇が増えたとき】選択時のみ: どのゾーンが増えたときかを選ぶ */}
+          {ZONE_INCREASE_TRIGGERS.has(block.trigger) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>増えた先</label>
+              <ButtonGroup
+                options={ZONE_INCREASE_VARIANTS.map((v) => ({ code: v.code, label: v.label }))}
+                value={ZONE_INCREASE_VARIANTS.find((v) => v.trigger === block.trigger)?.code || 'deck'}
+                onChange={(code) => {
+                  const v = ZONE_INCREASE_VARIANTS.find((x) => x.code === code)!;
+                  onChange({ ...block, trigger: v.trigger, triggers: [v.trigger] });
+                }}
+                accentColor="#d6336c"
+              />
+              {!ZONE_INCREASE_VARIANTS.find((v) => v.trigger === block.trigger)?.implemented && (
+                <span style={{ fontSize: 11, color: '#c62828' }}>⚠エンジン未実装（保存はできますが動作しません）</span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* === ＜前提＞ブロック: 区分 / タイプ / 限定 をボタン式で選択 ===

@@ -2246,24 +2246,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>発動領域</label>
             <ButtonGroup options={ZONE_BUTTONS} value={block.zone || ''} onChange={(v) => update('zone', v)} accentColor="#d6336c" />
           </div>
-          {/* 【〇〇が増えたとき】選択時のみ: どのゾーンが増えたときかを選ぶ */}
-          {ZONE_INCREASE_TRIGGERS.has(block.trigger) && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-              <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>増えた先</label>
-              <ButtonGroup
-                options={ZONE_INCREASE_VARIANTS.map((v) => ({ code: v.code, label: v.label }))}
-                value={ZONE_INCREASE_VARIANTS.find((v) => v.trigger === block.trigger)?.code || 'deck'}
-                onChange={(code) => {
-                  const v = ZONE_INCREASE_VARIANTS.find((x) => x.code === code)!;
-                  onChange({ ...block, trigger: v.trigger, triggers: [v.trigger] });
-                }}
-                accentColor="#d6336c"
-              />
-              {!ZONE_INCREASE_VARIANTS.find((v) => v.trigger === block.trigger)?.implemented && (
-                <span style={{ fontSize: 11, color: '#c62828' }}>⚠エンジン未実装（保存はできますが動作しません）</span>
-              )}
-            </div>
-          )}
         </div>
 
         {/* === ＜前提＞ブロック: 区分 / タイプ / 限定 をボタン式で選択 ===
@@ -2638,6 +2620,39 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <span style={{ fontSize: 11, color: '#666' }}>発動ターン:</span>
                     <ButtonGroup options={TIMING_OPTIONS.map((t) => ({ code: t.code, label: t.label }))} value={timing} onChange={(v) => setTiming(v as TimingKey)} accentColor="#2e7d32" />
                   </div>
+
+                  {/* 【〇〇が増えたとき】選択時のみ: 他の「📍 場所」欄と同じボタン見た目で
+                      どのゾーンが増えたときかを選ぶ（こちらは1つだけ選ぶ単一選択） */}
+                  {ZONE_INCREASE_TRIGGERS.has(block.trigger) && (
+                    <div style={{ marginTop: 6 }}>
+                      <label style={{ fontSize: 11, color: '#666' }}>📍 場所</label>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+                        {ZONE_INCREASE_VARIANTS.map((v) => {
+                          const active = block.trigger === v.trigger;
+                          return (
+                            <button
+                              key={v.code}
+                              type="button"
+                              onClick={() => onChange({ ...block, trigger: v.trigger, triggers: [v.trigger] })}
+                              style={{
+                                padding: '3px 9px', borderRadius: 5,
+                                border: active ? '2px solid #1a4f8a' : '1px solid #bbb',
+                                background: active ? '#1a4f8a' : '#f5f5f5',
+                                color: active ? '#fff' : '#333',
+                                fontWeight: active ? 'bold' : 'normal',
+                                cursor: 'pointer', fontSize: 11,
+                              }}
+                            >
+                              {v.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {!ZONE_INCREASE_VARIANTS.find((v) => v.trigger === block.trigger)?.implemented && (
+                        <div style={{ marginTop: 4, fontSize: 11, color: '#c62828' }}>⚠エンジン未実装（保存はできますが動作しません）</div>
+                      )}
+                    </div>
+                  )}
 
                   {unimplementedActive.length > 0 && (
                     <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>

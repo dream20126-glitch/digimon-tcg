@@ -1825,6 +1825,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectCostFree = isEditingAlt ? !!editingAlt!.costFree : !!block.costFree;
   const effectSkipOnPlay = isEditingAlt ? !!editingAlt!.skipOnPlay : !!block.skipOnPlay;
   const effectOptions = isEditingAlt ? (editingAlt!.options || []) : (block.options || []);
+  const effectOptional = isEditingAlt ? !!editingAlt!.optional : !!block.optional;
   const effectFromFilter = isEditingAlt ? (editingAlt!.fromFilter || []) : (block.fromFilter || []);
   const effectTargetFilter = isEditingAlt ? (editingAlt!.targetFilter || []) : targetFilter;
   const showRetrievalFilterEffective = !!effectAction && BUILTIN_FROM_ZONE_ACTIONS.has(effectAction);
@@ -2863,31 +2864,45 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           {/* 強制 / 任意 + 演出タイプ: 「〜できる」効果は optional をONにする。ONの間、発動前に
               「発動しますか？」の確認ダイアログが入る。アクション選択前から常に表示する
-              （枠色は削除。演出タイプはこの行に統合） */}
+              （枠色は削除。演出タイプはこの行に統合）。
+              強制/任意は効果1・代替アクションとも編集中の効果に対して個別に設定できる
+              （例:「DP+3000し、その後そのデジモンでアタックできる」で、DP+3000（効果1）は
+              強制のまま、その後のアタック（効果2）だけ任意にする、という使い方）。
+              ただし現状、確認ダイアログはブロック全体でまとめて1回しか出せないため、
+              代替アクション側だけ任意にしても実際の挙動には反映されない
+              （JSON上は正しく区別して保存されるが、エンジン側の対応が別途必要）。
+              演出タイプは効果1専用のまま（代替アクションには無い概念） */}
           {block.trigger !== 'alt_evolve' && (
             <div style={{ marginBottom: 8, display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
               <div>
                 <ButtonGroup
                   options={[{ code: 'forced', label: '強制' }, { code: 'optional', label: '任意' }]}
-                  value={block.optional ? 'optional' : 'forced'}
-                  onChange={(v) => update('optional', v === 'optional')}
+                  value={effectOptional ? 'optional' : 'forced'}
+                  onChange={(v) => updateEffect({ optional: v === 'optional' })}
                   accentColor="#2e7d32"
                 />
+                {isEditingAlt && (
+                  <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
+                    ⚠この効果だけ独立して確認ダイアログを出す対応はエンジン未実装です（保存はできますが動作しません）
+                  </div>
+                )}
               </div>
-              <div>
-                <label style={{ fontSize: 11, color: '#666' }}>✨ 演出タイプ（空欄ならアクションコードから自動推測）</label>
-                <select value={block.visualType || ''} onChange={(e) => update('visualType', e.target.value)}>
-                  <option value="">（自動推測）</option>
-                  <option value="数値ポップアップ">数値ポップアップ</option>
-                  <option value="消滅演出">消滅演出</option>
-                  <option value="ドロー演出">ドロー演出</option>
-                  <option value="カード登場">カード登場</option>
-                  <option value="カード移動">カード移動</option>
-                  <option value="状態付与演出">状態付与演出</option>
-                  <option value="Sアタック+">Sアタック+</option>
-                  <option value="ジョグレス進化">ジョグレス進化</option>
-                </select>
-              </div>
+              {!isEditingAlt && (
+                <div>
+                  <label style={{ fontSize: 11, color: '#666' }}>✨ 演出タイプ（空欄ならアクションコードから自動推測）</label>
+                  <select value={block.visualType || ''} onChange={(e) => update('visualType', e.target.value)}>
+                    <option value="">（自動推測）</option>
+                    <option value="数値ポップアップ">数値ポップアップ</option>
+                    <option value="消滅演出">消滅演出</option>
+                    <option value="ドロー演出">ドロー演出</option>
+                    <option value="カード登場">カード登場</option>
+                    <option value="カード移動">カード移動</option>
+                    <option value="状態付与演出">状態付与演出</option>
+                    <option value="Sアタック+">Sアタック+</option>
+                    <option value="ジョグレス進化">ジョグレス進化</option>
+                  </select>
+                </div>
+              )}
             </div>
           )}
 

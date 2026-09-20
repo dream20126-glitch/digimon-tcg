@@ -151,6 +151,9 @@ function altActionToStepObject(a: AltAction): any {
   if (fromFilterObj) out.from_filter = fromFilterObj;
   const costArr = buildCostArray(a.costs);
   if (costArr) out.cost = costArr;
+  // 「その後」等でこの効果だけ独立して任意にする（確認ダイアログをブロック全体から
+  // 切り離して個別に出す対応はエンジン側で別途必要。JSON上は正しく区別して保存する）
+  if (a.optional) out.optional = true;
   return out;
 }
 
@@ -831,6 +834,7 @@ function stepObjectToAltAction(step: any): AltAction {
     targetFilter: parseFilterObject(step?.filter),
     fromFilter: parseFilterObject(step?.from_filter),
     costs: parseCostArray(step?.cost),
+    optional: !!step?.optional,
   };
 }
 
@@ -1114,6 +1118,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             targetFilter: parseFilterObject(a?.filter),
             fromFilter: parseFilterObject(a?.from_filter),
             costs: parseCostArray(a?.cost),
+            optional: !!a?.optional,
           };
         })
       : [],

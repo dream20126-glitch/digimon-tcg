@@ -212,6 +212,13 @@ export interface AltAction {
   fromFilter?: ConditionPair[];
   // コスト（「〇〇することで」発動）。効果1のcostsと同じ意味・同じ変換ルール
   costs?: CostStep[];
+  // 「その後」で繋いだこの効果だけを独立して任意にする（例:「DP+3000し、その後
+  // そのデジモンでアタックできる」で、DP+3000は強制・アタックだけ任意にしたい場合）。
+  // 効果1のoptionalと同じ意味でJSONへstep.optional:trueを出力するが、確認ダイアログを
+  // 「ブロック全体でまとめて1回」ではなくこの効果だけ独立させて出すには、エンジン側の
+  // 対応（このAltAction由来のstepを実行する箇所を、ブロック全体のisOptional判定から
+  // 切り離して個別に確認する）が別途必要（未実装）。JSON上は正しく区別して保存できる
+  optional?: boolean;
 }
 
 // ルール = メインアクションに紐づく「ミニ effect step」

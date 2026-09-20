@@ -1417,7 +1417,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
     case 'cost_discard': {
       const n = action.value || 1;
-      if (player.hand.length < n) { callback(false); return; }
+      // 対象の絞り込み条件（cond_feature_contains等）。指定があれば手札全体ではなく
+      // 条件を満たすカードだけがピッカーの選択候補になる（他のcost系アクションと同じ規約）
+      const _cdConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
+      const _cdHandPool = _cdConds.length > 0 ? player.hand.filter(c => c && checkConditions(_cdConds, c, ctx.bs, ctx.side)) : player.hand;
+      if (_cdHandPool.length < n) { callback(false); return; }
       const isPlayerSide = ctx.side === 'player';
       const canShowPicker = isPlayerSide && typeof showHandDiscardPicker === 'function';
       // 1 枚ずつ破棄演出（自分側で fxCardMove, オンラインなら相手側にも fx_remoteCardMove 送信）
@@ -1450,13 +1454,13 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         next();
       };
       if (!canShowPicker) {
-        // AI 側 / UI なし: 末尾 N 枚を自動破棄
-        const auto = player.hand.slice(-n);
+        // AI 側 / UI なし: 条件を満たす末尾 N 枚を自動破棄
+        const auto = _cdHandPool.slice(-n);
         runDiscards(auto, () => callback());
         return;
       }
-      // プレイヤー: 手札ピッカーで N 枚選択 → 破棄
-      showHandDiscardPicker(player.hand.slice(), n, (picked) => {
+      // プレイヤー: 手札ピッカーで N 枚選択 → 破棄（条件があれば絞り込んだ候補のみ表示）
+      showHandDiscardPicker(_cdHandPool.slice(), n, (picked) => {
         if (!picked || picked.length < n) { callback(false); return; }
         runDiscards(picked, () => callback());
       });
@@ -1818,6 +1822,16 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
 
+    // 【分離】等「バトルエリアを離れない」の成功マーカー。盤面への副作用は起こさず、
+    // 「コストが払われてここまで到達した」ことだけをctx.cardに記録する。
+    // tryCancelViaLeaveBattleがこのフラグを見て「離れる処理をキャンセルできたか」を判定する
+    // （分離専用のlinkedCards増減チェックに代わる、when_leave_battleレシピ全般で使える汎用版）
+    case 'battle_area': {
+      if (ctx.card) ctx.card._stayedInBattleArea = true;
+      callback();
+      break;
+    }
+
     case 'goal_reached': {
       // チュートリアル専用アクション。チュートリアルランナーが動作中のときだけ通知する。
       // 通常のオンライン対戦では誰も呼ばないので副作用なし。
@@ -1840,13 +1854,6 @@ function runOneAction(action, defaultTarget, ctx, callback) {
 }
 
 // ===== ヘルパー関数 =====
-
-// 【分離】等、レシピの passive 配列に flag:'protection' を持つか
-// （_permEffects/buffs経由でこのフラグが立つ経路が無いためレシピ構造のみで判定）
-function _hasProtectionFlag(card) {
-  const recipe = _parseCardRecipe(card);
-  return !!(recipe && Array.isArray(recipe.passive) && recipe.passive.some(p => p && p.flag === 'protection'));
-}
 
 function doDestroy(targetSide, slotIdx, ctx, callback) {
   const destroyed = targetSide.battleArea[slotIdx];
@@ -2567,6 +2574,11 @@ function cardMatchesFilter(card, filter) {
   if (filter.name && !cardHasName(card, filter.name, true)) return false;
   const _nameInc = filter.name_includes || filter.name_contains;
   if (_nameInc && !cardHasName(card, _nameInc, false)) return false;
+  if (filter.description || filter.description_contains) {
+    const _descText = [card.effect, card.evoSourceEffect, card.securityEffect].filter(Boolean).join('\n');
+    if (filter.description && _descText !== filter.description) return false;
+    if (filter.description_contains && !_descText.includes(filter.description_contains)) return false;
+  }
   if (filter.lv_ge != null && (parseInt(card.level) || 0) < filter.lv_ge) return false;
   if (filter.lv_le != null && (parseInt(card.level) || 0) > filter.lv_le) return false;
   if (filter.lv != null && (parseInt(card.level) || 0) !== filter.lv) return false;
@@ -4728,6 +4740,19 @@ function checkConditions(conditions, card, bs, side) {
         if (!card._digicrossed) return false;
         break;
       }
+      // 記述（カード自身に印刷されている効果テキスト全体）に指定文字列が含まれるか。
+      // 例:「クロノモン」の記述があるカード1枚を破棄する（BT26-009/011等）
+      case 'cond_description_contains': {
+        const _wanted = String(cond.value || '');
+        const _text = [card.effect, card.evoSourceEffect, card.securityEffect].filter(Boolean).join('\n');
+        if (!_wanted || !_text.includes(_wanted)) return false;
+        break;
+      }
+      case 'cond_description': {
+        const _text = [card.effect, card.evoSourceEffect, card.securityEffect].filter(Boolean).join('\n');
+        if (String(cond.value || '') !== _text) return false;
+        break;
+      }
     }
   }
   return true;
@@ -5802,23 +5827,28 @@ export function fireWhenLeaveBattleTriggers(leftCard, leftSide, bs, ctxBase, don
   return _fireSelfDestroyEffects(leftCard, leftSide, bs, ctxBase, done, 'when_leave_battle');
 }
 
-// 【分離】: リンクカードを1枚（テンプレート指定枚数）破棄することで、このカードが
-// バトルエリアを離れること自体をキャンセルする（回避/防壁/不屈/フラグメント等と同じ
-// 「消滅回避」系キーワード）。battle-combat.js の _tryCancelDestroyAsync から使う。
-// when_leave_battle のレシピ自体（確認ダイアログ・trigger_conditions・cost feasibility
-// 等）はfireWhenLeaveBattleTriggers（_fireSelfDestroyEffects）にそのまま委ねる。
-// 「キャンセルされたか」は linkedCards が実際に減ったか（=unlinkが実行されたか）で判定する
-// （確認ダイアログで「いいえ」を選べば linkedCards は変化しないため false になる）
+// カードが持つ when_leave_battle レシピ（自身の passive:protection＝分離キーワードに限らず、
+// カード固有の独自コストを持つ when_leave_battle も含む）を使って、このカードが
+// バトルエリアを離れること自体をキャンセルできるか試す（回避/防壁/不屈/フラグメント等と
+// 同じ「消滅回避」系キーワードの仕組み）。battle-combat.js の _tryCancelDestroyAsync から使う。
+// when_leave_battle のレシピ自体（確認ダイアログ・trigger_conditions・cost feasibility等）は
+// fireWhenLeaveBattleTriggers（_fireSelfDestroyEffects）にそのまま委ねる。
+// 「キャンセルされたか」は action:'battle_area' が実際に実行されたか
+// （=ctx.card._stayedInBattleArea が立ったか）で判定する（コストを払えなかった/
+// 確認ダイアログで「いいえ」を選んだ場合はfalseのまま）。以前は【分離】専用に
+// linkedCardsの増減で判定していたが、独自コストを持つカード（クロノモン：ホーリーモード等）
+// にも対応できるよう汎用化した
 export function tryCancelViaLeaveBattle(card, side, bs, ctxBase, callback) {
   const isOnline = !!(window._isOnlineMode && window._isOnlineMode());
-  if (isOnline || !card || !Array.isArray(card.linkedCards) || card.linkedCards.length === 0 || !_hasProtectionFlag(card)) {
+  if (isOnline || !card) {
     callback(false);
     return;
   }
-  const before = card.linkedCards.length;
+  card._stayedInBattleArea = false;
   try {
     fireWhenLeaveBattleTriggers(card, side, bs, ctxBase, () => {
-      const canceled = Array.isArray(card.linkedCards) && card.linkedCards.length < before;
+      const canceled = card._stayedInBattleArea === true;
+      delete card._stayedInBattleArea;
       callback(canceled);
     });
   } catch (_) { callback(false); }
@@ -6395,6 +6425,7 @@ const TARGET_FILTER_COND_CODES = new Set([
   'cond_color', 'cond_type', 'cond_lv', 'cond_lv_le', 'cond_lv_ge',
   'cond_dp', 'cond_dp_le', 'cond_dp_ge', 'cond_cost', 'cond_cost_le', 'cond_cost_ge',
   'cond_feature', 'cond_feature_contains', 'cond_name', 'cond_name_contains',
+  'cond_description', 'cond_description_contains',
   'cond_keyword', 'cond_self_active', 'cond_self_rest', 'cond_self_suspended',
   'cond_blocker', 'cond_rest', 'cond_no_evo', 'cond_has_evo', 'cond_evolve_to_lv',
   'cond_same_as_picked', 'cond_digicross', 'cond_jogress',
@@ -9890,7 +9921,12 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (!ctx.block) ctx.block = {};
         ctx.block.conditions = edConds2;
       } else if (step.condition) {
+        // when / extra_conditions も条件として結合する（condition だけだと、
+        // 「特徴Aを持つかBの記述があるカード」のような when 併記のOR条件が
+        // 黙って無視されていた）
         const conds = parseRecipeCondition(step.condition);
+        if (step.when) conds.push(...parseRecipeCondition(step.when));
+        if (Array.isArray(step.extra_conditions)) step.extra_conditions.forEach(cs => conds.push(...parseRecipeCondition(cs)));
         if (step.condition_op === 'or') conds._op = 'or';
         const _isSelfTgt = !step.target || step.target === 'self' || step.target === 'self_card';
         // 盤面全体・メモリー等の状態を見る条件（cond_tamer/cond_memory_ge等、対象カード

@@ -1546,6 +1546,19 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'evolve', label: '進化' },
   { code: 'link', label: 'リンク' },
 ];
+// 「レスト」「アクティブ」「進化」ボタン専用: 「する」（通常の状態変化アクション）と
+// 「できない」（それを封じるアクション）を切り替えられるようにする。
+// アクションコード自体が別物（例: rest⇔cant_rest）なため、単純な位置バリアント
+// （POSITION_VARIANTS的なsuffix切替）ではなく専用の対応表で管理する。
+// cant_rest は辞書未登録・エンジンも未実装（該当カードが来たら追加実装）
+const DOABLE_TO_CANT: Record<string, string> = {
+  rest: 'cant_rest',
+  active: 'not_active',
+  evolve: 'cant_evolve',
+};
+const CANT_TO_DOABLE: Record<string, string> = Object.fromEntries(
+  Object.entries(DOABLE_TO_CANT).map(([doable, cant]) => [cant, doable])
+);
 // よく使うコストアクション（「〇〇することで」の〇〇部分）
 // 「破棄」と「デッキに戻す/セキュリティに置く」は下の DISCARD_ZONE_MAP / DECKPOS_COST_ACTIONS で
 // 第二ボタン（場所・位置）付きで個別にレンダリングするため、ここには含めない
@@ -3157,7 +3170,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           // よく使うアクション（トリガー家族ボタンと同じ操作感）: 該当すればボタン1つで即選択、
           // 無ければ「その他のアクション」を開いて既存のプルダウン(+位置バリアント)から選ぶ
-          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || isDiscardActive;
+          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || isDiscardActive || !!CANT_TO_DOABLE[effectAction];
           function selectCommonAction(code: string) {
             if (isEditingAlt) { updateEffect({ action: code, value: '' }); return; }
             const dictEntry = findActionEntry(code);
@@ -3232,7 +3245,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {COMMON_ACTIONS.map((a) => {
-                    const active = effectAction === a.code;
+                    // レスト/アクティブ/進化は「できない」形（例: rest→cant_rest）を選んでいても
+                    // このボタン自体はアクティブ表示のままにする（下の する/できない で切り替える）
+                    const active = effectAction === a.code || CANT_TO_DOABLE[effectAction] === a.code;
                     return (
                       <button
                         key={a.code}
@@ -3314,6 +3329,22 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     })()}
                   </div>
                 )}
+                {/* レスト/アクティブ/進化: 「する」（通常）/「できない」（封じる）の切り替え */}
+                {(DOABLE_TO_CANT[effectAction] || CANT_TO_DOABLE[effectAction]) && (() => {
+                  const doableBase = DOABLE_TO_CANT[effectAction] ? effectAction : CANT_TO_DOABLE[effectAction];
+                  const isCant = effectAction === DOABLE_TO_CANT[doableBase];
+                  return (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>する/できない</div>
+                      <ButtonGroup
+                        options={[{ code: 'do', label: 'する' }, { code: 'cant', label: 'できない' }]}
+                        value={isCant ? 'cant' : 'do'}
+                        onChange={(v) => updateEffect({ action: v === 'cant' ? DOABLE_TO_CANT[doableBase] : doableBase })}
+                        accentColor="#1976d2"
+                      />
+                    </div>
+                  );
+                })()}
                 <div style={{ marginTop: 6 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
                     <input

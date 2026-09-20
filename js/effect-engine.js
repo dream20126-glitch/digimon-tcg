@@ -2530,6 +2530,9 @@ function cardMatchesFilter(card, filter) {
     const wanted = Array.isArray(filter.feature_includes) ? filter.feature_includes : [filter.feature_includes];
     if (!wanted.some(w => cardFeatures.some(f => f.includes(w)))) return false;
   }
+  // suspended: レスト/アクティブ状態でのフィルタ（true=レスト状態のみ、false=アクティブ状態のみ）
+  if (filter.suspended === true && !card.suspended) return false;
+  if (filter.suspended === false && card.suspended) return false;
   return true;
 }
 
@@ -2989,6 +2992,49 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   });
 }
 
+
+// ===== 汎用カードリスト選択UI（少数の候補から N 枚選ぶ） =====
+// リンクカードの破棄（分離キーワード）等、トラッシュ/手札全体ではなく、渡された
+// candidates（少数のカード配列）の中からだけ wantCount 枚選ばせたい場合に使う。
+// callback(pickedCards) — キャンセル不可（wantCount丁度選ぶまでモーダルを閉じない）
+function showCardListPicker(candidates, wantCount, title, callback) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:70000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;';
+
+  const titleEl = document.createElement('div');
+  titleEl.style.cssText = 'color:#ffcc00;font-size:14px;font-weight:bold;margin-bottom:12px;text-shadow:0 0 8px #ffcc0099;';
+  titleEl.innerText = (title || 'カードを選択') + `（${wantCount}枚選択）`;
+  overlay.appendChild(titleEl);
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:90%;';
+  overlay.appendChild(row);
+
+  const picked = [];
+  const cleanup = () => { try { overlay.remove(); } catch (_) {} };
+
+  candidates.forEach((c) => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'border:2px solid #ffcc00;border-radius:8px;padding:4px;text-align:center;width:80px;cursor:pointer;transition:transform 0.15s;';
+    const src = c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '';
+    wrap.innerHTML = (src
+      ? `<img src="${src}" style="width:100%;border-radius:4px;">`
+      : `<div style="height:90px;background:#111;display:flex;align-items:center;justify-content:center;font-size:9px;color:#aaa;border-radius:4px;">${c.name || ''}</div>`
+    ) + `<div style="color:#fff;font-size:10px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name || ''}</div>`;
+    wrap.onclick = () => {
+      if (picked.includes(c)) return;
+      picked.push(c);
+      cleanup();
+      if (picked.length >= wantCount) { callback(picked); return; }
+      showCardListPicker(candidates.filter(x => !picked.includes(x)), wantCount - picked.length, title, (more) => {
+        callback(picked.concat(more || []));
+      });
+    };
+    row.appendChild(wrap);
+  });
+
+  document.body.appendChild(overlay);
+}
 
 // ===== 手札選択UI =====
 
@@ -5623,9 +5669,12 @@ export function fireWhenBattleDestroyTriggers(destroyedSide, bs, ctxBase, done) 
   return _fireSidedReactionTriggers(destroyedSide, 'when_battle_destroy', bs, ctxBase, done);
 }
 
-// バトルエリアを離れるとき → 離れる側の自分側が反応
-export function fireWhenLeaveBattleTriggers(leavingSide, bs, ctxBase, done) {
-  return _fireSidedReactionTriggers(leavingSide, 'when_leave_battle', bs, ctxBase, done);
+// バトルエリアを離れるとき（分離キーワード等） → 離れた本人カード自身の反応。
+// 消滅時（on_destroy）と同じ「離れるカード自身の効果」パターンのため、盤面の再スキャンでは
+// 拾えない（この時点で既にバトルエリアから除去済み）。on_destroy と同じ
+// _fireSelfDestroyEffects（destroyedCard 引数を直接使う版）に委譲する
+export function fireWhenLeaveBattleTriggers(leftCard, leftSide, bs, ctxBase, done) {
+  return _fireSelfDestroyEffects(leftCard, leftSide, bs, ctxBase, done, 'when_leave_battle');
 }
 
 // セキュリティが減ったとき → 減った側の自分側が反応
@@ -9056,39 +9105,51 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
-    // === アタックの対象を変更する（反応系・キャロモン BT26-003 用） ===
-    // 「相手のデジモンがアタックしたとき」等への反応として、対象条件を満たす自分のデジモン
-    // 1体を選び、実際にアタック対象を差し替える。
-    // 【重要な既知の制約】対象選択のみ実装しており、バトル解決フロー（aiAttackPhase /
-    // aiScriptAttack / battle-online.js の attack_security・attack_digimon）側は
-    // targetMode/targetIdx をこのトリガー発火前にローカル変数へ確定させてしまっており、
-    // ここで ctx.bs._redirectedAttack に書き込んでも後続の処理には反映されない。
-    // 実際にアタックを差し替えるには上記フロー側の作り込みが別途必要（意図的に未着手）。
+    // === アタックの対象を変更する ===
+    // 「相手のデジモンがアタックしたとき」等への反応として自分のデジモンを対象に差し替える
+    // 用途（反応系・キャロモン BT26-003 用）と、突進のように「アタック宣言後、自分のアタックの
+    // 対象を相手側へ差し替える」用途の両方に対応する。step.target（"own:N" / "opponent:N"、
+    // 省略時は従来通り自分側）で対象プールの陣営を選ぶ。
+    // filter.dp_extreme: "highest"/"lowest" — filter/condition適用後の候補群の中でDPが
+    // 最大/最小のものだけに絞り込む（複数カードにまたがる集合演算のため cardMatchesFilter
+    // ではなく候補抽出後に別途適用する）
+    // ctx.bs._redirectedAttack へ書き込んだ新対象は、攻撃側の on_attack 解決後
+    // （battle-combat.js の resolveAttackTarget）で実際のバトル対象差し替えに使われる
     case 'redirect_attack': {
       const _raConds = [];
       if (step.condition) _raConds.push(...parseRecipeCondition(step.condition));
       if (step.when) _raConds.push(...parseRecipeCondition(step.when));
       if (Array.isArray(step.extra_conditions)) step.extra_conditions.forEach(cs => _raConds.push(...parseRecipeCondition(cs)));
       const _raFilter = step.filter || null;
-      const _raCands = [];
-      player.battleArea.forEach((c, i) => {
+      const _raTargetStr = String(step.target || 'own');
+      const _raIsOpponent = _raTargetStr.startsWith('opponent');
+      const _raPool = _raIsOpponent ? opponent : player;
+      let _raCands = [];
+      _raPool.battleArea.forEach((c, i) => {
         if (!c) return;
         if (_raFilter && !cardMatchesFilter(c, _raFilter)) return;
         if (_raConds.length > 0 && !checkConditions(_raConds, c, ctx.bs, ctx.side)) return;
         _raCands.push(i);
       });
+      // dp_extreme: 上記フィルタを通過した候補の中で最大/最小DPのものだけに絞る
+      if (_raFilter && _raFilter.dp_extreme && _raCands.length > 0) {
+        const dps = _raCands.map(i => parseInt(_raPool.battleArea[i].dp) || 0);
+        const extreme = _raFilter.dp_extreme === 'lowest' ? Math.min(...dps) : Math.max(...dps);
+        _raCands = _raCands.filter(i => (parseInt(_raPool.battleArea[i].dp) || 0) === extreme);
+      }
       if (_raCands.length === 0) {
-        ctx.addLog('⚠ 対象にできる自分のデジモンがいません');
+        ctx.addLog('⚠ 対象にできるデジモンがいません');
         showEffectFailed('効果を発動できませんでした', callback);
         return;
       }
-      const _raRowId = ctx.side === 'player' ? 'pl' : 'ai';
+      const _raPoolSide = _raIsOpponent ? (ctx.side === 'player' ? 'ai' : 'player') : ctx.side;
+      const _raRowId = _raPoolSide === 'player' ? 'pl' : 'ai';
       const _raFinish = (selectedIdx) => {
         if (selectedIdx == null) { callback(); return; }
-        const newTarget = player.battleArea[selectedIdx];
+        const newTarget = _raPool.battleArea[selectedIdx];
         if (!newTarget) { callback(); return; }
-        ctx.bs._redirectedAttack = { side: ctx.side, idx: selectedIdx, cardNo: newTarget.cardNo };
-        ctx.addLog('🎯 アタックの対象を「' + newTarget.name + '」に変更（※バトル解決フロー未連携のため実際のアタック対象は変わりません）');
+        ctx.bs._redirectedAttack = { side: _raPoolSide, idx: selectedIdx, cardNo: newTarget.cardNo };
+        ctx.addLog('🎯 アタックの対象を「' + newTarget.name + '」に変更');
         ctx.renderAll();
         callback();
       };
@@ -9338,17 +9399,37 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
 
     // === リンクを破棄 ===
+    // 分離キーワード等: 通常はリンクカードは1枚だけなので自動で破棄するが、複数枚
+    // 付いている場合は（step.condition等が cond_designated_name の置き換えで絞り込み
+    // 条件を持っていれば、それを満たすものだけを候補にした上で）プレイヤーがどれを
+    // 破棄するか選べるようにする
     case 'unlink': {
-      if (ctx.card && Array.isArray(ctx.card.linkedCards) && ctx.card.linkedCards.length > 0) {
-        const n = step.value || 1;
-        for (let i = 0; i < n && ctx.card.linkedCards.length > 0; i++) {
-          const c = ctx.card.linkedCards.shift();
+      const _ulLinked = (ctx.card && Array.isArray(ctx.card.linkedCards)) ? ctx.card.linkedCards : [];
+      if (_ulLinked.length === 0) { callback(); break; }
+      const _ulCount = step.value || 1;
+      const _ulConds = [];
+      if (step.condition) _ulConds.push(...parseRecipeCondition(step.condition));
+      if (step.when) _ulConds.push(...parseRecipeCondition(step.when));
+      if (Array.isArray(step.extra_conditions)) step.extra_conditions.forEach(cs => _ulConds.push(...parseRecipeCondition(cs)));
+      const _ulCandidates = _ulConds.length > 0
+        ? _ulLinked.filter(c => checkConditions(_ulConds, c, ctx.bs, ctx.side))
+        : _ulLinked.slice();
+      const _ulDoDiscard = (chosen) => {
+        (chosen || []).forEach(c => {
+          const idx = ctx.card.linkedCards.indexOf(c);
+          if (idx >= 0) ctx.card.linkedCards.splice(idx, 1);
           player.trash.push(c);
           ctx.addLog('🔗 リンクカード「' + c.name + '」を破棄');
-        }
+        });
         ctx.renderAll();
+        callback();
+      };
+      if (_ulCandidates.length === 0) { callback(); break; }
+      if (_ulCandidates.length <= _ulCount || effectiveSide === 'ai') {
+        _ulDoDiscard(_ulCandidates.slice(0, _ulCount));
+      } else {
+        showCardListPicker(_ulCandidates, _ulCount, 'リンクカードを選んで破棄', _ulDoDiscard);
       }
-      callback();
       break;
     }
 

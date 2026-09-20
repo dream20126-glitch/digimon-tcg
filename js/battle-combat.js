@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireWhenLeaveBattleTriggers as _fireWhenLeaveBattle } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -321,7 +321,6 @@ function hasFragment(c) { return hasPassiveFlag(c, 'fragment', '【フラグメ�
 
 // その他キーワード判定（フェーズ1〜2 実装分）
 function hasRush(c)         { return hasPassiveFlag(c, 'rush', '【速攻】'); }
-function hasPiercing(c)     { return hasPassiveFlag(c, 'piercing', '【突進】'); }
 function hasJamming(c)      { return hasPassiveFlag(c, 'jamming', '【ジャミング】'); }
 function hasCharge(c)       { return hasPassiveFlag(c, 'charge', '【進撃】'); }
 function hasCollision(c)    { return hasPassiveFlag(c, 'collision', '【衝突】'); }
@@ -431,8 +430,20 @@ function removeOwnCard(slotIdx, reason) {
   bs.player.battleArea[slotIdx] = null;
   bs.player.trash.push(card);
   if (card.stack) card.stack.forEach(s => bs.player.trash.push(s));
-  if (card.linkedCards) card.linkedCards.forEach(s => bs.player.trash.push(s));
+  _dumpLinkedCardsUnlessDeferred(card, bs.player.trash);
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'own_card_removed', slotIdx, reason: reason || 'destroy' });
+}
+
+// リンクカードをトラッシュへ送る（消滅・バウンス等、バトルエリアを離れる全処理の共通部分）。
+// 【分離】等 when_leave_battle でリンクカードの処遇（どれを破棄するか等）を自前で処理する
+// キーワードを持つカードは、ここでの自動一括破棄をスキップする（_fireDestroyChain 内で
+// 発火する when_leave_battle 側の unlink アクションに処理を委ねる）。
+// オンライン対戦中は when_leave_battle 側を未対応（意図的にスコープ外）のため、
+// 二重発火/カード紛失を避けるためオンライン時は常に従来通り即座に一括破棄する
+function _dumpLinkedCardsUnlessDeferred(card, trashArr) {
+  if (!card || !Array.isArray(card.linkedCards) || card.linkedCards.length === 0) return;
+  if (!_onlineMode && hasPassiveFlag(card, 'protection')) return;
+  card.linkedCards.forEach(s => trashArr.push(s));
 }
 
 // ===== オプション使用の色条件チェック =====
@@ -1427,6 +1438,43 @@ export function cancelAttack() {
 
 export function getAttackState() { return _atkState; }
 
+// 突進等の on_attack 効果（effect-engine.js の redirect_attack アクション）が
+// ctx.bs._redirectedAttack = {side:'ai', idx, cardNo} を書き込んでいた場合、元の宣言
+// （セキュリティ／デジモン問わず）を、そのデジモンへのアタックに差し替える。
+// このヘルパーはプレイヤーがAI側をアタックする経路（resolveAttackTarget）専用のため、
+// side!=='ai' のリダイレクト（反応系の自陣営リダイレクト等）は無視する。
+// 呼び出し後は bs._redirectedAttack を消費（null化）する
+function _consumeRedirectedAttack(defaultTarget, defaultIdx) {
+  const ra = bs._redirectedAttack;
+  bs._redirectedAttack = null;
+  const fallback = { target: defaultTarget, idx: defaultIdx, def: defaultTarget === 'digimon' ? bs.ai.battleArea[defaultIdx] : null };
+  if (!ra || ra.side !== 'ai') return fallback;
+  const def = bs.ai.battleArea[ra.idx];
+  if (!def) return fallback;
+  return { target: 'digimon', idx: ra.idx, def };
+}
+
+// オンライン対戦: デジモンアタックの宣言送信 → ブロック応答待ち → バトル解決。
+// 通常の宣言・突進等でセキュリティ宣言から差し替わった場合の両方から呼ばれる
+function _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, def, targetIdx) {
+  _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo) });
+  if (typeof window._waitForBlockResponse === 'function') {
+    window._waitForBlockResponse((resp) => {
+      if (!resp.blocked) {
+        resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai');
+      } else {
+        afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
+          if (_onlineMode && _sendCommand) _sendCommand({ type: 'blocked_effect_done' });
+          renderAll();
+          checkPendingTurnEnd();
+        });
+      }
+    });
+  } else {
+    resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai');
+  }
+}
+
 // ===== アタック解決 =====
 
 export function resolveAttackTarget(target, targetIdx) {
@@ -1504,6 +1552,9 @@ export function resolveAttackTarget(target, targetIdx) {
       // ★ アタック時効果を先に処理 → 完了後にブロック要求を送信
       // （これでターンプレイヤーが効果処理中に相手の画面にブロック確認が出ない）
       afterAtkEffect(atk, atkSlotIdx, () => {
+        // 突進等でセキュリティ→デジモンアタックに差し替わっていれば、そちらの経路へ
+        const _rt = _consumeRedirectedAttack('security', -1);
+        if (_rt.target === 'digimon') { _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, _rt.def, _rt.idx); return; }
         // 効果処理完了 → このタイミングで attack_security を送る
         _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo) });
         if (typeof window._waitForBlockResponse === 'function') {
@@ -1522,15 +1573,21 @@ export function resolveAttackTarget(target, targetIdx) {
         } else { resolveSecurityCheck(atk, atkSlotIdx); }
       });
     } else {
-      afterAtkEffect(atk, atkSlotIdx, () => resolveSecurityCheck(atk, atkSlotIdx));
+      afterAtkEffect(atk, atkSlotIdx, () => {
+        // 突進等でセキュリティ→デジモンアタックに差し替わっていれば、そちらの経路へ
+        const _rt = _consumeRedirectedAttack('security', -1);
+        if (_rt.target === 'digimon') { resolveBattle(atk, atkSlotIdx, _rt.def, _rt.idx, 'ai'); return; }
+        resolveSecurityCheck(atk, atkSlotIdx);
+      });
     }
   } else if (target === 'digimon') {
     // デジモンアタック
     const def = bs.ai.battleArea[targetIdx];
     if (!def) { cancelAttack(); return; }
-    // 「アクティブ状態のデジモンにもアタックできる」は突進(piercing)で判定
-    const canHitActive = hasPiercing(atk);
-    if (!def.suspended && !canHitActive) {
+    // アクティブ状態のデジモンには宣言できない（公式ルール）。突進は宣言時の対象拡張ではなく
+    // 「宣言後、任意でDP最大のアクティブなデジモンへ対象を差し替える」効果のため、ここでの
+    // 例外は無い（redirect_attack アクション経由でafterAtkEffect後に差し替わる）
+    if (!def.suspended) {
       addLog('🚨 アクティブ状態のデジモンにはアタックできません');
       atk.suspended = false; renderAll();
       return;
@@ -1578,24 +1635,15 @@ export function resolveAttackTarget(target, targetIdx) {
     if (_onlineMode && _sendCommand) {
       // ★ アタック時効果を先に処理 → 完了後にブロック要求を送信
       afterAtkEffect(atk, atkSlotIdx, () => {
-        _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo) });
-        if (typeof window._waitForBlockResponse === 'function') {
-          window._waitForBlockResponse((resp) => {
-            if (!resp.blocked) {
-              resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai');
-            } else {
-              // ブロックされた時効果を発動 → 完了シグナル送信 → P2側でバトル解決開始
-              afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
-                if (_onlineMode && _sendCommand) _sendCommand({ type: 'blocked_effect_done' });
-                renderAll();
-                checkPendingTurnEnd();
-              });
-            }
-          });
-        } else { resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai'); }
+        // 突進等でアタック対象が差し替わっていれば、そちらを対象にする
+        const _rt = _consumeRedirectedAttack('digimon', targetIdx);
+        _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, _rt.def, _rt.idx);
       });
     } else {
-      afterAtkEffect(atk, atkSlotIdx, () => resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai'));
+      afterAtkEffect(atk, atkSlotIdx, () => {
+        const _rt = _consumeRedirectedAttack('digimon', targetIdx);
+        resolveBattle(atk, atkSlotIdx, _rt.def, _rt.idx, 'ai');
+      });
     }
   }
   } // _proceedAttack
@@ -2239,16 +2287,26 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide) {
       }
       try { _fireOnDestroy(s, bs, ctxBase, cb, destroyedCard); } catch (_) { cb(); }
     };
+    // 【分離】等 when_leave_battle（バトルエリアを離れたカード自身の効果）を最初に解決する。
+    // オンライン対戦は未対応（相手側所有権の受け渡し経路が無いため、意図的にスコープ外）。
+    // 各sideの実行と対応する形で _dumpLinkedCardsUnlessDeferred がリンクカードの自動一括破棄を
+    // 保留しているのはこのタイミングで unlink アクションに処理させるため
+    const afterLeaveBattle = (cb) => {
+      if (_onlineMode || !destroyedCard) { cb(); return; }
+      try { _fireWhenLeaveBattle(destroyedCard, s, bs, ctxBase, cb); } catch (_) { cb(); }
+    };
     // 「消滅した時」（when_own_destroyed=同sideの他カードの反応）を先に解決し、
     // 「消滅時」（on_destroy/on_battle_destroy=消滅したカード自体の効果）を最後に解決する。
     // on_battle_destroy/when_own_destroyed には対応する所有者側発火経路が無いため、
     // これらは従来通りここ（消滅させた側の機械）で発火する。
     try {
-      _fireWhenOwnDestroyed(s, bs, ctxBase, () => {
-        afterOnDestroy(() => {
-          try {
-            _fireOnBattleDestroy(s, bs, ctxBase, next, destroyedCard);
-          } catch (_) { next(); }
+      afterLeaveBattle(() => {
+        _fireWhenOwnDestroyed(s, bs, ctxBase, () => {
+          afterOnDestroy(() => {
+            try {
+              _fireOnBattleDestroy(s, bs, ctxBase, next, destroyedCard);
+            } catch (_) { next(); }
+          });
         });
       });
     } catch (_) { next(); }
@@ -2266,7 +2324,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
       bs.ai.battleArea[defIdx] = null;
       bs.ai.trash.push(def);
       if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
-      if (def.linkedCards) def.linkedCards.forEach(s => bs.ai.trash.push(s));
+      _dumpLinkedCardsUnlessDeferred(def, bs.ai.trash);
       if (_onlineMode && _sendCommand) {
         _sendCommand({ type: 'card_removed', zone: 'battle', slotIdx: defIdx, reason: 'destroy' });
         if (window._markDestroyed) window._markDestroyed('ai', defIdx);
@@ -2370,7 +2428,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
             bs.player.battleArea[atkIdx] = null;
             bs.player.trash.push(atk);
             if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
-            if (atk.linkedCards) atk.linkedCards.forEach(function(s){ bs.player.trash.push(s); });
+            _dumpLinkedCardsUnlessDeferred(atk, bs.player.trash);
             renderAll();
             showMichizureAnnounce(() => {
               showDestroyEffect(atk, function() {
@@ -2385,7 +2443,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
             bs.player.battleArea[atkIdx] = null;
             bs.player.trash.push(atk);
             if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
-            if (atk.linkedCards) atk.linkedCards.forEach(function(s){ bs.player.trash.push(s); });
+            _dumpLinkedCardsUnlessDeferred(atk, bs.player.trash);
             renderAll();
             showDestroyEffect(atk, function() {
               _fireDestroyChain(['player'], function() {
@@ -2447,7 +2505,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
                 bs.ai.battleArea[defIdx2] = null;
                 bs.ai.trash.push(def);
                 if (def.stack) def.stack.forEach(s => bs.ai.trash.push(s));
-      if (def.linkedCards) def.linkedCards.forEach(s => bs.ai.trash.push(s));
+      _dumpLinkedCardsUnlessDeferred(def, bs.ai.trash);
                 renderAll();
                 showMichizureAnnounce(() => {
                   showDestroyEffect(def, () => {
@@ -2498,10 +2556,10 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           // 両者とも回避せず → 両者消滅
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-          if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
+          _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
           bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
           if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
-          if (def.linkedCards) def.linkedCards.forEach(s => bs.player.trash.push(s));
+          _dumpLinkedCardsUnlessDeferred(def, bs.player.trash);
           renderAll();
           showDestroyEffect(def, () => { showDestroyEffect(atk, () => {
             // ターンプレイヤー（ai）側の reactions を先 → 'player' destroyed が reactSide='ai'
@@ -2513,7 +2571,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           // atk のみコストを払い消滅回避 → def のみ消滅
           bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
           if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
-          if (def.linkedCards) def.linkedCards.forEach(s => bs.player.trash.push(s));
+          _dumpLinkedCardsUnlessDeferred(def, bs.player.trash);
           renderAll();
           showDestroyEffect(def, () => {
             _fireDestroyChain(['player'], () => {
@@ -2526,7 +2584,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           // def のみコストを払い消滅回避 → atk のみ消滅
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-          if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
+          _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
           renderAll();
           showDestroyEffect(atk, () => {
             _fireDestroyChain(['ai'], () => {
@@ -2551,7 +2609,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         () => {
           bs.player.battleArea[defIdx] = null; bs.player.trash.push(def);
           if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
-          if (def.linkedCards) def.linkedCards.forEach(s => bs.player.trash.push(s));
+          _dumpLinkedCardsUnlessDeferred(def, bs.player.trash);
           renderAll();
           showDestroyEffect(def, () => {
             // on_battle_win（本体+進化元）を発火するヘルパー。≪衝突≫/≪貫通≫も同じ
@@ -2579,7 +2637,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
               bs.ai.battleArea[atkIdx] = null;
               bs.ai.trash.push(atk);
               if (atk.stack) atk.stack.forEach(function(s){ bs.ai.trash.push(s); });
-              if (atk.linkedCards) atk.linkedCards.forEach(function(s){ bs.ai.trash.push(s); });
+              _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
               renderAll();
               showMichizureAnnounce(() => {
                 showDestroyEffect(atk, function() {
@@ -2596,7 +2654,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
               bs.ai.battleArea[atkIdx] = null;
               bs.ai.trash.push(atk);
               if (atk.stack) atk.stack.forEach(function(s){ bs.ai.trash.push(s); });
-              if (atk.linkedCards) atk.linkedCards.forEach(function(s){ bs.ai.trash.push(s); });
+              _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
               renderAll();
               showDestroyEffect(atk, function() {
                 _fireDestroyChain(['ai'], function() {
@@ -2653,7 +2711,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         () => {
       bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
       if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-      if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
+      _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
       renderAll();
       // ≪道連れ≫: AI のアタッカーが消滅したとき、防御側 (player の def) も巻き込む
       if (hasMichizure(atk) && def && bs.player.battleArea.indexOf(def) >= 0) {
@@ -2661,7 +2719,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         bs.player.battleArea[defIdx2] = null;
         bs.player.trash.push(def);
         if (def.stack) def.stack.forEach(s => bs.player.trash.push(s));
-        if (def.linkedCards) def.linkedCards.forEach(s => bs.player.trash.push(s));
+        _dumpLinkedCardsUnlessDeferred(def, bs.player.trash);
         addLog('💀 【道連れ】「' + atk.name + '」が「' + def.name + '」を巻き込んで消滅！');
         renderAll();
         showDestroyEffect(atk, () => {
@@ -3080,7 +3138,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
         if (atk.dp === sec.dp) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-          if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
+          _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
           bs.player.trash.push(sec);
           showDestroyEffect(atk, () => {
             addLog('💥 両者消滅！'); renderAll();
@@ -3089,7 +3147,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
         } else if (sec.dp > atk.dp) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
-          if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
+          _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
           bs.player.trash.push(sec);
           showDestroyEffect(atk, () => {
             addLog('💥 「' + atk.name + '」が撃破された'); renderAll();

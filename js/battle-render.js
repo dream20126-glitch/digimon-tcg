@@ -460,13 +460,12 @@ function startAttackModeUI(slotIdx) {
   arrowSvg.innerHTML = `<defs><marker id="atkArrowHead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#00fbff"/></marker></defs><line id="atk-arrow-line" x1="${sx}" y1="${sy}" x2="${sx}" y2="${sy}" stroke="#00fbff" stroke-width="3" stroke-dasharray="8,4" marker-end="url(#atkArrowHead)" opacity="0.9"/>`;
   arrowSvg.style.display = 'block';
 
-  // アタック対象ハイライト
-  // 突進(piercing) を持っていればアクティブ状態のデジモンにもアタック可能
-  const canHitActive = !!(card._permEffects && card._permEffects.piercing);
+  // アタック対象ハイライト（アクティブ状態のデジモンには宣言できない。突進は宣言後に
+  // 任意で対象を差し替える効果のため、ここでの対象拡張は無い）
   const aiRow = document.getElementById('ai-battle-row');
   if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, i) => {
     const def = bs.ai.battleArea[i]; if (!def) return;
-    if (def.suspended || canHitActive) {
+    if (def.suspended) {
       s.style.boxShadow = '0 0 10px #ff444488'; s.style.cursor = 'pointer';
     } else {
       // アクティブ状態＝アタック不可 → 🚫マーク表示

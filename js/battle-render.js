@@ -978,7 +978,8 @@ export function renderHand() {
                   else { if (window.doLink) window.doLink(card, idx, si); }
                 });
               } else if (occupied) { if (window.doEvolve) window.doEvolve(card, idx, si); }
-              else { if (window.doPlay) window.doPlay(card, idx, si); }
+              else if (window.offerAssemblyThenPlay) window.offerAssemblyThenPlay(card, idx, si);
+              else if (window.doPlay) window.doPlay(card, idx, si);
               dropped = true;
             }
           });

@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -724,6 +724,49 @@ function _consumePendingEvoCostReduction(evolved, base) {
 
 // ===== カード登場 =====
 
+// アセンブリ等「トラッシュのカードを使うことで登場コストを軽減できる」パッシブキーワード:
+// 手札のカードをバトルエリアへドロップした瞬間（＝実際に登場させる直前）にこの関数を経由させる。
+// 発動できる条件（発動領域が手札、対象となるカードがトラッシュに規定枚数ある）を満たしていれば
+// 「発動しますか？」の確認を挟み、発動を選べば対象カードをこのカードの下（進化元スタック）に
+// 置いてから通常のdoPlayへ進む（発動しない/対象不足の場合はそのままdoPlay）
+export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
+  if (bs.phase !== 'main' || _attackInProgress) { doPlay(card, handIdx, slotIdx); return; }
+  const options = card ? _getAssemblyOptions(card) : [];
+  for (const opt of options) {
+    // 発動領域指定があれば、手札にある時だけ対象（登場前の今がまさにそれ）
+    if (opt.in_zone && opt.in_zone !== 'hand') continue;
+    const costItem = Array.isArray(opt.cost) ? opt.cost[0] : null;
+    if (!costItem) continue;
+    const fromZones = Array.isArray(costItem.from) ? costItem.from : (costItem.from ? [costItem.from] : []);
+    if (!fromZones.includes('trash')) continue; // 現状トラッシュ由来のみ対応
+    const wantCount = parseInt(costItem.count, 10) || 1;
+    const candidates = _filterAssemblyCandidates(costItem, bs.player.trash, bs, 'player');
+    if (candidates.length < wantCount) continue; // 対象不足のため発動不可（次の候補へ）
+
+    showConfirm({
+      title: '💠 アセンブリ',
+      message: '「' + card.name + '」をアセンブリで登場させますか？（トラッシュのカードを' + wantCount + '枚使用）',
+      yesText: '発動する', noText: '発動しない',
+    }).then((yes) => {
+      if (!yes) { doPlay(card, handIdx, slotIdx); return; }
+      _showTrashCardPicker(candidates, wantCount, false, '💠 アセンブリで使うカードを選んでください', (picked) => {
+        if (!picked || picked.length < wantCount) { doPlay(card, handIdx, slotIdx); return; }
+        picked.forEach((p) => {
+          const ti = bs.player.trash.indexOf(p);
+          if (ti !== -1) bs.player.trash.splice(ti, 1);
+        });
+        if (!card.stack) card.stack = [];
+        card.stack = [...picked, ...card.stack];
+        card._assemblyDiscount = (parseInt(card._assemblyDiscount, 10) || 0) + (parseInt(opt.value, 10) || 0);
+        addLog('💠 「' + card.name + '」のアセンブリを発動（トラッシュから' + wantCount + '枚使用）');
+        doPlay(card, handIdx, slotIdx);
+      }, candidates);
+    });
+    return;
+  }
+  doPlay(card, handIdx, slotIdx);
+}
+
 export function doPlay(card, handIdx, slotIdx) {
   console.log('[doPlay] card=' + (card && card.name) + ' type=' + (card && card.type) + ' phase=' + bs.phase + ' attackInProgress=' + _attackInProgress);
   if (bs.phase !== 'main') { console.log('[doPlay] skip: phase != main'); return; }
@@ -739,6 +782,9 @@ export function doPlay(card, handIdx, slotIdx) {
   // recipe の summon_cost（条件付き登場コスト軽減）を反映した実効登場コスト
   // 例: ブラックウォーグレイモン「DP10000以上の相手がいる間、登場コスト-6」
   const _effPlayCost = _getEffectivePlayCost(card, bs, 'player');
+  // アセンブリ等が発動した場合の一時的な軽減量（offerAssemblyThenPlay が設定）は
+  // このコスト計算で使い切ったら消す（次に別の理由で登場するとき等に残らないように）
+  delete card._assemblyDiscount;
   if (_effPlayCost !== card.playCost) {
     addLog('💠 「' + card.name + '」の登場コスト ' + card.playCost + ' → ' + _effPlayCost);
     // showPlayEffect/showOptionEffect の演出表示（自分側画面）にも軽減後コストを反映

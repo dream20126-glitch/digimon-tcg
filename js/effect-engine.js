@@ -2335,7 +2335,7 @@ function showHandDiscardPicker(hand, wantCount, callback) {
 // title: 上部に表示するメッセージ
 // callback: (chosenCards[]) => void  キャンセル時は [] or null を渡す
 // fullTrash: 全トラッシュ配列（指定すれば既存の trash-modal を使い対象だけハイライト表示）
-function showTrashCardPicker(candidates, wantCount, optional, title, callback, fullTrash) {
+export function showTrashCardPicker(candidates, wantCount, optional, title, callback, fullTrash) {
   // 既存 trash-modal を使うインプレース版
   const modal = document.getElementById('trash-modal');
   if (modal && Array.isArray(fullTrash) && fullTrash.length > 0) {
@@ -9697,28 +9697,59 @@ function _parseCardRecipe(card) {
 // recipe の summon_cost（条件付き登場コスト軽減）を反映した実効登場コスト。
 // summon_cost: [{ condition?, value }] — condition 成立分の value を合算して減算。
 // 例: ブラックウォーグレイモン「DP10000以上の相手がいる間、登場コスト-6」
+// ※ _lookupTriggerSteps 経由で取得するため、アセンブリ等パッシブキーワード由来の
+//    summon_cost（辞書のレシピテンプレート側で定義）も自動的に含まれる。
+//    ただし cost[] を伴うエントリ（プレイヤーが任意で選ぶ「支払うことで軽減」タイプ）は
+//    ここでは自動計算せず、実際に支払いを選んだ場合のみ card._assemblyDiscount
+//    （offerAssemblyThenPlay等が事前に設定する）経由で反映する
 export function getEffectivePlayCost(card, bs, side) {
   const base = (card && card.playCost != null) ? card.playCost : 0;
   if (base <= 0) return base;
+  let reduction = parseInt(card && card._assemblyDiscount, 10) || 0;
   const recipe = _parseCardRecipe(card);
-  const list = recipe && recipe.summon_cost;
-  if (!Array.isArray(list) || list.length === 0) return base;
-  let reduction = 0;
-  for (const entry of list) {
-    if (!entry) continue;
-    if (entry.condition) {
-      const conds = parseRecipeCondition(entry.condition);
-      if (!checkConditions(conds, card, bs, side || 'player')) continue;
-    }
-    if (entry.per_count && entry.ref) {
-      const count = getRefSourceCountDirect(entry.ref, card, bs, side || 'player', entry.ref_filter, entry.ref_state);
-      const perUnit = parseInt(entry.value, 10) || 1;
-      reduction += perUnit * Math.floor(count / entry.per_count);
-    } else {
-      reduction += parseInt(entry.value, 10) || 0;
+  const list = recipe && _lookupTriggerSteps(recipe, 'summon_cost');
+  if (Array.isArray(list)) {
+    for (const entry of list) {
+      if (!entry || (Array.isArray(entry.cost) && entry.cost.length > 0)) continue;
+      if (entry.condition) {
+        const conds = parseRecipeCondition(entry.condition);
+        if (!checkConditions(conds, card, bs, side || 'player')) continue;
+      }
+      if (entry.per_count && entry.ref) {
+        const count = getRefSourceCountDirect(entry.ref, card, bs, side || 'player', entry.ref_filter, entry.ref_state);
+        const perUnit = parseInt(entry.value, 10) || 1;
+        reduction += perUnit * Math.floor(count / entry.per_count);
+      } else {
+        reduction += parseInt(entry.value, 10) || 0;
+      }
     }
   }
   return Math.max(0, base - reduction);
+}
+
+// === アセンブリ等「トラッシュ等のカードを使うことで登場コストを軽減できる」
+// パッシブキーワード ===
+// summon_cost の中でも cost[] を伴うエントリ（自動軽減ではなく、プレイヤーが任意で
+// 選んで発動するタイプ）だけを取り出す
+export function getAssemblyOptions(card) {
+  const recipe = _parseCardRecipe(card);
+  if (!recipe) return [];
+  const steps = _lookupTriggerSteps(recipe, 'summon_cost') || [];
+  return steps.filter(s => s && Array.isArray(s.cost) && s.cost.length > 0);
+}
+
+// コストアイテム(cost[0]等)の condition/when/extra_conditions を満たすカードを抽出
+// （アセンブリの「対象」絞り込み判定・トラッシュの候補抽出に使う）
+export function filterAssemblyCandidates(costItem, cards, bs, side) {
+  if (!costItem) return [];
+  const conds = [];
+  if (costItem.condition) conds.push(...parseRecipeCondition(costItem.condition));
+  if (costItem.when) conds.push(...parseRecipeCondition(costItem.when));
+  if (Array.isArray(costItem.extra_conditions)) {
+    costItem.extra_conditions.forEach(cs => conds.push(...parseRecipeCondition(cs)));
+  }
+  if (costItem.condition_op === 'or' && conds.length > 1) conds._op = 'or';
+  return (cards || []).filter(c => c && (conds.length === 0 || checkConditions(conds, c, bs, side)));
 }
 
 // recipe の alt_evolve（進化条件を無視する代替進化）が baseCard に対して成立するか。

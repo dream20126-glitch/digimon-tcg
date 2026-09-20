@@ -1433,17 +1433,20 @@ const COST_REDUCTION_VARIANTS: { code: string; label: string; trigger: string; i
 const COST_REDUCTION_TRIGGERS = new Set(COST_REDUCTION_VARIANTS.map((v) => v.trigger));
 
 // 【〇〇が増えたとき】: 元々「デッキが増えたとき」(when_deck_increase) 専用だったトリガーを、
-// どのゾーンが増えたときかを選べるように一般化したもの。COST_REDUCTION_VARIANTS と違い、
-// こちらは通常の「〇〇したとき」系トリガーと同じくアクション/対象/条件を普通に編集する
-// （常時判定される特殊トリガーではないため、専用パネルには置き換えない）
-const ZONE_INCREASE_VARIANTS: { code: string; label: string; trigger: string; implemented: boolean }[] = [
-  { code: 'deck', label: 'デッキ', trigger: 'when_deck_increase', implemented: true },
-  { code: 'hand', label: '手札', trigger: 'when_hand_increase', implemented: false },
-  { code: 'security', label: 'セキュリティ', trigger: 'when_security_increase', implemented: false },
-  { code: 'trash', label: 'トラッシュ', trigger: 'when_trash_increase', implemented: false },
-  { code: 'evo_source', label: '進化元', trigger: 'when_evo_source_increase', implemented: false },
+// どのゾーンが増えたときかを選べるように一般化したもの。トリガーキー自体は常に
+// when_deck_increase のまま1つで、どのゾーンを見るかは block.zoneIncrease[]（既存の
+// fromZones/fromZonesOpと全く同じ「複数選択+OR/AND」の作り）で表現する。
+// COST_REDUCTION_VARIANTS と違い、こちらは通常の「〇〇したとき」系トリガーと同じく
+// アクション/対象/条件を普通に編集する（常時判定される特殊トリガーではないため、
+// 専用パネルには置き換えない）
+const ZONE_INCREASE_TRIGGER = 'when_deck_increase';
+const ZONE_INCREASE_OPTIONS: { code: string; label: string; implemented: boolean }[] = [
+  { code: 'deck', label: 'デッキ', implemented: true },
+  { code: 'hand', label: '手札', implemented: false },
+  { code: 'security', label: 'セキュリティ', implemented: false },
+  { code: 'trash', label: 'トラッシュ', implemented: false },
+  { code: 'evo_source', label: '進化元', implemented: false },
 ];
-const ZONE_INCREASE_TRIGGERS = new Set(ZONE_INCREASE_VARIANTS.map((v) => v.trigger));
 
 // よく使うアクション: カードDB(data/cards.json)のレシピ内action出現数を集計し、
 // 上位のものをボタン化（トリガー家族ボタンと同じ操作感にするため）。
@@ -2621,38 +2624,72 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <ButtonGroup options={TIMING_OPTIONS.map((t) => ({ code: t.code, label: t.label }))} value={timing} onChange={(v) => setTiming(v as TimingKey)} accentColor="#2e7d32" />
                   </div>
 
-                  {/* 【〇〇が増えたとき】選択時のみ: 他の「📍 場所」欄と同じボタン見た目で
-                      どのゾーンが増えたときかを選ぶ（こちらは1つだけ選ぶ単一選択） */}
-                  {ZONE_INCREASE_TRIGGERS.has(block.trigger) && (
-                    <div style={{ marginTop: 6 }}>
-                      <label style={{ fontSize: 11, color: '#666' }}>📍 場所</label>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
-                        {ZONE_INCREASE_VARIANTS.map((v) => {
-                          const active = block.trigger === v.trigger;
-                          return (
-                            <button
-                              key={v.code}
-                              type="button"
-                              onClick={() => onChange({ ...block, trigger: v.trigger, triggers: [v.trigger] })}
-                              style={{
-                                padding: '3px 9px', borderRadius: 5,
-                                border: active ? '2px solid #1a4f8a' : '1px solid #bbb',
-                                background: active ? '#1a4f8a' : '#f5f5f5',
-                                color: active ? '#fff' : '#333',
-                                fontWeight: active ? 'bold' : 'normal',
-                                cursor: 'pointer', fontSize: 11,
-                              }}
-                            >
-                              {v.label}
-                            </button>
-                          );
-                        })}
+                  {/* 【〇〇が増えたとき】選択時のみ: 既存の「📍 場所」（取得元エリア）欄と
+                      全く同じ作り（複数選択+2件以上ならOR/AND切替）でどのゾーンが
+                      増えたときかを選ぶ */}
+                  {block.trigger === ZONE_INCREASE_TRIGGER && (() => {
+                    const zones = block.zoneIncrease || [];
+                    const op = block.zoneIncreaseOp || 'or';
+                    const toggleZone = (code: string) => {
+                      const next = zones.includes(code) ? zones.filter((z) => z !== code) : [...zones, code];
+                      update('zoneIncrease', next);
+                    };
+                    return (
+                      <div style={{ marginTop: 6 }}>
+                        <label style={{ fontSize: 11, color: '#666' }}>📍 場所</label>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+                          {ZONE_INCREASE_OPTIONS.map((v) => {
+                            const active = zones.includes(v.code);
+                            return (
+                              <button
+                                key={v.code}
+                                type="button"
+                                onClick={() => toggleZone(v.code)}
+                                style={{
+                                  padding: '3px 9px', borderRadius: 5,
+                                  border: active ? '2px solid #1a4f8a' : '1px solid #bbb',
+                                  background: active ? '#1a4f8a' : '#f5f5f5',
+                                  color: active ? '#fff' : '#333',
+                                  fontWeight: active ? 'bold' : 'normal',
+                                  cursor: 'pointer', fontSize: 11,
+                                }}
+                              >
+                                {v.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {zones.length >= 2 && (
+                          <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                            <span style={{ color: '#666' }}>結合:</span>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                              <input
+                                type="radio"
+                                name={`zoneIncreaseOp_${index}`}
+                                checked={op === 'or'}
+                                onChange={() => update('zoneIncreaseOp', 'or')}
+                                style={{ margin: 0 }}
+                              />
+                              OR（いずれか）
+                            </label>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                              <input
+                                type="radio"
+                                name={`zoneIncreaseOp_${index}`}
+                                checked={op === 'and'}
+                                onChange={() => update('zoneIncreaseOp', 'and')}
+                                style={{ margin: 0 }}
+                              />
+                              AND（全て）
+                            </label>
+                          </div>
+                        )}
+                        {zones.some((z) => !ZONE_INCREASE_OPTIONS.find((v) => v.code === z)?.implemented) && (
+                          <div style={{ marginTop: 4, fontSize: 11, color: '#c62828' }}>⚠ デッキ以外はエンジン未実装です（保存はできますが動作しません）</div>
+                        )}
                       </div>
-                      {!ZONE_INCREASE_VARIANTS.find((v) => v.trigger === block.trigger)?.implemented && (
-                        <div style={{ marginTop: 4, fontSize: 11, color: '#c62828' }}>⚠エンジン未実装（保存はできますが動作しません）</div>
-                      )}
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {unimplementedActive.length > 0 && (
                     <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>

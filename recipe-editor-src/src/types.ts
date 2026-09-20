@@ -128,6 +128,11 @@ export interface EffectBlock {
   visualType?: string;
   fromZones?: string[]; // アクションの取得元エリア（'hand' / 'trash' / 'deck' 等）。複数指定可。JSON では step.from
   fromZonesOp?: 'or' | 'and'; // 複数取得元の結合演算子（既定は 'or'）
+  // 【〇〇が増えたとき】(trigger:'when_deck_increase') 専用: どのゾーンが増えたときに
+  // 発火するか。fromZones/fromZonesOpと全く同じ形・同じUIを使い回す（複数選択可）。
+  // JSON では step.zone_increase（1件→string / 2件以上→array + zone_increase_op）
+  zoneIncrease?: string[];
+  zoneIncreaseOp?: 'or' | 'and';
   // 取得元エリアに「進化元」(evo_source) を含む場合のみ有効: どのデジモンの進化元から探すか。
   // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし（絞り込まない）
   // JSON では step.evo_source_owner に serialize

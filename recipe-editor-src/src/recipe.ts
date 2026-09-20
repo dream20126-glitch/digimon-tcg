@@ -528,6 +528,17 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       step.evo_source_owner = b.evoSourceOwner;
     }
   }
+  // 【〇〇が増えたとき】専用: どのゾーンが増えたときか (zoneIncrease[]) の serialize。
+  // fromZones と全く同じ規則（1件のみ→文字列 / 2件以上→配列+op）
+  if (Array.isArray(b.zoneIncrease) && b.zoneIncrease.length > 0) {
+    const ziZones = b.zoneIncrease.filter((z) => !!z);
+    if (ziZones.length === 1) {
+      step.zone_increase = ziZones[0];
+    } else if (ziZones.length > 1) {
+      step.zone_increase = ziZones;
+      if (b.zoneIncreaseOp && b.zoneIncreaseOp !== 'or') step.zone_increase_op = b.zoneIncreaseOp;
+    }
+  }
   if (b.options && b.options.length > 0) step.options = b.options.slice();
   // 「～ごとに」倍率設定の serialize
   if (b.perCount !== undefined && b.perCount !== null && Number(b.perCount) > 0 && b.perRef) {
@@ -907,6 +918,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     cost: true,
     from: true,
     from_op: true,
+    zone_increase: true,
+    zone_increase_op: true,
     per_count: true,
     ref: true,
     ref_state: true,
@@ -1004,6 +1017,14 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       return 'or' as const;
     })(),
     evoSourceOwner: step?.evo_source_owner === 'self' || step?.evo_source_owner === 'other' ? step.evo_source_owner : undefined,
+    // 【〇〇が増えたとき】専用: どのゾーンが増えたときか (fromZones と同じ規則)
+    zoneIncrease: (() => {
+      const z = step?.zone_increase;
+      if (!z) return [];
+      if (Array.isArray(z)) return z.slice();
+      return [String(z)];
+    })(),
+    zoneIncreaseOp: step?.zone_increase_op === 'and' ? 'and' as const : 'or' as const,
     options: Array.isArray(step?.options) ? step.options.slice() : [],
     perCount: step?.per_count !== undefined && step?.per_count !== null ? Number(step.per_count) : undefined,
     perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : undefined,

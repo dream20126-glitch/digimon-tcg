@@ -4329,29 +4329,6 @@ interface RuleStepEditorProps {
   // 親ブロックのトリガーが【アタック時】系か（アタック対象専用のDP条件を出すかの判定に使う）
   isAttackTrigger?: boolean;
 }
-// === ルールフィールド定義 ===
-// 各フィールドはチェックボックスで有効/無効を切替できる。
-// kind:'top' = step 直下のフィールド (target/type/value)
-// kind:'condition' = step.conditions 配列に cond_xxx として格納
-//
-// input:
-//   'select' = プルダウン (options 必須)
-//   'text'   = テキスト入力
-//   'number' = 数値入力
-//   'value'  = 専用 値プルダウン (1/2/3/全て/記述)
-type RuleFieldKind = 'top' | 'condition';
-type RuleFieldInput = 'select' | 'text' | 'number' | 'value' | 'flag';
-interface RuleFieldDef {
-  key: string;
-  label: string;
-  kind: RuleFieldKind;
-  topKey?: 'target' | 'type' | 'value' | 'isRemaining';   // kind:'top' のとき step のどのキー
-  condCode?: string;                        // kind:'condition' のとき cond_xxx
-  input: RuleFieldInput;                    // 'flag' は値入力なし（チェックボックス自体が値）
-  options?: SelectOption[];                 // input='select' 用
-  placeholder?: string;
-}
-
 const RULE_COLOR_OPTS: SelectOption[] = [
   { value: '', label: '（選択）' },
   { value: '赤', label: '赤' }, { value: '青', label: '青' }, { value: '黄', label: '黄' },
@@ -4363,12 +4340,6 @@ const RULE_TYPE_OPTS: SelectOption[] = [
   { value: 'テイマー', label: 'テイマー' },
   { value: 'オプション', label: 'オプション' },
   { value: 'カード', label: '全カード' },
-];
-const RULE_VALUE_OPTS: SelectOption[] = [
-  { value: '', label: '（選択）' },
-  { value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' },
-  { value: 'all', label: '全て' },
-  { value: '__custom__', label: '記述（自由入力）' },
 ];
 // 「対象の条件」の「場所」カテゴリ用: 対象カードがどのエリアにあるかの絞り込み
 // （例:「手札の『クロノモン』の記述があるデジモンカード」の「手札」部分）
@@ -4533,97 +4504,17 @@ const COMMON_CONDS: CommonCondDef[] = [
   // 発動条件/トリガー条件の文脈ではエンジンが評価対象を特定できないため意味を持たない
   { code: 'cond_zone',                 label: '場所',         input: 'select', options: RULE_ZONE_OPTS },
 ];
-// ルール上部フィールド (step 直下) のみ。条件は ConditionsHybridEditor に統一。
-// 「残ったカード」(isRemaining) は「アクション」ラベルの隣に単独チェックボックスで表示する
-// （このチェックリストからは除外）。「タイプ」は条件（cond_type）側で指定できるため、
-// このチェックリストには含めない（二重管理を避ける）
-const RULE_FIELDS: RuleFieldDef[] = [
-  { key: 'target', label: '対象',       kind: 'top', topKey: 'target', input: 'select', options: [] /* TARGETS で動的設定 */ },
-  { key: 'value',  label: '値（枚数）', kind: 'top', topKey: 'value',  input: 'value' },
-];
-
 function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, isAttackTrigger }: RuleStepEditorProps) {
   // 「条件ごとに枚数を分ける」がONか（1つのルール内に条件+枚数の組を複数持つモード）
   const hasDesignatedGroups = Array.isArray(step.designatedGroups) && step.designatedGroups.length > 0;
 
-  // === フィールドの「有効化」判定 ===
-  // top: step[topKey] が undefined でなければ有効
-  // condition: step.conditions に condCode がある entry があれば有効
-  function isFieldEnabled(f: RuleFieldDef): boolean {
-    if (f.kind === 'top' && f.topKey) {
-      const v = (step as any)[f.topKey];
-      // flag 型: 真偽値で判定
-      if (f.input === 'flag') return v === true;
-      return v !== undefined;
-    }
-    if (f.kind === 'condition' && f.condCode) {
-      return !!(step.conditions || []).find((c) => c.base === f.condCode);
-    }
-    return false;
-  }
-
-  // === フィールドの現在値取得 ===
-  function getFieldValue(f: RuleFieldDef): any {
-    if (f.kind === 'top' && f.topKey) {
-      return (step as any)[f.topKey];
-    }
-    if (f.kind === 'condition' && f.condCode) {
-      const c = (step.conditions || []).find((cc) => cc.base === f.condCode);
-      return c ? c.value : undefined;
-    }
-    return undefined;
-  }
-
-  // === フィールドの値を更新 ===
-  function setFieldValue(f: RuleFieldDef, v: any) {
-    if (f.kind === 'top' && f.topKey) {
-      onChange({ [f.topKey]: v });
-      return;
-    }
-    if (f.kind === 'condition' && f.condCode) {
-      const conds = (step.conditions || []).slice();
-      const i = conds.findIndex((c) => c.base === f.condCode);
-      const valStr = v === undefined || v === null ? '' : String(v);
-      if (i >= 0) conds[i] = { ...conds[i], value: valStr };
-      else conds.push({ base: f.condCode, value: valStr });
-      onChange({ conditions: conds });
-    }
-  }
-
-  // === フィールド有効化トグル ===
-  function setFieldEnabled(f: RuleFieldDef, enabled: boolean) {
-    if (f.kind === 'top' && f.topKey) {
-      // flag型: チェック自体が値 (true/undefined)
-      if (f.input === 'flag') {
-        onChange({ [f.topKey]: enabled ? true : undefined });
-        return;
-      }
-      // 通常 top フィールド: 有効化=空文字、無効化=undefined
-      onChange({ [f.topKey]: enabled ? '' : undefined });
-      return;
-    }
-    if (f.kind === 'condition' && f.condCode) {
-      const conds = step.conditions || [];
-      if (enabled) {
-        if (!conds.find((c) => c.base === f.condCode)) {
-          onChange({ conditions: [...conds, { base: f.condCode!, value: '' }] });
-        }
-      } else {
-        onChange({ conditions: conds.filter((c) => c.base !== f.condCode) });
-      }
-    }
-  }
-
-  // 値フィールド (input='value') の記述モード state
+  // 値フィールドの記述モード state（ボタンで1/2/3/全てを選ぶ or 記述で自由入力）
   const valueRaw = step.value;
   const valueStr = valueRaw === undefined || valueRaw === null ? '' : String(valueRaw);
   const isPresetValue = ['', '1', '2', '3', 'all'].includes(valueStr);
   const [customMode, setCustomMode] = useState<boolean>(!isPresetValue && valueRaw !== undefined);
   // 「その他のアクション」開閉状態（手札に加える/破棄/〇〇に置く 以外を選んでいるときは自動で開く）
   const [ruleOtherOpen, setRuleOtherOpen] = useState(false);
-
-  // 「対象」のオプションは TARGETS から動的に取得（コンパイル時の動的依存避け）
-  const targetOptions = toOpts(TARGETS);
 
   return (
     <div style={{ marginBottom: 6, padding: 8, background: 'white', border: '1px solid #c5d4ea', borderRadius: 4 }}>
@@ -4830,106 +4721,55 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
         );
       })()}
 
-      {/* チェックボックス: 必要なフィールドだけ ☑
-          「条件ごとに枚数を分ける」ON時は「値」はグループごとの枚数で代替されるため除外 */}
-      <div style={{ marginBottom: 6, padding: 6, background: '#f3f6fc', borderRadius: 4, border: '1px solid #d8e0f0' }}>
-        <div style={{ ...miniLbl(), marginBottom: 4 }}>有効化する項目（必要なものに ☑）</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px' }}>
-          {RULE_FIELDS.filter((f) => !(hasDesignatedGroups && f.key === 'value')).map((f) => (
-            <label key={f.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-              <input
-                type="checkbox"
-                checked={isFieldEnabled(f)}
-                onChange={(e) => setFieldEnabled(f, e.target.checked)}
-                style={{ margin: 0 }}
+      {/* 値（枚数）: ボタンで1/2/3/全てを選択。「条件ごとに枚数を分ける」ON時は
+          グループごとの枚数で代替されるため非表示 */}
+      {!hasDesignatedGroups && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={miniLbl()}>値（枚数）</div>
+          {!customMode ? (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <ButtonGroup
+                options={[{ code: '', label: '（未指定）' }, { code: '1', label: '1' }, { code: '2', label: '2' }, { code: '3', label: '3' }, { code: 'all', label: '全て' }]}
+                value={isPresetValue ? valueStr : ''}
+                onChange={(v) => {
+                  if (!v) onChange({ value: '' });
+                  else if (v === 'all') onChange({ value: 'all' });
+                  else onChange({ value: Number(v) });
+                }}
+                accentColor="#1976d2"
               />
-              {f.label}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {/* 有効化されたフィールドの入力欄（flag型は値入力不要なので除外） */}
-      {RULE_FIELDS.filter((f) => f.input !== 'flag' && !(hasDesignatedGroups && f.key === 'value')).some(isFieldEnabled) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 6 }}>
-          {RULE_FIELDS.filter((f) => f.input !== 'flag' && !(hasDesignatedGroups && f.key === 'value') && isFieldEnabled(f)).map((f) => (
-            <div key={f.key}>
-              <div style={miniLbl()}>{f.label}</div>
-              {/* input: select */}
-              {f.input === 'select' && (
-                <SearchSelect
-                  value={String(getFieldValue(f) ?? '')}
-                  onChange={(v) => setFieldValue(f, v)}
-                  options={f.key === 'target' ? targetOptions : (f.options || [])}
-                  allowFreeText={f.key === 'target'}
-                  placeholder={f.placeholder}
-                />
-              )}
-              {/* input: text */}
-              {f.input === 'text' && (
-                <input
-                  type="text"
-                  value={String(getFieldValue(f) ?? '')}
-                  onChange={(e) => setFieldValue(f, e.target.value)}
-                  placeholder={f.placeholder}
-                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                />
-              )}
-              {/* input: number */}
-              {f.input === 'number' && (
-                <input
-                  type="number"
-                  value={String(getFieldValue(f) ?? '')}
-                  onChange={(e) => setFieldValue(f, e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder={f.placeholder}
-                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%', boxSizing: 'border-box' }}
-                />
-              )}
-              {/* input: value（プルダウン or 記述） */}
-              {f.input === 'value' && (
-                !customMode ? (
-                  <select
-                    value={isPresetValue ? valueStr : ''}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v === '__custom__') setCustomMode(true);
-                      else if (v === '') onChange({ value: '' });
-                      else if (v === 'all') onChange({ value: 'all' });
-                      else onChange({ value: Number(v) });
-                    }}
-                    style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: '100%' }}
-                  >
-                    {RULE_VALUE_OPTS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div style={{ display: 'flex', gap: 2 }}>
-                    <input
-                      type="text"
-                      value={valueStr}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === '') onChange({ value: '' });
-                        else if (/^\d+$/.test(v)) onChange({ value: Number(v) });
-                        else onChange({ value: v });
-                      }}
-                      placeholder="例: deck_choice / 1000"
-                      autoFocus
-                      style={{ flex: 1, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, minWidth: 0 }}
-                    />
-                    <button
-                      onClick={() => { setCustomMode(false); onChange({ value: '' }); }}
-                      title="プルダウンに戻す（値はクリア）"
-                      style={{ padding: '0 6px', border: '1px solid #888', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11 }}
-                    >
-                      ↺
-                    </button>
-                  </div>
-                )
-              )}
+              <button
+                type="button"
+                onClick={() => setCustomMode(true)}
+                style={{ padding: '3px 9px', border: '1px dashed #1976d2', color: '#1976d2', background: 'white', borderRadius: 5, cursor: 'pointer', fontSize: 11 }}
+              >
+                記述で入力
+              </button>
             </div>
-          ))}
+          ) : (
+            <div style={{ display: 'flex', gap: 2 }}>
+              <input
+                type="text"
+                value={valueStr}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '') onChange({ value: '' });
+                  else if (/^\d+$/.test(v)) onChange({ value: Number(v) });
+                  else onChange({ value: v });
+                }}
+                placeholder="例: deck_choice / 1000"
+                autoFocus
+                style={{ flex: 1, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, minWidth: 0, maxWidth: 220 }}
+              />
+              <button
+                onClick={() => { setCustomMode(false); onChange({ value: '' }); }}
+                title="ボタン選択に戻す（値はクリア）"
+                style={{ padding: '0 6px', border: '1px solid #888', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11 }}
+              >
+                ↺
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -5180,51 +5020,6 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
           );
         })()}
       </div>
-
-      {/* === ルール内 修飾子: このルール限定で適用される options === */}
-      {/* 例: 「相手に見せて」をルール「手札に加える」に付与 → selections[].options に展開 */}
-      {dict.options.length > 0 && (
-        <details style={{ marginTop: 8 }} open={Array.isArray(step.options) && step.options.length > 0}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 12, color: '#1976d2', padding: '2px 0' }}>
-            🛡 修飾子（このルールに限定）
-            {Array.isArray(step.options) && step.options.length > 0 ? ` (${step.options.length})` : ''}
-          </summary>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: 6, border: '1px solid #d8e0f0', borderRadius: 4, background: '#f3f6fc', marginTop: 4 }}>
-            {dict.options.map((o) => {
-              const optsArr = step.options || [];
-              const checked = optsArr.includes(o.code);
-              const implemented = isOptionImplemented(o.code, o.logicCode);
-              return (
-                <label
-                  key={o.code}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4,
-                    padding: '3px 8px',
-                    border: checked ? '1px solid #3b6cd1' : '1px solid #c5cfe0',
-                    borderRadius: 12,
-                    background: checked ? '#dde7fb' : 'white',
-                    cursor: 'pointer', fontSize: 11,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => {
-                      const next = checked ? optsArr.filter((x) => x !== o.code) : [...optsArr, o.code];
-                      onChange({ options: next });
-                    }}
-                    style={{ margin: 0 }}
-                  />
-                  <span>{o.label}</span>
-                  {implemented
-                    ? <span style={{ color: '#2e7d32', fontSize: 9 }}>✅</span>
-                    : <span style={{ color: '#e65100', fontSize: 9 }} title="エンジン未実装">⚠</span>}
-                </label>
-              );
-            })}
-          </div>
-        </details>
-      )}
     </div>
   );
 }

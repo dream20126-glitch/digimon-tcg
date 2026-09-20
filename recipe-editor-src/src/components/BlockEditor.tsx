@@ -5498,6 +5498,23 @@ function ConditionsHybridEditor({
                 </div>
               );
             })}
+            {/* Lv/DP/コスト/名前/記述: 同じカテゴリで複数条件を組み合わせたい場合
+                （例:「Lv5以下」+「Lvの異なる」、DPの範囲指定「1000以上」+「5000以下」等）
+                に、もう1行追加できるようにする。色/タイプ/特徴/場所等はカンマ区切りの
+                複数値入力で足りるため対象外（variantOptionsForが無いカテゴリには出さない） */}
+            {variantOptionsFor(cat.code as CondCategory) && (
+              <button
+                type="button"
+                onClick={() => addRow(CATEGORY_DEFAULT_BASE[cat.code] || '')}
+                style={{
+                  fontSize: 11, padding: '2px 8px', marginTop: 2,
+                  border: `1px dashed ${colors.accent}`, color: colors.accent,
+                  background: 'white', borderRadius: 4, cursor: 'pointer',
+                }}
+              >
+                + {cat.label}の条件をもう1つ追加
+              </button>
+            )}
           </div>
         );
       })}

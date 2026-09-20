@@ -1,5 +1,5 @@
 // EffectBlock[] ⇄ recipe JSON 変換
-import type { AltAction, ConditionPair, DictEntry, EffectBlock, KeywordEntry, DesignatedGroup } from './types';
+import type { AltAction, ConditionPair, CostStep, DictEntry, EffectBlock, KeywordEntry, DesignatedGroup } from './types';
 import { applyRulesToStep } from './ruleTranslator';
 
 // 条件pairを「base:value@subject」形式の文字列に変換
@@ -9,6 +9,84 @@ function pairToString(p: ConditionPair): string {
   let s = p.value ? p.base + ':' + p.value : p.base;
   if (p.subject) s += '@' + p.subject;
   return s;
+}
+
+// CostStep[] → step.cost[] 形式。効果1(EffectBlock.costs)・代替アクション(AltAction.costs)
+// の両方で共用する（同じUI=CostListEditorを使い回すため、変換ルールも1本化する）
+function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
+  const validCosts = (costs || []).filter((c) => c.action);
+  if (validCosts.length === 0) return undefined;
+  return validCosts.map((c) => {
+    const cs: any = { action: c.action };
+    if (c.value !== undefined && c.value !== '' && c.value !== null) {
+      const n = Number(c.value);
+      cs.value = isNaN(n) ? c.value : n;
+    }
+    if (c.target) cs.target = c.target;
+    // 上/下（デッキに戻す/セキュリティに置く用）。'both'（どちらか選んで）はエンジン未対応の
+    // ため 'select' として出力する（return_deck は 'top' 以外を全て「下」、
+    // place_on_security_top は現状常に「上」として扱うので注意）
+    if (c.deckPosition === 'top') cs.position = 'top';
+    else if (c.deckPosition === 'bottom') cs.position = 'bottom';
+    else if (c.deckPosition === 'both') cs.position = 'select';
+    // 修飾子（'face_down' 等）
+    if (Array.isArray(c.options) && c.options.length > 0) cs.options = c.options.slice();
+    // コスト対象の取得元エリア (1件→string / 2件以上→array + from_op)
+    if (Array.isArray(c.fromZones) && c.fromZones.length > 0) {
+      const cz = c.fromZones.filter((z) => !!z);
+      if (cz.length === 1) {
+        cs.from = cz[0];
+      } else if (cz.length > 1) {
+        cs.from = cz;
+        if (c.fromZonesOp && c.fromZonesOp !== 'or') cs.from_op = c.fromZonesOp;
+      }
+    }
+    // コスト対象への絞り込み条件: condition / when / extra_conditions として直列化
+    const validCondPairs = (c.conditions || []).filter((p) => p.base);
+    if (validCondPairs.length >= 1) cs.condition = pairToString(validCondPairs[0]);
+    if (validCondPairs.length >= 2) cs.when = pairToString(validCondPairs[1]);
+    if (validCondPairs.length >= 3) cs.extra_conditions = validCondPairs.slice(2).map(pairToString);
+    if (validCondPairs.length >= 2 && c.conditionsOp === 'or') cs.condition_op = 'or';
+    return cs;
+  });
+}
+
+// buildCostArray の逆変換。step.cost[] / alt_actionの.cost[] のどちらでも使う共通ロジック
+function parseCostArray(rawCost: any): CostStep[] {
+  if (!Array.isArray(rawCost)) return [];
+  return rawCost.map((c: any) => {
+    const condArr: ConditionPair[] = [];
+    if (c?.condition) condArr.push(stringToPair(String(c.condition)));
+    if (c?.when) condArr.push(stringToPair(String(c.when)));
+    if (Array.isArray(c?.extra_conditions)) {
+      c.extra_conditions.forEach((s: string) => condArr.push(stringToPair(String(s))));
+    }
+    // 取得元エリアの deserialize: string / array / 旧 'hand_or_trash' 互換
+    const fromZones: string[] = (() => {
+      const f = c?.from;
+      if (!f) return [];
+      if (Array.isArray(f)) return f.slice();
+      const s = String(f);
+      if (s.includes('_or_')) return s.split('_or_');
+      return [s];
+    })();
+    const fromZonesOp: 'or' | 'and' = c?.from_op === 'and' ? 'and' : 'or';
+    const deckPosition: 'top' | 'bottom' | 'both' | undefined = c?.position === 'top' ? 'top'
+      : c?.position === 'bottom' ? 'bottom'
+      : c?.position === 'select' ? 'both'
+      : undefined;
+    return {
+      action: c?.action || '',
+      value: c?.value,
+      target: c?.target || '',
+      conditions: condArr,
+      conditionsOp: c?.condition_op === 'or' ? 'or' as const : 'and' as const,
+      fromZones,
+      fromZonesOp,
+      deckPosition,
+      options: Array.isArray(c?.options) ? c.options.slice() : undefined,
+    };
+  });
 }
 
 // AltAction 1件を JSON のステップオブジェクトに変換する（alt_actions[] の各要素、
@@ -67,6 +145,12 @@ function altActionToStepObject(a: AltAction): any {
   if (a.duration) out.duration = a.duration;
   if (a.costFree) out.cost_free = true;
   if (a.skipOnPlay) out.skip_on_play = true;
+  const targetFilterObj = buildFilterObject(a.targetFilter);
+  if (targetFilterObj) out.filter = targetFilterObj;
+  const fromFilterObj = buildFilterObject(a.fromFilter);
+  if (fromFilterObj) out.from_filter = fromFilterObj;
+  const costArr = buildCostArray(a.costs);
+  if (costArr) out.cost = costArr;
   return out;
 }
 
@@ -391,42 +475,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (validTriggerConds.length > 0) step.trigger_conditions = validTriggerConds.map(pairToString);
 
   // コスト
-  const validCosts = (b.costs || []).filter((c) => c.action);
-  if (validCosts.length > 0) {
-    step.cost = validCosts.map((c) => {
-      const cs: any = { action: c.action };
-      if (c.value !== undefined && c.value !== '' && c.value !== null) {
-        const n = Number(c.value);
-        cs.value = isNaN(n) ? c.value : n;
-      }
-      if (c.target) cs.target = c.target;
-      // 上/下（デッキに戻す/セキュリティに置く用）。'both'（どちらか選んで）はエンジン未対応の
-      // ため 'select' として出力する（return_deck は 'top' 以外を全て「下」、
-      // place_on_security_top は現状常に「上」として扱うので注意）
-      if (c.deckPosition === 'top') cs.position = 'top';
-      else if (c.deckPosition === 'bottom') cs.position = 'bottom';
-      else if (c.deckPosition === 'both') cs.position = 'select';
-      // 修飾子（'face_down' 等）
-      if (Array.isArray(c.options) && c.options.length > 0) cs.options = c.options.slice();
-      // コスト対象の取得元エリア (1件→string / 2件以上→array + from_op)
-      if (Array.isArray(c.fromZones) && c.fromZones.length > 0) {
-        const cz = c.fromZones.filter((z) => !!z);
-        if (cz.length === 1) {
-          cs.from = cz[0];
-        } else if (cz.length > 1) {
-          cs.from = cz;
-          if (c.fromZonesOp && c.fromZonesOp !== 'or') cs.from_op = c.fromZonesOp;
-        }
-      }
-      // コスト対象への絞り込み条件: condition / when / extra_conditions として直列化
-      const validCondPairs = (c.conditions || []).filter((p) => p.base);
-      if (validCondPairs.length >= 1) cs.condition = pairToString(validCondPairs[0]);
-      if (validCondPairs.length >= 2) cs.when = pairToString(validCondPairs[1]);
-      if (validCondPairs.length >= 3) cs.extra_conditions = validCondPairs.slice(2).map(pairToString);
-      if (validCondPairs.length >= 2 && c.conditionsOp === 'or') cs.condition_op = 'or';
-      return cs;
-    });
-  }
+  const stepCost = buildCostArray(b.costs);
+  if (stepCost) step.cost = stepCost;
 
   if (b.duration) step.duration = b.duration;
   if (b.action) step.action = b.action;
@@ -767,6 +817,9 @@ function stepObjectToAltAction(step: any): AltAction {
     perRefFilter: [],
     costFree: !!step?.cost_free,
     skipOnPlay: !!step?.skip_on_play,
+    targetFilter: parseFilterObject(step?.filter),
+    fromFilter: parseFilterObject(step?.from_filter),
+    costs: parseCostArray(step?.cost),
   };
 }
 
@@ -894,41 +947,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     step.trigger_conditions.forEach((s: string) => triggerConditions.push(stringToPair(String(s))));
   }
   // コスト復元 (condition / when / extra_conditions を ConditionPair[] へ統合)
-  const costs = Array.isArray(step?.cost)
-    ? step.cost.map((c: any) => {
-        const condArr: ConditionPair[] = [];
-        if (c?.condition) condArr.push(stringToPair(String(c.condition)));
-        if (c?.when) condArr.push(stringToPair(String(c.when)));
-        if (Array.isArray(c?.extra_conditions)) {
-          c.extra_conditions.forEach((s: string) => condArr.push(stringToPair(String(s))));
-        }
-        // 取得元エリアの deserialize: string / array / 旧 'hand_or_trash' 互換
-        const fromZones: string[] = (() => {
-          const f = c?.from;
-          if (!f) return [];
-          if (Array.isArray(f)) return f.slice();
-          const s = String(f);
-          if (s.includes('_or_')) return s.split('_or_');
-          return [s];
-        })();
-        const fromZonesOp: 'or' | 'and' = c?.from_op === 'and' ? 'and' : 'or';
-        const deckPosition: 'top' | 'bottom' | 'both' | undefined = c?.position === 'top' ? 'top'
-          : c?.position === 'bottom' ? 'bottom'
-          : c?.position === 'select' ? 'both'
-          : undefined;
-        return {
-          action: c?.action || '',
-          value: c?.value,
-          target: c?.target || '',
-          conditions: condArr,
-          conditionsOp: c?.condition_op === 'or' ? 'or' as const : 'and' as const,
-          fromZones,
-          fromZonesOp,
-          deckPosition,
-          options: Array.isArray(c?.options) ? c.options.slice() : undefined,
-        };
-      })
-    : [];
+  const costs = parseCostArray(step?.cost);
   return {
     section,
     asType: step?.as_type === 'digimon' || step?.as_type === 'tamer' || step?.as_type === 'option' ? step.as_type : undefined,
@@ -1071,6 +1090,9 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             })(),
             costFree: !!a?.cost_free,
             skipOnPlay: !!a?.skip_on_play,
+            targetFilter: parseFilterObject(a?.filter),
+            fromFilter: parseFilterObject(a?.from_filter),
+            costs: parseCostArray(a?.cost),
           };
         })
       : [],

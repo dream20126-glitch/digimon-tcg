@@ -201,6 +201,12 @@ export interface AltAction {
   // true のとき JSON へ cost_free:true / skip_on_play:true を出力する
   costFree?: boolean;
   skipOnPlay?: boolean;
+  // 対象自身の絞り込み（→ step.filter）・取得元エリアから選ぶカードの絞り込み
+  // （→ step.from_filter）。効果1のtargetFilter/fromFilterと同じ意味・同じ変換ルール
+  targetFilter?: ConditionPair[];
+  fromFilter?: ConditionPair[];
+  // コスト（「〇〇することで」発動）。効果1のcostsと同じ意味・同じ変換ルール
+  costs?: CostStep[];
 }
 
 // ルール = メインアクションに紐づく「ミニ effect step」

@@ -1690,6 +1690,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // （進化する側）であっても、実際に絞り込みたいのは取得元エリア（手札等）から選ぶカードの方
   // なので、「対象の条件」とは別枠・別データ（block.fromFilter → step.from_filter）として扱う
   // （例:「このデジモンを手札の『クロノモン』の記述があるカードに進化できる」）
+  // 実際の表示判定は effectAction 定義後（下部）で行う（そちらは編集中の効果を見る）
   const showRetrievalFilter = !!block.action && BUILTIN_FROM_ZONE_ACTIONS.has(block.action);
 
   function setTarget(base: string, suffix: string) {
@@ -1807,6 +1808,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectCostFree = isEditingAlt ? !!editingAlt!.costFree : !!block.costFree;
   const effectSkipOnPlay = isEditingAlt ? !!editingAlt!.skipOnPlay : !!block.skipOnPlay;
   const effectOptions = isEditingAlt ? (editingAlt!.options || []) : (block.options || []);
+  const effectFromFilter = isEditingAlt ? (editingAlt!.fromFilter || []) : (block.fromFilter || []);
+  const effectTargetFilter = isEditingAlt ? (editingAlt!.targetFilter || []) : targetFilter;
+  const showRetrievalFilterEffective = !!effectAction && BUILTIN_FROM_ZONE_ACTIONS.has(effectAction);
   function updateEffect(patch: Record<string, any>) {
     if (isEditingAlt) updateAltAction(editingEffect - 1, patch);
     else onChange({ ...block, ...patch });
@@ -1896,18 +1900,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     onChange({ ...block, grantedStep: { ...grantedStep, ...patch } });
   }
 
-  // コスト操作
-  const costs = block.costs || [];
+  // コスト操作（効果1・代替アクションとも同じ場所を使い回す）
+  const costs = isEditingAlt ? (editingAlt!.costs || []) : (block.costs || []);
   function updateCost(i: number, c: CostStep) {
     const next = costs.slice();
     next[i] = c;
-    update('costs', next);
+    updateEffect({ costs: next });
   }
   function addCost() {
-    update('costs', [...costs, { action: '', value: '', target: '' }]);
+    updateEffect({ costs: [...costs, { action: '', value: '', target: '' }] });
   }
   function removeCost(i: number) {
-    update('costs', costs.filter((_, idx) => idx !== i));
+    updateEffect({ costs: costs.filter((_, idx) => idx !== i) });
   }
 
   // === 折りたたみ state ===
@@ -3366,8 +3370,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* 対象 / 対象数 (アクションのターゲット) */}
         {(() => {
-          // 効果2以降（代替アクション）を編集中は簡易版のみ（デジモン+テイマー複数選択・
-          // 対象の条件は効果1専用のため、混線を避けてここでは提供しない）
+          // 効果2以降（代替アクション）を編集中は「デジモン+テイマー同時選択(AND)」だけ省略する
+          // （AND側は altActions を入れ子で使う実装のため、代替アクション自身には適用できない）。
+          // 「対象の条件」（targetFilter）は効果1と同じ ConditionsHybridEditor を使い回す
           if (isEditingAlt) {
             const eBase = (effectTarget || '').split(':')[0];
             const eSuffix = (effectTarget || '').substring(eBase.length);
@@ -3375,6 +3380,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eL2Options = TARGET_SEL_L2[eCurTgt.l1] || [];
             const eHideCount = eBase === 'self' || eBase === 'self_card' || eBase === 'same_target';
             const eIsUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(eBase);
+            const eShowTargetFilter =
+              (eCurTgt.l1 === 'own' && ['digimon', 'card', 'tamer'].includes(eCurTgt.l2)) ||
+              (eCurTgt.l1 === 'opp' && ['digimon', 'tamer'].includes(eCurTgt.l2)) ||
+              (eCurTgt.l1 === 'other_own' && eCurTgt.l2 === 'digimon');
             const setEffTgt = (l1: string, l2?: string) => {
               if (!l1) { updateEffect({ target: '' }); return; }
               // self/self_card・same_target は「対象数」UIを表示しない（eHideCount）ため、
@@ -3397,6 +3406,44 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {eIsUnimplemented && (
                     <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
                       ⚠ この対象はエンジン未実装です（保存はできますが動作しません）
+                    </div>
+                  )}
+                  {eShowTargetFilter && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 6, padding: '4px 6px', background: 'white', borderRadius: 3, border: '1px solid #b2dfdb' }}>
+                        {[
+                          { code: 'cond_self_rest',   label: 'レスト状態' },
+                          { code: 'cond_self_active', label: 'アクティブ状態' },
+                        ].map((f) => {
+                          const checked = effectTargetFilter.some((c) => c.base === f.code);
+                          return (
+                            <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  if (e.target.checked) { if (!checked) updateEffect({ targetFilter: [...effectTargetFilter, { base: f.code, value: '' }] }); }
+                                  else updateEffect({ targetFilter: effectTargetFilter.filter((c) => c.base !== f.code) });
+                                }}
+                                style={{ margin: 0 }}
+                              />
+                              {f.label}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <ConditionsHybridEditor
+                        conditions={effectTargetFilter}
+                        onChange={(next) => updateEffect({ targetFilter: next })}
+                        dict={dict}
+                        title="対象の条件"
+                        hint="（対象カードの絞り込み条件・複数 AND）"
+                        theme="action"
+                        defaultSubject=""
+                        showSubjectSelector={false}
+                        supportsMultiValue={true}
+                        part="full"
+                      />
                     </div>
                   )}
                 </div>
@@ -3634,13 +3681,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         {/* 📥 取得元カードの条件: 進化/登場アクション専用。対象＝このカード自身であっても、
             実際に絞り込みたいのは取得元エリア（手札等）から選ぶカードの方（例:「このデジモンを
             手札の『クロノモン』の記述があるデジモンカードに進化できる」）。「対象の条件」
-            （このカード自身に掛かる条件）とは別データ（block.fromFilter）で持つ。
-            効果2以降（代替アクション）は対象の条件と同様に効果1専用のため対象外 */}
-        {!isEditingAlt && showRetrievalFilter && (
+            （このカード自身に掛かる条件）とは別データ（block.fromFilter/AltAction.fromFilter）
+            で持つ。効果1・代替アクション（その後/OR/AND）とも同じ場所を使い回す */}
+        {showRetrievalFilterEffective && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8, background: '#e0f7f5', border: '1px solid #b2dfdb', borderRadius: 4, padding: 8 }}>
             <ConditionsHybridEditor
-              conditions={fromFilter}
-              onChange={(next) => update('fromFilter', next)}
+              conditions={effectFromFilter}
+              onChange={(next) => updateEffect({ fromFilter: next })}
               dict={dict}
               title="取得元カードの条件"
               hint="（進化先/登場先として取得元エリアから選ぶカードの絞り込み。対象＝このカード自身の条件とは別物）"
@@ -3732,8 +3779,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {renderPerCountEditor(isEditingAlt)}
 
-        {/* コスト: 「〇〇することで」を表現（効果1専用。AltActionにcostsフィールドは無い） */}
-        {!isEditingAlt && (
+        {/* コスト: 「〇〇することで」を表現。効果1・代替アクション（その後/OR/AND）とも
+            同じ CostListEditor を使い回す */}
         <div className="field" style={{ gridColumn: '1 / span 2' }}>
           <label>コスト（「〇〇することで」発動）</label>
           <CostListEditor
@@ -3744,7 +3791,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             removeCost={removeCost}
           />
         </div>
-        )}
 
 
         </details>

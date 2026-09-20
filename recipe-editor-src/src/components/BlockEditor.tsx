@@ -4725,6 +4725,19 @@ const DISTINCT_VARIANT_BY_CATEGORY: Partial<Record<CondCategory, { value: string
   description: { value: 'cond_description_distinct', label: '異なる' },
   color: { value: 'cond_color_distinct', label: '異なる' },
 };
+// DP以下/以上（cond_dp_le/cond_dp_ge）の「参照」機能: 固定値の代わりに、
+// このデジモン/自分/相手/他のデジモンの"現在のDP"と動的に比較したい場合に使う
+// （例:「このデジモンのDP以下の相手のデジモン」）。値は 'self'/'own'/'opp'/'other' の
+// マーカー文字列として保存する（数値と混同しない特別な値。エンジン側の動的参照評価は
+// 未実装のため、保存はできるが現状は動作しない）
+const DP_REF_SUBJECTS: { code: string; label: string }[] = [
+  { code: 'self', label: 'このデジモン' },
+  { code: 'own', label: '自分' },
+  { code: 'opp', label: '相手' },
+  { code: 'other', label: '他' },
+];
+const DP_REF_CODES = new Set(DP_REF_SUBJECTS.map((s) => s.code));
+
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
   'cond_attack_target_player', 'cond_attack_target_digimon', 'cond_no_evo',
@@ -5236,6 +5249,41 @@ function ConditionsHybridEditor({
                           </>
                         );
                       })()
+                    ) : (c.base === 'cond_dp_le' || c.base === 'cond_dp_ge') ? (
+                      DP_REF_CODES.has(c.value || '') ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <ButtonGroup
+                            options={DP_REF_SUBJECTS}
+                            value={c.value || ''}
+                            onChange={(v) => updateAt(i, { value: v })}
+                            accentColor={colors.accent}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateAt(i, { value: '' })}
+                            style={{ alignSelf: 'flex-start', padding: '2px 8px', border: '1px solid #bbb', background: '#f5f5f5', color: '#333', borderRadius: 4, cursor: 'pointer', fontSize: 10 }}
+                          >
+                            数値入力に戻す
+                          </button>
+                          <div style={{ fontSize: 10, color: '#c62828' }}>⚠ 他のデジモンのDPを動的に参照する条件はエンジン未実装です（保存はできますが動作しません）</div>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input
+                            type="number"
+                            value={c.value || ''}
+                            onChange={(e) => updateAt(i, { value: e.target.value })}
+                            style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 100, boxSizing: 'border-box' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateAt(i, { value: 'self' })}
+                            style={{ padding: '4px 8px', border: '1px solid #bbb', background: '#f5f5f5', color: '#333', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                          >
+                            参照
+                          </button>
+                        </div>
+                      )
                     ) : def && def.input === 'select' ? (
                       <ButtonGroup
                         options={(def.options || []).filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))}

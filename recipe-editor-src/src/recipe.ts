@@ -162,6 +162,9 @@ function altActionToStepObject(a: AltAction): any {
 // エリアから選ぶカードの絞り込み）の両方で同じ形を使うため共通化している
 // 値を持たない（チェックのみの）条件コード。buildFilterObject の value 必須ガードを迂回する
 const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest']);
+// DP参照マーカー（cond_dp_le/ge の値が固定数値ではなく「このデジモン/自分/相手/他」のDPを
+// 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する
+const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other']);
 
 function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, any> | null {
   if (!Array.isArray(pairs) || pairs.length === 0) return null;
@@ -172,9 +175,9 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
     const num = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
     switch (c.base) {
       case 'cond_color':            f.color = c.value; break;
-      case 'cond_dp':       { const n = num(c.value); if (n !== undefined) { f.dp_le = n; f.dp_ge = n; } break; }
-      case 'cond_dp_le':    { const n = num(c.value); if (n !== undefined) f.dp_le = n; break; }
-      case 'cond_dp_ge':    { const n = num(c.value); if (n !== undefined) f.dp_ge = n; break; }
+      case 'cond_dp':       { if (DP_REF_MARKERS.has(c.value)) { f.dp_le = c.value; f.dp_ge = c.value; } else { const n = num(c.value); if (n !== undefined) { f.dp_le = n; f.dp_ge = n; } } break; }
+      case 'cond_dp_le':    { if (DP_REF_MARKERS.has(c.value)) { f.dp_le = c.value; } else { const n = num(c.value); if (n !== undefined) f.dp_le = n; } break; }
+      case 'cond_dp_ge':    { if (DP_REF_MARKERS.has(c.value)) { f.dp_ge = c.value; } else { const n = num(c.value); if (n !== undefined) f.dp_ge = n; } break; }
       // 対象候補プール全体との比較が必要なため cardMatchesFilter（カード単体評価）では
       // 判定できず、対象選択処理側で別途「候補一覧の中から絞り込む」実装が必要
       // （エンジン未対応・保存のみ可。現状のところ値は不要なので c.value は見ない）
@@ -569,9 +572,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
           case 'cond_lv':       { const n = num(c.value); if (n !== undefined) { filter.lv_le = n; filter.lv_ge = n; } break; }
           case 'cond_lv_le':    { const n = num(c.value); if (n !== undefined) filter.lv_le = n; break; }
           case 'cond_lv_ge':    { const n = num(c.value); if (n !== undefined) filter.lv_ge = n; break; }
-          case 'cond_dp':       { const n = num(c.value); if (n !== undefined) { filter.dp_le = n; filter.dp_ge = n; } break; }
-          case 'cond_dp_le':    { const n = num(c.value); if (n !== undefined) filter.dp_le = n; break; }
-          case 'cond_dp_ge':    { const n = num(c.value); if (n !== undefined) filter.dp_ge = n; break; }
+          case 'cond_dp':       { if (DP_REF_MARKERS.has(c.value)) { filter.dp_le = c.value; filter.dp_ge = c.value; } else { const n = num(c.value); if (n !== undefined) { filter.dp_le = n; filter.dp_ge = n; } } break; }
+          case 'cond_dp_le':    { if (DP_REF_MARKERS.has(c.value)) { filter.dp_le = c.value; } else { const n = num(c.value); if (n !== undefined) filter.dp_le = n; } break; }
+          case 'cond_dp_ge':    { if (DP_REF_MARKERS.has(c.value)) { filter.dp_ge = c.value; } else { const n = num(c.value); if (n !== undefined) filter.dp_ge = n; } break; }
           case 'cond_cost':     { const n = num(c.value); if (n !== undefined) { filter.cost_le = n; filter.cost_ge = n; } break; }
           case 'cond_cost_le':  { const n = num(c.value); if (n !== undefined) filter.cost_le = n; break; }
           case 'cond_cost_ge':  { const n = num(c.value); if (n !== undefined) filter.cost_ge = n; break; }

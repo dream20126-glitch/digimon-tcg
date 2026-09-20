@@ -1842,30 +1842,28 @@ function _hasProtectionFlag(card) {
   return !!(recipe && Array.isArray(recipe.passive) && recipe.passive.some(p => p && p.flag === 'protection'));
 }
 
-// リンクカードをトラッシュへ送る（消滅・バウンス・デッキ戻し等、バトルエリアを離れる
-// 全処理の共通部分）。【分離】等 when_leave_battle でリンクカードの処遇（どれを破棄するか等）
-// を自前で処理するキーワードを持つカードは、ここでの自動一括破棄をスキップする
-// （fireDestroyChain/doBounce/return_deck 側で発火する when_leave_battle の
-// unlink アクションに処理を委ねる）。オンライン対戦は未対応のため、二重発火/カード紛失を
-// 避けるためオンライン時は常に従来通り即座に一括破棄する
-// 戻り値: true = このタイミングで実際に一括破棄した（またはリンクカードが無かった）/
-// false = 【分離】等のため保留した（呼び出し側は when_leave_battle 解決後に
-// _sweepRemainingLinkedCards で後始末すること）
-function _dumpLinkedCardsUnlessDeferred(card, trashArr) {
-  if (!card || !Array.isArray(card.linkedCards) || card.linkedCards.length === 0) return true;
+// 【分離】等 when_leave_battle を、カードがまだバトルエリアにいる状態で解決してから
+// callback を呼ぶ（実際の除去・トラッシュ送り・手札/デッキへの移動は callback 側で行うこと）。
+// 公式ルールの「DP0のデジモンはバトルエリアに存在できない」等のルールチェックによる除去は、
+// 分離の効果（リンクカードの処遇）が解決した後・最後に適用されるべきというイメージのため、
+// 除去より前に解決する。分離を持たない/リンクカードが無い/オンライン対戦中は
+// 即座に callback を呼ぶ（同期スキップ）。
+// card._leaveBattleResolved を立てて、fireDestroyChain 側で二重発火しないようにする
+function _resolveLeaveBattleBeforeRemoval(card, side, ctx, callback) {
   const isOnline = !!(window._isOnlineMode && window._isOnlineMode());
-  if (!isOnline && _hasProtectionFlag(card)) return false;
-  card.linkedCards.forEach(s => trashArr.push(s));
-  return true;
-}
-
-// _dumpLinkedCardsUnlessDeferred が保留した場合の後始末。when_leave_battle の
-// unlink アクションが選んだ分だけ既に card.linkedCards から取り除かれている前提で、
-// 残り（選ばれなかった分、または効果を発動しなかった場合は全部）をまとめてトラッシュへ送る
-function _sweepRemainingLinkedCards(card, trashArr) {
-  if (!card || !Array.isArray(card.linkedCards) || card.linkedCards.length === 0) return;
-  card.linkedCards.forEach(s => trashArr.push(s));
-  card.linkedCards = [];
+  if (isOnline || !card || !_hasProtectionFlag(card) || !Array.isArray(card.linkedCards) || card.linkedCards.length === 0) {
+    callback();
+    return;
+  }
+  // fireDestroyChain 側で二重発火しないようにする一時フラグ。fireDestroyChain を呼ぶ
+  // 呼び出し元（doDestroy/DP0消滅スイープ）ではそちらの消費時に消す。fireDestroyChain を
+  // 呼ばない呼び出し元（doBounce/return_deck）は callback 内で自分で消しておくこと
+  // （そうしないと、このカードオブジェクトが後で別の機会に消滅した時、古いフラグのせいで
+  // when_leave_battle が発火しなくなってしまう）
+  card._leaveBattleResolved = true;
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  try { fireWhenLeaveBattleTriggers(card, side, ctx.bs, ctxBase, callback); }
+  catch (_) { callback(); }
 }
 
 function doDestroy(targetSide, slotIdx, ctx, callback) {
@@ -1880,20 +1878,24 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       // デコイ持ちを消滅させ、対象 (destroyed) はそのまま残す
       var dc = decoyRes.decoyCard;
       var di = decoyRes.decoySlotIdx;
-      targetSide.battleArea[di] = null;
-      targetSide.trash.push(dc);
-      if (dc.stack) dc.stack.forEach(function(s){ targetSide.trash.push(s); });
-      _dumpLinkedCardsUnlessDeferred(dc, targetSide.trash);
-      ctx.renderAll && ctx.renderAll();
-      // デコイ自身の消滅で on_destroy 発火
       const decoyOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-      fireDestroyChain(dc, decoyOwnerSide, ctx.bs, ctx, function() {
-        callback && callback();
+      _resolveLeaveBattleBeforeRemoval(dc, decoyOwnerSide, ctx, () => {
+        targetSide.battleArea[di] = null;
+        targetSide.trash.push(dc);
+        if (dc.stack) dc.stack.forEach(function(s){ targetSide.trash.push(s); });
+        if (dc.linkedCards) dc.linkedCards.forEach(function(s){ targetSide.trash.push(s); });
+        ctx.renderAll && ctx.renderAll();
+        // デコイ自身の消滅で on_destroy 発火
+        fireDestroyChain(dc, decoyOwnerSide, ctx.bs, ctx, function() {
+          callback && callback();
+        });
       });
       return;
     }
   }
   if (window._tryScapegoat) {
+    // ※ _tryScapegoat（battle-combat.js）は同期的に身代わりの除去まで済ませてしまうため、
+    // 分離の「除去前に解決する」順序は適用できない（fireDestroyChain側で除去後に発火する）
     if (window._tryScapegoat(destroyed, targetSide)) {
       // 他デジモンを身代わりにして destroyed は残す
       ctx.renderAll && ctx.renderAll();
@@ -1904,25 +1906,25 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       return;
     }
   }
-  targetSide.battleArea[slotIdx] = null;
-  targetSide.trash.push(destroyed);
-  if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));
-  _dumpLinkedCardsUnlessDeferred(destroyed, targetSide.trash);
-  ctx.addLog('💀 「' + destroyed.name + '」を消滅');
-  // オンライン: 相手のカードを消滅させた場合、直接通知 + 復活防止マーク
-  if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
-    window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'destroy' });
-    if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
-    // このパスは on_battle_win 等のユーザー操作待ちを挟まないため、相手機の
-    // card_removed 側フォールバック待ち（最大30秒）に頼らず即座に発火してよいと伝える
-    window._onlineSendCommand({ type: 'fx_ownDestroyReady' });
-  }
-  ctx.renderAll();
-  // on_destroy グローバル発火（消滅した側を引数に）
-  // targetSide オブジェクトから 'player' / 'ai' を逆引き
   const destroyedSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-  // 共通の消滅トリガーチェーン
-  fireDestroyChain(destroyed, destroyedSideName, ctx.bs, ctx, callback);
+  _resolveLeaveBattleBeforeRemoval(destroyed, destroyedSideName, ctx, () => {
+    targetSide.battleArea[slotIdx] = null;
+    targetSide.trash.push(destroyed);
+    if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));
+    if (destroyed.linkedCards) destroyed.linkedCards.forEach(s => targetSide.trash.push(s));
+    ctx.addLog('💀 「' + destroyed.name + '」を消滅');
+    // オンライン: 相手のカードを消滅させた場合、直接通知 + 復活防止マーク
+    if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+      window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'destroy' });
+      if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
+      // このパスは on_battle_win 等のユーザー操作待ちを挟まないため、相手機の
+      // card_removed 側フォールバック待ち（最大30秒）に頼らず即座に発火してよいと伝える
+      window._onlineSendCommand({ type: 'fx_ownDestroyReady' });
+    }
+    ctx.renderAll();
+    // on_destroy グローバル発火（消滅した側を引数に） ＝ 共通の消滅トリガーチェーン
+    fireDestroyChain(destroyed, destroyedSideName, ctx.bs, ctx, callback);
+  });
 }
 
 // callback は省略可（従来呼び出し元は fire-and-forget のまま動く）。
@@ -1931,42 +1933,33 @@ function doBounce(targetSide, slotIdx, ctx, callback) {
   const finish = () => { try { callback && callback(); } catch (_) {} };
   const bounced = targetSide.battleArea[slotIdx];
   if (!bounced) { finish(); return; }
-  targetSide.battleArea[slotIdx] = null;
-  // 手札に戻る = 一時的な状態（バフ/DP修整/永続効果/レスト等）は全てリセットされる
-  // （八神太一のDP+1000等が手札に戻った後も残ってしまう不具合の修正）
-  bounced.buffs = [];
-  bounced.dpModifier = 0;
-  if (bounced.baseDp == null) bounced.baseDp = parseInt(bounced.dp) || 0;
-  bounced.dp = bounced.baseDp;
-  bounced._permEffects = {};
-  bounced.suspended = false;
-  bounced.summonedThisTurn = false;
-  targetSide.hand.push(bounced);
-  if (bounced.stack) bounced.stack.forEach(s => targetSide.trash.push(s));
-  bounced.stack = [];
-  const _dumped = _dumpLinkedCardsUnlessDeferred(bounced, targetSide.trash);
-  if (_dumped) bounced.linkedCards = [];
-  ctx.addLog('↩ 「' + bounced.name + '」を手札に戻した');
-  // オンライン: 相手のカードをバウンスした場合、直接通知 + 復活防止マーク
-  if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
-    window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'bounce' });
-    if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
-  }
-  ctx.renderAll();
-  if (_dumped) { finish(); return; }
-  // 【分離】: when_leave_battle（バトルエリアを離れた本人効果）を発火してから残りを後始末
   const targetSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-  try {
-    fireWhenLeaveBattleTriggers(bounced, targetSideName, ctx.bs, ctxBase, () => {
-      _sweepRemainingLinkedCards(bounced, targetSide.trash);
-      ctx.renderAll();
-      finish();
-    });
-  } catch (_) {
-    _sweepRemainingLinkedCards(bounced, targetSide.trash);
+  _resolveLeaveBattleBeforeRemoval(bounced, targetSideName, ctx, () => {
+    delete bounced._leaveBattleResolved;
+    targetSide.battleArea[slotIdx] = null;
+    // 手札に戻る = 一時的な状態（バフ/DP修整/永続効果/レスト等）は全てリセットされる
+    // （八神太一のDP+1000等が手札に戻った後も残ってしまう不具合の修正）
+    bounced.buffs = [];
+    bounced.dpModifier = 0;
+    if (bounced.baseDp == null) bounced.baseDp = parseInt(bounced.dp) || 0;
+    bounced.dp = bounced.baseDp;
+    bounced._permEffects = {};
+    bounced.suspended = false;
+    bounced.summonedThisTurn = false;
+    targetSide.hand.push(bounced);
+    if (bounced.stack) bounced.stack.forEach(s => targetSide.trash.push(s));
+    if (bounced.linkedCards) bounced.linkedCards.forEach(s => targetSide.trash.push(s));
+    bounced.stack = [];
+    bounced.linkedCards = [];
+    ctx.addLog('↩ 「' + bounced.name + '」を手札に戻した');
+    // オンライン: 相手のカードをバウンスした場合、直接通知 + 復活防止マーク
+    if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+      window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'bounce' });
+      if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
+    }
+    ctx.renderAll();
     finish();
-  }
+  });
 }
 
 // ===== 対象選択UI =====
@@ -4760,12 +4753,16 @@ function checkPendingDestroys(ctx, callback) {
     const { side, slot, card } = pending[idx++];
     // 演出
     showDE(card, () => {
+      // 【分離】: DP0でバトルエリアに存在できないルールチェック自体は防げないが、
+      // 除去・トラッシュ送りより前にリンクカードの処遇を解決する（まだバトルエリアにいる
+      // 状態で「効果発動しますか？」→リンクカード選択・破棄 →その後で除去）
+      _resolveLeaveBattleBeforeRemoval(card, side, ctx, () => {
       // 削除（演出後に実際に消滅）
       if (ctx.bs[side].battleArea[slot] === card) {
         ctx.bs[side].battleArea[slot] = null;
         ctx.bs[side].trash.push(card);
         if (card.stack) card.stack.forEach(s => ctx.bs[side].trash.push(s));
-        _dumpLinkedCardsUnlessDeferred(card, ctx.bs[side].trash);
+        if (card.linkedCards) card.linkedCards.forEach(s => ctx.bs[side].trash.push(s));
       }
       ctx.addLog('💀 「' + card.name + '」消滅');
       // オンライン: DP0消滅を即時通知（state_sync遅延による復活を防止）
@@ -4784,6 +4781,7 @@ function checkPendingDestroys(ctx, callback) {
       }
       // 共通の消滅トリガーチェーン
       fireDestroyChain(card, side, ctx.bs, ctx, processNext);
+      });
     });
   }
   processNext();
@@ -6004,9 +6002,14 @@ export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, call
   if (!destroyedCard || !bs) { finish(); return; }
   const oppSide = destroyedSide === 'player' ? 'ai' : 'player';
   // 【分離】等 when_leave_battle（バトルエリアを離れたカード自身の効果）を最初に解決する。
-  // オンライン対戦は未対応（意図的にスコープ外）
+  // オンライン対戦は未対応（意図的にスコープ外）。呼び出し元が既に
+  // _resolveLeaveBattleBeforeRemoval で（除去より前に）解決済み(_leaveBattleResolved)なら
+  // ここでは二重発火しない
   const _isOnline = !!(window._isOnlineMode && window._isOnlineMode());
   const afterLeaveBattle = (cb) => {
+    // 一度消費したら必ずクリアする（同じカードオブジェクトが将来別の機会に再度消滅した時、
+    // 古いフラグのせいで when_leave_battle が発火しなくなるのを防ぐ）
+    if (destroyedCard._leaveBattleResolved) { delete destroyedCard._leaveBattleResolved; cb(); return; }
     if (_isOnline) { cb(); return; }
     try { fireWhenLeaveBattleTriggers(destroyedCard, destroyedSide, bs, ctxBase, cb); } catch (_) { cb(); }
   };
@@ -9109,35 +9112,22 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _doReturnDeck = (idx, doneCb) => {
           const c = opponent.battleArea[idx];
           if (!c) { doneCb && doneCb(); return; }
-          opponent.battleArea[idx] = null;
-          if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
-          const _rdDumped = _dumpLinkedCardsUnlessDeferred(c, opponent.trash);
-          if (_rdDumped) c.linkedCards = [];
-          if (_rdTop) opponent.deck.unshift(c); else opponent.deck.push(c);
-          ctx.addLog('🔄 「' + c.name + '」を持ち主のデッキの' + (_rdTop ? '上' : '下') + 'に戻す');
-          if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
-            window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'return_deck' });
-          }
-          ctx.renderAll();
-          const _afterMove = () => {
-            if (_rdDumped) { doneCb && doneCb(); return; }
-            // 【分離】: when_leave_battle（バトルエリアを離れた本人効果）を発火してから残りを後始末
-            const _rdSideName = (ctx.bs && opponent === ctx.bs.player) ? 'player' : 'ai';
-            const _rdCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-            try {
-              fireWhenLeaveBattleTriggers(c, _rdSideName, ctx.bs, _rdCtxBase, () => {
-                _sweepRemainingLinkedCards(c, opponent.trash);
-                ctx.renderAll();
-                doneCb && doneCb();
-              });
-            } catch (_) {
-              _sweepRemainingLinkedCards(c, opponent.trash);
-              doneCb && doneCb();
+          const _rdSideName = (ctx.bs && opponent === ctx.bs.player) ? 'player' : 'ai';
+          _resolveLeaveBattleBeforeRemoval(c, _rdSideName, ctx, () => {
+            delete c._leaveBattleResolved;
+            opponent.battleArea[idx] = null;
+            if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
+            if (c.linkedCards) c.linkedCards.forEach(s => opponent.trash.push(s));
+            if (_rdTop) opponent.deck.unshift(c); else opponent.deck.push(c);
+            ctx.addLog('🔄 「' + c.name + '」を持ち主のデッキの' + (_rdTop ? '上' : '下') + 'に戻す');
+            if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+              window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'return_deck' });
             }
-          };
-          // デッキへ戻る演出（テラーズクラスター等）
-          if (window._fxCardMove) window._fxCardMove(c, 'バトルエリア', 'デッキ' + (_rdTop ? '(上)' : '(下)'), _afterMove);
-          else setTimeout(_afterMove, 300);
+            ctx.renderAll();
+            // デッキへ戻る演出（テラーズクラスター等）
+            if (window._fxCardMove) window._fxCardMove(c, 'バトルエリア', 'デッキ' + (_rdTop ? '(上)' : '(下)'), doneCb);
+            else setTimeout(() => doneCb && doneCb(), 300);
+          });
         };
         if (effectiveSide === 'ai') {
           _doReturnDeck(ctx._forceTargetIdx ?? _rdCands[0], () => callback());

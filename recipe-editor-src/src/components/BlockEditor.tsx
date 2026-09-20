@@ -435,6 +435,16 @@ function KeywordEntriesEditor({
                         style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 80 }}
                       />
                     </div>
+                    {(g.count === undefined ? 1 : Number(g.count)) > 1 && (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginTop: 4, color: '#666' }}>
+                        <input
+                          type="checkbox"
+                          checked={!!g.distinctNames}
+                          onChange={(e) => updateGroup(gi, { distinctNames: e.target.checked })}
+                        />
+                        枚数分選ぶカードは互いに名称が異なる必要がある（例:「名称の異なるカードN枚」）
+                      </label>
+                    )}
                   </div>
                 ))}
                 <button

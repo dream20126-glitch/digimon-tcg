@@ -747,7 +747,7 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
       const wantCount = parseInt(costItem.count, 10) || 1;
       const candidates = _filterAssemblyCandidates(costItem, bs.player.trash, bs, 'player');
       if (candidates.length < wantCount) { eligible = false; return null; }
-      return { wantCount, candidates };
+      return { wantCount, candidates, distinctNames: !!costItem.distinct_names };
     });
     if (!eligible) continue;
     const totalWant = plan.reduce((sum, p) => sum + p.wantCount, 0);
@@ -759,29 +759,43 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
     }).then((yes) => {
       if (!yes) { doPlay(card, handIdx, slotIdx); return; }
       const allPicked = [];
-      const pickNext = (idx) => {
-        if (idx >= plan.length) {
-          // 全グループ分の選択が完了 → まとめてトラッシュから外し、このカードの下に置く
-          allPicked.forEach((p) => {
-            const ti = bs.player.trash.indexOf(p);
-            if (ti !== -1) bs.player.trash.splice(ti, 1);
-          });
-          if (!card.stack) card.stack = [];
-          card.stack = [...allPicked, ...card.stack];
-          card._assemblyDiscount = (parseInt(card._assemblyDiscount, 10) || 0) + (parseInt(opt.value, 10) || 0);
-          addLog('💠 「' + card.name + '」のアセンブリを発動（トラッシュから' + allPicked.length + '枚使用）');
-          doPlay(card, handIdx, slotIdx);
-          return;
-        }
-        const { wantCount, candidates } = plan[idx];
-        // 既に別グループで選んだカードは重複選択できないよう候補から除外
-        const remaining = candidates.filter(c => !allPicked.includes(c));
-        if (remaining.length < wantCount) { doPlay(card, handIdx, slotIdx); return; } // 念のための保険
-        _showTrashCardPicker(remaining, wantCount, false, '💠 アセンブリ（' + (idx + 1) + '/' + plan.length + '）: 使うカードを選んでください', (picked) => {
-          if (!picked || picked.length < wantCount) { doPlay(card, handIdx, slotIdx); return; }
-          allPicked.push(...picked);
-          pickNext(idx + 1);
+      const finish = () => {
+        // 全グループ分の選択が完了 → まとめてトラッシュから外し、このカードの下に置く
+        allPicked.forEach((p) => {
+          const ti = bs.player.trash.indexOf(p);
+          if (ti !== -1) bs.player.trash.splice(ti, 1);
+        });
+        if (!card.stack) card.stack = [];
+        card.stack = [...allPicked, ...card.stack];
+        card._assemblyDiscount = (parseInt(card._assemblyDiscount, 10) || 0) + (parseInt(opt.value, 10) || 0);
+        addLog('💠 「' + card.name + '」のアセンブリを発動（トラッシュから' + allPicked.length + '枚使用）');
+        doPlay(card, handIdx, slotIdx);
+      };
+      // グループ内で1枚ずつ順番に選ばせる（distinctNames時は、同グループ内で既に
+      // 選んだカードと同じ名称の候補を都度除外して重複名称を防ぐ）
+      const pickWithinGroup = (groupIdx, group, pickedInGroup, remainingWant, onGroupDone) => {
+        if (remainingWant <= 0) { onGroupDone(pickedInGroup); return; }
+        const excludeNames = group.distinctNames ? pickedInGroup.map(c => c.name) : [];
+        const remaining = group.candidates.filter(c =>
+          !allPicked.includes(c) && !pickedInGroup.includes(c) && !excludeNames.includes(c.name)
+        );
+        if (remaining.length < remainingWant) { doPlay(card, handIdx, slotIdx); return; } // 念のための保険
+        const pickCount = group.distinctNames ? 1 : remainingWant;
+        let title = '💠 アセンブリ: 使うカードを選んでください';
+        if (plan.length > 1) title += '（グループ' + (groupIdx + 1) + '/' + plan.length + '）';
+        if (group.distinctNames && group.wantCount > 1) title += '（' + (pickedInGroup.length + 1) + '/' + group.wantCount + '枚目・名称が異なるカードのみ）';
+        _showTrashCardPicker(remaining, pickCount, false, title, (picked) => {
+          if (!picked || picked.length < pickCount) { doPlay(card, handIdx, slotIdx); return; }
+          const nextPicked = [...pickedInGroup, ...picked];
+          pickWithinGroup(groupIdx, group, nextPicked, remainingWant - pickCount, onGroupDone);
         }, remaining);
+      };
+      const pickNext = (idx) => {
+        if (idx >= plan.length) { finish(); return; }
+        pickWithinGroup(idx, plan[idx], [], plan[idx].wantCount, (groupPicked) => {
+          allPicked.push(...groupPicked);
+          pickNext(idx + 1);
+        });
       };
       pickNext(0);
     });

@@ -12,6 +12,10 @@ export interface DesignatedGroup {
   conditions: ConditionPair[];
   conditionsOp?: 'and' | 'or';
   count?: number | string;
+  // true のとき、この組でcount枚選ぶカード同士は互いに名称が異なる必要がある
+  // （例:「特徴『セブンコード』を持つ名称の異なるカード7枚」）。
+  // JSONへは true のときのみ distinct_names:true として出力する
+  distinctNames?: boolean;
 }
 
 // パッシブ/キーワード付与で複数キーワードを1ブロックにまとめる際の1件分

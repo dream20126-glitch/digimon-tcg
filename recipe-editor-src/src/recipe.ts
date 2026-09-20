@@ -274,7 +274,7 @@ export function getDesignatedGroups(entry: KeywordEntry): DesignatedGroup[] {
 // condition_op?,count?}）。1組だけなら呼び出し側で従来のdesignated/countとして
 // 単純出力し、2組以上のときだけこの配列(p.designated_groups)を使う
 function buildDesignatedGroupsFields(groups: DesignatedGroup[]): Array<{
-  condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; count?: number | string;
+  condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; count?: number | string; distinct_names?: true;
 }> {
   return groups.map((g) => {
     const fields = buildDesignatedConditionFields(g.conditions, g.conditionsOp || 'and');
@@ -283,6 +283,7 @@ function buildDesignatedGroupsFields(groups: DesignatedGroup[]): Array<{
       const n = Number(g.count);
       out.count = isNaN(n) ? g.count : n;
     }
+    if (g.distinctNames) out.distinct_names = true;
     return out;
   });
 }
@@ -735,13 +736,13 @@ function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
   if (Array.isArray(raw?.designated_groups) && raw.designated_groups.length > 0) {
     return raw.designated_groups.map((g: any) => {
       const { conds, op } = parseDesignatedFields(g);
-      return { conditions: conds, conditionsOp: op, count: g?.count };
+      return { conditions: conds, conditionsOp: op, count: g?.count, distinctNames: g?.distinct_names === true };
     });
   }
   if (raw?.designated || raw?.count !== undefined) {
     const { conds, op } = raw?.designated ? parseDesignatedFields(raw.designated) : { conds: [], op: 'and' as const };
     if (conds.length === 0 && raw?.count === undefined) return [];
-    return [{ conditions: conds, conditionsOp: op, count: raw?.count }];
+    return [{ conditions: conds, conditionsOp: op, count: raw?.count, distinctNames: raw?.designated?.distinct_names === true }];
   }
   return [];
 }

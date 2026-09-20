@@ -1096,6 +1096,53 @@ function _finishDoEvolve(card, base, handIdx, slotIdx, cost) {
   });
 }
 
+// 効果から直接進化を実行する（進化条件チェック・進化先候補の絞り込みは呼び出し元
+// （effect-engine.js の action:'evolve'）で完了している前提）。ピョコモン(BT26-001)
+// 「デッキが自分の効果で増えたとき、手札の『クロノモン』の記述があるデジモンカードに
+// 支払うコスト-1で進化できる」のように、進化条件を無視して効果起点で進化させたい場合に使う。
+// doEvolve/_finishDoEvolveのコア処理（スタック構築・メモリー消費・ドロー・進化時効果発火）を
+// 両サイド対応で再利用できるようにした版。
+// card: 進化先(手札)カード, handIdx: p.hand内index, slotIdx: 進化元(base)のbattleArea内index,
+// cost: 実際に支払う進化コスト（呼び出し側で軽減計算済み）, side: 'player'|'ai'
+export function doEvolveFromEffect(card, handIdx, slotIdx, cost, side, callback) {
+  const p = side === 'player' ? bs.player : bs.ai;
+  const base = p.battleArea[slotIdx];
+  if (!base || !card) { callback && callback(false); return; }
+  const evolved = Object.assign({}, card, {
+    type: card.type === 'デュアル' ? 'デジモン' : card.type,
+    _noMainAbility: card.type === 'デュアル',
+    suspended: base.suspended,
+    summonedThisTurn: base.summonedThisTurn,
+    buffs: base.buffs || [],
+    dpModifier: base.dpModifier || 0,
+    stack: [base].concat(base.stack || []),
+  });
+  evolved.dp = evolved.baseDp + evolved.dpModifier;
+  p.battleArea[slotIdx] = evolved;
+  const _hi = p.hand.indexOf(card);
+  if (_hi !== -1) p.hand.splice(_hi, 1);
+  if (side === 'player') bs.selHand = null;
+  bs._evolveCountThisTurn = (bs._evolveCountThisTurn || 0) + 1;
+  addLog('⬆ 「' + base.name + '」→「' + evolved.name + '」進化！（効果・コスト ' + cost + '）');
+  renderAll();
+  showEvolveEffect(cost, base.name, base, evolved, () => {
+    // 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定
+    if (side === 'player') playerSpendMemory(cost, true); // defer=true: ターン終了は保留
+    else aiSpendMemory(cost);
+    doDraw(side, '進化ドロー（効果）', () => {
+      const finish = () => {
+        if (side === 'player') checkPlayerPendingTurnEnd();
+        callback && callback(true);
+      };
+      if (hasKeyword(evolved, '【進化時】')) {
+        _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => { renderAll(true); finish(); }, side);
+      } else {
+        finish();
+      }
+    }, { deferDismiss: false });
+  });
+}
+
 // ===== 育成エリア進化 =====
 
 export function doEvolveIku(card, handIdx) {

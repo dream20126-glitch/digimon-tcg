@@ -6483,6 +6483,18 @@ function recipeWillExecuteAnything(recipe, ctx) {
         }
       }
     }
+    // evolve（手札からfrom_filter一致で進化）: summonと同様、候補が1枚も無ければ
+    // 演出ポップアップも出さない（ピョコモン BT26-001「クロノモンの記述があるデジモン
+    // カードに進化できる」で手札に該当カードが無い場合等）
+    if (step.action === 'evolve') {
+      const _evoFilter = step.from_filter || step.filter || {};
+      const _ep = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+      const _hasEvoCand = (_ep.hand || []).some(c => c && cardMatchesFilter(c, _evoFilter));
+      if (!_hasEvoCand) {
+        console.log('[recipeWillExecute] reactor=' + _reactor + ' evolve filter has no candidate → skip', 'action=' + step.action);
+        continue;
+      }
+    }
     // 条件なし → 必ず実行される
     if (!step.condition) {
       console.log('[recipeWillExecute] reactor=' + _reactor + ' step has no condition → true', 'action=' + step.action);
@@ -7353,6 +7365,41 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         ctx.showPlayEffect(dummyPlay, callback);
       } else { callback(); }
+      break;
+    }
+
+    // === 効果起点の進化（進化条件を無視し、from_filterに一致する手札のカードへ進化する） ===
+    // 例: ピョコモン(BT26-001)「デッキが自分の効果で増えたとき、このデジモンを手札の
+    // 『クロノモン』の記述があるデジモンカードに支払うコスト-1で進化できる」
+    // step: { action:'evolve', target:'self_card', value:-1（進化コストの増減）,
+    //   from_filter:{...}（手札の進化先候補フィルタ） }
+    // 通常のcanEvolveOnto判定（進化条件チェック）は行わない。コストは候補カード自身の
+    // evolveCostにstep.valueを加算（マイナス指定で割引）したもの
+    case 'evolve': {
+      const _evoBase = ctx.card;
+      if (!_evoBase) { callback(); break; }
+      const _evoSlotIdx = player.battleArea.indexOf(_evoBase);
+      if (_evoSlotIdx === -1) { callback(); break; }
+      const _evoFilterObj = step.from_filter || step.filter || {};
+      const _evoCands = (player.hand || []).filter(c => c && cardMatchesFilter(c, _evoFilterObj));
+      if (_evoCands.length === 0) { callback(); break; }
+      const _evoCostFor = (c) => Math.max(0, (parseInt(c.evolveCost, 10) || 0) + (parseInt(step.value, 10) || 0));
+      const _doEvolveWith = (chosen) => {
+        if (!chosen) { callback(); return; }
+        const _hIdx = player.hand.indexOf(chosen);
+        if (_hIdx === -1) { callback(); return; }
+        const _cost = _evoCostFor(chosen);
+        if (window.doEvolveFromEffect) {
+          window.doEvolveFromEffect(chosen, _hIdx, _evoSlotIdx, _cost, ctx.side, () => callback());
+        } else { callback(); }
+      };
+      if (effectiveSide === 'ai' || _evoCands.length === 1) {
+        _doEvolveWith(_evoCands[0]);
+      } else {
+        showTrashCardPicker(_evoCands, 1, false, '⬆ 進化させるカードを選んでください', (picked) => {
+          _doEvolveWith(picked && picked[0]);
+        }, _evoCands);
+      }
       break;
     }
 

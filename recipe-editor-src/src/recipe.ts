@@ -43,6 +43,8 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
       // セキュリティ/進化元を取得元に含む場合のみ: 積み重ね順の上/下
       if (cz.includes('security') && c.securityPosition) cs.security_position = c.securityPosition;
       if (cz.includes('evo_source') && c.evoSourcePosition) cs.evo_source_position = c.evoSourcePosition;
+      // 取得元エリアがどちらのプレイヤーのものか（未指定=自分/相手どちらでも）
+      if (c.fromZoneOwner === 'self' || c.fromZoneOwner === 'opponent') cs.from_owner = c.fromZoneOwner;
     }
     // コスト対象への絞り込み条件: condition / when / extra_conditions として直列化
     const validCondPairs = (c.conditions || []).filter((p) => p.base);
@@ -86,6 +88,7 @@ function parseCostArray(rawCost: any): CostStep[] {
       conditionsOp: c?.condition_op === 'or' ? 'or' as const : 'and' as const,
       fromZones,
       fromZonesOp,
+      fromZoneOwner: c?.from_owner === 'self' || c?.from_owner === 'opponent' ? c.from_owner : undefined,
       deckPosition,
       securityPosition: c?.security_position === 'top' || c?.security_position === 'bottom' ? c.security_position : undefined,
       evoSourcePosition: c?.evo_source_position === 'top' || c?.evo_source_position === 'bottom' ? c.evo_source_position : undefined,
@@ -122,6 +125,8 @@ function altActionToStepObject(a: AltAction): any {
     // セキュリティ/進化元を取得元に含む場合のみ: 積み重ね順の上/下
     if (az.includes('security') && a.securityPosition) out.security_position = a.securityPosition;
     if (az.includes('evo_source') && a.evoSourcePosition) out.evo_source_position = a.evoSourcePosition;
+    // 取得元エリアがどちらのプレイヤーのものか（未指定=自分/相手どちらでも）
+    if (a.fromZoneOwner === 'self' || a.fromZoneOwner === 'opponent') out.from_owner = a.fromZoneOwner;
   }
   if (Array.isArray(a.options) && a.options.length > 0) out.options = a.options.slice();
   // 上/下（デッキに戻す位置等・hasDeckPosition用）。'both'（どちらか選んで）はエンジン未対応の
@@ -544,6 +549,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     // 場所に「セキュリティ」/「進化元」を含む場合のみ: 積み重ね順の上/下どちらから見るか
     if (zones.includes('security') && b.securityPosition) step.security_position = b.securityPosition;
     if (zones.includes('evo_source') && b.evoSourcePosition) step.evo_source_position = b.evoSourcePosition;
+    // 取得元エリアがどちらのプレイヤーのものか（未指定=自分/相手どちらでも）
+    if (b.fromZoneOwner === 'self' || b.fromZoneOwner === 'opponent') step.from_owner = b.fromZoneOwner;
   }
   // 【〇〇が増えたとき】専用: どのゾーンが増えたときか (zoneIncrease[]) の serialize。
   // fromZones と全く同じ規則（1件のみ→文字列 / 2件以上→配列+op）
@@ -834,6 +841,7 @@ function stepObjectToAltAction(step: any): AltAction {
     options,
     fromZones,
     fromZonesOp: step?.from_op === 'and' ? 'and' : 'or',
+    fromZoneOwner: step?.from_owner === 'self' || step?.from_owner === 'opponent' ? step.from_owner : undefined,
     deckPosition: step?.position === 'top' ? 'top'
       : step?.position === 'bottom' ? 'bottom'
       : step?.position === 'select' ? 'both'
@@ -939,6 +947,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     from: true,
     from_op: true,
     evo_source_owner: true,
+    from_owner: true,
     security_position: true,
     evo_source_position: true,
     zone_increase: true,
@@ -1040,6 +1049,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       return 'or' as const;
     })(),
     evoSourceOwner: step?.evo_source_owner === 'self' || step?.evo_source_owner === 'other' ? step.evo_source_owner : undefined,
+    fromZoneOwner: step?.from_owner === 'self' || step?.from_owner === 'opponent' ? step.from_owner : undefined,
     securityPosition: step?.security_position === 'top' || step?.security_position === 'bottom' ? step.security_position : undefined,
     evoSourcePosition: step?.evo_source_position === 'top' || step?.evo_source_position === 'bottom' ? step.evo_source_position : undefined,
     // 【〇〇が増えたとき】専用: どのゾーンが増えたときか (fromZones と同じ規則)
@@ -1112,6 +1122,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             options: Array.isArray(a?.options) ? a.options.slice() : [],
             fromZones: fromZ,
             fromZonesOp: a?.from_op === 'and' ? 'and' as const : 'or' as const,
+            fromZoneOwner: a?.from_owner === 'self' || a?.from_owner === 'opponent' ? a.from_owner : undefined,
             deckPosition: a?.position === 'top' ? 'top' as const
               : a?.position === 'bottom' ? 'bottom' as const
               : a?.position === 'select' ? 'both' as const

@@ -128,6 +128,9 @@ export interface EffectBlock {
   visualType?: string;
   fromZones?: string[]; // アクションの取得元エリア（'hand' / 'trash' / 'deck' 等）。複数指定可。JSON では step.from
   fromZonesOp?: 'or' | 'and'; // 複数取得元の結合演算子（既定は 'or'）
+  // 取得元エリア（fromZones）がどちらのプレイヤーのものか（未指定=自分/相手どちらでも）。
+  // JSON では step.from_owner ('self'/'opponent') に serialize
+  fromZoneOwner?: 'self' | 'opponent';
   // 【〇〇が増えたとき】(trigger:'when_deck_increase') 専用: どのゾーンが増えたときに
   // 発火するか。fromZones/fromZonesOpと全く同じ形・同じUIを使い回す（複数選択可）。
   // JSON では step.zone_increase（1件→string / 2件以上→array + zone_increase_op）
@@ -197,6 +200,9 @@ export interface AltAction {
   options?: string[];
   fromZones?: string[];
   fromZonesOp?: 'or' | 'and';
+  // 取得元エリア（fromZones）がどちらのプレイヤーのものか（未指定=自分/相手どちらでも）。
+  // JSON では from_owner ('self'/'opponent') に serialize
+  fromZoneOwner?: 'self' | 'opponent';
   // 辞書の hasDeckPosition=true のアクション専用（例: return_deck）。JSON では
   // 対応するstep（alt_actions[]の要素、または'then'モード時は独立した後続step）の
   // position ('top'/'bottom') に serialize
@@ -317,6 +323,9 @@ export interface CostStep {
   // コスト対象の取得元エリア（'evo_source' / 'hand' / 'trash' 等）。複数指定可
   fromZones?: string[];
   fromZonesOp?: 'or' | 'and';
+  // 取得元エリア（fromZones）がどちらのプレイヤーのものか（未指定=自分/相手どちらでも）。
+  // JSON では step.cost[].from_owner ('self'/'opponent') に serialize
+  fromZoneOwner?: 'self' | 'opponent';
   // 上/下（デッキに戻す/セキュリティに置く 用）。JSON では step.cost[].position に serialize。
   // 'both' はエンジン未対応（'top' 以外は全て「下」/常に「上」扱いになる）
   deckPosition?: 'top' | 'bottom' | 'both';

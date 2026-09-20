@@ -828,6 +828,17 @@ function CostListEditor({
                             </label>
                           </div>
                         )}
+                        {zones.length >= 1 && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 誰の場所か</div>
+                            <ButtonGroup
+                              options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                              value={c.fromZoneOwner || ''}
+                              onChange={(v) => updateCost(i, { ...c, fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                              accentColor="#b76e00"
+                            />
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
@@ -989,6 +1000,17 @@ function CostListEditor({
                           <input type="radio" name={`costFromZonesOp_${i}`} checked={op === 'and'} onChange={() => updateCost(i, { ...c, fromZonesOp: 'and' })} style={{ margin: 0 }} />
                           AND（全て）
                         </label>
+                      </div>
+                    )}
+                    {zones.length >= 1 && (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 誰の場所か</div>
+                        <ButtonGroup
+                          options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                          value={c.fromZoneOwner || ''}
+                          onChange={(v) => updateCost(i, { ...c, fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                          accentColor="#1a4f8a"
+                        />
                       </div>
                     )}
                   </div>
@@ -1871,6 +1893,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectConditionsOp: 'and' | 'or' = isEditingAlt ? (editingAlt!.conditionsOp || 'and') : (block.conditionsOp || 'and');
   const effectFromZones = isEditingAlt ? (editingAlt!.fromZones || []) : (block.fromZones || []);
   const effectFromZonesOp = isEditingAlt ? (editingAlt!.fromZonesOp || 'or') : (block.fromZonesOp || 'or');
+  const effectFromZoneOwner = isEditingAlt ? editingAlt!.fromZoneOwner : block.fromZoneOwner;
   const effectSecurityPosition = isEditingAlt ? editingAlt!.securityPosition : block.securityPosition;
   const effectEvoSourcePosition = isEditingAlt ? editingAlt!.evoSourcePosition : block.evoSourcePosition;
   const effectDuration = isEditingAlt ? editingAlt!.duration : block.duration;
@@ -3433,6 +3456,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     />
                     AND（全て）
                   </label>
+                </div>
+              )}
+              {zones.length >= 1 && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 誰の場所か</div>
+                  <ButtonGroup
+                    options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                    value={effectFromZoneOwner || ''}
+                    onChange={(v) => updateEffect({ fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                    accentColor="#1a4f8a"
+                  />
                 </div>
               )}
               {/* 場所に「進化元」を含む場合のみ: どのデジモンの進化元から探すか

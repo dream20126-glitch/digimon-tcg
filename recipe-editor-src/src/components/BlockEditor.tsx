@@ -2607,7 +2607,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     >
                       コスト軽減
                     </button>
-                    {/* パッシブ(passive)は、キーワード内でさらにキーワードを使うことは
+                    {/* キーワード効果(passive)は、キーワード内でさらにキーワードを使うことは
                         想定しないため、テンプレート編集(isKeywordMode)では出さない */}
                     {!isKeywordMode && (
                       <button
@@ -2619,7 +2619,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
                         }}
                       >
-                        パッシブ（常時キーワード効果付与）
+                        キーワード効果
                       </button>
                     )}
                   </div>

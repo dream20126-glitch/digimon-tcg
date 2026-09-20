@@ -3183,47 +3183,71 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             return true;
           })?.code || '';
 
-          // 「できない」複数選択の現在値。effectActionが単一cant_X、またはcant_attack_block、
-          // またはAND altActionsで複数のcant_Xが積まれている状態から復元する
-          // （例:「相手のデジモン1体はアタック/ブロックできない」= cant_attack + AND altAction
-          // cant_block(same_target)、または{attack,block}の2つだけならcant_attack_blockに集約）。
-          // altActionsはブロック単位の概念のため、代替アクション編集中は自分の1件のみを見る
-          const cantSet: string[] = (() => {
+          // レスト/アクティブ/進化/アタック/ブロックの5ボタンは複数選択できる（例:
+          // アタック＋ブロックを両方押す）。1つだけ選んでいるときは「する/できない」を
+          // 選べるが、2つ以上選んでいるときは「する」（=複数の行動を同時に強制する、の意味に
+          // なってしまい成立しない）が無く「できない」だけになる。
+          // selectedSet=現在選ばれている項目一覧、mode=する/できないのどちらか
+          // （effectActionが単一cant_X、またはcant_attack_block、またはAND altActionsで
+          // 複数のcant_Xが積まれている状態から復元する。altActionsはブロック単位の概念のため、
+          // 代替アクション編集中は自分の1件のみを見る）
+          const { selectedSet, mode } = (() => {
             if (isEditingAlt) {
+              if (DOABLE_TO_CANT[effectAction]) return { selectedSet: [effectAction], mode: 'do' as const };
               const d = CANT_TO_DOABLE[effectAction];
-              return d ? [d] : [];
+              return d ? { selectedSet: [d], mode: 'cant' as const } : { selectedSet: [] as string[], mode: 'do' as const };
             }
-            if (effectAction === 'cant_attack_block') return ['attack', 'block'];
+            if (DOABLE_TO_CANT[effectAction]) return { selectedSet: [effectAction], mode: 'do' as const };
+            if (effectAction === 'cant_attack_block') return { selectedSet: ['attack', 'block'], mode: 'cant' as const };
             const primary = CANT_TO_DOABLE[effectAction];
-            if (!primary) return [];
-            const set = [primary];
-            if ((block.altActionsOp || 'or') === 'and') {
-              (block.altActions || []).forEach((a) => {
-                const d = CANT_TO_DOABLE[a.action || ''];
-                if (d && !set.includes(d)) set.push(d);
-              });
+            if (primary) {
+              const set = [primary];
+              if ((block.altActionsOp || 'or') === 'and') {
+                (block.altActions || []).forEach((a) => {
+                  const d = CANT_TO_DOABLE[a.action || ''];
+                  if (d && !set.includes(d)) set.push(d);
+                });
+              }
+              return { selectedSet: set, mode: 'cant' as const };
             }
-            return set;
+            return { selectedSet: [] as string[], mode: 'do' as const };
           })();
-          // 「できない」複数選択をblockへ書き戻す（1件ならcant_X単体、attack+blockの2件だけなら
-          // 既存のcant_attack_blockに集約、それ以外の2件以上はAND altActions（same_target）で表現）
-          function applyCantSet(next: string[]) {
-            if (next.length === 0) return;
-            if (next.length === 1) {
-              onChange({ ...block, action: DOABLE_TO_CANT[next[0]], altActions: [], altActionsOp: undefined });
+          // selectedSet/modeをblockへ書き戻す（1件なら単一アクション（する/できない）、
+          // attack+blockの2件だけなら既存のcant_attack_blockに集約、それ以外の2件以上は
+          // 常に「できない」として AND altActions（same_target）で表現）
+          function applyCantSelection(nextSet: string[], nextMode: 'do' | 'cant') {
+            if (isEditingAlt) {
+              if (nextSet.length === 0) return;
+              updateEffect({ action: nextMode === 'cant' ? DOABLE_TO_CANT[nextSet[0]] : nextSet[0] });
               return;
             }
-            if (next.length === 2 && next.includes('attack') && next.includes('block')) {
+            if (nextSet.length === 0) {
+              onChange({ ...block, action: '', altActions: [], altActionsOp: undefined });
+              return;
+            }
+            if (nextSet.length === 1) {
+              const code = nextMode === 'cant' ? DOABLE_TO_CANT[nextSet[0]] : nextSet[0];
+              onChange({ ...block, action: code, altActions: [], altActionsOp: undefined });
+              return;
+            }
+            // 2件以上は常に「できない」
+            if (nextSet.length === 2 && nextSet.includes('attack') && nextSet.includes('block')) {
               onChange({ ...block, action: 'cant_attack_block', altActions: [], altActionsOp: undefined });
               return;
             }
-            const [first, ...rest] = next;
+            const [first, ...rest] = nextSet;
             onChange({
               ...block,
               action: DOABLE_TO_CANT[first],
               altActions: rest.map((k) => ({ action: DOABLE_TO_CANT[k], target: 'same_target' } as AltAction)),
               altActionsOp: 'and',
             });
+          }
+          function toggleCantAction(code: string) {
+            const isSelected = selectedSet.includes(code);
+            const nextSet = isSelected ? selectedSet.filter((x) => x !== code) : [...selectedSet, code];
+            const nextMode = nextSet.length >= 2 ? 'cant' : mode;
+            applyCantSelection(nextSet, nextMode);
           }
 
           // よく使うアクション（トリガー家族ボタンと同じ操作感）: 該当すればボタン1つで即選択、
@@ -3303,15 +3327,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {COMMON_ACTIONS.map((a) => {
-                    // レスト/アクティブ/進化/アタック/ブロックは「できない」形（例: rest→cant_rest。
-                    // 複数選択時はAND altActionsやcant_attack_blockに集約）を選んでいても、
-                    // 該当するボタン自体はアクティブ表示のままにする（下の する/できない で切り替える）
-                    const active = effectAction === a.code || cantSet.includes(a.code);
+                    const isCantToggleGroup = !!DOABLE_TO_CANT[a.code];
+                    // レスト/アクティブ/進化/アタック/ブロックは複数選択できるトグル式ボタン
+                    // （選んでいても「できない」形（cant_X等）になっていることがあるため、
+                    // selectedSetでの判定にする。それ以外のボタンは従来通り単一選択）
+                    const active = isCantToggleGroup ? selectedSet.includes(a.code) : effectAction === a.code;
                     return (
                       <button
                         key={a.code}
                         type="button"
-                        onClick={() => selectCommonAction(a.code)}
+                        onClick={() => (isCantToggleGroup ? toggleCantAction(a.code) : selectCommonAction(a.code))}
                         style={{
                           padding: '3px 9px', borderRadius: 5,
                           border: active ? '2px solid #1976d2' : '1px solid #bbb',
@@ -3389,50 +3414,24 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </div>
                 )}
                 {/* レスト/アクティブ/進化/アタック/ブロック: 「する」（通常）/「できない」（封じる）の
-                    切り替え。「できない」は複数選択可（例:「アタック/ブロックできない」）。
-                    効果1のみ対応（altActionsを使うため。代替アクション編集中は単独cant_Xのみ） */}
-                {(DOABLE_TO_CANT[effectAction] || CANT_TO_DOABLE[effectAction] || effectAction === 'cant_attack_block') && (() => {
-                  const doableBase = DOABLE_TO_CANT[effectAction] ? effectAction : (cantSet[0] || CANT_TO_DOABLE[effectAction]);
-                  const isCant = cantSet.length > 0;
-                  return (
-                    <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>する/できない</div>
-                      <ButtonGroup
-                        options={[{ code: 'do', label: 'する' }, { code: 'cant', label: 'できない' }]}
-                        value={isCant ? 'cant' : 'do'}
-                        onChange={(v) => {
-                          if (v === 'cant') applyCantSet(cantSet.length > 0 ? cantSet : [doableBase]);
-                          else onChange({ ...block, action: doableBase, altActions: [], altActionsOp: undefined });
-                        }}
-                        accentColor="#1976d2"
-                      />
-                      {isCant && !isEditingAlt && (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>できないようにする項目（複数選択可）</div>
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                            {Object.keys(DOABLE_TO_CANT).map((k) => {
-                              const checked = cantSet.includes(k);
-                              const label = COMMON_ACTIONS.find((a) => a.code === k)?.label || k;
-                              return (
-                                <label key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer' }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={(e) => {
-                                      const next = e.target.checked ? [...cantSet, k] : cantSet.filter((x) => x !== k);
-                                      applyCantSet(next);
-                                    }}
-                                  />
-                                  {label}
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
+                    切り替え。上のボタンで2つ以上選んでいる場合は複数の行動を同時に強制する
+                    「する」が成立しないため、「できない」固定（選択不要）になる */}
+                {selectedSet.length === 1 && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>する/できない</div>
+                    <ButtonGroup
+                      options={[{ code: 'do', label: 'する' }, { code: 'cant', label: 'できない' }]}
+                      value={mode === 'cant' ? 'cant' : 'do'}
+                      onChange={(v) => applyCantSelection(selectedSet, v === 'cant' ? 'cant' : 'do')}
+                      accentColor="#1976d2"
+                    />
+                  </div>
+                )}
+                {selectedSet.length >= 2 && (
+                  <div style={{ marginTop: 4, fontSize: 10, color: '#946200' }}>
+                    ⚠ 複数選択中のため「できない」になります（同時に「する」ことはできないため）
+                  </div>
+                )}
                 <div style={{ marginTop: 6 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
                     <input

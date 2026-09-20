@@ -9367,6 +9367,70 @@ function executeRecipeStep(step, ctx, store, callback) {
         });
         break;
       }
+      // 自分（from_owner:'opponent'指定時は相手）のゾーン（手札/トラッシュ/セキュリティ/
+      // 進化元）から条件に合うカードを選んでデッキに戻す。例: クロノモン：ホーリーモード
+      // (BT26-016)「自分のセキュリティを上から1枚デッキの下に戻す」、ブテンモン(BT26-015)
+      // 「自分のトラッシュ1枚をデッキの下に戻す」、ヒョコモン(BT26-009)
+      // 「自分の手札1枚をデッキの下に戻す」。security/evo_sourceは
+      // security_position/evo_source_position（'top'/'bottom'。未指定なら積み重ね全体から
+      // 選ぶ）で対象を絞り込める
+      const _rdFromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
+      if (_rdFromZones.length > 0) {
+        const _rdOwnerP = step.from_owner === 'opponent' ? opponent : player;
+        const _rdOwnerSideTag = (_rdOwnerP === player) ? ctx.side : (ctx.side === 'player' ? 'ai' : 'player');
+        const _rdTop2 = step.position === 'top' || step.deck_top;
+        const _rdConds2 = [];
+        if (step.condition) _rdConds2.push(...parseRecipeCondition(step.condition));
+        if (step.when) _rdConds2.push(...parseRecipeCondition(step.when));
+        if (Array.isArray(step.extra_conditions)) step.extra_conditions.forEach(cs => _rdConds2.push(...parseRecipeCondition(cs)));
+        if (step.condition_op === 'or') _rdConds2._op = 'or';
+        const _rdCandList = [];
+        _rdFromZones.forEach((zone) => {
+          if (zone === 'hand') {
+            (_rdOwnerP.hand || []).forEach((c) => { if (c) _rdCandList.push({ card: c, remove: () => { const i = _rdOwnerP.hand.indexOf(c); if (i !== -1) _rdOwnerP.hand.splice(i, 1); } }); });
+          } else if (zone === 'trash') {
+            (_rdOwnerP.trash || []).forEach((c) => { if (c) _rdCandList.push({ card: c, remove: () => { const i = _rdOwnerP.trash.indexOf(c); if (i !== -1) _rdOwnerP.trash.splice(i, 1); } }); });
+          } else if (zone === 'security') {
+            const sec = _rdOwnerP.security || [];
+            const pool = step.security_position === 'top' ? sec.slice(0, 1) : step.security_position === 'bottom' ? sec.slice(-1) : sec;
+            pool.forEach((c) => { if (c) _rdCandList.push({ card: c, remove: () => { const i = _rdOwnerP.security.indexOf(c); if (i !== -1) _rdOwnerP.security.splice(i, 1); } }); });
+          } else if (zone === 'evo_source') {
+            const stack = (ctx.card && ctx.card.stack) || [];
+            const pool = step.evo_source_position === 'top' ? stack.slice(0, 1) : step.evo_source_position === 'bottom' ? stack.slice(-1) : stack;
+            pool.forEach((c) => { if (c) _rdCandList.push({ card: c, remove: () => { if (ctx.card && ctx.card.stack) { const i = ctx.card.stack.indexOf(c); if (i !== -1) ctx.card.stack.splice(i, 1); } } }); });
+          }
+        });
+        const _rdWantCount = Math.max(1, parseInt(step.value, 10) || 1);
+        const _rdFiltered = _rdCandList.filter(({ card: c }) => _rdConds2.length === 0 || checkConditions(_rdConds2, c, ctx.bs, _rdOwnerSideTag));
+        if (_rdFiltered.length === 0) { callback(false); break; }
+        const _doReturn2 = (entry, doneCb) => {
+          if (!entry) { doneCb(false); return; }
+          entry.remove();
+          if (_rdTop2) _rdOwnerP.deck.unshift(entry.card); else _rdOwnerP.deck.push(entry.card);
+          ctx.addLog('🔄 「' + entry.card.name + '」をデッキの' + (_rdTop2 ? '上' : '下') + 'に戻す');
+          ctx.renderAll();
+          doneCb(true);
+        };
+        const _rdSequential = (remaining, pool, doneCb) => {
+          if (remaining <= 0 || pool.length === 0) { doneCb(); return; }
+          const pick = (entry) => {
+            const nextPool = pool.filter((e) => e !== entry);
+            _doReturn2(entry, () => _rdSequential(remaining - 1, nextPool, doneCb));
+          };
+          if (effectiveSide === 'ai' || pool.length === 1) {
+            pick(pool[0]);
+          } else {
+            showTrashCardPicker(pool.map((e) => e.card), 1, false, '🔄 デッキに戻すカードを選んでください', (picked) => {
+              const chosen = picked && picked[0];
+              const entry = pool.find((e) => e.card === chosen);
+              if (!entry) { doneCb(); return; }
+              pick(entry);
+            }, pool.map((e) => e.card));
+          }
+        };
+        _rdSequential(Math.min(_rdWantCount, _rdFiltered.length), _rdFiltered, () => callback(true));
+        break;
+      }
       callback();
       break;
     }

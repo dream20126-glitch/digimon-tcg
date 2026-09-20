@@ -1806,6 +1806,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectPerRefFilter = isEditingAlt ? (editingAlt!.perRefFilter || []) : (block.perRefFilter || []);
   const effectCostFree = isEditingAlt ? !!editingAlt!.costFree : !!block.costFree;
   const effectSkipOnPlay = isEditingAlt ? !!editingAlt!.skipOnPlay : !!block.skipOnPlay;
+  const effectOptions = isEditingAlt ? (editingAlt!.options || []) : (block.options || []);
   function updateEffect(patch: Record<string, any>) {
     if (isEditingAlt) updateAltAction(editingEffect - 1, patch);
     else onChange({ ...block, ...patch });
@@ -2963,11 +2964,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
                     )}
                   </label>
-                  {/* summon / summon_from_trash / evolve / summon_from_evo_source 専用（効果1のみ）:
+                  {/* summon / summon_from_trash / evolve / summon_from_evo_source 専用:
                       コストを支払わず / 登場時効果は発揮しない
                       裏向きで: place_on_security_top（辞書未登録のハードコード）に加え、
-                      辞書側 hasFaceOption=true なアクション（例:「テイマーの下に置く」）でも表示 */}
-                  {(showCostCheckboxes || (!isEditingAlt && (effectAction === 'place_on_security_top' || effectActionHasFaceOption))) && (
+                      辞書側 hasFaceOption=true なアクション（例:「テイマーの下に置く」）でも表示。
+                      いずれも効果1・代替アクション（その後/OR/AND）とも同じ作りにする */}
+                  {(showCostCheckboxes || effectAction === 'place_on_security_top' || effectActionHasFaceOption) && (
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                       {showCostCheckboxes && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
@@ -2989,14 +2991,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           登場時効果は発揮しない
                         </label>
                       )}
-                      {!isEditingAlt && (effectAction === 'place_on_security_top' || effectActionHasFaceOption) && (
+                      {(effectAction === 'place_on_security_top' || effectActionHasFaceOption) && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
                           <input
                             type="checkbox"
-                            checked={(block.options || []).includes('face_down')}
+                            checked={effectOptions.includes('face_down')}
                             onChange={(e) => {
-                              const opts = block.options || [];
-                              update('options', e.target.checked ? [...opts, 'face_down'] : opts.filter((o) => o !== 'face_down'));
+                              updateEffect({ options: e.target.checked ? [...effectOptions, 'face_down'] : effectOptions.filter((o) => o !== 'face_down') });
                             }}
                           />
                           裏向きで
@@ -3097,11 +3098,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   増/減ボタン+絶対値入力の方が分かりやすいため）。
                   ※ エンジン側は現状 evolve の value を未参照（要実装）。link は対応済み。
                   増=+N（コスト+N）/ 減=-N（コスト-N）として value に符号付きで保存する */}
-              {!isEditingAlt && (effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'link') ? (
+              {(effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'link') ? (
                 <div className="field">
                   <label>💰 コスト増減</label>
                   {(() => {
-                    const raw = block.value;
+                    const raw = effectValue;
                     // '-'/'+' は「符号だけ決まっていて数値は未定」のプレースホルダー
                     // （キーワードのレシピテンプレート登録時、実際の数値はカードごとに保存された
                     // 値が保存時に差し込まれるため、テンプレート側では数値を空にしておきたい場合に使う。
@@ -3116,10 +3117,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       const m = nextMagnitudeStr === '' ? undefined : Number(nextMagnitudeStr);
                       if (m === undefined || isNaN(m) || m === 0) {
                         // 数値未入力でも符号の選択だけは保持する（テンプレート用プレースホルダー）
-                        update('value', nextSign === 'minus' ? '-' : '+');
+                        updateEffect({ value: nextSign === 'minus' ? '-' : '+' });
                         return;
                       }
-                      update('value', nextSign === 'minus' ? -m : m);
+                      updateEffect({ value: nextSign === 'minus' ? -m : m });
                     };
                     return (
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

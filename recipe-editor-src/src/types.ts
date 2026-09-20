@@ -137,6 +137,11 @@ export interface EffectBlock {
   // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし（絞り込まない）
   // JSON では step.evo_source_owner に serialize
   evoSourceOwner?: 'self' | 'other';
+  // 取得元エリアに「セキュリティ」/「進化元」を含む場合のみ有効: それぞれ積み重ね順の
+  // 上/下どちらから見るか（未指定=絞り込まない）。JSON では
+  // step.security_position / step.evo_source_position に serialize
+  securityPosition?: 'top' | 'bottom';
+  evoSourcePosition?: 'top' | 'bottom';
   // 「～ごとに」倍率設定。perRef を数えて value × floor(count / perCount) を計算
   perCount?: number;  // N体ごとの N（'1体ごと' なら 1）
   perRef?: string;    // カウント対象 subject ('own_digimon' / 'opp_digimon' / 'own_hand' 等)
@@ -196,6 +201,11 @@ export interface AltAction {
   // 対応するstep（alt_actions[]の要素、または'then'モード時は独立した後続step）の
   // position ('top'/'bottom') に serialize
   deckPosition?: 'top' | 'bottom' | 'both';
+  // 取得元エリアに「セキュリティ」/「進化元」を含む場合のみ有効: それぞれ積み重ね順の
+  // 上/下どちらから見るか（未指定=絞り込まない）。JSON では
+  // security_position / evo_source_position に serialize
+  securityPosition?: 'top' | 'bottom';
+  evoSourcePosition?: 'top' | 'bottom';
   // 期間・倍率（AND実行時の追加設定）
   duration?: string;
   perCount?: number;
@@ -310,6 +320,11 @@ export interface CostStep {
   // 上/下（デッキに戻す/セキュリティに置く 用）。JSON では step.cost[].position に serialize。
   // 'both' はエンジン未対応（'top' 以外は全て「下」/常に「上」扱いになる）
   deckPosition?: 'top' | 'bottom' | 'both';
+  // 取得元エリア（fromZones）に「セキュリティ」/「進化元」を含む場合のみ有効: それぞれ
+  // 積み重ね順の上/下どちらから見るか（未指定=絞り込まない）。JSON では
+  // step.cost[].security_position / evo_source_position に serialize
+  securityPosition?: 'top' | 'bottom';
+  evoSourcePosition?: 'top' | 'bottom';
   // 修飾子コード配列（'face_down' 等）。辞書側 hasFaceOption=true のアクション選択時のみ
   // 「裏向き/表向き」ボタンとして編集可能になる（例:「テイマーの下に裏向きで置く」コスト）
   options?: string[];

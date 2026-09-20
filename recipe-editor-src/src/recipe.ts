@@ -40,6 +40,9 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
         cs.from = cz;
         if (c.fromZonesOp && c.fromZonesOp !== 'or') cs.from_op = c.fromZonesOp;
       }
+      // セキュリティ/進化元を取得元に含む場合のみ: 積み重ね順の上/下
+      if (cz.includes('security') && c.securityPosition) cs.security_position = c.securityPosition;
+      if (cz.includes('evo_source') && c.evoSourcePosition) cs.evo_source_position = c.evoSourcePosition;
     }
     // コスト対象への絞り込み条件: condition / when / extra_conditions として直列化
     const validCondPairs = (c.conditions || []).filter((p) => p.base);
@@ -84,6 +87,8 @@ function parseCostArray(rawCost: any): CostStep[] {
       fromZones,
       fromZonesOp,
       deckPosition,
+      securityPosition: c?.security_position === 'top' || c?.security_position === 'bottom' ? c.security_position : undefined,
+      evoSourcePosition: c?.evo_source_position === 'top' || c?.evo_source_position === 'bottom' ? c.evo_source_position : undefined,
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,
     };
   });
@@ -114,6 +119,9 @@ function altActionToStepObject(a: AltAction): any {
       out.from = az;
       if (a.fromZonesOp && a.fromZonesOp !== 'or') out.from_op = a.fromZonesOp;
     }
+    // セキュリティ/進化元を取得元に含む場合のみ: 積み重ね順の上/下
+    if (az.includes('security') && a.securityPosition) out.security_position = a.securityPosition;
+    if (az.includes('evo_source') && a.evoSourcePosition) out.evo_source_position = a.evoSourcePosition;
   }
   if (Array.isArray(a.options) && a.options.length > 0) out.options = a.options.slice();
   // 上/下（デッキに戻す位置等・hasDeckPosition用）。'both'（どちらか選んで）はエンジン未対応の
@@ -533,6 +541,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     if (zones.includes('evo_source') && (b.evoSourceOwner === 'self' || b.evoSourceOwner === 'other')) {
       step.evo_source_owner = b.evoSourceOwner;
     }
+    // 場所に「セキュリティ」/「進化元」を含む場合のみ: 積み重ね順の上/下どちらから見るか
+    if (zones.includes('security') && b.securityPosition) step.security_position = b.securityPosition;
+    if (zones.includes('evo_source') && b.evoSourcePosition) step.evo_source_position = b.evoSourcePosition;
   }
   // 【〇〇が増えたとき】専用: どのゾーンが増えたときか (zoneIncrease[]) の serialize。
   // fromZones と全く同じ規則（1件のみ→文字列 / 2件以上→配列+op）
@@ -827,6 +838,8 @@ function stepObjectToAltAction(step: any): AltAction {
       : step?.position === 'bottom' ? 'bottom'
       : step?.position === 'select' ? 'both'
       : undefined,
+    securityPosition: step?.security_position === 'top' || step?.security_position === 'bottom' ? step.security_position : undefined,
+    evoSourcePosition: step?.evo_source_position === 'top' || step?.evo_source_position === 'bottom' ? step.evo_source_position : undefined,
     duration: step?.duration || '',
     perCount: step?.per_count != null ? Number(step.per_count) : undefined,
     perRef: step?.ref || '',
@@ -925,6 +938,9 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     cost: true,
     from: true,
     from_op: true,
+    evo_source_owner: true,
+    security_position: true,
+    evo_source_position: true,
     zone_increase: true,
     zone_increase_op: true,
     per_count: true,
@@ -1024,6 +1040,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       return 'or' as const;
     })(),
     evoSourceOwner: step?.evo_source_owner === 'self' || step?.evo_source_owner === 'other' ? step.evo_source_owner : undefined,
+    securityPosition: step?.security_position === 'top' || step?.security_position === 'bottom' ? step.security_position : undefined,
+    evoSourcePosition: step?.evo_source_position === 'top' || step?.evo_source_position === 'bottom' ? step.evo_source_position : undefined,
     // 【〇〇が増えたとき】専用: どのゾーンが増えたときか (fromZones と同じ規則)
     zoneIncrease: (() => {
       const z = step?.zone_increase;
@@ -1098,6 +1116,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
               : a?.position === 'bottom' ? 'bottom' as const
               : a?.position === 'select' ? 'both' as const
               : undefined,
+            securityPosition: a?.security_position === 'top' || a?.security_position === 'bottom' ? a.security_position : undefined,
+            evoSourcePosition: a?.evo_source_position === 'top' || a?.evo_source_position === 'bottom' ? a.evo_source_position : undefined,
             duration: a?.duration || '',
             perCount: a?.per_count != null ? Number(a.per_count) : undefined,
             perRef: a?.ref || '',

@@ -831,6 +831,33 @@ function CostListEditor({
                       </div>
                     );
                   })()}
+                  {/* 場所に「セキュリティ」/「進化元」を含む場合のみ: 積み重ね順の上/下どちらから見るか */}
+                  {((c.fromZones || []).includes('security') || (c.fromZones || []).includes('evo_source')) && (
+                    <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      {(c.fromZones || []).includes('security') && (
+                        <div>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 セキュリティの位置</div>
+                          <ButtonGroup
+                            options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                            value={c.securityPosition || ''}
+                            onChange={(v) => updateCost(i, { ...c, securityPosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                      )}
+                      {(c.fromZones || []).includes('evo_source') && (
+                        <div>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 進化元の位置</div>
+                          <ButtonGroup
+                            options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                            value={c.evoSourcePosition || ''}
+                            onChange={(v) => updateCost(i, { ...c, evoSourcePosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {/* セキュリティ/テイマーのときだけ「上/下/下か上」を選べる */}
                   {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasPosition && (
                     <div style={{ marginTop: 4 }}>
@@ -967,6 +994,33 @@ function CostListEditor({
                   </div>
                 );
               })()}
+              {/* 場所に「セキュリティ」/「進化元」を含む場合のみ: 積み重ね順の上/下どちらから見るか */}
+              {((c.fromZones || []).includes('security') || (c.fromZones || []).includes('evo_source')) && (
+                <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {(c.fromZones || []).includes('security') && (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 セキュリティの位置</div>
+                      <ButtonGroup
+                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                        value={c.securityPosition || ''}
+                        onChange={(v) => updateCost(i, { ...c, securityPosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                        accentColor="#1a4f8a"
+                      />
+                    </div>
+                  )}
+                  {(c.fromZones || []).includes('evo_source') && (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 進化元の位置</div>
+                      <ButtonGroup
+                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                        value={c.evoSourcePosition || ''}
+                        onChange={(v) => updateCost(i, { ...c, evoSourcePosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                        accentColor="#1a4f8a"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
               {/* 🂠裏表: 辞書の hasFaceOption=true なアクション選択時のみ表示。
                   既存の修飾子コード face_down を c.options に書き込む
                   （「表向き」は指定なし＝デフォルトなので、options を空にするだけ） */}
@@ -1817,6 +1871,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectConditionsOp: 'and' | 'or' = isEditingAlt ? (editingAlt!.conditionsOp || 'and') : (block.conditionsOp || 'and');
   const effectFromZones = isEditingAlt ? (editingAlt!.fromZones || []) : (block.fromZones || []);
   const effectFromZonesOp = isEditingAlt ? (editingAlt!.fromZonesOp || 'or') : (block.fromZonesOp || 'or');
+  const effectSecurityPosition = isEditingAlt ? editingAlt!.securityPosition : block.securityPosition;
+  const effectEvoSourcePosition = isEditingAlt ? editingAlt!.evoSourcePosition : block.evoSourcePosition;
   const effectDuration = isEditingAlt ? editingAlt!.duration : block.duration;
   const effectPerCount = isEditingAlt ? editingAlt!.perCount : block.perCount;
   const effectPerRef = isEditingAlt ? editingAlt!.perRef : block.perRef;
@@ -3394,6 +3450,33 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     onChange={(v) => update('evoSourceOwner', (v || undefined) as 'self' | 'other' | undefined)}
                     accentColor="#1a4f8a"
                   />
+                </div>
+              )}
+              {/* 場所に「セキュリティ」/「進化元」を含む場合のみ: 積み重ね順の上/下どちらから見るか */}
+              {(zones.includes('security') || zones.includes('evo_source')) && (
+                <div style={{ marginTop: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {zones.includes('security') && (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 セキュリティの位置</div>
+                      <ButtonGroup
+                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                        value={effectSecurityPosition || ''}
+                        onChange={(v) => updateEffect({ securityPosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                        accentColor="#1a4f8a"
+                      />
+                    </div>
+                  )}
+                  {zones.includes('evo_source') && (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 進化元の位置</div>
+                      <ButtonGroup
+                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                        value={effectEvoSourcePosition || ''}
+                        onChange={(v) => updateEffect({ evoSourcePosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                        accentColor="#1a4f8a"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>

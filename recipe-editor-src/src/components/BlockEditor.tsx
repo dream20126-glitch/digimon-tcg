@@ -1545,16 +1545,20 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'recover', label: 'リカバリー' },
   { code: 'evolve', label: '進化' },
   { code: 'link', label: 'リンク' },
+  { code: 'attack', label: 'アタック' },
+  { code: 'block', label: 'ブロック' },
 ];
-// 「レスト」「アクティブ」「進化」ボタン専用: 「する」（通常の状態変化アクション）と
-// 「できない」（それを封じるアクション）を切り替えられるようにする。
+// 「レスト」「アクティブ」「進化」「アタック」「ブロック」ボタン専用: 「する」（通常の
+// 状態変化アクション）と「できない」（それを封じるアクション）を切り替えられるようにする。
 // アクションコード自体が別物（例: rest⇔cant_rest）なため、単純な位置バリアント
 // （POSITION_VARIANTS的なsuffix切替）ではなく専用の対応表で管理する。
-// cant_rest は辞書未登録・エンジンも未実装（該当カードが来たら追加実装）
+// cant_rest / block は辞書未登録・エンジンも未実装（該当カードが来たら追加実装）
 const DOABLE_TO_CANT: Record<string, string> = {
   rest: 'cant_rest',
   active: 'not_active',
   evolve: 'cant_evolve',
+  attack: 'cant_attack',
+  block: 'cant_block',
 };
 const CANT_TO_DOABLE: Record<string, string> = Object.fromEntries(
   Object.entries(DOABLE_TO_CANT).map(([doable, cant]) => [cant, doable])
@@ -3066,7 +3070,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           ) : (() => {
           // アクションのグループ表示処理（_top/_bottom/_select 系を1エントリに）
           // ※ effectAction/effectValue = 編集中の効果（効果1=block自身 / 効果2以降=altActions[i]）
-          const { options: actionDisplayOptions, flaggedBases, autoGroupBases } = buildActionDisplay(dict.actions);
+          const { options: rawActionDisplayOptions, flaggedBases, autoGroupBases } = buildActionDisplay(dict.actions);
+          // よく使うボタン（COMMON_ACTIONS／レスト等のできない形／破棄／〇〇に置く）で
+          // 既に選べるアクションは「その他のアクション」の候補から除外する（二重掲載を避ける）
+          const _buttonReachableCodes = new Set<string>([
+            ...COMMON_ACTIONS.map((a) => a.code),
+            ...Object.keys(DOABLE_TO_CANT),
+            ...Object.values(DOABLE_TO_CANT),
+            ...DISCARD_ACTION_CODES,
+            ...PLACE_ACTION_CODES,
+          ]);
+          const actionDisplayOptions = rawActionDisplayOptions.filter((o) => !_buttonReachableCodes.has(o.value));
           const curVariant = getActionVariant(effectAction);
           // 🂠裏表フラグ判定: コスト側(costActionHasFlag)と同じロジック。完全一致を優先し、
           // 無ければ位置バリアントのベースコードでも引く（'place_on_security_top' のように

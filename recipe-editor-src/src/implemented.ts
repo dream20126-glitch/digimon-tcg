@@ -44,6 +44,16 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'grant_effect',
   // Stage 7 追加（トークン生成）
   'summon_token',
+  // Stage 8 追加（アタック宣言・効果起点の進化・手札に戻す振り分け）
+  // 急襲(attack_at_end_phase)/BT26-015のalt_actions用にstartAttack→resolveAttackTargetを
+  // 効果から直接呼び出すaction:'attack'を実装（プレイヤー側のみ対応）
+  'attack',
+  // ピョコモン(BT26-001)用。進化条件を無視し、from_filterに一致する手札のカードへ
+  // 効果から直接進化する（doEvolveFromEffect経由）
+  'evolve',
+  // 辞書登録コード。from:'trash'指定時は自分のトラッシュ→手札、それ以外は
+  // 相手のバトルエリア→手札としてbounceに委譲する
+  'return_hand',
 ]);
 
 // エンジンで実装済の passive flag (キーワード)
@@ -112,6 +122,8 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_rest', 'cond_blocker', 'cond_tamer', 'cond_security', 'cond_evolve_to_lv',
   // Stage 8 追加（代替進化 / 条件付き登場コスト軽減）
   'cond_opp_dp_ge',
+  // Stage 9 追加（カード自身の記述テキストに文字列が含まれるか）
+  'cond_description', 'cond_description_contains',
 ]);
 
 // エンジンで実装済の修飾子コード（アクションの実行方法を変える）

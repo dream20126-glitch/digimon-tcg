@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireWhenLeaveBattleTriggers as _fireWhenLeaveBattle, fireKeywordAttackEffects as _fireKeywordAttackEffects } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -214,6 +214,21 @@ function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle) {
     return { canceled: true, reason: 'fragment' };
   }
   return null;
+}
+
+// _tryCancelDestroy（同期の防壁/アーマー解除/回避/不屈/スケープゴート/フラグメント判定）に
+// 加えて、【分離】（リンクカードを1枚破棄して回避。確認ダイアログを要するため非同期）も試す。
+// リンクカードが尽きるまで何度でも発動できる（回数制限は無い＝毎回このヘルパーで判定し直す）。
+// callback(result) — result は _tryCancelDestroy と同じ形（{canceled,reason} か null）
+function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callback) {
+  var syncResult = _tryCancelDestroy(card, ownerSidePlayer, onlyBattle);
+  if (syncResult) { callback(syncResult); return; }
+  const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+  try {
+    _tryCancelViaLeaveBattle(card, side, bs, ctxBase, (canceled) => {
+      callback(canceled ? { canceled: true, reason: 'protection' } : null);
+    });
+  } catch (_) { callback(null); }
 }
 
 // when_battle_destroy トリガーを発火し、コスト払いでバフが付与されていれば消滅をキャンセルする。
@@ -435,14 +450,11 @@ function removeOwnCard(slotIdx, reason) {
 }
 
 // リンクカードをトラッシュへ送る（消滅・バウンス等、バトルエリアを離れる全処理の共通部分）。
-// 【分離】等 when_leave_battle でリンクカードの処遇（どれを破棄するか等）を自前で処理する
-// キーワードを持つカードは、ここでの自動一括破棄をスキップする（_fireDestroyChain 内で
-// 発火する when_leave_battle 側の unlink アクションに処理を委ねる）。
-// オンライン対戦中は when_leave_battle 側を未対応（意図的にスコープ外）のため、
-// 二重発火/カード紛失を避けるためオンライン時は常に従来通り即座に一括破棄する
+// 【分離】は「消滅自体をキャンセルする」効果のため、ここに到達している時点で既に
+// _tryCancelDestroyAsync（呼び出し元）が判定済み＝消滅は確定している。よって
+// ここでは常に一括破棄してよい
 function _dumpLinkedCardsUnlessDeferred(card, trashArr) {
   if (!card || !Array.isArray(card.linkedCards) || card.linkedCards.length === 0) return;
-  if (!_onlineMode && hasPassiveFlag(card, 'protection')) return;
   card.linkedCards.forEach(s => trashArr.push(s));
 }
 
@@ -1913,8 +1925,8 @@ export function resolveSecurityCheck(atk, atkIdx) {
             return;
           }
           // ≪防壁≫: セキュリティバトル消滅時、自分のセキュリティ1枚破棄で回避
-          // ≪回避≫/≪アーマー解除≫もここで判定
-          var cancelAtkInSec = _tryCancelDestroy(atk, bs.player, false);
+          // ≪回避≫/≪アーマー解除≫/【分離】もここで判定
+          _tryCancelDestroyAsync(atk, bs.player, 'player', false, (cancelAtkInSec) => {
           if (cancelAtkInSec) {
             bs.ai.trash.push(sec);
             renderAll(); _dispatchStateSync();
@@ -1937,6 +1949,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
               } catch(_) { checkPendingTurnEnd(); }
             });
           }, 'Win!!', '#00ff88');
+          });
         }
         return;
       }
@@ -2294,35 +2307,18 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide) {
       }
       try { _fireOnDestroy(s, bs, ctxBase, cb, destroyedCard); } catch (_) { cb(); }
     };
-    // 【分離】等 when_leave_battle（バトルエリアを離れたカード自身の効果）を最初に解決する。
-    // オンライン対戦は未対応（相手側所有権の受け渡し経路が無いため、意図的にスコープ外）。
-    // _dumpLinkedCardsUnlessDeferred がリンクカードの自動一括破棄を保留しているのは
-    // このタイミングで unlink アクションに処理させるため。unlink で選ばれなかった残りは
-    // ここで最後にまとめてトラッシュへ送る（宙に浮いたままにしない）
-    const afterLeaveBattle = (cb) => {
-      if (_onlineMode || !destroyedCard) { cb(); return; }
-      try {
-        _fireWhenLeaveBattle(destroyedCard, s, bs, ctxBase, () => {
-          if (Array.isArray(destroyedCard.linkedCards) && destroyedCard.linkedCards.length > 0) {
-            destroyedCard.linkedCards.forEach(c => bs[s].trash.push(c));
-            destroyedCard.linkedCards = [];
-          }
-          cb();
-        });
-      } catch (_) { cb(); }
-    };
+    // 【分離】は「消滅自体をキャンセルする」効果のため、この関数に到達している時点で
+    // 既に呼び出し元（_tryCancelDestroyAsync）が判定済み＝消滅は確定している。
     // 「消滅した時」（when_own_destroyed=同sideの他カードの反応）を先に解決し、
     // 「消滅時」（on_destroy/on_battle_destroy=消滅したカード自体の効果）を最後に解決する。
     // on_battle_destroy/when_own_destroyed には対応する所有者側発火経路が無いため、
     // これらは従来通りここ（消滅させた側の機械）で発火する。
     try {
-      afterLeaveBattle(() => {
-        _fireWhenOwnDestroyed(s, bs, ctxBase, () => {
-          afterOnDestroy(() => {
-            try {
-              _fireOnBattleDestroy(s, bs, ctxBase, next, destroyedCard);
-            } catch (_) { next(); }
-          });
+      _fireWhenOwnDestroyed(s, bs, ctxBase, () => {
+        afterOnDestroy(() => {
+          try {
+            _fireOnBattleDestroy(s, bs, ctxBase, next, destroyedCard);
+          } catch (_) { next(); }
         });
       });
     } catch (_) { next(); }
@@ -2405,8 +2401,8 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
         });
       });
     } else if (_atkDp > _defDp) {
-      // ≪防壁≫/≪回避≫/≪アーマー解除≫: def 側の消滅回避を試行
-      var cancelDef = _tryCancelDestroy(def, bs.ai, false);
+      // ≪防壁≫/≪回避≫/≪アーマー解除≫/【分離】: def 側の消滅回避を試行
+      _tryCancelDestroyAsync(def, bs.ai, 'ai', false, (cancelDef) => {
       if (cancelDef) {
         renderAll();
         showBattleResult('回避！', '#ff00fb', '相手「' + def.name + '」が消滅を回避', () => { renderAll(); checkAttackEnd(atk, atkIdx); }, 'Lost...', '#ff4444');
@@ -2500,9 +2496,10 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
           showBattleResult('回避！', '#ff00fb', '相手「' + def.name + '」がコストを払い消滅を回避', () => { renderAll(); checkAttackEnd(atk, atkIdx); }, 'Lose...', '#ff4444');
         }
       );
+      });
     } else {
-      // ≪防壁≫/≪回避≫/≪アーマー解除≫: 消滅回避を試行
-      var cancelResult = _tryCancelDestroy(atk, bs.player, false);
+      // ≪防壁≫/≪回避≫/≪アーマー解除≫/【分離】: 消滅回避を試行
+      _tryCancelDestroyAsync(atk, bs.player, 'player', false, (cancelResult) => {
       if (cancelResult) {
         renderAll();
         showBattleResult('回避！', '#00fbff', '「' + atk.name + '」が消滅を回避', () => { renderAll(); checkAttackEnd(atk, atkIdx); }, 'Win!!', '#00ff88');
@@ -2539,6 +2536,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
           showBattleResult('回避！', '#00fbff', '「' + atk.name + '」がコストを払い消滅を回避', () => { renderAll(); checkAttackEnd(atk, atkIdx); }, 'Win!!', '#00ff88');
         }
       );
+      });
     }
   }, 'BATTLE!');
 }
@@ -2614,8 +2612,8 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
         });
       });
     } else if (_atkDp > _defDp) {
-      // ≪防壁≫/≪回避≫/≪アーマー解除≫: プレイヤー側 def の消滅回避を試行
-      var cancelPlayerDef = _tryCancelDestroy(def, bs.player, false);
+      // ≪防壁≫/≪回避≫/≪アーマー解除≫/【分離】: プレイヤー側 def の消滅回避を試行
+      _tryCancelDestroyAsync(def, bs.player, 'player', false, (cancelPlayerDef) => {
       if (cancelPlayerDef) {
         renderAll();
         showBattleResult('回避！', '#00fbff', '「' + def.name + '」が消滅を回避', () => { renderAll(); callback(); }, '回避！', '#00fbff');
@@ -2715,9 +2713,10 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           showBattleResult('回避！', '#00fbff', '「' + def.name + '」がコストを払い消滅を回避', () => { renderAll(); callback(); }, '回避！', '#00fbff');
         }
       );
+      });
     } else {
-      // ≪防壁≫/≪回避≫/≪アーマー解除≫: AI 側 atk の消滅回避を試行
-      var cancelAiAtk = _tryCancelDestroy(atk, bs.ai, false);
+      // ≪防壁≫/≪回避≫/≪アーマー解除≫/【分離】: AI 側 atk の消滅回避を試行
+      _tryCancelDestroyAsync(atk, bs.ai, 'ai', false, (cancelAiAtk) => {
       if (cancelAiAtk) {
         renderAll();
         showBattleResult('回避！', '#ff00fb', '相手「' + atk.name + '」が消滅を回避', () => { renderAll(); callback(); }, '回避！', '#ff00fb');
@@ -2771,6 +2770,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           showBattleResult('回避！', '#ff00fb', '相手「' + atk.name + '」がコストを払い消滅を回避', () => { renderAll(); callback(); }, '回避！', '#ff00fb');
         }
       );
+      });
     }
   }, 'BATTLE!');
 }

@@ -1842,30 +1842,6 @@ function _hasProtectionFlag(card) {
   return !!(recipe && Array.isArray(recipe.passive) && recipe.passive.some(p => p && p.flag === 'protection'));
 }
 
-// 【分離】等 when_leave_battle を、カードがまだバトルエリアにいる状態で解決してから
-// callback を呼ぶ（実際の除去・トラッシュ送り・手札/デッキへの移動は callback 側で行うこと）。
-// 公式ルールの「DP0のデジモンはバトルエリアに存在できない」等のルールチェックによる除去は、
-// 分離の効果（リンクカードの処遇）が解決した後・最後に適用されるべきというイメージのため、
-// 除去より前に解決する。分離を持たない/リンクカードが無い/オンライン対戦中は
-// 即座に callback を呼ぶ（同期スキップ）。
-// card._leaveBattleResolved を立てて、fireDestroyChain 側で二重発火しないようにする
-function _resolveLeaveBattleBeforeRemoval(card, side, ctx, callback) {
-  const isOnline = !!(window._isOnlineMode && window._isOnlineMode());
-  if (isOnline || !card || !_hasProtectionFlag(card) || !Array.isArray(card.linkedCards) || card.linkedCards.length === 0) {
-    callback();
-    return;
-  }
-  // fireDestroyChain 側で二重発火しないようにする一時フラグ。fireDestroyChain を呼ぶ
-  // 呼び出し元（doDestroy/DP0消滅スイープ）ではそちらの消費時に消す。fireDestroyChain を
-  // 呼ばない呼び出し元（doBounce/return_deck）は callback 内で自分で消しておくこと
-  // （そうしないと、このカードオブジェクトが後で別の機会に消滅した時、古いフラグのせいで
-  // when_leave_battle が発火しなくなってしまう）
-  card._leaveBattleResolved = true;
-  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-  try { fireWhenLeaveBattleTriggers(card, side, ctx.bs, ctxBase, callback); }
-  catch (_) { callback(); }
-}
-
 function doDestroy(targetSide, slotIdx, ctx, callback) {
   const destroyed = targetSide.battleArea[slotIdx];
   if (!destroyed) { callback && callback(); return; }
@@ -1879,7 +1855,10 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       var dc = decoyRes.decoyCard;
       var di = decoyRes.decoySlotIdx;
       const decoyOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-      _resolveLeaveBattleBeforeRemoval(dc, decoyOwnerSide, ctx, () => {
+      const ctxBaseDecoy = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+      // 【分離】: リンクカードを1枚破棄して、この消滅自体をキャンセルできる
+      tryCancelViaLeaveBattle(dc, decoyOwnerSide, ctx.bs, ctxBaseDecoy, (canceled) => {
+        if (canceled) { callback && callback(); return; }
         targetSide.battleArea[di] = null;
         targetSide.trash.push(dc);
         if (dc.stack) dc.stack.forEach(function(s){ targetSide.trash.push(s); });
@@ -1894,8 +1873,6 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
     }
   }
   if (window._tryScapegoat) {
-    // ※ _tryScapegoat（battle-combat.js）は同期的に身代わりの除去まで済ませてしまうため、
-    // 分離の「除去前に解決する」順序は適用できない（fireDestroyChain側で除去後に発火する）
     if (window._tryScapegoat(destroyed, targetSide)) {
       // 他デジモンを身代わりにして destroyed は残す
       ctx.renderAll && ctx.renderAll();
@@ -1907,7 +1884,10 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
     }
   }
   const destroyedSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-  _resolveLeaveBattleBeforeRemoval(destroyed, destroyedSideName, ctx, () => {
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  // 【分離】: リンクカードを1枚破棄して、この消滅自体をキャンセルできる
+  tryCancelViaLeaveBattle(destroyed, destroyedSideName, ctx.bs, ctxBase, (canceled) => {
+    if (canceled) { callback && callback(); return; }
     targetSide.battleArea[slotIdx] = null;
     targetSide.trash.push(destroyed);
     if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));
@@ -1928,14 +1908,17 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
 }
 
 // callback は省略可（従来呼び出し元は fire-and-forget のまま動く）。
-// 【分離】等 when_leave_battle を発火させたい呼び出し元は callback を渡して完了を待つこと
+// 【分離】等でバウンス自体がキャンセルされる可能性があるため、
+// 完了を待ちたい呼び出し元は callback を渡すこと
 function doBounce(targetSide, slotIdx, ctx, callback) {
   const finish = () => { try { callback && callback(); } catch (_) {} };
   const bounced = targetSide.battleArea[slotIdx];
   if (!bounced) { finish(); return; }
   const targetSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-  _resolveLeaveBattleBeforeRemoval(bounced, targetSideName, ctx, () => {
-    delete bounced._leaveBattleResolved;
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  // 【分離】: リンクカードを1枚破棄して、手札に戻ること自体をキャンセルできる
+  tryCancelViaLeaveBattle(bounced, targetSideName, ctx.bs, ctxBase, (canceled) => {
+    if (canceled) { finish(); return; }
     targetSide.battleArea[slotIdx] = null;
     // 手札に戻る = 一時的な状態（バフ/DP修整/永続効果/レスト等）は全てリセットされる
     // （八神太一のDP+1000等が手札に戻った後も残ってしまう不具合の修正）
@@ -4753,10 +4736,13 @@ function checkPendingDestroys(ctx, callback) {
     const { side, slot, card } = pending[idx++];
     // 演出
     showDE(card, () => {
-      // 【分離】: DP0でバトルエリアに存在できないルールチェック自体は防げないが、
-      // 除去・トラッシュ送りより前にリンクカードの処遇を解決する（まだバトルエリアにいる
-      // 状態で「効果発動しますか？」→リンクカード選択・破棄 →その後で除去）
-      _resolveLeaveBattleBeforeRemoval(card, side, ctx, () => {
+      // 【分離】: リンクカードを1枚破棄して、この消滅自体をキャンセルできる。ただし
+      // DP0である限り次の判定でまた消滅対象になる（_pendingDestroyは立ったままなので、
+      // 次にcheckPendingDestroysが呼ばれた時に再度この処理の対象になる）。
+      // リンクカードが尽きればキャンセルできなくなり、最終的に消滅する
+      const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+      tryCancelViaLeaveBattle(card, side, ctx.bs, ctxBase, (canceled) => {
+        if (canceled) { processNext(); return; }
       // 削除（演出後に実際に消滅）
       if (ctx.bs[side].battleArea[slot] === card) {
         ctx.bs[side].battleArea[slot] = null;
@@ -5776,6 +5762,28 @@ export function fireWhenLeaveBattleTriggers(leftCard, leftSide, bs, ctxBase, don
   return _fireSelfDestroyEffects(leftCard, leftSide, bs, ctxBase, done, 'when_leave_battle');
 }
 
+// 【分離】: リンクカードを1枚（テンプレート指定枚数）破棄することで、このカードが
+// バトルエリアを離れること自体をキャンセルする（回避/防壁/不屈/フラグメント等と同じ
+// 「消滅回避」系キーワード）。battle-combat.js の _tryCancelDestroyAsync から使う。
+// when_leave_battle のレシピ自体（確認ダイアログ・trigger_conditions・cost feasibility
+// 等）はfireWhenLeaveBattleTriggers（_fireSelfDestroyEffects）にそのまま委ねる。
+// 「キャンセルされたか」は linkedCards が実際に減ったか（=unlinkが実行されたか）で判定する
+// （確認ダイアログで「いいえ」を選べば linkedCards は変化しないため false になる）
+export function tryCancelViaLeaveBattle(card, side, bs, ctxBase, callback) {
+  const isOnline = !!(window._isOnlineMode && window._isOnlineMode());
+  if (isOnline || !card || !Array.isArray(card.linkedCards) || card.linkedCards.length === 0 || !_hasProtectionFlag(card)) {
+    callback(false);
+    return;
+  }
+  const before = card.linkedCards.length;
+  try {
+    fireWhenLeaveBattleTriggers(card, side, bs, ctxBase, () => {
+      const canceled = Array.isArray(card.linkedCards) && card.linkedCards.length < before;
+      callback(canceled);
+    });
+  } catch (_) { callback(false); }
+}
+
 // セキュリティが減ったとき → 減った側の自分側が反応
 export function fireWhenSecurityDecreaseTriggers(decreasedSide, bs, ctxBase, done) {
   return _fireSidedReactionTriggers(decreasedSide, 'when_security_decrease', bs, ctxBase, done);
@@ -6001,19 +6009,9 @@ export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, call
   const finish = () => { try { callback && callback(); } catch(_) {} };
   if (!destroyedCard || !bs) { finish(); return; }
   const oppSide = destroyedSide === 'player' ? 'ai' : 'player';
-  // 【分離】等 when_leave_battle（バトルエリアを離れたカード自身の効果）を最初に解決する。
-  // オンライン対戦は未対応（意図的にスコープ外）。呼び出し元が既に
-  // _resolveLeaveBattleBeforeRemoval で（除去より前に）解決済み(_leaveBattleResolved)なら
-  // ここでは二重発火しない
-  const _isOnline = !!(window._isOnlineMode && window._isOnlineMode());
-  const afterLeaveBattle = (cb) => {
-    // 一度消費したら必ずクリアする（同じカードオブジェクトが将来別の機会に再度消滅した時、
-    // 古いフラグのせいで when_leave_battle が発火しなくなるのを防ぐ）
-    if (destroyedCard._leaveBattleResolved) { delete destroyedCard._leaveBattleResolved; cb(); return; }
-    if (_isOnline) { cb(); return; }
-    try { fireWhenLeaveBattleTriggers(destroyedCard, destroyedSide, bs, ctxBase, cb); } catch (_) { cb(); }
-  };
-  afterLeaveBattle(() => {
+  // 【分離】は消滅自体をキャンセルする効果のため、除去より前に呼び出し元
+  // （doDestroy/checkPendingDestroys等）が tryCancelViaLeaveBattle で判定済み。
+  // ここに到達している時点で既に消滅は確定しているので when_leave_battle は発火しない
   _fireSidedReactionTriggers(destroyedSide, 'when_own_destroyed', bs, ctxBase, () => {
     _fireSidedReactionTriggers(oppSide, 'when_opp_destroyed', bs, ctxBase, () => {
       // when_other_destroyed は「両陣営どちらの他デジモンが消滅しても反応する」トリガーで、
@@ -6035,7 +6033,6 @@ export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, call
         });
       });
     });
-  });
   });
 }
 
@@ -9113,8 +9110,10 @@ function executeRecipeStep(step, ctx, store, callback) {
           const c = opponent.battleArea[idx];
           if (!c) { doneCb && doneCb(); return; }
           const _rdSideName = (ctx.bs && opponent === ctx.bs.player) ? 'player' : 'ai';
-          _resolveLeaveBattleBeforeRemoval(c, _rdSideName, ctx, () => {
-            delete c._leaveBattleResolved;
+          const _rdCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+          // 【分離】: リンクカードを1枚破棄して、デッキに戻ること自体をキャンセルできる
+          tryCancelViaLeaveBattle(c, _rdSideName, ctx.bs, _rdCtxBase, (canceled) => {
+            if (canceled) { doneCb && doneCb(); return; }
             opponent.battleArea[idx] = null;
             if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
             if (c.linkedCards) c.linkedCards.forEach(s => opponent.trash.push(s));

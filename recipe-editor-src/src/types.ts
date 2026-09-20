@@ -197,6 +197,10 @@ export interface AltAction {
   perRef?: string;
   perCountMode?: 'repeat';
   perRefFilter?: ConditionPair[];
+  // summon/summon_from_trash/evolve/summon_from_evo_source/link 専用（効果1と同じ）。
+  // true のとき JSON へ cost_free:true / skip_on_play:true を出力する
+  costFree?: boolean;
+  skipOnPlay?: boolean;
 }
 
 // ルール = メインアクションに紐づく「ミニ effect step」

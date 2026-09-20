@@ -1804,6 +1804,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectPerRef = isEditingAlt ? editingAlt!.perRef : block.perRef;
   const effectPerCountMode = isEditingAlt ? editingAlt!.perCountMode : block.perCountMode;
   const effectPerRefFilter = isEditingAlt ? (editingAlt!.perRefFilter || []) : (block.perRefFilter || []);
+  const effectCostFree = isEditingAlt ? !!editingAlt!.costFree : !!block.costFree;
+  const effectSkipOnPlay = isEditingAlt ? !!editingAlt!.skipOnPlay : !!block.skipOnPlay;
   function updateEffect(patch: Record<string, any>) {
     if (isEditingAlt) updateAltAction(editingEffect - 1, patch);
     else onChange({ ...block, ...patch });
@@ -2940,10 +2942,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             onChange(next);
           }
 
-          // コストを支払わず/登場時効果は発揮しない/裏向きで は効果1（メインアクション）専用。
-          // 代替アクション（効果2以降）にはまだ対応していない
-          const showCostCheckboxes = !isEditingAlt && (effectAction === 'summon' || effectAction === 'summon_from_trash' || effectAction === 'evolve' || effectAction === 'summon_from_evo_source' || effectAction === 'link');
-          const showSkipOnPlay = !isEditingAlt && (effectAction === 'summon' || effectAction === 'summon_from_trash');
+          // コストを支払わず/登場時効果は発揮しない は効果1・代替アクション（その後/OR/AND）とも
+          // 対応。裏向きで、は効果1（メインアクション）専用のまま
+          const showCostCheckboxes = effectAction === 'summon' || effectAction === 'summon_from_trash' || effectAction === 'evolve' || effectAction === 'summon_from_evo_source' || effectAction === 'link';
+          const showSkipOnPlay = effectAction === 'summon' || effectAction === 'summon_from_trash';
 
           return (
             <div style={{
@@ -2971,8 +2973,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
                           <input
                             type="checkbox"
-                            checked={!!block.costFree}
-                            onChange={(e) => update('costFree', e.target.checked)}
+                            checked={effectCostFree}
+                            onChange={(e) => updateEffect({ costFree: e.target.checked })}
                           />
                           コストを支払わず
                         </label>
@@ -2981,8 +2983,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
                           <input
                             type="checkbox"
-                            checked={!!block.skipOnPlay}
-                            onChange={(e) => update('skipOnPlay', e.target.checked)}
+                            checked={effectSkipOnPlay}
+                            onChange={(e) => updateEffect({ skipOnPlay: e.target.checked })}
                           />
                           登場時効果は発揮しない
                         </label>

@@ -65,6 +65,8 @@ function altActionToStepObject(a: AltAction): any {
     }
   }
   if (a.duration) out.duration = a.duration;
+  if (a.costFree) out.cost_free = true;
+  if (a.skipOnPlay) out.skip_on_play = true;
   return out;
 }
 
@@ -763,6 +765,8 @@ function stepObjectToAltAction(step: any): AltAction {
     perRef: step?.ref || '',
     perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : undefined,
     perRefFilter: [],
+    costFree: !!step?.cost_free,
+    skipOnPlay: !!step?.skip_on_play,
   };
 }
 
@@ -1065,6 +1069,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
               }
               return out2;
             })(),
+            costFree: !!a?.cost_free,
+            skipOnPlay: !!a?.skip_on_play,
           };
         })
       : [],

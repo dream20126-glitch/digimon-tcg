@@ -2296,11 +2296,20 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide) {
     };
     // 【分離】等 when_leave_battle（バトルエリアを離れたカード自身の効果）を最初に解決する。
     // オンライン対戦は未対応（相手側所有権の受け渡し経路が無いため、意図的にスコープ外）。
-    // 各sideの実行と対応する形で _dumpLinkedCardsUnlessDeferred がリンクカードの自動一括破棄を
-    // 保留しているのはこのタイミングで unlink アクションに処理させるため
+    // _dumpLinkedCardsUnlessDeferred がリンクカードの自動一括破棄を保留しているのは
+    // このタイミングで unlink アクションに処理させるため。unlink で選ばれなかった残りは
+    // ここで最後にまとめてトラッシュへ送る（宙に浮いたままにしない）
     const afterLeaveBattle = (cb) => {
       if (_onlineMode || !destroyedCard) { cb(); return; }
-      try { _fireWhenLeaveBattle(destroyedCard, s, bs, ctxBase, cb); } catch (_) { cb(); }
+      try {
+        _fireWhenLeaveBattle(destroyedCard, s, bs, ctxBase, () => {
+          if (Array.isArray(destroyedCard.linkedCards) && destroyedCard.linkedCards.length > 0) {
+            destroyedCard.linkedCards.forEach(c => bs[s].trash.push(c));
+            destroyedCard.linkedCards = [];
+          }
+          cb();
+        });
+      } catch (_) { cb(); }
     };
     // 「消滅した時」（when_own_destroyed=同sideの他カードの反応）を先に解決し、
     // 「消滅時」（on_destroy/on_battle_destroy=消滅したカード自体の効果）を最後に解決する。

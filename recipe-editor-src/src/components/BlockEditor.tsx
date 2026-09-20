@@ -1696,9 +1696,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // 対象のL1/L2（「対象の条件」を表示すべきかの判定にも使うため、コンポーネント直下で保持）
   const curTgt = TARGET_SEL_CODE_TO_L1L2[tgtBase] || { l1: '', l2: '' };
   // 「対象の条件」は対象が下記の場合のみ表示する（＝アクションが実際に処理する対象自身に
-  // 掛かる条件。例:「レスト状態のこのデジモン」）:
-  // 自分→デジモン/カード/テイマー・相手→デジモン/テイマー・他→デジモン
+  // 掛かる条件。例:「レスト状態のこのデジモン」「クロノモンの記述があるこのデジモン」）:
+  // このカード自身・自分→デジモン/カード/テイマー・相手→デジモン/テイマー・他→デジモン
   const showTargetFilter =
+    curTgt.l1 === 'self' ||
     (curTgt.l1 === 'own' && ['digimon', 'card', 'tamer'].includes(curTgt.l2)) ||
     (curTgt.l1 === 'opp' && ['digimon', 'tamer'].includes(curTgt.l2)) ||
     (curTgt.l1 === 'other_own' && curTgt.l2 === 'digimon');
@@ -3464,6 +3465,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eHideCount = eBase === 'self' || eBase === 'self_card' || eBase === 'same_target';
             const eIsUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(eBase);
             const eShowTargetFilter =
+              eCurTgt.l1 === 'self' ||
               (eCurTgt.l1 === 'own' && ['digimon', 'card', 'tamer'].includes(eCurTgt.l2)) ||
               (eCurTgt.l1 === 'opp' && ['digimon', 'tamer'].includes(eCurTgt.l2)) ||
               (eCurTgt.l1 === 'other_own' && eCurTgt.l2 === 'digimon');
@@ -3607,8 +3609,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             }
           };
 
+          // 対象数ボックス（右列）自体は hideCount のとき非表示だが、対象の条件（詳細パネル側）
+          // は「このカード」等でも表示したいため、条件パネルがある場合は列を維持する
+          const showSecondColumn = !hideCount || showTargetFilter;
           return (
-            <div style={{ display: 'grid', gridTemplateColumns: hideCount ? '1fr' : '1fr 1fr', gap: 8, marginTop: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: showSecondColumn ? '1fr 1fr' : '1fr', gap: 8, marginTop: 8 }}>
               <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
                 <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
                   🎯 アクションの対象
@@ -3723,22 +3728,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </div>
                 )}
               </div>
-              {!hideCount && (
+              {showSecondColumn && (
                 <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
-                  <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
-                    🎯 アクションの対象数
-                    <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
-                      （何体に適用するか）
-                    </span>
-                  </label>
-                  <ButtonGroup
-                    options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
-                    value={tgtSuffix}
-                    onChange={(v) => setTarget(tgtBase, v)}
-                    accentColor="#b76e00"
-                  />
+                  {!hideCount && (
+                    <>
+                      <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
+                        🎯 アクションの対象数
+                        <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
+                          （何体に適用するか）
+                        </span>
+                      </label>
+                      <ButtonGroup
+                        options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
+                        value={tgtSuffix}
+                        onChange={(v) => setTarget(tgtBase, v)}
+                        accentColor="#b76e00"
+                      />
+                    </>
+                  )}
                   {showTargetFilter && (
-                    <div style={{ marginTop: 8, border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', padding: 8 }}>
+                    <div style={{ marginTop: hideCount ? 0 : 8, border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', padding: 8 }}>
                       <ConditionsHybridEditor
                         conditions={targetFilter}
                         onChange={(next) => update('targetFilter', next)}

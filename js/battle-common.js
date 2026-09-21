@@ -10,7 +10,7 @@ import { addLog } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallbacks, doIkuMove } from './battle-render.js';
 import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, showDrawEffect } from './battle-phase.js';
 import { doPlay, offerAssemblyThenPlay, doEvolve, doEvolveIku, doEvolveFromEffect, doLink, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, showOptionEffect, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack, doTrainingEffect } from './battle-combat.js';
-import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE, fireOnAttackBothSubjectTriggers as _fireOnAttackBothSubjectEE, fireOnMainPhaseStartTriggers as _fireOnMainPhaseStartEE, fireDelegatedReactionTriggers as _fireDelegatedReactionEE } from './effect-engine.js';
+import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE, fireOnAttackBothSubjectTriggers as _fireOnAttackBothSubjectEE, fireOnMainPhaseStartTriggers as _fireOnMainPhaseStartEE, fireOnOppMainPhaseStartTriggers as _fireOnOppMainPhaseStartEE, fireDelegatedReactionTriggers as _fireDelegatedReactionEE } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxBuffStatus, fxShuffle } from './battle-fx.js';
 import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js';
 
@@ -199,6 +199,14 @@ export function fireOnAttackBothSubjectTriggersWrap(attackerSide, cb) {
 export function fireOnMainPhaseStartTriggersWrap(turnSide, cb) {
   try { _fireOnMainPhaseStartEE(turnSide, bs, makeEffectContext(null, turnSide), cb); }
   catch (e) { console.error('[fireOnMainPhaseStartTriggers]', e); cb && cb(); }
+}
+
+// ===== fireOnOppMainPhaseStartTriggers (wrapper) =====
+// 【相手のメインフェイズ開始時】(on_opp_main_phase_start) を turnSide の反対側の盤面で
+// 発火させる。on_main_phase_start とは別のトリガーコード（辞書側も別コードで登録）
+export function fireOnOppMainPhaseStartTriggersWrap(turnSide, cb) {
+  try { _fireOnOppMainPhaseStartEE(turnSide, bs, makeEffectContext(null, turnSide === 'player' ? 'ai' : 'player'), cb); }
+  catch (e) { console.error('[fireOnOppMainPhaseStartTriggers]', e); cb && cb(); }
 }
 
 // ===== Combat Hooks を構築 =====
@@ -436,6 +444,7 @@ export function setupCommonHooks() {
     checkTurnEndEffects,
     checkAndTriggerEffect,
     fireOnMainPhaseStartTriggers: fireOnMainPhaseStartTriggersWrap,
+    fireOnOppMainPhaseStartTriggers: fireOnOppMainPhaseStartTriggersWrap,
   });
 
   // 演出エンジン接続

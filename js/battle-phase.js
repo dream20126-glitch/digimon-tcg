@@ -68,6 +68,8 @@ let _hooks = {
   aiAttackPhase: (cb) => cb(),
   /** 【自分のメインフェイズ開始時】発火 (turnSide, callback) */
   fireOnMainPhaseStartTriggers: (_turnSide, cb) => cb(),
+  /** 【相手のメインフェイズ開始時】発火 (turnSide, callback) */
+  fireOnOppMainPhaseStartTriggers: (_turnSide, cb) => cb(),
 };
 
 /**
@@ -644,7 +646,12 @@ function execMain() {
   addLog('⚡ メインフェイズ');
   renderAll();
   // 【自分のメインフェイズ開始時】(on_main_phase_start) 発火
-  _hooks.fireOnMainPhaseStartTriggers('player', () => { renderAll(); });
+  _hooks.fireOnMainPhaseStartTriggers('player', () => {
+    renderAll();
+    // 【相手のメインフェイズ開始時】(on_opp_main_phase_start): 自分のターンが始まったので
+    // 相手側の盤面（AI）が反応する
+    _hooks.fireOnOppMainPhaseStartTriggers('player', () => { renderAll(); });
+  });
   // プレイヤーの操作を待つ（登場/進化/アタック/ターン終了）
 }
 
@@ -946,9 +953,14 @@ function aiPhaseMain() {
     // 【自分のメインフェイズ開始時】(on_main_phase_start) 発火
     _hooks.fireOnMainPhaseStartTriggers('ai', () => {
       renderAll();
-      _hooks.aiMainPhase(() => {
-        _hooks.aiAttackPhase(() => {
-          endAiTurn();
+      // 【相手のメインフェイズ開始時】(on_opp_main_phase_start): AIのターンが始まったので
+      // 相手側（プレイヤー）の盤面が反応する
+      _hooks.fireOnOppMainPhaseStartTriggers('ai', () => {
+        renderAll();
+        _hooks.aiMainPhase(() => {
+          _hooks.aiAttackPhase(() => {
+            endAiTurn();
+          });
         });
       });
     });

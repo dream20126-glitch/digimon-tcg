@@ -548,8 +548,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   }
   if (b.target) step.target = b.target;
   if (b.keyword) step.keyword = b.keyword;
-  // fusion_evolve 専用: 素材候補スロット一覧（名称OR / 色OR+Lv）+ 同時使用数
-  if (b.trigger === 'fusion_evolve' && Array.isArray(b.fusionMaterials) && b.fusionMaterials.length > 0) {
+  // app_gattai_evolve / jogress_evolve 専用: 素材候補スロット一覧（名称OR / 色OR+Lv）+ 同時使用数
+  // （演出が異なるためトリガーコード自体は2つに分けているが、データ構造は共通）
+  if ((b.trigger === 'app_gattai_evolve' || b.trigger === 'jogress_evolve') && Array.isArray(b.fusionMaterials) && b.fusionMaterials.length > 0) {
     const materials = b.fusionMaterials
       .map((s) => {
         const m: any = {};
@@ -1167,7 +1168,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     value: step?.value,
     target: step?.target || '',
     keyword: step?.keyword || '',
-    // fusion_evolve 専用: 素材候補スロット一覧の復元
+    // app_gattai_evolve / jogress_evolve 専用: 素材候補スロット一覧の復元
     fusionMaterials: Array.isArray(step?.materials)
       ? step.materials.map((m: any) => {
           const slot: any = {};

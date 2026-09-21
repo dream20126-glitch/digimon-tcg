@@ -18,7 +18,7 @@ export interface DesignatedGroup {
   count?: number | string;
 }
 
-// アプ合体/ジョグレス進化（fusion_evolve）専用: 素材候補スロット1つ分。
+// アプ合体/ジョグレス進化（app_gattai_evolve/jogress_evolve）専用: 素材候補スロット1つ分。
 // 1スロット=1つの「必要な個体」を表す。名称候補(OR)か、色候補(OR)+Lvのどちらかを使う
 // （両方指定した場合は名称優先。namesを空にしてcolors+lvだけ使うのがジョグレスの
 // 典型パターン、names単体のスロットを複数並べるのがアプ合体の典型パターン）
@@ -190,8 +190,9 @@ export interface EffectBlock {
   // JSON では step.position ('top'/'bottom') に serialize。'both' はエンジン未対応
   // （'top' 以外は全て下扱いになるため、選ぶと実際は「下」と同じ動作になる）
   deckPosition?: 'top' | 'bottom' | 'both';
-  // fusion_evolve 専用（trigger==='fusion_evolve'の時のみ意味を持つ）: アプ合体/ジョグレス進化の
-  // 素材候補スロット一覧。1スロット=1つの必要な個体（名称OR、または色OR+Lv）。
+  // app_gattai_evolve / jogress_evolve 専用（trigger がそのどちらかの時のみ意味を持つ）:
+  // アプ合体/ジョグレス進化の素材候補スロット一覧。1スロット=1つの必要な個体（名称OR、または色OR+Lv）。
+  // 演出が異なるためトリガーコード自体は2つに分けているが、素材の指定形式・UIは共通
   // 例:「エイドモン/サブリモン/スバモンのいずれか2体でアプ合体」
   //   → names単体スロットを3つ並べて fusionPickCount=2（3枚中2枚を満たせばOK）
   // 例:「紫/青Lv5 + 赤/黄Lv5でジョグレス進化」

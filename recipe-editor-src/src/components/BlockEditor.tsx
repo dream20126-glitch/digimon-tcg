@@ -145,7 +145,7 @@ const FUSION_COLOR_OPTS = [
   { code: '緑', label: '緑' }, { code: '黒', label: '黒' }, { code: '紫', label: '紫' }, { code: '白', label: '白' },
 ];
 
-// fusion_evolve（アプ合体/ジョグレス進化）専用: 素材候補スロットのリスト編集。
+// app_gattai_evolve / jogress_evolve（アプ合体/ジョグレス進化）専用: 素材候補スロットのリスト編集。
 // 1スロット=名称OR、または色OR+Lvのどちらか。候補数>使う体数なら「いずれかN体」判定になる
 function FusionMaterialsEditor({
   slots,
@@ -1677,6 +1677,10 @@ const COST_REDUCTION_VARIANTS: { code: string; label: string; trigger: string; i
 ];
 const COST_REDUCTION_TRIGGERS = new Set(COST_REDUCTION_VARIANTS.map((v) => v.trigger));
 
+// アプ合体/ジョグレス進化: 複数体の素材を同時使用する特殊進化トリガー。
+// 演出が異なるため2つの独立したトリガーコードに分けているが、素材候補UI（FusionMaterialsEditor）は共通
+const FUSION_EVOLVE_TRIGGERS = new Set(['app_gattai_evolve', 'jogress_evolve']);
+
 // 【〇〇が増えたとき】: 元々「デッキが増えたとき」(when_deck_increase) 専用だったトリガーを、
 // どのゾーンが増えたときかを選べるように一般化したもの。トリガーキー自体は常に
 // when_deck_increase のまま1つで、どのゾーンを見るかは block.zoneIncrease[]（既存の
@@ -2655,16 +2659,31 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               />
             </div>
           </div>
-        ) : block.trigger === 'fusion_evolve' ? (
+        ) : FUSION_EVOLVE_TRIGGERS.has(block.trigger) ? (
           <div style={{
             gridColumn: '1 / span 2', padding: 10, background: '#fff3e0',
             border: '2px solid #ffb74d', borderRadius: 6,
             fontSize: 12, color: '#8a5300', lineHeight: 1.6,
           }}>
-            <div style={{ marginBottom: 6, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
-              ⚠ アプ合体/ジョグレス進化はエンジン未実装です（保存はできますが動作しません）
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+              <ButtonGroup
+                options={[{ code: 'app_gattai_evolve', label: '🧬 アプ合体' }, { code: 'jogress_evolve', label: '🧬 ジョグレス進化' }]}
+                value={block.trigger}
+                onChange={(v) => onChange({ ...block, trigger: v, triggers: [v] })}
+                accentColor="#b76e00"
+              />
+              <button
+                type="button"
+                onClick={() => onChange({ ...block, trigger: '', triggers: [] })}
+                style={{ padding: '3px 9px', borderRadius: 5, border: 'none', background: '#757575', color: '#fff', cursor: 'pointer', fontSize: 11 }}
+              >
+                戻る
+              </button>
             </div>
-            🧬 <b>アプ合体/ジョグレス進化（複数体の素材を同時に使って進化）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。
+            <div style={{ marginBottom: 6, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
+              ⚠ {block.trigger === 'app_gattai_evolve' ? 'アプ合体' : 'ジョグレス進化'}はエンジン未実装です（保存はできますが動作しません）
+            </div>
+            🧬 <b>{block.trigger === 'app_gattai_evolve' ? 'アプ合体' : 'ジョグレス進化'}（複数体の素材を同時に使って進化）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。演出が異なるため、アプ合体とジョグレス進化は別々のトリガーとして保存されます。
             <br />・素材候補が2つで使う体数も2 → 2つとも必須（ジョグレス型。例:「紫/青Lv5」＋「赤/黄Lv5」）
             <br />・素材候補が3つで使う体数が2 → いずれか2つを満たせばOK（アプ合体型。例:「エイドモン/サブリモン/スバモン」のいずれか2体）
             <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #ffb74d' }}>
@@ -2953,6 +2972,34 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       >
                         キーワード効果
                       </button>
+                    )}
+                    {/* アプ合体/ジョグレス進化: 複数体の素材を同時使用する特殊進化トリガー。
+                        キーワードのテンプレート編集(isKeywordMode)では意味を成さないため出さない */}
+                    {!isKeywordMode && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onChange({ ...block, trigger: 'app_gattai_evolve', triggers: ['app_gattai_evolve'] })}
+                          style={{
+                            padding: '3px 9px', borderRadius: 5,
+                            border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
+                            fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
+                          }}
+                        >
+                          アプ合体
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onChange({ ...block, trigger: 'jogress_evolve', triggers: ['jogress_evolve'] })}
+                          style={{
+                            padding: '3px 9px', borderRadius: 5,
+                            border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
+                            fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
+                          }}
+                        >
+                          ジョグレス進化
+                        </button>
+                      </>
                     )}
                   </div>
 
@@ -3282,7 +3329,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               代替アクション側だけ任意にしても実際の挙動には反映されない
               （JSON上は正しく区別して保存されるが、エンジン側の対応が別途必要）。
               演出タイプは効果1専用のまま（代替アクションには無い概念） */}
-          {block.trigger !== 'alt_evolve' && block.trigger !== 'fusion_evolve' && (
+          {block.trigger !== 'alt_evolve' && !FUSION_EVOLVE_TRIGGERS.has(block.trigger) && (
             <div style={{ marginBottom: 8, display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
               <div>
                 <ButtonGroup
@@ -3319,7 +3366,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           {/* 効果発動ポップアップの表示テキスト: 空欄なら効果テキストから自動抽出にフォールバック。
               強制効果のみ「表示しない」を選べる（任意効果は確認ダイアログが必須のため対象外）。
               強制/任意ボタンと同様、アクション選択前から常に表示する */}
-          {block.trigger !== 'alt_evolve' && block.trigger !== 'fusion_evolve' && (
+          {block.trigger !== 'alt_evolve' && !FUSION_EVOLVE_TRIGGERS.has(block.trigger) && (
             <div className="field" style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <label>💬 効果発動ポップアップの表示テキスト（空欄なら効果テキストから自動抽出）</label>
@@ -3349,7 +3396,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <div style={{ fontSize: 11, color: '#888' }}>
               🔄 代替進化トリガーはアクション不要です（進化コストは上の🔄バナー内に入力済み）。
             </div>
-          ) : block.trigger === 'fusion_evolve' ? (
+          ) : FUSION_EVOLVE_TRIGGERS.has(block.trigger) ? (
             <div style={{ fontSize: 11, color: '#888' }}>
               🧬 アプ合体/ジョグレス進化トリガーはアクション不要です（素材候補・進化コストは上の🧬バナー内に入力済み）。
             </div>
@@ -4745,7 +4792,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 ? '（この効果を発動するための条件・複数指定可）'
                 : block.trigger === 'alt_evolve'
                 ? '（代替進化専用の意味: 条件1=発動条件 / 条件2=進化元の絞り込み・複数追加時は3個目以降は無視されます）'
-                : block.trigger === 'fusion_evolve'
+                : FUSION_EVOLVE_TRIGGERS.has(block.trigger)
                 ? '（この効果が有効になる条件。素材候補の指定は上の🧬バナー内で行います）'
                 : '（このアクションを発動するために満たすべき条件・複数指定可）'
             }

@@ -15,6 +15,7 @@ export const DEFAULT_VISUAL_TYPES: VisualTypeEntry[] = [
   { code: 'sattack_minus', label: 'Sアタック-', description: 'カード上に「Sアタック-N」バッジ表示', defaultColor: '赤' },
   { code: 'dedigivolve',   label: '退化演出', description: '進化元から N枚 をはがす演出', defaultColor: '黄' },
   { code: 'jogress_evolve',label: 'ジョグレス進化', description: '2枚のカードが合体して新カードに変化', defaultColor: '黄' },
+  { code: 'app_gattai_evolve',label: 'アプ合体', description: '複数体のカードが合体して新カードに変化', defaultColor: '黄' },
   { code: 'link_effect',   label: 'リンク演出', description: 'デジモンとリンクカードを線で結ぶエフェクト', defaultColor: '水色' },
   { code: 'vs_battle',     label: 'VS画面', description: 'アタッカー vs 対象 のフルスクリーン VS 演出', defaultColor: '赤' },
   { code: 'security_check',label: 'セキュリティチェック', description: 'セキュリティトップカードをめくる演出', defaultColor: '青' },

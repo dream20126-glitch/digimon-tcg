@@ -52,6 +52,16 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
     if (validCondPairs.length >= 2) cs.when = pairToString(validCondPairs[1]);
     if (validCondPairs.length >= 3) cs.extra_conditions = validCondPairs.slice(2).map(pairToString);
     if (validCondPairs.length >= 2 && c.conditionsOp === 'or') cs.condition_op = 'or';
+    // 代替コスト:「〇〇するか〇〇することで」。エンジン側の alt_actions/alt_actions_op
+    // 機構（executeRecipeStep→runWithAltActionsの選択UI）をコストにもそのまま流用する
+    const validAltCosts = (c.altCosts || []).filter((a) => a.action);
+    if (validAltCosts.length > 0) {
+      const altStepObjs = buildCostArray(validAltCosts);
+      if (altStepObjs && altStepObjs.length > 0) {
+        cs.alt_actions = altStepObjs;
+        cs.alt_actions_op = 'or';
+      }
+    }
     return cs;
   });
 }
@@ -93,6 +103,7 @@ function parseCostArray(rawCost: any): CostStep[] {
       securityPosition: c?.security_position === 'top' || c?.security_position === 'bottom' ? c.security_position : undefined,
       evoSourcePosition: c?.evo_source_position === 'top' || c?.evo_source_position === 'bottom' ? c.evo_source_position : undefined,
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,
+      altCosts: Array.isArray(c?.alt_actions) && c.alt_actions.length > 0 ? parseCostArray(c.alt_actions) : undefined,
     };
   });
 }

@@ -1160,6 +1160,38 @@ function CostListEditor({
                 onConditionsOpChange={(op) => updateCost(i, { ...c, conditionsOp: op })}
               />
             </div>
+
+            {/* === 代替コスト:「〇〇するか、〇〇することで」。効果1の代替アクション(altActions)
+                と全く同じ仕組み（executeRecipeStep→runWithAltActions選択UI）をコストにも
+                流用する。CostListEditor自身を再帰的に使い回し、2つ以上の代替も追加できる === */}
+            <div style={{ marginTop: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#e65100' }}>
+                <input
+                  type="checkbox"
+                  checked={Array.isArray(c.altCosts) && c.altCosts.length > 0}
+                  onChange={(e) => {
+                    updateCost(i, { ...c, altCosts: e.target.checked ? [{ action: '' }] : [] });
+                  }}
+                />
+                🔀 代わりに別のコストでも支払える（「〇〇するか、〇〇することで」）
+              </label>
+              {Array.isArray(c.altCosts) && c.altCosts.length > 0 && (
+                <div style={{ marginTop: 4, marginLeft: 16, padding: 8, background: '#fff8ec', border: '1px dashed #f9a825', borderRadius: 4 }}>
+                  <CostListEditor
+                    dict={dict}
+                    costs={c.altCosts}
+                    updateCost={(j, ac) => {
+                      const next = (c.altCosts || []).slice();
+                      next[j] = ac;
+                      updateCost(i, { ...c, altCosts: next });
+                    }}
+                    addCost={() => updateCost(i, { ...c, altCosts: [...(c.altCosts || []), { action: '' }] })}
+                    removeCost={(j) => updateCost(i, { ...c, altCosts: (c.altCosts || []).filter((_, idx) => idx !== j) })}
+                    noCostLabel="代替コストなし"
+                  />
+                </div>
+              )}
+            </div>
           </div>
         );
       })}

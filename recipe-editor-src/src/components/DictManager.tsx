@@ -856,6 +856,7 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                           { flag: 'hasDeckPosition' as const, icon: '⬆️⬇️', label: '上下', on: { bg: '#f0fdfa', color: '#0d9488', border: '#99f6e4' }, title: 'このアクション選択時に「上/下」ボタンを表示' },
                           { flag: 'hasFaceOption' as const, icon: '🂠', label: '裏表', on: { bg: '#f5f0fd', color: '#6b21a8', border: '#d8b4fe' }, title: 'コストで本アクション選択時に「裏向き/表向き」ボタンを表示' },
                         ] : [
+                          { flag: 'isPassive' as const, icon: '♾', label: 'パッシブ', on: { bg: '#e8f5e9', color: '#2e7d32', border: '#a5d6a7' }, title: '常時持続キーワード（passive flag）として動作' },
                           { flag: 'hasNamedParam' as const, icon: '📝', label: '対象', on: { bg: '#fef3e7', color: '#b76e00', border: '#ffd591' }, title: 'カード側でこのキーワードを選ぶと「対象」の絞り込み条件欄を表示' },
                         ]).map(({ flag, icon, label, on, title }) => {
                           const active = !!e[flag];

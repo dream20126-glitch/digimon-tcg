@@ -99,6 +99,11 @@ function categorize(rows: any[]): { triggers: DictEntry[]; conditions: DictEntry
       // 「できない」ペアコード: 「できないコード」列にコードが入っていれば、
       // レシピエディタでこのアクション選択時に「する/できない」トグルを表示する
       cantActionCode: String(r['できないコード'] || '').trim() || undefined,
+      // passiveフラグ（キーワード専用）: 「パッシブフラグ」列に "1"/"true" 等で、常時持続キーワードとして扱う
+      isPassive: (() => {
+        const v = String(r['パッシブフラグ'] || '').trim().toLowerCase();
+        return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+      })(),
     };
     if (kind === 'trigger' || kind === 'continuous') triggers.push(entry);
     else if (kind === 'condition') conditions.push(entry);
@@ -230,6 +235,7 @@ export function useDict(password: string): DictAPI {
       'キーワードレシピ': entry.recipeTemplate || '',
       '対象': entry.hasNamedParam ? '1' : '',
       'できないコード': entry.cantActionCode || '',
+      'パッシブフラグ': entry.isPassive ? '1' : '',
     };
     const r = await apiAdd('dict', row, password);
     // アクションのフラグを localStorage に保存（スプシ側に列がなくてもエディタ内で保持）
@@ -293,6 +299,9 @@ export function useDict(password: string): DictAPI {
     if (Object.prototype.hasOwnProperty.call(patch, 'cantActionCode')) {
       row['できないコード'] = (patch as any).cantActionCode || '';
       setActionFlagsForCode(code, { cantActionCode: (patch as any).cantActionCode || undefined });
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'isPassive')) {
+      row['パッシブフラグ'] = (patch as any).isPassive ? '1' : '';
     }
     const r = await apiUpdate('dict', code, kindToSingular(kind), row, password);
     if (r.ok) await refresh();

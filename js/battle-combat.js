@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -53,6 +53,7 @@ let _hooks = {
   triggerEffect: (code, card, side, ctx, cb) => {
     try { _triggerEffect(code, card, side, ctx, cb); } catch (_) { cb && cb(); }
   },
+  fireOnAttackBothSubjectTriggers: (_attackerSide, cb) => cb && cb(),
 };
 
 export function setCombatHooks(hooks) {
@@ -1143,6 +1144,31 @@ export function doEvolveFromEffect(card, handIdx, slotIdx, cost, side, callback)
   });
 }
 
+// ===== 【トレーニング】キーワード起動効果 =====
+// 公式ルール4-41:「メインフェイズ中、このデジモンをレストさせることで、自分のデッキの
+// 上から1枚をこのデジモンの進化元の下に裏向きで置く。この効果は育成エリアでも発揮できる」
+// レシピ非依存のハードコード実装（passive の training フラグのみで判定・発動）。
+// card はバトルエリア/育成エリアどちらのカード参照でもよい（呼び出し側が対象を渡す）
+export function doTrainingEffect(card, side) {
+  if (!card) return false;
+  if (!_hasTrainingKeyword(card)) return false;
+  if (card.suspended || card.cantRest) return false;
+  if (bs.phase !== 'main') return false;
+  const p = side === 'player' ? bs.player : bs.ai;
+  if (!p.deck || p.deck.length === 0) { addLog('⚠ デッキが空です'); return false; }
+  card.suspended = true;
+  if (!card.stack) card.stack = [];
+  const top = p.deck.shift();
+  top._faceDown = true;
+  card.stack.push(top);
+  addLog('🎓 【トレーニング】「' + card.name + '」をレスト。デッキの上から1枚を進化元の下に裏向きで置いた');
+  renderAll();
+  if (side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
+    try { window._onlineSendStateSync(); } catch (_) {}
+  }
+  return true;
+}
+
 // ===== 育成エリア進化 =====
 
 export function doEvolveIku(card, handIdx) {
@@ -1464,7 +1490,8 @@ export function startAttack(card, slotIdx, callback) {
   if (_attackInProgress) { callback && callback(false); return false; }
   if (chargeAllowed) addLog('⚔ 【進撃】「' + card.name + '」がメモリー相手側でアタック宣言');
   // suspended チェックは行わない（長押しメニューで既にレスト済み）
-  if (card.cantAttack) { callback && callback(false); return false; }
+  // 公式ルール1194: レストさせることができないデジモンはアタック宣言ができない
+  if (card.cantAttack || card.cantRest) { callback && callback(false); return false; }
 
   // when_opp_rest の解決待ちの間、別の攻撃宣言で状態が競合しないようロックする
   // （resolveAttackTarget 到達時に改めて true になるが、多重にしても問題ない）
@@ -1508,6 +1535,9 @@ function _consumeRedirectedAttack(defaultTarget, defaultIdx) {
   bs._redirectedAttack = null;
   const fallback = { target: defaultTarget, idx: defaultIdx, def: defaultTarget === 'digimon' ? bs.ai.battleArea[defaultIdx] : null };
   if (!ra || ra.side !== 'ai') return fallback;
+  // cant_redirect_attack:「アタックの対象は変更されない」— 元々の宣言先デジモンが
+  // この状態なら、リダイレクトを適用せず元の宣言のまま解決する
+  if (fallback.def && fallback.def.cantRedirectAttack) return fallback;
   const def = bs.ai.battleArea[ra.idx];
   if (!def) return fallback;
   return { target: 'digimon', idx: ra.idx, def };
@@ -1733,9 +1763,12 @@ export function resolveAttackTarget(target, targetIdx) {
 // 発動する（アタック宣言後、最終的にアタックする直前に突進が発動する、という順序）
 function afterAtkEffect(atk, atkSlotIdx, callback) {
   _hooks.checkAndTriggerEffect(atk, '【アタック時】', () => {
-    const ctxBase = { bs, addLog, renderAll, updateMemGauge };
-    try { _fireKeywordAttackEffects(atk, 'player', bs, ctxBase, callback); }
-    catch (_) { callback(); }
+    // subject:"both"（お互いのターンでアタック時発動）の進化元効果を相手側で反応させる
+    _hooks.fireOnAttackBothSubjectTriggers('player', () => {
+      const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+      try { _fireKeywordAttackEffects(atk, 'player', bs, ctxBase, callback); }
+      catch (_) { callback(); }
+    });
   });
 }
 
@@ -3030,9 +3063,12 @@ export function aiAttackPhase(callback) {
       // アタッカーの【アタック時】効果 → その後に防御側の
       // 「相手のデジモンがプレイヤーにアタックしたとき」誘発（ロゼモン BT1-082 等）
       const _afterAtkTime = () => {
-        if (window._fireWhenOppAttack) {
-          window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
-        } else { cb(); }
+        // subject:"both"（お互いのターンでアタック時発動）の進化元効果をプレイヤー側で反応させる
+        _hooks.fireOnAttackBothSubjectTriggers('ai', () => {
+          if (window._fireWhenOppAttack) {
+            window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
+          } else { cb(); }
+        });
       };
       // 常にスキャン（付与効果・誘発も拾う。効果が無ければ即コールバック）
       _hooks.checkAndTriggerEffect(atk, '【アタック時】', _afterAtkTime, 'ai');
@@ -4260,9 +4296,13 @@ export function aiScriptAttack(attackerKey, target, onDone) {
       // 【アタック時】効果 → プレイヤーへのアタック時のみ防御側の
       // 「相手のデジモンがプレイヤーにアタックしたとき」誘発（ロゼモン BT1-082 等）
       const _afterAtkTime = () => {
-        if (targetMode !== 'digimon' && window._fireWhenOppAttack) {
-          window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
-        } else { cb(); }
+        // subject:"both"（お互いのターンでアタック時発動）の進化元効果をプレイヤー側で反応させる
+        // （デジモン対象/プレイヤー対象どちらのアタックでも発動するため targetMode で絞らない）
+        _hooks.fireOnAttackBothSubjectTriggers('ai', () => {
+          if (targetMode !== 'digimon' && window._fireWhenOppAttack) {
+            window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
+          } else { cb(); }
+        });
       };
       // 常にスキャン（付与効果・誘発も拾う。効果が無ければ即コールバック）
       _hooks.checkAndTriggerEffect(atk, '【アタック時】', _afterAtkTime, 'ai');

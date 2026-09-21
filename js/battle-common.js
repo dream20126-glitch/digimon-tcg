@@ -9,8 +9,8 @@ import { bs } from './battle-state.js';
 import { addLog } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallbacks, doIkuMove } from './battle-render.js';
 import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, showDrawEffect } from './battle-phase.js';
-import { doPlay, offerAssemblyThenPlay, doEvolve, doEvolveIku, doEvolveFromEffect, doLink, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, showOptionEffect, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack } from './battle-combat.js';
-import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE, fireDelegatedReactionTriggers as _fireDelegatedReactionEE } from './effect-engine.js';
+import { doPlay, offerAssemblyThenPlay, doEvolve, doEvolveIku, doEvolveFromEffect, doLink, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, showOptionEffect, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack, doTrainingEffect } from './battle-combat.js';
+import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE, fireOnAttackBothSubjectTriggers as _fireOnAttackBothSubjectEE, fireDelegatedReactionTriggers as _fireDelegatedReactionEE } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxBuffStatus, fxShuffle } from './battle-fx.js';
 import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js';
 
@@ -25,6 +25,7 @@ export const TRIGGER_CODE_MAP = {
   '【ブロックされたとき】': 'when_blocked', 'ブロックされた時': 'when_blocked',
   'アタックされた時': 'when_attacked',
   '【リンク時】': 'on_link', 'リンク時': 'on_link',
+  '【移動時】': 'on_move',
 };
 
 // ===== makeEffectContext =====
@@ -186,6 +187,13 @@ export function triggerEffectWrap(code, card, side, ctx, cb) {
   try { _triggerEffectEE(code, card, side, ctx, cb); } catch (e) { console.error('[triggerEffect]', e); cb && cb(); }
 }
 
+// ===== fireOnAttackBothSubjectTriggers (wrapper) =====
+// subject:"both" の on_attack（進化元含む）を、アタック宣言側の反対陣営に対して発火させる
+export function fireOnAttackBothSubjectTriggersWrap(attackerSide, cb) {
+  try { _fireOnAttackBothSubjectEE(attackerSide, bs, makeEffectContext(null, attackerSide === 'player' ? 'ai' : 'player'), cb); }
+  catch (e) { console.error('[fireOnAttackBothSubjectTriggers]', e); cb && cb(); }
+}
+
 // ===== Combat Hooks を構築 =====
 export function buildCombatHooks() {
   return {
@@ -216,6 +224,7 @@ export function buildCombatHooks() {
     applyPermanentEffects: applyPermanentEffectsWrap,
     expireBuffs: expireBuffsWrap,
     triggerEffect: triggerEffectWrap,
+    fireOnAttackBothSubjectTriggers: fireOnAttackBothSubjectTriggersWrap,
   };
 }
 
@@ -258,7 +267,11 @@ export function buildIkuCallbacks() {
       }
       try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch (_) {}
       renderAll();
-      breedActionDone();
+      // 【移動時】: 育成エリア→バトルエリア移動で誘発（【登場時】とは別トリガー）
+      checkAndTriggerEffect(card, '【移動時】', () => {
+        renderAll();
+        breedActionDone();
+      }, 'player');
     },
   };
 }
@@ -287,6 +300,7 @@ export function setupCommonWindowExports() {
   window.doEvolveFromEffect = doEvolveFromEffect;
   window.doLink = doLink;
   window.canEvolveOnto = canEvolveOnto;
+  window._doTrainingEffect = (card, side) => { doTrainingEffect(card, side); renderAll(); };
   window.startAttack = startAttack;
   window.cancelAttack = cancelAttack;
   window.resolveAttackTarget = resolveAttackTarget;

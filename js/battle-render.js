@@ -8,7 +8,7 @@
 import { bs, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { updateScrollArrows, addLog, showConfirm } from './battle-ui.js';
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
-import { isTargetSelecting, hasRecipeTrigger, evoSourceEffectLabel } from './effect-engine.js';
+import { isTargetSelecting, hasRecipeTrigger, evoSourceEffectLabel, hasTrainingKeyword } from './effect-engine.js';
 
 // ===== カード画像ヘルパー =====
 const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
@@ -142,6 +142,8 @@ function _buildGrantBadges(card) {
   else if (card.cantAttack) items.push({ label: 'アタック不可', color: '#9933ff' });
   else if (card.cantBlock) items.push({ label: 'ブロック不可', color: '#9933ff' });
   if (card.cantEvolve) items.push({ label: '進化不可', color: '#9933ff' });
+  if (card.cantRest) items.push({ label: 'レスト不可', color: '#9933ff' });
+  if (card.cantRedirectAttack) items.push({ label: 'アタック対象変更不可', color: '#9933ff' });
   if (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'prevent_unsuspend')) {
     items.push({ label: 'アクティブにならない', color: '#9933ff' });
   }
@@ -392,7 +394,7 @@ function showLongpressMenu(card, slotIdx, el) {
   );
   const notSick = !card.summonedThisTurn || hasRushFlag;
   if (canAtk && notSick) {
-    if (card.cantAttack) {
+    if (card.cantAttack || card.cantRest) {
       html += '<button class="lp-action-btn lp-atk-btn" disabled style="opacity:0.3;cursor:not-allowed;">⚔ アタック不可</button>';
     } else if (_wasAlreadySuspended) {
       html += '<button class="lp-action-btn lp-atk-btn" disabled style="opacity:0.3;cursor:not-allowed;">⚔ アタック（レスト中）</button>';
@@ -409,6 +411,12 @@ function showLongpressMenu(card, slotIdx, el) {
     html += used
       ? '<button class="lp-action-btn lp-effect-btn" disabled style="opacity:0.3;">⚡ 効果（使用済み）</button>'
       : `<button class="lp-action-btn lp-effect-btn" onclick="activateEffect(${slotIdx},'self')">⚡ 効果</button>`;
+  }
+  // 【トレーニング】: レシピ非依存のキーワード起動効果（このデジモンをレストさせることで
+  // デッキの上1枚を進化元の下に裏向きで置く）。_wasAlreadySuspended で元々レスト中と分かる
+  // 場合は「レストできない＝発動条件を満たさない」ため出さない
+  if (hasTrainingKeyword(card) && !_wasAlreadySuspended && !card.cantRest) {
+    html += `<button class="lp-action-btn lp-effect-btn" onclick="activateTraining(${slotIdx}, false)">🎓 トレーニング</button>`;
   }
   html += `<button class="lp-action-btn lp-cancel-btn" onclick="cancelLongpress(${slotIdx})">✕ キャンセル</button>`;
   btns.innerHTML = html;
@@ -626,6 +634,28 @@ window.activateEffect = function(slotIdx, effectSource) {
     }
   };
 };
+// 【トレーニング】起動: fromIkusei=true なら育成エリアのカード（バトルエリアに出ていない）が対象。
+// 通常の「⚡ 効果」と異なり、レストすること自体がこのキーワードのコストなので、
+// 確定時は suspended=true のまま維持する（キャンセル時のみ元の状態に戻す）
+window.activateTraining = function(slotIdx, fromIkusei) {
+  hideLongpressMenu();
+  const card = fromIkusei ? bs.player.ikusei : bs.player.battleArea[slotIdx];
+  if (!card) return;
+  renderAll();
+  document.getElementById('effect-confirm-name').innerText = card.name + '（トレーニング）';
+  document.getElementById('effect-confirm-text').innerText = '【トレーニング】このデジモンをレストさせることで、自分のデッキの上から1枚をこのデジモンの進化元の下に裏向きで置く。';
+  document.getElementById('effect-confirm-overlay').style.display = 'flex';
+  window._effectConfirmCallback = function(yes) {
+    document.getElementById('effect-confirm-overlay').style.display = 'none';
+    if (!yes) {
+      if (!fromIkusei && !_wasAlreadySuspended) card.suspended = false;
+      renderAll();
+      return;
+    }
+    if (window._doTrainingEffect) window._doTrainingEffect(card, 'player');
+    renderAll();
+  };
+};
 
 // ===== テイマーエリア描画 =====
 function renderTamerRows() {
@@ -777,6 +807,31 @@ function renderIkusei() {
   });
 }
 
+// 育成エリアの長押しメニュー（🎓トレーニング可能なら表示 + 📋詳細 + ✕キャンセル）。
+// 【トレーニング】は「育成エリアでも発揮できる」ため、バトルエリアの長押しメニュー
+// （showLongpressMenu）とは別に、育成エリア専用のこの軽量メニューから起動する
+function showIkuseiActionMenu(card, el) {
+  const menu = document.getElementById('longpress-action-menu');
+  const btns = document.getElementById('longpress-action-buttons');
+  const backdrop = document.getElementById('longpress-backdrop');
+  if (!menu || !btns) return;
+  const canTrain = !!(hasTrainingKeyword(card) && !card.suspended && !card.cantRest && bs.phase === 'main');
+  let html = '';
+  if (canTrain) {
+    html += `<button class="lp-action-btn lp-effect-btn" onclick="activateTraining(0, true)">🎓 トレーニング</button>`;
+  }
+  html += `<button class="lp-action-btn lp-effect-btn" onclick="hideLongpressMenu(); if(window.showBCD) window.showBCD(null,'plIkusei');">📋 詳細</button>`;
+  html += `<button class="lp-action-btn lp-cancel-btn" onclick="hideLongpressMenu()">✕ キャンセル</button>`;
+  btns.innerHTML = html;
+  menu.style.visibility = 'hidden'; menu.style.display = 'block';
+  const menuH = menu.offsetHeight, menuW = menu.offsetWidth;
+  menu.style.visibility = ''; menu.style.display = 'none';
+  const rect = el.getBoundingClientRect();
+  menu.style.left = Math.max(4, Math.min(rect.left + rect.width / 2 - menuW / 2, window.innerWidth - menuW - 4)) + 'px';
+  menu.style.top = Math.max(4, rect.top - menuH - 6) + 'px';
+  backdrop.style.display = 'block'; menu.style.display = 'block';
+}
+
 // 育成エリアドラッグ移動 + 長押しでカード詳細
 function attachIkuDrag(iku) {
   if (iku._ikuDragAttached) return;
@@ -788,10 +843,17 @@ function attachIkuDrag(iku) {
   function startDrag(cx, cy) {
     dragging = true; dragMoved = false;
     startCx = cx; startCy = cy;
-    // 長押し(500ms)でカード詳細
+    // 長押し(500ms)でカード詳細（【トレーニング】可能なら軽量メニュー経由）
     longPressTimer = setTimeout(() => {
       dragging = false; // ドラッグをキャンセル
-      if (window.showBCD && bs.player.ikusei) window.showBCD(null, 'plIkusei');
+      const card = bs.player.ikusei;
+      if (!card) return;
+      const canTrain = !!(hasTrainingKeyword(card) && !card.suspended && !card.cantRest && bs.phase === 'main');
+      if (canTrain) {
+        showIkuseiActionMenu(card, iku);
+      } else if (window.showBCD) {
+        window.showBCD(null, 'plIkusei');
+      }
     }, 500);
   }
   function createGhost(cx, cy) {

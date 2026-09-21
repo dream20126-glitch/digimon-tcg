@@ -54,6 +54,11 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   // 辞書登録コード。from:'trash'指定時は自分のトラッシュ→手札、それ以外は
   // 相手のバトルエリア→手札としてbounceに委譲する
   'return_hand',
+  // Stage 9 追加（BT26-018~023: 移動時トリガー/できない系/汎用手札加算）
+  // 「レストできない」（相手のデジモン/テイマー対象・type_inフィルタ対応）
+  'cant_rest',
+  // 「アタックの対象は変更されない」（自分のデジモン対象・filter付き）
+  'cant_redirect_attack',
 ]);
 
 // エンジンで実装済の passive flag (キーワード)
@@ -71,6 +76,9 @@ export const IMPLEMENTED_KEYWORDS = new Set<string>([
   'fragment', 'decoy', 'scapegoat',
   // 旧コード alias
   'custom', 'security_effect',
+  // Stage 9 追加: メインフェイズ中このデジモンをレストさせることでデッキの上1枚を
+  // 進化元の下に裏向きで置く（育成エリアでも発揮可能）。レシピ非依存のハードコード実装
+  'training',
 ]);
 
 // エンジンで実装済の条件コード

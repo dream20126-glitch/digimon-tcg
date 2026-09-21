@@ -878,7 +878,8 @@ function aiPhaseBreed() {
       bs.ai.ikusei = null;
       addLog('🤖 AIが「' + moved.name + '」を育成エリアからバトルエリアへ移動');
       renderAll();
-      _hooks.checkAndTriggerEffect(moved, '【登場時】', () => {
+      // 【移動時】: 育成→バトルエリア移動は「登場」ではないため on_play ではなく on_move で誘発する
+      _hooks.checkAndTriggerEffect(moved, '【移動時】', () => {
         // 育成エリアが空 → 孵化も試みる
         if (!bs.ai.ikusei && bs.ai.tamaDeck && bs.ai.tamaDeck.length > 0) {
           const c = bs.ai.tamaDeck.splice(0, 1)[0];

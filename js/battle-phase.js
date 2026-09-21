@@ -66,6 +66,8 @@ let _hooks = {
   aiMainPhase: (cb) => cb(),
   /** AI アタックフェイズ処理 (callback) */
   aiAttackPhase: (cb) => cb(),
+  /** 【自分のメインフェイズ開始時】発火 (turnSide, callback) */
+  fireOnMainPhaseStartTriggers: (_turnSide, cb) => cb(),
 };
 
 /**
@@ -641,6 +643,8 @@ function execMain() {
   exitBreedPhase();
   addLog('⚡ メインフェイズ');
   renderAll();
+  // 【自分のメインフェイズ開始時】(on_main_phase_start) 発火
+  _hooks.fireOnMainPhaseStartTriggers('player', () => { renderAll(); });
   // プレイヤーの操作を待つ（登場/進化/アタック/ターン終了）
 }
 
@@ -939,9 +943,13 @@ function aiPhaseMain() {
   }
   showPhaseAnnounce('⚡ メインフェイズ', '#ff00fb', () => {
     addLog('🤖 メインフェイズ');
-    _hooks.aiMainPhase(() => {
-      _hooks.aiAttackPhase(() => {
-        endAiTurn();
+    // 【自分のメインフェイズ開始時】(on_main_phase_start) 発火
+    _hooks.fireOnMainPhaseStartTriggers('ai', () => {
+      renderAll();
+      _hooks.aiMainPhase(() => {
+        _hooks.aiAttackPhase(() => {
+          endAiTurn();
+        });
       });
     });
   });

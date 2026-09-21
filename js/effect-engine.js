@@ -4470,6 +4470,14 @@ function checkConditions(conditions, card, bs, side) {
         if (!card || String(card.type || '') !== want) return false;
         break;
       }
+      // 裏向きで置かれているカードか（place_under_tamer/place_under_digimon/
+      // deck_to_evo_bottom で options:['face_down'] 指定時に立つ card._faceDown を見る）。
+      // 裏向きカードは公式ルール上「カードの情報を持たないカードとして扱う」ため、
+      // type等の絞り込みは cond_type:カード（全許可）と組み合わせて使うのが通例
+      case 'cond_face_down': {
+        if (!card || !card._faceDown) return false;
+        break;
+      }
       case 'cond_name': {
         // 「名前（完全一致）」: card.name === cond.value、または「各名称『XXX』を
         // 含むものとしても扱う」ルールによるエイリアス一致で判定
@@ -10287,7 +10295,15 @@ function executeRecipeStep(step, ctx, store, callback) {
         else if (t.startsWith('own:')) target = { code: 'target_own', count: parseInt(t.split(':')[1]) || 1 };
         else if (t.startsWith('opponent:')) target = { code: 'target_opponent', count: parseInt(t.split(':')[1]) || 1 };
         else if (t.startsWith('other_own:')) target = { code: 'target_other_own', count: parseInt(t.split(':')[1]) || 1 };
-        else target = { code: 'target_' + t };
+        else {
+          // 汎用フォールバック: "own_tamer_stack:1" のような "<コード>:<N>" 形式は
+          // 末尾の":N"を数量として分離してからtarget_接頭辞を付ける（evo_discard系が
+          // コードの末尾"_stack"/"_stack_bottom"でエリアを判定するため、":N"が
+          // コード末尾に残ったままだと一致しなくなる）
+          const _tSuffixMatch = /^(.*):(\d+)$/.exec(t);
+          if (_tSuffixMatch) target = { code: 'target_' + _tSuffixMatch[1], count: parseInt(_tSuffixMatch[2], 10) || 1 };
+          else target = { code: 'target_' + t };
+        }
       }
       // step.filter（色/タイプ/名前等）を target に引き継ぐ（target_all_own 等の絞り込みに使用）
       if (target && step.filter) target.filter = resolveDpFilterMarkers(step.filter, ctx.card);

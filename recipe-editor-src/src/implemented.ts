@@ -64,6 +64,9 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'battle_area',
   // 突進等キーワードレシピのon_attack型「アタック対象を変更する」
   'redirect_attack',
+  // Stage 11 追加（コスト「破棄」→場所「テイマー」を実際に動くようにした。
+  // evo_discard系と全く同じロジックで、対象コンテナだけ自分のテイマーに強制する）
+  'evo_discard_tamer', 'evo_discard_tamer_bottom', 'evo_discard_tamer_top', 'evo_discard_tamer_select',
 ]);
 
 // エンジンで実装済の passive flag (キーワード)
@@ -137,9 +140,9 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_opp_dp_ge',
   // Stage 9 追加（カード自身の記述テキストに文字列が含まれるか）
   'cond_description', 'cond_description_contains',
-  // Stage 10 追加（裏向きで置かれたカードか。place_under_*/deck_to_evo_bottomの
+  // Stage 10 追加（裏向き/表向きで置かれたカードか。place_under_*/deck_to_evo_bottomの
   // options:['face_down']指定でcard._faceDownが立つのを見る）
-  'cond_face_down',
+  'cond_face_down', 'cond_face_up',
 ]);
 
 // エンジンで実装済の修飾子コード（アクションの実行方法を変える）

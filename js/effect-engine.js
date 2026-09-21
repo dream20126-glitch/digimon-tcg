@@ -1214,7 +1214,15 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     case 'evo_discard':
     case 'evo_discard_bottom':
     case 'evo_discard_top':
-    case 'evo_discard_select': {
+    case 'evo_discard_select':
+    // evo_discard_tamer_*: レシピエディタの「破棄」→場所「テイマー」ボタン専用コード
+    // （target フィールドで「対象」欄を巻き戻さないよう、場所自体をアクションコードで
+    // 表現している。ロジックは evo_discard 系と全く同じで、対象コンテナだけ強制的に
+    // 自分のテイマーにする）
+    case 'evo_discard_tamer':
+    case 'evo_discard_tamer_bottom':
+    case 'evo_discard_tamer_top':
+    case 'evo_discard_tamer_select': {
       // --- 対象コンテナ（進化元／テイマーの下を持つ本体）の解決 ---
       // executeRecipeStepのdefault委譲が生成するdefaultTarget.codeを見る。
       // target_own(_stack等の接尾辞含む)=自分のデジモン / target_own_tamer=自分のテイマー /
@@ -1222,8 +1230,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 後方互換で従来通り「相手のデジモン」固定
       const _edRawCode = (defaultTarget && defaultTarget.code) || '';
       const _edBaseCode = _edRawCode.replace(/_stack(_bottom)?$/, '');
+      // evo_discard_tamer_* はアクションコード自体がテイマー指定なので target を見ずに強制する
+      const _edActionForcesTamer = /^evo_discard_tamer/.test(action.code || '');
       let edOwner = opponent, edAreaKey = 'battleArea', edSide = (ctx.side === 'player' ? 'ai' : 'player');
-      if (_edBaseCode === 'target_own') { edOwner = player; edAreaKey = 'battleArea'; edSide = ctx.side; }
+      if (_edActionForcesTamer) { edOwner = player; edAreaKey = 'tamerArea'; edSide = ctx.side; }
+      else if (_edBaseCode === 'target_own') { edOwner = player; edAreaKey = 'battleArea'; edSide = ctx.side; }
       else if (_edBaseCode === 'target_own_tamer') { edOwner = player; edAreaKey = 'tamerArea'; edSide = ctx.side; }
       else if (_edBaseCode === 'target_opponent_tamer') { edOwner = opponent; edAreaKey = 'tamerArea'; edSide = (ctx.side === 'player' ? 'ai' : 'player'); }
       const edArea = edOwner[edAreaKey] || [];
@@ -1273,7 +1284,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const discardFromTarget = (tgt, onDone) => {
         const edTrash = edOwner.trash;
         // 「選んで破棄」: 進化元カード選択UIをN回繰り返す（AIは先頭を自動選択）
-        if (action.code === 'evo_discard_select') {
+        if (action.code === 'evo_discard_select' || action.code === 'evo_discard_tamer_select') {
           const discarded = [];
           const pickNext = (remaining) => {
             if (remaining <= 0 || tgt.stack.length === 0) { finalizeDiscard(discarded, tgt, onDone); return; }
@@ -1297,7 +1308,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // 上から/下から: 自動で決め打ち
         const discarded = [];
         for (let i = 0; i < n && tgt.stack.length > 0; i++) {
-          const fromTop = action.code === 'evo_discard_top';
+          const fromTop = action.code === 'evo_discard_top' || action.code === 'evo_discard_tamer_top';
           const removed = fromTop ? tgt.stack.shift() : tgt.stack.pop();
           edTrash.push(removed);
           discarded.push(removed);
@@ -4470,12 +4481,16 @@ function checkConditions(conditions, card, bs, side) {
         if (!card || String(card.type || '') !== want) return false;
         break;
       }
-      // 裏向きで置かれているカードか（place_under_tamer/place_under_digimon/
+      // 裏向き/表向きで置かれているカードか（place_under_tamer/place_under_digimon/
       // deck_to_evo_bottom で options:['face_down'] 指定時に立つ card._faceDown を見る）。
       // 裏向きカードは公式ルール上「カードの情報を持たないカードとして扱う」ため、
       // type等の絞り込みは cond_type:カード（全許可）と組み合わせて使うのが通例
       case 'cond_face_down': {
         if (!card || !card._faceDown) return false;
+        break;
+      }
+      case 'cond_face_up': {
+        if (!card || card._faceDown) return false;
         break;
       }
       case 'cond_name': {
@@ -6557,7 +6572,10 @@ const TARGET_FILTER_COND_CODES = new Set([
 // condition/when/extra_conditions を「対象コンテナ自身の性質を見る条件」として
 // 常に転送してよいアクションかどうかの判定に使う（executeRecipeStepのdefault委譲処理／
 // runOneActionのevo_discardケース両方から参照）
-const EVO_DISCARD_ACTION_CODES = new Set(['evo_discard', 'evo_discard_bottom', 'evo_discard_top', 'evo_discard_select']);
+const EVO_DISCARD_ACTION_CODES = new Set([
+  'evo_discard', 'evo_discard_bottom', 'evo_discard_top', 'evo_discard_select',
+  'evo_discard_tamer', 'evo_discard_tamer_bottom', 'evo_discard_tamer_top', 'evo_discard_tamer_select',
+]);
 
 // レシピが実行されるか事前判定（全ステップが条件で弾かれるか）
 // 戻り値: true=少なくとも1ステップが実行される, false=全ステップが条件NGで何も起きない

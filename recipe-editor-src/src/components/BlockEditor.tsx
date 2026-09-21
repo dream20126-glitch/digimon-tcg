@@ -939,6 +939,34 @@ function CostListEditor({
                       </div>
                     );
                   })()}
+                  {/* 進化元/テイマー: 積まれたカードのうち裏向き/表向きのものだけを対象にするか
+                      （place_under_tamer/place_under_digimon/deck_to_evo_bottomで裏向きに置かれた
+                      カードを区別して破棄したい場合。cond_face_down/cond_face_up を conditions に
+                      反映する。上の「対象」セレクタ経由（下/一番下選択時）の裏表/種別ボタンと
+                      同じ条件コードを使う共通仕様 */}
+                  {(() => {
+                    const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                    if (!zone?.hasFace) return null;
+                    const faceConds = c.conditions || [];
+                    const faceIdx = faceConds.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
+                    const faceVal = faceIdx !== -1 ? (faceConds[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
+                    return (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                        <ButtonGroup
+                          options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
+                          value={faceVal}
+                          onChange={(v) => {
+                            const next = faceConds.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
+                            if (v === 'down') next.push({ base: 'cond_face_down' });
+                            else if (v === 'up') next.push({ base: 'cond_face_up' });
+                            updateCost(i, { ...c, conditions: next });
+                          }}
+                          accentColor="#b76e00"
+                        />
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
               {/* デッキに戻す: 位置ボタン（下/上/下か上） */}
@@ -1361,8 +1389,8 @@ const STACK_CARD_TYPE_OPTS: { code: string; label: string }[] = [
 // コスト対象の「下/一番下」選択時に出す、積まれているカードの裏表・種別の
 // 絞り込みボタン（複数選択見た目だが、内部は face/type 各グループ排他の1件ずつ）。
 // 例:「テイマーの下にある裏向きのカードを1枚破棄することで」→ 裏向き + カード
-// ★エンジン未実装: 表裏の状態自体がカードデータのどこにも保持されていないため、
-//   cond_face_down/cond_face_up は将来の状態管理追加とセットでの対応が必要。
+// cond_face_down/cond_face_up はエンジン実装済み（card._faceDownを見る。
+// place_under_tamer/place_under_digimon/deck_to_evo_bottomの裏向き配置と対応）
 const COST_STACK_FACE_TYPE_OPTS: { code: string; label: string; group: 'face' | 'type' }[] = [
   { code: 'face_down', label: '裏向き', group: 'face' },
   { code: 'face_up', label: '表向き', group: 'face' },
@@ -1629,11 +1657,11 @@ const COMMON_COST_ACTIONS: { code: string; label: string }[] = [
 // （実体は POSITION_VARIANTS と同じ仕組みでアクションコードのsuffixを切り替える。
 // costIsPositional/costVariantOptions/onCostVariantChange を流用）。
 // 手札/デッキには順序の概念が無い（デッキは上からのみ固定）ため出さない。
-const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: string; warn?: string; hasPosition?: boolean }[] = [
-  { code: 'evo_source', label: '進化元', action: 'evo_discard_top', warn: '⚠ エンジン未対応: 現在は相手の進化元を破棄する動作になります（自分側の実装は該当カードが来たら追加予定）', hasPosition: true },
+const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: string; warn?: string; hasPosition?: boolean; hasFace?: boolean }[] = [
+  { code: 'evo_source', label: '進化元', action: 'evo_discard_top', warn: '⚠ エンジン未対応: 現在は相手の進化元を破棄する動作になります（自分側の実装は該当カードが来たら追加予定）', hasPosition: true, hasFace: true },
   // テイマーの下＝進化元と同じスタック機構のため、evo_discard系アクションを流用するが、
   // targetで区別せず専用のアクションコード（evo_discard_tamer_top）を使う
-  { code: 'tamer', label: 'テイマー', action: 'evo_discard_tamer_top', warn: '⚠ エンジン未対応: テイマーの下からの破棄は現状動作しません（該当カードが来たら追加実装します）', hasPosition: true },
+  { code: 'tamer', label: 'テイマー', action: 'evo_discard_tamer_top', hasPosition: true, hasFace: true },
   { code: 'hand', label: '手札', action: 'cost_discard' },
   { code: 'security', label: 'セキュリティ', action: 'security_trash_select', target: 'own_security', hasPosition: true },
   { code: 'deck', label: 'デッキ', action: 'deck_trash_top' },
@@ -3626,6 +3654,32 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
                             value={curSuffix}
                             onChange={(suffix) => { if (!suffix) return; changeEffectAction(zoneBase + suffix); }}
+                            accentColor="#1976d2"
+                          />
+                        </div>
+                      );
+                    })()}
+                    {/* 進化元/テイマー: 裏向き/表向きのカードだけを対象にするか。
+                        evo_discard系は対象コンテナの絞り込みに block/altAction 側の
+                        conditions（発動条件と同じ配列。EVO_DISCARD_ACTION_CODESは
+                        ホワイトリスト無しで転送されるためtargetFilterではなくこちらを使う） */}
+                    {(() => {
+                      const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                      if (!zone?.hasFace) return null;
+                      const faceIdx = effectConditions.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
+                      const faceVal = faceIdx !== -1 ? (effectConditions[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
+                      return (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                          <ButtonGroup
+                            options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
+                            value={faceVal}
+                            onChange={(v) => {
+                              const next = effectConditions.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
+                              if (v === 'down') next.push({ base: 'cond_face_down' });
+                              else if (v === 'up') next.push({ base: 'cond_face_up' });
+                              updateEffect({ conditions: next });
+                            }}
                             accentColor="#1976d2"
                           />
                         </div>

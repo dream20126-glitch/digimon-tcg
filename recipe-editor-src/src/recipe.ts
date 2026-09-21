@@ -787,12 +787,19 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
       blocks.push(passiveToBlock('main', p));
     });
   }
+  const mergedMainKeys = collectMergeGroups(recipe, new Set(['evo_source', 'link', 'passive', 'security']));
   Object.keys(recipe).forEach((k) => {
     if (k === 'evo_source' || k === 'link' || k === 'passive') return;
     const arr = recipe[k];
     if (!Array.isArray(arr)) return;
     if (k === 'security') {
       blocks.push(...stepsArrayToBlocks('security', 'security', arr));
+    } else if (mergedMainKeys.consumedKeys.has(k)) {
+      const unit = mergedMainKeys.units.find((u) => u.sourceKeys.has(k));
+      if (unit && !unit.emitted) {
+        unit.emitted = true;
+        blocks.push(stepToBlockWithTiming('main', unit.key, unit.step, unit.timingByCode));
+      }
     } else {
       blocks.push(...stepsArrayToBlocks('main', k, arr));
     }
@@ -803,11 +810,20 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
         blocks.push(passiveToBlock('evo_source', p));
       });
     }
+    const mergedEvoKeys = collectMergeGroups(recipe.evo_source, new Set(['passive']));
     Object.keys(recipe.evo_source).forEach((k) => {
       if (k === 'passive') return;
       const arr = recipe.evo_source[k];
       if (!Array.isArray(arr)) return;
-      blocks.push(...stepsArrayToBlocks('evo_source', k, arr));
+      if (mergedEvoKeys.consumedKeys.has(k)) {
+        const unit = mergedEvoKeys.units.find((u) => u.sourceKeys.has(k));
+        if (unit && !unit.emitted) {
+          unit.emitted = true;
+          blocks.push(stepToBlockWithTiming('evo_source', unit.key, unit.step, unit.timingByCode));
+        }
+      } else {
+        blocks.push(...stepsArrayToBlocks('evo_source', k, arr));
+      }
     });
   }
   // リンク効果（進化元効果と同じ、トリガーでネストされた構造）
@@ -817,14 +833,92 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
         blocks.push(passiveToBlock('link', p));
       });
     }
+    const mergedLinkKeys = collectMergeGroups(recipe.link, new Set(['passive']));
     Object.keys(recipe.link).forEach((k) => {
       if (k === 'passive') return;
       const arr = recipe.link[k];
       if (!Array.isArray(arr)) return;
-      blocks.push(...stepsArrayToBlocks('link', k, arr));
+      if (mergedLinkKeys.consumedKeys.has(k)) {
+        const unit = mergedLinkKeys.units.find((u) => u.sourceKeys.has(k));
+        if (unit && !unit.emitted) {
+          unit.emitted = true;
+          blocks.push(stepToBlockWithTiming('link', unit.key, unit.step, unit.timingByCode));
+        }
+      } else {
+        blocks.push(...stepsArrayToBlocks('link', k, arr));
+      }
     });
   }
   return blocks;
+}
+
+// blocksToRecipe側のgroupTriggersByTimingで「発動ターンが異なる」ために分割出力された
+// 複数のトリガーキーを、エディタで再読み込みした際に1つのブロックへ統合するための
+// 前処理。「発動条件(trigger_conditions)を除けば内容が完全に同じstep」を持つキー同士を
+// グループ化し、各キーが実際に持っていた発動ターンをtimingByCodeとして記録する。
+// 誤爆防止のため、グループ内の少なくとも1件が cond_during_own_turn/opp_turn を明示的に
+// 持っている場合のみ統合する（無条件のキー同士がたまたま内容一致しているだけの
+// 無関係な効果まで誤って結合しないようにするため）。対象は要素数1の配列のみ
+// （複数stepの配列・'security'・'passive'は個別処理のまま）
+function collectMergeGroups(container: Record<string, any>, excludeKeys: Set<string>): {
+  consumedKeys: Set<string>;
+  units: { key: string; step: any; timingByCode?: Record<string, 'self' | 'opp' | 'any'>; sourceKeys: Set<string>; emitted: boolean }[];
+} {
+  type Group = { sig: string; codes: string[]; step: any; timingByCode: Record<string, 'self' | 'opp' | 'any'>; hasTimingMarker: boolean; sourceKeys: Set<string> };
+  const groups: Group[] = [];
+  Object.keys(container).forEach((key) => {
+    if (excludeKeys.has(key)) return;
+    const arr = container[key];
+    if (!Array.isArray(arr) || arr.length !== 1) return;
+    const step = arr[0];
+    if (!step || typeof step !== 'object') return;
+    const { trigger_conditions, ...rest } = step;
+    const sig = JSON.stringify(rest);
+    const timing = inferTimingFromTriggerConditions(trigger_conditions);
+    const codes = key.split(',').map((c: string) => c.trim()).filter(Boolean);
+    const existing = groups.find((g) => g.sig === sig);
+    if (existing) {
+      existing.codes.push(...codes);
+      codes.forEach((c) => { existing.timingByCode[c] = timing; });
+      existing.hasTimingMarker = existing.hasTimingMarker || timing !== 'any';
+      existing.sourceKeys.add(key);
+    } else {
+      const timingByCode: Record<string, 'self' | 'opp' | 'any'> = {};
+      codes.forEach((c) => { timingByCode[c] = timing; });
+      groups.push({ sig, codes, step, timingByCode, hasTimingMarker: timing !== 'any', sourceKeys: new Set([key]) });
+    }
+  });
+  const consumedKeys = new Set<string>();
+  const units: { key: string; step: any; timingByCode?: Record<string, 'self' | 'opp' | 'any'>; sourceKeys: Set<string>; emitted: boolean }[] = [];
+  groups.forEach((g) => {
+    // 統合対象は「2キー以上から集まった」かつ「発動ターンの明示指定が1件以上ある」場合のみ
+    if (g.sourceKeys.size >= 2 && g.hasTimingMarker) {
+      g.sourceKeys.forEach((k) => consumedKeys.add(k));
+      units.push({ key: g.codes.join(','), step: g.step, timingByCode: g.timingByCode, sourceKeys: g.sourceKeys, emitted: false });
+    }
+  });
+  return { consumedKeys, units };
+}
+
+function inferTimingFromTriggerConditions(tc: any): 'self' | 'opp' | 'any' {
+  if (!Array.isArray(tc)) return 'any';
+  if (tc.some((s: string) => String(s).startsWith('cond_during_own_turn'))) return 'self';
+  if (tc.some((s: string) => String(s).startsWith('cond_during_opp_turn'))) return 'opp';
+  return 'any';
+}
+
+// stepToBlock の結果に triggerTimingByCode を付加する（統合済みブロック用）。
+// step は trigger_conditions を持ったままでよい（block.triggerConditionsに入るが、
+// timingByCodeが全トリガーをカバーしていれば保存時は無視される＝実害なし）
+function stepToBlockWithTiming(
+  section: 'main' | 'evo_source' | 'security' | 'link',
+  trigger: string,
+  step: any,
+  timingByCode?: Record<string, 'self' | 'opp' | 'any'>
+): EffectBlock {
+  const block = stepToBlock(section, trigger, step);
+  if (timingByCode) block.triggerTimingByCode = timingByCode;
+  return block;
 }
 
 // 1つのトリガー配列を EffectBlock[] に変換する。配列内で continue_on_fail 修飾子を

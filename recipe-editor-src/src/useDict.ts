@@ -70,9 +70,9 @@ function categorize(rows: any[]): { triggers: DictEntry[]; conditions: DictEntry
         const v = String(r['ルール許可'] || '').trim().toLowerCase();
         return v === '1' || v === 'true' || v === 'yes' || v === 'on';
       })(),
-      // 位置指定フラグ: 「位置指定」列に "1"/"true" 等で 位置 pulldown を表示
+      // 位置指定フラグ: 「対象指定」列に "1"/"true" 等で 位置 pulldown を表示
       hasPositionVariant: (() => {
-        const v = String(r['位置指定'] || '').trim().toLowerCase();
+        const v = String(r['対象指定'] || '').trim().toLowerCase();
         return v === '1' || v === 'true' || v === 'yes' || v === 'on';
       })(),
       // 場所指定フラグ: 「場所指定」列に "1"/"true" 等で「場所」(取得元エリア) ボタンを表示
@@ -228,7 +228,7 @@ export function useDict(password: string): DictAPI {
       '手動操作の内容': entry.manualDesc || '',
       'ロジックコード': entry.logicCode || '',
       'ルール許可': entry.allowsRules ? '1' : '',
-      '位置指定': entry.hasPositionVariant ? '1' : '',
+      '対象指定': entry.hasPositionVariant ? '1' : '',
       '場所指定': entry.hasFromZones ? '1' : '',
       '上下指定': entry.hasDeckPosition ? '1' : '',
       '裏表指定': entry.hasFaceOption ? '1' : '',
@@ -278,7 +278,7 @@ export function useDict(password: string): DictAPI {
       setActionFlagsForCode(code, { allowsRules: !!(patch as any).allowsRules });
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'hasPositionVariant')) {
-      row['位置指定'] = (patch as any).hasPositionVariant ? '1' : '';
+      row['対象指定'] = (patch as any).hasPositionVariant ? '1' : '';
       setActionFlagsForCode(code, { hasPositionVariant: !!(patch as any).hasPositionVariant });
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'hasFromZones')) {

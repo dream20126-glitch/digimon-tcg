@@ -6248,18 +6248,22 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
       return typeof raw === 'string' ? JSON.parse(raw) : raw;
     } catch(_) { return null; }
   };
-  // 1) 本体カードの on_destroy
+  // 1) 本体カードの on_destroy（passive:[{flag:X}] 経由のキーワードレシピ由来も
+  //    _lookupTriggerSteps がマージして拾う。例: 【分離】= passive:protection の
+  //    when_leave_battle は生のownR[triggerKey]には無く、キーワード辞書側にしかない）
   const ownR = parseRecipe(destroyedCard.recipe);
-  if (ownR && Array.isArray(ownR[triggerKey])) {
-    reactions.push({ card: destroyedCard, sourceCard: destroyedCard, recipe: ownR[triggerKey] });
+  const ownSteps = ownR && _lookupTriggerSteps(ownR, triggerKey);
+  if (Array.isArray(ownSteps) && ownSteps.length > 0) {
+    reactions.push({ card: destroyedCard, sourceCard: destroyedCard, recipe: ownSteps });
   }
-  // 2) 進化元カードの evo_source.on_destroy
+  // 2) 進化元カードの evo_source.on_destroy（同様にキーワードレシピ由来も拾う）
   if (Array.isArray(destroyedCard.stack)) {
     destroyedCard.stack.forEach(evoCard => {
       if (!evoCard) return;
       const r = parseRecipe(evoCard.recipe);
-      if (r && r.evo_source && Array.isArray(r.evo_source[triggerKey])) {
-        reactions.push({ card: destroyedCard, sourceCard: evoCard, recipe: r.evo_source[triggerKey] });
+      const evoSteps = r && r.evo_source && _lookupTriggerSteps(r.evo_source, triggerKey);
+      if (Array.isArray(evoSteps) && evoSteps.length > 0) {
+        reactions.push({ card: destroyedCard, sourceCard: evoCard, recipe: evoSteps });
       }
     });
   }

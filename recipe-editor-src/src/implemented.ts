@@ -5,7 +5,7 @@
 // 更新方法: js/effect-engine.js の switch case を grep して反映:
 // grep -E "^\s*case '[a-z_]+'" effect-engine.js | grep -v "cond_"
 export const IMPLEMENTED_ACTIONS = new Set<string>([
-  'active', 'add_to_evo_source', 'add_to_hand', 'app_gattai_evolve',
+  'active', 'add_to_evo_source', 'add_to_hand',
   'attack_digimon', 'attack_player', 'attack_without_rest',
   'bounce', 'cant_attack', 'cant_attack_block', 'cant_block', 'cant_evolve',
   'change_attack_target', 'cost_digiburst', 'cost_discard', 'cost_trash_self',
@@ -13,7 +13,7 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'do_security_check', 'dp_minus', 'dp_plus', 'draw',
   'evo_cost_minus', 'evo_discard', 'evo_discard_all', 'evo_discard_bottom', 'evo_discard_top', 'evo_discard_select',
   'force_block', 'goal_reached', 'grant_keyword', 'grant_keyword_to',
-  'ignore_color_condition', 'immune_effects', 'jogress_evolve',
+  'ignore_color_condition', 'immune_effects',
   'link', 'link_capacity', 'link_cost',
   'memory_minus', 'memory_plus', 'mod_attack_first_turn',
   'overflow_memory_minus',

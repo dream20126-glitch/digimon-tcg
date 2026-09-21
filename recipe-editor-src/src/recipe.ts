@@ -548,6 +548,25 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   }
   if (b.target) step.target = b.target;
   if (b.keyword) step.keyword = b.keyword;
+  // fusion_evolve 専用: 素材候補スロット一覧（名称OR / 色OR+Lv）+ 同時使用数
+  if (b.trigger === 'fusion_evolve' && Array.isArray(b.fusionMaterials) && b.fusionMaterials.length > 0) {
+    const materials = b.fusionMaterials
+      .map((s) => {
+        const m: any = {};
+        if (s.names && s.names.length > 0) m.name = s.names.join(',');
+        if (s.colors && s.colors.length > 0) m.color = s.colors.join(',');
+        if (s.lv !== undefined && s.lv !== '' && s.lv !== null) {
+          const n = Number(s.lv);
+          m.lv = isNaN(n) ? s.lv : n;
+        }
+        return m;
+      })
+      .filter((m) => Object.keys(m).length > 0);
+    if (materials.length > 0) {
+      step.materials = materials;
+      step.pick_count = b.fusionPickCount && Number(b.fusionPickCount) > 0 ? Number(b.fusionPickCount) : 2;
+    }
+  }
   // memory_plus の「このターン終了時メモリー-N」フラグ
   if (b.revertAtTurnEnd) step.revert_at_turn_end = true;
   // immune_effects 専用:「相手の効果を受けない」の対象範囲。
@@ -1098,6 +1117,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     designated: true,
     designated_groups: true,
     designated_common: true,
+    materials: true,
+    pick_count: true,
   };
   const extras: any = {};
   Object.keys(step || {}).forEach((k) => {
@@ -1146,6 +1167,17 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     value: step?.value,
     target: step?.target || '',
     keyword: step?.keyword || '',
+    // fusion_evolve 専用: 素材候補スロット一覧の復元
+    fusionMaterials: Array.isArray(step?.materials)
+      ? step.materials.map((m: any) => {
+          const slot: any = {};
+          if (m?.name) slot.names = String(m.name).split(',').map((s: string) => s.trim()).filter(Boolean);
+          if (m?.color) slot.colors = String(m.color).split(',').map((s: string) => s.trim()).filter(Boolean);
+          if (m?.lv !== undefined && m?.lv !== null && m?.lv !== '') slot.lv = m.lv;
+          return slot;
+        })
+      : undefined,
+    fusionPickCount: step?.pick_count !== undefined && step?.pick_count !== null ? Number(step.pick_count) : undefined,
     keywordCount: _stepSingleGroup ? _stepSingleGroup.count : _stepCount,
     keywordParamConditions: _stepSingleGroup && _stepSingleGroup.conditions.length > 0 ? _stepSingleGroup.conditions : undefined,
     keywordParamConditionsOp: _stepSingleGroup && _stepSingleGroup.conditions.length > 0 ? _stepSingleGroup.conditionsOp : undefined,

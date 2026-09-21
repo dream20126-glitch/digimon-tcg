@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup } from '../types';
+import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup, FusionMaterialSlot } from '../types';
 import {
   SECTIONS,
   DURATIONS,
@@ -135,6 +135,113 @@ function MultiTextTags({ values, onChange, placeholder, accentColor }: { values:
           style={{ flex: 1, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
         />
         <button type="button" onClick={add} style={{ padding: '3px 10px', borderRadius: 5, border: `1px solid ${accent}`, background: '#fff', color: accent, cursor: 'pointer', fontSize: 11, fontWeight: 'bold' }}>+ 追加</button>
+      </div>
+    </div>
+  );
+}
+
+const FUSION_COLOR_OPTS = [
+  { code: '赤', label: '赤' }, { code: '青', label: '青' }, { code: '黄', label: '黄' },
+  { code: '緑', label: '緑' }, { code: '黒', label: '黒' }, { code: '紫', label: '紫' }, { code: '白', label: '白' },
+];
+
+// fusion_evolve（アプ合体/ジョグレス進化）専用: 素材候補スロットのリスト編集。
+// 1スロット=名称OR、または色OR+Lvのどちらか。候補数>使う体数なら「いずれかN体」判定になる
+function FusionMaterialsEditor({
+  slots,
+  pickCount,
+  onSlotsChange,
+  onPickCountChange,
+}: {
+  slots: FusionMaterialSlot[];
+  pickCount: number;
+  onSlotsChange: (v: FusionMaterialSlot[]) => void;
+  onPickCountChange: (v: number) => void;
+}) {
+  const updateSlot = (i: number, next: FusionMaterialSlot) => {
+    const copy = slots.slice();
+    copy[i] = next;
+    onSlotsChange(copy);
+  };
+  const removeSlot = (i: number) => onSlotsChange(slots.filter((_, idx) => idx !== i));
+  const addSlot = () => onSlotsChange([...slots, { names: [] }]);
+  return (
+    <div>
+      {slots.map((s, i) => {
+        const mode: 'name' | 'color' = s.colors && s.colors.length > 0 ? 'color' : 'name';
+        return (
+          <div key={i} style={{ border: '1px solid #ffb74d', borderRadius: 4, padding: 8, marginBottom: 6, background: 'white' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 'bold', color: '#b76e00' }}>素材候補 {i + 1}</span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <ButtonGroup
+                  options={[{ code: 'name', label: '名称' }, { code: 'color', label: '色+Lv' }]}
+                  value={mode}
+                  onChange={(v) => updateSlot(i, v === 'color' ? { colors: [], lv: s.lv } : { names: s.names || [] })}
+                  accentColor="#b76e00"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeSlot(i)}
+                  style={{ padding: '2px 8px', borderRadius: 4, border: 'none', background: '#e53935', color: '#fff', cursor: 'pointer', fontSize: 11 }}
+                >
+                  ✕ 削除
+                </button>
+              </div>
+            </div>
+            {mode === 'name' ? (
+              <MultiTextTags
+                values={s.names || []}
+                onChange={(v) => updateSlot(i, { names: v })}
+                placeholder="例: エイドモン"
+                accentColor="#b76e00"
+              />
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <MultiButtonGroup
+                  options={FUSION_COLOR_OPTS}
+                  values={s.colors || []}
+                  onToggle={(code, on) => {
+                    const cur = s.colors || [];
+                    updateSlot(i, { ...s, colors: on ? [...cur, code] : cur.filter((c) => c !== code) });
+                  }}
+                  accentColor="#b76e00"
+                />
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontSize: 11 }}>Lv.</span>
+                  <input
+                    type="number"
+                    value={s.lv === undefined ? '' : String(s.lv)}
+                    onChange={(e) => updateSlot(i, { ...s, lv: e.target.value === '' ? undefined : Number(e.target.value) })}
+                    style={{ padding: '3px 5px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 55 }}
+                  />
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
+        <button
+          type="button"
+          onClick={addSlot}
+          style={{ padding: '4px 10px', borderRadius: 5, border: '1px solid #b76e00', background: '#fff', color: '#b76e00', cursor: 'pointer', fontSize: 11, fontWeight: 'bold' }}
+        >
+          + 素材候補を追加
+        </button>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ fontSize: 11 }}>同時に使う体数:</span>
+          <input
+            type="number"
+            min={1}
+            value={pickCount}
+            onChange={(e) => onPickCountChange(Math.max(1, Number(e.target.value) || 1))}
+            style={{ padding: '3px 5px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 50 }}
+          />
+        </span>
+      </div>
+      <div style={{ fontSize: 10, color: '#8a5300', marginTop: 4 }}>
+        素材候補の数 ＝ 使う体数 なら全候補が必須（ジョグレス型）。候補数 ＞ 使う体数 なら「いずれかN体」の組合せ判定になります（アプ合体型）。
       </div>
     </div>
   );
@@ -2548,6 +2655,45 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               />
             </div>
           </div>
+        ) : block.trigger === 'fusion_evolve' ? (
+          <div style={{
+            gridColumn: '1 / span 2', padding: 10, background: '#fff3e0',
+            border: '2px solid #ffb74d', borderRadius: 6,
+            fontSize: 12, color: '#8a5300', lineHeight: 1.6,
+          }}>
+            <div style={{ marginBottom: 6, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
+              ⚠ アプ合体/ジョグレス進化はエンジン未実装です（保存はできますが動作しません）
+            </div>
+            🧬 <b>アプ合体/ジョグレス進化（複数体の素材を同時に使って進化）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。
+            <br />・素材候補が2つで使う体数も2 → 2つとも必須（ジョグレス型。例:「紫/青Lv5」＋「赤/黄Lv5」）
+            <br />・素材候補が3つで使う体数が2 → いずれか2つを満たせばOK（アプ合体型。例:「エイドモン/サブリモン/スバモン」のいずれか2体）
+            <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #ffb74d' }}>
+              <label style={{ display: 'block', fontWeight: 'bold', color: '#b76e00', marginBottom: 6 }}>
+                🧩 素材候補
+              </label>
+              <FusionMaterialsEditor
+                slots={block.fusionMaterials || []}
+                pickCount={block.fusionPickCount || 2}
+                onSlotsChange={(v) => update('fusionMaterials', v)}
+                onPickCountChange={(v) => update('fusionPickCount', v)}
+              />
+            </div>
+            <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #ffb74d' }}>
+              <label style={{ display: 'block', fontWeight: 'bold', color: '#b76e00', marginBottom: 4 }}>
+                💰 進化コスト（下のアクション欄ではなく、ここに入力してください）
+              </label>
+              <input
+                type="number"
+                value={block.value === undefined ? '' : String(block.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  update('value', v === '' ? undefined : Number(v));
+                }}
+                placeholder="例: 4"
+                style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
+              />
+            </div>
+          </div>
         ) : COST_REDUCTION_TRIGGERS.has(block.trigger) ? (
           <div style={{
             gridColumn: '1 / span 2', padding: 10, background: '#fff8e1',
@@ -3136,7 +3282,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               代替アクション側だけ任意にしても実際の挙動には反映されない
               （JSON上は正しく区別して保存されるが、エンジン側の対応が別途必要）。
               演出タイプは効果1専用のまま（代替アクションには無い概念） */}
-          {block.trigger !== 'alt_evolve' && (
+          {block.trigger !== 'alt_evolve' && block.trigger !== 'fusion_evolve' && (
             <div style={{ marginBottom: 8, display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
               <div>
                 <ButtonGroup
@@ -3173,7 +3319,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           {/* 効果発動ポップアップの表示テキスト: 空欄なら効果テキストから自動抽出にフォールバック。
               強制効果のみ「表示しない」を選べる（任意効果は確認ダイアログが必須のため対象外）。
               強制/任意ボタンと同様、アクション選択前から常に表示する */}
-          {block.trigger !== 'alt_evolve' && (
+          {block.trigger !== 'alt_evolve' && block.trigger !== 'fusion_evolve' && (
             <div className="field" style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <label>💬 効果発動ポップアップの表示テキスト（空欄なら効果テキストから自動抽出）</label>
@@ -3202,6 +3348,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           {block.trigger === 'alt_evolve' ? (
             <div style={{ fontSize: 11, color: '#888' }}>
               🔄 代替進化トリガーはアクション不要です（進化コストは上の🔄バナー内に入力済み）。
+            </div>
+          ) : block.trigger === 'fusion_evolve' ? (
+            <div style={{ fontSize: 11, color: '#888' }}>
+              🧬 アプ合体/ジョグレス進化トリガーはアクション不要です（素材候補・進化コストは上の🧬バナー内に入力済み）。
             </div>
           ) : COST_REDUCTION_TRIGGERS.has(block.trigger) ? (
             <div style={{ fontSize: 11, color: '#888' }}>
@@ -4595,6 +4745,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 ? '（この効果を発動するための条件・複数指定可）'
                 : block.trigger === 'alt_evolve'
                 ? '（代替進化専用の意味: 条件1=発動条件 / 条件2=進化元の絞り込み・複数追加時は3個目以降は無視されます）'
+                : block.trigger === 'fusion_evolve'
+                ? '（この効果が有効になる条件。素材候補の指定は上の🧬バナー内で行います）'
                 : '（このアクションを発動するために満たすべき条件・複数指定可）'
             }
             theme="action"

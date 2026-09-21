@@ -18,6 +18,16 @@ export interface DesignatedGroup {
   count?: number | string;
 }
 
+// アプ合体/ジョグレス進化（fusion_evolve）専用: 素材候補スロット1つ分。
+// 1スロット=1つの「必要な個体」を表す。名称候補(OR)か、色候補(OR)+Lvのどちらかを使う
+// （両方指定した場合は名称優先。namesを空にしてcolors+lvだけ使うのがジョグレスの
+// 典型パターン、names単体のスロットを複数並べるのがアプ合体の典型パターン）
+export interface FusionMaterialSlot {
+  names?: string[]; // 名称候補（いずれか1つの名称に一致すればOK）
+  colors?: string[]; // 色候補（いずれか1つの色を含めばOK）
+  lv?: number | string; // レベル指定（colors指定時のみ意味を持つことが多い）
+}
+
 // パッシブ/キーワード付与で複数キーワードを1ブロックにまとめる際の1件分
 export interface KeywordEntry {
   keyword: string;
@@ -180,6 +190,16 @@ export interface EffectBlock {
   // JSON では step.position ('top'/'bottom') に serialize。'both' はエンジン未対応
   // （'top' 以外は全て下扱いになるため、選ぶと実際は「下」と同じ動作になる）
   deckPosition?: 'top' | 'bottom' | 'both';
+  // fusion_evolve 専用（trigger==='fusion_evolve'の時のみ意味を持つ）: アプ合体/ジョグレス進化の
+  // 素材候補スロット一覧。1スロット=1つの必要な個体（名称OR、または色OR+Lv）。
+  // 例:「エイドモン/サブリモン/スバモンのいずれか2体でアプ合体」
+  //   → names単体スロットを3つ並べて fusionPickCount=2（3枚中2枚を満たせばOK）
+  // 例:「紫/青Lv5 + 赤/黄Lv5でジョグレス進化」
+  //   → colors+lvスロットを2つ並べて fusionPickCount=2（=スロット数なので全スロット必須）
+  fusionMaterials?: FusionMaterialSlot[];
+  // 同時に使う素材の体数（既定2）。fusionMaterials.length と同じなら全スロット必須(AND)、
+  // それより少なければ「いずれかN体」の組合せ判定になる
+  fusionPickCount?: number;
 }
 
 // 付与される効果（grant_effect 用のネスト 1ステップ）

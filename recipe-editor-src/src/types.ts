@@ -190,6 +190,12 @@ export interface EffectBlock {
   // JSON では step.position ('top'/'bottom') に serialize。'both' はエンジン未対応
   // （'top' 以外は全て下扱いになるため、選ぶと実際は「下」と同じ動作になる）
   deckPosition?: 'top' | 'bottom' | 'both';
+  // negate（「効果を発揮」）専用: 対象のどのトリガー効果を発揮する/しないにするかの指定。
+  // JSON では step.target_trigger に serialize（例: 'on_play'=登場時 / 'on_evolve'=進化時）
+  negateTargetTrigger?: 'on_play' | 'on_evolve';
+  // negate 専用:「発揮する」/「発揮しない（＝無効化）」のどちらか。
+  // true のとき JSON へ step.deny:true を出力する（未指定/falseは「発揮する」の意味）
+  negateDeny?: boolean;
   // app_gattai_evolve / jogress_evolve 専用（trigger がそのどちらかの時のみ意味を持つ）:
   // アプ合体/ジョグレス進化の素材候補スロット一覧。1スロット=1つの必要な個体（名称OR、または色OR+Lv）。
   // 演出が異なるためトリガーコード自体は2つに分けているが、素材の指定形式・UIは共通
@@ -252,6 +258,9 @@ export interface AltAction {
   // true のとき JSON へ cost_free:true / skip_on_play:true を出力する
   costFree?: boolean;
   skipOnPlay?: boolean;
+  // negate 専用（効果1と同じ意味）
+  negateTargetTrigger?: 'on_play' | 'on_evolve';
+  negateDeny?: boolean;
   // 対象自身の絞り込み（→ step.filter）・取得元エリアから選ぶカードの絞り込み
   // （→ step.from_filter）。効果1のtargetFilter/fromFilterと同じ意味・同じ変換ルール
   targetFilter?: ConditionPair[];

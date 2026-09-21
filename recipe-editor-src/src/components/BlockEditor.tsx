@@ -2116,6 +2116,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectPerRefFilter = isEditingAlt ? (editingAlt!.perRefFilter || []) : (block.perRefFilter || []);
   const effectCostFree = isEditingAlt ? !!editingAlt!.costFree : !!block.costFree;
   const effectSkipOnPlay = isEditingAlt ? !!editingAlt!.skipOnPlay : !!block.skipOnPlay;
+  const effectNegateTargetTrigger = isEditingAlt ? editingAlt!.negateTargetTrigger : block.negateTargetTrigger;
+  const effectNegateDeny = isEditingAlt ? !!editingAlt!.negateDeny : !!block.negateDeny;
   const effectOptions = isEditingAlt ? (editingAlt!.options || []) : (block.options || []);
   const effectOptional = isEditingAlt ? !!editingAlt!.optional : !!block.optional;
   const effectFromFilter = isEditingAlt ? (editingAlt!.fromFilter || []) : (block.fromFilter || []);
@@ -3678,6 +3680,25 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           裏向きで
                         </label>
                       )}
+                    </div>
+                  )}
+                  {/* negate（「効果を発揮」）専用: どのトリガー効果を対象にするか + する/しない
+                      （例:「登場時」＋「発揮しない」＝対象の登場時効果を発揮しない） */}
+                  {effectAction === 'negate' && (
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: '#666' }}>対象のタイミング:</span>
+                      <ButtonGroup
+                        options={[{ code: 'on_play', label: '登場時' }, { code: 'on_evolve', label: '進化時' }]}
+                        value={effectNegateTargetTrigger || ''}
+                        onChange={(v) => updateEffect({ negateTargetTrigger: (v || undefined) as 'on_play' | 'on_evolve' | undefined })}
+                        accentColor="#1976d2"
+                      />
+                      <ButtonGroup
+                        options={[{ code: 'enable', label: '発揮する' }, { code: 'deny', label: '発揮しない' }]}
+                        value={effectNegateDeny ? 'deny' : 'enable'}
+                        onChange={(v) => updateEffect({ negateDeny: v === 'deny' })}
+                        accentColor="#1976d2"
+                      />
                     </div>
                   )}
                 </div>

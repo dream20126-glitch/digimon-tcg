@@ -169,6 +169,10 @@ function altActionToStepObject(a: AltAction): any {
   if (a.duration) out.duration = a.duration;
   if (a.costFree) out.cost_free = true;
   if (a.skipOnPlay) out.skip_on_play = true;
+  if (a.action === 'negate') {
+    if (a.negateTargetTrigger) out.target_trigger = a.negateTargetTrigger;
+    if (a.negateDeny) out.deny = true;
+  }
   const targetFilterObj = buildFilterObject(a.targetFilter);
   if (targetFilterObj) out.filter = targetFilterObj;
   const fromFilterObj = buildFilterObject(a.fromFilter);
@@ -574,6 +578,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // 省略(既定) = 相手の効果全て（デジモン/テイマー/オプション問わず）
   // 'digimon' = 相手の「デジモン」の効果のみ（テイマー/オプションは対象外）
   if (b.action === 'immune_effects' && b.immuneCardType === 'digimon') step.source_type = 'digimon';
+  // negate（「効果を発揮」）専用: 対象トリガー種別 + する/しない
+  if (b.action === 'negate') {
+    if (b.negateTargetTrigger) step.target_trigger = b.negateTargetTrigger;
+    if (b.negateDeny) step.deny = true;
+  }
   // summon の「コストを支払わずに登場」フラグ
   if (b.costFree) step.cost_free = true;
   // summon_from_trash の「登場したデジモンの【登場時】効果は発揮しない」フラグ
@@ -1010,6 +1019,8 @@ function stepObjectToAltAction(step: any): AltAction {
     perRefFilter: [],
     costFree: !!step?.cost_free,
     skipOnPlay: !!step?.skip_on_play,
+    negateTargetTrigger: step?.target_trigger === 'on_play' || step?.target_trigger === 'on_evolve' ? step.target_trigger : undefined,
+    negateDeny: !!step?.deny,
     targetFilter: parseFilterObject(step?.filter),
     fromFilter: parseFilterObject(step?.from_filter),
     costs: parseCostArray(step?.cost),
@@ -1120,6 +1131,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     designated_common: true,
     materials: true,
     pick_count: true,
+    target_trigger: true,
+    deny: true,
   };
   const extras: any = {};
   Object.keys(step || {}).forEach((k) => {
@@ -1187,6 +1200,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     keywordCommonConditionsOp: _stepCommonPairs && _stepCommonPairs.conds.length > 0 ? _stepCommonPairs.op : undefined,
     revertAtTurnEnd: !!step?.revert_at_turn_end,
     immuneCardType: step?.source_type === 'digimon' ? 'digimon' : undefined,
+    negateTargetTrigger: step?.target_trigger === 'on_play' || step?.target_trigger === 'on_evolve' ? step.target_trigger : undefined,
+    negateDeny: !!step?.deny,
     costFree: !!step?.cost_free,
     skipOnPlay: !!step?.skip_on_play,
     deckPosition: step?.position === 'top' ? 'top'
@@ -1317,6 +1332,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             })(),
             costFree: !!a?.cost_free,
             skipOnPlay: !!a?.skip_on_play,
+            negateTargetTrigger: a?.target_trigger === 'on_play' || a?.target_trigger === 'on_evolve' ? a.target_trigger : undefined,
+            negateDeny: !!a?.deny,
             targetFilter: parseFilterObject(a?.filter),
             fromFilter: parseFilterObject(a?.from_filter),
             costs: parseCostArray(a?.cost),

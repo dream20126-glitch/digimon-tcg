@@ -320,6 +320,10 @@ export interface DictEntry {
   // 「裏向き/表向き」ボタンを表示する。既存の options コード 'face_down' を
   // CostStep.options に書き込む（例: place_under_tamer「テイマーの下に置く」）
   hasFaceOption?: boolean;
+  // アクション辞書専用: このアクションを選んだとき、レシピエディタで「する/できない」トグルを
+  // 表示する。「できない」を選んだ場合、実際に保存されるアクションコードはこのコードに切り替わる
+  // （例: code='rest' + cantActionCode='cant_rest'）。空欄なら「する/できない」表示なし
+  cantActionCode?: string;
   // キーワード辞書専用: このキーワードの実体となるレシピ（EffectBlock[]をJSON文字列化したもの）。
   // カード側はこのレシピをベタ展開せず、常にキーワードの「コード」参照のみを保存する
   // （passive:[{flag}] / grant_keyword+keyword）。実際の展開はゲームエンジン側が、

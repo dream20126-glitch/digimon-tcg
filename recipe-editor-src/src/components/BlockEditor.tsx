@@ -1552,7 +1552,13 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
 // （通常の状態変化アクション）と「できない」（それを封じるアクション）を切り替えられるようにする。
 // アクションコード自体が別物（例: rest⇔cant_rest）なため、単純な位置バリアント
 // （POSITION_VARIANTS的なsuffix切替）ではなく専用の対応表で管理する。
-// cant_rest / block / cant_destroy は辞書未登録・エンジンも未実装（該当カードが来たら追加実装）。
+// これはあくまでフォールバック既定値。実際に使われるのはコンポーネント内で構築する
+// DOABLE_TO_CANT_LIVE（このデフォルト値 ＋ 辞書側 dict.actions[].cantActionCode で
+// 上書き/追加したもの）。「する/できない」表示を出したい新規アクションは、今後は
+// ここに直書きせず「効果辞書管理」画面のアクション編集フォームで
+// 「できないコード」を登録すれば自動で反映される
+// cant_rest / block / cant_destroy / cant_redirect_attack は辞書未登録・エンジンも
+// 未実装（該当カードが来たら追加実装）。
 // ※ cant_destroy は「選んだ対象は消滅しない」の意味。既存のprevent_destroy系アクションは
 // 対象選択ではなくctx.card（効果を持つカード自身）を保護する別物のため流用しない
 const DOABLE_TO_CANT: Record<string, string> = {
@@ -1768,6 +1774,15 @@ function combineLimit(type: string, count: number): string {
 
 export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, onMoveDown, isKeywordMode, hasNoEvoText }: Props) {
   const effectiveTriggerFamilies = isKeywordMode ? [...COMMON_TRIGGER_FAMILIES, ...KEYWORD_ONLY_TRIGGER_FAMILIES] : COMMON_TRIGGER_FAMILIES;
+  // 「する/できない」トグルのペア表を辞書（dict.actions[].cantActionCode）駆動で構築。
+  // 辞書に未登録のコードはモジュール直書きの DOABLE_TO_CANT をフォールバックとして使う
+  const DOABLE_TO_CANT_LIVE: Record<string, string> = { ...DOABLE_TO_CANT };
+  dict.actions.forEach((a) => {
+    if (a.cantActionCode && a.cantActionCode.trim()) DOABLE_TO_CANT_LIVE[a.code] = a.cantActionCode.trim();
+  });
+  const CANT_TO_DOABLE_LIVE: Record<string, string> = Object.fromEntries(
+    Object.entries(DOABLE_TO_CANT_LIVE).map(([doable, cant]) => [cant, doable])
+  );
   function update(key: keyof EffectBlock, value: any) {
     onChange({ ...block, [key]: value });
   }
@@ -3075,11 +3090,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // ※ effectAction/effectValue = 編集中の効果（効果1=block自身 / 効果2以降=altActions[i]）
           const { options: rawActionDisplayOptions, flaggedBases, autoGroupBases } = buildActionDisplay(dict.actions);
           // よく使うボタン（COMMON_ACTIONS／レスト等のできない形／破棄／〇〇に置く）で
-          // 既に選べるアクションは「その他のアクション」の候補から除外する（二重掲載を避ける）
+          // 既に選べるアクションは「その他のアクション」の候補から除外する（二重掲載を避ける）。
+          // ※ DOABLE_TO_CANT_LIVE には redirect_attack のように COMMON_ACTIONS ボタンを持たない
+          // （その他のアクションのみから選ぶ）コードも辞書経由で登録されうるため、実際に
+          // ボタンとして存在するコードのできない形だけを除外対象にする
+          const _cantButtonDoableCodes = COMMON_ACTIONS.map((a) => a.code).filter((c) => !!DOABLE_TO_CANT_LIVE[c]);
+          const _cantButtonCantCodes = new Set(_cantButtonDoableCodes.map((c) => DOABLE_TO_CANT_LIVE[c]));
           const _buttonReachableCodes = new Set<string>([
             ...COMMON_ACTIONS.map((a) => a.code),
-            ...Object.keys(DOABLE_TO_CANT),
-            ...Object.values(DOABLE_TO_CANT),
+            ..._cantButtonDoableCodes,
+            ..._cantButtonDoableCodes.map((c) => DOABLE_TO_CANT_LIVE[c]),
             'cant_attack_block',
             ...DISCARD_ACTION_CODES,
             ...PLACE_ACTION_CODES,
@@ -3196,19 +3216,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // 代替アクション編集中は自分の1件のみを見る）
           const { selectedSet, mode } = (() => {
             if (isEditingAlt) {
-              if (DOABLE_TO_CANT[effectAction]) return { selectedSet: [effectAction], mode: 'do' as const };
+              if (DOABLE_TO_CANT_LIVE[effectAction]) return { selectedSet: [effectAction], mode: 'do' as const };
               if (effectAction === 'cant_attack_block') return { selectedSet: ['attack', 'block'], mode: 'cant' as const };
-              const d = CANT_TO_DOABLE[effectAction];
+              const d = CANT_TO_DOABLE_LIVE[effectAction];
               return d ? { selectedSet: [d], mode: 'cant' as const } : { selectedSet: [] as string[], mode: 'do' as const };
             }
-            if (DOABLE_TO_CANT[effectAction]) return { selectedSet: [effectAction], mode: 'do' as const };
+            if (DOABLE_TO_CANT_LIVE[effectAction]) return { selectedSet: [effectAction], mode: 'do' as const };
             if (effectAction === 'cant_attack_block') return { selectedSet: ['attack', 'block'], mode: 'cant' as const };
-            const primary = CANT_TO_DOABLE[effectAction];
+            const primary = CANT_TO_DOABLE_LIVE[effectAction];
             if (primary) {
               const set = [primary];
               if ((block.altActionsOp || 'or') === 'and') {
                 (block.altActions || []).forEach((a) => {
-                  const d = CANT_TO_DOABLE[a.action || ''];
+                  const d = CANT_TO_DOABLE_LIVE[a.action || ''];
                   if (d && !set.includes(d)) set.push(d);
                 });
               }
@@ -3230,7 +3250,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 return;
               }
               const last = nextSet[nextSet.length - 1];
-              updateEffect({ action: nextMode === 'cant' ? DOABLE_TO_CANT[last] : last });
+              updateEffect({ action: nextMode === 'cant' ? DOABLE_TO_CANT_LIVE[last] : last });
               return;
             }
             if (nextSet.length === 0) {
@@ -3238,7 +3258,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               return;
             }
             if (nextSet.length === 1) {
-              const code = nextMode === 'cant' ? DOABLE_TO_CANT[nextSet[0]] : nextSet[0];
+              const code = nextMode === 'cant' ? DOABLE_TO_CANT_LIVE[nextSet[0]] : nextSet[0];
               onChange({ ...block, action: code, altActions: [], altActionsOp: undefined });
               return;
             }
@@ -3250,8 +3270,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const [first, ...rest] = nextSet;
             onChange({
               ...block,
-              action: DOABLE_TO_CANT[first],
-              altActions: rest.map((k) => ({ action: DOABLE_TO_CANT[k], target: 'same_target' } as AltAction)),
+              action: DOABLE_TO_CANT_LIVE[first],
+              altActions: rest.map((k) => ({ action: DOABLE_TO_CANT_LIVE[k], target: 'same_target' } as AltAction)),
               altActionsOp: 'and',
             });
           }
@@ -3264,7 +3284,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           // よく使うアクション（トリガー家族ボタンと同じ操作感）: 該当すればボタン1つで即選択、
           // 無ければ「その他のアクション」を開いて既存のプルダウン(+位置バリアント)から選ぶ
-          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || isDiscardActive || !!CANT_TO_DOABLE[effectAction] || effectAction === 'cant_attack_block';
+          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || isDiscardActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block';
           function selectCommonAction(code: string) {
             if (isEditingAlt) { updateEffect({ action: code, value: '' }); return; }
             const dictEntry = findActionEntry(code);
@@ -3339,7 +3359,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {COMMON_ACTIONS.map((a) => {
-                    const isCantToggleGroup = !!DOABLE_TO_CANT[a.code];
+                    const isCantToggleGroup = !!DOABLE_TO_CANT_LIVE[a.code];
                     // レスト/アクティブ/進化/アタック/ブロックは複数選択できるトグル式ボタン
                     // （選んでいても「できない」形（cant_X等）になっていることがあるため、
                     // selectedSetでの判定にする。それ以外のボタンは従来通り単一選択）

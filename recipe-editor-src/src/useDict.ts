@@ -12,7 +12,7 @@ const ACTION_FLAGS_KEY = 'recipe_editor_action_flags';
 
 // アクション単位のフラグ（allowsRules / hasPositionVariant / hasFromZones / hasDeckPosition / hasFaceOption）
 // を localStorage で永続化。スプシ側に該当列が無くてもエディタ内では保持される。
-type ActionFlags = Record<string, { allowsRules?: boolean; hasPositionVariant?: boolean; hasFromZones?: boolean; hasDeckPosition?: boolean; hasFaceOption?: boolean }>;
+type ActionFlags = Record<string, { allowsRules?: boolean; hasPositionVariant?: boolean; hasFromZones?: boolean; hasDeckPosition?: boolean; hasFaceOption?: boolean; cantActionCode?: string }>;
 function loadActionFlags(): ActionFlags {
   try { return JSON.parse(localStorage.getItem(ACTION_FLAGS_KEY) || '{}') || {}; }
   catch (_) { return {}; }
@@ -20,7 +20,7 @@ function loadActionFlags(): ActionFlags {
 function saveActionFlags(flags: ActionFlags) {
   try { localStorage.setItem(ACTION_FLAGS_KEY, JSON.stringify(flags)); } catch (_) {}
 }
-function setActionFlagsForCode(code: string, patch: { allowsRules?: boolean; hasPositionVariant?: boolean; hasFromZones?: boolean; hasDeckPosition?: boolean; hasFaceOption?: boolean }) {
+function setActionFlagsForCode(code: string, patch: { allowsRules?: boolean; hasPositionVariant?: boolean; hasFromZones?: boolean; hasDeckPosition?: boolean; hasFaceOption?: boolean; cantActionCode?: string }) {
   const all = loadActionFlags();
   all[code] = { ...(all[code] || {}), ...patch };
   saveActionFlags(all);
@@ -96,6 +96,9 @@ function categorize(rows: any[]): { triggers: DictEntry[]; conditions: DictEntry
         const v = String(r['対象'] || '').trim().toLowerCase();
         return v === '1' || v === 'true' || v === 'yes' || v === 'on';
       })(),
+      // 「できない」ペアコード: 「できないコード」列にコードが入っていれば、
+      // レシピエディタでこのアクション選択時に「する/できない」トグルを表示する
+      cantActionCode: String(r['できないコード'] || '').trim() || undefined,
     };
     if (kind === 'trigger' || kind === 'continuous') triggers.push(entry);
     else if (kind === 'condition') conditions.push(entry);
@@ -226,6 +229,7 @@ export function useDict(password: string): DictAPI {
       '裏表指定': entry.hasFaceOption ? '1' : '',
       'キーワードレシピ': entry.recipeTemplate || '',
       '対象': entry.hasNamedParam ? '1' : '',
+      'できないコード': entry.cantActionCode || '',
     };
     const r = await apiAdd('dict', row, password);
     // アクションのフラグを localStorage に保存（スプシ側に列がなくてもエディタ内で保持）
@@ -236,6 +240,7 @@ export function useDict(password: string): DictAPI {
         hasFromZones: !!entry.hasFromZones,
         hasDeckPosition: !!entry.hasDeckPosition,
         hasFaceOption: !!entry.hasFaceOption,
+        cantActionCode: entry.cantActionCode || undefined,
       });
     }
     if (r.ok) await refresh();
@@ -284,6 +289,10 @@ export function useDict(password: string): DictAPI {
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'hasNamedParam')) {
       row['対象'] = (patch as any).hasNamedParam ? '1' : '';
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'cantActionCode')) {
+      row['できないコード'] = (patch as any).cantActionCode || '';
+      setActionFlagsForCode(code, { cantActionCode: (patch as any).cantActionCode || undefined });
     }
     const r = await apiUpdate('dict', code, kindToSingular(kind), row, password);
     if (r.ok) await refresh();
@@ -337,10 +346,24 @@ export function useDict(password: string): DictAPI {
   //  1. hardcoded（deck_open / deck_search）
   //  2. localStorage キャッシュ（スプシに列が無くても永続）
   const localFlags = loadActionFlags();
+  // 「する/できない」トグルのデフォルトペア（スプシ「できないコード」列が未登録でも動く既定値）。
+  // 辞書側（スプシ or localStorage）に cantActionCode が登録されていればそちらを優先する
+  const DEFAULT_CANT_PAIRS: Record<string, string> = {
+    rest: 'cant_rest',
+    active: 'not_active',
+    evolve: 'cant_evolve',
+    attack: 'cant_attack',
+    block: 'cant_block',
+    destroy: 'cant_destroy',
+    redirect_attack: 'cant_redirect_attack',
+  };
   const enhancedActions = actions.map((a) => {
     let merged = a;
     if (a.code === 'deck_open' || a.code === 'deck_search') {
       merged = a.allowsRules ? a : { ...a, allowsRules: true };
+    }
+    if (!merged.cantActionCode && DEFAULT_CANT_PAIRS[a.code]) {
+      merged = { ...merged, cantActionCode: DEFAULT_CANT_PAIRS[a.code] };
     }
     const local = localFlags[a.code];
     if (local) {
@@ -351,6 +374,7 @@ export function useDict(password: string): DictAPI {
         hasFromZones: local.hasFromZones !== undefined ? local.hasFromZones : merged.hasFromZones,
         hasDeckPosition: local.hasDeckPosition !== undefined ? local.hasDeckPosition : merged.hasDeckPosition,
         hasFaceOption: local.hasFaceOption !== undefined ? local.hasFaceOption : merged.hasFaceOption,
+        cantActionCode: local.cantActionCode !== undefined ? local.cantActionCode : merged.cantActionCode,
       };
     }
     return merged;

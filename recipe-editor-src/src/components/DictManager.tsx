@@ -518,6 +518,21 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
     }
   }
 
+  async function handleEditCantCode(entry: DictEntry) {
+    const current = entry.cantActionCode || '';
+    const next = prompt('「できない」ペアアクションコード（コード「' + entry.code + '」）\n空欄で解除:', current);
+    if (next === null) return; // cancel
+    if (next.trim() === current) return; // 変更なし
+    setMsg('💾 更新中...');
+    try {
+      const r = await dict.updateEntry(kind, entry.code, { cantActionCode: next.trim() });
+      if (r.ok) setMsg('✅ できないコードを更新: ' + entry.code + ' → 「' + (next.trim() || '(解除)') + '」');
+      else setMsg('❌ ' + (r.msg || '更新失敗'));
+    } catch (e: any) {
+      setMsg('❌ 通信エラー: ' + (e?.message || e));
+    }
+  }
+
   return (
     <>
       <div style={panel()}>
@@ -699,6 +714,21 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                       として扱います）。
                     </div>
                   </div>
+                  <div className="field" style={{ gridColumn: '1 / span 2' }}>
+                    <label>🚫 「できない」ペアアクションコード（する/しない表示を出す場合）</label>
+                    <input
+                      type="text"
+                      value={form.cantActionCode || ''}
+                      onChange={(e) => update({ cantActionCode: e.target.value })}
+                      placeholder="例: cant_rest（空欄なら「する/できない」表示なし）"
+                    />
+                    <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+                      💡 「レスト」「デッキオープン」のように、封じる効果とペアで使われるアクションだけ
+                      入力してください。レシピエディタで本アクション選択時に「する/できない」トグルが表示され、
+                      「できない」を選ぶと保存される <code>action</code> がここで指定したコードに切り替わります。
+                      ペア先のコードが未実装なら⚠未実装バッジが出ます（先にこちらを登録し、エンジン実装はあとで対応してもOK）。
+                    </div>
+                  </div>
                 </>
               )}
               {kind === 'keywords' && (
@@ -848,6 +878,23 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                             </button>
                           );
                         })}
+                        {kind === 'actions' && (
+                          <button
+                            type="button"
+                            title={'「できない」ペアアクションコードを編集（クリックで' + (e.cantActionCode ? '変更/解除' : '登録') + '）'}
+                            onClick={() => handleEditCantCode(e)}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                              padding: '2px 6px', borderRadius: 10, fontSize: 11, fontWeight: 'bold',
+                              whiteSpace: 'nowrap', cursor: 'pointer',
+                              background: e.cantActionCode ? '#fdeeee' : '#f5f5f5',
+                              color: e.cantActionCode ? '#c62828' : '#999',
+                              border: '1px solid ' + (e.cantActionCode ? '#f0b8b8' : '#ddd'),
+                            }}
+                          >
+                            🚫 {e.cantActionCode || 'できない'}
+                          </button>
+                        )}
                       </span>
                     </td>
                   )}

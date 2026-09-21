@@ -3197,6 +3197,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const { selectedSet, mode } = (() => {
             if (isEditingAlt) {
               if (DOABLE_TO_CANT[effectAction]) return { selectedSet: [effectAction], mode: 'do' as const };
+              if (effectAction === 'cant_attack_block') return { selectedSet: ['attack', 'block'], mode: 'cant' as const };
               const d = CANT_TO_DOABLE[effectAction];
               return d ? { selectedSet: [d], mode: 'cant' as const } : { selectedSet: [] as string[], mode: 'do' as const };
             }
@@ -3221,7 +3222,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           function applyCantSelection(nextSet: string[], nextMode: 'do' | 'cant') {
             if (isEditingAlt) {
               if (nextSet.length === 0) return;
-              updateEffect({ action: nextMode === 'cant' ? DOABLE_TO_CANT[nextSet[0]] : nextSet[0] });
+              // 代替アクション（効果2以降）はaltActionsを持たないため、複数選択は
+              // {アタック,ブロック}の2件のみ既存のcant_attack_blockで表現できる。
+              // それ以外の2件以上は表現できないため、最後にクリックした1件のみ反映する
+              if (nextSet.length === 2 && nextSet.includes('attack') && nextSet.includes('block')) {
+                updateEffect({ action: 'cant_attack_block' });
+                return;
+              }
+              const last = nextSet[nextSet.length - 1];
+              updateEffect({ action: nextMode === 'cant' ? DOABLE_TO_CANT[last] : last });
               return;
             }
             if (nextSet.length === 0) {

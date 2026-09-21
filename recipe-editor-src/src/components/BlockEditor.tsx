@@ -3806,8 +3806,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   （同じ block.value を使うが、符号付き数値を直接入力させるより
                   増/減ボタン+絶対値入力の方が分かりやすいため）。
                   ※ エンジン側は現状 evolve の value を未参照（要実装）。link は対応済み。
-                  増=+N（コスト+N）/ 減=-N（コスト-N）として value に符号付きで保存する */}
-              {(effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'link') ? (
+                  増=+N（コスト+N）/ 減=-N（コスト-N）として value に符号付きで保存する。
+                  キーワード付与(grant_keyword)のときは、下の「🎁 付与する効果」内の
+                  キーワードごとの数値欄で block.value を管理するため、ここでは二重表示を避けて隠す */}
+              {(effectAction === 'grant_keyword' || effectAction === 'grant_keyword_to') ? null
+              : (effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'link') ? (
                 <div className="field">
                   <label>💰 コスト増減</label>
                   {(() => {
@@ -4649,7 +4652,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: 4 }}>付与するキーワード（複数選択可）</label>
-                  <KeywordEntriesEditor block={block} onChange={onChange} dict={dict} accentBorder="#99f6e4" primaryValueElsewhere />
+                  <KeywordEntriesEditor block={block} onChange={onChange} dict={dict} accentBorder="#99f6e4" />
                   {getKeywordEntries(block).length > 1 && (
                     <div style={{ fontSize: 10, color: '#0d9488', marginTop: 2 }}>
                       💡 2つ目以降のキーワードは、1つ目で選んだ「対象」欄の指定に応じて、1体選択系の対象なら

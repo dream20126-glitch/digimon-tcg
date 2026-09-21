@@ -1240,13 +1240,17 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const edArea = edOwner[edAreaKey] || [];
       const edRowSide = edSide === 'player' ? 'pl' : 'ai';
 
-      // 進化元/下のカードを持つ本体を列挙（条件フィルタ付き・checkConditionsで全コード対応）
+      // 進化元/下のカードを持つ本体を列挙（条件フィルタ付き・checkConditionsで全コード対応）。
+      // edConds は「積まれているカードのうちどれを破棄するか」を絞り込むためのものなので
+      // （例: cond_face_down=裏向きのカードだけ破棄）、判定対象は本体(container)自身ではなく
+      // stack内の各カード。本体が対象候補になるのは、stack内に1枚でも条件を満たすカードが
+      // ある場合のみ
       const edConds = (ctx.block && ctx.block.conditions) || action.conditions || [];
       const evoTargets = [];
       for (let i = 0; i < edArea.length; i++) {
         const c = edArea[i];
         if (!c || !c.stack || c.stack.length === 0) continue;
-        if (edConds.length > 0 && !checkConditions(edConds, c, ctx.bs, edSide)) continue;
+        if (edConds.length > 0 && !c.stack.some(s => checkConditions(edConds, s, ctx.bs, edSide))) continue;
         evoTargets.push(i);
       }
       if (evoTargets.length === 0) {
@@ -1297,7 +1301,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
               pickNext(remaining - 1);
             };
             if (effectiveSide === 'ai') {
-              takeCard(tgt.stack[0]);
+              const aiPick = edConds.length > 0 ? tgt.stack.find(s => checkConditions(edConds, s, ctx.bs, edSide)) : tgt.stack[0];
+              takeCard(aiPick || null);
             } else {
               showEvoSourceSelection(tgt, tgt.stack.slice(), null, takeCard);
             }
@@ -1305,11 +1310,23 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           pickNext(n);
           return;
         }
-        // 上から/下から: 自動で決め打ち
+        // 上から/下から: 自動で決め打ち。edConds（cond_face_down等）が指定されている場合は
+        // 条件を満たすカードだけを候補にし、その中で上から/下からの端を選ぶ
+        // （例:「テイマーの下にある裏向きのカードを下から1枚破棄する」→ 裏向きの候補の中で
+        // 一番下＝配列末尾に近い方を取る。stack先頭からの物理的な位置ではなく、
+        // フィルタ後の候補内での端になる点に注意）
+        const fromTop = action.code === 'evo_discard_top' || action.code === 'evo_discard_tamer_top';
         const discarded = [];
         for (let i = 0; i < n && tgt.stack.length > 0; i++) {
-          const fromTop = action.code === 'evo_discard_top' || action.code === 'evo_discard_tamer_top';
-          const removed = fromTop ? tgt.stack.shift() : tgt.stack.pop();
+          let takeIdx = -1;
+          if (edConds.length > 0) {
+            if (fromTop) { takeIdx = tgt.stack.findIndex(s => checkConditions(edConds, s, ctx.bs, edSide)); }
+            else { for (let k = tgt.stack.length - 1; k >= 0; k--) { if (checkConditions(edConds, tgt.stack[k], ctx.bs, edSide)) { takeIdx = k; break; } } }
+            if (takeIdx === -1) break; // 条件を満たす候補が尽きた
+          } else {
+            takeIdx = fromTop ? 0 : tgt.stack.length - 1;
+          }
+          const removed = tgt.stack.splice(takeIdx, 1)[0];
           edTrash.push(removed);
           discarded.push(removed);
         }

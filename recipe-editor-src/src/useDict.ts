@@ -362,6 +362,11 @@ export function useDict(password: string): DictAPI {
     if (a.code === 'deck_open' || a.code === 'deck_search') {
       merged = a.allowsRules ? a : { ...a, allowsRules: true };
     }
+    // 「手札に加える」はトラッシュ/デッキ/セキュリティ/進化元/リンクカードのいずれからでも
+    // 発生しうるため、常に「📍 場所」ボタンを表示する（スプシ「場所指定」列が未登録でも動く既定値）
+    if (a.code === 'add_to_hand' && !merged.hasFromZones) {
+      merged = { ...merged, hasFromZones: true };
+    }
     if (!merged.cantActionCode && DEFAULT_CANT_PAIRS[a.code]) {
       merged = { ...merged, cantActionCode: DEFAULT_CANT_PAIRS[a.code] };
     }

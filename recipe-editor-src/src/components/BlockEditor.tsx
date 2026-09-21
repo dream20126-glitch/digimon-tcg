@@ -1548,17 +1548,20 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'attack', label: 'アタック' },
   { code: 'block', label: 'ブロック' },
 ];
-// 「レスト」「アクティブ」「進化」「アタック」「ブロック」ボタン専用: 「する」（通常の
-// 状態変化アクション）と「できない」（それを封じるアクション）を切り替えられるようにする。
+// 「レスト」「アクティブ」「進化」「アタック」「ブロック」「消滅」ボタン専用: 「する」
+// （通常の状態変化アクション）と「できない」（それを封じるアクション）を切り替えられるようにする。
 // アクションコード自体が別物（例: rest⇔cant_rest）なため、単純な位置バリアント
 // （POSITION_VARIANTS的なsuffix切替）ではなく専用の対応表で管理する。
-// cant_rest / block は辞書未登録・エンジンも未実装（該当カードが来たら追加実装）
+// cant_rest / block / cant_destroy は辞書未登録・エンジンも未実装（該当カードが来たら追加実装）。
+// ※ cant_destroy は「選んだ対象は消滅しない」の意味。既存のprevent_destroy系アクションは
+// 対象選択ではなくctx.card（効果を持つカード自身）を保護する別物のため流用しない
 const DOABLE_TO_CANT: Record<string, string> = {
   rest: 'cant_rest',
   active: 'not_active',
   evolve: 'cant_evolve',
   attack: 'cant_attack',
   block: 'cant_block',
+  destroy: 'cant_destroy',
 };
 const CANT_TO_DOABLE: Record<string, string> = Object.fromEntries(
   Object.entries(DOABLE_TO_CANT).map(([doable, cant]) => [cant, doable])

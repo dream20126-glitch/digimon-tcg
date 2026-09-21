@@ -49,20 +49,28 @@ export function RecipeEditor({
   function addBlock() {
     setBlocks([...blocks, { section: 'main', trigger: '', triggerSubject: 'self', conditions: [] }]);
   }
+  // 関数形の更新（setBlocks(prev => ...)）を使う: 同一レンダーサイクル内で
+  // onChangeが連続して呼ばれるケース（例: 「アクション」ボタンを続けてクリックして
+  // 複数選択を組み立てる操作）で、古いblocksを参照して直前の更新を打ち消してしまう
+  // stale closureバグを防ぐため
   function updateBlock(i: number, b: EffectBlock) {
-    const next = blocks.slice();
-    next[i] = b;
-    setBlocks(next);
+    setBlocks((prev) => {
+      const next = prev.slice();
+      next[i] = b;
+      return next;
+    });
   }
   function removeBlock(i: number) {
-    setBlocks(blocks.filter((_, idx) => idx !== i));
+    setBlocks((prev) => prev.filter((_, idx) => idx !== i));
   }
   function moveBlock(i: number, dir: -1 | 1) {
-    const j = i + dir;
-    if (j < 0 || j >= blocks.length) return;
-    const next = blocks.slice();
-    [next[i], next[j]] = [next[j], next[i]];
-    setBlocks(next);
+    setBlocks((prev) => {
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = prev.slice();
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
   }
 
   async function save() {

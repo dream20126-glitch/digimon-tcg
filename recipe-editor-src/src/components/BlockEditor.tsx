@@ -3206,6 +3206,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             return true;
           })?.code || '';
 
+          // 〇〇に置く（PLACE_ZONE_MAP）: コスト側(CostListEditor)と全く同じ「置き場所ごとに
+          // 実アクションコード・対象を切り替える」仕組みを効果1/代替アクションでも使えるようにする
+          const isPlaceActive = PLACE_ACTION_CODES.has(effectAction || '');
+          const activePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === effectAction)?.code || '';
+
           // レスト/アクティブ/進化/アタック/ブロックの5ボタンは複数選択できる（例:
           // アタック＋ブロックを両方押す）。1つだけ選んでいるときは「する/できない」を
           // 選べるが、2つ以上選んでいるときは「する」（=複数の行動を同時に強制する、の意味に
@@ -3284,7 +3289,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           // よく使うアクション（トリガー家族ボタンと同じ操作感）: 該当すればボタン1つで即選択、
           // 無ければ「その他のアクション」を開いて既存のプルダウン(+位置バリアント)から選ぶ
-          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || isDiscardActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block';
+          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || isDiscardActive || isPlaceActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block';
           function selectCommonAction(code: string) {
             if (isEditingAlt) { updateEffect({ action: code, value: '' }); return; }
             const dictEntry = findActionEntry(code);
@@ -3302,7 +3307,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           return (
             <div style={{
               display: 'grid',
-              gridTemplateColumns: !isDiscardActive && isPositional && variantOptions.length > 0 ? '2fr 1fr 1fr' : '2fr 1fr',
+              gridTemplateColumns: !isDiscardActive && !isPlaceActive && isPositional && variantOptions.length > 0 ? '2fr 1fr 1fr' : '2fr 1fr',
               gap: 8,
             }}>
               <div className="field">
@@ -3403,7 +3408,158 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   >
                     破棄
                   </button>
+                  {/* 〇〇に置く: コスト側(CostListEditor)と同じ「置き場所ごとに実アクション
+                      コード・対象を切り替える」ボタン */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isPlaceActive) return;
+                      const z = PLACE_ZONE_MAP.find((zz) => zz.code === 'security')!;
+                      updateEffect({ action: z.action, target: z.target || '', value: '' });
+                    }}
+                    style={{
+                      padding: '3px 9px', borderRadius: 5,
+                      border: isPlaceActive ? '2px solid #1976d2' : '1px solid #bbb',
+                      background: isPlaceActive ? '#1976d2' : '#f5f5f5',
+                      color: isPlaceActive ? '#fff' : '#333',
+                      fontWeight: isPlaceActive ? 'bold' : 'normal',
+                      cursor: 'pointer', fontSize: 11,
+                    }}
+                  >
+                    〇〇に置く
+                  </button>
                 </div>
+                {isPlaceActive && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🎯 置き場所（どこに置くか）</div>
+                    <ButtonGroup
+                      options={PLACE_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
+                      value={activePlaceZone}
+                      onChange={(zoneCode) => {
+                        if (zoneCode === activePlaceZone) return;
+                        const z = PLACE_ZONE_MAP.find((zz) => zz.code === zoneCode);
+                        if (!z) return;
+                        updateEffect({ action: z.action, target: z.target || '', deckPosition: undefined, options: [], fromZones: [] });
+                      }}
+                      accentColor="#1976d2"
+                    />
+                    {(() => {
+                      const z = PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone);
+                      return z?.warn ? (
+                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
+                      ) : null;
+                    })()}
+                    {/* セキュリティ/テイマー/進化元のときだけ、置くカードの取得元（手札等）を選べる */}
+                    {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFromZones && (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから置くか）</div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {FROM_ZONES.map((z) => {
+                            const active = effectFromZones.includes(z.code);
+                            return (
+                              <button
+                                key={z.code}
+                                type="button"
+                                onClick={() => {
+                                  const next = active ? effectFromZones.filter((x) => x !== z.code) : [...effectFromZones, z.code];
+                                  updateEffect({ fromZones: next });
+                                }}
+                                style={{
+                                  padding: '3px 9px', borderRadius: 5,
+                                  border: active ? '2px solid #1976d2' : '1px solid #bbb',
+                                  background: active ? '#1976d2' : '#f5f5f5',
+                                  color: active ? '#fff' : '#333',
+                                  fontWeight: active ? 'bold' : 'normal',
+                                  cursor: 'pointer', fontSize: 11,
+                                }}
+                              >
+                                {z.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {effectFromZones.length >= 2 && (
+                          <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                            <span style={{ color: '#666' }}>結合:</span>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                              <input type="radio" name={`placeFromZonesOp_${index}_${editingEffect}`} checked={effectFromZonesOp === 'or'} onChange={() => updateEffect({ fromZonesOp: 'or' })} style={{ margin: 0 }} />
+                              OR（いずれか）
+                            </label>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                              <input type="radio" name={`placeFromZonesOp_${index}_${editingEffect}`} checked={effectFromZonesOp === 'and'} onChange={() => updateEffect({ fromZonesOp: 'and' })} style={{ margin: 0 }} />
+                              AND（全て）
+                            </label>
+                          </div>
+                        )}
+                        {effectFromZones.length >= 1 && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 誰の場所か</div>
+                            <ButtonGroup
+                              options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                              value={effectFromZoneOwner || ''}
+                              onChange={(v) => updateEffect({ fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                              accentColor="#1976d2"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {/* 場所に「セキュリティ」/「進化元」を含む場合のみ: 積み重ね順の上/下どちらから見るか */}
+                    {(effectFromZones.includes('security') || effectFromZones.includes('evo_source')) && (
+                      <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        {effectFromZones.includes('security') && (
+                          <div>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 セキュリティの位置</div>
+                            <ButtonGroup
+                              options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                              value={effectSecurityPosition || ''}
+                              onChange={(v) => updateEffect({ securityPosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                              accentColor="#1976d2"
+                            />
+                          </div>
+                        )}
+                        {effectFromZones.includes('evo_source') && (
+                          <div>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 進化元の位置</div>
+                            <ButtonGroup
+                              options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                              value={effectEvoSourcePosition || ''}
+                              onChange={(v) => updateEffect({ evoSourcePosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                              accentColor="#1976d2"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {/* セキュリティ/テイマーのときだけ「上/下/下か上」を選べる */}
+                    {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasPosition && (() => {
+                      const effectDeckPositionForPlace = isEditingAlt ? editingAlt!.deckPosition : block.deckPosition;
+                      return (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                          <ButtonGroup
+                            options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
+                            value={effectDeckPositionForPlace || ''}
+                            onChange={(v) => updateEffect({ deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
+                            accentColor="#1976d2"
+                          />
+                        </div>
+                      );
+                    })()}
+                    {/* セキュリティ/テイマーのときだけ「裏向き/表向き」を選べる */}
+                    {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFace && (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                        <ButtonGroup
+                          options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
+                          value={effectOptions.includes('face_down') ? 'face_down' : ''}
+                          onChange={(v) => updateEffect({ options: v ? [v] : [] })}
+                          accentColor="#1976d2"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
                 {isDiscardActive && (
                   <div style={{ marginTop: 4 }}>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから破棄するか）</div>
@@ -3488,7 +3644,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               </div>
               {/* 位置バリアント pulldown: フラグ駆動 or 自動グループ化時のみ。
                   破棄（isDiscardActive）は専用の📍位置ボタンを別途表示するため、ここでは除外 */}
-              {!isDiscardActive && isPositional && variantOptions.length > 0 && (
+              {!isDiscardActive && !isPlaceActive && isPositional && variantOptions.length > 0 && (
                 <div className="field">
                   <label>📍 位置</label>
                   <SearchSelect

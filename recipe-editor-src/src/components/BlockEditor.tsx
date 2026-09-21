@@ -2115,6 +2115,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
   // === 折りたたみ state ===
   const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
+  // 発動ターンをトリガーごとに個別設定するモード（既にtriggerTimingByCodeが
+  // 入っているデータを開いた場合は最初から展開しておく）
+  const [perTriggerTimingOpen, setPerTriggerTimingOpen] = useState<boolean>(
+    Object.keys(block.triggerTimingByCode || {}).length > 0
+  );
   const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
   const [otherActionOpen, setOtherActionOpen] = useState<boolean>(false);
   // ～ごとにの「状態（条件）」その他プルダウン開閉状態
@@ -2805,10 +2810,67 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     )}
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                    <span style={{ fontSize: 11, color: '#666' }}>発動ターン:</span>
-                    <ButtonGroup options={TIMING_OPTIONS.map((t) => ({ code: t.code, label: t.label }))} value={timing} onChange={(v) => setTiming(v as TimingKey)} accentColor="#2e7d32" />
-                  </div>
+                  {!perTriggerTimingOpen && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                      <span style={{ fontSize: 11, color: '#666' }}>発動ターン:</span>
+                      <ButtonGroup options={TIMING_OPTIONS.map((t) => ({ code: t.code, label: t.label }))} value={timing} onChange={(v) => setTiming(v as TimingKey)} accentColor="#2e7d32" />
+                    </div>
+                  )}
+                  {/* トリガーごとに発動ターンを分ける（例:「登場時」は無条件、
+                      「メインフェイズ開始時」だけ相手ターン限定、を同じブロックで混在させたい場合）。
+                      OFFなら上の共有「発動ターン」を使う従来通りの挙動 */}
+                  {currentTriggers.length >= 2 && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#1a5a1a', marginTop: 6 }}>
+                      <input
+                        type="checkbox"
+                        checked={perTriggerTimingOpen}
+                        onChange={(e) => {
+                          const on = e.target.checked;
+                          setPerTriggerTimingOpen(on);
+                          if (on) {
+                            // 現在の共有発動ターンを、各トリガーの個別値として引き継ぐ
+                            // （event系のみ。timing系はコード自体に既に反映済み）
+                            const nextMap: Record<string, TimingKey> = { ...(block.triggerTimingByCode || {}) };
+                            currentTriggers.forEach((code) => {
+                              const isTimingFam = effectiveTriggerFamilies.some((f) => f.kind === 'timing' && f.variants && Object.values(f.variants).includes(code));
+                              if (!isTimingFam && nextMap[code] === undefined) nextMap[code] = timing;
+                            });
+                            onChange({ ...block, triggerTimingByCode: nextMap });
+                          } else {
+                            onChange({ ...block, triggerTimingByCode: {} });
+                          }
+                        }}
+                      />
+                      🔀 トリガーごとに発動ターンを分ける
+                    </label>
+                  )}
+                  {perTriggerTimingOpen && (
+                    <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {currentTriggers.map((code) => {
+                        const fam = effectiveTriggerFamilies.find((f) => f.kind === 'timing' && f.variants && Object.values(f.variants).includes(code));
+                        const label = fam ? fam.label : (effectiveTriggerFamilies.find((f) => f.code === code)?.label || FAMILY_VARIANT_FALLBACK_LABELS[code] || code);
+                        const curTiming: TimingKey = fam && fam.variants
+                          ? ((Object.entries(fam.variants) as [TimingKey, string][]).find(([, v]) => v === code)?.[0] || 'any')
+                          : ((block.triggerTimingByCode || {})[code] || 'any');
+                        const setThisTiming = (v: TimingKey) => {
+                          if (fam && fam.variants) {
+                            const newVariant = fam.variants[v];
+                            const next = currentTriggers.map((t) => (t === code ? newVariant : t));
+                            onChange({ ...block, trigger: next[0] || '', triggers: next });
+                            return;
+                          }
+                          const nextMap = { ...(block.triggerTimingByCode || {}), [code]: v };
+                          onChange({ ...block, triggerTimingByCode: nextMap });
+                        };
+                        return (
+                          <div key={code} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                            <span style={{ color: '#333', minWidth: 90 }}>{label}:</span>
+                            <ButtonGroup options={TIMING_OPTIONS.map((t) => ({ code: t.code, label: t.label }))} value={curTiming} onChange={(v) => setThisTiming(v as TimingKey)} accentColor="#2e7d32" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {/* 【〇〇が増えたとき】選択時のみ: 既存の「📍 場所」（取得元エリア）欄と
                       全く同じ作り（複数選択+2件以上ならOR/AND切替）でどのゾーンが

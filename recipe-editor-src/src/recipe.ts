@@ -297,25 +297,55 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
     // 同一内容のstepを発動する場合。冗長な重複出力を避けるため、"on_move,on_play"の
     // ようにカンマ区切りの1キーへまとめて出力する（エンジン側は_lookupTriggerStepsで
     // カンマ区切りキーも解決できる。1件のみなら従来通り単一トリガーコードのまま）。
-    // 'passive'（キーワードのパッシブ宣言）は常に単一選択のため、まとめ対象にはならない
+    // 'passive'（キーワードのパッシブ宣言）は常に単一選択のため、まとめ対象にはならない。
+    // triggerTimingByCode で個別の発動ターンが指定されているトリガーがあれば、
+    // 発動ターン（＝実際のtrigger_conditions内容）が同じもの同士でグループ化し、
+    // グループごとに別々のstepとして出力する（グループが1つだけなら従来通り1step）
     const triggerList = (b.triggers && b.triggers.length > 0) ? b.triggers : (b.trigger ? [b.trigger] : []);
     if (triggerList.length > 0) {
-      const combinedTrig = triggerList.join(',');
-      if (b.section === 'evo_source') {
-        recipe.evo_source = recipe.evo_source || {};
-        appendStep(recipe.evo_source, { ...b, trigger: combinedTrig }, keywordDict);
-      } else if (b.section === 'link') {
-        // リンク効果は進化元効果と同じ構造（during_own_turn等のトリガーでネスト）。
-        // 「リンクしている間」という状態はcard.linkedCardsで表現されるため、
-        // トリガー自体は進化元と同様に発動タイミングの指定として使う
-        recipe.link = recipe.link || {};
-        appendStep(recipe.link, { ...b, trigger: combinedTrig }, keywordDict);
-      } else {
-        appendStep(recipe, { ...b, trigger: combinedTrig }, keywordDict);
-      }
+      const groups = groupTriggersByTiming(triggerList, b);
+      groups.forEach(({ codes, conditions }) => {
+        const combinedTrig = codes.join(',');
+        const bForGroup = { ...b, triggerConditions: conditions };
+        if (b.section === 'evo_source') {
+          recipe.evo_source = recipe.evo_source || {};
+          appendStep(recipe.evo_source, { ...bForGroup, trigger: combinedTrig }, keywordDict);
+        } else if (b.section === 'link') {
+          // リンク効果は進化元効果と同じ構造（during_own_turn等のトリガーでネスト）。
+          // 「リンクしている間」という状態はcard.linkedCardsで表現されるため、
+          // トリガー自体は進化元と同様に発動タイミングの指定として使う
+          recipe.link = recipe.link || {};
+          appendStep(recipe.link, { ...bForGroup, trigger: combinedTrig }, keywordDict);
+        } else {
+          appendStep(recipe, { ...bForGroup, trigger: combinedTrig }, keywordDict);
+        }
+      });
     }
   });
   return recipe;
+}
+
+// triggerTimingByCode に基づき、triggerList を「実際に出力されるtrigger_conditionsが
+// 同じもの同士」にグループ化する。triggerTimingByCode に個別指定が無いトリガーは
+// block共有の triggerConditions をそのまま使う（＝従来通りの挙動、後方互換）
+function groupTriggersByTiming(triggerList: string[], b: EffectBlock): { codes: string[]; conditions: ConditionPair[] }[] {
+  const overrides = b.triggerTimingByCode || {};
+  const resolve = (code: string): ConditionPair[] => {
+    const t = overrides[code];
+    if (t === 'self') return [{ base: 'cond_during_own_turn' }];
+    if (t === 'opp') return [{ base: 'cond_during_opp_turn' }];
+    if (t === 'any') return [];
+    return b.triggerConditions || []; // 個別指定なし → 共有条件（従来通り）
+  };
+  const groups: { key: string; codes: string[]; conditions: ConditionPair[] }[] = [];
+  triggerList.forEach((code) => {
+    const conditions = resolve(code);
+    const key = conditions.filter((p) => p.base).map(pairToString).join('|');
+    const existing = groups.find((g) => g.key === key);
+    if (existing) existing.codes.push(code);
+    else groups.push({ key, codes: [code], conditions });
+  });
+  return groups;
 }
 
 // ConditionPair[]（+AND/OR）から、条件一式のJSONフィールド（condition/when/

@@ -59,8 +59,17 @@ export interface EffectBlock {
   triggerSubject?: string;
   limit?: string; // '' | 'once_per_turn'
   // トリガー条件: トリガー発火元のカード（登場/消滅したカード等）に対するフィルタ
-  // 「黄のLv.3デジモンが登場したとき」等の "このトリガーが発火する条件" を表現
+  // 「黄のLv.3デジモンが登場したとき」等の "このトリガーが発火する条件" を表現。
+  // 複数トリガー選択時は原則この1つを全トリガーで共有する（従来通り）
   triggerConditions?: ConditionPair[];
+  // トリガーごとに発動ターン（自分/相手/お互い）を個別設定したい場合に使う
+  // （例:「登場時」は無条件、「相手のメインフェイズ開始時」だけ相手ターン限定、
+  // のように同じブロック内で異なる発動ターンを混在させたいケース）。
+  // キーはtriggers[]内のイベント系トリガーコード（on_play等。timing系ファミリーの
+  // バリアントコードは対象外＝発動ターンは元々コード自体に自分/相手/お互いが
+  // エンコードされているため不要）。値: 'self'=自分のターンのみ / 'opp'=相手のターンのみ /
+  // 'any'=どちらでも（無条件）。エントリが無いトリガーは triggerConditions（共有）に従う
+  triggerTimingByCode?: Record<string, 'self' | 'opp' | 'any'>;
   conditions?: ConditionPair[]; // 0〜N個の条件（self や全体状況に対するゲート）
   // 複数条件の結合方法。既定'and'=全部満たす／'or'=いずれか1つ満たす。
   // JSON では conditions.length>=2 のときだけ step.condition_op:'or' として出力する

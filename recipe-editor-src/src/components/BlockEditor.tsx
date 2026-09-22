@@ -3523,10 +3523,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // コードを切り替える」仕組みを効果1/代替アクションでも使えるようにする。
           // 辞書のhasPositionVariantフラグには頼らず、コスト側と同じくこのエディタ内で
           // 完結したハードコード機構として扱う（📍位置の二重表示を避けるため、下の
-          // 汎用位置バリアントpulldownとisPositionalの判定からは除外する）
+          // 汎用位置バリアントpulldownとisPositionalの判定からは除外する）。
+          // 「その他アクション」で辞書の discard（破棄する。エンジン未実装のプレースホルダー）
+          // を選んだ直後（まだ場所未選択）も、この📥場所パネルを表示する入り口として扱う
           const discardZoneBases = new Set(DISCARD_ZONE_MAP.map((z) => getActionVariant(z.action)?.base || z.action));
           const effectActionBase = getActionVariant(effectAction || '')?.base || (effectAction || '');
-          const isDiscardActive = discardZoneBases.has(effectActionBase);
+          const isDiscardActive = discardZoneBases.has(effectActionBase) || effectAction === 'discard';
           const activeDiscardZone = DISCARD_ZONE_MAP.find((z) => {
             if ((getActionVariant(z.action)?.base || z.action) !== effectActionBase) return false;
             if (z.target !== undefined && splitStackSuffix((effectTarget || '').split(':')[0]).base !== z.target) return false;
@@ -3733,27 +3735,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </button>
                     );
                   })}
-                  {/* 破棄: コスト側(CostListEditor)と同じ「場所ごとに実アクションコードを
-                      切り替える」ボタン。押すと下に📥場所（+進化元/テイマー/セキュリティなら
-                      📍位置）の選択が現れる */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isDiscardActive) return;
-                      const z = DISCARD_ZONE_MAP.find((zz) => zz.code === 'hand')!;
-                      updateEffect({ action: z.action, target: z.target || effectTarget, fromZones: [z.code], value: '' });
-                    }}
-                    style={{
-                      padding: '3px 9px', borderRadius: 5,
-                      border: isDiscardActive ? '2px solid #1976d2' : '1px solid #bbb',
-                      background: isDiscardActive ? '#1976d2' : '#f5f5f5',
-                      color: isDiscardActive ? '#fff' : '#333',
-                      fontWeight: isDiscardActive ? 'bold' : 'normal',
-                      cursor: 'pointer', fontSize: 11,
-                    }}
-                  >
-                    破棄
-                  </button>
                   {/* 〇〇に置く: コスト側(CostListEditor)と同じ「置き場所ごとに実アクション
                       コード・対象を切り替える」ボタン */}
                   <button

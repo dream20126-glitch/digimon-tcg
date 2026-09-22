@@ -1722,6 +1722,7 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'deck_open', label: 'デッキオープン' },
   { code: 'recover', label: 'リカバリー' },
   { code: 'evolve', label: '進化' },
+  { code: 'dedigivolve', label: '退化' },
   { code: 'link', label: 'リンク' },
   { code: 'attack', label: 'アタック' },
   { code: 'block', label: 'ブロック' },

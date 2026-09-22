@@ -6859,6 +6859,9 @@ function showAltActionChoice(labels, callback) {
 function runRecipe(steps, ctx, callback) {
   const store = {}; // ステップ間データ受け渡し用
   let idx = 0;
+  // 前回のレシピ実行で残った _lastAttemptedTarget（same_targetフォールバック用）を
+  // 持ち越さないようここでリセットする（無関係な過去の効果を誤って参照しないため）
+  if (ctx.bs) delete ctx.bs._lastAttemptedTarget;
   console.log('[runRecipe]', 'card=' + (ctx.card && ctx.card.name), 'steps.length=' + (steps && steps.length), 'isArray=' + Array.isArray(steps), 'first=', steps && steps[0]);
 
   function nextStep(success) {
@@ -6990,10 +6993,24 @@ function executeRecipeStep(step, ctx, store, callback) {
   if (step.target === 'same_target' || step.target === 'picked') {
     const picked = ctx.bs && ctx.bs._lastPickedCard;
     if (!picked) {
-      ctx.addLog && ctx.addLog('⚠ 直前選択カードがないため対象なし（same_target）');
-      callback && callback();
-      return;
-    }
+      // フォールバック: 直前ステップがコスト不払い等で対象選択自体に到達しなかった場合
+      // （例:「その後」で、コスト付きの前段effectを使わなかったため後段の強制effectが
+      // 巻き添えで対象なしになるケース）、その未到達ステップが本来使うはずだった対象指定
+      // (_lastAttemptedTarget、コスト失敗時にセットされる) で独立して選び直す。
+      // これにより「コスト付き効果を先に置き、その後の強制効果がそのデジモンを参照する」
+      // という組み方でも、コストを使わなかった場合に強制効果側が対象を失わずに済む
+      const fallbackTarget = ctx.bs && ctx.bs._lastAttemptedTarget;
+      if (fallbackTarget && fallbackTarget !== 'same_target' && fallbackTarget !== 'picked') {
+        console.log('[same_target] no picked card, falling back to _lastAttemptedTarget=' + fallbackTarget);
+        step = Object.assign({}, step, { target: fallbackTarget });
+        delete ctx.bs._lastAttemptedTarget; // 一度使ったら消費（後続ステップへの誤流用防止）
+        // ここで return せず、下の通常の対象解決（own:1/opponent:1等、各actionのswitch内）に委ねる
+      } else {
+        ctx.addLog && ctx.addLog('⚠ 直前選択カードがないため対象なし（same_target）');
+        callback && callback();
+        return;
+      }
+    } else {
     const _ownArea = (ctx.side === 'player' ? ctx.bs.player.battleArea : ctx.bs.ai.battleArea) || [];
     const _oppArea = (ctx.side === 'player' ? ctx.bs.ai.battleArea : ctx.bs.player.battleArea) || [];
     const _ownIdx = _ownArea.indexOf(picked);
@@ -7011,6 +7028,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       ctx.addLog && ctx.addLog('⚠ 直前選択カードが場にいません（same_target）');
       callback && callback();
       return;
+    }
     }
   }
 
@@ -7043,6 +7061,11 @@ function executeRecipeStep(step, ctx, store, callback) {
       executeRecipeStep(costStep, ctx, store, (success) => {
         if (success === false) {
           console.log('[cost] cost FAILED → aborting main');
+          // このステップ自身は対象選択まで到達しなかったため、後続の「その後」ステップが
+          // target:'same_target' で参照しようとしても _lastPickedCard は空のまま。
+          // 本来このステップが使うはずだった対象指定を控えておき、same_target解決時の
+          // フォールバック（独立して選び直す）に使えるようにする
+          if (ctx.bs && step.target) ctx.bs._lastAttemptedTarget = step.target;
           callback && callback(false);
           return;
         }

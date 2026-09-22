@@ -1318,6 +1318,40 @@ function onRemoteCommand(cmd) {
       dediShowAnim();
       break;
     }
+    case 'fx_detach_stack': {
+      // 重ねられているカードの一部だけを任意ゾーンへ移動（fx_dedigivolveの汎用版。
+      // 破棄先固定でなくdestZone/destPositionで任意先に対応。例: BT26-033「離れない」コスト）
+      const tgtPlayer = cmd.onSide === 'opp' ? bs.ai : bs.player;
+      const tgt = tgtPlayer.battleArea[cmd.targetIdx];
+      if (!tgt) break;
+      const removeCount = cmd.removeCount || 1;
+      const seq = [tgt].concat(tgt.stack || []);
+      const take = Math.min(removeCount, seq.length);
+      const removed = cmd.fromBottom ? seq.slice(seq.length - take) : seq.slice(0, take);
+      const remainder = cmd.fromBottom ? seq.slice(0, seq.length - take) : seq.slice(take);
+      const newCarrier = remainder.length > 0 ? remainder[0] : null;
+      if (newCarrier) {
+        const promoted = newCarrier !== tgt;
+        newCarrier.stack = remainder.slice(1);
+        if (promoted) {
+          newCarrier.suspended = !!tgt.suspended;
+          newCarrier.buffs = [];
+          newCarrier._permEffects = {};
+          newCarrier.summonedThisTurn = false;
+          newCarrier._usedEffects = [];
+          newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
+          newCarrier.dp = newCarrier.baseDp;
+          newCarrier.dpModifier = 0;
+        }
+      }
+      tgtPlayer.battleArea[cmd.targetIdx] = newCarrier;
+      const destArr = cmd.destZone === 'security' ? tgtPlayer.security : tgtPlayer.trash;
+      removed.forEach((c) => { if (cmd.destPosition === 'bottom') destArr.push(c); else destArr.unshift(c); });
+      addLog('🛡 「' + tgt.name + '」に重ねられているカードを' + removed.length + '枚移動' + (newCarrier ? ' (新形態: ' + newCarrier.name + ')' : ' (完全に離れる)'));
+      try { if (window._applyPermanentEffects) window._applyPermanentEffects(); } catch(_) {}
+      renderAll();
+      break;
+    }
     case 'fx_evoDiscard': {
       // 進化元破棄：自分のカードのstackを実際に操作
       const discardedCards = [];

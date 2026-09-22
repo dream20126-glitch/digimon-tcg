@@ -9563,6 +9563,60 @@ function executeRecipeStep(step, ctx, store, callback) {
       // ":N" 接尾辞（例: "self_card:1"）が付いていても self 扱いにする
       const _posTgtBase = String(step.target || '').split(':')[0];
       const isSelf = _posTgtBase === 'self' || _posTgtBase === 'self_card';
+
+      // from:"stacked_cards"（重ねられているカード）: 退化と同じ「本体+進化元の連番から
+      // 先頭N枚を切り出し、残りの先頭を新キャリアに昇格」方式だが、破棄先が固定トラッシュ
+      // ではなく任意のposition（例: セキュリティの上/下）になる汎用版。例: BT26-033
+      // ユピテルモン「このデジモンに重ねられているカードを上から1枚セキュリティの下に置く」
+      if (isSelf && step.from === 'stacked_cards' && ctx.card) {
+        const src = ctx.card;
+        const seq = [src].concat(src.stack || []);
+        const n = Math.max(1, step.value || 1);
+        const fromBottom = step.evo_source_position === 'bottom';
+        const take = Math.min(n, seq.length);
+        const removed = fromBottom ? seq.slice(seq.length - take) : seq.slice(0, take);
+        const remainder = fromBottom ? seq.slice(0, seq.length - take) : seq.slice(take);
+        const newCarrier = remainder.length > 0 ? remainder[0] : null;
+        if (newCarrier) {
+          const promoted = newCarrier !== src;
+          newCarrier.stack = remainder.slice(1);
+          if (promoted) {
+            newCarrier.suspended = !!src.suspended;
+            newCarrier.buffs = [];
+            newCarrier._permEffects = {};
+            newCarrier.summonedThisTurn = false;
+            newCarrier._usedEffects = [];
+            newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
+            newCarrier.dp = newCarrier.baseDp;
+            newCarrier.dpModifier = 0;
+          }
+        }
+        const idx = player.battleArea.indexOf(src);
+        if (idx !== -1) player.battleArea[idx] = newCarrier;
+        const toBottom = step.position === 'bottom';
+        removed.forEach((c) => { if (toBottom) player.security.push(c); else player.security.unshift(c); });
+        ctx.addLog && ctx.addLog('🛡 「' + src.name + '」に重ねられているカードを' + removed.length + '枚、セキュリティの' + (toBottom ? '下' : '上') + 'に置く' + (newCarrier && newCarrier !== src ? '（新形態: ' + newCarrier.name + '）' : (!newCarrier ? '（完全に離れる）' : '')));
+        ctx.renderAll();
+        if (idx !== -1 && window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+          try {
+            window._onlineSendCommand({
+              type: 'fx_detach_stack',
+              targetIdx: idx,
+              onSide: 'self',
+              removeCount: removed.length,
+              fromBottom,
+              destZone: 'security',
+              destPosition: toBottom ? 'bottom' : 'top',
+            });
+            if (window._markEvoModified) window._markEvoModified('player', idx);
+            if (window._onlineSendStateSync) window._onlineSendStateSync();
+          } catch (_) {}
+        }
+        try { applyPermanentEffects(ctx.bs, ctx.side, ctx); } catch (_) {}
+        callback();
+        break;
+      }
+
       const sd = !isSelf && step.card ? store[step.card] : null;
       const cardToPlace = isSelf ? ctx.card : (sd && (sd.card || sd));
       if (!cardToPlace) { callback(); break; }

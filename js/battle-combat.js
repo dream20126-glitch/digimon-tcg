@@ -688,8 +688,9 @@ function _resolveEvolveMatch(evoCard, baseCard) {
 export function canEvolveOnto(evoCard, baseCard) {
   // 代替進化（alt_evolve / 進化条件を無視）が成立するなら進化可
   try { if (_getAltEvolve(evoCard, baseCard, bs, 'player')) return true; } catch (_) {}
-  // アプ合体（app_gattai_evolve）が成立するなら進化可（バトルエリアのみ。公式ルール8-4）
-  try { if (_getAppGattaiEvolve(evoCard, baseCard, bs, 'player')) return true; } catch (_) {}
+  // アプ合体（app_gattai_evolve）は通常進化のドラッグ&ドロップ経路には含めない。
+  // 公式ルール8-4通りバトルエリア本体の長押しメニュー（🔗アプ合体ボタン）専用の
+  // 別ルートとして扱う（リンクカードの選択UIを挟むため。startAppGattaiMenu参照）
   return _resolveEvolveMatch(evoCard, baseCard) !== null;
 }
 
@@ -1019,10 +1020,6 @@ export function doEvolve(card, handIdx, slotIdx) {
   const base = bs.player.battleArea[slotIdx];
   if (!base) return;
   if (card.evolveCost === null) { addLog('🚨 「' + card.name + '」は進化できません‼'); return; }
-  // アプ合体（app_gattai_evolve）: 本体+本体にリンクしているカードから進化する特殊ルート。
-  // 通常の進化条件チェック・進化コスト計算とは別建て（公式ルール8-4）
-  const _appGattai = _getAppGattaiEvolve(card, base, bs, 'player');
-  if (_appGattai) { _finishAppGattaiEvolve(card, base, handIdx, slotIdx, _appGattai); return; }
   if (!canEvolveOnto(card, base)) { addLog('🚨 進化条件を満たしていません‼（' + card.evolveCond + '）'); return; }
 
   // 進化条件が複数(OR)ある場合、成立したclauseに対応するコスト（進化コスト欄の「・」区切り）を選ぶ
@@ -1114,7 +1111,37 @@ function _finishDoEvolve(card, base, handIdx, slotIdx, cost) {
 // 「本体（バトルエリアの指定名称デジモン）+ 本体にリンクしているカード（指定名称）」を
 // 合わせて手札のアプ合体デジモンの進化元とする特殊ルート。通常進化と違い、進化条件
 // （色/Lv/特徴）は無視し、_getAppGattaiEvolveが判定したlinkedPartnersのみを消費する。
-// コストも進化コスト欄ではなく、アプ合体自体に指定されたコスト（appGattai.cost）を使う
+// コストも進化コスト欄ではなく、アプ合体自体に指定されたコスト（appGattai.cost）を使う。
+// ドラッグ&ドロップの通常進化経路（doEvolve/canEvolveOnto）には含めず、バトルエリア
+// 本体の長押しメニュー「🔗 アプ合体」専用ルートとする（battle-render.jsから呼ばれる）
+
+// slotIdxの本体に対して、アプ合体可能な手札カード一覧を返す（🔗ボタンの表示判定用）
+export function getAppGattaiCandidates(slotIdx) {
+  const base = bs.player.battleArea[slotIdx];
+  if (!base) return [];
+  return (bs.player.hand || []).map((c, i) => {
+    let appGattai = null;
+    try { appGattai = _getAppGattaiEvolve(c, base, bs, 'player'); } catch (_) {}
+    return appGattai ? { card: c, handIdx: i, appGattai } : null;
+  }).filter(Boolean);
+}
+
+// 長押しメニュー「🔗 アプ合体」から呼ばれる実行本体。chosenPartnersを指定すると
+// （リンク+1等で候補が複数ある場合にプレイヤーが選んだ部分集合）そのカードのみ消費し、
+// 未指定なら成立している全リンクカードを消費する（候補1枚のみの通常ケース）
+export function doAppGattaiEvolve(handIdx, slotIdx, chosenPartners) {
+  const card = bs.player.hand[handIdx];
+  const base = bs.player.battleArea[slotIdx];
+  if (!card || !base) return;
+  const appGattai = _getAppGattaiEvolve(card, base, bs, 'player');
+  if (!appGattai) { addLog('🚨 アプ合体の条件を満たしていません'); return; }
+  const partners = (Array.isArray(chosenPartners) && chosenPartners.length > 0)
+    ? appGattai.linkedPartners.filter(lc => chosenPartners.includes(lc))
+    : appGattai.linkedPartners;
+  if (partners.length === 0) { addLog('🚨 アプ合体で使用するリンクカードがありません'); return; }
+  _finishAppGattaiEvolve(card, base, handIdx, slotIdx, { cost: appGattai.cost, linkedPartners: partners });
+}
+
 function _finishAppGattaiEvolve(card, base, handIdx, slotIdx, appGattai) {
   const cost = appGattai.cost;
   const partners = appGattai.linkedPartners || [];

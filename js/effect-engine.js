@@ -3274,7 +3274,7 @@ function showCardListPicker(candidates, wantCount, title, callback) {
 
 // ===== 手札選択UI =====
 
-function showHandSelection(hand, validIndices, borderColor, callback) {
+export function showHandSelection(hand, validIndices, borderColor, callback) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:70000;display:flex;flex-direction:column;align-items:center;justify-content:center;';
 

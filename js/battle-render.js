@@ -8,7 +8,7 @@
 import { bs, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { updateScrollArrows, addLog, showConfirm } from './battle-ui.js';
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
-import { isTargetSelecting, hasRecipeTrigger, evoSourceEffectLabel, hasTrainingKeyword } from './effect-engine.js';
+import { isTargetSelecting, hasRecipeTrigger, evoSourceEffectLabel, hasTrainingKeyword, showHandSelection } from './effect-engine.js';
 
 // ===== カード画像ヘルパー =====
 const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
@@ -418,6 +418,12 @@ function showLongpressMenu(card, slotIdx, el) {
   if (hasTrainingKeyword(card) && !_wasAlreadySuspended && !card.cantRest) {
     html += `<button class="lp-action-btn lp-effect-btn" onclick="activateTraining(${slotIdx}, false)">🎓 トレーニング</button>`;
   }
+  // アプ合体（公式ルール8-4）: このカードを本体として使えるアプ合体候補が手札にあれば表示。
+  // レストの要否は無い（通常進化と同じ）ため suspended 状態に関わらず表示する
+  const appGattaiCandidates = (window._getAppGattaiCandidates && window._getAppGattaiCandidates(slotIdx)) || [];
+  if (appGattaiCandidates.length > 0) {
+    html += `<button class="lp-action-btn lp-effect-btn" onclick="startAppGattaiMenu(${slotIdx})">🔗 アプ合体</button>`;
+  }
   html += `<button class="lp-action-btn lp-cancel-btn" onclick="cancelLongpress(${slotIdx})">✕ キャンセル</button>`;
   btns.innerHTML = html;
 
@@ -656,6 +662,100 @@ window.activateTraining = function(slotIdx, fromIkusei) {
     renderAll();
   };
 };
+
+// アプ合体（公式ルール8-4）: 長押しメニュー「🔗 アプ合体」から呼ばれる。
+// 1) 手札の候補が複数あれば選ばせる 2) 消費するリンクカードが複数あれば選ばせる
+// （通常はどちらも1択なので即実行される。リンク+1等で候補が増えたときのための選択UI）
+window.startAppGattaiMenu = function(slotIdx) {
+  hideLongpressMenu();
+  const card = bs.player.battleArea[slotIdx];
+  if (card && !_wasAlreadySuspended) card.suspended = false;
+  renderAll();
+  const candidates = (window._getAppGattaiCandidates && window._getAppGattaiCandidates(slotIdx)) || [];
+  if (candidates.length === 0) return;
+
+  const proceedWithHandCard = (chosen) => {
+    const partners = (chosen.appGattai && chosen.appGattai.linkedPartners) || [];
+    if (partners.length <= 1) {
+      if (window._doAppGattaiEvolve) window._doAppGattaiEvolve(chosen.handIdx, slotIdx, partners);
+      return;
+    }
+    showLinkedPartnerPicker(partners, (pickedPartners) => {
+      if (!pickedPartners || pickedPartners.length === 0) return; // キャンセル
+      if (window._doAppGattaiEvolve) window._doAppGattaiEvolve(chosen.handIdx, slotIdx, pickedPartners);
+    });
+  };
+
+  if (candidates.length === 1) { proceedWithHandCard(candidates[0]); return; }
+  showHandSelection(bs.player.hand, candidates.map(c => c.handIdx), '#ff00fb', (handIdx) => {
+    const chosen = candidates.find(c => c.handIdx === handIdx);
+    if (chosen) proceedWithHandCard(chosen);
+  });
+};
+
+// アプ合体で消費するリンクカードの選択UI（候補が2枚以上の場合のみ呼ばれる。
+// 1枚以上を選択させ、「決定」で確定。「キャンセル」はcallback(null)）
+function showLinkedPartnerPicker(candidates, callback) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:70000;display:flex;flex-direction:column;align-items:center;justify-content:center;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#ff00fb;font-size:16px;font-weight:bold;margin-bottom:16px;text-shadow:0 0 10px #ff00fb;';
+  title.innerText = '🔗 アプ合体で使うリンクカードを選んでください（1枚以上）';
+  overlay.appendChild(title);
+
+  const cardRow = document.createElement('div');
+  cardRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:90%;';
+  overlay.appendChild(cardRow);
+
+  const picked = [];
+  candidates.forEach((card) => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'border:2px solid #555;border-radius:8px;padding:4px;text-align:center;width:80px;cursor:pointer;transition:all 0.2s;';
+    const img = document.createElement('img');
+    img.src = card.imageUrl || card.imgSrc || '';
+    img.alt = card.name;
+    img.style.cssText = 'width:72px;height:auto;border-radius:4px;';
+    img.onerror = function () { this.style.display = 'none'; };
+    wrap.appendChild(img);
+    const name = document.createElement('div');
+    name.style.cssText = 'color:#fff;font-size:10px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    name.innerText = card.name;
+    wrap.appendChild(name);
+    wrap.addEventListener('click', () => {
+      const pi = picked.indexOf(card);
+      if (pi >= 0) { picked.splice(pi, 1); wrap.style.borderColor = '#555'; wrap.style.boxShadow = ''; }
+      else { picked.push(card); wrap.style.borderColor = '#ff00fb'; wrap.style.boxShadow = '0 0 12px #ff00fb'; }
+      confirmBtn.disabled = picked.length === 0;
+      confirmBtn.style.opacity = picked.length === 0 ? '0.4' : '1';
+    });
+    cardRow.appendChild(wrap);
+  });
+
+  const actionRow = document.createElement('div');
+  actionRow.style.cssText = 'display:flex;gap:10px;margin-top:16px;';
+  const confirmBtn = document.createElement('button');
+  confirmBtn.innerText = '✓ 決定';
+  confirmBtn.disabled = true;
+  confirmBtn.style.cssText = 'background:#ff00fb;color:#fff;border:none;padding:8px 20px;border-radius:8px;font-size:14px;cursor:pointer;opacity:0.4;';
+  confirmBtn.addEventListener('click', () => {
+    if (picked.length === 0) return;
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    callback(picked.slice());
+  });
+  const cancelBtn = document.createElement('button');
+  cancelBtn.innerText = '✕ キャンセル';
+  cancelBtn.style.cssText = 'background:#333;color:#fff;border:1px solid #666;padding:8px 20px;border-radius:8px;font-size:14px;cursor:pointer;';
+  cancelBtn.addEventListener('click', () => {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    callback(null);
+  });
+  actionRow.appendChild(confirmBtn);
+  actionRow.appendChild(cancelBtn);
+  overlay.appendChild(actionRow);
+
+  document.body.appendChild(overlay);
+}
 
 // ===== テイマーエリア描画 =====
 function renderTamerRows() {

@@ -389,7 +389,12 @@ export function fxDeckOpen(cards, callback) {
 //  9. アプ合体演出
 // =====================================================
 
-export function fxAppGattai(card1, card2, resultCard, callback) {
+// baseCard: 合体元のバトルエリアカード（本体）, partnerCards: 消費するリンクカードの配列
+// （1枚以上）, resultCard: 合体後のカード, cost: アプ合体コスト（表示のみ、省略可）
+export function fxAppGattai(baseCard, partnerCards, resultCard, cost, callback) {
+  if (typeof cost === 'function') { callback = cost; cost = undefined; }
+  const partners = (partnerCards || []).filter(Boolean);
+  const allCards = [baseCard, ...partners];
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:55000;display:flex;align-items:center;justify-content:center;flex-direction:column;';
 
@@ -399,7 +404,7 @@ export function fxAppGattai(card1, card2, resultCard, callback) {
   overlay.appendChild(label);
 
   const container = document.createElement('div');
-  container.style.cssText = 'display:flex;gap:20px;align-items:center;justify-content:center;';
+  container.style.cssText = 'display:flex;gap:16px;align-items:center;justify-content:center;flex-wrap:wrap;max-width:90vw;';
 
   function makeCard(card, id) {
     const div = document.createElement('div');
@@ -409,25 +414,48 @@ export function fxAppGattai(card1, card2, resultCard, callback) {
     div.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#ff00fb;padding:8px;font-size:10px;">${card?.name || '?'}</div>`;
     return div;
   }
+  function makePlus() {
+    const plus = document.createElement('div');
+    plus.style.cssText = 'font-size:16px;color:#ff00fb;font-weight:bold;opacity:0;transition:opacity 0.3s;';
+    plus.innerText = '＋';
+    return plus;
+  }
 
-  const c1 = makeCard(card1, '_ap1'); c1.style.transform = 'translateX(-40px)';
-  const plus = document.createElement('div');
-  plus.style.cssText = 'font-size:16px;color:#ff00fb;font-weight:bold;opacity:0;transition:opacity 0.3s;';
-  plus.innerText = '＋';
-  const c2 = makeCard(card2, '_ap2'); c2.style.transform = 'translateX(40px)';
+  const cardEls = allCards.map((c, i) => {
+    const el = makeCard(c, '_ap' + i);
+    el.style.transform = 'translateX(' + ((i - (allCards.length - 1) / 2) * 40) + 'px)';
+    return el;
+  });
+  const plusEls = [];
+  cardEls.forEach((el, i) => {
+    container.appendChild(el);
+    if (i < cardEls.length - 1) {
+      const plus = makePlus();
+      plusEls.push(plus);
+      container.appendChild(plus);
+    }
+  });
 
-  container.appendChild(c1); container.appendChild(plus); container.appendChild(c2);
   overlay.appendChild(container);
   document.body.appendChild(overlay);
 
-  setTimeout(() => { c1.style.opacity = '1'; c1.style.transform = 'translateX(0)'; }, 300);
-  setTimeout(() => { plus.style.opacity = '1'; }, 900);
-  setTimeout(() => { c2.style.opacity = '1'; c2.style.transform = 'translateX(0)'; }, 1200);
+  cardEls.forEach((el, i) => {
+    setTimeout(() => { el.style.opacity = '1'; el.style.transform = 'translateX(0)'; }, 300 + i * 300);
+  });
+  plusEls.forEach((plus, i) => {
+    setTimeout(() => { plus.style.opacity = '1'; }, 900 + i * 300);
+  });
+  const convergeDelay = 900 + plusEls.length * 300 + 1000;
   setTimeout(() => {
-    c1.style.transition = 'all 1s ease'; c2.style.transition = 'all 1s ease'; plus.style.opacity = '0';
-    c1.style.transform = 'translate(60px,0) rotate(360deg) scale(0)'; c1.style.opacity = '0';
-    c2.style.transform = 'translate(-60px,0) rotate(-360deg) scale(0)'; c2.style.opacity = '0';
-  }, 2200);
+    cardEls.forEach((el, i) => {
+      el.style.transition = 'all 1s ease';
+      const dir = i % 2 === 0 ? 1 : -1;
+      el.style.transform = 'translate(' + (dir * 60) + 'px,0) rotate(' + (dir * 360) + 'deg) scale(0)';
+      el.style.opacity = '0';
+    });
+    plusEls.forEach(plus => { plus.style.opacity = '0'; });
+  }, convergeDelay);
+  const resultDelay = convergeDelay + 1400;
   setTimeout(() => {
     container.innerHTML = '';
     container.style.flexDirection = 'column';
@@ -436,10 +464,11 @@ export function fxAppGattai(card1, card2, resultCard, callback) {
     container.appendChild(result);
     const rl = document.createElement('div');
     rl.style.cssText = 'margin-top:8px;font-size:11px;color:#ff00fb;font-weight:bold;';
-    rl.innerText = 'アプ合体完了！';
+    rl.innerText = 'アプ合体完了！' + (cost != null ? '（コスト' + cost + '）' : '');
     container.appendChild(rl);
-  }, 3600);
-  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 5500);
+  }, resultDelay);
+  const totalTime = resultDelay + 1900;
+  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, totalTime);
 }
 
 // =====================================================
@@ -1029,7 +1058,7 @@ export function getFxRunners() {
 
     // --- 特殊演出 ---
     "アプ合体": (opts, cb) => {
-      fxAppGattai(opts.card1, opts.card2, opts.resultCard, cb);
+      fxAppGattai(opts.baseCard, opts.partnerCards, opts.resultCard, opts.cost, cb);
     },
     "ジョグレス進化": (opts, cb) => {
       fxJogressEvolve(opts.card1, opts.card2, opts.resultCard, cb);

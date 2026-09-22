@@ -3687,7 +3687,7 @@ export function applyPermanentEffects(bs, side, context) {
       const turnKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
       const turnTextMap = { 'during_own_turn': '【自分のターン】', 'during_opp_turn': '【相手のターン】', 'during_any_turn': '【お互いのターン】' };
       turnKeys.forEach(tk => {
-        const tkSteps = _lookupTriggerSteps(card.recipe, tk);
+        const tkSteps = _lookupTriggerSteps(card.recipe, tk, card);
         if (!tkSteps) return;
         // 進化元効果のみのカード（メイン効果にターントリガーなし）はスキップ
         const triggerText = turnTextMap[tk];
@@ -3812,7 +3812,14 @@ export function applyPermanentEffects(bs, side, context) {
       // passiveキーワードフラグ（バトルエリアにいるカード自身に適用）
       // ※evo_source内のpassiveはここでは適用しない（④で処理）
       if (card.recipe.passive) {
-        const passives = Array.isArray(card.recipe.passive) ? card.recipe.passive : [card.recipe.passive];
+        let passives = Array.isArray(card.recipe.passive) ? card.recipe.passive : [card.recipe.passive];
+        // 継承（Inherit）: 進化元の指定カードのpassiveフラグも合わせて適用する
+        // （on_play/on_evolve等のトリガー効果は_lookupTriggerSteps側で別途処理）
+        const _inheritEntry = passives.find(p => p && p.flag === 'Inherit');
+        if (_inheritEntry) {
+          const _inheritedPassives = _lookupInheritedPassives(card, _inheritEntry);
+          if (_inheritedPassives.length > 0) passives = passives.concat(_inheritedPassives);
+        }
         passives.forEach(p => {
           const flag = typeof p === 'string' ? p : (p.flag || p.action || '');
           if (!card._permEffects) card._permEffects = {};
@@ -5679,6 +5686,37 @@ function _lookupTriggerStepsBase(recipeObj, triggerCode) {
   return result;
 }
 
+// 継承（Inherit）: designated.condition（例:"cond_name:ケレスモン"）に、進化元の中で
+// 最も上（stack[0]から順に走査）から最初にマッチしたカード自身のレシピを取得する。
+// ≪継承≫自身はここで除外（多重継承の無限ループ防止＋「≪継承≫以外の効果」の通り）。
+// designatedが無ければ無条件（stack先頭）を継承元とする
+function _getInheritedSourceRecipe(card, passiveEntry) {
+  if (!card || !Array.isArray(card.stack) || card.stack.length === 0) return null;
+  const condStr = passiveEntry && passiveEntry.designated && passiveEntry.designated.condition;
+  const conds = condStr ? parseRecipeCondition(condStr) : [];
+  let source = null;
+  for (const s of card.stack) {
+    if (!s) continue;
+    if (conds.length === 0 || checkConditions(conds, s, null, null)) { source = s; break; }
+  }
+  if (!source || !source.recipe) return null;
+  try {
+    const raw = typeof source.recipe === 'string' ? source.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : source.recipe;
+    const srcRecipes = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Object.assign({}, srcRecipes, {
+      passive: Array.isArray(srcRecipes.passive) ? srcRecipes.passive.filter(pp => pp && pp.flag !== 'Inherit') : srcRecipes.passive,
+    });
+  } catch (_) { return null; }
+}
+function _lookupInheritedSteps(card, passiveEntry, triggerCode) {
+  const srcFiltered = _getInheritedSourceRecipe(card, passiveEntry);
+  return srcFiltered ? _lookupTriggerSteps(srcFiltered, triggerCode) : null;
+}
+function _lookupInheritedPassives(card, passiveEntry) {
+  const srcFiltered = _getInheritedSourceRecipe(card, passiveEntry);
+  return (srcFiltered && Array.isArray(srcFiltered.passive)) ? srcFiltered.passive : [];
+}
+
 // _lookupTriggerStepsBase に加えて、recipeObj.passive（{flag, value, designated}[]）の
 // 各キーワードにレシピテンプレートが登録されていれば、そのテンプレート内の該当トリガー分も
 // マージする（カードが「対象」欄を持つキーワードを選んでいる場合は designated を差し込む）。
@@ -5690,12 +5728,18 @@ function _lookupTriggerStepsBase(recipeObj, triggerCode) {
 // カード自身のアタック時効果を優先して解決し終えてから、キーワード側は
 // fireKeywordAttackEffects で完全に別の確認ダイアログとして発動させたいため、
 // on_attack のみここでのマージ対象から除外する
+// card（省略可）: 継承（Inherit）フラグ評価用。card.stackから継承元を探すため必要
 const _NO_MERGE_TRIGGER_CODES = new Set(['on_attack']);
-function _lookupTriggerSteps(recipeObj, triggerCode) {
+function _lookupTriggerSteps(recipeObj, triggerCode, card) {
   let result = _lookupTriggerStepsBase(recipeObj, triggerCode);
   if (recipeObj && Array.isArray(recipeObj.passive) && !_NO_MERGE_TRIGGER_CODES.has(triggerCode)) {
     const dict = getKeywordDict();
     for (const p of recipeObj.passive) {
+      if (p && p.flag === 'Inherit') {
+        const inherited = card && _lookupInheritedSteps(card, p, triggerCode);
+        if (inherited) result = result ? result.concat(inherited) : inherited;
+        continue;
+      }
       const kw = p && p.flag && dict[p.flag];
       if (!kw) continue;
       const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
@@ -5750,7 +5794,7 @@ function getRecipeForCard(card, triggerCode) {
   try {
     const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
     const recipes = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return _lookupTriggerSteps(recipes, triggerCode) || null;
+    return _lookupTriggerSteps(recipes, triggerCode, card) || null;
   } catch(e) { return null; }
 }
 
@@ -5779,7 +5823,7 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
       return null;
     }
     // メインコンテキスト: top-level のみ
-    const mainSteps = _lookupTriggerSteps(recipes, triggerCode);
+    const mainSteps = _lookupTriggerSteps(recipes, triggerCode, card);
     if (mainSteps) return mainSteps;
     // セキュリティ効果でuse_main_effectの場合、mainレシピを返す
     if (triggerCode === 'security' && recipes['main']) {
@@ -10852,7 +10896,7 @@ export function hasRecipeTrigger(card, triggerCode) {
     const r = typeof card.recipe === 'string'
       ? JSON.parse(card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, ''))
       : card.recipe;
-    if (_lookupTriggerSteps(r, triggerCode)) return true;
+    if (_lookupTriggerSteps(r, triggerCode, card)) return true;
     if (r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode)) return true;
     return false;
   } catch (_) { return false; }
@@ -10978,6 +11022,32 @@ export function getAltEvolve(evoCard, baseCard, bs, side) {
              : (entry.value != null) ? entry.value
              : (evoCard.evolveCost || 0);
     return { cost: parseInt(_c, 10) || 0 };
+  }
+  return null;
+}
+
+// recipe の app_gattai_evolve（アプ合体）が baseCard に対して成立するか。
+// 公式ルール8-4: 指定されたカード群のうち2種の組み合わせによるリンク状態のデジモンから
+// 進化できる（baseCard自身が指定名称のいずれかで、かつ指定名称の別のカードが
+// リンクされている必要がある）。コストはカード固有のアプ合体コスト（進化コストとは別）。
+// app_gattai_evolve: [{ value:コスト, names:[名称1,名称2,...] }]
+// 成立すれば { cost, names, linkedPartners } を返す（linkedPartners=実際に消費するリンクカード全て）。
+export function getAppGattaiEvolve(evoCard, baseCard, bs, side) {
+  if (!evoCard || !baseCard) return null;
+  const recipe = _parseCardRecipe(evoCard);
+  const list = recipe && recipe.app_gattai_evolve;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  for (const entry of list) {
+    if (!entry) continue;
+    const names = Array.isArray(entry.names) ? entry.names
+      : String(entry.names || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (names.length < 2) continue;
+    const baseNameMatch = names.find(n => cardHasName(baseCard, n, false));
+    if (!baseNameMatch) continue;
+    const linkedPartners = (baseCard.linkedCards || []).filter(lc =>
+      lc && names.some(n => n !== baseNameMatch && cardHasName(lc, n, false)));
+    if (linkedPartners.length === 0) continue;
+    return { cost: parseInt(entry.value, 10) || 0, names, linkedPartners };
   }
   return null;
 }

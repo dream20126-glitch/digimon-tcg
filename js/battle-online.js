@@ -454,8 +454,14 @@ function onRemoteCommand(cmd) {
     case 'evolve': {
       const dummyEvolved = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '', level: '', dp: 0 };
       const dummyBase = { name: cmd.baseName || '???', imgSrc: '' };
-      addLog('🎮 相手が「' + cmd.baseName + '」→「' + cmd.cardName + '」に進化！');
-      if (m.showEvolveEffect) m.showEvolveEffect(cmd.evolveCost || 0, cmd.baseName || '', dummyBase, dummyEvolved, () => {});
+      if (cmd.appGattai) {
+        const dummyPartners = (cmd.partnerNames || []).map(n => ({ name: n, imgSrc: '' }));
+        addLog('🎮 相手が「' + cmd.baseName + '」＋' + dummyPartners.map(p => '「' + p.name + '」').join('＋') + ' →「' + cmd.cardName + '」アプ合体！');
+        if (m.showAppGattaiEffect) m.showAppGattaiEffect(cmd.evolveCost || 0, dummyBase, dummyPartners, dummyEvolved, () => {});
+      } else {
+        addLog('🎮 相手が「' + cmd.baseName + '」→「' + cmd.cardName + '」に進化！');
+        if (m.showEvolveEffect) m.showEvolveEffect(cmd.evolveCost || 0, cmd.baseName || '', dummyBase, dummyEvolved, () => {});
+      }
       break;
     }
     case 'hatch': {

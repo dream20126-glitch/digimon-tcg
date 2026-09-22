@@ -8,10 +8,10 @@
 import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
-import { fxLinkEffect } from './battle-fx.js';
+import { fxLinkEffect, fxAppGattai } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -688,6 +688,8 @@ function _resolveEvolveMatch(evoCard, baseCard) {
 export function canEvolveOnto(evoCard, baseCard) {
   // 代替進化（alt_evolve / 進化条件を無視）が成立するなら進化可
   try { if (_getAltEvolve(evoCard, baseCard, bs, 'player')) return true; } catch (_) {}
+  // アプ合体（app_gattai_evolve）が成立するなら進化可（バトルエリアのみ。公式ルール8-4）
+  try { if (_getAppGattaiEvolve(evoCard, baseCard, bs, 'player')) return true; } catch (_) {}
   return _resolveEvolveMatch(evoCard, baseCard) !== null;
 }
 
@@ -1017,6 +1019,10 @@ export function doEvolve(card, handIdx, slotIdx) {
   const base = bs.player.battleArea[slotIdx];
   if (!base) return;
   if (card.evolveCost === null) { addLog('🚨 「' + card.name + '」は進化できません‼'); return; }
+  // アプ合体（app_gattai_evolve）: 本体+本体にリンクしているカードから進化する特殊ルート。
+  // 通常の進化条件チェック・進化コスト計算とは別建て（公式ルール8-4）
+  const _appGattai = _getAppGattaiEvolve(card, base, bs, 'player');
+  if (_appGattai) { _finishAppGattaiEvolve(card, base, handIdx, slotIdx, _appGattai); return; }
   if (!canEvolveOnto(card, base)) { addLog('🚨 進化条件を満たしていません‼（' + card.evolveCond + '）'); return; }
 
   // 進化条件が複数(OR)ある場合、成立したclauseに対応するコスト（進化コスト欄の「・」区切り）を選ぶ
@@ -1102,6 +1108,70 @@ function _finishDoEvolve(card, base, handIdx, slotIdx, cost) {
       }
     }, { deferDismiss: true });
   });
+}
+
+// ===== アプ合体（公式ルール8-4） =====
+// 「本体（バトルエリアの指定名称デジモン）+ 本体にリンクしているカード（指定名称）」を
+// 合わせて手札のアプ合体デジモンの進化元とする特殊ルート。通常進化と違い、進化条件
+// （色/Lv/特徴）は無視し、_getAppGattaiEvolveが判定したlinkedPartnersのみを消費する。
+// コストも進化コスト欄ではなく、アプ合体自体に指定されたコスト（appGattai.cost）を使う
+function _finishAppGattaiEvolve(card, base, handIdx, slotIdx, appGattai) {
+  const cost = appGattai.cost;
+  const partners = appGattai.linkedPartners || [];
+  if (_onlineMode && _sendCommand) {
+    _sendCommand({
+      type: 'evolve', handIdx, slotIdx, cardName: card.name, baseName: base.name || '',
+      cardImg: card.imgSrc || '', evolveCost: cost, appGattai: true,
+      partnerNames: partners.map(p => p.name || '?'),
+    });
+  }
+  const evolved = Object.assign({}, card, {
+    type: card.type === 'デュアル' ? 'デジモン' : card.type,
+    _noMainAbility: card.type === 'デュアル',
+    suspended: base.suspended,
+    summonedThisTurn: base.summonedThisTurn,
+    buffs: base.buffs || [],
+    dpModifier: base.dpModifier || 0,
+    // 公式8-4-3-3: 選んだデジモンのリンクカードを本体の上に重ね、その上にアプ合体先を重ねる
+    stack: [base].concat(partners).concat(base.stack || []),
+  });
+  evolved.dp = evolved.baseDp + evolved.dpModifier;
+  base.linkedCards = (base.linkedCards || []).filter(lc => !partners.includes(lc));
+  bs.player.battleArea[slotIdx] = evolved;
+  bs.player.hand.splice(handIdx, 1); bs.selHand = null;
+  bs._evolveCountThisTurn = (bs._evolveCountThisTurn || 0) + 1;
+  addLog('🔗 「' + base.name + '」＋' + partners.map(p => '「' + (p.name || '?') + '」').join('＋') + ' →「' + evolved.name + '」アプ合体！（コスト ' + cost + '）');
+  if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
+    try { window._tutorialHideInstruction(); } catch (e) {}
+  }
+  renderAll();
+  showAppGattaiEffect(cost, base, partners, evolved, async () => {
+    // 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定
+    playerSpendMemory(cost, true); // defer=true: ターン終了は保留
+    doDraw('player', 'アプ合体ドロー', async (dismissDraw) => {
+      if (typeof dismissDraw === 'function') dismissDraw();
+      const finishEvolve = () => checkPlayerPendingTurnEnd();
+      if (hasKeyword(evolved, '【進化時】')) {
+        _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
+          renderAll(true);
+          finishEvolve();
+        });
+      } else {
+        finishEvolve();
+      }
+    }, { deferDismiss: true });
+  });
+}
+
+// アプ合体演出（fxAppGattai）を呼び、完了後にonDoneする薄いラッパー。
+// showEvolveEffectと違いテンプレートDOMに依存せず自己完結のオーバーレイを都度生成する
+export function showAppGattaiEffect(cost, baseCard, partnerCards, resultCard, onDone) {
+  try {
+    fxAppGattai(baseCard, partnerCards, resultCard, cost, () => { onDone && onDone(); });
+  } catch (e) {
+    console.error('[showAppGattaiEffect] error', e);
+    onDone && onDone();
+  }
 }
 
 // 効果から直接進化を実行する（進化条件チェック・進化先候補の絞り込みは呼び出し元

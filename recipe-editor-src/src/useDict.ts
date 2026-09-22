@@ -365,6 +365,7 @@ export function useDict(password: string): DictAPI {
     block: 'cant_block',
     destroy: 'cant_destroy',
     redirect_attack: 'cant_redirect_attack',
+    dp_minus: 'cant_dp_minus',
   };
   const enhancedActions = actions.map((a) => {
     let merged = a;

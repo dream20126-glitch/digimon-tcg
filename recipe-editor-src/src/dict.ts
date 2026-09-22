@@ -95,9 +95,6 @@ export const TARGETS = [
   { code: 'target_battle_opponent', label: 'バトルした相手のデジモン' },
   { code: 'own_tamer', label: '自分のテイマー' },
   { code: 'own_security', label: '自分のセキュリティデジモン' },
-  // 重ねられているカード = 対象デジモンの進化元＋一番上のカード（本体）全て
-  { code: 'own_stacked_cards', label: '自分の重ねられているカード' },
-  { code: 'opp_stacked_cards', label: '相手の重ねられているカード' },
   { code: 'player', label: 'プレイヤー' },
   { code: 'own_player', label: '自分のプレイヤー' },
   { code: 'opp_player', label: '相手のプレイヤー' },

@@ -1187,7 +1187,7 @@ function CostListEditor({
                   既存の修飾子コード face_down を c.options に書き込む
                   （「表向き」は指定なし＝デフォルトなので、options を空にするだけ） */}
               {(() => {
-                if (!costActionHasFlag('hasFaceOption')) return null;
+                if (!costActionHasFlag('hasFaceOption') || isDiscardActive) return null;
                 const isFaceDown = (c.options || []).includes('face_down');
                 return (
                   <div style={{ marginTop: 4 }}>
@@ -1526,11 +1526,9 @@ function joinStackSuffix(base: string, pos: StackPos): string {
   return pos ? base + '_' + pos : base;
 }
 
-// 重ねられているカード = 対象デジモンの進化元＋一番上のカード（本体）全て。エンジン未実装
-// （保存はできるが動作しない）。実装時はこの定義自体をエンジン側コードに追加する必要がある
 const TARGET_SEL_UNIMPLEMENTED = new Set([
   'opp_security', 'target_other_own_card', 'target_other_own_tamer', 'opponent_tamer',
-  'own_option', 'opponent_option', 'own_stacked_cards', 'opp_stacked_cards',
+  'own_option', 'opponent_option',
 ]);
 const TARGET_SEL_L1 = [
   { code: '', label: '既定' },
@@ -1547,7 +1545,6 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'tamer', label: 'テイマー' },
     { code: 'option', label: 'オプション' },
     { code: 'security', label: 'セキュリティ' },
-    { code: 'stacked', label: '重ねられているカード' },
   ],
   opp: [
     { code: 'digimon', label: 'デジモン' },
@@ -1556,7 +1553,6 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'option', label: 'オプション' },
     { code: 'player', label: 'プレイヤー' },
     { code: 'security', label: 'セキュリティ' },
-    { code: 'stacked', label: '重ねられているカード' },
   ],
   other_own: [
     { code: 'digimon', label: 'デジモン' },
@@ -1565,8 +1561,8 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
   ],
 };
 const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
-  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:option': 'own_option', 'own:security': 'own_security', 'own:stacked': 'own_stacked_cards',
-  'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:tamer': 'opponent_tamer', 'opp:option': 'opponent_option', 'opp:player': 'opp_player', 'opp:security': 'opp_security', 'opp:stacked': 'opp_stacked_cards',
+  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:option': 'own_option', 'own:security': 'own_security',
+  'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:tamer': 'opponent_tamer', 'opp:option': 'opponent_option', 'opp:player': 'opp_player', 'opp:security': 'opp_security',
   'other_own:digimon': 'target_other_own', 'other_own:card': 'target_other_own_card', 'other_own:tamer': 'target_other_own_tamer',
 };
 const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
@@ -1578,14 +1574,12 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   own_tamer: { l1: 'own', l2: 'tamer' },
   own_option: { l1: 'own', l2: 'option' },
   own_security: { l1: 'own', l2: 'security' },
-  own_stacked_cards: { l1: 'own', l2: 'stacked' },
   opponent: { l1: 'opp', l2: 'digimon' },
   opponent_card: { l1: 'opp', l2: 'card' },
   opponent_tamer: { l1: 'opp', l2: 'tamer' },
   opponent_option: { l1: 'opp', l2: 'option' },
   opp_player: { l1: 'opp', l2: 'player' },
   opp_security: { l1: 'opp', l2: 'security' },
-  opp_stacked_cards: { l1: 'opp', l2: 'stacked' },
   target_other_own: { l1: 'other_own', l2: 'digimon' },
   target_other_own_card: { l1: 'other_own', l2: 'card' },
   target_other_own_tamer: { l1: 'other_own', l2: 'tamer' },
@@ -3587,7 +3581,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 return;
               }
               const last = nextSet[nextSet.length - 1];
-              updateEffect({ action: nextMode === 'cant' ? DOABLE_TO_CANT_LIVE[last] : last });
+              // 「できない」に切り替える際は数値入力欄自体が不要になるため value を破棄する
+              updateEffect({ action: nextMode === 'cant' ? DOABLE_TO_CANT_LIVE[last] : last, value: nextMode === 'cant' ? undefined : editingAlt!.value });
               return;
             }
             if (nextSet.length === 0) {
@@ -3596,18 +3591,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             }
             if (nextSet.length === 1) {
               const code = nextMode === 'cant' ? DOABLE_TO_CANT_LIVE[nextSet[0]] : nextSet[0];
-              onChange({ ...block, action: code, altActions: [], altActionsOp: undefined });
+              onChange({ ...block, action: code, value: nextMode === 'cant' ? undefined : block.value, altActions: [], altActionsOp: undefined });
               return;
             }
             // 2件以上は常に「できない」
             if (nextSet.length === 2 && nextSet.includes('attack') && nextSet.includes('block')) {
-              onChange({ ...block, action: 'cant_attack_block', altActions: [], altActionsOp: undefined });
+              onChange({ ...block, action: 'cant_attack_block', value: undefined, altActions: [], altActionsOp: undefined });
               return;
             }
             const [first, ...rest] = nextSet;
             onChange({
               ...block,
               action: DOABLE_TO_CANT_LIVE[first],
+              value: undefined,
               altActions: rest.map((k) => ({ action: DOABLE_TO_CANT_LIVE[k], target: 'same_target' } as AltAction)),
               altActionsOp: 'and',
             });
@@ -3657,7 +3653,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       裏向きで: place_on_security_top（辞書未登録のハードコード）に加え、
                       辞書側 hasFaceOption=true なアクション（例:「テイマーの下に置く」）でも表示。
                       いずれも効果1・代替アクション（その後/OR/AND）とも同じ作りにする */}
-                  {(showCostCheckboxes || effectAction === 'place_on_security_top' || effectActionHasFaceOption) && (
+                  {(showCostCheckboxes || effectAction === 'place_on_security_top' || (effectActionHasFaceOption && !isDiscardActive)) && (
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                       {showCostCheckboxes && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
@@ -3679,7 +3675,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           登場時効果は発揮しない
                         </label>
                       )}
-                      {(effectAction === 'place_on_security_top' || effectActionHasFaceOption) && (
+                      {(effectAction === 'place_on_security_top' || (effectActionHasFaceOption && !isDiscardActive)) && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
                           <input
                             type="checkbox"
@@ -4065,7 +4061,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     );
                   })()}
                 </div>
-              ) : (
+              ) : CANT_TO_DOABLE_LIVE[effectAction] ? null /* 「できない」(cant_X)系は値入力自体が不要なため非表示 */ : (
                 <div className="field">
                   <label>値</label>
                   <input
@@ -5829,13 +5825,14 @@ const NO_VALUE_CONDS = new Set([
   'cond_dp_highest', 'cond_dp_lowest',
   'cond_face_down', 'cond_face_up', 'cond_designated_name',
   'cond_name_distinct', 'cond_lv_distinct', 'cond_description_distinct', 'cond_color_distinct',
+  'cond_target_stack',
 ]);
 
 // === 条件の「種別」を大分類(カテゴリ)+詳細(バリアント)の2段構成にする ===
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'description' | 'zone' | 'ref' | 'designated' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'description' | 'zone' | 'ref' | 'designated' | 'stacked' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -5850,6 +5847,9 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'zone', label: '場所' },
   { value: 'ref', label: '参照' },
   { value: 'designated', label: '指定' },
+  // 重ねられているカード = 対象デジモンの進化元＋一番上のカード（本体）全てを対象に含める
+  // という「対象の条件」。値不要のマーカー条件（cond_target_stack）。エンジン未実装
+  { value: 'stacked', label: '重ねられているカード' },
   { value: 'other', label: 'その他' },
 ];
 // 「指定」: キーワードの「対象」欄で組み立てた絞り込み条件一式を参照するプレースホルダー
@@ -5917,6 +5917,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   zone: 'cond_zone',
   ref: 'cond_hand_ge',
   designated: DESIGNATED_NAME_COND,
+  stacked: 'cond_target_stack',
 };
 
 // バリアント選択が必要なカテゴリのプルダウン候補
@@ -5967,6 +5968,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_zone') return 'zone';
   if (REF_CODE_TO_ZONE_QUANT[base]) return 'ref';
   if (base === DESIGNATED_NAME_COND) return 'designated';
+  if (base === 'cond_target_stack') return 'stacked';
   return 'other';
 }
 

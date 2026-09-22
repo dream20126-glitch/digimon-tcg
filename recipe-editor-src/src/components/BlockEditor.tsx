@@ -1742,6 +1742,7 @@ const DOABLE_TO_CANT: Record<string, string> = {
   attack: 'cant_attack',
   block: 'cant_block',
   destroy: 'cant_destroy',
+  dp_minus: 'cant_dp_minus',
 };
 const CANT_TO_DOABLE: Record<string, string> = Object.fromEntries(
   Object.entries(DOABLE_TO_CANT).map(([doable, cant]) => [cant, doable])

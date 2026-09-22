@@ -3734,6 +3734,34 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       />
                     </div>
                   )}
+                  {/* summon専用:「登場」「使用」を独立トグルで選べるようにする（トリガーの複数選択と
+                      同じ操作感）。「登場のみ」＝デジモンカードのみ対象・「使用のみ」＝オプション
+                      カードのみ対象・両方（or未指定）＝従来通りどちらも対象。対象/条件欄はそのまま
+                      共有し、targetFilterのcond_typeへ反映するだけ（アクションコード自体はsummon
+                      のまま変えない） */}
+                  {effectAction === 'summon' && (() => {
+                    const typeFilter = effectTargetFilter.find((c) => c.base === 'cond_type');
+                    const typeValues = typeFilter ? String(typeFilter.value || '').split(',').filter(Boolean) : ['デジモン', 'オプション'];
+                    const toggleSummonType = (t: 'デジモン' | 'オプション', on: boolean) => {
+                      const cur = new Set(typeValues);
+                      if (on) cur.add(t); else cur.delete(t);
+                      const rest = effectTargetFilter.filter((c) => c.base !== 'cond_type');
+                      // 両方 or どちらも無し（未指定=どちらも対象、と同じ意味に倒す）は絞り込み無しにする
+                      if (cur.size === 0 || cur.size === 2) updateEffect({ targetFilter: rest });
+                      else updateEffect({ targetFilter: [...rest, { base: 'cond_type', value: Array.from(cur).join(',') }] });
+                    };
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 11, color: '#666' }}>登場/使用:</span>
+                        <MultiButtonGroup
+                          options={[{ code: 'デジモン', label: '登場' }, { code: 'オプション', label: '使用' }]}
+                          values={typeValues}
+                          onToggle={(code, on) => toggleSummonType(code as 'デジモン' | 'オプション', on)}
+                          accentColor="#1976d2"
+                        />
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {COMMON_ACTIONS.map((a) => {

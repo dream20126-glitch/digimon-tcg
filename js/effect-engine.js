@@ -975,6 +975,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (_bounceConds.length > 0 && !checkConditions(_bounceConds, c, ctx.bs, _bounceCondSide)) continue;
         if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) continue;
         if (hasActiveImmuneEffects(c, ctx.side)) continue;
+        if (c.buffs && c.buffs.some(b => b.type === 'cant_return_hand')) continue;
         bounceTargets.push(i);
       }
       if(bounceTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
@@ -1616,6 +1617,38 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           break;
         }
         ctx.renderAll(); callback(); break;
+      }
+      // 対象が自分の（他の）デジモンの場合（例: BT26-027「特徴『植物型』『妖精型』『WG』を
+      // 持つ自分のデジモン1体をレストさせることで」＝target_own、BT26-032「デジモン1体を
+      // レストさせることで」＝target_other_own＝このカード自身は対象外）
+      if (restTarget.code === 'target_own' || restTarget.code === 'target_other_own') {
+        const _restOwnConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
+        const _rownCands = (player.battleArea || []).filter(c => {
+          if (!c || c.suspended || c.cantRest) return false;
+          if (restTarget.code === 'target_other_own' && c === ctx.card) return false;
+          if (_restOwnConds.length > 0 && !checkConditions(_restOwnConds, c, ctx.bs, ctx.side)) return false;
+          if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) return false;
+          if (hasActiveImmuneEffects(c, ctx.side)) return false;
+          return true;
+        });
+        if (_rownCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
+        const _rownN = Math.min(restTarget.count || 1, _rownCands.length);
+        const _rownApply = (list) => {
+          let ri = 0;
+          const next = () => {
+            if (ri >= list.length) { ctx.renderAll(); callback(); return; }
+            const c = list[ri++];
+            c.suspended = true;
+            ctx.addLog('💤 「' + c.name + '」をレスト');
+            try { fireWhenRestTriggers(ctx.side, c, ctx.bs, ctx, next); } catch (_) { next(); }
+          };
+          next();
+        };
+        if (effectiveSide === 'ai' || _rownCands.length <= _rownN) { _rownApply(_rownCands.slice(0, _rownN)); break; }
+        showCardListPicker(_rownCands, _rownN, '🎯 レストさせるデジモンを選んでください', (picked) => {
+          _rownApply(picked || []);
+        });
+        break;
       }
       // 対象が相手デジモンの場合（condition があれば対象フィルタとして適用）
       // 例: テントモン進化元「DP3000以下の相手1体をレスト」の cond_dp_le:3000
@@ -6385,9 +6418,19 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
   //    _lookupTriggerSteps がマージして拾う。例: 【分離】= passive:protection の
   //    when_leave_battle は生のownR[triggerKey]には無く、キーワード辞書側にしかない）
   const ownR = parseRecipe(destroyedCard.recipe);
-  const ownSteps = ownR && _lookupTriggerSteps(ownR, triggerKey);
+  const ownSteps = ownR && _lookupTriggerSteps(ownR, triggerKey, destroyedCard);
   if (Array.isArray(ownSteps) && ownSteps.length > 0) {
     reactions.push({ card: destroyedCard, sourceCard: destroyedCard, recipe: ownSteps });
+  }
+  // 1.5) grant_effect で一時付与された効果（_grantedRecipes）由来のtriggerKeyも拾う。
+  // 例: 【天昇】を grant_keyword で他カードに付与した場合の「消滅したとき」
+  if (Array.isArray(destroyedCard._grantedRecipes)) {
+    destroyedCard._grantedRecipes.forEach(g => {
+      const gSteps = g && g.recipe && _lookupTriggerSteps(g.recipe, triggerKey);
+      if (Array.isArray(gSteps) && gSteps.length > 0) {
+        reactions.push({ card: destroyedCard, sourceCard: destroyedCard, recipe: gSteps });
+      }
+    });
   }
   // 2) 進化元カードの evo_source.on_destroy（同様にキーワードレシピ由来も拾う）
   if (Array.isArray(destroyedCard.stack)) {
@@ -7771,7 +7814,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       else if (_t.startsWith('opponent:up_to_')) _targetObj = { code: 'target_opponent', count: parseInt(_t.split('opponent:up_to_')[1]) || 1, upTo: true };
       else if (_t.startsWith('own:')) _targetObj = { code: 'target_own', count: parseInt(_t.split(':')[1]) || 1 };
       else if (_t.startsWith('opponent:')) _targetObj = { code: 'target_opponent', count: parseInt(_t.split(':')[1]) || 1 };
-      else if (_t.startsWith('other_own:')) _targetObj = { code: 'target_other_own', count: parseInt(_t.split(':')[1]) || 1 };
+      else if (_t.startsWith('other_own:') || _t.startsWith('target_other_own:')) _targetObj = { code: 'target_other_own', count: parseInt(_t.split(':')[1]) || 1 };
       if (step.condition) {
         if (!ctx.block) ctx.block = {};
         const _dConds = parseRecipeCondition(step.condition);
@@ -9737,6 +9780,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (!c) continue;
           if (_rdConds.length > 0 && !checkConditions(_rdConds, c, ctx.bs, _rdCondSide)) continue;
           if (step.filter && !cardMatchesFilter(c, step.filter)) continue;
+          if (c.buffs && c.buffs.some(b => b.type === 'cant_return_deck')) continue;
           _rdCands.push(i);
         }
         if (_rdCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
@@ -10517,10 +10561,11 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
 
     // === 重ねられているカードは手札に戻らない ===
-    // enforcement は該当アクション（return_hand等、手札に戻す系）実行時に
-    // hasCantStackBuff(tgt, 'cant_return_hand') を参照して対象から除外する
+    // enforcement は bounce（runOneAction内、相手デジモンを手札に戻す候補絞り込み）で
+    // buffs.some(b=>b.type==='cant_return_hand') を参照して対象から除外する
     case 'cant_return_hand':
     // === 重ねられているカードはデッキに戻らない ===
+    // enforcement は return_deck の opponent 対象絞り込みで参照済み
     case 'cant_return_deck':
     // === 重ねられているカードは破棄されない ===
     // enforcement は dedigivolve（退化）の対象絞り込みで参照済み
@@ -10676,7 +10721,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         else if (t.startsWith('opponent:up_to_')) target = { code: 'target_opponent', count: parseInt(t.split('opponent:up_to_')[1]) || 1, upTo: true };
         else if (t.startsWith('own:')) target = { code: 'target_own', count: parseInt(t.split(':')[1]) || 1 };
         else if (t.startsWith('opponent:')) target = { code: 'target_opponent', count: parseInt(t.split(':')[1]) || 1 };
-        else if (t.startsWith('other_own:')) target = { code: 'target_other_own', count: parseInt(t.split(':')[1]) || 1 };
+        else if (t.startsWith('other_own:') || t.startsWith('target_other_own:')) target = { code: 'target_other_own', count: parseInt(t.split(':')[1]) || 1 };
         else {
           // 汎用フォールバック: "own_tamer_stack:1" のような "<コード>:<N>" 形式は
           // 末尾の":N"を数量として分離してからtarget_接頭辞を付ける（evo_discard系が

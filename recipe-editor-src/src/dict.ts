@@ -100,6 +100,11 @@ export const TARGETS = [
   { code: 'opp_player', label: '相手のプレイヤー' },
   // 「そのデジモン」=直前にメインアクションで選択／対象になったデジモンを再利用
   { code: 'same_target', label: 'そのデジモン（直前選択）' },
+  // 最も多いプレイヤー = 自分/相手のうち指定ゾーンの枚数が多い方のプレイヤー1人
+  { code: 'most_security_player', label: '最もセキュリティ枚数が多いプレイヤー' },
+  { code: 'most_trash_player', label: '最もトラッシュ枚数が多いプレイヤー' },
+  { code: 'most_hand_player', label: '最も手札枚数が多いプレイヤー' },
+  { code: 'most_evo_source_player', label: '最も進化元枚数が多いプレイヤー' },
 ];
 
 // トリガー発動主体（誰がイベントの主役か）

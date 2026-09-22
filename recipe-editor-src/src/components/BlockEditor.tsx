@@ -728,8 +728,11 @@ function CostListEditor({
         const cTgtSuffix = (c.target || '').substring(cTgtRaw.length);
         const { base: cTgtBase, pos: cTgtStackPos } = splitStackSuffix(cTgtRaw);
         const cCurTgt = TARGET_SEL_CODE_TO_L1L2[cTgtBase] || { l1: '', l2: '' };
-        // コストの対象では「オプション/プレイヤー/セキュリティ」を選択肢から除外
-        const cTgtL2Options = (TARGET_SEL_L2[cCurTgt.l1] || []).filter((o) => !['option', 'player', 'security'].includes(o.code));
+        // コストの対象では「オプション/プレイヤー/セキュリティ」を選択肢から除外。
+        // 「最も多いプレイヤー」は専用の「何が多いか」選択肢(MOST_PLAYER_METRICS)を使う
+        const cTgtL2Options = cCurTgt.l1 === 'most'
+          ? MOST_PLAYER_METRICS
+          : (TARGET_SEL_L2[cCurTgt.l1] || []).filter((o) => !['option', 'player', 'security'].includes(o.code));
         const cHideCount = cTgtBase === 'self' || cTgtBase === 'self_card' || cTgtBase === 'same_target';
         // デジモン/テイマー本体のときだけ「本体/下/一番下」を選べる（進化元／テイマーの
         // 下の"既存の"カードを指す。self=このカード自身の下も含む）。
@@ -743,7 +746,7 @@ function CostListEditor({
           if (!l1) { updateCost(i, { ...c, target: '' }); return; }
           if (l1 === 'self') { updateCost(i, { ...c, target: joinStackSuffix('self_card', cTgtStackPos) + cTgtSuffix }); return; }
           if (l1 === 'same_target') { updateCost(i, { ...c, target: 'same_target' + cTgtSuffix }); return; }
-          const useL2 = l2 || (cCurTgt.l1 === l1 && cCurTgt.l2 ? cCurTgt.l2 : 'digimon');
+          const useL2 = l2 || (cCurTgt.l1 === l1 && cCurTgt.l2 ? cCurTgt.l2 : (l1 === 'most' ? 'security' : 'digimon'));
           const newBase = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '';
           // 位置は「デジモン/テイマー」を維持したときだけ引き継ぐ（カード/オプション等に
           // 切り替えたら位置指定自体が無意味になるため破棄する）
@@ -1530,9 +1533,18 @@ function joinStackSuffix(base: string, pos: StackPos): string {
   return pos ? base + '_' + pos : base;
 }
 
+// 最も多いプレイヤー = 自分/相手のうち、指定ゾーン（セキュリティ/トラッシュ/手札/進化元）の
+// 枚数が最も多い方のプレイヤー1人を対象にする。エンジン未実装（比較ロジックが無い）
+const MOST_PLAYER_METRICS = [
+  { code: 'security', label: 'セキュリティ' },
+  { code: 'trash', label: 'トラッシュ' },
+  { code: 'hand', label: '手札' },
+  { code: 'evo_source', label: '進化元' },
+];
 const TARGET_SEL_UNIMPLEMENTED = new Set([
   'opp_security', 'target_other_own_card', 'target_other_own_tamer', 'opponent_tamer',
   'own_option', 'opponent_option',
+  'most_security_player', 'most_trash_player', 'most_hand_player', 'most_evo_source_player',
 ]);
 const TARGET_SEL_L1 = [
   { code: '', label: '既定' },
@@ -1541,6 +1553,7 @@ const TARGET_SEL_L1 = [
   { code: 'opp', label: '相手' },
   { code: 'other_own', label: '他' },
   { code: 'same_target', label: 'そのデジモン' },
+  { code: 'most', label: '最も多いプレイヤー' },
 ];
 const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
   own: [
@@ -1568,6 +1581,7 @@ const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
   'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:option': 'own_option', 'own:security': 'own_security',
   'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:tamer': 'opponent_tamer', 'opp:option': 'opponent_option', 'opp:player': 'opp_player', 'opp:security': 'opp_security',
   'other_own:digimon': 'target_other_own', 'other_own:card': 'target_other_own_card', 'other_own:tamer': 'target_other_own_tamer',
+  'most:security': 'most_security_player', 'most:trash': 'most_trash_player', 'most:hand': 'most_hand_player', 'most:evo_source': 'most_evo_source_player',
 };
 const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   '': { l1: '', l2: '' },
@@ -1588,6 +1602,10 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   target_other_own_card: { l1: 'other_own', l2: 'card' },
   target_other_own_tamer: { l1: 'other_own', l2: 'tamer' },
   same_target: { l1: 'same_target', l2: '' },
+  most_security_player: { l1: 'most', l2: 'security' },
+  most_trash_player: { l1: 'most', l2: 'trash' },
+  most_hand_player: { l1: 'most', l2: 'hand' },
+  most_evo_source_player: { l1: 'most', l2: 'evo_source' },
 };
 
 // よく使うトリガー:
@@ -4411,7 +4429,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eBase = (effectTarget || '').split(':')[0];
             const eSuffix = (effectTarget || '').substring(eBase.length);
             const eCurTgt = TARGET_SEL_CODE_TO_L1L2[eBase] || { l1: '', l2: '' };
-            const eL2Options = TARGET_SEL_L2[eCurTgt.l1] || [];
+            const eL2Options = eCurTgt.l1 === 'most' ? MOST_PLAYER_METRICS : (TARGET_SEL_L2[eCurTgt.l1] || []);
             const eHideCount = eBase === 'self' || eBase === 'self_card' || eBase === 'same_target';
             const eIsUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(eBase);
             const eShowTargetFilter =
@@ -4426,7 +4444,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               // 直前の対象で付いていた数指定を持ち越さないようここで破棄する
               if (l1 === 'self') { updateEffect({ target: 'self_card' }); return; }
               if (l1 === 'same_target') { updateEffect({ target: 'same_target' }); return; }
-              const useL2 = l2 || (eCurTgt.l1 === l1 && eCurTgt.l2 ? eCurTgt.l2 : 'digimon');
+              const useL2 = l2 || (eCurTgt.l1 === l1 && eCurTgt.l2 ? eCurTgt.l2 : (l1 === 'most' ? 'security' : 'digimon'));
               updateEffect({ target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '') + eSuffix });
             };
             return (
@@ -4497,7 +4515,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               </div>
             );
           }
-          const tgtL2Options = TARGET_SEL_L2[curTgt.l1] || [];
+          const tgtL2Options = curTgt.l1 === 'most' ? MOST_PLAYER_METRICS : (TARGET_SEL_L2[curTgt.l1] || []);
           // デジモン/テイマーだけは複数選択可（例:「相手のデジモン/テイマーを1体消滅させる」）。
           // カード/セキュリティ/プレイヤーは従来通り単一選択（デジモン/テイマーの複数選択とは排他）
           const exclusiveL2Options = tgtL2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer');
@@ -4525,7 +4543,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             // 直前に他の対象で付いていた数指定(例: ":1")を持ち越さないようここで破棄する
             if (l1 === 'self') { onChange({ ...block, ...cleared, target: 'self_card' }); return; }
             if (l1 === 'same_target') { onChange({ ...block, ...cleared, target: 'same_target' }); return; }
-            const l2 = curTgt.l1 === l1 && curTgt.l2 ? curTgt.l2 : 'digimon';
+            const l2 = curTgt.l1 === l1 && curTgt.l2 ? curTgt.l2 : (l1 === 'most' ? 'security' : 'digimon');
             onChange({ ...block, ...cleared, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + l2] || '') + tgtSuffix });
           };
           const handleTgtL2 = (l2: string) => {

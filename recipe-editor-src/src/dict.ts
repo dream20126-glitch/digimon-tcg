@@ -25,6 +25,10 @@ export const FROM_ZONES = [
   { code: 'deck',       label: 'デッキ' },
   { code: 'security',   label: 'セキュリティ' },
   { code: 'evo_source', label: '進化元' },
+  // 重ねられているカード = 本体（一番上のカード）含む進化元全て。「位置=上」「値=N」で
+  // 退化と同じロジック（本体から順にN枚を切り離す。切り離した後は残りの進化元が昇格）を
+  // 表す。evo_sourceと同じ evoSourceOwner/evoSourcePosition フィールドを共用する
+  { code: 'stacked_cards', label: '重ねられているカード' },
   { code: 'linked',     label: 'リンクカード' },
 ];
 

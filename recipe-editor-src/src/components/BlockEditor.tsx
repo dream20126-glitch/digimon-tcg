@@ -982,8 +982,10 @@ function CostListEditor({
                       </div>
                     );
                   })()}
-                  {/* 場所に「セキュリティ」/「進化元」を含む場合のみ: 積み重ね順の上/下どちらから見るか */}
-                  {((c.fromZones || []).includes('security') || (c.fromZones || []).includes('evo_source')) && (
+                  {/* 場所に「セキュリティ」/「進化元」/「重ねられているカード」を含む場合のみ:
+                      積み重ね順の上/下どちらから見るか（重ねられているカードもevo_sourceと同じ
+                      evoSourcePosition/evoSourceOwnerを共用する） */}
+                  {((c.fromZones || []).includes('security') || (c.fromZones || []).includes('evo_source') || (c.fromZones || []).includes('stacked_cards')) && (
                     <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                       {(c.fromZones || []).includes('security') && (
                         <div>
@@ -996,9 +998,9 @@ function CostListEditor({
                           />
                         </div>
                       )}
-                      {(c.fromZones || []).includes('evo_source') && (
+                      {((c.fromZones || []).includes('evo_source') || (c.fromZones || []).includes('stacked_cards')) && (
                         <div>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 進化元の位置</div>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 {(c.fromZones || []).includes('stacked_cards') ? '重ねられているカードの位置' : '進化元の位置'}</div>
                           <ButtonGroup
                             options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
                             value={c.evoSourcePosition || ''}
@@ -1188,8 +1190,9 @@ function CostListEditor({
                   </div>
                 );
               })()}
-              {/* 場所に「セキュリティ」/「進化元」を含む場合のみ: 積み重ね順の上/下どちらから見るか */}
-              {((c.fromZones || []).includes('security') || (c.fromZones || []).includes('evo_source')) && (
+              {/* 場所に「セキュリティ」/「進化元」/「重ねられているカード」を含む場合のみ:
+                  積み重ね順の上/下どちらから見るか */}
+              {((c.fromZones || []).includes('security') || (c.fromZones || []).includes('evo_source') || (c.fromZones || []).includes('stacked_cards')) && (
                 <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   {(c.fromZones || []).includes('security') && (
                     <div>
@@ -1202,9 +1205,9 @@ function CostListEditor({
                       />
                     </div>
                   )}
-                  {(c.fromZones || []).includes('evo_source') && (
+                  {((c.fromZones || []).includes('evo_source') || (c.fromZones || []).includes('stacked_cards')) && (
                     <div>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 進化元の位置</div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 {(c.fromZones || []).includes('stacked_cards') ? '重ねられているカードの位置' : '進化元の位置'}</div>
                       <ButtonGroup
                         options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
                         value={c.evoSourcePosition || ''}
@@ -3972,7 +3975,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </div>
                     )}
                     {/* 場所に「セキュリティ」/「進化元」を含む場合のみ: 積み重ね順の上/下どちらから見るか */}
-                    {(effectFromZones.includes('security') || effectFromZones.includes('evo_source')) && (
+                    {(effectFromZones.includes('security') || effectFromZones.includes('evo_source') || effectFromZones.includes('stacked_cards')) && (
                       <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                         {effectFromZones.includes('security') && (
                           <div>
@@ -3985,9 +3988,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             />
                           </div>
                         )}
-                        {effectFromZones.includes('evo_source') && (
+                        {(effectFromZones.includes('evo_source') || effectFromZones.includes('stacked_cards')) && (
                           <div>
-                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 進化元の位置</div>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 {effectFromZones.includes('stacked_cards') ? '重ねられているカードの位置' : '進化元の位置'}</div>
                             <ButtonGroup
                               options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
                               value={effectEvoSourcePosition || ''}
@@ -4417,11 +4420,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   />
                 </div>
               )}
-              {/* 場所に「進化元」を含む場合のみ: どのデジモンの進化元から探すか
-                  ('self'=このデジモン / 'other'=他のデジモン / 未指定='指定なし') */}
-              {zones.includes('evo_source') && (
+              {/* 場所に「進化元」/「重ねられているカード」を含む場合のみ: どのデジモンの
+                  進化元から探すか ('self'=このデジモン / 'other'=他のデジモン / 未指定='指定なし') */}
+              {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
                 <div style={{ marginTop: 6 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>進化元の対象</div>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの対象' : '進化元の対象'}</div>
                   <ButtonGroup
                     options={[
                       { code: '', label: '指定なし' },
@@ -4434,8 +4437,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   />
                 </div>
               )}
-              {/* 場所に「セキュリティ」/「進化元」を含む場合のみ: 積み重ね順の上/下どちらから見るか */}
-              {(zones.includes('security') || zones.includes('evo_source')) && (
+              {/* 場所に「セキュリティ」/「進化元」/「重ねられているカード」を含む場合のみ:
+                  積み重ね順の上/下どちらから見るか */}
+              {(zones.includes('security') || zones.includes('evo_source') || zones.includes('stacked_cards')) && (
                 <div style={{ marginTop: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   {zones.includes('security') && (
                     <div>
@@ -4448,9 +4452,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       />
                     </div>
                   )}
-                  {zones.includes('evo_source') && (
+                  {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
                     <div>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 進化元の位置</div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 {zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの位置' : '進化元の位置'}</div>
                       <ButtonGroup
                         options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
                         value={effectEvoSourcePosition || ''}

@@ -1994,9 +1994,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const curTgt = TARGET_SEL_CODE_TO_L1L2[tgtBase] || { l1: '', l2: '' };
   // 「対象の条件」は対象が下記の場合のみ表示する（＝アクションが実際に処理する対象自身に
   // 掛かる条件。例:「レスト状態のこのデジモン」「クロノモンの記述があるこのデジモン」）:
-  // このカード自身・自分→デジモン/カード/テイマー・相手→デジモン/テイマー・他→デジモン
+  // このカード自身・自分→デジモン/カード/テイマー・相手→デジモン/テイマー・他→デジモン・
+  // そのデジモン（直前選択。「重ねられているカード」等を選べるようにするため）
   const showTargetFilter =
     curTgt.l1 === 'self' ||
+    curTgt.l1 === 'same_target' ||
     (curTgt.l1 === 'own' && ['digimon', 'card', 'tamer'].includes(curTgt.l2)) ||
     (curTgt.l1 === 'opp' && ['digimon', 'tamer'].includes(curTgt.l2)) ||
     (curTgt.l1 === 'other_own' && curTgt.l2 === 'digimon');
@@ -4413,6 +4415,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eIsUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(eBase);
             const eShowTargetFilter =
               eCurTgt.l1 === 'self' ||
+              eCurTgt.l1 === 'same_target' ||
               (eCurTgt.l1 === 'own' && ['digimon', 'card', 'tamer'].includes(eCurTgt.l2)) ||
               (eCurTgt.l1 === 'opp' && ['digimon', 'tamer'].includes(eCurTgt.l2)) ||
               (eCurTgt.l1 === 'other_own' && eCurTgt.l2 === 'digimon');

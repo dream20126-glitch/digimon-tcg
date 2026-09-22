@@ -743,6 +743,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (_dpmConds.length > 0 && !checkConditions(_dpmConds, _dc, ctx.bs, _dpmCondSide)) continue;
         if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(_dc, defaultTarget.filter)) continue;
         if (hasActiveImmuneEffects(_dc, ctx.side)) continue;
+        if (_dc.buffs && _dc.buffs.some(b => b.type === 'cant_dp_minus')) continue;
         dpTargets.push(i);
       }
       if(dpTargets.length === 0) { callback(); break; }
@@ -771,6 +772,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const tgt = opponent.battleArea[idx];
         if (!tgt) return;
         addBuff(tgt, 'dp_minus', val, ctx);
+        // same_target（「このDPマイナス効果の数値-5000」等、直後の効果が同一対象を再利用する）用に保存
+        if (ctx.bs) ctx.bs._lastPickedCard = tgt;
         ctx.addLog('💥 ' + tgt.name + ' DP-' + val + ' → ' + tgt.dp);
         playEffect(action.code, { value: -val, ctx, label: tgt.name }, () => {}, { visualType: action.visualType, frameColor: action.frameColor });
         if(tgt.dp <= 0) tgt._pendingDestroy = true;
@@ -1658,6 +1661,47 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         });
         ctx.renderAll();
         finishWithTrigger();
+        break;
+      }
+      // テイマーも対象に含む、または複数体指定（count>1）の場合:
+      // battleArea専用のindex方式では表現できないため、cant_rest等と同じ
+      // カードオブジェクト方式のピッカー（showCardListPicker）で個別に処理する
+      // （例: ケレスモン＆ファミス(BT26-032)進化元「相手のデジモン/テイマー2体をレストできる」）
+      const _restWantsTamer = !!(defaultTarget && defaultTarget.filter
+        && Array.isArray(defaultTarget.filter.type_in) && defaultTarget.filter.type_in.includes('テイマー'));
+      const _restCount = (defaultTarget && defaultTarget.count) || 1;
+      if (_restWantsTamer || _restCount > 1) {
+        const _rmCands = [];
+        (opponent.battleArea || []).forEach(c => {
+          if (!c || c.suspended || c.cantRest) return;
+          if (_restConds.length > 0 && !checkConditions(_restConds, c, ctx.bs, _restCondTag)) return;
+          if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) return;
+          if (hasActiveImmuneEffects(c, ctx.side)) return;
+          _rmCands.push(c);
+        });
+        if (_restWantsTamer) {
+          (opponent.tamerArea || []).forEach(c => {
+            if (!c || c.suspended) return;
+            if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) return;
+            _rmCands.push(c);
+          });
+        }
+        if (_rmCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
+        const _rmN = Math.min(_restCount, _rmCands.length);
+        const _rmApply = (list) => {
+          list.forEach(c => {
+            c.suspended = true;
+            ctx.addLog('💤 「' + c.name + '」をレスト');
+            const _idx = opponent.battleArea.indexOf(c);
+            if (_idx >= 0) syncRest(_idx);
+          });
+          ctx.renderAll();
+          finishWithTrigger();
+        };
+        if (effectiveSide === 'ai') { _rmApply(_rmCands.slice(0, _rmN)); break; }
+        showCardListPicker(_rmCands, _rmN, '🎯 レストさせる対象を選んでください', (picked) => {
+          _rmApply(picked || []);
+        });
         break;
       }
       if(effectiveSide === 'ai') {
@@ -5352,7 +5396,11 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
     // ctx.card=勝者自身にフォールバックしてしまい、常に条件を満たしてしまう不具合になる
     // （メタルティラノモン: Lv3を消滅させてもLv6以上の自分自身に対して判定されてしまう等）。
     const battleWinEventSourceCard = triggerCode === 'on_battle_win' ? (ctx.bs && ctx.bs._lastBattleDefeatedCard) : null;
-    if (sourceCard) {
+    // negate(deny:true, target_trigger)で狙われたカード自身のトリガーは発揮させない
+    // （他カードがこのイベントに反応するsubjectスキャンは対象外。上のisSourceOnly分岐で処理済み）
+    const _negatedThisTrigger = !!(sourceCard && sourceCard.buffs
+      && sourceCard.buffs.some(b => b && b.type === 'negate_trigger' && b.value === triggerCode));
+    if (sourceCard && !_negatedThisTrigger) {
       const mainRecipe = getRecipeForTrigger(sourceCard, triggerCode);
       if (mainRecipe) {
         const dummyBlock = {
@@ -5995,8 +6043,9 @@ export function tryCancelViaLeaveBattle(card, side, bs, ctxBase, callback) {
 }
 
 // セキュリティが減ったとき → 減った側の自分側が反応
+// レシピの実際のトリガーキーは辞書コード on_security_reduced（表示名「セキュリティが減ったとき」）
 export function fireWhenSecurityDecreaseTriggers(decreasedSide, bs, ctxBase, done) {
-  return _fireSidedReactionTriggers(decreasedSide, 'when_security_decrease', bs, ctxBase, done);
+  return _fireSidedReactionTriggers(decreasedSide, 'on_security_reduced', bs, ctxBase, done);
 }
 
 // デッキが自分の効果で増えたとき（見た後に戻す／デッキに戻す等）→ 増えた側の自分側が反応
@@ -7618,17 +7667,24 @@ function executeRecipeStep(step, ctx, store, callback) {
         return;
       }
       // === target=opponent:all + step.condition: per-target フィルタとして条件を評価し、
-      //     一致するカード全てを消滅 ===
-      if ((step.target === 'opponent:all' || step.target === 'own:all') && step.condition) {
+      //     一致するカード全てを消滅（filter.dp_extreme:'lowest'/'highest' 指定時は
+      //     「最もDPが低い/高い相手のデジモン全て」を対象にする。redirect_attackと同じ規約） ===
+      if ((step.target === 'opponent:all' || step.target === 'own:all') && (step.condition || (step.filter && step.filter.dp_extreme))) {
         const isOwnAll = step.target === 'own:all';
         const tgtPlayer = isOwnAll ? player : opponent;
         const tgtSideTag = isOwnAll ? (ctx.side === 'player' ? 'player' : 'ai') : (ctx.side === 'player' ? 'ai' : 'player');
-        const conds = parseRecipeCondition(step.condition);
-        const matchedIdxs = [];
+        const conds = step.condition ? parseRecipeCondition(step.condition) : [];
+        let matchedIdxs = [];
         for (let i = 0; i < tgtPlayer.battleArea.length; i++) {
           const c = tgtPlayer.battleArea[i];
           if (!c) continue;
-          if (checkConditions(conds, c, ctx.bs, tgtSideTag)) matchedIdxs.push(i);
+          if (conds.length > 0 && !checkConditions(conds, c, ctx.bs, tgtSideTag)) continue;
+          matchedIdxs.push(i);
+        }
+        if (step.filter && step.filter.dp_extreme && matchedIdxs.length > 0) {
+          const dps = matchedIdxs.map(i => parseInt(tgtPlayer.battleArea[i].dp) || 0);
+          const extreme = step.filter.dp_extreme === 'lowest' ? Math.min(...dps) : Math.max(...dps);
+          matchedIdxs = matchedIdxs.filter(i => (parseInt(tgtPlayer.battleArea[i].dp) || 0) === extreme);
         }
         if (matchedIdxs.length === 0) {
           ctx.addLog('⚠ 条件に一致するカードがありません');
@@ -7755,7 +7811,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       const valid = [];
       for (let i = 0; i < tgtPlayer.battleArea.length; i++) {
         const c = tgtPlayer.battleArea[i];
-        if (c && c.stack && c.stack.length > 0) valid.push(i);
+        // cant_discard: 重ねられているカードは破棄されない（退化は破棄先がトラッシュ固定のため対象外）
+        if (c && c.stack && c.stack.length > 0 && !(c.buffs && c.buffs.some(b => b.type === 'cant_discard'))) valid.push(i);
       }
       if (valid.length === 0) {
         ctx.addLog && ctx.addLog('⚠ 進化元を持つ対象がいません');
@@ -8486,6 +8543,33 @@ function executeRecipeStep(step, ctx, store, callback) {
       const tStr = String(step.target || 'opponent:all');
       const _naIsOpp = tStr.startsWith('opp');
       const all = tStr.endsWith(':all') || tStr === 'opponent' || tStr === 'own';
+      if (!all) {
+        // 個別N体指定（例:「相手のデジモン/テイマー3体はアクティブにならない」）:
+        // battleArea/tamerAreaの両方から候補を集め、対象カードにprevent_unsuspendバフを付与する
+        // （実際のスキップ判定はbattle-phase.jsのexecUnsuspend側で既に実装済み）
+        const _naPool = _naIsOpp ? opponent : player;
+        const _naFilter = step.filter || null;
+        const _naCands = [];
+        (_naPool.battleArea || []).forEach(c => { if (c && (!_naFilter || cardMatchesFilter(c, _naFilter))) _naCands.push(c); });
+        (_naPool.tamerArea || []).forEach(c => { if (c && (!_naFilter || cardMatchesFilter(c, _naFilter))) _naCands.push(c); });
+        if (_naCands.length === 0) { ctx.addLog('⚠ 対象がいません'); callback(); break; }
+        const _naMatch = /^(?:opponent|own):(\d+)$/.exec(tStr);
+        const _naCount = Math.min(_naMatch ? parseInt(_naMatch[1], 10) || 1 : 1, _naCands.length);
+        const _naDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+        const _naApply = (list) => {
+          list.forEach(c => {
+            addBuffDirect(c, 'prevent_unsuspend', 0, _naDur, ctx);
+            ctx.addLog('🔒 「' + c.name + '」は次のアクティブフェイズでアクティブにならない');
+          });
+          ctx.renderAll();
+          callback();
+        };
+        if (effectiveSide === 'ai' || _naCands.length <= _naCount) { _naApply(_naCands.slice(0, _naCount)); break; }
+        showCardListPicker(_naCands, _naCount, '🔒 アクティブにならなくする対象を選んでください', (picked) => {
+          _naApply(picked || []);
+        });
+        break;
+      }
       if (all) {
         // 「次のアクティブフェイズでアクティブにならない（全て）」は継続効果。
         // 効果適用後に登場/レストしたデジモンも対象にするため、対象 side の
@@ -8515,6 +8599,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       const tgtPlayer = tStr.startsWith('opp') ? opponent : player;
       const applyTo = (c) => {
         if (!c) return;
+        // same_target（alt_actionsで同一対象に別のキーワードを続けて付与する等）用に保存
+        if (ctx.bs) ctx.bs._lastPickedCard = c;
         if (!c._grantedRecipes) c._grantedRecipes = [];
         // 付与効果の説明文: 付与元カードの効果テキストの「」内（＝付与される効果本体）
         // のみを使う。無ければ全文。
@@ -8535,7 +8621,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         // own:1 等 → 既存の対象選択 UI に乗せる（簡易: applyDpBuff の target_own と同等）
         const validTargets = [];
         for (let i = 0; i < tgtPlayer.battleArea.length; i++) {
-          if (tgtPlayer.battleArea[i]) validTargets.push(i);
+          const _geC = tgtPlayer.battleArea[i];
+          if (_geC && (!step.filter || cardMatchesFilter(_geC, step.filter))) validTargets.push(i);
         }
         if (validTargets.length === 0) { showEffectFailed(null, callback); return; }
         if (effectiveSide === 'ai' || ctx._forceTargetIdx !== undefined) {
@@ -9357,7 +9444,13 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _putOptional = !!step.optional;
         const _putHandCands = _putFromZones.includes('hand') ? (player.hand || []).filter(c => c && cardMatchesFilter(c, _putFilter)) : [];
         const _putTrashCands = _putFromZones.includes('trash') ? (player.trash || []).filter(c => c && cardMatchesFilter(c, _putFilter)) : [];
-        const _putCands = [..._putHandCands, ..._putTrashCands];
+        // セキュリティ（上/下1枚固定。add_to_hand等と同じ簡易実装）
+        const _putSecOwner = step.from_owner === 'opponent' ? opponent : player;
+        const _putSecPos = step.security_position;
+        const _putSecCands = (_putFromZones.includes('security') && _putSecOwner.security.length > 0)
+          ? [_putSecPos === 'bottom' ? _putSecOwner.security[_putSecOwner.security.length - 1] : _putSecOwner.security[0]].filter(c => c && cardMatchesFilter(c, _putFilter))
+          : [];
+        const _putCands = [..._putHandCands, ..._putTrashCands, ..._putSecCands];
         if (_putCands.length === 0) {
           ctx.addLog('💨 条件を満たすカードがありません');
           showEffectFailed('効果を発動できませんでした', callback);
@@ -9373,6 +9466,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           placeCardAndFinish(c, () => {
             const hi = player.hand.indexOf(c); if (hi !== -1) player.hand.splice(hi, 1);
             const ti = player.trash.indexOf(c); if (ti !== -1) player.trash.splice(ti, 1);
+            const si = _putSecOwner.security.indexOf(c); if (si !== -1) _putSecOwner.security.splice(si, 1);
           });
         };
         if (effectiveSide === 'ai') { _putOnPicked([_putCands[0]]); }
@@ -9669,8 +9763,25 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === セキュリティを選んで破棄 ===
     case 'security_trash_select': {
-      const owner = step.target && step.target.startsWith('own') ? player : opponent;
+      const _stsTgtStr = String(step.target || '');
+      // most_security_player: 最もセキュリティ枚数が多いプレイヤー1人。同数の場合は
+      // 効果の発動者（自分）が対象になる（公式ルールの「同数なら効果の発動者が選ぶ」に準拠した簡略化）
+      const owner = _stsTgtStr.startsWith('most_security_player')
+        ? (opponent.security.length > player.security.length ? opponent : player)
+        : (_stsTgtStr.startsWith('own') ? player : opponent);
       if (owner.security.length === 0) { callback(); break; }
+      // 位置指定（上から/下から）がある場合は自由選択せずその1枚に自動確定する
+      // （「セキュリティを上から1枚破棄する」等、位置固定で選択の余地が無いケース用）
+      const _stsPos = step.position || step.security_position;
+      if (_stsPos === 'top' || _stsPos === 'bottom') {
+        const selectedIdx = _stsPos === 'top' ? 0 : owner.security.length - 1;
+        const c = owner.security.splice(selectedIdx, 1)[0];
+        if (c) owner.trash.push(c);
+        ctx.addLog('🗑 セキュリティ（' + (_stsPos === 'top' ? '上から' : '下から') + '）破棄' + (c ? '：' + c.name : ''));
+        ctx.renderAll();
+        callback();
+        break;
+      }
       const idxs = owner.security.map((_, i) => i);
       const rowId = (owner === player ? (ctx.side === 'player' ? 'pl' : 'ai') : (ctx.side === 'player' ? 'ai' : 'pl')) + '-sec';
       showTargetSelection(rowId, idxs, 'セキュリティから破棄するカードを選択', '#ff4444', (selectedIdx) => {
@@ -9982,6 +10093,15 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
       };
 
+      // レシピ駆動のリンク成立後、対象カードの【リンク時】(on_link)を発火してから続行する
+      // （battle-combat.js の手動doLinkは自前で発火済みのため、ここ＝executeRecipeStep経由の
+      // 自動リンクのみが対象）
+      const _fireOnLinkThen = (cb) => {
+        const _linkCtx = { card: linkTarget, side: ctx.side, bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+        try { triggerEffect('on_link', linkTarget, ctx.side, _linkCtx, () => cb && cb()); }
+        catch (e) { console.error('[link] on_link trigger error', e); cb && cb(); }
+      };
+
       // 従来パス: store経由で事前に選択済みのカードをそのままリンクする
       if (step.card) {
         const sd = store[step.card];
@@ -9992,7 +10112,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           linkTarget.linkedCards.push(linkCard);
           ctx.addLog('🔗 「' + linkTarget.name + '」に「' + linkCard.name + '」をリンク');
           ctx.renderAll();
-          callback();
+          _fireOnLinkThen(callback);
         });
         break;
       }
@@ -10065,7 +10185,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           linkTarget.linkedCards.push(c);
           ctx.addLog('🔗 「' + linkTarget.name + '」に「' + c.name + '」をリンク');
           ctx.renderAll();
-          callback();
+          _fireOnLinkThen(callback);
         });
       };
 
@@ -10253,6 +10373,112 @@ function executeRecipeStep(step, ctx, store, callback) {
       showCardListPicker(_crCands, 1, '🔒 レストできなくする対象を選んでください', (picked) => {
         const c = picked && picked[0];
         if (c) _crApply(c);
+        ctx.renderAll();
+        callback();
+      });
+      break;
+    }
+
+    // === DPをマイナスされない（相手の効果でDP-を防ぐ） ===
+    // 例: アイギオテュースモン：ホーリー(BT26-029)【登場時】【進化時】
+    // enforcement は dp_minus 実行時のターゲット絞り込み（'dp_minus' case内）で判定する
+    case 'cant_dp_minus': {
+      const _cdmTgtStr = String(step.target || 'own_card');
+      const _cdmIsOpponent = !_cdmTgtStr.startsWith('own');
+      const _cdmPool = _cdmIsOpponent ? opponent : player;
+      const _cdmFilter = step.filter || null;
+      const _cdmCands = [];
+      (_cdmPool.battleArea || []).forEach(c => { if (c && (!_cdmFilter || cardMatchesFilter(c, _cdmFilter))) _cdmCands.push(c); });
+      if (_cdmCands.length === 0) {
+        ctx.addLog('⚠ 対象がいません');
+        showEffectFailed('効果を発動できませんでした', callback);
+        return;
+      }
+      const _cdmDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+      const _cdmApply = (c) => {
+        addBuffDirect(c, 'cant_dp_minus', 0, _cdmDur, ctx);
+        // same_target（alt_actionsのcant_return_hand/cant_return_deck/cant_discardが
+        // 同一対象を再利用する）用に保存
+        if (ctx.bs) ctx.bs._lastPickedCard = c;
+        ctx.addLog('🛡 「' + c.name + '」はDPをマイナスされない');
+      };
+      const _cdmForced = (ctx._forceTargetIdx !== undefined) ? _cdmPool.battleArea[ctx._forceTargetIdx] : null;
+      if (_cdmForced || effectiveSide === 'ai' || _cdmCands.length === 1) {
+        _cdmApply(_cdmForced || _cdmCands[0]);
+        ctx.renderAll();
+        callback();
+        break;
+      }
+      showCardListPicker(_cdmCands, 1, '🛡 DPをマイナスされなくする対象を選んでください', (picked) => {
+        const c = picked && picked[0];
+        if (c) _cdmApply(c);
+        ctx.renderAll();
+        callback();
+      });
+      break;
+    }
+
+    // === 重ねられているカードは手札に戻らない ===
+    // enforcement は該当アクション（return_hand等、手札に戻す系）実行時に
+    // hasCantStackBuff(tgt, 'cant_return_hand') を参照して対象から除外する
+    case 'cant_return_hand':
+    // === 重ねられているカードはデッキに戻らない ===
+    case 'cant_return_deck':
+    // === 重ねられているカードは破棄されない ===
+    // enforcement は dedigivolve（退化）の対象絞り込みで参照済み
+    case 'cant_discard': {
+      const _cxTgtStr = String(step.target || 'own_card');
+      const _cxIsOpponent = !_cxTgtStr.startsWith('own');
+      const _cxPool = _cxIsOpponent ? opponent : player;
+      const _cxForced = (ctx._forceTargetIdx !== undefined) ? _cxPool.battleArea[ctx._forceTargetIdx] : null;
+      const _cxTarget = _cxForced || (ctx.card && _cxPool.battleArea.indexOf(ctx.card) >= 0 ? ctx.card : null);
+      if (!_cxTarget) { ctx.addLog('⚠ 対象がいません'); callback(); break; }
+      const _cxDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+      addBuffDirect(_cxTarget, step.action, 0, _cxDur, ctx);
+      const _cxLabel = step.action === 'cant_return_hand' ? '手札に戻らない'
+        : step.action === 'cant_return_deck' ? 'デッキに戻らない' : '破棄されない';
+      ctx.addLog('🛡 「' + _cxTarget.name + '」に重ねられているカードは' + _cxLabel);
+      ctx.renderAll();
+      callback();
+      break;
+    }
+
+    // === 対象の特定トリガー効果を発揮させない（deny: true + target_trigger指定時のみ対応） ===
+    // 例: メディックモン(BT26-028)進化元「相手のデジモン1体の【進化時】効果は発揮せず、DP-3000」
+    // enforcement は triggerEffect() 冒頭（negate_trigger buff の参照）で行う
+    case 'negate': {
+      if (!step.deny) { callback(); break; }
+      const _ngTgtStr = String(step.target || 'opponent:1');
+      const _ngIsOpponent = !_ngTgtStr.startsWith('own');
+      const _ngPool = _ngIsOpponent ? opponent : player;
+      const _ngFilter = step.filter || null;
+      const _ngCands = [];
+      (_ngPool.battleArea || []).forEach((c, i) => { if (c && (!_ngFilter || cardMatchesFilter(c, _ngFilter))) _ngCands.push(i); });
+      if (_ngCands.length === 0) {
+        ctx.addLog('⚠ 対象がいません');
+        showEffectFailed('効果を発動できませんでした', callback);
+        return;
+      }
+      const _ngDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+      const _ngTriggerKey = step.target_trigger || 'on_evolve';
+      const _ngLabel = _ngTriggerKey === 'on_evolve' ? '【進化時】' : _ngTriggerKey;
+      const _ngApply = (idx) => {
+        const c = _ngPool.battleArea[idx];
+        if (!c) return;
+        addBuffDirect(c, 'negate_trigger', _ngTriggerKey, _ngDur, ctx);
+        // same_target（alt_actionsのdp_minus等が同一対象を再利用する）用に保存
+        if (ctx.bs) ctx.bs._lastPickedCard = c;
+        ctx.addLog('🚫 「' + c.name + '」の' + _ngLabel + '効果は発揮しない');
+      };
+      const _ngRowId = _ngIsOpponent ? (ctx.side === 'player' ? 'ai' : 'pl') : (ctx.side === 'player' ? 'pl' : 'ai');
+      if (effectiveSide === 'ai' || _ngCands.length === 1) {
+        _ngApply(_ngCands[0]);
+        ctx.renderAll();
+        callback();
+        break;
+      }
+      showTargetSelection(_ngRowId, _ngCands, null, '#ff4444', (selectedIdx) => {
+        if (selectedIdx != null) _ngApply(selectedIdx);
         ctx.renderAll();
         callback();
       });

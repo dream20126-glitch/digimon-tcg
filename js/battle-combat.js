@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -93,6 +93,13 @@ function fireOwnDestroyedThen(destroyedSide, cb) {
   const ctxBase = { bs, addLog, renderAll, updateMemGauge };
   try { _fireWhenOwnDestroyed(destroyedSide, bs, ctxBase, () => cb && cb()); }
   catch (_) { cb && cb(); }
+}
+
+// セキュリティが減ったとき: 減った側のテイマー/デジモンを反応させる（on_security_reduced）
+function fireSecurityDecreaseThen(decreasedSide, cb) {
+  const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+  try { _fireWhenSecurityDecrease(decreasedSide, bs, ctxBase, () => cb && cb()); }
+  catch (e) { console.error('[fireSecurityDecreaseThen]', decreasedSide, e); cb && cb(); }
 }
 
 // passive flag を 効果テキスト / 進化元 / _permEffects / buffs / レシピ直読み で総合判定する
@@ -1942,6 +1949,10 @@ export function resolveSecurityCheck(atk, atkIdx) {
       try { window._tutorialRunner.notifyEvent('security_reduced', { side: 'opponent', count: 1, remaining: bs.ai.security.length }); } catch (e) {}
     }
     applySecurityBuffs(sec, 'ai');
+    fireSecurityDecreaseThen('ai', () => { doNextCheckAfterSecurityDecrease(); });
+    return;
+
+    function doNextCheckAfterSecurityDecrease() {
 
     // Sアタック+のチェック枚数ラベル表示
     if (totalChecks > 1) {
@@ -2214,6 +2225,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
         }
       }, 500);
     });
+    }
   }
 }
 // 貫通効果のオンライン処理用: ブロック解決(防御側)から攻撃側へ追加セキュリティチェックを依頼するため公開
@@ -3232,6 +3244,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
     if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
       try { window._tutorialRunner.notifyEvent('security_reduced', { side: 'own', count: 1, remaining: bs.player.security.length }); } catch (e) {}
     }
+    fireSecurityDecreaseThen('player', () => {
     showSecurityCheck(sec, atk, () => {
       if (sec.type === 'デジモン') {
         if (atk.dp === sec.dp) {
@@ -3331,6 +3344,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
           _afterOne();
         }
       }
+    });
     });
   } else {
     const aiAtk = bs.ai.battleArea.find(c => c !== null) || { name: 'AI', dp: 0 };

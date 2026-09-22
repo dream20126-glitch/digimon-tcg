@@ -638,9 +638,12 @@ function CostListEditor({
         const cActionBase = getActionVariant(c.action || '')?.base || (c.action || '');
         const isCommonCostAction = COMMON_COST_ACTIONS.some((a) => a.code === (c.action || ''))
           || discardZoneBases.has(cActionBase)
+          || c.action === 'discard'
           || DECKPOS_COST_ACTIONS.some((a) => a.code === (c.action || ''))
           || PLACE_ACTION_CODES.has(c.action || '');
-        const isDiscardActive = discardZoneBases.has(cActionBase);
+        // 「その他アクション」で辞書の discard（破棄する。エンジン未実装のプレースホルダー）
+        // を選んだ直後（まだ場所未選択）も、この📥場所パネルを表示する入り口として扱う
+        const isDiscardActive = discardZoneBases.has(cActionBase) || c.action === 'discard';
         // 「進化元」と「テイマー」はどちらも evo_discard 系を流用していてアクションの
         // ベースコードだけでは区別できないため、target も一致条件に加えて逆引きする
         // （target が無い場所=手札/デッキはアクションのみで一意に決まる）

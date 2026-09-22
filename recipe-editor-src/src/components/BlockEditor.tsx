@@ -1129,9 +1129,12 @@ function CostListEditor({
                 </div>
               )}
               {/* 📥場所: 辞書の hasFromZones=true なアクション（例:「テイマーの下に置く」）
-                  選択時のみ表示。破棄ボタン(DISCARD_ZONE_MAP)とは独立した汎用機構 */}
+                  選択時のみ表示。破棄ボタン(DISCARD_ZONE_MAP)とは独立した汎用機構。
+                  「〇〇に置く」(isPlaceActive)専用の📥場所パネルと辞書側hasFromZonesが
+                  両方満たされるアクション（place_on_security_top等）では二重表示になって
+                  しまうため、isPlaceActive中はこちらを出さない */}
               {(() => {
-                if (!costActionHasFlag('hasFromZones')) return null;
+                if (isPlaceActive || !costActionHasFlag('hasFromZones')) return null;
                 const zones = c.fromZones || [];
                 const op = c.fromZonesOp || 'or';
                 const toggleZone = (code: string) => {
@@ -1191,8 +1194,9 @@ function CostListEditor({
                 );
               })()}
               {/* 場所に「セキュリティ」/「進化元」/「重ねられているカード」を含む場合のみ:
-                  積み重ね順の上/下どちらから見るか */}
-              {((c.fromZones || []).includes('security') || (c.fromZones || []).includes('evo_source') || (c.fromZones || []).includes('stacked_cards')) && (
+                  積み重ね順の上/下どちらから見るか（isPlaceActive中は901行目付近の専用パネルと
+                  二重表示になるためこちらは出さない） */}
+              {!isPlaceActive && ((c.fromZones || []).includes('security') || (c.fromZones || []).includes('evo_source') || (c.fromZones || []).includes('stacked_cards')) && (
                 <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   {(c.fromZones || []).includes('security') && (
                     <div>
@@ -4351,8 +4355,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
 
         {/* 📍 場所（取得元エリア）: 登場/使用・進化はビルトインのため常時対象、
-            それ以外は辞書の hasFromZones=true のアクションのみ表示。編集中の効果に対して読み書き */}
-        {(BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || !!dict.actions.find((a) => a.code === effectAction)?.hasFromZones) && (() => {
+            それ以外は辞書の hasFromZones=true のアクションのみ表示。編集中の効果に対して読み書き。
+            「〇〇に置く」(isPlaceActive)専用の📥場所パネルと辞書側hasFromZonesが両方満たされる
+            アクション（place_on_security_top等）では二重表示になってしまうため、
+            isPlaceActive中はこちらを出さない */}
+        {!PLACE_ACTION_CODES.has(effectAction || '') && (BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || !!dict.actions.find((a) => a.code === effectAction)?.hasFromZones) && (() => {
           const zones = effectFromZones;
           const op = effectFromZonesOp;
           const toggleZone = (code: string) => {

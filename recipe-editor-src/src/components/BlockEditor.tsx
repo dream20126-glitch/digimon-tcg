@@ -1523,9 +1523,11 @@ function joinStackSuffix(base: string, pos: StackPos): string {
   return pos ? base + '_' + pos : base;
 }
 
+// 重ねられているカード = 対象デジモンの進化元＋一番上のカード（本体）全て。エンジン未実装
+// （保存はできるが動作しない）。実装時はこの定義自体をエンジン側コードに追加する必要がある
 const TARGET_SEL_UNIMPLEMENTED = new Set([
   'opp_security', 'target_other_own_card', 'target_other_own_tamer', 'opponent_tamer',
-  'own_option', 'opponent_option',
+  'own_option', 'opponent_option', 'own_stacked_cards', 'opp_stacked_cards',
 ]);
 const TARGET_SEL_L1 = [
   { code: '', label: '既定' },
@@ -1542,6 +1544,7 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'tamer', label: 'テイマー' },
     { code: 'option', label: 'オプション' },
     { code: 'security', label: 'セキュリティ' },
+    { code: 'stacked', label: '重ねられているカード' },
   ],
   opp: [
     { code: 'digimon', label: 'デジモン' },
@@ -1550,6 +1553,7 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'option', label: 'オプション' },
     { code: 'player', label: 'プレイヤー' },
     { code: 'security', label: 'セキュリティ' },
+    { code: 'stacked', label: '重ねられているカード' },
   ],
   other_own: [
     { code: 'digimon', label: 'デジモン' },
@@ -1558,8 +1562,8 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
   ],
 };
 const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
-  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:option': 'own_option', 'own:security': 'own_security',
-  'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:tamer': 'opponent_tamer', 'opp:option': 'opponent_option', 'opp:player': 'opp_player', 'opp:security': 'opp_security',
+  'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:option': 'own_option', 'own:security': 'own_security', 'own:stacked': 'own_stacked_cards',
+  'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:tamer': 'opponent_tamer', 'opp:option': 'opponent_option', 'opp:player': 'opp_player', 'opp:security': 'opp_security', 'opp:stacked': 'opp_stacked_cards',
   'other_own:digimon': 'target_other_own', 'other_own:card': 'target_other_own_card', 'other_own:tamer': 'target_other_own_tamer',
 };
 const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
@@ -1571,12 +1575,14 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   own_tamer: { l1: 'own', l2: 'tamer' },
   own_option: { l1: 'own', l2: 'option' },
   own_security: { l1: 'own', l2: 'security' },
+  own_stacked_cards: { l1: 'own', l2: 'stacked' },
   opponent: { l1: 'opp', l2: 'digimon' },
   opponent_card: { l1: 'opp', l2: 'card' },
   opponent_tamer: { l1: 'opp', l2: 'tamer' },
   opponent_option: { l1: 'opp', l2: 'option' },
   opp_player: { l1: 'opp', l2: 'player' },
   opp_security: { l1: 'opp', l2: 'security' },
+  opp_stacked_cards: { l1: 'opp', l2: 'stacked' },
   target_other_own: { l1: 'other_own', l2: 'digimon' },
   target_other_own_card: { l1: 'other_own', l2: 'card' },
   target_other_own_tamer: { l1: 'other_own', l2: 'tamer' },

@@ -816,7 +816,9 @@ function CostListEditor({
                   onClick={() => {
                     if (isDiscardActive) return;
                     const z = DISCARD_ZONE_MAP.find((zz) => zz.code === 'hand')!;
-                    updateCost(i, { ...c, action: z.action, target: z.target || c.target, fromZones: [z.code] });
+                    // fromZones は設定しない（📍位置ボタンで既に場所+位置を action コードへ
+                    // エンコード済みのため、汎用の「セキュリティ/進化元の位置」パネルと二重表示になるのを防ぐ）
+                    updateCost(i, { ...c, action: z.action, target: z.target || c.target, fromZones: undefined });
                   }}
                   style={{
                     padding: '3px 9px', borderRadius: 5,
@@ -1017,8 +1019,10 @@ function CostListEditor({
                       const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
                       if (!z) return;
                       // z.targetが無い場所（進化元/テイマー/手札/デッキ/リンクカード）では既存のtargetを
-                      // そのまま維持する（「対象」欄で選んだ自分/相手を場所切替で巻き戻さないため）
-                      updateCost(i, { ...c, action: z.action, target: z.target || c.target, fromZones: [z.code] });
+                      // そのまま維持する（「対象」欄で選んだ自分/相手を場所切替で巻き戻さないため）。
+                      // fromZones は設定しない（📍位置ボタンで既に場所+位置を action コードへ
+                      // エンコード済みのため、汎用の「セキュリティ/進化元の位置」パネルと二重表示になるのを防ぐ）
+                      updateCost(i, { ...c, action: z.action, target: z.target || c.target, fromZones: undefined });
                     }}
                     accentColor="#b76e00"
                   />
@@ -3898,8 +3902,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
                         if (!z) return;
                         // z.targetが無い場所（進化元/テイマー/手札/デッキ/リンクカード）では既存のtargetを
-                        // そのまま維持する（「対象」欄で選んだ自分/相手を場所切替で巻き戻さないため）
-                        updateEffect({ action: z.action, target: z.target || effectTarget, fromZones: [z.code] });
+                        // そのまま維持する（「対象」欄で選んだ自分/相手を場所切替で巻き戻さないため）。
+                        // fromZones は設定しない（📍位置ボタンで既に場所+位置を action コードへ
+                        // エンコード済みのため、汎用の「セキュリティ/進化元の位置」パネルと二重表示になるのを防ぐ）
+                        updateEffect({ action: z.action, target: z.target || effectTarget, fromZones: undefined });
                       }}
                       accentColor="#1976d2"
                     />

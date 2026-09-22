@@ -3735,28 +3735,32 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
                   {/* summon専用:「登場」「使用」を独立トグルで選べるようにする（トリガーの複数選択と
-                      同じ操作感）。「登場のみ」＝デジモンカードのみ対象・「使用のみ」＝オプション
-                      カードのみ対象・両方（or未指定）＝従来通りどちらも対象。対象/条件欄はそのまま
-                      共有し、targetFilterのcond_typeへ反映するだけ（アクションコード自体はsummon
-                      のまま変えない） */}
+                      同じ操作感）。「登場のみ」＝デジモン/テイマーカードのみ対象・「使用のみ」＝
+                      オプションカードのみ対象・両方（or未指定）＝従来通りどちらも対象。対象/条件欄は
+                      そのまま共有し、targetFilterのcond_typeへ反映するだけ（アクションコード自体は
+                      summonのまま変えない） */}
                   {effectAction === 'summon' && (() => {
                     const typeFilter = effectTargetFilter.find((c) => c.base === 'cond_type');
-                    const typeValues = typeFilter ? String(typeFilter.value || '').split(',').filter(Boolean) : ['デジモン', 'オプション'];
-                    const toggleSummonType = (t: 'デジモン' | 'オプション', on: boolean) => {
-                      const cur = new Set(typeValues);
-                      if (on) cur.add(t); else cur.delete(t);
+                    const typeValues = typeFilter ? String(typeFilter.value || '').split(',').filter(Boolean) : [];
+                    // フィルタ未設定＝両方ONとして扱う（従来通りどちらも対象という意味）
+                    const appearOn = !typeFilter || (typeValues.includes('デジモン') && typeValues.includes('テイマー'));
+                    const useOn = !typeFilter || typeValues.includes('オプション');
+                    const toggleSummonKind = (kind: 'appear' | 'use', on: boolean) => {
+                      const nextAppear = kind === 'appear' ? on : appearOn;
+                      const nextUse = kind === 'use' ? on : useOn;
                       const rest = effectTargetFilter.filter((c) => c.base !== 'cond_type');
-                      // 両方 or どちらも無し（未指定=どちらも対象、と同じ意味に倒す）は絞り込み無しにする
-                      if (cur.size === 0 || cur.size === 2) updateEffect({ targetFilter: rest });
-                      else updateEffect({ targetFilter: [...rest, { base: 'cond_type', value: Array.from(cur).join(',') }] });
+                      // 両方ON・両方OFFはどちらも「絞り込み無し（＝どちらも対象）」に倒す
+                      if (nextAppear === nextUse) { updateEffect({ targetFilter: rest }); return; }
+                      const values = nextAppear ? ['デジモン', 'テイマー'] : ['オプション'];
+                      updateEffect({ targetFilter: [...rest, { base: 'cond_type', value: values.join(',') }] });
                     };
                     return (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ fontSize: 11, color: '#666' }}>登場/使用:</span>
                         <MultiButtonGroup
-                          options={[{ code: 'デジモン', label: '登場' }, { code: 'オプション', label: '使用' }]}
-                          values={typeValues}
-                          onToggle={(code, on) => toggleSummonType(code as 'デジモン' | 'オプション', on)}
+                          options={[{ code: 'appear', label: '登場' }, { code: 'use', label: '使用' }]}
+                          values={[...(appearOn ? ['appear'] : []), ...(useOn ? ['use'] : [])]}
+                          onToggle={(code, on) => toggleSummonKind(code as 'appear' | 'use', on)}
                           accentColor="#1976d2"
                         />
                       </div>

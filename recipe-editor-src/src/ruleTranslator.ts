@@ -86,7 +86,7 @@ function pairToString(p: ConditionPair): string {
 
 // deck_open / deck_search 系: ルールは「オープンしたカードに対する処理」
 //   action='add_to_hand' / 'bounce' → selections.push({...destination:'hand'})
-//   action='destroy'                → selections.push({...destination:'trash'})
+//   action='discard'                → selections.push({...destination:'trash'})
 //   action='add_to_evo_source'      → selections.push({...destination:'evo_source'})
 //   action='place_on_security_top'  → selections.push({...destination:'security_top'})
 //   action='return_deck'            → return_to を value から決定
@@ -121,7 +121,7 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
   // フィルタや count は無視し、rule.action と rule.value から戻し先を決定
   if (rule.isRemaining) {
     switch (rule.action) {
-      case 'destroy':
+      case 'discard':
       case 'return_trash':
         step.return_to = 'trash'; return;
       case 'return_deck':
@@ -199,7 +199,7 @@ function applyOneSelection(step: any, rule: MiniStep, filter: Record<string, any
     case 'add_to_hand':
     case 'bounce':
       pushSelection('hand'); return;
-    case 'destroy':
+    case 'discard':
       pushSelection('trash'); return;
     case 'add_to_evo_source':
       pushSelection('evo_source'); return;

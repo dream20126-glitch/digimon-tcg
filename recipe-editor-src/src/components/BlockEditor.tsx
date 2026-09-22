@@ -5277,7 +5277,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
         // これら以外は「その他のアクション」から選ぶ
         const isRulePlaceActive = PLACE_ACTION_CODES.has(step.action || '');
         const activeRulePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === step.action)?.code || '';
-        const isRuleCommonAction = step.action === 'add_to_hand' || step.action === 'destroy' || step.action === 'return_deck' || isRulePlaceActive;
+        const isRuleCommonAction = step.action === 'add_to_hand' || step.action === 'discard' || step.action === 'return_deck' || isRulePlaceActive;
 
         return (
           <div style={{ marginBottom: 8 }}>
@@ -5294,7 +5294,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
               </label>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {[{ code: 'add_to_hand', label: '手札に加える' }, { code: 'destroy', label: '破棄' }].map((a) => {
+              {[{ code: 'add_to_hand', label: '手札に加える' }, { code: 'discard', label: '破棄' }].map((a) => {
                 const active = step.action === a.code;
                 return (
                   <button
@@ -5593,12 +5593,12 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                     const gAction = g.action || step.action;
                     const gIsPlaceActive = PLACE_ACTION_CODES.has(gAction || '');
                     const gActivePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === gAction)?.code || '';
-                    const gIsCommon = gAction === 'add_to_hand' || gAction === 'destroy' || gAction === 'return_deck' || gIsPlaceActive;
+                    const gIsCommon = gAction === 'add_to_hand' || gAction === 'discard' || gAction === 'return_deck' || gIsPlaceActive;
                     return (
                       <div style={{ marginBottom: 6 }}>
                         <div style={miniLbl()}>アクション（省略時はルール本体と同じ）</div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          {[{ code: 'add_to_hand', label: '手札に加える' }, { code: 'destroy', label: '破棄' }].map((a) => {
+                          {[{ code: 'add_to_hand', label: '手札に加える' }, { code: 'discard', label: '破棄' }].map((a) => {
                             const active = (g.action || step.action) === a.code;
                             return (
                               <button

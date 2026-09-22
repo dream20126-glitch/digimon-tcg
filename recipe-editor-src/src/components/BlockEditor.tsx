@@ -743,15 +743,40 @@ function CostListEditor({
           && (cCurTgt.l1 === 'self' || cCurTgt.l2 === 'digimon' || cCurTgt.l2 === 'tamer');
         const setCostStackPos = (pos: StackPos) => updateCost(i, { ...c, target: joinStackSuffix(cTgtBase, pos) + cTgtSuffix });
         const setCostTgt = (l1: string, l2?: string) => {
-          if (!l1) { updateCost(i, { ...c, target: '' }); return; }
-          if (l1 === 'self') { updateCost(i, { ...c, target: joinStackSuffix('self_card', cTgtStackPos) + cTgtSuffix }); return; }
-          if (l1 === 'same_target') { updateCost(i, { ...c, target: 'same_target' + cTgtSuffix }); return; }
+          // OR選択中に他のL1/L2へ切り替えたら、自動設定していたtype絞り込みは持ち越さない
+          const cCleared = cIsOrMode ? { conditions: (c.conditions || []).filter((cc) => cc.base !== 'cond_type') } : {};
+          if (!l1) { updateCost(i, { ...c, ...cCleared, target: '' }); return; }
+          if (l1 === 'self') { updateCost(i, { ...c, ...cCleared, target: joinStackSuffix('self_card', cTgtStackPos) + cTgtSuffix }); return; }
+          if (l1 === 'same_target') { updateCost(i, { ...c, ...cCleared, target: 'same_target' + cTgtSuffix }); return; }
           const useL2 = l2 || (cCurTgt.l1 === l1 && cCurTgt.l2 ? cCurTgt.l2 : (l1 === 'most' ? 'security' : 'digimon'));
           const newBase = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '';
           // 位置は「デジモン/テイマー」を維持したときだけ引き継ぐ（カード/オプション等に
           // 切り替えたら位置指定自体が無意味になるため破棄する）
           const keepPos = useL2 === 'digimon' || useL2 === 'tamer';
-          updateCost(i, { ...c, target: joinStackSuffix(newBase, keepPos ? cTgtStackPos : '') + cTgtSuffix });
+          updateCost(i, { ...c, ...cCleared, target: joinStackSuffix(newBase, keepPos ? cTgtStackPos : '') + cTgtSuffix });
+        };
+        // デジモン/テイマーは複数選択可（対象・対象の条件と同じ操作感。両方選ぶと対象コードを
+        // card+cond_typeフィルタに切り替える。「最も多いプレイヤー」等L2にdigimon/tamerが
+        // 無いカテゴリでは常にfalseになるだけで無害）
+        const cHasDigimonTamer = (cCurTgt.l1 === 'own' || cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'other_own');
+        const cDigimonCode = TARGET_SEL_L1L2_TO_CODE[cCurTgt.l1 + ':digimon'];
+        const cTamerCode = TARGET_SEL_L1L2_TO_CODE[cCurTgt.l1 + ':tamer'];
+        const cCardCode = TARGET_SEL_L1L2_TO_CODE[cCurTgt.l1 + ':card'];
+        const cIsOrMode = cCurTgt.l2 === 'card' && (c.conditions || []).some((cc) => cc.base === 'cond_type' && /デジモン/.test(cc.value || '') && /テイマー/.test(cc.value || ''));
+        const cDigimonChecked = cHasDigimonTamer && (cCurTgt.l2 === 'digimon' || cIsOrMode);
+        const cTamerChecked = cHasDigimonTamer && (cCurTgt.l2 === 'tamer' || cIsOrMode);
+        const cExclusiveL2Options = cTgtL2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer');
+        const applyCostDigiTamerSelection = (nextDigimon: boolean, nextTamer: boolean) => {
+          const restConds = (c.conditions || []).filter((cc) => cc.base !== 'cond_type');
+          if (nextDigimon && nextTamer) {
+            updateCost(i, { ...c, target: cCardCode + cTgtSuffix, conditions: [...restConds, { base: 'cond_type', value: 'デジモン,テイマー' }] });
+          } else if (nextDigimon) {
+            updateCost(i, { ...c, target: cDigimonCode + cTgtSuffix, conditions: restConds });
+          } else if (nextTamer) {
+            updateCost(i, { ...c, target: cTamerCode + cTgtSuffix, conditions: restConds });
+          } else {
+            updateCost(i, { ...c, target: '', conditions: restConds });
+          }
         };
         // 「下/一番下」を選んだときだけ、積まれているカードの裏表・種別で絞り込める
         // （例:「テイマーの下にある裏向きのカードを破棄する」コスト）。
@@ -1258,7 +1283,28 @@ function CostListEditor({
             <div style={{ marginTop: 4 }}>
               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
               <ButtonGroup options={TARGET_SEL_L1} value={cCurTgt.l1} onChange={(l1) => setCostTgt(l1)} accentColor="#b76e00" />
-              {cTgtL2Options.length > 0 && (
+              {cHasDigimonTamer && (
+                <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <MultiButtonGroup
+                    options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }]}
+                    values={[...(cDigimonChecked ? ['digimon'] : []), ...(cTamerChecked ? ['tamer'] : [])]}
+                    onToggle={(code, on) => applyCostDigiTamerSelection(
+                      code === 'digimon' ? on : cDigimonChecked,
+                      code === 'tamer' ? on : cTamerChecked
+                    )}
+                    accentColor="#b76e00"
+                  />
+                  {cExclusiveL2Options.length > 0 && (
+                    <ButtonGroup
+                      options={cExclusiveL2Options}
+                      value={!cDigimonChecked && !cTamerChecked ? cCurTgt.l2 : ''}
+                      onChange={(l2) => setCostTgt(cCurTgt.l1, l2)}
+                      accentColor="#b76e00"
+                    />
+                  )}
+                </div>
+              )}
+              {!cHasDigimonTamer && cTgtL2Options.length > 0 && (
                 <div style={{ marginTop: 4 }}>
                   <ButtonGroup options={cTgtL2Options} value={cCurTgt.l2} onChange={(l2) => setCostTgt(cCurTgt.l1, l2)} accentColor="#b76e00" />
                 </div>
@@ -2947,6 +2993,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               update('triggerSubject', SUBJECT_L1L2_TO_CODE[cur.l1 + ':' + l2]);
             };
             const l2Options = cur.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
+            // デジモン/テイマーは複数選択可（両方選ぶとcard=「カード」扱いに集約。カード単体の
+            // ボタンは冗長になるためexclusiveL2Optionsから外す。対象/対象の条件と同じ操作感）
+            const hasDigimonTamer = (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'other_own');
+            const subjDigimonCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':digimon'];
+            const subjTamerCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':tamer'];
+            const subjCardCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':card'];
+            const subjDigimonChecked = hasDigimonTamer && (cur.l2 === 'digimon' || cur.l2 === 'card');
+            const subjTamerChecked = hasDigimonTamer && (cur.l2 === 'tamer' || cur.l2 === 'card');
+            const subjExclusiveL2Options = l2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer' && o.code !== 'card');
+            const applySubjDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
+              if (nextDigimon && nextTamer) update('triggerSubject', subjCardCode);
+              else if (nextDigimon) update('triggerSubject', subjDigimonCode);
+              else if (nextTamer) update('triggerSubject', subjTamerCode);
+              else update('triggerSubject', cur.l1);
+            };
             // レスト/アクティブ状態フィルタは「このカード/デジモン/テイマー」のときだけ意味を持つ
             // （「カード」全般やプレイヤーにはレスト/アクティブの概念が無い）
             const showRestActive = cur.l1 === 'self' || cur.l2 === 'digimon' || cur.l2 === 'tamer';
@@ -3260,7 +3321,28 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     )}
                   </div>
                   <ButtonGroup options={SUBJECT_L1} value={cur.l1} onChange={handleL1} accentColor="#2e7d32" />
-                  {cur.l1 !== 'self' && cur.l1 !== 'both' && (
+                  {hasDigimonTamer && (
+                    <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <MultiButtonGroup
+                        options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }]}
+                        values={[...(subjDigimonChecked ? ['digimon'] : []), ...(subjTamerChecked ? ['tamer'] : [])]}
+                        onToggle={(code, on) => applySubjDigiTamer(
+                          code === 'digimon' ? on : subjDigimonChecked,
+                          code === 'tamer' ? on : subjTamerChecked
+                        )}
+                        accentColor="#2e7d32"
+                      />
+                      {subjExclusiveL2Options.length > 0 && (
+                        <ButtonGroup
+                          options={subjExclusiveL2Options}
+                          value={!subjDigimonChecked && !subjTamerChecked ? cur.l2 : ''}
+                          onChange={handleL2}
+                          accentColor="#2e7d32"
+                        />
+                      )}
+                    </div>
+                  )}
+                  {!hasDigimonTamer && cur.l1 !== 'self' && cur.l1 !== 'both' && (
                     <div style={{ marginTop: 4 }}>
                       <ButtonGroup options={l2Options} value={cur.l2} onChange={handleL2} accentColor="#2e7d32" />
                     </div>
@@ -6552,10 +6634,46 @@ function ConditionsHybridEditor({
                         // （含めない＝他の自分のデジモン。旧 other_own コードをそのまま使う）
                         const showIncludeSelfToggle = curSub.l1 === 'own' && curSub.l2 === 'digimon';
                         const excludeSelf = rawSub.base === 'other_own';
+                        // デジモン/テイマーは複数選択可（両方選ぶとcard=「カード」扱いに集約。対象/
+                        // 対象の条件と同じ操作感。カード単体ボタンは冗長になるため除外する）
+                        const hasDigimonTamerSub = (curSub.l1 === 'own' || curSub.l1 === 'opp' || curSub.l1 === 'other_own');
+                        const subDigimonCode = COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':digimon'];
+                        const subTamerCode = COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':tamer'];
+                        const subCardCode = COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':card'];
+                        const subDigimonChecked = hasDigimonTamerSub && (curSub.l2 === 'digimon' || curSub.l2 === 'card');
+                        const subTamerChecked = hasDigimonTamerSub && (curSub.l2 === 'tamer' || curSub.l2 === 'card');
+                        const subExclusiveL2Options = l2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer' && o.code !== 'card');
+                        const applySubDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
+                          if (nextDigimon && nextTamer) updateAt(i, { subject: subCardCode, ...clearIfRedundant('card') });
+                          else if (nextDigimon) updateAt(i, { subject: subDigimonCode, ...clearIfRedundant('digimon') });
+                          else if (nextTamer) updateAt(i, { subject: subTamerCode, ...clearIfRedundant('tamer') });
+                          else updateAt(i, { subject: curSub.l1 || undefined });
+                        };
                         return (
                           <>
                             <ButtonGroup options={subjectL1Options} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
-                            {l2Options.length > 0 && (
+                            {hasDigimonTamerSub && (
+                              <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <MultiButtonGroup
+                                  options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }]}
+                                  values={[...(subDigimonChecked ? ['digimon'] : []), ...(subTamerChecked ? ['tamer'] : [])]}
+                                  onToggle={(code, on) => applySubDigiTamer(
+                                    code === 'digimon' ? on : subDigimonChecked,
+                                    code === 'tamer' ? on : subTamerChecked
+                                  )}
+                                  accentColor={colors.accent}
+                                />
+                                {subExclusiveL2Options.length > 0 && (
+                                  <ButtonGroup
+                                    options={subExclusiveL2Options}
+                                    value={!subDigimonChecked && !subTamerChecked ? curSub.l2 : ''}
+                                    onChange={handleSubL2}
+                                    accentColor={colors.accent}
+                                  />
+                                )}
+                              </div>
+                            )}
+                            {!hasDigimonTamerSub && l2Options.length > 0 && (
                               <div style={{ marginTop: 4 }}>
                                 <ButtonGroup options={l2Options} value={curSub.l2} onChange={handleSubL2} accentColor={colors.accent} />
                               </div>
@@ -6695,10 +6813,45 @@ function ConditionsHybridEditor({
                     const setStackPos = (pos: StackPos) => updateAt(i, { subject: joinStackSuffix(rawSub.base, pos) });
                     const showIncludeSelfToggle = curSub.l1 === 'own' && curSub.l2 === 'digimon';
                     const excludeSelf = rawSub.base === 'other_own';
+                    // デジモン/テイマーは複数選択可（両方選ぶとcard=「カード」扱いに集約）
+                    const hasDigimonTamerSub2 = (curSub.l1 === 'own' || curSub.l1 === 'opp' || curSub.l1 === 'other_own');
+                    const sub2DigimonCode = COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':digimon'];
+                    const sub2TamerCode = COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':tamer'];
+                    const sub2CardCode = COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':card'];
+                    const sub2DigimonChecked = hasDigimonTamerSub2 && (curSub.l2 === 'digimon' || curSub.l2 === 'card');
+                    const sub2TamerChecked = hasDigimonTamerSub2 && (curSub.l2 === 'tamer' || curSub.l2 === 'card');
+                    const sub2ExclusiveL2Options = l2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer' && o.code !== 'card');
+                    const applySub2DigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
+                      if (nextDigimon && nextTamer) updateAt(i, { subject: sub2CardCode });
+                      else if (nextDigimon) updateAt(i, { subject: sub2DigimonCode });
+                      else if (nextTamer) updateAt(i, { subject: sub2TamerCode });
+                      else updateAt(i, { subject: curSub.l1 || undefined });
+                    };
                     return (
                       <>
                         <ButtonGroup options={COND_SUBJECT_L1} value={curSub.l1} onChange={handleSubL1} accentColor={colors.accent} />
-                        {l2Options.length > 0 && (
+                        {hasDigimonTamerSub2 && (
+                          <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <MultiButtonGroup
+                              options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }]}
+                              values={[...(sub2DigimonChecked ? ['digimon'] : []), ...(sub2TamerChecked ? ['tamer'] : [])]}
+                              onToggle={(code, on) => applySub2DigiTamer(
+                                code === 'digimon' ? on : sub2DigimonChecked,
+                                code === 'tamer' ? on : sub2TamerChecked
+                              )}
+                              accentColor={colors.accent}
+                            />
+                            {sub2ExclusiveL2Options.length > 0 && (
+                              <ButtonGroup
+                                options={sub2ExclusiveL2Options}
+                                value={!sub2DigimonChecked && !sub2TamerChecked ? curSub.l2 : ''}
+                                onChange={handleSubL2}
+                                accentColor={colors.accent}
+                              />
+                            )}
+                          </div>
+                        )}
+                        {!hasDigimonTamerSub2 && l2Options.length > 0 && (
                           <div style={{ marginTop: 4 }}>
                             <ButtonGroup options={l2Options} value={curSub.l2} onChange={handleSubL2} accentColor={colors.accent} />
                           </div>

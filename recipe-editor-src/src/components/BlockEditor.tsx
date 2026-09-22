@@ -1734,6 +1734,10 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'rest', label: 'レスト' },
   { code: 'active', label: 'アクティブ' },
   { code: 'summon', label: '登場/使用' },
+  // 登場のみ(デジモン/テイマー限定)・使用のみ(オプション限定)。summonと同じ辞書未登録の
+  // ビルトインアクションとして扱う（BUILTIN_FROM_ZONE_ACTIONSに追加）。エンジン未実装
+  { code: 'summon_appear', label: '登場' },
+  { code: 'summon_use', label: '使用' },
   { code: 'draw', label: 'ドロー' },
   { code: 'grant_keyword', label: 'キーワード付与' },
   { code: 'destroy', label: '消滅' },
@@ -1847,7 +1851,7 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
 const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
-const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'evolve', 'link']);
+const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'summon_appear', 'summon_use', 'evolve', 'link']);
 // よく使う期間（対象と同じ2段ボタン式）
 const DURATION_L1 = [
   { code: 'dur_this_turn', label: 'このターン中' },
@@ -3655,8 +3659,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           // コストを支払わず/登場時効果は発揮しない は効果1・代替アクション（その後/OR/AND）とも
           // 対応。裏向きで、は効果1（メインアクション）専用のまま
-          const showCostCheckboxes = effectAction === 'summon' || effectAction === 'summon_from_trash' || effectAction === 'evolve' || effectAction === 'summon_from_evo_source' || effectAction === 'link';
-          const showSkipOnPlay = effectAction === 'summon' || effectAction === 'summon_from_trash';
+          const showCostCheckboxes = effectAction === 'summon' || effectAction === 'summon_appear' || effectAction === 'summon_use' || effectAction === 'summon_from_trash' || effectAction === 'evolve' || effectAction === 'summon_from_evo_source' || effectAction === 'link';
+          const showSkipOnPlay = effectAction === 'summon' || effectAction === 'summon_appear' || effectAction === 'summon_use' || effectAction === 'summon_from_trash';
 
           return (
             <div style={{

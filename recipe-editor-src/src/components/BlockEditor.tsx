@@ -4424,14 +4424,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         {(() => {
           // 効果2以降（代替アクション）を編集中は「デジモン+テイマー同時選択(AND)」だけ省略する
           // （AND側は altActions を入れ子で使う実装のため、代替アクション自身には適用できない）。
+          // OR側（対象コード=card+cond_typeフィルタ）はaltActionsのネストが不要なので効果1と同様に対応する。
           // 「対象の条件」（targetFilter）は効果1と同じ ConditionsHybridEditor を使い回す
           if (isEditingAlt) {
             const eBase = (effectTarget || '').split(':')[0];
             const eSuffix = (effectTarget || '').substring(eBase.length);
             const eCurTgt = TARGET_SEL_CODE_TO_L1L2[eBase] || { l1: '', l2: '' };
             const eL2Options = eCurTgt.l1 === 'most' ? MOST_PLAYER_METRICS : (TARGET_SEL_L2[eCurTgt.l1] || []);
+            const eHasDigimonTamer = (eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'other_own');
+            const eDigimonCode = TARGET_SEL_L1L2_TO_CODE[eCurTgt.l1 + ':digimon'];
+            const eTamerCode = TARGET_SEL_L1L2_TO_CODE[eCurTgt.l1 + ':tamer'];
+            const eCardCode = TARGET_SEL_L1L2_TO_CODE[eCurTgt.l1 + ':card'];
+            const eIsOrMode = eCurTgt.l2 === 'card' && effectTargetFilter.some((c) => c.base === 'cond_type' && /デジモン/.test(c.value || '') && /テイマー/.test(c.value || ''));
+            const eDigimonChecked = eHasDigimonTamer && (eCurTgt.l2 === 'digimon' || eIsOrMode);
+            const eTamerChecked = eHasDigimonTamer && (eCurTgt.l2 === 'tamer' || eIsOrMode);
+            const eExclusiveL2Options = eL2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer');
             const eHideCount = eBase === 'self' || eBase === 'self_card' || eBase === 'same_target';
-            const eIsUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(eBase);
+            const eIsUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(eBase) || eIsOrMode;
             const eShowTargetFilter =
               eCurTgt.l1 === 'self' ||
               eCurTgt.l1 === 'same_target' ||
@@ -4439,27 +4448,82 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               (eCurTgt.l1 === 'opp' && ['digimon', 'tamer'].includes(eCurTgt.l2)) ||
               (eCurTgt.l1 === 'other_own' && eCurTgt.l2 === 'digimon');
             const setEffTgt = (l1: string, l2?: string) => {
-              if (!l1) { updateEffect({ target: '' }); return; }
+              // OR選択中に他のL1/L2へ切り替えたら、自動設定していたtype絞り込みは持ち越さない
+              const cleared = eIsOrMode ? { targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type') } : {};
+              if (!l1) { updateEffect({ ...cleared, target: '' }); return; }
               // self/self_card・same_target は「対象数」UIを表示しない（eHideCount）ため、
               // 直前の対象で付いていた数指定を持ち越さないようここで破棄する
-              if (l1 === 'self') { updateEffect({ target: 'self_card' }); return; }
-              if (l1 === 'same_target') { updateEffect({ target: 'same_target' }); return; }
+              if (l1 === 'self') { updateEffect({ ...cleared, target: 'self_card' }); return; }
+              if (l1 === 'same_target') { updateEffect({ ...cleared, target: 'same_target' }); return; }
               const useL2 = l2 || (eCurTgt.l1 === l1 && eCurTgt.l2 ? eCurTgt.l2 : (l1 === 'most' ? 'security' : 'digimon'));
-              updateEffect({ target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '') + eSuffix });
+              updateEffect({ ...cleared, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '') + eSuffix });
+            };
+            // デジモン/テイマーのOR複数選択（対象コード=card + cond_typeフィルタ）を反映
+            const applyEffDigiTamerSelection = (nextDigimon: boolean, nextTamer: boolean) => {
+              if (nextDigimon && nextTamer) {
+                updateEffect({ target: eCardCode + eSuffix,
+                  targetFilter: [...effectTargetFilter.filter((c) => c.base !== 'cond_type'), { base: 'cond_type', value: 'デジモン,テイマー' }] });
+              } else if (nextDigimon) {
+                updateEffect({ target: eDigimonCode + eSuffix, targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type') });
+              } else if (nextTamer) {
+                updateEffect({ target: eTamerCode + eSuffix, targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type') });
+              } else {
+                updateEffect({ target: '', targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type') });
+              }
             };
             return (
               <div style={{ display: 'grid', gridTemplateColumns: eHideCount ? '1fr' : '1fr 1fr', gap: 8, marginTop: 8 }}>
                 <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
                   <label style={{ fontWeight: 'bold', color: '#b76e00' }}>🎯 対象</label>
                   <ButtonGroup options={TARGET_SEL_L1} value={eCurTgt.l1} onChange={(l1) => setEffTgt(l1)} accentColor="#b76e00" />
-                  {eL2Options.length > 0 && (
+                  {eHasDigimonTamer && (
+                    <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => applyEffDigiTamerSelection(!eDigimonChecked, eTamerChecked)}
+                        style={{
+                          padding: '3px 9px', borderRadius: 5,
+                          border: eDigimonChecked ? '2px solid #b76e00' : '1px solid #bbb',
+                          background: eDigimonChecked ? '#b76e00' : '#f5f5f5',
+                          color: eDigimonChecked ? '#fff' : '#333',
+                          fontWeight: eDigimonChecked ? 'bold' : 'normal',
+                          cursor: 'pointer', fontSize: 11,
+                        }}
+                      >
+                        デジモン
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyEffDigiTamerSelection(eDigimonChecked, !eTamerChecked)}
+                        style={{
+                          padding: '3px 9px', borderRadius: 5,
+                          border: eTamerChecked ? '2px solid #b76e00' : '1px solid #bbb',
+                          background: eTamerChecked ? '#b76e00' : '#f5f5f5',
+                          color: eTamerChecked ? '#fff' : '#333',
+                          fontWeight: eTamerChecked ? 'bold' : 'normal',
+                          cursor: 'pointer', fontSize: 11,
+                        }}
+                      >
+                        テイマー
+                      </button>
+                      {eExclusiveL2Options.length > 0 && (
+                        <ButtonGroup
+                          options={eExclusiveL2Options}
+                          value={!eDigimonChecked && !eTamerChecked ? eCurTgt.l2 : ''}
+                          onChange={(l2) => setEffTgt(eCurTgt.l1, l2)}
+                          accentColor="#b76e00"
+                        />
+                      )}
+                    </div>
+                  )}
+                  {!eHasDigimonTamer && eL2Options.length > 0 && (
                     <div style={{ marginTop: 4 }}>
                       <ButtonGroup options={eL2Options} value={eCurTgt.l2} onChange={(l2) => setEffTgt(eCurTgt.l1, l2)} accentColor="#b76e00" />
                     </div>
                   )}
                   {eIsUnimplemented && (
                     <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
-                      ⚠ この対象はエンジン未実装です（保存はできますが動作しません）
+                      ⚠ {eIsOrMode ? '複数対象（OR）は' : 'この対象は'}エンジン未実装です（保存はできますが動作しません）
                     </div>
                   )}
                   {eShowTargetFilter && (

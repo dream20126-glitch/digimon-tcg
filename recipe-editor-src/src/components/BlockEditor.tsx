@@ -1733,11 +1733,9 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'memory_minus', label: 'メモリー-' },
   { code: 'rest', label: 'レスト' },
   { code: 'active', label: 'アクティブ' },
-  { code: 'summon', label: '登場/使用' },
-  // 登場のみ(デジモン/テイマー限定)・使用のみ(オプション限定)。summonと同じ辞書未登録の
-  // ビルトインアクションとして扱う（BUILTIN_FROM_ZONE_ACTIONSに追加）。エンジン未実装
-  { code: 'summon_appear', label: '登場' },
-  { code: 'summon_use', label: '使用' },
+  // 「登場/使用」は独立した2ボタン（SUMMON_KIND_OPTIONS）に置き換えたため、ここには含めない
+  // （トリガーの複数選択と同じ操作感で、両方押すとsummon/片方だけだとsummon_appear/
+  // summon_useになる。COMMON_ACTIONS.mapの直前で個別にレンダリングする）
   { code: 'draw', label: 'ドロー' },
   { code: 'grant_keyword', label: 'キーワード付与' },
   { code: 'destroy', label: '消滅' },
@@ -1748,6 +1746,15 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'link', label: 'リンク' },
   { code: 'attack', label: 'アタック' },
   { code: 'block', label: 'ブロック' },
+];
+// 「登場」「使用」の2ボタン（SUMMON_KIND_OPTIONS）: トリガーの複数選択と同じ操作感で、
+// 両方押すと action:'summon'（従来通りどちらも対象）、片方だけだと summon_appear
+// （デジモン/テイマー限定）／summon_use（オプション限定）になる。3つとも
+// summon/evolve/linkと同じ辞書未登録のビルトインアクション（BUILTIN_FROM_ZONE_ACTIONS）
+const SUMMON_KIND_CODES = new Set(['summon', 'summon_appear', 'summon_use']);
+const SUMMON_KIND_OPTIONS: { code: 'appear' | 'use'; label: string }[] = [
+  { code: 'appear', label: '登場' },
+  { code: 'use', label: '使用' },
 ];
 // 「レスト」「アクティブ」「進化」「アタック」「ブロック」「消滅」ボタン専用: 「する」
 // （通常の状態変化アクション）と「できない」（それを封じるアクション）を切り替えられるようにする。
@@ -3457,6 +3464,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             'cant_attack_block',
             ...DISCARD_ACTION_CODES,
             ...PLACE_ACTION_CODES,
+            ...SUMMON_KIND_CODES,
           ]);
           const actionDisplayOptions = rawActionDisplayOptions.filter((o) => !_buttonReachableCodes.has(o.value));
           const curVariant = getActionVariant(effectAction);
@@ -3647,7 +3655,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           // よく使うアクション（トリガー家族ボタンと同じ操作感）: 該当すればボタン1つで即選択、
           // 無ければ「その他のアクション」を開いて既存のプルダウン(+位置バリアント)から選ぶ
-          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || isDiscardActive || isPlaceActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block';
+          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || isDiscardActive || isPlaceActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block' || SUMMON_KIND_CODES.has(effectAction);
           function selectCommonAction(code: string) {
             if (isEditingAlt) { updateEffect({ action: code, value: '' }); return; }
             const dictEntry = findActionEntry(code);
@@ -3740,6 +3748,27 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {/* 登場/使用: トリガーの複数選択と同じ操作感の独立2ボタン。両方押すと
+                      action:'summon'（従来通りどちらも対象）、片方だけだとsummon_appear/
+                      summon_use（デジモン/テイマー限定・オプション限定）になる */}
+                  {(() => {
+                    const appearOn = effectAction === 'summon' || effectAction === 'summon_appear';
+                    const useOn = effectAction === 'summon' || effectAction === 'summon_use';
+                    const toggleSummonKind = (kind: 'appear' | 'use', on: boolean) => {
+                      const nextAppear = kind === 'appear' ? on : appearOn;
+                      const nextUse = kind === 'use' ? on : useOn;
+                      const nextAction = nextAppear && nextUse ? 'summon' : nextAppear ? 'summon_appear' : nextUse ? 'summon_use' : '';
+                      selectCommonAction(nextAction);
+                    };
+                    return (
+                      <MultiButtonGroup
+                        options={SUMMON_KIND_OPTIONS}
+                        values={[...(appearOn ? ['appear'] : []), ...(useOn ? ['use'] : [])]}
+                        onToggle={(code, on) => toggleSummonKind(code as 'appear' | 'use', on)}
+                        accentColor="#1976d2"
+                      />
+                    );
+                  })()}
                   {COMMON_ACTIONS.map((a) => {
                     const isCantToggleGroup = !!DOABLE_TO_CANT_LIVE[a.code];
                     // レスト/アクティブ/進化/アタック/ブロックは複数選択できるトグル式ボタン
@@ -4046,7 +4075,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   キーワード付与(grant_keyword)のときは、下の「🎁 付与する効果」内の
                   キーワードごとの数値欄で block.value を管理するため、ここでは二重表示を避けて隠す */}
               {(effectAction === 'grant_keyword' || effectAction === 'grant_keyword_to') ? null
-              : (effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'link') ? (
+              : (effectAction === 'summon' || effectAction === 'summon_appear' || effectAction === 'summon_use' || effectAction === 'evolve' || effectAction === 'link') ? (
                 <div className="field">
                   <label>💰 コスト増減</label>
                   {(() => {

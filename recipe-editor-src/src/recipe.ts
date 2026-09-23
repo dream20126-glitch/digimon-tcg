@@ -589,9 +589,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (validConds.length >= 2 && b.conditionsOp === 'or') step.condition_op = 'or';
 
   // トリガー条件: 配列で出力 (step.trigger_conditions[])
-  // エンジンは「トリガー発火元のカード」に対してこれらの条件を AND 評価する想定
+  // エンジンは「トリガー発火元のカード」に対してこれらの条件を評価する
+  // （trigger_conditions_op:'or' が無ければ従来通り AND、'or' があればいずれか1件でOK）
   const validTriggerConds = (b.triggerConditions || []).filter((p) => p.base);
   if (validTriggerConds.length > 0) step.trigger_conditions = validTriggerConds.map(pairToString);
+  if (validTriggerConds.length >= 2 && b.triggerConditionsOp === 'or') step.trigger_conditions_op = 'or';
 
   // コスト
   const stepCost = buildCostArray(b.costs);
@@ -1191,6 +1193,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     when: true,
     extra_conditions: true,
     trigger_conditions: true,
+    trigger_conditions_op: true,
     duration: true,
     target: true,
     targets: true,
@@ -1278,6 +1281,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     destroyCauseSubject: step?.cause_subject || undefined,
     limit: step?.limit || '',
     triggerConditions,
+    triggerConditionsOp: step?.trigger_conditions_op === 'or' ? 'or' : 'and',
     conditions,
     conditionsOp: step?.condition_op === 'or' ? 'or' : 'and',
     costs,

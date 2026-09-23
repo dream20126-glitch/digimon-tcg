@@ -3794,6 +3794,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 defaultSubject=""
                 sameAsTargetSubject={targetBaseToCondSubject(block.target)}
                 attackContextActive={isAttackTrigger}
+                conditionsOp={block.triggerConditionsOp || 'and'}
+                onConditionsOpChange={(op) => update('triggerConditionsOp', op)}
               />
             </div>
           )}

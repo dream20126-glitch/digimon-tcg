@@ -1053,10 +1053,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (_bs) _bs._onActivePhase = 'main';
         const _willRun = (recipe, reactorCard) => recipe.some(step => {
           if (!step) return false;
-          if (Array.isArray(step.trigger_conditions) && step.trigger_conditions.length > 0) {
-            const ok = step.trigger_conditions.every((cs) => checkConditions(parseRecipeCondition(String(cs)), reactorCard, _bs, _side));
-            if (!ok) return false;
-          }
+          if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, reactorCard, _bs, _side)) return false;
           if (step.condition) {
             if (!checkConditions(parseRecipeCondition(step.condition), reactorCard, _bs, _side)) return false;
           }
@@ -6268,10 +6265,7 @@ export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) 
       if (s.includes('tamer') && restedCard.type !== 'テイマー') return false;
       if (s.includes('digimon') && restedCard.type !== 'デジモン') return false;
     }
-    if (Array.isArray(step.trigger_conditions) && step.trigger_conditions.length > 0) {
-      const ok = step.trigger_conditions.every((cs) => checkConditions(parseRecipeCondition(String(cs)), restedCard, bs, restedSide));
-      if (!ok) return false;
-    }
+    if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, restedCard, bs, restedSide)) return false;
     return true;
   };
   return _fireSidedReactionTriggers(restedSide, 'when_rest', bs, ctxBase, done, stepFilter);
@@ -6292,13 +6286,7 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
   const topCards = [...(reactPlayer.battleArea || []), ...(reactPlayer.tamerArea || [])].filter(c => c);
   const _willRun = (recipe, reactorCard) => recipe.some(step => {
     if (!step) return false;
-    if (Array.isArray(step.trigger_conditions) && step.trigger_conditions.length > 0) {
-      const ok = step.trigger_conditions.every((cs) => {
-        const conds = parseRecipeCondition(String(cs));
-        return checkConditions(conds, summonedCard, bs, summonedSide);
-      });
-      if (!ok) return false;
-    }
+    if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, summonedCard, bs, summonedSide)) return false;
     if (step.condition) {
       const conds = parseRecipeCondition(step.condition);
       if (!checkConditions(conds, reactorCard, bs, summonedSide)) return false;
@@ -6737,7 +6725,18 @@ function _buildBaseCtx(ctxBase, bs) {
   return base;
 }
 
-// step.trigger_conditions[] を評価（イベント発火元カードに対して AND）
+// step.trigger_conditions[] を評価（イベント発火元カードに対して評価）。
+// trigger_conditions_op:'or' が指定されていれば「いずれか1件」でOK、未指定/'and'なら
+// 従来通り「全件」を満たす必要がある（例:「名称にXを含むか特徴Yを持つこのデジモンが～とき」）
+function _evalTriggerConditionsArray(triggerConditions, op, card, bs, side) {
+  if (!Array.isArray(triggerConditions) || triggerConditions.length === 0) return true;
+  if (op === 'or') {
+    return triggerConditions.some((cs) => checkConditions(parseRecipeCondition(String(cs)), card, bs, side));
+  }
+  return triggerConditions.every((cs) => checkConditions(parseRecipeCondition(String(cs)), card, bs, side));
+}
+
+// step.trigger_conditions[] を評価（イベント発火元カードに対して AND、trigger_conditions_op:'or'指定時はOR）
 // trigger_conditions: ["cond_color:黄", "cond_lv:3", "cond_type:デジモン"] のような string 配列
 // eventCard: トリガー発火元カード（ctx.block._eventSourceCard or fallback ctx.card）
 function checkStepTriggerConditions(step, ctx) {
@@ -6748,15 +6747,9 @@ function checkStepTriggerConditions(step, ctx) {
     console.log('[trigger_conditions] reactor=' + reactingName + ' no event source card → fail');
     return false;
   }
-  for (const condStr of step.trigger_conditions) {
-    const conds = parseRecipeCondition(String(condStr));
-    if (!checkConditions(conds, eventCard, ctx.bs, ctx.side)) {
-      console.log('[trigger_conditions] reactor=' + reactingName + ' FAIL:', condStr, 'against', eventCard.name);
-      return false;
-    }
-  }
-  console.log('[trigger_conditions] reactor=' + reactingName + ' all pass');
-  return true;
+  const ok = _evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, eventCard, ctx.bs, ctx.side);
+  console.log('[trigger_conditions] reactor=' + reactingName + (ok ? ' all pass' : ' FAIL (op=' + (step.trigger_conditions_op || 'and') + ')'));
+  return ok;
 }
 
 // step.limit を最大使用回数に変換（once_per_turn=1 / per_turn:N=N / それ以外=0=無制限）
@@ -11182,13 +11175,7 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback) {
       if (!Array.isArray(list)) continue;
       for (const step of list) {
         if (!step) continue;
-        if (Array.isArray(step.trigger_conditions) && step.trigger_conditions.length > 0) {
-          const ok = step.trigger_conditions.every((cs) => {
-            const conds = parseRecipeCondition(String(cs));
-            return checkConditions(conds, evoCard, bs, side);
-          });
-          if (!ok) continue;
-        }
+        if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, evoCard, bs, side)) continue;
         if (step.condition) {
           const conds = parseRecipeCondition(step.condition);
           if (!checkConditions(conds, card, bs, side)) continue;

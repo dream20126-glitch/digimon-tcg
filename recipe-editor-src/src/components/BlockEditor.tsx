@@ -3424,6 +3424,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 hint="（このトリガーが発火する条件・トリガー発火元カードへのフィルタ）"
                 theme="trigger"
                 defaultSubject=""
+                sameAsTargetSubject={targetBaseToCondSubject(block.target)}
                 attackContextActive={isAttackTrigger}
               />
             </div>

@@ -4229,6 +4229,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       )}
                     </div>
                   )}
+                  {/* attack（効果からアタックを宣言）専用: デジモンのみに絞るか。
+                      OFFの場合、レスト中の相手デジモンがいなければセキュリティへ
+                      フォールバックする（従来通り）。ONの場合はフォールバックせず、
+                      レスト中の相手デジモンがいなければ何もしない
+                      （「相手のデジモンにアタックできる」等の表現用） */}
+                  {effectAction === 'attack' && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                      <input
+                        type="checkbox"
+                        checked={effectOptions.includes('digimon_only')}
+                        onChange={(e) => updateEffect({ options: e.target.checked ? ['digimon_only'] : [] })}
+                      />
+                      デジモンのみ（セキュリティへのフォールバックをしない）
+                    </label>
+                  )}
                   {/* negate（「効果を発揮」）専用: どのトリガー効果を対象にするか + する/しない
                       （例:「登場時」＋「発揮しない」＝対象の登場時効果を発揮しない） */}
                   {effectAction === 'negate' && (

@@ -358,8 +358,14 @@ export const ACTIONS: DictEntry[] = [
   { code: 'force_block', kind: 'action', label: 'ブロックさせる' },
   { code: 'immune_effects', kind: 'action', label: '効果を受けない' },
   { code: 'do_security_check', kind: 'action', label: 'セキュリティチェックをする' },
-  { code: 'attack_player', kind: 'action', label: 'プレイヤーにアタック' },
-  { code: 'attack_digimon', kind: 'action', label: 'デジモンにアタック' },
+  // 効果からアタックを宣言する（急襲/BT26-015等で使用の本物の実装）。
+  // options:['digimon_only'] を付けると、相手のレスト中デジモンがいない場合にセキュリティへ
+  // フォールバックせず何もしない（「相手のデジモンにアタックできる」等の表現用）
+  { code: 'attack', kind: 'action', label: 'アタックする（レスト中の相手デジモンかセキュリティへ）' },
+  // ⚠ 以下2つはcase自体はあるが呼び出し先(window._battleStartAttack)が未定義で常にno-op。
+  // 効果からアタックを宣言したい場合は上の 'attack' を使うこと
+  { code: 'attack_player', kind: 'action', label: 'プレイヤーにアタック（エンジン未対応）' },
+  { code: 'attack_digimon', kind: 'action', label: 'デジモンにアタック（エンジン未対応）' },
   { code: 'change_attack_target', kind: 'action', label: 'アタック対象を変更' },
   { code: 'redirect_attack', kind: 'action', label: 'アタック対象を差し替える（反応）' },
   { code: 'dedigivolve', kind: 'action', label: '退化' },

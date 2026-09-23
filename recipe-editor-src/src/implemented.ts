@@ -6,7 +6,10 @@
 // grep -E "^\s*case '[a-z_]+'" effect-engine.js | grep -v "cond_"
 export const IMPLEMENTED_ACTIONS = new Set<string>([
   'active', 'add_to_evo_source', 'add_to_hand',
-  'attack_digimon', 'attack_player', 'attack_without_rest',
+  // 'attack_digimon'/'attack_player' はcase自体はあるが、内部で呼ぶ
+  // window._battleStartAttack がどこにも定義されておらず常にno-op（実質未実装）。
+  // 効果からアタックを宣言したい場合は代わりに 'attack' を使う
+  'attack_without_rest',
   'bounce', 'cant_attack', 'cant_attack_block', 'cant_block', 'cant_evolve',
   'change_attack_target', 'cost_digiburst', 'cost_discard', 'cost_trash_self',
   'deck_open', 'deck_to_evo_bottom', 'deck_trash_top', 'dedigivolve', 'destroy',

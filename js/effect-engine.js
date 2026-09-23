@@ -10135,7 +10135,11 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (_atkSlotIdx === -1) { callback(); break; }
       const _atkRestTargets = [];
       (opponent.battleArea || []).forEach((c, i) => { if (c && c.suspended) _atkRestTargets.push(i); });
-      const _hasSecurity = (opponent.security || []).length > 0;
+      // options:['digimon_only'] （「相手のデジモンにアタックできる」等）指定時は
+      // セキュリティへのフォールバックを行わない。レスト中の相手デジモンがいなければ
+      // 何もしない（公式ルール上、アクティブな相手デジモンには通常アタックできないため）
+      const _atkDigimonOnly = Array.isArray(step.options) && step.options.includes('digimon_only');
+      const _hasSecurity = !_atkDigimonOnly && (opponent.security || []).length > 0;
       const _declareAttack = (targetType, targetIdx) => {
         window.startAttack(_atkCard, _atkSlotIdx, (ok) => {
           if (!ok) { callback(); return; }
@@ -10154,7 +10158,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (selectedIdx !== null) { _declareAttack('digimon', selectedIdx); return; }
           if (_hasSecurity) { _declareAttack('security', -1); return; }
           callback();
-        }, 'キャンセル＝セキュリティを攻撃');
+        }, _hasSecurity ? 'キャンセル＝セキュリティを攻撃' : 'キャンセル＝アタックしない');
       }
       break;
     }

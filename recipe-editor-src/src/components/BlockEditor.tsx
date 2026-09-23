@@ -6661,13 +6661,14 @@ function byEffectSubject(c: ConditionPair): string {
   return c.subject || 'own';
 }
 
-// 「参照」: 手札/トラッシュ/セキュリティ/進化元の枚数を条件にする（例:「手札が6枚以上」）。
-// ゾーン×以上/以下の2軸をコードの組合せで表現するため、専用の相互変換テーブルを持つ
+// 「参照」: 手札/トラッシュ/セキュリティ/進化元(テイマーの下含む)/バトルエリアの枚数・
+// 裏表状態を条件にする（例:「手札が6枚以上」「進化元が裏向き」）。
+// ゾーン×以上/以下/完全一致の3軸をコードの組合せで表現するため、専用の相互変換テーブルを持つ
 const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   { code: 'hand', label: '手札' },
   { code: 'trash', label: 'トラッシュ' },
   { code: 'security', label: 'セキュリティ' },
-  { code: 'evo_source', label: '進化元' },
+  { code: 'evo_source', label: '進化元／テイマーの下' },
   { code: 'battle_area', label: 'バトルエリア' },
 ];
 const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
@@ -6677,7 +6678,12 @@ const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le', 'evo_source:eq': 'cond_has_evo_eq',
   'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq',
 };
-type RefQuant = 'ge' | 'le' | 'eq';
+type RefQuant = 'ge' | 'le' | 'eq' | 'face_down' | 'face_up';
+const REF_QUANT_NO_VALUE = new Set<RefQuant>(['face_down', 'face_up']);
+// 裏向き/表向き（cond_face_down/cond_face_up）はカード自体の裏表状態を見るだけでゾーンを
+// 問わない判定だが、「どのゾーンについて聞いているか」の表示が消えると分かりにくいため、
+// ゾーンは c.value 側に保持する（進化元／セキュリティで選択可。値としては使わない・表示専用）
+const REF_FACE_ZONES = new Set(['evo_source', 'security']);
 const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> = {
   cond_hand_ge: { zone: 'hand', quant: 'ge' }, cond_hand_le: { zone: 'hand', quant: 'le' }, cond_hand_eq: { zone: 'hand', quant: 'eq' },
   cond_trash_ge: { zone: 'trash', quant: 'ge' }, cond_trash_le: { zone: 'trash', quant: 'le' }, cond_trash_eq: { zone: 'trash', quant: 'eq' },
@@ -6685,20 +6691,48 @@ const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> 
   cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_eq: { zone: 'evo_source', quant: 'eq' },
   cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' },
 };
-const REF_QUANT_OPTIONS: { code: RefQuant; label: string }[] = [
-  { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
-];
-// 裏向き/表向き（cond_face_down/cond_face_up）: 「値」の代わりにカード自体の裏表状態を見る
-// 判定で、進化元・セキュリティ・テイマーの下いずれのカードにも共通して使える汎用条件のため、
-// ゾーン(REF_ZONE_OPTIONS)には紐付けず独立したトグルとして表示する（値は不要）
-const REF_FACE_OPTIONS: { code: string; label: string }[] = [
-  { code: '', label: '指定なし' },
-  { code: 'cond_face_down', label: '裏向き' },
-  { code: 'cond_face_up', label: '表向き' },
-];
 function isRefFaceCond(base: string): boolean {
   return base === 'cond_face_down' || base === 'cond_face_up';
 }
+// 現在の行が指すゾーン（裏向き/表向きのときは c.value に保持したゾーンを見る）
+function refZoneOf(c: ConditionPair): string {
+  if (isRefFaceCond(c.base)) return (c.value && REF_FACE_ZONES.has(c.value)) ? c.value : 'evo_source';
+  return REF_CODE_TO_ZONE_QUANT[c.base]?.zone || 'hand';
+}
+// 現在の行の「値」バリアント（以上/以下/完全一致/裏向き/表向き）
+function refQuantOf(c: ConditionPair): RefQuant {
+  if (c.base === 'cond_face_down') return 'face_down';
+  if (c.base === 'cond_face_up') return 'face_up';
+  return REF_CODE_TO_ZONE_QUANT[c.base]?.quant || 'ge';
+}
+// ゾーンを変更する（値バリアントは可能な限り維持。裏向き/表向きは対応ゾーンでのみ維持できる）
+function refApplyZone(zone: string, quant: RefQuant, value: string | undefined): { base: string; value?: string } {
+  if (quant === 'face_down' || quant === 'face_up') {
+    if (REF_FACE_ZONES.has(zone)) return { base: quant === 'face_down' ? 'cond_face_down' : 'cond_face_up', value: zone };
+    return { base: REF_ZONE_QUANT_TO_CODE[zone + ':ge'], value: undefined };
+  }
+  return { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant] };
+}
+// 値バリアントを変更する（裏向き/表向きは現在のゾーンをそのまま value として保持する）
+function refApplyQuant(zone: string, quant: RefQuant): { base: string; value?: string } {
+  if (quant === 'face_down' || quant === 'face_up') {
+    return { base: quant === 'face_down' ? 'cond_face_down' : 'cond_face_up', value: zone };
+  }
+  return { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant], value: undefined };
+}
+const REF_QUANT_OPTIONS_BY_ZONE: Record<string, { code: RefQuant; label: string }[]> = {
+  evo_source: [
+    { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
+    { code: 'face_down', label: '裏向き' }, { code: 'face_up', label: '表向き' },
+  ],
+  security: [
+    { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
+    { code: 'face_down', label: '裏向き' }, { code: 'face_up', label: '表向き' },
+  ],
+};
+const REF_QUANT_OPTIONS_DEFAULT: { code: RefQuant; label: string }[] = [
+  { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
+];
 // 種別ボタン用（「その他」はトリガー同様、別枠のチェックボックスで扱うため除外）
 const CATEGORY_BUTTON_OPTIONS = CATEGORY_OPTIONS.filter((c) => c.value !== 'other')
   .map((c) => ({ code: c.value, label: c.label }));
@@ -6982,31 +7016,16 @@ function ConditionsHybridEditor({
                         : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 4 }} title="エンジン未実装">⚠</span>
                     )}
                   </div>
-                  {/* 参照: 手札/トラッシュ/セキュリティ/進化元/バトルエリアのどれを見るか（ゾーン選択）。
-                      「裏向き/表向き」を選んでいる間はゾーンに紐付かない判定になるため隠す */}
-                  {cat.code === 'ref' && !isRefFaceCond(c.base) && (
+                  {/* 参照: 手札/トラッシュ/セキュリティ/進化元(テイマーの下含む)/バトルエリアの
+                      どれを見るか（ゾーン選択）。裏向き/表向き選択中もゾーン表示は消さない
+                      （c.value にゾーンを保持しているためそのまま表示を維持できる） */}
+                  {cat.code === 'ref' && (
                     <ButtonGroup
                       options={REF_ZONE_OPTIONS}
-                      value={REF_CODE_TO_ZONE_QUANT[c.base]?.zone || 'hand'}
-                      onChange={(zone) => {
-                        const quant = REF_CODE_TO_ZONE_QUANT[c.base]?.quant || 'ge';
-                        updateAt(i, { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant] });
-                      }}
+                      value={refZoneOf(c)}
+                      onChange={(zone) => updateAt(i, refApplyZone(zone, refQuantOf(c), c.value))}
                       accentColor={colors.accent}
                     />
-                  )}
-                  {/* 裏向き/表向き: 進化元・セキュリティ・テイマーの下、いずれのカードにも使える
-                      汎用の裏表判定（値不要）。ゾーン選択とは独立したトグルとして常に表示する */}
-                  {cat.code === 'ref' && (
-                    <div>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>裏表（進化元/セキュリティ/テイマーの下）</div>
-                      <ButtonGroup
-                        options={REF_FACE_OPTIONS}
-                        value={isRefFaceCond(c.base) ? c.base : ''}
-                        onChange={(v) => updateAt(i, v ? { base: v, value: undefined } : { base: REF_ZONE_QUANT_TO_CODE['hand:ge'] })}
-                        accentColor={colors.accent}
-                      />
-                    </div>
                   )}
                   {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントボタン（コンテンツ幅のみ使用・空なら詰める） */}
                   {variantOptionsFor(cat.code as CondCategory) && (
@@ -7034,30 +7053,36 @@ function ConditionsHybridEditor({
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
                     {cat.code === 'ref' ? (
-                      /* 参照: 以上/以下/完全一致ボタン + 枚数入力。裏向き/表向きを選んでいる間は
-                         値不要のためこの枚数欄自体を表示しない（上の裏表トグル側に判定を集約） */
-                      isRefFaceCond(c.base) ? (
-                        <span style={{ fontSize: 10, color: '#666' }}>（値なし・カードの裏表で判定）</span>
-                      ) : (() => {
-                        const refZone = REF_CODE_TO_ZONE_QUANT[c.base]?.zone || 'hand';
-                        const refQuant = REF_CODE_TO_ZONE_QUANT[c.base]?.quant || 'ge';
+                      /* 参照: 以上/以下/完全一致ボタン + 枚数入力。進化元/セキュリティのみ
+                         裏向き/表向きも選べ、その場合は値不要のため枚数欄を隠す */
+                      (() => {
+                        const refZone = refZoneOf(c);
+                        const refQuant = refQuantOf(c);
+                        const refQuantOptions = REF_QUANT_OPTIONS_BY_ZONE[refZone] || REF_QUANT_OPTIONS_DEFAULT;
+                        const refNoValue = REF_QUANT_NO_VALUE.has(refQuant);
                         return (
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                             <ButtonGroup
-                              options={REF_QUANT_OPTIONS}
+                              options={refQuantOptions}
                               value={refQuant}
-                              onChange={(quant) => updateAt(i, { base: REF_ZONE_QUANT_TO_CODE[refZone + ':' + quant] })}
+                              onChange={(quant) => updateAt(i, refApplyQuant(refZone, quant as RefQuant))}
                               accentColor={colors.accent}
                             />
-                            <input
-                              type="number"
-                              min={0}
-                              value={c.value || ''}
-                              onChange={(e) => updateAt(i, { value: e.target.value })}
-                              placeholder="枚数"
-                              style={{ width: 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-                            />
-                            <span style={{ fontSize: 10, color: '#555' }}>枚</span>
+                            {refNoValue ? (
+                              <span style={{ fontSize: 10, color: '#666' }}>（値なし・カードの裏表で判定）</span>
+                            ) : (
+                              <>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={c.value || ''}
+                                  onChange={(e) => updateAt(i, { value: e.target.value })}
+                                  placeholder="枚数"
+                                  style={{ width: 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                                />
+                                <span style={{ fontSize: 10, color: '#555' }}>枚</span>
+                              </>
+                            )}
                           </div>
                         );
                       })()

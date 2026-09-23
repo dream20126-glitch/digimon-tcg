@@ -177,8 +177,10 @@ function altActionToStepObject(a: AltAction): any {
           case 'cond_lv': { const n = num2(c.value); if (n !== undefined) { af.lv_le = n; af.lv_ge = n; } break; }
           case 'cond_lv_le': { const n = num2(c.value); if (n !== undefined) af.lv_le = n; break; }
           case 'cond_lv_ge': { const n = num2(c.value); if (n !== undefined) af.lv_ge = n; break; }
-          case 'cond_face_down': af.face_down = true; break;
-          case 'cond_face_up':   af.face_up = true; break;
+          // face_zone: エディタ上で「どのゾーンについての裏表判定か」を表示し続けるための
+          // 表示専用情報（進化元/セキュリティ）。エンジンはこの値を見ない
+          case 'cond_face_down': af.face_down = true; if (c.value) af.face_zone = c.value; break;
+          case 'cond_face_up':   af.face_up = true; if (c.value) af.face_zone = c.value; break;
         }
       });
       if (Object.keys(af).length > 0) out.ref_filter = af;
@@ -724,8 +726,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
           case 'cond_cost':     { const n = num(c.value); if (n !== undefined) { filter.cost_le = n; filter.cost_ge = n; } break; }
           case 'cond_cost_le':  { const n = num(c.value); if (n !== undefined) filter.cost_le = n; break; }
           case 'cond_cost_ge':  { const n = num(c.value); if (n !== undefined) filter.cost_ge = n; break; }
-          case 'cond_face_down': filter.face_down = true; break;
-          case 'cond_face_up':   filter.face_up = true; break;
+          // face_zone: エディタ上で「どのゾーンについての裏表判定か」を表示し続けるための
+          // 表示専用情報（進化元/セキュリティ）。エンジンはこの値を見ない
+          case 'cond_face_down': filter.face_down = true; if (c.value) filter.face_zone = c.value; break;
+          case 'cond_face_up':   filter.face_up = true; if (c.value) filter.face_zone = c.value; break;
           // メモリーは ref_filter 文脈では意味を成さないので無視
         }
       });
@@ -1336,8 +1340,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       }
       if (f.dp_le !== undefined) out.push({ base: 'cond_dp_le', value: String(f.dp_le) });
       if (f.dp_ge !== undefined) out.push({ base: 'cond_dp_ge', value: String(f.dp_ge) });
-      if (f.face_down) out.push({ base: 'cond_face_down' });
-      if (f.face_up)   out.push({ base: 'cond_face_up' });
+      if (f.face_down) out.push({ base: 'cond_face_down', value: f.face_zone });
+      if (f.face_up)   out.push({ base: 'cond_face_up', value: f.face_zone });
       return out;
     })(),
     rules: [], // 既存レシピ load 時はルール情報が無いので空。エディタで再構築する場合は手動再追加
@@ -1400,8 +1404,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
                 if (f.lv_le !== undefined) out2.push({ base: 'cond_lv_le', value: String(f.lv_le) });
                 if (f.lv_ge !== undefined) out2.push({ base: 'cond_lv_ge', value: String(f.lv_ge) });
               }
-              if (f.face_down) out2.push({ base: 'cond_face_down' });
-              if (f.face_up)   out2.push({ base: 'cond_face_up' });
+              if (f.face_down) out2.push({ base: 'cond_face_down', value: f.face_zone });
+              if (f.face_up)   out2.push({ base: 'cond_face_up', value: f.face_zone });
               return out2;
             })(),
             costFree: !!a?.cost_free,

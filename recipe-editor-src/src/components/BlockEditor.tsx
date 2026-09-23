@@ -6619,7 +6619,7 @@ function ConditionsHybridEditor({
                       />
                     )}
                   </div>
-                  {showSubjectSelector && (
+                  {showSubjectSelector && cat.code !== 'memory' && (
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
                       {(() => {
@@ -6812,7 +6812,7 @@ function ConditionsHybridEditor({
                     accentColor={colors.accent}
                   />
                 </div>
-              ) : showSubjectSelector && (
+              ) : showSubjectSelector && c.base !== 'cond_memory_ge' && c.base !== 'cond_memory_le' && (
                 <div>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
                   {(() => {

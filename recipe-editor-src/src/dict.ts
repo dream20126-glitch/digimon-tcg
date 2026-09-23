@@ -278,6 +278,12 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_deck_ge', kind: 'condition', label: 'デッキがN枚以上' },
   { code: 'cond_battle_area_le', kind: 'condition', label: 'バトルエリアがN枚以下' },
   { code: 'cond_battle_area_ge', kind: 'condition', label: 'バトルエリアがN枚以上' },
+  // 完全一致（ちょうどN枚）
+  { code: 'cond_hand_eq', kind: 'condition', label: '手札がちょうどN枚' },
+  { code: 'cond_trash_eq', kind: 'condition', label: 'トラッシュがちょうどN枚' },
+  { code: 'cond_security_eq', kind: 'condition', label: 'セキュリティがちょうどN枚' },
+  { code: 'cond_has_evo_eq', kind: 'condition', label: '進化元がちょうどN枚' },
+  { code: 'cond_battle_area_eq', kind: 'condition', label: 'バトルエリアがちょうどN枚' },
 ];
 
 // アクション（種類: action）

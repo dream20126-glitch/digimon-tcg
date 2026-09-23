@@ -167,7 +167,9 @@ function altActionToStepObject(a: AltAction): any {
     if (Array.isArray(a.perRefFilter) && a.perRefFilter.length > 0) {
       const af: Record<string, any> = {};
       a.perRefFilter.forEach((c) => {
-        if (!c || !c.base || !c.value) return;
+        if (!c || !c.base) return;
+        // 裏向き/表向き（cond_face_down/up）は値を持たない判定のため、値必須ガードの対象外
+        if (!c.value && c.base !== 'cond_face_down' && c.base !== 'cond_face_up') return;
         const num2 = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
         switch (c.base) {
           case 'cond_color': af.color = c.value; break;
@@ -175,6 +177,8 @@ function altActionToStepObject(a: AltAction): any {
           case 'cond_lv': { const n = num2(c.value); if (n !== undefined) { af.lv_le = n; af.lv_ge = n; } break; }
           case 'cond_lv_le': { const n = num2(c.value); if (n !== undefined) af.lv_le = n; break; }
           case 'cond_lv_ge': { const n = num2(c.value); if (n !== undefined) af.lv_ge = n; break; }
+          case 'cond_face_down': af.face_down = true; break;
+          case 'cond_face_up':   af.face_up = true; break;
         }
       });
       if (Object.keys(af).length > 0) out.ref_filter = af;
@@ -701,7 +705,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     if (Array.isArray(b.perRefFilter) && b.perRefFilter.length > 0) {
       const filter: Record<string, any> = {};
       b.perRefFilter.forEach((c) => {
-        if (!c || !c.base || !c.value) return;
+        if (!c || !c.base) return;
+        // 裏向き/表向き（cond_face_down/up）は値を持たない判定のため、値必須ガードの対象外
+        if (!c.value && c.base !== 'cond_face_down' && c.base !== 'cond_face_up') return;
         const num = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
         switch (c.base) {
           case 'cond_color':            filter.color = c.value; break;
@@ -718,6 +724,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
           case 'cond_cost':     { const n = num(c.value); if (n !== undefined) { filter.cost_le = n; filter.cost_ge = n; } break; }
           case 'cond_cost_le':  { const n = num(c.value); if (n !== undefined) filter.cost_le = n; break; }
           case 'cond_cost_ge':  { const n = num(c.value); if (n !== undefined) filter.cost_ge = n; break; }
+          case 'cond_face_down': filter.face_down = true; break;
+          case 'cond_face_up':   filter.face_up = true; break;
           // メモリーは ref_filter 文脈では意味を成さないので無視
         }
       });
@@ -1328,6 +1336,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       }
       if (f.dp_le !== undefined) out.push({ base: 'cond_dp_le', value: String(f.dp_le) });
       if (f.dp_ge !== undefined) out.push({ base: 'cond_dp_ge', value: String(f.dp_ge) });
+      if (f.face_down) out.push({ base: 'cond_face_down' });
+      if (f.face_up)   out.push({ base: 'cond_face_up' });
       return out;
     })(),
     rules: [], // 既存レシピ load 時はルール情報が無いので空。エディタで再構築する場合は手動再追加
@@ -1390,6 +1400,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
                 if (f.lv_le !== undefined) out2.push({ base: 'cond_lv_le', value: String(f.lv_le) });
                 if (f.lv_ge !== undefined) out2.push({ base: 'cond_lv_ge', value: String(f.lv_ge) });
               }
+              if (f.face_down) out2.push({ base: 'cond_face_down' });
+              if (f.face_up)   out2.push({ base: 'cond_face_up' });
               return out2;
             })(),
             costFree: !!a?.cost_free,

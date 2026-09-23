@@ -6671,19 +6671,34 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   { code: 'battle_area', label: 'バトルエリア' },
 ];
 const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
-  'hand:ge': 'cond_hand_ge', 'hand:le': 'cond_hand_le',
-  'trash:ge': 'cond_trash_ge', 'trash:le': 'cond_trash_le',
-  'security:ge': 'cond_security_ge', 'security:le': 'cond_security_le',
-  'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le',
-  'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le',
+  'hand:ge': 'cond_hand_ge', 'hand:le': 'cond_hand_le', 'hand:eq': 'cond_hand_eq',
+  'trash:ge': 'cond_trash_ge', 'trash:le': 'cond_trash_le', 'trash:eq': 'cond_trash_eq',
+  'security:ge': 'cond_security_ge', 'security:le': 'cond_security_le', 'security:eq': 'cond_security_eq',
+  'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le', 'evo_source:eq': 'cond_has_evo_eq',
+  // 裏向き/表向き: 進化元カードの表裏状態そのものを見る（値不要）。進化元でのみ選べる
+  'evo_source:face_down': 'cond_face_down', 'evo_source:face_up': 'cond_face_up',
+  'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq',
 };
-const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: 'ge' | 'le' }> = {
-  cond_hand_ge: { zone: 'hand', quant: 'ge' }, cond_hand_le: { zone: 'hand', quant: 'le' },
-  cond_trash_ge: { zone: 'trash', quant: 'ge' }, cond_trash_le: { zone: 'trash', quant: 'le' },
-  cond_security_ge: { zone: 'security', quant: 'ge' }, cond_security_le: { zone: 'security', quant: 'le' },
-  cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' },
-  cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' },
+type RefQuant = 'ge' | 'le' | 'eq' | 'face_down' | 'face_up';
+const REF_QUANT_NO_VALUE = new Set<RefQuant>(['face_down', 'face_up']);
+const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> = {
+  cond_hand_ge: { zone: 'hand', quant: 'ge' }, cond_hand_le: { zone: 'hand', quant: 'le' }, cond_hand_eq: { zone: 'hand', quant: 'eq' },
+  cond_trash_ge: { zone: 'trash', quant: 'ge' }, cond_trash_le: { zone: 'trash', quant: 'le' }, cond_trash_eq: { zone: 'trash', quant: 'eq' },
+  cond_security_ge: { zone: 'security', quant: 'ge' }, cond_security_le: { zone: 'security', quant: 'le' }, cond_security_eq: { zone: 'security', quant: 'eq' },
+  cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_eq: { zone: 'evo_source', quant: 'eq' },
+  cond_face_down: { zone: 'evo_source', quant: 'face_down' }, cond_face_up: { zone: 'evo_source', quant: 'face_up' },
+  cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' },
 };
+// ゾーンごとに選べる「値」バリアント（進化元のみ裏向き/表向きを追加で持つ）
+const REF_QUANT_OPTIONS_BY_ZONE: Record<string, { code: RefQuant; label: string }[]> = {
+  evo_source: [
+    { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
+    { code: 'face_down', label: '裏向き' }, { code: 'face_up', label: '表向き' },
+  ],
+};
+const REF_QUANT_OPTIONS_DEFAULT: { code: RefQuant; label: string }[] = [
+  { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
+];
 // 種別ボタン用（「その他」はトリガー同様、別枠のチェックボックスで扱うため除外）
 const CATEGORY_BUTTON_OPTIONS = CATEGORY_OPTIONS.filter((c) => c.value !== 'other')
   .map((c) => ({ code: c.value, label: c.label }));
@@ -6967,14 +6982,16 @@ function ConditionsHybridEditor({
                         : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 4 }} title="エンジン未実装">⚠</span>
                     )}
                   </div>
-                  {/* 参照: 手札/トラッシュ/セキュリティ/進化元のどれを見るか（ゾーン選択） */}
+                  {/* 参照: 手札/トラッシュ/セキュリティ/進化元/バトルエリアのどれを見るか（ゾーン選択） */}
                   {cat.code === 'ref' && (
                     <ButtonGroup
                       options={REF_ZONE_OPTIONS}
                       value={REF_CODE_TO_ZONE_QUANT[c.base]?.zone || 'hand'}
                       onChange={(zone) => {
                         const quant = REF_CODE_TO_ZONE_QUANT[c.base]?.quant || 'ge';
-                        updateAt(i, { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant] });
+                        // 裏向き/表向きは進化元専用。別ゾーンに切り替えたら「以上」に戻す
+                        const safeQuant = REF_QUANT_NO_VALUE.has(quant) && zone !== 'evo_source' ? 'ge' : quant;
+                        updateAt(i, { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + safeQuant], value: REF_QUANT_NO_VALUE.has(safeQuant) ? undefined : c.value });
                       }}
                       accentColor={colors.accent}
                     />
@@ -7005,27 +7022,42 @@ function ConditionsHybridEditor({
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
                     {cat.code === 'ref' ? (
-                      /* 参照: 以上/以下ボタン + 枚数入力 */
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        <ButtonGroup
-                          options={[{ code: 'ge', label: '以上' }, { code: 'le', label: '以下' }]}
-                          value={REF_CODE_TO_ZONE_QUANT[c.base]?.quant || 'ge'}
-                          onChange={(quant) => {
-                            const zone = REF_CODE_TO_ZONE_QUANT[c.base]?.zone || 'hand';
-                            updateAt(i, { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant] });
-                          }}
-                          accentColor={colors.accent}
-                        />
-                        <input
-                          type="number"
-                          min={0}
-                          value={c.value || ''}
-                          onChange={(e) => updateAt(i, { value: e.target.value })}
-                          placeholder="枚数"
-                          style={{ width: 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-                        />
-                        <span style={{ fontSize: 10, color: '#555' }}>枚</span>
-                      </div>
+                      /* 参照: 以上/以下/完全一致ボタン + 枚数入力（進化元は裏向き/表向きも選べ、
+                         その場合は値なしで判定するため枚数欄を隠す） */
+                      (() => {
+                        const refZone = REF_CODE_TO_ZONE_QUANT[c.base]?.zone || 'hand';
+                        const refQuant = REF_CODE_TO_ZONE_QUANT[c.base]?.quant || 'ge';
+                        const refQuantOptions = REF_QUANT_OPTIONS_BY_ZONE[refZone] || REF_QUANT_OPTIONS_DEFAULT;
+                        const refNoValue = REF_QUANT_NO_VALUE.has(refQuant);
+                        return (
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <ButtonGroup
+                              options={refQuantOptions}
+                              value={refQuant}
+                              onChange={(quant) => {
+                                const nextQuant = quant as RefQuant;
+                                updateAt(i, { base: REF_ZONE_QUANT_TO_CODE[refZone + ':' + nextQuant], value: REF_QUANT_NO_VALUE.has(nextQuant) ? undefined : c.value });
+                              }}
+                              accentColor={colors.accent}
+                            />
+                            {refNoValue ? (
+                              <span style={{ fontSize: 10, color: '#666' }}>（値なし・カードの裏表で判定）</span>
+                            ) : (
+                              <>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={c.value || ''}
+                                  onChange={(e) => updateAt(i, { value: e.target.value })}
+                                  placeholder="枚数"
+                                  style={{ width: 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                                />
+                                <span style={{ fontSize: 10, color: '#555' }}>枚</span>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()
                     ) : cat.code === 'cost_mod' ? (
                       /* コスト増減: 「登場コストX以下」等のしきい値そのものを+/-する。
                          ⚠エンジン未対応（コスト条件のしきい値に per_count 相当の倍率を

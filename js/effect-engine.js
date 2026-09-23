@@ -4265,6 +4265,15 @@ function parseRecipeCondition(condStr) {
   return result;
 }
 
+// 「参照」(cond.value==='opp'): ゾーン枚数条件の比較先をリテラル値ではなく、
+// 判定対象側(ts)の逆サイドの同じゾーンの枚数から動的に取得する
+// （例:「自分の手札が相手の手札以上」。レシピエディタの「参照」ボタンが書き込む）
+function _refOppZoneCount(bs, ts, zoneKey) {
+  const otherSide = ts === 'player' ? 'ai' : 'player';
+  const otherPlayer = bs && bs[otherSide];
+  return otherPlayer && otherPlayer[zoneKey] ? otherPlayer[zoneKey].length : 0;
+}
+
 // subject から side ('player'/'ai') を解決するヘルパ
 // own系 → currentSide / opp系 → opposite / 未指定 → currentSide (既定)
 function resolveSubjectSide(subject, currentSide) {
@@ -4328,42 +4337,48 @@ function checkConditions(conditions, card, bs, side) {
         if (!bs) break;
         const ts = resolveSubjectSide(cond.subject, side);
         const len = bs[ts] && bs[ts].hand ? bs[ts].hand.length : 0;
-        if (len > (cond.value || 0)) return false;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'hand') : (cond.value || 0);
+        if (len > threshold) return false;
         break;
       }
       case 'cond_hand_ge': {
         if (!bs) break;
         const ts = resolveSubjectSide(cond.subject, side);
         const len = bs[ts] && bs[ts].hand ? bs[ts].hand.length : 0;
-        if (len < (cond.value || 0)) return false;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'hand') : (cond.value || 0);
+        if (len < threshold) return false;
         break;
       }
       case 'cond_security_le': {
         if (!bs) break;
         const ts = resolveSubjectSide(cond.subject, side);
         const len = bs[ts] && bs[ts].security ? bs[ts].security.length : 0;
-        if (len > (cond.value || 0)) return false;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'security') : (cond.value || 0);
+        if (len > threshold) return false;
         break;
       }
       case 'cond_security_ge': {
         if (!bs) break;
         const ts = resolveSubjectSide(cond.subject, side);
         const len = bs[ts] && bs[ts].security ? bs[ts].security.length : 0;
-        if (len < (cond.value || 0)) return false;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'security') : (cond.value || 0);
+        if (len < threshold) return false;
         break;
       }
       case 'cond_trash_ge': {
         if (!bs) break;
         const ts = resolveSubjectSide(cond.subject, side);
         const len = bs[ts] && bs[ts].trash ? bs[ts].trash.length : 0;
-        if (len < (cond.value || 0)) return false;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'trash') : (cond.value || 0);
+        if (len < threshold) return false;
         break;
       }
       case 'cond_trash_le': {
         if (!bs) break;
         const ts = resolveSubjectSide(cond.subject, side);
         const len = bs[ts] && bs[ts].trash ? bs[ts].trash.length : 0;
-        if (len > (cond.value || 0)) return false;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'trash') : (cond.value || 0);
+        if (len > threshold) return false;
         break;
       }
       case 'cond_deck_le': {

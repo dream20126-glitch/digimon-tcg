@@ -7302,6 +7302,17 @@ function ConditionsHybridEditor({
                             />
                             {refNoValue ? (
                               <span style={{ fontSize: 10, color: '#666' }}>（値なし・カードの裏表で判定）</span>
+                            ) : c.value === 'opp' ? (
+                              <>
+                                <span style={{ fontSize: 11, color: colors.accent }}>相手のこのゾーンの枚数</span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateAt(i, { value: '' })}
+                                  style={{ padding: '2px 8px', border: '1px solid #bbb', background: '#f5f5f5', color: '#333', borderRadius: 4, cursor: 'pointer', fontSize: 10 }}
+                                >
+                                  数値入力に戻す
+                                </button>
+                              </>
                             ) : (
                               <>
                                 <input
@@ -7313,6 +7324,14 @@ function ConditionsHybridEditor({
                                   style={{ width: 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
                                 />
                                 <span style={{ fontSize: 10, color: '#555' }}>枚</span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateAt(i, { value: 'opp' })}
+                                  style={{ padding: '4px 8px', border: '1px solid #bbb', background: '#f5f5f5', color: '#333', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                                  title="相手側の同じゾーンの枚数と動的に比較する（例:自分の手札が相手の手札以上）"
+                                >
+                                  参照
+                                </button>
                               </>
                             )}
                           </div>

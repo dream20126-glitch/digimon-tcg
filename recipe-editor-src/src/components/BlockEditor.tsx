@@ -2008,9 +2008,12 @@ const COMMON_COST_ACTIONS: { code: string; label: string }[] = [
 // 触らない（場所を選んでも対象欄の値を上書きしない・対象欄を変えても場所の選択状態が
 // 崩れないようにするため）。
 //   - hand/deck (cost_discard/deck_trash_top) はもともとtarget不要
-//   - security (security_trash_select) だけは、step.targetが'own'始まりなら自分側に
-//     破棄する実装が既にあるため、target:'own_security'を初期値として設定する
-//     （このアクション専用の意味で、対象欄と衝突しても実害が小さいため許容）
+//   - security (security_trash_select) は、かつてtarget:'own_security'を初期値として
+//     設定していたが、「対象」欄（自分/相手→セキュリティ）と書き込みが競合し、位置選択後に
+//     場所/位置の選択表示が消える不具合があったため撤廃。誰のセキュリティから破棄するかは
+//     「対象」欄で選ぶ（位置ボタンも「対象」欄のセキュリティ選択時に表示する。下記の
+//     「セキュリティ/テイマーのときだけ「上/下/下か上」を選べる」パネルとは別に、
+//     🎯対象パネル内の「セキュリティ選択時の位置」を参照）
 //   - evo_source/tamer (evo_discard系) はエンジン未対応のためtargetを持たせない。
 //     evo_sourceとtamerは同じスタック機構だが、targetで区別する代わりに
 //     アクションコード自体を分ける（evo_discard_top / evo_discard_tamer_top）
@@ -2025,7 +2028,9 @@ const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: 
   // targetで区別せず専用のアクションコード（evo_discard_tamer_top）を使う
   { code: 'tamer', label: 'テイマー', action: 'evo_discard_tamer_top', hasPosition: true, hasFace: true },
   { code: 'hand', label: '手札', action: 'cost_discard' },
-  { code: 'security', label: 'セキュリティ', action: 'security_trash_select', target: 'own_security', hasPosition: true },
+  // 位置（上/下/選んで）と「誰の」セキュリティかは、このパネルではなく🎯対象パネル側
+  // （対象＝自分/相手→セキュリティを選んだときに表示される位置ボタン）で設定する
+  { code: 'security', label: 'セキュリティ', action: 'security_trash_select' },
   { code: 'deck', label: 'デッキ', action: 'deck_trash_top' },
   // リンクカード: このカード自身がリンクしているカードを破棄する（unlinkアクションを流用）
   { code: 'linked', label: 'リンクカード', action: 'unlink', warn: '⚠ エンジン未対応: 現状は対象を選べず、リンクしている先頭のカードから自動で破棄されます（指定/絞り込みは未反映）' },
@@ -5334,6 +5339,22 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 {!hasDigimonTamer && tgtL2Options.length > 0 && (
                   <div style={{ marginTop: 4 }}>
                     <ButtonGroup options={tgtL2Options} value={curTgt.l2} onChange={handleTgtL2} accentColor="#b76e00" />
+                  </div>
+                )}
+                {/* 対象＝自分/相手→セキュリティ、かつアクションが「セキュリティを破棄」の
+                    ときだけ「上/下/選んで/全て」の位置ボタンを出す。以前は📥場所パネル側で
+                    target:'own_security'を初期値にしていたが、この対象欄と書き込みが競合し
+                    位置選択後に場所/位置の表示が消える不具合があったため、位置はこちらの
+                    対象欄に一本化した（誰の・どの位置のセキュリティかをここで完結できる） */}
+                {curTgt.l2 === 'security' && (getActionVariant(block.action || '')?.base || block.action) === 'security_trash' && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                    <ButtonGroup
+                      options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
+                      value={getActionVariant(block.action || '')?.suffix || ''}
+                      onChange={(suffix) => { if (!suffix) return; changeAction('security_trash' + suffix); }}
+                      accentColor="#b76e00"
+                    />
                   </div>
                 )}
                 {digimonChecked && tamerChecked && (

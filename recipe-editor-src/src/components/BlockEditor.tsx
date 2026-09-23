@@ -6841,7 +6841,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'description' | 'zone' | 'ref' | 'face' | 'designated' | 'stacked' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'description' | 'zone' | 'ref' | 'designated' | 'stacked' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -6856,7 +6856,6 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'description', label: '記述' },
   { value: 'zone', label: '場所' },
   { value: 'ref', label: '参照' },
-  { value: 'face', label: '裏表' },
   { value: 'designated', label: '指定' },
   // 重ねられているカード = 対象デジモンの進化元＋一番上のカード（本体）全てを対象に含める
   // という「対象の条件」。値不要のマーカー条件（cond_target_stack）。エンジン未実装
@@ -6908,6 +6907,7 @@ const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq',
 };
 type RefQuant = 'ge' | 'le' | 'eq' | 'face_down' | 'face_up';
+const REF_QUANT_NO_VALUE = new Set<RefQuant>(['face_down', 'face_up']);
 // 裏向き/表向き（cond_face_down/cond_face_up）はカード自体の裏表状態を見るだけでゾーンを
 // 問わない判定だが、「どのゾーンについて聞いているか」の表示が消えると分かりにくいため、
 // ゾーンは c.value 側に保持する（進化元／セキュリティで選択可。値としては使わない・表示専用）
@@ -6948,10 +6948,16 @@ function refApplyQuant(zone: string, quant: RefQuant): { base: string; value?: s
   }
   return { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant], value: undefined };
 }
-// 「裏表」カテゴリ専用の値ボタン（進化元/テイマーの下・セキュリティのカードの裏表を判定）
-const FACE_QUANT_OPTIONS: { code: RefQuant; label: string }[] = [
-  { code: 'face_down', label: '裏向き' }, { code: 'face_up', label: '表向き' },
-];
+const REF_QUANT_OPTIONS_BY_ZONE: Record<string, { code: RefQuant; label: string }[]> = {
+  evo_source: [
+    { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
+    { code: 'face_down', label: '裏向き' }, { code: 'face_up', label: '表向き' },
+  ],
+  security: [
+    { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
+    { code: 'face_down', label: '裏向き' }, { code: 'face_up', label: '表向き' },
+  ],
+};
 const REF_QUANT_OPTIONS_DEFAULT: { code: RefQuant; label: string }[] = [
   { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
 ];
@@ -6973,7 +6979,6 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   description: 'cond_description',
   zone: 'cond_zone',
   ref: 'cond_hand_ge',
-  face: 'cond_face_down',
   designated: DESIGNATED_NAME_COND,
   stacked: 'cond_target_stack',
 };
@@ -7029,8 +7034,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_name' || base === 'cond_name_contains' || base === 'cond_name_distinct') return 'name';
   if (base === 'cond_description' || base === 'cond_description_contains' || base === 'cond_description_distinct') return 'description';
   if (base === 'cond_zone') return 'zone';
-  if (isRefFaceCond(base)) return 'face';
-  if (REF_CODE_TO_ZONE_QUANT[base]) return 'ref';
+  if (REF_CODE_TO_ZONE_QUANT[base] || isRefFaceCond(base)) return 'ref';
   if (base === DESIGNATED_NAME_COND) return 'designated';
   if (base === 'cond_target_stack') return 'stacked';
   return 'other';
@@ -7241,20 +7245,11 @@ function ConditionsHybridEditor({
                     )}
                   </div>
                   {/* 参照: 手札/トラッシュ/セキュリティ/進化元(テイマーの下含む)/バトルエリアの
-                      枚数条件（以上/以下/完全一致）。裏表判定は「裏表」カテゴリへ分離済み */}
+                      どれを見るか（ゾーン選択）。裏向き/表向き選択中もゾーン表示は消さない
+                      （c.value にゾーンを保持しているためそのまま表示を維持できる） */}
                   {cat.code === 'ref' && (
                     <ButtonGroup
                       options={REF_ZONE_OPTIONS}
-                      value={refZoneOf(c)}
-                      onChange={(zone) => updateAt(i, refApplyZone(zone, refQuantOf(c), c.value))}
-                      accentColor={colors.accent}
-                    />
-                  )}
-                  {/* 裏表: 進化元(テイマーの下含む)/セキュリティのどちらのカードの裏表を見るか
-                      （ゾーン選択。c.value にゾーンを保持したまま表示を維持する） */}
-                  {cat.code === 'face' && (
-                    <ButtonGroup
-                      options={REF_ZONE_OPTIONS.filter((o) => REF_FACE_ZONES.has(o.code))}
                       value={refZoneOf(c)}
                       onChange={(zone) => updateAt(i, refApplyZone(zone, refQuantOf(c), c.value))}
                       accentColor={colors.accent}
@@ -7286,42 +7281,37 @@ function ConditionsHybridEditor({
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
                     {cat.code === 'ref' ? (
-                      /* 参照: 以上/以下/完全一致ボタン + 枚数入力 */
+                      /* 参照: 以上/以下/完全一致ボタン + 枚数入力。進化元/セキュリティのみ
+                         裏向き/表向きも選べ、その場合は値不要のため枚数欄を隠す */
                       (() => {
                         const refZone = refZoneOf(c);
                         const refQuant = refQuantOf(c);
+                        const refQuantOptions = REF_QUANT_OPTIONS_BY_ZONE[refZone] || REF_QUANT_OPTIONS_DEFAULT;
+                        const refNoValue = REF_QUANT_NO_VALUE.has(refQuant);
                         return (
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                             <ButtonGroup
-                              options={REF_QUANT_OPTIONS_DEFAULT}
+                              options={refQuantOptions}
                               value={refQuant}
                               onChange={(quant) => updateAt(i, refApplyQuant(refZone, quant as RefQuant))}
                               accentColor={colors.accent}
                             />
-                            <input
-                              type="number"
-                              min={0}
-                              value={c.value || ''}
-                              onChange={(e) => updateAt(i, { value: e.target.value })}
-                              placeholder="枚数"
-                              style={{ width: 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-                            />
-                            <span style={{ fontSize: 10, color: '#555' }}>枚</span>
+                            {refNoValue ? (
+                              <span style={{ fontSize: 10, color: '#666' }}>（値なし・カードの裏表で判定）</span>
+                            ) : (
+                              <>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={c.value || ''}
+                                  onChange={(e) => updateAt(i, { value: e.target.value })}
+                                  placeholder="枚数"
+                                  style={{ width: 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                                />
+                                <span style={{ fontSize: 10, color: '#555' }}>枚</span>
+                              </>
+                            )}
                           </div>
-                        );
-                      })()
-                    ) : cat.code === 'face' ? (
-                      /* 裏表: 裏向き/表向きボタンのみ（枚数は不要・カード自体の裏表で判定） */
-                      (() => {
-                        const refZone = refZoneOf(c);
-                        const refQuant = refQuantOf(c);
-                        return (
-                          <ButtonGroup
-                            options={FACE_QUANT_OPTIONS}
-                            value={refQuant}
-                            onChange={(quant) => updateAt(i, refApplyQuant(refZone, quant as RefQuant))}
-                            accentColor={colors.accent}
-                          />
                         );
                       })()
                     ) : cat.code === 'cost_mod' ? (

@@ -227,6 +227,12 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_exists_count_ge', kind: 'condition', label: 'がN体以上いる間' },
   { code: 'cond_jogress', kind: 'condition', label: 'ジョグレス進化していたなら' },
   { code: 'cond_in_battle', kind: 'condition', label: 'バトルしている間' },
+  // on_battle_win（バトル勝利時）と組み合わせて使う専用条件。バトルに勝っただけでは
+  // 「セキュリティデジモンとのバトルに勝った」場合も含んでしまう（公式ルール14-2-3により
+  // セキュリティデジモンはバトルに負けても消滅しないため、それでは「相手のデジモンを
+  // 消滅させたとき」の条件として不十分）。この条件は「実際に相手のデジモンをバトルで
+  // 消滅させた（＝バトルエリアの相手デジモンとのバトルに勝った）」場合のみ true になる
+  { code: 'cond_battle_opp_destroyed', kind: 'condition', label: 'バトルで相手のデジモンを消滅させた（セキュリティデジモンは含まない）' },
   { code: 'cond_color', kind: 'condition', label: '指定色' },
   { code: 'cond_type', kind: 'condition', label: '指定タイプ' },
   { code: 'cond_feature', kind: 'condition', label: '指定特徴' },

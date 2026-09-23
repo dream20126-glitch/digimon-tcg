@@ -5882,8 +5882,31 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
             setGroups(groupList.length <= 1 ? [{ conditions: [], conditionsOp: 'and' }] : groupList.filter((_, idx) => idx !== gi));
           };
           const addGroup = () => setGroups([...groupList, { conditions: [], conditionsOp: 'and' }]);
+          const groupsOp = step.groupsOp || 'and';
+          const isOrGroups = groupsOp === 'or' && groupList.length > 1;
           return (
             <div style={{ marginTop: 6 }}>
+              {groupList.length > 1 && (
+                <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px dashed #f0d9a8' }}>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#666', marginBottom: 4 }}>グループの結合方法</div>
+                  <ButtonGroup
+                    options={[
+                      { code: 'and', label: 'それぞれ別に（AND・加算）' },
+                      { code: 'or', label: 'どちらかを満たす（OR）' },
+                    ]}
+                    value={groupsOp}
+                    onChange={(v) => onChange({ groupsOp: (v || 'and') as 'and' | 'or' })}
+                    accentColor="#946200"
+                  />
+                  {isOrGroups && (
+                    <div style={{ fontSize: 10, color: '#946200', marginTop: 4 }}>
+                      OR時は下の「枚数」は先頭グループの入力欄のみ使われ、アクション/置き先も
+                      先頭グループ（未指定ならルール本体）が全体に適用されます。
+                      <span style={{ color: '#c62828' }}>⚠ エンジン未実装（保存はできますが動作しません）</span>
+                    </div>
+                  )}
+                </div>
+              )}
               {groupList.length > 1 && (
                 <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px dashed #f0d9a8' }}>
                   <div style={{ fontSize: 11, fontWeight: 'bold', color: '#666', marginBottom: 2 }}>
@@ -5920,8 +5943,9 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                     )}
                   </div>
                   {/* グループごとのアクション（省略時はルール本体のアクションを使う）。
-                      例:「1枚を手札に加え、1枚をセキュリティの上に置く」を2グループで表現 */}
-                  {(() => {
+                      例:「1枚を手札に加え、1枚をセキュリティの上に置く」を2グループで表現。
+                      OR結合時はアクション/置き先を先頭グループのみで共有するため2つ目以降は隠す */}
+                  {(!isOrGroups || gi === 0) && (() => {
                     const gAction = g.action || step.action;
                     const gIsPlaceActive = PLACE_ACTION_CODES.has(gAction || '');
                     const gActivePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === gAction)?.code || '';
@@ -6070,8 +6094,11 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                     onConditionsOpChange={(op) => updateGroup(gi, { conditionsOp: op })}
                     allowDistinctVariants
                   />
+                  {(!isOrGroups || gi === 0) && (
                   <div style={{ marginTop: 6 }}>
-                    <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>枚数（省略時は1枚）</label>
+                    <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
+                      {isOrGroups ? '枚数（OR全体の合計・省略時は1枚）' : '枚数（省略時は1枚）'}
+                    </label>
                     <input
                       type="number"
                       min={1}
@@ -6084,6 +6111,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                       style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 80 }}
                     />
                   </div>
+                  )}
                 </div>
               ))}
               <button

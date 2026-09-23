@@ -7,7 +7,7 @@
 // 翻訳ルールはメインアクションごとに 1 つの関数で表現。新しいメインアクションが
 // rules 対応する場合はこの translate map に1関数追加するだけ。
 
-import type { MiniStep, ConditionPair } from './types';
+import type { MiniStep, ConditionPair, RuleGroup } from './types';
 
 // 条件 (cond_xxx:value) の配列を filter オブジェクトへ変換
 // recipe-editor-src 側のフィルタ仕様: { color, type, lv_le, lv_ge, dp_le, dp_ge, feature_contains, name_contains }
@@ -151,10 +151,33 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
   // （例:「1枚を手札に加え、1枚をセキュリティの上に置く」を1行の2グループで表現）
   if (Array.isArray(rule.designatedGroups) && rule.designatedGroups.length > 0) {
     const { filterConds: commonFilterConds } = splitConds(rule.commonConditions);
-    rule.designatedGroups.forEach((g) => {
+    const buildGroupFilter = (g: RuleGroup) => {
       const { filterConds: gFilterConds } = splitConds(g.conditions);
       const gFilter = condsToFilter([...commonFilterConds, ...gFilterConds]);
       if (rule.type && !gFilter.type) gFilter.type = rule.type;
+      return gFilter;
+    };
+    // 'or': 全グループの条件をORで束ね、1つの選択肢として扱う（「AかBのどちらかを満たす
+    // カード合計N枚」）。アクション/置き先/枚数は先頭グループ（無指定ならルール本体）を共有する。
+    // ⚠ エンジン側（cardMatchesFilter）はfilter.orを未実装。保存はできるが動作しない
+    if (rule.groupsOp === 'or') {
+      const orFilters = rule.designatedGroups.map(buildGroupFilter).filter((f) => Object.keys(f).length > 0);
+      const first = rule.designatedGroups[0];
+      const effectiveRule: MiniStep = {
+        ...rule,
+        action: first?.action || rule.action,
+        deckPosition: first?.deckPosition ?? rule.deckPosition,
+        options: first?.options ?? rule.options,
+      };
+      const combinedFilter = orFilters.length > 1 ? { or: orFilters } : (orFilters[0] || {});
+      // 枚数は先頭グループのcount欄を共有（未指定ならルール本体のvalue、さらに未指定なら1）
+      const count = asNumberOrPass(first?.count) ?? asNumberOrPass(rule.value) ?? 1;
+      applyOneSelection(step, effectiveRule, combinedFilter, count);
+      return;
+    }
+    // 'and'（既定・従来通り）: 各グループが別々にその枚数分の選択肢を積む（加算）
+    rule.designatedGroups.forEach((g) => {
+      const gFilter = buildGroupFilter(g);
       const gCount = asNumberOrPass(g.count) ?? 1;
       const effectiveRule: MiniStep = {
         ...rule,

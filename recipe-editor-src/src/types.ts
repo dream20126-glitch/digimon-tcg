@@ -311,6 +311,12 @@ export interface MiniStep {
   // 全グループ共通の絞り込み条件（designatedGroupsが2件以上のときのみ意味を持つ）
   commonConditions?: ConditionPair[];
   commonConditionsOp?: 'and' | 'or';
+  // designatedGroups同士の結合方法。'and'（既定・従来通り）= 各グループが別々に
+  // その枚数分の選択肢を積む（「Aを1枚とBを1枚」の加算）。
+  // 'or' = 全グループの条件をORで束ね、1つの選択肢として扱う（「AかBのどちらかを満たす
+  // カード合計N枚」）。'or'時は枚数(count)・アクション・置き先は先頭グループ
+  // （無指定ならルール本体）の値を共有し、2つ目以降のグループは条件のみが意味を持つ
+  groupsOp?: 'and' | 'or';
 }
 
 export interface CardData {

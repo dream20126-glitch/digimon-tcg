@@ -1111,10 +1111,12 @@ function CostListEditor({
                   {/* 進化元/テイマー/セキュリティのときだけ、積まれたカードのどこから破棄するか選べる。
                       ※ 辞書側の hasPositionVariant フラグ（costIsPositional等）には依存しない。
                       DISCARD_ZONE_MAP はこのエディタ内で完結したハードコード機構であり、
-                      辞書の設定状態に関わらず常に POSITION_VARIANTS 4種を出す */}
+                      辞書の設定状態に関わらず常に POSITION_VARIANTS 4種を出す。
+                      ただし下の「対象」欄が同じ内容の「位置:」選択（showCostStackPos）を
+                      表示する場合は、二重表示になるためこちらは隠す */}
                   {(() => {
                     const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                    if (!zone?.hasPosition) return null;
+                    if (!zone?.hasPosition || showCostStackPos) return null;
                     const zoneBase = getActionVariant(zone.action)?.base || zone.action;
                     const curSuffix = getActionVariant(c.action || '')?.suffix || '';
                     return (
@@ -1132,11 +1134,11 @@ function CostListEditor({
                   {/* 進化元/テイマー: 積まれたカードのうち裏向き/表向きのものだけを対象にするか
                       （place_under_tamer/place_under_digimon/deck_to_evo_bottomで裏向きに置かれた
                       カードを区別して破棄したい場合。cond_face_down/cond_face_up を conditions に
-                      反映する。上の「対象」セレクタ経由（下/一番下選択時）の裏表/種別ボタンと
-                      同じ条件コードを使う共通仕様 */}
+                      反映する。下の「対象」セレクタ経由（下/一番下選択時）の裏表/種別ボタンと
+                      同じ条件コードを使う共通仕様のため、そちらが表示されるときはこちらは隠す */}
                   {(() => {
                     const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                    if (!zone?.hasFace) return null;
+                    if (!zone?.hasFace || (showCostStackPos && cTgtStackPos !== '')) return null;
                     const faceConds = c.conditions || [];
                     const faceIdx = faceConds.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
                     const faceVal = faceIdx !== -1 ? (faceConds[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';

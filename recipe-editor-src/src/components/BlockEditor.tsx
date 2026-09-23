@@ -1661,6 +1661,19 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   most_evo_source_player: { l1: 'most', l2: 'evo_source' },
 };
 
+// アクションの対象コード（例:"opponent:1"）→ 対応する発動条件/トリガー条件の「対象」コードに
+// 変換する（「対象と同じ」チェックボックス用）。対象側にしか無い種別（オプション/セキュリティ/
+// プレイヤー/そのデジモン/最も多いプレイヤー等）は条件の対象に対応が無いためundefinedを返す
+function targetBaseToCondSubject(targetStr: string | undefined): string | undefined {
+  if (!targetStr) return undefined;
+  const base = targetStr.split(':')[0];
+  if (base === 'self_card') return 'self_card';
+  if (base === 'self') return 'self';
+  const l1l2 = TARGET_SEL_CODE_TO_L1L2[base];
+  if (!l1l2 || !l1l2.l1 || l1l2.l1 === 'same_target' || l1l2.l1 === 'most') return undefined;
+  return COND_SUBJECT_L1L2_TO_CODE[l1l2.l1 + ':' + l1l2.l2];
+}
+
 // よく使うトリガー:
 // - 'event' 種別（登場時/進化時/アタック時/アタック終了時/消滅時）は実際に起きる出来事。
 //   発動ターン(自分/相手/お互い)を選ぶと、トリガーコード自体は変えず
@@ -5024,6 +5037,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             }
             theme="action"
             defaultSubject=""
+            sameAsTargetSubject={targetBaseToCondSubject(effectTarget)}
             attackContextActive={isAttackTrigger}
             showCostMod={effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'destroy'}
             conditionsOp={effectConditionsOp}
@@ -5980,6 +5994,9 @@ interface ConditionsHybridEditorProps {
   theme: 'trigger' | 'action';
   defaultSubject?: string;  // チェックボックス追加時の既定 subject（'' or 'self' 等）
   showSubjectSelector?: boolean; // 主体プルダウンを各行に出すか
+  // 「対象と同じ」チェックボックス用: アクションの対象から変換した条件対象コード（targetBaseToCondSubject）。
+  // 指定時のみチェックボックスを表示し、ONにすると各行のsubjectをこの値に固定してプルダウンをグレーアウトする
+  sameAsTargetSubject?: string;
   // true のとき cond_type 等を複数選択(カンマ区切り値)で入力可能にする。
   // step.filter (ターゲットフィルタ) は type_in 配列を受け付けるためOK判定できるが、
   // trigger_conditions/発動条件側の cond_type は単一値exact-matchのみ対応のため、
@@ -6213,6 +6230,7 @@ function formatCostMod(sign: '+' | '-', amount: string, perCount: string, perRef
 
 function ConditionsHybridEditor({
   conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true,
+  sameAsTargetSubject,
   supportsMultiValue = false, attackContextActive = false,
   part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false,
   showTypeInTargetFilter = false, conditionsOp, onConditionsOpChange, allowDistinctVariants = false,
@@ -6622,6 +6640,17 @@ function ConditionsHybridEditor({
                   {showSubjectSelector && cat.code !== 'memory' && (
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                      {sameAsTargetSubject && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#555', marginBottom: 4 }}>
+                          <input
+                            type="checkbox"
+                            checked={c.subject === sameAsTargetSubject}
+                            onChange={(e) => updateAt(i, { subject: e.target.checked ? sameAsTargetSubject : undefined })}
+                          />
+                          対象と同じ
+                        </label>
+                      )}
+                      <div style={(sameAsTargetSubject && c.subject === sameAsTargetSubject) ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
                       {(() => {
                         const rawSub = splitStackSuffix(c.subject || '');
                         const curSub = COND_SUBJECT_CODE_TO_L1L2[rawSub.base] || { l1: '', l2: '' };
@@ -6716,6 +6745,7 @@ function ConditionsHybridEditor({
                           </>
                         );
                       })()}
+                      </div>
                     </div>
                   )}
                   <button

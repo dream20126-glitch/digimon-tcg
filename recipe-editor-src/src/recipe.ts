@@ -788,6 +788,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.limit) step.limit = b.limit;
   // subject='self' はデフォルトなのでJSONに含めない（既存レシピと互換）
   if (b.triggerSubject && b.triggerSubject !== 'self') step.subject = b.triggerSubject;
+  // trigger='on_destroy' 専用の「消滅対象」（⚠ エンジン未実装。詳細は types.ts 参照）
+  if (b.trigger === 'on_destroy' && b.destroyTarget === 'opponent') step.destroy_target = 'opponent';
   if (b.extras) {
     try {
       const ex = JSON.parse(b.extras);
@@ -1196,6 +1198,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     limit: true,
     in_zone: true,
     subject: true,
+    destroy_target: true,
     cost: true,
     from: true,
     from_op: true,
@@ -1259,6 +1262,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     triggers: triggerParts.length > 1 ? triggerParts : undefined,
     // JSON に subject 無ければ 'self' (このデジモン) としてロード
     triggerSubject: step?.subject || 'self',
+    destroyTarget: step?.destroy_target === 'opponent' ? 'opponent' : undefined,
     limit: step?.limit || '',
     triggerConditions,
     conditions,

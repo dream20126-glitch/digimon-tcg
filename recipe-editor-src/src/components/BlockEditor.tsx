@@ -2357,6 +2357,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectFromCount = isEditingAlt ? editingAlt!.fromCount : block.fromCount;
   const effectTarget = isEditingAlt ? (editingAlt!.target || '') : (block.target || '');
   const effectExtraTargets = isEditingAlt ? (editingAlt!.extraTargets || []) : (block.extraTargets || []);
+  // 「追加」チェックボックス: ONで対象2以降の枠を出す（OFFにすると追加分は全て削除）
+  const hasExtraTargets = effectExtraTargets.length > 0;
+  const setHasExtraTargets = (on: boolean) => {
+    if (on) { if (effectExtraTargets.length === 0) updateEffect({ extraTargets: [{ target: '' }] }); }
+    else { updateEffect({ extraTargets: [] }); }
+  };
   const effectConditions = isEditingAlt ? (editingAlt!.conditions || []) : conditions;
   const effectConditionsOp: 'and' | 'or' = isEditingAlt ? (editingAlt!.conditionsOp || 'and') : (block.conditionsOp || 'and');
   const effectFromZones = isEditingAlt ? (editingAlt!.fromZones || []) : (block.fromZones || []);
@@ -4773,12 +4779,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
-        {/* 🎯 追加の対象: 対象1に加えて2体目以降の当事者を自由に追加できる汎用機能。
-            全アクション共通（このカード自身を暗黙の当事者にする設計は廃止し、必要なら
-            対象1/対象2...のどちらでも「このカード」を明示的に選べるようにする）。
-            対象1と同じコード体系（TARGET_SEL_L1/L2）＋各枠ごとに独立した「対象の条件」を持てる
-            ⚠ エンジン未実装（保存はできますが動作しません） */}
-        {(() => {
+        {/* 🎯 追加の対象: 「対象」ボックスの「追加」チェックボックスONで表示。対象1に加えて
+            2体目以降の当事者を自由に追加できる汎用機能。全アクション共通（このカード自身を
+            暗黙の当事者にする設計は廃止し、必要なら対象1/対象2...のどちらでも「このカード」を
+            明示的に選べるようにする）。対象1と同じコード体系（TARGET_SEL_L1/L2）＋
+            各枠ごとに独立した「対象の条件」を持てる ⚠ エンジン未実装（保存はできますが動作しません） */}
+        {hasExtraTargets && (() => {
           const setExtraTargets = (next: ExtraTarget[]) => updateEffect({ extraTargets: next });
           const addExtraTarget = () => setExtraTargets([...effectExtraTargets, { target: '' }]);
           const removeExtraTarget = (idx: number) => setExtraTargets(effectExtraTargets.filter((_: ExtraTarget, i: number) => i !== idx));
@@ -4792,7 +4798,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
                 🎯 追加の対象
                 <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
-                  （対象1に加えてもう1体以上の当事者を指定したいときに追加。例:「バトルする」で
+                  （対象1に加えてもう1体以上の当事者。例:「バトルする」で
                   「自分の他のデジモン1体と相手のデジモン1体を戦わせる」）
                 </span>
               </label>
@@ -5003,7 +5009,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             return (
               <div style={{ display: 'grid', gridTemplateColumns: eHideCount ? '1fr' : '1fr 1fr', gap: 8, marginTop: 8 }}>
                 <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
-                  <label style={{ fontWeight: 'bold', color: '#b76e00' }}>🎯 対象</label>
+                  <label style={{ fontWeight: 'bold', color: '#b76e00', display: 'flex', alignItems: 'center' }}>
+                    🎯 対象{hasExtraTargets ? '1' : ''}
+                    <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 'normal', color: '#666', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={hasExtraTargets} onChange={(e) => setHasExtraTargets(e.target.checked)} style={{ margin: 0 }} />
+                      追加
+                    </span>
+                  </label>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <MultiButtonGroup
                       options={TARGET_SEL_OWN_OPP}
@@ -5196,10 +5208,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           return (
             <div style={{ display: 'grid', gridTemplateColumns: showSecondColumn ? '1fr 1fr' : '1fr', gap: 8, marginTop: 8 }}>
               <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
-                <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
-                  🎯 アクションの対象
+                <label style={{ fontWeight: 'bold', color: '#b76e00', display: 'flex', alignItems: 'center' }}>
+                  🎯 アクションの対象{hasExtraTargets ? '1' : ''}
                   <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
                     （このアクションが効果を与えるカード／デジモン）
+                  </span>
+                  <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 'normal', color: '#666', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={hasExtraTargets} onChange={(e) => setHasExtraTargets(e.target.checked)} style={{ margin: 0 }} />
+                    追加
                   </span>
                 </label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>

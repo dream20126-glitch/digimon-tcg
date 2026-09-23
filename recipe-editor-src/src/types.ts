@@ -87,9 +87,11 @@ export interface EffectBlock {
   // 例:「自分の効果で（相手のデジモンが）消滅したとき」
   //  → destroyCause='effect' + destroyCauseSubject='own'
   // JSONでは step.cause / step.cause_subject として出力する。
-  // エンジン実装済み（effect-engine.js: bs._lastDestroyCause）。ただしバトルでの消滅は
-  // 「どちらの側が原因か」までしか追跡していないため、destroyCauseSubject='self'（このカードが
-  // 直接原因）は同一視して 'own'（自分側が原因）と同じ扱いになる
+  // エンジン実装済み（effect-engine.js: bs._lastDestroyCause）。バトル起因の消滅は
+  // 通常の勝敗（相打ち/道連れ含む）では実際に勝ったカードまで正確に追跡しており、
+  // destroyCauseSubject='self'（このカードが直接の原因）も正しく判定できる。
+  // ただし一部の特殊keyword（衝突の自滅・セキュリティデジモンとのバトル）は
+  // 原因カードを追跡しておらず、'self' が 'own'（自分側が原因）へフォールバックする
   destroyCause?: 'battle' | 'effect';
   destroyCauseSubject?: string;
   // トリガーごとに発動ターン（自分/相手/お互い）を個別設定したい場合に使う

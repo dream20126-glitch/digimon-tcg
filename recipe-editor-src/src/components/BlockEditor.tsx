@@ -3517,7 +3517,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         <div style={{ marginTop: 4 }}>
                           <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>
                             原因の対象
-                            <span title="バトルで消滅した場合、原因の対象「このデジモン」は「自分」と同じ扱いになります（どのカードが勝ったかまでは追跡していないため）">ℹ️</span>
+                            <span title="バトルで消滅した場合、通常の勝敗（相打ち/道連れ含む）なら「このデジモン」は実際に勝ったカードまで正確に判定されます。ただし【衝突】の自滅やセキュリティデジモンとのバトルなど一部の特殊ケースでは「自分」と同じ扱いになります">ℹ️</span>
                           </div>
                           <ButtonGroup
                             options={[{ code: 'self', label: 'このデジモン' }, { code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'both', label: '両方' }]}

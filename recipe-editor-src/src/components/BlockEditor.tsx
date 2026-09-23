@@ -2401,10 +2401,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // 出力し、continue_on_fail修飾子で前段の成否に関わらず継続する。トリガー/発動主体/limitは
   // 本体stepと共有され、後続step側で個別に再設定する必要が無い）。
   // チェックボックス自体は「その他のアクション」の隣に表示し、
-  // 「編集中」選択・設定内容の一覧はアクション欄の近くに別途表示する
-  const isOrChecked = altOp === 'or' && altActions.length > 0;
-  const isAndChecked = altOp === 'and' && altActions.length > 0;
-  const isThenChecked = altOp === 'then' && altActions.length > 0;
+  // 「編集中」選択・設定内容の一覧はアクション欄の近くに別途表示する。
+  // 「その後」はここでは全効果を一括で区切る簡易ショートカットとして扱う（実体は各効果の
+  // thenBreakフラグ。個別の効果だけ「その後」に区切りたい場合は効果タブ側のチェックで行う）。
+  // これにより「AとBはAND、その後C」のような混在も可能になる
+  const allThenBreak = altActions.length > 0 && altActions.every((a) => a.thenBreak);
+  const isOrChecked = altOp === 'or' && altActions.length > 0 && !allThenBreak;
+  const isAndChecked = altOp === 'and' && altActions.length > 0 && !allThenBreak;
+  const isThenChecked = allThenBreak;
   const setAltMode = (mode: 'or' | 'and' | 'then' | null) => {
     if (!mode) {
       onChange({ ...block, altActions: [], altActionsOp: undefined });
@@ -2412,10 +2416,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
       return;
     }
     if (altActions.length === 0) {
-      onChange({ ...block, altActions: [{ action: '', value: '', target: '', conditions: [], fromZones: [] }], altActionsOp: mode });
+      const first: AltAction = { action: '', value: '', target: '', conditions: [], fromZones: [] };
+      if (mode === 'then') first.thenBreak = true;
+      onChange({ ...block, altActions: [first], altActionsOp: mode === 'then' ? 'or' : mode });
       setEditingEffect(1);
+    } else if (mode === 'then') {
+      // 一括で全効果を「その後」区切りにする（従来の「その後」モードと同じ挙動）
+      onChange({ ...block, altActions: altActions.map((a) => ({ ...a, thenBreak: true })) });
     } else {
-      update('altActionsOp', mode);
+      // AND/ORへ戻す: 個別のthenBreakは全て解除して選んだモードに揃える
+      onChange({ ...block, altActionsOp: mode, altActions: altActions.map((a) => ({ ...a, thenBreak: undefined })) });
     }
   };
   const summarizeAction = (act?: string, val?: number | string) => {
@@ -4575,6 +4585,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
             <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
               💡 編集中の効果を選んでください。上のアクション/対象/対象数/発動条件/場所/期間は選んだ効果に反映されます。
+              {!isThenChecked && (
+                <> 効果ごとに「⛓その後」を付けると、そこだけAND/ORから切り離して独立した「その後」に区切れます（例:「AとBはAND、その後C」）。</>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               <button type="button" onClick={() => setEditingEffect(0)} style={altBtnStyle(editingEffect === 0)}>
@@ -4582,9 +4595,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               </button>
               {altActions.map((a, i) => (
                 <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                  {!isThenChecked && a.thenBreak && (
+                    <span style={{ fontSize: 10, color: '#9333ea' }} title="ここから「その後」として独立">⛓</span>
+                  )}
                   <button type="button" onClick={() => setEditingEffect(i + 1)} style={altBtnStyle(editingEffect === i + 1)}>
                     効果{i + 2}
                   </button>
+                  {!isThenChecked && (
+                    <label
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 9, color: a.thenBreak ? '#9333ea' : '#999', cursor: 'pointer' }}
+                      title="この効果から「その後」として独立させる（前の効果群が不発でもこの効果以降は必ず発動する）"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!a.thenBreak}
+                        onChange={(e) => updateAltAction(i, { thenBreak: e.target.checked || undefined })}
+                        style={{ margin: 0 }}
+                      />
+                      その後
+                    </label>
+                  )}
                   <button
                     type="button"
                     onClick={() => removeAltAction(i)}
@@ -4603,13 +4633,22 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 ＋ 効果を追加
               </button>
             </div>
-            {/* 選択内容の一覧表示: 押したボタンの表記をそのまま連結して書き出す */}
+            {/* 選択内容の一覧表示: 押したボタンの表記をそのまま連結して書き出す。
+                thenBreakの効果の直前には区切り線を挟み、AND/OR区間と「その後」区間の
+                境目が見た目でも分かるようにする */}
             <div style={{ marginTop: 8, padding: 8, background: 'white', border: '1px solid #d4b8f0', borderRadius: 4 }}>
               <div style={{ fontSize: 11, color: '#9333ea', fontWeight: 'bold', marginBottom: 4 }}>📋 設定内容</div>
               <div style={{ fontSize: 12, color: '#333', lineHeight: 1.8 }}>
                 <div>効果1：{describeEffect(block.action, block.value, block.target, block.conditions) || '(未設定)'}</div>
                 {altActions.map((a, i) => (
-                  <div key={i}>効果{i + 2}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}</div>
+                  <div key={i}>
+                    {a.thenBreak && (
+                      <div style={{ fontSize: 10, color: '#9333ea', fontWeight: 'bold', marginTop: 2 }}>
+                        ── その後（前の効果が不発でも継続） ──
+                      </div>
+                    )}
+                    <div>効果{i + 2}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}</div>
+                  </div>
                 ))}
               </div>
             </div>

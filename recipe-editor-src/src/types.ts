@@ -313,6 +313,12 @@ export interface AltAction {
   // 対応（このAltAction由来のstepを実行する箇所を、ブロック全体のisOptional判定から
   // 切り離して個別に確認する）が別途必要（未実装）。JSON上は正しく区別して保存できる
   optional?: boolean;
+  // この効果から「その後」区切りを開始する（例:「AとBをANDで行い、その後Cをレストできる」で
+  // Cにだけこれを立てる）。block.altActionsOp（OR/AND）は直前までの効果群の組合せ方を
+  // 決めるが、thenBreak:true の効果はそのグループから切り離され、同じトリガー配列内の
+  // 独立した後続step（continue_on_fail付き＝前段が不発でも必ず発動する）として出力される。
+  // これ以降、次のthenBreak項目までの効果は再び block.altActionsOp で結合される
+  thenBreak?: boolean;
 }
 
 // MiniStep.designatedGroups 専用: 通常のDesignatedGroup（条件+枚数）に加えて、

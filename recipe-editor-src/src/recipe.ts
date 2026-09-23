@@ -736,15 +736,25 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       if (Object.keys(filter).length > 0) step.ref_filter = filter;
     }
   }
-  // === 代替アクション (alt_actions[]) ===
+  // === 代替アクション (alt_actions[] / 独立後続step) ===
   // 'or'/'and' = 「〇〇するか〇〇する」「〇〇する＆〇〇する」を表現する同ステップ内代替アクション群。
-  // 'then' = 「その後」連結。同じstep内には入れず、同じトリガー配列内の独立した後続stepとして
-  // 出力する（公式ルールの「その後」はcontinue_on_fail修飾子を持つ次stepとして実装されているため）
-  if (Array.isArray(b.altActions) && b.altActions.length > 0 && b.altActionsOp !== 'then') {
-    step.alt_actions = b.altActions.filter((a) => a && a.action).map(altActionToStepObject);
-    if (step.alt_actions.length > 0) {
-      step.alt_actions_op = b.altActionsOp || 'or';
-    }
+  // 「その後」連結（block.altActionsOp==='then' による一括指定、または各AltActionの
+  // thenBreak:true による個別指定）= 同じstep内には入れず、同じトリガー配列内の独立した
+  // 後続stepとして出力する（公式ルールの「その後」はcontinue_on_fail修飾子を持つ次stepとして
+  // 実装されているため）。thenBreak:true の効果でセグメントを区切ることで、「AとBをANDで
+  // 行い、その後C」のように、AND/OR区間の後ろにだけ「その後」を続けることができる
+  const rawAltActions = Array.isArray(b.altActions) ? b.altActions.filter((a) => a && a.action) : [];
+  const altSegments: AltAction[][] = [[]];
+  if (rawAltActions.length > 0) {
+    const legacyAllThen = b.altActionsOp === 'then';
+    rawAltActions.forEach((a) => {
+      if (legacyAllThen || a.thenBreak) altSegments.push([a]);
+      else altSegments[altSegments.length - 1].push(a);
+    });
+  }
+  if (altSegments[0].length > 0) {
+    step.alt_actions = altSegments[0].map(altActionToStepObject);
+    step.alt_actions_op = b.altActionsOp === 'and' ? 'and' : 'or';
   }
   // === targetFilter → step.filter（対象自身の絞り込み。例:レスト状態のこのデジモン） ===
   const targetFilterObj = buildFilterObject(b.targetFilter);
@@ -836,20 +846,25 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     }
   }
 
-  // 'then'（その後）モードのalt_actionsは、同じトリガー配列内の独立した後続stepとして
-  // 続けて出力する。各stepにはcontinue_on_fail修飾子を自動付与し（前段が不発でも継続する
-  // ＝「その後」の公式ルール表現）、limitを個別指定していなければ本体stepのlimitを
-  // 引き継ぐ（「ターンに1回」等がこの一連の効果全体に掛かるようにするため）
-  if (b.altActionsOp === 'then' && Array.isArray(b.altActions) && b.altActions.length > 0) {
-    b.altActions.filter((a) => a && a.action).forEach((a) => {
-      const thenStep = altActionToStepObject(a);
-      const opts: string[] = Array.isArray(thenStep.options) ? thenStep.options.slice() : [];
-      if (!opts.includes('continue_on_fail')) opts.push('continue_on_fail');
-      thenStep.options = opts;
-      if (thenStep.limit === undefined && b.limit) thenStep.limit = b.limit;
-      container[b.trigger].push(thenStep);
-    });
-  }
+  // 「その後」区切り以降の各セグメントは、同じトリガー配列内の独立した後続stepとして
+  // 続けて出力する。各セグメント先頭にcontinue_on_fail修飾子を自動付与し（前段が不発でも
+  // 継続する＝「その後」の公式ルール表現）、limitを個別指定していなければ本体stepのlimitを
+  // 引き継ぐ（「ターンに1回」等がこの一連の効果全体に掛かるようにするため）。
+  // セグメントに2件目以降があれば、そのstep自身のalt_actionsとしてAND/OR結合する
+  altSegments.slice(1).forEach((seg) => {
+    if (seg.length === 0) return;
+    const [head, ...rest] = seg;
+    const thenStep = altActionToStepObject(head);
+    const opts: string[] = Array.isArray(thenStep.options) ? thenStep.options.slice() : [];
+    if (!opts.includes('continue_on_fail')) opts.push('continue_on_fail');
+    thenStep.options = opts;
+    if (thenStep.limit === undefined && b.limit) thenStep.limit = b.limit;
+    if (rest.length > 0) {
+      thenStep.alt_actions = rest.map(altActionToStepObject);
+      thenStep.alt_actions_op = b.altActionsOp === 'and' ? 'and' : 'or';
+    }
+    container[b.trigger].push(thenStep);
+  });
 }
 
 // 「base:value@subject」形式を ConditionPair に分解
@@ -1015,16 +1030,20 @@ function stepToBlockWithTiming(
 }
 
 // 1つのトリガー配列を EffectBlock[] に変換する。配列内で continue_on_fail 修飾子を
-// 持つstepは「その後」連結として直前のブロックへ altActions(op:'then') で吸収し、
-// 独立したブロックにはしない（blocksToRecipeの'then'出力の逆変換）
+// 持つstepは「その後」連結として直前のブロックへ altActions(先頭にthenBreak:true) で
+// 吸収し、独立したブロックにはしない（blocksToRecipeの「その後」出力の逆変換）。
+// そのstep自身がさらに alt_actions を持つ場合（AND/ORでもう1件以上束ねている場合）は、
+// 同じセグメントの後続項目（thenBreakなし）としてそのまま続けて吸収する
 function stepsArrayToBlocks(section: 'main' | 'evo_source' | 'security' | 'link', triggerKey: string, arr: any[]): EffectBlock[] {
   const blocks: EffectBlock[] = [];
   arr.forEach((step: any) => {
     const isChainStep = Array.isArray(step?.options) && step.options.includes('continue_on_fail');
     if (isChainStep && blocks.length > 0) {
       const prev = blocks[blocks.length - 1];
-      prev.altActions = [...(prev.altActions || []), stepObjectToAltAction(step)];
-      prev.altActionsOp = 'then';
+      const head = stepObjectToAltAction(step);
+      head.thenBreak = true;
+      const nested = Array.isArray(step?.alt_actions) ? step.alt_actions.map((a: any) => stepObjectToAltAction(a)) : [];
+      prev.altActions = [...(prev.altActions || []), head, ...nested];
       return;
     }
     blocks.push(stepToBlock(section, triggerKey, step));

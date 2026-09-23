@@ -6145,11 +6145,10 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                     onConditionsOpChange={(op) => updateGroup(gi, { conditionsOp: op })}
                     allowDistinctVariants
                   />
-                  {(!isOrGroups || gi === 0) && (
+                  {/* AND時: 各グループが自分の枚数を持つ（加算されるので各グループ末尾に表示） */}
+                  {!isOrGroups && (
                   <div style={{ marginTop: 6 }}>
-                    <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
-                      {isOrGroups ? '枚数（OR全体の合計・省略時は1枚）' : '枚数（省略時は1枚）'}
-                    </label>
+                    <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>枚数（省略時は1枚）</label>
                     <input
                       type="number"
                       min={1}
@@ -6165,6 +6164,24 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                   )}
                 </div>
               ))}
+              {/* OR時: 全グループ共有の枚数欄を1つだけ、グループ一覧の一番最後（「＋グループを追加」の直前）に表示する。
+                  データはグループ1のcountに保存する（ruleTranslator.tsのfirst?.countと対応） */}
+              {isOrGroups && (
+                <div style={{ marginTop: 6, marginBottom: 6 }}>
+                  <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>枚数（OR全体の合計・省略時は1枚）</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={groupList[0]?.count === undefined ? '' : String(groupList[0].count)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      updateGroup(0, { count: v === '' ? undefined : Number(v) });
+                    }}
+                    placeholder="例: 1"
+                    style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 80 }}
+                  />
+                </div>
+              )}
               <button
                 type="button"
                 onClick={addGroup}

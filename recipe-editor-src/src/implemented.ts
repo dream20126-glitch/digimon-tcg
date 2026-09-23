@@ -100,7 +100,7 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_in_battle', 'cond_jogress', 'cond_link_eligible', 'cond_link_state',
   'cond_lv_ge', 'cond_lv_le', 'cond_memory_opponent',
   'cond_name_contains', 'cond_no_evo', 'cond_no_tamer_evo',
-  'cond_not_own_effect', 'cond_opp_no_attack_this_turn',
+  'cond_opp_no_attack_this_turn',
   'cond_own_security_ge', 'cond_own_security_le', 'cond_own_trash_ge',
   'cond_self_active', 'cond_self_keyword', 'cond_when_opp_rest',
   // Stage 1 追加

@@ -244,7 +244,12 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_own_effect', kind: 'condition', label: '自分の効果で' },
   // 実際の辞書（スプシ）には cond_effect のみ登録済み。エディタでは専用の「効果で」
   // カテゴリボタン（「以外」チェック+自分/相手/互いボタン）で編集する。
-  // 「以外」はvalue:'not'、自分/相手/互いはsubjectで表現し、別コードは増やさない
+  // 「以外」はvalue:'not'、自分/相手/互いはsubjectで表現し、別コードは増やさない。
+  // 例:「相手のデジモンが消滅したとき」(when_opp_destroyed) と組み合わせて subject=自分 に
+  // すれば「相手のデジモンが自分の効果で消滅したとき」を表現できる（バトルでの消滅を
+  // 表す cond_battle_opp_destroyed の"効果版"に相当）。
+  // ⚠ エンジン未実装: 消滅原因(bs._lastDestroyCause等)を記録・伝播する処理が
+  // まだ無いため、保存はできますが動作しません（要エンジン実装）
   { code: 'cond_effect', kind: 'condition', label: '効果で' },
   { code: 'cond_name', kind: 'condition', label: '名前（完全一致）' },
   { code: 'cond_name_contains', kind: 'condition', label: '名称に含む' },

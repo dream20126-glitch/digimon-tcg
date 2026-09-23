@@ -109,9 +109,9 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_opp_digimon', 'cond_own', 'cond_digimon', 'cond_keyword', 'cond_custom',
   'deck_trash_top', // 条件タブに誤登録された action コードを「デッキに1枚以上ある」マーカーとして実装
   // ゾーン枚数（subject 駆動）
-  'cond_hand_le', 'cond_hand_ge',
-  'cond_security_le', 'cond_security_ge',
-  'cond_trash_le', 'cond_trash_ge',
+  'cond_hand_le', 'cond_hand_ge', 'cond_hand_gt', 'cond_hand_lt',
+  'cond_security_le', 'cond_security_ge', 'cond_security_gt', 'cond_security_lt',
+  'cond_trash_le', 'cond_trash_ge', 'cond_trash_gt', 'cond_trash_lt',
   'cond_deck_le', 'cond_deck_ge',
   // 進化元メタ条件（cond_exists の進化元版）
   'cond_has_evo_digimon',

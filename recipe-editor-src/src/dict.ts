@@ -295,6 +295,17 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_security_eq', kind: 'condition', label: 'セキュリティがちょうどN枚' },
   { code: 'cond_has_evo_eq', kind: 'condition', label: '進化元がちょうどN枚' },
   { code: 'cond_battle_area_eq', kind: 'condition', label: 'バトルエリアがちょうどN枚' },
+  // より多い/より少ない（N枚を含まない厳密な大小比較）
+  { code: 'cond_hand_gt', kind: 'condition', label: '手札がN枚より多い' },
+  { code: 'cond_hand_lt', kind: 'condition', label: '手札がN枚より少ない' },
+  { code: 'cond_trash_gt', kind: 'condition', label: 'トラッシュがN枚より多い' },
+  { code: 'cond_trash_lt', kind: 'condition', label: 'トラッシュがN枚より少ない' },
+  { code: 'cond_security_gt', kind: 'condition', label: 'セキュリティがN枚より多い' },
+  { code: 'cond_security_lt', kind: 'condition', label: 'セキュリティがN枚より少ない' },
+  { code: 'cond_has_evo_gt', kind: 'condition', label: '進化元がN枚より多い' },
+  { code: 'cond_has_evo_lt', kind: 'condition', label: '進化元がN枚より少ない' },
+  { code: 'cond_battle_area_gt', kind: 'condition', label: 'バトルエリアがN枚より多い' },
+  { code: 'cond_battle_area_lt', kind: 'condition', label: 'バトルエリアがN枚より少ない' },
 ];
 
 // アクション（種類: action）

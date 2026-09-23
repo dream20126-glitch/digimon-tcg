@@ -6904,24 +6904,24 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   { code: 'battle_area', label: 'バトルエリア' },
 ];
 const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
-  'hand:ge': 'cond_hand_ge', 'hand:le': 'cond_hand_le', 'hand:eq': 'cond_hand_eq',
-  'trash:ge': 'cond_trash_ge', 'trash:le': 'cond_trash_le', 'trash:eq': 'cond_trash_eq',
-  'security:ge': 'cond_security_ge', 'security:le': 'cond_security_le', 'security:eq': 'cond_security_eq',
-  'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le', 'evo_source:eq': 'cond_has_evo_eq',
-  'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq',
+  'hand:ge': 'cond_hand_ge', 'hand:le': 'cond_hand_le', 'hand:eq': 'cond_hand_eq', 'hand:gt': 'cond_hand_gt', 'hand:lt': 'cond_hand_lt',
+  'trash:ge': 'cond_trash_ge', 'trash:le': 'cond_trash_le', 'trash:eq': 'cond_trash_eq', 'trash:gt': 'cond_trash_gt', 'trash:lt': 'cond_trash_lt',
+  'security:ge': 'cond_security_ge', 'security:le': 'cond_security_le', 'security:eq': 'cond_security_eq', 'security:gt': 'cond_security_gt', 'security:lt': 'cond_security_lt',
+  'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le', 'evo_source:eq': 'cond_has_evo_eq', 'evo_source:gt': 'cond_has_evo_gt', 'evo_source:lt': 'cond_has_evo_lt',
+  'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq', 'battle_area:gt': 'cond_battle_area_gt', 'battle_area:lt': 'cond_battle_area_lt',
 };
-type RefQuant = 'ge' | 'le' | 'eq' | 'face_down' | 'face_up';
+type RefQuant = 'ge' | 'le' | 'eq' | 'gt' | 'lt' | 'face_down' | 'face_up';
 const REF_QUANT_NO_VALUE = new Set<RefQuant>(['face_down', 'face_up']);
 // 裏向き/表向き（cond_face_down/cond_face_up）はカード自体の裏表状態を見るだけでゾーンを
 // 問わない判定だが、「どのゾーンについて聞いているか」の表示が消えると分かりにくいため、
 // ゾーンは c.value 側に保持する（進化元／セキュリティで選択可。値としては使わない・表示専用）
 const REF_FACE_ZONES = new Set(['evo_source', 'security']);
 const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> = {
-  cond_hand_ge: { zone: 'hand', quant: 'ge' }, cond_hand_le: { zone: 'hand', quant: 'le' }, cond_hand_eq: { zone: 'hand', quant: 'eq' },
-  cond_trash_ge: { zone: 'trash', quant: 'ge' }, cond_trash_le: { zone: 'trash', quant: 'le' }, cond_trash_eq: { zone: 'trash', quant: 'eq' },
-  cond_security_ge: { zone: 'security', quant: 'ge' }, cond_security_le: { zone: 'security', quant: 'le' }, cond_security_eq: { zone: 'security', quant: 'eq' },
-  cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_eq: { zone: 'evo_source', quant: 'eq' },
-  cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' },
+  cond_hand_ge: { zone: 'hand', quant: 'ge' }, cond_hand_le: { zone: 'hand', quant: 'le' }, cond_hand_eq: { zone: 'hand', quant: 'eq' }, cond_hand_gt: { zone: 'hand', quant: 'gt' }, cond_hand_lt: { zone: 'hand', quant: 'lt' },
+  cond_trash_ge: { zone: 'trash', quant: 'ge' }, cond_trash_le: { zone: 'trash', quant: 'le' }, cond_trash_eq: { zone: 'trash', quant: 'eq' }, cond_trash_gt: { zone: 'trash', quant: 'gt' }, cond_trash_lt: { zone: 'trash', quant: 'lt' },
+  cond_security_ge: { zone: 'security', quant: 'ge' }, cond_security_le: { zone: 'security', quant: 'le' }, cond_security_eq: { zone: 'security', quant: 'eq' }, cond_security_gt: { zone: 'security', quant: 'gt' }, cond_security_lt: { zone: 'security', quant: 'lt' },
+  cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_eq: { zone: 'evo_source', quant: 'eq' }, cond_has_evo_gt: { zone: 'evo_source', quant: 'gt' }, cond_has_evo_lt: { zone: 'evo_source', quant: 'lt' },
+  cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' }, cond_battle_area_gt: { zone: 'battle_area', quant: 'gt' }, cond_battle_area_lt: { zone: 'battle_area', quant: 'lt' },
 };
 function isRefFaceCond(base: string): boolean {
   return base === 'cond_face_down' || base === 'cond_face_up';
@@ -6957,15 +6957,18 @@ function refApplyQuant(zone: string, quant: RefQuant, currentValue?: string): { 
 const REF_QUANT_OPTIONS_BY_ZONE: Record<string, { code: RefQuant; label: string }[]> = {
   evo_source: [
     { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
+    { code: 'gt', label: 'より多い' }, { code: 'lt', label: 'より少ない' },
     { code: 'face_down', label: '裏向き' }, { code: 'face_up', label: '表向き' },
   ],
   security: [
     { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
+    { code: 'gt', label: 'より多い' }, { code: 'lt', label: 'より少ない' },
     { code: 'face_down', label: '裏向き' }, { code: 'face_up', label: '表向き' },
   ],
 };
 const REF_QUANT_OPTIONS_DEFAULT: { code: RefQuant; label: string }[] = [
   { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
+  { code: 'gt', label: 'より多い' }, { code: 'lt', label: 'より少ない' },
 ];
 // 種別ボタン用（「その他」はトリガー同様、別枠のチェックボックスで扱うため除外）
 const CATEGORY_BUTTON_OPTIONS = CATEGORY_OPTIONS.filter((c) => c.value !== 'other')

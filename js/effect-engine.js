@@ -4349,6 +4349,22 @@ function checkConditions(conditions, card, bs, side) {
         if (len < threshold) return false;
         break;
       }
+      case 'cond_hand_lt': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].hand ? bs[ts].hand.length : 0;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'hand') : (cond.value || 0);
+        if (len >= threshold) return false;
+        break;
+      }
+      case 'cond_hand_gt': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].hand ? bs[ts].hand.length : 0;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'hand') : (cond.value || 0);
+        if (len <= threshold) return false;
+        break;
+      }
       case 'cond_security_le': {
         if (!bs) break;
         const ts = resolveSubjectSide(cond.subject, side);
@@ -4365,6 +4381,22 @@ function checkConditions(conditions, card, bs, side) {
         if (len < threshold) return false;
         break;
       }
+      case 'cond_security_lt': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].security ? bs[ts].security.length : 0;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'security') : (cond.value || 0);
+        if (len >= threshold) return false;
+        break;
+      }
+      case 'cond_security_gt': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].security ? bs[ts].security.length : 0;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'security') : (cond.value || 0);
+        if (len <= threshold) return false;
+        break;
+      }
       case 'cond_trash_ge': {
         if (!bs) break;
         const ts = resolveSubjectSide(cond.subject, side);
@@ -4379,6 +4411,22 @@ function checkConditions(conditions, card, bs, side) {
         const len = bs[ts] && bs[ts].trash ? bs[ts].trash.length : 0;
         const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'trash') : (cond.value || 0);
         if (len > threshold) return false;
+        break;
+      }
+      case 'cond_trash_lt': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].trash ? bs[ts].trash.length : 0;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'trash') : (cond.value || 0);
+        if (len >= threshold) return false;
+        break;
+      }
+      case 'cond_trash_gt': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const len = bs[ts] && bs[ts].trash ? bs[ts].trash.length : 0;
+        const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'trash') : (cond.value || 0);
+        if (len <= threshold) return false;
         break;
       }
       case 'cond_deck_le': {

@@ -4804,14 +4804,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               </label>
               {effectExtraTargets.map((et: ExtraTarget, idx: number) => {
                 const etBase = (et.target || '').split(':')[0];
+                const etSuffix = (et.target || '').substring(etBase.length);
                 const etCurL1L2 = TARGET_SEL_CODE_TO_L1L2[etBase] || { l1: '', l2: '' };
                 const setEtTarget = (l1: string, l2?: string) => {
                   if (!l1) { updateExtraTarget(idx, { target: '' }); return; }
                   if (l1 === 'self') { updateExtraTarget(idx, { target: 'self_card' }); return; }
                   const useL2 = l2 || (etCurL1L2.l1 === l1 && etCurL1L2.l2 ? etCurL1L2.l2 : 'digimon');
-                  updateExtraTarget(idx, { target: TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '' });
+                  updateExtraTarget(idx, { target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '') + etSuffix });
                 };
                 const etL2Options = TARGET_SEL_L2[etCurL1L2.l1] || [];
+                const etHideCount = etBase === 'self' || etBase === 'self_card' || etBase === 'same_target' || !etBase;
                 return (
                   <div key={idx} style={{ marginTop: idx === 0 ? 4 : 8, paddingTop: idx === 0 ? 0 : 8, borderTop: idx === 0 ? 'none' : '1px dashed #ffd591' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -4850,6 +4852,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           options={etL2Options}
                           value={etCurL1L2.l2}
                           onChange={(l2) => setEtTarget(etCurL1L2.l1, l2)}
+                          accentColor="#b76e00"
+                        />
+                      </div>
+                    )}
+                    {!etHideCount && (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🎯 対象数</div>
+                        <ButtonGroup
+                          options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
+                          value={etSuffix}
+                          onChange={(v) => updateExtraTarget(idx, { target: etBase + v })}
                           accentColor="#b76e00"
                         />
                       </div>

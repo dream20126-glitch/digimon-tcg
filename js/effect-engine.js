@@ -1343,6 +1343,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
         if (didDiscard) {
+          // 「原因」追跡: 効果によって破棄された（このactionを実行している効果の持ち主が原因）
+          if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
           try { fireWhenEvoDiscardTriggers(edSide, ctx.bs, ctx, () => doneCb && doneCb(), edAreaKey === 'tamerArea' ? 'tamer' : 'digimon'); return; } catch (_) {}
         }
         doneCb && doneCb();
@@ -6008,6 +6010,10 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
         const conds = parseRecipeCondition(step.condition);
         if (!checkConditions(conds, carrier, bs, reactSide)) return false;
       }
+      // 原因チェック（バトルで/効果で + 原因の対象）。on_destroy専用だった
+      // _destroyCauseMatches を、when_opp_rest/when_evo_discard等この関数を使う
+      // 全トリガー共通で使えるようにする（step.cause未指定なら常にtrue）
+      if (!_destroyCauseMatches(step, bs, reactSide, carrier)) return false;
       // gate: 発動可否のみを判定する条件。step.condition と違い対象選択の
       // フィルタには使われない（「自身がレスト中なら相手1体をレスト」等で、
       // 自身の状態判定が相手側の対象フィルタに漏れるのを防ぐ）。
@@ -6177,7 +6183,8 @@ export function fireOnAttackBothSubjectTriggers(attackerSide, bs, ctxBase, done)
 // discardedSide = 破棄された側。containerType = 'digimon'|'tamer'|undefined（破棄元の種別。
 // 呼び出し元がまだ指定していない場合はコンテナ種別を問わず判定する後方互換動作）。
 export function fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, done, containerType) {
-  const finish = () => { try { done && done(); } catch(_) {} };
+  // 原因追跡は「今まさに解決中の反応チェーン」限定の一時情報のため、解決完了後は必ずクリアする
+  const finish = () => { if (bs) bs._lastDestroyCause = null; try { done && done(); } catch(_) {} };
   const subjectMatches = (step, cardSide) => {
     const base = String(step.subject || '').replace(/_stack(_bottom)?$/, '');
     let sideMatch, typeReq = null;
@@ -9352,6 +9359,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _fireEvoDiscardReactIfNeeded = (didHit, doneCb) => {
         if (didHit) {
           const _discardedSide = _edIsOpp ? (effectiveSide === 'player' ? 'ai' : 'player') : effectiveSide;
+          // 「原因」追跡: 効果によって破棄された（このactionを実行している効果の持ち主が原因）
+          if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
           try { fireWhenEvoDiscardTriggers(_discardedSide, ctx.bs, ctx, () => doneCb && doneCb()); return; } catch (_) {}
         }
         doneCb && doneCb();

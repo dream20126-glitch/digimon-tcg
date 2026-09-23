@@ -79,19 +79,24 @@ export interface EffectBlock {
   // 「黄のLv.3デジモンが登場したとき」等の "このトリガーが発火する条件" を表現。
   // 複数トリガー選択時は原則この1つを全トリガーで共有する（従来通り）
   triggerConditions?: ConditionPair[];
-  // trigger='on_destroy' 専用の「原因」: 「誰が消滅したか」は発動主体(triggerSubject)で
-  // 表現する（self=このデジモン/own=自分のデジモン/opp=相手のデジモン/both=両方＝他のデジモン）。
-  // これとは別に「何が原因で消滅したか」をここで表す。未指定なら原因を問わない。
-  // 例:「このデジモンがバトルで相手のデジモンを消滅させたとき」
+  // 「原因」: どのトリガーでも使える汎用フィールド。「誰が（消滅/破棄等）したか」は
+  // 発動主体(triggerSubject。トリガーごとに分けたい場合はtriggerSubjectByCode)で表現する
+  // （self=このデジモン/own=自分のデジモン/opp=相手のデジモン/both=両方＝他のデジモン）。
+  // これとは別に「何が原因で（誰によって）発生したか」をここで表す。未指定なら原因を問わない。
+  // 例:「このデジモンがバトルで相手のデジモンを消滅させたとき」(trigger=on_destroy)
   //  → triggerSubject='opp'（相手が消滅した）+ destroyCause='battle' + destroyCauseSubject='self'（原因はこのデジモン）
-  // 例:「自分の効果で（相手のデジモンが）消滅したとき」
-  //  → destroyCause='effect' + destroyCauseSubject='own'
+  // 例:「自分のテイマーの下のカードが効果で破棄されたとき」(trigger=when_evo_discard)
+  //  → triggerSubject(またはtriggerSubjectByCode)='own_tamer_stack' + destroyCause='effect' + destroyCauseSubject='own'
   // JSONでは step.cause / step.cause_subject として出力する。
-  // エンジン実装済み（effect-engine.js: bs._lastDestroyCause）。バトル起因の消滅は
-  // 通常の勝敗（相打ち/道連れ含む）では実際に勝ったカードまで正確に追跡しており、
-  // destroyCauseSubject='self'（このカードが直接の原因）も正しく判定できる。
-  // ただし一部の特殊keyword（衝突の自滅・セキュリティデジモンとのバトル）は
-  // 原因カードを追跡しておらず、'self' が 'own'（自分側が原因）へフォールバックする
+  // エンジン実装済み（effect-engine.js: bs._lastDestroyCause）。on_destroy（消滅）と
+  // when_evo_discard（進化元/テイマーの下の破棄）の両方で原因追跡・判定に対応済み。
+  // バトル起因の消滅は、通常の勝敗（相打ち/道連れ含む）では実際に勝ったカードまで正確に
+  // 追跡しており、destroyCauseSubject='self'（このカードが直接の原因）も正しく判定できる。
+  // ただし一部の特殊keyword（衝突の自滅・セキュリティデジモンとのバトル）は原因カードを
+  // 追跡しておらず、'self' が 'own'（自分側が原因）へフォールバックする。
+  // when_opp_rest等その他の反応系トリガーも、_fireSidedReactionTriggers経由のものは
+  // 同じ仕組みで判定されるが、原因情報（bs._lastDestroyCause）は現状destroy/discard系の
+  // アクション実行時にしかセットされないため、それ以外のイベントでは常に「原因なし」扱いになる
   destroyCause?: 'battle' | 'effect';
   destroyCauseSubject?: string;
   // トリガーごとに発動ターン（自分/相手/お互い）を個別設定したい場合に使う

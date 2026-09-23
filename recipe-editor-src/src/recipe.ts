@@ -795,8 +795,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.limit) step.limit = b.limit;
   // subject='self' はデフォルトなのでJSONに含めない（既存レシピと互換）
   if (b.triggerSubject && b.triggerSubject !== 'self') step.subject = b.triggerSubject;
-  // trigger='on_destroy' 専用の「原因」（詳細は types.ts 参照）
-  if (b.trigger === 'on_destroy' && b.destroyCause) {
+  // 「原因」（バトルで/効果で・原因の対象）: どのトリガーでも設定可能な汎用フィールド
+  // （詳細は types.ts 参照）
+  if (b.destroyCause) {
     step.cause = b.destroyCause;
     if (b.destroyCauseSubject) step.cause_subject = b.destroyCauseSubject;
   }

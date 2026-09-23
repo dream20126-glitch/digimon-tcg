@@ -3500,35 +3500,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </>
                     )}
                   </div>
-                  {/* 原因: トリガー「消滅時」専用。「誰が消滅したか」は発動主体で表現するので、
-                      こちらは「何が原因で（誰によって）消滅したか」を表す。未指定なら原因を問わない。
-                      例:「このデジモンがバトルで相手のデジモンを消滅させたとき」
-                        → 発動主体=相手、原因=バトルで、原因の対象=このデジモン */}
-                  {currentTriggers.includes('on_destroy') && (
-                    <div style={{ marginTop: 6, marginBottom: 4 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>原因</div>
-                      <ButtonGroup
-                        options={[{ code: '', label: 'なし' }, { code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }]}
-                        value={block.destroyCause || ''}
-                        onChange={(v) => update('destroyCause', (v || undefined) as 'battle' | 'effect' | undefined)}
-                        accentColor="#2e7d32"
-                      />
-                      {block.destroyCause && (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>
-                            原因の対象
-                            <span title="バトルで消滅した場合、通常の勝敗（相打ち/道連れ含む）なら「このデジモン」は実際に勝ったカードまで正確に判定されます。ただし【衝突】の自滅やセキュリティデジモンとのバトルなど一部の特殊ケースでは「自分」と同じ扱いになります">ℹ️</span>
-                          </div>
-                          <ButtonGroup
-                            options={[{ code: 'self', label: 'このデジモン' }, { code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'both', label: '両方' }]}
-                            value={block.destroyCauseSubject || 'self'}
-                            onChange={(v) => update('destroyCauseSubject', v)}
-                            accentColor="#2e7d32"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <MultiButtonGroup
                       options={SUBJECT_OWN_OPP}
@@ -3598,6 +3569,35 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         }}
                         accentColor="#2e7d32"
                       />
+                    </div>
+                  )}
+                  {/* 原因: トリガー「消滅時」専用。「誰が消滅したか」は発動主体で表現するので、
+                      こちらは「何が原因で（誰によって）消滅したか」を表す。未指定なら原因を問わない。
+                      例:「このデジモンがバトルで相手のデジモンを消滅させたとき」
+                        → 発動主体=相手、原因=バトルで、原因の対象=このデジモン */}
+                  {currentTriggers.includes('on_destroy') && (
+                    <div style={{ marginTop: 6, marginBottom: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>原因</div>
+                      <ButtonGroup
+                        options={[{ code: '', label: 'なし' }, { code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }]}
+                        value={block.destroyCause || ''}
+                        onChange={(v) => update('destroyCause', (v || undefined) as 'battle' | 'effect' | undefined)}
+                        accentColor="#2e7d32"
+                      />
+                      {block.destroyCause && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>
+                            原因の対象
+                            <span title="バトルで消滅した場合、通常の勝敗（相打ち/道連れ含む）なら「このデジモン」は実際に勝ったカードまで正確に判定されます。ただし【衝突】の自滅やセキュリティデジモンとのバトルなど一部の特殊ケースでは「自分」と同じ扱いになります">ℹ️</span>
+                          </div>
+                          <ButtonGroup
+                            options={[{ code: 'self', label: 'このデジモン' }, { code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'both', label: '両方' }]}
+                            value={block.destroyCauseSubject || 'self'}
+                            onChange={(v) => update('destroyCauseSubject', v)}
+                            accentColor="#2e7d32"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

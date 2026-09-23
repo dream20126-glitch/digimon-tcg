@@ -101,7 +101,7 @@ function parseCostArray(rawCost: any): CostStep[] {
       fromZoneOwner: c?.from_owner === 'self' || c?.from_owner === 'opponent' ? c.from_owner : undefined,
       deckPosition,
       securityPosition: c?.security_position === 'top' || c?.security_position === 'bottom' ? c.security_position : undefined,
-      evoSourcePosition: c?.evo_source_position === 'top' || c?.evo_source_position === 'bottom' ? c.evo_source_position : undefined,
+      evoSourcePosition: c?.evo_source_position === 'top' || c?.evo_source_position === 'bottom' || c?.evo_source_position === 'select' ? c.evo_source_position : undefined,
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,
       altCosts: Array.isArray(c?.alt_actions) && c.alt_actions.length > 0 ? parseCostArray(c.alt_actions) : undefined,
     };
@@ -1019,7 +1019,7 @@ function stepObjectToAltAction(step: any): AltAction {
       : step?.position === 'select' ? 'both'
       : undefined,
     securityPosition: step?.security_position === 'top' || step?.security_position === 'bottom' ? step.security_position : undefined,
-    evoSourcePosition: step?.evo_source_position === 'top' || step?.evo_source_position === 'bottom' ? step.evo_source_position : undefined,
+    evoSourcePosition: step?.evo_source_position === 'top' || step?.evo_source_position === 'bottom' || step?.evo_source_position === 'select' ? step.evo_source_position : undefined,
     duration: step?.duration || '',
     perCount: step?.per_count != null ? Number(step.per_count) : undefined,
     perRef: step?.ref || '',
@@ -1242,7 +1242,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     evoSourceOwner: step?.evo_source_owner === 'self' || step?.evo_source_owner === 'other' ? step.evo_source_owner : undefined,
     fromZoneOwner: step?.from_owner === 'self' || step?.from_owner === 'opponent' ? step.from_owner : undefined,
     securityPosition: step?.security_position === 'top' || step?.security_position === 'bottom' ? step.security_position : undefined,
-    evoSourcePosition: step?.evo_source_position === 'top' || step?.evo_source_position === 'bottom' ? step.evo_source_position : undefined,
+    evoSourcePosition: step?.evo_source_position === 'top' || step?.evo_source_position === 'bottom' || step?.evo_source_position === 'select' ? step.evo_source_position : undefined,
     // 【〇〇が増えたとき】専用: どのゾーンが増えたときか (fromZones と同じ規則)
     zoneIncrease: (() => {
       const z = step?.zone_increase;
@@ -1319,7 +1319,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
               : a?.position === 'select' ? 'both' as const
               : undefined,
             securityPosition: a?.security_position === 'top' || a?.security_position === 'bottom' ? a.security_position : undefined,
-            evoSourcePosition: a?.evo_source_position === 'top' || a?.evo_source_position === 'bottom' ? a.evo_source_position : undefined,
+            evoSourcePosition: a?.evo_source_position === 'top' || a?.evo_source_position === 'bottom' || a?.evo_source_position === 'select' ? a.evo_source_position : undefined,
             duration: a?.duration || '',
             perCount: a?.per_count != null ? Number(a.per_count) : undefined,
             perRef: a?.ref || '',

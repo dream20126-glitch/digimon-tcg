@@ -171,7 +171,7 @@ export interface EffectBlock {
   // 上/下どちらから見るか（未指定=絞り込まない）。JSON では
   // step.security_position / step.evo_source_position に serialize
   securityPosition?: 'top' | 'bottom';
-  evoSourcePosition?: 'top' | 'bottom';
+  evoSourcePosition?: 'top' | 'bottom' | 'select';
   // 「～ごとに」倍率設定。perRef を数えて value × floor(count / perCount) を計算
   perCount?: number;  // N体ごとの N（'1体ごと' なら 1）
   perRef?: string;    // カウント対象 subject ('own_digimon' / 'opp_digimon' / 'own_hand' 等)
@@ -258,7 +258,7 @@ export interface AltAction {
   // 上/下どちらから見るか（未指定=絞り込まない）。JSON では
   // security_position / evo_source_position に serialize
   securityPosition?: 'top' | 'bottom';
-  evoSourcePosition?: 'top' | 'bottom';
+  evoSourcePosition?: 'top' | 'bottom' | 'select';
   // 期間・倍率（AND実行時の追加設定）
   duration?: string;
   perCount?: number;
@@ -430,7 +430,7 @@ export interface CostStep {
   // 積み重ね順の上/下どちらから見るか（未指定=絞り込まない）。JSON では
   // step.cost[].security_position / evo_source_position に serialize
   securityPosition?: 'top' | 'bottom';
-  evoSourcePosition?: 'top' | 'bottom';
+  evoSourcePosition?: 'top' | 'bottom' | 'select';
   // 修飾子コード配列（'face_down' 等）。辞書側 hasFaceOption=true のアクション選択時のみ
   // 「裏向き/表向き」ボタンとして編集可能になる（例:「テイマーの下に裏向きで置く」コスト）
   options?: string[];

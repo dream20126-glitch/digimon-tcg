@@ -1002,9 +1002,9 @@ function CostListEditor({
                         <div>
                           <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 {(c.fromZones || []).includes('stacked_cards') ? '重ねられているカードの位置' : '進化元の位置'}</div>
                           <ButtonGroup
-                            options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                            options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }]}
                             value={c.evoSourcePosition || ''}
-                            onChange={(v) => updateCost(i, { ...c, evoSourcePosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                            onChange={(v) => updateCost(i, { ...c, evoSourcePosition: (v || undefined) as 'top' | 'bottom' | 'select' | undefined })}
                             accentColor="#b76e00"
                           />
                         </div>
@@ -1213,9 +1213,9 @@ function CostListEditor({
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 {(c.fromZones || []).includes('stacked_cards') ? '重ねられているカードの位置' : '進化元の位置'}</div>
                       <ButtonGroup
-                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }]}
                         value={c.evoSourcePosition || ''}
-                        onChange={(v) => updateCost(i, { ...c, evoSourcePosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                        onChange={(v) => updateCost(i, { ...c, evoSourcePosition: (v || undefined) as 'top' | 'bottom' | 'select' | undefined })}
                         accentColor="#1a4f8a"
                       />
                     </div>
@@ -4091,9 +4091,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           <div>
                             <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 {effectFromZones.includes('stacked_cards') ? '重ねられているカードの位置' : '進化元の位置'}</div>
                             <ButtonGroup
-                              options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                              options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }]}
                               value={effectEvoSourcePosition || ''}
-                              onChange={(v) => updateEffect({ evoSourcePosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                              onChange={(v) => updateEffect({ evoSourcePosition: (v || undefined) as 'top' | 'bottom' | 'select' | undefined })}
                               accentColor="#1976d2"
                             />
                           </div>
@@ -4584,9 +4584,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 {zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの位置' : '進化元の位置'}</div>
                       <ButtonGroup
-                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }]}
                         value={effectEvoSourcePosition || ''}
-                        onChange={(v) => updateEffect({ evoSourcePosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                        onChange={(v) => updateEffect({ evoSourcePosition: (v || undefined) as 'top' | 'bottom' | 'select' | undefined })}
                         accentColor="#1a4f8a"
                       />
                     </div>

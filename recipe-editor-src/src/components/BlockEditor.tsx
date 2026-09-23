@@ -1598,6 +1598,9 @@ const TARGET_SEL_UNIMPLEMENTED = new Set([
   'opp_security', 'target_other_own_card', 'target_other_own_tamer', 'opponent_tamer',
   'own_option', 'opponent_option',
   'most_security_player', 'most_trash_player', 'most_hand_player', 'most_evo_source_player',
+  // 「両方（自分/相手）」＝側を問わず該当する全てが対象。「他」(other_own)と違い
+  // このカード自身も対象に含む。エンジン未実装のプレースホルダー
+  'both', 'both_card', 'both_tamer',
 ]);
 const TARGET_SEL_L1 = [
   { code: '', label: '既定' },
@@ -1605,6 +1608,8 @@ const TARGET_SEL_L1 = [
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
   { code: 'other_own', label: '他' },
+  // 自分/相手どちらでも該当する全てが対象（このカードを含む）。例:「デジモン1体をレストできる」
+  { code: 'both', label: '両方（自分/相手）' },
   { code: 'same_target', label: 'そのデジモン' },
   { code: 'most', label: '最も多いプレイヤー' },
 ];
@@ -1629,11 +1634,17 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'card', label: 'カード' },
     { code: 'tamer', label: 'テイマー' },
   ],
+  both: [
+    { code: 'digimon', label: 'デジモン' },
+    { code: 'card', label: 'カード' },
+    { code: 'tamer', label: 'テイマー' },
+  ],
 };
 const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
   'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:option': 'own_option', 'own:security': 'own_security',
   'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:tamer': 'opponent_tamer', 'opp:option': 'opponent_option', 'opp:player': 'opp_player', 'opp:security': 'opp_security',
   'other_own:digimon': 'target_other_own', 'other_own:card': 'target_other_own_card', 'other_own:tamer': 'target_other_own_tamer',
+  'both:digimon': 'both', 'both:card': 'both_card', 'both:tamer': 'both_tamer',
   'most:security': 'most_security_player', 'most:trash': 'most_trash_player', 'most:hand': 'most_hand_player', 'most:evo_source': 'most_evo_source_player',
 };
 const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
@@ -1654,6 +1665,9 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   target_other_own: { l1: 'other_own', l2: 'digimon' },
   target_other_own_card: { l1: 'other_own', l2: 'card' },
   target_other_own_tamer: { l1: 'other_own', l2: 'tamer' },
+  both: { l1: 'both', l2: 'digimon' },
+  both_card: { l1: 'both', l2: 'card' },
+  both_tamer: { l1: 'both', l2: 'tamer' },
   same_target: { l1: 'same_target', l2: '' },
   most_security_player: { l1: 'most', l2: 'security' },
   most_trash_player: { l1: 'most', l2: 'trash' },

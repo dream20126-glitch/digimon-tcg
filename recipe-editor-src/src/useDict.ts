@@ -96,6 +96,13 @@ function categorize(rows: any[]): { triggers: DictEntry[]; conditions: DictEntry
         const v = String(r['対象'] || '').trim().toLowerCase();
         return v === '1' || v === 'true' || v === 'yes' || v === 'on';
       })(),
+      // 種別なしフラグ（トリガー専用）: 「種別なし」列に "1"/"true" 等で、このトリガーの
+      // 発動主体エディタで「デジモン/テイマー」種別ボタンを表示しない
+      // （例:「デッキが増えたとき」のようにカード種別を問わないゾーン系イベント）
+      noSubjectType: (() => {
+        const v = String(r['種別なし'] || '').trim().toLowerCase();
+        return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+      })(),
       // 「できない」ペアコード: 「できないコード」列にコードが入っていれば、
       // レシピエディタでこのアクション選択時に「する/できない」トグルを表示する
       cantActionCode: String(r['できないコード'] || '').trim() || undefined,
@@ -236,6 +243,7 @@ export function useDict(password: string): DictAPI {
       '対象': entry.hasNamedParam ? '1' : '',
       'できないコード': entry.cantActionCode || '',
       'パッシブフラグ': entry.isPassive ? '1' : '',
+      '種別なし': entry.noSubjectType ? '1' : '',
     };
     const r = await apiAdd('dict', row, password);
     // アクションのフラグを localStorage に保存（スプシ側に列がなくてもエディタ内で保持）

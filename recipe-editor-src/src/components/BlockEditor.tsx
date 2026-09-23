@@ -3066,7 +3066,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const l2Options = cur.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
             // デジモン/テイマーは複数選択可（両方選ぶとcard=「カード」扱いに集約。カード単体の
             // ボタンは冗長になるためexclusiveL2Optionsから外す。対象/対象の条件と同じ操作感）
-            const hasDigimonTamer = (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'other_own' || cur.l1 === 'both');
+            // 選択中の全トリガーが「種別なし」（デッキが増えたとき等、カード種別を問わない
+            // ゾーン系イベント）なら、デジモン/テイマー種別ボタン自体を出さない
+            const allTriggersTypeless = currentTriggers.length > 0
+              && currentTriggers.every((t) => dict.triggers.find((d) => d.code === t)?.noSubjectType);
+            const hasDigimonTamer = (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'other_own' || cur.l1 === 'both') && !allTriggersTypeless;
             const subjDigimonCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':digimon'];
             const subjTamerCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':tamer'];
             const subjCardCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':card'];

@@ -3507,13 +3507,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       場合は発動条件の専用条件（cond_battle_opp_destroyed / cond_effect）を使う） */}
                   {currentTriggers.includes('on_destroy') && (
                     <div style={{ marginTop: 6, marginBottom: 4 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: block.destroyTarget === 'opponent' ? '#9333ea' : '#666', fontWeight: block.destroyTarget === 'opponent' ? 'bold' : 'normal' }}>
+                      <label
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: block.destroyTarget === 'opponent' ? '#9333ea' : '#666', fontWeight: block.destroyTarget === 'opponent' ? 'bold' : 'normal' }}
+                        title="ONにすると「発動主体が原因で相手のデジモンを消滅させたとき」の意味になる（バトル・効果どちらの原因でも発火する想定）"
+                      >
                         <input
                           type="checkbox"
                           checked={block.destroyTarget === 'opponent'}
                           onChange={(e) => update('destroyTarget', e.target.checked ? 'opponent' : undefined)}
                         />
-                        🎯 消滅対象：相手のデジモン（発動主体が原因で相手を消滅させたとき）
+                        消滅対象：相手デジモン
                         <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠未実装</span>
                       </label>
                     </div>

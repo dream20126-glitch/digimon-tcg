@@ -6051,7 +6051,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'name' | 'description' | 'zone' | 'ref' | 'designated' | 'stacked' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'description' | 'zone' | 'ref' | 'designated' | 'stacked' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -6061,6 +6061,7 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'dp', label: 'DP' },
   { value: 'cost', label: 'コスト' },
   { value: 'cost_mod', label: 'コスト増減' },
+  { value: 'memory', label: 'メモリー' },
   { value: 'name', label: '名前' },
   { value: 'description', label: '記述' },
   { value: 'zone', label: '場所' },
@@ -6130,6 +6131,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   lv: 'cond_lv_ge',
   dp: 'cond_dp_ge',
   cost: 'cond_cost_ge',
+  memory: 'cond_memory_ge',
   cost_mod: 'cond_cost_mod',
   name: 'cond_name',
   description: 'cond_description',
@@ -6160,6 +6162,10 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_cost_le', label: '以下' },
     { value: 'cond_cost', label: '完全一致' },
   ],
+  memory: [
+    { value: 'cond_memory_ge', label: '以上' },
+    { value: 'cond_memory_le', label: '以下' },
+  ],
   name: [
     { value: 'cond_name', label: '完全一致' },
     { value: 'cond_name_contains', label: '含む' },
@@ -6181,6 +6187,7 @@ function baseToCategory(base: string): CondCategory {
     || base === 'cond_dp_highest' || base === 'cond_dp_lowest'
     || base === 'cond_attack_target_highest_dp' || base === 'cond_attack_target_lowest_dp') return 'dp';
   if (base === 'cond_cost_ge' || base === 'cond_cost_le' || base === 'cond_cost') return 'cost';
+  if (base === 'cond_memory_ge' || base === 'cond_memory_le') return 'memory';
   if (base === 'cond_cost_mod') return 'cost_mod';
   if (base === 'cond_name' || base === 'cond_name_contains' || base === 'cond_name_distinct') return 'name';
   if (base === 'cond_description' || base === 'cond_description_contains' || base === 'cond_description_distinct') return 'description';
@@ -6246,6 +6253,7 @@ function ConditionsHybridEditor({
     'cond_dp_highest', 'cond_dp_lowest',
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
     'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod',
+    'cond_memory_ge', 'cond_memory_le',
     'cond_name', 'cond_name_contains', 'cond_description', 'cond_description_contains', 'cond_zone',
     'cond_name_distinct', 'cond_lv_distinct', 'cond_description_distinct', 'cond_color_distinct',
     // トリガーボックス側の専用「アタック対象」ボタンで管理するため、その他の追加候補にも出さない

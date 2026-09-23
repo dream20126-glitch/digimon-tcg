@@ -968,7 +968,9 @@ function CostListEditor({
                             </label>
                           </div>
                         )}
-                        {zones.length >= 1 && (
+                        {/* 進化元/重ねられているカード/リンクカード以外の場所を含む場合のみ表示。
+                            それらは専用の「〜の対象」欄（下記）で「誰の場所か」を表せるため省略する */}
+                        {zones.some((z) => z !== 'evo_source' && z !== 'stacked_cards' && z !== 'linked') && (
                           <div style={{ marginTop: 4 }}>
                             <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 誰の場所か</div>
                             <ButtonGroup
@@ -977,6 +979,50 @@ function CostListEditor({
                               onChange={(v) => updateCost(i, { ...c, fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
                               accentColor="#b76e00"
                             />
+                          </div>
+                        )}
+                        {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの対象' : '進化元の対象'}</div>
+                            <ButtonGroup
+                              options={[{ code: '', label: '指定なし' }, { code: 'self', label: 'このデジモン' }, { code: 'other', label: '他のデジモン' }]}
+                              value={c.evoSourceOwner || ''}
+                              onChange={(v) => updateCost(i, { ...c, evoSourceOwner: (v || undefined) as 'self' | 'other' | undefined })}
+                              accentColor="#b76e00"
+                            />
+                            {c.evoSourceOwner === 'other' && (
+                              <div style={{ marginTop: 4 }}>
+                                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 自分/相手</div>
+                                <ButtonGroup
+                                  options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                                  value={c.fromZoneOwner || ''}
+                                  onChange={(v) => updateCost(i, { ...c, fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                                  accentColor="#b76e00"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {zones.includes('linked') && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>リンクカードの対象</div>
+                            <ButtonGroup
+                              options={[{ code: '', label: '指定なし' }, { code: 'self', label: 'このデジモン' }, { code: 'other', label: '他のデジモン' }]}
+                              value={c.linkedOwner || ''}
+                              onChange={(v) => updateCost(i, { ...c, linkedOwner: (v || undefined) as 'self' | 'other' | undefined })}
+                              accentColor="#b76e00"
+                            />
+                            {c.linkedOwner === 'other' && (
+                              <div style={{ marginTop: 4 }}>
+                                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 自分/相手</div>
+                                <ButtonGroup
+                                  options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                                  value={c.fromZoneOwner || ''}
+                                  onChange={(v) => updateCost(i, { ...c, fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                                  accentColor="#b76e00"
+                                />
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1179,7 +1225,7 @@ function CostListEditor({
                         </label>
                       </div>
                     )}
-                    {zones.length >= 1 && (
+                    {zones.some((z) => z !== 'evo_source' && z !== 'stacked_cards' && z !== 'linked') && (
                       <div style={{ marginTop: 4 }}>
                         <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 誰の場所か</div>
                         <ButtonGroup
@@ -1188,6 +1234,50 @@ function CostListEditor({
                           onChange={(v) => updateCost(i, { ...c, fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
                           accentColor="#1a4f8a"
                         />
+                      </div>
+                    )}
+                    {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの対象' : '進化元の対象'}</div>
+                        <ButtonGroup
+                          options={[{ code: '', label: '指定なし' }, { code: 'self', label: 'このデジモン' }, { code: 'other', label: '他のデジモン' }]}
+                          value={c.evoSourceOwner || ''}
+                          onChange={(v) => updateCost(i, { ...c, evoSourceOwner: (v || undefined) as 'self' | 'other' | undefined })}
+                          accentColor="#1a4f8a"
+                        />
+                        {c.evoSourceOwner === 'other' && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 自分/相手</div>
+                            <ButtonGroup
+                              options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                              value={c.fromZoneOwner || ''}
+                              onChange={(v) => updateCost(i, { ...c, fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                              accentColor="#1a4f8a"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {zones.includes('linked') && (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>リンクカードの対象</div>
+                        <ButtonGroup
+                          options={[{ code: '', label: '指定なし' }, { code: 'self', label: 'このデジモン' }, { code: 'other', label: '他のデジモン' }]}
+                          value={c.linkedOwner || ''}
+                          onChange={(v) => updateCost(i, { ...c, linkedOwner: (v || undefined) as 'self' | 'other' | undefined })}
+                          accentColor="#1a4f8a"
+                        />
+                        {c.linkedOwner === 'other' && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 自分/相手</div>
+                            <ButtonGroup
+                              options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                              value={c.fromZoneOwner || ''}
+                              onChange={(v) => updateCost(i, { ...c, fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                              accentColor="#1a4f8a"
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2273,6 +2363,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectFromZoneOwner = isEditingAlt ? editingAlt!.fromZoneOwner : block.fromZoneOwner;
   const effectSecurityPosition = isEditingAlt ? editingAlt!.securityPosition : block.securityPosition;
   const effectEvoSourcePosition = isEditingAlt ? editingAlt!.evoSourcePosition : block.evoSourcePosition;
+  const effectEvoSourceOwner = isEditingAlt ? editingAlt!.evoSourceOwner : block.evoSourceOwner;
+  const effectLinkedOwner = isEditingAlt ? editingAlt!.linkedOwner : block.linkedOwner;
   const effectDuration = isEditingAlt ? editingAlt!.duration : block.duration;
   const effectPerCount = isEditingAlt ? editingAlt!.perCount : block.perCount;
   const effectPerRef = isEditingAlt ? editingAlt!.perRef : block.perRef;
@@ -4060,7 +4152,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             </label>
                           </div>
                         )}
-                        {effectFromZones.length >= 1 && (
+                        {effectFromZones.some((z) => z !== 'evo_source' && z !== 'stacked_cards' && z !== 'linked') && (
                           <div style={{ marginTop: 4 }}>
                             <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 誰の場所か</div>
                             <ButtonGroup
@@ -4069,6 +4161,50 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                               onChange={(v) => updateEffect({ fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
                               accentColor="#1976d2"
                             />
+                          </div>
+                        )}
+                        {(effectFromZones.includes('evo_source') || effectFromZones.includes('stacked_cards')) && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{effectFromZones.includes('stacked_cards') && !effectFromZones.includes('evo_source') ? '重ねられているカードの対象' : '進化元の対象'}</div>
+                            <ButtonGroup
+                              options={[{ code: '', label: '指定なし' }, { code: 'self', label: 'このデジモン' }, { code: 'other', label: '他のデジモン' }]}
+                              value={effectEvoSourceOwner || ''}
+                              onChange={(v) => updateEffect({ evoSourceOwner: (v || undefined) as 'self' | 'other' | undefined })}
+                              accentColor="#1976d2"
+                            />
+                            {effectEvoSourceOwner === 'other' && (
+                              <div style={{ marginTop: 4 }}>
+                                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 自分/相手</div>
+                                <ButtonGroup
+                                  options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                                  value={effectFromZoneOwner || ''}
+                                  onChange={(v) => updateEffect({ fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                                  accentColor="#1976d2"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {effectFromZones.includes('linked') && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>リンクカードの対象</div>
+                            <ButtonGroup
+                              options={[{ code: '', label: '指定なし' }, { code: 'self', label: 'このデジモン' }, { code: 'other', label: '他のデジモン' }]}
+                              value={effectLinkedOwner || ''}
+                              onChange={(v) => updateEffect({ linkedOwner: (v || undefined) as 'self' | 'other' | undefined })}
+                              accentColor="#1976d2"
+                            />
+                            {effectLinkedOwner === 'other' && (
+                              <div style={{ marginTop: 4 }}>
+                                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 自分/相手</div>
+                                <ButtonGroup
+                                  options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                                  value={effectFromZoneOwner || ''}
+                                  onChange={(v) => updateEffect({ fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                                  accentColor="#1976d2"
+                                />
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -4537,7 +4673,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </label>
                 </div>
               )}
-              {zones.length >= 1 && (
+              {zones.some((z) => z !== 'evo_source' && z !== 'stacked_cards' && z !== 'linked') && (
                 <div style={{ marginTop: 6 }}>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 誰の場所か</div>
                   <ButtonGroup
@@ -4549,7 +4685,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
               )}
               {/* 場所に「進化元」/「重ねられているカード」を含む場合のみ: どのデジモンの
-                  進化元から探すか ('self'=このデジモン / 'other'=他のデジモン / 未指定='指定なし') */}
+                  進化元から探すか ('self'=このデジモン / 'other'=他のデジモン / 未指定='指定なし')。
+                  「他のデジモン」のときだけ「自分/相手」を追加表示する */}
               {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
                 <div style={{ marginTop: 6 }}>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの対象' : '進化元の対象'}</div>
@@ -4559,10 +4696,48 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       { code: 'self', label: 'このデジモン' },
                       { code: 'other', label: '他のデジモン' },
                     ]}
-                    value={block.evoSourceOwner || ''}
-                    onChange={(v) => update('evoSourceOwner', (v || undefined) as 'self' | 'other' | undefined)}
+                    value={effectEvoSourceOwner || ''}
+                    onChange={(v) => updateEffect({ evoSourceOwner: (v || undefined) as 'self' | 'other' | undefined })}
                     accentColor="#1a4f8a"
                   />
+                  {effectEvoSourceOwner === 'other' && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 自分/相手</div>
+                      <ButtonGroup
+                        options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                        value={effectFromZoneOwner || ''}
+                        onChange={(v) => updateEffect({ fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                        accentColor="#1a4f8a"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* 場所に「リンクカード」を含む場合のみ: どのデジモンのリンクカードから探すか */}
+              {zones.includes('linked') && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>リンクカードの対象</div>
+                  <ButtonGroup
+                    options={[
+                      { code: '', label: '指定なし' },
+                      { code: 'self', label: 'このデジモン' },
+                      { code: 'other', label: '他のデジモン' },
+                    ]}
+                    value={effectLinkedOwner || ''}
+                    onChange={(v) => updateEffect({ linkedOwner: (v || undefined) as 'self' | 'other' | undefined })}
+                    accentColor="#1a4f8a"
+                  />
+                  {effectLinkedOwner === 'other' && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 自分/相手</div>
+                      <ButtonGroup
+                        options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                        value={effectFromZoneOwner || ''}
+                        onChange={(v) => updateEffect({ fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                        accentColor="#1a4f8a"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
               {/* 場所に「セキュリティ」/「進化元」/「重ねられているカード」を含む場合のみ:

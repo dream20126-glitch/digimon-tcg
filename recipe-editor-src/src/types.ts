@@ -167,6 +167,10 @@ export interface EffectBlock {
   // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし（絞り込まない）
   // JSON では step.evo_source_owner に serialize
   evoSourceOwner?: 'self' | 'other';
+  // 取得元エリアに「リンクカード」を含む場合のみ有効: どのデジモンのリンクカードから探すか。
+  // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし。
+  // JSON では step.linked_owner に serialize
+  linkedOwner?: 'self' | 'other';
   // 取得元エリアに「セキュリティ」/「進化元」を含む場合のみ有効: それぞれ積み重ね順の
   // 上/下どちらから見るか（未指定=絞り込まない）。JSON では
   // step.security_position / step.evo_source_position に serialize
@@ -254,6 +258,14 @@ export interface AltAction {
   // 対応するstep（alt_actions[]の要素、または'then'モード時は独立した後続step）の
   // position ('top'/'bottom') に serialize
   deckPosition?: 'top' | 'bottom' | 'both';
+  // 取得元エリアに「進化元」を含む場合のみ有効: どのデジモンの進化元から探すか。
+  // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし。
+  // JSON では evo_source_owner に serialize
+  evoSourceOwner?: 'self' | 'other';
+  // 取得元エリアに「リンクカード」を含む場合のみ有効: どのデジモンのリンクカードから探すか。
+  // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし。
+  // JSON では linked_owner に serialize
+  linkedOwner?: 'self' | 'other';
   // 取得元エリアに「セキュリティ」/「進化元」を含む場合のみ有効: それぞれ積み重ね順の
   // 上/下どちらから見るか（未指定=絞り込まない）。JSON では
   // security_position / evo_source_position に serialize
@@ -421,11 +433,21 @@ export interface CostStep {
   fromZones?: string[];
   fromZonesOp?: 'or' | 'and';
   // 取得元エリア（fromZones）がどちらのプレイヤーのものか（未指定=自分/相手どちらでも）。
-  // JSON では step.cost[].from_owner ('self'/'opponent') に serialize
+  // 「進化元」/「重ねられているカード」/「リンクカード」のときはevoSourceOwner/linkedOwnerで
+  // 「他のデジモン」を選んだ場合にのみ意味を持つ（それ以外はそちらの欄で「誰の場所か」が
+  // 自明なため使わない）。JSON では step.cost[].from_owner ('self'/'opponent') に serialize
   fromZoneOwner?: 'self' | 'opponent';
   // 上/下（デッキに戻す/セキュリティに置く 用）。JSON では step.cost[].position に serialize。
   // 'both' はエンジン未対応（'top' 以外は全て「下」/常に「上」扱いになる）
   deckPosition?: 'top' | 'bottom' | 'both';
+  // 取得元エリアに「進化元」/「重ねられているカード」を含む場合のみ有効: どのデジモンの
+  // 進化元から探すか。'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし。
+  // JSON では step.cost[].evo_source_owner に serialize
+  evoSourceOwner?: 'self' | 'other';
+  // 取得元エリアに「リンクカード」を含む場合のみ有効: どのデジモンのリンクカードから探すか。
+  // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし。
+  // JSON では step.cost[].linked_owner に serialize
+  linkedOwner?: 'self' | 'other';
   // 取得元エリア（fromZones）に「セキュリティ」/「進化元」を含む場合のみ有効: それぞれ
   // 積み重ね順の上/下どちらから見るか（未指定=絞り込まない）。JSON では
   // step.cost[].security_position / evo_source_position に serialize

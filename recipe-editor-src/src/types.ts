@@ -89,6 +89,14 @@ export interface EffectBlock {
   action?: string;
   value?: number | string;
   target?: string; // 'self' | 'own:1' | 'opponent:all' 等
+  // 登場/使用/進化/リンク（BUILTIN_FROM_ZONE_ACTIONS）専用: 対象が「このカード」自身の
+  // ときは通常の「アクションの対象数」欄が非表示になるため、代わりに取得元エリア
+  // （手札/進化元等）から何枚選ぶかをここで指定する。例:「進化元から特徴セイバーズを
+  // 持つデジモンカード1枚を、このカードにリンクできる」の"1枚"部分。
+  // JSONでは step.count として出力（アセンブリ等のkeywordCountと同じ出力先）。
+  // ⚠ エンジン側は現状 link 等のfrom-zone選択を1枚固定でハードコードしており、
+  // この値を未参照（要実装）
+  fromCount?: number | string;
   keyword?: string;
   // 選んだキーワードの辞書側hasNamedParam=trueのときのみ出現する「対象」の絞り込み条件。
   // 発動条件と同じボタン配列(特徴/名称/記述/Lv等)+AND/ORで組み立てる。JSON自体には
@@ -226,6 +234,9 @@ export interface AltAction {
   action: string;
   value?: number | string;
   target?: string;
+  // EffectBlock.fromCountと同じ（BUILTIN_FROM_ZONE_ACTIONS+対象「このカード」専用の
+  // 取得元エリアからの枚数指定）。JSONではstep.countとして出力
+  fromCount?: number | string;
   // 発動可否のみを判定する条件（対象選択のフィルタには使わない・複数指定でAND）。
   // 「〜のとき、代わりに〜する」のように、この代替アクションが自動選択される
   // 条件を表す。メイン側にgateが無く、alt側にgateがあって条件成立していれば、

@@ -116,6 +116,10 @@ function altActionToStepObject(a: AltAction): any {
     const n = Number(a.value);
     out.value = isNaN(n) ? a.value : n;
   }
+  if (a.fromCount !== undefined && a.fromCount !== '' && a.fromCount !== null) {
+    const n = Number(a.fromCount);
+    out.count = isNaN(n) ? a.fromCount : n;
+  }
   if (a.target) out.target = a.target;
   const validGate = (a.gateConditions || []).filter((p) => p.base);
   if (validGate.length >= 1) out.gate = pairToString(validGate[0]);
@@ -549,6 +553,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.value !== undefined && b.value !== '' && b.value !== null && b.value !== '-' && b.value !== '+') {
     const v = Number(b.value);
     step.value = isNaN(v) ? b.value : v;
+  }
+  if (b.fromCount !== undefined && b.fromCount !== '' && b.fromCount !== null) {
+    const n = Number(b.fromCount);
+    step.count = isNaN(n) ? b.fromCount : n;
   }
   if (b.target) step.target = b.target;
   if (b.keyword) step.keyword = b.keyword;

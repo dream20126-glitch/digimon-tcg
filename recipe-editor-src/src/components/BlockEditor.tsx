@@ -2264,6 +2264,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const editingAlt = isEditingAlt ? altActions[editingEffect - 1] : undefined;
   const effectAction = isEditingAlt ? (editingAlt!.action || '') : (block.action || '');
   const effectValue = isEditingAlt ? editingAlt!.value : block.value;
+  const effectFromCount = isEditingAlt ? editingAlt!.fromCount : block.fromCount;
   const effectTarget = isEditingAlt ? (editingAlt!.target || '') : (block.target || '');
   const effectConditions = isEditingAlt ? (editingAlt!.conditions || []) : conditions;
   const effectConditionsOp: 'and' | 'or' = isEditingAlt ? (editingAlt!.conditionsOp || 'and') : (block.conditionsOp || 'and');
@@ -4301,6 +4302,32 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           placeholder="空欄可（キーワード登録時等）"
                           style={{ width: 150 }}
                         />
+                      </div>
+                    );
+                  })()}
+                  {/* 対象が「このカード」のときは「アクションの対象数」欄が非表示になるため、
+                      取得元エリア（手札/進化元等）から何枚選ぶかをここで別途指定できるようにする。
+                      例:「進化元から特徴セイバーズを持つデジモンカード1枚を、このカードにリンクできる」
+                      ⚠ エンジン側は現状1枚固定でハードコードしており、この値を未参照（要実装） */}
+                  {(() => {
+                    const _fcBase = (effectTarget || '').split(':')[0];
+                    if (_fcBase !== 'self' && _fcBase !== 'self_card') return null;
+                    return (
+                      <div style={{ marginTop: 8 }}>
+                        <label>枚数（取得元エリアから何枚選ぶか・省略時は1枚）</label>
+                        <input
+                          type="text"
+                          value={effectFromCount === undefined ? '' : String(effectFromCount)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === '') { updateEffect({ fromCount: undefined }); return; }
+                            if (!/^\d+$/.test(v)) return;
+                            updateEffect({ fromCount: Number(v) });
+                          }}
+                          placeholder="例: 1"
+                          style={{ width: 150 }}
+                        />
+                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ エンジン未実装（保存はできますが動作しません）</div>
                       </div>
                     );
                   })()}

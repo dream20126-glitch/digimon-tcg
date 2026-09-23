@@ -1088,87 +1088,6 @@ function CostListEditor({
                   )}
                 </div>
               )}
-              {/* 破棄: 場所ボタン（選んだ場所に応じて実アクションコードを切り替える） */}
-              {isDiscardActive && (
-                <div style={{ marginTop: 4 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから破棄するか）</div>
-                  <ButtonGroup
-                    options={DISCARD_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
-                    value={activeDiscardZone}
-                    onChange={(zoneCode) => {
-                      if (zoneCode === activeDiscardZone) return; // 選び直し済みの位置指定を巻き戻さない
-                      const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
-                      if (!z) return;
-                      // z.targetが無い場所（進化元/テイマー/手札/デッキ/リンクカード）では既存のtargetを
-                      // そのまま維持する（「対象」欄で選んだ自分/相手を場所切替で巻き戻さないため）。
-                      // fromZones は設定しない（📍位置ボタンで既に場所+位置を action コードへ
-                      // エンコード済みのため、汎用の「セキュリティ/進化元の位置」パネルと二重表示になるのを防ぐ）
-                      updateCost(i, { ...c, action: z.action, target: z.target || c.target, fromZones: undefined });
-                    }}
-                    accentColor="#b76e00"
-                  />
-                  {(() => {
-                    const z = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                    return z?.warn ? (
-                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
-                    ) : null;
-                  })()}
-                  {/* 進化元/テイマー/セキュリティのときだけ、積まれたカードのどこから破棄するか選べる。
-                      ※ 辞書側の hasPositionVariant フラグ（costIsPositional等）には依存しない。
-                      DISCARD_ZONE_MAP はこのエディタ内で完結したハードコード機構であり、
-                      辞書の設定状態に関わらず常に POSITION_VARIANTS 4種を出す。
-                      これがevo_discard系の「上から/下から/選んで/全て」を決める唯一の実体
-                      （エンジンはaction.codeのサフィックスだけを見る。下の「対象」欄の
-                      「位置:」はevo_discard系では showCostStackPos=false になり出ないため、
-                      二重表示にはならない） */}
-                  {(() => {
-                    const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                    if (!zone?.hasPosition) return null;
-                    const zoneBase = getActionVariant(zone.action)?.base || zone.action;
-                    const curSuffix = getActionVariant(c.action || '')?.suffix || '';
-                    return (
-                      <div style={{ marginTop: 4 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
-                        <ButtonGroup
-                          options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
-                          value={curSuffix}
-                          onChange={(suffix) => { if (!suffix) return; updateCost(i, { ...c, action: zoneBase + suffix }); }}
-                          accentColor="#b76e00"
-                        />
-                      </div>
-                    );
-                  })()}
-                  {/* 進化元/テイマー: 積まれたカードのうち裏向き/表向きのものだけを対象にするか
-                      （place_under_tamer/place_under_digimon/deck_to_evo_bottomで裏向きに置かれた
-                      カードを区別して破棄したい場合。cond_face_down/cond_face_up を conditions に
-                      反映する。下の「対象」セレクタ経由の裏表/種別ボタンと同じ条件コードを使う
-                      共通仕様だが、evo_discard系では showCostStackPos=false になり下側は
-                      出ないため、二重表示にはならない */}
-                  {(() => {
-                    const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                    if (!zone?.hasFace) return null;
-                    const faceConds = c.conditions || [];
-                    const faceIdx = faceConds.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
-                    const faceVal = faceIdx !== -1 ? (faceConds[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
-                    return (
-                      <div style={{ marginTop: 4 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
-                        <ButtonGroup
-                          options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
-                          value={faceVal}
-                          onChange={(v) => {
-                            const next = faceConds.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
-                            if (v === 'down') next.push({ base: 'cond_face_down' });
-                            else if (v === 'up') next.push({ base: 'cond_face_up' });
-                            updateCost(i, { ...c, conditions: next });
-                          }}
-                          accentColor="#b76e00"
-                        />
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
               {/* デッキに戻す: 位置ボタン（下/上/下か上） */}
               {isDeckPosAction && (
                 <div style={{ marginTop: 4 }}>
@@ -1435,6 +1354,85 @@ function CostListEditor({
                   <ButtonGroup options={cTgtL2Options} value={cCurTgt.l2} onChange={(l2) => setCostTgt(cCurTgt.l1, l2)} accentColor="#b76e00" />
                 </div>
               )}
+              {/* 破棄: 場所/位置/裏表（対象欄に統合。以前はアクション欄側にあったが、
+                  「対象」で全て設定できるようにするため、対象の絞り込み系コントロールと
+                  ここへまとめた。選んだ場所に応じて実アクションコードを切り替える */}
+              {isDiscardActive && (
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから破棄するか）</div>
+                  <ButtonGroup
+                    options={DISCARD_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
+                    value={activeDiscardZone}
+                    onChange={(zoneCode) => {
+                      if (zoneCode === activeDiscardZone) return; // 選び直し済みの位置指定を巻き戻さない
+                      const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
+                      if (!z) return;
+                      // z.targetが無い場所（進化元/テイマー/手札/デッキ/リンクカード）では既存のtargetを
+                      // そのまま維持する（「対象」欄で選んだ自分/相手を場所切替で巻き戻さないため）。
+                      // fromZones は設定しない（📍位置ボタンで既に場所+位置を action コードへ
+                      // エンコード済みのため、汎用の「セキュリティ/進化元の位置」パネルと二重表示になるのを防ぐ）
+                      updateCost(i, { ...c, action: z.action, target: z.target || c.target, fromZones: undefined });
+                    }}
+                    accentColor="#b76e00"
+                  />
+                  {(() => {
+                    const z = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                    return z?.warn ? (
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
+                    ) : null;
+                  })()}
+                  {/* 進化元/テイマー/セキュリティのときだけ、積まれたカードのどこから破棄するか選べる。
+                      ※ 辞書側の hasPositionVariant フラグ（costIsPositional等）には依存しない。
+                      DISCARD_ZONE_MAP はこのエディタ内で完結したハードコード機構であり、
+                      辞書の設定状態に関わらず常に POSITION_VARIANTS 4種を出す。
+                      これがevo_discard系の「上から/下から/選んで/全て」を決める唯一の実体
+                      （エンジンはaction.codeのサフィックスだけを見る） */}
+                  {(() => {
+                    const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                    if (!zone?.hasPosition) return null;
+                    const zoneBase = getActionVariant(zone.action)?.base || zone.action;
+                    const curSuffix = getActionVariant(c.action || '')?.suffix || '';
+                    return (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                        <ButtonGroup
+                          options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
+                          value={curSuffix}
+                          onChange={(suffix) => { if (!suffix) return; updateCost(i, { ...c, action: zoneBase + suffix }); }}
+                          accentColor="#b76e00"
+                        />
+                      </div>
+                    );
+                  })()}
+                  {/* 進化元/テイマー: 積まれたカードのうち裏向き/表向きのものだけを対象にするか
+                      （place_under_tamer/place_under_digimon/deck_to_evo_bottomで裏向きに置かれた
+                      カードを区別して破棄したい場合。cond_face_down/cond_face_up を conditions に
+                      反映する */}
+                  {(() => {
+                    const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                    if (!zone?.hasFace) return null;
+                    const faceConds = c.conditions || [];
+                    const faceIdx = faceConds.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
+                    const faceVal = faceIdx !== -1 ? (faceConds[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
+                    return (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                        <ButtonGroup
+                          options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
+                          value={faceVal}
+                          onChange={(v) => {
+                            const next = faceConds.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
+                            if (v === 'down') next.push({ base: 'cond_face_down' });
+                            else if (v === 'up') next.push({ base: 'cond_face_up' });
+                            updateCost(i, { ...c, conditions: next });
+                          }}
+                          accentColor="#b76e00"
+                        />
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
               {/* デジモン/テイマー本体のときだけ「本体/下/一番下」を選べる（進化元／テイマーの下のカードを指す） */}
               {showCostStackPos && (
                 <div style={{ marginTop: 4 }}>
@@ -1462,11 +1460,17 @@ function CostListEditor({
             </div>
 
 
-            {/* === コスト対象の絞り込み条件（発動条件と同じConditionsHybridEditorを再利用） === */}
+            {/* === コスト対象の絞り込み条件（発動条件と同じConditionsHybridEditorを再利用） ===
+                裏向き/表向き(cond_face_down/up)は上の「対象」欄の🂠裏表クイックトグルで管理する
+                ため、ここには表示しない（同じconditions配列に書き込まれるが、このパネルの
+                表示・編集対象からは除外し、他の条件を編集してもそのまま保持する） */}
             <div style={{ marginTop: 6 }}>
               <ConditionsHybridEditor
-                conditions={c.conditions || []}
-                onChange={(next) => updateCost(i, { ...c, conditions: next })}
+                conditions={(c.conditions || []).filter((cc) => !isRefFaceCond(cc.base))}
+                onChange={(next) => updateCost(i, {
+                  ...c,
+                  conditions: [...(c.conditions || []).filter((cc) => isRefFaceCond(cc.base)), ...next],
+                })}
                 dict={dict}
                 title="コスト対象の絞り込み"
                 hint="（複数指定可）"

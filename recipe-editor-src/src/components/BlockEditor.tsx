@@ -5622,7 +5622,15 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
               <input
                 type="checkbox"
                 checked={step.groupsShareAction !== true}
-                onChange={(e) => onChange({ groupsShareAction: e.target.checked ? undefined : true })}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    onChange({ groupsShareAction: undefined });
+                  } else {
+                    // 共通化: 各グループの個別アクション指定は不要になるため破棄する
+                    const clearedGroups = (step.designatedGroups || []).map((g) => ({ ...g, action: undefined, deckPosition: undefined, options: undefined }));
+                    onChange({ groupsShareAction: true, designatedGroups: clearedGroups });
+                  }
+                }}
               />
               グループごとに異なる（このアクション欄を隠し、下の各グループのアクション欄を使う）
             </label>
@@ -5923,22 +5931,6 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                       <span style={{ color: '#c62828' }}>⚠ エンジン未実装（保存はできますが動作しません）</span>
                     </div>
                   )}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666', marginTop: 6 }}>
-                    <input
-                      type="checkbox"
-                      checked={groupsShareAction === true}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          // 共通化: 各グループの個別アクション指定は不要になるため破棄する
-                          setGroups(groupList.map((g) => ({ ...g, action: undefined, deckPosition: undefined, options: undefined })));
-                          onChange({ groupsShareAction: true });
-                        } else {
-                          onChange({ groupsShareAction: undefined });
-                        }
-                      }}
-                    />
-                    共通（全グループとも上の「アクション」を使う。各グループのアクション欄を隠す）
-                  </label>
                 </div>
               )}
               {groupList.length > 1 && (

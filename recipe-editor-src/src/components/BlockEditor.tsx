@@ -3500,25 +3500,33 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </>
                     )}
                   </div>
-                  {/* 消滅対象: トリガー「消滅時」専用。未指定＝従来通り「このデジモン自身が
-                      消滅したとき」。ONにすると「発動主体（例:このデジモン）が原因で、
-                      相手のデジモンを消滅させたとき」に意味が変わる（バトル・効果どちらの
-                      原因でも発火する想定の汎用版。「バトルでのみ」「効果でのみ」に限定したい
-                      場合は発動条件の専用条件（cond_battle_opp_destroyed / cond_effect）を使う） */}
+                  {/* 原因: トリガー「消滅時」専用。「誰が消滅したか」は発動主体で表現するので、
+                      こちらは「何が原因で（誰によって）消滅したか」を表す。未指定なら原因を問わない。
+                      例:「このデジモンがバトルで相手のデジモンを消滅させたとき」
+                        → 発動主体=相手、原因=バトルで、原因の対象=このデジモン */}
                   {currentTriggers.includes('on_destroy') && (
                     <div style={{ marginTop: 6, marginBottom: 4 }}>
-                      <label
-                        style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: block.destroyTarget === 'opponent' ? '#9333ea' : '#666', fontWeight: block.destroyTarget === 'opponent' ? 'bold' : 'normal' }}
-                        title="ONにすると「発動主体が原因で相手のデジモンを消滅させたとき」の意味になる（バトル・効果どちらの原因でも発火する想定）"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={block.destroyTarget === 'opponent'}
-                          onChange={(e) => update('destroyTarget', e.target.checked ? 'opponent' : undefined)}
-                        />
-                        消滅対象：相手デジモン
-                        <span style={{ color: '#e65100', fontSize: 10 }} title="エンジン未実装">⚠未実装</span>
-                      </label>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>原因</div>
+                      <ButtonGroup
+                        options={[{ code: '', label: 'なし' }, { code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }]}
+                        value={block.destroyCause || ''}
+                        onChange={(v) => update('destroyCause', (v || undefined) as 'battle' | 'effect' | undefined)}
+                        accentColor="#2e7d32"
+                      />
+                      {block.destroyCause && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>
+                            原因の対象
+                            <span title="バトルで消滅した場合、原因の対象「このデジモン」は「自分」と同じ扱いになります（どのカードが勝ったかまでは追跡していないため）">ℹ️</span>
+                          </div>
+                          <ButtonGroup
+                            options={[{ code: 'self', label: 'このデジモン' }, { code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'both', label: '両方' }]}
+                            value={block.destroyCauseSubject || 'self'}
+                            onChange={(v) => update('destroyCauseSubject', v)}
+                            accentColor="#2e7d32"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>

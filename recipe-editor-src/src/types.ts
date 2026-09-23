@@ -79,15 +79,19 @@ export interface EffectBlock {
   // 「黄のLv.3デジモンが登場したとき」等の "このトリガーが発火する条件" を表現。
   // 複数トリガー選択時は原則この1つを全トリガーで共有する（従来通り）
   triggerConditions?: ConditionPair[];
-  // trigger='on_destroy' 専用の「消滅対象」: 未指定＝従来通り「このデジモン自身が消滅した
-  // とき」。'opponent' を指定すると「このデジモン（発動主体）が原因で、相手のデジモンが
-  // 消滅したとき」という意味に変わる（バトル・効果どちらが原因でも発火する想定）。
-  // 「バトルでのみ」に限定したい場合はこちらではなく on_battle_win トリガー +
-  // cond_battle_opp_destroyed 条件を、「効果でのみ」に限定したい場合は when_opp_destroyed
-  // トリガー + cond_effect(subject=own) 条件を使う（いずれも本フィールドとは別の専用手段）。
-  // JSONでは step.destroy_target として出力する。
-  // ⚠ エンジン未実装（保存はできますが動作しません。消滅原因の統一的な追跡が必要）
-  destroyTarget?: 'opponent';
+  // trigger='on_destroy' 専用の「原因」: 「誰が消滅したか」は発動主体(triggerSubject)で
+  // 表現する（self=このデジモン/own=自分のデジモン/opp=相手のデジモン/both=両方＝他のデジモン）。
+  // これとは別に「何が原因で消滅したか」をここで表す。未指定なら原因を問わない。
+  // 例:「このデジモンがバトルで相手のデジモンを消滅させたとき」
+  //  → triggerSubject='opp'（相手が消滅した）+ destroyCause='battle' + destroyCauseSubject='self'（原因はこのデジモン）
+  // 例:「自分の効果で（相手のデジモンが）消滅したとき」
+  //  → destroyCause='effect' + destroyCauseSubject='own'
+  // JSONでは step.cause / step.cause_subject として出力する。
+  // エンジン実装済み（effect-engine.js: bs._lastDestroyCause）。ただしバトルでの消滅は
+  // 「どちらの側が原因か」までしか追跡していないため、destroyCauseSubject='self'（このカードが
+  // 直接原因）は同一視して 'own'（自分側が原因）と同じ扱いになる
+  destroyCause?: 'battle' | 'effect';
+  destroyCauseSubject?: string;
   // トリガーごとに発動ターン（自分/相手/お互い）を個別設定したい場合に使う
   // （例:「登場時」は無条件、「相手のメインフェイズ開始時」だけ相手ターン限定、
   // のように同じブロック内で異なる発動ターンを混在させたいケース）。

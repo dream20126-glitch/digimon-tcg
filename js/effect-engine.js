@@ -2045,7 +2045,8 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
         if (dc.stack) dc.stack.forEach(function(s){ targetSide.trash.push(s); });
         if (dc.linkedCards) dc.linkedCards.forEach(function(s){ targetSide.trash.push(s); });
         ctx.renderAll && ctx.renderAll();
-        // デコイ自身の消滅で on_destroy 発火
+        // デコイ自身の消滅で on_destroy 発火。「原因」追跡: 効果によって消滅した
+        if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
         fireDestroyChain(dc, decoyOwnerSide, ctx.bs, ctx, function() {
           callback && callback();
         });
@@ -2058,6 +2059,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       // 他デジモンを身代わりにして destroyed は残す
       ctx.renderAll && ctx.renderAll();
       const sgOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
+      if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
       fireDestroyChain(destroyed, sgOwnerSide, ctx.bs, ctx, function() {
         callback && callback();
       });
@@ -2083,7 +2085,9 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       window._onlineSendCommand({ type: 'fx_ownDestroyReady' });
     }
     ctx.renderAll();
-    // on_destroy グローバル発火（消滅した側を引数に） ＝ 共通の消滅トリガーチェーン
+    // on_destroy グローバル発火（消滅した側を引数に） ＝ 共通の消滅トリガーチェーン。
+    // 「原因」追跡: 効果によって消滅した（このactionを実行している効果の持ち主が原因）
+    if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
     fireDestroyChain(destroyed, destroyedSideName, ctx.bs, ctx, callback);
   });
 }
@@ -4905,8 +4909,8 @@ function checkConditions(conditions, card, bs, side) {
       }
       case 'cond_not_own_effect': {
         // 自分の効果以外で消滅した場合のみ true
-        // bs._lastDestroyCause が 'own_effect' なら false
-        if (bs && bs._lastDestroyCause === 'own_effect') return false;
+        const dc = bs && bs._lastDestroyCause;
+        if (dc && dc.type === 'effect' && dc.causerSide === side) return false;
         break;
       }
       case 'cond_name_contains': {
@@ -5044,7 +5048,9 @@ function checkPendingDestroys(ctx, callback) {
       if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
         window._onlineSendStateSync();
       }
-      // 共通の消滅トリガーチェーン
+      // 共通の消滅トリガーチェーン。「原因」追跡: DP0等、効果起因の消滅として扱う
+      // （どの効果がDPを0まで下げたかまでは追跡していないベストエフォートな近似）
+      if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
       fireDestroyChain(card, side, ctx.bs, ctx, processNext);
       });
     });
@@ -6351,8 +6357,39 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
 // 効果）より先に解決する。消滅時効果は何があっても必ず一番最後に発動する（ユーザー確認済み）。
 // destroyedCard: 消滅したカード（必須）
 // destroyedSide: 'player'/'ai'
+//
+// ===== on_destroy の発動主体（自分/相手/両方）別マッチャー =====
+// エディタの「発動主体」で選べる own/opp/both（+card系バリアント）を、消滅したカードの
+// 反対側/同じ側/両側どちらのスキャンで使うかを判定する
+const _isOppSubjectDestroyStep = (s) => !!s && (s.subject === 'opp' || s.subject === 'opp_any' || s.subject === 'opp_card');
+const _isOwnSubjectDestroyStep = (s) => !!s && (s.subject === 'own' || s.subject === 'own_any' || s.subject === 'own_card');
+const _isBothSubjectDestroyStep = (s) => !!s && (s.subject === 'both' || s.subject === 'both_digimon' || s.subject === 'both_card');
+
+// ===== on_destroy の「原因」(cause/cause_subject) 判定 =====
+// step.cause が無ければ原因を問わず常にtrue。ある場合は bs._lastDestroyCause（直近の消滅の
+// 原因。resolveBattle/doDestroy等が消滅チェーン開始直前にセットする）と照合する。
+// cause_subject: 'self'=原因となったカードが反応中のカード自身 / 'own'=反応中のカードと
+// 同じ側が原因 / 'opp'=反対側が原因 / 'both'または未指定=原因の主体を問わない。
+// バトル起因の消滅は「どのカードが勝ったか」までは追跡していない（causerCard未設定）ため、
+// 'self' は 'own'（同じ側）へフォールバックする
+function _destroyCauseMatches(step, bs, carrierSide, carrier) {
+  if (!step || !step.cause) return true;
+  const dc = bs && bs._lastDestroyCause;
+  if (!dc || dc.type !== step.cause) return false;
+  const cs = step.cause_subject;
+  if (!cs || cs === 'both') return true;
+  if (cs === 'self') return dc.causerCard ? dc.causerCard === carrier : dc.causerSide === carrierSide;
+  if (cs === 'own') return dc.causerSide === carrierSide;
+  if (cs === 'opp') return dc.causerSide !== carrierSide;
+  return true;
+}
+
 export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, callback) {
-  const finish = () => { try { callback && callback(); } catch(_) {} };
+  const finish = () => {
+    // 原因追跡は「今まさに解決中の消滅チェーン」限定の一時情報のため、解決完了後は必ずクリアする
+    if (bs) bs._lastDestroyCause = null;
+    try { callback && callback(); } catch(_) {}
+  };
   if (!destroyedCard || !bs) { finish(); return; }
   const oppSide = destroyedSide === 'player' ? 'ai' : 'player';
   // 【分離】は消滅自体をキャンセルする効果のため、除去より前に呼び出し元
@@ -6368,18 +6405,31 @@ export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, call
       _fireSidedReactionTriggers(turnSide, 'when_other_destroyed', bs, ctxBase, () => {
         _fireSidedReactionTriggers(nonTurnSide, 'when_other_destroyed', bs, ctxBase, () => {
           // 消滅時効果（on_destroy）を最後に解決する
-          // 1) 消滅したカード自身＋その進化元の on_destroy
+          // 1) 消滅したカード自身＋その進化元の on_destroy（発動主体=このデジモン）
           fireOnDestroyTriggers(destroyedSide, bs, ctxBase, () => {
-            // 2) 反対側のカード（本体＋進化元）の on_destroy 反応（subject:opp）。
-            //    例: ラブラモン進化元「相手デジモンがDP0で消滅したとき1ドロー」。
-            //    効果によるDP0消滅でも、セキュリティチェック消滅と同じ反応経路
-            //    （_fireDestroyTriggersImpl）に揃える。
-            _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, finish, 'on_destroy');
+            // 2) 発動主体=自分/相手/両方 の on_destroy 反応（例: ラブラモン進化元
+            //    「相手デジモンがDP0で消滅したとき1ドロー」）。効果によるDP0消滅でも、
+            //    セキュリティチェック消滅と同じ反応経路（_fireDestroyTriggersImpl）に揃える
+            fireOnDestroySubjectReactions(destroyedSide, bs, ctxBase, finish);
           }, destroyedCard);
         });
       });
     });
   });
+}
+
+// on_destroy の発動主体=自分/相手/両方（own/opp/both）を一括で解決する共有ヘルパー。
+// バトル起因・効果起因どちらの消滅チェーンからも呼ばれる（消滅したカード自身の
+// 発動主体=このデジモンの反応を解決した"後"に呼ぶこと）
+export function fireOnDestroySubjectReactions(destroyedSide, bs, ctxBase, done) {
+  const oppSide = destroyedSide === 'player' ? 'ai' : 'player';
+  _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, () => {
+    _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, () => {
+      _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, () => {
+        _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, 'on_destroy', destroyedSide, _isBothSubjectDestroyStep);
+      }, 'on_destroy', oppSide, _isBothSubjectDestroyStep);
+    }, 'on_destroy', destroyedSide, _isOwnSubjectDestroyStep);
+  }, 'on_destroy', oppSide, _isOppSubjectDestroyStep);
 }
 
 export function fireOnDestroyTriggers(destroyedSide, bs, ctxBase, done, destroyedCard) {
@@ -6467,22 +6517,23 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
   runOne();
 }
 
-function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) {
+// reactSideOverride/subjectMatcher 省略時は従来通り「消滅したカードの反対側」×subject:opp系
+// （後方互換・on_battle_destroy呼び出し等）。fireOnDestroySubjectReactions が own/both用に
+// 明示的に渡すことで、同じスキャンロジックを発動主体ごとに使い回す
+function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, reactSideOverride, subjectMatcher) {
   const finish = () => { try { done && done(); } catch(_) {} };
   if (!bs) { finish(); return; }
-  // 反対側 = リアクション側
-  const reactSide = destroyedSide === 'player' ? 'ai' : 'player';
+  const reactSide = reactSideOverride || (destroyedSide === 'player' ? 'ai' : 'player');
   const reactPlayer = bs[reactSide];
   if (!reactPlayer || !reactPlayer.battleArea) { finish(); return; }
 
   // 全 carrier × 全進化元（+ carrier 自身）から triggerKey レシピを収集
-  // ★ この関数は常に「消滅したカードの反対側」を無条件にスキャンするため、
-  //   明示的に subject:"opp"系 を持つステップだけを反応対象とする。
+  // ★ この関数は明示的な subject（opp/own/both系）を持つステップだけを反応対象とする。
   //   on_destroy は本来「自身が消滅したとき」専用トリガー（自己効果は
   //   _fireSelfDestroyEffects が別途処理済）なので、subject 無しの
   //   on_destroy まで拾うと無関係な自己完結効果まで誤発火する
   //   （例: 攻撃側ピヨモンの消滅で防御側ウィザーモン/プロットモンが反応してしまう）。
-  const isOppReactiveStep = (s) => !!s && (s.subject === 'opp' || s.subject === 'opp_any' || s.subject === 'opp_card');
+  const isOppReactiveStep = subjectMatcher || _isOppSubjectDestroyStep;
   const reactions = [];
   reactPlayer.battleArea.forEach((carrier) => {
     if (!carrier) return;
@@ -6527,6 +6578,8 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey) 
         const conds = parseRecipeCondition(step.condition);
         if (!checkConditions(conds, carrier, bs, reactSide)) return false;
       }
+      // 原因チェック（バトルで/効果で + 原因の対象）
+      if (!_destroyCauseMatches(step, bs, reactSide, carrier)) return false;
       // ターンに1回制限チェック
       if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
         const sourceId = (sourceCard && (sourceCard.cardNo || sourceCard.name)) || 'unknown';

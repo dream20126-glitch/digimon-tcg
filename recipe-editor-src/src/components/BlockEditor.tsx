@@ -6668,18 +6668,21 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   { code: 'trash', label: 'トラッシュ' },
   { code: 'security', label: 'セキュリティ' },
   { code: 'evo_source', label: '進化元' },
+  { code: 'battle_area', label: 'バトルエリア' },
 ];
 const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'hand:ge': 'cond_hand_ge', 'hand:le': 'cond_hand_le',
   'trash:ge': 'cond_trash_ge', 'trash:le': 'cond_trash_le',
   'security:ge': 'cond_security_ge', 'security:le': 'cond_security_le',
   'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le',
+  'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le',
 };
 const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: 'ge' | 'le' }> = {
   cond_hand_ge: { zone: 'hand', quant: 'ge' }, cond_hand_le: { zone: 'hand', quant: 'le' },
   cond_trash_ge: { zone: 'trash', quant: 'ge' }, cond_trash_le: { zone: 'trash', quant: 'le' },
   cond_security_ge: { zone: 'security', quant: 'ge' }, cond_security_le: { zone: 'security', quant: 'le' },
   cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' },
+  cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' },
 };
 // 種別ボタン用（「その他」はトリガー同様、別枠のチェックボックスで扱うため除外）
 const CATEGORY_BUTTON_OPTIONS = CATEGORY_OPTIONS.filter((c) => c.value !== 'other')

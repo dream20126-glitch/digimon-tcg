@@ -276,6 +276,8 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_trash_ge', kind: 'condition', label: 'トラッシュがN枚以上' },
   { code: 'cond_deck_le', kind: 'condition', label: 'デッキがN枚以下' },
   { code: 'cond_deck_ge', kind: 'condition', label: 'デッキがN枚以上' },
+  { code: 'cond_battle_area_le', kind: 'condition', label: 'バトルエリアがN枚以下' },
+  { code: 'cond_battle_area_ge', kind: 'condition', label: 'バトルエリアがN枚以上' },
 ];
 
 // アクション（種類: action）

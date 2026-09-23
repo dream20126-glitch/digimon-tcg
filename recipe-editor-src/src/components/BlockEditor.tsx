@@ -1304,7 +1304,7 @@ function CostListEditor({
                 />
                 <ButtonGroup
                   options={TARGET_SEL_L1_REST}
-                  value={(cCurTgt.l1 === 'own' || cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'both') ? '' : cCurTgt.l1}
+                  value={(cCurTgt.l1 === 'own' || cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'both') ? TARGET_SEL_NONE_ACTIVE : cCurTgt.l1}
                   onChange={(l1) => setCostTgt(l1)}
                   accentColor="#b76e00"
                 />
@@ -1652,6 +1652,10 @@ const TARGET_SEL_L1 = [
 // それ以外（既定/このカード/他/そのデジモン/最も多いプレイヤー）は従来通り単一選択のまま
 const TARGET_SEL_OWN_OPP = TARGET_SEL_L1.filter((o) => o.code === 'own' || o.code === 'opp');
 const TARGET_SEL_L1_REST = TARGET_SEL_L1.filter((o) => o.code !== 'own' && o.code !== 'opp' && o.code !== 'both');
+// TARGET_SEL_L1_RESTには code:'' の「なし」が含まれるため、自分/相手/両方選択中に
+// 「REST側は何も選ばれていない」ことを表すのに空文字は使えない（「なし」と誤って
+// 一致してハイライトされてしまう）。どの実コードとも一致しない番兵値を使う
+const TARGET_SEL_NONE_ACTIVE = ' none';
 const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
   own: [
     { code: 'digimon', label: 'デジモン' },
@@ -4706,7 +4710,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     />
                     <ButtonGroup
                       options={TARGET_SEL_L1_REST}
-                      value={(eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'both') ? '' : eCurTgt.l1}
+                      value={(eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'both') ? TARGET_SEL_NONE_ACTIVE : eCurTgt.l1}
                       onChange={(l1) => setEffTgt(l1)}
                       accentColor="#b76e00"
                     />
@@ -4904,7 +4908,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   />
                   <ButtonGroup
                     options={TARGET_SEL_L1_REST}
-                    value={(curTgt.l1 === 'own' || curTgt.l1 === 'opp' || curTgt.l1 === 'both') ? '' : curTgt.l1}
+                    value={(curTgt.l1 === 'own' || curTgt.l1 === 'opp' || curTgt.l1 === 'both') ? TARGET_SEL_NONE_ACTIVE : curTgt.l1}
                     onChange={handleTgtL1}
                     accentColor="#b76e00"
                   />

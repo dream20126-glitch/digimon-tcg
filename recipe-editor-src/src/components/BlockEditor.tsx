@@ -1590,7 +1590,7 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
 //   「このカードを含める/含めない」トグルとして表現する（旧 other_own コード）
 // 「両方」は「自分の効果で」のように自分/相手どちらでも成立しうる条件で使う単独選択（L2無し）
 const COND_SUBJECT_L1 = [
-  { code: '', label: '既定' },
+  { code: '', label: 'なし' },
   { code: 'self', label: 'このカード' },
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },

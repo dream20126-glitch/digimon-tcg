@@ -758,7 +758,7 @@ function CostListEditor({
         // デジモン/テイマーは複数選択可（対象・対象の条件と同じ操作感。両方選ぶと対象コードを
         // card+cond_typeフィルタに切り替える。「最も多いプレイヤー」等L2にdigimon/tamerが
         // 無いカテゴリでは常にfalseになるだけで無害）
-        const cHasDigimonTamer = (cCurTgt.l1 === 'own' || cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'other_own');
+        const cHasDigimonTamer = (cCurTgt.l1 === 'own' || cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'other_own' || cCurTgt.l1 === 'both');
         const cDigimonCode = TARGET_SEL_L1L2_TO_CODE[cCurTgt.l1 + ':digimon'];
         const cTamerCode = TARGET_SEL_L1L2_TO_CODE[cCurTgt.l1 + ':tamer'];
         const cCardCode = TARGET_SEL_L1L2_TO_CODE[cCurTgt.l1 + ':card'];
@@ -1289,7 +1289,26 @@ function CostListEditor({
             {/* 対象（ボタン方式） */}
             <div style={{ marginTop: 4 }}>
               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-              <ButtonGroup options={TARGET_SEL_L1} value={cCurTgt.l1} onChange={(l1) => setCostTgt(l1)} accentColor="#b76e00" />
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <MultiButtonGroup
+                  options={TARGET_SEL_OWN_OPP}
+                  values={[...(cCurTgt.l1 === 'own' || cCurTgt.l1 === 'both' ? ['own'] : []), ...(cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'both' ? ['opp'] : [])]}
+                  onToggle={(code, on) => {
+                    const ownOn = cCurTgt.l1 === 'own' || cCurTgt.l1 === 'both';
+                    const oppOn = cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'both';
+                    const nextOwn = code === 'own' ? on : ownOn;
+                    const nextOpp = code === 'opp' ? on : oppOn;
+                    setCostTgt(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : '');
+                  }}
+                  accentColor="#b76e00"
+                />
+                <ButtonGroup
+                  options={TARGET_SEL_L1_REST}
+                  value={(cCurTgt.l1 === 'own' || cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'both') ? '' : cCurTgt.l1}
+                  onChange={(l1) => setCostTgt(l1)}
+                  accentColor="#b76e00"
+                />
+              </div>
               {cHasDigimonTamer && (
                 <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   <MultiButtonGroup

@@ -9134,6 +9134,20 @@ function executeRecipeStep(step, ctx, store, callback) {
     // grant_keyword_all: 全体（step.keyword="Sアタック+1"等のテキストで指定、step.target="own_all_digimon"等）
     case 'grant_keyword':
     case 'grant_keyword_to': {
+      // 複数キーワードを1stepにまとめた場合（レシピエディタで複数キーワード選択時、
+      // "keyword":"combo,penetrate,Vortex" のようにカンマ区切りで1stepに集約される）は、
+      // キーワードごとに独立したstepとして直列に実行する（対象選択UIの競合を避けるため
+      // 並列ではなく逐次チェーンする。同じtarget/filter/optionsは全キーワードで共有される）
+      if (step.keyword && String(step.keyword).includes(',')) {
+        const _kwList = String(step.keyword).split(',').map(s => s.trim()).filter(Boolean);
+        const _runKwSeq = (idx) => {
+          if (idx >= _kwList.length) { callback(); return; }
+          const _kwStep = Object.assign({}, step, { keyword: _kwList[idx] });
+          executeRecipeStep(_kwStep, ctx, store, () => _runKwSeq(idx + 1));
+        };
+        _runKwSeq(0);
+        break;
+      }
       // キーワードにレシピテンプレートが登録されていれば、単純なバフ付与ではなく
       // grant_effect(granted_recipe)に委譲して実際の効果レシピを対象に一時付与する。
       // カード側は常にキーワードの「コード」しか持たないため、実際のレシピ展開

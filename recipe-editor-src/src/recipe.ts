@@ -829,35 +829,47 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   container[b.trigger] = container[b.trigger] || [];
   container[b.trigger].push(step);
 
-  // 複数キーワード選択時（1ブロックで複数キーワードを同時付与）: 2件目以降は
-  // 同じ効果ステップの内容を引き継いだ独立stepとして同じtrigger配列に追加する。
-  // 元のtargetが「N体選択」系（own:N / opponent:N / up_to）なら、2件目以降は
-  // target:'same_target' にして1件目で選んだのと同じ対象へ自動適用する（対象選択
-  // UIが人数分出てしまうのを防ぐ。エンジンの同一対象連続適用の仕組みを流用）
+  // 複数キーワード選択時（1ブロックで複数キーワードを同時付与）:
+  // 各キーワードが対象絞り込み(designated)や個別の値を持たない「単純」なもので、かつ
+  // 対象が「own:all」等の一括対象（自分/相手の1体選択のような対象選択UIを伴わないもの）
+  // だけなら、レシピを肥大化させないよう1つのstepにまとめ、step.keywordをカンマ区切りに
+  // する（例: "keyword":"combo,penetrate,Vortex"。エンジン側はキーワードごとに
+  // 逐次このstepを再実行する）。
+  // own:N/opponent:N（Nは数値、all以外）のような1体〜N体選択の対象だと、まとめた場合
+  // キーワードの数だけ対象選択UIが繰り返し出てしまうため対象外とし、従来通り2件目以降を
+  // 独立したstepとして同じtrigger配列に追加する（1件目の対象をsame_targetで引き継ぐ）
   if (isGrantKeyword) {
     const entries = getKeywordEntries(b).filter((entry) => entry.keyword);
     if (entries.length > 1) {
-      // 「N体まで/2体等」の複数対象選択は _lastPickedCard が最後の1体しか
-      // 覚えていないため same_target 化の対象外（安全側に倒し、2件目以降も独立して
-      // 対象選択させる）。ちょうど1体選択（own:1/opponent:1）の時だけ同一対象化する
-      const isSinglePickTarget = /^(own|opponent):1$/.test(String(b.target || ''));
-      entries.slice(1).forEach((entry) => {
-        const extraStep: any = { ...step, keyword: entry.keyword };
-        delete extraStep.designated;
-        delete extraStep.designated_groups;
-        delete extraStep.designated_common;
-        delete extraStep.count;
-        if (entry.value !== undefined && entry.value !== '' && entry.value !== null) {
-          const n = Number(entry.value);
-          extraStep.value = isNaN(n) ? entry.value : n;
-        } else {
-          delete extraStep.value;
-        }
-        const kwEntry2 = keywordDict && keywordDict.find((k) => k.code === entry.keyword);
-        applyDesignatedGroupsTo(extraStep, entry, kwEntry2);
-        if (isSinglePickTarget) extraStep.target = 'same_target';
-        container[b.trigger].push(extraStep);
-      });
+      const isSimpleEntry = (entry: KeywordEntry) =>
+        getDesignatedGroups(entry).length === 0
+        && (entry.value === undefined || entry.value === '' || entry.value === null);
+      const isInteractivePickTarget = /^(own|opponent):(?!all\b)/.test(String(b.target || ''));
+      if (entries.every(isSimpleEntry) && !isInteractivePickTarget) {
+        step.keyword = entries.map((entry) => entry.keyword).join(',');
+      } else {
+        // 「N体まで/2体等」の複数対象選択は _lastPickedCard が最後の1体しか
+        // 覚えていないため same_target 化の対象外（安全側に倒し、2件目以降も独立して
+        // 対象選択させる）。ちょうど1体選択（own:1/opponent:1）の時だけ同一対象化する
+        const isSinglePickTarget = /^(own|opponent):1$/.test(String(b.target || ''));
+        entries.slice(1).forEach((entry) => {
+          const extraStep: any = { ...step, keyword: entry.keyword };
+          delete extraStep.designated;
+          delete extraStep.designated_groups;
+          delete extraStep.designated_common;
+          delete extraStep.count;
+          if (entry.value !== undefined && entry.value !== '' && entry.value !== null) {
+            const n = Number(entry.value);
+            extraStep.value = isNaN(n) ? entry.value : n;
+          } else {
+            delete extraStep.value;
+          }
+          const kwEntry2 = keywordDict && keywordDict.find((k) => k.code === entry.keyword);
+          applyDesignatedGroupsTo(extraStep, entry, kwEntry2);
+          if (isSinglePickTarget) extraStep.target = 'same_target';
+          container[b.trigger].push(extraStep);
+        });
+      }
     }
   }
 
@@ -1290,7 +1302,13 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     value: step?.value,
     target: step?.target || '',
     extraTargets: parseExtraTargetsArray(step?.targets),
-    keyword: step?.keyword || '',
+    // 複数キーワードを1stepにまとめた場合（"keyword":"combo,penetrate,Vortex"）は
+    // keywordEntries[]へ分解して復元する（KeywordEntriesEditorの複数選択UIで
+    // 個別に編集できるようにするため）。単一キーワードのときはkeywordのみで従来通り
+    keyword: String(step?.keyword || '').includes(',') ? '' : (step?.keyword || ''),
+    keywordEntries: String(step?.keyword || '').includes(',')
+      ? String(step.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))
+      : undefined,
     // app_gattai_evolve / jogress_evolve 専用: 素材候補スロット一覧の復元
     fusionMaterials: Array.isArray(step?.materials)
       ? step.materials.map((m: any) => {

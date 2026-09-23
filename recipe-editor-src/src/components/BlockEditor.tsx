@@ -1633,7 +1633,9 @@ const TARGET_SEL_UNIMPLEMENTED = new Set([
   'both', 'both_card', 'both_tamer',
 ]);
 const TARGET_SEL_L1 = [
-  { code: '', label: '既定' },
+  // target:''（空文字）はrecipe.ts保存時にfalsy判定でtargetフィールドごと省かれるため、
+  // 実質的に「対象なし」と同じ結果になる（対象を持たないアクション用）
+  { code: '', label: 'なし' },
   { code: 'self', label: 'このカード' },
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },

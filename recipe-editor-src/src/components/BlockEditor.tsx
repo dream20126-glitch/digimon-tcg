@@ -6945,12 +6945,14 @@ function refApplyZone(zone: string, quant: RefQuant, value: string | undefined):
   }
   return { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant] };
 }
-// 値バリアントを変更する（裏向き/表向きは現在のゾーンをそのまま value として保持する）
-function refApplyQuant(zone: string, quant: RefQuant): { base: string; value?: string } {
+// 値バリアントを変更する（裏向き/表向きは現在のゾーンをそのまま value として保持する。
+// 以上/以下/完全一致の切替では、入力済みの枚数や「参照」(value:'opp')はそのまま維持する
+// ―― 以上/以下ボタンの切替のたびに「参照」選択が数値入力に巻き戻る不具合があったため）
+function refApplyQuant(zone: string, quant: RefQuant, currentValue?: string): { base: string; value?: string } {
   if (quant === 'face_down' || quant === 'face_up') {
     return { base: quant === 'face_down' ? 'cond_face_down' : 'cond_face_up', value: zone };
   }
-  return { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant], value: undefined };
+  return { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant], value: currentValue };
 }
 const REF_QUANT_OPTIONS_BY_ZONE: Record<string, { code: RefQuant; label: string }[]> = {
   evo_source: [
@@ -7297,7 +7299,11 @@ function ConditionsHybridEditor({
                             <ButtonGroup
                               options={refQuantOptions}
                               value={refQuant}
-                              onChange={(quant) => updateAt(i, refApplyQuant(refZone, quant as RefQuant))}
+                              onChange={(quant) => updateAt(i, refApplyQuant(
+                                refZone,
+                                quant as RefQuant,
+                                (refQuant === 'face_down' || refQuant === 'face_up') ? undefined : c.value,
+                              ))}
                               accentColor={colors.accent}
                             />
                             {refNoValue ? (

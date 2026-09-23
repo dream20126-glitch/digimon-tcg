@@ -126,6 +126,7 @@ function altActionToStepObject(a: AltAction): any {
     out.count = isNaN(n) ? a.fromCount : n;
   }
   if (a.target) out.target = a.target;
+  if (a.target2) out.target2 = a.target2;
   const validGate = (a.gateConditions || []).filter((p) => p.base);
   if (validGate.length >= 1) out.gate = pairToString(validGate[0]);
   if (validGate.length >= 2) out.gate_when = pairToString(validGate[1]);
@@ -567,6 +568,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     step.count = isNaN(n) ? b.fromCount : n;
   }
   if (b.target) step.target = b.target;
+  if (b.target2) step.target2 = b.target2;
   if (b.keyword) step.keyword = b.keyword;
   // app_gattai_evolve / jogress_evolve 専用: 素材候補スロット一覧（名称OR / 色OR+Lv）+ 同時使用数
   // （演出が異なるためトリガーコード自体は2つに分けているが、データ構造は共通）
@@ -1019,6 +1021,7 @@ function stepObjectToAltAction(step: any): AltAction {
     action: step?.action || '',
     value: step?.value,
     target: step?.target || '',
+    target2: step?.target2 || undefined,
     gateConditions,
     conditions,
     conditionsOp: step?.condition_op === 'or' ? 'or' : 'and',
@@ -1116,6 +1119,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     trigger_conditions: true,
     duration: true,
     target: true,
+    target2: true,
     value: true,
     keyword: true,
     revert_at_turn_end: true,
@@ -1203,6 +1207,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     action: step?.action || '',
     value: step?.value,
     target: step?.target || '',
+    target2: step?.target2 || undefined,
     keyword: step?.keyword || '',
     // app_gattai_evolve / jogress_evolve 専用: 素材候補スロット一覧の復元
     fusionMaterials: Array.isArray(step?.materials)
@@ -1323,6 +1328,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             action: a?.action || '',
             value: a?.value,
             target: a?.target || '',
+            target2: a?.target2 || undefined,
             gateConditions: gateArr,
             conditions: condArr,
             conditionsOp: a?.condition_op === 'or' ? 'or' as const : 'and' as const,

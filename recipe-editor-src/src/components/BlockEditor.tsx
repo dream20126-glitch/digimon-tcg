@@ -1609,10 +1609,17 @@ const TARGET_SEL_L1 = [
   { code: 'opp', label: '相手' },
   { code: 'other_own', label: '他' },
   // 自分/相手どちらでも該当する全てが対象（このカードを含む）。例:「デジモン1体をレストできる」
+  // ボタン自体は単独では出さず、下の「自分」「相手」を両方トグルすると自動でこのコードになる
+  // （登場/使用ボタンと同じ操作感）。describeTarget等のラベル逆引き用にリストには残す
   { code: 'both', label: '両方（自分/相手）' },
   { code: 'same_target', label: 'そのデジモン' },
   { code: 'most', label: '最も多いプレイヤー' },
 ];
+// 「アクションの対象」L1のうち「自分」「相手」は複数選択できるトグルボタンにする
+// （両方押すと'both'に自動で切り替わる。登場/使用ボタンと同じ操作感）。
+// それ以外（既定/このカード/他/そのデジモン/最も多いプレイヤー）は従来通り単一選択のまま
+const TARGET_SEL_OWN_OPP = TARGET_SEL_L1.filter((o) => o.code === 'own' || o.code === 'opp');
+const TARGET_SEL_L1_REST = TARGET_SEL_L1.filter((o) => o.code !== 'own' && o.code !== 'opp' && o.code !== 'both');
 const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
   own: [
     { code: 'digimon', label: 'デジモン' },
@@ -4585,7 +4592,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eSuffix = (effectTarget || '').substring(eBase.length);
             const eCurTgt = TARGET_SEL_CODE_TO_L1L2[eBase] || { l1: '', l2: '' };
             const eL2Options = eCurTgt.l1 === 'most' ? MOST_PLAYER_METRICS : (TARGET_SEL_L2[eCurTgt.l1] || []);
-            const eHasDigimonTamer = (eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'other_own');
+            const eHasDigimonTamer = (eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'other_own' || eCurTgt.l1 === 'both');
             const eDigimonCode = TARGET_SEL_L1L2_TO_CODE[eCurTgt.l1 + ':digimon'];
             const eTamerCode = TARGET_SEL_L1L2_TO_CODE[eCurTgt.l1 + ':tamer'];
             const eCardCode = TARGET_SEL_L1L2_TO_CODE[eCurTgt.l1 + ':card'];
@@ -4629,7 +4636,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <div style={{ display: 'grid', gridTemplateColumns: eHideCount ? '1fr' : '1fr 1fr', gap: 8, marginTop: 8 }}>
                 <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
                   <label style={{ fontWeight: 'bold', color: '#b76e00' }}>🎯 対象</label>
-                  <ButtonGroup options={TARGET_SEL_L1} value={eCurTgt.l1} onChange={(l1) => setEffTgt(l1)} accentColor="#b76e00" />
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <MultiButtonGroup
+                      options={TARGET_SEL_OWN_OPP}
+                      values={[...(eCurTgt.l1 === 'own' || eCurTgt.l1 === 'both' ? ['own'] : []), ...(eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'both' ? ['opp'] : [])]}
+                      onToggle={(code, on) => {
+                        const ownOn = eCurTgt.l1 === 'own' || eCurTgt.l1 === 'both';
+                        const oppOn = eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'both';
+                        const nextOwn = code === 'own' ? on : ownOn;
+                        const nextOpp = code === 'opp' ? on : oppOn;
+                        setEffTgt(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : '');
+                      }}
+                      accentColor="#b76e00"
+                    />
+                    <ButtonGroup
+                      options={TARGET_SEL_L1_REST}
+                      value={(eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'both') ? '' : eCurTgt.l1}
+                      onChange={(l1) => setEffTgt(l1)}
+                      accentColor="#b76e00"
+                    />
+                  </div>
                   {eHasDigimonTamer && (
                     <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                       <button
@@ -4737,7 +4763,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // デジモン/テイマーだけは複数選択可（例:「相手のデジモン/テイマーを1体消滅させる」）。
           // カード/セキュリティ/プレイヤーは従来通り単一選択（デジモン/テイマーの複数選択とは排他）
           const exclusiveL2Options = tgtL2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer');
-          const hasDigimonTamer = (curTgt.l1 === 'own' || curTgt.l1 === 'opp' || curTgt.l1 === 'other_own');
+          const hasDigimonTamer = (curTgt.l1 === 'own' || curTgt.l1 === 'opp' || curTgt.l1 === 'other_own' || curTgt.l1 === 'both');
           const digimonCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':digimon'];
           const tamerCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':tamer'];
           const cardCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':card'];
@@ -4808,7 +4834,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     （このアクションが効果を与えるカード／デジモン）
                   </span>
                 </label>
-                <ButtonGroup options={TARGET_SEL_L1} value={curTgt.l1} onChange={handleTgtL1} accentColor="#b76e00" />
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <MultiButtonGroup
+                    options={TARGET_SEL_OWN_OPP}
+                    values={[...(curTgt.l1 === 'own' || curTgt.l1 === 'both' ? ['own'] : []), ...(curTgt.l1 === 'opp' || curTgt.l1 === 'both' ? ['opp'] : [])]}
+                    onToggle={(code, on) => {
+                      const ownOn = curTgt.l1 === 'own' || curTgt.l1 === 'both';
+                      const oppOn = curTgt.l1 === 'opp' || curTgt.l1 === 'both';
+                      const nextOwn = code === 'own' ? on : ownOn;
+                      const nextOpp = code === 'opp' ? on : oppOn;
+                      handleTgtL1(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : '');
+                    }}
+                    accentColor="#b76e00"
+                  />
+                  <ButtonGroup
+                    options={TARGET_SEL_L1_REST}
+                    value={(curTgt.l1 === 'own' || curTgt.l1 === 'opp' || curTgt.l1 === 'both') ? '' : curTgt.l1}
+                    onChange={handleTgtL1}
+                    accentColor="#b76e00"
+                  />
+                </div>
                 {hasDigimonTamer && (
                   <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <button

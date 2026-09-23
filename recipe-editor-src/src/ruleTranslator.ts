@@ -163,12 +163,15 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
     if (rule.groupsOp === 'or') {
       const orFilters = rule.designatedGroups.map(buildGroupFilter).filter((f) => Object.keys(f).length > 0);
       const first = rule.designatedGroups[0];
-      const effectiveRule: MiniStep = {
-        ...rule,
-        action: first?.action || rule.action,
-        deckPosition: first?.deckPosition ?? rule.deckPosition,
-        options: first?.options ?? rule.options,
-      };
+      // groupsShareAction===true（「共通」指定）ならグループ側のaction指定は無視しルール本体を使う
+      const effectiveRule: MiniStep = rule.groupsShareAction === true
+        ? { ...rule }
+        : {
+            ...rule,
+            action: first?.action || rule.action,
+            deckPosition: first?.deckPosition ?? rule.deckPosition,
+            options: first?.options ?? rule.options,
+          };
       const combinedFilter = orFilters.length > 1 ? { or: orFilters } : (orFilters[0] || {});
       // 枚数は先頭グループのcount欄を共有（未指定ならルール本体のvalue、さらに未指定なら1）
       const count = asNumberOrPass(first?.count) ?? asNumberOrPass(rule.value) ?? 1;
@@ -179,12 +182,15 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
     rule.designatedGroups.forEach((g) => {
       const gFilter = buildGroupFilter(g);
       const gCount = asNumberOrPass(g.count) ?? 1;
-      const effectiveRule: MiniStep = {
-        ...rule,
-        action: g.action || rule.action,
-        deckPosition: g.deckPosition ?? rule.deckPosition,
-        options: g.options ?? rule.options,
-      };
+      // groupsShareAction===true（「共通」指定）ならグループ側のaction指定は無視しルール本体を使う
+      const effectiveRule: MiniStep = rule.groupsShareAction === true
+        ? { ...rule }
+        : {
+            ...rule,
+            action: g.action || rule.action,
+            deckPosition: g.deckPosition ?? rule.deckPosition,
+            options: g.options ?? rule.options,
+          };
       applyOneSelection(step, effectiveRule, gFilter, gCount);
     });
     return;

@@ -5616,6 +5616,18 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
         const isRuleCommonAction = step.action === 'add_to_hand' || step.action === 'discard' || step.action === 'return_deck' || isRulePlaceActive;
 
         return (
+          <>
+          {hasDesignatedGroups && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666', marginBottom: 6 }}>
+              <input
+                type="checkbox"
+                checked={step.groupsShareAction !== true}
+                onChange={(e) => onChange({ groupsShareAction: e.target.checked ? undefined : true })}
+              />
+              グループごとに異なる（このアクション欄を隠し、下の各グループのアクション欄を使う）
+            </label>
+          )}
+          {(!hasDesignatedGroups || step.groupsShareAction === true) && (
           <div style={{ marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 2 }}>
               <div style={miniLbl()}>アクション *</div>
@@ -5774,6 +5786,8 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
               </div>
             )}
           </div>
+          )}
+          </>
         );
       })()}
 
@@ -5888,6 +5902,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
           const addGroup = () => setGroups([...groupList, { conditions: [], conditionsOp: 'and' }]);
           const groupsOp = step.groupsOp || 'and';
           const isOrGroups = groupsOp === 'or' && groupList.length > 1;
+          const groupsShareAction = step.groupsShareAction;
           return (
             <div style={{ marginTop: 6 }}>
               {groupList.length > 1 && (
@@ -5904,11 +5919,26 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                   />
                   {isOrGroups && (
                     <div style={{ fontSize: 10, color: '#946200', marginTop: 4 }}>
-                      OR時は下の「枚数」は先頭グループの入力欄のみ使われ、アクション/置き先も
-                      先頭グループ（未指定ならルール本体）が全体に適用されます。
+                      OR時は下の「枚数」は先頭グループの入力欄のみ使われます。
                       <span style={{ color: '#c62828' }}>⚠ エンジン未実装（保存はできますが動作しません）</span>
                     </div>
                   )}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666', marginTop: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={groupsShareAction === true}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          // 共通化: 各グループの個別アクション指定は不要になるため破棄する
+                          setGroups(groupList.map((g) => ({ ...g, action: undefined, deckPosition: undefined, options: undefined })));
+                          onChange({ groupsShareAction: true });
+                        } else {
+                          onChange({ groupsShareAction: undefined });
+                        }
+                      }}
+                    />
+                    共通（全グループとも上の「アクション」を使う。各グループのアクション欄を隠す）
+                  </label>
                 </div>
               )}
               {groupList.length > 1 && (
@@ -5964,8 +5994,9 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                   </div>
                   {/* グループごとのアクション（省略時はルール本体のアクションを使う）。
                       例:「1枚を手札に加え、1枚をセキュリティの上に置く」を2グループで表現。
-                      OR結合時はアクション/置き先を先頭グループのみで共有するため2つ目以降は隠す */}
-                  {(!isOrGroups || gi === 0) && (() => {
+                      「共通」（groupsShareAction===true）のときは全グループとも上の
+                      ルール本体のアクションを使うため、個別のアクション欄は隠す */}
+                  {groupsShareAction !== true && (() => {
                     const gAction = g.action || step.action;
                     const gIsPlaceActive = PLACE_ACTION_CODES.has(gAction || '');
                     const gActivePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === gAction)?.code || '';

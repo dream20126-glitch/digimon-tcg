@@ -2028,19 +2028,19 @@ const COMMON_COST_ACTIONS: { code: string; label: string }[] = [
 //     「対象」欄で選ぶ（位置ボタンも「対象」欄のセキュリティ選択時に表示する。下記の
 //     「セキュリティ/テイマーのときだけ「上/下/下か上」を選べる」パネルとは別に、
 //     🎯対象パネル内の「セキュリティ選択時の位置」を参照）
-//   - evo_source/tamer (evo_discard系) はエンジン未対応のためtargetを持たせない。
-//     evo_sourceとtamerは同じスタック機構だが、targetで区別する代わりに
-//     アクションコード自体を分ける（evo_discard_top / evo_discard_tamer_top）
+//   - evo_source (evo_discard系) はtargetのown/own_tamer/opponent_tamerを見て自分の
+//     デジモン/自分のテイマー/相手のテイマーの下を正しく判定できる（js/effect-engine.js
+//     の evo_discard* ケース参照。実カードBT26-003/005/021で target:"own_tamer"実績あり）。
+//     かつて別コード（evo_discard_tamer_*）でテイマー専用の場所ボタンを分けていたが、
+//     自分固定でtargetの自分/相手選択も効かない下位互換だったため撤廃し、evo_sourceに統合。
+//     「対象」欄でデジモン/テイマーどちらを選んでも、この1つの場所ボタンで完結する
 // hasPosition:true の場所は「進化元/テイマー/セキュリティ」のように積まれたカードから
 // 1枚選ぶ概念があるため、下に「上から/下から/選んで/全て」ボタンを追加表示する
 // （実体は POSITION_VARIANTS と同じ仕組みでアクションコードのsuffixを切り替える。
 // costIsPositional/costVariantOptions/onCostVariantChange を流用）。
 // 手札/デッキには順序の概念が無い（デッキは上からのみ固定）ため出さない。
 const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: string; warn?: string; hasPosition?: boolean; hasFace?: boolean }[] = [
-  { code: 'evo_source', label: '進化元', action: 'evo_discard_top', warn: '⚠ エンジン未対応: 現在は相手の進化元を破棄する動作になります（自分側の実装は該当カードが来たら追加予定）', hasPosition: true, hasFace: true },
-  // テイマーの下＝進化元と同じスタック機構のため、evo_discard系アクションを流用するが、
-  // targetで区別せず専用のアクションコード（evo_discard_tamer_top）を使う
-  { code: 'tamer', label: 'テイマー', action: 'evo_discard_tamer_top', hasPosition: true, hasFace: true },
+  { code: 'evo_source', label: '進化元／テイマーの下', action: 'evo_discard_top', hasPosition: true, hasFace: true },
   { code: 'hand', label: '手札', action: 'cost_discard' },
   // 位置（上/下/選んで）と「誰の」セキュリティかは、このパネルではなく🎯対象パネル側
   // （対象＝自分/相手→セキュリティを選んだときに表示される位置ボタン）で設定する

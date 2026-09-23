@@ -5542,6 +5542,10 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
   const [customMode, setCustomMode] = useState<boolean>(!isPresetValue && valueRaw !== undefined);
   // 「その他のアクション」開閉状態（手札に加える/破棄/〇〇に置く 以外を選んでいるときは自動で開く）
   const [ruleOtherOpen, setRuleOtherOpen] = useState(false);
+  // 「条件ごとに枚数を分ける」の「共通の絞り込み条件」欄を非表示にするか
+  // （使わないケースの方が多いため、チェックを入れると欄自体を隠せる。表示状態のみの
+  // ローカルUI設定で、保存データには影響しない＝空のcommonConditionsのままでOK）
+  const [commonCondHidden, setCommonCondHidden] = useState(false);
 
   return (
     <div style={{ marginBottom: 6, padding: 8, background: 'white', border: '1px solid #c5d4ea', borderRadius: 4 }}>
@@ -5909,21 +5913,37 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
               )}
               {groupList.length > 1 && (
                 <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px dashed #f0d9a8' }}>
-                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#666', marginBottom: 2 }}>
-                    共通の絞り込み条件（全グループに自動でAND合成される）
-                  </div>
-                  <ConditionsHybridEditor
-                    conditions={step.commonConditions || []}
-                    onChange={(next) => onChange({ commonConditions: next })}
-                    dict={dict}
-                    title="共通条件"
-                    hint="（例:「特徴TB」を各グループで繰り返し書かなくて済むように、ここに1回だけ設定する）"
-                    theme="action"
-                    defaultSubject=""
-                    showSubjectSelector={false}
-                    conditionsOp={step.commonConditionsOp || 'and'}
-                    onConditionsOpChange={(op) => onChange({ commonConditionsOp: op })}
-                  />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                    <input
+                      type="checkbox"
+                      checked={commonCondHidden}
+                      onChange={(e) => {
+                        setCommonCondHidden(e.target.checked);
+                        // 隠すときは古い共通条件が見えないまま残って効いてしまわないよう破棄する
+                        if (e.target.checked) onChange({ commonConditions: undefined, commonConditionsOp: undefined });
+                      }}
+                    />
+                    共通条件なし（各グループの条件が全て異なる場合はチェックして欄を隠せます）
+                  </label>
+                  {!commonCondHidden && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#666', marginBottom: 2 }}>
+                        共通の絞り込み条件（全グループに自動でAND合成される）
+                      </div>
+                      <ConditionsHybridEditor
+                        conditions={step.commonConditions || []}
+                        onChange={(next) => onChange({ commonConditions: next })}
+                        dict={dict}
+                        title="共通条件"
+                        hint="（例:「特徴TB」を各グループで繰り返し書かなくて済むように、ここに1回だけ設定する）"
+                        theme="action"
+                        defaultSubject=""
+                        showSubjectSelector={false}
+                        conditionsOp={step.commonConditionsOp || 'and'}
+                        onConditionsOpChange={(op) => onChange({ commonConditionsOp: op })}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
               {groupList.map((g, gi) => (

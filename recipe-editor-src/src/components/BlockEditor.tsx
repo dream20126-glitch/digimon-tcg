@@ -3302,33 +3302,63 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       <ButtonGroup options={TIMING_OPTIONS.map((t) => ({ code: t.code, label: t.label }))} value={timing} onChange={(v) => setTiming(v as TimingKey)} accentColor="#2e7d32" />
                     </div>
                   )}
-                  {/* トリガーごとに発動ターンを分ける（例:「登場時」は無条件、
-                      「メインフェイズ開始時」だけ相手ターン限定、を同じブロックで混在させたい場合）。
-                      OFFなら上の共有「発動ターン」を使う従来通りの挙動 */}
+                  {/* トリガーごとに発動ターン/発動主体を分ける（スペース節約のため2つのチェック
+                      ボックスを横並びにする）。
+                      発動ターン: 例:「登場時」は無条件、「メインフェイズ開始時」だけ相手ターン
+                      限定、を同じブロックで混在させたい場合。OFFなら上の共有「発動ターン」を
+                      使う従来通りの挙動。
+                      発動主体: 例:「相手のデジモン/テイマーがレストしたとき」(発動主体=相手) か
+                      「自分のテイマーの下のカードが破棄されたとき」(発動主体=自分のテイマー+
+                      位置=下) を1ブロックでORしたい場合など、トリガーごとに必要な発動主体が
+                      異なるケース向け。ONにすると上の共有「発動主体」パネルは選べなくなる
+                      （簡易版のため、デジモン/テイマー同時選択やレスト/アクティブ状態の
+                      絞り込みはこのパネルでは選べない。L1/L2＋位置(本体/下/一番下)のみ） */}
                   {currentTriggers.length >= 2 && (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#1a5a1a', marginTop: 6 }}>
-                      <input
-                        type="checkbox"
-                        checked={perTriggerTimingOpen}
-                        onChange={(e) => {
-                          const on = e.target.checked;
-                          setPerTriggerTimingOpen(on);
-                          if (on) {
-                            // 現在の共有発動ターンを、各トリガーの個別値として引き継ぐ
-                            // （event系のみ。timing系はコード自体に既に反映済み）
-                            const nextMap: Record<string, TimingKey> = { ...(block.triggerTimingByCode || {}) };
-                            currentTriggers.forEach((code) => {
-                              const isTimingFam = effectiveTriggerFamilies.some((f) => f.kind === 'timing' && f.variants && Object.values(f.variants).includes(code));
-                              if (!isTimingFam && nextMap[code] === undefined) nextMap[code] = timing;
-                            });
-                            onChange({ ...block, triggerTimingByCode: nextMap });
-                          } else {
-                            onChange({ ...block, triggerTimingByCode: {} });
-                          }
-                        }}
-                      />
-                      🔀 トリガーごとに発動ターンを分ける
-                    </label>
+                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 6 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#1a5a1a' }}>
+                        <input
+                          type="checkbox"
+                          checked={perTriggerTimingOpen}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            setPerTriggerTimingOpen(on);
+                            if (on) {
+                              // 現在の共有発動ターンを、各トリガーの個別値として引き継ぐ
+                              // （event系のみ。timing系はコード自体に既に反映済み）
+                              const nextMap: Record<string, TimingKey> = { ...(block.triggerTimingByCode || {}) };
+                              currentTriggers.forEach((code) => {
+                                const isTimingFam = effectiveTriggerFamilies.some((f) => f.kind === 'timing' && f.variants && Object.values(f.variants).includes(code));
+                                if (!isTimingFam && nextMap[code] === undefined) nextMap[code] = timing;
+                              });
+                              onChange({ ...block, triggerTimingByCode: nextMap });
+                            } else {
+                              onChange({ ...block, triggerTimingByCode: {} });
+                            }
+                          }}
+                        />
+                        🔀 トリガーごとに発動ターンを分ける
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#1a5a1a' }}>
+                        <input
+                          type="checkbox"
+                          checked={perTriggerSubjectOpen}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            setPerTriggerSubjectOpen(on);
+                            if (on) {
+                              const nextMap: Record<string, string> = { ...(block.triggerSubjectByCode || {}) };
+                              currentTriggers.forEach((code) => {
+                                if (nextMap[code] === undefined) nextMap[code] = block.triggerSubject || 'self';
+                              });
+                              onChange({ ...block, triggerSubjectByCode: nextMap });
+                            } else {
+                              onChange({ ...block, triggerSubjectByCode: {} });
+                            }
+                          }}
+                        />
+                        🔀 トリガーごとに発動主体を分ける
+                      </label>
+                    </div>
                   )}
                   {perTriggerTimingOpen && (
                     <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -3358,35 +3388,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
 
-                  {/* トリガーごとに発動主体を分ける（例:「相手のデジモン/テイマーが
-                      レストしたとき」(発動主体=相手) か「自分のテイマーの下のカードが
-                      破棄されたとき」(発動主体=自分のテイマー+位置=下) を1ブロックでORしたい
-                      場合など、トリガーごとに必要な発動主体が異なるケース向け）。
-                      OFFなら上の共有「発動主体」パネルを使う従来通りの挙動。
-                      簡易版のため、デジモン/テイマー同時選択やレスト/アクティブ状態の
-                      絞り込みはこのパネルでは選べない（L1/L2＋位置(本体/下/一番下)のみ） */}
-                  {currentTriggers.length >= 2 && (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#1a5a1a', marginTop: 6 }}>
-                      <input
-                        type="checkbox"
-                        checked={perTriggerSubjectOpen}
-                        onChange={(e) => {
-                          const on = e.target.checked;
-                          setPerTriggerSubjectOpen(on);
-                          if (on) {
-                            const nextMap: Record<string, string> = { ...(block.triggerSubjectByCode || {}) };
-                            currentTriggers.forEach((code) => {
-                              if (nextMap[code] === undefined) nextMap[code] = block.triggerSubject || 'self';
-                            });
-                            onChange({ ...block, triggerSubjectByCode: nextMap });
-                          } else {
-                            onChange({ ...block, triggerSubjectByCode: {} });
-                          }
-                        }}
-                      />
-                      🔀 トリガーごとに発動主体を分ける
-                    </label>
-                  )}
                   {perTriggerSubjectOpen && (
                     <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {currentTriggers.map((code) => {
@@ -3570,6 +3571,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   )}
                 </div>
 
+                {!perTriggerSubjectOpen && (
                 <div className="field">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <label>発動主体</label>
@@ -3658,6 +3660,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
                 </div>
+                )}
               </div>
             );
           })()}

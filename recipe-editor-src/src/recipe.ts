@@ -356,9 +356,9 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
     const triggerList = (b.triggers && b.triggers.length > 0) ? b.triggers : (b.trigger ? [b.trigger] : []);
     if (triggerList.length > 0) {
       const groups = groupTriggersByTiming(triggerList, b);
-      groups.forEach(({ codes, conditions }) => {
+      groups.forEach(({ codes, conditions, subject }) => {
         const combinedTrig = codes.join(',');
-        const bForGroup = { ...b, triggerConditions: conditions };
+        const bForGroup = { ...b, triggerConditions: conditions, triggerSubject: subject };
         if (b.section === 'evo_source') {
           recipe.evo_source = recipe.evo_source || {};
           appendStep(recipe.evo_source, { ...bForGroup, trigger: combinedTrig }, keywordDict);
@@ -377,11 +377,15 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
   return recipe;
 }
 
-// triggerTimingByCode に基づき、triggerList を「実際に出力されるtrigger_conditionsが
-// 同じもの同士」にグループ化する。triggerTimingByCode に個別指定が無いトリガーは
-// block共有の triggerConditions をそのまま使う（＝従来通りの挙動、後方互換）
-function groupTriggersByTiming(triggerList: string[], b: EffectBlock): { codes: string[]; conditions: ConditionPair[] }[] {
+// triggerTimingByCode/triggerSubjectByCode に基づき、triggerList を「実際に出力される
+// trigger_conditions と 発動主体(subject) が両方とも同じもの同士」にグループ化する。
+// 個別指定が無いトリガーは block共有の triggerConditions/triggerSubject をそのまま使う
+// （＝従来通りの挙動、後方互換）。例:「相手がレストしたとき（発動主体=相手）」か
+// 「自分のテイマーの下が破棄されたとき（発動主体=自分のテイマーの下）」のように、
+// トリガーごとに発動主体が異なる場合は別stepとして出力する
+function groupTriggersByTiming(triggerList: string[], b: EffectBlock): { codes: string[]; conditions: ConditionPair[]; subject?: string }[] {
   const overrides = b.triggerTimingByCode || {};
+  const subjectOverrides = b.triggerSubjectByCode || {};
   const resolve = (code: string): ConditionPair[] => {
     const t = overrides[code];
     if (t === 'self') return [{ base: 'cond_during_own_turn' }];
@@ -389,13 +393,16 @@ function groupTriggersByTiming(triggerList: string[], b: EffectBlock): { codes: 
     if (t === 'any') return [];
     return b.triggerConditions || []; // 個別指定なし → 共有条件（従来通り）
   };
-  const groups: { key: string; codes: string[]; conditions: ConditionPair[] }[] = [];
+  const resolveSubject = (code: string): string | undefined =>
+    subjectOverrides[code] !== undefined ? subjectOverrides[code] : b.triggerSubject;
+  const groups: { key: string; codes: string[]; conditions: ConditionPair[]; subject?: string }[] = [];
   triggerList.forEach((code) => {
     const conditions = resolve(code);
-    const key = conditions.filter((p) => p.base).map(pairToString).join('|');
+    const subject = resolveSubject(code);
+    const key = conditions.filter((p) => p.base).map(pairToString).join('|') + '::' + (subject || '');
     const existing = groups.find((g) => g.key === key);
     if (existing) existing.codes.push(code);
-    else groups.push({ key, codes: [code], conditions });
+    else groups.push({ key, codes: [code], conditions, subject });
   });
   return groups;
 }

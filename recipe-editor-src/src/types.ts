@@ -102,6 +102,19 @@ export interface EffectBlock {
   // エンコードされているため不要）。値: 'self'=自分のターンのみ / 'opp'=相手のターンのみ /
   // 'any'=どちらでも（無条件）。エントリが無いトリガーは triggerConditions（共有）に従う
   triggerTimingByCode?: Record<string, 'self' | 'opp' | 'any'>;
+  // トリガーごとに発動主体（自分/相手/このデジモン等）を個別設定したい場合に使う
+  // （例:「相手のデジモンがレストしたとき」(発動主体=相手) か「自分のテイマーの下のカードが
+  // 破棄されたとき」(発動主体=自分のテイマー+位置=下) を1ブロックでORしたい場合、両トリガーで
+  // 必要な発動主体が異なるため、共有の triggerSubject 1つでは表現できない）。
+  // キーはtriggers[]内のトリガーコード、値はtriggerSubjectと同じコード体系の文字列
+  // （splitStackSuffix/joinStackSuffixで位置サフィックスも付与可）。
+  // エントリが無いトリガーは triggerSubject（共有）に従う。
+  // JSONでは、発動主体が異なるトリガー同士は別々のstepとして出力される（トリガーキーは
+  // "a,b"のようにまとめず個別キーになる）。
+  // ⚠ 再読み込み時: 発動主体が異なる複数stepは1ブロックへ自動統合されず、別ブロックとして
+  // 復元される（保存されたJSON自体は正しいが、エディタ上の「1ブロックでOR」という表示形式は
+  // 再現されない）
+  triggerSubjectByCode?: Record<string, string>;
   conditions?: ConditionPair[]; // 0〜N個の条件（self や全体状況に対するゲート）
   // 複数条件の結合方法。既定'and'=全部満たす／'or'=いずれか1つ満たす。
   // JSON では conditions.length>=2 のときだけ step.condition_op:'or' として出力する

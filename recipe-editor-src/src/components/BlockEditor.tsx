@@ -2500,6 +2500,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [perTriggerTimingOpen, setPerTriggerTimingOpen] = useState<boolean>(
     Object.keys(block.triggerTimingByCode || {}).length > 0
   );
+  // 発動主体をトリガーごとに個別設定するモード（既にtriggerSubjectByCodeが
+  // 入っているデータを開いた場合は最初から展開しておく）
+  const [perTriggerSubjectOpen, setPerTriggerSubjectOpen] = useState<boolean>(
+    Object.keys(block.triggerSubjectByCode || {}).length > 0
+  );
   const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
   const [otherActionOpen, setOtherActionOpen] = useState<boolean>(false);
   // ～ごとにの「状態（条件）」その他プルダウン開閉状態
@@ -3347,6 +3352,82 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           <div key={code} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
                             <span style={{ color: '#333', minWidth: 90 }}>{label}:</span>
                             <ButtonGroup options={TIMING_OPTIONS.map((t) => ({ code: t.code, label: t.label }))} value={curTiming} onChange={(v) => setThisTiming(v as TimingKey)} accentColor="#2e7d32" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* トリガーごとに発動主体を分ける（例:「相手のデジモン/テイマーが
+                      レストしたとき」(発動主体=相手) か「自分のテイマーの下のカードが
+                      破棄されたとき」(発動主体=自分のテイマー+位置=下) を1ブロックでORしたい
+                      場合など、トリガーごとに必要な発動主体が異なるケース向け）。
+                      OFFなら上の共有「発動主体」パネルを使う従来通りの挙動。
+                      簡易版のため、デジモン/テイマー同時選択やレスト/アクティブ状態の
+                      絞り込みはこのパネルでは選べない（L1/L2＋位置(本体/下/一番下)のみ） */}
+                  {currentTriggers.length >= 2 && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#1a5a1a', marginTop: 6 }}>
+                      <input
+                        type="checkbox"
+                        checked={perTriggerSubjectOpen}
+                        onChange={(e) => {
+                          const on = e.target.checked;
+                          setPerTriggerSubjectOpen(on);
+                          if (on) {
+                            const nextMap: Record<string, string> = { ...(block.triggerSubjectByCode || {}) };
+                            currentTriggers.forEach((code) => {
+                              if (nextMap[code] === undefined) nextMap[code] = block.triggerSubject || 'self';
+                            });
+                            onChange({ ...block, triggerSubjectByCode: nextMap });
+                          } else {
+                            onChange({ ...block, triggerSubjectByCode: {} });
+                          }
+                        }}
+                      />
+                      🔀 トリガーごとに発動主体を分ける
+                    </label>
+                  )}
+                  {perTriggerSubjectOpen && (
+                    <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {currentTriggers.map((code) => {
+                        const label = effectiveTriggerFamilies.find((f) => f.code === code)?.label
+                          || FAMILY_VARIANT_FALLBACK_LABELS[code]
+                          || dict.triggers.find((d) => d.code === code)?.label
+                          || code;
+                        const curSubjRaw = (block.triggerSubjectByCode || {})[code] || block.triggerSubject || 'self';
+                        const rawSub = splitStackSuffix(curSubjRaw);
+                        const subL1L2 = SUBJECT_CODE_TO_L1L2[rawSub.base] || { l1: 'self', l2: '' };
+                        const setThisSubject = (l1: string, l2?: string) => {
+                          let newCode: string;
+                          if (l1 === 'self') newCode = 'self';
+                          else {
+                            const useL2 = l2 || (subL1L2.l1 === l1 && subL1L2.l2 ? subL1L2.l2 : 'digimon');
+                            newCode = SUBJECT_L1L2_TO_CODE[l1 + ':' + useL2] || l1;
+                          }
+                          const nextMap = { ...(block.triggerSubjectByCode || {}), [code]: newCode };
+                          onChange({ ...block, triggerSubjectByCode: nextMap });
+                        };
+                        const setThisStackPos = (pos: StackPos) => {
+                          const nextMap = { ...(block.triggerSubjectByCode || {}), [code]: joinStackSuffix(rawSub.base, pos) };
+                          onChange({ ...block, triggerSubjectByCode: nextMap });
+                        };
+                        const l2Opts = subL1L2.l1 === 'self' ? [] : SUBJECT_L2;
+                        const showStackPos = subL1L2.l1 === 'self' || subL1L2.l2 === 'digimon' || subL1L2.l2 === 'tamer';
+                        return (
+                          <div key={code} style={{ fontSize: 11, border: '1px solid #c5e0c5', borderRadius: 4, padding: 6 }}>
+                            <div style={{ color: '#333', fontWeight: 'bold', marginBottom: 3 }}>{label}:</div>
+                            <ButtonGroup options={SUBJECT_L1} value={subL1L2.l1} onChange={(l1) => setThisSubject(l1)} accentColor="#2e7d32" />
+                            {l2Opts.length > 0 && (
+                              <div style={{ marginTop: 3 }}>
+                                <ButtonGroup options={l2Opts} value={subL1L2.l2} onChange={(l2) => setThisSubject(subL1L2.l1, l2)} accentColor="#2e7d32" />
+                              </div>
+                            )}
+                            {showStackPos && (
+                              <div style={{ marginTop: 3 }}>
+                                <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
+                                <ButtonGroup options={STACK_POS_OPTIONS} value={rawSub.pos} onChange={(v) => setThisStackPos(v as StackPos)} accentColor="#2e7d32" />
+                              </div>
+                            )}
                           </div>
                         );
                       })}

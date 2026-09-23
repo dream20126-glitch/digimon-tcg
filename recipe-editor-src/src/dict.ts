@@ -359,8 +359,10 @@ export const ACTIONS: DictEntry[] = [
   { code: 'immune_effects', kind: 'action', label: '効果を受けない' },
   { code: 'do_security_check', kind: 'action', label: 'セキュリティチェックをする' },
   // 効果からアタックを宣言する（急襲/BT26-015等で使用の本物の実装）。
-  // options:['digimon_only'] を付けると、相手のレスト中デジモンがいない場合にセキュリティへ
-  // フォールバックせず何もしない（「相手のデジモンにアタックできる」等の表現用）
+  // options:['digimon_only'] で相手のレスト中デジモンのみを対象にし、いなければ何もしない
+  // （「相手のデジモンにアタックできる」）。options:['player_only'] で必ずセキュリティを
+  // 対象にし、無ければ何もしない（「相手プレイヤーにアタックできる」）。指定なしは従来通り
+  // レスト中の相手デジモンがいればそちら優先・いなければセキュリティにフォールバック
   { code: 'attack', kind: 'action', label: 'アタックする（レスト中の相手デジモンかセキュリティへ）' },
   // ⚠ 以下2つはcase自体はあるが呼び出し先(window._battleStartAttack)が未定義で常にno-op。
   // 効果からアタックを宣言したい場合は上の 'attack' を使うこと

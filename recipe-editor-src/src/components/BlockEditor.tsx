@@ -1453,6 +1453,10 @@ const SUBJECT_L1 = [
   { code: 'other_own', label: '他' },
   { code: 'both', label: '両方' },
 ];
+// 「自分」「相手」は複数選択できるトグルボタンにする（両方押すと'both'系に自動で切り替わる。
+// アクションの対象/コストの対象と同じ操作感）。それ以外は従来通り単一選択のまま
+const SUBJECT_OWN_OPP = SUBJECT_L1.filter((o) => o.code === 'own' || o.code === 'opp');
+const SUBJECT_L1_REST = SUBJECT_L1.filter((o) => o.code !== 'own' && o.code !== 'opp' && o.code !== 'both');
 const SUBJECT_L2 = [
   { code: 'digimon', label: 'デジモン' },
   { code: 'card', label: 'カード' },
@@ -1463,6 +1467,9 @@ const SUBJECT_L1L2_TO_CODE: Record<string, string> = {
   'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:player': 'own_player',
   'opp:digimon': 'opp', 'opp:card': 'opp_card', 'opp:tamer': 'opp_tamer', 'opp:player': 'opp_player',
   'other_own:digimon': 'other_own', 'other_own:card': 'other_own_card', 'other_own:tamer': 'other_own_tamer',
+  // 「両方」+デジモン/カード/テイマー/プレイヤー: 自分/相手どちらでも該当する全てが対象
+  // （例:「デジモンが登場したとき」を自分/相手どちらでも）。エンジン未実装のプレースホルダー
+  'both:digimon': 'both_digimon', 'both:card': 'both_card', 'both:tamer': 'both_tamer', 'both:player': 'both_player',
 };
 const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   '': { l1: 'self', l2: '' },
@@ -1479,6 +1486,10 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   other_own_card: { l1: 'other_own', l2: 'card' },
   other_own_tamer: { l1: 'other_own', l2: 'tamer' },
   both: { l1: 'both', l2: '' },
+  both_digimon: { l1: 'both', l2: 'digimon' },
+  both_card: { l1: 'both', l2: 'card' },
+  both_tamer: { l1: 'both', l2: 'tamer' },
+  both_player: { l1: 'both', l2: 'player' },
 };
 
 // 条件の「対象」用の2段階ボタン選択（発動主体と同じ見た目のパターンだが、
@@ -3045,9 +3056,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const showTriggerStackPos = cur.l1 === 'self' || cur.l2 === 'digimon' || cur.l2 === 'tamer';
             const setTriggerStackPos = (pos: StackPos) => update('triggerSubject', joinStackSuffix(rawTriggerSubject.base, pos));
             const handleL1 = (l1: string) => {
-              if (l1 === 'self' || l1 === 'both') { update('triggerSubject', l1); return; }
+              if (l1 === 'self') { update('triggerSubject', l1); return; }
               const l2 = cur.l1 === l1 && cur.l2 ? cur.l2 : 'digimon';
-              update('triggerSubject', SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon']);
+              update('triggerSubject', SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon'] || l1);
             };
             const handleL2 = (l2: string) => {
               update('triggerSubject', SUBJECT_L1L2_TO_CODE[cur.l1 + ':' + l2]);
@@ -3055,7 +3066,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const l2Options = cur.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
             // デジモン/テイマーは複数選択可（両方選ぶとcard=「カード」扱いに集約。カード単体の
             // ボタンは冗長になるためexclusiveL2Optionsから外す。対象/対象の条件と同じ操作感）
-            const hasDigimonTamer = (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'other_own');
+            const hasDigimonTamer = (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'other_own' || cur.l1 === 'both');
             const subjDigimonCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':digimon'];
             const subjTamerCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':tamer'];
             const subjCardCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':card'];
@@ -3380,7 +3391,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </>
                     )}
                   </div>
-                  <ButtonGroup options={SUBJECT_L1} value={cur.l1} onChange={handleL1} accentColor="#2e7d32" />
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <MultiButtonGroup
+                      options={SUBJECT_OWN_OPP}
+                      values={[...(cur.l1 === 'own' || cur.l1 === 'both' ? ['own'] : []), ...(cur.l1 === 'opp' || cur.l1 === 'both' ? ['opp'] : [])]}
+                      onToggle={(code, on) => {
+                        const ownOn = cur.l1 === 'own' || cur.l1 === 'both';
+                        const oppOn = cur.l1 === 'opp' || cur.l1 === 'both';
+                        const nextOwn = code === 'own' ? on : ownOn;
+                        const nextOpp = code === 'opp' ? on : oppOn;
+                        handleL1(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : 'self');
+                      }}
+                      accentColor="#2e7d32"
+                    />
+                    <ButtonGroup
+                      options={SUBJECT_L1_REST}
+                      value={(cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'both') ? '' : cur.l1}
+                      onChange={handleL1}
+                      accentColor="#2e7d32"
+                    />
+                  </div>
                   {hasDigimonTamer && (
                     <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                       <MultiButtonGroup

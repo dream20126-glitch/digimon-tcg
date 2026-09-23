@@ -1,5 +1,5 @@
 // EffectBlock[] ⇄ recipe JSON 変換
-import type { AltAction, ConditionPair, CostStep, DictEntry, EffectBlock, KeywordEntry, DesignatedGroup } from './types';
+import type { AltAction, ConditionPair, CostStep, DictEntry, EffectBlock, ExtraTarget, KeywordEntry, DesignatedGroup } from './types';
 import { applyRulesToStep } from './ruleTranslator';
 
 // 条件pairを「base:value@subject」形式の文字列に変換
@@ -126,7 +126,8 @@ function altActionToStepObject(a: AltAction): any {
     out.count = isNaN(n) ? a.fromCount : n;
   }
   if (a.target) out.target = a.target;
-  if (a.target2) out.target2 = a.target2;
+  const aExtraTargets = buildExtraTargetsArray(a.extraTargets);
+  if (aExtraTargets) out.targets = aExtraTargets;
   const validGate = (a.gateConditions || []).filter((p) => p.base);
   if (validGate.length >= 1) out.gate = pairToString(validGate[0]);
   if (validGate.length >= 2) out.gate_when = pairToString(validGate[1]);
@@ -295,6 +296,34 @@ function parseFilterObject(f: any): ConditionPair[] {
   if (f.dp_extreme === 'highest') out.push({ base: 'cond_dp_highest' });
   else if (f.dp_extreme === 'lowest') out.push({ base: 'cond_dp_lowest' });
   return out;
+}
+
+// ExtraTarget[]（対象1に加えて自由に追加できる2体目以降の当事者）→ step.targets（JSON）
+function buildExtraTargetsArray(extraTargets: ExtraTarget[] | undefined): any[] | undefined {
+  if (!Array.isArray(extraTargets) || extraTargets.length === 0) return undefined;
+  const out = extraTargets
+    .filter((et) => et && et.target)
+    .map((et) => {
+      const entry: Record<string, any> = { target: et.target };
+      const filter = buildFilterObject(et.targetFilter);
+      if (filter) entry.filter = filter;
+      return entry;
+    });
+  return out.length > 0 ? out : undefined;
+}
+
+// step.targets（JSON）→ ExtraTarget[]（buildExtraTargetsArray の逆変換）
+function parseExtraTargetsArray(raw: any): ExtraTarget[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const out: ExtraTarget[] = raw
+    .filter((et) => et && et.target)
+    .map((et) => {
+      const entry: ExtraTarget = { target: String(et.target) };
+      const filter = parseFilterObject(et.filter);
+      if (filter.length > 0) entry.targetFilter = filter;
+      return entry;
+    });
+  return out.length > 0 ? out : undefined;
 }
 
 // keywordDict は「対象」(hasNamedParam) 付きキーワードの絞り込み条件(designated)を
@@ -568,7 +597,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     step.count = isNaN(n) ? b.fromCount : n;
   }
   if (b.target) step.target = b.target;
-  if (b.target2) step.target2 = b.target2;
+  const bExtraTargets = buildExtraTargetsArray(b.extraTargets);
+  if (bExtraTargets) step.targets = bExtraTargets;
   if (b.keyword) step.keyword = b.keyword;
   // app_gattai_evolve / jogress_evolve 専用: 素材候補スロット一覧（名称OR / 色OR+Lv）+ 同時使用数
   // （演出が異なるためトリガーコード自体は2つに分けているが、データ構造は共通）
@@ -1021,7 +1051,7 @@ function stepObjectToAltAction(step: any): AltAction {
     action: step?.action || '',
     value: step?.value,
     target: step?.target || '',
-    target2: step?.target2 || undefined,
+    extraTargets: parseExtraTargetsArray(step?.targets),
     gateConditions,
     conditions,
     conditionsOp: step?.condition_op === 'or' ? 'or' : 'and',
@@ -1119,7 +1149,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     trigger_conditions: true,
     duration: true,
     target: true,
-    target2: true,
+    targets: true,
     value: true,
     keyword: true,
     revert_at_turn_end: true,
@@ -1207,7 +1237,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     action: step?.action || '',
     value: step?.value,
     target: step?.target || '',
-    target2: step?.target2 || undefined,
+    extraTargets: parseExtraTargetsArray(step?.targets),
     keyword: step?.keyword || '',
     // app_gattai_evolve / jogress_evolve 専用: 素材候補スロット一覧の復元
     fusionMaterials: Array.isArray(step?.materials)
@@ -1328,7 +1358,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             action: a?.action || '',
             value: a?.value,
             target: a?.target || '',
-            target2: a?.target2 || undefined,
+            extraTargets: parseExtraTargetsArray(a?.targets),
             gateConditions: gateArr,
             conditions: condArr,
             conditionsOp: a?.condition_op === 'or' ? 'or' as const : 'and' as const,

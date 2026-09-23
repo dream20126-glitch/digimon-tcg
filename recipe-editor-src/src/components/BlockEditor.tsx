@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup, FusionMaterialSlot } from '../types';
+import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup, FusionMaterialSlot, ExtraTarget } from '../types';
 import {
   SECTIONS,
   DURATIONS,
@@ -2072,10 +2072,6 @@ const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
 const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'summon_appear', 'summon_use', 'evolve', 'link']);
-// このカード自身を暗黙の当事者にせず、2体とも外部から指定したい効果専用
-// （例:「バトルする」＝combat。「自分の他のデジモン1体と相手のデジモン1体を戦わせる」等）。
-// target=対象1・target2=対象2。⚠ エンジン未実装
-const DUAL_TARGET_ACTIONS = new Set(['combat']);
 // よく使う期間（対象と同じ2段ボタン式）
 const DURATION_L1 = [
   { code: 'dur_this_turn', label: 'このターン中' },
@@ -2360,7 +2356,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectValue = isEditingAlt ? editingAlt!.value : block.value;
   const effectFromCount = isEditingAlt ? editingAlt!.fromCount : block.fromCount;
   const effectTarget = isEditingAlt ? (editingAlt!.target || '') : (block.target || '');
-  const effectTarget2 = isEditingAlt ? (editingAlt!.target2 || '') : (block.target2 || '');
+  const effectExtraTargets = isEditingAlt ? (editingAlt!.extraTargets || []) : (block.extraTargets || []);
   const effectConditions = isEditingAlt ? (editingAlt!.conditions || []) : conditions;
   const effectConditionsOp: 'and' | 'or' = isEditingAlt ? (editingAlt!.conditionsOp || 'and') : (block.conditionsOp || 'and');
   const effectFromZones = isEditingAlt ? (editingAlt!.fromZones || []) : (block.fromZones || []);
@@ -4777,58 +4773,108 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
-        {/* 🎯 対象2: DUAL_TARGET_ACTIONS専用（例:「バトルする」）。このカード自身を暗黙の
-            当事者にせず、2体とも外部から指定したい効果向け。対象1と全く同じコード体系
-            （TARGET_SEL_L1/L2）を使うが、簡易版（数/対象の条件/位置系は無し。常に1体）
-            ⚠ エンジン未実装（combat自体が未実装のため保存はできますが動作しません） */}
-        {DUAL_TARGET_ACTIONS.has(effectAction) && (() => {
-          const t2Base = (effectTarget2 || '').split(':')[0];
-          const t2CurL1L2 = TARGET_SEL_CODE_TO_L1L2[t2Base] || { l1: '', l2: '' };
-          const setTarget2 = (l1: string, l2?: string) => {
-            if (!l1) { updateEffect({ target2: '' }); return; }
-            if (l1 === 'self') { updateEffect({ target2: 'self_card' }); return; }
-            const useL2 = l2 || (t2CurL1L2.l1 === l1 && t2CurL1L2.l2 ? t2CurL1L2.l2 : 'digimon');
-            updateEffect({ target2: TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '' });
+        {/* 🎯 追加の対象: 対象1に加えて2体目以降の当事者を自由に追加できる汎用機能。
+            全アクション共通（このカード自身を暗黙の当事者にする設計は廃止し、必要なら
+            対象1/対象2...のどちらでも「このカード」を明示的に選べるようにする）。
+            対象1と同じコード体系（TARGET_SEL_L1/L2）＋各枠ごとに独立した「対象の条件」を持てる
+            ⚠ エンジン未実装（保存はできますが動作しません） */}
+        {(() => {
+          const setExtraTargets = (next: ExtraTarget[]) => updateEffect({ extraTargets: next });
+          const addExtraTarget = () => setExtraTargets([...effectExtraTargets, { target: '' }]);
+          const removeExtraTarget = (idx: number) => setExtraTargets(effectExtraTargets.filter((_: ExtraTarget, i: number) => i !== idx));
+          const updateExtraTarget = (idx: number, patch: Partial<ExtraTarget>) => {
+            const next = effectExtraTargets.slice();
+            next[idx] = { ...next[idx], ...patch };
+            setExtraTargets(next);
           };
-          const t2L2Options = TARGET_SEL_L2[t2CurL1L2.l1] || [];
           return (
             <div className="field" style={{ marginTop: 8, background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
               <label style={{ fontWeight: 'bold', color: '#b76e00' }}>
-                🎯 対象2
+                🎯 追加の対象
                 <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
-                  （2体目の当事者。対象1と2体で効果を処理する）
+                  （対象1に加えてもう1体以上の当事者を指定したいときに追加。例:「バトルする」で
+                  「自分の他のデジモン1体と相手のデジモン1体を戦わせる」）
                 </span>
               </label>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                <MultiButtonGroup
-                  options={TARGET_SEL_OWN_OPP}
-                  values={[...(t2CurL1L2.l1 === 'own' || t2CurL1L2.l1 === 'both' ? ['own'] : []), ...(t2CurL1L2.l1 === 'opp' || t2CurL1L2.l1 === 'both' ? ['opp'] : [])]}
-                  onToggle={(code, on) => {
-                    const ownOn = t2CurL1L2.l1 === 'own' || t2CurL1L2.l1 === 'both';
-                    const oppOn = t2CurL1L2.l1 === 'opp' || t2CurL1L2.l1 === 'both';
-                    const nextOwn = code === 'own' ? on : ownOn;
-                    const nextOpp = code === 'opp' ? on : oppOn;
-                    setTarget2(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : '');
-                  }}
-                  accentColor="#b76e00"
-                />
-                <ButtonGroup
-                  options={TARGET_SEL_L1_REST}
-                  value={(t2CurL1L2.l1 === 'own' || t2CurL1L2.l1 === 'opp' || t2CurL1L2.l1 === 'both') ? TARGET_SEL_NONE_ACTIVE : t2CurL1L2.l1}
-                  onChange={(l1) => setTarget2(l1)}
-                  accentColor="#b76e00"
-                />
+              {effectExtraTargets.map((et: ExtraTarget, idx: number) => {
+                const etBase = (et.target || '').split(':')[0];
+                const etCurL1L2 = TARGET_SEL_CODE_TO_L1L2[etBase] || { l1: '', l2: '' };
+                const setEtTarget = (l1: string, l2?: string) => {
+                  if (!l1) { updateExtraTarget(idx, { target: '' }); return; }
+                  if (l1 === 'self') { updateExtraTarget(idx, { target: 'self_card' }); return; }
+                  const useL2 = l2 || (etCurL1L2.l1 === l1 && etCurL1L2.l2 ? etCurL1L2.l2 : 'digimon');
+                  updateExtraTarget(idx, { target: TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '' });
+                };
+                const etL2Options = TARGET_SEL_L2[etCurL1L2.l1] || [];
+                return (
+                  <div key={idx} style={{ marginTop: idx === 0 ? 4 : 8, paddingTop: idx === 0 ? 0 : 8, borderTop: idx === 0 ? 'none' : '1px dashed #ffd591' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#b76e00' }}>対象{idx + 2}</div>
+                      <button
+                        type="button"
+                        onClick={() => removeExtraTarget(idx)}
+                        style={{ fontSize: 10, color: '#c62828', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
+                      >
+                        ✕ 削除
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 2 }}>
+                      <MultiButtonGroup
+                        options={TARGET_SEL_OWN_OPP}
+                        values={[...(etCurL1L2.l1 === 'own' || etCurL1L2.l1 === 'both' ? ['own'] : []), ...(etCurL1L2.l1 === 'opp' || etCurL1L2.l1 === 'both' ? ['opp'] : [])]}
+                        onToggle={(code, on) => {
+                          const ownOn = etCurL1L2.l1 === 'own' || etCurL1L2.l1 === 'both';
+                          const oppOn = etCurL1L2.l1 === 'opp' || etCurL1L2.l1 === 'both';
+                          const nextOwn = code === 'own' ? on : ownOn;
+                          const nextOpp = code === 'opp' ? on : oppOn;
+                          setEtTarget(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : '');
+                        }}
+                        accentColor="#b76e00"
+                      />
+                      <ButtonGroup
+                        options={TARGET_SEL_L1_REST}
+                        value={(etCurL1L2.l1 === 'own' || etCurL1L2.l1 === 'opp' || etCurL1L2.l1 === 'both') ? TARGET_SEL_NONE_ACTIVE : etCurL1L2.l1}
+                        onChange={(l1) => setEtTarget(l1)}
+                        accentColor="#b76e00"
+                      />
+                    </div>
+                    {etL2Options.length > 0 && (
+                      <div style={{ marginTop: 4 }}>
+                        <ButtonGroup
+                          options={etL2Options}
+                          value={etCurL1L2.l2}
+                          onChange={(l2) => setEtTarget(etCurL1L2.l1, l2)}
+                          accentColor="#b76e00"
+                        />
+                      </div>
+                    )}
+                    <div style={{ marginTop: 6 }}>
+                      <ConditionsHybridEditor
+                        conditions={et.targetFilter || []}
+                        onChange={(next) => updateExtraTarget(idx, { targetFilter: next })}
+                        dict={dict}
+                        title="対象の条件"
+                        hint="（この対象の絞り込み条件・複数 AND）"
+                        theme="action"
+                        defaultSubject=""
+                        showSubjectSelector={false}
+                        supportsMultiValue={true}
+                        part="full"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={addExtraTarget}
+                style={{ marginTop: 8, fontSize: 11, padding: '3px 8px', background: '#fff', border: '1px solid #ffd591', borderRadius: 4, cursor: 'pointer', color: '#b76e00' }}
+              >
+                + 対象を追加
+              </button>
+              <div style={{ marginTop: 6, fontSize: 10, color: '#c62828' }}>
+                ⚠ エンジン未実装（保存はできますが、追加した対象は動作に反映されません）
               </div>
-              {t2L2Options.length > 0 && (
-                <div style={{ marginTop: 4 }}>
-                  <ButtonGroup
-                    options={t2L2Options}
-                    value={t2CurL1L2.l2}
-                    onChange={(l2) => setTarget2(t2CurL1L2.l1, l2)}
-                    accentColor="#b76e00"
-                  />
-                </div>
-              )}
             </div>
           );
         })()}

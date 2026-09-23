@@ -50,6 +50,13 @@ export interface KeywordEntry {
   count?: number | string;
 }
 
+// 対象1に加えて自由に追加できる2体目以降の当事者（例:「バトルする」でこのカード自身を
+// 暗黙にせず2体とも外部指定したい場合等）。target/targetFilterと同じ意味・同じ変換ルール
+export interface ExtraTarget {
+  target: string;
+  targetFilter?: ConditionPair[];
+}
+
 // 効果ブロック1ステップの構造（コードブロックシートと同等）
 export interface EffectBlock {
   section: 'main' | 'evo_source' | 'security' | 'link';
@@ -89,12 +96,13 @@ export interface EffectBlock {
   action?: string;
   value?: number | string;
   target?: string; // 'self' | 'own:1' | 'opponent:all' 等
-  // DUAL_TARGET_ACTIONS専用（例:「バトルする」＝combat）: このカード自身を暗黙の当事者に
-  // せず、2体とも外部から指定したい効果向けの2つ目の対象。target と全く同じコード体系
-  // （例:「自分の他のデジモン1体と相手のデジモン1体を戦わせる」→ target='other_own:1',
-  // target2='opponent:1'）。JSON では step.target2 に serialize。
-  // ⚠ エンジン未実装（combat自体が未実装のため、この値も含め要実装）
-  target2?: string;
+  // 追加対象（対象1に加えて2体目以降の当事者を自由に追加できる。例:「バトルする」で
+  // 「自分の他のデジモン1体と相手のデジモン1体を戦わせる」→ target='other_own:1',
+  // extraTargets=[{target:'opponent:1'}]）。各要素は対象1と同じコード体系のtargetと、
+  // 任意の対象の条件（targetFilterと同じ意味・同じ変換）を持てる。
+  // JSON では step.targets（{target, filter?}[]）に serialize。
+  // ⚠ エンジン未実装（要実装）
+  extraTargets?: ExtraTarget[];
   // 登場/使用/進化/リンク（BUILTIN_FROM_ZONE_ACTIONS）専用: 対象が「このカード」自身の
   // ときは通常の「アクションの対象数」欄が非表示になるため、代わりに取得元エリア
   // （手札/進化元等）から何枚選ぶかをここで指定する。例:「進化元から特徴セイバーズを
@@ -244,8 +252,8 @@ export interface AltAction {
   action: string;
   value?: number | string;
   target?: string;
-  // EffectBlock.target2と同じ（DUAL_TARGET_ACTIONS専用の2つ目の対象）
-  target2?: string;
+  // EffectBlock.extraTargetsと同じ（対象1に加えて自由に追加できる2体目以降の当事者）
+  extraTargets?: ExtraTarget[];
   // EffectBlock.fromCountと同じ（BUILTIN_FROM_ZONE_ACTIONS+対象「このカード」専用の
   // 取得元エリアからの枚数指定）。JSONではstep.countとして出力
   fromCount?: number | string;

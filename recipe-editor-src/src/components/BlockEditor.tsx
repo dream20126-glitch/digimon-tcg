@@ -3398,29 +3398,84 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         const curSubjRaw = (block.triggerSubjectByCode || {})[code] || block.triggerSubject || 'self';
                         const rawSub = splitStackSuffix(curSubjRaw);
                         const subL1L2 = SUBJECT_CODE_TO_L1L2[rawSub.base] || { l1: 'self', l2: '' };
-                        const setThisSubject = (l1: string, l2?: string) => {
-                          let newCode: string;
-                          if (l1 === 'self') newCode = 'self';
-                          else {
-                            const useL2 = l2 || (subL1L2.l1 === l1 && subL1L2.l2 ? subL1L2.l2 : 'digimon');
-                            newCode = SUBJECT_L1L2_TO_CODE[l1 + ':' + useL2] || l1;
-                          }
+                        const setThisSubjectCode = (newCode: string) => {
                           const nextMap = { ...(block.triggerSubjectByCode || {}), [code]: newCode };
                           onChange({ ...block, triggerSubjectByCode: nextMap });
                         };
-                        const setThisStackPos = (pos: StackPos) => {
-                          const nextMap = { ...(block.triggerSubjectByCode || {}), [code]: joinStackSuffix(rawSub.base, pos) };
-                          onChange({ ...block, triggerSubjectByCode: nextMap });
+                        // 共有の発動主体パネル（handleL1/handleL2/applySubjDigiTamer）と全く同じ
+                        // 挙動（自分/相手の複数選択＝両方への集約、デジモン+テイマー同時選択＝
+                        // カード扱いへの集約）をトリガーごとに再現する
+                        const handleThisL1 = (l1: string) => {
+                          if (l1 === 'self') { setThisSubjectCode('self'); return; }
+                          const l2 = subL1L2.l1 === l1 && subL1L2.l2 ? subL1L2.l2 : 'digimon';
+                          setThisSubjectCode(SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon'] || l1);
                         };
-                        const l2Opts = subL1L2.l1 === 'self' ? [] : SUBJECT_L2;
+                        const handleThisL2 = (l2: string) => {
+                          setThisSubjectCode(SUBJECT_L1L2_TO_CODE[subL1L2.l1 + ':' + l2]);
+                        };
+                        const setThisStackPos = (pos: StackPos) => setThisSubjectCode(joinStackSuffix(rawSub.base, pos));
+                        const l2Opts = subL1L2.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
+                        const thisHasDigimonTamer = subL1L2.l1 === 'own' || subL1L2.l1 === 'opp' || subL1L2.l1 === 'other_own' || subL1L2.l1 === 'both';
+                        const thisDigimonCode = SUBJECT_L1L2_TO_CODE[subL1L2.l1 + ':digimon'];
+                        const thisTamerCode = SUBJECT_L1L2_TO_CODE[subL1L2.l1 + ':tamer'];
+                        const thisCardCode = SUBJECT_L1L2_TO_CODE[subL1L2.l1 + ':card'];
+                        const thisDigimonChecked = thisHasDigimonTamer && (subL1L2.l2 === 'digimon' || subL1L2.l2 === 'card');
+                        const thisTamerChecked = thisHasDigimonTamer && (subL1L2.l2 === 'tamer' || subL1L2.l2 === 'card');
+                        const thisExclusiveL2Options = l2Opts.filter((o) => o.code !== 'digimon' && o.code !== 'tamer' && o.code !== 'card');
+                        const applyThisDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
+                          if (nextDigimon && nextTamer) setThisSubjectCode(thisCardCode);
+                          else if (nextDigimon) setThisSubjectCode(thisDigimonCode);
+                          else if (nextTamer) setThisSubjectCode(thisTamerCode);
+                          else setThisSubjectCode(subL1L2.l1);
+                        };
                         const showStackPos = subL1L2.l1 === 'self' || subL1L2.l2 === 'digimon' || subL1L2.l2 === 'tamer';
                         return (
                           <div key={code} style={{ fontSize: 11, border: '1px solid #c5e0c5', borderRadius: 4, padding: 6 }}>
                             <div style={{ color: '#333', fontWeight: 'bold', marginBottom: 3 }}>{label}:</div>
-                            <ButtonGroup options={SUBJECT_L1} value={subL1L2.l1} onChange={(l1) => setThisSubject(l1)} accentColor="#2e7d32" />
-                            {l2Opts.length > 0 && (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <MultiButtonGroup
+                                options={SUBJECT_OWN_OPP}
+                                values={[...(subL1L2.l1 === 'own' || subL1L2.l1 === 'both' ? ['own'] : []), ...(subL1L2.l1 === 'opp' || subL1L2.l1 === 'both' ? ['opp'] : [])]}
+                                onToggle={(toggleCode, on) => {
+                                  const ownOn = subL1L2.l1 === 'own' || subL1L2.l1 === 'both';
+                                  const oppOn = subL1L2.l1 === 'opp' || subL1L2.l1 === 'both';
+                                  const nextOwn = toggleCode === 'own' ? on : ownOn;
+                                  const nextOpp = toggleCode === 'opp' ? on : oppOn;
+                                  handleThisL1(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : 'self');
+                                }}
+                                accentColor="#2e7d32"
+                              />
+                              <ButtonGroup
+                                options={SUBJECT_L1_REST}
+                                value={(subL1L2.l1 === 'own' || subL1L2.l1 === 'opp' || subL1L2.l1 === 'both') ? '' : subL1L2.l1}
+                                onChange={handleThisL1}
+                                accentColor="#2e7d32"
+                              />
+                            </div>
+                            {thisHasDigimonTamer && (
+                              <div style={{ marginTop: 3, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <MultiButtonGroup
+                                  options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }]}
+                                  values={[...(thisDigimonChecked ? ['digimon'] : []), ...(thisTamerChecked ? ['tamer'] : [])]}
+                                  onToggle={(toggleCode, on) => applyThisDigiTamer(
+                                    toggleCode === 'digimon' ? on : thisDigimonChecked,
+                                    toggleCode === 'tamer' ? on : thisTamerChecked
+                                  )}
+                                  accentColor="#2e7d32"
+                                />
+                                {thisExclusiveL2Options.length > 0 && (
+                                  <ButtonGroup
+                                    options={thisExclusiveL2Options}
+                                    value={!thisDigimonChecked && !thisTamerChecked ? subL1L2.l2 : ''}
+                                    onChange={handleThisL2}
+                                    accentColor="#2e7d32"
+                                  />
+                                )}
+                              </div>
+                            )}
+                            {!thisHasDigimonTamer && subL1L2.l1 !== 'self' && subL1L2.l1 !== 'both' && (
                               <div style={{ marginTop: 3 }}>
-                                <ButtonGroup options={l2Opts} value={subL1L2.l2} onChange={(l2) => setThisSubject(subL1L2.l1, l2)} accentColor="#2e7d32" />
+                                <ButtonGroup options={l2Opts} value={subL1L2.l2} onChange={handleThisL2} accentColor="#2e7d32" />
                               </div>
                             )}
                             {showStackPos && (

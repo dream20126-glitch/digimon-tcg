@@ -738,8 +738,13 @@ function CostListEditor({
         // 下の"既存の"カードを指す。self=このカード自身の下も含む）。
         // 「〇〇に置く」系アクション（place_under_tamer 等）は新しいカードを追加する側で
         // 既存スタック内カードを指す概念が無い（位置は📍位置/deckPositionで別途指定する）
-        // ため、対象がテイマー等でもこの欄自体を出さない
-        const showCostStackPos = !PLACE_ACTION_CODES.has(c.action || '')
+        // ため、対象がテイマー等でもこの欄自体を出さない。
+        // evo_discard系（破棄→進化元/テイマー）も同様の理由で出さない: エンジン側が
+        // targetの_stack(_bottom)?サフィックスを無条件に剥がして無視するため
+        // （実際の上から/下から/選んで/全てはaction.code側のサフィックスでのみ判定される。
+        // js/effect-engine.js の evo_discard*ケース _edBaseCode 参照）
+        const costActionIsEvoDiscardFamily = /^evo_discard/.test(getActionVariant(c.action || '')?.base || c.action || '');
+        const showCostStackPos = !PLACE_ACTION_CODES.has(c.action || '') && !costActionIsEvoDiscardFamily
           && (cCurTgt.l1 === 'self' || cCurTgt.l2 === 'digimon' || cCurTgt.l2 === 'tamer');
         const setCostStackPos = (pos: StackPos) => updateCost(i, { ...c, target: joinStackSuffix(cTgtBase, pos) + cTgtSuffix });
         const setCostTgt = (l1: string, l2?: string) => {
@@ -1112,11 +1117,13 @@ function CostListEditor({
                       ※ 辞書側の hasPositionVariant フラグ（costIsPositional等）には依存しない。
                       DISCARD_ZONE_MAP はこのエディタ内で完結したハードコード機構であり、
                       辞書の設定状態に関わらず常に POSITION_VARIANTS 4種を出す。
-                      ただし下の「対象」欄が同じ内容の「位置:」選択（showCostStackPos）を
-                      表示する場合は、二重表示になるためこちらは隠す */}
+                      これがevo_discard系の「上から/下から/選んで/全て」を決める唯一の実体
+                      （エンジンはaction.codeのサフィックスだけを見る。下の「対象」欄の
+                      「位置:」はevo_discard系では showCostStackPos=false になり出ないため、
+                      二重表示にはならない） */}
                   {(() => {
                     const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                    if (!zone?.hasPosition || showCostStackPos) return null;
+                    if (!zone?.hasPosition) return null;
                     const zoneBase = getActionVariant(zone.action)?.base || zone.action;
                     const curSuffix = getActionVariant(c.action || '')?.suffix || '';
                     return (
@@ -1134,11 +1141,12 @@ function CostListEditor({
                   {/* 進化元/テイマー: 積まれたカードのうち裏向き/表向きのものだけを対象にするか
                       （place_under_tamer/place_under_digimon/deck_to_evo_bottomで裏向きに置かれた
                       カードを区別して破棄したい場合。cond_face_down/cond_face_up を conditions に
-                      反映する。下の「対象」セレクタ経由（下/一番下選択時）の裏表/種別ボタンと
-                      同じ条件コードを使う共通仕様のため、そちらが表示されるときはこちらは隠す */}
+                      反映する。下の「対象」セレクタ経由の裏表/種別ボタンと同じ条件コードを使う
+                      共通仕様だが、evo_discard系では showCostStackPos=false になり下側は
+                      出ないため、二重表示にはならない */}
                   {(() => {
                     const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                    if (!zone?.hasFace || (showCostStackPos && cTgtStackPos !== '')) return null;
+                    if (!zone?.hasFace) return null;
                     const faceConds = c.conditions || [];
                     const faceIdx = faceConds.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
                     const faceVal = faceIdx !== -1 ? (faceConds[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';

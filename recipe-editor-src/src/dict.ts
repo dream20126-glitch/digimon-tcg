@@ -382,10 +382,8 @@ export const ACTIONS: DictEntry[] = [
   // 対象にし、無ければ何もしない（「相手プレイヤーにアタックできる」）。指定なしは従来通り
   // レスト中の相手デジモンがいればそちら優先・いなければセキュリティにフォールバック
   { code: 'attack', kind: 'action', label: 'アタックする（レスト中の相手デジモンかセキュリティへ）' },
-  // ⚠ 以下2つはcase自体はあるが呼び出し先(window._battleStartAttack)が未定義で常にno-op。
-  // 効果からアタックを宣言したい場合は上の 'attack' を使うこと
-  { code: 'attack_player', kind: 'action', label: 'プレイヤーにアタック（エンジン未対応）' },
-  { code: 'attack_digimon', kind: 'action', label: 'デジモンにアタック（エンジン未対応）' },
+  // attack_player/attack_digimonは呼び出し先(window._battleStartAttack)が未定義で常にno-opの
+  // 死んだコードだったため削除済み（カード使用実績0件・上の'attack'が正式な代替）
   { code: 'change_attack_target', kind: 'action', label: 'アタック対象を変更' },
   { code: 'redirect_attack', kind: 'action', label: 'アタック対象を差し替える（反応）' },
   { code: 'dedigivolve', kind: 'action', label: '退化' },

@@ -1227,7 +1227,14 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
     case 'security_trash_top': {
-      const n = action.value || 1;
+      // per_count/ref倍率に対応（例:「相手のトラッシュ10枚ごとに」）。
+      // 旧security_discardアクションと統合（同等機能のため廃止・こちらへ一本化）
+      let n = action.value != null ? action.value : 1;
+      if (action.per_count) {
+        const refSource = action.ref || 'opp_trash';
+        const count = getRefSourceCountDirect(refSource, ctx.card, ctx.bs, ctx.side, action.ref_filter, action.ref_state);
+        n = n * Math.floor(count / action.per_count);
+      }
       const trashCard = opponent.security.length > 0 ? opponent.security[0] : null;
       for (let i = 0; i < n; i++) {
         if (opponent.security.length > 0) { opponent.trash.push(opponent.security.shift()); ctx.addLog('🛡 セキュリティ破棄'); }
@@ -1786,12 +1793,6 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
 
-    // === 自身をレスト（コスト） ===
-    case 'rest_self': {
-      if(ctx.card) { ctx.card.suspended = true; ctx.addLog('💤 「' + ctx.card.name + '」をレスト'); }
-      ctx.renderAll(); callback();
-      break;
-    }
 
     // === アタック不可（単体） ===
     case 'cant_attack': {
@@ -8972,37 +8973,6 @@ function executeRecipeStep(step, ctx, store, callback) {
       });
       break;
     }
-    // === セキュリティを破棄（汎用 alias: security_trash_top と同等） ===
-    case 'security_discard': {
-      // per_count/ref倍率を適用（例: デュークモン「相手のトラッシュ10枚ごとに」）
-      let n = step.value != null ? step.value : 1;
-      if (step.per_count) {
-        const refSource = step.ref || 'opp_trash';
-        const count = getRefSourceCountDirect(refSource, ctx.card, ctx.bs, ctx.side, step.ref_filter, step.ref_state);
-        n = n * Math.floor(count / step.per_count);
-      }
-      const discarded = [];
-      for (let i = 0; i < n; i++) {
-        if (opponent.security.length > 0) discarded.push(opponent.security.shift());
-      }
-      if (discarded.length === 0) { ctx.renderAll && ctx.renderAll(); callback(); break; }
-      discarded.forEach(c => opponent.trash.push(c));
-      ctx.addLog && ctx.addLog('🛡 セキュリティ破棄 ×' + discarded.length);
-      ctx.renderAll && ctx.renderAll();
-      // カード移動演出（1枚ずつ順番に）
-      let idx = 0;
-      function showNextSecDiscard() {
-        if (idx >= discarded.length) { callback(); return; }
-        const card = discarded[idx++];
-        if (window._fxCardMove) {
-          window._fxCardMove(card, 'セキュリティ', 'トラッシュ', showNextSecDiscard);
-        } else {
-          setTimeout(showNextSecDiscard, 300);
-        }
-      }
-      showNextSecDiscard();
-      break;
-    }
     // === セキュリティに置く（デッキ上から N 枚 or 指定カードをセキュリティへ） ===
     case 'place_security': {
       const n = step.value || 1;
@@ -10661,29 +10631,6 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.card._linkCapacityBonus = (ctx.card._linkCapacityBonus || 0) + (step.value || 1);
         ctx.addLog('🔗 リンク+' + (step.value || 1));
       }
-      callback();
-      break;
-    }
-
-    // === プレイヤーにアタック（強制アタック） ===
-    case 'attack_player': {
-      // 自身でアタック宣言を発火
-      if (ctx.card && window._battleStartAttack) {
-        window._battleStartAttack(ctx.card, 'player', ctx);
-      }
-      ctx.addLog('⚔ プレイヤーにアタック');
-      callback();
-      break;
-    }
-
-    // === 相手のデジモンにアタック ===
-    case 'attack_digimon': {
-      const sd = step.card ? store[step.card] : null;
-      const tgt = sd ? (sd.card || sd) : null;
-      if (ctx.card && tgt && window._battleStartAttack) {
-        window._battleStartAttack(ctx.card, 'digimon', ctx, tgt);
-      }
-      ctx.addLog('⚔ デジモンにアタック');
       callback();
       break;
     }

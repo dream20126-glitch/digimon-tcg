@@ -150,8 +150,6 @@ const TOKEN_MAP: Record<string, string> = {
   '手札を捨てる': 'cost_discard',
   'トラッシュから登場': 'summon_from_trash',
   'トラッシュから手札': 'trash_to_hand',
-  'プレイヤーにアタック': 'attack_player',
-  'デジモンにアタック': 'attack_digimon',
   'アタック対象を変更': 'change_attack_target',
   'キーワードを得る': 'grant_keyword',
   'キーワードを与える': 'grant_keyword_to',

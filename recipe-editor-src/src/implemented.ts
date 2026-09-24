@@ -6,9 +6,6 @@
 // grep -E "^\s*case '[a-z_]+'" effect-engine.js | grep -v "cond_"
 export const IMPLEMENTED_ACTIONS = new Set<string>([
   'active', 'add_to_evo_source', 'add_to_hand',
-  // 'attack_digimon'/'attack_player' はcase自体はあるが、内部で呼ぶ
-  // window._battleStartAttack がどこにも定義されておらず常にno-op（実質未実装）。
-  // 効果からアタックを宣言したい場合は代わりに 'attack' を使う
   'attack_without_rest',
   'bounce', 'cant_attack', 'cant_attack_block', 'cant_block', 'cant_destroy', 'cant_evolve',
   'change_attack_target', 'cost_digiburst', 'cost_discard', 'cost_trash_self',
@@ -23,8 +20,9 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'place_from_hand_battle_under', 'place_from_trash_under', 'place_on_security_top',
   'place_under_digimon', 'place_under_tamer',
   'prevent_battle_destroy', 'prevent_destroy', 'prevent_any_destroy',
-  'recover', 'rest', 'rest_self', 'return_deck',
+  'recover', 'rest', 'return_deck',
   'security_attack_minus', 'security_attack_plus',
+  // security_trash_top/bottomはper_count/ref倍率（旧security_discard相当）にも対応済み
   'security_trash_bottom', 'security_trash_select', 'security_trash_top',
   'select', 'select_evo_source', 'select_from_hand_trash', 'select_multi',
   'self_destroy_after_attack',
@@ -42,7 +40,7 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'security_open',
   // Stage 6 追加（汎用アクション・状態操作）
   'memory', 'dp', 'hatch', 'battle_area_make',
-  'security_discard', 'place_security',
+  'place_security',
   'not_active', 'prevent_unsuspend',
   'grant_effect',
   // Stage 7 追加（トークン生成）

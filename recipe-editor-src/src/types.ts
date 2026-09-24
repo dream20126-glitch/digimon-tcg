@@ -179,9 +179,11 @@ export interface EffectBlock {
   revertAtTurnEnd?: boolean;
   // immune_effects 専用（action==='immune_effects'の時のみ意味を持つ）:「相手の効果を
   // 受けない」の対象範囲。省略/'' = 相手の効果全て（デジモン/テイマー/オプション問わず）。
-  // 'digimon' = 相手の「デジモン」の効果のみ（テイマー/オプションの効果は防がない）。
-  // JSONへはtrueのときのみ step.source_type:'digimon' として出力する
-  immuneCardType?: 'digimon' | '';
+  // 'digimon' = 相手の「デジモン」の効果のみ / 'option' = 相手の「オプション」の効果のみ。
+  // JSONへは指定時のみ step.source_type:'digimon'|'option' として出力する。
+  // ⚠ 現状どちらもエンジン未対応（hasActiveImmuneEffectsの呼び出し元がeffectSourceTypeを
+  // 渡していないため、保存はできるが絞り込みは機能せず常に相手の効果全てをブロックする）
+  immuneCardType?: 'digimon' | 'option' | '';
   // summon 専用:「このカードをコストを支払わずに登場させる」（テイマーのセキュリティ効果等）
   // true のとき JSON へ step.cost_free:true を出力する。対象は 'self' / 'self_card' のとき有効
   costFree?: boolean;

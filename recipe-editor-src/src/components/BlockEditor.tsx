@@ -5227,11 +5227,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               options={[
                 { code: '', label: 'カード（デジモン/テイマー/オプション問わず）' },
                 { code: 'digimon', label: 'デジモンの効果のみ' },
+                { code: 'option', label: 'オプションの効果のみ' },
               ]}
               value={block.immuneCardType || ''}
-              onChange={(v) => update('immuneCardType', (v || '') as 'digimon' | '')}
+              onChange={(v) => update('immuneCardType', (v || '') as 'digimon' | 'option' | '')}
               accentColor="#9d174d"
             />
+            <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
+              ⚠ 「デジモンの効果のみ」「オプションの効果のみ」は保存はできますが、現状エンジンが
+              絞り込みを見ておらず、常に相手の効果全てをブロックする動作になります（別途エンジン
+              実装が必要です）
+            </div>
           </div>
         )}
 

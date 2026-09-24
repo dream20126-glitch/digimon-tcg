@@ -643,8 +643,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.revertAtTurnEnd) step.revert_at_turn_end = true;
   // immune_effects 専用:「相手の効果を受けない」の対象範囲。
   // 省略(既定) = 相手の効果全て（デジモン/テイマー/オプション問わず）
-  // 'digimon' = 相手の「デジモン」の効果のみ（テイマー/オプションは対象外）
-  if (b.action === 'immune_effects' && b.immuneCardType === 'digimon') step.source_type = 'digimon';
+  // 'digimon' = 相手の「デジモン」の効果のみ / 'option' = 相手の「オプション」の効果のみ
+  if (b.action === 'immune_effects' && (b.immuneCardType === 'digimon' || b.immuneCardType === 'option')) {
+    step.source_type = b.immuneCardType;
+  }
   // negate（「効果を発揮」）専用: 対象トリガー種別 + する/しない
   if (b.action === 'negate') {
     if (b.negateTargetTrigger) step.target_trigger = b.negateTargetTrigger;
@@ -1331,7 +1333,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     keywordCommonConditions: _stepCommonPairs && _stepCommonPairs.conds.length > 0 ? _stepCommonPairs.conds : undefined,
     keywordCommonConditionsOp: _stepCommonPairs && _stepCommonPairs.conds.length > 0 ? _stepCommonPairs.op : undefined,
     revertAtTurnEnd: !!step?.revert_at_turn_end,
-    immuneCardType: step?.source_type === 'digimon' ? 'digimon' : undefined,
+    immuneCardType: step?.source_type === 'digimon' ? 'digimon' : step?.source_type === 'option' ? 'option' : undefined,
     negateTargetTrigger: step?.target_trigger === 'on_play' || step?.target_trigger === 'on_evolve' ? step.target_trigger : undefined,
     negateDeny: !!step?.deny,
     costFree: !!step?.cost_free,

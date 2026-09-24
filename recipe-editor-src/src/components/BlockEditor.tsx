@@ -4409,14 +4409,38 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   );
                 })()}
-                {/* 消滅「できない」(cant_destroy): 上の🎯対象欄で誰を守るか選べ、原因(バトルで/効果で)は
-                    共通の「☑ 原因選択」欄（この下の条件エリアにある）で絞り込める。
-                    バフの付与・対象解決は実装済みだが、消滅処理の中核チェックは未実装のため注記する */}
-                {effectAction === 'cant_destroy' && (
-                  <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
-                    ⚠ 対象への付与自体は保存・実行できますが、そのバフ（消滅しない）を実際に消滅処理側で
-                    チェックする中核実装がまだ無いため、現状は効果がありません（別途エンジン実装が必要です）。
-                    原因（バトルで/効果で）はこの下の「☑ 原因選択」で絞り込めます（未選択なら両方防ぐ扱い）
+                {/* 消滅「できない」(cant_destroy): 上の🎯対象欄で誰を守るか選べる。
+                    原因（バトルで/効果で）はblock.destroyCause/destroyCauseSubject（トリガー側の
+                    「☑ 原因選択」と同じフィールド）をここでも直接編集できるようにする
+                    （トリガー欄まで探しに行かなくて済むように、アクション欄側にも同じUIを複製）。
+                    block専用フィールドのため効果2以降（代替アクション）編集中は出さない */}
+                {effectAction === 'cant_destroy' && !isEditingAlt && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#c62828', marginBottom: 4 }}>
+                      ⚠ 対象への付与自体は保存・実行できますが、そのバフ（消滅しない）を実際に消滅処理側で
+                      チェックする中核実装がまだ無いため、現状は効果がありません（別途エンジン実装が必要です）
+                    </div>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#1a5a1a' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!block.destroyCause}
+                        onChange={(e) => {
+                          if (e.target.checked) update('destroyCause', 'effect');
+                          else onChange({ ...block, destroyCause: undefined, destroyCauseSubject: undefined });
+                        }}
+                      />
+                      ☑ 原因選択（バトルで/効果で・未選択なら両方防ぐ）
+                    </label>
+                    {block.destroyCause && (
+                      <div style={{ marginTop: 4 }}>
+                        <ButtonGroup
+                          options={[{ code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }]}
+                          value={block.destroyCause}
+                          onChange={(v) => update('destroyCause', v as 'battle' | 'effect')}
+                          accentColor="#1a5a1a"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
                 {isPlaceActive && (

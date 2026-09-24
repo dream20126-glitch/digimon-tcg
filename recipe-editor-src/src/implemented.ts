@@ -10,7 +10,7 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   // window._battleStartAttack がどこにも定義されておらず常にno-op（実質未実装）。
   // 効果からアタックを宣言したい場合は代わりに 'attack' を使う
   'attack_without_rest',
-  'bounce', 'cant_attack', 'cant_attack_block', 'cant_block', 'cant_evolve',
+  'bounce', 'cant_attack', 'cant_attack_block', 'cant_block', 'cant_destroy', 'cant_evolve',
   'change_attack_target', 'cost_digiburst', 'cost_discard', 'cost_trash_self',
   'deck_open', 'deck_to_evo_bottom', 'deck_trash_top', 'dedigivolve', 'destroy',
   'do_security_check', 'dp_minus', 'dp_plus', 'draw',

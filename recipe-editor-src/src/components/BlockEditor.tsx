@@ -2003,10 +2003,14 @@ const SUMMON_KIND_OPTIONS: { code: 'appear' | 'use'; label: string }[] = [
 // 上書き/追加したもの）。「する/できない」表示を出したい新規アクションは、今後は
 // ここに直書きせず「効果辞書管理」画面のアクション編集フォームで
 // 「できないコード」を登録すれば自動で反映される
-// cant_rest / block / cant_destroy / cant_redirect_attack は辞書未登録・エンジンも
-// 未実装（該当カードが来たら追加実装）。
+// cant_rest / block / cant_redirect_attack は辞書未登録・エンジンも未実装
+// （該当カードが来たら追加実装）。
 // ※ cant_destroy は「選んだ対象は消滅しない」の意味。既存のprevent_destroy系アクションは
-// 対象選択ではなくctx.card（効果を持つカード自身）を保護する別物のため流用しない
+// 対象選択ではなくctx.card（効果を持つカード自身）を保護する別物のため流用しない。
+// 対象解決・原因（バトルで/効果で）の絞り込みはエンジン実装済み（js/effect-engine.js の
+// case 'cant_destroy'）。ただし付与されるバフ(keyword_prevent_battle_destroy/
+// keyword_prevent_destroy)自体は、消滅処理の中核（_tryCancelDestroy/doDestroy）では
+// まだ未チェック（prevent_destroy系と同じ既知の制約。中核チェックの追加は別対応）
 const DOABLE_TO_CANT: Record<string, string> = {
   rest: 'cant_rest',
   active: 'not_active',
@@ -4405,6 +4409,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   );
                 })()}
+                {/* 消滅「できない」(cant_destroy): 上の🎯対象欄で誰を守るか選べ、原因(バトルで/効果で)は
+                    共通の「☑ 原因選択」欄（この下の条件エリアにある）で絞り込める。
+                    バフの付与・対象解決は実装済みだが、消滅処理の中核チェックは未実装のため注記する */}
+                {effectAction === 'cant_destroy' && (
+                  <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
+                    ⚠ 対象への付与自体は保存・実行できますが、そのバフ（消滅しない）を実際に消滅処理側で
+                    チェックする中核実装がまだ無いため、現状は効果がありません（別途エンジン実装が必要です）。
+                    原因（バトルで/効果で）はこの下の「☑ 原因選択」で絞り込めます（未選択なら両方防ぐ扱い）
+                  </div>
+                )}
                 {isPlaceActive && (
                   <div style={{ marginTop: 4 }}>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🎯 置き場所（どこに置くか）</div>

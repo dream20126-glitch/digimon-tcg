@@ -9620,6 +9620,89 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === 選んだ対象は消滅しない（cant_destroy。「消滅」→「できない」トグルの実体） ===
+    // 対象解決はgrant_keyword(_to)と全く同じ仕組みを流用（own:N/opponent:N選択・own:all/
+    // opponent:all・self・store経由）。step.cause('battle'|'effect'|未指定=両方)で、
+    // どちらの消滅を防ぐ意図かを絞り込む。実体はprevent_battle_destroy/prevent_destroyと
+    // 同じバフ(keyword_prevent_battle_destroy/keyword_prevent_destroy)を対象に直接付与する。
+    // ⚠ これらのバフは現状、消滅処理の中核（_tryCancelDestroy/doDestroy）では未チェックで、
+    // when_battle_destroyトリガーを別途持つカードの限定的な経路でのみ参照される
+    // （prevent_destroy系と同じ既知の制約。中核チェックの追加は別途対応予定）
+    case 'cant_destroy': {
+      const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+      const cause = step.cause;
+      const flags = [];
+      if (!cause || cause === 'battle') flags.push('prevent_battle_destroy');
+      if (!cause || cause === 'effect') flags.push('prevent_destroy');
+      const causeJp = cause === 'battle' ? 'バトルで' : cause === 'effect' ? '効果で' : 'バトルでも効果でも';
+      const applyFlagsTo = (tgt) => {
+        if (!tgt) return;
+        flags.forEach((f) => addBuffDirect(tgt, 'keyword_' + f, 0, dur, ctx));
+        ctx.addLog('🛡 「' + tgt.name + '」は' + causeJp + '消滅しない');
+        if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, causeJp + '消滅しない'); } catch(_) {}
+      };
+      const tStr = step.target || '';
+      const isOwnSelect = (tStr.startsWith('own:') && !['own:all'].includes(tStr));
+      const isOpponentSelect = (tStr.startsWith('opponent:') && !['opponent:all'].includes(tStr));
+      if ((isOwnSelect || isOpponentSelect) && !step.card) {
+        const upToMatch = tStr.match(/^(own|opponent):up_to_(\d+)$/);
+        const exactMatch = tStr.match(/^(own|opponent):(\d+)$/);
+        const wantCount = upToMatch ? parseInt(upToMatch[2]) : (exactMatch ? parseInt(exactMatch[2]) : 1);
+        const isUpTo = !!upToMatch;
+        const tgtPlayer2 = isOwnSelect ? (ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai)
+                                       : (ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player);
+        const validIdxs = [];
+        for (let i = 0; i < tgtPlayer2.battleArea.length; i++) {
+          if (tgtPlayer2.battleArea[i]) validIdxs.push(i);
+        }
+        if (validIdxs.length === 0) { showEffectFailed(null, callback); return; }
+        const rowSide = isOwnSelect ? (ctx.side === 'player' ? 'pl' : 'ai')
+                                    : (ctx.side === 'player' ? 'ai' : 'pl');
+        const applyAll = (idxs) => {
+          idxs.forEach((idx) => {
+            const tgt = tgtPlayer2.battleArea[idx]; if (!tgt) return;
+            ctx.bs._lastPickedCard = tgt;
+            applyFlagsTo(tgt);
+          });
+          ctx.renderAll();
+          callback();
+        };
+        if (ctx._forceTargetIdx !== undefined) { applyAll([ctx._forceTargetIdx]); return; }
+        if (isUpTo) {
+          pickUpToNTargets(rowSide, validIdxs, wantCount, '#00ff88', applyAll);
+        } else {
+          const picked = [];
+          (function pickEx() {
+            if (picked.length >= wantCount) { applyAll(picked); return; }
+            const remaining = validIdxs.filter((i) => !picked.includes(i));
+            if (remaining.length === 0) { applyAll(picked); return; }
+            showTargetSelection(rowSide, remaining, null, '#00ff88', (selectedIdx) => {
+              if (selectedIdx == null) { applyAll(picked); return; }
+              picked.push(selectedIdx);
+              pickEx();
+            });
+          })();
+        }
+        break;
+      }
+      const _cdP = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+      const _cdOpp = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
+      const _cdT = step.target;
+      const _cdApplyFilter = (arr) => (step.filter ? arr.filter((c) => cardMatchesFilter(c, step.filter)) : arr);
+      let cdTargets;
+      if (_cdT === 'self') cdTargets = ctx.card ? [ctx.card] : [];
+      else if (_cdT === 'own:all' || _cdT === 'own_all_digimon') cdTargets = _cdApplyFilter(_cdP.battleArea.filter((c) => c));
+      else if (_cdT === 'opponent:all' || _cdT === 'opp_all_digimon') cdTargets = _cdApplyFilter(_cdOpp.battleArea.filter((c) => c));
+      else if (step.card && store[step.card]) {
+        const sd = store[step.card];
+        cdTargets = (Array.isArray(sd) ? sd : [sd]).map((s) => s.card || s).filter((c) => c);
+      } else cdTargets = ctx.card ? [ctx.card] : [];
+      cdTargets.forEach(applyFlagsTo);
+      ctx.renderAll();
+      callback();
+      break;
+    }
+
     // === 効果で消滅しない（バフ付与） ===
     case 'prevent_destroy': {
       const tgt = ctx.card;

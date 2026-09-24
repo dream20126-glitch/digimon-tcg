@@ -2,6 +2,11 @@
 import type { AltAction, ConditionPair, CostStep, DictEntry, EffectBlock, ExtraTarget, KeywordEntry, DesignatedGroup } from './types';
 import { applyRulesToStep } from './ruleTranslator';
 
+// 「コスト上限+/-」(効果辞書側で登録するアクションコード)。「直前の効果に適用する」
+// チェックがONのとき、独立したstepにはせず直前の効果のfilter.cost_le_modへ埋め込む
+// （appendStep内・blocksToRecipe参照）
+export const COST_LIMIT_MOD_ACTIONS = new Set(['cost_limit_plus', 'cost_limit_minus']);
+
 // 条件pairを「base:value@subject」形式の文字列に変換
 // subjectが空なら省略（互換性維持）
 function pairToString(p: ConditionPair): string {
@@ -168,6 +173,11 @@ function altActionToStepObject(a: AltAction): any {
     out.per_count = a.perCount;
     out.ref = a.perRef;
     if (a.perCountMode === 'repeat') out.per_count_mode = 'repeat';
+    if (a.perRefStateCond && a.perRefStateCond.base) {
+      out.ref_state = a.perRefStateCond.value
+        ? a.perRefStateCond.base + ':' + a.perRefStateCond.value
+        : a.perRefStateCond.base;
+    }
     if (Array.isArray(a.perRefFilter) && a.perRefFilter.length > 0) {
       const af: Record<string, any> = {};
       a.perRefFilter.forEach((c) => {
@@ -783,6 +793,48 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // === targetFilter → step.filter（対象自身の絞り込み。例:レスト状態のこのデジモン） ===
   const targetFilterObj = buildFilterObject(b.targetFilter);
   if (targetFilterObj) step.filter = targetFilterObj;
+  // === 「コスト上限+/-」を「直前の効果」へ自動適用する ===
+  // action:'cost_limit_plus'/'cost_limit_minus' かつ applyCostModToPrev:true のAltActionは、
+  // 独立したalt_actionsのエントリとしては出力せず、直前の効果（自分がaltSegments[0]の
+  // 先頭なら効果1=step自身のfilter、それ以外なら直前のalt_actionsエントリのfilter）の
+  // filter.cost_le_mod として埋め込む（エンジン側がcost_le判定時にこれを見て動的に加減算する）
+  if (Array.isArray(altSegments[0]) && altSegments[0].length > 0 && Array.isArray(step.alt_actions)) {
+    const seg = altSegments[0];
+    const removeIdx: number[] = [];
+    seg.forEach((a, i) => {
+      if (!COST_LIMIT_MOD_ACTIONS.has(a.action || '') || !a.applyCostModToPrev) return;
+      const amountRaw = a.value !== undefined && a.value !== '' && a.value !== null ? Number(a.value) : 1;
+      const mod: any = {
+        sign: a.action === 'cost_limit_minus' ? '-' : '+',
+        amount: isNaN(amountRaw) ? 1 : amountRaw,
+      };
+      if (a.perCount && Number(a.perCount) > 0 && a.perRef) {
+        mod.per_count = Number(a.perCount);
+        mod.per_ref = a.perRef;
+        if (a.perCountMode === 'repeat') mod.per_count_mode = 'repeat';
+        if (a.perRefStateCond && a.perRefStateCond.base) {
+          mod.per_ref_state = a.perRefStateCond.value
+            ? a.perRefStateCond.base + ':' + a.perRefStateCond.value
+            : a.perRefStateCond.base;
+        }
+      }
+      // 直前の（まだ除去されていない）効果を探す
+      let prevIdx = -1;
+      for (let k = i - 1; k >= 0; k--) { if (!removeIdx.includes(k)) { prevIdx = k; break; } }
+      if (prevIdx === -1) {
+        step.filter = step.filter || {};
+        step.filter.cost_le_mod = mod;
+      } else if (step.alt_actions[prevIdx]) {
+        step.alt_actions[prevIdx].filter = step.alt_actions[prevIdx].filter || {};
+        step.alt_actions[prevIdx].filter.cost_le_mod = mod;
+      }
+      removeIdx.push(i);
+    });
+    if (removeIdx.length > 0) {
+      step.alt_actions = step.alt_actions.filter((_: any, i: number) => !removeIdx.includes(i));
+      if (step.alt_actions.length === 0) { delete step.alt_actions; delete step.alt_actions_op; }
+    }
+  }
   // === fromFilter → step.from_filter（進化/登場アクション専用。取得元エリアから選ぶ
   // カードの絞り込み。対象＝このカード自身の条件(filter)とは別データ） ===
   const fromFilterObj = buildFilterObject(b.fromFilter);
@@ -1469,6 +1521,12 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             duration: a?.duration || '',
             perCount: a?.per_count != null ? Number(a.per_count) : undefined,
             perRef: a?.ref || '',
+            perRefStateCond: (() => {
+              const s = a?.ref_state;
+              if (!s || typeof s !== 'string') return undefined;
+              const i = s.indexOf(':');
+              return i >= 0 ? { base: s.substring(0, i), value: s.substring(i + 1) } : { base: s };
+            })(),
             perCountMode: a?.per_count_mode === 'repeat' ? 'repeat' as const : undefined,
             perRefFilter: (() => {
               const f = a?.ref_filter;

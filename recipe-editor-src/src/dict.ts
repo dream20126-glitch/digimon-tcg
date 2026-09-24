@@ -54,6 +54,10 @@ export const REF_SUBJECTS = [
   { code: 'opp_trash',       label: '相手のトラッシュ' },
   { code: 'opp_security',    label: '相手のセキュリティ' },
   { code: 'opp_battle_area', label: '相手のバトルエリア（全カード）' },
+  // 両方（自分+相手を合算してカウント。例:「レスト状態のデジモン/テイマー1体ごとに」）
+  { code: 'both_digimon',        label: '両方のデジモン' },
+  { code: 'both_tamer',          label: '両方のテイマー' },
+  { code: 'both_digimon_tamer',  label: '両方のデジモン+テイマー' },
 ];
 
 // 状態 pulldown の旧データ。新仕様では dict.conditions を直接利用するためエディタ側で参照していない。

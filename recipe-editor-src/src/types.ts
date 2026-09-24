@@ -338,8 +338,14 @@ export interface AltAction {
   duration?: string;
   perCount?: number;
   perRef?: string;
+  perRefStateCond?: ConditionPair; // 効果1と同じ意味。JSONではstep.ref_stateに出力
   perCountMode?: 'repeat';
   perRefFilter?: ConditionPair[];
+  // 「コスト上限+/-」専用: このAltAction自体は独立したalt_actionsのエントリとして出力せず、
+  // 直前の効果（効果1ならblock自身のfilter、効果2以降ならその直前のAltActionのfilter）の
+  // filter.cost_le（登場/使用コスト◯以下）へ、value/perCount/perRef/perRefStateCondから
+  // 計算したしきい値の増減(cost_le_mod)として埋め込む
+  applyCostModToPrev?: boolean;
   // summon/summon_from_trash/evolve/summon_from_evo_source/link 専用（効果1と同じ）。
   // true のとき JSON へ cost_free:true / skip_on_play:true を出力する
   costFree?: boolean;

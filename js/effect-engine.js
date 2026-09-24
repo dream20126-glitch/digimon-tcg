@@ -553,6 +553,18 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     case 'opp_tamer':            return countWith((opponent.tamerArea || []).filter(c => c !== null));
     // 直前の rest 効果でレストさせた枚数（bs._lastRestCount に保存）
     case 'last_rest_count':      return (bs && bs._lastRestCount != null) ? bs._lastRestCount : 0;
+    // --- 両方（自分+相手を合算してカウント） ---
+    case 'both_digimon':
+      return countWith(player.battleArea.filter(c => c && c.type === 'デジモン'))
+           + countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン'));
+    case 'both_tamer':
+      return countWith((player.tamerArea || []).filter(c => c !== null))
+           + countWith((opponent.tamerArea || []).filter(c => c !== null));
+    case 'both_digimon_tamer':
+      return countWith(player.battleArea.filter(c => c && c.type === 'デジモン'))
+           + countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン'))
+           + countWith((player.tamerArea || []).filter(c => c !== null))
+           + countWith((opponent.tamerArea || []).filter(c => c !== null));
     default: return 0;
   }
 }
@@ -2750,7 +2762,10 @@ function hasActiveImmuneEffects(card, effectSide, effectSourceType) {
   });
 }
 
-function cardMatchesFilter(card, filter) {
+// bs/side は cost_le_mod（「レスト状態のデジモン/テイマー1体ごとにコスト上限+1」等、
+// 直前の効果へ動的にかかるコスト上限修正）の評価にのみ使用。省略時はcost_le_modを無視する
+// （既存の呼び出し元を壊さないためのフェイルセーフ。呼び出し元にbs/sideがある場合は渡すこと）
+function cardMatchesFilter(card, filter, bs, side) {
   if (!filter) return true;
   if (filter.type && card.type !== filter.type) return false;
   if (Array.isArray(filter.type_in) && !filter.type_in.includes(card.type)) return false;
@@ -2783,7 +2798,20 @@ function cardMatchesFilter(card, filter) {
   // コスト系: cost (登場/使用コスト) のフィルタ
   const cardCost = (card.playCost != null ? card.playCost : (card.cost || 0));
   if (filter.cost != null && cardCost !== filter.cost) return false;
-  if (filter.cost_le != null && cardCost > filter.cost_le) return false;
+  if (filter.cost_le != null) {
+    let effectiveCostLe = filter.cost_le;
+    // cost_le_mod: 「レスト状態のデジモン/テイマー1体ごとにコスト上限+1」等、
+    // 直前の効果（AltActionの「直前の効果に適用する」）から埋め込まれた動的な閾値修正
+    if (filter.cost_le_mod && bs && side) {
+      const mod = filter.cost_le_mod;
+      const refCount = mod.per_ref ? getRefSourceCountDirect(mod.per_ref, card, bs, side, null, mod.per_ref_state) : 0;
+      const perCount = mod.per_count || 1;
+      const times = (mod.per_ref && perCount > 0) ? Math.floor(refCount / perCount) : 1;
+      const amount = (mod.amount || 0) * times;
+      effectiveCostLe += (mod.sign === '-' ? -amount : amount);
+    }
+    if (cardCost > effectiveCostLe) return false;
+  }
   if (filter.cost_ge != null && cardCost < filter.cost_ge) return false;
   if (Array.isArray(filter.cost_in) && !filter.cost_in.includes(cardCost)) return false;
   // 特徴: 「竜人型/四大竜」のようにスラッシュ区切り
@@ -6942,7 +6970,7 @@ function recipeWillExecuteAnything(recipe, ctx) {
       if (_fromZones.includes('hand')) {
         const _filter = step.filter || {};
         const _p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
-        const _hasCand = (_p.hand || []).some(c => c && cardMatchesFilter(c, _filter));
+        const _hasCand = (_p.hand || []).some(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side));
         if (!_hasCand) {
           console.log('[recipeWillExecute] reactor=' + _reactor + ' summon filter has no candidate → skip', 'action=' + step.action);
           continue;
@@ -7709,9 +7737,9 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _filter = step.from_filter || step.filter || {};
           const _optional = !!step.optional;
           const _handCands = _fromZones.includes('hand')
-            ? (player.hand || []).filter(c => c && cardMatchesFilter(c, _filter)) : [];
+            ? (player.hand || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side)) : [];
           const _trashCands = _fromZones.includes('trash')
-            ? (player.trash || []).filter(c => c && cardMatchesFilter(c, _filter)) : [];
+            ? (player.trash || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side)) : [];
           if (_handCands.length === 0 && _trashCands.length === 0) {
             ctx.addLog('💨 条件を満たすカードが手札・トラッシュにありません');
             showEffectFailed(null, () => callback());

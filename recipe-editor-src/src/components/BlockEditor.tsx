@@ -13,7 +13,7 @@ import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOp
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
-import { blocksToRecipe, getKeywordEntries, getDesignatedGroups } from '../recipe';
+import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS } from '../recipe';
 
 interface Props {
   block: EffectBlock;
@@ -2144,6 +2144,7 @@ const PERREF_L1 = [
   { code: 'self', label: 'このカード' },
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
+  { code: 'both', label: '両方' },
   { code: 'all_cards', label: '全カード' },
 ];
 const PERREF_L2: Record<string, { code: string; label: string }[]> = {
@@ -2168,18 +2169,32 @@ const PERREF_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'opp_security', label: 'セキュリティ' },
     { code: 'opp_battle_area', label: 'バトルエリア' },
   ],
+  // 両方（自分+相手を合算してカウント）。ゾーン系（手札等）は合算する意味が薄いため
+  // デジモン/テイマー系のみに限定する
+  both: [
+    { code: 'both_digimon', label: 'デジモン' },
+    { code: 'both_tamer', label: 'テイマー' },
+    { code: 'both_digimon_tamer', label: 'デジモン+テイマー' },
+  ],
 };
 // デジモン+テイマー複数選択の結合コード、および「全カード」は、いずれもエンジン未対応・⚠表示用
 const PERREF_COMBO_CODES = new Set(['own_digimon_tamer', 'opp_digimon_tamer', 'all_cards']);
 const PERREF_L2_CODES = new Set(
   Object.values(PERREF_L2).flatMap((opts) => opts.map((o) => o.code))
 );
+// 状態（レスト/アクティブ）が意味を持つ対象。ゾーン系（手札/トラッシュ等）には無い概念のため除外
+const PERREF_STATE_ELIGIBLE_SUBJECTS = new Set([
+  'own_digimon', 'own_tamer', 'own_digimon_tamer',
+  'opp_digimon', 'opp_tamer', 'opp_digimon_tamer',
+  'both_digimon', 'both_tamer', 'both_digimon_tamer',
+]);
 // REF_SUBJECTSコード → PERREF_L1 の逆引き
 function perRefToL1(code: string): string {
   if (code === 'evo_source') return 'self';
   if (code === 'all_cards') return 'all_cards';
   if (code.startsWith('own_') && PERREF_L2_CODES.has(code)) return 'own';
   if (code.startsWith('opp_') && PERREF_L2_CODES.has(code)) return 'opp';
+  if (code.startsWith('both_') && PERREF_L2_CODES.has(code)) return 'both';
   return '';
 }
 // 現在選択中のtriggers/triggerConditionsから、共有の発動ターンを逆算する
@@ -2411,6 +2426,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectPerRef = isEditingAlt ? editingAlt!.perRef : block.perRef;
   const effectPerCountMode = isEditingAlt ? editingAlt!.perCountMode : block.perCountMode;
   const effectPerRefFilter = isEditingAlt ? (editingAlt!.perRefFilter || []) : (block.perRefFilter || []);
+  const effectPerRefStateCond = isEditingAlt ? editingAlt!.perRefStateCond : block.perRefStateCond;
+  const effectApplyCostModToPrev = isEditingAlt ? !!editingAlt!.applyCostModToPrev : false;
   const effectCostFree = isEditingAlt ? !!editingAlt!.costFree : !!block.costFree;
   const effectSkipOnPlay = isEditingAlt ? !!editingAlt!.skipOnPlay : !!block.skipOnPlay;
   const effectNegateTargetTrigger = isEditingAlt ? editingAlt!.negateTargetTrigger : block.negateTargetTrigger;
@@ -2551,11 +2568,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // に直接埋め込むため、関数として切り出して2箇所から呼べるようにしている
   function renderPerCountEditor(forEffect: boolean = false) {
     // forEffect=true のとき、効果1(block)ではなく「編集中」の効果（effect*/updateEffect）に対して
-    // 読み書きする。AltActionにはperRefStateCondが無いため、その場合は状態(条件)UIを出さない
+    // 読み書きする。効果2以降(AltAction)もperRefStateCondを持てる（状態(条件)UIは効果1/2以降共通）
     const curPerRef = forEffect ? (effectPerRef || '') : (block.perRef || '');
     const curPerCount = forEffect ? effectPerCount : block.perCount;
     const curPerCountMode = forEffect ? effectPerCountMode : block.perCountMode;
     const curPerRefFilter = forEffect ? effectPerRefFilter : (block.perRefFilter || []);
+    const curPerRefStateCond = forEffect ? effectPerRefStateCond : block.perRefStateCond;
     const setFields = (patch: Record<string, any>) => {
       if (forEffect) updateEffect(patch);
       else onChange({ ...block, ...patch });
@@ -2572,11 +2590,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     };
     const { subject: legacySubject, legacyState } = decomposeRef(curPerRef);
     const refSubject = legacySubject;
-    // 効果2以降(AltAction)はperRefStateCondを持てないため、状態(条件)UIは効果1限定
-    const isDigimonSubject = !forEffect && (refSubject === 'own_digimon' || refSubject === 'opp_digimon');
+    // 状態(条件)UIは、デジモン/テイマー系の対象（自分/相手/両方）のときだけ表示
+    const isDigimonSubject = PERREF_STATE_ELIGIBLE_SUBJECTS.has(refSubject);
     const isEnabled = !!(curPerCount && curPerRef);
     // 現在の状態 cond（perRefStateCond > legacyState の優先順）
-    const currentStateCond: ConditionPair = (!forEffect && block.perRefStateCond)
+    const currentStateCond: ConditionPair = curPerRefStateCond
       || (legacyState ? { base: legacyState, value: '' } : { base: '', value: '' });
 
     // 状態 pulldown 候補: dict.conditions のうちカード単体に適用できるものをフィルタ
@@ -2598,15 +2616,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     ];
 
     function setSubject(newSubject: string) {
-      if (forEffect) { setFields({ perRef: newSubject }); return; }
-      // 2フィールド同時更新: update を2回呼ぶと古い block 参照で2回目が1回目を上書きするため
-      // onChange でまとめて反映する
-      const isDigimonRef = (newSubject === 'own_digimon' || newSubject === 'opp_digimon');
-      onChange({
-        ...block,
+      // 2フィールド同時更新: setFieldsを2回呼ぶと古い参照で2回目が1回目を上書きするため
+      // まとめて1回で反映する
+      const isDigimonRef = PERREF_STATE_ELIGIBLE_SUBJECTS.has(newSubject);
+      setFields({
         perRef: newSubject,
         // 非デジモン系: 状態をクリア（card-state は意味薄）
-        perRefStateCond: isDigimonRef ? block.perRefStateCond : undefined,
+        perRefStateCond: isDigimonRef ? curPerRefStateCond : undefined,
       });
     }
     function setStateBase(newBase: string) {
@@ -2614,17 +2630,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
       const newStateCond = newBase
         ? { base: newBase, value: currentStateCond.value || '' }
         : undefined;
-      let nextPerRef = block.perRef;
-      if (block.perRef === 'own_rest_digimon' || block.perRef === 'own_active_digimon') {
+      let nextPerRef = curPerRef;
+      if (curPerRef === 'own_rest_digimon' || curPerRef === 'own_active_digimon') {
         nextPerRef = 'own_digimon';
-      } else if (block.perRef === 'opp_rest_digimon' || block.perRef === 'opp_active_digimon') {
+      } else if (curPerRef === 'opp_rest_digimon' || curPerRef === 'opp_active_digimon') {
         nextPerRef = 'opp_digimon';
       }
-      onChange({ ...block, perRefStateCond: newStateCond, perRef: nextPerRef });
+      setFields({ perRefStateCond: newStateCond, perRef: nextPerRef });
     }
     function setStateValue(newValue: string) {
       if (!currentStateCond.base) return;
-      update('perRefStateCond', { base: currentStateCond.base, value: newValue });
+      setFields({ perRefStateCond: { base: currentStateCond.base, value: newValue } });
     }
 
     return (
@@ -4840,6 +4856,22 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     }}
                     placeholder={effectAction === 'summon_token' ? 'トークンのカードNo (例: TK-01)' : '数値 (例: 1000)'}
                   />
+                </div>
+              )}
+              {isEditingAlt && COST_LIMIT_MOD_ACTIONS.has(effectAction) && (
+                <div className="field" style={{ marginTop: 8 }}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={effectApplyCostModToPrev}
+                      onChange={(e) => updateEffect({ applyCostModToPrev: e.target.checked })}
+                    />
+                    ☑ 直前の効果に適用する
+                  </label>
+                  <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
+                    ONの場合、この効果は独立したステップにはならず、直前の効果（効果{editingEffect}）の
+                    「登場/使用コスト◯以下」の閾値を、上の「値」「～ごとに（倍率設定）」の設定に応じて動的に増減させます。
+                  </div>
                 </div>
               )}
             </div>

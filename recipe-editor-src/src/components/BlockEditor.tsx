@@ -2319,14 +2319,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const curTgt = TARGET_SEL_CODE_TO_L1L2[tgtBase] || { l1: '', l2: '' };
   // 「対象の条件」は対象が下記の場合のみ表示する（＝アクションが実際に処理する対象自身に
   // 掛かる条件。例:「レスト状態のこのデジモン」「クロノモンの記述があるこのデジモン」）:
-  // このカード自身・自分→デジモン/カード/テイマー・相手→デジモン/テイマー・他→デジモン・
-  // そのデジモン（直前選択。「重ねられているカード」等を選べるようにするため）
+  // このカード自身・そのデジモン（直前選択）・またはL1（自分/相手/両方/他等）を問わず
+  // デジモン/テイマー/カード（デジモン+テイマー）のいずれかが選択されているとき
   const showTargetFilter =
     curTgt.l1 === 'self' ||
     curTgt.l1 === 'same_target' ||
-    (curTgt.l1 === 'own' && ['digimon', 'card', 'tamer'].includes(curTgt.l2)) ||
-    (curTgt.l1 === 'opp' && ['digimon', 'tamer'].includes(curTgt.l2)) ||
-    (curTgt.l1 === 'other_own' && curTgt.l2 === 'digimon');
+    ['digimon', 'tamer', 'card'].includes(curTgt.l2);
   // 「取得元カードの条件」は進化/登場(BUILTIN_FROM_ZONE_ACTIONS)専用。対象＝このカード自身
   // （進化する側）であっても、実際に絞り込みたいのは取得元エリア（手札等）から選ぶカードの方
   // なので、「対象の条件」とは別枠・別データ（block.fromFilter → step.from_filter）として扱う
@@ -5494,9 +5492,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eShowTargetFilter =
               eCurTgt.l1 === 'self' ||
               eCurTgt.l1 === 'same_target' ||
-              (eCurTgt.l1 === 'own' && ['digimon', 'card', 'tamer'].includes(eCurTgt.l2)) ||
-              (eCurTgt.l1 === 'opp' && ['digimon', 'tamer'].includes(eCurTgt.l2)) ||
-              (eCurTgt.l1 === 'other_own' && eCurTgt.l2 === 'digimon');
+              ['digimon', 'tamer', 'card'].includes(eCurTgt.l2);
             const setEffTgt = (l1: string, l2?: string) => {
               // OR選択中に他のL1/L2へ切り替えたら、自動設定していたtype絞り込みは持ち越さない
               const cleared = eIsOrMode ? { targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type') } : {};

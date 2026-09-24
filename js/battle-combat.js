@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect, fxAppGattai } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -182,6 +182,14 @@ function hasMichizure(c) { return hasPassiveFlag(c, 'michizure', '【道連れ�
 // onlyBattle: true なら防壁のみチェック（バトル消滅専用）
 function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle) {
   if (!card || !ownerSidePlayer) return null;
+  // cant_destroy（消滅できない付与）: keyword_prevent_battle_destroy/keyword_prevent_destroy
+  // バフを持つ場合、コスト無しで即座に消滅そのものをキャンセルする（_runWhenBattleDestroyと
+  // 同じ判定をここでも行い、when_battle_destroyトリガーを持たないカードでも一般消滅
+  // 判定パイプライン全体でこの保護が効くようにする）
+  if (card.buffs && card.buffs.some(b => b.type === 'keyword_prevent_battle_destroy' || b.type === 'keyword_prevent_destroy')) {
+    addLog('🛡 「' + card.name + '」は消滅しない！');
+    return { canceled: true, reason: 'prevent_destroy' };
+  }
   // 防壁（バトル消滅時、自セキュリティ1枚破棄で回避）
   if (hasBarrier(card) && ownerSidePlayer.security && ownerSidePlayer.security.length > 0) {
     var trashed = ownerSidePlayer.security.shift();
@@ -688,6 +696,8 @@ function _resolveEvolveMatch(evoCard, baseCard) {
 export function canEvolveOnto(evoCard, baseCard) {
   // 代替進化（alt_evolve / 進化条件を無視）が成立するなら進化可
   try { if (_getAltEvolve(evoCard, baseCard, bs, 'player')) return true; } catch (_) {}
+  // バースト進化（burst_evolve）が成立するなら進化可（通常の進化条件は無視）
+  try { if (_getBurstEvolve(evoCard, baseCard, bs, 'player')) return true; } catch (_) {}
   // アプ合体（app_gattai_evolve）は通常進化のドラッグ&ドロップ経路には含めない。
   // 公式ルール8-4通りバトルエリア本体の長押しメニュー（🔗アプ合体ボタン）専用の
   // 別ルートとして扱う（リンクカードの選択UIを挟むため。startAppGattaiMenu参照）
@@ -1022,6 +1032,19 @@ export function doEvolve(card, handIdx, slotIdx) {
   if (card.evolveCost === null) { addLog('🚨 「' + card.name + '」は進化できません‼'); return; }
   if (!canEvolveOnto(card, base)) { addLog('🚨 進化条件を満たしていません‼（' + card.evolveCond + '）'); return; }
 
+  // バースト進化（burst_evolve）: 通常の進化条件・代替進化(alt_evolve)のどちらも
+  // 成立しない場合のみ、バースト進化の成立を確認する（総合ルール8-3-3-1「バースト進化を
+  // 宣言し」は本来プレイヤーの任意選択だが、両方成立する場合に選ばせるUIは未実装のため、
+  // 通常進化が可能ならそちらを優先する）
+  const _normalMatch = _resolveEvolveMatch(card, base) !== null;
+  let _altEvoForBurstCheck = null;
+  try { _altEvoForBurstCheck = _getAltEvolve(card, base, bs, 'player'); } catch (_) {}
+  if (!_normalMatch && !_altEvoForBurstCheck) {
+    let _burstEvo = null;
+    try { _burstEvo = _getBurstEvolve(card, base, bs, 'player'); } catch (_) {}
+    if (_burstEvo) { _doBurstEvolve(card, base, handIdx, slotIdx, _burstEvo); return; }
+  }
+
   // 進化条件が複数(OR)ある場合、成立したclauseに対応するコスト（進化コスト欄の「・」区切り）を選ぶ
   let cost = getEvolveCostFor(card, base);
   // 代替進化（alt_evolve・進化条件を無視）が成立していれば、その指定コストを使う
@@ -1051,7 +1074,27 @@ export function doEvolve(card, handIdx, slotIdx) {
   });
 }
 
-function _finishDoEvolve(card, base, handIdx, slotIdx, cost) {
+// バースト進化（総合ルール8-3）: バトルエリアの指定テイマー1体を手札に戻すコストを
+// 払ってから進化を確定する。テイマー候補が複数いる場合、現状は選択UIが無く
+// 先頭の候補を自動選択する（既知の簡略化。多くのカードは特定名称のテイマー1体だけを
+// 指定するため実用上は問題にならない想定）
+function _doBurstEvolve(card, base, handIdx, slotIdx, burstEvo) {
+  const cands = _filterBurstEvolveTamerCandidates(bs, 'player', burstEvo.tamerConditions, burstEvo.tamerConditionsOp);
+  if (cands.length === 0) { addLog('🚨 バースト進化に必要なテイマーがいません‼'); return; }
+  const chosen = cands[0];
+  const idx = bs.player.tamerArea.indexOf(chosen);
+  bs.player.tamerArea[idx] = null;
+  // 手札に戻る = 一時的な状態は全てリセット（doBounceと同じ扱い）
+  chosen.buffs = [];
+  chosen.dpModifier = 0;
+  chosen.suspended = false;
+  bs.player.hand.push(chosen);
+  addLog('🔥 バースト進化: 「' + chosen.name + '」を手札に戻した');
+  renderAll();
+  _finishDoEvolve(card, base, handIdx, slotIdx, burstEvo.cost, { isBurst: true });
+}
+
+function _finishDoEvolve(card, base, handIdx, slotIdx, cost, opts) {
   // 最終コスト（吸収進化等の軽減を反映済み）が確定した時点で相手画面に通知する
   if (_onlineMode && _sendCommand) _sendCommand({ type: 'evolve', handIdx, slotIdx, cardName: card.name, baseName: base.name || '', cardImg: card.imgSrc || '', evolveCost: cost });
   const evolved = Object.assign({}, card, {
@@ -1066,12 +1109,15 @@ function _finishDoEvolve(card, base, handIdx, slotIdx, cost) {
     dpModifier: base.dpModifier || 0,
     stack: [base].concat(base.stack || []),
   });
+  // バースト進化（総合ルール8-3-2-1）: このターン終了時、重ねられているカードを
+  // 上から1枚破棄する保留処理フラグ（processBurstEvolvePendingDiscardが消費する）
+  if (opts && opts.isBurst) evolved._burstEvolvedPendingDiscard = true;
   evolved.dp = evolved.baseDp + evolved.dpModifier;
   bs.player.battleArea[slotIdx] = evolved;
   bs.player.hand.splice(handIdx, 1); bs.selHand = null;
   // cond_evolved_this_turn 用カウンタを増加
   bs._evolveCountThisTurn = (bs._evolveCountThisTurn || 0) + 1;
-  addLog('⬆ 「' + base.name + '」→「' + evolved.name + '」進化！（コスト ' + cost + '）');
+  addLog((opts && opts.isBurst ? '🔥 バースト進化: ' : '⬆ ') + '「' + base.name + '」→「' + evolved.name + '」進化！（コスト ' + cost + '）');
   // チュートリアル: アクション完了の瞬間に指差し/吹き出しを消す
   if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
     try { window._tutorialHideInstruction(); } catch (e) {}

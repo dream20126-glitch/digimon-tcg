@@ -767,7 +767,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (!_dc) continue;
         if (_dpmConds.length > 0 && !checkConditions(_dpmConds, _dc, ctx.bs, _dpmCondSide)) continue;
         if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(_dc, defaultTarget.filter)) continue;
-        if (hasActiveImmuneEffects(_dc, ctx.side)) continue;
+        if (hasActiveImmuneEffects(_dc, ctx.side, _effectSourceTypeOf(ctx))) continue;
         if (_dc.buffs && _dc.buffs.some(b => b.type === 'cant_dp_minus')) continue;
         dpTargets.push(i);
       }
@@ -956,7 +956,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) continue;
         // 【プログレス】等「相手の効果を受けない」: isOwn（自分のデジモンが対象）のときは
         // 自分の効果なので対象外にしない
-        if (!isOwn && hasActiveImmuneEffects(c, ctx.side)) continue;
+        if (!isOwn && hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) continue;
         destroyTargets.push(i);
       }
       if(destroyTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', () => callback(false)); break; }
@@ -999,7 +999,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (onlySuspended && !c.suspended) continue;
         if (_bounceConds.length > 0 && !checkConditions(_bounceConds, c, ctx.bs, _bounceCondSide)) continue;
         if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) continue;
-        if (hasActiveImmuneEffects(c, ctx.side)) continue;
+        if (hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) continue;
         if (c.buffs && c.buffs.some(b => b.type === 'cant_return_hand')) continue;
         bounceTargets.push(i);
       }
@@ -1652,7 +1652,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           if (restTarget.code === 'target_other_own' && c === ctx.card) return false;
           if (_restOwnConds.length > 0 && !checkConditions(_restOwnConds, c, ctx.bs, ctx.side)) return false;
           if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) return false;
-          if (hasActiveImmuneEffects(c, ctx.side)) return false;
+          if (hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return false;
           return true;
         });
         if (_rownCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
@@ -1684,7 +1684,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if(!_rc || _rc.suspended || _rc.cantRest) continue;
         if(_restConds.length > 0 && !checkConditions(_restConds, _rc, ctx.bs, _restCondTag)) continue;
         if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(_rc, defaultTarget.filter)) continue;
-        if (hasActiveImmuneEffects(_rc, ctx.side)) continue;
+        if (hasActiveImmuneEffects(_rc, ctx.side, _effectSourceTypeOf(ctx))) continue;
         restTargets.push(i);
       }
       if(restTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
@@ -1733,7 +1733,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           if (!c || c.suspended || c.cantRest) return;
           if (_restConds.length > 0 && !checkConditions(_restConds, c, ctx.bs, _restCondTag)) return;
           if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) return;
-          if (hasActiveImmuneEffects(c, ctx.side)) return;
+          if (hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return;
           _rmCands.push(c);
         });
         if (_restWantsTamer) {
@@ -1995,7 +1995,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
 
     // === 登場させる（コスト踏み倒し） ===
-    case 'summon': {
+    // summon_appear/summon_use は「登場」「使用」の演出違いを表す表記揺れで、
+    // 処理自体は summon と完全に同じため同じcaseで受ける
+    case 'summon':
+    case 'summon_appear':
+    case 'summon_use': {
       // 手札から登場可能なデジモン/テイマーを選択
       const summonTargets = player.hand.map((c, i) => ({ card: c, idx: i })).filter(x => x.card.type === 'デジモン' || x.card.type === 'テイマー');
       if(summonTargets.length === 0) { ctx.addLog('⚠ 登場可能なカードがありません'); callback(); break; }
@@ -2011,6 +2015,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         }
         ctx.renderAll(); callback();
       });
+      break;
+    }
+
+    // === バトルする（アタックとは別に、指定2体だけでDP比較を行う） ===
+    case 'combat': {
+      _resolveCombatAction(action, ctx, callback);
       break;
     }
 
@@ -2047,9 +2057,19 @@ function runOneAction(action, defaultTarget, ctx, callback) {
 
 // ===== ヘルパー関数 =====
 
-function doDestroy(targetSide, slotIdx, ctx, callback) {
+function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
+  causeType = causeType || 'effect';
   const destroyed = targetSide.battleArea[slotIdx];
   if (!destroyed) { callback && callback(); return; }
+  // cant_destroy（消滅できない付与）: keyword_prevent_destroyは原因を問わず常にブロック。
+  // keyword_prevent_battle_destroyはバトル起因(causeType==='battle')の消滅のみブロックする
+  if (destroyed.buffs && destroyed.buffs.some((b) =>
+    b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle')
+  )) {
+    ctx.addLog('🛡 「' + destroyed.name + '」は消滅しない！');
+    callback && callback();
+    return;
+  }
   // ≪デコイ≫ - 同 side の他デジモンが身代わりに消滅
   // ≪スケープゴート≫ - 消滅対象が他デジモンを身代わりに消滅させて回避
   // どちらも window 経由で battle-combat.js のヘルパーを呼ぶ
@@ -2070,7 +2090,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
         if (dc.linkedCards) dc.linkedCards.forEach(function(s){ targetSide.trash.push(s); });
         ctx.renderAll && ctx.renderAll();
         // デコイ自身の消滅で on_destroy 発火。「原因」追跡: 効果によって消滅した
-        if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+        if (ctx.bs) ctx.bs._lastDestroyCause = { type: causeType, causerSide: ctx.side, causerCard: ctx.card };
         fireDestroyChain(dc, decoyOwnerSide, ctx.bs, ctx, function() {
           callback && callback();
         });
@@ -2083,7 +2103,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
       // 他デジモンを身代わりにして destroyed は残す
       ctx.renderAll && ctx.renderAll();
       const sgOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-      if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+      if (ctx.bs) ctx.bs._lastDestroyCause = { type: causeType, causerSide: ctx.side, causerCard: ctx.card };
       fireDestroyChain(destroyed, sgOwnerSide, ctx.bs, ctx, function() {
         callback && callback();
       });
@@ -2110,8 +2130,8 @@ function doDestroy(targetSide, slotIdx, ctx, callback) {
     }
     ctx.renderAll();
     // on_destroy グローバル発火（消滅した側を引数に） ＝ 共通の消滅トリガーチェーン。
-    // 「原因」追跡: 効果によって消滅した（このactionを実行している効果の持ち主が原因）
-    if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+    // 「原因」追跡: 効果/バトルによって消滅した（このactionを実行している効果の持ち主が原因）
+    if (ctx.bs) ctx.bs._lastDestroyCause = { type: causeType, causerSide: ctx.side, causerCard: ctx.card };
     fireDestroyChain(destroyed, destroyedSideName, ctx.bs, ctx, callback);
   });
 }
@@ -2770,9 +2790,81 @@ function hasActiveImmuneEffects(card, effectSide, effectSourceType) {
   return card.buffs.some((b) => {
     if (!b || b.type !== 'keyword_immune') return false;
     if (!b._appliedSide || b._appliedSide === effectSide) return false;
-    if (b.sourceType === 'digimon' && effectSourceType && effectSourceType !== 'digimon') return false;
+    // sourceType指定の免疫（デジモンの効果のみ/オプションの効果のみ）は、実際に発動している
+    // 効果の発生元種別(effectSourceType)と一致する場合のみブロックする。呼び出し元が
+    // effectSourceTypeを渡さない(=不明)場合は、従来通り種別を問わず全てブロックする
+    // （フェイルセーフ。未対応の呼び出し元で免疫が緩んでしまうのを防ぐ）
+    if (b.sourceType && effectSourceType && b.sourceType !== effectSourceType) return false;
     return true;
   });
+}
+// ctx.card（この効果を発動しているカード自身）の種別を immune_effects の source_type
+// 判定用コードへ変換する（デジモン/オプション/テイマー。不明なら undefined）
+function _effectSourceTypeOf(ctx) {
+  const t = ctx && ctx.card && ctx.card.type;
+  if (t === 'デジモン') return 'digimon';
+  if (t === 'オプション') return 'option';
+  if (t === 'テイマー') return 'tamer';
+  return undefined;
+}
+
+// combat（バトルする）: 通常のアタックとは別に、指定した自分1体(ctx.card)と相手1体だけで
+// DP比較によるバトル判定のみを行う（総合ルール14「バトル」の手順に準拠）。
+// アタックではないため、セキュリティチェック・ブロッカー宣言・「アタック時」「アタック終了時」
+// 等のトリガーは一切発生しない。step.target=主体側（通常self_card。未使用、常にctx.card）、
+// step.targets[0].target=相手側（例:"opponent:1"）
+function _resolveCombatAction(step, ctx, callback) {
+  const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+  const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
+  const selfCard = ctx.card;
+  const selfIdx = selfCard ? player.battleArea.indexOf(selfCard) : -1;
+  if (!selfCard || selfIdx === -1) { callback(); return; }
+
+  const targetSpec = Array.isArray(step.targets) && step.targets[0] ? step.targets[0] : null;
+  const targetCode = (targetSpec && targetSpec.target) || 'opponent:1';
+  const tBase = String(targetCode).split(':')[0];
+  const tPlayer = tBase.indexOf('own') === 0 ? player : opponent;
+
+  const candIdxs = [];
+  for (let i = 0; i < tPlayer.battleArea.length; i++) {
+    const c = tPlayer.battleArea[i];
+    if (!c) continue;
+    if (targetSpec && targetSpec.filter && !cardMatchesFilter(c, targetSpec.filter, ctx.bs, ctx.side)) continue;
+    if (hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) continue;
+    candIdxs.push(i);
+  }
+  if (candIdxs.length === 0) {
+    ctx.addLog('⚠ バトルする相手がいません');
+    showEffectFailed(null, callback);
+    return;
+  }
+
+  const doCombat = (idx) => {
+    const defCard = tPlayer.battleArea[idx];
+    if (!defCard) { callback(); return; }
+    const atkDp = parseInt(selfCard.dp) || 0;
+    const defDp = parseInt(defCard.dp) || 0;
+    ctx.addLog('⚔ 「' + selfCard.name + '」(DP ' + atkDp + ') vs 「' + defCard.name + '」(DP ' + defDp + ')でバトル');
+    const finish = () => { ctx.renderAll(); callback(); };
+    if (atkDp === defDp) {
+      // 両者敗北 → 両者消滅（それぞれ独立に消滅回避判定はdoDestroy内のデコイ/スケープゴート等で行われる）
+      doDestroy(player, selfIdx, ctx, () => { doDestroy(tPlayer, idx, ctx, finish, 'battle'); }, 'battle');
+    } else if (atkDp > defDp) {
+      doDestroy(tPlayer, idx, ctx, finish, 'battle');
+    } else {
+      doDestroy(player, selfIdx, ctx, finish, 'battle');
+    }
+  };
+
+  if (candIdxs.length === 1 || ctx.side !== 'player') {
+    doCombat(candIdxs[0]);
+  } else {
+    const rowSide = tPlayer === ctx.bs.ai ? 'ai' : 'pl';
+    showTargetSelection(rowSide, candIdxs, null, '#ff4444', (selectedIdx) => {
+      if (selectedIdx === null) { callback(); return; }
+      doCombat(selectedIdx);
+    });
+  }
 }
 
 // bs/side は cost_le_mod（「レスト状態のデジモン/テイマー1体ごとにコスト上限+1」等、
@@ -4347,6 +4439,16 @@ function _stateSubjectType(subject) {
   if (s.endsWith('_any')) return 'any';
   return 'digimon';
 }
+// 指定側のバトルエリア/テイマーエリアの体数を数える（cond_battle_area_le/ge用）。
+// type: 'digimon'=バトルエリアのみ（既定）/ 'tamer'=テイマーエリアのみ / 'card'or'any'=両方合算
+function _battleAreaCount(bs, sideKey, type) {
+  const p = bs && bs[sideKey];
+  if (!p) return 0;
+  let n = 0;
+  if (type !== 'tamer') n += (p.battleArea || []).filter(c => c).length;
+  if (type === 'tamer' || type === 'card' || type === 'any') n += (p.tamerArea || []).filter(c => c).length;
+  return n;
+}
 
 // ===== 条件チェック =====
 
@@ -4426,6 +4528,22 @@ function checkConditions(conditions, card, bs, side) {
         const len = bs[ts] && bs[ts].hand ? bs[ts].hand.length : 0;
         const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'hand') : (cond.value || 0);
         if (len <= threshold) return false;
+        break;
+      }
+      // バトルエリア/テイマーエリアの体数条件（subject駆動: @own_tamer/@opp_digimon等で
+      // side+種別を指定。種別未指定なら_stateSubjectTypeの既定通りデジモンのみをカウント）
+      case 'cond_battle_area_le': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const n = _battleAreaCount(bs, ts, _stateSubjectType(cond.subject));
+        if (n > (cond.value || 0)) return false;
+        break;
+      }
+      case 'cond_battle_area_ge': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const n = _battleAreaCount(bs, ts, _stateSubjectType(cond.subject));
+        if (n < (cond.value || 0)) return false;
         break;
       }
       case 'cond_security_le': {
@@ -7019,10 +7137,10 @@ function recipeWillExecuteAnything(recipe, ctx) {
     // 解決した別の効果がトラッシュに対象を追加してから発動する場合があるため、
     // 「今トラッシュに候補が無い」だけで発動順選択の候補から除外してはいけない
     // （対象が無ければ実行時にsummon_from_trash自身が失敗演出を出す）
-    if (step.action === 'summon' && !step.card) {
+    if ((step.action === 'summon' || step.action === 'summon_appear' || step.action === 'summon_use') && !step.card) {
       const _fromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
       if (_fromZones.includes('hand')) {
-        const _filter = step.filter || {};
+        const _filter = step.from_filter || step.filter || {};
         const _p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
         const _hasCand = (_p.hand || []).some(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side));
         if (!_hasCand) {
@@ -7707,7 +7825,17 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
 
     // === コスト無し登場 ===
-    case 'summon': {
+    // summon_appear/summon_use は「登場」「使用」の演出違いを表す表記揺れで、
+    // 処理自体は summon と完全に同じため同じcaseで受ける
+    // === バトルする（アタックとは別に、指定2体だけでDP比較を行う） ===
+    case 'combat': {
+      _resolveCombatAction(step, ctx, callback);
+      break;
+    }
+
+    case 'summon':
+    case 'summon_appear':
+    case 'summon_use': {
       // Security effect: summon self (tamer/digimon) to field at no cost
       // cost_free:true と options:['ignore_cost'] のどちらの表記も受け付ける
       const _summonSelfIgnoreCost = !!step.cost_free || (Array.isArray(step.options) && step.options.includes('ignore_cost'));
@@ -10311,10 +10439,13 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (tgt) {
         const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
         addBuffDirect(tgt, 'keyword_immune', 0, dur, ctx);
-        const isDigimonOnly = step.source_type === 'digimon';
+        // source_type: 'digimon'/'option' 指定時のみその種別の効果だけを免疫対象にする
+        // （hasActiveImmuneEffectsのeffectSourceTypeと突き合わせて判定。未指定なら全て免疫）
+        const srcType = (step.source_type === 'digimon' || step.source_type === 'option') ? step.source_type : undefined;
         const lastBuff = tgt.buffs[tgt.buffs.length - 1];
-        if (lastBuff && isDigimonOnly) lastBuff.sourceType = 'digimon';
-        ctx.addLog('🪄 「' + tgt.name + '」は相手の' + (isDigimonOnly ? 'デジモンの' : '') + '効果を受けない');
+        if (lastBuff && srcType) lastBuff.sourceType = srcType;
+        const srcLabel = srcType === 'digimon' ? 'デジモンの' : srcType === 'option' ? 'オプションの' : '';
+        ctx.addLog('🪄 「' + tgt.name + '」は相手の' + srcLabel + '効果を受けない');
       }
       callback();
       break;
@@ -11435,6 +11566,59 @@ export function getAltEvolve(evoCard, baseCard, bs, side) {
     return { cost: parseInt(_c, 10) || 0 };
   }
   return null;
+}
+
+// recipe の burst_evolve（バースト進化）が baseCard に対して成立するか。
+// 総合ルール8-3: 手札のevoCardが持つ「バースト進化」条件を1つ選び、その条件を満たす
+// 自分のデジモン(baseCard)へ、バトルエリアの指定テイマー1体を手札に戻すことで
+// 指定コスト（既定0）で進化できる。
+// burst_evolve: [{ base_conditions?:string[], base_conditions_op?, tamer_conditions?:string[],
+//   tamer_conditions_op?, cost? }]
+// 成立すれば { cost, tamerConditions, tamerConditionsOp } を返す（テイマー候補の絞り込みに使う）。
+// 不成立は null
+export function getBurstEvolve(evoCard, baseCard, bs, side) {
+  if (!evoCard || !baseCard) return null;
+  const recipe = _parseCardRecipe(evoCard);
+  const list = recipe && recipe.burst_evolve;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  for (const entry of list) {
+    if (!entry) continue;
+    if (!_evalTriggerConditionsArray(entry.base_conditions, entry.base_conditions_op, baseCard, bs, side || 'player')) continue;
+    const cost = parseInt(entry.cost, 10) || 0;
+    return { cost, tamerConditions: entry.tamer_conditions || [], tamerConditionsOp: entry.tamer_conditions_op };
+  }
+  return null;
+}
+
+// getBurstEvolve()が返した tamerConditions/tamerConditionsOp を使って、バトルエリアの
+// テイマーエリア(bs[side].tamerArea)から手札に戻せる候補を絞り込む（checkConditions/
+// parseRecipeConditionはこのモジュール内限定のため、battle-combat.js側からはこの
+// エクスポート経由でのみ評価できるようにする）
+export function filterBurstEvolveTamerCandidates(bs, side, tamerConditions, tamerConditionsOp) {
+  const p = bs && bs[side];
+  const area = (p && p.tamerArea) || [];
+  if (!Array.isArray(tamerConditions) || tamerConditions.length === 0) return area.filter((c) => !!c);
+  return area.filter((c) => c && _evalTriggerConditionsArray(tamerConditions, tamerConditionsOp, c, bs, side));
+}
+
+// バースト進化の保留処理（総合ルール8-3-2-1/8-3-2-2/8-3-2-3）:
+// バースト進化したターンの終了時、そのデジモンに重ねられているカードを上から1枚破棄する。
+// 重ねられているカードが無ければ破棄しない。バースト進化したデジモンが≪退化≫等で
+// ターン終了時にデジモンでなくなっていれば破棄しない。
+// side側のバトルエリアを対象に、doEvolve側が付けた _burstEvolvedPendingDiscard フラグを
+// 消費する（1ターンにつき1回だけ処理されるよう、処理後は必ずフラグを削除する）
+export function processBurstEvolvePendingDiscard(bsArg, side) {
+  const p = bsArg && bsArg[side];
+  if (!p) return;
+  (p.battleArea || []).forEach((c) => {
+    if (!c || !c._burstEvolvedPendingDiscard) return;
+    delete c._burstEvolvedPendingDiscard;
+    if (c.type !== 'デジモン') return;
+    if (!Array.isArray(c.stack) || c.stack.length === 0) return;
+    // stack[0] = 直前進化形（一番上）
+    const discarded = c.stack.shift();
+    if (discarded) p.trash.push(discarded);
+  });
 }
 
 // recipe の app_gattai_evolve（アプ合体）が baseCard に対して成立するか。

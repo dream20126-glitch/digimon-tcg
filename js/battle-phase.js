@@ -9,7 +9,7 @@ console.log('[LOADED] battle-phase.js version=player_pre_diagnostic_v2');
 import { bs, spendMemory, addMemory, endTurnManual, isMemoryOverflow, drawCards, isDeckEmpty } from './battle-state.js';
 import { addLog, showOverlay, removeOverlay } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, hasRecipeTrigger as _hasRecipeTrigger } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, hasRecipeTrigger as _hasRecipeTrigger, processBurstEvolvePendingDiscard as _processBurstEvolvePendingDiscard } from './effect-engine.js';
 
 // ===== 定数 =====
 
@@ -683,6 +683,8 @@ export function onEndTurn() {
     _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
     _hooks.expireBuffs('dur_next_own_turn', null, 'player');
     _hooks.expireBuffs('permanent', 'player');
+    // バースト進化の保留処理（進化したターンの終了時、重ねられているカードを1枚破棄）
+    _processBurstEvolvePendingDiscard(bs, 'player');
     // ≪再起動≫: 相手のアクティブフェイズで自分の本体側カードをアクティブにする
     // (相手側マシンからは fx_remoteSuspend が来るが、テスト/scripted opp 環境のため
     //  自分側でもローカルに活性化しておく)
@@ -719,6 +721,8 @@ export function onEndTurn() {
     _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
     _hooks.expireBuffs('dur_next_own_turn', null, 'player');
     _hooks.expireBuffs('permanent', 'player');
+    // バースト進化の保留処理（進化したターンの終了時、重ねられているカードを1枚破棄）
+    _processBurstEvolvePendingDiscard(bs, 'player');
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
       bs.isPlayerTurn = false;

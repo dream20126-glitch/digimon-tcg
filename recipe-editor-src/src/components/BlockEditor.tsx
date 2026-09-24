@@ -3003,25 +3003,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               「1枚ドロー」「ターン終了時に重ねられているカードの一番上を1枚破棄（保留処理）」も
               現状未対応です（総合ルール8-3-2-1/8-3-3-4）
             </div>
-            🔥 <b>バースト進化（指定テイマーを手札に戻すことで指定コストで進化できる）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。下の「🎯 発動条件」欄をこの意味で使います:
-            <br />・<b>条件1</b> = この条件が有効になる発動条件（通常は空でOK）
-            <br />・<b>条件2</b> = 進化元（進化させたい元のデジモン）の絞り込み（例:「名前を含む: シャイングレイモン」）
-            <br />・<b>条件3</b> = バトルエリアから手札に戻すテイマーの絞り込み（例:「名前を含む: 大門大」）
-            <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #ffb74d' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', color: '#b76e00', marginBottom: 4 }}>
-                💰 進化コスト（下のアクション欄ではなく、ここに入力してください）
-              </label>
-              <input
-                type="number"
-                value={block.value === undefined ? '' : String(block.value)}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  update('value', v === '' ? undefined : Number(v));
-                }}
-                placeholder="例: 0"
-                style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
-              />
-            </div>
+            🔥 <b>バースト進化（指定テイマーを手札に戻すことでコスト0で進化できる）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。下の「🎯 発動条件」欄をこの意味で使います:
+            <br />・<b>条件1</b> = 進化させたいデジモン（進化元）の絞り込み（例:「名前を含む: シャイングレイモン」。名前に限らず色/Lv等も指定可）
+            <br />・<b>条件2</b> = バトルエリアから手札に戻すテイマーの絞り込み（例:「名前を含む: 大門大」。名前に限らず色/Lv等も指定可）
           </div>
         ) : FUSION_EVOLVE_TRIGGERS.has(block.trigger) ? (
           <div style={{
@@ -4094,7 +4078,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
           ) : block.trigger === BURST_EVOLVE_TRIGGER ? (
             <div style={{ fontSize: 11, color: '#888' }}>
-              🔥 バースト進化トリガーはアクション不要です（進化コストは上の🔥バナー内に入力済み）。
+              🔥 バースト進化トリガーはアクション不要です（進化条件は下の🎯発動条件欄に入力済み）。
             </div>
           ) : FUSION_EVOLVE_TRIGGERS.has(block.trigger) ? (
             <div style={{ fontSize: 11, color: '#888' }}>
@@ -5965,7 +5949,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 : block.trigger === 'alt_evolve'
                 ? '（代替進化専用の意味: 条件1=発動条件 / 条件2=進化元の絞り込み・複数追加時は3個目以降は無視されます）'
                 : block.trigger === BURST_EVOLVE_TRIGGER
-                ? '（バースト進化専用の意味: 条件1=発動条件 / 条件2=進化元の絞り込み / 条件3=手札に戻すテイマーの絞り込み）'
+                ? '（バースト進化専用の意味: 条件1=進化元（進化させたいデジモン）の絞り込み / 条件2=手札に戻すテイマーの絞り込み）'
                 : FUSION_EVOLVE_TRIGGERS.has(block.trigger)
                 ? '（この効果が有効になる条件。素材候補の指定は上の🧬バナー内で行います）'
                 : '（このアクションを発動するために満たすべき条件・複数指定可）'

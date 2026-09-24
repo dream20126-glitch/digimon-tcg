@@ -4395,6 +4395,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         onToggle={(code, on) => toggle(code as 'battle' | 'effect', on)}
                         accentColor="#1976d2"
                       />
+                      {/* 対象(target)は保存できるが、エンジンは常にctx.card自身しか保護しないため
+                          「自分/相手」等を選んでも現時点では反映されない。要エンジン追加対応 */}
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
+                        ⚠ 「🎯 アクションの対象」欄は保存はできますが、エンジンが常にこのカード自身を
+                        保護する実装のため、現状は反映されません（対象を実際に効かせるには別途
+                        エンジン実装が必要です）
+                      </div>
                     </div>
                   );
                 })()}

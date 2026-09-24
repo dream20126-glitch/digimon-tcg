@@ -5987,7 +5987,7 @@ function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGr
 // 例: 効果辞書には「破棄されたとき＝discard」で登録されているが、evo_source側の
 // 実際の発火は'when_evo_discard'で行われる（fireWhenEvoDiscardTriggers）。
 // カード側レシピを書き換えずに辞書登録名のまま動くよう、ここで吸収する
-const TRIGGER_KEY_ALIASES = { when_evo_discard: 'discard' };
+const TRIGGER_KEY_ALIASES = { when_evo_discard: 'discard', on_battle_win: 'on_win_battle' };
 // トリガーごとに発動主体が異なるカード（例:「相手がレストしたとき」か「自分のテイマーの
 // 下が破棄されたとき」のどちらでも発動する効果）は、レシピエディタ側(groupTriggersByTiming)が
 // 1つのstepへまとめ、step.subject_by_code={トリガーコード: subject}として出力する。

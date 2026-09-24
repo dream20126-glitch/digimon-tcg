@@ -144,6 +144,10 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   // Stage 10 追加（裏向き/表向きで置かれたカードか。place_under_*/deck_to_evo_bottomの
   // options:['face_down']指定でcard._faceDownが立つのを見る）
   'cond_face_down', 'cond_face_up',
+  // エンジンには実装済だがこのSetへの登録が漏れていたもの（2026-09監査で発見）
+  'cond_battle_area_le', 'cond_battle_area_ge',
+  'cond_active', 'cond_same_name_digimon', 'cond_self_attacked',
+  'cond_not_own_effect', 'cond_linked_names', 'cond_linked_any_name',
 ]);
 
 // エンジンで実装済の修飾子コード（アクションの実行方法を変える）

@@ -1465,6 +1465,30 @@ function CostListEditor({
                 ため、ここには表示しない（同じconditions配列に書き込まれるが、このパネルの
                 表示・編集対象からは除外し、他の条件を編集してもそのまま保持する） */}
             <div style={{ marginTop: 6 }}>
+              {/* よく使う状態（クイックチェックボックス）: アクションの対象の条件と同じパターン */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 6, padding: '4px 6px', background: 'white', borderRadius: 3, border: '1px solid #b2dfdb' }}>
+                {[
+                  { code: 'cond_self_rest',   label: 'レスト状態' },
+                  { code: 'cond_self_active', label: 'アクティブ状態' },
+                ].map((f) => {
+                  const checked = (c.conditions || []).some((cc) => cc.base === f.code);
+                  return (
+                    <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const cur = c.conditions || [];
+                          if (e.target.checked) { if (!checked) updateCost(i, { ...c, conditions: [...cur, { base: f.code, value: '' }] }); }
+                          else updateCost(i, { ...c, conditions: cur.filter((cc) => cc.base !== f.code) });
+                        }}
+                        style={{ margin: 0 }}
+                      />
+                      {f.label}
+                    </label>
+                  );
+                })}
+              </div>
               <ConditionsHybridEditor
                 conditions={(c.conditions || []).filter((cc) => !isRefFaceCond(cc.base))}
                 onChange={(next) => updateCost(i, {

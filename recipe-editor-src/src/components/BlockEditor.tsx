@@ -3003,9 +3003,35 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               「1枚ドロー」「ターン終了時に重ねられているカードの一番上を1枚破棄（保留処理）」も
               現状未対応です（総合ルール8-3-2-1/8-3-3-4）
             </div>
-            🔥 <b>バースト進化（指定テイマーを手札に戻すことでコスト0で進化できる）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。下の「🎯 発動条件」欄をこの意味で使います:
-            <br />・<b>条件1</b> = 進化させたいデジモン（進化元）の絞り込み（例:「名前を含む: シャイングレイモン」。名前に限らず色/Lv等も指定可）
-            <br />・<b>条件2</b> = バトルエリアから手札に戻すテイマーの絞り込み（例:「名前を含む: 大門大」。名前に限らず色/Lv等も指定可）
+            🔥 <b>バースト進化（指定テイマーを手札に戻すことでコスト0で進化できる）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。
+            <div style={{ marginTop: 8 }}>
+              <ConditionsHybridEditor
+                conditions={block.burstBaseFilter || []}
+                onChange={(next) => update('burstBaseFilter', next)}
+                dict={dict}
+                title="🧬 進化元の条件"
+                hint="（進化させたい元のデジモンの絞り込み・複数指定可。例: 名前を含む「シャイングレイモン」）"
+                theme="action"
+                defaultSubject=""
+                showSubjectSelector={false}
+                conditionsOp={block.burstBaseFilterOp || 'and'}
+                onConditionsOpChange={(op) => update('burstBaseFilterOp', op)}
+              />
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <ConditionsHybridEditor
+                conditions={block.burstTamerFilter || []}
+                onChange={(next) => update('burstTamerFilter', next)}
+                dict={dict}
+                title="💰 コストの条件（手札に戻すテイマー）"
+                hint="（バトルエリアから手札に戻すテイマーの絞り込み・複数指定可。例: 名前を含む「大門大」）"
+                theme="action"
+                defaultSubject=""
+                showSubjectSelector={false}
+                conditionsOp={block.burstTamerFilterOp || 'and'}
+                onConditionsOpChange={(op) => update('burstTamerFilterOp', op)}
+              />
+            </div>
           </div>
         ) : FUSION_EVOLVE_TRIGGERS.has(block.trigger) ? (
           <div style={{
@@ -5929,8 +5955,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* === 🎯 発動条件（常時表示・デフォルト折りたたみ・データあれば展開） ===
             コスト軽減トリガーは同内容の編集欄を上の💰バナー内に直接表示しているため、
-            ここでの二重表示は避ける */}
-        {!COST_REDUCTION_TRIGGERS.has(block.trigger) && (
+            バースト進化は専用の「進化元の条件」「コストの条件」欄を上の🔥バナー内に
+            直接表示しているため、それぞれここでの二重表示は避ける */}
+        {!COST_REDUCTION_TRIGGERS.has(block.trigger) && block.trigger !== BURST_EVOLVE_TRIGGER && (
         <details className="field" style={{ marginTop: 8 }} open={conditions.length > 0 || !!block.perCount}>
           <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#1a4f8a' }}>
             🎯 発動条件{conditions.length > 0 ? ` (${conditions.length})` : ''}
@@ -5948,8 +5975,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 ? '（この効果を発動するための条件・複数指定可）'
                 : block.trigger === 'alt_evolve'
                 ? '（代替進化専用の意味: 条件1=発動条件 / 条件2=進化元の絞り込み・複数追加時は3個目以降は無視されます）'
-                : block.trigger === BURST_EVOLVE_TRIGGER
-                ? '（バースト進化専用の意味: 条件1=進化元（進化させたいデジモン）の絞り込み / 条件2=手札に戻すテイマーの絞り込み）'
                 : FUSION_EVOLVE_TRIGGERS.has(block.trigger)
                 ? '（この効果が有効になる条件。素材候補の指定は上の🧬バナー内で行います）'
                 : '（このアクションを発動するために満たすべき条件・複数指定可）'

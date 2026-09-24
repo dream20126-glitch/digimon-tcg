@@ -621,6 +621,15 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (validTriggerConds.length > 0) step.trigger_conditions = validTriggerConds.map(pairToString);
   if (validTriggerConds.length >= 2 && b.triggerConditionsOp === 'or') step.trigger_conditions_op = 'or';
 
+  // burst_evolve専用: 進化元の絞り込み / 手札に戻すテイマーの絞り込み（trigger_conditionsと同じ
+  // 「文字列配列+op」形式で別々に出力する）
+  const validBaseFilter = (b.burstBaseFilter || []).filter((p) => p.base);
+  if (validBaseFilter.length > 0) step.base_conditions = validBaseFilter.map(pairToString);
+  if (validBaseFilter.length >= 2 && b.burstBaseFilterOp === 'or') step.base_conditions_op = 'or';
+  const validTamerFilter = (b.burstTamerFilter || []).filter((p) => p.base);
+  if (validTamerFilter.length > 0) step.tamer_conditions = validTamerFilter.map(pairToString);
+  if (validTamerFilter.length >= 2 && b.burstTamerFilterOp === 'or') step.tamer_conditions_op = 'or';
+
   // 「破棄されたとき」専用: どのゾーンからの破棄に反応するか（1件ならtrigger_from:文字列、
   // 2件以上ならtrigger_from:配列+trigger_from_op。action側のfrom/from_opとは別枠）
   const validTriggerFromZones = (b.triggerFromZones || []).filter((z) => !!z);
@@ -1293,6 +1302,10 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     extra_conditions: true,
     trigger_conditions: true,
     trigger_conditions_op: true,
+    base_conditions: true,
+    base_conditions_op: true,
+    tamer_conditions: true,
+    tamer_conditions_op: true,
     trigger_from: true,
     trigger_from_op: true,
     duration: true,
@@ -1369,6 +1382,15 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
   if (Array.isArray(step?.trigger_conditions)) {
     step.trigger_conditions.forEach((s: string) => triggerConditions.push(stringToPair(String(s))));
   }
+  // burst_evolve専用条件復元
+  const burstBaseFilter: ConditionPair[] = [];
+  if (Array.isArray(step?.base_conditions)) {
+    step.base_conditions.forEach((s: string) => burstBaseFilter.push(stringToPair(String(s))));
+  }
+  const burstTamerFilter: ConditionPair[] = [];
+  if (Array.isArray(step?.tamer_conditions)) {
+    step.tamer_conditions.forEach((s: string) => burstTamerFilter.push(stringToPair(String(s))));
+  }
   // コスト復元 (condition / when / extra_conditions を ConditionPair[] へ統合)
   const costs = parseCostArray(step?.cost);
   return {
@@ -1387,6 +1409,10 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     limit: step?.limit || '',
     triggerConditions,
     triggerConditionsOp: step?.trigger_conditions_op === 'or' ? 'or' : 'and',
+    burstBaseFilter,
+    burstBaseFilterOp: step?.base_conditions_op === 'or' ? 'or' : 'and',
+    burstTamerFilter,
+    burstTamerFilterOp: step?.tamer_conditions_op === 'or' ? 'or' : 'and',
     triggerFromZones: Array.isArray(step?.trigger_from) ? step.trigger_from.slice()
       : step?.trigger_from ? [step.trigger_from] : undefined,
     triggerFromZonesOp: step?.trigger_from_op === 'and' ? 'and' : 'or',

@@ -280,6 +280,15 @@ export interface EffectBlock {
   // 同時に使う素材の体数（既定2）。fusionMaterials.length と同じなら全スロット必須(AND)、
   // それより少なければ「いずれかN体」の組合せ判定になる
   fusionPickCount?: number;
+  // burst_evolve 専用（trigger==='burst_evolve' の時のみ意味を持つ）:
+  // 進化元（進化させたいデジモン）の絞り込み条件。JSON では step.base_conditions[] へ
+  // シリアライズされる（trigger_conditions と同じ「文字列配列+op」形式）
+  burstBaseFilter?: ConditionPair[];
+  burstBaseFilterOp?: 'and' | 'or';
+  // burst_evolve 専用: バトルエリアから手札に戻すテイマーの絞り込み条件（＝進化の代替コスト）。
+  // JSON では step.tamer_conditions[] へシリアライズされる
+  burstTamerFilter?: ConditionPair[];
+  burstTamerFilterOp?: 'and' | 'or';
 }
 
 // 付与される効果（grant_effect 用のネスト 1ステップ）

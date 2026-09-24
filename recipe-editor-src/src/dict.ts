@@ -40,6 +40,7 @@ export const REF_SUBJECTS = [
   // 自分側
   { code: 'own_digimon',     label: '自分のデジモン' },
   { code: 'own_tamer',       label: '自分のテイマー' },
+  { code: 'own_card',        label: '自分のカード（デジモン+テイマー+オプション）' },
   { code: 'own_hand',        label: '自分の手札' },
   { code: 'own_trash',       label: '自分のトラッシュ' },
   { code: 'own_security',    label: '自分のセキュリティ' },
@@ -48,6 +49,7 @@ export const REF_SUBJECTS = [
   { code: 'opp_digimon',         label: '相手のデジモン' },
   { code: 'opp_no_evo_digimon', label: '相手の進化元なしデジモン' },
   { code: 'opp_tamer',          label: '相手のテイマー' },
+  { code: 'opp_card',           label: '相手のカード（デジモン+テイマー+オプション）' },
   // 特殊カウンタ
   { code: 'last_rest_count',    label: 'この効果でレストさせた枚数' },
   { code: 'opp_hand',        label: '相手の手札' },
@@ -57,7 +59,7 @@ export const REF_SUBJECTS = [
   // 両方（自分+相手を合算してカウント。例:「レスト状態のデジモン/テイマー1体ごとに」）
   { code: 'both_digimon',        label: '両方のデジモン' },
   { code: 'both_tamer',          label: '両方のテイマー' },
-  { code: 'both_digimon_tamer',  label: '両方のデジモン+テイマー' },
+  { code: 'both_card',           label: '両方のカード（デジモン+テイマー+オプション）' },
 ];
 
 // 状態 pulldown の旧データ。新仕様では dict.conditions を直接利用するためエディタ側で参照していない。

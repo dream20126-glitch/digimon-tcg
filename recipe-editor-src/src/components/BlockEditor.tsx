@@ -2145,7 +2145,6 @@ const PERREF_L1 = [
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
   { code: 'both', label: '両方' },
-  { code: 'all_cards', label: '全カード' },
 ];
 const PERREF_L2: Record<string, { code: string; label: string }[]> = {
   self: [
@@ -2154,7 +2153,7 @@ const PERREF_L2: Record<string, { code: string; label: string }[]> = {
   own: [
     { code: 'own_digimon', label: 'デジモン' },
     { code: 'own_tamer', label: 'テイマー' },
-    { code: 'own_digimon_tamer', label: 'デジモン+テイマー' },
+    { code: 'own_card', label: 'カード' },
     { code: 'own_hand', label: '手札' },
     { code: 'own_trash', label: 'トラッシュ' },
     { code: 'own_security', label: 'セキュリティ' },
@@ -2163,35 +2162,40 @@ const PERREF_L2: Record<string, { code: string; label: string }[]> = {
   opp: [
     { code: 'opp_digimon', label: 'デジモン' },
     { code: 'opp_tamer', label: 'テイマー' },
-    { code: 'opp_digimon_tamer', label: 'デジモン+テイマー' },
+    { code: 'opp_card', label: 'カード' },
     { code: 'opp_hand', label: '手札' },
     { code: 'opp_trash', label: 'トラッシュ' },
     { code: 'opp_security', label: 'セキュリティ' },
     { code: 'opp_battle_area', label: 'バトルエリア' },
   ],
   // 両方（自分+相手を合算してカウント）。ゾーン系（手札等）は合算する意味が薄いため
-  // デジモン/テイマー系のみに限定する
+  // デジモン/テイマー/カード系のみに限定する
   both: [
     { code: 'both_digimon', label: 'デジモン' },
     { code: 'both_tamer', label: 'テイマー' },
-    { code: 'both_digimon_tamer', label: 'デジモン+テイマー' },
+    { code: 'both_card', label: 'カード' },
   ],
 };
-// デジモン+テイマー複数選択の結合コード、および「全カード」は、いずれもエンジン未対応・⚠表示用
-const PERREF_COMBO_CODES = new Set(['own_digimon_tamer', 'opp_digimon_tamer', 'all_cards']);
-const PERREF_L2_CODES = new Set(
-  Object.values(PERREF_L2).flatMap((opts) => opts.map((o) => o.code))
-);
+// 「デジモン」「テイマー」ボタンを両方ONにしたときに使う結合コード。ボタンとしては表示しない
+// （トグル操作で自動的にこのコードへ切り替わる）が、保存済みレシピの読み込み時に
+// PERREF_L2_CODES/perRefToL1 が認識できるようにしておく
+const PERREF_COMBO_ONLY_CODES = ['own_digimon_tamer', 'opp_digimon_tamer', 'both_digimon_tamer'];
+// デジモン+テイマーの複合対象（トグルで両方ON）のうち、自分/相手側はエンジン未対応・⚠表示用
+// （「両方」側(both_digimon_tamer)と「カード」(own_card/opp_card/both_card)はエンジン対応済みのため対象外）
+const PERREF_COMBO_CODES = new Set(['own_digimon_tamer', 'opp_digimon_tamer']);
+const PERREF_L2_CODES = new Set([
+  ...Object.values(PERREF_L2).flatMap((opts) => opts.map((o) => o.code)),
+  ...PERREF_COMBO_ONLY_CODES,
+]);
 // 状態（レスト/アクティブ）が意味を持つ対象。ゾーン系（手札/トラッシュ等）には無い概念のため除外
 const PERREF_STATE_ELIGIBLE_SUBJECTS = new Set([
-  'own_digimon', 'own_tamer', 'own_digimon_tamer',
-  'opp_digimon', 'opp_tamer', 'opp_digimon_tamer',
-  'both_digimon', 'both_tamer', 'both_digimon_tamer',
+  'own_digimon', 'own_tamer', 'own_digimon_tamer', 'own_card',
+  'opp_digimon', 'opp_tamer', 'opp_digimon_tamer', 'opp_card',
+  'both_digimon', 'both_tamer', 'both_digimon_tamer', 'both_card',
 ]);
 // REF_SUBJECTSコード → PERREF_L1 の逆引き
 function perRefToL1(code: string): string {
   if (code === 'evo_source') return 'self';
-  if (code === 'all_cards') return 'all_cards';
   if (code.startsWith('own_') && PERREF_L2_CODES.has(code)) return 'own';
   if (code.startsWith('opp_') && PERREF_L2_CODES.has(code)) return 'opp';
   if (code.startsWith('both_') && PERREF_L2_CODES.has(code)) return 'both';
@@ -2684,17 +2688,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   const l2Options = PERREF_L2[curL1] || [];
                   const handleL1 = (l1: string) => {
                     if (!l1) { setSubject(''); return; }
-                    if (l1 === 'all_cards') { setSubject('all_cards'); return; }
                     const opts = PERREF_L2[l1] || [];
                     if (opts.length === 0) return;
                     const keepCurrent = opts.some((o) => o.code === refSubject);
                     setSubject(keepCurrent ? refSubject : opts[0].code);
                   };
                   // デジモン/テイマーは「デジモン/テイマー」表現があるため複数選択可
-                  const digimonCode = curL1 === 'own' ? 'own_digimon' : curL1 === 'opp' ? 'opp_digimon' : '';
-                  const tamerCode = curL1 === 'own' ? 'own_tamer' : curL1 === 'opp' ? 'opp_tamer' : '';
-                  const comboCode = curL1 === 'own' ? 'own_digimon_tamer' : curL1 === 'opp' ? 'opp_digimon_tamer' : '';
-                  const hasDigiTamer = curL1 === 'own' || curL1 === 'opp';
+                  // （両方ONにすると own_digimon_tamer / opp_digimon_tamer / both_digimon_tamer へ切り替わる）
+                  const digimonCode = curL1 === 'own' ? 'own_digimon' : curL1 === 'opp' ? 'opp_digimon' : curL1 === 'both' ? 'both_digimon' : '';
+                  const tamerCode = curL1 === 'own' ? 'own_tamer' : curL1 === 'opp' ? 'opp_tamer' : curL1 === 'both' ? 'both_tamer' : '';
+                  const comboCode = curL1 === 'own' ? 'own_digimon_tamer' : curL1 === 'opp' ? 'opp_digimon_tamer' : curL1 === 'both' ? 'both_digimon_tamer' : '';
+                  const hasDigiTamer = curL1 === 'own' || curL1 === 'opp' || curL1 === 'both';
                   const digimonChecked = refSubject === digimonCode || refSubject === comboCode;
                   const tamerChecked = refSubject === tamerCode || refSubject === comboCode;
                   const applyDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
@@ -2731,7 +2735,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       )}
                       {PERREF_COMBO_CODES.has(refSubject) && (
                         <div style={{ marginTop: 4, fontSize: 10, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '3px 6px' }}>
-                          ⚠ 「全カード」（デジモン+テイマー）はエンジン未実装です（保存はできますが動作しません）
+                          ⚠ 「デジモン+テイマー」（自分/相手の複合対象）はエンジン未実装です（保存はできますが動作しません）
                         </div>
                       )}
                     </>

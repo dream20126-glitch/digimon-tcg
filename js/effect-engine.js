@@ -541,6 +541,11 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     case 'own_rest_digimon':   return countWith(player.battleArea.filter(c => c && c.type === 'デジモン' && c.suspended));
     case 'own_active_digimon': return countWith(player.battleArea.filter(c => c && c.type === 'デジモン' && !c.suspended));
     case 'own_tamer':          return countWith((player.tamerArea || []).filter(c => c !== null));
+    // own_card: 「カード」＝デジモン+テイマー(+オプション)全種別。オプションはプレイ後トラッシュへ
+    // 移動し場に残らないため、実質バトルエリア(デジモン)+テイマーエリアの合算になる
+    case 'own_card':
+      return countWith(player.battleArea.filter(c => c !== null))
+           + countWith((player.tamerArea || []).filter(c => c !== null));
     // --- 相手側 ---
     case 'opp_hand':           return countWith(opponent.hand);
     case 'opp_trash':          return countWith(opponent.trash);
@@ -551,6 +556,9 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     case 'opp_active_digimon':   return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && !c.suspended));
     case 'opp_no_evo_digimon':   return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && (!c.stack || c.stack.length === 0)));
     case 'opp_tamer':            return countWith((opponent.tamerArea || []).filter(c => c !== null));
+    case 'opp_card':
+      return countWith(opponent.battleArea.filter(c => c !== null))
+           + countWith((opponent.tamerArea || []).filter(c => c !== null));
     // 直前の rest 効果でレストさせた枚数（bs._lastRestCount に保存）
     case 'last_rest_count':      return (bs && bs._lastRestCount != null) ? bs._lastRestCount : 0;
     // --- 両方（自分+相手を合算してカウント） ---
@@ -564,6 +572,11 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
       return countWith(player.battleArea.filter(c => c && c.type === 'デジモン'))
            + countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン'))
            + countWith((player.tamerArea || []).filter(c => c !== null))
+           + countWith((opponent.tamerArea || []).filter(c => c !== null));
+    case 'both_card':
+      return countWith(player.battleArea.filter(c => c !== null))
+           + countWith((player.tamerArea || []).filter(c => c !== null))
+           + countWith(opponent.battleArea.filter(c => c !== null))
            + countWith((opponent.tamerArea || []).filter(c => c !== null));
     default: return 0;
   }

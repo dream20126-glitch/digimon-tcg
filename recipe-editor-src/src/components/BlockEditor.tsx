@@ -2425,6 +2425,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectSkipOnPlay = isEditingAlt ? !!editingAlt!.skipOnPlay : !!block.skipOnPlay;
   const effectNegateTargetTrigger = isEditingAlt ? editingAlt!.negateTargetTrigger : block.negateTargetTrigger;
   const effectNegateDeny = isEditingAlt ? !!editingAlt!.negateDeny : !!block.negateDeny;
+  const effectDestroyCause = isEditingAlt ? editingAlt!.destroyCause : block.destroyCause;
+  const effectDestroyCauseSubject = isEditingAlt ? editingAlt!.destroyCauseSubject : block.destroyCauseSubject;
   const effectOptions = isEditingAlt ? (editingAlt!.options || []) : (block.options || []);
   const effectOptional = isEditingAlt ? !!editingAlt!.optional : !!block.optional;
   const effectFromFilter = isEditingAlt ? (editingAlt!.fromFilter || []) : (block.fromFilter || []);
@@ -4410,11 +4412,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   );
                 })()}
                 {/* 消滅「できない」(cant_destroy): 上の🎯対象欄で誰を守るか選べる。
-                    原因（バトルで/効果で）はblock.destroyCause/destroyCauseSubject（トリガー側の
-                    「☑ 原因選択」と同じフィールド）をここでも直接編集できるようにする
+                    原因（バトルで/効果で）はdestroyCause/destroyCauseSubject（トリガー側の
+                    「☑ 原因選択」と同じ考え方のフィールド）をここでも直接編集できるようにする
                     （トリガー欄まで探しに行かなくて済むように、アクション欄側にも同じUIを複製）。
-                    block専用フィールドのため効果2以降（代替アクション）編集中は出さない */}
-                {effectAction === 'cant_destroy' && !isEditingAlt && (
+                    効果2以降（代替アクション）ではeditingAlt側のdestroyCauseを使う */}
+                {effectAction === 'cant_destroy' && (
                   <div style={{ marginTop: 4 }}>
                     <div style={{ fontSize: 10, color: '#c62828', marginBottom: 4 }}>
                       ⚠ 対象への付与自体は保存・実行できますが、そのバフ（消滅しない）を実際に消滅処理側で
@@ -4423,20 +4425,20 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#1a5a1a' }}>
                       <input
                         type="checkbox"
-                        checked={!!block.destroyCause}
+                        checked={!!effectDestroyCause}
                         onChange={(e) => {
-                          if (e.target.checked) update('destroyCause', 'effect');
-                          else onChange({ ...block, destroyCause: undefined, destroyCauseSubject: undefined });
+                          if (e.target.checked) updateEffect({ destroyCause: 'effect' });
+                          else updateEffect({ destroyCause: undefined, destroyCauseSubject: undefined });
                         }}
                       />
                       ☑ 原因選択（バトルで/効果で・未選択なら両方防ぐ）
                     </label>
-                    {block.destroyCause && (
+                    {effectDestroyCause && (
                       <div style={{ marginTop: 4 }}>
                         <ButtonGroup
                           options={[{ code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }]}
-                          value={block.destroyCause}
-                          onChange={(v) => update('destroyCause', v as 'battle' | 'effect')}
+                          value={effectDestroyCause}
+                          onChange={(v) => updateEffect({ destroyCause: v as 'battle' | 'effect' })}
                           accentColor="#1a5a1a"
                         />
                       </div>

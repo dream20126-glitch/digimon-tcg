@@ -337,6 +337,10 @@ export interface AltAction {
   // negate 専用（効果1と同じ意味）
   negateTargetTrigger?: 'on_play' | 'on_evolve';
   negateDeny?: boolean;
+  // 原因（バトルで/効果で）: cant_destroy等で使う。効果1のdestroyCause/destroyCauseSubjectと
+  // 同じ意味。JSONでは対応するstepのcause/cause_subjectとして出力する
+  destroyCause?: 'battle' | 'effect';
+  destroyCauseSubject?: string;
   // 対象自身の絞り込み（→ step.filter）・取得元エリアから選ぶカードの絞り込み
   // （→ step.from_filter）。効果1のtargetFilter/fromFilterと同じ意味・同じ変換ルール
   targetFilter?: ConditionPair[];

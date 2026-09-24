@@ -128,6 +128,10 @@ function altActionToStepObject(a: AltAction): any {
   if (a.target) out.target = a.target;
   const aExtraTargets = buildExtraTargetsArray(a.extraTargets);
   if (aExtraTargets) out.targets = aExtraTargets;
+  if (a.destroyCause) {
+    out.cause = a.destroyCause;
+    if (a.destroyCauseSubject) out.cause_subject = a.destroyCauseSubject;
+  }
   const validGate = (a.gateConditions || []).filter((p) => p.base);
   if (validGate.length >= 1) out.gate = pairToString(validGate[0]);
   if (validGate.length >= 2) out.gate_when = pairToString(validGate[1]);
@@ -1470,6 +1474,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             skipOnPlay: !!a?.skip_on_play,
             negateTargetTrigger: a?.target_trigger === 'on_play' || a?.target_trigger === 'on_evolve' ? a.target_trigger : undefined,
             negateDeny: !!a?.deny,
+            destroyCause: a?.cause === 'battle' || a?.cause === 'effect' ? a.cause : undefined,
+            destroyCauseSubject: a?.cause_subject || undefined,
             targetFilter: parseFilterObject(a?.filter),
             fromFilter: parseFilterObject(a?.from_filter),
             costs: parseCostArray(a?.cost),

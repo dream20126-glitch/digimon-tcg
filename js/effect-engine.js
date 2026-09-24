@@ -5888,9 +5888,14 @@ function _lookupTriggerStepsBase(recipeObj, triggerCode) {
     const aliasSteps = recipeObj[aliasKey];
     if (Array.isArray(aliasSteps)) result = result ? result.concat(aliasSteps) : aliasSteps.slice();
   }
+  // カンマ区切りの結合キー（例:"when_rest,discard"）は、triggerCode自体だけでなく
+  // そのエイリアス（when_evo_discard→discardのdiscard側）でも一致判定する。
+  // これが無いと「when_rest,discard」キーはtriggerCode='when_evo_discard'では
+  // 見つからない（セグメントが'discard'であって'when_evo_discard'ではないため）
+  const matchCodes = aliasKey ? [triggerCode, aliasKey] : [triggerCode];
   for (const key in recipeObj) {
-    if (key === triggerCode || key.indexOf(',') === -1) continue;
-    if (!key.split(',').some(k => k.trim() === triggerCode)) continue;
+    if (key === triggerCode || (aliasKey && key === aliasKey) || key.indexOf(',') === -1) continue;
+    if (!key.split(',').some(k => matchCodes.indexOf(k.trim()) !== -1)) continue;
     const steps = recipeObj[key];
     if (!Array.isArray(steps)) continue;
     result = result ? result.concat(steps) : steps.slice();
@@ -6417,7 +6422,25 @@ export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
   // ことで、evo_source ネストされた反応（ガルルモン等と同種の構造）も自動的に拾えるようになり、
   // アナウンス/確認/close送信の定型処理も他の反応系トリガーと完全に統一される
   const reactSide = restedSide === 'player' ? 'ai' : 'player';
-  return _fireSidedReactionTriggers(reactSide, 'when_opp_rest', bs, ctxBase, done);
+  // 新方式: トリガーコードは共通の 'when_rest' に統一し、発動主体は subject（own/opp/both +
+  // digimon/tamer/card）で表現できるようにする（レシピエディタ側の設計）。
+  // ここでは「相手がレストしたとき」に該当する opp系/both系 の subject のみ拾う
+  // （own系は fireWhenRestTriggers 側の担当のため対象外＝二重発火防止）。
+  // 注意: このパスは「具体的にどのカードがレストしたか」を特定できない呼び出し元がある
+  // （rest_chain等で複数体レストのケース）ため、型指定(opp_digimon/opp_tamer)は
+  // 判定できず、型を問わずマッチする（既知の制約。型を厳密に見たい場合は既存の
+  // 'when_opp_rest' キー + when_rest とは別カードでの運用を推奨）
+  const whenRestStepFilter = (step) => {
+    if (!step) return false;
+    const subj = _resolveStepSubject(step, 'when_rest');
+    if (!subj) return false; // 未指定は対象外（'when_rest'単独キー使用時の既定=own側と衝突させないため）
+    const base = String(subj).replace(/_stack(_bottom)?$/, '');
+    if (base === 'own' || base.indexOf('own_') === 0) return false;
+    return true;
+  };
+  return _fireSidedReactionTriggers(reactSide, 'when_opp_rest', bs, ctxBase, () => {
+    _fireSidedReactionTriggers(reactSide, 'when_rest', bs, ctxBase, done, whenRestStepFilter);
+  });
 }
 
 // ===== when_rest グローバル発火 =====
@@ -6427,6 +6450,11 @@ export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
 // レストしたカードと同じ側が反応する。
 // restedSide: レストしたカードがいる側（反応するのも同じ側）
 // restedCard: レストしたカード本体（trigger_conditions の評価対象）
+// subject（own/own_digimon/own_tamer/own_card等・未指定時も既定でown扱い）で型を絞り込む。
+// opp系のsubjectはfireWhenOppRestTriggers側の担当のためここでは対象外（二重発火防止）。
+// ※ both系は「このカードが実際にレストした側」の反応にしか届かない（restedSide側の
+// カードしかスキャンしていないため）。相手側からのboth反応が必要な場合は、
+// 現状のアーキテクチャ（レスト元/レスト先で発火関数が分かれている）では未対応
 export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) {
   if (!restedCard) { try { done && done(); } catch(_) {} return; }
   // subject/trigger_conditions はレストしたカード本体(restedCard)に対して判定する必要があるため
@@ -6435,11 +6463,10 @@ export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) 
   const stepFilter = (step) => {
     if (!step) return false;
     const subj = _resolveStepSubject(step, 'when_rest');
-    if (subj) {
-      const s = String(subj);
-      if (s.includes('tamer') && restedCard.type !== 'テイマー') return false;
-      if (s.includes('digimon') && restedCard.type !== 'デジモン') return false;
-    }
+    const base = String(subj || 'own').replace(/_stack(_bottom)?$/, '');
+    if (base === 'opp' || base.indexOf('opp_') === 0) return false;
+    if (base.indexOf('tamer') >= 0 && restedCard.type !== 'テイマー') return false;
+    if (base.indexOf('digimon') >= 0 && restedCard.type !== 'デジモン') return false;
     if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, restedCard, bs, restedSide)) return false;
     return true;
   };

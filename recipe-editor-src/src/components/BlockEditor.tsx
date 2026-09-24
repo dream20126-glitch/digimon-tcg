@@ -2413,6 +2413,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [showSpecialEvolveMenu, setShowSpecialEvolveMenu] = useState(false);
   const isEditingAlt = editingEffect > 0 && !!altActions[editingEffect - 1];
   const editingAlt = isEditingAlt ? altActions[editingEffect - 1] : undefined;
+  // alt_evolve/burst_evolve/アプ合体/ジョグレス進化は常時判定される特殊トリガーで、
+  // アクション/対象/複数アクション(OR/AND)/期間のいずれも意味を持たない（専用バナー内で完結する）
+  const isSpecialEvolveTrigger = block.trigger === 'alt_evolve' || block.trigger === BURST_EVOLVE_TRIGGER || FUSION_EVOLVE_TRIGGERS.has(block.trigger);
   const effectAction = isEditingAlt ? (editingAlt!.action || '') : (block.action || '');
   const effectValue = isEditingAlt ? editingAlt!.value : block.value;
   const effectFromCount = isEditingAlt ? editingAlt!.fromCount : block.fromCount;
@@ -5004,7 +5007,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* OR/AND（複数アクションの組合せ方）: 📐ルールより下に配置
             （その他のアクションとは別の設定なので、混同しないよう枠と背景色で視覚的に分ける）。
-            「その後」は各効果タブの「アクション」欄の隣にあるチェックボックスで個別に指定する */}
+            「その後」は各効果タブの「アクション」欄の隣にあるチェックボックスで個別に指定する。
+            alt_evolve/burst_evolve/アプ合体/ジョグレス進化はアクション自体が無いため丸ごと非表示 */}
+        {!isSpecialEvolveTrigger && (
         <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
@@ -5029,9 +5034,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </label>
           </div>
         </div>
+        )}
 
         {/* 「編集中」の効果切替 + 設定内容一覧 */}
-        {(isOrChecked || isAndChecked) && (
+        {!isSpecialEvolveTrigger && (isOrChecked || isAndChecked) && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
             <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
               💡 編集中の効果を選んでください。上のアクション/対象/対象数/発動条件/場所/期間は選んだ効果に反映されます。
@@ -5440,6 +5446,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* 対象 / 対象数 (アクションのターゲット) */}
         {(() => {
+          // alt_evolve/burst_evolve/アプ合体/ジョグレス進化は対象という概念自体が無い
+          if (isSpecialEvolveTrigger) return null;
           // 効果2以降（代替アクション）を編集中は「デジモン+テイマー同時選択(AND)」だけ省略する
           // （AND側は altActions を入れ子で使う実装のため、代替アクション自身には適用できない）。
           // OR側（対象コード=card+cond_typeフィルタ）はaltActionsのネストが不要なので効果1と同様に対応する。
@@ -5909,7 +5917,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         )}
 
         {/* ⏳ 期間（クイックボタン）: ✅を入れるとボタンが現れる。編集中の効果（効果1/効果2以降）
-            に対して読み書きする。「〜の間（汎用）」等もL1に含む */}
+            に対して読み書きする。「〜の間（汎用）」等もL1に含む。
+            alt_evolve/burst_evolve/アプ合体/ジョグレス進化には「期間」の概念が無いため非表示 */}
+        {!isSpecialEvolveTrigger && (
         <div className="field" style={{ marginTop: 8 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
             <input
@@ -5952,6 +5962,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             );
           })()}
         </div>
+        )}
 
         {/* === 🎯 発動条件（常時表示・デフォルト折りたたみ・データあれば展開） ===
             コスト軽減トリガーは同内容の編集欄を上の💰バナー内に直接表示しているため、

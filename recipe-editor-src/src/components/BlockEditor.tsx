@@ -5114,8 +5114,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             それ以外は辞書の hasFromZones=true のアクションのみ表示。編集中の効果に対して読み書き。
             「〇〇に置く」(isPlaceActive)専用の📥場所パネルと辞書側hasFromZonesが両方満たされる
             アクション（place_on_security_top等）では二重表示になってしまうため、
-            isPlaceActive中はこちらを出さない */}
-        {!PLACE_ACTION_CODES.has(effectAction || '') && (BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || !!dict.actions.find((a) => a.code === effectAction)?.hasFromZones) && (() => {
+            isPlaceActive中はこちらを出さない。「破棄する」(isDiscardActive)も同様に
+            専用の📥場所（どこから破棄するか）パネルを別途持つため、二重表示を避けるためこちらを出さない */}
+        {!PLACE_ACTION_CODES.has(effectAction || '') && !(DISCARD_ACTION_CODES.has(getActionVariant(effectAction || '')?.base || (effectAction || '')) || effectAction === 'discard') && (BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || !!dict.actions.find((a) => a.code === effectAction)?.hasFromZones) && (() => {
           const zones = effectFromZones;
           const op = effectFromZonesOp;
           const toggleZone = (code: string) => {

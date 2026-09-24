@@ -370,9 +370,9 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
     const triggerList = (b.triggers && b.triggers.length > 0) ? b.triggers : (b.trigger ? [b.trigger] : []);
     if (triggerList.length > 0) {
       const groups = groupTriggersByTiming(triggerList, b);
-      groups.forEach(({ codes, conditions, subject }) => {
+      groups.forEach(({ codes, conditions, subject, subjectByCode }) => {
         const combinedTrig = codes.join(',');
-        const bForGroup = { ...b, triggerConditions: conditions, triggerSubject: subject };
+        const bForGroup = { ...b, triggerConditions: conditions, triggerSubject: subject, triggerSubjectByCode: subjectByCode };
         if (b.section === 'evo_source') {
           recipe.evo_source = recipe.evo_source || {};
           appendStep(recipe.evo_source, { ...bForGroup, trigger: combinedTrig }, keywordDict);
@@ -392,12 +392,16 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
 }
 
 // triggerTimingByCode/triggerSubjectByCode に基づき、triggerList を「実際に出力される
-// trigger_conditions と 発動主体(subject) が両方とも同じもの同士」にグループ化する。
+// trigger_conditions（発動タイミング）が同じもの同士」にグループ化する。
 // 個別指定が無いトリガーは block共有の triggerConditions/triggerSubject をそのまま使う
-// （＝従来通りの挙動、後方互換）。例:「相手がレストしたとき（発動主体=相手）」か
-// 「自分のテイマーの下が破棄されたとき（発動主体=自分のテイマーの下）」のように、
-// トリガーごとに発動主体が異なる場合は別stepとして出力する
-function groupTriggersByTiming(triggerList: string[], b: EffectBlock): { codes: string[]; conditions: ConditionPair[]; subject?: string }[] {
+// （＝従来通りの挙動、後方互換）。発動主体(subject)がコードごとに異なっていても
+// 別stepには分割せず、1つのstepへまとめてsubject_by_codeとして出力する
+// （例:「相手がレストしたとき」か「自分のテイマーの下が破棄されたとき」の
+// どちらでも同じ効果、のようなケースで、display_text/action/filter等を
+// コードの数だけ重複出力しないため）。エンジン側は各トリガーの発火関数が
+// 「今どのトリガーコードをスキャンしているか」を知っているので、
+// step.subject_by_code[そのコード] を優先して解決できる
+function groupTriggersByTiming(triggerList: string[], b: EffectBlock): { codes: string[]; conditions: ConditionPair[]; subject?: string; subjectByCode?: Record<string, string> }[] {
   const overrides = b.triggerTimingByCode || {};
   const subjectOverrides = b.triggerSubjectByCode || {};
   const resolve = (code: string): ConditionPair[] => {
@@ -409,16 +413,24 @@ function groupTriggersByTiming(triggerList: string[], b: EffectBlock): { codes: 
   };
   const resolveSubject = (code: string): string | undefined =>
     subjectOverrides[code] !== undefined ? subjectOverrides[code] : b.triggerSubject;
-  const groups: { key: string; codes: string[]; conditions: ConditionPair[]; subject?: string }[] = [];
+  const groups: { key: string; codes: string[]; conditions: ConditionPair[]; subjects: Record<string, string | undefined> }[] = [];
   triggerList.forEach((code) => {
     const conditions = resolve(code);
     const subject = resolveSubject(code);
-    const key = conditions.filter((p) => p.base).map(pairToString).join('|') + '::' + (subject || '');
+    const key = conditions.filter((p) => p.base).map(pairToString).join('|');
     const existing = groups.find((g) => g.key === key);
-    if (existing) existing.codes.push(code);
-    else groups.push({ key, codes: [code], conditions, subject });
+    if (existing) { existing.codes.push(code); existing.subjects[code] = subject; }
+    else groups.push({ key, codes: [code], conditions, subjects: { [code]: subject } });
   });
-  return groups;
+  return groups.map(({ codes, conditions, subjects }) => {
+    const distinctSubjects = Array.from(new Set(Object.values(subjects).filter((s): s is string => s !== undefined)));
+    if (codes.length <= 1 || distinctSubjects.length <= 1) {
+      return { codes, conditions, subject: distinctSubjects[0] };
+    }
+    const subjectByCode: Record<string, string> = {};
+    codes.forEach((c) => { const s = subjects[c]; if (s !== undefined) subjectByCode[c] = s; });
+    return { codes, conditions, subjectByCode };
+  });
 }
 
 // ConditionPair[]（+AND/OR）から、条件一式のJSONフィールド（condition/when/
@@ -862,8 +874,16 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.action) applyRulesToStep(b.action, b.rules, step);
   if (b.zone) step.in_zone = b.zone;
   if (b.limit) step.limit = b.limit;
-  // subject='self' はデフォルトなのでJSONに含めない（既存レシピと互換）
-  if (b.triggerSubject && b.triggerSubject !== 'self') step.subject = b.triggerSubject;
+  // subject='self' はデフォルトなのでJSONに含めない（既存レシピと互換）。
+  // トリガーごとに発動主体が異なる場合（groupTriggersByTimingが1stepへ統合した場合）は
+  // subject_by_code（{トリガーコード: subject}）を出力する。エンジン側は各トリガーの
+  // 発火関数が「今どのトリガーコードをスキャンしているか」を知っているため、
+  // step.subject_by_code[そのコード] || step.subject の順で解決する
+  if (b.triggerSubjectByCode && Object.keys(b.triggerSubjectByCode).length > 1) {
+    step.subject_by_code = b.triggerSubjectByCode;
+  } else if (b.triggerSubject && b.triggerSubject !== 'self') {
+    step.subject = b.triggerSubject;
+  }
   // 「原因」（バトルで/効果で・原因の対象）: どのトリガーでも設定可能な汎用フィールド
   // （詳細は types.ts 参照）
   if (b.destroyCause) {
@@ -1293,6 +1313,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     limit: true,
     in_zone: true,
     subject: true,
+    subject_by_code: true,
     cause: true,
     cause_subject: true,
     cost: true,
@@ -1358,6 +1379,9 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     triggers: triggerParts.length > 1 ? triggerParts : undefined,
     // JSON に subject 無ければ 'self' (このデジモン) としてロード
     triggerSubject: step?.subject || 'self',
+    // subject_by_code（トリガーコードごとに発動主体が異なる場合。groupTriggersByTiming参照）
+    triggerSubjectByCode: (step?.subject_by_code && typeof step.subject_by_code === 'object')
+      ? { ...step.subject_by_code } : undefined,
     destroyCause: step?.cause === 'battle' || step?.cause === 'effect' ? step.cause : undefined,
     destroyCauseSubject: step?.cause_subject || undefined,
     limit: step?.limit || '',

@@ -5865,6 +5865,19 @@ function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGr
 // 実際の発火は'when_evo_discard'で行われる（fireWhenEvoDiscardTriggers）。
 // カード側レシピを書き換えずに辞書登録名のまま動くよう、ここで吸収する
 const TRIGGER_KEY_ALIASES = { when_evo_discard: 'discard' };
+// トリガーごとに発動主体が異なるカード（例:「相手がレストしたとき」か「自分のテイマーの
+// 下が破棄されたとき」のどちらでも発動する効果）は、レシピエディタ側(groupTriggersByTiming)が
+// 1つのstepへまとめ、step.subject_by_code={トリガーコード: subject}として出力する。
+// 各トリガーの発火関数は「今どのトリガーコードをスキャンしているか」を知っているため、
+// そのコードに対応するsubjectを優先して解決する（無ければ従来通りstep.subjectを使う）
+function _resolveStepSubject(step, triggerCode) {
+  if (step && step.subject_by_code && typeof step.subject_by_code === 'object') {
+    if (step.subject_by_code[triggerCode] !== undefined) return step.subject_by_code[triggerCode];
+    const aliasKey = TRIGGER_KEY_ALIASES[triggerCode];
+    if (aliasKey && step.subject_by_code[aliasKey] !== undefined) return step.subject_by_code[aliasKey];
+  }
+  return step ? step.subject : undefined;
+}
 function _lookupTriggerStepsBase(recipeObj, triggerCode) {
   if (!recipeObj || !triggerCode) return undefined;
   let result;
@@ -6344,7 +6357,7 @@ export function fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, done, con
   // 原因追跡は「今まさに解決中の反応チェーン」限定の一時情報のため、解決完了後は必ずクリアする
   const finish = () => { if (bs) bs._lastDestroyCause = null; try { done && done(); } catch(_) {} };
   const subjectMatches = (step, cardSide) => {
-    const base = String(step.subject || '').replace(/_stack(_bottom)?$/, '');
+    const base = String(_resolveStepSubject(step, 'when_evo_discard') || '').replace(/_stack(_bottom)?$/, '');
     let sideMatch, typeReq = null;
     switch (base) {
       case 'opp': sideMatch = discardedSide !== cardSide; break;
@@ -6421,8 +6434,9 @@ export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) 
   // 既存の condition/gate/limit チェックに委譲される）
   const stepFilter = (step) => {
     if (!step) return false;
-    if (step.subject) {
-      const s = String(step.subject);
+    const subj = _resolveStepSubject(step, 'when_rest');
+    if (subj) {
+      const s = String(subj);
       if (s.includes('tamer') && restedCard.type !== 'テイマー') return false;
       if (s.includes('digimon') && restedCard.type !== 'デジモン') return false;
     }

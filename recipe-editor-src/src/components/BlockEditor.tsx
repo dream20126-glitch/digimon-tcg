@@ -6919,11 +6919,9 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   { code: 'security', label: 'セキュリティ' },
   { code: 'evo_source', label: '進化元／テイマーの下' },
   { code: 'battle_area', label: 'バトルエリア' },
-  { code: 'state_rest', label: 'レスト状態' },
-  { code: 'state_active', label: 'アクティブ状態' },
 ];
-// 状態（レスト/アクティブ）は枚数ではなく体数で数えるゾーン
-const REF_ZONE_UNIT_COUNT = new Set(['state_rest', 'state_active']);
+// バトルエリア（デジモン体数）は枚数ではなく体数で数えるゾーン
+const REF_ZONE_UNIT_COUNT = new Set(['battle_area']);
 const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'hand:ge': 'cond_hand_ge', 'hand:le': 'cond_hand_le', 'hand:eq': 'cond_hand_eq', 'hand:gt': 'cond_hand_gt', 'hand:lt': 'cond_hand_lt',
   'trash:ge': 'cond_trash_ge', 'trash:le': 'cond_trash_le', 'trash:eq': 'cond_trash_eq', 'trash:gt': 'cond_trash_gt', 'trash:lt': 'cond_trash_lt',
@@ -6951,10 +6949,14 @@ const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> 
 function isRefFaceCond(base: string): boolean {
   return base === 'cond_face_down' || base === 'cond_face_up';
 }
-// 現在の行が指すゾーン（裏向き/表向きのときは c.value に保持したゾーンを見る）
+// 現在の行が指すゾーン（裏向き/表向きのときは c.value に保持したゾーンを見る）。
+// レスト状態/アクティブ状態はバトルエリアの体数条件に「状態」フィルタを重ねたものなので、
+// ゾーンボタン上は常に「バトルエリア」として表示する（フィルタの有無は対象欄の
+// チェックボックスで別途表現する）
 function refZoneOf(c: ConditionPair): string {
   if (isRefFaceCond(c.base)) return (c.value && REF_FACE_ZONES.has(c.value)) ? c.value : 'evo_source';
-  return REF_CODE_TO_ZONE_QUANT[c.base]?.zone || 'hand';
+  const zone = REF_CODE_TO_ZONE_QUANT[c.base]?.zone || 'hand';
+  return (zone === 'state_rest' || zone === 'state_active') ? 'battle_area' : zone;
 }
 // 現在の行の「値」バリアント（以上/以下/完全一致/裏向き/表向き）
 function refQuantOf(c: ConditionPair): RefQuant {
@@ -7533,6 +7535,36 @@ function ConditionsHybridEditor({
                   {showSubjectSelector && cat.code !== 'memory' && (
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                      {/* バトルエリアのときだけ、体数を数える対象を「レスト状態」「アクティブ状態」
+                          のどちらかに絞り込めるチェックボックスを出す（互いに排他。どちらも
+                          外せば従来通りバトルエリアの全デジモンを数える） */}
+                      {cat.code === 'ref' && refZoneOf(c) === 'battle_area' && (() => {
+                        const refQuant = refQuantOf(c);
+                        const setStateFilter = (stateZone: '' | 'state_rest' | 'state_active') => {
+                          const zone = stateZone || 'battle_area';
+                          updateAt(i, { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + refQuant] });
+                        };
+                        return (
+                          <div style={{ display: 'flex', gap: 10, marginBottom: 4 }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11 }}>
+                              <input
+                                type="checkbox"
+                                checked={c.base.startsWith('cond_state_rest_')}
+                                onChange={(e) => setStateFilter(e.target.checked ? 'state_rest' : '')}
+                              />
+                              レスト状態のみ
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11 }}>
+                              <input
+                                type="checkbox"
+                                checked={c.base.startsWith('cond_state_active_')}
+                                onChange={(e) => setStateFilter(e.target.checked ? 'state_active' : '')}
+                              />
+                              アクティブ状態のみ
+                            </label>
+                          </div>
+                        );
+                      })()}
                       {sameAsTargetSubject && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#555', marginBottom: 4 }}>
                           <input

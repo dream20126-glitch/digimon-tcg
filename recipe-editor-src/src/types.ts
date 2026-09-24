@@ -83,6 +83,14 @@ export interface EffectBlock {
   // 'or'なら発火元カードがいずれか1件でも満たせばOK
   // （例:「名称に『ロゼモン』を含むか特徴『セイバーズ』を持つこのデジモンが～とき」）
   triggerConditionsOp?: 'and' | 'or';
+  // 「破棄されたとき」(discard/when_evo_discard) 専用: どのゾーンからの破棄に反応するか
+  // （手札/トラッシュ/セキュリティ/進化元/デッキ/リンクカード。複数選択でOR/AND切替可）。
+  // JSONへは step.trigger_from / step.trigger_from_op として出力する
+  // （action側のfrom/from_opとは別枠。命名衝突を避けるためtrigger_接頭辞を付ける）。
+  // ⚠ 現状エンジンは進化元/テイマーの下からの破棄にしか対応していないため、
+  // 手札/トラッシュ/セキュリティ/デッキ/リンクカードを選んでも保存はできるが動作しない
+  triggerFromZones?: string[];
+  triggerFromZonesOp?: 'or' | 'and';
   // 「原因」: どのトリガーでも使える汎用フィールド。「誰が（消滅/破棄等）したか」は
   // 発動主体(triggerSubject。トリガーごとに分けたい場合はtriggerSubjectByCode)で表現する
   // （self=このデジモン/own=自分のデジモン/opp=相手のデジモン/both=両方＝他のデジモン）。

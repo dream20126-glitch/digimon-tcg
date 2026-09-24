@@ -3751,6 +3751,70 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             );
           })()}
 
+          {/* 📥場所/🂠裏表:「破棄されたとき」(discard/when_evo_discard) 専用。コスト側の
+              「破棄」パネルと同じ見た目で、どのゾーンからの破棄に反応するかを選べる。
+              位置（本体/下/一番下）は発動主体側のスタック位置選択で既にカバーされている
+              ため、ここでは場所・裏表のみ扱う。
+              ⚠ 現状エンジンは進化元/テイマーの下からの破棄にしか対応していないため、
+              手札/トラッシュ/セキュリティ/デッキ/リンクカードは保存はできるが動作しない */}
+          {(() => {
+            const _discardTriggerActive = ((block.triggers && block.triggers.length > 0) ? block.triggers : (block.trigger ? [block.trigger] : []))
+              .some((t) => t === 'discard' || t === 'when_evo_discard');
+            if (!_discardTriggerActive) return null;
+            const _tfZones = block.triggerFromZones || [];
+            const _toggleTfZone = (code: string, on: boolean) => {
+              const next = on ? [..._tfZones, code] : _tfZones.filter((z) => z !== code);
+              onChange({ ...block, triggerFromZones: next });
+            };
+            const _tfEngineReady = new Set(['evo_source']);
+            const _tfHasUnready = _tfZones.some((z) => !_tfEngineReady.has(z));
+            const _tfFaceVal = (() => {
+              const p = triggerConditions.find((c) => c.base === 'cond_face_down' || c.base === 'cond_face_up');
+              return p ? (p.base === 'cond_face_down' ? 'down' : 'up') : '';
+            })();
+            return (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこからの破棄に反応するか）</div>
+                <MultiButtonGroup
+                  options={FROM_ZONES.filter((z) => z.code !== 'stacked_cards')}
+                  values={_tfZones}
+                  onToggle={_toggleTfZone}
+                  accentColor="#2e7d32"
+                />
+                {_tfZones.length >= 2 && (
+                  <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                    <span style={{ color: '#666' }}>結合:</span>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                      <input type="radio" name="triggerFromZonesOp" checked={(block.triggerFromZonesOp || 'or') === 'or'} onChange={() => update('triggerFromZonesOp', 'or')} style={{ margin: 0 }} />
+                      OR（いずれか）
+                    </label>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                      <input type="radio" name="triggerFromZonesOp" checked={block.triggerFromZonesOp === 'and'} onChange={() => update('triggerFromZonesOp', 'and')} style={{ margin: 0 }} />
+                      AND（全て）
+                    </label>
+                  </div>
+                )}
+                {_tfHasUnready && (
+                  <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
+                    ⚠ 進化元／テイマーの下からの破棄以外は、保存はできますがエンジンが現状対応していないため発火しません
+                  </div>
+                )}
+                <div style={{ fontSize: 10, color: '#555', marginTop: 6, marginBottom: 2 }}>🂠 裏表</div>
+                <ButtonGroup
+                  options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
+                  value={_tfFaceVal}
+                  onChange={(v) => {
+                    const next = triggerConditions.filter((c) => c.base !== 'cond_face_down' && c.base !== 'cond_face_up');
+                    if (v === 'down') next.push({ base: 'cond_face_down' });
+                    else if (v === 'up') next.push({ base: 'cond_face_up' });
+                    update('triggerConditions', next);
+                  }}
+                  accentColor="#2e7d32"
+                />
+              </div>
+            );
+          })()}
+
           {/* ☑ 原因選択: どのトリガーでも使える汎用の「原因」（バトルで/効果で + 原因の対象）。
               「誰が（消滅/破棄等）したか」は発動主体(triggerSubject/triggerSubjectByCode)で
               表現するので、こちらは「何が原因で（誰によって）発生したか」を表す。

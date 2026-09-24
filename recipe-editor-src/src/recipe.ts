@@ -599,6 +599,15 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (validTriggerConds.length > 0) step.trigger_conditions = validTriggerConds.map(pairToString);
   if (validTriggerConds.length >= 2 && b.triggerConditionsOp === 'or') step.trigger_conditions_op = 'or';
 
+  // 「破棄されたとき」専用: どのゾーンからの破棄に反応するか（1件ならtrigger_from:文字列、
+  // 2件以上ならtrigger_from:配列+trigger_from_op。action側のfrom/from_opとは別枠）
+  const validTriggerFromZones = (b.triggerFromZones || []).filter((z) => !!z);
+  if (validTriggerFromZones.length === 1) step.trigger_from = validTriggerFromZones[0];
+  else if (validTriggerFromZones.length > 1) {
+    step.trigger_from = validTriggerFromZones;
+    if (b.triggerFromZonesOp && b.triggerFromZonesOp !== 'or') step.trigger_from_op = b.triggerFromZonesOp;
+  }
+
   // コスト
   const stepCost = buildCostArray(b.costs);
   if (stepCost) step.cost = stepCost;
@@ -1212,6 +1221,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     extra_conditions: true,
     trigger_conditions: true,
     trigger_conditions_op: true,
+    trigger_from: true,
+    trigger_from_op: true,
     duration: true,
     target: true,
     targets: true,
@@ -1300,6 +1311,9 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     limit: step?.limit || '',
     triggerConditions,
     triggerConditionsOp: step?.trigger_conditions_op === 'or' ? 'or' : 'and',
+    triggerFromZones: Array.isArray(step?.trigger_from) ? step.trigger_from.slice()
+      : step?.trigger_from ? [step.trigger_from] : undefined,
+    triggerFromZonesOp: step?.trigger_from_op === 'and' ? 'and' : 'or',
     conditions,
     conditionsOp: step?.condition_op === 'or' ? 'or' : 'and',
     costs,

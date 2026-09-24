@@ -2099,6 +2099,16 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
   },
 ];
 const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));
+// 「消滅を防止」: prevent_destroy(効果でのみ)/prevent_battle_destroy(バトルでのみ)/
+// prevent_any_destroy(バトルでも効果でも)の3コードを、トリガー側の「原因」と同じ
+// 感覚の「バトルで/効果で」トグルボタンで統一的に編集できるようにする（保存されるJSON上の
+// アクションコードは従来通りこの3つのまま。UI側の見せ方だけを1つのボタン+トグルに統合）
+const PREVENT_DESTROY_CODES = new Set(['prevent_destroy', 'prevent_battle_destroy', 'prevent_any_destroy']);
+function preventDestroyCodeFor(battleOn: boolean, effectOn: boolean): string {
+  if (battleOn && effectOn) return 'prevent_any_destroy';
+  if (battleOn) return 'prevent_battle_destroy';
+  return 'prevent_destroy';
+}
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
 const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'summon_appear', 'summon_use', 'evolve', 'link']);
@@ -4072,6 +4082,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // 実アクションコード・対象を切り替える」仕組みを効果1/代替アクションでも使えるようにする
           const isPlaceActive = PLACE_ACTION_CODES.has(effectAction || '');
           const activePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === effectAction)?.code || '';
+          const isPreventDestroyActive = PREVENT_DESTROY_CODES.has(effectAction || '');
 
           // レスト/アクティブ/進化/アタック/ブロックの5ボタンは複数選択できる（例:
           // アタック＋ブロックを両方押す）。1つだけ選んでいるときは「する/できない」を
@@ -4153,7 +4164,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           // よく使うアクション（トリガー家族ボタンと同じ操作感）: 該当すればボタン1つで即選択、
           // 無ければ「その他のアクション」を開いて既存のプルダウン(+位置バリアント)から選ぶ
-          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || isDiscardActive || isPlaceActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block' || SUMMON_KIND_CODES.has(effectAction);
+          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || isDiscardActive || isPlaceActive || isPreventDestroyActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block' || SUMMON_KIND_CODES.has(effectAction);
           function selectCommonAction(code: string) {
             if (isEditingAlt) { updateEffect({ action: code, value: '' }); return; }
             const dictEntry = findActionEntry(code);
@@ -4343,7 +4354,50 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   >
                     〇〇に置く
                   </button>
+                  {/* 消滅を防止: prevent_destroy/prevent_battle_destroy/prevent_any_destroyを
+                      統一ボタン化。原因（バトルで/効果で）はこの下のトグルで選ぶ。
+                      エンジン側は常にctx.card（このカード自身）を保護対象にするため
+                      （target指定は見ない）、対象欄は変更しない */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isPreventDestroyActive) return;
+                      updateEffect({ action: 'prevent_battle_destroy', value: '' });
+                    }}
+                    style={{
+                      padding: '3px 9px', borderRadius: 5,
+                      border: isPreventDestroyActive ? '2px solid #1976d2' : '1px solid #bbb',
+                      background: isPreventDestroyActive ? '#1976d2' : '#f5f5f5',
+                      color: isPreventDestroyActive ? '#fff' : '#333',
+                      fontWeight: isPreventDestroyActive ? 'bold' : 'normal',
+                      cursor: 'pointer', fontSize: 11,
+                    }}
+                  >
+                    消滅を防止
+                  </button>
                 </div>
+                {isPreventDestroyActive && (() => {
+                  const battleOn = effectAction === 'prevent_battle_destroy' || effectAction === 'prevent_any_destroy';
+                  const effectOn = effectAction === 'prevent_destroy' || effectAction === 'prevent_any_destroy';
+                  const toggle = (which: 'battle' | 'effect', on: boolean) => {
+                    const nextBattle = which === 'battle' ? on : battleOn;
+                    const nextEffect = which === 'effect' ? on : effectOn;
+                    // 両方外そうとした場合は最後の1つを維持する（防止する原因が無いと成立しないため）
+                    if (!nextBattle && !nextEffect) return;
+                    updateEffect({ action: preventDestroyCodeFor(nextBattle, nextEffect) });
+                  };
+                  return (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>原因（バトルで/効果で）</div>
+                      <MultiButtonGroup
+                        options={[{ code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }]}
+                        values={[...(battleOn ? ['battle'] : []), ...(effectOn ? ['effect'] : [])]}
+                        onToggle={(code, on) => toggle(code as 'battle' | 'effect', on)}
+                        accentColor="#1976d2"
+                      />
+                    </div>
+                  );
+                })()}
                 {isPlaceActive && (
                   <div style={{ marginTop: 4 }}>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🎯 置き場所（どこに置くか）</div>

@@ -4285,12 +4285,26 @@ function resolveSubjectSide(subject, currentSide) {
   return currentSide;
 }
 
-// 指定側のバトルエリアにいる レスト状態(isActive=false) / アクティブ状態(isActive=true) の
-// デジモン体数を数える（cond_state_rest_*/cond_state_active_* 用）
-function _countStateDigimon(bs, sideKey, isActive) {
+// 指定側の レスト状態(isActive=false) / アクティブ状態(isActive=true) のカード体数を数える
+// （cond_state_rest_*/cond_state_active_* 用）。type: 'digimon'=バトルエリアのみ（既定）/
+// 'tamer'=テイマーエリアのみ / 'card'または'any'=両方合算
+function _countStateDigimon(bs, sideKey, isActive, type) {
   const p = bs && bs[sideKey];
-  if (!p || !p.battleArea) return 0;
-  return p.battleArea.filter(c => c && (isActive ? !c.suspended : !!c.suspended)).length;
+  if (!p) return 0;
+  const matches = (c) => c && (isActive ? !c.suspended : !!c.suspended);
+  let n = 0;
+  if (type !== 'tamer') n += (p.battleArea || []).filter(matches).length;
+  if (type === 'tamer' || type === 'card' || type === 'any') n += (p.tamerArea || []).filter(matches).length;
+  return n;
+}
+// subjectコード（own/opp/both + _tamer/_card/_any サフィックス）からカード種別を取り出す。
+// 無印（own/opp/both）は「デジモン」がエディタ側の既定規約のため 'digimon' 扱いにする
+function _stateSubjectType(subject) {
+  const s = String(subject || '').toLowerCase();
+  if (s.endsWith('_tamer')) return 'tamer';
+  if (s.endsWith('_card')) return 'card';
+  if (s.endsWith('_any')) return 'any';
+  return 'digimon';
 }
 
 // ===== 条件チェック =====
@@ -4437,10 +4451,13 @@ function checkConditions(conditions, card, bs, side) {
         if (len <= threshold) return false;
         break;
       }
-      // === 状態（レスト/アクティブ状態のデジモン体数）===
-      // subject='both' のときは自分+相手の合計体数で判定する（レスト状態のデジモンが
-      // 2体以上いるなら、等。旧cond_rest_count_geと同じ「両陣営合計」を汎用化したもの）。
-      // それ以外（own_any/opp_any等）はresolveSubjectSideで解決した片側だけを数える
+      // === 状態（レスト/アクティブ状態のデジモン/テイマー体数）===
+      // subjectが'both'系（both/both_tamer/both_card/both_any）のときは自分+相手の
+      // 合計体数で判定する（レスト状態のデジモンが2体以上いるなら、等。旧
+      // cond_rest_count_geと同じ「両陣営合計」を汎用化したもの）。
+      // それ以外（own_any/opp_tamer等）はresolveSubjectSideで解決した片側だけを数える。
+      // 種別（デジモン/テイマー/カード=両方）はsubjectのサフィックスから解決する
+      // （無印own/opp/bothは「デジモン」がエディタ側の既定規約）
       case 'cond_state_rest_ge':
       case 'cond_state_rest_le':
       case 'cond_state_rest_eq':
@@ -4453,13 +4470,14 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_state_active_lt': {
         if (!bs) break;
         const isActive = cond.code.indexOf('_active_') !== -1;
-        const isBoth = String(cond.subject || '').toLowerCase() === 'both';
+        const stType = _stateSubjectType(cond.subject);
+        const isBoth = String(cond.subject || '').toLowerCase().indexOf('both') === 0;
         const ts = isBoth ? null : resolveSubjectSide(cond.subject, side);
         const len = isBoth
-          ? _countStateDigimon(bs, 'player', isActive) + _countStateDigimon(bs, 'ai', isActive)
-          : _countStateDigimon(bs, ts, isActive);
+          ? _countStateDigimon(bs, 'player', isActive, stType) + _countStateDigimon(bs, 'ai', isActive, stType)
+          : _countStateDigimon(bs, ts, isActive, stType);
         const threshold = cond.value === 'opp' && !isBoth
-          ? _countStateDigimon(bs, ts === 'player' ? 'ai' : 'player', isActive)
+          ? _countStateDigimon(bs, ts === 'player' ? 'ai' : 'player', isActive, stType)
           : (cond.value || 0);
         if (cond.code.slice(-3) === '_ge' && len < threshold) return false;
         if (cond.code.slice(-3) === '_le' && len > threshold) return false;

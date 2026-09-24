@@ -1628,11 +1628,18 @@ const COND_SUBJECT_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'any', label: '指定なし' },
     { code: 'blocker', label: 'ブロッカー' },
   ],
+  both: [
+    { code: 'digimon', label: 'デジモン' },
+    { code: 'card', label: 'カード' },
+    { code: 'tamer', label: 'テイマー' },
+    { code: 'any', label: '指定なし' },
+  ],
 };
 const COND_SUBJECT_L1L2_TO_CODE: Record<string, string> = {
   'self:digimon': 'self', 'self:card': 'self_card',
   'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:any': 'own_any',
   'opp:digimon': 'opp', 'opp:card': 'opp_card', 'opp:tamer': 'opp_tamer', 'opp:any': 'opp_any', 'opp:blocker': 'opp_blocker',
+  'both:digimon': 'both', 'both:card': 'both_card', 'both:tamer': 'both_tamer', 'both:any': 'both_any',
 };
 // other_own: 旧「他」L1ボタンの単独コード。現在は 自分+デジモン 選択時の
 // 「このカードを含めない」トグルとして残す（表示上は own+digimon と同じ扱い）
@@ -1650,7 +1657,11 @@ const COND_SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   opp_any: { l1: 'opp', l2: 'any' },
   opp_blocker: { l1: 'opp', l2: 'blocker' },
   other_own: { l1: 'own', l2: 'digimon' },
-  both: { l1: 'both', l2: '' },
+  // both（デジモンの既定値。own/oppと同じ「無印=デジモン」の規約に揃える）
+  both: { l1: 'both', l2: 'digimon' },
+  both_card: { l1: 'both', l2: 'card' },
+  both_tamer: { l1: 'both', l2: 'tamer' },
+  both_any: { l1: 'both', l2: 'any' },
 };
 
 // 「アクションの対象」用の2段階ボタン選択（TARGETS辞書のコード体系専用テーブル）。
@@ -7595,9 +7606,9 @@ function ConditionsHybridEditor({
                         // 「対象=デジモンなのに値=テイマー」のような矛盾で常にfalseになってしまうため
                         const clearIfRedundant = (l2: string) => (cat.code === 'type' && (l2 === 'digimon' || l2 === 'tamer')) ? { value: '' } : {};
                         const handleSubL1 = (l1: string) => {
-                          if (!l1 || l1 === 'both') { updateAt(i, { subject: l1 || undefined }); return; }
+                          if (!l1) { updateAt(i, { subject: undefined }); return; }
                           const l2 = curSub.l1 === l1 && curSub.l2 ? curSub.l2 : 'digimon';
-                          updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2], ...clearIfRedundant(l2) });
+                          updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || l1, ...clearIfRedundant(l2) });
                         };
                         const handleSubL2 = (l2: string) => {
                           updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2], ...clearIfRedundant(l2) });
@@ -7609,7 +7620,7 @@ function ConditionsHybridEditor({
                         const excludeSelf = rawSub.base === 'other_own';
                         // デジモン/テイマーは複数選択可（両方選ぶとcard=「カード」扱いに集約。対象/
                         // 対象の条件と同じ操作感。カード単体ボタンは冗長になるため除外する）
-                        const hasDigimonTamerSub = (curSub.l1 === 'own' || curSub.l1 === 'opp' || curSub.l1 === 'other_own');
+                        const hasDigimonTamerSub = (curSub.l1 === 'own' || curSub.l1 === 'opp' || curSub.l1 === 'other_own' || curSub.l1 === 'both');
                         const subDigimonCode = COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':digimon'];
                         const subTamerCode = COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':tamer'];
                         const subCardCode = COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':card'];
@@ -7777,9 +7788,9 @@ function ConditionsHybridEditor({
                     const showStackPos = curSub.l1 === 'self' || curSub.l2 === 'digimon' || curSub.l2 === 'tamer';
                     const l2Options = COND_SUBJECT_L2[curSub.l1] || [];
                     const handleSubL1 = (l1: string) => {
-                      if (!l1 || l1 === 'both') { updateAt(i, { subject: l1 || undefined }); return; }
+                      if (!l1) { updateAt(i, { subject: undefined }); return; }
                       const l2 = curSub.l1 === l1 && curSub.l2 ? curSub.l2 : 'digimon';
-                      updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] });
+                      updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || l1 });
                     };
                     const handleSubL2 = (l2: string) => {
                       updateAt(i, { subject: COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':' + l2] });
@@ -7788,7 +7799,7 @@ function ConditionsHybridEditor({
                     const showIncludeSelfToggle = curSub.l1 === 'own' && curSub.l2 === 'digimon';
                     const excludeSelf = rawSub.base === 'other_own';
                     // デジモン/テイマーは複数選択可（両方選ぶとcard=「カード」扱いに集約）
-                    const hasDigimonTamerSub2 = (curSub.l1 === 'own' || curSub.l1 === 'opp' || curSub.l1 === 'other_own');
+                    const hasDigimonTamerSub2 = (curSub.l1 === 'own' || curSub.l1 === 'opp' || curSub.l1 === 'other_own' || curSub.l1 === 'both');
                     const sub2DigimonCode = COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':digimon'];
                     const sub2TamerCode = COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':tamer'];
                     const sub2CardCode = COND_SUBJECT_L1L2_TO_CODE[curSub.l1 + ':card'];

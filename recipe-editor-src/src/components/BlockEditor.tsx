@@ -1944,6 +1944,11 @@ const COST_REDUCTION_TRIGGERS = new Set(COST_REDUCTION_VARIANTS.map((v) => v.tri
 // 演出が異なるため2つの独立したトリガーコードに分けているが、素材候補UI（FusionMaterialsEditor）は共通
 const FUSION_EVOLVE_TRIGGERS = new Set(['app_gattai_evolve', 'jogress_evolve']);
 
+// バースト進化: 指定した自分のテイマー1体を手札に戻すことで、指定した自分のデジモンに
+// 指定コストで進化できる特殊進化トリガー（alt_evolveの兄弟。条件3=戻すテイマーの絞り込みを
+// 追加で持つ点だけが異なる）。エンジン未実装（保存はできますが動作しません）
+const BURST_EVOLVE_TRIGGER = 'burst_evolve';
+
 // 【〇〇が増えたとき】: 元々「デッキが増えたとき」(when_deck_increase) 専用だったトリガーを、
 // どのゾーンが増えたときかを選べるように一般化したもの。トリガーキー自体は常に
 // when_deck_increase のまま1つで、どのゾーンを見るかは block.zoneIncrease[]（既存の
@@ -2984,6 +2989,37 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               />
             </div>
           </div>
+        ) : block.trigger === BURST_EVOLVE_TRIGGER ? (
+          <div style={{
+            gridColumn: '1 / span 2', padding: 10, background: '#fff3e0',
+            border: '2px solid #ffb74d', borderRadius: 6,
+            fontSize: 12, color: '#8a5300', lineHeight: 1.6,
+          }}>
+            <div style={{ marginBottom: 6, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
+              ⚠ バースト進化はエンジン未実装です（保存はできますが動作しません）。バースト進化完了時の
+              「1枚ドロー」「ターン終了時に重ねられているカードの一番上を1枚破棄（保留処理）」も
+              現状未対応です（総合ルール8-3-2-1/8-3-3-4）
+            </div>
+            🔥 <b>バースト進化（指定テイマーを手札に戻すことで指定コストで進化できる）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。下の「🎯 発動条件」欄をこの意味で使います:
+            <br />・<b>条件1</b> = この条件が有効になる発動条件（通常は空でOK）
+            <br />・<b>条件2</b> = 進化元（進化させたい元のデジモン）の絞り込み（例:「名前を含む: シャイングレイモン」）
+            <br />・<b>条件3</b> = バトルエリアから手札に戻すテイマーの絞り込み（例:「名前を含む: 大門大」）
+            <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #ffb74d' }}>
+              <label style={{ display: 'block', fontWeight: 'bold', color: '#b76e00', marginBottom: 4 }}>
+                💰 進化コスト（下のアクション欄ではなく、ここに入力してください）
+              </label>
+              <input
+                type="number"
+                value={block.value === undefined ? '' : String(block.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  update('value', v === '' ? undefined : Number(v));
+                }}
+                placeholder="例: 0"
+                style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
+              />
+            </div>
+          </div>
         ) : FUSION_EVOLVE_TRIGGERS.has(block.trigger) ? (
           <div style={{
             gridColumn: '1 / span 2', padding: 10, background: '#fff3e0',
@@ -3959,7 +3995,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               代替アクション側だけ任意にしても実際の挙動には反映されない
               （JSON上は正しく区別して保存されるが、エンジン側の対応が別途必要）。
               演出タイプは効果1専用のまま（代替アクションには無い概念） */}
-          {block.trigger !== 'alt_evolve' && !FUSION_EVOLVE_TRIGGERS.has(block.trigger) && (
+          {block.trigger !== 'alt_evolve' && block.trigger !== BURST_EVOLVE_TRIGGER && !FUSION_EVOLVE_TRIGGERS.has(block.trigger) && (
             <div style={{ marginBottom: 8, display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
               <div>
                 <ButtonGroup
@@ -3996,7 +4032,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           {/* 効果発動ポップアップの表示テキスト: 空欄なら効果テキストから自動抽出にフォールバック。
               強制効果のみ「表示しない」を選べる（任意効果は確認ダイアログが必須のため対象外）。
               強制/任意ボタンと同様、アクション選択前から常に表示する */}
-          {block.trigger !== 'alt_evolve' && !FUSION_EVOLVE_TRIGGERS.has(block.trigger) && (
+          {block.trigger !== 'alt_evolve' && block.trigger !== BURST_EVOLVE_TRIGGER && !FUSION_EVOLVE_TRIGGERS.has(block.trigger) && (
             <div className="field" style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <label>💬 効果発動ポップアップの表示テキスト（空欄なら効果テキストから自動抽出）</label>
@@ -4025,6 +4061,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           {block.trigger === 'alt_evolve' ? (
             <div style={{ fontSize: 11, color: '#888' }}>
               🔄 代替進化トリガーはアクション不要です（進化コストは上の🔄バナー内に入力済み）。
+            </div>
+          ) : block.trigger === BURST_EVOLVE_TRIGGER ? (
+            <div style={{ fontSize: 11, color: '#888' }}>
+              🔥 バースト進化トリガーはアクション不要です（進化コストは上の🔥バナー内に入力済み）。
             </div>
           ) : FUSION_EVOLVE_TRIGGERS.has(block.trigger) ? (
             <div style={{ fontSize: 11, color: '#888' }}>
@@ -5894,6 +5934,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 ? '（この効果を発動するための条件・複数指定可）'
                 : block.trigger === 'alt_evolve'
                 ? '（代替進化専用の意味: 条件1=発動条件 / 条件2=進化元の絞り込み・複数追加時は3個目以降は無視されます）'
+                : block.trigger === BURST_EVOLVE_TRIGGER
+                ? '（バースト進化専用の意味: 条件1=発動条件 / 条件2=進化元の絞り込み / 条件3=手札に戻すテイマーの絞り込み）'
                 : FUSION_EVOLVE_TRIGGERS.has(block.trigger)
                 ? '（この効果が有効になる条件。素材候補の指定は上の🧬バナー内で行います）'
                 : '（このアクションを発動するために満たすべき条件・複数指定可）'

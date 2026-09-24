@@ -20,7 +20,7 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'place_from_hand_battle_under', 'place_from_trash_under', 'place_on_security_top',
   'place_under_digimon', 'place_under_tamer',
   'prevent_battle_destroy', 'prevent_destroy', 'prevent_any_destroy',
-  'recover', 'rest', 'return_deck',
+  'recover', 'rest', 'rest_self', 'return_deck',
   'security_attack_minus', 'security_attack_plus',
   // security_trash_top/bottomはper_count/ref倍率（旧security_discard相当）にも対応済み
   'security_trash_bottom', 'security_trash_select', 'security_trash_top',

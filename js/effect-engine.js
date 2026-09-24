@@ -1633,6 +1633,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
 
     // === レストさせる ===
+    // rest_self はスプシ辞書に登録済みのコード。「レスト」→「対象：このデジモン」と
+    // 完全に同じ処理（when_restトリガー発火含む）に統合する
+    case 'rest_self':
+      defaultTarget = { code: 'target_self' };
+      // fallthrough
     case 'rest': {
       const restTarget = defaultTarget || { code: 'target_opponent' };
       // 対象が自分自身の場合

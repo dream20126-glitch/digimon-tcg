@@ -5,29 +5,27 @@
 // 更新方法: js/effect-engine.js の switch case を grep して反映:
 // grep -E "^\s*case '[a-z_]+'" effect-engine.js | grep -v "cond_"
 export const IMPLEMENTED_ACTIONS = new Set<string>([
-  'active', 'add_to_evo_source', 'add_to_hand',
+  'active', 'add_to_hand',
   'attack_without_rest',
   'bounce', 'cant_attack', 'cant_attack_block', 'cant_block', 'cant_destroy', 'cant_evolve',
-  'change_attack_target', 'cost_digiburst', 'cost_discard', 'cost_trash_self',
-  'deck_open', 'deck_to_evo_bottom', 'deck_trash_top', 'dedigivolve', 'destroy',
+  'change_attack_target', 'cost_digiburst', 'cost_discard',
+  'deck_open', 'deck_trash_top', 'dedigivolve', 'destroy',
   'do_security_check', 'dp_minus', 'dp_plus', 'draw',
   'evo_cost_minus', 'evo_discard', 'evo_discard_all', 'evo_discard_bottom', 'evo_discard_top', 'evo_discard_select',
   'force_block', 'goal_reached', 'grant_keyword', 'grant_keyword_to',
-  'ignore_color_condition', 'immune_effects',
-  'link', 'link_capacity', 'link_cost',
+  'immune_effects',
+  'link', 'link_capacity',
   'memory_minus', 'memory_plus', 'mod_attack_first_turn',
-  'overflow_memory_minus',
-  'place_from_hand_battle_under', 'place_from_trash_under', 'place_on_security_top',
+  'place_on_security_top',
   'place_under_digimon', 'place_under_tamer',
-  'prevent_battle_destroy', 'prevent_destroy', 'prevent_any_destroy',
+  'prevent_any_destroy',
   'recover', 'rest', 'rest_self', 'return_deck',
   'security_attack_minus', 'security_attack_plus',
   // security_trash_top/bottomはper_count/ref倍率（旧security_discard相当）にも対応済み
   'security_trash_bottom', 'security_trash_select', 'security_trash_top',
-  'select', 'select_evo_source', 'select_from_hand_trash', 'select_multi',
-  'self_destroy_after_attack',
+  'select', 'select_evo_source', 'select_multi',
   'summon', 'summon_cost_minus', 'summon_from_trash',
-  'trash_to_hand', 'trash_top_card', 'unlink', 'use_main_effect',
+  'trash_to_hand', 'unlink', 'use_main_effect',
   // Stage 2 追加
   'deck_trash_top', 'cant_be_blocked', 'cost_destroy_other',
   // Stage 3 追加
@@ -40,7 +38,6 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'security_open',
   // Stage 6 追加（汎用アクション・状態操作）
   'memory', 'dp', 'hatch', 'battle_area_make',
-  'place_security',
   'not_active', 'prevent_unsuspend',
   'grant_effect',
   // Stage 7 追加（トークン生成）

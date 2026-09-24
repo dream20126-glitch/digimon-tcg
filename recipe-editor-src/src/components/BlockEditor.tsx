@@ -6919,13 +6919,19 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   { code: 'security', label: 'セキュリティ' },
   { code: 'evo_source', label: '進化元／テイマーの下' },
   { code: 'battle_area', label: 'バトルエリア' },
+  { code: 'state_rest', label: 'レスト状態' },
+  { code: 'state_active', label: 'アクティブ状態' },
 ];
+// 状態（レスト/アクティブ）は枚数ではなく体数で数えるゾーン
+const REF_ZONE_UNIT_COUNT = new Set(['state_rest', 'state_active']);
 const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'hand:ge': 'cond_hand_ge', 'hand:le': 'cond_hand_le', 'hand:eq': 'cond_hand_eq', 'hand:gt': 'cond_hand_gt', 'hand:lt': 'cond_hand_lt',
   'trash:ge': 'cond_trash_ge', 'trash:le': 'cond_trash_le', 'trash:eq': 'cond_trash_eq', 'trash:gt': 'cond_trash_gt', 'trash:lt': 'cond_trash_lt',
   'security:ge': 'cond_security_ge', 'security:le': 'cond_security_le', 'security:eq': 'cond_security_eq', 'security:gt': 'cond_security_gt', 'security:lt': 'cond_security_lt',
   'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le', 'evo_source:eq': 'cond_has_evo_eq', 'evo_source:gt': 'cond_has_evo_gt', 'evo_source:lt': 'cond_has_evo_lt',
   'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq', 'battle_area:gt': 'cond_battle_area_gt', 'battle_area:lt': 'cond_battle_area_lt',
+  'state_rest:ge': 'cond_state_rest_ge', 'state_rest:le': 'cond_state_rest_le', 'state_rest:eq': 'cond_state_rest_eq', 'state_rest:gt': 'cond_state_rest_gt', 'state_rest:lt': 'cond_state_rest_lt',
+  'state_active:ge': 'cond_state_active_ge', 'state_active:le': 'cond_state_active_le', 'state_active:eq': 'cond_state_active_eq', 'state_active:gt': 'cond_state_active_gt', 'state_active:lt': 'cond_state_active_lt',
 };
 type RefQuant = 'ge' | 'le' | 'eq' | 'gt' | 'lt' | 'face_down' | 'face_up';
 const REF_QUANT_NO_VALUE = new Set<RefQuant>(['face_down', 'face_up']);
@@ -6939,6 +6945,8 @@ const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> 
   cond_security_ge: { zone: 'security', quant: 'ge' }, cond_security_le: { zone: 'security', quant: 'le' }, cond_security_eq: { zone: 'security', quant: 'eq' }, cond_security_gt: { zone: 'security', quant: 'gt' }, cond_security_lt: { zone: 'security', quant: 'lt' },
   cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_eq: { zone: 'evo_source', quant: 'eq' }, cond_has_evo_gt: { zone: 'evo_source', quant: 'gt' }, cond_has_evo_lt: { zone: 'evo_source', quant: 'lt' },
   cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' }, cond_battle_area_gt: { zone: 'battle_area', quant: 'gt' }, cond_battle_area_lt: { zone: 'battle_area', quant: 'lt' },
+  cond_state_rest_ge: { zone: 'state_rest', quant: 'ge' }, cond_state_rest_le: { zone: 'state_rest', quant: 'le' }, cond_state_rest_eq: { zone: 'state_rest', quant: 'eq' }, cond_state_rest_gt: { zone: 'state_rest', quant: 'gt' }, cond_state_rest_lt: { zone: 'state_rest', quant: 'lt' },
+  cond_state_active_ge: { zone: 'state_active', quant: 'ge' }, cond_state_active_le: { zone: 'state_active', quant: 'le' }, cond_state_active_eq: { zone: 'state_active', quant: 'eq' }, cond_state_active_gt: { zone: 'state_active', quant: 'gt' }, cond_state_active_lt: { zone: 'state_active', quant: 'lt' },
 };
 function isRefFaceCond(base: string): boolean {
   return base === 'cond_face_down' || base === 'cond_face_up';
@@ -7330,7 +7338,7 @@ function ConditionsHybridEditor({
                               <span style={{ fontSize: 10, color: '#666' }}>（値なし・カードの裏表で判定）</span>
                             ) : c.value === 'opp' ? (
                               <>
-                                <span style={{ fontSize: 11, color: colors.accent }}>相手のこのゾーンの枚数</span>
+                                <span style={{ fontSize: 11, color: colors.accent }}>相手のこのゾーンの{REF_ZONE_UNIT_COUNT.has(refZone) ? '体数' : '枚数'}</span>
                                 <button
                                   type="button"
                                   onClick={() => updateAt(i, { value: '' })}
@@ -7346,10 +7354,10 @@ function ConditionsHybridEditor({
                                   min={0}
                                   value={c.value || ''}
                                   onChange={(e) => updateAt(i, { value: e.target.value })}
-                                  placeholder="枚数"
+                                  placeholder={REF_ZONE_UNIT_COUNT.has(refZone) ? '体数' : '枚数'}
                                   style={{ width: 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
                                 />
-                                <span style={{ fontSize: 10, color: '#555' }}>枚</span>
+                                <span style={{ fontSize: 10, color: '#555' }}>{REF_ZONE_UNIT_COUNT.has(refZone) ? '体' : '枚'}</span>
                                 <button
                                   type="button"
                                   onClick={() => updateAt(i, { value: 'opp' })}

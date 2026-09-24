@@ -306,6 +306,18 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_has_evo_lt', kind: 'condition', label: '進化元がN枚より少ない' },
   { code: 'cond_battle_area_gt', kind: 'condition', label: 'バトルエリアがN枚より多い' },
   { code: 'cond_battle_area_lt', kind: 'condition', label: 'バトルエリアがN枚より少ない' },
+  // 状態（レスト/アクティブ状態のデジモンの体数）。対象(subject)で自分/相手/両方を指定でき、
+  // 「両方」は自分+相手の合計体数で判定する（レスト状態のデジモンが2体以上いるなら、等）
+  { code: 'cond_state_rest_ge', kind: 'condition', label: 'レスト状態のデジモンがN体以上' },
+  { code: 'cond_state_rest_le', kind: 'condition', label: 'レスト状態のデジモンがN体以下' },
+  { code: 'cond_state_rest_eq', kind: 'condition', label: 'レスト状態のデジモンがちょうどN体' },
+  { code: 'cond_state_rest_gt', kind: 'condition', label: 'レスト状態のデジモンがN体より多い' },
+  { code: 'cond_state_rest_lt', kind: 'condition', label: 'レスト状態のデジモンがN体より少ない' },
+  { code: 'cond_state_active_ge', kind: 'condition', label: 'アクティブ状態のデジモンがN体以上' },
+  { code: 'cond_state_active_le', kind: 'condition', label: 'アクティブ状態のデジモンがN体以下' },
+  { code: 'cond_state_active_eq', kind: 'condition', label: 'アクティブ状態のデジモンがちょうどN体' },
+  { code: 'cond_state_active_gt', kind: 'condition', label: 'アクティブ状態のデジモンがN体より多い' },
+  { code: 'cond_state_active_lt', kind: 'condition', label: 'アクティブ状態のデジモンがN体より少ない' },
 ];
 
 // アクション（種類: action）

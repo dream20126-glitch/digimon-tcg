@@ -4285,6 +4285,14 @@ function resolveSubjectSide(subject, currentSide) {
   return currentSide;
 }
 
+// 指定側のバトルエリアにいる レスト状態(isActive=false) / アクティブ状態(isActive=true) の
+// デジモン体数を数える（cond_state_rest_*/cond_state_active_* 用）
+function _countStateDigimon(bs, sideKey, isActive) {
+  const p = bs && bs[sideKey];
+  if (!p || !p.battleArea) return 0;
+  return p.battleArea.filter(c => c && (isActive ? !c.suspended : !!c.suspended)).length;
+}
+
 // ===== 条件チェック =====
 
 function checkConditions(conditions, card, bs, side) {
@@ -4427,6 +4435,37 @@ function checkConditions(conditions, card, bs, side) {
         const len = bs[ts] && bs[ts].trash ? bs[ts].trash.length : 0;
         const threshold = cond.value === 'opp' ? _refOppZoneCount(bs, ts, 'trash') : (cond.value || 0);
         if (len <= threshold) return false;
+        break;
+      }
+      // === 状態（レスト/アクティブ状態のデジモン体数）===
+      // subject='both' のときは自分+相手の合計体数で判定する（レスト状態のデジモンが
+      // 2体以上いるなら、等。旧cond_rest_count_geと同じ「両陣営合計」を汎用化したもの）。
+      // それ以外（own_any/opp_any等）はresolveSubjectSideで解決した片側だけを数える
+      case 'cond_state_rest_ge':
+      case 'cond_state_rest_le':
+      case 'cond_state_rest_eq':
+      case 'cond_state_rest_gt':
+      case 'cond_state_rest_lt':
+      case 'cond_state_active_ge':
+      case 'cond_state_active_le':
+      case 'cond_state_active_eq':
+      case 'cond_state_active_gt':
+      case 'cond_state_active_lt': {
+        if (!bs) break;
+        const isActive = cond.code.indexOf('_active_') !== -1;
+        const isBoth = String(cond.subject || '').toLowerCase() === 'both';
+        const ts = isBoth ? null : resolveSubjectSide(cond.subject, side);
+        const len = isBoth
+          ? _countStateDigimon(bs, 'player', isActive) + _countStateDigimon(bs, 'ai', isActive)
+          : _countStateDigimon(bs, ts, isActive);
+        const threshold = cond.value === 'opp' && !isBoth
+          ? _countStateDigimon(bs, ts === 'player' ? 'ai' : 'player', isActive)
+          : (cond.value || 0);
+        if (cond.code.slice(-3) === '_ge' && len < threshold) return false;
+        if (cond.code.slice(-3) === '_le' && len > threshold) return false;
+        if (cond.code.slice(-3) === '_eq' && len !== threshold) return false;
+        if (cond.code.slice(-3) === '_gt' && len <= threshold) return false;
+        if (cond.code.slice(-3) === '_lt' && len >= threshold) return false;
         break;
       }
       case 'cond_deck_le': {

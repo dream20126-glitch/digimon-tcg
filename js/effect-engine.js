@@ -6307,7 +6307,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       // 原因チェック（バトルで/効果で + 原因の対象）。on_destroy専用だった
       // _destroyCauseMatches を、when_opp_rest/when_evo_discard等この関数を使う
       // 全トリガー共通で使えるようにする（step.cause未指定なら常にtrue）
-      if (!_destroyCauseMatches(step, bs, reactSide, carrier)) return false;
+      if (!_destroyCauseMatches(step, bs, reactSide, carrier, recipeKey)) return false;
       // gate: 発動可否のみを判定する条件。step.condition と違い対象選択の
       // フィルタには使われない（「自身がレスト中なら相手1体をレスト」等で、
       // 自身の状態判定が相手側の対象フィルタに漏れるのを防ぐ）。
@@ -6687,11 +6687,20 @@ const _isBothSubjectDestroyStep = (s) => !!s && (s.subject === 'both' || s.subje
 // 同じ側が原因 / 'opp'=反対側が原因 / 'both'または未指定=原因の主体を問わない。
 // バトル起因の消滅は「どのカードが勝ったか」までは追跡していない（causerCard未設定）ため、
 // 'self' は 'own'（同じ側）へフォールバックする
-function _destroyCauseMatches(step, bs, carrierSide, carrier) {
-  if (!step || !step.cause) return true;
+// triggerCode指定時、step.cause_by_code/cause_subject_by_code（トリガーコードごとの
+// 個別「原因」設定。when_rest,discardのような統合stepで、片方のコードだけ原因チェックを
+// 効かせたい場合に使う）を優先して解決する。cause_by_codeが使われているstepでは
+// 該当コードが無ければ「原因チェックなし」（常にtrue）とする
+function _destroyCauseMatches(step, bs, carrierSide, carrier, triggerCode) {
+  const cause = (triggerCode && step && step.cause_by_code)
+    ? step.cause_by_code[triggerCode]
+    : (step && step.cause);
+  if (!cause) return true;
   const dc = bs && bs._lastDestroyCause;
-  if (!dc || dc.type !== step.cause) return false;
-  const cs = step.cause_subject;
+  if (!dc || dc.type !== cause) return false;
+  const cs = (triggerCode && step && step.cause_subject_by_code)
+    ? step.cause_subject_by_code[triggerCode]
+    : (step && step.cause_subject);
   if (!cs || cs === 'both') return true;
   if (cs === 'self') return dc.causerCard ? dc.causerCard === carrier : dc.causerSide === carrierSide;
   if (cs === 'own') return dc.causerSide === carrierSide;
@@ -6894,7 +6903,7 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
         if (!checkConditions(conds, carrier, bs, reactSide)) return false;
       }
       // 原因チェック（バトルで/効果で + 原因の対象）
-      if (!_destroyCauseMatches(step, bs, reactSide, carrier)) return false;
+      if (!_destroyCauseMatches(step, bs, reactSide, carrier, triggerKey)) return false;
       // ターンに1回制限チェック
       if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
         const sourceId = (sourceCard && (sourceCard.cardNo || sourceCard.name)) || 'unknown';

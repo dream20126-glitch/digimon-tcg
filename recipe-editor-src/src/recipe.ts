@@ -678,6 +678,17 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       step.materials = materials;
       step.pick_count = b.fusionPickCount && Number(b.fusionPickCount) > 0 ? Number(b.fusionPickCount) : 2;
     }
+    // app_gattai_evolve専用: 進化可能判定(getAppGattaiEvolve)は素材候補スロット(materials)
+    // ではなく、フラットな名称配列(names)を見る別スキーマのため、名称モードのスロットから
+    // 名称だけを取り出してnamesとしても書き出す（色+LvスロットはgetAppGattaiEvolveが
+    // 対応していないため対象外。色+Lv指定のアプ合体カードは進化可能判定が引き続き不発火のまま）
+    if (b.trigger === 'app_gattai_evolve') {
+      const names = b.fusionMaterials
+        .flatMap((s) => s.names || [])
+        .map((n) => String(n).trim())
+        .filter(Boolean);
+      if (names.length >= 2) step.names = names;
+    }
   }
   // memory_plus の「このターン終了時メモリー-N」フラグ
   if (b.revertAtTurnEnd) step.revert_at_turn_end = true;
@@ -894,8 +905,14 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     step.subject = b.triggerSubject;
   }
   // 「原因」（バトルで/効果で・原因の対象）: どのトリガーでも設定可能な汎用フィールド
-  // （詳細は types.ts 参照）
-  if (b.destroyCause) {
+  // （詳細は types.ts 参照）。トリガーごとに原因を個別設定したい場合は
+  // triggerCauseByCode（cause_by_code）を優先し、共有のdestroyCauseは無視する
+  if (b.triggerCauseByCode && Object.keys(b.triggerCauseByCode).length > 0) {
+    step.cause_by_code = b.triggerCauseByCode;
+    if (b.triggerCauseSubjectByCode && Object.keys(b.triggerCauseSubjectByCode).length > 0) {
+      step.cause_subject_by_code = b.triggerCauseSubjectByCode;
+    }
+  } else if (b.destroyCause) {
     step.cause = b.destroyCause;
     if (b.destroyCauseSubject) step.cause_subject = b.destroyCauseSubject;
   }
@@ -1329,6 +1346,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     subject_by_code: true,
     cause: true,
     cause_subject: true,
+    cause_by_code: true,
+    cause_subject_by_code: true,
     cost: true,
     from: true,
     from_op: true,
@@ -1352,6 +1371,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     designated_common: true,
     materials: true,
     pick_count: true,
+    names: true,
     target_trigger: true,
     deny: true,
   };
@@ -1406,6 +1426,10 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       ? { ...step.subject_by_code } : undefined,
     destroyCause: step?.cause === 'battle' || step?.cause === 'effect' ? step.cause : undefined,
     destroyCauseSubject: step?.cause_subject || undefined,
+    triggerCauseByCode: (step?.cause_by_code && typeof step.cause_by_code === 'object')
+      ? { ...step.cause_by_code } : undefined,
+    triggerCauseSubjectByCode: (step?.cause_subject_by_code && typeof step.cause_subject_by_code === 'object')
+      ? { ...step.cause_subject_by_code } : undefined,
     limit: step?.limit || '',
     triggerConditions,
     triggerConditionsOp: step?.trigger_conditions_op === 'or' ? 'or' : 'and',
@@ -1431,7 +1455,9 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     keywordEntries: String(step?.keyword || '').includes(',')
       ? String(step.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))
       : undefined,
-    // app_gattai_evolve / jogress_evolve 専用: 素材候補スロット一覧の復元
+    // app_gattai_evolve / jogress_evolve 専用: 素材候補スロット一覧の復元。
+    // step.materialsが無く、step.names（進化可能判定専用のフラット配列）だけがある場合も、
+    // 1名称=1スロットとして復元する（手書き/旧データでmaterialsが無いケースの救済）
     fusionMaterials: Array.isArray(step?.materials)
       ? step.materials.map((m: any) => {
           const slot: any = {};
@@ -1440,6 +1466,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
           if (m?.lv !== undefined && m?.lv !== null && m?.lv !== '') slot.lv = m.lv;
           return slot;
         })
+      : Array.isArray(step?.names)
+      ? step.names.map((n: string) => ({ names: [String(n)] }))
       : undefined,
     fusionPickCount: step?.pick_count !== undefined && step?.pick_count !== null ? Number(step.pick_count) : undefined,
     keywordCount: _stepSingleGroup ? _stepSingleGroup.count : _stepCount,

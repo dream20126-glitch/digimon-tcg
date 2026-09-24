@@ -126,12 +126,24 @@ export interface EffectBlock {
   // キーはtriggers[]内のトリガーコード、値はtriggerSubjectと同じコード体系の文字列
   // （splitStackSuffix/joinStackSuffixで位置サフィックスも付与可）。
   // エントリが無いトリガーは triggerSubject（共有）に従う。
-  // JSONでは、発動主体が異なるトリガー同士は別々のstepとして出力される（トリガーキーは
-  // "a,b"のようにまとめず個別キーになる）。
-  // ⚠ 再読み込み時: 発動主体が異なる複数stepは1ブロックへ自動統合されず、別ブロックとして
-  // 復元される（保存されたJSON自体は正しいが、エディタ上の「1ブロックでOR」という表示形式は
-  // 再現されない）
+  // JSONでは、発動タイミング（triggerTimingByCode）が同じであれば、発動主体が異なる
+  // トリガー同士も1つのstepへ統合され、差分は step.subject_by_code として出力される
+  // （trigger_conditionsが同じ他のトリガーとまとめて"a,b"のような結合キーになる）。
+  // エンジン側は「今どのトリガーコードをスキャンしているか」を知っているため、
+  // 該当コードのsubject_by_codeを優先して解決する（groupTriggersByTiming参照）。
+  // ⚠ 再読み込み時: subject_by_codeを持つstepは1ブロックへ正しく復元されるが、UI上の
+  // 「トリガーごとに発動主体を個別設定」チェック状態の完全な往復はtriggerSubjectByCode
+  // フィールド経由で行われる
   triggerSubjectByCode?: Record<string, string>;
+  // トリガーごとに「原因」（バトルで/効果で）を個別設定したい場合に使う（triggerSubjectByCodeの
+  // 原因版）。例:「相手がレストしたとき」か「自分のテイマーの下のカードが効果で破棄された
+  // とき」を1ブロックでORする場合、前者には原因の概念が無く、後者だけ「効果で」を明示したい
+  // ケース。キーはtriggers[]内のトリガーコード、値はdestroyCauseと同じ'battle'|'effect'。
+  // エントリが無いトリガーは原因チェックなし（destroyCause共有フィールドは使わず、
+  // このフィールドを使うブロックではdestroyCauseは無視される）。
+  // JSONでは step.cause_by_code として出力する
+  triggerCauseByCode?: Record<string, 'battle' | 'effect'>;
+  triggerCauseSubjectByCode?: Record<string, string>;
   conditions?: ConditionPair[]; // 0〜N個の条件（self や全体状況に対するゲート）
   // 複数条件の結合方法。既定'and'=全部満たす／'or'=いずれか1つ満たす。
   // JSON では conditions.length>=2 のときだけ step.condition_op:'or' として出力する

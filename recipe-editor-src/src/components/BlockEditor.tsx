@@ -2590,6 +2590,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [perTriggerSubjectOpen, setPerTriggerSubjectOpen] = useState<boolean>(
     Object.keys(block.triggerSubjectByCode || {}).length > 0
   );
+  // 原因（バトルで/効果で）をトリガーごとに個別設定するモード
+  const [perTriggerCauseOpen, setPerTriggerCauseOpen] = useState<boolean>(
+    Object.keys(block.triggerCauseByCode || {}).length > 0
+  );
   const [otherTriggerOpen, setOtherTriggerOpen] = useState<boolean>(false);
   const [otherActionOpen, setOtherActionOpen] = useState<boolean>(false);
   // ～ごとにの「状態（条件）」その他プルダウン開閉状態
@@ -3510,6 +3514,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         />
                         🔀 トリガーごとに発動主体を分ける
                       </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#1a5a1a' }}>
+                        <input
+                          type="checkbox"
+                          checked={perTriggerCauseOpen}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            setPerTriggerCauseOpen(on);
+                            if (on) {
+                              const nextMap: Record<string, 'battle' | 'effect'> = { ...(block.triggerCauseByCode || {}) };
+                              currentTriggers.forEach((code) => {
+                                if (nextMap[code] === undefined && block.destroyCause) nextMap[code] = block.destroyCause;
+                              });
+                              onChange({ ...block, triggerCauseByCode: nextMap, destroyCause: undefined, destroyCauseSubject: undefined });
+                            } else {
+                              onChange({ ...block, triggerCauseByCode: {}, triggerCauseSubjectByCode: {} });
+                            }
+                          }}
+                        />
+                        🔀 トリガーごとに原因を分ける
+                      </label>
                     </div>
                   )}
                   {perTriggerTimingOpen && (
@@ -3634,6 +3658,50 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                               <div style={{ marginTop: 3 }}>
                                 <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
                                 <ButtonGroup options={STACK_POS_OPTIONS} value={rawSub.pos} onChange={(v) => setThisStackPos(v as StackPos)} accentColor="#2e7d32" />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {perTriggerCauseOpen && (
+                    <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {currentTriggers.map((code) => {
+                        const label = effectiveTriggerFamilies.find((f) => f.code === code)?.label
+                          || FAMILY_VARIANT_FALLBACK_LABELS[code]
+                          || dict.triggers.find((d) => d.code === code)?.label
+                          || code;
+                        const curCause = (block.triggerCauseByCode || {})[code];
+                        const curCauseSubj = (block.triggerCauseSubjectByCode || {})[code] || 'self';
+                        const setThisCause = (v: '' | 'battle' | 'effect') => {
+                          const nextMap = { ...(block.triggerCauseByCode || {}) };
+                          if (!v) delete nextMap[code]; else nextMap[code] = v;
+                          onChange({ ...block, triggerCauseByCode: nextMap });
+                        };
+                        const setThisCauseSubj = (v: string) => {
+                          const nextMap = { ...(block.triggerCauseSubjectByCode || {}), [code]: v };
+                          onChange({ ...block, triggerCauseSubjectByCode: nextMap });
+                        };
+                        return (
+                          <div key={code} style={{ fontSize: 11, border: '1px solid #c5e0c5', borderRadius: 4, padding: 6 }}>
+                            <div style={{ color: '#333', fontWeight: 'bold', marginBottom: 3 }}>{label}:</div>
+                            <ButtonGroup
+                              options={[{ code: '', label: '原因を問わない' }, { code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }]}
+                              value={curCause || ''}
+                              onChange={(v) => setThisCause(v as '' | 'battle' | 'effect')}
+                              accentColor="#1a5a1a"
+                            />
+                            {curCause && (
+                              <div style={{ marginTop: 3 }}>
+                                <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>原因の対象:</span>
+                                <ButtonGroup
+                                  options={[{ code: 'self', label: 'このデジモン' }, { code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'both', label: '両方' }]}
+                                  value={curCauseSubj}
+                                  onChange={setThisCauseSubj}
+                                  accentColor="#1a5a1a"
+                                />
                               </div>
                             )}
                           </div>
@@ -3942,7 +4010,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               例:「このデジモンがバトルで相手のデジモンを消滅させたとき」
                 → 発動主体=相手、原因=バトルで、原因の対象=このデジモン
               現状 on_destroy（消滅）/ when_evo_discard（進化元・テイマーの下の破棄）で
-              動作する。それ以外のトリガーでは原因情報が無いため「原因なし」扱いになる */}
+              動作する。それ以外のトリガーでは原因情報が無いため「原因なし」扱いになる。
+              「🔀 トリガーごとに原因を分ける」がONのときは、上のトリガーごとの原因欄が
+              優先されるためこちらは非表示にする（二重編集を避ける） */}
+          {!perTriggerCauseOpen && (
+          <>
           <label style={{
             display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
             marginTop: 10, fontWeight: 'bold', fontSize: 12, color: '#1a5a1a',
@@ -3979,6 +4051,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 />
               </div>
             </div>
+          )}
+          </>
           )}
 
           {/* ☑ 条件を設定する（トリガー条件） */}

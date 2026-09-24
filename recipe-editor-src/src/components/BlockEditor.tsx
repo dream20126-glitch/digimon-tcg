@@ -2408,6 +2408,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // 「編集中」の効果スロット: 0=このステップ自体（効果1）/ 1..N=altActions[i-1]（効果2以降）。
   // OR/AND有効時、共通のアクション/対象/発動条件ボタン群がこのスロットに対して読み書きする
   const [editingEffect, setEditingEffect] = useState(0);
+  // 「特殊進化」ボタンのサブメニュー開閉（バースト進化/アプ合体/ジョグレス進化をまとめて選ばせる）。
+  // block.triggerには影響しない純粋なUI表示state
+  const [showSpecialEvolveMenu, setShowSpecialEvolveMenu] = useState(false);
   const isEditingAlt = editingEffect > 0 && !!altActions[editingEffect - 1];
   const editingAlt = isEditingAlt ? altActions[editingEffect - 1] : undefined;
   const effectAction = isEditingAlt ? (editingAlt!.action || '') : (block.action || '');
@@ -3353,35 +3356,62 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         キーワード効果
                       </button>
                     )}
-                    {/* アプ合体/ジョグレス進化: 複数体の素材を同時使用する特殊進化トリガー。
+                    {/* 特殊進化: バースト進化/アプ合体/ジョグレス進化をまとめる入口ボタン。
+                        押下でサブメニューを開閉し、そこから個別の特殊進化トリガーを選ぶ。
                         キーワードのテンプレート編集(isKeywordMode)では意味を成さないため出さない */}
                     {!isKeywordMode && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => onChange({ ...block, trigger: 'app_gattai_evolve', triggers: ['app_gattai_evolve'] })}
-                          style={{
-                            padding: '3px 9px', borderRadius: 5,
-                            border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
-                            fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
-                          }}
-                        >
-                          アプ合体
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onChange({ ...block, trigger: 'jogress_evolve', triggers: ['jogress_evolve'] })}
-                          style={{
-                            padding: '3px 9px', borderRadius: 5,
-                            border: '1px solid #bbb', background: '#f5f5f5', color: '#333',
-                            fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
-                          }}
-                        >
-                          ジョグレス進化
-                        </button>
-                      </>
+                      <button
+                        type="button"
+                        onClick={() => setShowSpecialEvolveMenu((v) => !v)}
+                        style={{
+                          padding: '3px 9px', borderRadius: 5,
+                          border: showSpecialEvolveMenu ? '2px solid #b76e00' : '1px solid #bbb',
+                          background: showSpecialEvolveMenu ? '#ffe0b2' : '#f5f5f5', color: '#333',
+                          fontWeight: showSpecialEvolveMenu ? 'bold' : 'normal', cursor: 'pointer', fontSize: 11,
+                        }}
+                      >
+                        特殊進化
+                      </button>
                     )}
                   </div>
+
+                  {!isKeywordMode && showSpecialEvolveMenu && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, padding: 6, background: '#fff8ee', border: '1px solid #ffcc80', borderRadius: 5 }}>
+                      <button
+                        type="button"
+                        onClick={() => { onChange({ ...block, trigger: BURST_EVOLVE_TRIGGER, triggers: [BURST_EVOLVE_TRIGGER] }); setShowSpecialEvolveMenu(false); }}
+                        style={{
+                          padding: '3px 9px', borderRadius: 5,
+                          border: '1px solid #bbb', background: '#fff', color: '#333',
+                          fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
+                        }}
+                      >
+                        🔥 バースト進化
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { onChange({ ...block, trigger: 'app_gattai_evolve', triggers: ['app_gattai_evolve'] }); setShowSpecialEvolveMenu(false); }}
+                        style={{
+                          padding: '3px 9px', borderRadius: 5,
+                          border: '1px solid #bbb', background: '#fff', color: '#333',
+                          fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
+                        }}
+                      >
+                        🧬 アプ合体
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { onChange({ ...block, trigger: 'jogress_evolve', triggers: ['jogress_evolve'] }); setShowSpecialEvolveMenu(false); }}
+                        style={{
+                          padding: '3px 9px', borderRadius: 5,
+                          border: '1px solid #bbb', background: '#fff', color: '#333',
+                          fontWeight: 'normal', cursor: 'pointer', fontSize: 11,
+                        }}
+                      >
+                        🧬 ジョグレス進化
+                      </button>
+                    </div>
+                  )}
 
                   {!perTriggerTimingOpen && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>

@@ -3358,23 +3358,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               onChange({ ...block, trigger: next[0], triggers: next });
             };
 
-            // 「するとき」チェックボックス: 通常コード⇔するときコードを1回のonChangeで
-            // アトミックに切り替える（removeTrigger+addTriggerの2回呼び出しはstaleな
-            // currentTriggersを参照してしまい正しく切り替わらないため避けること）
-            const isPreEventChecked = (fam: TriggerFamily): boolean => {
-              const preCode = PRE_EVENT_TRIGGER_PAIR[fam.code];
-              return !!preCode && currentTriggers.includes(preCode);
-            };
-            const togglePreEvent = (fam: TriggerFamily) => {
-              const preCode = PRE_EVENT_TRIGGER_PAIR[fam.code];
-              if (!preCode) return;
-              const wantPre = !currentTriggers.includes(preCode);
-              const removed = wantPre ? fam.code : preCode;
-              const added = wantPre ? preCode : fam.code;
-              const next = [...currentTriggers.filter((t) => t !== removed && t !== added), added];
-              onChange({ ...block, trigger: next[0] || '', triggers: next });
-            };
-
             const setTiming = (newTiming: TimingKey) => {
               let next = [...currentTriggers];
               let matchedTimingFamily = false;
@@ -3466,50 +3449,69 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               update('triggerConditions', next);
             };
 
+            // 登場時/進化時/アタック時/消滅時のうち、現在選択中のファミリー（通常コード・
+            // するときコードいずれかがcurrentTriggersに含まれるもの）一覧。1個でもあれば
+            // 「トリガー（複数選択可）」ラベルの隣に「するとき」チェックボックスを表示する
+            const activePreEventFamilyCodes = Object.keys(PRE_EVENT_TRIGGER_PAIR).filter(
+              (code) => currentTriggers.includes(code) || currentTriggers.includes(PRE_EVENT_TRIGGER_PAIR[code])
+            );
+            const isPreEventCheckedAny = activePreEventFamilyCodes.some((code) => currentTriggers.includes(PRE_EVENT_TRIGGER_PAIR[code]));
+            const togglePreEventAll = () => {
+              const wantPre = !isPreEventCheckedAny;
+              let next = [...currentTriggers];
+              activePreEventFamilyCodes.forEach((code) => {
+                const preCode = PRE_EVENT_TRIGGER_PAIR[code];
+                const removed = wantPre ? code : preCode;
+                const added = wantPre ? preCode : code;
+                next = next.filter((t) => t !== removed);
+                if (!next.includes(added)) next.push(added);
+              });
+              onChange({ ...block, trigger: next[0] || '', triggers: next });
+            };
+
             return (
               <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 8 }}>
                 <div className="field">
-                  <label>トリガー（複数選択可）</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label style={{ margin: 0 }}>トリガー（複数選択可）</label>
+                    {/* 登場時/進化時/アタック時/消滅時のいずれかが選択されている間だけ表示。
+                        チェックで、選択中の該当ファミリーすべてを「〜したとき」の通常コードから
+                        「〜するとき」（事前・置換効果用）コードへまとめて切り替える */}
+                    {activePreEventFamilyCodes.length > 0 && (
+                      <label
+                        title="チェックすると「〜するとき」（事前・置換効果用）のトリガーコードに切り替わります"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#555', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isPreEventCheckedAny}
+                          onChange={togglePreEventAll}
+                          style={{ width: 11, height: 11, margin: 0 }}
+                        />
+                        するとき
+                      </label>
+                    )}
+                  </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {effectiveTriggerFamilies.map((fam) => {
                       const active = isFamilyActive(fam);
-                      const preCode = PRE_EVENT_TRIGGER_PAIR[fam.code];
                       return (
-                        <span key={fam.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                          <button
-                            type="button"
-                            onClick={() => toggleFamily(fam)}
-                            style={{
-                              padding: '3px 9px', borderRadius: 5,
-                              border: active ? '2px solid #2e7d32' : '1px solid #bbb',
-                              background: active ? '#2e7d32' : '#f5f5f5',
-                              color: active ? '#fff' : '#333',
-                              fontWeight: active ? 'bold' : 'normal',
-                              cursor: 'pointer', fontSize: 11,
-                              boxShadow: active ? '0 0 6px #2e7d3299' : 'none',
-                            }}
-                          >
-                            {fam.label}
-                          </button>
-                          {/* 「〜したとき」の通常発動コードと「〜するとき」（事前・置換効果用）
-                              コードを切り替える小さなチェックボックス。対応するファミリーには
-                              選択状態に関わらず一律でトリガー文字の隣に表示する
-                              （togglePreEventは未選択状態からでもpreCodeを直接addできる） */}
-                          {preCode && (
-                            <label
-                              title="チェックすると「〜するとき」（事前・置換効果用）のトリガーコードに切り替わります"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 9, color: '#555', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isPreEventChecked(fam)}
-                                onChange={() => togglePreEvent(fam)}
-                                style={{ width: 11, height: 11, margin: 0 }}
-                              />
-                              するとき
-                            </label>
-                          )}
-                        </span>
+                        <button
+                          key={fam.code}
+                          type="button"
+                          onClick={() => toggleFamily(fam)}
+                          style={{
+                            padding: '3px 9px', borderRadius: 5,
+                            border: active ? '2px solid #2e7d32' : '1px solid #bbb',
+                            background: active ? '#2e7d32' : '#f5f5f5',
+                            color: active ? '#fff' : '#333',
+                            fontWeight: active ? 'bold' : 'normal',
+                            cursor: 'pointer', fontSize: 11,
+                            boxShadow: active ? '0 0 6px #2e7d3299' : 'none',
+                          }}
+                        >
+                          {fam.label}
+                        </button>
                       );
                     })}
                     {/* コスト軽減: アセンブリ等、キーワード自体が「登場/使用コストを軽減する」効果

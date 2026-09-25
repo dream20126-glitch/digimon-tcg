@@ -335,6 +335,17 @@ export interface AltAction {
   // EffectBlock.fromCountと同じ（BUILTIN_FROM_ZONE_ACTIONS+対象「このカード」専用の
   // 取得元エリアからの枚数指定）。JSONではstep.countとして出力
   fromCount?: number | string;
+  // grant_keyword(_to)/grant_effect 専用（効果1のEffectBlockと同じフィールド・同じ変換ルール）。
+  // 効果2以降でもキーワード付与/独自効果付与を設定できるようにするため、効果1と同じ形で持つ
+  keyword?: string;
+  keywordParamConditions?: ConditionPair[];
+  keywordParamConditionsOp?: 'and' | 'or';
+  keywordCount?: number | string;
+  keywordDesignatedGroups?: DesignatedGroup[];
+  keywordCommonConditions?: ConditionPair[];
+  keywordCommonConditionsOp?: 'and' | 'or';
+  keywordEntries?: KeywordEntry[];
+  grantedStep?: GrantedStep;
   // 発動可否のみを判定する条件（対象選択のフィルタには使わない・複数指定でAND）。
   // 「〜のとき、代わりに〜する」のように、この代替アクションが自動選択される
   // 条件を表す。メイン側にgateが無く、alt側にgateがあって条件成立していれば、

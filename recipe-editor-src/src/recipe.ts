@@ -120,7 +120,7 @@ function parseCostArray(rawCost: any): CostStep[] {
 
 // AltAction 1件を JSON のステップオブジェクトに変換する（alt_actions[] の各要素、
 // および 'then'（その後）モードで独立した後続stepとして出力する場合の両方で共用）
-function altActionToStepObject(a: AltAction): any {
+function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   const out: any = { action: a.action };
   if (a.value !== undefined && a.value !== '' && a.value !== null) {
     const n = Number(a.value);
@@ -220,6 +220,35 @@ function altActionToStepObject(a: AltAction): any {
   // 「その後」等でこの効果だけ独立して任意にする（確認ダイアログをブロック全体から
   // 切り離して個別に出す対応はエンジン側で別途必要。JSON上は正しく区別して保存する）
   if (a.optional) out.optional = true;
+  // grant_keyword(_to)/grant_effect: 効果1(appendStep)と同じ意味のフィールドを持つ。
+  // 対象の絞り込み(designated)の組み立ても同じロジックを使う。ただし複数キーワードを
+  // 「対象を絞り込んだ別ステップ」として追加する分割（appendStep側の複雑なケース）は
+  // alt_actions（1エントリ=1ステップ）の構造と噛み合わないため、ここでは単純な
+  // カンマ区切りへの集約のみサポートする（対象の絞り込みが必要な複数キーワードは
+  // 先頭の1件のみが反映される既知の制約）
+  if (out.action === 'grant_keyword' || out.action === 'grant_keyword_to') {
+    const entries = getKeywordEntries(a).filter((entry) => entry.keyword);
+    if (entries.length > 0) {
+      const kwEntry = keywordDict && entries[0].keyword ? keywordDict.find((k) => k.code === entries[0].keyword) : undefined;
+      applyDesignatedGroupsTo(out, entries[0], kwEntry);
+      out.keyword = entries.map((entry) => entry.keyword).join(',');
+    }
+  } else if (out.action === 'grant_effect' && a.grantedStep && a.grantedStep.trigger && a.grantedStep.action) {
+    const gs = a.grantedStep;
+    const inner: any = { action: gs.action };
+    if (gs.value !== undefined && gs.value !== '' && gs.value !== null) {
+      const n = Number(gs.value);
+      inner.value = isNaN(n) ? gs.value : n;
+    }
+    if (gs.target) inner.target = gs.target;
+    if (gs.duration) inner.duration = gs.duration;
+    if (Array.isArray(gs.options) && gs.options.length > 0) inner.options = gs.options.slice();
+    const validGs = (gs.conditions || []).filter((p) => p.base);
+    if (validGs.length >= 1) inner.condition = pairToString(validGs[0]);
+    if (validGs.length >= 2) inner.when = pairToString(validGs[1]);
+    if (validGs.length >= 3) inner.extra_conditions = validGs.slice(2).map(pairToString);
+    out.granted_recipe = { [gs.trigger]: [inner] };
+  }
   return out;
 }
 
@@ -829,7 +858,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     });
   }
   if (altSegments[0].length > 0) {
-    step.alt_actions = altSegments[0].map(altActionToStepObject);
+    step.alt_actions = altSegments[0].map((a) => altActionToStepObject(a, keywordDict));
     step.alt_actions_op = b.altActionsOp === 'and' ? 'and' : 'or';
   }
   // === targetFilter → step.filter（対象自身の絞り込み。例:レスト状態のこのデジモン） ===
@@ -1015,13 +1044,13 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   altSegments.slice(1).forEach((seg) => {
     if (seg.length === 0) return;
     const [head, ...rest] = seg;
-    const thenStep = altActionToStepObject(head);
+    const thenStep = altActionToStepObject(head, keywordDict);
     const opts: string[] = Array.isArray(thenStep.options) ? thenStep.options.slice() : [];
     if (!opts.includes('continue_on_fail')) opts.push('continue_on_fail');
     thenStep.options = opts;
     if (thenStep.limit === undefined && b.limit) thenStep.limit = b.limit;
     if (rest.length > 0) {
-      thenStep.alt_actions = rest.map(altActionToStepObject);
+      thenStep.alt_actions = rest.map((a) => altActionToStepObject(a, keywordDict));
       thenStep.alt_actions_op = b.altActionsOp === 'and' ? 'and' : 'or';
     }
     container[b.trigger].push(thenStep);
@@ -1239,9 +1268,47 @@ function stepObjectToAltAction(step: any): AltAction {
   const options = Array.isArray(step?.options)
     ? step.options.filter((o: string) => o !== 'continue_on_fail')
     : [];
+  // grant_keyword(_to): 複数キーワードのカンマ区切り復元・対象の絞り込み(designated)復元は
+  // 効果1(stepToBlockWithTiming)と同じロジック
+  const _isAltGrantKeyword = step?.action === 'grant_keyword' || step?.action === 'grant_keyword_to';
+  const _altDesignatedGroups = _isAltGrantKeyword ? parseDesignatedGroupsField(step) : [];
+  const _altSingleGroup = _altDesignatedGroups.length === 1 ? _altDesignatedGroups[0] : undefined;
+  const _altCommonPairs = _isAltGrantKeyword && _altDesignatedGroups.length > 1 && step?.designated_common
+    ? parseDesignatedFields(step.designated_common)
+    : undefined;
   return {
     action: step?.action || '',
     value: step?.value,
+    keyword: String(step?.keyword || '').includes(',') ? '' : (step?.keyword || ''),
+    keywordEntries: String(step?.keyword || '').includes(',')
+      ? String(step.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))
+      : undefined,
+    keywordCount: _altSingleGroup ? _altSingleGroup.count : undefined,
+    keywordParamConditions: _altSingleGroup && _altSingleGroup.conditions.length > 0 ? _altSingleGroup.conditions : undefined,
+    keywordParamConditionsOp: _altSingleGroup && _altSingleGroup.conditions.length > 0 ? _altSingleGroup.conditionsOp : undefined,
+    keywordDesignatedGroups: _altDesignatedGroups.length > 1 ? _altDesignatedGroups : undefined,
+    keywordCommonConditions: _altCommonPairs && _altCommonPairs.conds.length > 0 ? _altCommonPairs.conds : undefined,
+    keywordCommonConditionsOp: _altCommonPairs && _altCommonPairs.conds.length > 0 ? _altCommonPairs.op : undefined,
+    grantedStep: (() => {
+      const gr = step?.granted_recipe;
+      if (!gr || typeof gr !== 'object') return undefined;
+      const trig = Object.keys(gr)[0];
+      const inner = trig && Array.isArray(gr[trig]) ? gr[trig][0] : undefined;
+      if (!trig || !inner) return undefined;
+      const gConds: ConditionPair[] = [];
+      if (inner.condition) gConds.push(stringToPair(String(inner.condition)));
+      if (inner.when) gConds.push(stringToPair(String(inner.when)));
+      if (Array.isArray(inner.extra_conditions)) inner.extra_conditions.forEach((s: string) => gConds.push(stringToPair(String(s))));
+      return {
+        trigger: trig,
+        action: inner.action || '',
+        value: inner.value,
+        target: inner.target || '',
+        duration: inner.duration || '',
+        options: Array.isArray(inner.options) ? inner.options.slice() : [],
+        conditions: gConds,
+      };
+    })(),
     target: step?.target || '',
     extraTargets: parseExtraTargetsArray(step?.targets),
     gateConditions,
@@ -1602,8 +1669,45 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             if (s.includes('_or_')) return s.split('_or_');
             return [s];
           })();
+          // grant_keyword(_to): 複数キーワードのカンマ区切り復元・対象の絞り込み(designated)復元
+          const _isAAGrantKeyword = a?.action === 'grant_keyword' || a?.action === 'grant_keyword_to';
+          const _aaDesignatedGroups = _isAAGrantKeyword ? parseDesignatedGroupsField(a) : [];
+          const _aaSingleGroup = _aaDesignatedGroups.length === 1 ? _aaDesignatedGroups[0] : undefined;
+          const _aaCommonPairs = _isAAGrantKeyword && _aaDesignatedGroups.length > 1 && a?.designated_common
+            ? parseDesignatedFields(a.designated_common)
+            : undefined;
           return {
             action: a?.action || '',
+            keyword: String(a?.keyword || '').includes(',') ? '' : (a?.keyword || ''),
+            keywordEntries: String(a?.keyword || '').includes(',')
+              ? String(a.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))
+              : undefined,
+            keywordCount: _aaSingleGroup ? _aaSingleGroup.count : undefined,
+            keywordParamConditions: _aaSingleGroup && _aaSingleGroup.conditions.length > 0 ? _aaSingleGroup.conditions : undefined,
+            keywordParamConditionsOp: _aaSingleGroup && _aaSingleGroup.conditions.length > 0 ? _aaSingleGroup.conditionsOp : undefined,
+            keywordDesignatedGroups: _aaDesignatedGroups.length > 1 ? _aaDesignatedGroups : undefined,
+            keywordCommonConditions: _aaCommonPairs && _aaCommonPairs.conds.length > 0 ? _aaCommonPairs.conds : undefined,
+            keywordCommonConditionsOp: _aaCommonPairs && _aaCommonPairs.conds.length > 0 ? _aaCommonPairs.op : undefined,
+            grantedStep: (() => {
+              const gr = a?.granted_recipe;
+              if (!gr || typeof gr !== 'object') return undefined;
+              const trig = Object.keys(gr)[0];
+              const inner = trig && Array.isArray(gr[trig]) ? gr[trig][0] : undefined;
+              if (!trig || !inner) return undefined;
+              const gConds: ConditionPair[] = [];
+              if (inner.condition) gConds.push(stringToPair(String(inner.condition)));
+              if (inner.when) gConds.push(stringToPair(String(inner.when)));
+              if (Array.isArray(inner.extra_conditions)) inner.extra_conditions.forEach((s: string) => gConds.push(stringToPair(String(s))));
+              return {
+                trigger: trig,
+                action: inner.action || '',
+                value: inner.value,
+                target: inner.target || '',
+                duration: inner.duration || '',
+                options: Array.isArray(inner.options) ? inner.options.slice() : [],
+                conditions: gConds,
+              };
+            })(),
             value: a?.value,
             target: a?.target || '',
             extraTargets: parseExtraTargetsArray(a?.targets),

@@ -2638,11 +2638,25 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     cursor: 'pointer', fontSize: 12,
   });
 
-  // 付与効果操作（grantedStep）
-  const grantedStep: GrantedStep = block.grantedStep || { trigger: '', action: '', conditions: [], options: [] };
+  // 付与効果操作（grantedStep）。効果1・効果2以降とも同じ場所（updateEffect経由）を使い回す
+  const grantedStep: GrantedStep = (isEditingAlt ? editingAlt!.grantedStep : block.grantedStep) || { trigger: '', action: '', conditions: [], options: [] };
   function updateGrantedStep(patch: Partial<GrantedStep>) {
-    onChange({ ...block, grantedStep: { ...grantedStep, ...patch } });
+    updateEffect({ grantedStep: { ...grantedStep, ...patch } });
   }
+  // キーワード付与（KeywordEntriesEditor）操作。効果2以降編集中は、そのAltActionが持つ
+  // キーワード関連フィールドだけを抜き出した仮想blockを渡し、書き込みはupdateEffect経由で
+  // AltAction側へ反映する（KeywordEntriesEditor自体はblock専用のシンプルな実装のまま）
+  const KEYWORD_FIELD_KEYS = ['keyword', 'keywordEntries', 'value', 'keywordParamConditions', 'keywordParamConditionsOp', 'keywordCount', 'keywordDesignatedGroups', 'keywordCommonConditions', 'keywordCommonConditionsOp'] as const;
+  const keywordEditBlock: EffectBlock = isEditingAlt
+    ? { ...block, ...Object.fromEntries(KEYWORD_FIELD_KEYS.map((k) => [k, (editingAlt as any)![k]])) }
+    : block;
+  const onKeywordEditChange = (nb: EffectBlock) => {
+    if (isEditingAlt) {
+      updateEffect(Object.fromEntries(KEYWORD_FIELD_KEYS.map((k) => [k, (nb as any)[k]])));
+    } else {
+      onChange(nb);
+    }
+  };
 
   // コスト操作（効果1・代替アクションとも同じ場所を使い回す）
   const costs = isEditingAlt ? (editingAlt!.costs || []) : (block.costs || []);
@@ -6272,10 +6286,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* === 🎁 付与する効果（キーワード付与 / 独自の効果付与） ===
             アクションが grant_keyword(_to) / grant_effect のときだけ自動表示。
-            パターン切替でどちらの action コードを使うか（block.action）を直接切り替える。
-            block（効果1）専用の設定（AltActionにはkeyword/grantedStepの保存先が無い）のため、
-            効果2以降を編集中は非表示にする */}
-        {!isEditingAlt && (block.action === 'grant_effect' || block.action === 'grant_keyword' || block.action === 'grant_keyword_to') && (
+            パターン切替でどちらの action コードを使うか（effectAction）を直接切り替える。
+            効果1・効果2以降とも同じ場所（updateEffect/keywordEditBlock経由）を使い回す */}
+        {(effectAction === 'grant_effect' || effectAction === 'grant_keyword' || effectAction === 'grant_keyword_to') && (
           <div style={{ padding: 8, border: '1px solid #5eead4', borderRadius: 4, background: '#f0fdfa', marginTop: 8 }}>
             <div style={{ fontWeight: 'bold', fontSize: 12, color: '#0d9488', marginBottom: 6 }}>
               🎁 付与する効果
@@ -6286,16 +6299,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   { code: 'keyword', label: 'キーワードを付与' },
                   { code: 'custom', label: '独自の効果を付与' },
                 ]}
-                value={block.action === 'grant_effect' ? 'custom' : 'keyword'}
+                value={effectAction === 'grant_effect' ? 'custom' : 'keyword'}
                 onChange={(v) => {
                   if (v === 'keyword') {
-                    onChange({ ...block, action: 'grant_keyword', grantedStep: undefined });
+                    updateEffect({ action: 'grant_keyword', grantedStep: undefined });
                   } else {
-                    onChange({
-                      ...block,
+                    updateEffect({
                       action: 'grant_effect',
                       keyword: undefined,
-                      grantedStep: block.grantedStep || { trigger: 'on_attack', action: '', conditions: [], options: [] },
+                      grantedStep: grantedStep || { trigger: 'on_attack', action: '', conditions: [], options: [] },
                     });
                   }
                 }}
@@ -6303,7 +6315,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               />
             </div>
 
-            {block.action === 'grant_keyword' || block.action === 'grant_keyword_to' ? (
+            {effectAction === 'grant_keyword' || effectAction === 'grant_keyword_to' ? (
               <>
                 <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
                   💡 対象にキーワードを付与する。値・対象・対象数・期間は上の通常のアクション欄で設定してください。
@@ -6313,8 +6325,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: 4 }}>付与するキーワード（複数選択可）</label>
-                  <KeywordEntriesEditor block={block} onChange={onChange} dict={dict} accentBorder="#99f6e4" />
-                  {getKeywordEntries(block).length > 1 && (
+                  <KeywordEntriesEditor block={keywordEditBlock} onChange={onKeywordEditChange} dict={dict} accentBorder="#99f6e4" />
+                  {getKeywordEntries(keywordEditBlock).length > 1 && (
                     <div style={{ fontSize: 10, color: '#0d9488', marginTop: 2 }}>
                       💡 2つ目以降のキーワードは、1つ目で選んだ「対象」欄の指定に応じて、1体選択系の対象なら
                       同じ対象へ自動で付与されます（対象選択は1回だけ）

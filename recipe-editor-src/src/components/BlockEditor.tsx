@@ -1655,6 +1655,10 @@ const SUBJECT_L1 = [
 // アクションの対象/コストの対象と同じ操作感）。それ以外は従来通り単一選択のまま
 const SUBJECT_OWN_OPP = SUBJECT_L1.filter((o) => o.code === 'own' || o.code === 'opp');
 const SUBJECT_L1_REST = SUBJECT_L1.filter((o) => o.code !== 'own' && o.code !== 'opp' && o.code !== 'both');
+// 「トリガーごとに発動主体を分ける」専用: このトリガーコードには発動主体を設定しない
+// （subject_by_codeにエントリを作らない＝共有のtriggerSubject/デフォルトにフォールバックさせる）
+// という状態を明示的に選べるようにする
+const SUBJECT_L1_REST_WITH_NONE = [{ code: '__none__', label: 'なし' }, ...SUBJECT_L1_REST];
 const SUBJECT_L2 = [
   { code: 'digimon', label: 'デジモン' },
   { code: 'card', label: 'カード' },
@@ -3652,11 +3656,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           || FAMILY_VARIANT_FALLBACK_LABELS[code]
                           || dict.triggers.find((d) => d.code === code)?.label
                           || code;
-                        const curSubjRaw = (block.triggerSubjectByCode || {})[code] || block.triggerSubject || 'self';
+                        // このトリガーコードにsubject_by_codeのエントリが無い（「なし」状態）かどうか。
+                        // 無い場合は他コードと違う値になりうる共有のtriggerSubject/'self'に暗黙で
+                        // フォールバックさせず、明示的に「未設定」の見た目にする（誤って「このカード」
+                        // が選択済みに見えるのを防ぐ）
+                        const hasThisSubjectEntry = Object.prototype.hasOwnProperty.call(block.triggerSubjectByCode || {}, code);
+                        const curSubjRaw = hasThisSubjectEntry ? (block.triggerSubjectByCode || {})[code] : '';
                         const rawSub = splitStackSuffix(curSubjRaw);
-                        const subL1L2 = SUBJECT_CODE_TO_L1L2[rawSub.base] || { l1: 'self', l2: '' };
+                        const subL1L2 = hasThisSubjectEntry ? (SUBJECT_CODE_TO_L1L2[rawSub.base] || { l1: 'self', l2: '' }) : { l1: '', l2: '' };
                         const setThisSubjectCode = (newCode: string) => {
                           const nextMap = { ...(block.triggerSubjectByCode || {}), [code]: newCode };
+                          onChange({ ...block, triggerSubjectByCode: nextMap });
+                        };
+                        const clearThisSubject = () => {
+                          const nextMap = { ...(block.triggerSubjectByCode || {}) };
+                          delete nextMap[code];
                           onChange({ ...block, triggerSubjectByCode: nextMap });
                         };
                         // 共有の発動主体パネル（handleL1/handleL2/applySubjDigiTamer）と全く同じ
@@ -3703,9 +3717,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                                 accentColor="#2e7d32"
                               />
                               <ButtonGroup
-                                options={SUBJECT_L1_REST}
-                                value={(subL1L2.l1 === 'own' || subL1L2.l1 === 'opp' || subL1L2.l1 === 'both') ? '' : subL1L2.l1}
-                                onChange={handleThisL1}
+                                options={SUBJECT_L1_REST_WITH_NONE}
+                                value={!hasThisSubjectEntry ? '__none__' : (subL1L2.l1 === 'own' || subL1L2.l1 === 'opp' || subL1L2.l1 === 'both') ? '' : subL1L2.l1}
+                                onChange={(v) => { if (v === '__none__') { clearThisSubject(); } else { handleThisL1(v); } }}
                                 accentColor="#2e7d32"
                               />
                             </div>

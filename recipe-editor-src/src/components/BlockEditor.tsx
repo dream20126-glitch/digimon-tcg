@@ -2022,9 +2022,17 @@ const KEYWORD_ONLY_TRIGGER_FAMILIES: TriggerFamily[] = [
 const ATTACK_TRIGGER_CODES = ['on_attack', 'when_opp_attack', 'on_any_attack', 'on_attack_end', 'when_opp_attack_end', 'on_any_attack_end'];
 // 【リンク時】のときだけ、リンクする側/される側を選べるUIを出す判定に使う
 const LINK_TRIGGER_CODES = ['on_link'];
-// 【消滅時】のときだけ、消滅前(when_destroy・置換効果/防御用)か消滅後(on_destroy・通常の
-// 消滅時効果)かを選べるUIを出す判定に使う
-const DESTROY_TRIGGER_CODES = ['on_destroy', 'when_destroy'];
+// event種別のトリガーファミリーのうち、「〜するとき（事前・置換効果用）」の対になる
+// コードを持つもの。該当ファミリーボタンがアクティブな間だけ、ボタンの隣に小さく
+// 「するとき」チェックボックスを出し、チェックで通常コード⇔するときコードを切り替える。
+// when_play/when_evolve/when_attackはエディタ側のみでエンジン未実装（レシピは書けるが
+// 現状は発火しない）。when_destroyのみエンジン実装済み
+const PRE_EVENT_TRIGGER_PAIR: Record<string, string> = {
+  on_play: 'when_play',
+  on_evolve: 'when_evolve',
+  on_attack: 'when_attack',
+  on_destroy: 'when_destroy',
+};
 const TIMING_OPTIONS: { code: TimingKey; label: string }[] = [
   { code: 'self', label: '自分' },
   { code: 'opp', label: '相手' },
@@ -3327,17 +3335,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             };
 
             const timing = inferTiming(currentTriggers, triggerConditions, effectiveTriggerFamilies);
-            // 「消滅時」ファミリーボタンは on_destroy(消滅後)/when_destroy(消滅前) のどちらでも
-            // アクティブ表示・トグルできるようにする（DESTROY_TRIGGER_CODES参照）
+            // event種別のファミリーボタンは、通常コード(on_play等)と「するとき」コード
+            // (when_play等、PRE_EVENT_TRIGGER_PAIR参照)のどちらでもアクティブ表示・
+            // トグルできるようにする
             const isFamilyActive = (fam: TriggerFamily): boolean =>
-              fam.kind === 'event' ? (fam.code === 'on_destroy'
-                ? currentTriggers.some((t) => DESTROY_TRIGGER_CODES.includes(t))
+              fam.kind === 'event' ? (PRE_EVENT_TRIGGER_PAIR[fam.code]
+                ? currentTriggers.some((t) => t === fam.code || t === PRE_EVENT_TRIGGER_PAIR[fam.code])
                 : currentTriggers.includes(fam.code))
                 : Object.values(fam.variants!).some((v) => currentTriggers.includes(v));
 
             const toggleFamily = (fam: TriggerFamily) => {
               if (fam.kind === 'event') {
-                if (fam.code === 'on_destroy' && currentTriggers.includes('when_destroy')) { removeTrigger('when_destroy'); return; }
+                const preCode = PRE_EVENT_TRIGGER_PAIR[fam.code];
+                if (preCode && currentTriggers.includes(preCode)) { removeTrigger(preCode); return; }
                 if (currentTriggers.includes(fam.code)) removeTrigger(fam.code); else addTrigger(fam.code);
                 return;
               }
@@ -3346,6 +3356,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               const others = Object.values(fam.variants!).filter((v) => v !== variant);
               const next = [...currentTriggers.filter((t) => !others.includes(t)), variant];
               onChange({ ...block, trigger: next[0], triggers: next });
+            };
+
+            // 「するとき」チェックボックス: 通常コード⇔するときコードを1回のonChangeで
+            // アトミックに切り替える（removeTrigger+addTriggerの2回呼び出しはstaleな
+            // currentTriggersを参照してしまい正しく切り替わらないため避けること）
+            const isPreEventChecked = (fam: TriggerFamily): boolean => {
+              const preCode = PRE_EVENT_TRIGGER_PAIR[fam.code];
+              return !!preCode && currentTriggers.includes(preCode);
+            };
+            const togglePreEvent = (fam: TriggerFamily) => {
+              const preCode = PRE_EVENT_TRIGGER_PAIR[fam.code];
+              if (!preCode) return;
+              const wantPre = !currentTriggers.includes(preCode);
+              const removed = wantPre ? fam.code : preCode;
+              const added = wantPre ? preCode : fam.code;
+              const next = [...currentTriggers.filter((t) => t !== removed && t !== added), added];
+              onChange({ ...block, trigger: next[0] || '', triggers: next });
             };
 
             const setTiming = (newTiming: TimingKey) => {
@@ -3446,23 +3473,42 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {effectiveTriggerFamilies.map((fam) => {
                       const active = isFamilyActive(fam);
+                      const preCode = PRE_EVENT_TRIGGER_PAIR[fam.code];
                       return (
-                        <button
-                          key={fam.code}
-                          type="button"
-                          onClick={() => toggleFamily(fam)}
-                          style={{
-                            padding: '3px 9px', borderRadius: 5,
-                            border: active ? '2px solid #2e7d32' : '1px solid #bbb',
-                            background: active ? '#2e7d32' : '#f5f5f5',
-                            color: active ? '#fff' : '#333',
-                            fontWeight: active ? 'bold' : 'normal',
-                            cursor: 'pointer', fontSize: 11,
-                            boxShadow: active ? '0 0 6px #2e7d3299' : 'none',
-                          }}
-                        >
-                          {fam.label}
-                        </button>
+                        <span key={fam.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <button
+                            type="button"
+                            onClick={() => toggleFamily(fam)}
+                            style={{
+                              padding: '3px 9px', borderRadius: 5,
+                              border: active ? '2px solid #2e7d32' : '1px solid #bbb',
+                              background: active ? '#2e7d32' : '#f5f5f5',
+                              color: active ? '#fff' : '#333',
+                              fontWeight: active ? 'bold' : 'normal',
+                              cursor: 'pointer', fontSize: 11,
+                              boxShadow: active ? '0 0 6px #2e7d3299' : 'none',
+                            }}
+                          >
+                            {fam.label}
+                          </button>
+                          {/* 「〜したとき」の通常発動コードと「〜するとき」（事前・置換効果用）
+                              コードを切り替える小さなチェックボックス。ファミリーボタンが
+                              アクティブな間だけ表示する */}
+                          {active && preCode && (
+                            <label
+                              title="チェックすると「〜するとき」（事前・置換効果用）のトリガーコードに切り替わります"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 9, color: '#555', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isPreEventChecked(fam)}
+                                onChange={() => togglePreEvent(fam)}
+                                style={{ width: 11, height: 11, margin: 0 }}
+                              />
+                              するとき
+                            </label>
+                          )}
+                        </span>
                       );
                     })}
                     {/* コスト軽減: アセンブリ等、キーワード自体が「登場/使用コストを軽減する」効果
@@ -3928,26 +3974,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         options={[{ code: 'linker', label: 'リンクする' }, { code: 'target', label: 'リンクされる' }]}
                         value={block.linkRole || 'linker'}
                         onChange={(v) => update('linkRole', v === 'target' ? 'target' : 'linker')}
-                        accentColor="#2e7d32"
-                      />
-                    </div>
-                  )}
-
-                  {/* 【消滅時】のときだけ、消滅前（when_destroy・置換効果/フラグメント等の防御用）か
-                      消滅後（on_destroy・通常の消滅時効果）かを選べる */}
-                  {currentTriggers.some((t) => DESTROY_TRIGGER_CODES.includes(t)) && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                      <span style={{ fontSize: 11, color: '#666' }}>消滅:</span>
-                      <ButtonGroup
-                        options={[{ code: 'on_destroy', label: '消滅後（通常の消滅時効果）' }, { code: 'when_destroy', label: '消滅前（置換効果・防御用）' }]}
-                        value={currentTriggers.includes('when_destroy') ? 'when_destroy' : 'on_destroy'}
-                        onChange={(v) => {
-                          const wantWhenDestroy = v === 'when_destroy';
-                          const removed = wantWhenDestroy ? 'on_destroy' : 'when_destroy';
-                          const added = wantWhenDestroy ? 'when_destroy' : 'on_destroy';
-                          const next = [...currentTriggers.filter((t) => t !== removed && t !== added), added];
-                          onChange({ ...block, trigger: next[0] || '', triggers: next });
-                        }}
                         accentColor="#2e7d32"
                       />
                     </div>

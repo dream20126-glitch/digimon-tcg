@@ -165,9 +165,12 @@ export const TARGET_COUNTS = [
 export const TRIGGERS: DictEntry[] = [
   // 即時系
   { code: 'on_play', kind: 'trigger', label: '登場時' },
+  { code: 'when_play', kind: 'trigger', label: '登場するとき（登場前・置換効果用・エンジン未実装）' },
   { code: 'on_evolve', kind: 'trigger', label: '進化時' },
+  { code: 'when_evolve', kind: 'trigger', label: '進化するとき（進化前・置換効果用・エンジン未実装）' },
   { code: 'on_move', kind: 'trigger', label: '移動時' },
   { code: 'on_attack', kind: 'trigger', label: 'アタック時' },
+  { code: 'when_attack', kind: 'trigger', label: 'アタックするとき（アタック前・置換効果用・エンジン未実装）' },
   { code: 'on_attack_end', kind: 'trigger', label: 'アタック終了時' },
   { code: 'on_destroy', kind: 'trigger', label: '消滅時' },
   { code: 'on_battle_destroy', kind: 'trigger', label: 'バトルで消滅したとき（消滅後）' },

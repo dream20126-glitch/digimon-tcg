@@ -1135,7 +1135,7 @@ function CostListEditor({
                   {/* セキュリティ/テイマーのときだけ「上/下/下か上」を選べる */}
                   {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasPosition && (
                     <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
                       <ButtonGroup
                         options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
                         value={c.deckPosition || ''}
@@ -1161,7 +1161,7 @@ function CostListEditor({
               {/* デッキに戻す: 位置ボタン（下/上/下か上） */}
               {isDeckPosAction && (
                 <div style={{ marginTop: 4 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
                   <ButtonGroup
                     options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
                     value={c.deckPosition || ''}
@@ -1352,7 +1352,7 @@ function CostListEditor({
                         value={costCurrentSuffix}
                         onChange={onCostVariantChange}
                         options={costVariantOptions}
-                        placeholder="📍 位置"
+                        placeholder="📍 アクションにかかる位置"
                       />
                     </div>
                   )}
@@ -1464,7 +1464,7 @@ function CostListEditor({
                     const curSuffix = getActionVariant(c.action || '')?.suffix || '';
                     return (
                       <div style={{ marginTop: 4 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
                         <ButtonGroup
                           options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
                           value={curSuffix}
@@ -4971,7 +4971,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       const effectDeckPositionForPlace = isEditingAlt ? editingAlt!.deckPosition : block.deckPosition;
                       return (
                         <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
                           <ButtonGroup
                             options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
                             value={effectDeckPositionForPlace || ''}
@@ -5026,7 +5026,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       const curSuffix = getActionVariant(effectAction || '')?.suffix || '';
                       return (
                         <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
                           <ButtonGroup
                             options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
                             value={curSuffix}
@@ -5109,7 +5109,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   破棄（isDiscardActive）は専用の📍位置ボタンを別途表示するため、ここでは除外 */}
               {!isDiscardActive && !isPlaceActive && isPositional && variantOptions.length > 0 && (
                 <div className="field">
-                  <label>📍 位置</label>
+                  <label>📍 アクションにかかる位置</label>
                   <SearchSelect
                     value={currentSuffix}
                     onChange={onVariantChange}
@@ -6063,7 +6063,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     対象欄に一本化した（誰の・どの位置のセキュリティかをここで完結できる） */}
                 {curTgt.l2 === 'security' && (getActionVariant(block.action || '')?.base || block.action) === 'security_trash' && (
                   <div style={{ marginTop: 4 }}>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
                     <ButtonGroup
                       options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
                       value={getActionVariant(block.action || '')?.suffix || ''}
@@ -6600,7 +6600,7 @@ const RULE_ZONE_OPTS: SelectOption[] = [
 // 同じ base に2件以上バリアントが存在する場合、エディタ上でグループ化する。
 // 例: security_trash_top / security_trash_bottom / security_trash_select
 //   → アクションプルダウンには "セキュリティを破棄" 1件のみ表示
-//   → 別途「📍 位置」サブプルダウンで上から/下から/選んで を選択
+//   → 別途「📍 アクションにかかる位置」サブプルダウンで上から/下から/選んで を選択
 const POSITION_VARIANTS: { suffix: string; label: string }[] = [
   { suffix: '_top',    label: '上' },
   { suffix: '_bottom', label: '下' },
@@ -6773,7 +6773,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
         </span>
       </div>
 
-      {/* アクションは常に表示・必須。位置指定フラグ付きアクション選択時は 📍 位置 pulldown も出現 */}
+      {/* アクションは常に表示・必須。位置指定フラグ付きアクション選択時は 📍 アクションにかかる位置 pulldown も出現 */}
       {(() => {
         const { options: ruleActionOptions, flaggedBases: ruleFlaggedBases, autoGroupBases: ruleAutoGroupBases } = buildActionDisplay(dict.actions);
         const ruleCurVariant = getActionVariant(step.action || '');
@@ -6920,7 +6920,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
             </div>
             {step.action === 'return_deck' && (
               <div style={{ marginTop: 4 }}>
-                <div style={miniLbl()}>📍 位置</div>
+                <div style={miniLbl()}>📍 アクションにかかる位置</div>
                 <ButtonGroup
                   options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '上か下' }]}
                   value={step.deckPosition || ''}
@@ -6952,7 +6952,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                   if (!z?.hasPosition) return null;
                   return (
                     <div style={{ marginTop: 4 }}>
-                      <div style={miniLbl()}>📍 位置</div>
+                      <div style={miniLbl()}>📍 アクションにかかる位置</div>
                       <ButtonGroup
                         options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
                         value={step.deckPosition || ''}
@@ -6998,7 +6998,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                 />
                 {ruleIsPositional && ruleVariantOptions.length > 0 && (
                   <div style={{ marginTop: 4 }}>
-                    <div style={miniLbl()}>📍 位置</div>
+                    <div style={miniLbl()}>📍 アクションにかかる位置</div>
                     <SearchSelect
                       value={ruleCurrentSuffix}
                       onChange={onRuleVariantChange}
@@ -7267,7 +7267,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                         </div>
                         {gAction === 'return_deck' && (
                           <div style={{ marginTop: 4 }}>
-                            <div style={miniLbl()}>📍 位置</div>
+                            <div style={miniLbl()}>📍 アクションにかかる位置</div>
                             <ButtonGroup
                               options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '上か下' }]}
                               value={g.deckPosition || ''}
@@ -7298,7 +7298,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                               if (!z?.hasPosition) return null;
                               return (
                                 <div style={{ marginTop: 4 }}>
-                                  <div style={miniLbl()}>📍 位置</div>
+                                  <div style={miniLbl()}>📍 アクションにかかる位置</div>
                                   <ButtonGroup
                                     options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
                                     value={g.deckPosition || ''}

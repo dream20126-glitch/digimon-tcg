@@ -9833,6 +9833,54 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         return;
       }
+      // target:"own_trash:N"/"opponent_trash:N"（トラッシュのカードを、その持ち主の手札に
+      // 戻す）。対象欄の「場所」統合（own/opponent_trash）を選んだ場合の実処理
+      const _bTrashM = /^(own|opponent)_trash:(up_to_)?(\d+)$/.exec(String(step.target || ''));
+      if (_bTrashM) {
+        const isOwnZone = _bTrashM[1] === 'own';
+        const zoneOwner = isOwnZone ? player : opponent;
+        const upTo = !!_bTrashM[2];
+        const want = parseInt(_bTrashM[3], 10) || 1;
+        const _btFilter = step.filter || {};
+        const _btCands = (zoneOwner.trash || []).filter(c => c && cardMatchesFilter(c, _btFilter, ctx.bs, ctx.side));
+        if (_btCands.length === 0) {
+          ctx.addLog('⚠ トラッシュに条件を満たすカードがありません');
+          showEffectFailed('効果を発動できませんでした', () => callback(false));
+          return;
+        }
+        const _doBounceTrash = (chosen) => {
+          if (!chosen || chosen.length === 0) { callback(upTo || !!step.optional); return; }
+          let _bti = 0;
+          const _moveNextTrash = () => {
+            if (_bti >= chosen.length) { ctx.renderAll(); callback(true); return; }
+            const c = chosen[_bti++];
+            const ti = zoneOwner.trash.indexOf(c);
+            if (ti >= 0) zoneOwner.trash.splice(ti, 1);
+            zoneOwner.hand.push(c);
+            ctx.addLog('🃏 トラッシュの「' + c.name + '」を手札に戻した');
+            if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+              try {
+                window._onlineSendCommand({
+                  type: 'fx_remoteCardMove',
+                  cardName: c.name, cardNo: c.cardNo,
+                  cardImg: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '',
+                  fromLabel: 'トラッシュ', toLabel: '手札',
+                });
+              } catch (_) {}
+            }
+            if (window._fxCardMove) window._fxCardMove(c, 'トラッシュ', '手札', _moveNextTrash);
+            else setTimeout(_moveNextTrash, 300);
+          };
+          _moveNextTrash();
+        };
+        const _btWant = Math.min(want, _btCands.length);
+        if (effectiveSide === 'ai' || (!upTo && _btCands.length <= want && !step.optional)) {
+          _doBounceTrash(_btCands.slice(0, _btWant));
+        } else {
+          showTrashCardPicker(_btCands, _btWant, upTo || !!step.optional, '🃏 手札に戻すカードを選んでください', _doBounceTrash, _btCands);
+        }
+        return;
+      }
       // 通常の bounce（相手デジモンを手札に戻す）→ 既存エンジンに委譲
       const _bAction = { code: 'bounce', value: step.value || null };
       if (step.condition) {

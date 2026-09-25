@@ -6221,7 +6221,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
                   {/* テイマー対象: テイマーの下には本体/進化元の区別が無いため、位置（上/下/選んで）
-                      のみを直接表示する。値はcond_target_stackとしてtargetFilterに保存する */}
+                      のみを直接表示する。値はcond_target_stackとしてtargetFilterに保存する。
+                      裏表指定（cond_face_down/up、block.conditionsへ保存）もここに表示する
+                      （テイマーの下＝裏向きで積まれているカードも扱うため） */}
                   {curTgt.l2 === 'tamer' && (() => {
                     const tamerStackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
                     const setTamerStackPosition = (v: string) => {
@@ -6231,25 +6233,46 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         update('targetFilter', [...targetFilter, { base: 'cond_target_stack', value: v }]);
                       }
                     };
+                    const faceIdx = conditions.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
+                    const faceVal = faceIdx !== -1 ? (conditions[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
+                    const setFace = (v: string) => {
+                      const next = conditions.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
+                      if (v === 'down') next.push({ base: 'cond_face_down' });
+                      else if (v === 'up') next.push({ base: 'cond_face_up' });
+                      update('conditions', next);
+                    };
                     return (
-                      <div style={{ marginTop: 4 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置（テイマーの下）</div>
-                        <ButtonGroup
-                          options={[
-                            { code: '', label: '指定なし（全体）' },
-                            { code: 'top', label: '上' },
-                            { code: 'bottom', label: '下' },
-                            { code: 'select', label: '選んで' },
-                          ]}
-                          value={tamerStackCond?.value || ''}
-                          onChange={setTamerStackPosition}
-                          accentColor="#b76e00"
-                        />
-                      </div>
+                      <>
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置（テイマーの下）</div>
+                          <ButtonGroup
+                            options={[
+                              { code: '', label: '指定なし（全体）' },
+                              { code: 'top', label: '上' },
+                              { code: 'bottom', label: '下' },
+                              { code: 'select', label: '選んで' },
+                            ]}
+                            value={tamerStackCond?.value || ''}
+                            onChange={setTamerStackPosition}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                          <ButtonGroup
+                            options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
+                            value={faceVal}
+                            onChange={setFace}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                      </>
                     );
                   })()}
                   {/* デジモン対象＋進化元/重ねられているカードのサブ選択肢（左の対象ボックス側）を
-                      選んでいるときだけ、その位置（上/下/選んで）をここに表示する */}
+                      選んでいるときだけ、その位置（上/下/選んで）をここに表示する。
+                      裏表指定は「進化元」のときのみ表示する（「重ねられているカード」は本体
+                      カード＝常に表向きも含むため対象外。block.conditionsへ保存） */}
                   {curTgt.l2 === 'digimon' && (() => {
                     const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                     const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
@@ -6258,21 +6281,42 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     const setSubPosition = (v: string) => {
                       update('targetFilter', targetFilter.map((c) => (c === activeCond ? { ...c, value: v } : c)));
                     };
+                    const faceIdx = conditions.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
+                    const faceVal = faceIdx !== -1 ? (conditions[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
+                    const setFace = (v: string) => {
+                      const next = conditions.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
+                      if (v === 'down') next.push({ base: 'cond_face_down' });
+                      else if (v === 'up') next.push({ base: 'cond_face_up' });
+                      update('conditions', next);
+                    };
                     return (
-                      <div style={{ marginTop: 4 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
-                        <ButtonGroup
-                          options={[
-                            { code: '', label: '指定なし（全体）' },
-                            { code: 'top', label: '上' },
-                            { code: 'bottom', label: '下' },
-                            { code: 'select', label: '選んで' },
-                          ]}
-                          value={activeCond.value || ''}
-                          onChange={setSubPosition}
-                          accentColor="#b76e00"
-                        />
-                      </div>
+                      <>
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                          <ButtonGroup
+                            options={[
+                              { code: '', label: '指定なし（全体）' },
+                              { code: 'top', label: '上' },
+                              { code: 'bottom', label: '下' },
+                              { code: 'select', label: '選んで' },
+                            ]}
+                            value={activeCond.value || ''}
+                            onChange={setSubPosition}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                        {evoCond && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                            <ButtonGroup
+                              options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
+                              value={faceVal}
+                              onChange={setFace}
+                              accentColor="#b76e00"
+                            />
+                          </div>
+                        )}
+                      </>
                     );
                   })()}
                   {showTargetFilter && (

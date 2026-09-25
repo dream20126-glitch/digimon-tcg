@@ -1371,9 +1371,14 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
         if (didDiscard) {
+          // 「したとき」系（進化元を破棄したとき）のため即座には発火せず保留キューへ積み、
+          // メイン効果全体の完了後にまとめて発火させる。
           // 「原因」追跡: 効果によって破棄された（このactionを実行している効果の持ち主が原因）
-          if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
-          try { fireWhenEvoDiscardTriggers(edSide, ctx.bs, ctx, () => doneCb && doneCb(), edAreaKey === 'tamerArea' ? 'tamer' : 'digimon'); return; } catch (_) {}
+          enqueueReaction(ctx.bs, _fireWhenEvoDiscardTriggersQueued, [
+            { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }, edSide, ctx.bs, ctx, edAreaKey === 'tamerArea' ? 'tamer' : 'digimon'
+          ]);
+          doneCb && doneCb();
+          return;
         }
         doneCb && doneCb();
       };
@@ -2119,11 +2124,12 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
         if (dc.stack) dc.stack.forEach(function(s){ targetSide.trash.push(s); });
         if (dc.linkedCards) dc.linkedCards.forEach(function(s){ targetSide.trash.push(s); });
         ctx.renderAll && ctx.renderAll();
-        // デコイ自身の消滅で on_destroy 発火。「原因」追跡: 効果によって消滅した
-        if (ctx.bs) ctx.bs._lastDestroyCause = { type: causeType, causerSide: ctx.side, causerCard: ctx.card };
-        fireDestroyChain(dc, decoyOwnerSide, ctx.bs, ctx, function() {
-          callback && callback();
-        });
+        // デコイ自身の消滅で on_destroy 発火（「したとき」系のため即時発火せず保留キューへ）。
+        // 「原因」追跡: 効果によって消滅した
+        enqueueReaction(ctx.bs, _fireDestroyChainQueued, [
+          { type: causeType, causerSide: ctx.side, causerCard: ctx.card }, dc, decoyOwnerSide, ctx.bs, ctx
+        ]);
+        callback && callback();
       });
       return;
     }
@@ -2133,10 +2139,11 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
       // 他デジモンを身代わりにして destroyed は残す
       ctx.renderAll && ctx.renderAll();
       const sgOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
-      if (ctx.bs) ctx.bs._lastDestroyCause = { type: causeType, causerSide: ctx.side, causerCard: ctx.card };
-      fireDestroyChain(destroyed, sgOwnerSide, ctx.bs, ctx, function() {
-        callback && callback();
-      });
+      // 「したとき」系のため即時発火せず保留キューへ。「原因」追跡: 効果によって消滅した
+      enqueueReaction(ctx.bs, _fireDestroyChainQueued, [
+        { type: causeType, causerSide: ctx.side, causerCard: ctx.card }, destroyed, sgOwnerSide, ctx.bs, ctx
+      ]);
+      callback && callback();
       return;
     }
   }
@@ -2160,9 +2167,13 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
     }
     ctx.renderAll();
     // on_destroy グローバル発火（消滅した側を引数に） ＝ 共通の消滅トリガーチェーン。
+    // 「したとき」系（事後反応）のため即座には発火せず保留キューへ積み、メイン効果全体の
+    // 完了後にcheckPendingDestroysのドレインループがまとめて発火させる。
     // 「原因」追跡: 効果/バトルによって消滅した（このactionを実行している効果の持ち主が原因）
-    if (ctx.bs) ctx.bs._lastDestroyCause = { type: causeType, causerSide: ctx.side, causerCard: ctx.card };
-    fireDestroyChain(destroyed, destroyedSideName, ctx.bs, ctx, callback);
+    enqueueReaction(ctx.bs, _fireDestroyChainQueued, [
+      { type: causeType, causerSide: ctx.side, causerCard: ctx.card }, destroyed, destroyedSideName, ctx.bs, ctx
+    ]);
+    callback && callback();
   });
   }
 }
@@ -5305,6 +5316,34 @@ function checkConditions(conditions, card, bs, side) {
   return true;
 }
 
+// 「したとき」系（〜したとき/事後反応）トリガーの発火を、呼び出し元のメイン効果全体の
+// 処理が完了するまで保留する。即座には発火せず bs._pendingReactions に積むだけにして
+// 呼び出し元(callback)はそのまま続行させる。実際の発火は checkPendingDestroys の
+// ドレインループが、メイン効果（cost・本体・その後チェーン全て）完了後にまとめて行う。
+// 「〜するとき」系（when_destroy/when_battle_destroy/when_leave_battle等の置換効果）は
+// このキューを使わず、従来通り即座に同期発火させること
+function enqueueReaction(bs, fn, args) {
+  if (!bs) return;
+  if (!Array.isArray(bs._pendingReactions)) bs._pendingReactions = [];
+  bs._pendingReactions.push({ fn, args });
+}
+
+// fireDestroyChain をキュー経由で保留発火する際のラッパー。_lastDestroyCause は
+// キューに積んだ時点の値をargsとして保持しておき、実際に発火する直前（＝他の保留反応と
+// 混ざらないタイミング）でbsへ書き戻してからfireDestroyChainへ渡す
+function _fireDestroyChainQueued(cause, destroyedCard, destroyedSide, bs, ctxBase, callback) {
+  if (bs) bs._lastDestroyCause = cause;
+  fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, callback);
+}
+
+// fireWhenEvoDiscardTriggers 用の同様のキュー発火ラッパー（引数順は
+// (discardedSide, bs, ctxBase, done, containerType) だが、ドレインループは末尾に
+// doneを付け足す規約のため、ここでcontainerTypeとdoneの順序を入れ替えて橋渡しする）
+function _fireWhenEvoDiscardTriggersQueued(cause, discardedSide, bs, ctxBase, containerType, callback) {
+  if (bs) bs._lastDestroyCause = cause;
+  fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, callback, containerType);
+}
+
 // ===== 消滅チェック =====
 // callback: 消滅した全カードの 演出 + on_destroy リアクションが完了したら呼ぶ
 
@@ -5324,7 +5363,25 @@ function checkPendingDestroys(ctx, callback) {
       }
     }
   });
-  if (pending.length === 0) { callback && callback(); return; }
+  if (pending.length === 0) {
+    // 「したとき」系の保留中反応（fireDestroyChain/fireWhenEvoDiscardTriggers等、
+    // enqueueReaction経由でbs._pendingReactionsに積まれたもの）を1件ずつ処理する。
+    // 処理中にさらに反応が積まれても、再帰的にこの関数へ戻ってきて
+    // _pendingDestroy/_pendingReactionsを両方再チェックするため、fixed-pointで
+    // 全て処理し終えるまでcallbackは呼ばれない（＝メイン効果完了後まで保留する仕様）
+    const reactions = ctx.bs._pendingReactions;
+    if (Array.isArray(reactions) && reactions.length > 0) {
+      const { fn, args } = reactions.shift();
+      try {
+        fn(...args, () => checkPendingDestroys(ctx, callback));
+      } catch (_) {
+        checkPendingDestroys(ctx, callback);
+      }
+      return;
+    }
+    callback && callback();
+    return;
+  }
 
   // showDestroyEffect の取得（ctx 経由 or window フォールバック）
   const showDE = (ctx && ctx.showDestroyEffect)
@@ -9756,9 +9813,14 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _fireEvoDiscardReactIfNeeded = (didHit, doneCb) => {
         if (didHit) {
           const _discardedSide = _edIsOpp ? (effectiveSide === 'player' ? 'ai' : 'player') : effectiveSide;
+          // 「したとき」系（進化元を破棄したとき）のため即座には発火せず保留キューへ積み、
+          // メイン効果全体の完了後にまとめて発火させる。
           // 「原因」追跡: 効果によって破棄された（このactionを実行している効果の持ち主が原因）
-          if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
-          try { fireWhenEvoDiscardTriggers(_discardedSide, ctx.bs, ctx, () => doneCb && doneCb()); return; } catch (_) {}
+          enqueueReaction(ctx.bs, _fireWhenEvoDiscardTriggersQueued, [
+            { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }, _discardedSide, ctx.bs, ctx, undefined
+          ]);
+          doneCb && doneCb();
+          return;
         }
         doneCb && doneCb();
       };

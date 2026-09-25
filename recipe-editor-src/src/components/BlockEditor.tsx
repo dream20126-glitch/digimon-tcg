@@ -415,6 +415,48 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
 // keyword/value/keywordParamConditions* フィールドにも同期して書く（appendStepの通常の
 // grant_keyword step構築ロジックが、今まで通りそれらのフィールドを読むだけで済むように
 // するため。2件目以降は appendStep 側で getKeywordEntries().slice(1) から個別に処理する）
+// 「数値」(value)を実際には使わない（boolean/flagだけの）アクション。真偽を問わず消滅/移動
+// できない・強制する系がほとんど。ここに載っていないアクションはvalueを使う可能性がある
+// とみなす（隠しすぎて必要な欄を消してしまうより、多めに出す方が安全なため）
+const VALUE_IRRELEVANT_ACTIONS = new Set([
+  'cant_destroy', 'prevent_any_destroy', 'cant_attack', 'cant_block', 'cant_attack_block',
+  'cant_evolve', 'cant_rest', 'cant_redirect_attack', 'cant_return_deck', 'cant_return_hand',
+  'cant_discard', 'force_block', 'battle_area', 'immune_effects', 'not_active',
+  'prevent_unsuspend', 'do_security_check', 'unlink', 'combat',
+]);
+// 登録済みのキーワードレシピテンプレート（JSON文字列）を解析し、「数値」(value→step.value)
+// と「枚数」(count→cost[].count)のどちらが実際に使われるかを判定する。
+// テンプレート未登録（ハードコード実装のキーワード）の場合は数値のみ使う可能性ありとみなす
+// （countはテンプレートのcost専用の仕組みのため、テンプレートが無ければ意味を持たない）
+function analyzeKeywordTemplate(tplStr: string | undefined): { usesValue: boolean; usesCount: boolean; hasTemplate: boolean } {
+  if (!tplStr || !tplStr.trim()) return { usesValue: true, usesCount: false, hasTemplate: false };
+  let parsed: any;
+  try { parsed = JSON.parse(tplStr); } catch (_) { return { usesValue: true, usesCount: false, hasTemplate: false }; }
+  let usesValue = false;
+  let usesCount = false;
+  const walkSteps = (steps: any) => {
+    if (!Array.isArray(steps)) return;
+    steps.forEach((s: any) => {
+      if (!s || typeof s !== 'object') return;
+      if (s.value === undefined && !VALUE_IRRELEVANT_ACTIONS.has(s.action)) usesValue = true;
+      if (Array.isArray(s.cost)) {
+        s.cost.forEach((c: any) => { if (c && typeof c === 'object' && c.count === undefined) usesCount = true; });
+      }
+      if (Array.isArray(s.alt_actions)) walkSteps(s.alt_actions);
+    });
+  };
+  if (parsed && typeof parsed === 'object') {
+    Object.keys(parsed).forEach((k) => {
+      if (k === 'evo_source' && parsed[k] && typeof parsed[k] === 'object') {
+        Object.values(parsed[k]).forEach((steps) => walkSteps(steps));
+      } else {
+        walkSteps(parsed[k]);
+      }
+    });
+  }
+  return { usesValue, usesCount, hasTemplate: true };
+}
+
 function KeywordEntriesEditor({
   block, onChange, dict, accentBorder, primaryValueElsewhere,
 }: {
@@ -458,7 +500,9 @@ function KeywordEntriesEditor({
 
   return (
     <>
-      {list.map((entry, i) => (
+      {list.map((entry, i) => {
+        const tplAnalysis = analyzeKeywordTemplate(dict.keywords.find((k) => k.code === entry.keyword)?.recipeTemplate);
+        return (
         <div key={i} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: i < list.length - 1 ? `1px dashed ${accentBorder}` : 'none' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
             <label style={{ fontWeight: 'bold' }}>
@@ -576,10 +620,11 @@ function KeywordEntriesEditor({
               </div>
             );
           })()}
-          {!(primaryValueElsewhere && i === 0) && (
+          {!(primaryValueElsewhere && i === 0) && tplAnalysis.usesValue && (
             <div style={{ marginTop: 6 }}>
               <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
                 数値（【セキュリティアタック+2】等の数値がある場合のみ）
+                {!tplAnalysis.hasTemplate && <span style={{ color: '#999' }}>（テンプレート未登録のため念のため表示）</span>}
               </label>
               <input
                 type="number"
@@ -597,8 +642,9 @@ function KeywordEntriesEditor({
               テンプレート側のcostにcount未指定の項目があれば、そこへ自動で差し込まれる
               （例: 【フラグメント《3》】→コスト「進化元を選んで破棄」のcountに3が入る）。
               対象の絞り込みがあるキーワード（アセンブリ等）は対象ごとの枚数欄を別途使うため、
-              ここでは出さない（二重入力を避ける） */}
-          {!dict.keywords.find((k) => k.code === entry.keyword)?.hasNamedParam && (
+              ここでは出さない（二重入力を避ける）。登録済みテンプレートを解析し、
+              実際にcost[].countのプレースホルダーがある場合だけ表示する */}
+          {!dict.keywords.find((k) => k.code === entry.keyword)?.hasNamedParam && tplAnalysis.usesCount && (
             <div style={{ marginTop: 6 }}>
               <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
                 枚数（【フラグメント《3》】等、コストの対象枚数がある場合のみ）
@@ -617,7 +663,8 @@ function KeywordEntriesEditor({
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <button
           type="button"

@@ -2007,13 +2007,6 @@ const COMMON_TRIGGER_FAMILIES: TriggerFamily[] = [
     implemented: { self: true, opp: true, any: false },
   },
 ];
-// 「付与する効果」(grantedStep)専用のトリガー・アクションのクイックボタン一覧。
-// grantedStepは発動主体(subject)等の概念を持たない単純な{trigger, action}のペアなので、
-// COMMON_TRIGGER_FAMILIES/COMMON_ACTIONSの見た目・コードだけを流用し、L1/L2の
-// タイミング切替（自分/相手/お互い）は「自分」バリアントのコードで代表させる
-const GRANTED_STEP_TRIGGER_QUICK: { code: string; label: string }[] = COMMON_TRIGGER_FAMILIES.map((fam) =>
-  fam.kind === 'event' ? { code: fam.code, label: fam.label } : { code: fam.variants!.self, label: fam.label }
-);
 // キーワード効果のレシピ作成画面でのみ選べるトリガー。通常のカードレシピでは
 // 「相手のアクティブフェイズ開始時」のような出来事を使うことがまず無いため、
 // 選択肢を汚さないようにこちらに分離している（isKeywordMode時のみ結合して使う）
@@ -6350,23 +6343,59 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>付与効果のトリガー</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
-                      {GRANTED_STEP_TRIGGER_QUICK.map((o) => (
-                        <button
-                          key={o.code}
-                          type="button"
-                          onClick={() => updateGrantedStep({ trigger: o.code })}
-                          style={{
-                            padding: '2px 7px', borderRadius: 5, fontSize: 10, cursor: 'pointer',
-                            border: grantedStep.trigger === o.code ? '2px solid #0d9488' : '1px solid #99f6e4',
-                            background: grantedStep.trigger === o.code ? '#0d9488' : 'white',
-                            color: grantedStep.trigger === o.code ? '#fff' : '#333',
-                          }}
-                        >
-                          {o.label}
-                        </button>
-                      ))}
-                    </div>
+                    {(() => {
+                      // 効果1のトリガーファミリーボタン（自分/相手/お互いのタイミング切替含む）を
+                      // そのまま流用する。grantedStepはtrigger配列を持たない単発の文字列のため
+                      // [grantedStep.trigger]にラップしてinferTiming等の既存ロジックに合わせる
+                      const gTiming = inferTiming([grantedStep.trigger], grantedStep.conditions || []);
+                      const gIsFamilyActive = (fam: TriggerFamily): boolean =>
+                        fam.kind === 'event' ? grantedStep.trigger === fam.code
+                          : !!fam.variants && Object.values(fam.variants).includes(grantedStep.trigger);
+                      const gToggleFamily = (fam: TriggerFamily) => {
+                        if (fam.kind === 'event') {
+                          updateGrantedStep({ trigger: grantedStep.trigger === fam.code ? '' : fam.code });
+                          return;
+                        }
+                        const variant = fam.variants![gTiming];
+                        updateGrantedStep({ trigger: grantedStep.trigger === variant ? '' : variant });
+                      };
+                      const gActiveTimingFamily = COMMON_TRIGGER_FAMILIES.find(
+                        (fam) => fam.kind === 'timing' && !!fam.variants && Object.values(fam.variants).includes(grantedStep.trigger)
+                      );
+                      const gSetTiming = (newTiming: TimingKey) => {
+                        if (!gActiveTimingFamily || !gActiveTimingFamily.variants) return;
+                        updateGrantedStep({ trigger: gActiveTimingFamily.variants[newTiming] });
+                      };
+                      return (
+                        <>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
+                            {COMMON_TRIGGER_FAMILIES.map((fam) => {
+                              const active = gIsFamilyActive(fam);
+                              return (
+                                <button
+                                  key={fam.code}
+                                  type="button"
+                                  onClick={() => gToggleFamily(fam)}
+                                  style={{
+                                    padding: '2px 7px', borderRadius: 5, fontSize: 10, cursor: 'pointer',
+                                    border: active ? '2px solid #0d9488' : '1px solid #99f6e4',
+                                    background: active ? '#0d9488' : 'white',
+                                    color: active ? '#fff' : '#333',
+                                  }}
+                                >
+                                  {fam.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {gActiveTimingFamily && (
+                            <div style={{ marginBottom: 4 }}>
+                              <ButtonGroup options={TIMING_OPTIONS.map((t) => ({ code: t.code, label: t.label }))} value={gTiming} onChange={(v) => gSetTiming(v as TimingKey)} accentColor="#0d9488" />
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                     <SearchSelect
                       value={grantedStep.trigger}
                       onChange={(v) => updateGrantedStep({ trigger: v })}

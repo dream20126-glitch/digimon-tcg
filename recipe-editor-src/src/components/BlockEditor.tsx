@@ -5574,7 +5574,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const commonActionHasFromZones = !!dict.actions.find(
             (a) => a.code === (getActionVariant(effectAction || '')?.base || effectAction)
           )?.hasFromZones || PLACE_ACTION_CODES.has(effectAction || '') || effectAction === 'bounce' || effectAction === 'return_hand';
-          const commonFromZoneExcludeCodes = effectAction === 'add_to_hand' ? new Set(['hand', 'trash', 'battle_area']) : null;
+          const commonFromZoneExcludeCodes = effectAction === 'add_to_hand' ? new Set(['hand', 'trash', 'battle_area'])
+            : (effectAction === 'bounce' || effectAction === 'return_hand') ? new Set(['hand', 'deck', 'security'])
+            : null;
           // 効果2以降（代替アクション）を編集中は「デジモン+テイマー同時選択(AND)」だけ省略する
           // （AND側は altActions を入れ子で使う実装のため、代替アクション自身には適用できない）。
           // OR側（対象コード=card+cond_typeフィルタ）はaltActionsのネストが不要なので効果1と同様に対応する。

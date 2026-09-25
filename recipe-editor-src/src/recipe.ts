@@ -256,7 +256,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
 // targetFilter（アクション対象自身の絞り込み）・fromFilter（進化/登場アクションの取得元
 // エリアから選ぶカードの絞り込み）の両方で同じ形を使うため共通化している
 // 値を持たない（チェックのみの）条件コード。buildFilterObject の value 必須ガードを迂回する
-const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest']);
+const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest', 'cond_lv_highest', 'cond_lv_lowest']);
 // DP参照マーカー（cond_dp_le/ge の値が固定数値ではなく「このデジモン/自分/相手/他」のDPを
 // 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する
 const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other']);
@@ -287,6 +287,10 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       case 'cond_lv':       { const n = num(c.value); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
       case 'cond_lv_le':    { const n = num(c.value); if (n !== undefined) f.lv_le = n; break; }
       case 'cond_lv_ge':    { const n = num(c.value); if (n !== undefined) f.lv_ge = n; break; }
+      // cond_dp_highest/lowestと同じく候補プール全体との比較が必要（cardMatchesFilterでは
+      // 判定できず、対象選択処理側で別途絞り込む実装が必要）
+      case 'cond_lv_highest': f.lv_extreme = 'highest'; break;
+      case 'cond_lv_lowest':  f.lv_extreme = 'lowest'; break;
       // 登場/使用コスト（cardMatchesFilterがfilter.cost/cost_le/cost_geを読む）
       case 'cond_cost':     { const n = num(c.value); if (n !== undefined) { f.cost_le = n; f.cost_ge = n; } break; }
       case 'cond_cost_le':  { const n = num(c.value); if (n !== undefined) f.cost_le = n; break; }
@@ -340,6 +344,8 @@ function parseFilterObject(f: any): ConditionPair[] {
     if (f.lv_le !== undefined) out.push({ base: 'cond_lv_le', value: String(f.lv_le) });
     if (f.lv_ge !== undefined) out.push({ base: 'cond_lv_ge', value: String(f.lv_ge) });
   }
+  if (f.lv_extreme === 'highest') out.push({ base: 'cond_lv_highest' });
+  else if (f.lv_extreme === 'lowest') out.push({ base: 'cond_lv_lowest' });
   if (f.cost_le !== undefined && f.cost_ge !== undefined && f.cost_le === f.cost_ge) {
     out.push({ base: 'cond_cost', value: String(f.cost_le) });
   } else {

@@ -261,6 +261,7 @@ export const CONDITIONS: DictEntry[] = [
   // まだ無いため、保存はできますが動作しません（要エンジン実装）
   { code: 'cond_effect', kind: 'condition', label: '効果で' },
   { code: 'cond_name', kind: 'condition', label: '名前（完全一致）' },
+  { code: 'cond_name_not', kind: 'condition', label: '名前（完全一致・除外）' },
   { code: 'cond_name_contains', kind: 'condition', label: '名称に含む' },
   { code: 'cond_feature_contains', kind: 'condition', label: '特徴に含む' },
   { code: 'cond_link_state', kind: 'condition', label: 'リンク状態' },

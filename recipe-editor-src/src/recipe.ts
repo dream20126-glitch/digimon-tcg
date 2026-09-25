@@ -303,6 +303,7 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
         break;
       }
       case 'cond_name':             f.name = c.value; break;
+      case 'cond_name_not':         f.name_not = c.value; break;
       case 'cond_name_contains':    f.name_contains = c.value; break;
       case 'cond_description':          f.description = c.value; break;
       case 'cond_description_contains': f.description_contains = c.value; break;
@@ -328,6 +329,7 @@ function parseFilterObject(f: any): ConditionPair[] {
     out.push({ base: 'cond_feature_contains', value: String(f.feature_contains) });
   }
   if (f.name)             out.push({ base: 'cond_name',             value: String(f.name) });
+  if (f.name_not)         out.push({ base: 'cond_name_not',         value: String(f.name_not) });
   if (f.name_contains)    out.push({ base: 'cond_name_contains',    value: String(f.name_contains) });
   if (f.description)          out.push({ base: 'cond_description',          value: String(f.description) });
   if (f.description_contains) out.push({ base: 'cond_description_contains', value: String(f.description_contains) });

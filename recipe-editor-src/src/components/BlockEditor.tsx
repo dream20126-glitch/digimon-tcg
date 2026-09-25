@@ -6735,6 +6735,7 @@ const COMMON_CONDS: CommonCondDef[] = [
   { code: 'cond_memory_ge',        label: 'メモリー以上', input: 'number' },
   { code: 'cond_feature_contains', label: '特徴を含む',   input: 'text' },
   { code: 'cond_name',             label: '名前（完全一致）', input: 'text' },
+  { code: 'cond_name_not',         label: '名前（完全一致・除外）', input: 'text' },
   { code: 'cond_name_contains',    label: '名前を含む',   input: 'text' },
   // 「記述」= カード上のどこか（名前/特徴/効果テキスト/進化元テキスト/セキュリティテキスト）に
   // 指定文字列があるか（公式ルールの「「XXX」の記述がある」表記に対応。名前限定の
@@ -7675,6 +7676,7 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
   ],
   name: [
     { value: 'cond_name', label: '完全一致' },
+    { value: 'cond_name_not', label: '完全一致・除外' },
     { value: 'cond_name_contains', label: '含む' },
   ],
   description: [
@@ -7697,7 +7699,7 @@ function baseToCategory(base: string): CondCategory {
     || base === 'cond_cost_highest' || base === 'cond_cost_lowest') return 'cost';
   if (base === 'cond_memory_ge' || base === 'cond_memory_le') return 'memory';
   if (base === 'cond_cost_mod') return 'cost_mod';
-  if (base === 'cond_name' || base === 'cond_name_contains' || base === 'cond_name_distinct') return 'name';
+  if (base === 'cond_name' || base === 'cond_name_not' || base === 'cond_name_contains' || base === 'cond_name_distinct') return 'name';
   if (base === 'cond_description' || base === 'cond_description_contains' || base === 'cond_description_distinct') return 'description';
   if (base === 'cond_zone') return 'zone';
   if (REF_CODE_TO_ZONE_QUANT[base] || isRefFaceCond(base)) return 'ref';
@@ -7763,7 +7765,7 @@ function ConditionsHybridEditor({
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
     'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod', 'cond_cost_highest', 'cond_cost_lowest',
     'cond_memory_ge', 'cond_memory_le',
-    'cond_name', 'cond_name_contains', 'cond_description', 'cond_description_contains', 'cond_zone',
+    'cond_name', 'cond_name_not', 'cond_name_contains', 'cond_description', 'cond_description_contains', 'cond_zone',
     'cond_name_distinct', 'cond_lv_distinct', 'cond_description_distinct', 'cond_color_distinct',
     // トリガーボックス側の専用「アタック対象」ボタンで管理するため、その他の追加候補にも出さない
     'cond_attack_target_player', 'cond_attack_target_digimon',

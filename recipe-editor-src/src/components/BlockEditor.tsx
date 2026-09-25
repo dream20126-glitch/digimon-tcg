@@ -1897,12 +1897,33 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'tamer', label: 'テイマー' },
   ],
 };
+// hasFromZonesフラグを持つアクション（破棄する等）を選択中のときだけ、通常のL2一覧に
+// 追加で表示するゾーン系オプション。旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが担っていた
+// 「場所」概念を対象欄のL2に統合するためのもの（セキュリティは既存L2に統合済みのため含めない）
+const TARGET_SEL_L2_FROM_ZONES: Record<string, { code: string; label: string }[]> = {
+  own: [
+    { code: 'hand', label: '手札' },
+    { code: 'deck', label: 'デッキ' },
+    { code: 'trash', label: 'トラッシュ' },
+    { code: 'linked', label: 'リンクカード' },
+  ],
+  opp: [
+    { code: 'hand', label: '手札' },
+    { code: 'deck', label: 'デッキ' },
+    { code: 'trash', label: 'トラッシュ' },
+    { code: 'linked', label: 'リンクカード' },
+  ],
+};
 const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
   'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:option': 'own_option', 'own:security': 'own_security',
   'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:tamer': 'opponent_tamer', 'opp:option': 'opponent_option', 'opp:player': 'opp_player', 'opp:security': 'opp_security',
   'other_own:digimon': 'target_other_own', 'other_own:card': 'target_other_own_card', 'other_own:tamer': 'target_other_own_tamer',
   'both:digimon': 'both', 'both:card': 'both_card', 'both:tamer': 'both_tamer',
   'most:security': 'most_security_player', 'most:trash': 'most_trash_player', 'most:hand': 'most_hand_player', 'most:evo_source': 'most_evo_source_player',
+  // 旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが担っていた場所（手札/デッキ/トラッシュ/リンクカード）を
+  // 対象欄のL2に統合した新規コード（hasFromZonesアクションのときのみ選択可）
+  'own:hand': 'own_hand', 'own:deck': 'own_deck', 'own:trash': 'own_trash', 'own:linked': 'own_linked',
+  'opp:hand': 'opponent_hand', 'opp:deck': 'opponent_deck', 'opp:trash': 'opponent_trash', 'opp:linked': 'opponent_linked',
 };
 const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   '': { l1: '', l2: '' },
@@ -1930,6 +1951,14 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   most_trash_player: { l1: 'most', l2: 'trash' },
   most_hand_player: { l1: 'most', l2: 'hand' },
   most_evo_source_player: { l1: 'most', l2: 'evo_source' },
+  own_hand: { l1: 'own', l2: 'hand' },
+  own_deck: { l1: 'own', l2: 'deck' },
+  own_trash: { l1: 'own', l2: 'trash' },
+  own_linked: { l1: 'own', l2: 'linked' },
+  opponent_hand: { l1: 'opp', l2: 'hand' },
+  opponent_deck: { l1: 'opp', l2: 'deck' },
+  opponent_trash: { l1: 'opp', l2: 'trash' },
+  opponent_linked: { l1: 'opp', l2: 'linked' },
 };
 
 // アクションの対象コード（例:"opponent:1"）→ 対応する発動条件/トリガー条件の「対象」コードに
@@ -5915,7 +5944,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               </div>
             );
           }
-          const tgtL2Options = curTgt.l1 === 'most' ? MOST_PLAYER_METRICS : (TARGET_SEL_L2[curTgt.l1] || []);
+          // 「破棄する」等hasFromZonesフラグ付きアクションのときだけ、通常のL2一覧に
+          // 手札/デッキ/トラッシュ/リンクカードを追加する（旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPの
+          // 「場所」選択を対象欄に統合するためのもの）
+          const actionHasFromZones = !!dict.actions.find(
+            (a) => a.code === (getActionVariant(block.action || '')?.base || block.action)
+          )?.hasFromZones;
+          const tgtL2Options = curTgt.l1 === 'most' ? MOST_PLAYER_METRICS : [
+            ...(TARGET_SEL_L2[curTgt.l1] || []),
+            ...(actionHasFromZones ? (TARGET_SEL_L2_FROM_ZONES[curTgt.l1] || []) : []),
+          ];
           // デジモン/テイマーだけは複数選択可（例:「相手のデジモン/テイマーを1体消滅させる」）。
           // カード/セキュリティ/プレイヤーは従来通り単一選択（デジモン/テイマーの複数選択とは排他）
           const exclusiveL2Options = tgtL2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer');
@@ -6075,6 +6113,84 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     />
                   </div>
                 )}
+                {/* テイマー対象: テイマーの下には本体/進化元の区別が無いため、位置（上/下/選んで）
+                    のみを直接表示する。値はcond_target_stackとしてtargetFilterに保存する
+                    （旧・対象の条件パネル内の専用UIをここへ移設したもの） */}
+                {curTgt.l2 === 'tamer' && (() => {
+                  const tamerStackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
+                  const setTamerStackPosition = (v: string) => {
+                    if (tamerStackCond) {
+                      update('targetFilter', targetFilter.map((c) => (c === tamerStackCond ? { ...c, value: v } : c)));
+                    } else {
+                      update('targetFilter', [...targetFilter, { base: 'cond_target_stack', value: v }]);
+                    }
+                  };
+                  return (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置（テイマーの下）</div>
+                      <ButtonGroup
+                        options={[
+                          { code: '', label: '指定なし（全体）' },
+                          { code: 'top', label: '上' },
+                          { code: 'bottom', label: '下' },
+                          { code: 'select', label: '選んで' },
+                        ]}
+                        value={tamerStackCond?.value || ''}
+                        onChange={setTamerStackPosition}
+                        accentColor="#b76e00"
+                      />
+                    </div>
+                  );
+                })()}
+                {/* デジモン対象: 「進化元」（スタックのみ）/「重ねられているカード」（スタック＋本体）
+                    をサブ選択肢として表示し、選んだ場合はさらに位置（上/下/選んで）を表示する。
+                    値はcond_target_evo_source/cond_target_stackとしてtargetFilterに保存する
+                    （旧・対象の条件パネル内のカテゴリボタンをここへ移設したもの） */}
+                {curTgt.l2 === 'digimon' && (() => {
+                  const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
+                  const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
+                  const activeSub: '' | 'evo_source' | 'stacked' = evoCond ? 'evo_source' : stackCond ? 'stacked' : '';
+                  const activeCond = evoCond || stackCond;
+                  const setSub = (next: '' | 'evo_source' | 'stacked') => {
+                    const cleared = targetFilter.filter((c) => c.base !== 'cond_target_evo_source' && c.base !== 'cond_target_stack');
+                    if (!next) { update('targetFilter', cleared); return; }
+                    update('targetFilter', [...cleared, { base: next === 'evo_source' ? 'cond_target_evo_source' : 'cond_target_stack', value: '' }]);
+                  };
+                  const setSubPosition = (v: string) => {
+                    if (!activeCond) return;
+                    update('targetFilter', targetFilter.map((c) => (c === activeCond ? { ...c, value: v } : c)));
+                  };
+                  return (
+                    <div style={{ marginTop: 4 }}>
+                      <ButtonGroup
+                        options={[
+                          { code: '', label: '指定なし' },
+                          { code: 'evo_source', label: '進化元' },
+                          { code: 'stacked', label: '重ねられているカード' },
+                        ]}
+                        value={activeSub}
+                        onChange={(v) => setSub(v as '' | 'evo_source' | 'stacked')}
+                        accentColor="#b76e00"
+                      />
+                      {activeSub && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                          <ButtonGroup
+                            options={[
+                              { code: '', label: '指定なし（全体）' },
+                              { code: 'top', label: '上' },
+                              { code: 'bottom', label: '下' },
+                              { code: 'select', label: '選んで' },
+                            ]}
+                            value={activeCond?.value || ''}
+                            onChange={setSubPosition}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 {digimonChecked && tamerChecked && (
                   <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 11, color: '#666' }}>対象の結合:</span>
@@ -7517,17 +7633,9 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'zone', label: '場所' },
   { value: 'ref', label: '参照' },
   { value: 'designated', label: '指定' },
-  // 進化元 = 対象デジモンの進化元スタックのみ（本体カードは含まない）を対象に含める
-  // という「対象の条件」（cond_target_evo_source）。位置は下記stackedと同じ規約。
-  // targetL2==='digimon'のときのみ表示（visibleCategoryOptions参照）。エンジン未実装（保存のみ可）
-  { value: 'evo_source', label: '進化元' },
-  // 重ねられているカード = 対象デジモンの進化元＋一番上のカード（本体）全てを対象に含める
-  // という「対象の条件」（cond_target_stack）。位置（指定なし=全体/上/下/選んで）を値として
-  // 持てる（evoSourcePositionと同じ規約）。エンジン未実装（保存のみ可）。
-  // targetL2==='digimon'のときのみこのカテゴリボタンとして表示（visibleCategoryOptions参照）。
-  // targetL2==='tamer'のときは本体/進化元の区別が無いため、カテゴリ選択を介さず
-  // 「位置」を直接表示する専用UIを別途用意している（panelsNode内tamerStackCond参照）
-  { value: 'stacked', label: '重ねられているカード' },
+  // 進化元/重ねられているカードは「対象の条件」パネルではなく、対象欄（デジモン選択後の
+  // サブ選択肢）側に移設済み（cond_target_evo_source/cond_target_stackのデータ形式は
+  // そのまま流用。書き込み元UIのみ変更）。カテゴリボタンとしてはここには出さない
   { value: 'other', label: 'その他' },
 ];
 // 「指定」: キーワードの「対象」欄で組み立てた絞り込み条件一式を参照するプレースホルダー
@@ -7779,25 +7887,8 @@ function ConditionsHybridEditor({
     // 「場所」は対象の条件（対象フィルタ・supportsMultiValue）専用。トリガー条件/発動条件
     // ではエンジンが「どのカードの場所を見るか」を特定できないため意味を持たない
     if (c.code === 'zone' && !supportsMultiValue) return false;
-    // 進化元/重ねられているカードは「対象」があって初めて意味を持つ。targetL2未指定
-    // （トリガー条件等、対象概念が無い文脈）では従来通り表示したままにする（後方互換）。
-    // targetL2==='tamer'のときは、カテゴリボタンではなく専用の直接位置UI（下記
-    // tamerStackPosition関連）を出すため、stackedカテゴリ自体はここでは隠す
-    if (c.code === 'evo_source' && targetL2 && targetL2 !== 'digimon') return false;
-    if (c.code === 'stacked' && targetL2 && targetL2 !== 'digimon') return false;
     return true;
   });
-  // テイマー対象専用: 「重ねられているカード」をカテゴリボタン経由ではなく、対象の条件
-  // パネルに直接「位置」だけを出す（テイマー下には本体/進化元の区別が無いため、
-  // カテゴリ選択という1手間を省く）。値はcond_target_stackへ引き続き保存する
-  const tamerStackCond = conditions.find((c) => c.base === 'cond_target_stack');
-  const setTamerStackPosition = (v: string) => {
-    if (tamerStackCond) {
-      onChange(conditions.map((c) => (c === tamerStackCond ? { ...c, value: v } : c)));
-    } else {
-      onChange([...conditions, { base: 'cond_target_stack', value: v }]);
-    }
-  };
 
   // 「その他」用: 色/タイプ/特徴/Lv/DP/名前として直接選べるコード群を除いた残り
   const CATEGORIZED_CODES = new Set<string>([
@@ -7932,24 +8023,6 @@ function ConditionsHybridEditor({
 
   const panelsNode = (
     <>
-      {/* テイマー対象専用: カテゴリボタンを介さず「位置」を直接表示（重ねられている
-          カード＝テイマー下のカード。本体/進化元の区別が無いため1手間省く） */}
-      {targetL2 === 'tamer' && (
-        <div style={{ marginTop: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
-          <div style={{ fontSize: 11, fontWeight: 'bold', color: colors.accent, marginBottom: 4 }}>📍 位置（テイマーの下）</div>
-          <ButtonGroup
-            options={[
-              { code: '', label: '指定なし（全体）' },
-              { code: 'top', label: '上' },
-              { code: 'bottom', label: '下' },
-              { code: 'select', label: '選んで' },
-            ]}
-            value={tamerStackCond?.value || ''}
-            onChange={setTamerStackPosition}
-            accentColor={colors.accent}
-          />
-        </div>
-      )}
       {/* アクティブなカテゴリごとの詳細設定（値・対象） */}
       {visibleCategoryOptions.map((cat) => {
         const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => baseToCategory(c.base) === cat.code);
@@ -8116,37 +8189,6 @@ function ConditionsHybridEditor({
                           </div>
                         );
                       })()
-                    ) : cat.code === 'evo_source' ? (
-                      /* 進化元: 対象デジモンの進化元スタックのみ（本体カードは含まない）の
-                         どの位置を対象にするか。指定なし=スタック全体/上・下=その一端の1枚/
-                         選んで=都度選択（cond_target_stackの「重ねられているカード」＝
-                         スタック＋本体とは別概念） */
-                      <ButtonGroup
-                        options={[
-                          { code: '', label: '指定なし（全体）' },
-                          { code: 'top', label: '上' },
-                          { code: 'bottom', label: '下' },
-                          { code: 'select', label: '選んで' },
-                        ]}
-                        value={c.value || ''}
-                        onChange={(v) => updateAt(i, { value: v })}
-                        accentColor={colors.accent}
-                      />
-                    ) : cat.code === 'stacked' ? (
-                      /* 重ねられているカード: 対象デジモンの進化元スタックのどの位置を対象にするか。
-                         指定なし=スタック全体（従来通り）/上・下=その一端の1枚/選んで=都度選択
-                         （コスト取得元の「重ねられているカードの位置」evoSourcePositionと同じ規約） */
-                      <ButtonGroup
-                        options={[
-                          { code: '', label: '指定なし（全体）' },
-                          { code: 'top', label: '上' },
-                          { code: 'bottom', label: '下' },
-                          { code: 'select', label: '選んで' },
-                        ]}
-                        value={c.value || ''}
-                        onChange={(v) => updateAt(i, { value: v })}
-                        accentColor={colors.accent}
-                      />
                     ) : typeRedundant ? (
                       <div style={{ fontSize: 11, color: '#888', padding: '4px 6px' }}>
                         （対象で種別を指定済みのため不要）

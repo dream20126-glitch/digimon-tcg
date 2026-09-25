@@ -904,6 +904,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   } else if (b.triggerSubject && b.triggerSubject !== 'self') {
     step.subject = b.triggerSubject;
   }
+  // 「リンク時」(on_link) 専用: リンクする側/される側の区別。'linker'（デフォルト）はJSONへ
+  // 出力しない（既存レシピ互換。従来の【リンク時】＝リンクする側のまま）
+  if (b.linkRole === 'target') {
+    step.link_role = 'target';
+  }
   // 「原因」（バトルで/効果で・原因の対象）: どのトリガーでも設定可能な汎用フィールド
   // （詳細は types.ts 参照）。トリガーごとに原因を個別設定したい場合は
   // triggerCauseByCode（cause_by_code）を優先し、共有のdestroyCauseは無視する
@@ -1344,6 +1349,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     in_zone: true,
     subject: true,
     subject_by_code: true,
+    link_role: true,
     cause: true,
     cause_subject: true,
     cause_by_code: true,
@@ -1424,6 +1430,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     // subject_by_code（トリガーコードごとに発動主体が異なる場合。groupTriggersByTiming参照）
     triggerSubjectByCode: (step?.subject_by_code && typeof step.subject_by_code === 'object')
       ? { ...step.subject_by_code } : undefined,
+    linkRole: step?.link_role === 'target' ? 'target' : 'linker',
     destroyCause: step?.cause === 'battle' || step?.cause === 'effect' ? step.cause : undefined,
     destroyCauseSubject: step?.cause_subject || undefined,
     triggerCauseByCode: (step?.cause_by_code && typeof step.cause_by_code === 'object')

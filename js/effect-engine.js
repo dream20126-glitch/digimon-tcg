@@ -5679,6 +5679,75 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
   });
 }
 
+// ===== リンク時トリガー（役割ベース） =====
+// on_link は「リンクする側」と「リンクされる側」で意味が異なる特殊なトリガーのため、
+// 汎用の scanTriggers(else分岐の無条件盤面スキャン)には乗せず、専用の発火経路を持つ。
+// レシピの各 step に link_role: 'target'（リンクされる側限定。未指定はリンクする側=従来動作）
+// を付けることで、同じ "on_link" キー内で役割を書き分けられる。
+// subject（own/opp/other_own）は既存の反応系と同じ意味で、役割が一致した側のイベントに
+// 「自分以外のカードが反応する」ケースをカバーする（例: 他の自分のデジモンがリンクされた時）。
+function _matchLinkSubject(subject, actingSide, cardSide) {
+  switch (subject) {
+    case 'other_own': case 'own': case 'own_any': return cardSide === actingSide;
+    case 'opp': case 'opp_any': case 'opp_card': return cardSide !== actingSide;
+    default: return false;
+  }
+}
+export function fireLinkTriggers(linkerCard, linkerSide, baseCard, baseSide, ctx, callback) {
+  clearQueue();
+  const turnPlayer = ctx.bs.isPlayerTurn ? 'player' : 'ai';
+  const isTargetRole = (s) => !!(s && s.link_role === 'target');
+  const isSelfSubject = (s) => !s.subject || s.subject === 'self';
+  const queueBlock = (card, side, steps, recipeCard, eventSourceCard) => {
+    if (!steps || steps.length === 0) return;
+    const block = {
+      raw: (recipeCard ? recipeCard.evoSourceEffect : card.effect) || '',
+      trigger: { code: 'on_link' }, actions: [], conditions: [], _grantedSteps: steps,
+    };
+    if (recipeCard) block._recipeCard = recipeCard;
+    if (eventSourceCard) block._eventSourceCard = eventSourceCard;
+    addToQueue(card, block, side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side);
+  };
+  // card自身のトップレベルon_link + 進化元(stack)由来のon_linkの両方をfilterにかけてqueueする
+  // （進化元効果は evo_source ラップ必須の規約に合わせ、getRecipeForTrigger(..., true) で取得）
+  const queueOwnLinkSteps = (card, side, filterFn, eventSourceCard) => {
+    const topSteps = getRecipeForTrigger(card, 'on_link') || [];
+    queueBlock(card, side, topSteps.filter(filterFn), null, eventSourceCard);
+    if (Array.isArray(card.stack)) {
+      card.stack.forEach((evoCard) => {
+        if (!evoCard) return;
+        const evoSteps = getRecipeForTrigger(evoCard, 'on_link', true) || [];
+        queueBlock(card, side, evoSteps.filter(filterFn), evoCard, eventSourceCard);
+      });
+    }
+  };
+
+  // 1. リンクする側自身の効果（従来の【リンク時】）
+  queueOwnLinkSteps(linkerCard, linkerSide, (s) => s && !isTargetRole(s) && isSelfSubject(s), null);
+
+  // 2. リンクされる側自身の効果（新規。link_role:'target' のみ）
+  if (baseCard !== linkerCard) {
+    queueOwnLinkSteps(baseCard, baseSide, (s) => s && isTargetRole(s) && isSelfSubject(s), linkerCard);
+  }
+
+  // 3・4. 盤面の他カードが「リンクする/される」イベントに反応する効果
+  ['player', 'ai'].forEach(side => {
+    [...ctx.bs[side].battleArea, ...(ctx.bs[side].tamerArea || [])].forEach(card => {
+      if (!card) return;
+      if (card !== linkerCard) {
+        queueOwnLinkSteps(card, side, (s) => s && !isTargetRole(s) && _matchLinkSubject(s.subject, linkerSide, side), linkerCard);
+      }
+      if (card !== baseCard) {
+        queueOwnLinkSteps(card, side, (s) => s && isTargetRole(s) && _matchLinkSubject(s.subject, baseSide, side), baseCard);
+      }
+    });
+  });
+
+  const waiting = _effectQueue.filter(e => e.status === 'waiting');
+  if (waiting.length === 0) { callback && callback(); return; }
+  processQueue(ctx, callback);
+}
+
 function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
   const turnPlayer = ctx.bs.isPlayerTurn ? 'player' : 'ai';
 

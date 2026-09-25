@@ -1946,6 +1946,8 @@ const KEYWORD_ONLY_TRIGGER_FAMILIES: TriggerFamily[] = [
 // 【アタック時】【アタック終了時】ファミリーの全バリアントコード。
 // アタック対象(cond_attack_target_*)関連のUIをこのトリガーのときだけ出す判定に使う
 const ATTACK_TRIGGER_CODES = ['on_attack', 'when_opp_attack', 'on_any_attack', 'on_attack_end', 'when_opp_attack_end', 'on_any_attack_end'];
+// 【リンク時】のときだけ、リンクする側/される側を選べるUIを出す判定に使う
+const LINK_TRIGGER_CODES = ['on_link'];
 const TIMING_OPTIONS: { code: TimingKey; label: string }[] = [
   { code: 'self', label: '自分' },
   { code: 'opp', label: '相手' },
@@ -3804,6 +3806,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             : rest;
                           update('triggerConditions', withNew);
                         }}
+                        accentColor="#2e7d32"
+                      />
+                    </div>
+                  )}
+
+                  {/* 【リンク時】のときだけ、このカードが「リンクする側」か「リンクされる側」かを選べる。
+                      「される側」は発動主体（own/other_own/opp）と組み合わせて「他の自分のデジモンが
+                      リンクされたとき」等も表現できる（発動主体パネルは下にそのまま表示される） */}
+                  {currentTriggers.some((t) => LINK_TRIGGER_CODES.includes(t)) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                      <span style={{ fontSize: 11, color: '#666' }}>リンク:</span>
+                      <ButtonGroup
+                        options={[{ code: 'linker', label: 'このカードがリンクする' }, { code: 'target', label: 'このカードがリンクされる' }]}
+                        value={block.linkRole || 'linker'}
+                        onChange={(v) => update('linkRole', v === 'target' ? 'target' : 'linker')}
                         accentColor="#2e7d32"
                       />
                     </div>

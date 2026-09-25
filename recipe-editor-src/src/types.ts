@@ -74,6 +74,11 @@ export interface EffectBlock {
   // '' = このデジモン / 'own' / 'other_own' / 'opp' / 'own_tamer' / 'both'（自分/相手どちらでも。
   // 「デッキが増えたとき」のようにデジモン/カード/テイマー等に分解できないゾーン系トリガー用）
   triggerSubject?: string;
+  // 「リンク時」(on_link) 専用: このカードが「リンクする側」か「リンクされる側」かの区別。
+  // 未指定/'linker' = リンクする側（従来の【リンク時】）。'target' = リンクされる側
+  // （他のデジモンが"このデジモン"にリンクしたとき）。triggerSubjectと組み合わせて
+  // 「他の自分のデジモンがリンクされたとき」等も表現できる。JSONへはstep.link_roleとして出力
+  linkRole?: 'linker' | 'target';
   limit?: string; // '' | 'once_per_turn'
   // トリガー条件: トリガー発火元のカード（登場/消滅したカード等）に対するフィルタ
   // 「黄のLv.3デジモンが登場したとき」等の "このトリガーが発火する条件" を表現。

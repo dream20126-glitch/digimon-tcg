@@ -1901,7 +1901,7 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
 // 手札に戻す等、場所/位置/裏表の表示が必要なアクション）を選択中のときだけ、通常のL2一覧に
 // 追加で表示するゾーン系オプション（＝「場所」）。旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが
 // 担っていた「場所」概念を対象欄のL2に統合するためのもの。
-// プレイヤーはこれらのアクションでは対象にならないため含めない。リンクカードは今回対象外
+// プレイヤーはこれらのアクションでは対象にならないため含めない
 const TARGET_SEL_L2_FROM_ZONES: Record<string, { code: string; label: string }[]> = {
   own: [
     { code: 'hand', label: '手札' },
@@ -1909,6 +1909,7 @@ const TARGET_SEL_L2_FROM_ZONES: Record<string, { code: string; label: string }[]
     { code: 'security', label: 'セキュリティ' },
     { code: 'deck', label: 'デッキ' },
     { code: 'battle_area', label: 'バトルエリア' },
+    { code: 'linked', label: 'リンクカード' },
   ],
   opp: [
     { code: 'hand', label: '手札' },
@@ -1916,6 +1917,7 @@ const TARGET_SEL_L2_FROM_ZONES: Record<string, { code: string; label: string }[]
     { code: 'security', label: 'セキュリティ' },
     { code: 'deck', label: 'デッキ' },
     { code: 'battle_area', label: 'バトルエリア' },
+    { code: 'linked', label: 'リンクカード' },
   ],
 };
 const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
@@ -1924,10 +1926,10 @@ const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
   'other_own:digimon': 'target_other_own', 'other_own:card': 'target_other_own_card', 'other_own:tamer': 'target_other_own_tamer',
   'both:digimon': 'both', 'both:card': 'both_card', 'both:tamer': 'both_tamer',
   'most:security': 'most_security_player', 'most:trash': 'most_trash_player', 'most:hand': 'most_hand_player', 'most:evo_source': 'most_evo_source_player',
-  // 旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが担っていた場所（手札/トラッシュ/バトルエリア）を
-  // 対象欄のL2に統合した新規コード（hasFromZonesアクションのときのみ選択可）
-  'own:hand': 'own_hand', 'own:trash': 'own_trash', 'own:deck': 'own_deck', 'own:battle_area': 'own_battle_area',
-  'opp:hand': 'opponent_hand', 'opp:trash': 'opponent_trash', 'opp:deck': 'opponent_deck', 'opp:battle_area': 'opponent_battle_area',
+  // 旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが担っていた場所（手札/トラッシュ/バトルエリア/
+  // リンクカード）を対象欄のL2に統合した新規コード（hasFromZonesアクションのときのみ選択可）
+  'own:hand': 'own_hand', 'own:trash': 'own_trash', 'own:deck': 'own_deck', 'own:battle_area': 'own_battle_area', 'own:linked': 'own_linked',
+  'opp:hand': 'opponent_hand', 'opp:trash': 'opponent_trash', 'opp:deck': 'opponent_deck', 'opp:battle_area': 'opponent_battle_area', 'opp:linked': 'opponent_linked',
 };
 const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   '': { l1: '', l2: '' },
@@ -1965,10 +1967,12 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   own_trash: { l1: 'own', l2: 'trash' },
   own_deck: { l1: 'own', l2: 'deck' },
   own_battle_area: { l1: 'own', l2: 'battle_area' },
+  own_linked: { l1: 'own', l2: 'linked' },
   opponent_hand: { l1: 'opp', l2: 'hand' },
   opponent_trash: { l1: 'opp', l2: 'trash' },
   opponent_deck: { l1: 'opp', l2: 'deck' },
   opponent_battle_area: { l1: 'opp', l2: 'battle_area' },
+  opponent_linked: { l1: 'opp', l2: 'linked' },
 };
 
 // アクションの対象コード（例:"opponent:1"）→ 対応する発動条件/トリガー条件の「対象」コードに
@@ -4898,58 +4902,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     })()}
                   </div>
                 )}
-                {isDiscardActive && (
-                  <div style={{ marginTop: 4 }}>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから破棄するか）</div>
-                    <ButtonGroup
-                      options={DISCARD_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
-                      value={activeDiscardZone}
-                      onChange={(zoneCode) => {
-                        if (zoneCode === activeDiscardZone) return;
-                        const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
-                        if (!z) return;
-                        // z.targetが無い場所（進化元/テイマー/手札/デッキ/リンクカード）では既存のtargetを
-                        // そのまま維持する（「対象」欄で選んだ自分/相手を場所切替で巻き戻さないため）。
-                        // fromZones は設定しない（📍位置ボタンで既に場所+位置を action コードへ
-                        // エンコード済みのため、汎用の「セキュリティ/進化元の位置」パネルと二重表示になるのを防ぐ）
-                        updateEffect({ action: z.action, target: z.target || effectTarget, fromZones: undefined });
-                      }}
-                      accentColor="#1976d2"
-                    />
-                    {(() => {
-                      const z = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                      return z?.warn ? (
-                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
-                      ) : null;
-                    })()}
-                    {/* 進化元/テイマー: 裏向き/表向きのカードだけを対象にするか。
-                        evo_discard系は対象コンテナの絞り込みに block/altAction 側の
-                        conditions（発動条件と同じ配列。EVO_DISCARD_ACTION_CODESは
-                        ホワイトリスト無しで転送されるためtargetFilterではなくこちらを使う） */}
-                    {(() => {
-                      const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                      if (!zone?.hasFace) return null;
-                      const faceIdx = effectConditions.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
-                      const faceVal = faceIdx !== -1 ? (effectConditions[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
-                      return (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
-                          <ButtonGroup
-                            options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
-                            value={faceVal}
-                            onChange={(v) => {
-                              const next = effectConditions.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
-                              if (v === 'down') next.push({ base: 'cond_face_down' });
-                              else if (v === 'up') next.push({ base: 'cond_face_up' });
-                              updateEffect({ conditions: next });
-                            }}
-                            accentColor="#1976d2"
-                          />
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
                 {/* レスト/アクティブ/進化/アタック/ブロック: 「する」（通常）/「できない」（封じる）の
                     切り替え。上のボタンで2つ以上選んでいる場合は複数の行動を同時に強制する
                     「する」が成立しないため、「できない」固定（選択不要）になる */}
@@ -5257,7 +5209,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             アクション（place_on_security_top等）では二重表示になってしまうため、
             isPlaceActive中はこちらを出さない。「破棄する」(isDiscardActive)も同様に
             専用の📥場所（どこから破棄するか）パネルを別途持つため、二重表示を避けるためこちらを出さない */}
-        {!PLACE_ACTION_CODES.has(effectAction || '') && !(DISCARD_ACTION_CODES.has(getActionVariant(effectAction || '')?.base || (effectAction || '')) || effectAction === 'discard') && (BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || !!dict.actions.find((a) => a.code === effectAction)?.hasFromZones) && (() => {
+        {!PLACE_ACTION_CODES.has(effectAction || '') && !(DISCARD_ACTION_CODES.has(getActionVariant(effectAction || '')?.base || (effectAction || '')) || effectAction === 'discard') && effectAction !== 'return_deck' && effectAction !== 'add_to_hand' && (BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || !!dict.actions.find((a) => a.code === effectAction)?.hasFromZones) && (() => {
           const zones = effectFromZones;
           const op = effectFromZonesOp;
           const toggleZone = (code: string) => {
@@ -5558,7 +5510,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           };
           return (
             <div className="field" style={{ marginTop: 8 }}>
-              <label>📍 上/下</label>
+              <label>📍 {effectAction === 'return_deck' ? 'デッキのどこに戻すか（上/下）' : '上/下'}</label>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
                   <input type="checkbox" checked={top} onChange={(e) => setPos(e.target.checked, bottom)} />
@@ -5813,9 +5765,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const actionHasFromZones = !!dict.actions.find(
             (a) => a.code === (getActionVariant(block.action || '')?.base || block.action)
           )?.hasFromZones || PLACE_ACTION_CODES.has(block.action || '');
+          // 「手札に加える」は手札/トラッシュ/バトルエリアからの取得元にはならないため
+          // （手札を手札に加える等は意味を成さない）、場所の選択肢から除く
+          const fromZoneExcludeCodes = block.action === 'add_to_hand' ? new Set(['hand', 'trash', 'battle_area']) : null;
           const tgtL2Options = curTgt.l1 === 'most' ? MOST_PLAYER_METRICS : [
             ...(TARGET_SEL_L2[curTgt.l1] || []),
-            ...(actionHasFromZones ? (TARGET_SEL_L2_FROM_ZONES[curTgt.l1] || []) : []),
+            ...(actionHasFromZones ? (TARGET_SEL_L2_FROM_ZONES[curTgt.l1] || []).filter((o) => !fromZoneExcludeCodes?.has(o.code)) : []),
           ];
           // デジモン/テイマーだけは複数選択可（例:「相手のデジモン/テイマーを1体消滅させる」）。
           // カード/セキュリティ/プレイヤーは従来通り単一選択（デジモン/テイマーの複数選択とは排他）

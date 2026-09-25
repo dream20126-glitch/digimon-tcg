@@ -3818,7 +3818,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                       <span style={{ fontSize: 11, color: '#666' }}>リンク:</span>
                       <ButtonGroup
-                        options={[{ code: 'linker', label: 'このカードがリンクする' }, { code: 'target', label: 'このカードがリンクされる' }]}
+                        options={[{ code: 'linker', label: 'リンクする' }, { code: 'target', label: 'リンクされる' }]}
                         value={block.linkRole || 'linker'}
                         onChange={(v) => update('linkRole', v === 'target' ? 'target' : 'linker')}
                         accentColor="#2e7d32"

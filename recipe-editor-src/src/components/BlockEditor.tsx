@@ -2014,7 +2014,7 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'dedigivolve', label: '退化' },
   { code: 'link', label: 'リンク' },
   { code: 'attack', label: 'アタック' },
-  { code: 'block', label: 'ブロック' },
+  { code: 'force_block', label: 'ブロック' },
 ];
 // 「登場」「使用」の2ボタン（SUMMON_KIND_OPTIONS）: トリガーの複数選択と同じ操作感で、
 // 両方押すと action:'summon'（従来通りどちらも対象）、片方だけだと summon_appear
@@ -2034,8 +2034,9 @@ const SUMMON_KIND_OPTIONS: { code: 'appear' | 'use'; label: string }[] = [
 // 上書き/追加したもの）。「する/できない」表示を出したい新規アクションは、今後は
 // ここに直書きせず「効果辞書管理」画面のアクション編集フォームで
 // 「できないコード」を登録すれば自動で反映される
-// cant_rest / block / cant_redirect_attack は辞書未登録・エンジンも未実装
-// （該当カードが来たら追加実装）。
+// cant_rest / cant_redirect_attack は辞書未登録・エンジンも未実装（該当カードが来たら追加実装）。
+// block（する側）は force_block（相手に強制ブロックさせる。衝突キーワード用）に対応。
+// 「ブロック」ボタンは自コードが block ではなく force_block（既存実装済コード）である点に注意
 // ※ cant_destroy は「選んだ対象は消滅しない」の意味。既存のprevent_destroy系アクションは
 // 対象選択ではなくctx.card（効果を持つカード自身）を保護する別物のため流用しない。
 // 対象解決・原因（バトルで/効果で）の絞り込みはエンジン実装済み（js/effect-engine.js の
@@ -2047,7 +2048,7 @@ const DOABLE_TO_CANT: Record<string, string> = {
   active: 'not_active',
   evolve: 'cant_evolve',
   attack: 'cant_attack',
-  block: 'cant_block',
+  force_block: 'cant_block',
   destroy: 'cant_destroy',
   dp_minus: 'cant_dp_minus',
 };
@@ -4370,12 +4371,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const { selectedSet, mode } = (() => {
             if (isEditingAlt) {
               if (DOABLE_TO_CANT_LIVE[effectAction]) return { selectedSet: [effectAction], mode: 'do' as const };
-              if (effectAction === 'cant_attack_block') return { selectedSet: ['attack', 'block'], mode: 'cant' as const };
+              if (effectAction === 'cant_attack_block') return { selectedSet: ['attack', 'force_block'], mode: 'cant' as const };
               const d = CANT_TO_DOABLE_LIVE[effectAction];
               return d ? { selectedSet: [d], mode: 'cant' as const } : { selectedSet: [] as string[], mode: 'do' as const };
             }
             if (DOABLE_TO_CANT_LIVE[effectAction]) return { selectedSet: [effectAction], mode: 'do' as const };
-            if (effectAction === 'cant_attack_block') return { selectedSet: ['attack', 'block'], mode: 'cant' as const };
+            if (effectAction === 'cant_attack_block') return { selectedSet: ['attack', 'force_block'], mode: 'cant' as const };
             const primary = CANT_TO_DOABLE_LIVE[effectAction];
             if (primary) {
               const set = [primary];
@@ -4398,7 +4399,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               // 代替アクション（効果2以降）はaltActionsを持たないため、複数選択は
               // {アタック,ブロック}の2件のみ既存のcant_attack_blockで表現できる。
               // それ以外の2件以上は表現できないため、最後にクリックした1件のみ反映する
-              if (nextSet.length === 2 && nextSet.includes('attack') && nextSet.includes('block')) {
+              if (nextSet.length === 2 && nextSet.includes('attack') && nextSet.includes('force_block')) {
                 updateEffect({ action: 'cant_attack_block' });
                 return;
               }
@@ -4417,7 +4418,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               return;
             }
             // 2件以上は常に「できない」
-            if (nextSet.length === 2 && nextSet.includes('attack') && nextSet.includes('block')) {
+            if (nextSet.length === 2 && nextSet.includes('attack') && nextSet.includes('force_block')) {
               onChange({ ...block, action: 'cant_attack_block', value: undefined, altActions: [], altActionsOp: undefined });
               return;
             }

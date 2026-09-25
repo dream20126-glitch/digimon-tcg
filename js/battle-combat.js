@@ -354,7 +354,6 @@ function hasFragment(c) { return hasPassiveFlag(c, 'fragment', '【フラグメ�
 function hasRush(c)         { return hasPassiveFlag(c, 'rush', '【速攻】'); }
 function hasJamming(c)      { return hasPassiveFlag(c, 'jamming', '【ジャミング】'); }
 function hasCharge(c)       { return hasPassiveFlag(c, 'charge', '【進撃】'); }
-function hasCollision(c)    { return hasPassiveFlag(c, 'collision', '【衝突】'); }
 function hasEvade(c)        { return hasPassiveFlag(c, 'evade', '【回避】'); }
 function hasBarrier(c)      { return hasPassiveFlag(c, 'barrier', '【防壁】'); }
 function hasArmorBreak(c)   { return hasPassiveFlag(c, 'armor_break', '【アーマー解除】'); }
@@ -2696,24 +2695,6 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
             });
             return;
           }
-          // ≪衝突≫: アタックで相手デジモン撃破 → 自身も消滅 (公式 18-30 推定: 相互道連れ)
-          if (hasCollision(atk)) {
-            addLog('💥 【衝突】「' + atk.name + '」が相手撃破とともに消滅！');
-            bs.player.battleArea[atkIdx] = null;
-            bs.player.trash.push(atk);
-            if (atk.stack) atk.stack.forEach(function(s){ bs.player.trash.push(s); });
-            _dumpLinkedCardsUnlessDeferred(atk, bs.player.trash);
-            renderAll();
-            showDestroyEffect(atk, function() {
-              _fireDestroyChain(['player'], function() {
-                fireOnBattleWin(() => {
-                  // ターンプレイヤー側が全て終わってから、def側(非ターンプレイヤー)へ
-                  _fireDestroyChain(['ai'], function() { checkPendingTurnEnd(); }, { ai: def }, { ai: atk });
-                });
-              }, { player: atk });
-            });
-            return;
-          }
           // ≪貫通≫: アタックで相手デジモン撃破 → アタック終了直前に追加セキュリティチェック
           if (hasPenetrate(atk)) {
             addLog('🗡 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
@@ -2906,26 +2887,6 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
                     showBattleResult('両者消滅', '#ff4444', '両者消滅（道連れ）！', function() { renderAll(); callback(); }, '両者消滅', '#ff4444');
                   }, { player: def, ai: atk }, { player: atk, ai: def });
                 });
-              });
-              return;
-            }
-            // ≪衝突≫: AI アタッカーが撃破したら自身も消滅
-            if (hasCollision(atk)) {
-              addLog('💥 【衝突】相手「' + atk.name + '」が撃破とともに消滅！');
-              bs.ai.battleArea[atkIdx] = null;
-              bs.ai.trash.push(atk);
-              if (atk.stack) atk.stack.forEach(function(s){ bs.ai.trash.push(s); });
-              _dumpLinkedCardsUnlessDeferred(atk, bs.ai.trash);
-              renderAll();
-              showDestroyEffect(atk, function() {
-                _fireDestroyChain(['ai'], function() {
-                  fireOnBattleWin(() => {
-                    // ターンプレイヤー側が全て終わってから、def側(非ターンプレイヤー)へ
-                    _fireDestroyChain(['player'], function() {
-                      showBattleResult('両者消滅', '#ff4444', '衝突で両者消滅', function() { renderAll(); callback(); }, '両者消滅', '#ff4444');
-                    }, { player: def }, { player: atk });
-                  });
-                }, { ai: atk });
               });
               return;
             }

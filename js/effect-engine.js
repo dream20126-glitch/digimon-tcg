@@ -5678,7 +5678,9 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
     // (例: ブラックウォーグレイモン「アタック時」の cond_attack_target_highest_dp@opp は
     //  “自分の”アタック対象を判定するための条件スコープであって、他カード反応の印ではない)、
     // これを反応判定に流用すると自分自身のイベント専用の効果まで他カードのイベントで誤発火する。
-    return steps.some(s => s && matchSubject(s.subject, cardSide));
+    // subject_by_code（トリガーごとに発動主体を分ける）にも対応。優先的にそちらを見て、
+    // 無ければ従来通りフラットな subject を見る（_resolveStepSubjectと同じ優先順位）
+    return steps.some(s => s && matchSubject(_resolveStepSubject(s, triggerCode), cardSide));
   };
 
   ['player', 'ai'].forEach(side => {

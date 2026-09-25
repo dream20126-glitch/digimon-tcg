@@ -48,8 +48,8 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
       // セキュリティ/進化元を取得元に含む場合のみ: 積み重ね順の上/下
       if (cz.includes('security') && c.securityPosition) cs.security_position = c.securityPosition;
       if (cz.includes('evo_source') && c.evoSourcePosition) cs.evo_source_position = c.evoSourcePosition;
-      // 進化元/リンクカードを取得元に含む場合のみ: どのデジモンのものか
-      if (cz.includes('evo_source') && (c.evoSourceOwner === 'self' || c.evoSourceOwner === 'other')) cs.evo_source_owner = c.evoSourceOwner;
+      // 進化元/重ねられているカード/リンクカードを取得元に含む場合のみ: どのデジモンのものか
+      if ((cz.includes('evo_source') || cz.includes('stacked_cards')) && (c.evoSourceOwner === 'self' || c.evoSourceOwner === 'other')) cs.evo_source_owner = c.evoSourceOwner;
       if (cz.includes('linked') && (c.linkedOwner === 'self' || c.linkedOwner === 'other')) cs.linked_owner = c.linkedOwner;
       // 取得元エリアがどちらのプレイヤーのものか（未指定=自分/相手どちらでも）
       if (c.fromZoneOwner === 'self' || c.fromZoneOwner === 'opponent') cs.from_owner = c.fromZoneOwner;
@@ -156,8 +156,8 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
     // セキュリティ/進化元を取得元に含む場合のみ: 積み重ね順の上/下
     if (az.includes('security') && a.securityPosition) out.security_position = a.securityPosition;
     if (az.includes('evo_source') && a.evoSourcePosition) out.evo_source_position = a.evoSourcePosition;
-    // 進化元/リンクカードを取得元に含む場合のみ: どのデジモンのものか
-    if (az.includes('evo_source') && (a.evoSourceOwner === 'self' || a.evoSourceOwner === 'other')) out.evo_source_owner = a.evoSourceOwner;
+    // 進化元/重ねられているカード/リンクカードを取得元に含む場合のみ: どのデジモンのものか
+    if ((az.includes('evo_source') || az.includes('stacked_cards')) && (a.evoSourceOwner === 'self' || a.evoSourceOwner === 'other')) out.evo_source_owner = a.evoSourceOwner;
     if (az.includes('linked') && (a.linkedOwner === 'self' || a.linkedOwner === 'other')) out.linked_owner = a.linkedOwner;
     // 取得元エリアがどちらのプレイヤーのものか（未指定=自分/相手どちらでも）
     if (a.fromZoneOwner === 'self' || a.fromZoneOwner === 'opponent') out.from_owner = a.fromZoneOwner;
@@ -795,9 +795,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       step.from = zones;
       if (b.fromZonesOp && b.fromZonesOp !== 'or') step.from_op = b.fromZonesOp;
     }
-    // 場所に「進化元」を含む場合のみ: どのデジモンの進化元から探すか
+    // 場所に「進化元」/「重ねられているカード」を含む場合のみ: どのデジモンのものから探すか
     // ('self'=このデジモン / 'other'=他のデジモン。未指定='指定なし'=絞り込まない)
-    if (zones.includes('evo_source') && (b.evoSourceOwner === 'self' || b.evoSourceOwner === 'other')) {
+    if ((zones.includes('evo_source') || zones.includes('stacked_cards')) && (b.evoSourceOwner === 'self' || b.evoSourceOwner === 'other')) {
       step.evo_source_owner = b.evoSourceOwner;
     }
     // 場所に「リンクカード」を含む場合のみ: どのデジモンのリンクカードから探すか

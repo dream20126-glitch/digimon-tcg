@@ -10193,8 +10193,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       // from:"stacked_cards"（このデジモンに重ねられているカードの中から）→ このデジモン
       // 自身の進化元の上/下に置き直す＝スタック内の並べ替え（ハイアンドロモン BT26-058等。
       // 「このデジモンに重ねられているカードを上から1枚、このデジモンの進化元の下に置く」）。
-      // target省略時もこの from が来たら自分自身の操作として扱う（他に解釈のしようがないため）
-      if ((_pudSelf || !step.target) && step.from === 'stacked_cards' && ctx.card) {
+      // target省略時もこの from が来たら自分自身の操作として扱う（他に解釈のしようがないため）。
+      // evo_source_owner:"self"（エディタの「重ねられているカードの対象」選択、コスト欄等で
+      // 使われる）も同じく自分自身を指す
+      if ((_pudSelf || !step.target || step.evo_source_owner === 'self') && step.from === 'stacked_cards' && ctx.card) {
         const src = ctx.card;
         if (!Array.isArray(src.stack)) src.stack = [];
         const n = Math.min(Math.max(1, step.value || 1), src.stack.length);

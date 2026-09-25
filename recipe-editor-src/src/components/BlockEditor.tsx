@@ -7522,9 +7522,11 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   // targetL2==='digimon'のときのみ表示（visibleCategoryOptions参照）。エンジン未実装（保存のみ可）
   { value: 'evo_source', label: '進化元' },
   // 重ねられているカード = 対象デジモンの進化元＋一番上のカード（本体）全てを対象に含める
-  // （targetL2==='tamer'のときは「テイマーの下」の意味で流用＝本体/進化元の区別が無いため）
   // という「対象の条件」（cond_target_stack）。位置（指定なし=全体/上/下/選んで）を値として
-  // 持てる（evoSourcePositionと同じ規約）。エンジン未実装（保存のみ可）
+  // 持てる（evoSourcePositionと同じ規約）。エンジン未実装（保存のみ可）。
+  // targetL2==='digimon'のときのみこのカテゴリボタンとして表示（visibleCategoryOptions参照）。
+  // targetL2==='tamer'のときは本体/進化元の区別が無いため、カテゴリ選択を介さず
+  // 「位置」を直接表示する専用UIを別途用意している（panelsNode内tamerStackCond参照）
   { value: 'stacked', label: '重ねられているカード' },
   { value: 'other', label: 'その他' },
 ];
@@ -7778,11 +7780,24 @@ function ConditionsHybridEditor({
     // ではエンジンが「どのカードの場所を見るか」を特定できないため意味を持たない
     if (c.code === 'zone' && !supportsMultiValue) return false;
     // 進化元/重ねられているカードは「対象」があって初めて意味を持つ。targetL2未指定
-    // （トリガー条件等、対象概念が無い文脈）では従来通り表示したままにする（後方互換）
+    // （トリガー条件等、対象概念が無い文脈）では従来通り表示したままにする（後方互換）。
+    // targetL2==='tamer'のときは、カテゴリボタンではなく専用の直接位置UI（下記
+    // tamerStackPosition関連）を出すため、stackedカテゴリ自体はここでは隠す
     if (c.code === 'evo_source' && targetL2 && targetL2 !== 'digimon') return false;
-    if (c.code === 'stacked' && targetL2 && targetL2 !== 'digimon' && targetL2 !== 'tamer') return false;
+    if (c.code === 'stacked' && targetL2 && targetL2 !== 'digimon') return false;
     return true;
   });
+  // テイマー対象専用: 「重ねられているカード」をカテゴリボタン経由ではなく、対象の条件
+  // パネルに直接「位置」だけを出す（テイマー下には本体/進化元の区別が無いため、
+  // カテゴリ選択という1手間を省く）。値はcond_target_stackへ引き続き保存する
+  const tamerStackCond = conditions.find((c) => c.base === 'cond_target_stack');
+  const setTamerStackPosition = (v: string) => {
+    if (tamerStackCond) {
+      onChange(conditions.map((c) => (c === tamerStackCond ? { ...c, value: v } : c)));
+    } else {
+      onChange([...conditions, { base: 'cond_target_stack', value: v }]);
+    }
+  };
 
   // 「その他」用: 色/タイプ/特徴/Lv/DP/名前として直接選べるコード群を除いた残り
   const CATEGORIZED_CODES = new Set<string>([
@@ -7917,6 +7932,24 @@ function ConditionsHybridEditor({
 
   const panelsNode = (
     <>
+      {/* テイマー対象専用: カテゴリボタンを介さず「位置」を直接表示（重ねられている
+          カード＝テイマー下のカード。本体/進化元の区別が無いため1手間省く） */}
+      {targetL2 === 'tamer' && (
+        <div style={{ marginTop: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
+          <div style={{ fontSize: 11, fontWeight: 'bold', color: colors.accent, marginBottom: 4 }}>📍 位置（テイマーの下）</div>
+          <ButtonGroup
+            options={[
+              { code: '', label: '指定なし（全体）' },
+              { code: 'top', label: '上' },
+              { code: 'bottom', label: '下' },
+              { code: 'select', label: '選んで' },
+            ]}
+            value={tamerStackCond?.value || ''}
+            onChange={setTamerStackPosition}
+            accentColor={colors.accent}
+          />
+        </div>
+      )}
       {/* アクティブなカテゴリごとの詳細設定（値・対象） */}
       {visibleCategoryOptions.map((cat) => {
         const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => baseToCategory(c.base) === cat.code);

@@ -3492,9 +3492,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             {fam.label}
                           </button>
                           {/* 「〜したとき」の通常発動コードと「〜するとき」（事前・置換効果用）
-                              コードを切り替える小さなチェックボックス。ファミリーボタンが
-                              アクティブな間だけ表示する */}
-                          {active && preCode && (
+                              コードを切り替える小さなチェックボックス。対応するファミリーには
+                              選択状態に関わらず一律でトリガー文字の隣に表示する
+                              （togglePreEventは未選択状態からでもpreCodeを直接addできる） */}
+                          {preCode && (
                             <label
                               title="チェックすると「〜するとき」（事前・置換効果用）のトリガーコードに切り替わります"
                               style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 9, color: '#555', cursor: 'pointer', whiteSpace: 'nowrap' }}

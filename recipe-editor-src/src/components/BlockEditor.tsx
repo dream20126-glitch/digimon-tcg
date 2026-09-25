@@ -1870,13 +1870,14 @@ const TARGET_SEL_L1_REST = TARGET_SEL_L1.filter((o) => o.code !== 'own' && o.cod
 // 「REST側は何も選ばれていない」ことを表すのに空文字は使えない（「なし」と誤って
 // 一致してハイライトされてしまう）。どの実コードとも一致しない番兵値を使う
 const TARGET_SEL_NONE_ACTIVE = ' none';
+// 通常（場所を表示する必要のないアクション）のL2一覧。セキュリティはここには含めず、
+// 「破棄する」等の場所を表示する必要があるアクションでのみ表示する（下記TARGET_SEL_L2_FROM_ZONES）
 const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
   own: [
     { code: 'digimon', label: 'デジモン' },
     { code: 'card', label: 'カード' },
     { code: 'tamer', label: 'テイマー' },
     { code: 'option', label: 'オプション' },
-    { code: 'security', label: 'セキュリティ' },
   ],
   opp: [
     { code: 'digimon', label: 'デジモン' },
@@ -1884,7 +1885,6 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'tamer', label: 'テイマー' },
     { code: 'option', label: 'オプション' },
     { code: 'player', label: 'プレイヤー' },
-    { code: 'security', label: 'セキュリティ' },
   ],
   other_own: [
     { code: 'digimon', label: 'デジモン' },
@@ -1897,21 +1897,24 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'tamer', label: 'テイマー' },
   ],
 };
-// hasFromZonesフラグを持つアクション（破棄する等）を選択中のときだけ、通常のL2一覧に
-// 追加で表示するゾーン系オプション。旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが担っていた
-// 「場所」概念を対象欄のL2に統合するためのもの（セキュリティは既存L2に統合済みのため含めない）
+// hasFromZonesフラグを持つアクション（破棄する/〇〇に置く/デッキに戻す/手札に加える/
+// 手札に戻す等、場所/位置/裏表の表示が必要なアクション）を選択中のときだけ、通常のL2一覧に
+// 追加で表示するゾーン系オプション（＝「場所」）。旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが
+// 担っていた「場所」概念を対象欄のL2に統合するためのもの。
+// プレイヤーはこれらのアクションでは対象にならないため含めない。デッキ（行き先は
+// アクション自体の上下指定で表現）・リンクカード（今回対象外）も含めない
 const TARGET_SEL_L2_FROM_ZONES: Record<string, { code: string; label: string }[]> = {
   own: [
+    { code: 'security', label: 'セキュリティ' },
     { code: 'hand', label: '手札' },
-    { code: 'deck', label: 'デッキ' },
     { code: 'trash', label: 'トラッシュ' },
-    { code: 'linked', label: 'リンクカード' },
+    { code: 'battle_area', label: 'バトルエリア' },
   ],
   opp: [
+    { code: 'security', label: 'セキュリティ' },
     { code: 'hand', label: '手札' },
-    { code: 'deck', label: 'デッキ' },
     { code: 'trash', label: 'トラッシュ' },
-    { code: 'linked', label: 'リンクカード' },
+    { code: 'battle_area', label: 'バトルエリア' },
   ],
 };
 const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
@@ -1920,10 +1923,10 @@ const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
   'other_own:digimon': 'target_other_own', 'other_own:card': 'target_other_own_card', 'other_own:tamer': 'target_other_own_tamer',
   'both:digimon': 'both', 'both:card': 'both_card', 'both:tamer': 'both_tamer',
   'most:security': 'most_security_player', 'most:trash': 'most_trash_player', 'most:hand': 'most_hand_player', 'most:evo_source': 'most_evo_source_player',
-  // 旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが担っていた場所（手札/デッキ/トラッシュ/リンクカード）を
+  // 旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが担っていた場所（手札/トラッシュ/バトルエリア）を
   // 対象欄のL2に統合した新規コード（hasFromZonesアクションのときのみ選択可）
-  'own:hand': 'own_hand', 'own:deck': 'own_deck', 'own:trash': 'own_trash', 'own:linked': 'own_linked',
-  'opp:hand': 'opponent_hand', 'opp:deck': 'opponent_deck', 'opp:trash': 'opponent_trash', 'opp:linked': 'opponent_linked',
+  'own:hand': 'own_hand', 'own:trash': 'own_trash', 'own:battle_area': 'own_battle_area',
+  'opp:hand': 'opponent_hand', 'opp:trash': 'opponent_trash', 'opp:battle_area': 'opponent_battle_area',
 };
 const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   '': { l1: '', l2: '' },
@@ -1952,13 +1955,11 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   most_hand_player: { l1: 'most', l2: 'hand' },
   most_evo_source_player: { l1: 'most', l2: 'evo_source' },
   own_hand: { l1: 'own', l2: 'hand' },
-  own_deck: { l1: 'own', l2: 'deck' },
   own_trash: { l1: 'own', l2: 'trash' },
-  own_linked: { l1: 'own', l2: 'linked' },
+  own_battle_area: { l1: 'own', l2: 'battle_area' },
   opponent_hand: { l1: 'opp', l2: 'hand' },
-  opponent_deck: { l1: 'opp', l2: 'deck' },
   opponent_trash: { l1: 'opp', l2: 'trash' },
-  opponent_linked: { l1: 'opp', l2: 'linked' },
+  opponent_battle_area: { l1: 'opp', l2: 'battle_area' },
 };
 
 // アクションの対象コード（例:"opponent:1"）→ 対応する発動条件/トリガー条件の「対象」コードに
@@ -6099,8 +6100,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 )}
                 {/* デジモン対象: 「進化元」（スタックのみ）/「重ねられているカード」（スタック＋本体）
                     をサブ選択肢として表示する（位置は右の対象数ボックス側に表示）。
-                    値はcond_target_evo_source/cond_target_stackとしてtargetFilterに保存する */}
-                {curTgt.l2 === 'digimon' && (() => {
+                    値はcond_target_evo_source/cond_target_stackとしてtargetFilterに保存する。
+                    場所/位置/裏表の表示が必要なアクション（hasFromZones）のときのみ表示する */}
+                {actionHasFromZones && curTgt.l2 === 'digimon' && (() => {
                   const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                   const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
                   const activeSub: '' | 'evo_source' | 'stacked' = evoCond ? 'evo_source' : stackCond ? 'stacked' : '';
@@ -6209,24 +6211,51 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       target:'own_security'を初期値にしていたが、この対象欄と書き込みが競合し
                       位置選択後に場所/位置の表示が消える不具合があったため、位置はこちらの
                       対象欄に一本化した（誰の・どの位置のセキュリティかをここで完結できる） */}
-                  {curTgt.l2 === 'security' && (getActionVariant(block.action || '')?.base || block.action) === 'security_trash' && (
-                    <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
-                      <ButtonGroup
-                        options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
-                        value={getActionVariant(block.action || '')?.suffix || ''}
-                        onChange={(suffix) => { if (!suffix) return; changeAction('security_trash' + suffix); }}
-                        accentColor="#b76e00"
-                      />
-                    </div>
-                  )}
-                  {/* テイマー対象: テイマーの下には本体/進化元の区別が無いため、位置（上/下/選んで）
-                      のみを直接表示する。値はcond_target_stackとしてtargetFilterに保存する。
-                      裏表指定（cond_face_down/up、block.conditionsへ保存）もここに表示する
-                      （テイマーの下＝裏向きで積まれているカードも扱うため） */}
-                  {curTgt.l2 === 'tamer' && (() => {
+                  {curTgt.l2 === 'security' && (() => {
+                    const isSecurityTrash = (getActionVariant(block.action || '')?.base || block.action) === 'security_trash';
+                    const faceIdx = conditions.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
+                    const faceVal = faceIdx !== -1 ? (conditions[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
+                    const setFace = (v: string) => {
+                      const next = conditions.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
+                      if (v === 'down') next.push({ base: 'cond_face_down' });
+                      else if (v === 'up') next.push({ base: 'cond_face_up' });
+                      update('conditions', next);
+                    };
+                    return (
+                      <>
+                        {isSecurityTrash && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
+                            <ButtonGroup
+                              options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
+                              value={getActionVariant(block.action || '')?.suffix || ''}
+                              onChange={(suffix) => { if (!suffix) return; changeAction('security_trash' + suffix); }}
+                              accentColor="#b76e00"
+                            />
+                          </div>
+                        )}
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                          <ButtonGroup
+                            options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
+                            value={faceVal}
+                            onChange={setFace}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                      </>
+                    );
+                  })()}
+                  {/* テイマー対象: 「本体」（テイマー自身。cond_target_stack無し）/「下」/「選んで」
+                      （テイマーの下に重ねられたカード。cond_target_stackとしてtargetFilterに保存）。
+                      裏表指定（cond_face_down/up、block.conditionsへ保存）は「下」「選んで」の
+                      ときのみ表示する（「本体」＝テイマー自身には裏表の概念が無いため）。
+                      場所/位置/裏表の表示が必要なアクション（hasFromZones）のときのみ表示する */}
+                  {actionHasFromZones && curTgt.l2 === 'tamer' && (() => {
                     const tamerStackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
+                    const currentPos = tamerStackCond?.value || '';
                     const setTamerStackPosition = (v: string) => {
+                      if (!v) { update('targetFilter', targetFilter.filter((c) => c !== tamerStackCond)); return; }
                       if (tamerStackCond) {
                         update('targetFilter', targetFilter.map((c) => (c === tamerStackCond ? { ...c, value: v } : c)));
                       } else {
@@ -6244,28 +6273,29 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     return (
                       <>
                         <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置（テイマーの下）</div>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
                           <ButtonGroup
                             options={[
-                              { code: '', label: '指定なし（全体）' },
-                              { code: 'top', label: '上' },
+                              { code: '', label: '本体' },
                               { code: 'bottom', label: '下' },
                               { code: 'select', label: '選んで' },
                             ]}
-                            value={tamerStackCond?.value || ''}
+                            value={currentPos}
                             onChange={setTamerStackPosition}
                             accentColor="#b76e00"
                           />
                         </div>
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
-                          <ButtonGroup
-                            options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
-                            value={faceVal}
-                            onChange={setFace}
-                            accentColor="#b76e00"
-                          />
-                        </div>
+                        {(currentPos === 'bottom' || currentPos === 'select') && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                            <ButtonGroup
+                              options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
+                              value={faceVal}
+                              onChange={setFace}
+                              accentColor="#b76e00"
+                            />
+                          </div>
+                        )}
                       </>
                     );
                   })()}

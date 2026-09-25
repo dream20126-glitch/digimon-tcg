@@ -8672,6 +8672,31 @@ function executeRecipeStep(step, ctx, store, callback) {
     // 相手のバトルエリアから: step: { action:'return_hand', target:'opponent:N', condition/filter... }
     //   → 既存の bounce（opponent.battleArea → 相手の手札）にそのまま委譲
     case 'return_hand': {
+      // target:"opponent_trash:N"（相手のトラッシュのカードを、その持ち主＝相手の手札に戻す）
+      if (String(step.target || '').split(':')[0] === 'opponent_trash') {
+        const _rhoFilter = step.filter || {};
+        const _rhoWant = parseInt(String(step.target).split(':')[1], 10) || step.count || 1;
+        const _rhoCands = (opponent.trash || []).filter(c => c && cardMatchesFilter(c, _rhoFilter, ctx.bs, ctx.side));
+        if (_rhoCands.length === 0) {
+          ctx.addLog && ctx.addLog('💨 条件を満たすカードが相手のトラッシュにありません');
+          showEffectFailed(null, () => callback());
+          return;
+        }
+        const _rhoPicked = _rhoCands.slice(0, Math.min(_rhoWant, _rhoCands.length));
+        let _rhoi = 0;
+        const _rhoMoveNext = () => {
+          if (_rhoi >= _rhoPicked.length) { ctx.renderAll(); callback(); return; }
+          const c = _rhoPicked[_rhoi++];
+          const ti = opponent.trash.indexOf(c);
+          if (ti !== -1) opponent.trash.splice(ti, 1);
+          opponent.hand.push(c);
+          ctx.addLog && ctx.addLog('🃏 相手のトラッシュの「' + c.name + '」を相手の手札に戻した');
+          if (window._fxCardMove) window._fxCardMove(c, 'トラッシュ', '手札', _rhoMoveNext);
+          else setTimeout(_rhoMoveNext, 300);
+        };
+        _rhoMoveNext();
+        break;
+      }
       const _rhFromTrash = step.from === 'trash'
         || (Array.isArray(step.from) && step.from.indexOf('trash') >= 0)
         || (!step.from && String(step.target || '').startsWith('own'));

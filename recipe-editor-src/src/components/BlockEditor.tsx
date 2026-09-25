@@ -5568,10 +5568,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // 「破棄する」等hasFromZonesフラグ付きアクション、「〇〇に置く」「手札に戻す」の
           // ときだけ、通常のL2一覧に手札/トラッシュ/セキュリティ/デッキ/バトルエリア/
           // リンクカードを追加する（効果1と同じ判定。効果2以降でも同じ場所選択肢が必要なため
-          // isEditingAlt分岐に入る前に、対象の効果(effectAction)基準で共通計算する）
+          // isEditingAlt分岐に入る前に、対象の効果(effectAction)基準で共通計算する）。
+          // 「手札に戻す」の辞書コードは実際には return_hand（bounceは同義の旧/別コード、
+          // 既存カードデータとの互換のため両方見る）
           const commonActionHasFromZones = !!dict.actions.find(
             (a) => a.code === (getActionVariant(effectAction || '')?.base || effectAction)
-          )?.hasFromZones || PLACE_ACTION_CODES.has(effectAction || '') || effectAction === 'bounce';
+          )?.hasFromZones || PLACE_ACTION_CODES.has(effectAction || '') || effectAction === 'bounce' || effectAction === 'return_hand';
           const commonFromZoneExcludeCodes = effectAction === 'add_to_hand' ? new Set(['hand', 'trash', 'battle_area']) : null;
           // 効果2以降（代替アクション）を編集中は「デジモン+テイマー同時選択(AND)」だけ省略する
           // （AND側は altActions を入れ子で使う実装のため、代替アクション自身には適用できない）。

@@ -5735,7 +5735,10 @@ export function fireLinkTriggers(linkerCard, linkerSide, baseCard, baseSide, ctx
   clearQueue();
   const turnPlayer = ctx.bs.isPlayerTurn ? 'player' : 'ai';
   const isTargetRole = (s) => !!(s && s.link_role === 'target');
-  const isSelfSubject = (s) => !s.subject || s.subject === 'self';
+  const isSelfSubject = (s) => {
+    const subj = _resolveStepSubject(s, 'on_link');
+    return !subj || subj === 'self';
+  };
   const queueBlock = (card, side, steps, recipeCard, eventSourceCard) => {
     if (!steps || steps.length === 0) return;
     const block = {
@@ -5773,10 +5776,10 @@ export function fireLinkTriggers(linkerCard, linkerSide, baseCard, baseSide, ctx
     [...ctx.bs[side].battleArea, ...(ctx.bs[side].tamerArea || [])].forEach(card => {
       if (!card) return;
       if (card !== linkerCard) {
-        queueOwnLinkSteps(card, side, (s) => s && !isTargetRole(s) && _matchLinkSubject(s.subject, linkerSide, side), linkerCard);
+        queueOwnLinkSteps(card, side, (s) => s && !isTargetRole(s) && _matchLinkSubject(_resolveStepSubject(s, 'on_link'), linkerSide, side), linkerCard);
       }
       if (card !== baseCard) {
-        queueOwnLinkSteps(card, side, (s) => s && isTargetRole(s) && _matchLinkSubject(s.subject, baseSide, side), baseCard);
+        queueOwnLinkSteps(card, side, (s) => s && isTargetRole(s) && _matchLinkSubject(_resolveStepSubject(s, 'on_link'), baseSide, side), baseCard);
       }
     });
   });
@@ -6575,7 +6578,7 @@ export function fireWhenOppAttackTriggers(attackerSide, bs, ctxBase, done) {
 // 追加で拾う（subject:"both" 以外は無視 = 二重発火しない）
 export function fireOnAttackBothSubjectTriggers(attackerSide, bs, ctxBase, done) {
   const reactSide = attackerSide === 'player' ? 'ai' : 'player';
-  return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && step.subject === 'both');
+  return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && _resolveStepSubject(step, 'on_attack') === 'both');
 }
 
 // デジモンの進化元／テイマーの下が破棄されたとき → 発動主体(step.subject)で判定し、
@@ -6788,9 +6791,11 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
 // ===== on_destroy の発動主体（自分/相手/両方）別マッチャー =====
 // エディタの「発動主体」で選べる own/opp/both（+card系バリアント）を、消滅したカードの
 // 反対側/同じ側/両側どちらのスキャンで使うかを判定する
-const _isOppSubjectDestroyStep = (s) => !!s && (s.subject === 'opp' || s.subject === 'opp_any' || s.subject === 'opp_card');
-const _isOwnSubjectDestroyStep = (s) => !!s && (s.subject === 'own' || s.subject === 'own_any' || s.subject === 'own_card');
-const _isBothSubjectDestroyStep = (s) => !!s && (s.subject === 'both' || s.subject === 'both_digimon' || s.subject === 'both_card');
+// これらは常に triggerKey='on_destroy' の文脈でのみ使われる（呼び出し元4箇所とも固定）ため、
+// _resolveStepSubject への triggerCode 指定を 'on_destroy' に固定してよい
+const _isOppSubjectDestroyStep = (s) => { const subj = _resolveStepSubject(s, 'on_destroy'); return subj === 'opp' || subj === 'opp_any' || subj === 'opp_card'; };
+const _isOwnSubjectDestroyStep = (s) => { const subj = _resolveStepSubject(s, 'on_destroy'); return subj === 'own' || subj === 'own_any' || subj === 'own_card'; };
+const _isBothSubjectDestroyStep = (s) => { const subj = _resolveStepSubject(s, 'on_destroy'); return subj === 'both' || subj === 'both_digimon' || subj === 'both_card'; };
 
 // ===== on_destroy の「原因」(cause/cause_subject) 判定 =====
 // step.cause が無ければ原因を問わず常にtrue。ある場合は bs._lastDestroyCause（直近の消滅の

@@ -7587,6 +7587,29 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
   }
 
+  // 対象の追加（エディタの「+ 対象を追加」→ step.targets）: 主対象(step.target/step.filter)に
+  // 加えて追加の対象グループがあれば、同じアクションを各グループへ順に実行する。
+  // これから追加される全アクションを含め、combat以外の全アクション共通の仕組みとする
+  // （combatだけは targets[0] を「バトルする相手」という別の意味で使う専用実装のため対象外）。
+  // 制限(limit)・発火元フィルタ(trigger_conditions)は既にこの呼び出しで1回分確認・消費済み
+  // なので、各グループの再実行では取り除く（グループごとに個別カウントされてしまうのを防ぐ）
+  if (Array.isArray(step.targets) && step.targets.length > 0 && step.action !== 'combat') {
+    const _tgGroups = [{ target: step.target, filter: step.filter }, ...step.targets];
+    const _tgBaseStep = Object.assign({}, step);
+    delete _tgBaseStep.targets;
+    delete _tgBaseStep.limit;
+    delete _tgBaseStep.trigger_conditions;
+    let _tgIdx = 0;
+    const _tgNext = () => {
+      if (_tgIdx >= _tgGroups.length) { callback && callback(); return; }
+      const g = _tgGroups[_tgIdx++];
+      const _tgStep = Object.assign({}, _tgBaseStep, { target: g.target, filter: g.filter });
+      executeRecipeStep(_tgStep, ctx, store, _tgNext);
+    };
+    _tgNext();
+    return;
+  }
+
   // 代替アクション処理: 'or' = 選択UI / 'and' = 順次実行
   if (Array.isArray(step.alt_actions) && step.alt_actions.length > 0) {
     runWithAltActions(step, ctx, store, callback);

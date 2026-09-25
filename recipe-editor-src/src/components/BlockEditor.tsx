@@ -5582,9 +5582,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               >
                 + 対象を追加
               </button>
-              <div style={{ marginTop: 6, fontSize: 10, color: '#c62828' }}>
-                ⚠ エンジン未実装（保存はできますが、追加した対象は動作に反映されません）
-              </div>
+              {effectAction === 'combat' ? (
+                <div style={{ marginTop: 6, fontSize: 10, color: '#666' }}>
+                  「バトルする」では対象2が「バトルする相手」として使われます（対象3以降は未対応）。
+                </div>
+              ) : (
+                <div style={{ marginTop: 6, fontSize: 10, color: '#2e7d32' }}>
+                  対象1と同じアクションを、追加した対象それぞれにも順番に実行します。
+                </div>
+              )}
             </div>
           );
         })()}

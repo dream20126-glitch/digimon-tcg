@@ -5502,30 +5502,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           return discardZoneBasesForDeckPos.has(effectActionBaseForDeckPos) || effectAction === 'discard';
         })() && !!dict.actions.find((a) => a.code === effectAction)?.hasDeckPosition && (() => {
           const effectDeckPosition = isEditingAlt ? editingAlt!.deckPosition : block.deckPosition;
-          const top = effectDeckPosition === 'top' || effectDeckPosition === 'both';
-          const bottom = effectDeckPosition === 'bottom' || effectDeckPosition === 'both';
-          const setPos = (nextTop: boolean, nextBottom: boolean) => {
-            const v = nextTop && nextBottom ? 'both' : nextTop ? 'top' : nextBottom ? 'bottom' : undefined;
-            updateEffect({ deckPosition: v });
-          };
           return (
             <div className="field" style={{ marginTop: 8 }}>
               <label>📍 {effectAction === 'return_deck' ? 'デッキのどこに戻すか（上/下）' : '上/下'}</label>
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
-                  <input type="checkbox" checked={top} onChange={(e) => setPos(e.target.checked, bottom)} />
-                  上
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
-                  <input type="checkbox" checked={bottom} onChange={(e) => setPos(top, e.target.checked)} />
-                  下
-                </label>
-                {top && bottom && (
-                  <span style={{ fontSize: 11, color: '#c62828' }}>
-                    ⚠ 両方選択（どちらか選んで）はエンジン未対応です（保存はできますが「下」と同じ動作になります）
-                  </span>
-                )}
-              </div>
+              <ButtonGroup
+                options={[
+                  { code: 'top', label: '上' },
+                  { code: 'bottom', label: '下' },
+                  { code: 'both', label: '上か下' },
+                ]}
+                value={effectDeckPosition || ''}
+                onChange={(v) => updateEffect({ deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
+                accentColor="#1976d2"
+              />
             </div>
           );
         })()}
@@ -5759,12 +5748,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           }
           // 「破棄する」等hasFromZonesフラグ付きアクション、および「〇〇に置く」
           // （PLACE_ACTION_CODES、辞書側はhasFaceOptionしか立っておらずhasFromZonesを
-          // 見ないため個別に判定）のときだけ、通常のL2一覧に手札/トラッシュ/セキュリティ/
-          // デッキ/バトルエリアを追加する（旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPの
-          // 「場所」選択を対象欄に統合するためのもの）
+          // 見ないため個別に判定）・「手札に戻す」（bounce、辞書側にフラグが無いため個別判定）
+          // のときだけ、通常のL2一覧に手札/トラッシュ/セキュリティ/デッキ/バトルエリアを
+          // 追加する（旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPの「場所」選択を対象欄に統合するためのもの）
           const actionHasFromZones = !!dict.actions.find(
             (a) => a.code === (getActionVariant(block.action || '')?.base || block.action)
-          )?.hasFromZones || PLACE_ACTION_CODES.has(block.action || '');
+          )?.hasFromZones || PLACE_ACTION_CODES.has(block.action || '') || block.action === 'bounce';
           // 「手札に加える」は手札/トラッシュ/バトルエリアからの取得元にはならないため
           // （手札を手札に加える等は意味を成さない）、場所の選択肢から除く
           const fromZoneExcludeCodes = block.action === 'add_to_hand' ? new Set(['hand', 'trash', 'battle_area']) : null;

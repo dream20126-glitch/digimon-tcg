@@ -2007,6 +2007,13 @@ const COMMON_TRIGGER_FAMILIES: TriggerFamily[] = [
     implemented: { self: true, opp: true, any: false },
   },
 ];
+// 「付与する効果」(grantedStep)専用のトリガー・アクションのクイックボタン一覧。
+// grantedStepは発動主体(subject)等の概念を持たない単純な{trigger, action}のペアなので、
+// COMMON_TRIGGER_FAMILIES/COMMON_ACTIONSの見た目・コードだけを流用し、L1/L2の
+// タイミング切替（自分/相手/お互い）は「自分」バリアントのコードで代表させる
+const GRANTED_STEP_TRIGGER_QUICK: { code: string; label: string }[] = COMMON_TRIGGER_FAMILIES.map((fam) =>
+  fam.kind === 'event' ? { code: fam.code, label: fam.label } : { code: fam.variants!.self, label: fam.label }
+);
 // キーワード効果のレシピ作成画面でのみ選べるトリガー。通常のカードレシピでは
 // 「相手のアクティブフェイズ開始時」のような出来事を使うことがまず無いため、
 // 選択肢を汚さないようにこちらに分離している（isKeywordMode時のみ結合して使う）
@@ -6343,6 +6350,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>付与効果のトリガー</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
+                      {GRANTED_STEP_TRIGGER_QUICK.map((o) => (
+                        <button
+                          key={o.code}
+                          type="button"
+                          onClick={() => updateGrantedStep({ trigger: o.code })}
+                          style={{
+                            padding: '2px 7px', borderRadius: 5, fontSize: 10, cursor: 'pointer',
+                            border: grantedStep.trigger === o.code ? '2px solid #0d9488' : '1px solid #99f6e4',
+                            background: grantedStep.trigger === o.code ? '#0d9488' : 'white',
+                            color: grantedStep.trigger === o.code ? '#fff' : '#333',
+                          }}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
                     <SearchSelect
                       value={grantedStep.trigger}
                       onChange={(v) => updateGrantedStep({ trigger: v })}
@@ -6352,6 +6376,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </div>
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>付与効果のアクション</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
+                      {COMMON_ACTIONS.map((o) => (
+                        <button
+                          key={o.code}
+                          type="button"
+                          onClick={() => updateGrantedStep({ action: o.code })}
+                          style={{
+                            padding: '2px 7px', borderRadius: 5, fontSize: 10, cursor: 'pointer',
+                            border: grantedStep.action === o.code ? '2px solid #0d9488' : '1px solid #99f6e4',
+                            background: grantedStep.action === o.code ? '#0d9488' : 'white',
+                            color: grantedStep.action === o.code ? '#fff' : '#333',
+                          }}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
                     <SearchSelect
                       value={grantedStep.action}
                       onChange={(v) => updateGrantedStep({ action: v })}

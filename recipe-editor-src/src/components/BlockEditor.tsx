@@ -593,6 +593,29 @@ function KeywordEntriesEditor({
               />
             </div>
           )}
+          {/* 対象の絞り込み（hasNamedParam）を持たないキーワードのための枚数欄。
+              テンプレート側のcostにcount未指定の項目があれば、そこへ自動で差し込まれる
+              （例: 【フラグメント《3》】→コスト「進化元を選んで破棄」のcountに3が入る）。
+              対象の絞り込みがあるキーワード（アセンブリ等）は対象ごとの枚数欄を別途使うため、
+              ここでは出さない（二重入力を避ける） */}
+          {!dict.keywords.find((k) => k.code === entry.keyword)?.hasNamedParam && (
+            <div style={{ marginTop: 6 }}>
+              <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
+                枚数（【フラグメント《3》】等、コストの対象枚数がある場合のみ）
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={entry.count === undefined ? '' : String(entry.count)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  updateEntry(i, { count: v === '' ? undefined : Number(v) });
+                }}
+                placeholder="例: 3"
+                style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
+              />
+            </div>
+          )}
         </div>
       ))}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

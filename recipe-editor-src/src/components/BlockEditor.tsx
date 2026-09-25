@@ -5542,8 +5542,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         {/* 上/下（デッキに戻す位置など）: 辞書の hasDeckPosition=true なアクションのみ表示。
             両方チェック＝「どちらか選んで」はエンジン未対応（'top'以外は全て下として扱われる）。
             OR/AND/その後で「効果2」以降を編集中のときは、そちらのアクション/位置を見る
-            （常にblock=効果1側を見てしまうと、効果2で「デッキに戻す」を選んでも出てこない） */}
-        {!!dict.actions.find((a) => a.code === effectAction)?.hasDeckPosition && (() => {
+            （常にblock=効果1側を見てしまうと、効果2で「デッキに戻す」を選んでも出てこない）。
+            「破棄する」は対象欄側の位置表示と重複するため除外する */}
+        {!(() => {
+          const discardZoneBasesForDeckPos = new Set(DISCARD_ZONE_MAP.map((z) => getActionVariant(z.action)?.base || z.action));
+          const effectActionBaseForDeckPos = getActionVariant(effectAction || '')?.base || (effectAction || '');
+          return discardZoneBasesForDeckPos.has(effectActionBaseForDeckPos) || effectAction === 'discard';
+        })() && !!dict.actions.find((a) => a.code === effectAction)?.hasDeckPosition && (() => {
           const effectDeckPosition = isEditingAlt ? editingAlt!.deckPosition : block.deckPosition;
           const top = effectDeckPosition === 'top' || effectDeckPosition === 'both';
           const bottom = effectDeckPosition === 'bottom' || effectDeckPosition === 'both';
@@ -5951,7 +5956,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     >
                       テイマー
                     </button>
-                    {exclusiveL2Options.length > 0 && (
+                    {/* デジモンを選択したら、カード/オプション/手札/デッキ等の他のL2選択肢は隠し、
+                        進化元/重ねられているカードのサブ選択肢（下記）のみを見せる */}
+                    {!digimonChecked && exclusiveL2Options.length > 0 && (
                       <ButtonGroup
                         options={exclusiveL2Options}
                         value={!digimonChecked && !tamerChecked ? curTgt.l2 : ''}
@@ -5966,13 +5973,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <ButtonGroup options={tgtL2Options} value={curTgt.l2} onChange={handleTgtL2} accentColor="#b76e00" />
                   </div>
                 )}
-                {/* デジモン対象: 「進化元」（スタックのみ）/「重ねられているカード」（スタック＋本体）
-                    をサブ選択肢として表示する（位置は右の対象数ボックス側に表示）。
-                    値はcond_target_evo_source/cond_target_stackとしてtargetFilterに保存する。
+                {/* デジモン対象、または「このカード」対象: 「進化元」（スタックのみ）/
+                    「重ねられているカード」（スタック＋本体）をサブ選択肢として表示する
+                    （位置は右の対象数ボックス側に表示）。値はcond_target_evo_source/
+                    cond_target_stackとしてtargetFilterに保存する。
                     場所/位置/裏表の表示が必要なアクション（hasFromZones）のときのみ表示する。
                     「〇〇に置く」では「指定なし」を選べず、進化元/重ねられているカードの
                     いずれかを必ず選ぶ（置く先が必ずどちらかのスタックになるため） */}
-                {actionHasFromZones && curTgt.l2 === 'digimon' && (() => {
+                {actionHasFromZones && (curTgt.l2 === 'digimon' || curTgt.l1 === 'self') && (() => {
                   const isPlaceAction = PLACE_ACTION_CODES.has(block.action || '');
                   const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                   const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
@@ -6084,13 +6092,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       対象欄に一本化した（誰の・どの位置のセキュリティかをここで完結できる） */}
                   {curTgt.l2 === 'security' && (() => {
                     const isSecurityTrash = (getActionVariant(block.action || '')?.base || block.action) === 'security_trash';
-                    const faceIdx = conditions.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
-                    const faceVal = faceIdx !== -1 ? (conditions[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
+                    // 裏表はtargetFilter（対象の絞り込み）へ保存する。block.conditions（発動条件と
+                    // 共用の配列）に書くと「発動条件」＞「参照」欄に意図せず反映されてしまうため
+                    const faceIdx = targetFilter.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
+                    const faceVal = faceIdx !== -1 ? (targetFilter[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
                     const setFace = (v: string) => {
-                      const next = conditions.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
+                      const next = targetFilter.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
                       if (v === 'down') next.push({ base: 'cond_face_down' });
                       else if (v === 'up') next.push({ base: 'cond_face_up' });
-                      update('conditions', next);
+                      update('targetFilter', next);
                     };
                     return (
                       <>
@@ -6133,13 +6143,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         update('targetFilter', [...targetFilter, { base: 'cond_target_stack', value: v }]);
                       }
                     };
-                    const faceIdx = conditions.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
-                    const faceVal = faceIdx !== -1 ? (conditions[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
+                    // 裏表はtargetFilter（対象の絞り込み）へ保存する。block.conditions（発動条件と
+                    // 共用の配列）に書くと「発動条件」＞「参照」欄に意図せず反映されてしまうため
+                    const faceIdx = targetFilter.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
+                    const faceVal = faceIdx !== -1 ? (targetFilter[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
                     const setFace = (v: string) => {
-                      const next = conditions.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
+                      const next = targetFilter.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
                       if (v === 'down') next.push({ base: 'cond_face_down' });
                       else if (v === 'up') next.push({ base: 'cond_face_up' });
-                      update('conditions', next);
+                      update('targetFilter', next);
                     };
                     return (
                       <>
@@ -6171,10 +6183,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </>
                     );
                   })()}
-                  {/* デジモン対象＋進化元/重ねられているカードのサブ選択肢（左の対象ボックス側）を
-                      選んでいるときだけ、その位置（本体/上/下/選んで）をここに表示する。
+                  {/* デジモン対象、または「このカード」対象＋進化元/重ねられているカードの
+                      サブ選択肢（左の対象ボックス側）を選んでいるときだけ、その位置
+                      （本体/上/下/選んで）をここに表示する。
                       裏表指定は「本体」以外（上/下/選んで）のときのみ表示する（block.conditionsへ保存） */}
-                  {curTgt.l2 === 'digimon' && (() => {
+                  {(curTgt.l2 === 'digimon' || curTgt.l1 === 'self') && (() => {
                     const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                     const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
                     const activeCond = evoCond || stackCond;
@@ -6183,13 +6196,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     const setSubPosition = (v: string) => {
                       update('targetFilter', targetFilter.map((c) => (c === activeCond ? { ...c, value: v } : c)));
                     };
-                    const faceIdx = conditions.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
-                    const faceVal = faceIdx !== -1 ? (conditions[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
+                    // 裏表はtargetFilter（対象の絞り込み）へ保存する。block.conditions（発動条件と
+                    // 共用の配列）に書くと「発動条件」＞「参照」欄に意図せず反映されてしまうため
+                    const faceIdx = targetFilter.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
+                    const faceVal = faceIdx !== -1 ? (targetFilter[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
                     const setFace = (v: string) => {
-                      const next = conditions.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
+                      const next = targetFilter.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
                       if (v === 'down') next.push({ base: 'cond_face_down' });
                       else if (v === 'up') next.push({ base: 'cond_face_up' });
-                      update('conditions', next);
+                      update('targetFilter', next);
                     };
                     return (
                       <>

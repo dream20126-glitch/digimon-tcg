@@ -2075,6 +2075,31 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
     callback && callback();
     return;
   }
+  const _ddSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
+  // when_destroy: 消滅"する"とき（置換効果）に反応するトリガー。バトル/効果どちらの消滅
+  // 原因でも共通に発火する汎用ゲート（フラグメント等「コストを払うことで消滅回避」を実現）。
+  // トリガー発火後、cant_destroy等でkeyword_prevent_destroy/keyword_prevent_battle_destroy
+  // バフが付与されていれば消滅をキャンセルする（when_battle_destroyの_runWhenBattleDestroyと
+  // 同じパターン。原因を問わず発火するため、バトル側の_runWhenBattleDestroyとは別に
+  // ここでも判定する必要がある＝原因を指定しないレシピは両方の消滅で発動する）
+  if (hasRecipeTrigger(destroyed, 'when_destroy')) {
+    const gateCtx = { bs: ctx.bs, side: _ddSide, card: destroyed, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+    triggerEffect('when_destroy', destroyed, _ddSide, gateCtx, () => {
+      const prevented = !!(destroyed.buffs && destroyed.buffs.some((b) =>
+        b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle')
+      ));
+      if (prevented) {
+        ctx.addLog('🛡 「' + destroyed.name + '」はコストを払い消滅を回避！');
+        callback && callback();
+        return;
+      }
+      _doDestroyProceed();
+    });
+    return;
+  }
+  _doDestroyProceed();
+
+  function _doDestroyProceed() {
   // ≪デコイ≫ - 同 side の他デジモンが身代わりに消滅
   // ≪スケープゴート≫ - 消滅対象が他デジモンを身代わりに消滅させて回避
   // どちらも window 経由で battle-combat.js のヘルパーを呼ぶ
@@ -2139,6 +2164,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
     if (ctx.bs) ctx.bs._lastDestroyCause = { type: causeType, causerSide: ctx.side, causerCard: ctx.card };
     fireDestroyChain(destroyed, destroyedSideName, ctx.bs, ctx, callback);
   });
+  }
 }
 
 // callback は省略可（従来呼び出し元は fire-and-forget のまま動く）。
@@ -4047,7 +4073,6 @@ export function applyPermanentEffects(bs, side, context) {
           else if (flag === 'delay') { card._permEffects.delay = true; }
           else if (flag === 'save') { card._permEffects.save = true; }
           else if (flag === 'decoy') { card._permEffects.decoy = true; }
-          else if (flag === 'fragment') { card._permEffects.fragment = true; }
           else if (flag === 'scapegoat') { card._permEffects.scapegoat = true; }
           else if (flag === 'material_save') { card._permEffects.materialSave = true; }
           else if (flag === 'vortex') { card._permEffects.vortex = true; }
@@ -4189,7 +4214,6 @@ export function applyPermanentEffects(bs, side, context) {
             else if (flag === 'delay') { card._permEffects.delay = true; }
             else if (flag === 'save') { card._permEffects.save = true; }
             else if (flag === 'decoy') { card._permEffects.decoy = true; }
-            else if (flag === 'fragment') { card._permEffects.fragment = true; }
             else if (flag === 'scapegoat') { card._permEffects.scapegoat = true; }
             else if (flag === 'material_save') { card._permEffects.materialSave = true; }
             else if (flag === 'vortex') { card._permEffects.vortex = true; }
@@ -4333,7 +4357,6 @@ export function applyPermanentEffects(bs, side, context) {
             else if (flag === 'delay') { card._permEffects.delay = true; }
             else if (flag === 'save') { card._permEffects.save = true; }
             else if (flag === 'decoy') { card._permEffects.decoy = true; }
-            else if (flag === 'fragment') { card._permEffects.fragment = true; }
             else if (flag === 'scapegoat') { card._permEffects.scapegoat = true; }
             else if (flag === 'material_save') { card._permEffects.materialSave = true; }
             else if (flag === 'vortex') { card._permEffects.vortex = true; }

@@ -225,10 +225,6 @@ function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle) {
   if (_tryScapegoat(card, ownerSidePlayer)) {
     return { canceled: true, reason: 'scapegoat' };
   }
-  // フラグメント（消滅時、進化元を破棄することで消滅回避）
-  if (_tryFragment(card, ownerSidePlayer)) {
-    return { canceled: true, reason: 'fragment' };
-  }
   return null;
 }
 
@@ -247,22 +243,43 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
   } catch (_) { callback(null); }
 }
 
-// when_battle_destroy トリガーを発火し、コスト払いでバフが付与されていれば消滅をキャンセルする。
+// when_battle_destroy / when_destroy トリガーを発火し、コスト払いでバフが付与されていれば
+// 消滅をキャンセルする。when_destroyは原因を問わず発火する汎用トリガー（フラグメント等）
+// のため、バトルでの消滅時もここで確認する（効果消滅時はeffect-engine.jsのdoDestroy側で
+// 同様に確認する。原因を指定しないレシピはどちらの消滅経路でも発動する）。
 // onDestroy: 消滅実行コールバック / onCancel: 消滅回避コールバック
 function _runWhenBattleDestroy(side, card, onDestroy, onCancel) {
-  if (!_hasRecipeTrigger(card, 'when_battle_destroy')) { onDestroy(); return; }
+  const hasWBD = _hasRecipeTrigger(card, 'when_battle_destroy');
+  const hasWD = _hasRecipeTrigger(card, 'when_destroy');
+  if (!hasWBD && !hasWD) { onDestroy(); return; }
   const ctxWBD = _hooks.makeEffectContext(card, side);
-  _hooks.triggerEffect('when_battle_destroy', card, side, ctxWBD, () => {
-    const prevented = !!(card.buffs && card.buffs.some(b =>
-      b.type === 'keyword_prevent_battle_destroy' || b.type === 'keyword_prevent_destroy'
-    ));
-    if (prevented) {
+  const checkPrevented = () => !!(card.buffs && card.buffs.some(b =>
+    b.type === 'keyword_prevent_battle_destroy' || b.type === 'keyword_prevent_destroy'
+  ));
+  const finish = () => {
+    if (checkPrevented()) {
       addLog('🛡 「' + card.name + '」はコストを払い消滅を回避！');
       onCancel();
     } else {
       onDestroy();
     }
-  });
+  };
+  const fireWhenDestroyThenFinish = () => {
+    if (!hasWD) { finish(); return; }
+    _hooks.triggerEffect('when_destroy', card, side, ctxWBD, finish);
+  };
+  if (hasWBD) {
+    _hooks.triggerEffect('when_battle_destroy', card, side, ctxWBD, () => {
+      if (checkPrevented()) {
+        addLog('🛡 「' + card.name + '」はコストを払い消滅を回避！');
+        onCancel();
+        return;
+      }
+      fireWhenDestroyThenFinish();
+    });
+  } else {
+    fireWhenDestroyThenFinish();
+  }
 }
 
 // ≪連携≫の処理: アタック時、他のアクティブデジモン1体をレストさせて
@@ -327,28 +344,6 @@ function _tryScapegoat(destroyTarget, ownerSidePlayer) {
   }
   return false;
 }
-
-// ≪フラグメント≫の処理: 自身が消滅するとき、進化元を選んでN枚破棄することで消滅しない
-// 簡易実装: 上から N 枚（指定値、なければ 1）破棄。0枚なら回避不可
-function _tryFragment(destroyTarget, ownerSidePlayer) {
-  if (!destroyTarget || !ownerSidePlayer || !hasFragment(destroyTarget)) return false;
-  var stack = destroyTarget.stack || [];
-  if (stack.length === 0) return false;
-  // フラグメントN: passive.flag='fragment' の value（または 1）枚破棄
-  var n = 1;
-  try {
-    var pe = destroyTarget._permEffects;
-    if (pe && pe.fragmentValue) n = pe.fragmentValue;
-  } catch(_) {}
-  if (n > stack.length) n = stack.length;
-  for (var i = 0; i < n; i++) {
-    var s = stack.shift();
-    if (s) ownerSidePlayer.trash.push(s);
-  }
-  addLog('🛡 【フラグメント】「' + destroyTarget.name + '」が進化元 ' + n + ' 枚を破棄して消滅回避');
-  return true;
-}
-function hasFragment(c) { return hasPassiveFlag(c, 'fragment', '【フラグメント】'); }
 
 // その他キーワード判定（フェーズ1〜2 実装分）
 function hasRush(c)         { return hasPassiveFlag(c, 'rush', '【速攻】'); }

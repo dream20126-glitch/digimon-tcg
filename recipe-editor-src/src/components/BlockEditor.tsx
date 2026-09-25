@@ -1948,6 +1948,9 @@ const KEYWORD_ONLY_TRIGGER_FAMILIES: TriggerFamily[] = [
 const ATTACK_TRIGGER_CODES = ['on_attack', 'when_opp_attack', 'on_any_attack', 'on_attack_end', 'when_opp_attack_end', 'on_any_attack_end'];
 // 【リンク時】のときだけ、リンクする側/される側を選べるUIを出す判定に使う
 const LINK_TRIGGER_CODES = ['on_link'];
+// 【消滅時】のときだけ、消滅前(when_destroy・置換効果/防御用)か消滅後(on_destroy・通常の
+// 消滅時効果)かを選べるUIを出す判定に使う
+const DESTROY_TRIGGER_CODES = ['on_destroy', 'when_destroy'];
 const TIMING_OPTIONS: { code: TimingKey; label: string }[] = [
   { code: 'self', label: '自分' },
   { code: 'opp', label: '相手' },
@@ -3236,12 +3239,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             };
 
             const timing = inferTiming(currentTriggers, triggerConditions, effectiveTriggerFamilies);
+            // 「消滅時」ファミリーボタンは on_destroy(消滅後)/when_destroy(消滅前) のどちらでも
+            // アクティブ表示・トグルできるようにする（DESTROY_TRIGGER_CODES参照）
             const isFamilyActive = (fam: TriggerFamily): boolean =>
-              fam.kind === 'event' ? currentTriggers.includes(fam.code)
+              fam.kind === 'event' ? (fam.code === 'on_destroy'
+                ? currentTriggers.some((t) => DESTROY_TRIGGER_CODES.includes(t))
+                : currentTriggers.includes(fam.code))
                 : Object.values(fam.variants!).some((v) => currentTriggers.includes(v));
 
             const toggleFamily = (fam: TriggerFamily) => {
               if (fam.kind === 'event') {
+                if (fam.code === 'on_destroy' && currentTriggers.includes('when_destroy')) { removeTrigger('when_destroy'); return; }
                 if (currentTriggers.includes(fam.code)) removeTrigger(fam.code); else addTrigger(fam.code);
                 return;
               }
@@ -3822,6 +3830,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         options={[{ code: 'linker', label: 'リンクする' }, { code: 'target', label: 'リンクされる' }]}
                         value={block.linkRole || 'linker'}
                         onChange={(v) => update('linkRole', v === 'target' ? 'target' : 'linker')}
+                        accentColor="#2e7d32"
+                      />
+                    </div>
+                  )}
+
+                  {/* 【消滅時】のときだけ、消滅前（when_destroy・置換効果/フラグメント等の防御用）か
+                      消滅後（on_destroy・通常の消滅時効果）かを選べる */}
+                  {currentTriggers.some((t) => DESTROY_TRIGGER_CODES.includes(t)) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                      <span style={{ fontSize: 11, color: '#666' }}>消滅:</span>
+                      <ButtonGroup
+                        options={[{ code: 'on_destroy', label: '消滅後（通常の消滅時効果）' }, { code: 'when_destroy', label: '消滅前（置換効果・防御用）' }]}
+                        value={currentTriggers.includes('when_destroy') ? 'when_destroy' : 'on_destroy'}
+                        onChange={(v) => {
+                          const wantWhenDestroy = v === 'when_destroy';
+                          const removed = wantWhenDestroy ? 'on_destroy' : 'when_destroy';
+                          const added = wantWhenDestroy ? 'when_destroy' : 'on_destroy';
+                          const next = [...currentTriggers.filter((t) => t !== removed && t !== added), added];
+                          onChange({ ...block, trigger: next[0] || '', triggers: next });
+                        }}
                         accentColor="#2e7d32"
                       />
                     </div>

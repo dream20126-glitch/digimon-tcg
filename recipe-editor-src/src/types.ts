@@ -276,6 +276,11 @@ export interface EffectBlock {
   // 選ぶカードの絞り込みは別物（例:「手札の『クロノモン』の記述があるデジモンカード」）
   // なので targetFilter とは別データとして持つ → step.from_filter に serialize
   fromFilter?: ConditionPair[];
+  // 取得元カードの絞り込み専用: 既に指定ゾーンにいる同名カードを除外する
+  // （例:「自分のテイマーと同じ名称のカードは登場できない」）。
+  // own_tamer=自分のテイマーエリア/own_digimon=自分のバトルエリア/own_any=両方。
+  // JSONでは fromFilter と同じstep.from_filterオブジェクトのexclude_same_name_zoneに同居する
+  fromExcludeSameNameZone?: 'own_tamer' | 'own_digimon' | 'own_any';
   // アクション辞書の hasDeckPosition=true のアクション専用（例: return_deck）。
   // JSON では step.position ('top'/'bottom') に serialize。'both' はエンジン未対応
   // （'top' 以外は全て下扱いになるため、選ぶと実際は「下」と同じ動作になる）
@@ -387,6 +392,7 @@ export interface AltAction {
   // （→ step.from_filter）。効果1のtargetFilter/fromFilterと同じ意味・同じ変換ルール
   targetFilter?: ConditionPair[];
   fromFilter?: ConditionPair[];
+  fromExcludeSameNameZone?: 'own_tamer' | 'own_digimon' | 'own_any';
   // コスト（「〇〇することで」発動）。効果1のcostsと同じ意味・同じ変換ルール
   costs?: CostStep[];
   // 「その後」で繋いだこの効果だけを独立して任意にする（例:「DP+3000し、その後

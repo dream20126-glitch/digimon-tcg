@@ -2943,6 +2943,19 @@ function cardMatchesFilter(card, filter, bs, side) {
   // suspended: レスト/アクティブ状態でのフィルタ（true=レスト状態のみ、false=アクティブ状態のみ）
   if (filter.suspended === true && !card.suspended) return false;
   if (filter.suspended === false && card.suspended) return false;
+  // exclude_same_name_zone: 既に指定ゾーンにいる同名カードを除外する（例:「自分のテイマーと
+  // 同じ名称のカードは登場できない」）。own_tamer=自分のテイマーエリア/own_digimon=自分の
+  // バトルエリア/own_any=両方。盤面状態(bs/side)が無いコンテキストでは判定できないため無視
+  if (filter.exclude_same_name_zone && bs && side) {
+    const p = bs[side];
+    if (p) {
+      const z = filter.exclude_same_name_zone;
+      const existing = [];
+      if (z === 'own_tamer' || z === 'own_any') existing.push(...(p.tamerArea || []));
+      if (z === 'own_digimon' || z === 'own_any') existing.push(...(p.battleArea || []));
+      if (existing.some(c => c && c !== card && c.name === card.name)) return false;
+    }
+  }
   return true;
 }
 
@@ -8015,10 +8028,12 @@ function executeRecipeStep(step, ctx, store, callback) {
           // （既存カードの挙動を変えない）。エディタの「💰コスト増減」UIは符号付きで保存する
           // （減=-N・増=+N）ため、ここでは value をそのままコストの増減量として扱う
           const _summonDelta = (typeof step.value === 'number' && step.value !== 0) ? step.value : 0;
-          // 何枚登場させるか: 対象欄の末尾数値サフィックス（例: "own_card:2"）から読む。
-          // 未指定時は従来通り1枚（既存カードの挙動を変えない）
+          // 何枚登場させるか: step.count（対象欄が空/self系のときエディタの「枚数」欄が
+          // 出力する値）を優先し、無ければ対象欄の末尾数値サフィックス（例: "own_card:2"）
+          // から読む。どちらも未指定なら従来通り1枚（既存カードの挙動を変えない）
           const _summonCountMatch = /:(\d+)$/.exec(String(step.target || ''));
-          const _summonCount = _summonCountMatch ? Math.max(1, parseInt(_summonCountMatch[1], 10)) : 1;
+          const _summonCount = step.count ? Math.max(1, parseInt(step.count, 10) || 1)
+            : (_summonCountMatch ? Math.max(1, parseInt(_summonCountMatch[1], 10)) : 1);
           const _doSummonHT = (c, done) => {
             done = done || callback;
             if (!c) { done(); return; }

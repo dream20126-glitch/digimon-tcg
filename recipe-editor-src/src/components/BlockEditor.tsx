@@ -5016,13 +5016,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </div>
                     );
                   })()}
-                  {/* 対象が「このカード」のときは「アクションの対象数」欄が非表示になるため、
-                      取得元エリア（手札/進化元等）から何枚選ぶかをここで別途指定できるようにする。
-                      例:「進化元から特徴セイバーズを持つデジモンカード1枚を、このカードにリンクできる」
-                      ⚠ エンジン側は現状1枚固定でハードコードしており、この値を未参照（要実装） */}
+                  {/* 対象が「このカード」または「なし」のときは「アクションの対象数」欄が
+                      非表示になるため、取得元エリア（手札/進化元等）から何枚選ぶかをここで
+                      別途指定できるようにする。
+                      例1:「進化元から特徴セイバーズを持つデジモンカード1枚を、このカードにリンクできる」
+                      例2:「自分の手札から、特徴「CS」を持つテイマーカード1枚をコストを支払わず登場できる」
+                      （対象なし・取得元フィルタのみ・1枚超を指定したい場合）。
+                      summon/summon_appear/summon_use かつ対象が空欄のケースはstep.countとして
+                      エンジン実装済み。それ以外（link・evolve、または対象=self/self_card）は
+                      現状エンジン未実装（要実装） */}
                   {(() => {
                     const _fcBase = (effectTarget || '').split(':')[0];
-                    if (_fcBase !== 'self' && _fcBase !== 'self_card') return null;
+                    if (_fcBase !== 'self' && _fcBase !== 'self_card' && _fcBase !== '') return null;
+                    const _fcImplemented = _fcBase === '' && ['summon', 'summon_appear', 'summon_use'].includes(effectAction || '');
                     return (
                       <div style={{ marginTop: 8 }}>
                         <label>枚数（取得元エリアから何枚選ぶか・省略時は1枚）</label>
@@ -5038,7 +5044,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           placeholder="例: 1"
                           style={{ width: 150 }}
                         />
-                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ エンジン未実装（保存はできますが動作しません）</div>
+                        {!_fcImplemented && (
+                          <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ この組み合わせはエンジン未実装（保存はできますが動作しません）</div>
+                        )}
                       </div>
                     );
                   })()}
@@ -6026,6 +6034,34 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               showTypeInTargetFilter={true}
               part="full"
             />
+            {/* 既に場にいる同名カードは除外（例:「自分のテイマーと同じ名称のカードは登場できない」）。
+                対象数/取得元とは独立したチェックのため、条件エディタとは別枠のチェックボックスで持つ */}
+            {!isEditingAlt && (
+              <div style={{ marginTop: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!block.fromExcludeSameNameZone}
+                    onChange={(e) => update('fromExcludeSameNameZone', e.target.checked ? 'own_tamer' : undefined)}
+                  />
+                  既に場にある同名カードは除外する
+                </label>
+                {block.fromExcludeSameNameZone && (
+                  <div style={{ marginTop: 4 }}>
+                    <ButtonGroup
+                      options={[
+                        { code: 'own_tamer', label: '自分のテイマー' },
+                        { code: 'own_digimon', label: '自分のデジモン' },
+                        { code: 'own_any', label: '自分のデジモン/テイマー' },
+                      ]}
+                      value={block.fromExcludeSameNameZone}
+                      onChange={(v) => update('fromExcludeSameNameZone', v || 'own_tamer')}
+                      accentColor="#2e7d32"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

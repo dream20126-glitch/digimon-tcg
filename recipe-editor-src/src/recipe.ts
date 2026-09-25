@@ -211,6 +211,10 @@ function altActionToStepObject(a: AltAction): any {
   if (targetFilterObj) out.filter = targetFilterObj;
   const fromFilterObj = buildFilterObject(a.fromFilter);
   if (fromFilterObj) out.from_filter = fromFilterObj;
+  if (a.fromExcludeSameNameZone) {
+    if (!out.from_filter) out.from_filter = {};
+    out.from_filter.exclude_same_name_zone = a.fromExcludeSameNameZone;
+  }
   const costArr = buildCostArray(a.costs);
   if (costArr) out.cost = costArr;
   // 「その後」等でこの効果だけ独立して任意にする（確認ダイアログをブロック全体から
@@ -871,6 +875,12 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // カードの絞り込み。対象＝このカード自身の条件(filter)とは別データ） ===
   const fromFilterObj = buildFilterObject(b.fromFilter);
   if (fromFilterObj) step.from_filter = fromFilterObj;
+  // 「既に場にある同名カードは除外」（例:「自分のテイマーと同じ名称のカードは登場できない」）。
+  // from_filterに他の条件が無くてもこのフラグだけで絞り込めるよう、無ければオブジェクトを新設する
+  if (b.fromExcludeSameNameZone) {
+    if (!step.from_filter) step.from_filter = {};
+    step.from_filter.exclude_same_name_zone = b.fromExcludeSameNameZone;
+  }
   // === 付与効果 (granted_recipe) ===
   // 対象に一時的にトリガー効果を付与（grant_effect 等で使用）
   if (b.grantedStep && b.grantedStep.trigger && b.grantedStep.action) {
@@ -1254,6 +1264,9 @@ function stepObjectToAltAction(step: any): AltAction {
     negateDeny: !!step?.deny,
     targetFilter: parseFilterObject(step?.filter),
     fromFilter: parseFilterObject(step?.from_filter),
+    fromExcludeSameNameZone: (step?.from_filter && (step.from_filter.exclude_same_name_zone === 'own_tamer'
+      || step.from_filter.exclude_same_name_zone === 'own_digimon' || step.from_filter.exclude_same_name_zone === 'own_any'))
+      ? step.from_filter.exclude_same_name_zone : undefined,
     costs: parseCostArray(step?.cost),
     optional: !!step?.optional,
   };
@@ -1637,6 +1650,9 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             destroyCauseSubject: a?.cause_subject || undefined,
             targetFilter: parseFilterObject(a?.filter),
             fromFilter: parseFilterObject(a?.from_filter),
+            fromExcludeSameNameZone: (a?.from_filter && (a.from_filter.exclude_same_name_zone === 'own_tamer'
+              || a.from_filter.exclude_same_name_zone === 'own_digimon' || a.from_filter.exclude_same_name_zone === 'own_any'))
+              ? a.from_filter.exclude_same_name_zone : undefined,
             costs: parseCostArray(a?.cost),
             optional: !!a?.optional,
           };
@@ -1671,6 +1687,9 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     })(),
     targetFilter: parseFilterObject(step?.filter),
     fromFilter: parseFilterObject(step?.from_filter),
+    fromExcludeSameNameZone: (step?.from_filter && (step.from_filter.exclude_same_name_zone === 'own_tamer'
+      || step.from_filter.exclude_same_name_zone === 'own_digimon' || step.from_filter.exclude_same_name_zone === 'own_any'))
+      ? step.from_filter.exclude_same_name_zone : undefined,
     extras: Object.keys(extras).length > 0 ? JSON.stringify(extras) : '',
   };
 }

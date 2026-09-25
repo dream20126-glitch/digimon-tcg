@@ -1573,6 +1573,7 @@ function CostListEditor({
                 showSubjectSelector={false}
                 conditionsOp={c.conditionsOp || 'and'}
                 onConditionsOpChange={(op) => updateCost(i, { ...c, conditionsOp: op })}
+                targetL2={cCurTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
               />
             </div>
 
@@ -5627,6 +5628,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         showSubjectSelector={false}
                         supportsMultiValue={true}
                         part="full"
+                        targetL2={etCurL1L2.l2 as 'digimon' | 'tamer' | 'card' | ''}
                       />
                     </div>
                   </div>
@@ -5894,6 +5896,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         showSubjectSelector={false}
                         supportsMultiValue={true}
                         part="full"
+                        targetL2={eCurTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
                       />
                     </div>
                   )}
@@ -6129,6 +6132,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       part="buttons"
                       otherOpen={targetFilterOtherOpen}
                       onOtherOpenChange={setTargetFilterOtherOpen}
+                      targetL2={curTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
                     />
                   </div>
                 )}
@@ -6166,6 +6170,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         part="panels"
                         otherOpen={targetFilterOtherOpen}
                         onOtherOpenChange={setTargetFilterOtherOpen}
+                        targetL2={curTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
                       />
                     </div>
                   )}
@@ -7451,6 +7456,11 @@ interface ConditionsHybridEditorProps {
   // 異なる必要があるという集合レベルの制約（例:「名称の異なるカードN枚」）を表す
   // プレースホルダーのため、意味を持つ「対象」（DesignatedGroup）欄でのみ有効にすること
   allowDistinctVariants?: boolean;
+  // 呼び出し元の「対象」(L1/L2)選択から渡すtarget種別。進化元/重ねられているカードカテゴリは
+  // 対象があって初めて意味を持つため、'digimon'/'tamer'のときだけ該当カテゴリを表示する
+  // （'evo_source'はdigimonのみ、'stacked'はdigimon/tamer両方＝テイマー下として流用）。
+  // 未指定時は従来通り常時表示（トリガー条件等、対象概念が無い文脈向けの後方互換）
+  targetL2?: 'digimon' | 'tamer' | 'card' | '';
 }
 // 「異なる」バリアント（名前/Lv/記述/色）。値は不要で、あくまで複数枚選択時の
 // 「互いにこの属性が異なる」という制約を表すプレースホルダー
@@ -7484,14 +7494,14 @@ const NO_VALUE_CONDS = new Set([
   'cond_lv_highest', 'cond_lv_lowest',
   'cond_face_down', 'cond_face_up', 'cond_designated_name',
   'cond_name_distinct', 'cond_lv_distinct', 'cond_description_distinct', 'cond_color_distinct',
-  'cond_target_stack',
+  'cond_target_stack', 'cond_target_evo_source',
 ]);
 
 // === 条件の「種別」を大分類(カテゴリ)+詳細(バリアント)の2段構成にする ===
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'description' | 'zone' | 'ref' | 'designated' | 'stacked' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'description' | 'zone' | 'ref' | 'designated' | 'evo_source' | 'stacked' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -7507,7 +7517,12 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'zone', label: '場所' },
   { value: 'ref', label: '参照' },
   { value: 'designated', label: '指定' },
+  // 進化元 = 対象デジモンの進化元スタックのみ（本体カードは含まない）を対象に含める
+  // という「対象の条件」（cond_target_evo_source）。位置は下記stackedと同じ規約。
+  // targetL2==='digimon'のときのみ表示（visibleCategoryOptions参照）。エンジン未実装（保存のみ可）
+  { value: 'evo_source', label: '進化元' },
   // 重ねられているカード = 対象デジモンの進化元＋一番上のカード（本体）全てを対象に含める
+  // （targetL2==='tamer'のときは「テイマーの下」の意味で流用＝本体/進化元の区別が無いため）
   // という「対象の条件」（cond_target_stack）。位置（指定なし=全体/上/下/選んで）を値として
   // 持てる（evoSourcePositionと同じ規約）。エンジン未実装（保存のみ可）
   { value: 'stacked', label: '重ねられているカード' },
@@ -7646,6 +7661,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   zone: 'cond_zone',
   ref: 'cond_hand_ge',
   designated: DESIGNATED_NAME_COND,
+  evo_source: 'cond_target_evo_source',
   stacked: 'cond_target_stack',
 };
 
@@ -7710,6 +7726,7 @@ function baseToCategory(base: string): CondCategory {
   if (REF_CODE_TO_ZONE_QUANT[base] || isRefFaceCond(base)) return 'ref';
   if (base === DESIGNATED_NAME_COND) return 'designated';
   if (base === 'cond_target_stack') return 'stacked';
+  if (base === 'cond_target_evo_source') return 'evo_source';
   return 'other';
 }
 
@@ -7732,6 +7749,7 @@ function ConditionsHybridEditor({
   supportsMultiValue = false, attackContextActive = false,
   part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false,
   showTypeInTargetFilter = false, conditionsOp, onConditionsOpChange, allowDistinctVariants = false,
+  targetL2 = '',
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
@@ -7759,6 +7777,10 @@ function ConditionsHybridEditor({
     // 「場所」は対象の条件（対象フィルタ・supportsMultiValue）専用。トリガー条件/発動条件
     // ではエンジンが「どのカードの場所を見るか」を特定できないため意味を持たない
     if (c.code === 'zone' && !supportsMultiValue) return false;
+    // 進化元/重ねられているカードは「対象」があって初めて意味を持つ。targetL2未指定
+    // （トリガー条件等、対象概念が無い文脈）では従来通り表示したままにする（後方互換）
+    if (c.code === 'evo_source' && targetL2 && targetL2 !== 'digimon') return false;
+    if (c.code === 'stacked' && targetL2 && targetL2 !== 'digimon' && targetL2 !== 'tamer') return false;
     return true;
   });
 
@@ -8061,6 +8083,22 @@ function ConditionsHybridEditor({
                           </div>
                         );
                       })()
+                    ) : cat.code === 'evo_source' ? (
+                      /* 進化元: 対象デジモンの進化元スタックのみ（本体カードは含まない）の
+                         どの位置を対象にするか。指定なし=スタック全体/上・下=その一端の1枚/
+                         選んで=都度選択（cond_target_stackの「重ねられているカード」＝
+                         スタック＋本体とは別概念） */
+                      <ButtonGroup
+                        options={[
+                          { code: '', label: '指定なし（全体）' },
+                          { code: 'top', label: '上' },
+                          { code: 'bottom', label: '下' },
+                          { code: 'select', label: '選んで' },
+                        ]}
+                        value={c.value || ''}
+                        onChange={(v) => updateAt(i, { value: v })}
+                        accentColor={colors.accent}
+                      />
                     ) : cat.code === 'stacked' ? (
                       /* 重ねられているカード: 対象デジモンの進化元スタックのどの位置を対象にするか。
                          指定なし=スタック全体（従来通り）/上・下=その一端の1枚/選んで=都度選択

@@ -7508,7 +7508,8 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'ref', label: '参照' },
   { value: 'designated', label: '指定' },
   // 重ねられているカード = 対象デジモンの進化元＋一番上のカード（本体）全てを対象に含める
-  // という「対象の条件」。値不要のマーカー条件（cond_target_stack）。エンジン未実装
+  // という「対象の条件」（cond_target_stack）。位置（指定なし=全体/上/下/選んで）を値として
+  // 持てる（evoSourcePositionと同じ規約）。エンジン未実装（保存のみ可）
   { value: 'stacked', label: '重ねられているカード' },
   { value: 'other', label: 'その他' },
 ];
@@ -8060,6 +8061,21 @@ function ConditionsHybridEditor({
                           </div>
                         );
                       })()
+                    ) : cat.code === 'stacked' ? (
+                      /* 重ねられているカード: 対象デジモンの進化元スタックのどの位置を対象にするか。
+                         指定なし=スタック全体（従来通り）/上・下=その一端の1枚/選んで=都度選択
+                         （コスト取得元の「重ねられているカードの位置」evoSourcePositionと同じ規約） */
+                      <ButtonGroup
+                        options={[
+                          { code: '', label: '指定なし（全体）' },
+                          { code: 'top', label: '上' },
+                          { code: 'bottom', label: '下' },
+                          { code: 'select', label: '選んで' },
+                        ]}
+                        value={c.value || ''}
+                        onChange={(v) => updateAt(i, { value: v })}
+                        accentColor={colors.accent}
+                      />
                     ) : typeRedundant ? (
                       <div style={{ fontSize: 11, color: '#888', padding: '4px 6px' }}>
                         （対象で種別を指定済みのため不要）

@@ -256,7 +256,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
 // targetFilter（アクション対象自身の絞り込み）・fromFilter（進化/登場アクションの取得元
 // エリアから選ぶカードの絞り込み）の両方で同じ形を使うため共通化している
 // 値を持たない（チェックのみの）条件コード。buildFilterObject の value 必須ガードを迂回する
-const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest', 'cond_lv_highest', 'cond_lv_lowest']);
+const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest', 'cond_lv_highest', 'cond_lv_lowest', 'cond_target_stack']);
 // DP参照マーカー（cond_dp_le/ge の値が固定数値ではなく「このデジモン/自分/相手/他」のDPを
 // 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する
 const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other']);
@@ -309,6 +309,14 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       case 'cond_name':             f.name = c.value; break;
       case 'cond_name_not':         f.name_not = c.value; break;
       case 'cond_name_contains':    f.name_contains = c.value; break;
+      // 重ねられているカード（対象デジモンの進化元スタック）を対象に含める。
+      // target_stack_position未指定=スタック全体/'top'/'bottom'=その一端の1枚/'select'=都度選択
+      // （エンジン未対応・保存のみ可）
+      case 'cond_target_stack': {
+        f.target_stack = true;
+        if (c.value) f.target_stack_position = c.value;
+        break;
+      }
       case 'cond_description':          f.description = c.value; break;
       case 'cond_description_contains': f.description_contains = c.value; break;
       case 'cond_zone':                  f.zone = c.value; break;
@@ -338,6 +346,7 @@ function parseFilterObject(f: any): ConditionPair[] {
   if (f.description)          out.push({ base: 'cond_description',          value: String(f.description) });
   if (f.description_contains) out.push({ base: 'cond_description_contains', value: String(f.description_contains) });
   if (f.zone)                 out.push({ base: 'cond_zone',                 value: String(f.zone) });
+  if (f.target_stack)         out.push({ base: 'cond_target_stack',         value: f.target_stack_position ? String(f.target_stack_position) : undefined });
   if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
     out.push({ base: 'cond_lv', value: String(f.lv_le) });
   } else {

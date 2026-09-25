@@ -6097,68 +6097,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <ButtonGroup options={tgtL2Options} value={curTgt.l2} onChange={handleTgtL2} accentColor="#b76e00" />
                   </div>
                 )}
-                {/* 対象＝自分/相手→セキュリティ、かつアクションが「セキュリティを破棄」の
-                    ときだけ「上/下/選んで/全て」の位置ボタンを出す。以前は📥場所パネル側で
-                    target:'own_security'を初期値にしていたが、この対象欄と書き込みが競合し
-                    位置選択後に場所/位置の表示が消える不具合があったため、位置はこちらの
-                    対象欄に一本化した（誰の・どの位置のセキュリティかをここで完結できる） */}
-                {curTgt.l2 === 'security' && (getActionVariant(block.action || '')?.base || block.action) === 'security_trash' && (
-                  <div style={{ marginTop: 4 }}>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
-                    <ButtonGroup
-                      options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
-                      value={getActionVariant(block.action || '')?.suffix || ''}
-                      onChange={(suffix) => { if (!suffix) return; changeAction('security_trash' + suffix); }}
-                      accentColor="#b76e00"
-                    />
-                  </div>
-                )}
-                {/* テイマー対象: テイマーの下には本体/進化元の区別が無いため、位置（上/下/選んで）
-                    のみを直接表示する。値はcond_target_stackとしてtargetFilterに保存する
-                    （旧・対象の条件パネル内の専用UIをここへ移設したもの） */}
-                {curTgt.l2 === 'tamer' && (() => {
-                  const tamerStackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
-                  const setTamerStackPosition = (v: string) => {
-                    if (tamerStackCond) {
-                      update('targetFilter', targetFilter.map((c) => (c === tamerStackCond ? { ...c, value: v } : c)));
-                    } else {
-                      update('targetFilter', [...targetFilter, { base: 'cond_target_stack', value: v }]);
-                    }
-                  };
-                  return (
-                    <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置（テイマーの下）</div>
-                      <ButtonGroup
-                        options={[
-                          { code: '', label: '指定なし（全体）' },
-                          { code: 'top', label: '上' },
-                          { code: 'bottom', label: '下' },
-                          { code: 'select', label: '選んで' },
-                        ]}
-                        value={tamerStackCond?.value || ''}
-                        onChange={setTamerStackPosition}
-                        accentColor="#b76e00"
-                      />
-                    </div>
-                  );
-                })()}
                 {/* デジモン対象: 「進化元」（スタックのみ）/「重ねられているカード」（スタック＋本体）
-                    をサブ選択肢として表示し、選んだ場合はさらに位置（上/下/選んで）を表示する。
-                    値はcond_target_evo_source/cond_target_stackとしてtargetFilterに保存する
-                    （旧・対象の条件パネル内のカテゴリボタンをここへ移設したもの） */}
+                    をサブ選択肢として表示する（位置は右の対象数ボックス側に表示）。
+                    値はcond_target_evo_source/cond_target_stackとしてtargetFilterに保存する */}
                 {curTgt.l2 === 'digimon' && (() => {
                   const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                   const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
                   const activeSub: '' | 'evo_source' | 'stacked' = evoCond ? 'evo_source' : stackCond ? 'stacked' : '';
-                  const activeCond = evoCond || stackCond;
                   const setSub = (next: '' | 'evo_source' | 'stacked') => {
                     const cleared = targetFilter.filter((c) => c.base !== 'cond_target_evo_source' && c.base !== 'cond_target_stack');
                     if (!next) { update('targetFilter', cleared); return; }
                     update('targetFilter', [...cleared, { base: next === 'evo_source' ? 'cond_target_evo_source' : 'cond_target_stack', value: '' }]);
-                  };
-                  const setSubPosition = (v: string) => {
-                    if (!activeCond) return;
-                    update('targetFilter', targetFilter.map((c) => (c === activeCond ? { ...c, value: v } : c)));
                   };
                   return (
                     <div style={{ marginTop: 4 }}>
@@ -6172,22 +6121,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         onChange={(v) => setSub(v as '' | 'evo_source' | 'stacked')}
                         accentColor="#b76e00"
                       />
-                      {activeSub && (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
-                          <ButtonGroup
-                            options={[
-                              { code: '', label: '指定なし（全体）' },
-                              { code: 'top', label: '上' },
-                              { code: 'bottom', label: '下' },
-                              { code: 'select', label: '選んで' },
-                            ]}
-                            value={activeCond?.value || ''}
-                            onChange={setSubPosition}
-                            accentColor="#b76e00"
-                          />
-                        </div>
-                      )}
                     </div>
                   );
                 })()}
@@ -6271,6 +6204,77 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       />
                     </>
                   )}
+                  {/* 対象＝自分/相手→セキュリティ、かつアクションが「セキュリティを破棄」の
+                      ときだけ「上/下/選んで/全て」の位置ボタンを出す。以前は📥場所パネル側で
+                      target:'own_security'を初期値にしていたが、この対象欄と書き込みが競合し
+                      位置選択後に場所/位置の表示が消える不具合があったため、位置はこちらの
+                      対象欄に一本化した（誰の・どの位置のセキュリティかをここで完結できる） */}
+                  {curTgt.l2 === 'security' && (getActionVariant(block.action || '')?.base || block.action) === 'security_trash' && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
+                      <ButtonGroup
+                        options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
+                        value={getActionVariant(block.action || '')?.suffix || ''}
+                        onChange={(suffix) => { if (!suffix) return; changeAction('security_trash' + suffix); }}
+                        accentColor="#b76e00"
+                      />
+                    </div>
+                  )}
+                  {/* テイマー対象: テイマーの下には本体/進化元の区別が無いため、位置（上/下/選んで）
+                      のみを直接表示する。値はcond_target_stackとしてtargetFilterに保存する */}
+                  {curTgt.l2 === 'tamer' && (() => {
+                    const tamerStackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
+                    const setTamerStackPosition = (v: string) => {
+                      if (tamerStackCond) {
+                        update('targetFilter', targetFilter.map((c) => (c === tamerStackCond ? { ...c, value: v } : c)));
+                      } else {
+                        update('targetFilter', [...targetFilter, { base: 'cond_target_stack', value: v }]);
+                      }
+                    };
+                    return (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置（テイマーの下）</div>
+                        <ButtonGroup
+                          options={[
+                            { code: '', label: '指定なし（全体）' },
+                            { code: 'top', label: '上' },
+                            { code: 'bottom', label: '下' },
+                            { code: 'select', label: '選んで' },
+                          ]}
+                          value={tamerStackCond?.value || ''}
+                          onChange={setTamerStackPosition}
+                          accentColor="#b76e00"
+                        />
+                      </div>
+                    );
+                  })()}
+                  {/* デジモン対象＋進化元/重ねられているカードのサブ選択肢（左の対象ボックス側）を
+                      選んでいるときだけ、その位置（上/下/選んで）をここに表示する */}
+                  {curTgt.l2 === 'digimon' && (() => {
+                    const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
+                    const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
+                    const activeCond = evoCond || stackCond;
+                    if (!activeCond) return null;
+                    const setSubPosition = (v: string) => {
+                      update('targetFilter', targetFilter.map((c) => (c === activeCond ? { ...c, value: v } : c)));
+                    };
+                    return (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                        <ButtonGroup
+                          options={[
+                            { code: '', label: '指定なし（全体）' },
+                            { code: 'top', label: '上' },
+                            { code: 'bottom', label: '下' },
+                            { code: 'select', label: '選んで' },
+                          ]}
+                          value={activeCond.value || ''}
+                          onChange={setSubPosition}
+                          accentColor="#b76e00"
+                        />
+                      </div>
+                    );
+                  })()}
                   {showTargetFilter && (
                     <div style={{ marginTop: hideCount ? 0 : 8, border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', padding: 8 }}>
                       <ConditionsHybridEditor

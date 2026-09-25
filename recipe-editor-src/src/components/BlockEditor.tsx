@@ -1901,19 +1901,20 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
 // 手札に戻す等、場所/位置/裏表の表示が必要なアクション）を選択中のときだけ、通常のL2一覧に
 // 追加で表示するゾーン系オプション（＝「場所」）。旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが
 // 担っていた「場所」概念を対象欄のL2に統合するためのもの。
-// プレイヤーはこれらのアクションでは対象にならないため含めない。デッキ（行き先は
-// アクション自体の上下指定で表現）・リンクカード（今回対象外）も含めない
+// プレイヤーはこれらのアクションでは対象にならないため含めない。リンクカードは今回対象外
 const TARGET_SEL_L2_FROM_ZONES: Record<string, { code: string; label: string }[]> = {
   own: [
-    { code: 'security', label: 'セキュリティ' },
     { code: 'hand', label: '手札' },
     { code: 'trash', label: 'トラッシュ' },
+    { code: 'security', label: 'セキュリティ' },
+    { code: 'deck', label: 'デッキ' },
     { code: 'battle_area', label: 'バトルエリア' },
   ],
   opp: [
-    { code: 'security', label: 'セキュリティ' },
     { code: 'hand', label: '手札' },
     { code: 'trash', label: 'トラッシュ' },
+    { code: 'security', label: 'セキュリティ' },
+    { code: 'deck', label: 'デッキ' },
     { code: 'battle_area', label: 'バトルエリア' },
   ],
 };
@@ -1925,8 +1926,8 @@ const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
   'most:security': 'most_security_player', 'most:trash': 'most_trash_player', 'most:hand': 'most_hand_player', 'most:evo_source': 'most_evo_source_player',
   // 旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが担っていた場所（手札/トラッシュ/バトルエリア）を
   // 対象欄のL2に統合した新規コード（hasFromZonesアクションのときのみ選択可）
-  'own:hand': 'own_hand', 'own:trash': 'own_trash', 'own:battle_area': 'own_battle_area',
-  'opp:hand': 'opponent_hand', 'opp:trash': 'opponent_trash', 'opp:battle_area': 'opponent_battle_area',
+  'own:hand': 'own_hand', 'own:trash': 'own_trash', 'own:deck': 'own_deck', 'own:battle_area': 'own_battle_area',
+  'opp:hand': 'opponent_hand', 'opp:trash': 'opponent_trash', 'opp:deck': 'opponent_deck', 'opp:battle_area': 'opponent_battle_area',
 };
 const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   '': { l1: '', l2: '' },
@@ -1956,9 +1957,11 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   most_evo_source_player: { l1: 'most', l2: 'evo_source' },
   own_hand: { l1: 'own', l2: 'hand' },
   own_trash: { l1: 'own', l2: 'trash' },
+  own_deck: { l1: 'own', l2: 'deck' },
   own_battle_area: { l1: 'own', l2: 'battle_area' },
   opponent_hand: { l1: 'opp', l2: 'hand' },
   opponent_trash: { l1: 'opp', l2: 'trash' },
+  opponent_deck: { l1: 'opp', l2: 'deck' },
   opponent_battle_area: { l1: 'opp', l2: 'battle_area' },
 };
 
@@ -6247,9 +6250,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </>
                     );
                   })()}
-                  {/* テイマー対象: 「本体」（テイマー自身。cond_target_stack無し）/「下」/「選んで」
+                  {/* テイマー対象: 「本体」（テイマー自身。cond_target_stack無し）/「上」/「下」/「選んで」
                       （テイマーの下に重ねられたカード。cond_target_stackとしてtargetFilterに保存）。
-                      裏表指定（cond_face_down/up、block.conditionsへ保存）は「下」「選んで」の
+                      裏表指定（cond_face_down/up、block.conditionsへ保存）は「本体」以外の
                       ときのみ表示する（「本体」＝テイマー自身には裏表の概念が無いため）。
                       場所/位置/裏表の表示が必要なアクション（hasFromZones）のときのみ表示する */}
                   {actionHasFromZones && curTgt.l2 === 'tamer' && (() => {
@@ -6278,6 +6281,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           <ButtonGroup
                             options={[
                               { code: '', label: '本体' },
+                              { code: 'top', label: '上' },
                               { code: 'bottom', label: '下' },
                               { code: 'select', label: '選んで' },
                             ]}
@@ -6286,7 +6290,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             accentColor="#b76e00"
                           />
                         </div>
-                        {(currentPos === 'bottom' || currentPos === 'select') && (
+                        {currentPos !== '' && (
                           <div style={{ marginTop: 4 }}>
                             <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
                             <ButtonGroup
@@ -6301,14 +6305,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     );
                   })()}
                   {/* デジモン対象＋進化元/重ねられているカードのサブ選択肢（左の対象ボックス側）を
-                      選んでいるときだけ、その位置（上/下/選んで）をここに表示する。
-                      裏表指定は「進化元」のときのみ表示する（「重ねられているカード」は本体
-                      カード＝常に表向きも含むため対象外。block.conditionsへ保存） */}
+                      選んでいるときだけ、その位置（本体/上/下/選んで）をここに表示する。
+                      裏表指定は「本体」以外（上/下/選んで）のときのみ表示する（block.conditionsへ保存） */}
                   {curTgt.l2 === 'digimon' && (() => {
                     const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                     const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
                     const activeCond = evoCond || stackCond;
                     if (!activeCond) return null;
+                    const currentPos = activeCond.value || '';
                     const setSubPosition = (v: string) => {
                       update('targetFilter', targetFilter.map((c) => (c === activeCond ? { ...c, value: v } : c)));
                     };
@@ -6326,17 +6330,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
                           <ButtonGroup
                             options={[
-                              { code: '', label: '指定なし（全体）' },
+                              { code: '', label: '本体' },
                               { code: 'top', label: '上' },
                               { code: 'bottom', label: '下' },
                               { code: 'select', label: '選んで' },
                             ]}
-                            value={activeCond.value || ''}
+                            value={currentPos}
                             onChange={setSubPosition}
                             accentColor="#b76e00"
                           />
                         </div>
-                        {evoCond && (
+                        {currentPos !== '' && (
                           <div style={{ marginTop: 4 }}>
                             <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
                             <ButtonGroup

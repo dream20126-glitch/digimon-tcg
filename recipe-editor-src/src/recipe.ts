@@ -227,7 +227,7 @@ function altActionToStepObject(a: AltAction): any {
 // targetFilter（アクション対象自身の絞り込み）・fromFilter（進化/登場アクションの取得元
 // エリアから選ぶカードの絞り込み）の両方で同じ形を使うため共通化している
 // 値を持たない（チェックのみの）条件コード。buildFilterObject の value 必須ガードを迂回する
-const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest']);
+const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest']);
 // DP参照マーカー（cond_dp_le/ge の値が固定数値ではなく「このデジモン/自分/相手/他」のDPを
 // 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する
 const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other']);
@@ -262,6 +262,10 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       case 'cond_cost':     { const n = num(c.value); if (n !== undefined) { f.cost_le = n; f.cost_ge = n; } break; }
       case 'cond_cost_le':  { const n = num(c.value); if (n !== undefined) f.cost_le = n; break; }
       case 'cond_cost_ge':  { const n = num(c.value); if (n !== undefined) f.cost_ge = n; break; }
+      // cond_dp_highest/lowestと同じく候補プール全体との比較が必要（cardMatchesFilterでは
+      // 判定できず、対象選択処理側で別途絞り込む実装が必要）
+      case 'cond_cost_highest': f.cost_extreme = 'highest'; break;
+      case 'cond_cost_lowest':  f.cost_extreme = 'lowest'; break;
       // カンマ区切り(複数チェック)なら feature_includes 配列(OR・特徴を "/" で分割して部分一致)、
       // 単一値でも feature_includes を使う（cardMatchesFilter は feature_contains を見ないため）
       case 'cond_feature_contains': {
@@ -319,6 +323,8 @@ function parseFilterObject(f: any): ConditionPair[] {
   }
   if (f.dp_extreme === 'highest') out.push({ base: 'cond_dp_highest' });
   else if (f.dp_extreme === 'lowest') out.push({ base: 'cond_dp_lowest' });
+  if (f.cost_extreme === 'highest') out.push({ base: 'cond_cost_highest' });
+  else if (f.cost_extreme === 'lowest') out.push({ base: 'cond_cost_lowest' });
   return out;
 }
 

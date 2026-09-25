@@ -8266,8 +8266,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       // === target=opponent:all + step.condition: per-target フィルタとして条件を評価し、
       //     一致するカード全てを消滅（filter.dp_extreme:'lowest'/'highest' 指定時は
-      //     「最もDPが低い/高い相手のデジモン全て」を対象にする。redirect_attackと同じ規約） ===
-      if ((step.target === 'opponent:all' || step.target === 'own:all') && (step.condition || (step.filter && step.filter.dp_extreme))) {
+      //     「最もDPが低い/高い相手のデジモン全て」、filter.cost_extreme指定時は
+      //     「最も登場コストが低い/高い相手のデジモン全て」を対象にする。redirect_attackと同じ規約） ===
+      if ((step.target === 'opponent:all' || step.target === 'own:all') && (step.condition || (step.filter && (step.filter.dp_extreme || step.filter.cost_extreme)))) {
         const isOwnAll = step.target === 'own:all';
         const tgtPlayer = isOwnAll ? player : opponent;
         const tgtSideTag = isOwnAll ? (ctx.side === 'player' ? 'player' : 'ai') : (ctx.side === 'player' ? 'ai' : 'player');
@@ -8283,6 +8284,12 @@ function executeRecipeStep(step, ctx, store, callback) {
           const dps = matchedIdxs.map(i => parseInt(tgtPlayer.battleArea[i].dp) || 0);
           const extreme = step.filter.dp_extreme === 'lowest' ? Math.min(...dps) : Math.max(...dps);
           matchedIdxs = matchedIdxs.filter(i => (parseInt(tgtPlayer.battleArea[i].dp) || 0) === extreme);
+        }
+        if (step.filter && step.filter.cost_extreme && matchedIdxs.length > 0) {
+          const costOf = (c) => (c.playCost != null ? c.playCost : (c.cost || 0));
+          const costs = matchedIdxs.map(i => parseInt(costOf(tgtPlayer.battleArea[i])) || 0);
+          const extreme = step.filter.cost_extreme === 'lowest' ? Math.min(...costs) : Math.max(...costs);
+          matchedIdxs = matchedIdxs.filter(i => (parseInt(costOf(tgtPlayer.battleArea[i])) || 0) === extreme);
         }
         if (matchedIdxs.length === 0) {
           ctx.addLog('⚠ 条件に一致するカードがありません');
@@ -10493,6 +10500,13 @@ function executeRecipeStep(step, ctx, store, callback) {
         const dps = _raCands.map(i => parseInt(_raPool.battleArea[i].dp) || 0);
         const extreme = _raFilter.dp_extreme === 'lowest' ? Math.min(...dps) : Math.max(...dps);
         _raCands = _raCands.filter(i => (parseInt(_raPool.battleArea[i].dp) || 0) === extreme);
+      }
+      // cost_extreme: 同様に登場コストが最大/最小のものだけに絞る
+      if (_raFilter && _raFilter.cost_extreme && _raCands.length > 0) {
+        const costOf = (c) => (c.playCost != null ? c.playCost : (c.cost || 0));
+        const costs = _raCands.map(i => parseInt(costOf(_raPool.battleArea[i])) || 0);
+        const extreme = _raFilter.cost_extreme === 'lowest' ? Math.min(...costs) : Math.max(...costs);
+        _raCands = _raCands.filter(i => (parseInt(costOf(_raPool.battleArea[i])) || 0) === extreme);
       }
       if (_raCands.length === 0) {
         ctx.addLog('⚠ 対象にできるデジモンがいません');

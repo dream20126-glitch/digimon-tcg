@@ -6558,9 +6558,30 @@ export function fireWhenReturnToHandTriggers(returnedSide, bs, ctxBase, done) {
   return _fireSidedReactionTriggers(returnedSide, 'when_return_to_hand', bs, ctxBase, done);
 }
 
-// アタック対象が変更されたとき → アタック側の自分側が反応
+// アタック対象が変更されたとき → 発動主体(own/opp/both + digimon/tamer/card)で
+// どちらの陣営が反応するかをステップごとに指定できる。attackerSideはアタック対象が
+// 変更されたデジモンがいる側を表す基準値で、own=attackerSideと同じ陣営/opp=反対の陣営/
+// both=両陣営が反応する（on_play等の発動主体scanと同じ own/opp/both の規約）。
+// 発動主体が未指定（「なし」）の場合は反応しない（when_opp_restと同様、明示指定が必要）
+function _whenTargetChangedSubjectFilter(attackerSide, scanSide) {
+  return (step) => {
+    const subj = _resolveStepSubject(step, 'when_target_changed');
+    if (!subj) return false;
+    switch (subj) {
+      case 'own': case 'own_any': case 'other_own': case 'own_digimon': case 'own_tamer': case 'own_card':
+        return scanSide === attackerSide;
+      case 'opp': case 'opp_any': case 'opp_card': case 'opp_digimon': case 'opp_tamer':
+        return scanSide !== attackerSide;
+      case 'both': case 'both_digimon': case 'both_tamer': case 'both_card':
+        return true;
+      default: return false;
+    }
+  };
+}
 export function fireWhenTargetChangedTriggers(attackerSide, bs, ctxBase, done) {
-  return _fireSidedReactionTriggers(attackerSide, 'when_target_changed', bs, ctxBase, done);
+  return _fireSidedReactionTriggers('player', 'when_target_changed', bs, ctxBase, () => {
+    _fireSidedReactionTriggers('ai', 'when_target_changed', bs, ctxBase, done, _whenTargetChangedSubjectFilter(attackerSide, 'ai'));
+  }, _whenTargetChangedSubjectFilter(attackerSide, 'player'));
 }
 
 // 相手のデジモンがプレイヤーにアタックしたとき → アタックされた側（防御側）が反応

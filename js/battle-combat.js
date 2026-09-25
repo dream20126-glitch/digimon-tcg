@@ -54,6 +54,7 @@ let _hooks = {
     try { _triggerEffect(code, card, side, ctx, cb); } catch (_) { cb && cb(); }
   },
   fireOnAttackBothSubjectTriggers: (_attackerSide, cb) => cb && cb(),
+  fireOnAttackOppSubjectTriggers: (_attackerSide, cb) => cb && cb(),
 };
 
 export function setCombatHooks(hooks) {
@@ -1905,9 +1906,12 @@ function afterAtkEffect(atk, atkSlotIdx, callback) {
   _hooks.checkAndTriggerEffect(atk, '【アタック時】', () => {
     // subject:"both"（お互いのターンでアタック時発動）の進化元効果を相手側で反応させる
     _hooks.fireOnAttackBothSubjectTriggers('player', () => {
-      const ctxBase = { bs, addLog, renderAll, updateMemGauge };
-      try { _fireKeywordAttackEffects(atk, 'player', bs, ctxBase, callback); }
-      catch (_) { callback(); }
+      // subject:"opp"（相手のデジモンがアタックしたとき）の進化元効果を相手側で反応させる
+      _hooks.fireOnAttackOppSubjectTriggers('player', () => {
+        const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+        try { _fireKeywordAttackEffects(atk, 'player', bs, ctxBase, callback); }
+        catch (_) { callback(); }
+      });
     });
   });
 }
@@ -3188,9 +3192,12 @@ export function aiAttackPhase(callback) {
       const _afterAtkTime = () => {
         // subject:"both"（お互いのターンでアタック時発動）の進化元効果をプレイヤー側で反応させる
         _hooks.fireOnAttackBothSubjectTriggers('ai', () => {
-          if (window._fireWhenOppAttack) {
-            window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
-          } else { cb(); }
+          // subject:"opp"（相手のデジモンがアタックしたとき）の進化元効果をプレイヤー側で反応させる
+          _hooks.fireOnAttackOppSubjectTriggers('ai', () => {
+            if (window._fireWhenOppAttack) {
+              window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
+            } else { cb(); }
+          });
         });
       };
       // 常にスキャン（付与効果・誘発も拾う。効果が無ければ即コールバック）
@@ -4424,9 +4431,12 @@ export function aiScriptAttack(attackerKey, target, onDone) {
         // subject:"both"（お互いのターンでアタック時発動）の進化元効果をプレイヤー側で反応させる
         // （デジモン対象/プレイヤー対象どちらのアタックでも発動するため targetMode で絞らない）
         _hooks.fireOnAttackBothSubjectTriggers('ai', () => {
-          if (targetMode !== 'digimon' && window._fireWhenOppAttack) {
-            window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
-          } else { cb(); }
+          // subject:"opp"（相手のデジモンがアタックしたとき）の進化元効果をプレイヤー側で反応させる
+          _hooks.fireOnAttackOppSubjectTriggers('ai', () => {
+            if (targetMode !== 'digimon' && window._fireWhenOppAttack) {
+              window._fireWhenOppAttack('ai', bs, { bs, addLog, renderAll, updateMemGauge }, cb);
+            } else { cb(); }
+          });
         });
       };
       // 常にスキャン（付与効果・誘発も拾う。効果が無ければ即コールバック）

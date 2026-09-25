@@ -2117,7 +2117,7 @@ const ZONE_INCREASE_OPTIONS: { code: string; label: string; implemented: boolean
   { code: 'hand', label: '手札', implemented: false },
   { code: 'security', label: 'セキュリティ', implemented: false },
   { code: 'trash', label: 'トラッシュ', implemented: false },
-  { code: 'evo_source', label: '進化元', implemented: false },
+  { code: 'evo_source', label: '進化元', implemented: true },
 ];
 
 // よく使うアクション: カードDB(data/cards.json)のレシピ内action出現数を集計し、

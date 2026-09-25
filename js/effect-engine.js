@@ -1517,6 +1517,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           window._fxCardMove(card, '手札', 'トラッシュ', done);
         } else { setTimeout(done, 300); }
       };
+      // 「手札が破棄されたとき」(when_hand_discard) は、コスト支払いの途中で即時発動させず、
+      // 他の「したとき」系反応と同様キューに積んで、元の効果の解決が終わってから発火する
+      const _cdFinishCallback = () => {
+        enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueued, [ctx.side]);
+        callback();
+      };
       const runDiscards = (cards, finalize) => {
         let i = 0;
         const next = () => {
@@ -1528,13 +1534,13 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       if (!canShowPicker) {
         // AI 側 / UI なし: 条件を満たす末尾 N 枚を自動破棄
         const auto = _cdHandPool.slice(-n);
-        runDiscards(auto, () => callback());
+        runDiscards(auto, _cdFinishCallback);
         return;
       }
       // プレイヤー: 手札ピッカーで N 枚選択 → 破棄（条件があれば絞り込んだ候補のみ表示）
       showHandDiscardPicker(_cdHandPool.slice(), n, (picked) => {
         if (!picked || picked.length < n) { callback(false); return; }
-        runDiscards(picked, () => callback());
+        runDiscards(picked, _cdFinishCallback);
       });
       break;
     }
@@ -2925,6 +2931,7 @@ function cardMatchesFilter(card, filter, bs, side) {
   if (filter.cardno && card.cardNo !== filter.cardno) return false;
   if (filter.cardno_includes && !(card.cardNo || '').includes(filter.cardno_includes)) return false;
   if (filter.name && !cardHasName(card, filter.name, true)) return false;
+  if (filter.name_not && cardHasName(card, filter.name_not, true)) return false;
   const _nameInc = filter.name_includes || filter.name_contains;
   if (_nameInc && !cardHasName(card, _nameInc, false)) return false;
   if (filter.description || filter.description_contains) {
@@ -5344,6 +5351,11 @@ function _fireWhenEvoDiscardTriggersQueued(cause, discardedSide, bs, ctxBase, co
   fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, callback, containerType);
 }
 
+// fireWhenHandDiscardTriggers 用の同様のキュー発火ラッパー
+function _fireWhenHandDiscardTriggersQueued(discardedSide, bs, ctxBase, callback) {
+  fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, callback);
+}
+
 // ===== 消滅チェック =====
 // callback: 消滅した全カードの 演出 + on_destroy リアクションが完了したら呼ぶ
 
@@ -6606,8 +6618,37 @@ export function fireWhenSecurityDecreaseTriggers(decreasedSide, bs, ctxBase, don
 // デッキが自分の効果で増えたとき（見た後に戻す／デッキに戻す等）→ 増えた側の自分側が反応
 // ピョコモン(BT26-001)用。ドロー/初期配布等の通常処理では呼ばない（あくまで効果でデッキが
 // 増えた場合のみ、呼び出し側で判断して発火する）
+// step.zone_increase が明示されている場合は 'deck'（または未指定＝後方互換で無条件一致）の
+// ものだけを対象にする。'evo_source' 等、他ゾーン向けに明示されたステップはここでは発火しない
+// （進化元向けは _fireEvoSourceIncreaseTrigger で別途、そのデジモン自身の視点のみ発火する）
+function _zoneIncreaseMatches(step, zone) {
+  const zi = step && step.zone_increase;
+  if (!zi) return true;
+  const list = Array.isArray(zi) ? zi : [zi];
+  return list.includes(zone);
+}
 export function fireWhenDeckIncreaseTriggers(increasedSide, bs, ctxBase, done) {
-  return _fireSidedReactionTriggers(increasedSide, 'when_deck_increase', bs, ctxBase, done);
+  return _fireSidedReactionTriggers(increasedSide, 'when_deck_increase', bs, ctxBase, done, (step) => _zoneIncreaseMatches(step, 'deck'));
+}
+
+// このデジモン自身の進化元(スタック)に、効果でカードが置かれたとき → そのデジモン自身の
+// when_deck_increase(zone_increase:"evo_source") レシピのみを、そのカードの視点で発火する。
+// アンドロモン(BT26-054)「このデジモンの進化元に特徴「CS」を持つデジモンカードが効果で
+// 置かれたとき〜」等、「自分自身のスタックに限る」反応のため、盤面全体をスキャンする
+// _fireSidedReactionTriggers系とは別に、対象カード1枚だけを見て発火する専用処理にする
+export function fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, done) {
+  const finish = () => { try { done && done(); } catch (_) {} };
+  if (!digi) { finish(); return; }
+  const r = _parseCardRecipe(digi);
+  const steps = r && _lookupTriggerSteps(r, 'when_deck_increase', digi);
+  const matched = Array.isArray(steps) ? steps.filter(s => {
+    const zi = s && s.zone_increase;
+    const list = Array.isArray(zi) ? zi : (zi ? [zi] : []);
+    return list.includes('evo_source');
+  }) : [];
+  if (matched.length === 0) { finish(); return; }
+  try { _runReactionEffect({ card: digi, sourceCard: digi, recipe: matched }, side, bs, ctxBase, finish); }
+  catch (_) { finish(); }
 }
 
 // 手札に戻ったとき → 戻った側が反応
@@ -6655,8 +6696,39 @@ export function fireWhenOppAttackTriggers(attackerSide, bs, ctxBase, done) {
 // でのみ checkAndTriggerEffect 経由で発動するため、ここでは相手側の反応分だけを
 // 追加で拾う（subject:"both" 以外は無視 = 二重発火しない）
 export function fireOnAttackBothSubjectTriggers(attackerSide, bs, ctxBase, done) {
+  if (bs) bs._currentAttackerSide = attackerSide;
   const reactSide = attackerSide === 'player' ? 'ai' : 'player';
   return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && _resolveStepSubject(step, 'on_attack') === 'both');
+}
+
+// on_attack ステップに subject:"opp" が付いている場合（例: アンドロモン進化元「相手の
+// デジモンがアタックしたとき、アタックの対象をこのデジモンに変更できる」）、攻撃側の
+// 反対側（防御側）のカードが持つ on_attack 効果を発動する。subject:"both" と同様、
+// 通常の on_attack（subject無し＝発動元自身のアタック）とは別枠で追加スキャンする
+export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done) {
+  if (bs) bs._currentAttackerSide = attackerSide;
+  const reactSide = attackerSide === 'player' ? 'ai' : 'player';
+  return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && _resolveStepSubject(step, 'on_attack') === 'opp');
+}
+
+// 手札のカードが（進化元/テイマー下ではなく）効果で破棄されたとき → 発動主体(subject)で
+// 判定し、両陣営をスキャンして反応させる。プルートモン(BT26-059)「手札が破棄されたとき」等。
+// when_evo_discard（進化元/テイマー下スタックの破棄）とは別トリガーキー。
+// subject未指定時は不発火（when_evo_discard等と同じ規約）
+export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done) {
+  const subjectMatches = (step, cardSide) => {
+    const subj = _resolveStepSubject(step, 'when_hand_discard');
+    if (!subj) return false;
+    switch (subj) {
+      case 'own': case 'own_any': case 'own_card': return discardedSide === cardSide;
+      case 'opp': case 'opp_any': case 'opp_card': return discardedSide !== cardSide;
+      case 'both': case 'both_card': return true;
+      default: return false;
+    }
+  };
+  return _fireSidedReactionTriggers('player', 'when_hand_discard', bs, ctxBase, () => {
+    _fireSidedReactionTriggers('ai', 'when_hand_discard', bs, ctxBase, done, (step) => subjectMatches(step, 'ai'));
+  }, (step) => subjectMatches(step, 'player'));
 }
 
 // デジモンの進化元／テイマーの下が破棄されたとき → 発動主体(step.subject)で判定し、
@@ -10118,6 +10190,25 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _pudBottom = step.position === 'bottom';
       const _pudFaceDown = Array.isArray(step.options) && step.options.includes('face_down');
 
+      // from:"stacked_cards"（このデジモンに重ねられているカードの中から）→ このデジモン
+      // 自身の進化元の上/下に置き直す＝スタック内の並べ替え（ハイアンドロモン BT26-058等。
+      // 「このデジモンに重ねられているカードを上から1枚、このデジモンの進化元の下に置く」）。
+      // target省略時もこの from が来たら自分自身の操作として扱う（他に解釈のしようがないため）
+      if ((_pudSelf || !step.target) && step.from === 'stacked_cards' && ctx.card) {
+        const src = ctx.card;
+        if (!Array.isArray(src.stack)) src.stack = [];
+        const n = Math.min(Math.max(1, step.value || 1), src.stack.length);
+        if (n <= 0) { callback(); break; }
+        const moved = src.stack.splice(0, n); // 上からn枚（stack[0]が直前進化形＝最上位）
+        if (_pudFaceDown) moved.forEach(c => { c._faceDown = true; });
+        if (_pudBottom) src.stack.push(...moved); else src.stack.unshift(...moved);
+        ctx.addLog('🃏 「' + src.name + '」に重ねられているカードを上から' + moved.length + '枚、進化元の' + (_pudBottom ? '下' : '上') + 'に置き直す');
+        ctx.renderAll();
+        if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+        callback();
+        break;
+      }
+
       const placeUnderAndFinish = (digi, cardToPlace, removeFromSource) => {
         if (!digi || !cardToPlace) { callback(); return; }
         if (!digi.stack) digi.stack = [];
@@ -10127,7 +10218,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.addLog('🃏 「' + digi.name + '」の進化元の' + (_pudBottom ? '下' : '上') + 'に「' + cardToPlace.name + '」を置く' + (_pudFaceDown ? '（裏向き）' : ''));
         ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
-        callback();
+        // 「進化元に効果でカードが置かれたとき」(when_deck_increase + zone_increase:"evo_source")
+        // をそのデジモン自身の視点で発火（アンドロモン BT26-054等）
+        const _pudCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+        fireWhenEvoSourceIncreaseTriggers(digi, ctx.side, ctx.bs, _pudCtxBase, callback);
       };
 
       const resolveDigimonThen = (next) => {
@@ -10640,7 +10734,13 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.bs._redirectedAttack = { side: _raPoolSide, idx: selectedIdx, cardNo: newTarget.cardNo };
         ctx.addLog('🎯 アタックの対象を「' + newTarget.name + '」に変更');
         ctx.renderAll();
-        callback();
+        // 「アタックの対象が変更されたとき」(when_target_changed) 発火。attackerSideは
+        // 実際にアタックしている側（ctx.sideはsubject:opp/both反応中だと反応元の
+        // 所有側になっているため、checkAndTriggerEffect/fireOnAttackXSubjectTriggersが
+        // 記録した bs._currentAttackerSide を優先し、無ければ ctx.side にフォールバックする）
+        const _wtcAttackerSide = ctx.bs._currentAttackerSide || ctx.side;
+        const _wtcCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+        fireWhenTargetChangedTriggers(_wtcAttackerSide, ctx.bs, _wtcCtxBase, callback);
       };
       if (_raCands.length === 1 || effectiveSide === 'ai') { _raFinish(_raCands[0]); break; }
       showTargetSelection(_raRowId, _raCands, 'アタック対象にするデジモンを選んでください', '#ff4444', _raFinish);

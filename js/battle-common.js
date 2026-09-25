@@ -10,7 +10,7 @@ import { addLog } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallbacks, doIkuMove } from './battle-render.js';
 import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, showDrawEffect } from './battle-phase.js';
 import { doPlay, offerAssemblyThenPlay, doEvolve, doEvolveIku, doEvolveFromEffect, doLink, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, showOptionEffect, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack, doTrainingEffect, getAppGattaiCandidates, doAppGattaiEvolve } from './battle-combat.js';
-import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE, fireOnAttackBothSubjectTriggers as _fireOnAttackBothSubjectEE, fireOnMainPhaseStartTriggers as _fireOnMainPhaseStartEE, fireOnOppMainPhaseStartTriggers as _fireOnOppMainPhaseStartEE, fireDelegatedReactionTriggers as _fireDelegatedReactionEE } from './effect-engine.js';
+import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE, fireOnAttackBothSubjectTriggers as _fireOnAttackBothSubjectEE, fireOnAttackOppSubjectTriggers as _fireOnAttackOppSubjectEE, fireWhenTargetChangedTriggers as _fireWhenTargetChangedEE, fireOnMainPhaseStartTriggers as _fireOnMainPhaseStartEE, fireOnOppMainPhaseStartTriggers as _fireOnOppMainPhaseStartEE, fireDelegatedReactionTriggers as _fireDelegatedReactionEE } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxBuffStatus, fxShuffle } from './battle-fx.js';
 import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js';
 
@@ -117,6 +117,10 @@ export function checkAndTriggerEffect(card, triggerType, callback, side, already
     side = inPlayer ? 'player' : 'ai';
   }
   const triggerCode = TRIGGER_CODE_MAP[triggerType] || triggerType;
+  // when_target_changed（アタックの対象が変更されたとき）用: 現在アタック中のカードの
+  // 所属側を記録しておく。redirect_attackアクション実行時（subject:opp/both の反応中で
+  // ctx.sideが反応元カードの所有者になっている場合も含む）に、本当の攻撃側を参照するため
+  if (triggerCode === 'on_attack') bs._currentAttackerSide = side;
   // チュートリアル通知（既存の動作には影響なし、active=falseなら何もしない）
   _notifyTutorial(triggerCode, card, side);
   const context = makeEffectContext(card, side);
@@ -194,6 +198,13 @@ export function fireOnAttackBothSubjectTriggersWrap(attackerSide, cb) {
   catch (e) { console.error('[fireOnAttackBothSubjectTriggers]', e); cb && cb(); }
 }
 
+// ===== fireOnAttackOppSubjectTriggers (wrapper) =====
+// subject:"opp" の on_attack（進化元含む）を、アタック宣言側の反対陣営（防御側）に対して発火させる
+export function fireOnAttackOppSubjectTriggersWrap(attackerSide, cb) {
+  try { _fireOnAttackOppSubjectEE(attackerSide, bs, makeEffectContext(null, attackerSide === 'player' ? 'ai' : 'player'), cb); }
+  catch (e) { console.error('[fireOnAttackOppSubjectTriggers]', e); cb && cb(); }
+}
+
 // ===== fireOnMainPhaseStartTriggers (wrapper) =====
 // 【自分のメインフェイズ開始時】(on_main_phase_start) を turnSide 自身の盤面で発火させる
 export function fireOnMainPhaseStartTriggersWrap(turnSide, cb) {
@@ -240,6 +251,7 @@ export function buildCombatHooks() {
     expireBuffs: expireBuffsWrap,
     triggerEffect: triggerEffectWrap,
     fireOnAttackBothSubjectTriggers: fireOnAttackBothSubjectTriggersWrap,
+    fireOnAttackOppSubjectTriggers: fireOnAttackOppSubjectTriggersWrap,
   };
 }
 

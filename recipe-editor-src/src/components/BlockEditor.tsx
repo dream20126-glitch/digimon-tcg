@@ -5565,6 +5565,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         {(() => {
           // alt_evolve/burst_evolve/アプ合体/ジョグレス進化は対象という概念自体が無い
           if (isSpecialEvolveTrigger) return null;
+          // 「破棄する」等hasFromZonesフラグ付きアクション、「〇〇に置く」「手札に戻す」の
+          // ときだけ、通常のL2一覧に手札/トラッシュ/セキュリティ/デッキ/バトルエリア/
+          // リンクカードを追加する（効果1と同じ判定。効果2以降でも同じ場所選択肢が必要なため
+          // isEditingAlt分岐に入る前に、対象の効果(effectAction)基準で共通計算する）
+          const commonActionHasFromZones = !!dict.actions.find(
+            (a) => a.code === (getActionVariant(effectAction || '')?.base || effectAction)
+          )?.hasFromZones || PLACE_ACTION_CODES.has(effectAction || '') || effectAction === 'bounce';
+          const commonFromZoneExcludeCodes = effectAction === 'add_to_hand' ? new Set(['hand', 'trash', 'battle_area']) : null;
           // 効果2以降（代替アクション）を編集中は「デジモン+テイマー同時選択(AND)」だけ省略する
           // （AND側は altActions を入れ子で使う実装のため、代替アクション自身には適用できない）。
           // OR側（対象コード=card+cond_typeフィルタ）はaltActionsのネストが不要なので効果1と同様に対応する。
@@ -5573,7 +5581,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eBase = (effectTarget || '').split(':')[0];
             const eSuffix = (effectTarget || '').substring(eBase.length);
             const eCurTgt = TARGET_SEL_CODE_TO_L1L2[eBase] || { l1: '', l2: '' };
-            const eL2Options = eCurTgt.l1 === 'most' ? MOST_PLAYER_METRICS : (TARGET_SEL_L2[eCurTgt.l1] || []);
+            const eL2Options = eCurTgt.l1 === 'most' ? MOST_PLAYER_METRICS : [
+              ...(TARGET_SEL_L2[eCurTgt.l1] || []),
+              ...(commonActionHasFromZones ? (TARGET_SEL_L2_FROM_ZONES[eCurTgt.l1] || []).filter((o) => !commonFromZoneExcludeCodes?.has(o.code)) : []),
+            ];
             const eHasDigimonTamer = (eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'other_own' || eCurTgt.l1 === 'both');
             const eDigimonCode = TARGET_SEL_L1L2_TO_CODE[eCurTgt.l1 + ':digimon'];
             const eTamerCode = TARGET_SEL_L1L2_TO_CODE[eCurTgt.l1 + ':tamer'];
@@ -5750,13 +5761,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // （PLACE_ACTION_CODES、辞書側はhasFaceOptionしか立っておらずhasFromZonesを
           // 見ないため個別に判定）・「手札に戻す」（bounce、辞書側にフラグが無いため個別判定）
           // のときだけ、通常のL2一覧に手札/トラッシュ/セキュリティ/デッキ/バトルエリアを
-          // 追加する（旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPの「場所」選択を対象欄に統合するためのもの）
-          const actionHasFromZones = !!dict.actions.find(
-            (a) => a.code === (getActionVariant(block.action || '')?.base || block.action)
-          )?.hasFromZones || PLACE_ACTION_CODES.has(block.action || '') || block.action === 'bounce';
-          // 「手札に加える」は手札/トラッシュ/バトルエリアからの取得元にはならないため
-          // （手札を手札に加える等は意味を成さない）、場所の選択肢から除く
-          const fromZoneExcludeCodes = block.action === 'add_to_hand' ? new Set(['hand', 'trash', 'battle_area']) : null;
+          // 追加する（旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPの「場所」選択を対象欄に統合するためのもの）。
+          // isEditingAlt分岐に入る前に計算済みのcommon版をそのまま使う（!isEditingAlt時は
+          // effectAction===block.actionなので同じ結果になる）
+          const actionHasFromZones = commonActionHasFromZones;
+          const fromZoneExcludeCodes = commonFromZoneExcludeCodes;
           const tgtL2Options = curTgt.l1 === 'most' ? MOST_PLAYER_METRICS : [
             ...(TARGET_SEL_L2[curTgt.l1] || []),
             ...(actionHasFromZones ? (TARGET_SEL_L2_FROM_ZONES[curTgt.l1] || []).filter((o) => !fromZoneExcludeCodes?.has(o.code)) : []),

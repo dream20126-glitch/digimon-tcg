@@ -209,7 +209,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   }
   const targetFilterObj = buildFilterObject(a.targetFilter);
   if (targetFilterObj) out.filter = targetFilterObj;
-  const fromFilterObj = buildFilterObject(a.fromFilter);
+  const fromFilterObj = buildFilterObjectMaybeOr(a.fromFilter, a.fromFilterOp);
   if (fromFilterObj) out.from_filter = fromFilterObj;
   if (a.fromExcludeSameNameZone) {
     if (!out.from_filter) out.from_filter = {};
@@ -261,6 +261,25 @@ const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'con
 // 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する
 const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other']);
 
+// buildFilterObjectのOR対応版。op==='or'かつ条件が2つ以上あれば、各条件を単独filterに
+// 分解し {or:[...]} として返す（filter.orはcardMatchesFilterが再帰的にOR評価する。
+// エンジン対応済み。例:「名前がタイタモン」か「特徴がタイタン族」のどちらか）
+function buildFilterObjectMaybeOr(pairs: ConditionPair[] | undefined, op: 'and' | 'or' | undefined): Record<string, any> | null {
+  if (!Array.isArray(pairs) || pairs.length === 0) return null;
+  if (op === 'or' && pairs.length >= 2) {
+    const orFilters = pairs.map((p) => buildFilterObject([p])).filter((f): f is Record<string, any> => !!f);
+    return orFilters.length > 0 ? { or: orFilters } : null;
+  }
+  return buildFilterObject(pairs);
+}
+// parseFilterObjectのOR対応版。f.orが配列なら各要素を1条件ずつ復元しop='or'を返す
+function parseFilterObjectWithOp(f: any): { conds: ConditionPair[]; op: 'and' | 'or' } {
+  if (f && Array.isArray(f.or) && f.or.length > 0) {
+    const conds = f.or.map((sub: any) => parseFilterObject(sub)[0]).filter((c: ConditionPair | undefined): c is ConditionPair => !!c);
+    return { conds, op: 'or' };
+  }
+  return { conds: parseFilterObject(f), op: 'and' };
+}
 function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, any> | null {
   if (!Array.isArray(pairs) || pairs.length === 0) return null;
   const f: Record<string, any> = {};
@@ -947,7 +966,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   }
   // === fromFilter → step.from_filter（進化/登場アクション専用。取得元エリアから選ぶ
   // カードの絞り込み。対象＝このカード自身の条件(filter)とは別データ） ===
-  const fromFilterObj = buildFilterObject(b.fromFilter);
+  const fromFilterObj = buildFilterObjectMaybeOr(b.fromFilter, b.fromFilterOp);
   if (fromFilterObj) step.from_filter = fromFilterObj;
   // 「既に場にある同名カードは除外」（例:「自分のテイマーと同じ名称のカードは登場できない」）。
   // from_filterに他の条件が無くてもこのフラグだけで絞り込めるよう、無ければオブジェクトを新設する
@@ -1375,7 +1394,8 @@ function stepObjectToAltAction(step: any): AltAction {
     negateTargetTrigger: step?.target_trigger === 'on_play' || step?.target_trigger === 'on_evolve' ? step.target_trigger : undefined,
     negateDeny: !!step?.deny,
     targetFilter: parseFilterObject(step?.filter),
-    fromFilter: parseFilterObject(step?.from_filter),
+    fromFilter: parseFilterObjectWithOp(step?.from_filter).conds,
+    fromFilterOp: parseFilterObjectWithOp(step?.from_filter).op,
     fromExcludeSameNameZone: (step?.from_filter && (step.from_filter.exclude_same_name_zone === 'own_tamer'
       || step.from_filter.exclude_same_name_zone === 'own_digimon' || step.from_filter.exclude_same_name_zone === 'own_any'))
       ? step.from_filter.exclude_same_name_zone : undefined,
@@ -1799,7 +1819,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             destroyCause: a?.cause === 'battle' || a?.cause === 'effect' ? a.cause : undefined,
             destroyCauseSubject: a?.cause_subject || undefined,
             targetFilter: parseFilterObject(a?.filter),
-            fromFilter: parseFilterObject(a?.from_filter),
+            fromFilter: parseFilterObjectWithOp(a?.from_filter).conds,
+            fromFilterOp: parseFilterObjectWithOp(a?.from_filter).op,
             fromExcludeSameNameZone: (a?.from_filter && (a.from_filter.exclude_same_name_zone === 'own_tamer'
               || a.from_filter.exclude_same_name_zone === 'own_digimon' || a.from_filter.exclude_same_name_zone === 'own_any'))
               ? a.from_filter.exclude_same_name_zone : undefined,
@@ -1836,7 +1857,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       };
     })(),
     targetFilter: parseFilterObject(step?.filter),
-    fromFilter: parseFilterObject(step?.from_filter),
+    fromFilter: parseFilterObjectWithOp(step?.from_filter).conds,
+    fromFilterOp: parseFilterObjectWithOp(step?.from_filter).op,
     fromExcludeSameNameZone: (step?.from_filter && (step.from_filter.exclude_same_name_zone === 'own_tamer'
       || step.from_filter.exclude_same_name_zone === 'own_digimon' || step.from_filter.exclude_same_name_zone === 'own_any'))
       ? step.from_filter.exclude_same_name_zone : undefined,

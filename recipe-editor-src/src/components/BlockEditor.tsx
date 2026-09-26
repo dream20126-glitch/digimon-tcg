@@ -2774,6 +2774,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectOptions = isEditingAlt ? (editingAlt!.options || []) : (block.options || []);
   const effectOptional = isEditingAlt ? !!editingAlt!.optional : !!block.optional;
   const effectFromFilter = isEditingAlt ? (editingAlt!.fromFilter || []) : (block.fromFilter || []);
+  const effectFromFilterOp = isEditingAlt ? (editingAlt!.fromFilterOp || 'and') : (block.fromFilterOp || 'and');
   const effectTargetFilter = isEditingAlt ? (editingAlt!.targetFilter || []) : targetFilter;
   const showRetrievalFilterEffective = !!effectAction && BUILTIN_FROM_ZONE_ACTIONS.has(effectAction);
   function updateEffect(patch: Record<string, any>) {
@@ -6219,6 +6220,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               supportsMultiValue={true}
               showTypeInTargetFilter={true}
               part="full"
+              conditionsOp={effectFromFilterOp}
+              onConditionsOpChange={(op) => updateEffect({ fromFilterOp: op })}
             />
             {/* 既に場にいる同名カードは除外（例:「自分のテイマーと同じ名称のカードは登場できない」）。
                 対象数/取得元とは独立したチェックのため、条件エディタとは別枠のチェックボックスで持つ */}

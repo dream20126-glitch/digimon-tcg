@@ -276,6 +276,9 @@ export interface EffectBlock {
   // 選ぶカードの絞り込みは別物（例:「手札の『クロノモン』の記述があるデジモンカード」）
   // なので targetFilter とは別データとして持つ → step.from_filter に serialize
   fromFilter?: ConditionPair[];
+  // fromFilterの複数条件の結合方法。'or'時は各条件を単独のfilterに分解しstep.from_filter.or
+  // （配列）として出力する（例:「名前がタイタモン」か「特徴がタイタン族」のどちらか）
+  fromFilterOp?: 'and' | 'or';
   // 取得元カードの絞り込み専用: 既に指定ゾーンにいる同名カードを除外する
   // （例:「自分のテイマーと同じ名称のカードは登場できない」）。
   // own_tamer=自分のテイマーエリア/own_digimon=自分のバトルエリア/own_any=両方。
@@ -403,6 +406,7 @@ export interface AltAction {
   // （→ step.from_filter）。効果1のtargetFilter/fromFilterと同じ意味・同じ変換ルール
   targetFilter?: ConditionPair[];
   fromFilter?: ConditionPair[];
+  fromFilterOp?: 'and' | 'or';
   fromExcludeSameNameZone?: 'own_tamer' | 'own_digimon' | 'own_any';
   // コスト（「〇〇することで」発動）。効果1のcostsと同じ意味・同じ変換ルール
   costs?: CostStep[];

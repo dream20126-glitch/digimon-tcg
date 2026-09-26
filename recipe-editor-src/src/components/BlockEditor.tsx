@@ -2156,7 +2156,7 @@ function TriggerSubjectStagedPicker({
           )}
         </div>
       )}
-      {!hasDigimonTamer && cur.l1 !== 'self' && cur.l1 !== 'both' && (
+      {!hasDigimonTamer && cur.l1 !== 'self' && (
         <div style={{ marginTop: 4 }}>
           <ButtonGroup options={l2Options} value={effectiveL2} onChange={handleL2} accentColor={accentColor} />
         </div>

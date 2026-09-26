@@ -1074,7 +1074,7 @@ export function doEvolve(card, handIdx, slotIdx) {
 // 先頭の候補を自動選択する（既知の簡略化。多くのカードは特定名称のテイマー1体だけを
 // 指定するため実用上は問題にならない想定）
 function _doBurstEvolve(card, base, handIdx, slotIdx, burstEvo) {
-  const cands = _filterBurstEvolveTamerCandidates(bs, 'player', burstEvo.tamerConditions, burstEvo.tamerConditionsOp);
+  const cands = _filterBurstEvolveTamerCandidates(bs, 'player', burstEvo.tamerConditions, burstEvo.tamerConditionsOp, burstEvo.tamerConditionsChain);
   if (cands.length === 0) { addLog('🚨 バースト進化に必要なテイマーがいません‼'); return; }
   const chosen = cands[0];
   const idx = bs.player.tamerArea.indexOf(chosen);

@@ -16,6 +16,40 @@ function pairToString(p: ConditionPair): string {
   return s;
 }
 
+// legacyPairs（従来のフラット条件配列）とchain（条件チェーンUIの入力）から、実際に
+// JSON出力すべき内容を1本化して決定する。chainが指定されていれば常にそちらを正とし
+// （legacyPairsは無視。呼び出し側UIがchain編集時にlegacyPairsを空にしてもJSON出力が
+// 欠落しないようにするため）、1セグメントに収束するならflatPairsとして返し（従来通りの
+// シンプルな出力になる）、2セグメント以上ならchainOutも返す（呼び出し側はflatPairsを
+// 先頭条件のフォールバックとして書きつつ、chainOutがあればそちらを追加出力する）
+function resolveChainField(legacyPairs: ConditionPair[] | undefined, chain: ConditionChainEntry[] | undefined): { flatPairs: ConditionPair[]; chainOut: { conditions: string[] }[] | null } {
+  if (!Array.isArray(chain) || chain.length === 0) return { flatPairs: legacyPairs || [], chainOut: null };
+  const segments = buildConditionChainSegments(chain).map((seg) => seg.filter((p) => p.base)).filter((seg) => seg.length > 0);
+  if (segments.length > 1) {
+    return { flatPairs: segments[0], chainOut: segments.map((seg) => ({ conditions: seg.map(pairToString) })) };
+  }
+  return { flatPairs: segments[0] || [], chainOut: null };
+}
+
+// ConditionChainEntry[] → {conditions:string[]}[]（AND内包OR用のセグメント配列。
+// trigger_conditions_chain/base_conditions_chain/tamer_conditions_chainで共用）。
+// 単一セグメントに収束する場合はnullを返し、呼び出し側は従来のcondition_op方式にフォールバックする
+function buildConditionChainStrings(chain: ConditionChainEntry[] | undefined): { conditions: string[] }[] | null {
+  if (!Array.isArray(chain) || chain.length === 0) return null;
+  const segments = buildConditionChainSegments(chain)
+    .map((seg) => seg.filter((p) => p.base).map(pairToString))
+    .filter((seg) => seg.length > 0);
+  return segments.length > 1 ? segments.map((conditions) => ({ conditions })) : null;
+}
+// buildConditionChainStringsの逆変換
+function parseConditionChainStrings(raw: any): ConditionChainEntry[] | undefined {
+  if (!Array.isArray(raw) || raw.length < 2) return undefined;
+  return raw.map((seg: any, idx: number) => ({
+    conditions: Array.isArray(seg?.conditions) ? seg.conditions.map((s: string) => stringToPair(String(s))) : [],
+    op: idx === 0 ? undefined : 'or' as const,
+  }));
+}
+
 // ConditionChainEntry[]（1条件ずつAND/ORを選ぶ統一UI）を「ANDがORより優先」＝OR区切りで
 // AND区間をまとめる積和評価のセグメント配列に変換する（ruleTranslator.tsのbuildGroupFilter内
 // ロジックと同じ規則。例:[色紫]→[名前レイヴモン](and)→[特徴鳥](or) = (色紫 AND 名前レイヴモン) OR 特徴鳥）
@@ -162,14 +196,8 @@ function parseCostArray(rawCost: any): CostStep[] {
     if (Array.isArray(c?.extra_conditions)) {
       c.extra_conditions.forEach((s: string) => condArr.push(stringToPair(String(s))));
     }
-    // 「Lv4以下のクロノモン、または特徴TS」のようなAND内包のOR（複合条件）。
-    // 先頭セグメントはAND、2番目以降は前セグメントとOR結合という規約でchain化する
-    const conditionChain: ConditionChainEntry[] | undefined = Array.isArray(c?.condition_chain) && c.condition_chain.length > 0
-      ? c.condition_chain.map((seg: any, idx: number) => ({
-          conditions: Array.isArray(seg?.conditions) ? seg.conditions.map((s: string) => stringToPair(String(s))) : [],
-          op: idx === 0 ? undefined : 'or' as const,
-        }))
-      : undefined;
+    // 「Lv4以下のクロノモン、または特徴TS」のようなAND内包のOR（複合条件）
+    const conditionChain: ConditionChainEntry[] | undefined = parseConditionChainStrings(c?.condition_chain);
     // 取得元エリアの deserialize: string / array / 旧 'hand_or_trash' 互換
     const fromZones: string[] = (() => {
       const f = c?.from;
@@ -265,27 +293,8 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
         ? a.perRefStateCond.base + ':' + a.perRefStateCond.value
         : a.perRefStateCond.base;
     }
-    if (Array.isArray(a.perRefFilter) && a.perRefFilter.length > 0) {
-      const af: Record<string, any> = {};
-      a.perRefFilter.forEach((c) => {
-        if (!c || !c.base) return;
-        // 裏向き/表向き（cond_face_down/up）は値を持たない判定のため、値必須ガードの対象外
-        if (!c.value && c.base !== 'cond_face_down' && c.base !== 'cond_face_up') return;
-        const num2 = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
-        switch (c.base) {
-          case 'cond_color': af.color = c.value; break;
-          case 'cond_type':  af.type = c.value; break;
-          case 'cond_lv': { const n = num2(c.value); if (n !== undefined) { af.lv_le = n; af.lv_ge = n; } break; }
-          case 'cond_lv_le': { const n = num2(c.value); if (n !== undefined) af.lv_le = n; break; }
-          case 'cond_lv_ge': { const n = num2(c.value); if (n !== undefined) af.lv_ge = n; break; }
-          // face_zone: エディタ上で「どのゾーンについての裏表判定か」を表示し続けるための
-          // 表示専用情報（進化元/セキュリティ）。エンジンはこの値を見ない
-          case 'cond_face_down': af.face_down = true; if (c.value) af.face_zone = c.value; break;
-          case 'cond_face_up':   af.face_up = true; if (c.value) af.face_zone = c.value; break;
-        }
-      });
-      if (Object.keys(af).length > 0) out.ref_filter = af;
-    }
+    const aRefFilter = buildConditionChainFilter(a.perRefFilterChain, a.perRefFilter);
+    if (aRefFilter) out.ref_filter = aRefFilter;
   }
   if (a.duration) out.duration = a.duration;
   if (a.costFree) out.cost_free = true;
@@ -294,9 +303,11 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
     if (a.negateTargetTrigger) out.target_trigger = a.negateTargetTrigger;
     if (a.negateDeny) out.deny = true;
   }
-  const targetFilterObj = buildFilterObject(a.targetFilter);
+  const targetFilterObj = buildConditionChainFilter(a.targetFilterChain, a.targetFilter);
   if (targetFilterObj) out.filter = targetFilterObj;
-  const fromFilterObj = buildFilterObjectMaybeOr(a.fromFilter, a.fromFilterOp);
+  const fromFilterObj = (a.fromFilterChain && a.fromFilterChain.length > 0)
+    ? buildConditionChainFilter(a.fromFilterChain, a.fromFilter)
+    : buildFilterObjectMaybeOr(a.fromFilter, a.fromFilterOp);
   if (fromFilterObj) out.from_filter = fromFilterObj;
   if (a.fromExcludeSameNameZone) {
     if (!out.from_filter) out.from_filter = {};
@@ -330,10 +341,11 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
     if (gs.target) inner.target = gs.target;
     if (gs.duration) inner.duration = gs.duration;
     if (Array.isArray(gs.options) && gs.options.length > 0) inner.options = gs.options.slice();
-    const validGs = (gs.conditions || []).filter((p) => p.base);
+    const { flatPairs: validGs, chainOut: gsChain } = resolveChainField(gs.conditions, gs.conditionsChain);
     if (validGs.length >= 1) inner.condition = pairToString(validGs[0]);
     if (validGs.length >= 2) inner.when = pairToString(validGs[1]);
     if (validGs.length >= 3) inner.extra_conditions = validGs.slice(2).map(pairToString);
+    if (gsChain) inner.condition_chain = gsChain;
     out.granted_recipe = { [gs.trigger]: [inner] };
   }
   return out;
@@ -343,7 +355,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
 // targetFilter（アクション対象自身の絞り込み）・fromFilter（進化/登場アクションの取得元
 // エリアから選ぶカードの絞り込み）の両方で同じ形を使うため共通化している
 // 値を持たない（チェックのみの）条件コード。buildFilterObject の value 必須ガードを迂回する
-const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest', 'cond_lv_highest', 'cond_lv_lowest', 'cond_target_stack', 'cond_target_evo_source']);
+const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest', 'cond_lv_highest', 'cond_lv_lowest', 'cond_target_stack', 'cond_target_evo_source', 'cond_face_down', 'cond_face_up']);
 // DP参照マーカー（cond_dp_le/ge の値が固定数値ではなく「このデジモン/自分/相手/他」のDPを
 // 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する
 const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other']);
@@ -366,6 +378,40 @@ function parseFilterObjectWithOp(f: any): { conds: ConditionPair[]; op: 'and' | 
     return { conds, op: 'or' };
   }
   return { conds: parseFilterObject(f), op: 'and' };
+}
+// ConditionChainEntry[]（AND内包OR）→ カード絞り込み用フィルタオブジェクト。単一セグメントなら
+// 通常のbuildFilterObjectと同じ形、複数セグメントなら{or:[segFilter1,segFilter2,...]}として返す
+// （cardMatchesFilterがfilter.orを再帰的にOR評価するためエンジン対応済み）。
+// chainが空ならlegacyPairsからそのままbuildFilterObjectする（後方互換フォールバック）
+function buildConditionChainFilter(chain: ConditionChainEntry[] | undefined, legacyPairs: ConditionPair[] | undefined): Record<string, any> | null {
+  if (Array.isArray(chain) && chain.length > 0) {
+    const segments = buildConditionChainSegments(chain)
+      .map((seg) => seg.filter((p) => p.base))
+      .filter((seg) => seg.length > 0);
+    if (segments.length > 1) {
+      const segFilters = segments.map((seg) => buildFilterObject(seg)).filter((f): f is Record<string, any> => !!f);
+      return segFilters.length > 0 ? { or: segFilters } : null;
+    }
+    if (segments.length === 1) return buildFilterObject(segments[0]);
+    return null;
+  }
+  return buildFilterObject(legacyPairs);
+}
+// buildConditionChainFilterの逆変換。f.orが2件以上ならchainを復元し、1件以下ならchainなし
+// （呼び出し側は通常のparseFilterObject(WithOp)結果をpairs/opとして使う）
+function parseConditionChainFilter(f: any): { pairs: ConditionPair[]; chain?: ConditionChainEntry[] } {
+  if (f && Array.isArray(f.or) && f.or.length > 0) {
+    const segPairsList: ConditionPair[][] = f.or.map((sub: any) => parseFilterObject(sub)).filter((arr: ConditionPair[]) => arr.length > 0);
+    if (segPairsList.length > 1) {
+      return {
+        pairs: segPairsList[0],
+        chain: segPairsList.map((pairs, idx) => ({ conditions: pairs, op: idx === 0 ? undefined : 'or' as const })),
+      };
+    }
+    if (segPairsList.length === 1) return { pairs: segPairsList[0] };
+    return { pairs: [] };
+  }
+  return { pairs: parseFilterObject(f) };
 }
 function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, any> | null {
   if (!Array.isArray(pairs) || pairs.length === 0) return null;
@@ -441,6 +487,9 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       case 'cond_description':          f.description = c.value; break;
       case 'cond_description_contains': f.description_contains = c.value; break;
       case 'cond_zone':                  f.zone = c.value; break;
+      // 裏向き/表向き（perRefFilter等で使用。face_zoneは「どのゾーンについての裏表判定か」の表示専用情報）
+      case 'cond_face_down': f.face_down = true; if (c.value) f.face_zone = c.value; break;
+      case 'cond_face_up':   f.face_up = true; if (c.value) f.face_zone = c.value; break;
     }
   });
   return Object.keys(f).length > 0 ? f : null;
@@ -498,6 +547,8 @@ function parseFilterObject(f: any): ConditionPair[] {
   else if (f.dp_extreme === 'lowest') out.push({ base: 'cond_dp_lowest' });
   if (f.cost_extreme === 'highest') out.push({ base: 'cond_cost_highest' });
   else if (f.cost_extreme === 'lowest') out.push({ base: 'cond_cost_lowest' });
+  if (f.face_down) out.push({ base: 'cond_face_down', value: f.face_zone ? String(f.face_zone) : undefined });
+  if (f.face_up)   out.push({ base: 'cond_face_up',   value: f.face_zone ? String(f.face_zone) : undefined });
   return out;
 }
 
@@ -508,7 +559,7 @@ function buildExtraTargetsArray(extraTargets: ExtraTarget[] | undefined): any[] 
     .filter((et) => et && et.target)
     .map((et) => {
       const entry: Record<string, any> = { target: et.target };
-      const filter = buildFilterObject(et.targetFilter);
+      const filter = buildConditionChainFilter(et.targetFilterChain, et.targetFilter);
       if (filter) entry.filter = filter;
       return entry;
     });
@@ -522,8 +573,9 @@ function parseExtraTargetsArray(raw: any): ExtraTarget[] | undefined {
     .filter((et) => et && et.target)
     .map((et) => {
       const entry: ExtraTarget = { target: String(et.target) };
-      const filter = parseFilterObject(et.filter);
-      if (filter.length > 0) entry.targetFilter = filter;
+      const { pairs, chain } = parseConditionChainFilter(et.filter);
+      if (pairs.length > 0) entry.targetFilter = pairs;
+      if (chain) entry.targetFilterChain = chain;
       return entry;
     });
   return out.length > 0 ? out : undefined;
@@ -742,11 +794,13 @@ function applyDesignatedGroupsTo(target: any, entry: KeywordEntry, kwEntry?: Dic
     if (gCount !== undefined) target.count = gCount;
   } else if (groups.length > 1) {
     target.designated_groups = buildDesignatedGroupsFields(groups);
-    const validCommon = (entry.commonConditions || []).filter((c) => c.base);
-    if (validCommon.length > 0) {
-      const common = buildDesignatedConditionFields(validCommon, entry.commonConditionsOp || 'and');
-      if (Object.keys(common).length > 0) target.designated_common = common;
-    }
+    // commonConditionsChainが複数セグメントに収束する場合のみdesignated_common_chainとして
+    // 別出力（⚠エンジン未対応・保存のみ）。1セグメントに収束する場合は従来通り
+    // designated_common（condition/when/extra_conditions）へ畳み込む
+    const { flatPairs: validCommon, chainOut: commonChain } = resolveChainField(entry.commonConditions, entry.commonConditionsChain);
+    const common = buildDesignatedConditionFields(validCommon, entry.commonConditionsOp || 'and');
+    if (Object.keys(common).length > 0) target.designated_common = common;
+    if (commonChain) target.designated_common_chain = commonChain;
   }
 }
 
@@ -791,27 +845,42 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // エンジンは参照しないため意図的にJSON出力しない（block.asTypeとしてエディタ内では保持され続ける）
 
   // 条件: 1つ目→condition, 2つ目→when, 3つ目以降→extra_conditions[]
-  const validConds = expandRefExistsAttributeFilters((b.conditions || []).filter((p) => p.base));
-  if (validConds.length >= 1) step.condition = pairToString(validConds[0]);
-  if (validConds.length >= 2) step.when = pairToString(validConds[1]);
-  if (validConds.length >= 3) step.extra_conditions = validConds.slice(2).map(pairToString);
-  if (validConds.length >= 2 && b.conditionsOp === 'or') step.condition_op = 'or';
+  // conditionsChain（AND内包OR）が複数セグメントに収束する場合はcondition_chainとして別出力
+  // （⚠ エンジン未対応。保存はできるが複数セグメント使用時は動作しない）
+  {
+    const { flatPairs: validConds, chainOut: chainStrings } = resolveChainField(
+      expandRefExistsAttributeFilters((b.conditions || []).filter((p) => p.base)), b.conditionsChain);
+    if (validConds.length >= 1) step.condition = pairToString(validConds[0]);
+    if (validConds.length >= 2) step.when = pairToString(validConds[1]);
+    if (validConds.length >= 3) step.extra_conditions = validConds.slice(2).map(pairToString);
+    if (chainStrings) step.condition_chain = chainStrings;
+    else if (validConds.length >= 2 && b.conditionsOp === 'or') step.condition_op = 'or';
+  }
 
   // トリガー条件: 配列で出力 (step.trigger_conditions[])
   // エンジンは「トリガー発火元のカード」に対してこれらの条件を評価する
-  // （trigger_conditions_op:'or' が無ければ従来通り AND、'or' があればいずれか1件でOK）
-  const validTriggerConds = (b.triggerConditions || []).filter((p) => p.base);
-  if (validTriggerConds.length > 0) step.trigger_conditions = validTriggerConds.map(pairToString);
-  if (validTriggerConds.length >= 2 && b.triggerConditionsOp === 'or') step.trigger_conditions_op = 'or';
+  // （trigger_conditions_op:'or' が無ければ従来通り AND、'or' があればいずれか1件でOK。
+  // triggerConditionsChainが複数セグメントに収束する場合はtrigger_conditions_chainとして
+  // 別出力・エンジン対応済み＝_evalTriggerConditionsArrayがそちらを優先評価する）
+  {
+    const { flatPairs: validTriggerConds, chainOut: triggerCondsChain } = resolveChainField(b.triggerConditions, b.triggerConditionsChain);
+    if (validTriggerConds.length > 0) step.trigger_conditions = validTriggerConds.map(pairToString);
+    if (triggerCondsChain) step.trigger_conditions_chain = triggerCondsChain;
+    else if (validTriggerConds.length >= 2 && b.triggerConditionsOp === 'or') step.trigger_conditions_op = 'or';
+  }
 
   // burst_evolve専用: 進化元の絞り込み / 手札に戻すテイマーの絞り込み（trigger_conditionsと同じ
   // 「文字列配列+op」形式で別々に出力する）
-  const validBaseFilter = (b.burstBaseFilter || []).filter((p) => p.base);
-  if (validBaseFilter.length > 0) step.base_conditions = validBaseFilter.map(pairToString);
-  if (validBaseFilter.length >= 2 && b.burstBaseFilterOp === 'or') step.base_conditions_op = 'or';
-  const validTamerFilter = (b.burstTamerFilter || []).filter((p) => p.base);
-  if (validTamerFilter.length > 0) step.tamer_conditions = validTamerFilter.map(pairToString);
-  if (validTamerFilter.length >= 2 && b.burstTamerFilterOp === 'or') step.tamer_conditions_op = 'or';
+  {
+    const { flatPairs: validBaseFilter, chainOut: baseFilterChain } = resolveChainField(b.burstBaseFilter, b.burstBaseFilterChain);
+    if (validBaseFilter.length > 0) step.base_conditions = validBaseFilter.map(pairToString);
+    if (baseFilterChain) step.base_conditions_chain = baseFilterChain;
+    else if (validBaseFilter.length >= 2 && b.burstBaseFilterOp === 'or') step.base_conditions_op = 'or';
+    const { flatPairs: validTamerFilter, chainOut: tamerFilterChain } = resolveChainField(b.burstTamerFilter, b.burstTamerFilterChain);
+    if (validTamerFilter.length > 0) step.tamer_conditions = validTamerFilter.map(pairToString);
+    if (tamerFilterChain) step.tamer_conditions_chain = tamerFilterChain;
+    else if (validTamerFilter.length >= 2 && b.burstTamerFilterOp === 'or') step.tamer_conditions_op = 'or';
+  }
 
   // 「破棄されたとき」専用: どのゾーンからの破棄に反応するか（1件ならtrigger_from:文字列、
   // 2件以上ならtrigger_from:配列+trigger_from_op。action側のfrom/from_opとは別枠）
@@ -952,39 +1021,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
         ? b.perRefStateCond.base + ':' + b.perRefStateCond.value
         : b.perRefStateCond.base;
     }
-    // perRefFilter (ConditionPair[]) を filter オブジェクトに変換
-    if (Array.isArray(b.perRefFilter) && b.perRefFilter.length > 0) {
-      const filter: Record<string, any> = {};
-      b.perRefFilter.forEach((c) => {
-        if (!c || !c.base) return;
-        // 裏向き/表向き（cond_face_down/up）は値を持たない判定のため、値必須ガードの対象外
-        if (!c.value && c.base !== 'cond_face_down' && c.base !== 'cond_face_up') return;
-        const num = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
-        switch (c.base) {
-          case 'cond_color':            filter.color = c.value; break;
-          case 'cond_type':             filter.type = c.value; break;
-          case 'cond_feature_contains': filter.feature_contains = c.value; break;
-          case 'cond_feature':          filter.feature = c.value; break;
-          case 'cond_name':             filter.name = c.value; break;
-          case 'cond_name_contains':    filter.name_contains = c.value; break;
-          case 'cond_lv':       { const n = num(c.value); if (n !== undefined) { filter.lv_le = n; filter.lv_ge = n; } break; }
-          case 'cond_lv_le':    { const n = num(c.value); if (n !== undefined) filter.lv_le = n; break; }
-          case 'cond_lv_ge':    { const n = num(c.value); if (n !== undefined) filter.lv_ge = n; break; }
-          case 'cond_dp':       { if (DP_REF_MARKERS.has(c.value)) { filter.dp_le = c.value; filter.dp_ge = c.value; } else { const n = num(c.value); if (n !== undefined) { filter.dp_le = n; filter.dp_ge = n; } } break; }
-          case 'cond_dp_le':    { if (DP_REF_MARKERS.has(c.value)) { filter.dp_le = c.value; } else { const n = num(c.value); if (n !== undefined) filter.dp_le = n; } break; }
-          case 'cond_dp_ge':    { if (DP_REF_MARKERS.has(c.value)) { filter.dp_ge = c.value; } else { const n = num(c.value); if (n !== undefined) filter.dp_ge = n; } break; }
-          case 'cond_cost':     { const n = num(c.value); if (n !== undefined) { filter.cost_le = n; filter.cost_ge = n; } break; }
-          case 'cond_cost_le':  { const n = num(c.value); if (n !== undefined) filter.cost_le = n; break; }
-          case 'cond_cost_ge':  { const n = num(c.value); if (n !== undefined) filter.cost_ge = n; break; }
-          // face_zone: エディタ上で「どのゾーンについての裏表判定か」を表示し続けるための
-          // 表示専用情報（進化元/セキュリティ）。エンジンはこの値を見ない
-          case 'cond_face_down': filter.face_down = true; if (c.value) filter.face_zone = c.value; break;
-          case 'cond_face_up':   filter.face_up = true; if (c.value) filter.face_zone = c.value; break;
-          // メモリーは ref_filter 文脈では意味を成さないので無視
-        }
-      });
-      if (Object.keys(filter).length > 0) step.ref_filter = filter;
-    }
+    // perRefFilter (ConditionPair[]) を filter オブジェクトに変換（AND内包OR対応: perRefFilterChain優先）
+    const bRefFilter = buildConditionChainFilter(b.perRefFilterChain, b.perRefFilter);
+    if (bRefFilter) step.ref_filter = bRefFilter;
   }
   // === 代替アクション (alt_actions[] / 独立後続step) ===
   // 'or'/'and' = 「〇〇するか〇〇する」「〇〇する＆〇〇する」を表現する同ステップ内代替アクション群。
@@ -1007,7 +1046,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     step.alt_actions_op = b.altActionsOp === 'and' ? 'and' : 'or';
   }
   // === targetFilter → step.filter（対象自身の絞り込み。例:レスト状態のこのデジモン） ===
-  const targetFilterObj = buildFilterObject(b.targetFilter);
+  const targetFilterObj = buildConditionChainFilter(b.targetFilterChain, b.targetFilter);
   if (targetFilterObj) step.filter = targetFilterObj;
   // === 「コスト上限+/-」を「直前の効果」へ自動適用する ===
   // action:'cost_limit_plus'/'cost_limit_minus' かつ applyCostModToPrev:true のAltActionは、
@@ -1053,7 +1092,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   }
   // === fromFilter → step.from_filter（進化/登場アクション専用。取得元エリアから選ぶ
   // カードの絞り込み。対象＝このカード自身の条件(filter)とは別データ） ===
-  const fromFilterObj = buildFilterObjectMaybeOr(b.fromFilter, b.fromFilterOp);
+  const fromFilterObj = (b.fromFilterChain && b.fromFilterChain.length > 0)
+    ? buildConditionChainFilter(b.fromFilterChain, b.fromFilter)
+    : buildFilterObjectMaybeOr(b.fromFilter, b.fromFilterOp);
   if (fromFilterObj) step.from_filter = fromFilterObj;
   // 「既に場にある同名カードは除外」（例:「自分のテイマーと同じ名称のカードは登場できない」）。
   // from_filterに他の条件が無くてもこのフラグだけで絞り込めるよう、無ければオブジェクトを新設する
@@ -1072,10 +1113,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     }
     if (gs.target) inner.target = gs.target;
     if (gs.duration) inner.duration = gs.duration;
-    const validG = (gs.conditions || []).filter((p) => p.base);
+    const { flatPairs: validG, chainOut: gsChain2 } = resolveChainField(gs.conditions, gs.conditionsChain);
     if (validG.length >= 1) inner.condition = pairToString(validG[0]);
     if (validG.length >= 2) inner.when = pairToString(validG[1]);
     if (validG.length >= 3) inner.extra_conditions = validG.slice(2).map(pairToString);
+    if (gsChain2) inner.condition_chain = gsChain2;
     if (Array.isArray(gs.options) && gs.options.length > 0) inner.options = gs.options.slice();
     step.granted_recipe = { [gs.trigger]: [inner] };
   }
@@ -1460,6 +1502,7 @@ function stepObjectToAltAction(step: any): AltAction {
     gateConditions,
     conditions,
     conditionsOp: step?.condition_op === 'or' ? 'or' : 'and',
+    conditionsChain: parseConditionChainStrings(step?.condition_chain),
     options,
     fromZones,
     fromZonesOp: step?.from_op === 'and' ? 'and' : 'or',
@@ -1481,9 +1524,11 @@ function stepObjectToAltAction(step: any): AltAction {
     skipOnPlay: !!step?.skip_on_play,
     negateTargetTrigger: step?.target_trigger === 'on_play' || step?.target_trigger === 'on_evolve' ? step.target_trigger : undefined,
     negateDeny: !!step?.deny,
-    targetFilter: parseFilterObject(step?.filter),
-    fromFilter: parseFilterObjectWithOp(step?.from_filter).conds,
+    targetFilter: parseConditionChainFilter(step?.filter).pairs,
+    targetFilterChain: parseConditionChainFilter(step?.filter).chain,
+    fromFilter: parseConditionChainFilter(step?.from_filter).pairs,
     fromFilterOp: parseFilterObjectWithOp(step?.from_filter).op,
+    fromFilterChain: parseConditionChainFilter(step?.from_filter).chain,
     fromExcludeSameNameZone: (step?.from_filter && (step.from_filter.exclude_same_name_zone === 'own_tamer'
       || step.from_filter.exclude_same_name_zone === 'own_digimon' || step.from_filter.exclude_same_name_zone === 'own_any'))
       ? step.from_filter.exclude_same_name_zone : undefined,
@@ -1674,15 +1719,19 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     limit: step?.limit || '',
     triggerConditions,
     triggerConditionsOp: step?.trigger_conditions_op === 'or' ? 'or' : 'and',
+    triggerConditionsChain: parseConditionChainStrings(step?.trigger_conditions_chain),
     burstBaseFilter,
     burstBaseFilterOp: step?.base_conditions_op === 'or' ? 'or' : 'and',
+    burstBaseFilterChain: parseConditionChainStrings(step?.base_conditions_chain),
     burstTamerFilter,
     burstTamerFilterOp: step?.tamer_conditions_op === 'or' ? 'or' : 'and',
+    burstTamerFilterChain: parseConditionChainStrings(step?.tamer_conditions_chain),
     triggerFromZones: Array.isArray(step?.trigger_from) ? step.trigger_from.slice()
       : step?.trigger_from ? [step.trigger_from] : undefined,
     triggerFromZonesOp: step?.trigger_from_op === 'and' ? 'and' : 'or',
     conditions,
     conditionsOp: step?.condition_op === 'or' ? 'or' : 'and',
+    conditionsChain: parseConditionChainStrings(step?.condition_chain),
     costs,
     duration: step?.duration || '',
     action: step?.action || '',
@@ -1773,27 +1822,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       const i = s.indexOf(':');
       return i >= 0 ? { base: s.substring(0, i), value: s.substring(i + 1) } : { base: s };
     })(),
-    perRefFilter: (() => {
-      const f = step?.ref_filter;
-      if (!f || typeof f !== 'object') return [];
-      const out: ConditionPair[] = [];
-      if (f.color)            out.push({ base: 'cond_color',            value: String(f.color) });
-      if (f.type)             out.push({ base: 'cond_type',             value: String(f.type) });
-      if (f.feature_contains) out.push({ base: 'cond_feature_contains', value: String(f.feature_contains) });
-      if (f.feature)          out.push({ base: 'cond_feature',          value: String(f.feature) });
-      if (f.name_contains)    out.push({ base: 'cond_name_contains',    value: String(f.name_contains) });
-      if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
-        out.push({ base: 'cond_lv', value: String(f.lv_le) });
-      } else {
-        if (f.lv_le !== undefined) out.push({ base: 'cond_lv_le', value: String(f.lv_le) });
-        if (f.lv_ge !== undefined) out.push({ base: 'cond_lv_ge', value: String(f.lv_ge) });
-      }
-      if (f.dp_le !== undefined) out.push({ base: 'cond_dp_le', value: String(f.dp_le) });
-      if (f.dp_ge !== undefined) out.push({ base: 'cond_dp_ge', value: String(f.dp_ge) });
-      if (f.face_down) out.push({ base: 'cond_face_down', value: f.face_zone });
-      if (f.face_up)   out.push({ base: 'cond_face_up', value: f.face_zone });
-      return out;
-    })(),
+    perRefFilter: parseConditionChainFilter(step?.ref_filter).pairs,
+    perRefFilterChain: parseConditionChainFilter(step?.ref_filter).chain,
     rules: [], // 既存レシピ load 時はルール情報が無いので空。エディタで再構築する場合は手動再追加
     // 代替アクション復元
     altActions: Array.isArray(step?.alt_actions)
@@ -1859,6 +1889,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
                 duration: inner.duration || '',
                 options: Array.isArray(inner.options) ? inner.options.slice() : [],
                 conditions: gConds,
+                conditionsChain: parseConditionChainStrings(inner.condition_chain),
               };
             })(),
             value: a?.value,
@@ -1867,6 +1898,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
             gateConditions: gateArr,
             conditions: condArr,
             conditionsOp: a?.condition_op === 'or' ? 'or' as const : 'and' as const,
+            conditionsChain: parseConditionChainStrings(a?.condition_chain),
             options: Array.isArray(a?.options) ? a.options.slice() : [],
             fromZones: fromZ,
             fromZonesOp: a?.from_op === 'and' ? 'and' as const : 'or' as const,
@@ -1889,31 +1921,19 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
               return i >= 0 ? { base: s.substring(0, i), value: s.substring(i + 1) } : { base: s };
             })(),
             perCountMode: a?.per_count_mode === 'repeat' ? 'repeat' as const : undefined,
-            perRefFilter: (() => {
-              const f = a?.ref_filter;
-              if (!f || typeof f !== 'object') return [];
-              const out2: ConditionPair[] = [];
-              if (f.color) out2.push({ base: 'cond_color', value: String(f.color) });
-              if (f.type)  out2.push({ base: 'cond_type',  value: String(f.type)  });
-              if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
-                out2.push({ base: 'cond_lv', value: String(f.lv_le) });
-              } else {
-                if (f.lv_le !== undefined) out2.push({ base: 'cond_lv_le', value: String(f.lv_le) });
-                if (f.lv_ge !== undefined) out2.push({ base: 'cond_lv_ge', value: String(f.lv_ge) });
-              }
-              if (f.face_down) out2.push({ base: 'cond_face_down', value: f.face_zone });
-              if (f.face_up)   out2.push({ base: 'cond_face_up', value: f.face_zone });
-              return out2;
-            })(),
+            perRefFilter: parseConditionChainFilter(a?.ref_filter).pairs,
+            perRefFilterChain: parseConditionChainFilter(a?.ref_filter).chain,
             costFree: !!a?.cost_free,
             skipOnPlay: !!a?.skip_on_play,
             negateTargetTrigger: a?.target_trigger === 'on_play' || a?.target_trigger === 'on_evolve' ? a.target_trigger : undefined,
             negateDeny: !!a?.deny,
             destroyCause: a?.cause === 'battle' || a?.cause === 'effect' ? a.cause : undefined,
             destroyCauseSubject: a?.cause_subject || undefined,
-            targetFilter: parseFilterObject(a?.filter),
-            fromFilter: parseFilterObjectWithOp(a?.from_filter).conds,
+            targetFilter: parseConditionChainFilter(a?.filter).pairs,
+            targetFilterChain: parseConditionChainFilter(a?.filter).chain,
+            fromFilter: parseConditionChainFilter(a?.from_filter).pairs,
             fromFilterOp: parseFilterObjectWithOp(a?.from_filter).op,
+            fromFilterChain: parseConditionChainFilter(a?.from_filter).chain,
             fromExcludeSameNameZone: (a?.from_filter && (a.from_filter.exclude_same_name_zone === 'own_tamer'
               || a.from_filter.exclude_same_name_zone === 'own_digimon' || a.from_filter.exclude_same_name_zone === 'own_any'))
               ? a.from_filter.exclude_same_name_zone : undefined,
@@ -1947,12 +1967,15 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
         target: inner?.target || '',
         duration: inner?.duration || '',
         conditions: condArr,
+        conditionsChain: parseConditionChainStrings(inner?.condition_chain),
         options: Array.isArray(inner?.options) ? inner.options.slice() : [],
       };
     })(),
-    targetFilter: parseFilterObject(step?.filter),
-    fromFilter: parseFilterObjectWithOp(step?.from_filter).conds,
+    targetFilter: parseConditionChainFilter(step?.filter).pairs,
+    targetFilterChain: parseConditionChainFilter(step?.filter).chain,
+    fromFilter: parseConditionChainFilter(step?.from_filter).pairs,
     fromFilterOp: parseFilterObjectWithOp(step?.from_filter).op,
+    fromFilterChain: parseConditionChainFilter(step?.from_filter).chain,
     fromExcludeSameNameZone: (step?.from_filter && (step.from_filter.exclude_same_name_zone === 'own_tamer'
       || step.from_filter.exclude_same_name_zone === 'own_digimon' || step.from_filter.exclude_same_name_zone === 'own_any'))
       ? step.from_filter.exclude_same_name_zone : undefined,

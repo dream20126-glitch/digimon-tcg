@@ -1077,7 +1077,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (_bs) _bs._onActivePhase = 'main';
         const _willRun = (recipe, reactorCard) => recipe.some(step => {
           if (!step) return false;
-          if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, reactorCard, _bs, _side)) return false;
+          if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, reactorCard, _bs, _side, step.trigger_conditions_chain)) return false;
           if (step.condition) {
             if (!checkConditions(parseRecipeCondition(step.condition), reactorCard, _bs, _side)) return false;
           }
@@ -6857,7 +6857,7 @@ export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) 
     if (base === 'opp' || base.indexOf('opp_') === 0) return false;
     if (base.indexOf('tamer') >= 0 && restedCard.type !== 'テイマー') return false;
     if (base.indexOf('digimon') >= 0 && restedCard.type !== 'デジモン') return false;
-    if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, restedCard, bs, restedSide)) return false;
+    if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, restedCard, bs, restedSide, step.trigger_conditions_chain)) return false;
     return true;
   };
   return _fireSidedReactionTriggers(restedSide, 'when_rest', bs, ctxBase, done, stepFilter);
@@ -6878,7 +6878,7 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
   const topCards = [...(reactPlayer.battleArea || []), ...(reactPlayer.tamerArea || [])].filter(c => c);
   const _willRun = (recipe, reactorCard) => recipe.some(step => {
     if (!step) return false;
-    if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, summonedCard, bs, summonedSide)) return false;
+    if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, summonedCard, bs, summonedSide, step.trigger_conditions_chain)) return false;
     if (step.condition) {
       const conds = parseRecipeCondition(step.condition);
       if (!checkConditions(conds, reactorCard, bs, summonedSide)) return false;
@@ -7331,7 +7331,17 @@ function _buildBaseCtx(ctxBase, bs) {
 // step.trigger_conditions[] を評価（イベント発火元カードに対して評価）。
 // trigger_conditions_op:'or' が指定されていれば「いずれか1件」でOK、未指定/'and'なら
 // 従来通り「全件」を満たす必要がある（例:「名称にXを含むか特徴Yを持つこのデジモンが～とき」）
-function _evalTriggerConditionsArray(triggerConditions, op, card, bs, side) {
+// chain（[{conditions:["cond_lv_le:4","cond_name_contains:クロノモン"]},{conditions:["cond_feature:TS"]}]
+// のような「AND内包のOR」複合条件・セグメント配列）が指定されていれば、各セグメントをAND評価した上で
+// セグメント間はOR評価する（あればtriggerConditions/opより優先）
+function _evalTriggerConditionsArray(triggerConditions, op, card, bs, side, chain) {
+  if (Array.isArray(chain) && chain.length > 0) {
+    return chain.some((seg) => {
+      const segConds = [];
+      (seg && seg.conditions || []).forEach((cs) => segConds.push(...parseRecipeCondition(String(cs))));
+      return segConds.length === 0 || checkConditions(segConds, card, bs, side);
+    });
+  }
   if (!Array.isArray(triggerConditions) || triggerConditions.length === 0) return true;
   if (op === 'or') {
     return triggerConditions.some((cs) => checkConditions(parseRecipeCondition(String(cs)), card, bs, side));
@@ -7350,7 +7360,7 @@ function checkStepTriggerConditions(step, ctx) {
     console.log('[trigger_conditions] reactor=' + reactingName + ' no event source card → fail');
     return false;
   }
-  const ok = _evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, eventCard, ctx.bs, ctx.side);
+  const ok = _evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, eventCard, ctx.bs, ctx.side, step.trigger_conditions_chain);
   console.log('[trigger_conditions] reactor=' + reactingName + (ok ? ' all pass' : ' FAIL (op=' + (step.trigger_conditions_op || 'and') + ')'));
   return ok;
 }
@@ -11695,9 +11705,9 @@ export function getBurstEvolve(evoCard, baseCard, bs, side) {
   if (!Array.isArray(list) || list.length === 0) return null;
   for (const entry of list) {
     if (!entry) continue;
-    if (!_evalTriggerConditionsArray(entry.base_conditions, entry.base_conditions_op, baseCard, bs, side || 'player')) continue;
+    if (!_evalTriggerConditionsArray(entry.base_conditions, entry.base_conditions_op, baseCard, bs, side || 'player', entry.base_conditions_chain)) continue;
     const cost = parseInt(entry.cost, 10) || 0;
-    return { cost, tamerConditions: entry.tamer_conditions || [], tamerConditionsOp: entry.tamer_conditions_op };
+    return { cost, tamerConditions: entry.tamer_conditions || [], tamerConditionsOp: entry.tamer_conditions_op, tamerConditionsChain: entry.tamer_conditions_chain };
   }
   return null;
 }
@@ -11706,11 +11716,11 @@ export function getBurstEvolve(evoCard, baseCard, bs, side) {
 // テイマーエリア(bs[side].tamerArea)から手札に戻せる候補を絞り込む（checkConditions/
 // parseRecipeConditionはこのモジュール内限定のため、battle-combat.js側からはこの
 // エクスポート経由でのみ評価できるようにする）
-export function filterBurstEvolveTamerCandidates(bs, side, tamerConditions, tamerConditionsOp) {
+export function filterBurstEvolveTamerCandidates(bs, side, tamerConditions, tamerConditionsOp, tamerConditionsChain) {
   const p = bs && bs[side];
   const area = (p && p.tamerArea) || [];
-  if (!Array.isArray(tamerConditions) || tamerConditions.length === 0) return area.filter((c) => !!c);
-  return area.filter((c) => c && _evalTriggerConditionsArray(tamerConditions, tamerConditionsOp, c, bs, side));
+  if ((!Array.isArray(tamerConditions) || tamerConditions.length === 0) && (!Array.isArray(tamerConditionsChain) || tamerConditionsChain.length === 0)) return area.filter((c) => !!c);
+  return area.filter((c) => c && _evalTriggerConditionsArray(tamerConditions, tamerConditionsOp, c, bs, side, tamerConditionsChain));
 }
 
 // バースト進化の保留処理（総合ルール8-3-2-1/8-3-2-2/8-3-2-3）:
@@ -11782,7 +11792,7 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback) {
       if (!Array.isArray(list)) continue;
       for (const step of list) {
         if (!step) continue;
-        if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, evoCard, bs, side)) continue;
+        if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, evoCard, bs, side, step.trigger_conditions_chain)) continue;
         if (step.condition) {
           const conds = parseRecipeCondition(step.condition);
           if (!checkConditions(conds, card, bs, side)) continue;

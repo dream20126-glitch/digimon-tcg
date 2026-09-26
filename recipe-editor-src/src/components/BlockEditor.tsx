@@ -717,18 +717,19 @@ function KeywordEntriesEditor({
                     <div style={{ fontSize: 11, fontWeight: 'bold', color: '#666', marginBottom: 2 }}>
                       共通の絞り込み条件（全グループに自動でAND合成される）
                     </div>
-                    <ConditionsHybridEditor
-                      conditions={entry.commonConditions || []}
-                      onChange={(next) => updateEntry(i, { commonConditions: next })}
+                    <ConditionChainField
+                      chain={entry.commonConditionsChain}
+                      legacyPairs={entry.commonConditions}
+                      legacyOp={entry.commonConditionsOp}
+                      onChainChange={(next) => updateEntry(i, { commonConditionsChain: next, commonConditions: [] })}
                       dict={dict}
-                      title="共通条件"
-                      hint="（例:「特徴TB」を各グループで繰り返し書かなくて済むように、ここに1回だけ設定する）"
+                      titleBase="共通条件"
                       theme="action"
-                      defaultSubject=""
-                      showSubjectSelector={false}
-                      conditionsOp={entry.commonConditionsOp || 'and'}
-                      onConditionsOpChange={(op) => updateEntry(i, { commonConditionsOp: op })}
+                      extraProps={{ defaultSubject: '', showSubjectSelector: false }}
                     />
+                    {Array.isArray(entry.commonConditionsChain) && entry.commonConditionsChain.length > 1 && (
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 複合条件（AND内包OR）はエンジン未対応です（保存はできますが動作しません）</div>
+                    )}
                   </div>
                 )}
                 {groupList.map((g, gi) => (
@@ -1742,68 +1743,18 @@ function CostListEditor({
               {(() => {
                 const isCommonCostCond = (base: string) => isRefFaceCond(base) || base === 'cond_self_rest' || base === 'cond_self_active';
                 const commonConds = (c.conditions || []).filter((cc) => isCommonCostCond(cc.base));
-                const chain: ConditionChainEntry[] = (c.conditionChain && c.conditionChain.length > 0)
-                  ? c.conditionChain
-                  : [{ conditions: (c.conditions || []).filter((cc) => !isCommonCostCond(cc.base)) }];
-                const setChain = (next: ConditionChainEntry[]) => updateCost(i, { ...c, conditionChain: next, conditions: commonConds });
-                const updateChainEntry = (ei: number, patch: Partial<ConditionChainEntry>) => {
-                  const next = chain.slice();
-                  next[ei] = { ...next[ei], ...patch };
-                  setChain(next);
-                };
-                const removeChainEntry = (ei: number) => {
-                  const next = chain.filter((_, idx) => idx !== ei);
-                  setChain(next.length > 0 ? next : [{ conditions: [] }]);
-                };
-                const addChainEntry = () => setChain([...chain, { conditions: [], op: 'and' }]);
+                const legacyPairs = (c.conditions || []).filter((cc) => !isCommonCostCond(cc.base));
                 return (
-                  <div>
-                    {chain.map((entry, ei) => (
-                      <div key={ei} style={{ marginTop: ei === 0 ? 0 : 6 }}>
-                        {ei > 0 && (
-                          <div style={{ margin: '4px 0' }}>
-                            <ButtonGroup
-                              options={[{ code: 'and', label: 'AND（かつ）' }, { code: 'or', label: 'OR（または）' }]}
-                              value={entry.op || 'and'}
-                              onChange={(v) => updateChainEntry(ei, { op: (v || 'and') as 'and' | 'or' })}
-                              accentColor="#b76e00"
-                            />
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
-                          <div style={{ flex: 1 }}>
-                            <ConditionsHybridEditor
-                              conditions={entry.conditions}
-                              onChange={(next) => updateChainEntry(ei, { conditions: next })}
-                              dict={dict}
-                              title={ei === 0 ? 'コスト対象の絞り込み' : `コスト対象の絞り込み${ei + 1}`}
-                              hint="（複数指定時はAND）"
-                              theme="action"
-                              defaultSubject=""
-                              showSubjectSelector={false}
-                              targetL2={cCurTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
-                            />
-                          </div>
-                          {chain.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeChainEntry(ei)}
-                              style={{ border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '1px 7px', cursor: 'pointer', fontSize: 11, marginTop: 18 }}
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={addChainEntry}
-                      style={{ marginTop: 6, padding: '2px 8px', border: '1px dashed #b76e00', background: 'white', color: '#b76e00', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
-                    >
-                      + 条件を追加（AND/OR選択）
-                    </button>
-                  </div>
+                  <ConditionChainField
+                    chain={c.conditionChain}
+                    legacyPairs={legacyPairs}
+                    legacyOp={c.conditionsOp}
+                    onChainChange={(next) => updateCost(i, { ...c, conditionChain: next, conditions: commonConds })}
+                    dict={dict}
+                    titleBase="コスト対象の絞り込み"
+                    theme="action"
+                    extraProps={{ defaultSubject: '', showSubjectSelector: false, targetL2: cCurTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
+                  />
                 );
               })()}
             </div>
@@ -3044,6 +2995,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   };
   const effectConditions = isEditingAlt ? (editingAlt!.conditions || []) : conditions;
   const effectConditionsOp: 'and' | 'or' = isEditingAlt ? (editingAlt!.conditionsOp || 'and') : (block.conditionsOp || 'and');
+  const effectConditionsChain = isEditingAlt ? editingAlt!.conditionsChain : block.conditionsChain;
   const effectFromZones = isEditingAlt ? (editingAlt!.fromZones || []) : (block.fromZones || []);
   const effectFromZonesOp = isEditingAlt ? (editingAlt!.fromZonesOp || 'or') : (block.fromZonesOp || 'or');
   const effectFromZoneOwner = isEditingAlt ? editingAlt!.fromZoneOwner : block.fromZoneOwner;
@@ -3056,6 +3008,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectPerRef = isEditingAlt ? editingAlt!.perRef : block.perRef;
   const effectPerCountMode = isEditingAlt ? editingAlt!.perCountMode : block.perCountMode;
   const effectPerRefFilter = isEditingAlt ? (editingAlt!.perRefFilter || []) : (block.perRefFilter || []);
+  const effectPerRefFilterChain = isEditingAlt ? editingAlt!.perRefFilterChain : block.perRefFilterChain;
   const effectPerRefStateCond = isEditingAlt ? editingAlt!.perRefStateCond : block.perRefStateCond;
   const effectApplyCostModToPrev = isEditingAlt ? !!editingAlt!.applyCostModToPrev : false;
   const effectCostFree = isEditingAlt ? !!editingAlt!.costFree : !!block.costFree;
@@ -3068,7 +3021,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectOptional = isEditingAlt ? !!editingAlt!.optional : !!block.optional;
   const effectFromFilter = isEditingAlt ? (editingAlt!.fromFilter || []) : (block.fromFilter || []);
   const effectFromFilterOp = isEditingAlt ? (editingAlt!.fromFilterOp || 'and') : (block.fromFilterOp || 'and');
+  const effectFromFilterChain = isEditingAlt ? editingAlt!.fromFilterChain : block.fromFilterChain;
   const effectTargetFilter = isEditingAlt ? (editingAlt!.targetFilter || []) : targetFilter;
+  const effectTargetFilterChain = isEditingAlt ? editingAlt!.targetFilterChain : block.targetFilterChain;
   const showRetrievalFilterEffective = !!effectAction && BUILTIN_FROM_ZONE_ACTIONS.has(effectAction);
   function updateEffect(patch: Record<string, any>) {
     if (isEditingAlt) updateAltAction(editingEffect - 1, patch);
@@ -3222,6 +3177,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     const curPerCount = forEffect ? effectPerCount : block.perCount;
     const curPerCountMode = forEffect ? effectPerCountMode : block.perCountMode;
     const curPerRefFilter = forEffect ? effectPerRefFilter : (block.perRefFilter || []);
+    const curPerRefFilterChain = forEffect ? effectPerRefFilterChain : block.perRefFilterChain;
     const curPerRefStateCond = forEffect ? effectPerRefStateCond : block.perRefStateCond;
     const setFields = (patch: Record<string, any>) => {
       if (forEffect) updateEffect(patch);
@@ -3477,15 +3433,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
             {/* フィルタ: カウント時に追加で絞り込み（発動条件と同じボタン式のConditionsHybridEditorを再利用） */}
             <div style={{ marginTop: 8 }}>
-              <ConditionsHybridEditor
-                conditions={curPerRefFilter}
-                onChange={(next) => setFields({ perRefFilter: next })}
+              <ConditionChainField
+                chain={curPerRefFilterChain}
+                legacyPairs={curPerRefFilter}
+                onChainChange={(next) => setFields({ perRefFilterChain: next, perRefFilter: [] })}
                 dict={dict}
-                title="さらに絞り込み"
-                hint="（カウント対象の絞り込み・複数 AND）"
+                titleBase="さらに絞り込み"
                 theme="action"
-                defaultSubject=""
-                showSubjectSelector={false}
+                extraProps={{ defaultSubject: '', showSubjectSelector: false }}
               />
             </div>
           </div>
@@ -3642,31 +3597,27 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
             🔥 <b>バースト進化（指定テイマーを手札に戻すことでコスト0で進化できる）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。
             <div style={{ marginTop: 8 }}>
-              <ConditionsHybridEditor
-                conditions={block.burstBaseFilter || []}
-                onChange={(next) => update('burstBaseFilter', next)}
+              <ConditionChainField
+                chain={block.burstBaseFilterChain}
+                legacyPairs={block.burstBaseFilter}
+                legacyOp={block.burstBaseFilterOp}
+                onChainChange={(next) => onChange({ ...block, burstBaseFilterChain: next, burstBaseFilter: [] })}
                 dict={dict}
-                title="🧬 進化元の条件"
-                hint="（進化させたい元のデジモンの絞り込み・複数指定可。例: 名前を含む「シャイングレイモン」）"
+                titleBase="🧬 進化元の条件"
                 theme="action"
-                defaultSubject=""
-                showSubjectSelector={false}
-                conditionsOp={block.burstBaseFilterOp || 'and'}
-                onConditionsOpChange={(op) => update('burstBaseFilterOp', op)}
+                extraProps={{ defaultSubject: '', showSubjectSelector: false }}
               />
             </div>
             <div style={{ marginTop: 8 }}>
-              <ConditionsHybridEditor
-                conditions={block.burstTamerFilter || []}
-                onChange={(next) => update('burstTamerFilter', next)}
+              <ConditionChainField
+                chain={block.burstTamerFilterChain}
+                legacyPairs={block.burstTamerFilter}
+                legacyOp={block.burstTamerFilterOp}
+                onChainChange={(next) => onChange({ ...block, burstTamerFilterChain: next, burstTamerFilter: [] })}
                 dict={dict}
-                title="💰 コストの条件（手札に戻すテイマー）"
-                hint="（バトルエリアから手札に戻すテイマーの絞り込み・複数指定可。例: 名前を含む「大門大」）"
+                titleBase="💰 コストの条件（手札に戻すテイマー）"
                 theme="action"
-                defaultSubject=""
-                showSubjectSelector={false}
-                conditionsOp={block.burstTamerFilterOp || 'and'}
-                onConditionsOpChange={(op) => update('burstTamerFilterOp', op)}
+                extraProps={{ defaultSubject: '', showSubjectSelector: false }}
               />
             </div>
           </div>
@@ -3782,18 +3733,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               />
             </div>
             <div style={{ marginTop: 8 }}>
-              <ConditionsHybridEditor
-                conditions={conditions}
-                onChange={(next) => update('conditions', next)}
+              <ConditionChainField
+                chain={block.conditionsChain}
+                legacyPairs={conditions}
+                legacyOp={block.conditionsOp}
+                onChainChange={(next) => onChange({ ...block, conditionsChain: next, conditions: [] })}
                 dict={dict}
-                title="発動条件"
-                hint="（この軽減が有効になる条件・複数指定可）"
+                titleBase="発動条件"
                 theme="trigger"
-                defaultSubject=""
-                attackContextActive={isAttackTrigger}
-                conditionsOp={block.conditionsOp || 'and'}
-                onConditionsOpChange={(op) => update('conditionsOp', op)}
+                extraProps={{ defaultSubject: '', attackContextActive: isAttackTrigger }}
               />
+              {Array.isArray(block.conditionsChain) && block.conditionsChain.length > 1 && (
+                <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 複合条件（AND内包OR）はエンジン未対応です（保存はできますが動作しません）</div>
+              )}
             </div>
             {renderPerCountEditor()}
           </div>
@@ -4507,8 +4459,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               checked={triggerCondsOpen}
               onChange={(e) => {
                 setTriggerCondsOpen(e.target.checked);
-                if (!e.target.checked && triggerConditions.length > 0) {
-                  update('triggerConditions', []);
+                if (!e.target.checked && (triggerConditions.length > 0 || (block.triggerConditionsChain && block.triggerConditionsChain.length > 0))) {
+                  onChange({ ...block, triggerConditions: [], triggerConditionsChain: [] });
                 }
               }}
             />
@@ -4516,18 +4468,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </label>
           {triggerCondsOpen && (
             <div style={{ marginTop: 6 }}>
-              <ConditionsHybridEditor
-                conditions={triggerConditions}
-                onChange={(next) => update('triggerConditions', next)}
+              <ConditionChainField
+                chain={block.triggerConditionsChain}
+                legacyPairs={triggerConditions}
+                legacyOp={block.triggerConditionsOp}
+                onChainChange={(next) => onChange({ ...block, triggerConditionsChain: next, triggerConditions: [] })}
                 dict={dict}
-                title="トリガー条件"
-                hint="（このトリガーが発火する条件・トリガー発火元カードへのフィルタ）"
+                titleBase="トリガー条件"
                 theme="trigger"
-                defaultSubject=""
-                sameAsTargetSubject={targetBaseToCondSubject(block.target)}
-                attackContextActive={isAttackTrigger}
-                conditionsOp={block.triggerConditionsOp || 'and'}
-                onConditionsOpChange={(op) => update('triggerConditionsOp', op)}
+                extraProps={{ defaultSubject: '', sameAsTargetSubject: targetBaseToCondSubject(block.target), attackContextActive: isAttackTrigger }}
               />
             </div>
           )}
@@ -5680,18 +5629,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </div>
                     )}
                     <div style={{ marginTop: 6 }}>
-                      <ConditionsHybridEditor
-                        conditions={et.targetFilter || []}
-                        onChange={(next) => updateExtraTarget(idx, { targetFilter: next })}
+                      <ConditionChainField
+                        chain={et.targetFilterChain}
+                        legacyPairs={et.targetFilter}
+                        onChainChange={(next) => updateExtraTarget(idx, { targetFilterChain: next, targetFilter: [] })}
                         dict={dict}
-                        title="対象の条件"
-                        hint="（この対象の絞り込み条件・複数 AND）"
+                        titleBase="対象の条件"
                         theme="action"
-                        defaultSubject=""
-                        showSubjectSelector={false}
-                        supportsMultiValue={true}
-                        part="full"
-                        targetL2={etCurL1L2.l2 as 'digimon' | 'tamer' | 'card' | ''}
+                        extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, targetL2: etCurL1L2.l2 as 'digimon' | 'tamer' | 'card' | '' }}
                       />
                     </div>
                   </div>
@@ -5957,19 +5902,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           );
                         })}
                       </div>
-                      <ConditionsHybridEditor
-                        conditions={effectTargetFilter}
-                        onChange={(next) => updateEffect({ targetFilter: next })}
-                        dict={dict}
-                        title="対象の条件"
-                        hint="（対象カードの絞り込み条件・複数 AND）"
-                        theme="action"
-                        defaultSubject=""
-                        showSubjectSelector={false}
-                        supportsMultiValue={true}
-                        part="full"
-                        targetL2={eCurTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
-                      />
+                      {(() => {
+                        const isQuickCond = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
+                        const quickConds = effectTargetFilter.filter((cc) => isQuickCond(cc.base));
+                        return (
+                          <ConditionChainField
+                            chain={effectTargetFilterChain}
+                            legacyPairs={effectTargetFilter.filter((cc) => !isQuickCond(cc.base))}
+                            onChainChange={(next) => updateEffect({ targetFilterChain: next, targetFilter: quickConds })}
+                            dict={dict}
+                            titleBase="対象の条件"
+                            theme="action"
+                            extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, targetL2: eCurTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
+                          />
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -6451,20 +6398,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             で持つ。効果1・代替アクション（その後/OR/AND）とも同じ場所を使い回す */}
         {showRetrievalFilterEffective && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8, background: '#e0f7f5', border: '1px solid #b2dfdb', borderRadius: 4, padding: 8 }}>
-            <ConditionsHybridEditor
-              conditions={effectFromFilter}
-              onChange={(next) => updateEffect({ fromFilter: next })}
+            <ConditionChainField
+              chain={effectFromFilterChain}
+              legacyPairs={effectFromFilter}
+              legacyOp={effectFromFilterOp}
+              onChainChange={(next) => updateEffect({ fromFilterChain: next, fromFilter: [] })}
               dict={dict}
-              title="取得元カードの条件"
-              hint="（進化先/登場先として取得元エリアから選ぶカードの絞り込み。対象＝このカード自身の条件とは別物）"
+              titleBase="取得元カードの条件"
               theme="action"
-              defaultSubject=""
-              showSubjectSelector={false}
-              supportsMultiValue={true}
-              showTypeInTargetFilter={true}
-              part="full"
-              conditionsOp={effectFromFilterOp}
-              onConditionsOpChange={(op) => updateEffect({ fromFilterOp: op })}
+              extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, showTypeInTargetFilter: true }}
             />
             {/* 既に場にいる同名カードは除外（例:「自分のテイマーと同じ名称のカードは登場できない」）。
                 対象数/取得元とは独立したチェックのため、条件エディタとは別枠のチェックボックスで持つ */}
@@ -6557,28 +6499,31 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>
             このカード自身やゲーム状況を確認する条件。対象カードを色/タイプで絞る場合は「ターゲットフィルタ」を使用
           </div>
-          <ConditionsHybridEditor
-            conditions={effectConditions}
-            onChange={(next) => updateEffect({ conditions: next })}
+          <ConditionChainField
+            chain={effectConditionsChain}
+            legacyPairs={effectConditions}
+            legacyOp={effectConditionsOp}
+            onChainChange={(next) => updateEffect({ conditionsChain: next, conditions: [] })}
             dict={dict}
-            title={isEditingAlt ? `発動条件（効果${editingEffect + 1}）` : '発動条件'}
-            hint={
-              isEditingAlt
-                ? '（この効果を発動するための条件・複数指定可）'
-                : block.trigger === 'alt_evolve'
-                ? '（代替進化専用の意味: 条件1=発動条件 / 条件2=進化元の絞り込み・複数追加時は3個目以降は無視されます）'
-                : FUSION_EVOLVE_TRIGGERS.has(block.trigger)
-                ? '（この効果が有効になる条件。素材候補の指定は上の🧬バナー内で行います）'
-                : '（このアクションを発動するために満たすべき条件・複数指定可）'
-            }
+            titleBase={isEditingAlt ? `発動条件（効果${editingEffect + 1}）` : '発動条件'}
             theme="action"
-            defaultSubject=""
-            sameAsTargetSubject={targetBaseToCondSubject(effectTarget)}
-            attackContextActive={isAttackTrigger}
-            showCostMod={effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'destroy'}
-            conditionsOp={effectConditionsOp}
-            onConditionsOpChange={(op) => updateEffect({ conditionsOp: op })}
+            extraProps={{
+              defaultSubject: '',
+              sameAsTargetSubject: targetBaseToCondSubject(effectTarget),
+              attackContextActive: isAttackTrigger,
+              showCostMod: effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'destroy',
+            }}
           />
+          {(() => {
+            const hint = isEditingAlt
+              ? '（この効果を発動するための条件・複数指定可）'
+              : block.trigger === 'alt_evolve'
+              ? '（代替進化専用の意味: 条件1=発動条件 / 条件2=進化元の絞り込み・複数追加時は3個目以降は無視されます）'
+              : FUSION_EVOLVE_TRIGGERS.has(block.trigger)
+              ? '（この効果が有効になる条件。素材候補の指定は上の🧬バナー内で行います）'
+              : '（このアクションを発動するために満たすべき条件・複数指定可）';
+            return <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>{hint}</div>;
+          })()}
 
         {renderPerCountEditor(isEditingAlt)}
         </details>
@@ -6803,17 +6748,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </details>
                 )}
                 {/* 内側条件 */}
-                <ConditionsHybridEditor
-                  conditions={grantedStep.conditions || []}
-                  onChange={(next) => updateGrantedStep({ conditions: next })}
+                <ConditionChainField
+                  chain={grantedStep.conditionsChain}
+                  legacyPairs={grantedStep.conditions}
+                  onChainChange={(next) => updateGrantedStep({ conditionsChain: next, conditions: [] })}
                   dict={dict}
-                  title="付与効果の発動条件"
-                  hint="（付与された効果が発動するための条件）"
+                  titleBase="付与効果の発動条件"
                   theme="action"
-                  defaultSubject=""
-                  showSubjectSelector={false}
-                  attackContextActive={ATTACK_TRIGGER_CODES.includes(grantedStep.trigger)}
+                  extraProps={{ defaultSubject: '', showSubjectSelector: false, attackContextActive: ATTACK_TRIGGER_CODES.includes(grantedStep.trigger) }}
                 />
+                {Array.isArray(grantedStep.conditionsChain) && grantedStep.conditionsChain.length > 1 && (
+                  <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 複合条件（AND内包OR）はエンジン未対応です（保存はできますが動作しません）</div>
+                )}
               </>
             )}
           </div>
@@ -8879,6 +8825,96 @@ function ConditionsHybridEditor({
     <div className="field" style={{ gridColumn: '1 / span 2', background: colors.bg, padding: 8, borderRadius: 4, border: `1px solid ${colors.border}` }}>
       {buttonsNode}
       {panelsNode}
+    </div>
+  );
+}
+
+// 旧flat（pairs+op）データから条件チェーンの初期表示を組み立てる。旧「AND/ORどちらか一方」
+// トグルがop==='or'だった場合は各条件を独立セグメント化（従来のOR全展開と同じ見た目）にし、
+// それ以外（and/未指定）は1セグメントにまとめる（従来の複数条件AND表示と同じ）
+function deriveDefaultConditionChain(pairs: ConditionPair[] | undefined, op: 'and' | 'or' | undefined): ConditionChainEntry[] {
+  const list = pairs || [];
+  if (op === 'or' && list.length >= 2) {
+    return list.map((p, idx) => ({ conditions: [p], op: idx === 0 ? undefined : ('or' as const) }));
+  }
+  return [{ conditions: list }];
+}
+
+// 条件チェーンUI（1条件ずつ追加し、直前条件とのAND/ORを選べる「ANDがORより優先」＝
+// OR区切りでAND区間をまとめる積和評価）の共通部品。デッキ検索のグループ条件チェーン・
+// コスト対象の絞り込み（アセンブリ）と同じUI/挙動を、他の条件パネルでも使い回す。
+// chain が空なら legacyPairs/legacyOp から初期セグメントを1つ導出して表示する
+function ConditionChainField({
+  chain, legacyPairs, legacyOp, onChainChange, dict, titleBase, theme, accentColor = '#b76e00', extraProps,
+}: {
+  chain: ConditionChainEntry[] | undefined;
+  legacyPairs: ConditionPair[] | undefined;
+  legacyOp?: 'and' | 'or';
+  onChainChange: (next: ConditionChainEntry[]) => void;
+  dict: DictAPI;
+  titleBase: string;
+  theme: 'trigger' | 'action';
+  accentColor?: string;
+  extraProps?: Partial<Pick<ConditionsHybridEditorProps,
+    'defaultSubject' | 'showSubjectSelector' | 'sameAsTargetSubject' | 'supportsMultiValue' |
+    'attackContextActive' | 'allowDistinctVariants' | 'showCostMod' | 'showTypeInTargetFilter' | 'targetL2'>>;
+}) {
+  const effectiveChain: ConditionChainEntry[] = (chain && chain.length > 0) ? chain : deriveDefaultConditionChain(legacyPairs, legacyOp);
+  const updateEntry = (ei: number, patch: Partial<ConditionChainEntry>) => {
+    const next = effectiveChain.slice();
+    next[ei] = { ...next[ei], ...patch };
+    onChainChange(next);
+  };
+  const removeEntry = (ei: number) => {
+    const next = effectiveChain.filter((_, idx) => idx !== ei);
+    onChainChange(next.length > 0 ? next : [{ conditions: [] }]);
+  };
+  const addEntry = () => onChainChange([...effectiveChain, { conditions: [], op: 'and' }]);
+  return (
+    <div>
+      {effectiveChain.map((entry, ei) => (
+        <div key={ei} style={{ marginTop: ei === 0 ? 0 : 6 }}>
+          {ei > 0 && (
+            <div style={{ margin: '4px 0' }}>
+              <ButtonGroup
+                options={[{ code: 'and', label: 'AND（かつ）' }, { code: 'or', label: 'OR（または）' }]}
+                value={entry.op || 'and'}
+                onChange={(v) => updateEntry(ei, { op: (v || 'and') as 'and' | 'or' })}
+                accentColor={accentColor}
+              />
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+            <div style={{ flex: 1 }}>
+              <ConditionsHybridEditor
+                conditions={entry.conditions}
+                onChange={(next) => updateEntry(ei, { conditions: next })}
+                dict={dict}
+                title={ei === 0 ? titleBase : `${titleBase}${ei + 1}`}
+                hint="（複数指定時はAND）"
+                theme={theme}
+                {...extraProps}
+              />
+            </div>
+            {effectiveChain.length > 1 && (
+              <button
+                type="button"
+                onClick={() => removeEntry(ei)}
+                style={{ border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '1px 7px', cursor: 'pointer', fontSize: 11, marginTop: 18 }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={addEntry}
+        style={{ marginTop: 6, padding: '2px 8px', border: '1px dashed ' + accentColor, background: 'white', color: accentColor, borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+      >
+        + 条件を追加（AND/OR選択）
+      </button>
     </div>
   );
 }

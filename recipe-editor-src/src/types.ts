@@ -15,6 +15,9 @@ export interface DesignatedGroup {
   // extra_conditionsには含めない
   conditions: ConditionPair[];
   conditionsOp?: 'and' | 'or';
+  // conditionsのAND内包OR版条件チェーン。⚠ エンジン未対応（_expandDesignatedGroupsJS等の
+  // 3つの展開関数を拡張する必要がある。保存はできるが複数セグメント使用時は動作しない）
+  conditionChain?: ConditionChainEntry[];
   count?: number | string;
 }
 
@@ -42,6 +45,9 @@ export interface KeywordEntry {
   // JSONには残らない＝エディタ入力の利便性のためだけの機能）
   commonConditions?: ConditionPair[];
   commonConditionsOp?: 'and' | 'or';
+  // commonConditionsのAND内包OR版条件チェーン。⚠ エンジン未対応（DesignatedGroup.conditionChainと
+  // 同じ制約。保存はできるが複数セグメント使用時は動作しない）
+  commonConditionsChain?: ConditionChainEntry[];
   // 後方互換用（designatedGroupsが無い/1組のときの単純ケース）
   keywordParamConditions?: ConditionPair[];
   keywordParamConditionsOp?: 'and' | 'or';
@@ -55,6 +61,8 @@ export interface KeywordEntry {
 export interface ExtraTarget {
   target: string;
   targetFilter?: ConditionPair[];
+  // targetFilterのAND内包OR版条件チェーン（EffectBlock.targetFilterChainと同じ意味・変換）
+  targetFilterChain?: ConditionChainEntry[];
 }
 
 // 効果ブロック1ステップの構造（コードブロックシートと同等）
@@ -88,6 +96,10 @@ export interface EffectBlock {
   // 'or'なら発火元カードがいずれか1件でも満たせばOK
   // （例:「名称に『ロゼモン』を含むか特徴『セイバーズ』を持つこのデジモンが～とき」）
   triggerConditionsOp?: 'and' | 'or';
+  // 「(Lv4以下 AND 名前クロノモン) OR 特徴TS」のようなAND内包のOR（複合条件）用の条件チェーン。
+  // 設定されていれば triggerConditions/triggerConditionsOp より優先される。
+  // JSON では step.trigger_conditions_chain に serialize。エンジン対応済み（_evalTriggerConditionsArray）
+  triggerConditionsChain?: ConditionChainEntry[];
   // 「破棄されたとき」(discard/when_evo_discard) 専用: どのゾーンからの破棄に反応するか
   // （手札/トラッシュ/セキュリティ/進化元/デッキ/リンクカード。複数選択でOR/AND切替可）。
   // JSONへは step.trigger_from / step.trigger_from_op として出力する
@@ -153,6 +165,14 @@ export interface EffectBlock {
   // 複数条件の結合方法。既定'and'=全部満たす／'or'=いずれか1つ満たす。
   // JSON では conditions.length>=2 のときだけ step.condition_op:'or' として出力する
   conditionsOp?: 'and' | 'or';
+  // 「(Lv4以下 AND 名前クロノモン) OR 特徴TS」のようなAND内包のOR（複合条件）用の条件チェーン。
+  // 設定されていれば conditions/conditionsOp より優先される。
+  // JSON では単一セグメントならcondition/when/extra_conditionsへ畳み込み、複数セグメント
+  // （真の複合OR）ならstep.condition_chainとして出力する。
+  // ⚠ エンジン未対応（block.conditions＝「発動条件」はrunOneAction内の個別アクション
+  // ケースごとに分散してcondition/when/extra_conditionsを読んでおり、単一の共通評価経路が
+  // 無いため。保存はできるが複数セグメント使用時は動作しない）
+  conditionsChain?: ConditionChainEntry[];
   costs?: CostStep[]; // 0〜N個のコスト（〜することで）
   duration?: string;
   action?: string;
@@ -181,6 +201,8 @@ export interface EffectBlock {
   // （エディタ内限定の値）
   keywordParamConditions?: ConditionPair[];
   keywordParamConditionsOp?: 'and' | 'or';
+  // keywordParamConditionsのAND内包OR版条件チェーン（KeywordEntry側と同じ⚠エンジン未対応）
+  keywordParamConditionsChain?: ConditionChainEntry[];
   // アセンブリ等、絞り込んだカードを何枚使うか（keywordEntries[0].count のミラー。
   // 省略時は1枚として扱う想定）。JSONへは p.count / step.count として出力する
   keywordCount?: number | string;
@@ -191,6 +213,8 @@ export interface EffectBlock {
   // 全グループ共通の絞り込み条件（keywordEntries[0].commonConditions のミラー）
   keywordCommonConditions?: ConditionPair[];
   keywordCommonConditionsOp?: 'and' | 'or';
+  // keywordCommonConditionsのAND内包OR版条件チェーン（KeywordEntry側と同じ⚠エンジン未対応）
+  keywordCommonConditionsChain?: ConditionChainEntry[];
   // 複数キーワード選択（パッシブ/キーワード付与 共通）。1件のブロックで複数のキーワードを
   // 同時に持たせたい場合（例: 進化元効果で【貫通】【分離】を両方常に持つ）に使う。
   // これが1件以上あればこちらを優先し、上の keyword/value/keywordParamConditions*は
@@ -259,6 +283,10 @@ export interface EffectBlock {
   perRef?: string;    // カウント対象 subject ('own_digimon' / 'opp_digimon' / 'own_hand' 等)
   perRefStateCond?: ConditionPair; // 状態を表す単一条件（cond_self_rest / cond_no_evo 等）
   perRefFilter?: ConditionPair[]; // カウント時の追加フィルタ（色/タイプ/特徴/Lv 等）
+  // perRefFilterのAND内包OR版条件チェーン。設定されていればperRefFilterより優先。
+  // JSON では単一セグメントならstep.ref_filterのフラット形式、複数セグメントなら
+  // {or:[...]}形式で出力する（cardMatchesFilterが再帰的にOR評価・エンジン対応済み）
+  perRefFilterChain?: ConditionChainEntry[];
   perCountMode?: 'repeat'; // 'repeat' = N回発動（1枚ごとに1回効果）, undefined = 値×N（既存動作）
   options?: string[]; // 修飾子コード配列（'ignore_cost' / 'face_down' 等、複数可）
   rules?: MiniStep[]; // ルール = ミニ effect step の配列。serialize 時に main action 毎に翻訳されて step に展開
@@ -272,6 +300,11 @@ export interface EffectBlock {
   grantedStep?: GrantedStep;
   extras?: string; // フリー入力 JSON 文字列
   targetFilter?: ConditionPair[]; // アクション対象自身の絞り込み（例:レスト状態のこのデジモン）→ step.filter に serialize
+  // targetFilterのAND内包OR版条件チェーン（「Lv4以下のクロノモン、または特徴TS」等）。
+  // 設定されていればtargetFilterより優先。JSON では単一セグメントならstep.filterの
+  // フラット形式、複数セグメントなら{or:[...]}形式で出力する（cardMatchesFilterが
+  // 再帰的にOR評価・エンジン対応済み）
+  targetFilterChain?: ConditionChainEntry[];
   // 進化/登場アクション専用。対象＝このカード自身であっても、取得元エリア（手札等）から
   // 選ぶカードの絞り込みは別物（例:「手札の『クロノモン』の記述があるデジモンカード」）
   // なので targetFilter とは別データとして持つ → step.from_filter に serialize
@@ -279,6 +312,8 @@ export interface EffectBlock {
   // fromFilterの複数条件の結合方法。'or'時は各条件を単独のfilterに分解しstep.from_filter.or
   // （配列）として出力する（例:「名前がタイタモン」か「特徴がタイタン族」のどちらか）
   fromFilterOp?: 'and' | 'or';
+  // fromFilterのAND内包OR版条件チェーン。設定されていればfromFilter/fromFilterOpより優先
+  fromFilterChain?: ConditionChainEntry[];
   // 取得元カードの絞り込み専用: 既に指定ゾーンにいる同名カードを除外する
   // （例:「自分のテイマーと同じ名称のカードは登場できない」）。
   // own_tamer=自分のテイマーエリア/own_digimon=自分のバトルエリア/own_any=両方。
@@ -310,10 +345,16 @@ export interface EffectBlock {
   // シリアライズされる（trigger_conditions と同じ「文字列配列+op」形式）
   burstBaseFilter?: ConditionPair[];
   burstBaseFilterOp?: 'and' | 'or';
+  // burstBaseFilterのAND内包OR版条件チェーン。設定されていればburstBaseFilterより優先。
+  // JSON では step.base_conditions_chain へ serialize（エンジン対応済み・_evalTriggerConditionsArray）
+  burstBaseFilterChain?: ConditionChainEntry[];
   // burst_evolve 専用: バトルエリアから手札に戻すテイマーの絞り込み条件（＝進化の代替コスト）。
   // JSON では step.tamer_conditions[] へシリアライズされる
   burstTamerFilter?: ConditionPair[];
   burstTamerFilterOp?: 'and' | 'or';
+  // burstTamerFilterのAND内包OR版条件チェーン。JSON では step.tamer_conditions_chain へ
+  // serialize（エンジン対応済み・_evalTriggerConditionsArray）
+  burstTamerFilterChain?: ConditionChainEntry[];
 }
 
 // 付与される効果（grant_effect 用のネスト 1ステップ）
@@ -325,6 +366,9 @@ export interface GrantedStep {
   target?: string;
   duration?: string;
   conditions?: ConditionPair[];
+  // conditionsのAND内包OR版条件チェーン。⚠ エンジン未対応（EffectBlock.conditionsChainと同じ
+  // 制約。保存はできるが複数セグメント使用時は動作しない）
+  conditionsChain?: ConditionChainEntry[];
   options?: string[];
 }
 
@@ -356,6 +400,8 @@ export interface AltAction {
   gateConditions?: ConditionPair[];
   conditions?: ConditionPair[];
   conditionsOp?: 'and' | 'or';
+  // conditionsのAND内包OR版条件チェーン（EffectBlock.conditionsChainと同じ制約・⚠エンジン未対応）
+  conditionsChain?: ConditionChainEntry[];
   options?: string[];
   fromZones?: string[];
   fromZonesOp?: 'or' | 'and';
@@ -386,6 +432,8 @@ export interface AltAction {
   perRefStateCond?: ConditionPair; // 効果1と同じ意味。JSONではstep.ref_stateに出力
   perCountMode?: 'repeat';
   perRefFilter?: ConditionPair[];
+  // perRefFilterのAND内包OR版条件チェーン（EffectBlock.perRefFilterChainと同じ意味・変換）
+  perRefFilterChain?: ConditionChainEntry[];
   // 「コスト上限+/-」専用: このAltAction自体は独立したalt_actionsのエントリとして出力せず、
   // 直前の効果（効果1ならblock自身のfilter、効果2以降ならその直前のAltActionのfilter）の
   // filter.cost_le（登場/使用コスト◯以下）へ、value/perCount/perRef/perRefStateCondから
@@ -405,8 +453,12 @@ export interface AltAction {
   // 対象自身の絞り込み（→ step.filter）・取得元エリアから選ぶカードの絞り込み
   // （→ step.from_filter）。効果1のtargetFilter/fromFilterと同じ意味・同じ変換ルール
   targetFilter?: ConditionPair[];
+  // targetFilterのAND内包OR版条件チェーン（EffectBlock.targetFilterChainと同じ意味・変換）
+  targetFilterChain?: ConditionChainEntry[];
   fromFilter?: ConditionPair[];
   fromFilterOp?: 'and' | 'or';
+  // fromFilterのAND内包OR版条件チェーン（EffectBlock.fromFilterChainと同じ意味・変換）
+  fromFilterChain?: ConditionChainEntry[];
   fromExcludeSameNameZone?: 'own_tamer' | 'own_digimon' | 'own_any';
   // コスト（「〇〇することで」発動）。効果1のcostsと同じ意味・同じ変換ルール
   costs?: CostStep[];

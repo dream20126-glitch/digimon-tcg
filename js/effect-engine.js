@@ -1261,7 +1261,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // target_opponent_tamer=相手のテイマー / それ以外(未指定/target_opponent等)は
       // 後方互換で従来通り「相手のデジモン」固定
       const _edRawCode = (defaultTarget && defaultTarget.code) || '';
-      const _edBaseCode = _edRawCode.replace(/_stack(_bottom)?$/, '');
+      const _edBaseCode = _edRawCode.replace(/(_evo)?_stack(_top|_bottom)?$/, '');
       // evo_discard_tamer_* はアクションコード自体がテイマー指定なので target を見ずに強制する
       const _edActionForcesTamer = /^evo_discard_tamer/.test(action.code || '');
       let edOwner = opponent, edAreaKey = 'battleArea', edSide = (ctx.side === 'player' ? 'ai' : 'player');
@@ -6751,7 +6751,7 @@ export function fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, done, con
   // 原因追跡は「今まさに解決中の反応チェーン」限定の一時情報のため、解決完了後は必ずクリアする
   const finish = () => { if (bs) bs._lastDestroyCause = null; try { done && done(); } catch(_) {} };
   const subjectMatches = (step, cardSide) => {
-    const base = String(_resolveStepSubject(step, 'when_evo_discard') || '').replace(/_stack(_bottom)?$/, '');
+    const base = String(_resolveStepSubject(step, 'when_evo_discard') || '').replace(/(_evo)?_stack(_top|_bottom)?$/, '');
     let sideMatch, typeReq = null;
     switch (base) {
       case 'opp': sideMatch = discardedSide !== cardSide; break;
@@ -6823,7 +6823,7 @@ export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
     if (!step) return false;
     const subj = _resolveStepSubject(step, 'when_rest');
     if (!subj) return false; // 未指定は対象外（'when_rest'単独キー使用時の既定=own側と衝突させないため）
-    const base = String(subj).replace(/_stack(_bottom)?$/, '');
+    const base = String(subj).replace(/(_evo)?_stack(_top|_bottom)?$/, '');
     if (base === 'own' || base.indexOf('own_') === 0) return false;
     return true;
   };
@@ -6852,7 +6852,7 @@ export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) 
   const stepFilter = (step) => {
     if (!step) return false;
     const subj = _resolveStepSubject(step, 'when_rest');
-    const base = String(subj || 'own').replace(/_stack(_bottom)?$/, '');
+    const base = String(subj || 'own').replace(/(_evo)?_stack(_top|_bottom)?$/, '');
     if (base === 'opp' || base.indexOf('opp_') === 0) return false;
     if (base.indexOf('tamer') >= 0 && restedCard.type !== 'テイマー') return false;
     if (base.indexOf('digimon') >= 0 && restedCard.type !== 'デジモン') return false;
@@ -10167,7 +10167,7 @@ function executeRecipeStep(step, ctx, store, callback) {
     //         optional? }
     case 'place_under_tamer': {
       // --- 対象（どのテイマーの下に置くか）の解決 ---
-      const _putTgtRaw = String(step.target || 'own_tamer').split(':')[0].replace(/_stack(_bottom)?$/, '');
+      const _putTgtRaw = String(step.target || 'own_tamer').split(':')[0].replace(/(_evo)?_stack(_top|_bottom)?$/, '');
       const _putOwner = (_putTgtRaw === 'opponent_tamer' || _putTgtRaw === 'opp_tamer') ? opponent : player;
       const _putConds = [];
       if (step.condition) _putConds.push(...parseRecipeCondition(step.condition));
@@ -10264,7 +10264,7 @@ function executeRecipeStep(step, ctx, store, callback) {
     //         position?('top'既定/'bottom'), options?(['face_down']), optional? }
     case 'place_under_digimon': {
       // --- 置き先デジモンの解決 ---
-      const _pudTgtBase = String(step.target || '').split(':')[0].replace(/_stack(_bottom)?$/, '');
+      const _pudTgtBase = String(step.target || '').split(':')[0].replace(/(_evo)?_stack(_top|_bottom)?$/, '');
       const _pudSelf = _pudTgtBase === 'self' || _pudTgtBase === 'self_card';
       const _pudBottom = step.position === 'bottom';
       const _pudFaceDown = Array.isArray(step.options) && step.options.includes('face_down');

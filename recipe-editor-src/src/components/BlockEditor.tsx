@@ -1693,7 +1693,30 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   both_card: { l1: 'both', l2: 'card' },
   both_tamer: { l1: 'both', l2: 'tamer' },
   both_player: { l1: 'both', l2: 'player' },
+  // 場所（手札/トラッシュ/セキュリティ）: 辞書側「場所指定」フラグが立っているトリガー
+  // （破棄されたとき等）でのみ選択肢に出す。エンジンのsubjectMatchesに対応ケースが無く、
+  // 保存はできても発火しない（進化元/テイマー下の破棄のみ対応済みのエンジン未実装枠）
+  own_hand: { l1: 'own', l2: 'hand' },
+  own_trash: { l1: 'own', l2: 'trash' },
+  own_security: { l1: 'own', l2: 'security' },
+  opp_hand: { l1: 'opp', l2: 'hand' },
+  opp_trash: { l1: 'opp', l2: 'trash' },
+  opp_security: { l1: 'opp', l2: 'security' },
 };
+Object.assign(SUBJECT_L1L2_TO_CODE, {
+  'own:hand': 'own_hand', 'own:trash': 'own_trash', 'own:security': 'own_security',
+  'opp:hand': 'opp_hand', 'opp:trash': 'opp_trash', 'opp:security': 'opp_security',
+});
+// 「場所指定」フラグが立っているトリガー（破棄されたとき等）でのみ、通常のL2一覧に
+// 手札/トラッシュ/セキュリティを追加する（アクション対象欄のTARGET_SEL_L2_FROM_ZONESと
+// 同じ考え方。デッキ/バトルエリア/リンクカードはここでは対象外）
+const SUBJECT_L2_FROM_ZONES = [
+  { code: 'hand', label: '手札' },
+  { code: 'trash', label: 'トラッシュ' },
+  { code: 'security', label: 'セキュリティ' },
+];
+// own_hand等はエンジンのsubjectMatchesに対応ケースが無く、保存はできても発火しない
+const SUBJECT_UNIMPLEMENTED_ZONES = new Set(['own_hand', 'own_trash', 'own_security', 'opp_hand', 'opp_trash', 'opp_security']);
 
 // 条件の「対象」用の2段階ボタン選択（発動主体と同じ見た目のパターンだが、
 // CONDITION_SUBJECTS のコード体系が発動主体と異なる＝別テーブルで持つ）
@@ -1828,6 +1851,151 @@ function splitStackSuffix(code: string): { base: string; pos: StackPos } {
 }
 function joinStackSuffix(base: string, pos: StackPos): string {
   return pos ? base + '_' + pos : base;
+}
+
+// 発動主体（トリガー）専用の第3段階（進化元/重ねられているカード）＋第4段階（上/下/選んで）
+// サフィックス。既存の_stack/_stack_bottom（splitStackSuffix）とは別体系だが、
+// 後方互換のため「_evo_」プレフィックスが無い_stack系は「重ねられているカード」として読む。
+// 新設: _stack_top（重ねられているカード×上）/ _evo_stack, _evo_stack_top, _evo_stack_bottom（進化元系）
+type TriggerStackFamily = '' | 'evo' | 'stacked';
+type TriggerStackPos = '' | 'top' | 'bottom';
+function splitTriggerSubjectSuffix(code: string): { base: string; family: TriggerStackFamily; pos: TriggerStackPos } {
+  if (code.endsWith('_evo_stack_top')) return { base: code.slice(0, -'_evo_stack_top'.length), family: 'evo', pos: 'top' };
+  if (code.endsWith('_evo_stack_bottom')) return { base: code.slice(0, -'_evo_stack_bottom'.length), family: 'evo', pos: 'bottom' };
+  if (code.endsWith('_evo_stack')) return { base: code.slice(0, -'_evo_stack'.length), family: 'evo', pos: '' };
+  if (code.endsWith('_stack_top')) return { base: code.slice(0, -'_stack_top'.length), family: 'stacked', pos: 'top' };
+  if (code.endsWith('_stack_bottom')) return { base: code.slice(0, -'_stack_bottom'.length), family: 'stacked', pos: 'bottom' };
+  if (code.endsWith('_stack')) return { base: code.slice(0, -'_stack'.length), family: 'stacked', pos: '' };
+  return { base: code, family: '', pos: '' };
+}
+function joinTriggerSubjectSuffix(base: string, family: TriggerStackFamily, pos: TriggerStackPos): string {
+  if (!family) return base;
+  return base + (family === 'evo' ? '_evo_stack' : '_stack') + (pos ? '_' + pos : '');
+}
+
+// 発動主体の段階式ピッカー（共有パネル／トリガーごとに発動主体を分けるモードの両方から
+// 使う共通実装。以前は2箇所に丸ごと複製されており、片方だけ直して片方直し忘れる事故が
+// 繰り返し起きていたため、ロジックを1箇所に集約する）。
+// 第1段階(自分/相手/他/このカード/[なし]) → 第2段階(デジモン/テイマー/カード/プレイヤー
+// +手札/トラッシュ/セキュリティ[hasFromZonesの時のみ]) → 第3段階(進化元/重ねられている
+// カード。デジモン選択時+hasFromZonesの時のみ) → 第4段階(位置:上/下/選んで。テイマー選択時
+// または第3段階を選んだ時のみ)
+function TriggerSubjectStagedPicker({
+  subject, onChange, hasFromZones, allowNone = false, hasEntry = true, onClear,
+  accentColor = '#2e7d32', suppressTypeButtons = false,
+}: {
+  subject: string;
+  onChange: (next: string) => void;
+  hasFromZones: boolean;
+  allowNone?: boolean;
+  hasEntry?: boolean;
+  onClear?: () => void;
+  accentColor?: string;
+  suppressTypeButtons?: boolean;
+}) {
+  const raw = splitTriggerSubjectSuffix(subject || '');
+  const cur = SUBJECT_CODE_TO_L1L2[raw.base] || { l1: 'self', l2: '' };
+  const handleL1 = (l1: string) => {
+    if (l1 === 'self') { onChange('self'); return; }
+    const l2 = cur.l1 === l1 && cur.l2 ? cur.l2 : 'digimon';
+    onChange(SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon'] || l1);
+  };
+  const handleL2 = (l2: string) => {
+    onChange(SUBJECT_L1L2_TO_CODE[cur.l1 + ':' + l2]);
+  };
+  const baseL2Options = cur.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
+  const l2Options = hasFromZones ? [...baseL2Options, ...SUBJECT_L2_FROM_ZONES] : baseL2Options;
+  const hasDigimonTamer = !suppressTypeButtons && (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'other_own' || cur.l1 === 'both');
+  const subjDigimonCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':digimon'];
+  const subjTamerCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':tamer'];
+  const subjCardCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':card'];
+  const subjDigimonChecked = hasDigimonTamer && (cur.l2 === 'digimon' || cur.l2 === 'card');
+  const subjTamerChecked = hasDigimonTamer && (cur.l2 === 'tamer' || cur.l2 === 'card');
+  const subjExclusiveL2Options = l2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer' && o.code !== 'card');
+  const applySubjDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
+    if (nextDigimon && nextTamer) onChange(subjCardCode);
+    else if (nextDigimon) onChange(subjDigimonCode);
+    else if (nextTamer) onChange(subjTamerCode);
+    else onChange(cur.l1);
+  };
+  // 第3段階: デジモンを選択している場合のみ、進化元/重ねられているカードのサブ選択肢を出す
+  const showStage3 = hasFromZones && cur.l2 === 'digimon';
+  // 第4段階: テイマー選択時、または第3段階で進化元/重ねられているカードを選んだ時
+  const showStage4 = hasFromZones && (cur.l2 === 'tamer' || (showStage3 && raw.family !== ''));
+  const setFamily = (family: TriggerStackFamily) => onChange(joinTriggerSubjectSuffix(raw.base, family, family ? raw.pos : ''));
+  const setPos = (pos: TriggerStackPos) => onChange(joinTriggerSubjectSuffix(raw.base, raw.family || 'stacked', pos));
+  const l1Value = !hasEntry ? '__none__' : (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'both') ? '' : cur.l1;
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <MultiButtonGroup
+          options={SUBJECT_OWN_OPP}
+          values={[...(cur.l1 === 'own' || cur.l1 === 'both' ? ['own'] : []), ...(cur.l1 === 'opp' || cur.l1 === 'both' ? ['opp'] : [])]}
+          onToggle={(code, on) => {
+            const ownOn = cur.l1 === 'own' || cur.l1 === 'both';
+            const oppOn = cur.l1 === 'opp' || cur.l1 === 'both';
+            const nextOwn = code === 'own' ? on : ownOn;
+            const nextOpp = code === 'opp' ? on : oppOn;
+            handleL1(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : 'self');
+          }}
+          accentColor={accentColor}
+        />
+        <ButtonGroup
+          options={allowNone ? SUBJECT_L1_REST_WITH_NONE : SUBJECT_L1_REST}
+          value={l1Value}
+          onChange={(v) => { if (v === '__none__') { onClear && onClear(); } else { handleL1(v); } }}
+          accentColor={accentColor}
+        />
+      </div>
+      {hasDigimonTamer && (
+        <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <MultiButtonGroup
+            options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }]}
+            values={[...(subjDigimonChecked ? ['digimon'] : []), ...(subjTamerChecked ? ['tamer'] : [])]}
+            onToggle={(code, on) => applySubjDigiTamer(
+              code === 'digimon' ? on : subjDigimonChecked,
+              code === 'tamer' ? on : subjTamerChecked
+            )}
+            accentColor={accentColor}
+          />
+          {subjExclusiveL2Options.length > 0 && (
+            <ButtonGroup
+              options={subjExclusiveL2Options}
+              value={!subjDigimonChecked && !subjTamerChecked ? cur.l2 : ''}
+              onChange={handleL2}
+              accentColor={accentColor}
+            />
+          )}
+        </div>
+      )}
+      {!hasDigimonTamer && cur.l1 !== 'self' && cur.l1 !== 'both' && (
+        <div style={{ marginTop: 4 }}>
+          <ButtonGroup options={l2Options} value={cur.l2} onChange={handleL2} accentColor={accentColor} />
+        </div>
+      )}
+      {showStage3 && (
+        <div style={{ marginTop: 4 }}>
+          <ButtonGroup
+            options={[{ code: '', label: '指定なし' }, { code: 'evo', label: '進化元' }, { code: 'stacked', label: '重ねられているカード' }]}
+            value={raw.family}
+            onChange={(v) => setFamily((v || '') as TriggerStackFamily)}
+            accentColor={accentColor}
+          />
+        </div>
+      )}
+      {showStage4 && (
+        <div style={{ marginTop: 4 }}>
+          <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
+          <ButtonGroup
+            options={[{ code: '', label: '選んで' }, { code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+            value={raw.pos}
+            onChange={(v) => setPos((v || '') as TriggerStackPos)}
+            accentColor={accentColor}
+          />
+        </div>
+      )}
+    </>
+  );
 }
 
 // 最も多いプレイヤー = 自分/相手のうち、指定ゾーン（セキュリティ/トラッシュ/手札/進化元）の
@@ -3447,39 +3615,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               })
               .filter((x): x is { fam: TriggerFamily; axisLabel: string } => x !== null);
 
-            const rawTriggerSubject = splitStackSuffix(block.triggerSubject || '');
+            const rawTriggerSubject = splitTriggerSubjectSuffix(block.triggerSubject || '');
             const cur = SUBJECT_CODE_TO_L1L2[rawTriggerSubject.base] || { l1: 'self', l2: '' };
-            const triggerStackPos = rawTriggerSubject.pos;
-            const showTriggerStackPos = cur.l1 === 'self' || cur.l2 === 'digimon' || cur.l2 === 'tamer';
-            const setTriggerStackPos = (pos: StackPos) => update('triggerSubject', joinStackSuffix(rawTriggerSubject.base, pos));
-            const handleL1 = (l1: string) => {
-              if (l1 === 'self') { update('triggerSubject', l1); return; }
-              const l2 = cur.l1 === l1 && cur.l2 ? cur.l2 : 'digimon';
-              update('triggerSubject', SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon'] || l1);
-            };
-            const handleL2 = (l2: string) => {
-              update('triggerSubject', SUBJECT_L1L2_TO_CODE[cur.l1 + ':' + l2]);
-            };
-            const l2Options = cur.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
-            // デジモン/テイマーは複数選択可（両方選ぶとcard=「カード」扱いに集約。カード単体の
-            // ボタンは冗長になるためexclusiveL2Optionsから外す。対象/対象の条件と同じ操作感）
-            // 選択中の全トリガーが「種別なし」（デッキが増えたとき等、カード種別を問わない
-            // ゾーン系イベント）なら、デジモン/テイマー種別ボタン自体を出さない
+            // 辞書「場所指定」フラグが立っているトリガー（破棄されたとき等）を1つでも選んでいれば、
+            // 第2段階に手札/トラッシュ/セキュリティ、第3/4段階（進化元/重ねられているカード＋位置）を表示する
             const allTriggersTypeless = currentTriggers.length > 0
               && currentTriggers.every((t) => dict.triggers.find((d) => d.code === t)?.noSubjectType);
-            const hasDigimonTamer = (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'other_own' || cur.l1 === 'both') && !allTriggersTypeless;
-            const subjDigimonCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':digimon'];
-            const subjTamerCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':tamer'];
-            const subjCardCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':card'];
-            const subjDigimonChecked = hasDigimonTamer && (cur.l2 === 'digimon' || cur.l2 === 'card');
-            const subjTamerChecked = hasDigimonTamer && (cur.l2 === 'tamer' || cur.l2 === 'card');
-            const subjExclusiveL2Options = l2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer' && o.code !== 'card');
-            const applySubjDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
-              if (nextDigimon && nextTamer) update('triggerSubject', subjCardCode);
-              else if (nextDigimon) update('triggerSubject', subjDigimonCode);
-              else if (nextTamer) update('triggerSubject', subjTamerCode);
-              else update('triggerSubject', cur.l1);
-            };
+            const triggerHasFromZones = currentTriggers.some((t) => dict.triggers.find((d) => d.code === t)?.hasFromZones);
             // レスト/アクティブ状態フィルタは「このカード/デジモン/テイマー」のときだけ意味を持つ
             // （「カード」全般やプレイヤーにはレスト/アクティブの概念が無い）
             const showRestActive = cur.l1 === 'self' || cur.l2 === 'digimon' || cur.l2 === 'tamer';
@@ -3769,8 +3911,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         // が選択済みに見えるのを防ぐ）
                         const hasThisSubjectEntry = Object.prototype.hasOwnProperty.call(block.triggerSubjectByCode || {}, code);
                         const curSubjRaw = hasThisSubjectEntry ? (block.triggerSubjectByCode || {})[code] : '';
-                        const rawSub = splitStackSuffix(curSubjRaw);
-                        const subL1L2 = hasThisSubjectEntry ? (SUBJECT_CODE_TO_L1L2[rawSub.base] || { l1: 'self', l2: '' }) : { l1: '', l2: '' };
                         const setThisSubjectCode = (newCode: string) => {
                           const nextMap = { ...(block.triggerSubjectByCode || {}), [code]: newCode };
                           onChange({ ...block, triggerSubjectByCode: nextMap });
@@ -3780,88 +3920,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           delete nextMap[code];
                           onChange({ ...block, triggerSubjectByCode: nextMap });
                         };
-                        // 共有の発動主体パネル（handleL1/handleL2/applySubjDigiTamer）と全く同じ
-                        // 挙動（自分/相手の複数選択＝両方への集約、デジモン+テイマー同時選択＝
-                        // カード扱いへの集約）をトリガーごとに再現する
-                        const handleThisL1 = (l1: string) => {
-                          if (l1 === 'self') { setThisSubjectCode('self'); return; }
-                          const l2 = subL1L2.l1 === l1 && subL1L2.l2 ? subL1L2.l2 : 'digimon';
-                          setThisSubjectCode(SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon'] || l1);
-                        };
-                        const handleThisL2 = (l2: string) => {
-                          setThisSubjectCode(SUBJECT_L1L2_TO_CODE[subL1L2.l1 + ':' + l2]);
-                        };
-                        const setThisStackPos = (pos: StackPos) => setThisSubjectCode(joinStackSuffix(rawSub.base, pos));
-                        const l2Opts = subL1L2.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
-                        const thisHasDigimonTamer = subL1L2.l1 === 'own' || subL1L2.l1 === 'opp' || subL1L2.l1 === 'other_own' || subL1L2.l1 === 'both';
-                        const thisDigimonCode = SUBJECT_L1L2_TO_CODE[subL1L2.l1 + ':digimon'];
-                        const thisTamerCode = SUBJECT_L1L2_TO_CODE[subL1L2.l1 + ':tamer'];
-                        const thisCardCode = SUBJECT_L1L2_TO_CODE[subL1L2.l1 + ':card'];
-                        const thisDigimonChecked = thisHasDigimonTamer && (subL1L2.l2 === 'digimon' || subL1L2.l2 === 'card');
-                        const thisTamerChecked = thisHasDigimonTamer && (subL1L2.l2 === 'tamer' || subL1L2.l2 === 'card');
-                        const thisExclusiveL2Options = l2Opts.filter((o) => o.code !== 'digimon' && o.code !== 'tamer' && o.code !== 'card');
-                        const applyThisDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
-                          if (nextDigimon && nextTamer) setThisSubjectCode(thisCardCode);
-                          else if (nextDigimon) setThisSubjectCode(thisDigimonCode);
-                          else if (nextTamer) setThisSubjectCode(thisTamerCode);
-                          else setThisSubjectCode(subL1L2.l1);
-                        };
-                        const showStackPos = subL1L2.l1 === 'self' || subL1L2.l2 === 'digimon' || subL1L2.l2 === 'tamer';
+                        const thisHasFromZones = !!dict.triggers.find((d) => d.code === code)?.hasFromZones;
                         return (
                           <div key={code} style={{ fontSize: 11, border: '1px solid #c5e0c5', borderRadius: 4, padding: 6 }}>
                             <div style={{ color: '#333', fontWeight: 'bold', marginBottom: 3 }}>{label}:</div>
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                              <MultiButtonGroup
-                                options={SUBJECT_OWN_OPP}
-                                values={[...(subL1L2.l1 === 'own' || subL1L2.l1 === 'both' ? ['own'] : []), ...(subL1L2.l1 === 'opp' || subL1L2.l1 === 'both' ? ['opp'] : [])]}
-                                onToggle={(toggleCode, on) => {
-                                  const ownOn = subL1L2.l1 === 'own' || subL1L2.l1 === 'both';
-                                  const oppOn = subL1L2.l1 === 'opp' || subL1L2.l1 === 'both';
-                                  const nextOwn = toggleCode === 'own' ? on : ownOn;
-                                  const nextOpp = toggleCode === 'opp' ? on : oppOn;
-                                  handleThisL1(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : 'self');
-                                }}
-                                accentColor="#2e7d32"
-                              />
-                              <ButtonGroup
-                                options={SUBJECT_L1_REST_WITH_NONE}
-                                value={!hasThisSubjectEntry ? '__none__' : (subL1L2.l1 === 'own' || subL1L2.l1 === 'opp' || subL1L2.l1 === 'both') ? '' : subL1L2.l1}
-                                onChange={(v) => { if (v === '__none__') { clearThisSubject(); } else { handleThisL1(v); } }}
-                                accentColor="#2e7d32"
-                              />
-                            </div>
-                            {thisHasDigimonTamer && (
-                              <div style={{ marginTop: 3, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                                <MultiButtonGroup
-                                  options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }]}
-                                  values={[...(thisDigimonChecked ? ['digimon'] : []), ...(thisTamerChecked ? ['tamer'] : [])]}
-                                  onToggle={(toggleCode, on) => applyThisDigiTamer(
-                                    toggleCode === 'digimon' ? on : thisDigimonChecked,
-                                    toggleCode === 'tamer' ? on : thisTamerChecked
-                                  )}
-                                  accentColor="#2e7d32"
-                                />
-                                {thisExclusiveL2Options.length > 0 && (
-                                  <ButtonGroup
-                                    options={thisExclusiveL2Options}
-                                    value={!thisDigimonChecked && !thisTamerChecked ? subL1L2.l2 : ''}
-                                    onChange={handleThisL2}
-                                    accentColor="#2e7d32"
-                                  />
-                                )}
-                              </div>
-                            )}
-                            {!thisHasDigimonTamer && subL1L2.l1 !== 'self' && subL1L2.l1 !== 'both' && (
-                              <div style={{ marginTop: 3 }}>
-                                <ButtonGroup options={l2Opts} value={subL1L2.l2} onChange={handleThisL2} accentColor="#2e7d32" />
-                              </div>
-                            )}
-                            {showStackPos && (
-                              <div style={{ marginTop: 3 }}>
-                                <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
-                                <ButtonGroup options={STACK_POS_OPTIONS} value={rawSub.pos} onChange={(v) => setThisStackPos(v as StackPos)} accentColor="#2e7d32" />
-                              </div>
-                            )}
+                            <TriggerSubjectStagedPicker
+                              subject={curSubjRaw}
+                              onChange={setThisSubjectCode}
+                              hasFromZones={thisHasFromZones}
+                              allowNone
+                              hasEntry={hasThisSubjectEntry}
+                              onClear={clearThisSubject}
+                            />
                           </div>
                         );
                       })}
@@ -4080,64 +4150,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </>
                     )}
                   </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <MultiButtonGroup
-                      options={SUBJECT_OWN_OPP}
-                      values={[...(cur.l1 === 'own' || cur.l1 === 'both' ? ['own'] : []), ...(cur.l1 === 'opp' || cur.l1 === 'both' ? ['opp'] : [])]}
-                      onToggle={(code, on) => {
-                        const ownOn = cur.l1 === 'own' || cur.l1 === 'both';
-                        const oppOn = cur.l1 === 'opp' || cur.l1 === 'both';
-                        const nextOwn = code === 'own' ? on : ownOn;
-                        const nextOpp = code === 'opp' ? on : oppOn;
-                        handleL1(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : 'self');
-                      }}
-                      accentColor="#2e7d32"
-                    />
-                    <ButtonGroup
-                      options={SUBJECT_L1_REST}
-                      value={(cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'both') ? '' : cur.l1}
-                      onChange={handleL1}
-                      accentColor="#2e7d32"
-                    />
-                  </div>
-                  {hasDigimonTamer && (
-                    <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <MultiButtonGroup
-                        options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }]}
-                        values={[...(subjDigimonChecked ? ['digimon'] : []), ...(subjTamerChecked ? ['tamer'] : [])]}
-                        onToggle={(code, on) => applySubjDigiTamer(
-                          code === 'digimon' ? on : subjDigimonChecked,
-                          code === 'tamer' ? on : subjTamerChecked
-                        )}
-                        accentColor="#2e7d32"
-                      />
-                      {subjExclusiveL2Options.length > 0 && (
-                        <ButtonGroup
-                          options={subjExclusiveL2Options}
-                          value={!subjDigimonChecked && !subjTamerChecked ? cur.l2 : ''}
-                          onChange={handleL2}
-                          accentColor="#2e7d32"
-                        />
-                      )}
-                    </div>
-                  )}
-                  {!hasDigimonTamer && cur.l1 !== 'self' && cur.l1 !== 'both' && (
-                    <div style={{ marginTop: 4 }}>
-                      <ButtonGroup options={l2Options} value={cur.l2} onChange={handleL2} accentColor="#2e7d32" />
-                    </div>
-                  )}
-                  {/* デジモン/テイマーのときだけ「本体/下/一番下」を選べる（進化元・テイマーの
-                      下のカードを指す）。例:「自分のテイマーの下のカードが破棄されたとき」 */}
-                  {showTriggerStackPos && (
-                    <div style={{ marginTop: 4 }}>
-                      <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
-                      <ButtonGroup options={STACK_POS_OPTIONS} value={triggerStackPos} onChange={(v) => setTriggerStackPos(v as StackPos)} accentColor="#2e7d32" />
-                    </div>
-                  )}
-                  {/* 「下」「一番下」のときだけ、積まれているカードの種別で絞り込める
+                  <TriggerSubjectStagedPicker
+                    subject={block.triggerSubject || ''}
+                    onChange={(next) => update('triggerSubject', next)}
+                    hasFromZones={triggerHasFromZones}
+                    suppressTypeButtons={allTriggersTypeless}
+                  />
+                  {/* 「下」のときだけ、積まれているカードの種別で絞り込める
                       （例:「自分のテイマーの下のデジモンカードが破棄されたとき」）。
-                      本体を指しているとき（位置未選択）はL2選択自体が種別を兼ねるため出さない。 */}
-                  {showTriggerStackPos && triggerStackPos !== '' && (
+                      本体/指定なしを指しているとき（位置未選択）はL2選択自体が種別を兼ねるため出さない。 */}
+                  {rawTriggerSubject.pos !== '' && (
                     <div style={{ marginTop: 4 }}>
                       <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>下のカード種別:</span>
                       <ButtonGroup
@@ -4151,72 +4173,32 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       />
                     </div>
                   )}
+                  {/* 🂠 裏表:「破棄されたとき」(discard/when_evo_discard)等、場所指定フラグ付き
+                      トリガー専用。裏向き/表向きのカードのみに反応を絞り込める */}
+                  {triggerHasFromZones && (() => {
+                    const _tfFaceVal = (() => {
+                      const p = triggerConditions.find((c) => c.base === 'cond_face_down' || c.base === 'cond_face_up');
+                      return p ? (p.base === 'cond_face_down' ? 'down' : 'up') : '';
+                    })();
+                    return (
+                      <div style={{ marginTop: 4 }}>
+                        <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>🂠 裏表:</span>
+                        <ButtonGroup
+                          options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
+                          value={_tfFaceVal}
+                          onChange={(v) => {
+                            const next = triggerConditions.filter((c) => c.base !== 'cond_face_down' && c.base !== 'cond_face_up');
+                            if (v === 'down') next.push({ base: 'cond_face_down' });
+                            else if (v === 'up') next.push({ base: 'cond_face_up' });
+                            update('triggerConditions', next);
+                          }}
+                          accentColor="#2e7d32"
+                        />
+                      </div>
+                    );
+                  })()}
                 </div>
                 )}
-              </div>
-            );
-          })()}
-
-          {/* 📥場所/🂠裏表:「破棄されたとき」(discard/when_evo_discard) 専用。コスト側の
-              「破棄」パネルと同じ見た目で、どのゾーンからの破棄に反応するかを選べる。
-              位置（本体/下/一番下）は発動主体側のスタック位置選択で既にカバーされている
-              ため、ここでは場所・裏表のみ扱う。
-              ⚠ 現状エンジンは進化元/テイマーの下からの破棄にしか対応していないため、
-              手札/トラッシュ/セキュリティ/デッキ/リンクカードは保存はできるが動作しない */}
-          {(() => {
-            const _discardTriggerActive = ((block.triggers && block.triggers.length > 0) ? block.triggers : (block.trigger ? [block.trigger] : []))
-              .some((t) => t === 'discard' || t === 'when_evo_discard');
-            if (!_discardTriggerActive) return null;
-            const _tfZones = block.triggerFromZones || [];
-            const _toggleTfZone = (code: string, on: boolean) => {
-              const next = on ? [..._tfZones, code] : _tfZones.filter((z) => z !== code);
-              onChange({ ...block, triggerFromZones: next });
-            };
-            const _tfEngineReady = new Set(['evo_source']);
-            const _tfHasUnready = _tfZones.some((z) => !_tfEngineReady.has(z));
-            const _tfFaceVal = (() => {
-              const p = triggerConditions.find((c) => c.base === 'cond_face_down' || c.base === 'cond_face_up');
-              return p ? (p.base === 'cond_face_down' ? 'down' : 'up') : '';
-            })();
-            return (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこからの破棄に反応するか）</div>
-                <MultiButtonGroup
-                  options={FROM_ZONES.filter((z) => z.code !== 'stacked_cards')}
-                  values={_tfZones}
-                  onToggle={_toggleTfZone}
-                  accentColor="#2e7d32"
-                />
-                {_tfZones.length >= 2 && (
-                  <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-                    <span style={{ color: '#666' }}>結合:</span>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                      <input type="radio" name="triggerFromZonesOp" checked={(block.triggerFromZonesOp || 'or') === 'or'} onChange={() => update('triggerFromZonesOp', 'or')} style={{ margin: 0 }} />
-                      OR（いずれか）
-                    </label>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                      <input type="radio" name="triggerFromZonesOp" checked={block.triggerFromZonesOp === 'and'} onChange={() => update('triggerFromZonesOp', 'and')} style={{ margin: 0 }} />
-                      AND（全て）
-                    </label>
-                  </div>
-                )}
-                {_tfHasUnready && (
-                  <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
-                    ⚠ 進化元／テイマーの下からの破棄以外は、保存はできますがエンジンが現状対応していないため発火しません
-                  </div>
-                )}
-                <div style={{ fontSize: 10, color: '#555', marginTop: 6, marginBottom: 2 }}>🂠 裏表</div>
-                <ButtonGroup
-                  options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
-                  value={_tfFaceVal}
-                  onChange={(v) => {
-                    const next = triggerConditions.filter((c) => c.base !== 'cond_face_down' && c.base !== 'cond_face_up');
-                    if (v === 'down') next.push({ base: 'cond_face_down' });
-                    else if (v === 'up') next.push({ base: 'cond_face_up' });
-                    update('triggerConditions', next);
-                  }}
-                  accentColor="#2e7d32"
-                />
               </div>
             );
           })()}

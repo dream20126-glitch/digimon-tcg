@@ -104,7 +104,7 @@ function MultiButtonGroup({ options, values, onToggle, accentColor }: { options:
 }
 
 // 自由記述の複数タグ入力（特徴など、固定選択肢が無い項目のOR複数指定用）
-function MultiTextTags({ values, onChange, placeholder, accentColor }: { values: string[]; onChange: (v: string[]) => void; placeholder?: string; accentColor?: string }) {
+function MultiTextTags({ values, onChange, placeholder, accentColor, valueLabel }: { values: string[]; onChange: (v: string[]) => void; placeholder?: string; accentColor?: string; valueLabel?: (v: string) => string }) {
   const [draft, setDraft] = useState('');
   const accent = accentColor || '#d81b60';
   const add = () => {
@@ -119,7 +119,7 @@ function MultiTextTags({ values, onChange, placeholder, accentColor }: { values:
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
           {values.map((v) => (
             <span key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 5, border: `2px solid ${accent}`, background: accent, color: '#fff', fontSize: 11, fontWeight: 'bold' }}>
-              {v}
+              {valueLabel ? valueLabel(v) : v}
               <button type="button" onClick={() => remove(v)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}>×</button>
             </span>
           ))}
@@ -8200,7 +8200,13 @@ function ConditionsHybridEditor({
                         const feats = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
                         const setFeats = (next: string[]) => updateAt(i, { value: next.join(',') });
                         return (
-                          <MultiTextTags values={feats} onChange={setFeats} placeholder="例: サイボーグ型" accentColor={colors.accent} />
+                          <MultiTextTags
+                            values={feats}
+                            onChange={setFeats}
+                            placeholder="例: サイボーグ型"
+                            accentColor={colors.accent}
+                            valueLabel={c.base === 'cond_feature_contains' ? (v) => `${v}（含む）` : undefined}
+                          />
                         );
                       })() : (() => {
                         const optList = c.base === 'cond_type' ? RULE_TYPE_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))

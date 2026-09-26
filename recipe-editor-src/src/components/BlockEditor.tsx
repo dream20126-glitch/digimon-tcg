@@ -140,6 +140,174 @@ function MultiTextTags({ values, onChange, placeholder, accentColor, valueLabel 
   );
 }
 
+// 参照(バトルエリア/以上)行専用の「属性で絞り込む」パネル。チェックボックスで開閉し、
+// 開いたら色/Lv/コスト/特徴のボタンが並び、押した分だけ詳細設定が展開する
+// （よく使う条件のカテゴリボタンと同じ操作感）。ローカルstate(開閉・どのボタンを
+// 表示中か)を持つため、独立したコンポーネントとして切り出している
+function RefExistsAttributeFilterPanel({ conditions, onChange }: { conditions: ConditionPair[]; onChange: (next: ConditionPair[]) => void }) {
+  const attrs = conditions.filter((cc) => cc.subject === REF_EXISTS_FILTER_MARKER);
+  const hasAnyAttr = attrs.length > 0;
+  const [open, setOpen] = useState(hasAnyAttr);
+  const getAttr = (base: string) => attrs.find((a) => a.base === base);
+  const setAttr = (base: string, value: string | undefined) => {
+    const withoutThis = conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && cc.base === base));
+    onChange(value === undefined || value === '' ? withoutThis : [...withoutThis, { base, value, subject: REF_EXISTS_FILTER_MARKER }]);
+  };
+  const lvGe = getAttr('cond_lv_ge');
+  const lvLe = getAttr('cond_lv_le');
+  const lvMode = lvGe ? 'cond_lv_ge' : lvLe ? 'cond_lv_le' : '';
+  const costGe = getAttr('cond_cost_ge');
+  const costLe = getAttr('cond_cost_le');
+  const costMode = costGe ? 'cond_cost_ge' : costLe ? 'cond_cost_le' : '';
+  const featureVal = getAttr('cond_feature');
+  const feats = (featureVal?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const colorVal = getAttr('cond_color');
+
+  const [activeSub, setActiveSub] = useState<Set<string>>(() => {
+    const s = new Set<string>();
+    if (colorVal) s.add('color');
+    if (lvGe || lvLe) s.add('lv');
+    if (costGe || costLe) s.add('cost');
+    if (featureVal) s.add('feature');
+    return s;
+  });
+  const toggleSub = (key: string) => {
+    if (activeSub.has(key)) {
+      if (key === 'color') setAttr('cond_color', undefined);
+      else if (key === 'lv') onChange(conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le'))));
+      else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le'))));
+      else if (key === 'feature') setAttr('cond_feature', undefined);
+      setActiveSub((prev) => { const next = new Set(prev); next.delete(key); return next; });
+    } else {
+      setActiveSub((prev) => new Set(prev).add(key));
+    }
+  };
+  const subButtons: { key: string; label: string }[] = [
+    { key: 'color', label: '色' }, { key: 'lv', label: 'Lv' }, { key: 'cost', label: 'コスト' }, { key: 'feature', label: '特徴' },
+  ];
+
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#946200' }}>
+        <input
+          type="checkbox"
+          checked={open}
+          onChange={(e) => {
+            setOpen(e.target.checked);
+            if (!e.target.checked) {
+              setActiveSub(new Set());
+              onChange(conditions.filter((cc) => cc.subject !== REF_EXISTS_FILTER_MARKER));
+            }
+          }}
+        />
+        属性で絞り込む（この参照行専用・「1体以上」の存在チェックのみ対応）
+      </label>
+      {open && (
+        <div style={{ marginTop: 4, padding: 6, background: '#fffaf0', border: '1px dashed #f0d9a8', borderRadius: 4 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+            {subButtons.map((b) => {
+              const active = activeSub.has(b.key);
+              return (
+                <button
+                  key={b.key}
+                  type="button"
+                  onClick={() => toggleSub(b.key)}
+                  style={{
+                    padding: '2px 8px', borderRadius: 5,
+                    border: active ? '2px solid #946200' : '1px solid #bbb',
+                    background: active ? '#946200' : '#f5f5f5',
+                    color: active ? '#fff' : '#333',
+                    fontWeight: active ? 'bold' : 'normal',
+                    cursor: 'pointer', fontSize: 11,
+                  }}
+                >
+                  {b.label}
+                </button>
+              );
+            })}
+          </div>
+          {activeSub.has('color') && (
+            <div style={{ marginBottom: 4 }}>
+              <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>色:</span>
+              <MultiButtonGroup
+                options={RULE_COLOR_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))}
+                values={(colorVal?.value || '').split(',').filter(Boolean)}
+                onToggle={(code, on) => {
+                  const cur = (colorVal?.value || '').split(',').filter(Boolean);
+                  const next = on ? [...cur, code] : cur.filter((x) => x !== code);
+                  setAttr('cond_color', next.join(','));
+                }}
+                accentColor="#946200"
+              />
+            </div>
+          )}
+          {activeSub.has('lv') && (
+            <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10, color: '#666' }}>Lv:</span>
+              <ButtonGroup
+                options={[{ code: '', label: '指定なし' }, { code: 'cond_lv_ge', label: '以上' }, { code: 'cond_lv_le', label: '以下' }]}
+                value={lvMode}
+                onChange={(v) => {
+                  const rest = conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le')));
+                  onChange(v ? [...rest, { base: v, value: '1', subject: REF_EXISTS_FILTER_MARKER }] : rest);
+                }}
+                accentColor="#946200"
+              />
+              {lvMode && (
+                <input
+                  type="number" min={1}
+                  value={(lvMode === 'cond_lv_ge' ? lvGe?.value : lvLe?.value) || ''}
+                  onChange={(e) => setAttr(lvMode, e.target.value)}
+                  style={{ width: 60, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                />
+              )}
+            </div>
+          )}
+          {activeSub.has('cost') && (
+            <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10, color: '#666' }}>コスト:</span>
+              <ButtonGroup
+                options={[{ code: '', label: '指定なし' }, { code: 'cond_cost_ge', label: '以上' }, { code: 'cond_cost_le', label: '以下' }]}
+                value={costMode}
+                onChange={(v) => {
+                  const rest = conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le')));
+                  onChange(v ? [...rest, { base: v, value: '1', subject: REF_EXISTS_FILTER_MARKER }] : rest);
+                }}
+                accentColor="#946200"
+              />
+              {costMode && (
+                <input
+                  type="number" min={0}
+                  value={(costMode === 'cond_cost_ge' ? costGe?.value : costLe?.value) || ''}
+                  onChange={(e) => setAttr(costMode, e.target.value)}
+                  style={{ width: 60, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                />
+              )}
+              {costMode && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ コストはエンジン未対応です（保存はできますが動作しません）</span>}
+            </div>
+          )}
+          {activeSub.has('feature') && (
+            <div>
+              <span style={{ fontSize: 10, color: '#666' }}>特徴:</span>
+              <MultiTextTags
+                values={feats}
+                onChange={(next) => setAttr('cond_feature', next.join(','))}
+                placeholder="例: サイボーグ型"
+                accentColor="#946200"
+              />
+            </div>
+          )}
+          {hasAnyAttr && (
+            <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
+              ⚠ この行を使うと、同じ発動条件欄内の他の条件は無視されます
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const FUSION_COLOR_OPTS = [
   { code: '赤', label: '赤' }, { code: '青', label: '青' }, { code: '黄', label: '黄' },
   { code: '緑', label: '緑' }, { code: '黒', label: '黒' }, { code: '紫', label: '紫' }, { code: '白', label: '白' },
@@ -8313,98 +8481,9 @@ function ConditionsHybridEditor({
                           </div>
                         );
                       })()}
-                      {cat.code === 'ref' && refZoneOf(c) === 'battle_area' && refQuantOf(c) === 'ge' && (() => {
-                        const attrs = conditions.filter((cc) => cc.subject === REF_EXISTS_FILTER_MARKER);
-                        const getAttr = (base: string) => attrs.find((a) => a.base === base);
-                        const setAttr = (base: string, value: string | undefined) => {
-                          const withoutThis = conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && cc.base === base));
-                          if (value === undefined || value === '') { onChange(withoutThis); return; }
-                          onChange([...withoutThis, { base, value, subject: REF_EXISTS_FILTER_MARKER }]);
-                        };
-                        const lvGe = getAttr('cond_lv_ge');
-                        const lvLe = getAttr('cond_lv_le');
-                        const lvMode = lvGe ? 'cond_lv_ge' : lvLe ? 'cond_lv_le' : '';
-                        const costGe = getAttr('cond_cost_ge');
-                        const costLe = getAttr('cond_cost_le');
-                        const costMode = costGe ? 'cond_cost_ge' : costLe ? 'cond_cost_le' : '';
-                        const featureVal = getAttr('cond_feature');
-                        const feats = (featureVal?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
-                        return (
-                          <div style={{ marginBottom: 4, padding: 6, background: '#fffaf0', border: '1px dashed #f0d9a8', borderRadius: 4 }}>
-                            <div style={{ fontSize: 11, fontWeight: 'bold', color: '#946200', marginBottom: 4 }}>
-                              属性で絞り込む（この参照行専用・「1体以上」の存在チェックのみ対応）
-                            </div>
-                            <div style={{ marginBottom: 4 }}>
-                              <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>色:</span>
-                              <MultiButtonGroup
-                                options={RULE_COLOR_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))}
-                                values={(getAttr('cond_color')?.value || '').split(',').filter(Boolean)}
-                                onToggle={(code, on) => {
-                                  const cur = (getAttr('cond_color')?.value || '').split(',').filter(Boolean);
-                                  const next = on ? [...cur, code] : cur.filter((x) => x !== code);
-                                  setAttr('cond_color', next.join(','));
-                                }}
-                                accentColor="#946200"
-                              />
-                            </div>
-                            <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: 10, color: '#666' }}>Lv:</span>
-                              <ButtonGroup
-                                options={[{ code: '', label: '指定なし' }, { code: 'cond_lv_ge', label: '以上' }, { code: 'cond_lv_le', label: '以下' }]}
-                                value={lvMode}
-                                onChange={(v) => {
-                                  const rest = conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le')));
-                                  onChange(v ? [...rest, { base: v, value: '1', subject: REF_EXISTS_FILTER_MARKER }] : rest);
-                                }}
-                                accentColor="#946200"
-                              />
-                              {lvMode && (
-                                <input
-                                  type="number" min={1}
-                                  value={(lvMode === 'cond_lv_ge' ? lvGe?.value : lvLe?.value) || ''}
-                                  onChange={(e) => setAttr(lvMode, e.target.value)}
-                                  style={{ width: 60, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
-                                />
-                              )}
-                            </div>
-                            <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: 10, color: '#666' }}>コスト:</span>
-                              <ButtonGroup
-                                options={[{ code: '', label: '指定なし' }, { code: 'cond_cost_ge', label: '以上' }, { code: 'cond_cost_le', label: '以下' }]}
-                                value={costMode}
-                                onChange={(v) => {
-                                  const rest = conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le')));
-                                  onChange(v ? [...rest, { base: v, value: '1', subject: REF_EXISTS_FILTER_MARKER }] : rest);
-                                }}
-                                accentColor="#946200"
-                              />
-                              {costMode && (
-                                <input
-                                  type="number" min={0}
-                                  value={(costMode === 'cond_cost_ge' ? costGe?.value : costLe?.value) || ''}
-                                  onChange={(e) => setAttr(costMode, e.target.value)}
-                                  style={{ width: 60, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
-                                />
-                              )}
-                              {costMode && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ コストはエンジン未対応です（保存はできますが動作しません）</span>}
-                            </div>
-                            <div>
-                              <span style={{ fontSize: 10, color: '#666' }}>特徴:</span>
-                              <MultiTextTags
-                                values={feats}
-                                onChange={(next) => setAttr('cond_feature', next.join(','))}
-                                placeholder="例: サイボーグ型"
-                                accentColor="#946200"
-                              />
-                            </div>
-                            {attrs.length > 0 && (
-                              <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
-                                ⚠ この行を使うと、同じ発動条件欄内の他の条件は無視されます
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
+                      {cat.code === 'ref' && refZoneOf(c) === 'battle_area' && refQuantOf(c) === 'ge' && (
+                        <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} />
+                      )}
                       {sameAsTargetSubject && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#555', marginBottom: 4 }}>
                           <input

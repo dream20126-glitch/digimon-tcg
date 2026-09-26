@@ -1,5 +1,5 @@
 // EffectBlock[] ⇄ recipe JSON 変換
-import type { AltAction, ConditionPair, CostStep, DictEntry, EffectBlock, ExtraTarget, KeywordEntry, DesignatedGroup } from './types';
+import type { AltAction, ConditionPair, ConditionChainEntry, CostStep, DictEntry, EffectBlock, ExtraTarget, KeywordEntry, DesignatedGroup } from './types';
 import { applyRulesToStep } from './ruleTranslator';
 
 // 「コスト上限+/-」(効果辞書側で登録するアクションコード)。「直前の効果に適用する」
@@ -14,6 +14,22 @@ function pairToString(p: ConditionPair): string {
   let s = p.value ? p.base + ':' + p.value : p.base;
   if (p.subject) s += '@' + p.subject;
   return s;
+}
+
+// ConditionChainEntry[]（1条件ずつAND/ORを選ぶ統一UI）を「ANDがORより優先」＝OR区切りで
+// AND区間をまとめる積和評価のセグメント配列に変換する（ruleTranslator.tsのbuildGroupFilter内
+// ロジックと同じ規則。例:[色紫]→[名前レイヴモン](and)→[特徴鳥](or) = (色紫 AND 名前レイヴモン) OR 特徴鳥）
+function buildConditionChainSegments(chain: ConditionChainEntry[]): ConditionPair[][] {
+  const segments: ConditionPair[][] = [[]];
+  chain.forEach((entry) => {
+    const entryConds = entry.conditions || [];
+    if (entry.op === 'or' && segments[segments.length - 1].length > 0) {
+      segments.push(entryConds.slice());
+    } else {
+      segments[segments.length - 1] = [...segments[segments.length - 1], ...entryConds];
+    }
+  });
+  return segments;
 }
 
 // 参照(バトルエリア/以上/1)の行に「属性で絞り込む」（色/Lv/コスト/特徴）で添付した
@@ -96,11 +112,32 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
       if (c.fromZoneOwner === 'self' || c.fromZoneOwner === 'opponent') cs.from_owner = c.fromZoneOwner;
     }
     // コスト対象への絞り込み条件: condition / when / extra_conditions として直列化
-    const validCondPairs = (c.conditions || []).filter((p) => p.base);
-    if (validCondPairs.length >= 1) cs.condition = pairToString(validCondPairs[0]);
-    if (validCondPairs.length >= 2) cs.when = pairToString(validCondPairs[1]);
-    if (validCondPairs.length >= 3) cs.extra_conditions = validCondPairs.slice(2).map(pairToString);
-    if (validCondPairs.length >= 2 && c.conditionsOp === 'or') cs.condition_op = 'or';
+    // c.conditions にはレスト状態等の「常時条件」（＋古い形式の絞り込み条件）を保持し、
+    // c.conditionChain（「Lv4以下のクロノモン、または特徴TS」のようなAND内包のOR）が
+    // あればそちらを優先する。単一セグメントならcondition/when/extra_conditionsへ畳み込み、
+    // 複数セグメント（真の複合OR）ならcondition_chainとして別出力する
+    const commonCondPairs = (c.conditions || []).filter((p) => p.base);
+    if (Array.isArray(c.conditionChain) && c.conditionChain.length > 0) {
+      const segments = buildConditionChainSegments(c.conditionChain)
+        .map((seg) => seg.filter((p) => p.base))
+        .filter((seg) => seg.length > 0);
+      if (segments.length > 1) {
+        if (commonCondPairs.length >= 1) cs.condition = pairToString(commonCondPairs[0]);
+        if (commonCondPairs.length >= 2) cs.when = pairToString(commonCondPairs[1]);
+        if (commonCondPairs.length >= 3) cs.extra_conditions = commonCondPairs.slice(2).map(pairToString);
+        cs.condition_chain = segments.map((seg) => ({ conditions: seg.map(pairToString) }));
+      } else {
+        const merged = [...commonCondPairs, ...(segments[0] || [])];
+        if (merged.length >= 1) cs.condition = pairToString(merged[0]);
+        if (merged.length >= 2) cs.when = pairToString(merged[1]);
+        if (merged.length >= 3) cs.extra_conditions = merged.slice(2).map(pairToString);
+      }
+    } else {
+      if (commonCondPairs.length >= 1) cs.condition = pairToString(commonCondPairs[0]);
+      if (commonCondPairs.length >= 2) cs.when = pairToString(commonCondPairs[1]);
+      if (commonCondPairs.length >= 3) cs.extra_conditions = commonCondPairs.slice(2).map(pairToString);
+      if (commonCondPairs.length >= 2 && c.conditionsOp === 'or') cs.condition_op = 'or';
+    }
     // 代替コスト:「〇〇するか〇〇することで」。エンジン側の alt_actions/alt_actions_op
     // 機構（executeRecipeStep→runWithAltActionsの選択UI）をコストにもそのまま流用する
     const validAltCosts = (c.altCosts || []).filter((a) => a.action);
@@ -125,6 +162,14 @@ function parseCostArray(rawCost: any): CostStep[] {
     if (Array.isArray(c?.extra_conditions)) {
       c.extra_conditions.forEach((s: string) => condArr.push(stringToPair(String(s))));
     }
+    // 「Lv4以下のクロノモン、または特徴TS」のようなAND内包のOR（複合条件）。
+    // 先頭セグメントはAND、2番目以降は前セグメントとOR結合という規約でchain化する
+    const conditionChain: ConditionChainEntry[] | undefined = Array.isArray(c?.condition_chain) && c.condition_chain.length > 0
+      ? c.condition_chain.map((seg: any, idx: number) => ({
+          conditions: Array.isArray(seg?.conditions) ? seg.conditions.map((s: string) => stringToPair(String(s))) : [],
+          op: idx === 0 ? undefined : 'or' as const,
+        }))
+      : undefined;
     // 取得元エリアの deserialize: string / array / 旧 'hand_or_trash' 互換
     const fromZones: string[] = (() => {
       const f = c?.from;
@@ -145,6 +190,7 @@ function parseCostArray(rawCost: any): CostStep[] {
       target: c?.target || '',
       conditions: condArr,
       conditionsOp: c?.condition_op === 'or' ? 'or' as const : 'and' as const,
+      conditionChain,
       fromZones,
       fromZonesOp,
       fromZoneOwner: c?.from_owner === 'self' || c?.from_owner === 'opponent' ? c.from_owner : undefined,

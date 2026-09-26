@@ -11616,8 +11616,18 @@ export function getAssemblyOptions(card) {
 
 // コストアイテム(cost[0]等)の condition/when/extra_conditions を満たすカードを抽出
 // （アセンブリの「対象」絞り込み判定・トラッシュの候補抽出に使う）
+// condition_chain（[{conditions:["cond_lv_le:4","cond_name_contains:クロノモン"]},{conditions:["cond_feature:TS"]}]
+// のような「AND内包のOR」複合条件・セグメント配列）が指定されていれば、各セグメントを
+// AND評価した上でセグメント間はOR評価する（あればcondition/when/extra_conditionsより優先）
 export function filterAssemblyCandidates(costItem, cards, bs, side) {
   if (!costItem) return [];
+  if (Array.isArray(costItem.condition_chain) && costItem.condition_chain.length > 0) {
+    return (cards || []).filter(c => c && costItem.condition_chain.some(seg => {
+      const segConds = [];
+      (seg && seg.conditions || []).forEach(cs => segConds.push(...parseRecipeCondition(cs)));
+      return segConds.length === 0 || checkConditions(segConds, c, bs, side);
+    }));
+  }
   const conds = [];
   if (costItem.condition) conds.push(...parseRecipeCondition(costItem.condition));
   if (costItem.when) conds.push(...parseRecipeCondition(costItem.when));

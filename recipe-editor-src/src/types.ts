@@ -569,6 +569,11 @@ export interface CostStep {
   // コスト対象の絞り込み条件（例: 進化元のLv.6のデジモンを手札に戻す → cond_lv:6）
   conditions?: ConditionPair[];
   conditionsOp?: 'and' | 'or';
+  // 「(Lv4以下 AND 名前クロノモン) OR 特徴TS」のようなAND内包のOR（複合条件）を組みたい場合の
+  // 条件チェーン。設定されていれば conditions/conditionsOp より優先される
+  // （デッキ内カード検索のグループ条件チェーンと同じ「OR区切りでAND区間をまとめる積和評価」）。
+  // JSON では step.cost[].condition_chain（segments配列）に serialize
+  conditionChain?: ConditionChainEntry[];
   // コスト対象の取得元エリア（'evo_source' / 'hand' / 'trash' 等）。複数指定可
   fromZones?: string[];
   fromZonesOp?: 'or' | 'and';

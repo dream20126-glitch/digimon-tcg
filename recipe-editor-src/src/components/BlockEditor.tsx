@@ -1733,22 +1733,79 @@ function CostListEditor({
                   );
                 })}
               </div>
-              <ConditionsHybridEditor
-                conditions={(c.conditions || []).filter((cc) => !isRefFaceCond(cc.base))}
-                onChange={(next) => updateCost(i, {
-                  ...c,
-                  conditions: [...(c.conditions || []).filter((cc) => isRefFaceCond(cc.base)), ...next],
-                })}
-                dict={dict}
-                title="コスト対象の絞り込み"
-                hint="（複数指定可）"
-                theme="action"
-                defaultSubject=""
-                showSubjectSelector={false}
-                conditionsOp={c.conditionsOp || 'and'}
-                onConditionsOpChange={(op) => updateCost(i, { ...c, conditionsOp: op })}
-                targetL2={cCurTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
-              />
+              {/* コスト対象の絞り込み条件チェーン: 1条件ずつ追加し、2個目以降は直前との関係を
+                  AND/ORで選ぶ（デッキ検索等のグループ条件チェーンと同じ「ANDがORより優先」＝
+                  OR区切りでAND区間をまとめる積和評価）。例:「Lv4以下」→[AND]→「名前クロノモン」
+                  →[OR]→「特徴TS」 = (Lv4以下 AND 名前クロノモン) OR 特徴TS
+                  レスト状態/裏表（cond_self_rest等・isRefFaceCond）はc.conditionsに残し、
+                  このチェーンには含めない（上のクイックチェックボックス/🂠裏表で管理） */}
+              {(() => {
+                const isCommonCostCond = (base: string) => isRefFaceCond(base) || base === 'cond_self_rest' || base === 'cond_self_active';
+                const commonConds = (c.conditions || []).filter((cc) => isCommonCostCond(cc.base));
+                const chain: ConditionChainEntry[] = (c.conditionChain && c.conditionChain.length > 0)
+                  ? c.conditionChain
+                  : [{ conditions: (c.conditions || []).filter((cc) => !isCommonCostCond(cc.base)) }];
+                const setChain = (next: ConditionChainEntry[]) => updateCost(i, { ...c, conditionChain: next, conditions: commonConds });
+                const updateChainEntry = (ei: number, patch: Partial<ConditionChainEntry>) => {
+                  const next = chain.slice();
+                  next[ei] = { ...next[ei], ...patch };
+                  setChain(next);
+                };
+                const removeChainEntry = (ei: number) => {
+                  const next = chain.filter((_, idx) => idx !== ei);
+                  setChain(next.length > 0 ? next : [{ conditions: [] }]);
+                };
+                const addChainEntry = () => setChain([...chain, { conditions: [], op: 'and' }]);
+                return (
+                  <div>
+                    {chain.map((entry, ei) => (
+                      <div key={ei} style={{ marginTop: ei === 0 ? 0 : 6 }}>
+                        {ei > 0 && (
+                          <div style={{ margin: '4px 0' }}>
+                            <ButtonGroup
+                              options={[{ code: 'and', label: 'AND（かつ）' }, { code: 'or', label: 'OR（または）' }]}
+                              value={entry.op || 'and'}
+                              onChange={(v) => updateChainEntry(ei, { op: (v || 'and') as 'and' | 'or' })}
+                              accentColor="#b76e00"
+                            />
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+                          <div style={{ flex: 1 }}>
+                            <ConditionsHybridEditor
+                              conditions={entry.conditions}
+                              onChange={(next) => updateChainEntry(ei, { conditions: next })}
+                              dict={dict}
+                              title={ei === 0 ? 'コスト対象の絞り込み' : `コスト対象の絞り込み${ei + 1}`}
+                              hint="（複数指定時はAND）"
+                              theme="action"
+                              defaultSubject=""
+                              showSubjectSelector={false}
+                              targetL2={cCurTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
+                            />
+                          </div>
+                          {chain.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeChainEntry(ei)}
+                              style={{ border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '1px 7px', cursor: 'pointer', fontSize: 11, marginTop: 18 }}
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={addChainEntry}
+                      style={{ marginTop: 6, padding: '2px 8px', border: '1px dashed #b76e00', background: 'white', color: '#b76e00', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                    >
+                      + 条件を追加（AND/OR選択）
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* === 代替コスト:「〇〇するか、〇〇することで」。効果1の代替アクション(altActions)
@@ -3730,10 +3787,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 onChange={(next) => update('conditions', next)}
                 dict={dict}
                 title="発動条件"
-                hint="（この軽減が有効になる条件・複数指定可・AND結合）"
+                hint="（この軽減が有効になる条件・複数指定可）"
                 theme="trigger"
                 defaultSubject=""
                 attackContextActive={isAttackTrigger}
+                conditionsOp={block.conditionsOp || 'and'}
+                onConditionsOpChange={(op) => update('conditionsOp', op)}
               />
             </div>
             {renderPerCountEditor()}

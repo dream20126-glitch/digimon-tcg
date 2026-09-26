@@ -1520,7 +1520,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 「手札が破棄されたとき」(when_hand_discard) は、コスト支払いの途中で即時発動させず、
       // 他の「したとき」系反応と同様キューに積んで、元の効果の解決が終わってから発火する
       const _cdFinishCallback = () => {
-        enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueued, [ctx.side]);
+        const _cdCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+        enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueued, [ctx.side, ctx.bs, _cdCtxBase]);
         callback();
       };
       const runDiscards = (cards, finalize) => {

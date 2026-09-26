@@ -1870,10 +1870,17 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   opp_hand: { l1: 'opp', l2: 'hand' },
   opp_trash: { l1: 'opp', l2: 'trash' },
   opp_security: { l1: 'opp', l2: 'security' },
+  // 「このカード」+場所（例:「このカードが手札から破棄されたとき」）。
+  // このカード自身の識別が必要なため own/opp側の場所より対応がさらに限定的
+  // （エンジン未実装のプレースホルダー。保存はできるが発火しない）
+  self_hand: { l1: 'self', l2: 'hand' },
+  self_trash: { l1: 'self', l2: 'trash' },
+  self_security: { l1: 'self', l2: 'security' },
 };
 Object.assign(SUBJECT_L1L2_TO_CODE, {
   'own:hand': 'own_hand', 'own:trash': 'own_trash', 'own:security': 'own_security',
   'opp:hand': 'opp_hand', 'opp:trash': 'opp_trash', 'opp:security': 'opp_security',
+  'self:hand': 'self_hand', 'self:trash': 'self_trash', 'self:security': 'self_security',
 });
 // 「場所指定」フラグが立っているトリガー（破棄されたとき等）でのみ、通常のL2一覧に
 // 手札/トラッシュ/セキュリティを追加する（アクション対象欄のTARGET_SEL_L2_FROM_ZONESと
@@ -2087,7 +2094,13 @@ function TriggerSubjectStagedPicker({
     onZoneAndSubjectChange!(cur.l1, [zone]); // 種別は指定なし（陣営のみ）に戻す
   };
   const handleL1 = (l1: string) => {
-    if (l1 === 'self') { setSubject('self'); return; }
+    if (l1 === 'self') {
+      // 場所（手札/トラッシュ/セキュリティ）は保持する（例:「このカードが手札から
+      // 破棄されたとき」を再選択しても場所が消えないように）
+      const l2 = cur.l1 === 'self' && cur.l2 ? cur.l2 : '';
+      setSubject(l2 ? (SUBJECT_L1L2_TO_CODE['self:' + l2] || 'self') : 'self');
+      return;
+    }
     const l2 = cur.l1 === l1 && cur.l2 ? cur.l2 : 'digimon';
     setSubject(SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon'] || l1);
   };
@@ -2164,6 +2177,21 @@ function TriggerSubjectStagedPicker({
       {!hasDigimonTamer && cur.l1 !== 'self' && (
         <div style={{ marginTop: 4 }}>
           <ButtonGroup options={l2Options} value={effectiveL2} onChange={handleL2} accentColor={accentColor} />
+        </div>
+      )}
+      {/* 「このカード」+場所（例:「このカードが手札から破棄されたとき」）。
+          zoneMode（〇〇が増えたとき）は「このカードの手札が増えた」等が意味を成さないため対象外 */}
+      {!zoneMode && hasFromZones && cur.l1 === 'self' && (
+        <div style={{ marginTop: 4 }}>
+          <ButtonGroup
+            options={[{ code: '', label: '指定なし' }, ...SUBJECT_L2_FROM_ZONES]}
+            value={effectiveL2}
+            onChange={(l2) => setSubject(l2 ? (SUBJECT_L1L2_TO_CODE['self:' + l2] || 'self') : 'self')}
+            accentColor={accentColor}
+          />
+          {effectiveL2 && (
+            <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 「このカード」+場所はエンジン未実装です（保存はできますが動作しません）</div>
+          )}
         </div>
       )}
       {zoneMode && currentZone && ZONE_INCREASE_UNIMPLEMENTED.has(currentZone) && (

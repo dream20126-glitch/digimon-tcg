@@ -34,7 +34,16 @@ function condsToFilter(conds?: ConditionPair[]): Record<string, any> {
       case 'cond_cost_ge':          { const n = num(v); if (n !== undefined) f.cost_ge = n; break; }
       case 'cond_feature_contains': if (v) f.feature_contains = String(v); break;
       case 'cond_name_contains':    if (v) f.name_contains = String(v); break;
-      case 'cond_feature':          if (v) f.feature = String(v); break;
+      // 完全一致（カンマ区切りで複数指定可・OR）。cardMatchesFilterのfilter.featureは配列時のみ
+      // 複数OR判定になるため、カンマ区切り文字列のまま渡さずここで配列化する
+      case 'cond_feature': {
+        if (v) {
+          const feats = String(v).split(',').map((s) => s.trim()).filter(Boolean);
+          if (feats.length === 1) f.feature = feats[0];
+          else if (feats.length > 1) f.feature = feats;
+        }
+        break;
+      }
       // 知らない条件は無視（filter に出さない）
     }
   }

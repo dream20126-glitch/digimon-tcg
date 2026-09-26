@@ -6777,6 +6777,7 @@ const COMMON_CONDS: CommonCondDef[] = [
   { code: 'cond_memory_le',        label: 'メモリー以下', input: 'number' },
   { code: 'cond_memory_ge',        label: 'メモリー以上', input: 'number' },
   { code: 'cond_feature_contains', label: '特徴を含む',   input: 'text' },
+  { code: 'cond_feature',          label: '特徴（完全一致）', input: 'text' },
   { code: 'cond_name',             label: '名前（完全一致）', input: 'text' },
   { code: 'cond_name_not',         label: '名前（完全一致・除外）', input: 'text' },
   { code: 'cond_name_contains',    label: '名前を含む',   input: 'text' },
@@ -8177,9 +8178,10 @@ function ConditionsHybridEditor({
                     ) : c.base === 'cond_same_as_picked'
                       || (supportsMultiValue && c.base === 'cond_type')
                       || c.base === 'cond_color'
-                      || c.base === 'cond_feature_contains' ? (
+                      || c.base === 'cond_feature_contains'
+                      || c.base === 'cond_feature' ? (
                       /* 「選んだデジモンと同じ」「タイプ(複数可・ターゲットフィルタ限定)」
-                         「色(複数可・全箇所共通)」「特徴を含む(複数可・全箇所共通)」:
+                         「色(複数可・全箇所共通)」「特徴を含む/特徴が完全一致(複数可・全箇所共通)」:
                          複数選択（カンマ区切りで保存）。
                          カードは同時に複数タイプを持てないため、複数選択=常にOR判定でよい
                          （「紫のデジモンかオプション」はタイプで デジモン,オプション を両方トグルするだけで表現可能）
@@ -8189,9 +8191,12 @@ function ConditionsHybridEditor({
                            step.filter (feature_includes配列) として、トリガー条件/発動条件/コスト対象の
                            絞り込み文脈(checkConditions)ではカンマ区切りのOR判定として、どちらも
                            「いずれか1つを含む」の意味で解釈される（全箇所対応済み）
+                         ※ cond_feature の複数値（カンマ区切り）は、対象の絞り込み文脈(step.filter.feature
+                           配列)でのみ「いずれか1つに完全一致」のOR判定になる。トリガー条件/発動条件側
+                           (checkConditions)は単一値の部分一致想定のため、そちらでは複数指定は使わないこと
                          ※ cond_color の複数値（2色以上選択）は現状どの箇所でもエンジン未対応
                            （多色カードは1枚で複数の色を持てるため、type_inと単純に同じ扱いにはできない） */
-                      c.base === 'cond_feature_contains' ? (() => {
+                      (c.base === 'cond_feature_contains' || c.base === 'cond_feature') ? (() => {
                         const feats = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
                         const setFeats = (next: string[]) => updateAt(i, { value: next.join(',') });
                         return (

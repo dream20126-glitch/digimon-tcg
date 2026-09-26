@@ -306,6 +306,14 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
         if (feats.length > 0) f.feature_includes = feats;
         break;
       }
+      // 特徴の完全一致（カンマ区切りで複数指定可・OR）。cardMatchesFilterのfilter.featureは
+      // Array/単一文字列どちらも受け付ける
+      case 'cond_feature': {
+        const feats = String(c.value).split(',').map((s) => s.trim()).filter(Boolean);
+        if (feats.length === 1) f.feature = feats[0];
+        else if (feats.length > 1) f.feature = feats;
+        break;
+      }
       case 'cond_name':             f.name = c.value; break;
       case 'cond_name_not':         f.name_not = c.value; break;
       case 'cond_name_contains':    f.name_contains = c.value; break;
@@ -346,6 +354,11 @@ function parseFilterObject(f: any): ConditionPair[] {
     out.push({ base: 'cond_feature_contains', value: f.feature_includes.join(',') });
   } else if (f.feature_contains) {
     out.push({ base: 'cond_feature_contains', value: String(f.feature_contains) });
+  }
+  if (Array.isArray(f.feature) && f.feature.length > 0) {
+    out.push({ base: 'cond_feature', value: f.feature.join(',') });
+  } else if (f.feature) {
+    out.push({ base: 'cond_feature', value: String(f.feature) });
   }
   if (f.name)             out.push({ base: 'cond_name',             value: String(f.name) });
   if (f.name_not)         out.push({ base: 'cond_name_not',         value: String(f.name_not) });
@@ -845,6 +858,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
           case 'cond_color':            filter.color = c.value; break;
           case 'cond_type':             filter.type = c.value; break;
           case 'cond_feature_contains': filter.feature_contains = c.value; break;
+          case 'cond_feature':          filter.feature = c.value; break;
           case 'cond_name':             filter.name = c.value; break;
           case 'cond_name_contains':    filter.name_contains = c.value; break;
           case 'cond_lv':       { const n = num(c.value); if (n !== undefined) { filter.lv_le = n; filter.lv_ge = n; } break; }
@@ -1657,6 +1671,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       if (f.color)            out.push({ base: 'cond_color',            value: String(f.color) });
       if (f.type)             out.push({ base: 'cond_type',             value: String(f.type) });
       if (f.feature_contains) out.push({ base: 'cond_feature_contains', value: String(f.feature_contains) });
+      if (f.feature)          out.push({ base: 'cond_feature',          value: String(f.feature) });
       if (f.name_contains)    out.push({ base: 'cond_name_contains',    value: String(f.name_contains) });
       if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
         out.push({ base: 'cond_lv', value: String(f.lv_le) });

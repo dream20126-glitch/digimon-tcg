@@ -851,7 +851,7 @@ function KeywordEntriesEditor({
 // コスト軽減トリガー（アセンブリ等）の両方から同じ見た目・同じ機能で使えるよう共通化した。
 // action/target/fromZones/conditions等の意味はどちらの文脈でも同じ（block.costs → step.cost[]）
 function CostListEditor({
-  dict, costs, updateCost, addCost, removeCost, noCostLabel,
+  dict, costs, updateCost, addCost, removeCost, noCostLabel, labelSuffix = '', indexOffset = 0,
 }: {
   dict: DictAPI;
   costs: CostStep[];
@@ -859,6 +859,12 @@ function CostListEditor({
   addCost: () => void;
   removeCost: (i: number) => void;
   noCostLabel?: string;
+  // 「代わりに別のコストでも支払える」で入れ子にした代替コスト一覧(CostListEditorの
+  // 再帰利用)と、本来のコスト一覧を見分けやすくするための表示調整。
+  // labelSuffix: 本来のコスト一覧側に付ける「（外側）」等の注記
+  // indexOffset: 代替コスト側の番号を本来のコストから続き番号にする（例: コスト2〜）
+  labelSuffix?: string;
+  indexOffset?: number;
 }) {
   const [costOtherOpen, setCostOtherOpen] = useState<Record<number, boolean>>({});
   return (
@@ -1050,7 +1056,7 @@ function CostListEditor({
         return (
           <div key={i} style={{ marginBottom: 6, padding: 6, border: '1px solid #ffe0b2', borderRadius: 4, background: '#fffbe6' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: 11, color: '#b76e00', fontWeight: 'bold' }}>コスト{i + 1}</div>
+              <div style={{ fontSize: 11, color: '#b76e00', fontWeight: 'bold' }}>コスト{indexOffset + i + 1}{labelSuffix}</div>
               <button
                 onClick={() => removeCost(i)}
                 style={{ padding: '0 8px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, height: 22 }}
@@ -1764,6 +1770,7 @@ function CostListEditor({
                   <CostListEditor
                     dict={dict}
                     costs={c.altCosts}
+                    indexOffset={i + 1}
                     updateCost={(j, ac) => {
                       const next = (c.altCosts || []).slice();
                       next[j] = ac;
@@ -3714,6 +3721,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 addCost={addCost}
                 removeCost={removeCost}
                 noCostLabel="コストなし（常に軽減）"
+                labelSuffix="（外側）"
               />
             </div>
             <div style={{ marginTop: 8 }}>
@@ -4481,6 +4489,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             updateCost={updateCost}
             addCost={addCost}
             removeCost={removeCost}
+            labelSuffix="（外側）"
           />
         </details>
         )}

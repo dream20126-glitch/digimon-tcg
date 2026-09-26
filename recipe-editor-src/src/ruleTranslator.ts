@@ -152,17 +152,33 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
   if (Array.isArray(rule.designatedGroups) && rule.designatedGroups.length > 0) {
     const { filterConds: commonFilterConds } = splitConds(rule.commonConditions);
     const buildGroupFilter = (g: RuleGroup) => {
+      // conditionChain（1条件ずつAND/ORを選ぶ統一UI）が設定されていればそちらを優先。
+      // 標準的な「ANDがORより優先」＝OR区切りでAND区間をまとめる積和評価で filter.or を組む。
+      // 例: [色紫](先頭) → [名前レイヴモン](and) → [特徴鳥](or)
+      //   = (色紫 AND 名前レイヴモン) OR 特徴鳥
+      if (Array.isArray(g.conditionChain) && g.conditionChain.length > 0) {
+        const segments: ConditionPair[][] = [[]];
+        g.conditionChain.forEach((entry) => {
+          if (entry.op === 'or' && segments[segments.length - 1].length > 0) {
+            segments.push(entry.conditions.slice());
+          } else {
+            segments[segments.length - 1] = [...segments[segments.length - 1], ...entry.conditions];
+          }
+        });
+        const segFilters = segments
+          .map((segConds) => {
+            const f = condsToFilter([...commonFilterConds, ...segConds]);
+            if (rule.type && !f.type) f.type = rule.type;
+            return f;
+          })
+          .filter((f) => Object.keys(f).length > 0);
+        if (segFilters.length === 0) return {};
+        if (segFilters.length === 1) return segFilters[0];
+        return { or: segFilters };
+      }
       const { filterConds: gFilterConds } = splitConds(g.conditions);
       const gFilter = condsToFilter([...commonFilterConds, ...gFilterConds]);
       if (rule.type && !gFilter.type) gFilter.type = rule.type;
-      // グループ自身の「さらにOR」代替条件セット（各要素はAND、要素同士はOR）を
-      // filter.orとしてAND合成する。例: 色=紫（gFilter）AND（名前レイヴモン OR 特徴鳥）
-      if (Array.isArray(g.subOrGroups) && g.subOrGroups.length > 0) {
-        const orFilters = g.subOrGroups
-          .map((conds) => condsToFilter(conds))
-          .filter((f) => Object.keys(f).length > 0);
-        if (orFilters.length > 0) gFilter.or = orFilters;
-      }
       return gFilter;
     };
     // 'or': 全グループの条件をORで束ね、1つの選択肢として扱う（「AかBのどちらかを満たす

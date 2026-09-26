@@ -421,6 +421,17 @@ export interface AltAction {
   thenBreak?: boolean;
 }
 
+// グループ内条件の1エントリ。1エントリの中に複数条件を入れるとその中はAND。
+// opは「直前のエントリとどう繋ぐか」（先頭エントリは無視）。
+// and=直前の式にこのエントリをAND合成（同じ区間に留まる）/ or=ここで新しい区間を開始し、
+// 以降のand条件はこの新区間に積まれる（標準的な「ANDがORより優先」の積和評価）。
+// 例: [色紫][先頭] → [名前レイヴモン][and] → [特徴鳥][or]
+//   = (色紫 AND 名前レイヴモン) OR 特徴鳥
+export interface ConditionChainEntry {
+  conditions: ConditionPair[];
+  op?: 'and' | 'or';
+}
+
 // MiniStep.designatedGroups 専用: 通常のDesignatedGroup（条件+枚数）に加えて、
 // グループごとに異なる置き先（action）を持たせられる。例:「1枚を手札に加え、
 // 1枚をセキュリティの上に置く」を1ルール行の中の2グループとして表現する。
@@ -429,11 +440,9 @@ export interface RuleGroup extends DesignatedGroup {
   action?: string;
   deckPosition?: 'top' | 'bottom' | 'both';
   options?: string[];
-  // このグループ自身が持つ「さらにOR」の代替条件セット（各要素はAND条件の配列、
-  // 要素同士はOR）。通常のconditions（AND）とはANDで合成される。例:「色=紫」を
-  // conditionsに、「名前にレイヴモンを含む/特徴に鳥を含む」をsubOrGroupsに入れると
-  // 「紫 AND（名前レイヴモン OR 特徴鳥）」になる（→ step.filter.or として出力）
-  subOrGroups?: ConditionPair[][];
+  // 1条件ずつAND/ORを選びながら追加する統一UI用（設定されていればconditionsより優先）。
+  // 「ANDがORより優先」の標準的な積和評価で filter.or を組み立てる
+  conditionChain?: ConditionChainEntry[];
 }
 
 // ルール = メインアクションに紐づく「ミニ effect step」

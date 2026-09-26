@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup, FusionMaterialSlot, ExtraTarget } from '../types';
+import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup, ConditionChainEntry, FusionMaterialSlot, ExtraTarget } from '../types';
 import {
   SECTIONS,
   DURATIONS,
@@ -7381,74 +7381,75 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                       </div>
                     );
                   })()}
-                  <ConditionsHybridEditor
-                    conditions={g.conditions || []}
-                    onChange={(next) => updateGroup(gi, { conditions: next })}
-                    dict={dict}
-                    title="条件"
-                    hint="（このグループの絞り込み条件・複数指定可）"
-                    theme="action"
-                    defaultSubject=""
-                    showSubjectSelector={false}
-                    conditionsOp={g.conditionsOp || 'and'}
-                    onConditionsOpChange={(op) => updateGroup(gi, { conditionsOp: op })}
-                    allowDistinctVariants
-                  />
-                  {/* グループ内OR（例:「色=紫」（上の条件）かつ（名前に「レイヴモン」を含む
-                      または特徴に「鳥」を含む）を1グループで表現したい場合）。
-                      上の「条件」とはAND、ここに追加した候補同士はOR */}
-                  {Array.isArray(g.subOrGroups) && g.subOrGroups.length > 0 ? (
-                    <div style={{ marginTop: 6, padding: 6, background: '#fffaf0', border: '1px dashed #f0d9a8', borderRadius: 4 }}>
-                      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#946200', marginBottom: 4 }}>
-                        このグループ内でさらにOR（上の「条件」とはANDで合成されます）
-                      </div>
-                      {g.subOrGroups.map((orConds, oi) => (
-                        <div key={oi} style={{ marginBottom: 4, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
-                          <div style={{ flex: 1 }}>
-                            <ConditionsHybridEditor
-                              conditions={orConds}
-                              onChange={(next) => {
-                                const nextList = (g.subOrGroups || []).slice();
-                                nextList[oi] = next;
-                                updateGroup(gi, { subOrGroups: nextList });
-                              }}
-                              dict={dict}
-                              title={`OR候補${oi + 1}`}
-                              hint="（このOR候補の条件・複数指定時はAND）"
-                              theme="action"
-                              defaultSubject=""
-                              showSubjectSelector={false}
-                            />
+                  {/* グループ内条件チェーン: 1条件ずつ追加し、2個目以降は直前との関係を
+                      AND/ORで選ぶ（標準的な「ANDがORより優先」＝OR区切りでAND区間をまとめる
+                      積和評価）。例:「色紫」→[AND]→「名前レイヴモン」→[OR]→「特徴鳥」
+                      = (色紫 AND 名前レイヴモン) OR 特徴鳥 */}
+                  {(() => {
+                    const chain: ConditionChainEntry[] = (g.conditionChain && g.conditionChain.length > 0)
+                      ? g.conditionChain
+                      : [{ conditions: g.conditions || [] }];
+                    const setChain = (next: ConditionChainEntry[]) => updateGroup(gi, { conditionChain: next, conditions: [] });
+                    const updateEntry = (ei: number, patch: Partial<ConditionChainEntry>) => {
+                      const next = chain.slice();
+                      next[ei] = { ...next[ei], ...patch };
+                      setChain(next);
+                    };
+                    const removeEntry = (ei: number) => {
+                      const next = chain.filter((_, idx) => idx !== ei);
+                      setChain(next.length > 0 ? next : [{ conditions: [] }]);
+                    };
+                    const addEntry = () => setChain([...chain, { conditions: [], op: 'and' }]);
+                    return (
+                      <div>
+                        {chain.map((entry, ei) => (
+                          <div key={ei} style={{ marginTop: ei === 0 ? 0 : 6 }}>
+                            {ei > 0 && (
+                              <div style={{ margin: '4px 0' }}>
+                                <ButtonGroup
+                                  options={[{ code: 'and', label: 'AND（かつ）' }, { code: 'or', label: 'OR（または）' }]}
+                                  value={entry.op || 'and'}
+                                  onChange={(v) => updateEntry(ei, { op: (v || 'and') as 'and' | 'or' })}
+                                  accentColor="#946200"
+                                />
+                              </div>
+                            )}
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+                              <div style={{ flex: 1 }}>
+                                <ConditionsHybridEditor
+                                  conditions={entry.conditions}
+                                  onChange={(next) => updateEntry(ei, { conditions: next })}
+                                  dict={dict}
+                                  title={ei === 0 ? '条件' : `条件${ei + 1}`}
+                                  hint="（複数指定時はAND）"
+                                  theme="action"
+                                  defaultSubject=""
+                                  showSubjectSelector={false}
+                                  allowDistinctVariants={ei === 0}
+                                />
+                              </div>
+                              {chain.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeEntry(ei)}
+                                  style={{ border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '1px 7px', cursor: 'pointer', fontSize: 11 }}
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nextList = (g.subOrGroups || []).filter((_, idx) => idx !== oi);
-                              updateGroup(gi, { subOrGroups: nextList.length > 0 ? nextList : undefined });
-                            }}
-                            style={{ border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '1px 7px', cursor: 'pointer', fontSize: 11 }}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => updateGroup(gi, { subOrGroups: [...(g.subOrGroups || []), []] })}
-                        style={{ padding: '2px 8px', border: '1px dashed #946200', background: 'white', color: '#946200', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
-                      >
-                        + OR候補を追加
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => updateGroup(gi, { subOrGroups: [[], []] })}
-                      style={{ marginTop: 6, padding: '2px 8px', border: '1px dashed #946200', background: 'white', color: '#946200', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
-                    >
-                      + このグループ内にOR条件を追加
-                    </button>
-                  )}
+                        ))}
+                        <button
+                          type="button"
+                          onClick={addEntry}
+                          style={{ marginTop: 6, padding: '2px 8px', border: '1px dashed #946200', background: 'white', color: '#946200', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                        >
+                          + 条件を追加（AND/OR選択）
+                        </button>
+                      </div>
+                    );
+                  })()}
                   {/* AND時: 各グループが自分の枚数を持つ（加算されるので各グループ末尾に表示） */}
                   {!isOrGroups && (
                   <div style={{ marginTop: 6 }}>

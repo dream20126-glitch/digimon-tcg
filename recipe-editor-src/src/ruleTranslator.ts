@@ -155,6 +155,14 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
       const { filterConds: gFilterConds } = splitConds(g.conditions);
       const gFilter = condsToFilter([...commonFilterConds, ...gFilterConds]);
       if (rule.type && !gFilter.type) gFilter.type = rule.type;
+      // グループ自身の「さらにOR」代替条件セット（各要素はAND、要素同士はOR）を
+      // filter.orとしてAND合成する。例: 色=紫（gFilter）AND（名前レイヴモン OR 特徴鳥）
+      if (Array.isArray(g.subOrGroups) && g.subOrGroups.length > 0) {
+        const orFilters = g.subOrGroups
+          .map((conds) => condsToFilter(conds))
+          .filter((f) => Object.keys(f).length > 0);
+        if (orFilters.length > 0) gFilter.or = orFilters;
+      }
       return gFilter;
     };
     // 'or': 全グループの条件をORで束ね、1つの選択肢として扱う（「AかBのどちらかを満たす

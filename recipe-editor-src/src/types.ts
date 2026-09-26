@@ -429,6 +429,11 @@ export interface RuleGroup extends DesignatedGroup {
   action?: string;
   deckPosition?: 'top' | 'bottom' | 'both';
   options?: string[];
+  // このグループ自身が持つ「さらにOR」の代替条件セット（各要素はAND条件の配列、
+  // 要素同士はOR）。通常のconditions（AND）とはANDで合成される。例:「色=紫」を
+  // conditionsに、「名前にレイヴモンを含む/特徴に鳥を含む」をsubOrGroupsに入れると
+  // 「紫 AND（名前レイヴモン OR 特徴鳥）」になる（→ step.filter.or として出力）
+  subOrGroups?: ConditionPair[][];
 }
 
 // ルール = メインアクションに紐づく「ミニ effect step」

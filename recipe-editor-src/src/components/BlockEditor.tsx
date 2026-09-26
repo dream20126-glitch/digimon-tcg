@@ -7781,6 +7781,10 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_memory_ge', label: '以上' },
     { value: 'cond_memory_le', label: '以下' },
   ],
+  feature: [
+    { value: 'cond_feature_contains', label: '含む' },
+    { value: 'cond_feature', label: '完全一致' },
+  ],
   name: [
     { value: 'cond_name', label: '完全一致' },
     { value: 'cond_name_not', label: '完全一致・除外' },

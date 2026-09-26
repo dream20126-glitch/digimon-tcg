@@ -7897,6 +7897,11 @@ function ConditionsHybridEditor({
 
   const [localOtherOpen, setLocalOtherOpen] = useState(false);
   const otherOpen = otherOpenProp !== undefined ? otherOpenProp : localOtherOpen;
+  // 「対象と同じ」チェックボックス: 以前は c.subject===sameAsTargetSubject の値一致で
+  // 自動判定していたが、それだと「自分」等を直接選んだだけで（値がたまたま一致するため）
+  // 勝手にチェックが付いてしまい紛らわしかった。チェックボックス自身をクリックしたときだけ
+  // 明示的にONになる、行インデックス単位の独立したUI状態として管理する
+  const [sameAsTargetChecked, setSameAsTargetChecked] = useState<Record<number, boolean>>({});
   const setOtherOpen = onOtherOpenChange || setLocalOtherOpen;
 
   // 「コスト」カテゴリ専用: 登場/使用/両方でカード種別を絞り込む（対象の条件=supportsMultiValue時のみ）。
@@ -8327,13 +8332,16 @@ function ConditionsHybridEditor({
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#555', marginBottom: 4 }}>
                           <input
                             type="checkbox"
-                            checked={c.subject === sameAsTargetSubject}
-                            onChange={(e) => updateAt(i, { subject: e.target.checked ? sameAsTargetSubject : undefined })}
+                            checked={!!sameAsTargetChecked[i]}
+                            onChange={(e) => {
+                              setSameAsTargetChecked((prev) => ({ ...prev, [i]: e.target.checked }));
+                              updateAt(i, { subject: e.target.checked ? sameAsTargetSubject : undefined });
+                            }}
                           />
                           対象と同じ
                         </label>
                       )}
-                      <div style={(sameAsTargetSubject && c.subject === sameAsTargetSubject) ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
+                      <div style={sameAsTargetChecked[i] ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
                       {(() => {
                         const rawSub = splitStackSuffix(c.subject || '');
                         const curSub = COND_SUBJECT_CODE_TO_L1L2[rawSub.base] || { l1: '', l2: '' };

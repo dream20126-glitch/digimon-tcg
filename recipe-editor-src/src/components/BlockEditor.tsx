@@ -2051,7 +2051,7 @@ function joinTriggerSubjectSuffix(base: string, family: TriggerStackFamily, pos:
 function TriggerSubjectStagedPicker({
   subject, onChange, hasFromZones, allowNone = false, hasEntry = true, onClear,
   accentColor = '#2e7d32', suppressTypeButtons = false,
-  zoneIncreaseValue, onZoneIncreaseChange, extraZoneOptions,
+  zoneIncreaseValue, onZoneAndSubjectChange, extraZoneOptions,
 }: {
   subject: string;
   onChange: (next: string) => void;
@@ -2063,32 +2063,38 @@ function TriggerSubjectStagedPicker({
   suppressTypeButtons?: boolean;
   // 【〇〇が増えたとき】専用: 「場所」はsubjectではなくblock.zoneIncrease[]に書く
   // （発動主体の種別=subjectとは独立した別フィールドのため）。指定時のみゾーン系L2選択肢が
-  // zoneIncreaseValueを読み書きするようになる
+  // 有効になる。subject/zoneIncreaseは同じblockオブジェクトの別キーなので、両方を
+  // 同時に書き換える必要がある操作（場所⇔種別の切替）は必ずこの1つのコールバックに
+  // まとめて渡す（onChange+別コールバックの2回呼びは、親のonChangeが直前のblockを
+  // クロージャで持つ実装だと片方が消える不具合になるため厳禁）
   zoneIncreaseValue?: string[];
-  onZoneIncreaseChange?: (next: string[]) => void;
+  onZoneAndSubjectChange?: (nextSubject: string, nextZone: string[]) => void;
   extraZoneOptions?: { code: string; label: string }[];
 }) {
   const raw = splitTriggerSubjectSuffix(subject || '');
   const cur = SUBJECT_CODE_TO_L1L2[raw.base] || { l1: 'self', l2: '' };
-  const zoneMode = !!onZoneIncreaseChange;
+  const zoneMode = !!onZoneAndSubjectChange;
   const currentZone = (zoneIncreaseValue && zoneIncreaseValue[0]) || '';
   // zoneMode時は「増えた場所」が選ばれていればそちらをL2として優先表示する
   // （subject自体は種別(digimon/tamer等)を別途保持できるが、L2ボタンの見た目は単一選択にする）
   const effectiveL2 = zoneMode && currentZone ? currentZone : cur.l2;
+  // subjectだけを更新する（zoneMode時は場所を一緒にクリアして1回のコールバックで済ませる）
+  const setSubject = (nextSubject: string) => {
+    if (zoneMode) onZoneAndSubjectChange!(nextSubject, []);
+    else onChange(nextSubject);
+  };
+  const setZone = (zone: string) => {
+    onZoneAndSubjectChange!(cur.l1, [zone]); // 種別は指定なし（陣営のみ）に戻す
+  };
   const handleL1 = (l1: string) => {
-    if (l1 === 'self') { onChange('self'); return; }
+    if (l1 === 'self') { setSubject('self'); return; }
     const l2 = cur.l1 === l1 && cur.l2 ? cur.l2 : 'digimon';
-    onChange(SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon'] || l1);
+    setSubject(SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon'] || l1);
   };
   const zoneOptionCodes = new Set([...SUBJECT_L2_FROM_ZONES.map((o) => o.code), ...(extraZoneOptions || []).map((o) => o.code)]);
   const handleL2 = (l2: string) => {
-    if (zoneMode && zoneOptionCodes.has(l2)) {
-      onZoneIncreaseChange!([l2]);
-      onChange(cur.l1); // subjectは種別なしの陣営だけに戻す（場所と種別は同時指定不可）
-      return;
-    }
-    if (zoneMode) onZoneIncreaseChange!([]);
-    onChange(SUBJECT_L1L2_TO_CODE[cur.l1 + ':' + l2]);
+    if (zoneMode && zoneOptionCodes.has(l2)) { setZone(l2); return; }
+    setSubject(SUBJECT_L1L2_TO_CODE[cur.l1 + ':' + l2]);
   };
   const baseL2Options = cur.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
   const l2Options = hasFromZones ? [...baseL2Options, ...SUBJECT_L2_FROM_ZONES, ...(extraZoneOptions || [])] : baseL2Options;
@@ -2100,18 +2106,17 @@ function TriggerSubjectStagedPicker({
   const subjTamerChecked = hasDigimonTamer && (effectiveL2 === 'tamer' || effectiveL2 === 'card');
   const subjExclusiveL2Options = l2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer' && o.code !== 'card');
   const applySubjDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
-    if (zoneMode) onZoneIncreaseChange!([]);
-    if (nextDigimon && nextTamer) onChange(subjCardCode);
-    else if (nextDigimon) onChange(subjDigimonCode);
-    else if (nextTamer) onChange(subjTamerCode);
-    else onChange(cur.l1);
+    if (nextDigimon && nextTamer) setSubject(subjCardCode);
+    else if (nextDigimon) setSubject(subjDigimonCode);
+    else if (nextTamer) setSubject(subjTamerCode);
+    else setSubject(cur.l1);
   };
   // 第3段階: デジモンを選択している場合のみ、進化元/重ねられているカードのサブ選択肢を出す
   const showStage3 = hasFromZones && effectiveL2 === 'digimon';
   // 第4段階: テイマー選択時、または第3段階で進化元/重ねられているカードを選んだ時
   const showStage4 = hasFromZones && (effectiveL2 === 'tamer' || (showStage3 && raw.family !== ''));
-  const setFamily = (family: TriggerStackFamily) => onChange(joinTriggerSubjectSuffix(raw.base, family, family ? raw.pos : ''));
-  const setPos = (pos: TriggerStackPos) => onChange(joinTriggerSubjectSuffix(raw.base, raw.family || 'stacked', pos));
+  const setFamily = (family: TriggerStackFamily) => setSubject(joinTriggerSubjectSuffix(raw.base, family, family ? raw.pos : ''));
+  const setPos = (pos: TriggerStackPos) => setSubject(joinTriggerSubjectSuffix(raw.base, raw.family || 'stacked', pos));
   const l1Value = !hasEntry ? '__none__' : (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'both') ? '' : cur.l1;
   return (
     <>
@@ -4120,6 +4125,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         };
                         const thisIsZoneIncrease = code === ZONE_INCREASE_TRIGGER;
                         const thisHasFromZones = thisIsZoneIncrease || !!dict.triggers.find((d) => d.code === code)?.hasFromZones;
+                        const setThisSubjectAndZone = (nextSubject: string, nextZone: string[]) => {
+                          const nextMap = { ...(block.triggerSubjectByCode || {}), [code]: nextSubject };
+                          onChange({ ...block, triggerSubjectByCode: nextMap, zoneIncrease: nextZone });
+                        };
                         return (
                           <div key={code} style={{ fontSize: 11, border: '1px solid #c5e0c5', borderRadius: 4, padding: 6 }}>
                             <div style={{ color: '#333', fontWeight: 'bold', marginBottom: 3 }}>{label}:</div>
@@ -4131,7 +4140,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                               hasEntry={hasThisSubjectEntry}
                               onClear={clearThisSubject}
                               zoneIncreaseValue={thisIsZoneIncrease ? (block.zoneIncrease || []) : undefined}
-                              onZoneIncreaseChange={thisIsZoneIncrease ? (next) => update('zoneIncrease', next) : undefined}
+                              onZoneAndSubjectChange={thisIsZoneIncrease ? setThisSubjectAndZone : undefined}
                               extraZoneOptions={thisIsZoneIncrease ? ZONE_INCREASE_EXTRA_OPTIONS : undefined}
                             />
                           </div>
@@ -4292,7 +4301,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     hasFromZones={triggerHasFromZones}
                     suppressTypeButtons={allTriggersTypeless}
                     zoneIncreaseValue={isZoneIncreaseTrigger ? (block.zoneIncrease || []) : undefined}
-                    onZoneIncreaseChange={isZoneIncreaseTrigger ? (next) => update('zoneIncrease', next) : undefined}
+                    onZoneAndSubjectChange={isZoneIncreaseTrigger ? (nextSubject, nextZone) => onChange({ ...block, triggerSubject: nextSubject, zoneIncrease: nextZone }) : undefined}
                     extraZoneOptions={isZoneIncreaseTrigger ? ZONE_INCREASE_EXTRA_OPTIONS : undefined}
                   />
                   {/* 「下」のときだけ、積まれているカードの種別で絞り込める

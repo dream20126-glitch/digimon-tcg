@@ -13,7 +13,7 @@ import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOp
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
-import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS } from '../recipe';
+import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER } from '../recipe';
 
 interface Props {
   block: EffectBlock;
@@ -7920,8 +7920,8 @@ function ConditionsHybridEditor({
   // よく使う条件（色/タイプ/特徴/Lv/DP/名前/場所）ボタンのトグル。
   // オフ→オン: そのカテゴリの既定コードで1行追加。オン→オフ: そのカテゴリの行を全て削除
   function toggleCategory(cat: string) {
-    if (conditions.some((c) => baseToCategory(c.base) === cat)) {
-      onChange(conditions.filter((c) => baseToCategory(c.base) !== cat));
+    if (conditions.some((c) => c.subject !== REF_EXISTS_FILTER_MARKER && baseToCategory(c.base) === cat)) {
+      onChange(conditions.filter((c) => c.subject === REF_EXISTS_FILTER_MARKER || baseToCategory(c.base) !== cat));
     } else {
       addRow(CATEGORY_DEFAULT_BASE[cat] || '');
     }
@@ -7961,7 +7961,7 @@ function ConditionsHybridEditor({
       {/* よく使う条件: ボタンを押すとその場に詳細設定が展開する（よく使うトリガーと同じ操作感） */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {visibleCategoryOptions.map((cat) => {
-          const active = conditions.some((c) => baseToCategory(c.base) === cat.code);
+          const active = conditions.some((c) => c.subject !== REF_EXISTS_FILTER_MARKER && baseToCategory(c.base) === cat.code);
           return (
             <button
               key={cat.code}
@@ -7997,7 +7997,7 @@ function ConditionsHybridEditor({
     <>
       {/* アクティブなカテゴリごとの詳細設定（値・対象） */}
       {visibleCategoryOptions.map((cat) => {
-        const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => baseToCategory(c.base) === cat.code);
+        const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => c.subject !== REF_EXISTS_FILTER_MARKER && baseToCategory(c.base) === cat.code);
         if (rows.length === 0) return null;
         return (
           <div key={cat.code} style={{ marginTop: 6 }}>
@@ -8310,6 +8310,100 @@ function ConditionsHybridEditor({
                               />
                               アクティブ状態のみ
                             </label>
+                          </div>
+                        );
+                      })()}
+                      {cat.code === 'ref' && refZoneOf(c) === 'battle_area' && refQuantOf(c) === 'ge' && (() => {
+                        const attrs = conditions.filter((cc) => cc.subject === REF_EXISTS_FILTER_MARKER);
+                        const getAttr = (base: string) => attrs.find((a) => a.base === base);
+                        const setAttr = (base: string, value: string | undefined) => {
+                          const withoutThis = conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && cc.base === base));
+                          if (value === undefined || value === '') { onChange(withoutThis); return; }
+                          onChange([...withoutThis, { base, value, subject: REF_EXISTS_FILTER_MARKER }]);
+                        };
+                        const lvGe = getAttr('cond_lv_ge');
+                        const lvLe = getAttr('cond_lv_le');
+                        const lvMode = lvGe ? 'cond_lv_ge' : lvLe ? 'cond_lv_le' : '';
+                        const costGe = getAttr('cond_cost_ge');
+                        const costLe = getAttr('cond_cost_le');
+                        const costMode = costGe ? 'cond_cost_ge' : costLe ? 'cond_cost_le' : '';
+                        const featureVal = getAttr('cond_feature');
+                        const feats = (featureVal?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
+                        return (
+                          <div style={{ marginBottom: 4, padding: 6, background: '#fffaf0', border: '1px dashed #f0d9a8', borderRadius: 4 }}>
+                            <div style={{ fontSize: 11, fontWeight: 'bold', color: '#946200', marginBottom: 4 }}>
+                              属性で絞り込む（この参照行専用・「1体以上」の存在チェックのみ対応）
+                            </div>
+                            <div style={{ marginBottom: 4 }}>
+                              <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>色:</span>
+                              <MultiButtonGroup
+                                options={RULE_COLOR_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))}
+                                values={(getAttr('cond_color')?.value || '').split(',').filter(Boolean)}
+                                onToggle={(code, on) => {
+                                  const cur = (getAttr('cond_color')?.value || '').split(',').filter(Boolean);
+                                  const next = on ? [...cur, code] : cur.filter((x) => x !== code);
+                                  setAttr('cond_color', next.join(','));
+                                }}
+                                accentColor="#946200"
+                              />
+                            </div>
+                            <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 10, color: '#666' }}>Lv:</span>
+                              <ButtonGroup
+                                options={[{ code: '', label: '指定なし' }, { code: 'cond_lv_ge', label: '以上' }, { code: 'cond_lv_le', label: '以下' }]}
+                                value={lvMode}
+                                onChange={(v) => {
+                                  setAttr('cond_lv_ge', undefined);
+                                  setAttr('cond_lv_le', undefined);
+                                  if (v) setAttr(v, '1');
+                                }}
+                                accentColor="#946200"
+                              />
+                              {lvMode && (
+                                <input
+                                  type="number" min={1}
+                                  value={(lvMode === 'cond_lv_ge' ? lvGe?.value : lvLe?.value) || ''}
+                                  onChange={(e) => setAttr(lvMode, e.target.value)}
+                                  style={{ width: 60, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                                />
+                              )}
+                            </div>
+                            <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 10, color: '#666' }}>コスト:</span>
+                              <ButtonGroup
+                                options={[{ code: '', label: '指定なし' }, { code: 'cond_cost_ge', label: '以上' }, { code: 'cond_cost_le', label: '以下' }]}
+                                value={costMode}
+                                onChange={(v) => {
+                                  setAttr('cond_cost_ge', undefined);
+                                  setAttr('cond_cost_le', undefined);
+                                  if (v) setAttr(v, '1');
+                                }}
+                                accentColor="#946200"
+                              />
+                              {costMode && (
+                                <input
+                                  type="number" min={0}
+                                  value={(costMode === 'cond_cost_ge' ? costGe?.value : costLe?.value) || ''}
+                                  onChange={(e) => setAttr(costMode, e.target.value)}
+                                  style={{ width: 60, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                                />
+                              )}
+                              {costMode && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ コストはエンジン未対応です（保存はできますが動作しません）</span>}
+                            </div>
+                            <div>
+                              <span style={{ fontSize: 10, color: '#666' }}>特徴:</span>
+                              <MultiTextTags
+                                values={feats}
+                                onChange={(next) => setAttr('cond_feature', next.join(','))}
+                                placeholder="例: サイボーグ型"
+                                accentColor="#946200"
+                              />
+                            </div>
+                            {attrs.length > 0 && (
+                              <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
+                                ⚠ この行を使うと、同じ発動条件欄内の他の条件は無視されます
+                              </div>
+                            )}
                           </div>
                         );
                       })()}

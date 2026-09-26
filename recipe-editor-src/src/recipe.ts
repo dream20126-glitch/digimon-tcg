@@ -16,6 +16,47 @@ function pairToString(p: ConditionPair): string {
   return s;
 }
 
+// 参照(バトルエリア/以上/1)の行に「属性で絞り込む」（色/Lv/コスト/特徴）で添付した
+// フィルタのマーカー。エンジンのcond_existsは同じ発動条件配列内の兄弟条件を丸ごと
+// 自分のフィルタとして消費してしまう（他の無関係な条件と併用不可）という制約があるため、
+// 「参照+属性フィルタ」は単独使用前提の特殊なグループとして識別・展開する
+export const REF_EXISTS_FILTER_MARKER = '__ref_exists_filter__';
+export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_feature', 'cond_cost_le', 'cond_cost_ge']);
+
+// 参照(cond_battle_area_ge, 以上/1)の行に属性フィルタ(REF_EXISTS_FILTER_MARKER付き)が
+// 添付されていれば、その行を cond_exists に差し替え、属性フィルタはsubjectを外した
+// 兄弟条件として展開する（cond_existsのotherConds消費ロジックがそのまま使えるように
+// なる）。添付が無ければ何も変えずそのまま返す
+function expandRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[] {
+  if (!Array.isArray(pairs) || pairs.length === 0) return pairs;
+  const hasAttrs = pairs.some((p) => p && p.subject === REF_EXISTS_FILTER_MARKER && REF_EXISTS_FILTER_CODES.has(p.base));
+  if (!hasAttrs) return pairs;
+  const refIdx = pairs.findIndex((p) => p && p.base === 'cond_battle_area_ge' && p.subject !== REF_EXISTS_FILTER_MARKER);
+  if (refIdx === -1) return pairs;
+  const refPair = pairs[refIdx];
+  return pairs.map((p, i) => {
+    if (i === refIdx) return { base: 'cond_exists', subject: refPair.subject };
+    if (p.subject === REF_EXISTS_FILTER_MARKER && REF_EXISTS_FILTER_CODES.has(p.base)) {
+      return { base: p.base, value: p.value };
+    }
+    return p;
+  });
+}
+
+// expandRefExistsAttributeFiltersの逆変換（レシピ読込時）。cond_existsエントリを
+// cond_battle_area_ge(以上/1)の参照行に戻し、直後に続く属性フィルタ条件群には
+// REF_EXISTS_FILTER_MARKERを付け直して「参照行に添付」の表示に復元する
+function collapseRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[] {
+  if (!Array.isArray(pairs) || pairs.length === 0) return pairs;
+  const existsIdx = pairs.findIndex((p) => p && p.base === 'cond_exists');
+  if (existsIdx === -1) return pairs;
+  return pairs.map((p, i) => {
+    if (i === existsIdx) return { base: 'cond_battle_area_ge', value: '1', subject: p.subject };
+    if (REF_EXISTS_FILTER_CODES.has(p.base)) return { ...p, subject: REF_EXISTS_FILTER_MARKER };
+    return p;
+  });
+}
+
 // CostStep[] → step.cost[] 形式。効果1(EffectBlock.costs)・代替アクション(AltAction.costs)
 // の両方で共用する（同じUI=CostListEditorを使い回すため、変換ルールも1本化する）
 function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
@@ -141,7 +182,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   if (validGate.length >= 1) out.gate = pairToString(validGate[0]);
   if (validGate.length >= 2) out.gate_when = pairToString(validGate[1]);
   if (validGate.length >= 3) out.gate_extra_conditions = validGate.slice(2).map(pairToString);
-  const validC = (a.conditions || []).filter((p) => p.base);
+  const validC = expandRefExistsAttributeFilters((a.conditions || []).filter((p) => p.base));
   if (validC.length >= 1) out.condition = pairToString(validC[0]);
   if (validC.length >= 2) out.when = pairToString(validC[1]);
   if (validC.length >= 3) out.extra_conditions = validC.slice(2).map(pairToString);
@@ -704,7 +745,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // エンジンは参照しないため意図的にJSON出力しない（block.asTypeとしてエディタ内では保持され続ける）
 
   // 条件: 1つ目→condition, 2つ目→when, 3つ目以降→extra_conditions[]
-  const validConds = (b.conditions || []).filter((p) => p.base);
+  const validConds = expandRefExistsAttributeFilters((b.conditions || []).filter((p) => p.base));
   if (validConds.length >= 1) step.condition = pairToString(validConds[0]);
   if (validConds.length >= 2) step.when = pairToString(validConds[1]);
   if (validConds.length >= 3) step.extra_conditions = validConds.slice(2).map(pairToString);
@@ -1303,12 +1344,13 @@ function stepsArrayToBlocks(section: 'main' | 'evo_source' | 'security' | 'link'
 // （altActionToStepObjectの逆変換。continue_on_failは'then'モードで暗黙付与されるため、
 // UI上のoptions一覧には出さないよう除去する）
 function stepObjectToAltAction(step: any): AltAction {
-  const conditions: ConditionPair[] = [];
-  if (step?.condition) conditions.push(stringToPair(String(step.condition)));
-  if (step?.when) conditions.push(stringToPair(String(step.when)));
+  const conditionsRaw: ConditionPair[] = [];
+  if (step?.condition) conditionsRaw.push(stringToPair(String(step.condition)));
+  if (step?.when) conditionsRaw.push(stringToPair(String(step.when)));
   if (Array.isArray(step?.extra_conditions)) {
-    step.extra_conditions.forEach((s: string) => conditions.push(stringToPair(String(s))));
+    step.extra_conditions.forEach((s: string) => conditionsRaw.push(stringToPair(String(s))));
   }
+  const conditions: ConditionPair[] = collapseRefExistsAttributeFilters(conditionsRaw);
   const gateConditions: ConditionPair[] = [];
   if (step?.gate) gateConditions.push(stringToPair(String(step.gate)));
   if (step?.gate_when) gateConditions.push(stringToPair(String(step.gate_when)));
@@ -1542,12 +1584,13 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     ? parseDesignatedFields(step.designated_common)
     : undefined;
   // 条件復元
-  const conditions: ConditionPair[] = [];
-  if (step?.condition) conditions.push(stringToPair(String(step.condition)));
-  if (step?.when) conditions.push(stringToPair(String(step.when)));
+  const conditionsRaw: ConditionPair[] = [];
+  if (step?.condition) conditionsRaw.push(stringToPair(String(step.condition)));
+  if (step?.when) conditionsRaw.push(stringToPair(String(step.when)));
   if (Array.isArray(step?.extra_conditions)) {
-    step.extra_conditions.forEach((s: string) => conditions.push(stringToPair(String(s))));
+    step.extra_conditions.forEach((s: string) => conditionsRaw.push(stringToPair(String(s))));
   }
+  const conditions: ConditionPair[] = collapseRefExistsAttributeFilters(conditionsRaw);
   // トリガー条件復元
   const triggerConditions: ConditionPair[] = [];
   if (Array.isArray(step?.trigger_conditions)) {
@@ -1709,12 +1752,15 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     // 代替アクション復元
     altActions: Array.isArray(step?.alt_actions)
       ? step.alt_actions.map((a: any) => {
-          const condArr: ConditionPair[] = [];
-          if (a?.condition) condArr.push(stringToPair(String(a.condition)));
-          if (a?.when) condArr.push(stringToPair(String(a.when)));
-          if (Array.isArray(a?.extra_conditions)) {
-            a.extra_conditions.forEach((s: string) => condArr.push(stringToPair(String(s))));
-          }
+          const condArr: ConditionPair[] = collapseRefExistsAttributeFilters((() => {
+            const raw: ConditionPair[] = [];
+            if (a?.condition) raw.push(stringToPair(String(a.condition)));
+            if (a?.when) raw.push(stringToPair(String(a.when)));
+            if (Array.isArray(a?.extra_conditions)) {
+              a.extra_conditions.forEach((s: string) => raw.push(stringToPair(String(s))));
+            }
+            return raw;
+          })());
           const gateArr: ConditionPair[] = [];
           if (a?.gate) gateArr.push(stringToPair(String(a.gate)));
           if (a?.gate_when) gateArr.push(stringToPair(String(a.gate_when)));
@@ -1754,10 +1800,11 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
               const trig = Object.keys(gr)[0];
               const inner = trig && Array.isArray(gr[trig]) ? gr[trig][0] : undefined;
               if (!trig || !inner) return undefined;
-              const gConds: ConditionPair[] = [];
-              if (inner.condition) gConds.push(stringToPair(String(inner.condition)));
-              if (inner.when) gConds.push(stringToPair(String(inner.when)));
-              if (Array.isArray(inner.extra_conditions)) inner.extra_conditions.forEach((s: string) => gConds.push(stringToPair(String(s))));
+              const gCondsRaw: ConditionPair[] = [];
+              if (inner.condition) gCondsRaw.push(stringToPair(String(inner.condition)));
+              if (inner.when) gCondsRaw.push(stringToPair(String(inner.when)));
+              if (Array.isArray(inner.extra_conditions)) inner.extra_conditions.forEach((s: string) => gCondsRaw.push(stringToPair(String(s))));
+              const gConds: ConditionPair[] = collapseRefExistsAttributeFilters(gCondsRaw);
               return {
                 trigger: trig,
                 action: inner.action || '',
@@ -1840,12 +1887,13 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
       const arr = gr[trig];
       if (!Array.isArray(arr) || arr.length === 0) return undefined;
       const inner = arr[0];
-      const condArr: ConditionPair[] = [];
-      if (inner?.condition) condArr.push(stringToPair(String(inner.condition)));
-      if (inner?.when) condArr.push(stringToPair(String(inner.when)));
+      const condArrRaw: ConditionPair[] = [];
+      if (inner?.condition) condArrRaw.push(stringToPair(String(inner.condition)));
+      if (inner?.when) condArrRaw.push(stringToPair(String(inner.when)));
       if (Array.isArray(inner?.extra_conditions)) {
-        inner.extra_conditions.forEach((s: string) => condArr.push(stringToPair(String(s))));
+        inner.extra_conditions.forEach((s: string) => condArrRaw.push(stringToPair(String(s))));
       }
+      const condArr: ConditionPair[] = collapseRefExistsAttributeFilters(condArrRaw);
       return {
         trigger: trig,
         action: inner?.action || '',

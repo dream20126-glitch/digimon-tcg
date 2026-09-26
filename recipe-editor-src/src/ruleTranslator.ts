@@ -159,7 +159,6 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
     };
     // 'or': 全グループの条件をORで束ね、1つの選択肢として扱う（「AかBのどちらかを満たす
     // カード合計N枚」）。アクション/置き先/枚数は先頭グループ（無指定ならルール本体）を共有する。
-    // ⚠ エンジン側（cardMatchesFilter）はfilter.orを未実装。保存はできるが動作しない
     if (rule.groupsOp === 'or') {
       const orFilters = rule.designatedGroups.map(buildGroupFilter).filter((f) => Object.keys(f).length > 0);
       const first = rule.designatedGroups[0];

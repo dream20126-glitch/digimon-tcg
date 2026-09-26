@@ -2920,6 +2920,12 @@ function _resolveCombatAction(step, ctx, callback) {
 // （既存の呼び出し元を壊さないためのフェイルセーフ。呼び出し元にbs/sideがある場合は渡すこと）
 function cardMatchesFilter(card, filter, bs, side) {
   if (!filter) return true;
+  // filter.or: サブフィルタの配列。いずれか1つでも一致すればOK（他のトップレベル条件とは
+  // AND）。例: 色=紫（AND）かつ（名称に「レイヴモン」を含む OR 特徴に「鳥」を含む）
+  // = { color:"紫", or:[{name_contains:"レイヴモン"},{feature_contains:"鳥"}] }
+  if (Array.isArray(filter.or) && filter.or.length > 0) {
+    if (!filter.or.some((sub) => cardMatchesFilter(card, sub, bs, side))) return false;
+  }
   if (filter.type && card.type !== filter.type) return false;
   if (Array.isArray(filter.type_in) && !filter.type_in.includes(card.type)) return false;
   // 色: カンマ区切り文字列でOR指定に対応（例: "青,赤" → 青 or 赤）。カード側が

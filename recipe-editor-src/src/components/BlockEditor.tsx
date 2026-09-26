@@ -7186,7 +7186,6 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                   {isOrGroups && (
                     <div style={{ fontSize: 10, color: '#946200', marginTop: 4 }}>
                       OR時は下の「枚数」は先頭グループの入力欄のみ使われます。
-                      <span style={{ color: '#c62828' }}>⚠ エンジン未実装（保存はできますが動作しません）</span>
                     </div>
                   )}
                 </div>

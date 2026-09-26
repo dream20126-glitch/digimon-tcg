@@ -8353,9 +8353,8 @@ function ConditionsHybridEditor({
                                 options={[{ code: '', label: '指定なし' }, { code: 'cond_lv_ge', label: '以上' }, { code: 'cond_lv_le', label: '以下' }]}
                                 value={lvMode}
                                 onChange={(v) => {
-                                  setAttr('cond_lv_ge', undefined);
-                                  setAttr('cond_lv_le', undefined);
-                                  if (v) setAttr(v, '1');
+                                  const rest = conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le')));
+                                  onChange(v ? [...rest, { base: v, value: '1', subject: REF_EXISTS_FILTER_MARKER }] : rest);
                                 }}
                                 accentColor="#946200"
                               />
@@ -8374,9 +8373,8 @@ function ConditionsHybridEditor({
                                 options={[{ code: '', label: '指定なし' }, { code: 'cond_cost_ge', label: '以上' }, { code: 'cond_cost_le', label: '以下' }]}
                                 value={costMode}
                                 onChange={(v) => {
-                                  setAttr('cond_cost_ge', undefined);
-                                  setAttr('cond_cost_le', undefined);
-                                  if (v) setAttr(v, '1');
+                                  const rest = conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le')));
+                                  onChange(v ? [...rest, { base: v, value: '1', subject: REF_EXISTS_FILTER_MARKER }] : rest);
                                 }}
                                 accentColor="#946200"
                               />

@@ -2051,6 +2051,7 @@ function joinTriggerSubjectSuffix(base: string, family: TriggerStackFamily, pos:
 function TriggerSubjectStagedPicker({
   subject, onChange, hasFromZones, allowNone = false, hasEntry = true, onClear,
   accentColor = '#2e7d32', suppressTypeButtons = false,
+  zoneIncreaseValue, onZoneIncreaseChange, extraZoneOptions,
 }: {
   subject: string;
   onChange: (next: string) => void;
@@ -2060,36 +2061,55 @@ function TriggerSubjectStagedPicker({
   onClear?: () => void;
   accentColor?: string;
   suppressTypeButtons?: boolean;
+  // 【〇〇が増えたとき】専用: 「場所」はsubjectではなくblock.zoneIncrease[]に書く
+  // （発動主体の種別=subjectとは独立した別フィールドのため）。指定時のみゾーン系L2選択肢が
+  // zoneIncreaseValueを読み書きするようになる
+  zoneIncreaseValue?: string[];
+  onZoneIncreaseChange?: (next: string[]) => void;
+  extraZoneOptions?: { code: string; label: string }[];
 }) {
   const raw = splitTriggerSubjectSuffix(subject || '');
   const cur = SUBJECT_CODE_TO_L1L2[raw.base] || { l1: 'self', l2: '' };
+  const zoneMode = !!onZoneIncreaseChange;
+  const currentZone = (zoneIncreaseValue && zoneIncreaseValue[0]) || '';
+  // zoneMode時は「増えた場所」が選ばれていればそちらをL2として優先表示する
+  // （subject自体は種別(digimon/tamer等)を別途保持できるが、L2ボタンの見た目は単一選択にする）
+  const effectiveL2 = zoneMode && currentZone ? currentZone : cur.l2;
   const handleL1 = (l1: string) => {
     if (l1 === 'self') { onChange('self'); return; }
     const l2 = cur.l1 === l1 && cur.l2 ? cur.l2 : 'digimon';
     onChange(SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon'] || l1);
   };
+  const zoneOptionCodes = new Set([...SUBJECT_L2_FROM_ZONES.map((o) => o.code), ...(extraZoneOptions || []).map((o) => o.code)]);
   const handleL2 = (l2: string) => {
+    if (zoneMode && zoneOptionCodes.has(l2)) {
+      onZoneIncreaseChange!([l2]);
+      onChange(cur.l1); // subjectは種別なしの陣営だけに戻す（場所と種別は同時指定不可）
+      return;
+    }
+    if (zoneMode) onZoneIncreaseChange!([]);
     onChange(SUBJECT_L1L2_TO_CODE[cur.l1 + ':' + l2]);
   };
   const baseL2Options = cur.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
-  const l2Options = hasFromZones ? [...baseL2Options, ...SUBJECT_L2_FROM_ZONES] : baseL2Options;
+  const l2Options = hasFromZones ? [...baseL2Options, ...SUBJECT_L2_FROM_ZONES, ...(extraZoneOptions || [])] : baseL2Options;
   const hasDigimonTamer = !suppressTypeButtons && (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'other_own' || cur.l1 === 'both');
   const subjDigimonCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':digimon'];
   const subjTamerCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':tamer'];
   const subjCardCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':card'];
-  const subjDigimonChecked = hasDigimonTamer && (cur.l2 === 'digimon' || cur.l2 === 'card');
-  const subjTamerChecked = hasDigimonTamer && (cur.l2 === 'tamer' || cur.l2 === 'card');
+  const subjDigimonChecked = hasDigimonTamer && (effectiveL2 === 'digimon' || effectiveL2 === 'card');
+  const subjTamerChecked = hasDigimonTamer && (effectiveL2 === 'tamer' || effectiveL2 === 'card');
   const subjExclusiveL2Options = l2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer' && o.code !== 'card');
   const applySubjDigiTamer = (nextDigimon: boolean, nextTamer: boolean) => {
+    if (zoneMode) onZoneIncreaseChange!([]);
     if (nextDigimon && nextTamer) onChange(subjCardCode);
     else if (nextDigimon) onChange(subjDigimonCode);
     else if (nextTamer) onChange(subjTamerCode);
     else onChange(cur.l1);
   };
   // 第3段階: デジモンを選択している場合のみ、進化元/重ねられているカードのサブ選択肢を出す
-  const showStage3 = hasFromZones && cur.l2 === 'digimon';
+  const showStage3 = hasFromZones && effectiveL2 === 'digimon';
   // 第4段階: テイマー選択時、または第3段階で進化元/重ねられているカードを選んだ時
-  const showStage4 = hasFromZones && (cur.l2 === 'tamer' || (showStage3 && raw.family !== ''));
+  const showStage4 = hasFromZones && (effectiveL2 === 'tamer' || (showStage3 && raw.family !== ''));
   const setFamily = (family: TriggerStackFamily) => onChange(joinTriggerSubjectSuffix(raw.base, family, family ? raw.pos : ''));
   const setPos = (pos: TriggerStackPos) => onChange(joinTriggerSubjectSuffix(raw.base, raw.family || 'stacked', pos));
   const l1Value = !hasEntry ? '__none__' : (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'both') ? '' : cur.l1;
@@ -2129,7 +2149,7 @@ function TriggerSubjectStagedPicker({
           {subjExclusiveL2Options.length > 0 && (
             <ButtonGroup
               options={subjExclusiveL2Options}
-              value={!subjDigimonChecked && !subjTamerChecked ? cur.l2 : ''}
+              value={!subjDigimonChecked && !subjTamerChecked ? effectiveL2 : ''}
               onChange={handleL2}
               accentColor={accentColor}
             />
@@ -2138,8 +2158,11 @@ function TriggerSubjectStagedPicker({
       )}
       {!hasDigimonTamer && cur.l1 !== 'self' && cur.l1 !== 'both' && (
         <div style={{ marginTop: 4 }}>
-          <ButtonGroup options={l2Options} value={cur.l2} onChange={handleL2} accentColor={accentColor} />
+          <ButtonGroup options={l2Options} value={effectiveL2} onChange={handleL2} accentColor={accentColor} />
         </div>
+      )}
+      {zoneMode && currentZone && ZONE_INCREASE_UNIMPLEMENTED.has(currentZone) && (
+        <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>⚠ デッキ/進化元以外は保存はできますがエンジンが現状対応していないため発火しません</div>
       )}
       {showStage3 && (
         <div style={{ marginTop: 4 }}>
@@ -2455,6 +2478,11 @@ const ZONE_INCREASE_OPTIONS: { code: string; label: string; implemented: boolean
   { code: 'trash', label: 'トラッシュ', implemented: false },
   { code: 'evo_source', label: '進化元', implemented: true },
 ];
+// 発動主体パネルの第2段階に統合する際、手札/トラッシュ/セキュリティは
+// SUBJECT_L2_FROM_ZONES（破棄されたとき等と共通）にあるため、ここでは
+// デッキ/進化元のみ追加すればZONE_INCREASE_OPTIONSと同じ5択が揃う
+const ZONE_INCREASE_EXTRA_OPTIONS = [{ code: 'deck', label: 'デッキ' }, { code: 'evo_source', label: '進化元' }];
+const ZONE_INCREASE_UNIMPLEMENTED = new Set(ZONE_INCREASE_OPTIONS.filter((o) => !o.implemented).map((o) => o.code));
 
 // よく使うアクション: カードDB(data/cards.json)のレシピ内action出現数を集計し、
 // 上位のものをボタン化（トリガー家族ボタンと同じ操作感にするため）。
@@ -3790,7 +3818,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             // 第2段階に手札/トラッシュ/セキュリティ、第3/4段階（進化元/重ねられているカード＋位置）を表示する
             const allTriggersTypeless = currentTriggers.length > 0
               && currentTriggers.every((t) => dict.triggers.find((d) => d.code === t)?.noSubjectType);
-            const triggerHasFromZones = currentTriggers.some((t) => dict.triggers.find((d) => d.code === t)?.hasFromZones);
+            const isZoneIncreaseTrigger = currentTriggers.includes(ZONE_INCREASE_TRIGGER);
+            const triggerHasFromZones = isZoneIncreaseTrigger || currentTriggers.some((t) => dict.triggers.find((d) => d.code === t)?.hasFromZones);
             // レスト/アクティブ状態フィルタは「このカード/デジモン/テイマー」のときだけ意味を持つ
             // （「カード」全般やプレイヤーにはレスト/アクティブの概念が無い）
             const showRestActive = cur.l1 === 'self' || cur.l2 === 'digimon' || cur.l2 === 'tamer';
@@ -4089,7 +4118,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           delete nextMap[code];
                           onChange({ ...block, triggerSubjectByCode: nextMap });
                         };
-                        const thisHasFromZones = !!dict.triggers.find((d) => d.code === code)?.hasFromZones;
+                        const thisIsZoneIncrease = code === ZONE_INCREASE_TRIGGER;
+                        const thisHasFromZones = thisIsZoneIncrease || !!dict.triggers.find((d) => d.code === code)?.hasFromZones;
                         return (
                           <div key={code} style={{ fontSize: 11, border: '1px solid #c5e0c5', borderRadius: 4, padding: 6 }}>
                             <div style={{ color: '#333', fontWeight: 'bold', marginBottom: 3 }}>{label}:</div>
@@ -4100,6 +4130,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                               allowNone
                               hasEntry={hasThisSubjectEntry}
                               onClear={clearThisSubject}
+                              zoneIncreaseValue={thisIsZoneIncrease ? (block.zoneIncrease || []) : undefined}
+                              onZoneIncreaseChange={thisIsZoneIncrease ? (next) => update('zoneIncrease', next) : undefined}
+                              extraZoneOptions={thisIsZoneIncrease ? ZONE_INCREASE_EXTRA_OPTIONS : undefined}
                             />
                           </div>
                         );
@@ -4151,72 +4184,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
 
-                  {/* 【〇〇が増えたとき】選択時のみ: 既存の「📍 場所」（取得元エリア）欄と
-                      全く同じ作り（複数選択+2件以上ならOR/AND切替）でどのゾーンが
-                      増えたときかを選ぶ */}
-                  {block.trigger === ZONE_INCREASE_TRIGGER && (() => {
-                    const zones = block.zoneIncrease || [];
-                    const op = block.zoneIncreaseOp || 'or';
-                    const toggleZone = (code: string) => {
-                      const next = zones.includes(code) ? zones.filter((z) => z !== code) : [...zones, code];
-                      update('zoneIncrease', next);
-                    };
-                    return (
-                      <div style={{ marginTop: 6 }}>
-                        <label style={{ fontSize: 11, color: '#666' }}>📍 場所</label>
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
-                          {ZONE_INCREASE_OPTIONS.map((v) => {
-                            const active = zones.includes(v.code);
-                            return (
-                              <button
-                                key={v.code}
-                                type="button"
-                                onClick={() => toggleZone(v.code)}
-                                style={{
-                                  padding: '3px 9px', borderRadius: 5,
-                                  border: active ? '2px solid #1a4f8a' : '1px solid #bbb',
-                                  background: active ? '#1a4f8a' : '#f5f5f5',
-                                  color: active ? '#fff' : '#333',
-                                  fontWeight: active ? 'bold' : 'normal',
-                                  cursor: 'pointer', fontSize: 11,
-                                }}
-                              >
-                                {v.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {zones.length >= 2 && (
-                          <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-                            <span style={{ color: '#666' }}>結合:</span>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                              <input
-                                type="radio"
-                                name={`zoneIncreaseOp_${index}`}
-                                checked={op === 'or'}
-                                onChange={() => update('zoneIncreaseOp', 'or')}
-                                style={{ margin: 0 }}
-                              />
-                              OR（いずれか）
-                            </label>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
-                              <input
-                                type="radio"
-                                name={`zoneIncreaseOp_${index}`}
-                                checked={op === 'and'}
-                                onChange={() => update('zoneIncreaseOp', 'and')}
-                                style={{ margin: 0 }}
-                              />
-                              AND（全て）
-                            </label>
-                          </div>
-                        )}
-                        {zones.some((z) => !ZONE_INCREASE_OPTIONS.find((v) => v.code === z)?.implemented) && (
-                          <div style={{ marginTop: 4, fontSize: 11, color: '#c62828' }}>⚠ デッキ以外はエンジン未実装です（保存はできますが動作しません）</div>
-                        )}
-                      </div>
-                    );
-                  })()}
 
                   {unimplementedActive.length > 0 && (
                     <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
@@ -4324,6 +4291,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     onChange={(next) => update('triggerSubject', next)}
                     hasFromZones={triggerHasFromZones}
                     suppressTypeButtons={allTriggersTypeless}
+                    zoneIncreaseValue={isZoneIncreaseTrigger ? (block.zoneIncrease || []) : undefined}
+                    onZoneIncreaseChange={isZoneIncreaseTrigger ? (next) => update('zoneIncrease', next) : undefined}
+                    extraZoneOptions={isZoneIncreaseTrigger ? ZONE_INCREASE_EXTRA_OPTIONS : undefined}
                   />
                   {/* 「下」のときだけ、積まれているカードの種別で絞り込める
                       （例:「自分のテイマーの下のデジモンカードが破棄されたとき」）。

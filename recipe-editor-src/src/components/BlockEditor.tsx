@@ -6022,6 +6022,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               eCurTgt.l1 === 'self' ||
               eCurTgt.l1 === 'same_target' ||
               ['digimon', 'tamer', 'card'].includes(eCurTgt.l2);
+            const eStackSubCond = effectTargetFilter.find((c) => c.base === 'cond_target_evo_source' || c.base === 'cond_target_stack');
             const setEffTgt = (l1: string, l2?: string) => {
               // OR選択中に他のL1/L2へ切り替えたら、自動設定していたtype絞り込みは持ち越さない
               const cleared = eIsOrMode ? { targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type') } : {};
@@ -6132,6 +6133,34 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       <ButtonGroup options={eL2Options} value={eCurTgt.l2} onChange={(l2) => setEffTgt(eCurTgt.l1, l2)} accentColor="#b76e00" />
                     </div>
                   )}
+                  {/* デジモン対象、「このカード」対象、または「そのデジモン」対象:
+                      「進化元」/「重ねられているカード」をサブ選択肢として表示する
+                      （位置は右の対象数ボックス側に表示）。メインの対象欄と同じ仕組み */}
+                  {commonActionHasFromZones && (eCurTgt.l2 === 'digimon' || eCurTgt.l1 === 'self' || eCurTgt.l1 === 'same_target') && (() => {
+                    const eIsPlaceAction = PLACE_ACTION_CODES.has(effectAction || '');
+                    const eEvoCond = effectTargetFilter.find((c) => c.base === 'cond_target_evo_source');
+                    const eStackCond = effectTargetFilter.find((c) => c.base === 'cond_target_stack');
+                    const eActiveSub: '' | 'evo_source' | 'stacked' = eEvoCond ? 'evo_source' : eStackCond ? 'stacked' : '';
+                    const setESub = (next: '' | 'evo_source' | 'stacked') => {
+                      const cleared = effectTargetFilter.filter((c) => c.base !== 'cond_target_evo_source' && c.base !== 'cond_target_stack');
+                      if (!next) { updateEffect({ targetFilter: cleared }); return; }
+                      updateEffect({ targetFilter: [...cleared, { base: next === 'evo_source' ? 'cond_target_evo_source' : 'cond_target_stack', value: '' }] });
+                    };
+                    return (
+                      <div style={{ marginTop: 4 }}>
+                        <ButtonGroup
+                          options={[
+                            ...(eIsPlaceAction ? [] : [{ code: '', label: '指定なし' }]),
+                            { code: 'evo_source', label: '進化元' },
+                            { code: 'stacked', label: '重ねられているカード' },
+                          ]}
+                          value={eActiveSub}
+                          onChange={(v) => setESub(v as '' | 'evo_source' | 'stacked')}
+                          accentColor="#b76e00"
+                        />
+                      </div>
+                    );
+                  })()}
                   {eIsUnimplemented && (
                     <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
                       ⚠ {eIsOrMode ? '複数対象（OR）は' : 'この対象は'}エンジン未実装です（保存はできますが動作しません）
@@ -6181,7 +6210,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
                 </div>
-                {(!eHideCount || showEffectPosition || showEffectFace) && (
+                {(!eHideCount || showEffectPosition || showEffectFace || eStackSubCond) && (
                   <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
                     {!eHideCount && (
                       <>
@@ -6192,6 +6221,50 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         />
                       </>
                     )}
+                    {eStackSubCond && !effectIsPlaceActive && (() => {
+                      const currentPos = eStackSubCond.value || '';
+                      const setSubPosition = (v: string) => {
+                        updateEffect({ targetFilter: effectTargetFilter.map((c) => (c === eStackSubCond ? { ...c, value: v } : c)) });
+                      };
+                      // 裏表はtargetFilter（対象の絞り込み）へ保存する
+                      const faceIdx = effectTargetFilter.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
+                      const faceVal = faceIdx !== -1 ? (effectTargetFilter[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
+                      const setFace = (v: string) => {
+                        const next = effectTargetFilter.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
+                        if (v === 'down') next.push({ base: 'cond_face_down' });
+                        else if (v === 'up') next.push({ base: 'cond_face_up' });
+                        updateEffect({ targetFilter: next });
+                      };
+                      return (
+                        <>
+                          <div style={{ marginTop: 6 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                            <ButtonGroup
+                              options={[
+                                { code: '', label: '本体' },
+                                { code: 'top', label: '上' },
+                                { code: 'bottom', label: '下' },
+                                { code: 'select', label: '選んで' },
+                              ]}
+                              value={currentPos}
+                              onChange={setSubPosition}
+                              accentColor="#b76e00"
+                            />
+                          </div>
+                          {currentPos !== '' && (
+                            <div style={{ marginTop: 6 }}>
+                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                              <ButtonGroup
+                                options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
+                                value={faceVal}
+                                onChange={setFace}
+                                accentColor="#b76e00"
+                              />
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                     {showEffectPosition && (
                       <div style={{ marginTop: 6 }}>
                         <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>

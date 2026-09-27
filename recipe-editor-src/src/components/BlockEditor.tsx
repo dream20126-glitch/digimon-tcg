@@ -140,6 +140,59 @@ function MultiTextTags({ values, onChange, placeholder, accentColor, valueLabel 
   );
 }
 
+// 「特徴」条件専用: 含む/完全一致の2モードのタグを1行にまとめて表示・追加できるタグ入力
+// （MultiTextTagsと違い、タグ1つ1つが自分の所属モード(mode)を持つため、追加時にモードを
+// 選んでから追加する。含む=cond_feature_contains・完全一致=cond_featureの別々の
+// ConditionPairへ振り分けるのは呼び出し側(onAdd/onRemove)の責務）
+function FeatureTagsCombined({
+  combined, onAdd, onRemove, accentColor,
+}: {
+  combined: { v: string; mode: 'contains' | 'exact' }[];
+  onAdd: (v: string, mode: 'contains' | 'exact') => void;
+  onRemove: (v: string, mode: 'contains' | 'exact') => void;
+  accentColor?: string;
+}) {
+  const [draft, setDraft] = useState('');
+  const [mode, setMode] = useState<'contains' | 'exact'>('contains');
+  const accent = accentColor || '#d81b60';
+  const add = () => {
+    const v = draft.trim();
+    if (v) onAdd(v, mode);
+    setDraft('');
+  };
+  return (
+    <div>
+      {combined.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+          {combined.map(({ v, mode: m }) => (
+            <span key={m + ':' + v} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 5, border: `2px solid ${accent}`, background: accent, color: '#fff', fontSize: 11, fontWeight: 'bold' }}>
+              {m === 'contains' ? `${v}（含む）` : v}
+              <button type="button" onClick={() => onRemove(v, m)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <ButtonGroup
+          options={[{ code: 'contains', label: '含む' }, { code: 'exact', label: '完全一致' }]}
+          value={mode}
+          onChange={(v) => setMode((v || 'contains') as 'contains' | 'exact')}
+          accentColor={accent}
+        />
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="例: サイボーグ型"
+          style={{ flex: 1, minWidth: 120, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+        />
+        <button type="button" onClick={add} style={{ padding: '3px 10px', borderRadius: 5, border: `1px solid ${accent}`, background: '#fff', color: accent, cursor: 'pointer', fontSize: 11, fontWeight: 'bold' }}>+ 追加</button>
+      </div>
+    </div>
+  );
+}
+
 // 参照(バトルエリア/以上)行専用の「属性で絞り込む」パネル。チェックボックスで開閉し、
 // 開いたら色/Lv/コスト/特徴のボタンが並び、押した分だけ詳細設定が展開する
 // （よく使う条件のカテゴリボタンと同じ操作感）。ローカルstate(開閉・どのボタンを
@@ -8288,6 +8341,53 @@ function ConditionsHybridEditor({
       {visibleCategoryOptions.map((cat) => {
         const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => c.subject !== REF_EXISTS_FILTER_MARKER && baseToCategory(c.base) === cat.code);
         if (rows.length === 0) return null;
+        // 特徴（含む/完全一致）: 別々の行に分けず、1行に両モードのタグをまとめて表示する
+        // （「鳥（含む）」「セイバーズ」のように並べて追加できるようにするため、通常の
+        // 行ごとレンダリングとは別の専用UIを使う。データ上はcond_feature_contains/
+        // cond_featureの2つのConditionPairのままで、表示だけ統合する）
+        if (cat.code === 'feature') {
+          const containsRow = rows.find((r) => r.c.base === 'cond_feature_contains');
+          const exactRow = rows.find((r) => r.c.base === 'cond_feature');
+          const containsTags = containsRow ? (containsRow.c.value || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
+          const exactTags = exactRow ? (exactRow.c.value || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
+          const combined = [
+            ...containsTags.map((v) => ({ v, mode: 'contains' as const })),
+            ...exactTags.map((v) => ({ v, mode: 'exact' as const })),
+          ];
+          const removeTag = (v: string, mode: 'contains' | 'exact') => {
+            if (mode === 'contains' && containsRow) {
+              const next = containsTags.filter((t) => t !== v);
+              if (next.length > 0) updateAt(containsRow.i, { value: next.join(',') });
+              else removeAt(containsRow.i);
+            } else if (mode === 'exact' && exactRow) {
+              const next = exactTags.filter((t) => t !== v);
+              if (next.length > 0) updateAt(exactRow.i, { value: next.join(',') });
+              else removeAt(exactRow.i);
+            }
+          };
+          const addTag = (v: string, mode: 'contains' | 'exact') => {
+            if (!v) return;
+            if (mode === 'contains') {
+              if (containsRow) { if (!containsTags.includes(v)) updateAt(containsRow.i, { value: [...containsTags, v].join(',') }); }
+              else onChange([...conditions, { base: 'cond_feature_contains', value: v, subject: defaultSubject || undefined }]);
+            } else {
+              if (exactRow) { if (!exactTags.includes(v)) updateAt(exactRow.i, { value: [...exactTags, v].join(',') }); }
+              else onChange([...conditions, { base: 'cond_feature', value: v, subject: defaultSubject || undefined }]);
+            }
+          };
+          return (
+            <div key={cat.code} style={{ marginTop: 6 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start', marginBottom: 6, padding: 6, border: `1px solid ${colors.border}`, borderRadius: 4, background: 'white' }}>
+                <div style={{ fontSize: 11, fontWeight: 'bold', color: colors.accent, paddingTop: 6, whiteSpace: 'nowrap' }}>
+                  {cat.label}
+                </div>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <FeatureTagsCombined combined={combined} onAdd={addTag} onRemove={removeTag} accentColor={colors.accent} />
+                </div>
+              </div>
+            </div>
+          );
+        }
         return (
           <div key={cat.code} style={{ marginTop: 6 }}>
             {rows.map(({ c, i }) => {
@@ -8323,20 +8423,7 @@ function ConditionsHybridEditor({
                     <ButtonGroup
                       options={variantOptionsFor(cat.code as CondCategory)!.map((v) => ({ code: v.value, label: v.label }))}
                       value={c.base}
-                      onChange={(v) => {
-                        // 特徴（含む/完全一致）は複数タグをカンマ区切りで保持するため、
-                        // 既にタグを追加済みの行でモードを切り替えると、追加済みタグの
-                        // 意味まで一緒に変わってしまう（「鳥」を含むで追加後、完全一致に
-                        // 切り替えると「鳥」が完全一致条件として保存される不具合）。
-                        // 値が入っている場合は既存行を変更せず、新しいモードの行を
-                        // 別途追加する（「鳥（含む）」を残したまま「セイバーズ（完全一致）」
-                        // を追加できるようにする）
-                        if (cat.code === 'feature' && c.value && v !== c.base) {
-                          addRow(v);
-                        } else {
-                          updateAt(i, { base: v });
-                        }
-                      }}
+                      onChange={(v) => updateAt(i, { base: v })}
                       accentColor={colors.accent}
                     />
                   )}

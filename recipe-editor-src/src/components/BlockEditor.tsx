@@ -3049,6 +3049,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
   function setTarget(base: string, suffix: string) {
     if (!base) return update('target', '');
+    const remapAction = remapPlaceActionForTarget(base);
+    if (remapAction) { onChange({ ...block, target: base + (suffix || ''), action: remapAction }); return; }
     update('target', base + (suffix || ''));
   }
 
@@ -3261,6 +3263,20 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectFaceValue: 'face_down' | 'face_up' = effectOptions.includes('face_down') ? 'face_down' : 'face_up';
   function setEffectFace(v: 'face_down' | 'face_up') {
     updateEffect({ options: v === 'face_down' ? [...effectOptions.filter((o) => o !== 'face_down'), 'face_down'] : effectOptions.filter((o) => o !== 'face_down') });
+  }
+  // 対象欄で新しい対象(base)を選んだとき、現在「〇〇に置く」系アクション(PLACE_ACTION_CODES)を
+  // 選択中であれば、新対象のゾーン（テイマー/デジモン/セキュリティ/バトルエリア）に対応する
+  // アクションコードへ自動的に切り替える。「置き場所」専用ボタンを廃止し、対象欄の選択だけで
+  // 置き場所も決まるようにするため（例: 対象を「自分の→セキュリティ」に変えたら
+  // action が自動で place_on_security_top になる）
+  function remapPlaceActionForTarget(newTargetBase: string): string | undefined {
+    if (!effectIsPlaceActive || !newTargetBase) return undefined;
+    const l1l2 = TARGET_SEL_CODE_TO_L1L2[newTargetBase] || { l1: '', l2: '' };
+    const zone = PLACE_ZONE_MAP.find((z) => {
+      const zl = TARGET_SEL_CODE_TO_L1L2[z.target || ''] || { l1: '', l2: '' };
+      return zl.l2 ? zl.l2 === l1l2.l2 : (zl.l1 === 'self' && l1l2.l1 === 'self');
+    });
+    return zone && zone.action !== effectAction ? zone.action : undefined;
   }
 
   // 🔀 代替アクション（OR/AND）: OR=プレイヤーがどちらかを選ぶ / AND=両方行う（同じ対象に
@@ -4980,10 +4996,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             return true;
           })?.code || '';
 
-          // 〇〇に置く（PLACE_ZONE_MAP）: コスト側(CostListEditor)と全く同じ「置き場所ごとに
-          // 実アクションコード・対象を切り替える」仕組みを効果1/代替アクションでも使えるようにする
+          // 〇〇に置く: 置き場所（テイマー/進化元/セキュリティ/バトルエリア）は対象欄の選択だけで
+          // 決まる（remapPlaceActionForTarget）。「〇〇に置く」クイックボタンはセキュリティ配置を
+          // 既定値として place モードに入るための入口として残す
           const isPlaceActive = PLACE_ACTION_CODES.has(effectAction || '');
-          const activePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === effectAction)?.code || '';
 
           // レスト/アクティブ/進化/アタック/ブロックの5ボタンは複数選択できる（例:
           // アタック＋ブロックを両方押す）。1つだけ選んでいるときは「する/できない」を
@@ -5289,29 +5305,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     )}
                   </div>
                 )}
-                {isPlaceActive && (
-                  <div style={{ marginTop: 4 }}>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🎯 置き場所（どこに置くか）</div>
-                    <ButtonGroup
-                      options={PLACE_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
-                      value={activePlaceZone}
-                      onChange={(zoneCode) => {
-                        if (zoneCode === activePlaceZone) return;
-                        const z = PLACE_ZONE_MAP.find((zz) => zz.code === zoneCode);
-                        if (!z) return;
-                        updateEffect({ action: z.action, target: z.target || '', deckPosition: undefined, options: [], fromZones: [] });
-                      }}
-                      accentColor="#1976d2"
-                    />
-                    {(() => {
-                      const z = PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone);
-                      return z?.warn ? (
-                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
-                      ) : null;
-                    })()}
-                    {/* 位置（上/下/選んで）・裏表は対象欄の右側（🎯アクションの対象数の隣）に統合済み */}
-                  </div>
-                )}
+                {/* 置き場所は対象欄（🎯アクションの対象/対象数の隣）の選択だけで決まる
+                    （対象を変えると action が自動でplace_under_tamer/place_under_digimon/
+                    place_on_security_top/place_in_battle_areaへ切り替わる。remapPlaceActionForTarget参照）。
+                    警告文だけはここに残す */}
+                {isPlaceActive && (() => {
+                  const z = PLACE_ZONE_MAP.find((zz) => zz.action === effectAction);
+                  return z?.warn ? (
+                    <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>{z.warn}</div>
+                  ) : null;
+                })()}
                 {/* レスト/アクティブ/進化/アタック/ブロック: 「する」（通常）/「できない」（封じる）の
                     切り替え。上のボタンで2つ以上選んでいる場合は複数の行動を同時に強制する
                     「する」が成立しないため、「できない」固定（選択不要）になる */}
@@ -6004,13 +6007,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               if (!l1) { updateEffect({ ...cleared, target: '' }); return; }
               // self/self_card・same_target は「対象数」UIを表示しない（eHideCount）ため、
               // 直前の対象で付いていた数指定を持ち越さないようここで破棄する
-              if (l1 === 'self') { updateEffect({ ...cleared, target: 'self_card' }); return; }
+              if (l1 === 'self') {
+                const remapAction = remapPlaceActionForTarget('self_card');
+                updateEffect({ ...cleared, target: 'self_card', ...(remapAction ? { action: remapAction } : {}) });
+                return;
+              }
               // 「そのデジモン」: 効果1ではトリガー発火元カードを指す(target_trigger_source)、
               // 効果2以降では直前の効果が選んだ対象を再利用する(same_target)、という別コードになる
               // （ボタンの見た目・ラベルは共通の「そのデジモン」のまま）
               if (l1 === 'same_target') { updateEffect({ ...cleared, target: isEditingAlt ? 'same_target' : 'target_trigger_source' }); return; }
               const useL2 = l2 || (eCurTgt.l1 === l1 && eCurTgt.l2 ? eCurTgt.l2 : (l1 === 'most' ? 'security' : 'digimon'));
-              updateEffect({ ...cleared, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '') + eSuffix });
+              const newEffBase = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '';
+              const remapAction = remapPlaceActionForTarget(newEffBase);
+              updateEffect({ ...cleared, target: newEffBase + eSuffix, ...(remapAction ? { action: remapAction } : {}) });
             };
             // デジモン/テイマーのOR複数選択（対象コード=card + cond_typeフィルタ）を反映
             const applyEffDigiTamerSelection = (nextDigimon: boolean, nextTamer: boolean) => {
@@ -6018,9 +6027,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 updateEffect({ target: eCardCode + eSuffix,
                   targetFilter: [...effectTargetFilter.filter((c) => c.base !== 'cond_type'), { base: 'cond_type', value: 'デジモン,テイマー' }] });
               } else if (nextDigimon) {
-                updateEffect({ target: eDigimonCode + eSuffix, targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type') });
+                const remapAction = remapPlaceActionForTarget(eDigimonCode);
+                updateEffect({ target: eDigimonCode + eSuffix, targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type'), ...(remapAction ? { action: remapAction } : {}) });
               } else if (nextTamer) {
-                updateEffect({ target: eTamerCode + eSuffix, targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type') });
+                const remapAction = remapPlaceActionForTarget(eTamerCode);
+                updateEffect({ target: eTamerCode + eSuffix, targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type'), ...(remapAction ? { action: remapAction } : {}) });
               } else {
                 updateEffect({ target: '', targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type') });
               }
@@ -6220,7 +6231,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             if (!l1) { onChange({ ...block, ...cleared, target: '' }); return; }
             // self/self_card・same_target は「対象数」UI自体を表示しない（hideCount）ため、
             // 直前に他の対象で付いていた数指定(例: ":1")を持ち越さないようここで破棄する
-            if (l1 === 'self') { onChange({ ...block, ...cleared, target: 'self_card' }); return; }
+            if (l1 === 'self') {
+              const remapAction = remapPlaceActionForTarget('self_card');
+              onChange({ ...block, ...cleared, target: 'self_card', ...(remapAction ? { action: remapAction } : {}) });
+              return;
+            }
             // 「そのデジモン」: このパネルは常に効果1（block直下）なので、トリガー発火元カードを
             // 指すtarget_trigger_sourceを使う（same_targetは効果2以降専用）
             if (l1 === 'same_target') { onChange({ ...block, ...cleared, target: 'target_trigger_source' }); return; }
@@ -6259,11 +6274,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   altActions: [{ action: block.action || '', value: block.value, target: tamerCode }], altActionsOp: 'and' });
               }
             } else if (nextDigimon) {
+              const remapAction = remapPlaceActionForTarget(digimonCode);
               onChange({ ...block, target: digimonCode + tgtSuffix, altActions: [], altActionsOp: undefined,
-                targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') });
+                targetFilter: targetFilter.filter((c) => c.base !== 'cond_type'), ...(remapAction ? { action: remapAction } : {}) });
             } else if (nextTamer) {
+              const remapAction = remapPlaceActionForTarget(tamerCode);
               onChange({ ...block, target: tamerCode + tgtSuffix, altActions: [], altActionsOp: undefined,
-                targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') });
+                targetFilter: targetFilter.filter((c) => c.base !== 'cond_type'), ...(remapAction ? { action: remapAction } : {}) });
             } else {
               onChange({ ...block, target: '', altActions: [], altActionsOp: undefined,
                 targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') });

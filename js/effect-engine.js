@@ -560,6 +560,11 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
            + countWith((opponent.tamerArea || []).filter(c => c !== null));
     // 直前の rest 効果でレストさせた枚数（bs._lastRestCount に保存）
     case 'last_rest_count':      return (bs && bs._lastRestCount != null) ? bs._lastRestCount : 0;
+    // 直前のアクション（破棄/消滅等）が処理した枚数（bs._lastActionCount に保存）。
+    // 例:「自分のセキュリティを全て破棄する。この効果で破棄した1枚ごとに、相手のデジモン
+    // 1体を消滅させる」。一部のアクション（security_trash_top/bottom/select・deck_trash_top・
+    // destroy）のみ対応（該当箇所で bs._lastActionCount を更新）
+    case 'last_action_count':    return (bs && bs._lastActionCount != null) ? bs._lastActionCount : 0;
     // --- 両方（自分+相手を合算してカウント） ---
     case 'both_digimon':
       return countWith(player.battleArea.filter(c => c && c.type === 'デジモン'))
@@ -958,12 +963,13 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (!isOwn && hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) continue;
         destroyTargets.push(i);
       }
-      if(destroyTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', () => callback(false)); break; }
+      if(destroyTargets.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', () => callback(false)); break; }
       // 枠色を辞書から取得
       const borderColor = uiColor;
       if(effectiveSide === 'ai') {
         const di = ctx._forceTargetIdx ?? destroyTargets[0];
         const card = tgtPlayer.battleArea[di];
+        if (ctx.bs) ctx.bs._lastActionCount = 1;
         // 消滅演出 → doDestroy（on_destroy リアクション完了まで待つ）→ callback
         playEffect(action.code, { card, ctx }, () => {
           doDestroy(tgtPlayer, di, ctx, () => callback(true));
@@ -974,11 +980,13 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       showTargetSelection(tgtRowId, destroyTargets, null, borderColor, (selectedIdx) => {
         if(selectedIdx !== null) {
           const card = tgtPlayer.battleArea[selectedIdx];
+          if (ctx.bs) ctx.bs._lastActionCount = 1;
           // 消滅演出 → doDestroy（on_destroy リアクション完了まで待つ）→ callback
           playEffect(action.code, { card, ctx }, () => {
             doDestroy(tgtPlayer, selectedIdx, ctx, () => callback(true));
           }, { visualType: action.visualType, frameColor: action.frameColor });
         } else {
+          if (ctx.bs) ctx.bs._lastActionCount = 0;
           // target_own は cost 用途とみなし、キャンセル時は callback(false) で後続中止
           callback(isOwn ? false : undefined);
         }
@@ -1235,9 +1243,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         n = n * Math.floor(count / action.per_count);
       }
       const trashCard = opponent.security.length > 0 ? opponent.security[0] : null;
+      let _discardedCount = 0;
       for (let i = 0; i < n; i++) {
-        if (opponent.security.length > 0) { opponent.trash.push(opponent.security.shift()); ctx.addLog('🛡 セキュリティ破棄'); }
+        if (opponent.security.length > 0) { opponent.trash.push(opponent.security.shift()); ctx.addLog('🛡 セキュリティ破棄'); _discardedCount++; }
       }
+      if (ctx.bs) ctx.bs._lastActionCount = _discardedCount;
       ctx.renderAll();
       // 辞書の演出パラメータ1=セキュリティ, パラメータ2=トラッシュ で自動決定
       playEffect(action.code, { card: trashCard, ctx }, () => { callback(); }, { visualType: action.visualType, frameColor: action.frameColor });
@@ -2004,9 +2014,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     // === セキュリティ下から破棄 ===
     case 'security_trash_bottom': {
       const n = action.value || 1;
+      let _discardedCount = 0;
       for(let i = 0; i < n; i++) {
-        if(opponent.security.length > 0) { opponent.trash.push(opponent.security.pop()); ctx.addLog('🛡 セキュリティ（下から）破棄'); }
+        if(opponent.security.length > 0) { opponent.trash.push(opponent.security.pop()); ctx.addLog('🛡 セキュリティ（下から）破棄'); _discardedCount++; }
       }
+      if (ctx.bs) ctx.bs._lastActionCount = _discardedCount;
       ctx.renderAll(); callback();
       break;
     }
@@ -8488,14 +8500,16 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (targetData) {
         const targets = Array.isArray(targetData) ? targetData : [targetData];
         let di = 0;
+        let _destroyedCount = 0;
         function destroyOneByOne() {
-          if (di >= targets.length) { callback(); return; }
+          if (di >= targets.length) { if (ctx.bs) ctx.bs._lastActionCount = _destroyedCount; callback(); return; }
           const t = targets[di++];
           const c = opponent.battleArea[t.idx];
           if (!c) { destroyOneByOne(); return; }
           // 1体消滅
           opponent.battleArea[t.idx] = null;
           opponent.trash.push(c);
+          _destroyedCount++;
           if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
           if (c.linkedCards) c.linkedCards.forEach(s => opponent.trash.push(s));
           ctx.addLog('💥 「' + c.name + '」を消滅させた！');
@@ -10080,6 +10094,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       let i = 0;
       const trashOne = () => {
         if (i >= n || !player.deck || player.deck.length === 0) {
+          if (ctx.bs) ctx.bs._lastActionCount = i;
           ctx.renderAll && ctx.renderAll();
           callback();
           return;
@@ -10671,7 +10686,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const owner = _stsTgtStr.startsWith('most_security_player')
         ? (opponent.security.length > player.security.length ? opponent : player)
         : (_stsTgtStr.startsWith('own') ? player : opponent);
-      if (owner.security.length === 0) { callback(); break; }
+      if (owner.security.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; callback(); break; }
       // 位置指定（上から/下から）がある場合は自由選択せずその1枚に自動確定する
       // （「セキュリティを上から1枚破棄する」等、位置固定で選択の余地が無いケース用）
       const _stsPos = step.position || step.security_position;
@@ -10679,6 +10694,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const selectedIdx = _stsPos === 'top' ? 0 : owner.security.length - 1;
         const c = owner.security.splice(selectedIdx, 1)[0];
         if (c) owner.trash.push(c);
+        if (ctx.bs) ctx.bs._lastActionCount = c ? 1 : 0;
         ctx.addLog('🗑 セキュリティ（' + (_stsPos === 'top' ? '上から' : '下から') + '）破棄' + (c ? '：' + c.name : ''));
         ctx.renderAll();
         callback();
@@ -10687,9 +10703,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       const idxs = owner.security.map((_, i) => i);
       const rowId = (owner === player ? (ctx.side === 'player' ? 'pl' : 'ai') : (ctx.side === 'player' ? 'ai' : 'pl')) + '-sec';
       showTargetSelection(rowId, idxs, 'セキュリティから破棄するカードを選択', '#ff4444', (selectedIdx) => {
-        if (selectedIdx == null) { callback(); return; }
+        if (selectedIdx == null) { if (ctx.bs) ctx.bs._lastActionCount = 0; callback(); return; }
         const c = owner.security.splice(selectedIdx, 1)[0];
         if (c) owner.trash.push(c);
+        if (ctx.bs) ctx.bs._lastActionCount = c ? 1 : 0;
         ctx.addLog('🗑 セキュリティから「' + (c ? c.name : '?') + '」を破棄');
         ctx.renderAll();
         callback();

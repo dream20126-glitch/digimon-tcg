@@ -52,6 +52,9 @@ export const REF_SUBJECTS = [
   { code: 'opp_card',           label: '相手のカード（デジモン+テイマー+オプション）' },
   // 特殊カウンタ
   { code: 'last_rest_count',    label: 'この効果でレストさせた枚数' },
+  // 直前のアクション（同じ効果ブロック内・代替アクションのその後等）が処理した枚数を参照する。
+  // 例:「自分のセキュリティを全て破棄する。この効果で破棄した1枚ごとに、相手のデジモン1体を消滅させる」
+  { code: 'last_action_count',  label: '直前の効果で処理した枚数' },
   { code: 'opp_hand',        label: '相手の手札' },
   { code: 'opp_trash',       label: '相手のトラッシュ' },
   { code: 'opp_security',    label: '相手のセキュリティ' },

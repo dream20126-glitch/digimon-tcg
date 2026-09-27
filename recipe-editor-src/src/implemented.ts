@@ -6,7 +6,6 @@
 // grep -E "^\s*case '[a-z_]+'" effect-engine.js | grep -v "cond_"
 export const IMPLEMENTED_ACTIONS = new Set<string>([
   'active', 'add_to_hand',
-  'attack_without_rest',
   'bounce', 'cant_attack', 'cant_attack_block', 'cant_block', 'cant_destroy', 'cant_evolve',
   'change_attack_target', 'cost_digiburst', 'cost_discard',
   'deck_open', 'deck_trash_top', 'dedigivolve', 'destroy',
@@ -44,7 +43,8 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'summon_token',
   // Stage 8 追加（アタック宣言・効果起点の進化・手札に戻す振り分け）
   // 急襲(attack_at_end_phase)/BT26-015のalt_actions用にstartAttack→resolveAttackTargetを
-  // 効果から直接呼び出すaction:'attack'を実装（プレイヤー側のみ対応）
+  // 効果から直接呼び出すaction:'attack'を実装（即時アタック実行自体はプレイヤー側のみ対応。
+  // options:['without_rest']指定時は即時アタックを行わず永続フラグ付与のみなので両側対応）
   'attack',
   // ピョコモン(BT26-001)用。進化条件を無視し、from_filterに一致する手札のカードへ
   // 効果から直接進化する（doEvolveFromEffect経由）
@@ -164,6 +164,9 @@ export const IMPLEMENTED_OPTIONS = new Set<string>([
   'reveal',
   // 「任意（してもよい）」: 効果実行前に確認ダイアログを出す（recipe 解釈側で対応）
   'optional',
+  // 「レストせずに」: action:'attack'専用。即時アタックを実行せず、対象に
+  // _attackWithoutRestフラグを付与するだけにする（旧attack_without_restアクションの後継）
+  'without_rest',
 ]);
 
 // エンジン側に実装が必要かを判定（ロジック alias 考慮）

@@ -361,7 +361,6 @@ export const ACTIONS: DictEntry[] = [
   { code: 'cant_evolve', kind: 'action', label: '進化できない' },
   { code: 'security_attack_plus', kind: 'action', label: 'Sアタックを+' },
   { code: 'security_attack_minus', kind: 'action', label: 'Sアタックを-' },
-  { code: 'attack_without_rest', kind: 'action', label: 'レストせずにアタック' },
   { code: 'cost_discard', kind: 'action', label: '手札を捨てる（コスト）' },
   { code: 'cost_destroy_other', kind: 'action', label: '他の自分のデジモンを消滅させる（コスト）' },
   { code: 'evo_cost_minus', kind: 'action', label: '進化コストを-' },
@@ -410,6 +409,10 @@ export const OPTIONS: DictEntry[] = [
   { code: 'once_only',           kind: 'option', label: '次の1回限定（消費型）' },
   // 「その後」: 前ステップが失敗（対象なし等）でも後続を実行
   { code: 'continue_on_fail',    kind: 'option', label: 'その後（前失敗でも実行）' },
+  // 'attack'アクション専用: 即時アタックを実行せず、対象に「レストせずにアタックできる」
+  // 永続フラグだけを付与する（旧attack_without_restアクションの後継。スプシ未登録のため削除し、
+  // 既存の'attack'アクション+この修飾子で表現する形に統一）
+  { code: 'without_rest',        kind: 'option', label: 'レストせずに' },
 ];
 
 // キーワード（passive flag / grant_keyword 用）

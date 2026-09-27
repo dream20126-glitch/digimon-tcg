@@ -9612,9 +9612,6 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
-    // === レストせずアタック可能にする（attack_without_restとマージ済み） ===
-    // case 'enable_attack_without_rest' は削除（attack_without_rest にリネーム）
-
     // === storeの対象にバフ/状態を直接適用 ===
     case 'cant_attack_block':
     case 'cant_attack':
@@ -9864,16 +9861,6 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
       });
       ctx.renderAll();
-      callback();
-      break;
-    }
-
-    // === レストせずアタック可能（attack_without_rest: enable_attack_without_rest のリネーム後継）===
-    case 'attack_without_rest': {
-      if (ctx.card) {
-        ctx.card._attackWithoutRest = true;
-        ctx.addLog('⚔ 「' + ctx.card.name + '」はレストせずにアタックできる！');
-      }
       callback();
       break;
     }
@@ -10781,6 +10768,24 @@ function executeRecipeStep(step, ctx, store, callback) {
     // 進行し、このstep自身への完了コールバックは持たないため、宣言が成立した時点で
     // このrecipeステップのcallbackを呼ぶ（バトル解決の完了までは待たない）
     case 'attack': {
+      // options:['without_rest']（「このデジモンでレストせずアタックできる」）: 即時アタックを
+      // 実行せず、対象に「アタックしてもレストしない」永続フラグだけを付与する（旧
+      // attack_without_restアクションの後継。スプシ未登録のため削除し既存の'attack'アクション+
+      // この修飾子で表現する形に統一）。即時アタック実行パス（下記）はwindow.startAttack等の
+      // UI関数がプレイヤー側専用のため ctx.side==='player' 限定だが、こちらは状態フラグの
+      // 付与だけなので ctx.side を問わず動作する
+      if (Array.isArray(step.options) && step.options.includes('without_rest')) {
+        let _wrCard = ctx.card;
+        if (ctx._forceTargetIdx !== undefined && (step.target === 'own:1' || step.target === 'same_target' || step.target === 'picked')) {
+          _wrCard = player.battleArea[ctx._forceTargetIdx] || ctx.card;
+        }
+        if (_wrCard) {
+          _wrCard._attackWithoutRest = true;
+          ctx.addLog('⚔ 「' + _wrCard.name + '」はレストせずにアタックできる！');
+        }
+        callback();
+        break;
+      }
       if (ctx.side !== 'player' || typeof window.startAttack !== 'function' || typeof window.resolveAttackTarget !== 'function') {
         callback();
         break;

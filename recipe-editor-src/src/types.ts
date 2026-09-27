@@ -523,17 +523,8 @@ export interface RuleGroup extends DesignatedGroup {
   conditionChain?: ConditionChainEntry[];
 }
 
-// MiniStep.actionKinds 専用: 「登場/使用/進化」を自由に複数組み合わせられる特殊枠
-// （例:「登場/使用できる」「登場/進化できる」）。カードの種別によって取れる行動が
-// 異なる（オプションは使用のみ・進化は進化元を持つデジモンのみ等）ため、指定した
-// 種別のうちそのカードで実際に取れるものをプレイヤーが選ぶ想定。
-// 各要素が独自のコスト増減/コストを支払わずを持てる（例:「登場コスト-2で登場、
-// またはコストを支払わず使用」）。⚠ エンジン未対応（選択UIの実装が必要。保存のみ可）
-export interface RuleActionKind {
-  kind: 'summon' | 'use' | 'evolve';
-  value?: number | string; // コスト増減（例: "-2"）
-  costFree?: boolean;      // コストを支払わず
-}
+// MiniStep.actionKinds で使う「登場/使用/進化」の種別コード
+export type RuleActionKind = 'summon' | 'use' | 'evolve';
 
 // ルール = メインアクションに紐づく「ミニ effect step」
 // 構造はメインの effect step と同じだが、編集 UI ではコンパクト表示

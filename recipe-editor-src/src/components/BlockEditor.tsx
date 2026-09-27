@@ -3206,6 +3206,63 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     changeAction(newAction);
   }
 
+  // === 位置（上/下/選んで）・裏表（裏向き/表向き）: 対象欄の右側に一本化して表示するための
+  // 共通ロジック。以前は①辞書の「対象指定」(hasPositionVariant)フラグ付きアクション→
+  // アクション欄隣の「📍アクションにかかる位置」列、②辞書の「裏表指定」(hasFaceOption)フラグ→
+  // アクション欄そばの「裏向きで」チェックボックス、③「〇〇に置く」→置き場所ボタン下の
+  // 「上/下/下か上」(deckPosition、別語彙)の3箇所に分散していたが、対象欄の右側の1箇所に統合する。
+  // 「〇〇に置く」(PLACE_ACTION_CODES)は常に位置・裏表の対象として扱う（辞書フラグの有無を問わない。
+  // 元々PLACE_ZONE_MAPでhasPosition/hasFace固定trueだったのを踏襲）
+  const effectCurVariant = getActionVariant(effectAction);
+  const { flaggedBases: effectFlaggedBases, autoGroupBases: effectAutoGroupBases } = buildActionDisplay(dict.actions);
+  const effectIsFlaggedBaseDirect = effectFlaggedBases.has(effectAction);
+  const effectIsVariantOfFlagged = !!(effectCurVariant && (effectFlaggedBases.has(effectCurVariant.base) || effectAutoGroupBases.has(effectCurVariant.base)));
+  const effectIsPositionalGeneric = effectIsFlaggedBaseDirect || effectIsVariantOfFlagged;
+  const effectIsPlaceActive = PLACE_ACTION_CODES.has(effectAction || '');
+  // 置き場所ごとに位置/裏表の有無が異なる（例: バトルエリアには位置/裏表の概念が無い）ため、
+  // PLACE_ZONE_MAPの該当ゾーンのhasPosition/hasFaceを見る（従来通りゾーン単位で判定）
+  const effectPlaceZoneEntry = PLACE_ZONE_MAP.find((z) => z.action === effectAction);
+  const effectHasFaceOptionFlag = (() => {
+    const exact = dict.actions.find((a) => a.code === effectAction);
+    if (exact?.hasFaceOption) return true;
+    const base = effectCurVariant ? dict.actions.find((a) => a.code === effectCurVariant!.base) : undefined;
+    return !!base?.hasFaceOption;
+  })();
+  // 破棄する（isDiscardActive）は📥場所パネル側で位置・裏表を独自に扱うため対象外のまま
+  const effectDiscardZoneBases = new Set(DISCARD_ZONE_MAP.map((z) => getActionVariant(z.action)?.base || z.action));
+  const effectActionBaseForDiscard = getActionVariant(effectAction || '')?.base || (effectAction || '');
+  const effectIsDiscardActive = effectDiscardZoneBases.has(effectActionBaseForDiscard) || effectAction === 'discard';
+  const showEffectPosition = !effectIsDiscardActive && ((effectIsPlaceActive && !!effectPlaceZoneEntry?.hasPosition) || effectIsPositionalGeneric);
+  const showEffectFace = !effectIsDiscardActive && ((effectIsPlaceActive && !!effectPlaceZoneEntry?.hasFace) || effectHasFaceOptionFlag);
+  const effectPositionOptions: { code: string; label: string }[] = effectIsPlaceActive
+    ? [{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }]
+    : effectIsFlaggedBaseDirect || (effectCurVariant && effectFlaggedBases.has(effectCurVariant.base))
+    ? POSITION_VARIANTS.map((v) => ({ code: v.suffix.slice(1), label: v.label }))
+    : effectCurVariant && effectAutoGroupBases.has(effectCurVariant.base)
+    ? POSITION_VARIANTS.filter((v) => dict.actions.some((a) => a.code === effectCurVariant!.base + v.suffix)).map((v) => ({ code: v.suffix.slice(1), label: v.label }))
+    : [];
+  const effectCurrentPosition: string = effectIsPlaceActive
+    ? (() => {
+        const dp = isEditingAlt ? editingAlt!.deckPosition : block.deckPosition;
+        return dp === 'top' ? 'top' : dp === 'bottom' ? 'bottom' : dp === 'both' ? 'select' : '';
+      })()
+    : (effectCurVariant ? effectCurVariant.suffix.slice(1) : '');
+  function setEffectPosition(pos: string) {
+    if (effectIsPlaceActive) {
+      const dp = pos === 'top' ? 'top' : pos === 'bottom' ? 'bottom' : pos === 'select' ? 'both' : undefined;
+      updateEffect({ deckPosition: dp });
+      return;
+    }
+    if (!pos) return;
+    const base = effectIsFlaggedBaseDirect ? effectAction : (effectCurVariant ? effectCurVariant.base : '');
+    if (!base) return;
+    changeEffectAction(base + '_' + pos);
+  }
+  const effectFaceValue: 'face_down' | 'face_up' = effectOptions.includes('face_down') ? 'face_down' : 'face_up';
+  function setEffectFace(v: 'face_down' | 'face_up') {
+    updateEffect({ options: v === 'face_down' ? [...effectOptions.filter((o) => o !== 'face_down'), 'face_down'] : effectOptions.filter((o) => o !== 'face_down') });
+  }
+
   // 🔀 代替アクション（OR/AND）: OR=プレイヤーがどちらかを選ぶ / AND=両方行う（同じ対象に
   // 重ねて適用）。チェックボックス自体は「その他のアクション」の隣に表示し、
   // 「編集中」選択・設定内容の一覧はアクション欄の近くに別途表示する。
@@ -4873,21 +4930,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           ]);
           const actionDisplayOptions = rawActionDisplayOptions.filter((o) => !_buttonReachableCodes.has(o.value));
           const curVariant = getActionVariant(effectAction);
-          // 🂠裏表フラグ判定: コスト側(costActionHasFlag)と同じロジック。完全一致を優先し、
-          // 無ければ位置バリアントのベースコードでも引く（'place_on_security_top' のように
-          // 位置バリアントではないのに語尾が "_top" と一致するケースの誤爆防止のため）
-          const effectActionHasFaceOption = (() => {
-            const exact = dict.actions.find((a) => a.code === effectAction);
-            if (exact?.hasFaceOption) return true;
-            const base = curVariant ? dict.actions.find((a) => a.code === curVariant!.base) : undefined;
-            return !!base?.hasFaceOption;
-          })();
           // 現在 effectAction が「位置バリアント表示」の対象か判定
           // ケースA: effectAction がフラグ付き base そのもの（例: "security_trash"）
           const isFlaggedBaseDirect = flaggedBases.has(effectAction);
-          // ケースB: effectAction が <base>_<suffix> で base がフラグ付き or 自動グループ化対象
-          const isVariantOfFlagged = !!(curVariant && (flaggedBases.has(curVariant.base) || autoGroupBases.has(curVariant.base)));
-          const isPositional = isFlaggedBaseDirect || isVariantOfFlagged;
 
           // 表示用 value 正規化
           // - フラグ付き base 直: そのまま
@@ -4897,39 +4942,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             if (curVariant && flaggedBases.has(curVariant.base)) return curVariant.base;
             if (curVariant && autoGroupBases.has(curVariant.base)) return curVariant.base + '_top'; // 代表
             return effectAction;
-          })();
-
-          // hasFromZones も持つアクション（例:「破棄する」+ 場所=進化元/デッキ/手札/セキュリティ）では、
-          // 順序が意味を持つ場所（進化元/セキュリティ）を選んだとき、または対象がテイマー
-          // （テイマーの下＝進化元と同じ仕組みのスタック）のときだけ位置pulldownを出す。
-          // デッキ/手札には「上から/下から/選んで」の概念が無いため。
-          // hasFromZones が無いアクション（evo_discard等の既存zone専用アクション）は従来通り常時表示
-          const positionalBase = isFlaggedBaseDirect ? effectAction : (curVariant ? curVariant.base : effectAction);
-          const positionalActionEntry = dict.actions.find((a) => a.code === positionalBase);
-          const effectiveTargetForPosition = isEditingAlt ? (editingAlt!.target || '') : (block.target || '');
-          const effectiveTargetL2ForPosition = TARGET_SEL_CODE_TO_L1L2[effectiveTargetForPosition.split(':')[0]]?.l2 || '';
-          const zoneGatesPosition = !positionalActionEntry?.hasFromZones
-            || effectFromZones.some((z) => z === 'evo_source' || z === 'security')
-            || effectiveTargetL2ForPosition === 'tamer';
-          // 位置 pulldown の選択肢（フラグ付き base は3種固定、autoGroup は dict にあるバリアントのみ）
-          const variantOptions: SelectOption[] = (() => {
-            if (!isPositional || !zoneGatesPosition) return [];
-            if (isFlaggedBaseDirect || (curVariant && flaggedBases.has(curVariant.base))) {
-              // フラグ付き base: 3種固定
-              return POSITION_VARIANTS.map((v) => ({ value: v.suffix, label: v.label }));
-            }
-            if (curVariant && autoGroupBases.has(curVariant.base)) {
-              return POSITION_VARIANTS
-                .filter((v) => dict.actions.some((a) => a.code === curVariant.base + v.suffix))
-                .map((v) => ({ value: v.suffix, label: v.label }));
-            }
-            return [];
-          })();
-          // 現在の suffix 値
-          const currentSuffix = (() => {
-            if (curVariant) return curVariant.suffix;
-            if (isFlaggedBaseDirect) return ''; // 未選択
-            return '';
           })();
 
           function onActionPulldownChange(newCode: string) {
@@ -4951,19 +4963,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             // 自動グループ化の代表 code (newCode = base + '_top')
             changeEffectAction(newCode);
           }
-          function onVariantChange(newSuffix: string) {
-            if (!newSuffix) return;
-            // 現在の base を特定
-            const base = isFlaggedBaseDirect ? effectAction : (curVariant ? curVariant.base : '');
-            if (!base) return;
-            changeEffectAction(base + newSuffix);
-          }
 
           // 破棄（DISCARD_ZONE_MAP）: コスト側(CostListEditor)と全く同じ「場所ごとに実アクション
           // コードを切り替える」仕組みを効果1/代替アクションでも使えるようにする。
           // 辞書のhasPositionVariantフラグには頼らず、コスト側と同じくこのエディタ内で
-          // 完結したハードコード機構として扱う（📍位置の二重表示を避けるため、下の
-          // 汎用位置バリアントpulldownとisPositionalの判定からは除外する）。
+          // 完結したハードコード機構として扱う（対象欄右側の位置・裏表UIは showEffectPosition/
+          // showEffectFace が effectIsDiscardActive を除外しているため二重表示にならない）。
           // 「その他アクション」で辞書の discard（破棄する。エンジン未実装のプレースホルダー）
           // を選んだ直後（まだ場所未選択）も、この📥場所パネルを表示する入り口として扱う
           const discardZoneBases = new Set(DISCARD_ZONE_MAP.map((z) => getActionVariant(z.action)?.base || z.action));
@@ -5078,7 +5083,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           return (
             <div style={{
               display: 'grid',
-              gridTemplateColumns: !isDiscardActive && !isPlaceActive && isPositional && variantOptions.length > 0 ? '2fr 1fr 1fr' : '2fr 1fr',
+              gridTemplateColumns: '2fr 1fr',
               gap: 8,
             }}>
               <div className="field">
@@ -5108,21 +5113,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   )}
                   {/* summon / summon_from_trash / evolve / summon_from_evo_source 専用:
                       コストを支払わず / 登場時効果は発揮しない
-                      裏向きで: place_on_security_top（辞書未登録のハードコード）に加え、
-                      辞書側 hasFaceOption=true なアクション（例:「テイマーの下に置く」）でも表示。
-                      いずれも効果1・代替アクション（その後/OR/AND）とも同じ作りにする */}
-                  {(showCostCheckboxes || effectAction === 'place_on_security_top' || (effectActionHasFaceOption && !isDiscardActive)) && (
+                      （裏向きで、は対象欄の右側「🂠裏表」に統合済み） */}
+                  {showCostCheckboxes && (
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                      {showCostCheckboxes && (
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
-                          <input
-                            type="checkbox"
-                            checked={effectCostFree}
-                            onChange={(e) => updateEffect({ costFree: e.target.checked })}
-                          />
-                          コストを支払わず
-                        </label>
-                      )}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
+                        <input
+                          type="checkbox"
+                          checked={effectCostFree}
+                          onChange={(e) => updateEffect({ costFree: e.target.checked })}
+                        />
+                        コストを支払わず
+                      </label>
                       {showSkipOnPlay && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
                           <input
@@ -5131,18 +5132,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             onChange={(e) => updateEffect({ skipOnPlay: e.target.checked })}
                           />
                           登場時効果は発揮しない
-                        </label>
-                      )}
-                      {(effectAction === 'place_on_security_top' || (effectActionHasFaceOption && !isDiscardActive)) && (
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
-                          <input
-                            type="checkbox"
-                            checked={effectOptions.includes('face_down')}
-                            onChange={(e) => {
-                              updateEffect({ options: e.target.checked ? [...effectOptions, 'face_down'] : effectOptions.filter((o) => o !== 'face_down') });
-                            }}
-                          />
-                          裏向きで
                         </label>
                       )}
                     </div>
@@ -5320,22 +5309,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
                       ) : null;
                     })()}
-                    {/* セキュリティ/テイマーのときだけ「上/下/下か上」を選べる（置き場所自体の上下指定。
-                        取得元「どこから置くか」「裏表」は対象欄側（🎯アクションの対象）に移設済み） */}
-                    {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasPosition && (() => {
-                      const effectDeckPositionForPlace = isEditingAlt ? editingAlt!.deckPosition : block.deckPosition;
-                      return (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
-                          <ButtonGroup
-                            options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '下か上' }]}
-                            value={effectDeckPositionForPlace || ''}
-                            onChange={(v) => updateEffect({ deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
-                            accentColor="#1976d2"
-                          />
-                        </div>
-                      );
-                    })()}
+                    {/* 位置（上/下/選んで）・裏表は対象欄の右側（🎯アクションの対象数の隣）に統合済み */}
                   </div>
                 )}
                 {/* レスト/アクティブ/進化/アタック/ブロック: 「する」（通常）/「できない」（封じる）の
@@ -5379,18 +5353,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </div>
                 )}
               </div>
-              {/* 位置バリアント pulldown: フラグ駆動 or 自動グループ化時のみ。
-                  破棄（isDiscardActive）は専用の📍位置ボタンを別途表示するため、ここでは除外 */}
-              {!isDiscardActive && !isPlaceActive && isPositional && variantOptions.length > 0 && (
-                <div className="field">
-                  <label>📍 アクションにかかる位置</label>
-                  <SearchSelect
-                    value={currentSuffix}
-                    onChange={onVariantChange}
-                    options={variantOptions}
-                  />
-                </div>
-              )}
+              {/* 位置（上/下/選んで）・裏表は対象欄の右側（🎯アクションの対象数の隣）に統合済み */}
               {/* 登場/使用・進化・リンクのときだけ「💰 コスト増減」を出し、通常の「値」入力は隠す
                   （同じ block.value を使うが、符号付き数値を直接入力させるより
                   増/減ボタン+絶対値入力の方が分かりやすいため）。
@@ -6186,13 +6149,34 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
                 </div>
-                {!eHideCount && (
+                {(!eHideCount || showEffectPosition || showEffectFace) && (
                   <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
-                    <label style={{ fontWeight: 'bold', color: '#b76e00' }}>🎯 対象数</label>
-                    <TargetCountField
-                      suffix={eSuffix}
-                      onChange={(v) => updateEffect({ target: eBase + v })}
-                    />
+                    {!eHideCount && (
+                      <>
+                        <label style={{ fontWeight: 'bold', color: '#b76e00' }}>🎯 対象数</label>
+                        <TargetCountField
+                          suffix={eSuffix}
+                          onChange={(v) => updateEffect({ target: eBase + v })}
+                        />
+                      </>
+                    )}
+                    {showEffectPosition && (
+                      <div style={{ marginTop: 6 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                        <ButtonGroup options={effectPositionOptions} value={effectCurrentPosition} onChange={setEffectPosition} accentColor="#b76e00" />
+                      </div>
+                    )}
+                    {showEffectFace && (
+                      <div style={{ marginTop: 6 }}>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                        <ButtonGroup
+                          options={[{ code: 'face_up', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
+                          value={effectFaceValue}
+                          onChange={(v) => setEffectFace(v as 'face_down' | 'face_up')}
+                          accentColor="#b76e00"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -6484,7 +6468,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       target:'own_security'を初期値にしていたが、この対象欄と書き込みが競合し
                       位置選択後に場所/位置の表示が消える不具合があったため、位置はこちらの
                       対象欄に一本化した（誰の・どの位置のセキュリティかをここで完結できる） */}
-                  {curTgt.l2 === 'security' && (() => {
+                  {curTgt.l2 === 'security' && !effectIsPlaceActive && (() => {
                     const isSecurityTrash = (getActionVariant(block.action || '')?.base || block.action) === 'security_trash';
                     // 裏表はtargetFilter（対象の絞り込み）へ保存する。block.conditions（発動条件と
                     // 共用の配列）に書くと「発動条件」＞「参照」欄に意図せず反映されてしまうため
@@ -6526,7 +6510,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       裏表指定（cond_face_down/up、block.conditionsへ保存）は「本体」以外の
                       ときのみ表示する（「本体」＝テイマー自身には裏表の概念が無いため）。
                       場所/位置/裏表の表示が必要なアクション（hasFromZones）のときのみ表示する */}
-                  {actionHasFromZones && curTgt.l2 === 'tamer' && (() => {
+                  {actionHasFromZones && curTgt.l2 === 'tamer' && !effectIsPlaceActive && (() => {
                     const tamerStackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
                     const currentPos = tamerStackCond?.value || '';
                     const setTamerStackPosition = (v: string) => {
@@ -6581,7 +6565,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       サブ選択肢（左の対象ボックス側）を選んでいるときだけ、その位置
                       （本体/上/下/選んで）をここに表示する。
                       裏表指定は「本体」以外（上/下/選んで）のときのみ表示する（block.conditionsへ保存） */}
-                  {(curTgt.l2 === 'digimon' || curTgt.l1 === 'self') && (() => {
+                  {(curTgt.l2 === 'digimon' || curTgt.l1 === 'self') && !effectIsPlaceActive && (() => {
                     const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                     const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
                     const activeCond = evoCond || stackCond;
@@ -6630,6 +6614,27 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </>
                     );
                   })()}
+                  {/* 位置（上/下/選んで）・裏表（裏向き/表向き）: 辞書の「対象指定」(hasPositionVariant)/
+                      「裏表指定」(hasFaceOption)フラグ付きアクション、および「〇〇に置く」用。
+                      破棄する/セキュリティ・テイマー対象への絞り込み等、既に専用UIがある場合は
+                      showEffectPosition/showEffectFace側でfalseになり重複表示しない */}
+                  {showEffectPosition && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                      <ButtonGroup options={effectPositionOptions} value={effectCurrentPosition} onChange={setEffectPosition} accentColor="#b76e00" />
+                    </div>
+                  )}
+                  {showEffectFace && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                      <ButtonGroup
+                        options={[{ code: 'face_up', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
+                        value={effectFaceValue}
+                        onChange={(v) => setEffectFace(v as 'face_down' | 'face_up')}
+                        accentColor="#b76e00"
+                      />
+                    </div>
+                  )}
                   {showTargetFilter && (
                     <div style={{ marginTop: hideCount ? 0 : 8, border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', padding: 8 }}>
                       <ConditionsHybridEditor

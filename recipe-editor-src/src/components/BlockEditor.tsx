@@ -8094,7 +8094,7 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   // 「対数（枚数/体数）」ではなく「表示形式（レスト/アクティブ）が参照対象と一致するか」を
   // 見る特殊ゾーン。他ゾーンのge/le/eq等の量的比較とは別軸のため、専用コード(cond_same_state)+
   // 専用UIで扱う（DP参照(cond_dp_le/ge:self等)と同じ「参照」の考え方を状態一致に適用したもの）
-  { code: 'state', label: '状態' },
+  { code: 'state', label: '表示形式' },
 ];
 // バトルエリア（デジモン体数）は枚数ではなく体数で数えるゾーン
 const REF_ZONE_UNIT_COUNT = new Set(['battle_area']);

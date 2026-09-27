@@ -8275,6 +8275,10 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
 
 // バリアント選択が必要なカテゴリのプルダウン候補
 const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: string }[]>> = {
+  color: [
+    { value: 'cond_color', label: '含む' },
+    { value: 'cond_color_not', label: '以外' },
+  ],
   lv: [
     { value: 'cond_lv_ge', label: '以上' },
     { value: 'cond_lv_le', label: '以下' },
@@ -8319,7 +8323,7 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
 // 条件コード → カテゴリ の逆引き（既存レシピ読込時・行の見た目復元用）
 function baseToCategory(base: string): CondCategory {
   if (!base) return '';
-  if (base === 'cond_color' || base === 'cond_color_distinct') return 'color';
+  if (base === 'cond_color' || base === 'cond_color_not' || base === 'cond_color_distinct') return 'color';
   if (base === 'cond_type') return 'type';
   if (base === 'cond_feature_contains' || base === 'cond_feature') return 'feature';
   if (base === 'cond_lv_ge' || base === 'cond_lv_le' || base === 'cond_lv' || base === 'cond_lv_distinct'
@@ -8400,7 +8404,7 @@ function ConditionsHybridEditor({
 
   // 「その他」用: 色/タイプ/特徴/Lv/DP/名前として直接選べるコード群を除いた残り
   const CATEGORIZED_CODES = new Set<string>([
-    'cond_color', 'cond_type', 'cond_feature_contains', 'cond_feature',
+    'cond_color', 'cond_color_not', 'cond_type', 'cond_feature_contains', 'cond_feature',
     'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_lv_highest', 'cond_lv_lowest', 'cond_lv_sum_le',
     'cond_dp_ge', 'cond_dp_le', 'cond_dp',
     'cond_dp_highest', 'cond_dp_lowest',
@@ -8789,6 +8793,7 @@ function ConditionsHybridEditor({
                     ) : c.base === 'cond_same_as_picked'
                       || (supportsMultiValue && c.base === 'cond_type')
                       || c.base === 'cond_color'
+                      || c.base === 'cond_color_not'
                       || c.base === 'cond_feature_contains'
                       || c.base === 'cond_feature' ? (
                       /* 「選んだデジモンと同じ」「タイプ(複数可・ターゲットフィルタ限定)」
@@ -8821,7 +8826,7 @@ function ConditionsHybridEditor({
                         );
                       })() : (() => {
                         const optList = c.base === 'cond_type' ? RULE_TYPE_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
-                          : c.base === 'cond_color' ? RULE_COLOR_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
+                          : (c.base === 'cond_color' || c.base === 'cond_color_not') ? RULE_COLOR_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
                           : SAME_AS_PICKED_FIELDS;
                         const sel = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
                         const toggleAttr = (code: string, on: boolean) => {

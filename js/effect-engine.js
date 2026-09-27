@@ -2947,6 +2947,11 @@ function cardMatchesFilter(card, filter, bs, side) {
     const wantedColors = String(filter.color).split(',').map(s => s.trim()).filter(Boolean);
     if (wantedColors.length > 0 && !wantedColors.some(w => String(card.color || '').indexOf(w) >= 0)) return false;
   }
+  // 色以外: カンマ区切りで複数指定可（列挙した色をいずれも含まない場合のみ一致）
+  if (filter.color_not) {
+    const excludedColors = String(filter.color_not).split(',').map(s => s.trim()).filter(Boolean);
+    if (excludedColors.some(w => String(card.color || '').indexOf(w) >= 0)) return false;
+  }
   if (filter.cardno && card.cardNo !== filter.cardno) return false;
   if (filter.cardno_includes && !(card.cardNo || '').includes(filter.cardno_includes)) return false;
   if (filter.name && !cardHasName(card, filter.name, true)) return false;
@@ -5251,6 +5256,14 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_color': {
         // 指定色（cond.value に色文字列）
         if (cond.value && card.color && !String(card.color).includes(cond.value)) return false;
+        break;
+      }
+      case 'cond_color_not': {
+        // 指定色以外（cond.value はカンマ区切りで複数指定可。列挙された色をいずれも
+        // 含まない場合のみtrue。NOT(A or B) = NOT A and NOT B のため複数指定でも成立する）
+        if (!cond.value || !card.color) break;
+        const excluded = String(cond.value).split(',').map((s) => s.trim()).filter(Boolean);
+        if (excluded.some((ec) => String(card.color).includes(ec))) return false;
         break;
       }
       case 'cond_feature': {

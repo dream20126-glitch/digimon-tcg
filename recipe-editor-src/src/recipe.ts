@@ -469,6 +469,7 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
     const num = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
     switch (c.base) {
       case 'cond_color':            f.color = c.value; break;
+      case 'cond_color_not':        f.color_not = c.value; break;
       case 'cond_dp':       { if (DP_REF_MARKERS.has(c.value)) { f.dp_le = c.value; f.dp_ge = c.value; } else { const n = num(c.value); if (n !== undefined) { f.dp_le = n; f.dp_ge = n; } } break; }
       case 'cond_dp_le':    { if (DP_REF_MARKERS.has(c.value)) { f.dp_le = c.value; } else { const n = num(c.value); if (n !== undefined) f.dp_le = n; } break; }
       case 'cond_dp_ge':    { if (DP_REF_MARKERS.has(c.value)) { f.dp_ge = c.value; } else { const n = num(c.value); if (n !== undefined) f.dp_ge = n; } break; }
@@ -557,6 +558,7 @@ function parseFilterObject(f: any): ConditionPair[] {
   if (!f || typeof f !== 'object') return [];
   const out: ConditionPair[] = [];
   if (f.color)            out.push({ base: 'cond_color',            value: String(f.color) });
+  if (f.color_not)        out.push({ base: 'cond_color_not',        value: String(f.color_not) });
   if (Array.isArray(f.type_in) && f.type_in.length > 0) {
     out.push({ base: 'cond_type', value: f.type_in.join(',') });
   } else if (f.type) {

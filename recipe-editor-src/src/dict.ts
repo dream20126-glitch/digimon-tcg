@@ -247,6 +247,7 @@ export const CONDITIONS: DictEntry[] = [
   // 消滅させた（＝バトルエリアの相手デジモンとのバトルに勝った）」場合のみ true になる
   { code: 'cond_battle_opp_destroyed', kind: 'condition', label: 'バトルで相手のデジモンを消滅させた（セキュリティデジモンは含まない）' },
   { code: 'cond_color', kind: 'condition', label: '指定色' },
+  { code: 'cond_color_not', kind: 'condition', label: '指定色以外' },
   { code: 'cond_type', kind: 'condition', label: '指定タイプ' },
   { code: 'cond_feature', kind: 'condition', label: '指定特徴' },
   { code: 'cond_memory_opponent', kind: 'condition', label: 'メモリーが相手側' },

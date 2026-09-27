@@ -91,7 +91,7 @@ export const IMPLEMENTED_KEYWORDS = new Set<string>([
 // 更新方法: grep -E "case 'cond_[a-z_]+'" effect-engine.js
 export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_assembly_eligible', 'cond_attack_target_digimon', 'cond_battle_win',
-  'cond_color', 'cond_cost_ge', 'cond_cost_le',
+  'cond_color', 'cond_color_not', 'cond_cost_ge', 'cond_cost_le',
   'cond_digicross', 'cond_dp_ge', 'cond_dp_le',
   'cond_during_opp_turn', 'cond_during_own_turn', 'cond_exists',
   'cond_feature', 'cond_feature_contains', 'cond_has_evo',

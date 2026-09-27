@@ -4,7 +4,6 @@ import {
   SECTIONS,
   DURATIONS,
   TARGETS,
-  TARGET_COUNTS,
   FROM_ZONES,
   REF_SUBJECTS,
 } from '../dict';
@@ -38,6 +37,65 @@ function toOpts(arr: { code: string; label: string }[]): SelectOption[] {
 }
 
 // ボタン式の単一選択グループ（区分・発動領域など、選択肢が少なく視覚的に選ばせたい項目用）
+// === 対象数（target/costのtargetサフィックス）: モード(完全一致/～まで/～なるまで/全て/指定なし)
+// + 数値の記述入力。以前は「1〜3体」等の固定コードをボタンでしか選べなかったが、
+// 任意の数値を入力できるようにするため base + mode + 数値 に分解して扱う。
+// ":until_N" は「（そのゾーンが）N枚になるまで対象を選ぶ」（例:「手札が4枚になるように破棄する」）
+// を表す新設サフィックス。エンジン側は未実装（保存はできるが現状は動作しない）
+type TargetCountMode = '' | 'all' | 'exact' | 'up_to' | 'until';
+const TARGET_COUNT_MODE_OPTIONS: { code: TargetCountMode; label: string }[] = [
+  { code: '', label: '指定なし' },
+  { code: 'all', label: '全て' },
+  { code: 'exact', label: '完全一致' },
+  { code: 'up_to', label: '～まで' },
+  { code: 'until', label: '～なるまで' },
+];
+function parseTargetCountSuffix(suffix: string | undefined): { mode: TargetCountMode; num: string } {
+  const s = suffix || '';
+  if (!s) return { mode: '', num: '' };
+  if (s === ':all') return { mode: 'all', num: '' };
+  const upToM = s.match(/^:up_to_(\d+)$/);
+  if (upToM) return { mode: 'up_to', num: upToM[1] };
+  const untilM = s.match(/^:until_(\d+)$/);
+  if (untilM) return { mode: 'until', num: untilM[1] };
+  const exactM = s.match(/^:(\d+)$/);
+  if (exactM) return { mode: 'exact', num: exactM[1] };
+  return { mode: '', num: '' };
+}
+function buildTargetCountSuffix(mode: TargetCountMode, num: string): string {
+  if (mode === '' || mode === 'all') return mode === 'all' ? ':all' : '';
+  const n = num && /^\d+$/.test(num) ? num : '1';
+  if (mode === 'exact') return ':' + n;
+  if (mode === 'up_to') return ':up_to_' + n;
+  return ':until_' + n;
+}
+function TargetCountField({ suffix, onChange, accentColor = '#b76e00' }: { suffix: string; onChange: (nextSuffix: string) => void; accentColor?: string }) {
+  const { mode, num } = parseTargetCountSuffix(suffix);
+  const showNum = mode === 'exact' || mode === 'up_to' || mode === 'until';
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+      <ButtonGroup
+        options={TARGET_COUNT_MODE_OPTIONS}
+        value={mode}
+        onChange={(v) => onChange(buildTargetCountSuffix(v as TargetCountMode, num || '1'))}
+        accentColor={accentColor}
+      />
+      {showNum && (
+        <input
+          type="number"
+          min={1}
+          value={num}
+          onChange={(e) => onChange(buildTargetCountSuffix(mode, e.target.value))}
+          style={{ width: 56, padding: '2px 4px', fontSize: 12, border: '1px solid #bbb', borderRadius: 4 }}
+        />
+      )}
+      {mode === 'until' && (
+        <span style={{ fontSize: 10, color: '#666' }}>体になるまで（⚠ エンジン未実装）</span>
+      )}
+    </div>
+  );
+}
+
 function ButtonGroup({ options, value, onChange, accentColor }: { options: { code: string; label: string }[]; value: string; onChange: (v: string) => void; accentColor?: string }) {
   const accent = accentColor || '#d81b60';
   return (
@@ -1788,11 +1846,9 @@ function CostListEditor({
               )}
               {!cHideCount && cCurTgt.l1 && (
                 <div style={{ marginTop: 4 }}>
-                  <ButtonGroup
-                    options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
-                    value={cTgtSuffix}
+                  <TargetCountField
+                    suffix={cTgtSuffix}
                     onChange={(v) => updateCost(i, { ...c, target: joinStackSuffix(cTgtBase, cTgtStackPos) + v })}
-                    accentColor="#b76e00"
                   />
                 </div>
               )}
@@ -3174,7 +3230,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
       const l2Label = l1l2.l2 ? (TARGET_SEL_L2[l1l2.l1] || []).find((o) => o.code === l1l2.l2)?.label || '' : '';
       label = [l1Label, l2Label].filter(Boolean).join('の');
     }
-    const countLabel = suffix ? (TARGET_COUNTS.find((o) => o.code === suffix)?.label || '') : '';
+    const { mode: countMode, num: countNum } = parseTargetCountSuffix(suffix);
+    const countLabel = countMode === 'all' ? '全て'
+      : countMode === 'exact' ? `${countNum}体`
+      : countMode === 'up_to' ? `${countNum}体まで`
+      : countMode === 'until' ? `${countNum}体になるまで`
+      : '';
     return [label, countLabel].filter(Boolean).join(' ');
   };
   // 条件配列 → ボタン表記をそのまま連結した文字列に復元（例:「テイマーの色:黄」）
@@ -5790,11 +5851,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     {!etHideCount && (
                       <div style={{ marginTop: 4 }}>
                         <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🎯 対象数</div>
-                        <ButtonGroup
-                          options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
-                          value={etSuffix}
+                        <TargetCountField
+                          suffix={etSuffix}
                           onChange={(v) => updateExtraTarget(idx, { target: etBase + v })}
-                          accentColor="#b76e00"
                         />
                       </div>
                     )}
@@ -6100,11 +6159,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 {!eHideCount && (
                   <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
                     <label style={{ fontWeight: 'bold', color: '#b76e00' }}>🎯 対象数</label>
-                    <ButtonGroup
-                      options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
-                      value={eSuffix}
+                    <TargetCountField
+                      suffix={eSuffix}
                       onChange={(v) => updateEffect({ target: eBase + v })}
-                      accentColor="#b76e00"
                     />
                   </div>
                 )}
@@ -6386,11 +6443,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           （何体に適用するか）
                         </span>
                       </label>
-                      <ButtonGroup
-                        options={TARGET_COUNTS.map((o) => ({ code: o.code, label: o.label || '指定なし' }))}
-                        value={tgtSuffix}
+                      <TargetCountField
+                        suffix={tgtSuffix}
                         onChange={(v) => setTarget(tgtBase, v)}
-                        accentColor="#b76e00"
                       />
                     </>
                   )}
@@ -6888,14 +6943,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </div>
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象数</div>
-                    <SearchSelect
-                      value={(grantedStep.target || '').substring((grantedStep.target || '').split(':')[0].length)}
+                    <TargetCountField
+                      suffix={(grantedStep.target || '').substring((grantedStep.target || '').split(':')[0].length)}
                       onChange={(v) => {
                         const base = (grantedStep.target || '').split(':')[0];
                         updateGrantedStep({ target: base + v });
                       }}
-                      options={toOpts(TARGET_COUNTS)}
-                      allowFreeText
                     />
                   </div>
                 </div>

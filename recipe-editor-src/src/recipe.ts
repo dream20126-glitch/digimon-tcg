@@ -469,6 +469,10 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       // 判定できず、対象選択処理側で別途絞り込む実装が必要）
       case 'cond_lv_highest': f.lv_extreme = 'highest'; break;
       case 'cond_lv_lowest':  f.lv_extreme = 'lowest'; break;
+      // 「Lv合計〜まで」: 選ぶ複数対象のLvの合計がN以下（例:「Lv合計12まで」→3+5+4体等を選べる）。
+      // highest/lowestと同じく候補プール全体（選んだ組合せ）との比較が必要（cardMatchesFilterでは
+      // 判定できず、対象選択処理側で別途「合計が閾値以下になる組合せ」を絞り込む実装が必要）
+      case 'cond_lv_sum_le': { const n = num(c.value); if (n !== undefined) f.lv_sum_le = n; break; }
       // 登場/使用コスト（cardMatchesFilterがfilter.cost/cost_le/cost_geを読む）
       case 'cond_cost':     { const n = num(c.value); if (n !== undefined) { f.cost_le = n; f.cost_ge = n; } break; }
       case 'cond_cost_le':  { const n = num(c.value); if (n !== undefined) f.cost_le = n; break; }
@@ -477,6 +481,9 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       // 判定できず、対象選択処理側で別途絞り込む実装が必要）
       case 'cond_cost_highest': f.cost_extreme = 'highest'; break;
       case 'cond_cost_lowest':  f.cost_extreme = 'lowest'; break;
+      // 「コスト合計〜まで」: 選ぶ複数対象のコストの合計がN以下。lv_sum_leと同様に候補プール
+      // 全体（選んだ組合せ）との比較が必要（エンジン未対応・保存のみ可）
+      case 'cond_cost_sum_le': { const n = num(c.value); if (n !== undefined) f.cost_sum_le = n; break; }
       // カンマ区切り(複数チェック)なら feature_includes 配列(OR・特徴を "/" で分割して部分一致)、
       // 単一値でも feature_includes を使う（cardMatchesFilter は feature_contains を見ないため）
       case 'cond_feature_contains': {
@@ -561,6 +568,7 @@ function parseFilterObject(f: any): ConditionPair[] {
   }
   if (f.lv_extreme === 'highest') out.push({ base: 'cond_lv_highest' });
   else if (f.lv_extreme === 'lowest') out.push({ base: 'cond_lv_lowest' });
+  if (f.lv_sum_le !== undefined) out.push({ base: 'cond_lv_sum_le', value: String(f.lv_sum_le) });
   if (f.cost_le !== undefined && f.cost_ge !== undefined && f.cost_le === f.cost_ge) {
     out.push({ base: 'cond_cost', value: String(f.cost_le) });
   } else {
@@ -577,6 +585,7 @@ function parseFilterObject(f: any): ConditionPair[] {
   else if (f.dp_extreme === 'lowest') out.push({ base: 'cond_dp_lowest' });
   if (f.cost_extreme === 'highest') out.push({ base: 'cond_cost_highest' });
   else if (f.cost_extreme === 'lowest') out.push({ base: 'cond_cost_lowest' });
+  if (f.cost_sum_le !== undefined) out.push({ base: 'cond_cost_sum_le', value: String(f.cost_sum_le) });
   if (f.face_down) out.push({ base: 'cond_face_down', value: f.face_zone ? String(f.face_zone) : undefined });
   if (f.face_up)   out.push({ base: 'cond_face_up',   value: f.face_zone ? String(f.face_zone) : undefined });
   return out;

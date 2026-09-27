@@ -8211,6 +8211,7 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_lv', label: '完全一致' },
     { value: 'cond_lv_highest', label: '最も高い' },
     { value: 'cond_lv_lowest', label: '最も低い' },
+    { value: 'cond_lv_sum_le', label: '合計〜まで' },
   ],
   dp: [
     { value: 'cond_dp_ge', label: '以上' },
@@ -8227,6 +8228,7 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_cost', label: '完全一致' },
     { value: 'cond_cost_highest', label: '最も高い' },
     { value: 'cond_cost_lowest', label: '最も低い' },
+    { value: 'cond_cost_sum_le', label: '合計〜まで' },
   ],
   memory: [
     { value: 'cond_memory_ge', label: '以上' },
@@ -8251,12 +8253,12 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_type') return 'type';
   if (base === 'cond_feature_contains' || base === 'cond_feature') return 'feature';
   if (base === 'cond_lv_ge' || base === 'cond_lv_le' || base === 'cond_lv' || base === 'cond_lv_distinct'
-    || base === 'cond_lv_highest' || base === 'cond_lv_lowest') return 'lv';
+    || base === 'cond_lv_highest' || base === 'cond_lv_lowest' || base === 'cond_lv_sum_le') return 'lv';
   if (base === 'cond_dp_ge' || base === 'cond_dp_le' || base === 'cond_dp'
     || base === 'cond_dp_highest' || base === 'cond_dp_lowest'
     || base === 'cond_attack_target_highest_dp' || base === 'cond_attack_target_lowest_dp') return 'dp';
   if (base === 'cond_cost_ge' || base === 'cond_cost_le' || base === 'cond_cost'
-    || base === 'cond_cost_highest' || base === 'cond_cost_lowest') return 'cost';
+    || base === 'cond_cost_highest' || base === 'cond_cost_lowest' || base === 'cond_cost_sum_le') return 'cost';
   if (base === 'cond_memory_ge' || base === 'cond_memory_le') return 'memory';
   if (base === 'cond_cost_mod') return 'cost_mod';
   if (base === 'cond_name' || base === 'cond_name_not' || base === 'cond_name_contains' || base === 'cond_name_distinct') return 'name';
@@ -8329,11 +8331,11 @@ function ConditionsHybridEditor({
   // 「その他」用: 色/タイプ/特徴/Lv/DP/名前として直接選べるコード群を除いた残り
   const CATEGORIZED_CODES = new Set<string>([
     'cond_color', 'cond_type', 'cond_feature_contains', 'cond_feature',
-    'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_lv_highest', 'cond_lv_lowest',
+    'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_lv_highest', 'cond_lv_lowest', 'cond_lv_sum_le',
     'cond_dp_ge', 'cond_dp_le', 'cond_dp',
     'cond_dp_highest', 'cond_dp_lowest',
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
-    'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod', 'cond_cost_highest', 'cond_cost_lowest',
+    'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod', 'cond_cost_highest', 'cond_cost_lowest', 'cond_cost_sum_le',
     'cond_memory_ge', 'cond_memory_le',
     'cond_name', 'cond_name_not', 'cond_name_contains', 'cond_description', 'cond_description_contains', 'cond_zone',
     'cond_name_distinct', 'cond_lv_distinct', 'cond_description_distinct', 'cond_color_distinct',

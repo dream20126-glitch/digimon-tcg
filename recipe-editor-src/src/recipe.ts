@@ -1169,6 +1169,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // step.subject_by_code[そのコード] || step.subject の順で解決する
   if (b.triggerSubjectByCode && Object.keys(b.triggerSubjectByCode).length > 1) {
     step.subject_by_code = b.triggerSubjectByCode;
+  } else if (b.triggerSubjects && b.triggerSubjects.length > 1) {
+    step.subject_or = b.triggerSubjects;
   } else if (b.triggerSubject && b.triggerSubject !== 'self') {
     step.subject = b.triggerSubject;
   }
@@ -1708,6 +1710,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     in_zone: true,
     subject: true,
     subject_by_code: true,
+    subject_or: true,
     link_role: true,
     cause: true,
     cause_subject: true,
@@ -1787,6 +1790,8 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     triggers: triggerParts.length > 1 ? triggerParts : undefined,
     // JSON に subject 無ければ 'self' (このデジモン) としてロード
     triggerSubject: step?.subject || 'self',
+    // 発動主体のOR（例:「自分のテイマーの下 か 相手の手札」）
+    triggerSubjects: Array.isArray(step?.subject_or) && step.subject_or.length > 0 ? step.subject_or : undefined,
     // subject_by_code（トリガーコードごとに発動主体が異なる場合。groupTriggersByTiming参照）
     triggerSubjectByCode: (step?.subject_by_code && typeof step.subject_by_code === 'object')
       ? { ...step.subject_by_code } : undefined,

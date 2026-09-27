@@ -96,6 +96,14 @@ export interface EffectBlock {
   // '' = このデジモン / 'own' / 'other_own' / 'opp' / 'own_tamer' / 'both'（自分/相手どちらでも。
   // 「デッキが増えたとき」のようにデジモン/カード/テイマー等に分解できないゾーン系トリガー用）
   triggerSubject?: string;
+  // 発動主体のOR（例:「自分のテイマーの下 か 相手の手札」）。2件以上のときのみ意味を持ち、
+  // 1件以下ならtriggerSubjectのみを見る（triggers/triggerと同じ規約）。JSON では
+  // step.subject_or（文字列配列）に serialize。エンジン対応済み（_resolveStepSubjectList・
+  // fireWhenHandDiscardTriggers/fireWhenEvoDiscardTriggers等の反応スキャン関数が、それぞれ
+  // 自分のゾーンに関係する値だけをリストから拾って判定する）。現状「破棄されたとき」
+  // （手札/進化元・テイマー下）でのみ動作確認済み。triggerSubjectByCodeと併用する場合、
+  // by-code側が優先され、このリストは無視される
+  triggerSubjects?: string[];
   // 「リンク時」(on_link) 専用: このカードが「リンクする側」か「リンクされる側」かの区別。
   // 未指定/'linker' = リンクする側（従来の【リンク時】）。'target' = リンクされる側
   // （他のデジモンが"このデジモン"にリンクしたとき）。triggerSubjectと組み合わせて

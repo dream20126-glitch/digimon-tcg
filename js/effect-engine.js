@@ -6173,7 +6173,7 @@ function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGr
 // 例: 効果辞書には「破棄されたとき＝discard」で登録されているが、evo_source側の
 // 実際の発火は'when_evo_discard'で行われる（fireWhenEvoDiscardTriggers）。
 // カード側レシピを書き換えずに辞書登録名のまま動くよう、ここで吸収する
-const TRIGGER_KEY_ALIASES = { when_evo_discard: 'discard', on_battle_win: 'on_win_battle' };
+const TRIGGER_KEY_ALIASES = { when_evo_discard: 'discard', when_hand_discard: 'discard', on_battle_win: 'on_win_battle' };
 // トリガーごとに発動主体が異なるカード（例:「相手がレストしたとき」か「自分のテイマーの
 // 下が破棄されたとき」のどちらでも発動する効果）は、レシピエディタ側(groupTriggersByTiming)が
 // 1つのstepへまとめ、step.subject_by_code={トリガーコード: subject}として出力する。
@@ -6186,6 +6186,15 @@ function _resolveStepSubject(step, triggerCode) {
     if (aliasKey && step.subject_by_code[aliasKey] !== undefined) return step.subject_by_code[aliasKey];
   }
   return step ? step.subject : undefined;
+}
+// _resolveStepSubjectのOR対応版:「発動主体：自分のテイマーの下 か 相手の手札」のように
+// 1つのstepに複数の発動主体候補を持たせたい場合、step.subject_or（文字列配列）を使う。
+// あれば配列としてそのまま返し、無ければ_resolveStepSubjectの単一値を1件配列で返す
+// （呼び出し元のsubjectMatchesは.some()でいずれか1件でも自分のゾーンに一致するか判定する）
+function _resolveStepSubjectList(step, triggerCode) {
+  if (step && Array.isArray(step.subject_or) && step.subject_or.length > 0) return step.subject_or;
+  const single = _resolveStepSubject(step, triggerCode);
+  return single !== undefined ? [single] : [];
 }
 function _lookupTriggerStepsBase(recipeObj, triggerCode) {
   if (!recipeObj || !triggerCode) return undefined;
@@ -6730,15 +6739,21 @@ export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done) 
 // when_evo_discard（進化元/テイマー下スタックの破棄）とは別トリガーキー。
 // subject未指定時は不発火（when_evo_discard等と同じ規約）
 export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done) {
-  const subjectMatches = (step, cardSide) => {
-    const subj = _resolveStepSubject(step, 'when_hand_discard');
-    if (!subj) return false;
+  const matchesOne = (subj, cardSide) => {
     switch (subj) {
-      case 'own': case 'own_any': case 'own_card': return discardedSide === cardSide;
-      case 'opp': case 'opp_any': case 'opp_card': return discardedSide !== cardSide;
+      case 'own': case 'own_any': case 'own_card': case 'own_hand': return discardedSide === cardSide;
+      case 'opp': case 'opp_any': case 'opp_card': case 'opp_hand': return discardedSide !== cardSide;
       case 'both': case 'both_card': return true;
       default: return false;
     }
+  };
+  // subject_or（発動主体のOR。例:「自分のテイマーの下 か 相手の手札」）があれば、
+  // このリストのうち自分（手札破棄スキャン）に関係する値（own_hand/opp_hand等）だけを見る。
+  // 他ゾーン向けの値（own_tamer等）はここでは無視される（evo/tamer側のスキャンが別途判定する）
+  const subjectMatches = (step, cardSide) => {
+    const list = _resolveStepSubjectList(step, 'when_hand_discard');
+    if (list.length === 0) return false;
+    return list.some((subj) => matchesOne(subj, cardSide));
   };
   return _fireSidedReactionTriggers('player', 'when_hand_discard', bs, ctxBase, () => {
     _fireSidedReactionTriggers('ai', 'when_hand_discard', bs, ctxBase, done, (step) => subjectMatches(step, 'ai'));
@@ -6758,8 +6773,8 @@ export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done) {
 export function fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, done, containerType) {
   // 原因追跡は「今まさに解決中の反応チェーン」限定の一時情報のため、解決完了後は必ずクリアする
   const finish = () => { if (bs) bs._lastDestroyCause = null; try { done && done(); } catch(_) {} };
-  const subjectMatches = (step, cardSide) => {
-    const base = String(_resolveStepSubject(step, 'when_evo_discard') || '').replace(/(_evo)?_stack(_top|_bottom)?$/, '');
+  const matchesOne = (subj, cardSide) => {
+    const base = String(subj || '').replace(/(_evo)?_stack(_top|_bottom)?$/, '');
     let sideMatch, typeReq = null;
     switch (base) {
       case 'opp': sideMatch = discardedSide !== cardSide; break;
@@ -6773,6 +6788,12 @@ export function fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, done, con
     if (!sideMatch) return false;
     if (typeReq && containerType && typeReq !== containerType) return false;
     return true;
+  };
+  // subject_or（発動主体のOR）があれば、own_tamer/own_digimon等（進化元/テイマー下系）の
+  // 値だけがここで意味を持つ（own_hand等はここでは無視され、手札側のスキャンが別途判定する）
+  const subjectMatches = (step, cardSide) => {
+    const list = _resolveStepSubjectList(step, 'when_evo_discard');
+    return list.some((subj) => matchesOne(subj, cardSide));
   };
   _fireSidedReactionTriggers('player', 'when_evo_discard', bs, ctxBase, () => {
     _fireSidedReactionTriggers('ai', 'when_evo_discard', bs, ctxBase, finish, subjectMatches);

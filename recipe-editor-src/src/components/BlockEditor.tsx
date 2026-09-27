@@ -1946,8 +1946,9 @@ const SUBJECT_L2_FROM_ZONES = [
   { code: 'trash', label: 'トラッシュ' },
   { code: 'security', label: 'セキュリティ' },
 ];
-// own_hand等はエンジンのsubjectMatchesに対応ケースが無く、保存はできても発火しない
-const SUBJECT_UNIMPLEMENTED_ZONES = new Set(['own_hand', 'own_trash', 'own_security', 'opp_hand', 'opp_trash', 'opp_security']);
+// own_trash/own_security等はエンジンのsubjectMatchesに対応ケースが無く、保存はできても
+// 発火しない（own_hand/opp_hand は「破棄されたとき」でfireWhenHandDiscardTriggers対応済み）
+const SUBJECT_UNIMPLEMENTED_ZONES = new Set(['own_trash', 'own_security', 'opp_trash', 'opp_security']);
 
 // 条件の「対象」用の2段階ボタン選択（発動主体と同じ見た目のパターンだが、
 // CONDITION_SUBJECTS のコード体系が発動主体と異なる＝別テーブルで持つ）
@@ -4400,15 +4401,57 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </>
                     )}
                   </div>
-                  <TriggerSubjectStagedPicker
-                    subject={block.triggerSubject || ''}
-                    onChange={(next) => update('triggerSubject', next)}
-                    hasFromZones={triggerHasFromZones}
-                    suppressTypeButtons={allTriggersTypeless}
-                    zoneIncreaseValue={isZoneIncreaseTrigger ? (block.zoneIncrease || []) : undefined}
-                    onZoneAndSubjectChange={isZoneIncreaseTrigger ? (nextSubject, nextZone) => onChange({ ...block, triggerSubject: nextSubject, zoneIncrease: nextZone }) : undefined}
-                    extraZoneOptions={isZoneIncreaseTrigger ? ZONE_INCREASE_EXTRA_OPTIONS : undefined}
-                  />
+                  {(() => {
+                    const subjList = (block.triggerSubjects && block.triggerSubjects.length > 0) ? block.triggerSubjects : [block.triggerSubject || ''];
+                    const setSubjList = (next: string[]) => onChange({ ...block, triggerSubjects: next.length > 1 ? next : undefined, triggerSubject: next[0] || '' });
+                    // 発動主体OR機能は現状「破棄されたとき」（手札/進化元・テイマー下）でのみ
+                    // エンジン対応済み（_resolveStepSubjectList・各反応スキャン関数）。
+                    // それ以外のトリガーで使うと保存はできるが2件目以降は無視される
+                    const orSupported = currentTriggers.includes('discard');
+                    return (
+                      <>
+                        {subjList.map((subj, si) => (
+                          <div key={si} style={{ marginTop: si === 0 ? 0 : 6 }}>
+                            {si > 0 && <div style={{ fontSize: 11, color: '#946200', fontWeight: 'bold', margin: '4px 0' }}>OR（または）</div>}
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+                              <div style={{ flex: 1 }}>
+                                <TriggerSubjectStagedPicker
+                                  subject={subj}
+                                  onChange={(next) => { const c = subjList.slice(); c[si] = next; setSubjList(c); }}
+                                  hasFromZones={triggerHasFromZones}
+                                  suppressTypeButtons={allTriggersTypeless}
+                                  zoneIncreaseValue={si === 0 && isZoneIncreaseTrigger ? (block.zoneIncrease || []) : undefined}
+                                  onZoneAndSubjectChange={si === 0 && isZoneIncreaseTrigger ? (nextSubject, nextZone) => onChange({ ...block, triggerSubject: nextSubject, zoneIncrease: nextZone, triggerSubjects: undefined }) : undefined}
+                                  extraZoneOptions={isZoneIncreaseTrigger ? ZONE_INCREASE_EXTRA_OPTIONS : undefined}
+                                />
+                              </div>
+                              {subjList.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSubjList(subjList.filter((_, idx) => idx !== si))}
+                                  style={{ border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '1px 7px', cursor: 'pointer', fontSize: 11, marginTop: 4 }}
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        {!isZoneIncreaseTrigger && (
+                          <button
+                            type="button"
+                            onClick={() => setSubjList([...subjList, ''])}
+                            style={{ marginTop: 6, padding: '2px 8px', border: '1px dashed #946200', background: 'white', color: '#946200', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                          >
+                            + 発動主体を追加（OR）
+                          </button>
+                        )}
+                        {subjList.length > 1 && !orSupported && (
+                          <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ このトリガーでは発動主体のOR設定はエンジン未対応です（保存はできますが2件目以降は無視されます）</div>
+                        )}
+                      </>
+                    );
+                  })()}
                   {/* 「下」のときだけ、積まれているカードの種別で絞り込める
                       （例:「自分のテイマーの下のデジモンカードが破棄されたとき」）。
                       本体/指定なしを指しているとき（位置未選択）はL2選択自体が種別を兼ねるため出さない。 */}

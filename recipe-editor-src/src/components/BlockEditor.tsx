@@ -8091,6 +8091,10 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   { code: 'security', label: 'セキュリティ' },
   { code: 'evo_source', label: '進化元／テイマーの下' },
   { code: 'battle_area', label: 'バトルエリア' },
+  // 「対数（枚数/体数）」ではなく「表示形式（レスト/アクティブ）が参照対象と一致するか」を
+  // 見る特殊ゾーン。他ゾーンのge/le/eq等の量的比較とは別軸のため、専用コード(cond_same_state)+
+  // 専用UIで扱う（DP参照(cond_dp_le/ge:self等)と同じ「参照」の考え方を状態一致に適用したもの）
+  { code: 'state', label: '状態' },
 ];
 // バトルエリア（デジモン体数）は枚数ではなく体数で数えるゾーン
 const REF_ZONE_UNIT_COUNT = new Set(['battle_area']);
@@ -8132,6 +8136,7 @@ function isTriggerTimingCond(base: string): boolean {
 // ゾーンボタン上は常に「バトルエリア」として表示する（フィルタの有無は対象欄の
 // チェックボックスで別途表現する）
 function refZoneOf(c: ConditionPair): string {
+  if (c.base === 'cond_same_state') return 'state';
   if (isRefFaceCond(c.base)) return (c.value && REF_FACE_ZONES.has(c.value)) ? c.value : 'evo_source';
   const zone = REF_CODE_TO_ZONE_QUANT[c.base]?.zone || 'hand';
   return (zone === 'state_rest' || zone === 'state_active') ? 'battle_area' : zone;
@@ -8144,6 +8149,7 @@ function refQuantOf(c: ConditionPair): RefQuant {
 }
 // ゾーンを変更する（値バリアントは可能な限り維持。裏向き/表向きは対応ゾーンでのみ維持できる）
 function refApplyZone(zone: string, quant: RefQuant, value: string | undefined): { base: string; value?: string } {
+  if (zone === 'state') return { base: 'cond_same_state', value: DP_REF_CODES.has(value || '') ? value : 'self' };
   if (quant === 'face_down' || quant === 'face_up') {
     if (REF_FACE_ZONES.has(zone)) return { base: quant === 'face_down' ? 'cond_face_down' : 'cond_face_up', value: zone };
     return { base: REF_ZONE_QUANT_TO_CODE[zone + ':ge'], value: undefined };
@@ -8256,7 +8262,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_name' || base === 'cond_name_not' || base === 'cond_name_contains' || base === 'cond_name_distinct') return 'name';
   if (base === 'cond_description' || base === 'cond_description_contains' || base === 'cond_description_distinct') return 'name';
   if (base === 'cond_zone') return 'zone';
-  if (REF_CODE_TO_ZONE_QUANT[base] || isRefFaceCond(base)) return 'ref';
+  if (REF_CODE_TO_ZONE_QUANT[base] || isRefFaceCond(base) || base === 'cond_same_state') return 'ref';
   if (base === DESIGNATED_NAME_COND) return 'designated';
   if (base === 'cond_target_stack') return 'stacked';
   if (base === 'cond_target_evo_source') return 'evo_source';
@@ -8565,7 +8571,21 @@ function ConditionsHybridEditor({
                   )}
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                    {cat.code === 'ref' ? (
+                    {cat.code === 'ref' && refZoneOf(c) === 'state' ? (
+                      /* 状態: 対数（枚数/体数）ではなく「参照対象と表示形式(レスト/アクティブ)が
+                         一致するか」を見る。DP参照(cond_dp_le/ge:self等)と同じ考え方で、
+                         参照対象(このデジモン/自分/相手/他)を選ぶだけで済むため以上/以下等の
+                         quantボタンや数値入力は不要 */
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <ButtonGroup
+                          options={DP_REF_SUBJECTS}
+                          value={DP_REF_CODES.has(c.value || '') ? (c.value || '') : 'self'}
+                          onChange={(v) => updateAt(i, { value: v })}
+                          accentColor={colors.accent}
+                        />
+                        <div style={{ fontSize: 10, color: '#c62828' }}>⚠ 表示形式（レスト/アクティブ）を動的に参照する条件はエンジン未実装です（保存はできますが動作しません）</div>
+                      </div>
+                    ) : cat.code === 'ref' ? (
                       /* 参照: 以上/以下/完全一致ボタン + 枚数入力。進化元/セキュリティのみ
                          裏向き/表向きも選べ、その場合は値不要のため枚数欄を隠す */
                       (() => {

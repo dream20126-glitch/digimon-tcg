@@ -516,6 +516,9 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       // 裏向き/表向き（perRefFilter等で使用。face_zoneは「どのゾーンについての裏表判定か」の表示専用情報）
       case 'cond_face_down': f.face_down = true; if (c.value) f.face_zone = c.value; break;
       case 'cond_face_up':   f.face_up = true; if (c.value) f.face_zone = c.value; break;
+      // 表示形式（レスト/アクティブ）が参照対象と一致するか。値は'self'/'own'/'opp'/'other'の
+      // マーカー文字列（DP参照のcond_dp_le/ge:self等と同じ考え方）。エンジン未対応・保存のみ可
+      case 'cond_same_state': f.same_state_ref = c.value; break;
     }
   });
   return Object.keys(f).length > 0 ? f : null;
@@ -549,6 +552,7 @@ function parseFilterObject(f: any): ConditionPair[] {
   if (f.zone)                 out.push({ base: 'cond_zone',                 value: String(f.zone) });
   if (f.target_stack)         out.push({ base: 'cond_target_stack',         value: f.target_stack_position ? String(f.target_stack_position) : undefined });
   if (f.target_evo_source)    out.push({ base: 'cond_target_evo_source',    value: f.target_evo_source_position ? String(f.target_evo_source_position) : undefined });
+  if (f.same_state_ref)       out.push({ base: 'cond_same_state',           value: String(f.same_state_ref) });
   if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
     out.push({ base: 'cond_lv', value: String(f.lv_le) });
   } else {

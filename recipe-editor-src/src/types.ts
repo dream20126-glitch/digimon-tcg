@@ -74,6 +74,14 @@ export interface ExtraTarget {
 // 効果ブロック1ステップの構造（コードブロックシートと同等）
 export interface EffectBlock {
   section: 'main' | 'evo_source' | 'security' | 'link';
+  // 区分の複数選択（例:「メイン」と「セキュリティ」の両方で全く同じ内容を発動する）。
+  // 2件以上のときのみ意味を持ち、1件以下ならsectionのみを見る（triggers/triggerと同じ規約）。
+  // 「メイン」等（トリガーコードで出力される区分）と「セキュリティ」を同時に選んだ場合、
+  // レシピを二重に書かず済むよう、JSON上はrecipe.securityへstepを複製せず、
+  // 参照先トリガーコードの文字列だけを書く（例: "security":"on_destroy"）。
+  // エンジン側（_lookupTriggerStepsBase）がこの文字列値を検出し、参照先のstepを
+  // そのまま解決する（1段のみ）。「セキュリティ」単独選択時は従来通りstep配列を出力する
+  sections?: ('main' | 'evo_source' | 'security' | 'link')[];
   // この効果ステップが「デジモンとしての効果」か「オプションとしての効果」かのメモ書き。
   // デュアルカードのように1枚のカードにオプション使用時の効果とデジモン側の効果が
   // 混在する場合、trigger='main'だけでは（オプション使用時のmainとデジモンの起動効果の
@@ -81,13 +89,6 @@ export interface EffectBlock {
   // 編集時の目印として記録する。エンジンは参照しない（保存はするが動作に影響しない）
   asType?: 'digimon' | 'tamer' | 'option';
   zone?: string; // '' | 'security' | 'trash' | 'hand' | 'breed'
-  // true のとき、このブロック（section:'main'限定）の内容を「セキュリティでめくれたとき」
-  // にも同じ内容で発動する。section:'security'の別ブロックを重複して書かなくて済むように
-  // するための編集用フラグ。JSONでは recipe.security[] に同じstepを複製出力し、
-  // 各stepに _mirror_of:（このブロックのtriggerコード）を付与して再読込時に判別する。
-  // エンジンはこのフラグ自体を参照しない（appendStep時点で通常のsection:'security'
-  // ブロックと全く同じ形へ変換済みのため、実行時は区別なく動作する）
-  mirrorToSecurity?: boolean;
   trigger: string; // code (e.g., 'on_play', 'during_own_turn', 'passive', 'main')。複数選択時はtriggers[0]と一致させる
   // トリガーの複数選択（例: 登場時/進化時どちらでも同じ効果）。2件以上のときのみ意味を持つ。
   // blocksToRecipeで各コードごとに同じstepを複製して出力する。1件以下ならtriggerのみを見る

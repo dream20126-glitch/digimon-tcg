@@ -3524,20 +3524,35 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           gridColumn: '1 / span 2', padding: 10, background: '#fdeef2',
           border: '1px solid #f3b8ce', borderRadius: 6,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-            <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>区分 *</label>
-            <ButtonGroup options={SECTIONS} value={block.section} onChange={(v) => update('section', v)} accentColor="#d6336c" />
-          </div>
-          <div style={{ fontSize: 10, color: '#666', marginBottom: 6, marginLeft: 64 }}>
-            {block.section === 'evo_source'
-              ? '「進化元」＝このカードが他のカードの進化元（下敷き）になったときに発揮する効果（カード情報一覧の「進化元テキスト」欄の内容）専用です。'
-              : block.section === 'security'
-              ? '「セキュリティ」＝このカードがセキュリティとして表向きになったときの効果（セキュリティテキスト欄）専用です。'
-              : block.section === 'link'
-              ? '「リンク」＝このカードがリンクしている間に発揮する効果専用です。'
-              : '「メイン」＝このカード自身の効果テキストです（進化元になったときの効果ではありません）。'}
-          </div>
-          {block.section === 'evo_source' && hasNoEvoText && (
+          {(() => {
+            const sectionsList: string[] = (block.sections && block.sections.length > 0) ? block.sections : [block.section];
+            const toggleSection = (code: string) => {
+              const has = sectionsList.includes(code);
+              let next = has ? sectionsList.filter((s) => s !== code) : [...sectionsList, code];
+              if (next.length === 0) next = [code]; // 最低1つは必須（外そうとした最後の1つは残す）
+              const nonSecurity = next.filter((s) => s !== 'security');
+              const primary = (nonSecurity.length > 0 ? nonSecurity[0] : next[0]) as EffectBlock['section'];
+              onChange({ ...block, section: primary, sections: next.length > 1 ? (next as EffectBlock['section'][]) : undefined });
+            };
+            const sectionDesc: Record<string, string> = {
+              main: '「メイン」＝このカード自身の効果テキストです（進化元になったときの効果ではありません）。',
+              evo_source: '「進化元」＝このカードが他のカードの進化元（下敷き）になったときに発揮する効果（カード情報一覧の「進化元テキスト」欄の内容）専用です。',
+              security: '「セキュリティ」＝このカードがセキュリティとして表向きになったときの効果（セキュリティテキスト欄）専用です。2つ目以降の区分として追加選択すると、レシピを二重に書かずに同じ内容をセキュリティでも発動できます（JSONも二重記載にはなりません）。',
+              link: '「リンク」＝このカードがリンクしている間に発揮する効果専用です。',
+            };
+            return (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                  <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>区分 *</label>
+                  <MultiButtonGroup options={SECTIONS} values={sectionsList} onToggle={(code) => toggleSection(code)} accentColor="#d6336c" />
+                </div>
+                <div style={{ fontSize: 10, color: '#666', marginBottom: 6, marginLeft: 64 }}>
+                  {sectionsList.map((s) => <div key={s}>{sectionDesc[s]}</div>)}
+                </div>
+              </>
+            );
+          })()}
+          {(block.sections && block.sections.length > 0 ? block.sections : [block.section]).includes('evo_source') && hasNoEvoText && (
             <div style={{ fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px', marginBottom: 6 }}>
               ⚠ このカードの「進化元テキスト」欄は空/なしです。効果テキスト（メイン）由来の効果を誤って「進化元」区分にしていませんか？
             </div>
@@ -3590,9 +3605,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         )}
 
         {/* === 🎬 トリガーグループ === */}
-        {/* セキュリティ効果(区分=セキュリティ)は常に「セキュリティチェック時」に発動するため、
-            トリガー/発動主体/タイミング等の入力は不要（内部的に trigger:'security' が自動設定される） */}
-        {block.section === 'security' ? (
+        {/* セキュリティ効果(区分=セキュリティ単独)は常に「セキュリティチェック時」に発動するため、
+            トリガー/発動主体/タイミング等の入力は不要（内部的に trigger:'security' が自動設定される）。
+            「メイン」等と「セキュリティ」を併せて選んでいる場合は、通常通りトリガー選択が必要
+            （その内容がそのままセキュリティでも発動する＝区分の複数選択機能） */}
+        {((block.sections && block.sections.length > 0) ? block.sections : [block.section]).every((s) => s === 'security') ? (
           <div style={{
             gridColumn: '1 / span 2', padding: 10, background: '#f0f9f0',
             border: '2px solid #93c693', borderRadius: 6,
@@ -4075,24 +4092,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         🧬 ジョグレス進化
                       </button>
                     </div>
-                  )}
-
-                  {/* セキュリティ効果は section:'security' の別ブロックとして保存する仕様だが、
-                      「消滅時と全く同じ内容」のような場合にレシピを二重に書かずに済むよう、
-                      このブロックの内容をそのままセキュリティ効果としても発動できるようにする
-                      （保存時にrecipe.securityへも複製出力・エンジン変更不要） */}
-                  {/* 'passive'（キーワード宣言）はカード全体で共有するcontainer.passive配列に
-                      出力され、他トリガーのような「このブロック専用の配列」を持たないため、
-                      セキュリティへの参照ミラーが作れない（対象から除外） */}
-                  {!isKeywordMode && currentTriggers.length > 0 && block.trigger !== 'passive' && (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#1a5a1a', marginTop: 6 }}>
-                      <input
-                        type="checkbox"
-                        checked={!!block.mirrorToSecurity}
-                        onChange={(e) => onChange({ ...block, mirrorToSecurity: e.target.checked })}
-                      />
-                      🔒 セキュリティでめくれたときも同じ内容を発動する
-                    </label>
                   )}
 
                   {!perTriggerTimingOpen && (

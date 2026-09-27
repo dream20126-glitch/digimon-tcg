@@ -588,11 +588,24 @@ function parseExtraTargetsArray(raw: any): ExtraTarget[] | undefined {
 export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
   const recipe: Record<string, any> = {};
   blocks.forEach((b) => {
-    // セキュリティ効果はトリガー入力不要（常に 'security' キーに出力される）。
-    // トリガー未入力を理由に他セクションと同様スキップされてしまわないよう先に処理する。
-    if (b.section === 'security') {
-      appendStep(recipe, { ...b, trigger: 'security' }, keywordDict);
-      return;
+    // 区分の複数選択（例:「メイン」+「セキュリティ」で全く同じ内容を発動する）。
+    // 2件以上のときのみ意味を持ち、1件以下ならsectionのみを見る（triggers/triggerと同じ規約）
+    const sectionList = (b.sections && b.sections.length > 0) ? b.sections : (b.section ? [b.section] : ['main' as const]);
+    const hasSecurity = sectionList.includes('security');
+    const otherSections = sectionList.filter((s) => s !== 'security');
+    if (hasSecurity) {
+      if (otherSections.length > 0) {
+        // 他の区分と併用: レシピを二重に書き出さずに済むよう、recipe.securityには
+        // step配列を複製せず、参照先トリガーコードの文字列だけを書く（例: security:"on_destroy"）。
+        // エンジン側は_lookupTriggerStepsBaseでこの文字列値を検出し、参照先のstepをそのまま
+        // 解決する（1段のみ）。'passive'（キーワード宣言）はcontainer.passive（カード全体で
+        // 共有する配列）に出力され、他トリガー同様のtrigger-keyed配列を持たないため参照できない
+        // （ミラー対象から除外。UI側でも選べないようガード済み）
+        if (b.trigger && b.trigger !== 'passive') recipe.security = b.trigger;
+      } else {
+        // セキュリティ単独選択: 従来通りトリガー入力不要でstep配列をそのまま出力する
+        appendStep(recipe, { ...b, trigger: 'security' }, keywordDict);
+      }
     }
     // トリガー複数選択: 「登場時/進化時どちらでも同じ効果」のように、複数トリガーで
     // 同一内容のstepを発動する場合。冗長な重複出力を避けるため、"on_move,on_play"の
@@ -603,15 +616,16 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
     // 発動ターン（＝実際のtrigger_conditions内容）が同じもの同士でグループ化し、
     // グループごとに別々のstepとして出力する（グループが1つだけなら従来通り1step）
     const triggerList = (b.triggers && b.triggers.length > 0) ? b.triggers : (b.trigger ? [b.trigger] : []);
-    if (triggerList.length > 0) {
+    if (triggerList.length === 0) return;
+    otherSections.forEach((section) => {
       const groups = groupTriggersByTiming(triggerList, b);
       groups.forEach(({ codes, conditions, subject, subjectByCode }) => {
         const combinedTrig = codes.join(',');
         const bForGroup = { ...b, triggerConditions: conditions, triggerSubject: subject, triggerSubjectByCode: subjectByCode };
-        if (b.section === 'evo_source') {
+        if (section === 'evo_source') {
           recipe.evo_source = recipe.evo_source || {};
           appendStep(recipe.evo_source, { ...bForGroup, trigger: combinedTrig }, keywordDict);
-        } else if (b.section === 'link') {
+        } else if (section === 'link') {
           // リンク効果は進化元効果と同じ構造（during_own_turn等のトリガーでネスト）。
           // 「リンクしている間」という状態はcard.linkedCardsで表現されるため、
           // トリガー自体は進化元と同様に発動タイミングの指定として使う
@@ -621,17 +635,7 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
           appendStep(recipe, { ...bForGroup, trigger: combinedTrig }, keywordDict);
         }
       });
-    }
-    // 「セキュリティでめくれたときも同じ内容で発動する」: レシピを二重に書き出さずに済むよう、
-    // recipe.security にはstep配列を複製せず、参照先トリガーコードの文字列だけを書く
-    // （例: security:"on_destroy"）。エンジン側は_lookupTriggerStepsBaseでこの文字列値を
-    // 検出し、参照先（recipe.on_destroy）のstepをそのまま解決する（1段のみ・エンジン対応済み）
-    // 'passive'（キーワード宣言）はcontainer.passive（カード全体で共有する配列）に
-    // 出力されるため、他トリガー同様のtrigger-keyed配列としては存在せず参照できない。
-    // ミラー対象から除外する（UI側でも選べないようにガード済み）
-    if (b.mirrorToSecurity && b.trigger && b.trigger !== 'passive') {
-      recipe.security = b.trigger;
-    }
+    });
   });
   return recipe;
 }
@@ -1311,8 +1315,8 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
     if (!Array.isArray(arr)) return;
     if (k === 'security') {
       // _mirror_of マーカー付きのstepは「他トリガーの内容をそのまま複製したもの」なので、
-      // 独立したセキュリティブロックとしては復元しない（後段でmirrorToSecurityとして
-      // 対応する元ブロックへ結び付ける。マッチする元ブロックが見付からなければ、
+      // 独立したセキュリティブロックとしては復元しない（後段で対応する元ブロックの
+      // sectionsへ'security'を追加する形で結び付ける。マッチする元ブロックが見付からなければ、
       // データを失わないよう通常のセキュリティブロックとして復元する）
       const ownSteps = arr.filter((s: any) => !(s && s._mirror_of));
       if (ownSteps.length > 0) blocks.push(...stepsArrayToBlocks('security', 'security', ownSteps));
@@ -1371,25 +1375,29 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
       }
     });
   }
-  // security:"on_destroy" のような文字列参照（mirrorToSecurity機能・現行フォーマット）を
-  // 対応する元ブロック（トリガーが一致する'main'セクションのブロック）に結び付け、
-  // mirrorToSecurityを復元する。マッチする元ブロックが見付からなければ何もしない
-  // （参照先が消えている壊れたデータのため、復元しようがない）
+  // security:"on_destroy" のような文字列参照（区分の複数選択機能・現行フォーマット）を
+  // 対応する元ブロック（トリガーが一致するブロック）に結び付け、区分に'security'を追加する
+  // （区分の複数選択＝「メイン」+「セキュリティ」等として復元）。マッチする元ブロックが
+  // 見付からなければ何もしない（参照先が消えている壊れたデータのため、復元しようがない）
+  const addSecuritySection = (target: EffectBlock) => {
+    const base = (target.sections && target.sections.length > 0) ? target.sections : [target.section];
+    if (!base.includes('security')) target.sections = [...base, 'security'];
+  };
   if (typeof recipe.security === 'string' && recipe.security) {
-    const target = blocks.find((b) => b.section === 'main'
+    const target = blocks.find((b) => b.section !== 'security'
       && (b.trigger === recipe.security || (b.triggers && b.triggers.includes(recipe.security))));
-    if (target) target.mirrorToSecurity = true;
+    if (target) addSecuritySection(target);
   }
   // _mirror_of マーカー付きのセキュリティstep（旧フォーマット・複製配列）を、対応する
-  // 元ブロックに結び付け、mirrorToSecurityを復元する。マッチする元ブロックが見付からなければ
+  // 元ブロックに結び付け、区分に'security'を追加する。マッチする元ブロックが見付からなければ
   // 通常のセキュリティブロックとして復元する（データを失わないため）
   if (Array.isArray(recipe.security)) {
     recipe.security.forEach((s: any) => {
       if (!s || !s._mirror_of) return;
-      const target = blocks.find((b) => b.section === 'main'
+      const target = blocks.find((b) => b.section !== 'security'
         && (b.trigger === s._mirror_of || (b.triggers && b.triggers.includes(s._mirror_of))));
       if (target) {
-        target.mirrorToSecurity = true;
+        addSecuritySection(target);
       } else {
         blocks.push(...stepsArrayToBlocks('security', 'security', [s]));
       }

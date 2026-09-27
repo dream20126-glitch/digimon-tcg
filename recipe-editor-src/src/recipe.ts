@@ -896,11 +896,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // トリガー条件: 配列で出力 (step.trigger_conditions[])
   // エンジンは「トリガー発火元のカード」に対してこれらの条件を評価する
   // （trigger_conditions_op:'or' が無ければ従来通り AND、'or' があればいずれか1件でOK）。
-  // b.triggerConditions には発動ターン（cond_during_own_turn等・setTimingが書き込む、
-  // どのセグメントでも常に必須の条件）を保持し、ユーザーが追加するOR条件は
-  // b.triggerConditionsChain 側で独立して管理する（UIのonChainChangeが
-  // triggerConditionsのタイミング条件以外をクリアする形で分離している）。
-  // 複数セグメントに収束する場合、timingConds は trigger_conditions へ、chainは
+  // b.triggerConditions には「常に必須」の条件（発動ターン=cond_during_own_turn等・
+  // setTimingが書き込む／共通条件=ユーザーが「共通条件」欄で追加するもの、両方）を保持し、
+  // OR設定はb.triggerConditionsChain側で独立して管理する。
+  // 複数セグメントに収束する場合、常時必須条件は trigger_conditions へ、chainは
   // trigger_conditions_chain へそれぞれ独立出力する（エンジンは両方をAND評価する）。
   // 収束しない場合（chain無し・単一セグメント）は全て1つのtrigger_conditionsへ
   // まとめる（従来互換）

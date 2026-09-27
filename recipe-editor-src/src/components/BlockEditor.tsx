@@ -4627,18 +4627,43 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </label>
           {triggerCondsOpen && (
             <div style={{ marginTop: 6 }}>
+              {/* 共通条件: 発動ターン（自動）とは別に、ユーザーが追加できる「常に必須」の条件。
+                  下のトリガー条件（OR設定）がある場合、そのすべての選択肢にAND適用される
+                  （例:「登場コスト12以下」＋「クロノモンの記述がある or 特徴タイタン族」） */}
+              {(() => {
+                const commonConds = triggerConditions.filter((c) => !isTriggerTimingCond(c.base));
+                const setCommon = (next: ConditionPair[]) => onChange({
+                  ...block,
+                  triggerConditions: [...triggerConditions.filter((c) => isTriggerTimingCond(c.base)), ...next],
+                });
+                return commonConds.length > 0 ? (
+                  <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px dashed #1a5a1a' }}>
+                    <ConditionsHybridEditor
+                      conditions={commonConds}
+                      onChange={setCommon}
+                      dict={dict}
+                      title="共通条件"
+                      hint="（下のトリガー条件にOR設定がある場合、すべての選択肢に共通でAND適用される）"
+                      theme="trigger"
+                      defaultSubject=""
+                      sameAsTargetSubject={targetBaseToCondSubject(block.target)}
+                      attackContextActive={isAttackTrigger}
+                    />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setCommon([{ base: '', value: '' }])}
+                    style={{ marginBottom: 8, padding: '2px 8px', border: '1px dashed #1a5a1a', background: 'white', borderRadius: 4, cursor: 'pointer', fontSize: 11, color: '#1a5a1a' }}
+                  >
+                    ＋ 共通条件を追加（OR設定がある場合、すべての選択肢に共通でAND適用される）
+                  </button>
+                );
+              })()}
               <ConditionChainField
                 chain={block.triggerConditionsChain}
-                legacyPairs={triggerConditions.filter((c) => !isTriggerTimingCond(c.base))}
-                legacyOp={block.triggerConditionsOp}
-                onChainChange={(next) => onChange({
-                  ...block,
-                  triggerConditionsChain: next,
-                  // 発動ターン（cond_during_own_turn等）は「発動ターン」欄が別途書き込む値なので、
-                  // ここでtriggerConditionsをクリアする際も残す（チェーンが上書きするのは
-                  // ユーザーが直接編集するトリガー条件のみ）
-                  triggerConditions: triggerConditions.filter((c) => isTriggerTimingCond(c.base)),
-                })}
+                legacyPairs={[]}
+                onChainChange={(next) => onChange({ ...block, triggerConditionsChain: next })}
                 dict={dict}
                 titleBase="トリガー条件"
                 theme="trigger"
@@ -8254,22 +8279,6 @@ function ConditionsHybridEditor({
   const [sameAsTargetChecked, setSameAsTargetChecked] = useState<Record<number, boolean>>({});
   const setOtherOpen = onOtherOpenChange || setLocalOtherOpen;
 
-  // 「コスト」カテゴリ専用: 登場/使用/両方でカード種別を絞り込む（対象の条件=supportsMultiValue時のみ）。
-  // 登場=デジモン/テイマー（場に出す）・使用=オプション（使用して手放す）・両方=絞り込みなし
-  function getCostTypeScope(): 'summon' | 'use' | 'both' {
-    const t = conditions.find((c) => c.base === 'cond_type');
-    if (!t) return 'both';
-    const vals = String(t.value || '').split(',').map((s) => s.trim());
-    if (vals.length === 1 && vals[0] === 'オプション') return 'use';
-    if (vals.includes('デジモン')) return 'summon';
-    return 'both';
-  }
-  function setCostTypeScope(mode: 'summon' | 'use' | 'both') {
-    const withoutType = conditions.filter((c) => c.base !== 'cond_type');
-    if (mode === 'both') { onChange(withoutType); return; }
-    const value = mode === 'summon' ? 'デジモン,テイマー' : 'オプション';
-    onChange([...withoutType, { base: 'cond_type', value }]);
-  }
 
   function updateAt(i: number, patch: Partial<ConditionPair>) {
     const next = conditions.slice();
@@ -8449,20 +8458,6 @@ function ConditionsHybridEditor({
                       onChange={(v) => updateAt(i, { base: v })}
                       accentColor={colors.accent}
                     />
-                  )}
-                  {/* コストのみ: 登場(デジモン/テイマー)/使用(オプション)/両方でカード種別を絞り込む。
-                      対象の条件（supportsMultiValue）でのみ有効（cond_typeの複数値がtype_inとして
-                      解釈されるのはこの文脈だけのため） */}
-                  {cat.code === 'cost' && supportsMultiValue && (
-                    <div>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>カード種別</div>
-                      <ButtonGroup
-                        options={[{ code: 'summon', label: '登場' }, { code: 'use', label: '使用' }, { code: 'both', label: '両方' }]}
-                        value={getCostTypeScope()}
-                        onChange={(v) => setCostTypeScope(v as 'summon' | 'use' | 'both')}
-                        accentColor={colors.accent}
-                      />
-                    </div>
                   )}
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>

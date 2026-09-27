@@ -8547,6 +8547,21 @@ function ConditionsHybridEditor({
                       accentColor={colors.accent}
                     />
                   )}
+                  {/* 参照ゾーン（手札/トラッシュ/セキュリティ/進化元/バトルエリア）が自分/相手
+                      どちらのものかを指定する。汎用の「対象」セレクタ（showSubjectSelector）は
+                      対象の条件（supportsMultiValue）パネルでは非表示のため、参照カテゴリだけは
+                      常にこの簡易セレクタを出す（「状態」ゾーンは参照対象ボタンで別途指定するため対象外） */}
+                  {cat.code === 'ref' && refZoneOf(c) !== 'state' && (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>参照先</div>
+                      <ButtonGroup
+                        options={[{ code: 'own', label: '自分' }, { code: 'opp', label: '相手' }]}
+                        value={c.subject === 'opp' ? 'opp' : 'own'}
+                        onChange={(v) => updateAt(i, { subject: v === 'opp' ? 'opp' : undefined })}
+                        accentColor={colors.accent}
+                      />
+                    </div>
+                  )}
                   {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントボタン（コンテンツ幅のみ使用・空なら詰める） */}
                   {variantOptionsFor(cat.code as CondCategory) && (
                     <ButtonGroup

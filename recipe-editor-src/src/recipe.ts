@@ -382,6 +382,26 @@ const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'con
 // 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する
 const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other']);
 
+// 参照ゾーン（手札/トラッシュ/セキュリティ/バトルエリア/レスト・アクティブ体数）の量的条件
+// （以上/以下/完全一致/より多い/より少ない）。cardMatchesFilterは候補カード単体しか見ないため
+// まだ評価されない（エンジン未対応・保存のみ可）。参照先が相手のときのみ<zone>_subject:'opp'
+// を保持する（未指定時は自分＝デフォルト）。進化元(cond_has_evo系)は語形が不規則なため別処理
+const REF_ZONES = ['hand', 'trash', 'security', 'battle_area', 'state_rest', 'state_active'];
+const REF_QUANTS = ['ge', 'le', 'eq', 'gt', 'lt'];
+const REF_ZONE_COND_RE = /^cond_(hand|trash|security|battle_area|state_rest|state_active)_(ge|le|eq|gt|lt)$/;
+function applyRefZoneCond(f: Record<string, any>, c: ConditionPair): boolean {
+  let zone: string | undefined; let quant: string | undefined;
+  const m = REF_ZONE_COND_RE.exec(c.base);
+  if (m) { zone = m[1]; quant = m[2]; }
+  else if (c.base === 'cond_has_evo') { zone = 'evo_source'; quant = 'ge'; }
+  else if (/^cond_has_evo_(le|eq|gt|lt)$/.test(c.base)) { zone = 'evo_source'; quant = c.base.replace('cond_has_evo_', ''); }
+  else return false;
+  const n = parseInt(String(c.value), 10);
+  if (!isNaN(n)) f[`${zone}_${quant}`] = n;
+  if (c.subject === 'opp') f[`${zone}_subject`] = 'opp';
+  return true;
+}
+
 // buildFilterObjectのOR対応版。op==='or'かつ条件が2つ以上あれば、各条件を単独filterに
 // 分解し {or:[...]} として返す（filter.orはcardMatchesFilterが再帰的にOR評価する。
 // エンジン対応済み。例:「名前がタイタモン」か「特徴がタイタン族」のどちらか）
@@ -445,6 +465,7 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
   pairs.forEach((c) => {
     if (!c || !c.base) return;
     if (!c.value && !NO_VALUE_FILTER_CONDS.has(c.base)) return;
+    if (applyRefZoneCond(f, c)) return;
     const num = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
     switch (c.base) {
       case 'cond_color':            f.color = c.value; break;
@@ -560,6 +581,18 @@ function parseFilterObject(f: any): ConditionPair[] {
   if (f.target_stack)         out.push({ base: 'cond_target_stack',         value: f.target_stack_position ? String(f.target_stack_position) : undefined });
   if (f.target_evo_source)    out.push({ base: 'cond_target_evo_source',    value: f.target_evo_source_position ? String(f.target_evo_source_position) : undefined });
   if (f.same_state_ref)       out.push({ base: 'cond_same_state',           value: String(f.same_state_ref) });
+  REF_ZONES.forEach((zone) => {
+    REF_QUANTS.forEach((quant) => {
+      const v = f[`${zone}_${quant}`];
+      if (v !== undefined) out.push({ base: `cond_${zone}_${quant}`, value: String(v), subject: f[`${zone}_subject`] === 'opp' ? 'opp' : undefined });
+    });
+  });
+  REF_QUANTS.forEach((quant) => {
+    const v = f[`evo_source_${quant}`];
+    if (v !== undefined) {
+      out.push({ base: quant === 'ge' ? 'cond_has_evo' : `cond_has_evo_${quant}`, value: String(v), subject: f.evo_source_subject === 'opp' ? 'opp' : undefined });
+    }
+  });
   if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
     out.push({ base: 'cond_lv', value: String(f.lv_le) });
   } else {

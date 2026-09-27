@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup, ConditionChainEntry, FusionMaterialSlot, ExtraTarget } from '../types';
+import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup, RuleActionKind, ConditionChainEntry, FusionMaterialSlot, ExtraTarget } from '../types';
 import {
   SECTIONS,
   DURATIONS,
@@ -7382,6 +7382,66 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
               グループごとに異なる（このアクション欄を隠し、下の各グループのアクション欄を使う）
             </label>
           )}
+          {/* 登場/使用/進化を自由に複数組み合わせる特殊枠（例:「登場/使用できる」）。
+              カード種別によって実際に取れる行動が異なるため、指定した種別のうち
+              そのカードで取れるものをプレイヤーが選ぶ想定。ONのときは下の通常の
+              「アクション」欄の代わりにこちらが使われる（保存データ上はactionKinds優先）。
+              ⚠ エンジン未対応（選択UIの実装が必要。保存のみ可） */}
+          <div style={{ marginBottom: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666', marginBottom: 4 }}>
+              <input
+                type="checkbox"
+                checked={!!(step.actionKinds && step.actionKinds.length > 0)}
+                onChange={(e) => onChange({ actionKinds: e.target.checked ? [{ kind: 'summon' }] : undefined })}
+              />
+              登場/使用/進化を複数組み合わせる（例:「登場/使用できる」。ONのときは下のアクション欄の代わりに使用）
+              <span style={{ fontSize: 10, color: '#e65100' }}>※エンジン未対応</span>
+            </label>
+            {step.actionKinds && step.actionKinds.length > 0 && (
+              <div>
+                <MultiButtonGroup
+                  options={[{ code: 'summon', label: '登場' }, { code: 'use', label: '使用' }, { code: 'evolve', label: '進化' }]}
+                  values={step.actionKinds.map((k) => k.kind)}
+                  onToggle={(code, on) => {
+                    const cur = step.actionKinds || [];
+                    const next = on
+                      ? [...cur, { kind: code as RuleActionKind['kind'] }]
+                      : cur.filter((k) => k.kind !== code);
+                    onChange({ actionKinds: next.length > 0 ? next : [{ kind: 'summon' }] });
+                  }}
+                  accentColor="#1976d2"
+                />
+                {step.actionKinds.map((k, ki) => {
+                  const kindLabel = k.kind === 'summon' ? '登場' : k.kind === 'use' ? '使用' : '進化';
+                  const updateKind = (patch: Partial<RuleActionKind>) => {
+                    const next = (step.actionKinds || []).slice();
+                    next[ki] = { ...next[ki], ...patch };
+                    onChange({ actionKinds: next });
+                  };
+                  return (
+                    <div key={k.kind} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, padding: '4px 6px', background: '#f3f6fc', borderRadius: 4, border: '1px solid #c5d4ea' }}>
+                      <span style={{ fontSize: 11, fontWeight: 'bold', color: '#1976d2', minWidth: 32 }}>{kindLabel}</span>
+                      <input
+                        type="number"
+                        placeholder="コスト増減"
+                        value={k.value === undefined ? '' : String(k.value)}
+                        onChange={(e) => updateKind({ value: e.target.value === '' ? undefined : e.target.value })}
+                        style={{ width: 90, padding: '3px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                      />
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11 }}>
+                        <input
+                          type="checkbox"
+                          checked={!!k.costFree}
+                          onChange={(e) => updateKind({ costFree: e.target.checked })}
+                        />
+                        コストを支払わず
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           {(!hasDesignatedGroups || step.groupsShareAction === true) && (
           <div style={{ marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 2 }}>

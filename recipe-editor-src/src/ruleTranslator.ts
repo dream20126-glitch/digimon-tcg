@@ -312,6 +312,11 @@ export function hasRuleTranslator(mainAction: string | undefined): boolean {
 // 1つの step に対し、rules を翻訳して step フィールドへマージ
 export function applyRulesToStep(mainAction: string, rules: MiniStep[] | undefined, step: any): void {
   if (!Array.isArray(rules) || rules.length === 0) return;
+  // 「登場/使用/進化」複数組み合わせ（actionKinds）はエンジン未対応のため、メインアクション毎の
+  // 複雑な翻訳分岐には組み込まず、ルール配列と同じ並びでそのまま素通しする（保存のみ可）
+  if (rules.some((r) => Array.isArray(r.actionKinds) && r.actionKinds.length > 0)) {
+    step.rule_action_kinds = rules.map((r) => (Array.isArray(r.actionKinds) && r.actionKinds.length > 0) ? r.actionKinds : null);
+  }
   const translator = TRANSLATORS[mainAction];
   if (!translator) {
     // 翻訳器無しのメインアクション: rules を rules フィールドにそのまま残す（汎用処理）

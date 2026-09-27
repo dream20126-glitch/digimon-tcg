@@ -8570,10 +8570,13 @@ function ConditionsHybridEditor({
                     />
                   )}
                   {/* 参照ゾーン（手札/トラッシュ/セキュリティ/進化元/バトルエリア）が自分/相手
-                      どちらのものかを指定する。汎用の「対象」セレクタ（showSubjectSelector）は
-                      対象の条件（supportsMultiValue）パネルでは非表示のため、参照カテゴリだけは
-                      常にこの簡易セレクタを出す（「状態」ゾーンは参照対象ボタンで別途指定するため対象外） */}
-                  {cat.code === 'ref' && refZoneOf(c) !== 'state' && (
+                      どちらのものかを指定する。汎用の「対象」セレクタ（showSubjectSelector、
+                      同じc.subjectを書き込む「対象」欄）が表示される発動条件/トリガー条件等の
+                      パネルではそちらと二重制御になり競合する（片方の操作でもう片方の選択が
+                      巻き戻る）ため出さない。対象の条件（supportsMultiValue）等showSubjectSelector
+                      が非表示のパネルでのみ、参照カテゴリの簡易セレクタとして表示する
+                      （「状態」ゾーンは参照対象ボタンで別途指定するため対象外） */}
+                  {cat.code === 'ref' && refZoneOf(c) !== 'state' && !showSubjectSelector && (
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>参照先</div>
                       <ButtonGroup

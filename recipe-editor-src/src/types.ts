@@ -19,6 +19,12 @@ export interface DesignatedGroup {
   // 3つの展開関数を拡張する必要がある。保存はできるが複数セグメント使用時は動作しない）
   conditionChain?: ConditionChainEntry[];
   count?: number | string;
+  // 直前のグループとの関係。未指定/'and' = 従来通り「両方満たす（別々の候補から複数枚選ぶ）」。
+  // 'or' = 「いずれか一方を満たす1枚を選ぶ」（例:「Lv4以下のクロノモン、または特徴TS」）。
+  // 1件でも'or'があれば、このentry全体を単一のdesignated（condition_chainのセグメント配列）
+  // として出力する（designated_groups＝複数カード要求とは異なるJSON形状になる）。
+  // エンジン対応済み（filterAssemblyCandidatesのcondition_chain評価を流用）
+  op?: 'and' | 'or';
 }
 
 // アプ合体/ジョグレス進化（app_gattai_evolve/jogress_evolve）専用: 素材候補スロット1つ分。

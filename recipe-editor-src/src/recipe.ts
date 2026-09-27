@@ -787,6 +787,28 @@ function buildDesignatedGroupsFields(groups: DesignatedGroup[]): Array<{
 function applyDesignatedGroupsTo(target: any, entry: KeywordEntry, kwEntry?: DictEntry): void {
   if (!kwEntry?.hasNamedParam) return;
   const groups = getDesignatedGroups(entry);
+  const isOrGroups = groups.length > 1 && groups.some((g) => g.op === 'or');
+  if (isOrGroups) {
+    // グループ間に「OR」（例:「Lv4以下のクロノモン、または特徴TS」）が1つでも指定されていれば、
+    // 複数カード要求(designated_groups=AND/別々の候補)ではなく、1枚を選ぶ単一designatedとして
+    // condition_chain（各グループ=1セグメント、group.opでAND合成/OR新セグメントを決定）を出力する。
+    // 「異なる」バリアント(distinct_by)はOR構造と両立しないため、この経路では無視する
+    const chain: ConditionChainEntry[] = groups.map((g) => ({ conditions: g.conditions || [], op: g.op }));
+    const { chainOut } = resolveChainField([], chain);
+    const commonPairs = (entry.commonConditions || []).filter((c) => c.base);
+    const common: any = buildDesignatedConditionFields(commonPairs, 'and');
+    // condition_chainはdesignatedオブジェクトの中に入れる（_substituteDesignatedNameJSが
+    // Object.assign(out, target.designated)でcost itemへ丸ごとコピーするため、こうしないと
+    // condition_chainがcost item側へ渡らない）
+    if (chainOut) common.condition_chain = chainOut;
+    if (Object.keys(common).length > 0) target.designated = common;
+    const firstCount = groups[0]?.count;
+    if (firstCount !== undefined && firstCount !== '' && firstCount !== null) {
+      const n = Number(firstCount);
+      target.count = isNaN(n) ? firstCount : n;
+    }
+    return;
+  }
   if (groups.length === 1) {
     const fields = buildDesignatedGroupsFields(groups)[0];
     const { count: gCount, ...designated } = fields;
@@ -1549,6 +1571,18 @@ function distinctByToConditions(distinctBy: any): ConditionPair[] {
 }
 
 function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
+  // グループ間に「OR」がある場合（applyDesignatedGroupsToのisOrGroups経路）は
+  // designated.condition_chain（セグメント配列）として保存されている。各セグメント=1グループ
+  // として復元する（designated自体に乗っている条件は「共通条件」として先頭グループへ付与）
+  if (Array.isArray(raw?.designated?.condition_chain) && raw.designated.condition_chain.length > 0) {
+    const chain = parseConditionChainStrings(raw.designated.condition_chain) || [];
+    const commonConds = parseDesignatedFields(raw.designated).conds;
+    return chain.map((entry, idx) => ({
+      conditions: idx === 0 ? [...commonConds, ...entry.conditions] : entry.conditions,
+      op: entry.op,
+      count: idx === 0 ? raw?.count : undefined,
+    }));
+  }
   if (Array.isArray(raw?.designated_groups) && raw.designated_groups.length > 0) {
     return raw.designated_groups.map((g: any) => {
       const { conds, op } = parseDesignatedFields(g);

@@ -709,31 +709,54 @@ function KeywordEntriesEditor({
             const removeGroup = (gi: number) => {
               setGroups(groupList.length <= 1 ? [{ conditions: [], conditionsOp: 'and' }] : groupList.filter((_, idx) => idx !== gi));
             };
-            const addGroup = () => setGroups([...groupList, { conditions: [], conditionsOp: 'and' }]);
+            const addGroup = () => setGroups([...groupList, { conditions: [], conditionsOp: 'and', op: 'and' }]);
+            const hasCommonContent = (entry.commonConditions && entry.commonConditions.length > 0)
+              || (Array.isArray(entry.commonConditionsChain) && entry.commonConditionsChain.length > 0);
+            const isOrGroups = groupList.length > 1 && groupList.some((g) => g.op === 'or');
             return (
               <div style={{ marginTop: 6, padding: 6, background: '#fff', border: `1px solid ${accentBorder}`, borderRadius: 4 }}>
                 {groupList.length > 1 && (
-                  <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: `1px dashed ${accentBorder}` }}>
-                    <div style={{ fontSize: 11, fontWeight: 'bold', color: '#666', marginBottom: 2 }}>
-                      共通の絞り込み条件（全グループに自動でAND合成される）
+                  hasCommonContent ? (
+                    <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: `1px dashed ${accentBorder}` }}>
+                      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#666', marginBottom: 2 }}>
+                        共通の絞り込み条件（全グループに自動でAND合成される）
+                      </div>
+                      <ConditionChainField
+                        chain={entry.commonConditionsChain}
+                        legacyPairs={entry.commonConditions}
+                        legacyOp={entry.commonConditionsOp}
+                        onChainChange={(next) => updateEntry(i, { commonConditionsChain: next, commonConditions: [] })}
+                        dict={dict}
+                        titleBase="共通条件"
+                        theme="action"
+                        extraProps={{ defaultSubject: '', showSubjectSelector: false }}
+                      />
+                      {Array.isArray(entry.commonConditionsChain) && entry.commonConditionsChain.length > 1 && (
+                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 複合条件（AND内包OR）はエンジン未対応です（保存はできますが動作しません）</div>
+                      )}
                     </div>
-                    <ConditionChainField
-                      chain={entry.commonConditionsChain}
-                      legacyPairs={entry.commonConditions}
-                      legacyOp={entry.commonConditionsOp}
-                      onChainChange={(next) => updateEntry(i, { commonConditionsChain: next, commonConditions: [] })}
-                      dict={dict}
-                      titleBase="共通条件"
-                      theme="action"
-                      extraProps={{ defaultSubject: '', showSubjectSelector: false }}
-                    />
-                    {Array.isArray(entry.commonConditionsChain) && entry.commonConditionsChain.length > 1 && (
-                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 複合条件（AND内包OR）はエンジン未対応です（保存はできますが動作しません）</div>
-                    )}
-                  </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => updateEntry(i, { commonConditionsChain: [{ conditions: [] }] })}
+                      style={{ marginBottom: 8, padding: '2px 8px', border: `1px dashed ${accentBorder}`, background: 'white', borderRadius: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}
+                    >
+                      ＋ 共通の絞り込み条件を追加（全グループに自動でAND合成される）
+                    </button>
+                  )
                 )}
                 {groupList.map((g, gi) => (
                   <div key={gi} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: gi < groupList.length - 1 ? `1px dashed ${accentBorder}` : 'none' }}>
+                    {gi > 0 && (
+                      <div style={{ margin: '4px 0' }}>
+                        <ButtonGroup
+                          options={[{ code: 'and', label: 'AND（両方必要・別々の候補から複数枚）' }, { code: 'or', label: 'OR（いずれか1枚を選ぶ）' }]}
+                          value={g.op || 'and'}
+                          onChange={(v) => updateGroup(gi, { op: (v || 'and') as 'and' | 'or' })}
+                          accentColor={accentBorder}
+                        />
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontSize: 11, fontWeight: 'bold', color: '#666' }}>
                         対象{groupList.length > 1 ? `（${gi + 1}）` : ''}
@@ -759,26 +782,44 @@ function KeywordEntriesEditor({
                       showSubjectSelector={false}
                       conditionsOp={g.conditionsOp || 'and'}
                       onConditionsOpChange={(op) => updateGroup(gi, { conditionsOp: op })}
-                      allowDistinctVariants
+                      allowDistinctVariants={!isOrGroups}
                     />
-                    <div style={{ marginTop: 6 }}>
-                      <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
-                        枚数（アセンブリ等、絞り込んだカードを何枚使うか・省略時は1枚）
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={g.count === undefined ? '' : String(g.count)}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          updateGroup(gi, { count: v === '' ? undefined : Number(v) });
-                        }}
-                        placeholder="例: 1"
-                        style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 80 }}
-                      />
-                    </div>
+                    {!isOrGroups && (
+                      <div style={{ marginTop: 6 }}>
+                        <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
+                          枚数（アセンブリ等、絞り込んだカードを何枚使うか・省略時は1枚）
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={g.count === undefined ? '' : String(g.count)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            updateGroup(gi, { count: v === '' ? undefined : Number(v) });
+                          }}
+                          placeholder="例: 1"
+                          style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 80 }}
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
+                {isOrGroups && (
+                  <div style={{ marginTop: 6, marginBottom: 6 }}>
+                    <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>枚数（OR全体で・省略時は1枚）</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={groupList[0]?.count === undefined ? '' : String(groupList[0].count)}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        updateGroup(0, { count: v === '' ? undefined : Number(v) });
+                      }}
+                      placeholder="例: 1"
+                      style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 80 }}
+                    />
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={addGroup}

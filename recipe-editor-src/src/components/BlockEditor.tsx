@@ -7919,7 +7919,6 @@ interface ConditionsHybridEditorProps {
 const DISTINCT_VARIANT_BY_CATEGORY: Partial<Record<CondCategory, { value: string; label: string }>> = {
   name: { value: 'cond_name_distinct', label: '異なる' },
   lv: { value: 'cond_lv_distinct', label: '異なる' },
-  description: { value: 'cond_description_distinct', label: '異なる' },
   color: { value: 'cond_color_distinct', label: '異なる' },
 };
 // DP以下/以上（cond_dp_le/cond_dp_ge）の「参照」機能: 固定値の代わりに、
@@ -7953,7 +7952,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'description' | 'zone' | 'ref' | 'designated' | 'evo_source' | 'stacked' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'zone' | 'ref' | 'designated' | 'evo_source' | 'stacked' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -7964,8 +7963,7 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'cost', label: 'コスト' },
   { value: 'cost_mod', label: 'コスト増減' },
   { value: 'memory', label: 'メモリー' },
-  { value: 'name', label: '名前' },
-  { value: 'description', label: '記述' },
+  { value: 'name', label: '名前/記述' },
   { value: 'zone', label: '場所' },
   { value: 'ref', label: '参照' },
   { value: 'designated', label: '指定' },
@@ -8109,7 +8107,6 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   memory: 'cond_memory_ge',
   cost_mod: 'cond_cost_mod',
   name: 'cond_name',
-  description: 'cond_description',
   zone: 'cond_zone',
   ref: 'cond_hand_ge',
   designated: DESIGNATED_NAME_COND,
@@ -8151,13 +8148,10 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_feature', label: '完全一致' },
   ],
   name: [
+    { value: 'cond_name_contains', label: '含む' },
     { value: 'cond_name', label: '完全一致' },
     { value: 'cond_name_not', label: '完全一致・除外' },
-    { value: 'cond_name_contains', label: '含む' },
-  ],
-  description: [
-    { value: 'cond_description', label: '完全一致' },
-    { value: 'cond_description_contains', label: '含む' },
+    { value: 'cond_description_contains', label: '記述' },
   ],
 };
 
@@ -8177,7 +8171,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_memory_ge' || base === 'cond_memory_le') return 'memory';
   if (base === 'cond_cost_mod') return 'cost_mod';
   if (base === 'cond_name' || base === 'cond_name_not' || base === 'cond_name_contains' || base === 'cond_name_distinct') return 'name';
-  if (base === 'cond_description' || base === 'cond_description_contains' || base === 'cond_description_distinct') return 'description';
+  if (base === 'cond_description' || base === 'cond_description_contains' || base === 'cond_description_distinct') return 'name';
   if (base === 'cond_zone') return 'zone';
   if (REF_CODE_TO_ZONE_QUANT[base] || isRefFaceCond(base)) return 'ref';
   if (base === DESIGNATED_NAME_COND) return 'designated';

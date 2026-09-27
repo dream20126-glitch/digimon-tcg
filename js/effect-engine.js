@@ -7889,6 +7889,36 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
   }
 
+  // 'target_trigger_source' = 反応トリガー（on_play/on_evolve/on_attack等の盤面スキャン反応）の
+  // 発火元カードを対象にする。「自分のデジモンが登場したとき、そのデジモンは〜を得る」のような
+  // 「そのデジモン」＝トリガー発火元カードを指すケースで使う（same_targetの「直前選択カードを
+  // 再利用」とは別物。効果1でエディタが「そのデジモン」を選ぶとこちらのコードになる）
+  if (step.target === 'target_trigger_source') {
+    const src = ctx.block && ctx.block._eventSourceCard;
+    if (!src) {
+      ctx.addLog && ctx.addLog('⚠ 発火元カードが見つかりません（target_trigger_source）');
+      callback && callback();
+      return;
+    }
+    const _tsOwnArea = (ctx.side === 'player' ? ctx.bs.player.battleArea : ctx.bs.ai.battleArea) || [];
+    const _tsOppArea = (ctx.side === 'player' ? ctx.bs.ai.battleArea : ctx.bs.player.battleArea) || [];
+    const _tsOwnIdx = _tsOwnArea.indexOf(src);
+    const _tsOppIdx = _tsOppArea.indexOf(src);
+    if (_tsOwnIdx >= 0) {
+      step = Object.assign({}, step, { target: 'own:1' });
+      ctx = Object.assign({}, ctx, { _forceTargetIdx: _tsOwnIdx });
+    } else if (_tsOppIdx >= 0) {
+      step = Object.assign({}, step, { target: 'opponent:1' });
+      ctx = Object.assign({}, ctx, { _forceTargetIdx: _tsOppIdx });
+    } else if (src === ctx.card) {
+      step = Object.assign({}, step, { target: 'self' });
+    } else {
+      ctx.addLog && ctx.addLog('⚠ 発火元カードが場にいません（target_trigger_source）');
+      callback && callback();
+      return;
+    }
+  }
+
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
   // _forceTargetIdx で対象が確定済みなら 'ai' 扱い（自動選択パス）

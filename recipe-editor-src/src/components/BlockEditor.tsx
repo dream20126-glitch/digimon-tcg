@@ -2461,6 +2461,9 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   both_card: { l1: 'both', l2: 'card' },
   both_tamer: { l1: 'both', l2: 'tamer' },
   same_target: { l1: 'same_target', l2: '' },
+  // 効果1で「そのデジモン」を選んだ場合の実コード（トリガー発火元カードを指す。
+  // same_targetの「直前選択カードを再利用」とは別物だが、ボタンの見た目は共有する）
+  target_trigger_source: { l1: 'same_target', l2: '' },
   most_security_player: { l1: 'most', l2: 'security' },
   most_trash_player: { l1: 'most', l2: 'trash' },
   most_hand_player: { l1: 'most', l2: 'hand' },
@@ -5931,7 +5934,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eDigimonChecked = eHasDigimonTamer && (eCurTgt.l2 === 'digimon' || eIsOrMode);
             const eTamerChecked = eHasDigimonTamer && (eCurTgt.l2 === 'tamer' || eIsOrMode);
             const eExclusiveL2Options = eL2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer');
-            const eHideCount = eBase === 'self' || eBase === 'self_card' || eBase === 'same_target';
+            const eHideCount = eBase === 'self' || eBase === 'self_card' || eBase === 'same_target' || eBase === 'target_trigger_source';
             const eIsUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(eBase) || eIsOrMode;
             const eShowTargetFilter =
               eCurTgt.l1 === 'self' ||
@@ -5944,7 +5947,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               // self/self_card・same_target は「対象数」UIを表示しない（eHideCount）ため、
               // 直前の対象で付いていた数指定を持ち越さないようここで破棄する
               if (l1 === 'self') { updateEffect({ ...cleared, target: 'self_card' }); return; }
-              if (l1 === 'same_target') { updateEffect({ ...cleared, target: 'same_target' }); return; }
+              // 「そのデジモン」: 効果1ではトリガー発火元カードを指す(target_trigger_source)、
+              // 効果2以降では直前の効果が選んだ対象を再利用する(same_target)、という別コードになる
+              // （ボタンの見た目・ラベルは共通の「そのデジモン」のまま）
+              if (l1 === 'same_target') { updateEffect({ ...cleared, target: isEditingAlt ? 'same_target' : 'target_trigger_source' }); return; }
               const useL2 = l2 || (eCurTgt.l1 === l1 && eCurTgt.l2 ? eCurTgt.l2 : (l1 === 'most' ? 'security' : 'digimon'));
               updateEffect({ ...cleared, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '') + eSuffix });
             };
@@ -6124,7 +6130,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const digimonChecked = hasDigimonTamer && (curTgt.l2 === 'digimon' || isOrMode || isAndMode);
           const tamerChecked = hasDigimonTamer && (curTgt.l2 === 'tamer' || isOrMode || isAndMode);
           const combineMode: 'or' | 'and' = isAndMode ? 'and' : 'or';
-          const hideCount = tgtBase === 'self' || tgtBase === 'self_card' || tgtBase === 'same_target';
+          const hideCount = tgtBase === 'self' || tgtBase === 'self_card' || tgtBase === 'same_target' || tgtBase === 'target_trigger_source';
           const isUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(tgtBase) || isOrMode || isAndMode;
 
           const handleTgtL1 = (l1: string) => {
@@ -6136,7 +6142,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             // self/self_card・same_target は「対象数」UI自体を表示しない（hideCount）ため、
             // 直前に他の対象で付いていた数指定(例: ":1")を持ち越さないようここで破棄する
             if (l1 === 'self') { onChange({ ...block, ...cleared, target: 'self_card' }); return; }
-            if (l1 === 'same_target') { onChange({ ...block, ...cleared, target: 'same_target' }); return; }
+            // 「そのデジモン」: このパネルは常に効果1（block直下）なので、トリガー発火元カードを
+            // 指すtarget_trigger_sourceを使う（same_targetは効果2以降専用）
+            if (l1 === 'same_target') { onChange({ ...block, ...cleared, target: 'target_trigger_source' }); return; }
             // 既に同じL1でL2も選択済みならそれを維持する。新規にL1を選んだ場合は
             // 「デジモン」等を自動選択せず、L2未選択の番兵コード（own_none等）にする
             // （「most」だけは既存の「最も多いセキュリティ」既定を維持）

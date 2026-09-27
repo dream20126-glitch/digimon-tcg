@@ -386,9 +386,9 @@ const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other
 // （以上/以下/完全一致/より多い/より少ない）。cardMatchesFilterは候補カード単体しか見ないため
 // まだ評価されない（エンジン未対応・保存のみ可）。参照先が相手のときのみ<zone>_subject:'opp'
 // を保持する（未指定時は自分＝デフォルト）。進化元(cond_has_evo系)は語形が不規則なため別処理
-const REF_ZONES = ['hand', 'trash', 'security', 'battle_area', 'state_rest', 'state_active'];
+const REF_ZONES = ['hand', 'trash', 'security', 'battle_area', 'state_rest', 'state_active', 'last_action'];
 const REF_QUANTS = ['ge', 'le', 'eq', 'gt', 'lt'];
-const REF_ZONE_COND_RE = /^cond_(hand|trash|security|battle_area|state_rest|state_active)_(ge|le|eq|gt|lt)$/;
+const REF_ZONE_COND_RE = /^cond_(hand|trash|security|battle_area|state_rest|state_active|last_action)_(ge|le|eq|gt|lt)$/;
 function applyRefZoneCond(f: Record<string, any>, c: ConditionPair): boolean {
   let zone: string | undefined; let quant: string | undefined;
   const m = REF_ZONE_COND_RE.exec(c.base);

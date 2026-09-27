@@ -6823,6 +6823,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               sameAsTargetSubject: targetBaseToCondSubject(effectTarget),
               attackContextActive: isAttackTrigger,
               showCostMod: effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'destroy',
+              showLastActionRef: isEditingAlt,
             }}
             commonConditions={effectConditions}
             onCommonConditionsChange={(next) => updateEffect({ conditions: next })}
@@ -8041,6 +8042,10 @@ interface ConditionsHybridEditorProps {
   // （'evo_source'はdigimonのみ、'stacked'はdigimon/tamer両方＝テイマー下として流用）。
   // 未指定時は従来通り常時表示（トリガー条件等、対象概念が無い文脈向けの後方互換）
   targetL2?: 'digimon' | 'tamer' | 'card' | '';
+  // true のとき、「参照」カテゴリのゾーン選択に「直前の効果」を追加する（bs._lastActionCountを
+  // 比較する cond_last_action_ge/le/eq/gt/lt）。効果1には「直前」が存在しないため、
+  // 効果2以降（代替アクション）を編集中のときだけ呼び出し元がtrueを渡すこと
+  showLastActionRef?: boolean;
 }
 // 「異なる」バリアント（名前/Lv/記述/色）。値は不要で、あくまで複数枚選択時の
 // 「互いにこの属性が異なる」という制約を表すプレースホルダー
@@ -8140,6 +8145,11 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   // 見る特殊ゾーン。他ゾーンのge/le/eq等の量的比較とは別軸のため、専用コード(cond_same_state)+
   // 専用UIで扱う（DP参照(cond_dp_le/ge:self等)と同じ「参照」の考え方を状態一致に適用したもの）
   { code: 'state', label: '表示形式' },
+  // 直前の効果（同じ効果ブロック内・代替アクションの直前ステップ）が処理した枚数
+  // （bs._lastActionCount、security_trash_top/bottom/select・deck_trash_top・destroyのみ対応）。
+  // 効果1には「直前」が存在しないため、呼び出し元がshowLastActionRef=trueのときだけ
+  // （効果2以降を編集中のときだけ）出す。ConditionsHybridEditor側でフィルタする
+  { code: 'last_action', label: '直前の効果' },
 ];
 // バトルエリア（デジモン体数）は枚数ではなく体数で数えるゾーン
 const REF_ZONE_UNIT_COUNT = new Set(['battle_area']);
@@ -8151,6 +8161,7 @@ const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq', 'battle_area:gt': 'cond_battle_area_gt', 'battle_area:lt': 'cond_battle_area_lt',
   'state_rest:ge': 'cond_state_rest_ge', 'state_rest:le': 'cond_state_rest_le', 'state_rest:eq': 'cond_state_rest_eq', 'state_rest:gt': 'cond_state_rest_gt', 'state_rest:lt': 'cond_state_rest_lt',
   'state_active:ge': 'cond_state_active_ge', 'state_active:le': 'cond_state_active_le', 'state_active:eq': 'cond_state_active_eq', 'state_active:gt': 'cond_state_active_gt', 'state_active:lt': 'cond_state_active_lt',
+  'last_action:ge': 'cond_last_action_ge', 'last_action:le': 'cond_last_action_le', 'last_action:eq': 'cond_last_action_eq', 'last_action:gt': 'cond_last_action_gt', 'last_action:lt': 'cond_last_action_lt',
 };
 type RefQuant = 'ge' | 'le' | 'eq' | 'gt' | 'lt' | 'face_down' | 'face_up';
 const REF_QUANT_NO_VALUE = new Set<RefQuant>(['face_down', 'face_up']);
@@ -8166,6 +8177,7 @@ const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> 
   cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' }, cond_battle_area_gt: { zone: 'battle_area', quant: 'gt' }, cond_battle_area_lt: { zone: 'battle_area', quant: 'lt' },
   cond_state_rest_ge: { zone: 'state_rest', quant: 'ge' }, cond_state_rest_le: { zone: 'state_rest', quant: 'le' }, cond_state_rest_eq: { zone: 'state_rest', quant: 'eq' }, cond_state_rest_gt: { zone: 'state_rest', quant: 'gt' }, cond_state_rest_lt: { zone: 'state_rest', quant: 'lt' },
   cond_state_active_ge: { zone: 'state_active', quant: 'ge' }, cond_state_active_le: { zone: 'state_active', quant: 'le' }, cond_state_active_eq: { zone: 'state_active', quant: 'eq' }, cond_state_active_gt: { zone: 'state_active', quant: 'gt' }, cond_state_active_lt: { zone: 'state_active', quant: 'lt' },
+  cond_last_action_ge: { zone: 'last_action', quant: 'ge' }, cond_last_action_le: { zone: 'last_action', quant: 'le' }, cond_last_action_eq: { zone: 'last_action', quant: 'eq' }, cond_last_action_gt: { zone: 'last_action', quant: 'gt' }, cond_last_action_lt: { zone: 'last_action', quant: 'lt' },
 };
 function isRefFaceCond(base: string): boolean {
   return base === 'cond_face_down' || base === 'cond_face_up';
@@ -8342,7 +8354,7 @@ function ConditionsHybridEditor({
   supportsMultiValue = false, attackContextActive = false,
   part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false,
   showTypeInTargetFilter = false, conditionsOp, onConditionsOpChange, allowDistinctVariants = false,
-  targetL2 = '',
+  targetL2 = '', showLastActionRef = false,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
     ? { bg: '#e8f7e8', border: '#93c693', accent: '#1a5a1a', icon: '🔔' }
@@ -8586,7 +8598,7 @@ function ConditionsHybridEditor({
                       （c.value にゾーンを保持しているためそのまま表示を維持できる） */}
                   {cat.code === 'ref' && (
                     <ButtonGroup
-                      options={REF_ZONE_OPTIONS}
+                      options={showLastActionRef ? REF_ZONE_OPTIONS : REF_ZONE_OPTIONS.filter((o) => o.code !== 'last_action')}
                       value={refZoneOf(c)}
                       onChange={(zone) => updateAt(i, refApplyZone(zone, refQuantOf(c), c.value))}
                       accentColor={colors.accent}
@@ -8598,8 +8610,8 @@ function ConditionsHybridEditor({
                       パネルではそちらと二重制御になり競合する（片方の操作でもう片方の選択が
                       巻き戻る）ため出さない。対象の条件（supportsMultiValue）等showSubjectSelector
                       が非表示のパネルでのみ、参照カテゴリの簡易セレクタとして表示する
-                      （「状態」ゾーンは参照対象ボタンで別途指定するため対象外） */}
-                  {cat.code === 'ref' && refZoneOf(c) !== 'state' && !showSubjectSelector && (
+                      （「状態」「直前の効果」ゾーンは自分/相手の概念が無いため対象外） */}
+                  {cat.code === 'ref' && refZoneOf(c) !== 'state' && refZoneOf(c) !== 'last_action' && !showSubjectSelector && (
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>参照先</div>
                       <ButtonGroup
@@ -9265,7 +9277,8 @@ function ConditionChainField({
   accentColor?: string;
   extraProps?: Partial<Pick<ConditionsHybridEditorProps,
     'defaultSubject' | 'showSubjectSelector' | 'sameAsTargetSubject' | 'supportsMultiValue' |
-    'attackContextActive' | 'allowDistinctVariants' | 'showCostMod' | 'showTypeInTargetFilter' | 'targetL2'>>;
+    'attackContextActive' | 'allowDistinctVariants' | 'showCostMod' | 'showTypeInTargetFilter' | 'targetL2' |
+    'showLastActionRef'>>;
   // 共通条件（任意）: 下のOR設定（chain）がある場合、その全選択肢に共通でAND適用される条件。
   // onCommonConditionsChangeを渡した呼び出し元でのみ「共通条件」セクションを表示する
   // （例:「登場コスト12以下」AND（「クロノモンの記述がある」OR「特徴タイタン族」））

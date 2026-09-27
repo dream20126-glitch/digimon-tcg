@@ -4575,6 +4575,13 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_cost':    if ((card.playCost || card.cost || 0) !== (cond.value || 0)) return false; break;
       case 'cond_own_security_le': if (bs && bs[side] && bs[side].security && bs[side].security.length > (cond.value || 0)) return false; break;
       case 'cond_own_security_ge': if (bs && bs[side] && bs[side].security && bs[side].security.length < (cond.value || 0)) return false; break;
+      // === 「直前の効果」ゾーン: bs._lastActionCount（security_trash_top/bottom/select・
+      // deck_trash_top・destroyのみ対応）との比較。手札/トラッシュ等と違いsideを問わない単一値 ===
+      case 'cond_last_action_le': { if (!bs) break; if ((bs._lastActionCount || 0) > (cond.value || 0)) return false; break; }
+      case 'cond_last_action_ge': { if (!bs) break; if ((bs._lastActionCount || 0) < (cond.value || 0)) return false; break; }
+      case 'cond_last_action_eq': { if (!bs) break; if ((bs._lastActionCount || 0) !== Number(cond.value || 0)) return false; break; }
+      case 'cond_last_action_gt': { if (!bs) break; if ((bs._lastActionCount || 0) <= (cond.value || 0)) return false; break; }
+      case 'cond_last_action_lt': { if (!bs) break; if ((bs._lastActionCount || 0) >= (cond.value || 0)) return false; break; }
       // === ゾーン枚数条件（subject 駆動: @own_any/@opp_any 等で side 切替） ===
       case 'cond_hand_le': {
         if (!bs) break;

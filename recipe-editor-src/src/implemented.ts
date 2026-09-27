@@ -111,6 +111,9 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_security_le', 'cond_security_ge', 'cond_security_gt', 'cond_security_lt',
   'cond_trash_le', 'cond_trash_ge', 'cond_trash_gt', 'cond_trash_lt',
   'cond_deck_le', 'cond_deck_ge',
+  // 直前の効果が処理した枚数（bs._lastActionCount。security_trash_top/bottom/select・
+  // deck_trash_top・destroyのみ実際に値を記録する）
+  'cond_last_action_ge', 'cond_last_action_le', 'cond_last_action_eq', 'cond_last_action_gt', 'cond_last_action_lt',
   // 状態（レスト/アクティブ状態のデジモンの体数。subject駆動、bothは自分+相手の合計）
   'cond_state_rest_ge', 'cond_state_rest_le', 'cond_state_rest_eq', 'cond_state_rest_gt', 'cond_state_rest_lt',
   'cond_state_active_ge', 'cond_state_active_le', 'cond_state_active_eq', 'cond_state_active_gt', 'cond_state_active_lt',

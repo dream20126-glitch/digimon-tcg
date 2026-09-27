@@ -3537,7 +3537,22 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 />
                 <span style={{ fontSize: 11, color: '#555' }}>枚ごと、</span>
               </div>
+              {/* 直前の効果（同じ効果ブロック内・代替アクションの直前ステップ）が処理した枚数を
+                  参照する特殊枠。「自分のセキュリティを全て破棄する。破棄した1枚ごとに～」等、
+                  L1/L2（自分/相手×ゾーン）に収まらないため専用チェックボックスで切り替える
+                  （ONのとき対象L1/L2ボタンは非表示。security_trash_top/bottom/select・
+                  deck_trash_top・destroyのみ対応。他のアクションはまだ0のまま） */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginBottom: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={refSubject === 'last_action_count'}
+                  onChange={(e) => setSubject(e.target.checked ? 'last_action_count' : '')}
+                />
+                直前の効果で処理した枚数を使う（例:「破棄した枚数ごとに」）
+                <span style={{ fontSize: 10, color: '#e65100' }}>※一部アクションのみ対応</span>
+              </label>
               {/* 対象（2段ボタン方式: このカード/自分/相手 → 進化元/デジモン/テイマー/手札/トラッシュ/セキュリティ/バトルエリア） */}
+              {refSubject !== 'last_action_count' && (
               <div>
                 <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
                 {(() => {
@@ -3599,6 +3614,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   );
                 })()}
               </div>
+              )}
               {/* 状態: デジモン系のみ表示。よく使う2状態はボタン、他は辞書からその他選択 */}
               {isDigimonSubject && (
                 <div style={{ minWidth: 200 }}>

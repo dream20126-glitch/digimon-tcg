@@ -7675,19 +7675,18 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                       const next = chain.filter((_, idx) => idx !== ei);
                       setChain(next.length > 0 ? next : [{ conditions: [] }]);
                     };
-                    const addEntry = () => setChain([...chain, { conditions: [], op: 'and' }]);
+                    // セグメント内で複数条件を組み合わせたい場合は、各セグメントの
+                    // ConditionsHybridEditor自体が複数条件（AND）に対応しているため、
+                    // 「＋条件を追加」は常に新しいセグメント（OR）を追加する
+                    // （AND/OR選択のボタンは廃止。ANDにしたい場合は既存セグメントに条件を追加すればよい）
+                    const addEntry = () => setChain([...chain, { conditions: [], op: 'or' }]);
                     return (
                       <div>
                         {chain.map((entry, ei) => (
                           <div key={ei} style={{ marginTop: ei === 0 ? 0 : 6 }}>
                             {ei > 0 && (
-                              <div style={{ margin: '4px 0' }}>
-                                <ButtonGroup
-                                  options={[{ code: 'and', label: 'AND（かつ）' }, { code: 'or', label: 'OR（または）' }]}
-                                  value={entry.op || 'and'}
-                                  onChange={(v) => updateEntry(ei, { op: (v || 'and') as 'and' | 'or' })}
-                                  accentColor="#946200"
-                                />
+                              <div style={{ margin: '4px 0', fontSize: 11, color: '#946200', fontWeight: 'bold' }}>
+                                {entry.op === 'and' ? 'AND（かつ）' : 'OR（または）'}
                               </div>
                             )}
                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
@@ -7721,7 +7720,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                           onClick={addEntry}
                           style={{ marginTop: 6, padding: '2px 8px', border: '1px dashed #946200', background: 'white', color: '#946200', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
                         >
-                          + 条件を追加（AND/OR選択）
+                          + 条件を追加（OR）
                         </button>
                       </div>
                     );
@@ -8983,19 +8982,17 @@ function ConditionChainField({
     const next = effectiveChain.filter((_, idx) => idx !== ei);
     onChainChange(next.length > 0 ? next : [{ conditions: [] }]);
   };
-  const addEntry = () => onChainChange([...effectiveChain, { conditions: [], op: 'and' }]);
+  // セグメント内で複数条件を組み合わせたい場合は、各セグメントのConditionsHybridEditor
+  // 自体が複数条件（AND）に対応しているため、「＋条件を追加」は常に新しいセグメント（OR）を
+  // 追加する（AND/OR選択のボタンは廃止。ANDにしたい場合は既存セグメントに条件を追加すればよい）
+  const addEntry = () => onChainChange([...effectiveChain, { conditions: [], op: 'or' }]);
   return (
     <div>
       {effectiveChain.map((entry, ei) => (
         <div key={ei} style={{ marginTop: ei === 0 ? 0 : 6 }}>
           {ei > 0 && (
-            <div style={{ margin: '4px 0' }}>
-              <ButtonGroup
-                options={[{ code: 'and', label: 'AND（かつ）' }, { code: 'or', label: 'OR（または）' }]}
-                value={entry.op || 'and'}
-                onChange={(v) => updateEntry(ei, { op: (v || 'and') as 'and' | 'or' })}
-                accentColor={accentColor}
-              />
+            <div style={{ margin: '4px 0', fontSize: 11, color: accentColor, fontWeight: 'bold' }}>
+              {entry.op === 'and' ? 'AND（かつ）' : 'OR（または）'}
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
@@ -9027,7 +9024,7 @@ function ConditionChainField({
         onClick={addEntry}
         style={{ marginTop: 6, padding: '2px 8px', border: '1px dashed ' + accentColor, background: 'white', color: accentColor, borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
       >
-        + 条件を追加（AND/OR選択）
+        + 条件を追加（OR）
       </button>
     </div>
   );

@@ -6391,14 +6391,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <ButtonGroup options={tgtL2Options} value={curTgt.l2} onChange={handleTgtL2} accentColor="#b76e00" />
                   </div>
                 )}
-                {/* デジモン対象、または「このカード」対象: 「進化元」（スタックのみ）/
-                    「重ねられているカード」（スタック＋本体）をサブ選択肢として表示する
-                    （位置は右の対象数ボックス側に表示）。値はcond_target_evo_source/
-                    cond_target_stackとしてtargetFilterに保存する。
+                {/* デジモン対象、「このカード」対象、または「そのデジモン」対象:
+                    「進化元」（スタックのみ）/「重ねられているカード」（スタック＋本体）を
+                    サブ選択肢として表示する（位置は右の対象数ボックス側に表示）。
+                    値はcond_target_evo_source/cond_target_stackとしてtargetFilterに保存する。
                     場所/位置/裏表の表示が必要なアクション（hasFromZones）のときのみ表示する。
                     「〇〇に置く」では「指定なし」を選べず、進化元/重ねられているカードの
                     いずれかを必ず選ぶ（置く先が必ずどちらかのスタックになるため） */}
-                {actionHasFromZones && (curTgt.l2 === 'digimon' || curTgt.l1 === 'self') && (() => {
+                {actionHasFromZones && (curTgt.l2 === 'digimon' || curTgt.l1 === 'self' || curTgt.l1 === 'same_target') && (() => {
                   const isPlaceAction = PLACE_ACTION_CODES.has(block.action || '');
                   const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                   const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
@@ -6599,11 +6599,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </>
                     );
                   })()}
-                  {/* デジモン対象、または「このカード」対象＋進化元/重ねられているカードの
-                      サブ選択肢（左の対象ボックス側）を選んでいるときだけ、その位置
-                      （本体/上/下/選んで）をここに表示する。
+                  {/* デジモン対象、「このカード」対象、または「そのデジモン」対象＋進化元/
+                      重ねられているカードのサブ選択肢（左の対象ボックス側）を選んでいるときだけ、
+                      その位置（本体/上/下/選んで）をここに表示する。
                       裏表指定は「本体」以外（上/下/選んで）のときのみ表示する（block.conditionsへ保存） */}
-                  {(curTgt.l2 === 'digimon' || curTgt.l1 === 'self') && !effectIsPlaceActive && (() => {
+                  {(curTgt.l2 === 'digimon' || curTgt.l1 === 'self' || curTgt.l1 === 'same_target') && !effectIsPlaceActive && (() => {
                     const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                     const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
                     const activeCond = evoCond || stackCond;

@@ -2896,6 +2896,11 @@ const PERREF_L1 = [
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
   { code: 'both', label: '両方' },
+  // 直前の効果（同じ効果ブロック内・代替アクションの直前ステップ）が処理した枚数
+  // （bs._lastActionCount）。L2に相当する下位選択が無く、このボタン単独でrefSubjectが
+  // 'last_action_count' に確定する特殊枠（security_trash_top/bottom/select・deck_trash_top・
+  // destroyのみ実際に値を記録するため、他のアクションではまだ0のまま）
+  { code: 'last_action', label: '直前の効果' },
 ];
 const PERREF_L2: Record<string, { code: string; label: string }[]> = {
   self: [
@@ -2947,6 +2952,7 @@ const PERREF_STATE_ELIGIBLE_SUBJECTS = new Set([
 // REF_SUBJECTSコード → PERREF_L1 の逆引き
 function perRefToL1(code: string): string {
   if (code === 'evo_source') return 'self';
+  if (code === 'last_action_count') return 'last_action';
   if (code.startsWith('own_') && PERREF_L2_CODES.has(code)) return 'own';
   if (code.startsWith('opp_') && PERREF_L2_CODES.has(code)) return 'opp';
   if (code.startsWith('both_') && PERREF_L2_CODES.has(code)) return 'both';
@@ -3537,22 +3543,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 />
                 <span style={{ fontSize: 11, color: '#555' }}>枚ごと、</span>
               </div>
-              {/* 直前の効果（同じ効果ブロック内・代替アクションの直前ステップ）が処理した枚数を
-                  参照する特殊枠。「自分のセキュリティを全て破棄する。破棄した1枚ごとに～」等、
-                  L1/L2（自分/相手×ゾーン）に収まらないため専用チェックボックスで切り替える
-                  （ONのとき対象L1/L2ボタンは非表示。security_trash_top/bottom/select・
-                  deck_trash_top・destroyのみ対応。他のアクションはまだ0のまま） */}
-              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, marginBottom: 4 }}>
-                <input
-                  type="checkbox"
-                  checked={refSubject === 'last_action_count'}
-                  onChange={(e) => setSubject(e.target.checked ? 'last_action_count' : '')}
-                />
-                直前の効果で処理した枚数を使う（例:「破棄した枚数ごとに」）
-                <span style={{ fontSize: 10, color: '#e65100' }}>※一部アクションのみ対応</span>
-              </label>
-              {/* 対象（2段ボタン方式: このカード/自分/相手 → 進化元/デジモン/テイマー/手札/トラッシュ/セキュリティ/バトルエリア） */}
-              {refSubject !== 'last_action_count' && (
+              {/* 対象（2段ボタン方式: このカード/自分/相手/両方/直前の効果 → 進化元/デジモン/
+                  テイマー/手札/トラッシュ/セキュリティ/バトルエリア）。「直前の効果」はL1単独で
+                  完結する特殊枠（L2無し。security_trash_top/bottom/select・deck_trash_top・
+                  destroyのみ実際にbs._lastActionCountを記録するため、他のアクションでは0のまま） */}
               <div>
                 <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
                 {(() => {
@@ -3560,6 +3554,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   const l2Options = PERREF_L2[curL1] || [];
                   const handleL1 = (l1: string) => {
                     if (!l1) { setSubject(''); return; }
+                    if (l1 === 'last_action') { setSubject('last_action_count'); return; }
                     const opts = PERREF_L2[l1] || [];
                     if (opts.length === 0) return;
                     const keepCurrent = opts.some((o) => o.code === refSubject);
@@ -3614,7 +3609,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   );
                 })()}
               </div>
-              )}
               {/* 状態: デジモン系のみ表示。よく使う2状態はボタン、他は辞書からその他選択 */}
               {isDigimonSubject && (
                 <div style={{ minWidth: 200 }}>

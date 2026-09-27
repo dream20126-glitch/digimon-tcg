@@ -622,22 +622,15 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
         }
       });
     }
-    // 「セキュリティでめくれたときも同じ内容で発動する」: 同じレシピを section:'security'
-    // ブロックとして別途作らなくて済むよう、このブロックの内容をそのまま recipe.security
-    // へも複製出力する（section:'security'ブロックの標準経路と全く同じappendStep呼び出し）。
-    // _mirror_of マーカーで「どのトリガーの複製か」を記録し、再読み込み時に
-    // recipeToBlocks側で対応する元ブロックのmirrorToSecurityへ復元し、複製先の
-    // 別ブロック化を防ぐ（マーカーはエンジンが参照しない余剰キーなので無視される）
-    if (b.mirrorToSecurity && b.trigger) {
-      const beforeLen = Array.isArray(recipe.security) ? recipe.security.length : 0;
-      appendStep(recipe, { ...b, trigger: 'security' }, keywordDict);
-      if (Array.isArray(recipe.security)) {
-        for (let idx = beforeLen; idx < recipe.security.length; idx++) {
-          if (recipe.security[idx] && typeof recipe.security[idx] === 'object') {
-            recipe.security[idx]._mirror_of = b.trigger;
-          }
-        }
-      }
+    // 「セキュリティでめくれたときも同じ内容で発動する」: レシピを二重に書き出さずに済むよう、
+    // recipe.security にはstep配列を複製せず、参照先トリガーコードの文字列だけを書く
+    // （例: security:"on_destroy"）。エンジン側は_lookupTriggerStepsBaseでこの文字列値を
+    // 検出し、参照先（recipe.on_destroy）のstepをそのまま解決する（1段のみ・エンジン対応済み）
+    // 'passive'（キーワード宣言）はcontainer.passive（カード全体で共有する配列）に
+    // 出力されるため、他トリガー同様のtrigger-keyed配列としては存在せず参照できない。
+    // ミラー対象から除外する（UI側でも選べないようにガード済み）
+    if (b.mirrorToSecurity && b.trigger && b.trigger !== 'passive') {
+      recipe.security = b.trigger;
     }
   });
   return recipe;
@@ -1378,10 +1371,18 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
       }
     });
   }
-  // _mirror_of マーカー付きのセキュリティstepを、対応する元ブロック（トリガーが一致する
-  // 'main'セクションのブロック）に結び付け、mirrorToSecurityを復元する。
-  // マッチする元ブロックが見付からなければ通常のセキュリティブロックとして復元する
-  // （appendStepと同じ変換ルールを通すため、他のセキュリティブロックと同様stepsArrayToBlocksを使う）
+  // security:"on_destroy" のような文字列参照（mirrorToSecurity機能・現行フォーマット）を
+  // 対応する元ブロック（トリガーが一致する'main'セクションのブロック）に結び付け、
+  // mirrorToSecurityを復元する。マッチする元ブロックが見付からなければ何もしない
+  // （参照先が消えている壊れたデータのため、復元しようがない）
+  if (typeof recipe.security === 'string' && recipe.security) {
+    const target = blocks.find((b) => b.section === 'main'
+      && (b.trigger === recipe.security || (b.triggers && b.triggers.includes(recipe.security))));
+    if (target) target.mirrorToSecurity = true;
+  }
+  // _mirror_of マーカー付きのセキュリティstep（旧フォーマット・複製配列）を、対応する
+  // 元ブロックに結び付け、mirrorToSecurityを復元する。マッチする元ブロックが見付からなければ
+  // 通常のセキュリティブロックとして復元する（データを失わないため）
   if (Array.isArray(recipe.security)) {
     recipe.security.forEach((s: any) => {
       if (!s || !s._mirror_of) return;

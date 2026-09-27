@@ -6192,6 +6192,13 @@ function _lookupTriggerStepsBase(recipeObj, triggerCode) {
   let result;
   const exact = recipeObj[triggerCode];
   if (Array.isArray(exact)) result = exact.slice();
+  else if (typeof exact === 'string' && exact) {
+    // ミラー参照（例: security:"on_destroy" ＝「セキュリティでめくれたときも【消滅時】と
+    // 同じ内容を発動する」）。レシピエディタのmirrorToSecurity機能がレシピの二重記載を
+    // 避けるために出力する。参照先を1段だけ解決する（無限ループ防止のためネストは辿らない）
+    const redirected = recipeObj[exact];
+    if (Array.isArray(redirected)) result = redirected.slice();
+  }
   const aliasKey = TRIGGER_KEY_ALIASES[triggerCode];
   if (aliasKey) {
     const aliasSteps = recipeObj[aliasKey];

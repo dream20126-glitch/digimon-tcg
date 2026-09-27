@@ -4081,7 +4081,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       「消滅時と全く同じ内容」のような場合にレシピを二重に書かずに済むよう、
                       このブロックの内容をそのままセキュリティ効果としても発動できるようにする
                       （保存時にrecipe.securityへも複製出力・エンジン変更不要） */}
-                  {!isKeywordMode && currentTriggers.length > 0 && (
+                  {/* 'passive'（キーワード宣言）はカード全体で共有するcontainer.passive配列に
+                      出力され、他トリガーのような「このブロック専用の配列」を持たないため、
+                      セキュリティへの参照ミラーが作れない（対象から除外） */}
+                  {!isKeywordMode && currentTriggers.length > 0 && block.trigger !== 'passive' && (
                     <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#1a5a1a', marginTop: 6 }}>
                       <input
                         type="checkbox"

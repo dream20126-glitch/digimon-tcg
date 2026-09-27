@@ -3206,22 +3206,22 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     changeAction(newAction);
   }
 
-  // === 位置（上/下/選んで）・裏表（裏向き/表向き）: 対象欄の右側に一本化して表示するための
+  // === 位置（上/下/上か下）・裏表（裏向き/表向き）: 対象欄の右側に一本化して表示するための
   // 共通ロジック。以前は①辞書の「対象指定」(hasPositionVariant)フラグ付きアクション→
   // アクション欄隣の「📍アクションにかかる位置」列、②辞書の「裏表指定」(hasFaceOption)フラグ→
   // アクション欄そばの「裏向きで」チェックボックス、③「〇〇に置く」→置き場所ボタン下の
   // 「上/下/下か上」(deckPosition、別語彙)の3箇所に分散していたが、対象欄の右側の1箇所に統合する。
-  // 「〇〇に置く」(PLACE_ACTION_CODES)は常に位置・裏表の対象として扱う（辞書フラグの有無を問わない。
-  // 元々PLACE_ZONE_MAPでhasPosition/hasFace固定trueだったのを踏襲）
   const effectCurVariant = getActionVariant(effectAction);
   const { flaggedBases: effectFlaggedBases, autoGroupBases: effectAutoGroupBases } = buildActionDisplay(dict.actions);
   const effectIsFlaggedBaseDirect = effectFlaggedBases.has(effectAction);
   const effectIsVariantOfFlagged = !!(effectCurVariant && (effectFlaggedBases.has(effectCurVariant.base) || effectAutoGroupBases.has(effectCurVariant.base)));
   const effectIsPositionalGeneric = effectIsFlaggedBaseDirect || effectIsVariantOfFlagged;
   const effectIsPlaceActive = PLACE_ACTION_CODES.has(effectAction || '');
-  // 置き場所ごとに位置/裏表の有無が異なる（例: バトルエリアには位置/裏表の概念が無い）ため、
-  // PLACE_ZONE_MAPの該当ゾーンのhasPosition/hasFaceを見る（従来通りゾーン単位で判定）
-  const effectPlaceZoneEntry = PLACE_ZONE_MAP.find((z) => z.action === effectAction);
+  // 置き場所ごとに位置/裏表の有無が異なる（例: バトルエリアには位置/裏表の概念が無い）が、
+  // PLACE_ZONE_MAPの個別フラグではなく、対象欄で選んでいる対象のゾーン（テイマー/デジモン/
+  // セキュリティ＝いずれも重ね順のあるゾーン）から判定する（対象欄側の選択と二重管理しない）
+  const effectTargetL2ForPlace = TARGET_SEL_CODE_TO_L1L2[(effectTarget || '').split(':')[0]]?.l2 || '';
+  const effectPlaceZoneHasPositionFace = effectTargetL2ForPlace === 'security' || effectTargetL2ForPlace === 'tamer' || effectTargetL2ForPlace === 'digimon';
   const effectHasFaceOptionFlag = (() => {
     const exact = dict.actions.find((a) => a.code === effectAction);
     if (exact?.hasFaceOption) return true;
@@ -3232,10 +3232,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectDiscardZoneBases = new Set(DISCARD_ZONE_MAP.map((z) => getActionVariant(z.action)?.base || z.action));
   const effectActionBaseForDiscard = getActionVariant(effectAction || '')?.base || (effectAction || '');
   const effectIsDiscardActive = effectDiscardZoneBases.has(effectActionBaseForDiscard) || effectAction === 'discard';
-  const showEffectPosition = !effectIsDiscardActive && ((effectIsPlaceActive && !!effectPlaceZoneEntry?.hasPosition) || effectIsPositionalGeneric);
-  const showEffectFace = !effectIsDiscardActive && ((effectIsPlaceActive && !!effectPlaceZoneEntry?.hasFace) || effectHasFaceOptionFlag);
+  const showEffectPosition = !effectIsDiscardActive && ((effectIsPlaceActive && effectPlaceZoneHasPositionFace) || effectIsPositionalGeneric);
+  const showEffectFace = !effectIsDiscardActive && ((effectIsPlaceActive && effectPlaceZoneHasPositionFace) || effectHasFaceOptionFlag);
   const effectPositionOptions: { code: string; label: string }[] = effectIsPlaceActive
-    ? [{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }]
+    ? [{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '上か下' }]
     : effectIsFlaggedBaseDirect || (effectCurVariant && effectFlaggedBases.has(effectCurVariant.base))
     ? POSITION_VARIANTS.map((v) => ({ code: v.suffix.slice(1), label: v.label }))
     : effectCurVariant && effectAutoGroupBases.has(effectCurVariant.base)
@@ -3244,12 +3244,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectCurrentPosition: string = effectIsPlaceActive
     ? (() => {
         const dp = isEditingAlt ? editingAlt!.deckPosition : block.deckPosition;
-        return dp === 'top' ? 'top' : dp === 'bottom' ? 'bottom' : dp === 'both' ? 'select' : '';
+        return dp === 'top' ? 'top' : dp === 'bottom' ? 'bottom' : dp === 'both' ? 'both' : '';
       })()
     : (effectCurVariant ? effectCurVariant.suffix.slice(1) : '');
   function setEffectPosition(pos: string) {
     if (effectIsPlaceActive) {
-      const dp = pos === 'top' ? 'top' : pos === 'bottom' ? 'bottom' : pos === 'select' ? 'both' : undefined;
+      const dp = pos === 'top' ? 'top' : pos === 'bottom' ? 'bottom' : pos === 'both' ? 'both' : undefined;
       updateEffect({ deckPosition: dp });
       return;
     }

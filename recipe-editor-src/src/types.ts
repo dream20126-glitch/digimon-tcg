@@ -81,6 +81,13 @@ export interface EffectBlock {
   // 編集時の目印として記録する。エンジンは参照しない（保存はするが動作に影響しない）
   asType?: 'digimon' | 'tamer' | 'option';
   zone?: string; // '' | 'security' | 'trash' | 'hand' | 'breed'
+  // true のとき、このブロック（section:'main'限定）の内容を「セキュリティでめくれたとき」
+  // にも同じ内容で発動する。section:'security'の別ブロックを重複して書かなくて済むように
+  // するための編集用フラグ。JSONでは recipe.security[] に同じstepを複製出力し、
+  // 各stepに _mirror_of:（このブロックのtriggerコード）を付与して再読込時に判別する。
+  // エンジンはこのフラグ自体を参照しない（appendStep時点で通常のsection:'security'
+  // ブロックと全く同じ形へ変換済みのため、実行時は区別なく動作する）
+  mirrorToSecurity?: boolean;
   trigger: string; // code (e.g., 'on_play', 'during_own_turn', 'passive', 'main')。複数選択時はtriggers[0]と一致させる
   // トリガーの複数選択（例: 登場時/進化時どちらでも同じ効果）。2件以上のときのみ意味を持つ。
   // blocksToRecipeで各コードごとに同じstepを複製して出力する。1件以下ならtriggerのみを見る

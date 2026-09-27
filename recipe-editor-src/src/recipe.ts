@@ -622,6 +622,23 @@ export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[])
         }
       });
     }
+    // 「セキュリティでめくれたときも同じ内容で発動する」: 同じレシピを section:'security'
+    // ブロックとして別途作らなくて済むよう、このブロックの内容をそのまま recipe.security
+    // へも複製出力する（section:'security'ブロックの標準経路と全く同じappendStep呼び出し）。
+    // _mirror_of マーカーで「どのトリガーの複製か」を記録し、再読み込み時に
+    // recipeToBlocks側で対応する元ブロックのmirrorToSecurityへ復元し、複製先の
+    // 別ブロック化を防ぐ（マーカーはエンジンが参照しない余剰キーなので無視される）
+    if (b.mirrorToSecurity && b.trigger) {
+      const beforeLen = Array.isArray(recipe.security) ? recipe.security.length : 0;
+      appendStep(recipe, { ...b, trigger: 'security' }, keywordDict);
+      if (Array.isArray(recipe.security)) {
+        for (let idx = beforeLen; idx < recipe.security.length; idx++) {
+          if (recipe.security[idx] && typeof recipe.security[idx] === 'object') {
+            recipe.security[idx]._mirror_of = b.trigger;
+          }
+        }
+      }
+    }
   });
   return recipe;
 }
@@ -1300,7 +1317,12 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
     const arr = recipe[k];
     if (!Array.isArray(arr)) return;
     if (k === 'security') {
-      blocks.push(...stepsArrayToBlocks('security', 'security', arr));
+      // _mirror_of マーカー付きのstepは「他トリガーの内容をそのまま複製したもの」なので、
+      // 独立したセキュリティブロックとしては復元しない（後段でmirrorToSecurityとして
+      // 対応する元ブロックへ結び付ける。マッチする元ブロックが見付からなければ、
+      // データを失わないよう通常のセキュリティブロックとして復元する）
+      const ownSteps = arr.filter((s: any) => !(s && s._mirror_of));
+      if (ownSteps.length > 0) blocks.push(...stepsArrayToBlocks('security', 'security', ownSteps));
     } else if (mergedMainKeys.consumedKeys.has(k)) {
       const unit = mergedMainKeys.units.find((u) => u.sourceKeys.has(k));
       if (unit && !unit.emitted) {
@@ -1353,6 +1375,22 @@ export function recipeToBlocks(recipe: any): EffectBlock[] {
         }
       } else {
         blocks.push(...stepsArrayToBlocks('link', k, arr));
+      }
+    });
+  }
+  // _mirror_of マーカー付きのセキュリティstepを、対応する元ブロック（トリガーが一致する
+  // 'main'セクションのブロック）に結び付け、mirrorToSecurityを復元する。
+  // マッチする元ブロックが見付からなければ通常のセキュリティブロックとして復元する
+  // （appendStepと同じ変換ルールを通すため、他のセキュリティブロックと同様stepsArrayToBlocksを使う）
+  if (Array.isArray(recipe.security)) {
+    recipe.security.forEach((s: any) => {
+      if (!s || !s._mirror_of) return;
+      const target = blocks.find((b) => b.section === 'main'
+        && (b.trigger === s._mirror_of || (b.triggers && b.triggers.includes(s._mirror_of))));
+      if (target) {
+        target.mirrorToSecurity = true;
+      } else {
+        blocks.push(...stepsArrayToBlocks('security', 'security', [s]));
       }
     });
   }

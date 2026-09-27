@@ -4077,6 +4077,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
 
+                  {/* セキュリティ効果は section:'security' の別ブロックとして保存する仕様だが、
+                      「消滅時と全く同じ内容」のような場合にレシピを二重に書かずに済むよう、
+                      このブロックの内容をそのままセキュリティ効果としても発動できるようにする
+                      （保存時にrecipe.securityへも複製出力・エンジン変更不要） */}
+                  {!isKeywordMode && currentTriggers.length > 0 && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#1a5a1a', marginTop: 6 }}>
+                      <input
+                        type="checkbox"
+                        checked={!!block.mirrorToSecurity}
+                        onChange={(e) => onChange({ ...block, mirrorToSecurity: e.target.checked })}
+                      />
+                      🔒 セキュリティでめくれたときも同じ内容を発動する
+                    </label>
+                  )}
+
                   {!perTriggerTimingOpen && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                       <span style={{ fontSize: 11, color: '#666' }}>発動ターン:</span>

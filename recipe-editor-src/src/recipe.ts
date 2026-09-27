@@ -31,6 +31,32 @@ function resolveChainField(legacyPairs: ConditionPair[] | undefined, chain: Cond
   return { flatPairs: segments[0] || [], chainOut: null };
 }
 
+// commonPairs（「共通条件」欄・chain有無に関わらず常にAND適用）とchain（AND内包OR）から、
+// condition/when/extra_conditions（+複数セグメントに収束する場合はcondition_chain）を
+// 組み立てる。resolveChainFieldと異なり、commonPairsはchainの有無に関わらず常に出力に
+// 含まれる（chain側が上書き・無視することはない）
+function resolveCommonPlusChainTriple(commonPairs: ConditionPair[] | undefined, chain: ConditionChainEntry[] | undefined): {
+  condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; condition_chain?: { conditions: string[] }[];
+} {
+  const common = (commonPairs || []).filter((p) => p.base);
+  const chainSegs = Array.isArray(chain) && chain.length > 0
+    ? buildConditionChainSegments(chain).map((seg) => seg.filter((p) => p.base)).filter((seg) => seg.length > 0)
+    : [];
+  const out: { condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; condition_chain?: { conditions: string[] }[] } = {};
+  if (chainSegs.length > 1) {
+    if (common.length >= 1) out.condition = pairToString(common[0]);
+    if (common.length >= 2) out.when = pairToString(common[1]);
+    if (common.length >= 3) out.extra_conditions = common.slice(2).map(pairToString);
+    out.condition_chain = chainSegs.map((seg) => ({ conditions: seg.map(pairToString) }));
+  } else {
+    const merged = [...common, ...(chainSegs[0] || [])];
+    if (merged.length >= 1) out.condition = pairToString(merged[0]);
+    if (merged.length >= 2) out.when = pairToString(merged[1]);
+    if (merged.length >= 3) out.extra_conditions = merged.slice(2).map(pairToString);
+  }
+  return out;
+}
+
 // ConditionChainEntry[] → {conditions:string[]}[]（AND内包OR用のセグメント配列。
 // trigger_conditions_chain/base_conditions_chain/tamer_conditions_chainで共用）。
 // 単一セグメントに収束する場合はnullを返し、呼び出し側は従来のcondition_op方式にフォールバックする
@@ -341,11 +367,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
     if (gs.target) inner.target = gs.target;
     if (gs.duration) inner.duration = gs.duration;
     if (Array.isArray(gs.options) && gs.options.length > 0) inner.options = gs.options.slice();
-    const { flatPairs: validGs, chainOut: gsChain } = resolveChainField(gs.conditions, gs.conditionsChain);
-    if (validGs.length >= 1) inner.condition = pairToString(validGs[0]);
-    if (validGs.length >= 2) inner.when = pairToString(validGs[1]);
-    if (validGs.length >= 3) inner.extra_conditions = validGs.slice(2).map(pairToString);
-    if (gsChain) inner.condition_chain = gsChain;
+    Object.assign(inner, resolveCommonPlusChainTriple(gs.conditions, gs.conditionsChain));
     out.granted_recipe = { [gs.trigger]: [inner] };
   }
   return out;
@@ -380,36 +402,40 @@ function parseFilterObjectWithOp(f: any): { conds: ConditionPair[]; op: 'and' | 
   return { conds: parseFilterObject(f), op: 'and' };
 }
 // ConditionChainEntry[]（AND内包OR）→ カード絞り込み用フィルタオブジェクト。単一セグメントなら
-// 通常のbuildFilterObjectと同じ形、複数セグメントなら{or:[segFilter1,segFilter2,...]}として返す
-// （cardMatchesFilterがfilter.orを再帰的にOR評価するためエンジン対応済み）。
-// chainが空ならlegacyPairsからそのままbuildFilterObjectする（後方互換フォールバック）
+// 通常のbuildFilterObjectと同じ形、複数セグメントなら{...common, or:[segFilter1,segFilter2,...]}
+// として返す（cardMatchesFilterはfilter.orを再帰的にOR評価しつつ、他のトップレベルキーとは
+// AND評価するため、common条件をトップレベルに乗せるだけでエンジン変更無しに「共通条件」を
+// 実現できる）。legacyPairs（「共通条件」欄・chain有無に関わらず常にAND適用）は空でもよい
 function buildConditionChainFilter(chain: ConditionChainEntry[] | undefined, legacyPairs: ConditionPair[] | undefined): Record<string, any> | null {
+  const commonFilter = buildFilterObject(legacyPairs) || {};
   if (Array.isArray(chain) && chain.length > 0) {
     const segments = buildConditionChainSegments(chain)
       .map((seg) => seg.filter((p) => p.base))
       .filter((seg) => seg.length > 0);
     if (segments.length > 1) {
       const segFilters = segments.map((seg) => buildFilterObject(seg)).filter((f): f is Record<string, any> => !!f);
-      return segFilters.length > 0 ? { or: segFilters } : null;
+      if (segFilters.length === 0) return Object.keys(commonFilter).length > 0 ? commonFilter : null;
+      return { ...commonFilter, or: segFilters };
     }
-    if (segments.length === 1) return buildFilterObject(segments[0]);
-    return null;
+    if (segments.length === 1) return buildFilterObject([...(legacyPairs || []).filter((p) => p.base), ...segments[0]]);
   }
-  return buildFilterObject(legacyPairs);
+  return Object.keys(commonFilter).length > 0 ? commonFilter : null;
 }
-// buildConditionChainFilterの逆変換。f.orが2件以上ならchainを復元し、1件以下ならchainなし
-// （呼び出し側は通常のparseFilterObject(WithOp)結果をpairs/opとして使う）
+// buildConditionChainFilterの逆変換。f.orが2件以上ならchainを復元し（f.or以外のトップレベル
+// キーは「共通条件」としてpairsに入れる）、1件以下ならchainなし
 function parseConditionChainFilter(f: any): { pairs: ConditionPair[]; chain?: ConditionChainEntry[] } {
   if (f && Array.isArray(f.or) && f.or.length > 0) {
-    const segPairsList: ConditionPair[][] = f.or.map((sub: any) => parseFilterObject(sub)).filter((arr: ConditionPair[]) => arr.length > 0);
+    const { or, ...common } = f;
+    const commonPairs = parseFilterObject(common);
+    const segPairsList: ConditionPair[][] = or.map((sub: any) => parseFilterObject(sub)).filter((arr: ConditionPair[]) => arr.length > 0);
     if (segPairsList.length > 1) {
       return {
-        pairs: segPairsList[0],
+        pairs: commonPairs,
         chain: segPairsList.map((pairs, idx) => ({ conditions: pairs, op: idx === 0 ? undefined : 'or' as const })),
       };
     }
-    if (segPairsList.length === 1) return { pairs: segPairsList[0] };
-    return { pairs: [] };
+    if (segPairsList.length === 1) return { pairs: [...commonPairs, ...segPairsList[0]] };
+    return { pairs: commonPairs };
   }
   return { pairs: parseFilterObject(f) };
 }
@@ -881,16 +907,19 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // エンジンは参照しないため意図的にJSON出力しない（block.asTypeとしてエディタ内では保持され続ける）
 
   // 条件: 1つ目→condition, 2つ目→when, 3つ目以降→extra_conditions[]
-  // conditionsChain（AND内包OR）が複数セグメントに収束する場合はcondition_chainとして別出力
-  // （⚠ エンジン未対応。保存はできるが複数セグメント使用時は動作しない）
+  // b.conditions は「共通条件」（chain有無に関わらず常にAND適用）として扱う
+  // （triggerConditionsと同じ規約）。conditionsChain（AND内包OR）が複数セグメントに
+  // 収束する場合はcondition_chainとして別出力する
+  // （⚠ chain部分はエンジン未対応。保存はできるが複数セグメント使用時は動作しない。
+  // 共通条件（chain無し/単一セグメント）は従来通りcondition/when/extra_conditionsとして
+  // 動作する）
   {
-    const { flatPairs: validConds, chainOut: chainStrings } = resolveChainField(
-      expandRefExistsAttributeFilters((b.conditions || []).filter((p) => p.base)), b.conditionsChain);
-    if (validConds.length >= 1) step.condition = pairToString(validConds[0]);
-    if (validConds.length >= 2) step.when = pairToString(validConds[1]);
-    if (validConds.length >= 3) step.extra_conditions = validConds.slice(2).map(pairToString);
-    if (chainStrings) step.condition_chain = chainStrings;
-    else if (validConds.length >= 2 && b.conditionsOp === 'or') step.condition_op = 'or';
+    const fields = resolveCommonPlusChainTriple(expandRefExistsAttributeFilters((b.conditions || []).filter((p) => p.base)), b.conditionsChain);
+    Object.assign(step, fields);
+    if (!fields.condition_chain) {
+      const commonLen = (b.conditions || []).filter((p) => p.base).length;
+      if (!b.conditionsChain?.length && commonLen >= 2 && b.conditionsOp === 'or') step.condition_op = 'or';
+    }
   }
 
   // トリガー条件: 配列で出力 (step.trigger_conditions[])
@@ -919,14 +948,17 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   }
 
   // burst_evolve専用: 進化元の絞り込み / 手札に戻すテイマーの絞り込み（trigger_conditionsと同じ
-  // 「文字列配列+op」形式で別々に出力する）
+  // 「文字列配列+op」形式で別々に出力する）。b.burstBaseFilter/burstTamerFilterは「共通条件」
+  // （chain有無に関わらず常にAND適用）として扱う（triggerConditionsと同じ規約）
   {
-    const { flatPairs: validBaseFilter, chainOut: baseFilterChain } = resolveChainField(b.burstBaseFilter, b.burstBaseFilterChain);
+    const validBaseFilter = (b.burstBaseFilter || []).filter((p) => p.base);
     if (validBaseFilter.length > 0) step.base_conditions = validBaseFilter.map(pairToString);
+    const baseFilterChain = buildConditionChainStrings(b.burstBaseFilterChain);
     if (baseFilterChain) step.base_conditions_chain = baseFilterChain;
     else if (validBaseFilter.length >= 2 && b.burstBaseFilterOp === 'or') step.base_conditions_op = 'or';
-    const { flatPairs: validTamerFilter, chainOut: tamerFilterChain } = resolveChainField(b.burstTamerFilter, b.burstTamerFilterChain);
+    const validTamerFilter = (b.burstTamerFilter || []).filter((p) => p.base);
     if (validTamerFilter.length > 0) step.tamer_conditions = validTamerFilter.map(pairToString);
+    const tamerFilterChain = buildConditionChainStrings(b.burstTamerFilterChain);
     if (tamerFilterChain) step.tamer_conditions_chain = tamerFilterChain;
     else if (validTamerFilter.length >= 2 && b.burstTamerFilterOp === 'or') step.tamer_conditions_op = 'or';
   }
@@ -1162,11 +1194,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     }
     if (gs.target) inner.target = gs.target;
     if (gs.duration) inner.duration = gs.duration;
-    const { flatPairs: validG, chainOut: gsChain2 } = resolveChainField(gs.conditions, gs.conditionsChain);
-    if (validG.length >= 1) inner.condition = pairToString(validG[0]);
-    if (validG.length >= 2) inner.when = pairToString(validG[1]);
-    if (validG.length >= 3) inner.extra_conditions = validG.slice(2).map(pairToString);
-    if (gsChain2) inner.condition_chain = gsChain2;
+    Object.assign(inner, resolveCommonPlusChainTriple(gs.conditions, gs.conditionsChain));
     if (Array.isArray(gs.options) && gs.options.length > 0) inner.options = gs.options.slice();
     step.granted_recipe = { [gs.trigger]: [inner] };
   }

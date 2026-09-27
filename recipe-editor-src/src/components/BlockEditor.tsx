@@ -1848,6 +1848,8 @@ function CostListEditor({
                     titleBase="コスト対象の絞り込み"
                     theme="action"
                     extraProps={{ defaultSubject: '', showSubjectSelector: false, targetL2: cCurTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
+                    commonConditions={commonConds.filter((cc) => !isRefFaceCond(cc.base))}
+                    onCommonConditionsChange={(next) => updateCost(i, { ...c, conditions: [...commonConds.filter((cc) => isRefFaceCond(cc.base)), ...next] })}
                   />
                 );
               })()}
@@ -3533,12 +3535,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <div style={{ marginTop: 8 }}>
               <ConditionChainField
                 chain={curPerRefFilterChain}
-                legacyPairs={curPerRefFilter}
-                onChainChange={(next) => setFields({ perRefFilterChain: next, perRefFilter: [] })}
+                legacyPairs={[]}
+                onChainChange={(next) => setFields({ perRefFilterChain: next })}
                 dict={dict}
                 titleBase="さらに絞り込み"
                 theme="action"
                 extraProps={{ defaultSubject: '', showSubjectSelector: false }}
+                commonConditions={curPerRefFilter}
+                onCommonConditionsChange={(next) => setFields({ perRefFilter: next })}
               />
             </div>
           </div>
@@ -3714,25 +3718,27 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <div style={{ marginTop: 8 }}>
               <ConditionChainField
                 chain={block.burstBaseFilterChain}
-                legacyPairs={block.burstBaseFilter}
-                legacyOp={block.burstBaseFilterOp}
-                onChainChange={(next) => onChange({ ...block, burstBaseFilterChain: next, burstBaseFilter: [] })}
+                legacyPairs={[]}
+                onChainChange={(next) => onChange({ ...block, burstBaseFilterChain: next })}
                 dict={dict}
                 titleBase="🧬 進化元の条件"
                 theme="action"
                 extraProps={{ defaultSubject: '', showSubjectSelector: false }}
+                commonConditions={block.burstBaseFilter}
+                onCommonConditionsChange={(next) => onChange({ ...block, burstBaseFilter: next })}
               />
             </div>
             <div style={{ marginTop: 8 }}>
               <ConditionChainField
                 chain={block.burstTamerFilterChain}
-                legacyPairs={block.burstTamerFilter}
-                legacyOp={block.burstTamerFilterOp}
-                onChainChange={(next) => onChange({ ...block, burstTamerFilterChain: next, burstTamerFilter: [] })}
+                legacyPairs={[]}
+                onChainChange={(next) => onChange({ ...block, burstTamerFilterChain: next })}
                 dict={dict}
                 titleBase="💰 コストの条件（手札に戻すテイマー）"
                 theme="action"
                 extraProps={{ defaultSubject: '', showSubjectSelector: false }}
+                commonConditions={block.burstTamerFilter}
+                onCommonConditionsChange={(next) => onChange({ ...block, burstTamerFilter: next })}
               />
             </div>
           </div>
@@ -3850,13 +3856,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <div style={{ marginTop: 8 }}>
               <ConditionChainField
                 chain={block.conditionsChain}
-                legacyPairs={conditions}
-                legacyOp={block.conditionsOp}
-                onChainChange={(next) => onChange({ ...block, conditionsChain: next, conditions: [] })}
+                legacyPairs={[]}
+                onChainChange={(next) => onChange({ ...block, conditionsChain: next })}
                 dict={dict}
                 titleBase="発動条件"
                 theme="trigger"
                 extraProps={{ defaultSubject: '', attackContextActive: isAttackTrigger }}
+                commonConditions={conditions}
+                onCommonConditionsChange={(next) => onChange({ ...block, conditions: next })}
               />
               {Array.isArray(block.conditionsChain) && block.conditionsChain.length > 1 && (
                 <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 複合条件（AND内包OR）はエンジン未対応です（保存はできますが動作しません）</div>
@@ -4627,39 +4634,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </label>
           {triggerCondsOpen && (
             <div style={{ marginTop: 6 }}>
-              {/* 共通条件: 発動ターン（自動）とは別に、ユーザーが追加できる「常に必須」の条件。
-                  下のトリガー条件（OR設定）がある場合、そのすべての選択肢にAND適用される
-                  （例:「登場コスト12以下」＋「クロノモンの記述がある or 特徴タイタン族」） */}
-              {(() => {
-                const commonConds = triggerConditions.filter((c) => !isTriggerTimingCond(c.base));
-                const setCommon = (next: ConditionPair[]) => onChange({
-                  ...block,
-                  triggerConditions: [...triggerConditions.filter((c) => isTriggerTimingCond(c.base)), ...next],
-                });
-                return commonConds.length > 0 ? (
-                  <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px dashed #1a5a1a' }}>
-                    <ConditionsHybridEditor
-                      conditions={commonConds}
-                      onChange={setCommon}
-                      dict={dict}
-                      title="共通条件"
-                      hint="（下のトリガー条件にOR設定がある場合、すべての選択肢に共通でAND適用される）"
-                      theme="trigger"
-                      defaultSubject=""
-                      sameAsTargetSubject={targetBaseToCondSubject(block.target)}
-                      attackContextActive={isAttackTrigger}
-                    />
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setCommon([{ base: '', value: '' }])}
-                    style={{ marginBottom: 8, padding: '2px 8px', border: '1px dashed #1a5a1a', background: 'white', borderRadius: 4, cursor: 'pointer', fontSize: 11, color: '#1a5a1a' }}
-                  >
-                    ＋ 共通条件を追加（OR設定がある場合、すべての選択肢に共通でAND適用される）
-                  </button>
-                );
-              })()}
               <ConditionChainField
                 chain={block.triggerConditionsChain}
                 legacyPairs={[]}
@@ -4668,6 +4642,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 titleBase="トリガー条件"
                 theme="trigger"
                 extraProps={{ defaultSubject: '', sameAsTargetSubject: targetBaseToCondSubject(block.target), attackContextActive: isAttackTrigger }}
+                commonConditions={triggerConditions.filter((c) => !isTriggerTimingCond(c.base))}
+                onCommonConditionsChange={(next) => onChange({
+                  ...block,
+                  triggerConditions: [...triggerConditions.filter((c) => isTriggerTimingCond(c.base)), ...next],
+                })}
               />
             </div>
           )}
@@ -5822,12 +5801,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <div style={{ marginTop: 6 }}>
                       <ConditionChainField
                         chain={et.targetFilterChain}
-                        legacyPairs={et.targetFilter}
-                        onChainChange={(next) => updateExtraTarget(idx, { targetFilterChain: next, targetFilter: [] })}
+                        legacyPairs={[]}
+                        onChainChange={(next) => updateExtraTarget(idx, { targetFilterChain: next })}
                         dict={dict}
                         titleBase="対象の条件"
                         theme="action"
                         extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, targetL2: etCurL1L2.l2 as 'digimon' | 'tamer' | 'card' | '' }}
+                        commonConditions={et.targetFilter}
+                        onCommonConditionsChange={(next) => updateExtraTarget(idx, { targetFilter: next })}
                       />
                     </div>
                   </div>
@@ -6102,12 +6083,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         return (
                           <ConditionChainField
                             chain={effectTargetFilterChain}
-                            legacyPairs={effectTargetFilter.filter((cc) => !isQuickCond(cc.base))}
+                            legacyPairs={[]}
                             onChainChange={(next) => updateEffect({ targetFilterChain: next, targetFilter: quickConds })}
                             dict={dict}
                             titleBase="対象の条件"
                             theme="action"
                             extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, targetL2: eCurTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
+                            commonConditions={effectTargetFilter.filter((cc) => !isQuickCond(cc.base))}
+                            onCommonConditionsChange={(next) => updateEffect({ targetFilter: [...quickConds, ...next] })}
                           />
                         );
                       })()}
@@ -6596,13 +6579,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8, background: '#e0f7f5', border: '1px solid #b2dfdb', borderRadius: 4, padding: 8 }}>
             <ConditionChainField
               chain={effectFromFilterChain}
-              legacyPairs={effectFromFilter}
+              legacyPairs={[]}
               legacyOp={effectFromFilterOp}
               onChainChange={(next) => updateEffect({ fromFilterChain: next, fromFilter: [] })}
               dict={dict}
               titleBase="取得元カードの条件"
               theme="action"
               extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, showTypeInTargetFilter: true }}
+              commonConditions={effectFromFilter}
+              onCommonConditionsChange={(next) => updateEffect({ fromFilter: next })}
             />
             {/* 既に場にいる同名カードは除外（例:「自分のテイマーと同じ名称のカードは登場できない」）。
                 対象数/取得元とは独立したチェックのため、条件エディタとは別枠のチェックボックスで持つ */}
@@ -6697,7 +6682,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </div>
           <ConditionChainField
             chain={effectConditionsChain}
-            legacyPairs={effectConditions}
+            legacyPairs={[]}
             legacyOp={effectConditionsOp}
             onChainChange={(next) => updateEffect({ conditionsChain: next, conditions: [] })}
             dict={dict}
@@ -6709,6 +6694,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               attackContextActive: isAttackTrigger,
               showCostMod: effectAction === 'summon' || effectAction === 'evolve' || effectAction === 'destroy',
             }}
+            commonConditions={effectConditions}
+            onCommonConditionsChange={(next) => updateEffect({ conditions: next })}
           />
           {(() => {
             const hint = isEditingAlt
@@ -6946,12 +6933,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 {/* 内側条件 */}
                 <ConditionChainField
                   chain={grantedStep.conditionsChain}
-                  legacyPairs={grantedStep.conditions}
+                  legacyPairs={[]}
                   onChainChange={(next) => updateGrantedStep({ conditionsChain: next, conditions: [] })}
                   dict={dict}
                   titleBase="付与効果の発動条件"
                   theme="action"
                   extraProps={{ defaultSubject: '', showSubjectSelector: false, attackContextActive: ATTACK_TRIGGER_CODES.includes(grantedStep.trigger) }}
+                  commonConditions={grantedStep.conditions}
+                  onCommonConditionsChange={(next) => updateGrantedStep({ conditions: next })}
                 />
                 {Array.isArray(grantedStep.conditionsChain) && grantedStep.conditionsChain.length > 1 && (
                   <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 複合条件（AND内包OR）はエンジン未対応です（保存はできますが動作しません）</div>
@@ -9064,6 +9053,7 @@ function deriveDefaultConditionChain(pairs: ConditionPair[] | undefined, op: 'an
 // chain が空なら legacyPairs/legacyOp から初期セグメントを1つ導出して表示する
 function ConditionChainField({
   chain, legacyPairs, legacyOp, onChainChange, dict, titleBase, theme, accentColor = '#b76e00', extraProps,
+  commonConditions, onCommonConditionsChange, commonTitleBase = '共通条件',
 }: {
   chain: ConditionChainEntry[] | undefined;
   legacyPairs: ConditionPair[] | undefined;
@@ -9076,6 +9066,12 @@ function ConditionChainField({
   extraProps?: Partial<Pick<ConditionsHybridEditorProps,
     'defaultSubject' | 'showSubjectSelector' | 'sameAsTargetSubject' | 'supportsMultiValue' |
     'attackContextActive' | 'allowDistinctVariants' | 'showCostMod' | 'showTypeInTargetFilter' | 'targetL2'>>;
+  // 共通条件（任意）: 下のOR設定（chain）がある場合、その全選択肢に共通でAND適用される条件。
+  // onCommonConditionsChangeを渡した呼び出し元でのみ「共通条件」セクションを表示する
+  // （例:「登場コスト12以下」AND（「クロノモンの記述がある」OR「特徴タイタン族」））
+  commonConditions?: ConditionPair[];
+  onCommonConditionsChange?: (next: ConditionPair[]) => void;
+  commonTitleBase?: string;
 }) {
   const effectiveChain: ConditionChainEntry[] = (chain && chain.length > 0) ? chain : deriveDefaultConditionChain(legacyPairs, legacyOp);
   const updateEntry = (ei: number, patch: Partial<ConditionChainEntry>) => {
@@ -9093,6 +9089,29 @@ function ConditionChainField({
   const addEntry = () => onChainChange([...effectiveChain, { conditions: [], op: 'or' }]);
   return (
     <div>
+      {onCommonConditionsChange && (
+        (commonConditions && commonConditions.length > 0) ? (
+          <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: `1px dashed ${accentColor}` }}>
+            <ConditionsHybridEditor
+              conditions={commonConditions}
+              onChange={onCommonConditionsChange}
+              dict={dict}
+              title={commonTitleBase}
+              hint="（下の条件にOR設定がある場合、すべての選択肢に共通でAND適用される）"
+              theme={theme}
+              {...extraProps}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onCommonConditionsChange([{ base: '', value: '' }])}
+            style={{ marginBottom: 8, padding: '2px 8px', border: `1px dashed ${accentColor}`, background: 'white', color: accentColor, borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+          >
+            ＋ {commonTitleBase}を追加（OR設定がある場合、すべての選択肢に共通でAND適用される）
+          </button>
+        )
+      )}
       {effectiveChain.map((entry, ei) => (
         <div key={ei} style={{ marginTop: ei === 0 ? 0 : 6 }}>
           {ei > 0 && (

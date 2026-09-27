@@ -8193,6 +8193,13 @@ function formatCostMod(sign: '+' | '-', amount: string, perCount: string, perRef
   return `${sign}${amount}|${perCount}|${perRef}`;
 }
 
+// 「コスト」カテゴリ専用: 登場/使用/両方でカード種別を絞り込むボタンが書き込む cond_type 行の
+// 目印。「タイプ」カテゴリが独自に追加する cond_type とデータ上は同じコードだが、この
+// マーカーを付けることで「タイプ」カテゴリ側のボタン点灯/行表示には出さず、コスト行に
+// インラインの「登場/使用/両方」ボタンとしてのみ表示する（保存形式・エンジン側はcond_type
+// のまま＝recipe.ts変更不要）
+const COST_TYPE_SCOPE_SUBJECT = '__cost_type_scope__';
+
 function ConditionsHybridEditor({
   conditions, onChange, dict, title, hint, theme, defaultSubject = '', showSubjectSelector = true,
   sameAsTargetSubject,
@@ -8277,11 +8284,27 @@ function ConditionsHybridEditor({
   // よく使う条件（色/タイプ/特徴/Lv/DP/名前/場所）ボタンのトグル。
   // オフ→オン: そのカテゴリの既定コードで1行追加。オン→オフ: そのカテゴリの行を全て削除
   function toggleCategory(cat: string) {
-    if (conditions.some((c) => c.subject !== REF_EXISTS_FILTER_MARKER && baseToCategory(c.base) === cat)) {
-      onChange(conditions.filter((c) => c.subject === REF_EXISTS_FILTER_MARKER || baseToCategory(c.base) !== cat));
+    if (conditions.some((c) => c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && baseToCategory(c.base) === cat)) {
+      onChange(conditions.filter((c) => c.subject === REF_EXISTS_FILTER_MARKER || c.subject === COST_TYPE_SCOPE_SUBJECT || baseToCategory(c.base) !== cat));
     } else {
       addRow(CATEGORY_DEFAULT_BASE[cat] || '');
     }
+  }
+  // 「コスト」カテゴリ専用: 登場/使用/両方でカード種別を絞り込む（対象の条件=supportsMultiValue時のみ）。
+  // 登場=デジモン/テイマー（場に出す）・使用=オプション（使用して手放す）・両方=絞り込みなし
+  function getCostTypeScope(): 'summon' | 'use' | 'both' {
+    const t = conditions.find((c) => c.base === 'cond_type' && c.subject === COST_TYPE_SCOPE_SUBJECT);
+    if (!t) return 'both';
+    const vals = String(t.value || '').split(',').map((s) => s.trim());
+    if (vals.length === 1 && vals[0] === 'オプション') return 'use';
+    if (vals.includes('デジモン')) return 'summon';
+    return 'both';
+  }
+  function setCostTypeScope(mode: 'summon' | 'use' | 'both') {
+    const withoutScope = conditions.filter((c) => !(c.base === 'cond_type' && c.subject === COST_TYPE_SCOPE_SUBJECT));
+    if (mode === 'both') { onChange(withoutScope); return; }
+    const value = mode === 'summon' ? 'デジモン,テイマー' : 'オプション';
+    onChange([...withoutScope, { base: 'cond_type', value, subject: COST_TYPE_SCOPE_SUBJECT }]);
   }
   // アタック対象(cond_attack_target_player/digimon)はトリガーボックス側の専用「アタック対象」
   // ボタンで管理するため、その他の条件リストには二重表示しない
@@ -8318,7 +8341,7 @@ function ConditionsHybridEditor({
       {/* よく使う条件: ボタンを押すとその場に詳細設定が展開する（よく使うトリガーと同じ操作感） */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {visibleCategoryOptions.map((cat) => {
-          const active = conditions.some((c) => c.subject !== REF_EXISTS_FILTER_MARKER && baseToCategory(c.base) === cat.code);
+          const active = conditions.some((c) => c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && baseToCategory(c.base) === cat.code);
           return (
             <button
               key={cat.code}
@@ -8354,7 +8377,7 @@ function ConditionsHybridEditor({
     <>
       {/* アクティブなカテゴリごとの詳細設定（値・対象） */}
       {visibleCategoryOptions.map((cat) => {
-        const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => c.subject !== REF_EXISTS_FILTER_MARKER && baseToCategory(c.base) === cat.code);
+        const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && baseToCategory(c.base) === cat.code);
         if (rows.length === 0) return null;
         // 特徴（含む/完全一致）: 別々の行に分けず、1行に両モードのタグをまとめて表示する
         // （「鳥（含む）」「セイバーズ」のように並べて追加できるようにするため、通常の
@@ -8441,6 +8464,21 @@ function ConditionsHybridEditor({
                       onChange={(v) => updateAt(i, { base: v })}
                       accentColor={colors.accent}
                     />
+                  )}
+                  {/* コストのみ: 登場(デジモン/テイマー)/使用(オプション)/両方でカード種別を絞り込む。
+                      対象の条件（supportsMultiValue）でのみ有効（cond_typeの複数値がtype_inとして
+                      解釈されるのはこの文脈だけのため）。書き込む行はCOST_TYPE_SCOPE_SUBJECTで
+                      目印を付け、「タイプ」カテゴリ側の表示・点灯には出さない */}
+                  {cat.code === 'cost' && supportsMultiValue && (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>カード種別</div>
+                      <ButtonGroup
+                        options={[{ code: 'summon', label: '登場' }, { code: 'use', label: '使用' }, { code: 'both', label: '両方' }]}
+                        value={getCostTypeScope()}
+                        onChange={(v) => setCostTypeScope(v as 'summon' | 'use' | 'both')}
+                        accentColor={colors.accent}
+                      />
+                    </div>
                   )}
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>

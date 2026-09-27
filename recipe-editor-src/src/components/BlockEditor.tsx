@@ -4613,8 +4613,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               checked={triggerCondsOpen}
               onChange={(e) => {
                 setTriggerCondsOpen(e.target.checked);
-                if (!e.target.checked && (triggerConditions.length > 0 || (block.triggerConditionsChain && block.triggerConditionsChain.length > 0))) {
-                  onChange({ ...block, triggerConditions: [], triggerConditionsChain: [] });
+                if (!e.target.checked && (triggerConditions.some((c) => !isTriggerTimingCond(c.base)) || (block.triggerConditionsChain && block.triggerConditionsChain.length > 0))) {
+                  // 発動ターン（cond_during_own_turn等・「発動ターン」欄が別途管理）は
+                  // このチェックボックスの対象外なので残す
+                  onChange({ ...block, triggerConditions: triggerConditions.filter((c) => isTriggerTimingCond(c.base)), triggerConditionsChain: [] });
                 }
               }}
             />
@@ -4624,9 +4626,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <div style={{ marginTop: 6 }}>
               <ConditionChainField
                 chain={block.triggerConditionsChain}
-                legacyPairs={triggerConditions}
+                legacyPairs={triggerConditions.filter((c) => !isTriggerTimingCond(c.base))}
                 legacyOp={block.triggerConditionsOp}
-                onChainChange={(next) => onChange({ ...block, triggerConditionsChain: next, triggerConditions: [] })}
+                onChainChange={(next) => onChange({
+                  ...block,
+                  triggerConditionsChain: next,
+                  // 発動ターン（cond_during_own_turn等）は「発動ターン」欄が別途書き込む値なので、
+                  // ここでtriggerConditionsをクリアする際も残す（チェーンが上書きするのは
+                  // ユーザーが直接編集するトリガー条件のみ）
+                  triggerConditions: triggerConditions.filter((c) => isTriggerTimingCond(c.base)),
+                })}
                 dict={dict}
                 titleBase="トリガー条件"
                 theme="trigger"
@@ -8008,6 +8017,12 @@ const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> 
 };
 function isRefFaceCond(base: string): boolean {
   return base === 'cond_face_down' || base === 'cond_face_up';
+}
+// 発動ターン（「発動ターン」欄・setTimingが書き込む）を表す条件かどうか。
+// トリガー条件チェーン（ユーザーが編集するOR条件）とは別枠で常に保持する必要があるため、
+// チェーンのlegacyPairs/onChainChangeの両方でこれらだけ除外・保護する
+function isTriggerTimingCond(base: string): boolean {
+  return base === 'cond_during_own_turn' || base === 'cond_during_opp_turn';
 }
 // 現在の行が指すゾーン（裏向き/表向きのときは c.value に保持したゾーンを見る）。
 // レスト状態/アクティブ状態はバトルエリアの体数条件に「状態」フィルタを重ねたものなので、

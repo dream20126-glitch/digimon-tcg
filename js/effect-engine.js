@@ -7361,8 +7361,16 @@ function _buildBaseCtx(ctxBase, bs) {
 // 従来通り「全件」を満たす必要がある（例:「名称にXを含むか特徴Yを持つこのデジモンが～とき」）
 // chain（[{conditions:["cond_lv_le:4","cond_name_contains:クロノモン"]},{conditions:["cond_feature:TS"]}]
 // のような「AND内包のOR」複合条件・セグメント配列）が指定されていれば、各セグメントをAND評価した上で
-// セグメント間はOR評価する（あればtriggerConditions/opより優先）
+// セグメント間はOR評価する。triggerConditions（例:発動ターンのcond_during_own_turn等、常に
+// 必須の条件）とchainは独立した別々のAND要件として扱う（両方指定されていれば両方満たす必要が
+// ある。例:「自分のターン中」AND（「クロノモンの記述がある」OR「特徴TSを持つ」））
 function _evalTriggerConditionsArray(triggerConditions, op, card, bs, side, chain) {
+  if (Array.isArray(triggerConditions) && triggerConditions.length > 0) {
+    const flatOk = op === 'or'
+      ? triggerConditions.some((cs) => checkConditions(parseRecipeCondition(String(cs)), card, bs, side))
+      : triggerConditions.every((cs) => checkConditions(parseRecipeCondition(String(cs)), card, bs, side));
+    if (!flatOk) return false;
+  }
   if (Array.isArray(chain) && chain.length > 0) {
     return chain.some((seg) => {
       const segConds = [];
@@ -7370,11 +7378,7 @@ function _evalTriggerConditionsArray(triggerConditions, op, card, bs, side, chai
       return segConds.length === 0 || checkConditions(segConds, card, bs, side);
     });
   }
-  if (!Array.isArray(triggerConditions) || triggerConditions.length === 0) return true;
-  if (op === 'or') {
-    return triggerConditions.some((cs) => checkConditions(parseRecipeCondition(String(cs)), card, bs, side));
-  }
-  return triggerConditions.every((cs) => checkConditions(parseRecipeCondition(String(cs)), card, bs, side));
+  return true;
 }
 
 // step.trigger_conditions[] を評価（イベント発火元カードに対して AND、trigger_conditions_op:'or'指定時はOR）

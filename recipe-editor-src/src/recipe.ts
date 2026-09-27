@@ -895,14 +895,28 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
 
   // トリガー条件: 配列で出力 (step.trigger_conditions[])
   // エンジンは「トリガー発火元のカード」に対してこれらの条件を評価する
-  // （trigger_conditions_op:'or' が無ければ従来通り AND、'or' があればいずれか1件でOK。
-  // triggerConditionsChainが複数セグメントに収束する場合はtrigger_conditions_chainとして
-  // 別出力・エンジン対応済み＝_evalTriggerConditionsArrayがそちらを優先評価する）
+  // （trigger_conditions_op:'or' が無ければ従来通り AND、'or' があればいずれか1件でOK）。
+  // b.triggerConditions には発動ターン（cond_during_own_turn等・setTimingが書き込む、
+  // どのセグメントでも常に必須の条件）を保持し、ユーザーが追加するOR条件は
+  // b.triggerConditionsChain 側で独立して管理する（UIのonChainChangeが
+  // triggerConditionsのタイミング条件以外をクリアする形で分離している）。
+  // 複数セグメントに収束する場合、timingConds は trigger_conditions へ、chainは
+  // trigger_conditions_chain へそれぞれ独立出力する（エンジンは両方をAND評価する）。
+  // 収束しない場合（chain無し・単一セグメント）は全て1つのtrigger_conditionsへ
+  // まとめる（従来互換）
   {
-    const { flatPairs: validTriggerConds, chainOut: triggerCondsChain } = resolveChainField(b.triggerConditions, b.triggerConditionsChain);
-    if (validTriggerConds.length > 0) step.trigger_conditions = validTriggerConds.map(pairToString);
-    if (triggerCondsChain) step.trigger_conditions_chain = triggerCondsChain;
-    else if (validTriggerConds.length >= 2 && b.triggerConditionsOp === 'or') step.trigger_conditions_op = 'or';
+    const timingConds = (b.triggerConditions || []).filter((p) => p.base);
+    const chainSegs = Array.isArray(b.triggerConditionsChain) && b.triggerConditionsChain.length > 0
+      ? buildConditionChainSegments(b.triggerConditionsChain).map((seg) => seg.filter((p) => p.base)).filter((seg) => seg.length > 0)
+      : [];
+    if (chainSegs.length > 1) {
+      if (timingConds.length > 0) step.trigger_conditions = timingConds.map(pairToString);
+      step.trigger_conditions_chain = chainSegs.map((seg) => ({ conditions: seg.map(pairToString) }));
+    } else {
+      const merged = [...timingConds, ...(chainSegs[0] || [])];
+      if (merged.length > 0) step.trigger_conditions = merged.map(pairToString);
+      if (!chainSegs.length && merged.length >= 2 && b.triggerConditionsOp === 'or') step.trigger_conditions_op = 'or';
+    }
   }
 
   // burst_evolve専用: 進化元の絞り込み / 手札に戻すテイマーの絞り込み（trigger_conditionsと同じ

@@ -768,17 +768,18 @@ function buildDesignatedConditionFields(conds: ConditionPair[], op: 'and' | 'or'
   return out;
 }
 
-// designated（{condition, when, extra_conditions, condition_op}）→ ConditionPair[]+AND/OR
-// buildDesignatedConditionFields の逆変換（パッシブキーワードの「対象」欄をカード編集画面で
-// 再度開いた時に、保存済みの絞り込み条件をUIへ復元するために使う）
-function parseDesignatedFields(d: any): { conds: ConditionPair[]; op: 'and' | 'or' } {
+// designated（{condition, when, extra_conditions, condition_op, condition_chain}）→
+// ConditionPair[]+AND/OR+チェーン。buildDesignatedConditionFields/resolveCommonPlusChainTripleの
+// 逆変換（パッシブキーワードの「対象」欄をカード編集画面で再度開いた時に、保存済みの
+// 絞り込み条件をUIへ復元するために使う）
+function parseDesignatedFields(d: any): { conds: ConditionPair[]; op: 'and' | 'or'; conditionChain?: ConditionChainEntry[] } {
   const conds: ConditionPair[] = [];
   if (d?.condition) conds.push(stringToPair(String(d.condition)));
   if (d?.when) conds.push(stringToPair(String(d.when)));
   if (Array.isArray(d?.extra_conditions)) {
     d.extra_conditions.forEach((s: string) => conds.push(stringToPair(String(s))));
   }
-  return { conds, op: d?.condition_op === 'or' ? 'or' : 'and' };
+  return { conds, op: d?.condition_op === 'or' ? 'or' : 'and', conditionChain: parseConditionChainStrings(d?.condition_chain) };
 }
 
 // ブロックが持つキーワードの一覧を返す（パッシブ/キーワード付与 共通）。
@@ -839,14 +840,16 @@ export const DISTINCT_ATTR_TO_MARKER: Record<string, string> = Object.fromEntrie
 );
 
 // DesignatedGroup[] → JSON出力用の配列（各要素が {condition?,when?,extra_conditions?,
-// condition_op?,count?,distinct_by?}）。1組だけなら呼び出し側で従来のdesignated/count
-// として単純出力し、2組以上のときだけこの配列(p.designated_groups)を使う。
+// condition_op?,condition_chain?,count?,distinct_by?}）。1組だけなら呼び出し側で従来の
+// designated/count として単純出力し、2組以上のときだけこの配列(p.designated_groups)を使う。
 // conditions に「異なる」プレースホルダー（cond_name_distinct等）が混ざっていれば、
 // 通常のcondition/when/extra_conditionsには含めず distinct_by（属性名の配列）へ抜き出す。
 // 各グループにはそのグループ固有の条件だけを積む（共通条件は混ぜ込まない）。
-// 共通条件は呼び出し側(applyDesignatedGroupsTo)が designated_common として別枠出力する
+// 共通条件は呼び出し側(applyDesignatedGroupsTo)が designated_common として別枠出力する。
+// g.conditionChain（グループ内の「特徴A AND Lv5 OR 名前B」等・AND内包OR）は
+// resolveCommonPlusChainTripleでg.conditionsと合成し、2セグメント以上ならcondition_chainを出力する
 function buildDesignatedGroupsFields(groups: DesignatedGroup[]): Array<{
-  condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; count?: number | string; distinct_by?: string[];
+  condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; condition_chain?: { conditions: string[] }[]; count?: number | string; distinct_by?: string[];
 }> {
   return groups.map((g) => {
     const conds = g.conditions || [];
@@ -854,7 +857,13 @@ function buildDesignatedGroupsFields(groups: DesignatedGroup[]): Array<{
     const distinctAttrs = conds
       .filter((c) => DISTINCT_MARKER_TO_ATTR[c.base])
       .map((c) => DISTINCT_MARKER_TO_ATTR[c.base]);
-    const fields = buildDesignatedConditionFields(realConds, g.conditionsOp || 'and');
+    // 実際に2セグメント以上のOR連結を組んだ場合だけチェーン経路を使う。チェーン未使用の
+    // 既存データ（conditionsOpによる単純AND/OR）は従来通りの出力のまま維持する
+    const hasRealChain = Array.isArray(g.conditionChain)
+      && buildConditionChainSegments(g.conditionChain).map((seg) => seg.filter((p) => p.base)).filter((seg) => seg.length > 0).length > 1;
+    const fields = hasRealChain
+      ? resolveCommonPlusChainTriple(realConds, g.conditionChain)
+      : buildDesignatedConditionFields(realConds, g.conditionsOp || 'and');
     const out: any = { ...fields };
     if (g.count !== undefined && g.count !== '' && g.count !== null) {
       const n = Number(g.count);
@@ -1721,8 +1730,8 @@ function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
   }
   if (Array.isArray(raw?.designated_groups) && raw.designated_groups.length > 0) {
     return raw.designated_groups.map((g: any) => {
-      const { conds, op } = parseDesignatedFields(g);
-      return { conditions: [...conds, ...distinctByToConditions(g?.distinct_by)], conditionsOp: op, count: g?.count };
+      const { conds, op, conditionChain } = parseDesignatedFields(g);
+      return { conditions: [...conds, ...distinctByToConditions(g?.distinct_by)], conditionsOp: op, conditionChain, count: g?.count };
     });
   }
   if (raw?.designated || raw?.count !== undefined) {

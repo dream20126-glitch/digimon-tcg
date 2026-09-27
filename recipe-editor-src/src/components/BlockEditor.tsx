@@ -882,19 +882,26 @@ function KeywordEntriesEditor({
                         </button>
                       )}
                     </div>
-                    <ConditionsHybridEditor
-                      conditions={g.conditions || []}
-                      onChange={(next) => updateGroup(gi, { conditions: next })}
+                    <div style={{ fontSize: 10, color: '#666', marginBottom: 2 }}>
+                      （このキーワードが参照する対象の絞り込み・カードごとに指定。名前/Lv/記述/色は「異なる」も選べます。
+                      例:「特徴セイバーズ AND Lv.5」OR「名称ユノモン」のような複合条件も設定できます）
+                    </div>
+                    <ConditionChainField
+                      chain={g.conditionChain}
+                      legacyPairs={[]}
+                      onChainChange={(next) => updateGroup(gi, { conditionChain: next })}
                       dict={dict}
-                      title="対象"
-                      hint="（このキーワードが参照する対象の絞り込み・カードごとに指定。名前/Lv/記述/色は「異なる」も選べます）"
+                      titleBase="対象"
                       theme="action"
-                      defaultSubject=""
-                      showSubjectSelector={false}
-                      conditionsOp={g.conditionsOp || 'and'}
-                      onConditionsOpChange={(op) => updateGroup(gi, { conditionsOp: op })}
-                      allowDistinctVariants={!isOrGroups}
+                      extraProps={{ defaultSubject: '', showSubjectSelector: false, allowDistinctVariants: !isOrGroups }}
+                      commonConditions={g.conditions || []}
+                      onCommonConditionsChange={(next) => updateGroup(gi, { conditions: next })}
                     />
+                    {groupList.length > 1 && Array.isArray(g.conditionChain) && g.conditionChain.length > 1 && (
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
+                        ⚠ 複数の条件グループそれぞれに複合条件（AND内包OR）を設定する組み合わせはエンジン未対応です（保存はできますが動作しません）
+                      </div>
+                    )}
                     {!isOrGroups && (
                       <div style={{ marginTop: 6 }}>
                         <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>

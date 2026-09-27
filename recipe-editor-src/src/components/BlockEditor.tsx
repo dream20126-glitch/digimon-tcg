@@ -8324,7 +8324,20 @@ function ConditionsHybridEditor({
                     <ButtonGroup
                       options={variantOptionsFor(cat.code as CondCategory)!.map((v) => ({ code: v.value, label: v.label }))}
                       value={c.base}
-                      onChange={(v) => updateAt(i, { base: v })}
+                      onChange={(v) => {
+                        // 特徴（含む/完全一致）は複数タグをカンマ区切りで保持するため、
+                        // 既にタグを追加済みの行でモードを切り替えると、追加済みタグの
+                        // 意味まで一緒に変わってしまう（「鳥」を含むで追加後、完全一致に
+                        // 切り替えると「鳥」が完全一致条件として保存される不具合）。
+                        // 値が入っている場合は既存行を変更せず、新しいモードの行を
+                        // 別途追加する（「鳥（含む）」を残したまま「セイバーズ（完全一致）」
+                        // を追加できるようにする）
+                        if (cat.code === 'feature' && c.value && v !== c.base) {
+                          addRow(v);
+                        } else {
+                          updateAt(i, { base: v });
+                        }
+                      }}
                       accentColor={colors.accent}
                     />
                   )}

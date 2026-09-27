@@ -2479,6 +2479,14 @@ const TARGET_SEL_L2_FROM_ZONES: Record<string, { code: string; label: string }[]
     { code: 'battle_area', label: 'バトルエリア' },
     { code: 'linked', label: 'リンクカード' },
   ],
+  both: [
+    { code: 'hand', label: '手札' },
+    { code: 'trash', label: 'トラッシュ' },
+    { code: 'security', label: 'セキュリティ' },
+    { code: 'deck', label: 'デッキ' },
+    { code: 'battle_area', label: 'バトルエリア' },
+    { code: 'linked', label: 'リンクカード' },
+  ],
 };
 const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
   'own:digimon': 'own', 'own:card': 'own_card', 'own:tamer': 'own_tamer', 'own:option': 'own_option', 'own:security': 'own_security',
@@ -2490,6 +2498,7 @@ const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
   // リンクカード）を対象欄のL2に統合した新規コード（hasFromZonesアクションのときのみ選択可）
   'own:hand': 'own_hand', 'own:trash': 'own_trash', 'own:deck': 'own_deck', 'own:battle_area': 'own_battle_area', 'own:linked': 'own_linked',
   'opp:hand': 'opponent_hand', 'opp:trash': 'opponent_trash', 'opp:deck': 'opponent_deck', 'opp:battle_area': 'opponent_battle_area', 'opp:linked': 'opponent_linked',
+  'both:hand': 'both_hand', 'both:trash': 'both_trash', 'both:security': 'both_security', 'both:deck': 'both_deck', 'both:battle_area': 'both_battle_area', 'both:linked': 'both_linked',
 };
 const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   '': { l1: '', l2: '' },
@@ -2536,6 +2545,12 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   opponent_deck: { l1: 'opp', l2: 'deck' },
   opponent_battle_area: { l1: 'opp', l2: 'battle_area' },
   opponent_linked: { l1: 'opp', l2: 'linked' },
+  both_hand: { l1: 'both', l2: 'hand' },
+  both_trash: { l1: 'both', l2: 'trash' },
+  both_security: { l1: 'both', l2: 'security' },
+  both_deck: { l1: 'both', l2: 'deck' },
+  both_battle_area: { l1: 'both', l2: 'battle_area' },
+  both_linked: { l1: 'both', l2: 'linked' },
 };
 
 // アクションの対象コード（例:"opponent:1"）→ 対応する発動条件/トリガー条件の「対象」コードに

@@ -5154,14 +5154,29 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       プレイヤー＝常にセキュリティを対象にし、無ければ何もしない
                       （「相手プレイヤーにアタックできる」） */}
                   {effectAction === 'attack' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 11, color: '#666' }}>アタック対象:</span>
-                      <ButtonGroup
-                        options={[{ code: 'digimon', label: 'デジモン' }, { code: 'player', label: 'プレイヤー' }, { code: '', label: '指定なし' }]}
-                        value={effectOptions.includes('digimon_only') ? 'digimon' : effectOptions.includes('player_only') ? 'player' : ''}
-                        onChange={(v) => updateEffect({ options: v === 'digimon' ? ['digimon_only'] : v === 'player' ? ['player_only'] : [] })}
-                        accentColor="#1976d2"
-                      />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {/* レストせず: 即時アタックを実行せず、対象に「アタックしてもレストしない」
+                          永続フラグだけを付与する（旧attack_without_restアクションの後継）。
+                          チェック時は即時アタック用の「アタック対象」欄が無意味になるため隠す */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
+                        <input
+                          type="checkbox"
+                          checked={effectOptions.includes('without_rest')}
+                          onChange={(e) => updateEffect({ options: e.target.checked ? ['without_rest'] : [] })}
+                        />
+                        レストせず（レストせずアタックできるようにするだけで、即時アタックはしない）
+                      </label>
+                      {!effectOptions.includes('without_rest') && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 11, color: '#666' }}>アタック対象:</span>
+                          <ButtonGroup
+                            options={[{ code: 'digimon', label: 'デジモン' }, { code: 'player', label: 'プレイヤー' }, { code: '', label: '指定なし' }]}
+                            value={effectOptions.includes('digimon_only') ? 'digimon' : effectOptions.includes('player_only') ? 'player' : ''}
+                            onChange={(v) => updateEffect({ options: v === 'digimon' ? ['digimon_only'] : v === 'player' ? ['player_only'] : [] })}
+                            accentColor="#1976d2"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                   {/* negate（「効果を発揮」）専用: どのトリガー効果を対象にするか + する/しない

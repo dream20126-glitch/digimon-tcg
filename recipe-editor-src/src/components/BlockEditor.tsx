@@ -2346,7 +2346,15 @@ function TriggerSubjectStagedPicker({
   onZoneAndSubjectChange?: (nextSubject: string, nextZone: string[]) => void;
   extraZoneOptions?: { code: string; label: string }[];
 }) {
-  const raw = splitTriggerSubjectSuffix(subject || '');
+  // 「このカード」+セキュリティの位置（上/下）。self_security_top/self_security_bottom
+  // サフィックス（evo/stacked家系のjoinTriggerSubjectSuffixとは別体系。セキュリティ以外の
+  // 場所（手札/トラッシュ）には積み重ね順の概念が無いため対象外）
+  const rawSelfSec = splitTriggerSubjectSuffix(subject || '');
+  const selfSecPos: '' | 'top' | 'bottom' =
+    rawSelfSec.base === 'self_security_top' ? 'top'
+    : rawSelfSec.base === 'self_security_bottom' ? 'bottom'
+    : '';
+  const raw = selfSecPos ? { ...rawSelfSec, base: 'self_security' } : rawSelfSec;
   const cur = SUBJECT_CODE_TO_L1L2[raw.base] || { l1: 'self', l2: '' };
   const zoneMode = !!onZoneAndSubjectChange;
   const currentZone = (zoneIncreaseValue && zoneIncreaseValue[0]) || '';
@@ -2357,6 +2365,9 @@ function TriggerSubjectStagedPicker({
   const setSubject = (nextSubject: string) => {
     if (zoneMode) onZoneAndSubjectChange!(nextSubject, []);
     else onChange(nextSubject);
+  };
+  const setSelfSecPos = (pos: '' | 'top' | 'bottom') => {
+    setSubject('self_security' + (pos ? '_' + pos : ''));
   };
   const setZone = (zone: string) => {
     onZoneAndSubjectChange!(cur.l1, [zone]); // 種別は指定なし（陣営のみ）に戻す
@@ -2462,6 +2473,18 @@ function TriggerSubjectStagedPicker({
           />
           {effectiveL2 && (
             <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 「このカード」+場所はエンジン未実装です（保存はできますが動作しません）</div>
+          )}
+          {/* セキュリティのときだけ位置（上/下）。手札/トラッシュには積み重ね順の概念が無い */}
+          {effectiveL2 === 'security' && (
+            <div style={{ marginTop: 4 }}>
+              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+              <ButtonGroup
+                options={[{ code: '', label: '指定なし' }, { code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                value={selfSecPos}
+                onChange={(v) => setSelfSecPos(v as '' | 'top' | 'bottom')}
+                accentColor={accentColor}
+              />
+            </div>
           )}
         </div>
       )}

@@ -2403,8 +2403,11 @@ function TriggerSubjectStagedPicker({
     else if (nextTamer) setSubject(subjTamerCode);
     else setSubject(cur.l1);
   };
-  // 第3段階: デジモンを選択している場合のみ、進化元/重ねられているカードのサブ選択肢を出す
-  const showStage3 = hasFromZones && effectiveL2 === 'digimon';
+  // 第3段階: デジモンを選択している場合、または発動主体が「このカード」の場合
+  // （このカードがテイマーの可能性もあるため、「このカード自身の下」に重ねられた
+  // カードを指したいケース向け。例:「このテイマーの下から破棄されたとき」）に、
+  // 進化元/重ねられているカードのサブ選択肢を出す
+  const showStage3 = hasFromZones && (effectiveL2 === 'digimon' || cur.l1 === 'self');
   // 第4段階: テイマー選択時、または第3段階で進化元/重ねられているカードを選んだ時
   const showStage4 = hasFromZones && (effectiveL2 === 'tamer' || (showStage3 && raw.family !== ''));
   const setFamily = (family: TriggerStackFamily) => setSubject(joinTriggerSubjectSuffix(raw.base, family, family ? raw.pos : ''));

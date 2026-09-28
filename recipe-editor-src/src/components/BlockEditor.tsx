@@ -6305,7 +6305,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
                 </div>
-                {(!eHideCount || showEffectPosition || showEffectFace || eStackSubCond) && (
+                {(!eHideCount || showEffectPosition || showEffectFace || eStackSubCond || eCurTgt.l2 === 'security') && (
                   <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
                     {!eHideCount && (
                       <>
@@ -6316,6 +6316,64 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         />
                       </>
                     )}
+                    {/* 対象＝自分/相手→セキュリティのときは常に「位置」「裏表」を表示する
+                        （効果1側の同機構と同じ）。action:'security_trash'系のときはsuffix
+                        （_top/_bottom/_select/_all）に位置をエンコードする（エンジン実装済み・
+                        showEffectPositionはeffectIsDiscardActive判定によりsecurity_trash系では
+                        falseになるためここでの表示と重複しない）。それ以外のアクションでは
+                        targetFilterのcond_target_stackへ保存する（⚠エンジン未対応・要実装） */}
+                    {eCurTgt.l2 === 'security' && !effectIsPlaceActive && (() => {
+                      const eIsSecurityTrash = (getActionVariant(effectAction || '')?.base || effectAction) === 'security_trash';
+                      const eSecStackCond = effectTargetFilter.find((c) => c.base === 'cond_target_stack');
+                      const currentPos = eIsSecurityTrash
+                        ? (getActionVariant(effectAction || '')?.suffix || '').replace(/^_/, '')
+                        : (eSecStackCond?.value || '');
+                      const setPos = (v: string) => {
+                        if (eIsSecurityTrash) {
+                          if (!v) return;
+                          changeEffectAction('security_trash_' + v);
+                          return;
+                        }
+                        const cleared = effectTargetFilter.filter((c) => c.base !== 'cond_target_stack');
+                        if (!v) { updateEffect({ targetFilter: cleared }); return; }
+                        updateEffect({ targetFilter: [...cleared, { base: 'cond_target_stack', value: v }] });
+                      };
+                      const faceIdx = effectTargetFilter.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
+                      const faceVal = faceIdx !== -1 ? (effectTargetFilter[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
+                      const setFace = (v: string) => {
+                        const next = effectTargetFilter.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
+                        if (v === 'down') next.push({ base: 'cond_face_down' });
+                        else if (v === 'up') next.push({ base: 'cond_face_up' });
+                        updateEffect({ targetFilter: next });
+                      };
+                      return (
+                        <>
+                          <div style={{ marginTop: 6 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                            <ButtonGroup
+                              options={eIsSecurityTrash
+                                ? [{ code: '', label: '指定なし' }, { code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }, { code: 'all', label: '全て' }]
+                                : [{ code: '', label: '指定なし' }, { code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }]}
+                              value={currentPos}
+                              onChange={setPos}
+                              accentColor="#b76e00"
+                            />
+                            {!eIsSecurityTrash && currentPos !== '' && (
+                              <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠「セキュリティを破棄する」以外のアクションでは位置指定はエンジン未対応（保存はできますが動作しません）</div>
+                            )}
+                          </div>
+                          <div style={{ marginTop: 6 }}>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                            <ButtonGroup
+                              options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
+                              value={faceVal}
+                              onChange={setFace}
+                              accentColor="#b76e00"
+                            />
+                          </div>
+                        </>
+                      );
+                    })()}
                     {eStackSubCond && !effectIsPlaceActive && (() => {
                       const currentPos = eStackSubCond.value || '';
                       const setSubPosition = (v: string) => {
@@ -6670,13 +6728,30 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       />
                     </>
                   )}
-                  {/* 対象＝自分/相手→セキュリティ、かつアクションが「セキュリティを破棄」の
-                      ときだけ「上/下/選んで/全て」の位置ボタンを出す。以前は📥場所パネル側で
-                      target:'own_security'を初期値にしていたが、この対象欄と書き込みが競合し
-                      位置選択後に場所/位置の表示が消える不具合があったため、位置はこちらの
-                      対象欄に一本化した（誰の・どの位置のセキュリティかをここで完結できる） */}
+                  {/* 対象＝自分/相手→セキュリティのときは常に「位置」「裏表」を表示する。
+                      アクションが「セキュリティを破棄」のときは従来通りアクションのsuffix
+                      （_top/_bottom/_select/_all）に位置をエンコードする（エンジン実装済み）。
+                      それ以外のアクションではtargetFilterのcond_target_stack（デジモン/テイマー
+                      対象の位置サブ選択と同じ仕組み）に保存する（⚠エンジン未対応・要実装）。
+                      以前は📥場所パネル側でtarget:'own_security'を初期値にしていたが、この対象欄と
+                      書き込みが競合し位置選択後に場所/位置の表示が消える不具合があったため、
+                      位置はこちらの対象欄に一本化した（誰の・どの位置のセキュリティかをここで完結できる） */}
                   {curTgt.l2 === 'security' && !effectIsPlaceActive && (() => {
                     const isSecurityTrash = (getActionVariant(block.action || '')?.base || block.action) === 'security_trash';
+                    const secStackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
+                    const currentPos = isSecurityTrash
+                      ? (getActionVariant(block.action || '')?.suffix || '').replace(/^_/, '')
+                      : (secStackCond?.value || '');
+                    const setPos = (v: string) => {
+                      if (isSecurityTrash) {
+                        if (!v) return;
+                        changeAction('security_trash_' + v);
+                        return;
+                      }
+                      const cleared = targetFilter.filter((c) => c.base !== 'cond_target_stack');
+                      if (!v) { update('targetFilter', cleared); return; }
+                      update('targetFilter', [...cleared, { base: 'cond_target_stack', value: v }]);
+                    };
                     // 裏表はtargetFilter（対象の絞り込み）へ保存する。block.conditions（発動条件と
                     // 共用の配列）に書くと「発動条件」＞「参照」欄に意図せず反映されてしまうため
                     const faceIdx = targetFilter.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
@@ -6689,17 +6764,20 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     };
                     return (
                       <>
-                        {isSecurityTrash && (
-                          <div style={{ marginTop: 4 }}>
-                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
-                            <ButtonGroup
-                              options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
-                              value={getActionVariant(block.action || '')?.suffix || ''}
-                              onChange={(suffix) => { if (!suffix) return; changeAction('security_trash' + suffix); }}
-                              accentColor="#b76e00"
-                            />
-                          </div>
-                        )}
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 位置</div>
+                          <ButtonGroup
+                            options={isSecurityTrash
+                              ? [{ code: '', label: '指定なし' }, { code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }, { code: 'all', label: '全て' }]
+                              : [{ code: '', label: '指定なし' }, { code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }]}
+                            value={currentPos}
+                            onChange={setPos}
+                            accentColor="#b76e00"
+                          />
+                          {!isSecurityTrash && currentPos !== '' && (
+                            <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠「セキュリティを破棄する」以外のアクションでは位置指定はエンジン未対応（保存はできますが動作しません）</div>
+                          )}
+                        </div>
                         <div style={{ marginTop: 4 }}>
                           <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
                           <ButtonGroup

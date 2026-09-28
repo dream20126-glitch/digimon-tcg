@@ -546,6 +546,8 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     case 'own_card':
       return countWith(player.battleArea.filter(c => c !== null))
            + countWith((player.tamerArea || []).filter(c => c !== null));
+    // メモリー（bs.memory。プレイヤー側=正/AI側=負の共有ゲージ。自分側に無ければ0扱い）
+    case 'own_memory': return bs ? Math.max(0, side === 'player' ? bs.memory : -bs.memory) : 0;
     // --- 相手側 ---
     case 'opp_hand':           return countWith(opponent.hand);
     case 'opp_trash':          return countWith(opponent.trash);
@@ -559,6 +561,8 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     case 'opp_card':
       return countWith(opponent.battleArea.filter(c => c !== null))
            + countWith((opponent.tamerArea || []).filter(c => c !== null));
+    // 相手側のメモリー（own_memoryと同じゲージを符号違いで読む）
+    case 'opp_memory': return bs ? Math.max(0, side === 'player' ? -bs.memory : bs.memory) : 0;
     // 直前の rest 効果でレストさせた枚数（bs._lastRestCount に保存）
     case 'last_rest_count':      return (bs && bs._lastRestCount != null) ? bs._lastRestCount : 0;
     // 直前のアクション（破棄/消滅等）が処理した枚数（bs._lastActionCount に保存）。

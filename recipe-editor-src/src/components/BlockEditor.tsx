@@ -3032,6 +3032,7 @@ const PERREF_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'own_trash', label: 'トラッシュ' },
     { code: 'own_security', label: 'セキュリティ' },
     { code: 'own_battle_area', label: 'バトルエリア' },
+    { code: 'own_memory', label: 'メモリー' },
   ],
   opp: [
     { code: 'opp_digimon', label: 'デジモン' },
@@ -3041,6 +3042,7 @@ const PERREF_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'opp_trash', label: 'トラッシュ' },
     { code: 'opp_security', label: 'セキュリティ' },
     { code: 'opp_battle_area', label: 'バトルエリア' },
+    { code: 'opp_memory', label: 'メモリー' },
   ],
   // 両方（自分+相手を合算してカウント）。ゾーン系（手札等）は合算する意味が薄いため
   // デジモン/テイマー/カード系のみに限定する
@@ -3067,6 +3069,9 @@ const PERREF_STATE_ELIGIBLE_SUBJECTS = new Set([
   'opp_digimon', 'opp_tamer', 'opp_digimon_tamer', 'opp_card',
   'both_digimon', 'both_tamer', 'both_digimon_tamer', 'both_card',
 ]);
+// メモリーはカードの枚数ではなくメモリーゲージの数値そのものを数える特殊対象。
+// 「N枚ごと」ではなく「Nごと」と表示するため、枚数系（ゾーン/カード）と区別する
+const PERREF_MEMORY_CODES = new Set(['own_memory', 'opp_memory']);
 // REF_SUBJECTSコード → PERREF_L1 の逆引き
 function perRefToL1(code: string): string {
   if (code === 'evo_source') return 'self';
@@ -3677,7 +3682,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   onChange={(e) => setFields({ perCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
                   style={{ width: 50, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
                 />
-                <span style={{ fontSize: 11, color: '#555' }}>枚ごと、</span>
+                <span style={{ fontSize: 11, color: '#555' }}>{PERREF_MEMORY_CODES.has(refSubject) ? 'ごと、' : '枚ごと、'}</span>
               </div>
               {/* 対象（2段ボタン方式: このカード/自分/相手/両方/直前の効果 → 進化元/デジモン/
                   テイマー/手札/トラッシュ/セキュリティ/バトルエリア）。「直前の効果」はL1単独で
@@ -6389,7 +6394,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       accentColor="#b76e00"
                     />
                     <ButtonGroup
-                      options={TARGET_SEL_L1_REST}
+                      /* 効果2以降の「そのデジモン」は直前の効果が選んだ対象をそのまま再利用する
+                         （same_target）ため、対象がデジモンとは限らない（テイマー/オプション等も
+                         あり得る）。ラベルだけ「そのカード」に変える（コード自体はsame_targetのまま） */
+                      options={TARGET_SEL_L1_REST.map((o) => (o.code === 'same_target' ? { ...o, label: 'そのカード' } : o))}
                       value={(eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'both') ? TARGET_SEL_NONE_ACTIVE : eCurTgt.l1}
                       onChange={(l1) => setEffTgt(l1)}
                       accentColor="#b76e00"

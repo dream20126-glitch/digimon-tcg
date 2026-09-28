@@ -45,6 +45,8 @@ export const REF_SUBJECTS = [
   { code: 'own_trash',       label: '自分のトラッシュ' },
   { code: 'own_security',    label: '自分のセキュリティ' },
   { code: 'own_battle_area', label: '自分のバトルエリア（全カード）' },
+  // 自分側のメモリー（bs.memory。カードの枚数ではなくメモリーゲージの数値を数える）
+  { code: 'own_memory',      label: '自分側のメモリー' },
   // 相手側
   { code: 'opp_digimon',         label: '相手のデジモン' },
   { code: 'opp_no_evo_digimon', label: '相手の進化元なしデジモン' },
@@ -59,6 +61,8 @@ export const REF_SUBJECTS = [
   { code: 'opp_trash',       label: '相手のトラッシュ' },
   { code: 'opp_security',    label: '相手のセキュリティ' },
   { code: 'opp_battle_area', label: '相手のバトルエリア（全カード）' },
+  // 相手側のメモリー（bs.memory。own_memoryと同じ仕組みで符号違いを読む）
+  { code: 'opp_memory',      label: '相手側のメモリー' },
   // 両方（自分+相手を合算してカウント。例:「レスト状態のデジモン/テイマー1体ごとに」）
   { code: 'both_digimon',        label: '両方のデジモン' },
   { code: 'both_tamer',          label: '両方のテイマー' },

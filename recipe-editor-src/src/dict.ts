@@ -239,6 +239,12 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_linked_eq', kind: 'condition', label: 'リンクカードがちょうどN枚' },
   { code: 'cond_linked_gt', kind: 'condition', label: 'リンクカードがN枚より多い' },
   { code: 'cond_linked_lt', kind: 'condition', label: 'リンクカードがN枚より少ない' },
+  // 「〇〇が減った」: 効果2以降の発動条件専用。「Aするか、Xが減っているなら代わりにB」の
+  // ように使う汎用条件。値に原因（バトルで/効果で/指定なし）を保存する。
+  // ⚠エンジン未対応（減少検知トリガー自体が未実装のため要実装）
+  { code: 'cond_security_decreased', kind: 'condition', label: 'セキュリティが減った' },
+  { code: 'cond_hand_decreased', kind: 'condition', label: '手札が減った' },
+  { code: 'cond_deck_decreased', kind: 'condition', label: 'デッキが減った' },
   { code: 'cond_exists', kind: 'condition', label: 'いるとき' },
   { code: 'cond_opp_exists', kind: 'condition', label: '相手のデジモンがいるとき' },
   { code: 'cond_own_exists', kind: 'condition', label: '自分のデジモンがいるとき' },

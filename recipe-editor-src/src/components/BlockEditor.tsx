@@ -8597,7 +8597,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'zone' | 'ref' | 'designated' | 'evo_source' | 'stacked' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'zone' | 'ref' | 'decrease' | 'designated' | 'evo_source' | 'stacked' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -8611,6 +8611,7 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'name', label: '名前/記述' },
   { value: 'zone', label: '場所' },
   { value: 'ref', label: '参照' },
+  { value: 'decrease', label: '減少' },
   { value: 'designated', label: '指定' },
   // 進化元/重ねられているカードは「対象の条件」パネルではなく、対象欄（デジモン選択後の
   // サブ選択肢）側に移設済み（cond_target_evo_source/cond_target_stackのデータ形式は
@@ -8781,6 +8782,14 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_color', label: '含む' },
     { value: 'cond_color_not', label: '以外' },
   ],
+  // 「〇〇が減った」: 効果2以降の発動条件に付けて「Aするか、Xが減っているなら代わりにBする」
+  // 的な効果を組みたいときに使う汎用条件。原因（バトルで/効果で/指定なし）はc.valueに保存する。
+  // ⚠エンジン未対応（on_security_reduced等の減少検知トリガー自体が未実装のため要実装）
+  decrease: [
+    { value: 'cond_security_decreased', label: 'セキュリティ' },
+    { value: 'cond_hand_decreased', label: '手札' },
+    { value: 'cond_deck_decreased', label: 'デッキ' },
+  ],
   lv: [
     { value: 'cond_lv_ge', label: '以上' },
     { value: 'cond_lv_le', label: '以下' },
@@ -8841,6 +8850,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_description' || base === 'cond_description_contains' || base === 'cond_description_distinct') return 'name';
   if (base === 'cond_zone') return 'zone';
   if (REF_CODE_TO_ZONE_QUANT[base] || isRefFaceCond(base) || base === 'cond_same_state') return 'ref';
+  if (base === 'cond_security_decreased' || base === 'cond_hand_decreased' || base === 'cond_deck_decreased') return 'decrease';
   if (base === DESIGNATED_NAME_COND) return 'designated';
   if (base === 'cond_target_stack') return 'stacked';
   if (base === 'cond_target_evo_source') return 'evo_source';
@@ -9288,6 +9298,18 @@ function ConditionsHybridEditor({
                           </div>
                         );
                       })()
+                    ) : (c.base === 'cond_security_decreased' || c.base === 'cond_hand_decreased' || c.base === 'cond_deck_decreased') ? (
+                      /* 「〇〇が減った」の原因（バトルで/効果で/指定なし）。指定なし=原因を問わない。
+                         ⚠エンジン未対応（減少検知トリガー自体が未実装のため要実装） */
+                      <div>
+                        <ButtonGroup
+                          options={[{ code: '', label: '指定なし' }, { code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }]}
+                          value={c.value || ''}
+                          onChange={(v) => updateAt(i, { value: v })}
+                          accentColor={colors.accent}
+                        />
+                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ エンジン未対応（保存はできますが動作しません）</div>
+                      </div>
                     ) : typeRedundant ? (
                       <div style={{ fontSize: 11, color: '#888', padding: '4px 6px' }}>
                         （対象で種別を指定済みのため不要）

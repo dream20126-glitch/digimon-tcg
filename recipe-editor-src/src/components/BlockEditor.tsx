@@ -2927,6 +2927,15 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
     warn: '⚠ エンジン未対応: target/位置/裏表/場所のいずれも反映されません（該当カードが来たら追加実装）',
   },
   {
+    // 「進化元」(target:'own'。🎯対象パネルで選んだ自分のデジモンの下に置く)とは別に、
+    // 常に「このカード自身」の下に置く専用の場所。target:'own'側とアクションコードを
+    // 共有すると（activePlaceZoneのz.action===c.action判定、remapPlaceActionForTargetの
+    // z.target逆引き判定の両方が）区別できなくなるため、専用のアクションコードを持たせる
+    code: 'self', label: 'このカード', action: 'place_under_self', target: 'self_card',
+    hasPosition: true, hasFace: true, hasFromZones: true,
+    warn: '⚠ エンジン未対応: place_under_self は辞書未登録・エンジンも未実装の新規アクションです（このカード自身の下に置く想定）',
+  },
+  {
     code: 'battle_area', label: 'バトルエリア', action: 'place_in_battle_area', target: 'self_card',
     // 「このカード自身」が置かれる（BT24-089等）ため、取得元(場所)の概念は無い
     warn: '⚠ このボタン自体は今すぐ使えます（保存はできます）が、place_in_battle_area は辞書未登録・エンジンも未実装の新規アクションです。辞書に登録すると実装状況バッジ等でも認識されます（このカード自身をテイマーエリアに永続カードとして残す想定）',

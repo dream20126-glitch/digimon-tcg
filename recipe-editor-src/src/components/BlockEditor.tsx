@@ -2789,7 +2789,12 @@ const ZONE_INCREASE_UNIMPLEMENTED = new Set(ZONE_INCREASE_OPTIONS.filter((o) => 
 // 発動主体パネルの第2段階（デジモン/テイマー/プレイヤー）ボタン自体を出さない
 // （＝「自分」「相手」だけ選べば「指定なし」の状態になる。ZONE_INCREASE_TRIGGERと同じ
 // ハードコード方式。辞書列が整備されたら不要になる）
-const NO_SUBJECT_TYPE_TRIGGERS = new Set(['when_security_decrease']);
+const NO_SUBJECT_TYPE_TRIGGERS = new Set(['on_security_reduced']);
+// スプシ由来のトリガーコードは前後に余分な空白/改行が混入していることがあるため、
+// 完全一致ではなく trim() してから判定する（NO_SUBJECT_TYPE_TRIGGERS.has(t) の代わりに使う）
+function isNoSubjectTypeTriggerCode(code: string): boolean {
+  return NO_SUBJECT_TYPE_TRIGGERS.has(String(code || '').trim());
+}
 
 // よく使うアクション: カードDB(data/cards.json)のレシピ内action出現数を集計し、
 // 上位のものをボタン化（トリガー家族ボタンと同じ操作感にするため）。
@@ -4262,7 +4267,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             // 辞書「場所指定」フラグが立っているトリガー（破棄されたとき等）を1つでも選んでいれば、
             // 第2段階に手札/トラッシュ/セキュリティ、第3/4段階（進化元/重ねられているカード＋位置）を表示する
             const allTriggersTypeless = currentTriggers.length > 0
-              && currentTriggers.every((t) => NO_SUBJECT_TYPE_TRIGGERS.has(t) || dict.triggers.find((d) => d.code === t)?.noSubjectType);
+              && currentTriggers.every((t) => isNoSubjectTypeTriggerCode(t) || dict.triggers.find((d) => d.code === t)?.noSubjectType);
             const isZoneIncreaseTrigger = currentTriggers.includes(ZONE_INCREASE_TRIGGER);
             const triggerHasFromZones = isZoneIncreaseTrigger || currentTriggers.some((t) => dict.triggers.find((d) => d.code === t)?.hasFromZones);
             // レスト/アクティブ状態フィルタは「このカード/デジモン/テイマー」のときだけ意味を持つ
@@ -4565,7 +4570,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         };
                         const thisIsZoneIncrease = code === ZONE_INCREASE_TRIGGER;
                         const thisHasFromZones = thisIsZoneIncrease || !!dict.triggers.find((d) => d.code === code)?.hasFromZones;
-                        const thisNoSubjectType = NO_SUBJECT_TYPE_TRIGGERS.has(code) || !!dict.triggers.find((d) => d.code === code)?.noSubjectType;
+                        const thisNoSubjectType = isNoSubjectTypeTriggerCode(code) || !!dict.triggers.find((d) => d.code === code)?.noSubjectType;
                         const setThisSubjectAndZone = (nextSubject: string, nextZone: string[]) => {
                           const nextMap = { ...(block.triggerSubjectByCode || {}), [code]: nextSubject };
                           onChange({ ...block, triggerSubjectByCode: nextMap, zoneIncrease: nextZone });

@@ -93,7 +93,7 @@ const TOKEN_MAP: Record<string, string> = {
   'アタックされたとき': 'when_attacked',
   'レストしたとき': 'when_rest',
   'バトルエリアを離れるとき': 'when_leave_battle',
-  'セキュリティが減ったとき': 'when_security_decrease',
+  'セキュリティが減ったとき': 'on_security_reduced',
   '手札に戻ったとき': 'when_return_to_hand',
   'アタック対象が変更されたとき': 'when_target_changed',
   '自分のデジモンが消滅したとき': 'when_own_destroyed',

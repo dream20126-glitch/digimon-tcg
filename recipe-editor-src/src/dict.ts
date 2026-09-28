@@ -184,7 +184,7 @@ export const TRIGGERS: DictEntry[] = [
   { code: 'when_attacked', kind: 'trigger', label: 'アタックされたとき' },
   { code: 'when_rest', kind: 'trigger', label: 'レストしたとき' },
   { code: 'when_leave_battle', kind: 'trigger', label: 'バトルエリアを離れるとき' },
-  { code: 'when_security_decrease', kind: 'trigger', label: 'セキュリティが減ったとき' },
+  { code: 'on_security_reduced', kind: 'trigger', label: 'セキュリティが減ったとき' },
   { code: 'when_return_to_hand', kind: 'trigger', label: '手札に戻ったとき' },
   { code: 'when_target_changed', kind: 'trigger', label: 'アタック対象が変更されたとき' },
   { code: 'when_own_destroyed', kind: 'trigger', label: '自分のデジモンが消滅したとき' },

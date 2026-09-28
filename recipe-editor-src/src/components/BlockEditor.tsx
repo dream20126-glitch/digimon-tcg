@@ -6622,6 +6622,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       defaultSubject=""
                       showSubjectSelector={false}
                       supportsMultiValue={true}
+                      allowDistinctVariants={true}
                       part="buttons"
                       otherOpen={targetFilterOtherOpen}
                       onOtherOpenChange={setTargetFilterOtherOpen}
@@ -8194,10 +8195,10 @@ interface ConditionsHybridEditorProps {
   // 両方セットで渡す。現状は発動条件・コスト対象の絞り込みでのみ有効化している
   conditionsOp?: 'and' | 'or';
   onConditionsOpChange?: (op: 'and' | 'or') => void;
-  // true のとき、名前/Lv/記述/色カテゴリのバリアントボタンに「異なる」を追加する。
+  // true（既定）のとき、名前/Lv/記述/色カテゴリのバリアントボタンに「異なる」を追加する。
   // 「異なる」は単体カードの判定ではなく、複数枚選ぶ際に選んだカード同士がその属性で
   // 異なる必要があるという集合レベルの制約（例:「名称の異なるカードN枚」）を表す
-  // プレースホルダーのため、意味を持つ「対象」（DesignatedGroup）欄でのみ有効にすること
+  // プレースホルダー。ユーザー指定によりデフォルトで全ての条件パネルに表示する
   allowDistinctVariants?: boolean;
   // 呼び出し元の「対象」(L1/L2)選択から渡すtarget種別。進化元/重ねられているカードカテゴリは
   // 対象があって初めて意味を持つため、'digimon'/'tamer'のときだけ該当カテゴリを表示する
@@ -8302,6 +8303,7 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   { code: 'trash', label: 'トラッシュ' },
   { code: 'security', label: 'セキュリティ' },
   { code: 'evo_source', label: '進化元／テイマーの下' },
+  { code: 'linked', label: 'リンクカード' },
   { code: 'battle_area', label: 'バトルエリア' },
   // 「対数（枚数/体数）」ではなく「表示形式（レスト/アクティブ）が参照対象と一致するか」を
   // 見る特殊ゾーン。他ゾーンのge/le/eq等の量的比較とは別軸のため、専用コード(cond_same_state)+
@@ -8320,6 +8322,7 @@ const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'trash:ge': 'cond_trash_ge', 'trash:le': 'cond_trash_le', 'trash:eq': 'cond_trash_eq', 'trash:gt': 'cond_trash_gt', 'trash:lt': 'cond_trash_lt',
   'security:ge': 'cond_security_ge', 'security:le': 'cond_security_le', 'security:eq': 'cond_security_eq', 'security:gt': 'cond_security_gt', 'security:lt': 'cond_security_lt',
   'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le', 'evo_source:eq': 'cond_has_evo_eq', 'evo_source:gt': 'cond_has_evo_gt', 'evo_source:lt': 'cond_has_evo_lt',
+  'linked:ge': 'cond_linked_ge', 'linked:le': 'cond_linked_le', 'linked:eq': 'cond_linked_eq', 'linked:gt': 'cond_linked_gt', 'linked:lt': 'cond_linked_lt',
   'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq', 'battle_area:gt': 'cond_battle_area_gt', 'battle_area:lt': 'cond_battle_area_lt',
   'state_rest:ge': 'cond_state_rest_ge', 'state_rest:le': 'cond_state_rest_le', 'state_rest:eq': 'cond_state_rest_eq', 'state_rest:gt': 'cond_state_rest_gt', 'state_rest:lt': 'cond_state_rest_lt',
   'state_active:ge': 'cond_state_active_ge', 'state_active:le': 'cond_state_active_le', 'state_active:eq': 'cond_state_active_eq', 'state_active:gt': 'cond_state_active_gt', 'state_active:lt': 'cond_state_active_lt',
@@ -8336,6 +8339,7 @@ const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> 
   cond_trash_ge: { zone: 'trash', quant: 'ge' }, cond_trash_le: { zone: 'trash', quant: 'le' }, cond_trash_eq: { zone: 'trash', quant: 'eq' }, cond_trash_gt: { zone: 'trash', quant: 'gt' }, cond_trash_lt: { zone: 'trash', quant: 'lt' },
   cond_security_ge: { zone: 'security', quant: 'ge' }, cond_security_le: { zone: 'security', quant: 'le' }, cond_security_eq: { zone: 'security', quant: 'eq' }, cond_security_gt: { zone: 'security', quant: 'gt' }, cond_security_lt: { zone: 'security', quant: 'lt' },
   cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_eq: { zone: 'evo_source', quant: 'eq' }, cond_has_evo_gt: { zone: 'evo_source', quant: 'gt' }, cond_has_evo_lt: { zone: 'evo_source', quant: 'lt' },
+  cond_linked_ge: { zone: 'linked', quant: 'ge' }, cond_linked_le: { zone: 'linked', quant: 'le' }, cond_linked_eq: { zone: 'linked', quant: 'eq' }, cond_linked_gt: { zone: 'linked', quant: 'gt' }, cond_linked_lt: { zone: 'linked', quant: 'lt' },
   cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' }, cond_battle_area_gt: { zone: 'battle_area', quant: 'gt' }, cond_battle_area_lt: { zone: 'battle_area', quant: 'lt' },
   cond_state_rest_ge: { zone: 'state_rest', quant: 'ge' }, cond_state_rest_le: { zone: 'state_rest', quant: 'le' }, cond_state_rest_eq: { zone: 'state_rest', quant: 'eq' }, cond_state_rest_gt: { zone: 'state_rest', quant: 'gt' }, cond_state_rest_lt: { zone: 'state_rest', quant: 'lt' },
   cond_state_active_ge: { zone: 'state_active', quant: 'ge' }, cond_state_active_le: { zone: 'state_active', quant: 'le' }, cond_state_active_eq: { zone: 'state_active', quant: 'eq' }, cond_state_active_gt: { zone: 'state_active', quant: 'gt' }, cond_state_active_lt: { zone: 'state_active', quant: 'lt' },
@@ -8519,7 +8523,7 @@ function ConditionsHybridEditor({
   sameAsTargetSubject,
   supportsMultiValue = false, attackContextActive = false,
   part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false,
-  showTypeInTargetFilter = false, conditionsOp, onConditionsOpChange, allowDistinctVariants = false,
+  showTypeInTargetFilter = false, conditionsOp, onConditionsOpChange, allowDistinctVariants = true,
   targetL2 = '', showLastActionRef = false,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'

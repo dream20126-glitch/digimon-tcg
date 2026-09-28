@@ -528,6 +528,7 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
   switch (refSource) {
     // --- 自分側 ---
     case 'evo_source':         return countWith(card && card.stack ? card.stack : []);
+    case 'linked':             return countWith(card && card.linkedCards ? card.linkedCards : []);
     case 'hand':               return countWith(player.hand);
     case 'trash':              return countWith(player.trash);
     case 'security':           return countWith(player.security);
@@ -4561,6 +4562,12 @@ function checkConditions(conditions, card, bs, side) {
     switch (cond.code) {
       case 'cond_has_evo': if (!card.stack || card.stack.length < (cond.value || 0)) return false; break;
       case 'cond_no_evo': if (card.stack && card.stack.length > 0) return false; break;
+      // リンクカード枚数（参照カテゴリ「リンクカード」。card.linkedCardsの枚数を比較）
+      case 'cond_linked_ge': if ((card.linkedCards ? card.linkedCards.length : 0) < (cond.value || 0)) return false; break;
+      case 'cond_linked_le': if ((card.linkedCards ? card.linkedCards.length : 0) > (cond.value || 0)) return false; break;
+      case 'cond_linked_eq': if ((card.linkedCards ? card.linkedCards.length : 0) !== Number(cond.value || 0)) return false; break;
+      case 'cond_linked_gt': if ((card.linkedCards ? card.linkedCards.length : 0) <= (cond.value || 0)) return false; break;
+      case 'cond_linked_lt': if ((card.linkedCards ? card.linkedCards.length : 0) >= (cond.value || 0)) return false; break;
       case 'cond_dp_le': if (card.dp > (cond.value || 0)) return false; break;
       case 'cond_dp_ge': if (card.dp < (cond.value || 0)) return false; break;
       case 'cond_dp':    if (card.dp !== (cond.value || 0)) return false; break;

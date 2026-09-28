@@ -3322,6 +3322,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectIsDiscardActive = effectDiscardZoneBases.has(effectActionBaseForDiscard) || effectAction === 'discard';
   const showEffectPosition = !effectIsDiscardActive && ((effectIsPlaceActive && effectPlaceZoneHasPositionFace) || effectIsPositionalGeneric);
   const showEffectFace = !effectIsDiscardActive && ((effectIsPlaceActive && effectPlaceZoneHasPositionFace) || effectHasFaceOptionFlag);
+  // デッキに戻す（hasDeckPosition）は、対象に関わらず常にアクション欄側で独自の位置/裏表
+  // （block.deckPosition/options）を持つため、対象＝セキュリティのときの位置/裏表パネルと
+  // 二重表示にならないよう、そちらではこのフラグ付きアクションを除外する
+  const effectHasDeckPositionFlag = !!dict.actions.find((a) => a.code === effectAction)?.hasDeckPosition;
   const effectPositionOptions: { code: string; label: string }[] = effectIsPlaceActive
     ? [{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '上か下' }]
     : effectIsFlaggedBaseDirect || (effectCurVariant && effectFlaggedBases.has(effectCurVariant.base))
@@ -6014,17 +6018,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 onChange={(v) => updateEffect({ deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
                 accentColor="#1976d2"
               />
-              {effectAction === 'return_deck' && (
-                <div style={{ marginTop: 6 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
-                  <ButtonGroup
-                    options={[{ code: 'face_up', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
-                    value={effectFaceValue}
-                    onChange={(v) => setEffectFace(v as 'face_down' | 'face_up')}
-                    accentColor="#1976d2"
-                  />
-                </div>
-              )}
             </div>
           );
         })()}
@@ -6305,7 +6298,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   )}
                 </div>
-                {(!eHideCount || showEffectPosition || showEffectFace || eStackSubCond || eCurTgt.l2 === 'security') && (
+                {(!eHideCount || showEffectPosition || showEffectFace || eStackSubCond || (eCurTgt.l2 === 'security' && !effectHasDeckPositionFlag)) && (
                   <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
                     {!eHideCount && (
                       <>
@@ -6321,8 +6314,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         （_top/_bottom/_select/_all）に位置をエンコードする（エンジン実装済み・
                         showEffectPositionはeffectIsDiscardActive判定によりsecurity_trash系では
                         falseになるためここでの表示と重複しない）。それ以外のアクションでは
-                        targetFilterのcond_target_stackへ保存する（⚠エンジン未対応・要実装） */}
-                    {eCurTgt.l2 === 'security' && !effectIsPlaceActive && (() => {
+                        targetFilterのcond_target_stackへ保存する（⚠エンジン未対応・要実装）。
+                        「デッキに戻す」等hasDeckPosition持ちのアクションはアクション欄側で
+                        独自の位置/裏表を持つため、ここでは除外する（二重表示防止） */}
+                    {eCurTgt.l2 === 'security' && !effectIsPlaceActive && !effectHasDeckPositionFlag && (() => {
                       const eIsSecurityTrash = (getActionVariant(effectAction || '')?.base || effectAction) === 'security_trash';
                       const eSecStackCond = effectTargetFilter.find((c) => c.base === 'cond_target_stack');
                       const currentPos = eIsSecurityTrash
@@ -6735,8 +6730,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       対象の位置サブ選択と同じ仕組み）に保存する（⚠エンジン未対応・要実装）。
                       以前は📥場所パネル側でtarget:'own_security'を初期値にしていたが、この対象欄と
                       書き込みが競合し位置選択後に場所/位置の表示が消える不具合があったため、
-                      位置はこちらの対象欄に一本化した（誰の・どの位置のセキュリティかをここで完結できる） */}
-                  {curTgt.l2 === 'security' && !effectIsPlaceActive && (() => {
+                      位置はこちらの対象欄に一本化した（誰の・どの位置のセキュリティかをここで完結できる）。
+                      「デッキに戻す」等hasDeckPosition持ちのアクションはアクション欄側で独自の
+                      位置/裏表を持つため、ここでは除外する（二重表示防止） */}
+                  {curTgt.l2 === 'security' && !effectIsPlaceActive && !effectHasDeckPositionFlag && (() => {
                     const isSecurityTrash = (getActionVariant(block.action || '')?.base || block.action) === 'security_trash';
                     const secStackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
                     const currentPos = isSecurityTrash

@@ -1693,22 +1693,82 @@ function CostListEditor({
                 </div>
               )}
             </div>
-            {/* 値 */}
-            <div style={{ marginTop: 4 }}>
-              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-              <input
-                type="text"
-                value={c.value === undefined ? '' : String(c.value)}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === '') updateCost(i, { ...c, value: undefined });
-                  else if (/^\d+$/.test(v)) updateCost(i, { ...c, value: Number(v) });
-                  else updateCost(i, { ...c, value: v });
-                }}
-                placeholder="値（枚数等）"
-                style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-              />
-            </div>
+            {/* 値: action:'evolve' のときは通常の値入力の代わりに「コストを支払わず」
+                チェックボックス＋「コスト増減」UIを出す（block.action側の登場/進化と同じ操作感）。
+                ※ コスト増減はエンジン実装済み（case 'evolve'がstep.valueを進化コストへ加算）だが、
+                「コストを支払わず」はcase 'evolve'側が現状cost_freeを未参照のためエンジン未対応 */}
+            {c.action === 'evolve' ? (
+              <div style={{ marginTop: 4 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!c.costFree}
+                    onChange={(e) => updateCost(i, { ...c, costFree: e.target.checked })}
+                  />
+                  コストを支払わず
+                </label>
+                {c.costFree && (
+                  <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
+                    ⚠ エンジン未対応（保存はできますが動作しません。進化コストは通常通り必要です）
+                  </div>
+                )}
+                <div style={{ fontSize: 10, color: '#555', marginTop: 6, marginBottom: 2 }}>💰 コスト増減</div>
+                {(() => {
+                  const raw = c.value;
+                  const isPlaceholder = raw === '-' || raw === '+';
+                  const num = raw === undefined || raw === '' || isPlaceholder ? undefined : Number(raw);
+                  const sign: 'plus' | 'minus' | '' = isPlaceholder
+                    ? (raw === '-' ? 'minus' : 'plus')
+                    : (num === undefined || isNaN(num) || num === 0 ? '' : (num > 0 ? 'plus' : 'minus'));
+                  const magnitude = num === undefined || isNaN(num) ? '' : String(Math.abs(num));
+                  const applyValue = (nextSign: 'plus' | 'minus', nextMagnitudeStr: string) => {
+                    const m = nextMagnitudeStr === '' ? undefined : Number(nextMagnitudeStr);
+                    if (m === undefined || isNaN(m) || m === 0) {
+                      updateCost(i, { ...c, value: nextSign === 'minus' ? '-' : '+' });
+                      return;
+                    }
+                    updateCost(i, { ...c, value: nextSign === 'minus' ? -m : m });
+                  };
+                  return (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <ButtonGroup
+                        options={[{ code: 'minus', label: '減' }, { code: 'plus', label: '増' }]}
+                        value={sign}
+                        onChange={(v) => applyValue((v || 'minus') as 'plus' | 'minus', magnitude)}
+                        accentColor="#b76e00"
+                      />
+                      <input
+                        type="text"
+                        value={magnitude}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v !== '' && !/^\d+$/.test(v)) return;
+                          applyValue(sign === 'plus' ? 'plus' : 'minus', v);
+                        }}
+                        placeholder="空欄可"
+                        style={{ width: 150 }}
+                      />
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div style={{ marginTop: 4 }}>
+                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
+                <input
+                  type="text"
+                  value={c.value === undefined ? '' : String(c.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === '') updateCost(i, { ...c, value: undefined });
+                    else if (/^\d+$/.test(v)) updateCost(i, { ...c, value: Number(v) });
+                    else updateCost(i, { ...c, value: v });
+                  }}
+                  placeholder="値（枚数等）"
+                  style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
             {/* 対象（ボタン方式） */}
             <div style={{ marginTop: 4 }}>
               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
@@ -2780,6 +2840,7 @@ const CANT_TO_DOABLE: Record<string, string> = Object.fromEntries(
 const COMMON_COST_ACTIONS: { code: string; label: string }[] = [
   { code: 'rest', label: 'レストさせる' },
   { code: 'cost_destroy_other', label: '消滅させる' },
+  { code: 'evolve', label: '進化させる' },
 ];
 // 「破棄」ボタン: 押すと「どこから破棄するか」の第二ボタン（場所）が現れ、選んだ場所に応じて
 // 実際のアクションコードに切り替える（エンジンには「破棄+場所」の汎用実装が無く、手札/進化元/

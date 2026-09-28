@@ -153,6 +153,8 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
     else if (c.deckPosition === 'both') cs.position = 'select';
     // 修飾子（'face_down' 等）
     if (Array.isArray(c.options) && c.options.length > 0) cs.options = c.options.slice();
+    // action:'evolve' 専用: コストを支払わずに進化させる
+    if (c.costFree) cs.cost_free = true;
     // コスト対象の取得元エリア (1件→string / 2件以上→array + from_op)
     if (Array.isArray(c.fromZones) && c.fromZones.length > 0) {
       const cz = c.fromZones.filter((z) => !!z);
@@ -255,6 +257,7 @@ function parseCostArray(rawCost: any): CostStep[] {
       linkedOwner: c?.linked_owner === 'self' || c?.linked_owner === 'other' ? c.linked_owner : undefined,
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,
       altCosts: Array.isArray(c?.alt_actions) && c.alt_actions.length > 0 ? parseCostArray(c.alt_actions) : undefined,
+      costFree: !!c?.cost_free,
     };
   });
 }

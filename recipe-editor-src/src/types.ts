@@ -687,6 +687,9 @@ export interface CostStep {
   // 対戦中はプレイヤーがどちらのコストを払うか選択UIで選ぶ。現状は「いずれか1つ」の
   // 意味しかないため、効果側と異なりop（and/or/then）は持たない）
   altCosts?: CostStep[];
+  // action:'evolve' 専用:「コストを支払わずに進化させる」。JSON では step.cost[].cost_free
+  // に serialize。⚠ エンジン側のcase 'evolve'は現状cost_freeを未参照（要実装）
+  costFree?: boolean;
 }
 
 // 演出タイプ自体の定義（小辞書）

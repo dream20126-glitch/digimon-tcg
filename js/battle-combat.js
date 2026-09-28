@@ -1463,7 +1463,7 @@ export function doLink(card, handIdx, slotIdx) {
   // 差し替え扱いで、既存のリンクカードを1枚トラッシュへ送って空きを作る
   // （「破棄された時」の効果ではないため、消滅トリガー等は発生させず直接trashへ送る）。
   // 2枚以上リンクされている場合はどちらを外すか選ばせる
-  const cap = (base._linkCapacityBonus || 0) + 1;
+  const cap = (base._linkCapacityBonus || 0) + (base._linkPlusPassive || 0) + 1;
   if (base.linkedCards.length >= cap) {
     const doReplace = (replaced) => {
       if (!replaced) { proceedLink(); return; }

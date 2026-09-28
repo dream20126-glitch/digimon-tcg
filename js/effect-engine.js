@@ -3913,6 +3913,10 @@ export function applyPermanentEffects(bs, side, context) {
     if (card.buffs) { card.buffs = card.buffs.filter(b => b.duration !== 'permanent'); recalcDp(card); }
     if (card._permEffects) card._permEffects = {};
     if (card._evoGrantedKeywords) card._evoGrantedKeywords = null;
+    // link_plus（passive）由来のリンク容量ボーナスは毎回再計算するためここでクリアする。
+    // 「リンク+」アクション(case 'link_capacity')由来の_linkCapacityBonusは永続効果として
+    // 別管理のため、ここでは触らない（毎回リセットすると付与した効果が消えてしまう）
+    card._linkPlusPassive = 0;
     // レシピ由来のcant_attack/cant_block（during_own_turn等）は毎回③④で再評価するため
     // 一旦クリアする（バフ由来のcant_attack/cant_blockが別にあれば維持）
     if (!card.buffs || !card.buffs.some(b => ['cant_attack_block', 'cant_attack'].includes(b.type))) card.cantAttack = false;
@@ -4100,8 +4104,8 @@ export function applyPermanentEffects(bs, side, context) {
           else if (flag === 'link_plus') {
             const val = (typeof p === 'object' && p.value) ? p.value : 1;
             card._permEffects.linkPlus = (card._permEffects.linkPlus || 0) + val;
-            // 既存のリンク容量計算にも反映
-            card._linkCapacityBonus = (card._linkCapacityBonus || 0) + val;
+            // リンク容量計算にも反映（cond_link_eligible/doLink/effect版link等が_linkPlusPassiveを参照）
+            card._linkPlusPassive = (card._linkPlusPassive || 0) + val;
           }
           else if (flag === 'ice_armor') { card._permEffects.iceArmor = true; }
           else if (flag === 'advance') { card._permEffects.advance = true; card._permEffects.charge = true; /* charge にも alias */ }
@@ -4243,6 +4247,7 @@ export function applyPermanentEffects(bs, side, context) {
             else if (flag === 'link_plus') {
               const val = (typeof p === 'object' && p.value) ? p.value : 1;
               card._permEffects.linkPlus = (card._permEffects.linkPlus || 0) + val;
+              card._linkPlusPassive = (card._linkPlusPassive || 0) + val;
             }
             else if (flag === 'ice_armor') { card._permEffects.iceArmor = true; }
             else if (flag === 'advance') { card._permEffects.advance = true; card._permEffects.charge = true; /* charge にも alias */ }
@@ -5310,7 +5315,7 @@ function checkConditions(conditions, card, bs, side) {
       }
       case 'cond_link_eligible': {
         // リンク条件を満たす（簡易: linkedCards 上限内）
-        const cap = (card._linkCapacityBonus || 0) + 1;
+        const cap = (card._linkCapacityBonus || 0) + (card._linkPlusPassive || 0) + 1;
         if (card.linkedCards && card.linkedCards.length >= cap) return false;
         break;
       }
@@ -11028,7 +11033,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 1枚選んでトラッシュへ送ってから空きを作る（2枚以上いる場合は選択UIを出す）
       const _linkMakeRoom = (afterRoom) => {
         if (!linkTarget.linkedCards) linkTarget.linkedCards = [];
-        const _cap = (linkTarget._linkCapacityBonus || 0) + 1;
+        const _cap = (linkTarget._linkCapacityBonus || 0) + (linkTarget._linkPlusPassive || 0) + 1;
         if (linkTarget.linkedCards.length < _cap) { afterRoom(); return; }
         const _doReplace = (replaced) => {
           if (!replaced) { afterRoom(); return; }

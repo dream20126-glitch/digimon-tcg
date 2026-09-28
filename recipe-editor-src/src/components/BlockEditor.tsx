@@ -3255,6 +3255,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     else { updateEffect({ extraTargets: [] }); }
   };
   const effectConditions = isEditingAlt ? (editingAlt!.conditions || []) : conditions;
+  // ゲート条件（AltAction専用。「〜のとき、代わりに〜する」用）:
+  // メイン側（効果1）にゲート条件が無く、この効果（効果2以降）にゲート条件があって
+  // 条件が成立していれば、メインの代わりにこちらが自動実行される（OR結合時のみ意味を持つ。
+  // ネガモン等で実績あり・エンジン実装済み）
+  const effectGateConditions = isEditingAlt ? (editingAlt!.gateConditions || []) : [];
   const effectConditionsOp: 'and' | 'or' = isEditingAlt ? (editingAlt!.conditionsOp || 'and') : (block.conditionsOp || 'and');
   const effectConditionsChain = isEditingAlt ? editingAlt!.conditionsChain : block.conditionsChain;
   const effectFromZones = isEditingAlt ? (editingAlt!.fromZones || []) : (block.fromZones || []);
@@ -3502,6 +3507,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [otherActionOpen, setOtherActionOpen] = useState<boolean>(false);
   // ～ごとにの「状態（条件）」その他プルダウン開閉状態
   const [perStateOtherOpen, setPerStateOtherOpen] = useState<boolean>(false);
+  // ゲート条件（効果2以降専用）その他プルダウン開閉状態
+  const [gateOtherOpen, setGateOtherOpen] = useState<boolean>(false);
   // 「対象の条件」をアクションの対象/対象数の2箇所に分けて描画するため、
   // その他チェックボックスの開閉状態をここで共有する
   const [targetFilterOtherOpen, setTargetFilterOtherOpen] = useState<boolean>(false);
@@ -7085,6 +7092,38 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {renderPerCountEditor(isEditingAlt)}
         </details>
+        )}
+
+        {/* === 🔀 ゲート条件（効果2以降・OR結合専用）:「〜のとき、代わりに〜する」用。
+            効果1（メイン）にゲート条件が無く、この効果にゲート条件があって条件が成立していれば、
+            効果1の代わりにこの効果が自動実行される（プレイヤーへの選択確認は出ない）。
+            例:「このテイマーをレストさせることで、支払うコスト-1。自分のデジモンがいないなら、
+            代わりに支払うコスト-2」→ 効果1=コスト-1（ゲート無し）、効果2=コスト-2＋ゲート条件
+            「自分のデジモンがいない」、対象の結合をOR（altActionsOp='or'）にする。
+            発動条件（conditions）とは別枠のフィールド（block.altActions[].gate/gate_when/
+            gate_extra_conditions）。エンジン実装済み（ネガモン等で実績あり） */}
+        {isEditingAlt && (
+          <details className="field" style={{ marginTop: 8 }} open={effectGateConditions.length > 0}>
+            <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#9333ea' }}>
+              🔀 ゲート条件（効果{editingEffect + 1}）{effectGateConditions.length > 0 ? ` (${effectGateConditions.length})` : ''}
+            </summary>
+            <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>
+              「〜のとき、代わりにこの効果を実行する」の条件。対象の結合がOR、かつ効果1に
+              ゲート条件が無い場合のみ機能します（条件が成立していればプレイヤーへの選択確認なしで
+              効果1の代わりにこちらが自動実行されます）
+            </div>
+            <ConditionsHybridEditor
+              conditions={effectGateConditions}
+              onChange={(next) => updateEffect({ gateConditions: next })}
+              dict={dict}
+              title="ゲート条件"
+              hint="（複数指定時はAND）"
+              theme="action"
+              defaultSubject=""
+              otherOpen={gateOtherOpen}
+              onOtherOpenChange={setGateOtherOpen}
+            />
+          </details>
         )}
 
         {/* === 🎁 付与する効果（キーワード付与 / 独自の効果付与） ===

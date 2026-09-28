@@ -215,6 +215,9 @@ export interface EffectBlock {
   // ⚠ エンジン側は現状 link 等のfrom-zone選択を1枚固定でハードコードしており、
   // この値を未参照（要実装）
   fromCount?: number | string;
+  // fromCountの意味（省略時は'eq'＝ちょうどN枚）。'le'＝N枚まで（0〜N枚の範囲で好きな枚数）。
+  // JSONでは step.count_quant として出力。⚠ エンジン未対応（fromCount同様、要実装）
+  fromCountQuant?: 'eq' | 'le';
   keyword?: string;
   // 選んだキーワードの辞書側hasNamedParam=trueのときのみ出現する「対象」の絞り込み条件。
   // 発動条件と同じボタン配列(特徴/名称/記述/Lv等)+AND/ORで組み立てる。JSON自体には
@@ -404,6 +407,8 @@ export interface AltAction {
   // EffectBlock.fromCountと同じ（BUILTIN_FROM_ZONE_ACTIONS+対象「このカード」専用の
   // 取得元エリアからの枚数指定）。JSONではstep.countとして出力
   fromCount?: number | string;
+  // EffectBlock.fromCountQuantと同じ。JSONではstep.count_quantとして出力
+  fromCountQuant?: 'eq' | 'le';
   // grant_keyword(_to)/grant_effect 専用（効果1のEffectBlockと同じフィールド・同じ変換ルール）。
   // 効果2以降でもキーワード付与/独自効果付与を設定できるようにするため、効果1と同じ形で持つ
   keyword?: string;

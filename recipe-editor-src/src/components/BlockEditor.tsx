@@ -3243,6 +3243,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectAction = isEditingAlt ? (editingAlt!.action || '') : (block.action || '');
   const effectValue = isEditingAlt ? editingAlt!.value : block.value;
   const effectFromCount = isEditingAlt ? editingAlt!.fromCount : block.fromCount;
+  const effectFromCountQuant = (isEditingAlt ? editingAlt!.fromCountQuant : block.fromCountQuant) || 'eq';
   const effectTarget = isEditingAlt ? (editingAlt!.target || '') : (block.target || '');
   const effectExtraTargets = isEditingAlt ? (editingAlt!.extraTargets || []) : (block.extraTargets || []);
   // 「追加」チェックボックス: ONで対象2以降の枠を出す（OFFにすると追加分は全て削除）
@@ -5516,20 +5517,31 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     return (
                       <div style={{ marginTop: 8 }}>
                         <label>枚数（取得元エリアから何枚選ぶか・省略時は1枚）</label>
-                        <input
-                          type="text"
-                          value={effectFromCount === undefined ? '' : String(effectFromCount)}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            if (v === '') { updateEffect({ fromCount: undefined }); return; }
-                            if (!/^\d+$/.test(v)) return;
-                            updateEffect({ fromCount: Number(v) });
-                          }}
-                          placeholder="例: 1"
-                          style={{ width: 150 }}
-                        />
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <ButtonGroup
+                            options={[{ code: 'eq', label: '完全一致' }, { code: 'le', label: '〜まで' }]}
+                            value={effectFromCountQuant}
+                            onChange={(v) => updateEffect({ fromCountQuant: (v || 'eq') as 'eq' | 'le' })}
+                            accentColor="#1976d2"
+                          />
+                          <input
+                            type="text"
+                            value={effectFromCount === undefined ? '' : String(effectFromCount)}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (v === '') { updateEffect({ fromCount: undefined }); return; }
+                              if (!/^\d+$/.test(v)) return;
+                              updateEffect({ fromCount: Number(v) });
+                            }}
+                            placeholder="例: 1"
+                            style={{ width: 150 }}
+                          />
+                        </div>
                         {!_fcImplemented && (
                           <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ この組み合わせはエンジン未実装（保存はできますが動作しません）</div>
+                        )}
+                        {_fcImplemented && effectFromCountQuant === 'le' && (
+                          <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠「〜まで」はエンジン未対応（保存はできますが「完全一致」として動作します）</div>
                         )}
                       </div>
                     );

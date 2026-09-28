@@ -274,6 +274,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
     const n = Number(a.fromCount);
     out.count = isNaN(n) ? a.fromCount : n;
   }
+  if (a.fromCountQuant === 'le') out.count_quant = 'le';
   if (a.target) out.target = a.target;
   const aExtraTargets = buildExtraTargetsArray(a.extraTargets);
   if (aExtraTargets) out.targets = aExtraTargets;
@@ -1048,6 +1049,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     const n = Number(b.fromCount);
     step.count = isNaN(n) ? b.fromCount : n;
   }
+  if (b.fromCountQuant === 'le') step.count_quant = 'le';
   if (b.target) step.target = b.target;
   const bExtraTargets = buildExtraTargetsArray(b.extraTargets);
   if (bExtraTargets) step.targets = bExtraTargets;

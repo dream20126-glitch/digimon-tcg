@@ -1456,8 +1456,19 @@ function CostListEditor({
                   {/* 場所に「セキュリティ」/「進化元」/「重ねられているカード」を含む場合のみ:
                       積み重ね順の上/下どちらから見るか（重ねられているカードもevo_sourceと同じ
                       evoSourcePosition/evoSourceOwnerを共用する） */}
-                  {((c.fromZones || []).includes('security') || (c.fromZones || []).includes('evo_source') || (c.fromZones || []).includes('stacked_cards')) && (
+                  {((c.fromZones || []).includes('security') || (c.fromZones || []).includes('evo_source') || (c.fromZones || []).includes('stacked_cards') || (c.fromZones || []).includes('deck')) && (
                     <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      {(c.fromZones || []).includes('deck') && (
+                        <div>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 デッキの位置</div>
+                          <ButtonGroup
+                            options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                            value={c.deckSourcePosition || ''}
+                            onChange={(v) => updateCost(i, { ...c, deckSourcePosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                      )}
                       {(c.fromZones || []).includes('security') && (
                         <div>
                           <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 セキュリティの位置</div>
@@ -1643,8 +1654,19 @@ function CostListEditor({
               {/* 場所に「セキュリティ」/「進化元」/「重ねられているカード」を含む場合のみ:
                   積み重ね順の上/下どちらから見るか（isPlaceActive中は901行目付近の専用パネルと
                   二重表示になるためこちらは出さない） */}
-              {!isPlaceActive && ((c.fromZones || []).includes('security') || (c.fromZones || []).includes('evo_source') || (c.fromZones || []).includes('stacked_cards')) && (
+              {!isPlaceActive && ((c.fromZones || []).includes('security') || (c.fromZones || []).includes('evo_source') || (c.fromZones || []).includes('stacked_cards') || (c.fromZones || []).includes('deck')) && (
                 <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {(c.fromZones || []).includes('deck') && (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 デッキの位置</div>
+                      <ButtonGroup
+                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                        value={c.deckSourcePosition || ''}
+                        onChange={(v) => updateCost(i, { ...c, deckSourcePosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                        accentColor="#1a4f8a"
+                      />
+                    </div>
+                  )}
                   {(c.fromZones || []).includes('security') && (
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 セキュリティの位置</div>
@@ -3291,6 +3313,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectFromZoneOwner = isEditingAlt ? editingAlt!.fromZoneOwner : block.fromZoneOwner;
   const effectSecurityPosition = isEditingAlt ? editingAlt!.securityPosition : block.securityPosition;
   const effectEvoSourcePosition = isEditingAlt ? editingAlt!.evoSourcePosition : block.evoSourcePosition;
+  const effectDeckSourcePosition = isEditingAlt ? editingAlt!.deckSourcePosition : block.deckSourcePosition;
   const effectEvoSourceOwner = isEditingAlt ? editingAlt!.evoSourceOwner : block.evoSourceOwner;
   const effectLinkedOwner = isEditingAlt ? editingAlt!.linkedOwner : block.linkedOwner;
   const effectDuration = isEditingAlt ? editingAlt!.duration : block.duration;
@@ -5552,8 +5575,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           )}
                         </div>
                       )}
-                      {(zones.includes('security') || zones.includes('evo_source') || zones.includes('stacked_cards')) && (
+                      {(zones.includes('security') || zones.includes('evo_source') || zones.includes('stacked_cards') || zones.includes('deck')) && (
                         <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                          {zones.includes('deck') && (
+                            <div>
+                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 デッキの位置</div>
+                              <ButtonGroup
+                                options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                                value={effectDeckSourcePosition || ''}
+                                onChange={(v) => updateEffect({ deckSourcePosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                                accentColor="#1976d2"
+                              />
+                            </div>
+                          )}
                           {zones.includes('security') && (
                             <div>
                               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 セキュリティの位置</div>
@@ -6016,8 +6050,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               )}
               {/* 場所に「セキュリティ」/「進化元」/「重ねられているカード」を含む場合のみ:
                   積み重ね順の上/下どちらから見るか */}
-              {(zones.includes('security') || zones.includes('evo_source') || zones.includes('stacked_cards')) && (
+              {(zones.includes('security') || zones.includes('evo_source') || zones.includes('stacked_cards') || zones.includes('deck')) && (
                 <div style={{ marginTop: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {zones.includes('deck') && (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 デッキの位置</div>
+                      <ButtonGroup
+                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                        value={effectDeckSourcePosition || ''}
+                        onChange={(v) => updateEffect({ deckSourcePosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                        accentColor="#1a4f8a"
+                      />
+                    </div>
+                  )}
                   {zones.includes('security') && (
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 セキュリティの位置</div>

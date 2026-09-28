@@ -167,6 +167,7 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
       // セキュリティ/進化元を取得元に含む場合のみ: 積み重ね順の上/下
       if (cz.includes('security') && c.securityPosition) cs.security_position = c.securityPosition;
       if (cz.includes('evo_source') && c.evoSourcePosition) cs.evo_source_position = c.evoSourcePosition;
+      if (cz.includes('deck') && c.deckSourcePosition) cs.deck_source_position = c.deckSourcePosition;
       // 進化元/重ねられているカード/リンクカードを取得元に含む場合のみ: どのデジモンのものか
       if ((cz.includes('evo_source') || cz.includes('stacked_cards')) && (c.evoSourceOwner === 'self' || c.evoSourceOwner === 'other')) cs.evo_source_owner = c.evoSourceOwner;
       if (cz.includes('linked') && (c.linkedOwner === 'self' || c.linkedOwner === 'other')) cs.linked_owner = c.linkedOwner;
@@ -253,6 +254,7 @@ function parseCostArray(rawCost: any): CostStep[] {
       deckPosition,
       securityPosition: c?.security_position === 'top' || c?.security_position === 'bottom' ? c.security_position : undefined,
       evoSourcePosition: c?.evo_source_position === 'top' || c?.evo_source_position === 'bottom' || c?.evo_source_position === 'select' ? c.evo_source_position : undefined,
+      deckSourcePosition: c?.deck_source_position === 'top' || c?.deck_source_position === 'bottom' ? c.deck_source_position : undefined,
       evoSourceOwner: c?.evo_source_owner === 'self' || c?.evo_source_owner === 'other' ? c.evo_source_owner : undefined,
       linkedOwner: c?.linked_owner === 'self' || c?.linked_owner === 'other' ? c.linked_owner : undefined,
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,
@@ -301,6 +303,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
     // セキュリティ/進化元を取得元に含む場合のみ: 積み重ね順の上/下
     if (az.includes('security') && a.securityPosition) out.security_position = a.securityPosition;
     if (az.includes('evo_source') && a.evoSourcePosition) out.evo_source_position = a.evoSourcePosition;
+    if (az.includes('deck') && a.deckSourcePosition) out.deck_source_position = a.deckSourcePosition;
     // 進化元/重ねられているカード/リンクカードを取得元に含む場合のみ: どのデジモンのものか
     if ((az.includes('evo_source') || az.includes('stacked_cards')) && (a.evoSourceOwner === 'self' || a.evoSourceOwner === 'other')) out.evo_source_owner = a.evoSourceOwner;
     if (az.includes('linked') && (a.linkedOwner === 'self' || a.linkedOwner === 'other')) out.linked_owner = a.linkedOwner;
@@ -1138,6 +1141,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     // 場所に「セキュリティ」/「進化元」を含む場合のみ: 積み重ね順の上/下どちらから見るか
     if (zones.includes('security') && b.securityPosition) step.security_position = b.securityPosition;
     if (zones.includes('evo_source') && b.evoSourcePosition) step.evo_source_position = b.evoSourcePosition;
+    if (zones.includes('deck') && b.deckSourcePosition) step.deck_source_position = b.deckSourcePosition;
     // 取得元エリアがどちらのプレイヤーのものか（未指定=自分/相手どちらでも）
     if (b.fromZoneOwner === 'self' || b.fromZoneOwner === 'opponent') step.from_owner = b.fromZoneOwner;
   }
@@ -1687,6 +1691,7 @@ function stepObjectToAltAction(step: any): AltAction {
       : undefined,
     securityPosition: step?.security_position === 'top' || step?.security_position === 'bottom' ? step.security_position : undefined,
     evoSourcePosition: step?.evo_source_position === 'top' || step?.evo_source_position === 'bottom' || step?.evo_source_position === 'select' ? step.evo_source_position : undefined,
+    deckSourcePosition: step?.deck_source_position === 'top' || step?.deck_source_position === 'bottom' ? step.deck_source_position : undefined,
     evoSourceOwner: step?.evo_source_owner === 'self' || step?.evo_source_owner === 'other' ? step.evo_source_owner : undefined,
     linkedOwner: step?.linked_owner === 'self' || step?.linked_owner === 'other' ? step.linked_owner : undefined,
     duration: step?.duration || '',
@@ -1827,6 +1832,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     from_owner: true,
     security_position: true,
     evo_source_position: true,
+    deck_source_position: true,
     zone_increase: true,
     zone_increase_op: true,
     per_count: true,
@@ -1993,6 +1999,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     fromZoneOwner: step?.from_owner === 'self' || step?.from_owner === 'opponent' ? step.from_owner : undefined,
     securityPosition: step?.security_position === 'top' || step?.security_position === 'bottom' ? step.security_position : undefined,
     evoSourcePosition: step?.evo_source_position === 'top' || step?.evo_source_position === 'bottom' || step?.evo_source_position === 'select' ? step.evo_source_position : undefined,
+    deckSourcePosition: step?.deck_source_position === 'top' || step?.deck_source_position === 'bottom' ? step.deck_source_position : undefined,
     // 【〇〇が増えたとき】専用: どのゾーンが増えたときか (fromZones と同じ規則)
     zoneIncrease: (() => {
       const z = step?.zone_increase;
@@ -2098,6 +2105,7 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
               : undefined,
             securityPosition: a?.security_position === 'top' || a?.security_position === 'bottom' ? a.security_position : undefined,
             evoSourcePosition: a?.evo_source_position === 'top' || a?.evo_source_position === 'bottom' || a?.evo_source_position === 'select' ? a.evo_source_position : undefined,
+            deckSourcePosition: a?.deck_source_position === 'top' || a?.deck_source_position === 'bottom' ? a.deck_source_position : undefined,
             evoSourceOwner: a?.evo_source_owner === 'self' || a?.evo_source_owner === 'other' ? a.evo_source_owner : undefined,
             linkedOwner: a?.linked_owner === 'self' || a?.linked_owner === 'other' ? a.linked_owner : undefined,
             duration: a?.duration || '',

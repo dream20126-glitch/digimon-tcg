@@ -303,6 +303,10 @@ export interface EffectBlock {
   // step.security_position / step.evo_source_position に serialize
   securityPosition?: 'top' | 'bottom';
   evoSourcePosition?: 'top' | 'bottom' | 'select';
+  // 取得元エリアに「デッキ」を含む場合のみ有効: デッキの上/下どちらから取得するか
+  // （未指定=絞り込まない）。JSON では step.deck_source_position に serialize。
+  // deckPosition（「〇〇に置く」の置き先位置。別概念）とは名前を分けて区別する
+  deckSourcePosition?: 'top' | 'bottom';
   // 「～ごとに」倍率設定。perRef を数えて value × floor(count / perCount) を計算
   perCount?: number;  // N体ごとの N（'1体ごと' なら 1）
   perRef?: string;    // カウント対象 subject ('own_digimon' / 'opp_digimon' / 'own_hand' 等)
@@ -452,6 +456,8 @@ export interface AltAction {
   // security_position / evo_source_position に serialize
   securityPosition?: 'top' | 'bottom';
   evoSourcePosition?: 'top' | 'bottom' | 'select';
+  // EffectBlock.deckSourcePositionと同じ。JSONではstep.deck_source_positionとして出力
+  deckSourcePosition?: 'top' | 'bottom';
   // 期間・倍率（AND実行時の追加設定）
   duration?: string;
   perCount?: number;
@@ -683,6 +689,8 @@ export interface CostStep {
   // step.cost[].security_position / evo_source_position に serialize
   securityPosition?: 'top' | 'bottom';
   evoSourcePosition?: 'top' | 'bottom' | 'select';
+  // EffectBlock.deckSourcePositionと同じ。JSONではstep.cost[].deck_source_positionとして出力
+  deckSourcePosition?: 'top' | 'bottom';
   // 修飾子コード配列（'face_down' 等）。辞書側 hasFaceOption=true のアクション選択時のみ
   // 「裏向き/表向き」ボタンとして編集可能になる（例:「テイマーの下に裏向きで置く」コスト）
   options?: string[];

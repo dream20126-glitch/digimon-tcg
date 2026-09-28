@@ -2420,7 +2420,10 @@ function TriggerSubjectStagedPicker({
           )}
         </div>
       )}
-      {!hasDigimonTamer && cur.l1 !== 'self' && (
+      {/* suppressTypeButtons時（種別概念の無い単一ゾーン系トリガー）はこのフォールバックも
+          出さない。hasDigimonTamerがfalseになる理由がsuppressTypeButtons以外
+          （l1がown/opp/other_own/both以外）のときのみ従来通り表示する */}
+      {!hasDigimonTamer && !suppressTypeButtons && cur.l1 !== 'self' && (
         <div style={{ marginTop: 4 }}>
           <ButtonGroup options={l2Options} value={effectiveL2} onChange={handleL2} accentColor={accentColor} />
         </div>

@@ -5447,6 +5447,140 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>{z.warn}</div>
                   ) : null;
                 })()}
+                {/* 📥 場所（どこから置くか）: 「〇〇に置く」でPLACE_ZONE_MAP側のhasFromZonesが
+                    立っている置き場所（セキュリティ/テイマー/進化元/このカード）のときだけ、
+                    置くカードの取得元をここ（アクション欄・警告文の下）に表示する。
+                    CostListEditorの同名パネルと見た目・データ（effectFromZones等）を揃えている。
+                    バトルエリアは「このカード自身」が置かれるだけなので取得元の概念が無い */}
+                {isPlaceActive && effectActivePlaceZone?.hasFromZones && (() => {
+                  const zones = effectFromZones;
+                  const op = effectFromZonesOp;
+                  const toggleZone = (code: string) => {
+                    const next = zones.includes(code) ? zones.filter((z) => z !== code) : [...zones, code];
+                    updateEffect({ fromZones: next });
+                  };
+                  return (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから置くか）</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {FROM_ZONES.map((z) => {
+                          const active = zones.includes(z.code);
+                          return (
+                            <button
+                              key={z.code}
+                              type="button"
+                              onClick={() => toggleZone(z.code)}
+                              style={{
+                                padding: '3px 9px', borderRadius: 5,
+                                border: active ? '2px solid #1976d2' : '1px solid #bbb',
+                                background: active ? '#1976d2' : '#f5f5f5',
+                                color: active ? '#fff' : '#333',
+                                fontWeight: active ? 'bold' : 'normal',
+                                cursor: 'pointer', fontSize: 11,
+                              }}
+                            >
+                              {z.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {zones.length >= 2 && (
+                        <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                          <span style={{ color: '#666' }}>結合:</span>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                            <input type="radio" name={`placeFromZonesOp_${index}_${editingEffect}`} checked={op === 'or'} onChange={() => updateEffect({ fromZonesOp: 'or' })} style={{ margin: 0 }} />
+                            OR（いずれか）
+                          </label>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                            <input type="radio" name={`placeFromZonesOp_${index}_${editingEffect}`} checked={op === 'and'} onChange={() => updateEffect({ fromZonesOp: 'and' })} style={{ margin: 0 }} />
+                            AND（全て）
+                          </label>
+                        </div>
+                      )}
+                      {zones.some((z) => z !== 'evo_source' && z !== 'stacked_cards' && z !== 'linked') && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 誰の場所か</div>
+                          <ButtonGroup
+                            options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                            value={effectFromZoneOwner || ''}
+                            onChange={(v) => updateEffect({ fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                            accentColor="#1976d2"
+                          />
+                        </div>
+                      )}
+                      {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの対象' : '進化元の対象'}</div>
+                          <ButtonGroup
+                            options={[{ code: '', label: '指定なし' }, { code: 'self', label: 'このデジモン' }, { code: 'other', label: '他のデジモン' }]}
+                            value={effectEvoSourceOwner || ''}
+                            onChange={(v) => updateEffect({ evoSourceOwner: (v || undefined) as 'self' | 'other' | undefined })}
+                            accentColor="#1976d2"
+                          />
+                          {effectEvoSourceOwner === 'other' && (
+                            <div style={{ marginTop: 4 }}>
+                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 自分/相手</div>
+                              <ButtonGroup
+                                options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                                value={effectFromZoneOwner || ''}
+                                onChange={(v) => updateEffect({ fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                                accentColor="#1976d2"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {zones.includes('linked') && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>リンクカードの対象</div>
+                          <ButtonGroup
+                            options={[{ code: '', label: '指定なし' }, { code: 'self', label: 'このデジモン' }, { code: 'other', label: '他のデジモン' }]}
+                            value={effectLinkedOwner || ''}
+                            onChange={(v) => updateEffect({ linkedOwner: (v || undefined) as 'self' | 'other' | undefined })}
+                            accentColor="#1976d2"
+                          />
+                          {effectLinkedOwner === 'other' && (
+                            <div style={{ marginTop: 4 }}>
+                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 自分/相手</div>
+                              <ButtonGroup
+                                options={[{ code: '', label: 'どちらでも' }, { code: 'self', label: '自分' }, { code: 'opponent', label: '相手' }]}
+                                value={effectFromZoneOwner || ''}
+                                onChange={(v) => updateEffect({ fromZoneOwner: (v || undefined) as 'self' | 'opponent' | undefined })}
+                                accentColor="#1976d2"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {(zones.includes('security') || zones.includes('evo_source') || zones.includes('stacked_cards')) && (
+                        <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                          {zones.includes('security') && (
+                            <div>
+                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 セキュリティの位置</div>
+                              <ButtonGroup
+                                options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                                value={effectSecurityPosition || ''}
+                                onChange={(v) => updateEffect({ securityPosition: (v || undefined) as 'top' | 'bottom' | undefined })}
+                                accentColor="#1976d2"
+                              />
+                            </div>
+                          )}
+                          {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
+                            <div>
+                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 {zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの位置' : '進化元の位置'}</div>
+                              <ButtonGroup
+                                options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }]}
+                                value={effectEvoSourcePosition || ''}
+                                onChange={(v) => updateEffect({ evoSourcePosition: (v || undefined) as 'top' | 'bottom' | 'select' | undefined })}
+                                accentColor="#1976d2"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* レスト/アクティブ/進化/アタック/ブロック: 「する」（通常）/「できない」（封じる）の
                     切り替え。上のボタンで2つ以上選んでいる場合は複数の行動を同時に強制する
                     「する」が成立しないため、「できない」固定（選択不要）になる */}
@@ -5750,13 +5884,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* 📍 場所（取得元エリア）: 登場/使用・進化はビルトインのため常時対象、
             それ以外は辞書の hasFromZones=true のアクションのみ表示。編集中の効果に対して読み書き。
-            「〇〇に置く」(isPlaceActive)はPLACE_ZONE_MAP側のhasFromZonesフラグを見る
-            （セキュリティ/テイマー/進化元/このカードは取得元を選べるが、バトルエリアは
-            「このカード自身」が置かれるだけなので取得元の概念が無い）。「破棄する」
-            (isDiscardActive)は専用の📥場所（どこから破棄するか）パネルを別途持つため、
-            二重表示を避けるためこちらを出さない */}
-        {!(DISCARD_ACTION_CODES.has(getActionVariant(effectAction || '')?.base || (effectAction || '')) || effectAction === 'discard') && effectAction !== 'return_deck' && effectAction !== 'add_to_hand'
-          && (effectIsPlaceActive ? !!effectActivePlaceZone?.hasFromZones : (BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || !!dict.actions.find((a) => a.code === effectAction)?.hasFromZones))
+            「〇〇に置く」(isPlaceActive)はアクション欄側（〇〇に置くボタンの警告文の下）に
+            専用の📥場所（どこから置くか）パネルを別途持つため、二重表示を避けるためこちらを
+            出さない。「破棄する」(isDiscardActive)も同様に専用の📥場所（どこから破棄するか）
+            パネルを別途持つため、二重表示を避けるためこちらを出さない */}
+        {!effectIsPlaceActive && !(DISCARD_ACTION_CODES.has(getActionVariant(effectAction || '')?.base || (effectAction || '')) || effectAction === 'discard') && effectAction !== 'return_deck' && effectAction !== 'add_to_hand'
+          && (BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || !!dict.actions.find((a) => a.code === effectAction)?.hasFromZones)
           && (() => {
           const zones = effectFromZones;
           const op = effectFromZonesOp;

@@ -4562,6 +4562,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         };
                         const thisIsZoneIncrease = code === ZONE_INCREASE_TRIGGER;
                         const thisHasFromZones = thisIsZoneIncrease || !!dict.triggers.find((d) => d.code === code)?.hasFromZones;
+                        const thisNoSubjectType = NO_SUBJECT_TYPE_TRIGGERS.has(code) || !!dict.triggers.find((d) => d.code === code)?.noSubjectType;
                         const setThisSubjectAndZone = (nextSubject: string, nextZone: string[]) => {
                           const nextMap = { ...(block.triggerSubjectByCode || {}), [code]: nextSubject };
                           onChange({ ...block, triggerSubjectByCode: nextMap, zoneIncrease: nextZone });
@@ -4573,6 +4574,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                               subject={curSubjRaw}
                               onChange={setThisSubjectCode}
                               hasFromZones={thisHasFromZones}
+                              suppressTypeButtons={thisNoSubjectType}
                               allowNone
                               hasEntry={hasThisSubjectEntry}
                               onClear={clearThisSubject}

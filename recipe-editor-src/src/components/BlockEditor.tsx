@@ -1226,7 +1226,23 @@ function CostListEditor({
             </div>
             {/* アクション（よく使うコストアクション + 破棄(場所) + デッキに戻す/セキュリティに置く(位置) + その他） */}
             <div style={{ marginTop: 4 }}>
-              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>アクション</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 2 }}>
+                <div style={{ fontSize: 10, color: '#555' }}>アクション</div>
+                {/* action:'evolve' 専用: コストを支払わずに進化させる */}
+                {c.action === 'evolve' && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!c.costFree}
+                      onChange={(e) => updateCost(i, { ...c, costFree: e.target.checked })}
+                    />
+                    コストを支払わず
+                    {c.costFree && (
+                      <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未対応（保存はできますが動作しません）</span>
+                    )}
+                  </label>
+                )}
+              </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {COMMON_COST_ACTIONS.map((a) => {
                   const active = c.action === a.code;
@@ -1701,26 +1717,13 @@ function CostListEditor({
                 </div>
               )}
             </div>
-            {/* 値: action:'evolve' のときは通常の値入力の代わりに「コストを支払わず」
-                チェックボックス＋「コスト増減」UIを出す（block.action側の登場/進化と同じ操作感）。
-                ※ コスト増減はエンジン実装済み（case 'evolve'がstep.valueを進化コストへ加算）だが、
-                「コストを支払わず」はcase 'evolve'側が現状cost_freeを未参照のためエンジン未対応 */}
+            {/* 値: action:'evolve' のときは通常の値入力の代わりに「コスト増減」UIを出す
+                （block.action側の登場/進化と同じ操作感。「コストを支払わず」は上の
+                「アクション」ラベル隣に移設済み）。
+                ※ コスト増減はエンジン実装済み（case 'evolve'がstep.valueを進化コストへ加算） */}
             {c.action === 'evolve' ? (
               <div style={{ marginTop: 4 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
-                  <input
-                    type="checkbox"
-                    checked={!!c.costFree}
-                    onChange={(e) => updateCost(i, { ...c, costFree: e.target.checked })}
-                  />
-                  コストを支払わず
-                </label>
-                {c.costFree && (
-                  <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
-                    ⚠ エンジン未対応（保存はできますが動作しません。進化コストは通常通り必要です）
-                  </div>
-                )}
-                <div style={{ fontSize: 10, color: '#555', marginTop: 6, marginBottom: 2 }}>💰 コスト増減</div>
+                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>💰 コスト増減</div>
                 {(() => {
                   const raw = c.value;
                   const isPlaceholder = raw === '-' || raw === '+';

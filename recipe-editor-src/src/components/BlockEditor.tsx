@@ -2780,6 +2780,13 @@ const ZONE_INCREASE_OPTIONS: { code: string; label: string; implemented: boolean
 // デッキ/進化元のみ追加すればZONE_INCREASE_OPTIONSと同じ5択が揃う
 const ZONE_INCREASE_EXTRA_OPTIONS = [{ code: 'deck', label: 'デッキ' }, { code: 'evo_source', label: '進化元' }];
 const ZONE_INCREASE_UNIMPLEMENTED = new Set(ZONE_INCREASE_OPTIONS.filter((o) => !o.implemented).map((o) => o.code));
+// 発動主体に「デジモン/テイマー/プレイヤー」の種別概念が無い単一ゾーン系トリガー
+// （例:「セキュリティが減ったとき」＝カード種別ではなく陣営(自分/相手)のみで完結する）。
+// 辞書側「場所指定なし」列（noSubjectType）が立っているトリガーと同様に扱い、
+// 発動主体パネルの第2段階（デジモン/テイマー/プレイヤー）ボタン自体を出さない
+// （＝「自分」「相手」だけ選べば「指定なし」の状態になる。ZONE_INCREASE_TRIGGERと同じ
+// ハードコード方式。辞書列が整備されたら不要になる）
+const NO_SUBJECT_TYPE_TRIGGERS = new Set(['when_security_decrease']);
 
 // よく使うアクション: カードDB(data/cards.json)のレシピ内action出現数を集計し、
 // 上位のものをボタン化（トリガー家族ボタンと同じ操作感にするため）。
@@ -4243,7 +4250,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             // 辞書「場所指定」フラグが立っているトリガー（破棄されたとき等）を1つでも選んでいれば、
             // 第2段階に手札/トラッシュ/セキュリティ、第3/4段階（進化元/重ねられているカード＋位置）を表示する
             const allTriggersTypeless = currentTriggers.length > 0
-              && currentTriggers.every((t) => dict.triggers.find((d) => d.code === t)?.noSubjectType);
+              && currentTriggers.every((t) => NO_SUBJECT_TYPE_TRIGGERS.has(t) || dict.triggers.find((d) => d.code === t)?.noSubjectType);
             const isZoneIncreaseTrigger = currentTriggers.includes(ZONE_INCREASE_TRIGGER);
             const triggerHasFromZones = isZoneIncreaseTrigger || currentTriggers.some((t) => dict.triggers.find((d) => d.code === t)?.hasFromZones);
             // レスト/アクティブ状態フィルタは「このカード/デジモン/テイマー」のときだけ意味を持つ

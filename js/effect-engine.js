@@ -10562,6 +10562,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const cardToReturn = sd && (sd.card || sd);
         if (!cardToReturn) { callback(); break; }
         const top = step.position === 'top' || step.deck_top;
+        if (Array.isArray(step.options) && step.options.includes('face_down')) cardToReturn._faceDown = true;
         if (top) player.deck.unshift(cardToReturn);
         else player.deck.push(cardToReturn);
         ctx.addLog('🔄 「' + cardToReturn.name + '」をデッキの' + (top ? '上' : '下') + 'に戻す');
@@ -10606,6 +10607,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             opponent.battleArea[idx] = null;
             if (c.stack) c.stack.forEach(s => opponent.trash.push(s));
             if (c.linkedCards) c.linkedCards.forEach(s => opponent.trash.push(s));
+            if (Array.isArray(step.options) && step.options.includes('face_down')) c._faceDown = true;
             if (_rdTop) opponent.deck.unshift(c); else opponent.deck.push(c);
             ctx.addLog('🔄 「' + c.name + '」を持ち主のデッキの' + (_rdTop ? '上' : '下') + 'に戻す');
             if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
@@ -10675,6 +10677,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _doReturn2 = (entry, doneCb) => {
           if (!entry) { doneCb(false); return; }
           entry.remove();
+          if (Array.isArray(step.options) && step.options.includes('face_down')) entry.card._faceDown = true;
           if (_rdTop2) _rdOwnerP.deck.unshift(entry.card); else _rdOwnerP.deck.push(entry.card);
           _rdReturnedCount++;
           ctx.addLog('🔄 「' + entry.card.name + '」をデッキの' + (_rdTop2 ? '上' : '下') + 'に戻す');

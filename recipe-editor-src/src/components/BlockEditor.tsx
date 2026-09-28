@@ -6014,6 +6014,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 onChange={(v) => updateEffect({ deckPosition: (v || undefined) as 'top' | 'bottom' | 'both' | undefined })}
                 accentColor="#1976d2"
               />
+              {effectAction === 'return_deck' && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                  <ButtonGroup
+                    options={[{ code: 'face_up', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
+                    value={effectFaceValue}
+                    onChange={(v) => setEffectFace(v as 'face_down' | 'face_up')}
+                    accentColor="#1976d2"
+                  />
+                </div>
+              )}
             </div>
           );
         })()}

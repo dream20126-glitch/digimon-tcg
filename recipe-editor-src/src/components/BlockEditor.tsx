@@ -8771,6 +8771,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   name: 'cond_name',
   zone: 'cond_zone',
   ref: 'cond_hand_ge',
+  decrease: 'cond_security_decreased',
   designated: DESIGNATED_NAME_COND,
   evo_source: 'cond_target_evo_source',
   stacked: 'cond_target_stack',

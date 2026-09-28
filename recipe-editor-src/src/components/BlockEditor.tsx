@@ -3336,11 +3336,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectIsVariantOfFlagged = !!(effectCurVariant && (effectFlaggedBases.has(effectCurVariant.base) || effectAutoGroupBases.has(effectCurVariant.base)));
   const effectIsPositionalGeneric = effectIsFlaggedBaseDirect || effectIsVariantOfFlagged;
   const effectIsPlaceActive = PLACE_ACTION_CODES.has(effectAction || '');
-  // 置き場所ごとに位置/裏表の有無が異なる（例: バトルエリアには位置/裏表の概念が無い）が、
-  // PLACE_ZONE_MAPの個別フラグではなく、対象欄で選んでいる対象のゾーン（テイマー/デジモン/
-  // セキュリティ＝いずれも重ね順のあるゾーン）から判定する（対象欄側の選択と二重管理しない）
-  const effectTargetL2ForPlace = TARGET_SEL_CODE_TO_L1L2[(effectTarget || '').split(':')[0]]?.l2 || '';
-  const effectPlaceZoneHasPositionFace = effectTargetL2ForPlace === 'security' || effectTargetL2ForPlace === 'tamer' || effectTargetL2ForPlace === 'digimon';
+  // 置き場所ごとに位置/裏表の有無が異なる（例: バトルエリアには位置/裏表の概念が無い）。
+  // 現在選択中のアクションコード自体がどの置き場所かを一意に表すため、PLACE_ZONE_MAPの
+  // hasPosition/hasFaceフラグを直接見る（対象欄側の対象がデジモン/テイマー/セキュリティ/
+  // 「このカード」いずれでも、アクションコードから正しく判定できる。以前は対象欄のL2から
+  // 判定していたため、対象＝「このカード」(target:'self_card'。l2=''になる)のケースで
+  // 判定漏れが起きていた）
+  const effectActivePlaceZone = PLACE_ZONE_MAP.find((z) => z.action === effectAction);
+  const effectPlaceZoneHasPositionFace = !!effectActivePlaceZone?.hasPosition || !!effectActivePlaceZone?.hasFace;
   const effectHasFaceOptionFlag = (() => {
     const exact = dict.actions.find((a) => a.code === effectAction);
     if (exact?.hasFaceOption) return true;
@@ -5747,11 +5750,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* 📍 場所（取得元エリア）: 登場/使用・進化はビルトインのため常時対象、
             それ以外は辞書の hasFromZones=true のアクションのみ表示。編集中の効果に対して読み書き。
-            「〇〇に置く」(isPlaceActive)専用の📥場所パネルと辞書側hasFromZonesが両方満たされる
-            アクション（place_on_security_top等）では二重表示になってしまうため、
-            isPlaceActive中はこちらを出さない。「破棄する」(isDiscardActive)も同様に
-            専用の📥場所（どこから破棄するか）パネルを別途持つため、二重表示を避けるためこちらを出さない */}
-        {!PLACE_ACTION_CODES.has(effectAction || '') && !(DISCARD_ACTION_CODES.has(getActionVariant(effectAction || '')?.base || (effectAction || '')) || effectAction === 'discard') && effectAction !== 'return_deck' && effectAction !== 'add_to_hand' && (BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || !!dict.actions.find((a) => a.code === effectAction)?.hasFromZones) && (() => {
+            「〇〇に置く」(isPlaceActive)はPLACE_ZONE_MAP側のhasFromZonesフラグを見る
+            （セキュリティ/テイマー/進化元/このカードは取得元を選べるが、バトルエリアは
+            「このカード自身」が置かれるだけなので取得元の概念が無い）。「破棄する」
+            (isDiscardActive)は専用の📥場所（どこから破棄するか）パネルを別途持つため、
+            二重表示を避けるためこちらを出さない */}
+        {!(DISCARD_ACTION_CODES.has(getActionVariant(effectAction || '')?.base || (effectAction || '')) || effectAction === 'discard') && effectAction !== 'return_deck' && effectAction !== 'add_to_hand'
+          && (effectIsPlaceActive ? !!effectActivePlaceZone?.hasFromZones : (BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || !!dict.actions.find((a) => a.code === effectAction)?.hasFromZones))
+          && (() => {
           const zones = effectFromZones;
           const op = effectFromZonesOp;
           const toggleZone = (code: string) => {

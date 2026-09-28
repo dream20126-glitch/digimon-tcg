@@ -1508,12 +1508,14 @@ function CostListEditor({
                 </div>
               )}
               {/* 📥場所: 辞書の hasFromZones=true なアクション（例:「テイマーの下に置く」）
-                  選択時のみ表示。破棄ボタン(DISCARD_ZONE_MAP)とは独立した汎用機構。
+                  選択時、および「進化させる」(evolve。登場/使用/リンクと同じくビルトインの
+                  取得元エリア持ちアクション。BUILTIN_FROM_ZONE_ACTIONS参照)選択時に表示。
+                  破棄ボタン(DISCARD_ZONE_MAP)とは独立した汎用機構。
                   「〇〇に置く」(isPlaceActive)専用の📥場所パネルと辞書側hasFromZonesが
                   両方満たされるアクション（place_on_security_top等）では二重表示になって
                   しまうため、isPlaceActive中はこちらを出さない */}
               {(() => {
-                if (isPlaceActive || !costActionHasFlag('hasFromZones')) return null;
+                if (isPlaceActive || (!costActionHasFlag('hasFromZones') && c.action !== 'evolve')) return null;
                 const zones = c.fromZones || [];
                 const op = c.fromZonesOp || 'or';
                 const toggleZone = (code: string) => {
@@ -1545,6 +1547,12 @@ function CostListEditor({
                         );
                       })}
                     </div>
+                    {c.action === 'evolve' && zones.some((z) => z !== 'hand') && (
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
+                        ⚠ 「進化させる」はエンジン側が取得元を常に手札固定で処理するため、手札以外の場所指定は
+                        保存はできますが動作しません
+                      </div>
+                    )}
                     {zones.length >= 2 && (
                       <div style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
                         <span style={{ color: '#666' }}>結合:</span>

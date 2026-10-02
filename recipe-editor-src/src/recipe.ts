@@ -1406,7 +1406,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     if (thenStep.limit === undefined && b.limit) thenStep.limit = b.limit;
     if (rest.length > 0) {
       thenStep.alt_actions = rest.map((a) => altActionToStepObject(a, keywordDict));
-      thenStep.alt_actions_op = b.altActionsOp === 'and' ? 'and' : 'or';
+      // thenBreakOpが明示されていればそちらを優先（「その後」区間だけ独自のAND/ORにできる）。
+      // 省略時は従来通りblock.altActionsOpを引き継ぐ（後方互換）
+      thenStep.alt_actions_op = head.thenBreakOp ? head.thenBreakOp : (b.altActionsOp === 'and' ? 'and' : 'or');
     }
     container[b.trigger].push(thenStep);
   });
@@ -1620,6 +1622,11 @@ function stepsArrayToBlocks(section: 'main' | 'evo_source' | 'security' | 'link'
       const prev = blocks[blocks.length - 1];
       const head = stepObjectToAltAction(step);
       head.thenBreak = true;
+      // このstep自身がalt_actionsを持つ（＝「その後」区間が2件以上のAND/OR束）場合、
+      // そのstep.alt_actions_opを区間固有の結合方法として復元する
+      if (Array.isArray(step?.alt_actions) && step.alt_actions.length > 0) {
+        head.thenBreakOp = step.alt_actions_op === 'and' ? 'and' : 'or';
+      }
       const nested = Array.isArray(step?.alt_actions) ? step.alt_actions.map((a: any) => stepObjectToAltAction(a)) : [];
       prev.altActions = [...(prev.altActions || []), head, ...nested];
       return;

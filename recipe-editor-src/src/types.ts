@@ -509,12 +509,15 @@ export interface AltAction {
   // 対応（このAltAction由来のstepを実行する箇所を、ブロック全体のisOptional判定から
   // 切り離して個別に確認する）が別途必要（未実装）。JSON上は正しく区別して保存できる
   optional?: boolean;
-  // この効果から「その後」区切りを開始する（例:「AとBをANDで行い、その後Cをレストできる」で
-  // Cにだけこれを立てる）。block.altActionsOp（OR/AND）は直前までの効果群の組合せ方を
-  // 決めるが、thenBreak:true の効果はそのグループから切り離され、同じトリガー配列内の
-  // 独立した後続step（continue_on_fail付き＝前段が不発でも必ず発動する）として出力される。
-  // これ以降、次のthenBreak項目までの効果は再び block.altActionsOp で結合される
+  // この効果から「その後」区切りを開始する（例:「AとBをANDで行い、その後CかDのどちらかを
+  // 発揮する」でCにだけこれを立てる）。thenBreak:true の効果はそれ以前の効果群から切り離され、
+  // 同じトリガー配列内の独立した後続step（continue_on_fail付き＝前段が不発でも必ず発動する）
+  // として出力される
   thenBreak?: boolean;
+  // 「その後」区切り以降（このthenBreak項目を含むグループ）の組合せ方をAND/ORで個別指定する。
+  // 省略時はblock.altActionsOpを引き継ぐ（後方互換）。これにより「効果1・2はAND、
+  // その後の効果3・4はOR」のように、区切り前後で異なる結合方法を設定できる
+  thenBreakOp?: 'and' | 'or';
 }
 
 // グループ内条件の1エントリ。1エントリの中に複数条件を入れるとその中はAND。

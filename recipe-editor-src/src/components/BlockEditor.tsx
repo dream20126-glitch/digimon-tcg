@@ -5394,10 +5394,25 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       <input
                         type="checkbox"
                         checked={!!editingAlt?.thenBreak}
-                        onChange={(e) => updateEffect({ thenBreak: e.target.checked || undefined })}
+                        onChange={(e) => updateEffect({ thenBreak: e.target.checked || undefined, thenBreakOp: e.target.checked ? editingAlt?.thenBreakOp : undefined })}
                       />
                       その後
                     </label>
+                  )}
+                  {/* 「その後」区間（この効果から始まる、次の「その後」までのグループ）独自の
+                      AND/OR。省略時（指定なし）はブロック全体の「🔀複数アクション」設定を
+                      引き継ぐ（後方互換）。これで「効果1・2はAND、その後の効果3・4はOR」のように
+                      区切り前後で異なる結合方法を設定できる */}
+                  {isEditingAlt && editingAlt?.thenBreak && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 10, color: '#666' }}>この「その後」区間の結合:</span>
+                      <ButtonGroup
+                        options={[{ code: '', label: '指定なし（全体設定を継承）' }, { code: 'and', label: 'AND' }, { code: 'or', label: 'OR' }]}
+                        value={editingAlt?.thenBreakOp || ''}
+                        onChange={(v) => updateEffect({ thenBreakOp: (v || undefined) as 'and' | 'or' | undefined })}
+                        accentColor="#9333ea"
+                      />
+                    </div>
                   )}
                   {/* summon / summon_from_trash / evolve / summon_from_evo_source 専用:
                       コストを支払わず / 登場時効果は発揮しない
@@ -6034,7 +6049,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <div>効果1：{describeEffect(block.action, block.value, block.target, block.conditions) || '(未設定)'}</div>
                 {altActions.map((a, i) => (
                   <div key={i}>
-                    効果{i + 2}{a.thenBreak ? '（その後）' : ''}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}
+                    効果{i + 2}{a.thenBreak ? `（その後${a.thenBreakOp ? '・' + (a.thenBreakOp === 'and' ? 'AND区間' : 'OR区間') + '開始' : ''}）` : ''}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}
                   </div>
                 ))}
               </div>

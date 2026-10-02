@@ -8783,9 +8783,6 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   { code: 'hand', label: '手札' },
   { code: 'trash', label: 'トラッシュ' },
   { code: 'security', label: 'セキュリティ' },
-  // ⚠ エンジン未実装（表向き/裏向きのセキュリティという状態自体をエンジンが未保持）
-  { code: 'security_faceup', label: '表向きのセキュリティ' },
-  { code: 'security_facedown', label: '裏向きのセキュリティ' },
   { code: 'evo_source', label: '進化元／テイマーの下' },
   { code: 'linked', label: 'リンクカード' },
   { code: 'battle_area', label: 'バトルエリア' },
@@ -8805,6 +8802,8 @@ const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'hand:ge': 'cond_hand_ge', 'hand:le': 'cond_hand_le', 'hand:eq': 'cond_hand_eq', 'hand:gt': 'cond_hand_gt', 'hand:lt': 'cond_hand_lt',
   'trash:ge': 'cond_trash_ge', 'trash:le': 'cond_trash_le', 'trash:eq': 'cond_trash_eq', 'trash:gt': 'cond_trash_gt', 'trash:lt': 'cond_trash_lt',
   'security:ge': 'cond_security_ge', 'security:le': 'cond_security_le', 'security:eq': 'cond_security_eq', 'security:gt': 'cond_security_gt', 'security:lt': 'cond_security_lt',
+  // 「セキュリティ」ゾーン+裏表トグル（refSecurityFaceOf/REF_SECURITY_FACE_OPTIONS）専用の
+  // 内部参照キー。ゾーンボタンとしては出さない（REF_ZONE_OPTIONSには含めない）
   'security_faceup:ge': 'cond_security_faceup_ge', 'security_faceup:le': 'cond_security_faceup_le', 'security_faceup:eq': 'cond_security_faceup_eq', 'security_faceup:gt': 'cond_security_faceup_gt', 'security_faceup:lt': 'cond_security_faceup_lt',
   'security_facedown:ge': 'cond_security_facedown_ge', 'security_facedown:le': 'cond_security_facedown_le', 'security_facedown:eq': 'cond_security_facedown_eq', 'security_facedown:gt': 'cond_security_facedown_gt', 'security_facedown:lt': 'cond_security_facedown_lt',
   'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le', 'evo_source:eq': 'cond_has_evo_eq', 'evo_source:gt': 'cond_has_evo_gt', 'evo_source:lt': 'cond_has_evo_lt',
@@ -8828,8 +8827,10 @@ const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> 
   cond_hand_ge: { zone: 'hand', quant: 'ge' }, cond_hand_le: { zone: 'hand', quant: 'le' }, cond_hand_eq: { zone: 'hand', quant: 'eq' }, cond_hand_gt: { zone: 'hand', quant: 'gt' }, cond_hand_lt: { zone: 'hand', quant: 'lt' },
   cond_trash_ge: { zone: 'trash', quant: 'ge' }, cond_trash_le: { zone: 'trash', quant: 'le' }, cond_trash_eq: { zone: 'trash', quant: 'eq' }, cond_trash_gt: { zone: 'trash', quant: 'gt' }, cond_trash_lt: { zone: 'trash', quant: 'lt' },
   cond_security_ge: { zone: 'security', quant: 'ge' }, cond_security_le: { zone: 'security', quant: 'le' }, cond_security_eq: { zone: 'security', quant: 'eq' }, cond_security_gt: { zone: 'security', quant: 'gt' }, cond_security_lt: { zone: 'security', quant: 'lt' },
-  cond_security_faceup_ge: { zone: 'security_faceup', quant: 'ge' }, cond_security_faceup_le: { zone: 'security_faceup', quant: 'le' }, cond_security_faceup_eq: { zone: 'security_faceup', quant: 'eq' }, cond_security_faceup_gt: { zone: 'security_faceup', quant: 'gt' }, cond_security_faceup_lt: { zone: 'security_faceup', quant: 'lt' },
-  cond_security_facedown_ge: { zone: 'security_facedown', quant: 'ge' }, cond_security_facedown_le: { zone: 'security_facedown', quant: 'le' }, cond_security_facedown_eq: { zone: 'security_facedown', quant: 'eq' }, cond_security_facedown_gt: { zone: 'security_facedown', quant: 'gt' }, cond_security_facedown_lt: { zone: 'security_facedown', quant: 'lt' },
+  // 裏表トグルが付いていても「セキュリティ」ゾーン自体は変わらない（refSecurityFaceOfが
+  // c.baseからトグルの状態を別途判定する）
+  cond_security_faceup_ge: { zone: 'security', quant: 'ge' }, cond_security_faceup_le: { zone: 'security', quant: 'le' }, cond_security_faceup_eq: { zone: 'security', quant: 'eq' }, cond_security_faceup_gt: { zone: 'security', quant: 'gt' }, cond_security_faceup_lt: { zone: 'security', quant: 'lt' },
+  cond_security_facedown_ge: { zone: 'security', quant: 'ge' }, cond_security_facedown_le: { zone: 'security', quant: 'le' }, cond_security_facedown_eq: { zone: 'security', quant: 'eq' }, cond_security_facedown_gt: { zone: 'security', quant: 'gt' }, cond_security_facedown_lt: { zone: 'security', quant: 'lt' },
   cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_eq: { zone: 'evo_source', quant: 'eq' }, cond_has_evo_gt: { zone: 'evo_source', quant: 'gt' }, cond_has_evo_lt: { zone: 'evo_source', quant: 'lt' },
   cond_linked_ge: { zone: 'linked', quant: 'ge' }, cond_linked_le: { zone: 'linked', quant: 'le' }, cond_linked_eq: { zone: 'linked', quant: 'eq' }, cond_linked_gt: { zone: 'linked', quant: 'gt' }, cond_linked_lt: { zone: 'linked', quant: 'lt' },
   cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' }, cond_battle_area_gt: { zone: 'battle_area', quant: 'gt' }, cond_battle_area_lt: { zone: 'battle_area', quant: 'lt' },
@@ -8862,6 +8863,21 @@ function refQuantOf(c: ConditionPair): RefQuant {
   if (c.base === 'cond_face_up') return 'face_up';
   return REF_CODE_TO_ZONE_QUANT[c.base]?.quant || 'ge';
 }
+// セキュリティゾーン専用: 枚数(ge/le/eq/gt/lt)と独立した「裏表」トグル
+// （手札+枚数+以上/以下と同じ形に、裏向き/表向きだけを追加で絞り込む軸として重ねる）。
+// cond_security_faceup_*/cond_security_facedown_* を使っていれば該当する裏表、
+// それ以外（cond_security_*、または他ゾーン）は「指定なし」
+const REF_SECURITY_FACE_OPTIONS: { code: '' | 'down' | 'up'; label: string }[] = [
+  { code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' },
+];
+function refSecurityFaceOf(base: string): '' | 'down' | 'up' {
+  if (base.startsWith('cond_security_facedown_')) return 'down';
+  if (base.startsWith('cond_security_faceup_')) return 'up';
+  return '';
+}
+function refSecurityZoneKey(face: '' | 'down' | 'up'): string {
+  return face === 'down' ? 'security_facedown' : face === 'up' ? 'security_faceup' : 'security';
+}
 // ゾーンを変更する（値バリアントは可能な限り維持。裏向き/表向きは対応ゾーンでのみ維持できる）
 function refApplyZone(zone: string, quant: RefQuant, value: string | undefined): { base: string; value?: string } {
   if (zone === 'state') return { base: 'cond_same_state', value: DP_REF_CODES.has(value || '') ? value : 'self' };
@@ -8869,16 +8885,19 @@ function refApplyZone(zone: string, quant: RefQuant, value: string | undefined):
     if (REF_FACE_ZONES.has(zone)) return { base: quant === 'face_down' ? 'cond_face_down' : 'cond_face_up', value: zone };
     return { base: REF_ZONE_QUANT_TO_CODE[zone + ':ge'], value: undefined };
   }
+  // ゾーンを切り替えたら裏表トグルは「指定なし」にリセットする
   return { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant] };
 }
 // 値バリアントを変更する（裏向き/表向きは現在のゾーンをそのまま value として保持する。
 // 以上/以下/完全一致の切替では、入力済みの枚数や「参照」(value:'opp')はそのまま維持する
-// ―― 以上/以下ボタンの切替のたびに「参照」選択が数値入力に巻き戻る不具合があったため）
-function refApplyQuant(zone: string, quant: RefQuant, currentValue?: string): { base: string; value?: string } {
+// ―― 以上/以下ボタンの切替のたびに「参照」選択が数値入力に巻き戻る不具合があったため）。
+// securityFace: セキュリティゾーンの裏表トグルの現在値を、切替後も保持するために渡す
+function refApplyQuant(zone: string, quant: RefQuant, currentValue?: string, securityFace?: '' | 'down' | 'up'): { base: string; value?: string } {
   if (quant === 'face_down' || quant === 'face_up') {
     return { base: quant === 'face_down' ? 'cond_face_down' : 'cond_face_up', value: zone };
   }
-  return { base: REF_ZONE_QUANT_TO_CODE[zone + ':' + quant], value: currentValue };
+  const key = (zone === 'security' && securityFace) ? refSecurityZoneKey(securityFace) : zone;
+  return { base: REF_ZONE_QUANT_TO_CODE[key + ':' + quant], value: currentValue };
 }
 const REF_QUANT_OPTIONS_BY_ZONE: Record<string, { code: RefQuant; label: string }[]> = {
   evo_source: [
@@ -9340,7 +9359,9 @@ function ConditionsHybridEditor({
                         const refQuant = refQuantOf(c);
                         const refQuantOptions = REF_QUANT_OPTIONS_BY_ZONE[refZone] || REF_QUANT_OPTIONS_DEFAULT;
                         const refNoValue = REF_QUANT_NO_VALUE.has(refQuant);
+                        const refSecurityFace = refSecurityFaceOf(c.base);
                         return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                             <ButtonGroup
                               options={refQuantOptions}
@@ -9349,6 +9370,7 @@ function ConditionsHybridEditor({
                                 refZone,
                                 quant as RefQuant,
                                 (refQuant === 'face_down' || refQuant === 'face_up') ? undefined : c.value,
+                                refSecurityFace,
                               ))}
                               accentColor={colors.accent}
                             />
@@ -9386,6 +9408,23 @@ function ConditionsHybridEditor({
                                 </button>
                               </>
                             )}
+                          </div>
+                          {/* セキュリティのみ: 枚数条件に重ねて「裏向きのみ/表向きのみ」に絞り込める
+                              （例:「裏向きのセキュリティが2枚以上」）。⚠エンジン未実装
+                              （セキュリティカード個々の裏表状態自体をエンジンが未保持） */}
+                          {refZone === 'security' && (
+                            <div>
+                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                              <ButtonGroup
+                                options={REF_SECURITY_FACE_OPTIONS}
+                                value={refSecurityFace}
+                                onChange={(face) => updateAt(i, {
+                                  base: REF_ZONE_QUANT_TO_CODE[refSecurityZoneKey(face as '' | 'down' | 'up') + ':' + refQuant],
+                                })}
+                                accentColor={colors.accent}
+                              />
+                            </div>
+                          )}
                           </div>
                         );
                       })()

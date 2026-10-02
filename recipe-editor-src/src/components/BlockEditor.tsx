@@ -8783,8 +8783,9 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   { code: 'hand', label: '手札' },
   { code: 'trash', label: 'トラッシュ' },
   { code: 'security', label: 'セキュリティ' },
-  // ⚠ エンジン未実装（表向きのセキュリティという状態自体をエンジンが未保持）
+  // ⚠ エンジン未実装（表向き/裏向きのセキュリティという状態自体をエンジンが未保持）
   { code: 'security_faceup', label: '表向きのセキュリティ' },
+  { code: 'security_facedown', label: '裏向きのセキュリティ' },
   { code: 'evo_source', label: '進化元／テイマーの下' },
   { code: 'linked', label: 'リンクカード' },
   { code: 'battle_area', label: 'バトルエリア' },
@@ -8805,6 +8806,7 @@ const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'trash:ge': 'cond_trash_ge', 'trash:le': 'cond_trash_le', 'trash:eq': 'cond_trash_eq', 'trash:gt': 'cond_trash_gt', 'trash:lt': 'cond_trash_lt',
   'security:ge': 'cond_security_ge', 'security:le': 'cond_security_le', 'security:eq': 'cond_security_eq', 'security:gt': 'cond_security_gt', 'security:lt': 'cond_security_lt',
   'security_faceup:ge': 'cond_security_faceup_ge', 'security_faceup:le': 'cond_security_faceup_le', 'security_faceup:eq': 'cond_security_faceup_eq', 'security_faceup:gt': 'cond_security_faceup_gt', 'security_faceup:lt': 'cond_security_faceup_lt',
+  'security_facedown:ge': 'cond_security_facedown_ge', 'security_facedown:le': 'cond_security_facedown_le', 'security_facedown:eq': 'cond_security_facedown_eq', 'security_facedown:gt': 'cond_security_facedown_gt', 'security_facedown:lt': 'cond_security_facedown_lt',
   'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le', 'evo_source:eq': 'cond_has_evo_eq', 'evo_source:gt': 'cond_has_evo_gt', 'evo_source:lt': 'cond_has_evo_lt',
   'linked:ge': 'cond_linked_ge', 'linked:le': 'cond_linked_le', 'linked:eq': 'cond_linked_eq', 'linked:gt': 'cond_linked_gt', 'linked:lt': 'cond_linked_lt',
   'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq', 'battle_area:gt': 'cond_battle_area_gt', 'battle_area:lt': 'cond_battle_area_lt',
@@ -8816,13 +8818,18 @@ type RefQuant = 'ge' | 'le' | 'eq' | 'gt' | 'lt' | 'face_down' | 'face_up';
 const REF_QUANT_NO_VALUE = new Set<RefQuant>(['face_down', 'face_up']);
 // 裏向き/表向き（cond_face_down/cond_face_up）はカード自体の裏表状態を見るだけでゾーンを
 // 問わない判定だが、「どのゾーンについて聞いているか」の表示が消えると分かりにくいため、
-// ゾーンは c.value 側に保持する（進化元／セキュリティで選択可。値としては使わない・表示専用）
-const REF_FACE_ZONES = new Set(['evo_source', 'security']);
+// ゾーンは c.value 側に保持する（値としては使わない・表示専用）。
+// セキュリティはこの「個別カード1枚の裏表」判定ではなく、常に「ゾーン全体で表向き/裏向きが
+// 何枚あるか」という集計（cond_security_faceup_*/cond_security_facedown_*、上のREF_ZONE_OPTIONS
+// 参照）が欲しいケースしか無いため、ここには含めない（進化元/テイマーの下は積まれたカードを
+// 1枚ずつ選ぶ場面＝CostStepの取得元フィルタ等で個別カード判定が必要なため維持する）
+const REF_FACE_ZONES = new Set(['evo_source']);
 const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> = {
   cond_hand_ge: { zone: 'hand', quant: 'ge' }, cond_hand_le: { zone: 'hand', quant: 'le' }, cond_hand_eq: { zone: 'hand', quant: 'eq' }, cond_hand_gt: { zone: 'hand', quant: 'gt' }, cond_hand_lt: { zone: 'hand', quant: 'lt' },
   cond_trash_ge: { zone: 'trash', quant: 'ge' }, cond_trash_le: { zone: 'trash', quant: 'le' }, cond_trash_eq: { zone: 'trash', quant: 'eq' }, cond_trash_gt: { zone: 'trash', quant: 'gt' }, cond_trash_lt: { zone: 'trash', quant: 'lt' },
   cond_security_ge: { zone: 'security', quant: 'ge' }, cond_security_le: { zone: 'security', quant: 'le' }, cond_security_eq: { zone: 'security', quant: 'eq' }, cond_security_gt: { zone: 'security', quant: 'gt' }, cond_security_lt: { zone: 'security', quant: 'lt' },
   cond_security_faceup_ge: { zone: 'security_faceup', quant: 'ge' }, cond_security_faceup_le: { zone: 'security_faceup', quant: 'le' }, cond_security_faceup_eq: { zone: 'security_faceup', quant: 'eq' }, cond_security_faceup_gt: { zone: 'security_faceup', quant: 'gt' }, cond_security_faceup_lt: { zone: 'security_faceup', quant: 'lt' },
+  cond_security_facedown_ge: { zone: 'security_facedown', quant: 'ge' }, cond_security_facedown_le: { zone: 'security_facedown', quant: 'le' }, cond_security_facedown_eq: { zone: 'security_facedown', quant: 'eq' }, cond_security_facedown_gt: { zone: 'security_facedown', quant: 'gt' }, cond_security_facedown_lt: { zone: 'security_facedown', quant: 'lt' },
   cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_eq: { zone: 'evo_source', quant: 'eq' }, cond_has_evo_gt: { zone: 'evo_source', quant: 'gt' }, cond_has_evo_lt: { zone: 'evo_source', quant: 'lt' },
   cond_linked_ge: { zone: 'linked', quant: 'ge' }, cond_linked_le: { zone: 'linked', quant: 'le' }, cond_linked_eq: { zone: 'linked', quant: 'eq' }, cond_linked_gt: { zone: 'linked', quant: 'gt' }, cond_linked_lt: { zone: 'linked', quant: 'lt' },
   cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' }, cond_battle_area_gt: { zone: 'battle_area', quant: 'gt' }, cond_battle_area_lt: { zone: 'battle_area', quant: 'lt' },
@@ -8879,11 +8886,9 @@ const REF_QUANT_OPTIONS_BY_ZONE: Record<string, { code: RefQuant; label: string 
     { code: 'gt', label: 'より多い' }, { code: 'lt', label: 'より少ない' },
     { code: 'face_down', label: '裏向き' }, { code: 'face_up', label: '表向き' },
   ],
-  security: [
-    { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },
-    { code: 'gt', label: 'より多い' }, { code: 'lt', label: 'より少ない' },
-    { code: 'face_down', label: '裏向き' }, { code: 'face_up', label: '表向き' },
-  ],
+  // セキュリティは「表向きのセキュリティ」「裏向きのセキュリティ」という独立ゾーンに
+  // 枚数集計(ge/le/eq/gt/lt)を持たせたため、ここでは通常のREF_QUANT_OPTIONS_DEFAULT
+  // （枚数のみ）に委ねる。個別カード1枚の裏表判定(face_down/face_up)は不要
 };
 const REF_QUANT_OPTIONS_DEFAULT: { code: RefQuant; label: string }[] = [
   { code: 'ge', label: '以上' }, { code: 'le', label: '以下' }, { code: 'eq', label: '完全一致' },

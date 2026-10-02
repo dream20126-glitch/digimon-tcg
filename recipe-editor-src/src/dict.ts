@@ -244,13 +244,18 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_linked_eq', kind: 'condition', label: 'リンクカードがちょうどN枚' },
   { code: 'cond_linked_gt', kind: 'condition', label: 'リンクカードがN枚より多い' },
   { code: 'cond_linked_lt', kind: 'condition', label: 'リンクカードがN枚より少ない' },
-  // 表向きのセキュリティ枚数（⚠ エンジン未実装: セキュリティカード個々の裏表状態を
+  // 表向き/裏向きのセキュリティ枚数（⚠ エンジン未実装: セキュリティカード個々の裏表状態を
   // エンジンが保持していないため、実装にはセキュリティの表向き管理自体の追加が必要）
   { code: 'cond_security_faceup_ge', kind: 'condition', label: '表向きのセキュリティがN枚以上' },
   { code: 'cond_security_faceup_le', kind: 'condition', label: '表向きのセキュリティがN枚以下' },
   { code: 'cond_security_faceup_eq', kind: 'condition', label: '表向きのセキュリティがちょうどN枚' },
   { code: 'cond_security_faceup_gt', kind: 'condition', label: '表向きのセキュリティがN枚より多い' },
   { code: 'cond_security_faceup_lt', kind: 'condition', label: '表向きのセキュリティがN枚より少ない' },
+  { code: 'cond_security_facedown_ge', kind: 'condition', label: '裏向きのセキュリティがN枚以上' },
+  { code: 'cond_security_facedown_le', kind: 'condition', label: '裏向きのセキュリティがN枚以下' },
+  { code: 'cond_security_facedown_eq', kind: 'condition', label: '裏向きのセキュリティがちょうどN枚' },
+  { code: 'cond_security_facedown_gt', kind: 'condition', label: '裏向きのセキュリティがN枚より多い' },
+  { code: 'cond_security_facedown_lt', kind: 'condition', label: '裏向きのセキュリティがN枚より少ない' },
   // 「〇〇が減った」: 効果2以降の発動条件専用。「Aするか、Xが減っているなら代わりにB」の
   // ように使う汎用条件。値に原因（バトルで/効果で/指定なし）を保存する。
   // ⚠エンジン未対応（減少検知トリガー自体が未実装のため要実装）

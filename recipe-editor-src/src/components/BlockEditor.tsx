@@ -2134,9 +2134,11 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   own_hand: { l1: 'own', l2: 'hand' },
   own_trash: { l1: 'own', l2: 'trash' },
   own_security: { l1: 'own', l2: 'security' },
+  own_deck: { l1: 'own', l2: 'deck' },
   opp_hand: { l1: 'opp', l2: 'hand' },
   opp_trash: { l1: 'opp', l2: 'trash' },
   opp_security: { l1: 'opp', l2: 'security' },
+  opp_deck: { l1: 'opp', l2: 'deck' },
   // 「このカード」+場所（例:「このカードが手札から破棄されたとき」）。
   // このカード自身の識別が必要なため own/opp側の場所より対応がさらに限定的
   // （エンジン未実装のプレースホルダー。保存はできるが発火しない）
@@ -2145,21 +2147,22 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   self_security: { l1: 'self', l2: 'security' },
 };
 Object.assign(SUBJECT_L1L2_TO_CODE, {
-  'own:hand': 'own_hand', 'own:trash': 'own_trash', 'own:security': 'own_security',
-  'opp:hand': 'opp_hand', 'opp:trash': 'opp_trash', 'opp:security': 'opp_security',
+  'own:hand': 'own_hand', 'own:trash': 'own_trash', 'own:security': 'own_security', 'own:deck': 'own_deck',
+  'opp:hand': 'opp_hand', 'opp:trash': 'opp_trash', 'opp:security': 'opp_security', 'opp:deck': 'opp_deck',
   'self:hand': 'self_hand', 'self:trash': 'self_trash', 'self:security': 'self_security',
 });
 // 「場所指定」フラグが立っているトリガー（破棄されたとき等）でのみ、通常のL2一覧に
-// 手札/トラッシュ/セキュリティを追加する（アクション対象欄のTARGET_SEL_L2_FROM_ZONESと
-// 同じ考え方。デッキ/バトルエリア/リンクカードはここでは対象外）
+// 手札/トラッシュ/セキュリティ/デッキを追加する（アクション対象欄のTARGET_SEL_L2_FROM_ZONESと
+// 同じ考え方。バトルエリア/リンクカードはここでは対象外）
 const SUBJECT_L2_FROM_ZONES = [
   { code: 'hand', label: '手札' },
   { code: 'trash', label: 'トラッシュ' },
   { code: 'security', label: 'セキュリティ' },
+  { code: 'deck', label: 'デッキ' },
 ];
-// own_trash/own_security等はエンジンのsubjectMatchesに対応ケースが無く、保存はできても
+// own_trash/own_security/own_deck等はエンジンのsubjectMatchesに対応ケースが無く、保存はできても
 // 発火しない（own_hand/opp_hand は「破棄されたとき」でfireWhenHandDiscardTriggers対応済み）
-const SUBJECT_UNIMPLEMENTED_ZONES = new Set(['own_trash', 'own_security', 'opp_trash', 'opp_security']);
+const SUBJECT_UNIMPLEMENTED_ZONES = new Set(['own_trash', 'own_security', 'opp_trash', 'opp_security', 'own_deck', 'opp_deck']);
 
 // 条件の「対象」用の2段階ボタン選択（発動主体と同じ見た目のパターンだが、
 // CONDITION_SUBJECTS のコード体系が発動主体と異なる＝別テーブルで持つ）
@@ -2462,6 +2465,14 @@ function TriggerSubjectStagedPicker({
       {!hasDigimonTamer && !suppressTypeButtons && cur.l1 !== 'self' && (
         <div style={{ marginTop: 4 }}>
           <ButtonGroup options={l2Options} value={effectiveL2} onChange={handleL2} accentColor={accentColor} />
+        </div>
+      )}
+      {/* suppressTypeButtons時でも、場所（手札/トラッシュ/セキュリティ/デッキ）は別軸の情報
+          なので種別とは独立して出す（「破棄されたとき」のように、辞書の「種別なし」フラグは
+          デジモン/テイマー等の種別だけを隠したい意図で、場所まで隠す意図ではないケース向け） */}
+      {suppressTypeButtons && hasFromZones && (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'other_own' || cur.l1 === 'both') && (
+        <div style={{ marginTop: 4 }}>
+          <ButtonGroup options={SUBJECT_L2_FROM_ZONES} value={effectiveL2} onChange={handleL2} accentColor={accentColor} />
         </div>
       )}
       {/* 「このカード」+場所（例:「このカードが手札から破棄されたとき」）。
@@ -2853,6 +2864,7 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'dp_minus', label: 'DP-' },
   { code: 'memory_plus', label: 'メモリー+' },
   { code: 'memory_minus', label: 'メモリー-' },
+  { code: 'memory', label: 'メモリー＝' },
   { code: 'rest', label: 'レスト' },
   { code: 'active', label: 'アクティブ' },
   // 「登場/使用」は独立した2ボタン（SUMMON_KIND_OPTIONS）に置き換えたため、ここには含めない
@@ -3368,7 +3380,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectFromFilterChain = isEditingAlt ? editingAlt!.fromFilterChain : block.fromFilterChain;
   const effectTargetFilter = isEditingAlt ? (editingAlt!.targetFilter || []) : targetFilter;
   const effectTargetFilterChain = isEditingAlt ? editingAlt!.targetFilterChain : block.targetFilterChain;
-  const showRetrievalFilterEffective = !!effectAction && BUILTIN_FROM_ZONE_ACTIONS.has(effectAction);
+  // 「〇〇に置く」(PLACE_ACTION_CODES)も📥場所（どこから置くか）で取得元エリアを選ぶ以上、
+  // 「どんなカードを」取得するかの絞り込み（取得元カードの条件）が同様に必要なため対象に含める
+  const showRetrievalFilterEffective = !!effectAction && (BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || PLACE_ACTION_CODES.has(effectAction));
   function updateEffect(patch: Record<string, any>) {
     if (isEditingAlt) updateAltAction(editingEffect - 1, patch);
     else onChange({ ...block, ...patch });
@@ -4146,18 +4160,39 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 }}
                 accentColor="#ef6c00"
               />
+              {/* 軽減量: block.valueは「コスト-N」を表す正の数（エンジン側
+                  getEffectivePlayCostがreduction+=valueしてbase-reductionする体系のため、
+                  正の値=軽減・負の値=増加という向き）。増加側も選べるよう符号ボタンを用意する */}
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 11 }}>軽減量:</span>
-                <input
-                  type="number"
-                  value={block.value === undefined ? '' : String(block.value)}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    update('value', v === '' ? undefined : Number(v));
-                  }}
-                  placeholder="例: 1"
-                  style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 70 }}
-                />
+                {(() => {
+                  const raw = block.value;
+                  const numVal = raw === undefined || raw === '' ? undefined : Number(raw);
+                  const sign: 'reduce' | 'increase' = (numVal === undefined || isNaN(numVal) || numVal >= 0) ? 'reduce' : 'increase';
+                  const magnitude = numVal === undefined || isNaN(numVal) ? '' : String(Math.abs(numVal));
+                  const applyValue = (nextSign: 'reduce' | 'increase', magStr: string) => {
+                    const m = magStr === '' ? undefined : Number(magStr);
+                    if (m === undefined || isNaN(m)) { update('value', undefined); return; }
+                    update('value', nextSign === 'increase' ? -m : m);
+                  };
+                  return (
+                    <>
+                      <ButtonGroup
+                        options={[{ code: 'reduce', label: '軽減（コスト-）' }, { code: 'increase', label: '増加（コスト+）' }]}
+                        value={sign}
+                        onChange={(v) => applyValue((v || 'reduce') as 'reduce' | 'increase', magnitude)}
+                        accentColor="#ef6c00"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        value={magnitude}
+                        onChange={(e) => applyValue(sign, e.target.value)}
+                        placeholder="例: 1"
+                        style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 70 }}
+                      />
+                    </>
+                  );
+                })()}
               </span>
               <button
                 type="button"
@@ -5790,7 +5825,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
               ) : CANT_TO_DOABLE_LIVE[effectAction] ? null /* 「できない」(cant_X)系は値入力自体が不要なため非表示 */ : (
                 <div className="field">
-                  <label>値</label>
+                  <label>
+                    値
+                    {effectAction === 'memory' && <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>（自分側のメモリー数。マイナスなら相手側のメモリー数）</span>}
+                  </label>
                   <input
                     type="text"
                     value={effectValue === undefined ? '' : String(effectValue)}
@@ -9864,6 +9902,8 @@ function ConditionChainField({
   commonTitleBase?: string;
 }) {
   const effectiveChain: ConditionChainEntry[] = (chain && chain.length > 0) ? chain : deriveDefaultConditionChain(legacyPairs, legacyOp);
+  // 「共通条件を設定する」チェックボックス: 既に保存済みの共通条件があれば最初から開いておく
+  const [commonOpen, setCommonOpen] = useState<boolean>(!!(commonConditions && commonConditions.length > 0));
   const updateEntry = (ei: number, patch: Partial<ConditionChainEntry>) => {
     const next = effectiveChain.slice();
     next[ei] = { ...next[ei], ...patch };
@@ -9880,27 +9920,33 @@ function ConditionChainField({
   return (
     <div>
       {onCommonConditionsChange && (
-        (commonConditions && commonConditions.length > 0) ? (
-          <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: `1px dashed ${accentColor}` }}>
-            <ConditionsHybridEditor
-              conditions={commonConditions}
-              onChange={onCommonConditionsChange}
-              dict={dict}
-              title={commonTitleBase}
-              hint="（下の条件にOR設定がある場合、すべての選択肢に共通でAND適用される）"
-              theme={theme}
-              {...extraProps}
+        <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: `1px dashed ${accentColor}` }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: accentColor }}>
+            <input
+              type="checkbox"
+              checked={commonOpen}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setCommonOpen(on);
+                if (!on && commonConditions && commonConditions.length > 0) onCommonConditionsChange([]);
+              }}
             />
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => onCommonConditionsChange([{ base: '', value: '' }])}
-            style={{ marginBottom: 8, padding: '2px 8px', border: `1px dashed ${accentColor}`, background: 'white', color: accentColor, borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
-          >
-            ＋ {commonTitleBase}を追加（OR設定がある場合、すべての選択肢に共通でAND適用される）
-          </button>
-        )
+            {commonTitleBase}を設定する（OR設定がある場合、すべての選択肢に共通でAND適用される）
+          </label>
+          {commonOpen && (
+            <div style={{ marginTop: 4 }}>
+              <ConditionsHybridEditor
+                conditions={commonConditions || []}
+                onChange={onCommonConditionsChange}
+                dict={dict}
+                title={commonTitleBase}
+                hint=""
+                theme={theme}
+                {...extraProps}
+              />
+            </div>
+          )}
+        </div>
       )}
       {effectiveChain.map((entry, ei) => (
         <div key={ei} style={{ marginTop: ei === 0 ? 0 : 6 }}>

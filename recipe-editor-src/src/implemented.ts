@@ -14,7 +14,7 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'force_block', 'goal_reached', 'grant_keyword', 'grant_keyword_to',
   'immune_effects',
   'link', 'link_capacity',
-  'memory_minus', 'memory_plus', 'mod_attack_first_turn',
+  'memory', 'memory_minus', 'memory_plus', 'mod_attack_first_turn',
   'place_on_security_top',
   'place_under_digimon', 'place_under_tamer',
   'prevent_any_destroy',

@@ -4293,6 +4293,24 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #d8b4fe' }}>
               <KeywordEntriesEditor block={block} onChange={onChange} dict={dict} accentBorder="#d8b4fe" />
             </div>
+            {/* 条件（〜の間）: 省略時は常時有効（従来通り）。指定すると、ここで組み立てた条件を
+                満たしている間だけ上のキーワード群が有効、という条件付きパッシブになる
+                （例:「自分の表向きのセキュリティがない間、色条件を無視できる」）。
+                ⚠ エンジン未実装: 保存はできるがまだどのpassiveフラグ処理もgateを評価しない */}
+            <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px dashed #d8b4fe' }}>
+              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>⏱ 条件（〜の間・省略時は常時）</div>
+              <div style={{ fontSize: 10, color: '#c62828', marginBottom: 4 }}>⚠ エンジン未実装です（保存はできますが動作しません）</div>
+              <ConditionChainField
+                chain={block.passiveGateChain}
+                legacyPairs={block.passiveGate}
+                legacyOp={block.passiveGateOp}
+                onChainChange={(next) => onChange({ ...block, passiveGateChain: next })}
+                dict={dict}
+                titleBase="条件"
+                theme="trigger"
+                accentColor="#8a4fc9"
+              />
+            </div>
           </div>
         ) : (
         <div style={{
@@ -8765,6 +8783,8 @@ const REF_ZONE_OPTIONS: { code: string; label: string }[] = [
   { code: 'hand', label: '手札' },
   { code: 'trash', label: 'トラッシュ' },
   { code: 'security', label: 'セキュリティ' },
+  // ⚠ エンジン未実装（表向きのセキュリティという状態自体をエンジンが未保持）
+  { code: 'security_faceup', label: '表向きのセキュリティ' },
   { code: 'evo_source', label: '進化元／テイマーの下' },
   { code: 'linked', label: 'リンクカード' },
   { code: 'battle_area', label: 'バトルエリア' },
@@ -8784,6 +8804,7 @@ const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'hand:ge': 'cond_hand_ge', 'hand:le': 'cond_hand_le', 'hand:eq': 'cond_hand_eq', 'hand:gt': 'cond_hand_gt', 'hand:lt': 'cond_hand_lt',
   'trash:ge': 'cond_trash_ge', 'trash:le': 'cond_trash_le', 'trash:eq': 'cond_trash_eq', 'trash:gt': 'cond_trash_gt', 'trash:lt': 'cond_trash_lt',
   'security:ge': 'cond_security_ge', 'security:le': 'cond_security_le', 'security:eq': 'cond_security_eq', 'security:gt': 'cond_security_gt', 'security:lt': 'cond_security_lt',
+  'security_faceup:ge': 'cond_security_faceup_ge', 'security_faceup:le': 'cond_security_faceup_le', 'security_faceup:eq': 'cond_security_faceup_eq', 'security_faceup:gt': 'cond_security_faceup_gt', 'security_faceup:lt': 'cond_security_faceup_lt',
   'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le', 'evo_source:eq': 'cond_has_evo_eq', 'evo_source:gt': 'cond_has_evo_gt', 'evo_source:lt': 'cond_has_evo_lt',
   'linked:ge': 'cond_linked_ge', 'linked:le': 'cond_linked_le', 'linked:eq': 'cond_linked_eq', 'linked:gt': 'cond_linked_gt', 'linked:lt': 'cond_linked_lt',
   'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq', 'battle_area:gt': 'cond_battle_area_gt', 'battle_area:lt': 'cond_battle_area_lt',
@@ -8801,6 +8822,7 @@ const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> 
   cond_hand_ge: { zone: 'hand', quant: 'ge' }, cond_hand_le: { zone: 'hand', quant: 'le' }, cond_hand_eq: { zone: 'hand', quant: 'eq' }, cond_hand_gt: { zone: 'hand', quant: 'gt' }, cond_hand_lt: { zone: 'hand', quant: 'lt' },
   cond_trash_ge: { zone: 'trash', quant: 'ge' }, cond_trash_le: { zone: 'trash', quant: 'le' }, cond_trash_eq: { zone: 'trash', quant: 'eq' }, cond_trash_gt: { zone: 'trash', quant: 'gt' }, cond_trash_lt: { zone: 'trash', quant: 'lt' },
   cond_security_ge: { zone: 'security', quant: 'ge' }, cond_security_le: { zone: 'security', quant: 'le' }, cond_security_eq: { zone: 'security', quant: 'eq' }, cond_security_gt: { zone: 'security', quant: 'gt' }, cond_security_lt: { zone: 'security', quant: 'lt' },
+  cond_security_faceup_ge: { zone: 'security_faceup', quant: 'ge' }, cond_security_faceup_le: { zone: 'security_faceup', quant: 'le' }, cond_security_faceup_eq: { zone: 'security_faceup', quant: 'eq' }, cond_security_faceup_gt: { zone: 'security_faceup', quant: 'gt' }, cond_security_faceup_lt: { zone: 'security_faceup', quant: 'lt' },
   cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_eq: { zone: 'evo_source', quant: 'eq' }, cond_has_evo_gt: { zone: 'evo_source', quant: 'gt' }, cond_has_evo_lt: { zone: 'evo_source', quant: 'lt' },
   cond_linked_ge: { zone: 'linked', quant: 'ge' }, cond_linked_le: { zone: 'linked', quant: 'le' }, cond_linked_eq: { zone: 'linked', quant: 'eq' }, cond_linked_gt: { zone: 'linked', quant: 'gt' }, cond_linked_lt: { zone: 'linked', quant: 'lt' },
   cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' }, cond_battle_area_gt: { zone: 'battle_area', quant: 'gt' }, cond_battle_area_lt: { zone: 'battle_area', quant: 'lt' },

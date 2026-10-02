@@ -951,9 +951,22 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     // 1ブロックから複数のpassiveエントリを出力する（エンジン側は元々配列を
     // 独立にスキャンするので、1ブロック由来かN個のブロック由来かは区別しない）
     container.passive = container.passive || [];
+    // 条件（〜の間）: 省略時は常時有効（従来通り、gate自体を出力しない）。指定時のみ
+    // 各passiveエントリにp.gate（AND配列）/p.gate_op/p.gate_chainを付与する。
+    // ⚠ エンジン未実装（保存のみ。gateを評価するコードはまだ無い）
+    const { flatPairs: gateFlat, chainOut: gateChainOut } = resolveChainField(b.passiveGate, b.passiveGateChain);
+    const gateFields: any = {};
+    if (gateChainOut) {
+      if (gateFlat.length > 0) gateFields.gate = gateFlat.map(pairToString);
+      gateFields.gate_chain = gateChainOut;
+    } else if (gateFlat.length > 0) {
+      gateFields.gate = gateFlat.map(pairToString);
+      if (gateFlat.length >= 2 && b.passiveGateOp === 'or') gateFields.gate_op = 'or';
+    }
     getKeywordEntries(b).filter((entry) => entry.keyword).forEach((entry) => {
       const kwEntry = keywordDict && entry.keyword ? keywordDict.find((k) => k.code === entry.keyword) : undefined;
       const p: any = { flag: entry.keyword };
+      Object.assign(p, gateFields);
       // 値 (例: 【Sアタック+2】 の "2"): 数値化できれば number、そうでなければそのまま
       if (entry.value !== undefined && entry.value !== '' && entry.value !== null) {
         const n = Number(entry.value);
@@ -1768,11 +1781,15 @@ function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
 function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): EffectBlock {
   const extras: any = {};
   Object.keys(p || {}).forEach((k) => {
-    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'designated_common' && k !== 'count') extras[k] = p[k];
+    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'designated_common' && k !== 'count'
+      && k !== 'gate' && k !== 'gate_op' && k !== 'gate_chain') extras[k] = p[k];
   });
   const groups = parseDesignatedGroupsField(p);
   const single = groups.length === 1 ? groups[0] : undefined;
   const commonPairs = groups.length > 1 && p?.designated_common ? parseDesignatedFields(p.designated_common) : undefined;
+  // 条件（〜の間）復元: trigger_conditionsと同じ「文字列配列(AND) + 任意でchain」の形
+  const passiveGate: ConditionPair[] = [];
+  if (Array.isArray(p?.gate)) p.gate.forEach((s: string) => passiveGate.push(stringToPair(String(s))));
   return {
     section,
     zone: p?.in_zone || '',
@@ -1785,6 +1802,9 @@ function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): Effect
     keywordDesignatedGroups: groups.length > 1 ? groups : undefined,
     keywordCommonConditions: commonPairs && commonPairs.conds.length > 0 ? commonPairs.conds : undefined,
     keywordCommonConditionsOp: commonPairs && commonPairs.conds.length > 0 ? commonPairs.op : undefined,
+    passiveGate: passiveGate.length > 0 ? passiveGate : undefined,
+    passiveGateOp: p?.gate_op === 'or' ? 'or' : 'and',
+    passiveGateChain: parseConditionChainStrings(p?.gate_chain),
     extras: Object.keys(extras).length > 0 ? JSON.stringify(extras) : '',
   };
 }

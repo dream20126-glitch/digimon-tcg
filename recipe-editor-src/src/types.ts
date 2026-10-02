@@ -248,6 +248,13 @@ export interface EffectBlock {
   // grant_keyword(_to)は1件目を通常のstepに、2件目以降は「同じ対象に付与」するため
   // target:'same_target'（single-target選択時のみ）の独立stepとして同じtrigger配列に積む
   keywordEntries?: KeywordEntry[];
+  // trigger==='passive' 専用:「〇〇の間、[キーワード]を得る」のような条件付きパッシブ用。
+  // ブロック内の全keywordEntriesに共通で適用され、JSONへは各passiveエントリの
+  // p.gate（条件文字列配列・AND）/p.gate_op/p.gate_chainとして出力する。
+  // ⚠ エンジン未実装（保存はできるが、まだどのpassiveフラグ処理もgateを参照・評価しない）
+  passiveGate?: ConditionPair[];
+  passiveGateOp?: 'and' | 'or';
+  passiveGateChain?: ConditionChainEntry[];
   // memory_plus 専用:「メモリー+Nする。このターン終了時、メモリーを-Nする。」
   // true のとき JSON へ step.revert_at_turn_end:true を出力する
   revertAtTurnEnd?: boolean;

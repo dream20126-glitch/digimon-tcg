@@ -1357,7 +1357,7 @@ function CostListEditor({
                     };
                     return (
                       <div style={{ marginTop: 4 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから置くか）</div>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（取得元）</div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           {FROM_ZONES.map((z) => {
                             const active = zones.includes(z.code);
@@ -5579,7 +5579,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   };
                   return (
                     <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから置くか）</div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（取得元）</div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {FROM_ZONES.map((z) => {
                           const active = zones.includes(z.code);

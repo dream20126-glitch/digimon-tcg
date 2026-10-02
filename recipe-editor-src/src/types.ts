@@ -691,6 +691,15 @@ export interface CostStep {
   evoSourcePosition?: 'top' | 'bottom' | 'select';
   // EffectBlock.deckSourcePositionと同じ。JSONではstep.cost[].deck_source_positionとして出力
   deckSourcePosition?: 'top' | 'bottom';
+  // 「〇〇に置く」(PLACE_ACTION_CODES)専用: 置かれるカード自体の絞り込み条件
+  // （例:「名称に『結城ダン』『結城カナン』を含む自分のテイマー1体を、自分の『アイギオモン』の
+  // 進化元の下に置くことで」の"結城ダン/結城カナン"部分）。target+conditions（コスト対象の
+  // 絞り込み条件）は「どのデジモンの下に置くか」という置き先（コンテナ）側を絞り込むのに対し、
+  // fromFilterは「どのカードを置くか」という取得元側を絞り込む、という役割分担。
+  // EffectBlock.fromFilterと同じ変換ルール。JSON では step.cost[].from_filter に serialize
+  fromFilter?: ConditionPair[];
+  fromFilterOp?: 'and' | 'or';
+  fromFilterChain?: ConditionChainEntry[];
   // 修飾子コード配列（'face_down' 等）。辞書側 hasFaceOption=true のアクション選択時のみ
   // 「裏向き/表向き」ボタンとして編集可能になる（例:「テイマーの下に裏向きで置く」コスト）
   options?: string[];

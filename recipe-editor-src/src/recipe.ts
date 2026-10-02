@@ -201,6 +201,13 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
       if (commonCondPairs.length >= 3) cs.extra_conditions = commonCondPairs.slice(2).map(pairToString);
       if (commonCondPairs.length >= 2 && c.conditionsOp === 'or') cs.condition_op = 'or';
     }
+    // 「〇〇に置く」専用: 置かれるカード自体の絞り込み（取得元カードの条件）。
+    // conditions（上）は置き先＝コンテナ側を絞り込むのに対し、fromFilterは取得元＝置かれる
+    // カード側を絞り込む（EffectBlock.fromFilterと同じ変換ルール）
+    const fromFilterObj = (c.fromFilterChain && c.fromFilterChain.length > 0)
+      ? buildConditionChainFilter(c.fromFilterChain, c.fromFilter)
+      : buildFilterObjectMaybeOr(c.fromFilter, c.fromFilterOp);
+    if (fromFilterObj) cs.from_filter = fromFilterObj;
     // 代替コスト:「〇〇するか〇〇することで」。エンジン側の alt_actions/alt_actions_op
     // 機構（executeRecipeStep→runWithAltActionsの選択UI）をコストにもそのまま流用する
     const validAltCosts = (c.altCosts || []).filter((a) => a.action);
@@ -255,6 +262,9 @@ function parseCostArray(rawCost: any): CostStep[] {
       securityPosition: c?.security_position === 'top' || c?.security_position === 'bottom' ? c.security_position : undefined,
       evoSourcePosition: c?.evo_source_position === 'top' || c?.evo_source_position === 'bottom' || c?.evo_source_position === 'select' ? c.evo_source_position : undefined,
       deckSourcePosition: c?.deck_source_position === 'top' || c?.deck_source_position === 'bottom' ? c.deck_source_position : undefined,
+      fromFilter: parseConditionChainFilter(c?.from_filter).pairs,
+      fromFilterOp: parseFilterObjectWithOp(c?.from_filter).op,
+      fromFilterChain: parseConditionChainFilter(c?.from_filter).chain,
       evoSourceOwner: c?.evo_source_owner === 'self' || c?.evo_source_owner === 'other' ? c.evo_source_owner : undefined,
       linkedOwner: c?.linked_owner === 'self' || c?.linked_owner === 'other' ? c.linked_owner : undefined,
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,

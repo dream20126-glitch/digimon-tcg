@@ -1453,6 +1453,26 @@ function CostListEditor({
                       </div>
                     );
                   })()}
+                  {/* 📥 取得元カードの条件: 置かれるカード自体の絞り込み（上のconditionsは
+                      置き先＝コンテナ側(例:「アイギオモン」)を絞り込むのに対し、こちらは
+                      取得元＝置かれるカード側(例:「結城ダン/結城カナン」)を絞り込む） */}
+                  {PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone)?.hasFromZones && (
+                    <div style={{ marginTop: 4 }}>
+                      <ConditionChainField
+                        chain={c.fromFilterChain}
+                        legacyPairs={[]}
+                        legacyOp={c.fromFilterOp}
+                        onChainChange={(next) => updateCost(i, { ...c, fromFilterChain: next, fromFilter: [] })}
+                        dict={dict}
+                        titleBase="取得元カードの条件"
+                        theme="action"
+                        accentColor="#b76e00"
+                        extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true }}
+                        commonConditions={c.fromFilter}
+                        onCommonConditionsChange={(next) => updateCost(i, { ...c, fromFilter: next })}
+                      />
+                    </div>
+                  )}
                   {/* 場所に「セキュリティ」/「進化元」/「重ねられているカード」を含む場合のみ:
                       積み重ね順の上/下どちらから見るか（重ねられているカードもevo_sourceと同じ
                       evoSourcePosition/evoSourceOwnerを共用する） */}

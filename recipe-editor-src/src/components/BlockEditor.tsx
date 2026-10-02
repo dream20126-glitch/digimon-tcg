@@ -3329,19 +3329,45 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
   // 代替アクション操作（OR / AND 結合）
   const altActions = block.altActions || [];
-  const altOp = block.altActionsOp || 'or';
   function updateAltAction(i: number, patch: Partial<AltAction>) {
     const next = altActions.slice();
     next[i] = { ...next[i], ...patch };
     update('altActions', next);
   }
-  function addAltAction() {
-    update('altActions', [...altActions, { action: '', value: '', target: '', conditions: [], options: [], fromZones: [] }]);
-  }
   function removeAltAction(i: number) {
     update('altActions', altActions.filter((_, idx) => idx !== i));
     if (editingEffect > i + 1) setEditingEffect(editingEffect - 1);
     else if (editingEffect === i + 1) setEditingEffect(0);
+  }
+  // 現在、末尾の効果が属している「区間」の結合方法（AND/OR）を調べる。末尾から遡って
+  // 直近のthenBreak付き効果を探し、そのthenBreakOp（省略時はblock.altActionsOp）を返す。
+  // thenBreakが1つも無ければ区間は1つだけ＝block.altActionsOpがそのまま区間の結合方法
+  function currentSegmentOp(): 'and' | 'or' {
+    for (let i = altActions.length - 1; i >= 0; i--) {
+      if (altActions[i].thenBreak) return altActions[i].thenBreakOp === 'and' ? 'and' : 'or';
+    }
+    return block.altActionsOp === 'and' ? 'and' : 'or';
+  }
+  // 条件チェーンの「＋条件を追加」と同じ発想: 効果を追加する時点でAND/ORを直接選ぶ。
+  // 1件目（効果2）は単純にblock.altActionsOpを決めるだけ。2件目以降は、選んだ結合方法が
+  // 現在の区間と同じならそのまま同じ区間に追加、違えば自動的に「その後」区切り
+  // （thenBreak:true + thenBreakOp）で新しい区間を開始する
+  function addAltActionWithOp(op: 'and' | 'or') {
+    const base: AltAction = { action: '', value: '', target: '', conditions: [], options: [], fromZones: [] };
+    if (altActions.length === 0) {
+      onChange({ ...block, altActions: [base], altActionsOp: op });
+      setEditingEffect(1);
+      return;
+    }
+    const entry = (op === currentSegmentOp()) ? base : { ...base, thenBreak: true, thenBreakOp: op };
+    const next = [...altActions, entry];
+    update('altActions', next);
+    setEditingEffect(next.length);
+  }
+  // 複数アクション自体を解除し、単一効果（効果1のみ）に戻す
+  function clearAltActions() {
+    onChange({ ...block, altActions: [], altActionsOp: undefined });
+    setEditingEffect(0);
   }
 
   // 「編集中」の効果スロット: 0=このステップ自体（効果1）/ 1..N=altActions[i-1]（効果2以降）。
@@ -3495,27 +3521,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     return zone && zone.action !== effectAction ? zone.action : undefined;
   }
 
-  // 🔀 代替アクション（OR/AND）: OR=プレイヤーがどちらかを選ぶ / AND=両方行う（同じ対象に
-  // 重ねて適用）。チェックボックス自体は「その他のアクション」の隣に表示し、
-  // 「編集中」選択・設定内容の一覧はアクション欄の近くに別途表示する。
-  // 「その後」は各効果の thenBreak フラグで個別に指定する（効果タブの「アクション」欄の
-  // 隣にチェックボックスがある）。AND/OR区間の途中からでも「その後」に区切れる
-  // （例:「AとBはAND、その後C（Aが不発でもCは必ず発動）」）
-  const isOrChecked = altOp === 'or' && altActions.length > 0;
-  const isAndChecked = altOp === 'and' && altActions.length > 0;
-  const setAltMode = (mode: 'or' | 'and' | null) => {
-    if (!mode) {
-      onChange({ ...block, altActions: [], altActionsOp: undefined });
-      setEditingEffect(0);
-      return;
-    }
-    if (altActions.length === 0) {
-      onChange({ ...block, altActions: [{ action: '', value: '', target: '', conditions: [], fromZones: [] }], altActionsOp: mode });
-      setEditingEffect(1);
-    } else {
-      update('altActionsOp', mode);
-    }
-  };
   const summarizeAction = (act?: string, val?: number | string) => {
     if (!act) return '(未設定)';
     const label = dict.actions.find((d) => d.code === act)?.label || act;
@@ -5976,10 +5981,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
             <div style={{ fontSize: 11, color: '#9333ea', background: '#f5eefc', border: '1px solid #d8b4fe', borderRadius: 4, padding: '6px 10px' }}>
               ⏳ 「ディレイ」は、このカードを破棄した後に効果2以降をまとめて発動する設計です。
-              下の「🔀 複数アクション」で必ず<strong>AND（両方行う）</strong>にチェックを入れ、効果2以降に発動したい効果を追加してください（OR不可）。
+              下で必ず<strong>「+ ANDで追加」</strong>を使って、効果2以降に発動したい効果を追加してください（OR不可）。
             </div>
           </div>
         )}
+        {/* 🔀 複数アクション: 条件チェーン（＋条件を追加）と同じ発想で、効果を追加する
+            その場でAND/ORを選ぶ。選んだ結合方法が直前の区間と同じならそのまま同じ区間に
+            追加、違えば自動的に「その後」区切りで新しい区間を開始する（addAltActionWithOp）。
+            既存の効果の結合方法を後から変えたい場合は、各効果タブの「アクション」欄の隣にある
+            「その後」チェック＋区間の結合ボタンで個別に調整できる */}
         {!isSpecialEvolveTrigger && (
         <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
           <div style={{
@@ -5987,32 +5997,41 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             padding: '4px 10px', background: '#f5eefc', border: '1px solid #d8b4fe', borderRadius: 14,
           }}>
             <span style={{ fontSize: 10, color: '#9333ea', fontWeight: 'bold' }}>🔀 複数アクション</span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
-              <input
-                type="checkbox"
-                checked={isOrChecked}
-                onChange={(e) => setAltMode(e.target.checked ? 'or' : (isAndChecked ? 'and' : null))}
-              />
-              OR（どちらかを選ぶ）
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
-              <input
-                type="checkbox"
-                checked={isAndChecked}
-                onChange={(e) => setAltMode(e.target.checked ? 'and' : (isOrChecked ? 'or' : null))}
-              />
-              AND（両方行う）
-            </label>
+            <button
+              type="button"
+              onClick={() => addAltActionWithOp('and')}
+              style={{ padding: '4px 10px', border: '1px dashed #9333ea', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#9333ea' }}
+            >
+              + ANDで追加（両方行う）
+            </button>
+            <button
+              type="button"
+              onClick={() => addAltActionWithOp('or')}
+              style={{ padding: '4px 10px', border: '1px dashed #9333ea', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#9333ea' }}
+            >
+              + ORで追加（どちらかを選ぶ）
+            </button>
+            {altActions.length > 0 && (
+              <button
+                type="button"
+                onClick={clearAltActions}
+                title="複数アクションを解除し、効果1だけに戻す"
+                style={{ padding: '4px 10px', border: '1px solid #bbb', background: '#f5f5f5', color: '#666', borderRadius: 3, cursor: 'pointer', fontSize: 11 }}
+              >
+                ✕ 複数アクションを解除
+              </button>
+            )}
           </div>
         </div>
         )}
 
         {/* 「編集中」の効果切替 + 設定内容一覧 */}
-        {!isSpecialEvolveTrigger && (isOrChecked || isAndChecked) && (
+        {!isSpecialEvolveTrigger && altActions.length > 0 && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
             <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
               💡 編集中の効果を選んでください。上のアクション/対象/対象数/発動条件/場所/期間は選んだ効果に反映されます。
-              効果ごとに「アクション」欄の隣の「その後」にチェックを入れると、そこだけAND/ORから切り離して独立した「その後」に区切れます（例:「AとBはAND、その後C」）。
+              「+ ANDで追加」「+ ORで追加」は直前の区間と結合方法が違えば自動的に「その後」で区切ります。
+              既存の効果の結合方法を後から変えたい場合は、その効果タブの「アクション」欄の隣の「その後」で調整できます。
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               <button type="button" onClick={() => setEditingEffect(0)} style={altBtnStyle(editingEffect === 0)}>
@@ -6033,23 +6052,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </button>
                 </span>
               ))}
-              <button
-                type="button"
-                onClick={() => { addAltAction(); setEditingEffect(altActions.length + 1); }}
-                style={{ padding: '4px 10px', border: '1px dashed #9333ea', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#9333ea' }}
-              >
-                ＋ 効果を追加
-              </button>
             </div>
             {/* 選択内容の一覧表示: 押したボタンの表記をそのまま連結して書き出す。
                 thenBreakが立っている効果には「（その後）」を付けて見分けられるようにする */}
             <div style={{ marginTop: 8, padding: 8, background: 'white', border: '1px solid #d4b8f0', borderRadius: 4 }}>
               <div style={{ fontSize: 11, color: '#9333ea', fontWeight: 'bold', marginBottom: 4 }}>📋 設定内容</div>
               <div style={{ fontSize: 12, color: '#333', lineHeight: 1.8 }}>
-                <div>効果1：{describeEffect(block.action, block.value, block.target, block.conditions) || '(未設定)'}</div>
+                <div>効果1：{describeEffect(block.action, block.value, block.target, block.conditions) || '(未設定)'}（{(block.altActionsOp === 'and') ? 'AND' : 'OR'}区間開始）</div>
                 {altActions.map((a, i) => (
                   <div key={i}>
-                    効果{i + 2}{a.thenBreak ? `（その後${a.thenBreakOp ? '・' + (a.thenBreakOp === 'and' ? 'AND区間' : 'OR区間') + '開始' : ''}）` : ''}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}
+                    効果{i + 2}{a.thenBreak ? `（その後・${(a.thenBreakOp === 'and') ? 'AND' : 'OR'}区間開始）` : ''}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}
                   </div>
                 ))}
               </div>

@@ -7611,8 +7611,11 @@ function runWithAltActions(step, ctx, store, callback) {
   delete mainOnly.alt_actions_op;
 
   if (op === 'and') {
-    // メイン → alt 順次
-    executeRecipeStep(mainOnly, ctx, store, () => {
+    // メイン → alt 順次。メインがcallback(false)（例: 'delay'でプレイヤーが破棄を
+    // 辞退した）で終わった場合は、alt（効果2以降）を一切実行せずそのまま終了する
+    // （任意コストが支払われなかった扱い。executeCostAndActionsのcost失敗時と同じ考え方）
+    executeRecipeStep(mainOnly, ctx, store, (success) => {
+      if (success === false) { callback && callback(false); return; }
       let i = 0;
       function nextAlt() {
         if (i >= alts.length) { callback && callback(); return; }
@@ -8021,6 +8024,38 @@ function executeRecipeStep(step, ctx, store, callback) {
   }
 
   switch (step.action) {
+
+    // === ディレイ（バトルエリアのこのカードを破棄すると効果2以降を発動） ===
+    case 'delay': {
+      const _delayCard = ctx.card;
+      const _delayIdx = _delayCard ? player.battleArea.indexOf(_delayCard) : -1;
+      if (_delayIdx === -1) { callback(false); return; }
+      const _doDelay = () => {
+        player.battleArea[_delayIdx] = null;
+        player.trash.push(_delayCard);
+        if (_delayCard.stack) _delayCard.stack.forEach((s) => player.trash.push(s));
+        if (_delayCard.linkedCards) _delayCard.linkedCards.forEach((s) => player.trash.push(s));
+        ctx.addLog && ctx.addLog('🗑 「' + _delayCard.name + '」を破棄してディレイ効果を発動');
+        if (window._isOnlineMode && window._isOnlineMode()) {
+          window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: _delayIdx, reason: 'discard' });
+        }
+        ctx.renderAll && ctx.renderAll();
+        callback();
+      };
+      if (ctx.side === 'player') {
+        if (typeof showConfirmDialog === 'function') {
+          showConfirmDialog(_delayCard, 'このカードを破棄して効果を発動しますか？', (yes) => {
+            if (yes) _doDelay(); else callback(false);
+          });
+        } else {
+          _doDelay();
+        }
+      } else {
+        // AI: 保留コストと同じ慣例で自動的に発動を選ぶ
+        _doDelay();
+      }
+      break;
+    }
 
     // === 対象選択（自分のデジモン） ===
     case 'select': {

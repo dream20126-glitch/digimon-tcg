@@ -2900,7 +2900,11 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'link', label: 'リンク' },
   { code: 'attack', label: 'アタック' },
   { code: 'force_block', label: 'ブロック' },
+  { code: 'delay', label: 'ディレイ' },
 ];
+// 「ディレイ」選択時: このカードを破棄して効果2以降（alt_actions, AND）を発動する設計のため、
+// 効果2以降は必ずAND（同時発動）で組む必要がある旨をヒント表示する
+const DELAY_ACTION_CODES = new Set(['delay']);
 // 「登場」「使用」の2ボタン（SUMMON_KIND_OPTIONS）: トリガーの複数選択と同じ操作感で、
 // 両方押すと action:'summon'（従来通りどちらも対象）、片方だけだと summon_appear
 // （デジモン/テイマー限定）／summon_use（オプション限定）になる。3つとも
@@ -5935,6 +5939,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             （その他のアクションとは別の設定なので、混同しないよう枠と背景色で視覚的に分ける）。
             「その後」は各効果タブの「アクション」欄の隣にあるチェックボックスで個別に指定する。
             alt_evolve/burst_evolve/アプ合体/ジョグレス進化はアクション自体が無いため丸ごと非表示 */}
+        {!isSpecialEvolveTrigger && DELAY_ACTION_CODES.has(block.action || '') && (
+          <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: '#9333ea', background: '#f5eefc', border: '1px solid #d8b4fe', borderRadius: 4, padding: '6px 10px' }}>
+              ⏳ 「ディレイ」は、このカードを破棄した後に効果2以降をまとめて発動する設計です。
+              下の「🔀 複数アクション」で必ず<strong>AND（両方行う）</strong>にチェックを入れ、効果2以降に発動したい効果を追加してください（OR不可）。
+            </div>
+          </div>
+        )}
         {!isSpecialEvolveTrigger && (
         <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
           <div style={{

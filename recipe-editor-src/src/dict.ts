@@ -359,6 +359,7 @@ export const ACTIONS: DictEntry[] = [
   { code: 'memory_plus', kind: 'action', label: 'メモリーを+' },
   { code: 'memory_minus', kind: 'action', label: 'メモリーを-' },
   { code: 'memory', kind: 'action', label: 'メモリーを指定値にする（完全一致）' },
+  { code: 'delay', kind: 'action', label: 'ディレイ（このカードを破棄して効果2以降を発動）' },
   { code: 'destroy', kind: 'action', label: '消滅させる' },
   { code: 'bounce', kind: 'action', label: '手札に戻す' },
   { code: 'active', kind: 'action', label: 'アクティブにする' },

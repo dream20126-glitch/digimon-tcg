@@ -65,6 +65,8 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   // Stage 11 追加（コスト「破棄」→場所「テイマー」を実際に動くようにした。
   // evo_discard系と全く同じロジックで、対象コンテナだけ自分のテイマーに強制する）
   'evo_discard_tamer', 'evo_discard_tamer_bottom', 'evo_discard_tamer_top', 'evo_discard_tamer_select',
+  // Stage 12 追加（ディレイ: バトルエリアのこのカードを破棄して効果2以降を発動）
+  'delay',
 ]);
 
 // エンジンで実装済の passive flag (キーワード)

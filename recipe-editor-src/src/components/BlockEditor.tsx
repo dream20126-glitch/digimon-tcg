@@ -4166,12 +4166,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 {(() => {
                   const raw = block.value;
-                  const numVal = raw === undefined || raw === '' ? undefined : Number(raw);
-                  const sign: 'reduce' | 'increase' = (numVal === undefined || isNaN(numVal) || numVal >= 0) ? 'reduce' : 'increase';
+                  // '-'/'+' はプレースホルダー（まだ数値未入力の段階で符号の選択だけを保持する）。
+                  // これが無いと、数値が空のままボタンだけ押しても符号を記憶できず
+                  // 「増加」ボタンが反応しないように見えるバグになる
+                  const isPlaceholder = raw === '-' || raw === '+';
+                  const numVal = raw === undefined || raw === '' || isPlaceholder ? undefined : Number(raw);
+                  const sign: 'reduce' | 'increase' = isPlaceholder
+                    ? (raw === '-' ? 'increase' : 'reduce')
+                    : (numVal === undefined || isNaN(numVal) || numVal >= 0) ? 'reduce' : 'increase';
                   const magnitude = numVal === undefined || isNaN(numVal) ? '' : String(Math.abs(numVal));
                   const applyValue = (nextSign: 'reduce' | 'increase', magStr: string) => {
                     const m = magStr === '' ? undefined : Number(magStr);
-                    if (m === undefined || isNaN(m)) { update('value', undefined); return; }
+                    if (m === undefined || isNaN(m) || m === 0) {
+                      update('value', nextSign === 'increase' ? '-' : '+');
+                      return;
+                    }
                     update('value', nextSign === 'increase' ? -m : m);
                   };
                   return (

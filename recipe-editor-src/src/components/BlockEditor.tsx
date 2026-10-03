@@ -2044,6 +2044,30 @@ function CostListEditor({
                   />
                 );
               })()}
+              {/* 進化元/テイマーの下から破棄するコスト専用: 上の「コスト対象の絞り込み」は
+                  破棄されるカード自体（裏向き・Lv等）の条件。こちらは「どのデジモン/テイマーの
+                  進化元（下のカード）から破棄するか」というコンテナ側の条件 → cost[].filter */}
+              {costActionIsEvoDiscardFamily && cCurTgt.l1 !== 'self' && cCurTgt.l1 !== 'same_target' && (
+                <div style={{ marginTop: 6 }}>
+                  <ConditionChainField
+                    chain={c.containerFilterChain}
+                    legacyPairs={[]}
+                    onChainChange={(next) => updateCost(i, { ...c, containerFilterChain: next })}
+                    dict={dict}
+                    titleBase="進化元を持つデジモン/テイマーの条件"
+                    theme="action"
+                    accentColor="#b76e00"
+                    extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true }}
+                    commonConditions={c.containerFilter}
+                    onCommonConditionsChange={(next) => updateCost(i, { ...c, containerFilter: next })}
+                  />
+                  <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
+                    例:「特徴『バグラ軍』を持つ自分のデジモンの進化元を2枚破棄」の“バグラ軍”はここに入れる
+                    （上の「コスト対象の絞り込み」は破棄されるカード側の条件になる）
+                  </div>
+                  <div style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン側のコスト処理はこの条件をまだ参照しません（保存のみ）</div>
+                </div>
+              )}
             </div>
 
             {/* === 代替コスト:「〇〇するか、〇〇することで」。効果1の代替アクション(altActions)

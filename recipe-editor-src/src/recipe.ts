@@ -216,6 +216,9 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
       ? buildConditionChainFilter(c.fromFilterChain, c.fromFilter)
       : buildFilterObjectMaybeOr(c.fromFilter, c.fromFilterOp);
     if (fromFilterObj) cs.from_filter = fromFilterObj;
+    // evo_discard系専用: 進化元を持つデジモン/テイマー（コンテナ）側の絞り込み → cost[].filter
+    const containerFilterObj = buildConditionChainFilter(c.containerFilterChain, c.containerFilter);
+    if (containerFilterObj) cs.filter = containerFilterObj;
     // 代替コスト:「〇〇するか〇〇することで」。エンジン側の alt_actions/alt_actions_op
     // 機構（executeRecipeStep→runWithAltActionsの選択UI）をコストにもそのまま流用する
     const validAltCosts = (c.altCosts || []).filter((a) => a.action);
@@ -273,6 +276,8 @@ function parseCostArray(rawCost: any): CostStep[] {
       fromFilter: parseConditionChainFilter(c?.from_filter).pairs,
       fromFilterOp: parseFilterObjectWithOp(c?.from_filter).op,
       fromFilterChain: parseConditionChainFilter(c?.from_filter).chain,
+      containerFilter: parseConditionChainFilter(c?.filter).pairs,
+      containerFilterChain: parseConditionChainFilter(c?.filter).chain,
       evoSourceOwner: c?.evo_source_owner === 'self' || c?.evo_source_owner === 'other' ? c.evo_source_owner : undefined,
       linkedOwner: c?.linked_owner === 'self' || c?.linked_owner === 'other' ? c.linked_owner : undefined,
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,

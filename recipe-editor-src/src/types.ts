@@ -710,6 +710,13 @@ export interface CostStep {
   fromFilter?: ConditionPair[];
   fromFilterOp?: 'and' | 'or';
   fromFilterChain?: ConditionChainEntry[];
+  // 「破棄→進化元/テイマーの下」(evo_discard系)専用: どのデジモン/テイマーの進化元（下のカード）
+  // から破棄するか、というコンテナ側の絞り込み（例: モニモン「特徴『バグラ軍』を持つ自分の
+  // デジモンの進化元を選んで2枚破棄することで」の"バグラ軍"部分）。conditions は破棄される
+  // カード自体の条件（裏向き等）として評価されるため、コンテナの条件はこちらに分けて持つ。
+  // JSON では step.cost[].filter に serialize（⚠ エンジン側のevo_discard系コストは現状未参照）
+  containerFilter?: ConditionPair[];
+  containerFilterChain?: ConditionChainEntry[];
   // 修飾子コード配列（'face_down' 等）。辞書側 hasFaceOption=true のアクション選択時のみ
   // 「裏向き/表向き」ボタンとして編集可能になる（例:「テイマーの下に裏向きで置く」コスト）
   options?: string[];

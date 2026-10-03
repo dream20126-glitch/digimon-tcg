@@ -382,8 +382,8 @@ export function setupCommonWindowExports() {
   // オンライン対戦: 相手機から委譲された反応系トリガー(when_opp_rest等)を、
   // こちら（カードの本当の持ち主）側で side='player' として実際に発揮する
   // （battle-online.js の fx_reactionDelegate 受信ハンドラから呼ばれる）
-  window._fireDelegatedReactionTriggers = function(recipeKey, _bs, ctxBase, done) {
-    try { _fireDelegatedReactionEE(recipeKey, _bs || bs, ctxBase || { bs, addLog, renderAll, updateMemGauge }, done); }
+  window._fireDelegatedReactionTriggers = function(recipeKey, _bs, ctxBase, done, cmd) {
+    try { _fireDelegatedReactionEE(recipeKey, _bs || bs, ctxBase || { bs, addLog, renderAll, updateMemGauge }, done, cmd); }
     catch (e) { console.error('[_fireDelegatedReactionTriggers]', recipeKey, e); done && done(); }
   };
 

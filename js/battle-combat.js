@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect, fxAppGattai } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -96,10 +96,13 @@ function fireOwnDestroyedThen(destroyedSide, cb) {
   catch (_) { cb && cb(); }
 }
 
-// セキュリティが減ったとき: 減った側のテイマー/デジモンを反応させる（on_security_reduced）
+// セキュリティが減ったとき: 減った側（own系）と反対側（opp/both系）のテイマー/デジモンを反応させる
+// （on_security_reduced）。セキュリティチェックによる減少なので原因は「バトル」（効果ではない。
+// 沢城キョウ BT26-089「効果で減っていたなら」は成立しない）
 function fireSecurityDecreaseThen(decreasedSide, cb) {
   const ctxBase = { bs, addLog, renderAll, updateMemGauge };
-  try { _fireWhenSecurityDecrease(decreasedSide, bs, ctxBase, () => cb && cb()); }
+  const cause = { type: 'battle', causerSide: decreasedSide === 'player' ? 'ai' : 'player', causerCard: null };
+  try { _fireWhenSecurityDecrease(decreasedSide, bs, ctxBase, () => cb && cb(), { cause }); }
   catch (e) { console.error('[fireSecurityDecreaseThen]', decreasedSide, e); cb && cb(); }
 }
 
@@ -1321,6 +1324,13 @@ export function doTrainingEffect(card, side) {
   renderAll();
   if (side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
     try { window._onlineSendStateSync(); } catch (_) {}
+  }
+  // バトルエリアのデジモンなら「進化元にカードが（効果で）置かれたとき」を発火
+  // （トレーマニュアル BT26-099「自分のデジモンの進化元に裏向きのカードが置かれたとき」等）
+  if ((p.battleArea || []).includes(card)) {
+    try {
+      _fireWhenEvoSourceIncrease(card, side, bs, { bs, addLog, renderAll, updateMemGauge }, () => renderAll(), [top], { type: 'effect', causerSide: side, causerCard: card });
+    } catch (e) { console.error('[doTrainingEffect] evo source increase trigger', e); }
   }
   return true;
 }

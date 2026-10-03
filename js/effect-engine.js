@@ -758,7 +758,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       for (let i = 0; i < n; i++) {
         if (player.deck.length > 0) {
           const c = player.deck.splice(0, 1)[0];
-          player.hand.push(c);
+          player.hand.push(c); _noteHandIncrease(ctx, player);
           drawn.push(c);
           ctx.addLog('🃏 「' + c.name + '」をドロー');
         }
@@ -1353,6 +1353,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (opponent.security.length > 0) { opponent.trash.push(opponent.security.shift()); ctx.addLog('🛡 セキュリティ破棄'); _discardedCount++; }
       }
       if (ctx.bs) ctx.bs._lastActionCount = _discardedCount;
+      _noteSecurityDecrease(ctx, opponent, _discardedCount);
       ctx.renderAll();
       // 辞書の演出パラメータ1=セキュリティ, パラメータ2=トラッシュ で自動決定
       playEffect(action.code, { card: trashCard, ctx }, () => { callback(); }, { visualType: action.visualType, frameColor: action.frameColor });
@@ -1443,8 +1444,18 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         }
         showNextDiscard();
       };
+      // 破棄元と破棄したカード（破棄時点で一番下/一番上だったか）を「破棄されたとき」の判定用に記録する
+      // （fireWhenEvoDiscardTriggers の self_stack / *_bottom / trigger_conditions 判定に渡す）
+      let _edInfo = null;
+      const _edNote = (tgt, card, idx) => {
+        if (!_edInfo || _edInfo.container !== tgt) _edInfo = { container: tgt, cards: [], bottomCards: [], topCards: [] };
+        _edInfo.cards.push(card);
+        if (idx === tgt.stack.length - 1) _edInfo.bottomCards.push(card);
+        if (idx === 0) _edInfo.topCards.push(card);
+      };
       const discardFromTarget = (tgt, onDone) => {
         const edTrash = edOwner.trash;
+        _edInfo = null;
         // 「選んで破棄」: 進化元カード選択UIをN回繰り返す（AIは先頭を自動選択）
         if (action.code === 'evo_discard_select' || action.code === 'evo_discard_tamer_select') {
           const discarded = [];
@@ -1453,7 +1464,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
             const takeCard = (chosen) => {
               if (!chosen) { finalizeDiscard(discarded, tgt, onDone); return; }
               const si = tgt.stack.indexOf(chosen);
-              if (si !== -1) tgt.stack.splice(si, 1);
+              if (si !== -1) { _edNote(tgt, chosen, si); tgt.stack.splice(si, 1); }
               edTrash.push(chosen);
               discarded.push(chosen);
               pickNext(remaining - 1);
@@ -1484,6 +1495,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           } else {
             takeIdx = fromTop ? 0 : tgt.stack.length - 1;
           }
+          _edNote(tgt, tgt.stack[takeIdx], takeIdx);
           const removed = tgt.stack.splice(takeIdx, 1)[0];
           edTrash.push(removed);
           discarded.push(removed);
@@ -1501,7 +1513,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           // メイン効果全体の完了後にまとめて発火させる。
           // 「原因」追跡: 効果によって破棄された（このactionを実行している効果の持ち主が原因）
           enqueueReaction(ctx.bs, _fireWhenEvoDiscardTriggersQueued, [
-            { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }, edSide, ctx.bs, ctx, edAreaKey === 'tamerArea' ? 'tamer' : 'digimon'
+            { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }, edSide, ctx.bs, ctx, edAreaKey === 'tamerArea' ? 'tamer' : 'digimon', _edInfo
           ]);
           doneCb && doneCb();
           return;
@@ -2149,8 +2161,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           const secCard = _athSecPos === 'bottom' ? _athOwner.security[_athOwner.security.length - 1] : _athOwner.security[0];
           if (secCard && cardMatchesFilter(secCard, _athFilter)) {
             const si = _athOwner.security.indexOf(secCard);
-            if (si !== -1) _athOwner.security.splice(si, 1);
-            _athOwner.hand.push(secCard);
+            if (si !== -1) { _athOwner.security.splice(si, 1); _noteSecurityDecrease(ctx, _athOwner, 1); }
+            _athOwner.hand.push(secCard); _noteHandIncrease(ctx, _athOwner);
             ctx.addLog('🃏 「' + secCard.name + '」を手札に加えた');
             ctx.renderAll();
             callback();
@@ -2176,10 +2188,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           realCard = player.trash.splice(trashIdx, 1)[0];
         } else {
           const secIdx = player.security.findIndex(matchFn);
-          if (secIdx >= 0) realCard = player.security.splice(secIdx, 1)[0];
+          if (secIdx >= 0) { realCard = player.security.splice(secIdx, 1)[0]; _noteSecurityDecrease(ctx, player, 1); }
         }
         if (realCard) {
-          player.hand.push(realCard);
+          player.hand.push(realCard); _noteHandIncrease(ctx, player);
           ctx.addLog('🃏 「' + realCard.name + '」を手札に加えた');
         } else {
           ctx.addLog('🃏 「' + ctx.card.name + '」を手札に加える（セキュリティ効果終了時）');
@@ -2199,6 +2211,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if(opponent.security.length > 0) { opponent.trash.push(opponent.security.pop()); ctx.addLog('🛡 セキュリティ（下から）破棄'); _discardedCount++; }
       }
       if (ctx.bs) ctx.bs._lastActionCount = _discardedCount;
+      _noteSecurityDecrease(ctx, opponent, _discardedCount);
       ctx.renderAll(); callback();
       break;
     }
@@ -2279,6 +2292,7 @@ function _drawForOpponent(n, ctx, done) {
     window._onlineSendCommand({ type: 'fx_drawRequest', count: n, cardName: (ctx.card && ctx.card.name) || '' });
     const k = Math.min(n, opp.deck.length);
     for (let i = 0; i < k; i++) opp.hand.push(opp.deck.shift());
+    if (k > 0) _noteHandIncrease(ctx, oppSide);
     ctx.addLog && ctx.addLog('🃏 相手が' + k + '枚ドロー');
     done();
     return;
@@ -2286,7 +2300,7 @@ function _drawForOpponent(n, ctx, done) {
   const drawn = [];
   for (let i = 0; i < n && opp.deck.length > 0; i++) {
     const c = opp.deck.shift();
-    opp.hand.push(c);
+    opp.hand.push(c); _noteHandIncrease(ctx, oppSide);
     drawn.push(c);
   }
   ctx.addLog && ctx.addLog('🃏 ' + (oppSide === 'player' ? '自分' : '相手') + 'が' + drawn.length + '枚ドロー');
@@ -2559,7 +2573,7 @@ function doBounce(targetSide, slotIdx, ctx, callback) {
     bounced._permEffects = {};
     bounced.suspended = false;
     bounced.summonedThisTurn = false;
-    targetSide.hand.push(bounced);
+    targetSide.hand.push(bounced); _noteHandIncrease(ctx, targetSide);
     if (bounced.stack) bounced.stack.forEach(s => targetSide.trash.push(s));
     if (bounced.linkedCards) bounced.linkedCards.forEach(s => targetSide.trash.push(s));
     bounced.stack = [];
@@ -3586,7 +3600,7 @@ function _deckOpenAuto(opened, step, ctx, callback) {
         _deckOpenPlayCard(c, sel, kind, slot, ctx, pickNext);
         return;
       }
-      if (dest === 'trash') player.trash.push(c); else player.hand.push(c);
+      if (dest === 'trash') player.trash.push(c); else { player.hand.push(c); _noteHandIncrease(ctx, player); }
       ctx.addLog && ctx.addLog('🃏 「' + c.name + '」を' + (dest === 'trash' ? 'トラッシュへ' : '手札に加えた'));
       pickNext();
     };
@@ -3895,7 +3909,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
           }
           // 実際の移動処理 + 後続フロー
           const proceed = () => {
-            if (dest === 'hand') player.hand.push(entry.card);
+            if (dest === 'hand') { player.hand.push(entry.card); _noteHandIncrease(ctx, player); }
             else if (dest === 'trash') player.trash.push(entry.card);
             ctx.addLog && ctx.addLog('🃏 「' + entry.card.name + '」を' + (dest === 'hand' ? '手札に加えた' : 'トラッシュへ'));
             removeEntry(entry);
@@ -6198,9 +6212,12 @@ function _fireDestroyChainQueued(cause, destroyedCard, destroyedSide, bs, ctxBas
 // fireWhenEvoDiscardTriggers 用の同様のキュー発火ラッパー（引数順は
 // (discardedSide, bs, ctxBase, done, containerType) だが、ドレインループは末尾に
 // doneを付け足す規約のため、ここでcontainerTypeとdoneの順序を入れ替えて橋渡しする）
-function _fireWhenEvoDiscardTriggersQueued(cause, discardedSide, bs, ctxBase, containerType, callback) {
+// info（{ container, cards, bottomCards, topCards }。破棄元のカードと破棄されたカード）は省略可
+// （旧呼び出し形式 (cause, side, bs, ctxBase, containerType, callback) も受け付ける）
+function _fireWhenEvoDiscardTriggersQueued(cause, discardedSide, bs, ctxBase, containerType, info, callback) {
+  if (typeof info === 'function' && callback === undefined) { callback = info; info = null; }
   if (bs) bs._lastDestroyCause = cause;
-  fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, callback, containerType);
+  fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, callback, containerType, info);
 }
 
 // fireWhenHandDiscardTriggers 用の同様のキュー発火ラッパー
@@ -6608,36 +6625,49 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
       case 'other_own':
       case 'own':
       case 'own_any':
+      case 'own_card':
+      case 'own_digimon':
         return cardSide === sourceSide;
       case 'opp':
       case 'opp_any':
       case 'opp_card':
+      case 'opp_digimon':
         return cardSide !== sourceSide;
+      // 「（お互いの）デジモンが〜したとき」（咲夜レーナ BT26-093 の both_digimon 等）は誰のイベントでも反応する。
+      // ただし on_attack の相手側は fireOnAttackBothSubjectTriggers が別経路で拾うため、ここでは
+      // 発動元と同じ側（自分の他のデジモンのアタック）だけを拾う（二重発火防止）
+      case 'both':
+      case 'both_any':
+      case 'both_card':
+      case 'both_digimon':
+        return triggerCode === 'on_attack' ? cardSide === sourceSide : true;
       default: return false;
     }
   };
-  const recipeHasReactiveSubject = (steps, cardSide) => {
-    if (!Array.isArray(steps)) return false;
-    // "他カードのイベントに反応する効果" かどうかは明示的な subject フィールドでのみ判定する。
-    // trigger_conditions 内の @own/@opp/@self 等はイベント条件の単なる値スコープ指定であり
-    // (例: ブラックウォーグレイモン「アタック時」の cond_attack_target_highest_dp@opp は
-    //  “自分の”アタック対象を判定するための条件スコープであって、他カード反応の印ではない)、
-    // これを反応判定に流用すると自分自身のイベント専用の効果まで他カードのイベントで誤発火する。
-    // subject_by_code（トリガーごとに発動主体を分ける）にも対応。優先的にそちらを見て、
-    // 無ければ従来通りフラットな subject を見る（_resolveStepSubjectと同じ優先順位）
-    return steps.some(s => s && matchSubject(_resolveStepSubject(s, triggerCode), cardSide));
+  // "他カードのイベントに反応する効果" かどうかは明示的な subject フィールドでのみ判定する。
+  // trigger_conditions 内の @own/@opp/@self 等はイベント条件の単なる値スコープ指定であり
+  // (例: ブラックウォーグレイモン「アタック時」の cond_attack_target_highest_dp@opp は
+  //  “自分の”アタック対象を判定するための条件スコープであって、他カード反応の印ではない)、
+  // これを反応判定に流用すると自分自身のイベント専用の効果まで他カードのイベントで誤発火する。
+  // subject_by_code（トリガーごとに発動主体を分ける）にも対応。優先的にそちらを見て、
+  // 無ければ従来通りフラットな subject を見る（_resolveStepSubjectと同じ優先順位）。
+  // 反応するステップ（＋「その後」で連結された後続）だけを返す（そのカード自身の通常の
+  // 【登場時】等のステップまで他カードのイベントで実行されないように）
+  const reactiveSteps = (steps, cardSide) => {
+    if (!Array.isArray(steps)) return [];
+    return _filterStepChains(steps, (s) => s && matchSubject(_resolveStepSubject(s, triggerCode), cardSide));
   };
 
   ['player', 'ai'].forEach(side => {
     const cards = [...ctx.bs[side].battleArea, ...(ctx.bs[side].tamerArea || [])];
     cards.forEach(card => {
       if (!card || card === sourceCard) return;
-      const steps = getRecipeForTrigger(card, triggerCode);
-      if (!recipeHasReactiveSubject(steps, side)) return;
+      const steps = reactiveSteps(getRecipeForTrigger(card, triggerCode), side);
+      if (steps.length === 0) return;
       // 'other_own' で同じカード自体は対象外（card !== sourceCard でガード済）
       const dummyBlock = {
         raw: card.effect || '', trigger: { code: triggerCode },
-        actions: [], conditions: [], _eventSourceCard: sourceCard,
+        actions: [], conditions: [], _eventSourceCard: sourceCard, _grantedSteps: steps,
       };
       addToQueue(card, dummyBlock,
         side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
@@ -6648,11 +6678,13 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
       if (!card || !card.stack) return;
       card.stack.forEach(evoCard => {
         if (!evoCard) return;
-        const evoSteps = getRecipeForTrigger(evoCard, triggerCode, true);
-        if (!recipeHasReactiveSubject(evoSteps, side)) return;
+        // 発動元自身の進化元は、発動元のイベントとして scanTriggers 本体が処理済み
+        if (card === sourceCard) return;
+        const evoSteps = reactiveSteps(getRecipeForTrigger(evoCard, triggerCode, true), side);
+        if (evoSteps.length === 0) return;
         const dummyBlock = {
           raw: evoCard.evoSourceEffect || '', trigger: { code: triggerCode },
-          actions: [], conditions: [], _recipeCard: evoCard, _eventSourceCard: sourceCard,
+          actions: [], conditions: [], _recipeCard: evoCard, _eventSourceCard: sourceCard, _grantedSteps: evoSteps,
         };
         addToQueue(card, dummyBlock,
           side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
@@ -6676,8 +6708,39 @@ function _matchLinkSubject(subject, actingSide, cardSide) {
     default: return false;
   }
 }
+// リンクする側のカードの「リンク効果」欄の【リンク時】（エディタの区分「リンク」が出力する
+// recipe.link.on_link。メールモン BT26-019 / ゴミモン 051 等）。旧形式として、リンクカード
+// （card.isLink）自身の evo_source.on_link（リンクカードの進化元欄＝リンク効果欄。メディックモン 028 /
+// ウェザドラモン 037 / コピペモン 084）も同じ扱いにする
+function _getLinkSectionOnLinkSteps(card) {
+  const r = _parseCardRecipe(card);
+  if (!r) return [];
+  let out = [];
+  if (r.link && typeof r.link === 'object') out = out.concat(_lookupTriggerSteps(r.link, 'on_link') || []);
+  if ((card.isLink || card.linkCost != null) && r.evo_source && typeof r.evo_source === 'object') out = out.concat(_lookupTriggerSteps(r.evo_source, 'on_link') || []);
+  return out;
+}
 export function fireLinkTriggers(linkerCard, linkerSide, baseCard, baseSide, ctx, callback) {
-  clearQueue();
+  return _fireLinkTriggersImpl(linkerCard, linkerSide, baseCard, baseSide, ctx, callback, false);
+}
+// 効果処理中（キュー処理中）のリンク（executeRecipeStep の case 'link'）から呼ぶ版。
+// 実行中の外側のキュー（同時に誘発した他の効果）を退避し、【リンク時】の解決後に戻す
+function _fireLinkTriggersNested(linkerCard, linkerSide, baseCard, baseSide, ctx, callback) {
+  return _fireLinkTriggersImpl(linkerCard, linkerSide, baseCard, baseSide, ctx, callback, true);
+}
+// linkerCard は配列も可（複数枚リンク。ダンテモン BT26-086 等）。リンクされる側の効果は1回だけ
+function _fireLinkTriggersImpl(linkerCard, linkerSide, baseCard, baseSide, ctx, callback, nested) {
+  const _savedQueue = nested ? _effectQueue : null;
+  if (nested) {
+    _effectQueue = [];
+    const _cb0 = callback;
+    callback = () => { _effectQueue = _savedQueue; _cb0 && _cb0(); };
+  } else {
+    clearQueue();
+  }
+  const linkers = (Array.isArray(linkerCard) ? linkerCard : [linkerCard]).filter(Boolean);
+  linkerCard = linkers[0];
+  if (!linkerCard) { callback && callback(); return; }
   const turnPlayer = ctx.bs.isPlayerTurn ? 'player' : 'ai';
   const isTargetRole = (s) => !!(s && s.link_role === 'target');
   const isSelfSubject = (s) => {
@@ -6709,7 +6772,14 @@ export function fireLinkTriggers(linkerCard, linkerSide, baseCard, baseSide, ctx
   };
 
   // 1. リンクする側自身の効果（従来の【リンク時】）
-  queueOwnLinkSteps(linkerCard, linkerSide, (s) => s && !isTargetRole(s) && isSelfSubject(s), null);
+  linkers.forEach((lc) => {
+    queueOwnLinkSteps(lc, linkerSide, (s) => s && !isTargetRole(s) && isSelfSubject(s), null);
+    // 1b. リンクする側の「リンク効果」欄の【リンク時】（recipe.link.on_link）。リンク効果は
+    // リンク先のデジモンが得る効果なので、実行主体（「このデジモン」）はリンクされた側（baseCard）、
+    // 効果を持つカード（_recipeCard）はリンクしたカードとして積む
+    const linkSteps = _getLinkSectionOnLinkSteps(lc).filter((s) => s && !isTargetRole(s) && isSelfSubject(s));
+    if (linkSteps.length > 0) queueBlock(baseCard || lc, baseCard ? baseSide : linkerSide, linkSteps, lc, null);
+  });
 
   // 2. リンクされる側自身の効果（新規。link_role:'target' のみ）
   if (baseCard !== linkerCard) {
@@ -6784,9 +6854,15 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
     // （他カードがこのイベントに反応するsubjectスキャンは対象外。上のisSourceOnly分岐で処理済み）
     const _negatedThisTrigger = !!(sourceCard && sourceCard.buffs
       && sourceCard.buffs.some(b => b && b.type === 'negate_trigger' && b.value === triggerCode));
+    // 「他の自分のデジモンが登場したとき」(other_own)・「相手のデジモンがアタックしたとき」(opp)等の
+    // 反応専用ステップは、発動元自身のイベントとしては発動させない（ティンカーモン BT26-024 が
+    // 自分の登場で誤発火する等）。除外があったときだけ _grantedSteps で実行ステップを絞る
+    const _selfOnlyCodes = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end'];
+    const _narrowSelf = (steps) => (_selfOnlyCodes.includes(triggerCode) ? _selfEventSteps(steps, triggerCode) : steps);
     if (sourceCard && !_negatedThisTrigger) {
-      const mainRecipe = getRecipeForTrigger(sourceCard, triggerCode);
-      if (mainRecipe) {
+      const _mainAll = getRecipeForTrigger(sourceCard, triggerCode);
+      const mainRecipe = _narrowSelf(_mainAll);
+      if (mainRecipe && (mainRecipe === _mainAll || mainRecipe.length > 0)) {
         const dummyBlock = {
           // security トリガー（セキュリティからチェックして発動）はセキュリティ効果テキストを、
           // それ以外（main = 手札から発動 等）はメイン効果テキストを効果説明に表示する
@@ -6794,6 +6870,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
           trigger: { code: triggerCode },
           actions: [], conditions: [],
         };
+        if (mainRecipe !== _mainAll) dummyBlock._grantedSteps = mainRecipe;
         if (battleWinEventSourceCard) dummyBlock._eventSourceCard = battleWinEventSourceCard;
         addToQueue(sourceCard, dummyBlock,
           sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
@@ -6821,13 +6898,15 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
         console.log('[scanTriggers/sourceOnly evo] trigger=' + triggerCode + ' source=' + sourceCard.name + ' stack数=' + sourceCard.stack.length);
         sourceCard.stack.forEach((evoCard, evoIdx) => {
           if (!evoCard) return;
-          const evoRecipeSteps = getRecipeForTrigger(evoCard, triggerCode, true);
+          const _evoAll = getRecipeForTrigger(evoCard, triggerCode, true);
+          const evoRecipeSteps = _narrowSelf(_evoAll);
           console.log('  [evo' + evoIdx + ']', evoCard.name, 'recipe=' + (evoRecipeSteps ? '有' : '無'));
-          if (!evoRecipeSteps) return;
+          if (!evoRecipeSteps || (evoRecipeSteps !== _evoAll && evoRecipeSteps.length === 0)) return;
           const dummyBlock = {
             raw: evoCard.evoSourceEffect || '', trigger: { code: triggerCode },
             actions: [], conditions: [], _recipeCard: evoCard,
           };
+          if (evoRecipeSteps !== _evoAll) dummyBlock._grantedSteps = evoRecipeSteps;
           if (battleWinEventSourceCard) dummyBlock._eventSourceCard = battleWinEventSourceCard;
           addToQueue(sourceCard, dummyBlock,
             sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide
@@ -7065,6 +7144,38 @@ function _resolveStepSubjectList(step, triggerCode) {
   const single = _resolveStepSubject(step, triggerCode);
   return single !== undefined ? [single] : [];
 }
+// 発動元カード自身のイベントでは発動しない（他のカード/相手のイベント専用の）発動主体か。
+// other_own（他の自分の〜）・opp 系（相手の〜）がこれに当たる。own/both 系は「自分の（このカードを
+// 含む）〜」「お互いの〜」なので、発動元自身のイベントでも発動する
+function _isSelfExcludingSubject(subj) {
+  const s = String(subj || '');
+  return s === 'other' || s.startsWith('other_') || s === 'opp' || s.startsWith('opp_') || s === 'opponent';
+}
+// 「その後」（continue_on_fail）で連結された後続ステップは、エディタ上は直前のステップと同じ
+// 1ブロック（同じ発動主体・同じ条件）なので、先頭ステップと1組（チェーン）として扱う
+// （recipe.ts の stepsArrayToBlocks と同じ区切り方）
+function _splitStepChains(steps) {
+  const chains = [];
+  (Array.isArray(steps) ? steps : []).forEach((s) => {
+    const isCont = !!(s && Array.isArray(s.options) && s.options.includes('continue_on_fail'));
+    if (isCont && chains.length > 0) chains[chains.length - 1].push(s);
+    else chains.push([s]);
+  });
+  return chains;
+}
+// 先頭ステップが pred を満たすチェーンだけを残したステップ配列を返す
+function _filterStepChains(steps, pred) {
+  const out = [];
+  _splitStepChains(steps).forEach((chain) => { if (chain[0] && pred(chain[0])) out.push(...chain); });
+  return out;
+}
+// 発動元自身のイベント（自分の登場時/アタック時 等）として実行してよいステップだけに絞る
+// （他の自分の/相手の〜のときに反応する専用ステップを除外する）。除外が無ければ元の配列をそのまま返す
+function _selfEventSteps(steps, triggerCode) {
+  if (!Array.isArray(steps)) return steps;
+  const out = _filterStepChains(steps, (s) => !_isSelfExcludingSubject(_resolveStepSubject(s, triggerCode)));
+  return out.length === steps.length ? steps : out;
+}
 function _lookupTriggerStepsBase(recipeObj, triggerCode) {
   if (!recipeObj || !triggerCode) return undefined;
   let result;
@@ -7275,6 +7386,11 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   const sourceCard = reaction.sourceCard || card;
   const isEvo = sourceCard !== card;
   const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side };
+  // 発火元カード（反応の元になったイベントのカード）があれば、trigger_conditions の評価・
+  // target_trigger_source（「そのデジモン」）で参照できるよう ctx.block に載せる
+  if (reaction.eventSourceCard) {
+    ctx.block = { _eventSourceCard: reaction.eventSourceCard, trigger: { code: reaction.triggerCode || null }, actions: [], conditions: [] };
+  }
   // once_per_turn等のlimitキーは呼び出し元の事前フィルタと同じ基準（card基準/sourceCard基準）で
   // 揃える必要がある。_fireDestroyTriggersImpl は sourceCard 基準で事前フィルタしているため
   // opts.trackLimitBySourceCard:true を渡す。他は card(carrier) 基準のまま（省略時デフォルト）。
@@ -7291,6 +7407,9 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
       : '⚡ 「' + card.name + '」の効果発動');
   };
   const runNow = () => {
+    // 「そのデジモン」を same_target で参照する反応（トレーマニュアル BT26-099 の【ディレイ】後の
+    // 進化等）のため、指定があれば直前選択カードとしてセットしてから実行する
+    if (reaction.presetPicked && ctx.bs) ctx.bs._lastPickedCard = reaction.presetPicked;
     runRecipe(recipe, ctx, () => {
       ctx.renderAll && ctx.renderAll();
       // 相手画面のポップアップは必ずこの close 送信ペアでのみ消える（自動タイムアウト無し）ため、
@@ -7344,7 +7463,24 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
 // レシピを発動する。確認ダイアログ・任意効果・once_per_turn 制限なども共通処理。
 // stepFilter(step, reactSide): 追加の発動可否判定（省略時は常に true）。
 // 「発動主体(step.subject)」で自分/相手を判定するトリガー（when_evo_discard 等）に使う。
-function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, stepFilter) {
+// stepFilter は (step, reactSide, carrier, sourceCard) で呼ばれる（carrier=場のカード、
+// sourceCard=効果を持つカード。進化元効果なら進化元カード）。stepFilter を満たすステップ
+// （＋「その後」で連結された後続ステップ）だけを実行する（他の発動主体向けのステップや、
+// そのカードの別の効果まで一緒に実行されないように）。
+// opts.eventCards: イベントの対象になったカード（破棄された進化元・置かれたカード等）の配列。
+//   指定時は step.trigger_conditions をこれらのカードで評価し（いずれか1枚が満たせばよい）、
+//   満たしたカードを「発火元カード」（ctx.block._eventSourceCard）として効果に渡す
+//   （アンドロモン BT26-054「特徴CSを持つデジモンカードが置かれたとき」・
+//    ブルムロードモン BT26-048「裏向きの進化元が破棄されたとき」等）
+// opts.cause: 原因（{type, causerSide, causerCard}）。指定時は反応チェーンの間だけ bs._lastDestroyCause にセットする
+function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, stepFilter, opts) {
+  opts = opts || {};
+  if (opts.cause && bs) {
+    const _prevCause = bs._lastDestroyCause;
+    bs._lastDestroyCause = opts.cause;
+    const _done0 = done;
+    done = () => { bs._lastDestroyCause = _prevCause; _done0 && _done0(); };
+  }
   const finish = () => { try { done && done(); } catch(_) {} };
   if (!bs) { finish(); return; }
   // オンライン対戦: reactSide='ai'（＝実際のカードの持ち主は対戦相手）の場合、この場でローカル
@@ -7375,10 +7511,21 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
   };
   // carrier: 発動可否判定の基準になるカード（進化元由来効果の場合も、状態を持つのは
   // 進化元を抱えている本体側なので carrier で判定する）
-  const evalSteps = (carrier, recipe) => {
+  const eventCards = Array.isArray(opts.eventCards) ? opts.eventCards.filter(Boolean) : null;
+  // step.trigger_conditions を満たすイベント対象カード（eventCards 指定時のみ）。無ければ null
+  const pickEventCard = (step) => {
+    if (!eventCards || !step || ((!Array.isArray(step.trigger_conditions) || step.trigger_conditions.length === 0)
+        && !(Array.isArray(step.trigger_conditions_chain) && step.trigger_conditions_chain.length > 0))) {
+      return eventCards && eventCards.length > 0 ? eventCards[0] : null;
+    }
+    return eventCards.find(ec => _evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, ec, bs, reactSide, step.trigger_conditions_chain)) || null;
+  };
+  const evalSteps = (carrier, recipe, sourceCard) => {
     if (!Array.isArray(recipe)) return false;
     return recipe.some(step => {
-      if (stepFilter && !stepFilter(step, reactSide)) return false;
+      if (stepFilter && !stepFilter(step, reactSide, carrier, sourceCard || carrier)) return false;
+      // イベント対象カードで trigger_conditions を評価（いずれか1枚も満たさなければ不発）
+      if (eventCards && !pickEventCard(step)) return false;
       if (step.condition) {
         const conds = parseRecipeCondition(step.condition);
         if (!checkConditions(conds, carrier, bs, reactSide)) return false;
@@ -7418,12 +7565,26 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       return true;
     });
   };
+  // stepFilter 指定時は、それを満たすチェーンだけを実行対象にする
+  const narrow = (recipe, carrier, sourceCard) => (stepFilter
+    ? _filterStepChains(recipe, (s) => !!s && stepFilter(s, reactSide, carrier, sourceCard))
+    : recipe);
+  const pushReaction = (card, sourceCard, recipe) => {
+    const steps = narrow(recipe, card, sourceCard);
+    if (!Array.isArray(steps) || steps.length === 0 || !evalSteps(card, steps, sourceCard)) return;
+    const reaction = { card, sourceCard, recipe: steps, triggerCode: recipeKey };
+    if (eventCards) {
+      const ev = steps.map(pickEventCard).find(Boolean);
+      if (ev) reaction.eventSourceCard = ev;
+    }
+    reactions.push(reaction);
+  };
   cards.forEach(card => {
     // 本体カードの top-level recipe
     if (card.recipe) {
       const r = parseRecipe(card.recipe);
       const recipe = r && _lookupTriggerSteps(r, recipeKey);
-      if (recipe && evalSteps(card, recipe)) reactions.push({ card, sourceCard: card, recipe });
+      if (recipe) pushReaction(card, card, recipe);
     }
     // 進化元カードの evo_source ネストされたレシピ（例: ガルルモン「進化元にいるとき、
     // 自分の他のデジモンが消滅したらメモリー+1」）。_fireSelfDestroyEffects と同じ構造。
@@ -7432,7 +7593,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
         if (!evoCard || !evoCard.recipe) return;
         const r = parseRecipe(evoCard.recipe);
         const recipe = r && r.evo_source && _lookupTriggerSteps(r.evo_source, recipeKey);
-        if (recipe && evalSteps(card, recipe)) reactions.push({ card, sourceCard: evoCard, recipe });
+        if (recipe) pushReaction(card, evoCard, recipe);
       });
     }
   });
@@ -7454,7 +7615,18 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
 // オンライン対戦: _fireSidedReactionTriggers が相手機に委譲した反応系トリガーを、
 // 相手機（＝カードの本当の持ち主）側で side='player' として実際に発揮するためのエントリー
 // ポイント。battle-online.js の fx_reactionDelegate 受信ハンドラから呼ばれる。
-export function fireDelegatedReactionTriggers(recipeKey, bs, ctxBase, done) {
+// cmd（受信した fx_reactionDelegate コマンド。省略可）に kind があれば、その種類の発火関数を
+// こちら側（player）のカードだけで実行する（side 系フィールドは送信側で反転済み）:
+//   'security_reduced' … セキュリティが減ったとき（cmd.decreasedSide, cmd.cause）
+//   'hand_increase'    … 手札が効果で増えたとき（cmd.increasedSide, cmd.cause）
+export function fireDelegatedReactionTriggers(recipeKey, bs, ctxBase, done, cmd) {
+  const kind = cmd && cmd.kind;
+  if (kind === 'security_reduced') {
+    return fireWhenSecurityDecreaseTriggers(cmd.decreasedSide, bs, ctxBase, done, { cause: cmd.cause || null, onlySide: 'player' });
+  }
+  if (kind === 'hand_increase') {
+    return fireWhenHandIncreaseTriggers(cmd.increasedSide, bs, ctxBase, done, { cause: cmd.cause || null, onlySide: 'player' });
+  }
   return _fireSidedReactionTriggers('player', recipeKey, bs, ctxBase, done);
 }
 
@@ -7511,15 +7683,247 @@ export function tryCancelViaLeaveBattle(card, side, bs, ctxBase, callback) {
     fireWhenLeaveBattleTriggers(card, side, bs, ctxBase, () => {
       const canceled = card._stayedInBattleArea === true;
       delete card._stayedInBattleArea;
-      callback(canceled);
+      if (canceled) { callback(true); return; }
+      // 離れるカード自身で置換できなければ、同じ側の他のカード（バトルエリアのデジモン・テイマー）の
+      // 「自分のデジモンがバトルエリアを離れるとき、〜することで、離れない」を試す
+      // （ハイアンドロモン BT26-058「特徴CSを持つ自分のデジモンが離れるとき」）
+      _tryCancelLeaveByOtherCards(card, side, bs, ctxBase, callback);
     });
   } catch (_) { callback(false); }
 }
 
-// セキュリティが減ったとき → 減った側の自分側が反応
-// レシピの実際のトリガーキーは辞書コード on_security_reduced（表示名「セキュリティが減ったとき」）
-export function fireWhenSecurityDecreaseTriggers(decreasedSide, bs, ctxBase, done) {
-  return _fireSidedReactionTriggers(decreasedSide, 'on_security_reduced', bs, ctxBase, done);
+// 他のカードの when_leave_battle（離れる置換効果）の候補を集める。
+// 発動主体（subject）が own 系＝離れるカードと同じ側 / opp 系＝反対側 / both 系＝両方 のステップだけを対象にし
+// （未指定/self は「このカード自身が離れるとき」なので対象外）、trigger_conditions は離れるカードで評価する
+// （058 の ['cond_feature_contains:CS@own'] の @own は発火元＝離れるカードの陣営指定）。
+// 戻り値: [{ card(反応するカード), sourceCard, recipe, side }]
+function _collectLeaveBattleReplacers(leavingCard, leavingSide, bs) {
+  const out = [];
+  if (!leavingCard || !bs) return out;
+  ['player', 'ai'].forEach((sd) => {
+    const p = bs[sd];
+    if (!p) return;
+    const subjOk = (step) => {
+      const s = String(_resolveStepSubject(step, 'when_leave_battle') || '');
+      if (!s || s === 'self' || /^self_/.test(s)) return false;
+      if (/^both/.test(s)) return true;
+      if (s === 'opp' || /^opp_/.test(s) || s === 'opponent') return sd !== leavingSide;
+      if (s === 'own' || /^own_/.test(s) || s === 'other_own' || /^other_own/.test(s)) return sd === leavingSide;
+      return false;
+    };
+    const stepOk = (step, carrier) => {
+      if (!step || !subjOk(step)) return false;
+      if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, leavingCard, bs, sd, step.trigger_conditions_chain)) return false;
+      if (step.condition && !checkConditions(parseRecipeCondition(step.condition), carrier, bs, sd)) return false;
+      const lmax = getLimitMaxUses(step);
+      if (lmax > 0 && bs._usedLimits) {
+        const cid = (carrier && (carrier.cardNo || carrier.name)) || 'unknown';
+        if ((bs._usedLimits[cid + '@' + cid + '_recipe_' + step.action] || 0) >= lmax) return false;
+      }
+      return true;
+    };
+    const add = (carrier, srcCard, steps) => {
+      if (!Array.isArray(steps) || steps.length === 0) return;
+      const chosen = _filterStepChains(steps, (s) => stepOk(s, carrier)).map((s) => {
+        // trigger_conditions は離れるカードでここで判定済み（実行時に反応するカード側で再評価しない）
+        if (!s || !s.trigger_conditions) return s;
+        const o = Object.assign({}, s); delete o.trigger_conditions; delete o.trigger_conditions_op; delete o.trigger_conditions_chain;
+        return o;
+      });
+      if (chosen.length > 0) out.push({ card: carrier, sourceCard: srcCard, recipe: chosen, side: sd });
+    };
+    [...(p.battleArea || []), ...(p.tamerArea || [])].forEach((c) => {
+      if (!c || c === leavingCard) return;
+      const r = _parseCardRecipe(c);
+      if (r) add(c, c, _lookupTriggerSteps(r, 'when_leave_battle', c));
+      (c.stack || []).forEach((ec) => {
+        const er = _parseCardRecipe(ec);
+        if (er && er.evo_source) add(c, ec, _lookupTriggerSteps(er.evo_source, 'when_leave_battle'));
+      });
+    });
+  });
+  return out;
+}
+
+// 他のカードの離れる置換効果を順に試し、どれか1つで「離れない」（action:'battle_area'）まで
+// 到達したら callback(true)。反応するカード側の ctx.card に _stayedInBattleArea が立つので、それで判定する
+function _tryCancelLeaveByOtherCards(leavingCard, leavingSide, bs, ctxBase, callback) {
+  let list = [];
+  try { list = _collectLeaveBattleReplacers(leavingCard, leavingSide, bs); } catch (_) { list = []; }
+  if (list.length === 0) { callback(false); return; }
+  let i = 0;
+  const next = () => {
+    if (i >= list.length) { callback(false); return; }
+    const rc = list[i++];
+    rc.card._stayedInBattleArea = false;
+    const reaction = { card: rc.card, sourceCard: rc.sourceCard, recipe: rc.recipe, eventSourceCard: leavingCard, triggerCode: 'when_leave_battle' };
+    try {
+      _runReactionEffect(reaction, rc.side, bs, ctxBase, () => {
+        const ok = rc.card._stayedInBattleArea === true;
+        delete rc.card._stayedInBattleArea;
+        if (ok) { callback(true); return; }
+        next();
+      }, { alwaysConfirm: true });
+    } catch (_) { delete rc.card._stayedInBattleArea; next(); }
+  };
+  next();
+}
+
+// オンライン対戦: 相手（bs.ai）側のカードの反応を相手機に委譲する（fx_reactionDelegate）。
+// payload の side 系フィールドは送信前に相手視点（player⇔ai）へ反転しておくこと。
+// 相手機では battle-online.js → fireDelegatedReactionTriggers(recipeKey, ..., cmd) が cmd.kind で振り分ける
+function _delegateReactionToOpponent(payload, done) {
+  const finish = () => { try { done && done(); } catch (_) {} };
+  try { window._onlineSendCommand(Object.assign({ type: 'fx_reactionDelegate' }, payload)); }
+  catch (_) { finish(); return; }
+  if (typeof window._waitForReactionDelegate === 'function') window._waitForReactionDelegate(finish);
+  else finish();
+}
+const _flipSide = (s) => (s === 'player' ? 'ai' : s === 'ai' ? 'player' : s);
+// 両陣営のバトルエリア/テイマーエリアのカード（＋進化元の evo_source）に、recipeKey のステップで
+// pred を満たすものが1つでもあるか（反応しうるカードが無いときに保留反応を積まないための事前判定）
+function _anyBoardCardHasStep(bs, recipeKey, pred) {
+  if (!bs) return false;
+  const has = (steps) => Array.isArray(steps) && steps.some((s) => s && pred(s));
+  for (const sd of ['player', 'ai']) {
+    const p = bs[sd];
+    if (!p) continue;
+    for (const c of [...(p.battleArea || []), ...(p.tamerArea || [])]) {
+      if (!c) continue;
+      const r = _parseCardRecipe(c);
+      if (r && has(_lookupTriggerSteps(r, recipeKey, c))) return true;
+      for (const ec of (c.stack || [])) {
+        const er = ec && _parseCardRecipe(ec);
+        if (er && er.evo_source && has(_lookupTriggerSteps(er.evo_source, recipeKey))) return true;
+      }
+    }
+  }
+  return false;
+}
+// 原因（{type, causerSide, causerCard}）を相手機へ送れる形に（カード参照は送らない・陣営は相手視点へ反転）
+const _causeForOpponent = (cause) => (cause ? { type: cause.type, causerSide: _flipSide(cause.causerSide) } : null);
+
+// セキュリティが減ったとき（on_security_reduced。表示名「セキュリティが減ったとき」）
+// 減った側のカードは発動主体が未指定/self/own系/both系のステップ（沢城キョウ BT26-089「自分の
+// セキュリティが減ったとき」）、反対側のカードは opp系/both系のステップ（ユピテルモン：ラースモード
+// BT26-103「セキュリティが減ったとき」= both_digimon は自分・相手どちらのセキュリティでも）で反応する。
+// opts.cause: 原因（{type:'effect'|'battle', causerSide, causerCard}）。反応チェーンの間だけ
+//   bs._lastDestroyCause にセットする（cause:'effect' や gate:'cond_effect'「効果で減っていたなら」の判定用）。
+//   省略時は呼び出し時点の bs._lastDestroyCause をそのまま使う（従来の効果破棄キュー経由の呼び出し）
+// opts.onlySide: その側のカードだけを反応させる（オンラインで相手機から委譲された場合）
+// オンラインでは相手側（ai）のカードは相手機に委譲する（相手機で本物のUIを操作してもらう）
+const _SEC_REDUCED_KEY = 'on_security_reduced';
+function _secReducedSubjectFilter(decreasedSide) {
+  return (step, reactSide) => {
+    const list = _resolveStepSubjectList(step, _SEC_REDUCED_KEY);
+    const subs = list.length > 0 ? list : [undefined];
+    return subs.some((subj) => {
+      const s = String(subj || '');
+      if (/^both/.test(s)) return true;
+      if (s === 'opp' || /^opp_/.test(s) || s === 'opponent') return reactSide !== decreasedSide;
+      // 未指定 / self / own 系（own・own_any・own_card・own_security 等）は減った側
+      return reactSide === decreasedSide;
+    });
+  };
+}
+export function fireWhenSecurityDecreaseTriggers(decreasedSide, bs, ctxBase, done, opts) {
+  opts = opts || {};
+  const finish = () => { try { done && done(); } catch (_) {} };
+  if (!bs) { finish(); return; }
+  const cause = opts.cause !== undefined ? opts.cause : bs._lastDestroyCause;
+  const filter = _secReducedSubjectFilter(decreasedSide);
+  const isOnline = !!(window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand);
+  const scanSide = (sd, next) => {
+    if (opts.onlySide && opts.onlySide !== sd) { next(); return; }
+    if (sd === 'ai' && isOnline && !opts.onlySide) {
+      _delegateReactionToOpponent({ recipeKey: _SEC_REDUCED_KEY, kind: 'security_reduced', decreasedSide: _flipSide(decreasedSide), cause: _causeForOpponent(cause) }, next);
+      return;
+    }
+    _fireSidedReactionTriggers(sd, _SEC_REDUCED_KEY, bs, ctxBase, next, filter, { cause: cause || null });
+  };
+  // 減った側 → 反対側の順に解決する
+  const other = _flipSide(decreasedSide);
+  scanSide(decreasedSide, () => scanSide(other, finish));
+}
+
+// 効果でセキュリティが減ったとき（security_trash_top/bottom/select・セキュリティから手札に加える・
+// セキュリティのカードを他の場所に置く 等）の on_security_reduced を、元の効果の解決後に発火する
+// ようキューへ積む（discard の _runSecurityDiscard と同じ）。原因は「ctx.side の効果」。
+// 同じ効果の解決中に同じ側のセキュリティが複数回減っても誘発は1回（公式ルール 5-2）。
+// セキュリティの「オープン」（公開）だけでは減ったことにならない（15-3-1）ので、公開から他の
+// 領域へ移した分だけを呼び出し側で数えて渡すこと
+function _noteSecurityDecrease(ctx, owner, n) {
+  if (!ctx || !ctx.bs || !(n > 0)) return;
+  if (!_anyBoardCardHasStep(ctx.bs, _SEC_REDUCED_KEY, () => true)) return;
+  const side = typeof owner === 'string' ? owner : (owner === ctx.bs.player ? 'player' : (owner === ctx.bs.ai ? 'ai' : null));
+  if (!side) return;
+  const pend = ctx.bs._pendingReactions || [];
+  if (pend.some(r => r && r.fn === _fireWhenSecurityDecreaseQueuedWithCause && r.args[1] === side && r.args[0] && r.args[0].causerCard === ctx.card)) return;
+  const cause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  enqueueReaction(ctx.bs, _fireWhenSecurityDecreaseQueuedWithCause, [cause, side, ctx.bs, ctxBase]);
+}
+
+// 手札が効果で増えたとき（when_deck_increase + zone_increase:'hand'）。
+// デビモン BT26-068「相手の手札が効果で増えたとき」= subject:'opp'。発動主体は
+// 未指定/self/own系=増えた側のカード、opp系=反対側のカード、both系=両陣営。
+// zone_increase に 'hand' が明示されたステップだけが対象（未指定はデッキ増加用の後方互換）。
+// ドローフェイズのドロー等の通常処理では呼ばない（効果の処理中に _noteHandIncrease 経由で呼ぶ）。
+// opts.cause: 原因 / opts.onlySide: その側のカードだけを反応させる。
+// オンラインでは相手側（ai）のカードは相手機へ委譲する（こちらの効果で増えた手札＝こちらの手札でも
+// 相手の手札でも、その効果を処理した端末が両陣営分を発火させる）
+function _handIncreaseSubjectFilter(increasedSide) {
+  return (step, reactSide) => {
+    const zi = step && step.zone_increase;
+    if (!(Array.isArray(zi) ? zi : (zi ? [zi] : [])).includes('hand')) return false;
+    const list = _resolveStepSubjectList(step, 'when_deck_increase');
+    const subs = list.length > 0 ? list : [undefined];
+    return subs.some((subj) => {
+      const s = String(subj || '');
+      if (/^both/.test(s)) return true;
+      if (s === 'opp' || /^opp_/.test(s) || s === 'opponent') return reactSide !== increasedSide;
+      return reactSide === increasedSide;
+    });
+  };
+}
+export function fireWhenHandIncreaseTriggers(increasedSide, bs, ctxBase, done, opts) {
+  opts = opts || {};
+  const finish = () => { try { done && done(); } catch (_) {} };
+  if (!bs) { finish(); return; }
+  const cause = opts.cause || { type: 'effect', causerSide: increasedSide, causerCard: null };
+  const filter = _handIncreaseSubjectFilter(increasedSide);
+  const isOnline = !!(window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand);
+  const scanSide = (sd, next) => {
+    if (opts.onlySide && opts.onlySide !== sd) { next(); return; }
+    if (sd === 'ai' && isOnline && !opts.onlySide) {
+      _delegateReactionToOpponent({ recipeKey: 'when_deck_increase', kind: 'hand_increase', increasedSide: _flipSide(increasedSide), cause: _causeForOpponent(cause) }, next);
+      return;
+    }
+    _fireSidedReactionTriggers(sd, 'when_deck_increase', bs, ctxBase, next, filter, { cause });
+  };
+  const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+  scanSide(turnSide, () => scanSide(_flipSide(turnSide), finish));
+}
+function _fireWhenHandIncreaseQueued(cause, increasedSide, bs, ctxBase, callback) {
+  fireWhenHandIncreaseTriggers(increasedSide, bs, ctxBase, callback, { cause });
+}
+// 効果の処理中に手札が増えたときに呼ぶ（owner = 増えた側の bs.player/bs.ai か 'player'/'ai'）。
+// 元の効果の解決後に「手札が増えたとき」を発火するようキューへ積む。同じ効果の解決中に何枚増えても
+// 誘発は1回（公式ルール 5-2）
+function _noteHandIncrease(ctx, owner) {
+  if (!ctx || !ctx.bs) return;
+  // 盤面に「手札が増えたとき」のステップを持つカードが無ければ何もしない（無駄な保留反応を積まない）
+  if (!_anyBoardCardHasStep(ctx.bs, 'when_deck_increase', (s) => {
+    const zi = s && s.zone_increase;
+    return (Array.isArray(zi) ? zi : (zi ? [zi] : [])).includes('hand');
+  })) return;
+  const side = typeof owner === 'string' ? owner : (owner === ctx.bs.player ? 'player' : (owner === ctx.bs.ai ? 'ai' : null));
+  if (!side) return;
+  const pend = ctx.bs._pendingReactions || [];
+  if (pend.some(r => r && r.fn === _fireWhenHandIncreaseQueued && r.args[1] === side && r.args[0] && r.args[0].causerCard === ctx.card)) return;
+  const cause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  enqueueReaction(ctx.bs, _fireWhenHandIncreaseQueued, [cause, side, ctx.bs, ctxBase]);
 }
 
 // デッキが自分の効果で増えたとき（見た後に戻す／デッキに戻す等）→ 増えた側の自分側が反応
@@ -7554,19 +7958,128 @@ export function fireWhenDeckIncreaseTriggers(increasedSide, bs, ctxBase, done, c
 // アンドロモン(BT26-054)「このデジモンの進化元に特徴「CS」を持つデジモンカードが効果で
 // 置かれたとき〜」等、「自分自身のスタックに限る」反応のため、盤面全体をスキャンする
 // _fireSidedReactionTriggers系とは別に、対象カード1枚だけを見て発火する専用処理にする
-export function fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, done) {
+//
+// placedCards: 置かれたカード（配列）。trigger_conditions をこれらのカードで評価する
+//   （アンドロモン 054「特徴CSを持つデジモンカードが置かれたとき」= ['cond_feature:CS','cond_type:デジモン']、
+//    トレーマニュアル 099「裏向きのカードが置かれたとき」= ['cond_face_down']）。省略時は従来通り判定しない
+// cause: 原因（{type:'effect', causerSide, causerCard}）。step.cause:'effect' 等の判定用（省略時は効果扱い）
+//
+// 1) 置かれた先のデジモン自身（＋その進化元）の、発動主体が自分系（未指定/self/own）のステップ
+//    （アンドロモン 054 の subject:'own' は「このデジモンの進化元」の意味で使われている）
+// 2) 同じ側の他のカード（テイマーエリアのテイマー・バトルエリアに置かれたオプション＝
+//    トレーマニュアル 099 等）の「自分のデジモンの進化元に置かれたとき」。
+//    テイマーエリアのカード（自身は進化元を持たない）は subject 'own' / 'own_evo_stack' / 'own_digimon' 系、
+//    バトルエリアの他のデジモンは own_evo_stack / own_digimon 系（'own' は 1) の意味なので対象外）で反応する。
+//    both 系は両陣営、opp 系は反対側（相手のデジモンの進化元）で反応する
+//    （オンラインでは相手側のカードはこちらで発動させない＝相手機で起きた配置は相手機が処理する）。
+//    発火元（ctx.block._eventSourceCard）と直前選択カードは「置かれた先のデジモン」にする
+//    （【ディレイ】後の same_target / target_trigger_source で「そのデジモン」を参照できるように）
+export function fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, done, placedCards, cause) {
   const finish = () => { try { done && done(); } catch (_) {} };
-  if (!digi) { finish(); return; }
-  const r = _parseCardRecipe(digi);
-  const steps = r && _lookupTriggerSteps(r, 'when_deck_increase', digi);
-  const matched = Array.isArray(steps) ? steps.filter(s => {
+  if (!digi || !bs) { finish(); return; }
+  const placed = Array.isArray(placedCards) ? placedCards.filter(Boolean) : null;
+  const evoZone = (s) => {
     const zi = s && s.zone_increase;
     const list = Array.isArray(zi) ? zi : (zi ? [zi] : []);
     return list.includes('evo_source');
-  }) : [];
-  if (matched.length === 0) { finish(); return; }
-  try { _runReactionEffect({ card: digi, sourceCard: digi, recipe: matched }, side, bs, ctxBase, finish); }
-  catch (_) { finish(); }
+  };
+  const reactions = [];
+  // trigger_conditions を置かれたカードで評価して、満たしたカードを返す（placed 未指定なら判定しない）
+  const pickPlaced = (step, reactSide) => {
+    if (!placed) return true;
+    const hasTc = (Array.isArray(step.trigger_conditions) && step.trigger_conditions.length > 0)
+      || (Array.isArray(step.trigger_conditions_chain) && step.trigger_conditions_chain.length > 0);
+    if (!hasTc) return placed[0] || true;
+    return placed.find(pc => _evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, pc, bs, reactSide, step.trigger_conditions_chain)) || null;
+  };
+  const effCause = cause || { type: 'effect', causerSide: side, causerCard: null };
+  const stepUsable = (step, carrier, reactSide, srcCard) => {
+    if (!step) return false;
+    if (step.condition && !checkConditions(parseRecipeCondition(step.condition), carrier, bs, reactSide)) return false;
+    const _prev = bs._lastDestroyCause;
+    bs._lastDestroyCause = effCause;
+    const okCause = _destroyCauseMatches(step, bs, reactSide, carrier, 'when_deck_increase');
+    bs._lastDestroyCause = _prev;
+    if (!okCause) return false;
+    const lmax = getLimitMaxUses(step);
+    if (lmax > 0 && bs._usedLimits) {
+      const sid = (srcCard && (srcCard.cardNo || srcCard.name)) || 'unknown';
+      const cid = (carrier && (carrier.cardNo || carrier.name)) || 'unknown';
+      if ((bs._usedLimits[sid + '@' + cid + '_recipe_' + step.action] || 0) >= lmax) return false;
+    }
+    return !!pickPlaced(step, reactSide);
+  };
+  const addReaction = (carrier, srcCard, steps, reactSide, subjOk, isEvo) => {
+    const chains = _filterStepChains(steps || [], (s) => evoZone(s) && subjOk(_resolveStepSubject(s, 'when_deck_increase')) && stepUsable(s, carrier, reactSide, carrier));
+    if (chains.length === 0) return;
+    // trigger_conditions は置かれたカードでここで判定済みなので、実行時には外す
+    // （実行時の発火元カード＝「そのデジモン」は置かれた先のデジモンにするため、置かれたカード用の
+    //  条件をそちらで再評価して誤って不発にならないように）
+    const recipe = placed ? chains.map((s) => {
+      if (!s || (!s.trigger_conditions && !s.trigger_conditions_chain)) return s;
+      const o = Object.assign({}, s); delete o.trigger_conditions; delete o.trigger_conditions_op; delete o.trigger_conditions_chain;
+      return o;
+    }) : chains;
+    const reaction = { card: carrier, sourceCard: srcCard, recipe, triggerCode: 'when_deck_increase', reactSide };
+    if (carrier !== digi) { reaction.eventSourceCard = digi; reaction.presetPicked = digi; }
+    else if (placed) reaction.eventSourceCard = digi;
+    reactions.push(reaction);
+  };
+  const recipeOf = (c) => _parseCardRecipe(c);
+  // 1) 置かれた先のデジモン自身
+  const selfSubj = (subj) => !subj || subj === 'self' || subj === 'own' || subj === 'own_any' || /^self_/.test(String(subj));
+  {
+    const r = recipeOf(digi);
+    if (r) addReaction(digi, digi, _lookupTriggerSteps(r, 'when_deck_increase', digi), side, selfSubj, false);
+    (digi.stack || []).forEach((ec) => {
+      const er = recipeOf(ec);
+      if (er && er.evo_source) addReaction(digi, ec, _lookupTriggerSteps(er.evo_source, 'when_deck_increase'), side, selfSubj, true);
+    });
+  }
+  // 2) 他のカード
+  const isOnline = !!(window._isOnlineMode && window._isOnlineMode());
+  ['player', 'ai'].forEach((sd) => {
+    if (isOnline && sd === 'ai') return;
+    const p = bs[sd];
+    if (!p) return;
+    const sameSide = sd === side;
+    const subjOkFor = (inTamerArea) => (subj) => {
+      const s = String(subj || '');
+      if (!s || s === 'self') return false;
+      if (/^both/.test(s)) return true;
+      if (/^opp/.test(s)) return !sameSide;
+      if (s === 'own_evo_stack' || /^own_digimon/.test(s) || s === 'other_own' || s === 'other_own_digimon') return sameSide;
+      if (s === 'own' || s === 'own_any' || s === 'own_card') return sameSide && inTamerArea;
+      return false;
+    };
+    (p.tamerArea || []).forEach((c) => {
+      if (!c || c === digi) return;
+      const r = recipeOf(c);
+      if (r) addReaction(c, c, _lookupTriggerSteps(r, 'when_deck_increase', c), sd, subjOkFor(true), false);
+    });
+    (p.battleArea || []).forEach((c) => {
+      if (!c || c === digi) return;
+      const r = recipeOf(c);
+      if (r) addReaction(c, c, _lookupTriggerSteps(r, 'when_deck_increase', c), sd, subjOkFor(false), false);
+      (c.stack || []).forEach((ec) => {
+        const er = recipeOf(ec);
+        if (er && er.evo_source) addReaction(c, ec, _lookupTriggerSteps(er.evo_source, 'when_deck_increase'), sd, subjOkFor(false), true);
+      });
+    });
+  });
+  if (reactions.length === 0) { finish(); return; }
+  // 置かれた先の側（ターンプレイヤー優先の近似として、置かれた先の側→反対側）の順に解決する
+  reactions.sort((a, b) => (a.reactSide === side ? 0 : 1) - (b.reactSide === side ? 0 : 1));
+  const prevCause = bs._lastDestroyCause;
+  let i = 0;
+  const next = () => {
+    if (i >= reactions.length) { bs._lastDestroyCause = prevCause; finish(); return; }
+    const rc = reactions[i++];
+    bs._lastDestroyCause = effCause;
+    try { _runReactionEffect(rc, rc.reactSide, bs, ctxBase, next); }
+    catch (_) { next(); }
+  };
+  next();
 }
 
 // 手札に戻ったとき → 戻った側が反応
@@ -7612,11 +8125,14 @@ export function fireWhenOppAttackTriggers(attackerSide, bs, ctxBase, done) {
 // 相手のアタック宣言でも反応する（例: ゲコモン進化元「お互いのターン、デジモンが
 // アタックしたとき〜」）。通常の on_attack（subject無し）は「発動元自身のアタック」
 // でのみ checkAndTriggerEffect 経由で発動するため、ここでは相手側の反応分だけを
-// 追加で拾う（subject:"both" 以外は無視 = 二重発火しない）
+// 追加で拾う（subject:"both" 以外は無視 = 二重発火しない）。エディタが出力する
+// both_digimon（咲夜レーナ BT26-093「デジモンがアタックしたとき」）等の both 系も同じ扱い。
+// 自分の他のデジモンのアタックへの反応は scanTriggers の _scanReactiveSubjectsForSourceOnly が拾う
+const _BOTH_SUBJECTS = new Set(['both', 'both_any', 'both_card', 'both_digimon']);
 export function fireOnAttackBothSubjectTriggers(attackerSide, bs, ctxBase, done) {
   if (bs) bs._currentAttackerSide = attackerSide;
   const reactSide = attackerSide === 'player' ? 'ai' : 'player';
-  return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && _resolveStepSubject(step, 'on_attack') === 'both');
+  return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && _BOTH_SUBJECTS.has(_resolveStepSubject(step, 'on_attack')));
 }
 
 // on_attack ステップに subject:"opp" が付いている場合（例: アンドロモン進化元「相手の
@@ -7647,6 +8163,10 @@ export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, on
   // このリストのうち自分（手札破棄スキャン）に関係する値（own_hand/opp_hand等）だけを見る。
   // 他ゾーン向けの値（own_tamer等）はここでは無視される（evo/tamer側のスキャンが別途判定する）
   const subjectMatches = (step, cardSide) => {
+    // trigger_from（破棄元ゾーン）が手札以外（'evo_source' 等。ブルムロードモン BT26-048）の
+    // ステップは手札の破棄では発動しない
+    const tf = step && step.trigger_from;
+    if (tf && !(Array.isArray(tf) ? tf : [tf]).includes('hand')) return false;
     const list = _resolveStepSubjectList(step, 'when_hand_discard');
     if (list.length === 0) return false;
     return list.some((subj) => matchesOne(subj, cardSide));
@@ -7870,11 +8390,23 @@ export function runDelegatedHandDiscard(req, bs, ctxBase, done) {
 // （このトリガー自体が常にスタック破棄イベントなので）冗長な接尾辞として無視する。
 // discardedSide = 破棄された側。containerType = 'digimon'|'tamer'|undefined（破棄元の種別。
 // 呼び出し元がまだ指定していない場合はコンテナ種別を問わず判定する後方互換動作）。
-export function fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, done, containerType) {
+// info（省略可）: { container: 破棄元のデジモン/テイマー, cards: 破棄されたカード[],
+//   bottomCards: そのうち破棄時点で一番下だったカード[], topCards: 一番上だったカード[] }
+//   - self 系の発動主体（self_stack＝藤枝淑乃/イクト BT26-091/094「このテイマーの下のカード」、
+//     self_evo_stack 等）は、破棄元が反応するカード自身（carrier）のときだけ一致する
+//   - 末尾 _bottom（own_tamer_stack_bottom＝ヤタガラモン BT26-076 等）は一番下のカードが破棄されたとき、
+//     _top は一番上のカードが破棄されたときだけ一致する（info が無い呼び出しでは位置を問わない）
+//   - 破棄されたカードを trigger_conditions の判定対象にする（ブルムロードモン BT26-048 の cond_face_down）
+// step.trigger_from: 'evo_source'（デジモンの進化元）/'tamer'（テイマーの下）/'hand'（手札）で
+//   破棄元のゾーンを絞る。'hand' のステップはここ（進化元/テイマー下の破棄）では発動しない
+export function fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, done, containerType, info) {
   // 原因追跡は「今まさに解決中の反応チェーン」限定の一時情報のため、解決完了後は必ずクリアする
   const finish = () => { if (bs) bs._lastDestroyCause = null; try { done && done(); } catch(_) {} };
-  const matchesOne = (subj, cardSide) => {
-    const base = String(subj || '').replace(/(_evo)?_stack(_top|_bottom)?$/, '');
+  const container = info && info.container;
+  if (!containerType && container) containerType = String(container.type || '') === 'テイマー' ? 'tamer' : 'digimon';
+  const matchesOne = (subj, cardSide, carrier) => {
+    const raw = String(subj || '');
+    const base = raw.replace(/(_evo)?_stack(_top|_bottom)?$/, '');
     let sideMatch, typeReq = null;
     switch (base) {
       case 'opp': sideMatch = discardedSide !== cardSide; break;
@@ -7883,21 +8415,39 @@ export function fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, done, con
       case 'own': sideMatch = discardedSide === cardSide; break;
       case 'own_tamer': sideMatch = discardedSide === cardSide; typeReq = 'tamer'; break;
       case 'own_digimon': sideMatch = discardedSide === cardSide; typeReq = 'digimon'; break;
+      // このカード自身の進化元/下（破棄元＝反応するカード自身）
+      case 'self': sideMatch = discardedSide === cardSide && !!container && container === carrier; break;
       default: return false;
     }
     if (!sideMatch) return false;
     if (typeReq && containerType && typeReq !== containerType) return false;
+    if (info && /_bottom$/.test(raw) && !(Array.isArray(info.bottomCards) && info.bottomCards.length > 0)) return false;
+    if (info && /_top$/.test(raw) && !(Array.isArray(info.topCards) && info.topCards.length > 0)) return false;
     return true;
+  };
+  const triggerFromOk = (step) => {
+    const tf = step && step.trigger_from;
+    if (!tf) return true;
+    const list = Array.isArray(tf) ? tf : [tf];
+    return list.some((z) => {
+      if (z === 'evo_source' || z === 'evo_stack') return containerType !== 'tamer';
+      if (z === 'tamer' || z === 'tamer_stack') return containerType !== 'digimon';
+      return false;
+    });
   };
   // subject_or（発動主体のOR）があれば、own_tamer/own_digimon等（進化元/テイマー下系）の
   // 値だけがここで意味を持つ（own_hand等はここでは無視され、手札側のスキャンが別途判定する）
-  const subjectMatches = (step, cardSide) => {
+  const subjectMatches = (step, cardSide, carrier) => {
+    if (!triggerFromOk(step)) return false;
     const list = _resolveStepSubjectList(step, 'when_evo_discard');
-    return list.some((subj) => matchesOne(subj, cardSide));
+    return list.some((subj) => matchesOne(subj, cardSide, carrier));
   };
+  // 一番下/一番上の指定があるステップは、その位置のカードを trigger_conditions の判定対象にする
+  // （ここでは単純化して、破棄されたカード全体を判定対象として渡す）
+  const opts = (info && Array.isArray(info.cards) && info.cards.length > 0) ? { eventCards: info.cards } : undefined;
   _fireSidedReactionTriggers('player', 'when_evo_discard', bs, ctxBase, () => {
-    _fireSidedReactionTriggers('ai', 'when_evo_discard', bs, ctxBase, finish, subjectMatches);
-  }, subjectMatches);
+    _fireSidedReactionTriggers('ai', 'when_evo_discard', bs, ctxBase, finish, subjectMatches, opts);
+  }, subjectMatches, opts);
 }
 
 // 自分のメインフェイズ開始時 → ターンプレイヤー側が反応
@@ -8094,14 +8644,21 @@ const _isBothSubjectDestroyStep = (s) => { const subj = _resolveStepSubject(s, '
 // 効かせたい場合に使う）を優先して解決する。cause_by_codeが使われているstepでは
 // 該当コードが無ければ「原因チェックなし」（常にtrue）とする
 function _destroyCauseMatches(step, bs, carrierSide, carrier, triggerCode) {
+  // *_by_code はトリガーコード、無ければその辞書上の別名（when_evo_discard/when_hand_discard → discard）で引く
+  // （藤枝淑乃 BT26-091 の cause_by_code:{discard:'effect'} を when_evo_discard の発火で効かせる）
+  const byCode = (map) => {
+    if (map[triggerCode] !== undefined) return map[triggerCode];
+    const ak = TRIGGER_KEY_ALIASES[triggerCode];
+    return ak ? map[ak] : undefined;
+  };
   const cause = (triggerCode && step && step.cause_by_code)
-    ? step.cause_by_code[triggerCode]
+    ? byCode(step.cause_by_code)
     : (step && step.cause);
   if (!cause) return true;
   const dc = bs && bs._lastDestroyCause;
   if (!dc || dc.type !== cause) return false;
   const cs = (triggerCode && step && step.cause_subject_by_code)
-    ? step.cause_subject_by_code[triggerCode]
+    ? byCode(step.cause_subject_by_code)
     : (step && step.cause_subject);
   if (!cs || cs === 'both') return true;
   if (cs === 'self') return dc.causerCard ? dc.causerCard === carrier : dc.causerSide === carrierSide;
@@ -8194,7 +8751,10 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
   //    _lookupTriggerSteps がマージして拾う。例: 【分離】= passive:protection の
   //    when_leave_battle は生のownR[triggerKey]には無く、キーワード辞書側にしかない）
   const ownR = parseRecipe(destroyedCard.recipe);
-  const ownSteps = ownR && _lookupTriggerSteps(ownR, triggerKey, destroyedCard);
+  let ownSteps = ownR && _lookupTriggerSteps(ownR, triggerKey, destroyedCard);
+  // 離れるとき: 「他の自分の/相手のデジモンが離れるとき」専用のステップは、このカード自身が
+  // 離れるときには使わない（他のカードが離れるときは _tryCancelLeaveByOtherCards が扱う）
+  if (triggerKey === 'when_leave_battle' && Array.isArray(ownSteps)) ownSteps = _selfEventSteps(ownSteps, triggerKey);
   if (Array.isArray(ownSteps) && ownSteps.length > 0) {
     reactions.push({ card: destroyedCard, sourceCard: destroyedCard, recipe: ownSteps });
   }
@@ -8754,6 +9314,19 @@ function runWithAltActions(step, ctx, store, callback) {
       function nextAlt() {
         if (i >= alts.length) { callback && callback(); return; }
         const a = alts[i++];
+        // alt 側の gate（「さらに、効果で減っていたなら」沢城キョウ BT26-089 の gate:'cond_effect' 等）は
+        // AND（順次実行）でも、満たさないときはその alt だけを実行しない
+        if (a && (a.gate || a.gate_when || (Array.isArray(a.gate_extra_conditions) && a.gate_extra_conditions.length > 0))) {
+          const _ag = [];
+          if (a.gate) (Array.isArray(a.gate) ? a.gate : [a.gate]).forEach((g) => _ag.push(...parseRecipeCondition(String(g))));
+          if (a.gate_when) _ag.push(...parseRecipeCondition(a.gate_when));
+          if (Array.isArray(a.gate_extra_conditions)) a.gate_extra_conditions.forEach((g) => _ag.push(...parseRecipeCondition(String(g))));
+          if (_ag.length > 0 && !checkConditions(_ag, ctx.card, ctx.bs, ctx.side)) {
+            console.log('[runWithAltActions] alt gate not met → skip', 'action=' + a.action);
+            nextAlt();
+            return;
+          }
+        }
         executeRecipeStep(a, ctx, store, () => nextAlt());
       }
       nextAlt();
@@ -10254,7 +10827,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const c = _rhoPicked[_rhoi++];
           const ti = opponent.trash.indexOf(c);
           if (ti !== -1) opponent.trash.splice(ti, 1);
-          opponent.hand.push(c);
+          opponent.hand.push(c); _noteHandIncrease(ctx, opponent);
           ctx.addLog && ctx.addLog('🃏 相手のトラッシュの「' + c.name + '」を相手の手札に戻した');
           if (window._fxCardMove) window._fxCardMove(c, 'トラッシュ', '手札', _rhoMoveNext);
           else setTimeout(_rhoMoveNext, 300);
@@ -10306,7 +10879,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const c = chosen[ri++];
           const ti = player.trash.indexOf(c);
           if (ti !== -1) player.trash.splice(ti, 1);
-          player.hand.push(c);
+          player.hand.push(c); _noteHandIncrease(ctx, player);
           ctx.addLog && ctx.addLog('🃏 「' + c.name + '」をトラッシュから手札に戻した');
           if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
             try {
@@ -10355,7 +10928,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const c = chosen[i++];
           const ti = player.trash.indexOf(c);
           if (ti !== -1) player.trash.splice(ti, 1);
-          player.hand.push(c);
+          player.hand.push(c); _noteHandIncrease(ctx, player);
           ctx.addLog && ctx.addLog('🃏 「' + c.name + '」をトラッシュから手札に戻した');
           // オンライン: 相手画面にも同じカード移動演出を送信
           if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
@@ -10950,6 +11523,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         const remaining = player.deck.slice();
         player.deck = savedDeckSO;
         player.security = player.security.concat(remaining);
+        // オープンしただけ（セキュリティに戻した分）は減ったことにならない（公式ルール 15-3-1）。
+        // オープン中のカードを手札等へ移した分だけ「セキュリティが減ったとき」を誘発させる（15-3-2）
+        _noteSecurityDecrease(ctx, player, opened.length - remaining.length);
         // 選択して手札に加わったカード（cond_picked_color 等で参照）
         const newPickedSO = player.hand.filter(c => !handBeforeSO.includes(c));
         if (newPickedSO.length > 0) ctx.bs._lastPickedCard = newPickedSO[newPickedSO.length - 1];
@@ -11397,7 +11973,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             const c = chosen[_bi++];
             const si = _self.stack.indexOf(c);
             if (si >= 0) _self.stack.splice(si, 1);
-            player.hand.push(c);
+            player.hand.push(c); _noteHandIncrease(ctx, player);
             ctx.addLog('🃏 進化元の「' + c.name + '」を手札に戻した');
             ctx.renderAll();
             // オンライン: 相手画面にも「進化元 → 手札」の移動演出を送る
@@ -11447,7 +12023,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             const c = chosen[_bti++];
             const ti = zoneOwner.trash.indexOf(c);
             if (ti >= 0) zoneOwner.trash.splice(ti, 1);
-            zoneOwner.hand.push(c);
+            zoneOwner.hand.push(c); _noteHandIncrease(ctx, zoneOwner);
             ctx.addLog('🃏 トラッシュの「' + c.name + '」を手札に戻した');
             if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
               try {
@@ -11534,7 +12110,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           // メイン効果全体の完了後にまとめて発火させる。
           // 「原因」追跡: 効果によって破棄された（このactionを実行している効果の持ち主が原因）
           enqueueReaction(ctx.bs, _fireWhenEvoDiscardTriggersQueued, [
-            { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }, _discardedSide, ctx.bs, ctx, undefined
+            { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }, _discardedSide, ctx.bs, ctx, undefined, null
           ]);
           doneCb && doneCb();
           return;
@@ -11808,7 +12384,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           placeCardAndFinish(c, () => {
             const hi = player.hand.indexOf(c); if (hi !== -1) player.hand.splice(hi, 1);
             const ti = player.trash.indexOf(c); if (ti !== -1) player.trash.splice(ti, 1);
-            const si = _putSecOwner.security.indexOf(c); if (si !== -1) _putSecOwner.security.splice(si, 1);
+            const si = _putSecOwner.security.indexOf(c); if (si !== -1) { _putSecOwner.security.splice(si, 1); _noteSecurityDecrease(ctx, _putSecOwner, 1); }
           });
         };
         if (effectiveSide === 'ai') { _putOnPicked([_putCands[0]]); }
@@ -11868,7 +12444,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 「進化元に効果でカードが置かれたとき」(when_deck_increase + zone_increase:"evo_source")
         // をそのデジモン自身の視点で発火（アンドロモン BT26-054等）
         const _pudCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-        fireWhenEvoSourceIncreaseTriggers(digi, ctx.side, ctx.bs, _pudCtxBase, callback);
+        fireWhenEvoSourceIncreaseTriggers(digi, ctx.side, ctx.bs, _pudCtxBase, callback, [cardToPlace], { type: 'effect', causerSide: ctx.side, causerCard: ctx.card });
       };
 
       const resolveDigimonThen = (next) => {
@@ -12080,7 +12656,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         // デジモンの進化元に置いた場合は「進化元が増えたとき」を発火（place_under_digimon と同じ）
         if (_pusInBattle) {
           const _cb = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-          fireWhenEvoSourceIncreaseTriggers(host, ctx.side, ctx.bs, _cb, () => callback(true));
+          fireWhenEvoSourceIncreaseTriggers(host, ctx.side, ctx.bs, _cb, () => callback(true), cards, { type: 'effect', causerSide: ctx.side, causerCard: ctx.card });
           return;
         }
         callback(true);
@@ -12109,7 +12685,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _pusRemove = (c) => {
         const hi = player.hand.indexOf(c); if (hi !== -1) { player.hand.splice(hi, 1); return; }
         const ti = player.trash.indexOf(c); if (ti !== -1) { player.trash.splice(ti, 1); return; }
-        const si = player.security.indexOf(c); if (si !== -1) player.security.splice(si, 1);
+        const si = player.security.indexOf(c); if (si !== -1) { player.security.splice(si, 1); _noteSecurityDecrease(ctx, player, 1); }
       };
       const _pusOnPicked = (picked) => {
         const list = (picked || []).filter(Boolean);
@@ -12270,7 +12846,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           } else if (zone === 'security') {
             const sec = _rdOwnerP.security || [];
             const pool = step.security_position === 'top' ? sec.slice(0, 1) : step.security_position === 'bottom' ? sec.slice(-1) : sec;
-            pool.forEach((c) => { if (c) _rdCandList.push({ card: c, remove: () => { const i = _rdOwnerP.security.indexOf(c); if (i !== -1) _rdOwnerP.security.splice(i, 1); } }); });
+            pool.forEach((c) => { if (c) _rdCandList.push({ card: c, remove: () => { const i = _rdOwnerP.security.indexOf(c); if (i !== -1) { _rdOwnerP.security.splice(i, 1); _noteSecurityDecrease(ctx, _rdOwnerP, 1); } } }); });
           } else if (zone === 'evo_source') {
             const stack = (ctx.card && ctx.card.stack) || [];
             const pool = step.evo_source_position === 'top' ? stack.slice(0, 1) : step.evo_source_position === 'bottom' ? stack.slice(-1) : stack;
@@ -12335,7 +12911,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (_stsPos === 'top' || _stsPos === 'bottom') {
         const selectedIdx = _stsPos === 'top' ? 0 : owner.security.length - 1;
         const c = owner.security.splice(selectedIdx, 1)[0];
-        if (c) owner.trash.push(c);
+        if (c) { owner.trash.push(c); _noteSecurityDecrease(ctx, owner, 1); }
         if (ctx.bs) ctx.bs._lastActionCount = c ? 1 : 0;
         ctx.addLog('🗑 セキュリティ（' + (_stsPos === 'top' ? '上から' : '下から') + '）破棄' + (c ? '：' + c.name : ''));
         ctx.renderAll();
@@ -12347,7 +12923,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       showTargetSelection(rowId, idxs, 'セキュリティから破棄するカードを選択', '#ff4444', (selectedIdx) => {
         if (selectedIdx == null) { if (ctx.bs) ctx.bs._lastActionCount = 0; callback(); return; }
         const c = owner.security.splice(selectedIdx, 1)[0];
-        if (c) owner.trash.push(c);
+        if (c) { owner.trash.push(c); _noteSecurityDecrease(ctx, owner, 1); }
         if (ctx.bs) ctx.bs._lastActionCount = c ? 1 : 0;
         ctx.addLog('🗑 セキュリティから「' + (c ? c.name : '?') + '」を破棄');
         ctx.renderAll();
@@ -12674,9 +13250,16 @@ function executeRecipeStep(step, ctx, store, callback) {
       // レシピ駆動のリンク成立後、対象カードの【リンク時】(on_link)を発火してから続行する
       // （battle-combat.js の手動doLinkは自前で発火済みのため、ここ＝executeRecipeStep経由の
       // 自動リンクのみが対象）
-      const _fireOnLinkThen = (cb) => {
+      // 手動リンク（doLink）と同じ fireLinkTriggers の経路で、リンクしたカードの【リンク時】
+      // （トップレベル on_link・リンク効果欄 link.on_link）とリンクされた側（このカード）の
+      // link_role:'target' の【リンク時】、盤面の反応（subject）をまとめて発火する。
+      // 実行中の外側のキューは退避して、解決後に戻す（_fireLinkTriggersNested）
+      const _fireOnLinkThen = (linkers, cb) => {
         const _linkCtx = { card: linkTarget, side: ctx.side, bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-        try { triggerEffect('on_link', linkTarget, ctx.side, _linkCtx, () => cb && cb()); }
+        ['showDrawEffect', 'showPlayEffect', 'showEvolveEffect', 'showDestroyEffect', 'showSecurityCheck', 'showBattleResult', 'doDraw'].forEach((k) => {
+          if (typeof ctx[k] === 'function') _linkCtx[k] = ctx[k];
+        });
+        try { _fireLinkTriggersNested(linkers, ctx.side, linkTarget, ctx.side, _linkCtx, () => cb && cb()); }
         catch (e) { console.error('[link] on_link trigger error', e); cb && cb(); }
       };
 
@@ -12690,7 +13273,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           linkTarget.linkedCards.push(linkCard);
           ctx.addLog('🔗 「' + linkTarget.name + '」に「' + linkCard.name + '」をリンク');
           ctx.renderAll();
-          _fireOnLinkThen(callback);
+          _fireOnLinkThen([linkCard], callback);
         });
         break;
       }
@@ -12764,7 +13347,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           linkTarget.linkedCards.push(c);
           ctx.addLog('🔗 「' + linkTarget.name + '」に「' + c.name + '」をリンク');
           ctx.renderAll();
-          if (fireOnLink) _fireOnLinkThen(done); else done();
+          if (fireOnLink) _fireOnLinkThen([c], done); else done();
         });
       };
       const _doLink = (entry) => _linkOne(entry, callback, true);
@@ -12790,7 +13373,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _finishMulti = () => {
           if (_linkedNow.length === 0) { ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
           if (ctx.bs) ctx.bs._lastActionCount = _linkedNow.length;
-          _fireOnLinkThen(callback);
+          _fireOnLinkThen(_linkedNow.slice(), callback);
         };
         const _multiNext = () => {
           if (_linkedNow.length >= _linkCount) { _finishMulti(); return; }

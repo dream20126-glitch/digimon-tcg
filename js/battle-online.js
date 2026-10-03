@@ -867,7 +867,7 @@ function onRemoteCommand(cmd) {
         sendCommand({ type: 'fx_reactionDelegateDone' });
       };
       try {
-        if (window._fireDelegatedReactionTriggers) window._fireDelegatedReactionTriggers(cmd.recipeKey, bs, ctx, done);
+        if (window._fireDelegatedReactionTriggers) window._fireDelegatedReactionTriggers(cmd.recipeKey, bs, ctx, done, cmd);
         else done();
       } catch (_) { done(); }
       break;

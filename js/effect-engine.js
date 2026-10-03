@@ -968,6 +968,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (!isOwn && hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) continue;
         destroyTargets.push(i);
       }
+      // 「最もLv/DP/登場コストの低い（高い）〜1体」: 候補が揃ってから極値で絞る
+      if (defaultTarget && defaultTarget.filter) {
+        const _ext = applyExtremeFilterIdxs(destroyTargets, tgtPlayer.battleArea, defaultTarget.filter);
+        destroyTargets.length = 0; destroyTargets.push(..._ext);
+      }
       if(destroyTargets.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', () => callback(false)); break; }
       // 枠色を辞書から取得
       const borderColor = uiColor;
@@ -2895,7 +2900,7 @@ function _resolveCombatAction(step, ctx, callback) {
   for (let i = 0; i < tPlayer.battleArea.length; i++) {
     const c = tPlayer.battleArea[i];
     if (!c) continue;
-    if (targetSpec && targetSpec.filter && !cardMatchesFilter(c, targetSpec.filter, ctx.bs, ctx.side)) continue;
+    if (targetSpec && targetSpec.filter && !cardMatchesFilter(c, targetSpec.filter, ctx.bs, ctx.side, ctx.card)) continue;
     if (hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) continue;
     candIdxs.push(i);
   }
@@ -2936,16 +2941,20 @@ function _resolveCombatAction(step, ctx, callback) {
 // bs/side は cost_le_mod（「レスト状態のデジモン/テイマー1体ごとにコスト上限+1」等、
 // 直前の効果へ動的にかかるコスト上限修正）の評価にのみ使用。省略時はcost_le_modを無視する
 // （既存の呼び出し元を壊さないためのフェイルセーフ。呼び出し元にbs/sideがある場合は渡すこと）
-function cardMatchesFilter(card, filter, bs, side) {
+// sourceCard: 効果を発揮しているカード（ctx.card）。cost_le_mod の「このデジモンの進化元1枚ごとに」
+// 等、参照元が候補カードではなく発揮元のカードであるものの集計に使う（省略時は候補カードで代用）
+function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   if (!filter) return true;
   // filter.or: サブフィルタの配列。いずれか1つでも一致すればOK（他のトップレベル条件とは
   // AND）。例: 色=紫（AND）かつ（名称に「レイヴモン」を含む OR 特徴に「鳥」を含む）
   // = { color:"紫", or:[{name_contains:"レイヴモン"},{feature_contains:"鳥"}] }
   if (Array.isArray(filter.or) && filter.or.length > 0) {
-    if (!filter.or.some((sub) => cardMatchesFilter(card, sub, bs, side))) return false;
+    if (!filter.or.some((sub) => cardMatchesFilter(card, sub, bs, side, sourceCard))) return false;
   }
-  if (filter.type && card.type !== filter.type) return false;
-  if (Array.isArray(filter.type_in) && !filter.type_in.includes(card.type)) return false;
+  // 種別「カード」はレシピエディタで「種別を問わない」を表す（checkConditionsのcond_typeと同じ扱い）
+  const _isAnyType = (t) => t === 'カード' || t === 'card';
+  if (filter.type && !_isAnyType(filter.type) && card.type !== filter.type) return false;
+  if (Array.isArray(filter.type_in) && !filter.type_in.some(_isAnyType) && !filter.type_in.includes(card.type)) return false;
   // 色: カンマ区切り文字列でOR指定に対応（例: "青,赤" → 青 or 赤）。カード側が
   // "青/赤" のような複合色の場合もあるため部分一致（indexOf）で判定する
   if (filter.color) {
@@ -2987,7 +2996,8 @@ function cardMatchesFilter(card, filter, bs, side) {
     // 直前の効果（AltActionの「直前の効果に適用する」）から埋め込まれた動的な閾値修正
     if (filter.cost_le_mod && bs && side) {
       const mod = filter.cost_le_mod;
-      const refCount = mod.per_ref ? getRefSourceCountDirect(mod.per_ref, card, bs, side, null, mod.per_ref_state) : 0;
+      // 「このデジモンの裏向きの進化元1枚ごとに」等は発揮元カード（sourceCard）を数える
+      const refCount = mod.per_ref ? getRefSourceCountDirect(mod.per_ref, sourceCard || card, bs, side, null, mod.per_ref_state) : 0;
       const perCount = mod.per_count || 1;
       const times = (mod.per_ref && perCount > 0) ? Math.floor(refCount / perCount) : 1;
       const amount = (mod.amount || 0) * times;
@@ -3016,6 +3026,10 @@ function cardMatchesFilter(card, filter, bs, side) {
   // suspended: レスト/アクティブ状態でのフィルタ（true=レスト状態のみ、false=アクティブ状態のみ）
   if (filter.suspended === true && !card.suspended) return false;
   if (filter.suspended === false && card.suspended) return false;
+  // 裏向き/表向き（進化元・テイマーの下のカード等。例:「このデジモンの裏向きの進化元1枚ごとに」の
+  // ref_filter:{face_down:true}）。face_zoneは表示専用情報なので判定には使わない
+  if (filter.face_down === true && !card._faceDown) return false;
+  if (filter.face_up === true && card._faceDown) return false;
   // exclude_same_name_zone: 既に指定ゾーンにいる同名カードを除外する（例:「自分のテイマーと
   // 同じ名称のカードは登場できない」）。own_tamer=自分のテイマーエリア/own_digimon=自分の
   // バトルエリア/own_any=両方。盤面状態(bs/side)が無いコンテキストでは判定できないため無視
@@ -3030,6 +3044,31 @@ function cardMatchesFilter(card, filter, bs, side) {
     }
   }
   return true;
+}
+
+// filter.lv_extreme / dp_extreme / cost_extreme（'highest'|'lowest'）: 候補群の中で最もLv/DP/登場コストが
+// 高い/低いものだけに絞る（「最もLvの低い相手のデジモン1体」等。cardMatchesFilterはカード単体しか
+// 見られないため、候補一覧が揃った時点でこちらを掛ける）。指定が無ければそのまま返す
+function applyExtremeFilter(cards, filter) {
+  if (!filter || !Array.isArray(cards) || cards.length === 0) return cards || [];
+  let out = cards.filter(Boolean);
+  const pick = (key, valOf) => {
+    const mode = filter[key];
+    if ((mode !== 'highest' && mode !== 'lowest') || out.length === 0) return;
+    const vals = out.map(valOf);
+    const ext = mode === 'lowest' ? Math.min(...vals) : Math.max(...vals);
+    out = out.filter((c, i) => vals[i] === ext);
+  };
+  pick('dp_extreme', (c) => parseInt(c.dp) || 0);
+  pick('cost_extreme', (c) => parseInt(c.playCost != null ? c.playCost : (c.cost || 0)) || 0);
+  pick('lv_extreme', (c) => parseInt(c.level) || 0);
+  return out;
+}
+// applyExtremeFilter の添字版（area[idx] のカードで判定し、残った添字を返す）
+function applyExtremeFilterIdxs(idxs, area, filter) {
+  if (!filter || !filter.dp_extreme && !filter.cost_extreme && !filter.lv_extreme) return idxs;
+  const keep = new Set(applyExtremeFilter(idxs.map(i => area[i]), filter));
+  return idxs.filter(i => keep.has(area[i]));
 }
 
 // 新 deck_open UI 関数
@@ -3984,9 +4023,30 @@ export function applyPermanentEffects(bs, side, context) {
             const filterConds = [];
             if (step.condition) filterConds.push(...parseRecipeCondition(step.condition));
             if (step.when) filterConds.push(...parseRecipeCondition(step.when));
+            // 複数キーワードを1stepにまとめた形（"combo,reboot,blocker"）はキーワードごとに付与する
+            const _kwList = String(kw).split(',').map(s => s.trim()).filter(Boolean);
             const applyKw = (tgt) => {
               if (!tgt) return;
               if (filterConds.length && !checkConditions(filterConds, tgt, bs, side)) return;
+              // 対象の条件（例:「特徴『イリアス』を持つ自分のデジモン全て」）
+              if (step.filter && !cardMatchesFilter(tgt, step.filter, bs, side, card)) return;
+              if (_kwList.length > 1) {
+                _kwList.forEach(k => applyOneKw(tgt, k));
+              } else {
+                applyOneKw(tgt, kw);
+              }
+              // 「…を得て、DP+2000」: 同じ対象への代替アクション（AND）のDP修正も常時効果として適用
+              if (Array.isArray(step.alt_actions) && step.alt_actions_op !== 'or') {
+                step.alt_actions.forEach(a => {
+                  if (!a || (a.target && a.target !== 'same_target')) return;
+                  const av = parseInt(a.value) || 0;
+                  if (!av || (a.action !== 'dp_plus' && a.action !== 'dp_minus')) return;
+                  if (!tgt.buffs) tgt.buffs = [];
+                  tgt.buffs.push({ type: a.action, value: av, duration: 'permanent', source: 'recipe_perm' });
+                });
+              }
+            };
+            const applyOneKw = (tgt, kw) => {
               if (!tgt._permEffects) tgt._permEffects = {};
               if (kw === 'security_attack_plus' || /Sアタック/.test(String(kw))) {
                 tgt._permEffects.securityAttackPlus = (tgt._permEffects.securityAttackPlus || 0) + gv;
@@ -4015,7 +4075,7 @@ export function applyPermanentEffects(bs, side, context) {
             };
             const gt = String(step.target || 'self');
             if (gt === 'own:all') bs[side].battleArea.forEach(applyKw);
-            else if (gt === 'self') applyKw(card);
+            else if (gt === 'self' || gt === 'self_card') applyKw(card);
             return;
           }
           // custom: メインカード由来の特殊フラグ設定
@@ -4041,7 +4101,7 @@ export function applyPermanentEffects(bs, side, context) {
           }
           // アクション適用
           if (step.action === 'dp_plus') {
-            const target = step.target || 'self';
+            const target = (!step.target || step.target === 'self_card') ? 'self' : step.target;
             if (target === 'self') {
               if (!card.buffs) card.buffs = [];
               card.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'recipe_perm' });
@@ -4180,7 +4240,7 @@ export function applyPermanentEffects(bs, side, context) {
               value = value * Math.floor(count / step.per_count);
             }
             if (step.action === 'dp_plus') {
-              const target = step.target || 'self';
+              const target = (!step.target || step.target === 'self_card') ? 'self' : step.target;
               if (target === 'self') {
                 if (!card.buffs) card.buffs = [];
                 card.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'evo_recipe_perm' });
@@ -4329,7 +4389,7 @@ export function applyPermanentEffects(bs, side, context) {
               value = value * Math.floor(count / step.per_count);
             }
             if (step.action === 'dp_plus') {
-              const target = step.target || 'self';
+              const target = (!step.target || step.target === 'self_card') ? 'self' : step.target;
               if (target === 'self') {
                 if (!card.buffs) card.buffs = [];
                 card.buffs.push({ type: 'dp_plus', value: value, duration: 'permanent', source: 'link_recipe_perm' });
@@ -7515,7 +7575,7 @@ function recipeWillExecuteAnything(recipe, ctx) {
       if (_fromZones.includes('hand')) {
         const _filter = step.from_filter || step.filter || {};
         const _p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
-        const _hasCand = (_p.hand || []).some(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side));
+        const _hasCand = (_p.hand || []).some(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card));
         if (!_hasCand) {
           console.log('[recipeWillExecute] reactor=' + _reactor + ' summon filter has no candidate → skip', 'action=' + step.action);
           continue;
@@ -8377,12 +8437,20 @@ function executeRecipeStep(step, ctx, store, callback) {
           // 取得元カードの条件(from_filter)を優先し、対象の条件(filter)はフォールバック
           // （linkアクションの読み順と統一。取得元＝手札/トラッシュから選ぶカード自体の
           // 絞り込みなので、本来こちらが正）
-          const _filter = step.from_filter || step.filter || {};
+          let _filter = step.from_filter || step.filter || {};
+          // 対象欄の種別（own=自分のデジモン / own_tamer=テイマー / own_option=オプション）で候補を
+          // 絞る。取得元の条件に種別の指定がある場合はそちらを優先（例:「オプションカード1枚を使用」で
+          // 同じ特徴のデジモン/テイマーまで選べてしまうのを防ぐ）
+          {
+            const _tb = String(step.target || '').replace(/:.*$/, '');
+            const _impliedType = _tb === 'own_option' ? 'オプション' : _tb === 'own_tamer' ? 'テイマー' : _tb === 'own' ? 'デジモン' : null;
+            if (_impliedType && !_filter.type && !_filter.type_in) _filter = Object.assign({}, _filter, { type: _impliedType });
+          }
           const _optional = !!step.optional;
           const _handCands = _fromZones.includes('hand')
-            ? (player.hand || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side)) : [];
+            ? (player.hand || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card)) : [];
           const _trashCands = _fromZones.includes('trash')
-            ? (player.trash || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side)) : [];
+            ? (player.trash || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card)) : [];
           if (_handCands.length === 0 && _trashCands.length === 0) {
             ctx.addLog('💨 条件を満たすカードが手札・トラッシュにありません');
             showEffectFailed(null, () => callback());
@@ -8616,6 +8684,9 @@ function executeRecipeStep(step, ctx, store, callback) {
           const c = tgtPlayer.battleArea[i];
           if (!c) continue;
           if (conds.length > 0 && !checkConditions(conds, c, ctx.bs, tgtSideTag)) continue;
+          // 極値以外の対象の条件（アクティブ状態=suspended:false 等）も評価する
+          // （例:「最もDPの低いアクティブ状態の相手のデジモン全て」）
+          if (step.filter && !cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)) continue;
           matchedIdxs.push(i);
         }
         if (step.filter && step.filter.dp_extreme && matchedIdxs.length > 0) {
@@ -8840,7 +8911,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (String(step.target || '').split(':')[0] === 'opponent_trash') {
         const _rhoFilter = step.filter || {};
         const _rhoWant = parseInt(String(step.target).split(':')[1], 10) || step.count || 1;
-        const _rhoCands = (opponent.trash || []).filter(c => c && cardMatchesFilter(c, _rhoFilter, ctx.bs, ctx.side));
+        const _rhoCands = (opponent.trash || []).filter(c => c && cardMatchesFilter(c, _rhoFilter, ctx.bs, ctx.side, ctx.card));
         if (_rhoCands.length === 0) {
           ctx.addLog && ctx.addLog('💨 条件を満たすカードが相手のトラッシュにありません');
           showEffectFailed(null, () => callback());
@@ -9788,10 +9859,17 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 並列ではなく逐次チェーンする。同じtarget/filter/optionsは全キーワードで共有される）
       if (step.keyword && String(step.keyword).includes(',')) {
         const _kwList = String(step.keyword).split(',').map(s => s.trim()).filter(Boolean);
+        // 対象を選ぶ形（own:1 等）の場合、1つ目のキーワードで選んだデジモンに2つ目以降も付与する
+        // （「そのデジモン1体は【衝突】と【ブロッカー】を得る」で選択が2回出ないように）
+        const _kwStore = store || {};
+        const _kwIsSelect = /^(own|opponent):/.test(step.target || '') && !/:all$/.test(step.target || '') && !step.card;
+        delete _kwStore.__kwPicked;
         const _runKwSeq = (idx) => {
           if (idx >= _kwList.length) { callback(); return; }
-          const _kwStep = Object.assign({}, step, { keyword: _kwList[idx] });
-          executeRecipeStep(_kwStep, ctx, store, () => _runKwSeq(idx + 1));
+          // 選択結果が記録されていない（レシピテンプレート型キーワード等）ときは従来通り改めて選ぶ
+          const _reuse = idx > 0 && _kwIsSelect && Array.isArray(_kwStore.__kwPicked) && _kwStore.__kwPicked.length > 0;
+          const _kwStep = Object.assign({}, step, { keyword: _kwList[idx] }, _reuse ? { card: '__kwPicked' } : {});
+          executeRecipeStep(_kwStep, ctx, _kwStore, () => _runKwSeq(idx + 1));
         };
         _runKwSeq(0);
         break;
@@ -9850,19 +9928,28 @@ function executeRecipeStep(step, ctx, store, callback) {
         const isUpTo = !!upToMatch;
         const tgtPlayer2 = isOwnSelect ? (ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai)
                                        : (ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player);
-        const validIdxs = [];
+        // 対象の条件（step.filter。例:「特徴『シャンバラ』『TS』を持つ自分のデジモン1体」）で絞り込む
+        const _kwCands = [];
         for (let i = 0; i < tgtPlayer2.battleArea.length; i++) {
-          if (tgtPlayer2.battleArea[i]) validIdxs.push(i);
+          const _c = tgtPlayer2.battleArea[i];
+          if (_c && (!step.filter || cardMatchesFilter(_c, step.filter, ctx.bs, ctx.side, ctx.card))) _kwCands.push(_c);
         }
+        const validIdxs = applyExtremeFilter(_kwCands, step.filter).map(c => tgtPlayer2.battleArea.indexOf(c));
         if (validIdxs.length === 0) { showEffectFailed(null, callback); return; }
         const rowSide = isOwnSelect ? (ctx.side === 'player' ? 'pl' : 'ai')
                                     : (ctx.side === 'player' ? 'ai' : 'pl');
         const applyAll = (idxs) => {
+          // 複数キーワード一括付与で2つ目以降も同じ対象へ付与するため記録（_runKwSeq参照）
+          if (store) store.__kwPicked = idxs.map(i => tgtPlayer2.battleArea[i]).filter(Boolean);
           idxs.forEach(idx => {
             const tgt = tgtPlayer2.battleArea[idx]; if (!tgt) return;
             // 連続同一対象用 (same_target): 選んだカードを保存
             ctx.bs._lastPickedCard = tgt;
-            if (flag === 'security_attack_plus') {
+            if (flag === 'security_attack_minus') {
+              addBuffDirect(tgt, 'security_attack_minus', val, dur, ctx);
+              ctx.addLog('⚔ 「' + tgt.name + '」にSアタック-' + val);
+              if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, 'Sアタック-' + val); } catch(_) {}
+            } else if (flag === 'security_attack_plus') {
               addBuffDirect(tgt, 'security_attack_plus', val, dur, ctx);
               ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
               if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, 'Sアタック+' + val); } catch(_) {}
@@ -9916,8 +10003,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         const p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
         const opp = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
         const t = step.target;
-        const applyFilter = (arr) => (step.filter ? arr.filter(c => cardMatchesFilter(c, step.filter)) : arr);
-        if (t === 'self') return ctx.card ? [ctx.card] : [];
+        const applyFilter = (arr) => applyExtremeFilter(step.filter ? arr.filter(c => cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)) : arr, step.filter);
+        if (t === 'self' || t === 'self_card') return ctx.card ? [ctx.card] : [];
+        if ((t === 'same_target' || t === 'picked') && !step.card) return ctx.bs._lastPickedCard ? [ctx.bs._lastPickedCard] : [];
         if (t === 'own:all' || t === 'own_all_digimon') return applyFilter(p.battleArea.filter(c => c));
         if (t === 'opponent:all' || t === 'opp_all_digimon') return applyFilter(opp.battleArea.filter(c => c));
         if (step.card && store[step.card]) {
@@ -9930,7 +10018,11 @@ function executeRecipeStep(step, ctx, store, callback) {
       const targets = resolveTargets();
       console.log('[grant_keyword_all]', 'action=' + step.action, 'flag=' + flag, 'val=' + val, 'dur=' + dur, 'targets=' + targets.map(t => t.name).join(','), 'ctxSide=' + ctx.side, 'isPlayerTurn=' + ctx.bs.isPlayerTurn);
       targets.forEach(tgt => {
-        if (flag === 'security_attack_plus') {
+        if (flag === 'security_attack_minus') {
+          addBuffDirect(tgt, 'security_attack_minus', val, dur, ctx);
+          ctx.addLog('⚔ 「' + tgt.name + '」にSアタック-' + val);
+          if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, 'Sアタック-' + val); } catch(_) {}
+        } else if (flag === 'security_attack_plus') {
           // addBuffDirect 経由で _appliedSide / _appliedDuringOwnTurn を正しく設定
           // → expireBuffs の dur_next_own_turn 等のサイド判定が正しく動く
           addBuffDirect(tgt, 'security_attack_plus', val, dur, ctx);
@@ -10018,7 +10110,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const upTo = !!_bTrashM[2];
         const want = parseInt(_bTrashM[3], 10) || 1;
         const _btFilter = step.filter || {};
-        const _btCands = (zoneOwner.trash || []).filter(c => c && cardMatchesFilter(c, _btFilter, ctx.bs, ctx.side));
+        const _btCands = (zoneOwner.trash || []).filter(c => c && cardMatchesFilter(c, _btFilter, ctx.bs, ctx.side, ctx.card));
         if (_btCands.length === 0) {
           ctx.addLog('⚠ トラッシュに条件を満たすカードがありません');
           showEffectFailed('効果を発動できませんでした', () => callback(false));

@@ -71,7 +71,45 @@ function normalizeCard(card) {
   if (!card["進化元テキスト"] && card["進化元効果"]) card["進化元テキスト"] = card["進化元効果"];
   if (!card["セキュリティテキスト"] && card["セキュリティ効果"]) card["セキュリティテキスト"] = card["セキュリティ効果"];
   if (!card["レシピ"] && card["効果レシピ"]) card["レシピ"] = card["効果レシピ"];
+  // キーワードコードの別名をエンジンが扱う正規コードへ置き換える（スプシ辞書の登録コードが
+  // エンジンと食い違っているもの。例: 辞書「Sアタック+」= attack_plus → security_attack_plus）
+  ["レシピ", "効果レシピ"].forEach((k) => {
+    if (typeof card[k] === 'string' && card[k]) card[k] = normalizeRecipeKeywordAliases(card[k]);
+  });
   return card;
+}
+
+// 辞書コード → エンジンの正規コード
+export const KEYWORD_CODE_ALIASES = {
+  attack_plus: 'security_attack_plus',
+  attack_minus: 'security_attack_minus',
+  Link_plus: 'link_plus',
+  Execute: 'execute',
+};
+function normalizeKeywordCode(code) {
+  return Object.prototype.hasOwnProperty.call(KEYWORD_CODE_ALIASES, code) ? KEYWORD_CODE_ALIASES[code] : code;
+}
+// レシピJSON文字列中の passive の flag / grant_keyword の keyword（カンマ区切り可）を正規化する。
+// 解析できない文字列はそのまま返す
+export function normalizeRecipeKeywordAliases(recipeStr) {
+  let obj;
+  try { obj = JSON.parse(recipeStr); } catch (_) { return recipeStr; }
+  let changed = false;
+  const walk = (v) => {
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (!v || typeof v !== 'object') return;
+    if (typeof v.flag === 'string') {
+      const n = normalizeKeywordCode(v.flag);
+      if (n !== v.flag) { v.flag = n; changed = true; }
+    }
+    if (typeof v.keyword === 'string' && v.keyword) {
+      const n = v.keyword.split(',').map((s) => normalizeKeywordCode(s.trim())).join(',');
+      if (n !== v.keyword) { v.keyword = n; changed = true; }
+    }
+    Object.values(v).forEach(walk);
+  };
+  walk(obj);
+  return changed ? JSON.stringify(obj) : recipeStr;
 }
 
 // Google Drive URL → 直リンク変換（GAS経由Base64不要に）

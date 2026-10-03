@@ -133,6 +133,14 @@ function collapseRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPai
   });
 }
 
+// 発動条件（condition/when/extra_conditions、文字列配列形式）にはDP参照の「属性で絞り込む」
+// フィルタ（dp_ref_filter相当の入れ子オブジェクト）を表現する手段が無いため、この経路では
+// DP_REF_FILTER_MARKER付きの条件を除外する（⚠ targetFilterと異なりこちらは未保存。
+// 対象の条件＝targetFilterで設定すればbuildFilterObjectWithDpRefFilter側で正しく保存される）
+function stripDpRefFilterMarker(pairs: ConditionPair[]): ConditionPair[] {
+  return pairs.filter((p) => !(p && p.subject === DP_REF_FILTER_MARKER));
+}
+
 // CostStep[] → step.cost[] 形式。効果1(EffectBlock.costs)・代替アクション(AltAction.costs)
 // の両方で共用する（同じUI=CostListEditorを使い回すため、変換ルールも1本化する）
 function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
@@ -298,7 +306,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   if (validGate.length >= 1) out.gate = pairToString(validGate[0]);
   if (validGate.length >= 2) out.gate_when = pairToString(validGate[1]);
   if (validGate.length >= 3) out.gate_extra_conditions = validGate.slice(2).map(pairToString);
-  const validC = expandRefExistsAttributeFilters((a.conditions || []).filter((p) => p.base));
+  const validC = expandRefExistsAttributeFilters(stripDpRefFilterMarker((a.conditions || []).filter((p) => p.base)));
   if (validC.length >= 1) out.condition = pairToString(validC[0]);
   if (validC.length >= 2) out.when = pairToString(validC[1]);
   if (validC.length >= 3) out.extra_conditions = validC.slice(2).map(pairToString);
@@ -396,8 +404,17 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
 // 値を持たない（チェックのみの）条件コード。buildFilterObject の value 必須ガードを迂回する
 const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest', 'cond_lv_highest', 'cond_lv_lowest', 'cond_target_stack', 'cond_target_evo_source', 'cond_face_down', 'cond_face_up']);
 // DP参照マーカー（cond_dp_le/ge の値が固定数値ではなく「このデジモン/自分/相手/他」のDPを
-// 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する
-const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other']);
+// 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する。
+// own_pick/opp_pick = 複数該当する場合にプレイヤーが任意で1体選ぶ版（BlockEditor.tsx の
+// dpRefBaseOf/dpRefIsPickと対応）
+const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other', 'own_pick', 'opp_pick']);
+// DP参照（自分/相手）に「属性で絞り込む」（色/Lv/コスト/特徴）を添付する際のマーカー。
+// REF_EXISTS_FILTER_MARKERと同様にconditions配列内でsubjectに付けて目印にするが、
+// cond_existsへの変換は行わず、buildFilterObjectWithDpRefFilterで dp_ref_filter という
+// 入れ子オブジェクトに分離する（対象自身の条件filterへ誤って混ざらないようにするため）。
+// ⚠ エンジン未実装（保存はできるが、dp_ref_filterを読んでDP参照先を絞り込む処理がまだ無い）
+export const DP_REF_FILTER_MARKER = '__dp_ref_filter__';
+const DP_REF_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_feature', 'cond_cost_le', 'cond_cost_ge']);
 
 // 参照ゾーン（手札/トラッシュ/セキュリティ/バトルエリア/レスト・アクティブ体数）の量的条件
 // （以上/以下/完全一致/より多い/より少ない）。cardMatchesFilterは候補カード単体しか見ないため
@@ -444,17 +461,17 @@ function parseFilterObjectWithOp(f: any): { conds: ConditionPair[]; op: 'and' | 
 // AND評価するため、common条件をトップレベルに乗せるだけでエンジン変更無しに「共通条件」を
 // 実現できる）。legacyPairs（「共通条件」欄・chain有無に関わらず常にAND適用）は空でもよい
 function buildConditionChainFilter(chain: ConditionChainEntry[] | undefined, legacyPairs: ConditionPair[] | undefined): Record<string, any> | null {
-  const commonFilter = buildFilterObject(legacyPairs) || {};
+  const commonFilter = buildFilterObjectWithDpRefFilter(legacyPairs) || {};
   if (Array.isArray(chain) && chain.length > 0) {
     const segments = buildConditionChainSegments(chain)
       .map((seg) => seg.filter((p) => p.base))
       .filter((seg) => seg.length > 0);
     if (segments.length > 1) {
-      const segFilters = segments.map((seg) => buildFilterObject(seg)).filter((f): f is Record<string, any> => !!f);
+      const segFilters = segments.map((seg) => buildFilterObjectWithDpRefFilter(seg)).filter((f): f is Record<string, any> => !!f);
       if (segFilters.length === 0) return Object.keys(commonFilter).length > 0 ? commonFilter : null;
       return { ...commonFilter, or: segFilters };
     }
-    if (segments.length === 1) return buildFilterObject([...(legacyPairs || []).filter((p) => p.base), ...segments[0]]);
+    if (segments.length === 1) return buildFilterObjectWithDpRefFilter([...(legacyPairs || []).filter((p) => p.base), ...segments[0]]);
   }
   return Object.keys(commonFilter).length > 0 ? commonFilter : null;
 }
@@ -570,6 +587,21 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
   return Object.keys(f).length > 0 ? f : null;
 }
 
+// buildFilterObjectのDP参照対応版。DP_REF_FILTER_MARKER付きの条件（DP参照先=自分/相手の
+// デジモンを絞り込む色/Lv/コスト/特徴）は、対象自身の条件（f.color/f.feature等）に混ぜると
+// 「対象自身がその属性を持つこと」という別の意味になってしまうため、f.dp_ref_filterという
+// 入れ子オブジェクトに分離して出力する（対象自身の条件とは独立に保持される）
+function buildFilterObjectWithDpRefFilter(pairs: ConditionPair[] | undefined): Record<string, any> | null {
+  if (!Array.isArray(pairs) || pairs.length === 0) return buildFilterObject(pairs);
+  const dpRefPairs = pairs.filter((p) => p && p.subject === DP_REF_FILTER_MARKER && DP_REF_FILTER_CODES.has(p.base));
+  if (dpRefPairs.length === 0) return buildFilterObject(pairs);
+  const normalPairs = pairs.filter((p) => !(p && p.subject === DP_REF_FILTER_MARKER));
+  const base = buildFilterObject(normalPairs) || {};
+  const nested = buildFilterObject(dpRefPairs.map((p) => ({ base: p.base, value: p.value })));
+  if (nested) base.dp_ref_filter = nested;
+  return Object.keys(base).length > 0 ? base : null;
+}
+
 // フィルタオブジェクト（step.filter / step.from_filter）→ ConditionPair[]（buildFilterObject の逆変換）
 function parseFilterObject(f: any): ConditionPair[] {
   if (!f || typeof f !== 'object') return [];
@@ -640,6 +672,12 @@ function parseFilterObject(f: any): ConditionPair[] {
   if (f.cost_sum_le !== undefined) out.push({ base: 'cond_cost_sum_le', value: String(f.cost_sum_le) });
   if (f.face_down) out.push({ base: 'cond_face_down', value: f.face_zone ? String(f.face_zone) : undefined });
   if (f.face_up)   out.push({ base: 'cond_face_up',   value: f.face_zone ? String(f.face_zone) : undefined });
+  // DP参照先（自分/相手）を絞り込む属性フィルタ（buildFilterObjectWithDpRefFilterの逆変換）。
+  // 入れ子のdp_ref_filterを、DP_REF_FILTER_MARKER付きのConditionPairへ戻して
+  // 「属性で絞り込む」パネルの表示を復元する
+  if (f.dp_ref_filter && typeof f.dp_ref_filter === 'object') {
+    parseFilterObject(f.dp_ref_filter).forEach((p) => out.push({ ...p, subject: DP_REF_FILTER_MARKER }));
+  }
   return out;
 }
 
@@ -1001,7 +1039,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // 共通条件（chain無し/単一セグメント）は従来通りcondition/when/extra_conditionsとして
   // 動作する）
   {
-    const fields = resolveCommonPlusChainTriple(expandRefExistsAttributeFilters((b.conditions || []).filter((p) => p.base)), b.conditionsChain);
+    const fields = resolveCommonPlusChainTriple(expandRefExistsAttributeFilters(stripDpRefFilterMarker((b.conditions || []).filter((p) => p.base))), b.conditionsChain);
     Object.assign(step, fields);
     if (!fields.condition_chain) {
       const commonLen = (b.conditions || []).filter((p) => p.base).length;

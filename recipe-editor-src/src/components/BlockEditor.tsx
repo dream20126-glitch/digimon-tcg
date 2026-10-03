@@ -12,7 +12,7 @@ import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOp
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
-import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER } from '../recipe';
+import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER } from '../recipe';
 
 interface Props {
   block: EffectBlock;
@@ -255,14 +255,27 @@ function FeatureTagsCombined({
 // 開いたら色/Lv/コスト/特徴のボタンが並び、押した分だけ詳細設定が展開する
 // （よく使う条件のカテゴリボタンと同じ操作感）。ローカルstate(開閉・どのボタンを
 // 表示中か)を持つため、独立したコンポーネントとして切り出している
-function RefExistsAttributeFilterPanel({ conditions, onChange }: { conditions: ConditionPair[]; onChange: (next: ConditionPair[]) => void }) {
-  const attrs = conditions.filter((cc) => cc.subject === REF_EXISTS_FILTER_MARKER);
+function RefExistsAttributeFilterPanel({
+  conditions, onChange, marker = REF_EXISTS_FILTER_MARKER, title, warnConflict = true,
+}: {
+  conditions: ConditionPair[]; onChange: (next: ConditionPair[]) => void;
+  // 呼び出し元ごとに別々のマーカー文字列を使うことで、同じ発動条件欄に複数の
+  // 「参照行専用フィルタ」（例: バトルエリア参照用・DP参照用）が混在しても互いに
+  // 干渉しないようにする
+  marker?: string;
+  title?: string;
+  // バトルエリア参照(cond_exists)用の既定trueは「同じ発動条件欄内の他の条件が
+  // 無視される」仕様に対応した警告。DP参照用はtargetFilter側でdp_ref_filterという
+  // 独立した入れ子に分離するため、他の条件に影響しない＝falseで警告を出さない
+  warnConflict?: boolean;
+}) {
+  const attrs = conditions.filter((cc) => cc.subject === marker);
   const hasAnyAttr = attrs.length > 0;
   const [open, setOpen] = useState(hasAnyAttr);
   const getAttr = (base: string) => attrs.find((a) => a.base === base);
   const setAttr = (base: string, value: string | undefined) => {
-    const withoutThis = conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && cc.base === base));
-    onChange(value === undefined || value === '' ? withoutThis : [...withoutThis, { base, value, subject: REF_EXISTS_FILTER_MARKER }]);
+    const withoutThis = conditions.filter((cc) => !(cc.subject === marker && cc.base === base));
+    onChange(value === undefined || value === '' ? withoutThis : [...withoutThis, { base, value, subject: marker }]);
   };
   const lvGe = getAttr('cond_lv_ge');
   const lvLe = getAttr('cond_lv_le');
@@ -285,8 +298,8 @@ function RefExistsAttributeFilterPanel({ conditions, onChange }: { conditions: C
   const toggleSub = (key: string) => {
     if (activeSub.has(key)) {
       if (key === 'color') setAttr('cond_color', undefined);
-      else if (key === 'lv') onChange(conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le'))));
-      else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le'))));
+      else if (key === 'lv') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le'))));
+      else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le'))));
       else if (key === 'feature') setAttr('cond_feature', undefined);
       setActiveSub((prev) => { const next = new Set(prev); next.delete(key); return next; });
     } else {
@@ -307,11 +320,11 @@ function RefExistsAttributeFilterPanel({ conditions, onChange }: { conditions: C
             setOpen(e.target.checked);
             if (!e.target.checked) {
               setActiveSub(new Set());
-              onChange(conditions.filter((cc) => cc.subject !== REF_EXISTS_FILTER_MARKER));
+              onChange(conditions.filter((cc) => cc.subject !== marker));
             }
           }}
         />
-        属性で絞り込む（この参照行専用・「1体以上」の存在チェックのみ対応）
+        {title || '属性で絞り込む（この参照行専用・「1体以上」の存在チェックのみ対応）'}
       </label>
       {open && (
         <div style={{ marginTop: 4, padding: 6, background: '#fffaf0', border: '1px dashed #f0d9a8', borderRadius: 4 }}>
@@ -359,8 +372,8 @@ function RefExistsAttributeFilterPanel({ conditions, onChange }: { conditions: C
                 options={[{ code: '', label: '指定なし' }, { code: 'cond_lv_ge', label: '以上' }, { code: 'cond_lv_le', label: '以下' }]}
                 value={lvMode}
                 onChange={(v) => {
-                  const rest = conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le')));
-                  onChange(v ? [...rest, { base: v, value: '1', subject: REF_EXISTS_FILTER_MARKER }] : rest);
+                  const rest = conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le')));
+                  onChange(v ? [...rest, { base: v, value: '1', subject: marker }] : rest);
                 }}
                 accentColor="#946200"
               />
@@ -381,8 +394,8 @@ function RefExistsAttributeFilterPanel({ conditions, onChange }: { conditions: C
                 options={[{ code: '', label: '指定なし' }, { code: 'cond_cost_ge', label: '以上' }, { code: 'cond_cost_le', label: '以下' }]}
                 value={costMode}
                 onChange={(v) => {
-                  const rest = conditions.filter((cc) => !(cc.subject === REF_EXISTS_FILTER_MARKER && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le')));
-                  onChange(v ? [...rest, { base: v, value: '1', subject: REF_EXISTS_FILTER_MARKER }] : rest);
+                  const rest = conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le')));
+                  onChange(v ? [...rest, { base: v, value: '1', subject: marker }] : rest);
                 }}
                 accentColor="#946200"
               />
@@ -408,7 +421,7 @@ function RefExistsAttributeFilterPanel({ conditions, onChange }: { conditions: C
               />
             </div>
           )}
-          {hasAnyAttr && (
+          {hasAnyAttr && warnConflict && (
             <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
               ⚠ この行を使うと、同じ発動条件欄内の他の条件は無視されます
             </div>
@@ -8735,7 +8748,20 @@ const DP_REF_SUBJECTS: { code: string; label: string }[] = [
   { code: 'opp', label: '相手' },
   { code: 'other', label: '他' },
 ];
-const DP_REF_CODES = new Set(DP_REF_SUBJECTS.map((s) => s.code));
+// DP参照（自分/相手/他）に「属性で絞り込む」（色/Lv/コスト/特徴）を添付する際のマーカー
+// （DP_REF_FILTER_MARKER）は recipe.ts からimport（buildFilterObjectWithDpRefFilterと
+// 同じ定義を共有し、二重定義によるズレを防ぐ）。RefExistsAttributeFilterPanelを
+// DP参照専用にも使い回すため、バトルエリア参照用（REF_EXISTS_FILTER_MARKER）とは
+// 別のマーカー文字列にして混在時も互いに干渉しないようにしている
+// DP参照の「任意で選ぶ」（複数該当する場合にプレイヤーが実際に1体選ぶ）は、
+// 値の末尾に _pick を付けて区別する（例: 'own' の自動選択 ⇔ 'own_pick' の任意選択）。
+// ⚠ エンジン未実装（保存はできるが、選択UI自体が無いため動作しない）
+function dpRefBaseOf(value: string): string { return value.replace(/_pick$/, ''); }
+function dpRefIsPick(value: string): boolean { return /_pick$/.test(value); }
+const DP_REF_CODES = new Set([
+  ...DP_REF_SUBJECTS.map((s) => s.code),
+  ...DP_REF_SUBJECTS.map((s) => s.code + '_pick'),
+]);
 
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
@@ -9578,14 +9604,45 @@ function ConditionsHybridEditor({
                         );
                       })()
                     ) : (c.base === 'cond_dp_le' || c.base === 'cond_dp_ge') ? (
-                      DP_REF_CODES.has(c.value || '') ? (
+                      DP_REF_CODES.has(c.value || '') ? (() => {
+                        const dpRefBase = dpRefBaseOf(c.value || '');
+                        const dpRefPick = dpRefIsPick(c.value || '');
+                        // 「このデジモン」「他」は元々1体に定まっているため、属性で絞り込む/
+                        // 任意で選ぶは「自分」「相手」（複数該当し得る）のときのみ意味を持つ
+                        const dpRefCanFilter = dpRefBase === 'own' || dpRefBase === 'opp';
+                        return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <ButtonGroup
                             options={DP_REF_SUBJECTS}
-                            value={c.value || ''}
-                            onChange={(v) => updateAt(i, { value: v })}
+                            value={dpRefBase}
+                            onChange={(v) => updateAt(i, { value: v + (dpRefPick && (v === 'own' || v === 'opp') ? '_pick' : '') })}
                             accentColor={colors.accent}
                           />
+                          {dpRefCanFilter && (
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
+                              <input
+                                type="checkbox"
+                                checked={dpRefPick}
+                                onChange={(e) => updateAt(i, { value: dpRefBase + (e.target.checked ? '_pick' : '') })}
+                              />
+                              任意でプレイヤーが選ぶ（複数該当する場合。未チェックなら自動選択）
+                            </label>
+                          )}
+                          {dpRefCanFilter && (
+                            <RefExistsAttributeFilterPanel
+                              conditions={conditions}
+                              onChange={onChange}
+                              marker={DP_REF_FILTER_MARKER}
+                              title="属性で絞り込む（この参照先専用。例: 特徴「TS」を持つデジモンに限定）"
+                              warnConflict={false}
+                            />
+                          )}
+                          {dpRefCanFilter && (
+                            <div style={{ fontSize: 10, color: '#8a6d00' }}>
+                              💡「対象の条件」欄で使うと、絞り込み内容は対象自身の条件とは別に
+                              保存されます（「発動条件」欄では保存時に無視されます）
+                            </div>
+                          )}
                           <button
                             type="button"
                             onClick={() => updateAt(i, { value: '' })}
@@ -9595,7 +9652,8 @@ function ConditionsHybridEditor({
                           </button>
                           <div style={{ fontSize: 10, color: '#c62828' }}>⚠ 他のデジモンのDPを動的に参照する条件はエンジン未実装です（保存はできますが動作しません）</div>
                         </div>
-                      ) : (
+                        );
+                      })() : (
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                           <input
                             type="number"

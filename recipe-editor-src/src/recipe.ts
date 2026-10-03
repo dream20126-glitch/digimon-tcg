@@ -2045,6 +2045,9 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     // 素通し(extras)に残すと保存時に古いfrom_filterで上書きされ、取得元の条件をUIで
     // 直しても反映されなかった
     from_filter: true,
+    // position→deckPosition、per_count_mode→perCountMode へ復元済み（同上の理由で素通しにしない）
+    position: true,
+    per_count_mode: true,
     designated: true,
     designated_groups: true,
     designated_common: true,

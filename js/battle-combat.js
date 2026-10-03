@@ -1272,6 +1272,10 @@ export function doEvolveFromEffect(card, handIdx, slotIdx, cost, side, callback)
   if (side === 'player') bs.selHand = null;
   bs._evolveCountThisTurn = (bs._evolveCountThisTurn || 0) + 1;
   addLog('⬆ 「' + base.name + '」→「' + evolved.name + '」進化！（効果・コスト ' + cost + '）');
+  // オンライン: 相手画面に進化演出を通知（盤面自体は効果完了後の state_sync で同期）
+  if (side === 'player' && _onlineMode && _sendCommand) {
+    try { _sendCommand({ type: 'evolve', cardName: evolved.name, baseName: base.name || '', cardImg: evolved.imgSrc || '', evolveCost: cost }); } catch (_) {}
+  }
   renderAll();
   showEvolveEffect(cost, base.name, base, evolved, () => {
     // 公式ルール: コスト支払い(メモリー消費) → ドロー → 進化時効果 → ターン終了判定

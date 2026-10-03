@@ -2161,6 +2161,8 @@ function handleRemoteDeckOpenAct(cmd) {
   const labelMap = {
     'hand': '手札へ', 'trash': 'トラッシュへ',
     'deck_top': 'デッキの上へ', 'deck_bottom': 'デッキの下へ',
+    // デッキオープンから登場/使用（コピペモン BT26-084）・進化
+    'play': 'バトルエリアへ', 'evolve': '進化元の上へ',
   };
   const toLabel = labelMap[cmd.to] || '???';
   if (_remoteDeckOpenState.footer) {

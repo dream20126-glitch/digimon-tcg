@@ -1613,7 +1613,8 @@ function checkOnlineBlock(cmd) {
   // 言及にも誤マッチするため、構造的な情報（_permEffects / buffs / recipe.passive /
   // stack[].recipe.evo_source.passive）のみで判定する
   const passiveHasBlocker = (arr) =>
-    Array.isArray(arr) && arr.some(p => p && (p.flag === 'blocker' || p === 'blocker'));
+    // gate（「〜の間」条件）付きのpassiveは条件判定済みの _permEffects 側に任せ、ここでは数えない
+    Array.isArray(arr) && arr.some(p => p && !p.gate && !p.gate_chain && (p.flag === 'blocker' || p === 'blocker'));
   const parseR = (rec) => {
     if (!rec) return null;
     try {
@@ -1684,7 +1685,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   const atkHasPenetrate = (() => {
     if (atk._permEffects && atk._permEffects.penetrate) return true;
     if (Array.isArray(atk.buffs) && atk.buffs.some(b => b && b.type === 'keyword_penetrate')) return true;
-    const pHas = (arr) => Array.isArray(arr) && arr.some(p => p && (p.flag === 'penetrate' || p === 'penetrate'));
+    const pHas = (arr) => Array.isArray(arr) && arr.some(p => p && !p.gate && !p.gate_chain && (p.flag === 'penetrate' || p === 'penetrate'));
     const parseRec = (rec) => {
       if (!rec) return null;
       try { return typeof rec === 'string' ? JSON.parse(rec.replace(/[\x00-\x1F\x7F]\s*/g, '')) : rec; }

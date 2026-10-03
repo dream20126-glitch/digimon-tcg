@@ -2836,16 +2836,51 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
 
 // DP参照マーカー（'self'等）を実数値に変換した新しいfilterオブジェクトを返す。
 // 元のfilterは変更しない（同じstep.filterが複数回・複数対象に対して再利用されるため）。
-// 現状「self」（このデジモン＝selfCardの現在DP）のみ対応。'own'/'opp'/'other'は
-// どの1体を指すか未確定のため今後の対応課題（値があっても無視＝絞り込まない）
-function resolveDpFilterMarkers(filter, selfCard) {
+// 'self'（このデジモン＝selfCardの現在DP）に加え、bs/side が渡されていれば
+// 'own'/'own_pick'（自分のデジモン1体）・'opp'/'opp_pick'（相手のデジモン1体）・
+// 'other'（このデジモン以外の自分のデジモン1体）にも対応する。参照先の候補は
+// filter.dp_ref_filter（例: {feature:"TS"}=特徴「TS」を持つ自分のデジモン）で絞り込む
+// （クロスアーツ BT26-101「特徴『TS』を持つ自分のデジモン1体のDP以下の相手のデジモン」）。
+// 「参照先を1体選び、そのDP以下/以上の対象を選ぶ」は、参照先の選び方が対象の候補を
+// 広げる以外に影響しないため、dp_le は候補中の最大DP、dp_ge は最小DPを使う（_pick の
+// 任意選択も結果は同じなので同じ扱い）。dp（ちょうど）は参照先が1体に定まる場合のみ。
+// 参照先が1体もいなければ対象なし（どのカードも一致しない値にする）。
+// bs/side が無い呼び出しでは従来通り 'self' 以外は無視（絞り込まない）
+function resolveDpFilterMarkers(filter, selfCard, bs, side) {
   if (!filter || typeof filter !== 'object') return filter;
   const hasMarker = ['dp_le', 'dp_ge', 'dp'].some((k) => typeof filter[k] === 'string');
-  if (!hasMarker) return filter;
+  if (!hasMarker) {
+    if (filter.dp_ref_filter) { const o = { ...filter }; delete o.dp_ref_filter; return o; }
+    return filter;
+  }
   const out = { ...filter };
+  const refFilter = out.dp_ref_filter;
+  delete out.dp_ref_filter;
+  const refDps = (marker) => {
+    if (!bs || !side) return null;
+    const base = String(marker).replace(/_pick$/, '');
+    const oppSide = side === 'player' ? 'ai' : 'player';
+    let area;
+    if (base === 'own' || base === 'other') area = (bs[side] && bs[side].battleArea) || [];
+    else if (base === 'opp') area = (bs[oppSide] && bs[oppSide].battleArea) || [];
+    else return null;
+    return area.filter(c => c && c.type === 'デジモン'
+      && !(base === 'other' && c === selfCard)
+      && (!refFilter || cardMatchesFilter(c, refFilter, bs, side, selfCard)))
+      .map(c => parseInt(c.dp) || 0);
+  };
   ['dp_le', 'dp_ge', 'dp'].forEach((k) => {
     if (typeof out[k] !== 'string') return;
-    if (out[k] === 'self' && selfCard) out[k] = selfCard.dp || 0;
+    if (out[k] === 'self') {
+      if (selfCard) out[k] = selfCard.dp || 0; else delete out[k];
+      return;
+    }
+    const dps = refDps(out[k]);
+    if (!dps) { delete out[k]; return; }
+    if (k === 'dp_le') out[k] = dps.length > 0 ? Math.max(...dps) : -1;
+    else if (k === 'dp_ge') out[k] = dps.length > 0 ? Math.min(...dps) : Number.MAX_SAFE_INTEGER;
+    else if (dps.length === 1) out[k] = dps[0];
+    else if (dps.length === 0) out[k] = -1;
     else delete out[k];
   });
   return out;
@@ -3389,7 +3424,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
     cleanup();
     if (_deckIncreasedByEffect) {
       const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-      try { fireWhenDeckIncreaseTriggers(ctx.side, ctx.bs, ctxBase, () => callback()); return; }
+      try { fireWhenDeckIncreaseTriggers(ctx.side, ctx.bs, ctxBase, () => callback(), { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); return; }
       catch (_) { /* fallthrough */ }
     }
     callback();
@@ -4145,6 +4180,8 @@ export function applyPermanentEffects(bs, side, context) {
           if (_inheritedPassives.length > 0) passives = passives.concat(_inheritedPassives);
         }
         passives.forEach(p => {
+          // passive の gate（「〜の間」条件）を満たさない間はこのキーワードを適用しない
+          if (!_passiveGateOk(p, card, bs, side)) return;
           const flag = typeof p === 'string' ? p : (p.flag || p.action || '');
           if (!card._permEffects) card._permEffects = {};
           if (flag === 'security_attack_plus') {
@@ -4296,6 +4333,8 @@ export function applyPermanentEffects(bs, side, context) {
         if (evoRecipe.passive) {
           const passives = Array.isArray(evoRecipe.passive) ? evoRecipe.passive : [evoRecipe.passive];
           passives.forEach(p => {
+            // passive の gate（「〜の間」条件）を満たさない間はこのキーワードを適用しない
+            if (!_passiveGateOk(p, card, bs, side)) return;
             const flag = typeof p === 'string' ? p : (p.flag || p.action || '');
             if (!card._permEffects) card._permEffects = {};
             if (flag === 'security_attack_plus') {
@@ -4441,6 +4480,8 @@ export function applyPermanentEffects(bs, side, context) {
         if (linkRecipe.passive) {
           const passives = Array.isArray(linkRecipe.passive) ? linkRecipe.passive : [linkRecipe.passive];
           passives.forEach(p => {
+            // passive の gate（「〜の間」条件）を満たさない間はこのキーワードを適用しない
+            if (!_passiveGateOk(p, card, bs, side)) return;
             const flag = typeof p === 'string' ? p : (p.flag || p.action || '');
             if (!card._permEffects) card._permEffects = {};
             if (flag === 'security_attack_plus') {
@@ -4601,6 +4642,120 @@ function _battleAreaCount(bs, sideKey, type) {
   if (type !== 'tamer') n += (p.battleArea || []).filter(c => c).length;
   if (type === 'tamer' || type === 'card' || type === 'any') n += (p.tamerArea || []).filter(c => c).length;
   return n;
+}
+
+// ===== step の発動条件（condition/when/extra_conditions/condition_op/condition_chain）の一括評価 =====
+// レシピエディタ（recipe.ts の resolveCommonPlusChainTriple 等）は発動条件を
+//   1つ目→condition / 2つ目→when / 3つ目以降→extra_conditions[]、条件間のOR→condition_op:'or'、
+//   AND内包OR（複数セグメント）→condition_chain:[{conditions:[...]}, ...]（共通条件とはAND）
+// の形で出力する。「赤/紫の自分のデジモンがいるなら」は condition:"cond_exists@own" +
+// when:"cond_color:赤,紫" のように、cond_exists の直後に属性フィルタが続く形になる
+// （collapseRefExistsAttributeFilters）。checkConditions の cond_exists は同じ配列内の
+// 兄弟条件を候補カードへのフィルタとして消費するため、condition/when/extra を1つの配列に
+// まとめて渡せば「該当するカードが存在するか」として正しく評価できる。
+
+// 「@own_tamer」等の陣営 subject が付いた「カード自身の性質」条件
+// （例: "cond_name_contains:結城ダン@own_tamer" =名称に「結城ダン」を含む自分のテイマーがいる）。
+// 発動条件（ゲート）の文脈では「その陣営に該当するカードが存在するか」として評価する
+// （trigger_conditions の @own 等は発火元カードの陣営指定なので、この変換は使わない）
+const _SUBJECT_EXISTS_RE = /^(own|opp|opponent)(_tamer|_card|_digimon|_any)?$/;
+function _isSubjectAttrCond(c) {
+  return !!(c && c.subject && TARGET_FILTER_COND_CODES.has(c.code)
+    && _SUBJECT_EXISTS_RE.test(String(c.subject).toLowerCase()));
+}
+
+// 陣営 subject 付きの属性条件を cond_exists に読み替えてから checkConditions で評価する。
+// 既に cond_exists を含む配列（従来の「cond_exists + 属性フィルタ」形式）はそのまま評価する
+function _checkCondsSubjectAware(conds, card, bs, side) {
+  if (!conds || conds.length === 0) return true;
+  if (conds._op === 'or') return conds.some(c => _checkCondsSubjectAware([c], card, bs, side));
+  if (conds.some(c => c && c.code === 'cond_exists') || !conds.some(_isSubjectAttrCond)) {
+    return checkConditions(conds, card, bs, side);
+  }
+  const bySubj = {};
+  const rest = [];
+  conds.forEach(c => {
+    if (_isSubjectAttrCond(c)) {
+      const k = String(c.subject).toLowerCase();
+      (bySubj[k] = bySubj[k] || []).push({ code: c.code, value: c.value });
+    } else {
+      rest.push(c);
+    }
+  });
+  for (const k of Object.keys(bySubj)) {
+    if (!checkConditions([{ code: 'cond_exists', subject: k }, ...bySubj[k]], card, bs, side)) return false;
+  }
+  return checkConditions(rest, card, bs, side);
+}
+
+// condition/when/extra_conditions を「元の文字列ごとのグループ」で返す
+// （"cond_exists:cond_color:紫@own" のように1文字列が複数エントリに展開される場合があるため、
+// condition_op:'or' のときは文字列単位でORを取る必要がある）
+function _collectStepCondGroups(src) {
+  const groups = [];
+  if (!src) return groups;
+  const push = (s) => { if (s) { const g = parseRecipeCondition(String(s)); if (g.length > 0) groups.push(g); } };
+  push(src.condition);
+  push(src.when);
+  if (Array.isArray(src.extra_conditions)) src.extra_conditions.forEach(push);
+  return groups;
+}
+
+function _stepHasGateConditions(src) {
+  return !!(src && (src.condition || src.when
+    || (Array.isArray(src.extra_conditions) && src.extra_conditions.length > 0)
+    || (Array.isArray(src.condition_chain) && src.condition_chain.length > 0)));
+}
+
+// src（step / 継承の designated 等）の発動条件一式を評価する。
+// condition_chain があれば「共通条件(condition/when/extra) AND（セグメントのいずれか）」。
+// セグメントは共通条件と同じ配列に結合して評価する（共通条件の cond_exists がセグメント側の
+// 属性条件をフィルタとして消費できるように。例: クロスアーツ「cond_exists@own_tamer」＋
+// セグメント「cond_name_contains:結城ダン」「cond_name_contains:結城カナン」）
+function _evalStepConditionGate(src, card, bs, side) {
+  if (!src) return true;
+  const groups = _collectStepCondGroups(src);
+  const chain = Array.isArray(src.condition_chain)
+    ? src.condition_chain.filter(seg => seg && Array.isArray(seg.conditions))
+    : [];
+  const common = [];
+  if (src.condition_op === 'or' && groups.length > 1) {
+    if (!groups.some(g => _checkCondsSubjectAware(g, card, bs, side))) return false;
+  } else {
+    groups.forEach(g => common.push(...g));
+  }
+  if (chain.length > 0) {
+    return chain.some(seg => {
+      const sc = common.slice();
+      seg.conditions.forEach(cs => { if (cs) sc.push(...parseRecipeCondition(String(cs))); });
+      return _checkCondsSubjectAware(sc, card, bs, side);
+    });
+  }
+  return _checkCondsSubjectAware(common, card, bs, side);
+}
+
+// passive エントリの gate（条件を満たす間だけそのキーワードが有効）を評価する。
+// recipe.ts の resolveChainField と同じ規約: gate_chain（2セグメント以上）があればそちらが正
+// （gate はその先頭セグメントのフォールバック表記）、無ければ gate（文字列配列。AND、
+// gate_op:'or' なら OR）。gate が無いエントリは常に有効
+// 例: ダーク・フィールド {"flag":"ignore_evolve_color","gate":["cond_security_faceup_le:0@own_any"]}
+function _passiveGateOk(p, card, bs, side) {
+  if (!p || typeof p !== 'object') return true;
+  const chain = Array.isArray(p.gate_chain) ? p.gate_chain.filter(seg => seg && Array.isArray(seg.conditions)) : [];
+  if (chain.length > 0) {
+    return chain.some(seg => {
+      const sc = [];
+      seg.conditions.forEach(cs => { if (cs) sc.push(...parseRecipeCondition(String(cs))); });
+      return _checkCondsSubjectAware(sc, card, bs, side);
+    });
+  }
+  const gate = Array.isArray(p.gate) ? p.gate : (p.gate ? [p.gate] : []);
+  const groups = gate.filter(Boolean).map(s => parseRecipeCondition(String(s))).filter(g => g.length > 0);
+  if (groups.length === 0) return true;
+  if (p.gate_op === 'or') return groups.some(g => _checkCondsSubjectAware(g, card, bs, side));
+  const all = [];
+  groups.forEach(g => all.push(...g));
+  return _checkCondsSubjectAware(all, card, bs, side);
 }
 
 // ===== 条件チェック =====
@@ -5105,7 +5260,14 @@ function checkConditions(conditions, card, bs, side) {
                 const wantedFeats = String(oc.value).split(',').map(s => s.trim()).filter(Boolean);
                 return !!c.feature && wantedFeats.some(w => String(c.feature).indexOf(w) >= 0);
               }
-              default: return true;
+              // 上記以外の「カード自身の性質」条件（名称/特徴含む/種別等）は候補カードに対して
+              // 汎用評価する（例: クロスアーツ「名称に『結城ダン』を含む自分のテイマーがいる」=
+              // cond_exists@own_tamer + cond_name_contains:結城ダン）。subjectは陣営指定なので外す
+              default:
+                if (TARGET_FILTER_COND_CODES.has(oc.code)) {
+                  return checkConditions([{ code: oc.code, value: oc.value }], c, bs, oppSide);
+                }
+                return true;
             }
           });
         });
@@ -5163,7 +5325,7 @@ function checkConditions(conditions, card, bs, side) {
             const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]/g, '') : card.recipe;
             const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
             const passives = r.passive;
-            if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw))) has = true;
+            if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw) && _passiveGateOk(p, card, bs, side))) has = true;
           } catch(_) {}
         }
         // 進化元の recipe.passive
@@ -5176,7 +5338,7 @@ function checkConditions(conditions, card, bs, side) {
               // 進化元として持つときは evo_source.passive のみ参照（本体 passive にフォールバックしない）。
               // 本体の passive は「そのカードがメインで居るとき」限定の効果のため。
               const passives = r.evo_source && r.evo_source.passive;
-              if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw))) { has = true; break; }
+              if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw) && _passiveGateOk(p, card, bs, side))) { has = true; break; }
             } catch(_) {}
           }
         }
@@ -5221,7 +5383,7 @@ function checkConditions(conditions, card, bs, side) {
             const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]/g, '') : card.recipe;
             const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
             const passives = r.passive;
-            if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw))) has = true;
+            if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw) && _passiveGateOk(p, card, bs, side))) has = true;
           } catch(_) {}
         }
         if (!has && card && Array.isArray(card.stack)) {
@@ -5232,7 +5394,7 @@ function checkConditions(conditions, card, bs, side) {
               const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
               // 進化元として持つときは evo_source.passive のみ参照（本体 passive にフォールバックしない）
               const passives = r.evo_source && r.evo_source.passive;
-              if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw))) { has = true; break; }
+              if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw) && _passiveGateOk(p, card, bs, side))) { has = true; break; }
             } catch(_) {}
           }
         }
@@ -5363,6 +5525,45 @@ function checkConditions(conditions, card, bs, side) {
         // 自分の効果以外で消滅した場合のみ true
         const dc = bs && bs._lastDestroyCause;
         if (dc && dc.type === 'effect' && dc.causerSide === side) return false;
+        break;
+      }
+      case 'cond_effect': {
+        // 「効果で」（trigger_conditions に入る原因条件）。トリガー発火元が bs._lastDestroyCause
+        // （cause/cause_subject 判定と共通の「今解決中の反応チェーンの原因」）に
+        // {type:'effect'|'battle'|..., causerSide} をセットしてから発火する。
+        //   無印/@both = 誰の効果でも / @own_any 等の自分系 = 自分(side)の効果 /
+        //   @opp 等の相手系 = 相手の効果 / value 'not' = 効果以外
+        // 原因情報が無い（効果による発火元から呼ばれていない）場合は「効果ではない」扱い
+        const dc = bs && bs._lastDestroyCause;
+        const byEffect = !!(dc && dc.type === 'effect');
+        if (String(cond.value || '') === 'not') {
+          if (byEffect) return false;
+          break;
+        }
+        if (!byEffect) return false;
+        const _ceSubj = String(cond.subject || '').toLowerCase();
+        if (_ceSubj && _ceSubj !== 'both' && _ceSubj !== 'both_any') {
+          const _ceOpp = _ceSubj === 'opp' || _ceSubj.startsWith('opp_') || _ceSubj === 'opponent';
+          if (_ceOpp ? dc.causerSide === side : dc.causerSide !== side) return false;
+        }
+        break;
+      }
+      // 表向きのセキュリティ枚数（subject駆動: @own_any=自分 / @opp_any=相手）。
+      // セキュリティのカードは通常裏向きで、効果で表向きに置かれたカードは card._faceUp
+      // （または card.faceUp）が true になっている想定で数える
+      case 'cond_security_faceup_le':
+      case 'cond_security_faceup_ge':
+      case 'cond_security_faceup_eq':
+      case 'cond_security_faceup_gt':
+      case 'cond_security_faceup_lt': {
+        if (!bs) break;
+        const _sfSide = resolveSubjectSide(cond.subject, side);
+        const _sfN = ((bs[_sfSide] && bs[_sfSide].security) || []).filter(c => c && (c._faceUp === true || c.faceUp === true)).length;
+        const _sfV = Number(cond.value || 0);
+        const _sfOp = cond.code.slice('cond_security_faceup_'.length);
+        const _sfOk = _sfOp === 'le' ? _sfN <= _sfV : _sfOp === 'ge' ? _sfN >= _sfV
+          : _sfOp === 'eq' ? _sfN === _sfV : _sfOp === 'gt' ? _sfN > _sfV : _sfN < _sfV;
+        if (!_sfOk) return false;
         break;
       }
       case 'cond_name_contains': {
@@ -6342,12 +6543,15 @@ function _lookupTriggerStepsBase(recipeObj, triggerCode) {
 // designatedが無ければ無条件（stack先頭）を継承元とする
 function _getInheritedSourceRecipe(card, passiveEntry) {
   if (!card || !Array.isArray(card.stack) || card.stack.length === 0) return null;
-  const condStr = passiveEntry && passiveEntry.designated && passiveEntry.designated.condition;
-  const conds = condStr ? parseRecipeCondition(condStr) : [];
+  // designated は condition だけでなく when/extra_conditions/condition_op/condition_chain も
+  // 指定条件として評価する（クロノモン：デストロイモード BT26-060「名称に『クロノモン』を含む
+  // Lv.6」= condition:"cond_name_contains:クロノモン" + when:"cond_lv:6"）
+  const designated = passiveEntry && passiveEntry.designated;
+  const hasCond = _stepHasGateConditions(designated);
   let source = null;
   for (const s of card.stack) {
     if (!s) continue;
-    if (conds.length === 0 || checkConditions(conds, s, null, null)) { source = s; break; }
+    if (!hasCond || _evalStepConditionGate(designated, s, null, null)) { source = s; break; }
   }
   if (!source || !source.recipe) return null;
   try {
@@ -6623,6 +6827,13 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       // _destroyCauseMatches を、when_opp_rest/when_evo_discard等この関数を使う
       // 全トリガー共通で使えるようにする（step.cause未指定なら常にtrue）
       if (!_destroyCauseMatches(step, bs, reactSide, carrier, recipeKey)) return false;
+      // trigger_conditions の原因条件（cond_effect「自分の効果で」等）は発火元カードに依存しない
+      // ため、スキャン時点で判定する（不成立なら任意効果の確認ダイアログも出さない）
+      if (Array.isArray(step.trigger_conditions)) {
+        const _effConds = step.trigger_conditions.filter(cs => /^cond_effect(?:[:@]|$)/.test(String(cs || '')));
+        if (_effConds.length > 0 && step.trigger_conditions_op !== 'or'
+            && !_effConds.every(cs => checkConditions(parseRecipeCondition(String(cs)), carrier, bs, reactSide))) return false;
+      }
       // gate: 発動可否のみを判定する条件。step.condition と違い対象選択の
       // フィルタには使われない（「自身がレスト中なら相手1体をレスト」等で、
       // 自身の状態判定が相手側の対象フィルタに漏れるのを防ぐ）。
@@ -6666,10 +6877,15 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
     }
   });
   if (reactions.length === 0) { finish(); return; }
+  // 原因（bs._lastDestroyCause）はスキャン時点の値を各反応の実行直前に書き戻す
+  // （先に解決した反応の中で別の消滅チェーン等が走ると、その終了時にクリアされてしまい、
+  // 後続の反応の trigger_conditions（cond_effect）や cause 判定が原因を見失うため）
+  const causeAtScan = bs._lastDestroyCause;
   let idx = 0;
   function nextReaction() {
     if (idx >= reactions.length) { finish(); return; }
     const reaction = reactions[idx++];
+    if (causeAtScan !== undefined) bs._lastDestroyCause = causeAtScan;
     _runReactionEffect(reaction, reactSide, bs, ctxBase, nextReaction);
   }
   nextReaction();
@@ -6758,8 +6974,19 @@ function _zoneIncreaseMatches(step, zone) {
   const list = Array.isArray(zi) ? zi : [zi];
   return list.includes(zone);
 }
-export function fireWhenDeckIncreaseTriggers(increasedSide, bs, ctxBase, done) {
-  return _fireSidedReactionTriggers(increasedSide, 'when_deck_increase', bs, ctxBase, done, (step) => _zoneIncreaseMatches(step, 'deck'));
+// cause: デッキが増えた原因（{type:'effect', causerSide, causerCard}）。trigger_conditions の
+// cond_effect（「自分の効果で」等）と step.cause/cause_subject の判定に使うため、反応チェーンの
+// 間だけ bs._lastDestroyCause（原因判定の共通フィールド）にセットし、終了後に元へ戻す
+export function fireWhenDeckIncreaseTriggers(increasedSide, bs, ctxBase, done, cause) {
+  if (!bs || !cause) {
+    return _fireSidedReactionTriggers(increasedSide, 'when_deck_increase', bs, ctxBase, done, (step) => _zoneIncreaseMatches(step, 'deck'));
+  }
+  const prevCause = bs._lastDestroyCause;
+  bs._lastDestroyCause = cause;
+  return _fireSidedReactionTriggers(increasedSide, 'when_deck_increase', bs, ctxBase, () => {
+    bs._lastDestroyCause = prevCause;
+    done && done();
+  }, (step) => _zoneIncreaseMatches(step, 'deck'));
 }
 
 // このデジモン自身の進化元(スタック)に、効果でカードが置かれたとき → そのデジモン自身の
@@ -7536,6 +7763,63 @@ const EVO_DISCARD_ACTION_CODES = new Set([
   'evo_discard_tamer', 'evo_discard_tamer_bottom', 'evo_discard_tamer_top', 'evo_discard_tamer_select',
 ]);
 
+// executeRecipeStep の各 case が step.condition 等を一切読まないアクション。これらは発動条件を
+// 実行前ゲートとして（発動元カード視点で）評価する（以前はゲートが無く、ソーサリモン
+// BT26-022「赤/紫の自分のデジモンがいるなら〜登場できる」等の条件が実行時に無視されていた）
+const STEP_GATE_ACTIONS = new Set([
+  'summon', 'summon_appear', 'summon_use', 'evolve', 'deck_open', 'grant_keyword', 'grant_keyword_to',
+]);
+// cost[] として実行中のステップ（コストの condition/when は「コスト対象の絞り込み」であり、
+// 発動条件ゲートとして扱ってはいけないため除外する）
+const _COST_STEP_SET = new WeakSet();
+
+// executeRecipeStep 用: このステップの発動条件のうち「実行前ゲート」として評価すべき部分と、
+// ゲート評価後に後段（各 case）へ渡すステップ（評価済みの条件を取り除いたコピー）を決める。
+// ゲート対象が無ければ null（従来通り各 case に任せる）。
+//   - condition_chain あり: 全体をゲートとして評価（各 case は chain を解釈できないため）
+//   - STEP_GATE_ACTIONS: 全体をゲートとして評価（grant_keyword の「対象の絞り込み」として
+//     読める条件＝対象指定あり＋全て対象自身の性質条件、はゲートにしない）
+//   - それ以外: 陣営 subject 付きの属性条件（"cond_name_contains:X@own_tamer"）だけを
+//     ゲートとして抜き出し、残りは condition/when/extra_conditions に詰め直して各 case へ渡す
+//     （destroy 等が対象フィルタとして誤用しないように）。condition_op:'or' のときは全体がゲート
+function _resolveStepConditionGate(step) {
+  if (!_stepHasGateConditions(step)) return null;
+  const strip = (s) => {
+    const o = Object.assign({}, s);
+    delete o.condition; delete o.when; delete o.extra_conditions; delete o.condition_op; delete o.condition_chain;
+    return o;
+  };
+  if (Array.isArray(step.condition_chain) && step.condition_chain.length > 0) {
+    return { gateSrc: step, stripped: strip(step) };
+  }
+  const strs = [step.condition, step.when, ...(Array.isArray(step.extra_conditions) ? step.extra_conditions : [])].filter(Boolean).map(String);
+  const parsed = strs.map(s => parseRecipeCondition(s));
+  const all = [];
+  parsed.forEach(g => all.push(...g));
+  const hasSubjAttr = !all.some(c => c && c.code === 'cond_exists') && all.some(_isSubjectAttrCond);
+  if (STEP_GATE_ACTIONS.has(step.action)) {
+    if (step.action === 'grant_keyword' || step.action === 'grant_keyword_to') {
+      const t = String(step.target || '');
+      const isSelfTgt = !t || t === 'self' || t === 'self_card';
+      if (!isSelfTgt && !hasSubjAttr && all.every(c => c && TARGET_FILTER_COND_CODES.has(c.code))) return null;
+    }
+    return { gateSrc: step, stripped: strip(step) };
+  }
+  if (!hasSubjAttr) return null;
+  if (step.condition_op === 'or') return { gateSrc: step, stripped: strip(step) };
+  const gateStrs = [];
+  const restStrs = [];
+  parsed.forEach((g, i) => {
+    if (g.length > 0 && g.every(_isSubjectAttrCond)) gateStrs.push(strs[i]);
+    else restStrs.push(strs[i]);
+  });
+  const stripped = strip(step);
+  if (restStrs[0]) stripped.condition = restStrs[0];
+  if (restStrs[1]) stripped.when = restStrs[1];
+  if (restStrs.length > 2) stripped.extra_conditions = restStrs.slice(2);
+  return { gateSrc: { condition: gateStrs[0], when: gateStrs[1], extra_conditions: gateStrs.slice(2) }, stripped };
+}
+
 // レシピが実行されるか事前判定（全ステップが条件で弾かれるか）
 // 戻り値: true=少なくとも1ステップが実行される, false=全ステップが条件NGで何も起きない
 // 不確定な場合（store依存・ターゲット選択型など）は安全側で true を返す
@@ -7595,12 +7879,25 @@ function recipeWillExecuteAnything(recipe, ctx) {
       }
     }
     // 条件なし → 必ず実行される
-    if (!step.condition) {
+    // when/extra_conditions/condition_chain も発動条件として見るのは、実行時（executeRecipeStep）に
+    // それらがゲートとして評価されるステップに限る: STEP_GATE_ACTIONS（summon/evolve等）・
+    // condition_chain・陣営subject付き属性条件・cond_exists（兄弟条件をフィルタとして消費する）を含む場合。
+    // それ以外（evo_cost_minus の「緑のLv.5がLv.6に進化するとき」等、when をアクション固有の
+    // 意味で使うもの）は従来通り condition だけを評価する
+    // （ソーサリモン BT26-022 の condition:"cond_exists@own"+when:"cond_color:赤,紫" 等）
+    const _allConds = [];
+    _collectStepCondGroups(step).forEach(g => _allConds.push(...g));
+    const _hasChain = Array.isArray(step.condition_chain) && step.condition_chain.length > 0;
+    const _gateInfo = _resolveStepConditionGate(step);
+    const _useFullGate = !!_gateInfo || _allConds.some(c => c && c.code === 'cond_exists');
+    if (_useFullGate ? !_stepHasGateConditions(step) : !step.condition) {
       console.log('[recipeWillExecute] reactor=' + _reactor + ' step has no condition → true', 'action=' + step.action);
       return true;
     }
     // 条件あり → 評価
-    const conds = parseRecipeCondition(step.condition);
+    const conds = _useFullGate ? _allConds : parseRecipeCondition(step.condition);
+    if (_useFullGate && step.condition_op === 'or') conds._op = 'or';
+    const _hasChainOrSubj = _hasChain || conds.some(_isSubjectAttrCond);
     // destroy / rest / bounce / cant_* / dp_plus / dp_minus で target が opponent/own の場合、
     // condition が「対象カードごとの性質（色/タイプ/Lv/DP/キーワード等）を絞り込むフィルタ」
     // であれば、盤面に実際にその条件を満たすカードが1体でもいるかを確認する。
@@ -7609,7 +7906,8 @@ function recipeWillExecuteAnything(recipe, ctx) {
     // ただし cond_tamer / cond_memory_ge / cond_exists 等、盤面全体やメモリーなど
     // 「対象カード自身の性質ではない」条件は、引き続き発動可否のゲートとして評価する
     // （ライアモン「メモリーが3以上のとき」等がゲートとして機能しなくなるのを防ぐ）。
-    if (['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'dp_plus', 'dp_minus', 'active'].includes(step.action)
+    if (!_hasChainOrSubj
+        && ['destroy', 'rest', 'bounce', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'dp_plus', 'dp_minus', 'active'].includes(step.action)
         && /^(opponent|own)(?::|$)/.test(String(step.target || ''))
         && conds.every(c => c && TARGET_FILTER_COND_CODES.has(c.code))) {
       const _isOwnTarget = /^own(?::|$)/.test(String(step.target || ''));
@@ -7620,7 +7918,11 @@ function recipeWillExecuteAnything(recipe, ctx) {
       console.log('[recipeWillExecute] reactor=' + _reactor + ' target filter has no candidate → skip', 'action=' + step.action);
       continue;
     }
-    const result = checkConditions(conds, ctx.card, ctx.bs, ctx.side);
+    // 陣営 subject 付き属性条件が対象フィルタと混在する場合は、実行時（executeRecipeStep）と
+    // 同じく subject 付きの部分だけをゲートとして評価する
+    const result = _useFullGate
+      ? _evalStepConditionGate(_gateInfo ? _gateInfo.gateSrc : step, ctx.card, ctx.bs, ctx.side)
+      : checkConditions(conds, ctx.card, ctx.bs, ctx.side);
     console.log('[recipeWillExecute] reactor=' + _reactor, 'action=' + step.action, 'condition=' + step.condition, 'parsed=' + JSON.stringify(conds), '→ ' + result);
     if (result) return true;
   }
@@ -7867,6 +8169,23 @@ function executeRecipeStep(step, ctx, store, callback) {
     return;
   }
 
+  // 発動条件ゲート（condition/when/extra_conditions/condition_op/condition_chain）。
+  // コストより前・ターン回数制限の加算より前に評価する（条件不成立ならコストも払わず、
+  // 【ターンに1回】も消費しない）。評価済みの条件は取り除いたステップで以降を処理する
+  // （コスト解決後の再呼び出し・alt_actions のメイン再実行で二重評価しないため。
+  // 特にコストで自身を移動した後に「自分のデジモンがいるなら」を再評価すると誤って不成立になる）
+  if (!step._costsResolved && !_COST_STEP_SET.has(step)) {
+    const _gate = _resolveStepConditionGate(step);
+    if (_gate) {
+      if (!_evalStepConditionGate(_gate.gateSrc, ctx.card, ctx.bs, ctx.side)) {
+        console.log('[executeRecipeStep] condition gate blocked → skip step', 'action=' + step.action);
+        callback && callback();
+        return;
+      }
+      step = _gate.stripped;
+    }
+  }
+
   // ターン回数制限チェック（once_per_turn=1回 / per_turn:N=N回）
   // active 等の専用 case は default の limit-check を通らないため、ここで共通的に判定する
   {
@@ -8056,6 +8375,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       const costStep = step.cost[i++];
       console.log('[cost] executing cost step', i, 'action=' + costStep.action);
+      if (costStep && typeof costStep === 'object') _COST_STEP_SET.add(costStep);
       executeRecipeStep(costStep, ctx, store, (success) => {
         if (success === false) {
           console.log('[cost] cost FAILED → aborting main');
@@ -8755,7 +9075,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       // 対象の条件エディタ由来のfilterオブジェクト（DP以下等）もrunOneAction側の
       // destroyハンドラに引き継ぐ（これが無いとfilterが黙って無視されていた）
-      if (_targetObj && step.filter) _targetObj.filter = resolveDpFilterMarkers(step.filter, ctx.card);
+      if (_targetObj && step.filter) _targetObj.filter = resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side);
       runOneAction(_actionObj, _targetObj, ctx, callback);
       break;
     }
@@ -8948,7 +9268,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (_rht.startsWith('opponent_suspended:')) _rhTarget = { code: 'target_opponent_suspended', count: parseInt(_rht.split(':')[1]) || 1 };
         else if (_rht.startsWith('opponent:up_to_')) _rhTarget = { code: 'target_opponent', count: parseInt(_rht.split('opponent:up_to_')[1]) || 1, upTo: true };
         else if (_rht.startsWith('opponent:')) _rhTarget = { code: 'target_opponent', count: parseInt(_rht.split(':')[1]) || 1 };
-        if (_rhTarget && step.filter) _rhTarget.filter = resolveDpFilterMarkers(step.filter, ctx.card);
+        if (_rhTarget && step.filter) _rhTarget.filter = resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side);
         runOneAction(_rhAction, _rhTarget, ctx, callback);
         break;
       }
@@ -10166,7 +10486,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         else if (_bt.startsWith('opponent:up_to_')) _bTarget = { code: 'target_opponent', count: parseInt(_bt.split('opponent:up_to_')[1]) || 1, upTo: true };
         else if (_bt.startsWith('opponent:')) _bTarget = { code: 'target_opponent', count: parseInt(_bt.split(':')[1]) || 1 };
       }
-      if (_bTarget && step.filter) _bTarget.filter = resolveDpFilterMarkers(step.filter, ctx.card);
+      if (_bTarget && step.filter) _bTarget.filter = resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side);
       runOneAction(_bAction, _bTarget, ctx, callback);
       break;
     }
@@ -10700,7 +11020,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.renderAll();
         {
           const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-          try { fireWhenDeckIncreaseTriggers(ctx.side, ctx.bs, ctxBase, () => callback()); break; }
+          try { fireWhenDeckIncreaseTriggers(ctx.side, ctx.bs, ctxBase, () => callback(), { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); break; }
           catch (_) { /* fallthrough */ }
         }
         callback();
@@ -10746,7 +11066,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             }
             ctx.renderAll();
             const _fireDeckIncrease = (next) => {
-              try { fireWhenDeckIncreaseTriggers(_rdSideName, ctx.bs, _rdCtxBase, next); }
+              try { fireWhenDeckIncreaseTriggers(_rdSideName, ctx.bs, _rdCtxBase, next, { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); }
               catch (_) { next(); }
             };
             // デッキへ戻る演出（テラーズクラスター等）
@@ -10835,7 +11155,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         _rdSequential(Math.min(_rdWantCount, _rdFiltered.length), _rdFiltered, () => {
           if (_rdReturnedCount === 0) { callback(false); return; }
           const _rdCtxBase2 = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-          try { fireWhenDeckIncreaseTriggers(_rdOwnerSideTag, ctx.bs, _rdCtxBase2, () => callback(true)); }
+          try { fireWhenDeckIncreaseTriggers(_rdOwnerSideTag, ctx.bs, _rdCtxBase2, () => callback(true), { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); }
           catch (_) { callback(true); }
         });
         break;
@@ -11592,7 +11912,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
       }
       // step.filter（色/タイプ/名前等）を target に引き継ぐ（target_all_own 等の絞り込みに使用）
-      if (target && step.filter) target.filter = resolveDpFilterMarkers(step.filter, ctx.card);
+      if (target && step.filter) target.filter = resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side);
       // 持続期間をctx.blockに設定（runOneAction内のapplyDpBuff等で参照）
       // レシピのコード（this_turn等）→ エンジン内部コード（dur_this_turn等）に正規化
       if (step.duration) {

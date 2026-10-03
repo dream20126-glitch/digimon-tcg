@@ -113,7 +113,9 @@ function hasPassiveFlag(c, flagName, kwBracket) {
   // 構造的な情報（_permEffects / buffs / recipe.passive / stack[].recipe.evo_source.passive）のみで判定する。
   if (c._permEffects && c._permEffects[flagName]) return true;
   if (c.buffs && c.buffs.some(b => b.type === 'keyword_' + flagName)) return true;
-  const passiveContains = (arr) => Array.isArray(arr) && arr.some(p => (p && (p.flag === flagName || p === flagName)));
+  // gate（「〜の間」条件）付きのpassiveは、条件判定済みの _permEffects（applyPermanentEffects）に任せ、
+  // ここでのレシピ直読みフォールバックでは数えない（条件不成立中も有効扱いになるのを防ぐ）
+  const passiveContains = (arr) => Array.isArray(arr) && arr.some(p => (p && !p.gate && !p.gate_chain && (p.flag === flagName || p === flagName)));
   const parseRecipe = (rec) => {
     if (!rec) return null;
     try {

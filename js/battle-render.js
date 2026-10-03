@@ -782,7 +782,8 @@ function renderTamerRows() {
       sl.onclick = () => window.showBCD && window.showBCD(card, isPlayer ? 'plTamer' : 'aiTamer');
 
       // プレイヤーテイマー → 長押し/スワイプで効果発動メニュー
-      if (isPlayer && card.effect && card.effect.trim() && card.effect !== 'なし') {
+      // （効果でバトルエリアに置かれたオプション（place_in_battle_area）は【メイン】を再使用できないので出さない）
+      if (isPlayer && card.type !== 'オプション' && card.effect && card.effect.trim() && card.effect !== 'なし') {
         let touchSX = 0, swiped = false;
         sl.addEventListener('touchstart', e => { touchSX = e.touches[0].clientX; swiped = false; }, { passive: true });
         sl.addEventListener('touchmove', e => {

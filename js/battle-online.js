@@ -380,6 +380,42 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'card_removed': {
+      // テイマーの消滅（相手の効果「相手のデジモン/テイマー1体を消滅させる」等。effect-engine.js の
+      // _doDestroyTamer から送られる）: 自分のテイマーエリアから除去してトラッシュへ（下のカードも）。
+      // 消滅時チェーンはバトルエリアと同じく fx_ownDestroyReady を待ってから発火する
+      if (cmd.zone === 'tamer' && cmd.tamerIdx !== undefined) {
+        const _ta = bs.player.tamerArea || [];
+        let _tIdx = cmd.tamerIdx;
+        if (!_ta[_tIdx] || (cmd.cardName && _ta[_tIdx].name !== cmd.cardName)) {
+          const _byName = _ta.findIndex(c => c && c.name === cmd.cardName);
+          if (_byName !== -1) _tIdx = _byName;
+        }
+        const tamer = _ta[_tIdx];
+        if (tamer) {
+          _ta.splice(_tIdx, 1);
+          bs.player.trash.push(tamer);
+          if (tamer.stack) tamer.stack.forEach(s => bs.player.trash.push(s));
+          tamer.stack = [];
+          addLog('💀 「' + tamer.name + '」（テイマー）が消滅');
+          renderAll();
+          if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
+            _pendingOwnDestroyFire = (afterDone) => {
+              const _finishOwnDestroy = () => {
+                sendMemoryUpdate();
+                sendStateSync();
+                sendCommand({ type: 'fx_ownDestroyDone' });
+                afterDone && afterDone();
+              };
+              try {
+                window._fireOnlineDestroyChain(['player'], { player: tamer }, _finishOwnDestroy);
+              } catch (_) { _finishOwnDestroy(); }
+            };
+          } else {
+            sendStateSync();
+          }
+        }
+        break;
+      }
       if (cmd.zone === 'battle' && cmd.slotIdx !== undefined) {
         let card = bs.player.battleArea[cmd.slotIdx];
         if (card) {
@@ -868,6 +904,23 @@ function onRemoteCommand(cmd) {
       } catch (_) { done({ count: 0, names: [] }); }
       break;
     }
+    // --- ドローの依頼（相手の効果「お互いは【2ドロー】」等の、こちら側のドロー） ---
+    // デッキ/手札の中身は同期されていないため、デッキの持ち主（こちら）が自分のデッキから引き、
+    // state_sync で枚数を返す（effect-engine.js の _drawForOpponent から送られる）
+    case 'fx_drawRequest': {
+      const n = Math.max(0, parseInt(cmd.count, 10) || 0);
+      let k = 0;
+      for (let i = 0; i < n && bs.player.deck.length > 0; i++) {
+        const c = bs.player.deck.shift();
+        bs.player.hand.push(c);
+        k++;
+        addLog('🃏 「' + c.name + '」をドロー（' + (cmd.cardName ? '「' + cmd.cardName + '」の効果' : '相手の効果') + '）');
+      }
+      if (k === 0) addLog('⚠ デッキが無いためドローできません');
+      renderAll();
+      sendStateSync();
+      break;
+    }
     case 'fx_handDiscardDone': {
       // 手札枚数・トラッシュは直前に送られる state_sync で既に反映されている
       const res = { count: cmd.count || 0, names: cmd.names || [] };
@@ -1255,11 +1308,15 @@ function onRemoteCommand(cmd) {
       // senderOwn=true : 送信者が自分のカードを操作 → 受信側では相手(ai)側のカード
       // senderOwn なし : 送信者が相手のカードを操作 → 受信側では自分(player)側のカード
       const _suspZone = cmd.senderOwn ? 'ai' : 'player';
-      const myCard = bs[_suspZone].battleArea[cmd.targetIdx];
+      // zone:'tamer' はテイマーエリアのカード（「デジモン/テイマー1体をレストできる」等）
+      const _suspIsTamer = cmd.zone === 'tamer';
+      const myCard = _suspIsTamer ? (bs[_suspZone].tamerArea || [])[cmd.targetIdx] : bs[_suspZone].battleArea[cmd.targetIdx];
       if (myCard) {
         myCard.suspended = !!cmd.suspended;
         // 保護フラグを立てて、相手からの古い state_sync で戻されないようにする
-        markSuspendChanged(_suspZone, cmd.targetIdx, !!cmd.suspended);
+        if (!_suspIsTamer) markSuspendChanged(_suspZone, cmd.targetIdx, !!cmd.suspended);
+        // テイマーは保護フラグが無いので、自分の状態を相手に送り直して反映を確定させる
+        else if (_suspZone === 'player') sendStateSync();
         renderAll();
       }
       addLog((cmd.suspended ? '💤 ' : '🔄 ') + '「' + (cmd.targetName || '???') + '」が' + (cmd.suspended ? 'レスト' : 'アクティブ'));

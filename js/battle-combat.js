@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect, fxAppGattai } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -902,8 +902,12 @@ export function doPlay(card, handIdx, slotIdx) {
       if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play_cost');
       _hooks.checkAndTriggerEffect(card, '【メイン】', async () => {
-        bs.player.trash.push(card);
-        addLog('✦ 「' + card.name + '」をトラッシュへ');
+        // 公式9-1-5: 【メイン】解決後、どの領域にも属していなければ破棄（「このカードをバトルエリアに
+        // 置く」「セキュリティの下に置く」等で領域に置かれたならトラッシュへ送らない）
+        if (!_isCardInAnyZone(card, bs.player)) {
+          bs.player.trash.push(card);
+          addLog('✦ 「' + card.name + '」をトラッシュへ');
+        }
         renderAll();
         // 割り込み2: 効果完了後（after_play / after_use_effect 両方発火）
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
@@ -1247,7 +1251,8 @@ export function showAppGattaiEffect(cost, baseCard, partnerCards, resultCard, on
 // 効果から直接進化を実行する（進化条件チェック・進化先候補の絞り込みは呼び出し元
 // （effect-engine.js の action:'evolve'）で完了している前提）。ピョコモン(BT26-001)
 // 「デッキが自分の効果で増えたとき、手札の『クロノモン』の記述があるデジモンカードに
-// 支払うコスト-1で進化できる」のように、進化条件を無視して効果起点で進化させたい場合に使う。
+// 支払うコスト-1で進化できる」のように、効果起点で進化させたい場合に使う（進化条件
+// （canEvolveOnto）の判定は呼び出し元の _effectEvoAllowed で行う。公式ルール8-1-2-2）。
 // doEvolve/_finishDoEvolveのコア処理（スタック構築・メモリー消費・ドロー・進化時効果発火）を
 // 両サイド対応で再利用できるようにした版。
 // card: 進化先(手札)カード, handIdx: p.hand内index, slotIdx: 進化元(base)のbattleArea内index,
@@ -2258,7 +2263,8 @@ export function resolveSecurityCheck(atk, atkIdx) {
               delete sec._returnToHand;
               bs.ai.hand.push(sec);
               addLog('🃏 相手は「' + sec.name + '」を手札に加えた');
-            } else {
+            } else if (!_isCardInAnyZone(sec, bs.ai)) {
+              // 【メイン】効果の発揮でバトルエリア等に置かれた（place_in_battle_area 等）ならトラッシュへ送らない
               bs.ai.trash.push(sec);
             }
             renderAll(); _dispatchStateSync();
@@ -3441,7 +3447,8 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
                 delete sec._returnToHand;
                 bs.player.hand.push(sec);
                 addLog('🃏 「' + sec.name + '」を手札に加えた');
-              } else {
+              } else if (!_isCardInAnyZone(sec, bs.player)) {
+                // 【メイン】効果の発揮でバトルエリア等に置かれた（place_in_battle_area 等）ならトラッシュへ送らない
                 bs.player.trash.push(sec);
               }
               renderAll();
@@ -3506,7 +3513,9 @@ function aiPlayCard(c, handIdx, onDone) {
     showOptionEffect(c, () => {
       const turnEnded = aiSpendMemory(c.playCost);
       _hooks.checkAndTriggerEffect(c, '【メイン】', () => {
-        bs.ai.trash.push(c); renderAll(true);
+        // 公式9-1-5: どの領域にも属していなければ破棄（バトルエリア等に置かれたら残す）
+        if (!_isCardInAnyZone(c, bs.ai)) bs.ai.trash.push(c);
+        renderAll(true);
         onDone(turnEnded);
       }, 'ai');
     });

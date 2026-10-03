@@ -3691,6 +3691,22 @@ function aiPlayAuto(callback) {
     return;
   }
 
+  // ③' ［トラッシュ］【メイン】（ゾンビプルートモン BT26-079「このカードを支払うコスト-4で登場させる」等）。
+  // 使える効果があり、支払うメモリーが足りるなら使う（同じカードはこのターン1回だけ試す＝無限ループ防止）
+  const zoneMain = (window._getUsableZoneMainEffects ? window._getUsableZoneMainEffects('ai', 'trash') : [])
+    .find(z => z && z.card && z.payCost <= available && z.card._aiZoneMainTurn !== bs.turn);
+  if (zoneMain && window._activateZoneMainEffect) {
+    zoneMain.card._aiZoneMainTurn = bs.turn;
+    addLog('🤖 AIがトラッシュの「' + zoneMain.card.name + '」の効果を使用！');
+    window._activateZoneMainEffect(zoneMain.card, 'ai', 'trash', () => {
+      _hooks.applyPermanentEffects('ai');
+      renderAll(true);
+      if (bs.memory > 0) { setTimeout(() => callback(), 500); return; }
+      setTimeout(() => aiPlayAuto(callback), 500);
+    });
+    return;
+  }
+
   // ④ デジモン登場
   const playable = bs.ai.hand.filter(c =>
     c.type === 'デジモン' && c.level !== '2' && c.playCost !== null && c.playCost <= available

@@ -654,9 +654,10 @@ function onRemoteCommand(cmd) {
       const fireOppTurnEnd = (done) => {
         try {
           const te = window._triggerEffectFn;
+          // 場にカードが無くても、表向きのセキュリティ/トラッシュのゾーン効果（レイヴモン BT26-082）を走査する
           const anyOwn = (bs.player.battleArea || []).find(c => c)
-            || (bs.player.tamerArea || []).find(c => c);
-          if (te && anyOwn) {
+            || (bs.player.tamerArea || []).find(c => c) || null;
+          if (te) {
             te('on_opp_turn_end', anyOwn, 'player', null, () => done());
             return;
           }

@@ -8,7 +8,7 @@
 import { bs, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { updateScrollArrows, addLog, showConfirm } from './battle-ui.js';
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
-import { isTargetSelecting, hasRecipeTrigger, evoSourceEffectLabel, hasTrainingKeyword, showHandSelection } from './effect-engine.js';
+import { isTargetSelecting, hasRecipeTrigger, evoSourceEffectLabel, hasTrainingKeyword, showHandSelection, canUseZoneMainEffect } from './effect-engine.js';
 
 // ===== カード画像ヘルパー =====
 const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
@@ -209,10 +209,18 @@ function renderSecurity() {
     if (!el) return;
 
     if (sec.length > 0) {
+      // 表向きで置かれたカード（card._faceUp。［セキュリティ］効果を持つレイヴモン BT26-082 /
+      // ダーク・フィールド BT26-100 等）は両プレイヤーに表を見せる（タップで詳細）
       el.innerHTML = `<div style="position:relative;width:36px;height:${28 + (sec.length - 1) * 10}px;">` +
-        sec.map((_, i) =>
-          `<div class="sec-card ${side === 'ai' ? 'ai-sec' : 'pl-sec'}" style="position:absolute;top:${i * 10}px;left:0;width:36px;height:28px;">${backHtml}</div>`
-        ).join('') + '</div>';
+        sec.map((c, i) => {
+          const faceUp = !!(c && (c._faceUp === true || c.faceUp === true));
+          const fSrc = faceUp ? cardImg(c) : '';
+          const inner = !faceUp ? backHtml
+            : (fSrc ? `<img src="${fSrc}" title="${c.name || ''}（表向き）" style="width:100%;height:100%;object-fit:cover;border-radius:2px;outline:1px solid #ffaa00;">`
+              : `<div style="font-size:6px;color:#ffaa00;line-height:1.1;overflow:hidden;height:100%;">${c.name || ''}</div>`);
+          const click = faceUp ? ` onclick="event.stopPropagation();showFaceUpSecurity('${side}',${i})"` : '';
+          return `<div class="sec-card ${side === 'ai' ? 'ai-sec' : 'pl-sec'}" style="position:absolute;top:${i * 10}px;left:0;width:36px;height:28px;${faceUp ? 'cursor:pointer;' : ''}"${click}>${inner}</div>`;
+        }).join('') + '</div>';
     } else {
       el.innerHTML = '<div class="sec-card empty">0</div>';
     }
@@ -1441,16 +1449,58 @@ export function showTrash(side) {
   if (trash.length === 0) {
     grid.innerHTML = '<div style="color:#555;text-align:center;padding:20px;">カードがありません</div>';
   } else {
+    // ［トラッシュ］【メイン】（ゾンビプルートモン BT26-079）: 自分のメインフェイズ中は、条件を満たして
+    // 使えるカードに「効果を使う」ボタンを出す（ユーザー決定事項）
+    const canZoneMain = isPlayer && bs.phase === 'main' && bs.isPlayerTurn && !isTargetSelecting();
     grid.innerHTML = trash.map((c, i) => {
       const src = cardImg(c);
+      const zoneBtn = (canZoneMain && canUseZoneMainEffect(c, 'player', bs, 'trash'))
+        ? `<button class="menu-btn" style="font-size:8px;padding:2px 4px;margin-top:3px;width:100%;" onclick="event.stopPropagation();useTrashZoneEffect(${i})">⚡ 効果を使う</button>`
+        : '';
       return `<div id="trash-card-${i}" data-card-no="${c.cardNo || ''}" data-card-name="${c.name || ''}" style="text-align:center;cursor:pointer;padding:3px;border:2px solid transparent;border-radius:6px;transition:all 0.2s;" onclick="selectTrashCard('${side}',${i})" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 4px 12px rgba(0,251,255,0.3)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
         ${src ? `<img src="${src}" style="width:100%;border-radius:4px;">` : `<div style="height:60px;background:#111;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#aaa;">${c.name}</div>`}
         <div style="font-size:7px;color:#888;margin-top:2px;">${c.name}</div>
+        ${zoneBtn}
       </div>`;
     }).join('');
   }
   modal.style.display = 'block';
 }
+
+// 表向きのセキュリティのカード詳細
+window.showFaceUpSecurity = function(side, idx) {
+  const sec = (side === 'ai') ? bs.ai.security : bs.player.security;
+  const c = sec && sec[idx];
+  if (c && (c._faceUp === true || c.faceUp === true) && window.showBCD) window.showBCD(c, 'security');
+};
+
+// トラッシュのカードの［トラッシュ］【メイン】効果を使う（確認 → トラッシュ一覧を閉じて発揮）
+window.useTrashZoneEffect = function(idx) {
+  const card = bs.player.trash[idx];
+  if (!card || bs.phase !== 'main' || !bs.isPlayerTurn) return;
+  if (!canUseZoneMainEffect(card, 'player', bs, 'trash')) return;
+  const modal = document.getElementById('trash-modal');
+  if (modal) modal.style.display = 'none';
+  const overlay = document.getElementById('effect-confirm-overlay');
+  const run = () => {
+    if (!window._activateZoneMainEffect) { renderAll(); return; }
+    window._activateZoneMainEffect(card, 'player', 'trash', () => {
+      renderAll();
+      // 効果で支払ったコストでメモリーが相手側へ移ったらターン終了
+      if (bs.memory < 0) bs._pendingTurnEnd = true;
+      if (window._checkPendingTurnEndOnly) window._checkPendingTurnEndOnly();
+    });
+  };
+  if (!overlay) { run(); return; }
+  document.getElementById('effect-confirm-name').innerText = card.name + '（トラッシュ）';
+  document.getElementById('effect-confirm-text').innerText = card.effect || '';
+  overlay.style.display = 'flex';
+  window._effectConfirmCallback = function(yes) {
+    overlay.style.display = 'none';
+    if (!yes) { renderAll(); return; }
+    run();
+  };
+};
 
 // トラッシュカード選択
 window.selectTrashCard = function(side, idx) {

@@ -713,6 +713,15 @@ export function onEndTurn() {
     if (window._tutorialRunner && window._tutorialRunner.active) {
       await window._tutorialRunner.checkInterrupt('before_end_turn');
     }
+    // CPU のカードの「相手のターン終了時」効果（場・表向きのセキュリティ/トラッシュのゾーン効果。
+    // レイヴモン BT26-082 等）。endAiTurn のプレイヤー側と対になる処理（チュートリアル中は従来通り行わない）
+    if (!(window._tutorialRunner && window._tutorialRunner.active)) {
+      try {
+        const te = window._triggerEffectFn;
+        const anyAi = (bs.ai.battleArea || []).find(c => c) || (bs.ai.tamerArea || []).find(c => c) || null;
+        if (te) await new Promise(res => te('on_opp_turn_end', anyAi, 'ai', null, res));
+      } catch (_) {}
+    }
     bs.memory = -3;
     applyTurnEndMemoryShift();
     updateMemGauge();
@@ -759,6 +768,14 @@ export function checkAutoTurnEnd() {
         showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {});
       });
     } else {
+      // CPU のカードの「相手のターン終了時」効果（onEndTurn の AI対戦分岐と同じ）
+      if (!(window._tutorialRunner && window._tutorialRunner.active)) {
+        try {
+          const te = window._triggerEffectFn;
+          const anyAi = (bs.ai.battleArea || []).find(c => c) || (bs.ai.tamerArea || []).find(c => c) || null;
+          if (te) await new Promise(res => te('on_opp_turn_end', anyAi, 'ai', null, res));
+        } catch (_) {}
+      }
       // AI対戦: 相手メモリーは超過した絶対値（AI側なので負の値）
       bs.memory = -over;
       applyTurnEndMemoryShift();
@@ -981,12 +998,14 @@ async function endAiTurn() {
   _hooks.expireBuffs('permanent', 'ai');
   // 自分(プレイヤー)のカードの「相手のターン終了時」効果を発火
   // scanTriggersが盤面全体（本体 + 進化元レシピ）を走査するので
-  // 任意の自分カード1枚を source として triggerEffect を1度だけ呼ぶ
+  // 任意の自分カード1枚を source として triggerEffect を1度だけ呼ぶ。
+  // 場にカードが無くても、表向きのセキュリティ/トラッシュのゾーン効果（レイヴモン BT26-082
+  // 「［セキュリティ］【相手のターン終了時】」）があるので source 無しでも走査する
   try {
     const te = window._triggerEffectFn;
     const anyOwn = (bs.player.battleArea || []).find(c => c)
-      || (bs.player.tamerArea || []).find(c => c);
-    if (te && anyOwn) {
+      || (bs.player.tamerArea || []).find(c => c) || null;
+    if (te) {
       await new Promise(res => te('on_opp_turn_end', anyOwn, 'player', null, res));
     }
   } catch(_) {}

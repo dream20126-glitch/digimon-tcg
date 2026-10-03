@@ -346,6 +346,12 @@ function executeQueueEntry(entry, context, callback) {
     showEffectAnnounce(card, displayEffText, actualSide, () => runEffectNow(callback), evoSourceCard);
   }
 
+  // ゾーン効果（［トラッシュ］［セキュリティ］）は、解決時にそのゾーンを離れていたら発揮しない
+  if ((block._zone === 'trash' || block._zone === 'security') && !_cardStillInZone(context.bs, actualSide, card, block._zone)) {
+    callback();
+    return;
+  }
+
   // 条件チェック（cond_exists等）
   if (block.conditions && block.conditions.length > 0) {
     if (!checkConditions(block.conditions, card, context.bs, actualSide)) {
@@ -1650,10 +1656,13 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const isPlayerSide = ctx.side === 'player';
       const canShowPicker = isPlayerSide && typeof showHandDiscardPicker === 'function';
       // 1 枚ずつ破棄演出（自分側で fxCardMove, オンラインなら相手側にも fx_remoteCardMove 送信）
+      // 破棄したカード（自身の「手札から破棄されたとき」(in_zone:'hand') 用）
+      const _cdDiscarded = [];
       const discardOne = (card, done) => {
         const idx = player.hand.indexOf(card);
         if (idx !== -1) player.hand.splice(idx, 1);
         player.trash.push(card);
+        _cdDiscarded.push(card);
         ctx.addLog('✦ 「' + card.name + '」を捨てた');
         // オンライン: 相手画面にもカード移動演出を送信
         if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
@@ -1674,7 +1683,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 他の「したとき」系反応と同様キューに積んで、元の効果の解決が終わってから発火する
       const _cdFinishCallback = () => {
         const _cdCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-        enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueued, [ctx.side, ctx.bs, _cdCtxBase]);
+        enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueued, [ctx.side, ctx.bs, _cdCtxBase, _cdDiscarded.slice()]);
         callback();
       };
       const runDiscards = (cards, finalize) => {
@@ -4560,7 +4569,9 @@ export function applyPermanentEffects(bs, side, context) {
   // ② 永続効果を全て再適用
   const allCards = [...(bs[side].battleArea.filter(c => c)), ...(bs[side].tamerArea || [])];
 
-  allCards.forEach(card => {
+  // _permZone: null=場のカード / 'security'=表向きのセキュリティのカード（［セキュリティ］常時効果。
+  // ダーク・フィールド BT26-100。in_zone:'security' の during_* ステップだけを適用し、passive・進化元は見ない）
+  const _applyCardPerm = (card, _permZone) => {
     // ③ レシピベースの永続効果処理
     if (card.recipe) {
       // 文字列ならパース（キャッシュ）
@@ -4575,11 +4586,11 @@ export function applyPermanentEffects(bs, side, context) {
       const turnKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
       const turnTextMap = { 'during_own_turn': '【自分のターン】', 'during_opp_turn': '【相手のターン】', 'during_any_turn': '【お互いのターン】' };
       turnKeys.forEach(tk => {
-        const tkSteps = _lookupTriggerSteps(card.recipe, tk, card);
+        const tkSteps = _withZoneScope(_permZone, () => _lookupTriggerSteps(card.recipe, tk, card));
         if (!tkSteps) return;
         // 進化元効果のみのカード（メイン効果にターントリガーなし）はスキップ
         const triggerText = turnTextMap[tk];
-        if (!cardMainEffect.includes(triggerText) && cardEvoEffect.includes(triggerText)) return;
+        if (!_permZone && !cardMainEffect.includes(triggerText) && cardEvoEffect.includes(triggerText)) return;
         if (tk === 'during_own_turn' && side !== turnSide) return;
         if (tk === 'during_opp_turn' && side === turnSide) return;
         const steps = Array.isArray(tkSteps) ? tkSteps : [tkSteps];
@@ -4626,6 +4637,9 @@ export function applyPermanentEffects(bs, side, context) {
                   if (!a || (a.target && a.target !== 'same_target')) return;
                   const av = parseInt(a.value) || 0;
                   if (!av || (a.action !== 'dp_plus' && a.action !== 'dp_minus')) return;
+                  // 代替アクション側の条件（「名称に『プルートモン』『タイタモン』を含む自分のデジモンがいる間、
+                  // 加えてDP+3000」ダーク・フィールド BT26-100）を満たす間だけ適用する
+                  if (_stepHasGateConditions(a) && !_evalStepConditionGate(a, card, bs, side)) return;
                   if (!tgt.buffs) tgt.buffs = [];
                   tgt.buffs.push({ type: a.action, value: av, duration: 'permanent', source: 'recipe_perm' });
                 });
@@ -4718,6 +4732,7 @@ export function applyPermanentEffects(bs, side, context) {
           }
         });
       });
+      if (_permZone) return;
       // passiveキーワードフラグ（バトルエリアにいるカード自身に適用）
       // ※evo_source内のpassiveはここでは適用しない（④で処理）
       if (card.recipe.passive) {
@@ -5073,6 +5088,11 @@ export function applyPermanentEffects(bs, side, context) {
         }
       });
     }
+  };
+  allCards.forEach(card => _applyCardPerm(card, null));
+  // ［セキュリティ］常時効果: 表向きで置かれているセキュリティのカード（card._faceUp。公式ルール14-5-1）
+  (bs[side].security || []).forEach(card => {
+    if (card && (card._faceUp === true || card.faceUp === true) && _cardHasZoneSteps(card, 'security')) _applyCardPerm(card, 'security');
   });
 }
 
@@ -6221,21 +6241,25 @@ function _fireWhenEvoDiscardTriggersQueued(cause, discardedSide, bs, ctxBase, co
 }
 
 // fireWhenHandDiscardTriggers 用の同様のキュー発火ラッパー
-function _fireWhenHandDiscardTriggersQueued(discardedSide, bs, ctxBase, callback) {
-  fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, callback);
+// discardedCards: 破棄されたカード（自身の「手札から破棄されたとき」用。旧形式の4引数呼び出しも受け付ける）
+function _fireWhenHandDiscardTriggersQueued(discardedSide, bs, ctxBase, discardedCards, callback) {
+  if (typeof discardedCards === 'function' && callback === undefined) { callback = discardedCards; discardedCards = null; }
+  fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, callback, undefined, discardedCards);
 }
 
 // 効果による手札破棄（action:'discard'）用のキュー発火ラッパー。原因（{type:'effect', causerSide,
 // causerCard}）を反応チェーンの間だけ bs._lastDestroyCause にセットし（cause:'effect' /
 // cause_subject の判定用）、終了後に元へ戻す。onlySide を指定するとその側のカードだけを
 // スキャンする（オンラインで相手機に破棄を依頼した場合、相手側のカードは相手機が発火するため）
-function _fireWhenHandDiscardTriggersQueuedWithCause(cause, discardedSide, onlySide, bs, ctxBase, callback) {
+// discardedCards: 破棄されたカード（自身の「手札から破棄されたとき」用。省略時は旧形式の引数順）
+function _fireWhenHandDiscardTriggersQueuedWithCause(cause, discardedSide, onlySide, bs, ctxBase, discardedCards, callback) {
+  if (typeof discardedCards === 'function' && callback === undefined) { callback = discardedCards; discardedCards = null; }
   const prevCause = bs ? bs._lastDestroyCause : undefined;
   if (bs) bs._lastDestroyCause = cause;
   fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, () => {
     if (bs) bs._lastDestroyCause = prevCause;
     callback && callback();
-  }, onlySide || undefined);
+  }, onlySide || undefined, discardedCards);
 }
 
 // 効果によるセキュリティ破棄（action:'discard' の own_security）用のキュー発火ラッパー
@@ -6691,6 +6715,19 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
         );
       });
     });
+    // ［トラッシュ］［セキュリティ］の反応（ケルビモン BT26-078「［トラッシュ］自分のデジモンが登場したとき」）。
+    // 発揮元はゾーンのカード自身（ctx.card）。_zone は解決時の「まだそのゾーンにあるか」判定用
+    _zoneCardsForScan(ctx.bs, side).forEach(({ card, zone }) => {
+      const steps = reactiveSteps(_withZoneScope(zone, () => getRecipeForTrigger(card, triggerCode)), side);
+      if (steps.length === 0) return;
+      const dummyBlock = {
+        raw: card.effect || '', trigger: { code: triggerCode },
+        actions: [], conditions: [], _eventSourceCard: sourceCard, _grantedSteps: steps, _zone: zone,
+      };
+      addToQueue(card, dummyBlock,
+        side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
+      );
+    });
   });
 }
 
@@ -6949,6 +6986,18 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
             side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
           );
         });
+      });
+
+      // ［トラッシュ］［セキュリティ］のゾーン効果（レイヴモン BT26-082「［セキュリティ］【相手のターン終了時】」等）
+      _zoneCardsForScan(ctx.bs, side).forEach(({ card, zone }) => {
+        const zSteps = _withZoneScope(zone, () => getRecipeForTrigger(card, triggerCode));
+        if (!zSteps || zSteps.length === 0) return;
+        const priority = triggerCode.startsWith('when_') ? 'interrupt' : 'normal';
+        const dummyBlock = {
+          raw: card.effect || '', trigger: { code: triggerCode },
+          actions: [], conditions: [], _grantedSteps: zSteps, _zone: zone,
+        };
+        addToQueue(card, dummyBlock, side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', priority, side);
       });
     });
 
@@ -7273,7 +7322,64 @@ function _lookupTriggerSteps(recipeObj, triggerCode, card) {
       result = result ? result.concat(filled) : filled;
     }
   }
-  return result;
+  return _applyZoneScope(result);
+}
+
+// ===== ゾーン効果（［トラッシュ］［手札］［セキュリティ］。step.in_zone） =====
+// 公式ルール 14-2/14-3/14-5: 手札・トラッシュ・セキュリティ（表向き）にある間だけ有効な効果。
+// _lookupTriggerSteps の全呼び出し元は「場のカード」として見る（_triggerZoneScope=null）ので、
+// in_zone 付きのステップ（＋「その後」の後続）は除外する（ケルビモン BT26-078 の［トラッシュ］on_play が
+// 場にいるときの登場時として誤発火しない）。ゾーンのカードを走査するときだけ _withZoneScope でその
+// ゾーンを指定し、in_zone が一致するステップだけを返す（in_zone の無いステップはゾーンから発火しない）。
+// in_zone:'hand' でも action を持たない設定エントリ（summon_cost / burst_evolve 等。手札にある間の
+// 登場コスト軽減・バースト進化の条件）は従来通り場のスコープで返す（それぞれの専用処理が読む）
+let _triggerZoneScope = null;
+function _withZoneScope(zone, fn) {
+  const prev = _triggerZoneScope;
+  _triggerZoneScope = zone || null;
+  try { return fn(); } finally { _triggerZoneScope = prev; }
+}
+function _stepZone(s) {
+  const z = s && s.in_zone;
+  if (!z) return null;
+  if (z === 'hand' && !s.action) return null;
+  return String(z);
+}
+function _applyZoneScope(steps) {
+  if (!Array.isArray(steps)) return steps;
+  const zone = _triggerZoneScope;
+  if (!zone && !steps.some(_stepZone)) return steps;
+  const out = _filterStepChains(steps, (s) => _stepZone(s) === zone);
+  if (out.length === steps.length) return steps;
+  return out.length > 0 ? out : undefined;
+}
+// カードのレシピ（トップレベル）に指定ゾーンの in_zone ステップがあるか（走査の事前絞り込み用）
+function _cardHasZoneSteps(card, zone) {
+  const r = _parseCardRecipe(card);
+  if (!r || typeof r !== 'object') return false;
+  return Object.keys(r).some((k) => Array.isArray(r[k]) && r[k].some((s) => _stepZone(s) === zone));
+}
+// side のゾーン効果の走査対象カード（[{ card, zone }]）。トラッシュの全カードと、表向きの
+// セキュリティ（card._faceUp。14-5-1）のうち、そのゾーンの in_zone ステップを持つもの。
+// オンラインでは相手側（ai）のゾーンのカードの効果は相手機が走査するので返さない
+function _zoneCardsForScan(bs, side) {
+  if (!bs || !bs[side]) return [];
+  if (side !== 'player' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) return [];
+  const out = [];
+  (bs[side].trash || []).forEach((c) => { if (c && _cardHasZoneSteps(c, 'trash')) out.push({ card: c, zone: 'trash' }); });
+  (bs[side].security || []).forEach((c) => {
+    if (c && (c._faceUp === true || c.faceUp === true) && _cardHasZoneSteps(c, 'security')) out.push({ card: c, zone: 'security' });
+  });
+  return out;
+}
+// card が side のそのゾーンにまだあるか（ゾーン効果は解決時にそのゾーンを離れていたら発揮しない）
+function _cardStillInZone(bs, side, card, zone) {
+  const p = bs && bs[side];
+  if (!p || !card) return false;
+  if (zone === 'trash') return (p.trash || []).includes(card);
+  if (zone === 'security') return (p.security || []).includes(card);
+  if (zone === 'hand') return (p.hand || []).includes(card);
+  return true;
 }
 
 // card.recipe.passive に登録されたキーワードのうち on_attack 型テンプレート
@@ -7597,6 +7703,17 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       });
     }
   });
+  // ［トラッシュ］［セキュリティ］のゾーン効果＋opts.zoneCards（[{card, zone}]。手札から破棄された
+  // カード自身の「このカードが手札から破棄されたとき」(in_zone:'hand') 等、呼び出し側が指定するカード）
+  const _zoneList = _zoneCardsForScan(bs, reactSide).concat(Array.isArray(opts.zoneCards) ? opts.zoneCards.filter(z => z && z.card) : []);
+  _zoneList.forEach(({ card, zone }) => {
+    const r = parseRecipe(card.recipe);
+    const recipe = r && _withZoneScope(zone, () => _lookupTriggerSteps(r, recipeKey, card));
+    if (!recipe) return;
+    const before = reactions.length;
+    pushReaction(card, card, recipe);
+    if (reactions.length > before) reactions[reactions.length - 1].zone = zone;
+  });
   if (reactions.length === 0) { finish(); return; }
   // 原因（bs._lastDestroyCause）はスキャン時点の値を各反応の実行直前に書き戻す
   // （先に解決した反応の中で別の消滅チェーン等が走ると、その終了時にクリアされてしまい、
@@ -7606,6 +7723,8 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
   function nextReaction() {
     if (idx >= reactions.length) { finish(); return; }
     const reaction = reactions[idx++];
+    // ゾーン効果は解決時にそのゾーンを離れていたら発揮しない
+    if ((reaction.zone === 'trash' || reaction.zone === 'security') && !_cardStillInZone(bs, reactSide, reaction.card, reaction.zone)) { nextReaction(); return; }
     if (causeAtScan !== undefined) bs._lastDestroyCause = causeAtScan;
     _runReactionEffect(reaction, reactSide, bs, ctxBase, nextReaction);
   }
@@ -8150,7 +8269,11 @@ export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done) 
 // when_evo_discard（進化元/テイマー下スタックの破棄）とは別トリガーキー。
 // subject未指定時は不発火（when_evo_discard等と同じ規約）
 // onlySide: 'player' | 'ai' を指定するとその側のカードだけをスキャンする（省略時は両陣営）
-export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, onlySide) {
+// discardedCards（省略可）: 手札から破棄されたカード（破棄後はトラッシュにある）。各カード自身の
+// 「このカードが手札から破棄されたとき」（in_zone:'hand' のステップ。発動主体 self_hand/self/未指定。
+// ドーベルモン BT26-069）も発火させる（公式ルール15-2: 手札で誘発し、トラッシュで発揮を待つ）
+export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, onlySide, discardedCards) {
+  const discarded = Array.isArray(discardedCards) ? discardedCards.filter(Boolean) : [];
   const matchesOne = (subj, cardSide) => {
     switch (subj) {
       case 'own': case 'own_any': case 'own_card': case 'own_hand': return discardedSide === cardSide;
@@ -8162,7 +8285,13 @@ export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, on
   // subject_or（発動主体のOR。例:「自分のテイマーの下 か 相手の手札」）があれば、
   // このリストのうち自分（手札破棄スキャン）に関係する値（own_hand/opp_hand等）だけを見る。
   // 他ゾーン向けの値（own_tamer等）はここでは無視される（evo/tamer側のスキャンが別途判定する）
-  const subjectMatches = (step, cardSide) => {
+  const subjectMatches = (step, cardSide, carrier) => {
+    // 破棄されたカード自身の［手札］効果: そのカード自身が破棄されたときだけ
+    if (_stepZone(step) === 'hand') {
+      if (cardSide !== discardedSide || !discarded.includes(carrier)) return false;
+      const subj = _resolveStepSubject(step, 'when_hand_discard');
+      return !subj || subj === 'self_hand' || subj === 'self';
+    }
     // trigger_from（破棄元ゾーン）が手札以外（'evo_source' 等。ブルムロードモン BT26-048）の
     // ステップは手札の破棄では発動しない
     const tf = step && step.trigger_from;
@@ -8171,15 +8300,13 @@ export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, on
     if (list.length === 0) return false;
     return list.some((subj) => matchesOne(subj, cardSide));
   };
-  if (onlySide === 'player') {
-    return _fireSidedReactionTriggers('player', 'when_hand_discard', bs, ctxBase, done, (step) => subjectMatches(step, 'player'));
-  }
-  if (onlySide === 'ai') {
-    return _fireSidedReactionTriggers('ai', 'when_hand_discard', bs, ctxBase, done, (step) => subjectMatches(step, 'ai'));
-  }
-  return _fireSidedReactionTriggers('player', 'when_hand_discard', bs, ctxBase, () => {
-    _fireSidedReactionTriggers('ai', 'when_hand_discard', bs, ctxBase, done, (step) => subjectMatches(step, 'ai'));
-  }, (step) => subjectMatches(step, 'player'));
+  const optsFor = (side) => (side === discardedSide && discarded.length > 0
+    ? { zoneCards: discarded.map((c) => ({ card: c, zone: 'hand' })) } : undefined);
+  const fireSide = (side, next) => _fireSidedReactionTriggers(side, 'when_hand_discard', bs, ctxBase, next,
+    (step, rs, carrier) => subjectMatches(step, side, carrier), optsFor(side));
+  if (onlySide === 'player') return fireSide('player', done);
+  if (onlySide === 'ai') return fireSide('ai', done);
+  return fireSide('player', () => fireSide('ai', done));
 }
 
 // ===== 効果による手札/セキュリティの破棄（action:'discard'） =====
@@ -8261,10 +8388,10 @@ function _moveHandCardsToTrash(handSide, cards, ctx, done) {
 
 // 「手札が破棄されたとき」を、元の効果の解決後に発火するようキューへ積む（cost_discard と同じ）。
 // 原因は「ctx.side の効果」
-function _enqueueHandDiscardTriggers(ctx, discardedSide, onlySide) {
+function _enqueueHandDiscardTriggers(ctx, discardedSide, onlySide, discardedCards) {
   const cause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
   const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-  enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueuedWithCause, [cause, discardedSide, onlySide || null, ctx.bs, ctxBase]);
+  enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueuedWithCause, [cause, discardedSide, onlySide || null, ctx.bs, ctxBase, discardedCards || null]);
 }
 
 // 1人分の手札破棄。spec = { count, all, until, upTo, optional, filter }。done({ count, declined })
@@ -8303,7 +8430,7 @@ function _runHandDiscardForSide(handSide, spec, ctx, done) {
   _pickHandDiscards(handSide, pool, want, optional, (picked) => {
     if (!picked) { ctx.addLog && ctx.addLog('☓ 手札を破棄しなかった'); done({ count: 0, declined: true }); return; }
     _moveHandCardsToTrash(handSide, picked, ctx, () => {
-      if (picked.length > 0) _enqueueHandDiscardTriggers(ctx, handSide, null);
+      if (picked.length > 0) _enqueueHandDiscardTriggers(ctx, handSide, null, picked);
       done({ count: picked.length });
     });
   }, title);
@@ -8374,7 +8501,7 @@ export function runDelegatedHandDiscard(req, bs, ctxBase, done) {
       const res = { count: cards.length, names: cards.map(c => c.name || '?') };
       if (cards.length === 0) { finish(res); return; }
       const cause = { type: 'effect', causerSide: 'ai', causerCard: null };
-      try { _fireWhenHandDiscardTriggersQueuedWithCause(cause, 'player', 'player', bs, ctxBase, () => finish(res)); }
+      try { _fireWhenHandDiscardTriggersQueuedWithCause(cause, 'player', 'player', bs, ctxBase, cards, () => finish(res)); }
       catch (_) { finish(res); }
     });
   }, title);
@@ -9578,6 +9705,34 @@ function _summonCardFromEffect(c, ctx, opts, done) {
   else setTimeout(afterAnim, 300);
 }
 
+// このカード自身（ctx.card）を、それがある手札/トラッシュ/セキュリティから取り除く（ゾーン効果で
+// 「このカードを登場させる」とき）。取り除いたゾーン名を返す（どのゾーンにも無ければ null）。
+// セキュリティから取り除いた場合はセキュリティ減少（on_security_reduced）を積み、オンラインでは
+// 自分のセキュリティを相手へ再同期する（security_init）
+function _takeSelfCardFromZone(card, p, ctx) {
+  if (!card || !p) return null;
+  const zone = (p.trash || []).includes(card) ? 'trash' : (p.hand || []).includes(card) ? 'hand'
+    : (p.security || []).includes(card) ? 'security' : null;
+  if (!zone) return null;
+  p[zone].splice(p[zone].indexOf(card), 1);
+  if (zone === 'security') {
+    delete card._faceUp;
+    _noteSecurityDecrease(ctx, p, 1);
+    if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+      try { window._onlineSendCommand({ type: 'security_init', cards: p.security.map(_serializeSecurityCard) }); } catch (_) {}
+    }
+  }
+  ctx.addLog && ctx.addLog('🌟 「' + card.name + '」を' + ({ trash: 'トラッシュ', hand: '手札', security: 'セキュリティ' })[zone] + 'から登場させる');
+  return zone;
+}
+// オンライン: ゾーンから登場させた自分のカードを相手へ同期する（相手のターン中は renderAll の
+// 自動同期が走らないため明示的に state_sync を送る）
+function _syncZoneSummon(ctx) {
+  if (ctx && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
+    try { window._onlineSendStateSync(); } catch (_) {}
+  }
+}
+
 // 効果での登場/使用のコスト増減量（step.value。符号付き: 減=-N/増=+N）。
 // per_count があれば value × floor(参照数 / per_count) にする
 // （結城カナン BT26-090「相手側のメモリー1ごとにコスト-1」= value:-1, per_count:1, ref:'opp_memory'）
@@ -10147,10 +10302,30 @@ function executeRecipeStep(step, ctx, store, callback) {
       // Security effect: summon self (tamer/digimon) to field at no cost
       // cost_free:true と options:['ignore_cost'] のどちらの表記も受け付ける
       const _summonSelfIgnoreCost = !!step.cost_free || (Array.isArray(step.options) && step.options.includes('ignore_cost'));
+      // ［トラッシュ］［手札］［セキュリティ］のこのカード自身をコストを支払って登場（ゾンビプルートモン
+      // BT26-079「［トラッシュ］【メイン】このカードを支払うコスト-4で登場させる」）。
+      // value（符号付きのコスト増減）が無ければ通常の登場コストを支払う
+      if ((step.target === 'self' || step.target === 'self_card') && !_summonSelfIgnoreCost && ctx.card) {
+        const _zsP = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+        if (_takeSelfCardFromZone(ctx.card, _zsP, ctx)) {
+          const _zsDelta = _effectPlayCostDelta(step, ctx);
+          _summonCardFromEffect(ctx.card, ctx, {
+            payCost: Math.max(0, _cardPlayCostOf(ctx.card) + _zsDelta),
+            costDelta: _zsDelta,
+            enterSuspended: !!step.enter_suspended,
+            skipOnPlay: !!step.skip_on_play,
+          }, () => { _syncZoneSummon(ctx); callback(); });
+          _syncZoneSummon(ctx);
+          break;
+        }
+      }
       if ((step.target === 'self' || step.target === 'self_card') && _summonSelfIgnoreCost) {
         const cardToSummon = ctx.card;
         if (!cardToSummon) { callback(); break; }
         const p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+        // ［セキュリティ］［トラッシュ］等にあるこのカード（レイヴモン BT26-082「［セキュリティ］
+        // 【相手のターン終了時】このカードをコストを支払わず登場させる」）はそのゾーンから取り除いてから登場
+        const _selfFromZone = _takeSelfCardFromZone(cardToSummon, p, ctx);
         // オプションカードは「登場」ではなく「使用」として解決する
         if (String(cardToSummon.type || '') === 'オプション') {
           _useOptionCardFromEffect(cardToSummon, ctx, callback);
@@ -10177,6 +10352,12 @@ function executeRecipeStep(step, ctx, store, callback) {
             else p.battleArea.push(cardToSummon);
           }
           ctx.addLog('🌟 「' + cardToSummon.name + '」をバトルエリアに登場');
+        }
+        if (_selfFromZone) {
+          cardToSummon.summonedThisTurn = true; cardToSummon.suspended = false;
+          if (!Array.isArray(cardToSummon.buffs)) cardToSummon.buffs = [];
+          if (!Array.isArray(cardToSummon.stack)) cardToSummon.stack = [];
+          _syncZoneSummon(ctx);
         }
         ctx.renderAll();
         // 登場時効果を発動（skip_on_play指定時は発動しない）。
@@ -12739,6 +12920,32 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === デッキに戻す（上下選択） ===
     case 'return_deck': {
+      // target:'self_card'（「このカードをデッキの下に戻す」）で、このカードが手札/トラッシュ/セキュリティに
+      // ある場合（ケルビモン BT26-078 の［トラッシュ］効果のコスト等）: そのゾーンから自分のデッキへ戻す。
+      // バトルエリアのこのデジモンは従来通り（下の各分岐）
+      if ((step.target === 'self_card' || step.target === 'self') && !step.card && !step.from && ctx.card
+          && !player.battleArea.includes(ctx.card)) {
+        const _rsc = ctx.card;
+        const _rsZone = player.trash.includes(_rsc) ? 'trash' : player.hand.includes(_rsc) ? 'hand'
+          : (player.security || []).includes(_rsc) ? 'security' : null;
+        if (!_rsZone) { callback(false); break; }
+        player[_rsZone].splice(player[_rsZone].indexOf(_rsc), 1);
+        if (_rsZone === 'security') {
+          delete _rsc._faceUp;
+          _noteSecurityDecrease(ctx, player, 1);
+          if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            try { window._onlineSendCommand({ type: 'security_init', cards: player.security.map(_serializeSecurityCard) }); } catch (_) {}
+          }
+        }
+        const _rsTop = step.position === 'top' || step.deck_top;
+        if (_rsTop) player.deck.unshift(_rsc); else player.deck.push(_rsc);
+        ctx.addLog('🔄 「' + _rsc.name + '」を' + ({ trash: 'トラッシュ', hand: '手札', security: 'セキュリティ' })[_rsZone] + 'からデッキの' + (_rsTop ? '上' : '下') + 'に戻す');
+        ctx.renderAll();
+        const _rsCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+        try { fireWhenDeckIncreaseTriggers(ctx.side, ctx.bs, _rsCtxBase, () => callback(true), { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); }
+        catch (_) { callback(true); }
+        break;
+      }
       // store経由（自分側カードを対象にした従来パス）: 自分のデッキに戻す
       if (step.card) {
         const sd = store[step.card];
@@ -13955,6 +14162,52 @@ export function cardHasKeyword(card, keywordCode) {
     if (flag && card._permEffects[flag]) return true;
   }
   return false;
+}
+
+// ===== ゾーンにあるカードの起動効果（［トラッシュ］【メイン】等） =====
+// ゾンビプルートモン BT26-079「［トラッシュ］【メイン】自分の手札が5枚以下なら、このカードを支払うコスト-4で
+// 登場させる」。自分のメインフェイズ中にトラッシュ一覧の「効果を使う」ボタンから発揮する（ユーザー決定事項）。
+// 発揮元（ctx.card）はトラッシュのカード自身
+function _zoneMainSteps(card, zone) {
+  return _withZoneScope(zone, () => getRecipeForTrigger(card, 'main'));
+}
+// card（side の zone にあるカード）の【メイン】ゾーン効果が今使えるか（発動条件を満たすか）
+export function canUseZoneMainEffect(card, side, bs, zone) {
+  if (!card || !bs || !bs[side] || !_cardStillInZone(bs, side, card, zone)) return false;
+  const steps = _zoneMainSteps(card, zone);
+  if (!Array.isArray(steps) || steps.length === 0) return false;
+  try { return !!recipeWillExecuteAnything(steps, { card, bs, side, block: null, _sourceCard: card }); }
+  catch (_) { return false; }
+}
+// side の zone のうち【メイン】ゾーン効果が使えるカード一覧 [{ card, payCost }]。
+// payCost は「このカードを登場させる」(summon_appear self_card) で支払うメモリー（CPU の判断用。他は0）
+export function getUsableZoneMainEffects(bs, side, zone) {
+  const p = bs && bs[side];
+  if (!p || !Array.isArray(p[zone])) return [];
+  const out = [];
+  p[zone].forEach((card) => {
+    if (!card || !_cardHasZoneSteps(card, zone) || !canUseZoneMainEffect(card, side, bs, zone)) return;
+    let payCost = 0;
+    (_zoneMainSteps(card, zone) || []).forEach((s) => {
+      if (!s || !/^summon/.test(String(s.action || '')) || (s.target !== 'self_card' && s.target !== 'self')) return;
+      if (s.cost_free || (Array.isArray(s.options) && s.options.includes('ignore_cost'))) return;
+      payCost += Math.max(0, _cardPlayCostOf(card) + _effectPlayCostDelta(s, { card, bs, side }));
+    });
+    out.push({ card, payCost });
+  });
+  return out;
+}
+// card の【メイン】ゾーン効果を発揮する（context は makeEffectContext 等で作った効果コンテキスト）
+export function activateZoneMainEffect(card, side, zone, context, callback) {
+  const steps = _zoneMainSteps(card, zone);
+  if (!card || !context || !context.bs || !Array.isArray(steps) || steps.length === 0) { callback && callback(); return; }
+  clearQueue();
+  const turnPlayer = context.bs.isPlayerTurn ? 'player' : 'ai';
+  addToQueue(card, {
+    raw: card.effect || '', trigger: { code: 'main' }, actions: [], conditions: [],
+    _grantedSteps: steps, _zone: zone,
+  }, side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side);
+  processQueue(context, () => callback && callback());
 }
 
 // カードがそのトリガーのレシピを持っているか（top-level または evo_source）

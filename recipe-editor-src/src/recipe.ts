@@ -714,7 +714,27 @@ function parseExtraTargetsArray(raw: any): ExtraTarget[] | undefined {
 // 組み立てるために使う（passive:[{flag,value,designated}] / grant_keyword等のstep.designated）。
 // レシピテンプレートの中身自体はカードのJSONにはベタ展開しない＝常にコード参照のみを
 // 保存する。実際の展開はゲームエンジン側がキーワード辞書を実行時に見に行って行う
-export function blocksToRecipe(blocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
+// 値が無いと意味を持たない条件（特徴/名称/記述/色/タイプ）。カテゴリ選択直後の値なし行が
+// 画面に出ないまま残ると "cond_feature_contains" のような値なし条件がJSONへ出てしまうため、
+// 出力前にブロック内の全ConditionPairから取り除く
+const VALUE_REQUIRED_CONDS = new Set(['cond_feature_contains', 'cond_feature', 'cond_name', 'cond_name_contains', 'cond_description_contains', 'cond_color', 'cond_type']);
+function isEmptyValuePair(v: any): boolean {
+  return !!v && typeof v === 'object' && !Array.isArray(v) && typeof v.base === 'string'
+    && VALUE_REQUIRED_CONDS.has(v.base) && (v.value == null || String(v.value).trim() === '')
+    && Object.keys(v).every((k) => k === 'base' || k === 'value' || k === 'subject');
+}
+function stripEmptyValuePairs<T>(v: T): T {
+  if (Array.isArray(v)) return v.filter((x) => !isEmptyValuePair(x)).map(stripEmptyValuePairs) as unknown as T;
+  if (v && typeof v === 'object') {
+    const out: any = {};
+    Object.entries(v as any).forEach(([k, x]) => { out[k] = stripEmptyValuePairs(x); });
+    return out;
+  }
+  return v;
+}
+
+export function blocksToRecipe(rawBlocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
+  const blocks = stripEmptyValuePairs(rawBlocks);
   const recipe: Record<string, any> = {};
   blocks.forEach((b) => {
     // 区分の複数選択（例:「メイン」+「セキュリティ」で全く同じ内容を発動する）。

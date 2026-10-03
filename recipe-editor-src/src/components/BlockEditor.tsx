@@ -9295,11 +9295,18 @@ function ConditionsHybridEditor({
           };
           const addTag = (v: string, mode: 'contains' | 'exact') => {
             if (!v) return;
+            // カテゴリ選択時に作られる値なしの行（もう一方のモード）は、タグが0件で画面に
+            // 出ず消せないまま値なし条件としてJSONに残ってしまうため、新しいモードの行へ転用する
+            const emptyOther = mode === 'contains'
+              ? (exactRow && exactTags.length === 0 ? exactRow : null)
+              : (containsRow && containsTags.length === 0 ? containsRow : null);
             if (mode === 'contains') {
               if (containsRow) { if (!containsTags.includes(v)) updateAt(containsRow.i, { value: [...containsTags, v].join(',') }); }
+              else if (emptyOther) updateAt(emptyOther.i, { base: 'cond_feature_contains', value: v });
               else onChange([...conditions, { base: 'cond_feature_contains', value: v, subject: defaultSubject || undefined }]);
             } else {
               if (exactRow) { if (!exactTags.includes(v)) updateAt(exactRow.i, { value: [...exactTags, v].join(',') }); }
+              else if (emptyOther) updateAt(emptyOther.i, { base: 'cond_feature', value: v });
               else onChange([...conditions, { base: 'cond_feature', value: v, subject: defaultSubject || undefined }]);
             }
           };

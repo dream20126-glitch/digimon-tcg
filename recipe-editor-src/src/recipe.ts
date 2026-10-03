@@ -498,6 +498,14 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
   const f: Record<string, any> = {};
   pairs.forEach((c) => {
     if (!c || !c.base) return;
+    // 「異なる」（名前/Lv/記述/色）: 複数枚選ぶ際に同じ属性のカードを重複して選べない制約。
+    // 対象/取得元の絞り込みでは filter.distinct_by（属性名の配列）として出力する
+    // （例: ダンテモン「進化元から、特徴『アプモン』を持つ名称の異なるカード7枚までをリンク」）
+    if (DISTINCT_MARKER_TO_ATTR[c.base]) {
+      const attr = DISTINCT_MARKER_TO_ATTR[c.base];
+      f.distinct_by = Array.from(new Set([...(f.distinct_by || []), attr]));
+      return;
+    }
     if (!c.value && !NO_VALUE_FILTER_CONDS.has(c.base)) return;
     if (applyRefZoneCond(f, c)) return;
     const num = (v: any) => { const n = parseInt(String(v), 10); return isNaN(n) ? undefined : n; };
@@ -638,6 +646,9 @@ function parseFilterObject(f: any): ConditionPair[] {
   if (f.same_state_ref)       out.push({ base: 'cond_same_state',           value: String(f.same_state_ref) });
   if (f.suspended === true)   out.push({ base: 'cond_self_rest' });
   else if (f.suspended === false) out.push({ base: 'cond_self_active' });
+  if (Array.isArray(f.distinct_by)) {
+    f.distinct_by.forEach((attr: string) => { if (DISTINCT_ATTR_TO_MARKER[attr]) out.push({ base: DISTINCT_ATTR_TO_MARKER[attr] }); });
+  }
   REF_ZONES.forEach((zone) => {
     REF_QUANTS.forEach((quant) => {
       const v = f[`${zone}_${quant}`];
@@ -2030,6 +2041,10 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     alt_actions_op: true,
     granted_recipe: true,
     filter: true,
+    // from_filter は fromFilter/fromFilterChain/fromExcludeSameNameZone へ復元済み。
+    // 素通し(extras)に残すと保存時に古いfrom_filterで上書きされ、取得元の条件をUIで
+    // 直しても反映されなかった
+    from_filter: true,
     designated: true,
     designated_groups: true,
     designated_common: true,

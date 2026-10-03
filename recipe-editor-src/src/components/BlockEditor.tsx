@@ -906,7 +906,9 @@ function KeywordEntriesEditor({
                       dict={dict}
                       titleBase="対象"
                       theme="action"
-                      extraProps={{ defaultSubject: '', showSubjectSelector: false, allowDistinctVariants: !isOrGroups }}
+                      // グループ間ORでも「異なる」を選べる（どのグループで選んでも、OR全体＝選ぶカード全体に
+                      // 対する制約として designated.distinct_by に出力される。例: 巨神兵器のアセンブリ）
+                      extraProps={{ defaultSubject: '', showSubjectSelector: false, allowDistinctVariants: true }}
                       commonConditions={g.conditions || []}
                       onCommonConditionsChange={(next) => updateGroup(gi, { conditions: next })}
                     />

@@ -7,7 +7,7 @@
 // 翻訳ルールはメインアクションごとに 1 つの関数で表現。新しいメインアクションが
 // rules 対応する場合はこの translate map に1関数追加するだけ。
 
-import type { MiniStep, ConditionPair, RuleGroup } from './types';
+import type { MiniStep, ConditionPair, RuleGroup, RuleActionKind } from './types';
 
 // 条件 (cond_xxx:value) の配列を filter オブジェクトへ変換
 // recipe-editor-src 側のフィルタ仕様: { color, type, lv_le, lv_ge, dp_le, dp_ge, feature_contains, name_contains }
@@ -241,6 +241,8 @@ function applyOneSelection(step: any, rule: MiniStep, filter: Record<string, any
     if (Object.keys(filter).length > 0) sel.filter = filter;
     // ルール内修飾子をこの選択に限定して適用（メインアクション直下の options とは別系統）
     if (Array.isArray(rule.options) && rule.options.length > 0) sel.options = rule.options.slice();
+    // 任意（「〜を手札に加えられる」等。エンジンは !!sel.optional で判定）
+    if (rule.optional) sel.optional = true;
     step.selections.push(sel);
   };
   // 「〇〇に置く」(PLACE_ZONE_MAP。コスト側「〇〇に置く」と同じ4択:
@@ -254,8 +256,25 @@ function applyOneSelection(step: any, rule: MiniStep, filter: Record<string, any
     if (Object.keys(filter).length > 0) sel.filter = filter;
     if (rule.deckPosition) sel.position = rule.deckPosition;
     if (Array.isArray(rule.options) && rule.options.length > 0) sel.options = rule.options.slice();
+    if (rule.optional) sel.optional = true;
     step.selections.push(sel);
   };
+  // 「登場/使用/進化」（actionKinds）: オープンしたカードを場に出す/使う選択肢。
+  // 例: コピペモン「その中の特徴『セブンコード』を持つカード1枚を支払うコスト-3で登場/使用できる」
+  // → {count:1, destination:'play', play_kinds:['summon','use'], cost_delta:-3, optional:true, filter}
+  // ⚠ エンジン側の deck_open は destination:'play' 未対応（保存のみ）
+  if (Array.isArray(rule.actionKinds) && rule.actionKinds.length > 0) {
+    if (!Array.isArray(step.selections)) step.selections = [];
+    const sel: Record<string, any> = { count, destination: 'play', play_kinds: rule.actionKinds.slice() };
+    const delta = asNumberOrPass(rule.costDelta);
+    if (rule.costFree) sel.cost_free = true;
+    else if (delta !== undefined && delta !== 0) sel.cost_delta = delta;
+    if (rule.optional) sel.optional = true;
+    if (Object.keys(filter).length > 0) sel.filter = filter;
+    if (Array.isArray(rule.options) && rule.options.length > 0) sel.options = rule.options.slice();
+    step.selections.push(sel);
+    return;
+  }
   switch (rule.action) {
     case 'add_to_hand':
     case 'bounce':
@@ -312,12 +331,13 @@ export function hasRuleTranslator(mainAction: string | undefined): boolean {
 // 1つの step に対し、rules を翻訳して step フィールドへマージ
 export function applyRulesToStep(mainAction: string, rules: MiniStep[] | undefined, step: any): void {
   if (!Array.isArray(rules) || rules.length === 0) return;
-  // 「登場/使用/進化」複数組み合わせ（actionKinds）はエンジン未対応のため、メインアクション毎の
-  // 複雑な翻訳分岐には組み込まず、ルール配列と同じ並びでそのまま素通しする（保存のみ可）
-  if (rules.some((r) => Array.isArray(r.actionKinds) && r.actionKinds.length > 0)) {
+  // 「登場/使用/進化」（actionKinds）は、翻訳器のあるアクション（deck_open等）では
+  // selections[] の {destination:'play', play_kinds,...} として出力する（applyOneSelection）。
+  // 旧形式の rule_action_kinds（ルール配列と同じ並びの素通し）は、翻訳器の無いアクションでのみ残す
+  const translator = TRANSLATORS[mainAction];
+  if (!translator && rules.some((r) => Array.isArray(r.actionKinds) && r.actionKinds.length > 0)) {
     step.rule_action_kinds = rules.map((r) => (Array.isArray(r.actionKinds) && r.actionKinds.length > 0) ? r.actionKinds : null);
   }
-  const translator = TRANSLATORS[mainAction];
   if (!translator) {
     // 翻訳器無しのメインアクション: rules を rules フィールドにそのまま残す（汎用処理）
     // 編集情報のみ保持し、エンジンは無視。後で対応するアクション用の翻訳を足したらここを通らなくなる。
@@ -335,4 +355,143 @@ export function applyRulesToStep(mainAction: string, rules: MiniStep[] | undefin
     return;
   }
   rules.forEach((rule) => translator(step, rule));
+}
+
+// === 逆変換: 既存JSON（selections[] / return_to）→ ルール群 (MiniStep[]) ===
+// これが無いと、既存カードを開いたときにデッキオープン等のルールが画面に出ず、
+// selections は素通し(extras)のまま保存時に上書きされるため、ルールを編集しても反映されなかった。
+// 逆変換したルールを applyRulesToStep で再翻訳し、元のJSONと完全一致した場合だけ採用する
+// （一致しない＝表現しきれない形のときは null を返し、呼び出し側は従来通り素通しのままにする）。
+// 戻り値の keys は、採用時に素通しから取り除くべきJSONキー
+
+export const RULE_OUTPUT_KEYS = ['selections', 'return_to', 'post_actions', 'rule_action_kinds'];
+
+// condsToFilter の逆変換。表現できないキーがあれば null
+function filterToConds(f: any): ConditionPair[] | null {
+  if (!f || typeof f !== 'object') return [];
+  const out: ConditionPair[] = [];
+  const used = new Set<string>();
+  const take = (k: string) => { used.add(k); return f[k]; };
+  if (f.color !== undefined) out.push({ base: 'cond_color', value: String(take('color')) });
+  if (f.type !== undefined) out.push({ base: 'cond_type', value: String(take('type')) });
+  const pairRange = (key: string, eqCode: string, leCode: string, geCode: string) => {
+    const le = f[key + '_le'], ge = f[key + '_ge'];
+    if (le !== undefined) used.add(key + '_le');
+    if (ge !== undefined) used.add(key + '_ge');
+    if (le !== undefined && ge !== undefined && le === ge) out.push({ base: eqCode, value: String(le) });
+    else {
+      if (le !== undefined) out.push({ base: leCode, value: String(le) });
+      if (ge !== undefined) out.push({ base: geCode, value: String(ge) });
+    }
+  };
+  pairRange('lv', 'cond_lv', 'cond_lv_le', 'cond_lv_ge');
+  pairRange('dp', 'cond_dp', 'cond_dp_le', 'cond_dp_ge');
+  pairRange('cost', 'cond_cost', 'cond_cost_le', 'cond_cost_ge');
+  if (f.feature_contains !== undefined) out.push({ base: 'cond_feature_contains', value: String(take('feature_contains')) });
+  if (f.feature !== undefined) {
+    const v = take('feature');
+    out.push({ base: 'cond_feature', value: Array.isArray(v) ? v.join(',') : String(v) });
+  }
+  if (f.name_contains !== undefined) out.push({ base: 'cond_name_contains', value: String(take('name_contains')) });
+  if (Object.keys(f).some((k) => !used.has(k))) return null;
+  return out;
+}
+
+function selectionToRule(sel: any, legacyKinds: RuleActionKind[] | null): MiniStep | null {
+  if (!sel || typeof sel !== 'object') return null;
+  const rule: MiniStep = { action: '' };
+  if (sel.count !== undefined) rule.value = sel.count;
+  if (Array.isArray(sel.options) && sel.options.length > 0) rule.options = sel.options.slice();
+  if (sel.optional === true) rule.optional = true;
+  // filter: filter.or のみ（他のキーと併用していない）なら「OR」グループとして復元
+  if (sel.filter && Array.isArray(sel.filter.or)) {
+    if (Object.keys(sel.filter).length !== 1) return null;
+    const groups: RuleGroup[] = [];
+    for (const sub of sel.filter.or) {
+      const conds = filterToConds(sub);
+      if (!conds) return null;
+      groups.push({ conditions: conds });
+    }
+    rule.designatedGroups = groups;
+    rule.groupsOp = 'or';
+    rule.groupsShareAction = true;
+    if (sel.count !== undefined && groups.length > 0) groups[0].count = sel.count;
+  } else if (sel.filter) {
+    const conds = filterToConds(sel.filter);
+    if (!conds) return null;
+    if (conds.length > 0) rule.conditions = conds;
+  }
+  switch (sel.destination) {
+    case 'hand': rule.action = 'add_to_hand'; break;
+    case 'trash': rule.action = 'discard'; break;
+    case 'evo_source': rule.action = sel.position !== undefined ? 'place_under_digimon' : 'add_to_evo_source'; break;
+    case 'security_top': rule.action = 'place_on_security_top'; break;
+    case 'security_bottom': rule.action = 'place_on_security_bottom'; break;
+    case 'tamer': rule.action = 'place_under_tamer'; break;
+    case 'battle_area': rule.action = 'place_in_battle_area'; break;
+    case 'play':
+      if (!Array.isArray(sel.play_kinds) || sel.play_kinds.length === 0) return null;
+      rule.actionKinds = sel.play_kinds.slice();
+      if (sel.cost_free) rule.costFree = true;
+      if (sel.cost_delta !== undefined) rule.costDelta = sel.cost_delta;
+      break;
+    case undefined:
+      // ルールの「登場/使用/進化」が旧形式（actionKindsを rule_action_kinds に保存するだけで、
+      // 選択肢自体は action:'' の暫定形）で保存されていたもの
+      if (legacyKinds && legacyKinds.length > 0) { rule.actionKinds = legacyKinds.slice(); break; }
+      rule.action = String(sel.action || '');
+      break;
+    default: return null;
+  }
+  if (sel.position === 'top' || sel.position === 'bottom' || sel.position === 'both') rule.deckPosition = sel.position;
+  return rule;
+}
+
+function returnToToRule(v: any): MiniStep | null {
+  if (v === 'trash') return { action: 'discard', isRemaining: true };
+  if (v === 'deck_top') return { action: 'return_deck', isRemaining: true, deckPosition: 'top' };
+  if (v === 'deck_bottom') return { action: 'return_deck', isRemaining: true, deckPosition: 'bottom' };
+  if (v === 'deck_top_or_bottom') return { action: 'return_deck', isRemaining: true, deckPosition: 'both' };
+  if (typeof v === 'string' && v.startsWith('deck_')) return { action: 'return_deck', isRemaining: true, value: v };
+  return null;
+}
+
+export function rulesFromStep(mainAction: string | undefined, step: any): { rules: MiniStep[]; keys: string[] } | null {
+  if (!mainAction || !TRANSLATORS[mainAction] || !step) return null;
+  if (step.post_actions !== undefined) return null;
+  const hasSel = Array.isArray(step.selections) && step.selections.length > 0;
+  if (!hasSel && step.return_to === undefined) return null;
+  const legacyKindsList: any[] = Array.isArray(step.rule_action_kinds) ? step.rule_action_kinds : [];
+  const rules: MiniStep[] = [];
+  const sels: any[] = hasSel ? step.selections : [];
+  for (let i = 0; i < sels.length; i++) {
+    const r = selectionToRule(sels[i], Array.isArray(legacyKindsList[i]) ? legacyKindsList[i] : null);
+    if (!r) return null;
+    rules.push(r);
+  }
+  if (step.return_to !== undefined) {
+    const r = returnToToRule(step.return_to);
+    if (!r) return null;
+    rules.push(r);
+  }
+  // 再翻訳して元と一致するか検証（旧形式の「登場/使用/進化」は元々エンジンが動かせない
+  // 暫定形のため、新しい出力形式への置き換えを許容して検証を省く）
+  const isLegacyKinds = legacyKindsList.some((k) => Array.isArray(k) && k.length > 0);
+  if (!isLegacyKinds) {
+    const check: any = {};
+    applyRulesToStep(mainAction, rules, check);
+    // キー順は問わない・optional:false は省略と同義（エンジンは !!sel.optional で判定）として比較
+    const canon = (v: any): any => {
+      if (Array.isArray(v)) return v.map(canon);
+      if (v && typeof v === 'object') {
+        const out: any = {};
+        Object.keys(v).sort().forEach((k) => { if (!(k === 'optional' && v[k] === false)) out[k] = canon(v[k]); });
+        return out;
+      }
+      return v;
+    };
+    const norm = (o: any) => JSON.stringify(canon({ selections: o.selections, return_to: o.return_to, post_actions: o.post_actions }));
+    if (norm(check) !== norm(step)) return null;
+  }
+  return { rules, keys: RULE_OUTPUT_KEYS.filter((k) => step[k] !== undefined) };
 }

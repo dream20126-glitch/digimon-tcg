@@ -1,6 +1,6 @@
 // EffectBlock[] ⇄ recipe JSON 変換
 import type { AltAction, ConditionPair, ConditionChainEntry, CostStep, DictEntry, EffectBlock, ExtraTarget, KeywordEntry, DesignatedGroup } from './types';
-import { applyRulesToStep } from './ruleTranslator';
+import { applyRulesToStep, hasRuleTranslator, rulesFromStep, RULE_OUTPUT_KEYS } from './ruleTranslator';
 
 // 「コスト上限+/-」(効果辞書側で登録するアクションコード)。「直前の効果に適用する」
 // チェックがONのとき、独立したstepにはせず直前の効果のfilter.cost_le_modへ埋め込む
@@ -1418,7 +1418,13 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.extras) {
     try {
       const ex = JSON.parse(b.extras);
-      Object.keys(ex).forEach((k) => (step[k] = ex[k]));
+      // ルールを1件以上編集している場合、ルール翻訳の出力先（selections/return_to等）は
+      // ルール側を正とする（古い素通し値で上書きすると、ルールを直しても反映されない）
+      const hasRules = Array.isArray(b.rules) && b.rules.length > 0 && hasRuleTranslator(b.action);
+      Object.keys(ex).forEach((k) => {
+        if (hasRules && RULE_OUTPUT_KEYS.includes(k)) return;
+        step[k] = ex[k];
+      });
     } catch (_) {}
   }
   // extras由来のfrom_filter（コスト上限を持つ取得元の絞り込み）は上の「コスト上限+/-」
@@ -2072,6 +2078,10 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
   const _isGrantKeywordStep = step?.action === 'grant_keyword' || step?.action === 'grant_keyword_to';
   const _stepCount = _isGrantKeywordStep && extras.count !== undefined ? extras.count : undefined;
   if (_isGrantKeywordStep && extras.count !== undefined) delete extras.count;
+  // デッキオープン等のルール（selections/return_to）を逆変換して復元。再翻訳で元と一致した
+  // 場合だけ採用し、そのキーは素通し(extras)から外す（不一致なら従来通り素通しのまま）
+  const _restoredRules = rulesFromStep(step?.action, step);
+  if (_restoredRules) _restoredRules.keys.forEach((k) => { delete extras[k]; });
   const _stepDesignatedGroups = _isGrantKeywordStep ? parseDesignatedGroupsField(step) : [];
   const _stepSingleGroup = _stepDesignatedGroups.length === 1 ? _stepDesignatedGroups[0] : undefined;
   const _stepCommonPairs = _isGrantKeywordStep && _stepDesignatedGroups.length > 1 && step?.designated_common
@@ -2230,7 +2240,9 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     })(),
     perRefFilter: parseConditionChainFilter(step?.ref_filter).pairs,
     perRefFilterChain: parseConditionChainFilter(step?.ref_filter).chain,
-    rules: [], // 既存レシピ load 時はルール情報が無いので空。エディタで再構築する場合は手動再追加
+    // 既存レシピの selections/return_to から逆変換できた場合のみルールを復元（できなければ空のまま、
+    // 元のJSONは素通しで保持される）
+    rules: _restoredRules ? _restoredRules.rules : [],
     // 代替アクション復元
     altActions: Array.isArray(step?.alt_actions)
       ? step.alt_actions.map((a: any) => {

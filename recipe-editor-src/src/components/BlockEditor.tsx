@@ -8157,7 +8157,45 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
               </button>
             </div>
             {step.actionKinds && step.actionKinds.length > 0 && (
-              <div style={{ fontSize: 10, color: '#e65100', marginTop: 2 }}>※エンジン未対応（保存はできますが動作しません）</div>
+              <div style={{ marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                {/* 例: コピペモン「その中の特徴『セブンコード』を持つカード1枚を支払うコスト-3で登場/使用できる」
+                    → 値(枚数)=1、コスト増減=-3、任意ON。JSONでは selections[] の
+                    {destination:'play', play_kinds, cost_delta, cost_free, optional} になる */}
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                  <span style={miniLbl()}>支払うコストの増減</span>
+                  <input
+                    type="number"
+                    value={step.costDelta === undefined ? '' : String(step.costDelta)}
+                    disabled={!!step.costFree}
+                    onChange={(e) => onChange({ costDelta: e.target.value === '' ? undefined : Number(e.target.value) })}
+                    placeholder="例: -3"
+                    style={{ width: 70, padding: '2px 4px', fontSize: 11 }}
+                  />
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!step.costFree}
+                    onChange={(e) => onChange({ costFree: e.target.checked || undefined })}
+                    style={{ margin: 0 }}
+                  />
+                  コストを支払わず
+                </label>
+              </div>
+            )}
+            {step.actionKinds && step.actionKinds.length > 0 && (
+              <div style={{ fontSize: 10, color: '#e65100', marginTop: 2 }}>※エンジン未対応（保存はできますが動作しません）。「値」は枚数です</div>
+            )}
+            {!step.isRemaining && (
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', marginTop: 4, color: '#666' }}>
+                <input
+                  type="checkbox"
+                  checked={!!step.optional}
+                  onChange={(e) => onChange({ optional: e.target.checked || undefined })}
+                  style={{ margin: 0 }}
+                />
+                任意（「〜できる」「〜加えられる」）
+              </label>
             )}
             {step.action === 'return_deck' && (
               <div style={{ marginTop: 4 }}>

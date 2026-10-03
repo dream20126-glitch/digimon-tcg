@@ -590,6 +590,12 @@ export interface MiniStep {
   // 「登場/使用/進化」を複数自由に組み合わせる特殊枠。指定時（1件以上）は action フィールドの
   // 代わりにこちらを使う。⚠ エンジン未対応（保存はできるが動作しない）
   actionKinds?: RuleActionKind[];
+  // actionKinds指定時のみ: 支払うコストの増減（例: -3 =「支払うコスト-3で登場/使用できる」）・
+  // コストを支払わない・任意（「できる」）。JSONでは selections[] の
+  // {destination:'play', play_kinds, cost_delta, cost_free, optional} として出力する
+  costDelta?: number | string;
+  costFree?: boolean;
+  optional?: boolean;
 }
 
 export interface CardData {

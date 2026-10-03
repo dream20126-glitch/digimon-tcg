@@ -402,7 +402,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
 // targetFilter（アクション対象自身の絞り込み）・fromFilter（進化/登場アクションの取得元
 // エリアから選ぶカードの絞り込み）の両方で同じ形を使うため共通化している
 // 値を持たない（チェックのみの）条件コード。buildFilterObject の value 必須ガードを迂回する
-const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest', 'cond_lv_highest', 'cond_lv_lowest', 'cond_target_stack', 'cond_target_evo_source', 'cond_face_down', 'cond_face_up']);
+const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest', 'cond_lv_highest', 'cond_lv_lowest', 'cond_target_stack', 'cond_target_evo_source', 'cond_face_down', 'cond_face_up', 'cond_self_rest', 'cond_self_active']);
 // DP参照マーカー（cond_dp_le/ge の値が固定数値ではなく「このデジモン/自分/相手/他」のDPを
 // 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する。
 // own_pick/opp_pick = 複数該当する場合にプレイヤーが任意で1体選ぶ版（BlockEditor.tsx の
@@ -582,6 +582,10 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       // 表示形式（レスト/アクティブ）が参照対象と一致するか。値は'self'/'own'/'opp'/'other'の
       // マーカー文字列（DP参照のcond_dp_le/ge:self等と同じ考え方）。エンジン未対応・保存のみ可
       case 'cond_same_state': f.same_state_ref = c.value; break;
+      // レスト状態/アクティブ状態の対象だけに絞る（cardMatchesFilterがfilter.suspendedの
+      // true/falseで判定する。例:「レスト状態の相手のデジモン全て」「アクティブ状態の相手のデジモン」）
+      case 'cond_self_rest':   f.suspended = true; break;
+      case 'cond_self_active': f.suspended = false; break;
     }
   });
   return Object.keys(f).length > 0 ? f : null;
@@ -632,6 +636,8 @@ function parseFilterObject(f: any): ConditionPair[] {
   if (f.target_stack)         out.push({ base: 'cond_target_stack',         value: f.target_stack_position ? String(f.target_stack_position) : undefined });
   if (f.target_evo_source)    out.push({ base: 'cond_target_evo_source',    value: f.target_evo_source_position ? String(f.target_evo_source_position) : undefined });
   if (f.same_state_ref)       out.push({ base: 'cond_same_state',           value: String(f.same_state_ref) });
+  if (f.suspended === true)   out.push({ base: 'cond_self_rest' });
+  else if (f.suspended === false) out.push({ base: 'cond_self_active' });
   REF_ZONES.forEach((zone) => {
     REF_QUANTS.forEach((quant) => {
       const v = f[`${zone}_${quant}`];

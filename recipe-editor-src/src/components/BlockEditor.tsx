@@ -8781,7 +8781,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'zone' | 'ref' | 'decrease' | 'designated' | 'evo_source' | 'stacked' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'state' | 'zone' | 'ref' | 'decrease' | 'designated' | 'evo_source' | 'stacked' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -8793,6 +8793,9 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'cost_mod', label: 'コスト増減' },
   { value: 'memory', label: 'メモリー' },
   { value: 'name', label: '名前/記述' },
+  // レスト状態/アクティブ状態（対象の条件ではstep.filter.suspended=true/falseとして出力。
+  // 例:「レスト状態の相手のデジモン全て」「最もDPの低いアクティブ状態の相手のデジモン」）
+  { value: 'state', label: '状態' },
   { value: 'zone', label: '場所' },
   { value: 'ref', label: '参照' },
   { value: 'decrease', label: '減少' },
@@ -8981,6 +8984,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   memory: 'cond_memory_ge',
   cost_mod: 'cond_cost_mod',
   name: 'cond_name',
+  state: 'cond_self_rest',
   zone: 'cond_zone',
   ref: 'cond_hand_ge',
   decrease: 'cond_security_decreased',
@@ -9036,6 +9040,10 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_feature_contains', label: '含む' },
     { value: 'cond_feature', label: '完全一致' },
   ],
+  state: [
+    { value: 'cond_self_rest', label: 'レスト状態' },
+    { value: 'cond_self_active', label: 'アクティブ状態' },
+  ],
   name: [
     { value: 'cond_name_contains', label: '含む' },
     { value: 'cond_name', label: '完全一致' },
@@ -9062,6 +9070,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_name' || base === 'cond_name_not' || base === 'cond_name_contains' || base === 'cond_name_distinct') return 'name';
   if (base === 'cond_description' || base === 'cond_description_contains' || base === 'cond_description_distinct') return 'name';
   if (base === 'cond_zone') return 'zone';
+  if (base === 'cond_self_rest' || base === 'cond_self_active') return 'state';
   if (REF_CODE_TO_ZONE_QUANT[base] || isRefFaceCond(base) || base === 'cond_same_state') return 'ref';
   if (base === 'cond_security_decreased' || base === 'cond_hand_decreased' || base === 'cond_deck_decreased') return 'decrease';
   if (base === DESIGNATED_NAME_COND) return 'designated';
@@ -9137,6 +9146,7 @@ function ConditionsHybridEditor({
     'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod', 'cond_cost_highest', 'cond_cost_lowest', 'cond_cost_sum_le',
     'cond_memory_ge', 'cond_memory_le',
     'cond_name', 'cond_name_not', 'cond_name_contains', 'cond_description', 'cond_description_contains', 'cond_zone',
+    'cond_self_rest', 'cond_self_active',
     'cond_name_distinct', 'cond_lv_distinct', 'cond_description_distinct', 'cond_color_distinct',
     // トリガーボックス側の専用「アタック対象」ボタンで管理するため、その他の追加候補にも出さない
     'cond_attack_target_player', 'cond_attack_target_digimon',

@@ -41,6 +41,8 @@ let _pendingSecEffectCallback = null;
 let _pendingSecEffectResponse = null;
 let _pendingReactionDelegateCallback = null;
 let _pendingReactionDelegateResponse = null;
+let _pendingHandDiscardCallback = null; // fx_handDiscardRequest 送信側の応答待ち（cb(result)）
+let _pendingHandDiscardResponse = null; // 待ち開始前に届いた fx_handDiscardDone の結果
 let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
 let _pendingOwnDestroyDoneCallback = null;
 let _pendingOwnDestroyDoneResponse = null;
@@ -335,6 +337,8 @@ export async function initOnline(roomId, myKey) {
   _pendingSecEffectResponse = null;
   _pendingReactionDelegateCallback = null;
   _pendingReactionDelegateResponse = null;
+  _pendingHandDiscardCallback = null;
+  _pendingHandDiscardResponse = null;
   _recentlyDestroyed = [];
   _fxQueue = [];
   _fxRunning = false;
@@ -841,6 +845,38 @@ function onRemoteCommand(cmd) {
         // 無関係な将来のwaitForReactionDelegate呼び出しを誤って即完了させないよう自動で消す
         _pendingReactionDelegateResponse = true;
         setTimeout(() => { _pendingReactionDelegateResponse = null; }, 3000);
+      }
+      break;
+    }
+
+    // --- 手札破棄の依頼（相手の効果「相手は自身の手札1枚を破棄する」等） ---
+    // 手札の中身は同期されていないため、手札の持ち主（こちら）が自分の画面で選んで破棄する。
+    // 破棄後のこちら側の「手札が破棄されたとき」もこちらで発火し、全て終わってから
+    // 状態を同期して fx_handDiscardDone（破棄枚数）を返す
+    case 'fx_handDiscardRequest': {
+      const ctx = { bs, addLog, renderAll, updateMemGauge };
+      let replied = false;
+      const done = (res) => {
+        if (replied) return; replied = true;
+        sendMemoryUpdate();
+        sendStateSync();
+        sendCommand({ type: 'fx_handDiscardDone', count: (res && res.count) || 0, names: (res && res.names) || [] });
+      };
+      try {
+        if (window._runDelegatedHandDiscard) window._runDelegatedHandDiscard(cmd, bs, ctx, done);
+        else done({ count: 0, names: [] });
+      } catch (_) { done({ count: 0, names: [] }); }
+      break;
+    }
+    case 'fx_handDiscardDone': {
+      // 手札枚数・トラッシュは直前に送られる state_sync で既に反映されている
+      const res = { count: cmd.count || 0, names: cmd.names || [] };
+      if (_pendingHandDiscardCallback) {
+        const cb = _pendingHandDiscardCallback; _pendingHandDiscardCallback = null; cb(res);
+      } else {
+        // 待ち開始前に届いた応答（短い競合状態用。無関係な将来の待ちを誤って完了させないよう自動で消す）
+        _pendingHandDiscardResponse = res;
+        setTimeout(() => { _pendingHandDiscardResponse = null; }, 3000);
       }
       break;
     }
@@ -1580,6 +1616,32 @@ export function waitForReactionDelegate(callback) {
   }, 30000);
 }
 
+// ===== 手札破棄の依頼の完了待ち（fx_handDiscardRequest 送信側） =====
+// 相手に手札を選んで破棄してもらう間、こちらの効果処理を止めて待つ。callback(result)
+// result = { count: 破棄枚数, names: 破棄したカード名[] }。反応系トリガー委譲と同じ設計
+export function waitForHandDiscardDelegate(callback) {
+  const waitOv = document.createElement('div');
+  waitOv.id = '_hand-discard-wait-overlay';
+  waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
+  waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手が破棄する手札を選択中...</div>';
+  document.body.appendChild(waitOv);
+
+  function onDone(res) {
+    if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
+    callback(res || { count: 0, names: [] });
+  }
+  if (_pendingHandDiscardResponse !== null) {
+    const res = _pendingHandDiscardResponse; _pendingHandDiscardResponse = null; onDone(res);
+  } else {
+    _pendingHandDiscardCallback = onDone;
+  }
+  // 60秒タイムアウト（相手の切断等で応答が来ない場合にゲームが止まらないように。
+  // 相手が手札を選ぶ操作を含むため、反応系トリガー委譲の30秒より長めにとる）
+  setTimeout(() => {
+    if (_pendingHandDiscardCallback === onDone) { _pendingHandDiscardCallback = null; onDone({ count: 0, names: [], timeout: true }); }
+  }, 60000);
+}
+
 // ===== 相手（カードの本当の持ち主）機の消滅時チェーン完了待ち =====
 // fx_ownDestroyReady送信後、相手側のon_destroy/when_own_destroyed等（メモリー+1等を
 // 含む）が完全に解決するまで、こちら（消滅させた側）はアタック終了・ターン終了判定に
@@ -1978,6 +2040,7 @@ window._sendMemoryUpdate = () => sendMemoryUpdate();
 window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
 window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._waitForReactionDelegate = (cb) => waitForReactionDelegate(cb);
+window._waitForHandDiscardDelegate = (cb) => waitForHandDiscardDelegate(cb);
 window._waitForOwnDestroyDone = (cb) => waitForOwnDestroyDone(cb);
 window._drainNonTurnPlayerReactionQueue = () => _drainNonTurnPlayerReactionQueue();
 window._clearPendingBlock = () => { _pendingBlockCallback = null; _pendingBlockResponse = null; };

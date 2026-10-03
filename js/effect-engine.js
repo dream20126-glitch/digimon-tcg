@@ -74,7 +74,7 @@ function sortQueue() {
 var MANUAL_INPUT_ACTIONS = {
   'destroy': 1, 'bounce': 1, 'evo_discard': 1, 'evo_discard_bottom': 1,
   'evo_discard_top': 1, 'evo_discard_select': 1, 'evo_discard_all': 1,
-  'cost_discard': 1, 'cost_digiburst': 1,
+  'cost_discard': 1, 'cost_digiburst': 1, 'discard': 1,
   'select': 1, 'select_multi': 1, 'select_evo_source': 1,
   'place_under_tamer': 1, 'place_under_digimon': 1, 'place_on_security_top': 1,
   'jogress_evolve': 1, 'app_gattai_evolve': 1, 'return_deck': 1,
@@ -2609,12 +2609,14 @@ function _showCardConfirmDialog(card, onConfirm) {
 // hand: プレイヤーの手札配列のスナップショット
 // wantCount: 破棄枚数
 // callback: (picked[]) => void  キャンセルは null
-function showHandDiscardPicker(hand, wantCount, callback) {
+// opts: { optional: true なら「破棄しない」ボタンを出す（押すと callback(null)）,
+//         title: 上部の見出し（省略時「🗑 手札から N 枚破棄」） }
+function showHandDiscardPicker(hand, wantCount, callback, opts) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:62000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.2s ease;';
   const titleEl = document.createElement('div');
   titleEl.style.cssText = 'color:#ff9900;font-size:14px;font-weight:bold;margin-bottom:8px;text-shadow:0 0 8px #ff9900;';
-  titleEl.innerText = '🗑 手札から ' + wantCount + ' 枚破棄';
+  titleEl.innerText = (opts && opts.title) || ('🗑 手札から ' + wantCount + ' 枚破棄');
   overlay.appendChild(titleEl);
   const sub = document.createElement('div');
   sub.style.cssText = 'color:#ffaa00;font-size:11px;margin-bottom:12px;';
@@ -2658,6 +2660,13 @@ function showHandDiscardPicker(hand, wantCount, callback) {
     };
     cardArea.appendChild(wrap);
   });
+  if (opts && opts.optional) {
+    const skipBtn = document.createElement('button');
+    skipBtn.innerText = '破棄しない';
+    skipBtn.style.cssText = 'background:#555;color:#fff;border:1px solid #888;padding:8px 18px;border-radius:6px;font-size:12px;cursor:pointer;';
+    skipBtn.onclick = () => { cleanup(); callback(null); };
+    btnRow.appendChild(skipBtn);
+  }
   document.body.appendChild(overlay);
 }
 
@@ -5672,6 +5681,30 @@ function _fireWhenHandDiscardTriggersQueued(discardedSide, bs, ctxBase, callback
   fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, callback);
 }
 
+// 効果による手札破棄（action:'discard'）用のキュー発火ラッパー。原因（{type:'effect', causerSide,
+// causerCard}）を反応チェーンの間だけ bs._lastDestroyCause にセットし（cause:'effect' /
+// cause_subject の判定用）、終了後に元へ戻す。onlySide を指定するとその側のカードだけを
+// スキャンする（オンラインで相手機に破棄を依頼した場合、相手側のカードは相手機が発火するため）
+function _fireWhenHandDiscardTriggersQueuedWithCause(cause, discardedSide, onlySide, bs, ctxBase, callback) {
+  const prevCause = bs ? bs._lastDestroyCause : undefined;
+  if (bs) bs._lastDestroyCause = cause;
+  fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, () => {
+    if (bs) bs._lastDestroyCause = prevCause;
+    callback && callback();
+  }, onlySide || undefined);
+}
+
+// 効果によるセキュリティ破棄（action:'discard' の own_security）用のキュー発火ラッパー
+// （on_security_reduced。原因の扱いは上と同じ）
+function _fireWhenSecurityDecreaseQueuedWithCause(cause, decreasedSide, bs, ctxBase, callback) {
+  const prevCause = bs ? bs._lastDestroyCause : undefined;
+  if (bs) bs._lastDestroyCause = cause;
+  fireWhenSecurityDecreaseTriggers(decreasedSide, bs, ctxBase, () => {
+    if (bs) bs._lastDestroyCause = prevCause;
+    callback && callback();
+  });
+}
+
 // ===== 消滅チェック =====
 // callback: 消滅した全カードの 演出 + on_destroy リアクションが完了したら呼ぶ
 
@@ -7073,7 +7106,8 @@ export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done) 
 // 判定し、両陣営をスキャンして反応させる。プルートモン(BT26-059)「手札が破棄されたとき」等。
 // when_evo_discard（進化元/テイマー下スタックの破棄）とは別トリガーキー。
 // subject未指定時は不発火（when_evo_discard等と同じ規約）
-export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done) {
+// onlySide: 'player' | 'ai' を指定するとその側のカードだけをスキャンする（省略時は両陣営）
+export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, onlySide) {
   const matchesOne = (subj, cardSide) => {
     switch (subj) {
       case 'own': case 'own_any': case 'own_card': case 'own_hand': return discardedSide === cardSide;
@@ -7090,9 +7124,205 @@ export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done) {
     if (list.length === 0) return false;
     return list.some((subj) => matchesOne(subj, cardSide));
   };
+  if (onlySide === 'player') {
+    return _fireSidedReactionTriggers('player', 'when_hand_discard', bs, ctxBase, done, (step) => subjectMatches(step, 'player'));
+  }
+  if (onlySide === 'ai') {
+    return _fireSidedReactionTriggers('ai', 'when_hand_discard', bs, ctxBase, done, (step) => subjectMatches(step, 'ai'));
+  }
   return _fireSidedReactionTriggers('player', 'when_hand_discard', bs, ctxBase, () => {
     _fireSidedReactionTriggers('ai', 'when_hand_discard', bs, ctxBase, done, (step) => subjectMatches(step, 'ai'));
   }, (step) => subjectMatches(step, 'player'));
+}
+
+// ===== 効果による手札/セキュリティの破棄（action:'discard'） =====
+// target の形（エディタ TARGET_SEL_L1L2_TO_CODE のコード + 対象数サフィックス）:
+//   own_hand:N          自分の手札からN枚を自分で選んで破棄
+//   opponent_hand:N     相手が相手自身の手札からN枚選んで破棄
+//   both_hand:until_N   お互いがそれぞれ手札がN枚になるように自分で選んで破棄
+//   own_security:all|N  自分のセキュリティを（上から）全て/N枚破棄
+// 旧レシピの both_none:until_N（L2未選択の番兵値が混入したもの）は both_hand と同じ扱い。
+// 戻り値: { zone, count, all, until, upTo }（解釈できない形は null）
+function _parseDiscardTarget(target) {
+  const m = /^([a-z_]+?)(?::(all|up_to_\d+|until_\d+|\d+))?$/.exec(String(target || ''));
+  if (!m) return null;
+  let zone = m[1];
+  if (zone === 'opp_hand') zone = 'opponent_hand';
+  if (zone === 'self_hand') zone = 'own_hand';
+  if (zone === 'both_none') zone = 'both_hand';
+  const suf = m[2] || '';
+  const r = { zone, count: 1, all: false, until: null, upTo: false };
+  if (suf === 'all') r.all = true;
+  else if (/^until_/.test(suf)) r.until = parseInt(suf.slice(6), 10);
+  else if (/^up_to_/.test(suf)) { r.upTo = true; r.count = parseInt(suf.slice(6), 10) || 1; }
+  else if (suf) r.count = parseInt(suf, 10) || 1;
+  return r;
+}
+
+// 手札から破棄する枚数。until（N枚になるまで）は現在の手札枚数との差。
+// 候補（フィルタ後）が足りなければあるだけ破棄する
+function _handDiscardWantCount(handLen, poolLen, spec) {
+  const want = spec.until != null ? Math.max(0, handLen - spec.until) : (spec.all ? poolLen : spec.count);
+  return Math.max(0, Math.min(want, poolLen));
+}
+
+// handSide の手札候補 pool から want 枚を選ぶ（選ぶのは手札の持ち主）。
+//  - ai 側（CPU）: ランダム（ユーザー決定事項: CPUが自分の手札から選ぶ場面はランダム）
+//  - player 側: 任意でなく候補が want 枚以下なら選択の余地が無いため自動、それ以外は手札ピッカー
+// done(picked[] | null)  null = 「破棄しない」を選んだ（optional 時のみ）
+function _pickHandDiscards(handSide, pool, want, optional, done, title) {
+  if (want <= 0) { done([]); return; }
+  if (handSide !== 'player') {
+    const rest = pool.slice();
+    const picked = [];
+    while (picked.length < want && rest.length > 0) picked.push(rest.splice(Math.floor(Math.random() * rest.length), 1)[0]);
+    done(picked);
+    return;
+  }
+  if (!optional && pool.length <= want) { done(pool.slice(0, want)); return; }
+  showHandDiscardPicker(pool.slice(), want, (picked) => done(picked && picked.length > 0 ? picked : null), { optional, title });
+}
+
+// 選んだ手札を1枚ずつトラッシュへ送る（演出つき。player 側の破棄はオンライン相手にも演出を送る）
+function _moveHandCardsToTrash(handSide, cards, ctx, done) {
+  const owner = ctx.bs[handSide];
+  const isOnline = !!(window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand);
+  let i = 0;
+  const next = () => {
+    if (i >= cards.length) { ctx.renderAll && ctx.renderAll(); done(); return; }
+    const card = cards[i++];
+    const idx = owner.hand.indexOf(card);
+    if (idx !== -1) owner.hand.splice(idx, 1);
+    owner.trash.push(card);
+    ctx.addLog && ctx.addLog('🗑 ' + (handSide === 'player' ? '' : '相手が') + '手札から「' + (card.name || '?') + '」を破棄');
+    if (isOnline && handSide === 'player') {
+      try {
+        window._onlineSendCommand({
+          type: 'fx_remoteCardMove',
+          cardName: card.name, cardNo: card.cardNo,
+          cardImg: card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || '',
+          fromLabel: '手札', toLabel: 'トラッシュ',
+        });
+      } catch (_) {}
+    }
+    if (window._fxCardMove) {
+      try { window._fxCardMove(card, '手札', 'トラッシュ', next); } catch (_) { setTimeout(next, 300); }
+    } else { setTimeout(next, 300); }
+  };
+  next();
+}
+
+// 「手札が破棄されたとき」を、元の効果の解決後に発火するようキューへ積む（cost_discard と同じ）。
+// 原因は「ctx.side の効果」
+function _enqueueHandDiscardTriggers(ctx, discardedSide, onlySide) {
+  const cause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueuedWithCause, [cause, discardedSide, onlySide || null, ctx.bs, ctxBase]);
+}
+
+// 1人分の手札破棄。spec = { count, all, until, upTo, optional, filter }。done({ count, declined })
+// オンラインで handSide==='ai'（相手の手札。中身は同期されていない）の場合は、相手機に
+// fx_handDiscardRequest で依頼し、相手自身に選んで破棄してもらう（fx_handDiscardDone で応答）
+function _runHandDiscardForSide(handSide, spec, ctx, done) {
+  const bs = ctx.bs;
+  const owner = bs[handSide];
+  if (!owner || !Array.isArray(owner.hand)) { done({ count: 0 }); return; }
+  const isOnline = !!(window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand);
+  if (handSide === 'ai' && isOnline) {
+    // 枚数は同期されているので、明らかに0枚のとき（手札0枚／既にN枚以下）は依頼しない
+    if (_handDiscardWantCount(owner.hand.length, owner.hand.length, spec) <= 0) { done({ count: 0 }); return; }
+    window._onlineSendCommand({
+      type: 'fx_handDiscardRequest',
+      count: spec.count, all: !!spec.all, until: spec.until,
+      filter: spec.filter || null,
+      cardName: (ctx.card && ctx.card.name) || '',
+    });
+    const onRes = (res) => {
+      const n = (res && res.count) || 0;
+      // こちら側のカードの「相手の手札が破棄されたとき」だけ発火（相手側のカードは相手機で発火済み）
+      if (n > 0) _enqueueHandDiscardTriggers(ctx, 'ai', 'player');
+      done({ count: n });
+    };
+    if (typeof window._waitForHandDiscardDelegate === 'function') window._waitForHandDiscardDelegate(onRes);
+    else onRes({ count: 0 });
+    return;
+  }
+  const pool = owner.hand.filter(c => c && (!spec.filter || cardMatchesFilter(c, spec.filter, bs, handSide, ctx.card)));
+  const want = _handDiscardWantCount(owner.hand.length, pool.length, spec);
+  if (want <= 0) { done({ count: 0 }); return; }
+  // 「〜できる」は効果の発動者の任意。相手に破棄させる場合は相手側に拒否の選択肢は無い
+  const optional = !!spec.optional && handSide === ctx.side;
+  const title = handSide !== ctx.side ? ('🗑 相手の効果: 手札から ' + want + ' 枚破棄') : null;
+  _pickHandDiscards(handSide, pool, want, optional, (picked) => {
+    if (!picked) { ctx.addLog && ctx.addLog('☓ 手札を破棄しなかった'); done({ count: 0, declined: true }); return; }
+    _moveHandCardsToTrash(handSide, picked, ctx, () => {
+      if (picked.length > 0) _enqueueHandDiscardTriggers(ctx, handSide, null);
+      done({ count: picked.length });
+    });
+  }, title);
+}
+
+// セキュリティを上から破棄（all=全て）。破棄枚数を done(n) で返す。
+// 1枚以上減ったら on_security_reduced を元の効果の解決後に発火するようキューへ積む
+function _runSecurityDiscard(secSide, spec, ctx, done) {
+  const owner = ctx.bs[secSide];
+  if (!owner || !Array.isArray(owner.security)) { done(0); return; }
+  const n = spec.all ? owner.security.length : Math.min(spec.count, owner.security.length);
+  const removed = owner.security.splice(0, n);
+  removed.forEach(c => owner.trash.push(c));
+  if (n > 0) ctx.addLog && ctx.addLog('🛡 ' + (secSide === 'player' ? '' : '相手の') + 'セキュリティを' + n + '枚破棄');
+  else ctx.addLog && ctx.addLog('⚠ 破棄できるセキュリティがありません');
+  // オンライン: 自分のセキュリティ（実カード）を相手へ再同期（security_open と同じ方式）
+  if (n > 0 && secSide === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    try {
+      window._onlineSendCommand({
+        type: 'security_init',
+        cards: owner.security.map(c => ({
+          name: c.name, cardNo: c.cardNo, type: c.type, color: c.color,
+          level: c.level, dp: c.dp, baseDp: c.baseDp,
+          playCost: c.playCost, evolveCost: c.evolveCost, cost: c.cost,
+          effect: c.effect, evoSourceEffect: c.evoSourceEffect,
+          securityEffect: c.securityEffect, recipe: c.recipe,
+          evolveCond: c.evolveCond, imgSrc: c.imgSrc, imageUrl: c.imageUrl, feature: c.feature,
+        })),
+      });
+    } catch (_) {}
+  }
+  if (n > 0) {
+    const cause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+    const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+    enqueueReaction(ctx.bs, _fireWhenSecurityDecreaseQueuedWithCause, [cause, secSide, ctx.bs, ctxBase]);
+  }
+  ctx.renderAll && ctx.renderAll();
+  done(n);
+}
+
+// オンライン対戦: 相手機から「手札をN枚（またはN枚になるまで）選んで破棄して」と依頼された
+// ときの、こちら（手札の本当の持ち主）側の処理。battle-online.js の fx_handDiscardRequest
+// 受信ハンドラから battle-common.js の window._runDelegatedHandDiscard 経由で呼ばれる。
+// 破棄後の「手札が破棄されたとき」はこちら側のカードだけを発火する（依頼元側のカードは
+// 依頼元が fx_handDiscardDone 受信後に発火する）。done({ count, names })
+export function runDelegatedHandDiscard(req, bs, ctxBase, done) {
+  let finished = false;
+  const finish = (res) => { if (finished) return; finished = true; try { done && done(res); } catch (_) {} };
+  if (!bs || !bs.player || !Array.isArray(bs.player.hand)) { finish({ count: 0, names: [] }); return; }
+  const r = req || {};
+  const spec = { count: r.count || 1, all: !!r.all, until: r.until != null ? r.until : null };
+  const ctx = Object.assign({}, ctxBase, { bs, side: 'player', card: null });
+  const pool = bs.player.hand.filter(c => c && (!r.filter || cardMatchesFilter(c, r.filter, bs, 'player')));
+  const want = _handDiscardWantCount(bs.player.hand.length, pool.length, spec);
+  if (want <= 0) { finish({ count: 0, names: [] }); return; }
+  const title = '🗑 相手の効果' + (r.cardName ? '「' + r.cardName + '」' : '') + ': 手札から ' + want + ' 枚破棄';
+  _pickHandDiscards('player', pool, want, false, (picked) => {
+    const cards = picked || [];
+    _moveHandCardsToTrash('player', cards, ctx, () => {
+      const res = { count: cards.length, names: cards.map(c => c.name || '?') };
+      if (cards.length === 0) { finish(res); return; }
+      const cause = { type: 'effect', causerSide: 'ai', causerCard: null };
+      try { _fireWhenHandDiscardTriggersQueuedWithCause(cause, 'player', 'player', bs, ctxBase, () => finish(res)); }
+      catch (_) { finish(res); }
+    });
+  }, title);
 }
 
 // デジモンの進化元／テイマーの下が破棄されたとき → 発動主体(step.subject)で判定し、
@@ -9067,6 +9297,28 @@ function executeRecipeStep(step, ctx, store, callback) {
       else if (_t.startsWith('own:')) _targetObj = { code: 'target_own', count: parseInt(_t.split(':')[1]) || 1 };
       else if (_t.startsWith('opponent:')) _targetObj = { code: 'target_opponent', count: parseInt(_t.split(':')[1]) || 1 };
       else if (_t.startsWith('other_own:') || _t.startsWith('target_other_own:')) _targetObj = { code: 'target_other_own', count: parseInt(_t.split(':')[1]) || 1 };
+      // per_count（「〜1枚ごとに相手のデジモン1体を消滅」）: N × floor(参照数 / per_count) 回、
+      // 1体ずつの消滅を繰り返す（runOneAction の destroy は1体ずつしか扱わないため）。
+      // ユノモン(BT26-083)「セキュリティを全て破棄し、この効果で破棄した1枚ごとに」= ref:'last_action_count'。
+      // 繰り返しの各回はコスト/発動条件/回数制限を再評価しない（_costsResolved + limit除去）。
+      // 対象がいなくなったら（callback(false)）そこで打ち切る。
+      // （per_count_mode:'repeat' は前段で繰り返し実行に展開済みのためここには来ない）
+      if (step.per_count && _targetObj && _targetObj.count && !_targetObj.upTo
+          && (_targetObj.code === 'target_own' || _targetObj.code === 'target_opponent' || _targetObj.code === 'target_other_own')) {
+        const _dpcCount = getRefSourceCountDirect(step.ref || 'evo_source', ctx.card, ctx.bs, ctx.side, step.ref_filter, step.ref_state);
+        const _dpcTimes = _targetObj.count * Math.floor(_dpcCount / step.per_count);
+        if (_dpcTimes <= 0) { ctx.addLog && ctx.addLog('⚠ 消滅させる数が0のため何もしない'); callback && callback(); break; }
+        const _dpcOne = Object.assign({}, step, { target: _t.replace(/:\d+$/, ':1'), _costsResolved: true });
+        ['per_count', 'ref', 'ref_filter', 'ref_state', 'limit', 'trigger_conditions', 'cost'].forEach(k => delete _dpcOne[k]);
+        let _dpcK = 0;
+        const _dpcNext = (ok) => {
+          if (ok === false || _dpcK >= _dpcTimes) { callback && callback(); return; }
+          _dpcK++;
+          executeRecipeStep(_dpcOne, ctx, store, _dpcNext);
+        };
+        _dpcNext();
+        break;
+      }
       if (step.condition) {
         if (!ctx.block) ctx.block = {};
         const _dConds = parseRecipeCondition(step.condition);
@@ -11808,6 +12060,60 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
 
     // === その他のアクション（既存エンジンに委譲） ===
+    // === 手札/セキュリティを破棄（効果で） ===
+    // 対象の形と処理は _parseDiscardTarget / _runHandDiscardForSide / _runSecurityDiscard を参照。
+    // 破棄した枚数は bs._lastActionCount に入れる（後続の per_count ref:'last_action_count' 用。
+    // ユノモン「セキュリティを全て破棄し、破棄した1枚ごとに〜」等）。
+    // コスト（cost 配列）として使われた場合は、規定枚数を払えない／「破棄しない」を選んだら
+    // callback(false) で本体ごと中止する
+    case 'discard': {
+      const _dSpec = _parseDiscardTarget(step.target);
+      const _dIsCost = _COST_STEP_SET.has(step);
+      if (!_dSpec || !['own_hand', 'opponent_hand', 'both_hand', 'own_security'].includes(_dSpec.zone)) {
+        ctx.addLog && ctx.addLog('⚠ 未対応の破棄対象: ' + (step.target || '(なし)'));
+        callback && callback();
+        break;
+      }
+      const _dFilterRaw = step.filter || step.from_filter || null;
+      _dSpec.filter = _dFilterRaw ? resolveDpFilterMarkers(_dFilterRaw, ctx.card, ctx.bs, ctx.side) : null;
+      _dSpec.optional = !!step.optional || _dSpec.upTo;
+      const _dOwnSide = ctx.side;
+      const _dOppSide = ctx.side === 'player' ? 'ai' : 'player';
+      if (_dSpec.zone === 'own_security') {
+        if (_dIsCost && !_dSpec.all && player.security.length < _dSpec.count) { callback && callback(false); break; }
+        _runSecurityDiscard(_dOwnSide, _dSpec, ctx, (n) => {
+          if (ctx.bs) ctx.bs._lastActionCount = n;
+          callback && callback();
+        });
+        break;
+      }
+      // コストの手札破棄は規定枚数を払えなければ不成立
+      if (_dIsCost && _dSpec.zone === 'own_hand' && _dSpec.until == null && !_dSpec.upTo) {
+        const _dPoolLen = player.hand.filter(c => c && (!_dSpec.filter || cardMatchesFilter(c, _dSpec.filter, ctx.bs, _dOwnSide, ctx.card))).length;
+        if (_dPoolLen < (_dSpec.all ? 1 : _dSpec.count)) { callback && callback(false); break; }
+      }
+      const _dSides = _dSpec.zone === 'own_hand' ? [_dOwnSide]
+        : _dSpec.zone === 'opponent_hand' ? [_dOppSide]
+        : [_dOwnSide, _dOppSide];
+      let _dTotal = 0, _dDeclined = false, _di = 0;
+      const _dNext = () => {
+        if (_di >= _dSides.length) {
+          if (ctx.bs) ctx.bs._lastActionCount = _dTotal;
+          ctx.renderAll && ctx.renderAll();
+          if (_dIsCost && _dDeclined) { callback && callback(false); return; }
+          callback && callback();
+          return;
+        }
+        _runHandDiscardForSide(_dSides[_di++], _dSpec, ctx, (res) => {
+          _dTotal += (res && res.count) || 0;
+          if (res && res.declined) _dDeclined = true;
+          _dNext();
+        });
+      };
+      _dNext();
+      break;
+    }
+
     default: {
       // rest で target が own_tamer:all → テイマーエリア全体をレスト（filter 適用可）
       // レストさせた枚数を bs._lastRestCount に保存（ref:'last_rest_count' で参照可能）

@@ -10,7 +10,7 @@ import { addLog } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallbacks, doIkuMove } from './battle-render.js';
 import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, showDrawEffect } from './battle-phase.js';
 import { doPlay, offerAssemblyThenPlay, doEvolve, doEvolveIku, doEvolveFromEffect, doLink, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, showOptionEffect, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack, doTrainingEffect, getAppGattaiCandidates, doAppGattaiEvolve } from './battle-combat.js';
-import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE, fireOnAttackBothSubjectTriggers as _fireOnAttackBothSubjectEE, fireOnAttackOppSubjectTriggers as _fireOnAttackOppSubjectEE, fireWhenTargetChangedTriggers as _fireWhenTargetChangedEE, fireOnMainPhaseStartTriggers as _fireOnMainPhaseStartEE, fireOnOppMainPhaseStartTriggers as _fireOnOppMainPhaseStartEE, fireDelegatedReactionTriggers as _fireDelegatedReactionEE } from './effect-engine.js';
+import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE, fireOnAttackBothSubjectTriggers as _fireOnAttackBothSubjectEE, fireOnAttackOppSubjectTriggers as _fireOnAttackOppSubjectEE, fireWhenTargetChangedTriggers as _fireWhenTargetChangedEE, fireOnMainPhaseStartTriggers as _fireOnMainPhaseStartEE, fireOnOppMainPhaseStartTriggers as _fireOnOppMainPhaseStartEE, fireDelegatedReactionTriggers as _fireDelegatedReactionEE, runDelegatedHandDiscard as _runDelegatedHandDiscardEE } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxBuffStatus, fxShuffle } from './battle-fx.js';
 import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js';
 
@@ -385,6 +385,14 @@ export function setupCommonWindowExports() {
   window._fireDelegatedReactionTriggers = function(recipeKey, _bs, ctxBase, done) {
     try { _fireDelegatedReactionEE(recipeKey, _bs || bs, ctxBase || { bs, addLog, renderAll, updateMemGauge }, done); }
     catch (e) { console.error('[_fireDelegatedReactionTriggers]', recipeKey, e); done && done(); }
+  };
+
+  // オンライン対戦: 相手の効果で「自分の手札をN枚（N枚になるまで）破棄する」よう依頼されたとき、
+  // こちら（手札の持ち主）が自分の画面で選んで破棄する
+  // （battle-online.js の fx_handDiscardRequest 受信ハンドラから呼ばれる）
+  window._runDelegatedHandDiscard = function(req, _bs, ctxBase, done) {
+    try { _runDelegatedHandDiscardEE(req, _bs || bs, ctxBase || { bs, addLog, renderAll, updateMemGauge }, done); }
+    catch (e) { console.error('[_runDelegatedHandDiscard]', e); done && done({ count: 0, names: [] }); }
   };
 
   // 消滅時/バトル消滅時/自分のデジモンが消滅したとき の誘発をまとめて発火する

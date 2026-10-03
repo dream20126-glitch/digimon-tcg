@@ -964,15 +964,25 @@ function applyDesignatedGroupsTo(target: any, entry: KeywordEntry, kwEntry?: Dic
     // グループ間に「OR」（例:「Lv4以下のクロノモン、または特徴TS」）が1つでも指定されていれば、
     // 複数カード要求(designated_groups=AND/別々の候補)ではなく、1枚を選ぶ単一designatedとして
     // condition_chain（各グループ=1セグメント、group.opでAND合成/OR新セグメントを決定）を出力する。
-    // 「異なる」バリアント(distinct_by)はOR構造と両立しないため、この経路では無視する
-    const chain: ConditionChainEntry[] = groups.map((g) => ({ conditions: g.conditions || [], op: g.op }));
-    const { chainOut } = resolveChainField([], chain);
+    // 「異なる」バリアント（cond_lv_distinct等）は各グループの条件からは抜き出し、
+    // designated.distinct_by として出力する（例: 巨神兵器「『クロノモン』の記述があるか
+    // 特徴『神人型』を持つ、Lvの異なるカード5枚」。単一designatedと同じく
+    // _substituteDesignatedNameJS が cost item へ丸ごとコピーするのでエンジン側は対応済み）
+    const distinctAttrs = Array.from(new Set(groups.flatMap((g) => (g.conditions || [])
+      .filter((c) => DISTINCT_MARKER_TO_ATTR[c.base]).map((c) => DISTINCT_MARKER_TO_ATTR[c.base]))));
+    const chain: ConditionChainEntry[] = groups.map((g) => ({
+      conditions: (g.conditions || []).filter((c) => !DISTINCT_MARKER_TO_ATTR[c.base]), op: g.op,
+    }));
+    const { flatPairs, chainOut } = resolveChainField([], chain);
     const commonPairs = (entry.commonConditions || []).filter((c) => c.base);
-    const common: any = buildDesignatedConditionFields(commonPairs, 'and');
+    // 空のグループを除いた結果1セグメントに収束した場合は、そのセグメントを共通条件と
+    // AND合成して通常のcondition/whenとして出す（これをしないと条件ごと消えてしまう）
+    const common: any = buildDesignatedConditionFields(chainOut ? commonPairs : [...commonPairs, ...flatPairs], 'and');
     // condition_chainはdesignatedオブジェクトの中に入れる（_substituteDesignatedNameJSが
     // Object.assign(out, target.designated)でcost itemへ丸ごとコピーするため、こうしないと
     // condition_chainがcost item側へ渡らない）
     if (chainOut) common.condition_chain = chainOut;
+    if (distinctAttrs.length > 0) common.distinct_by = distinctAttrs;
     if (Object.keys(common).length > 0) target.designated = common;
     const firstCount = groups[0]?.count;
     if (firstCount !== undefined && firstCount !== '' && firstCount !== null) {
@@ -1304,13 +1314,17 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       // 直前の（まだ除去されていない）効果を探す
       let prevIdx = -1;
       for (let k = i - 1; k >= 0; k--) { if (!removeIdx.includes(k)) { prevIdx = k; break; } }
-      if (prevIdx === -1) {
-        step.filter = step.filter || {};
-        step.filter.cost_le_mod = mod;
-      } else if (step.alt_actions[prevIdx]) {
-        step.alt_actions[prevIdx].filter = step.alt_actions[prevIdx].filter || {};
-        step.alt_actions[prevIdx].filter.cost_le_mod = mod;
-      }
+      // 埋め込み先: 取得元エリアから選ぶ効果（登場/使用/手札に加える等）は、エンジンが
+      // from_filter を優先して候補判定する（step.from_filter || step.filter）ため、
+      // cost_le を持つ側（無ければ from_filter があればそちら）へ入れる。filterへ入れると
+      // from_filter側のcost_leに加算されず「◯枚ごとにコスト上限+1」が効かない
+      const embed = (obj: any) => {
+        const useFrom = obj.from_filter && (obj.from_filter.cost_le !== undefined || !(obj.filter && obj.filter.cost_le !== undefined));
+        if (useFrom) obj.from_filter.cost_le_mod = mod;
+        else { obj.filter = obj.filter || {}; obj.filter.cost_le_mod = mod; }
+      };
+      if (prevIdx === -1) embed(step);
+      else if (step.alt_actions[prevIdx]) embed(step.alt_actions[prevIdx]);
       removeIdx.push(i);
     });
     if (removeIdx.length > 0) {
@@ -1385,6 +1399,14 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       Object.keys(ex).forEach((k) => (step[k] = ex[k]));
     } catch (_) {}
   }
+  // extras由来のfrom_filter（コスト上限を持つ取得元の絞り込み）は上の「コスト上限+/-」
+  // 埋め込みより後に合成されるため、filterへ入ってしまったcost_le_modをここでfrom_filterへ移す
+  [step, ...(Array.isArray(step.alt_actions) ? step.alt_actions : [])].forEach((o: any) => {
+    if (!o || !o.filter || !o.filter.cost_le_mod || !o.from_filter || o.filter.cost_le !== undefined) return;
+    o.from_filter = { ...o.from_filter, cost_le_mod: o.filter.cost_le_mod };
+    delete o.filter.cost_le_mod;
+    if (Object.keys(o.filter).length === 0) delete o.filter;
+  });
   // === grant_keyword(_to) で「対象」絞り込み条件を持つキーワードを選んでいれば、
   // その条件一式を designated として添える（置き換え自体はエンジン側が実行時に、
   // キーワード辞書のレシピテンプレートを見に行った時点で行う。カードのJSONには
@@ -1822,8 +1844,10 @@ function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
   if (Array.isArray(raw?.designated?.condition_chain) && raw.designated.condition_chain.length > 0) {
     const chain = parseConditionChainStrings(raw.designated.condition_chain) || [];
     const commonConds = parseDesignatedFields(raw.designated).conds;
+    // OR経路のdistinct_by（全グループ共通の「異なる」指定）は先頭グループのプレースホルダーとして戻す
+    const distinctConds = distinctByToConditions(raw.designated.distinct_by);
     return chain.map((entry, idx) => ({
-      conditions: idx === 0 ? [...commonConds, ...entry.conditions] : entry.conditions,
+      conditions: idx === 0 ? [...commonConds, ...entry.conditions, ...distinctConds] : entry.conditions,
       op: entry.op,
       count: idx === 0 ? raw?.count : undefined,
     }));
@@ -1874,7 +1898,62 @@ function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): Effect
   };
 }
 
+// filter/from_filter.cost_le_mod（「コスト上限+/-」を直前の効果へ適用した結果）を、
+// 元の「コスト上限+/-」AltAction（applyCostModToPrev:true）へ戻す（blocksToRecipeの逆変換）。
+// これが無いと、エディタで開き直して保存しただけで cost_le_mod が消える
+function costModToAltAction(mod: any): AltAction {
+  const alt: AltAction = {
+    action: mod?.sign === '-' ? 'cost_limit_minus' : 'cost_limit_plus',
+    value: mod?.amount !== undefined ? mod.amount : 1,
+    applyCostModToPrev: true,
+  };
+  if (mod?.per_count && mod?.per_ref) {
+    alt.perCount = Number(mod.per_count);
+    alt.perRef = String(mod.per_ref);
+    if (mod.per_count_mode === 'repeat') alt.perCountMode = 'repeat';
+    if (mod.per_ref_state) {
+      const s = String(mod.per_ref_state);
+      const i = s.indexOf(':');
+      alt.perRefStateCond = i >= 0 ? { base: s.substring(0, i), value: s.substring(i + 1) } : { base: s };
+    }
+  }
+  return alt;
+}
+function restoreCostModAltActions(block: EffectBlock, step: any): EffectBlock {
+  const pick = (o: any) => (o?.from_filter && o.from_filter.cost_le_mod) || (o?.filter && o.filter.cost_le_mod);
+  const stepAlts: any[] = Array.isArray(step?.alt_actions) ? step.alt_actions : [];
+  const hasAny = !!pick(step) || stepAlts.some((a) => !!pick(a));
+  if (!hasAny) return block;
+  const alts: AltAction[] = [...(block.altActions || [])];
+  // 後ろから挿入して、先頭側（step.alt_actions[i] ↔ altActions[i]）の対応を崩さない
+  for (let i = stepAlts.length - 1; i >= 0; i--) {
+    const mod = pick(stepAlts[i]);
+    if (mod) alts.splice(i + 1, 0, costModToAltAction(mod));
+  }
+  const mod0 = pick(step);
+  if (mod0) alts.splice(0, 0, costModToAltAction(mod0));
+  block.altActions = alts;
+  // 素通し(extras)側に残ったcost_le_modは除く（UIでコスト上限+/-を消しても復活しないように）
+  if (block.extras) {
+    try {
+      const ex = JSON.parse(block.extras);
+      ['filter', 'from_filter'].forEach((k) => {
+        if (ex[k] && typeof ex[k] === 'object') {
+          delete ex[k].cost_le_mod;
+          if (Object.keys(ex[k]).length === 0) delete ex[k];
+        }
+      });
+      block.extras = Object.keys(ex).length > 0 ? JSON.stringify(ex) : '';
+    } catch (_) {}
+  }
+  return block;
+}
+
 function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigger: string, step: any): EffectBlock {
+  return restoreCostModAltActions(stepToBlockCore(section, trigger, step), step);
+}
+
+function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', trigger: string, step: any): EffectBlock {
   // "on_move,on_play" のようなカンマ区切りの複数トリガーまとめキーを、
   // トリガー複数選択(triggers[])として復元する（blocksToRecipeの出力の逆変換）
   const triggerParts = trigger.split(',').map((t) => t.trim()).filter(Boolean);
@@ -1888,10 +1967,17 @@ function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigg
     extra_conditions: true,
     trigger_conditions: true,
     trigger_conditions_op: true,
+    // *_chain は専用フィールド（triggerConditionsChain等）へ復元するため素通し(extras)にしない。
+    // extrasに残すと出力時に元のchainが再合成され、chainが1セグメントへ収束した場合に
+    // trigger_conditions と二重になって保存のたびに条件が増殖する
+    trigger_conditions_chain: true,
+    condition_chain: true,
     base_conditions: true,
     base_conditions_op: true,
+    base_conditions_chain: true,
     tamer_conditions: true,
     tamer_conditions_op: true,
+    tamer_conditions_chain: true,
     trigger_from: true,
     trigger_from_op: true,
     duration: true,

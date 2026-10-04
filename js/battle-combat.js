@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect, fxAppGattai } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -815,6 +815,35 @@ const ASSEMBLY_DISTINCT_LABEL = { name: '名称', lv: 'Lv', description: '記述
 // （getEffectivePlayCost）に反映させる。登場できない状態（メイン以外・デジタマ・進化専用・
 // 支払うコストが0）なら確認せずそのまま doPlay へ
 function _offerWhenPlayThenPlay(card, handIdx, slotIdx) {
+  // 先に「このカードを使用/登場するとき、〇〇することで、支払うコスト-N」（summon_cost のコスト付き
+  // エントリ。茨の女王 BT26-098 等）を確認し、その後で when_play（鷺坂ヒロコ）の確認へ
+  _offerCostedSummonDiscount(card, () => {
+    // コストで手札が動いた場合に備えて、手札の位置を取り直す
+    const _hi = bs.player.hand.indexOf(card);
+    _offerWhenPlayThenPlayInner(card, _hi !== -1 ? _hi : handIdx, slotIdx);
+  });
+}
+
+// 「このカードを使用/登場するとき、〇〇することで、支払うコスト-N」（recipe.summon_cost のうち cost[] を伴い、
+// 取得元がトラッシュのアセンブリ型ではないもの。effect-engine.js の checkCostedSummonDiscount）:
+// 払えるものがあれば「〜することで、支払うコスト-Nしますか？」を確認し、はいならコストを実行して
+// 軽減量を card._assemblyDiscount に加算する（doPlay の getEffectivePlayCost に反映）。
+// オプション/デュアルは色条件で使用できない場合は確認しない（doPlay 側で使用不可になるため）
+function _offerCostedSummonDiscount(card, next) {
+  if (!card || bs.phase !== 'main' || _attackInProgress || card.level === '2' || card.playCost === null) { next(); return; }
+  if ((card.type === 'オプション' || card.type === 'デュアル') && !hasMatchingColorInPlay(card, 'player')
+      && !meetsUseCondition(card, 'player') && !_ignoresColorCondition(card, 'player')) { next(); return; }
+  let _pay = 0;
+  try { _pay = _getEffectivePlayCost(card, bs, 'player'); } catch (_) { _pay = card.playCost || 0; }
+  if (!(_pay > 0)) { next(); return; }
+  _checkCostedSummonDiscount(card, bs, 'player', _hooks.makeEffectContext(card, 'player'), (disc) => {
+    // 盤面の表示（テイマーの下のカードの破棄等）は doPlay 内の renderAll で反映される
+    if (disc > 0) card._assemblyDiscount = (parseInt(card._assemblyDiscount, 10) || 0) + disc;
+    next();
+  }, { addLog, baseCost: _pay });
+}
+
+function _offerWhenPlayThenPlayInner(card, handIdx, slotIdx) {
   if (!card || bs.phase !== 'main' || _attackInProgress || card.type !== 'デジモン'
       || card.level === '2' || card.playCost === null) { doPlay(card, handIdx, slotIdx); return; }
   let _pay = 0;
@@ -3561,15 +3590,32 @@ export function aiMainPhase(callback) {
 }
 
 function aiPlayCard(c, handIdx, onDone) {
+  // 「このカードを使用/登場するとき、〇〇することで、支払うコスト-N」（summon_cost のコスト付きエントリ。
+  // 茨の女王 BT26-098 等）: CPU は払えるなら自動で使う（checkCostedSummonDiscount は side!=='player' なら確認なし）
+  if (c && (c.playCost || 0) > 0) {
+    let _called = false;
+    _checkCostedSummonDiscount(c, bs, 'ai', _hooks.makeEffectContext(c, 'ai'), (disc) => {
+      if (_called) return; _called = true;
+      const _hi = bs.ai.hand.indexOf(c);
+      _aiPlayCardMain(c, _hi !== -1 ? _hi : handIdx, onDone, disc || 0);
+    }, { addLog, baseCost: c.playCost });
+    return;
+  }
+  _aiPlayCardMain(c, handIdx, onDone, 0);
+}
+
+function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
+  // コストを払った軽減量を差し引いた支払うコスト
+  const _aiBasePay = Math.max(0, (c.playCost || 0) - (costedDisc || 0));
   let empty = bs.ai.battleArea.findIndex(s => s === null);
   if (empty === -1) { empty = bs.ai.battleArea.length; bs.ai.battleArea.push(null); }
 
   if (c.type === 'オプション') {
     bs.ai.hand.splice(handIdx, 1);
-    addLog('🤖 AIが「' + c.name + '」を使用！（コスト' + c.playCost + '）');
+    addLog('🤖 AIが「' + c.name + '」を使用！（コスト' + _aiBasePay + '）');
     renderAll();
     showOptionEffect(c, () => {
-      const turnEnded = aiSpendMemory(c.playCost);
+      const turnEnded = aiSpendMemory(_aiBasePay);
       _hooks.checkAndTriggerEffect(c, '【メイン】', () => {
         // 公式9-1-5: どの領域にも属していなければ破棄（バトルエリア等に置かれたら残す）
         if (!_isCardInAnyZone(c, bs.ai)) bs.ai.trash.push(c);
@@ -3583,10 +3629,10 @@ function aiPlayCard(c, handIdx, onDone) {
   // ----- デュアルカード（AIはオプションとして使用。アーツ進化できるなら常に受け入れる） -----
   if (c.type === 'デュアル') {
     bs.ai.hand.splice(handIdx, 1);
-    addLog('🤖 AIが「' + c.name + '」を使用！（コスト' + c.playCost + '）');
+    addLog('🤖 AIが「' + c.name + '」を使用！（コスト' + _aiBasePay + '）');
     renderAll();
     showOptionEffect(c, () => {
-      const turnEnded = aiSpendMemory(c.playCost);
+      const turnEnded = aiSpendMemory(_aiBasePay);
       _hooks.checkAndTriggerEffect(c, '【メイン】', () => {
         const candidates = _findArtsEvolveCandidates(c, 'ai');
         if (candidates.length > 0) {
@@ -3612,10 +3658,10 @@ function aiPlayCard(c, handIdx, onDone) {
   if (c.type === 'テイマー') {
     bs.ai.hand.splice(handIdx, 1);
     bs.ai.tamerArea.push(c);
-    addLog('🤖 AIが「' + c.name + '」を登場！（コスト' + c.playCost + '）');
+    addLog('🤖 AIが「' + c.name + '」を登場！（コスト' + _aiBasePay + '）');
     renderAll();
     showPlayEffect(c, () => {
-      const turnEnded = aiSpendMemory(c.playCost);
+      const turnEnded = aiSpendMemory(_aiBasePay);
       _hooks.applyPermanentEffects('ai');
       renderAll(); onDone(turnEnded);
     });
@@ -3625,10 +3671,10 @@ function aiPlayCard(c, handIdx, onDone) {
   // 「登場するとき、このテイマーをレストさせることで、支払うコスト-N」（when_play。鷺坂ヒロコ BT26-088）:
   // CPU は使える効果を自動で使う（checkWhenPlayDiscount は side!=='player' なら確認なしで適用）
   let _aiWhenPlayDisc = 0;
-  if (c.type === 'デジモン' && (c.playCost || 0) > 0) {
-    _checkWhenPlayDiscount(c, bs, 'ai', (d) => { _aiWhenPlayDisc = d || 0; }, { addLog, baseCost: c.playCost });
+  if (c.type === 'デジモン' && _aiBasePay > 0) {
+    _checkWhenPlayDiscount(c, bs, 'ai', (d) => { _aiWhenPlayDisc = d || 0; }, { addLog, baseCost: _aiBasePay });
   }
-  const _aiPayCost = Math.max(0, (c.playCost || 0) - _aiWhenPlayDisc);
+  const _aiPayCost = Math.max(0, _aiBasePay - _aiWhenPlayDisc);
   c.summonedThisTurn = true;
   bs.ai.battleArea[empty] = c;
   bs.ai.hand.splice(handIdx, 1);

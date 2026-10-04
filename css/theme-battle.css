@@ -569,6 +569,14 @@
     --sub-w: calc(var(--sub-h) * 0.72);
     --hand-h: clamp(72px, 10vh, 128px);
   }
+  /* 全画面中: タブやアドレスバーが無くなり縦に広く使えるので、カード・手札をさらに大きく */
+  html.is-fullscreen #battle-screen {
+    --card-h: clamp(75px, 12.5vh, 160px);
+    --sub-h: calc(var(--card-h) * 0.76);
+    --hand-h: clamp(72px, 12vh, 150px);
+  }
+  html.is-fullscreen #battle-screen .battle-zone { padding-top: 12px; padding-bottom: 12px; }
+  html.is-fullscreen #battle-screen .m-cell { width: 32px; height: 32px; font-size: 13px; }
   /* 横に広げる。高さが足りない画面では縦スクロールで最後まで見られるようにする */
   #battle-screen .battle-wrap { max-width: min(1280px, 100vw); overflow-x: hidden; overflow-y: auto; }
   #battle-screen .battle-zone { padding: 8px 16px; }
@@ -645,14 +653,14 @@
 }
 
 /* =========================================================
-   PC: 盤面の外側（左右の黒い部分）をデジタルワールドに
+   幅640px以上（盤面の横に余白がある画面）: 盤面の外側（左右の黒い部分）をデジタルワールドに
    - 0/1 のデジタルコードの雨（速さの違う 2 層）、昇っていく光の粒、上から下へ走るスキャン光
    - 天井のグリッド（床のグリッドは theme-game.css の body::after を見せる）
    - 盤面の左右の縁がゲートのように脈打って光る
    重なり順を変えないよう z-index の文脈は作らず、#battle-screen の背景を透明にして
    その下（z-index:-1）に層を置く。スマホは盤面が全面なので動かさない。
    ========================================================= */
-@media (min-width: 900px) {
+@media (min-width: 640px) {
   #battle-screen {
     position: relative;
     background: transparent;
@@ -731,14 +739,22 @@
   #battle-screen .battle-wrap { animation: none !important; }
 }
 
-/* 全画面ボタン（PCのみ表示。表示条件は battle.css） */
+/* 全画面ボタン（表示条件は battle.css）: 見つけやすいよう明るい枠でゆっくり光らせる */
 #battle-screen .fullscreen-btn {
-  background: linear-gradient(180deg, rgba(0, 80, 95, 0.85), rgba(0, 20, 26, 0.9));
-  border: 1px solid rgba(0, 251, 255, 0.6);
-  color: #b5feff;
+  background: linear-gradient(180deg, rgba(0, 90, 105, 0.9), rgba(0, 24, 30, 0.92));
+  border: 1px solid rgba(0, 251, 255, 0.9);
+  color: #e0ffff;
   letter-spacing: 0.08em;
-  box-shadow: 0 0 8px rgba(0, 251, 255, 0.25);
-  transition: box-shadow 0.2s, background 0.2s;
+  box-shadow: 0 0 10px rgba(0, 251, 255, 0.45);
+  transition: background 0.2s;
+  animation: fsBtnGlow 2.4s ease-in-out infinite;
+}
+@keyframes fsBtnGlow {
+  0%, 100% { box-shadow: 0 0 8px rgba(0, 251, 255, 0.35); }
+  50%      { box-shadow: 0 0 18px rgba(0, 251, 255, 0.85); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #battle-screen .fullscreen-btn { animation: none; }
 }
 #battle-screen .fullscreen-btn:hover {
   background: linear-gradient(180deg, rgba(0, 120, 140, 0.95), rgba(0, 40, 50, 0.95));

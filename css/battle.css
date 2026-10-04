@@ -810,17 +810,19 @@ body.tutorial-spotlight-mode #effect-confirm-no {
   height: 0;
 }
 
-/* ===== 全画面表示ボタン（PC＝幅900px以上かつマウス操作の環境のみ表示） ===== */
+/* ===== 全画面表示ボタン（幅640px以上で表示。全画面に非対応のブラウザでは JS が html.fs-unsupported を付けて隠す） ===== */
 .fullscreen-btn { display: none; }
 .fullscreen-btn .fs-icon-exit { display: none; }
 .fullscreen-btn.is-fs .fs-icon-enter { display: none; }
 .fullscreen-btn.is-fs .fs-icon-exit { display: inline; }
-@media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+@media (min-width: 640px) {
   .memory-info .mi-sep { display: none; }
   .fullscreen-btn {
     display: inline-flex; align-items: center; gap: 5px;
-    padding: 3px 10px; border-radius: 12px; cursor: pointer;
+    padding: 5px 14px; border-radius: 14px; cursor: pointer;
     background: rgba(0, 0, 0, 0.5); border: 1px solid #00fbff66; color: #00fbff;
-    font-size: 11px; font-weight: bold;
+    font-size: 12px; font-weight: bold;
   }
+  html.fs-unsupported .fullscreen-btn { display: none; }
+  html.fs-unsupported .memory-info .mi-sep { display: inline; }
 }

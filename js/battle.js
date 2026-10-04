@@ -481,13 +481,19 @@ window.toggleBattleFullscreen = function() {
   } catch (e) { console.warn('[fullscreen]', e); }
 };
 function updateFullscreenBtn() {
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  // 全画面中は縦に広く使えるのでカード等を大きくする（css/theme-battle.css の html.is-fullscreen）
+  document.documentElement.classList.toggle('is-fullscreen', isFs);
   const btn = document.getElementById('fullscreen-btn');
   if (!btn) return;
-  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
   btn.classList.toggle('is-fs', isFs);
   btn.title = isFs ? '元の表示に戻す' : '全画面表示';
   const label = btn.querySelector('.fs-label');
-  if (label) label.textContent = isFs ? '戻す' : '全画面';
+  if (label) label.textContent = isFs ? '元に戻す' : '全画面表示';
+}
+// 全画面に対応していないブラウザ（iPhone の Safari 等）ではボタンを隠す
+if (!(document.fullscreenEnabled || document.webkitFullscreenEnabled)) {
+  document.documentElement.classList.add('fs-unsupported');
 }
 document.addEventListener('fullscreenchange', updateFullscreenBtn);
 document.addEventListener('webkitfullscreenchange', updateFullscreenBtn);

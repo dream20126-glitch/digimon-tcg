@@ -173,7 +173,7 @@ export const TARGET_COUNTS = [
 export const TRIGGERS: DictEntry[] = [
   // 即時系
   { code: 'on_play', kind: 'trigger', label: '登場時' },
-  { code: 'when_play', kind: 'trigger', label: '登場するとき（登場前・置換効果用・エンジン未実装）' },
+  { code: 'when_play', kind: 'trigger', label: '登場するとき（登場前・置換効果用。エンジンは「このテイマーをレストさせることで支払うコスト-N」のみ対応）' },
   { code: 'on_evolve', kind: 'trigger', label: '進化時' },
   { code: 'when_evolve', kind: 'trigger', label: '進化するとき（進化前・置換効果用・エンジン未実装）' },
   { code: 'on_move', kind: 'trigger', label: '移動時' },
@@ -244,8 +244,7 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_linked_eq', kind: 'condition', label: 'リンクカードがちょうどN枚' },
   { code: 'cond_linked_gt', kind: 'condition', label: 'リンクカードがN枚より多い' },
   { code: 'cond_linked_lt', kind: 'condition', label: 'リンクカードがN枚より少ない' },
-  // 表向き/裏向きのセキュリティ枚数（⚠ エンジン未実装: セキュリティカード個々の裏表状態を
-  // エンジンが保持していないため、実装にはセキュリティの表向き管理自体の追加が必要）
+  // 表向きのセキュリティ枚数（エンジンは card._faceUp でセキュリティの表向き状態を保持する）
   { code: 'cond_security_faceup_ge', kind: 'condition', label: '表向きのセキュリティがN枚以上' },
   { code: 'cond_security_faceup_le', kind: 'condition', label: '表向きのセキュリティがN枚以下' },
   { code: 'cond_security_faceup_eq', kind: 'condition', label: '表向きのセキュリティがちょうどN枚' },
@@ -290,8 +289,7 @@ export const CONDITIONS: DictEntry[] = [
   // 例:「相手のデジモンが消滅したとき」(when_opp_destroyed) と組み合わせて subject=自分 に
   // すれば「相手のデジモンが自分の効果で消滅したとき」を表現できる（バトルでの消滅を
   // 表す cond_battle_opp_destroyed の"効果版"に相当）。
-  // ⚠ エンジン未実装: 消滅原因(bs._lastDestroyCause等)を記録・伝播する処理が
-  // まだ無いため、保存はできますが動作しません（要エンジン実装）
+  // エンジンは bs._lastDestroyCause（原因と誰の効果か）で判定する
   { code: 'cond_effect', kind: 'condition', label: '効果で' },
   { code: 'cond_name', kind: 'condition', label: '名前（完全一致）' },
   { code: 'cond_name_not', kind: 'condition', label: '名前（完全一致・除外）' },
@@ -469,7 +467,7 @@ export const KEYWORDS: DictEntry[] = [
   // ⚠ エンジン未実装: 進化先の進化条件のうち「色クローズ」のみを無視できる
   // （特徴/名称クローズは通常通り要求される）。「〇〇の間」等の条件付き付与にしたい場合は
   // パッシブ編集パネルの「条件（〜の間）」にcond_security_faceup_eq等を組み合わせて使う
-  { code: 'ignore_evolve_color', kind: 'keyword', label: '色条件を無視できる（進化先の色クローズを無視）' },
+  { code: 'ignore_evolve_color', kind: 'keyword', label: '色条件を無視できる（オプションの使用色・進化先の色クローズを無視）' },
 ];
 
 // ラベル⇄コード変換ヘルパー

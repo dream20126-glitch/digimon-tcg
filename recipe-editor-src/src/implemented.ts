@@ -67,6 +67,9 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   'evo_discard_tamer', 'evo_discard_tamer_bottom', 'evo_discard_tamer_top', 'evo_discard_tamer_select',
   // Stage 12 追加（ディレイ: バトルエリアのこのカードを破棄して効果2以降を発動）
   'delay',
+  // BT26 エンジン対応（2026-10）: 手札/セキュリティの破棄（own_hand/opponent_hand/both_hand:until_N/
+  // own_security）、このカードの下に置く、オプションをバトルエリアに置く
+  'discard', 'place_under_self', 'place_in_battle_area',
 ]);
 
 // エンジンで実装済の passive flag (キーワード)
@@ -87,6 +90,8 @@ export const IMPLEMENTED_KEYWORDS = new Set<string>([
   // Stage 9 追加: メインフェイズ中このデジモンをレストさせることでデッキの上1枚を
   // 進化元の下に裏向きで置く（育成エリアでも発揮可能）。レシピ非依存のハードコード実装
   'training',
+  // BT26 エンジン対応（2026-10）: 色条件を無視（オプションの使用色・進化先の色クローズ）
+  'ignore_evolve_color',
 ]);
 
 // エンジンで実装済の条件コード
@@ -155,6 +160,11 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_battle_area_le', 'cond_battle_area_ge',
   'cond_active', 'cond_same_name_digimon', 'cond_self_attacked',
   'cond_not_own_effect', 'cond_linked_names', 'cond_linked_any_name',
+  // BT26 エンジン対応（2026-10）: 効果で（自分/相手/誰の効果でも/効果以外）、
+  // バトルエリアの体数（完全一致/より多い/より少ない）、表向きのセキュリティ枚数
+  'cond_effect', 'cond_battle_area_eq', 'cond_battle_area_gt', 'cond_battle_area_lt',
+  'cond_security_faceup_le', 'cond_security_faceup_ge', 'cond_security_faceup_eq',
+  'cond_security_faceup_gt', 'cond_security_faceup_lt',
 ]);
 
 // エンジンで実装済の修飾子コード（アクションの実行方法を変える）

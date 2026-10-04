@@ -90,7 +90,7 @@ function TargetCountField({ suffix, onChange, accentColor = '#b76e00' }: { suffi
         />
       )}
       {mode === 'until' && (
-        <span style={{ fontSize: 10, color: '#666' }}>体になるまで（⚠ エンジン未実装）</span>
+        <span style={{ fontSize: 10, color: '#666' }}>枚（体）になるまで（手札の破棄のみ対応）</span>
       )}
     </div>
   );
@@ -1545,8 +1545,10 @@ function CostListEditor({
                     <div style={{ marginTop: 4 }}>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
                       <ButtonGroup
-                        options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
-                        value={(c.options || []).includes('face_down') ? 'face_down' : ''}
+                        // 表向きは options:['face_up'] として明示的に保存する（エンジンは指定が無いと
+                        // 従来通りの置き方をするため。セキュリティに表向きで置く等で使う）
+                        options={[{ code: 'face_up', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
+                        value={(c.options || []).includes('face_down') ? 'face_down' : 'face_up'}
                         onChange={(v) => updateCost(i, { ...c, options: v ? [v] : [] })}
                         accentColor="#b76e00"
                       />
@@ -2065,7 +2067,6 @@ function CostListEditor({
                     例:「特徴『バグラ軍』を持つ自分のデジモンの進化元を2枚破棄」の“バグラ軍”はここに入れる
                     （上の「コスト対象の絞り込み」は破棄されるカード側の条件になる）
                   </div>
-                  <div style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン側のコスト処理はこの条件をまだ参照しません（保存のみ）</div>
                 </div>
               )}
             </div>
@@ -3064,12 +3065,10 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
     // z.target逆引き判定の両方が）区別できなくなるため、専用のアクションコードを持たせる
     code: 'self', label: 'このカード', action: 'place_under_self', target: 'self_card',
     hasPosition: true, hasFace: true, hasFromZones: true,
-    warn: '⚠ エンジン未対応: place_under_self は辞書未登録・エンジンも未実装の新規アクションです（このカード自身の下に置く想定）',
   },
   {
     code: 'battle_area', label: 'バトルエリア', action: 'place_in_battle_area', target: 'self_card',
     // 「このカード自身」が置かれる（BT24-089等）ため、取得元(場所)の概念は無い
-    warn: '⚠ このボタン自体は今すぐ使えます（保存はできます）が、place_in_battle_area は辞書未登録・エンジンも未実装の新規アクションです。辞書に登録すると実装状況バッジ等でも認識されます（このカード自身をテイマーエリアに永続カードとして残す想定）',
   },
 ];
 const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));
@@ -3541,9 +3540,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     if (!base) return;
     changeEffectAction(base + '_' + pos);
   }
+  // 裏向き=options:['face_down']、表向き=options:['face_up']（明示）。どちらも無い既存レシピは
+  // 表向き扱いで表示する。エンジンは「セキュリティに置く」で face_up がある（またはテキストに
+  // 「表向きで置」がある）ときだけ表向きで置くため、表向きを選んだら face_up を明示的に保存する
   const effectFaceValue: 'face_down' | 'face_up' = effectOptions.includes('face_down') ? 'face_down' : 'face_up';
   function setEffectFace(v: 'face_down' | 'face_up') {
-    updateEffect({ options: v === 'face_down' ? [...effectOptions.filter((o) => o !== 'face_down'), 'face_down'] : effectOptions.filter((o) => o !== 'face_down') });
+    const rest = effectOptions.filter((o) => o !== 'face_down' && o !== 'face_up');
+    updateEffect({ options: [...rest, v] });
   }
   // 対象欄で新しい対象(base)を選んだとき、現在「〇〇に置く」系アクション(PLACE_ACTION_CODES)を
   // 選択中であれば、新対象のゾーン（テイマー/デジモン/セキュリティ/バトルエリア）に対応する
@@ -4340,10 +4343,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             {/* 条件（〜の間）: 省略時は常時有効（従来通り）。指定すると、ここで組み立てた条件を
                 満たしている間だけ上のキーワード群が有効、という条件付きパッシブになる
                 （例:「自分の表向きのセキュリティがない間、色条件を無視できる」）。
-                ⚠ エンジン未実装: 保存はできるがまだどのpassiveフラグ処理もgateを評価しない */}
+                （エンジンは applyPermanentEffects 等で gate を評価する） */}
             <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px dashed #d8b4fe' }}>
               <div style={{ fontWeight: 'bold', marginBottom: 4 }}>⏱ 条件（〜の間・省略時は常時）</div>
-              <div style={{ fontSize: 10, color: '#c62828', marginBottom: 4 }}>⚠ エンジン未実装です（保存はできますが動作しません）</div>
               <ConditionChainField
                 chain={block.passiveGateChain}
                 legacyPairs={block.passiveGate}
@@ -8184,7 +8186,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
               </div>
             )}
             {step.actionKinds && step.actionKinds.length > 0 && (
-              <div style={{ fontSize: 10, color: '#e65100', marginTop: 2 }}>※エンジン未対応（保存はできますが動作しません）。「値」は枚数です</div>
+              <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>※「値」は枚数です（デジモン/テイマーは登場、オプションは使用）</div>
             )}
             {!step.isRemaining && (
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', marginTop: 4, color: '#666' }}>
@@ -9731,7 +9733,6 @@ function ConditionsHybridEditor({
                           >
                             数値入力に戻す
                           </button>
-                          <div style={{ fontSize: 10, color: '#c62828' }}>⚠ 他のデジモンのDPを動的に参照する条件はエンジン未実装です（保存はできますが動作しません）</div>
                         </div>
                         );
                       })() : (

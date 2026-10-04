@@ -268,6 +268,9 @@ export interface EffectBlock {
   // summon 専用:「このカードをコストを支払わずに登場させる」（テイマーのセキュリティ効果等）
   // true のとき JSON へ step.cost_free:true を出力する。対象は 'self' / 'self_card' のとき有効
   costFree?: boolean;
+  // evolve 専用:「進化条件を無視して進化させる」（公式8-1-2-2）。JSON では step.ignore_evolve_condition:true
+  // （例: 雷霆の覚醒 BT26-097「そのデジモンを…『ユピテルモン』に進化条件を無視して進化できる」）
+  ignoreEvolveCondition?: boolean;
   // summon_from_trash 専用:「この効果で登場したデジモンの【登場時】効果は発揮しない」
   // true のとき JSON へ step.skip_on_play:true を出力する
   skipOnPlay?: boolean;
@@ -483,6 +486,8 @@ export interface AltAction {
   // true のとき JSON へ cost_free:true / skip_on_play:true を出力する
   costFree?: boolean;
   skipOnPlay?: boolean;
+  // evolve 専用（効果1と同じ）: 進化条件を無視して進化させる → ignore_evolve_condition:true
+  ignoreEvolveCondition?: boolean;
   // negate 専用（効果1と同じ意味）
   negateTargetTrigger?: 'on_play' | 'on_evolve';
   negateDeny?: boolean;
@@ -732,9 +737,10 @@ export interface CostStep {
   // 対戦中はプレイヤーがどちらのコストを払うか選択UIで選ぶ。現状は「いずれか1つ」の
   // 意味しかないため、効果側と異なりop（and/or/then）は持たない）
   altCosts?: CostStep[];
-  // action:'evolve' 専用:「コストを支払わずに進化させる」。JSON では step.cost[].cost_free
-  // に serialize。⚠ エンジン側のcase 'evolve'は現状cost_freeを未参照（要実装）
+  // action:'evolve' 専用:「コストを支払わずに進化させる」。JSON では step.cost[].cost_free に serialize
   costFree?: boolean;
+  // action:'evolve' 専用:「進化条件を無視して進化させる」。JSON では step.cost[].ignore_evolve_condition
+  ignoreEvolveCondition?: boolean;
 }
 
 // 演出タイプ自体の定義（小辞書）

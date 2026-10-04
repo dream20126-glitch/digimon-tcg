@@ -126,6 +126,22 @@ function collapseRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPai
   if (!Array.isArray(pairs) || pairs.length === 0) return pairs;
   const existsIdx = pairs.findIndex((p) => p && p.base === 'cond_exists');
   if (existsIdx === -1) return pairs;
+  // 入れ子形式「cond_exists:cond_color:赤,紫@own」（＝赤/紫の自分のデジモンがいる）:
+  // 中身が属性フィルタで表せるなら参照行＋属性行に展開する。表せない中身はそのまま残す
+  // （値を無視して「1体以上」に縮めると条件が消えてしまう。ソーサリモン BT26-022 / コンロン BT26-104）
+  const existsPair = pairs[existsIdx];
+  if (existsPair.value) {
+    const inner = stringToPair(String(existsPair.value));
+    if (!REF_EXISTS_FILTER_CODES.has(inner.base) || inner.subject) return pairs;
+    const out: ConditionPair[] = [];
+    pairs.forEach((p, i) => {
+      if (i === existsIdx) {
+        out.push({ base: 'cond_battle_area_ge', value: '1', subject: p.subject });
+        out.push({ base: inner.base, value: inner.value, subject: REF_EXISTS_FILTER_MARKER });
+      } else out.push(p);
+    });
+    return out;
+  }
   return pairs.map((p, i) => {
     if (i === existsIdx) return { base: 'cond_battle_area_ge', value: '1', subject: p.subject };
     if (REF_EXISTS_FILTER_CODES.has(p.base)) return { ...p, subject: REF_EXISTS_FILTER_MARKER };
@@ -163,6 +179,7 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
     if (Array.isArray(c.options) && c.options.length > 0) cs.options = c.options.slice();
     // action:'evolve' 専用: コストを支払わずに進化させる
     if (c.costFree) cs.cost_free = true;
+    if (c.ignoreEvolveCondition) cs.ignore_evolve_condition = true;
     // コスト対象の取得元エリア (1件→string / 2件以上→array + from_op)
     if (Array.isArray(c.fromZones) && c.fromZones.length > 0) {
       const cz = c.fromZones.filter((z) => !!z);
@@ -283,6 +300,7 @@ function parseCostArray(rawCost: any): CostStep[] {
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,
       altCosts: Array.isArray(c?.alt_actions) && c.alt_actions.length > 0 ? parseCostArray(c.alt_actions) : undefined,
       costFree: !!c?.cost_free,
+      ignoreEvolveCondition: !!c?.ignore_evolve_condition || undefined,
     };
   });
 }
@@ -354,6 +372,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   }
   if (a.duration) out.duration = a.duration;
   if (a.costFree) out.cost_free = true;
+  if (a.ignoreEvolveCondition) out.ignore_evolve_condition = true;
   if (a.skipOnPlay) out.skip_on_play = true;
   if (a.action === 'negate') {
     if (a.negateTargetTrigger) out.target_trigger = a.negateTargetTrigger;
@@ -1216,6 +1235,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   }
   // summon の「コストを支払わずに登場」フラグ
   if (b.costFree) step.cost_free = true;
+  // evolve の「進化条件を無視して」
+  if (b.ignoreEvolveCondition) step.ignore_evolve_condition = true;
   // summon_from_trash の「登場したデジモンの【登場時】効果は発揮しない」フラグ
   if (b.skipOnPlay) step.skip_on_play = true;
   // 上/下（デッキに戻す位置等・hasDeckPosition用）。'both'（どちらか選んで）はエンジン未対応の
@@ -1540,9 +1561,34 @@ function stringToPair(s: string): ConditionPair {
   return pair;
 }
 
+// キーワードの旧コード → 辞書の現在のコード（エンジン js/cards.js の KEYWORD_CODE_ALIASES と同じ）。
+// 辞書のコードを変更した後も旧コードで保存されたレシピを開けるよう、読み込み時に置き換える
+// （置き換えないと辞書の「対象」設定(hasNamedParam)が引けず、保存時にデコード等の対象が消える）
+const KEYWORD_CODE_ALIASES: Record<string, string> = {
+  attack_plus: 'security_attack_plus',
+  attack_minus: 'security_attack_minus',
+  Link_plus: 'link_plus',
+  Execute: 'execute',
+  Decode: 'decode',
+  Ascension: 'ascension',
+  Vortex: 'vortex',
+};
+function normalizeKeywordAliasesDeep(v: any): any {
+  if (Array.isArray(v)) return v.map(normalizeKeywordAliasesDeep);
+  if (!v || typeof v !== 'object') return v;
+  const out: any = {};
+  Object.entries(v).forEach(([k, x]) => {
+    if (k === 'flag' && typeof x === 'string' && KEYWORD_CODE_ALIASES[x]) out[k] = KEYWORD_CODE_ALIASES[x];
+    else if (k === 'keyword' && typeof x === 'string' && x) out[k] = x.split(',').map((s) => KEYWORD_CODE_ALIASES[s.trim()] || s.trim()).join(',');
+    else out[k] = normalizeKeywordAliasesDeep(x);
+  });
+  return out;
+}
+
 // 既存レシピ JSON から EffectBlock[] へ復元
-export function recipeToBlocks(recipe: any): EffectBlock[] {
-  if (!recipe || typeof recipe !== 'object') return [];
+export function recipeToBlocks(rawRecipe: any): EffectBlock[] {
+  if (!rawRecipe || typeof rawRecipe !== 'object') return [];
+  const recipe = normalizeKeywordAliasesDeep(rawRecipe);
   const blocks: EffectBlock[] = [];
 
   if (Array.isArray(recipe.passive)) {
@@ -1836,8 +1882,21 @@ function stepObjectToAltAction(step: any): AltAction {
     perCount: step?.per_count != null ? Number(step.per_count) : undefined,
     perRef: step?.ref || '',
     perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : undefined,
-    perRefFilter: [],
+    // 「～ごとに」の参照条件・参照状態（「その後」の後続stepでも、開き直して保存したときに
+    // 消えないよう復元する。altActionToStepObject の ref_filter / ref_state 出力の逆変換）
+    perRefFilter: parseConditionChainFilter(step?.ref_filter).pairs,
+    perRefFilterChain: parseConditionChainFilter(step?.ref_filter).chain,
+    perRefStateCond: (() => {
+      const s = step?.ref_state;
+      if (!s || typeof s !== 'string') return undefined;
+      const i = s.indexOf(':');
+      return i >= 0 ? { base: s.substring(0, i), value: s.substring(i + 1) } : { base: s };
+    })(),
+    // 原因（バトルで/効果で・誰の効果か）
+    destroyCause: step?.cause === 'battle' || step?.cause === 'effect' ? step.cause : undefined,
+    destroyCauseSubject: step?.cause_subject || undefined,
     costFree: !!step?.cost_free,
+    ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
     skipOnPlay: !!step?.skip_on_play,
     negateTargetTrigger: step?.target_trigger === 'on_play' || step?.target_trigger === 'on_evolve' ? step.target_trigger : undefined,
     negateDeny: !!step?.deny,
@@ -2016,6 +2075,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     revert_at_turn_end: true,
     source_type: true,
     cost_free: true,
+    ignore_evolve_condition: true,
     skip_on_play: true,
     optional: true,
     display_text: true,
@@ -2186,6 +2246,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     negateTargetTrigger: step?.target_trigger === 'on_play' || step?.target_trigger === 'on_evolve' ? step.target_trigger : undefined,
     negateDeny: !!step?.deny,
     costFree: !!step?.cost_free,
+    ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
     skipOnPlay: !!step?.skip_on_play,
     deckPosition: step?.position === 'top' ? 'top'
       : step?.position === 'bottom' ? 'bottom'
@@ -2343,6 +2404,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             perRefFilter: parseConditionChainFilter(a?.ref_filter).pairs,
             perRefFilterChain: parseConditionChainFilter(a?.ref_filter).chain,
             costFree: !!a?.cost_free,
+            ignoreEvolveCondition: !!a?.ignore_evolve_condition || undefined,
             skipOnPlay: !!a?.skip_on_play,
             negateTargetTrigger: a?.target_trigger === 'on_play' || a?.target_trigger === 'on_evolve' ? a.target_trigger : undefined,
             negateDeny: !!a?.deny,

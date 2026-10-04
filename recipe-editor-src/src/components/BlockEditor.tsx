@@ -1252,9 +1252,16 @@ function CostListEditor({
                       onChange={(e) => updateCost(i, { ...c, costFree: e.target.checked })}
                     />
                     コストを支払わず
-                    {c.costFree && (
-                      <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未対応（保存はできますが動作しません）</span>
-                    )}
+                  </label>
+                )}
+                {c.action === 'evolve' && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!c.ignoreEvolveCondition}
+                      onChange={(e) => updateCost(i, { ...c, ignoreEvolveCondition: e.target.checked || undefined })}
+                    />
+                    進化条件を無視して
                   </label>
                 )}
               </div>
@@ -3456,6 +3463,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectPerRefStateCond = isEditingAlt ? editingAlt!.perRefStateCond : block.perRefStateCond;
   const effectApplyCostModToPrev = isEditingAlt ? !!editingAlt!.applyCostModToPrev : false;
   const effectCostFree = isEditingAlt ? !!editingAlt!.costFree : !!block.costFree;
+  const effectIgnoreEvolveCondition = isEditingAlt ? !!editingAlt!.ignoreEvolveCondition : !!block.ignoreEvolveCondition;
   const effectSkipOnPlay = isEditingAlt ? !!editingAlt!.skipOnPlay : !!block.skipOnPlay;
   const effectNegateTargetTrigger = isEditingAlt ? editingAlt!.negateTargetTrigger : block.negateTargetTrigger;
   const effectNegateDeny = isEditingAlt ? !!editingAlt!.negateDeny : !!block.negateDeny;
@@ -5473,6 +5481,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         />
                         コストを支払わず
                       </label>
+                      {effectAction === 'evolve' && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
+                          <input
+                            type="checkbox"
+                            checked={effectIgnoreEvolveCondition}
+                            onChange={(e) => updateEffect({ ignoreEvolveCondition: e.target.checked || undefined })}
+                          />
+                          進化条件を無視して
+                        </label>
+                      )}
                       {showSkipOnPlay && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
                           <input

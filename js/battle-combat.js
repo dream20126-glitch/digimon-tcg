@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect, fxAppGattai } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -499,6 +499,21 @@ function parseUseCondFeature(useCond) {
   return m ? m[1].trim() : null;
 }
 
+// 「このカードは色条件を無視できる」（passive flag 'ignore_evolve_color'。gate 成立中のみ）。
+// ダーク・フィールド BT26-100「自分の表向きのセキュリティがない間、このカードは色条件を無視できる」:
+// オプションなら使用時の色条件、デジモンなら進化条件の色の部分（進化先として）を無視する
+function _ignoresColorCondition(card, side) {
+  if (!card || !card.recipe) return false;
+  try { return !!_cardHasActivePassiveFlag(card, 'ignore_evolve_color', bs, side); } catch (_) { return false; }
+}
+// カードの持ち主（手札/トラッシュ/場のどちらの陣営にあるか）。見つからなければ 'player'
+function _ownerSideOfCard(card) {
+  if (!bs || !card) return 'player';
+  const p = bs.ai;
+  if (p && ((p.hand || []).includes(card) || (p.trash || []).includes(card) || (p.battleArea || []).includes(card) || (p.tamerArea || []).includes(card) || p.ikusei === card)) return 'ai';
+  return 'player';
+}
+
 // 使用条件（特徴：〇〇）を満たすか＝場に該当特徴を持つカードがあれば色条件を無視できる
 function meetsUseCondition(optionCard, side) {
   const feature = parseUseCondFeature(optionCard.useCond);
@@ -573,7 +588,7 @@ function _matchFeatureClause(c, baseCard) {
 }
 
 // 色クローズ（例: "赤Lv.5" / "Lv.5"=色不問）がbaseCardに一致するか判定する。
-function _matchColorClause(c, baseCard) {
+function _matchColorClause(c, baseCard, ignoreColor) {
   const m = c.match(/([赤青黄緑黒紫白]+)?Lv\.(\d+)/);
   if (!m) return false;
   const reqColor = m[1] || '';
@@ -583,7 +598,8 @@ function _matchColorClause(c, baseCard) {
   const baseLevel = String(baseCard.level).trim();
   const baseColor = baseCard.color || '';
   if (baseLevel !== reqLevel) return false;
-  if (reqColor && !baseColor.includes(reqColor)) return false;
+  // 進化先が「色条件を無視できる」（ignore_evolve_color）なら色の部分は判定しない
+  if (reqColor && !ignoreColor && !baseColor.includes(reqColor)) return false;
   const remainder = c.slice(m.index + m[0].length);
   const nameSuffix = _parseNameSuffix(remainder);
   if (nameSuffix && !_cardOrStackHasName(baseCard, nameSuffix.name, nameSuffix.exact)) return false;
@@ -629,14 +645,14 @@ function _matchNameCostClause(c, baseCard) {
 // baseCardに一致するか判定する。「記述がある」はカード情報一覧の各テキスト列の
 // いずれかにXXXがあればOKという公式ルール。色指定が無いことが多く名称クローズに近い
 // ため 'name' 種別に含める（コスト列は進化コスト（名称）列を共用）。
-function _matchDescriptionClause(c, baseCard) {
+function _matchDescriptionClause(c, baseCard, ignoreColor) {
   const m = c.match(/^([赤青黄緑黒紫白]+)?「(.+?)」の記述がある(?:Lv\.(\d+))?$/);
   if (!m) return false;
   const reqColor = m[1] || '';
   const reqText = m[2];
   const reqLevel = m[3];
   if (reqLevel != null && String(baseCard.level).trim() !== reqLevel) return false;
-  if (reqColor && !String(baseCard.color || '').includes(reqColor)) return false;
+  if (reqColor && !ignoreColor && !String(baseCard.color || '').includes(reqColor)) return false;
   return _cardHasDescription(baseCard, reqText);
 }
 
@@ -653,10 +669,10 @@ function _clauseType(c) {
 
 // 種別が'name'のクローズは、実際には「登場コスト＋名称」「名称＋登場コスト」「記述」
 // 「名称のみ」の4パターンがあるので、書かれている内容によって判定関数を振り分ける
-function _matchNameTypeClause(c, baseCard) {
+function _matchNameTypeClause(c, baseCard, ignoreColor) {
   if (/登場コスト\d+の/.test(c)) return _matchPlayCostClause(c, baseCard);
   if (/^.+：コスト\d+$/.test(c)) return _matchNameCostClause(c, baseCard);
-  if (/「.+」の記述がある/.test(c)) return _matchDescriptionClause(c, baseCard);
+  if (/「.+」の記述がある/.test(c)) return _matchDescriptionClause(c, baseCard, ignoreColor);
   return _matchNameClause(c, baseCard);
 }
 
@@ -687,8 +703,10 @@ function _resolveEvolveMatch(evoCard, baseCard) {
     return (aFirst === bFirst) ? 0 : (aFirst ? -1 : 1);
   });
   const MATCHERS = { color: _matchColorClause, feature: _matchFeatureClause, name: _matchNameTypeClause };
+  // 進化先が「色条件を無視できる」（ignore_evolve_color・gate 成立中）なら色クローズの色を無視する
+  const ignoreColor = _ignoresColorCondition(evoCard, _ownerSideOfCard(evoCard));
   for (const entry of order) {
-    if (MATCHERS[entry.type](entry.c, baseCard)) return entry;
+    if (MATCHERS[entry.type](entry.c, baseCard, ignoreColor)) return entry;
   }
   return null;
 }
@@ -740,6 +758,9 @@ export function getEvolveCostFor(evoCard, baseCard) {
   const picked = _pickCostFromList(RAW_BY_TYPE[match.type], match.typeIdx, sameTypeCount);
   return picked != null ? picked : evoCard.evolveCost;
 }
+// 効果による進化（effect-engine.js の _effectEvolveBaseCost）でも、選んだ進化条件のコストを
+// 手動進化と同じ規則で引けるよう window に公開する（公式ルール8-1-3-2）
+if (typeof window !== 'undefined') window.getEvolveCostFor = getEvolveCostFor;
 
 // 保留中の進化コスト軽減（スマッシュポテト等）を消費して合計軽減値を返す。
 // bs._pendingEvoCostReductions の各エントリは color / baseLv / evoLv / name の記述子で
@@ -779,6 +800,25 @@ const ASSEMBLY_DISTINCT_LABEL = { name: '名称', lv: 'Lv', description: '記述
 // 発動できる条件（発動領域が手札、対象となるカードがトラッシュに規定枚数ある）を満たしていれば
 // 「発動しますか？」の確認を挟み、発動を選べば対象カードをこのカードの下（進化元スタック）に
 // 置いてから通常のdoPlayへ進む（発動しない/対象不足の場合はそのままdoPlay）
+// 「登場するとき、このテイマーをレストさせることで、支払うコスト-N」（when_play。鷺坂ヒロコ BT26-088）:
+// 手札のデジモンをコストを支払って登場させる直前（アセンブリの確認の後）に、使える効果ごとに
+// 「レストして支払うコストを-Nしますか？」を確認する（effect-engine.js の checkWhenPlayDiscount）。
+// 使うと選んだ軽減量は card._assemblyDiscount に加算して doPlay の実効登場コスト計算
+// （getEffectivePlayCost）に反映させる。登場できない状態（メイン以外・デジタマ・進化専用・
+// 支払うコストが0）なら確認せずそのまま doPlay へ
+function _offerWhenPlayThenPlay(card, handIdx, slotIdx) {
+  if (!card || bs.phase !== 'main' || _attackInProgress || card.type !== 'デジモン'
+      || card.level === '2' || card.playCost === null) { doPlay(card, handIdx, slotIdx); return; }
+  let _pay = 0;
+  try { _pay = _getEffectivePlayCost(card, bs, 'player'); } catch (_) { _pay = card.playCost || 0; }
+  if (!(_pay > 0)) { doPlay(card, handIdx, slotIdx); return; }
+  _checkWhenPlayDiscount(card, bs, 'player', (disc) => {
+    // テイマーのレスト表示は doPlay 内の renderAll で反映される
+    if (disc > 0) card._assemblyDiscount = (parseInt(card._assemblyDiscount, 10) || 0) + disc;
+    doPlay(card, handIdx, slotIdx);
+  }, { addLog, baseCost: _pay });
+}
+
 export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
   if (bs.phase !== 'main' || _attackInProgress) { doPlay(card, handIdx, slotIdx); return; }
   const options = card ? _getAssemblyOptions(card) : [];
@@ -807,7 +847,7 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
       message: '「' + card.name + '」をアセンブリで登場させますか？（トラッシュのカードを' + totalWant + '枚使用）',
       yesText: '発動する', noText: '発動しない',
     }).then((yes) => {
-      if (!yes) { doPlay(card, handIdx, slotIdx); return; }
+      if (!yes) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
       const allPicked = [];
       const finish = () => {
         // 全グループ分の選択が完了 → まとめてトラッシュから外し、このカードの下に置く
@@ -819,7 +859,7 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
         card.stack = [...allPicked, ...card.stack];
         card._assemblyDiscount = (parseInt(card._assemblyDiscount, 10) || 0) + (parseInt(opt.value, 10) || 0);
         addLog('💠 「' + card.name + '」のアセンブリを発動（トラッシュから' + allPicked.length + '枚使用）');
-        doPlay(card, handIdx, slotIdx);
+        _offerWhenPlayThenPlay(card, handIdx, slotIdx);
       };
       // グループ内で1枚ずつ順番に選ばせる（distinctBy指定時は、同グループ内で既に選んだ
       // カードと指定属性（名前/Lv/記述/色）が同じ候補を都度除外して重複を防ぐ）
@@ -834,7 +874,7 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
             return field && p[field] === c[field];
           }));
         });
-        if (remaining.length < remainingWant) { doPlay(card, handIdx, slotIdx); return; } // 念のための保険
+        if (remaining.length < remainingWant) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; } // 念のための保険
         const pickCount = distinctBy.length > 0 ? 1 : remainingWant;
         let title = '💠 アセンブリ: 使うカードを選んでください';
         if (plan.length > 1) title += '（グループ' + (groupIdx + 1) + '/' + plan.length + '）';
@@ -843,7 +883,7 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
           title += '（' + (pickedInGroup.length + 1) + '/' + group.wantCount + '枚目・' + labels + 'が異なるカードのみ）';
         }
         _showTrashCardPicker(remaining, pickCount, false, title, (picked) => {
-          if (!picked || picked.length < pickCount) { doPlay(card, handIdx, slotIdx); return; }
+          if (!picked || picked.length < pickCount) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
           const nextPicked = [...pickedInGroup, ...picked];
           pickWithinGroup(groupIdx, group, nextPicked, remainingWant - pickCount, onGroupDone);
         }, remaining);
@@ -859,7 +899,7 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
     });
     return;
   }
-  doPlay(card, handIdx, slotIdx);
+  _offerWhenPlayThenPlay(card, handIdx, slotIdx);
 }
 
 export function doPlay(card, handIdx, slotIdx) {
@@ -870,7 +910,7 @@ export function doPlay(card, handIdx, slotIdx) {
   if (card.playCost === null) { addLog('🚨 「' + card.name + '」は進化専用カードです'); return; }
   // オプション使用の色条件（場に同色のカードが無ければ使用不可。使用条件を満たせば無視できる）。
   // デュアルカードもオプションとして使う際は同じ色条件を満たす必要がある
-  if ((card.type === 'オプション' || card.type === 'デュアル') && !hasMatchingColorInPlay(card, 'player') && !meetsUseCondition(card, 'player')) {
+  if ((card.type === 'オプション' || card.type === 'デュアル') && !hasMatchingColorInPlay(card, 'player') && !meetsUseCondition(card, 'player') && !_ignoresColorCondition(card, 'player')) {
     addLog('🚨 「' + card.name + '」と同じ色のカードが場に無いため使用できません');
     return;
   }
@@ -3574,13 +3614,20 @@ function aiPlayCard(c, handIdx, onDone) {
     return;
   }
 
+  // 「登場するとき、このテイマーをレストさせることで、支払うコスト-N」（when_play。鷺坂ヒロコ BT26-088）:
+  // CPU は使える効果を自動で使う（checkWhenPlayDiscount は side!=='player' なら確認なしで適用）
+  let _aiWhenPlayDisc = 0;
+  if (c.type === 'デジモン' && (c.playCost || 0) > 0) {
+    _checkWhenPlayDiscount(c, bs, 'ai', (d) => { _aiWhenPlayDisc = d || 0; }, { addLog, baseCost: c.playCost });
+  }
+  const _aiPayCost = Math.max(0, (c.playCost || 0) - _aiWhenPlayDisc);
   c.summonedThisTurn = true;
   bs.ai.battleArea[empty] = c;
   bs.ai.hand.splice(handIdx, 1);
-  addLog('🤖 AIが「' + c.name + '」を登場！（コスト' + c.playCost + '）');
+  addLog('🤖 AIが「' + c.name + '」を登場！（コスト' + _aiPayCost + '）');
   renderAll();
   showPlayEffect(c, () => {
-    const turnEnded = aiSpendMemory(c.playCost);
+    const turnEnded = aiSpendMemory(_aiPayCost);
     _hooks.applyPermanentEffects('ai');
     renderAll();
     // 【登場時】効果を発動 (公式ルール準拠)
@@ -3680,7 +3727,7 @@ function aiPlayAuto(callback) {
   const optionOrTamer = bs.ai.hand.find(c =>
     (c.type === 'オプション' || c.type === 'テイマー' || c.type === 'デュアル') &&
     c.playCost !== null && c.playCost <= available &&
-    (c.type === 'テイマー' || hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai'))
+    (c.type === 'テイマー' || hasMatchingColorInPlay(c, 'ai') || meetsUseCondition(c, 'ai') || _ignoresColorCondition(c, 'ai'))
   );
   if (optionOrTamer) {
     const handIdx = bs.ai.hand.indexOf(optionOrTamer);

@@ -401,6 +401,14 @@ function executeQueueEntry(entry, context, callback) {
     return;
   }
 
+  // CPU（CPU対戦の ai 側）の任意効果: プレイヤーの画面に確認ダイアログを出さず自動で「使う」
+  // （保留コスト・【ディレイ】・進化コスト軽減等の CPU 任意効果と同じ慣例）。アナウンス演出を
+  // 挟んでから実行する。オンライン対戦の相手（ai 側）の効果は相手の端末で処理されるため対象外
+  if (actualSide === 'ai' && !(window._isOnlineMode && window._isOnlineMode())) {
+    executeWithAnnounce();
+    return;
+  }
+
   // 任意効果 → 確認ダイアログ（カード名・効果テキストは既にここで表示済みのため、
   // 「はい」を選んだ後に別途アナウンス演出は挟まず、その場で実行する）
   // B画面: fx_confirmShow → Aが「はい」→ fx_confirmClose（処理中表示）→ 実行完了で fx_effectClose
@@ -3489,6 +3497,26 @@ function _effectEvoAllowed(evoCard, baseCard, ignoreCond) {
   try { return !!fn(evoCard, baseCard); } catch (_) { return true; }
 }
 
+// === 効果による進化の基準コスト ===
+// 公式ルール8-1-3-2: 選んだ進化条件で指定された進化コストを支払う。手動進化（doEvolve）と同じく、
+// 進化元に合う進化条件のコスト（getEvolveCostFor。色/特徴/名称クローズごとのコスト列。複数成立時は
+// 手動進化と同じ優先順＝名称・特徴を色より先）を基準にし、代替進化（alt_evolve）が成立すればその
+// コストを使う。進化元が分からない／判定関数が無い環境（Node テスト等）は evolveCost
+function _effectEvolveBaseCost(evoCard, baseCard, bs, side) {
+  const fallback = parseInt(evoCard && evoCard.evolveCost, 10) || 0;
+  if (!evoCard || !baseCard) return fallback;
+  let cost = fallback;
+  const fn = (typeof window !== 'undefined' && typeof window.getEvolveCostFor === 'function') ? window.getEvolveCostFor : null;
+  if (fn) {
+    try { const v = parseInt(fn(evoCard, baseCard), 10); if (!isNaN(v)) cost = v; } catch (_) {}
+  }
+  try {
+    const alt = getAltEvolve(evoCard, baseCard, bs, side);
+    if (alt) cost = alt.cost;
+  } catch (_) {}
+  return cost;
+}
+
 // === deck_open の selections[].destination:'play'（オープンしたカードを登場/使用/進化） ===
 // 例: コピペモン(BT26-084)「その中の特徴『セブンコード』を持つカード1枚を支払うコスト-3で登場/使用できる」
 // sel: { count, destination:'play', play_kinds:['summon','use'(,'evolve')], cost_delta?, cost_free?, optional?, filter }
@@ -3507,9 +3535,10 @@ function _deckOpenPlayKinds(card, sel, player) {
   return out;
 }
 // 支払うコスト: 基本コスト（登場/使用=登場コスト、進化=進化コスト）＋cost_delta。cost_free なら0
-function _deckOpenPlayCost(card, sel, kind) {
+// 進化は進化元 baseCard が分かれば、その進化元に合う進化条件のコスト（_effectEvolveBaseCost）を基準にする
+function _deckOpenPlayCost(card, sel, kind, baseCard, bs, side) {
   if (sel.cost_free) return 0;
-  const base = kind === 'evolve' ? (parseInt(card.evolveCost, 10) || 0) : _cardPlayCostOf(card);
+  const base = kind === 'evolve' ? _effectEvolveBaseCost(card, baseCard, bs, side) : _cardPlayCostOf(card);
   return Math.max(0, base + (parseInt(sel.cost_delta, 10) || 0));
 }
 // 'evolve' の進化元（自分のデジモン）を選ぶ。CPU/候補1体なら自動。cb(slotIdx|null)
@@ -3526,7 +3555,9 @@ function _deckOpenChooseEvoBase(ctx, player, cb, evoCard, sel) {
 // 登場時効果はキューに積むだけにして、デッキオープンの処理が終わってから解決する
 // （効果の処理中に誘発した効果は、その効果の処理後に発揮する）
 function _deckOpenPlayCard(card, sel, kind, slotIdx, ctx, done) {
-  const cost = _deckOpenPlayCost(card, sel, kind);
+  const _evoBaseCard = (kind === 'evolve' && slotIdx != null && slotIdx >= 0 && ctx.bs)
+    ? ((ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai).battleArea || [])[slotIdx] : null;
+  const cost = _deckOpenPlayCost(card, sel, kind, _evoBaseCard, ctx.bs, ctx.side);
   if (kind === 'evolve') {
     if (sel.cost_free) ctx.addLog && ctx.addLog('💾 コストを支払わずに進化');
     if (window.doEvolveFromEffect && slotIdx != null && slotIdx >= 0) {
@@ -5437,6 +5468,21 @@ function checkConditions(conditions, card, bs, side) {
         if (n < (cond.value || 0)) return false;
         break;
       }
+      // ちょうどN / Nより多い / Nより少ない（鷺坂ヒロコ BT26-088「自分のデジモンがいないなら」
+      // = gate "cond_battle_area_eq:0@own"）
+      case 'cond_battle_area_eq':
+      case 'cond_battle_area_gt':
+      case 'cond_battle_area_lt': {
+        if (!bs) break;
+        const ts = resolveSubjectSide(cond.subject, side);
+        const n = _battleAreaCount(bs, ts, _stateSubjectType(cond.subject));
+        const v = cond.value || 0;
+        const _baOp = cond.code.slice('cond_battle_area_'.length);
+        if (_baOp === 'eq' && n !== v) return false;
+        if (_baOp === 'gt' && n <= v) return false;
+        if (_baOp === 'lt' && n >= v) return false;
+        break;
+      }
       case 'cond_security_le': {
         if (!bs) break;
         const ts = resolveSubjectSide(cond.subject, side);
@@ -6075,8 +6121,12 @@ function checkConditions(conditions, card, bs, side) {
         break;
       }
       case 'cond_feature': {
-        // 指定特徴
-        if (cond.value && card.feature && !String(card.feature).includes(cond.value)) return false;
+        // 指定特徴。カンマ区切りで複数指定した場合はOR（cond_feature_contains と同じ仕様。
+        // 鷺坂ヒロコ BT26-088 の trigger_conditions "cond_feature:バンチョー,TS" 等）
+        if (cond.value && card.feature) {
+          const _feats = String(cond.value).split(',').map(s => s.trim()).filter(Boolean);
+          if (_feats.length > 0 && !_feats.some(f => String(card.feature).includes(f))) return false;
+        }
         break;
       }
       case 'cond_memory_opponent': {
@@ -9659,6 +9709,19 @@ function _payEffectPlayCost(payCost, costDelta, ctx) {
 function _summonCardFromEffect(c, ctx, opts, done) {
   opts = opts || {};
   if (!c) { done && done(); return; }
+  // コストを支払って登場させる場合は、支払い前に「登場するとき」のコスト軽減（when_play。
+  // 鷺坂ヒロコ BT26-088）を確認する。コストを支払わない登場（payCost=null）・使用（オプション）は対象外
+  if (opts.payCost != null && opts.payCost > 0 && !opts._whenPlayChecked && String(c.type || '') !== 'オプション' && ctx && ctx.bs) {
+    checkWhenPlayDiscount(c, ctx.bs, ctx.side, (disc) => {
+      const o2 = Object.assign({}, opts, { _whenPlayChecked: true });
+      if (disc > 0) {
+        o2.payCost = Math.max(0, opts.payCost - disc);
+        o2.costDelta = (parseInt(opts.costDelta, 10) || 0) - disc;
+      }
+      _summonCardFromEffect(c, ctx, o2, done);
+    }, { addLog: ctx.addLog, baseCost: opts.payCost });
+    return;
+  }
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   _payEffectPlayCost(opts.payCost, opts.costDelta, ctx);
   // オプションカードは「登場」ではなく「使用」として解決する
@@ -10640,7 +10703,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (!_evoBaseIdxs.some(i => _evoOk(_evoCands[_k], i))) _evoCands.splice(_k, 1);
       }
       if (_evoBaseIdxs.length === 0 || _evoCands.length === 0) { _evoFail('進化条件を満たす進化先がありません'); break; }
-      const _evoCostFor = (c) => step.cost_free ? 0 : Math.max(0, (parseInt(c.evolveCost, 10) || 0) + (parseInt(step.value, 10) || 0));
+      // 公式ルール8-1-3-2: 進化元に合う進化条件のコスト（手動進化と同じ getEvolveCostFor / alt_evolve）に
+      // step.value（増減）を加える。cost_free なら0
+      const _evoCostFor = (c, slot) => step.cost_free ? 0 : Math.max(0, _effectEvolveBaseCost(c, player.battleArea[slot], ctx.bs, ctx.side) + (parseInt(step.value, 10) || 0));
       const _doEvolveWith = (chosen, slotIdx) => {
         if (!chosen) {
           if (_evoOptional) ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
@@ -10654,7 +10719,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (_tIdx === -1) { callback(); return; }
           player.trash.splice(_tIdx, 1);
         }
-        const _cost = _evoCostFor(chosen);
+        const _cost = _evoCostFor(chosen, slotIdx);
         if (step.cost_free) ctx.addLog && ctx.addLog('💾 コストを支払わずに進化');
         if (window.doEvolveFromEffect) {
           window.doEvolveFromEffect(chosen, _hIdx, slotIdx, _cost, ctx.side, () => callback());
@@ -14503,6 +14568,131 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback) {
   } else {
     applyDiscount();
   }
+}
+
+// === when_play（「〜が登場するとき、このテイマーをレストさせることで、支払うコスト-N」） ===
+// 例: 鷺坂ヒロコ BT26-088「【自分のターン】特徴『バンチョー』『TS』を持つデジモンカードが登場するとき、
+// このテイマーをレストさせることで、支払うコスト-1。自分のデジモンがいないなら、代わりに支払うコスト-2」
+// レシピ: when_play:[{ trigger_conditions:[...登場するカードに対して評価], cost:[{action:'rest',target:'self_card'}],
+//   action:'summon_appear'|'summon_cost_minus', value:-1, alt_actions:[{ value:-2, gate:'cond_battle_area_eq:0@own' }],
+//   alt_actions_op:'or' }]
+// - 軽減量は value の絶対値。alt_actions は gate が成立したものだけ使い、op が 'or' なら「代わりに」
+//   （置き換え）、それ以外は加算
+// - trigger_conditions に種別条件（cond_type）が無ければ、テキストの「デジモンカードが登場するとき」に
+//   合わせてデジモンカードの登場だけを対象にする
+// - コストは自身のレストのみ対応（既にレスト中＝アクティブでないなら候補にしない）
+// コストを支払って登場させるとき（手札からの通常登場／効果の「支払うコスト-Nで登場」）に呼ぶ。
+// 戻り値: [{ card（効果を持つカード）, step, amount, restSelf }]
+function _whenPlayAmountOf(s) {
+  const v = parseInt(s && s.value, 10);
+  return isNaN(v) ? 0 : Math.abs(v);
+}
+export function getWhenPlayDiscountOptions(playCard, bs, side) {
+  const out = [];
+  if (!bs || !playCard || !bs[side]) return out;
+  const sidePl = bs[side];
+  const cards = [...(sidePl.battleArea || []), ...(sidePl.tamerArea || [])].filter(c => c && c !== playCard);
+  for (const card of cards) {
+    const recipe = _parseCardRecipe(card);
+    if (!recipe) continue;
+    const list = _lookupTriggerSteps(recipe, 'when_play', card);
+    if (!Array.isArray(list)) continue;
+    for (const step of list) {
+      if (!step || typeof step !== 'object') continue;
+      // 相手のカードの登場に反応するもの（subject:'opp'）はこの経路では扱わない
+      const subj = String(step.subject || 'own').toLowerCase();
+      if (subj === 'opp' || subj === 'opponent') continue;
+      const _isTypeCond = (cs) => /^cond_type(:|@|$)/.test(String(cs));
+      const hasTypeCond = (Array.isArray(step.trigger_conditions) && step.trigger_conditions.some(_isTypeCond))
+        || (Array.isArray(step.trigger_conditions_chain) && step.trigger_conditions_chain.some(seg => (seg && seg.conditions || []).some(_isTypeCond)));
+      if (!hasTypeCond && String(playCard.type || '') !== 'デジモン') continue;
+      if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, playCard, bs, side, step.trigger_conditions_chain)) continue;
+      if (step.condition) {
+        const conds = parseRecipeCondition(step.condition);
+        if (!checkConditions(conds, card, bs, side)) continue;
+      }
+      const costs = Array.isArray(step.cost) ? step.cost.filter(Boolean) : [];
+      // 自身のレスト以外のコストは未対応（支払えないものとして扱う）
+      if (costs.some(c => !(c.action === 'rest' && (!c.target || c.target === 'self' || c.target === 'self_card')))) continue;
+      const restSelf = costs.length > 0;
+      if (restSelf && card.suspended) continue;
+      let amount = _whenPlayAmountOf(step);
+      const alts = Array.isArray(step.alt_actions) ? step.alt_actions.filter(Boolean) : [];
+      const isOr = step.alt_actions_op === 'or';
+      for (const a of alts) {
+        if (!a.gate && !a.gate_chain) continue; // gate の無い代替は軽減量の判断に使わない
+        if (!_passiveGateOk(a, card, bs, side)) continue;
+        const av = _whenPlayAmountOf(a);
+        if (isOr) { amount = av; break; }
+        amount += av;
+      }
+      if (amount <= 0) continue;
+      out.push({ card, step, amount, restSelf });
+    }
+  }
+  return out;
+}
+
+// getWhenPlayDiscountOptions の候補を順に確認し、使うと決めたものの軽減量の合計を callback に渡す。
+// プレイヤーは「「鷺坂ヒロコ」をレストさせることで、「X」の支払うコストを-N しますか？」の確認ダイアログ
+// （コストが無い強制軽減は確認なし）、CPU（side!=='player'）は自動で使う。テイマーのレストは
+// オンラインでは state_sync で相手へ同期する（自分のテイマーエリアの状態同期）。
+// opts: { addLog?, baseCost?（支払うコスト。軽減の合計がこれに達したら以降の確認を出さない） }
+export function checkWhenPlayDiscount(playCard, bs, side, callback, opts) {
+  opts = opts || {};
+  const finish = (total) => { try { callback(total || 0); } catch (e) { console.error('[when_play]', e); } };
+  let options = [];
+  try { options = getWhenPlayDiscountOptions(playCard, bs, side); } catch (e) { console.error('[when_play]', e); }
+  if (options.length === 0) { finish(0); return; }
+  const baseCost = opts.baseCost != null ? opts.baseCost : null;
+  const online = side === 'player' && window._isOnlineMode && window._isOnlineMode();
+  let total = 0;
+  let rested = false;
+  let i = 0;
+  const done = () => {
+    if (rested && online && window._onlineSendStateSync) {
+      try { window._onlineSendStateSync(); } catch (_) {}
+    }
+    finish(total);
+  };
+  const next = () => {
+    if (i >= options.length) { done(); return; }
+    if (baseCost != null && total >= baseCost) { done(); return; }
+    const o = options[i++];
+    // 先の候補の処理でレストされた等、もう使えない場合は飛ばす
+    if (o.restSelf && o.card.suspended) { next(); return; }
+    const apply = () => {
+      if (o.restSelf) { o.card.suspended = true; rested = true; }
+      total += o.amount;
+      opts.addLog && opts.addLog('💠 「' + o.card.name + '」の効果' + (o.restSelf ? '（レスト）' : '') + 'で「' + playCard.name + '」の支払うコスト-' + o.amount);
+      next();
+    };
+    if (side !== 'player' || !o.restSelf) { apply(); return; }
+    const msg = '「' + o.card.name + '」をレストさせることで、「' + playCard.name + '」の支払うコストを-' + o.amount + 'しますか？';
+    const hasDialog = typeof document !== 'undefined' && document.getElementById && document.getElementById('effect-confirm-overlay');
+    if (!hasDialog) { apply(); return; }
+    // showConfirmDialog は相手画面に fx_confirmShow を送り、回答時に fx_confirmClose を送る。
+    // 「はい」の場合は相手画面の「効果を発動中」表示を fx_effectClose で閉じる
+    showConfirmDialog(o.card, msg, (yes) => {
+      if (yes && online && window._onlineSendCommand) {
+        try { window._onlineSendCommand({ type: 'fx_effectClose' }); } catch (_) {}
+      }
+      if (yes) apply(); else next();
+    });
+  };
+  next();
+}
+
+// 指定カードが passive の flag を、gate（〜の間）成立中の状態で持っているか（本体の recipe.passive）。
+// ダーク・フィールド BT26-100 {"flag":"ignore_evolve_color","gate":["cond_security_faceup_le:0@own_any"]} 等、
+// 手札にあるカードの性質判定（オプションの色条件・進化条件の色クローズの無視）に使う
+export function cardHasActivePassiveFlag(card, flag, bs, side) {
+  if (!card || !card.recipe) return false;
+  if (typeof card.recipe === 'string' && card.recipe.indexOf(flag) === -1) return false;
+  const r = _parseCardRecipe(card);
+  if (!r) return false;
+  const passives = Array.isArray(r.passive) ? r.passive : (r.passive ? [r.passive] : []);
+  return passives.some(p => p && (p === flag || p.flag === flag) && (typeof p !== 'object' || _passiveGateOk(p, card, bs, side)));
 }
 
 // 【吸収進化-N】: 手札のこの進化先カード自身が持つ能力（アルゴモン BT2-045等）。

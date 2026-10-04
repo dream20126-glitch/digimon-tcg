@@ -34,6 +34,12 @@ function condsToFilter(conds?: ConditionPair[]): Record<string, any> {
       case 'cond_cost_ge':          { const n = num(v); if (n !== undefined) f.cost_ge = n; break; }
       case 'cond_feature_contains': if (v) f.feature_contains = String(v); break;
       case 'cond_name_contains':    if (v) f.name_contains = String(v); break;
+      // 名前（完全一致）/除外・記述・色以外（FILTER_COND_CODESに入っているのに変換が無く、
+      // 「『イクト』か特徴『セイバーズ』を持つカード」の名前条件が保存時に消えていた。ファルコモン BT26-065）
+      case 'cond_name':             if (v) f.name = String(v); break;
+      case 'cond_name_not':         if (v) f.name_not = String(v); break;
+      case 'cond_description_contains': if (v) f.description_contains = String(v); break;
+      case 'cond_color_not':        if (v) f.color_not = String(v); break;
       // 完全一致（カンマ区切りで複数指定可・OR）。cardMatchesFilterのfilter.featureは配列時のみ
       // 複数OR判定になるため、カンマ区切り文字列のまま渡さずここで配列化する
       case 'cond_feature': {
@@ -67,7 +73,7 @@ const FILTER_COND_CODES = new Set([
   'cond_lv', 'cond_lv_le', 'cond_lv_ge',
   'cond_dp', 'cond_dp_le', 'cond_dp_ge',
   'cond_cost', 'cond_cost_le', 'cond_cost_ge',
-  'cond_name', 'cond_name_contains',
+  'cond_name', 'cond_name_contains', 'cond_name_not', 'cond_description_contains', 'cond_color_not',
 ]);
 
 // ConditionPair[] を「filter畳み可能 / 文脈条件」に分割
@@ -393,6 +399,10 @@ function filterToConds(f: any): ConditionPair[] | null {
     out.push({ base: 'cond_feature', value: Array.isArray(v) ? v.join(',') : String(v) });
   }
   if (f.name_contains !== undefined) out.push({ base: 'cond_name_contains', value: String(take('name_contains')) });
+  if (f.name !== undefined) out.push({ base: 'cond_name', value: String(take('name')) });
+  if (f.name_not !== undefined) out.push({ base: 'cond_name_not', value: String(take('name_not')) });
+  if (f.description_contains !== undefined) out.push({ base: 'cond_description_contains', value: String(take('description_contains')) });
+  if (f.color_not !== undefined) out.push({ base: 'cond_color_not', value: String(take('color_not')) });
   if (Object.keys(f).some((k) => !used.has(k))) return null;
   return out;
 }

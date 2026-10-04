@@ -80,6 +80,17 @@
   font-size: 11px;
   color: #777;
 }
+.search-guide {
+  grid-column: 1 / -1;
+  margin-top: 40px;
+  padding: 24px 16px;
+  border: 1px dashed #333;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 13px;
+  color: #888;
+  line-height: 1.7;
+}
 #search-results-sentinel {
   grid-column: 1 / -1;
   height: 1px;

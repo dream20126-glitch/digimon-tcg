@@ -80,6 +80,16 @@ window.toggleFilter = function(btn, type, val) {
 window.filterCards = function() {
   const input = document.getElementById('s-input').value.toLowerCase();
   const feature = document.getElementById('s-feature').value.toLowerCase();
+  // 何も絞り込んでいないときは全件を出さず、案内だけ表示する
+  const hasFilter = input.trim() || feature.trim() || selectedColors.length || selectedLevels.length || selectedTypes.length;
+  if (!hasFilter) {
+    if (resultObserver) resultObserver.disconnect();
+    resultList = [];
+    renderedCount = 0;
+    document.getElementById('search-results').innerHTML =
+      '<div class="search-guide">左の絞り込み（キーワード・色・レベル・タイプ・特徴）でカードを検索してください</div>';
+    return;
+  }
   const filtered = allCards.filter(c => {
     // トークンはデッキに入れられないので検索結果から除外
     if (String(c["タイプ"]) === 'トークン') return false;

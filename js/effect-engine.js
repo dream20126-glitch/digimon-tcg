@@ -1042,7 +1042,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // 条件フィルタ（cond_keyword / cond_lv_le / cond_no_evo 等）を checkConditions で一括評価
         if (dConds.length > 0 && !checkConditions(dConds, c, ctx.bs, _dSideTag)) continue;
         // 対象の条件エディタ由来のfilterオブジェクト（DP以下等）も併せて評価
-        if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) continue;
+        if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter, ctx.bs, ctx.side, ctx.card)) continue;
         // 【プログレス】等「相手の効果を受けない」: isOwn（自分のデジモンが対象）のときは
         // 自分の効果なので対象外にしない
         if (!isOwn && hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) continue;
@@ -1095,7 +1095,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (!c) continue;
         if (onlySuspended && !c.suspended) continue;
         if (_bounceConds.length > 0 && !checkConditions(_bounceConds, c, ctx.bs, _bounceCondSide)) continue;
-        if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) continue;
+        if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter, ctx.bs, ctx.side, ctx.card)) continue;
         if (hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) continue;
         if (c.buffs && c.buffs.some(b => b.type === 'cant_return_hand')) continue;
         bounceTargets.push(i);
@@ -1238,7 +1238,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const _activeConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
       const _activeCondSide = ctx.side;
       const _activeCondPass = (c) => (_activeConds.length === 0 || checkConditions(_activeConds, c, ctx.bs, _activeCondSide))
-        && (!defaultTarget || !defaultTarget.filter || cardMatchesFilter(c, defaultTarget.filter));
+        && (!defaultTarget || !defaultTarget.filter || cardMatchesFilter(c, defaultTarget.filter, ctx.bs, ctx.side, ctx.card));
       if (tCode === 'target_all_own') {
         const activated = [];
         (player.battleArea || []).forEach(c => {
@@ -1888,7 +1888,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           if (!c || c.suspended || c.cantRest) return false;
           if (restTarget.code === 'target_other_own' && c === ctx.card) return false;
           if (_restOwnConds.length > 0 && !checkConditions(_restOwnConds, c, ctx.bs, ctx.side)) return false;
-          if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) return false;
+          if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter, ctx.bs, ctx.side, ctx.card)) return false;
           if (hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return false;
           return true;
         });
@@ -1969,14 +1969,14 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         (opponent.battleArea || []).forEach(c => {
           if (!c || c.suspended || c.cantRest) return;
           if (_restConds.length > 0 && !checkConditions(_restConds, c, ctx.bs, _restCondTag)) return;
-          if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) return;
+          if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter, ctx.bs, ctx.side, ctx.card)) return;
           if (hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return;
           _rmCands.push(c);
         });
         if (_restWantsTamer) {
           (opponent.tamerArea || []).forEach(c => {
             if (!c || c.suspended) return;
-            if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter)) return;
+            if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter, ctx.bs, ctx.side, ctx.card)) return;
             _rmCands.push(c);
           });
         }
@@ -3431,6 +3431,9 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   // suspended: レスト/アクティブ状態でのフィルタ（true=レスト状態のみ、false=アクティブ状態のみ）
   if (filter.suspended === true && !card.suspended) return false;
   if (filter.suspended === false && card.suspended) return false;
+  // same_state_ref: 参照カードと同じ表示形式（レスト/アクティブ）か（例: バッカスモン「このデジモンと
+  // 同じ表示形式の相手のデジモン1体を消滅」= 'self'）。参照カードが分からなければ絞り込まない
+  if (filter.same_state_ref === 'self' && sourceCard && !!card.suspended !== !!sourceCard.suspended) return false;
   // 裏向き/表向き（進化元・テイマーの下のカード等。例:「このデジモンの裏向きの進化元1枚ごとに」の
   // ref_filter:{face_down:true}）。face_zoneは表示専用情報なので判定には使わない
   if (filter.face_down === true && !card._faceDown) return false;
@@ -12714,6 +12717,101 @@ function executeRecipeStep(step, ctx, store, callback) {
         break;
       }
       const _pudFromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
+      // --- 拡張: 置き先（コンテナ）の条件・場/リンクカードからの取得・複数枚 ---
+      // 例: 雷霆の覚醒 BT26-097「名称に『結城ダン』『結城カナン』を含む自分のテイマー1体を、自分の
+      //   『アイギオモン』の進化元の下に置くことで」（cost: from:'battle_area', condition=置き先の名前）
+      //   / 同「トラッシュの『アイギオテュースモン』をそのデジモン（ユピテルモン）の進化元の上に置ける」
+      //   / セブンコードPAD BT26-102「トラッシュ/バトルエリア/他のデジモンのリンクカードから
+      //   特徴『セブンコード』を持つデジモンカード6枚を、自分のデジモン1体の進化元の下に置くことで」
+      // 置き先を先に決め（置き先自身を置くカードの候補から外すため）、続けて置くカードを選ぶ
+      const _pudIsCost = _COST_STEP_SET.has(step);
+      const _pudContainerFilter = step.from_filter ? (step.filter || null) : null;
+      const _pudContainerConds = (_pudIsCost && step.condition)
+        ? [...parseRecipeCondition(step.condition), ...(step.when ? parseRecipeCondition(step.when) : [])] : [];
+      const _pudWant = Math.max(1, parseInt(step.value, 10) || 1);
+      const _pudExtended = !_pudSelf && (_pudFromZones.includes('battle_area') || _pudFromZones.includes('linked')
+        || !!_pudContainerFilter || _pudContainerConds.length > 0 || _pudWant > 1);
+      if (_pudFromZones.length > 0 && _pudExtended) {
+        const _fail = () => {
+          if (_pudIsCost) { ctx.addLog('💨 コストを支払えません'); callback(false); return; }
+          showEffectFailed('効果を発動できませんでした', callback);
+        };
+        const _srcFilter = step.from_filter || {};
+        const _containers = player.battleArea.map((c, i) => ({ c, i })).filter(({ c }) => c
+          && (!_pudContainerFilter || cardMatchesFilter(c, _pudContainerFilter, ctx.bs, ctx.side, ctx.card))
+          && (_pudContainerConds.length === 0 || checkConditions(_pudContainerConds, c, ctx.bs, ctx.side)));
+        // 置き先ごとに置けるカードの候補（手札/トラッシュ/場のデジモン・テイマー/リンクカード）
+        const _sourcesFor = (digi) => {
+          const out = [];
+          const add = (card, remove) => { if (card && card !== digi && cardMatchesFilter(card, _srcFilter, ctx.bs, ctx.side, ctx.card)) out.push({ card, remove }); };
+          if (_pudFromZones.includes('hand')) (player.hand || []).forEach(c => add(c, () => { const k = player.hand.indexOf(c); if (k !== -1) player.hand.splice(k, 1); }));
+          if (_pudFromZones.includes('trash')) (player.trash || []).forEach(c => add(c, () => { const k = player.trash.indexOf(c); if (k !== -1) player.trash.splice(k, 1); }));
+          if (_pudFromZones.includes('battle_area')) {
+            player.battleArea.forEach((c, k) => add(c, () => {
+              const kk = player.battleArea.indexOf(c); if (kk === -1) return;
+              player.battleArea[kk] = null;
+              // 置かれたカードの進化元・リンクカードはトラッシュへ（場を離れたカードは単独のカードになる）
+              (c.stack || []).forEach(s => player.trash.push(s)); c.stack = [];
+              (c.linkedCards || []).forEach(s => player.trash.push(s)); c.linkedCards = [];
+            }));
+            (player.tamerArea || []).forEach(c => add(c, () => {
+              const kk = player.tamerArea.indexOf(c); if (kk === -1) return;
+              player.tamerArea.splice(kk, 1);
+              (c.stack || []).forEach(s => player.trash.push(s)); c.stack = [];
+            }));
+          }
+          if (_pudFromZones.includes('linked')) {
+            player.battleArea.forEach((holder) => {
+              if (!holder || !Array.isArray(holder.linkedCards)) return;
+              // linked_owner:'other' = 他のデジモンのリンクカードのみ（置き先自身のリンクカードは除く）
+              if (step.linked_owner === 'other' && holder === digi) return;
+              if (step.linked_owner === 'self' && holder !== digi) return;
+              holder.linkedCards.forEach(lc => add(lc, () => { const k = holder.linkedCards.indexOf(lc); if (k !== -1) holder.linkedCards.splice(k, 1); }));
+            });
+          }
+          return out;
+        };
+        const _usable = _containers.filter(({ c }) => _sourcesFor(c).length >= (_pudIsCost ? _pudWant : 1));
+        if (_usable.length === 0) { _fail(); break; }
+        const _placeMany = (digi, picked) => {
+          if (!picked || picked.length === 0) {
+            if (_pudOptionalExt) { ctx.addLog('☓ 「使わない」を選択'); callback(_pudIsCost ? false : undefined); return; }
+            _fail(); return;
+          }
+          if (_pudIsCost && picked.length < _pudWant) { _fail(); return; }
+          if (!digi.stack) digi.stack = [];
+          if (ctx.bs) ctx.bs._lastPickedCard = digi;
+          const placed = [];
+          picked.forEach(({ card, remove }) => {
+            remove();
+            if (_pudFaceDown) card._faceDown = true;
+            if (_pudBottom) digi.stack.push(card); else digi.stack.unshift(card);
+            placed.push(card);
+          });
+          ctx.addLog('🃏 「' + digi.name + '」の進化元の' + (_pudBottom ? '下' : '上') + 'に' + placed.map(c => '「' + c.name + '」').join('') + 'を置く' + (_pudFaceDown ? '（裏向き）' : ''));
+          ctx.renderAll();
+          if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+          const _ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+          fireWhenEvoSourceIncreaseTriggers(digi, ctx.side, ctx.bs, _ctxBase, () => callback(true), placed, { type: 'effect', causerSide: ctx.side, causerCard: ctx.card });
+        };
+        const _pudOptionalExt = !!step.optional;
+        const _pickSources = (digi) => {
+          const srcs = _sourcesFor(digi);
+          const n = Math.min(_pudWant, srcs.length);
+          if (effectiveSide === 'ai' || (srcs.length === n && !_pudOptionalExt)) { _placeMany(digi, srcs.slice(0, n)); return; }
+          const cards = srcs.map(s => s.card);
+          showTrashCardPicker(cards, n, _pudOptionalExt, '🃏 「' + digi.name + '」の進化元の' + (_pudBottom ? '下' : '上') + 'に置くカードを' + n + '枚選んでください', (chosen) => {
+            const picked = (chosen || []).map(c => srcs.find(s => s.card === c)).filter(Boolean);
+            _placeMany(digi, picked);
+          }, cards);
+        };
+        if (_usable.length === 1 || effectiveSide === 'ai') { _pickSources(_usable[0].c); break; }
+        showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', _usable.map(u => u.i), '進化元に置く先のデジモンを選んでください', '#00ff88', (selectedIdx) => {
+          if (selectedIdx == null) { if (_pudOptionalExt || _pudIsCost) { callback(_pudIsCost ? false : undefined); } else { _fail(); } return; }
+          _pickSources(player.battleArea[selectedIdx]);
+        });
+        break;
+      }
       if (_pudFromZones.length > 0) {
         // 置くカードの条件: 取得元カードの条件(from_filter)を優先し、無ければ filter（従来通り）
         const _pudFilter = step.from_filter || step.filter || {};

@@ -85,6 +85,10 @@ export const KEYWORD_CODE_ALIASES = {
   attack_minus: 'security_attack_minus',
   Link_plus: 'link_plus',
   Execute: 'execute',
+  // 辞書のコードを小文字へ変更した後も、旧コードのまま保存されているレシピを動かすため
+  Decode: 'decode',
+  Ascension: 'ascension',
+  Vortex: 'vortex',
 };
 function normalizeKeywordCode(code) {
   return Object.prototype.hasOwnProperty.call(KEYWORD_CODE_ALIASES, code) ? KEYWORD_CODE_ALIASES[code] : code;

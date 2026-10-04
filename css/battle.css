@@ -188,6 +188,16 @@
   font-size: 10px; font-weight: bold;
 }
 .phase-info-row { font-size: 9px; color: #555; display: flex; gap: 8px; }
+/* 相手側の枚数表示（相手ゾーンの右上、名前と同じ行） */
+.ai-zone { position: relative; }
+.opp-info-row {
+  position: absolute; top: 7px; right: 8px;
+  display: flex; gap: 8px; font-size: 9px; color: #555;
+}
+.opp-info-row b { color: #aaa; }
+@media (max-width: 440px) {
+  .opp-info-row { position: static; justify-content: flex-end; margin: -2px 0 4px; }
+}
 
 .action-bar {
   display: flex; gap: 5px; padding: 5px 8px; background: #000;

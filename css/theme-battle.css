@@ -237,6 +237,8 @@
 }
 #battle-screen .phase-info-row { color: #6f8a90; }
 #battle-screen .phase-info-row b { color: #dffcff !important; }
+#battle-screen .opp-info-row { color: #8a7090; }
+#battle-screen .opp-info-row b { color: #fdeaff; }
 
 /* ---------- 手札 ---------- */
 #battle-screen .hand-wrap {
@@ -489,7 +491,9 @@
   /* フェイズ・手札・ボタン */
   #battle-screen .phase-bar { padding: 6px 16px; }
   #battle-screen .phase-badge { font-size: 13px; padding: 5px 24px; }
-  #battle-screen .phase-info-row { font-size: 12px; gap: 14px; }
+  #battle-screen .phase-info-row,
+  #battle-screen .opp-info-row { font-size: 12px; gap: 14px; }
+  #battle-screen .opp-info-row { top: 12px; right: 16px; }
   #battle-screen .hand-wrap { height: calc(var(--hand-h) + 22px); padding: 6px 16px; gap: 6px; }
   #battle-screen .h-card { width: calc(var(--hand-h) * 0.72); height: var(--hand-h); border-radius: 7px; }
   #battle-screen .h-cost { font-size: 11px; padding: 1px 5px; }

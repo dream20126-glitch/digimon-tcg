@@ -1210,6 +1210,10 @@ function updateCounts() {
   set('pl-trash-count', bs.player.trash.length);
   set('pl-trash-count2', bs.player.trash.length);
   set('ai-trash-count', bs.ai.trash.length);
+  // 相手側の枚数表示（相手ゾーン上端）
+  set('ai-hand-count', bs.ai.hand.length);
+  set('ai-tama-count', bs.ai.tamaDeck.length);
+  set('ai-trash-count2', bs.ai.trash.length);
 }
 
 // ===== フェーズバッジ更新 =====

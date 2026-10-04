@@ -279,6 +279,7 @@ export function sendStateSync() {
       tamerArea: bs.player.tamerArea.map(serializeCard),
       ikusei: serializeCard(bs.player.ikusei),
       handCount: bs.player.hand.length,
+      tamaCount: bs.player.tamaDeck.length,
       deckCount: bs.player.deck.length,
       trashCount: bs.player.trash.length,
       trashCards: bs.player.trash.map(serializeCard),
@@ -978,6 +979,7 @@ function onRemoteCommand(cmd) {
       bs.ai.ikusei = st.ikusei ? restoreCard(st.ikusei) : bs.ai.ikusei;
       if (st.deckCount !== undefined) adjustArr(bs.ai.deck, st.deckCount);
       if (st.handCount !== undefined) adjustArr(bs.ai.hand, st.handCount);
+      if (st.tamaCount !== undefined) adjustArr(bs.ai.tamaDeck, st.tamaCount);
       if (st.trashCards) bs.ai.trash = toArray(st.trashCards).map(restoreCard);
       else if (st.trashCount !== undefined) adjustArr(bs.ai.trash, st.trashCount);
       if (st.securityCount !== undefined && st.securityCount > 0 && st.securityCount < bs.ai.security.length && bs._aiSecuritySynced) {

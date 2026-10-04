@@ -135,6 +135,10 @@
 .m-cell.m-ai { background: rgba(255, 0, 251, 0.12); border-color: #ff00fb44; color: #ff00fb; }
 .m-cell.m-active { transform: scale(1.25); box-shadow: 0 0 8px currentColor; border-width: 2px; }
 .memory-info { display: flex; justify-content: space-between; align-items: center; font-size: 10px; }
+/* ターン数バッジ */
+.turn-badge { display: inline-flex; align-items: baseline; gap: 4px; color: #aaa; }
+.turn-badge-label { font-size: 8px; letter-spacing: 1px; color: #666; }
+.turn-badge #t-count { font-size: 14px; color: #fff; }
 .m-turn-label { font-weight: bold; }
 .m-turn-label.pl { color: #00fbff; }
 .m-turn-label.ai { color: #ff00fb; }

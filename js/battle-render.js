@@ -1197,7 +1197,12 @@ export function updateMemGauge() {
     lbl.style.color = bs.isPlayerTurn ? myColor : oppColor;
   }
   const tCount = document.getElementById('t-count');
-  if (tCount) tCount.innerText = bs.turn;
+  if (tCount && tCount.innerText !== String(bs.turn)) {
+    tCount.innerText = bs.turn;
+    // ターンが進んだらバッジを一度弾ませる（アニメーションを再始動）
+    const badge = document.getElementById('turn-badge');
+    if (badge) { badge.classList.remove('turn-pop'); void badge.offsetWidth; badge.classList.add('turn-pop'); }
+  }
 }
 
 // ===== カウント更新 =====

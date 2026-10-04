@@ -1,297 +1,334 @@
-/* ===== バトル画面のおしゃれテーマ（演出レイヤー） =====
+/* ===== バトル画面テーマ（紺〜青のプレイマット） =====
    battle.css の後に読み込む上書き専用ファイル。外せば元の見た目に戻る。
-   盤面の視認性を最優先し、レイアウト・サイズ・transform（レスト時の回転、手札の持ち上げ）は変えない。
-   色・背景・枠・影・文字だけを変える。 */
+   配置・サイズ・transform（レスト時の回転、手札の持ち上げ）は変えない。色・背景・枠・影・形だけを変える。
+   モチーフ: 紺〜ロイヤルブルーのプレイマット、楕円のリング、台形のレーン、P1/P2 のリボン、
+   六角形のカウンター、オレンジ丸の現在メモリー、白い平行四辺形のフェイズ表示。 */
 
-/* ---------- 画面全体: 両脇にも光がにじむ ---------- */
 #battle-screen {
+  --mat-deep: #071232;
+  --mat-navy: #0e2263;
+  --mat-blue: #1a3fa8;
+  --mat-line: rgba(170, 200, 255, 0.35);
+  --mat-text: #e6efff;
+  --p1-blue: #3f8cff;
+  --p2-pink: #ff4f9e;
+  --ring: rgba(255, 168, 70, 0.55);
+  --mem-orange: #ff9a2e;
   background:
-    radial-gradient(ellipse 50% 40% at 50% 0%, rgba(255, 0, 251, 0.14), transparent 70%),
-    radial-gradient(ellipse 50% 40% at 50% 100%, rgba(0, 251, 255, 0.14), transparent 70%),
-    #000;
+    radial-gradient(ellipse 70% 60% at 50% 50%, #183a9c, #0a1a52 60%, #050b24 100%);
 }
 
 /* ---------- プレイマット ---------- */
 #battle-screen .battle-wrap {
+  isolation: isolate;
   background:
-    /* 薄い六角形模様 */
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='48' viewBox='0 0 28 48'%3E%3Cpath d='M14 0l14 8v16L14 32 0 24V8zM14 32l14 8v16M14 32L0 40v16' fill='none' stroke='%2300fbff' stroke-opacity='0.05' stroke-width='1'/%3E%3C/svg%3E"),
-    linear-gradient(180deg, #0c0010 0%, #050008 38%, #020406 50%, #00070a 62%, #000c10 100%);
-  box-shadow:
-    -1px 0 0 rgba(0, 251, 255, 0.25),
-    1px 0 0 rgba(255, 0, 251, 0.25),
-    0 0 40px rgba(0, 0, 0, 0.9);
+    /* 細いグリッド */
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 32px 32px,
+    radial-gradient(ellipse 90% 55% at 50% 42%, #2050c8 0%, #15349a 45%, #0d2266 80%, #0a1a52 100%);
+  box-shadow: 0 0 0 1px rgba(150, 190, 255, 0.25), 0 0 60px rgba(0, 0, 0, 0.7);
+}
+/* 楕円のリング（盤面中央） */
+#battle-screen .battle-wrap::before {
+  content: '';
+  position: absolute;
+  left: -14%;
+  right: -14%;
+  top: 6%;
+  height: 52%;
+  border: 1.5px solid var(--ring);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(255, 168, 70, 0.25), inset 0 0 12px rgba(255, 168, 70, 0.15);
+  pointer-events: none;
+  z-index: -1;
+}
+/* 中央の紋章（同心円） */
+#battle-screen .battle-wrap::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 32%;
+  width: 220px;
+  height: 220px;
+  margin: -110px 0 0 -110px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, transparent 38%, rgba(160, 200, 255, 0.10) 38.5%, transparent 40%),
+    radial-gradient(circle, transparent 58%, rgba(160, 200, 255, 0.08) 58.5%, transparent 60.5%),
+    radial-gradient(circle, transparent 78%, rgba(160, 200, 255, 0.06) 78.5%, transparent 80.5%);
+  pointer-events: none;
+  z-index: -1;
 }
 
-/* 相手ゾーン（マゼンタ） / 自分ゾーン（シアン） */
+/* ---------- 相手ゾーン / 自分ゾーン ---------- */
 #battle-screen .ai-zone {
-  background:
-    radial-gradient(ellipse 80% 90% at 50% 0%, rgba(255, 0, 251, 0.14), transparent 75%);
-  border-bottom: 1px solid transparent;
-  border-image: linear-gradient(90deg, transparent, rgba(255, 0, 251, 0.6), transparent) 1;
+  background: linear-gradient(180deg, rgba(255, 79, 158, 0.12), transparent 70%);
+  border-bottom: none;
 }
 #battle-screen .player-zone {
-  background:
-    radial-gradient(ellipse 80% 90% at 50% 100%, rgba(0, 251, 255, 0.13), transparent 75%);
-  border-top: 1px solid transparent;
-  border-image: linear-gradient(90deg, transparent, rgba(0, 251, 255, 0.6), transparent) 1;
+  position: relative;
+  background: linear-gradient(0deg, rgba(63, 140, 255, 0.16), transparent 70%);
+  border-top: none;
 }
-#battle-screen .zone-label {
-  font-family: var(--font-tech, sans-serif);
-  font-weight: 600;
-  letter-spacing: 0.14em;
-}
-#battle-screen .ai-zone .zone-label { color: #ff7dfd; text-shadow: 0 0 6px rgba(255, 0, 251, 0.6); }
-#battle-screen .player-zone .zone-label { color: #7ffdff; text-shadow: 0 0 6px rgba(0, 251, 255, 0.6); }
+#battle-screen .zone-label { letter-spacing: 0.1em; }
+#battle-screen .ai-zone .zone-label,
+#battle-screen .player-zone .zone-label { color: var(--mat-text); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
+
+/* P2 リボン（相手の名前） */
 #opponent-name-label {
+  display: block;
+  width: fit-content;
+  margin: 0 auto 6px !important;
+  padding: 3px 28px 4px;
+  font-size: 10px !important;
   font-weight: bold;
-  letter-spacing: 0.08em !important;
-  color: #ffb3fe !important;
+  letter-spacing: 0.12em !important;
+  color: #fff !important;
+  text-shadow: 0 1px 2px rgba(120, 0, 50, 0.6) !important;
+  background: linear-gradient(180deg, #ff7ab6, var(--p2-pink) 60%, #d62f7c);
+  clip-path: polygon(0 0, 100% 0, 92% 100%, 8% 100%);
+}
+/* P1 リボン（自分ゾーンの下端） */
+#battle-screen .player-zone::after {
+  content: 'P1';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  padding: 2px 30px 1px;
+  font-size: 9px;
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  color: #fff;
+  background: linear-gradient(0deg, #2f6fe0, var(--p1-blue) 60%, #79b0ff);
+  clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%);
+  pointer-events: none;
 }
 
-/* ---------- カード枠 ---------- */
+/* ---------- 台形のレーン（バトルエリア・テイマーエリアの背景） ---------- */
+#battle-screen .scroll-wrap[data-scroll-target$="battle-row"] {
+  isolation: isolate;
+  padding: 5px 6px;
+}
+#battle-screen .scroll-wrap[data-scroll-target$="battle-row"]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(120, 165, 255, 0.22), rgba(60, 110, 230, 0.12));
+  border: 1px solid var(--mat-line);
+}
+#battle-screen .ai-zone .scroll-wrap[data-scroll-target$="battle-row"]::before {
+  clip-path: polygon(0 0, 100% 0, 97% 100%, 3% 100%);
+  border-radius: 6px;
+}
+#battle-screen .player-zone .scroll-wrap[data-scroll-target$="battle-row"]::before {
+  clip-path: polygon(3% 0, 97% 0, 100% 100%, 0 100%);
+  border-radius: 6px;
+}
+#battle-screen div:has(> #ai-tamer-row),
+#battle-screen div:has(> #pl-tamer-row) {
+  border-top: none !important;
+  padding: 3px 6px !important;
+  background: linear-gradient(180deg, rgba(120, 165, 255, 0.12), rgba(60, 110, 230, 0.06));
+  border-radius: 6px;
+  outline: 1px solid rgba(170, 200, 255, 0.18);
+}
+#battle-screen div:has(> #ai-tamer-row) > span,
+#battle-screen div:has(> #pl-tamer-row) > span { color: rgba(255, 210, 150, 0.8) !important; }
+
+/* ---------- カード ---------- */
 #battle-screen .b-slot {
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)) ,
-    #06080a;
-  border: 1px dashed rgba(120, 140, 150, 0.25);
+  background: rgba(10, 25, 70, 0.4);
+  border: 1px dashed rgba(170, 200, 255, 0.3);
 }
-/* 空き枠: 四隅のブラケット */
-#battle-screen .b-slot:not(.pl-card):not(.ai-card) {
-  background:
-    linear-gradient(currentColor, currentColor) top left / 8px 1px no-repeat,
-    linear-gradient(currentColor, currentColor) top left / 1px 8px no-repeat,
-    linear-gradient(currentColor, currentColor) bottom right / 8px 1px no-repeat,
-    linear-gradient(currentColor, currentColor) bottom right / 1px 8px no-repeat,
-    rgba(255, 255, 255, 0.015);
-  color: rgba(0, 251, 255, 0.35);
-  border-color: rgba(0, 251, 255, 0.12);
-}
-#battle-screen .ai-zone .b-slot:not(.pl-card):not(.ai-card) {
-  color: rgba(255, 0, 251, 0.35);
-  border-color: rgba(255, 0, 251, 0.12);
-}
-#battle-screen .b-slot.pl-card {
-  border: 1px solid rgba(0, 251, 255, 0.55);
-  background: #001a1f;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.7), 0 0 8px rgba(0, 251, 255, 0.25);
-}
+#battle-screen .b-slot.pl-card,
 #battle-screen .b-slot.ai-card {
-  border: 1px solid rgba(255, 0, 251, 0.55);
-  background: #1a0019;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.7), 0 0 8px rgba(255, 0, 251, 0.25);
+  background: #0a1a4a;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 10px rgba(0, 0, 30, 0.6);
 }
-#battle-screen .b-slot.pl-card:hover { box-shadow: 0 3px 10px rgba(0, 0, 0, 0.7), 0 0 14px rgba(0, 251, 255, 0.55); }
-#battle-screen .b-slot.ai-card:hover { box-shadow: 0 3px 10px rgba(0, 0, 0, 0.7), 0 0 14px rgba(255, 0, 251, 0.55); }
+#battle-screen .b-slot.pl-card { box-shadow: 0 4px 10px rgba(0, 0, 30, 0.6), 0 0 8px rgba(63, 140, 255, 0.5); }
+#battle-screen .b-slot.ai-card { box-shadow: 0 4px 10px rgba(0, 0, 30, 0.6), 0 0 8px rgba(255, 79, 158, 0.45); }
 #battle-screen .b-slot.selected-slot {
-  box-shadow: 0 0 0 1px #fff, 0 0 16px rgba(0, 251, 255, 0.9) !important;
+  border-color: #ffd36b !important;
+  box-shadow: 0 0 0 1px #ffd36b, 0 0 16px rgba(255, 190, 80, 0.9) !important;
 }
-/* 名前帯とDPバッジ */
 #battle-screen .b-slot .s-name {
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.55));
+  background: linear-gradient(90deg, rgba(8, 18, 55, 0.6), rgba(8, 18, 55, 0.92), rgba(8, 18, 55, 0.6));
   font-weight: bold;
-  letter-spacing: 0.02em;
 }
 #battle-screen .b-slot .s-dp {
-  background: linear-gradient(180deg, rgba(0, 40, 50, 0.95), rgba(0, 0, 0, 0.95));
-  border: 1px solid rgba(0, 251, 255, 0.5);
+  background: rgba(8, 18, 55, 0.95);
+  color: #fff;
+  border: 1px solid rgba(170, 200, 255, 0.6);
   border-radius: 3px;
-  letter-spacing: 0.02em;
-  text-shadow: 0 0 4px rgba(0, 251, 255, 0.7);
 }
-#battle-screen .ai-zone .b-slot .s-dp {
-  background: linear-gradient(180deg, rgba(50, 0, 48, 0.95), rgba(0, 0, 0, 0.95));
-  border-color: rgba(255, 0, 251, 0.5);
-}
+#battle-screen .tamer-slot { box-shadow: 0 3px 8px rgba(0, 0, 30, 0.6); }
 
-/* テイマー枠 */
-#battle-screen .tamer-slot {
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.7), 0 0 8px rgba(255, 170, 0, 0.2);
-}
-
-/* 育成エリア: デジタマのゆりかご */
+/* 育成エリア: オレンジの枠（参考: 「育成」スロット） */
 #battle-screen .iku-slot {
-  background: radial-gradient(circle at 50% 60%, rgba(0, 255, 136, 0.18), rgba(0, 20, 8, 0.9) 70%);
-  border-color: rgba(0, 255, 136, 0.35);
+  background: linear-gradient(160deg, rgba(160, 90, 30, 0.35), rgba(60, 30, 10, 0.5));
+  border: 1px solid rgba(255, 170, 90, 0.6);
 }
-#battle-screen .iku-slot.occupied {
-  box-shadow: 0 0 10px rgba(0, 255, 136, 0.4);
+#battle-screen .iku-slot.occupied { border-color: #ffb46b; box-shadow: 0 0 10px rgba(255, 170, 90, 0.45); }
+
+/* デッキ・トラッシュのタイル */
+#ai-deck-img,
+#pl-deck-img {
+  border: 1.5px solid rgba(255, 255, 255, 0.85) !important;
+  background: var(--mat-navy) !important;
+  box-shadow: 0 3px 0 #0a1a52, 0 5px 0 #071232, 0 7px 10px rgba(0, 0, 0, 0.6);
 }
+#battle-screen [onclick^="showTrash"] {
+  background: linear-gradient(180deg, #1d3a99, #0e2263) !important;
+  border: 1.5px solid rgba(170, 200, 255, 0.7) !important;
+}
+#ai-trash-count,
+#pl-trash-count { color: #fff !important; font-size: 13px !important; }
 
-/* デッキ・トラッシュ */
-#pl-deck-img { box-shadow: 0 3px 0 #003a44, 0 6px 0 #00222a, 0 8px 12px rgba(0, 0, 0, 0.8), 0 0 10px rgba(0, 251, 255, 0.3); }
-#ai-deck-img { box-shadow: 0 3px 0 #3a0038, 0 6px 0 #22001f, 0 8px 12px rgba(0, 0, 0, 0.8), 0 0 10px rgba(255, 0, 251, 0.3); }
-
-/* セキュリティ */
-#battle-screen .sec-card.pl-sec,
-#battle-screen .sec-card.ai-sec { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.8); }
-#pl-sec-area img,
-#ai-sec-area img { filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.8)); }
+/* セキュリティ枚数: 六角形のカウンター */
+#battle-screen .zone-label:has(> #pl-sec-count),
+#battle-screen .zone-label:has(> #ai-sec-count) { font-size: 0; }
+#pl-sec-count,
+#ai-sec-count {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 23px;
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--mat-navy);
+  background: linear-gradient(180deg, #ffffff, #c9dbff);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+}
 
 /* ---------- メモリーゲージ ---------- */
 #battle-screen .memory-wrap {
-  position: relative;
-  background:
-    linear-gradient(90deg, rgba(0, 251, 255, 0.08), rgba(0, 0, 0, 0.6) 35%, rgba(0, 0, 0, 0.6) 65%, rgba(255, 0, 251, 0.08)),
-    #020304;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 8px 14px rgba(0, 0, 0, 0.7), inset 0 -8px 14px rgba(0, 0, 0, 0.7);
+  background: linear-gradient(90deg, rgba(255, 79, 158, 0.12), rgba(8, 18, 55, 0.55) 30%, rgba(8, 18, 55, 0.55) 70%, rgba(63, 140, 255, 0.14));
+  border-top: 1px solid var(--mat-line);
+  border-bottom: 1px solid var(--mat-line);
 }
 #battle-screen .m-cell {
-  border-radius: 50%;
+  border-radius: 3px;
+  background: rgba(12, 28, 80, 0.85);
+  border: 1px solid rgba(170, 200, 255, 0.35);
+  color: #b9cdf5;
 }
-#battle-screen .m-cell.m-pl {
-  background: radial-gradient(circle at 35% 30%, rgba(0, 251, 255, 0.35), rgba(0, 251, 255, 0.06) 70%);
-  border-color: rgba(0, 251, 255, 0.45);
-}
-#battle-screen .m-cell.m-ai {
-  background: radial-gradient(circle at 35% 30%, rgba(255, 0, 251, 0.35), rgba(255, 0, 251, 0.06) 70%);
-  border-color: rgba(255, 0, 251, 0.45);
-}
-#battle-screen .m-cell.m-zero {
-  border-radius: 5px;
-  background: linear-gradient(135deg, #3a3a3a, #111);
-  border-color: #888;
-}
+#battle-screen .m-cell.m-pl { background: rgba(40, 90, 200, 0.45); border-color: rgba(120, 175, 255, 0.6); color: #dbe8ff; }
+#battle-screen .m-cell.m-ai { background: rgba(200, 40, 120, 0.35); border-color: rgba(255, 120, 180, 0.6); color: #ffd6ea; }
+#battle-screen .m-cell.m-zero { background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.6); color: #fff; }
 #battle-screen .m-cell.m-active {
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: radial-gradient(circle at 35% 30%, #ffc27a, var(--mem-orange) 60%, #e67400);
   color: #fff;
-  animation: memPulse 1.6s ease-in-out infinite;
+  text-shadow: 0 1px 2px rgba(120, 50, 0, 0.7);
+  box-shadow: 0 0 10px rgba(255, 154, 46, 0.8);
 }
-#battle-screen .m-cell.m-pl.m-active { --mem-glow: #00fbff; background: radial-gradient(circle at 35% 30%, #c9feff, #00c8d4 70%); color: #002024; }
-#battle-screen .m-cell.m-ai.m-active { --mem-glow: #ff00fb; background: radial-gradient(circle at 35% 30%, #ffc9fe, #d400cf 70%); color: #24001f; }
-#battle-screen .m-cell.m-zero.m-active { background: linear-gradient(135deg, #fff, #9aa); color: #000; }
-@keyframes memPulse {
-  0%, 100% { box-shadow: 0 0 6px var(--mem-glow, #fff); }
-  50%      { box-shadow: 0 0 14px var(--mem-glow, #fff), 0 0 22px var(--mem-glow, #fff); }
-}
-#battle-screen .m-turn-label {
-  letter-spacing: 0.08em;
-}
-#battle-screen .m-turn-label.pl { text-shadow: 0 0 8px rgba(0, 251, 255, 0.8); }
-#battle-screen .m-turn-label.ai { text-shadow: 0 0 8px rgba(255, 0, 251, 0.8); }
+#battle-screen .m-turn-label { letter-spacing: 0.08em; }
+#battle-screen .m-turn-label.pl { color: #8fc0ff; }
+#battle-screen .m-turn-label.ai { color: #ff8cc0; }
 
-/* ---------- フェーズ表示 ---------- */
+/* ---------- フェイズ表示: 白い平行四辺形 ---------- */
 #battle-screen .phase-bar {
-  background: linear-gradient(180deg, rgba(0, 20, 26, 0.9), rgba(0, 6, 8, 0.95));
-  border-top: 1px solid rgba(0, 251, 255, 0.18);
+  background: linear-gradient(180deg, rgba(10, 26, 82, 0.95), rgba(7, 18, 50, 0.98));
+  border-top: 1px solid var(--mat-line);
 }
 #battle-screen .phase-badge {
-  position: relative;
-  padding-left: 20px;
+  border: none;
+  border-radius: 0;
+  padding: 4px 18px;
+  font-style: italic;
+  font-weight: 900;
   letter-spacing: 0.08em;
-  background: linear-gradient(180deg, rgba(0, 251, 255, 0.25), rgba(0, 251, 255, 0.06));
-  box-shadow: 0 0 10px rgba(0, 251, 255, 0.35);
-  text-shadow: 0 0 6px rgba(0, 251, 255, 0.7);
+  color: var(--mat-navy);
+  background: linear-gradient(90deg, #ffffff, #d7e5ff);
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
 }
-#battle-screen .phase-badge::before {
-  content: '';
-  position: absolute;
-  left: 8px;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  margin-top: -3px;
-  border-radius: 50%;
-  background: var(--main-cyan);
-  box-shadow: 0 0 6px var(--main-cyan);
-  animation: phaseDot 1.2s ease-in-out infinite;
-}
-@keyframes phaseDot {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.25; }
-}
-#battle-screen .phase-info-row { color: #6f8a90; }
-#battle-screen .phase-info-row b { color: #d5f6f8 !important; }
+#battle-screen .phase-info-row { color: #8ea6d8; }
+#battle-screen .phase-info-row b { color: #fff !important; }
 
-/* ---------- 手札: トレイ ---------- */
+/* ---------- 手札 ---------- */
 #battle-screen .hand-wrap {
-  background:
-    radial-gradient(ellipse 70% 100% at 50% 100%, rgba(0, 251, 255, 0.1), transparent 70%),
-    linear-gradient(180deg, #03080a, #000);
-  border-top: 1px solid rgba(0, 251, 255, 0.2);
-  box-shadow: inset 0 10px 16px rgba(0, 0, 0, 0.8);
+  background: linear-gradient(180deg, #0c1c50, #060f2c);
+  border-top: 1px solid var(--mat-line);
 }
 #battle-screen .h-card {
-  border-color: rgba(0, 251, 255, 0.25);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.8);
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 4px 10px rgba(0, 0, 30, 0.7);
 }
-#battle-screen .h-card:hover {
-  border-color: rgba(0, 251, 255, 0.7);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.8), 0 0 12px rgba(0, 251, 255, 0.45);
-}
-#battle-screen .h-card.h-selected {
-  border-color: #fff;
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.8), 0 0 18px rgba(0, 251, 255, 0.9);
-}
-#battle-screen .h-cost {
-  background: rgba(0, 0, 0, 0.9);
-  border: 1px solid rgba(255, 170, 0, 0.7);
-  box-shadow: 0 0 6px rgba(255, 170, 0, 0.5);
-}
+#battle-screen .h-card:hover { border-color: #fff; box-shadow: 0 8px 16px rgba(0, 0, 30, 0.7), 0 0 10px rgba(120, 175, 255, 0.6); }
+#battle-screen .h-card.h-selected { border-color: #ffd36b; box-shadow: 0 10px 18px rgba(0, 0, 30, 0.7), 0 0 16px rgba(255, 190, 80, 0.9); }
+#battle-screen .h-cost { background: rgba(8, 18, 55, 0.92); border: 1px solid rgba(255, 190, 90, 0.7); }
 
 /* ---------- ボタン ---------- */
-#battle-screen .action-bar {
-  background: linear-gradient(180deg, #010203, #000);
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-#battle-screen .a-btn {
-  letter-spacing: 0.06em;
-}
+#battle-screen .action-bar { background: #060f2c; border-top: 1px solid rgba(170, 200, 255, 0.15); }
+#battle-screen #breed-action-bar { background: #08143a !important; border-top: 1px solid rgba(170, 200, 255, 0.15) !important; }
 #battle-screen .a-btn-cyan {
-  background: linear-gradient(180deg, rgba(0, 80, 95, 0.9), rgba(0, 25, 32, 0.95));
-  box-shadow: 0 0 10px rgba(0, 251, 255, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  text-shadow: 0 0 6px rgba(0, 251, 255, 0.6);
+  border-radius: 20px;
+  border-color: rgba(190, 215, 255, 0.8);
+  color: var(--mat-text);
+  background: linear-gradient(180deg, #1f3f9e, #0e2263);
+  box-shadow: 0 2px 6px rgba(0, 0, 30, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
-#battle-screen .a-btn-cyan:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(0, 120, 140, 0.95), rgba(0, 40, 50, 0.95));
-  box-shadow: 0 0 18px rgba(0, 251, 255, 0.5);
-}
+#battle-screen .a-btn-cyan:hover:not(:disabled) { background: linear-gradient(180deg, #2a52c4, #13307f); }
+/* ターン終了: 六角形のボタン（参考: 「パス」） */
 #battle-screen .a-btn-end {
-  padding-top: 10px;
-  padding-bottom: 10px;
-  font-family: var(--font-display, sans-serif);
-  font-weight: normal;
+  border: none;
+  border-radius: 0;
+  padding: 10px 12px;
   font-size: 13px;
-  letter-spacing: 0.12em;
-  color: #fff;
-  border-color: #ff6b6b;
-  background: linear-gradient(180deg, #c4002f, #5a0016);
-  box-shadow: 0 0 14px rgba(255, 40, 80, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -8px 14px rgba(0, 0, 0, 0.3);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  color: var(--mat-navy);
+  background: linear-gradient(180deg, #f2f6ff, #b7c8ea 55%, #91a7d6);
+  clip-path: polygon(16px 0, calc(100% - 16px) 0, 100% 50%, calc(100% - 16px) 100%, 16px 100%, 0 50%);
 }
-#battle-screen .a-btn-end:hover {
-  background: linear-gradient(180deg, #e8003a, #70001c);
-  box-shadow: 0 0 22px rgba(255, 40, 80, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+#battle-screen .a-btn-end:hover { background: linear-gradient(180deg, #ffffff, #cfdcf5 55%, #a8bbe3); }
+#battle-screen .a-btn-end:active { filter: brightness(0.92); }
+#battle-screen div:has(> #exit-gate-btn) {
+  background: #060f2c !important;
+  border-top: 1px solid rgba(170, 200, 255, 0.15) !important;
 }
-#battle-screen .a-btn-end:active { filter: brightness(0.9); }
+#exit-gate-btn {
+  border-color: rgba(255, 120, 150, 0.5) !important;
+  color: rgba(255, 170, 190, 0.85) !important;
+  border-radius: 12px !important;
+}
 #battle-screen .scroll-arrow {
   border-radius: 50%;
   width: 26px;
   height: 26px;
   font-size: 11px;
-  background: radial-gradient(circle at 35% 30%, rgba(0, 80, 95, 0.95), rgba(0, 10, 14, 0.95));
+  border-color: rgba(190, 215, 255, 0.8);
+  color: #fff;
+  background: rgba(14, 34, 99, 0.92);
+  box-shadow: 0 2px 6px rgba(0, 0, 30, 0.6);
 }
-#exit-gate-btn:hover { color: #ff6b6b !important; border-color: #ff6b6b !important; }
 
 /* ---------- カード詳細・メニュー ---------- */
 #b-card-detail > div {
-  background:
-    linear-gradient(160deg, rgba(0, 30, 45, 0.95), rgba(0, 6, 12, 0.98)) padding-box,
-    linear-gradient(135deg, var(--main-cyan), rgba(0, 251, 255, 0.1) 45%, rgba(255, 0, 251, 0.15) 60%, var(--accent-magenta, #ff00fb)) border-box !important;
-  border: 1.5px solid transparent !important;
-  box-shadow: 0 0 40px rgba(0, 251, 255, 0.25) !important;
+  background: linear-gradient(170deg, #16348f, #0a1a52) !important;
+  border: 1.5px solid rgba(190, 215, 255, 0.7) !important;
+  box-shadow: 0 0 40px rgba(0, 0, 30, 0.8) !important;
 }
-#bcd-img { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 251, 255, 0.4); }
-#bcd-name { font-family: var(--font-display, sans-serif); font-weight: normal !important; font-size: 15px !important; letter-spacing: 0.05em; }
+#bcd-img { border: 2px solid #fff !important; box-shadow: 0 8px 20px rgba(0, 0, 30, 0.8); }
+#bcd-close-btn {
+  border-radius: 24px;
+  border-color: rgba(190, 215, 255, 0.8);
+  color: var(--mat-text, #e6efff);
+  text-shadow: none;
+  background: linear-gradient(180deg, #2a52c4, #13307f);
+  box-shadow: 0 4px 10px rgba(0, 0, 30, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+#bcd-close-btn:hover { background: linear-gradient(180deg, #3563dc, #183a96); box-shadow: 0 4px 14px rgba(0, 0, 30, 0.6), 0 0 12px rgba(120, 175, 255, 0.5); }
+#bcd-effect,
+#bcd-evo-source { background: rgba(5, 12, 40, 0.75) !important; border-color: rgba(170, 200, 255, 0.3) !important; }
 #card-action-menu,
 #longpress-action-menu {
-  backdrop-filter: blur(6px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 251, 255, 0.35) !important;
-}
-
-/* ---------- 動きを減らす設定 ---------- */
-@media (prefers-reduced-motion: reduce) {
-  #battle-screen .m-cell.m-active,
-  #battle-screen .phase-badge::before { animation: none !important; }
+  background: rgba(12, 30, 90, 0.97) !important;
+  border-color: rgba(190, 215, 255, 0.8) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 30, 0.8) !important;
 }

@@ -696,7 +696,7 @@ export function onEndTurn() {
     });
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
-      bs.isPlayerTurn = false;
+      bs.isPlayerTurn = false; bs._oppPhase = null;
       // ターン中アタック回数のリセット
       bs._currentTurnAttackCount = 0;
       bs._evolveCountThisTurn = 0;
@@ -725,7 +725,7 @@ export function onEndTurn() {
     _processBurstEvolvePendingDiscard(bs, 'player');
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
-      bs.isPlayerTurn = false;
+      bs.isPlayerTurn = false; bs._oppPhase = null;
       setTimeout(() => aiTurn(), 500);
     });
   });
@@ -738,7 +738,7 @@ export function checkAutoTurnEnd() {
 
   const over = Math.abs(bs.memory);
   addLog('💾 メモリー' + over + 'で相手側へ');
-  bs.isPlayerTurn = false;
+  bs.isPlayerTurn = false; bs._oppPhase = null;
   // プレイヤーのターン終了
   _hooks.expireBuffs('dur_this_turn', null, 'player');
   _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
@@ -797,9 +797,13 @@ export async function aiTurn() {
   });
 }
 
+// 相手（AI/オンライン相手）の現在フェーズ。フェーズ表示に使う（自分のフェーズは bs.phase）
+function setOppPhase(phase) { bs._oppPhase = phase; updatePhaseBadge(); }
+
 // ----- AI アクティブフェイズ -----
 
 function aiPhaseUnsuspend() {
+  setOppPhase('unsuspend');
   // 再起動判定の前に永続効果を再評価（直前の付与状態を確実に反映）
   try { _applyPermanent(bs, 'player', { bs, side: 'player' }); _applyPermanent(bs, 'ai', { bs, side: 'ai' }); } catch(_) {}
   const hasRested = bs.ai.battleArea.some(c => c && c.suspended);
@@ -842,6 +846,7 @@ function aiPhaseUnsuspend() {
 // ----- AI ドローフェイズ -----
 
 function aiPhaseDraw() {
+  setOppPhase('draw');
   if (bs.ai.deck.length > 0) {
     const c = bs.ai.deck.splice(0, 1)[0];
     bs.ai.hand.push(c);
@@ -860,6 +865,7 @@ function aiPhaseDraw() {
 // ----- AI 育成フェイズ -----
 
 function aiPhaseBreed() {
+  setOppPhase('breed');
   // チュートリアル: AIスクリプトがあれば育成系アクションをここで実行
   const runner = window._tutorialRunner;
   if (runner && runner.active && runner.opponentScriptRunner) {
@@ -929,6 +935,7 @@ function aiPhaseBreed() {
 // ----- AI メインフェイズ -----
 
 function aiPhaseMain() {
+  setOppPhase('main');
   // チュートリアル: AIスクリプトがあればメインフェイズでスクリプトを実行
   const runner = window._tutorialRunner;
   if (runner && runner.active && runner.opponentScriptRunner) {

@@ -69,6 +69,7 @@ export function resetBattleState(playerFirst) {
   bs._usedLimits = {};
   bs._securityBuffs = [];
   bs._turnEndMemoryShift = 0;
+  bs._oppPhase = null;
 
   bs.player = createEmptySide();
   bs.ai = createEmptySide();

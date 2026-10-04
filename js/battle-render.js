@@ -1225,9 +1225,24 @@ const PHASE_NAMES = {
   main: '⚡ メイン',
 };
 
+// 「誰のターン」＋ アクティブ › ドロー › 育成 › メイン の流れを表示し、現在のフェーズを光らせる。
+// 相手のターン中は相手の現在フェーズ（bs._oppPhase）を表示する。
+const PHASE_ORDER = ['unsuspend', 'draw', 'breed', 'main'];
+const PHASE_STEP_LABELS = { unsuspend: 'アクティブ', draw: 'ドロー', breed: '育成', main: 'メイン' };
+
 export function updatePhaseBadge() {
   const badge = document.getElementById('phase-badge');
-  if (badge) badge.innerText = PHASE_NAMES[bs.phase] || bs.phase;
+  if (!badge) return;
+  const mine = !!bs.isPlayerTurn;
+  const phase = mine ? bs.phase : (bs._oppPhase || null);
+  const cur = PHASE_ORDER.indexOf(phase);
+  badge.dataset.owner = mine ? 'me' : 'opp';
+  badge.title = mine ? ('自分: ' + (PHASE_NAMES[phase] || '準備中')) : ('相手: ' + (PHASE_NAMES[phase] || '準備中'));
+  const steps = PHASE_ORDER.map((p, i) => {
+    const cls = i < cur ? 'ph-step done' : (i === cur ? 'ph-step on' : 'ph-step');
+    return '<span class="' + cls + '">' + PHASE_STEP_LABELS[p] + '</span>';
+  }).join('<span class="ph-sep">›</span>');
+  badge.innerHTML = '<span class="ph-owner">' + (mine ? '自分' : '相手') + '</span><span class="ph-steps">' + steps + '</span>';
 }
 
 // ===== カード裏面画像セット =====

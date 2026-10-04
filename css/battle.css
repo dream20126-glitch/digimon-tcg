@@ -194,6 +194,12 @@
   font-size: 10px; font-weight: bold;
 }
 .phase-info-row { font-size: 9px; color: #555; display: flex; gap: 8px; }
+/* フェイズの流れ（updatePhaseBadge が生成） */
+.phase-badge .ph-owner { margin-right: 6px; }
+.phase-badge .ph-steps { display: inline-flex; gap: 3px; align-items: center; }
+.phase-badge .ph-step { color: #446; font-weight: normal; }
+.phase-badge .ph-step.on { color: #fff; font-weight: bold; }
+.phase-badge .ph-sep { color: #333; }
 /* 相手側の枚数表示（相手ゾーンの右上、名前と同じ行） */
 .ai-zone { position: relative; }
 .opp-info-row {

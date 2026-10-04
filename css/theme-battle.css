@@ -643,3 +643,90 @@
   #mulligan-overlay > div:last-child { max-width: 640px !important; gap: 18px !important; }
   #mulligan-overlay > div:last-child .menu-btn { padding: 18px !important; font-size: 1.25rem; }
 }
+
+/* =========================================================
+   PC: 盤面の外側（左右の黒い部分）をデジタルワールドに
+   - 0/1 のデジタルコードの雨（速さの違う 2 層）、昇っていく光の粒、上から下へ走るスキャン光
+   - 天井のグリッド（床のグリッドは theme-game.css の body::after を見せる）
+   - 盤面の左右の縁がゲートのように脈打って光る
+   重なり順を変えないよう z-index の文脈は作らず、#battle-screen の背景を透明にして
+   その下（z-index:-1）に層を置く。スマホは盤面が全面なので動かさない。
+   ========================================================= */
+@media (min-width: 900px) {
+  #battle-screen {
+    position: relative;
+    background: transparent;
+  }
+  /* デジタルコードの雨 + 光の粒 + スキャン光 */
+  #battle-screen::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      linear-gradient(180deg, transparent, rgba(0, 251, 255, 0.10) 45%, rgba(255, 255, 255, 0.22) 50%, rgba(0, 251, 255, 0.10) 55%, transparent),
+      radial-gradient(circle, rgba(160, 255, 255, 0.9) 0 1.2px, transparent 2px),
+      radial-gradient(circle, rgba(255, 160, 255, 0.8) 0 1px, transparent 1.8px),
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'120'%20height%3D'240'%3E%3Ctext%20x%3D'8'%20y%3D'20'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.26'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'8'%20y%3D'40'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.33'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'8'%20y%3D'60'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.39'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'8'%20y%3D'80'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.46'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'8'%20y%3D'100'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.53'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'8'%20y%3D'120'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.90'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'8'%20y%3D'220'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.12'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'8'%20y%3D'240'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.19'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'38'%20y%3D'20'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.43'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'38'%20y%3D'40'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.49'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'38'%20y%3D'60'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.55'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'38'%20y%3D'80'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.90'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'38'%20y%3D'140'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.10'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'38'%20y%3D'160'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.16'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'38'%20y%3D'180'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.22'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'38'%20y%3D'200'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.27'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'38'%20y%3D'220'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.33'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'38'%20y%3D'240'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.38'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'68'%20y%3D'40'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.10'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'68'%20y%3D'60'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.15'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'68'%20y%3D'80'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.20'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'68'%20y%3D'100'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.25'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'68'%20y%3D'120'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.30'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'68'%20y%3D'140'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.35'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'68'%20y%3D'160'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.40'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'68'%20y%3D'180'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.45'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'68'%20y%3D'200'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.50'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'68'%20y%3D'220'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.55'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'68'%20y%3D'240'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.90'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'98'%20y%3D'20'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.46'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'98'%20y%3D'40'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.53'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'98'%20y%3D'60'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.90'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'98'%20y%3D'160'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.12'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'98'%20y%3D'180'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.19'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'98'%20y%3D'200'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.26'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'98'%20y%3D'220'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.33'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'98'%20y%3D'240'%20fill%3D'%2300fbff'%20fill-opacity%3D'0.39'%20font-family%3D'monospace'%20font-size%3D'14'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3C%2Fsvg%3E"),
+      url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'90'%20height%3D'160'%3E%3Ctext%20x%3D'12'%20y%3D'64'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.14'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'12'%20y%3D'80'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.23'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'12'%20y%3D'96'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.33'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'12'%20y%3D'112'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.42'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'12'%20y%3D'128'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.51'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'12'%20y%3D'144'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.90'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'47'%20y%3D'16'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.42'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'47'%20y%3D'32'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.51'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'47'%20y%3D'48'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.90'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'47'%20y%3D'128'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.14'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'47'%20y%3D'144'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.23'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'47'%20y%3D'160'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.33'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'78'%20y%3D'16'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.33'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'78'%20y%3D'32'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.42'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'78'%20y%3D'48'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.51'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E1%3C%2Ftext%3E%3Ctext%20x%3D'78'%20y%3D'64'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.90'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'78'%20y%3D'144'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.14'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3Ctext%20x%3D'78'%20y%3D'160'%20fill%3D'%23ff00fb'%20fill-opacity%3D'0.23'%20font-family%3D'monospace'%20font-size%3D'11'%20font-weight%3D'bold'%3E0%3C%2Ftext%3E%3C%2Fsvg%3E"),
+      radial-gradient(ellipse 60% 45% at 50% 0%, rgba(255, 0, 251, 0.14), transparent 70%),
+      radial-gradient(ellipse 60% 45% at 50% 100%, rgba(0, 251, 255, 0.14), transparent 70%);
+    background-size:
+      100% 18vh,
+      300px 300px,
+      220px 220px,
+      120px 240px,
+      90px 160px,
+      100% 100%,
+      100% 100%;
+    background-repeat: no-repeat, repeat, repeat, repeat, repeat, no-repeat, no-repeat;
+    opacity: 0.6;
+    animation: digitalRain 12s linear infinite;
+  }
+  /* 天井のグリッド（床のグリッドと鏡写し） */
+  #battle-screen::after {
+    content: '';
+    position: fixed;
+    left: -50%;
+    right: -50%;
+    top: -10%;
+    height: 50%;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255, 0, 251, 0.18) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 0, 251, 0.18) 1px, transparent 1px);
+    background-size: 60px 60px;
+    transform: perspective(420px) rotateX(-62deg);
+    transform-origin: center bottom;
+    -webkit-mask-image: linear-gradient(to top, transparent, #000 35%, #000 70%, transparent);
+    mask-image: linear-gradient(to top, transparent, #000 35%, #000 70%, transparent);
+    animation: ceilingFlow 6s linear infinite;
+  }
+  /* ゲートの縁: 盤面の左右が脈打って光る */
+  #battle-screen .battle-wrap {
+    animation: gateEdgePulse 4s ease-in-out infinite;
+  }
+}
+@keyframes digitalRain {
+  from {
+    background-position: 0 -18vh, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0;
+  }
+  to {
+    background-position: 0 118vh, 0 -600px, 0 -440px, 0 960px, 0 1920px, 0 0, 0 0;
+  }
+}
+@keyframes ceilingFlow {
+  from { background-position: 0 0, 0 0; }
+  to   { background-position: 0 -60px, 0 0; }
+}
+@keyframes gateEdgePulse {
+  0%, 100% { box-shadow: -1px 0 0 rgba(0, 251, 255, 0.35), 1px 0 0 rgba(255, 0, 251, 0.35), -8px 0 24px rgba(0, 251, 255, 0.10), 8px 0 24px rgba(255, 0, 251, 0.10), 0 0 50px rgba(0, 0, 0, 0.9); }
+  50%      { box-shadow: -2px 0 0 rgba(0, 251, 255, 0.85), 2px 0 0 rgba(255, 0, 251, 0.85), -14px 0 40px rgba(0, 251, 255, 0.35), 14px 0 40px rgba(255, 0, 251, 0.35), 0 0 50px rgba(0, 0, 0, 0.9); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #battle-screen::before,
+  #battle-screen::after,
+  #battle-screen .battle-wrap { animation: none !important; }
+}

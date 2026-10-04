@@ -217,8 +217,7 @@
 #battle-screen .m-cell.m-ai.m-active { background: radial-gradient(circle at 35% 30%, #ffe0ff, #e400df 65%); color: #24001f; box-shadow: 0 0 12px #ff00fb; }
 #battle-screen .m-cell.m-zero.m-active { background: radial-gradient(circle at 35% 30%, #fff, #b8c4c8 65%); color: #000; box-shadow: 0 0 12px #fff; }
 #battle-screen .m-turn-label { letter-spacing: 0.08em; }
-#battle-screen .m-turn-label.pl { text-shadow: 0 0 8px rgba(0, 251, 255, 0.8); }
-#battle-screen .m-turn-label.ai { text-shadow: 0 0 8px rgba(255, 0, 251, 0.8); }
+#battle-screen .m-turn-label { text-shadow: 0 0 8px currentColor; }
 
 /* ---------- フェイズ表示: 平行四辺形 ---------- */
 #battle-screen .phase-bar {
@@ -297,6 +296,146 @@
 #longpress-action-menu {
   backdrop-filter: blur(6px);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 251, 255, 0.35) !important;
+}
+
+/* =========================================================
+   オンライン対戦で自分が後攻（P2）のとき: 自分側＝ピンク、相手側＝シアン に入れ替える
+   （P1＝先攻は常にシアン、P2＝後攻は常にピンク。#battle-screen に .side-p2 が付く）
+   ボタン類・カード詳細はアプリ共通のシアンのまま。メモリーゲージのマス色は JS 側で切り替え済み。
+   ========================================================= */
+#battle-screen.side-p2 {
+  background:
+    radial-gradient(ellipse 60% 45% at 50% 0%, rgba(0, 251, 255, 0.16), transparent 70%),
+    radial-gradient(ellipse 60% 45% at 50% 100%, rgba(255, 0, 251, 0.16), transparent 70%),
+    #000;
+}
+#battle-screen.side-p2 .battle-wrap {
+  background:
+    linear-gradient(rgba(255, 0, 251, 0.04) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, rgba(255, 0, 251, 0.04) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(180deg, #00141a 0%, #00080c 30%, #020408 50%, #06000c 70%, #12001a 100%);
+  box-shadow: -1px 0 0 rgba(255, 0, 251, 0.3), 1px 0 0 rgba(0, 251, 255, 0.3), 0 0 50px rgba(0, 0, 0, 0.9);
+}
+#battle-screen.side-p2 .battle-wrap::before {
+  content: '';
+  background: linear-gradient(180deg, rgba(0, 251, 255, 0.7), rgba(255, 0, 251, 0.7)) border-box;
+  filter: drop-shadow(0 0 6px rgba(255, 0, 251, 0.5));
+}
+#battle-screen.side-p2 .ai-zone {
+  background: linear-gradient(180deg, rgba(0, 251, 255, 0.12), transparent 70%);
+}
+#battle-screen.side-p2 .player-zone {
+  background: linear-gradient(0deg, rgba(255, 0, 251, 0.12), transparent 70%);
+}
+#battle-screen.side-p2 .ai-zone .zone-label {
+  color: #9cfdff;
+  text-shadow: 0 0 6px rgba(0, 251, 255, 0.6);
+}
+#battle-screen.side-p2 .player-zone .zone-label {
+  color: #ff9cfd;
+  text-shadow: 0 0 6px rgba(255, 0, 251, 0.6);
+}
+#battle-screen.side-p2 #opponent-name-label {
+  text-shadow: 0 0 6px rgba(0, 251, 255, 0.9) !important;
+  background: linear-gradient(180deg, rgba(0, 251, 255, 0.75), rgba(0, 110, 118, 0.85));
+}
+#battle-screen.side-p2 .player-zone::after {
+  content: 'P2';
+  color: #1a0014;
+  background: linear-gradient(0deg, #d400cf, #ff7ffd);
+}
+#battle-screen.side-p2 .ai-zone .scroll-wrap[data-scroll-target$="battle-row"]::before {
+  background: linear-gradient(180deg, rgba(0, 251, 255, 0.16), rgba(0, 251, 255, 0.05));
+}
+#battle-screen.side-p2 .player-zone .scroll-wrap[data-scroll-target$="battle-row"]::before {
+  background: linear-gradient(0deg, rgba(255, 0, 251, 0.16), rgba(255, 0, 251, 0.05));
+}
+#battle-screen.side-p2 div:has(> #ai-tamer-row) {
+  background: rgba(0, 251, 255, 0.05);
+  outline: 1px solid rgba(0, 251, 255, 0.15);
+}
+#battle-screen.side-p2 div:has(> #pl-tamer-row) {
+  background: rgba(255, 0, 251, 0.05);
+  outline: 1px solid rgba(255, 0, 251, 0.15);
+}
+#battle-screen.side-p2 .b-slot {
+  border: 1px dashed rgba(255, 0, 251, 0.2);
+}
+#battle-screen.side-p2 .ai-zone .b-slot {
+  border-color: rgba(0, 251, 255, 0.2);
+}
+#battle-screen.side-p2 .b-slot.pl-card {
+  background: #1a0019;
+  border: 1.5px solid rgba(255, 0, 251, 0.75);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.7), 0 0 10px rgba(255, 0, 251, 0.35);
+}
+#battle-screen.side-p2 .b-slot.ai-card {
+  background: #001a1f;
+  border: 1.5px solid rgba(0, 251, 255, 0.75);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.7), 0 0 10px rgba(0, 251, 255, 0.35);
+}
+#battle-screen.side-p2 .b-slot .s-dp {
+  border: 1px solid rgba(255, 0, 251, 0.55);
+  text-shadow: 0 0 4px rgba(255, 0, 251, 0.7);
+}
+#battle-screen.side-p2 .ai-zone .b-slot .s-dp {
+  border-color: rgba(0, 251, 255, 0.55);
+}
+#battle-screen.side-p2 #ai-deck-img {
+  border: 1.5px solid rgba(0, 251, 255, 0.7) !important;
+  box-shadow: 0 3px 0 #003a44, 0 5px 0 #00222a, 0 7px 10px rgba(0, 0, 0, 0.8), 0 0 10px rgba(0, 251, 255, 0.35);
+}
+#battle-screen.side-p2 #pl-deck-img {
+  border: 1.5px solid rgba(255, 0, 251, 0.7) !important;
+  box-shadow: 0 3px 0 #3a0038, 0 5px 0 #22001f, 0 7px 10px rgba(0, 0, 0, 0.8), 0 0 10px rgba(255, 0, 251, 0.35);
+}
+#battle-screen.side-p2 [onclick="showTrash('ai')"] {
+  background: linear-gradient(180deg, #002a30, #000f12) !important;
+  border: 1.5px solid rgba(0, 251, 255, 0.55) !important;
+}
+#battle-screen.side-p2 [onclick="showTrash('player')"] {
+  background: linear-gradient(180deg, #2a0028, #12000f) !important;
+  border: 1.5px solid rgba(255, 0, 251, 0.55) !important;
+}
+#battle-screen.side-p2 #ai-trash-count {
+  color: #b3feff !important;
+  text-shadow: 0 0 6px rgba(0, 251, 255, 0.8);
+}
+#battle-screen.side-p2 #pl-trash-count {
+  color: #ffb3fe !important;
+  text-shadow: 0 0 6px rgba(255, 0, 251, 0.8);
+}
+#battle-screen.side-p2 #pl-sec-count {
+  color: #1a0014;
+  background: linear-gradient(180deg, #ffb5fe, #d400cf);
+}
+#battle-screen.side-p2 #ai-sec-count {
+  color: #001a1f;
+  background: linear-gradient(180deg, #b5feff, #00c8d4);
+}
+#battle-screen.side-p2 .memory-wrap {
+  background: linear-gradient(90deg, rgba(255, 0, 251, 0.1), rgba(0, 0, 0, 0.6) 30%, rgba(0, 0, 0, 0.6) 70%, rgba(0, 251, 255, 0.1));
+}
+#battle-screen.side-p2 .phase-bar {
+  border-top: 1px solid rgba(255, 0, 251, 0.2);
+}
+#battle-screen.side-p2 .phase-badge {
+  color: #1a0014;
+  background: linear-gradient(90deg, #ffb5fe, #e400df);
+}
+#battle-screen.side-p2 .hand-wrap {
+  background: radial-gradient(ellipse 70% 100% at 50% 100%, rgba(255, 0, 251, 0.1), transparent 70%), linear-gradient(180deg, #03080a, #000);
+  border-top: 1px solid rgba(255, 0, 251, 0.2);
+}
+#battle-screen.side-p2 .h-card {
+  border: 1.5px solid rgba(255, 0, 251, 0.35);
+}
+#battle-screen.side-p2 .h-card:hover {
+  border-color: rgba(255, 0, 251, 0.8);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.8), 0 0 12px rgba(255, 0, 251, 0.5);
+}
+#battle-screen.side-p2 .h-card.h-selected {
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.8), 0 0 18px rgba(255, 0, 251, 0.9);
 }
 
 /* =========================================================

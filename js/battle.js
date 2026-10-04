@@ -558,6 +558,11 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   resetBattleState(playerFirst);
   bs.phase = 'standby';
 
+  // 盤面の色: オンライン対戦は P1（先攻）＝シアン、P2（後攻）＝ピンクで固定。
+  // 自分が後攻なら自分側（下）をピンクにする（css/theme-battle.css の .side-p2）
+  const battleScreenEl = document.getElementById('battle-screen');
+  if (battleScreenEl) battleScreenEl.classList.toggle('side-p2', isOnlineMode() && !playerFirst);
+
   // デッキパース
   const plCards = parseDeck(playerDeckData);
   const aiCards = parseDeck(aiDeckData);

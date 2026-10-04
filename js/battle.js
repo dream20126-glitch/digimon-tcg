@@ -562,6 +562,9 @@ window.startBattleGame = async function(playerDeckData, aiDeckData, playerFirst)
   // 自分が後攻なら自分側（下）をピンクにする（css/theme-battle.css の .side-p2）
   const battleScreenEl = document.getElementById('battle-screen');
   if (battleScreenEl) battleScreenEl.classList.toggle('side-p2', isOnlineMode() && !playerFirst);
+  // 自分側の名前（下端のリボン）
+  const myNameLabel = document.getElementById('my-name-label');
+  if (myNameLabel) myNameLabel.innerText = window.currentPlayerName || 'あなた';
 
   // デッキパース
   const plCards = parseDeck(playerDeckData);

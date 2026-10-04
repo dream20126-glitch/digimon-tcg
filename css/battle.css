@@ -46,6 +46,12 @@
 .ai-zone .zone-label { color: #ff00fb88; }
 .player-zone { background: rgba(0, 251, 255, 0.04); border-top: 1px solid #00fbff22; }
 .player-zone .zone-label { color: #00fbff88; }
+.player-zone { position: relative; }
+/* 自分の名前（自分ゾーンの下端中央） */
+.my-name-ribbon {
+  position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+  font-size: 9px; font-weight: bold; color: #00fbff; pointer-events: none;
+}
 
 .sec-card {
   width: 38px; height: 28px; border-radius: 3px;

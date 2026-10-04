@@ -89,9 +89,8 @@
   background: linear-gradient(180deg, rgba(255, 0, 251, 0.75), rgba(120, 0, 118, 0.85));
   clip-path: polygon(0 0, 100% 0, 92% 100%, 8% 100%);
 }
-/* P1 リボン（自分ゾーンの下端） */
-#battle-screen .player-zone::after {
-  content: 'P1';
+/* 自分の名前リボン（自分ゾーンの下端） */
+#battle-screen .my-name-ribbon {
   position: absolute;
   left: 50%;
   bottom: 0;
@@ -99,7 +98,11 @@
   padding: 2px 30px 1px;
   font-size: 9px;
   font-weight: bold;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.12em;
+  max-width: 60%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: #001417;
   background: linear-gradient(0deg, #00c8d4, #7ffdff);
   clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%);
@@ -341,8 +344,7 @@
   text-shadow: 0 0 6px rgba(0, 251, 255, 0.9) !important;
   background: linear-gradient(180deg, rgba(0, 251, 255, 0.75), rgba(0, 110, 118, 0.85));
 }
-#battle-screen.side-p2 .player-zone::after {
-  content: 'P2';
+#battle-screen.side-p2 .my-name-ribbon {
   color: #1a0014;
   background: linear-gradient(0deg, #d400cf, #ff7ffd);
 }
@@ -507,7 +509,7 @@
   #pl-sec-count,
   #ai-sec-count { width: 32px; height: 28px; font-size: 14px; }
   #opponent-name-label { font-size: 12px !important; padding: 4px 40px 5px; }
-  #battle-screen .player-zone::after { font-size: 11px; padding: 2px 40px 1px; }
+  #battle-screen .my-name-ribbon { font-size: 12px; padding: 3px 40px 2px; }
 
   /* メモリーゲージ */
   #battle-screen .memory-wrap { padding: 6px 16px; }

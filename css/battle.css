@@ -791,3 +791,36 @@ body.tutorial-spotlight-mode #effect-confirm-no {
   0%, 100% { box-shadow: 0 0 15px 4px rgba(0, 255, 136, 0.6); }
   50%      { box-shadow: 0 0 25px 8px rgba(0, 255, 136, 0.9); }
 }
+
+/* ===== スクロールバーを表示しない（スクロール自体は可能。手札・バトルエリアは矢印ボタンあり） ===== */
+#battle-screen .battle-wrap,
+#pl-battle-row,
+#ai-battle-row,
+#battle-screen .hand-wrap {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+#battle-screen .battle-wrap::-webkit-scrollbar,
+#pl-battle-row::-webkit-scrollbar,
+#ai-battle-row::-webkit-scrollbar,
+#battle-screen .hand-wrap::-webkit-scrollbar,
+#hand-wrap::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* ===== 全画面表示ボタン（PC＝幅900px以上かつマウス操作の環境のみ表示） ===== */
+.fullscreen-btn { display: none; }
+.fullscreen-btn .fs-icon-exit { display: none; }
+.fullscreen-btn.is-fs .fs-icon-enter { display: none; }
+.fullscreen-btn.is-fs .fs-icon-exit { display: inline; }
+@media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+  .memory-info .mi-sep { display: none; }
+  .fullscreen-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 12px; cursor: pointer;
+    background: rgba(0, 0, 0, 0.5); border: 1px solid #00fbff66; color: #00fbff;
+    font-size: 11px; font-weight: bold;
+  }
+}

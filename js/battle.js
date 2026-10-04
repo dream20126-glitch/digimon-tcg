@@ -254,13 +254,17 @@ function animateSecuritySet(callback) {
   const tempPlSec = bs.player.security;
   const tempAiSec = bs.ai.security;
   bs.player.security = []; bs.ai.security = [];
+  // 演出中に相手から security_init（相手セキュリティの実データ5枚）が届くと bs.ai.security が
+  // 丸ごと置き換わる。その後も残りを足し続けると 5 枚を超える（例: 7枚）ので、
+  // 演出開始後に security_init を受信していたら相手側は足さない（受信回数 _aiSecurityInitSeq で判定）
+  const aiInitSeqAtStart = bs._aiSecurityInitSeq || 0;
   renderAll();
   let count = 0;
   const total = tempPlSec.length;
   function placeNext() {
     if (count >= total) { setTimeout(callback, 400); return; }
     bs.player.security.push(tempPlSec[count]);
-    bs.ai.security.push(tempAiSec[count]);
+    if ((bs._aiSecurityInitSeq || 0) === aiInitSeqAtStart && tempAiSec[count]) bs.ai.security.push(tempAiSec[count]);
     count++;
     renderAll();
     // セキュリティエリアにアニメーション
@@ -460,6 +464,33 @@ setOnlineModules({
 // Phase 3/4 にオンラインハンドラーを接続（初期はオフライン）
 setOnlineHandlers(false, null, { sendCommand, sendStateSync, sendMemoryUpdate });
 setCombatOnlineHandlers(false, null, { sendCommand, sendStateSync, sendMemoryUpdate });
+
+// ===== 全画面表示の切り替え（PCのみボタン表示） =====
+window.toggleBattleFullscreen = function() {
+  const doc = document;
+  const root = doc.documentElement;
+  const isFs = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+  try {
+    if (!isFs) {
+      const req = root.requestFullscreen || root.webkitRequestFullscreen;
+      if (req) { const p = req.call(root); if (p && p.catch) p.catch(e => console.warn('[fullscreen]', e)); }
+    } else {
+      const exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+      if (exit) { const p = exit.call(doc); if (p && p.catch) p.catch(e => console.warn('[fullscreen]', e)); }
+    }
+  } catch (e) { console.warn('[fullscreen]', e); }
+};
+function updateFullscreenBtn() {
+  const btn = document.getElementById('fullscreen-btn');
+  if (!btn) return;
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  btn.classList.toggle('is-fs', isFs);
+  btn.title = isFs ? '元の表示に戻す' : '全画面表示';
+  const label = btn.querySelector('.fs-label');
+  if (label) label.textContent = isFs ? '戻す' : '全画面';
+}
+document.addEventListener('fullscreenchange', updateFullscreenBtn);
+document.addEventListener('webkitfullscreenchange', updateFullscreenBtn);
 
 // ===== ローディング＆ゲートオープン演出 =====
 

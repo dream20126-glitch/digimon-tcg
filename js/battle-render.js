@@ -163,7 +163,8 @@ function _purgeTokens() {
     const p = bs[side];
     if (!p) return;
     ['trash', 'hand', 'deck', 'security'].forEach(zone => {
-      if (Array.isArray(p[zone])) p[zone] = p[zone].filter(c => !(c && c._isToken));
+      // トークンがある時だけ配列を作り直す（毎回作り直すと、配列を参照で持っている処理が追従できなくなる）
+      if (Array.isArray(p[zone]) && p[zone].some(c => c && c._isToken)) p[zone] = p[zone].filter(c => !(c && c._isToken));
     });
   });
 }

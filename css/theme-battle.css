@@ -730,3 +730,18 @@
   #battle-screen::after,
   #battle-screen .battle-wrap { animation: none !important; }
 }
+
+/* 全画面ボタン（PCのみ表示。表示条件は battle.css） */
+#battle-screen .fullscreen-btn {
+  background: linear-gradient(180deg, rgba(0, 80, 95, 0.85), rgba(0, 20, 26, 0.9));
+  border: 1px solid rgba(0, 251, 255, 0.6);
+  color: #b5feff;
+  letter-spacing: 0.08em;
+  box-shadow: 0 0 8px rgba(0, 251, 255, 0.25);
+  transition: box-shadow 0.2s, background 0.2s;
+}
+#battle-screen .fullscreen-btn:hover {
+  background: linear-gradient(180deg, rgba(0, 120, 140, 0.95), rgba(0, 40, 50, 0.95));
+  box-shadow: 0 0 16px rgba(0, 251, 255, 0.6);
+  color: #fff;
+}

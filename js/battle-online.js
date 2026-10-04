@@ -356,6 +356,8 @@ function onRemoteCommand(cmd) {
       if (cmd.cards && Array.isArray(cmd.cards)) {
         bs.ai.security = cmd.cards.map(c => ({ ...c, buffs: c.buffs || [], stack: c.stack || [] }));
         bs._aiSecuritySynced = true;
+        // 受信回数（セキュリティ配布演出の途中で届いたかの判定に使う。battle.js animateSecuritySet）
+        bs._aiSecurityInitSeq = (bs._aiSecurityInitSeq || 0) + 1;
         console.log('[security_init] 相手セキュリティ同期:', bs.ai.security.length + '枚', bs.ai.security.map(c => c.name + '(' + c.type + ')'));
       }
       break;

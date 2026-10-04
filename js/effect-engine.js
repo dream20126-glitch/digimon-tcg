@@ -1691,7 +1691,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 他の「したとき」系反応と同様キューに積んで、元の効果の解決が終わってから発火する
       const _cdFinishCallback = () => {
         const _cdCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-        enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueued, [ctx.side, ctx.bs, _cdCtxBase, _cdDiscarded.slice()]);
+        // コストの破棄も「効果で」破棄されたものとして原因（発動者の効果）を付ける
+        // （ヤタガラモン BT26-076「相手の手札が破棄されたとき」の cause:'effect' 等が成立するように）
+        const _cdCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card || null };
+        enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueuedWithCause, [_cdCause, ctx.side, null, ctx.bs, _cdCtxBase, _cdDiscarded.slice()]);
         callback();
       };
       const runDiscards = (cards, finalize) => {
@@ -7375,6 +7378,28 @@ function _lookupTriggerSteps(recipeObj, triggerCode, card) {
       result = result ? result.concat(filled) : filled;
     }
   }
+  // 常時効果で付与されたキーワード（applyPermanentEffects が積む source:'recipe_perm' の
+  // keyword_X バフ。例: グランクワガーモン BT26-045「特徴『昆虫型』『タイタン族』を持つ自分の
+  // デジモン全ては【連携】【貫通】【ヴォルテクス】を得る」）にレシピテンプレートがあれば、
+  // そのトリガー分もマージする（passive に同じキーワードがあれば二重にしない）。
+  // 1回きりの付与は grant_effect に委譲済みなのでここでは扱わない
+  if (card && Array.isArray(card.buffs) && !_NO_MERGE_TRIGGER_CODES.has(triggerCode)) {
+    const dict = getKeywordDict();
+    const passiveFlags = new Set(((recipeObj && Array.isArray(recipeObj.passive)) ? recipeObj.passive : []).map(p => p && p.flag));
+    const seen = new Set();
+    card.buffs.forEach(b => {
+      if (!b || b.source !== 'recipe_perm' || typeof b.type !== 'string' || !b.type.startsWith('keyword_')) return;
+      const code = b.type.slice('keyword_'.length);
+      if (seen.has(code) || passiveFlags.has(code)) return;
+      seen.add(code);
+      const kw = dict[code];
+      if (!kw) return;
+      const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
+      if (!tplSteps) return;
+      const filled = _fillKeywordTemplateSteps(tplSteps, undefined, undefined, undefined, undefined, undefined);
+      result = result ? result.concat(filled) : filled;
+    });
+  }
   return _applyZoneScope(result);
 }
 
@@ -9483,6 +9508,13 @@ function runWithAltActions(step, ctx, store, callback) {
   const mainOnly = Object.assign({}, step);
   delete mainOnly.alt_actions;
   delete mainOnly.alt_actions_op;
+  // コストの「〇〇するか、〇〇することで」（cost の alt_actions）: コピーや選択肢にもコストの印を
+  // 引き継ぐ（印が無いと払えない選択肢を選んでも「支払った」扱いになり本体が実行されてしまう。
+  // クーガモン BT26-026）
+  if (_COST_STEP_SET.has(step)) {
+    _COST_STEP_SET.add(mainOnly);
+    alts.forEach((a) => { if (a && typeof a === 'object') _COST_STEP_SET.add(a); });
+  }
 
   if (op === 'and') {
     // メイン → alt 順次。メインがcallback(false)（例: 'delay'でプレイヤーが破棄を
@@ -9545,6 +9577,27 @@ function runWithAltActions(step, ctx, store, callback) {
     const _cs = _gateConditionsOf(a);
     return _cs.length > 0 && checkConditions(_cs, ctx.card, ctx.bs, ctx.side);
   });
+  const _isCostAlt = _COST_STEP_SET.has(step);
+  // コストとして払えるかの簡易判定（払えない選択肢をプレイヤーに提示しないため）
+  const _costAltPayable = (c, sidePl) => {
+    const code = String(c.action || '');
+    const need = Math.max(1, parseInt(c.value, 10) || 1);
+    if (/^security_trash/.test(code)) {
+      const t = String(c.target || '');
+      const owner = /^(opp|opponent)/.test(t) ? (ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player) : sidePl;
+      return (owner.security || []).length >= 1;
+    }
+    if (/^evo_discard/.test(code)) {
+      const conds = c.condition ? parseRecipeCondition(c.condition) : [];
+      const okCount = (holder) => (holder && Array.isArray(holder.stack))
+        ? holder.stack.filter(s => s && (conds.length === 0 || checkConditions(conds, s, ctx.bs, ctx.side))).length : 0;
+      const t = String(c.target || '');
+      const holders = /tamer/.test(t) || /tamer/.test(code) || c.from === 'tamer'
+        ? (sidePl.tamerArea || []) : (/^self/.test(t) ? [ctx.card] : (sidePl.battleArea || []));
+      return holders.some(h => okCount(h) >= need);
+    }
+    return true;
+  };
   const _altFeasible = (c, isMain) => {
     if (!c || !ctx.bs) return true;
     const sidePl = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
@@ -9561,6 +9614,8 @@ function runWithAltActions(step, ctx, store, callback) {
       }
       return true;
     }
+    // コストの選択肢: 払えないもの（セキュリティが無い／破棄できる進化元・テイマーの下のカードが無い）は除外
+    if (_isCostAlt && !_costAltPayable(c, sidePl)) return false;
     const _gcs = _gateConditionsOf(c);
     if (_gcs.length > 0) {
       return checkConditions(_gcs, ctx.card, ctx.bs, ctx.side);
@@ -9574,9 +9629,15 @@ function runWithAltActions(step, ctx, store, callback) {
     executeRecipeStep(_feasibleChoices[0], ctx, store, callback);
     return;
   }
+  // コストでどの選択肢も払えない → コスト不成立
+  if (_isCostAlt && _feasibleChoices.length === 0) { ctx.addLog && ctx.addLog('💨 コストを支払えません'); callback && callback(false); return; }
 
-  // AI / 自動選択: 最初の有効な選択肢
+  // AI / 自動選択: 最初の有効な選択肢（コストの場合は払える選択肢の先頭）
   if (ctx.side === 'ai' || ctx._forceAltChoice !== undefined) {
+    if (ctx._forceAltChoice === undefined && _isCostAlt && _feasibleChoices.length > 0) {
+      executeRecipeStep(_feasibleChoices[0], ctx, store, callback);
+      return;
+    }
     const idx = (ctx._forceAltChoice !== undefined) ? ctx._forceAltChoice : 0;
     executeRecipeStep(choices[idx] || choices[0], ctx, store, callback);
     return;
@@ -13274,7 +13335,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       const owner = _stsTgtStr.startsWith('most_security_player')
         ? (opponent.security.length > player.security.length ? opponent : player)
         : (_stsTgtStr.startsWith('own') ? player : opponent);
-      if (owner.security.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; callback(); break; }
+      // セキュリティが無い: コストとしてなら不成立（本体を実行しない）
+      if (owner.security.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; callback(_COST_STEP_SET.has(step) ? false : undefined); break; }
       // 位置指定（上から/下から）がある場合は自由選択せずその1枚に自動確定する
       // （「セキュリティを上から1枚破棄する」等、位置固定で選択の余地が無いケース用）
       const _stsPos = step.position || step.security_position;

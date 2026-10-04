@@ -464,10 +464,26 @@ select:focus {
 .deck-row:hover img { transform: rotateZ(0deg) scale(1.06); }
 
 /* ---------- 動きを減らす設定の人には演出を止める ---------- */
+/* このテーマで追加した演出だけを止める（アプリ本来のアニメーションには触れない。
+   全要素を止めるとマリガンのカードなど、アニメーションで表示される要素が見えなくなるため） */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  body::after,
+  .screen.active:not(#battle-screen),
+  #card-back-img-login,
+  #card-back-img-top,
+  .top-card--battle .top-card-wide-icon,
+  .card-thumb,
+  .search-guide::before,
+  #card-preview-window {
     animation: none !important;
-    transition: none !important;
+  }
+  .top-card::after,
+  .top-card-wide::after,
+  .menu-btn::after,
+  .action-btn-primary::after,
+  .action-btn-cyan::after,
+  .card-thumb::after {
+    display: none;
   }
 }
 

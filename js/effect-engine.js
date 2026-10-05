@@ -6174,9 +6174,10 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_feature': {
         // 指定特徴。カンマ区切りで複数指定した場合はOR（cond_feature_contains と同じ仕様。
         // 鷺坂ヒロコ BT26-088 の trigger_conditions "cond_feature:バンチョー,TS" 等）
-        if (cond.value && card.feature) {
+        // 特徴を持たないカード（特徴欄が空。効果テストのダミーカード等）は不成立
+        if (cond.value) {
           const _feats = String(cond.value).split(',').map(s => s.trim()).filter(Boolean);
-          if (_feats.length > 0 && !_feats.some(f => String(card.feature).includes(f))) return false;
+          if (_feats.length > 0 && !_feats.some(f => String(card.feature || '').includes(f))) return false;
         }
         break;
       }
@@ -6245,9 +6246,12 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_feature_contains': {
         // 特徴に指定文字列を含む。カンマ区切りで複数指定した場合はOR
         // （いずれか1つでも含んでいればOK。エディタの「特徴」複数タグ入力に対応）
-        if (cond.value && card.feature) {
+        // 特徴を持たないカード（特徴欄が空。効果テストのダミーカード等）は不成立
+        // （以前は特徴が空だと判定自体を飛ばして成立扱いになり、「特徴『神人型』を持つカード」に
+        //   ダミーカードやテイマー等の特徴なしカードが選べてしまっていた。ヒョコモン BT26-009 / ブライモン BT26-011）
+        if (cond.value) {
           const feats = String(cond.value).split(',').map(s => s.trim()).filter(Boolean);
-          if (feats.length > 0 && !feats.some(f => String(card.feature).includes(f))) return false;
+          if (feats.length > 0 && !feats.some(f => String(card.feature || '').includes(f))) return false;
         }
         break;
       }

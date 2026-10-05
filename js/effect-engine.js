@@ -423,7 +423,7 @@ function executeQueueEntry(entry, context, callback) {
       }
       executeAfterActions(block, ctx, callback);
     }
-  });
+  }, block._recipeCard);
 }
 
 function executeAfterActions(block, ctx, callback) {
@@ -6680,18 +6680,25 @@ function showEffectFailed(message, callback) {
 
 // ===== 確認ダイアログ =====
 
-function showConfirmDialog(card, effectText, callback) {
+// evoSourceCard: 進化元効果の場合、実際に効果を持つ進化元カード（例: ピョコモン）。
+//   指定時は「ピョコモン（「ブテンモン」の進化元効果）」のように効果の持ち主を表示する
+//   （以前は場のカード＝進化先の名前だけが出て、進化先の効果に見えていた）
+function showConfirmDialog(card, effectText, callback, evoSourceCard) {
   const overlay = document.getElementById('effect-confirm-overlay');
   if (!overlay) { callback(false); return; }
+  const isEvo = !!(evoSourceCard && evoSourceCard !== card);
+  const ownerName = isEvo
+    ? (evoSourceCard.name + '（「' + card.name + '」の' + evoSourceEffectLabel(evoSourceCard) + '）')
+    : card.name;
 
   const _show = () => {
-    document.getElementById('effect-confirm-name').innerText = card.name;
+    document.getElementById('effect-confirm-name').innerText = ownerName;
     document.getElementById('effect-confirm-text').innerText = effectText;
     document.body.appendChild(overlay);
     overlay.style.display = 'flex';
     window._effectConfirmCallback = callback;
     if (window._isOnlineMode && window._isOnlineMode()) {
-      window._onlineSendCommand({ type: 'fx_confirmShow', cardName: card.name, effectText: (effectText||'').substring(0,200) });
+      window._onlineSendCommand({ type: 'fx_confirmShow', cardName: ownerName, effectText: (effectText||'').substring(0,200) });
     }
   };
 
@@ -7628,10 +7635,14 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   // 揃える必要がある。_fireDestroyTriggersImpl は sourceCard 基準で事前フィルタしているため
   // opts.trackLimitBySourceCard:true を渡す。他は card(carrier) 基準のまま（省略時デフォルト）。
   if (opts && opts.trackLimitBySourceCard && isEvo) ctx._sourceCard = sourceCard;
+  // ポップアップには今発動する効果だけを出す（レシピの display_text を最優先、無ければ該当トリガー部分を抜粋）。
+  // 以前はカードの効果テキスト全文を出していたため、ブテンモン BT26-015 の「デッキが自分の効果で
+  // 増えたとき」の確認に【登場時】【進化時】の文章まで一緒に表示されていた
+  const _reactFullText = isEvo
+    ? (sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし' ? sourceCard.evoSourceEffect : (sourceCard.effect || card.effect || ''))
+    : (card.effect || '');
   const effectText = reaction.effectText != null ? reaction.effectText
-    : (isEvo
-        ? (sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし' ? sourceCard.evoSourceEffect : (sourceCard.effect || card.effect || ''))
-        : (card.effect || ''));
+    : extractTriggerSectionText(_reactFullText, reaction.triggerCode || null, recipe);
   const evoSourceArg = isEvo ? sourceCard : undefined;
   const alwaysConfirm = !!(opts && opts.alwaysConfirm);
   const logActivated = () => {
@@ -7669,7 +7680,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
           window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: card.name });
         }
         finish();
-      });
+      }, evoSourceArg);
     } else {
       ctx.addLog && ctx.addLog('☓ AI: 「' + card.name + '」の効果は発動しなかった');
       finish();

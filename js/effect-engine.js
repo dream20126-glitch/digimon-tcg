@@ -6499,8 +6499,36 @@ const TRIGGER_LABEL_MAP = {
   on_own_turn_start: '自分のターン開始時', on_opp_turn_start: '相手のターン開始時',
   main: 'メイン', during_own_turn: '自分のターン', during_opp_turn: '相手のターン', during_any_turn: 'お互いのターン',
   on_battle_win: 'バトルで勝利した時',
+  on_main_phase_start: '自分のメインフェイズ開始時', on_opp_main_phase_start: '相手のメインフェイズ開始時',
 };
 const _ALL_TRIGGER_LABELS = Array.from(new Set(Object.values(TRIGGER_LABEL_MAP)));
+
+// 【ラベル】で特定できない反応系トリガー（「相手のデジモンがアタックしたとき」等）用:
+// カードテキストを行頭の【…】ごとのセクションに分け、このキーワードを含むセクションだけを表示する。
+// 一部のセクションだけが一致する場合に限って絞る（全部/どれも一致しなければ全文のまま）。
+// 例: 黒井翔太 BT26-092「【自分のメインフェイズ開始時】…\n【相手のターン】相手のデジモンがアタックしたとき…」
+//     の when_opp_attack では【相手のターン】のセクションだけを出す
+const SECTION_KEYWORDS = {
+  when_opp_attack: ['アタックしたとき', 'アタックした時'],
+  when_deck_increase: ['増えたとき', '増えた時'],
+  when_hand_discard: ['破棄されたとき', '破棄された時'],
+  when_rest: ['レスト'], when_opp_rest: ['レスト'],
+  when_own_block: ['ブロック'],
+  when_return_to_hand: ['手札に戻'],
+  when_destroy: ['消滅'], when_battle_destroy: ['消滅'],
+  when_own_destroyed: ['消滅'], when_opp_destroyed: ['消滅'], when_other_destroyed: ['消滅'],
+  when_target_changed: ['対象が変更'],
+  when_leave_battle: ['離れ'],
+};
+function _pickSectionByKeyword(fullText, triggerCode) {
+  const kws = SECTION_KEYWORDS[triggerCode];
+  if (!kws || !fullText) return null;
+  const sections = String(fullText).split(/\n(?=【)/).map(s => s.trim()).filter(Boolean);
+  if (sections.length < 2) return null;
+  const hit = sections.filter(s => kws.some(k => s.includes(k)));
+  if (hit.length === 0 || hit.length === sections.length) return null;
+  return hit.join('\n');
+}
 
 // 「他のデジモンが消滅/登場したとき」等の反応系トリガーは、レシピ上は when_own_destroyed /
 // on_play(subject:other_own) 等の別コードだが、カードテキストは【自分のターン】のような
@@ -6592,6 +6620,10 @@ export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
       const m = fullText.match(re);
       block = m ? m[0].trim() : fullText;
     } catch (_) { block = fullText; }
+  } else {
+    // 【ラベル】が無いトリガーは、キーワードで該当セクションだけを選ぶ（_pickSectionByKeyword）
+    const picked = _pickSectionByKeyword(fullText, triggerCode);
+    if (picked) block = picked;
   }
   return _narrowBySentence(block, triggerCode);
 }

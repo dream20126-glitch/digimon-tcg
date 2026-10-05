@@ -332,6 +332,10 @@ function executeQueueEntry(entry, context, callback) {
     const trigCode = block.trigger ? block.trigger.code : null;
     const recipe = block._grantedSteps || getRecipeForTrigger(recipeCard, trigCode, isEvoSourceLookup);
     if (recipe) {
+      // 「強制 → その後、〇〇することで（任意）」はコスト持ちステップの時点で確認する（runRecipe 参照）
+      if (_isInlineCostConfirmRecipe(recipe)) {
+        ctx._inlineCostConfirm = { steps: recipe, text: displayEffText, evoSourceCard: block._recipeCard || null };
+      }
       runRecipe(recipe, ctx, wrappedCallback);
     } else {
       executeCostAndActions(block, ctx, () => executeAfterActions(block, ctx, wrappedCallback));
@@ -342,6 +346,9 @@ function executeQueueEntry(entry, context, callback) {
   // （レシピで no_announce:true が指定されていればアナウンス自体を省略して即実行）
   function executeWithAnnounce() {
     if (hasNoAnnounceOverride(_recipeStepsForLookup)) { runEffectNow(callback); return; }
+    // 「強制 → その後、〇〇することで（任意）」は強制部分をポップアップなしで対象選択へ進め、
+    // 任意部分に来た時点で確認ダイアログを出す（ブテンモン BT26-015 の要望）
+    if (_isInlineCostConfirmRecipe(_recipeStepsForLookup)) { runEffectNow(callback); return; }
     const evoSourceCard = block && block._recipeCard;
     showEffectAnnounce(card, displayEffText, actualSide, () => runEffectNow(callback), evoSourceCard);
   }
@@ -392,7 +399,9 @@ function executeQueueEntry(entry, context, callback) {
   if (block.isOptional === undefined) {
     block.isOptional = Array.isArray(_recipeStepsForLookup) && _recipeStepsForLookup.some(s =>
       s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0))
-    );
+    )
+      // 先頭が強制で、2つ目以降のコスト持ちステップだけが任意なら、効果の最初では確認しない
+      && !_isInlineCostConfirmRecipe(_recipeStepsForLookup);
   }
 
   // 強制効果 or 既に確認済み → 即実行
@@ -777,13 +786,18 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           ctx.addLog('🃏 「' + c.name + '」をドロー');
         }
       }
-      // 演出: ctx.showDrawEffect があれば 1 枚ずつ流す（辞書未設定でも確実に演出する）
-      if (drawn.length > 0 && ctx.showDrawEffect) {
+      // 演出: ctx.showDrawEffect があれば 1 枚ずつ流す（辞書未設定でも確実に演出する）。
+      // 経路によっては ctx に演出関数が引き継がれていないことがあるため、自分のドローなら
+      // battle-phase.js が公開している window._showDrawEffect にフォールバックする
+      // （ヒョコモン BT26-009 の【1ドロー】でドロー演出が出なかった。相手のドローは中身を見せないので対象外）
+      const _showDraw = ctx.showDrawEffect
+        || (ctx.side === 'player' && typeof window !== 'undefined' && typeof window._showDrawEffect === 'function' ? window._showDrawEffect : null);
+      if (drawn.length > 0 && _showDraw) {
         let di = 0;
         const showOne = () => {
           if (di >= drawn.length) { ctx.renderAll(true); _drawDone(); return; }
           const c = drawn[di++];
-          ctx.showDrawEffect(c, parseInt(c.level) >= 6, showOne);
+          _showDraw(c, parseInt(c.level) >= 6, showOne);
         };
         showOne();
       } else { ctx.renderAll(true); _drawDone(); }
@@ -3051,21 +3065,27 @@ function showHandDiscardPicker(hand, wantCount, callback, opts) {
     wrap.onclick = () => {
       const idx = picked.indexOf(card);
       if (idx !== -1) {
+        // 選択済みは確認なしで解除（トラッシュ選択UIと同じ）
         picked.splice(idx, 1);
         wrap.style.border = '2px solid #444';
         wrap.style.boxShadow = '';
-      } else {
-        if (picked.length >= wantCount) return;
+        sub.innerText = picked.length + '/' + wantCount + ' 選択';
+        return;
+      }
+      if (picked.length >= wantCount) return;
+      // カード詳細を見せて「このカードに決定」で選ぶ（ヒョコモン BT26-009 の要望。
+      // タップ1回で即破棄されて、どのカードか確認できなかった）
+      _showCardConfirmDialog(card, () => {
+        if (picked.includes(card) || picked.length >= wantCount) return;
         picked.push(card);
         wrap.style.border = '2px solid #ff9900';
         wrap.style.boxShadow = '0 0 12px #ff9900aa';
+        sub.innerText = picked.length + '/' + wantCount + ' 選択';
         // wantCount に達したら自動確定
         if (picked.length >= wantCount) {
           setTimeout(() => { cleanup(); callback(picked.slice()); }, 200);
-          return;
         }
-      }
-      sub.innerText = picked.length + '/' + wantCount + ' 選択';
+      });
     };
     cardArea.appendChild(wrap);
   });
@@ -7635,6 +7655,9 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   // 揃える必要がある。_fireDestroyTriggersImpl は sourceCard 基準で事前フィルタしているため
   // opts.trackLimitBySourceCard:true を渡す。他は card(carrier) 基準のまま（省略時デフォルト）。
   if (opts && opts.trackLimitBySourceCard && isEvo) ctx._sourceCard = sourceCard;
+  // 進化元効果の【ターンに1回】は進化元カード基準で数える（_fireSidedReactionTriggers の事前判定と同じキー）。
+  // trackLimitBySourceCard 指定の呼び出し元は独自のキーで事前判定しているため対象外
+  if (isEvo && !(opts && opts.trackLimitBySourceCard)) ctx._evoLimitSource = sourceCard;
   // ポップアップには今発動する効果だけを出す（レシピの display_text を最優先、無ければ該当トリガー部分を抜粋）。
   // 以前はカードの効果テキスト全文を出していたため、ブテンモン BT26-015 の「デッキが自分の効果で
   // 増えたとき」の確認に【登場時】【進化時】の文章まで一緒に表示されていた
@@ -7654,6 +7677,10 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
     // 「そのデジモン」を same_target で参照する反応（トレーマニュアル BT26-099 の【ディレイ】後の
     // 進化等）のため、指定があれば直前選択カードとしてセットしてから実行する
     if (reaction.presetPicked && ctx.bs) ctx.bs._lastPickedCard = reaction.presetPicked;
+    // 「強制 → その後、〇〇することで（任意）」はコスト持ちステップの時点で確認する（runRecipe 参照）
+    if (_isInlineCostConfirmRecipe(recipe)) {
+      ctx._inlineCostConfirm = { steps: recipe, text: effectText, evoSourceCard: isEvo ? sourceCard : null };
+    }
     runRecipe(recipe, ctx, () => {
       ctx.renderAll && ctx.renderAll();
       // 相手画面のポップアップは必ずこの close 送信ペアでのみ消える（自動タイムアウト無し）ため、
@@ -7664,7 +7691,9 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
       finish();
     });
   };
-  const isOptional = Array.isArray(recipe) && recipe.some(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0)));
+  const _inlineCost = _isInlineCostConfirmRecipe(recipe);
+  const isOptional = Array.isArray(recipe) && recipe.some(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0)))
+    && !_inlineCost; // 先頭が強制で後段のコストだけ任意なら、最初には確認しない
   if (isOptional) {
     if (side === 'player' || alwaysConfirm) {
       showConfirmDialog(card, effectText, (accepted) => {
@@ -7689,7 +7718,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   }
   // 強制効果: アナウンス演出を挟んでから実行（no_announce:true 指定時は省略）
   logActivated();
-  if (hasNoAnnounceOverride(recipe)) { runNow(); return; }
+  if (hasNoAnnounceOverride(recipe) || _inlineCost) { runNow(); return; }
   showEffectAnnounce(card, effectText, side, runNow, evoSourceArg);
 }
 
@@ -7794,7 +7823,10 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       }
       if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
         const sourceId = carrier.cardNo || carrier.name || 'unknown';
-        const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
+        // 進化元効果は進化元カード基準（進化してキャリアが変わっても使用済みのまま。_evoSourceLimitKey 参照）
+        const limitKey = (sourceCard && sourceCard !== carrier)
+          ? _evoSourceLimitKey(sourceCard, step)
+          : sourceId + '@' + sourceId + '_recipe_' + step.action;
         if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
       }
       // コスト feasibility チェック: 「自身をレスト」コストがあるが既にレスト中ならスキップ
@@ -9268,6 +9300,21 @@ function showReactionOrderSelect(reactions, triggerKey, callback) {
 }
 
 // ctx の最小フィールドを構築（addLog/renderAll/updateMemGauge は ctxBase か window から拾う）
+// 進化元効果の【ターンに1回】の使用回数キー。進化元カード（例: ピョコモン）そのものに固有IDを振って数える。
+// 場のカード（キャリア）基準のキーだと、進化元効果で進化（ピョコモン BT26-001「このデジモンを
+// 手札のカードに進化できる」）した途端にキャリアが変わってキーも変わり、同じターンに何度でも
+// 発動できてしまっていた。進化してもデジモンは同一扱い・進化元カードは同じオブジェクトのまま残るので、
+// 進化元カード基準にすればターンをまたぐまで再発動しない（別のデジモンの進化元にある同名カードとは別に数える）
+let _cardUidCounter = 0;
+function _cardUid(card) {
+  if (!card) return 'none';
+  if (!card._uid) card._uid = 'u' + (++_cardUidCounter);
+  return card._uid;
+}
+function _evoSourceLimitKey(sourceCard, step) {
+  return 'evo#' + _cardUid(sourceCard) + '_recipe_' + (step && step.action);
+}
+
 function _buildBaseCtx(ctxBase, bs) {
   const safeLog = (msg) => { try { (ctxBase && ctxBase.addLog) ? ctxBase.addLog(msg) : console.log(msg); } catch(_) {} };
   const safeRender = () => { try { (ctxBase && ctxBase.renderAll) ? ctxBase.renderAll() : (window.renderAll && window.renderAll()); } catch(_) {} };
@@ -9749,6 +9796,25 @@ function showAltActionChoice(labels, callback) {
 }
 
 // レシピを順次実行
+// 「強制の効果 → その後、〇〇することで〜（任意）」の形か。先頭ステップが強制（optional でもコスト持ちでもない）で、
+// 2つ目以降にコスト持ちステップがあるとき true。このときは効果の最初に「発動しますか？」を出さず、
+// コスト持ちステップに来た時点で確認する（ブテンモン BT26-015「相手のデジモン1体をDP-4000。その後、
+// 自分のトラッシュ1枚をデッキの下に戻すことで〜消滅させる」: DP-4000 は強制なので確認なしで対象選択）
+function _isInlineCostConfirmRecipe(steps) {
+  if (!Array.isArray(steps) || steps.length < 2) return false;
+  const first = steps[0];
+  const firstOptional = !!(first && (first.optional === true || (Array.isArray(first.cost) && first.cost.length > 0)));
+  if (firstOptional) return false;
+  return steps.slice(1).some(s => s && Array.isArray(s.cost) && s.cost.length > 0);
+}
+// 確認ダイアログに出す「その後〜」部分のテキスト（ステップの display_text があればそれ）
+function _inlineCostConfirmText(step, fullText) {
+  if (step && typeof step.display_text === 'string' && step.display_text.trim()) return step.display_text.trim();
+  const t = String(fullText || '');
+  const i = t.indexOf('その後');
+  return i >= 0 ? t.slice(i) : t;
+}
+
 function runRecipe(steps, ctx, callback) {
   const store = {}; // ステップ間データ受け渡し用
   let idx = 0;
@@ -9774,6 +9840,25 @@ function runRecipe(steps, ctx, callback) {
     if (idx >= steps.length) { console.log('[runRecipe] completed all steps'); ctx.renderAll(); callback && callback(); return; }
     const step = steps[idx++];
     console.log('[runRecipe] executing step', idx, 'action=' + step.action, 'target=' + step.target);
+    // 「強制 → その後、〇〇することで（任意）」: コスト持ちステップに来たらここで発動確認する
+    // （_isInlineCostConfirmRecipe。効果の最初では確認していない）
+    if (ctx._inlineCostConfirm && ctx._inlineCostConfirm.steps === steps && idx > 1
+        && step && Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved) {
+      const _askText = _inlineCostConfirmText(step, ctx._inlineCostConfirm.text);
+      const _isCpu = ctx.side === 'ai' && !(window._isOnlineMode && window._isOnlineMode());
+      if (ctx.side === 'player') {
+        showConfirmDialog(ctx.card, _askText, (accepted) => {
+          if (accepted) { executeRecipeStep(step, ctx, store, nextStep); return; }
+          ctx.addLog && ctx.addLog('☓ 「' + (ctx.card ? ctx.card.name : '?') + '」の「その後」以降の効果は発動しなかった');
+          if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: ctx.card ? ctx.card.name : '' });
+          }
+          nextStep(); // このステップだけ飛ばして続ける
+        }, ctx._inlineCostConfirm.evoSourceCard);
+        return;
+      }
+      if (_isCpu) { executeRecipeStep(step, ctx, store, nextStep); return; } // CPU の任意効果は自動で使う（従来と同じ慣例）
+    }
     executeRecipeStep(step, ctx, store, nextStep);
   }
   nextStep();
@@ -9992,7 +10077,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _srcCard = ctx._sourceCard || ctx.card;
       const _srcId = (_srcCard && (_srcCard.cardNo || _srcCard.name)) || 'unknown';
       const _carId = (ctx.card && (ctx.card.cardNo || ctx.card.name)) || 'unknown';
-      const _limitKey = _srcId + '@' + _carId + '_recipe_' + step.action;
+      // 反応系トリガーの進化元効果は進化元カード基準のキー（_runReactionEffect が ctx._evoLimitSource を設定）
+      const _limitKey = ctx._evoLimitSource
+        ? _evoSourceLimitKey(ctx._evoLimitSource, step)
+        : _srcId + '@' + _carId + '_recipe_' + step.action;
       if (!ctx.bs._usedLimits) ctx.bs._usedLimits = {};
       const _used = ctx.bs._usedLimits[_limitKey] || 0;
       if (_used >= _limitMax) {

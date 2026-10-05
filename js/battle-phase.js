@@ -199,6 +199,8 @@ export function doDraw(side, reason, callback, options) {
 
 // options.deferDismiss=true の場合、overlay を閉じずに callback(dismiss) を呼ぶ。
 // 呼び元は好きなタイミングで dismiss() を実行して演出を閉じる。
+// 効果エンジンのドロー演出のフォールバック用に公開（effect-engine.js の draw アクション）
+if (typeof window !== 'undefined') window._showDrawEffect = (...args) => showDrawEffect(...args);
 export function showDrawEffect(card, isLv6Plus, callback, options) {
   const overlay = document.getElementById('draw-overlay');
   if (!overlay) { callback && callback(); return; }

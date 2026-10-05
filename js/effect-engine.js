@@ -14489,15 +14489,39 @@ function showHandTrashSelection(candidates, remaining, filterName, callback) {
 
 // ===== 公開API =====
 
+// 効果処理中の数（triggerEffect の入れ子も数える）。メモリーが相手側へ移っても、
+// 効果処理が全て終わるまでターンを終了しないための判定に使う（battle-phase.js checkAutoTurnEnd）
+let _effectProcessingDepth = 0;
+export function isEffectProcessing() { return _effectProcessingDepth > 0; }
+// バトル開始時や、処理中のまま解除されなかった場合（完了コールバックが呼ばれない経路の不具合）に戻す
+export function resetEffectProcessing() { _effectProcessingDepth = 0; }
+if (typeof window !== 'undefined') {
+  window._isEffectProcessing = isEffectProcessing;
+  window._resetEffectProcessing = resetEffectProcessing;
+}
+
 // トリガー発生時に呼ぶ
 export function triggerEffect(triggerCode, sourceCard, sourceSide, context, callback) {
-  clearQueue();
-  scanTriggers(triggerCode, sourceCard, sourceSide, context);
+  _effectProcessingDepth++;
+  let _finished = false;
+  // 完了時は「処理中」を先に解除してから次へ進む（直後のターン終了判定が処理中と誤認しないように）
+  const done = (...args) => {
+    if (!_finished) { _finished = true; _effectProcessingDepth = Math.max(0, _effectProcessingDepth - 1); }
+    callback && callback(...args);
+  };
+  try {
+    clearQueue();
+    scanTriggers(triggerCode, sourceCard, sourceSide, context);
 
-  const waiting = _effectQueue.filter(e => e.status === 'waiting');
+    const waiting = _effectQueue.filter(e => e.status === 'waiting');
 
-  if (waiting.length === 0) { callback && callback(); return; }
-  processQueue(context, callback);
+    if (waiting.length === 0) { done(); return; }
+    processQueue(context, done);
+  } catch (e) {
+    // 例外で処理中のまま残るとターンが終わらなくなるため解除してから投げ直す
+    if (!_finished) { _finished = true; _effectProcessingDepth = Math.max(0, _effectProcessingDepth - 1); }
+    throw e;
+  }
 }
 
 // カードがキーワード効果を持っているか（_permEffects のみ参照）

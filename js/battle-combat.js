@@ -1704,6 +1704,8 @@ function aiSpendMemory(cost) {
 
 let _atkState = null; // { card, slotIdx }
 let _attackInProgress = false; // アタック処理中フラグ（操作ロック用）
+// ターン終了判定（battle-phase.js checkAutoTurnEnd）から、アタック処理中かを参照できるようにする
+if (typeof window !== 'undefined') window._isAttackInProgress = () => _attackInProgress;
 
 export function isAttackInProgress() { return _attackInProgress; }
 

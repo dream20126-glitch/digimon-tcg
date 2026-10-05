@@ -69,6 +69,8 @@ export function resetBattleState(playerFirst) {
   bs._usedLimits = {};
   bs._securityBuffs = [];
   bs._turnEndMemoryShift = 0;
+  // 効果処理中の数を戻す（前のバトルで解除されずに残っていても持ち越さない）
+  try { if (typeof window !== 'undefined' && window._resetEffectProcessing) window._resetEffectProcessing(); } catch (_) {}
 
   bs.player = createEmptySide();
   bs.ai = createEmptySide();

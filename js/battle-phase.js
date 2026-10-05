@@ -742,8 +742,51 @@ export function onEndTurn() {
 
 // ===== 自動ターン終了（メモリーオーバーフロー時） =====
 
+// 効果処理・アタック処理がまだ途中か（途中ならターンを終了しない）
+function _isTurnEndBlocked() {
+  try {
+    if (typeof window === 'undefined') return false;
+    if (window._isEffectProcessing && window._isEffectProcessing()) return true;
+    if (window._isAttackInProgress && window._isAttackInProgress()) return true;
+  } catch (_) {}
+  return false;
+}
+let _turnEndWaitTimer = null;
+let _turnEndWaitStartedAt = 0;
+const TURN_END_WAIT_INTERVAL = 300;
+const TURN_END_WAIT_MAX_MS = 120000; // 処理中の判定が残り続けた場合の保険（2分で強制的にターン終了）
+
 export function checkAutoTurnEnd() {
   if (bs.memory >= 0) return false;
+  // 公式ルール: メモリーが相手側へ移っても、効果処理とアタック処理が全て終わってからターン終了する。
+  // 途中なら終了を保留し、処理が終わるのを待ってから改めて判定する
+  // （進化時効果の途中で「相手のアクティブフェイズ」が始まってしまう不具合の対策）
+  if (_isTurnEndBlocked()) {
+    bs._pendingTurnEnd = true;
+    if (!_turnEndWaitTimer) {
+      _turnEndWaitStartedAt = Date.now();
+      const poll = () => {
+        _turnEndWaitTimer = null;
+        if (!bs.isPlayerTurn || bs._battleAborted) return; // 既にターンが移っている / バトル中断
+        if (!bs._pendingTurnEnd) return; // 別経路で処理済み
+        const waited = Date.now() - _turnEndWaitStartedAt;
+        if (_isTurnEndBlocked() && waited < TURN_END_WAIT_MAX_MS) {
+          _turnEndWaitTimer = setTimeout(poll, TURN_END_WAIT_INTERVAL);
+          return;
+        }
+        if (waited >= TURN_END_WAIT_MAX_MS) {
+          console.warn('[checkAutoTurnEnd] 処理中の判定が解除されないため強制的にターン終了');
+          // 処理中の数が残ったままだと以降のターン終了も毎回待たされるので戻す
+          try { if (window._resetEffectProcessing) window._resetEffectProcessing(); } catch (_) {}
+        }
+        bs._pendingTurnEnd = false;
+        checkAutoTurnEnd();
+      };
+      _turnEndWaitTimer = setTimeout(poll, TURN_END_WAIT_INTERVAL);
+    }
+    return false;
+  }
+  if (_turnEndWaitTimer) { clearTimeout(_turnEndWaitTimer); _turnEndWaitTimer = null; }
 
   const over = Math.abs(bs.memory);
   addLog('💾 メモリー' + over + 'で相手側へ');

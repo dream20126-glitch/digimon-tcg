@@ -163,7 +163,8 @@ function _purgeTokens() {
     const p = bs[side];
     if (!p) return;
     ['trash', 'hand', 'deck', 'security'].forEach(zone => {
-      if (Array.isArray(p[zone])) p[zone] = p[zone].filter(c => !(c && c._isToken));
+      // トークンがある時だけ配列を作り直す（毎回作り直すと、配列を参照で持っている処理が追従できなくなる）
+      if (Array.isArray(p[zone]) && p[zone].some(c => c && c._isToken)) p[zone] = p[zone].filter(c => !(c && c._isToken));
     });
   });
 }
@@ -1206,7 +1207,12 @@ export function updateMemGauge() {
     lbl.style.color = bs.isPlayerTurn ? myColor : oppColor;
   }
   const tCount = document.getElementById('t-count');
-  if (tCount) tCount.innerText = bs.turn;
+  if (tCount && tCount.innerText !== String(bs.turn)) {
+    tCount.innerText = bs.turn;
+    // ターンが進んだらバッジを一度弾ませる（アニメーションを再始動）
+    const badge = document.getElementById('turn-badge');
+    if (badge) { badge.classList.remove('turn-pop'); void badge.offsetWidth; badge.classList.add('turn-pop'); }
+  }
 }
 
 // ===== カウント更新 =====
@@ -1219,6 +1225,10 @@ function updateCounts() {
   set('pl-trash-count', bs.player.trash.length);
   set('pl-trash-count2', bs.player.trash.length);
   set('ai-trash-count', bs.ai.trash.length);
+  // 相手側の枚数表示（相手ゾーン上端）
+  set('ai-hand-count', bs.ai.hand.length);
+  set('ai-tama-count', bs.ai.tamaDeck.length);
+  set('ai-trash-count2', bs.ai.trash.length);
 }
 
 // ===== フェーズバッジ更新 =====
@@ -1230,9 +1240,24 @@ const PHASE_NAMES = {
   main: '⚡ メイン',
 };
 
+// 「誰のターン」＋ アクティブ › ドロー › 育成 › メイン の流れを表示し、現在のフェーズを光らせる。
+// 相手のターン中は相手の現在フェーズ（bs._oppPhase）を表示する。
+const PHASE_ORDER = ['unsuspend', 'draw', 'breed', 'main'];
+const PHASE_STEP_LABELS = { unsuspend: 'アクティブ', draw: 'ドロー', breed: '育成', main: 'メイン' };
+
 export function updatePhaseBadge() {
   const badge = document.getElementById('phase-badge');
-  if (badge) badge.innerText = PHASE_NAMES[bs.phase] || bs.phase;
+  if (!badge) return;
+  const mine = !!bs.isPlayerTurn;
+  const phase = mine ? bs.phase : (bs._oppPhase || null);
+  const cur = PHASE_ORDER.indexOf(phase);
+  badge.dataset.owner = mine ? 'me' : 'opp';
+  badge.title = mine ? ('自分: ' + (PHASE_NAMES[phase] || '準備中')) : ('相手: ' + (PHASE_NAMES[phase] || '準備中'));
+  const steps = PHASE_ORDER.map((p, i) => {
+    const cls = i < cur ? 'ph-step done' : (i === cur ? 'ph-step on' : 'ph-step');
+    return '<span class="' + cls + '">' + PHASE_STEP_LABELS[p] + '</span>';
+  }).join('<span class="ph-sep">›</span>');
+  badge.innerHTML = '<span class="ph-owner">' + (mine ? '自分' : '相手') + '</span><span class="ph-steps">' + steps + '</span>';
 }
 
 // ===== カード裏面画像セット =====

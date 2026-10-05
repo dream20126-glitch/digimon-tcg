@@ -7,7 +7,7 @@
 
 import { bs } from './battle-state.js';
 import { addLog, showScreen } from './battle-ui.js';
-import { renderAll, updateMemGauge, cardImg } from './battle-render.js';
+import { renderAll, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
 import { rtdb, ref, set, onValue, remove } from './firebase-config.js';
 import { applyBattleBuffs, removeBattleBuffs } from './battle-combat.js';
 
@@ -281,6 +281,7 @@ export function sendStateSync() {
       tamerArea: bs.player.tamerArea.map(serializeCard),
       ikusei: serializeCard(bs.player.ikusei),
       handCount: bs.player.hand.length,
+      tamaCount: bs.player.tamaDeck.length,
       deckCount: bs.player.deck.length,
       trashCount: bs.player.trash.length,
       trashCards: bs.player.trash.map(serializeCard),
@@ -359,6 +360,8 @@ function onRemoteCommand(cmd) {
       if (cmd.cards && Array.isArray(cmd.cards)) {
         bs.ai.security = cmd.cards.map(c => ({ ...c, buffs: c.buffs || [], stack: c.stack || [] }));
         bs._aiSecuritySynced = true;
+        // 受信回数（セキュリティ配布演出の途中で届いたかの判定に使う。battle.js animateSecuritySet）
+        bs._aiSecurityInitSeq = (bs._aiSecurityInitSeq || 0) + 1;
         console.log('[security_init] 相手セキュリティ同期:', bs.ai.security.length + '枚', bs.ai.security.map(c => c.name + '(' + c.type + ')'));
       }
       break;
@@ -688,6 +691,9 @@ function onRemoteCommand(cmd) {
       const PHASE_NAMES = { unsuspend: { icon: '🔄', name: 'アクティブフェイズ' }, draw: { icon: '🃏', name: 'ドローフェイズ' }, breed: { icon: '🥚', name: '育成フェイズ' }, main: { icon: '⚡', name: 'メインフェイズ' } };
       const PHASE_COLORS = { unsuspend: '#00fbff', draw: '#00ff88', breed: '#ff9900', main: '#ff00fb' };
       const info = PHASE_NAMES[cmd.phase];
+      // 相手の現在フェーズを記録してフェーズ表示に反映（自分の bs.phase は変えない）
+      bs._oppPhase = cmd.phase;
+      updatePhaseBadge();
       if (info && m.showPhaseAnnounce) m.showPhaseAnnounce(`${info.icon} 相手: ${info.name}`, PHASE_COLORS[cmd.phase], () => {});
       break;
     }
@@ -1068,6 +1074,7 @@ function onRemoteCommand(cmd) {
       bs.ai.ikusei = st.ikusei ? restoreCard(st.ikusei) : bs.ai.ikusei;
       if (st.deckCount !== undefined) adjustArr(bs.ai.deck, st.deckCount);
       if (st.handCount !== undefined) adjustArr(bs.ai.hand, st.handCount);
+      if (st.tamaCount !== undefined) adjustArr(bs.ai.tamaDeck, st.tamaCount);
       if (st.trashCards) bs.ai.trash = toArray(st.trashCards).map(restoreCard);
       else if (st.trashCount !== undefined) adjustArr(bs.ai.trash, st.trashCount);
       if (st.securityCount !== undefined && st.securityCount > 0 && st.securityCount < bs.ai.security.length && bs._aiSecuritySynced) {

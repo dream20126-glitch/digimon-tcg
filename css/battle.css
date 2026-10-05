@@ -46,6 +46,12 @@
 .ai-zone .zone-label { color: #ff00fb88; }
 .player-zone { background: rgba(0, 251, 255, 0.04); border-top: 1px solid #00fbff22; }
 .player-zone .zone-label { color: #00fbff88; }
+.player-zone { position: relative; }
+/* 自分の名前（自分ゾーンの下端中央） */
+.my-name-ribbon {
+  position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+  font-size: 9px; font-weight: bold; color: #00fbff; pointer-events: none;
+}
 
 .sec-card {
   width: 38px; height: 28px; border-radius: 3px;
@@ -129,6 +135,10 @@
 .m-cell.m-ai { background: rgba(255, 0, 251, 0.12); border-color: #ff00fb44; color: #ff00fb; }
 .m-cell.m-active { transform: scale(1.25); box-shadow: 0 0 8px currentColor; border-width: 2px; }
 .memory-info { display: flex; justify-content: space-between; align-items: center; font-size: 10px; }
+/* ターン数バッジ */
+.turn-badge { display: inline-flex; align-items: baseline; gap: 4px; color: #aaa; }
+.turn-badge-label { font-size: 8px; letter-spacing: 1px; color: #666; }
+.turn-badge #t-count { font-size: 14px; color: #fff; }
 .m-turn-label { font-weight: bold; }
 .m-turn-label.pl { color: #00fbff; }
 .m-turn-label.ai { color: #ff00fb; }
@@ -188,6 +198,22 @@
   font-size: 10px; font-weight: bold;
 }
 .phase-info-row { font-size: 9px; color: #555; display: flex; gap: 8px; }
+/* フェイズの流れ（updatePhaseBadge が生成） */
+.phase-badge .ph-owner { margin-right: 6px; }
+.phase-badge .ph-steps { display: inline-flex; gap: 3px; align-items: center; }
+.phase-badge .ph-step { color: #446; font-weight: normal; }
+.phase-badge .ph-step.on { color: #fff; font-weight: bold; }
+.phase-badge .ph-sep { color: #333; }
+/* 相手側の枚数表示（相手ゾーンの右上、名前と同じ行） */
+.ai-zone { position: relative; }
+.opp-info-row {
+  position: absolute; top: 7px; right: 8px;
+  display: flex; gap: 8px; font-size: 9px; color: #555;
+}
+.opp-info-row b { color: #aaa; }
+@media (max-width: 440px) {
+  .opp-info-row { position: static; justify-content: flex-end; margin: -2px 0 4px; }
+}
 
 .action-bar {
   display: flex; gap: 5px; padding: 5px 8px; background: #000;
@@ -764,4 +790,39 @@ body.tutorial-spotlight-mode #effect-confirm-no {
 @keyframes tutorialBtnPulse {
   0%, 100% { box-shadow: 0 0 15px 4px rgba(0, 255, 136, 0.6); }
   50%      { box-shadow: 0 0 25px 8px rgba(0, 255, 136, 0.9); }
+}
+
+/* ===== スクロールバーを表示しない（スクロール自体は可能。手札・バトルエリアは矢印ボタンあり） ===== */
+#battle-screen .battle-wrap,
+#pl-battle-row,
+#ai-battle-row,
+#battle-screen .hand-wrap {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+#battle-screen .battle-wrap::-webkit-scrollbar,
+#pl-battle-row::-webkit-scrollbar,
+#ai-battle-row::-webkit-scrollbar,
+#battle-screen .hand-wrap::-webkit-scrollbar,
+#hand-wrap::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* ===== 全画面表示ボタン（幅640px以上で表示。全画面に非対応のブラウザでは JS が html.fs-unsupported を付けて隠す） ===== */
+.fullscreen-btn { display: none; }
+.fullscreen-btn .fs-icon-exit { display: none; }
+.fullscreen-btn.is-fs .fs-icon-enter { display: none; }
+.fullscreen-btn.is-fs .fs-icon-exit { display: inline; }
+@media (min-width: 640px) {
+  .memory-info .mi-sep { display: none; }
+  .fullscreen-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 14px; border-radius: 14px; cursor: pointer;
+    background: rgba(0, 0, 0, 0.5); border: 1px solid #00fbff66; color: #00fbff;
+    font-size: 12px; font-weight: bold;
+  }
+  html.fs-unsupported .fullscreen-btn { display: none; }
+  html.fs-unsupported .memory-info .mi-sep { display: inline; }
 }

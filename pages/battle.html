@@ -4,6 +4,11 @@
     <!-- AIゾーン -->
     <div class="battle-zone ai-zone">
       <span class="zone-label" id="opponent-name-label">🤖 デジモンマスター</span>
+      <div class="opp-info-row">
+        <span>手札:<b id="ai-hand-count">0</b></span>
+        <span>タマ:<b id="ai-tama-count">0</b></span>
+        <span>トラッシュ:<b id="ai-trash-count2">0</b></span>
+      </div>
       <div style="display:flex; align-items:flex-start; gap:6px;">
         <div style="display:flex; flex-direction:column; gap:3px; flex-shrink:0; align-items:center;">
           <span class="zone-label" style="margin:0;">📚</span>
@@ -43,8 +48,14 @@
       <div class="memory-row" id="memory-gauge-row"></div>
       <div class="memory-info">
         <span id="m-turn-lbl" class="m-turn-label pl">あなたのターン</span>
-        <span style="color:#444;">|</span>
-        <span style="color:#666; font-size:9px;">ターン <b id="t-count" style="color:#aaa;">1</b></span>
+        <span class="mi-sep" style="color:#444;">|</span>
+        <!-- 全画面表示の切り替え（幅640px以上で表示。css/battle.css） -->
+        <button type="button" class="fullscreen-btn" id="fullscreen-btn" onclick="toggleBattleFullscreen()" title="全画面表示">
+          <svg class="fs-icon-enter" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
+          <svg class="fs-icon-exit" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
+          <span class="fs-label">全画面表示</span>
+        </button>
+        <span class="turn-badge" id="turn-badge"><span class="turn-badge-label">TURN</span><b id="t-count">1</b></span>
       </div>
     </div>
 
@@ -85,6 +96,8 @@
           </div>
         </div>
       </div>
+      <!-- 自分の名前（下端のリボン。対戦開始時にプレイヤー名を入れる） -->
+      <span class="my-name-ribbon" id="my-name-label">あなた</span>
     </div>
 
     <!-- 長押しアクション選択メニュー -->

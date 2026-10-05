@@ -1,0 +1,503 @@
+/* ===== ゲーム風テーマ（演出レイヤー） =====
+   既存の配色（黒×シアン、アクセントのマゼンタ）はそのままに、カードゲームらしい演出を上乗せする。
+   既存CSSの後に読み込む上書き専用ファイル。外せば元の見た目に戻る。
+   バトル画面（#battle-screen）は盤面の視認性を優先し対象外。 */
+
+:root {
+  --accent-magenta: #ff00fb;
+  --glow-cyan: rgba(0, 251, 255, 0.55);
+  --glow-magenta: rgba(255, 0, 251, 0.45);
+  --font-display: 'Dela Gothic One', 'Helvetica Neue', 'Meiryo', sans-serif;
+  --font-tech: 'Orbitron', 'Helvetica Neue', 'Meiryo', sans-serif;
+}
+
+/* ---------- 背景: デジタルワールドの床と光 ---------- */
+body {
+  background: #000;
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 45% at 15% 10%, rgba(0, 251, 255, 0.16), transparent 70%),
+    radial-gradient(ellipse 55% 40% at 90% 85%, rgba(255, 0, 251, 0.13), transparent 70%),
+    radial-gradient(ellipse 80% 60% at 50% 120%, rgba(0, 120, 255, 0.18), transparent 70%),
+    #000;
+}
+/* 遠近感のあるグリッド床（ゆっくり流れる） */
+body::after {
+  content: '';
+  position: fixed;
+  left: -50%;
+  right: -50%;
+  bottom: -10%;
+  height: 55%;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(0, 251, 255, 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 251, 255, 0.22) 1px, transparent 1px);
+  background-size: 60px 60px;
+  transform: perspective(420px) rotateX(62deg);
+  transform-origin: center top;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 35%, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 35%, #000 70%, transparent);
+  animation: gridFlow 6s linear infinite;
+}
+@keyframes gridFlow {
+  from { background-position: 0 0, 0 0; }
+  to   { background-position: 0 60px, 0 0; }
+}
+
+/* 画面切り替え時にふわっと出る */
+.screen.active:not(#battle-screen) {
+  animation: screenIn 0.4s ease-out;
+}
+@keyframes screenIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---------- タイトル・見出し ---------- */
+.game-title,
+.main-title {
+  font-family: var(--font-display);
+  font-weight: normal;
+  letter-spacing: 0.06em;
+  background: linear-gradient(180deg, #ffffff 0%, #c9feff 45%, #00fbff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 0 10px var(--glow-cyan)) drop-shadow(0 2px 0 rgba(0, 60, 80, 0.9));
+  position: relative;
+}
+.game-title::after {
+  content: '';
+  display: block;
+  width: 70%;
+  height: 2px;
+  margin: 10px auto 0;
+  background: linear-gradient(90deg, transparent, var(--main-cyan), var(--accent-magenta), var(--main-cyan), transparent);
+  box-shadow: 0 0 10px var(--glow-cyan);
+}
+.menu-container h2,
+#deck-list-screen h2,
+#battle-register-screen h2 {
+  font-family: var(--font-tech);
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 12px var(--glow-cyan);
+}
+.filter-label {
+  font-family: var(--font-tech);
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 8px var(--glow-cyan);
+}
+
+/* カード裏面のロゴ: 浮遊＋発光 */
+#card-back-img-login,
+#card-back-img-top {
+  width: 96px !important;
+  border-radius: 8px;
+  animation: cardFloat 4s ease-in-out infinite;
+  box-shadow: 0 0 18px var(--glow-cyan), 0 0 40px rgba(255, 0, 251, 0.25) !important;
+}
+@keyframes cardFloat {
+  0%, 100% { transform: translateY(0) rotateY(-8deg) rotateZ(-2deg); }
+  50%      { transform: translateY(-8px) rotateY(8deg) rotateZ(2deg); }
+}
+
+/* ---------- パネル: ホログラムの縁取り ---------- */
+.main-card {
+  position: relative;
+  background:
+    linear-gradient(160deg, rgba(0, 30, 45, 0.92), rgba(0, 8, 16, 0.96)) padding-box,
+    linear-gradient(135deg, var(--main-cyan), rgba(0, 251, 255, 0.1) 40%, rgba(255, 0, 251, 0.1) 60%, var(--accent-magenta)) border-box;
+  border: 1.5px solid transparent;
+  box-shadow: 0 0 30px rgba(0, 251, 255, 0.15), inset 0 0 30px rgba(0, 251, 255, 0.05);
+  backdrop-filter: blur(4px);
+}
+/* 四隅のブラケット */
+.main-card::before,
+.main-card::after {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+.main-card::before {
+  top: 8px;
+  left: 8px;
+  border-top: 2px solid var(--main-cyan);
+  border-left: 2px solid var(--main-cyan);
+}
+.main-card::after {
+  bottom: 8px;
+  right: 8px;
+  border-bottom: 2px solid var(--accent-magenta);
+  border-right: 2px solid var(--accent-magenta);
+}
+
+/* ---------- トップメニュー: カード型のタイル ---------- */
+.top-grid { perspective: 900px; }
+.top-card,
+.top-card-wide {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(160deg, rgba(0, 40, 55, 0.9), rgba(0, 6, 12, 0.95)) padding-box,
+    linear-gradient(140deg, var(--main-cyan), rgba(0, 251, 255, 0.15) 50%, var(--main-cyan)) border-box;
+  border: 1.5px solid transparent;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6), 0 0 14px rgba(0, 251, 255, 0.12);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+/* 内側の細い枠（カードの縁） */
+.top-card > *,
+.top-card-wide > * { position: relative; z-index: 1; }
+.top-card::before,
+.top-card-wide::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(0, 251, 255, 0.18);
+  border-radius: 10px;
+  pointer-events: none;
+}
+/* ホバーで走る光（フォイルの反射） */
+.top-card::after,
+.top-card-wide::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -60%;
+  width: 40%;
+  height: 200%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: rotate(20deg) translateX(-200%);
+  pointer-events: none;
+  z-index: 2;
+}
+.top-card:hover::after,
+.top-card-wide:hover::after {
+  transition: transform 0.7s ease;
+  transform: rotate(20deg) translateX(450%);
+}
+.top-card:hover,
+.top-card-wide:hover {
+  background:
+    linear-gradient(160deg, rgba(0, 70, 90, 0.95), rgba(0, 12, 22, 0.95)) padding-box,
+    linear-gradient(140deg, #fff, var(--main-cyan) 40%, var(--accent-magenta)) border-box;
+  border-color: transparent;
+  transform: translateY(-4px) rotateX(6deg);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.7), 0 0 26px var(--glow-cyan);
+}
+.top-card:active,
+.top-card-wide:active { transform: translateY(0) scale(0.98); }
+
+/* アイコンは光る紋章風 */
+.top-card-icon,
+.top-card-wide-icon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, rgba(0, 251, 255, 0.35), rgba(0, 251, 255, 0.05) 70%);
+  border: 1px solid rgba(0, 251, 255, 0.6);
+  box-shadow: 0 0 16px rgba(0, 251, 255, 0.35), inset 0 0 12px rgba(0, 251, 255, 0.3);
+  font-size: 1.8rem;
+}
+.top-card-wide-icon { width: 66px; height: 66px; font-size: 2.1rem; }
+.top-card-label {
+  font-size: 1rem !important;
+  font-family: var(--font-display);
+  font-weight: normal;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 8px var(--glow-cyan);
+}
+
+/* オンライン対戦はマゼンタの特別枠 */
+.top-card--battle {
+  background:
+    linear-gradient(160deg, rgba(55, 0, 50, 0.9), rgba(10, 0, 12, 0.95)) padding-box,
+    linear-gradient(140deg, var(--accent-magenta), rgba(255, 0, 251, 0.15) 50%, var(--main-cyan)) border-box;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6), 0 0 18px rgba(255, 0, 251, 0.2);
+}
+.top-card--battle::before { border-color: rgba(255, 0, 251, 0.25); }
+.top-card--battle:hover {
+  background:
+    linear-gradient(160deg, rgba(90, 0, 80, 0.95), rgba(16, 0, 18, 0.95)) padding-box,
+    linear-gradient(140deg, #fff, var(--accent-magenta) 40%, var(--main-cyan)) border-box;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.7), 0 0 28px var(--glow-magenta);
+}
+.top-card--battle .top-card-wide-icon {
+  background: radial-gradient(circle at 50% 40%, rgba(255, 0, 251, 0.4), rgba(255, 0, 251, 0.05) 70%);
+  border-color: rgba(255, 0, 251, 0.7);
+  box-shadow: 0 0 18px rgba(255, 0, 251, 0.45), inset 0 0 12px rgba(255, 0, 251, 0.3);
+  animation: emblemPulse 2.4s ease-in-out infinite;
+}
+.top-card--battle .top-card-label { text-shadow: 0 0 10px var(--glow-magenta); }
+@keyframes emblemPulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(255, 0, 251, 0.35), inset 0 0 10px rgba(255, 0, 251, 0.25); }
+  50%      { box-shadow: 0 0 26px rgba(255, 0, 251, 0.75), inset 0 0 16px rgba(255, 0, 251, 0.45); }
+}
+
+/* プレイヤーバー: プレイヤーカード風 */
+.player-bar {
+  background:
+    linear-gradient(90deg, rgba(0, 40, 55, 0.85), rgba(0, 8, 14, 0.9)) padding-box,
+    linear-gradient(90deg, var(--main-cyan), transparent 70%) border-box;
+  border: 1px solid transparent;
+  box-shadow: 0 0 14px rgba(0, 251, 255, 0.1);
+}
+.player-bar-info {
+  padding-left: 12px;
+  border-left: 3px solid var(--main-cyan);
+}
+.player-bar-name { text-shadow: 0 0 8px var(--glow-cyan); }
+
+/* ---------- ボタン ---------- */
+.menu-btn,
+.action-btn-primary,
+.action-btn-cyan {
+  position: relative;
+  overflow: hidden;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 6px var(--glow-cyan);
+  background: linear-gradient(180deg, rgba(0, 80, 95, 0.9), rgba(0, 25, 32, 0.95));
+  box-shadow: 0 0 12px rgba(0, 251, 255, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -10px 20px rgba(0, 0, 0, 0.35);
+}
+.menu-btn::after,
+.action-btn-primary::after,
+.action-btn-cyan::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -75%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  transform: skewX(-20deg);
+  pointer-events: none;
+}
+.menu-btn:hover::after,
+.action-btn-primary:hover::after,
+.action-btn-cyan:hover::after {
+  left: 130%;
+  transition: left 0.6s ease;
+}
+.menu-btn:hover,
+.action-btn-primary:hover,
+.action-btn-cyan:hover {
+  background: linear-gradient(180deg, rgba(0, 120, 140, 0.95), rgba(0, 40, 50, 0.95));
+  box-shadow: 0 0 24px var(--glow-cyan), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+/* 決定系（保存など） */
+.menu-btn.primary {
+  color: #001417;
+  text-shadow: none;
+  background: linear-gradient(180deg, #7ffdff, #00c8d4);
+  border-color: #bffeff;
+  box-shadow: 0 0 18px var(--glow-cyan), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.menu-btn.primary:hover {
+  background: linear-gradient(180deg, #b5feff, #00e1ee);
+  box-shadow: 0 0 30px var(--glow-cyan), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.ctrl-btn:not(.del) { box-shadow: 0 0 6px rgba(0, 251, 255, 0.2); }
+.ctrl-btn:active,
+.menu-btn:active { transform: scale(0.97) !important; }
+
+/* 入力欄 */
+input[type="text"],
+input[type="password"],
+select,
+.login-input {
+  background: rgba(0, 12, 18, 0.85);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+input[type="text"]:focus,
+input[type="password"]:focus,
+select:focus {
+  outline: none;
+  border-color: var(--main-cyan);
+  box-shadow: 0 0 12px rgba(0, 251, 255, 0.3);
+}
+
+/* ---------- デッキ作成 ---------- */
+.side-panel-left,
+.side-panel-right {
+  background: linear-gradient(180deg, rgba(0, 22, 32, 0.94), rgba(0, 8, 14, 0.96));
+}
+.center-panel {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(0, 251, 255, 0.07), transparent 60%),
+    rgba(3, 6, 10, 0.92);
+}
+.search-mode-box { box-shadow: 0 0 10px rgba(0, 251, 255, 0.2); }
+.mode-btn { transition: background 0.2s, color 0.2s; }
+.mode-btn.active {
+  background: linear-gradient(180deg, #7ffdff, #00c8d4);
+  box-shadow: 0 0 12px var(--glow-cyan);
+}
+.filter-btn { transition: all 0.15s; }
+.filter-btn:hover { border-color: rgba(0, 251, 255, 0.6); color: #bbb; }
+.filter-btn.selected {
+  background: linear-gradient(180deg, rgba(0, 251, 255, 0.28), rgba(0, 251, 255, 0.08));
+  color: #fff;
+  text-shadow: 0 0 6px var(--glow-cyan);
+  box-shadow: 0 0 10px rgba(0, 251, 255, 0.45), inset 0 0 8px rgba(0, 251, 255, 0.25);
+}
+
+/* 検索結果のカード: 配られるように出て、ホバーで持ち上がって光る */
+.card-thumb {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, #14202a, #0a1016);
+  border-color: #23323d;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s;
+  animation: cardDeal 0.35s ease-out backwards;
+}
+.card-thumb:hover {
+  transform: translateY(-5px) scale(1.04);
+  border-color: var(--main-cyan);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.7), 0 0 16px var(--glow-cyan);
+  z-index: 2;
+}
+.card-thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.3) 45%, rgba(0, 251, 255, 0.15) 52%, transparent 65%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+.card-thumb:hover::after {
+  transform: translateX(120%);
+  transition: transform 0.6s ease;
+}
+@keyframes cardDeal {
+  from { opacity: 0; transform: translateY(14px) rotateZ(-3deg) scale(0.92); }
+  to   { opacity: 1; transform: none; }
+}
+.search-guide {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(160deg, rgba(0, 30, 42, 0.8), rgba(0, 8, 14, 0.9)) padding-box,
+    linear-gradient(135deg, rgba(0, 251, 255, 0.6), rgba(255, 0, 251, 0.4)) border-box;
+  color: #9fdfe3;
+  box-shadow: 0 0 20px rgba(0, 251, 255, 0.1);
+}
+.search-guide::before {
+  content: '🔍';
+  display: block;
+  font-size: 2rem;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 0 8px var(--glow-cyan));
+  animation: cardFloat 4s ease-in-out infinite;
+}
+.search-hit-count {
+  font-family: var(--font-tech);
+  color: var(--main-cyan);
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 6px var(--glow-cyan);
+}
+
+/* デッキ枚数カウンター */
+.count-display {
+  font-family: var(--font-tech);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  padding: 8px 10px;
+  border: 1px solid rgba(0, 251, 255, 0.3);
+  border-radius: 6px;
+  background: rgba(0, 251, 255, 0.05);
+}
+.count-display b {
+  font-size: 18px;
+  text-shadow: 0 0 8px currentColor;
+}
+.deck-item {
+  background: linear-gradient(90deg, rgba(0, 40, 52, 0.7), rgba(8, 12, 16, 0.9));
+  border-color: rgba(0, 251, 255, 0.18);
+  border-left: 3px solid var(--main-cyan);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.deck-item:hover {
+  border-color: rgba(0, 251, 255, 0.5);
+  box-shadow: 0 0 10px rgba(0, 251, 255, 0.2);
+}
+#card-preview-window {
+  box-shadow: 0 0 40px var(--glow-cyan), 0 0 80px rgba(255, 0, 251, 0.2);
+  animation: previewIn 0.25s ease-out;
+}
+@keyframes previewIn {
+  from { opacity: 0; transform: translate(-50%, -48%) scale(0.96); }
+  to   { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+/* ---------- マイデッキ ---------- */
+.deck-row {
+  background:
+    linear-gradient(100deg, rgba(0, 38, 50, 0.85), rgba(4, 8, 12, 0.92)) padding-box,
+    linear-gradient(100deg, rgba(0, 251, 255, 0.7), rgba(0, 251, 255, 0.08) 60%) border-box;
+  border: 1px solid transparent;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.deck-row:hover {
+  background:
+    linear-gradient(100deg, rgba(0, 60, 78, 0.9), rgba(4, 10, 16, 0.92)) padding-box,
+    linear-gradient(100deg, var(--main-cyan), var(--accent-magenta)) border-box;
+  transform: translateX(4px);
+  box-shadow: 0 0 18px rgba(0, 251, 255, 0.25);
+}
+.deck-row img {
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.8), 0 0 10px rgba(0, 251, 255, 0.3);
+  transform: rotateZ(-3deg);
+  transition: transform 0.2s;
+}
+.deck-row:hover img { transform: rotateZ(0deg) scale(1.06); }
+
+/* ---------- 動きを減らす設定の人には演出を止める ---------- */
+/* このテーマで追加した演出だけを止める（アプリ本来のアニメーションには触れない。
+   全要素を止めるとマリガンのカードなど、アニメーションで表示される要素が見えなくなるため） */
+@media (prefers-reduced-motion: reduce) {
+  body::after,
+  .screen.active:not(#battle-screen),
+  #card-back-img-login,
+  #card-back-img-top,
+  .top-card--battle .top-card-wide-icon,
+  .card-thumb,
+  .search-guide::before,
+  #card-preview-window {
+    animation: none !important;
+  }
+  .top-card::after,
+  .top-card-wide::after,
+  .menu-btn::after,
+  .action-btn-primary::after,
+  .action-btn-cyan::after,
+  .card-thumb::after {
+    display: none;
+  }
+}
+
+/* 元々グレー指定の「戻る」系ボタンは控えめなメタル調に（光らせない） */
+.menu-btn[style*="#555"] {
+  color: #9aa7ad !important;
+  border-color: #4a5a62 !important;
+  text-shadow: none;
+  background: linear-gradient(180deg, #1c262b, #0c1215);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.menu-btn[style*="#555"]:hover {
+  color: #d6e2e6 !important;
+  border-color: #7d939c !important;
+  background: linear-gradient(180deg, #26343a, #121a1e);
+  box-shadow: 0 0 12px rgba(160, 200, 210, 0.2);
+}

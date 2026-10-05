@@ -80,6 +80,16 @@ window.toggleFilter = function(btn, type, val) {
 window.filterCards = function() {
   const input = document.getElementById('s-input').value.toLowerCase();
   const feature = document.getElementById('s-feature').value.toLowerCase();
+  // 何も絞り込んでいないときは全件を出さず、案内だけ表示する
+  const hasFilter = input.trim() || feature.trim() || selectedColors.length || selectedLevels.length || selectedTypes.length;
+  if (!hasFilter) {
+    if (resultObserver) resultObserver.disconnect();
+    resultList = [];
+    renderedCount = 0;
+    document.getElementById('search-results').innerHTML =
+      '<div class="search-guide">左の絞り込み（キーワード・色・レベル・タイプ・特徴）でカードを検索してください</div>';
+    return;
+  }
   const filtered = allCards.filter(c => {
     // トークンはデッキに入れられないので検索結果から除外
     if (String(c["タイプ"]) === 'トークン') return false;
@@ -96,16 +106,52 @@ window.filterCards = function() {
   renderResults(filtered);
 };
 
-function renderResults(list) {
-  const res = document.getElementById('search-results');
-  res.innerHTML = list.map(c => {
-    const safeId = c["カードNo"].replace(/[^a-z0-9]/gi, '');
-    const imgUrl = getCardImageUrl(c);
-    return `<div class="card-thumb" onclick="showPreview('${c["カードNo"]}')">
-      <div id="img-box-${safeId}">${imgUrl ? `<img src="${imgUrl}" style="width:100%">` : '<div style="height:100px; background:#111;"></div>'}</div>
+// 検索結果は一度に全件描画せず、PAGE_SIZE 件ずつ追加する。
+// 全件分の <img> を一斉に作ると Drive サムネイルへのリクエストが千件単位で詰まり、表示が遅くなるため。
+// 末尾の番兵要素が見えたら次のページを追加する（IntersectionObserver）。
+const PAGE_SIZE = 60;
+let resultList = [];
+let renderedCount = 0;
+let resultObserver = null;
+
+function thumbHtml(c) {
+  const safeId = c["カードNo"].replace(/[^a-z0-9]/gi, '');
+  const imgUrl = getCardImageUrl(c);
+  return `<div class="card-thumb" onclick="showPreview('${c["カードNo"]}')">
+      <div id="img-box-${safeId}">${imgUrl ? `<img src="${imgUrl}" loading="lazy" decoding="async" style="width:100%">` : '<div style="height:100px; background:#111;"></div>'}</div>
       <div style="font-size:9px; color:#555; margin-top:3px;">${c["カードNo"]}</div>
     </div>`;
-  }).join('');
+}
+
+function renderNextPage() {
+  const sentinel = document.getElementById('search-results-sentinel');
+  const next = resultList.slice(renderedCount, renderedCount + PAGE_SIZE);
+  if (next.length === 0) return;
+  sentinel.insertAdjacentHTML('beforebegin', next.map(thumbHtml).join(''));
+  renderedCount += next.length;
+  if (renderedCount >= resultList.length) sentinel.remove();
+}
+
+function renderResults(list) {
+  const res = document.getElementById('search-results');
+  resultList = list;
+  renderedCount = 0;
+  if (resultObserver) resultObserver.disconnect();
+  const panel = res.closest('.center-panel');
+  if (panel) panel.scrollTop = 0;
+  res.innerHTML = `<div class="search-hit-count">${list.length}件</div><div id="search-results-sentinel"></div>`;
+  renderNextPage();
+  const sentinel = document.getElementById('search-results-sentinel');
+  if (!sentinel) return;
+  if (!('IntersectionObserver' in window)) {
+    // 古いブラウザは従来どおり全件描画
+    while (renderedCount < resultList.length) renderNextPage();
+    return;
+  }
+  resultObserver = new IntersectionObserver((entries) => {
+    if (entries.some(e => e.isIntersecting)) renderNextPage();
+  }, { rootMargin: '600px 0px' });
+  resultObserver.observe(sentinel);
 }
 
 window.showPreview = function(id) {

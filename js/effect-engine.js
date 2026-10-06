@@ -3192,9 +3192,16 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
       // 最終確定時のみ相手画面のポップアップを閉じる。
       // ただし後続の登場演出 / カード移動演出が呼び出す play/state_sync コマンドより
       // 先に届いて演出が抑止されないよう、1tick 遅延 → さらに少し余裕を持たせる
+      // 確定の callback は同期で走り、その中でデッキ増加等の誘発効果が相手画面に新しい
+      // ポップアップを出すことがある（ヒョコモン BT26-009 の戻し→ピョコモン BT26-001、
+      // ブテンモン BT26-015 のトラッシュ戻し→自身の【自分のターン】）。遅延した close が
+      // それを消さないよう、予約後に新しいポップアップを送っていたら close は送らない
+      // （新しいポップアップはその効果自身の完了時に閉じられる）
       if (_onlinePickerActive) {
         window._skipFxEffectClose = false;
+        const _popupGenAtCleanup = window._remotePopupGen || 0;
         setTimeout(() => {
+          if ((window._remotePopupGen || 0) !== _popupGenAtCleanup) return;
           try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_effectClose' }); } catch(_) {}
         }, 50);
       }

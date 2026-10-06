@@ -247,6 +247,11 @@ function serializeCardForCmd(c) {
 
 export function sendCommand(cmd) {
   if (!_onlineMode || !_onlineRoomId) return;
+  // 相手画面に効果発動ポップアップを出すコマンドの世代番号。遅延送信する fx_effectClose
+  // （showTrashCardPicker 等）が、その間に出た次の効果のポップアップまで消さないよう照合に使う
+  if (cmd && (cmd.type === 'fx_effectAnnounce' || cmd.type === 'fx_confirmShow' || cmd.type === 'effect_start')) {
+    window._remotePopupGen = (window._remotePopupGen || 0) + 1;
+  }
   _onlineCmdSeq++;
   // 送信者ごとに独立したパス・連番空間に書き込むため、相手と同時に送信しても衝突しない
   const path = `rooms/${_onlineRoomId}/commands/${_onlineMyKey}/${_onlineCmdSeq}`;
@@ -746,8 +751,9 @@ function onRemoteCommand(cmd) {
       if (remoteOv) {
         const statusEl = remoteOv.querySelector('div[style*="color:#888"]');
         if (statusEl) statusEl.innerText = cmd.accepted ? '⚡ 相手が効果を発動中...' : '💨 効果を発動しませんでした';
-        // 「いいえ」の場合は3秒後に消す
-        if (!cmd.accepted) setTimeout(() => { if (m.fxRemoteEffectClose) m.fxRemoteEffectClose(); }, 3000);
+        // 「いいえ」の場合は3秒後に消す（この間に次の効果のポップアップへ差し替わっていたら、
+        // そちらは消さない。fxRemoteEffect は毎回要素を作り直すので要素の同一性で判定する）
+        if (!cmd.accepted) setTimeout(() => { if (remoteOv.parentNode) remoteOv.parentNode.removeChild(remoteOv); }, 3000);
       }
       break;
     }

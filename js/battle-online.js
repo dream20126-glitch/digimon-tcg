@@ -1265,10 +1265,17 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_remoteCardMove': {
-      // 相手側でのカード移動演出を自分側でも再生（受信側視点で from/to ラベルは反転表示しない）
+      // 相手側でのカード移動演出を自分側でも再生（受信側視点で from/to ラベルは反転表示しない）。
+      // rawLabels: 送信側が受信側視点のラベルを指定済み（相手の効果でこちらのカードが動いた等）。
+      // faceDown: 非公開情報（相手の手札から戻したカード等）は裏向きで表示。
+      // 連続して届いても重ならないよう、演出キューで1枚ずつ再生する
       if (window._fxCardMove) {
         const dummy = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '', cardNo: cmd.cardNo || '' };
-        try { window._fxCardMove(dummy, '相手の' + (cmd.fromLabel || ''), '相手の' + (cmd.toLabel || ''), () => {}); } catch(_) {}
+        const from = cmd.rawLabels ? (cmd.fromLabel || '') : '相手の' + (cmd.fromLabel || '');
+        const to = cmd.rawLabels ? (cmd.toLabel || '') : '相手の' + (cmd.toLabel || '');
+        enqueueFx((done) => {
+          try { window._fxCardMove(dummy, from, to, done, !!cmd.faceDown); } catch (_) { done(); }
+        });
       }
       break;
     }

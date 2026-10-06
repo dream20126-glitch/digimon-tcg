@@ -355,14 +355,9 @@ function executeQueueEntry(entry, context, callback) {
   // （レシピで no_announce:true が指定されていればアナウンス自体を省略して即実行）
   function executeWithAnnounce() {
     if (hasNoAnnounceOverride(_recipeStepsForLookup)) { runEffectNow(callback); return; }
-    // 「強制 → その後、〇〇することで（任意）」は強制部分をポップアップなしで対象選択へ進め、
-    // 任意部分に来た時点で確認ダイアログを出す（ブテンモン BT26-015 の要望）
-    // 自分の画面には出さないが、相手の画面には効果の内容を出す（ブテンモン BT26-015 c1 の要望）
-    if (_isInlineCostConfirmRecipe(_recipeStepsForLookup)) {
-      _announceToOpponentOnly(block && block._recipeCard ? block._recipeCard : card, displayEffText, actualSide);
-      runEffectNow(callback);
-      return;
-    }
+    // 「強制 → その後、〇〇することで（任意）」も、強制部分は通常の効果と同じくアナウンス（自分・相手の
+    // 両画面）を出してから対象選択へ進む。任意部分に来た時点で確認ダイアログを出す（runRecipe 参照）。
+    // （ブテンモン BT26-015 c1: 自分の画面にも効果がわかるように出してほしい）
     const evoSourceCard = block && block._recipeCard;
     showEffectAnnounce(card, displayEffText, actualSide, () => runEffectNow(callback), evoSourceCard);
   }
@@ -416,6 +411,14 @@ function executeQueueEntry(entry, context, callback) {
     )
       // 先頭が強制で、2つ目以降のコスト持ちステップだけが任意なら、効果の最初では確認しない
       && !_isInlineCostConfirmRecipe(_recipeStepsForLookup);
+  }
+
+  // 任意の「このデジモンでアタックできる」だけの効果（≪急襲≫等）は、アタックの処理自体が
+  // 「「〜」でアタックしますか？」を確認するので、効果全体の確認・アナウンスは出さない（二重確認の防止）
+  if (Array.isArray(_recipeStepsForLookup) && _recipeStepsForLookup.length === 1
+      && _recipeStepsForLookup[0] && _recipeStepsForLookup[0].action === 'attack' && _recipeStepsForLookup[0].optional === true) {
+    runEffectNow(callback);
+    return;
   }
 
   // 強制効果 or 既に確認済み → 即実行
@@ -2534,7 +2537,13 @@ function _returnOwnFieldCardToDeck(owner, card, toTop, ctx, done) {
   if (ownerSide === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
     try { window._onlineSendStateSync(); } catch (_) {}
   }
-  _deckIncreased(ctx, ownerSide, () => done && done());
+  // デッキへ戻る演出（自分・相手の両画面。御園公介 BT26-096「このテイマーをデッキの下に戻す」等）
+  const _fromArea = ti !== -1 ? 'テイマーエリア' : 'バトルエリア';
+  const _dk = 'デッキ' + (toTop ? '(上)' : '(下)');
+  const _after = () => _deckIncreased(ctx, ownerSide, () => done && done());
+  if (ctx.side !== 'player') { _after(); return; }
+  _fxMoveSync(ctx, card, (ownerSide === 'player' ? '' : '相手の') + _fromArea, (ownerSide === 'player' ? '' : '相手の') + _dk, _after,
+    ownerSide === 'player' ? {} : { remoteFrom: '自分の' + _fromArea, remoteTo: '自分の' + _dk });
 }
 
 // テイマーを消滅させる（「相手のデジモン/テイマー1体を消滅させる」等）。テイマーの下に置かれた
@@ -3178,7 +3187,7 @@ function _returnDeckFromBothTrash(step, ctx, player, opponent, effectiveSide, ca
     }
     // 移動演出（自分の画面）→ デッキが増えたときの誘発（自分のデッキ。相手のデッキは、オンラインでは
     // 相手機の処理なのでここでは発火しない）
-    const anims = ctx.side === 'player' && window._fxCardMove ? list.slice() : [];
+    const anims = ctx.side === 'player' ? list.slice() : [];
     const nextAnim = () => {
       const a = anims.shift();
       if (!a) {
@@ -3190,7 +3199,9 @@ function _returnDeckFromBothTrash(step, ctx, player, opponent, effectiveSide, ca
         afterOwn();
         return;
       }
-      window._fxCardMove(a.card, a.side === 'own' ? 'トラッシュ' : '相手のトラッシュ', (a.side === 'own' ? '' : '相手の') + 'デッキ' + (top ? '(上)' : '(下)'), nextAnim);
+      const _dk = 'デッキ' + (top ? '(上)' : '(下)');
+      _fxMoveSync(ctx, a.card, a.side === 'own' ? 'トラッシュ' : '相手のトラッシュ', (a.side === 'own' ? '' : '相手の') + _dk, nextAnim,
+        a.side === 'own' ? {} : { remoteFrom: '自分のトラッシュ', remoteTo: '自分の' + _dk });
     };
     nextAnim();
   };
@@ -3203,6 +3214,36 @@ function _returnDeckFromBothTrash(step, ctx, player, opponent, effectiveSide, ca
   }
   showBothTrashPicker({ own: { cards: (player.trash || []).slice(), cands: ownC }, opp: { cards: (opponent.trash || []).slice(), cands: oppC } },
     Math.min(want, total), '🔄 デッキの' + (top ? '上' : '下') + 'に戻すカードを選んでください', apply);
+}
+
+// カード移動演出を自分の画面で再生し、オンラインなら相手の画面にも同じ演出を送る（fx_remoteCardMove）。
+// 相手側にも「どのカードがどこからどこへ動いたか」がわかるようにするため（デッキに戻す等）。
+// opts.faceDown: 自分の画面も裏向き（セキュリティ等の非公開情報）
+// opts.remoteFaceDown: 相手の画面だけ裏向き（手札から戻すカード等、相手には見えない情報）
+// opts.remoteFrom / opts.remoteTo: 相手の画面に出すラベルをそのまま指定（相手視点。例: こちらの効果で
+//   相手のカードを動かしたときは「自分のトラッシュ」→「自分のデッキ(下)」）。省略時は相手側で
+//   「相手の」＋fromLabel/toLabel と表示される
+function _fxMoveSync(ctx, card, fromLabel, toLabel, cb, opts) {
+  opts = opts || {};
+  const done = () => { try { cb && cb(); } catch (e) { console.error('[_fxMoveSync]', e); } };
+  if (ctx && ctx.side === 'player' && card && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    const raw = opts.remoteFrom != null || opts.remoteTo != null;
+    const hide = !!(opts.faceDown || opts.remoteFaceDown);
+    try {
+      window._onlineSendCommand({
+        type: 'fx_remoteCardMove',
+        cardName: hide ? '' : (card.name || ''), cardNo: hide ? '' : (card.cardNo || ''),
+        cardImg: hide ? '' : (card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || card.imageUrl || ''),
+        fromLabel: raw ? (opts.remoteFrom != null ? opts.remoteFrom : '相手の' + fromLabel) : fromLabel,
+        toLabel: raw ? (opts.remoteTo != null ? opts.remoteTo : '相手の' + toLabel) : toLabel,
+        rawLabels: raw, faceDown: hide,
+      });
+    } catch (_) {}
+  }
+  if (window._fxCardMove) {
+    try { window._fxCardMove(card, fromLabel, toLabel, done, !!opts.faceDown); return; } catch (_) {}
+  }
+  setTimeout(done, 300);
 }
 
 // 自分・相手どちらのトラッシュからでも合計 wantCount 枚を選ぶUI（クロノモン：ホーリーモード BT26-016
@@ -7971,18 +8012,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   // 強制効果: アナウンス演出を挟んでから実行（no_announce:true 指定時は省略）
   logActivated();
   if (hasNoAnnounceOverride(recipe)) { runNow(); return; }
-  if (_inlineCost) { _announceToOpponentOnly(isEvo ? sourceCard : card, effectText, side); runNow(); return; }
   showEffectAnnounce(card, effectText, side, runNow, evoSourceArg);
-}
-
-// 「強制 → その後、〇〇することで（任意）」の強制部分は、自分の画面にはアナウンスを出さず
-// そのまま対象選択に進むが、相手の画面には「相手が発動している効果の内容」を出す（ブテンモン BT26-015）。
-// 相手側のポップアップは効果の完了時（fx_effectClose）や任意部分の確認（fx_confirmShow）で差し替わる
-function _announceToOpponentOnly(titleCard, effectText, side) {
-  if (side !== 'player' || !titleCard || !(window._isOnlineMode && window._isOnlineMode()) || !window._onlineSendCommand) return;
-  try {
-    window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: titleCard.name, effectText: String(effectText || '').substring(0, 400), status: '⚡ 相手が効果を処理中...' });
-  } catch (_) {}
 }
 
 // ===== when_opp_rest グローバル発火 =====
@@ -10365,9 +10395,20 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done) {
   const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
   const slotIdx = atkCard ? player.battleArea.indexOf(atkCard) : -1;
   if (slotIdx === -1 || atkCard.suspended || atkCard.cantAttack) { finish(false); return; }
+  // 【自分のターン終了時】の効果（≪急襲≫）でのアタックは、バトルの解決が終わってから効果を完了させる。
+  // そうしないとターン終了処理がそのまま進み、バトル中に相手へターンが渡ってしまう。
+  // 完了の合図は battle-combat.js の checkPendingTurnEnd（アタック終了）が bs._effectAttackResolveCbs を呼ぶ
+  const trig = ctx.block && ctx.block.trigger && ctx.block.trigger.code;
+  const waitResolve = /turn_end$/.test(String(trig || ''));
   const declare = (targetType, targetIdx) => {
     window.startAttack(atkCard, slotIdx, (ok) => {
       if (!ok) { finish(false); return; }
+      if (waitResolve) {
+        if (!Array.isArray(ctx.bs._effectAttackResolveCbs)) ctx.bs._effectAttackResolveCbs = [];
+        ctx.bs._effectAttackResolveCbs.push(() => finish(true));
+        window.resolveAttackTarget(targetType, targetIdx);
+        return;
+      }
       window.resolveAttackTarget(targetType, targetIdx);
       finish(true);
     });
@@ -11696,8 +11737,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (ti !== -1) opponent.trash.splice(ti, 1);
           opponent.hand.push(c); _noteHandIncrease(ctx, opponent);
           ctx.addLog && ctx.addLog('🃏 相手のトラッシュの「' + c.name + '」を相手の手札に戻した');
-          if (window._fxCardMove) window._fxCardMove(c, 'トラッシュ', '手札', _rhoMoveNext);
-          else setTimeout(_rhoMoveNext, 300);
+          _fxMoveSync(ctx, c, '相手のトラッシュ', '相手の手札', _rhoMoveNext, { remoteFrom: '自分のトラッシュ', remoteTo: '自分の手札' });
         };
         _rhoMoveNext();
         break;
@@ -13740,9 +13780,14 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         const _rsTop = step.position === 'top' || step.deck_top;
         if (_rsTop) player.deck.unshift(_rsc); else player.deck.push(_rsc);
-        ctx.addLog('🔄 「' + _rsc.name + '」を' + ({ trash: 'トラッシュ', hand: '手札', security: 'セキュリティ' })[_rsZone] + 'からデッキの' + (_rsTop ? '上' : '下') + 'に戻す');
+        const _rsFrom = ({ trash: 'トラッシュ', hand: '手札', security: 'セキュリティ' })[_rsZone];
+        ctx.addLog('🔄 「' + _rsc.name + '」を' + _rsFrom + 'からデッキの' + (_rsTop ? '上' : '下') + 'に戻す');
         ctx.renderAll();
-        _deckIncreased(ctx, ctx.side, () => callback(true));
+        // デッキへ戻る演出（自分・相手の両画面。手札/セキュリティからは相手には非公開）
+        const _rsAfter = () => _deckIncreased(ctx, ctx.side, () => callback(true));
+        if (effectiveSide === 'ai') { _rsAfter(); break; }
+        _fxMoveSync(ctx, _rsc, _rsFrom, 'デッキ' + (_rsTop ? '(上)' : '(下)'), _rsAfter,
+          { faceDown: _rsZone === 'security', remoteFaceDown: _rsZone === 'hand' });
         break;
       }
       // store経由（自分側カードを対象にした従来パス）: 自分のデッキに戻す
@@ -13756,7 +13801,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         else player.deck.push(cardToReturn);
         ctx.addLog('🔄 「' + cardToReturn.name + '」をデッキの' + (top ? '上' : '下') + 'に戻す');
         ctx.renderAll();
-        _deckIncreased(ctx, ctx.side, () => callback());
+        if (effectiveSide === 'ai') { _deckIncreased(ctx, ctx.side, () => callback()); break; }
+        _fxMoveSync(ctx, cardToReturn, '', 'デッキ' + (top ? '(上)' : '(下)'), () => _deckIncreased(ctx, ctx.side, () => callback()));
         break;
       }
       // target:"opponent:1" 等の直接指定: 相手デジモンをバトルエリアから外し、
@@ -13800,8 +13846,10 @@ function executeRecipeStep(step, ctx, store, callback) {
             ctx.renderAll();
             const _fireDeckIncrease = (next) => _deckIncreased(ctx, _rdSideName, next);
             // デッキへ戻る演出（テラーズクラスター等）
-            if (window._fxCardMove) window._fxCardMove(c, 'バトルエリア', 'デッキ' + (_rdTop ? '(上)' : '(下)'), () => _fireDeckIncrease(() => doneCb && doneCb()));
-            else setTimeout(() => _fireDeckIncrease(() => doneCb && doneCb()), 300);
+            // 相手の画面にも「自分のデジモンがデッキに戻った」演出を出す（相手視点のラベル）
+            const _rdDk = 'デッキ' + (_rdTop ? '(上)' : '(下)');
+            _fxMoveSync(ctx, c, '相手のバトルエリア', '相手の' + _rdDk, () => _fireDeckIncrease(() => doneCb && doneCb()),
+              { remoteFrom: '自分のバトルエリア', remoteTo: '自分の' + _rdDk });
           });
         };
         if (effectiveSide === 'ai') {
@@ -13929,8 +13977,14 @@ function executeRecipeStep(step, ctx, store, callback) {
           ctx.renderAll();
           // デッキへ戻る演出（ブテンモン BT26-015 の要望: 戻す→演出→次の処理の順に見せる）。
           // セキュリティから戻すカードは非公開情報なので裏向き
-          if (effectiveSide !== 'ai' && window._fxCardMove) {
-            window._fxCardMove(entry.card, _rdFromLabel, 'デッキ' + (_rdTop2 ? '(上)' : '(下)'), () => doneCb(true), _rdFromLabel === 'セキュリティ');
+          // 相手の画面にも同じ演出を出す。手札から戻すカードは相手には非公開なので相手側は裏向き。
+          // 相手のゾーンから戻した（from_owner:'opponent'）なら相手視点では「自分の〜」
+          if (effectiveSide !== 'ai') {
+            const _rdDk2 = 'デッキ' + (_rdTop2 ? '(上)' : '(下)');
+            const _rdOpp = _rdOwnerP === opponent;
+            _fxMoveSync(ctx, entry.card, (_rdOpp ? '相手の' : '') + _rdFromLabel, (_rdOpp ? '相手の' : '') + _rdDk2, () => doneCb(true), Object.assign(
+              { faceDown: _rdFromLabel === 'セキュリティ', remoteFaceDown: _rdFromLabel === '手札' },
+              _rdOpp ? { remoteFrom: '自分の' + _rdFromLabel, remoteTo: '自分の' + _rdDk2 } : {}));
             return;
           }
           doneCb(true);

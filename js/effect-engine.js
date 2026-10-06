@@ -157,6 +157,9 @@ function _entryWillExecute(entry, ctx) {
   return recipeWillExecuteAnything(recipe, { card: entry.card, bs: ctx.bs, side: actualSide, block: entry.block, _sourceCard: recipeCard });
 }
 
+// キューの効果を解決中（executeQueueEntry 〜 その後の保留反応の処理完了まで）の深さ。
+// 0 より大きい間に起きた「デッキが増えた」は保留キューに積み、解決後に発火する（_deckIncreased）
+let _queueResolveDepth = 0;
 function processQueue(context, onComplete) {
   // ターン1回制限済み/条件不成立で不発確定のエントリは完了扱いにスキップ
   // （「どちらを発動しますか」の選択ポップアップに不発カードが紛れ込むのを防ぐ）
@@ -169,7 +172,9 @@ function processQueue(context, onComplete) {
   if (waiting.length === 0) {
     clearQueue();
     // 消滅処理 → on_destroy リアクション完了を待つ
+    _queueResolveDepth++;
     checkPendingDestroys(context, () => {
+      _queueResolveDepth = Math.max(0, _queueResolveDepth - 1);
       // メモリー超過チェック
       if (context._memoryOverflow) {
         context._memoryOverflow = false;
@@ -208,11 +213,13 @@ function processQueue(context, onComplete) {
     showQueueOrderSelect(sameLevelManuals, (chosenIdx) => {
       const chosen = sameLevelManuals[chosenIdx];
       chosen.status = 'processing';
+      _queueResolveDepth++;
       executeQueueEntry(chosen, context, () => {
         chosen.status = 'completed';
         sortQueue();
         if (window._sendMemoryUpdate) try { window._sendMemoryUpdate(); } catch(_) {}
         checkPendingDestroys(context, () => {
+          _queueResolveDepth = Math.max(0, _queueResolveDepth - 1);
           processQueue(context, onComplete);
         });
       });
@@ -223,6 +230,7 @@ function processQueue(context, onComplete) {
   }
 
   next.status = 'processing';
+  _queueResolveDepth++;
   executeQueueEntry(next, context, () => {
     next.status = 'completed';
     sortQueue();
@@ -230,6 +238,7 @@ function processQueue(context, onComplete) {
     // 加えてメモリー値が効果でズレている可能性に備え必ずメモリー同期も送る
     if (window._sendMemoryUpdate) try { window._sendMemoryUpdate(); } catch(_) {}
     checkPendingDestroys(context, () => {
+      _queueResolveDepth = Math.max(0, _queueResolveDepth - 1);
       processQueue(context, onComplete);
     });
   });
@@ -2520,9 +2529,7 @@ function _returnOwnFieldCardToDeck(owner, card, toTop, ctx, done) {
   if (ownerSide === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
     try { window._onlineSendStateSync(); } catch (_) {}
   }
-  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-  try { fireWhenDeckIncreaseTriggers(ownerSide, ctx.bs, ctxBase, () => done && done(), { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); }
-  catch (_) { done && done(); }
+  _deckIncreased(ctx, ownerSide, () => done && done());
 }
 
 // テイマーを消滅させる（「相手のデジモン/テイマー1体を消滅させる」等）。テイマーの下に置かれた
@@ -3666,11 +3673,7 @@ function _deckOpenAuto(opened, step, ctx, callback) {
     });
     left.length = 0;
     ctx.renderAll && ctx.renderAll();
-    if (deckInc) {
-      const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-      try { fireWhenDeckIncreaseTriggers(ctx.side, ctx.bs, ctxBase, () => callback(), { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); return; }
-      catch (_) { /* fallthrough */ }
-    }
+    if (deckInc) { _deckIncreased(ctx, ctx.side, () => callback()); return; }
     callback();
   };
   const nextSel = () => {
@@ -4089,11 +4092,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   // デッキへの戻しが1枚でもあれば when_deck_increase を発火してから終了する（ピョコモン BT26-001用）
   function finishReturnPhase() {
     cleanup();
-    if (_deckIncreasedByEffect) {
-      const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-      try { fireWhenDeckIncreaseTriggers(ctx.side, ctx.bs, ctxBase, () => callback(), { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); return; }
-      catch (_) { /* fallthrough */ }
-    }
+    if (_deckIncreasedByEffect) { _deckIncreased(ctx, ctx.side, () => callback()); return; }
     callback();
   }
   function runReturnPhase() {
@@ -6347,10 +6346,11 @@ function checkConditions(conditions, card, bs, side) {
 // ドレインループが、メイン効果（cost・本体・その後チェーン全て）完了後にまとめて行う。
 // 「〜するとき」系（when_destroy/when_battle_destroy/when_leave_battle等の置換効果）は
 // このキューを使わず、従来通り即座に同期発火させること
-function enqueueReaction(bs, fn, args) {
+// opts.late: true のものは、他の（late でない）保留反応が全て片付いてから処理する
+function enqueueReaction(bs, fn, args, opts) {
   if (!bs) return;
   if (!Array.isArray(bs._pendingReactions)) bs._pendingReactions = [];
-  bs._pendingReactions.push({ fn, args });
+  bs._pendingReactions.push({ fn, args, late: !!(opts && opts.late) });
 }
 
 // fireDestroyChain をキュー経由で保留発火する際のラッパー。_lastDestroyCause は
@@ -6432,7 +6432,9 @@ function checkPendingDestroys(ctx, callback) {
     // 全て処理し終えるまでcallbackは呼ばれない（＝メイン効果完了後まで保留する仕様）
     const reactions = ctx.bs._pendingReactions;
     if (Array.isArray(reactions) && reactions.length > 0) {
-      const { fn, args } = reactions.shift();
+      // late 指定（デッキが増えたとき）は、先に消滅時等の他の保留反応を処理してから
+      const _ni = reactions.findIndex(r => r && !r.late);
+      const { fn, args } = reactions.splice(_ni >= 0 ? _ni : 0, 1)[0];
       try {
         fn(...args, () => checkPendingDestroys(ctx, callback));
       } catch (_) {
@@ -8280,6 +8282,32 @@ export function fireWhenDeckIncreaseTriggers(increasedSide, bs, ctxBase, done, c
     done && done();
   }, (step) => _zoneIncreaseMatches(step, 'deck'));
 }
+function _fireWhenDeckIncreaseQueued(cause, increasedSide, bs, ctxBase, callback) {
+  fireWhenDeckIncreaseTriggers(increasedSide, bs, ctxBase, callback, cause);
+}
+// 効果の処理中にデッキが増えたときに呼ぶ（side = 増えた側 'player'/'ai'）。その場では発火せず、
+// 元の効果の解決後に「デッキが増えたとき」を発火するよう保留キューへ積む（手札増加と同じ方式）。
+// 以前は戻した瞬間に同期発火していたため、ブテンモン BT26-015 の「トラッシュ1枚をデッキの下に
+// 戻すことで、相手を消滅」でコストの支払い中に自身の【自分のターン】効果が割り込み、消滅より
+// 先に発動・対象選択が噛み合わない等の不具合になっていた。同じ効果の解決中に何枚増えても誘発は
+// 1回（公式ルール 5-2）。late:true で、同じ効果の消滅時等の他の保留反応より後に処理する
+// デッキが効果で増えた後の続行: キューの効果を解決中（processQueue の実行〜保留反応の処理中）なら
+// 保留キューへ積んで即続行し、解決後にまとめて発火させる。キューの外で動く処理（戦闘中の反応・
+// オンラインで委譲された反応等。保留キューを処理する processQueue を通らない）では従来通りその場で発火する
+function _deckIncreased(ctx, side, cb) {
+  if (_queueResolveDepth > 0) { _noteDeckIncrease(ctx, side); cb && cb(); return; }
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  try { fireWhenDeckIncreaseTriggers(side, ctx.bs, ctxBase, () => cb && cb(), { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); }
+  catch (_) { cb && cb(); }
+}
+function _noteDeckIncrease(ctx, side) {
+  if (!ctx || !ctx.bs || (side !== 'player' && side !== 'ai')) return;
+  const pend = ctx.bs._pendingReactions || [];
+  if (pend.some(r => r && r.fn === _fireWhenDeckIncreaseQueued && r.args[1] === side && r.args[0] && r.args[0].causerCard === ctx.card)) return;
+  const cause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  enqueueReaction(ctx.bs, _fireWhenDeckIncreaseQueued, [cause, side, ctx.bs, ctxBase], { late: true });
+}
 
 // このデジモン自身の進化元(スタック)に、効果でカードが置かれたとき → そのデジモン自身の
 // when_deck_increase(zone_increase:"evo_source") レシピのみを、そのカードの視点で発火する。
@@ -9654,6 +9682,14 @@ function runWithAltActions(step, ctx, store, callback) {
   const mainOnly = Object.assign({}, step);
   delete mainOnly.alt_actions;
   delete mainOnly.alt_actions_op;
+  // 【ターンに1回】等の使用回数は、この呼び出し元の executeRecipeStep で判定・加算済み
+  // （コストが無いか、コスト解決後の本体実行時）。メインの再実行で limit を残すと、加算直後の
+  // 再判定で「制限に達した」として本体が実行されない（ブテンモン BT26-015「自分のデジモン1体を
+  // DP+3000し、そのデジモンでアタックできる」で DP+3000 の対象選択が出なかった）。
+  // コスト持ちでまだ未解決のときは、加算がコスト解決後の再実行で行われるので残す
+  if (getLimitMaxUses(step) > 0 && (!(Array.isArray(step.cost) && step.cost.length > 0) || step._costsResolved)) {
+    delete mainOnly.limit;
+  }
   // コストの「〇〇するか、〇〇することで」（cost の alt_actions）: コピーや選択肢にもコストの印を
   // 引き継ぐ（印が無いと払えない選択肢を選んでも「支払った」扱いになり本体が実行されてしまう。
   // クーガモン BT26-026）
@@ -13379,9 +13415,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (_rsTop) player.deck.unshift(_rsc); else player.deck.push(_rsc);
         ctx.addLog('🔄 「' + _rsc.name + '」を' + ({ trash: 'トラッシュ', hand: '手札', security: 'セキュリティ' })[_rsZone] + 'からデッキの' + (_rsTop ? '上' : '下') + 'に戻す');
         ctx.renderAll();
-        const _rsCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-        try { fireWhenDeckIncreaseTriggers(ctx.side, ctx.bs, _rsCtxBase, () => callback(true), { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); }
-        catch (_) { callback(true); }
+        _deckIncreased(ctx, ctx.side, () => callback(true));
         break;
       }
       // store経由（自分側カードを対象にした従来パス）: 自分のデッキに戻す
@@ -13395,12 +13429,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         else player.deck.push(cardToReturn);
         ctx.addLog('🔄 「' + cardToReturn.name + '」をデッキの' + (top ? '上' : '下') + 'に戻す');
         ctx.renderAll();
-        {
-          const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-          try { fireWhenDeckIncreaseTriggers(ctx.side, ctx.bs, ctxBase, () => callback(), { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); break; }
-          catch (_) { /* fallthrough */ }
-        }
-        callback();
+        _deckIncreased(ctx, ctx.side, () => callback());
         break;
       }
       // target:"opponent:1" 等の直接指定: 相手デジモンをバトルエリアから外し、
@@ -13442,10 +13471,7 @@ function executeRecipeStep(step, ctx, store, callback) {
               window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'return_deck' });
             }
             ctx.renderAll();
-            const _fireDeckIncrease = (next) => {
-              try { fireWhenDeckIncreaseTriggers(_rdSideName, ctx.bs, _rdCtxBase, next, { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); }
-              catch (_) { next(); }
-            };
+            const _fireDeckIncrease = (next) => _deckIncreased(ctx, _rdSideName, next);
             // デッキへ戻る演出（テラーズクラスター等）
             if (window._fxCardMove) window._fxCardMove(c, 'バトルエリア', 'デッキ' + (_rdTop ? '(上)' : '(下)'), () => _fireDeckIncrease(() => doneCb && doneCb()));
             else setTimeout(() => _fireDeckIncrease(() => doneCb && doneCb()), 300);
@@ -13557,12 +13583,22 @@ function executeRecipeStep(step, ctx, store, callback) {
         let _rdReturnedCount = 0;
         const _doReturn2 = (entry, doneCb) => {
           if (!entry) { doneCb(false); return; }
+          // 移動演出の移動元ラベル（取り除く前に判定）
+          const _rdFromLabel = (_rdOwnerP.trash || []).includes(entry.card) ? 'トラッシュ'
+            : (_rdOwnerP.hand || []).includes(entry.card) ? '手札'
+            : (_rdOwnerP.security || []).includes(entry.card) ? 'セキュリティ' : '進化元';
           entry.remove();
           if (Array.isArray(step.options) && step.options.includes('face_down')) entry.card._faceDown = true;
           if (_rdTop2) _rdOwnerP.deck.unshift(entry.card); else _rdOwnerP.deck.push(entry.card);
           _rdReturnedCount++;
           ctx.addLog('🔄 「' + entry.card.name + '」をデッキの' + (_rdTop2 ? '上' : '下') + 'に戻す');
           ctx.renderAll();
+          // デッキへ戻る演出（ブテンモン BT26-015 の要望: 戻す→演出→次の処理の順に見せる）。
+          // セキュリティから戻すカードは非公開情報なので裏向き
+          if (effectiveSide !== 'ai' && window._fxCardMove) {
+            window._fxCardMove(entry.card, _rdFromLabel, 'デッキ' + (_rdTop2 ? '(上)' : '(下)'), () => doneCb(true), _rdFromLabel === 'セキュリティ');
+            return;
+          }
           doneCb(true);
         };
         const _rdSequential = (remaining, pool, doneCb) => {
@@ -13584,9 +13620,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         };
         _rdSequential(Math.min(_rdWantCount, _rdFiltered.length), _rdFiltered, () => {
           if (_rdReturnedCount === 0) { callback(false); return; }
-          const _rdCtxBase2 = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-          try { fireWhenDeckIncreaseTriggers(_rdOwnerSideTag, ctx.bs, _rdCtxBase2, () => callback(true), { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }); }
-          catch (_) { callback(true); }
+          _deckIncreased(ctx, _rdOwnerSideTag, () => callback(true));
         });
         break;
       }

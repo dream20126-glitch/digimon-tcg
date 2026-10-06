@@ -1294,6 +1294,13 @@ export function formatCardStats(card) {
        + ' ／ 登場コスト:' + costStr;
 }
 
+// 特徴行: "特徴：XXX/YYY"（特徴が無いカードは null）
+export function formatFeature(card) {
+  const f = String((card && card.feature) || '').trim();
+  if (!f || f === 'なし' || f === '-') return null;
+  return '特徴：' + f;
+}
+
 // 進化コスト行: "進化コスト：[進化条件]から[コスト]"（進化不可なら null）
 export function formatEvolveCost(card) {
   if (!card || card.evolveCost == null) return null;
@@ -1338,13 +1345,24 @@ export function showBCD(idxOrCard, source) {
   document.getElementById('bcd-name').innerText = card.name + ' (' + (card.cardNo || '') + ')';
   const statsEl = document.getElementById('bcd-stats');
   statsEl.innerText = formatCardStats(card);
+  // 特徴行（特徴指定の進化・効果の対象確認でよく参照するため）
+  let featureEl = document.getElementById('bcd-feature');
+  if (!featureEl) {
+    featureEl = document.createElement('div');
+    featureEl.id = 'bcd-feature';
+    featureEl.style.cssText = 'font-size:12px; color:#ffcc66; margin-top:-4px; margin-bottom:10px;';
+    statsEl.parentNode.insertBefore(featureEl, statsEl.nextSibling);
+  }
+  const featureText = formatFeature(card);
+  featureEl.innerText = featureText || '';
+  featureEl.style.display = featureText ? 'block' : 'none';
   // 進化コスト行は別要素に分離（チュートリアルでスポットライト指定可能にするため）
   let evoCostEl = document.getElementById('bcd-evo-cost');
   if (!evoCostEl) {
     evoCostEl = document.createElement('div');
     evoCostEl.id = 'bcd-evo-cost';
     evoCostEl.style.cssText = 'font-size:12px; color:#00ff88; margin-top:-4px; margin-bottom:10px;';
-    statsEl.parentNode.insertBefore(evoCostEl, statsEl.nextSibling);
+    featureEl.parentNode.insertBefore(evoCostEl, featureEl.nextSibling);
   }
   const evoCostText = formatEvolveCost(card);
   if (evoCostText) {

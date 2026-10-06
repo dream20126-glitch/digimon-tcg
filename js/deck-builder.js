@@ -160,7 +160,19 @@ window.showPreview = function(id) {
   zoomScale = 1;
   document.getElementById('preview-img').style.transform = 'scale(1)';
   document.getElementById('preview-img').src = getCardImageUrl(card) || '';
-  document.getElementById('preview-title').innerText = `${card["名前"]} (${card["カードNo"]})`;
+  const titleEl = document.getElementById('preview-title');
+  titleEl.innerText = `${card["名前"]} (${card["カードNo"]})`;
+  // 特徴行（特徴指定の進化等でよく参照するため）
+  let featEl = document.getElementById('preview-feature');
+  if (!featEl) {
+    featEl = document.createElement('div');
+    featEl.id = 'preview-feature';
+    featEl.style.cssText = 'margin:-10px 0 12px 0; font-size:0.9rem; color:#ffcc66;';
+    titleEl.parentNode.insertBefore(featEl, titleEl.nextSibling);
+  }
+  const feat = String(card["特徴"] || '').trim();
+  featEl.innerText = (feat && feat !== 'なし' && feat !== '-') ? '特徴：' + feat : '';
+  featEl.style.display = featEl.innerText ? 'block' : 'none';
   const matched = masterKeywords.filter(kw => (card["効果"] || '').includes(kw.name));
   document.getElementById('keyword-preview-area').innerHTML = matched.map(kw =>
     `<div class="keyword-item"><span class="keyword-name">【${kw.name}】</span><div class="keyword-desc">${kw.effect}</div></div>`

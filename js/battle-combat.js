@@ -3247,6 +3247,10 @@ function showBlockerConfirm(card, onYes, onNo) {
   const imgSrc = card ? (card.imgSrc || cardImg(card) || card.imageUrl || '') : '';
   const _pc = (card.playCost != null) ? card.playCost : (card.cost != null ? card.cost : null);
   let _statsHtml = 'Lv.' + (card.level || '?') + ' ／ DP:' + (card.dp || '?') + ' ／ 登場コスト:' + (_pc != null ? _pc : '—');
+  const _feat = String(card.feature || '').trim();
+  if (_feat && _feat !== 'なし' && _feat !== '-') {
+    _statsHtml += '<br><span style="color:#ffcc66;">特徴：' + _feat.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])) + '</span>';
+  }
   if (card.evolveCost != null) {
     const _evoEsc = String(formatEvolveCostDetail(card)).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     _statsHtml += '<br><span style="color:#00ff88;">進化コスト：' + _evoEsc + '</span>';

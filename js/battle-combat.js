@@ -3886,6 +3886,12 @@ export async function checkPendingTurnEnd() {
     // 全工程完了 → 次ステップ表示を解放
     if (window._tutorialBattleDone) window._tutorialBattleDone();
   }
+  // 【自分のターン終了時】の効果（≪急襲≫）によるアタックが終わった → その効果（とターン終了処理）を再開する
+  if (Array.isArray(bs._effectAttackResolveCbs) && bs._effectAttackResolveCbs.length > 0) {
+    const cbs = bs._effectAttackResolveCbs.splice(0);
+    cbs.forEach(cb => { try { cb(); } catch (e) { console.error('[effectAttackResolve]', e); } });
+    return;
+  }
   // アタック中に発揮されて保留していた「そのデジモンでアタックできる」（ブテンモン BT26-015 等）を、
   // ターン終了判定より先に行う。新しいアタックを宣言したら、その終了時に再びここへ来る
   if (Array.isArray(bs._pendingEffectAttacks) && bs._pendingEffectAttacks.length > 0 && typeof window._runPendingEffectAttack === 'function') {

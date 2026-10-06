@@ -676,7 +676,16 @@ export function onEndTurn() {
   exitBreedPhase();
 
   if (_onlineMode) {
+    // ターン終了処理中の二重押し防止（【自分のターン終了時】効果の解決待ちの間もボタンは押せるため）
+    if (bs._endingTurn) return;
+    bs._endingTurn = true;
     bs.memory = -3;
+    updateMemGauge();
+    // 【自分のターン終了時】効果（≪急襲≫「自分のターン終了時、このデジモンでアタックできる」等）を
+    // 解決してから相手にターンを渡す。以前はオンラインの手動ターン終了だけこの発火が無く、
+    // 急襲（クロノモン：ホーリーモード BT26-016）等が発動しなかった
+    _hooks.checkTurnEndEffects(() => {
+    bs._endingTurn = false;
     applyTurnEndMemoryShift();
     if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
     updateMemGauge();
@@ -705,6 +714,7 @@ export function onEndTurn() {
       showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {
         addLog('⏳ 相手のターン（操作待ち）');
       });
+    });
     });
     return;
   }

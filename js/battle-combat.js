@@ -3886,6 +3886,12 @@ export async function checkPendingTurnEnd() {
     // 全工程完了 → 次ステップ表示を解放
     if (window._tutorialBattleDone) window._tutorialBattleDone();
   }
+  // アタック中に発揮されて保留していた「そのデジモンでアタックできる」（ブテンモン BT26-015 等）を、
+  // ターン終了判定より先に行う。新しいアタックを宣言したら、その終了時に再びここへ来る
+  if (Array.isArray(bs._pendingEffectAttacks) && bs._pendingEffectAttacks.length > 0 && typeof window._runPendingEffectAttack === 'function') {
+    window._runPendingEffectAttack(bs, (started) => { if (!started) checkPendingTurnEndOnly(); });
+    return;
+  }
   if (bs._pendingTurnEnd) {
     bs._pendingTurnEnd = false;
     checkAutoTurnEnd();

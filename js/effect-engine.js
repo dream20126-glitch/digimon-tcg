@@ -10146,6 +10146,84 @@ function _cardPlayCostOf(c) {
   return parseInt(c && c.playCost != null ? c.playCost : ((c && c.cost) || 0), 10) || 0;
 }
 
+// 効果による「このデジモン（そのデジモン）でアタックできる」の実行本体。任意（step.optional）なら
+// 「〜でアタックしますか？」を確認してから、アタック対象（レスト中の相手デジモン／セキュリティ）を
+// 選んで宣言する。done(declared) は宣言した（true）／しなかった（false）で呼ばれる
+// （宣言した場合、バトルの解決は battle-combat.js の通常のアタック処理が続けて行う）
+function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done) {
+  const finish = (v) => { try { done && done(v); } catch (_) {} };
+  const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+  const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
+  const slotIdx = atkCard ? player.battleArea.indexOf(atkCard) : -1;
+  if (slotIdx === -1 || atkCard.suspended || atkCard.cantAttack) { finish(false); return; }
+  const declare = (targetType, targetIdx) => {
+    window.startAttack(atkCard, slotIdx, (ok) => {
+      if (!ok) { finish(false); return; }
+      window.resolveAttackTarget(targetType, targetIdx);
+      finish(true);
+    });
+  };
+  const chooseAndDeclare = () => {
+    // options:['digimon_only'] （「相手のデジモンにアタックできる」）: セキュリティへの
+    // フォールバックを行わず、レスト中の相手デジモンがいなければ何もしない
+    // （公式ルール上、アクティブな相手デジモンには通常アタックできないため）。
+    // options:['player_only'] （「相手プレイヤーにアタックできる」）: 逆にレスト中の相手
+    // デジモンの候補を見ず、必ずセキュリティを対象にする（無ければ何もしない）
+    const digimonOnly = Array.isArray(step.options) && step.options.includes('digimon_only');
+    const playerOnly = Array.isArray(step.options) && step.options.includes('player_only');
+    if (playerOnly) {
+      if ((opponent.security || []).length === 0) { finish(false); return; }
+      declare('security', -1);
+      return;
+    }
+    const restTargets = [];
+    (opponent.battleArea || []).forEach((c, i) => { if (c && c.suspended) restTargets.push(i); });
+    const hasSecurity = !digimonOnly && (opponent.security || []).length > 0;
+    if (restTargets.length === 0) {
+      if (!hasSecurity) { finish(false); return; }
+      declare('security', -1);
+    } else if (restTargets.length === 1 && !hasSecurity) {
+      declare('digimon', restTargets[0]);
+    } else {
+      const rowId = ctx.side === 'player' ? 'ai' : 'pl';
+      showTargetSelection(rowId, restTargets, null, '#ff4444', (selectedIdx) => {
+        if (selectedIdx !== null) { declare('digimon', selectedIdx); return; }
+        if (hasSecurity) { declare('security', -1); return; }
+        finish(false);
+      }, hasSecurity ? 'キャンセル＝セキュリティを攻撃' : 'キャンセル＝アタックしない');
+    }
+  };
+  if (!step.optional) { chooseAndDeclare(); return; }
+  const srcNote = (ctx.card && ctx.card !== atkCard) ? '（「' + ctx.card.name + '」の効果）' : '';
+  showConfirmDialog(atkCard, '「' + atkCard.name + '」でアタックしますか？' + srcNote, (yes) => {
+    if (yes) { chooseAndDeclare(); return; }
+    ctx.addLog && ctx.addLog('☓ 「' + atkCard.name + '」でアタックしなかった');
+    finish(false);
+  });
+}
+
+// アタック終了時（battle-combat.js の checkPendingTurnEnd）に、アタック中に発揮されて保留していた
+// 「そのデジモンでアタックできる」を1件取り出して実行する。done(started): 新しいアタックを宣言した
+// なら true（そのアタックの終了時に再び checkPendingTurnEnd → ここが呼ばれ、残りを処理する）
+export function runPendingEffectAttack(bs, done) {
+  const list = bs && bs._pendingEffectAttacks;
+  if (!Array.isArray(list) || list.length === 0) { done && done(false); return; }
+  const e = list.shift();
+  // 前のターンに保留したまま残っていたもの（異常終了等）は持ち越さない
+  if (e && e.turn !== undefined && bs.turn !== undefined && e.turn !== bs.turn) { runPendingEffectAttack(bs, done); return; }
+  const p = e && e.ctx && e.ctx.bs && (e.ctx.side === 'player' ? e.ctx.bs.player : e.ctx.bs.ai);
+  if (!p || p.battleArea.indexOf(e.card) === -1 || e.card.suspended) {
+    if (e && e.card && e.ctx && e.ctx.addLog) e.ctx.addLog('⚠ 「' + e.card.name + '」はアタックできる状態ではありません');
+    runPendingEffectAttack(bs, done);
+    return;
+  }
+  _confirmAndDeclareEffectAttack(e.card, e.step, e.ctx, (declared) => {
+    if (declared) { done && done(true); return; }
+    runPendingEffectAttack(bs, done);
+  });
+}
+if (typeof window !== 'undefined') window._runPendingEffectAttack = runPendingEffectAttack;
+
 // レシピの1ステップを実行
 function executeRecipeStep(step, ctx, store, callback) {
   // trigger_conditions ゲート: 発火元カードへのフィルタが NG ならステップスキップ
@@ -13797,43 +13875,19 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (ctx._forceTargetIdx !== undefined && (step.target === 'own:1' || step.target === 'same_target' || step.target === 'picked')) {
         _atkCard = player.battleArea[ctx._forceTargetIdx] || ctx.card;
       }
-      const _atkSlotIdx = _atkCard ? player.battleArea.indexOf(_atkCard) : -1;
-      if (_atkSlotIdx === -1) { callback(); break; }
-      const _declareAttack = (targetType, targetIdx) => {
-        window.startAttack(_atkCard, _atkSlotIdx, (ok) => {
-          if (!ok) { callback(); return; }
-          window.resolveAttackTarget(targetType, targetIdx);
-          callback();
-        });
-      };
-      // options:['digimon_only'] （「相手のデジモンにアタックできる」）: セキュリティへの
-      // フォールバックを行わず、レスト中の相手デジモンがいなければ何もしない
-      // （公式ルール上、アクティブな相手デジモンには通常アタックできないため）。
-      // options:['player_only'] （「相手プレイヤーにアタックできる」）: 逆にレスト中の相手
-      // デジモンの候補を見ず、必ずセキュリティを対象にする（無ければ何もしない）
-      const _atkDigimonOnly = Array.isArray(step.options) && step.options.includes('digimon_only');
-      const _atkPlayerOnly = Array.isArray(step.options) && step.options.includes('player_only');
-      if (_atkPlayerOnly) {
-        if ((opponent.security || []).length === 0) { callback(); break; }
-        _declareAttack('security', -1);
+      if (!_atkCard || player.battleArea.indexOf(_atkCard) === -1) { callback(); break; }
+      // 別のデジモンのアタック中（アタック時効果やバトル中の誘発で「そのデジモンでアタックできる」
+      // が発揮された）なら、今のアタックが終わってから行う（ブテンモン BT26-015。以前は startAttack が
+      // アタック中を理由に断り、アタックできないまま終わっていた）。アタック終了時（battle-combat.js の
+      // checkPendingTurnEnd）に runPendingEffectAttack が取り出して確認・宣言する
+      if (typeof window._isAttackInProgress === 'function' && window._isAttackInProgress()) {
+        if (!Array.isArray(ctx.bs._pendingEffectAttacks)) ctx.bs._pendingEffectAttacks = [];
+        ctx.bs._pendingEffectAttacks.push({ card: _atkCard, step, turn: ctx.bs.turn, ctx: { bs: ctx.bs, side: ctx.side, card: ctx.card, addLog: ctx.addLog, renderAll: ctx.renderAll } });
+        ctx.addLog('⏳ 「' + _atkCard.name + '」のアタックは、今のアタックが終わった後に行えます');
+        callback();
         break;
       }
-      const _atkRestTargets = [];
-      (opponent.battleArea || []).forEach((c, i) => { if (c && c.suspended) _atkRestTargets.push(i); });
-      const _hasSecurity = !_atkDigimonOnly && (opponent.security || []).length > 0;
-      if (_atkRestTargets.length === 0) {
-        if (!_hasSecurity) { callback(); break; }
-        _declareAttack('security', -1);
-      } else if (_atkRestTargets.length === 1 && !_hasSecurity) {
-        _declareAttack('digimon', _atkRestTargets[0]);
-      } else {
-        const _atkRowId = ctx.side === 'player' ? 'ai' : 'pl';
-        showTargetSelection(_atkRowId, _atkRestTargets, null, '#ff4444', (selectedIdx) => {
-          if (selectedIdx !== null) { _declareAttack('digimon', selectedIdx); return; }
-          if (_hasSecurity) { _declareAttack('security', -1); return; }
-          callback();
-        }, _hasSecurity ? 'キャンセル＝セキュリティを攻撃' : 'キャンセル＝アタックしない');
-      }
+      _confirmAndDeclareEffectAttack(_atkCard, step, ctx, () => callback());
       break;
     }
 

@@ -10421,12 +10421,17 @@ export function runPendingEffectAttack(bs, done) {
   // 前のターンに保留したまま残っていたもの（異常終了等）は持ち越さない
   if (e && e.turn !== undefined && bs.turn !== undefined && e.turn !== bs.turn) { runPendingEffectAttack(bs, done); return; }
   const p = e && e.ctx && e.ctx.bs && (e.ctx.side === 'player' ? e.ctx.bs.player : e.ctx.bs.ai);
-  if (!p || p.battleArea.indexOf(e.card) === -1 || e.card.suspended) {
-    if (e && e.card && e.ctx && e.ctx.addLog) e.ctx.addLog('⚠ 「' + e.card.name + '」はアタックできる状態ではありません');
+  // 保留後に進化していたら、進化後のデジモン（進化元に元のカードを持つもの）でアタックする。進化しても
+  // 同じデジモンとして扱う（ブテンモン BT26-015 → ピョコモンの進化元効果でクロノモン：ホーリーモードに
+  // 進化した後、保留していた「アタックできる」が場にいない扱いで捨てられていた）
+  const cur = !p ? null : (p.battleArea.includes(e.card) ? e.card
+    : (p.battleArea.find(c => c && Array.isArray(c.stack) && c.stack.includes(e.card)) || null));
+  if (!cur || cur.suspended) {
+    if (e && e.card && e.ctx && e.ctx.addLog) e.ctx.addLog('⚠ 「' + ((cur || e.card).name) + '」はアタックできる状態ではありません');
     runPendingEffectAttack(bs, done);
     return;
   }
-  _confirmAndDeclareEffectAttack(e.card, e.step, e.ctx, (declared) => {
+  _confirmAndDeclareEffectAttack(cur, e.step, e.ctx, (declared) => {
     if (declared) { done && done(true); return; }
     runPendingEffectAttack(bs, done);
   });

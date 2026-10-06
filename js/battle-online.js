@@ -876,10 +876,16 @@ function onRemoteCommand(cmd) {
       // こちら（本当の持ち主）側で side='player' として本物のUIを操作し、
       // 完了したらメモリー等の変動を相手に返してあげる
       const ctx = { bs, addLog, renderAll, updateMemGauge };
+      // 委譲された反応の中でアタック対象が変更されたら（黒井翔太 BT26-092 等の redirect_attack）、
+      // 相手（アタックしている側）の視点に反転して返す。こちらの bs には残さない
+      bs._redirectedAttack = null;
       const done = () => {
         sendMemoryUpdate();
         sendStateSync();
-        sendCommand({ type: 'fx_reactionDelegateDone' });
+        const ra = bs._redirectedAttack;
+        bs._redirectedAttack = null;
+        const redirect = ra ? { side: ra.side === 'player' ? 'ai' : 'player', idx: ra.idx, cardNo: ra.cardNo || '' } : null;
+        sendCommand(redirect ? { type: 'fx_reactionDelegateDone', redirect } : { type: 'fx_reactionDelegateDone' });
       };
       try {
         if (window._fireDelegatedReactionTriggers) window._fireDelegatedReactionTriggers(cmd.recipeKey, bs, ctx, done, cmd);
@@ -888,6 +894,8 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_reactionDelegateDone': {
+      // 委譲先でアタック対象が変更されていれば、こちらのアタック解決で差し替える（_consumeRedirectedAttack）
+      if (cmd.redirect) bs._redirectedAttack = cmd.redirect;
       // メモリー等の変動は直前に送られる memory_update/state_sync で既に反映されている
       if (_pendingReactionDelegateCallback) {
         const cb = _pendingReactionDelegateCallback; _pendingReactionDelegateCallback = null; cb();
@@ -1683,10 +1691,11 @@ export function waitForReactionDelegate(callback) {
   } else {
     _pendingReactionDelegateCallback = onDone;
   }
-  // 30秒タイムアウト（相手の切断等でackが来ない場合にゲームが止まらないように）
+  // 120秒タイムアウト（相手の切断等でackが来ない場合にゲームが止まらないように）。
+  // 委譲先ではコストやアタック対象の選択など相手の操作を待つので、30秒では途中で打ち切られることがある
   setTimeout(() => {
     if (_pendingReactionDelegateCallback === onDone) { _pendingReactionDelegateCallback = null; onDone(); }
-  }, 30000);
+  }, 120000);
 }
 
 // ===== 手札破棄の依頼の完了待ち（fx_handDiscardRequest 送信側） =====

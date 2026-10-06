@@ -2828,6 +2828,11 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
     const imgSrc = card ? (card.imgSrc || getCardImageUrl(card) || card.imageUrl || '') : '';
     const _pc = (card.playCost != null) ? card.playCost : (card.cost != null ? card.cost : null);
     let _statsHtml = 'Lv.'+(card.level||'?')+' ／ DP:'+(card.dp||'?')+' ／ 登場コスト:'+(_pc != null ? _pc : '—');
+    // 特徴（特徴指定の進化・効果の対象確認でよく参照するため）
+    const _feat = String(card.feature || '').trim();
+    if (_feat && _feat !== 'なし' && _feat !== '-') {
+      _statsHtml += '<br><span style="color:#ffcc66;">特徴：' + _feat.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) + '</span>';
+    }
     if (card.evolveCost != null) {
       const _cond = (card.evolveCond || '').trim();
       // 進化条件ごとのコスト（色/特徴/名称）は battle-combat.js の formatEvolveCostDetail と同じ規則で出す
@@ -6523,6 +6528,7 @@ const _ALL_TRIGGER_LABELS = Array.from(new Set(Object.values(TRIGGER_LABEL_MAP))
 //     の when_opp_attack では【相手のターン】のセクションだけを出す
 const SECTION_KEYWORDS = {
   when_opp_attack: ['アタックしたとき', 'アタックした時'],
+  on_attack: ['アタックしたとき', 'アタックした時'],
   when_deck_increase: ['増えたとき', '増えた時'],
   when_hand_discard: ['破棄されたとき', '破棄された時'],
   when_rest: ['レスト'], when_opp_rest: ['レスト'],
@@ -6631,7 +6637,9 @@ export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
       // 区切りと誤認識し、そこで切り詰められてしまう不具合があった（チェリーボム等）
       const re = new RegExp('【' + esc(label) + '】[\\s\\S]*?(?=\\n【(?:' + _ALL_TRIGGER_LABELS.map(esc).join('|') + ')】|$)');
       const m = fullText.match(re);
-      block = m ? m[0].trim() : fullText;
+      // 【アタック時】等の見出しが無い反応（黒井翔太 BT26-092「【相手のターン】相手のデジモンがアタックしたとき」）は
+      // キーワードで該当セクションを選ぶ（見つからなければ全文）
+      block = m ? m[0].trim() : (_pickSectionByKeyword(fullText, triggerCode) || fullText);
     } catch (_) { block = fullText; }
   } else {
     // 【ラベル】が無いトリガーは、キーワードで該当セクションだけを選ぶ（_pickSectionByKeyword）
@@ -6833,6 +6841,10 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
       case 'opp_any':
       case 'opp_card':
       case 'opp_digimon':
+        // 「相手のデジモンがアタックしたとき」（黒井翔太 BT26-092・アンドロモン進化元等）は
+        // fireOnAttackOppSubjectTriggers が別経路で拾う（オンラインでは持ち主の端末へ委譲する）ため、
+        // ここでは拾わない（二重発火・アタックした側の画面に相手の確認が出る不具合の防止）
+        if (triggerCode === 'on_attack') return false;
         return cardSide !== sourceSide;
       // 「（お互いの）デジモンが〜したとき」（咲夜レーナ BT26-093 の both_digimon 等）は誰のイベントでも反応する。
       // ただし on_attack の相手側は fireOnAttackBothSubjectTriggers が別経路で拾うため、ここでは
@@ -7971,6 +7983,10 @@ export function fireDelegatedReactionTriggers(recipeKey, bs, ctxBase, done, cmd)
   if (kind === 'hand_increase') {
     return fireWhenHandIncreaseTriggers(cmd.increasedSide, bs, ctxBase, done, { cause: cmd.cause || null, onlySide: 'player' });
   }
+  if (kind === 'on_attack_opp') {
+    // 相手のデジモンがアタックした（こちら視点でアタックしたのは ai 側）→ こちらのカードが反応
+    return fireOnAttackOppSubjectTriggers('ai', bs, ctxBase, done, { local: true });
+  }
   return _fireSidedReactionTriggers('player', recipeKey, bs, ctxBase, done);
 }
 
@@ -8509,9 +8525,18 @@ export function fireOnAttackBothSubjectTriggers(attackerSide, bs, ctxBase, done)
 // デジモンがアタックしたとき、アタックの対象をこのデジモンに変更できる」）、攻撃側の
 // 反対側（防御側）のカードが持つ on_attack 効果を発動する。subject:"both" と同様、
 // 通常の on_attack（subject無し＝発動元自身のアタック）とは別枠で追加スキャンする
-export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done) {
+export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, opts) {
   if (bs) bs._currentAttackerSide = attackerSide;
   const reactSide = attackerSide === 'player' ? 'ai' : 'player';
+  // オンライン対戦で反応するのが相手（ai＝カードの持ち主は相手機）なら、持ち主の端末へ委譲して
+  // 本物のUI（コストの選択・変更先の選択）で処理してもらう。以前はアタックした側の端末で
+  // 相手のカードとして処理していたため、確認がアタックした側に出て、持ち主は何も操作できなかった
+  // （黒井翔太 BT26-092）。変更されたアタック対象は fx_reactionDelegateDone で返ってくる
+  if (reactSide === 'ai' && !(opts && opts.local) && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    if (!_anyBoardCardHasStep(bs, 'on_attack', (s) => _resolveStepSubject(s, 'on_attack') === 'opp')) { done && done(); return; }
+    _delegateReactionToOpponent({ recipeKey: 'on_attack', kind: 'on_attack_opp' }, done);
+    return;
+  }
   return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && _resolveStepSubject(step, 'on_attack') === 'opp');
 }
 

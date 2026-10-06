@@ -160,7 +160,9 @@ function findCardByName(idOrName) {
     baseDp: parseInt(card['DP'] || 0),
     dpModifier: 0,
     playCost: hasPlay ? parseInt(playCost) : null,
-    evolveCost: hasEvolve ? parseInt(evolveCost) : null,
+    // 進化コスト（色）が「なし」でも特徴/名称の進化コストがあれば進化できる（例: BT26-086「特徴「アプモン」Lv.6」のみ）。
+    // 代表値は特徴→名称の順で最初の数値（条件ごとのコストは getEvolveCostFor が各列から引く）
+    evolveCost: hasEvolve ? parseInt(evolveCost) : ([evolveCostFeature, evolveCostName].map(v => parseInt(v)).find(n => !isNaN(n)) ?? null),
     evolveCostRaw: hasEvolve ? String(evolveCost) : null,
     evolveCostFeatureRaw: (evolveCostFeature !== undefined && evolveCostFeature !== null && evolveCostFeature !== '') ? String(evolveCostFeature) : null,
     evolveCostNameRaw: (evolveCostName !== undefined && evolveCostName !== null && evolveCostName !== '') ? String(evolveCostName) : null,

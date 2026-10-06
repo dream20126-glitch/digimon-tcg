@@ -273,6 +273,8 @@ export function sendStateSync() {
       cantAttack: !!c.cantAttack, cantBlock: !!c.cantBlock, cantEvolve: !!c.cantEvolve,
       imgSrc: c.imgSrc || '', imageUrl: c.imageUrl || '', color: c.color || '', feature: c.feature || '', isLink: !!c.isLink,
       evolveCond: c.evolveCond || '', buffs: c.buffs || [],
+      // 進化条件ごとの進化コスト列（相手のカード詳細でも「特徴「TS」Lv.4から3コスト」等を出すため）
+      evolveCostRaw: c.evolveCostRaw || null, evolveCostFeatureRaw: c.evolveCostFeatureRaw || null, evolveCostNameRaw: c.evolveCostNameRaw || null,
       stack: (c.stack || []).map(serializeCard),
       recipe: c.recipe || null,
       _permEffects: c._permEffects || {}, _usedEffects: c._usedEffects || [],

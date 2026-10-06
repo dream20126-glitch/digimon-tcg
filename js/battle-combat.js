@@ -766,9 +766,38 @@ export function getEvolveCostFor(evoCard, baseCard) {
   const picked = _pickCostFromList(RAW_BY_TYPE[match.type], match.typeIdx, sameTypeCount);
   return picked != null ? picked : evoCard.evolveCost;
 }
+// カード詳細の「進化コスト：」表示用の文字列（エスケープ前、進化不可なら null）。
+// 進化条件の各クローズに、実際の進化（getEvolveCostFor）と同じ規則で種別ごとのコスト列から
+// 引いたコストを付け、隣り合う同じコストのクローズはまとめる。
+// 例: ブテンモン BT26-015「赤Lv.4/黄Lv.4/特徴「TS」Lv.4」色4・特徴3
+//     → 「赤Lv.4/黄Lv.4から4コスト/特徴「TS」Lv.4から3コスト」
+// （以前は進化コスト（色）だけを使い「…/特徴「TS」Lv.4から4」と表示していた）
+export function formatEvolveCostDetail(card) {
+  if (!card || card.evolveCost == null) return null;
+  const cond = String(card.evolveCond || '').trim();
+  if (!cond || cond === 'なし') return card.evolveCost + 'コスト';
+  const clauses = cond.split('/').map(s => s.trim()).filter(Boolean);
+  const RAW_BY_TYPE = { color: card.evolveCostRaw, feature: card.evolveCostFeatureRaw, name: card.evolveCostNameRaw };
+  const counts = { color: 0, feature: 0, name: 0 };
+  clauses.forEach(c => { counts[_clauseType(c)]++; });
+  const seen = { color: 0, feature: 0, name: 0 };
+  const groups = [];
+  clauses.forEach(c => {
+    const type = _clauseType(c);
+    let cost = _pickCostFromList(RAW_BY_TYPE[type], seen[type]++, counts[type]);
+    if (cost == null) cost = card.evolveCost;
+    const last = groups[groups.length - 1];
+    if (last && String(last.cost) === String(cost)) last.clauses.push(c);
+    else groups.push({ cost, clauses: [c] });
+  });
+  return groups.map(g => g.clauses.join('/') + 'から' + g.cost + 'コスト').join('/');
+}
+
 // 効果による進化（effect-engine.js の _effectEvolveBaseCost）でも、選んだ進化条件のコストを
 // 手動進化と同じ規則で引けるよう window に公開する（公式ルール8-1-3-2）
 if (typeof window !== 'undefined') window.getEvolveCostFor = getEvolveCostFor;
+// カード詳細表示（battle-render.js / effect-engine.js）からも同じ規則で進化コストを出せるよう公開する
+if (typeof window !== 'undefined') window._formatEvolveCostDetail = formatEvolveCostDetail;
 
 // 保留中の進化コスト軽減（スマッシュポテト等）を消費して合計軽減値を返す。
 // bs._pendingEvoCostReductions の各エントリは color / baseLv / evoLv / name の記述子で
@@ -3219,9 +3248,8 @@ function showBlockerConfirm(card, onYes, onNo) {
   const _pc = (card.playCost != null) ? card.playCost : (card.cost != null ? card.cost : null);
   let _statsHtml = 'Lv.' + (card.level || '?') + ' ／ DP:' + (card.dp || '?') + ' ／ 登場コスト:' + (_pc != null ? _pc : '—');
   if (card.evolveCost != null) {
-    const _cond = (card.evolveCond || '').trim();
-    const _condEsc = _cond.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-    _statsHtml += '<br><span style="color:#00ff88;">進化コスト：' + (_cond ? _condEsc + 'から' : '') + card.evolveCost + '</span>';
+    const _evoEsc = String(formatEvolveCostDetail(card)).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    _statsHtml += '<br><span style="color:#00ff88;">進化コスト：' + _evoEsc + '</span>';
   }
   box.innerHTML = (imgSrc ? '<img src="' + imgSrc + '" style="width:160px;border-radius:8px;margin-bottom:12px;border:1px solid ' + borderColor + ';">' : '')
     + '<div style="color:#fff;font-weight:bold;font-size:14px;margin-bottom:8px;">' + (card.name || '不明') + ' (' + (card.cardNo || '') + ')</div>'

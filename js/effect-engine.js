@@ -2830,8 +2830,12 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
     let _statsHtml = 'Lv.'+(card.level||'?')+' ／ DP:'+(card.dp||'?')+' ／ 登場コスト:'+(_pc != null ? _pc : '—');
     if (card.evolveCost != null) {
       const _cond = (card.evolveCond || '').trim();
-      const _condEsc = _cond.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-      _statsHtml += '<br><span style="color:#00ff88;">進化コスト：' + (_cond ? _condEsc + 'から' : '') + card.evolveCost + '</span>';
+      // 進化条件ごとのコスト（色/特徴/名称）は battle-combat.js の formatEvolveCostDetail と同じ規則で出す
+      const _evoTxt = (typeof window !== 'undefined' && typeof window._formatEvolveCostDetail === 'function')
+        ? window._formatEvolveCostDetail(card)
+        : ((_cond ? _cond + 'から' : '') + card.evolveCost + 'コスト');
+      const _evoEsc = String(_evoTxt).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+      _statsHtml += '<br><span style="color:#00ff88;">進化コスト：' + _evoEsc + '</span>';
     }
     box.innerHTML = (imgSrc ? '<img src="'+imgSrc+'" style="width:160px;border-radius:8px;margin-bottom:12px;border:1px solid '+borderColor+';">' : '')
       + '<div style="color:#fff;font-weight:bold;font-size:14px;margin-bottom:8px;">'+(card.name||'不明')+' ('+(card.cardNo||'')+')</div>'

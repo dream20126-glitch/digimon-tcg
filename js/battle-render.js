@@ -1299,7 +1299,11 @@ export function formatEvolveCost(card) {
   if (!card || card.evolveCost == null) return null;
   const esc = (s) => String(s).replace(/[&<>]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
   const cond = (card.evolveCond || '').trim();
-  return '進化コスト：' + (cond ? esc(cond) + 'から' : '') + card.evolveCost;
+  // 進化条件ごとのコスト（色/特徴/名称）は battle-combat.js の formatEvolveCostDetail と同じ規則で出す
+  if (typeof window !== 'undefined' && typeof window._formatEvolveCostDetail === 'function') {
+    return '進化コスト：' + esc(window._formatEvolveCostDetail(card));
+  }
+  return '進化コスト：' + (cond ? esc(cond) + 'から' : '') + card.evolveCost + 'コスト';
 }
 
 // リンクコスト行: "リンクコスト：[リンク条件を持つデジモンに]N（リンク時DP+M）"（リンク不可なら null）

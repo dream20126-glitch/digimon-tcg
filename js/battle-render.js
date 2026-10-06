@@ -819,8 +819,12 @@ function showTamerMenu(card, tamerIdx, el) {
   // （cost: rest self）で処理される。先にレストしてしまうと、そのコストが
   // 「既にレスト中」で支払えず効果が不発になる（泉光子郎/太刀川ミミ等）。
   renderAll();
+  // renderAll で作り直された同じテイマーの要素を探す（作り直し前の el は DOM から外れて位置が 0,0 になり、
+  // メニューが画面左上に出てしまう）。テイマーの枠は .tamer-slot で、空き（null）は描画されないため
+  // 描画済みの枠の中での並び順で引く
   const tamerRow = document.getElementById('pl-tamer-row');
-  const updatedEl = tamerRow ? tamerRow.querySelectorAll('.b-slot')[tamerIdx] : el;
+  const renderedIdx = bs.player.tamerArea.filter(Boolean).indexOf(card);
+  const updatedEl = (tamerRow && renderedIdx !== -1) ? tamerRow.querySelectorAll('.tamer-slot')[renderedIdx] : null;
   el = updatedEl || el;
 
   const menu = document.getElementById('longpress-action-menu');

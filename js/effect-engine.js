@@ -7874,6 +7874,8 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
         const gconds = parseRecipeCondition(step.gate);
         if (!checkConditions(gconds, carrier, bs, reactSide)) return false;
       }
+      // 手札に登場/進化の候補が無ければ不発確定なので、確認/発動ポップアップを出さない（ピョコモン BT26-001）
+      if (_stepLacksHandCandidate(step, carrier, bs, reactSide)) return false;
       if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
         const sourceId = carrier.cardNo || carrier.name || 'unknown';
         // 進化元効果は進化元カード基準（進化してキャリアが変わっても使用済みのまま。_evoSourceLimitKey 参照）
@@ -9539,6 +9541,35 @@ function _resolveStepConditionGate(step) {
 // レシピが実行されるか事前判定（全ステップが条件で弾かれるか）
 // 戻り値: true=少なくとも1ステップが実行される, false=全ステップが条件NGで何も起きない
 // 不確定な場合（store依存・ターゲット選択型など）は安全側で true を返す
+// summon/evolve（手札から from_filter 一致で登場/進化）で、手札に候補が1枚も無いか
+// （＝実行しても必ず不発なので、効果発動の演出/確認ポップアップも出さない）。
+// ホーリードラモン「黄色のLv3のデジモン」が手札に無い、ピョコモン BT26-001「クロノモンの記述が
+// あるデジモンカードに進化できる」で手札に該当カードが無い場合等。
+// トラッシュを含む指定（summon_from_trash・メルヴァモン BT26-081・プロットモン BT26-066 等）は判定しない：
+// パグモン「デッキ上から1枚破棄」→メタルガルルモン「トラッシュから登場」のように、同時誘発の中で
+// 先に解決した別の効果がトラッシュに対象を追加してから発動する場合があるため（無ければ実行時に失敗表示）
+// recipeWillExecuteAnything（キューの効果）と _fireSidedReactionTriggers（反応系トリガー）で共用する
+function _stepLacksHandCandidate(step, card, bs, side) {
+  if (!step || !bs) return false;
+  const zones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
+  if (zones.includes('trash')) return false;
+  const p = side === 'player' ? bs.player : bs.ai;
+  if (!p) return false;
+  if ((step.action === 'summon' || step.action === 'summon_appear' || step.action === 'summon_use') && !step.card) {
+    if (!zones.includes('hand')) return false;
+    const filter = step.from_filter || step.filter || {};
+    return !(p.hand || []).some(c => c && cardMatchesFilter(c, filter, bs, side, card));
+  }
+  if (step.action === 'evolve') {
+    const filter = step.from_filter || step.filter || {};
+    // 「このデジモン」を進化させる形は、進化条件（公式ルール8-1-2-2）を満たす候補があるかも見る
+    const selfBase = (!step.target || step.target === 'self' || step.target === 'self_card') ? card : null;
+    const ign = _effectEvoIgnoresCondition(step);
+    return !(p.hand || []).some(c => c && cardMatchesFilter(c, filter) && (!selfBase || _effectEvoAllowed(c, selfBase, ign)));
+  }
+  return false;
+}
+
 function recipeWillExecuteAnything(recipe, ctx) {
   if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
   const _reactor = (ctx && ctx.card && ctx.card.name) || '?';
@@ -9562,44 +9593,11 @@ function recipeWillExecuteAnything(recipe, ctx) {
       );
       if (_costInfeasible) continue;
     }
-    // summon（手札から filter 一致で登場）: フィルタに一致する候補が1枚も無ければ、
-    // 条件を満たしていても効果不発なので演出ポップアップも出さない
-    // （ホーリードラモン「黄色のLv3のデジモン」等が手札に無い場合に該当）。
-    // ※ トラッシュ(summon_from_trash)はここでは判定しない：パグモン「デッキ上から
-    // 1枚破棄」→メタルガルルモン「トラッシュから登場」のように、同時誘発の中で先に
-    // 解決した別の効果がトラッシュに対象を追加してから発動する場合があるため、
-    // 「今トラッシュに候補が無い」だけで発動順選択の候補から除外してはいけない
-    // （対象が無ければ実行時にsummon_from_trash自身が失敗演出を出す）
-    if ((step.action === 'summon' || step.action === 'summon_appear' || step.action === 'summon_use') && !step.card) {
-      const _fromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
-      // 手札+トラッシュ（メルヴァモン BT26-081 等）はトラッシュ側を判定しない理由（下記）と同じく判定しない
-      if (_fromZones.includes('hand') && !_fromZones.includes('trash')) {
-        const _filter = step.from_filter || step.filter || {};
-        const _p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
-        const _hasCand = (_p.hand || []).some(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card));
-        if (!_hasCand) {
-          console.log('[recipeWillExecute] reactor=' + _reactor + ' summon filter has no candidate → skip', 'action=' + step.action);
-          continue;
-        }
-      }
-    }
-    // evolve（手札からfrom_filter一致で進化）: summonと同様、候補が1枚も無ければ
-    // 演出ポップアップも出さない（ピョコモン BT26-001「クロノモンの記述があるデジモン
-    // カードに進化できる」で手札に該当カードが無い場合等）
-    // トラッシュから進化できる指定（from に 'trash' を含む。プロットモン BT26-066 等）は、summon と同じ理由で
-    // ここでは判定しない（同時誘発の先の効果でトラッシュに候補が増えることがあるため。無ければ実行時に失敗表示）
-    const _evoFromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
-    if (step.action === 'evolve' && !_evoFromZones.includes('trash')) {
-      const _evoFilter = step.from_filter || step.filter || {};
-      const _ep = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
-      // 「このデジモン」を進化させる形は、進化条件（公式ルール8-1-2-2）を満たす候補があるかも見る
-      const _evoSelfBase = (!step.target || step.target === 'self' || step.target === 'self_card') ? ctx.card : null;
-      const _evoIgn = _effectEvoIgnoresCondition(step);
-      const _hasEvoCand = (_ep.hand || []).some(c => c && cardMatchesFilter(c, _evoFilter) && (!_evoSelfBase || _effectEvoAllowed(c, _evoSelfBase, _evoIgn)));
-      if (!_hasEvoCand) {
-        console.log('[recipeWillExecute] reactor=' + _reactor + ' evolve filter has no candidate → skip', 'action=' + step.action);
-        continue;
-      }
+    // summon/evolve（手札から登場/進化）で手札に候補が無ければ不発なので演出ポップアップも出さない
+    // （詳細は _stepLacksHandCandidate。トラッシュを含む指定は判定しない）
+    if (_stepLacksHandCandidate(step, ctx.card, ctx.bs, ctx.side)) {
+      console.log('[recipeWillExecute] reactor=' + _reactor + ' hand candidate none → skip', 'action=' + step.action);
+      continue;
     }
     // 条件なし → 必ず実行される
     // when/extra_conditions/condition_chain も発動条件として見るのは、実行時（executeRecipeStep）に

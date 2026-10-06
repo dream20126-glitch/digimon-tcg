@@ -357,7 +357,12 @@ function executeQueueEntry(entry, context, callback) {
     if (hasNoAnnounceOverride(_recipeStepsForLookup)) { runEffectNow(callback); return; }
     // 「強制 → その後、〇〇することで（任意）」は強制部分をポップアップなしで対象選択へ進め、
     // 任意部分に来た時点で確認ダイアログを出す（ブテンモン BT26-015 の要望）
-    if (_isInlineCostConfirmRecipe(_recipeStepsForLookup)) { runEffectNow(callback); return; }
+    // 自分の画面には出さないが、相手の画面には効果の内容を出す（ブテンモン BT26-015 c1 の要望）
+    if (_isInlineCostConfirmRecipe(_recipeStepsForLookup)) {
+      _announceToOpponentOnly(block && block._recipeCard ? block._recipeCard : card, displayEffText, actualSide);
+      runEffectNow(callback);
+      return;
+    }
     const evoSourceCard = block && block._recipeCard;
     showEffectAnnounce(card, displayEffText, actualSide, () => runEffectNow(callback), evoSourceCard);
   }
@@ -7783,8 +7788,19 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   }
   // 強制効果: アナウンス演出を挟んでから実行（no_announce:true 指定時は省略）
   logActivated();
-  if (hasNoAnnounceOverride(recipe) || _inlineCost) { runNow(); return; }
+  if (hasNoAnnounceOverride(recipe)) { runNow(); return; }
+  if (_inlineCost) { _announceToOpponentOnly(isEvo ? sourceCard : card, effectText, side); runNow(); return; }
   showEffectAnnounce(card, effectText, side, runNow, evoSourceArg);
+}
+
+// 「強制 → その後、〇〇することで（任意）」の強制部分は、自分の画面にはアナウンスを出さず
+// そのまま対象選択に進むが、相手の画面には「相手が発動している効果の内容」を出す（ブテンモン BT26-015）。
+// 相手側のポップアップは効果の完了時（fx_effectClose）や任意部分の確認（fx_confirmShow）で差し替わる
+function _announceToOpponentOnly(titleCard, effectText, side) {
+  if (side !== 'player' || !titleCard || !(window._isOnlineMode && window._isOnlineMode()) || !window._onlineSendCommand) return;
+  try {
+    window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: titleCard.name, effectText: String(effectText || '').substring(0, 400), status: '⚡ 相手が効果を処理中...' });
+  } catch (_) {}
 }
 
 // ===== when_opp_rest グローバル発火 =====

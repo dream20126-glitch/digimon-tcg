@@ -311,7 +311,8 @@ export function fxConfirmDialog(card, effectText, question, callback) {
  * 「カード名 + 効果内容 + 相手が効果を処理中...」を表示
  * — 旧コード showRemoteEffectOverlay 準拠
  */
-export function fxRemoteEffect(cardName, effectText) {
+// status: 下段の状態表示（省略時「⏳ 相手が効果を確認中...」）
+export function fxRemoteEffect(cardName, effectText, status) {
   const id = '_remote-effect-announce';
   const existing = document.getElementById(id);
   if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
@@ -323,7 +324,7 @@ export function fxRemoteEffect(cardName, effectText) {
   bx.style.cssText = 'max-width:85%;padding:20px;background:rgba(0,10,20,0.95);border:2px solid #ff00fb;border-radius:12px;box-shadow:0 0 30px #ff00fb44;text-align:center;';
   bx.innerHTML = '<div style="color:#ff00fb;font-size:14px;font-weight:bold;margin-bottom:10px;text-shadow:0 0 8px #ff00fb;">⚡ 相手: ' + (cardName || '') + '</div>'
     + '<div style="color:#ddd;font-size:11px;line-height:1.6;text-align:left;margin-bottom:12px;max-height:100px;overflow-y:auto;">' + (effectText || '') + '</div>'
-    + '<div style="color:#888;font-size:10px;">⏳ 相手が効果を確認中...</div>';
+    + '<div style="color:#888;font-size:10px;">' + (status || '⏳ 相手が効果を確認中...') + '</div>';
   ov.appendChild(bx);
   document.body.appendChild(ov);
   // タイムアウトなし — fx_effectClose受信時に消える

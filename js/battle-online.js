@@ -1544,7 +1544,7 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_effectAnnounce': {
-      if (m.fxRemoteEffect) m.fxRemoteEffect(cmd.cardName, cmd.effectText || '');
+      if (m.fxRemoteEffect) m.fxRemoteEffect(cmd.cardName, cmd.effectText || '', cmd.status);
       break;
     }
     case 'fx_effectClose': {

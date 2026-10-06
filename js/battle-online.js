@@ -871,6 +871,21 @@ function onRemoteCommand(cmd) {
       break;
     }
 
+    // --- 相手の効果でこちらのトラッシュのカードがデッキに戻された（クロノモン：ホーリーモード BT26-016
+    //     「トラッシュ3枚をデッキの下に戻す」で相手がこちらのトラッシュから選んだ分） ---
+    case 'opp_trash_to_deck': {
+      (cmd.cards || []).forEach((ref) => {
+        const i = bs.player.trash.findIndex(c => c && (c.cardNo || '') === (ref.cardNo || '') && (c.name || '') === (ref.name || ''));
+        if (i === -1) return;
+        const c = bs.player.trash.splice(i, 1)[0];
+        if (cmd.top) bs.player.deck.unshift(c); else bs.player.deck.push(c);
+        addLog('🔄 相手の効果で「' + c.name + '」がトラッシュからデッキの' + (cmd.top ? '上' : '下') + 'に戻った');
+      });
+      renderAll();
+      sendStateSync();
+      break;
+    }
+
     // --- 反応系トリガー委譲（when_opp_rest等、相手が本当の持ち主のカードの効果） ---
     case 'fx_reactionDelegate': {
       // こちら（本当の持ち主）側で side='player' として本物のUIを操作し、

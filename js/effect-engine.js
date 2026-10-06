@@ -3127,6 +3127,189 @@ function showHandDiscardPicker(hand, wantCount, callback, opts) {
 // title: 上部に表示するメッセージ
 // callback: (chosenCards[]) => void  キャンセル時は [] or null を渡す
 // fullTrash: 全トラッシュ配列（指定すれば既存の trash-modal を使い対象だけハイライト表示）
+// return_deck（from:'trash'、誰のトラッシュか指定なし）の本体。自分・相手どちらのトラッシュからでも
+// 合計 step.value 枚を選び、それぞれ持ち主のデッキの上/下へ戻す。コストとして使われた場合は枚数が
+// 足りなければ支払えない（callback(false)）。オンラインでは相手のトラッシュから戻した分を相手機へ送る
+// （opp_trash_to_deck。相手機は自分のトラッシュから同じカードを探してデッキへ移す）
+function _returnDeckFromBothTrash(step, ctx, player, opponent, effectiveSide, callback) {
+  const want = Math.max(1, parseInt(step.value, 10) || 1);
+  const isCost = _COST_STEP_SET.has(step);
+  const top = step.position === 'top' || step.deck_top;
+  const ownSide = ctx.side;
+  const oppSide = ctx.side === 'player' ? 'ai' : 'player';
+  const conds = [];
+  if (step.condition) conds.push(...parseRecipeCondition(step.condition));
+  if (step.when) conds.push(...parseRecipeCondition(step.when));
+  if (Array.isArray(step.extra_conditions)) step.extra_conditions.forEach(cs => conds.push(...parseRecipeCondition(cs)));
+  if (step.condition_op === 'or') conds._op = 'or';
+  const okFor = (sd) => (c) => c && (conds.length === 0 || checkConditions(conds, c, ctx.bs, sd));
+  const ownC = (player.trash || []).filter(okFor(ownSide));
+  const oppC = (opponent.trash || []).filter(okFor(oppSide));
+  const total = ownC.length + oppC.length;
+  const fail = (msg) => {
+    if (ctx.bs) ctx.bs._lastActionCount = 0;
+    ctx.addLog && ctx.addLog(msg);
+    callback(isCost ? false : undefined);
+  };
+  if (total === 0 || (isCost && total < want)) { fail('⚠ トラッシュのカードが足りません（' + total + '/' + want + '枚）'); return; }
+  const apply = (list) => {
+    if (!list || list.length === 0) {
+      if (ctx.bs) ctx.bs._lastActionCount = 0;
+      if (isCost) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(false); return; }
+      callback();
+      return;
+    }
+    const oppMoved = [];
+    let ownMoved = 0;
+    list.forEach(({ card, side }) => {
+      const owner = side === 'own' ? player : opponent;
+      const i = owner.trash.indexOf(card);
+      if (i === -1) return;
+      owner.trash.splice(i, 1);
+      if (top) owner.deck.unshift(card); else owner.deck.push(card);
+      if (side === 'own') ownMoved++; else oppMoved.push({ cardNo: card.cardNo || '', name: card.name || '' });
+      ctx.addLog && ctx.addLog('🔄 「' + card.name + '」を' + (side === 'own' ? '自分' : '相手') + 'のトラッシュから' + (side === 'own' ? '' : '相手の') + 'デッキの' + (top ? '上' : '下') + 'に戻す');
+    });
+    if (ctx.bs) ctx.bs._lastActionCount = ownMoved + oppMoved.length;
+    ctx.renderAll && ctx.renderAll();
+    const online = !!(window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand);
+    if (online && ctx.side === 'player' && oppMoved.length > 0) {
+      try { window._onlineSendCommand({ type: 'opp_trash_to_deck', cards: oppMoved, top: !!top }); } catch (_) {}
+    }
+    // 移動演出（自分の画面）→ デッキが増えたときの誘発（自分のデッキ。相手のデッキは、オンラインでは
+    // 相手機の処理なのでここでは発火しない）
+    const anims = ctx.side === 'player' && window._fxCardMove ? list.slice() : [];
+    const nextAnim = () => {
+      const a = anims.shift();
+      if (!a) {
+        const afterOwn = () => {
+          if (oppMoved.length > 0 && !online) { _deckIncreased(ctx, oppSide, () => callback(true)); return; }
+          callback(true);
+        };
+        if (ownMoved > 0) { _deckIncreased(ctx, ownSide, afterOwn); return; }
+        afterOwn();
+        return;
+      }
+      window._fxCardMove(a.card, a.side === 'own' ? 'トラッシュ' : '相手のトラッシュ', (a.side === 'own' ? '' : '相手の') + 'デッキ' + (top ? '(上)' : '(下)'), nextAnim);
+    };
+    nextAnim();
+  };
+  if (effectiveSide === 'ai') {
+    // CPU: 自分のトラッシュから優先して選ぶ
+    const auto = ownC.slice(0, want).map(card => ({ card, side: 'own' }));
+    oppC.slice(0, want - auto.length).forEach(card => auto.push({ card, side: 'opp' }));
+    apply(auto);
+    return;
+  }
+  showBothTrashPicker({ own: { cards: (player.trash || []).slice(), cands: ownC }, opp: { cards: (opponent.trash || []).slice(), cands: oppC } },
+    Math.min(want, total), '🔄 デッキの' + (top ? '上' : '下') + 'に戻すカードを選んでください', apply);
+}
+
+// 自分・相手どちらのトラッシュからでも合計 wantCount 枚を選ぶUI（クロノモン：ホーリーモード BT26-016
+// 「トラッシュ3枚をデッキの下に戻す」）。「自分のトラッシュ／相手のトラッシュ」ボタンで行き来しながら選び、
+// 合計 wantCount 枚になったら「どちらのトラッシュのどのカードか」の確認画面を出す。
+// sides: { own: { cards, cands }, opp: { cards, cands } }（cards=表示するトラッシュ全体、cands=選べるカード）
+// done([{ card, side: 'own'|'opp' }]) / 「使わない」なら done(null)
+function showBothTrashPicker(sides, wantCount, title, done) {
+  const picked = [];
+  let cur = sides.own.cands.length > 0 || sides.opp.cands.length === 0 ? 'own' : 'opp';
+  const label = { own: '自分のトラッシュ', opp: '相手のトラッシュ' };
+  const overlay = document.createElement('div');
+  overlay.id = '_both-trash-picker';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:62000;display:flex;flex-direction:column;align-items:center;padding:16px;overflow-y:auto;animation:fadeIn 0.2s ease;';
+  document.body.appendChild(overlay);
+  const close = (v) => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); done(v); };
+  const img = (c) => c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '';
+  const btnCss = (bg, fg) => 'background:' + bg + ';color:' + fg + ';border:1px solid #888;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
+  const cardTile = (c, opts) => {
+    const src = img(c);
+    return '<div style="width:64px;text-align:center;' + (opts.style || '') + '">'
+      + (src ? '<img src="' + src + '" style="width:64px;height:90px;object-fit:cover;border-radius:4px;">'
+             : '<div style="width:64px;height:90px;background:#111;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#aaa;">' + (c.name || '') + '</div>')
+      + '<div style="font-size:8px;color:#ccc;margin-top:2px;line-height:1.2;">' + (c.name || '') + '</div>'
+      + (opts.badge || '') + '</div>';
+  };
+  function renderSelect() {
+    const side = sides[cur];
+    const count = (s) => picked.filter(p => p.side === s).length;
+    overlay.innerHTML = '';
+    const head = document.createElement('div');
+    head.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;margin-bottom:8px;text-align:center;';
+    head.innerText = (title || '🔄 デッキに戻すカードを選んでください') + '（自分・相手どちらのトラッシュからでも合計' + wantCount + '枚）';
+    overlay.appendChild(head);
+    const tabs = document.createElement('div');
+    tabs.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;';
+    ['own', 'opp'].forEach((s) => {
+      const b = document.createElement('button');
+      b.style.cssText = btnCss(s === cur ? '#00fbff' : '#222', s === cur ? '#001a1a' : '#ddd');
+      b.innerText = label[s] + '（選択' + count(s) + '）';
+      b.onclick = () => { cur = s; renderSelect(); };
+      tabs.appendChild(b);
+    });
+    overlay.appendChild(tabs);
+    const status = document.createElement('div');
+    status.style.cssText = 'color:#ffcc66;font-size:12px;margin-bottom:8px;';
+    status.innerText = '選択中 ' + picked.length + ' / ' + wantCount + ' 枚（タップで選択／もう一度タップで解除）';
+    overlay.appendChild(status);
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:520px;margin-bottom:12px;';
+    if (side.cards.length === 0) {
+      grid.innerHTML = '<div style="color:#777;font-size:12px;padding:20px;">' + label[cur] + 'は空です</div>';
+    }
+    side.cards.forEach((c) => {
+      const isCand = side.cands.includes(c);
+      const isPicked = picked.some(p => p.card === c);
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'cursor:' + (isCand ? 'pointer' : 'not-allowed') + ';opacity:' + (isCand ? '1' : '0.35') + ';border:2px solid ' + (isPicked ? '#00ff88' : (isCand ? '#ffcc00' : 'transparent')) + ';border-radius:6px;padding:2px;' + (isPicked ? 'box-shadow:0 0 12px #00ff88aa;' : '');
+      wrap.innerHTML = cardTile(c, { badge: isPicked ? '<div style="color:#00ff88;font-size:10px;font-weight:bold;">✓ 選択中</div>' : '' });
+      if (isCand) {
+        wrap.onclick = () => {
+          const pi = picked.findIndex(p => p.card === c);
+          if (pi >= 0) picked.splice(pi, 1);
+          else if (picked.length < wantCount) picked.push({ card: c, side: cur });
+          if (picked.length >= wantCount) { renderConfirm(); return; }
+          renderSelect();
+        };
+      }
+      grid.appendChild(wrap);
+    });
+    overlay.appendChild(grid);
+    const skip = document.createElement('button');
+    skip.style.cssText = btnCss('#555', '#fff');
+    skip.innerText = '⏭ 使わない';
+    skip.onclick = () => close(null);
+    overlay.appendChild(skip);
+  }
+  function renderConfirm() {
+    overlay.innerHTML = '';
+    const head = document.createElement('div');
+    head.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;margin-bottom:12px;text-align:center;';
+    head.innerText = 'この' + picked.length + '枚をそれぞれの持ち主のデッキの下に戻しますか？';
+    overlay.appendChild(head);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:520px;margin-bottom:14px;';
+    picked.forEach((p) => {
+      const d = document.createElement('div');
+      d.innerHTML = cardTile(p.card, { badge: '<div style="font-size:9px;font-weight:bold;margin-top:2px;color:' + (p.side === 'own' ? '#00fbff' : '#ff00fb') + ';">' + label[p.side] + 'から</div>' });
+      row.appendChild(d);
+    });
+    overlay.appendChild(row);
+    const btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:10px;';
+    const ok = document.createElement('button');
+    ok.style.cssText = btnCss('#00fbff', '#001a1a');
+    ok.innerText = 'OK（デッキの下に戻す）';
+    ok.onclick = () => close(picked.slice());
+    const back = document.createElement('button');
+    back.style.cssText = btnCss('#333', '#fff');
+    back.innerText = '↩ 選び直す';
+    back.onclick = () => { picked.pop(); renderSelect(); };
+    btns.appendChild(ok); btns.appendChild(back);
+    overlay.appendChild(btns);
+  }
+  renderSelect();
+}
+
 export function showTrashCardPicker(candidates, wantCount, optional, title, callback, fullTrash) {
   // 既存 trash-modal を使うインプレース版
   const modal = document.getElementById('trash-modal');
@@ -3476,7 +3659,7 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   if (filter.description || filter.description_contains) {
     const _descText = [card.effect, card.evoSourceEffect, card.securityEffect].filter(Boolean).join('\n');
     if (filter.description && _descText !== filter.description) return false;
-    if (filter.description_contains && !_descText.includes(filter.description_contains)) return false;
+    if (filter.description_contains && !_cardHasDescriptionText(card, filter.description_contains)) return false;
   }
   if (filter.lv_ge != null && (parseInt(card.level) || 0) < filter.lv_ge) return false;
   if (filter.lv_le != null && (parseInt(card.level) || 0) > filter.lv_le) return false;
@@ -6340,8 +6523,7 @@ function checkConditions(conditions, card, bs, side) {
       // 例:「クロノモン」の記述があるカード1枚を破棄する（BT26-009/011等）
       case 'cond_description_contains': {
         const _wanted = String(cond.value || '');
-        const _text = [card.effect, card.evoSourceEffect, card.securityEffect].filter(Boolean).join('\n');
-        if (!_wanted || !_text.includes(_wanted)) return false;
+        if (!_wanted || !_cardHasDescriptionText(card, _wanted)) return false;
         break;
       }
       case 'cond_description': {
@@ -9492,6 +9674,17 @@ function checkStepTriggerConditions(step, ctx) {
 }
 
 // step.limit を最大使用回数に変換（once_per_turn=1 / per_turn:N=N / それ以外=0=無制限）
+// 「「XXX」の記述がある」判定。公式ルールどおりカード名・特徴・テキスト（効果／進化元効果／
+// セキュリティ効果）のいずれかに XXX があれば true（battle-combat.js の進化条件 _cardHasDescription と同じ）。
+// 以前はテキストだけを見ていたため、名前にだけ「クロノモン」を含むクロノモン：ホーリーモード BT26-016 が
+// 「「クロノモン」の記述があるデジモン」に当たらず、ブテンモン BT26-015 の進化元効果やピョコモン BT26-001 の
+// 進化先候補から漏れていた
+function _cardHasDescriptionText(card, text) {
+  if (!card || !text) return false;
+  return [card.name, card.feature, card.effect, card.evoSourceEffect, card.securityEffect]
+    .some(f => String(f || '').includes(text));
+}
+
 function getLimitMaxUses(step) {
   const l = String((step && step.limit) || '');
   if (l === 'once_per_turn' || l === 'limit_once_per_turn') return 1;
@@ -13681,6 +13874,13 @@ function executeRecipeStep(step, ctx, store, callback) {
       // security_position/evo_source_position（'top'/'bottom'。未指定なら積み重ね全体から
       // 選ぶ）で対象を絞り込める
       const _rdFromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
+      // 「トラッシュN枚をデッキの下に戻す」のように誰のトラッシュか書かれていない（レシピは from:'trash' で
+      // target も from_owner も無し＝エディタの「誰の場所か：どちらでも」）なら、自分・相手どちらの
+      // トラッシュからでも合計N枚を選び、それぞれ持ち主のデッキへ戻す（クロノモン：ホーリーモード BT26-016）
+      if (_rdFromZones.length === 1 && _rdFromZones[0] === 'trash' && !step.from_owner && !step.target) {
+        _returnDeckFromBothTrash(step, ctx, player, opponent, effectiveSide, callback);
+        break;
+      }
       if (_rdFromZones.length > 0) {
         const _rdOwnerP = step.from_owner === 'opponent' ? opponent : player;
         const _rdOwnerSideTag = (_rdOwnerP === player) ? ctx.side : (ctx.side === 'player' ? 'ai' : 'player');

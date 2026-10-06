@@ -7592,7 +7592,15 @@ function _getKeywordOnAttackSteps(card, flagsOut) {
     if (!kw) continue;
     const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, 'on_attack');
     if (!tplSteps) continue;
-    const filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common);
+    let filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common);
+    // ≪突進≫は「最もDPの高い“アクティブ状態の”相手のデジモン1体に変更“できる”」（公式説明）。
+    // 辞書のテンプレートに任意・アクティブ条件が無くても、任意効果（はい/いいえの確認）として扱い、
+    // レスト状態のデジモンは候補から外す（ブライモン BT26-011: 「OK」しか押せなかった）
+    if (p.flag === 'piercing') {
+      filled = filled.map((s) => (s && s.action === 'redirect_attack')
+        ? Object.assign({}, s, { optional: true, filter: Object.assign({ suspended: false }, s.filter || {}) })
+        : s);
+    }
     result = result.concat(filled);
     if (flagsOut) flagsOut.push(p.flag);
   }

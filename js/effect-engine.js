@@ -6958,6 +6958,21 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
 
 // 対象（選べるデジモン/カード）がいないために効果を発揮できなかったときのメッセージ
 const EFFECT_FAILED_NO_TARGET = '対象がいませんでした';
+// トラッシュ等のゾーンに選べるカードが無かったとき（「〜を手札に戻す」等、対象がカードの場合）
+const EFFECT_FAILED_NO_CARD = '対象がありませんでした';
+
+// 任意の「トラッシュから〜を手札に戻せる」の共通処理: 選択画面の前に「トラッシュの「X」を手札に
+// 戻しますか？」を確認し、「はい」なら戻す（候補が戻す枚数以下ならそのまま、多ければ選ぶ）。
+// 「いいえ」なら onDecline（久我橙矢 BT26-087「自分のトラッシュから『巨神兵器』1枚を手札に戻せる」）
+function _confirmOptionalTrashToHand(ctx, filter, candidates, want, onPicked, onDecline) {
+  const label = filter && filter.name ? '「' + filter.name + '」' : 'カード';
+  const n = Math.min(want || 1, candidates.length);
+  showConfirmDialog(ctx.card, 'トラッシュの' + label + (n > 1 ? n + '枚' : '') + 'を手札に戻しますか？', (yes) => {
+    if (!yes) { ctx.addLog && ctx.addLog('☓ 手札に戻さなかった'); onDecline(); return; }
+    if (candidates.length <= n) { onPicked(candidates.slice(0, n)); return; }
+    showTrashCardPicker(candidates, n, false, '🃏 手札に戻すカードを選んでください', onPicked, candidates);
+  });
+}
 function showEffectFailed(message, callback) {
   const text = message || EFFECT_FAILED_NO_TARGET;
   // オンライン: 相手にも不発メッセージを送信
@@ -11806,7 +11821,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _rhCandidates = (player.trash || []).filter(c => cardMatchesFilter(c, _rhFilter));
       if (_rhCandidates.length === 0) {
         ctx.addLog && ctx.addLog('💨 条件を満たすカードがトラッシュにありません');
-        showEffectFailed(null, () => callback());
+        showEffectFailed(EFFECT_FAILED_NO_CARD, () => callback());
         return;
       }
       const _rhOnPicked = (chosen) => {
@@ -11840,6 +11855,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       };
       if (effectiveSide === 'ai') {
         _rhOnPicked(_rhCandidates.slice(0, _rhWantCount));
+      } else if (_rhOptional) {
+        // 「〜を手札に戻せる」（任意）: 先に戻すか確認 →「はい」なら戻す（久我橙矢 BT26-087）
+        _confirmOptionalTrashToHand(ctx, _rhFilter, _rhCandidates, _rhWantCount, _rhOnPicked, () => callback());
       } else {
         showTrashCardPicker(_rhCandidates, _rhWantCount, _rhOptional, '🃏 手札に戻すカードを選んでください', _rhOnPicked, player.trash);
       }
@@ -11855,7 +11873,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const candidates = (player.trash || []).filter(c => cardMatchesFilter(c, filter));
       if (candidates.length === 0) {
         ctx.addLog && ctx.addLog('💨 条件を満たすカードがトラッシュにありません');
-        showEffectFailed(null, () => callback());
+        showEffectFailed(EFFECT_FAILED_NO_CARD, () => callback());
         return;
       }
       const onPicked = (chosen) => {
@@ -11891,6 +11909,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (effectiveSide === 'ai') {
         // AI: 先頭から N 枚を自動選択
         onPicked(candidates.slice(0, wantCount));
+      } else if (optional) {
+        _confirmOptionalTrashToHand(ctx, filter, candidates, wantCount, onPicked, () => callback());
       } else {
         showTrashCardPicker(candidates, wantCount, optional, '🃏 手札に戻すカードを選んでください', onPicked, player.trash);
       }
@@ -12954,7 +12974,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _btCands = (zoneOwner.trash || []).filter(c => c && cardMatchesFilter(c, _btFilter, ctx.bs, ctx.side, ctx.card));
         if (_btCands.length === 0) {
           ctx.addLog('⚠ トラッシュに条件を満たすカードがありません');
-          showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(false));
+          showEffectFailed(EFFECT_FAILED_NO_CARD, () => callback(false));
           return;
         }
         const _doBounceTrash = (chosen) => {
@@ -12989,12 +13009,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           // 「〜を手札に戻せる」（任意）: 先に発動するか確認し、「はい」なら戻す（候補が必要枚数以下なら
           // そのまま、多ければ選ぶ）。「いいえ」なら何もしない（久我橙矢 BT26-087「トラッシュから
           // 『巨神兵器』1枚を手札に戻せる」。以前は確認なしで「使わない」付きの選択画面が出ていた）
-          const _btLabel = _btFilter.name ? '「' + _btFilter.name + '」' : 'カード';
-          showConfirmDialog(ctx.card, 'トラッシュの' + _btLabel + (want > 1 ? want + '枚' : '') + 'を手札に戻しますか？', (yes) => {
-            if (!yes) { ctx.addLog('☓ 手札に戻さなかった'); callback(true); return; }
-            if (_btCands.length <= want) { _doBounceTrash(_btCands.slice(0, _btWant)); return; }
-            showTrashCardPicker(_btCands, _btWant, false, '🃏 手札に戻すカードを選んでください', _doBounceTrash, _btCands);
-          });
+          _confirmOptionalTrashToHand(ctx, _btFilter, _btCands, _btWant, _doBounceTrash, () => callback(true));
         } else {
           showTrashCardPicker(_btCands, _btWant, upTo || !!step.optional, '🃏 手札に戻すカードを選んでください', _doBounceTrash, _btCands);
         }

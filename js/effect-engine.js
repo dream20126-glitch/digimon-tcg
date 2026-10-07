@@ -7755,6 +7755,20 @@ function _lookupInheritedPassives(card, passiveEntry) {
 // on_attack のみここでのマージ対象から除外する
 // card（省略可）: 継承（Inherit）フラグ評価用。card.stackから継承元を探すため必要
 const _NO_MERGE_TRIGGER_CODES = new Set(['on_attack']);
+// ≪エグゼキュート≫（公式ルール -38）:「自分のターン終了時、このデジモンでアタックできる。このアタック終了時、
+// このデジモンは消滅する。この効果では、アクティブ状態の相手のデジモンにもアタックできる」。
+// 辞書のテンプレートは on_own_turn_end（アタック）と on_attack_end（自身を消滅）の2つだが、消滅するのは
+// エグゼキュートの効果で行ったアタックの終了時だけ（以前は通常のアタックでも毎回消滅していた。
+// ユノモン：ヒステリックモード BT26-083）。on_own_turn_end のアタックには印（_executeAttack）を付け、
+// _confirmAndDeclareEffectAttack がアタック中のカードに _executeAttacking を立てる。on_attack_end の
+// 消滅は、その印が立っているアタックのときだけ展開する
+function _adjustExecuteSteps(flag, triggerCode, steps, card) {
+  if (flag !== 'execute' || !Array.isArray(steps)) return steps || [];
+  if (triggerCode === 'on_attack_end') return (card && card._executeAttacking) ? steps : [];
+  if (triggerCode === 'on_own_turn_end') return steps.map(st => (st && st.action === 'attack') ? Object.assign({}, st, { _executeAttack: true }) : st);
+  return steps;
+}
+
 function _lookupTriggerSteps(recipeObj, triggerCode, card) {
   let result = _lookupTriggerStepsBase(recipeObj, triggerCode);
   if (recipeObj && Array.isArray(recipeObj.passive) && !_NO_MERGE_TRIGGER_CODES.has(triggerCode)) {
@@ -7769,7 +7783,8 @@ function _lookupTriggerSteps(recipeObj, triggerCode, card) {
       if (!kw) continue;
       const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
       if (!tplSteps) continue;
-      const filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common);
+      const filled = _adjustExecuteSteps(p.flag, triggerCode, _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common), card);
+      if (filled.length === 0) continue;
       result = result ? result.concat(filled) : filled;
     }
   }
@@ -7791,7 +7806,8 @@ function _lookupTriggerSteps(recipeObj, triggerCode, card) {
       if (!kw) return;
       const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
       if (!tplSteps) return;
-      const filled = _fillKeywordTemplateSteps(tplSteps, undefined, undefined, undefined, undefined, undefined);
+      const filled = _adjustExecuteSteps(code, triggerCode, _fillKeywordTemplateSteps(tplSteps, undefined, undefined, undefined, undefined, undefined), card);
+      if (filled.length === 0) return;
       result = result ? result.concat(filled) : filled;
     });
   }
@@ -10481,12 +10497,15 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done) {
   // 完了の合図は battle-combat.js の checkPendingTurnEnd（アタック終了）が bs._effectAttackResolveCbs を呼ぶ
   const trig = ctx.block && ctx.block.trigger && ctx.block.trigger.code;
   const waitResolve = /turn_end$/.test(String(trig || ''));
+  const isExecute = !!(step && step._executeAttack);
   const declare = (targetType, targetIdx) => {
+    // ≪エグゼキュート≫でのアタック: アタック終了時の消滅（_adjustExecuteSteps）の判定に使う印
+    if (isExecute) atkCard._executeAttacking = true;
     window.startAttack(atkCard, slotIdx, (ok) => {
-      if (!ok) { finish(false); return; }
+      if (!ok) { delete atkCard._executeAttacking; finish(false); return; }
       if (waitResolve) {
         if (!Array.isArray(ctx.bs._effectAttackResolveCbs)) ctx.bs._effectAttackResolveCbs = [];
-        ctx.bs._effectAttackResolveCbs.push(() => finish(true));
+        ctx.bs._effectAttackResolveCbs.push(() => { delete atkCard._executeAttacking; finish(true); });
         window.resolveAttackTarget(targetType, targetIdx);
         return;
       }
@@ -10507,8 +10526,9 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done) {
       declare('security', -1);
       return;
     }
+    // ≪エグゼキュート≫は「アクティブ状態の相手のデジモンにもアタックできる」
     const restTargets = [];
-    (opponent.battleArea || []).forEach((c, i) => { if (c && c.suspended) restTargets.push(i); });
+    (opponent.battleArea || []).forEach((c, i) => { if (c && (c.suspended || isExecute) && (!c.type || c.type === 'デジモン')) restTargets.push(i); });
     const hasSecurity = !digimonOnly && (opponent.security || []).length > 0;
     if (restTargets.length === 0) {
       if (!hasSecurity) { finish(false); return; }

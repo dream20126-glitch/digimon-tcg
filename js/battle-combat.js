@@ -556,18 +556,19 @@ function _baseCardName(name) {
   return i === -1 ? s : s.slice(0, i);
 }
 
-// baseCard自身、またはその進化元スタックのいずれかが reqName に一致するか判定する
-// （いずれも「：」以降を除いた基本名で比較する）。
+// baseCard（進化させるデジモン自身）の名称が reqName に一致するか判定する（「：」以降を除いた基本名で比較）。
+// 進化条件の名称はそのデジモン自身の名称で判定し、進化元（重ねられているカード）の名称は見ない
+// （以前は進化元も見ていたため、進化元に「ケルベロモン」を持つプルートモン Lv.6 等へ
+// ケルベロモン：人狼モード BT26-056 がアーツ進化できてしまっていた）。
 // exact=true: 基本名がreqNameと完全一致（デフォルト。例: "アイギオモン"→"アイギオモン"のみ）
 // exact=false: 基本名がreqNameを含む（部分一致。"〜を含む"と書かれたときだけ使う。
 //              例: "アイギオモンを含む"→"コアイギオモン"等も対象になる）
-function _cardOrStackHasName(baseCard, reqName, exact) {
+function _cardHasEvolveName(baseCard, reqName, exact) {
   const test = exact ? (n => n === reqName) : (n => n.includes(reqName));
   // 「各名称『XXX』を含むものとしても扱う」ルール（メイン効果欄に印刷）による
   // エイリアス名も、本来の名前と同様にチェックする
   const matches = (c) => test(_baseCardName(c.name)) || getNameAliases(c).some(test);
-  if (matches(baseCard)) return true;
-  return !!(baseCard.stack && baseCard.stack.some(matches));
+  return matches(baseCard);
 }
 
 // 「〜の記述がある」判定用。baseCard自身のカード情報一覧の各テキスト列
@@ -603,7 +604,7 @@ function _matchFeatureClause(c, baseCard) {
   // よう、featureMatch本体より後ろの残り文字列だけを対象に判定する
   const remainder = c.slice(featureMatch.index + featureMatch[0].length);
   const nameSuffix = _parseNameSuffix(remainder);
-  if (nameSuffix && !_cardOrStackHasName(baseCard, nameSuffix.name, nameSuffix.exact)) return false;
+  if (nameSuffix && !_cardHasEvolveName(baseCard, nameSuffix.name, nameSuffix.exact)) return false;
   return true;
 }
 
@@ -622,7 +623,7 @@ function _matchColorClause(c, baseCard, ignoreColor) {
   if (reqColor && !ignoreColor && !baseColor.includes(reqColor)) return false;
   const remainder = c.slice(m.index + m[0].length);
   const nameSuffix = _parseNameSuffix(remainder);
-  if (nameSuffix && !_cardOrStackHasName(baseCard, nameSuffix.name, nameSuffix.exact)) return false;
+  if (nameSuffix && !_cardHasEvolveName(baseCard, nameSuffix.name, nameSuffix.exact)) return false;
   return true;
 }
 
@@ -631,10 +632,10 @@ function _matchColorClause(c, baseCard, ignoreColor) {
 // コロン記法（"名称:アイギオモン"）はブラケット無しなので常に完全一致扱い。
 function _matchNameClause(c, baseCard) {
   const bracket = c.match(/名称[:：]?\s*「(.+?)」\s*(を含む)?\s*$/);
-  if (bracket) return _cardOrStackHasName(baseCard, bracket[1].trim(), !bracket[2]);
+  if (bracket) return _cardHasEvolveName(baseCard, bracket[1].trim(), !bracket[2]);
   const plain = c.match(/名称[:：]\s*(.+?)\s*$/);
   if (!plain) return false;
-  return _cardOrStackHasName(baseCard, plain[1].trim(), true);
+  return _cardHasEvolveName(baseCard, plain[1].trim(), true);
 }
 
 // 登場コスト＋名称クローズ（例: "登場コスト12の「ケレスモン」"）がbaseCardに一致するか判定する。
@@ -649,7 +650,7 @@ function _matchPlayCostClause(c, baseCard) {
   const remainder = c.slice(m.index + m[0].length);
   const nameSuffix = _parseNameSuffix(remainder);
   if (!nameSuffix) return false; // 名称指定が無いと進化元を絞りきれないため不成立
-  return _cardOrStackHasName(baseCard, nameSuffix.name, nameSuffix.exact);
+  return _cardHasEvolveName(baseCard, nameSuffix.name, nameSuffix.exact);
 }
 
 // 名称＋登場コストクローズ（例: "巨神兵器：コスト5" = "名称：巨神兵器"と同義で、
@@ -658,7 +659,7 @@ function _matchPlayCostClause(c, baseCard) {
 function _matchNameCostClause(c, baseCard) {
   const m = c.match(/^(.+?)：コスト\d+$/);
   if (!m) return false;
-  return _cardOrStackHasName(baseCard, m[1].trim(), true);
+  return _cardHasEvolveName(baseCard, m[1].trim(), true);
 }
 
 // 「「XXX」の記述があるLvN」クローズ（例: "「クロノモン」の記述があるLv.6"）が

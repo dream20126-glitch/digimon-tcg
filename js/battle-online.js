@@ -1832,9 +1832,11 @@ function checkOnlineBlock(cmd) {
     }
     return false;
   };
+  // 【衝突】: 相手のアタック中、こちらのデジモン全ては【ブロッカー】を得て、可能ならブロックしなければならない
+  const forced = !!cmd.atkCollision;
   const blockerIndices = [];
   bs.player.battleArea.forEach((c, i) => {
-    if (c && !c.suspended && !c.cantBlock && isBlocker(c)) {
+    if (c && !c.suspended && !c.cantBlock && (forced ? (!c.type || c.type === 'デジモン') : isBlocker(c))) {
       if (cmd.atkCantBeBlocked) return; // アタッカーがブロックされない
       if (cmd.atkCantBeBlockedByNoEvo && (!c.stack || c.stack.length === 0)) return; // 進化元なしブロッカーは不可
       blockerIndices.push(i);
@@ -1850,6 +1852,18 @@ function checkOnlineBlock(cmd) {
   let targetInfo = null;
   if (cmd.type === 'attack_security') targetInfo = { type: 'security' };
   else if (cmd.type === 'attack_digimon') targetInfo = { type: 'digimon', name: cmd.defName || '' };
+  if (forced) {
+    // 【衝突】のブロックは強制: 「ブロックしますか？」は出さず、ブロックするデジモンを選ぶだけ（1体なら自動）。
+    // 選択をキャンセルしても必ずどれかでブロックする（選び直し）
+    addLog('💥 相手の「' + (cmd.atkName || '???') + '」の【衝突】: ブロックしなければならない');
+    if (blockerIndices.length === 1 || !_modules.showBlockerSelection) { resolveOnlineBlock(blockerIndices[0], cmd); return; }
+    const pick = () => _modules.showBlockerSelection(blockerIndices, attacker, (selectedIdx) => {
+      if (selectedIdx !== null && blockerIndices.includes(selectedIdx)) resolveOnlineBlock(selectedIdx, cmd);
+      else pick();
+    });
+    pick();
+    return;
+  }
   if (_modules.showBlockConfirm) {
     _modules.showBlockConfirm(bs.player.battleArea[blockerIndices[0]], attacker, (doBlock) => {
       if (!doBlock) { sendCommand({ type: 'block_response', blocked: false }); return; }

@@ -1460,6 +1460,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       for (let i = 0; i < edArea.length; i++) {
         const c = edArea[i];
         if (!c || !c.stack || c.stack.length === 0) continue;
+        // 「（相手の効果で）重ねられているカードは破棄されない」（cant_discard）を持つ相手のデジモンは対象外
+        // （巨神兵器 BT26-085。以前は退化だけが見ていて、進化元を破棄する効果では破棄されていた）
+        if (edOwner === opponent && _hasCantDiscard(c)) continue;
         if (edContainerFilter && !cardMatchesFilter(c, edContainerFilter, ctx.bs, ctx.side, ctx.card)) continue;
         const _edOkCount = edConds.length > 0 ? c.stack.filter(s => checkConditions(edConds, s, ctx.bs, edSide)).length : c.stack.length;
         if (_edOkCount === 0) continue;
@@ -3670,6 +3673,11 @@ function _resolveCombatAction(step, ctx, callback) {
       doCombat(selectedIdx);
     });
   }
+}
+
+// 「重ねられているカードは破棄されない」（cant_discard バフ）を持つか（巨神兵器 BT26-085 等）
+function _hasCantDiscard(card) {
+  return !!(card && Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_discard'));
 }
 
 // bs/side は cost_le_mod（「レスト状態のデジモン/テイマー1体ごとにコスト上限+1」等、
@@ -7887,8 +7895,12 @@ export function fireKeywordAttackEffects(card, side, bs, ctxBase, done) {
   const steps = _getKeywordOnAttackSteps(card, flags);
   if (steps.length === 0) { finish(); return; }
   const label = flags.map(f => '【' + _keywordJpName(f) + '】').join('');
-  const reaction = { card, sourceCard: card, recipe: steps, effectText: label + 'の効果を発動しますか？' };
-  try { _runReactionEffect(reaction, side, bs, ctxBase, finish, { alwaysConfirm: true }); }
+  // 【衝突】のように「〜しなければならない」強制のキーワードだけなら「発動しますか？」は出さずに発揮する
+  // （巨神兵器 BT26-085）。任意のキーワードが混ざる場合は従来通り確認する
+  const MANDATORY_ATTACK_KEYWORDS = ['collision'];
+  const allMandatory = flags.length > 0 && flags.every(f => MANDATORY_ATTACK_KEYWORDS.includes(f));
+  const reaction = { card, sourceCard: card, recipe: steps, effectText: label + (allMandatory ? '' : 'の効果を発動しますか？') };
+  try { _runReactionEffect(reaction, side, bs, ctxBase, finish, { alwaysConfirm: !allMandatory }); }
   catch (_) { finish(); }
 }
 
@@ -9027,7 +9039,17 @@ function _runSecurityDiscard(secSide, spec, ctx, done) {
     enqueueReaction(ctx.bs, _fireWhenSecurityDecreaseQueuedWithCause, [cause, secSide, ctx.bs, ctxBase]);
   }
   ctx.renderAll && ctx.renderAll();
-  done(n);
+  // トラッシュは公開領域なので、破棄したセキュリティは表向きにして1枚ずつ見せる（両者の画面）
+  const isOwnSec = secSide === 'player';
+  let i = 0;
+  const showNext = () => {
+    if (i >= removed.length) { done(n); return; }
+    const c = removed[i++];
+    _fxMoveSync(ctx, c, (isOwnSec ? '' : '相手の') + 'セキュリティ', (isOwnSec ? '' : '相手の') + 'トラッシュ', showNext, {
+      remoteFrom: (isOwnSec ? '相手の' : '') + 'セキュリティ', remoteTo: (isOwnSec ? '相手の' : '') + 'トラッシュ',
+    });
+  };
+  showNext();
 }
 
 // オンライン対戦: 相手機から「手札をN枚（またはN枚になるまで）選んで破棄して」と依頼された
@@ -13055,6 +13077,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _edOwner = _edIsOpp ? opponent : player; // 破棄した進化元は所有者のトラッシュへ
       const _discardEvoAll = (tgt) => {
         if (!tgt || !Array.isArray(tgt.stack) || tgt.stack.length === 0) return false;
+        if (_edIsOpp && _hasCantDiscard(tgt)) { ctx.addLog('🛡 「' + tgt.name + '」の重ねられているカードは破棄されない'); return false; }
         const _cnt = tgt.stack.length;
         const _names = tgt.stack.map(s => (s && s.name) || '???').join('、');
         while (tgt.stack.length > 0) _edOwner.trash.push(tgt.stack.shift());

@@ -257,6 +257,18 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
   } catch (_) { callback(null); }
 }
 
+// 両者消滅（DP同値）用: 防壁/回避/【分離】/「バトルエリアを離れるとき」の置換効果（_tryCancelDestroyAsync）を
+// 先に試し、回避できなければ when_battle_destroy / when_destroy（_runWhenBattleDestroy）を確認する。
+// 片方だけ勝つ分岐は以前からこの順で確認していたが、両者消滅の分岐では離れるときの置換効果を見ておらず
+// 不発になっていた（巨神兵器 BT26-085「離れるとき、デストロイモードに進化させることで離れない」等）
+function _runBattleDestroyAvoid(side, card, onDestroy, onCancel) {
+  const owner = side === 'ai' ? bs.ai : bs.player;
+  _tryCancelDestroyAsync(card, owner, side, false, (canceled) => {
+    if (canceled) { addLog('🛡 「' + card.name + '」が消滅を回避'); renderAll(); onCancel(); return; }
+    _runWhenBattleDestroy(side, card, onDestroy, onCancel);
+  });
+}
+
 // when_battle_destroy / when_destroy トリガーを発火し、コスト払いでバフが付与されていれば
 // 消滅をキャンセルする。when_destroyは原因を問わず発火する汎用トリガー（フラグメント等）
 // のため、バトルでの消滅時もここで確認する（効果消滅時はeffect-engine.jsのdoDestroy側で
@@ -1915,10 +1927,19 @@ function _consumeRedirectedAttack(defaultTarget, defaultIdx) {
   return { target: 'digimon', idx: ra.idx, def };
 }
 
+// 【衝突】を持つか（このデジモンのアタック中、相手のデジモン全ては【ブロッカー】を得て、可能ならブロックしなければならない）。
+// オンラインではブロックするかどうかは防御側の端末が決めるので、アタック宣言コマンドに載せて伝える（巨神兵器 BT26-085）
+function _hasCollision(card) {
+  if (!card) return false;
+  if (card._permEffects && card._permEffects.collision) return true;
+  if (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'keyword_collision')) return true;
+  try { return !!_cardHasActivePassiveFlag(card, 'collision', bs, 'player'); } catch (_) { return false; }
+}
+
 // オンライン対戦: デジモンアタックの宣言送信 → ブロック応答待ち → バトル解決。
 // 通常の宣言・突進等でセキュリティ宣言から差し替わった場合の両方から呼ばれる
 function _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, def, targetIdx) {
-  _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo) });
+  _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo), atkCollision: _hasCollision(atk) });
   if (typeof window._waitForBlockResponse === 'function') {
     window._waitForBlockResponse((resp) => {
       if (!resp.blocked) {
@@ -2017,7 +2038,7 @@ export function resolveAttackTarget(target, targetIdx) {
         const _rt = _consumeRedirectedAttack('security', -1);
         if (_rt.target === 'digimon') { _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, _rt.def, _rt.idx); return; }
         // 効果処理完了 → このタイミングで attack_security を送る
-        _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo) });
+        _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo), atkCollision: _hasCollision(atk) });
         if (typeof window._waitForBlockResponse === 'function') {
           window._waitForBlockResponse((resp) => {
             if (!resp.blocked) {
@@ -2840,8 +2861,8 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
     _expireBuffs(bs, 'dur_until_battle_end');
     if (_atkDp === _defDp) {
       // 両者消滅の前に、双方独立に when_battle_destroy（消滅回避コスト）を確認する
-      _runWhenBattleDestroy('ai', def, () => {
-        _runWhenBattleDestroy('player', atk, () => {
+      _runBattleDestroyAvoid('ai', def, () => {
+        _runBattleDestroyAvoid('player', atk, () => {
           // 両者とも回避せず → 両者消滅
           destroyDef(); destroyAtk(); renderAll();
           showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
@@ -2862,7 +2883,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
           }, '回避！', '#00fbff');
         });
       }, () => {
-        _runWhenBattleDestroy('player', atk, () => {
+        _runBattleDestroyAvoid('player', atk, () => {
           // def のみコストを払い消滅回避 → atk のみ消滅
           destroyAtk(); renderAll();
           showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された...', () => {
@@ -3024,8 +3045,8 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
     _expireBuffs(bs, 'dur_until_battle_end');
     if (_atkDp === _defDp) {
       // 両者消滅の前に、双方独立に when_battle_destroy（消滅回避コスト）を確認する
-      _runWhenBattleDestroy('player', def, () => {
-        _runWhenBattleDestroy('ai', atk, () => {
+      _runBattleDestroyAvoid('player', def, () => {
+        _runBattleDestroyAvoid('ai', atk, () => {
           // 両者とも回避せず → 両者消滅
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
@@ -3053,7 +3074,7 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
           });
         });
       }, () => {
-        _runWhenBattleDestroy('ai', atk, () => {
+        _runBattleDestroyAvoid('ai', atk, () => {
           // def のみコストを払い消滅回避 → atk のみ消滅
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));

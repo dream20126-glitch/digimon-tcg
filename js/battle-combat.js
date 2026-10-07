@@ -833,8 +833,8 @@ const ASSEMBLY_DISTINCT_FIELD = { name: 'name', lv: 'level', description: 'effec
 const ASSEMBLY_DISTINCT_LABEL = { name: '名称', lv: 'Lv', description: '記述', color: '色' };
 
 // アセンブリで選んだカードを進化元に入れる順番の確認（巨神兵器 BT26-085 等）。
-// 左のカードほど上（stack[0] 側）に重ねる。「順番を変更」で各カードの ◀ ▶ から並べ替えでき、
-// 「OK」で確定 → callback(並べ替え後の配列)。「やめる」→ callback(null)（アセンブリを使わない）
+// 一番左が一番下で、左から順に上へ重ねていく（右端が本体のすぐ下＝stack[0]）。「順番を変更」で各カードの ◀ ▶ から並べ替えでき、
+// 「OK」で確定 → callback(並べ替え後の配列。[0]＝一番下)。「やめる」→ callback(null)（アセンブリを使わない）
 function _confirmAssemblyOrder(cards, callback) {
   if (!Array.isArray(cards) || cards.length <= 1) { callback(cards); return; }
   const order = cards.slice();
@@ -849,7 +849,7 @@ function _confirmAssemblyOrder(cards, callback) {
     title.innerText = '💠 この順番で進化元に入れますか？';
     const sub = document.createElement('div');
     sub.style.cssText = 'color:#aaa;font-size:11px;text-align:center;';
-    sub.innerText = '左のカードから順に上に重ねます（一番左が一番上）' + (reorder ? '／◀ ▶ で並べ替え' : '');
+    sub.innerText = '一番左が一番下で、左から順に上へ重ねます' + (reorder ? '／◀ ▶ で並べ替え' : '');
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:100%;';
     order.forEach((c, i) => {
@@ -857,7 +857,7 @@ function _confirmAssemblyOrder(cards, callback) {
       cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;width:84px;';
       const pos = document.createElement('div');
       pos.style.cssText = 'color:#ffcc00;font-size:11px;font-weight:bold;';
-      pos.innerText = i === 0 ? '1（一番上）' : String(i + 1);
+      pos.innerText = i === 0 ? '1（一番下）' : (i === order.length - 1 ? (i + 1) + '（一番上）' : String(i + 1));
       const img = document.createElement('img');
       img.src = cardImg(c);
       img.alt = c.name || '';
@@ -992,7 +992,8 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
       const finish = () => {
         _confirmAssemblyOrder(allPicked, (ordered) => {
           if (!ordered) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
-          allPicked.splice(0, allPicked.length, ...ordered);
+          // 画面は左＝一番下、進化元(stack)は [0]＝一番上 なので逆順にして入れる
+          allPicked.splice(0, allPicked.length, ...ordered.slice().reverse());
           commitAssembly();
         });
       };

@@ -1716,16 +1716,18 @@ function playerSpendMemory(cost, defer) {
 // （全ての効果処理が終わってからアタック。2件目以降はアタック終了時の checkPendingTurnEnd が続ける）。
 // opts.noFlush: 外側の効果処理がまだ残っている途中から呼ぶ場合（効果による進化 doEvolveFromEffect）
 function checkPlayerPendingTurnEnd(opts) {
-  if (bs._pendingTurnEnd) {
-    bs._pendingTurnEnd = false;
-    // メモリーが相手側に移りターンが終わるため、保留していたアタックは行えない
-    bs._pendingEffectAttacks = [];
-    checkAutoTurnEnd();
+  // 保留中のアタックは、メモリーが相手側に移っていてもターン内に発揮された効果なので先に行い、
+  // 全て終わってからターン終了判定をする（2件目以降・最後の判定はアタック終了時の checkPendingTurnEnd が続ける）
+  const hasPendingAttack = Array.isArray(bs._pendingEffectAttacks) && bs._pendingEffectAttacks.length > 0 && typeof window._runPendingEffectAttack === 'function';
+  if (hasPendingAttack) {
+    // 外側の効果処理の途中 / 別のアタック中なら、そちらの完了時に改めて処理される
+    if ((opts && opts.noFlush) || _attackInProgress) return;
+    window._runPendingEffectAttack(bs, (started) => { if (!started) checkPendingTurnEndOnly(); });
     return;
   }
-  if (opts && opts.noFlush) return;
-  if (!_attackInProgress && Array.isArray(bs._pendingEffectAttacks) && bs._pendingEffectAttacks.length > 0 && typeof window._runPendingEffectAttack === 'function') {
-    window._runPendingEffectAttack(bs, () => {});
+  if (bs._pendingTurnEnd) {
+    bs._pendingTurnEnd = false;
+    checkAutoTurnEnd();
   }
 }
 
@@ -1747,9 +1749,10 @@ let _attackInProgress = false; // アタック処理中フラグ（操作ロッ�
 if (typeof window !== 'undefined') window._isAttackInProgress = () => _attackInProgress;
 // 起動効果（デジモン/テイマーの【メイン】）の完了時用: 保留中の効果アタックだけを行う（ターン終了判定はしない）
 if (typeof window !== 'undefined') window._flushPendingEffectAttacks = () => {
-  if (bs._pendingTurnEnd || _attackInProgress || !bs.isPlayerTurn) return;
+  if (_attackInProgress || !bs.isPlayerTurn) return;
   if (Array.isArray(bs._pendingEffectAttacks) && bs._pendingEffectAttacks.length > 0 && typeof window._runPendingEffectAttack === 'function') {
-    window._runPendingEffectAttack(bs, () => {});
+    // メモリーが相手側に移っていても保留中のアタックを先に行い、その後でターン終了判定
+    window._runPendingEffectAttack(bs, (started) => { if (!started) checkPendingTurnEndOnly(); });
   }
 };
 

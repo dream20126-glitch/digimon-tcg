@@ -41,6 +41,7 @@ let _pendingSecEffectCallback = null;
 let _pendingSecEffectResponse = null;
 let _pendingReactionDelegateCallback = null;
 let _pendingReactionDelegateResponse = null;
+let _pendingLeaveBattleDelegateCallback = null; // fx_leaveBattleDelegate の返事待ち（callback(canceled)）
 let _pendingHandDiscardCallback = null; // fx_handDiscardRequest 送信側の応答待ち（cb(result)）
 let _pendingHandDiscardResponse = null; // 待ち開始前に届いた fx_handDiscardDone の結果
 let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
@@ -345,6 +346,7 @@ export async function initOnline(roomId, myKey) {
   _pendingSecEffectResponse = null;
   _pendingReactionDelegateCallback = null;
   _pendingReactionDelegateResponse = null;
+  _pendingLeaveBattleDelegateCallback = null;
   _pendingHandDiscardCallback = null;
   _pendingHandDiscardResponse = null;
   _recentlyDestroyed = [];
@@ -906,6 +908,28 @@ function onRemoteCommand(cmd) {
         if (window._fireDelegatedReactionTriggers) window._fireDelegatedReactionTriggers(cmd.recipeKey, bs, ctx, done, cmd);
         else done();
       } catch (_) { done(); }
+      break;
+    }
+    // --- 「バトルエリアを離れるとき」の置換効果の委譲（相手が、こちらのデジモンを消滅等させようとしている） ---
+    // こちら（持ち主）の端末で確認ダイアログ・コスト支払いを行い、離れなかったかどうかを返す
+    case 'fx_leaveBattleDelegate': {
+      const card = bs.player.battleArea[cmd.slotIdx];
+      const reply = (canceled) => {
+        renderAll();
+        sendMemoryUpdate();
+        sendStateSync();
+        sendCommand({ type: 'fx_leaveBattleDelegateDone', canceled: !!canceled });
+      };
+      if (!card || typeof window._tryCancelLeaveLocal !== 'function') { reply(false); break; }
+      const ctx = { bs, addLog, renderAll, updateMemGauge };
+      try { window._tryCancelLeaveLocal(card, 'player', bs, ctx, reply); }
+      catch (_) { reply(false); }
+      break;
+    }
+    case 'fx_leaveBattleDelegateDone': {
+      const cb = _pendingLeaveBattleDelegateCallback;
+      _pendingLeaveBattleDelegateCallback = null;
+      if (cb) cb(!!cmd.canceled);
       break;
     }
     case 'fx_reactionDelegateDone': {
@@ -2144,6 +2168,19 @@ window._sendMemoryUpdate = () => sendMemoryUpdate();
 window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
 window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._waitForReactionDelegate = (cb) => waitForReactionDelegate(cb);
+// 相手のデジモンが「バトルエリアを離れるとき」: 持ち主（相手）の端末に置換効果の判定を委譲し、
+// 離れなかったかどうか（canceled）を待つ。待っている間は待機オーバーレイを出す
+window._requestLeaveBattleDelegate = (slotIdx, cb) => {
+  const waitOv = document.createElement('div');
+  waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
+  waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手が効果を確認中...</div>';
+  document.body.appendChild(waitOv);
+  _pendingLeaveBattleDelegateCallback = (canceled) => {
+    if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
+    try { cb(canceled); } catch (e) { console.error('[leaveBattleDelegate]', e); }
+  };
+  sendCommand({ type: 'fx_leaveBattleDelegate', slotIdx });
+};
 window._waitForHandDiscardDelegate = (cb) => waitForHandDiscardDelegate(cb);
 window._waitForOwnDestroyDone = (cb) => waitForOwnDestroyDone(cb);
 window._drainNonTurnPlayerReactionQueue = () => _drainNonTurnPlayerReactionQueue();

@@ -8263,11 +8263,30 @@ export function fireWhenLeaveBattleTriggers(leftCard, leftSide, bs, ctxBase, don
 // linkedCardsの増減で判定していたが、独自コストを持つカード（クロノモン：ホーリーモード等）
 // にも対応できるよう汎用化した
 export function tryCancelViaLeaveBattle(card, side, bs, ctxBase, callback) {
+  if (!card) { callback(false); return; }
   const isOnline = !!(window._isOnlineMode && window._isOnlineMode());
-  if (isOnline || !card) {
-    callback(false);
+  if (isOnline) {
+    // オンライン対戦: 確認ダイアログ・コスト支払い（セキュリティをデッキに戻す等）はカードの持ち主の
+    // 端末で行う。自分のカードはこの端末でそのまま判定し、結果を state_sync で相手に伝える。
+    // 相手のカードは相手の端末に委譲し（fx_leaveBattleDelegate）、離れなかったかどうかの返事を待つ
+    // （クロノモン：ホーリーモード BT26-016 がバトルで負けたとき等。以前はオンラインでは常に不発だった）
+    if (side === 'player') {
+      _tryCancelLeaveLocal(card, side, bs, ctxBase, (canceled) => {
+        if (canceled && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+        callback(canceled);
+      });
+      return;
+    }
+    const slotIdx = bs && bs[side] ? bs[side].battleArea.indexOf(card) : -1;
+    if (slotIdx === -1 || typeof window._requestLeaveBattleDelegate !== 'function') { callback(false); return; }
+    window._requestLeaveBattleDelegate(slotIdx, (canceled) => callback(!!canceled));
     return;
   }
+  _tryCancelLeaveLocal(card, side, bs, ctxBase, callback);
+}
+// オンラインで相手から委譲された「離れるとき」の判定を、持ち主（この端末）側で行う入口（battle-online.js 用）
+if (typeof window !== 'undefined') window._tryCancelLeaveLocal = (card, side, bs, ctxBase, cb) => _tryCancelLeaveLocal(card, side, bs, ctxBase, cb);
+function _tryCancelLeaveLocal(card, side, bs, ctxBase, callback) {
   card._stayedInBattleArea = false;
   try {
     fireWhenLeaveBattleTriggers(card, side, bs, ctxBase, () => {
@@ -8340,6 +8359,8 @@ function _collectLeaveBattleReplacers(leavingCard, leavingSide, bs) {
 function _tryCancelLeaveByOtherCards(leavingCard, leavingSide, bs, ctxBase, callback) {
   let list = [];
   try { list = _collectLeaveBattleReplacers(leavingCard, leavingSide, bs); } catch (_) { list = []; }
+  // オンラインでは確認ダイアログを出せるのはこの端末の持ち主のカードだけ（相手のカードの置換効果は対象外）
+  if (window._isOnlineMode && window._isOnlineMode()) list = list.filter((rc) => rc.side === 'player');
   if (list.length === 0) { callback(false); return; }
   let i = 0;
   const next = () => {
@@ -10005,7 +10026,11 @@ function runWithAltActions(step, ctx, store, callback) {
             return;
           }
         }
-        executeRecipeStep(a, ctx, store, () => nextAlt());
+        // 「相手のターン終了まで、A し、B」のように期間がメインにだけ書かれている場合、
+        // 続けて行う alt にも同じ期間をかける（巨神兵器 BT26-085「DPをマイナスされず、重ねられている
+        // カードは破棄されない」の後半が「このターン」扱いになっていた）
+        const aRun = (a && !a.duration && step.duration) ? Object.assign({}, a, { duration: step.duration }) : a;
+        executeRecipeStep(aRun, ctx, store, () => nextAlt());
       }
       nextAlt();
     });
@@ -12960,6 +12985,16 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _btWant = Math.min(want, _btCands.length);
         if (effectiveSide === 'ai' || (!upTo && _btCands.length <= want && !step.optional)) {
           _doBounceTrash(_btCands.slice(0, _btWant));
+        } else if (step.optional && !upTo) {
+          // 「〜を手札に戻せる」（任意）: 先に発動するか確認し、「はい」なら戻す（候補が必要枚数以下なら
+          // そのまま、多ければ選ぶ）。「いいえ」なら何もしない（久我橙矢 BT26-087「トラッシュから
+          // 『巨神兵器』1枚を手札に戻せる」。以前は確認なしで「使わない」付きの選択画面が出ていた）
+          const _btLabel = _btFilter.name ? '「' + _btFilter.name + '」' : 'カード';
+          showConfirmDialog(ctx.card, 'トラッシュの' + _btLabel + (want > 1 ? want + '枚' : '') + 'を手札に戻しますか？', (yes) => {
+            if (!yes) { ctx.addLog('☓ 手札に戻さなかった'); callback(true); return; }
+            if (_btCands.length <= want) { _doBounceTrash(_btCands.slice(0, _btWant)); return; }
+            showTrashCardPicker(_btCands, _btWant, false, '🃏 手札に戻すカードを選んでください', _doBounceTrash, _btCands);
+          });
         } else {
           showTrashCardPicker(_btCands, _btWant, upTo || !!step.optional, '🃏 手札に戻すカードを選んでください', _doBounceTrash, _btCands);
         }
@@ -14577,12 +14612,17 @@ function executeRecipeStep(step, ctx, store, callback) {
     // 実際の enforcement は battle-combat.js の攻撃宣言可否チェック側（card.cantRest）
     case 'cant_rest': {
       const _crTgtStr = String(step.target || 'opponent_card');
-      const _crIsOpponent = !_crTgtStr.startsWith('own');
+      // self / self_card は対象選択なしでこのカード自身（cant_dp_minus と同じ扱い）
+      const _crIsSelf = _crTgtStr === 'self' || _crTgtStr === 'self_card';
+      const _crIsOpponent = !_crIsSelf && !_crTgtStr.startsWith('own');
       const _crPool = _crIsOpponent ? opponent : player;
       const _crFilter = step.filter || null;
       const _crCands = [];
-      (_crPool.battleArea || []).forEach(c => { if (c && (!_crFilter || cardMatchesFilter(c, _crFilter))) _crCands.push(c); });
-      (_crPool.tamerArea || []).forEach(c => { if (c && (!_crFilter || cardMatchesFilter(c, _crFilter))) _crCands.push(c); });
+      if (_crIsSelf) { if (ctx.card && (_crPool.battleArea.includes(ctx.card) || (_crPool.tamerArea || []).includes(ctx.card))) _crCands.push(ctx.card); }
+      else {
+        (_crPool.battleArea || []).forEach(c => { if (c && (!_crFilter || cardMatchesFilter(c, _crFilter))) _crCands.push(c); });
+        (_crPool.tamerArea || []).forEach(c => { if (c && (!_crFilter || cardMatchesFilter(c, _crFilter))) _crCands.push(c); });
+      }
       if (_crCands.length === 0) {
         ctx.addLog('⚠ 対象がいません');
         showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
@@ -14614,11 +14654,15 @@ function executeRecipeStep(step, ctx, store, callback) {
     // enforcement は dp_minus 実行時のターゲット絞り込み（'dp_minus' case内）で判定する
     case 'cant_dp_minus': {
       const _cdmTgtStr = String(step.target || 'own_card');
-      const _cdmIsOpponent = !_cdmTgtStr.startsWith('own');
+      // self / self_card（「このデジモンは」）: 対象選択を出さずこのデジモン自身に付与する
+      // （巨神兵器 BT26-085。以前は own で始まらないため相手側扱いになり、相手のデジモンを選ばされていた）
+      const _cdmIsSelf = _cdmTgtStr === 'self' || _cdmTgtStr === 'self_card';
+      const _cdmIsOpponent = !_cdmIsSelf && !_cdmTgtStr.startsWith('own');
       const _cdmPool = _cdmIsOpponent ? opponent : player;
       const _cdmFilter = step.filter || null;
       const _cdmCands = [];
-      (_cdmPool.battleArea || []).forEach(c => { if (c && (!_cdmFilter || cardMatchesFilter(c, _cdmFilter))) _cdmCands.push(c); });
+      if (_cdmIsSelf) { if (ctx.card && _cdmPool.battleArea.includes(ctx.card)) _cdmCands.push(ctx.card); }
+      else (_cdmPool.battleArea || []).forEach(c => { if (c && (!_cdmFilter || cardMatchesFilter(c, _cdmFilter))) _cdmCands.push(c); });
       if (_cdmCands.length === 0) {
         ctx.addLog('⚠ 対象がいません');
         showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
@@ -14632,7 +14676,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (ctx.bs) ctx.bs._lastPickedCard = c;
         ctx.addLog('🛡 「' + c.name + '」はDPをマイナスされない');
       };
-      const _cdmForced = (ctx._forceTargetIdx !== undefined) ? _cdmPool.battleArea[ctx._forceTargetIdx] : null;
+      const _cdmForced = _cdmIsSelf ? null : ((ctx._forceTargetIdx !== undefined) ? _cdmPool.battleArea[ctx._forceTargetIdx] : null);
       if (_cdmForced || effectiveSide === 'ai' || _cdmCands.length === 1) {
         _cdmApply(_cdmForced || _cdmCands[0]);
         ctx.renderAll();
@@ -14659,10 +14703,17 @@ function executeRecipeStep(step, ctx, store, callback) {
     // enforcement は dedigivolve（退化）の対象絞り込みで参照済み
     case 'cant_discard': {
       const _cxTgtStr = String(step.target || 'own_card');
-      const _cxIsOpponent = !_cxTgtStr.startsWith('own');
+      // same_target: 直前のアクション（cant_dp_minus 等）で選んだ対象をそのまま使う。
+      // self / self_card: このデジモン自身（巨神兵器 BT26-085。以前は same_target が相手側扱いになり不発だった）
+      const _cxPicked = ctx.bs && ctx.bs._lastPickedCard;
+      const _cxPickedOk = _cxTgtStr === 'same_target' && _cxPicked
+        && (player.battleArea.includes(_cxPicked) || opponent.battleArea.includes(_cxPicked));
+      const _cxIsSelf = _cxTgtStr === 'self' || _cxTgtStr === 'self_card' || (_cxTgtStr === 'same_target' && !_cxPickedOk);
+      const _cxIsOpponent = !_cxIsSelf && !_cxPickedOk && !_cxTgtStr.startsWith('own');
       const _cxPool = _cxIsOpponent ? opponent : player;
-      const _cxForced = (ctx._forceTargetIdx !== undefined) ? _cxPool.battleArea[ctx._forceTargetIdx] : null;
-      const _cxTarget = _cxForced || (ctx.card && _cxPool.battleArea.indexOf(ctx.card) >= 0 ? ctx.card : null);
+      const _cxForced = (!_cxIsSelf && !_cxPickedOk && ctx._forceTargetIdx !== undefined) ? _cxPool.battleArea[ctx._forceTargetIdx] : null;
+      const _cxTarget = _cxPickedOk ? _cxPicked
+        : (_cxForced || (ctx.card && _cxPool.battleArea.indexOf(ctx.card) >= 0 ? ctx.card : null));
       if (!_cxTarget) { ctx.addLog('⚠ 対象がいません'); callback(); break; }
       const _cxDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
       addBuffDirect(_cxTarget, step.action, 0, _cxDur, ctx);

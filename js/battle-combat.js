@@ -832,6 +832,78 @@ function _consumePendingEvoCostReduction(evolved, base) {
 const ASSEMBLY_DISTINCT_FIELD = { name: 'name', lv: 'level', description: 'effect', color: 'color' };
 const ASSEMBLY_DISTINCT_LABEL = { name: '名称', lv: 'Lv', description: '記述', color: '色' };
 
+// アセンブリで選んだカードを進化元に入れる順番の確認（巨神兵器 BT26-085 等）。
+// 左のカードほど上（stack[0] 側）に重ねる。「順番を変更」で各カードの ◀ ▶ から並べ替えでき、
+// 「OK」で確定 → callback(並べ替え後の配列)。「やめる」→ callback(null)（アセンブリを使わない）
+function _confirmAssemblyOrder(cards, callback) {
+  if (!Array.isArray(cards) || cards.length <= 1) { callback(cards); return; }
+  const order = cards.slice();
+  let reorder = false;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:65000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:12px;';
+  const btnCss = (bg, fg) => 'font-weight:bold;font-size:13px;padding:8px 18px;border-radius:999px;border:2px solid ' + bg + ';background:' + bg + ';color:' + fg + ';cursor:pointer;';
+  const render = () => {
+    ov.innerHTML = '';
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#00fbff;font-size:15px;font-weight:bold;text-shadow:0 0 8px #00fbff;text-align:center;';
+    title.innerText = '💠 この順番で進化元に入れますか？';
+    const sub = document.createElement('div');
+    sub.style.cssText = 'color:#aaa;font-size:11px;text-align:center;';
+    sub.innerText = '左のカードから順に上に重ねます（一番左が一番上）' + (reorder ? '／◀ ▶ で並べ替え' : '');
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:100%;';
+    order.forEach((c, i) => {
+      const cell = document.createElement('div');
+      cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;width:84px;';
+      const pos = document.createElement('div');
+      pos.style.cssText = 'color:#ffcc00;font-size:11px;font-weight:bold;';
+      pos.innerText = i === 0 ? '1（一番上）' : String(i + 1);
+      const img = document.createElement('img');
+      img.src = cardImg(c);
+      img.alt = c.name || '';
+      img.style.cssText = 'width:80px;border-radius:6px;border:2px solid ' + (reorder ? '#ffcc00' : '#00fbff') + ';';
+      const name = document.createElement('div');
+      name.style.cssText = 'color:#fff;font-size:10px;text-align:center;line-height:1.3;';
+      name.innerText = (c.name || '') + (c.level ? ' Lv' + c.level : '');
+      cell.append(pos, img, name);
+      if (reorder) {
+        const arrows = document.createElement('div');
+        arrows.style.cssText = 'display:flex;gap:6px;';
+        const mk = (label, delta) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.innerText = label;
+          const to = i + delta;
+          const ok = to >= 0 && to < order.length;
+          b.disabled = !ok;
+          b.style.cssText = 'width:34px;height:28px;border-radius:8px;border:1px solid #ffcc00;background:#222;color:#ffcc00;font-size:13px;cursor:pointer;' + (ok ? '' : 'opacity:.3;cursor:default;');
+          b.onclick = () => { if (!ok) return; const t = order[i]; order[i] = order[to]; order[to] = t; render(); };
+          return b;
+        };
+        arrows.append(mk('◀', -1), mk('▶', 1));
+        cell.appendChild(arrows);
+      }
+      row.appendChild(cell);
+    });
+    const btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;';
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button'; okBtn.innerText = 'OK'; okBtn.style.cssText = btnCss('#00fbff', '#000');
+    okBtn.onclick = () => { ov.remove(); callback(order.slice()); };
+    const reBtn = document.createElement('button');
+    reBtn.type = 'button'; reBtn.innerText = reorder ? '並べ替えを終える' : '順番を変更';
+    reBtn.style.cssText = btnCss('#ffcc00', '#000');
+    reBtn.onclick = () => { reorder = !reorder; render(); };
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button'; cancelBtn.innerText = 'やめる'; cancelBtn.style.cssText = btnCss('#555', '#fff');
+    cancelBtn.onclick = () => { ov.remove(); callback(null); };
+    btns.append(okBtn, reBtn, cancelBtn);
+    ov.append(title, sub, row, btns);
+  };
+  render();
+  document.body.appendChild(ov);
+}
+
 // アセンブリ等「トラッシュのカードを使うことで登場コストを軽減できる」パッシブキーワード:
 // 手札のカードをバトルエリアへドロップした瞬間（＝実際に登場させる直前）にこの関数を経由させる。
 // 発動できる条件（発動領域が手札、対象となるカードがトラッシュに規定枚数ある）を満たしていれば
@@ -915,8 +987,17 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
     }).then((yes) => {
       if (!yes) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
       const allPicked = [];
+      // 全グループ分の選択が完了 → 進化元に入れる順番を確認（並べ替え可）してから確定する。
+      // 「やめる」ならアセンブリを使わず通常の登場へ（他の選択キャンセル時と同じ）
       const finish = () => {
-        // 全グループ分の選択が完了 → まとめてトラッシュから外し、このカードの下に置く
+        _confirmAssemblyOrder(allPicked, (ordered) => {
+          if (!ordered) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
+          allPicked.splice(0, allPicked.length, ...ordered);
+          commitAssembly();
+        });
+      };
+      const commitAssembly = () => {
+        // まとめてトラッシュから外し、このカードの下に置く（allPicked[0] が一番上）
         allPicked.forEach((p) => {
           const ti = bs.player.trash.indexOf(p);
           if (ti !== -1) bs.player.trash.splice(ti, 1);

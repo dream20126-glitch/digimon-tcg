@@ -643,6 +643,8 @@ window.activateEffect = function(slotIdx, effectSource) {
       window._triggerMainEffect(card, async () => {
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('use_effect');
         renderAll();
+        // 起動効果の解決中に保留した「そのデジモンでアタックできる」を全効果処理後に行う
+        if (window._flushPendingEffectAttacks) window._flushPendingEffectAttacks();
       });
     } else {
       renderAll();
@@ -852,7 +854,7 @@ window.activateTamerEffect = function(tamerIdx) {
   // ここで独自に effect-confirm-overlay を出すと、engine の showConfirmDialog と
   // 同じ要素・同じ _effectConfirmCallback を奪い合い、確認が二重化して効果が止まる。
   // コスト持ち効果（cost: rest self 等）は engine が確認ダイアログを出す。
-  if (window._triggerMainEffect) window._triggerMainEffect(card, () => renderAll());
+  if (window._triggerMainEffect) window._triggerMainEffect(card, () => { renderAll(); if (window._flushPendingEffectAttacks) window._flushPendingEffectAttacks(); });
   else renderAll();
 };
 window.cancelTamerLongpress = function(tamerIdx) {

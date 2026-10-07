@@ -379,7 +379,7 @@ function executeQueueEntry(entry, context, callback) {
   // ターンに1回制限チェック
   if (block.limit) {
     if (!context.bs._usedLimits) context.bs._usedLimits = {};
-    const limitKey = (card.cardNo || card.name) + '_' + (block.trigger ? block.trigger.code : 'unknown');
+    const limitKey = _limitCardId(card) + '_' + (block.trigger ? block.trigger.code : 'unknown');
     if (context.bs._usedLimits[limitKey]) {
       ctx.addLog('⚠ 「' + card.name + '」はこのターン既に発動済み');
       callback();
@@ -1211,7 +1211,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
             if (!checkConditions(parseRecipeCondition(step.condition), reactorCard, _bs, _side)) return false;
           }
           if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
-            const sourceId = reactorCard.cardNo || reactorCard.name || 'unknown';
+            const sourceId = _limitCardId(reactorCard);
             const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
             if (_bs._usedLimits && _bs._usedLimits[limitKey]) return false;
           }
@@ -8117,7 +8117,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       // 手札に登場/進化の候補が無ければ不発確定なので、確認/発動ポップアップを出さない（ピョコモン BT26-001）
       if (_stepLacksHandCandidate(step, carrier, bs, reactSide)) return false;
       if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
-        const sourceId = carrier.cardNo || carrier.name || 'unknown';
+        const sourceId = _limitCardId(carrier);
         // 進化元効果は進化元カード基準（進化してキャリアが変わっても使用済みのまま。_evoSourceLimitKey 参照）
         const limitKey = (sourceCard && sourceCard !== carrier)
           ? _evoSourceLimitKey(sourceCard, step)
@@ -8305,7 +8305,7 @@ function _collectLeaveBattleReplacers(leavingCard, leavingSide, bs) {
       if (step.condition && !checkConditions(parseRecipeCondition(step.condition), carrier, bs, sd)) return false;
       const lmax = getLimitMaxUses(step);
       if (lmax > 0 && bs._usedLimits) {
-        const cid = (carrier && (carrier.cardNo || carrier.name)) || 'unknown';
+        const cid = _limitCardId(carrier);
         if ((bs._usedLimits[cid + '@' + cid + '_recipe_' + step.action] || 0) >= lmax) return false;
       }
       return true;
@@ -8617,8 +8617,8 @@ export function fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, done,
     if (!okCause) return false;
     const lmax = getLimitMaxUses(step);
     if (lmax > 0 && bs._usedLimits) {
-      const sid = (srcCard && (srcCard.cardNo || srcCard.name)) || 'unknown';
-      const cid = (carrier && (carrier.cardNo || carrier.name)) || 'unknown';
+      const sid = _limitCardId(srcCard);
+      const cid = _limitCardId(carrier);
       if ((bs._usedLimits[sid + '@' + cid + '_recipe_' + step.action] || 0) >= lmax) return false;
     }
     return !!pickPlaced(step, reactSide);
@@ -9193,7 +9193,7 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
       if (!checkConditions(conds, reactorCard, bs, summonedSide)) return false;
     }
     if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
-      const sourceId = reactorCard.cardNo || reactorCard.name || 'unknown';
+      const sourceId = _limitCardId(reactorCard);
       const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
       if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
     }
@@ -9499,8 +9499,8 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
       if (!_destroyCauseMatches(step, bs, reactSide, carrier, triggerKey)) return false;
       // ターンに1回制限チェック
       if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
-        const sourceId = (sourceCard && (sourceCard.cardNo || sourceCard.name)) || 'unknown';
-        const carrierId = (carrier && (carrier.cardNo || carrier.name)) || 'unknown';
+        const sourceId = _limitCardId(sourceCard);
+        const carrierId = _limitCardId(carrier);
         const limitKey = sourceId + '@' + carrierId + '_recipe_' + step.action;
         if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
       }
@@ -9644,6 +9644,14 @@ function _cardUid(card) {
   if (!card) return 'none';
   if (!card._uid) card._uid = 'u' + (++_cardUidCounter);
   return card._uid;
+}
+// 【ターンに1回】等の使用回数キーに使うカード識別子（進化元以外の効果用）。公式ルール上、回数制限は
+// カード1枚（場の1体）ごとに数えるため、カードNoだけだと同名カードが2体並んだとき（ブテンモン2体の
+// 「デッキが増えたとき」同時誘発等）、片方の使用でもう片方まで使用済み扱いになってしまう。
+// カードNoに固有IDを添えて1体ごとに数える
+function _limitCardId(card) {
+  if (!card) return 'unknown';
+  return (card.cardNo || card.name || 'unknown') + '#' + _cardUid(card);
 }
 function _evoSourceLimitKey(sourceCard, step) {
   return 'evo#' + _cardUid(sourceCard) + '_recipe_' + (step && step.action);
@@ -9844,8 +9852,8 @@ function recipeWillExecuteAnything(recipe, ctx) {
     const _lMax = getLimitMaxUses(step);
     if (_lMax > 0 && ctx.bs && ctx.bs._usedLimits) {
       const _lsc = ctx._sourceCard || ctx.card;
-      const _lSourceId = (_lsc && (_lsc.cardNo || _lsc.name)) || 'unknown';
-      const _lCarrierId = (ctx.card && (ctx.card.cardNo || ctx.card.name)) || 'unknown';
+      const _lSourceId = _limitCardId(_lsc);
+      const _lCarrierId = _limitCardId(ctx.card);
       if ((ctx.bs._usedLimits[_lSourceId + '@' + _lCarrierId + '_recipe_' + step.action] || 0) >= _lMax) continue;
     }
     // コスト feasibility チェック: 「自身をレスト」コストがあるが既にレスト中ならスキップ
@@ -10518,8 +10526,8 @@ function executeRecipeStep(step, ctx, store, callback) {
     const _limitMax = getLimitMaxUses(step);
     if (_limitMax > 0 && ctx.bs) {
       const _srcCard = ctx._sourceCard || ctx.card;
-      const _srcId = (_srcCard && (_srcCard.cardNo || _srcCard.name)) || 'unknown';
-      const _carId = (ctx.card && (ctx.card.cardNo || ctx.card.name)) || 'unknown';
+      const _srcId = _limitCardId(_srcCard);
+      const _carId = _limitCardId(ctx.card);
       // 反応系トリガーの進化元効果は進化元カード基準のキー（_runReactionEffect が ctx._evoLimitSource を設定）
       const _limitKey = ctx._evoLimitSource
         ? _evoSourceLimitKey(ctx._evoLimitSource, step)
@@ -14159,6 +14167,20 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (!Array.isArray(ctx.bs._pendingEffectAttacks)) ctx.bs._pendingEffectAttacks = [];
         ctx.bs._pendingEffectAttacks.push({ card: _atkCard, step, turn: ctx.bs.turn, ctx: { bs: ctx.bs, side: ctx.side, card: ctx.card, addLog: ctx.addLog, renderAll: ctx.renderAll } });
         ctx.addLog('⏳ 「' + _atkCard.name + '」のアタックは、今のアタックが終わった後に行えます');
+        callback();
+        break;
+      }
+      // キューの効果を解決中（同時誘発した他の効果や保留中の「〜したとき」反応がまだ残っている）なら、
+      // その場でアタックを始めると後続の効果処理とバトルが並行して進んでしまう（ブテンモン BT26-015 が
+      // 2体並んで「デッキが増えたとき」が同時誘発 → 1体目がすぐアタックし、2体目・ピョコモンの進化元効果が
+      // バトル中に割り込んでいた）。全ての効果処理が終わってから（battle-combat.js の
+      // checkPlayerPendingTurnEnd 等）順に行うよう保留する。【自分のターン終了時】（≪急襲≫）のアタックは
+      // 効果の完了をバトル解決まで待つ専用処理があるため対象外
+      const _atkTrig = ctx.block && ctx.block.trigger && ctx.block.trigger.code;
+      if (_queueResolveDepth > 0 && !/turn_end$/.test(String(_atkTrig || ''))) {
+        if (!Array.isArray(ctx.bs._pendingEffectAttacks)) ctx.bs._pendingEffectAttacks = [];
+        ctx.bs._pendingEffectAttacks.push({ card: _atkCard, step, turn: ctx.bs.turn, ctx: { bs: ctx.bs, side: ctx.side, card: ctx.card, addLog: ctx.addLog, renderAll: ctx.renderAll } });
+        ctx.addLog('⏳ 「' + _atkCard.name + '」のアタックは、全ての効果の処理が終わった後に行えます');
         callback();
         break;
       }

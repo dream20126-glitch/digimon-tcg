@@ -256,7 +256,12 @@ export function sendCommand(cmd) {
   _onlineCmdSeq++;
   // 送信者ごとに独立したパス・連番空間に書き込むため、相手と同時に送信しても衝突しない
   const path = `rooms/${_onlineRoomId}/commands/${_onlineMyKey}/${_onlineCmdSeq}`;
-  set(ref(rtdb, path), { ...cmd, from: _onlineMyKey, seq: _onlineCmdSeq, time: Date.now() });
+  // Firebase は undefined を含む値を書き込めず例外になる（呼び出し側の try/catch で握りつぶされ、
+  // コマンドが相手に届かないまま気づけない）。送る前に JSON 化して undefined のフィールドを落とす
+  let payload;
+  try { payload = JSON.parse(JSON.stringify({ ...cmd, from: _onlineMyKey, seq: _onlineCmdSeq, time: Date.now() })); }
+  catch (_) { payload = { ...cmd, from: _onlineMyKey, seq: _onlineCmdSeq, time: Date.now() }; }
+  set(ref(rtdb, path), payload).catch((e) => console.error('[sendCommand] 送信失敗', cmd && cmd.type, e));
 }
 
 export function sendStateSync() {

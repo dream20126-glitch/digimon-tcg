@@ -1362,11 +1362,16 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       //   二重加算を防ぐ）。
       if (recoveredCards.length > 0
           && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+        // 自分のセキュリティが増えた場合は、増えた分の追加（fx_recover）だけに頼らず、セキュリティ全体の
+        // 実カードを security_init で再同期する（P1がリカバリーしてもP2の画面ではセキュリティが増えないことが
+        // あった）。fx_recover は演出のみにして二重に足さない。相手側のセキュリティ（ctx.side==='ai'）は
+        // この端末の持ち物ではないので従来通り fx_recover で追加する
+        const _recOwnSync = ctx.side === 'player' && !ctx._securityOpenActive;
         try {
           window._onlineSendCommand({
             type: 'fx_recover',
             recoverSide: ctx.side,
-            animOnly: !!ctx._securityOpenActive,
+            animOnly: !!ctx._securityOpenActive || _recOwnSync,
             cards: recoveredCards.map(c => ({
               name: c.name, cardNo: c.cardNo, type: c.type, color: c.color,
               level: c.level, dp: c.dp, baseDp: c.baseDp,
@@ -1377,7 +1382,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
               feature: c.feature,
             })),
           });
-        } catch (_) {}
+        } catch (e) { console.error('[recover] fx_recover 送信失敗', e); }
+        if (_recOwnSync) {
+          try { window._onlineSendCommand({ type: 'security_init', cards: player.security.map(_serializeSecurityCard) }); }
+          catch (e) { console.error('[recover] security_init 送信失敗', e); }
+        }
       }
       // 辞書の演出パラメータ1=デッキ, パラメータ2=セキュリティ で自動決定
       playEffect(action.code, { card: recoverCard, ctx }, () => { callback(); }, { visualType: action.visualType, frameColor: action.frameColor });

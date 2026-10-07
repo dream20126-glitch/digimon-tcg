@@ -932,7 +932,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const dpsRow = dpsIsOpp ? opponentRowSide : (ctx.side === 'player' ? 'pl' : 'ai');
       const dpsValid = [];
       for (let i = 0; i < dpsPlayer.battleArea.length; i++) if (dpsPlayer.battleArea[i]) dpsValid.push(i);
-      if (dpsValid.length === 0) { showEffectFailed('効果を発動できませんでした', callback); break; }
+      if (dpsValid.length === 0) { showEffectFailed(EFFECT_FAILED_NO_TARGET, callback); break; }
       let dpsNeed = (dpsTgt.code === 'target_all_opponent' || dpsTgt.code === 'target_all_own') ? dpsValid.length : (dpsTgt.count || 1);
       dpsNeed = Math.min(dpsNeed, dpsValid.length);
       if (effectiveSide === 'ai') {
@@ -1041,7 +1041,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           if (!isOwn && hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return false;
           return true;
         } });
-        if (_dbCands.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', () => callback(false)); break; }
+        if (_dbCands.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(false)); break; }
         _pickSideTargets(_dbCands, defaultTarget.count || 1, ctx, effectiveSide, false, '🎯 消滅させる対象を選んでください', (picked) => {
           if (!picked || picked.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; callback(false); return; }
           if (ctx.bs) ctx.bs._lastActionCount = picked.length;
@@ -1084,7 +1084,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const _ext = applyExtremeFilterIdxs(destroyTargets, tgtPlayer.battleArea, defaultTarget.filter);
         destroyTargets.length = 0; destroyTargets.push(..._ext);
       }
-      if(destroyTargets.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', () => callback(false)); break; }
+      if(destroyTargets.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(false)); break; }
       // 枠色を辞書から取得
       const borderColor = uiColor;
       if(effectiveSide === 'ai') {
@@ -1131,7 +1131,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (c.buffs && c.buffs.some(b => b.type === 'cant_return_hand')) continue;
         bounceTargets.push(i);
       }
-      if(bounceTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
+      if(bounceTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, callback); break; }
       const bounceColor = uiColor;
       // 複数対象（opponent:N / opponent:up_to_N）
       const bounceNeed = (defaultTarget && defaultTarget.count) || 1;
@@ -1460,7 +1460,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       if (evoTargets.length === 0) {
         ctx.addLog('⚠ 進化元を破棄できる対象がいません');
         // コストの場合は支払えない＝本体の効果も実行しない（callback(false)）
-        showEffectFailed('効果を発動できませんでした', () => callback(action._isCost ? false : undefined));
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(action._isCost ? false : undefined));
         break;
       }
       // 破棄確定後の共通後処理（演出 + ログ + オンライン同期）
@@ -1614,7 +1614,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       if (cabTargets.length === 0) {
         ctx.addLog('⚠ 対象がいません');
-        showEffectFailed('効果を発動できませんでした', callback);
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
         break;
       }
       const applyCab = (tgt, onDone) => {
@@ -1842,7 +1842,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       }
       if (smTargets.length === 0) {
         ctx.addLog('⚠ 対象がいません');
-        showEffectFailed('効果を発動できませんでした', callback);
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
         break;
       }
       if (effectiveSide === 'ai') {
@@ -1901,7 +1901,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           if (!isOwn && hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return false;
           return true;
         } });
-        if (_rbCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', () => callback(false)); break; }
+        if (_rbCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(false)); break; }
         const _rbN = (defaultTarget && defaultTarget.count) || action.value || 1;
         _pickSideTargets(_rbCands, _rbN, ctx, effectiveSide, false, '🎯 レストさせる対象を選んでください', (picked) => {
           if (!picked || picked.length === 0) { ctx.renderAll(); callback(false); return; }
@@ -1942,7 +1942,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           if (hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return false;
           return true;
         });
-        if (_rownCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
+        if (_rownCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, callback); break; }
         const _rownN = Math.min(restTarget.count || 1, _rownCands.length);
         const _rownApply = (list) => {
           let ri = 0;
@@ -1974,7 +1974,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (hasActiveImmuneEffects(_rc, ctx.side, _effectSourceTypeOf(ctx))) continue;
         restTargets.push(i);
       }
-      if(restTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
+      if(restTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, callback); break; }
       const restColor = uiColor;
       // 相手デジモンがレスト → when_opp_rest 発火（restedSide = 相手側。効果によるレストも含む）
       const restedSide = ctx.side === 'player' ? 'ai' : 'player';
@@ -2030,7 +2030,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
             _rmCands.push(c);
           });
         }
-        if (_rmCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
+        if (_rmCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, callback); break; }
         const _rmN = Math.min(_restCount, _rmCands.length);
         const _rmApply = (list) => {
           list.forEach(c => {
@@ -2237,7 +2237,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           }
         }
         ctx.addLog('💨 条件を満たすカードがありません');
-        showEffectFailed('効果を発動できませんでした', callback);
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
         return;
       }
       const ahTarget = defaultTarget || { code: 'target_self' };
@@ -6956,8 +6956,10 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
 
 // ===== 効果不発ポップアップ =====
 
+// 対象（選べるデジモン/カード）がいないために効果を発揮できなかったときのメッセージ
+const EFFECT_FAILED_NO_TARGET = '対象がいませんでした';
 function showEffectFailed(message, callback) {
-  const text = message || '💨 対象がいないため、効果発動できませんでした';
+  const text = message || EFFECT_FAILED_NO_TARGET;
   // オンライン: 相手にも不発メッセージを送信
   if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand && !window._suppressFxSend) {
     window._onlineSendCommand({ type: 'fx_effectFailed', text });
@@ -11349,7 +11351,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.addLog && ctx.addLog('💨 ' + msg);
         if (_evoIsCost) { ctx.addLog && ctx.addLog('💨 コストを支払えません'); callback(false); return; }
         if (_evoOptional) { callback(); return; }
-        showEffectFailed('効果を発動できませんでした', callback);
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
       };
       // --- 進化元の候補（battleArea の添字） ---
       let _evoBaseIdxs = [];
@@ -11603,7 +11605,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       if (valid.length === 0) {
         ctx.addLog && ctx.addLog('⚠ 進化元を持つ対象がいません');
-        showEffectFailed('効果を発動できませんでした', callback);
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
         return;
       }
       const applyDedigi = (idxs) => {
@@ -12866,7 +12868,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _self = ctx.card;
         if (!_self || !Array.isArray(_self.stack) || _self.stack.length === 0) {
           ctx.addLog('⚠ 進化元がありません');
-          showEffectFailed('効果を発動できませんでした', () => callback(false));
+          showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(false));
           return;
         }
         const _bConds = step.condition ? parseRecipeCondition(step.condition) : [];
@@ -12876,7 +12878,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         );
         if (_bCands.length === 0) {
           ctx.addLog('⚠ 条件を満たす進化元がありません');
-          showEffectFailed('効果を発動できませんでした', () => callback(false));
+          showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(false));
           return;
         }
         const _bWant = step.value || step.count || 1;
@@ -12927,7 +12929,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _btCands = (zoneOwner.trash || []).filter(c => c && cardMatchesFilter(c, _btFilter, ctx.bs, ctx.side, ctx.card));
         if (_btCands.length === 0) {
           ctx.addLog('⚠ トラッシュに条件を満たすカードがありません');
-          showEffectFailed('効果を発動できませんでした', () => callback(false));
+          showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(false));
           return;
         }
         const _doBounceTrash = (chosen) => {
@@ -13046,7 +13048,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       (_edOwner.battleArea || []).forEach((c, i) => { if (c && Array.isArray(c.stack) && c.stack.length > 0) _edCands.push(i); });
       if (_edCands.length === 0) {
         ctx.addLog('⚠ 進化元を持つデジモンがいません');
-        showEffectFailed('効果を発動できませんでした', callback);
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
         break;
       }
       const _edRowId = _edIsOpp ? (ctx.side === 'player' ? 'ai' : 'pl') : (ctx.side === 'player' ? 'pl' : 'ai');
@@ -13232,7 +13234,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _putFail = (msg) => {
         ctx.addLog(msg);
         if (_putIsCost) { ctx.addLog('💨 コストを支払えません'); callback(false); return; }
-        showEffectFailed('効果を発動できませんでした', callback);
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
       };
 
       const tamerIdxs = [];
@@ -13412,9 +13414,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _pudExtended = !_pudSelf && (_pudFromZones.includes('battle_area') || _pudFromZones.includes('linked')
         || !!_pudContainerFilter || _pudContainerConds.length > 0 || _pudWant > 1);
       if (_pudFromZones.length > 0 && _pudExtended) {
-        const _fail = () => {
+        const _fail = (noTarget) => {
           if (_pudIsCost) { ctx.addLog('💨 コストを支払えません'); callback(false); return; }
-          showEffectFailed('効果を発動できませんでした', callback);
+          showEffectFailed(noTarget ? EFFECT_FAILED_NO_TARGET : '効果を発動できませんでした', callback);
         };
         const _srcFilter = step.from_filter || {};
         const _containers = player.battleArea.map((c, i) => ({ c, i })).filter(({ c }) => c
@@ -13452,7 +13454,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           return out;
         };
         const _usable = _containers.filter(({ c }) => _sourcesFor(c).length >= (_pudIsCost ? _pudWant : 1));
-        if (_usable.length === 0) { _fail(); break; }
+        if (_usable.length === 0) { _fail(true); break; }
         const _placeMany = (digi, picked) => {
           if (!picked || picked.length === 0) {
             if (_pudOptionalExt) { ctx.addLog('☓ 「使わない」を選択'); callback(_pudIsCost ? false : undefined); return; }
@@ -13501,7 +13503,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _pudCands = [..._pudHandCands, ..._pudTrashCands];
         if (_pudCands.length === 0) {
           ctx.addLog('💨 条件を満たすカードがありません');
-          showEffectFailed('効果を発動できませんでした', callback);
+          showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
           return;
         }
         const _pudOnPicked = (chosen) => {
@@ -13656,7 +13658,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _pusOptional = !!step.optional;
       const _pusFail = (msg) => {
         ctx.addLog && ctx.addLog('💨 ' + msg);
-        showEffectFailed('効果を発動できませんでした', () => callback(_pusIsCost ? false : undefined));
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(_pusIsCost ? false : undefined));
       };
       const host = ctx.card;
       const _pusInBattle = !!host && player.battleArea.includes(host);
@@ -13829,7 +13831,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (c.buffs && c.buffs.some(b => b.type === 'cant_return_deck')) continue;
           _rdCands.push(i);
         }
-        if (_rdCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed('効果を発動できませんでした', callback); break; }
+        if (_rdCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, callback); break; }
         const _rdTop = step.position === 'top' || step.deck_top;
         // executeRecipeStep では opponentRowSide / uiColor が未定義のため、ここで構築する
         const _rdRowId = ctx.side === 'player' ? 'ai' : 'pl';
@@ -13900,7 +13902,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           ctx.addLog(msg);
           if (_rdoIsCost) { ctx.addLog('💨 コストを支払えません'); callback(false); return; }
           if (step.optional || _rdoUpTo) { callback(); return; }
-          showEffectFailed('効果を発動できませんでした', callback);
+          showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
         };
         if (_rdoCands.length === 0) { _rdoFail('⚠ 条件を満たす' + (_rdoTamer ? 'テイマー' : 'デジモン') + 'がいません'); break; }
         const _rdoN = Math.min(_rdoWant, _rdoCands.length);
@@ -14235,7 +14237,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       if (_raCands.length === 0) {
         ctx.addLog('⚠ 対象にできるデジモンがいません');
-        showEffectFailed('効果を発動できませんでした', callback);
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
         return;
       }
       const _raPoolSide = _raIsOpponent ? (ctx.side === 'player' ? 'ai' : 'player') : ctx.side;
@@ -14432,7 +14434,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (_linkCands.length === 0) {
         ctx.addLog('💨 条件を満たすカードがありません');
         if (_linkOptional) { ctx.addLog('☓ 「使わない」を選択'); callback(); }
-        else showEffectFailed('効果を発動できませんでした', callback);
+        else showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
         return;
       }
 
@@ -14583,7 +14585,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       (_crPool.tamerArea || []).forEach(c => { if (c && (!_crFilter || cardMatchesFilter(c, _crFilter))) _crCands.push(c); });
       if (_crCands.length === 0) {
         ctx.addLog('⚠ 対象がいません');
-        showEffectFailed('効果を発動できませんでした', callback);
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
         return;
       }
       const _crDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
@@ -14619,7 +14621,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       (_cdmPool.battleArea || []).forEach(c => { if (c && (!_cdmFilter || cardMatchesFilter(c, _cdmFilter))) _cdmCands.push(c); });
       if (_cdmCands.length === 0) {
         ctx.addLog('⚠ 対象がいません');
-        showEffectFailed('効果を発動できませんでした', callback);
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
         return;
       }
       const _cdmDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
@@ -14685,7 +14687,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       (_ngPool.battleArea || []).forEach((c, i) => { if (c && (!_ngFilter || cardMatchesFilter(c, _ngFilter))) _ngCands.push(i); });
       if (_ngCands.length === 0) {
         ctx.addLog('⚠ 対象がいません');
-        showEffectFailed('効果を発動できませんでした', callback);
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
         return;
       }
       const _ngDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';

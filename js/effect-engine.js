@@ -11670,8 +11670,10 @@ function executeRecipeStep(step, ctx, store, callback) {
           // 公式ルール: 退化はLv.3未満にはならない。破棄候補（キャリア→stack先頭→…の順）
           // を順に見てLv.3以下のカードに達したらそこで打ち切る（そのカードは破棄せず
           // 結果として残る。退化4等の指定枚数より少なく破棄で終わることがある）。
+          // 一番下のカードは必ずバトルエリアに残す（一番下がLv.4やLv.5でも、それより下は無いので
+          // 最後の1枚は破棄しない）。以前は全部破棄でき、Lv.5が一番下のデジモンが丸ごと消えていた
           const _dediSeq = [tgt].concat(tgt.stack || []);
-          const _dediWantN = Math.min(dedigN, _dediSeq.length);
+          const _dediWantN = Math.min(dedigN, _dediSeq.length - 1);
           const removed = [];
           for (let k = 0; k < _dediWantN; k++) {
             const candidate = _dediSeq[k];

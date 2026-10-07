@@ -1160,7 +1160,8 @@ function onRemoteCommand(cmd) {
       // senderOwn=true : 送信者が自分のカードに付与 → 受信側では相手(ai)のカード
       // senderOwn なし : 送信者が相手のカードに付与 → 受信側では自分(player)のカード
       const _buffZone = cmd.senderOwn ? 'ai' : 'player';
-      const myCard = bs[_buffZone].battleArea[cmd.targetIdx];
+      // zone:'tamer' ならテイマーエリアのカード（「アクティブにならない」等、テイマーにも付く効果）
+      const myCard = (cmd.zone === 'tamer' ? (bs[_buffZone].tamerArea || []) : bs[_buffZone].battleArea)[cmd.targetIdx];
       if (myCard) {
         if (!myCard.buffs) myCard.buffs = [];
         // 送信側 _appliedSide を受信側目線に反転
@@ -1190,6 +1191,7 @@ function onRemoteCommand(cmd) {
         }
         renderAll();
       }
+      if (cmd.buffType === 'prevent_unsuspend') { addLog('🔒 相手の効果で「' + (cmd.targetName || '???') + '」はアクティブにならない'); break; }
       const sign = cmd.buffType === 'dp_minus' ? '-' : '+';
       addLog('⚔ 「' + (cmd.targetName || '???') + '」に' + (cmd.buffType || 'バフ') + sign + (cmd.value || 0) + ' 付与');
       break;

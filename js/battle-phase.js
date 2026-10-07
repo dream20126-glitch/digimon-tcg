@@ -522,14 +522,16 @@ function execUnsuspend() {
         c.summonedThisTurn = false; c._usedEffects = [];
       }
     });
+    // テイマーも「アクティブにならない」（prevent_unsuspend）を持つ間はレストのまま（ロゼモン：バーストモード BT26-050
+    // 「相手のデジモン/テイマー2体はアクティブにならない」）
     bs.player.tamerArea.forEach(c => {
-      if (c) { c.suspended = false; c._usedEffects = []; }
+      if (c) { if (!c.cantBeActive && !_hasPreventUnsuspend(c) && !_skipAllUnsuspend) c.suspended = false; c._usedEffects = []; }
     });
     // prevent_unsuspend バフを本フェーズ（＝このプレイヤーのアクティブフェイズ）で失効。
     // 「次のアクティブフェイズではアクティブにならない」効果は、その対象カードの
     // 持ち主のアクティブフェイズで1回スキップした後に消費される。execUnsuspend は
     // 自分(player)のアクティブフェイズなので、player 側のカードから除去する。
-    bs.player.battleArea.forEach(c => {
+    [...bs.player.battleArea, ...(bs.player.tamerArea || [])].forEach(c => {
       if (c && Array.isArray(c.buffs)) {
         c.buffs = c.buffs.filter(b => !(b && b.type === 'prevent_unsuspend'));
       }

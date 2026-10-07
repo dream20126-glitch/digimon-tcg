@@ -3675,6 +3675,22 @@ function _resolveCombatAction(step, ctx, callback) {
   }
 }
 
+// 相手のデジモン/テイマーに付けた「アクティブにならない」（prevent_unsuspend）を相手の端末にも付ける。
+// state_sync は相手のカードを上書きしないため、個別に fx_remoteBuff で送る（アクティブにするのは相手の端末）
+function _sendRemotePreventUnsuspend(ctx, oppPlayer, card, dur) {
+  if (!(ctx && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand)) return;
+  const bi = (oppPlayer.battleArea || []).indexOf(card);
+  const ti = bi === -1 ? (oppPlayer.tamerArea || []).indexOf(card) : -1;
+  if (bi === -1 && ti === -1) return;
+  try {
+    window._onlineSendCommand({
+      type: 'fx_remoteBuff', targetIdx: bi !== -1 ? bi : ti, zone: bi !== -1 ? 'battle' : 'tamer',
+      targetName: card.name, buffType: 'prevent_unsuspend', value: 0, duration: dur,
+      appliedFromSender: 'player', appliedDuringOwnTurn: !!(ctx.bs && ctx.bs.isPlayerTurn),
+    });
+  } catch (_) {}
+}
+
 // 「重ねられているカードは破棄されない」（cant_discard バフ）を持つか（巨神兵器 BT26-085 等）
 function _hasCantDiscard(card) {
   return !!(card && Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_discard'));
@@ -7292,6 +7308,33 @@ function _fireLinkTriggersImpl(linkerCard, linkerSide, baseCard, baseSide, ctx, 
   processQueue(ctx, callback);
 }
 
+// カード本体のレシピで triggerCode に当たるステップを、レシピのキーごと（＝別々の効果ごと）のグループに分ける。
+// キーワード由来等、どのキーにも属さないステップは最後に1グループにまとめる。分けられない／1グループしか
+// 無いときは null（呼び出し側は従来通り1つの効果として扱う）
+function _splitTriggerStepGroups(card, triggerCode) {
+  const r = _parseCardRecipe(card);
+  if (!r || typeof r !== 'object') return null;
+  const full = _lookupTriggerSteps(r, triggerCode, card);
+  if (!Array.isArray(full) || full.length === 0) return null;
+  const fullSet = new Set(full);
+  const aliasKey = TRIGGER_KEY_ALIASES[triggerCode];
+  const codes = aliasKey ? [triggerCode, aliasKey] : [triggerCode];
+  const used = new Set();
+  const groups = [];
+  for (const key in r) {
+    if (!key.split(',').some((k) => codes.includes(k.trim()))) continue;
+    const arr = Array.isArray(r[key]) ? r[key] : null;
+    if (!arr) continue;
+    const g = arr.filter((st) => fullSet.has(st) && !used.has(st));
+    g.forEach((st) => used.add(st));
+    if (g.length > 0) groups.push(g);
+  }
+  if (groups.length < 2) return null;
+  const rest = full.filter((st) => !used.has(st));
+  if (rest.length > 0) groups.push(rest);
+  return groups;
+}
+
 function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
   const turnPlayer = ctx.bs.isPlayerTurn ? 'player' : 'ai';
 
@@ -7347,7 +7390,25 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
     // 自分の登場で誤発火する等）。除外があったときだけ _grantedSteps で実行ステップを絞る
     const _selfOnlyCodes = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end'];
     const _narrowSelf = (steps) => (_selfOnlyCodes.includes(triggerCode) ? _selfEventSteps(steps, triggerCode) : steps);
-    if (sourceCard && !_negatedThisTrigger) {
+    // 同じトリガーの効果がレシピの複数キーに分かれている（=カードに別々の効果として印刷されている。
+    // 例: ロゼモン：バーストモード BT26-050 の「【進化時】A」と「【進化時】【アタック時】B」）なら、
+    // それぞれを独立した効果としてキューに積む（以前は1つの効果にまとめて実行していたため、
+    // 1つ目が任意効果だと確認が1回しか出ず、2つ目の効果が発動しなかった）
+    const _splitGroups = (sourceCard && !_negatedThisTrigger) ? _splitTriggerStepGroups(sourceCard, triggerCode) : null;
+    if (_splitGroups && _splitGroups.length > 1) {
+      _splitGroups.forEach((g) => {
+        const steps = _narrowSelf(g);
+        if (!Array.isArray(steps) || steps.length === 0) return;
+        const blk = {
+          raw: ((triggerCode === 'security' ? (sourceCard.securityEffect || sourceCard.effect) : sourceCard.effect) || ''),
+          trigger: { code: triggerCode },
+          actions: [], conditions: [], _grantedSteps: steps,
+        };
+        if (battleWinEventSourceCard) blk._eventSourceCard = battleWinEventSourceCard;
+        addToQueue(sourceCard, blk, sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide);
+      });
+    }
+    if (sourceCard && !_negatedThisTrigger && !(_splitGroups && _splitGroups.length > 1)) {
       const _mainAll = getRecipeForTrigger(sourceCard, triggerCode);
       const mainRecipe = _narrowSelf(_mainAll);
       if (mainRecipe && (mainRecipe === _mainAll || mainRecipe.length > 0)) {
@@ -12403,6 +12464,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           list.forEach(c => {
             addBuffDirect(c, 'prevent_unsuspend', 0, _naDur, ctx);
             ctx.addLog('🔒 「' + c.name + '」は次のアクティブフェイズでアクティブにならない');
+            if (_naIsOpp) _sendRemotePreventUnsuspend(ctx, opponent, c, _naDur);
           });
           ctx.renderAll();
           callback();
@@ -12413,7 +12475,20 @@ function executeRecipeStep(step, ctx, store, callback) {
         });
         break;
       }
-      if (all) {
+      if (all && step.filter) {
+        // 「レスト状態の相手のデジモン/テイマー全てはアクティブにならない」のように条件付きの「全て」は、
+        // 今その条件に当てはまるカードだけに付与する（ロゼモン：バーストモード BT26-050 オプション）
+        const _naPoolAll = _naIsOpp ? opponent : player;
+        const _naDurAll = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+        const _naList = [...(_naPoolAll.battleArea || []), ...(_naPoolAll.tamerArea || [])]
+          .filter(c => c && cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card));
+        if (_naList.length === 0) ctx.addLog('⚠ 対象がいません');
+        _naList.forEach(c => {
+          addBuffDirect(c, 'prevent_unsuspend', 0, _naDurAll, ctx);
+          ctx.addLog('🔒 「' + c.name + '」はアクティブにならない');
+          if (_naIsOpp) _sendRemotePreventUnsuspend(ctx, opponent, c, _naDurAll);
+        });
+      } else if (all) {
         // 「次のアクティブフェイズでアクティブにならない（全て）」は継続効果。
         // 効果適用後に登場/レストしたデジモンも対象にするため、対象 side の
         // 次のアクティブフェイズを丸ごとスキップするフラグを立てる
@@ -12727,16 +12802,21 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       // opponent:all / own:all → 条件フィルタを適用して全体に直接付与（対象選択を出さない）
       const _cantTgt = step.target || '';
-      if (_cantTgt === 'opponent:all' || _cantTgt === 'own:all') {
-        const _isOwnAll = _cantTgt === 'own:all';
+      // opponent_card:all / own_card:all は「デジモン/テイマー全て」（テイマーエリアも含める）。step.filter（レスト状態等）で絞る
+      // （ロゼモン：バーストモード BT26-050 オプション「レスト状態の相手のデジモン/テイマー全ては進化できず」。
+      // 以前は opponent:all しか全体扱いしておらず、対象選択になっていた）
+      if (_cantTgt === 'opponent:all' || _cantTgt === 'own:all' || _cantTgt === 'opponent_card:all' || _cantTgt === 'own_card:all') {
+        const _isOwnAll = _cantTgt.startsWith('own');
         const _tgtPlayer = _isOwnAll ? player : opponent;
         const _tgtSideTag = _isOwnAll ? (ctx.side === 'player' ? 'player' : 'ai')
                                       : (ctx.side === 'player' ? 'ai' : 'player');
         const _conds = step.condition ? parseRecipeCondition(step.condition) : [];
+        const _cardPool = _cantTgt.includes('_card:') ? [...(_tgtPlayer.battleArea || []), ...(_tgtPlayer.tamerArea || [])] : (_tgtPlayer.battleArea || []);
         let _applied = 0;
-        (_tgtPlayer.battleArea || []).forEach(c => {
+        _cardPool.forEach(c => {
           if (!c) return;
           if (_conds.length > 0 && !checkConditions(_conds, c, ctx.bs, _tgtSideTag)) return;
+          if (step.filter && !cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)) return;
           _applyCantState(c, !_isOwnAll);
           _applied++;
         });

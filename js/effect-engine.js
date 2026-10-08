@@ -1526,7 +1526,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           }
           if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
             const sourceId = _limitCardId(reactorCard);
-            const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
+            const limitKey = sourceId + '@' + sourceId + '_recipe_' + _limitStepPart(step);
             if (_bs._usedLimits && _bs._usedLimits[limitKey]) return false;
           }
           return true;
@@ -8493,7 +8493,13 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
       ? '⚡ 「' + sourceCard.name + '」（「' + (card.name || '?') + '」の進化元）の効果発動'
       : '⚡ 「' + card.name + '」の効果発動');
   };
+  // 原因（「自分の効果で」等の判定に使う bs._lastDestroyCause）は、確認ダイアログの返事を待っている間に
+  // 別の処理（アタック中のバトルの消滅等）で上書きされることがあるので、実行直前に誘発時の値へ戻す
+  // （ブテンモン BT26-015 の進化元「デッキが自分の効果で増えたとき、このデジモンをアクティブにできる」が
+  // 「はい」を押しても何も起きなかった）
+  const _causeAtTrigger = bs ? bs._lastDestroyCause : undefined;
   const runNow = () => {
+    if (bs && _causeAtTrigger !== undefined) bs._lastDestroyCause = _causeAtTrigger;
     // 「そのデジモン」を same_target で参照する反応（トレーマニュアル BT26-099 の【ディレイ】後の
     // 進化等）のため、指定があれば直前選択カードとしてセットしてから実行する
     if (reaction.presetPicked && ctx.bs) ctx.bs._lastPickedCard = reaction.presetPicked;
@@ -8648,7 +8654,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
         // 進化元効果は進化元カード基準（進化してキャリアが変わっても使用済みのまま。_evoSourceLimitKey 参照）
         const limitKey = (sourceCard && sourceCard !== carrier)
           ? _evoSourceLimitKey(sourceCard, step)
-          : sourceId + '@' + sourceId + '_recipe_' + step.action;
+          : sourceId + '@' + sourceId + '_recipe_' + _limitStepPart(step);
         if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
       }
       // コスト feasibility チェック: 「自身をレスト」コストがあるが既にレスト中ならスキップ
@@ -8711,14 +8717,36 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
   // （先に解決した反応の中で別の消滅チェーン等が走ると、その終了時にクリアされてしまい、
   // 後続の反応の trigger_conditions（cond_effect）や cause 判定が原因を見失うため）
   const causeAtScan = bs._lastDestroyCause;
-  let idx = 0;
-  function nextReaction() {
-    if (idx >= reactions.length) { finish(); return; }
-    const reaction = reactions[idx++];
+  // 同時に誘発した反応が2つ以上あれば、どれから発動するかをプレイヤーが選ぶ（公式ルール: 同時誘発は
+  // そのプレイヤーが順番を決める）。クロノモン：デストロイモード BT26-060 の「デッキが増えたとき」と、
+  // 進化元のブテンモン BT26-015 の「デッキが増えたとき」等。CPU・相手の端末側は従来通り並び順で処理する
+  const remaining = reactions.slice();
+  const canChoose = reactSide === 'player' && typeof showQueueOrderSelect === 'function';
+  const runOneReaction = (reaction) => {
     // ゾーン効果は解決時にそのゾーンを離れていたら発揮しない
     if ((reaction.zone === 'trash' || reaction.zone === 'security') && !_cardStillInZone(bs, reactSide, reaction.card, reaction.zone)) { nextReaction(); return; }
     if (causeAtScan !== undefined) bs._lastDestroyCause = causeAtScan;
     _runReactionEffect(reaction, reactSide, bs, ctxBase, nextReaction);
+  };
+  function nextReaction() {
+    if (remaining.length === 0) { finish(); return; }
+    if (canChoose && remaining.length >= 2) {
+      const entries = remaining.map((r) => ({
+        card: r.card,
+        block: {
+          trigger: { code: recipeKey },
+          raw: r.sourceCard === r.card ? (r.card.effect || '') : '',
+          _recipeCard: r.sourceCard !== r.card ? r.sourceCard : undefined,
+          _grantedSteps: r.recipe,
+        },
+      }));
+      showQueueOrderSelect(entries, (chosenIdx) => {
+        const chosen = remaining.splice(chosenIdx, 1)[0];
+        runOneReaction(chosen);
+      });
+      return;
+    }
+    runOneReaction(remaining.shift());
   }
   nextReaction();
 }
@@ -8857,7 +8885,7 @@ function _collectLeaveBattleReplacers(leavingCard, leavingSide, bs) {
       const lmax = getLimitMaxUses(step);
       if (lmax > 0 && bs._usedLimits) {
         const cid = _limitCardId(carrier);
-        if ((bs._usedLimits[cid + '@' + cid + '_recipe_' + step.action] || 0) >= lmax) return false;
+        if ((bs._usedLimits[cid + '@' + cid + '_recipe_' + _limitStepPart(step)] || 0) >= lmax) return false;
       }
       return true;
     };
@@ -9194,7 +9222,7 @@ export function fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, done,
     if (lmax > 0 && bs._usedLimits) {
       const sid = _limitCardId(srcCard);
       const cid = _limitCardId(carrier);
-      if ((bs._usedLimits[sid + '@' + cid + '_recipe_' + step.action] || 0) >= lmax) return false;
+      if ((bs._usedLimits[sid + '@' + cid + '_recipe_' + _limitStepPart(step)] || 0) >= lmax) return false;
     }
     return !!pickPlaced(step, reactSide);
   };
@@ -9779,7 +9807,7 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
     }
     if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
       const sourceId = _limitCardId(reactorCard);
-      const limitKey = sourceId + '@' + sourceId + '_recipe_' + step.action;
+      const limitKey = sourceId + '@' + sourceId + '_recipe_' + _limitStepPart(step);
       if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
     }
     return true;
@@ -10086,7 +10114,7 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
       if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
         const sourceId = _limitCardId(sourceCard);
         const carrierId = _limitCardId(carrier);
-        const limitKey = sourceId + '@' + carrierId + '_recipe_' + step.action;
+        const limitKey = sourceId + '@' + carrierId + '_recipe_' + _limitStepPart(step);
         if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
       }
       return true;
@@ -10234,12 +10262,31 @@ function _cardUid(card) {
 // カード1枚（場の1体）ごとに数えるため、カードNoだけだと同名カードが2体並んだとき（ブテンモン2体の
 // 「デッキが増えたとき」同時誘発等）、片方の使用でもう片方まで使用済み扱いになってしまう。
 // カードNoに固有IDを添えて1体ごとに数える
+// 【ターンに1回】の使用回数キーの「どの効果か」部分。アクション名だけだと、同じカード上の別の効果で同じ
+// アクションのもの（クロノモン：デストロイモード BT26-060 の「デッキが増えたとき」の消滅と、継承した
+// ホーリーモードの【進化時】の消滅）が同じキーになり、片方を使うともう片方まで使用済み扱いになっていた。
+// ステップの内容（エンジンが付ける _ 始まりの印・alt_actions・limit は除く）から短いハッシュを作って区別する。
+// 同じ効果が複数のトリガー（【登場時】【進化時】【アタック時】）に書かれている場合は内容が同じなので共通の1回になる
+function _limitStepPart(step) {
+  if (!step || typeof step !== 'object') return String(step && step.action);
+  const stable = {};
+  Object.keys(step).sort().forEach((k) => {
+    if (k.charAt(0) === '_' || k === 'alt_actions' || k === 'alt_actions_op' || k === 'limit') return;
+    stable[k] = step[k];
+  });
+  let json = '';
+  try { json = JSON.stringify(stable); } catch (_) { json = String(step.action); }
+  let h = 5381;
+  for (let i = 0; i < json.length; i++) h = ((h * 33) ^ json.charCodeAt(i)) >>> 0;
+  return String(step.action) + '~' + h.toString(36);
+}
+
 function _limitCardId(card) {
   if (!card) return 'unknown';
   return (card.cardNo || card.name || 'unknown') + '#' + _cardUid(card);
 }
 function _evoSourceLimitKey(sourceCard, step) {
-  return 'evo#' + _cardUid(sourceCard) + '_recipe_' + (step && step.action);
+  return 'evo#' + _cardUid(sourceCard) + '_recipe_' + _limitStepPart(step);
 }
 
 function _buildBaseCtx(ctxBase, bs) {
@@ -10439,7 +10486,7 @@ function recipeWillExecuteAnything(recipe, ctx) {
       const _lsc = ctx._sourceCard || ctx.card;
       const _lSourceId = _limitCardId(_lsc);
       const _lCarrierId = _limitCardId(ctx.card);
-      if ((ctx.bs._usedLimits[_lSourceId + '@' + _lCarrierId + '_recipe_' + step.action] || 0) >= _lMax) continue;
+      if ((ctx.bs._usedLimits[_lSourceId + '@' + _lCarrierId + '_recipe_' + _limitStepPart(step)] || 0) >= _lMax) continue;
     }
     // コスト feasibility チェック: 「自身をレスト」コストがあるが既にレスト中ならスキップ
     // （武之内空等「このテイマーをレストさせることで〜」は、既にレスト状態なら
@@ -11124,7 +11171,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 反応系トリガーの進化元効果は進化元カード基準のキー（_runReactionEffect が ctx._evoLimitSource を設定）
       const _limitKey = ctx._evoLimitSource
         ? _evoSourceLimitKey(ctx._evoLimitSource, step)
-        : _srcId + '@' + _carId + '_recipe_' + step.action;
+        : _srcId + '@' + _carId + '_recipe_' + _limitStepPart(step);
       if (!ctx.bs._usedLimits) ctx.bs._usedLimits = {};
       const _used = ctx.bs._usedLimits[_limitKey] || 0;
       if (_used >= _limitMax) {

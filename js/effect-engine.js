@@ -3182,48 +3182,51 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
       const _evoEsc = String(_evoTxt).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
       _statsHtml += '<br><span style="color:#00ff88;">進化コスト：' + _evoEsc + '</span>';
     }
-    box.innerHTML = (imgSrc ? '<img src="'+imgSrc+'" style="width:160px;border-radius:8px;margin-bottom:12px;border:1px solid '+borderColor+';">' : '')
+    const _esc = (t) => String(t == null ? '' : t).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    // 1) 本体の詳細（画像・ステータス・効果・進化元効果）
+    let mainHtml = (imgSrc ? '<img src="'+imgSrc+'" style="width:160px;border-radius:8px;margin-bottom:12px;border:1px solid '+borderColor+';">' : '')
       + '<div style="color:#fff;font-weight:bold;font-size:14px;margin-bottom:8px;">'+(card.name||'不明')+' ('+(card.cardNo||'')+')</div>'
       + '<div style="font-size:12px;color:'+borderColor+';margin-bottom:10px;line-height:1.5;">'+_statsHtml+'</div>';
-
-    // 効果
     if (card.effect && card.effect !== 'なし') {
-      box.innerHTML += '<div style="font-size:11px;color:#ddd;line-height:1.7;margin-bottom:10px;text-align:left;background:#111;padding:10px;border-radius:6px;border:1px solid #333;">'
+      mainHtml += '<div style="font-size:11px;color:#ddd;line-height:1.7;margin-bottom:10px;text-align:left;background:#111;padding:10px;border-radius:6px;border:1px solid #333;">'
         + '<div style="color:'+borderColor+';font-size:10px;margin-bottom:4px;font-weight:bold;">効果</div>' + card.effect + '</div>';
     }
     // 進化元効果（タイプにより表示ラベルが変わる）
     if (card.evoSourceEffect && card.evoSourceEffect !== 'なし') {
-      box.innerHTML += '<div style="font-size:11px;color:#aaa;line-height:1.7;margin-bottom:10px;text-align:left;background:#0a0a0a;padding:10px;border-radius:6px;border:1px solid #222;">'
+      mainHtml += '<div style="font-size:11px;color:#aaa;line-height:1.7;margin-bottom:10px;text-align:left;background:#0a0a0a;padding:10px;border-radius:6px;border:1px solid #222;">'
         + '<div style="color:#ffaa00;font-size:10px;margin-bottom:4px;font-weight:bold;">' + evoSourceEffectLabel(card) + '</div>' + card.evoSourceEffect + '</div>';
     }
-    // 重ねられている進化元（上から順）。対象を選ぶときに進化元のカード名・Lv・進化元効果を確認できるようにする
-    // （クロノモン：デストロイモード BT26-060「重ねられているカードを上から戻す」等で、何が重なっているか分からなかった）。
-    // 裏向きのカードは名前を伏せる
-    if (Array.isArray(card.stack) && card.stack.length > 0) {
-      const _esc = (t) => String(t == null ? '' : t).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-      const _rows = card.stack.map((s, i) => {
-        if (!s) return '';
-        if (s._faceDown) {
-          return '<div style="padding:6px 0;border-top:1px solid #222;color:#888;">' + (i + 1) + '. 裏向きのカード</div>';
-        }
+    // 2) 重ねられている進化元（上から順）。縦長にならないよう、本体の詳細とは別の画面にして
+    // 「進化元を確認する」ボタンで切り替える。裏向きのカードは名前を伏せる
+    const _stack = Array.isArray(card.stack) ? card.stack.filter(Boolean) : [];
+    const evoHtml = '<div style="color:#00fbff;font-weight:bold;font-size:14px;margin-bottom:4px;">「' + _esc(card.name) + '」の進化元</div>'
+      + '<div style="color:#888;font-size:11px;margin-bottom:10px;">' + _stack.length + '枚・上から順</div>'
+      + '<div style="text-align:left;max-height:55vh;overflow-y:auto;">' + _stack.map((s, i) => {
+        if (s._faceDown) return '<div style="padding:8px 0;border-top:1px solid #222;color:#888;font-size:12px;">' + (i + 1) + '. 裏向きのカード</div>';
         const _sImg = s.imgSrc || getCardImageUrl(s) || s.imageUrl || '';
         const _sEff = (s.evoSourceEffect && s.evoSourceEffect !== 'なし') ? s.evoSourceEffect : '（進化元効果なし）';
-        return '<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-top:1px solid #222;">'
-          + (_sImg ? '<img src="' + _sImg + '" style="width:44px;border-radius:4px;flex:none;">' : '')
-          + '<div style="min-width:0;"><div style="color:#fff;font-weight:bold;">' + (i + 1) + '. ' + _esc(s.name) + '（Lv.' + _esc(s.level || '?') + '）</div>'
+        return '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #222;">'
+          + (_sImg ? '<img src="' + _sImg + '" style="width:56px;border-radius:4px;flex:none;">' : '')
+          + '<div style="min-width:0;font-size:11px;line-height:1.6;"><div style="color:#fff;font-weight:bold;font-size:12px;">' + (i + 1) + '. ' + _esc(s.name) + '（Lv.' + _esc(s.level || '?') + '）</div>'
           + '<div style="color:#aaa;">' + _esc(_sEff) + '</div></div></div>';
-      }).join('');
-      box.innerHTML += '<details open style="font-size:11px;line-height:1.6;margin-bottom:10px;text-align:left;background:#0a0a0a;padding:8px 10px;border-radius:6px;border:1px solid #333;">'
-        + '<summary style="color:#00fbff;font-size:11px;font-weight:bold;cursor:pointer;">進化元（' + card.stack.length + '枚・上から順）</summary>'
-        + '<div style="max-height:220px;overflow-y:auto;">' + _rows + '</div></details>';
-    }
-
-    // 確認ボタン
-    box.innerHTML += '<div style="color:'+borderColor+';font-size:14px;font-weight:bold;margin:16px 0 12px;">このカードでいいですか？</div>'
+      }).join('') + '</div>';
+    // 確認ボタン（どちらの画面からでも選べる）
+    const confirmHtml = '<div style="color:'+borderColor+';font-size:14px;font-weight:bold;margin:16px 0 12px;">このカードでいいですか？</div>'
       + '<div style="display:flex;gap:10px;justify-content:center;">'
-      + '<button id="_target-yes" style="background:'+borderColor+';color:#000;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
-      + '<button id="_target-no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
+      + '<button id="_target-yes" data-tc="yes" style="background:'+borderColor+';color:#000;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">はい</button>'
+      + '<button id="_target-no" data-tc="no" style="background:#333;color:#fff;border:1px solid #666;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;">いいえ</button>'
       + '</div>';
+    const smallBtn = (act, label) => '<button data-tc="' + act + '" style="background:#111;color:#00fbff;border:1px solid #00fbff;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:bold;cursor:pointer;">' + label + '</button>';
+    const render = (view) => {
+      if (view === 'evo') {
+        box.innerHTML = evoHtml + '<div style="margin-top:12px;">' + smallBtn('back', '← 戻る') + '</div>' + confirmHtml;
+      } else {
+        box.innerHTML = mainHtml + (_stack.length > 0 ? '<div style="margin-top:4px;">' + smallBtn('evo', '進化元を確認する（' + _stack.length + '枚）') + '</div>' : '') + confirmHtml;
+      }
+      box.scrollTop = 0;
+      overlay.scrollTop = 0;
+    };
+    render('main');
 
     overlay.appendChild(box);
     document.body.appendChild(overlay);
@@ -3243,19 +3246,27 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     }
 
-    document.getElementById('_target-yes').addEventListener('click', (e) => {
+    // ボタンは画面を切り替えるたびに作り直すので、box でまとめて受ける
+    box.addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest('[data-tc]') : null;
+      if (!btn) return;
       e.stopPropagation();
-      cleanupConfirm();
-      setTimeout(() => onResult(true), 50);
-    });
-    document.getElementById('_target-no').addEventListener('click', (e) => {
-      e.stopPropagation();
-      cleanupConfirm();
-      setTimeout(() => {
-        document.addEventListener('click', onSelect, true);
-        document.addEventListener('touchend', onSelect, true);
-      }, 100);
-      setTimeout(() => onResult(false), 50);
+      const act = btn.getAttribute('data-tc');
+      if (act === 'evo') { render('evo'); return; }
+      if (act === 'back') { render('main'); return; }
+      if (act === 'yes') {
+        cleanupConfirm();
+        setTimeout(() => onResult(true), 50);
+        return;
+      }
+      if (act === 'no') {
+        cleanupConfirm();
+        setTimeout(() => {
+          document.addEventListener('click', onSelect, true);
+          document.addEventListener('touchend', onSelect, true);
+        }, 100);
+        setTimeout(() => onResult(false), 50);
+      }
     });
   }
 

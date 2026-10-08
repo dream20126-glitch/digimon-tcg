@@ -42,6 +42,7 @@ let _pendingSecEffectResponse = null;
 let _pendingReactionDelegateCallback = null;
 let _pendingReactionDelegateResponse = null;
 let _pendingLeaveBattleDelegateCallback = null; // fx_leaveBattleDelegate の返事待ち（callback(canceled)）
+let _pendingFlushDeferredEvoCallback = null;    // fx_flushDeferredEvo の返事待ち
 let _pendingHandDiscardCallback = null; // fx_handDiscardRequest 送信側の応答待ち（cb(result)）
 let _pendingHandDiscardResponse = null; // 待ち開始前に届いた fx_handDiscardDone の結果
 let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
@@ -1490,6 +1491,19 @@ function onRemoteCommand(cmd) {
       dediShowAnim();
       break;
     }
+    // 相手（消滅処理をした側）から: こちらで保留した【進化時】を発揮して、終わったら知らせる
+    case 'fx_flushDeferredEvo': {
+      const doneFlush = () => { sendMemoryUpdate(); sendStateSync(); sendCommand({ type: 'fx_flushDeferredEvoDone' }); };
+      if (typeof window._flushDeferredEvoTriggers === 'function') window._flushDeferredEvoTriggers(doneFlush);
+      else doneFlush();
+      break;
+    }
+    case 'fx_flushDeferredEvoDone': {
+      const cb = _pendingFlushDeferredEvoCallback;
+      _pendingFlushDeferredEvoCallback = null;
+      if (cb) cb();
+      break;
+    }
     case 'fx_pendingHud': {
       // 相手の発揮待ちの効果（次に発揮するカード・一覧）→ 画面右上に表示（effect-engine.js の発揮待ち表示）
       if (typeof window._setRemotePendingHud === 'function') window._setRemotePendingHud(cmd.items || []);
@@ -1921,6 +1935,13 @@ function _clearCollisionBlockerBadges() {
   });
 }
 
+// バトルの消滅処理が終わった後、相手（攻撃側＝ターンプレイヤー）の端末に「離れるとき」で保留された【進化時】が
+// あれば先に発揮してもらってから、こちら（非ターンプレイヤー）の消滅時効果に進む（公式ルール 15-4-3-5）
+function _withOppDeferred(fn) {
+  if (typeof window._flushOppDeferredEvo === 'function') window._flushOppDeferredEvo(fn);
+  else fn();
+}
+
 function resolveOnlineBlock(blockerIdx, cmd) {
   _clearCollisionBlockerBadges();
   const blocker = bs.player.battleArea[blockerIdx];
@@ -2004,7 +2025,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
       if (!atkDies && !blkDies) {
         renderAll();
         sendCommand({ type: 'fx_battleResult', text: '回避！', color: '#00fbff', sub: '消滅を回避' });
-        showBR('回避！', '#00fbff', '消滅を回避', () => { window._suppressFxSend = false; sendStateSync(); });
+        showBR('回避！', '#00fbff', '消滅を回避', () => _withOppDeferred(() => { window._suppressFxSend = false; sendStateSync(); }));
         return;
       }
       if (atkDies && blkDies) {
@@ -2043,7 +2064,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
                 window._suppressFxSend = false; sendStateSync();
               }
             };
-            if (fire) fire(['player'], { player: blocker }, finishAfterOwn);
+            if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finishAfterOwn));
             else finishAfterOwn();
           }); });
         });
@@ -2091,7 +2112,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
                       window._suppressFxSend = false; sendStateSync();
                     }
                   };
-                  if (fire) fire(['player'], { player: blocker }, finishAfterOwn);
+                  if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finishAfterOwn));
                   else finishAfterOwn();
                 });
               });
@@ -2111,7 +2132,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
               // ≪貫通≫: ブロッカーを撃破し atk が貫通を持つなら攻撃側に追加セキュリティチェックを要求
               if (atkHasPenetrate) sendCommand({ type: 'penetrate_security_check', atkIdx: cmd.atkIdx });
             };
-            if (fire) fire(['player'], { player: blocker }, finish);
+            if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finish));
             else finish();
           });
         });
@@ -2159,7 +2180,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
                       window._suppressFxSend = false; sendStateSync();
                     }
                   };
-                  if (fire) fire(['player'], { player: blocker }, finishAfterOwn);
+                  if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finishAfterOwn));
                   else finishAfterOwn();
                 });
               });
@@ -2255,6 +2276,21 @@ window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._waitForReactionDelegate = (cb) => waitForReactionDelegate(cb);
 // 相手のデジモンが「バトルエリアを離れるとき」: 持ち主（相手）の端末に置換効果の判定を委譲し、
 // 離れなかったかどうか（canceled）を待つ。待っている間は待機オーバーレイを出す
+// 相手の端末で「離れるとき」により進化して保留された【進化時】を、こちらの消滅処理が終わった時点で発揮してもらう
+// （bs._oppDeferredEvoPending が立っているときだけ）。終わるまで待機表示を出す。cb()
+window._flushOppDeferredEvo = (cb) => {
+  if (!bs._oppDeferredEvoPending) { cb && cb(); return; }
+  bs._oppDeferredEvoPending = false;
+  const waitOv = document.createElement('div');
+  waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
+  waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手の効果を処理中...</div>';
+  document.body.appendChild(waitOv);
+  let settled = false;
+  const finish = () => { if (settled) return; settled = true; if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv); cb && cb(); };
+  _pendingFlushDeferredEvoCallback = finish;
+  setTimeout(finish, 120000);
+  sendCommand({ type: 'fx_flushDeferredEvo' });
+};
 window._requestLeaveBattleDelegate = (slotIdx, cb) => {
   const waitOv = document.createElement('div');
   waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';

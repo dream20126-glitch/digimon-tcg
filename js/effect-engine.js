@@ -795,7 +795,19 @@ function _hudClearDestroyPreview(card) {
   _hudDestroyPreviews.delete(card);
   _hudSetSource(key, []);
 }
+// 保留中の【進化時】（置き換えの処理中に効果で進化したもの）を発揮待ちとして表示する。list: [{ card, side }]
+function hudSetDeferredEvo(list) {
+  _hudSetSource('deferredEvo', (list || []).map((d) => {
+    let text = d.card && d.card.effect || '';
+    try { text = extractTriggerSectionText(text, 'on_evolve', null); } catch (_) {}
+    const it = _hudItem(d.side, d.card, null, text);
+    it.sub = '消滅の処理後に発揮';
+    it.group = 'deferredEvo';
+    return it;
+  }));
+}
 if (typeof window !== 'undefined') {
+  window._hudSetDeferredEvo = hudSetDeferredEvo;
   window._hudPreviewDestroy = hudPreviewDestroy;
   window._hudClearDestroyPreview = _hudClearDestroyPreview;
 }
@@ -9138,7 +9150,21 @@ export function tryCancelViaLeaveBattle(card, side, bs, ctxBase, callback) {
 }
 // オンラインで相手から委譲された「離れるとき」の判定を、持ち主（この端末）側で行う入口（battle-online.js 用）
 if (typeof window !== 'undefined') window._tryCancelLeaveLocal = (card, side, bs, ctxBase, cb) => _tryCancelLeaveLocal(card, side, bs, ctxBase, cb);
-function _tryCancelLeaveLocal(card, side, bs, ctxBase, callback) {
+function _tryCancelLeaveLocal(card, side, bs, ctxBase, callback0) {
+  // 「離れるとき」（即時型効果）の処理中に効果で進化した場合、その【進化時】（誘発型効果）はここでは
+  // 発揮せず保留し、元の消滅等の処理が終わってから発揮する（公式ルール 15-8-5。巨神兵器 BT26-085 が
+  // ユノモン：ヒステリックモードと相打ちになり、デストロイモードに進化して離れなかったとき、まだ消滅処理前で
+  // 場に残っているユノモンを【進化時】で選べてしまっていた）。保留分は battle-combat.js の
+  // flushDeferredEvoTriggers が発揮する（キューの効果の処理中なら、その効果の解決後に保留反応として発揮）
+  if (bs) bs._deferEvoTriggerDepth = (bs._deferEvoTriggerDepth || 0) + 1;
+  const callback = (canceled) => {
+    if (bs) bs._deferEvoTriggerDepth = Math.max(0, (bs._deferEvoTriggerDepth || 0) - 1);
+    if (bs && _queueResolveDepth > 0 && Array.isArray(bs._deferredEvoTriggers) && bs._deferredEvoTriggers.length > 0
+        && typeof window._flushDeferredEvoTriggers === 'function') {
+      enqueueReaction(bs, (cb) => window._flushDeferredEvoTriggers(cb), []);
+    }
+    callback0(canceled);
+  };
   card._stayedInBattleArea = false;
   try {
     fireWhenLeaveBattleTriggers(card, side, bs, ctxBase, () => {

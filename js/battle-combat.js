@@ -252,6 +252,8 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
   const ctxBase = { bs, addLog, renderAll, updateMemGauge };
   try {
     _tryCancelViaLeaveBattle(card, side, bs, ctxBase, (canceled) => {
+      // 相手の端末で「離れるとき」により進化していれば、相手側に【進化時】の保留が残っている
+      if (canceled && side === 'ai' && _onlineMode) bs._oppDeferredEvoPending = true;
       callback(canceled ? { canceled: true, reason: 'protection' } : null);
     });
   } catch (_) { callback(null); }
@@ -1475,6 +1477,27 @@ export function showAppGattaiEffect(cost, baseCard, partnerCards, resultCard, on
 // 両サイド対応で再利用できるようにした版。
 // card: 進化先(手札)カード, handIdx: p.hand内index, slotIdx: 進化元(base)のbattleArea内index,
 // cost: 実際に支払う進化コスト（呼び出し側で軽減計算済み）, side: 'player'|'ai'
+// 置き換えの処理中に保留した【進化時】を、保留した順に発揮する（まだ場にいるものだけ）。done()
+export function flushDeferredEvoTriggers(done) {
+  const list = Array.isArray(bs._deferredEvoTriggers) ? bs._deferredEvoTriggers.splice(0) : [];
+  if (typeof window._hudSetDeferredEvo === 'function') window._hudSetDeferredEvo(list);
+  let i = 0;
+  const next = () => {
+    if (typeof window._hudSetDeferredEvo === 'function') window._hudSetDeferredEvo(list.slice(i));
+    if (i >= list.length) { renderAll(true); done && done(); return; }
+    const d = list[i++];
+    const p = d.side === 'player' ? bs.player : bs.ai;
+    if (!d.card || !(p.battleArea || []).includes(d.card)) {
+      addLog('💨 「' + (d.card && d.card.name) + '」は【進化時】を発揮する前に場を離れたため、効果を発揮できない');
+      next();
+      return;
+    }
+    _hooks.checkAndTriggerEffect(d.card, '【進化時】', () => { renderAll(true); next(); }, d.side);
+  };
+  next();
+}
+if (typeof window !== 'undefined') window._flushDeferredEvoTriggers = flushDeferredEvoTriggers;
+
 export function doEvolveFromEffect(card, handIdx, slotIdx, cost, side, callback) {
   const p = side === 'player' ? bs.player : bs.ai;
   const base = p.battleArea[slotIdx];
@@ -1509,7 +1532,16 @@ export function doEvolveFromEffect(card, handIdx, slotIdx, cost, side, callback)
         if (side === 'player') checkPlayerPendingTurnEnd({ noFlush: true });
         callback && callback(true);
       };
-      if (hasKeyword(evolved, '【進化時】')) {
+      // 「離れるとき」等の置き換えの処理中の進化なら、【進化時】は保留して元の処理の後に発揮する
+      // （flushDeferredEvoTriggers。effect-engine.js の _tryCancelLeaveLocal 参照）
+      if (hasKeyword(evolved, '【進化時】') && (bs._deferEvoTriggerDepth || 0) > 0) {
+        if (!Array.isArray(bs._deferredEvoTriggers)) bs._deferredEvoTriggers = [];
+        bs._deferredEvoTriggers.push({ card: evolved, side });
+        addLog('⏳ 「' + evolved.name + '」の【進化時】は、消滅等の処理が終わってから発揮します');
+        if (typeof window._hudSetDeferredEvo === 'function') window._hudSetDeferredEvo(bs._deferredEvoTriggers);
+        renderAll(true);
+        finish();
+      } else if (hasKeyword(evolved, '【進化時】')) {
         _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => { renderAll(true); finish(); }, side);
       } else {
         finish();
@@ -4006,6 +4038,14 @@ export async function checkPendingTurnEnd() {
   _attackInProgress = false;
   hideCombatBackdrop();
   renderAll();
+  // バトル中の「離れるとき」で進化して保留していた【進化時】を、バトルの消滅処理が終わったここで発揮する
+  // （ターンプレイヤー＝自分の分を先に、相手の端末に残っている分を後に）
+  if (Array.isArray(bs._deferredEvoTriggers) && bs._deferredEvoTriggers.length > 0) {
+    await new Promise((resolve) => flushDeferredEvoTriggers(resolve));
+  }
+  if (bs._oppDeferredEvoPending && typeof window._flushOppDeferredEvo === 'function') {
+    await new Promise((resolve) => window._flushOppDeferredEvo(resolve));
+  }
   // チュートリアル通知: バトル解決完了（attack_resolved 条件用）
   if (window._tutorialRunner && window._tutorialRunner.active) {
     try {

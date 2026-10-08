@@ -23,7 +23,7 @@ function normalizeRecipeDuration(d) {
 // ===== 効果キュー管理 =====
 
 // キューをクリア
-function clearQueue() { _effectQueue = []; }
+function clearQueue() { _effectQueue = []; try { _hudSetSource('queue', []); } catch (_) {} }
 
 // キューにエントリを追加
 function addToQueue(card, block, side, priority, actualSide) {
@@ -169,6 +169,7 @@ function processQueue(context, onComplete) {
     }
   });
   const waiting = _effectQueue.filter(e => e.status === 'waiting');
+  _hudSyncQueue(context);
   // 継承（≪継承≫）で得た効果が誘発していれば、効果の選択・実行の前に「継承した」演出を出す
   // （クロノモン：デストロイモード BT26-060 → 進化元のホーリーモードの【進化時】）
   const _inhEntry = waiting.find(e => e.block && e.block._inheritedFrom && !e._inheritAnnounced);
@@ -221,6 +222,7 @@ function processQueue(context, onComplete) {
     showQueueOrderSelect(sameLevelManuals, (chosenIdx) => {
       const chosen = sameLevelManuals[chosenIdx];
       chosen.status = 'processing';
+      _hudSyncQueue(context);
       _queueResolveDepth++;
       executeQueueEntry(chosen, context, () => {
         chosen.status = 'completed';
@@ -238,6 +240,7 @@ function processQueue(context, onComplete) {
   }
 
   next.status = 'processing';
+  _hudSyncQueue(context);
   _queueResolveDepth++;
   executeQueueEntry(next, context, () => {
     next.status = 'completed';
@@ -548,6 +551,142 @@ function _runStackToDeckEffect(step, ctx, player, opponent, effectiveSide, callb
     }, '（重ねられているカードを戻すデジモン ' + (chosen.length + 1) + '/' + digiCount + '体目）');
   };
   pickNext();
+}
+
+// ===== 発揮待ちの効果の表示（画面右下=自分 / 右上=相手） =====
+// 今どのカードの効果が次に発揮されるのかを分かりやすくするため、発揮待ちの効果の先頭（次に発揮する効果）の
+// カード画像・名前を小さく表示し、「他」ボタンで残り全ての一覧（画像・名前・効果）を開けるようにする。
+// 発揮待ちの効果は複数の場所で管理されている（効果のキュー _effectQueue と、反応系トリガーの同時誘発
+// _fireSidedReactionTriggers）ので、それぞれが「ソース」として自分の発揮待ちを登録し、ここでまとめる。
+// 後から登録されたソース（割り込み）ほど先に発揮されるので、新しいソースを先頭に並べる。
+// オンラインでは自分の発揮待ちを相手に送り（fx_pendingHud）、相手の画面では右上に表示する
+const _hudSources = new Map(); // key → { seq, items: [{ side, name, sub, img, text }] }
+let _hudSeq = 0;
+let _hudRemote = []; // オンライン: 相手から送られてきた相手の発揮待ち
+let _hudSendTimer = null;
+let _hudLastSent = '';
+
+function _hudItem(side, card, sourceCard, text) {
+  const owner = sourceCard || card;
+  const isEvo = !!(sourceCard && card && sourceCard !== card);
+  const pos = isEvo ? _evoSourcePosText(card, sourceCard) : '';
+  return {
+    side,
+    name: (owner && owner.name) || '?',
+    sub: isEvo ? '「' + (card.name || '') + '」の進化元' + (pos ? '・' + pos : '') : '',
+    img: (owner && (owner.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(owner) : '') || owner.imageUrl)) || '',
+    text: String(text || ''),
+  };
+}
+function _hudSetSource(key, items) {
+  if (!items || items.length === 0) { _hudSources.delete(key); }
+  else {
+    const prev = _hudSources.get(key);
+    _hudSources.set(key, { seq: prev ? prev.seq : ++_hudSeq, items });
+  }
+  _hudRender();
+}
+// 発揮待ちのキュー（_effectQueue の waiting）をソースとして登録し直す
+function _hudSyncQueue(context) {
+  try {
+    const bs = context && context.bs;
+    const items = _effectQueue.filter(e => e && e.status === 'waiting').map((e) => {
+      const side = e.actualSide || (e.side === 'turnPlayer' ? (bs && bs.isPlayerTurn ? 'player' : 'ai') : (bs && bs.isPlayerTurn ? 'ai' : 'player'));
+      const blk = e.block || {};
+      const inh = blk._inheritedFrom;
+      const src = blk._recipeCard || (inh && Array.isArray(e.card && e.card.stack) ? e.card.stack.find(c => c && c.cardNo === inh.cardNo) : null) || null;
+      const trig = blk.trigger ? blk.trigger.code : null;
+      const raw = inh ? inh.effect : (blk._recipeCard ? (blk._recipeCard.evoSourceEffect || blk.raw) : blk.raw);
+      let text = '';
+      try { text = extractTriggerSectionText(raw || '', trig, blk._grantedSteps || null); } catch (_) { text = raw || ''; }
+      const it = _hudItem(side, e.card, blk._recipeCard || null, text);
+      if (inh) { it.name = (src && src.name) || inh.name; it.sub = '継承：「' + (e.card && e.card.name || '') + '」'; if (src) it.img = src.imgSrc || getCardImageUrl(src) || src.imageUrl || it.img; }
+      return it;
+    });
+    _hudSetSource('queue', items);
+  } catch (_) {}
+}
+function _hudAllItems() {
+  return [..._hudSources.values()].sort((a, b) => b.seq - a.seq).reduce((acc, s) => acc.concat(s.items), []);
+}
+function _hudEnsureBox(id, pos) {
+  let el = document.getElementById(id);
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = id;
+  el.style.cssText = 'position:fixed;' + pos + 'z-index:45000;display:none;align-items:center;gap:6px;padding:6px 8px;border-radius:10px;background:rgba(0,10,20,0.9);box-shadow:0 0 10px rgba(0,0,0,0.6);max-width:min(60vw,260px);pointer-events:auto;';
+  document.body.appendChild(el);
+  return el;
+}
+function _hudRenderBox(id, pos, items, color, label) {
+  if (typeof document === 'undefined' || !document.body) return;
+  const el = _hudEnsureBox(id, pos);
+  if (!items || items.length === 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const first = items[0];
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  el.style.display = 'flex';
+  el.style.border = '1px solid ' + color;
+  el.innerHTML = (first.img ? '<img src="' + esc(first.img) + '" style="width:30px;border-radius:3px;flex:none;">' : '')
+    + '<div style="min-width:0;line-height:1.25;">'
+    + '<div style="color:' + color + ';font-size:9px;font-weight:bold;">' + esc(label) + '</div>'
+    + '<div style="color:#fff;font-size:11px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(first.name) + '</div>'
+    + (first.sub ? '<div style="color:#ffaa00;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(first.sub) + '</div>' : '')
+    + '</div>'
+    + '<button type="button" data-hud-more="1" style="flex:none;font-size:10px;font-weight:bold;padding:3px 8px;border-radius:999px;border:1px solid ' + color + ';background:#111;color:' + color + ';cursor:pointer;">他' + (items.length > 1 ? '(' + (items.length - 1) + ')' : '') + '</button>';
+  const btn = el.querySelector('[data-hud-more]');
+  if (btn) btn.onclick = (ev) => { ev.stopPropagation(); _hudShowList(items, color, label); };
+}
+// 「他」: 発揮待ちの一覧（発揮する順。画像・名前・効果）
+function _hudShowList(items, color, label) {
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:66000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#0a0a0a;border:1px solid ' + color + ';border-radius:12px;padding:14px;width:min(520px,100%);max-height:85vh;display:flex;flex-direction:column;gap:8px;';
+  box.innerHTML = '<div style="color:' + color + ';font-size:14px;font-weight:bold;text-align:center;">' + esc(label) + '（発揮する順）</div>'
+    + '<div style="overflow-y:auto;display:grid;gap:8px;">' + items.map((it, i) =>
+      '<div style="display:flex;gap:10px;align-items:flex-start;background:#111;border:1px solid ' + (i === 0 ? color : '#333') + ';border-radius:8px;padding:8px;">'
+      + (it.img ? '<img src="' + esc(it.img) + '" style="width:56px;border-radius:4px;flex:none;">' : '')
+      + '<div style="min-width:0;font-size:11px;line-height:1.6;">'
+      + '<div style="color:#fff;font-weight:bold;font-size:12px;">' + (i + 1) + '. ' + esc(it.name) + (i === 0 ? ' <span style="color:' + color + ';">（次）</span>' : '') + '</div>'
+      + (it.sub ? '<div style="color:#ffaa00;font-size:10px;">◇ ' + esc(it.sub) + ' ◇</div>' : '')
+      + '<div style="color:#aaa;white-space:pre-wrap;">' + esc(it.text) + '</div></div></div>').join('') + '</div>';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.innerText = '閉じる';
+  close.style.cssText = 'align-self:center;font-weight:bold;font-size:13px;padding:8px 24px;border-radius:999px;border:none;background:' + color + ';color:#000;cursor:pointer;';
+  close.onclick = () => ov.remove();
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  box.appendChild(close);
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+}
+function _hudRender() {
+  if (typeof window === 'undefined') return;
+  const all = _hudAllItems();
+  const mine = all.filter(it => it.side === 'player');
+  const online = !!(window._isOnlineMode && window._isOnlineMode());
+  const theirs = online ? _hudRemote : all.filter(it => it.side === 'ai');
+  _hudRenderBox('_pending-hud-own', 'right:8px;bottom:96px;', mine, '#00fbff', '自分の次の効果');
+  _hudRenderBox('_pending-hud-opp', 'right:8px;top:56px;', theirs, '#ff00fb', '相手の次の効果');
+  // オンライン: 自分の発揮待ちを相手へ（変化したときだけ、短い間隔でまとめて送る）
+  if (online && window._onlineSendCommand) {
+    const payload = JSON.stringify(mine.map(it => ({ name: it.name, sub: it.sub, img: it.img, text: it.text.slice(0, 300) })));
+    if (payload !== _hudLastSent) {
+      clearTimeout(_hudSendTimer);
+      _hudSendTimer = setTimeout(() => {
+        _hudLastSent = payload;
+        try { window._onlineSendCommand({ type: 'fx_pendingHud', items: JSON.parse(payload) }); } catch (_) {}
+      }, 150);
+    }
+  }
+}
+// 相手から届いた相手の発揮待ち（battle-online.js の fx_pendingHud 受信）
+if (typeof window !== 'undefined') {
+  window._setRemotePendingHud = (items) => {
+    _hudRemote = (Array.isArray(items) ? items : []).map(it => Object.assign({ side: 'ai' }, it));
+    _hudRender();
+  };
 }
 
 // ===== キュー順序選択UI =====
@@ -8733,6 +8872,15 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
   // 進化元のブテンモン BT26-015 の「デッキが増えたとき」等。CPU・相手の端末側は従来通り並び順で処理する
   const remaining = reactions.slice();
   const canChoose = reactSide === 'player' && typeof showQueueOrderSelect === 'function';
+  // 発揮待ちの表示用（この同時誘発の残り）
+  const _hudKey = 'react#' + (++_hudSeq);
+  const _hudUpdate = () => _hudSetSource(_hudKey, remaining.map((r) => {
+    const isEvo = r.sourceCard && r.sourceCard !== r.card;
+    const full = isEvo ? ((r.sourceCard.evoSourceEffect && r.sourceCard.evoSourceEffect !== 'なし') ? r.sourceCard.evoSourceEffect : r.sourceCard.effect) : (r.card.effect || '');
+    let text = full || '';
+    try { text = extractTriggerSectionText(full || '', recipeKey, r.recipe); } catch (_) {}
+    return _hudItem(reactSide, r.card, isEvo ? r.sourceCard : null, text);
+  }));
   const runOneReaction = (reaction) => {
     // ゾーン効果は解決時にそのゾーンを離れていたら発揮しない
     if ((reaction.zone === 'trash' || reaction.zone === 'security') && !_cardStillInZone(bs, reactSide, reaction.card, reaction.zone)) { nextReaction(); return; }
@@ -8740,7 +8888,8 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
     _runReactionEffect(reaction, reactSide, bs, ctxBase, nextReaction);
   };
   function nextReaction() {
-    if (remaining.length === 0) { finish(); return; }
+    if (remaining.length === 0) { _hudSetSource(_hudKey, []); finish(); return; }
+    _hudUpdate();
     if (canChoose && remaining.length >= 2) {
       const entries = remaining.map((r) => ({
         card: r.card,
@@ -8753,11 +8902,14 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       }));
       showQueueOrderSelect(entries, (chosenIdx) => {
         const chosen = remaining.splice(chosenIdx, 1)[0];
+        _hudUpdate();
         runOneReaction(chosen);
       });
       return;
     }
-    runOneReaction(remaining.shift());
+    const _one = remaining.shift();
+    _hudUpdate();
+    runOneReaction(_one);
   }
   nextReaction();
 }

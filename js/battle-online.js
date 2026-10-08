@@ -1490,6 +1490,11 @@ function onRemoteCommand(cmd) {
       dediShowAnim();
       break;
     }
+    case 'fx_pendingHud': {
+      // 相手の発揮待ちの効果（次に発揮するカード・一覧）→ 画面右上に表示（effect-engine.js の発揮待ち表示）
+      if (typeof window._setRemotePendingHud === 'function') window._setRemotePendingHud(cmd.items || []);
+      break;
+    }
     case 'fx_stackToDeck': {
       // 相手の効果で、こちらのデジモンに重ねられているカードを上から指定枚数ずつデッキへ戻された
       // （クロノモン：デストロイモード BT26-060）。相手が選んだ枚数・置く順番をそのまま再現する

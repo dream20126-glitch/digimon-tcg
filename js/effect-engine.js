@@ -718,6 +718,44 @@ function _hudRender() {
     }
   }
 }
+// バトルで消滅が決まったが、先に別の処理（相手の「バトルエリアを離れるとき」の確認等）を挟むため、
+// 消滅時効果がまだ誘発していないカードの消滅時効果を、発揮待ちとして先に表示する（巨神兵器 BT26-085 と
+// 相打ちになったユノモン：ヒステリックモード BT26-083 の【消滅時】）。実際に消滅時効果を処理し始めたら
+// （_fireSelfDestroyEffects）、または消滅しなかったら外す
+const _hudDestroyPreviews = new Map(); // card → source key
+function hudPreviewDestroy(card, side) {
+  if (!card) return;
+  const items = [];
+  const r = _parseCardRecipe(card);
+  const own = r && _lookupTriggerSteps(r, 'on_destroy', card);
+  const key = 'preview#' + (++_hudSeq);
+  if (Array.isArray(own) && own.length > 0) {
+    let text = '';
+    try { text = extractTriggerSectionText(card.effect || '', 'on_destroy', own); } catch (_) { text = card.effect || ''; }
+    items.push(_hudItem(side, card, null, text));
+  }
+  (card.stack || []).forEach((src) => {
+    const sr = src && _parseCardRecipe(src);
+    const evo = sr && sr.evo_source && _lookupTriggerSteps(sr.evo_source, 'on_destroy');
+    if (Array.isArray(evo) && evo.length > 0) items.push(_hudItem(side, card, src, src.evoSourceEffect || ''));
+  });
+  if (items.length === 0) return;
+  items.forEach((it) => { it.group = key; it.sub = (it.sub ? it.sub + '・' : '') + '消滅が決まり発揮待ち'; });
+  _hudClearDestroyPreview(card);
+  _hudDestroyPreviews.set(card, key);
+  _hudSetSource(key, items);
+}
+function _hudClearDestroyPreview(card) {
+  const key = card && _hudDestroyPreviews.get(card);
+  if (!key) return;
+  _hudDestroyPreviews.delete(card);
+  _hudSetSource(key, []);
+}
+if (typeof window !== 'undefined') {
+  window._hudPreviewDestroy = hudPreviewDestroy;
+  window._hudClearDestroyPreview = _hudClearDestroyPreview;
+}
+
 // 相手から届いた相手の発揮待ち（battle-online.js の fx_pendingHud 受信）
 if (typeof window !== 'undefined') {
   window._setRemotePendingHud = (items) => {
@@ -10188,7 +10226,10 @@ export function fireOnBattleDestroyTriggers(destroyedSide, bs, ctxBase, done, de
 // destroyedCard: 消滅したカード本体
 // destroyedSide: そのカードが所属していた side ('player' or 'ai')
 function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done, triggerKey) {
-  const finish = () => { try { done && done(); } catch(_) {} };
+  // 消滅が決まった時点で先に出していた「発揮待ち」の予告は、ここで実際の発揮待ちに置き換える
+  _hudClearDestroyPreview(destroyedCard);
+  const _hudKeySD = 'self#' + (++_hudSeq);
+  const finish = () => { _hudSetSource(_hudKeySD, []); try { done && done(); } catch(_) {} };
   if (!destroyedCard || !bs) { finish(); return; }
   const reactions = [];
   const parseRecipe = (recipe) => {
@@ -10247,6 +10288,12 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
   const runOne = () => {
     if (i >= _reactionsToRun.length) { finish(); return; }
     const reaction = _reactionsToRun[i++];
+    // 発揮待ちの表示（この消滅で誘発した残りの効果）
+    _hudSetSource(_hudKeySD, _reactionsToRun.slice(i).map((r) => {
+      const it = _hudItem(destroyedSide, r.card, r.sourceCard !== r.card ? r.sourceCard : null, r.effectText || '');
+      it.group = _hudKeySD;
+      return it;
+    }));
     // 通常の効果ディスパッチ（executeQueueEntry）と同じ判定・同じ確認フローに揃えるため
     // alwaysConfirm:true（任意効果は side を問わず必ず確認ダイアログを出す）
     _runReactionEffect(reaction, destroyedSide, bs, ctxBase, runOne, { alwaysConfirm: true });

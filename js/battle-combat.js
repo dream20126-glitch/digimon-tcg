@@ -271,7 +271,9 @@ if (typeof window !== 'undefined') {
 // 先に試し、回避できなければ when_battle_destroy / when_destroy（_runWhenBattleDestroy）を確認する。
 // 片方だけ勝つ分岐は以前からこの順で確認していたが、両者消滅の分岐では離れるときの置換効果を見ておらず
 // 不発になっていた（巨神兵器 BT26-085「離れるとき、デストロイモードに進化させることで離れない」等）
-function _runBattleDestroyAvoid(side, card, onDestroy, onCancel) {
+function _runBattleDestroyAvoid(side, card, onDestroy, onCancel0) {
+  // 消滅を回避したら、先に出していた消滅時効果の「発揮待ち」予告を外す
+  const onCancel = () => { if (typeof window._hudClearDestroyPreview === 'function') window._hudClearDestroyPreview(card); onCancel0(); };
   const owner = side === 'ai' ? bs.ai : bs.player;
   _tryCancelDestroyAsync(card, owner, side, false, (canceled) => {
     if (canceled) { addLog('🛡 「' + card.name + '」が消滅を回避'); renderAll(); onCancel(); return; }
@@ -2873,7 +2875,9 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
     // （例:「アタック中のこのデジモンは相手の効果を受けない」＝immune_effects）
     _expireBuffs(bs, 'dur_until_battle_end');
     if (_atkDp === _defDp) {
-      // 両者消滅の前に、双方独立に when_battle_destroy（消滅回避コスト）を確認する
+      // 両者消滅の前に、双方独立に when_battle_destroy（消滅回避コスト）を確認する。相手の確認を待っている間も、
+      // 自分のデジモンの消滅時効果を発揮待ちとして表示しておく
+      if (typeof window._hudPreviewDestroy === 'function') window._hudPreviewDestroy(atk, 'player');
       _runBattleDestroyAvoid('ai', def, () => {
         _runBattleDestroyAvoid('player', atk, () => {
           // 両者とも回避せず → 両者消滅

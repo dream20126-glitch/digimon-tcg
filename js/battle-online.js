@@ -1993,8 +1993,12 @@ function resolveOnlineBlock(blockerIdx, cmd) {
         try { window._tryCancelBattleDestroy(card, side, (c) => { window._suppressFxSend = true; cb(!!c); }); }
         catch (_) { window._suppressFxSend = true; cb(false); }
       };
+      // ブロックしたこちらのデジモンの消滅が決まったら、相手の「離れるとき」等の確認を待っている間も、
+      // その消滅時効果を発揮待ちとして表示しておく（ユノモン：ヒステリックモード BT26-083 の【消滅時】等）
+      if (_blkWouldDie && typeof window._hudPreviewDestroy === 'function') window._hudPreviewDestroy(blocker, 'player');
       tryAvoid(_atkWouldDie, atk, 'ai', (atkAvoided) => {
       tryAvoid(_blkWouldDie, blocker, 'player', (blkAvoided) => {
+      if (blkAvoided && typeof window._hudClearDestroyPreview === 'function') window._hudClearDestroyPreview(blocker);
       const atkDies = _atkWouldDie && !atkAvoided;
       const blkDies = _blkWouldDie && !blkAvoided;
       if (!atkDies && !blkDies) {

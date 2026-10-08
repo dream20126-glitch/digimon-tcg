@@ -265,6 +265,327 @@ function _announceInherit(entry, context, done) {
   catch (_) { done(); }
 }
 
+// ===== 相手のデジモンN体に重ねられているカードを、上から合計M枚デッキの上/下に戻す =====
+// クロノモン：デストロイモード BT26-060「相手のデジモン3体に重ねられているカードを上から5枚デッキの上に戻す」。
+// 流れ（効果を発揮する側が全て選ぶ）:
+//   1. 相手のデジモンを N 体選ぶ（1体ずつ。選ぶたびにカード詳細＝進化元と効果を見せて「このデジモンでいいですか？」）。
+//      一番上が Lv.3 以下のデジモン・進化元がないデジモンは選べない（戻せるカードが無い）
+//   2. 選んだデジモンごとに戻す枚数を決める（1体につき最低1枚、合計 M 枚。戻せる枚数より多い合計にはしない）
+//   3. 戻すカードをデッキに置く順番を決める
+// 1体から戻せるのは「本体＋進化元」の上から、最後の1枚を残し、Lv.3以下のカードの手前まで（退化と同じ）
+
+// このデジモンから上から戻せる最大枚数
+function _stackReturnMax(c) {
+  if (!c || !Array.isArray(c.stack) || c.stack.length === 0) return 0;
+  const seq = [c].concat(c.stack);
+  let k = 0;
+  while (k < seq.length - 1) {
+    const lv = parseInt(seq[k] && seq[k].level, 10) || 0;
+    if (lv > 0 && lv <= 3) break;
+    k++;
+  }
+  return k;
+}
+
+// 1体から上から n 枚を取り除き、残りの一番上を新しい本体にする。取り除いたカード（上から順）を返す。
+// 自分の端末（effect-engine）と相手の端末（battle-online の fx_stackToDeck 受信）の両方で使う
+function _detachTopCards(area, idx, n) {
+  const c = area[idx];
+  if (!c || n <= 0) return [];
+  const seq = [c].concat(c.stack || []);
+  const take = Math.min(n, seq.length - 1);
+  const removed = seq.slice(0, take);
+  const newCarrier = seq[take];
+  if (newCarrier !== c) {
+    newCarrier.stack = seq.slice(take + 1);
+    newCarrier.suspended = !!c.suspended;
+    newCarrier.buffs = [];
+    newCarrier._permEffects = {};
+    newCarrier.summonedThisTurn = false;
+    newCarrier._usedEffects = [];
+    newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
+    newCarrier.dp = newCarrier.baseDp;
+    newCarrier.dpModifier = 0;
+  }
+  removed.forEach((r) => { r.stack = []; });
+  area[idx] = newCarrier;
+  return removed;
+}
+
+// entries: [{ idx, count }]（どのデジモンから何枚）/ order: [[entryNo, k], ...]（取り除いたカードを置く順。
+// entryNo 番目のデジモンから取り除いた上から k 番目のカード）。順に1枚ずつデッキの上（下）へ置くので、
+// top なら order の最後のカードがデッキの一番上になる。置いたカードを置いた順で返す
+function _applyStackToDeck(ownerPlayer, entries, order, top) {
+  const removedByEntry = entries.map((e) => _detachTopCards(ownerPlayer.battleArea, e.idx, e.count));
+  const placed = [];
+  order.forEach(([ei, k]) => {
+    const card = removedByEntry[ei] && removedByEntry[ei][k];
+    if (!card) return;
+    if (top) ownerPlayer.deck.unshift(card); else ownerPlayer.deck.push(card);
+    placed.push(card);
+  });
+  // 念のため、order に含まれなかったカードも置く（取りこぼし防止）
+  removedByEntry.forEach((list) => list.forEach((card) => {
+    if (placed.includes(card)) return;
+    if (top) ownerPlayer.deck.unshift(card); else ownerPlayer.deck.push(card);
+    placed.push(card);
+  }));
+  return placed;
+}
+if (typeof window !== 'undefined') window._applyStackToDeck = _applyStackToDeck;
+
+const _sdImg = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
+const _sdEsc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+function _sdOverlay() {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:65000;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:16px;gap:12px;overflow-y:auto;';
+  return ov;
+}
+function _sdButton(label, bg, fg) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.innerText = label;
+  b.style.cssText = 'font-weight:bold;font-size:13px;padding:8px 18px;border-radius:999px;border:2px solid ' + bg + ';background:' + bg + ';color:' + fg + ';cursor:pointer;';
+  return b;
+}
+
+// 選んだデジモンのカード詳細（本体・進化元とその効果）を見せて「このデジモンでいいですか？」。callback(true/false)
+function _confirmDigimonDetail(card, maxReturn, callback) {
+  const ov = _sdOverlay();
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#00fbff;font-size:15px;font-weight:bold;text-shadow:0 0 8px #00fbff;text-align:center;margin-top:8px;';
+  title.innerText = 'このデジモンでいいですか？';
+  const seq = [card].concat(card.stack || []);
+  const list = document.createElement('div');
+  list.style.cssText = 'display:grid;gap:8px;width:min(560px,100%);';
+  seq.forEach((c, i) => {
+    const row = document.createElement('div');
+    const returnable = i < maxReturn;
+    row.style.cssText = 'display:flex;gap:10px;align-items:flex-start;background:#111;border:1px solid ' + (i === 0 ? '#00fbff' : '#444') + ';border-radius:8px;padding:8px;';
+    const txt = (i === 0 ? (c.effect || '') : ((c.evoSourceEffect && c.evoSourceEffect !== 'なし') ? c.evoSourceEffect : '（進化元効果なし）'));
+    row.innerHTML = (_sdImg(c) ? '<img src="' + _sdEsc(_sdImg(c)) + '" style="width:64px;border-radius:4px;flex:none;">' : '')
+      + '<div style="min-width:0;flex:1;">'
+      + '<div style="color:#fff;font-size:12px;font-weight:bold;">' + (i === 0 ? '本体' : '進化元' + i) + '：' + _sdEsc(c.name) + '（Lv.' + _sdEsc(c.level) + '）'
+      + (returnable ? '' : ' <span style="color:#888;font-weight:normal;">（戻せない）</span>') + '</div>'
+      + '<div style="color:#aaf;font-size:11px;line-height:1.5;white-space:pre-wrap;">' + _sdEsc(txt) + '</div></div>';
+    list.appendChild(row);
+  });
+  const note = document.createElement('div');
+  note.style.cssText = 'color:#aaa;font-size:11px;text-align:center;';
+  note.innerText = 'このデジモンからは上から最大' + maxReturn + '枚戻せます';
+  const btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;padding-bottom:12px;';
+  const ok = _sdButton('このデジモンにする', '#00fbff', '#000');
+  const ng = _sdButton('選び直す', '#555', '#fff');
+  ok.onclick = () => { ov.remove(); callback(true); };
+  ng.onclick = () => { ov.remove(); callback(false); };
+  btns.append(ok, ng);
+  ov.append(title, list, note, btns);
+  document.body.appendChild(ov);
+}
+
+// 選んだデジモンごとの戻す枚数を決める（各1枚以上・最大まで、合計 total 枚）。callback(counts)
+function _chooseReturnCounts(cards, maxes, total, callback) {
+  const counts = cards.map(() => 1);
+  // 初期値: 1枚ずつ配った残りを上から順に詰める
+  let rest = total - counts.length;
+  for (let i = 0; i < counts.length && rest > 0; i++) { const add = Math.min(rest, maxes[i] - counts[i]); counts[i] += add; rest -= add; }
+  const ov = _sdOverlay();
+  const render = () => {
+    ov.innerHTML = '';
+    const sum = counts.reduce((a, b) => a + b, 0);
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#00fbff;font-size:15px;font-weight:bold;text-shadow:0 0 8px #00fbff;text-align:center;margin-top:8px;';
+    title.innerText = '何枚ずつ戻しますか？（合計' + sum + ' / ' + total + '枚）';
+    const sub = document.createElement('div');
+    sub.style.cssText = 'color:#aaa;font-size:11px;text-align:center;';
+    sub.innerText = '1体につき最低1枚。重ねられているカードの上から戻します';
+    const list = document.createElement('div');
+    list.style.cssText = 'display:grid;gap:8px;width:min(560px,100%);';
+    cards.forEach((c, i) => {
+      const seq = [c].concat(c.stack || []);
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:10px;align-items:center;background:#111;border:1px solid #444;border-radius:8px;padding:8px;';
+      const info = document.createElement('div');
+      info.style.cssText = 'flex:1;min-width:0;';
+      info.innerHTML = '<div style="color:#fff;font-size:12px;font-weight:bold;">' + _sdEsc(c.name) + '（最大' + maxes[i] + '枚）</div>'
+        + '<div style="color:#ffcc00;font-size:11px;">戻す: ' + _sdEsc(seq.slice(0, counts[i]).map(x => x.name).join(' → ')) + '</div>';
+      const minus = _sdButton('－', '#333', '#fff');
+      const plus = _sdButton('＋', '#333', '#fff');
+      const num = document.createElement('div');
+      num.style.cssText = 'color:#fff;font-size:16px;font-weight:bold;min-width:24px;text-align:center;';
+      num.innerText = String(counts[i]);
+      minus.disabled = counts[i] <= 1;
+      plus.disabled = counts[i] >= maxes[i] || sum >= total;
+      if (minus.disabled) minus.style.opacity = '.35';
+      if (plus.disabled) plus.style.opacity = '.35';
+      minus.onclick = () => { if (counts[i] > 1) { counts[i]--; render(); } };
+      plus.onclick = () => { if (counts[i] < maxes[i] && sum < total) { counts[i]++; render(); } };
+      row.append(_sdImg(c) ? Object.assign(document.createElement('img'), { src: _sdImg(c), style: 'width:48px;border-radius:4px;flex:none;' }) : document.createElement('span'), info, minus, num, plus);
+      list.appendChild(row);
+    });
+    const ok = _sdButton('決定', '#00fbff', '#000');
+    ok.disabled = sum !== total;
+    if (ok.disabled) ok.style.opacity = '.4';
+    ok.onclick = () => { if (counts.reduce((a, b) => a + b, 0) !== total) return; ov.remove(); callback(counts.slice()); };
+    ov.append(title, sub, list, ok);
+  };
+  render();
+  document.body.appendChild(ov);
+}
+
+// 戻すカードをデッキに置く順番を決める（左から順に置く。top なら一番右がデッキの一番上）。callback(順番に並べた items)
+function _chooseDeckPlaceOrder(items, top, callback) {
+  const order = items.slice();
+  let reorder = false;
+  const ov = _sdOverlay();
+  ov.style.justifyContent = 'center';
+  const render = () => {
+    ov.innerHTML = '';
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#00fbff;font-size:15px;font-weight:bold;text-shadow:0 0 8px #00fbff;text-align:center;';
+    title.innerText = 'この順番で相手のデッキの' + (top ? '上' : '下') + 'に戻しますか？';
+    const sub = document.createElement('div');
+    sub.style.cssText = 'color:#aaa;font-size:11px;text-align:center;';
+    sub.innerText = top ? '左から順にデッキの上に置きます（一番右のカードがデッキの一番上になります）' : '左から順にデッキの下に置きます（一番右のカードがデッキの一番下になります）';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:100%;';
+    order.forEach((it, i) => {
+      const cell = document.createElement('div');
+      cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;width:84px;';
+      const pos = document.createElement('div');
+      pos.style.cssText = 'color:#ffcc00;font-size:11px;font-weight:bold;';
+      pos.innerText = (i + 1) + (i === order.length - 1 ? (top ? '（一番上）' : '（一番下）') : '');
+      const img = document.createElement('img');
+      img.src = _sdImg(it.card);
+      img.alt = it.card.name || '';
+      img.style.cssText = 'width:80px;border-radius:6px;border:2px solid ' + (reorder ? '#ffcc00' : '#00fbff') + ';';
+      const nm = document.createElement('div');
+      nm.style.cssText = 'color:#fff;font-size:10px;text-align:center;line-height:1.3;';
+      nm.innerText = (it.card.name || '') + '\n（' + (it.fromName || '') + 'から）';
+      cell.append(pos, img, nm);
+      if (reorder) {
+        const arrows = document.createElement('div');
+        arrows.style.cssText = 'display:flex;gap:6px;';
+        [['◀', -1], ['▶', 1]].forEach(([lb, d]) => {
+          const to = i + d;
+          const b = _sdButton(lb, '#222', '#ffcc00');
+          b.style.padding = '4px 10px';
+          if (to < 0 || to >= order.length) { b.disabled = true; b.style.opacity = '.3'; }
+          b.onclick = () => { if (to < 0 || to >= order.length) return; const t = order[i]; order[i] = order[to]; order[to] = t; render(); };
+          arrows.appendChild(b);
+        });
+        cell.appendChild(arrows);
+      }
+      row.appendChild(cell);
+    });
+    const btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;';
+    const ok = _sdButton('OK', '#00fbff', '#000');
+    ok.onclick = () => { ov.remove(); callback(order.slice()); };
+    const re = _sdButton(reorder ? '並べ替えを終える' : '順番を変更', '#ffcc00', '#000');
+    re.onclick = () => { reorder = !reorder; render(); };
+    btns.append(ok, re);
+    ov.append(title, sub, row, btns);
+  };
+  render();
+  document.body.appendChild(ov);
+}
+
+// 効果本体（executeRecipeStep の return_deck から呼ぶ）
+function _runStackToDeckEffect(step, ctx, player, opponent, effectiveSide, callback) {
+  const tStr = String(step.target || '');
+  const m = /^opponent(?:_card)?:(?:up_to_)?(\d+)$/.exec(tStr);
+  const wantDigi = m ? (parseInt(m[1], 10) || 1) : 1;
+  const totalWant = Math.max(1, parseInt(step.value, 10) || 1);
+  const top = step.position === 'top' || step.deck_top;
+  const oppSide = ctx.side === 'player' ? 'ai' : 'player';
+  const eligible = (c) => !!c && _stackReturnMax(c) > 0
+    && !(c.buffs && c.buffs.some(b => b && b.type === 'cant_return_deck'))
+    && !hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))
+    && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card));
+  const candIdx = [];
+  opponent.battleArea.forEach((c, i) => { if (eligible(c)) candIdx.push(i); });
+  if (candIdx.length === 0) {
+    ctx.addLog('⚠ 重ねられているカードを戻せる相手のデジモンがいません（Lv.3以下・進化元なしは選べません）');
+    showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
+    return;
+  }
+  const digiCount = Math.min(wantDigi, candIdx.length);
+  const rowId = ctx.side === 'player' ? 'ai' : 'pl';
+
+  const finish = (chosenIdx, counts, orderItems) => {
+    const entries = chosenIdx.map((idx, i) => ({ idx, count: counts[i] }));
+    const order = orderItems.map(it => [it.entry, it.k]);
+    const names = entries.map(e => opponent.battleArea[e.idx] && opponent.battleArea[e.idx].name);
+    const placed = _applyStackToDeck(opponent, entries, order, top);
+    ctx.addLog('🔄 相手のデジモン' + entries.length + '体に重ねられているカードを合計' + placed.length + '枚、デッキの' + (top ? '上' : '下') + 'に戻した（' + names.join('・') + '）');
+    if (ctx.bs) ctx.bs._lastActionCount = placed.length;
+    ctx.renderAll();
+    if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+      try {
+        window._onlineSendCommand({ type: 'fx_stackToDeck', entries, order, top: !!top });
+        if (window._markEvoModified) entries.forEach(e => window._markEvoModified('ai', e.idx));
+      } catch (_) {}
+    }
+    try { applyPermanentEffects(ctx.bs, oppSide, ctx); } catch (_) {}
+    let i = 0;
+    const anim = () => {
+      if (i >= placed.length || effectiveSide === 'ai') { _deckIncreased(ctx, oppSide, () => callback()); return; }
+      const c = placed[i++];
+      _fxMoveSync(ctx, c, '相手のデジモン', '相手のデッキ' + (top ? '(上)' : '(下)'), anim, { remoteFrom: '自分のデジモン', remoteTo: 'デッキ' + (top ? '(上)' : '(下)') });
+    };
+    anim();
+  };
+
+  const afterPick = (chosenIdx) => {
+    const cards = chosenIdx.map(i => opponent.battleArea[i]);
+    const maxes = cards.map(_stackReturnMax);
+    const total = Math.min(totalWant, maxes.reduce((a, b) => a + b, 0));
+    const toOrder = (counts) => {
+      const items = [];
+      cards.forEach((c, ei) => {
+        const seq = [c].concat(c.stack || []);
+        for (let k = 0; k < counts[ei]; k++) items.push({ entry: ei, k, card: seq[k], fromName: c.name });
+      });
+      return items;
+    };
+    if (effectiveSide === 'ai') {
+      const counts = cards.map(() => 1);
+      let rest = total - counts.length;
+      for (let i = 0; i < counts.length && rest > 0; i++) { const add = Math.min(rest, maxes[i] - counts[i]); counts[i] += add; rest -= add; }
+      finish(chosenIdx, counts, toOrder(counts));
+      return;
+    }
+    const withCounts = (counts) => {
+      const items = toOrder(counts);
+      if (items.length <= 1) { finish(chosenIdx, counts, items); return; }
+      _chooseDeckPlaceOrder(items, top, (ordered) => finish(chosenIdx, counts, ordered));
+    };
+    // 1体だけ、または合計が体数ちょうど（全員1枚）なら枚数の選択は不要
+    if (cards.length === 1) { withCounts([total]); return; }
+    if (total === cards.length) { withCounts(cards.map(() => 1)); return; }
+    _chooseReturnCounts(cards, maxes, total, withCounts);
+  };
+
+  if (effectiveSide === 'ai') { afterPick(candIdx.slice(0, digiCount)); return; }
+  // 1体ずつ選ぶ（選ぶたびにカード詳細で確認）
+  const chosen = [];
+  const pickNext = () => {
+    if (chosen.length >= digiCount) { afterPick(chosen); return; }
+    const avail = candIdx.filter(i => !chosen.includes(i));
+    showTargetSelection(rowId, avail, null, '#ff4444', (sel) => {
+      if (sel === null || !avail.includes(sel)) { pickNext(); return; }
+      const c = opponent.battleArea[sel];
+      _confirmDigimonDetail(c, _stackReturnMax(c), (ok) => {
+        if (ok) chosen.push(sel);
+        pickNext();
+      });
+    }, '（重ねられているカードを戻すデジモン ' + (chosen.length + 1) + '/' + digiCount + '体目）');
+  };
+  pickNext();
+}
+
 // ===== キュー順序選択UI =====
 // 同レベルで誘発した効果が複数ある時、プレイヤーがどれを先に発動するか選択する
 function showQueueOrderSelect(entries, callback) {
@@ -14122,84 +14443,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 相手自身のデッキ（所有者のデッキ）に戻す。例: テラーズクラスター
       // 「レスト状態の相手のデジモン1体をデッキの下に戻す」
       const _rdTStr = step.target || '';
-      // from:"stacked_cards" + 相手のデジモン N 体（クロノモン：デストロイモード BT26-060「相手のデジモン3体に
-      // 重ねられているカードを上から5枚デッキの上に戻す」）: 選んだ N 体の「本体＋進化元」の上から、合計 value 枚を
-      // 1枚ずつ持ち主のデッキへ戻す（どのデジモンから戻すかは1枚ごとに選ぶ）。退化と同じく、最後の1枚は残し、
-      // Lv.3以下のカードが一番上になったらそのデジモンからはそれ以上戻さない。以前はこの指定に対応しておらず
-      // デジモンごとデッキに戻す処理になっていた
+      // from:"stacked_cards" + 相手のデジモン N 体（クロノモン：デストロイモード BT26-060）→ _runStackToDeckEffect
       if (step.from === 'stacked_cards' && _rdTStr.startsWith('opponent')) {
-        const _skM = /^opponent(?:_card)?:(?:up_to_)?(\d+)$/.exec(_rdTStr);
-        const _skWantDigi = _skM ? (parseInt(_skM[1], 10) || 1) : 1;
-        const _skTotal = Math.max(1, parseInt(step.value, 10) || 1);
-        const _skTop = step.position === 'top' || step.deck_top;
-        const _skOppSide = ctx.side === 'player' ? 'ai' : 'player';
-        const _skCanTake = (c) => {
-          if (!c || !Array.isArray(c.stack) || c.stack.length === 0) return false;
-          if (c.buffs && c.buffs.some(b => b && b.type === 'cant_return_deck')) return false;
-          if (hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return false;
-          const lv = parseInt(c.level, 10) || 0;
-          return !(lv > 0 && lv <= 3);
-        };
-        const _skCands = [];
-        opponent.battleArea.forEach((c, i) => { if (_skCanTake(c) && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))) _skCands.push(i); });
-        if (_skCands.length === 0) { ctx.addLog('⚠ 重ねられているカードを戻せる相手のデジモンがいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, callback); break; }
-        const _skRowId = ctx.side === 'player' ? 'ai' : 'pl';
-        // 1枚戻す（本体を戻し、進化元の一番上を新しい本体にする）
-        const _skTakeOne = (idx, done) => {
-          const c = opponent.battleArea[idx];
-          if (!_skCanTake(c)) { done(); return; }
-          const newCarrier = c.stack[0];
-          newCarrier.stack = c.stack.slice(1);
-          newCarrier.suspended = !!c.suspended;
-          newCarrier.buffs = [];
-          newCarrier._permEffects = {};
-          newCarrier.summonedThisTurn = false;
-          newCarrier._usedEffects = [];
-          newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
-          newCarrier.dp = newCarrier.baseDp;
-          newCarrier.dpModifier = 0;
-          opponent.battleArea[idx] = newCarrier;
-          c.stack = [];
-          if (_skTop) opponent.deck.unshift(c); else opponent.deck.push(c);
-          ctx.addLog('🔄 「' + c.name + '」を相手のデッキの' + (_skTop ? '上' : '下') + 'に戻した（新形態: ' + newCarrier.name + '）');
-          ctx.renderAll();
-          if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
-            try {
-              window._onlineSendCommand({ type: 'fx_detach_stack', targetIdx: idx, onSide: 'self', removeCount: 1, fromBottom: false, destZone: 'deck', destPosition: _skTop ? 'top' : 'bottom' });
-              if (window._markEvoModified) window._markEvoModified('ai', idx);
-            } catch (_) {}
-          }
-          if (effectiveSide === 'ai') { done(); return; }
-          _fxMoveSync(ctx, c, '相手の「' + newCarrier.name + '」', '相手のデッキ' + (_skTop ? '(上)' : '(下)'), done,
-            { remoteFrom: '「' + newCarrier.name + '」', remoteTo: 'デッキ' + (_skTop ? '(上)' : '(下)') });
-        };
-        const _skFinish = (returned) => {
-          try { applyPermanentEffects(ctx.bs, _skOppSide, ctx); } catch (_) {}
-          ctx.renderAll();
-          if (ctx.bs) ctx.bs._lastActionCount = returned;
-          if (returned > 0) _deckIncreased(ctx, _skOppSide, () => callback());
-          else callback();
-        };
-        // 合計 _skTotal 枚になるまで、選んだデジモンのうち戻せるものから1枚ずつ戻す
-        const _skDistribute = (slots) => {
-          let returned = 0;
-          const next = () => {
-            if (returned >= _skTotal) { _skFinish(returned); return; }
-            const avail = slots.filter(i => _skCanTake(opponent.battleArea[i]));
-            if (avail.length === 0) { _skFinish(returned); return; }
-            const take = (i) => _skTakeOne(i, () => { returned++; next(); });
-            if (avail.length === 1 || effectiveSide === 'ai') { take(avail[0]); return; }
-            showTargetSelection(_skRowId, avail, null, '#ff4444', (sel) => take(sel !== null && avail.includes(sel) ? sel : avail[0]),
-              '（重ねられているカードを上から戻すデジモン・あと' + (_skTotal - returned) + '枚）');
-          };
-          next();
-        };
-        if (_skCands.length <= _skWantDigi || effectiveSide === 'ai') { _skDistribute(_skCands.slice(0, _skWantDigi)); break; }
-        const _skCards = _skCands.map(i => opponent.battleArea[i]);
-        showCardListPicker(_skCards, _skWantDigi, '🔄 重ねられているカードを戻す相手のデジモンを' + _skWantDigi + '体選んでください', (picked) => {
-          const slots = (picked || []).map(c => opponent.battleArea.indexOf(c)).filter(i => i !== -1);
-          _skDistribute(slots.length > 0 ? slots : _skCands.slice(0, _skWantDigi));
-        });
+        _runStackToDeckEffect(step, ctx, player, opponent, effectiveSide, callback);
         break;
       }
       if (_rdTStr.startsWith('opponent')) {

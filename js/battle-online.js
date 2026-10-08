@@ -1490,6 +1490,18 @@ function onRemoteCommand(cmd) {
       dediShowAnim();
       break;
     }
+    case 'fx_stackToDeck': {
+      // 相手の効果で、こちらのデジモンに重ねられているカードを上から指定枚数ずつデッキへ戻された
+      // （クロノモン：デストロイモード BT26-060）。相手が選んだ枚数・置く順番をそのまま再現する
+      if (typeof window._applyStackToDeck === 'function' && Array.isArray(cmd.entries)) {
+        const placed = window._applyStackToDeck(bs.player, cmd.entries, Array.isArray(cmd.order) ? cmd.order : [], !!cmd.top);
+        addLog('🔄 相手の効果で、重ねられているカード' + placed.length + '枚がデッキの' + (cmd.top ? '上' : '下') + 'に戻った');
+        try { if (window._applyPermanentEffects) window._applyPermanentEffects(); } catch (_) {}
+        renderAll();
+        sendStateSync();
+      }
+      break;
+    }
     case 'fx_detach_stack': {
       // 重ねられているカードの一部だけを任意ゾーンへ移動（fx_dedigivolveの汎用版。
       // 破棄先固定でなくdestZone/destPositionで任意先に対応。例: BT26-033「離れない」コスト）

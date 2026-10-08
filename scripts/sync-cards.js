@@ -97,6 +97,18 @@ async function main() {
   fs.writeFileSync(OUT_FILE, JSON.stringify(out));
   fs.writeFileSync(VERSION_FILE, JSON.stringify({ version, exportedAt: out.exportedAt, cardCount: cards.length }));
 
+  // キーワード効果の説明（スプシ「キーワード効果」シート）→ data/keyword-effects.json（効果ポップアップの説明表示用）
+  try {
+    const dict = await fetchJson(GAS_URL + '?action=listDict');
+    const kwEffects = ((dict && dict.keywords) || []).map((r) => ({
+      keyword: String(r['キーワード'] || '').trim(), description: String(r['効果説明'] || '').trim(),
+    })).filter((r) => r.keyword && r.description);
+    if (kwEffects.length > 0) {
+      fs.writeFileSync(path.join(path.dirname(OUT_FILE), 'keyword-effects.json'), JSON.stringify({ exportedAt: out.exportedAt, source: 'スプレッドシート「キーワード効果」シート', keywords: kwEffects }, null, 1));
+      console.log('[sync-cards] キーワード効果の説明: ' + kwEffects.length + '件');
+    }
+  } catch (e) { console.warn('[sync-cards] キーワード効果の説明を取得できませんでした（既存のファイルを残します）:', e.message); }
+
   // カード個別ファイル（バトル開始時等、デッキに入っているカードだけをピンポイント
   // 取得できるようにするための分割出力）。既存フォルダは一旦クリアしてから書き直す
   // ことで、カードNo変更・削除に伴う古いファイルの残留を防ぐ。

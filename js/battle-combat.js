@@ -443,11 +443,12 @@ function showMichizureAnnounce(callback) {
   text.style.cssText = 'font-size:clamp(1.6rem,7vw,3.2rem);font-weight:900;color:#ff5577;letter-spacing:6px;text-shadow:0 0 20px #ff5577,0 0 40px #aa0033,0 0 60px #aa0033;animation:phaseSlideIn 1.4s ease forwards;';
   text.innerText = '💀 道連れ！';
   overlay.appendChild(text);
+  const _kwRule = !!(window._appendKeywordRuleLine && window._appendKeywordRuleLine(overlay, 'michizure'));
   document.body.appendChild(overlay);
   setTimeout(() => {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     callback && callback();
-  }, 1200);
+  }, _kwRule ? 2600 : 1200);
 }
 // window から呼べるように公開（battle-online.js のオンラインブロック処理で使う）
 if (typeof window !== 'undefined') window._showMichizureAnnounce = showMichizureAnnounce;
@@ -465,11 +466,12 @@ function showPenetrateAnnounce(callback) {
   text.style.cssText = 'font-size:clamp(1.6rem,7vw,3.2rem);font-weight:900;color:#ff9900;letter-spacing:6px;text-shadow:0 0 20px #ff9900,0 0 40px #ff5500,0 0 60px #ff5500;animation:phaseSlideIn 1.4s ease forwards;';
   text.innerText = '🗡 貫通！';
   overlay.appendChild(text);
+  const _kwRule = !!(window._appendKeywordRuleLine && window._appendKeywordRuleLine(overlay, 'penetrate'));
   document.body.appendChild(overlay);
   setTimeout(() => {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     callback && callback();
-  }, 1400);
+  }, _kwRule ? 2800 : 1400);
 }
 
 function hideCombatBackdrop() {
@@ -4443,8 +4445,9 @@ function showSAttackPlusAnnounce(n, callback) {
   el.style.cssText = 'position:absolute;top:50%;left:50%;font-size:clamp(1.8rem,8vw,3rem);font-weight:900;color:#ff2255;text-shadow:0 0 10px #ff2255,0 0 30px #ff4466,0 0 60px #ff0044,0 0 100px #ff006688;letter-spacing:3px;white-space:nowrap;padding:16px 36px;border:3px solid #ff3366;border-radius:14px;background:linear-gradient(135deg,rgba(40,0,10,0.95),rgba(80,0,20,0.95));animation:sAttackPlusSlam 2s cubic-bezier(0.22,1,0.36,1) forwards, sAttackPlusGlow 0.6s ease-in-out 0.25s 2;';
   el.innerText = '⚔ セキュリティアタック+' + n + '！！';
   overlay.appendChild(el);
+  const _kwRule = !!(window._appendKeywordRuleLine && window._appendKeywordRuleLine(overlay, 'security_attack_plus'));
   document.body.appendChild(overlay);
-  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2200);
+  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, _kwRule ? 3000 : 2200);
 }
 
 // ----- 勝敗演出 -----

@@ -1329,8 +1329,9 @@ function onRemoteCommand(cmd) {
       mtxt.style.cssText = 'font-size:clamp(1.6rem,7vw,3.2rem);font-weight:900;color:#ff5577;letter-spacing:6px;text-shadow:0 0 20px #ff5577,0 0 40px #aa0033,0 0 60px #aa0033;animation:phaseSlideIn 1.4s ease forwards;';
       mtxt.innerText = '💀 道連れ！';
       movly.appendChild(mtxt);
+      const _kwRule = !!(window._appendKeywordRuleLine && window._appendKeywordRuleLine(movly, 'michizure'));
       document.body.appendChild(movly);
-      setTimeout(() => { if (movly.parentNode) movly.parentNode.removeChild(movly); }, 1200);
+      setTimeout(() => { if (movly.parentNode) movly.parentNode.removeChild(movly); }, _kwRule ? 2600 : 1200);
       break;
     }
     case 'fx_penetrate': {
@@ -1341,8 +1342,9 @@ function onRemoteCommand(cmd) {
       text.style.cssText = 'font-size:clamp(1.6rem,7vw,3.2rem);font-weight:900;color:#ff9900;letter-spacing:6px;text-shadow:0 0 20px #ff9900,0 0 40px #ff5500,0 0 60px #ff5500;animation:phaseSlideIn 1.4s ease forwards;';
       text.innerText = '🗡 貫通！';
       overlay.appendChild(text);
+      const _kwRule = !!(window._appendKeywordRuleLine && window._appendKeywordRuleLine(overlay, 'penetrate'));
       document.body.appendChild(overlay);
-      setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 1400);
+      setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }, _kwRule ? 2800 : 1400);
       addLog('🗡 相手の【貫通】効果でセキュリティチェック！');
       break;
     }

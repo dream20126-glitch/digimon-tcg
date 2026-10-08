@@ -315,7 +315,7 @@ function executeQueueEntry(entry, context, callback) {
   const _recipeStepsForLookup = block._grantedSteps || (_trigCodeForLookup ? getRecipeForTrigger(_recipeCardForLookup, _trigCodeForLookup, !!block._recipeCard) : null);
   // ポップアップ表示用: display_text 指定があればそれを最優先、無ければ複数トリガーを
   // 持つカードでも今発動中のトリガー部分だけを抜粋する
-  const displayEffText = extractTriggerSectionText(block.raw, block.trigger ? block.trigger.code : null, _recipeStepsForLookup);
+  const displayEffText = _withKeywordRuleText(extractTriggerSectionText(block.raw, block.trigger ? block.trigger.code : null, _recipeStepsForLookup), _recipeStepsForLookup);
 
   // レシピ/アクションを実行（アナウンス演出は挟まない）
   function runEffectNow(cb) {
@@ -7823,6 +7823,53 @@ const _NO_MERGE_TRIGGER_CODES = new Set(['on_attack']);
 // ユノモン：ヒステリックモード BT26-083）。on_own_turn_end のアタックには印（_executeAttack）を付け、
 // _confirmAndDeclareEffectAttack がアタック中のカードに _executeAttacking を立てる。on_attack_end の
 // 消滅は、その印が立っているアタックのときだけ展開する
+// キーワード辞書のテンプレート由来のステップに、元のキーワード（_kwFlag）の印を付ける（ポップアップの説明表示用）
+function _tagKeywordSteps(flag, steps) {
+  if (!Array.isArray(steps)) return steps || [];
+  return steps.map((st) => (st && typeof st === 'object' && !st._kwFlag) ? Object.assign({}, st, { _kwFlag: flag }) : st);
+}
+
+// キーワードの説明文（スプレッドシート「キーワード効果」シートの効果説明。window.keywordEffects）。
+// コード → 表示名はキーワード辞書（window.keywords の 表示名）から引き、シートのキーワード名で説明を探す
+const _KEYWORD_SHEET_ALIASES = { 'Sアタック+': 'セキュリティアタック', 'Sアタック-': 'セキュリティアタック', 'Sアタック': 'セキュリティアタック', 'リカバリー+': 'リカバリー' };
+export function keywordRuleText(code) {
+  if (!code || typeof window === 'undefined') return '';
+  const rows = window.keywords || [];
+  const lc = String(code).toLowerCase();
+  const row = rows.find((r) => r && String(r['種類'] || '').trim() === 'keyword' && String(r['コード'] || '').trim().toLowerCase() === lc);
+  const name = row ? String(row['表示名'] || '').trim() : (_keywordJpName(code) || String(code));
+  const effects = window.keywordEffects || [];
+  const sheetName = _KEYWORD_SHEET_ALIASES[name] || name;
+  const hit = effects.find((e) => e.keyword === sheetName) || effects.find((e) => e.keyword === name);
+  return hit ? '【' + name + '】' + hit.description : '';
+}
+if (typeof window !== 'undefined') window._keywordRuleText = keywordRuleText;
+
+// 「貫通！」「道連れ！」等の大きな文字の演出オーバーレイに、キーワードの説明（スプレッドシート「キーワード効果」）の
+// 枠を足す。説明が見つかれば true（呼び出し側は読めるよう表示時間を延ばす）
+export function appendKeywordRuleLine(overlay, code) {
+  const t = keywordRuleText(code);
+  if (!t || !overlay || typeof document === 'undefined') return false;
+  const box = document.createElement('div');
+  box.style.cssText = 'position:absolute;left:50%;bottom:16%;transform:translateX(-50%);width:max-content;max-width:min(90vw,560px);padding:10px 16px;border-radius:12px;background:rgba(0,0,0,0.8);border:1px solid rgba(255,255,255,0.35);color:#fff;font-size:clamp(0.75rem,3.2vw,0.95rem);font-weight:600;line-height:1.6;text-align:left;white-space:pre-wrap;';
+  box.innerText = t;
+  overlay.appendChild(box);
+  return true;
+}
+if (typeof window !== 'undefined') window._appendKeywordRuleLine = appendKeywordRuleLine;
+
+// ポップアップの効果テキストに、キーワード由来のステップのキーワード説明を加える。
+// 全てのステップがキーワード由来なら説明だけ（カードの効果テキストの抜粋は出さない）、混ざっていれば末尾に追加する
+function _withKeywordRuleText(text, steps) {
+  if (!Array.isArray(steps)) return text;
+  const flags = [...new Set(steps.filter((st) => st && st._kwFlag).map((st) => st._kwFlag))];
+  if (flags.length === 0) return text;
+  const lines = flags.map(keywordRuleText).filter(Boolean);
+  if (lines.length === 0) return text;
+  const allKw = steps.every((st) => st && st._kwFlag);
+  return allKw ? lines.join('\n') : ((text ? text + '\n' : '') + lines.join('\n'));
+}
+
 function _adjustExecuteSteps(flag, triggerCode, steps, card) {
   if (flag !== 'execute' || !Array.isArray(steps)) return steps || [];
   if (triggerCode === 'on_attack_end') return (card && card._executeAttacking) ? steps : [];
@@ -7844,7 +7891,7 @@ function _lookupTriggerSteps(recipeObj, triggerCode, card) {
       if (!kw) continue;
       const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
       if (!tplSteps) continue;
-      const filled = _adjustExecuteSteps(p.flag, triggerCode, _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common), card);
+      const filled = _tagKeywordSteps(p.flag, _adjustExecuteSteps(p.flag, triggerCode, _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common), card));
       if (filled.length === 0) continue;
       result = result ? result.concat(filled) : filled;
     }
@@ -7867,7 +7914,7 @@ function _lookupTriggerSteps(recipeObj, triggerCode, card) {
       if (!kw) return;
       const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
       if (!tplSteps) return;
-      const filled = _adjustExecuteSteps(code, triggerCode, _fillKeywordTemplateSteps(tplSteps, undefined, undefined, undefined, undefined, undefined), card);
+      const filled = _tagKeywordSteps(code, _adjustExecuteSteps(code, triggerCode, _fillKeywordTemplateSteps(tplSteps, undefined, undefined, undefined, undefined, undefined), card));
       if (filled.length === 0) return;
       result = result ? result.concat(filled) : filled;
     });
@@ -7956,7 +8003,7 @@ function _getKeywordOnAttackSteps(card, flagsOut) {
         ? Object.assign({}, s, { optional: true, filter: Object.assign({ suspended: false }, s.filter || {}) })
         : s);
     }
-    result = result.concat(filled);
+    result = result.concat(_tagKeywordSteps(p.flag, filled));
     if (flagsOut) flagsOut.push(p.flag);
   }
   return result;
@@ -7980,8 +8027,9 @@ export function fireKeywordAttackEffects(card, side, bs, ctxBase, done) {
     collision: '【衝突】このデジモンのアタック中、相手のデジモン全ては【ブロッカー】を得て、可能ならブロックしなければならない。',
   };
   const allMandatory = flags.length > 0 && flags.every(f => MANDATORY_ATTACK_KEYWORDS.includes(f));
-  const mandatoryText = allMandatory ? flags.map(f => KEYWORD_RULE_TEXT[f] || ('【' + _keywordJpName(f) + '】')).join('\n') : '';
-  const reaction = { card, sourceCard: card, recipe: steps, effectText: allMandatory ? mandatoryText : label + 'の効果を発動しますか？' };
+  const ruleText = flags.map(f => keywordRuleText(f) || KEYWORD_RULE_TEXT[f] || ('【' + _keywordJpName(f) + '】')).join('\n');
+  // _runReactionEffect が _kwFlag から説明を足し直さないよう、ここで完成した文を渡す（印は外したコピーを使う）
+  const reaction = { card, sourceCard: card, recipe: steps.map(st => (st && st._kwFlag) ? Object.assign({}, st, { _kwFlag: undefined }) : st), effectText: allMandatory ? ruleText : ruleText + '\nの効果を発動しますか？' };
   try { _runReactionEffect(reaction, side, bs, ctxBase, finish, { alwaysConfirm: !allMandatory }); }
   catch (_) { finish(); }
 }
@@ -8079,6 +8127,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
     : (card.effect || '');
   const effectText = reaction.effectText != null ? reaction.effectText
     : extractTriggerSectionText(_reactFullText, reaction.triggerCode || null, recipe);
+  const effectTextWithKw = _withKeywordRuleText(effectText, recipe);
   const evoSourceArg = isEvo ? sourceCard : undefined;
   const alwaysConfirm = !!(opts && opts.alwaysConfirm);
   const logActivated = () => {
@@ -8092,7 +8141,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
     if (reaction.presetPicked && ctx.bs) ctx.bs._lastPickedCard = reaction.presetPicked;
     // 「強制 → その後、〇〇することで（任意）」はコスト持ちステップの時点で確認する（runRecipe 参照）
     if (_isInlineCostConfirmRecipe(recipe)) {
-      ctx._inlineCostConfirm = { steps: recipe, text: effectText, evoSourceCard: isEvo ? sourceCard : null };
+      ctx._inlineCostConfirm = { steps: recipe, text: effectTextWithKw, evoSourceCard: isEvo ? sourceCard : null };
     }
     runRecipe(recipe, ctx, () => {
       ctx.renderAll && ctx.renderAll();
@@ -8109,7 +8158,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
     && !_inlineCost; // 先頭が強制で後段のコストだけ任意なら、最初には確認しない
   if (isOptional) {
     if (side === 'player' || alwaysConfirm) {
-      showConfirmDialog(card, effectText, (accepted) => {
+      showConfirmDialog(card, effectTextWithKw, (accepted) => {
         if (accepted) {
           // 確認ダイアログでカード名・効果テキストは既に見せているので、承諾後に
           // 同じ内容のアナウンス演出を重ねて出さずそのまま実行する
@@ -8132,7 +8181,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   // 強制効果: アナウンス演出を挟んでから実行（no_announce:true 指定時は省略）
   logActivated();
   if (hasNoAnnounceOverride(recipe)) { runNow(); return; }
-  showEffectAnnounce(card, effectText, side, runNow, evoSourceArg);
+  showEffectAnnounce(card, effectTextWithKw, side, runNow, evoSourceArg);
 }
 
 // ===== when_opp_rest グローバル発火 =====
@@ -9576,7 +9625,7 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
       ? sourceCard.evoSourceEffect : (sourceCard.effect || card.effect || '');
     // ポップアップ表示用: display_text指定があれば最優先。無ければ他のトリガー
     // （進化時/アタック時等）の文言まで一緒に出さないよう抜粋
-    return { card, sourceCard, recipe, effectText: extractTriggerSectionText(fullEffText, triggerKey, recipe) };
+    return { card, sourceCard, recipe, effectText: _withKeywordRuleText(extractTriggerSectionText(fullEffText, triggerKey, recipe), recipe) };
   });
   if (_reactionsToRun.length === 0) { finish(); return; }
   let i = 0;

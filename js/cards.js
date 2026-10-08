@@ -9,6 +9,8 @@ import { gasGet } from './firebase-config.js';
 window.allCards = [];
 window.keywords = [];
 window.masterKeywords = [];
+// キーワード効果の説明（スプレッドシート「キーワード効果」シート）。[{ keyword, description }]
+window.keywordEffects = [];
 window.cardImages = {};
 
 // 静的 JSON のパス（リポジトリルート相対）
@@ -34,6 +36,27 @@ async function getVersionParam() {
     }
   } catch (_) {}
   return '?v=' + Date.now();
+}
+
+// キーワード効果の説明を読み込む（効果ポップアップでキーワードの説明を出すため）。
+// 本番は静的な data/keyword-effects.json、開発モード（localhost）や静的ファイルが無いときは GAS の listDict から読む。
+// 失敗してもカード読み込み自体は止めない（説明が出ないだけ）
+async function loadKeywordEffects() {
+  const fromRows = (rows) => (rows || []).map((r) => ({
+    keyword: String(r.keyword || r['キーワード'] || '').trim(),
+    description: String(r.description || r['効果説明'] || '').trim(),
+  })).filter((r) => r.keyword && r.description);
+  if (!isDevMode()) {
+    try {
+      const versionParam = await getVersionParam();
+      const res = await fetch('data/keyword-effects.json' + versionParam);
+      if (res.ok) { const j = await res.json(); window.keywordEffects = fromRows(j.keywords); if (window.keywordEffects.length) return; }
+    } catch (_) {}
+  }
+  try {
+    const d = await gasGet('listDict');
+    window.keywordEffects = fromRows(d && d.keywords);
+  } catch (e) { console.warn('[cards] キーワード効果の説明を読み込めませんでした', e); }
 }
 
 // 静的 JSON から読み込み（version は cache buster として URL に付与）
@@ -178,6 +201,7 @@ export async function loadCardAndKeywordData() {
     allCards = data.cards || [];
     keywords = data.keywords || [];
     masterKeywords = keywords;
+    loadKeywordEffects();
 
     // 列名の正規化（新旧スプシ両対応）
     allCards.forEach(normalizeCard);

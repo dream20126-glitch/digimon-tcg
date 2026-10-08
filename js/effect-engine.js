@@ -7358,9 +7358,12 @@ function _splitTriggerStepGroups(card, triggerCode) {
     g.forEach((st) => used.add(st));
     if (g.length > 0) groups.push(g);
   }
-  if (groups.length < 2) return null;
+  // キーに属さないステップ（継承した効果・キーワード由来等）も1つの効果として加えてから、
+  // 2つ以上の効果に分かれるかを判定する（以前は先に判定していたため、自身の効果のキーが1つだけの
+  // クロノモン：デストロイモード BT26-060 では、継承したホーリーモードの【進化時】が分かれなかった）
   const rest = full.filter((st) => !used.has(st));
   if (rest.length > 0) groups.push(rest);
+  if (groups.length < 2) return null;
   return groups;
 }
 

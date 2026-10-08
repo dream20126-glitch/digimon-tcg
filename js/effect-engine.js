@@ -9071,16 +9071,38 @@ function _zoneIncreaseMatches(step, zone) {
 // cause: デッキが増えた原因（{type:'effect', causerSide, causerCard}）。trigger_conditions の
 // cond_effect（「自分の効果で」等）と step.cause/cause_subject の判定に使うため、反応チェーンの
 // 間だけ bs._lastDestroyCause（原因判定の共通フィールド）にセットし、終了後に元へ戻す
+// 発動主体（subject）: 未指定/own 系 = 自分のデッキが増えたとき、opp 系 = 相手のデッキが増えたとき、
+// both 系 = どちらのデッキが増えたときも。デッキが増えた側のカードに加えて、反対側のカードのうち
+// opp/both 系のステップも反応させる（クロノモン：デストロイモード BT26-060「デッキが自分の効果で増えたとき」=
+// subject:both_digimon は、自分の効果で相手のデッキに戻したときにも誘発する。以前はデッキが増えた側の
+// 盤面しか探しておらず、自分の盤面のデストロイモードが反応しなかった）
+function _deckIncreaseSubjectFilter(forOtherSide) {
+  return (step) => {
+    if (!_zoneIncreaseMatches(step, 'deck')) return false;
+    const subj = String(_resolveStepSubject(step, 'when_deck_increase') || 'own');
+    const isOpp = subj === 'opp' || subj === 'opponent' || subj.startsWith('opp_');
+    const isBoth = subj === 'both' || subj.startsWith('both_');
+    return forOtherSide ? (isOpp || isBoth) : !isOpp;
+  };
+}
 export function fireWhenDeckIncreaseTriggers(increasedSide, bs, ctxBase, done, cause) {
-  if (!bs || !cause) {
-    return _fireSidedReactionTriggers(increasedSide, 'when_deck_increase', bs, ctxBase, done, (step) => _zoneIncreaseMatches(step, 'deck'));
-  }
+  const finish = () => { try { done && done(); } catch (_) {} };
+  if (!bs) { finish(); return; }
   const prevCause = bs._lastDestroyCause;
-  bs._lastDestroyCause = cause;
-  return _fireSidedReactionTriggers(increasedSide, 'when_deck_increase', bs, ctxBase, () => {
-    bs._lastDestroyCause = prevCause;
-    done && done();
-  }, (step) => _zoneIncreaseMatches(step, 'deck'));
+  if (cause) bs._lastDestroyCause = cause;
+  // 公式ルール: 同時に誘発した効果はターンプレイヤー側から解決する
+  const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+  const order = [turnSide, turnSide === 'player' ? 'ai' : 'player'];
+  const runSide = (i) => {
+    if (i >= order.length) { if (cause) bs._lastDestroyCause = prevCause; finish(); return; }
+    const sd = order[i];
+    if (cause) bs._lastDestroyCause = cause;
+    // オンラインでは相手のカードの「相手のデッキが増えたとき」は持ち主の端末でしか正しく判定・確認できないので、
+    // こちらの端末では扱わない（自分のカードだけ反応させる）
+    if (sd !== increasedSide && sd === 'ai' && window._isOnlineMode && window._isOnlineMode()) { runSide(i + 1); return; }
+    _fireSidedReactionTriggers(sd, 'when_deck_increase', bs, ctxBase, () => runSide(i + 1), _deckIncreaseSubjectFilter(sd !== increasedSide));
+  };
+  runSide(0);
 }
 function _fireWhenDeckIncreaseQueued(cause, increasedSide, bs, ctxBase, callback) {
   fireWhenDeckIncreaseTriggers(increasedSide, bs, ctxBase, callback, cause);

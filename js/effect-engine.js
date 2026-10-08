@@ -600,6 +600,8 @@ function _hudSyncQueue(context) {
       let text = '';
       try { text = extractTriggerSectionText(raw || '', trig, blk._grantedSteps || null); } catch (_) { text = raw || ''; }
       const it = _hudItem(side, e.card, blk._recipeCard || null, text);
+      // 同時誘発のグループ（同じプレイヤー・同じ優先度でまとめて誘発して待っているもの。順番はプレイヤーが選ぶ）
+      it.group = 'queue:' + side + ':' + (e.priority || 'normal');
       if (inh) { it.name = (src && src.name) || inh.name; it.sub = '継承：「' + (e.card && e.card.name || '') + '」'; if (src) it.img = src.imgSrc || getCardImageUrl(src) || src.imageUrl || it.img; }
       return it;
     });
@@ -619,21 +621,48 @@ function _hudEnsureBox(id, pos) {
   document.body.appendChild(el);
   return el;
 }
+// 並び順のまま、同じグループ（group）が連続する所を1まとまりにする。2件以上のまとまり＝同時誘発（順番はまだ決まっていない）
+function _hudGroups(items) {
+  const groups = [];
+  (items || []).forEach((it) => {
+    const last = groups[groups.length - 1];
+    if (last && it.group && last.key === it.group) last.items.push(it);
+    else groups.push({ key: it.group || null, items: [it] });
+  });
+  return groups.map(g => ({ simultaneous: g.items.length >= 2, items: g.items }));
+}
+function _hudEsc(t) {
+  return String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
 function _hudRenderBox(id, pos, items, color, label) {
   if (typeof document === 'undefined' || !document.body) return;
   const el = _hudEnsureBox(id, pos);
   if (!items || items.length === 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
-  const first = items[0];
-  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const groups = _hudGroups(items);
+  const head = groups[0];
+  const first = head.items[0];
+  const restCount = items.length - head.items.length;
+  const esc = _hudEsc;
   el.style.display = 'flex';
   el.style.border = '1px solid ' + color;
-  el.innerHTML = (first.img ? '<img src="' + esc(first.img) + '" style="width:30px;border-radius:3px;flex:none;">' : '')
-    + '<div style="min-width:0;line-height:1.25;">'
-    + '<div style="color:' + color + ';font-size:9px;font-weight:bold;">' + esc(label) + '</div>'
-    + '<div style="color:#fff;font-size:11px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(first.name) + '</div>'
-    + (first.sub ? '<div style="color:#ffaa00;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(first.sub) + '</div>' : '')
-    + '</div>'
-    + '<button type="button" data-hud-more="1" style="flex:none;font-size:10px;font-weight:bold;padding:3px 8px;border-radius:999px;border:1px solid ' + color + ';background:#111;color:' + color + ';cursor:pointer;">他' + (items.length > 1 ? '(' + (items.length - 1) + ')' : '') + '</button>';
+  const moreBtn = '<button type="button" data-hud-more="1" style="flex:none;align-self:center;font-size:10px;font-weight:bold;padding:3px 8px;border-radius:999px;border:1px solid ' + color + ';background:#111;color:' + color + ';cursor:pointer;">他' + (restCount > 0 ? '(' + restCount + ')' : '') + '</button>';
+  if (head.simultaneous) {
+    // 同時誘発で順番がまだ決まっていない: 「同時誘発」と表示し、該当するカードを全て並べる
+    el.innerHTML = '<div style="min-width:0;line-height:1.25;">'
+      + '<div style="color:' + color + ';font-size:9px;font-weight:bold;">' + esc(label) + '</div>'
+      + '<div style="color:#ffcc00;font-size:10px;font-weight:bold;">⚡ 同時誘発（' + head.items.length + '件・順番未定）</div>'
+      + '<div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap;">' + head.items.map(it =>
+        '<div style="width:44px;text-align:center;">' + (it.img ? '<img src="' + esc(it.img) + '" style="width:30px;border-radius:3px;">' : '')
+        + '<div style="color:#fff;font-size:8px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(it.name) + '</div></div>').join('') + '</div>'
+      + '</div>' + moreBtn;
+  } else {
+    el.innerHTML = (first.img ? '<img src="' + esc(first.img) + '" style="width:30px;border-radius:3px;flex:none;">' : '')
+      + '<div style="min-width:0;line-height:1.25;">'
+      + '<div style="color:' + color + ';font-size:9px;font-weight:bold;">' + esc(label) + '</div>'
+      + '<div style="color:#fff;font-size:11px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(first.name) + '</div>'
+      + (first.sub ? '<div style="color:#ffaa00;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(first.sub) + '</div>' : '')
+      + '</div>' + moreBtn;
+  }
   const btn = el.querySelector('[data-hud-more]');
   if (btn) btn.onclick = (ev) => { ev.stopPropagation(); _hudShowList(items, color, label); };
 }
@@ -645,14 +674,20 @@ function _hudShowList(items, color, label) {
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99995;display:flex;align-items:center;justify-content:center;padding:16px;';
   const box = document.createElement('div');
   box.style.cssText = 'background:#0a0a0a;border:1px solid ' + color + ';border-radius:12px;padding:14px;width:min(520px,100%);max-height:85vh;display:flex;flex-direction:column;gap:8px;';
+  const cardHtml = (it) => '<div style="display:flex;gap:10px;align-items:flex-start;background:#111;border:1px solid #333;border-radius:8px;padding:8px;">'
+    + (it.img ? '<img src="' + esc(it.img) + '" style="width:56px;border-radius:4px;flex:none;">' : '')
+    + '<div style="min-width:0;font-size:11px;line-height:1.6;">'
+    + '<div style="color:#fff;font-weight:bold;font-size:12px;">' + esc(it.name) + '</div>'
+    + (it.sub ? '<div style="color:#ffaa00;font-size:10px;">◇ ' + esc(it.sub) + ' ◇</div>' : '')
+    + '<div style="color:#aaa;white-space:pre-wrap;">' + esc(it.text) + '</div></div></div>';
+  // 発揮する順に、グループ（同時誘発のまとまり／単発）ごとに表示する
   box.innerHTML = '<div style="color:' + color + ';font-size:14px;font-weight:bold;text-align:center;">' + esc(label) + '（発揮する順）</div>'
-    + '<div style="overflow-y:auto;display:grid;gap:8px;">' + items.map((it, i) =>
-      '<div style="display:flex;gap:10px;align-items:flex-start;background:#111;border:1px solid ' + (i === 0 ? color : '#333') + ';border-radius:8px;padding:8px;">'
-      + (it.img ? '<img src="' + esc(it.img) + '" style="width:56px;border-radius:4px;flex:none;">' : '')
-      + '<div style="min-width:0;font-size:11px;line-height:1.6;">'
-      + '<div style="color:#fff;font-weight:bold;font-size:12px;">' + (i + 1) + '. ' + esc(it.name) + (i === 0 ? ' <span style="color:' + color + ';">（次）</span>' : '') + '</div>'
-      + (it.sub ? '<div style="color:#ffaa00;font-size:10px;">◇ ' + esc(it.sub) + ' ◇</div>' : '')
-      + '<div style="color:#aaa;white-space:pre-wrap;">' + esc(it.text) + '</div></div></div>').join('') + '</div>';
+    + '<div style="overflow-y:auto;display:grid;gap:10px;">' + _hudGroups(items).map((g, gi) =>
+      '<div style="border:' + (gi === 0 ? '2px solid ' + color : '1px solid #333') + ';border-radius:10px;padding:8px;display:grid;gap:6px;">'
+      + '<div style="font-size:12px;font-weight:bold;color:' + (g.simultaneous ? '#ffcc00' : '#ddd') + ';">' + (gi + 1) + '. '
+      + (g.simultaneous ? '⚡ 同時誘発（' + g.items.length + '件・どれから発揮するかは選択）' : '単発')
+      + (gi === 0 ? ' <span style="color:' + color + ';">（次）</span>' : '') + '</div>'
+      + g.items.map(cardHtml).join('') + '</div>').join('') + '</div>';
   const close = document.createElement('button');
   close.type = 'button';
   close.innerText = '閉じる';
@@ -673,7 +708,7 @@ function _hudRender() {
   _hudRenderBox('_pending-hud-opp', 'right:8px;top:56px;', theirs, '#ff00fb', '相手の次の効果');
   // オンライン: 自分の発揮待ちを相手へ（変化したときだけ、短い間隔でまとめて送る）
   if (online && window._onlineSendCommand) {
-    const payload = JSON.stringify(mine.map(it => ({ name: it.name, sub: it.sub, img: it.img, text: it.text.slice(0, 300) })));
+    const payload = JSON.stringify(mine.map(it => ({ name: it.name, sub: it.sub, img: it.img, text: it.text.slice(0, 300), group: it.group || null })));
     if (payload !== _hudLastSent) {
       clearTimeout(_hudSendTimer);
       _hudSendTimer = setTimeout(() => {
@@ -8883,7 +8918,9 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
     const full = isEvo ? ((r.sourceCard.evoSourceEffect && r.sourceCard.evoSourceEffect !== 'なし') ? r.sourceCard.evoSourceEffect : r.sourceCard.effect) : (r.card.effect || '');
     let text = full || '';
     try { text = extractTriggerSectionText(full || '', recipeKey, r.recipe); } catch (_) {}
-    return _hudItem(reactSide, r.card, isEvo ? r.sourceCard : null, text);
+    const it = _hudItem(reactSide, r.card, isEvo ? r.sourceCard : null, text);
+    it.group = _hudKey;
+    return it;
   }));
   const runOneReaction = (reaction) => {
     // ゾーン効果は解決時にそのゾーンを離れていたら発揮しない

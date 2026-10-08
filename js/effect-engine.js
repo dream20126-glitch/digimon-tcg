@@ -169,6 +169,14 @@ function processQueue(context, onComplete) {
     }
   });
   const waiting = _effectQueue.filter(e => e.status === 'waiting');
+  // 継承（≪継承≫）で得た効果が誘発していれば、効果の選択・実行の前に「継承した」演出を出す
+  // （クロノモン：デストロイモード BT26-060 → 進化元のホーリーモードの【進化時】）
+  const _inhEntry = waiting.find(e => e.block && e.block._inheritedFrom && !e._inheritAnnounced);
+  if (_inhEntry) {
+    _inhEntry._inheritAnnounced = true;
+    _announceInherit(_inhEntry, context, () => processQueue(context, onComplete));
+    return;
+  }
   if (waiting.length === 0) {
     clearQueue();
     // 消滅処理 → on_destroy リアクション完了を待つ
@@ -244,6 +252,19 @@ function processQueue(context, onComplete) {
   });
 }
 
+// ≪継承≫の発動演出: 継承元（進化元の指定カード）の名前と、継承のキーワード説明を出す
+function _announceInherit(entry, context, done) {
+  const carrier = entry.card;
+  const from = entry.block._inheritedFrom;
+  const src = (carrier && Array.isArray(carrier.stack)) ? carrier.stack.find(c => c && c.cardNo === from.cardNo) : null;
+  const side = entry.actualSide || (entry.side === 'turnPlayer' ? (context.bs.isPlayerTurn ? 'player' : 'ai') : (context.bs.isPlayerTurn ? 'ai' : 'player'));
+  const rule = keywordRuleText('Inherit');
+  const text = '【継承】進化元の「' + from.name + '」の効果を得る' + (rule ? '\n' + rule : '');
+  context.addLog && context.addLog('🧬 「' + (carrier ? carrier.name : '?') + '」が進化元の「' + from.name + '」の効果を継承');
+  try { showEffectAnnounce(carrier, text, side, done, src || undefined); }
+  catch (_) { done(); }
+}
+
 // ===== キュー順序選択UI =====
 // 同レベルで誘発した効果が複数ある時、プレイヤーがどれを先に発動するか選択する
 function showQueueOrderSelect(entries, callback) {
@@ -269,7 +290,9 @@ function showQueueOrderSelect(entries, callback) {
     const carrier = entry.card;
     // 進化元効果の場合は _recipeCard が効果を持つ進化元カード本体
     const fromEvo = !!(entry.block && entry.block._recipeCard);
-    const effectOwner = (entry.block && entry.block._recipeCard) || carrier;
+    const _inhFrom = entry.block && entry.block._inheritedFrom;
+    const _inhSrc = _inhFrom && Array.isArray(carrier.stack) ? carrier.stack.find(c => c && c.cardNo === _inhFrom.cardNo) : null;
+    const effectOwner = (entry.block && entry.block._recipeCard) || _inhSrc || carrier;
     const div = document.createElement('div');
     div.style.cssText = 'background:#0a0a0a;border:2px solid #00fbff;border-radius:10px;padding:10px;width:200px;cursor:pointer;text-align:center;transition:transform 0.15s ease, box-shadow 0.15s ease;';
     div.onmouseenter = () => { div.style.transform = 'translateY(-3px) scale(1.03)'; div.style.boxShadow = '0 0 18px #00fbff'; };
@@ -278,14 +301,14 @@ function showQueueOrderSelect(entries, callback) {
     const imgSrc = effectOwner.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(effectOwner) : '') || effectOwner.imageUrl || '';
     const _fullEffText = (fromEvo && effectOwner.evoSourceEffect && effectOwner.evoSourceEffect !== 'なし')
       ? effectOwner.evoSourceEffect
-      : ((entry.block && entry.block.raw) || effectOwner.effect || '');
+      : (_inhFrom ? (_inhFrom.effect || '') : ((entry.block && entry.block.raw) || effectOwner.effect || ''));
     const _trigCode = entry.block && entry.block.trigger ? entry.block.trigger.code : null;
     const _steps = entry.block && (entry.block._grantedSteps || (_trigCode ? getRecipeForTrigger(effectOwner, _trigCode, fromEvo) : null));
     // 選択肢プレビューも、実際に発動するトリガー部分だけを抜粋して表示する（display_text指定があれば最優先）
     const effText = extractTriggerSectionText(_fullEffText, _trigCode, Array.isArray(_steps) ? _steps : null);
     div.innerHTML =
       (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
-      + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+(effectOwner.name||'')+'</div>'
+      + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+(_inhFrom ? '🧬 継承：' : '')+(effectOwner.name||'')+'</div>'
       + '<div style="color:#aaf;font-size:10px;line-height:1.5;text-align:left;max-height:80px;overflow-y:auto;background:#111;padding:6px;border-radius:4px;">'+effText+'</div>';
     div.onclick = () => {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
@@ -7411,6 +7434,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
           actions: [], conditions: [], _grantedSteps: steps,
         };
         if (battleWinEventSourceCard) blk._eventSourceCard = battleWinEventSourceCard;
+        if (steps.every((st) => st && st._inheritedFrom)) blk._inheritedFrom = steps[0]._inheritedFrom;
         addToQueue(sourceCard, blk, sourceSide === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', sourceSide);
       });
     }
@@ -7809,7 +7833,7 @@ function _lookupInheritedSteps(card, passiveEntry, triggerCode) {
   const src = srcFiltered && srcFiltered.__inheritSource;
   if (!Array.isArray(steps) || !src) return steps;
   // 継承した効果の印（_inheritedFrom）。ポップアップで継承元のカード名・効果文を表示するのに使う
-  const from = { name: src.name || '', effect: src.effect || '' };
+  const from = { name: src.name || '', effect: src.effect || '', cardNo: src.cardNo || '' };
   return steps.map((st) => (st && typeof st === 'object') ? Object.assign({}, st, { _inheritedFrom: from }) : st);
 }
 function _lookupInheritedPassives(card, passiveEntry) {

@@ -7975,8 +7975,13 @@ export function fireKeywordAttackEffects(card, side, bs, ctxBase, done) {
   // 【衝突】のように「〜しなければならない」強制のキーワードだけなら「発動しますか？」は出さずに発揮する
   // （巨神兵器 BT26-085）。任意のキーワードが混ざる場合は従来通り確認する
   const MANDATORY_ATTACK_KEYWORDS = ['collision'];
+  // 強制キーワードは何が起きるかをポップアップ（相手画面の効果待ち表示にもそのまま出る）で説明する
+  const KEYWORD_RULE_TEXT = {
+    collision: '【衝突】このデジモンのアタック中、相手のデジモン全ては【ブロッカー】を得て、可能ならブロックしなければならない。',
+  };
   const allMandatory = flags.length > 0 && flags.every(f => MANDATORY_ATTACK_KEYWORDS.includes(f));
-  const reaction = { card, sourceCard: card, recipe: steps, effectText: label + (allMandatory ? '' : 'の効果を発動しますか？') };
+  const mandatoryText = allMandatory ? flags.map(f => KEYWORD_RULE_TEXT[f] || ('【' + _keywordJpName(f) + '】')).join('\n') : '';
+  const reaction = { card, sourceCard: card, recipe: steps, effectText: allMandatory ? mandatoryText : label + 'の効果を発動しますか？' };
   try { _runReactionEffect(reaction, side, bs, ctxBase, finish, { alwaysConfirm: !allMandatory }); }
   catch (_) { finish(); }
 }
@@ -8390,7 +8395,12 @@ export function tryCancelViaLeaveBattle(card, side, bs, ctxBase, callback) {
       });
       return;
     }
-    const slotIdx = bs && bs[side] ? bs[side].battleArea.indexOf(card) : -1;
+    // 相手のカードは state_sync を受けるたびに別オブジェクトへ置き換わるので、バトル開始時に掴んだ
+    // 参照では見つからないことがある（【衝突】ブロックで相打ちの巨神兵器 BT26-085 が委譲されず不発だった）。
+    // 見つからなければ、カードNo・名前が同じカードを探す
+    const _area = bs && bs[side] ? bs[side].battleArea : [];
+    let slotIdx = _area.indexOf(card);
+    if (slotIdx === -1) slotIdx = _area.findIndex(c => c && c.cardNo === card.cardNo && c.name === card.name);
     if (slotIdx === -1 || typeof window._requestLeaveBattleDelegate !== 'function') { callback(false); return; }
     window._requestLeaveBattleDelegate(slotIdx, (canceled) => callback(!!canceled));
     return;

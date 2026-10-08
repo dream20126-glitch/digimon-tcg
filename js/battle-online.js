@@ -1857,6 +1857,14 @@ function checkOnlineBlock(cmd) {
     // 【衝突】のブロックは強制: 「ブロックしますか？」は出さず、ブロックするデジモンを選ぶだけ（1体なら自動）。
     // 選択をキャンセルしても必ずどれかでブロックする（選び直し）
     addLog('💥 相手の「' + (cmd.atkName || '???') + '」の【衝突】: ブロックしなければならない');
+    // このアタック中はこちらのデジモン全てが【ブロッカー】を得るので、盤面にもブロッカーのバッジを出す
+    // （ブロック解決の開始時に _clearCollisionBlockerBadges で外す）
+    bs.player.battleArea.forEach((c) => {
+      if (!c || (c.type && c.type !== 'デジモン')) return;
+      if (!Array.isArray(c.buffs)) c.buffs = [];
+      if (!c.buffs.some(b => b && b.source === 'collision')) c.buffs.push({ type: 'keyword_blocker', value: 0, duration: 'dur_until_battle_end', source: 'collision' });
+    });
+    renderAll();
     if (blockerIndices.length === 1 || !_modules.showBlockerSelection) { resolveOnlineBlock(blockerIndices[0], cmd); return; }
     const pick = () => _modules.showBlockerSelection(blockerIndices, attacker, (selectedIdx) => {
       if (selectedIdx !== null && blockerIndices.includes(selectedIdx)) resolveOnlineBlock(selectedIdx, cmd);
@@ -1886,7 +1894,15 @@ function checkOnlineBlock(cmd) {
   }
 }
 
+// 【衝突】の間だけ付けたブロッカーのバッジを外す
+function _clearCollisionBlockerBadges() {
+  bs.player.battleArea.forEach((c) => {
+    if (c && Array.isArray(c.buffs)) c.buffs = c.buffs.filter(b => !(b && b.source === 'collision'));
+  });
+}
+
 function resolveOnlineBlock(blockerIdx, cmd) {
+  _clearCollisionBlockerBadges();
   const blocker = bs.player.battleArea[blockerIdx];
   const atk = bs.ai.battleArea[cmd.atkIdx];
   if (!blocker || !atk) { sendCommand({ type: 'block_response', blocked: false }); return; }

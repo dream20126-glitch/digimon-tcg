@@ -26,6 +26,37 @@ function normalizeRecipeDuration(d) {
 function clearQueue() { _effectQueue = []; try { _hudSetSource('queue', []); } catch (_) {} }
 
 // キューにエントリを追加
+// ===== 発揮待ちの効果が発揮できなくなったか（公式ルール 15-4-4-3〜15-4-4-5） =====
+// 発揮待ちの効果を持つカードが、発揮する前に新しいカードになった（場を離れた）・その効果を持たなくなった
+// （進化して一番上でなくなった／進化元から離れた）場合、その効果は発揮できない。
+// 消滅時・離れるとき等、場を離れることで誘発する効果と、誘発した時点で場にいなかったカード
+// （オプション・セキュリティ・トラッシュ等）の効果は対象外
+const _LEAVING_TRIGGER_CODES = new Set(['on_destroy', 'on_battle_destroy', 'when_leave_battle', 'when_destroy', 'when_battle_destroy', 'security', 'main', 'when_return_to_hand']);
+function _cardOnField(bs, card) {
+  if (!bs || !card) return false;
+  return ['player', 'ai'].some(sd => bs[sd] && ((bs[sd].battleArea || []).includes(card) || (bs[sd].tamerArea || []).includes(card)));
+}
+// 進化元カードが、場のどれかのデジモン（またはテイマー）に重ねられているか
+function _evoSourceOnField(bs, src) {
+  if (!bs || !src) return false;
+  return ['player', 'ai'].some(sd => bs[sd] && [...(bs[sd].battleArea || []), ...(bs[sd].tamerArea || [])]
+    .some(c => c && Array.isArray(c.stack) && c.stack.includes(src)));
+}
+function _entryStillValid(e, bs) {
+  if (!e || !bs || !e._onFieldAtTrigger) return true;
+  const trig = e.block && e.block.trigger && e.block.trigger.code;
+  if (_LEAVING_TRIGGER_CODES.has(trig)) return true;
+  const src = e.block && e.block._recipeCard;
+  if (src && src !== e.card) return _evoSourceOnField(bs, src);
+  return _cardOnField(bs, e.card);
+}
+function _reactionStillValid(r, bs, recipeKey) {
+  if (!r || !bs || r.zone) return true; // ゾーン効果（トラッシュ等）は別途 _cardStillInZone で判定
+  if (_LEAVING_TRIGGER_CODES.has(recipeKey)) return true;
+  if (r.sourceCard && r.sourceCard !== r.card) return _evoSourceOnField(bs, r.sourceCard);
+  return _cardOnField(bs, r.card);
+}
+
 function addToQueue(card, block, side, priority, actualSide) {
   const triggerCode = block.trigger?.code;
   // 同じカード+同じトリガー+同じ効果テキストが既にキューにあればスキップ
@@ -48,7 +79,10 @@ function addToQueue(card, block, side, priority, actualSide) {
   if (isDuplicate) {
     return;
   }
-  _effectQueue.push({ card, block, side, priority: priority || 'normal', status: 'waiting', actualSide });
+  // 誘発した時点で場にいたか（発揮する前に場を離れたら発揮できない判定 _entryStillValid に使う）
+  const _bsNow = (typeof window !== 'undefined' && window._lastBattleState) || null;
+  const _onField = !!(_bsNow && (_cardOnField(_bsNow, card) || (block._recipeCard && _evoSourceOnField(_bsNow, block._recipeCard))));
+  _effectQueue.push({ card, block, side, priority: priority || 'normal', status: 'waiting', actualSide, _onFieldAtTrigger: _onField });
 }
 
 // キューをルールに従いソート
@@ -164,6 +198,12 @@ function processQueue(context, onComplete) {
   // ターン1回制限済み/条件不成立で不発確定のエントリは完了扱いにスキップ
   // （「どちらを発動しますか」の選択ポップアップに不発カードが紛れ込むのを防ぐ）
   _effectQueue.filter(e => e.status === 'waiting').forEach(e => {
+    if (!_entryStillValid(e, context.bs)) {
+      e.status = 'completed';
+      const _src = e.block && e.block._recipeCard;
+      context.addLog && context.addLog('💨 「' + ((_src && _src !== e.card) ? _src.name : (e.card && e.card.name)) + '」は発揮する前に場を離れた（または効果を持たなくなった）ため、効果を発揮できない');
+      return;
+    }
     if (!_entryWillExecute(e, context)) {
       e.status = 'completed';
     }
@@ -602,6 +642,7 @@ function _hudSyncQueue(context) {
       const it = _hudItem(side, e.card, blk._recipeCard || null, text);
       // 同時誘発のグループ（同じプレイヤー・同じ優先度でまとめて誘発して待っているもの。順番はプレイヤーが選ぶ）
       it.group = 'queue:' + side + ':' + (e.priority || 'normal');
+      it.alive = () => e.status === 'waiting' && _entryStillValid(e, bs);
       if (inh) { it.name = (src && src.name) || inh.name; it.sub = '継承：「' + (e.card && e.card.name || '') + '」'; if (src) it.img = src.imgSrc || getCardImageUrl(src) || src.imageUrl || it.img; }
       return it;
     });
@@ -609,8 +650,11 @@ function _hudSyncQueue(context) {
   } catch (_) {}
 }
 function _hudAllItems() {
-  return [..._hudSources.values()].sort((a, b) => b.seq - a.seq).reduce((acc, s) => acc.concat(s.items), []);
+  return [..._hudSources.values()].sort((a, b) => b.seq - a.seq).reduce((acc, s) => acc.concat(s.items), [])
+    .filter((it) => { try { return !it.alive || it.alive(); } catch (_) { return true; } });
 }
+// 盤面が変わったとき（renderAll）に、発揮できなくなった発揮待ちを表示から消すための再描画
+if (typeof window !== 'undefined') window._hudRefresh = () => { try { _hudRender(); } catch (_) {} };
 function _hudEnsureBox(id, pos) {
   let el = document.getElementById(id);
   if (el) return el;
@@ -8958,11 +9002,19 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
     try { text = extractTriggerSectionText(full || '', recipeKey, r.recipe); } catch (_) {}
     const it = _hudItem(reactSide, r.card, isEvo ? r.sourceCard : null, text);
     it.group = _hudKey;
+    it.alive = () => _reactionStillValid(r, bs, recipeKey);
     return it;
   }));
   const runOneReaction = (reaction) => {
     // ゾーン効果は解決時にそのゾーンを離れていたら発揮しない
     if ((reaction.zone === 'trash' || reaction.zone === 'security') && !_cardStillInZone(bs, reactSide, reaction.card, reaction.zone)) { nextReaction(); return; }
+    // 発揮する前に場を離れた／効果を持たなくなったら発揮しない（公式ルール 15-4-4-3〜15-4-4-5）
+    if (!_reactionStillValid(reaction, bs, recipeKey)) {
+      const _n = (reaction.sourceCard && reaction.sourceCard !== reaction.card) ? reaction.sourceCard.name : (reaction.card && reaction.card.name);
+      ctxBase && ctxBase.addLog && ctxBase.addLog('💨 「' + _n + '」は発揮する前に場を離れた（または効果を持たなくなった）ため、効果を発揮できない');
+      nextReaction();
+      return;
+    }
     if (causeAtScan !== undefined) bs._lastDestroyCause = causeAtScan;
     _runReactionEffect(reaction, reactSide, bs, ctxBase, nextReaction);
   };

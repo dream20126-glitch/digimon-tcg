@@ -204,6 +204,8 @@ export function renderAll(force) {
     if (_syncTimer) clearTimeout(_syncTimer);
     _syncTimer = setTimeout(() => window._onlineSendStateSync(), 500);
   }
+  // 発揮待ちの効果の表示（場を離れて発揮できなくなったものを消す）
+  if (typeof window !== 'undefined' && window._hudRefresh) window._hudRefresh();
 }
 
 // ===== セキュリティ描画 =====

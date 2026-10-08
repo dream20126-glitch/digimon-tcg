@@ -257,6 +257,16 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
   } catch (_) { callback(null); }
 }
 
+// オンラインのブロック解決（battle-online.js の resolveOnlineBlock。防御側の端末でバトルを解決する）から、
+// バトルで消滅するカードの消滅回避を確認するための入口。callback(true)=消滅を回避した
+if (typeof window !== 'undefined') {
+  window._tryCancelBattleDestroy = (card, side, callback) => {
+    const owner = side === 'ai' ? bs.ai : bs.player;
+    try { _tryCancelDestroyAsync(card, owner, side, false, (r) => callback(!!r)); }
+    catch (_) { callback(false); }
+  };
+}
+
 // 両者消滅（DP同値）用: 防壁/回避/【分離】/「バトルエリアを離れるとき」の置換効果（_tryCancelDestroyAsync）を
 // 先に試し、回避できなければ when_battle_destroy / when_destroy（_runWhenBattleDestroy）を確認する。
 // 片方だけ勝つ分岐は以前からこの順で確認していたが、両者消滅の分岐では離れるときの置換効果を見ておらず

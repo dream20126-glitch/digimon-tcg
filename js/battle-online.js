@@ -714,18 +714,10 @@ function onRemoteCommand(cmd) {
 
     // --- ブロック ---
     case 'block_response': {
-      if (cmd.blocked) {
-        const atkIdx = cmd.atkIdx;
-        const atk = bs.player.battleArea[atkIdx];
-        if (atk && (cmd.atkResult === 'destroyed' || cmd.atkResult === 'both_destroyed')) {
-          bs.player.battleArea[atkIdx] = null;
-          bs.player.trash.push(atk);
-          if (atk.stack) atk.stack.forEach(s => bs.player.trash.push(s));
-          if (atk.linkedCards) atk.linkedCards.forEach(s => bs.player.trash.push(s));
-          markDestroyed('player', atkIdx);
-          renderAll();
-        }
-      }
+      // ブロックされたアタッカーがバトルで負ける見込み（cmd.atkResult）でも、ここでは盤面から外さない。
+      // 実際の消滅は防御側がバトルを解決したあとに送ってくる card_removed で行う（その前に防御側から
+      // 「バトルエリアを離れるとき」の確認（fx_leaveBattleDelegate）が来るので、ここで先に外していると
+      // 巨神兵器 BT26-085 等の離れない効果が使えなかった）
       if (_pendingBlockCallback) {
         const cb = _pendingBlockCallback; _pendingBlockCallback = null; cb(cmd);
       } else {
@@ -1007,7 +999,9 @@ function onRemoteCommand(cmd) {
         const cb = _pendingOwnDestroyDoneCallback; _pendingOwnDestroyDoneCallback = null; cb();
       } else {
         _pendingOwnDestroyDoneResponse = true;
-        setTimeout(() => { _pendingOwnDestroyDoneResponse = null; }, 3000);
+        // こちらが自分側の消滅時効果を処理してから待つ予定（armOwnDestroyDone 済み）なら、待ち始めるまで保持する
+        // （両者消滅のブロックで、自分のユノモンの消滅時効果に3秒以上かかると取りこぼして30秒待っていた）
+        if (!_ownDestroyDoneArmed) setTimeout(() => { if (!_ownDestroyDoneArmed) _pendingOwnDestroyDoneResponse = null; }, 3000);
       }
       break;
     }
@@ -1783,7 +1777,12 @@ export function waitForHandDiscardDelegate(callback) {
 // 進まず待機する。これが無いと、相手側の消滅時効果が終わる前にこちらが先に進んでしまい、
 // メモリーが相手側へ渡ったことによるターン終了判定を取りこぼしていた
 // （バトル終了直後に本来ではないアクティブフェイズへ入ってしまう不具合）
+// 「相手の消滅時チェーン完了（fx_ownDestroyDone）を後で待つ」と予告する。予告中に届いた完了通知は
+// 待ち始めるまで失効させない（自分側の消滅時効果を先に処理してから待つ場合用）
+let _ownDestroyDoneArmed = false;
+function armOwnDestroyDone() { _ownDestroyDoneArmed = true; _pendingOwnDestroyDoneResponse = null; }
 export function waitForOwnDestroyDone(callback) {
+  _ownDestroyDoneArmed = false;
   if (_pendingOwnDestroyDoneResponse !== null) {
     _pendingOwnDestroyDoneResponse = null; callback();
     return;
@@ -1947,7 +1946,28 @@ function resolveOnlineBlock(blockerIdx, cmd) {
       // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
       const _atkDp = atk.dp, _blkDp = blocker.dp;
       removeBattleBuffs(battleBuffs);
-      if (_atkDp === _blkDp) {
+      // 消滅する側の消滅回避（防壁/回避/【分離】/「バトルエリアを離れるとき」の置換効果）を確認してから
+      // 結果を決める。相手のカード（atk）の確認は持ち主の端末に委譲される（巨神兵器 BT26-085 が【衝突】で
+      // ブロックされて相打ちになったとき、「離れるとき」が発動しなかった）
+      const _atkWouldDie = _atkDp <= _blkDp;
+      const _blkWouldDie = _atkDp >= _blkDp;
+      const tryAvoid = (would, card, side, cb) => {
+        if (!would || typeof window._tryCancelBattleDestroy !== 'function') { cb(false); return; }
+        window._suppressFxSend = false;
+        try { window._tryCancelBattleDestroy(card, side, (c) => { window._suppressFxSend = true; cb(!!c); }); }
+        catch (_) { window._suppressFxSend = true; cb(false); }
+      };
+      tryAvoid(_atkWouldDie, atk, 'ai', (atkAvoided) => {
+      tryAvoid(_blkWouldDie, blocker, 'player', (blkAvoided) => {
+      const atkDies = _atkWouldDie && !atkAvoided;
+      const blkDies = _blkWouldDie && !blkAvoided;
+      if (!atkDies && !blkDies) {
+        renderAll();
+        sendCommand({ type: 'fx_battleResult', text: '回避！', color: '#00fbff', sub: '消滅を回避' });
+        showBR('回避！', '#00fbff', '消滅を回避', () => { window._suppressFxSend = false; sendStateSync(); });
+        return;
+      }
+      if (atkDies && blkDies) {
         bs.ai.battleArea[cmd.atkIdx] = null; bs.ai.trash.push(atk); if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s)); if (atk.linkedCards) atk.linkedCards.forEach(s => bs.ai.trash.push(s));
         bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s)); if (blocker.linkedCards) blocker.linkedCards.forEach(s => bs.player.trash.push(s));
         sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
@@ -1959,6 +1979,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy',
           cardData: serializeCardForCmd(atk),
         });
+        armOwnDestroyDone();
         sendCommand({ type: 'fx_ownDestroyReady' });
         renderAll();
         sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '両者消滅！' });
@@ -1986,7 +2007,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
             else finishAfterOwn();
           }); });
         });
-      } else if (_atkDp > _blkDp) {
+      } else if (blkDies) {
         bs.player.battleArea[blockerIdx] = null; bs.player.trash.push(blocker); if (blocker.stack) blocker.stack.forEach(s => bs.player.trash.push(s)); if (blocker.linkedCards) blocker.linkedCards.forEach(s => bs.player.trash.push(s));
         sendCommand({ type: 'own_card_removed', slotIdx: blockerIdx, reason: 'destroy' });
         renderAll();
@@ -2009,6 +2030,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy',
           cardData: serializeCardForCmd(atk),
         });
+          armOwnDestroyDone();
           sendCommand({ type: 'fx_ownDestroyReady' });
           renderAll();
           sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '道連れで両者消滅！' });
@@ -2063,6 +2085,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           type: 'card_removed', zone: 'battle', slotIdx: cmd.atkIdx, reason: 'destroy',
           cardData: serializeCardForCmd(atk),
         });
+        armOwnDestroyDone();
         sendCommand({ type: 'fx_ownDestroyReady' });
         renderAll();
         // ≪道連れ≫: 攻撃側 atk が「自分だけバトルで消滅」したとき blocker も消滅
@@ -2120,6 +2143,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           });
         });
       }
+      }); });
     }, 'BLOCK!');
   }
 

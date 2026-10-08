@@ -594,6 +594,7 @@ function showQueueOrderSelect(entries, callback) {
     div.innerHTML =
       (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
       + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+(_inhFrom ? '🧬 継承：' : '')+(effectOwner.name||'')+'</div>'
+      + (fromEvo ? '<div style="color:#ffaa00;font-size:10px;font-weight:bold;margin:-2px 0 6px;">◇「'+(carrier.name||'')+'」の進化元'+(_evoSourcePosText(carrier, effectOwner) ? '・'+_evoSourcePosText(carrier, effectOwner) : '')+' ◇</div>' : '')
       + '<div style="color:#aaf;font-size:10px;line-height:1.5;text-align:left;max-height:80px;overflow-y:auto;background:#111;padding:6px;border-radius:4px;">'+effText+'</div>';
     div.onclick = () => {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
@@ -7276,12 +7277,13 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
   // タイトルには実際に効果を持つカードの名前を出す（進化元由来ならその進化元カード名）。
   // カード自身（キャリア）の名前は分かりにくいとの要望のため、サブラベル側に回す。
   const titleName = evoSourceCard ? evoSourceCard.name : card.name;
+  const _evoPos = evoSourceCard ? _evoSourcePosText(card, evoSourceCard) : '';
   // オンライン: 自分側 (side='player') の効果のときだけ相手機に送信。
   // 自機の bs.ai 側の効果 (=相手のカード視点) を送るとオーナー機側で「相手の効果」
   // として誤表示されてしまうので、所有者の機械からだけ送る運用に戻す。
   if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand && side === 'player') {
     try {
-      window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: titleName, effectText: displayText.substring(0,400) });
+      window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: evoSourceCard ? titleName + '（「' + card.name + '」の進化元' + (_evoPos ? '・' + _evoPos : '') + '）' : titleName, effectText: displayText.substring(0,400) });
     } catch (_) {}
   }
   const sideColor = side === 'player' ? '#00fbff' : '#ff00fb';
@@ -7300,7 +7302,7 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
   if (evoSourceCard) {
     const sub = document.createElement('div');
     sub.style.cssText = 'color:#ffaa00;font-size:11px;font-weight:bold;margin-bottom:8px;text-shadow:0 0 4px #ffaa0066;';
-    sub.innerText = '◇ 「' + card.name + '」の' + evoSourceEffectLabel(card) + ' ◇';
+    sub.innerText = '◇ 「' + card.name + '」の' + evoSourceEffectLabel(card) + (_evoPos ? '（' + _evoPos + '）' : '') + ' ◇';
     box.appendChild(sub);
   }
 
@@ -7380,12 +7382,21 @@ function showEffectFailed(message, callback) {
 // evoSourceCard: 進化元効果の場合、実際に効果を持つ進化元カード（例: ピョコモン）。
 //   指定時は「ピョコモン（「ブテンモン」の進化元効果）」のように効果の持ち主を表示する
 //   （以前は場のカード＝進化先の名前だけが出て、進化先の効果に見えていた）
+// 進化元の何枚目か（「上からN枚目」）。同じ名前の進化元が複数あると、どれの効果か分からないため表示に添える
+// （ホーリーモードの進化元だったブテンモンと、デストロイモード直下のブテンモン等）
+function _evoSourcePosText(carrier, src) {
+  if (!carrier || !src || !Array.isArray(carrier.stack)) return '';
+  const i = carrier.stack.indexOf(src);
+  return i === -1 ? '' : '上から' + (i + 1) + '枚目';
+}
+
 function showConfirmDialog(card, effectText, callback, evoSourceCard) {
   const overlay = document.getElementById('effect-confirm-overlay');
   if (!overlay) { callback(false); return; }
   const isEvo = !!(evoSourceCard && evoSourceCard !== card);
+  const _pos = isEvo ? _evoSourcePosText(card, evoSourceCard) : '';
   const ownerName = isEvo
-    ? (evoSourceCard.name + '（「' + card.name + '」の' + evoSourceEffectLabel(evoSourceCard) + '）')
+    ? (evoSourceCard.name + '（「' + card.name + '」の' + evoSourceEffectLabel(evoSourceCard) + (_pos ? '・' + _pos : '') + '）')
     : card.name;
 
   const _show = () => {
@@ -9118,7 +9129,10 @@ function _zoneIncreaseMatches(step, zone) {
 function _deckIncreaseSubjectFilter(forOtherSide) {
   return (step) => {
     if (!_zoneIncreaseMatches(step, 'deck')) return false;
-    const subj = String(_resolveStepSubject(step, 'when_deck_increase') || 'own');
+    // 発動主体が未指定（「デッキが自分の効果で増えたとき」の「デッキ」に「自分の」「相手の」が無い）なら、
+    // どちらのデッキが増えたときも誘発する（対象指定なしは both が既定。ブテンモン BT26-015 の本体/進化元の
+    // 「デッキが増えたとき」が、デストロイモード BT26-060 で相手のデッキに戻したときに同時誘発しなかった）
+    const subj = String(_resolveStepSubject(step, 'when_deck_increase') || 'both');
     const isOpp = subj === 'opp' || subj === 'opponent' || subj.startsWith('opp_');
     const isBoth = subj === 'both' || subj.startsWith('both_');
     return forOtherSide ? (isOpp || isBoth) : !isOpp;

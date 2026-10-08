@@ -614,7 +614,8 @@ function _hudEnsureBox(id, pos) {
   if (el) return el;
   el = document.createElement('div');
   el.id = id;
-  el.style.cssText = 'position:fixed;' + pos + 'z-index:45000;display:none;align-items:center;gap:6px;padding:6px 8px;border-radius:10px;background:rgba(0,10,20,0.9);box-shadow:0 0 10px rgba(0,0,0,0.6);max-width:min(60vw,260px);pointer-events:auto;';
+  // 効果の確認ダイアログ・選択画面が出ている間もいつでも押せるよう、全てのポップアップより手前に出す
+  el.style.cssText = 'position:fixed;' + pos + 'z-index:99990;display:none;align-items:center;gap:6px;padding:6px 8px;border-radius:10px;background:rgba(0,10,20,0.9);box-shadow:0 0 10px rgba(0,0,0,0.6);max-width:min(60vw,260px);pointer-events:auto;';
   document.body.appendChild(el);
   return el;
 }
@@ -640,7 +641,8 @@ function _hudRenderBox(id, pos, items, color, label) {
 function _hudShowList(items, color, label) {
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const ov = document.createElement('div');
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:66000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.setAttribute('data-hud-list', '1');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99995;display:flex;align-items:center;justify-content:center;padding:16px;';
   const box = document.createElement('div');
   box.style.cssText = 'background:#0a0a0a;border:1px solid ' + color + ';border-radius:12px;padding:14px;width:min(520px,100%);max-height:85vh;display:flex;flex-direction:column;gap:8px;';
   box.innerHTML = '<div style="color:' + color + ';font-size:14px;font-weight:bold;text-align:center;">' + esc(label) + '（発揮する順）</div>'
@@ -3239,6 +3241,8 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
   });
 
   function onSelect(e) {
+    // 発揮待ちの効果の表示（右下/右上・「他」の一覧）を押したときは、その裏にあるカードを選ばない
+    if (e.target && e.target.closest && e.target.closest('#_pending-hud-own, #_pending-hud-opp, [data-hud-list]')) return;
     const cx = e.clientX || (e.changedTouches && e.changedTouches[0].clientX);
     const cy = e.clientY || (e.changedTouches && e.changedTouches[0].clientY);
     if (!cx || !cy) return;

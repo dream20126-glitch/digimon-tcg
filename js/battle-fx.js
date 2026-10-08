@@ -241,6 +241,7 @@ export function fxTargetSelect(side, validIndices, color, message, callback) {
   }
 
   function onSelect(e) {
+    if (e.target && e.target.closest && e.target.closest('#_pending-hud-own, #_pending-hud-opp, [data-hud-list]')) return; // 発揮待ちの効果の表示は対象外
     e.preventDefault();
     const cx = e.clientX || (e.changedTouches && e.changedTouches[0].clientX);
     const cy = e.clientY || (e.changedTouches && e.changedTouches[0].clientY);

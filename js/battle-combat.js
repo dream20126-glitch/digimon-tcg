@@ -3331,6 +3331,7 @@ export function showBlockerSelection(blockerIndices, attacker, callback) {
   }
 
   function onSelect(e) {
+    if (e.target && e.target.closest && e.target.closest('#_pending-hud-own, #_pending-hud-opp, [data-hud-list]')) return; // 発揮待ちの効果の表示は対象外
     const cx = e.clientX || (e.changedTouches && e.changedTouches[0].clientX);
     const cy = e.clientY || (e.changedTouches && e.changedTouches[0].clientY);
     if (!cx || !cy) return;

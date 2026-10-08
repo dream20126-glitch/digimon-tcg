@@ -315,7 +315,13 @@ function executeQueueEntry(entry, context, callback) {
   const _recipeStepsForLookup = block._grantedSteps || (_trigCodeForLookup ? getRecipeForTrigger(_recipeCardForLookup, _trigCodeForLookup, !!block._recipeCard) : null);
   // ポップアップ表示用: display_text 指定があればそれを最優先、無ければ複数トリガーを
   // 持つカードでも今発動中のトリガー部分だけを抜粋する
-  const displayEffText = _withKeywordRuleText(extractTriggerSectionText(block.raw, block.trigger ? block.trigger.code : null, _recipeStepsForLookup), _recipeStepsForLookup);
+  // 継承した効果だけの効果なら、継承元のカードの効果文を出し、どのカードから継承したかを添える
+  // （クロノモン：デストロイモード BT26-060 が進化元のホーリーモードから継承した【登場時】【進化時】等）
+  const _inhFrom = (Array.isArray(_recipeStepsForLookup) && _recipeStepsForLookup.length > 0 && _recipeStepsForLookup.every(st => st && st._inheritedFrom))
+    ? _recipeStepsForLookup[0]._inheritedFrom : null;
+  const _dispRaw = _inhFrom ? (_inhFrom.effect || block.raw) : block.raw;
+  const displayEffText = (_inhFrom ? '（継承：「' + _inhFrom.name + '」の効果）\n' : '')
+    + _withKeywordRuleText(extractTriggerSectionText(_dispRaw, block.trigger ? block.trigger.code : null, _recipeStepsForLookup), _recipeStepsForLookup);
 
   // レシピ/アクションを実行（アナウンス演出は挟まない）
   function runEffectNow(cb) {
@@ -7789,14 +7795,22 @@ function _getInheritedSourceRecipe(card, passiveEntry) {
   try {
     const raw = typeof source.recipe === 'string' ? source.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : source.recipe;
     const srcRecipes = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return Object.assign({}, srcRecipes, {
+    const out = Object.assign({}, srcRecipes, {
       passive: Array.isArray(srcRecipes.passive) ? srcRecipes.passive.filter(pp => pp && pp.flag !== 'Inherit') : srcRecipes.passive,
     });
+    // 継承元のカード（ポップアップで「どのカードから継承した効果か」を出すため。トリガーキーとして走査されないよう列挙しない）
+    Object.defineProperty(out, '__inheritSource', { value: source, enumerable: false });
+    return out;
   } catch (_) { return null; }
 }
 function _lookupInheritedSteps(card, passiveEntry, triggerCode) {
   const srcFiltered = _getInheritedSourceRecipe(card, passiveEntry);
-  return srcFiltered ? _lookupTriggerSteps(srcFiltered, triggerCode) : null;
+  const steps = srcFiltered ? _lookupTriggerSteps(srcFiltered, triggerCode) : null;
+  const src = srcFiltered && srcFiltered.__inheritSource;
+  if (!Array.isArray(steps) || !src) return steps;
+  // 継承した効果の印（_inheritedFrom）。ポップアップで継承元のカード名・効果文を表示するのに使う
+  const from = { name: src.name || '', effect: src.effect || '' };
+  return steps.map((st) => (st && typeof st === 'object') ? Object.assign({}, st, { _inheritedFrom: from }) : st);
 }
 function _lookupInheritedPassives(card, passiveEntry) {
   const srcFiltered = _getInheritedSourceRecipe(card, passiveEntry);
@@ -10336,12 +10350,12 @@ function actionLabelOf(code) {
 }
 
 // 代替アクション選択UI（OR時）
-function showAltActionChoice(labels, callback) {
+function showAltActionChoice(labels, callback, titleText) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:60000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;animation:fadeIn 0.2s ease;';
   const title = document.createElement('div');
   title.style.cssText = 'color:#e9d5ff;font-size:14px;font-weight:bold;text-shadow:0 0 8px #c084fc;';
-  title.innerText = '🔀 どちらを実行しますか？';
+  title.innerText = titleText || '🔀 どちらを実行しますか？';
   overlay.appendChild(title);
   const btnArea = document.createElement('div');
   btnArea.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:90%;';
@@ -11443,9 +11457,10 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           // 指定ゾーンのカードから最大 _summonCount 枚選んで登場（候補が枚数以内なら即時。
           // ただし「できる」(optional) 指定時は必ずピッカーを経由させ「使わない」を選べるようにする）
-          const _pickFromZone = (zoneCands) => {
+          const _pickFromZone = (zoneCands, zoneChosen) => {
             if (!zoneCands || zoneCands.length === 0) { callback(); return; }
-            if (zoneCands.length <= _summonCount && !_optional) { _summonSequential(zoneCands, 0, callback); return; }
+            // 「手札から/トラッシュから」を選んだ後（＝使うことは決定済み）は、候補が枚数以内ならそのまま登場
+            if (zoneCands.length <= _summonCount && (!_optional || zoneChosen)) { _summonSequential(zoneCands, 0, callback); return; }
             showTrashCardPicker(zoneCands, _summonCount, _optional, '🌟 登場させるカードを選んでください', (picked) => {
               if (!picked || picked.length === 0) {
                 ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
@@ -11464,8 +11479,8 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (_optional) _zoneLabels.push('使わない');
             showAltActionChoice(_zoneLabels, (zi) => {
               if (_optional && zi === 2) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
-              _pickFromZone(zi === 0 ? _handCands : _trashCands);
-            });
+              _pickFromZone(zi === 0 ? _handCands : _trashCands, true);
+            }, '🌟 どこから登場させますか？');
           } else {
             _pickFromZone(_handCands.length > 0 ? _handCands : _trashCands);
           }
@@ -11623,6 +11638,23 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (_cands.length === 0) { _evoFail('進化条件を満たす進化先がありません'); return; }
         if (ctx.side === 'ai' || (_cands.length === 1 && !_evoOptional)) {
           _doEvolveWith(_cands[0], slotIdx);
+          return;
+        }
+        // 手札とトラッシュの両方に進化先がある（巨神兵器 BT26-085「手札/トラッシュの『クロノモン：デストロイモード』に
+        // 進化させることで」）: カードを選ぶ画面ではなく、まず「手札から/トラッシュから」を選ぶ。選んだゾーンの
+        // 候補が1種類だけならそのまま進化し、複数種類あるときだけカードを選ぶ
+        const _inHand = _cands.filter(c => player.hand.includes(c));
+        const _inTrash = _cands.filter(c => !player.hand.includes(c));
+        if (_inHand.length > 0 && _inTrash.length > 0) {
+          const _zl = ['✋ 手札から進化', '🗑 トラッシュから進化'];
+          if (_evoOptional || _evoIsCost) _zl.push('使わない');
+          const _sameKind = (list) => list.every(c => c.cardNo === list[0].cardNo);
+          showAltActionChoice(_zl, (zi) => {
+            if (zi >= 2) { _doEvolveWith(null, slotIdx); return; }
+            const zc = zi === 0 ? _inHand : _inTrash;
+            if (_sameKind(zc)) { _doEvolveWith(zc[0], slotIdx); return; }
+            showTrashCardPicker(zc, 1, false, '⬆ 進化させるカードを選んでください', (picked) => _doEvolveWith(picked && picked[0], slotIdx), zc);
+          }, '⬆ 「' + (_sameKind(_cands) ? _cands[0].name : '進化先') + '」にどこから進化させますか？');
           return;
         }
         showTrashCardPicker(_cands, 1, _evoOptional, '⬆ 進化させるカードを選んでください', (picked) => {
@@ -13817,7 +13849,8 @@ function executeRecipeStep(step, ctx, store, callback) {
             window._onlineSendCommand({
               type: 'fx_detach_stack',
               targetIdx: idx,
-              onSide: 'self',
+              // onSide は受信側の視点（fx_dedigivolve と同じ規約）: 自分のカード → 受信側では相手側 = 'opp'
+              onSide: 'opp',
               removeCount: removed.length,
               fromBottom,
               destZone: 'security',
@@ -14062,6 +14095,86 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 相手自身のデッキ（所有者のデッキ）に戻す。例: テラーズクラスター
       // 「レスト状態の相手のデジモン1体をデッキの下に戻す」
       const _rdTStr = step.target || '';
+      // from:"stacked_cards" + 相手のデジモン N 体（クロノモン：デストロイモード BT26-060「相手のデジモン3体に
+      // 重ねられているカードを上から5枚デッキの上に戻す」）: 選んだ N 体の「本体＋進化元」の上から、合計 value 枚を
+      // 1枚ずつ持ち主のデッキへ戻す（どのデジモンから戻すかは1枚ごとに選ぶ）。退化と同じく、最後の1枚は残し、
+      // Lv.3以下のカードが一番上になったらそのデジモンからはそれ以上戻さない。以前はこの指定に対応しておらず
+      // デジモンごとデッキに戻す処理になっていた
+      if (step.from === 'stacked_cards' && _rdTStr.startsWith('opponent')) {
+        const _skM = /^opponent(?:_card)?:(?:up_to_)?(\d+)$/.exec(_rdTStr);
+        const _skWantDigi = _skM ? (parseInt(_skM[1], 10) || 1) : 1;
+        const _skTotal = Math.max(1, parseInt(step.value, 10) || 1);
+        const _skTop = step.position === 'top' || step.deck_top;
+        const _skOppSide = ctx.side === 'player' ? 'ai' : 'player';
+        const _skCanTake = (c) => {
+          if (!c || !Array.isArray(c.stack) || c.stack.length === 0) return false;
+          if (c.buffs && c.buffs.some(b => b && b.type === 'cant_return_deck')) return false;
+          if (hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return false;
+          const lv = parseInt(c.level, 10) || 0;
+          return !(lv > 0 && lv <= 3);
+        };
+        const _skCands = [];
+        opponent.battleArea.forEach((c, i) => { if (_skCanTake(c) && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))) _skCands.push(i); });
+        if (_skCands.length === 0) { ctx.addLog('⚠ 重ねられているカードを戻せる相手のデジモンがいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, callback); break; }
+        const _skRowId = ctx.side === 'player' ? 'ai' : 'pl';
+        // 1枚戻す（本体を戻し、進化元の一番上を新しい本体にする）
+        const _skTakeOne = (idx, done) => {
+          const c = opponent.battleArea[idx];
+          if (!_skCanTake(c)) { done(); return; }
+          const newCarrier = c.stack[0];
+          newCarrier.stack = c.stack.slice(1);
+          newCarrier.suspended = !!c.suspended;
+          newCarrier.buffs = [];
+          newCarrier._permEffects = {};
+          newCarrier.summonedThisTurn = false;
+          newCarrier._usedEffects = [];
+          newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
+          newCarrier.dp = newCarrier.baseDp;
+          newCarrier.dpModifier = 0;
+          opponent.battleArea[idx] = newCarrier;
+          c.stack = [];
+          if (_skTop) opponent.deck.unshift(c); else opponent.deck.push(c);
+          ctx.addLog('🔄 「' + c.name + '」を相手のデッキの' + (_skTop ? '上' : '下') + 'に戻した（新形態: ' + newCarrier.name + '）');
+          ctx.renderAll();
+          if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+            try {
+              window._onlineSendCommand({ type: 'fx_detach_stack', targetIdx: idx, onSide: 'self', removeCount: 1, fromBottom: false, destZone: 'deck', destPosition: _skTop ? 'top' : 'bottom' });
+              if (window._markEvoModified) window._markEvoModified('ai', idx);
+            } catch (_) {}
+          }
+          if (effectiveSide === 'ai') { done(); return; }
+          _fxMoveSync(ctx, c, '相手の「' + newCarrier.name + '」', '相手のデッキ' + (_skTop ? '(上)' : '(下)'), done,
+            { remoteFrom: '「' + newCarrier.name + '」', remoteTo: 'デッキ' + (_skTop ? '(上)' : '(下)') });
+        };
+        const _skFinish = (returned) => {
+          try { applyPermanentEffects(ctx.bs, _skOppSide, ctx); } catch (_) {}
+          ctx.renderAll();
+          if (ctx.bs) ctx.bs._lastActionCount = returned;
+          if (returned > 0) _deckIncreased(ctx, _skOppSide, () => callback());
+          else callback();
+        };
+        // 合計 _skTotal 枚になるまで、選んだデジモンのうち戻せるものから1枚ずつ戻す
+        const _skDistribute = (slots) => {
+          let returned = 0;
+          const next = () => {
+            if (returned >= _skTotal) { _skFinish(returned); return; }
+            const avail = slots.filter(i => _skCanTake(opponent.battleArea[i]));
+            if (avail.length === 0) { _skFinish(returned); return; }
+            const take = (i) => _skTakeOne(i, () => { returned++; next(); });
+            if (avail.length === 1 || effectiveSide === 'ai') { take(avail[0]); return; }
+            showTargetSelection(_skRowId, avail, null, '#ff4444', (sel) => take(sel !== null && avail.includes(sel) ? sel : avail[0]),
+              '（重ねられているカードを上から戻すデジモン・あと' + (_skTotal - returned) + '枚）');
+          };
+          next();
+        };
+        if (_skCands.length <= _skWantDigi || effectiveSide === 'ai') { _skDistribute(_skCands.slice(0, _skWantDigi)); break; }
+        const _skCards = _skCands.map(i => opponent.battleArea[i]);
+        showCardListPicker(_skCards, _skWantDigi, '🔄 重ねられているカードを戻す相手のデジモンを' + _skWantDigi + '体選んでください', (picked) => {
+          const slots = (picked || []).map(c => opponent.battleArea.indexOf(c)).filter(i => i !== -1);
+          _skDistribute(slots.length > 0 ? slots : _skCands.slice(0, _skWantDigi));
+        });
+        break;
+      }
       if (_rdTStr.startsWith('opponent')) {
         const _rdConds = step.condition ? parseRecipeCondition(step.condition) : [];
         const _rdCondSide = ctx.side === 'player' ? 'ai' : 'player';

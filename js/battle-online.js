@@ -1517,7 +1517,8 @@ function onRemoteCommand(cmd) {
         }
       }
       tgtPlayer.battleArea[cmd.targetIdx] = newCarrier;
-      const destArr = cmd.destZone === 'security' ? tgtPlayer.security : tgtPlayer.trash;
+      // destZone: 'security' / 'deck'（クロノモン：デストロイモード BT26-060「重ねられているカードをデッキの上に戻す」）/ それ以外はトラッシュ
+      const destArr = cmd.destZone === 'security' ? tgtPlayer.security : cmd.destZone === 'deck' ? tgtPlayer.deck : tgtPlayer.trash;
       removed.forEach((c) => { if (cmd.destPosition === 'bottom') destArr.push(c); else destArr.unshift(c); });
       addLog('🛡 「' + tgt.name + '」に重ねられているカードを' + removed.length + '枚移動' + (newCarrier ? ' (新形態: ' + newCarrier.name + ')' : ' (完全に離れる)'));
       try { if (window._applyPermanentEffects) window._applyPermanentEffects(); } catch(_) {}

@@ -268,7 +268,7 @@ function _announceInherit(entry, context, done) {
 // ===== 相手のデジモンN体に重ねられているカードを、上から合計M枚デッキの上/下に戻す =====
 // クロノモン：デストロイモード BT26-060「相手のデジモン3体に重ねられているカードを上から5枚デッキの上に戻す」。
 // 流れ（効果を発揮する側が全て選ぶ）:
-//   1. 相手のデジモンを N 体選ぶ（1体ずつ。選ぶたびにカード詳細＝進化元と効果を見せて「このデジモンでいいですか？」）。
+//   1. 相手のデジモンを N 体選ぶ（1体ずつ。対象選択の確認画面に本体と進化元の詳細が出る）。
 //      一番上が Lv.3 以下のデジモン・進化元がないデジモンは選べない（戻せるカードが無い）
 //   2. 選んだデジモンごとに戻す枚数を決める（1体につき最低1枚、合計 M 枚。戻せる枚数より多い合計にはしない）
 //   3. 戻すカードをデッキに置く順番を決める
@@ -347,41 +347,6 @@ function _sdButton(label, bg, fg) {
   b.innerText = label;
   b.style.cssText = 'font-weight:bold;font-size:13px;padding:8px 18px;border-radius:999px;border:2px solid ' + bg + ';background:' + bg + ';color:' + fg + ';cursor:pointer;';
   return b;
-}
-
-// 選んだデジモンのカード詳細（本体・進化元とその効果）を見せて「このデジモンでいいですか？」。callback(true/false)
-function _confirmDigimonDetail(card, maxReturn, callback) {
-  const ov = _sdOverlay();
-  const title = document.createElement('div');
-  title.style.cssText = 'color:#00fbff;font-size:15px;font-weight:bold;text-shadow:0 0 8px #00fbff;text-align:center;margin-top:8px;';
-  title.innerText = 'このデジモンでいいですか？';
-  const seq = [card].concat(card.stack || []);
-  const list = document.createElement('div');
-  list.style.cssText = 'display:grid;gap:8px;width:min(560px,100%);';
-  seq.forEach((c, i) => {
-    const row = document.createElement('div');
-    const returnable = i < maxReturn;
-    row.style.cssText = 'display:flex;gap:10px;align-items:flex-start;background:#111;border:1px solid ' + (i === 0 ? '#00fbff' : '#444') + ';border-radius:8px;padding:8px;';
-    const txt = (i === 0 ? (c.effect || '') : ((c.evoSourceEffect && c.evoSourceEffect !== 'なし') ? c.evoSourceEffect : '（進化元効果なし）'));
-    row.innerHTML = (_sdImg(c) ? '<img src="' + _sdEsc(_sdImg(c)) + '" style="width:64px;border-radius:4px;flex:none;">' : '')
-      + '<div style="min-width:0;flex:1;">'
-      + '<div style="color:#fff;font-size:12px;font-weight:bold;">' + (i === 0 ? '本体' : '進化元' + i) + '：' + _sdEsc(c.name) + '（Lv.' + _sdEsc(c.level) + '）'
-      + (returnable ? '' : ' <span style="color:#888;font-weight:normal;">（戻せない）</span>') + '</div>'
-      + '<div style="color:#aaf;font-size:11px;line-height:1.5;white-space:pre-wrap;">' + _sdEsc(txt) + '</div></div>';
-    list.appendChild(row);
-  });
-  const note = document.createElement('div');
-  note.style.cssText = 'color:#aaa;font-size:11px;text-align:center;';
-  note.innerText = 'このデジモンからは上から最大' + maxReturn + '枚戻せます';
-  const btns = document.createElement('div');
-  btns.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;padding-bottom:12px;';
-  const ok = _sdButton('このデジモンにする', '#00fbff', '#000');
-  const ng = _sdButton('選び直す', '#555', '#fff');
-  ok.onclick = () => { ov.remove(); callback(true); };
-  ng.onclick = () => { ov.remove(); callback(false); };
-  btns.append(ok, ng);
-  ov.append(title, list, note, btns);
-  document.body.appendChild(ov);
 }
 
 // 選んだデジモンごとの戻す枚数を決める（各1枚以上・最大まで、合計 total 枚）。callback(counts)
@@ -576,11 +541,10 @@ function _runStackToDeckEffect(step, ctx, player, opponent, effectiveSide, callb
     const avail = candIdx.filter(i => !chosen.includes(i));
     showTargetSelection(rowId, avail, null, '#ff4444', (sel) => {
       if (sel === null || !avail.includes(sel)) { pickNext(); return; }
-      const c = opponent.battleArea[sel];
-      _confirmDigimonDetail(c, _stackReturnMax(c), (ok) => {
-        if (ok) chosen.push(sel);
-        pickNext();
-      });
+      // 対象選択の確認画面（showTargetSelection の「このカードでいいですか？」）に進化元も表示されるので、
+      // ここで重ねて確認は出さない
+      chosen.push(sel);
+      pickNext();
     }, '（重ねられているカードを戻すデジモン ' + (chosen.length + 1) + '/' + digiCount + '体目）');
   };
   pickNext();
@@ -3231,6 +3195,27 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
     if (card.evoSourceEffect && card.evoSourceEffect !== 'なし') {
       box.innerHTML += '<div style="font-size:11px;color:#aaa;line-height:1.7;margin-bottom:10px;text-align:left;background:#0a0a0a;padding:10px;border-radius:6px;border:1px solid #222;">'
         + '<div style="color:#ffaa00;font-size:10px;margin-bottom:4px;font-weight:bold;">' + evoSourceEffectLabel(card) + '</div>' + card.evoSourceEffect + '</div>';
+    }
+    // 重ねられている進化元（上から順）。対象を選ぶときに進化元のカード名・Lv・進化元効果を確認できるようにする
+    // （クロノモン：デストロイモード BT26-060「重ねられているカードを上から戻す」等で、何が重なっているか分からなかった）。
+    // 裏向きのカードは名前を伏せる
+    if (Array.isArray(card.stack) && card.stack.length > 0) {
+      const _esc = (t) => String(t == null ? '' : t).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+      const _rows = card.stack.map((s, i) => {
+        if (!s) return '';
+        if (s._faceDown) {
+          return '<div style="padding:6px 0;border-top:1px solid #222;color:#888;">' + (i + 1) + '. 裏向きのカード</div>';
+        }
+        const _sImg = s.imgSrc || getCardImageUrl(s) || s.imageUrl || '';
+        const _sEff = (s.evoSourceEffect && s.evoSourceEffect !== 'なし') ? s.evoSourceEffect : '（進化元効果なし）';
+        return '<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-top:1px solid #222;">'
+          + (_sImg ? '<img src="' + _sImg + '" style="width:44px;border-radius:4px;flex:none;">' : '')
+          + '<div style="min-width:0;"><div style="color:#fff;font-weight:bold;">' + (i + 1) + '. ' + _esc(s.name) + '（Lv.' + _esc(s.level || '?') + '）</div>'
+          + '<div style="color:#aaa;">' + _esc(_sEff) + '</div></div></div>';
+      }).join('');
+      box.innerHTML += '<details open style="font-size:11px;line-height:1.6;margin-bottom:10px;text-align:left;background:#0a0a0a;padding:8px 10px;border-radius:6px;border:1px solid #333;">'
+        + '<summary style="color:#00fbff;font-size:11px;font-weight:bold;cursor:pointer;">進化元（' + card.stack.length + '枚・上から順）</summary>'
+        + '<div style="max-height:220px;overflow-y:auto;">' + _rows + '</div></details>';
     }
 
     // 確認ボタン

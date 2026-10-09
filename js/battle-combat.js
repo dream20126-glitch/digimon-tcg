@@ -1478,7 +1478,21 @@ export function showAppGattaiEffect(cost, baseCard, partnerCards, resultCard, on
 // card: 進化先(手札)カード, handIdx: p.hand内index, slotIdx: 進化元(base)のbattleArea内index,
 // cost: 実際に支払う進化コスト（呼び出し側で軽減計算済み）, side: 'player'|'ai'
 // 置き換えの処理中に保留した【進化時】を、保留した順に発揮する（まだ場にいるものだけ）。done()
-export function flushDeferredEvoTriggers(done) {
+// 実行中に再度呼ばれたら（アタック終了時と相手の端末からの依頼が重なった等）、実行中の分が全て終わってから
+// 完了を返す（以前は2回目が「保留は空」として即座に完了を返し、相手の端末が先へ進んでいた）
+let _flushingDeferredEvo = false;
+const _flushDeferredEvoWaiters = [];
+export function flushDeferredEvoTriggers(done0) {
+  if (_flushingDeferredEvo) { _flushDeferredEvoWaiters.push(done0); return; }
+  _flushingDeferredEvo = true;
+  const done = () => {
+    // 発揮中に新しく保留が増えていれば続けて発揮する
+    if (Array.isArray(bs._deferredEvoTriggers) && bs._deferredEvoTriggers.length > 0) { _flushingDeferredEvo = false; flushDeferredEvoTriggers(done0); return; }
+    _flushingDeferredEvo = false;
+    const ws = _flushDeferredEvoWaiters.splice(0);
+    done0 && done0();
+    ws.forEach(w => { try { w && w(); } catch (_) {} });
+  };
   const list = Array.isArray(bs._deferredEvoTriggers) ? bs._deferredEvoTriggers.splice(0) : [];
   if (typeof window._hudSetDeferredEvo === 'function') window._hudSetDeferredEvo(list);
   let i = 0;

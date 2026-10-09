@@ -10304,8 +10304,10 @@ export function fireOnBattleDestroyTriggers(destroyedSide, bs, ctxBase, done, de
 // destroyedCard: 消滅したカード本体
 // destroyedSide: そのカードが所属していた side ('player' or 'ai')
 function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done, triggerKey) {
-  // 消滅が決まった時点で先に出していた「発揮待ち」の予告は、ここで実際の発揮待ちに置き換える
-  _hudClearDestroyPreview(destroyedCard);
+  // 消滅が決まった時点で先に出していた【消滅時】の「発揮待ち」の予告は、ここで実際の発揮待ちに置き換える。
+  // 「離れるとき」（when_leave_battle）の確認でもこの関数を通るが、そこではまだ消滅していないので外さない
+  // （以前は外していたため、消滅が決まったユノモン：ヒステリックモードの【消滅時】が表示されなかった）
+  if (!triggerKey || triggerKey === 'on_destroy') _hudClearDestroyPreview(destroyedCard);
   const _hudKeySD = 'self#' + (++_hudSeq);
   const finish = () => { _hudSetSource(_hudKeySD, []); try { done && done(); } catch(_) {} };
   if (!destroyedCard || !bs) { finish(); return; }

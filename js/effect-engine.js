@@ -5706,7 +5706,9 @@ function _purgeOffFieldGrants(bs) {
     if (!p) return;
     // 場のカードのDPを付与されているバフから計算し直す（アーツ進化等の後に DP+3000 のバフがあるのに
     // DP・dpModifier に反映されていなかった。ケルベロモン：人狼モード＆インフェルノディバイド BT26-056）
-    (p.battleArea || []).forEach(c => { if (c && Array.isArray(c.buffs)) { try { recalcDp(c); } catch (_) {} } });
+    // オンラインの相手のカードは持ち主の端末の値（state_sync）を正とするので、計算し直すのは自分のカードとCPU戦だけ
+    const _onlineOpp = sd === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode();
+    if (!_onlineOpp) (p.battleArea || []).forEach(c => { if (c && Array.isArray(c.buffs)) { try { recalcDp(c); } catch (_) {} } });
     ['hand', 'trash', 'deck', 'security'].forEach(z => {
       (p[z] || []).forEach(c => {
         if (!c) return;

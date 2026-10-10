@@ -2117,6 +2117,8 @@ export function resolveAttackTarget(target, targetIdx) {
         const _rt = _consumeRedirectedAttack('security', -1);
         if (_rt.target === 'digimon') { _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, _rt.def, _rt.idx); return; }
         // 効果処理完了 → このタイミングで attack_security を送る
+        // 送るDPは付与中のバフから計算し直した値にする（防御側はこの値でブロックの勝敗を判定する）
+        try { if (window._recalcDp) window._recalcDp(atk); } catch (_) {}
         _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked) || _cantRedirectAttack(atk), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo), atkCollision: _hasCollision(atk) });
         if (typeof window._waitForBlockResponse === 'function') {
           window._waitForBlockResponse((resp) => {
@@ -2905,7 +2907,8 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide, causerCardsBySide)
 
 export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
   // 比べるDPは付与中のバフから計算し直した値にする（DP+の永続効果が反映されていないことがあった）
-  try { if (window._recalcDp) { window._recalcDp(atk); window._recalcDp(def); } } catch (_) {}
+  // オンラインの相手のカード（def）は持ち主の端末の値を正とするので計算し直さない
+  try { if (window._recalcDp) { window._recalcDp(atk); if (!_onlineMode) window._recalcDp(def); } } catch (_) {}
   showCombatBackdrop();
   const battleBuffs = applyBattleBuffs(atk, def);
   addLog('⚔ 「' + atk.name + '」(DP ' + formatDpDisplay(atk) + ') vs 「' + def.name + '」(DP ' + formatDpDisplay(def) + ')');

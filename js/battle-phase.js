@@ -762,6 +762,8 @@ function _isTurnEndBlocked() {
     if (typeof window === 'undefined') return false;
     if (window._isEffectProcessing && window._isEffectProcessing()) return true;
     if (window._isAttackInProgress && window._isAttackInProgress()) return true;
+    // 相手の端末の処理（ブロックの解決・相手の「離れるとき」・相手の消滅時効果等）の返事待ちの間も終了しない
+    if (window._isOnlineWaiting && window._isOnlineWaiting()) return true;
   } catch (_) {}
   return false;
 }
@@ -813,6 +815,8 @@ export function checkAutoTurnEnd() {
   // 「ターン終了まで」得た【エグゼキュート】が、メモリーが相手側に移ってのターン終了で発動しなかった。
   // ターン終了ボタン（onEndTurn）と同じ順番）
   bs._autoTurnEnding = true;
+  // 「自分のターン終了」の表示を先に出してから【自分のターン終了時】の効果（エグゼキュート等）を処理する
+  showYourTurn('自分のターン終了', '', '#555555', () => {
   _hooks.checkTurnEndEffects(async () => {
     bs._autoTurnEnding = false;
     bs.isPlayerTurn = false; bs._oppPhase = null;
@@ -830,9 +834,7 @@ export function checkAutoTurnEnd() {
     if (_onlineMode) {
       applyTurnEndMemoryShift();
       if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
-      showYourTurn('自分のターン終了', '', '#555555', () => {
-        showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {});
-      });
+      showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {});
     } else {
       // CPU のカードの「相手のターン終了時」効果（onEndTurn の AI対戦分岐と同じ）
       if (!(window._tutorialRunner && window._tutorialRunner.active)) {
@@ -846,10 +848,9 @@ export function checkAutoTurnEnd() {
       bs.memory = -over;
       applyTurnEndMemoryShift();
       updateMemGauge();
-      showYourTurn('自分のターン終了', '', '#555555', () => {
-        setTimeout(() => aiTurn(), 500);
-      });
+      setTimeout(() => aiTurn(), 500);
     }
+  });
   });
   return true;
 }

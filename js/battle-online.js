@@ -2029,6 +2029,9 @@ function resolveOnlineBlock(blockerIdx, cmd) {
 
   // ★ ブロック決定を通知（攻撃側で「ブロックされた時」効果を先に処理してもらう）
   // バフ適用後のDPで勝敗判定
+  // 勝敗に使う攻撃側DP（攻撃側の送った値＋バトル中の効果）を、ここで確定させておく（演出の間に永続効果の再計算が
+  // 走っても、相手のカードのDPがこちらの見えている情報で計算し直されて変わらないように）
+  const _atkDpFixed = atk.dp;
   let atkResult = 'survived';
   if (atk.dp <= blocker.dp) atkResult = atk.dp === blocker.dp ? 'both_destroyed' : 'destroyed';
   sendCommand({ type: 'block_response', blocked: true, atkIdx: cmd.atkIdx, atkResult, blockerName: blocker.name, blockerImg: cardImg(blocker), blockerDp: blocker.dp });
@@ -2051,7 +2054,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
 
     showSC(blocker, atk, () => {
       // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
-      const _atkDp = atk.dp, _blkDp = blocker.dp;
+      const _atkDp = _atkDpFixed, _blkDp = blocker.dp;
       removeBattleBuffs(battleBuffs);
       // 消滅する側の消滅回避（防壁/回避/【分離】/「バトルエリアを離れるとき」の置換効果）を確認してから
       // 結果を決める。相手のカード（atk）の確認は持ち主の端末に委譲される（巨神兵器 BT26-085 が【衝突】で
@@ -2324,6 +2327,10 @@ window._sendMemoryUpdate = () => sendMemoryUpdate();
 window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
 window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._waitForReactionDelegate = (cb) => waitForReactionDelegate(cb);
+// 相手の端末からの返事（ブロック・セキュリティ効果・委譲した反応・離れるとき・保留した【進化時】・手札の破棄・相手の消滅時効果）を
+// 待っている間か。待っている間はメモリーが相手側でもターン終了に進まない（battle-phase.js _isTurnEndBlocked）
+window._isOnlineWaiting = () => !!(_pendingBlockCallback || _pendingSecEffectCallback || _pendingReactionDelegateCallback
+  || _pendingLeaveBattleDelegateCallback || _pendingFlushDeferredEvoCallback || _pendingHandDiscardCallback || _pendingOwnDestroyDoneCallback);
 // 相手のデジモンが「バトルエリアを離れるとき」: 持ち主（相手）の端末に置換効果の判定を委譲し、
 // 離れなかったかどうか（canceled）を待つ。待っている間は待機オーバーレイを出す
 // 相手の端末で「離れるとき」により進化して保留された【進化時】を、こちらの消滅処理が終わった時点で発揮してもらう

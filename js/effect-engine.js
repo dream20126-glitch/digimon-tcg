@@ -1675,7 +1675,23 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           return true;
         } });
         if (_dbCands.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(false)); break; }
-        _pickSideTargets(_dbCands, defaultTarget.count || 1, ctx, effectiveSide, false, '🎯 消滅させる対象を選んでください', (picked) => {
+        // 1体をバトルエリアから選ぶなら、他の効果と同じく盤面のデジモンをタップして選ぶ（確認画面つき）。
+        // 自分のデジモンも相手のデジモンも、条件を満たすものだけが光る
+        const _dbPick = (n, cb) => {
+          if (effectiveSide !== 'ai' && (n || 1) === 1 && _dbCands.every(e => e.zone === 'battleArea')
+              && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
+            const enc = _dbCands.map(e => e.own ? 100 + e.idx : e.idx);
+            const ask = () => showTargetSelection('both', enc, null, uiColor, (v) => {
+              if (v === null || v === undefined) { ask(); return; } // 強制効果なので選び直す
+              const e = _dbCands.find(x => (x.own ? 100 + x.idx : x.idx) === v);
+              cb(e ? [e] : []);
+            }, '（自分・相手のデジモンから）');
+            ask();
+            return;
+          }
+          _pickSideTargets(_dbCands, n, ctx, effectiveSide, false, '🎯 消滅させる対象を選んでください', cb);
+        };
+        _dbPick(defaultTarget.count || 1, (picked) => {
           if (!picked || picked.length === 0) { if (ctx.bs) ctx.bs._lastActionCount = 0; callback(false); return; }
           if (ctx.bs) ctx.bs._lastActionCount = picked.length;
           let _dbi = 0;
@@ -2386,6 +2402,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // コストの破棄も「効果で」破棄されたものとして原因（発動者の効果）を付ける
         // （ヤタガラモン BT26-076「相手の手札が破棄されたとき」の cause:'effect' 等が成立するように）
         const _cdCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card || null };
+        _snapshotHandDiscardConds(ctx.bs, ctx.side, _cdDiscarded);
         enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueuedWithCause, [_cdCause, ctx.side, null, ctx.bs, _cdCtxBase, _cdDiscarded.slice()]);
         callback();
       };
@@ -3370,12 +3387,22 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
   }
 
   const _showUI = () => {
+  // targetSide==='both'（自分と相手の両方から選ぶ）: validIndices は 自分のスロットi=100+i／相手のスロットi=i で
+  // 指定し、選んだ値も同じ形で返す（ドーベルモン BT26-069「Lv.4以下のデジモン1体を消滅させる」）
+  const _isBoth = targetSide === 'both';
   const rowId = targetSide === 'ai' ? 'ai-battle-row' : 'pl-battle-row';
   const row = document.getElementById(rowId);
   if (!row) { callback(null); return; }
 
   _targetSelecting = true;
-  const slots = row.querySelectorAll('.b-slot');
+  let slots = row.querySelectorAll('.b-slot');
+  if (_isBoth) {
+    const _plSlots = row.querySelectorAll('.b-slot');
+    const _aiRow = document.getElementById('ai-battle-row');
+    const _aiSlots = _aiRow ? _aiRow.querySelectorAll('.b-slot') : [];
+    slots = {};
+    validIndices.forEach((v) => { slots[v] = v >= 100 ? _plSlots[v - 100] : _aiSlots[v]; });
+  }
   const color = borderColor || '#ff4444';
 
   // バトル演出中の黒背景（_combat-backdrop, z-index:46999）が盤面より前面にあり、
@@ -3438,7 +3465,9 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
       // 対象カードの情報を取得
       const bs = window._lastBattleState;
       const area = targetSide === 'ai' ? (bs ? bs.ai.battleArea : []) : (bs ? bs.player.battleArea : []);
-      const card = area[selectedIdx];
+      const card = _isBoth
+        ? (bs ? (selectedIdx >= 100 ? bs.player.battleArea[selectedIdx - 100] : bs.ai.battleArea[selectedIdx]) : null)
+        : area[selectedIdx];
       // チュートリアル通知: 対象選択タップ完了（確認ダイアログ表示前）
       if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
         try {
@@ -3524,7 +3553,7 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
       + '<div style="color:#888;font-size:11px;margin-bottom:10px;">' + _stack.length + '枚・上から順</div>'
       + '<div style="text-align:left;max-height:55vh;overflow-y:auto;">' + _stack.map((s, i) => {
         // 裏向きのカードは持ち主（自分）の画面でだけ中身を見られる（相手のデジモンなら伏せる）
-        if (s._faceDown && targetSide === 'ai') return '<div style="padding:8px 0;border-top:1px solid #222;color:#888;font-size:12px;">' + (i + 1) + '. 裏向きのカード</div>';
+        if (s._faceDown && (targetSide === 'ai' || (_isBoth && idx < 100))) return '<div style="padding:8px 0;border-top:1px solid #222;color:#888;font-size:12px;">' + (i + 1) + '. 裏向きのカード</div>';
         const _sImg = s.imgSrc || getCardImageUrl(s) || s.imageUrl || '';
         const _sEff = (s.evoSourceEffect && s.evoSourceEffect !== 'なし') ? s.evoSourceEffect : '（進化元効果なし）';
         return '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #222;">'
@@ -8824,6 +8853,15 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   const recipe = reaction.recipe;
   const sourceCard = reaction.sourceCard || card;
   const isEvo = sourceCard !== card;
+  // 発揮する時点で「〜なら」の条件（step.condition）を満たすステップが1つも無ければ、確認も出さずに終える
+  // （誘発の判定 _fireSidedReactionTriggers と同じ基準。プロットモン BT26-066【自分のメインフェイズ開始時】
+  // 「手札が5枚以下なら」を、発揮する時点で手札が6枚以上でも確認していた）
+  if (bs && Array.isArray(recipe) && recipe.length > 0 && recipe.every(st => st && st.condition
+      && !checkConditions(parseRecipeCondition(st.condition), card, bs, side))) {
+    ctxBase && ctxBase.addLog && ctxBase.addLog('💨 「' + (sourceCard && sourceCard.name || card.name) + '」の効果は条件を満たさないため発揮しない');
+    finish();
+    return;
+  }
   const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side };
   // 発火元カード（反応の元になったイベントのカード）があれば、trigger_conditions の評価・
   // target_trigger_source（「そのデジモン」）で参照できるよう ctx.block に載せる
@@ -9806,6 +9844,8 @@ export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, on
     // 破棄されたカード自身の［手札］効果: そのカード自身が破棄されたときだけ
     if (_stepZone(step) === 'hand') {
       if (cardSide !== discardedSide || !discarded.includes(carrier)) return false;
+      // 破棄された時点で「〜なら」を満たしていなかった（_snapshotHandDiscardConds）
+      if (carrier && carrier._handDiscardCondFailed) return false;
       const subj = _resolveStepSubject(step, 'when_hand_discard');
       return !subj || subj === 'self_hand' || subj === 'self';
     }
@@ -9821,9 +9861,10 @@ export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, on
     ? { zoneCards: discarded.map((c) => ({ card: c, zone: 'hand' })) } : undefined);
   const fireSide = (side, next) => _fireSidedReactionTriggers(side, 'when_hand_discard', bs, ctxBase, next,
     (step, rs, carrier) => subjectMatches(step, side, carrier), optsFor(side));
-  if (onlySide === 'player') return fireSide('player', done);
-  if (onlySide === 'ai') return fireSide('ai', done);
-  return fireSide('player', () => fireSide('ai', done));
+  const done2 = () => { discarded.forEach((c) => { if (c) delete c._handDiscardCondFailed; }); done && done(); };
+  if (onlySide === 'player') return fireSide('player', done2);
+  if (onlySide === 'ai') return fireSide('ai', done2);
+  return fireSide('player', () => fireSide('ai', done2));
 }
 
 // ===== 効果による手札/セキュリティの破棄（action:'discard'） =====
@@ -9905,7 +9946,30 @@ function _moveHandCardsToTrash(handSide, cards, ctx, done) {
 
 // 「手札が破棄されたとき」を、元の効果の解決後に発火するようキューへ積む（cost_discard と同じ）。
 // 原因は「ctx.side の効果」
+// 手札から破棄されたカード自身の効果（［手札］「このカードが手札から破棄されたとき、〜なら」。ドーベルモン
+// BT26-069「自分の手札が5枚以下なら【1ドロー】」）の「〜なら」を、破棄された時点で判定して記録する。
+// 「したとき」は元の効果の解決後に発揮するので、その間に手札の枚数が変わって条件を満たしてしまうのを防ぐ。
+// 満たしていなかったカードは c._handDiscardCondFailed を立て、fireWhenHandDiscardTriggers が誘発させない
+function _snapshotHandDiscardConds(bs, side, cards) {
+  if (!bs || !Array.isArray(cards)) return;
+  cards.forEach((c) => {
+    if (!c) return;
+    delete c._handDiscardCondFailed;
+    let r = null;
+    try { r = typeof c.recipe === 'string' ? JSON.parse(c.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : c.recipe; } catch (_) { r = null; }
+    if (!r || typeof r !== 'object') return;
+    const steps = [];
+    Object.keys(r).forEach((k) => {
+      if (!k.split(',').map(x => x.trim()).some(x => x === 'discard' || x === 'when_hand_discard')) return;
+      (Array.isArray(r[k]) ? r[k] : []).forEach((st) => { if (st && st.in_zone === 'hand') steps.push(st); });
+    });
+    if (steps.length === 0) return;
+    if (steps.every(st => st.condition && !checkConditions(parseRecipeCondition(st.condition), c, bs, side))) c._handDiscardCondFailed = true;
+  });
+}
+
 function _enqueueHandDiscardTriggers(ctx, discardedSide, onlySide, discardedCards) {
+  _snapshotHandDiscardConds(ctx.bs, discardedSide, discardedCards);
   const cause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
   const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
   enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueuedWithCause, [cause, discardedSide, onlySide || null, ctx.bs, ctxBase, discardedCards || null]);

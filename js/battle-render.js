@@ -56,13 +56,13 @@ const KEYWORD_DISPLAY_NAMES = {
   prevent_destroy: '消滅耐性', prevent_battle_destroy: 'バトル耐性',
   immune: '効果耐性',
   // 耐性バフ（cant_* のバフから _collectActiveKeywords が変換する。巨神兵器 BT26-085 等）
-  no_dp_minus: 'DP-されない', no_discard: '破棄されない', no_return_hand: '手札に戻らない', no_return_deck: 'デッキに戻らない',
+  no_dp_minus: 'DP-されない', no_discard: '破棄されない', no_return_hand: '手札に戻らない', no_return_deck: 'デッキに戻らない', no_redirect: 'アタック対象変更不可',
 };
 
 // キーワード→色カテゴリ
 function _keywordColor(code) {
   if (['michizure', 'penetrate', 'piercing', 'rush', 'charge', 'execute', 'vortex', 'overclock'].includes(code)) return '#ff5577'; // 攻撃系
-  if (['barrier', 'evade', 'armor_break', 'indomitable', 'scapegoat', 'fragment', 'prevent_destroy', 'prevent_battle_destroy', 'ice_armor', 'no_dp_minus', 'no_discard', 'no_return_hand', 'no_return_deck'].includes(code)) return '#5599ff'; // 防御系
+  if (['barrier', 'evade', 'armor_break', 'indomitable', 'scapegoat', 'fragment', 'prevent_destroy', 'prevent_battle_destroy', 'ice_armor', 'no_dp_minus', 'no_discard', 'no_return_hand', 'no_return_deck', 'no_redirect'].includes(code)) return '#5599ff'; // 防御系
   if (['blocker', 'combo', 'collision', 'decoy', 'force_block'].includes(code)) return '#44dd88'; // ブロック・支援系
   if (['jamming', 'attack_immunity', 'immune', 'reboot'].includes(code)) return '#44ddcc'; // 状態系
   if (['absorb_evolve', 'blast_evolve', 'blast_jogress', 'save', 'material_save', 'mind_link', 'partition', 'delay'].includes(code)) return '#cc77ff'; // 進化・配置系
@@ -70,7 +70,7 @@ function _keywordColor(code) {
 }
 
 // 耐性バフ（buff.type）→ バッジ用コード
-const _RESIST_BUFF_BADGE = { cant_dp_minus: 'no_dp_minus', cant_discard: 'no_discard', cant_return_hand: 'no_return_hand', cant_return_deck: 'no_return_deck' };
+const _RESIST_BUFF_BADGE = { cant_dp_minus: 'no_dp_minus', cant_discard: 'no_discard', cant_return_hand: 'no_return_hand', cant_return_deck: 'no_return_deck', cant_redirect_attack: 'no_redirect' };
 
 // カードに「効果で付与された」キーワード一覧を抽出
 // 元から持っているキーワード（カードテキスト/進化元/recipe.passive）はカード詳細で確認できるためバッジ表示しない
@@ -134,7 +134,7 @@ function _buildGrantBadges(card) {
       else if (b.type === 'security_attack_plus') saMod += (parseInt(b.value) || 0);
       else if (b.type === 'security_attack_minus') saMod -= (parseInt(b.value) || 0);
       else if (b.type.indexOf('keyword_') === 0) kwSet.add(b.type.slice('keyword_'.length));
-      else if (_RESIST_BUFF_BADGE[b.type]) kwSet.add(_RESIST_BUFF_BADGE[b.type]);
+      else if (_RESIST_BUFF_BADGE[b.type] && b.type !== 'cant_redirect_attack') kwSet.add(_RESIST_BUFF_BADGE[b.type]); // アタック対象変更不可は下の行動制限で出す
     });
   }
   if (dpMod !== 0) items.push({ label: 'DP' + (dpMod > 0 ? '+' : '') + dpMod, color: dpMod > 0 ? '#00aa55' : '#cc3333' });

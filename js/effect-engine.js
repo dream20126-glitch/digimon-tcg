@@ -4525,6 +4525,8 @@ function applyExtremeFilter(cards, filter) {
   };
   pick('dp_extreme', (c) => parseInt(c.dp) || 0);
   pick('cost_extreme', (c) => parseInt(c.playCost != null ? c.playCost : (c.cost || 0)) || 0);
+  // Lvを持たないカード（巨神兵器 BT26-085 等）は「最もLvの低い／高い」の候補にしない（Lv.0 扱いにしない）
+  if (filter.lv_extreme === 'highest' || filter.lv_extreme === 'lowest') out = out.filter(c => !isNaN(parseInt(c.level)));
   pick('lv_extreme', (c) => parseInt(c.level) || 0);
   return out;
 }
@@ -12776,6 +12778,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           const extreme = step.filter.cost_extreme === 'lowest' ? Math.min(...costs) : Math.max(...costs);
           matchedIdxs = matchedIdxs.filter(i => (parseInt(costOf(tgtPlayer.battleArea[i])) || 0) === extreme);
         }
+        // Lvを持たないカードは「最もLvの低い／高い」の候補にしない
+        if (step.filter && step.filter.lv_extreme) matchedIdxs = matchedIdxs.filter(i => !isNaN(parseInt(tgtPlayer.battleArea[i] && tgtPlayer.battleArea[i].level)));
         if (step.filter && step.filter.lv_extreme && matchedIdxs.length > 0) {
           const lvs = matchedIdxs.map(i => parseInt(tgtPlayer.battleArea[i].level) || 0);
           const extreme = step.filter.lv_extreme === 'lowest' ? Math.min(...lvs) : Math.max(...lvs);
@@ -15548,6 +15552,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         _raCands = _raCands.filter(i => (parseInt(costOf(_raPool.battleArea[i])) || 0) === extreme);
       }
       // lv_extreme: 同様にLvが最大/最小のものだけに絞る
+      if (_raFilter && _raFilter.lv_extreme) _raCands = _raCands.filter(i => !isNaN(parseInt(_raPool.battleArea[i] && _raPool.battleArea[i].level)));
       if (_raFilter && _raFilter.lv_extreme && _raCands.length > 0) {
         const lvs = _raCands.map(i => parseInt(_raPool.battleArea[i].level) || 0);
         const extreme = _raFilter.lv_extreme === 'lowest' ? Math.min(...lvs) : Math.max(...lvs);

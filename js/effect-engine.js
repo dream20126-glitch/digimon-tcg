@@ -560,7 +560,8 @@ function _runStackToDeckEffect(step, ctx, player, opponent, effectiveSide, callb
       const c = placed[i++];
       _fxMoveSync(ctx, c, '相手のデジモン', '相手のデッキ' + (top ? '(上)' : '(下)'), anim, { remoteFrom: '自分のデジモン', remoteTo: 'デッキ' + (top ? '(上)' : '(下)') });
     };
-    anim();
+    if (effectiveSide === 'ai') { anim(); return; }
+    _moveBatchIntro(ctx, placed, '相手のデジモン', '相手のデッキ' + (top ? '(上)' : '(下)'), anim, { remoteFrom: '自分のデジモン', remoteTo: 'デッキ' + (top ? '(上)' : '(下)') });
   };
 
   const afterPick = (chosenIdx) => {
@@ -2148,7 +2149,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
             setTimeout(showNextDiscard, 500);
           }
         }
-        showNextDiscard();
+        _moveBatchIntro(ctx, discarded, tgt.name + 'の進化元', 'トラッシュ', showNextDiscard, { noRemote: true });
       };
       // 破棄元と破棄したカード（破棄時点で一番下/一番上だったか）を「破棄されたとき」の判定用に記録する
       // （fireWhenEvoDiscardTriggers の self_stack / *_bottom / trigger_conditions 判定に渡す）
@@ -2381,7 +2382,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         _cdDiscarded.push(card);
         ctx.addLog('✦ 「' + card.name + '」を捨てた');
         // オンライン: 相手画面にもカード移動演出を送信
-        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand && !_moveBatchSkipping()) {
           try {
             window._onlineSendCommand({
               type: 'fx_remoteCardMove',
@@ -2417,13 +2418,13 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       if (!canShowPicker) {
         // AI 側 / UI なし: 条件を満たす末尾 N 枚を自動破棄
         const auto = _cdHandPool.slice(-n);
-        runDiscards(auto, _cdFinishCallback);
+        _moveBatchIntro(ctx, auto, '手札', 'トラッシュ', () => runDiscards(auto, _cdFinishCallback));
         return;
       }
       // プレイヤー: 手札ピッカーで N 枚選択 → 破棄（条件があれば絞り込んだ候補のみ表示）
       showHandDiscardPicker(_cdHandPool.slice(), n, (picked) => {
         if (!picked || picked.length < n) { callback(false); return; }
-        runDiscards(picked, _cdFinishCallback);
+        _moveBatchIntro(ctx, picked, '手札', 'トラッシュ', () => runDiscards(picked, _cdFinishCallback));
       });
       break;
     }
@@ -3913,7 +3914,10 @@ function _returnDeckFromBothTrash(step, ctx, player, opponent, effectiveSide, ca
       _fxMoveSync(ctx, a.card, a.side === 'own' ? 'トラッシュ' : '相手のトラッシュ', (a.side === 'own' ? '' : '相手の') + _dk, nextAnim,
         a.side === 'own' ? {} : { remoteFrom: '自分のトラッシュ', remoteTo: '自分の' + _dk });
     };
-    nextAnim();
+    {
+      const _dk0 = 'デッキ' + (top ? '(上)' : '(下)');
+      _moveBatchIntro(ctx, anims.map(a => a.card), 'トラッシュ', _dk0, nextAnim, { remoteFrom: 'トラッシュ', remoteTo: _dk0 });
+    }
   };
   if (effectiveSide === 'ai') {
     // CPU: 自分のトラッシュから優先して選ぶ
@@ -3933,10 +3937,46 @@ function _returnDeckFromBothTrash(step, ctx, player, opponent, effectiveSide, ca
 // opts.remoteFrom / opts.remoteTo: 相手の画面に出すラベルをそのまま指定（相手視点。例: こちらの効果で
 //   相手のカードを動かしたときは「自分のトラッシュ」→「自分のデッキ(下)」）。省略時は相手側で
 //   「相手の」＋fromLabel/toLabel と表示される
+// 3枚以上のカードがまとめて動くとき、1枚ずつの移動演出の代わりに「以下のN枚を〇〇に戻します」の一覧を
+// 自分と相手の画面に1回だけ出してから start() する。続く1枚ずつの移動演出（_fxCardMove / _fxMoveSync）は
+// その枚数ぶん省略される（相手への fx_remoteCardMove も送らない）。2枚以下ならそのまま start()。
+// opts: { faceDown, remoteFaceDown, remoteFrom, remoteTo }（_fxMoveSync と同じ意味）
+function _flipSideLabel(l) { l = String(l || ''); return l.indexOf('相手の') === 0 ? l.slice(3) : (l ? '相手の' + l : l); }
+function _moveBatchIntro(ctx, cards, fromLabel, toLabel, start, opts) {
+  opts = opts || {};
+  const list = (cards || []).filter(Boolean);
+  if (list.length < 3 || typeof window === 'undefined' || typeof window._showMoveBatch !== 'function') { start(); return; }
+  // noRemote: 相手の画面の演出は別のコマンド（fx_evoDiscard / fx_dedigivolve 等）の受信側が出すので送らない
+  if (!opts.noRemote && ctx && ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    const hide = !!(opts.faceDown || opts.remoteFaceDown);
+    try {
+      window._onlineSendCommand({
+        type: 'fx_moveBatch',
+        cards: list.map(c => hide ? { name: '', imgSrc: '' } : { name: c.name || '', cardNo: c.cardNo || '', imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '' }),
+        fromLabel: opts.remoteFrom != null ? opts.remoteFrom : _flipSideLabel(fromLabel),
+        toLabel: opts.remoteTo != null ? opts.remoteTo : _flipSideLabel(toLabel),
+        faceDown: hide,
+      });
+    } catch (_) {}
+  }
+  window._showMoveBatch(list, fromLabel, toLabel, () => {
+    window._fxMoveBatchSkip = (window._fxMoveBatchSkip || 0) + list.length;
+    window._fxMoveBatchSkipAt = Date.now();
+    start();
+  }, !!opts.faceDown);
+}
+// 一覧の演出のあと、1枚ずつの移動演出を省略中か（相手への fx_remoteCardMove も送らない）
+function _moveBatchSkipping() {
+  if (typeof window === 'undefined' || !(window._fxMoveBatchSkip > 0)) return false;
+  // 呼び出し元が途中で打ち切って省略枚数が残ったままにならないよう、時間が経っていたら解除する
+  if (window._fxMoveBatchSkipAt && Date.now() - window._fxMoveBatchSkipAt > 20000) { window._fxMoveBatchSkip = 0; return false; }
+  return true;
+}
+
 function _fxMoveSync(ctx, card, fromLabel, toLabel, cb, opts) {
   opts = opts || {};
   const done = () => { try { cb && cb(); } catch (e) { console.error('[_fxMoveSync]', e); } };
-  if (ctx && ctx.side === 'player' && card && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+  if (ctx && ctx.side === 'player' && card && !window._suppressFxSend && !_moveBatchSkipping() && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
     const raw = opts.remoteFrom != null || opts.remoteTo != null;
     const hide = !!(opts.faceDown || opts.remoteFaceDown);
     try {
@@ -9985,7 +10025,7 @@ function _moveHandCardsToTrash(handSide, cards, ctx, done) {
     if (idx !== -1) owner.hand.splice(idx, 1);
     owner.trash.push(card);
     ctx.addLog && ctx.addLog('🗑 ' + (handSide === 'player' ? '' : '相手が') + '手札から「' + (card.name || '?') + '」を破棄');
-    if (isOnline && handSide === 'player') {
+    if (isOnline && handSide === 'player' && !_moveBatchSkipping()) {
       try {
         window._onlineSendCommand({
           type: 'fx_remoteCardMove',
@@ -9999,7 +10039,7 @@ function _moveHandCardsToTrash(handSide, cards, ctx, done) {
       try { window._fxCardMove(card, '手札', 'トラッシュ', next); } catch (_) { setTimeout(next, 300); }
     } else { setTimeout(next, 300); }
   };
-  next();
+  _moveBatchIntro(ctx, cards, (handSide === 'player' ? '' : '相手の') + '手札', (handSide === 'player' ? '' : '相手の') + 'トラッシュ', next);
 }
 
 // 「手札が破棄されたとき」を、元の効果の解決後に発火するようキューへ積む（cost_discard と同じ）。
@@ -10127,7 +10167,9 @@ function _runSecurityDiscard(secSide, spec, ctx, done) {
       remoteFrom: (isOwnSec ? '相手の' : '') + 'セキュリティ', remoteTo: (isOwnSec ? '相手の' : '') + 'トラッシュ',
     });
   };
-  showNext();
+  _moveBatchIntro(ctx, removed, (isOwnSec ? '' : '相手の') + 'セキュリティ', (isOwnSec ? '' : '相手の') + 'トラッシュ', showNext, {
+    remoteFrom: (isOwnSec ? '相手の' : '') + 'セキュリティ', remoteTo: (isOwnSec ? '相手の' : '') + 'トラッシュ',
+  });
 }
 
 // オンライン対戦: 相手機から「手札をN枚（またはN枚になるまで）選んで破棄して」と依頼された
@@ -12974,7 +13016,7 @@ function executeRecipeStep(step, ctx, store, callback) {
               window._fxCardMove(card, tgt.name + (card === tgt ? '' : 'の進化元'), 'トラッシュ', showRemovedAnim);
             } else { setTimeout(showRemovedAnim, 300); }
           }
-          showRemovedAnim();
+          _moveBatchIntro(ctx, removed, tgt.name + 'の進化元', 'トラッシュ', showRemovedAnim, { noRemote: true });
         }
         dediNext();
       };
@@ -13035,7 +13077,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           ctx.addLog && ctx.addLog('🃏 相手のトラッシュの「' + c.name + '」を相手の手札に戻した');
           _fxMoveSync(ctx, c, '相手のトラッシュ', '相手の手札', _rhoMoveNext, { remoteFrom: '自分のトラッシュ', remoteTo: '自分の手札' });
         };
-        _rhoMoveNext();
+        _moveBatchIntro(ctx, _rhoPicked, '相手のトラッシュ', '相手の手札', _rhoMoveNext, { remoteFrom: 'トラッシュ', remoteTo: '手札' });
         break;
       }
       const _rhFromTrash = step.from === 'trash'
@@ -13097,7 +13139,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (window._fxCardMove) window._fxCardMove(c, 'トラッシュ', '手札', _rhMoveNext);
           else setTimeout(_rhMoveNext, 300);
         }
-        _rhMoveNext();
+        _moveBatchIntro(ctx, chosen, 'トラッシュ', '手札', _rhMoveNext);
       };
       if (effectiveSide === 'ai') {
         _rhOnPicked(_rhCandidates.slice(0, _rhWantCount));
@@ -13150,7 +13192,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (window._fxCardMove) window._fxCardMove(c, 'トラッシュ', '手札', moveNext);
           else setTimeout(moveNext, 300);
         }
-        moveNext();
+        _moveBatchIntro(ctx, chosen, 'トラッシュ', '手札', moveNext);
       };
       if (effectiveSide === 'ai') {
         // AI: 先頭から N 枚を自動選択
@@ -13858,7 +13900,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             setTimeout(discardNext, 300);
           }
         }
-        discardNext();
+        _moveBatchIntro(ctx, selectedCards, carrier.name + 'の進化元', 'トラッシュ', discardNext);
       };
       // showEvoSourceSelection を使って evo card を N 枚選ばせる
       // フィルタなし（任意の進化元から選択可）
@@ -14218,7 +14260,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (window._fxCardMove) window._fxCardMove(c, '進化元', '手札', _moveNextEvo);
             else setTimeout(_moveNextEvo, 300);
           };
-          _moveNextEvo();
+          _moveBatchIntro(ctx, chosen, '進化元', '手札', _moveNextEvo);
         };
         if (effectiveSide === 'ai' || _bCands.length <= _bWant) {
           _doBounceEvo(_bCands.slice(0, _bWant));
@@ -14265,7 +14307,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (window._fxCardMove) window._fxCardMove(c, 'トラッシュ', '手札', _moveNextTrash);
             else setTimeout(_moveNextTrash, 300);
           };
-          _moveNextTrash();
+          _moveBatchIntro(ctx, chosen, (isOwnZone ? '' : '相手の') + 'トラッシュ', (isOwnZone ? '' : '相手の') + '手札', _moveNextTrash);
         };
         const _btWant = Math.min(want, _btCands.length);
         if (effectiveSide === 'ai' || (!upTo && _btCands.length <= want && !step.optional)) {
@@ -14387,6 +14429,7 @@ function executeRecipeStep(step, ctx, store, callback) {
     case 'deck_trash_top': {
       const n = step.value || 1;
       let i = 0;
+      const _dtBatch = Math.min(n, (player.deck || []).length) >= 3;
       const trashOne = () => {
         if (i >= n || !player.deck || player.deck.length === 0) {
           if (ctx.bs) ctx.bs._lastActionCount = i;
@@ -14400,7 +14443,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.addLog && ctx.addLog('🗑 デッキ上から「' + (top.name || '?') + '」をトラッシュへ');
         ctx.renderAll && ctx.renderAll();
         // オンライン: 相手画面にも「デッキ → トラッシュ」のカード移動演出を送る
-        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+        if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand && !_moveBatchSkipping()) {
           try {
             window._onlineSendCommand({
               type: 'fx_remoteCardMove',
@@ -14410,6 +14453,8 @@ function executeRecipeStep(step, ctx, store, callback) {
             });
           } catch(_) {}
         }
+        // 3枚以上は一覧の演出を出し済み（_moveBatchIntro）なので、1枚ずつの表示は省略する
+        if (_dtBatch) { if (window._fxCardMove) window._fxCardMove(top, 'デッキ', 'トラッシュ', trashOne); else trashOne(); return; }
         // 一瞬カード画像を中央表示してから移動（簡易演出）
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:62000;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.15s ease;pointer-events:none;';
@@ -14432,7 +14477,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
         }, 700);
       };
-      trashOne();
+      if (_dtBatch) _moveBatchIntro(ctx, player.deck.slice(0, n), 'デッキ', 'トラッシュ', trashOne);
+      else trashOne();
       break;
     }
 

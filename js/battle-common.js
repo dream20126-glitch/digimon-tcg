@@ -11,7 +11,7 @@ import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallback
 import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, showDrawEffect } from './battle-phase.js';
 import { doPlay, offerAssemblyThenPlay, doEvolve, doEvolveIku, doEvolveFromEffect, doLink, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, showOptionEffect, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack, doTrainingEffect, getAppGattaiCandidates, doAppGattaiEvolve } from './battle-combat.js';
 import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE, fireOnAttackBothSubjectTriggers as _fireOnAttackBothSubjectEE, fireOnAttackOppSubjectTriggers as _fireOnAttackOppSubjectEE, fireWhenTargetChangedTriggers as _fireWhenTargetChangedEE, fireOnMainPhaseStartTriggers as _fireOnMainPhaseStartEE, fireOnOppMainPhaseStartTriggers as _fireOnOppMainPhaseStartEE, fireDelegatedReactionTriggers as _fireDelegatedReactionEE, runDelegatedHandDiscard as _runDelegatedHandDiscardEE, activateZoneMainEffect as _activateZoneMainEE, getUsableZoneMainEffects as _getUsableZoneMainEE } from './effect-engine.js';
-import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxBuffStatus, fxShuffle } from './battle-fx.js';
+import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxCardMoveBatch, fxBuffStatus, fxShuffle } from './battle-fx.js';
 import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js';
 
 // ===== TRIGGER_CODE_MAP =====
@@ -364,7 +364,22 @@ export function setupCommonWindowExports() {
   // カード移動の演出が再生中か数える（window._fxAnimActive）。演出の途中で次の効果のポップアップを出さないよう、
   // battle-online.js の _waitFxIdle がこれも見て待つ（相手の効果で自分のトラッシュのカードがデッキに戻る演出等、
   // 演出キューを通らない演出があるため）
+  // 3枚以上がまとめて動くときは、先に一覧の演出（_showMoveBatch）を1回出し、続く1枚ずつの移動演出は
+  // その枚数ぶん省略する（window._fxMoveBatchSkip。effect-engine.js の _moveBatchIntro が立てる）
+  window._fxMoveBatchSkip = 0;
+  window._showMoveBatch = (cards, fromLabel, toLabel, callback, faceDown) => {
+    window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+    let ended = false;
+    const end = () => { if (ended) return; ended = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 0) - 1); callback && callback(); };
+    try { fxCardMoveBatch(cards, fromLabel, toLabel, end, faceDown); } catch (_) { end(); }
+  };
   window._fxCardMove = (card, fromLabel, toLabel, callback, faceDown) => {
+    if (window._fxMoveBatchSkip > 0 && !(window._fxMoveBatchSkipAt && Date.now() - window._fxMoveBatchSkipAt > 20000)) {
+      window._fxMoveBatchSkip--;
+      setTimeout(() => { callback && callback(); }, 0);
+      return;
+    }
+    window._fxMoveBatchSkip = 0;
     window._fxAnimActive = (window._fxAnimActive || 0) + 1;
     let ended = false;
     const end = () => { if (ended) return; ended = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 0) - 1); callback && callback(); };

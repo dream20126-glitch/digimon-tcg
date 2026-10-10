@@ -250,6 +250,9 @@ function serializeCardForCmd(c) {
 
 export function sendCommand(cmd) {
   if (!_onlineMode || !_onlineRoomId) return;
+  // 3枚以上のまとめての移動は一覧の演出（fx_moveBatch）を送り済みなので、1枚ずつの移動演出は送らない
+  if (cmd && (cmd.type === 'fx_remoteCardMove' || cmd.type === 'fx_remoteSelfEvoDiscard') && window._fxMoveBatchSkip > 0
+      && !(window._fxMoveBatchSkipAt && Date.now() - window._fxMoveBatchSkipAt > 20000)) return;
   // 相手画面に効果発動ポップアップを出すコマンドの世代番号。遅延送信する fx_effectClose
   // （showTrashCardPicker 等）が、その間に出た次の効果のポップアップまで消さないよう照合に使う
   if (cmd && (cmd.type === 'fx_effectAnnounce' || cmd.type === 'fx_confirmShow' || cmd.type === 'effect_start')) {
@@ -1481,7 +1484,11 @@ function onRemoteCommand(cmd) {
         // 反映後の state を相手機にも送信
         if (window._onlineSendStateSync) window._onlineSendStateSync();
       } catch(_) {}
-      // 1枚ずつ移動演出
+      // 1枚ずつ移動演出（3枚以上なら一覧の演出を1回出して、1枚ずつは省略する）
+      if (removed.length >= 3 && typeof window._showMoveBatch === 'function') {
+        window._showMoveBatch(removed, tgt.name + 'の進化元', 'トラッシュ', () => {});
+        break;
+      }
       let dedi = 0;
       function dediShowAnim() {
         if (dedi >= removed.length) return;
@@ -1574,7 +1581,11 @@ function onRemoteCommand(cmd) {
         }
       }
       addLog('📤 「' + (cmd.targetName || '???') + '」の進化元から「' + (cmd.discardedNames || '???') + '」破棄！');
-      // カード移動演出（1枚ずつ）
+      // カード移動演出（1枚ずつ。3枚以上なら一覧の演出を1回出す）
+      if (discardedCards.length >= 3 && typeof window._showMoveBatch === 'function') {
+        window._showMoveBatch(discardedCards, (cmd.targetName || '???') + 'の進化元', 'トラッシュ', () => {});
+        break;
+      }
       let di = 0;
       function showNextFx() {
         if (di >= discardedCards.length) return;
@@ -1606,6 +1617,13 @@ function onRemoteCommand(cmd) {
     }
     case 'fx_directAttack': {
       if (m.showDirectAttack) enqueueFx((done) => m.showDirectAttack({ name: cmd.atkName, imgSrc: cmd.atkImg }, cmd.side, done));
+      break;
+    }
+    case 'fx_moveBatch': {
+      // 相手の効果で3枚以上のカードがまとめて動いた（effect-engine.js の _moveBatchIntro）→ 一覧の演出を1回出す
+      if (typeof window._showMoveBatch === 'function') {
+        enqueueFx((done) => window._showMoveBatch(cmd.cards || [], cmd.fromLabel || '', cmd.toLabel || '', done, !!cmd.faceDown));
+      }
       break;
     }
     case 'fx_artsEvolve': {

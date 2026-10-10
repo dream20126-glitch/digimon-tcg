@@ -204,6 +204,44 @@ export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
   setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2500);
 }
 
+// 3枚以上のカードがまとめて動くとき（破棄・デッキに戻す等）に、1枚ずつの移動演出の代わりに出す一覧の演出。
+// 「以下のN枚をデッキの下に戻します」のように、動くカードを並べて1回だけ見せる。
+// cards: カード（{name, imgSrc} 等）の配列。faceDown: 裏向き（非公開）のカードとして見せる
+export function fxCardMoveBatch(cards, fromLabel, toLabel, callback, faceDown) {
+  const list = (cards || []).filter(Boolean);
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const to = String(toLabel || '');
+  const where = to.replace(/\(上\)/, 'の上').replace(/\(下\)/, 'の下');
+  const verb = /トラッシュ/.test(to) ? 'に送ります' : /デッキ|セキュリティ/.test(to) ? 'に戻します' : /手札/.test(to) ? 'に加えます' : 'に移動します';
+  const _fd = !!faceDown || /セキュリティ/.test(to);
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:66000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;pointer-events:none;opacity:0;transition:opacity 0.25s;';
+  const head = document.createElement('div');
+  head.style.cssText = 'color:#00fbff;font-size:15px;font-weight:bold;text-align:center;text-shadow:0 0 10px #00fbff;line-height:1.6;';
+  head.innerHTML = (fromLabel ? '<span style="color:#aaa;font-size:12px;">' + esc(fromLabel) + 'から</span><br>' : '') + '以下の' + list.length + '枚を<span style="color:#fff;">' + esc(where) + '</span>' + verb;
+  overlay.appendChild(head);
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:min(92vw,620px);max-height:60vh;overflow:hidden;';
+  const w = list.length > 12 ? 52 : 72;
+  list.forEach((c, i) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'width:' + w + 'px;text-align:center;opacity:0;transform:translateY(10px);transition:opacity 0.3s,transform 0.3s;';
+    const src = (!_fd && c) ? cardImg(c) : '';
+    d.innerHTML = '<div style="width:' + w + 'px;height:' + Math.round(w * 1.4) + 'px;border-radius:5px;border:1px solid #00fbff;overflow:hidden;box-shadow:0 0 8px #00fbff44;">'
+      + (_fd ? (cardBackUrl ? '<img src="' + cardBackUrl + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="width:100%;height:100%;background:linear-gradient(135deg,#1a3a6a,#0a1530);"></div>')
+        : (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#00fbff;font-size:9px;padding:4px;">' + esc(c && c.name || '?') + '</div>'))
+      + '</div>' + (_fd ? '' : '<div style="color:#ddd;font-size:8px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(c && c.name || '') + '</div>');
+    row.appendChild(d);
+    setTimeout(() => { d.style.opacity = '1'; d.style.transform = 'translateY(0)'; }, 150 + i * 60);
+  });
+  overlay.appendChild(row);
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => { overlay.style.opacity = '1'; });
+  const dur = Math.min(3600, 2000 + list.length * 60);
+  setTimeout(() => { overlay.style.opacity = '0'; }, dur - 250);
+  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, dur);
+}
+
 // =====================================================
 //  6. 対象選択UI — effect-engine.jsの実装を使用
 //     ※battle-fx.jsのfxTargetSelectはテスト用の簡易版

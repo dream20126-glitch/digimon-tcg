@@ -772,6 +772,8 @@ const TURN_END_WAIT_MAX_MS = 120000; // 処理中の判定が残り続けた場�
 
 export function checkAutoTurnEnd() {
   if (bs.memory >= 0) return false;
+  // ターン終了時の効果（エグゼキュート等のアタック）を処理中に、その処理の終わりから再び呼ばれても二重に終了しない
+  if (bs._autoTurnEnding) return true;
   // 公式ルール: メモリーが相手側へ移っても、効果処理とアタック処理が全て終わってからターン終了する。
   // 途中なら終了を保留し、処理が終わるのを待ってから改めて判定する
   // （進化時効果の途中で「相手のアクティブフェイズ」が始まってしまう不具合の対策）
@@ -804,15 +806,22 @@ export function checkAutoTurnEnd() {
 
   const over = Math.abs(bs.memory);
   addLog('💾 メモリー' + over + 'で相手側へ');
-  bs.isPlayerTurn = false; bs._oppPhase = null;
-  // プレイヤーのターン終了
-  _hooks.expireBuffs('dur_this_turn', null, 'player');
-  _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
-  _hooks.expireBuffs('dur_next_own_turn', null, 'player');
-  _hooks.expireBuffs('permanent', 'player');
   renderAll(true);
 
+  // 【自分のターン終了時】の効果は、まだ自分のターンのうち（ターン終了時）に、「ターン終了まで」の効果が
+  // 切れる前に処理する（以前は先にターンを相手に移して期限切れにしていたため、ケルビモン BT26-078 で
+  // 「ターン終了まで」得た【エグゼキュート】が、メモリーが相手側に移ってのターン終了で発動しなかった。
+  // ターン終了ボタン（onEndTurn）と同じ順番）
+  bs._autoTurnEnding = true;
   _hooks.checkTurnEndEffects(async () => {
+    bs._autoTurnEnding = false;
+    bs.isPlayerTurn = false; bs._oppPhase = null;
+    // プレイヤーのターン終了
+    _hooks.expireBuffs('dur_this_turn', null, 'player');
+    _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
+    _hooks.expireBuffs('dur_next_own_turn', null, 'player');
+    _hooks.expireBuffs('permanent', 'player');
+    renderAll(true);
     // チュートリアル割り込み: メモリー相手側到達
     if (window._tutorialRunner && window._tutorialRunner.active) {
       await window._tutorialRunner.checkInterrupt('memory_crossed');

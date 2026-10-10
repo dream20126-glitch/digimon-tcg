@@ -1497,9 +1497,11 @@ export function flushDeferredEvoTriggers(done0) {
   if (typeof window._hudSetDeferredEvo === 'function') window._hudSetDeferredEvo(list);
   let i = 0;
   const next = () => {
-    if (typeof window._hudSetDeferredEvo === 'function') window._hudSetDeferredEvo(list.slice(i));
-    if (i >= list.length) { renderAll(true); done && done(); return; }
+    if (i >= list.length) { if (typeof window._hudSetDeferredEvo === 'function') window._hudSetDeferredEvo([]); renderAll(true); done && done(); return; }
     const d = list[i++];
+    // 発揮を始めた分は「保留中」の表示から外す（発揮すると【進化時】の各効果が発揮待ちとして別に表示されるため、
+    // 残していると同じ効果が2回並んで見えていた）
+    if (typeof window._hudSetDeferredEvo === 'function') window._hudSetDeferredEvo(list.slice(i));
     const p = d.side === 'player' ? bs.player : bs.ai;
     if (!d.card || !(p.battleArea || []).includes(d.card)) {
       addLog('💨 「' + (d.card && d.card.name) + '」は【進化時】を発揮する前に場を離れたため、効果を発揮できない');

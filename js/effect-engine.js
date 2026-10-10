@@ -299,12 +299,12 @@ function processQueue(context, onComplete) {
 function _announceInherit(entry, context, done) {
   const carrier = entry.card;
   const from = entry.block._inheritedFrom;
-  const src = (carrier && Array.isArray(carrier.stack)) ? carrier.stack.find(c => c && c.cardNo === from.cardNo) : null;
   const side = entry.actualSide || (entry.side === 'turnPlayer' ? (context.bs.isPlayerTurn ? 'player' : 'ai') : (context.bs.isPlayerTurn ? 'ai' : 'player'));
   const rule = keywordRuleText('Inherit');
   const text = '【継承】進化元の「' + from.name + '」の効果を得る' + (rule ? '\n' + rule : '');
   context.addLog && context.addLog('🧬 「' + (carrier ? carrier.name : '?') + '」が進化元の「' + from.name + '」の効果を継承');
-  try { showEffectAnnounce(carrier, text, side, done, src || undefined); }
+  // 継承はこのデジモン（キャリア）自身の効果なので、演出はキャリア名義で出す（継承元は本文に表示）
+  try { showEffectAnnounce(carrier, text, side, done); }
   catch (_) { done(); }
 }
 
@@ -643,7 +643,8 @@ function _hudSyncQueue(context) {
       // 同時誘発のグループ（同じプレイヤー・同じ優先度でまとめて誘発して待っているもの。順番はプレイヤーが選ぶ）
       it.group = 'queue:' + side + ':' + (e.priority || 'normal');
       it.alive = () => e.status === 'waiting' && _entryStillValid(e, bs);
-      if (inh) { it.name = (src && src.name) || inh.name; it.sub = '継承：「' + (e.card && e.card.name || '') + '」'; if (src) it.img = src.imgSrc || getCardImageUrl(src) || src.imageUrl || it.img; }
+      // 継承した効果はキャリア（継承しているデジモン）名義で表示し、継承元を添える
+      if (inh) { it.sub = '🧬 継承：「' + ((src && src.name) || inh.name) + '」の効果'; }
       return it;
     });
     _hudSetSource('queue', items);
@@ -846,8 +847,8 @@ function showQueueOrderSelect(entries, callback) {
     // 進化元効果の場合は _recipeCard が効果を持つ進化元カード本体
     const fromEvo = !!(entry.block && entry.block._recipeCard);
     const _inhFrom = entry.block && entry.block._inheritedFrom;
-    const _inhSrc = _inhFrom && Array.isArray(carrier.stack) ? carrier.stack.find(c => c && c.cardNo === _inhFrom.cardNo) : null;
-    const effectOwner = (entry.block && entry.block._recipeCard) || _inhSrc || carrier;
+    // 継承した効果もキャリア（継承しているデジモン）自身の効果として、キャリアの画像・名前で表示する
+    const effectOwner = (entry.block && entry.block._recipeCard) || carrier;
     const div = document.createElement('div');
     div.style.cssText = 'background:#0a0a0a;border:2px solid #00fbff;border-radius:10px;padding:10px;width:200px;cursor:pointer;text-align:center;transition:transform 0.15s ease, box-shadow 0.15s ease;';
     div.onmouseenter = () => { div.style.transform = 'translateY(-3px) scale(1.03)'; div.style.boxShadow = '0 0 18px #00fbff'; };
@@ -863,7 +864,8 @@ function showQueueOrderSelect(entries, callback) {
     const effText = extractTriggerSectionText(_fullEffText, _trigCode, Array.isArray(_steps) ? _steps : null);
     div.innerHTML =
       (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
-      + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+(_inhFrom ? '🧬 継承：' : '')+(effectOwner.name||'')+'</div>'
+      + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+(effectOwner.name||'')+'</div>'
+      + (_inhFrom ? '<div style="color:#ffaa00;font-size:10px;font-weight:bold;margin:-2px 0 6px;">🧬 継承：「'+(_inhFrom.name||'')+'」の効果</div>' : '')
       + (fromEvo ? '<div style="color:#ffaa00;font-size:10px;font-weight:bold;margin:-2px 0 6px;">◇「'+(carrier.name||'')+'」の進化元'+(_evoSourcePosText(carrier, effectOwner) ? '・'+_evoSourcePosText(carrier, effectOwner) : '')+' ◇</div>' : '')
       + '<div style="color:#aaf;font-size:10px;line-height:1.5;text-align:left;max-height:80px;overflow-y:auto;background:#111;padding:6px;border-radius:4px;">'+effText+'</div>';
     div.onclick = () => {

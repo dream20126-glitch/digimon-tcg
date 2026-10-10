@@ -2015,6 +2015,17 @@ function _hasCollision(card) {
 
 // オンライン対戦: デジモンアタックの宣言送信 → ブロック応答待ち → バトル解決。
 // 通常の宣言・突進等でセキュリティ宣言から差し替わった場合の両方から呼ばれる
+// オンライン: ブロックされたら、防御側の端末がバトルを解決する（消滅・離れるとき・消滅時効果まで）。それが全て終わった
+// 合図（block_battle_done）を待ってからアタック終了に進む（以前はすぐ進んでいたため、メモリーが相手側だと
+// バトルの解決中に【自分のターン終了時】のエグゼキュート等が始まっていた）。≪貫通≫でセキュリティチェックに続く
+// ときは、そのセキュリティチェックの終わりでアタック終了になる
+function _afterOnlineBlockBattle() {
+  if (_onlineMode && typeof window._waitForBlockBattleDone === 'function') {
+    window._waitForBlockBattleDone((res) => { renderAll(); if (res && res.penetrate) return; checkPendingTurnEnd(); });
+    return;
+  }
+  checkPendingTurnEnd();
+}
 function _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, def, targetIdx) {
   // 送るDPは付与中のバフから計算し直した値にする（防御側はこの値で勝敗を判定する）
   try { if (window._recalcDp) window._recalcDp(atk); } catch (_) {}
@@ -2027,7 +2038,7 @@ function _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, def, targetIdx) {
         afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
           if (_onlineMode && _sendCommand) _sendCommand({ type: 'blocked_effect_done' });
           renderAll();
-          checkPendingTurnEnd();
+          _afterOnlineBlockBattle();
         });
       }
     });
@@ -2129,7 +2140,7 @@ export function resolveAttackTarget(target, targetIdx) {
               afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
                 if (_onlineMode && _sendCommand) _sendCommand({ type: 'blocked_effect_done' });
                 renderAll();
-                checkPendingTurnEnd();
+                _afterOnlineBlockBattle();
               });
             }
           });

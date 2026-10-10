@@ -43,6 +43,8 @@ let _pendingReactionDelegateCallback = null;
 let _pendingReactionDelegateResponse = null;
 let _pendingLeaveBattleDelegateCallback = null; // fx_leaveBattleDelegate の返事待ち（callback(canceled)）
 let _pendingFlushDeferredEvoCallback = null;    // fx_flushDeferredEvo の返事待ち
+let _pendingBlockBattleDoneCallback = null;     // block_battle_done（防御側のブロックのバトル解決の完了）待ち
+let _pendingBlockBattleDoneResponse = null;     // 待ち始める前に届いた block_battle_done
 let _pendingHandDiscardCallback = null; // fx_handDiscardRequest 送信側の応答待ち（cb(result)）
 let _pendingHandDiscardResponse = null; // 待ち開始前に届いた fx_handDiscardDone の結果
 let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
@@ -1633,6 +1635,12 @@ function onRemoteCommand(cmd) {
       }
       break;
     }
+    case 'block_battle_done': {
+      const cb = _pendingBlockBattleDoneCallback;
+      _pendingBlockBattleDoneCallback = null;
+      if (cb) cb(cmd); else _pendingBlockBattleDoneResponse = cmd;
+      break;
+    }
     case 'fx_artsEvolve': {
       // 相手のアーツ進化の演出（battle-combat.js showEvolveEffect の arts 版）
       if (m.showEvolveEffect) enqueueFx((done) => m.showEvolveEffect(0, cmd.baseName || '', { name: cmd.baseName || '', imgSrc: cmd.baseImg || '' }, { name: cmd.cardName || '', imgSrc: cmd.cardImg || '', level: '', dp: 0 }, done, { arts: true }));
@@ -1988,6 +1996,9 @@ function _withOppDeferred(fn) {
   else go();
 }
 
+// 防御側: ブロックのバトル解決（消滅・離れるとき・消滅時効果まで）が全て終わったことを攻撃側に知らせる。
+// 攻撃側はこれを受けてからアタック終了（ターン終了の判定）に進む
+function _sendBlockBattleDone(extra) { sendCommand(Object.assign({ type: 'block_battle_done' }, extra || {})); }
 function resolveOnlineBlock(blockerIdx, cmd) {
   _clearCollisionBlockerBadges();
   const blocker = bs.player.battleArea[blockerIdx];
@@ -2078,7 +2089,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
       if (!atkDies && !blkDies) {
         renderAll();
         sendCommand({ type: 'fx_battleResult', text: '回避！', color: '#00fbff', sub: '消滅を回避' });
-        showBR('回避！', '#00fbff', '消滅を回避', () => _withOppDeferred(() => { window._suppressFxSend = false; sendStateSync(); }));
+        showBR('回避！', '#00fbff', '消滅を回避', () => _withOppDeferred(() => { window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone(); }));
         return;
       }
       if (atkDies && blkDies) {
@@ -2112,9 +2123,9 @@ function resolveOnlineBlock(blockerIdx, cmd) {
               // 相手(atk所有者)側の消滅時チェーンが解決するまで待つ（fx_ownDestroyReady済み）。
               // これが無いと相手側の効果でメモリーが動いてもターン終了判定を取りこぼす
               if (typeof window._waitForOwnDestroyDone === 'function') {
-                window._waitForOwnDestroyDone(() => { window._suppressFxSend = false; sendStateSync(); });
+                window._waitForOwnDestroyDone(() => { window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone(); });
               } else {
-                window._suppressFxSend = false; sendStateSync();
+                window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone();
               }
             };
             if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finishAfterOwn));
@@ -2160,9 +2171,9 @@ function resolveOnlineBlock(blockerIdx, cmd) {
                   const fire = window._fireOnlineDestroyChain;
                   const finishAfterOwn = () => {
                     if (typeof window._waitForOwnDestroyDone === 'function') {
-                      window._waitForOwnDestroyDone(() => { window._suppressFxSend = false; sendStateSync(); });
+                      window._waitForOwnDestroyDone(() => { window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone(); });
                     } else {
-                      window._suppressFxSend = false; sendStateSync();
+                      window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone();
                     }
                   };
                   if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finishAfterOwn));
@@ -2183,6 +2194,8 @@ function resolveOnlineBlock(blockerIdx, cmd) {
               window._suppressFxSend = false;
               sendStateSync();
               // ≪貫通≫: ブロッカーを撃破し atk が貫通を持つなら攻撃側に追加セキュリティチェックを要求
+              // （その場合のアタック終了は、攻撃側のセキュリティチェックの終わりで行う）
+              _sendBlockBattleDone(atkHasPenetrate ? { penetrate: true } : null);
               if (atkHasPenetrate) sendCommand({ type: 'penetrate_security_check', atkIdx: cmd.atkIdx });
             };
             if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finish));
@@ -2228,9 +2241,9 @@ function resolveOnlineBlock(blockerIdx, cmd) {
                   const fire = window._fireOnlineDestroyChain;
                   const finishAfterOwn = () => {
                     if (typeof window._waitForOwnDestroyDone === 'function') {
-                      window._waitForOwnDestroyDone(() => { window._suppressFxSend = false; sendStateSync(); });
+                      window._waitForOwnDestroyDone(() => { window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone(); });
                     } else {
-                      window._suppressFxSend = false; sendStateSync();
+                      window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone();
                     }
                   };
                   if (fire) _withOppDeferred(() => fire(['player'], { player: blocker }, finishAfterOwn));
@@ -2251,7 +2264,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
             // atk の on_destroy はカード所有者 (相手機) で card_removed 受信時に発火される。
             // fx_ownDestroyReady送信済みなので、相手側の消滅時チェーンが完全に解決する
             // (fx_ownDestroyDone受信)まで待ってから次へ進む
-            const finishAfterOwn = () => { window._suppressFxSend = false; sendStateSync(); };
+            const finishAfterOwn = () => { window._suppressFxSend = false; sendStateSync(); _sendBlockBattleDone(); };
             if (typeof window._waitForOwnDestroyDone === 'function') window._waitForOwnDestroyDone(finishAfterOwn);
             else finishAfterOwn();
           });
@@ -2327,10 +2340,19 @@ window._sendMemoryUpdate = () => sendMemoryUpdate();
 window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
 window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._waitForReactionDelegate = (cb) => waitForReactionDelegate(cb);
+// 攻撃側: 防御側のブロックのバトル解決の完了（block_battle_done）を待つ。届かないときの保険で最大90秒
+window._waitForBlockBattleDone = (cb) => {
+  if (_pendingBlockBattleDoneResponse) { const r = _pendingBlockBattleDoneResponse; _pendingBlockBattleDoneResponse = null; cb(r); return; }
+  let settled = false;
+  const fin = (r) => { if (settled) return; settled = true; if (_pendingBlockBattleDoneCallback === fin) _pendingBlockBattleDoneCallback = null; cb(r); };
+  _pendingBlockBattleDoneCallback = fin;
+  setTimeout(() => fin(null), 90000);
+};
 // 相手の端末からの返事（ブロック・セキュリティ効果・委譲した反応・離れるとき・保留した【進化時】・手札の破棄・相手の消滅時効果）を
 // 待っている間か。待っている間はメモリーが相手側でもターン終了に進まない（battle-phase.js _isTurnEndBlocked）
 window._isOnlineWaiting = () => !!(_pendingBlockCallback || _pendingSecEffectCallback || _pendingReactionDelegateCallback
-  || _pendingLeaveBattleDelegateCallback || _pendingFlushDeferredEvoCallback || _pendingHandDiscardCallback || _pendingOwnDestroyDoneCallback);
+  || _pendingLeaveBattleDelegateCallback || _pendingFlushDeferredEvoCallback || _pendingHandDiscardCallback || _pendingOwnDestroyDoneCallback
+  || _pendingBlockBattleDoneCallback);
 // 相手のデジモンが「バトルエリアを離れるとき」: 持ち主（相手）の端末に置換効果の判定を委譲し、
 // 離れなかったかどうか（canceled）を待つ。待っている間は待機オーバーレイを出す
 // 相手の端末で「離れるとき」により進化して保留された【進化時】を、こちらの消滅処理が終わった時点で発揮してもらう

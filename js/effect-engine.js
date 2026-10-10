@@ -9151,11 +9151,33 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
     if (causeAtScan !== undefined) bs._lastDestroyCause = causeAtScan;
     _runReactionEffect(reaction, reactSide, bs, ctxBase, () => _drainAfterReaction(bs, ctxBase, nextReaction));
   };
+  // 今「〜なら」の条件（step.condition）を満たしているか。満たしていない反応は、同時誘発の中で今は選べない
+  // （他の効果の処理で手札の枚数等が変わって満たせば、また選べるようになる）。手札から破棄されたカード自身の
+  // 効果は破棄された時点の判定（_snapshotHandDiscardConds）を使う
+  const condOkNow = (r) => {
+    if (r.zone === 'hand' && r.card && r.card._handDiscardCond === 'ok') return true;
+    const rc = Array.isArray(r.recipe) ? r.recipe : [];
+    return !(rc.length > 0 && rc.every(st => st && st.condition && !checkConditions(parseRecipeCondition(st.condition), r.card, bs, reactSide)));
+  };
   function nextReaction() {
     if (remaining.length === 0) { _hudSetSource(_hudKey, []); finish(); return; }
     _hudUpdate();
-    if (canChoose && remaining.length >= 2) {
-      const entries = remaining.map((r) => ({
+    // 今の条件で発揮できるものだけを選択肢にする（プロットモン BT26-066 が2体と黒井翔太 BT26-092 の
+    // 【自分のメインフェイズ開始時】: 1体目の進化で手札が6枚になれば2体目は外れ、黒井の効果で5枚に戻れば
+    // また選べる）。どれも満たさなくなったら、残りは発揮しないで終える
+    const usable = remaining.filter(condOkNow);
+    if (usable.length === 0) {
+      remaining.splice(0).forEach((r) => {
+        const n = ((r.sourceCard && r.sourceCard !== r.card) ? r.sourceCard : r.card).name || '';
+        ctxBase && ctxBase.addLog && ctxBase.addLog('💨 「' + n + '」の効果は条件を満たさないため発揮しない');
+      });
+      _hudSetSource(_hudKey, []);
+      finish();
+      return;
+    }
+    const takeOut = (r) => { const i = remaining.indexOf(r); if (i !== -1) remaining.splice(i, 1); return r; };
+    if (canChoose && usable.length >= 2) {
+      const entries = usable.map((r) => ({
         card: r.card,
         block: {
           trigger: { code: recipeKey },
@@ -9175,13 +9197,13 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
           nextReaction();
           return;
         }
-        const chosen = remaining.splice(chosenIdx, 1)[0];
+        const chosen = takeOut(usable[chosenIdx]);
         _hudUpdate();
         runOneReaction(chosen);
       });
       return;
     }
-    const _one = remaining.shift();
+    const _one = takeOut(usable[0]);
     _hudUpdate();
     runOneReaction(_one);
   }

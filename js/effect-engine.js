@@ -2355,7 +2355,13 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         ctx.addLog('💀 コスト: 「' + tgt.name + '」を消滅');
         // 共通の doDestroy に委譲（オンライン同期・on_destroy連鎖・デコイ/スケープゴート判定を統一）。
         // 消滅しなかった（消滅されない効果・【分離】等）ときはコストを支払えていないので false
-        doDestroy(player, idx, ctx, () => callback(player.battleArea.indexOf(tgt) === -1));
+        // 消滅の演出を出してから消滅させる（ケルビモン BT26-078「このデジモンを消滅させることで」で演出が無かった。
+        // showDestroyEffect はオンラインの相手の画面にも fx_destroy を送る）
+        const _showDE = (ctx && ctx.showDestroyEffect) || (typeof window !== 'undefined' && window.showDestroyEffect)
+          || (window._fxAnimFns && window._fxAnimFns.showDestroyEffect);
+        const _run = () => doDestroy(player, idx, ctx, () => callback(player.battleArea.indexOf(tgt) === -1));
+        if (typeof _showDE === 'function') { try { _showDE(tgt, _run); } catch (_) { _run(); } }
+        else _run();
       };
       if (_cdoCode === 'target_self') { doCostDestroy(candidates[0]); break; }
       if (effectiveSide === 'ai' || ctx._forceTargetIdx !== undefined) {
@@ -7949,8 +7955,13 @@ function showDpPopup(value, label) {
 // sourceOnly トリガー (on_play 等) で「他の自分のデジモンが登場した時」のような
 // 反応効果を盤面全体から拾う。block._eventSourceCard に発火元を記録する。
 function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide, ctx, turnPlayer) {
+  // テイマー（セキュリティから登場した久我橙矢 等）の登場は「デジモンが登場したとき」ではないので、テイマー向けの
+  // 発動主体（own_tamer / opp_tamer 等）のステップだけを反応させる（ゾンビプルートモン BT26-079「相手のデジモンが
+  // 登場/進化したとき」が、相手のセキュリティのテイマーの登場で発動していた）
+  const _srcIsTamer = !!(sourceCard && String(sourceCard.type || '') === 'テイマー');
   const matchSubject = (subject, cardSide) => {
     if (!subject) return false;
+    if (_srcIsTamer && !/tamer/.test(String(subject))) return false;
     switch (subject) {
       case 'other_own':
       case 'own':

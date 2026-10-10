@@ -8850,7 +8850,11 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
 function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   const finish = () => { try { done && done(); } catch (_) {} };
   const card = reaction.card;
-  const recipe = reaction.recipe;
+  // 手札から破棄されたカード自身の効果で、破棄された時点で「〜なら」を満たしていた（_snapshotHandDiscardConds）なら、
+  // 発揮する時点の手札の枚数では判定し直さない（ドーベルモン BT26-069「自分の手札が5枚以下なら【1ドロー】」）
+  const recipe = (reaction.zone === 'hand' && card && card._handDiscardCond === 'ok' && Array.isArray(reaction.recipe))
+    ? reaction.recipe.map(st => (st && st.condition && _stepZone(st) === 'hand') ? Object.assign({}, st, { condition: undefined }) : st)
+    : reaction.recipe;
   const sourceCard = reaction.sourceCard || card;
   const isEvo = sourceCard !== card;
   // 発揮する時点で「〜なら」の条件（step.condition）を満たすステップが1つも無ければ、確認も出さずに終える
@@ -9023,7 +9027,9 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       if (stepFilter && !stepFilter(step, reactSide, carrier, sourceCard || carrier)) return false;
       // イベント対象カードで trigger_conditions を評価（いずれか1枚も満たさなければ不発）
       if (eventCards && !pickEventCard(step)) return false;
-      if (step.condition) {
+      // 手札から破棄されたカード自身の効果は、破棄された時点の判定（_snapshotHandDiscardConds）を使う
+      const _condAtDiscard = _stepZone(step) === 'hand' && carrier && carrier._handDiscardCond === 'ok';
+      if (step.condition && !_condAtDiscard) {
         const conds = parseRecipeCondition(step.condition);
         if (!checkConditions(conds, carrier, bs, reactSide)) return false;
       }
@@ -9845,7 +9851,7 @@ export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, on
     if (_stepZone(step) === 'hand') {
       if (cardSide !== discardedSide || !discarded.includes(carrier)) return false;
       // 破棄された時点で「〜なら」を満たしていなかった（_snapshotHandDiscardConds）
-      if (carrier && carrier._handDiscardCondFailed) return false;
+      if (carrier && carrier._handDiscardCond === 'ng') return false;
       const subj = _resolveStepSubject(step, 'when_hand_discard');
       return !subj || subj === 'self_hand' || subj === 'self';
     }
@@ -9861,7 +9867,7 @@ export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, on
     ? { zoneCards: discarded.map((c) => ({ card: c, zone: 'hand' })) } : undefined);
   const fireSide = (side, next) => _fireSidedReactionTriggers(side, 'when_hand_discard', bs, ctxBase, next,
     (step, rs, carrier) => subjectMatches(step, side, carrier), optsFor(side));
-  const done2 = () => { discarded.forEach((c) => { if (c) delete c._handDiscardCondFailed; }); done && done(); };
+  const done2 = () => { discarded.forEach((c) => { if (c) delete c._handDiscardCond; }); done && done(); };
   if (onlySide === 'player') return fireSide('player', done2);
   if (onlySide === 'ai') return fireSide('ai', done2);
   return fireSide('player', () => fireSide('ai', done2));
@@ -9949,12 +9955,13 @@ function _moveHandCardsToTrash(handSide, cards, ctx, done) {
 // 手札から破棄されたカード自身の効果（［手札］「このカードが手札から破棄されたとき、〜なら」。ドーベルモン
 // BT26-069「自分の手札が5枚以下なら【1ドロー】」）の「〜なら」を、破棄された時点で判定して記録する。
 // 「したとき」は元の効果の解決後に発揮するので、その間に手札の枚数が変わって条件を満たしてしまうのを防ぐ。
-// 満たしていなかったカードは c._handDiscardCondFailed を立て、fireWhenHandDiscardTriggers が誘発させない
+// 結果を c._handDiscardCond（'ok' / 'ng'）に記録する。'ng' なら誘発させず、'ok' なら発揮する時点で手札の枚数が
+// 変わっていても条件は満たしたものとして発揮する（「破棄されたとき」の条件は破棄された時点で判定する）
 function _snapshotHandDiscardConds(bs, side, cards) {
   if (!bs || !Array.isArray(cards)) return;
   cards.forEach((c) => {
     if (!c) return;
-    delete c._handDiscardCondFailed;
+    delete c._handDiscardCond;
     let r = null;
     try { r = typeof c.recipe === 'string' ? JSON.parse(c.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : c.recipe; } catch (_) { r = null; }
     if (!r || typeof r !== 'object') return;
@@ -9964,7 +9971,8 @@ function _snapshotHandDiscardConds(bs, side, cards) {
       (Array.isArray(r[k]) ? r[k] : []).forEach((st) => { if (st && st.in_zone === 'hand') steps.push(st); });
     });
     if (steps.length === 0) return;
-    if (steps.every(st => st.condition && !checkConditions(parseRecipeCondition(st.condition), c, bs, side))) c._handDiscardCondFailed = true;
+    if (!steps.some(st => st.condition)) return;
+    c._handDiscardCond = steps.every(st => st.condition && !checkConditions(parseRecipeCondition(st.condition), c, bs, side)) ? 'ng' : 'ok';
   });
 }
 

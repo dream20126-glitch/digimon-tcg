@@ -1445,7 +1445,13 @@ export function showBCD(idxOrCard, source) {
   // トラッシュのカードは消滅時にstackがクリアされないため、トラッシュ表示時だけ
   // 内訳を出さない（進化元カードは別々にトラッシュへ送られている実際の状態と合わせる）
   if (source !== 'trash' && card.stack && card.stack.length > 0) {
-    let stackHtml = '<div id="bcd-evo-source-stack">';
+    // 進化元が多いと詳細画面が縦に長くなるので、一覧は「進化元を確認する」ボタンで開閉する
+    // （チュートリアル中は進化元の各行をスポットライトで指すことがあるため最初から開いておく）
+    const _tutOn = typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active;
+    const _n = card.stack.length;
+    evoHtml += '<button type="button" id="bcd-evo-stack-toggle" data-n="' + _n + '" style="display:block;margin:8px auto 0;background:#111;color:#00fbff;border:1px solid #00fbff;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:bold;cursor:pointer;">'
+      + (_tutOn ? '▲ 進化元を閉じる' : '▼ 進化元を確認する（' + _n + '枚・上から順）') + '</button>';
+    let stackHtml = '<div id="bcd-evo-source-stack" style="display:' + (_tutOn ? 'block' : 'none') + ';">';
     card.stack.forEach((s, i) => {
       const idForDom = card.stack.length - 1 - i; // 一番下=0, 直前=N-1
       const hasEvo = s.evoSourceEffect && s.evoSourceEffect.trim() && s.evoSourceEffect !== 'なし';
@@ -1460,6 +1466,17 @@ export function showBCD(idxOrCard, source) {
   if (!evoHtml) evoHtml = '<div style="color:#555;font-size:10px;">' + evoLabel + 'なし</div>';
   evoEl.innerHTML = evoHtml;
   evoEl.style.display = 'block';
+  const _stackToggle = document.getElementById('bcd-evo-stack-toggle');
+  if (_stackToggle) {
+    _stackToggle.onclick = (e) => {
+      e.stopPropagation();
+      const list = document.getElementById('bcd-evo-source-stack');
+      if (!list) return;
+      const open = list.style.display === 'none';
+      list.style.display = open ? 'block' : 'none';
+      _stackToggle.innerText = open ? '▲ 進化元を閉じる' : '▼ 進化元を確認する（' + _stackToggle.getAttribute('data-n') + '枚・上から順）';
+    };
+  }
 
   // セキュリティ効果
   let secEl = document.getElementById('bcd-security-effect');

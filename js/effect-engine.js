@@ -208,11 +208,18 @@ function processQueue(context, onComplete) {
       e.status = 'completed';
     }
   });
+  // 解決の順番（ターンプレイヤー優先・強制効果優先）に並べ替えてから処理する（以前は最初の1件目だけ積んだ順のままで、
+  // 後から積んだターンプレイヤーの効果より相手の効果が先になることがあった）
+  sortQueue();
   const waiting = _effectQueue.filter(e => e.status === 'waiting');
   _hudSyncQueue(context);
   // 継承（≪継承≫）で得た効果が誘発していれば、効果の選択・実行の前に「継承した」演出を出す
   // （クロノモン：デストロイモード BT26-060 → 進化元のホーリーモードの【進化時】）
-  const _inhEntry = waiting.find(e => e.block && e.block._inheritedFrom && !e._inheritAnnounced);
+  // 継承の演出は、その効果の順番（いちばん先に解決するプレイヤー・優先度）が来たときだけ出す
+  // （ターンプレイヤーのゾンビプルートモン BT26-079 より先に、相手のデストロイモード BT26-060 の継承演出が出ていた）
+  const _head0 = waiting[0];
+  const _inhEntry = _head0 && waiting.find(e => e.block && e.block._inheritedFrom && !e._inheritAnnounced
+    && e.side === _head0.side && e.priority === _head0.priority);
   if (_inhEntry) {
     _inhEntry._inheritAnnounced = true;
     _announceInherit(_inhEntry, context, () => processQueue(context, onComplete));

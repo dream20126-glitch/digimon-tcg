@@ -7424,7 +7424,8 @@ const SECTION_KEYWORDS = {
 function _pickSectionByKeyword(fullText, triggerCode) {
   const kws = SECTION_KEYWORDS[triggerCode];
   if (!kws || !fullText) return null;
-  const sections = String(fullText).split(/\n(?=【)/).map(s => s.trim()).filter(Boolean);
+  // 《アセンブリ》等の《》行・［トラッシュ］等の［］行も別の効果として区切る（【】の見出しと同じ扱い）
+  const sections = String(fullText).split(/\n(?=[【《［])/).map(s => s.trim()).filter(Boolean);
   if (sections.length < 2) return null;
   const hit = sections.filter(s => kws.some(k => s.includes(k)));
   if (hit.length === 0 || hit.length === sections.length) return null;
@@ -7517,7 +7518,9 @@ export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
       // \n* (0回以上)だと、文中で他ラベルに言及しているだけの箇所（例:「このカードの
       // 【メイン】効果を発揮する」というセキュリティ効果テキスト中の「【メイン】」）まで
       // 区切りと誤認識し、そこで切り詰められてしまう不具合があった（チェリーボム等）
-      const re = new RegExp('【' + esc(label) + '】[\\s\\S]*?(?=\\n【(?:' + _ALL_TRIGGER_LABELS.map(esc).join('|') + ')】|$)');
+      // 《アセンブリ-N》等の《》で始まる行・［トラッシュ］等の［］で始まる行も、別の効果（キーワード／ゾーン効果）の
+      // 始まりとして区切る（巨神兵器 BT26-085 の「離れるとき」のポップアップに《アセンブリ-5》まで出ていた）
+      const re = new RegExp('【' + esc(label) + '】[\\s\\S]*?(?=\\n【(?:' + _ALL_TRIGGER_LABELS.map(esc).join('|') + ')】|\\n[《［]|$)');
       const m = fullText.match(re);
       // 【アタック時】等の見出しが無い反応（黒井翔太 BT26-092「【相手のターン】相手のデジモンがアタックしたとき」）は
       // キーワードで該当セクションを選ぶ（見つからなければ全文）

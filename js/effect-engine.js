@@ -5697,6 +5697,9 @@ function _purgeOffFieldGrants(bs) {
   ['player', 'ai'].forEach(sd => {
     const p = bs[sd];
     if (!p) return;
+    // 場のカードのDPを付与されているバフから計算し直す（アーツ進化等の後に DP+3000 のバフがあるのに
+    // DP・dpModifier に反映されていなかった。ケルベロモン：人狼モード＆インフェルノディバイド BT26-056）
+    (p.battleArea || []).forEach(c => { if (c && Array.isArray(c.buffs)) { try { recalcDp(c); } catch (_) {} } });
     ['hand', 'trash', 'deck', 'security'].forEach(z => {
       (p[z] || []).forEach(c => {
         if (!c) return;
@@ -10663,6 +10666,11 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
   const _hudKeySD = 'self#' + (++_hudSeq);
   const finish = () => { _hudSetSource(_hudKeySD, []); try { done && done(); } catch(_) {} };
   if (!destroyedCard || !bs) { finish(); return; }
+  // オンライン対戦: 相手（ai）のカード自身の【消滅時】は、持ち主の端末が card_removed を受けて発揮する
+  // （battle-online.js の _fireOnlineDestroyChain）。こちらでも発揮すると、確認が持ち主ではない画面に出て二重に発揮していた
+  // （効果で消滅させたケルベロモン：人狼モード＆インフェルノディバイド BT26-056 の【消滅時】）
+  if ((triggerKey === 'on_destroy' || triggerKey === 'on_battle_destroy') && destroyedSide === 'ai'
+      && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) { finish(); return; }
   const reactions = [];
   const parseRecipe = (recipe) => {
     if (!recipe) return null;

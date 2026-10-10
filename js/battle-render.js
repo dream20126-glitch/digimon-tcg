@@ -112,10 +112,18 @@ function _collectActiveKeywords(card) {
 }
 
 // バッジHTMLを生成（カード名の上に配置、カード名と被らない位置）
+// 効果によるDPの増減（バフの合計）。カード詳細の「付与中の効果」と同じ計算にする（dpModifier は進化等の後に
+// 更新されず古いことがあり、盤面に DP+3000 が出ていなかった）
+function _dpModFromBuffs(card) {
+  if (!card || !Array.isArray(card.buffs)) return (card && card.dpModifier) || 0;
+  let m = 0;
+  card.buffs.forEach((b) => { if (!b) return; if (b.type === 'dp_plus') m += (parseInt(b.value) || 0); else if (b.type === 'dp_minus') m -= (parseInt(b.value) || 0); });
+  return m;
+}
 function _renderKeywordBadges(card) {
   const codes = _collectActiveKeywords(card);
   // 効果によるDPの増減（DP+3000 等）も、キーワードと同じ並びにバッジで出す（数字横の小さい表記だけでは見えにくい）
-  const _dpMod = card.dpModifier || 0;
+  const _dpMod = _dpModFromBuffs(card);
   const _dpChip = _dpMod !== 0
     ? `<span style="background:${_dpMod > 0 ? '#00aa55' : '#cc3333'};color:#fff;font-size:7px;font-weight:bold;padding:1px 3px;border-radius:2px;border:1px solid rgba(255,255,255,0.7);white-space:nowrap;line-height:1;box-shadow:0 0 3px rgba(0,0,0,0.6);">DP${_dpMod > 0 ? '+' : ''}${_dpMod}</span>`
     : '';
@@ -304,7 +312,7 @@ function renderBattleRows() {
 
         // DP表示（実効ベース + dpModifier内訳）
         // dp_set（元々のDP変更）対応: 実効ベース = 現DP - 修正値
-        const dpMod = card.dpModifier || 0;
+        const dpMod = _dpModFromBuffs(card);
         const effBaseDp = (typeof card.dp === 'number') ? (card.dp - dpMod) : (card.baseDp || card.dp);
         let dpHtml = `${effBaseDp}`;
         if (dpMod > 0) dpHtml += `<span style="color:#00ff88;font-size:6px;"> +${dpMod}</span>`;

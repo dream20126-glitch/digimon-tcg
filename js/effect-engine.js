@@ -1189,8 +1189,8 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     return result.filter(c => {
       if (refFilter.color && String(c.color || '') !== refFilter.color) return false;
       if (refFilter.type && String(c.type || '') !== refFilter.type) return false;
-      if (refFilter.lv_le !== undefined && parseInt(c.level || c.Lv || c.lv) > refFilter.lv_le) return false;
-      if (refFilter.lv_ge !== undefined && parseInt(c.level || c.Lv || c.lv) < refFilter.lv_ge) return false;
+      if (refFilter.lv_le !== undefined && (isNaN(parseInt(c.level || c.Lv || c.lv)) || parseInt(c.level || c.Lv || c.lv) > refFilter.lv_le)) return false; // Lvなしは当てはまらない
+      if (refFilter.lv_ge !== undefined && (isNaN(parseInt(c.level || c.Lv || c.lv)) || parseInt(c.level || c.Lv || c.lv) < refFilter.lv_ge)) return false;
       if (refFilter.dp_le !== undefined && (c.dp || 0) > refFilter.dp_le) return false;
       if (refFilter.dp_ge !== undefined && (c.dp || 0) < refFilter.dp_ge) return false;
       if (refFilter.feature_contains && String(c.feature || '').indexOf(refFilter.feature_contains) < 0) return false;
@@ -4440,7 +4440,7 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   // Lvを持たないカード（巨神兵器 BT26-085 等）は「Lv.N以下／以上」に当てはまらない（Lv.0 扱いにしない）
   if (filter.lv_ge != null && (isNaN(parseInt(card.level)) || parseInt(card.level) < filter.lv_ge)) return false;
   if (filter.lv_le != null && (isNaN(parseInt(card.level)) || parseInt(card.level) > filter.lv_le)) return false;
-  if (filter.lv != null && (parseInt(card.level) || 0) !== filter.lv) return false;
+  if (filter.lv != null && (isNaN(parseInt(card.level)) || parseInt(card.level) !== filter.lv)) return false;
   // DP系: dp_le/dp_ge/dp（対象の条件エディタの「DP」カテゴリが出力する形式）。
   // 値が数値でなく DP参照マーカー文字列（'self'/'own'/'opp'/'other'）の場合は、
   // 呼び出し側が事前に resolveDpFilterMarkers() で数値化してから渡すこと
@@ -12073,7 +12073,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             const condType = String(rawType || '').replace(/^cond_/, '');
             if (condType === 'dp_le' && c.dp > parseInt(condVal)) continue;
             if (condType === 'dp_ge' && c.dp < parseInt(condVal)) continue;
-            if (condType === 'lv_le' && parseInt(c.level) > parseInt(condVal)) continue;
+            if (condType === 'lv_le' && (isNaN(parseInt(c.level)) || parseInt(c.level) > parseInt(condVal))) continue; // Lvなしは当てはまらない
             if (condType === 'self_active' && c.suspended) continue;
             if (condType === 'self_rest' && !c.suspended) continue;
           }
@@ -12165,7 +12165,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             const limitDp = parseInt(condVal) || 0;
             if (condType === 'dp_le' && cardDp > limitDp) continue;
             if (condType === 'dp_ge' && cardDp < limitDp) continue;
-            if (condType === 'lv_le' && (parseInt(c.level) || 0) > parseInt(condVal)) continue;
+            if (condType === 'lv_le' && (isNaN(parseInt(c.level)) || parseInt(c.level) > parseInt(condVal))) continue; // Lvなしは当てはまらない
             if (condType === 'self_active' && c.suspended) continue;
             if (condType === 'self_rest' && !c.suspended) continue;
           }

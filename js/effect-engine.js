@@ -5362,7 +5362,7 @@ function _keywordJpName(flag) {
     fragment:'フラグメント', execute:'エグゼキュート', attack_immunity:'プログレス',
     training:'トレーニング', prevent_destroy:'消滅耐性',
     prevent_battle_destroy:'バトル耐性', immune:'効果耐性',
-    security_attack_plus:'Sアタック+',
+    security_attack_plus:'Sアタック+', attack_at_end_phase:'急襲',
   };
   return map[flag] || flag;
 }
@@ -11480,7 +11480,18 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done) {
     }
   };
   if (!step.optional) { chooseAndDeclare(); return; }
-  const srcNote = (ctx.card && ctx.card !== atkCard) ? '（「' + ctx.card.name + '」の効果）' : '';
+  // どの効果でのアタックかを添える。≪急襲≫≪エグゼキュート≫等のキーワード効果なら、キーワード名と
+  // その説明（スプレッドシート「キーワード効果」）も出す
+  const _kw = (step && step._kwFlag) || (isExecute ? 'execute' : null);
+  let srcNote = '';
+  if (_kw) {
+    const _kwName = _keywordJpName(_kw) || _kw;
+    srcNote = '\n（≪' + _kwName + '≫の効果）';
+    const _rule = keywordRuleText(_kw);
+    if (_rule) srcNote += '\n\n' + _rule;
+  } else if (ctx.card) {
+    srcNote = '\n（「' + ((ctx._sourceCard && ctx._sourceCard.name) || ctx.card.name) + '」の効果）';
+  }
   showConfirmDialog(atkCard, '「' + atkCard.name + '」でアタックしますか？' + srcNote, (yes) => {
     if (yes) { chooseAndDeclare(); return; }
     ctx.addLog && ctx.addLog('☓ 「' + atkCard.name + '」でアタックしなかった');

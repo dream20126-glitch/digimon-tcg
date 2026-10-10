@@ -7,7 +7,7 @@
 
 import { bs } from './battle-state.js';
 import { addLog } from './battle-ui.js';
-import { renderAll, updateMemGauge, cardImg } from './battle-render.js';
+import { renderAll, updateMemGauge, cardImg, cardBackUrl } from './battle-render.js';
 
 // ===== 効果確認ダイアログのwindow公開 =====
 window.confirmEffect = function(yes) {
@@ -157,7 +157,10 @@ export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
   cardDiv.style.cssText = 'width:80px;height:112px;border-radius:6px;border:2px solid #00fbff;overflow:hidden;box-shadow:0 0 15px #00fbff44;';
   // _fd=true: カード内容を見せず裏向き（セキュリティへ加える等、秘匿が必要な移動）
   const src = (card && !_fd) ? cardImg(card) : '';
-  cardDiv.innerHTML = _fd
+  // 裏向きは盤面のセキュリティ・デッキと同じカード裏面の画像で出す（画像が無いときだけ🛡の仮表示）
+  cardDiv.innerHTML = (_fd && cardBackUrl)
+    ? `<img src="${cardBackUrl}" style="width:100%;height:100%;object-fit:cover;">`
+    : _fd
     ? `<div style="width:100%;height:100%;background:linear-gradient(135deg,#1a3a6a,#0a1530);display:flex;align-items:center;justify-content:center;font-size:20px;color:#3a5a9a;">🛡</div>`
     : (src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#00fbff;padding:8px;font-size:10px;">${(card && card.name) || '?'}</div>`);
   fromDiv.appendChild(cardDiv);

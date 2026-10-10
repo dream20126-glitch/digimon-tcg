@@ -11,7 +11,7 @@ import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
 import { isTargetSelecting, hasRecipeTrigger, evoSourceEffectLabel, hasTrainingKeyword, showHandSelection, canUseZoneMainEffect } from './effect-engine.js';
 
 // ===== カード画像ヘルパー =====
-const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
+export const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
 const tamaBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1-Os-ZfmgLlQeYGkTU1uUXrt7iowy0FLD/view');
 
 export function cardImg(card) {

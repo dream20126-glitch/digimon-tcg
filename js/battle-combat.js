@@ -1809,6 +1809,7 @@ function _placeArtsEvolve(card, target, side) {
 // 「アーツ進化しますか？」を確認し、承諾かつ対象が複数いれば他の効果と同じ対象選択UI
 // （場のカードを直接タップして選ぶ）で選ばせてから進化させる（プレイヤー専用）。
 // onDone(evolved) — 進化した場合は進化後カード、しなかった場合は null/undefined を渡す
+if (typeof window !== 'undefined') window._offerArtsEvolve = (card, onDone) => _offerArtsEvolve(card, onDone);
 function _offerArtsEvolve(card, onDone) {
   const candidates = _findArtsEvolveCandidates(card, 'player');
   if (candidates.length === 0) { onDone(); return; }
@@ -1977,6 +1978,11 @@ export function getAttackState() { return _atkState; }
 // このヘルパーはプレイヤーがAI側をアタックする経路（resolveAttackTarget）専用のため、
 // side!=='ai' のリダイレクト（反応系の自陣営リダイレクト等）は無視する。
 // 呼び出し後は bs._redirectedAttack を消費（null化）する
+// 「アタックの対象は変更されない」（ゲコモン BT26-021 cant_redirect_attack）を持つデジモンのアタック。
+// ブロック（【ブロッカー】も効果）でアタック対象が変わることもないので、ブロックされない
+function _cantRedirectAttack(c) {
+  return !!(c && (c.cantRedirectAttack || (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'cant_redirect_attack'))));
+}
 function _consumeRedirectedAttack(defaultTarget, defaultIdx) {
   const ra = bs._redirectedAttack;
   bs._redirectedAttack = null;
@@ -2002,7 +2008,7 @@ function _hasCollision(card) {
 // オンライン対戦: デジモンアタックの宣言送信 → ブロック応答待ち → バトル解決。
 // 通常の宣言・突進等でセキュリティ宣言から差し替わった場合の両方から呼ばれる
 function _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, def, targetIdx) {
-  _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo), atkCollision: _hasCollision(atk) });
+  _sendCommand({ type: 'attack_digimon', atkIdx: atkSlotIdx, defIdx: targetIdx, atkName: atk.name, defName: def.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked) || _cantRedirectAttack(atk), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo), atkCollision: _hasCollision(atk) });
   if (typeof window._waitForBlockResponse === 'function') {
     window._waitForBlockResponse((resp) => {
       if (!resp.blocked) {
@@ -2101,7 +2107,7 @@ export function resolveAttackTarget(target, targetIdx) {
         const _rt = _consumeRedirectedAttack('security', -1);
         if (_rt.target === 'digimon') { _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, _rt.def, _rt.idx); return; }
         // 効果処理完了 → このタイミングで attack_security を送る
-        _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo), atkCollision: _hasCollision(atk) });
+        _sendCommand({ type: 'attack_security', atkIdx: atkSlotIdx, atkName: atk.name, atkDp: atk.dp, atkBaseDp: atk.baseDp != null ? atk.baseDp : atk.dp, atkImg: cardImg(atk), atkCantBeBlocked: !!(atk._permEffects && atk._permEffects.cantBeBlocked) || _cantRedirectAttack(atk), atkCantBeBlockedByNoEvo: !!(atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo), atkCollision: _hasCollision(atk) });
         if (typeof window._waitForBlockResponse === 'function') {
           window._waitForBlockResponse((resp) => {
             if (!resp.blocked) {
@@ -3543,7 +3549,7 @@ export function aiAttackPhase(callback) {
       }));
       const blockerIndices = [];
       // 「ブロックされない」フラグ: アタッカーが cantBeBlocked なら全ブロック不可
-      const atkCantBeBlocked = atk && atk._permEffects && atk._permEffects.cantBeBlocked;
+      const atkCantBeBlocked = (atk && atk._permEffects && atk._permEffects.cantBeBlocked) || _cantRedirectAttack(atk);
       // 「進化元を持たないデジモンにはブロックされない」(イッカクモン等)
       const atkCantBeBlockedByNoEvo = atk && atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo;
       bs.player.battleArea.forEach((c, i) => {
@@ -4842,6 +4848,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
         // セキュリティアタック → ブロッカーチェック付き
         const blockerIndices = [];
         bs.player.battleArea.forEach((c, i) => {
+          if (_cantRedirectAttack(atk)) return; // アタック対象を変更されない（ブロックされない）
           if (c && !c.suspended && !c.cantBlock && isBlocker(c)) {
             blockerIndices.push(i);
           }

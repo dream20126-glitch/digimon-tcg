@@ -1074,6 +1074,8 @@ function executeQueueEntry(entry, context, callback) {
     if (accepted) {
       runEffectNow(callback);
     } else {
+      // 【メイン】を使わなかったら「⚡ 効果」ボタンの使用済み表示を戻す（battle-render.js activateEffect）
+      if (block.trigger && block.trigger.code === 'main') card._mainDeclined = true;
       // 「いいえ」→ 相手に「効果を発動しませんでした」を通知
       if (window._isOnlineMode && window._isOnlineMode() && actualSide === 'player') {
         window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: card.name });
@@ -4378,8 +4380,12 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   }
   // 種別「カード」はレシピエディタで「種別を問わない」を表す（checkConditionsのcond_typeと同じ扱い）
   const _isAnyType = (t) => t === 'カード' || t === 'card';
-  if (filter.type && !_isAnyType(filter.type) && card.type !== filter.type) return false;
-  if (Array.isArray(filter.type_in) && !filter.type_in.some(_isAnyType) && !filter.type_in.includes(card.type)) return false;
+  // デュアルカード（手札・トラッシュ等。場ではデジモンになっている）は、デジモンカードとオプションカード両方の
+  // カードカテゴリーを持つ（公式ルール 2-5-5-1）。トラッシュのケルベロモン：人狼モード＆インフェルノディバイド
+  // BT26-056 を、ケルベロモン BT26-074「特徴「タイタン族」を持つオプションカード1枚を使用」で選べなかった
+  const _typeIs = (t) => card.type === t || (card.type === 'デュアル' && (t === 'デジモン' || t === 'オプション'));
+  if (filter.type && !_isAnyType(filter.type) && !_typeIs(filter.type)) return false;
+  if (Array.isArray(filter.type_in) && !filter.type_in.some(_isAnyType) && !filter.type_in.some(_typeIs)) return false;
   // 色: カンマ区切り文字列でOR指定に対応（例: "青,赤" → 青 or 赤）。カード側が
   // "青/赤" のような複合色の場合もあるため部分一致（indexOf）で判定する
   if (filter.color) {
@@ -7345,6 +7351,26 @@ function _fireWhenSecurityDecreaseQueuedWithCause(cause, decreasedSide, bs, ctxB
 // ===== 消滅チェック =====
 // callback: 消滅した全カードの 演出 + on_destroy リアクションが完了したら呼ぶ
 
+// 反応系の効果（メインフェイズ開始時・ターン終了時・したとき等。キューを通らない）を1つ解決し終えたら、
+// その中で保留された「〜したとき」（手札が破棄されたとき等）と消滅を、次の効果へ進む前に処理する。
+// キューの効果（processQueue）は各効果の後に checkPendingDestroys を呼んでいるが、反応系には無く、
+// 黒井翔太 BT26-092 の【自分のメインフェイズ開始時】で手札を破棄しても、プロットモン BT26-066 の進化元効果
+// 「自分の手札が破棄されたとき」が保留されたまま発揮されなかった。キューの解決中（_queueResolveDepth>0）は
+// そちらがまとめて処理するので何もしない
+function _drainAfterReaction(bs, ctxBase, cb) {
+  const hasPend = !!bs && ((Array.isArray(bs._pendingReactions) && bs._pendingReactions.length > 0)
+    || ['player', 'ai'].some(sd => bs[sd] && (bs[sd].battleArea || []).some(c => c && c._pendingDestroy)));
+  if (_queueResolveDepth > 0 || !hasPend || !ctxBase) { cb(); return; }
+  _queueResolveDepth++;
+  try {
+    checkPendingDestroys(Object.assign({}, ctxBase, { bs }), () => { _queueResolveDepth = Math.max(0, _queueResolveDepth - 1); cb(); });
+  } catch (e) {
+    console.error('[_drainAfterReaction]', e);
+    _queueResolveDepth = Math.max(0, _queueResolveDepth - 1);
+    cb();
+  }
+}
+
 function checkPendingDestroys(ctx, callback) {
   // 消滅対象を「演出 → 削除 → on_destroy」の順で逐次処理する
   // ターンプレイヤー側を先に処理するため順序付き
@@ -9079,7 +9105,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       return;
     }
     if (causeAtScan !== undefined) bs._lastDestroyCause = causeAtScan;
-    _runReactionEffect(reaction, reactSide, bs, ctxBase, nextReaction);
+    _runReactionEffect(reaction, reactSide, bs, ctxBase, () => _drainAfterReaction(bs, ctxBase, nextReaction));
   };
   function nextReaction() {
     if (remaining.length === 0) { _hudSetSource(_hudKey, []); finish(); return; }
@@ -11192,6 +11218,15 @@ function showAltActionChoice(labels, callback, titleText) {
 // 2つ目以降にコスト持ちステップがあるとき true。このときは効果の最初に「発動しますか？」を出さず、
 // コスト持ちステップに来た時点で確認する（ブテンモン BT26-015「相手のデジモン1体をDP-4000。その後、
 // 自分のトラッシュ1枚をデッキの下に戻すことで〜消滅させる」: DP-4000 は強制なので確認なしで対象選択）
+// 場のデジモンの【メイン】が、効果エンジン側で「効果を発動しますか？」の確認を出す任意効果か
+// （「⚡ 効果」ボタン側の確認と二重にならないよう、battle-render.js の activateEffect が見る）
+if (typeof window !== 'undefined') window._mainEffectConfirmsInEngine = (card) => {
+  try {
+    const steps = getRecipeForTrigger(card, 'main', false);
+    return Array.isArray(steps) && steps.some(s => s && (s.optional === true || (Array.isArray(s.cost) && s.cost.length > 0)))
+      && !_isInlineCostConfirmRecipe(steps);
+  } catch (_) { return false; }
+};
 function _isInlineCostConfirmRecipe(steps) {
   if (!Array.isArray(steps) || steps.length < 2) return false;
   const first = steps[0];
@@ -11262,19 +11297,28 @@ function runRecipe(steps, ctx, callback) {
 // ※呼び出し元で既に手札/トラッシュ等の元ゾーンからは取り除かれていること
 function _useOptionCardFromEffect(card, ctx, callback) {
   const p = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
-  ctx.addLog && ctx.addLog('✦ 「' + card.name + '」を使用！');
+  const isDual = String(card.type || '') === 'デュアル';
+  ctx.addLog && ctx.addLog('✦ 「' + card.name + '」を' + (isDual ? 'オプションとして' : '') + '使用！');
   ctx.renderAll && ctx.renderAll();
   const afterAnim = () => {
     try {
       scanTriggers('main', card, ctx.side, ctx);
       processQueue(ctx, () => {
-        // 【メイン】でバトルエリア/セキュリティ等に置かれたならトラッシュへ送らない（公式9-1-5）
-        if (!isCardInAnyZone(card, p)) {
-          p.trash.push(card);
-          ctx.addLog && ctx.addLog('✦ 「' + card.name + '」をトラッシュへ');
+        const toTrash = () => {
+          // 【メイン】でバトルエリア/セキュリティ等に置かれたならトラッシュへ送らない（公式9-1-5）
+          if (!isCardInAnyZone(card, p)) {
+            p.trash.push(card);
+            ctx.addLog && ctx.addLog('✦ 「' + card.name + '」をトラッシュへ');
+          }
+          ctx.renderAll && ctx.renderAll();
+          callback();
+        };
+        // デュアルカードは、使用後の保留処理で破棄する代わりにアーツ進化できる（公式ルール 8-19-1）
+        if (isDual && ctx.side === 'player' && typeof window !== 'undefined' && typeof window._offerArtsEvolve === 'function' && !isCardInAnyZone(card, p)) {
+          window._offerArtsEvolve(card, (evolved) => { if (evolved) { ctx.renderAll && ctx.renderAll(); callback(); } else toTrash(); });
+          return;
         }
-        ctx.renderAll && ctx.renderAll();
-        callback();
+        toTrash();
       });
     } catch (_) {
       if (!p.trash.includes(card)) p.trash.push(card);
@@ -11325,8 +11369,9 @@ function _summonCardFromEffect(c, ctx, opts, done) {
   }
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   _payEffectPlayCost(opts.payCost, opts.costDelta, ctx);
-  // オプションカードは「登場」ではなく「使用」として解決する
-  if (String(c.type || '') === 'オプション') {
+  // オプションカードは「登場」ではなく「使用」として解決する。デュアルカードは登場コストを持たないので
+  // 効果で登場/使用するときはオプション側の使用になる
+  if (String(c.type || '') === 'オプション' || String(c.type || '') === 'デュアル') {
     _useOptionCardFromEffect(c, ctx, done);
     return;
   }
@@ -12102,8 +12147,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         // ［セキュリティ］［トラッシュ］等にあるこのカード（レイヴモン BT26-082「［セキュリティ］
         // 【相手のターン終了時】このカードをコストを支払わず登場させる」）はそのゾーンから取り除いてから登場
         const _selfFromZone = _takeSelfCardFromZone(cardToSummon, p, ctx);
-        // オプションカードは「登場」ではなく「使用」として解決する
-        if (String(cardToSummon.type || '') === 'オプション') {
+        // オプションカードは「登場」ではなく「使用」として解決する（デュアルはオプション側の使用）
+        if (String(cardToSummon.type || '') === 'オプション' || String(cardToSummon.type || '') === 'デュアル') {
           _useOptionCardFromEffect(cardToSummon, ctx, callback);
           break;
         }
@@ -12195,6 +12240,14 @@ function executeRecipeStep(step, ctx, store, callback) {
             ? (player.hand || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card)) : [];
           let _trashCands = _fromZones.includes('trash')
             ? (player.trash || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card)) : [];
+          // デュアルカードは登場コストを持たないので「登場」の候補にはしない（オプションとして「使用」する指定のときだけ）
+          {
+            const _ft = [].concat(_filter.type || [], _filter.type_in || []);
+            if (!_ft.includes('オプション')) {
+              _handCands = _handCands.filter(c => String(c.type || '') !== 'デュアル');
+              _trashCands = _trashCands.filter(c => String(c.type || '') !== 'デュアル');
+            }
+          }
           // from_filter.cost_sum_le（「登場コスト合計Nまで」メルヴァモン BT26-081）: 合計コストの予算。
           // 予算を超えるカードは最初から候補に含めない
           const _costSumLe = (_filter && _filter.cost_sum_le != null) ? (parseInt(_filter.cost_sum_le, 10) || 0) : null;

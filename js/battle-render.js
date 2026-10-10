@@ -635,6 +635,24 @@ window.activateEffect = function(slotIdx, effectSource) {
   // 長押しメニューで仮レストされた状態を解除（元々アクティブだった場合）
   if (!_wasAlreadySuspended) card.suspended = false;
   renderAll();
+  // 任意効果（「〜できる」・コスト持ち）なら効果エンジンが「効果を発動しますか？」を確認するので、
+  // ここでの確認は出さない（確認が2回出ていた。ゲコモン BT26-021【メイン】）
+  if (!(effectSource && effectSource.startsWith('evo-')) && typeof window._mainEffectConfirmsInEngine === 'function'
+      && window._mainEffectConfirmsInEngine(card) && window._triggerMainEffect) {
+    card._usedEffects.push(effectSource || 'self');
+    delete card._mainDeclined;
+    window._triggerMainEffect(card, async () => {
+      if (card._mainDeclined) {
+        delete card._mainDeclined;
+        const _ui = card._usedEffects.lastIndexOf(effectSource || 'self');
+        if (_ui !== -1) card._usedEffects.splice(_ui, 1);
+      }
+      if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('use_effect');
+      renderAll();
+      if (window._flushPendingEffectAttacks) window._flushPendingEffectAttacks();
+    });
+    return;
+  }
   document.getElementById('effect-confirm-name').innerText = effectName;
   document.getElementById('effect-confirm-text').innerText = effectText;
   document.getElementById('effect-confirm-overlay').style.display = 'flex';

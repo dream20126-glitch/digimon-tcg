@@ -1327,7 +1327,7 @@ function _finishDoEvolve(card, base, handIdx, slotIdx, cost, opts) {
     _noMainAbility: card.type === 'デュアル',
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,
-    buffs: base.buffs || [],
+    buffs: base.buffs || [], _grantedRecipes: base._grantedRecipes, // 効果で付与された効果（【エグゼキュート】等）も進化後に引き継ぐ
     dpModifier: base.dpModifier || 0,
     stack: [base].concat(base.stack || []),
   });
@@ -1425,7 +1425,7 @@ function _finishAppGattaiEvolve(card, base, handIdx, slotIdx, appGattai) {
     _noMainAbility: card.type === 'デュアル',
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,
-    buffs: base.buffs || [],
+    buffs: base.buffs || [], _grantedRecipes: base._grantedRecipes, // 効果で付与された効果（【エグゼキュート】等）も進化後に引き継ぐ
     dpModifier: base.dpModifier || 0,
     // 公式8-4-3-3: 選んだデジモンのリンクカードを本体の上に重ね、その上にアプ合体先を重ねる
     stack: [base].concat(partners).concat(base.stack || []),
@@ -1524,7 +1524,7 @@ export function doEvolveFromEffect(card, handIdx, slotIdx, cost, side, callback)
     _noMainAbility: card.type === 'デュアル',
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,
-    buffs: base.buffs || [],
+    buffs: base.buffs || [], _grantedRecipes: base._grantedRecipes, // 効果で付与された効果（【エグゼキュート】等）も進化後に引き継ぐ
     dpModifier: base.dpModifier || 0,
     stack: [base].concat(base.stack || []),
   });
@@ -1624,7 +1624,7 @@ export function doEvolveIku(card, handIdx) {
     _noMainAbility: card.type === 'デュアル',
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,
-    buffs: base.buffs || [],
+    buffs: base.buffs || [], _grantedRecipes: base._grantedRecipes, // 効果で付与された効果（【エグゼキュート】等）も進化後に引き継ぐ
     dpModifier: base.dpModifier || 0,
     stack: [base].concat(base.stack || []),
   });
@@ -1794,7 +1794,7 @@ function _placeArtsEvolve(card, target, side) {
     _noMainAbility: true, // recipe.mainはオプション使用時の効果のため進化後は再発動不可にする
     suspended: base.suspended,
     summonedThisTurn: base.summonedThisTurn,
-    buffs: base.buffs || [],
+    buffs: base.buffs || [], _grantedRecipes: base._grantedRecipes, // 効果で付与された効果（【エグゼキュート】等）も進化後に引き継ぐ
     dpModifier: base.dpModifier || 0,
     stack: [base].concat(base.stack || []),
   });

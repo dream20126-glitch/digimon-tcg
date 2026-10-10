@@ -42,7 +42,7 @@ window._showKeywordGrantBanner = function(card, keywordName, remote) {
 };
 function _showKeywordGrantBannerNow(card, keywordName) {
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'position:fixed;top:25%;left:50%;transform:translate(-50%,-50%);z-index:64000;background:linear-gradient(135deg,#001a2e,#003366);border:2px solid #00fbff;border-radius:14px;padding:16px 24px;box-shadow:0 0 30px #00fbff;text-align:center;animation:fadeIn 0.25s ease;pointer-events:none;';
+  wrap.style.cssText = 'position:fixed;top:25%;left:50%;transform:translate(-50%,-50%);z-index:70000;background:linear-gradient(135deg,#001a2e,#003366);border:2px solid #00fbff;border-radius:14px;padding:16px 24px;box-shadow:0 0 30px #00fbff;text-align:center;animation:fadeIn 0.25s ease;pointer-events:none;';
   wrap.innerHTML = '<div style="color:#00fbff;font-size:13px;font-weight:bold;text-shadow:0 0 6px #00fbff;margin-bottom:6px;">✨ キーワード付与</div>'
     + '<div style="color:#fff;font-size:14px;font-weight:bold;margin-bottom:4px;">「' + (card && card.name || '?') + '」</div>'
     + '<div style="color:#ffcc00;font-size:18px;font-weight:bold;text-shadow:0 0 8px #ffcc00;">【' + keywordName + '】</div>';

@@ -4726,7 +4726,7 @@ function _deckOpenAuto(opened, step, ctx, callback) {
         if (_slot < 0) { left.push(c); nextSel(); return; }
         const _evolved = Object.assign({}, c, {
           suspended: _base.suspended, summonedThisTurn: _base.summonedThisTurn,
-          buffs: _base.buffs || [], dpModifier: _base.dpModifier || 0,
+          buffs: _base.buffs || [], dpModifier: _base.dpModifier || 0, _grantedRecipes: _base._grantedRecipes,
           stack: [_base].concat(_base.stack || []),
         });
         _evolved.baseDp = parseInt(c.dp) || parseInt(c.baseDp) || 0;
@@ -4980,7 +4980,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
             const _evolved = Object.assign({}, entry.card, {
               suspended: _base.suspended,
               summonedThisTurn: _base.summonedThisTurn,
-              buffs: _base.buffs || [],
+              buffs: _base.buffs || [], _grantedRecipes: _base._grantedRecipes,
               dpModifier: _base.dpModifier || 0,
               stack: [_base].concat(_base.stack || []),
             });

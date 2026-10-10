@@ -232,6 +232,9 @@ export function buildCombatHooks() {
         '【メイン】': 'main', '【リンク時】': 'on_link', 'リンク時': 'on_link',
       };
       const trig = map[kw];
+      // 【進化時】は、進化したデジモン自身が持っていなくても、進化元の効果や他のカードの「デジモンが進化したとき」
+      // （ゾンビプルートモン BT26-079 等）が誘発するので、常に誘発の処理（scanTriggers）を通す（【登場時】と同じ扱い）
+      if (trig === 'on_evolve') return true;
       return trig ? _hasRecipeTriggerEE(card, trig) : false;
     },
     hasEvoKeyword: (card, kw) => {

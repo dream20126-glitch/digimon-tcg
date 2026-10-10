@@ -4254,7 +4254,9 @@ export function showEvolveEffect(cost, baseName, baseCard, evolvedCard, onDone) 
 // ----- オプション使用演出 -----
 
 export function showOptionEffect(card, onDone) {
-  if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_option', cardName: card.name, cardImg: cardImg(card) });
+  // 表示するコスト（効果で軽減したら軽減後）。相手の画面にも同じコストを出す
+  const _shownCost = card._costReduction ? (card.playCost - card._costReduction) : card.playCost;
+  if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_option', cardName: card.name, cardImg: cardImg(card), cost: _shownCost });
   const overlay = document.getElementById('option-overlay');
   if (!overlay) { onDone && onDone(); return; }
   const flash = document.getElementById('option-flash');
@@ -4271,12 +4273,8 @@ export function showOptionEffect(card, onDone) {
   imgEl.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#aa66ff;padding:8px;">${card.name}</div>`;
   imgEl.style.animation = 'optionGlow 1s ease-in-out infinite';
   nameEl.innerText = card.name;
-  if (card._costReduction) {
-    costEl.innerText = (card.playCost - card._costReduction) + ' コストで使用！';
-    delete card._costReduction;
-  } else {
-    costEl.innerText = card.playCost + ' コストで使用！';
-  }
+  delete card._costReduction;
+  costEl.innerText = (_shownCost != null && !isNaN(_shownCost)) ? _shownCost + ' コストで使用！' : '使用！';
   overlay.style.display = 'flex';
 
   setTimeout(() => { flash.style.opacity = '1'; }, 50);

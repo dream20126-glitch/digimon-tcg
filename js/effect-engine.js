@@ -11514,6 +11514,13 @@ function _summonCardFromEffect(c, ctx, opts, done) {
   // オプションカードは「登場」ではなく「使用」として解決する。デュアルカードは登場コストを持たないので
   // 効果で登場/使用するときはオプション側の使用になる
   if (String(c.type || '') === 'オプション' || String(c.type || '') === 'デュアル') {
+    // 使用演出（showOptionEffect）の「〇コストで使用！」に、効果で支払った（軽減後の）コストを出す
+    // （ケルベロモン BT26-074「支払うコスト-2で使用」で使用コスト3のまま表示されていた）
+    const _basePc = parseInt(c.playCost, 10);
+    if (!isNaN(_basePc)) {
+      const _paid = opts.payCost == null ? 0 : opts.payCost;
+      if (_basePc - _paid > 0) c._costReduction = _basePc - _paid; else delete c._costReduction;
+    }
     _useOptionCardFromEffect(c, ctx, done);
     return;
   }

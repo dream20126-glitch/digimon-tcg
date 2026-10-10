@@ -1609,7 +1609,7 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_option': {
-      if (m.showOptionEffect) enqueueFx((done) => m.showOptionEffect({ name: cmd.cardName, imgSrc: cmd.cardImg }, done));
+      if (m.showOptionEffect) enqueueFx((done) => m.showOptionEffect({ name: cmd.cardName, imgSrc: cmd.cardImg, playCost: cmd.cost }, done));
       break;
     }
     case 'fx_sAttackPlus': {

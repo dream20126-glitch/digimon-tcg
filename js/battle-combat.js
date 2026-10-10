@@ -123,7 +123,8 @@ function hasPassiveFlag(c, flagName, kwBracket) {
   // 「【ブロッカー】を持つ間」も【ブロッカー】を含んでしまう）。
   // 構造的な情報（_permEffects / buffs / recipe.passive / stack[].recipe.evo_source.passive）のみで判定する。
   if (c._permEffects && c._permEffects[flagName]) return true;
-  if (c.buffs && c.buffs.some(b => b.type === 'keyword_' + flagName)) return true;
+  // 【衝突】で付けたブロッカー（source:'collision'）は、そのアタックのブロック判定（強制）以外では数えない
+  if (c.buffs && c.buffs.some(b => b.type === 'keyword_' + flagName && !(flagName === 'blocker' && b.source === 'collision'))) return true;
   // gate（「〜の間」条件）付きのpassiveは、条件判定済みの _permEffects（applyPermanentEffects）に任せ、
   // ここでのレシピ直読みフォールバックでは数えない（条件不成立中も有効扱いになるのを防ぐ）
   const passiveContains = (arr) => Array.isArray(arr) && arr.some(p => (p && !p.gate && !p.gate_chain && (p.flag === flagName || p === flagName)));
@@ -4059,6 +4060,8 @@ function aiPlayAuto(callback) {
 export async function checkPendingTurnEnd() {
   _attackInProgress = false;
   hideCombatBackdrop();
+  // アタックが終わったので【衝突】のブロッカーを外す
+  if (typeof window !== 'undefined' && window._clearCollisionBlockers) window._clearCollisionBlockers(bs);
   renderAll();
   // バトル中の「離れるとき」で進化して保留していた【進化時】を、バトルの消滅処理が終わったここで発揮する
   // （ターンプレイヤー＝自分の分を先に、相手の端末に残っている分を後に）

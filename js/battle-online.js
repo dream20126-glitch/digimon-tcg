@@ -1858,7 +1858,8 @@ function checkOnlineBlock(cmd) {
   const isBlocker = (c) => {
     if (!c) return false;
     if (c._permEffects && c._permEffects.blocker) return true;
-    if (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_blocker')) return true;
+    // 【衝突】で付けたブロッカー（source:'collision'）は数えない（強制ブロックは forced 側で全デジモンを候補にする）
+    if (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_blocker' && b.source !== 'collision')) return true;
     const r = parseR(c.recipe);
     if (r && passiveHasBlocker(r.passive)) return true;
     if (Array.isArray(c.stack)) {

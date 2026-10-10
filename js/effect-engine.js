@@ -4437,8 +4437,9 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
     if (filter.description && _descText !== filter.description) return false;
     if (filter.description_contains && !_cardHasDescriptionText(card, filter.description_contains)) return false;
   }
-  if (filter.lv_ge != null && (parseInt(card.level) || 0) < filter.lv_ge) return false;
-  if (filter.lv_le != null && (parseInt(card.level) || 0) > filter.lv_le) return false;
+  // Lvを持たないカード（巨神兵器 BT26-085 等）は「Lv.N以下／以上」に当てはまらない（Lv.0 扱いにしない）
+  if (filter.lv_ge != null && (isNaN(parseInt(card.level)) || parseInt(card.level) < filter.lv_ge)) return false;
+  if (filter.lv_le != null && (isNaN(parseInt(card.level)) || parseInt(card.level) > filter.lv_le)) return false;
   if (filter.lv != null && (parseInt(card.level) || 0) !== filter.lv) return false;
   // DP系: dp_le/dp_ge/dp（対象の条件エディタの「DP」カテゴリが出力する形式）。
   // 値が数値でなく DP参照マーカー文字列（'self'/'own'/'opp'/'other'）の場合は、
@@ -5480,8 +5481,22 @@ function recalcDp(card) {
 // 呼び出しタイミング: 各ターンの終了時。bs.isPlayerTurn = ちょうど終わろうとしているターンの陣営
 // expireBuffs(bs, timing, ownerSide, endingSide)
 // endingSide: 'player'/'ai' - 明示指定（省略時は bs.isPlayerTurn から推測、オンラインでは要明示）
+// 【衝突】のアタック中だけ付けたブロッカー（buff.source==='collision'）を外す（重ねられているカードの分も）。
+// ブロック処理を通らずにアタックが終わった等で残ると、その後もブロッカーのバッジが付いたまま・ブロッカー扱いになっていた
+export function clearCollisionBlockers(bs) {
+  if (!bs) return;
+  const strip = (c) => {
+    if (!c) return;
+    if (Array.isArray(c.buffs) && c.buffs.some(b => b && b.source === 'collision')) c.buffs = c.buffs.filter(b => !(b && b.source === 'collision'));
+    if (Array.isArray(c.stack)) c.stack.forEach(strip);
+  };
+  ['player', 'ai'].forEach(sd => { if (bs[sd]) [...(bs[sd].battleArea || []), ...(bs[sd].tamerArea || [])].forEach(strip); });
+}
+if (typeof window !== 'undefined') window._clearCollisionBlockers = (b) => clearCollisionBlockers(b || window._lastBattleState);
+
 export function expireBuffs(bs, timing, ownerSide, endingSide) {
   if (!endingSide) endingSide = bs.isPlayerTurn ? 'player' : 'ai';
+  clearCollisionBlockers(bs);
   console.log('[expire]', timing, 'endingSide=' + endingSide);
   ['player', 'ai'].forEach(side => {
     [...bs[side].battleArea, ...(bs[side].tamerArea || [])].forEach(card => {
@@ -6454,8 +6469,9 @@ function checkConditions(conditions, card, bs, side) {
         if (!_ok) return false;
         break;
       }
-      case 'cond_lv_le': if (parseInt(card.level) > (cond.value || 0)) return false; break;
-      case 'cond_lv_ge': if (parseInt(card.level) < (cond.value || 0)) return false; break;
+      // Lvを持たないカードは当てはまらない（以前は NaN の比較で常に満たしていた）
+      case 'cond_lv_le': if (isNaN(parseInt(card.level)) || parseInt(card.level) > (cond.value || 0)) return false; break;
+      case 'cond_lv_ge': if (isNaN(parseInt(card.level)) || parseInt(card.level) < (cond.value || 0)) return false; break;
       case 'cond_lv':    if (parseInt(card.level) !== (cond.value || 0)) return false; break;
       case 'cond_cost_le': if ((card.playCost || card.cost || 0) > (cond.value || 0)) return false; break;
       case 'cond_cost_ge': if ((card.playCost || card.cost || 0) < (cond.value || 0)) return false; break;
@@ -6782,7 +6798,7 @@ function checkConditions(conditions, card, bs, side) {
         // 「持たない条件」として使うなら、エンジン呼び出し側で否定するか辞書名で表現する
         const hasBlocker = !!(card && (
           (card._permEffects && card._permEffects.blocker) ||
-          (card.buffs && card.buffs.some(b => b.type === 'keyword_blocker')) ||
+          (card.buffs && card.buffs.some(b => b.type === 'keyword_blocker' && b.source !== 'collision')) ||
           /ブロッカー/.test(String(card.keywords || card.effect || ''))
         ));
         // デフォルトは「ブロッカーを持たない」の意味（cond.value !== '1' のとき）

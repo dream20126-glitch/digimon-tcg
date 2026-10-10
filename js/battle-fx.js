@@ -142,7 +142,9 @@ export function fxLabelPopup(card, effectName, color, callback) {
 
 export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
   // 移動先がセキュリティの場合は秘匿情報なので強制的に裏向き（カード名も隠す）
-  const _fd = !!faceDown || /セキュリティ/.test(String(toLabel || ''));
+  // faceDown === false（明示的に表向き）なら、セキュリティへの移動でも表向きで見せる（ダーク・フィールド BT26-100 等の
+  // 「セキュリティの下に表向きで置く」）
+  const _fd = faceDown === false ? false : (!!faceDown || /セキュリティ/.test(String(toLabel || '')));
   const overlay = document.createElement('div');
   // z-index は deck_open UI(60000) / 観戦オーバーレイ(65000) の上に重ねる必要がある
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:66000;display:flex;align-items:center;justify-content:center;pointer-events:none;';

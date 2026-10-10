@@ -4013,12 +4013,13 @@ function _fxMoveSync(ctx, card, fromLabel, toLabel, cb, opts) {
         cardImg: hide ? '' : (card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || card.imageUrl || ''),
         fromLabel: raw ? (opts.remoteFrom != null ? opts.remoteFrom : '相手の' + fromLabel) : fromLabel,
         toLabel: raw ? (opts.remoteTo != null ? opts.remoteTo : '相手の' + toLabel) : toLabel,
-        rawLabels: raw, faceDown: hide,
+        rawLabels: raw, faceDown: hide, faceUp: !!opts.faceUp,
       });
     } catch (_) {}
   }
   if (window._fxCardMove) {
-    try { window._fxCardMove(card, fromLabel, toLabel, done, !!opts.faceDown); return; } catch (_) {}
+    // faceUp: 表向きで見せる（セキュリティへの移動でも）。指定が無ければ移動先に応じて既定（セキュリティなら裏向き）
+    try { window._fxCardMove(card, fromLabel, toLabel, done, opts.faceUp ? false : (opts.faceDown ? true : undefined)); return; } catch (_) {}
   }
   setTimeout(done, 300);
 }
@@ -15168,6 +15169,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       const sd = !isSelf && step.card ? store[step.card] : null;
       const cardToPlace = isSelf ? ctx.card : (sd && (sd.card || sd));
       if (!cardToPlace) { callback(); break; }
+      const _posFromZone = player.trash.includes(cardToPlace) ? 'トラッシュ' : player.hand.includes(cardToPlace) ? '手札'
+        : player.battleArea.includes(cardToPlace) ? 'バトルエリア' : '';
       // self指定時は消滅演出で既にトラッシュ行き済みのはずなので、二重登録されないよう除去してから積む
       if (isSelf) {
         const _ti = player.trash.indexOf(cardToPlace);
@@ -15201,6 +15204,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (_posFaceUp) { cardToPlace._faceUp = true; delete cardToPlace._faceDown; }
       else delete cardToPlace._faceUp;
       const _posFaceLabel = _posFaceUp ? '（表向き）' : '';
+      // 移動演出の移動元（取り除く前に判定済みの場所。使用中のオプション等はどこにも無いので「使用したカード」）
+      const _posFrom = isSelf ? (_posFromZone || '使用したカード') : '';
       // step.position（'bottom'指定）があればセキュリティの下に置く。未指定/'top'なら従来通り上
       if (step.position === 'bottom') {
         player.security.push(cardToPlace);
@@ -15215,7 +15220,19 @@ function executeRecipeStep(step, ctx, store, callback) {
         try { window._onlineSendCommand({ type: 'security_init', cards: player.security.map(_serializeSecurityCard) }); } catch (_) {}
       }
       try { applyPermanentEffects(ctx.bs, ctx.side, ctx); } catch (_) {}
-      callback();
+      // セキュリティに置く移動演出（表向きなら表向きで見せる）→ 表向きで置いたカードに［セキュリティ］の常時効果が
+      // あれば、その効果をポップアップで知らせる（ダーク・フィールド BT26-100）
+      {
+        const _toLbl = 'セキュリティ' + (step.position === 'bottom' ? '(下)' : '(上)');
+        const _secPara = _posFaceUp ? String(cardToPlace.effect || '').split(/\n(?=[【《［])/).find(p => p.trim().indexOf('［セキュリティ］') === 0) : null;
+        const _announce = () => {
+          if (!_secPara) { callback(); return; }
+          try { showEffectAnnounce(cardToPlace, '（セキュリティに表向きで置かれている間の効果）\n' + _secPara.trim(), ctx.side, () => callback()); }
+          catch (_) { callback(); }
+        };
+        if (ctx.side !== 'player') { _announce(); break; }
+        _fxMoveSync(ctx, cardToPlace, _posFrom || 'カード', _toLbl, _announce, _posFaceUp ? { faceUp: true } : { faceDown: true });
+      }
       break;
     }
 

@@ -1309,7 +1309,7 @@ function onRemoteCommand(cmd) {
         const from = cmd.rawLabels ? (cmd.fromLabel || '') : '相手の' + (cmd.fromLabel || '');
         const to = cmd.rawLabels ? (cmd.toLabel || '') : '相手の' + (cmd.toLabel || '');
         enqueueFx((done) => {
-          try { window._fxCardMove(dummy, from, to, done, !!cmd.faceDown); } catch (_) { done(); }
+          try { window._fxCardMove(dummy, from, to, done, cmd.faceUp ? false : (cmd.faceDown ? true : undefined)); } catch (_) { done(); }
         });
       }
       break;

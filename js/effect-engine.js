@@ -7751,6 +7751,20 @@ export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
       if (para) return para.trim();
     }
   }
+  // 他のカードのイベントに反応するステップ（発動主体が相手/自分/両方。「相手のデジモンが登場/進化したとき」
+  // ゾンビプルートモン BT26-079 等）は【登場時】【進化時】の段落ではなく、「〜したとき」の段落を出す
+  // （以前は【登場時】の文章が出て、同じ効果が2回発動したように見えていた）
+  if (Array.isArray(recipeSteps) && recipeSteps.length > 0 && (triggerCode === 'on_play' || triggerCode === 'on_evolve' || triggerCode === 'on_attack')) {
+    const _reactive = recipeSteps.every(st => {
+      const sj = st && _resolveStepSubject(st, triggerCode);
+      return !!sj && sj !== 'self' && sj !== 'self_card' && sj !== 'self_hand';
+    });
+    if (_reactive) {
+      const _kw = triggerCode === 'on_attack' ? /アタックした(とき|時)/ : (triggerCode === 'on_evolve' ? /進化した(とき|時)/ : /登場した(とき|時)|登場\/進化した(とき|時)/);
+      const para = String(fullText).split(/\n(?=[【《［])/).find(p => _kw.test(p) || /登場\/進化した(とき|時)/.test(p) && triggerCode !== 'on_attack');
+      if (para) return para.trim();
+    }
+  }
   const label = triggerCode && TRIGGER_LABEL_MAP[triggerCode];
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   let block = fullText;

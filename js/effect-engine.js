@@ -5546,6 +5546,7 @@ if (typeof window !== 'undefined') window._clearCollisionBlockers = (b) => clear
 export function expireBuffs(bs, timing, ownerSide, endingSide) {
   if (!endingSide) endingSide = bs.isPlayerTurn ? 'player' : 'ai';
   clearCollisionBlockers(bs);
+  _purgeOffFieldGrants(bs);
   console.log('[expire]', timing, 'endingSide=' + endingSide);
   ['player', 'ai'].forEach(side => {
     [...bs[side].battleArea, ...(bs[side].tamerArea || [])].forEach(card => {
@@ -5687,8 +5688,29 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
 
 // ===== 永続効果適用 =====
 
+// 場（バトルエリア・テイマーエリア）の外にあるカード（手札・トラッシュ・デッキ・セキュリティ）からは、効果で付与された
+// 効果（_grantedRecipes）とバフを消す。場を離れたカードは新しいカードとして扱われる（付与されたものは引き継がない）。
+// 消滅等で場を離れる経路は多く、それぞれで消し忘れると、トラッシュから再び登場したときに前の【エグゼキュート】等が
+// 残っていた（ケルベロモン BT26-074 がプルートモン BT26-059 の効果でトラッシュから登場したら付与済みに見えた）
+function _purgeOffFieldGrants(bs) {
+  if (!bs) return;
+  ['player', 'ai'].forEach(sd => {
+    const p = bs[sd];
+    if (!p) return;
+    ['hand', 'trash', 'deck', 'security'].forEach(z => {
+      (p[z] || []).forEach(c => {
+        if (!c) return;
+        if (Array.isArray(c._grantedRecipes) && c._grantedRecipes.length > 0) c._grantedRecipes = [];
+        if (Array.isArray(c._grantedKw) && c._grantedKw.length > 0) c._grantedKw = [];
+        if (z !== 'hand' && Array.isArray(c.buffs) && c.buffs.length > 0) { c.buffs = []; if (c.dpModifier) { c.dpModifier = 0; if (c.baseDp != null) c.dp = c.baseDp; } }
+      });
+    });
+  });
+}
+
 export function applyPermanentEffects(bs, side, context) {
   const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+  _purgeOffFieldGrants(bs);
 
   // ① まず全カードの永続バフをクリア（対象side + そのsideのバフを受けている相手sideも）
   [...bs[side].battleArea, ...(bs[side].tamerArea || [])].forEach(card => {
@@ -11669,7 +11691,7 @@ function _summonCardFromEffect(c, ctx, opts, done) {
   }
   // アルゴモン(BT2-047)「レスト状態で登場できる」等、レスト状態での登場を
   // 指定できるようにする（enterSuspended）。省略時は従来通り活動状態で登場
-  c.summonedThisTurn = true; c.suspended = !!opts.enterSuspended; c.buffs = []; c.stack = [];
+  c.summonedThisTurn = true; c.suspended = !!opts.enterSuspended; c.buffs = []; c.stack = []; c._grantedRecipes = [];
   // skipOnPlay 指定時は登場時効果を発動しない
   if (opts.skipOnPlay) {
     c._skipOnPlayEffect = true;

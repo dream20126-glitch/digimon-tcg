@@ -926,6 +926,13 @@ function showQueueOrderSelect(entries, callback) {
 // キューエントリを実行
 function executeQueueEntry(entry, context, callback) {
   const { card, block, side } = entry;
+  // 相手のカードの反応（_scanReactiveSubjectsForSourceOnly が印を付けたもの）は持ち主の端末で発揮してもらう
+  if (block && block._delegate && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    let _steps = [];
+    try { _steps = JSON.parse(JSON.stringify(block._grantedSteps || [])); } catch (_) { _steps = []; }
+    _delegateReactionToOpponent({ recipeKey: block._delegate.triggerCode, kind: 'subject_source', ref: block._delegate, steps: _steps }, callback);
+    return;
+  }
   // sideを実際のplayer/aiに変換
   const actualSide = entry.actualSide || (side === 'turnPlayer' ? (context.bs.isPlayerTurn ? 'player' : 'ai') : (context.bs.isPlayerTurn ? 'ai' : 'player'));
   // _sourceCard: 進化元効果なら進化元カード自身（例: ワーガルルモン）、そうでなければcardと同じ。
@@ -7674,6 +7681,18 @@ export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
   const override = _findDisplayTextOverride(recipeSteps);
   if (override) return override;
   if (!fullText) return fullText || '';
+  // ［トラッシュ］［手札］［セキュリティ］のゾーン効果（全ステップが in_zone 指定）は、その［］で始まる段落を出す
+  // （ケルビモン BT26-078 の「［トラッシュ］自分のデジモンが登場したとき」が、同じカードの【登場時】【進化時】の
+  // 文章で表示されていた）
+  if (Array.isArray(recipeSteps) && recipeSteps.length > 0) {
+    const _zones = [...new Set(recipeSteps.map(st => st && st.in_zone).filter(Boolean))];
+    const _zoneLabel = { trash: '［トラッシュ］', hand: '［手札］', security: '［セキュリティ］' };
+    if (_zones.length === 1 && recipeSteps.every(st => st && st.in_zone) && _zoneLabel[_zones[0]]) {
+      const zl = _zoneLabel[_zones[0]];
+      const para = String(fullText).split(/\n(?=[【《［])/).find(p => p.trim().indexOf(zl) === 0);
+      if (para) return para.trim();
+    }
+  }
   const label = triggerCode && TRIGGER_LABEL_MAP[triggerCode];
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   let block = fullText;
@@ -7948,6 +7967,12 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
     return _filterStepChains(steps, (s) => s && matchSubject(_resolveStepSubject(s, triggerCode), cardSide));
   };
 
+  // オンライン対戦で反応するのが相手（ai＝カードの持ち主は相手機）のカードなら、実行時に持ち主の端末へ委譲する
+  // （ゾンビプルートモン BT26-079「相手のデジモンが登場/進化したとき」の確認・破棄が、登場させた側の画面に出ていた）
+  const _onlineDeleg = typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
+  const _evtIdx = (ctx.bs[sourceSide] && ctx.bs[sourceSide].battleArea || []).indexOf(sourceCard);
+  const _delegFor = (side, ref) => (_onlineDeleg && side === 'ai')
+    ? Object.assign({ triggerCode, eventSide: _flipSide(sourceSide), eventIdx: _evtIdx }, ref) : undefined;
   ['player', 'ai'].forEach(side => {
     const cards = [...ctx.bs[side].battleArea, ...(ctx.bs[side].tamerArea || [])];
     cards.forEach(card => {
@@ -7955,9 +7980,11 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
       const steps = reactiveSteps(getRecipeForTrigger(card, triggerCode), side);
       if (steps.length === 0) return;
       // 'other_own' で同じカード自体は対象外（card !== sourceCard でガード済）
+      const _bIdx = ctx.bs[side].battleArea.indexOf(card);
       const dummyBlock = {
         raw: card.effect || '', trigger: { code: triggerCode },
         actions: [], conditions: [], _eventSourceCard: sourceCard, _grantedSteps: steps,
+        _delegate: _delegFor(side, _bIdx !== -1 ? { area: 'battle', idx: _bIdx } : { area: 'tamer', idx: (ctx.bs[side].tamerArea || []).indexOf(card) }),
       };
       addToQueue(card, dummyBlock,
         side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
@@ -7975,6 +8002,7 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
         const dummyBlock = {
           raw: evoCard.evoSourceEffect || '', trigger: { code: triggerCode },
           actions: [], conditions: [], _recipeCard: evoCard, _eventSourceCard: sourceCard, _grantedSteps: evoSteps,
+          _delegate: _delegFor(side, { area: 'battle', idx: ctx.bs[side].battleArea.indexOf(card), evoIdx: card.stack.indexOf(evoCard) }),
         };
         addToQueue(card, dummyBlock,
           side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
@@ -7989,6 +8017,7 @@ function _scanReactiveSubjectsForSourceOnly(triggerCode, sourceCard, sourceSide,
       const dummyBlock = {
         raw: card.effect || '', trigger: { code: triggerCode },
         actions: [], conditions: [], _eventSourceCard: sourceCard, _grantedSteps: steps, _zone: zone,
+        _delegate: _delegFor(side, { area: zone, idx: (ctx.bs[side][zone] || []).indexOf(card), cardNo: card.cardNo || '' }),
       };
       addToQueue(card, dummyBlock,
         side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', 'normal', side
@@ -9288,6 +9317,32 @@ export function fireDelegatedReactionTriggers(recipeKey, bs, ctxBase, done, cmd)
   }
   if (kind === 'hand_increase') {
     return fireWhenHandIncreaseTriggers(cmd.increasedSide, bs, ctxBase, done, { cause: cmd.cause || null, onlySide: 'player' });
+  }
+  if (kind === 'subject_source') {
+    // 相手のデジモンの登場/進化等で、こちらのカードが反応した（ゾンビプルートモン BT26-079 等）。
+    // 相手機がスキャンしたステップ（cmd.steps）を、こちらのカードとして発揮する
+    const r = cmd.ref || {};
+    const me = bs.player;
+    let card = null;
+    if (r.area === 'battle') card = (me.battleArea || [])[r.idx];
+    else if (r.area === 'tamer') card = (me.tamerArea || [])[r.idx];
+    else if (r.area === 'trash' || r.area === 'security') {
+      const z = me[r.area] || [];
+      card = (z[r.idx] && z[r.idx].cardNo === r.cardNo) ? z[r.idx] : z.find(c => c && c.cardNo === r.cardNo);
+    }
+    const src = (card && r.evoIdx != null && r.evoIdx >= 0) ? (card.stack || [])[r.evoIdx] : null;
+    const evt = (r.eventSide && bs[r.eventSide]) ? (bs[r.eventSide].battleArea || [])[r.eventIdx] : null;
+    const steps = Array.isArray(cmd.steps) ? cmd.steps : [];
+    if (!card || steps.length === 0) { done && done(); return; }
+    const reaction = { card, sourceCard: src || card, recipe: steps, eventSourceCard: evt || null, triggerCode: recipeKey };
+    if (r.area === 'trash' || r.area === 'security') reaction.zone = r.area;
+    let ok = true;
+    try {
+      ok = recipeWillExecuteAnything(steps, { card, bs, side: 'player', _sourceCard: src || card,
+        block: { _eventSourceCard: evt || null, trigger: { code: recipeKey }, actions: [], conditions: [] } });
+    } catch (_) { ok = true; }
+    if (!ok) { done && done(); return; }
+    return _runReactionEffect(reaction, 'player', bs, ctxBase, () => _drainAfterReaction(bs, ctxBase, done));
   }
   if (kind === 'on_attack_opp') {
     // 相手のデジモンがアタックした（こちら視点でアタックしたのは ai 側）→ こちらのカードが反応

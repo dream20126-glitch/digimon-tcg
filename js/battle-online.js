@@ -2043,6 +2043,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   // 勝敗に使う攻撃側DP（攻撃側の送った値＋バトル中の効果）を、ここで確定させておく（演出の間に永続効果の再計算が
   // 走っても、相手のカードのDPがこちらの見えている情報で計算し直されて変わらないように）
   const _atkDpFixed = atk.dp;
+  addLog('⚔ ブロックのバトル: 「' + atk.name + '」DP' + _atkDpFixed + '（攻撃側から届いたDP ' + cmd.atkDp + '） vs 「' + blocker.name + '」DP' + blocker.dp + '  [block-v2]');
   let atkResult = 'survived';
   if (atk.dp <= blocker.dp) atkResult = atk.dp === blocker.dp ? 'both_destroyed' : 'destroyed';
   sendCommand({ type: 'block_response', blocked: true, atkIdx: cmd.atkIdx, atkResult, blockerName: blocker.name, blockerImg: cardImg(blocker), blockerDp: blocker.dp });
@@ -2061,8 +2062,10 @@ function resolveOnlineBlock(blockerIdx, cmd) {
     // baseDpも送って受信側の formatDpDisplay で「元値+バフ」表示できるようにする
     const blockerBase = parseInt(blocker._origDp != null ? blocker._origDp : (blocker.baseDp != null ? blocker.baseDp : blocker.dp)) || 0;
     const atkBase = parseInt(atk._origDp != null ? atk._origDp : (atk.baseDp != null ? atk.baseDp : atk.dp)) || 0;
-    sendCommand({ type: 'fx_securityCheck', secName: blocker.name, secImg: cardImg(blocker), secDp: blocker.dp, secBaseDp: blockerBase, secType: 'デジモン', atkName: atk.name, atkImg: cardImg(atk), atkDp: atk.dp, atkBaseDp: atkBase, customLabel: 'BLOCK!' });
+    sendCommand({ type: 'fx_securityCheck', secName: blocker.name, secImg: cardImg(blocker), secDp: blocker.dp, secBaseDp: blockerBase, secType: 'デジモン', atkName: atk.name, atkImg: cardImg(atk), atkDp: _atkDpFixed, atkBaseDp: atkBase, customLabel: 'BLOCK!' });
 
+    // VS演出・勝敗とも確定させた攻撃側DPを使う（演出の間に状態同期等で相手のカードのDPが変わっても表示がずれないように）
+    atk.dp = _atkDpFixed;
     showSC(blocker, atk, () => {
       // バトル中効果適用済みのDPで勝敗判定 → その後バフ除去
       const _atkDp = _atkDpFixed, _blkDp = blocker.dp;

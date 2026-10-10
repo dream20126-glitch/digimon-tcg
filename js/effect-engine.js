@@ -7618,7 +7618,13 @@ export function hasNoAnnounceOverride(recipeSteps) {
 export function evoSourceEffectLabel(card) {
   if (!card) return '進化元効果';
   if (card.isLink) return 'リンク効果';
-  if (card.type === 'デュアル') return 'オプション効果';
+  // デュアルカードの下段はオプション側の効果（進化元効果ではない）。「オプション：メイン」のように
+  // オプション側のタイミング（先頭の【】）を添えて出す（全デュアルカード共通）
+  // （場に進化したデュアルカードは type がデジモンになり _noMainAbility が立っている）
+  if (card.type === 'デュアル' || card._noMainAbility) {
+    const m = /^\s*【([^】]+)】/.exec(String(card.evoSourceEffect || ''));
+    return 'オプション：' + (m ? m[1] : 'メイン');
+  }
   return '進化元効果';
 }
 
@@ -9848,6 +9854,12 @@ export function fireOnAttackBothSubjectTriggers(attackerSide, bs, ctxBase, done)
 // デジモンがアタックしたとき、アタックの対象をこのデジモンに変更できる」）、攻撃側の
 // 反対側（防御側）のカードが持つ on_attack 効果を発動する。subject:"both" と同様、
 // 通常の on_attack（subject無し＝発動元自身のアタック）とは別枠で追加スキャンする
+// 相手のデジモンのアタックで反応するステップ: 発動主体が「相手」か「両方」（「デジモンがアタックしたとき」。
+// ゲコモン BT26-021 の進化元効果は相手のアタックでも発動する）
+function _isOppOrBothAttackStep(step) {
+  const subj = _resolveStepSubject(step, 'on_attack');
+  return subj === 'opp' || subj === 'both' || subj === 'both_digimon';
+}
 export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, opts) {
   if (bs) bs._currentAttackerSide = attackerSide;
   const reactSide = attackerSide === 'player' ? 'ai' : 'player';
@@ -9856,11 +9868,11 @@ export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, 
   // 相手のカードとして処理していたため、確認がアタックした側に出て、持ち主は何も操作できなかった
   // （黒井翔太 BT26-092）。変更されたアタック対象は fx_reactionDelegateDone で返ってくる
   if (reactSide === 'ai' && !(opts && opts.local) && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-    if (!_anyBoardCardHasStep(bs, 'on_attack', (s) => _resolveStepSubject(s, 'on_attack') === 'opp')) { done && done(); return; }
+    if (!_anyBoardCardHasStep(bs, 'on_attack', _isOppOrBothAttackStep)) { done && done(); return; }
     _delegateReactionToOpponent({ recipeKey: 'on_attack', kind: 'on_attack_opp' }, done);
     return;
   }
-  return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && _resolveStepSubject(step, 'on_attack') === 'opp');
+  return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && _isOppOrBothAttackStep(step));
 }
 
 // 手札のカードが（進化元/テイマー下ではなく）効果で破棄されたとき → 発動主体(subject)で

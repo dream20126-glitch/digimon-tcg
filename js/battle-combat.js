@@ -1817,6 +1817,13 @@ function _offerArtsEvolve(card, onDone) {
 
   const finishWith = (cand) => {
     const evolved = _placeArtsEvolve(card, cand, 'player');
+    if (_onlineMode && _sendCommand) {
+      _sendCommand({ type: 'fx_artsEvolve', baseName: cand.base.name, baseImg: cardImg(cand.base), cardName: evolved.name, cardImg: cardImg(evolved) });
+      if (typeof window !== 'undefined' && window._onlineSendStateSync) window._onlineSendStateSync();
+    }
+    showEvolveEffect(0, cand.base.name, cand.base, evolved, () => afterPlace(evolved), { arts: true });
+  };
+  const afterPlace = (evolved) => {
     if (hasKeyword(evolved, '【進化時】')) {
       _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => {
         _hooks.applyPermanentEffects('player');
@@ -4203,27 +4210,30 @@ export function showPlayEffect(card, onDone) {
 
 // ----- 進化演出 -----
 
-export function showEvolveEffect(cost, baseName, baseCard, evolvedCard, onDone) {
+// opts.arts: アーツ進化（デュアルカード BT26-056 等）の演出。通常の進化と見分けられるよう、金色で
+// 「ARTS EVOLUTION」と出し、カードを2回転させて光の輪を広げる
+export function showEvolveEffect(cost, baseName, baseCard, evolvedCard, onDone, opts) {
+  const _arts = !!(opts && opts.arts);
   const overlay = document.getElementById('evolve-overlay');
   if (!overlay) { onDone && onDone(); return; }
   const flash = document.getElementById('evo-flash'), label = document.getElementById('evo-label'),
     imgEl = document.getElementById('evo-card-img'), nameEl = document.getElementById('evo-card-name'),
     costEl = document.getElementById('evo-cost-text'), effectEl = document.getElementById('evo-effect-text');
 
-  const isLv6 = parseInt(evolvedCard.level) >= 6;
+  const isLv6 = !_arts && parseInt(evolvedCard.level) >= 6;
   label.style.opacity = '0'; nameEl.style.opacity = '0'; costEl.style.opacity = '0'; costEl.style.transform = 'scale(0.5)';
   effectEl.style.display = 'none'; flash.style.opacity = '0';
 
-  const evoColor = isLv6 ? '#ff00fb' : '#00ff88';
+  const evoColor = _arts ? '#ffcc00' : (isLv6 ? '#ff00fb' : '#00ff88');
   imgEl.style.borderColor = evoColor;
   imgEl.style.boxShadow = `0 0 ${isLv6 ? 80 : 40}px ${evoColor}${isLv6 ? ', 0 0 150px ' + evoColor + '66' : ''}`;
-  label.style.color = evoColor; label.innerText = isLv6 ? '★ MEGA EVOLUTION ★' : 'DIGITAL EVOLUTION';
-  label.style.fontSize = isLv6 ? '1.1rem' : '0.9rem';
+  label.style.color = evoColor; label.innerText = _arts ? '✦ ARTS EVOLUTION ✦' : (isLv6 ? '★ MEGA EVOLUTION ★' : 'DIGITAL EVOLUTION');
+  label.style.fontSize = (isLv6 || _arts) ? '1.1rem' : '0.9rem';
   costEl.style.color = evoColor; costEl.style.textShadow = `0 0 20px ${evoColor}`;
   if (evolvedCard._costReduction) {
     delete evolvedCard._costReduction;
   }
-  costEl.innerText = cost + ' コスト進化！！';
+  costEl.innerText = _arts ? 'アーツ進化！！' : (cost + ' コスト進化！！');
 
   imgEl.style.transition = 'none'; imgEl.style.transform = 'scale(1) rotate(0deg)'; imgEl.style.opacity = '1';
   const baseSrc = cardImg(baseCard);
@@ -4232,7 +4242,7 @@ export function showEvolveEffect(cost, baseName, baseCard, evolvedCard, onDone) 
 
   setTimeout(() => {
     imgEl.style.transition = 'opacity 0.4s, transform 0.4s';
-    imgEl.style.transform = `scale(0.3) rotate(${isLv6 ? 720 : 360}deg)`; imgEl.style.opacity = '0';
+    imgEl.style.transform = `scale(0.3) rotate(${(isLv6 || _arts) ? 720 : 360}deg)`; imgEl.style.opacity = '0';
     setTimeout(() => {
       flash.style.transition = 'opacity 0.1s'; flash.style.opacity = isLv6 ? '1' : '0.95';
       setTimeout(() => {
@@ -4241,6 +4251,16 @@ export function showEvolveEffect(cost, baseName, baseCard, evolvedCard, onDone) 
         const evoSrc = cardImg(evolvedCard);
         imgEl.innerHTML = evoSrc ? `<img src="${evoSrc}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:${evoColor};font-size:10px;padding:8px;">${evolvedCard.name}</div>`;
         imgEl.style.transition = 'none'; imgEl.style.transform = `scale(${isLv6 ? 1.4 : 1.2}) rotate(-10deg)`; imgEl.style.opacity = '1';
+        if (_arts) {
+          // アーツ進化: 金色の光の輪を2重に広げる
+          [0, 180].forEach((d) => setTimeout(() => {
+            const ring = document.createElement('div');
+            ring.style.cssText = 'position:absolute;left:50%;top:50%;width:60px;height:60px;margin:-30px 0 0 -30px;border:3px solid #ffcc00;border-radius:50%;box-shadow:0 0 25px #ffcc00,inset 0 0 15px #ffcc0088;pointer-events:none;transition:transform 0.8s ease-out,opacity 0.8s ease-out;opacity:1;transform:scale(0.5);z-index:1;';
+            overlay.appendChild(ring);
+            requestAnimationFrame(() => { ring.style.transform = 'scale(6)'; ring.style.opacity = '0'; });
+            setTimeout(() => { if (ring.parentNode) ring.parentNode.removeChild(ring); }, 900);
+          }, d));
+        }
         setTimeout(() => { imgEl.style.transition = 'transform 0.25s'; imgEl.style.transform = 'scale(1) rotate(0deg)'; label.style.opacity = '1'; nameEl.style.opacity = '1';
           setTimeout(() => { costEl.style.opacity = '1'; costEl.style.transform = 'scale(1)'; }, 150);
         }, 50);
@@ -4248,7 +4268,7 @@ export function showEvolveEffect(cost, baseName, baseCard, evolvedCard, onDone) 
     }, 400);
   }, 300);
   clearTimeout(window._evoTimer);
-  window._evoTimer = setTimeout(() => { overlay.style.display = 'none'; onDone && onDone(); }, isLv6 ? 2500 : 1800);
+  window._evoTimer = setTimeout(() => { overlay.style.display = 'none'; onDone && onDone(); }, (isLv6 || _arts) ? 2500 : 1800);
 }
 
 // ----- オプション使用演出 -----

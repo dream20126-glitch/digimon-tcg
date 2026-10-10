@@ -1608,6 +1608,11 @@ function onRemoteCommand(cmd) {
       if (m.showDirectAttack) enqueueFx((done) => m.showDirectAttack({ name: cmd.atkName, imgSrc: cmd.atkImg }, cmd.side, done));
       break;
     }
+    case 'fx_artsEvolve': {
+      // 相手のアーツ進化の演出（battle-combat.js showEvolveEffect の arts 版）
+      if (m.showEvolveEffect) enqueueFx((done) => m.showEvolveEffect(0, cmd.baseName || '', { name: cmd.baseName || '', imgSrc: cmd.baseImg || '' }, { name: cmd.cardName || '', imgSrc: cmd.cardImg || '', level: '', dp: 0 }, done, { arts: true }));
+      break;
+    }
     case 'fx_option': {
       if (m.showOptionEffect) enqueueFx((done) => m.showOptionEffect({ name: cmd.cardName, imgSrc: cmd.cardImg, playCost: cmd.cost }, done));
       break;

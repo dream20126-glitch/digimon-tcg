@@ -2036,6 +2036,8 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   sendCommand({ type: 'waiting_close' });
 
   // ★ バトル中効果を適用してから勝敗判定（DP+1000等の進化元効果を反映）
+  // 画面更新等で相手のカードのDPが計算し直されていても、攻撃側から届いたDPに戻してからバトル中の効果を適用する
+  if (cmd.atkDp != null && !isNaN(parseInt(cmd.atkDp, 10))) atk.dp = parseInt(cmd.atkDp, 10);
   const battleBuffs = applyBattleBuffs(atk, blocker);
 
   // ★ ブロック決定を通知（攻撃側で「ブロックされた時」効果を先に処理してもらう）
@@ -2043,7 +2045,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   // 勝敗に使う攻撃側DP（攻撃側の送った値＋バトル中の効果）を、ここで確定させておく（演出の間に永続効果の再計算が
   // 走っても、相手のカードのDPがこちらの見えている情報で計算し直されて変わらないように）
   const _atkDpFixed = atk.dp;
-  addLog('⚔ ブロックのバトル: 「' + atk.name + '」DP' + _atkDpFixed + '（攻撃側から届いたDP ' + cmd.atkDp + '） vs 「' + blocker.name + '」DP' + blocker.dp + '  [block-v2]');
+  addLog('⚔ ブロックのバトル: 「' + atk.name + '」DP' + _atkDpFixed + '（攻撃側から届いたDP ' + cmd.atkDp + '） vs 「' + blocker.name + '」DP' + blocker.dp + '  [block-v3]');
   let atkResult = 'survived';
   if (atk.dp <= blocker.dp) atkResult = atk.dp === blocker.dp ? 'both_destroyed' : 'destroyed';
   sendCommand({ type: 'block_response', blocked: true, atkIdx: cmd.atkIdx, atkResult, blockerName: blocker.name, blockerImg: cardImg(blocker), blockerDp: blocker.dp });

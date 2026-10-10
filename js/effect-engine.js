@@ -5720,7 +5720,24 @@ function _purgeOffFieldGrants(bs) {
   });
 }
 
+// オンライン対戦の相手（ai）のカードの永続効果は、持ち主の端末が計算して state_sync で送ってくる値を正とする。
+// こちらで計算し直すと、相手のセキュリティ・手札など見えていない情報で条件の判定がずれ、DP+ 等が外れる
+// （相手のダーク・フィールド等による DP+3000 が外れ、プルートモン DP16000 が巨神兵器 DP14000 に負けていた）。
+// セキュリティのデジモンへのバフ（bs._securityBuffs）は再計算したいので処理は行い、カードの状態だけ元に戻す
 export function applyPermanentEffects(bs, side, context) {
+  const _keepSynced = side === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode();
+  if (!_keepSynced) return _applyPermanentEffectsImpl(bs, side, context);
+  const _cards = [...(bs.ai.battleArea || []), ...(bs.ai.tamerArea || [])].filter(Boolean);
+  const _snap = _cards.map(c => ({ c, dp: c.dp, dpModifier: c.dpModifier, buffs: Array.isArray(c.buffs) ? c.buffs.slice() : c.buffs,
+    perm: c._permEffects ? Object.assign({}, c._permEffects) : c._permEffects, evoKw: c._evoGrantedKeywords,
+    cantAttack: c.cantAttack, cantBlock: c.cantBlock, linkPlus: c._linkPlusPassive }));
+  try { return _applyPermanentEffectsImpl(bs, side, context); }
+  finally {
+    _snap.forEach(x => { const c = x.c; c.dp = x.dp; c.dpModifier = x.dpModifier; c.buffs = x.buffs; c._permEffects = x.perm;
+      c._evoGrantedKeywords = x.evoKw; c.cantAttack = x.cantAttack; c.cantBlock = x.cantBlock; c._linkPlusPassive = x.linkPlus; });
+  }
+}
+function _applyPermanentEffectsImpl(bs, side, context) {
   const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
   _purgeOffFieldGrants(bs);
 

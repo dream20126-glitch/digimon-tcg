@@ -114,14 +114,18 @@ function _collectActiveKeywords(card) {
 // バッジHTMLを生成（カード名の上に配置、カード名と被らない位置）
 function _renderKeywordBadges(card) {
   const codes = _collectActiveKeywords(card);
-  if (codes.length === 0) return '';
+  // 効果によるDPの増減（DP+3000 等）も、キーワードと同じ並びにバッジで出す（数字横の小さい表記だけでは見えにくい）
+  const _dpMod = card.dpModifier || 0;
+  const _dpChip = _dpMod !== 0
+    ? `<span style="background:${_dpMod > 0 ? '#00aa55' : '#cc3333'};color:#fff;font-size:7px;font-weight:bold;padding:1px 3px;border-radius:2px;border:1px solid rgba(255,255,255,0.7);white-space:nowrap;line-height:1;box-shadow:0 0 3px rgba(0,0,0,0.6);">DP${_dpMod > 0 ? '+' : ''}${_dpMod}</span>`
+    : '';
   const visible = codes.filter(c => KEYWORD_DISPLAY_NAMES[c]);
-  if (visible.length === 0) return '';
+  if (visible.length === 0 && !_dpChip) return '';
   // 多すぎる場合は3件 + "+N" で省略表示
   const MAX = 3;
   const showItems = visible.slice(0, MAX);
   const overflow = visible.length - MAX;
-  let html = showItems.map(code => {
+  let html = _dpChip + showItems.map(code => {
     const name = KEYWORD_DISPLAY_NAMES[code];
     const color = _keywordColor(code);
     return `<span style="background:${color};color:#fff;font-size:7px;font-weight:bold;padding:1px 3px;border-radius:2px;border:1px solid rgba(255,255,255,0.7);white-space:nowrap;line-height:1;box-shadow:0 0 3px rgba(0,0,0,0.6);">${name}</span>`;

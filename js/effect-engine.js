@@ -845,10 +845,12 @@ function showQueueOrderSelect(entries, callback) {
   let _allOptional = entries.length > 0;
   const overlay = document.createElement('div');
   overlay.id = '_queue-order-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;animation:fadeIn 0.2s ease;';
+  // 効果が多いと画面に収まらないので縦にスクロールできるようにする（中身が少なければ上下中央。
+  // 先頭の margin-top:auto と末尾の margin-bottom:auto で中央寄せし、はみ出すときは上から並べる）
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:flex-start;flex-direction:column;padding:20px 20px 0;overflow-y:auto;animation:fadeIn 0.2s ease;';
 
   const title = document.createElement('div');
-  title.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;margin-bottom:14px;text-shadow:0 0 8px #00fbff;';
+  title.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;margin-top:auto;margin-bottom:14px;text-shadow:0 0 8px #00fbff;';
   title.innerText = '⚡ どの効果から使用しますか？';
   overlay.appendChild(title);
 
@@ -858,7 +860,7 @@ function showQueueOrderSelect(entries, callback) {
   overlay.appendChild(subtitle);
 
   const row = document.createElement('div');
-  row.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:90%;';
+  row.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:90%;margin-bottom:20px;';
   overlay.appendChild(row);
 
   entries.forEach((entry, idx) => {
@@ -901,13 +903,20 @@ function showQueueOrderSelect(entries, callback) {
   // 全部が任意効果なら、1つずつ選んで「いいえ」を押さなくても、まとめて使わずに終われるようにする
   if (_allOptional) {
     const endBtn = document.createElement('button');
-    endBtn.style.cssText = 'margin-top:18px;background:#333;color:#fff;border:1px solid #888;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;';
+    // スクロールしても常に見えるよう、画面の下に固定する
+    const endBar = document.createElement('div');
+    endBar.style.cssText = 'position:sticky;bottom:0;align-self:stretch;display:flex;justify-content:center;padding:12px 0 16px;margin-bottom:auto;background:linear-gradient(transparent,rgba(0,0,0,0.95) 35%);';
+    endBtn.style.cssText = 'background:#333;color:#fff;border:1px solid #888;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;';
     endBtn.innerText = '終了する（効果を使わない）';
     endBtn.onclick = () => {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
       callback(-1);
     };
-    overlay.appendChild(endBtn);
+    endBar.appendChild(endBtn);
+    overlay.appendChild(endBar);
+  } else {
+    row.style.marginBottom = 'auto';
+    row.style.paddingBottom = '20px';
   }
 
   document.body.appendChild(overlay);

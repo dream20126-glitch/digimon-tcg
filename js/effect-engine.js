@@ -10561,20 +10561,52 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
     return { card, sourceCard, recipe, effectText: _withKeywordRuleText(extractTriggerSectionText(fullEffText, triggerKey, recipe), recipe) };
   });
   if (_reactionsToRun.length === 0) { finish(); return; }
-  let i = 0;
-  const runOne = () => {
-    if (i >= _reactionsToRun.length) { finish(); return; }
-    const reaction = _reactionsToRun[i++];
+  // 本体と進化元の【消滅時】等が2つ以上あれば同時誘発なので、自分の分はどれから発揮するかを選ぶ
+  // （ケルベロモン：人狼モード＆インフェルノディバイド BT26-056 と、進化元のケルベロモン BT26-074 の【消滅時】）
+  const remaining = _reactionsToRun.slice();
+  const canChoose = destroyedSide === 'player' && typeof showQueueOrderSelect === 'function';
+  const hudUpdate = (list) => _hudSetSource(_hudKeySD, list.map((r) => {
+    const it = _hudItem(destroyedSide, r.card, r.sourceCard !== r.card ? r.sourceCard : null, r.effectText || '');
+    it.group = _hudKeySD;
+    return it;
+  }));
+  const runReaction = (reaction) => {
     // 発揮待ちの表示（この消滅で誘発した残りの効果）
-    _hudSetSource(_hudKeySD, _reactionsToRun.slice(i).map((r) => {
-      const it = _hudItem(destroyedSide, r.card, r.sourceCard !== r.card ? r.sourceCard : null, r.effectText || '');
-      it.group = _hudKeySD;
-      return it;
-    }));
+    hudUpdate(remaining);
     // 通常の効果ディスパッチ（executeQueueEntry）と同じ判定・同じ確認フローに揃えるため
     // alwaysConfirm:true（任意効果は side を問わず必ず確認ダイアログを出す）
     _runReactionEffect(reaction, destroyedSide, bs, ctxBase, runOne, { alwaysConfirm: true });
   };
+  function runOne() {
+    if (remaining.length === 0) { finish(); return; }
+    if (canChoose && remaining.length >= 2) {
+      hudUpdate(remaining);
+      const entries = remaining.map((r) => ({
+        card: r.card,
+        block: {
+          trigger: { code: triggerKey || 'on_destroy' },
+          raw: r.sourceCard === r.card ? (r.card.effect || '') : '',
+          _recipeCard: r.sourceCard !== r.card ? r.sourceCard : undefined,
+          _grantedSteps: r.recipe,
+        },
+      }));
+      showQueueOrderSelect(entries, (chosenIdx) => {
+        if (chosenIdx < 0) {
+          // 「終了する」: 残りの任意効果をすべて使わない
+          const names = remaining.splice(0).map((r) => (r.sourceCard || r.card).name || '');
+          names.forEach((n) => { ctxBase && ctxBase.addLog && ctxBase.addLog('☓ 「' + n + '」の効果は発動しなかった'); });
+          if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: names.join('」「') });
+          }
+          runOne();
+          return;
+        }
+        runReaction(remaining.splice(chosenIdx, 1)[0]);
+      });
+      return;
+    }
+    runReaction(remaining.shift());
+  }
   runOne();
 }
 

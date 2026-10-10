@@ -8261,8 +8261,8 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
       // 例: ヘブンズリッパーで全デジモンが得る「【アタック時】DP-2000」
       if (Array.isArray(sourceCard._grantedRecipes)) {
         sourceCard._grantedRecipes.forEach(g => {
-          const gSteps = g && g.recipe && _lookupTriggerSteps(g.recipe, triggerCode);
-          if (gSteps && Array.isArray(gSteps)) {
+          const gSteps = _grantedStepsFor(g, triggerCode, sourceCard);
+          if (Array.isArray(gSteps) && gSteps.length > 0) {
             const gBlock = {
               raw: (g.granterText || ('付与効果（' + (g.granterName || '') + '）')),
               trigger: { code: triggerCode },
@@ -8306,6 +8306,18 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
       [...ctx.bs[side].battleArea, ...(ctx.bs[side].tamerArea || [])].forEach(card => {
         if (!card) return;
         const priority = triggerCode.startsWith('when_') ? 'interrupt' : 'normal';
+        // 効果で付与された効果（grant_effect。付与された【エグゼキュート】の【自分のターン終了時】等）も拾う
+        // （ケルビモン BT26-078 で【エグゼキュート】を得たデジモンが、ターン終了時にアタックできなかった）
+        if (Array.isArray(card._grantedRecipes)) {
+          card._grantedRecipes.forEach(g => {
+            const gSteps = _grantedStepsFor(g, triggerCode, card);
+            if (!Array.isArray(gSteps) || gSteps.length === 0) return;
+            addToQueue(card, {
+              raw: (g.granterText || ('付与効果（' + (g.granterName || '') + '）')), trigger: { code: triggerCode },
+              actions: [], conditions: [], _grantedSteps: gSteps,
+            }, side === turnPlayer ? 'turnPlayer' : 'nonTurnPlayer', priority, side);
+          });
+        }
         const cardRecipe = getRecipeForTrigger(card, triggerCode);
         if (!cardRecipe) return;
         const dummyBlock = {
@@ -8708,6 +8720,16 @@ function _withKeywordRuleText(text, steps) {
   if (lines.length === 0) return text;
   const allKw = steps.every((st) => st && st._kwFlag);
   return allKw ? lines.join('\n') : ((text ? text + '\n' : '') + lines.join('\n'));
+}
+
+// grant_effect で付与された効果（card._grantedRecipes の1件 g）の triggerCode のステップ。キーワードの付与なら、
+// カードが元から持つキーワードと同じく【エグゼキュート】の調整（アタック終了時の消滅はエグゼキュートのアタック
+// だけ・ターン終了時のアタックはアクティブの相手も選べる）とキーワード説明の印を付ける
+function _grantedStepsFor(g, triggerCode, card) {
+  let steps = g && g.recipe && _lookupTriggerSteps(g.recipe, triggerCode);
+  if (!Array.isArray(steps)) return steps;
+  if (g.kwFlag) steps = _tagKeywordSteps(g.kwFlag, _adjustExecuteSteps(g.kwFlag, triggerCode, steps, card));
+  return steps;
 }
 
 function _adjustExecuteSteps(flag, triggerCode, steps, card) {
@@ -13754,7 +13776,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _gFullText = ctx.card ? (ctx.card.effect || '') : '';
         const _gQuoted = /「([^」]+)」/.exec(_gFullText);
         c._grantedRecipes.push({
-          recipe: granted, duration: dur, side: ctx.side,
+          recipe: granted, duration: dur, side: ctx.side, kwFlag: step._grantKw || null,
           granterName: ctx.card ? ctx.card.name : '',
           granterText: _gQuoted ? _gQuoted[1] : _gFullText,
         });
@@ -14113,7 +14135,8 @@ function executeRecipeStep(step, ctx, store, callback) {
             const tplSteps = _kwEntry.recipeTemplate[k];
             if (Array.isArray(tplSteps)) _filledTemplate[k] = _fillKeywordTemplateSteps(tplSteps, _cv, step.designated, step.count, step.designated_groups, step.designated_common);
           });
-          const _grantStep = Object.assign({}, step, { action: 'grant_effect', granted_recipe: _filledTemplate });
+          // どのキーワードを付与したかを残す（付与された【エグゼキュート】の発揮条件・説明文に使う。_grantedStepsFor）
+          const _grantStep = Object.assign({}, step, { action: 'grant_effect', granted_recipe: _filledTemplate, _grantKw: _kwCode });
           executeRecipeStep(_grantStep, ctx, store, callback);
           break;
         }
@@ -16591,7 +16614,10 @@ export function activateZoneMainEffect(card, side, zone, context, callback) {
 // カードがそのトリガーのレシピを持っているか（top-level または evo_source）
 // triggerCode: 'on_play' / 'on_evolve' / 'on_attack' / 'on_attack_end' / 'security' 等
 export function hasRecipeTrigger(card, triggerCode) {
-  if (!card || !card.recipe) return false;
+  if (!card) return false;
+  // 効果で付与された効果（grant_effect。付与された【エグゼキュート】の【自分のターン終了時】等）も含める
+  if (Array.isArray(card._grantedRecipes) && card._grantedRecipes.some(g => { const st = _grantedStepsFor(g, triggerCode, card); return Array.isArray(st) && st.length > 0; })) return true;
+  if (!card.recipe) return false;
   try {
     const r = typeof card.recipe === 'string'
       ? JSON.parse(card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, ''))

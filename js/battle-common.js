@@ -167,12 +167,9 @@ export function checkTurnEndEffects(cb) {
   // 拾う（急襲＝attack_at_end_phaseのon_own_turn_end等。checkTurnStartEffectsと同じ理由）
   const cardsWithEffect = allCards.filter(c => c && _hasRecipeTriggerEE(c, 'on_own_turn_end'));
   if (cardsWithEffect.length === 0) { cb(); return; }
-  let idx = 0;
-  function next() {
-    if (idx >= cardsWithEffect.length) { cb(); return; }
-    checkAndTriggerEffect(cardsWithEffect[idx++], '【自分のターン終了時】', next);
-  }
-  next();
+  // 【自分のターン終了時】は盤面全体（自分側）をまとめてスキャンして同時誘発として処理する（scanTriggers）ので、
+  // 1回だけ呼ぶ（カードごとに呼ぶと、2枚目以降の呼び出しで同じ効果が二重に積まれる）
+  checkAndTriggerEffect(cardsWithEffect[0], '【自分のターン終了時】', cb);
 }
 
 // ===== applyPermanentEffects (wrapper) =====

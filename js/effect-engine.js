@@ -260,6 +260,23 @@ function processQueue(context, onComplete) {
   } else if (sameLevelManuals.length > 1 && isLocalSide) {
     // 手動が複数残った → 順序選択UI
     showQueueOrderSelect(sameLevelManuals, (chosenIdx) => {
+      if (chosenIdx < 0) {
+        // 「終了する」: 残りの任意効果をすべて使わない
+        const names = [];
+        sameLevelManuals.forEach((e) => {
+          e.status = 'completed';
+          const _src = (e.block && e.block._recipeCard) || e.card;
+          const _n = _src && _src.name || '';
+          names.push(_n);
+          context.addLog && context.addLog('☓ 「' + _n + '」の効果は発動しなかった');
+        });
+        if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+          window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: names.join('」「') });
+        }
+        _hudSyncQueue(context);
+        processQueue(context, onComplete);
+        return;
+      }
       const chosen = sameLevelManuals[chosenIdx];
       chosen.status = 'processing';
       _hudSyncQueue(context);
@@ -823,7 +840,9 @@ if (typeof window !== 'undefined') {
 
 // ===== キュー順序選択UI =====
 // 同レベルで誘発した効果が複数ある時、プレイヤーがどれを先に発動するか選択する
+// 全部が任意効果なら「終了する」ボタンを出し、押されたら callback(-1)（どの効果も使わない）
 function showQueueOrderSelect(entries, callback) {
+  let _allOptional = entries.length > 0;
   const overlay = document.createElement('div');
   overlay.id = '_queue-order-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;animation:fadeIn 0.2s ease;';
@@ -862,6 +881,10 @@ function showQueueOrderSelect(entries, callback) {
     const _steps = entry.block && (entry.block._grantedSteps || (_trigCode ? getRecipeForTrigger(effectOwner, _trigCode, fromEvo) : null));
     // 選択肢プレビューも、実際に発動するトリガー部分だけを抜粋して表示する（display_text指定があれば最優先）
     const effText = extractTriggerSectionText(_fullEffText, _trigCode, Array.isArray(_steps) ? _steps : null);
+    // 任意効果か（executeQueueEntry / _runReactionEffect の確認ダイアログの要否と同じ判定）
+    const _opt = Array.isArray(_steps) && _steps.some(st => st && (st.optional === true || (Array.isArray(st.cost) && st.cost.length > 0)))
+      && !_isInlineCostConfirmRecipe(_steps);
+    if (!_opt) _allOptional = false;
     div.innerHTML =
       (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
       + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+(effectOwner.name||'')+'</div>'
@@ -874,6 +897,18 @@ function showQueueOrderSelect(entries, callback) {
     };
     row.appendChild(div);
   });
+
+  // 全部が任意効果なら、1つずつ選んで「いいえ」を押さなくても、まとめて使わずに終われるようにする
+  if (_allOptional) {
+    const endBtn = document.createElement('button');
+    endBtn.style.cssText = 'margin-top:18px;background:#333;color:#fff;border:1px solid #888;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;';
+    endBtn.innerText = '終了する（効果を使わない）';
+    endBtn.onclick = () => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      callback(-1);
+    };
+    overlay.appendChild(endBtn);
+  }
 
   document.body.appendChild(overlay);
 }
@@ -9049,6 +9084,16 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
         },
       }));
       showQueueOrderSelect(entries, (chosenIdx) => {
+        if (chosenIdx < 0) {
+          // 「終了する」: 残りの任意効果をすべて使わない
+          const names = remaining.splice(0).map((r) => ((r.sourceCard && r.sourceCard !== r.card) ? r.sourceCard : r.card).name || '');
+          names.forEach((n) => { ctxBase && ctxBase.addLog && ctxBase.addLog('☓ 「' + n + '」の効果は発動しなかった'); });
+          if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: names.join('」「') });
+          }
+          nextReaction();
+          return;
+        }
         const chosen = remaining.splice(chosenIdx, 1)[0];
         _hudUpdate();
         runOneReaction(chosen);

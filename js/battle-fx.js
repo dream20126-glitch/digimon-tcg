@@ -248,11 +248,23 @@ export function fxCardMoveBatch(cards, fromLabel, toLabel, callback, faceDown) {
     setTimeout(() => { d.style.opacity = '1'; d.style.transform = 'translateY(0)'; }, 150 + i * 60);
   });
   overlay.appendChild(row);
+  // 「OK」を押したら閉じて先へ進む（自分と相手の両方が押してから進む。待ち合わせは呼び出し元）
+  overlay.style.pointerEvents = 'auto';
+  const okBtn = document.createElement('button');
+  okBtn.type = 'button';
+  okBtn.innerText = 'OK';
+  okBtn.style.cssText = 'margin-top:6px;background:#00fbff;color:#000;border:none;padding:10px 40px;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer;box-shadow:0 0 12px #00fbff88;';
+  let _closed = false;
+  okBtn.onclick = (e) => {
+    if (e) e.stopPropagation();
+    if (_closed) return;
+    _closed = true;
+    overlay.style.opacity = '0';
+    setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 200);
+  };
+  overlay.appendChild(okBtn);
   document.body.appendChild(overlay);
   requestAnimationFrame(() => { overlay.style.opacity = '1'; });
-  const dur = toDeck ? Math.min(4500, 2600 + list.length * 120) : Math.min(3600, 2000 + list.length * 60);
-  setTimeout(() => { overlay.style.opacity = '0'; }, dur - 250);
-  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, dur);
 }
 
 // =====================================================

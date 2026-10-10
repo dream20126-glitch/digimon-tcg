@@ -368,9 +368,9 @@ export function setupCommonWindowExports() {
   // その枚数ぶん省略する（window._fxMoveBatchSkip。effect-engine.js の _moveBatchIntro が立てる）
   window._fxMoveBatchSkip = 0;
   window._showMoveBatch = (cards, fromLabel, toLabel, callback, faceDown) => {
-    window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+    // 「OK」待ちの間は演出中として数えない（相手の画面の演出待ち _waitFxIdle がこちらのOKを待って止まらないように）
     let ended = false;
-    const end = () => { if (ended) return; ended = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 0) - 1); callback && callback(); };
+    const end = () => { if (ended) return; ended = true; callback && callback(); };
     try { fxCardMoveBatch(cards, fromLabel, toLabel, end, faceDown); } catch (_) { end(); }
   };
   window._fxCardMove = (card, fromLabel, toLabel, callback, faceDown) => {

@@ -1489,10 +1489,7 @@ function onRemoteCommand(cmd) {
         if (window._onlineSendStateSync) window._onlineSendStateSync();
       } catch(_) {}
       // 1枚ずつ移動演出（3枚以上なら一覧の演出を1回出して、1枚ずつは省略する）
-      if (removed.length >= 3 && typeof window._showMoveBatch === 'function') {
-        window._showMoveBatch(removed, tgt.name + 'の進化元', 'トラッシュ', () => {});
-        break;
-      }
+      if (removed.length >= 3) break; // 一覧の演出（fx_moveBatch）で表示する
       let dedi = 0;
       function dediShowAnim() {
         if (dedi >= removed.length) return;
@@ -1586,10 +1583,7 @@ function onRemoteCommand(cmd) {
       }
       addLog('📤 「' + (cmd.targetName || '???') + '」の進化元から「' + (cmd.discardedNames || '???') + '」破棄！');
       // カード移動演出（1枚ずつ。3枚以上なら一覧の演出を1回出す）
-      if (discardedCards.length >= 3 && typeof window._showMoveBatch === 'function') {
-        window._showMoveBatch(discardedCards, (cmd.targetName || '???') + 'の進化元', 'トラッシュ', () => {});
-        break;
-      }
+      if (discardedCards.length >= 3) break; // 一覧の演出（fx_moveBatch）で表示する
       let di = 0;
       function showNextFx() {
         if (di >= discardedCards.length) return;
@@ -1630,9 +1624,16 @@ function onRemoteCommand(cmd) {
     }
     case 'fx_moveBatch': {
       // 相手の効果で3枚以上のカードがまとめて動いた（effect-engine.js の _moveBatchIntro）→ 一覧の演出を1回出す
+      // こちらで「OK」を押したら相手に知らせる（相手は両者が押すまで待つ）
+      const _ack = () => { if (cmd.batchId) sendCommand({ type: 'fx_moveBatchAck', batchId: cmd.batchId }); };
       if (typeof window._showMoveBatch === 'function') {
-        enqueueFx((done) => window._showMoveBatch(cmd.cards || [], cmd.fromLabel || '', cmd.toLabel || '', done, !!cmd.faceDown));
-      }
+        enqueueFx((done) => window._showMoveBatch(cmd.cards || [], cmd.fromLabel || '', cmd.toLabel || '', () => { _ack(); done(); }, !!cmd.faceDown));
+      } else _ack();
+      break;
+    }
+    case 'fx_moveBatchAck': {
+      const w = _moveBatchAckWaiters[cmd.batchId];
+      if (w) { delete _moveBatchAckWaiters[cmd.batchId]; w(); } else _moveBatchAckEarly[cmd.batchId] = true;
       break;
     }
     case 'block_battle_done': {
@@ -2354,6 +2355,17 @@ window._sendMemoryUpdate = () => sendMemoryUpdate();
 window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
 window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._waitForReactionDelegate = (cb) => waitForReactionDelegate(cb);
+// まとめて動くカードの一覧（fx_moveBatch）で、相手が「OK」を押すのを待つ。待っている間は待機表示を出す
+const _moveBatchAckWaiters = {};
+const _moveBatchAckEarly = {};
+window._waitMoveBatchAck = (batchId, cb) => {
+  if (_moveBatchAckEarly[batchId]) { delete _moveBatchAckEarly[batchId]; cb(); return; }
+  const waitOv = document.createElement('div');
+  waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:66500;display:flex;align-items:center;justify-content:center;';
+  waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手の確認待ち...</div>';
+  document.body.appendChild(waitOv);
+  _moveBatchAckWaiters[batchId] = () => { if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv); cb(); };
+};
 // 攻撃側: 防御側のブロックのバトル解決の完了（block_battle_done）を待つ
 window._waitForBlockBattleDone = (cb) => {
   if (_pendingBlockBattleDoneResponse) { const r = _pendingBlockBattleDoneResponse; _pendingBlockBattleDoneResponse = null; cb(r); return; }

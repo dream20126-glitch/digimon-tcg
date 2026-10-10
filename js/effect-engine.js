@@ -3967,22 +3967,29 @@ function _moveBatchIntro(ctx, cards, fromLabel, toLabel, start, opts) {
   const list = (cards || []).filter(Boolean);
   if (list.length < 3 || typeof window === 'undefined' || typeof window._showMoveBatch !== 'function') { start(); return; }
   // noRemote: 相手の画面の演出は別のコマンド（fx_evoDiscard / fx_dedigivolve 等）の受信側が出すので送らない
-  if (!opts.noRemote && ctx && ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+  let _batchId = null;
+  if (ctx && ctx.side === 'player' && !window._suppressFxSend && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
     const hide = !!(opts.faceDown || opts.remoteFaceDown);
+    _batchId = 'mb' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
     try {
       window._onlineSendCommand({
         type: 'fx_moveBatch',
         cards: list.map(c => hide ? { name: '', imgSrc: '' } : { name: c.name || '', cardNo: c.cardNo || '', imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '' }),
         fromLabel: opts.remoteFrom != null ? opts.remoteFrom : _flipSideLabel(fromLabel),
         toLabel: opts.remoteTo != null ? opts.remoteTo : _flipSideLabel(toLabel),
-        faceDown: hide,
+        faceDown: hide, batchId: _batchId,
       });
-    } catch (_) {}
+    } catch (_) { _batchId = null; }
   }
+  // 自分が「OK」を押し、オンラインなら相手も「OK」を押してから（fx_moveBatchAck）先へ進む
   window._showMoveBatch(list, fromLabel, toLabel, () => {
-    window._fxMoveBatchSkip = (window._fxMoveBatchSkip || 0) + list.length;
-    window._fxMoveBatchSkipAt = Date.now();
-    start();
+    const go = () => {
+      window._fxMoveBatchSkip = (window._fxMoveBatchSkip || 0) + list.length;
+      window._fxMoveBatchSkipAt = Date.now();
+      start();
+    };
+    if (_batchId && typeof window._waitMoveBatchAck === 'function') window._waitMoveBatchAck(_batchId, go);
+    else go();
   }, !!opts.faceDown);
 }
 // 一覧の演出のあと、1枚ずつの移動演出を省略中か（相手への fx_remoteCardMove も送らない）

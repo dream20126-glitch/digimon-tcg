@@ -480,15 +480,23 @@ function hideLongpressMenu() {
 }
 
 // ===== アタック矢印UI =====
-function startAttackModeUI(slotIdx) {
+// opts（効果によるアタック。effect-engine.js _confirmAndDeclareEffectAttack から）:
+//   allowActive: アクティブ状態の相手デジモンも選べる（≪エグゼキュート≫）
+//   noSecurity:  セキュリティ（プレイヤー）は選べない（「相手のデジモンにアタックできる」）
+//   onPick(type, idx): 選んだ対象を返す（アタックの宣言は呼び出し元が行う）／onCancel(): 選ばずに離したとき
+function startAttackModeUI(slotIdx, opts) {
+  opts = opts || {};
+  const _fromEffect = typeof opts.onPick === 'function';
+  const canHitActive = !!opts.allowActive;
+  const _noSec = !!opts.noSecurity;
   hideLongpressMenu();
-  const card = bs.player.battleArea[slotIdx]; if (!card) return;
+  const card = bs.player.battleArea[slotIdx]; if (!card) { if (_fromEffect && opts.onCancel) opts.onCancel(); return; }
   addLog('⚔ 「' + card.name + '」でアタック！ → 対象を選んでください');
 
   // チュートリアル通知: アタックボタン押下時点で attack_declared を発火
   // (この時点では対象未選択なので isDirect は false 固定。
   //  ダイレクトアタックの本確定は battle-combat.js の直接攻撃分岐で再発火する)
-  if (window._tutorialRunner && window._tutorialRunner.active) {
+  if (!_fromEffect && window._tutorialRunner && window._tutorialRunner.active) {
     try {
       window._tutorialRunner.notifyEvent('attack_declared', {
         cardNo: card.cardNo, cardName: card.name,
@@ -515,7 +523,7 @@ function startAttackModeUI(slotIdx) {
   const aiRow = document.getElementById('ai-battle-row');
   if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, i) => {
     const def = bs.ai.battleArea[i]; if (!def) return;
-    if (def.suspended) {
+    if (def.suspended || (canHitActive && (!def.type || def.type === 'デジモン'))) {
       s.style.boxShadow = '0 0 10px #ff444488'; s.style.cursor = 'pointer';
     } else {
       // アクティブ状態＝アタック不可 → 🚫マーク表示
@@ -529,7 +537,7 @@ function startAttackModeUI(slotIdx) {
     }
   });
   const secArea = document.getElementById('ai-sec-area');
-  if (secArea && bs.ai.security.length > 0) { secArea.style.boxShadow = '0 0 10px #ff444488'; secArea.style.cursor = 'pointer'; }
+  if (secArea && bs.ai.security.length > 0 && !_noSec) { secArea.style.boxShadow = '0 0 10px #ff444488'; secArea.style.cursor = 'pointer'; }
 
   // 透明な操作レイヤー（クリック/タッチ/ドラッグを全て受け取る）
   const inputLayer = document.createElement('div');
@@ -549,7 +557,7 @@ function startAttackModeUI(slotIdx) {
       const hit = t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
       s.style.transform = hit ? 'translateY(-4px) scale(1.05)' : '';
     });
-    if (secArea) {
+    if (secArea && !_noSec) {
       const r = secArea.getBoundingClientRect();
       const hit = t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
       secArea.style.transform = hit ? 'translateY(-2px) scale(1.02)' : '';
@@ -569,6 +577,11 @@ function startAttackModeUI(slotIdx) {
     if (secArea) { secArea.style.boxShadow = ''; secArea.style.cursor = ''; secArea.style.transform = ''; }
   }
 
+  // 効果によるアタック: 選んだ対象を呼び出し元へ返す（宣言は呼び出し元）
+  const _declare = (type, idx) => {
+    if (_fromEffect) { opts.onPick(type, idx); return; }
+    if (window.startAttack) window.startAttack(card, slotIdx, (ok) => { if (ok) { if (type === 'digimon') window.resolveAttackTarget('digimon', idx); else window.resolveAttackTarget('security'); } });
+  };
   function resolveTarget(cx, cy) {
     let resolved = false;
     // 相手デジモン
@@ -577,30 +590,34 @@ function startAttackModeUI(slotIdx) {
       const def = bs.ai.battleArea[di]; if (!def) return;
       const r = s.getBoundingClientRect();
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+        // 効果によるアタックでは、選べない対象（アクティブ等）を離しても宣言しない
+        if (_fromEffect && !(def.suspended || (canHitActive && (!def.type || def.type === 'デジモン')))) return;
         resolved = true;
-        if (window.startAttack) window.startAttack(card, slotIdx, (ok) => { if (ok) window.resolveAttackTarget('digimon', di); });
+        _declare('digimon', di);
       }
     });
     // セキュリティ
-    if (!resolved && secArea) {
+    const _secOk = !_noSec && !(_fromEffect && bs.ai.security.length === 0);
+    if (!resolved && secArea && _secOk) {
       const r = secArea.getBoundingClientRect();
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
         resolved = true;
-        if (window.startAttack) window.startAttack(card, slotIdx, (ok) => { if (ok) window.resolveAttackTarget('security'); });
+        _declare('security');
       }
     }
     // 上方向全体 → セキュリティ
-    if (!resolved) {
+    if (!resolved && _secOk) {
       const aiZone = document.querySelector('.ai-zone');
       if (aiZone) {
         const r = aiZone.getBoundingClientRect();
         if (cy >= r.top && cy <= r.bottom) {
           resolved = true;
-          if (window.startAttack) window.startAttack(card, slotIdx, (ok) => { if (ok) window.resolveAttackTarget('security'); });
+          _declare('security');
         }
       }
     }
     if (!resolved) {
+      if (_fromEffect) { renderAll(); if (opts.onCancel) opts.onCancel(); return; }
       if (!_wasAlreadySuspended) card.suspended = false;
       renderAll();
     }

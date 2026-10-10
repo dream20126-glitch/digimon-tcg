@@ -11811,6 +11811,26 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done) {
       declare('security', -1);
       return;
     }
+    // 自分のデジモンの効果によるアタックは、通常のアタックと同じ矢印で対象（相手のデジモン／セキュリティ）を選ぶ。
+    // ≪エグゼキュート≫はアクティブ状態の相手のデジモンも選べる。対象を選ばずに離したら、アタックするか確認し直す
+    if (ctx.side === 'player' && typeof window !== 'undefined' && typeof window.startAttackMode === 'function'
+        && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
+      const _anyDigi = (opponent.battleArea || []).some(c => c && (c.suspended || isExecute) && (!c.type || c.type === 'デジモン'));
+      const _anySec = !digimonOnly && (opponent.security || []).length > 0;
+      if (!_anyDigi && !_anySec) { finish(false); return; }
+      window.startAttackMode(slotIdx, {
+        allowActive: isExecute, noSecurity: digimonOnly,
+        onPick: (type, idx) => declare(type === 'digimon' ? 'digimon' : 'security', type === 'digimon' ? idx : -1),
+        onCancel: () => {
+          showConfirmDialog(atkCard, '対象を選ばずに離しました。「' + atkCard.name + '」でアタックしますか？', (yes) => {
+            if (yes) { chooseAndDeclare(); return; }
+            ctx.addLog && ctx.addLog('☓ 「' + atkCard.name + '」でアタックしなかった');
+            finish(false);
+          });
+        },
+      });
+      return;
+    }
     // ≪エグゼキュート≫は「アクティブ状態の相手のデジモンにもアタックできる」
     const restTargets = [];
     (opponent.battleArea || []).forEach((c, i) => { if (c && (c.suspended || isExecute) && (!c.type || c.type === 'デジモン')) restTargets.push(i); });

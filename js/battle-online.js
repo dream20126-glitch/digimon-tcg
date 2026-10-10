@@ -1493,7 +1493,8 @@ function onRemoteCommand(cmd) {
     }
     // 相手（消滅処理をした側）から: こちらで保留した【進化時】を発揮して、終わったら知らせる
     case 'fx_flushDeferredEvo': {
-      const doneFlush = () => { sendMemoryUpdate(); sendStateSync(); sendCommand({ type: 'fx_flushDeferredEvoDone' }); };
+      // こちらの画面の演出（相手から届いた演出を含む）を再生し終えてから完了を返す
+      const doneFlush = () => _waitFxIdle(() => { sendMemoryUpdate(); sendStateSync(); sendCommand({ type: 'fx_flushDeferredEvoDone' }); });
       if (typeof window._flushDeferredEvoTriggers === 'function') window._flushDeferredEvoTriggers(doneFlush);
       else doneFlush();
       break;
@@ -1937,9 +1938,21 @@ function _clearCollisionBlockerBadges() {
 
 // バトルの消滅処理が終わった後、相手（攻撃側＝ターンプレイヤー）の端末に「離れるとき」で保留された【進化時】が
 // あれば先に発揮してもらってから、こちら（非ターンプレイヤー）の消滅時効果に進む（公式ルール 15-4-3-5）
+// 相手の端末の処理が終わった後も、こちらの画面ではまだ相手から届いた演出（カード移動等）を順番に再生中のことがある。
+// 演出の途中で次の効果のポップアップが出ないよう、演出キューが空になるまで待つ（最大15秒）
+// （ホーリーモードの「トラッシュ3枚をデッキの下に戻す」の移動演出中に、ユノモン：ヒステリックモードの【消滅時】が出ていた）
+function _waitFxIdle(cb, maxMs) {
+  const limit = Date.now() + (maxMs || 15000);
+  const tick = () => {
+    if ((!_fxRunning && _fxQueue.length === 0) || Date.now() > limit) { setTimeout(cb, 200); return; }
+    setTimeout(tick, 100);
+  };
+  tick();
+}
 function _withOppDeferred(fn) {
-  if (typeof window._flushOppDeferredEvo === 'function') window._flushOppDeferredEvo(fn);
-  else fn();
+  const go = () => _waitFxIdle(fn);
+  if (typeof window._flushOppDeferredEvo === 'function') window._flushOppDeferredEvo(go);
+  else go();
 }
 
 function resolveOnlineBlock(blockerIdx, cmd) {

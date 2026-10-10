@@ -28,7 +28,19 @@ export function setOnlineInfo(online, myKey) {
 }
 
 // ===== キーワード付与時のバナー演出 =====
-window._showKeywordGrantBanner = function(card, keywordName) {
+// 続けて付与したとき（「【速攻】と【エグゼキュート】を得る」等）は重ならないよう順番に出す。
+// 自分の画面で出したときは、オンラインの相手の画面にも同じ演出を出す（fx_kwGrant。remote=true は受信側）
+let _kwBannerChain = Promise.resolve();
+window._showKeywordGrantBanner = function(card, keywordName, remote) {
+  if (!remote && _onlineMode && typeof window._onlineSendCommand === 'function' && !window._suppressFxSend) {
+    try { window._onlineSendCommand({ type: 'fx_kwGrant', cardName: (card && card.name) || '', keyword: keywordName || '' }); } catch (_) {}
+  }
+  _kwBannerChain = _kwBannerChain.then(() => new Promise((resolve) => {
+    _showKeywordGrantBannerNow(card, keywordName);
+    setTimeout(resolve, 1800);
+  }));
+};
+function _showKeywordGrantBannerNow(card, keywordName) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed;top:25%;left:50%;transform:translate(-50%,-50%);z-index:64000;background:linear-gradient(135deg,#001a2e,#003366);border:2px solid #00fbff;border-radius:14px;padding:16px 24px;box-shadow:0 0 30px #00fbff;text-align:center;animation:fadeIn 0.25s ease;pointer-events:none;';
   wrap.innerHTML = '<div style="color:#00fbff;font-size:13px;font-weight:bold;text-shadow:0 0 6px #00fbff;margin-bottom:6px;">✨ キーワード付与</div>'
@@ -37,7 +49,7 @@ window._showKeywordGrantBanner = function(card, keywordName) {
   document.body.appendChild(wrap);
   setTimeout(() => { wrap.style.transition = 'opacity 0.3s'; wrap.style.opacity = '0'; }, 1400);
   setTimeout(() => { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }, 1750);
-};
+}
 
 // ===== キーワード効果バッジ表示 =====
 // 内部コード→日本語表示名 マッピング
@@ -92,6 +104,10 @@ function _collectActiveKeywords(card) {
   if (card._evoGrantedKeywords) {
     card._evoGrantedKeywords.forEach(kw => set.add(kw));
   }
+  // 効果で付与されたレシピ型のキーワード（【エグゼキュート】等。grant_effect の _grantedRecipes[].kwFlag）。
+  // 相手のカードは state_sync の _grantedKw で受け取る
+  if (Array.isArray(card._grantedRecipes)) card._grantedRecipes.forEach(g => { if (g && g.kwFlag) set.add(g.kwFlag); });
+  if (Array.isArray(card._grantedKw)) card._grantedKw.forEach(kw => { if (kw) set.add(kw); });
   return [...set];
 }
 

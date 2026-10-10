@@ -13793,6 +13793,10 @@ function executeRecipeStep(step, ctx, store, callback) {
           granterText: _gQuoted ? _gQuoted[1] : _gFullText,
         });
         ctx.addLog && ctx.addLog('🎁 「' + c.name + '」に効果を付与');
+        // キーワードの付与（【エグゼキュート】等のレシピ型キーワード）なら、キーワード付与の演出を出す
+        if (step._grantKw && window._showKeywordGrantBanner) {
+          try { window._showKeywordGrantBanner(c, _keywordJpName(step._grantKw)); } catch (_) {}
+        }
       };
       if (tStr.endsWith(':all') || tStr === 'own' || tStr === 'opponent') {
         (tgtPlayer.battleArea || []).forEach(applyTo);
@@ -15248,7 +15252,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.renderAll();
         // デッキへ戻る演出（自分・相手の両画面。手札/セキュリティからは相手には非公開）
         const _rsAfter = () => _deckIncreased(ctx, ctx.side, () => callback(true));
-        if (effectiveSide === 'ai') { _rsAfter(); break; }
+        // 演出の有無は効果の主（ctx.side）で決める（「そのデジモン」を対象にする効果では _forceTargetIdx で
+        // effectiveSide が 'ai' になるため、ケルビモン BT26-078 のコスト「このカードをデッキの下に戻す」の演出が出ていなかった）
+        if (ctx.side !== 'player') { _rsAfter(); break; }
         _fxMoveSync(ctx, _rsc, _rsFrom, 'デッキ' + (_rsTop ? '(上)' : '(下)'), _rsAfter,
           { faceDown: _rsZone === 'security', remoteFaceDown: _rsZone === 'hand' });
         break;

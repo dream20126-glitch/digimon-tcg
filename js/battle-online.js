@@ -291,6 +291,8 @@ export function sendStateSync() {
       _permEffects: c._permEffects || {}, _usedEffects: c._usedEffects || [],
       _isToken: !!c._isToken,
       _faceDown: !!c._faceDown, // 裏向きで重ねられているカード（相手の画面では中身を伏せる）
+      // 効果で付与されたレシピ型キーワード（【エグゼキュート】等）。相手の画面のバッジ表示用
+      _grantedKw: (Array.isArray(c._grantedRecipes) ? c._grantedRecipes : []).map(g => g && g.kwFlag).filter(Boolean),
     };
   };
   sendCommand({
@@ -1617,6 +1619,11 @@ function onRemoteCommand(cmd) {
     }
     case 'fx_directAttack': {
       if (m.showDirectAttack) enqueueFx((done) => m.showDirectAttack({ name: cmd.atkName, imgSrc: cmd.atkImg }, cmd.side, done));
+      break;
+    }
+    case 'fx_kwGrant': {
+      // 相手の効果でキーワードが付与された演出（battle-render.js _showKeywordGrantBanner）
+      if (typeof window._showKeywordGrantBanner === 'function') window._showKeywordGrantBanner({ name: cmd.cardName || '' }, cmd.keyword || '', true);
       break;
     }
     case 'fx_moveBatch': {

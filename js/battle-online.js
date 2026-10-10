@@ -1998,7 +1998,16 @@ function _withOppDeferred(fn) {
 
 // 防御側: ブロックのバトル解決（消滅・離れるとき・消滅時効果まで）が全て終わったことを攻撃側に知らせる。
 // 攻撃側はこれを受けてからアタック終了（ターン終了の判定）に進む
-function _sendBlockBattleDone(extra) { sendCommand(Object.assign({ type: 'block_battle_done' }, extra || {})); }
+// 送る前に、こちら（防御側）で「離れるとき」により進化して保留していた【進化時】（巨神兵器 BT26-085 → デストロイモード
+// BT26-060 等）を発揮する。消滅の処理が終わったここが発揮のタイミングで、攻撃側の【自分のターン終了時】（エグゼキュート等）
+// より先に解決する
+function _sendBlockBattleDone(extra) {
+  const send = () => sendCommand(Object.assign({ type: 'block_battle_done' }, extra || {}));
+  const hasDeferred = Array.isArray(bs._deferredEvoTriggers) && bs._deferredEvoTriggers.length > 0;
+  if (!hasDeferred || typeof window._flushDeferredEvoTriggers !== 'function') { send(); return; }
+  window._suppressFxSend = false;
+  window._flushDeferredEvoTriggers(() => _waitFxIdle(() => { sendMemoryUpdate(); sendStateSync(); send(); }));
+}
 function resolveOnlineBlock(blockerIdx, cmd) {
   _clearCollisionBlockerBadges();
   const blocker = bs.player.battleArea[blockerIdx];
@@ -2345,13 +2354,13 @@ window._sendMemoryUpdate = () => sendMemoryUpdate();
 window._waitForBlockResponse = (cb) => waitForBlockResponse(cb);
 window._waitForSecurityEffect = (cb) => waitForSecurityEffect(cb);
 window._waitForReactionDelegate = (cb) => waitForReactionDelegate(cb);
-// 攻撃側: 防御側のブロックのバトル解決の完了（block_battle_done）を待つ。届かないときの保険で最大90秒
+// 攻撃側: 防御側のブロックのバトル解決の完了（block_battle_done）を待つ
 window._waitForBlockBattleDone = (cb) => {
   if (_pendingBlockBattleDoneResponse) { const r = _pendingBlockBattleDoneResponse; _pendingBlockBattleDoneResponse = null; cb(r); return; }
   let settled = false;
   const fin = (r) => { if (settled) return; settled = true; if (_pendingBlockBattleDoneCallback === fin) _pendingBlockBattleDoneCallback = null; cb(r); };
   _pendingBlockBattleDoneCallback = fin;
-  setTimeout(() => fin(null), 90000);
+  // 時間切れは設けない（防御側の【進化時】等で対象選択に時間がかかっても先に進まない。他の委譲の待ちと同じ）
 };
 // 相手の端末からの返事（ブロック・セキュリティ効果・委譲した反応・離れるとき・保留した【進化時】・手札の破棄・相手の消滅時効果）を
 // 待っている間か。待っている間はメモリーが相手側でもターン終了に進まない（battle-phase.js _isTurnEndBlocked）

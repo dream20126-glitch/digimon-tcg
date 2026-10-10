@@ -1480,12 +1480,20 @@ export function showBCD(idxOrCard, source) {
   if (_evoView) _evoView.innerHTML = '';
   const _esc = (t) => String(t == null ? '' : t).replace(/[&<>]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
   const _tutOn = typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active;
+  // 裏向きで重ねられているカードは、持ち主（自分）の画面でだけ中身を見られる。相手のカードなら伏せる
+  const _ownCard = source === 'plBattle' || source === 'plIkusei'
+    || ((source !== 'aiBattle' && source !== 'aiIkusei') && !!(bs.player && ((bs.player.battleArea || []).includes(card) || (bs.player.tamerArea || []).includes(card) || bs.player.ikusei === card)));
+  const _fdTag = '<span style="color:#888;font-size:10px;font-weight:normal;">（裏向き・自分だけ確認できます）</span>';
   if (source !== 'trash' && card.stack && card.stack.length > 0) {
     const _n = card.stack.length;
     if (_tutOn || !_evoView) {
       let stackHtml = '<div id="bcd-evo-source-stack">';
       card.stack.forEach((s, i) => {
         const idForDom = card.stack.length - 1 - i; // 一番下=0, 直前=N-1
+        if (s._faceDown && !_ownCard) {
+          stackHtml += '<div id="bcd-evo-source-stack-' + idForDom + '" style="margin-top:6px;border-top:1px solid #222;padding-top:4px;color:#888;font-size:10px;">裏向きのカード</div>';
+          return;
+        }
         const hasEvo = s.evoSourceEffect && s.evoSourceEffect.trim() && s.evoSourceEffect !== 'なし';
         const sLabel = evoSourceEffectLabel(s);
         stackHtml += '<div id="bcd-evo-source-stack-' + idForDom + '" style="margin-top:6px;border-top:1px solid #222;padding-top:4px;">'
@@ -1500,12 +1508,12 @@ export function showBCD(idxOrCard, source) {
         + '<div style="color:#888;font-size:11px;margin-bottom:10px;">' + _n + '枚・上から順</div>'
         + '<div id="bcd-evo-source-stack" style="text-align:left;">' + card.stack.map((s, i) => {
           const idForDom = card.stack.length - 1 - i;
-          if (s._faceDown) return '<div id="bcd-evo-source-stack-' + idForDom + '" style="padding:8px 0;border-top:1px solid #222;color:#888;font-size:12px;">' + (i + 1) + '. 裏向きのカード</div>';
+          if (s._faceDown && !_ownCard) return '<div id="bcd-evo-source-stack-' + idForDom + '" style="padding:8px 0;border-top:1px solid #222;color:#888;font-size:12px;">' + (i + 1) + '. 裏向きのカード</div>';
           const sImg = cardImg(s);
           const hasEvo = s.evoSourceEffect && s.evoSourceEffect.trim() && s.evoSourceEffect !== 'なし';
           return '<div id="bcd-evo-source-stack-' + idForDom + '" style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #222;">'
             + (sImg ? '<img src="' + sImg + '" style="width:56px;border-radius:4px;flex:none;">' : '')
-            + '<div style="min-width:0;font-size:11px;line-height:1.6;"><div style="color:#fff;font-weight:bold;font-size:12px;">' + (i + 1) + '. ' + _esc(s.name) + '（Lv.' + _esc(s.level || '?') + '）</div>'
+            + '<div style="min-width:0;font-size:11px;line-height:1.6;"><div style="color:#fff;font-weight:bold;font-size:12px;">' + (i + 1) + '. ' + _esc(s.name) + '（Lv.' + _esc(s.level || '?') + '）' + (s._faceDown ? _fdTag : '') + '</div>'
             + '<div style="color:#ffaa00;font-size:10px;">' + evoSourceEffectLabel(s) + '</div>'
             + '<div style="color:' + (hasEvo ? '#ddd' : '#555') + ';">' + (hasEvo ? s.evoSourceEffect : 'なし') + '</div></div></div>';
         }).join('') + '</div>'

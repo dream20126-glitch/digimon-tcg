@@ -238,6 +238,7 @@ function serializeCardForCmd(c) {
       color: cc.color || '', feature: cc.feature || '',
       type: cc.type || '',
       stack: (cc.stack || []).map(ser),
+      _faceDown: !!cc._faceDown,
       buffs: cc.buffs || [],
       _permEffects: cc._permEffects || {},
     };
@@ -286,6 +287,7 @@ export function sendStateSync() {
       recipe: c.recipe || null,
       _permEffects: c._permEffects || {}, _usedEffects: c._usedEffects || [],
       _isToken: !!c._isToken,
+      _faceDown: !!c._faceDown, // 裏向きで重ねられているカード（相手の画面では中身を伏せる）
     };
   };
   sendCommand({

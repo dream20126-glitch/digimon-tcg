@@ -3521,12 +3521,14 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
     const evoHtml = '<div style="color:#00fbff;font-weight:bold;font-size:14px;margin-bottom:4px;">「' + _esc(card.name) + '」の進化元</div>'
       + '<div style="color:#888;font-size:11px;margin-bottom:10px;">' + _stack.length + '枚・上から順</div>'
       + '<div style="text-align:left;max-height:55vh;overflow-y:auto;">' + _stack.map((s, i) => {
-        if (s._faceDown) return '<div style="padding:8px 0;border-top:1px solid #222;color:#888;font-size:12px;">' + (i + 1) + '. 裏向きのカード</div>';
+        // 裏向きのカードは持ち主（自分）の画面でだけ中身を見られる（相手のデジモンなら伏せる）
+        if (s._faceDown && targetSide === 'ai') return '<div style="padding:8px 0;border-top:1px solid #222;color:#888;font-size:12px;">' + (i + 1) + '. 裏向きのカード</div>';
         const _sImg = s.imgSrc || getCardImageUrl(s) || s.imageUrl || '';
         const _sEff = (s.evoSourceEffect && s.evoSourceEffect !== 'なし') ? s.evoSourceEffect : '（進化元効果なし）';
         return '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #222;">'
           + (_sImg ? '<img src="' + _sImg + '" style="width:56px;border-radius:4px;flex:none;">' : '')
-          + '<div style="min-width:0;font-size:11px;line-height:1.6;"><div style="color:#fff;font-weight:bold;font-size:12px;">' + (i + 1) + '. ' + _esc(s.name) + '（Lv.' + _esc(s.level || '?') + '）</div>'
+          + '<div style="min-width:0;font-size:11px;line-height:1.6;"><div style="color:#fff;font-weight:bold;font-size:12px;">' + (i + 1) + '. ' + _esc(s.name) + '（Lv.' + _esc(s.level || '?') + '）'
+          + (s._faceDown ? '<span style="color:#888;font-size:10px;font-weight:normal;">（裏向き・自分だけ確認できます）</span>' : '') + '</div>'
           + '<div style="color:#aaa;">' + _esc(_sEff) + '</div></div></div>';
       }).join('') + '</div>';
     // 確認ボタン（どちらの画面からでも選べる）

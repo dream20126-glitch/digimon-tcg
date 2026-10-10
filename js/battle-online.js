@@ -2300,8 +2300,10 @@ window._flushOppDeferredEvo = (cb) => {
   document.body.appendChild(waitOv);
   let settled = false;
   const finish = () => { if (settled) return; settled = true; if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv); cb && cb(); };
+  // 時間切れで先へ進めない（相手の【進化時】は対象選択・順番選択等で2分以上かかることがあり、以前の120秒の
+  // 時間切れで、相手がデストロイモードの効果の対象を選んでいる途中にこちらのユノモン：ヒステリックモードの
+  // 【消滅時】が始まっていた）。他の委譲（fx_leaveBattleDelegate 等）と同じく、相手の完了通知だけを待つ
   _pendingFlushDeferredEvoCallback = finish;
-  setTimeout(finish, 120000);
   sendCommand({ type: 'fx_flushDeferredEvo' });
 };
 window._requestLeaveBattleDelegate = (slotIdx, cb) => {

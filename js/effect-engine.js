@@ -5505,6 +5505,7 @@ function addBuffDirect(card, type, value, duration, ctx) {
   }
 }
 
+if (typeof window !== 'undefined') window._recalcDp = (c) => { if (c && Array.isArray(c.buffs)) recalcDp(c); };
 function recalcDp(card) {
   // baseDpは初回のみ設定。以降は変更しない
   if (card.baseDp === undefined || card.baseDp === null) {
@@ -11873,11 +11874,11 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done) {
         allowActive: isExecute, noSecurity: digimonOnly,
         onPick: (type, idx) => declare(type === 'digimon' ? 'digimon' : 'security', type === 'digimon' ? idx : -1),
         onCancel: () => {
-          showConfirmDialog(atkCard, '対象を選ばずに離しました。「' + atkCard.name + '」でアタックしますか？', (yes) => {
+          setTimeout(() => showConfirmDialog(atkCard, '対象を選ばずに離しました。「' + atkCard.name + '」でアタックしますか？', (yes) => {
             if (yes) { chooseAndDeclare(); return; }
             ctx.addLog && ctx.addLog('☓ 「' + atkCard.name + '」でアタックしなかった');
             finish(false);
-          });
+          }), 300);
         },
       });
       return;

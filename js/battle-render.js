@@ -643,12 +643,19 @@ function startAttackModeUI(slotIdx, opts) {
     resolveTarget(e.clientX, e.clientY);
   }
 
-  inputLayer.addEventListener('mousemove', onMove);
-  inputLayer.addEventListener('touchmove', onMove, { passive: false });
-  inputLayer.addEventListener('mouseup', onEnd);
-  inputLayer.addEventListener('touchend', onEnd);
-  // クリックでも発動可能（メニューから遷移した直後のクリック対応）
-  inputLayer.addEventListener('click', onClick);
+  const _attach = () => {
+    inputLayer.addEventListener('mousemove', onMove);
+    inputLayer.addEventListener('touchmove', onMove, { passive: false });
+    inputLayer.addEventListener('mouseup', onEnd);
+    inputLayer.addEventListener('touchend', onEnd);
+    // クリックでも発動可能（メニューから遷移した直後のクリック対応）
+    inputLayer.addEventListener('click', onClick);
+  };
+  // 効果によるアタック（「アタックしますか？」の「はい」の直後に出る）は、その「はい」のクリックを矢印の操作として
+  // 拾わないよう、少し待ってから受け付ける（対象を選ばずに離した扱い→確認→同じクリックで「いいえ」になり、
+  // エグゼキュートのアタックをしないままターンが進んでいた）
+  if (_fromEffect) setTimeout(_attach, 350);
+  else _attach();
 }
 
 // window公開（HTMLのonclickから呼ばれる）

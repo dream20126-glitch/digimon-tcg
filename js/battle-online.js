@@ -1993,6 +1993,10 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   const blocker = bs.player.battleArea[blockerIdx];
   const atk = bs.ai.battleArea[cmd.atkIdx];
   if (!blocker || !atk) { sendCommand({ type: 'block_response', blocked: false }); return; }
+  // 攻撃側のDPは、攻撃側の端末が（アタック時効果の解決後に）送ってきた値を正とする。こちらの端末は相手のカードの
+  // 永続効果を自分の見えている情報で計算し直すため、DP+（永続効果）が外れていることがある
+  // （プルートモン DP13000+3000 が巨神兵器 DP14000 にブロックされて負けていた）
+  if (cmd.atkDp != null && !isNaN(parseInt(cmd.atkDp, 10))) atk.dp = parseInt(cmd.atkDp, 10);
 
   // ≪貫通≫: 攻撃側カードが【貫通】を持つか（_permEffects / buffs / recipe.passive / 進化元passive）
   const atkHasPenetrate = (() => {

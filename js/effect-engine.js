@@ -11774,6 +11774,18 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done) {
   const declare = (targetType, targetIdx) => {
     // ≪エグゼキュート≫でのアタック: アタック終了時の消滅（_adjustExecuteSteps）の判定に使う印
     if (isExecute) atkCard._executeAttacking = true;
+    // 【自分のターン終了時】の効果（≪急襲≫≪エグゼキュート≫等）でアタックした時点で「ターン終了時」のタイミングは
+    // 過ぎるので、まだ発揮していない他の【ターン終了時】の効果は発揮しない（もう1体の急襲等でアタックはできない）
+    if (waitResolve) {
+      _effectQueue.forEach((e) => {
+        const tc = e && e.status === 'waiting' && e.block && e.block.trigger && e.block.trigger.code;
+        if (!tc || !/turn_end$/.test(String(tc))) return;
+        e.status = 'completed';
+        const _n = (e.block._recipeCard && e.block._recipeCard !== e.card) ? e.block._recipeCard.name : (e.card && e.card.name);
+        ctx.addLog && ctx.addLog('💨 アタックしたので「ターン終了時」のタイミングが過ぎ、「' + _n + '」の効果は発揮しない');
+      });
+      try { _hudSyncQueue(ctx); } catch (_) {}
+    }
     window.startAttack(atkCard, slotIdx, (ok) => {
       if (!ok) { delete atkCard._executeAttacking; finish(false); return; }
       if (waitResolve) {

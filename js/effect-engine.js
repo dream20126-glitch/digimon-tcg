@@ -11598,10 +11598,19 @@ function _useOptionCardFromEffect(card, ctx, callback) {
   ctx.addLog && ctx.addLog('✦ 「' + card.name + '」を' + (isDual ? 'オプションとして' : '') + '使用！');
   ctx.renderAll && ctx.renderAll();
   const afterAnim = () => {
+    // 効果で使用したオプションの【メイン】は、その効果（使用させた効果）の処理の一部として、すぐに解決する。
+    // 発揮待ちの他の効果（同時に誘発していた効果）とは別の処理待ちの列で処理し、終わったら元の列に戻す
+    // （ケルベロモン BT26-074 でデュアルカードのオプション側を使ったとき、発揮待ちのケルビモン BT26-078 と
+    // 同時誘発のように並び、順番を選べてしまっていた）
+    const _savedQueue = _effectQueue;
+    _effectQueue = [];
+    const _restoreQueue = () => { _effectQueue = _savedQueue; try { _hudSyncQueue(ctx); } catch (_) {} };
     try {
       scanTriggers('main', card, ctx.side, ctx);
       processQueue(ctx, () => {
+        // アーツ進化の【進化時】の解決（triggerEffect は処理待ちの列を作り直す）も、この別の列で行ってから戻す
         const toTrash = () => {
+          _restoreQueue();
           // 【メイン】でバトルエリア/セキュリティ等に置かれたならトラッシュへ送らない（公式9-1-5）
           if (!isCardInAnyZone(card, p)) {
             p.trash.push(card);
@@ -11612,12 +11621,13 @@ function _useOptionCardFromEffect(card, ctx, callback) {
         };
         // デュアルカードは、使用後の保留処理で破棄する代わりにアーツ進化できる（公式ルール 8-19-1）
         if (isDual && ctx.side === 'player' && typeof window !== 'undefined' && typeof window._offerArtsEvolve === 'function' && !isCardInAnyZone(card, p)) {
-          window._offerArtsEvolve(card, (evolved) => { if (evolved) { ctx.renderAll && ctx.renderAll(); callback(); } else toTrash(); });
+          window._offerArtsEvolve(card, (evolved) => { if (evolved) { _restoreQueue(); ctx.renderAll && ctx.renderAll(); callback(); } else toTrash(); });
           return;
         }
         toTrash();
       });
     } catch (_) {
+      _restoreQueue();
       if (!p.trash.includes(card)) p.trash.push(card);
       callback();
     }
@@ -16585,11 +16595,16 @@ if (typeof window !== 'undefined') {
 
 // トリガー発生時に呼ぶ
 export function triggerEffect(triggerCode, sourceCard, sourceSide, context, callback) {
+  // 別の効果の処理中（処理待ちの列に発揮待ちの効果が残っている）に呼ばれたら、その列を退避して別の列で処理し、
+  // 終わったら戻す。以前は clearQueue で列を作り直していたため、発揮待ちだった他の効果が消えていた
+  // （効果で使用したデュアルカードのアーツ進化の【進化時】等で、発揮待ちのケルビモン BT26-078 が消える）
+  const _outerQueue = _effectQueue.some(e => e && (e.status === 'waiting' || e.status === 'processing')) ? _effectQueue : null;
   _effectProcessingDepth++;
   let _finished = false;
   // 完了時は「処理中」を先に解除してから次へ進む（直後のターン終了判定が処理中と誤認しないように）
   const done = (...args) => {
     if (!_finished) { _finished = true; _effectProcessingDepth = Math.max(0, _effectProcessingDepth - 1); }
+    if (_outerQueue) { _effectQueue = _outerQueue; try { _hudSyncQueue(context); } catch (_) {} }
     callback && callback(...args);
   };
   try {
@@ -16603,6 +16618,7 @@ export function triggerEffect(triggerCode, sourceCard, sourceSide, context, call
   } catch (e) {
     // 例外で処理中のまま残るとターンが終わらなくなるため解除してから投げ直す
     if (!_finished) { _finished = true; _effectProcessingDepth = Math.max(0, _effectProcessingDepth - 1); }
+    if (_outerQueue) _effectQueue = _outerQueue;
     throw e;
   }
 }

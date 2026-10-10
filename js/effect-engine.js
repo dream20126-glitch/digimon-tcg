@@ -10632,8 +10632,12 @@ function _buildBaseCtx(ctxBase, bs) {
   const base = { bs, addLog: safeLog, renderAll: safeRender, updateMemGauge: safeMem };
   // 演出コールバック（showDrawEffect等）は window には公開されていないため、
   // 呼び出し元の ctxBase（makeEffectContext由来）から引き継ぐ
+  // 呼び出し元に無ければ画面共通の演出関数を使う（デッキが増えたとき等の反応で、消滅演出が出なかった。
+  // クロノモン：デストロイモード BT26-060「デッキが増えたとき、相手のデジモン1体を消滅できる」）
+  const _fxFns = (typeof window !== 'undefined' && window._fxAnimFns) || {};
   ['showDrawEffect', 'showPlayEffect', 'showEvolveEffect', 'showDestroyEffect', 'showSecurityCheck', 'showBattleResult', 'doDraw'].forEach((key) => {
     if (ctxBase && typeof ctxBase[key] === 'function') base[key] = ctxBase[key];
+    else if (typeof _fxFns[key] === 'function') base[key] = _fxFns[key];
   });
   return base;
 }

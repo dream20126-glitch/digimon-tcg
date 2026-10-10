@@ -1944,7 +1944,7 @@ function _clearCollisionBlockerBadges() {
 function _waitFxIdle(cb, maxMs) {
   const limit = Date.now() + (maxMs || 15000);
   const tick = () => {
-    if ((!_fxRunning && _fxQueue.length === 0) || Date.now() > limit) { setTimeout(cb, 200); return; }
+    if ((!_fxRunning && _fxQueue.length === 0 && !(window._fxAnimActive > 0)) || Date.now() > limit) { setTimeout(cb, 200); return; }
     setTimeout(tick, 100);
   };
   tick();

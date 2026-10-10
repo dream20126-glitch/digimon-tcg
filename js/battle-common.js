@@ -361,7 +361,17 @@ export function setupCommonWindowExports() {
     try { return _getUsableZoneMainEE(bs, side, zone); } catch (_) { return []; }
   };
 
-  window._fxCardMove = fxCardMove;
+  // カード移動の演出が再生中か数える（window._fxAnimActive）。演出の途中で次の効果のポップアップを出さないよう、
+  // battle-online.js の _waitFxIdle がこれも見て待つ（相手の効果で自分のトラッシュのカードがデッキに戻る演出等、
+  // 演出キューを通らない演出があるため）
+  window._fxCardMove = (card, fromLabel, toLabel, callback, faceDown) => {
+    window._fxAnimActive = (window._fxAnimActive || 0) + 1;
+    let ended = false;
+    const end = () => { if (ended) return; ended = true; window._fxAnimActive = Math.max(0, (window._fxAnimActive || 0) - 1); callback && callback(); };
+    try { fxCardMove(card, fromLabel, toLabel, end, faceDown); } catch (_) { end(); }
+  };
+  // 反応系の効果（デッキが増えたとき等）は呼び出し元が演出関数を持っていないことがあるので、共通の演出関数を公開する
+  window._fxAnimFns = { doDraw, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, showDrawEffect };
   window._fxBuffStatus = fxBuffStatus;
   window._fxShuffle = fxShuffle;
 

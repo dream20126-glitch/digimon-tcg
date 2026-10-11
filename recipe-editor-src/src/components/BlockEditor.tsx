@@ -3683,6 +3683,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [perStateOtherOpen, setPerStateOtherOpen] = useState<boolean>(false);
   // ゲート条件（効果2以降専用）その他プルダウン開閉状態
   const [gateOtherOpen, setGateOtherOpen] = useState<boolean>(false);
+  const [pccOtherOpen, setPccOtherOpen] = useState<boolean>(false);
   // 「対象の条件」をアクションの対象/対象数の2箇所に分けて描画するため、
   // その他チェックボックスの開閉状態をここで共有する
   const [targetFilterOtherOpen, setTargetFilterOtherOpen] = useState<boolean>(false);
@@ -5144,6 +5145,28 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             removeCost={removeCost}
             labelSuffix="（外側）"
           />
+          {/* コストを払ったあとで判定する条件（「〜することで、〜なら、〜する」の「〜なら」）→ step.post_cost_condition */}
+          <div style={{ marginTop: 8, padding: 8, border: '1px dashed #e0b060', borderRadius: 6, background: '#fffaf0' }}>
+            <div style={{ fontWeight: 'bold', fontSize: 12, color: '#b76e00', marginBottom: 2 }}>
+              ⏩ コストを払ったあとの条件（「〜することで、〜なら」の「〜なら」）{(block.postCostConditions || []).length > 0 ? ` (${(block.postCostConditions || []).length})` : ''}
+            </div>
+            <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>
+              コストを支払い終えてから判定します。満たさなければ効果本体だけ行いません（コストは支払ったまま）。
+              発動条件（🎯）はコストより前に判定されるため、「相手のターンでもコストは払える」効果はこちらを使います
+              （例: プルートモン「手札1枚を破棄することで、自分のターンなら、〜登場できる」→ 自分のターン中）
+            </div>
+            <ConditionsHybridEditor
+              conditions={block.postCostConditions || []}
+              onChange={(next) => onChange({ ...block, postCostConditions: next })}
+              dict={dict}
+              title="コスト後の条件"
+              hint="（複数指定時はAND）"
+              theme="action"
+              defaultSubject=""
+              otherOpen={pccOtherOpen}
+              onOtherOpenChange={setPccOtherOpen}
+            />
+          </div>
         </details>
         )}
 

@@ -196,6 +196,11 @@ export interface EffectBlock {
   // 無いため。保存はできるが複数セグメント使用時は動作しない）
   conditionsChain?: ConditionChainEntry[];
   costs?: CostStep[]; // 0〜N個のコスト（〜することで）
+  // コストを払ったあとで判定する条件（「〜することで、〜なら、〜する」の「〜なら」）。
+  // 発動条件（conditions）はコストより前に判定されるのに対し、こちらはコストを支払い終えた時点で判定し、
+  // 満たさなければ効果本体だけ行わない（コストは支払ったまま）。複数指定はAND。
+  // JSON では step.post_cost_condition（1件なら文字列、2件以上なら配列）。エンジン対応済み
+  postCostConditions?: ConditionPair[];
   duration?: string;
   action?: string;
   value?: number | string;

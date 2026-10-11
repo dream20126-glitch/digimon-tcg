@@ -12722,7 +12722,8 @@ function executeRecipeStep(step, ctx, store, callback) {
   // （コストは支払ったまま。プルートモン BT26-059「自分の手札1枚を破棄することで、自分のターンなら、〜登場できる」:
   // 相手のターンでも手札は破棄でき、破棄したことで「手札が破棄されたとき」が誘発する）
   if (step.post_cost_condition && (step._costsResolved || !(Array.isArray(step.cost) && step.cost.length > 0))) {
-    const _pcc = parseRecipeCondition(step.post_cost_condition);
+    const _pcc = (Array.isArray(step.post_cost_condition) ? step.post_cost_condition : [step.post_cost_condition])
+      .reduce((acc, s) => acc.concat(s ? parseRecipeCondition(String(s)) : []), []);
     if (_pcc.length > 0 && !checkConditions(_pcc, ctx.card, ctx.bs, ctx.side)) {
       ctx.addLog && ctx.addLog('💨 条件を満たさないため、「' + (ctx.card ? ctx.card.name : '?') + '」の効果のこの先は行わない');
       callback && callback();

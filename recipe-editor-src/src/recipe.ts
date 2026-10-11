@@ -1171,6 +1171,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // コスト
   const stepCost = buildCostArray(b.costs);
   if (stepCost) step.cost = stepCost;
+  // コストを払ったあとで判定する条件（1件なら文字列、2件以上なら配列＝AND）
+  const pccPairs = (b.postCostConditions || []).filter((p) => p.base);
+  if (pccPairs.length === 1) step.post_cost_condition = pairToString(pccPairs[0]);
+  else if (pccPairs.length > 1) step.post_cost_condition = pccPairs.map(pairToString);
 
   if (b.duration) step.duration = b.duration;
   if (b.action) step.action = b.action;
@@ -2094,6 +2098,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     cause_by_code: true,
     cause_subject_by_code: true,
     cost: true,
+    post_cost_condition: true,
     from: true,
     from_op: true,
     evo_source_owner: true,
@@ -2208,6 +2213,12 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     conditionsOp: step?.condition_op === 'or' ? 'or' : 'and',
     conditionsChain: parseConditionChainStrings(step?.condition_chain),
     costs,
+    postCostConditions: (() => {
+      const raw = step?.post_cost_condition;
+      const arr = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+      const pairs = arr.map((s: any) => stringToPair(String(s))).filter((p: ConditionPair) => p.base);
+      return pairs.length > 0 ? pairs : undefined;
+    })(),
     duration: step?.duration || '',
     action: step?.action || '',
     value: step?.value,

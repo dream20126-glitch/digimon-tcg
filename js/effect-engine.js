@@ -5931,6 +5931,17 @@ function _scheduleRuleDestroyCheck(bs) {
   };
   _ruleCheckTimer = setTimeout(tick, 100);
 }
+// アタックの終了時に、保留していた DP0 の消滅（ルールチェック）を行う（battle-combat.js checkPendingTurnEnd）
+if (typeof window !== 'undefined') {
+  window._runRuleDestroyCheckNow = (cb) => {
+    const b = window._lastBattleState;
+    const has = !!(b && ['player', 'ai'].some(sd => (b[sd].battleArea || []).some(c => c && c._pendingDestroy)));
+    if (b) b._dp0HeldForAttack = false;
+    if (!has) { cb && cb(); return; }
+    try { checkPendingDestroys(_buildBaseCtx(null, b), () => { cb && cb(); }); }
+    catch (e) { console.error('[runRuleDestroyCheckNow]', e); cb && cb(); }
+  };
+}
 // オンライン: 相手の効果の「自分のデジモン全て」への全体処理を受け取って記録する（battle-online.js の fx_globalEffect）
 if (typeof window !== 'undefined') {
   window._addRemoteGlobalEffect = (e) => {
@@ -8049,11 +8060,16 @@ function checkPendingDestroys(ctx, callback) {
   const orderedSides = [turnPlayerSide, turnPlayerSide === 'player' ? 'ai' : 'player'];
 
   // 1) 消滅対象カードを収集（まだ削除しない）
+  // アタックの処理中（セキュリティチェック・バトル・アタック終了時まで）は、DP0 による消滅（ルールチェック）を
+  // 保留し、アタックが全て終わった時点（battle-combat.js checkPendingTurnEnd → _runRuleDestroyCheckNow）で行う
+  // （セキュリティチェック中の効果で DP0 にしたムシャモンが、セキュリティバトルの終了を待たずに消滅していた）
+  const _holdForAttack = typeof window !== 'undefined' && typeof window._isAttackInProgress === 'function' && window._isAttackInProgress();
   const pending = [];
   orderedSides.forEach(side => {
     const area = ctx.bs[side].battleArea;
     for (let i = 0; i < area.length; i++) {
       if (area[i] && area[i]._pendingDestroy) {
+        if (_holdForAttack) { ctx.bs._dp0HeldForAttack = true; continue; }
         pending.push({ side, slot: i, card: area[i] });
       }
     }

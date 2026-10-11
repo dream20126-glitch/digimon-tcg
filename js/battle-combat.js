@@ -4172,6 +4172,10 @@ export async function checkPendingTurnEnd() {
   // 「そのアタックの終了まで」（≪連携≫のDP+・Sアタック+1）のバフをここで外す
   _expireBuffs(bs, 'dur_until_attack_end');
   hideCombatBackdrop();
+  // アタック中に保留していた DP0 の消滅（ルールチェック）を、アタックの処理が全て終わったここで行う
+  if (typeof window !== 'undefined' && typeof window._runRuleDestroyCheckNow === 'function') {
+    await new Promise((resolve) => window._runRuleDestroyCheckNow(resolve));
+  }
   // アタックが終わったので【衝突】のブロッカーを外す
   if (typeof window !== 'undefined' && window._clearCollisionBlockers) window._clearCollisionBlockers(bs);
   renderAll();

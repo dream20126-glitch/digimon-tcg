@@ -5913,13 +5913,17 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
       } else {
         const removedBuffs = [];
         card.buffs = card.buffs.filter(b => {
+          // 保険: ターン終了時には「そのアタックの終了まで」のバフも残さない（アタック終了の処理を通らなかった場合）
+          if (timing === 'dur_this_turn' && b.duration === 'dur_until_attack_end') { removedBuffs.push({ type: b.type, duration: b.duration }); return false; }
           if (b.duration !== timing) return true;
           let shouldRemove = false;
           // dur_this_turn: 「このターン」= 付与時に走っていたターン終了で削除
           // 自ターン中に付与（_appliedDuringOwnTurn=true）→ 付与本人のターン終了で削除
           // 相手ターン中に付与（=セキュリティ発動など、_appliedDuringOwnTurn=false）→ 相手側のターン終了で削除
           if (timing === 'dur_this_turn') {
-            if (b._appliedDuringOwnTurn === false) {
+            // 付与した側の情報が無いバフ（直接付けたもの）は、最初に来たターン終了で消す
+            if (b._appliedSide == null) shouldRemove = true;
+            else if (b._appliedDuringOwnTurn === false) {
               // 付与時は相手のターンだった → 相手のターン終了 (=appliedSide と異なる側のターン終了) で削除
               shouldRemove = b._appliedSide !== endingSide;
             } else {
@@ -5938,6 +5942,10 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
             const needed = b._appliedDuringOwnTurn === false ? 1 : 2;
             shouldRemove = b._ticks >= needed;
             if (!shouldRemove) return true;
+          }
+          // dur_until_attack_end:「そのアタックの終了まで」（≪連携≫）。アタック終了時（checkPendingTurnEnd）に無条件削除
+          else if (timing === 'dur_until_attack_end') {
+            shouldRemove = true;
           }
           // dur_until_battle_end: ターン非依存。バトル解決時（resolveBattle/resolveBattleAI）に
           // 呼ばれた時点で無条件削除（例:「アタック中は相手の効果を受けない」等）

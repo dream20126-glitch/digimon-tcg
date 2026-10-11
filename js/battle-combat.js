@@ -324,7 +324,8 @@ function _runWhenBattleDestroy(side, card, onDestroy, onCancel) {
 }
 
 // ≪連携≫の処理: アタック時、他のアクティブデジモン1体をレストさせて
-// このターン DP+(対象DP) と Sアタック+1 を一時付与する (公式 18-24)
+// そのアタックの終了まで DP+(対象DP) と Sアタック+1 を一時付与する (総合ルール 24-1)。
+// 以前は「このターン」で付与していたうえ付与した側の情報が無く、ターン終了でも消えずに残っていた
 function _tryCombo(atk, ownerSidePlayer) {
   if (!atk || !hasCombo(atk) || !ownerSidePlayer) return false;
   var others = [];
@@ -337,8 +338,8 @@ function _tryCombo(atk, ownerSidePlayer) {
   target.suspended = true;
   var addedDp = parseInt(target.dp) || 0;
   if (!atk.buffs) atk.buffs = [];
-  atk.buffs.push({ type: 'dp_plus', value: addedDp, duration: 'dur_this_turn', source: 'combo' });
-  atk.buffs.push({ type: 'security_attack_plus', value: 1, duration: 'dur_this_turn', source: 'combo' });
+  atk.buffs.push({ type: 'dp_plus', value: addedDp, duration: 'dur_until_attack_end', source: 'combo' });
+  atk.buffs.push({ type: 'security_attack_plus', value: 1, duration: 'dur_until_attack_end', source: 'combo' });
   if (atk.baseDp == null) atk.baseDp = parseInt(atk.dp) || 0;
   var mod = 0;
   atk.buffs.forEach(function(b){
@@ -4103,6 +4104,8 @@ function aiPlayAuto(callback) {
 
 export async function checkPendingTurnEnd() {
   _attackInProgress = false;
+  // 「そのアタックの終了まで」（≪連携≫のDP+・Sアタック+1）のバフをここで外す
+  _expireBuffs(bs, 'dur_until_attack_end');
   hideCombatBackdrop();
   // アタックが終わったので【衝突】のブロッカーを外す
   if (typeof window !== 'undefined' && window._clearCollisionBlockers) window._clearCollisionBlockers(bs);

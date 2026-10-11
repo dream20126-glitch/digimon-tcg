@@ -8095,7 +8095,10 @@ function checkPendingDestroys(ctx, callback) {
   // アタックの処理中（セキュリティチェック・バトル・アタック終了時まで）は、DP0 による消滅（ルールチェック）を
   // 保留し、アタックが全て終わった時点（battle-combat.js checkPendingTurnEnd → _runRuleDestroyCheckNow）で行う
   // （セキュリティチェック中の効果で DP0 にしたムシャモンが、セキュリティバトルの終了を待たずに消滅していた）
-  const _holdForAttack = typeof window !== 'undefined' && typeof window._isAttackInProgress === 'function' && window._isAttackInProgress();
+  // オンラインで相手がアタック中（bs._oppAttackInProgress。battle-online.js が attack_start / attack_end で管理）も同じく保留する
+  // （相手のアタック中のセキュリティ効果等で DP0 になった自分のデジモンが、相手のアタックの途中で消滅していた）
+  const _holdForAttack = (typeof window !== 'undefined' && typeof window._isAttackInProgress === 'function' && window._isAttackInProgress())
+    || !!(ctx.bs && ctx.bs._oppAttackInProgress);
   const pending = [];
   orderedSides.forEach(side => {
     const area = ctx.bs[side].battleArea;

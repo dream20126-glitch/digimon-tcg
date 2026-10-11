@@ -683,6 +683,7 @@ function onRemoteCommand(cmd) {
 
     // --- ターン ---
     case 'endTurn': {
+      if (bs._oppAttackInProgress) { bs._oppAttackInProgress = false; if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => {}); } // 保険（attack_end を受け取れなかった場合）
       // 保険: こちらの効果処理（相手に消滅させられたデジモンの消滅時効果等）の途中なら、終わってからターンを受け取る
       if (_localBusyForRemote() && !cmd._idleWaited) {
         const _c = Object.assign({}, cmd, { _idleWaited: true });
@@ -1198,6 +1199,17 @@ function onRemoteCommand(cmd) {
     }
 
     // --- 演出コマンド（キュー経由で順次再生、並列起動によるバチバチを防止） ---
+    case 'attack_start': {
+      // 相手がアタックを開始した。アタックの処理が全て終わるまで、こちらの DP0 の消滅（ルールチェック）は保留する
+      bs._oppAttackInProgress = true;
+      break;
+    }
+    case 'attack_end': {
+      // 相手のアタックが全て終わった → 保留していた DP0 の消滅を行う
+      bs._oppAttackInProgress = false;
+      if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => { renderAll(); sendStateSync(); });
+      break;
+    }
     case 'fx_kwRule': {
       // 相手のデジモンの常在型キーワード（≪プログレス≫等）が効いた説明
       if (window._showKeywordRuleFlash) window._showKeywordRuleFlash({ name: cmd.cardName || '' }, cmd.code || '', true);

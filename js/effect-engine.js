@@ -5815,6 +5815,17 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
 
   function applyAndLog(card) {
     addBuffDirect(card, type, val, dur, ctx);
+    // 「〜1枚ごとに」の DP+/-: 参照情報を付けて、効果中は参照数の変化に合わせて値を数え直す（recalcDp）
+    if (ctx._dpPerCount && Array.isArray(card.buffs)) {
+      const _lb = card.buffs[card.buffs.length - 1];
+      if (_lb && _lb.type === type) {
+        // このデジモン自身を数える（refSelf）なら、進化してカードが入れ替わっても今のカードで数える。
+        // 参照情報はカード（循環参照）を持つので、state_sync の JSON に出ないよう列挙しない
+        const _pc = Object.assign({}, ctx._dpPerCount, { refSelf: ctx._dpPerCount.refCard === card });
+        Object.defineProperty(_lb, '_perCount', { value: _pc, enumerable: false, writable: true, configurable: true });
+        recalcDp(card);
+      }
+    }
     ctx.addLog(label + card.name + ' DP' + sign + val + ' → ' + card.dp);
     showDpPopup(isPlus ? val : -val, card.name);
   }
@@ -6084,7 +6095,16 @@ function recalcDp(card) {
   let mod = 0;
   let overrideBase = null;
   if (card.buffs) {
+    const _bsNow = (typeof window !== 'undefined') ? window._lastBattleState : null;
     card.buffs.forEach(b => {
+      // 「〜1枚ごとに」: 参照数を数え直す（参照元カードが場を離れていたら付与時の値のまま）
+      if (b && b._perCount && _bsNow) {
+        const pc = b._perCount;
+        try {
+          const n = getRefSourceCountDirect(pc.ref, pc.refSelf ? card : pc.refCard, _bsNow, pc.side, pc.refFilter, pc.refState);
+          b.value = pc.unit * Math.floor(n / pc.per);
+        } catch (_) {}
+      }
       if (b.type === 'dp_plus') mod += (parseInt(b.value) || 0);
       if (b.type === 'dp_minus') mod -= (parseInt(b.value) || 0);
       // dp_set: 「元々のDPを N に変更」。複数あれば最後に付与されたものが有効
@@ -17352,9 +17372,15 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       // per_count倍率を適用
       let effectiveValue = step.value != null ? step.value : (step.per_count ? 1 : null);
+      let _dpPerCount = null;
       if (step.per_count && effectiveValue != null) {
         const refSource = step.ref || 'evo_source';
         const count = getRefSourceCountDirect(refSource, ctx.card, ctx.bs, ctx.side, step.ref_filter, step.ref_state);
+        // 期間のある DP+/- は、効果中に参照数が変わったら値も変わる（ドリモゲモン BT26-040「相手のターン終了まで、
+        // 裏向きの進化元1枚ごとにDP+1000」: あとから裏向きの進化元が増えたらDPも増える）。recalcDp が毎回数え直す
+        if (step.action === 'dp_plus' || step.action === 'dp_minus') {
+          _dpPerCount = { unit: effectiveValue, per: step.per_count, ref: refSource, refFilter: step.ref_filter || null, refState: step.ref_state || null, refCard: ctx.card, side: ctx.side };
+        }
         effectiveValue = effectiveValue * Math.floor(count / step.per_count);
       }
       // レシピのアクション名を既存エンジンのアクション名にマッピング
@@ -17467,6 +17493,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           runOneAction(action, null, { ...ctx, _forceTargetIdx: t.idx }, nextStoredTarget);
         }
         nextStoredTarget();
+      } else if (_dpPerCount) {
+        runOneAction(action, target, { ...ctx, _dpPerCount }, callback);
       } else {
         runOneAction(action, target, ctx, callback);
       }

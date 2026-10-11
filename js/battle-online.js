@@ -50,6 +50,17 @@ let _pendingHandDiscardResponse = null; // 待ち開始前に届いた fx_handDi
 let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
 let _pendingOwnDestroyDoneCallback = null;
 let _ownDestroyWaitCards = []; // 相手の合図待ちの、消滅した自分のカード（発揮待ちの表示用）
+let _pendingOwnDestroyList = []; // 相手の合図待ちの、消滅した自分のカードごとの消滅時チェーン { card, fire }
+// 合図（fx_ownDestroyReady）で、たまっている消滅時チェーンを持ち主（自分）が選んだ順に発揮する
+function _queueOwnDestroyFire(card, fire) {
+  _pendingOwnDestroyList.push({ card, fire });
+  _pendingOwnDestroyFire = (afterDone) => {
+    const list = _pendingOwnDestroyList; _pendingOwnDestroyList = [];
+    const runOne = (c, nx) => { const it = list.find(x => x.card === c); if (it) it.fire(nx); else nx(); };
+    if (window._runDestroyChainsInChosenOrder) window._runDestroyChainsInChosenOrder(list.map(x => x.card), runOne, afterDone);
+    else { let i = 0; const step = () => { if (i >= list.length) { afterDone && afterDone(); return; } list[i++].fire(step); }; step(); }
+  };
+}
 let _pendingOwnDestroyDoneResponse = null;
 let _nonTurnPlayerReactionDraining = false; // bs._pendingNonTurnPlayerReactionsを順に発揮中かどうか
 let _deferStuckWatchdog = null; // active:false未受信のまま保留し続けるのを防ぐフェイルセーフタイマー
@@ -427,8 +438,6 @@ function onRemoteCommand(cmd) {
           addLog('💀 「' + tamer.name + '」（テイマー）が消滅');
           renderAll();
           if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
-            const _prevOwnFire = _pendingOwnDestroyFire; // 先に消滅したカードの分が残っていれば連結する（上書きで失わない）
-            _pendingOwnDestroyFire = _prevOwnFire ? (afterDone) => _prevOwnFire(() => _thisOwnFire(afterDone)) : null;
             const _thisOwnFire = (afterDone) => {
               const _finishOwnDestroy = () => {
                 sendMemoryUpdate();
@@ -440,7 +449,7 @@ function onRemoteCommand(cmd) {
                 window._fireOnlineDestroyChain(['player'], { player: tamer }, _finishOwnDestroy);
               } catch (_) { _finishOwnDestroy(); }
             };
-            if (!_pendingOwnDestroyFire) _pendingOwnDestroyFire = _thisOwnFire;
+            _queueOwnDestroyFire(tamer, _thisOwnFire);
           } else {
             sendStateSync();
           }
@@ -470,8 +479,6 @@ function onRemoteCommand(cmd) {
         if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
           const cardForChain = card || cmd.cardData;
           if (cardForChain) {
-            const _prevOwnFire = _pendingOwnDestroyFire; // 先に消滅したカードの分が残っていれば連結する（上書きで失わない）
-            _pendingOwnDestroyFire = _prevOwnFire ? (afterDone) => _prevOwnFire(() => _thisOwnFire(afterDone)) : null;
             const _thisOwnFire = (afterDone) => {
               const _finishOwnDestroy = () => {
                 sendMemoryUpdate();
@@ -488,7 +495,7 @@ function onRemoteCommand(cmd) {
                 window._fireOnlineDestroyChain(['player'], { player: cardForChain }, _finishOwnDestroy);
               } catch (_) { _finishOwnDestroy(); }
             };
-            if (!_pendingOwnDestroyFire) _pendingOwnDestroyFire = _thisOwnFire;
+            _queueOwnDestroyFire(cardForChain, _thisOwnFire);
             // 相手の合図（fx_ownDestroyReady）を待っている間も、発揮待ちとして表示する
             _ownDestroyWaitCards.push(cardForChain);
             if (window._hudSetDestroyWait) window._hudSetDestroyWait(_ownDestroyWaitCards);

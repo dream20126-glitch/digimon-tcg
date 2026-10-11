@@ -47,7 +47,7 @@ function _shouldDeferNonTurn(bs, side) {
 }
 // hud: { card, side, trigger }（発揮待ちの表示に出すカード。消滅時の効果を持たないカードなら出さない）
 function _deferNonTurn(fn, ctxForLog, label, hud) {
-  _ntpDeferred.push(fn);
+  _ntpDeferred.push({ fn, card: hud && hud.card, side: hud && hud.side });
   let item = null;
   try {
     // オンラインで相手のカードなら、相手の端末が自分の発揮待ちとして表示して送ってくるので、こちらでは出さない（二重表示防止）
@@ -69,14 +69,47 @@ function _cardHasDestroyTrigger(card) {
 function _flushNonTurnDeferred(bs, cb) {
   const done = () => { try { cb && cb(); } catch (e) { console.error('[flushNonTurnDeferred]', e); } };
   if (_ntpDeferred.length === 0 || _tpResolutionActive(bs || (typeof window !== 'undefined' && window._lastBattleState))) { done(); return; }
-  const fn = _ntpDeferred.shift();
-  _ntpDeferredHud.shift();
-  _ntpHudSync();
-  try { fn(() => _flushNonTurnDeferred(bs, cb)); } catch (e) { console.error('[flushNonTurnDeferred]', e); _flushNonTurnDeferred(bs, cb); }
+  // 同じプレイヤーの消滅時の効果が複数あるなら、その持ち主が発揮する順番を選ぶ（公式ルール15-4-3）
+  const _run = (i) => {
+    const item = _ntpDeferred.splice(i, 1)[0];
+    _ntpDeferredHud.splice(i, 1);
+    _ntpHudSync();
+    try { item.fn(() => _flushNonTurnDeferred(bs, cb)); } catch (e) { console.error('[flushNonTurnDeferred]', e); _flushNonTurnDeferred(bs, cb); }
+  };
+  const _localCands = _ntpDeferred.map((it, i) => ({ it, i }))
+    .filter(x => x.it.card && x.it.side === 'player' && _cardHasDestroyTrigger(x.it.card));
+  if (_localCands.length >= 2) {
+    _chooseDestroyedCard(_localCands.map(x => x.it.card), (k) => _run(_localCands[k].i));
+    return;
+  }
+  _run(0);
+}
+// 消滅した複数のカードの【消滅時】のうち、どれから発揮するかを選ぶ（効果の順番選択と同じ画面）。cb(選んだ番号)
+function _chooseDestroyedCard(cards, cb) {
+  if (!Array.isArray(cards) || cards.length < 2 || typeof document === 'undefined') { cb(0); return; }
+  const entries = cards.map(c => ({ card: c, block: { raw: c.effect || '', trigger: { code: 'on_destroy' }, actions: [], conditions: [] } }));
+  showQueueOrderSelect(entries, (i) => cb(i >= 0 && i < cards.length ? i : 0));
+}
+// 消滅した複数のカードの消滅時チェーンを、持ち主が選んだ順に1枚ずつ発揮する（battle-online.js の受信側でも使う）
+// runOne(card, next) で1枚分を発揮する
+function _runDestroyChainsInChosenOrder(cards, runOne, done) {
+  const rest = (cards || []).slice();
+  const next = () => {
+    if (rest.length === 0) { done && done(); return; }
+    const withEff = rest.filter(_cardHasDestroyTrigger);
+    if (withEff.length < 2) { const c = rest.shift(); runOne(c, next); return; }
+    _chooseDestroyedCard(withEff, (k) => {
+      const c = withEff[k];
+      rest.splice(rest.indexOf(c), 1);
+      runOne(c, next);
+    });
+  };
+  next();
 }
 if (typeof window !== 'undefined') {
   window._flushNonTurnDeferred = (cb) => _flushNonTurnDeferred(window._lastBattleState, cb);
   window._hasNonTurnDeferred = () => _ntpDeferred.length > 0;
+  window._runDestroyChainsInChosenOrder = (cards, runOne, done) => _runDestroyChainsInChosenOrder(cards, runOne, done);
   // battle-online.js: 相手に消滅させられた自分のデジモンの消滅時効果が、相手の合図（fx_ownDestroyReady）待ちの間の表示
   window._hudSetDestroyWait = (cards) => {
     try {

@@ -3315,6 +3315,16 @@ function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb) {
     return;
   }
   if (cands.length <= want) { cb(cands.slice()); return; }
+  // 1体をバトルエリアから選ぶなら、通常の対象選択（盤面のデジモンをタップ→確認）で選ぶ
+  // （自分・相手どちらのデジモンでも選べるレスト等で、カード一覧から選ぶ画面になっていた）
+  if (want === 1 && cands.every(e => e.zone === 'battleArea') && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
+    const enc = cands.map(e => e.own ? 100 + e.idx : e.idx);
+    showTargetSelection('both', enc, null, '#ffcc00', (v) => {
+      const e = cands.find(x => (x.own ? 100 + x.idx : x.idx) === v);
+      cb(e ? [e] : []);
+    }, (() => { const t = String(title || '').replace(/^🎯\s*/, '').replace(/の?対象を選んでください$/, '').trim(); return t ? '（' + t + '・自分/相手のデジモンから）' : '（自分/相手のデジモンから）'; })());
+    return;
+  }
   const byCard = new Map(cands.map(e => [e.card, e]));
   showCardListPicker(cands.map(e => e.card), want, title, (picked) => {
     cb((picked || []).map(c => byCard.get(c)).filter(Boolean));

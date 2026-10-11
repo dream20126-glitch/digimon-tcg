@@ -1853,9 +1853,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const _dsIdx = _dsCard ? player.battleArea.indexOf(_dsCard) : -1;
         if (_dsIdx === -1) { ctx.addLog('⚠ このデジモンがバトルエリアにいません'); callback(false); break; }
         if (ctx.bs) ctx.bs._lastActionCount = 1;
-        playEffect(action.code, { card: _dsCard, ctx }, () => {
-          doDestroy(player, _dsIdx, ctx, () => callback(player.battleArea.indexOf(_dsCard) === -1));
-        }, { visualType: action.visualType, frameColor: action.frameColor });
+        _destroyWithFx(player, _dsIdx, ctx,
+          (c, cb) => playEffect(action.code, { card: c, ctx }, cb, { visualType: action.visualType, frameColor: action.frameColor }),
+          (gone) => callback(gone));
         break;
       }
       // 自分と相手の両方（target_both）/ テイマーを含む相手のカード（filter.type_in にテイマー）:
@@ -1896,17 +1896,18 @@ function runOneAction(action, defaultTarget, ctx, callback) {
             if (_dbi >= picked.length) { callback(true); return; }
             const e = picked[_dbi++];
             const owner = e.own ? player : opponent;
-            playEffect(action.code, { card: e.card, ctx }, () => {
-              if (e.zone === 'tamerArea') {
-                const ti = (owner.tamerArea || []).indexOf(e.card);
-                if (ti === -1) { _dbNext(); return; }
-                _doDestroyTamer(owner, ti, ctx, _dbNext);
-              } else {
-                const bi = owner.battleArea.indexOf(e.card);
-                if (bi === -1) { _dbNext(); return; }
-                doDestroy(owner, bi, ctx, _dbNext);
-              }
-            }, { visualType: action.visualType, frameColor: action.frameColor });
+            const _dbFx = (c, cb) => playEffect(action.code, { card: c, ctx }, cb, { visualType: action.visualType, frameColor: action.frameColor });
+            if (e.zone === 'tamerArea') {
+              const ti = (owner.tamerArea || []).indexOf(e.card);
+              if (ti === -1) { _dbNext(); return; }
+              _doDestroyTamer(owner, ti, ctx, () => {
+                if ((owner.tamerArea || []).indexOf(e.card) === -1) _dbFx(e.card, _dbNext); else _dbNext();
+              });
+            } else {
+              const bi = owner.battleArea.indexOf(e.card);
+              if (bi === -1) { _dbNext(); return; }
+              _destroyWithFx(owner, bi, ctx, _dbFx, () => _dbNext());
+            }
           };
           _dbNext();
         });
@@ -1937,10 +1938,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const di = ctx._forceTargetIdx ?? destroyTargets[0];
         const card = tgtPlayer.battleArea[di];
         if (ctx.bs) ctx.bs._lastActionCount = 1;
-        // 消滅演出 → doDestroy（on_destroy リアクション完了まで待つ）→ callback
-        playEffect(action.code, { card, ctx }, () => {
-          doDestroy(tgtPlayer, di, ctx, () => callback(true));
-        }, { visualType: action.visualType, frameColor: action.frameColor });
+        // doDestroy（離れなかったら演出なし）→ 消滅演出 → callback
+        void card;
+        _destroyWithFx(tgtPlayer, di, ctx,
+          (c, cb) => playEffect(action.code, { card: c, ctx }, cb, { visualType: action.visualType, frameColor: action.frameColor }),
+          () => callback(true));
         break;
       }
       ctx.addLog(isOwn ? '🎯 自分のデジモンから消滅させる対象を選んでください' : '🎯 消滅させる対象を選んでください');
@@ -1948,10 +1950,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if(selectedIdx !== null) {
           const card = tgtPlayer.battleArea[selectedIdx];
           if (ctx.bs) ctx.bs._lastActionCount = 1;
-          // 消滅演出 → doDestroy（on_destroy リアクション完了まで待つ）→ callback
-          playEffect(action.code, { card, ctx }, () => {
-            doDestroy(tgtPlayer, selectedIdx, ctx, () => callback(true));
-          }, { visualType: action.visualType, frameColor: action.frameColor });
+          // doDestroy（離れなかったら演出なし）→ 消滅演出 → callback
+          void card;
+          _destroyWithFx(tgtPlayer, selectedIdx, ctx,
+            (c, cb) => playEffect(action.code, { card: c, ctx }, cb, { visualType: action.visualType, frameColor: action.frameColor }),
+            () => callback(true));
         } else {
           if (ctx.bs) ctx.bs._lastActionCount = 0;
           // target_own は cost 用途とみなし、キャンセル時は callback(false) で後続中止
@@ -2566,9 +2569,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // showDestroyEffect はオンラインの相手の画面にも fx_destroy を送る）
         const _showDE = (ctx && ctx.showDestroyEffect) || (typeof window !== 'undefined' && window.showDestroyEffect)
           || (window._fxAnimFns && window._fxAnimFns.showDestroyEffect);
-        const _run = () => doDestroy(player, idx, ctx, () => callback(player.battleArea.indexOf(tgt) === -1));
-        if (typeof _showDE === 'function') { try { _showDE(tgt, _run); } catch (_) { _run(); } }
-        else _run();
+        _destroyWithFx(player, idx, ctx, (typeof _showDE === 'function') ? _showDE : null, (gone) => callback(gone));
       };
       if (_cdoCode === 'target_self') { doCostDestroy(candidates[0]); break; }
       if (effectiveSide === 'ai' || ctx._forceTargetIdx !== undefined) {
@@ -3290,6 +3291,19 @@ export function isCardInAnyZone(card, p) {
   return ['battleArea', 'tamerArea', 'hand', 'deck', 'security', 'trash'].some(z => Array.isArray(p[z]) && p[z].includes(card));
 }
 
+// 消滅させてから、実際に場を離れたときだけ消滅演出を出す（fxFn(card, cb)）。done(離れたか)。
+// 以前は演出を先に出してから消滅させていたため、「離れるとき」（クロノモン：ホーリーモード BT26-016 の
+// セキュリティをデッキに戻して離れない等）や消滅されない効果で離れなかったときにも消滅演出が出ていた
+function _destroyWithFx(owner, idx, ctx, fxFn, done) {
+  const card = owner && owner.battleArea ? owner.battleArea[idx] : null;
+  doDestroy(owner, idx, ctx, () => {
+    const gone = !!card && owner.battleArea.indexOf(card) === -1;
+    if (gone && typeof fxFn === 'function') {
+      try { fxFn(card, () => done && done(true)); return; } catch (_) {}
+    }
+    done && done(gone);
+  });
+}
 function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   causeType = causeType || 'effect';
   const destroyed = targetSide.battleArea[slotIdx];
@@ -8181,8 +8195,8 @@ function checkPendingDestroys(ctx, callback) {
     if (idx >= pending.length) { _drainPendingReactionsOnly(ctx, callback); return; }
     const { side, slot, card } = pending[idx++];
     card._destroyInProgress = true;
-    // 演出
-    showDE(card, () => {
+    // 「離れるとき」（離れない置換）を先に確認し、離れることが決まってから消滅演出を出す
+    {
       // 【分離】: リンクカードを1枚破棄して、この消滅自体をキャンセルできる。ただし
       // DP0である限り次の判定でまた消滅対象になる（_pendingDestroyは立ったままなので、
       // 次にcheckPendingDestroysが呼ばれた時に再度この処理の対象になる）。
@@ -8191,6 +8205,7 @@ function checkPendingDestroys(ctx, callback) {
       tryCancelViaLeaveBattle(card, side, ctx.bs, ctxBase, (canceled) => {
         delete card._destroyInProgress;
         if (canceled) { processNext(); return; }
+      showDE(card, () => {
       // 削除（演出後に実際に消滅）
       if (ctx.bs[side].battleArea[slot] === card) {
         ctx.bs[side].battleArea[slot] = null;
@@ -8232,8 +8247,9 @@ function checkPendingDestroys(ctx, callback) {
         return;
       }
       fireDestroyChain(card, side, ctx.bs, ctx, processNext);
-      });
-    });
+      }); // showDE
+      }); // tryCancelViaLeaveBattle
+    }
   }
   processNext();
 }

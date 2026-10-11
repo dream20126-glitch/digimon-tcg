@@ -4967,6 +4967,12 @@ function applyExtremeFilterIdxs(idxs, area, filter) {
 // （レシピの ignore_evolve_condition:true / options:['ignore_evolve_condition']）。
 // 判定は手動進化と同じ canEvolveOnto（battle-combat.js。代替進化 alt_evolve 等も含む）を使う。
 // 判定関数が無い環境（テストのNode等）は従来通り判定しない
+// 進化元から登場させるステップか（summon 系 + from に evo_source）
+function _isEvoSourceSummonStep(step) {
+  if (!step || !(step.action === 'summon' || step.action === 'summon_appear' || step.action === 'summon_use')) return false;
+  const f = step.from;
+  return f === 'evo_source' || (Array.isArray(f) && f.includes('evo_source'));
+}
 function _effectEvoIgnoresCondition(step) {
   if (!step) return false;
   if (step.ignore_evolve_condition) return true;
@@ -11903,6 +11909,8 @@ function recipeWillExecuteAnything(recipe, ctx) {
     }
     // summon/evolve（手札から登場/進化）で手札に候補が無ければ不発なので演出ポップアップも出さない
     // （詳細は _stepLacksHandCandidate。トラッシュを含む指定は判定しない）
+    // ≪デコード≫は「バトル以外でバトルエリアを離れるとき」の効果。バトルで負けて離れるときは発揮しない
+    if (step._kwFlag === 'decode' && ctx.bs && ctx.bs._leaveByBattle) continue;
     // 「このデジモンでアタックできる」（≪ヴォルテクス≫≪急襲≫等）で、アタックできない（レスト中・アタックできない状態、
     // 「相手のデジモンにアタック」でアタックできる相手のデジモンがいない）なら不発なので、誘発の選択にも出さない
     // （グランクワガーモン BT26-045 で【ヴォルテクス】を得たレスト中のタイラントカブテリモンが、ターン終了時に出ていた）
@@ -12651,7 +12659,7 @@ function executeRecipeStep(step, ctx, store, callback) {
   // 【ターンに1回】も消費しない）。評価済みの条件は取り除いたステップで以降を処理する
   // （コスト解決後の再呼び出し・alt_actions のメイン再実行で二重評価しないため。
   // 特にコストで自身を移動した後に「自分のデジモンがいるなら」を再評価すると誤って不成立になる）
-  if (!step._costsResolved && !_COST_STEP_SET.has(step)) {
+  if (!step._costsResolved && !_COST_STEP_SET.has(step) && !_isEvoSourceSummonStep(step)) {
     const _gate = _resolveStepConditionGate(step);
     if (_gate) {
       if (!_evalStepConditionGate(_gate.gateSrc, ctx.card, ctx.bs, ctx.side)) {
@@ -13175,6 +13183,36 @@ function executeRecipeStep(step, ctx, store, callback) {
     case 'summon':
     case 'summon_appear':
     case 'summon_use': {
+      // 進化元から登場（≪デコード≫「バトル以外でバトルエリアを離れるとき、このデジモンの進化元から『〇〇』を
+      // コストを支払わずに登場できる」。ゾンビプルートモン BT26-079 等）。condition / from_filter / filter は
+      // 登場させる進化元カードの条件として使う（このカード自身の発動条件ではない）
+      if (_isEvoSourceSummonStep(step)) {
+        const _esHost = ctx.card;
+        const _esConds = step.condition ? parseRecipeCondition(step.condition) : [];
+        const _esFilter = step.from_filter || step.filter || null;
+        const _esCands = (_esHost && Array.isArray(_esHost.stack) ? _esHost.stack : []).filter(c => c
+          && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type)
+          && (!_esFilter || cardMatchesFilter(c, _esFilter, ctx.bs, ctx.side, ctx.card))
+          && (_esConds.length === 0 || checkConditions(_esConds, c, ctx.bs, ctx.side)));
+        if (_esCands.length === 0) { ctx.addLog && ctx.addLog('💨 進化元に登場できるカードがありません'); callback(); break; }
+        const _esPay = step.cost_free ? null : Math.max(0, _cardPlayCostOf(_esCands[0]) + _effectPlayCostDelta(step, ctx));
+        const _esDo = (chosen) => {
+          if (!chosen) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
+          const _si = _esHost.stack.indexOf(chosen);
+          if (_si === -1) { callback(); return; }
+          _esHost.stack.splice(_si, 1);
+          ctx.addLog && ctx.addLog('🌟 「' + _esHost.name + '」の進化元から「' + chosen.name + '」を登場');
+          _summonCardFromEffect(chosen, ctx, { payCost: step.cost_free ? null : Math.max(0, _cardPlayCostOf(chosen) + _effectPlayCostDelta(step, ctx)),
+            enterSuspended: !!step.enter_suspended, skipOnPlay: !!step.skip_on_play }, () => {
+            if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+            callback();
+          });
+        };
+        if (ctx.side === 'ai' || (_esCands.length === 1 && !step.optional)) { _esDo(_esCands[0]); break; }
+        void _esPay;
+        showTrashCardPicker(_esCands, 1, !!step.optional, '🌟 進化元から登場させるカードを選んでください', (picked) => _esDo(picked && picked[0]), _esCands);
+        break;
+      }
       // Security effect: summon self (tamer/digimon) to field at no cost
       // cost_free:true と options:['ignore_cost'] のどちらの表記も受け付ける
       const _summonSelfIgnoreCost = !!step.cost_free || (Array.isArray(step.options) && step.options.includes('ignore_cost'));

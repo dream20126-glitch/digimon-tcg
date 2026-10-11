@@ -954,8 +954,10 @@ function onRemoteCommand(cmd) {
       };
       if (!card || typeof window._tryCancelLeaveLocal !== 'function') { reply(false); break; }
       const ctx = { bs, addLog, renderAll, updateMemGauge };
-      try { window._tryCancelLeaveLocal(card, 'player', bs, ctx, reply); }
-      catch (_) { reply(false); }
+      // バトルで負けて離れるのか（≪デコード≫等「バトル以外で」の判定用）
+      bs._leaveByBattle = !!cmd.byBattle;
+      try { window._tryCancelLeaveLocal(card, 'player', bs, ctx, (c) => { bs._leaveByBattle = false; reply(c); }); }
+      catch (_) { bs._leaveByBattle = false; reply(false); }
       break;
     }
     case 'fx_leaveBattleDelegateDone': {
@@ -2496,7 +2498,7 @@ window._requestLeaveBattleDelegate = (slotIdx, cb) => {
     if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
     try { cb(canceled); } catch (e) { console.error('[leaveBattleDelegate]', e); }
   };
-  sendCommand({ type: 'fx_leaveBattleDelegate', slotIdx });
+  sendCommand({ type: 'fx_leaveBattleDelegate', slotIdx, byBattle: !!bs._leaveByBattle });
 };
 window._waitForHandDiscardDelegate = (cb) => waitForHandDiscardDelegate(cb);
 window._waitForOwnDestroyDone = (cb) => waitForOwnDestroyDone(cb);

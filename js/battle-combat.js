@@ -251,13 +251,16 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
   var syncResult = _tryCancelDestroy(card, ownerSidePlayer, onlyBattle);
   if (syncResult) { callback(syncResult); return; }
   const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+  // バトルで負けて離れる（≪デコード≫等「バトル以外でバトルエリアを離れるとき」は発揮しない。effect-engine.js が見る）
+  bs._leaveByBattle = true;
   try {
     _tryCancelViaLeaveBattle(card, side, bs, ctxBase, (canceled) => {
+      bs._leaveByBattle = false;
       // 相手の端末で「離れるとき」により進化していれば、相手側に【進化時】の保留が残っている
       if (canceled && side === 'ai' && _onlineMode) bs._oppDeferredEvoPending = true;
       callback(canceled ? { canceled: true, reason: 'protection' } : null);
     });
-  } catch (_) { callback(null); }
+  } catch (_) { bs._leaveByBattle = false; callback(null); }
 }
 
 // オンラインのブロック解決（battle-online.js の resolveOnlineBlock。防御側の端末でバトルを解決する）から、

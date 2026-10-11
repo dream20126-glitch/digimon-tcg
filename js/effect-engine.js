@@ -12307,6 +12307,13 @@ function _payEffectPlayCost(payCost, costDelta, ctx) {
     else ctx.addLog && ctx.addLog('💾 コスト' + payCost + 'を支払う');
     ctx.updateMemGauge && ctx.updateMemGauge();
     if (window._sendMemoryUpdate) window._sendMemoryUpdate();
+    // 支払いでメモリーが相手側に移ったら、効果の処理が全て終わってからターン終了する
+    // （マネキモン BT26-012【メイン】で手札から登場させてメモリーが相手側に移っても、ターンが終わらなかった）
+    if (ctx.side === 'player' && ctx.bs.memory < 0) {
+      ctx._memoryOverflow = true;
+      if (ctx._parentContext) ctx._parentContext._memoryOverflow = true;
+      ctx.bs._pendingTurnEnd = true;
+    }
   } else {
     ctx.addLog && ctx.addLog('💾 支払いコスト0');
   }
@@ -17305,6 +17312,8 @@ export function triggerEffect(triggerCode, sourceCard, sourceSide, context, call
   // （効果で使用したデュアルカードのアーツ進化の【進化時】等で、発揮待ちのケルビモン BT26-078 が消える）
   const _outerQueue = _effectQueue.some(e => e && (e.status === 'waiting' || e.status === 'processing')) ? _effectQueue : null;
   if (_outerQueue) _queueStack.push(_outerQueue);
+  // いちばん外側の効果処理を始めた時点のメモリー（この処理中にメモリーが相手側へ移ったかの判定用）
+  const _startMem = (_effectProcessingDepth === 0 && context && context.bs && context.bs.isPlayerTurn) ? context.bs.memory : null;
   _effectProcessingDepth++;
   let _finished = false;
   // 完了時は「処理中」を先に解除してから次へ進む（直後のターン終了判定が処理中と誤認しないように）
@@ -17314,12 +17323,26 @@ export function triggerEffect(triggerCode, sourceCard, sourceSide, context, call
       const _qi = _queueStack.lastIndexOf(_outerQueue); if (_qi !== -1) _queueStack.splice(_qi, 1);
       _effectQueue = _outerQueue; try { _hudSyncQueue(context); } catch (_) {}
     }
+    // いちばん外側の効果処理が全て終わったら、効果でメモリーが相手側に移っていればターン終了の判定をする
+    // （どの効果・どの呼び出し元でも共通。アタック中ならアタックの終了を待ってから終わる＝checkAutoTurnEnd が待つ）
+    const _afterAll = () => {
+      const _b = context && context.bs;
+      // この効果処理の中でメモリーが相手側へ移った（開始時は0以上で今は負）ときだけ。ターン終了の処理中
+      // （手動のターン終了でメモリーを-3にしてから【ターン終了時】を処理する等）は対象外
+      const _crossed = _effectProcessingDepth === 0 && _startMem !== null && _startMem >= 0 && _b && _b.isPlayerTurn
+        && _b.memory < 0 && !_b._autoTurnEnding && !_b._endingTurn;
+      callback && callback(...args);
+      if (_crossed && typeof window !== 'undefined' && typeof window._checkPendingTurnEndOnly === 'function') {
+        _b._pendingTurnEnd = true; // 支払い・メモリー操作の経路を問わず（印を付け忘れた効果があっても）ターン終了を判定する
+        setTimeout(() => { try { if (_b.isPlayerTurn && _b.memory < 0) window._checkPendingTurnEndOnly(); } catch (e) { console.error('[pendingTurnEnd]', e); } }, 0);
+      }
+    };
     // いちばん外側の効果処理が終わったら、後回しにしていた非ターンプレイヤー側の効果を発揮する
     if (_effectProcessingDepth === 0 && _ntpDeferred.length > 0) {
-      _flushNonTurnDeferred(context && context.bs, () => { callback && callback(...args); });
+      _flushNonTurnDeferred(context && context.bs, _afterAll);
       return;
     }
-    callback && callback(...args);
+    _afterAll();
   };
   try {
     clearQueue();

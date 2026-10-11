@@ -8126,6 +8126,12 @@ function _drainPendingReactionsOnly(ctx, cb) {
   catch (_) { _drainPendingReactionsOnly(ctx, cb); }
 }
 // 効果の処理外で DP0 になったカード（オンラインで相手の効果の DP- を受け取った等）を、処理が無いときに消滅させる
+// アタック終了時等に、保留中の「〜したとき」の反応を処理する（battle-combat.js checkPendingTurnEnd）
+if (typeof window !== 'undefined') window._drainPendingReactions = (cb) => {
+  const b = window._lastBattleState;
+  if (!b || !Array.isArray(b._pendingReactions) || b._pendingReactions.length === 0) { cb && cb(); return; }
+  _drainPendingReactionsOnly(_buildBaseCtx(null, b), cb);
+};
 if (typeof window !== 'undefined') window._scheduleRuleDestroyCheck = () => { try { _scheduleRuleDestroyCheck(window._lastBattleState); } catch (_) {} };
 function checkPendingDestroys(ctx, callback) {
   // 消滅対象を「演出 → 削除 → on_destroy」の順で逐次処理する
@@ -12509,6 +12515,18 @@ function _summonCardFromEffect(c, ctx, opts, done) {
   const showFn = (ctx && ctx.showPlayEffect) || (typeof window !== 'undefined' && window.showPlayEffect);
   const afterAnim = () => {
     if (opts.skipOnPlay) { done && done(); return; }
+    // 「離れるとき」（即時型効果。≪デコード≫等）の処理中に登場した場合、その【登場時】は離れる処理（消滅等）が
+    // 終わってから発揮する（公式ルール15-8-5）。「〜したとき」の保留キューに積み、消滅の処理後にまとめて発揮される
+    // （ゾンビプルートモンの【デコード】で登場したプルートモンの【登場時】→手札破棄→「手札が破棄されたとき」が、
+    // ゾンビプルートモンの消滅より先に処理されていた）
+    if (ctx.bs && (ctx.bs._deferEvoTriggerDepth || 0) > 0) {
+      const _side = ctx.side;
+      enqueueReaction(ctx.bs, (cb) => {
+        try { triggerEffect('on_play', c, _side, ctx, () => cb && cb()); } catch (e) { console.error('[deferred on_play]', e); cb && cb(); }
+      }, []);
+      done && done();
+      return;
+    }
     if (opts.deferOnPlay) {
       try { scanTriggers('on_play', c, ctx.side, ctx); } catch (_) {}
       done && done();

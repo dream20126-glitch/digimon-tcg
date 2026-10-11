@@ -4185,6 +4185,10 @@ export async function checkPendingTurnEnd() {
   if (typeof window !== 'undefined' && typeof window._runRuleDestroyCheckNow === 'function') {
     await new Promise((resolve) => window._runRuleDestroyCheckNow(resolve));
   }
+  // バトル中の「離れるとき」等で保留した「〜したとき」の反応（【デコード】で登場したデジモンの【登場時】等）を処理する
+  if (typeof window !== 'undefined' && typeof window._drainPendingReactions === 'function') {
+    await new Promise((resolve) => window._drainPendingReactions(resolve));
+  }
   // 相手の端末にもアタックの終了を伝える（相手側で保留している DP0 の消滅をここで行ってもらう）
   if (_onlineMode && _sendCommand) { try { _sendCommand({ type: 'attack_end' }); } catch (_) {} }
   // アタックが終わったので【衝突】のブロッカーを外す

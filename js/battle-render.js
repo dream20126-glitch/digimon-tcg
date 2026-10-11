@@ -1604,11 +1604,42 @@ export function showBCD(idxOrCard, source) {
       evoHtml += '<button type="button" id="bcd-evo-stack-toggle" style="display:block;margin:8px auto 0;background:#111;color:#00fbff;border:1px solid #00fbff;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:bold;cursor:pointer;">進化元を確認する（' + _n + '枚）</button>';
     }
   }
+  // リンクしているカード（進化元と同じく別画面で一覧。テラーモン BT26-063 等）
+  const _stackViewHtml = _evoView ? _evoView.innerHTML : '';
+  let _linkViewHtml = '';
+  const _linked = (source !== 'trash' && Array.isArray(card.linkedCards)) ? card.linkedCards.filter(Boolean) : [];
+  if (_linked.length > 0 && _evoView) {
+    _linkViewHtml = '<div style="color:#00fbff;font-weight:bold;font-size:14px;margin-bottom:4px;">「' + _esc(card.name) + '」のリンクカード</div>'
+      + '<div style="color:#888;font-size:11px;margin-bottom:10px;">' + _linked.length + '枚</div>'
+      + '<div id="bcd-linked-list" style="text-align:left;">' + _linked.map((l, i) => {
+        const lImg = cardImg(l);
+        const lEff = String(l.evoSourceEffect || '').trim();
+        const hasEff = lEff && lEff !== 'なし';
+        return '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #222;">'
+          + (lImg ? '<img src="' + lImg + '" style="width:56px;border-radius:4px;flex:none;">' : '')
+          + '<div style="min-width:0;font-size:11px;line-height:1.6;"><div style="color:#fff;font-weight:bold;font-size:12px;">' + (i + 1) + '. ' + _esc(l.name) + (l.cardNo ? '（' + _esc(l.cardNo) + '）' : '') + '</div>'
+          + (parseInt(l.linkDp, 10) > 0 ? '<div style="color:#00ff88;font-size:10px;">リンクDP +' + _esc(l.linkDp) + '</div>' : '')
+          + '<div style="color:#ffaa00;font-size:10px;">リンク効果</div>'
+          + '<div style="color:' + (hasEff ? '#ddd' : '#555') + ';">' + (hasEff ? lEff : 'なし') + '</div></div></div>';
+      }).join('') + '</div>'
+      + '<div style="margin:12px 0;"><button type="button" id="bcd-evo-back" style="background:#111;color:#00fbff;border:1px solid #00fbff;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:bold;cursor:pointer;">← 戻る</button></div>';
+    evoHtml += '<button type="button" id="bcd-linked-toggle" style="display:block;margin:8px auto 0;background:#111;color:#00fbff;border:1px solid #00fbff;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:bold;cursor:pointer;">🔗 リンクカードを確認する（' + _linked.length + '枚）</button>';
+  }
   if (!evoHtml) evoHtml = '<div style="color:#555;font-size:10px;">' + evoLabel + 'なし</div>';
   evoEl.innerHTML = evoHtml;
   evoEl.style.display = 'block';
+  // 進化元／リンクカードの画面を切り替えて表示（どちらも同じ別画面の枠を使う）
+  const _openSubView = (html) => {
+    if (!_evoView) return;
+    _evoView.innerHTML = html;
+    const _back = document.getElementById('bcd-evo-back');
+    if (_back) _back.onclick = (e) => { e.stopPropagation(); _showMainView(); };
+    _showEvoView();
+  };
   const _stackToggle = document.getElementById('bcd-evo-stack-toggle');
-  if (_stackToggle) _stackToggle.onclick = (e) => { e.stopPropagation(); _showEvoView(); };
+  if (_stackToggle) _stackToggle.onclick = (e) => { e.stopPropagation(); _openSubView(_stackViewHtml); };
+  const _linkedToggle = document.getElementById('bcd-linked-toggle');
+  if (_linkedToggle) _linkedToggle.onclick = (e) => { e.stopPropagation(); _openSubView(_linkViewHtml); };
   const _evoBack = document.getElementById('bcd-evo-back');
   if (_evoBack) _evoBack.onclick = (e) => { e.stopPropagation(); _showMainView(); };
   // セキュリティ効果

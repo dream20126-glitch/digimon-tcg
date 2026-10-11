@@ -2306,6 +2306,16 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       else if (_edBaseCode === 'target_own') { edOwner = player; edAreaKey = 'battleArea'; edSide = ctx.side; }
       else if (_edBaseCode === 'target_own_tamer') { edOwner = player; edAreaKey = 'tamerArea'; edSide = ctx.side; }
       else if (_edBaseCode === 'target_opponent_tamer') { edOwner = opponent; edAreaKey = 'tamerArea'; edSide = (ctx.side === 'player' ? 'ai' : 'player'); }
+      // target:'self_card'（「このデジモンの進化元を破棄する」。【フラグメント】のコスト等）: このカード自身だけ
+      // （以前は既定の「相手のデジモン」になり、ギロモン BT26-055 の【フラグメント】で相手の進化元を破棄していた）
+      let _edSelfOnly = null;
+      if ((_edBaseCode === 'target_self' || _edBaseCode === 'target_self_card') && ctx.card) {
+        _edSelfOnly = ctx.card;
+        const _inOpp = (opponent.battleArea || []).includes(ctx.card) || (opponent.tamerArea || []).includes(ctx.card);
+        edOwner = _inOpp ? opponent : player;
+        edAreaKey = (edOwner.tamerArea || []).includes(ctx.card) ? 'tamerArea' : 'battleArea';
+        edSide = _inOpp ? (ctx.side === 'player' ? 'ai' : 'player') : ctx.side;
+      }
       const edArea = edOwner[edAreaKey] || [];
       const edRowSide = edSide === 'player' ? 'pl' : 'ai';
 
@@ -2327,6 +2337,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       for (let i = 0; i < edArea.length; i++) {
         const c = edArea[i];
         if (!c || !c.stack || c.stack.length === 0) continue;
+        if (_edSelfOnly && c !== _edSelfOnly) continue;
         // 「（相手の効果で）重ねられているカードは破棄されない」（cant_discard）を持つ相手のデジモンは対象外
         // （巨神兵器 BT26-085。以前は退化だけが見ていて、進化元を破棄する効果では破棄されていた）
         if (edOwner === opponent && _hasCantDiscard(c)) continue;
@@ -2464,6 +2475,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         showTrashCardPicker(_edTamers, 1, !!action._isCost, '🎯 下のカードを破棄するテイマーを選んでください', (picked) => {
           _edTamerDo(picked && picked[0]);
         }, _edTamers);
+        break;
+      }
+      // 「このデジモンの進化元」なら対象は決まっているので選ばせない
+      if (_edSelfOnly) {
+        discardFromTarget(_edSelfOnly, (didDiscard) => { afterDiscard(didDiscard, callback); });
         break;
       }
       ctx.addLog('🎯 進化元を破棄する対象を選んでください');

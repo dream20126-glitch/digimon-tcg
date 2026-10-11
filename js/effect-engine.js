@@ -2005,7 +2005,6 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
     case 'recover': {
       const n = action.value || 1;
-      const recoverCard = player.deck.length > 0 ? player.deck[0] : null;
       const recoveredCards = [];
       for (let i = 0; i < n; i++) {
         if (player.deck.length > 0) {
@@ -2052,8 +2051,17 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           catch (e) { console.error('[recover] security_init 送信失敗', e); }
         }
       }
-      // 辞書の演出パラメータ1=デッキ, パラメータ2=セキュリティ で自動決定
-      playEffect(action.code, { card: recoverCard, ctx }, () => { callback(); }, { visualType: action.visualType, frameColor: action.frameColor });
+      // デッキ→セキュリティの移動演出（裏向き）を1枚ずつ。相手の画面は fx_recover の受信側が同じ演出を出す
+      // （以前は辞書の汎用演出で、デッキの上のカードが表向きに見えていた）
+      if (recoveredCards.length === 0 || !window._fxCardMove) { callback(); break; }
+      const _recPre = ctx.side === 'player' ? '' : '相手の';
+      let _recI = 0;
+      const _recNext = () => {
+        if (_recI >= recoveredCards.length) { callback(); return; }
+        const rc = recoveredCards[_recI++];
+        try { window._fxCardMove(rc, _recPre + 'デッキ', _recPre + 'セキュリティ', _recNext, true); } catch (_) { _recNext(); }
+      };
+      _recNext();
       break;
     }
     case 'security_trash_top': {
@@ -2915,7 +2923,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
             _athOwner.hand.push(secCard); _noteHandIncrease(ctx, _athOwner);
             ctx.addLog('🃏 「' + secCard.name + '」を手札に加えた');
             ctx.renderAll();
-            callback();
+            // セキュリティ→手札の移動演出: 手札の持ち主の画面だけ表向き、相手の画面は裏向き
+            const _athOwnSide = _athOwner === player ? ctx.side : (ctx.side === 'player' ? 'ai' : 'player');
+            const _athMine = _athOwnSide === 'player';
+            const _athPre = _athMine ? '' : '相手の';
+            _fxMoveSync(ctx, secCard, _athPre + 'セキュリティ', _athPre + '手札', () => callback(),
+              _athMine ? { remoteFaceDown: true } : { faceDown: true, remoteFrom: 'セキュリティ', remoteTo: '手札' });
             break;
           }
         }
@@ -11684,12 +11697,20 @@ if (typeof window !== 'undefined') window._mainEffectConfirmsInEngine = (card) =
       && !_isInlineCostConfirmRecipe(steps);
   } catch (_) { return false; }
 };
+// 2つ目以降の「〜できる」(optional) ステップも同じ扱い（フーディエモン BT26-041「セキュリティを手札に加え、
+// 【リカバリー+1】（強制）。その後、デジモン1体をレストできる（任意）」: 最初は確認せず、レストの前に確認する）
+// ※「アタックできる」はアタック処理自体が確認するので除く
+function _isInlineConfirmStep(s) {
+  if (!s) return false;
+  if (Array.isArray(s.cost) && s.cost.length > 0) return true;
+  return s.optional === true && s.action !== 'attack';
+}
 function _isInlineCostConfirmRecipe(steps) {
   if (!Array.isArray(steps) || steps.length < 2) return false;
   const first = steps[0];
   const firstOptional = !!(first && (first.optional === true || (Array.isArray(first.cost) && first.cost.length > 0)));
   if (firstOptional) return false;
-  return steps.slice(1).some(s => s && Array.isArray(s.cost) && s.cost.length > 0);
+  return steps.slice(1).some(_isInlineConfirmStep);
 }
 // 確認ダイアログに出す「その後〜」部分のテキスト（ステップの display_text があればそれ）
 function _inlineCostConfirmText(step, fullText) {
@@ -11727,7 +11748,7 @@ function runRecipe(steps, ctx, callback) {
     // 「強制 → その後、〇〇することで（任意）」: コスト持ちステップに来たらここで発動確認する
     // （_isInlineCostConfirmRecipe。効果の最初では確認していない）
     if (ctx._inlineCostConfirm && ctx._inlineCostConfirm.steps === steps && idx > 1
-        && step && Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved) {
+        && step && _isInlineConfirmStep(step) && !step._costsResolved) {
       const _askText = _inlineCostConfirmText(step, ctx._inlineCostConfirm.text);
       const _isCpu = ctx.side === 'ai' && !(window._isOnlineMode && window._isOnlineMode());
       if (ctx.side === 'player') {

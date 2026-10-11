@@ -2625,6 +2625,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const _cdCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card || null };
         _snapshotHandDiscardConds(ctx.bs, ctx.side, _cdDiscarded);
         enqueueReaction(ctx.bs, _fireWhenHandDiscardTriggersQueuedWithCause, [_cdCause, ctx.side, null, ctx.bs, _cdCtxBase, _cdDiscarded.slice()]);
+        console.log('[diag-handDiscard] queued (cost_discard) side=' + ctx.side + ' cards=' + _cdDiscarded.map(c => c && c.name).join(',') + ' pending=' + (ctx.bs._pendingReactions || []).length + ' sameBs=' + (ctx.bs === (typeof window !== 'undefined' && window._lastBattleState)));
         callback();
       };
       const runDiscards = (cards, finalize) => {
@@ -8054,7 +8055,9 @@ function _fireWhenHandDiscardTriggersQueuedWithCause(cause, discardedSide, onlyS
   if (typeof discardedCards === 'function' && callback === undefined) { callback = discardedCards; discardedCards = null; }
   const prevCause = bs ? bs._lastDestroyCause : undefined;
   if (bs) bs._lastDestroyCause = cause;
+  console.log('[diag-handDiscard] fire side=' + discardedSide + ' onlySide=' + onlySide);
   fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, () => {
+    console.log('[diag-handDiscard] fire done');
     if (bs) bs._lastDestroyCause = prevCause;
     callback && callback();
   }, onlySide || undefined, discardedCards);
@@ -8098,6 +8101,7 @@ function _drainAfterReaction(bs, ctxBase, cb) {
 // 離れなかったDP0のカードを何度も判定し直してしまわないように checkPendingDestroys の末尾から使う）
 function _drainPendingReactionsOnly(ctx, cb) {
   const r = ctx && ctx.bs && ctx.bs._pendingReactions;
+  console.log('[diag-handDiscard] drainOnly pending=' + (Array.isArray(r) ? r.length : 'none'));
   if (!Array.isArray(r) || r.length === 0) { cb && cb(); return; }
   const i = r.findIndex(x => x && !x.late);
   const { fn, args } = r.splice(i >= 0 ? i : 0, 1)[0];
@@ -8153,6 +8157,7 @@ function checkPendingDestroys(ctx, callback) {
     // _pendingDestroy/_pendingReactionsを両方再チェックするため、fixed-pointで
     // 全て処理し終えるまでcallbackは呼ばれない（＝メイン効果完了後まで保留する仕様）
     const reactions = ctx.bs._pendingReactions;
+    if (Array.isArray(reactions) && reactions.length > 0) console.log('[diag-handDiscard] checkPendingDestroys drain pending=' + reactions.length);
     if (Array.isArray(reactions) && reactions.length > 0) {
       // late 指定（デッキが増えたとき）は、先に消滅時等の他の保留反応を処理してから
       const _ni = reactions.findIndex(r => r && !r.late);
@@ -10764,8 +10769,15 @@ export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, on
   };
   const optsFor = (side) => (side === discardedSide && discarded.length > 0
     ? { zoneCards: discarded.map((c) => ({ card: c, zone: 'hand' })) } : undefined);
-  const fireSide = (side, next) => _fireSidedReactionTriggers(side, 'when_hand_discard', bs, ctxBase, next,
-    (step, rs, carrier) => subjectMatches(step, side, carrier), optsFor(side));
+  const fireSide = (side, next) => {
+    try {
+      const area = [...((bs[side] && bs[side].battleArea) || []), ...((bs[side] && bs[side].tamerArea) || [])].filter(Boolean);
+      const names = area.filter(c => { const st = getRecipeForTrigger(c, 'when_hand_discard'); return Array.isArray(st) && st.some(x => subjectMatches(x, side, c)); }).map(c => c.name);
+      console.log('[diag-handDiscard] side=' + side + ' matching=' + names.join(',') + ' usedLimits=' + JSON.stringify(Object.keys(bs._usedLimits || {}).filter(k => k.indexOf('destroy') >= 0)));
+    } catch (e) { console.log('[diag-handDiscard] err', e && e.message); }
+    _fireSidedReactionTriggers(side, 'when_hand_discard', bs, ctxBase, next,
+      (step, rs, carrier) => subjectMatches(step, side, carrier), optsFor(side));
+  };
   const done2 = () => { discarded.forEach((c) => { if (c) delete c._handDiscardCond; }); done && done(); };
   if (onlySide === 'player') return fireSide('player', done2);
   if (onlySide === 'ai') return fireSide('ai', done2);

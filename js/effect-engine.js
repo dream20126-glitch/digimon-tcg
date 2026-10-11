@@ -7772,7 +7772,7 @@ const TRIGGER_LABEL_MAP = {
   on_own_turn_end: '自分のターン終了時', on_opp_turn_end: '相手のターン終了時',
   on_own_turn_start: '自分のターン開始時', on_opp_turn_start: '相手のターン開始時',
   main: 'メイン', during_own_turn: '自分のターン', during_opp_turn: '相手のターン', during_any_turn: 'お互いのターン',
-  on_battle_win: 'バトルで勝利した時',
+  on_battle_win: 'バトルで勝利した時', on_battle_win_security: 'バトルで勝利した時',
   on_main_phase_start: '自分のメインフェイズ開始時', on_opp_main_phase_start: '相手のメインフェイズ開始時',
 };
 const _ALL_TRIGGER_LABELS = Array.from(new Set(Object.values(TRIGGER_LABEL_MAP)));
@@ -7927,7 +7927,13 @@ export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
       // 《アセンブリ-N》等の《》で始まる行・［トラッシュ］等の［］で始まる行も、別の効果（キーワード／ゾーン効果）の
       // 始まりとして区切る（巨神兵器 BT26-085 の「離れるとき」のポップアップに《アセンブリ-5》まで出ていた）
       const re = new RegExp('【' + esc(label) + '】[\\s\\S]*?(?=\\n【(?:' + _ALL_TRIGGER_LABELS.map(esc).join('|') + ')】|\\n[《［]|$)');
-      const m = fullText.match(re);
+      let m = fullText.match(re);
+      // 同じ見出しの効果が複数ある（別々の効果としてキューに積んだ。_splitTriggerStepGroups）なら、その順番の段落
+      const _secIdx = Array.isArray(recipeSteps) ? recipeSteps._sectionIdx : null;
+      if (m && _secIdx > 0) {
+        const all = [...fullText.matchAll(new RegExp(re.source, 'g'))];
+        if (all[_secIdx]) m = all[_secIdx];
+      }
       // 【アタック時】等の見出しが無い反応（黒井翔太 BT26-092「【相手のターン】相手のデジモンがアタックしたとき」）は
       // キーワードで該当セクションを選ぶ（見つからなければ全文）
       block = m ? m[0].trim() : (_pickSectionByKeyword(fullText, triggerCode) || fullText);
@@ -8372,8 +8378,7 @@ function _splitTriggerStepGroups(card, triggerCode) {
   const full = _lookupTriggerSteps(r, triggerCode, card);
   if (!Array.isArray(full) || full.length === 0) return null;
   const fullSet = new Set(full);
-  const aliasKey = TRIGGER_KEY_ALIASES[triggerCode];
-  const codes = aliasKey ? [triggerCode, aliasKey] : [triggerCode];
+  const codes = _triggerMatchCodes(triggerCode);
   const used = new Set();
   const groups = [];
   for (const key in r) {
@@ -8382,7 +8387,9 @@ function _splitTriggerStepGroups(card, triggerCode) {
     if (!arr) continue;
     const g = arr.filter((st) => fullSet.has(st) && !used.has(st));
     g.forEach((st) => used.add(st));
-    if (g.length > 0) groups.push(g);
+    // 何番目の効果（同じトリガーの見出しを持つ段落の何番目）か。表示テキストの段落選び（extractTriggerSectionText）に使う
+    // （タイラントカブテリモン BT26-047 の【進化時】2つが、どちらも1つ目の段落の文章で表示されていた）
+    if (g.length > 0) { g._sectionIdx = groups.length; groups.push(g); }
   }
   // キーに属さないステップ（継承した効果・キーワード由来等）も1つの効果として加えてから、
   // 2つ以上の効果に分かれるかを判定する（以前は先に判定していたため、自身の効果のキーが1つだけの
@@ -8400,7 +8407,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
   const isActivated = ['main'].includes(triggerCode);
   // ソースカード限定のイベント系トリガー（そのカード固有のイベント）
   // これらは盤面全体をスキャンすると関係ない他カードの効果まで誘発してしまう
-  const isSourceOnly = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked', 'on_battle_win', 'on_battle_destroy', 'on_active'].includes(triggerCode);
+  const isSourceOnly = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked', 'on_battle_win', 'on_battle_win_security', 'on_battle_destroy', 'on_active'].includes(triggerCode);
   // ターン境界トリガー: 「相手のターン終了時」「自分のターン終了時」等は
   // 一方のサイドのカードのみ発火する（相手ターン終了 = 自陣営カードが反応）。
   // sourceSide で指定された側のみスキャン対象にする。
@@ -8438,7 +8445,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
     // 評価する必要がある。_eventSourceCard を明示しないと checkStepTriggerConditions が
     // ctx.card=勝者自身にフォールバックしてしまい、常に条件を満たしてしまう不具合になる
     // （メタルティラノモン: Lv3を消滅させてもLv6以上の自分自身に対して判定されてしまう等）。
-    const battleWinEventSourceCard = triggerCode === 'on_battle_win' ? (ctx.bs && ctx.bs._lastBattleDefeatedCard) : null;
+    const battleWinEventSourceCard = (triggerCode === 'on_battle_win' || triggerCode === 'on_battle_win_security') ? (ctx.bs && ctx.bs._lastBattleDefeatedCard) : null;
     // negate(deny:true, target_trigger)で狙われたカード自身のトリガーは発揮させない
     // （他カードがこのイベントに反応するsubjectスキャンは対象外。上のisSourceOnly分岐で処理済み）
     const _negatedThisTrigger = !!(sourceCard && sourceCard.buffs
@@ -8457,6 +8464,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
       _splitGroups.forEach((g) => {
         const steps = _narrowSelf(g);
         if (!Array.isArray(steps) || steps.length === 0) return;
+        if (steps !== g && g._sectionIdx != null) steps._sectionIdx = g._sectionIdx;
         const blk = {
           raw: ((triggerCode === 'security' ? (sourceCard.securityEffect || sourceCard.effect) : sourceCard.effect) || ''),
           trigger: { code: triggerCode },
@@ -8754,6 +8762,19 @@ function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGr
 // 実際の発火は'when_evo_discard'で行われる（fireWhenEvoDiscardTriggers）。
 // カード側レシピを書き換えずに辞書登録名のまま動くよう、ここで吸収する
 const TRIGGER_KEY_ALIASES = { when_evo_discard: 'discard', when_hand_discard: 'discard', on_battle_win: 'on_win_battle' };
+// エイリアスとは別に、そのトリガーで一緒に拾うレシピのキー。
+// on_win_battle_any =「バトルに勝ったとき」（モルフォモン BT26-035 等）。デジモンとのバトルで勝った（on_battle_win）と、
+// セキュリティデジモンとのバトルで勝った（on_battle_win_security）の両方で発動する。
+// on_win_battle（=on_battle_win）は「バトルで相手のデジモンを消滅させたとき」なので、セキュリティデジモン
+// （負けても消滅しない。総合ルール14-2-3）とのバトルでは発動しない
+const TRIGGER_EXTRA_KEYS = { on_battle_win: ['on_win_battle_any'], on_battle_win_security: ['on_win_battle_any'] };
+function _triggerMatchCodes(triggerCode) {
+  const out = [triggerCode];
+  const ak = TRIGGER_KEY_ALIASES[triggerCode];
+  if (ak) out.push(ak);
+  (TRIGGER_EXTRA_KEYS[triggerCode] || []).forEach((k) => out.push(k));
+  return out;
+}
 // トリガーごとに発動主体が異なるカード（例:「相手がレストしたとき」か「自分のテイマーの
 // 下が破棄されたとき」のどちらでも発動する効果）は、レシピエディタ側(groupTriggersByTiming)が
 // 1つのstepへまとめ、step.subject_by_code={トリガーコード: subject}として出力する。
@@ -8825,13 +8846,18 @@ function _lookupTriggerStepsBase(recipeObj, triggerCode) {
     const aliasSteps = recipeObj[aliasKey];
     if (Array.isArray(aliasSteps)) result = result ? result.concat(aliasSteps) : aliasSteps.slice();
   }
+  const _extraKeys = TRIGGER_EXTRA_KEYS[triggerCode] || [];
+  _extraKeys.forEach((ek) => {
+    const extraSteps = recipeObj[ek];
+    if (Array.isArray(extraSteps)) result = result ? result.concat(extraSteps) : extraSteps.slice();
+  });
   // カンマ区切りの結合キー（例:"when_rest,discard"）は、triggerCode自体だけでなく
   // そのエイリアス（when_evo_discard→discardのdiscard側）でも一致判定する。
   // これが無いと「when_rest,discard」キーはtriggerCode='when_evo_discard'では
   // 見つからない（セグメントが'discard'であって'when_evo_discard'ではないため）
-  const matchCodes = aliasKey ? [triggerCode, aliasKey] : [triggerCode];
+  const matchCodes = _triggerMatchCodes(triggerCode);
   for (const key in recipeObj) {
-    if (key === triggerCode || (aliasKey && key === aliasKey) || key.indexOf(',') === -1) continue;
+    if (key === triggerCode || (aliasKey && key === aliasKey) || _extraKeys.includes(key) || key.indexOf(',') === -1) continue;
     if (!key.split(',').some(k => matchCodes.indexOf(k.trim()) !== -1)) continue;
     const steps = recipeObj[key];
     if (!Array.isArray(steps)) continue;

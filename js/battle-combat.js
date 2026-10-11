@@ -479,6 +479,22 @@ function showPenetrateAnnounce(callback) {
   }, _kwRule ? 2800 : 1400);
 }
 
+// セキュリティデジモンとのバトルに勝ったときの「バトルに勝ったとき」（レシピ on_win_battle_any）。
+// 「バトルで相手のデジモンを消滅させたとき」（on_win_battle）はセキュリティデジモンが消滅しないので発動しない。
+// オンラインで相手のデジモンの勝利は相手の端末（持ち主）が処理する
+function _fireSecurityBattleWin(atk, side, sec, next) {
+  if (!atk || (side === 'ai' && _onlineMode)) { next && next(); return; }
+  const area = side === 'player' ? bs.player.battleArea : bs.ai.battleArea;
+  if (!area.includes(atk)) { next && next(); return; }
+  bs._lastBattleWinner = atk;
+  bs._lastBattleDefeatedCard = sec;
+  const end = () => { bs._lastBattleWinner = null; bs._lastBattleDefeatedCard = null; renderAll(); next && next(); };
+  try {
+    const winCtx = _hooks.makeEffectContext(atk, side);
+    _hooks.triggerEffect('on_battle_win_security', atk, side, winCtx, end);
+  } catch (e) { console.error('[_fireSecurityBattleWin]', e); end(); }
+}
+
 function hideCombatBackdrop() {
   _combatAnimating = false;
   const bd = document.getElementById('_combat-backdrop');
@@ -2475,11 +2491,14 @@ export function resolveSecurityCheck(atk, atkIdx) {
           showBattleResult('Win!!', '#00ff88', 'セキュリティ突破！', () => {
             showDestroyEffect(sec, () => {
               addLog('✓ セキュリティ突破');
+              // セキュリティデジモンとのバトルに勝った →「バトルに勝ったとき」（on_win_battle_any）
+              _fireSecurityBattleWin(atk, 'player', sec, () => {
               if (bs.ai.security.length <= 0) {
                 addLog('🛡 相手のセキュリティが0枚になった');
                 checkAttackEnd(atk, atkIdx);
               } else if (checksRemaining > 0) { setTimeout(() => doNextCheck(), 500); }
               else { checkAttackEnd(atk, atkIdx); }
+              });
             });
           }, 'Lose...', '#ff4444');
         } else {
@@ -3745,7 +3764,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
               addLog('✓ セキュリティ突破');
               if (bs.player.security.length <= 0) addLog('🛡 自分のセキュリティが0枚になった');
               renderAll();
-              _afterOne();
+              _fireSecurityBattleWin(atk, 'ai', sec, _afterOne);
             }, 'Win!!', '#00ff88');
           });
         }

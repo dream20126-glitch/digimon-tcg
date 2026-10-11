@@ -7,8 +7,14 @@
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
   <title>エフェクトテスト - デジモンTCG</title>
-  <link rel="stylesheet" href="css/common.css">
-  <link rel="stylesheet" href="css/battle.css">
+  <!-- 本番（index.html）と同じスタイル。テーマ（盤面・リボン・ターン表示）とフォントも読み込む -->
+  <link rel="stylesheet" href="css/common.css?v=20261004-11">
+  <link rel="stylesheet" href="css/battle.css?v=20261004-11">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Orbitron:wght@600;800&display=swap">
+  <link rel="stylesheet" href="css/theme-game.css?v=20261004-11">
+  <link rel="stylesheet" href="css/theme-battle.css?v=20261004-11">
   <style>
     /* シナリオ選択画面 */
     #scenario-screen {
@@ -309,6 +315,11 @@
     <!-- AIゾーン -->
     <div class="battle-zone ai-zone">
       <span class="zone-label" id="opponent-name-label">相手プレイヤー</span>
+      <div class="opp-info-row">
+        <span>手札:<b id="ai-hand-count">0</b></span>
+        <span>タマ:<b id="ai-tama-count">0</b></span>
+        <span>トラッシュ:<b id="ai-trash-count2">0</b></span>
+      </div>
       <div style="display:flex; align-items:flex-start; gap:6px;">
         <div style="display:flex; flex-direction:column; gap:3px; flex-shrink:0; align-items:center;">
           <span class="zone-label" style="margin:0;">📚</span>
@@ -347,8 +358,14 @@
       <div class="memory-row" id="memory-gauge-row"></div>
       <div class="memory-info">
         <span id="m-turn-lbl" class="m-turn-label pl">あなたのターン</span>
-        <span style="color:#444;">|</span>
-        <span style="color:#666; font-size:9px;">ターン <b id="t-count" style="color:#aaa;">1</b></span>
+        <span class="mi-sep" style="color:#444;">|</span>
+        <!-- 全画面表示の切り替え（幅640px以上で表示。css/battle.css） -->
+        <button type="button" class="fullscreen-btn" id="fullscreen-btn" onclick="toggleBattleFullscreen()" title="全画面表示">
+          <svg class="fs-icon-enter" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
+          <svg class="fs-icon-exit" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
+          <span class="fs-label">全画面表示</span>
+        </button>
+        <span class="turn-badge" id="turn-badge"><span class="turn-badge-label">TURN</span><b id="t-count">1</b></span>
       </div>
     </div>
 
@@ -388,6 +405,8 @@
           </div>
         </div>
       </div>
+      <!-- 自分の名前（下端のリボン。対戦開始時にプレイヤー名を入れる） -->
+      <span class="my-name-ribbon" id="my-name-label">あなた</span>
     </div>
 
     <!-- 長押しアクション選択メニュー -->
@@ -420,7 +439,7 @@
 
     <!-- ゲートを出るボタン -->
     <div style="text-align:center; padding:6px 0; background:#020202; border-top:1px solid #111;">
-      <button onclick="confirmExitGate()" style="background:none; border:1px solid #ff444444; color:#ff444488; font-size:10px; padding:4px 16px; border-radius:6px; cursor:pointer;">ゲートを出る</button>
+      <button id="exit-gate-btn" onclick="confirmExitGate()" style="background:none; border:1px solid #ff444444; color:#ff444488; font-size:10px; padding:4px 16px; border-radius:6px; cursor:pointer;">ゲートを出る</button>
     </div>
 
     <!-- チュートリアルガイド -->
@@ -524,7 +543,7 @@
     <div id="bcd-stats" style="font-size:12px; color:var(--main-cyan); margin-bottom:10px;"></div>
     <div id="bcd-effect" style="font-size:11px; color:#ddd; line-height:1.7; margin-bottom:10px; text-align:left; background:#111; padding:10px; border-radius:6px; border:1px solid #333;"></div>
     <div id="bcd-evo-source" style="display:none; font-size:11px; color:#aaa; line-height:1.7; margin-bottom:10px; text-align:left; background:#0a0a0a; padding:10px; border-radius:6px; border:1px solid #222;"></div>
-    <button class="menu-btn" onclick="closeBCD()">閉じる</button>
+    <button class="menu-btn" id="bcd-close-btn" onclick="closeBCD()">閉じる</button>
   </div>
 </div>
 
@@ -557,14 +576,14 @@
 <!-- セキュリティチェック演出 -->
 <div id="security-check-overlay" style="display:none; position:fixed; inset:0; z-index:47500; align-items:center; justify-content:center; flex-direction:column; gap:16px; background:rgba(0,0,0,0.95);">
   <div id="sec-check-label" style="font-size:1.2rem; color:#ff4444; letter-spacing:4px; font-weight:bold; opacity:0; transition:opacity 0.3s; text-shadow:0 0 20px rgba(255,68,68,0.6);">SECURITY CHECK!</div>
-  <div style="display:flex; gap:20px; align-items:center;">
-    <div style="text-align:center;">
+  <div id="sec-vs-cards" style="display:flex; gap:20px; align-items:center;">
+    <div id="sec-atk-area" style="text-align:center;">
       <div id="sec-atk-card-img" style="width:110px; height:154px; border-radius:10px; overflow:hidden; border:2px solid #00fbff; box-shadow:0 0 25px rgba(0,251,255,0.5); opacity:0; transition:opacity 0.3s;"></div>
       <div id="sec-atk-name" style="font-size:11px; color:#00fbff; margin-top:6px; font-weight:bold; opacity:0; transition:opacity 0.3s;"></div>
       <div id="sec-atk-dp" style="font-size:10px; color:#aaa; opacity:0; transition:opacity 0.3s;"></div>
     </div>
-    <div style="font-size:2rem; font-weight:bold; color:#ff4444; text-shadow:0 0 15px #ff4444;">VS</div>
-    <div style="text-align:center;">
+    <div id="sec-vs-label" style="font-size:2rem; font-weight:bold; color:#ff4444; text-shadow:0 0 15px #ff4444;">VS</div>
+    <div id="sec-def-area" style="text-align:center;">
       <div id="sec-check-card-img" style="width:110px; height:154px; border-radius:10px; overflow:hidden; border:2px solid #ff4444; box-shadow:0 0 25px rgba(255,68,68,0.5); opacity:0; transform:rotateY(180deg); transition:opacity 0.4s, transform 0.6s;"></div>
       <div id="sec-check-card-name" style="font-size:11px; color:#ff4444; margin-top:6px; font-weight:bold; opacity:0; transition:opacity 0.3s;"></div>
       <div id="sec-check-type" style="font-size:10px; color:#aaa; opacity:0; transition:opacity 0.3s;"></div>
@@ -611,15 +630,15 @@
 
 <!-- 効果発動確認 -->
 <div id="effect-confirm-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:65000; align-items:center; justify-content:center; padding:20px;">
-  <div style="background:var(--panel-bg); border:1px solid var(--main-cyan); border-radius:14px; padding:24px; max-width:300px; width:100%; text-align:center;">
+  <div id="effect-confirm-panel" style="background:var(--panel-bg); border:1px solid var(--main-cyan); border-radius:14px; padding:24px; max-width:300px; width:100%; text-align:center;">
     <div style="font-size:1.5rem; margin-bottom:10px;">⚡</div>
     <div id="effect-confirm-img" style="width:120px; height:168px; border-radius:8px; border:2px solid var(--main-cyan); overflow:hidden; margin:0 auto 12px; box-shadow:0 0 15px rgba(0,251,255,0.3);"></div>
     <div id="effect-confirm-name" style="font-size:1rem; font-weight:bold; color:#fff; margin-bottom:8px;"></div>
     <div id="effect-confirm-text" style="font-size:12px; color:#aaa; line-height:1.7; margin-bottom:16px; text-align:left; background:#111; padding:10px; border-radius:6px; white-space:pre-line;"></div>
     <p id="effect-confirm-question" style="color:var(--main-cyan); font-size:14px; font-weight:bold; margin-bottom:16px;">効果を発動しますか？</p>
     <div style="display:flex; gap:10px;">
-      <button class="menu-btn primary" style="flex:1;" onclick="confirmEffect(true)">はい</button>
-      <button class="menu-btn" style="flex:1; border-color:#555; color:#555;" onclick="confirmEffect(false)">いいえ</button>
+      <button id="effect-confirm-yes" class="menu-btn primary" style="flex:1;" onclick="confirmEffect(true)">はい</button>
+      <button id="effect-confirm-no" class="menu-btn" style="flex:1; border-color:#555; color:#555;" onclick="confirmEffect(false)">いいえ</button>
     </div>
   </div>
 </div>

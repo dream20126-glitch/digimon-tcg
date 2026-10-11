@@ -796,6 +796,12 @@ window.startTest = async function() {
     // 相手プレイヤーの名前表示
     const oppLabel = document.getElementById('opponent-name-label');
     if (oppLabel) oppLabel.innerText = isFirst ? 'Player 2' : 'Player 1';
+    // 本番（battle.js）と同じ: P1（先攻）＝シアン、P2（後攻）＝ピンク。自分が後攻なら自分側をピンクに（.side-p2）
+    const _bsEl = document.getElementById('battle-screen');
+    if (_bsEl) _bsEl.classList.toggle('side-p2', !isFirst);
+    // 自分側の名前（下端のリボン）
+    const _myName = document.getElementById('my-name-label');
+    if (_myName) _myName.innerText = isFirst ? 'Player 1' : 'Player 2';
 
     // リスナー開始
     startOnlineListener();
@@ -814,3 +820,34 @@ window.startTest = async function() {
 
 // ===== 初期化 =====
 console.log('[test-battle.js] エフェクトテスト用モジュール読み込み完了');
+
+// ===== 全画面表示の切り替え（本番 battle.js と同じ。PCのみボタン表示） =====
+if (!window.toggleBattleFullscreen) {
+  window.toggleBattleFullscreen = function() {
+    const doc = document;
+    const root = doc.documentElement;
+    const isFs = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+    try {
+      if (!isFs) {
+        const req = root.requestFullscreen || root.webkitRequestFullscreen;
+        if (req) { const p = req.call(root); if (p && p.catch) p.catch(e => console.warn('[fullscreen]', e)); }
+      } else {
+        const exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+        if (exit) { const p = exit.call(doc); if (p && p.catch) p.catch(e => console.warn('[fullscreen]', e)); }
+      }
+    } catch (e) { console.warn('[fullscreen]', e); }
+  };
+  const _updateFsBtn = () => {
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    document.documentElement.classList.toggle('is-fullscreen', isFs);
+    const btn = document.getElementById('fullscreen-btn');
+    if (!btn) return;
+    btn.classList.toggle('is-fs', isFs);
+    btn.title = isFs ? '元の表示に戻す' : '全画面表示';
+    const label = btn.querySelector('.fs-label');
+    if (label) label.textContent = isFs ? '元に戻す' : '全画面表示';
+  };
+  if (!(document.fullscreenEnabled || document.webkitFullscreenEnabled)) document.documentElement.classList.add('fs-unsupported');
+  document.addEventListener('fullscreenchange', _updateFsBtn);
+  document.addEventListener('webkitfullscreenchange', _updateFsBtn);
+}

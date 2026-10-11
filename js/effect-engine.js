@@ -65,11 +65,10 @@ function _entryLimitExhausted(card, block) {
     const src = block._recipeCard || card;
     const steps = block._grantedSteps || (code ? getRecipeForTrigger(src, code, !!block._recipeCard) : null);
     if (!Array.isArray(steps) || steps.length === 0) return false;
-    const srcId = _limitCardId(src), carId = _limitCardId(card);
     return steps.every((st) => {
       const max = st ? getLimitMaxUses(st) : 0;
       if (!(max > 0)) return false;
-      return (bs._usedLimits[srcId + '@' + carId + '_recipe_' + _limitStepPart(st)] || 0) >= max;
+      return (bs._usedLimits[_stepLimitKey(src, card, st)] || 0) >= max;
     });
   } catch (_) { return false; }
 }
@@ -10121,9 +10120,7 @@ export function fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, done,
     if (!okCause) return false;
     const lmax = getLimitMaxUses(step);
     if (lmax > 0 && bs._usedLimits) {
-      const sid = _limitCardId(srcCard);
-      const cid = _limitCardId(carrier);
-      if ((bs._usedLimits[sid + '@' + cid + '_recipe_' + _limitStepPart(step)] || 0) >= lmax) return false;
+      if ((bs._usedLimits[_stepLimitKey(srcCard, carrier, step)] || 0) >= lmax) return false;
     }
     return !!pickPlaced(step, reactSide);
   };
@@ -11097,9 +11094,7 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
       if (!_destroyCauseMatches(step, bs, reactSide, carrier, triggerKey)) return false;
       // ターンに1回制限チェック
       if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
-        const sourceId = _limitCardId(sourceCard);
-        const carrierId = _limitCardId(carrier);
-        const limitKey = sourceId + '@' + carrierId + '_recipe_' + _limitStepPart(step);
+        const limitKey = _stepLimitKey(sourceCard, carrier, step);
         if (bs._usedLimits && bs._usedLimits[limitKey]) return false;
       }
       return true;
@@ -11272,6 +11267,14 @@ function _limitCardId(card) {
 }
 function _evoSourceLimitKey(sourceCard, step) {
   return 'evo#' + _cardUid(sourceCard) + '_recipe_' + _limitStepPart(step);
+}
+// 回数制限（【ターンに1回】等）の使用回数キー。進化元効果（効果を持つカード≠一番上のカード）は進化元カード基準にする。
+// 進化しても同じデジモンなので、一番上のカードが変わっても使用回数は引き継ぐ（モルフォモン BT26-035 の進化元
+// 「【ターンに1回】バトルに勝ったとき」を使ってオオクワモン→タイラントカブテリモンに進化したあと、
+// 次のバトル勝利でまた誘発していた）
+function _stepLimitKey(sourceCard, carrier, step) {
+  if (sourceCard && carrier && sourceCard !== carrier) return _evoSourceLimitKey(sourceCard, step);
+  return _limitCardId(sourceCard || carrier) + '@' + _limitCardId(carrier || sourceCard) + '_recipe_' + _limitStepPart(step);
 }
 
 function _buildBaseCtx(ctxBase, bs) {
@@ -11475,7 +11478,7 @@ function recipeWillExecuteAnything(recipe, ctx) {
       const _lsc = ctx._sourceCard || ctx.card;
       const _lSourceId = _limitCardId(_lsc);
       const _lCarrierId = _limitCardId(ctx.card);
-      if ((ctx.bs._usedLimits[_lSourceId + '@' + _lCarrierId + '_recipe_' + _limitStepPart(step)] || 0) >= _lMax) continue;
+      if ((ctx.bs._usedLimits[_stepLimitKey(_lsc, ctx.card, step)] || 0) >= _lMax) continue;
     }
     // コスト feasibility チェック: 「自身をレスト」コストがあるが既にレスト中ならスキップ
     // （武之内空等「このテイマーをレストさせることで〜」は、既にレスト状態なら
@@ -12247,7 +12250,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 反応系トリガーの進化元効果は進化元カード基準のキー（_runReactionEffect が ctx._evoLimitSource を設定）
       const _limitKey = ctx._evoLimitSource
         ? _evoSourceLimitKey(ctx._evoLimitSource, step)
-        : _srcId + '@' + _carId + '_recipe_' + _limitStepPart(step);
+        : _stepLimitKey(_srcCard, ctx.card, step);
       if (!ctx.bs._usedLimits) ctx.bs._usedLimits = {};
       const _used = ctx.bs._usedLimits[_limitKey] || 0;
       if (_used >= _limitMax) {

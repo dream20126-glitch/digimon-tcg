@@ -1443,7 +1443,8 @@ export function showBCD(idxOrCard, source) {
   // 対象選択中はカード詳細を開かない（タップ干渉防止）
   if (isTargetSelecting()) return;
   let card;
-  if (typeof idxOrCard === 'object') card = idxOrCard;
+  // null は typeof が 'object' になるので除く（育成エリアは showBCD(null, 'plIkusei') で呼ばれる）
+  if (idxOrCard && typeof idxOrCard === 'object') card = idxOrCard;
   else if (source === 'hand') card = bs.player.hand[idxOrCard];
   else if (source === 'mulliganHand') card = bs.player.hand[idxOrCard];
   else if (source === 'plBattle') card = bs.player.battleArea[idxOrCard];

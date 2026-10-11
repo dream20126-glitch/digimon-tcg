@@ -8347,14 +8347,18 @@ function _narrowBySentence(blockText, triggerCode) {
   // 括弧ラベル自身のテキスト（例:「【登場時】」に含まれる「登場」）は判定対象から除く。
   // ラベル文字列との一致だけで「他の系統と同居している」と誤判定し、単一トリガーの
   // 2文目以降を誤って絞り込んでしまうのを防ぐ
-  const labelPrefixMatch = blockText.match(/^【[^】]+】/);
+  // 「【登場時】【進化時】」のように見出しが並んでいれば全部をラベルとして扱う
+  const labelPrefixMatch = blockText.match(/^(?:【[^】]+】)+/);
   const stripLabel = (s, idx) => (idx === 0 && labelPrefixMatch) ? s.slice(labelPrefixMatch[0].length) : s;
   const otherFamilies = _ALL_REACTIVE_FAMILIES.filter(f => f !== family);
+  // 「進化元」の「進化」は【進化時】の系統キーワードとして数えない（ピッコロモン BT26-043 の【登場時】【進化時】
+  // 「〜レストさせる。その後、〜進化元の下に〜」が、【進化時】では「その後〜」の文だけに絞り込まれていた）
+  const _hasKw = (t, f) => (f === '進化' ? t.replace(/進化元/g, '') : t).includes(f);
   // 他の系統キーワードが実際に混在している場合だけ文単位で絞り込む。混在がなければ
   // （＝同一トリガーの複数文が並んでいるだけ）絞り込まずそのまま全文を返す
-  const hasOtherFamilyMix = sentences.some((s, idx) => otherFamilies.some(f => stripLabel(s, idx).includes(f)));
+  const hasOtherFamilyMix = sentences.some((s, idx) => otherFamilies.some(f => _hasKw(stripLabel(s, idx), f)));
   if (!hasOtherFamilyMix) return blockText;
-  const matched = sentences.filter((s, idx) => stripLabel(s, idx).includes(family));
+  const matched = sentences.filter((s, idx) => _hasKw(stripLabel(s, idx), family));
   if (matched.length === 0 || matched.length === sentences.length) return blockText;
   let result = matched.join('');
   if (labelPrefixMatch && !result.startsWith('【')) result = labelPrefixMatch[0] + result;
@@ -8443,7 +8447,14 @@ export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
       }
       // 【アタック時】等の見出しが無い反応（黒井翔太 BT26-092「【相手のターン】相手のデジモンがアタックしたとき」）は
       // キーワードで該当セクションを選ぶ（見つからなければ全文）
-      block = m ? m[0].trim() : (_pickSectionByKeyword(fullText, triggerCode) || fullText);
+      // 「【登場時】【進化時】〜」のように見出しが並んでいれば、直前の見出しも含めて出す
+      let _lead = '';
+      if (m && typeof m.index === 'number') {
+        const before = fullText.slice(0, m.index);
+        const lm = before.match(/(?:【[^】\n]+】)+$/);
+        if (lm) _lead = lm[0];
+      }
+      block = m ? (_lead + m[0]).trim() : (_pickSectionByKeyword(fullText, triggerCode) || fullText);
     } catch (_) { block = fullText; }
   } else {
     // 【ラベル】が無いトリガーは、キーワードで該当セクションだけを選ぶ（_pickSectionByKeyword）

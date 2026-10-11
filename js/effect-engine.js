@@ -4560,8 +4560,13 @@ function _effectSourceTypeOf(ctx) {
   if (t === 'デジモン') return 'digimon';
   if (t === 'オプション') return 'option';
   if (t === 'テイマー') return 'tamer';
-  // デュアルカード: 場にいない（手札から使用中・トラッシュへ送られた）ならオプションとしての効果
-  if (t === 'デュアル') return 'option';
+  // デュアルカード: 場にデジモンとしているならデジモンの効果、場にいない（手札から使用中・トラッシュへ送られた）なら
+  // オプションとしての効果（タイラントカブテリモン BT26-047「相手のオプションの効果を受けない」はデジモンの効果は受ける）
+  if (t === 'デュアル') {
+    const bs = ctx.bs;
+    const onField = !!(bs && ['player', 'ai'].some(sd => bs[sd] && (bs[sd].battleArea || []).includes(ctx.card)));
+    return onField ? 'digimon' : 'option';
+  }
   return undefined;
 }
 

@@ -170,7 +170,33 @@ function _entryLimitExhausted(card, block) {
   } catch (_) { return false; }
 }
 
+// 常在型のキーワード（誘発型ではないので、発揮待ち・順番選択に入れない）。キーワード辞書ではアタック時等の
+// テンプレートで書かれているが、誘発した時点でその場で適用し、説明だけ出す
+// （≪プログレス≫「このデジモンのアタック中、相手の効果を受けない」。ザンバモン BT26-017 で得た【プログレス】が
+// 「どの効果から使用しますか？」に出ていた）
+const _CONTINUOUS_KW_FLAGS = new Set(['attack_immunity']);
+function _applyContinuousKeywordBlock(card, block, actualSide) {
+  try {
+    const code = block && block.trigger && block.trigger.code;
+    const src = (block && block._recipeCard) || card;
+    const steps = (block && block._grantedSteps) || (code ? getRecipeForTrigger(src, code, !!(block && block._recipeCard)) : null);
+    if (!Array.isArray(steps) || steps.length === 0) return false;
+    if (!steps.every(st => st && st._kwFlag && _CONTINUOUS_KW_FLAGS.has(st._kwFlag))) return false;
+    const bs = (typeof window !== 'undefined' && window._lastBattleState) || null;
+    if (!bs) return false;
+    const side = actualSide || (bs.player.battleArea.includes(card) ? 'player' : 'ai');
+    // オンラインで相手のカードなら、持ち主の端末が適用する（状態は同期で届く）
+    if (side === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) return true;
+    const ctx = Object.assign({}, _buildBaseCtx(null, bs), { card, side });
+    runRecipe(steps.map(st => Object.assign({}, st)), ctx, () => {});
+    const flags = [...new Set(steps.map(st => st._kwFlag))];
+    flags.forEach(fl => { if (typeof window !== 'undefined' && window._showKeywordRuleFlash) window._showKeywordRuleFlash(card, fl); });
+    return true;
+  } catch (e) { console.error('[continuousKeyword]', e); return false; }
+}
+
 function addToQueue(card, block, side, priority, actualSide) {
+  if (_applyContinuousKeywordBlock(card, block, actualSide)) return;
   const triggerCode = block.trigger?.code;
   // 同じカード+同じトリガー+同じ効果テキストが既にキューにあればスキップ
   // 注意1: 進化元効果は異なるカード由来でも同じ親カードで登録されるため、

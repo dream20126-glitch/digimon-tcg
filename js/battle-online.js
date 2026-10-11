@@ -1196,6 +1196,11 @@ function onRemoteCommand(cmd) {
     }
 
     // --- 演出コマンド（キュー経由で順次再生、並列起動によるバチバチを防止） ---
+    case 'fx_kwRule': {
+      // 相手のデジモンの常在型キーワード（≪プログレス≫等）が効いた説明
+      if (window._showKeywordRuleFlash) window._showKeywordRuleFlash({ name: cmd.cardName || '' }, cmd.code || '', true);
+      break;
+    }
     case 'fx_globalEffect': {
       // 相手の効果の継続する全体処理（「相手のターン終了まで、相手のデジモン全てをDP-」等）を、こちらのデジモンへの
       // 全体処理として記録する。今いるデジモンにも、あとから条件を満たしたデジモンにも付く（effect-engine.js）

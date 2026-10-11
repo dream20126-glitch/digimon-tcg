@@ -40,6 +40,26 @@ window._showKeywordGrantBanner = function(card, keywordName, remote) {
     setTimeout(resolve, 1800);
   }));
 };
+// 常在型のキーワードが効いたことを知らせる説明（≪プログレス≫のアタック宣言時等）。自動で消える。
+// オンラインでは相手の画面にも出す（fx_kwRule）
+window._showKeywordRuleFlash = function(card, code, remote) {
+  if (!remote && _onlineMode && typeof window._onlineSendCommand === 'function' && !window._suppressFxSend) {
+    try { window._onlineSendCommand({ type: 'fx_kwRule', cardName: (card && card.name) || '', code: code || '' }); } catch (_) {}
+  }
+  const name = KEYWORD_DISPLAY_NAMES[code] || code;
+  const rule = (window._keywordRuleText && window._keywordRuleText(code)) || '';
+  _kwBannerChain = _kwBannerChain.then(() => new Promise((resolve) => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;top:25%;left:50%;transform:translate(-50%,-50%);z-index:70000;background:linear-gradient(135deg,#001a2e,#003366);border:2px solid #44ddcc;border-radius:14px;padding:14px 20px;box-shadow:0 0 30px #44ddcc;text-align:center;animation:fadeIn 0.25s ease;pointer-events:none;max-width:min(90vw,520px);';
+    const esc = (t) => String(t == null ? '' : t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    wrap.innerHTML = '<div style="color:#fff;font-size:13px;font-weight:bold;margin-bottom:4px;">「' + esc(card && card.name || '?') + '」</div>'
+      + '<div style="color:#44ddcc;font-size:18px;font-weight:bold;text-shadow:0 0 8px #44ddcc;margin-bottom:6px;">【' + esc(name) + '】</div>'
+      + (rule ? '<div style="color:#ddd;font-size:12px;line-height:1.6;text-align:left;">' + esc(rule) + '</div>' : '');
+    document.body.appendChild(wrap);
+    setTimeout(() => { wrap.style.transition = 'opacity 0.3s'; wrap.style.opacity = '0'; }, 2400);
+    setTimeout(() => { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); resolve(); }, 2750);
+  }));
+};
 function _showKeywordGrantBannerNow(card, keywordName) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed;top:25%;left:50%;transform:translate(-50%,-50%);z-index:70000;background:linear-gradient(135deg,#001a2e,#003366);border:2px solid #00fbff;border-radius:14px;padding:16px 24px;box-shadow:0 0 30px #00fbff;text-align:center;animation:fadeIn 0.25s ease;pointer-events:none;';

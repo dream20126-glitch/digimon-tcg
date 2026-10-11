@@ -49,6 +49,7 @@ let _pendingHandDiscardCallback = null; // fx_handDiscardRequest 送信側の応
 let _pendingHandDiscardResponse = null; // 待ち開始前に届いた fx_handDiscardDone の結果
 let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
 let _pendingOwnDestroyDoneCallback = null;
+let _ownDestroyWaitCards = []; // 相手の合図待ちの、消滅した自分のカード（発揮待ちの表示用）
 let _pendingOwnDestroyDoneResponse = null;
 let _nonTurnPlayerReactionDraining = false; // bs._pendingNonTurnPlayerReactionsを順に発揮中かどうか
 let _deferStuckWatchdog = null; // active:false未受信のまま保留し続けるのを防ぐフェイルセーフタイマー
@@ -488,6 +489,9 @@ function onRemoteCommand(cmd) {
               } catch (_) { _finishOwnDestroy(); }
             };
             if (!_pendingOwnDestroyFire) _pendingOwnDestroyFire = _thisOwnFire;
+            // 相手の合図（fx_ownDestroyReady）を待っている間も、発揮待ちとして表示する
+            _ownDestroyWaitCards.push(cardForChain);
+            if (window._hudSetDestroyWait) window._hudSetDestroyWait(_ownDestroyWaitCards);
           }
         }
       }
@@ -1041,6 +1045,8 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_ownDestroyReady': {
+      _ownDestroyWaitCards = [];
+      if (window._hudSetDestroyWait) window._hudSetDestroyWait([]);
       // 相手（攻撃側）機がon_battle_win等の解決を終え、こちら（本当の持ち主）の
       // on_destroy発火に進んでよいと明示的に伝えてきた。
       // ただし、テイマーの登場時等（bs._pendingNonTurnPlayerReactions）がまだ発揮待ちの

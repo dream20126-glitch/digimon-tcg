@@ -33,6 +33,7 @@ function clearQueue() { _effectQueue = []; try { _hudSetSource('queue', []); } c
 // _fireDestroyChainQueued）で共通に判定する
 const _queueStack = [];      // triggerEffect の入れ子で退避中の外側のキュー
 const _ntpDeferred = [];     // 後回しにした非ターンプレイヤー側の効果（fn(done)）
+const _ntpDeferredHud = [];  // 同じ並びの発揮待ち表示（null なら表示しない）
 function _tpResolutionActive(bs) {
   if (!bs) return false;
   if (bs._pendingTurnPlayerBattleTrigger || bs._pendingNonTurnPlayerBattleTrigger || bs._penetrateResume) return true;
@@ -44,20 +45,48 @@ function _shouldDeferNonTurn(bs, side) {
   const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
   return side !== turnSide && _tpResolutionActive(bs);
 }
-function _deferNonTurn(fn, ctxForLog, label) {
+// hud: { card, side, trigger }（発揮待ちの表示に出すカード。消滅時の効果を持たないカードなら出さない）
+function _deferNonTurn(fn, ctxForLog, label, hud) {
   _ntpDeferred.push(fn);
+  let item = null;
+  try {
+    // オンラインで相手のカードなら、相手の端末が自分の発揮待ちとして表示して送ってくるので、こちらでは出さない（二重表示防止）
+    const _remoteOwned = hud && hud.side === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode();
+    if (hud && hud.card && !_remoteOwned && _cardHasDestroyTrigger(hud.card)) {
+      item = _hudItem(hud.side, hud.card, null, extractTriggerSectionText(hud.card.effect || '', hud.trigger || 'on_destroy'));
+      item.sub = '⏳ ターンプレイヤーの効果の後に発揮';
+    }
+  } catch (_) { item = null; }
+  _ntpDeferredHud.push(item);
+  _ntpHudSync();
   if (label && ctxForLog && ctxForLog.addLog) ctxForLog.addLog('⏳ ' + label + 'は、ターンプレイヤーの効果を全て処理してから発揮する');
+}
+function _ntpHudSync() { try { _hudSetSource('ntpDeferred', _ntpDeferredHud.filter(Boolean)); } catch (_) {} }
+function _cardHasDestroyTrigger(card) {
+  try { return !!(card && (hasRecipeTrigger(card, 'on_destroy') || hasEvoStackTrigger(card, 'on_destroy'))); } catch (_) { return false; }
 }
 // 後回しにした非ターンプレイヤー側の効果を順に発揮する（ターンプレイヤー側の解決がまだなら何もしない）
 function _flushNonTurnDeferred(bs, cb) {
   const done = () => { try { cb && cb(); } catch (e) { console.error('[flushNonTurnDeferred]', e); } };
   if (_ntpDeferred.length === 0 || _tpResolutionActive(bs || (typeof window !== 'undefined' && window._lastBattleState))) { done(); return; }
   const fn = _ntpDeferred.shift();
+  _ntpDeferredHud.shift();
+  _ntpHudSync();
   try { fn(() => _flushNonTurnDeferred(bs, cb)); } catch (e) { console.error('[flushNonTurnDeferred]', e); _flushNonTurnDeferred(bs, cb); }
 }
 if (typeof window !== 'undefined') {
   window._flushNonTurnDeferred = (cb) => _flushNonTurnDeferred(window._lastBattleState, cb);
   window._hasNonTurnDeferred = () => _ntpDeferred.length > 0;
+  // battle-online.js: 相手に消滅させられた自分のデジモンの消滅時効果が、相手の合図（fx_ownDestroyReady）待ちの間の表示
+  window._hudSetDestroyWait = (cards) => {
+    try {
+      _hudSetSource('ownDestroyWait', (cards || []).filter(c => c && _cardHasDestroyTrigger(c)).map((c) => {
+        const it = _hudItem('player', c, null, extractTriggerSectionText(c.effect || '', 'on_destroy'));
+        it.sub = '⏳ 相手の効果の後に発揮';
+        return it;
+      }));
+    } catch (_) {}
+  };
 }
 
 // キューにエントリを追加
@@ -7906,7 +7935,7 @@ function _fireDestroyChainQueued(cause, destroyedCard, destroyedSide, bs, ctxBas
     fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, done);
   };
   if (_shouldDeferNonTurn(bs, destroyedSide)) {
-    _deferNonTurn(_go, ctxBase, '「' + (destroyedCard && destroyedCard.name || '?') + '」の消滅時の効果');
+    _deferNonTurn(_go, ctxBase, '「' + (destroyedCard && destroyedCard.name || '?') + '」の消滅時の効果', { card: destroyedCard, side: destroyedSide, trigger: 'on_destroy' });
     callback && callback();
     return;
   }
@@ -8073,7 +8102,7 @@ function checkPendingDestroys(ctx, callback) {
           if (window._isOnlineMode && window._isOnlineMode() && side === 'ai') { try { window._onlineSendCommand({ type: 'fx_ownDestroyReady' }); } catch (_) {} }
           ctx.bs._lastDestroyCause = _cause;
           fireDestroyChain(card, side, ctx.bs, ctx, done);
-        }, ctx, '「' + card.name + '」の消滅時の効果');
+        }, ctx, '「' + card.name + '」の消滅時の効果', { card, side, trigger: 'on_destroy' });
         processNext();
         return;
       }

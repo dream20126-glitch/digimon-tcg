@@ -25,6 +25,41 @@ function normalizeRecipeDuration(d) {
 // キューをクリア
 function clearQueue() { _effectQueue = []; try { _hudSetSource('queue', []); } catch (_) {} }
 
+// ===== 非ターンプレイヤー側の効果の後回し（公式ルール 15-4-3-5 / 15-4-5 派生誘発） =====
+// ターンプレイヤー側の効果の解決中（発揮待ち・解決中のターンプレイヤーの効果がどこかのキューに残っている、
+// またはバトルの解決中＝battle-combat.js の保留フック）に、非ターンプレイヤー側の効果（消滅時チェーン等）が
+// 誘発したら、その場で発揮せず _ntpDeferred に積み、ターンプレイヤー側を全て解決してから順に発揮する。
+// 場面（バトル・貫通・効果によるDP0等）ごとではなく、消滅時チェーンの入口（checkPendingDestroys /
+// _fireDestroyChainQueued）で共通に判定する
+const _queueStack = [];      // triggerEffect の入れ子で退避中の外側のキュー
+const _ntpDeferred = [];     // 後回しにした非ターンプレイヤー側の効果（fn(done)）
+function _tpResolutionActive(bs) {
+  if (!bs) return false;
+  if (bs._pendingTurnPlayerBattleTrigger || bs._pendingNonTurnPlayerBattleTrigger || bs._penetrateResume) return true;
+  return [_effectQueue, ..._queueStack].some(q => Array.isArray(q)
+    && q.some(e => e && (e.status === 'waiting' || e.status === 'processing') && e.side === 'turnPlayer'));
+}
+function _shouldDeferNonTurn(bs, side) {
+  if (!bs || !side) return false;
+  const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+  return side !== turnSide && _tpResolutionActive(bs);
+}
+function _deferNonTurn(fn, ctxForLog, label) {
+  _ntpDeferred.push(fn);
+  if (label && ctxForLog && ctxForLog.addLog) ctxForLog.addLog('⏳ ' + label + 'は、ターンプレイヤーの効果を全て処理してから発揮する');
+}
+// 後回しにした非ターンプレイヤー側の効果を順に発揮する（ターンプレイヤー側の解決がまだなら何もしない）
+function _flushNonTurnDeferred(bs, cb) {
+  const done = () => { try { cb && cb(); } catch (e) { console.error('[flushNonTurnDeferred]', e); } };
+  if (_ntpDeferred.length === 0 || _tpResolutionActive(bs || (typeof window !== 'undefined' && window._lastBattleState))) { done(); return; }
+  const fn = _ntpDeferred.shift();
+  try { fn(() => _flushNonTurnDeferred(bs, cb)); } catch (e) { console.error('[flushNonTurnDeferred]', e); _flushNonTurnDeferred(bs, cb); }
+}
+if (typeof window !== 'undefined') {
+  window._flushNonTurnDeferred = (cb) => _flushNonTurnDeferred(window._lastBattleState, cb);
+  window._hasNonTurnDeferred = () => _ntpDeferred.length > 0;
+}
+
 // キューにエントリを追加
 // ===== 発揮待ちの効果が発揮できなくなったか（公式ルール 15-4-4-3〜15-4-4-5） =====
 // 発揮待ちの効果を持つカードが、発揮する前に新しいカードになった（場を離れた）・その効果を持たなくなった
@@ -3271,9 +3306,8 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
       if (destroyedSideName === 'ai') {
         window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slotIdx, reason: 'destroy' });
         if (window._markDestroyed) window._markDestroyed('ai', slotIdx);
-        // このパスは on_battle_win 等のユーザー操作待ちを挟まないため、相手機の
-        // card_removed 側フォールバック待ち（最大30秒）に頼らず即座に発火してよいと伝える
-        window._onlineSendCommand({ type: 'fx_ownDestroyReady' });
+        // 消滅時チェーンを始めてよい合図（fx_ownDestroyReady）は、保留キューの _fireDestroyChainQueued が送る
+        // （ターンプレイヤー側の効果が残っていれば、それが全て終わってから）
       } else {
         window._onlineSendCommand({ type: 'own_card_removed', slotIdx: slotIdx, reason: 'destroy' });
       }
@@ -7861,8 +7895,22 @@ function enqueueReaction(bs, fn, args, opts) {
 // キューに積んだ時点の値をargsとして保持しておき、実際に発火する直前（＝他の保留反応と
 // 混ざらないタイミング）でbsへ書き戻してからfireDestroyChainへ渡す
 function _fireDestroyChainQueued(cause, destroyedCard, destroyedSide, bs, ctxBase, callback) {
-  if (bs) bs._lastDestroyCause = cause;
-  fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, callback);
+  // オンラインで相手のデジモンなら、持ち主の端末に消滅時チェーンを始めてよいと伝えてから（doDestroy から移動。
+  // 後回しにする場合はその番が来てから伝える）
+  const _go = (done) => {
+    if (destroyedSide === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand
+        && ctxBase && ctxBase.side !== 'ai') {
+      try { window._onlineSendCommand({ type: 'fx_ownDestroyReady' }); } catch (_) {}
+    }
+    if (bs) bs._lastDestroyCause = cause;
+    fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, done);
+  };
+  if (_shouldDeferNonTurn(bs, destroyedSide)) {
+    _deferNonTurn(_go, ctxBase, '「' + (destroyedCard && destroyedCard.name || '?') + '」の消滅時の効果');
+    callback && callback();
+    return;
+  }
+  _go(callback);
 }
 
 // fireWhenEvoDiscardTriggers 用の同様のキュー発火ラッパー（引数順は
@@ -8001,8 +8049,7 @@ function checkPendingDestroys(ctx, callback) {
       // battle-combat.js の bs._pendingNonTurnPlayerBattleTrigger）に非ターンプレイヤー側のデジモンが消滅したら、
       // その消滅時効果は発揮待ちとして、ターンプレイヤー側を全て解決してから発揮する（公式ルール15-4-3-5。
       // ≪貫通≫のセキュリティチェック中の効果でDP0になった相手のザンバモンの消滅時効果が、すぐに発揮されていた）
-      const _turnSideNow = ctx.bs.isPlayerTurn ? 'player' : 'ai';
-      const _deferToNonTurn = !!(ctx.bs._pendingNonTurnPlayerBattleTrigger && side !== _turnSideNow);
+      const _deferToNonTurn = _shouldDeferNonTurn(ctx.bs, side);
       // オンライン: DP0消滅を即時通知（state_sync遅延による復活を防止）
       if (window._isOnlineMode && window._isOnlineMode()) {
         if (side === 'ai') {
@@ -8022,13 +8069,11 @@ function checkPendingDestroys(ctx, callback) {
       if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
       if (_deferToNonTurn) {
         const _cause = ctx.bs._lastDestroyCause;
-        const _prevHook = ctx.bs._pendingNonTurnPlayerBattleTrigger;
-        ctx.bs._pendingNonTurnPlayerBattleTrigger = (proceed) => {
+        _deferNonTurn((done) => {
           if (window._isOnlineMode && window._isOnlineMode() && side === 'ai') { try { window._onlineSendCommand({ type: 'fx_ownDestroyReady' }); } catch (_) {} }
           ctx.bs._lastDestroyCause = _cause;
-          fireDestroyChain(card, side, ctx.bs, ctx, () => _prevHook(proceed));
-        };
-        ctx.addLog('⏳ 「' + card.name + '」の消滅時の効果は、ターンプレイヤーの効果を全て処理してから発揮する');
+          fireDestroyChain(card, side, ctx.bs, ctx, done);
+        }, ctx, '「' + card.name + '」の消滅時の効果');
         processNext();
         return;
       }
@@ -17197,12 +17242,21 @@ export function triggerEffect(triggerCode, sourceCard, sourceSide, context, call
   // 終わったら戻す。以前は clearQueue で列を作り直していたため、発揮待ちだった他の効果が消えていた
   // （効果で使用したデュアルカードのアーツ進化の【進化時】等で、発揮待ちのケルビモン BT26-078 が消える）
   const _outerQueue = _effectQueue.some(e => e && (e.status === 'waiting' || e.status === 'processing')) ? _effectQueue : null;
+  if (_outerQueue) _queueStack.push(_outerQueue);
   _effectProcessingDepth++;
   let _finished = false;
   // 完了時は「処理中」を先に解除してから次へ進む（直後のターン終了判定が処理中と誤認しないように）
   const done = (...args) => {
     if (!_finished) { _finished = true; _effectProcessingDepth = Math.max(0, _effectProcessingDepth - 1); }
-    if (_outerQueue) { _effectQueue = _outerQueue; try { _hudSyncQueue(context); } catch (_) {} }
+    if (_outerQueue) {
+      const _qi = _queueStack.lastIndexOf(_outerQueue); if (_qi !== -1) _queueStack.splice(_qi, 1);
+      _effectQueue = _outerQueue; try { _hudSyncQueue(context); } catch (_) {}
+    }
+    // いちばん外側の効果処理が終わったら、後回しにしていた非ターンプレイヤー側の効果を発揮する
+    if (_effectProcessingDepth === 0 && _ntpDeferred.length > 0) {
+      _flushNonTurnDeferred(context && context.bs, () => { callback && callback(...args); });
+      return;
+    }
     callback && callback(...args);
   };
   try {
@@ -17223,7 +17277,7 @@ export function triggerEffect(triggerCode, sourceCard, sourceSide, context, call
   } catch (e) {
     // 例外で処理中のまま残るとターンが終わらなくなるため解除してから投げ直す
     if (!_finished) { _finished = true; _effectProcessingDepth = Math.max(0, _effectProcessingDepth - 1); }
-    if (_outerQueue) _effectQueue = _outerQueue;
+    if (_outerQueue) { const _qi = _queueStack.lastIndexOf(_outerQueue); if (_qi !== -1) _queueStack.splice(_qi, 1); _effectQueue = _outerQueue; }
     throw e;
   }
 }

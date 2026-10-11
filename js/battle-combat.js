@@ -2362,6 +2362,11 @@ function _consumePendingBattleTriggers(finalCallback) {
     pending(() => _consumePendingBattleTriggers(finalCallback));
     return;
   }
+  // バトルの解決中に後回しにした非ターンプレイヤー側の効果（効果でDP0になった相手のデジモンの消滅時効果等）
+  if (typeof window !== 'undefined' && window._hasNonTurnDeferred && window._hasNonTurnDeferred()) {
+    window._flushNonTurnDeferred(finalCallback);
+    return;
+  }
   finalCallback();
 }
 
@@ -4159,6 +4164,10 @@ function aiPlayAuto(callback) {
 export async function checkPendingTurnEnd() {
   // ≪貫通≫のセキュリティチェック中にアタックしたデジモンが消滅した等でここに来たら、キューの残りに戻る
   if (_resumeAfterPenetrate()) return;
+  // 保険: 後回しにした非ターンプレイヤー側の効果が残っていれば、アタックを終える前に発揮する
+  if (typeof window !== 'undefined' && window._hasNonTurnDeferred && window._hasNonTurnDeferred()) {
+    await new Promise((resolve) => window._flushNonTurnDeferred(resolve));
+  }
   _attackInProgress = false;
   // 「そのアタックの終了まで」（≪連携≫のDP+・Sアタック+1）のバフをここで外す
   _expireBuffs(bs, 'dur_until_attack_end');

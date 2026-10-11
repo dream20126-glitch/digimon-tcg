@@ -2507,7 +2507,9 @@ export function resolveSecurityCheck(atk, atkIdx) {
       try { window._tutorialRunner.notifyEvent('security_reduced', { side: 'opponent', count: 1, remaining: bs.ai.security.length }); } catch (e) {}
     }
     applySecurityBuffs(sec, 'ai');
-    fireSecurityDecreaseThen('ai', () => { doNextCheckAfterSecurityDecrease(); });
+    // 「セキュリティが減ったとき」は、チェック（セキュリティの公開）のあと、セキュリティ効果・バトルの前に解決する
+    // （総合ルール13-1-8。以前はめくる演出より前に発動していた）。showSecurityCheck の完了時に呼ぶ
+    doNextCheckAfterSecurityDecrease();
     return;
 
     function doNextCheckAfterSecurityDecrease() {
@@ -2531,7 +2533,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
       }
     }
 
-    showSecurityCheck(sec, atk, () => {
+    showSecurityCheck(sec, atk, () => fireSecurityDecreaseThen('ai', () => {
       // ----- セキュリティがデジモン -----
       if (sec.type === 'デジモン') {
         if (atk.dp === sec.dp) {
@@ -2786,7 +2788,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
           else { checkAttackEnd(atk, atkIdx); }
         }
       }, 500);
-    });
+    }));
     }
   }
 }
@@ -3798,8 +3800,9 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
     if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
       try { window._tutorialRunner.notifyEvent('security_reduced', { side: 'own', count: 1, remaining: bs.player.security.length }); } catch (e) {}
     }
-    fireSecurityDecreaseThen('player', () => {
-    showSecurityCheck(sec, atk, () => {
+    // 「セキュリティが減ったとき」はチェック（公開）のあとに解決する（総合ルール13-1-8）
+    {
+    showSecurityCheck(sec, atk, () => fireSecurityDecreaseThen('player', () => {
       if (sec.type === 'デジモン') {
         if (atk.dp === sec.dp) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
@@ -3899,8 +3902,8 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
           _afterOne();
         }
       }
-    });
-    });
+    }));
+    }
   } else {
     const aiAtk = bs.ai.battleArea.find(c => c !== null) || { name: 'AI', dp: 0 };
     showDirectAttack(aiAtk, 'ai', () => { battleDefeat(); });

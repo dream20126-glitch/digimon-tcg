@@ -1510,6 +1510,30 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (_dc.buffs && _dc.buffs.some(b => b.type === 'cant_dp_minus')) continue;
         dpTargets.push(i);
       }
+      // 「相手のデジモン全て」で期限つき（相手のターン終了まで等）なら継続する全体処理（総合ルール11-2-2）:
+      // あとから条件を満たした相手のデジモンにも付く。オンラインでは相手の端末に記録してもらう（fx_globalEffect）
+      const _dpmDur = (ctx.block && ctx.block.duration && ctx.block.duration.code) || 'dur_this_turn';
+      if (defaultTarget && defaultTarget.code === 'target_all_opponent' && _GLOBAL_EFFECT_DURATIONS.has(_dpmDur)) {
+        const _gOpts = { type: 'dp_minus', value: val, duration: _dpmDur, filter: defaultTarget.filter || null, conds: _dpmConds, immuneFrom: _effectSourceTypeOf(ctx) || 'any' };
+        const _online = !!(window._isOnlineMode && window._isOnlineMode());
+        if (_online && ctx.side === 'player') {
+          dpTargets.forEach((i) => {
+            const t = opponent.battleArea[i];
+            if (!t) return;
+            addBuff(t, 'dp_minus', val, ctx);
+            ctx.addLog('💥 ' + t.name + ' DP-' + val + ' → ' + t.dp);
+            if (t.dp <= 0) t._pendingDestroy = true;
+          });
+          try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_globalEffect', effect: Object.assign({}, _gOpts, { appliedDuringOwnTurn: !!(ctx.bs && ctx.bs.isPlayerTurn) }) }); } catch (_) {}
+        } else {
+          _registerGlobalEffect(ctx, _dpmCondSide, _gOpts);
+          dpTargets.forEach((i) => { const t = opponent.battleArea[i]; if (t) ctx.addLog('💥 ' + t.name + ' DP-' + val + ' → ' + t.dp); });
+        }
+        ctx.addLog('💥 相手のデジモン全て DP-' + val + '（あとから条件を満たしたデジモンにも）');
+        playEffect(action.code, { value: -val, ctx, label: '相手のデジモン全て' }, () => {}, { visualType: action.visualType, frameColor: action.frameColor });
+        ctx.renderAll(); callback();
+        break;
+      }
       if(dpTargets.length === 0) { callback(); break; }
       // 対象数（opponent:N の N）。opponent:all は全体。未指定は1体。
       let dpNeed = 1;
@@ -5677,6 +5701,7 @@ function _registerGlobalEffect(ctx, targetSide, opts) {
     id: 'g' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
     targetSide, ownerSide: ctx.side, filter: opts.filter || null, conds: opts.conds || null,
     type: opts.type, value: opts.value || 0, duration: opts.duration, sourceType: opts.sourceType || null,
+    immuneFrom: opts.immuneFrom || null,
     source: ctx.card ? ctx.card.cardNo : '', _appliedSide: ctx.side, _appliedDuringOwnTurn: turnSide === ctx.side, _ticks: 0,
   };
   bs._globalEffects.push(g);
@@ -5685,6 +5710,9 @@ function _registerGlobalEffect(ctx, targetSide, opts) {
 }
 function _globalEffectMatches(g, c, bs) {
   try {
+    // 相手の効果としての全体処理（DP-等）: 効果を受けないデジモン・「DPを-されない」デジモンには付かない
+    if (g.immuneFrom && hasActiveImmuneEffects(c, g.ownerSide, g.immuneFrom === 'any' ? undefined : g.immuneFrom)) return false;
+    if (g.type === 'dp_minus' && Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'cant_dp_minus')) return false;
     if (g.filter && !cardMatchesFilter(c, g.filter, bs, g.ownerSide, null)) return false;
     if (Array.isArray(g.conds) && g.conds.length > 0 && !checkConditions(g.conds, c, bs, g.targetSide)) return false;
     return true;
@@ -5707,6 +5735,9 @@ function _refreshGlobalEffects(bs, side) {
         if (g.sourceType) b.sourceType = g.sourceType;
         c.buffs.push(b);
         recalcDp(c);
+        // DPが0以下になったら消滅（ルール処理）。効果の処理中なら、それが終わってから
+        // （オンラインで相手の効果から受け取った記録では、受け取った時点でいたデジモンの消滅は相手の端末が処理するので除く）
+        if (g.type === 'dp_minus' && (parseInt(c.dp) || 0) <= 0 && !(g._initialCards && g._initialCards.includes(c))) { c._pendingDestroy = true; _scheduleRuleDestroyCheck(bs); }
       } else if (!ok && at !== -1) {
         c.buffs.splice(at, 1);
         recalcDp(c);
@@ -5714,6 +5745,39 @@ function _refreshGlobalEffects(bs, side) {
     });
   });
 }
+// DP0 等で _pendingDestroy が立ったカードを、効果・アタックの処理が無いときに消滅させる（継続する全体処理で
+// あとから DP が0以下になったデジモン用。効果の処理中なら、その完了時の checkPendingDestroys に任せる）
+let _ruleCheckTimer = null;
+function _scheduleRuleDestroyCheck(bs) {
+  if (_ruleCheckTimer || typeof window === 'undefined') return;
+  const tick = () => {
+    _ruleCheckTimer = null;
+    const b = window._lastBattleState || bs;
+    if (!b) return;
+    if (!['player', 'ai'].some(sd => (b[sd].battleArea || []).some(c => c && c._pendingDestroy))) return;
+    if (isEffectProcessing() || (window._isAttackInProgress && window._isAttackInProgress())) { _ruleCheckTimer = setTimeout(tick, 300); return; }
+    try { checkPendingDestroys(_buildBaseCtx(null, b), () => { try { window.renderAll && window.renderAll(); } catch (_) {} }); }
+    catch (e) { console.error('[ruleDestroyCheck]', e); }
+  };
+  _ruleCheckTimer = setTimeout(tick, 100);
+}
+// オンライン: 相手の効果の「自分のデジモン全て」への全体処理を受け取って記録する（battle-online.js の fx_globalEffect）
+if (typeof window !== 'undefined') {
+  window._addRemoteGlobalEffect = (e) => {
+    const bs = window._lastBattleState;
+    if (!bs || !e) return;
+    if (!Array.isArray(bs._globalEffects)) bs._globalEffects = [];
+    bs._globalEffects.push({
+      id: 'g' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
+      targetSide: 'player', ownerSide: 'ai', filter: e.filter || null, conds: e.conds || null,
+      type: e.type, value: e.value || 0, duration: e.duration, sourceType: e.sourceType || null, immuneFrom: e.immuneFrom || null,
+      source: 'remote', _appliedSide: 'ai', _appliedDuringOwnTurn: e.appliedDuringOwnTurn !== false, _ticks: 0,
+      _initialCards: (bs.player.battleArea || []).filter(Boolean),
+    });
+    _refreshGlobalEffects(bs, 'player');
+  };
+}
+
 // 期限切れの判定（expireBuffs のカードのバフと同じ規則）。true なら消す
 function _globalEffectExpires(g, timing, endingSide) {
   if (g.duration !== timing) return false;

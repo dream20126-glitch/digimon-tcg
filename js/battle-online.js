@@ -1177,6 +1177,14 @@ function onRemoteCommand(cmd) {
     }
 
     // --- 演出コマンド（キュー経由で順次再生、並列起動によるバチバチを防止） ---
+    case 'fx_globalEffect': {
+      // 相手の効果の継続する全体処理（「相手のターン終了まで、相手のデジモン全てをDP-」等）を、こちらのデジモンへの
+      // 全体処理として記録する。今いるデジモンにも、あとから条件を満たしたデジモンにも付く（effect-engine.js）
+      if (window._addRemoteGlobalEffect) window._addRemoteGlobalEffect(cmd.effect);
+      renderAll();
+      sendStateSync();
+      break;
+    }
     case 'fx_remoteBuff': {
       // 相手から汎用バフ付与コマンドを受信 → 対象カードに buff を直接 push
       // state_sync は oppBattleArea を上書きしないため、この個別コマンドで同期する

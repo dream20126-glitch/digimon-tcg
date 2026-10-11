@@ -12338,9 +12338,8 @@ function _isInlineCostConfirmRecipe(steps) {
 // 確認ダイアログに出す「その後〜」部分のテキスト（ステップの display_text があればそれ）
 function _inlineCostConfirmText(step, fullText) {
   if (step && typeof step.display_text === 'string' && step.display_text.trim()) return step.display_text.trim();
-  const t = String(fullText || '');
-  const i = t.indexOf('その後');
-  return i >= 0 ? t.slice(i) : t;
+  // 効果テキスト全体を出す（「その後〜」だけだと何の効果かわからない。ピッコロモン BT26-043）
+  return String(fullText || '');
 }
 
 function runRecipe(steps, ctx, callback) {
@@ -15755,7 +15754,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
 
       // 進化元に置く移動演出（自分の画面は表向き、裏向きで置くなら相手の画面は裏向き）
-      const _pudZoneLabel = (c) => (player.hand || []).includes(c) ? '手札' : (player.trash || []).includes(c) ? 'トラッシュ'
+      const _pudZoneLabel = (c) => (player.deck || []).includes(c) ? 'デッキ' : (player.hand || []).includes(c) ? '手札' : (player.trash || []).includes(c) ? 'トラッシュ'
         : (player.battleArea || []).includes(c) ? 'バトルエリア' : (player.tamerArea || []).includes(c) ? 'テイマーエリア' : 'カード';
       const _pudAnim = (digi, cards, fromLabels, next) => {
         let i = 0;
@@ -15908,6 +15907,41 @@ function executeRecipeStep(step, ctx, store, callback) {
         });
         break;
       }
+      // from:"deck"（自分のデッキの上からN枚。ピッコロモン BT26-043「自分のデッキの上から1枚をこのデジモンの
+      // 進化元の下に裏向きで置くことで」）: 選ばずに上から置く。コストとして足りなければ支払い失敗
+      if (_pudFromZones.length === 1 && _pudFromZones[0] === 'deck') {
+        const _pdWant = Math.max(1, parseInt(step.value, 10) || 1);
+        const _pdIsCost = _COST_STEP_SET.has(step);
+        const _pdDeck = player.deck || [];
+        if (_pdDeck.length === 0 || (_pdIsCost && _pdDeck.length < _pdWant)) {
+          ctx.addLog(_pdIsCost ? '💨 コストを支払えません（デッキの枚数が足りない）' : '💨 デッキにカードがありません');
+          callback(_pdIsCost ? false : undefined);
+          break;
+        }
+        resolveDigimonThen((digi) => {
+          if (!digi) { callback(_pdIsCost ? false : undefined); return; }
+          const _pdCards = _pdDeck.slice(0, _pdWant);
+          if (_pdCards.length === 1) {
+            placeUnderAndFinish(digi, _pdCards[0], () => { const k = player.deck.indexOf(_pdCards[0]); if (k !== -1) player.deck.splice(k, 1); });
+            return;
+          }
+          const _pdLabels = _pdCards.map(() => 'デッキ');
+          if (!digi.stack) digi.stack = [];
+          _pdCards.forEach((c) => {
+            const k = player.deck.indexOf(c); if (k !== -1) player.deck.splice(k, 1);
+            if (_pudFaceDown) c._faceDown = true;
+            if (_pudBottom) digi.stack.push(c); else digi.stack.unshift(c);
+          });
+          ctx.addLog('🃏 「' + digi.name + '」の進化元の' + (_pudBottom ? '下' : '上') + 'にデッキの上から' + _pdCards.length + '枚を置く' + (_pudFaceDown ? '（裏向き）' : ''));
+          ctx.renderAll();
+          if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+          const _pdCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+          _pudAnim(digi, _pdCards, _pdLabels, () => {
+            fireWhenEvoSourceIncreaseTriggers(digi, ctx.side, ctx.bs, _pdCtxBase, () => callback(true), _pdCards, { type: 'effect', causerSide: ctx.side, causerCard: ctx.card });
+          });
+        });
+        break;
+      }
       if (_pudFromZones.length > 0) {
         // 置くカードの条件: 取得元カードの条件(from_filter)を優先し、無ければ filter（従来通り）
         const _pudFilter = step.from_filter || step.filter || {};
@@ -15917,6 +15951,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _pudCands = [..._pudHandCands, ..._pudTrashCands];
         if (_pudCands.length === 0) {
           ctx.addLog('💨 条件を満たすカードがありません');
+          // コストとして使う場合は支払い失敗（後続の効果を発揮させない）
+          if (_COST_STEP_SET.has(step)) { callback(false); return; }
           showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
           return;
         }

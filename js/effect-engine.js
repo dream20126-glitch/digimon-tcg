@@ -216,6 +216,20 @@ function _entryWillExecute(entry, ctx) {
 // 0 より大きい間に起きた「デッキが増えた」は保留キューに積み、解決後に発火する（_deckIncreased）
 let _queueResolveDepth = 0;
 function processQueue(context, onComplete) {
+  // ルールチェック（総合ルール17）: 効果の処理中でなければ、発揮待ちの効果を発揮する前に DP0 のデジモンを消滅させる。
+  // 継続する全体処理（相手のデジモン全てDP-等）の中に登場してDP0になったデジモンは、【登場時】を発揮する前に
+  // 消滅する（15-4-4-3: 発揮する前に場を離れたカードの効果は発揮できない）。別の効果の処理中に呼ばれた
+  // （入れ子の triggerEffect）ときは、その効果の完了時のルールチェック（checkPendingDestroys）に任せる
+  if (_effectProcessingDepth <= 1 && context && context.bs && !context._ruleCheckedAtStart) {
+    const _b = context.bs;
+    try { ['player', 'ai'].forEach(sd => { if (!(sd === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode())) _refreshGlobalEffects(_b, sd); }); } catch (_) {}
+    const _dp0 = ['player', 'ai'].some(sd => (_b[sd].battleArea || []).some(c => c && c._pendingDestroy && (parseInt(c.dp) || 0) <= 0));
+    if (_dp0) {
+      context._ruleCheckedAtStart = true;
+      checkPendingDestroys(context, () => { processQueue(context, onComplete); });
+      return;
+    }
+  }
   // ターン1回制限済み/条件不成立で不発確定のエントリは完了扱いにスキップ
   // （「どちらを発動しますか」の選択ポップアップに不発カードが紛れ込むのを防ぐ）
   _effectQueue.filter(e => e.status === 'waiting').forEach(e => {

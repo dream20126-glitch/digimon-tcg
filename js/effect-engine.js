@@ -910,7 +910,7 @@ function showQueueOrderSelect(entries, callback) {
     const _trigCode = entry.block && entry.block.trigger ? entry.block.trigger.code : null;
     const _steps = entry.block && (entry.block._grantedSteps || (_trigCode ? getRecipeForTrigger(effectOwner, _trigCode, fromEvo) : null));
     // 選択肢プレビューも、実際に発動するトリガー部分だけを抜粋して表示する（display_text指定があれば最優先）
-    const effText = extractTriggerSectionText(_fullEffText, _trigCode, Array.isArray(_steps) ? _steps : null);
+    const effText = _withKeywordRuleText(extractTriggerSectionText(_fullEffText, _trigCode, Array.isArray(_steps) ? _steps : null), Array.isArray(_steps) ? _steps : null);
     // 任意効果か（executeQueueEntry / _runReactionEffect の確認ダイアログの要否と同じ判定）
     const _opt = Array.isArray(_steps) && _steps.some(st => st && (st.optional === true || (Array.isArray(st.cost) && st.cost.length > 0)))
       && !_isInlineCostConfirmRecipe(_steps);
@@ -8999,7 +8999,8 @@ function _withKeywordRuleText(text, steps) {
   if (!Array.isArray(steps)) return text;
   const flags = [...new Set(steps.filter((st) => st && st._kwFlag).map((st) => st._kwFlag))];
   if (flags.length === 0) return text;
-  const lines = flags.map(keywordRuleText).filter(Boolean);
+  // 説明が引けないときもキーワード名は出す（カードの効果テキストの関係ない段落を出さないため）
+  const lines = flags.map((f) => keywordRuleText(f) || ('【' + (_keywordJpName(f) || f) + '】')).filter(Boolean);
   if (lines.length === 0) return text;
   const allKw = steps.every((st) => st && st._kwFlag);
   return allKw ? lines.join('\n') : ((text ? text + '\n' : '') + lines.join('\n'));
@@ -11211,7 +11212,7 @@ function showReactionOrderSelect(reactions, triggerKey, callback) {
     const _fullEffText = (sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
       ? sourceCard.evoSourceEffect
       : (sourceCard.effect || '');
-    const effText = extractTriggerSectionText(_fullEffText, triggerKey, recipe);
+    const effText = _withKeywordRuleText(extractTriggerSectionText(_fullEffText, triggerKey, recipe), recipe);
     card.innerHTML =
       (imgSrc ? '<img src="'+imgSrc+'" style="width:120px;border-radius:6px;margin-bottom:8px;border:1px solid #00fbff;">' : '')
       + '<div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:6px;">'+sourceCard.name+'</div>'
@@ -11466,6 +11467,19 @@ function _stepLacksHandCandidate(step, card, bs, side) {
   return false;
 }
 
+function _attackStepImpossible(step, card, bs, side) {
+  if (!step || step.action !== 'attack' || !card || !bs) return false;
+  if (Array.isArray(step.options) && step.options.includes('without_rest')) return false;
+  if (step.target && step.target !== 'self_card' && step.target !== 'self') return false; // 対象を選ぶ形は判定しない
+  const me = side === 'player' ? bs.player : bs.ai;
+  if (!me || !(me.battleArea || []).includes(card)) return false;
+  if (card.suspended || card.cantAttack) return true;
+  if (Array.isArray(step.options) && step.options.includes('digimon_only') && !step._executeAttack) {
+    const opp = side === 'player' ? bs.ai : bs.player;
+    if (!(opp.battleArea || []).some(c => c && c.suspended)) return true;
+  }
+  return false;
+}
 function recipeWillExecuteAnything(recipe, ctx) {
   if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
   const _reactor = (ctx && ctx.card && ctx.card.name) || '?';
@@ -11491,6 +11505,13 @@ function recipeWillExecuteAnything(recipe, ctx) {
     }
     // summon/evolve（手札から登場/進化）で手札に候補が無ければ不発なので演出ポップアップも出さない
     // （詳細は _stepLacksHandCandidate。トラッシュを含む指定は判定しない）
+    // 「このデジモンでアタックできる」（≪ヴォルテクス≫≪急襲≫等）で、アタックできない（レスト中・アタックできない状態、
+    // 「相手のデジモンにアタック」でアタックできる相手のデジモンがいない）なら不発なので、誘発の選択にも出さない
+    // （グランクワガーモン BT26-045 で【ヴォルテクス】を得たレスト中のタイラントカブテリモンが、ターン終了時に出ていた）
+    if (_attackStepImpossible(step, ctx.card, ctx.bs, ctx.side)) {
+      console.log('[recipeWillExecute] reactor=' + _reactor + ' attack impossible → skip');
+      continue;
+    }
     if (_stepLacksHandCandidate(step, ctx.card, ctx.bs, ctx.side)) {
       console.log('[recipeWillExecute] reactor=' + _reactor + ' hand candidate none → skip', 'action=' + step.action);
       continue;

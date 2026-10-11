@@ -2394,6 +2394,19 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // 「選んで破棄」: 進化元カード選択UIをN回繰り返す（AIは先頭を自動選択）
         if (action.code === 'evo_discard_select' || action.code === 'evo_discard_tamer_select') {
           const discarded = [];
+          // 破棄できるカードが指定枚数ちょうど（以下）なら選ぶ余地が無いので、選択画面を出さずに全部破棄する
+          // （【フラグメント（2）】で進化元が2枚だけのとき等）
+          const _selCands = edConds.length > 0 ? tgt.stack.filter(s => checkConditions(edConds, s, ctx.bs, edSide)) : tgt.stack.slice();
+          if (_selCands.length <= n) {
+            _selCands.forEach((chosen) => {
+              const si = tgt.stack.indexOf(chosen);
+              if (si !== -1) { _edNote(tgt, chosen, si); tgt.stack.splice(si, 1); }
+              edTrash.push(chosen);
+              discarded.push(chosen);
+            });
+            finalizeDiscard(discarded, tgt, onDone);
+            return;
+          }
           const pickNext = (remaining) => {
             if (remaining <= 0 || tgt.stack.length === 0) { finalizeDiscard(discarded, tgt, onDone); return; }
             const takeCard = (chosen) => {
@@ -8061,8 +8074,66 @@ function checkConditions(conditions, card, bs, side) {
 function enqueueReaction(bs, fn, args, opts) {
   if (!bs) return;
   if (!Array.isArray(bs._pendingReactions)) bs._pendingReactions = [];
-  bs._pendingReactions.push({ fn, args, late: !!(opts && opts.late) });
+  // collectable: 「〜したとき」の反応をまとめて集め、同時に誘発したものとして発動順を選べる種類
+  // （_collectPendingReactions。進化元/手札が破棄されたとき・セキュリティが減ったとき・手札が増えたとき・
+  //   効果で登場したデジモンの【登場時】）
+  const collectable = !!(opts && opts.collectable) || _COLLECTABLE_REACTION_FNS.has(fn);
+  bs._pendingReactions.push({ fn, args, late: !!(opts && opts.late), collectable });
 }
+
+// 保留中の「〜したとき」の反応のうち、同時に誘発したものとしてまとめて発動順を選べるもの（2つ以上あるとき）を
+// 集めて、ターンプレイヤー→非ターンプレイヤーの順に、プレイヤーが選んだ順で発揮する（公式ルール: 同時に誘発した
+// 効果はそのプレイヤーが発動順を決める）。ブルムロードモン BT26-048 の【進化時】で進化元を破棄して登場させた
+// デジモンの【登場時】と、「進化元が破棄されたとき」が同時に誘発する等。
+// 集めている間（bs._reactionCollector）は、_fireSidedReactionTriggers と登場時の保留反応が実行せずに候補を積む。
+// 取り込んだら true（after は全て発揮した後に呼ばれる）
+function _collectPendingReactions(ctx, after) {
+  const bs = ctx && ctx.bs;
+  const list = bs && bs._pendingReactions;
+  if (!Array.isArray(list) || bs._reactionCollector) return false;
+  const coll = list.filter(r => r && r.collectable && !r.late);
+  if (coll.length < 2) return false;
+  coll.forEach(r => { const i = list.indexOf(r); if (i !== -1) list.splice(i, 1); });
+  const col = { items: [] };
+  bs._reactionCollector = col;
+  let i = 0;
+  const collectNext = () => {
+    if (i >= coll.length) { delete bs._reactionCollector; runPool(); return; }
+    const { fn, args } = coll[i++];
+    try { fn(...args, collectNext); } catch (e) { console.error('[collect reaction]', e); collectNext(); }
+  };
+  const runPool = () => {
+    if (col.items.length === 0) { after && after(); return; }
+    const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+    let cands = col.items.filter(it => it.side === turnSide);
+    if (cands.length === 0) cands = col.items.slice();
+    const pick = (it) => {
+      const k = col.items.indexOf(it); if (k !== -1) col.items.splice(k, 1);
+      try { it.run(runPool); } catch (e) { console.error('[collect run]', e); runPool(); }
+    };
+    if (cands.length >= 2 && cands[0].side === 'player' && typeof showQueueOrderSelect === 'function') {
+      showQueueOrderSelect(cands.map(it => ({ card: it.card, block: it.block })), (idx) => {
+        if (idx < 0) {
+          // 「終了する」: 選べる効果（全て任意）を使わない
+          cands.forEach(it => { const k = col.items.indexOf(it); if (k !== -1) col.items.splice(k, 1); ctx.addLog && ctx.addLog('☓ 「' + ((it.block && it.block._recipeCard) || it.card).name + '」の効果は発動しなかった'); });
+          runPool();
+          return;
+        }
+        pick(cands[idx] || cands[0]);
+      });
+      return;
+    }
+    pick(cands[0]);
+  };
+  collectNext();
+  return true;
+}
+
+const _COLLECTABLE_REACTION_FNS = new Set();
+if (typeof _fireWhenEvoDiscardTriggersQueued === 'function') _COLLECTABLE_REACTION_FNS.add(_fireWhenEvoDiscardTriggersQueued);
+if (typeof _fireWhenHandDiscardTriggersQueuedWithCause === 'function') _COLLECTABLE_REACTION_FNS.add(_fireWhenHandDiscardTriggersQueuedWithCause);
+if (typeof _fireWhenSecurityDecreaseQueuedWithCause === 'function') _COLLECTABLE_REACTION_FNS.add(_fireWhenSecurityDecreaseQueuedWithCause);
+if (typeof _fireWhenHandIncreaseQueued === 'function') _COLLECTABLE_REACTION_FNS.add(_fireWhenHandIncreaseQueued);
 
 // fireDestroyChain をキュー経由で保留発火する際のラッパー。_lastDestroyCause は
 // キューに積んだ時点の値をargsとして保持しておき、実際に発火する直前（＝他の保留反応と
@@ -8158,6 +8229,7 @@ function _drainAfterReaction(bs, ctxBase, cb) {
 function _drainPendingReactionsOnly(ctx, cb) {
   const r = ctx && ctx.bs && ctx.bs._pendingReactions;
   if (!Array.isArray(r) || r.length === 0) { cb && cb(); return; }
+  if (_collectPendingReactions(ctx, () => _drainPendingReactionsOnly(ctx, cb))) return;
   const i = r.findIndex(x => x && !x.late);
   const { fn, args } = r.splice(i >= 0 ? i : 0, 1)[0];
   try { fn(...args, () => _drainPendingReactionsOnly(ctx, cb)); }
@@ -8219,6 +8291,8 @@ function checkPendingDestroys(ctx, callback) {
     // 全て処理し終えるまでcallbackは呼ばれない（＝メイン効果完了後まで保留する仕様）
     const reactions = ctx.bs._pendingReactions;
     if (Array.isArray(reactions) && reactions.length > 0) {
+      // 同時に誘発した「〜したとき」が2つ以上なら、まとめて発動順を選ばせる
+      if (_collectPendingReactions(ctx, () => checkPendingDestroys(ctx, callback))) return;
       // late 指定（デッキが増えたとき）は、先に消滅時等の他の保留反応を処理してから
       const _ni = reactions.findIndex(r => r && !r.late);
       const { fn, args } = reactions.splice(_ni >= 0 ? _ni : 0, 1)[0];
@@ -8330,6 +8404,8 @@ const SECTION_KEYWORDS = {
   on_attack: ['アタックしたとき', 'アタックした時'],
   when_deck_increase: ['増えたとき', '増えた時'],
   when_hand_discard: ['破棄されたとき', '破棄された時'],
+  // 進化元が破棄されたとき（ブルムロードモン BT26-048「【お互いのターン】自分のデジモンの裏向きの進化元が効果で破棄されたとき」）
+  when_evo_discard: ['破棄されたとき', '破棄された時'], discard: ['破棄されたとき', '破棄された時'],
   when_rest: ['レスト'], when_opp_rest: ['レスト'],
   when_own_block: ['ブロック'],
   when_return_to_hand: ['手札に戻'],
@@ -9293,6 +9369,12 @@ function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGr
     if (value !== undefined && value !== '' && value !== null && out && out.value === undefined) {
       out = Object.assign({}, out, { value });
     }
+    // キーワードの数値が「進化元を何枚破棄するか」のコスト（【フラグメント（N）】「進化元をN枚破棄することで」）なら、
+    // コスト側にも数値を入れる（以前は本体のステップにだけ入り、コストは1枚しか破棄しなかった。ギロモン BT26-055）
+    if (value !== undefined && value !== '' && value !== null && out && Array.isArray(out.cost)
+        && out.cost.some(c => c && c.value === undefined && /^evo_discard/.test(String(c.action || '')))) {
+      out = Object.assign({}, out, { cost: out.cost.map(c => (c && c.value === undefined && /^evo_discard/.test(String(c.action || ''))) ? Object.assign({}, c, { value }) : c) });
+    }
     if (Array.isArray(designatedGroups) && designatedGroups.length > 0) {
       out = _expandDesignatedGroupsJS(out, designatedGroups, designatedCommon);
     } else {
@@ -10043,6 +10125,23 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
   // （先に解決した反応の中で別の消滅チェーン等が走ると、その終了時にクリアされてしまい、
   // 後続の反応の trigger_conditions（cond_effect）や cause 判定が原因を見失うため）
   const causeAtScan = bs._lastDestroyCause;
+  // 保留中の「〜したとき」をまとめて集めている間（_collectPendingReactions）は実行せず、候補として積む
+  if (bs._reactionCollector) {
+    reactions.forEach((r) => {
+      bs._reactionCollector.items.push({
+        card: r.card, side: reactSide,
+        block: { trigger: { code: recipeKey }, raw: r.sourceCard === r.card ? (r.card.effect || '') : '', _recipeCard: r.sourceCard !== r.card ? r.sourceCard : undefined, _grantedSteps: r.recipe },
+        run: (cb) => {
+          if ((r.zone === 'trash' || r.zone === 'security') && !_cardStillInZone(bs, reactSide, r.card, r.zone)) { cb(); return; }
+          if (!_reactionStillValid(r, bs, recipeKey)) { cb(); return; }
+          if (causeAtScan !== undefined) bs._lastDestroyCause = causeAtScan;
+          _runReactionEffect(r, reactSide, bs, ctxBase, () => _drainAfterReaction(bs, ctxBase, cb));
+        },
+      });
+    });
+    finish();
+    return;
+  }
   // 同時に誘発した反応が2つ以上あれば、どれから発動するかをプレイヤーが選ぶ（公式ルール: 同時誘発は
   // そのプレイヤーが順番を決める）。クロノモン：デストロイモード BT26-060 の「デッキが増えたとき」と、
   // 進化元のブテンモン BT26-015 の「デッキが増えたとき」等。CPU・相手の端末側は従来通り並び順で処理する
@@ -12594,6 +12693,30 @@ function _summonCardFromEffect(c, ctx, opts, done) {
     }
     if (opts.deferOnPlay) {
       try { scanTriggers('on_play', c, ctx.side, ctx); } catch (_) {}
+      done && done();
+      return;
+    }
+    // 効果の処理中に登場した場合、その【登場時】は効果の処理が終わってから、同じ効果で誘発した他の
+    // 「〜したとき」（進化元が破棄されたとき等）と同時に誘発したものとして扱い、発動順を選べるようにする
+    if (ctx.bs && _queueResolveDepth > 0) {
+      const _side = ctx.side;
+      enqueueReaction(ctx.bs, (cb) => {
+        const col = ctx.bs._reactionCollector;
+        if (col) {
+          const _before = new Set(_effectQueue);
+          try { scanTriggers('on_play', c, _side, ctx); } catch (_) {}
+          const _added = _effectQueue.filter(e => !_before.has(e));
+          _added.forEach((e) => { const k = _effectQueue.indexOf(e); if (k !== -1) _effectQueue.splice(k, 1); });
+          _added.forEach((e) => {
+            const _es = e.actualSide || _side;
+            col.items.push({ card: e.card, side: _es, block: e.block, run: (k) => { _effectQueue.push(e); try { processQueue(ctx, () => k && k()); } catch (_) { k && k(); } } });
+          });
+          cb && cb();
+          return;
+        }
+        try { scanTriggers('on_play', c, _side, ctx); processQueue(ctx, () => cb && cb()); }
+        catch (_) { cb && cb(); }
+      }, [], { collectable: true });
       done && done();
       return;
     }

@@ -4499,13 +4499,24 @@ function _resolveCombatAction(step, ctx, callback) {
     const defDp = parseInt(defCard.dp) || 0;
     ctx.addLog('⚔ 「' + selfCard.name + '」(DP ' + atkDp + ') vs 「' + defCard.name + '」(DP ' + defDp + ')でバトル');
     const finish = () => { ctx.renderAll(); callback(); };
+    // 効果によるバトルでも、相手を消滅させて場に残った側の「バトルに勝ったとき」（on_battle_win。本体＋進化元）が
+    // 誘発する（オオクワモン BT26-042 進化元を持つタイラントカブテリモン BT26-047「このデジモンと相手のデジモン1体で
+    // バトルできる」で勝ったとき）。「したとき」なのでこの効果の処理が終わってから、消滅時効果と同じ保留キューで発揮する
+    const winAfter = (winner, winnerSide, loserArea, loserIdx, loser) => () => {
+      if (loserArea.battleArea[loserIdx] !== loser && _cardOnField(ctx.bs, winner)) {
+        _enqueueBattleWin(ctx, winner, winnerSide, loser);
+      }
+      finish();
+    };
+    const _oppSideTag = ctx.side === 'player' ? 'ai' : 'player';
+    const _defSideTag = tPlayer === player ? ctx.side : _oppSideTag;
     if (atkDp === defDp) {
       // 両者敗北 → 両者消滅（それぞれ独立に消滅回避判定はdoDestroy内のデコイ/スケープゴート等で行われる）
       doDestroy(player, selfIdx, ctx, () => { doDestroy(tPlayer, idx, ctx, finish, 'battle'); }, 'battle');
     } else if (atkDp > defDp) {
-      doDestroy(tPlayer, idx, ctx, finish, 'battle');
+      doDestroy(tPlayer, idx, ctx, winAfter(selfCard, ctx.side, tPlayer, idx, defCard), 'battle');
     } else {
-      doDestroy(player, selfIdx, ctx, finish, 'battle');
+      doDestroy(player, selfIdx, ctx, winAfter(defCard, _defSideTag, player, selfIdx, selfCard), 'battle');
     }
   };
 
@@ -4518,6 +4529,32 @@ function _resolveCombatAction(step, ctx, callback) {
       doCombat(selectedIdx);
     });
   }
+}
+
+// 効果によるバトルの「バトルに勝ったとき」を保留キューに積む。ターンプレイヤー側の勝利は先頭に（同時に誘発した
+// 消滅時効果より先。公式ルール: ターンプレイヤーの効果から）。オンラインで勝者が相手のデジモンなら、
+// 相手の端末が持ち主として処理するのでここでは発揮しない
+function _enqueueBattleWin(ctx, winner, winnerSide, loser) {
+  const bs = ctx.bs;
+  if (!bs || !winner) return;
+  if (winnerSide === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) return;
+  if (!Array.isArray(bs._pendingReactions)) bs._pendingReactions = [];
+  const item = { fn: _fireBattleWinQueued, args: [winner, winnerSide, loser, bs, ctx], late: false };
+  const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+  if (winnerSide === turnSide) bs._pendingReactions.unshift(item); else bs._pendingReactions.push(item);
+}
+function _fireBattleWinQueued(winner, winnerSide, loser, bs, ctxBase, done) {
+  if (!_cardOnField(bs, winner)) { done && done(); return; }
+  bs._lastBattleWinner = winner;
+  bs._lastBattleDefeatedCard = loser;
+  const end = () => { bs._lastBattleWinner = null; bs._lastBattleDefeatedCard = null; done && done(); };
+  try {
+    if (typeof window !== 'undefined' && typeof window._triggerEffectFn === 'function') {
+      window._triggerEffectFn('on_battle_win', winner, winnerSide, null, end);
+    } else {
+      triggerEffect('on_battle_win', winner, winnerSide, { ..._buildBaseCtx(ctxBase, bs), card: winner, side: winnerSide }, end);
+    }
+  } catch (e) { console.error('[_fireBattleWinQueued]', e); end(); }
 }
 
 // 相手のデジモン/テイマーに付けた「アクティブにならない」（prevent_unsuspend）を相手の端末にも付ける。

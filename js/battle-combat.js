@@ -2365,7 +2365,29 @@ function _consumePendingBattleTriggers(finalCallback) {
   finalCallback();
 }
 
+// ≪貫通≫のセキュリティチェック（効果のキューの1件として実行。effect-engine.js の penetrate_check）。
+// resolveSecurityCheck は完了コールバックを持たないので、最終的に到達する checkAttackEnd / checkPendingTurnEnd で
+// bs._penetrateResume を呼んでキューの残り（同時誘発した他の「バトルに勝ったとき」等）に戻る
+if (typeof window !== 'undefined') {
+  window._runPenetrateCheck = (atk, done) => {
+    const atkIdx = atk ? bs.player.battleArea.indexOf(atk) : -1;
+    if (atkIdx === -1) { done && done(); return; }
+    addLog('🗡 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
+    bs._penetrateResume = done;
+    showPenetrateAnnounce(() => { resolveSecurityCheck(atk, atkIdx); });
+  };
+}
+function _resumeAfterPenetrate() {
+  if (!bs._penetrateResume) return false;
+  const r = bs._penetrateResume;
+  bs._penetrateResume = null;
+  hideCombatBackdrop();
+  renderAll();
+  r();
+  return true;
+}
 function checkAttackEnd(atk, atkIdx) {
+  if (_resumeAfterPenetrate()) return;
   _consumePendingBattleTriggers(() => {
     if (hasKeyword(atk, '【アタック終了時】') && bs.player.battleArea[atkIdx]) {
       _hooks.checkAndTriggerEffect(atk, '【アタック終了時】', () => checkPendingTurnEnd());
@@ -3096,20 +3118,22 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
           }
           // ≪貫通≫: アタックで相手デジモン撃破 → アタック終了直前に追加セキュリティチェック
           if (hasPenetrate(atk)) {
-            addLog('🗡 「' + atk.name + '」の【貫通】効果でセキュリティチェック！');
-            // resolveSecurityCheckは完了コールバックを持たないため、必ず内部で最終的に
-            // 到達するcheckAttackEndに「on_battle_win(ターンプレイヤー) → defの消滅チェーン
-            // (非ターンプレイヤー)」をフックしておく（貫通のセキュリティ解決が先）。
-            // 非ターンプレイヤー側フックは、貫通のセキュリティ効果解決中に新たな非ターン
-            // プレイヤー側トリガー（登場したテイマーの登場時等）が誘発した場合、
-            // effect-engine.js側から合流できるよう分けて保持する
+            // ≪貫通≫は「バトルで相手のデジモンを消滅させたとき」に誘発する効果なので、同時に誘発した
+            // 「バトルに勝ったとき」（on_battle_win。本体・進化元）と並べて、ターンプレイヤーが順番を選ぶ
+            // （公式ルール15-4-3。以前は貫通のセキュリティチェックを必ず先に行っていた）。
+            // 非ターンプレイヤー側（defの消滅時チェーン）は、ターンプレイヤー側を全て解決してから。
+            // 貫通のセキュリティ効果解決中に誘発した非ターンプレイヤー側トリガー（登場したテイマーの登場時等）は
+            // effect-engine.js側からこのフックに合流する
             _setPendingBattleTriggers(
-              (proceed) => { fireOnBattleWin(proceed); },
+              null,
               (proceed) => { _fireDestroyChain(['ai'], proceed, { ai: def }, { ai: atk }); }
             );
-            showPenetrateAnnounce(() => {
-              resolveSecurityCheck(atk, atkIdx);
-            });
+            window._nextTriggerExtras = [{
+              card: atk, side: 'turnPlayer', actualSide: 'player',
+              block: { raw: '', trigger: { code: 'on_battle_win' }, actions: [], conditions: [],
+                _grantedSteps: [{ action: 'penetrate_check', no_announce: true, _kwFlag: 'penetrate' }] },
+            }];
+            fireOnBattleWin(() => { checkAttackEnd(atk, atkIdx); });
           } else {
             fireOnBattleWin(() => {
               _fireDestroyChain(['ai'], () => { checkAttackEnd(atk, atkIdx); }, { ai: def }, { ai: atk });
@@ -4133,6 +4157,8 @@ function aiPlayAuto(callback) {
 // ===== ターン終了チェック =====
 
 export async function checkPendingTurnEnd() {
+  // ≪貫通≫のセキュリティチェック中にアタックしたデジモンが消滅した等でここに来たら、キューの残りに戻る
+  if (_resumeAfterPenetrate()) return;
   _attackInProgress = false;
   // 「そのアタックの終了まで」（≪連携≫のDP+・Sアタック+1）のバフをここで外す
   _expireBuffs(bs, 'dur_until_attack_end');

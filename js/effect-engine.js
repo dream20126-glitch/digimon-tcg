@@ -3078,6 +3078,13 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       break;
     }
 
+    // ≪貫通≫のセキュリティチェック（battle-combat.js が同時誘発の1つとしてキューに積む）。チェックが全て終わったら次へ
+    case 'penetrate_check': {
+      if (typeof window !== 'undefined' && typeof window._runPenetrateCheck === 'function') window._runPenetrateCheck(ctx.card, () => callback());
+      else callback();
+      break;
+    }
+
     // 【分離】等「バトルエリアを離れない」の成功マーカー。盤面への副作用は起こさず、
     // 「コストが払われてここまで到達した」ことだけをctx.cardに記録する。
     // tryCancelViaLeaveBattleがこのフラグを見て「離れる処理をキャンセルできたか」を判定する
@@ -17183,6 +17190,13 @@ export function triggerEffect(triggerCode, sourceCard, sourceSide, context, call
   try {
     clearQueue();
     scanTriggers(triggerCode, sourceCard, sourceSide, context);
+    // 呼び出し元が同時に誘発した効果を足す（≪貫通≫を「バトルに勝ったとき」等と並べて順番を選べるように。
+    // battle-combat.js が window._nextTriggerExtras に積んでから triggerEffect を呼ぶ）
+    if (typeof window !== 'undefined' && Array.isArray(window._nextTriggerExtras)) {
+      const _ex = window._nextTriggerExtras;
+      window._nextTriggerExtras = null;
+      _ex.forEach((e) => { if (e && e.card && e.block) addToQueue(e.card, e.block, e.side || 'turnPlayer', e.priority || 'normal', e.actualSide || sourceSide); });
+    }
 
     const waiting = _effectQueue.filter(e => e.status === 'waiting');
 

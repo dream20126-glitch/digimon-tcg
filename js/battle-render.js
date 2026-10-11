@@ -773,6 +773,9 @@ window.activateTraining = function(slotIdx, fromIkusei) {
       renderAll();
       return;
     }
+    // バトルエリアの長押しメニューはレスト表示のため先に suspended=true にしている。元の状態に戻してから
+    // 【トレーニング】を実行する（そのままだと「既にレスト中」と判定され、デッキのカードが置かれなかった）
+    if (!fromIkusei) card.suspended = !!_wasAlreadySuspended;
     if (window._doTrainingEffect) window._doTrainingEffect(card, 'player');
     renderAll();
   };

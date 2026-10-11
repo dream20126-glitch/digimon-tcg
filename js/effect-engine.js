@@ -12338,8 +12338,10 @@ function _isInlineCostConfirmRecipe(steps) {
 // 確認ダイアログに出す「その後〜」部分のテキスト（ステップの display_text があればそれ）
 function _inlineCostConfirmText(step, fullText) {
   if (step && typeof step.display_text === 'string' && step.display_text.trim()) return step.display_text.trim();
-  // 効果テキスト全体を出す（「その後〜」だけだと何の効果かわからない。ピッコロモン BT26-043）
-  return String(fullText || '');
+  // 強制部分は効果発動のアナウンスで見せ済みなので、確認では任意の「その後〜」部分だけを出す
+  const t = String(fullText || '');
+  const i = t.indexOf('その後');
+  return i >= 0 ? t.slice(i) : t;
 }
 
 function runRecipe(steps, ctx, callback) {
@@ -12860,7 +12862,11 @@ function executeRecipeStep(step, ctx, store, callback) {
 
   // per_count_mode === 'repeat': 値×NでなくアクションをN回繰り返す
   // 例：「黄テイマー1体ごとに相手デジモン1体のDP-4000」→ 2体なら -4000 を2回発動
-  if (step.per_count_mode === 'repeat' && step.per_count) {
+  // コスト持ちなら、回数はコストを払った後に数える（コスト未解決ならここでは展開せず、下のコスト処理→
+  // _costsResolved で再実行されたときに展開する。ピッコロモン BT26-043「デッキの上から1枚を裏向きで
+  // 進化元に置くことで、裏向きの進化元1枚ごとに〜」が、置く前の0枚で数えられ何も起きなかった）
+  if (step.per_count_mode === 'repeat' && step.per_count
+      && !(Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)) {
     const _rRef = step.ref || 'evo_source';
     const _rCount = getRefSourceCountDirect(_rRef, ctx.card, ctx.bs, ctx.side, step.ref_filter, step.ref_state);
     const _rN = Math.floor(_rCount / step.per_count);

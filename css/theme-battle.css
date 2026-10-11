@@ -712,6 +712,11 @@
     mask-image: linear-gradient(to top, transparent, #000 35%, #000 70%, transparent);
     animation: ceilingFlow 6s linear infinite;
   }
+  /* 後攻（.side-p2）でも背景を透明にして、外側のデジタルワールドを見せる
+     （.side-p2 の不透明な背景が優先されて、後攻の画面だけ余白の演出が隠れていた） */
+  #battle-screen.side-p2 {
+    background: transparent;
+  }
   /* ゲートの縁: 盤面の左右が脈打って光る */
   #battle-screen .battle-wrap {
     animation: gateEdgePulse 4s ease-in-out infinite;

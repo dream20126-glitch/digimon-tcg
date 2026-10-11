@@ -281,7 +281,7 @@ function _entryNeedsUserInput(entry, ctx) {
         ? recipeCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')
         : recipeCard.recipe;
       const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      recipe = isEvoSource ? (r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode)) : _lookupTriggerSteps(r, triggerCode);
+      recipe = isEvoSource ? (!(recipeCard && recipeCard._faceDown) && r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode)) : _lookupTriggerSteps(r, triggerCode);
     }
   } catch(_) {}
   if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
@@ -324,7 +324,7 @@ function _entryWillExecute(entry, ctx) {
           : recipeCard.recipe;
         const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
         // 常時効果で得たキーワード（グランクワガーモンで得た【ヴォルテクス】等）のステップも含めるためカードを渡す
-        recipe = isEvoSource ? (r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode)) : _lookupTriggerSteps(r, triggerCode, recipeCard);
+        recipe = isEvoSource ? (!(recipeCard && recipeCard._faceDown) && r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode)) : _lookupTriggerSteps(r, triggerCode, recipeCard);
       }
     } catch(_) {}
   }
@@ -964,7 +964,7 @@ function hudPreviewDestroy(card, side) {
   }
   (card.stack || []).forEach((src) => {
     const sr = src && _parseCardRecipe(src);
-    const evo = sr && sr.evo_source && _lookupTriggerSteps(sr.evo_source, 'on_destroy');
+    const evo = sr && !(src && src._faceDown) && sr.evo_source && _lookupTriggerSteps(sr.evo_source, 'on_destroy');
     if (Array.isArray(evo) && evo.length > 0) items.push(_hudItem(side, card, src, src.evoSourceEffect || ''));
   });
   if (items.length === 0) return;
@@ -2075,7 +2075,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
               try {
                 const raw = typeof evoCard.recipe === 'string' ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
                 const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-                const recipe = r.evo_source && r.evo_source.on_active;
+                const recipe = !(evoCard && evoCard._faceDown) && r.evo_source && r.evo_source.on_active;
                 if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe, sourceCard: evoCard });
               } catch (_) {}
             });
@@ -6615,7 +6615,7 @@ function _applyPermanentEffectsImpl(bs, side, context) {
         if (typeof evoCard.recipe === 'string') {
           try { evoCard.recipe = JSON.parse(evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')); } catch (_) { evoCard.recipe = null; }
         }
-        if (!evoCard.recipe || !evoCard.recipe.evo_source) return;
+        if (!evoCard.recipe || !evoCard.recipe.evo_source || evoCard._faceDown) return;
         const evoRecipe = evoCard.recipe.evo_source;
         const turnKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
         turnKeys.forEach(tk => {
@@ -7726,7 +7726,7 @@ function checkConditions(conditions, card, bs, side) {
               const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
               // 進化元として持つときは evo_source.passive のみ参照（本体 passive にフォールバックしない）。
               // 本体の passive は「そのカードがメインで居るとき」限定の効果のため。
-              const passives = r.evo_source && r.evo_source.passive;
+              const passives = !(s && s._faceDown) && r.evo_source && r.evo_source.passive;
               if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw) && _passiveGateOk(p, card, bs, side))) { has = true; break; }
             } catch(_) {}
           }
@@ -7782,7 +7782,7 @@ function checkConditions(conditions, card, bs, side) {
               const raw = typeof s.recipe === 'string' ? s.recipe.replace(/[\x00-\x1F\x7F]/g, '') : s.recipe;
               const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
               // 進化元として持つときは evo_source.passive のみ参照（本体 passive にフォールバックしない）
-              const passives = r.evo_source && r.evo_source.passive;
+              const passives = !(s && s._faceDown) && r.evo_source && r.evo_source.passive;
               if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw) && _passiveGateOk(p, card, bs, side))) { has = true; break; }
             } catch(_) {}
           }
@@ -9719,6 +9719,9 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
     const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
     const recipes = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (inEvoSource) {
+      // 裏向きの進化元は効果を持たない（トレーニング等で裏向きに置かれたカードの進化元効果は発揮しない。
+      // 裏向きのピッコロモン BT26-043 の進化元効果が発動していた）
+      if (card._faceDown) return null;
       // 進化元コンテキスト: evo_source.X のみ（top-level は見ない）
       const evoSteps = recipes['evo_source'] && _lookupTriggerSteps(recipes['evo_source'], triggerCode);
       if (evoSteps) return evoSteps;
@@ -10003,7 +10006,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       card.stack.forEach(evoCard => {
         if (!evoCard || !evoCard.recipe) return;
         const r = parseRecipe(evoCard.recipe);
-        const recipe = r && r.evo_source && _lookupTriggerSteps(r.evo_source, recipeKey);
+        const recipe = r && !(evoCard && evoCard._faceDown) && r.evo_source && _lookupTriggerSteps(r.evo_source, recipeKey);
         if (recipe) pushReaction(card, evoCard, recipe);
       });
     }
@@ -10307,7 +10310,7 @@ function _collectLeaveBattleReplacers(leavingCard, leavingSide, bs) {
       if (r) add(c, c, _lookupTriggerSteps(r, 'when_leave_battle', c));
       (c.stack || []).forEach((ec) => {
         const er = _parseCardRecipe(ec);
-        if (er && er.evo_source) add(c, ec, _lookupTriggerSteps(er.evo_source, 'when_leave_battle'));
+        if (er && !(ec && ec._faceDown) && er.evo_source) add(c, ec, _lookupTriggerSteps(er.evo_source, 'when_leave_battle'));
       });
     });
   });
@@ -10365,7 +10368,7 @@ function _anyBoardCardHasStep(bs, recipeKey, pred) {
       if (r && has(_lookupTriggerSteps(r, recipeKey, c))) return true;
       for (const ec of (c.stack || [])) {
         const er = ec && _parseCardRecipe(ec);
-        if (er && er.evo_source && has(_lookupTriggerSteps(er.evo_source, recipeKey))) return true;
+        if (er && !(ec && ec._faceDown) && er.evo_source && has(_lookupTriggerSteps(er.evo_source, recipeKey))) return true;
       }
     }
   }
@@ -10653,7 +10656,7 @@ export function fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, done,
     if (r) addReaction(digi, digi, _lookupTriggerSteps(r, 'when_deck_increase', digi), side, selfSubj, false);
     (digi.stack || []).forEach((ec) => {
       const er = recipeOf(ec);
-      if (er && er.evo_source) addReaction(digi, ec, _lookupTriggerSteps(er.evo_source, 'when_deck_increase'), side, selfSubj, true);
+      if (er && !(ec && ec._faceDown) && er.evo_source) addReaction(digi, ec, _lookupTriggerSteps(er.evo_source, 'when_deck_increase'), side, selfSubj, true);
     });
   }
   // 2) 他のカード
@@ -10683,7 +10686,7 @@ export function fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, done,
       if (r) addReaction(c, c, _lookupTriggerSteps(r, 'when_deck_increase', c), sd, subjOkFor(false), false);
       (c.stack || []).forEach((ec) => {
         const er = recipeOf(ec);
-        if (er && er.evo_source) addReaction(c, ec, _lookupTriggerSteps(er.evo_source, 'when_deck_increase'), sd, subjOkFor(false), true);
+        if (er && !(ec && ec._faceDown) && er.evo_source) addReaction(c, ec, _lookupTriggerSteps(er.evo_source, 'when_deck_increase'), sd, subjOkFor(false), true);
       });
     });
   });
@@ -11270,7 +11273,7 @@ export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, 
       try {
         const raw = typeof evoCard.recipe === 'string' ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
         const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        const recipe = r.evo_source && r.evo_source.when_summon;
+        const recipe = !(evoCard && evoCard._faceDown) && r.evo_source && r.evo_source.when_summon;
         if (Array.isArray(recipe) && _willRun(recipe, carrier)) reactions.push({ card: carrier, recipe, sourceCard: evoCard });
       } catch (_) {}
     });
@@ -11466,7 +11469,7 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
     destroyedCard.stack.forEach(evoCard => {
       if (!evoCard) return;
       const r = parseRecipe(evoCard.recipe);
-      const evoSteps = r && r.evo_source && _lookupTriggerSteps(r.evo_source, triggerKey);
+      const evoSteps = r && !(evoCard && evoCard._faceDown) && r.evo_source && _lookupTriggerSteps(r.evo_source, triggerKey);
       if (Array.isArray(evoSteps) && evoSteps.length > 0) {
         reactions.push({ card: destroyedCard, sourceCard: evoCard, recipe: evoSteps });
       }
@@ -11563,7 +11566,7 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
             ? evoCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : evoCard.recipe;
           const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
           // 進化元効果専用: evo_source[triggerKey] のみ拾う
-          const recipe = r.evo_source && r.evo_source[triggerKey];
+          const recipe = !(evoCard && evoCard._faceDown) && r.evo_source && r.evo_source[triggerKey];
           if (Array.isArray(recipe) && recipe.some(isOppReactiveStep)) {
             reactions.push({ sourceCard: evoCard, recipe, carrier });
           }
@@ -18367,7 +18370,7 @@ export function hasEvoStackTrigger(card, triggerCode) {
       const r = typeof s.recipe === 'string'
         ? JSON.parse(s.recipe.replace(/[\x00-\x1F\x7F]\s*/g, ''))
         : s.recipe;
-      return !!(r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode));
+      return !!(!(s && s._faceDown) && r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode));
     } catch (_) { return false; }
   });
 }

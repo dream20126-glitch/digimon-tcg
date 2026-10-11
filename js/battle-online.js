@@ -426,7 +426,9 @@ function onRemoteCommand(cmd) {
           addLog('💀 「' + tamer.name + '」（テイマー）が消滅');
           renderAll();
           if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
-            _pendingOwnDestroyFire = (afterDone) => {
+            const _prevOwnFire = _pendingOwnDestroyFire; // 先に消滅したカードの分が残っていれば連結する（上書きで失わない）
+            _pendingOwnDestroyFire = _prevOwnFire ? (afterDone) => _prevOwnFire(() => _thisOwnFire(afterDone)) : null;
+            const _thisOwnFire = (afterDone) => {
               const _finishOwnDestroy = () => {
                 sendMemoryUpdate();
                 sendStateSync();
@@ -437,6 +439,7 @@ function onRemoteCommand(cmd) {
                 window._fireOnlineDestroyChain(['player'], { player: tamer }, _finishOwnDestroy);
               } catch (_) { _finishOwnDestroy(); }
             };
+            if (!_pendingOwnDestroyFire) _pendingOwnDestroyFire = _thisOwnFire;
           } else {
             sendStateSync();
           }
@@ -466,7 +469,9 @@ function onRemoteCommand(cmd) {
         if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
           const cardForChain = card || cmd.cardData;
           if (cardForChain) {
-            _pendingOwnDestroyFire = (afterDone) => {
+            const _prevOwnFire = _pendingOwnDestroyFire; // 先に消滅したカードの分が残っていれば連結する（上書きで失わない）
+            _pendingOwnDestroyFire = _prevOwnFire ? (afterDone) => _prevOwnFire(() => _thisOwnFire(afterDone)) : null;
+            const _thisOwnFire = (afterDone) => {
               const _finishOwnDestroy = () => {
                 sendMemoryUpdate();
                 sendStateSync();
@@ -482,6 +487,7 @@ function onRemoteCommand(cmd) {
                 window._fireOnlineDestroyChain(['player'], { player: cardForChain }, _finishOwnDestroy);
               } catch (_) { _finishOwnDestroy(); }
             };
+            if (!_pendingOwnDestroyFire) _pendingOwnDestroyFire = _thisOwnFire;
           }
         }
       }

@@ -7997,12 +7997,18 @@ function checkPendingDestroys(ctx, callback) {
         if (card.linkedCards) card.linkedCards.forEach(s => ctx.bs[side].trash.push(s));
       }
       ctx.addLog('💀 「' + card.name + '」消滅');
+      // バトルの解決中（ターンプレイヤー側の同時誘発＝「バトルに勝ったとき」≪貫通≫等がまだ残っている。
+      // battle-combat.js の bs._pendingNonTurnPlayerBattleTrigger）に非ターンプレイヤー側のデジモンが消滅したら、
+      // その消滅時効果は発揮待ちとして、ターンプレイヤー側を全て解決してから発揮する（公式ルール15-4-3-5。
+      // ≪貫通≫のセキュリティチェック中の効果でDP0になった相手のザンバモンの消滅時効果が、すぐに発揮されていた）
+      const _turnSideNow = ctx.bs.isPlayerTurn ? 'player' : 'ai';
+      const _deferToNonTurn = !!(ctx.bs._pendingNonTurnPlayerBattleTrigger && side !== _turnSideNow);
       // オンライン: DP0消滅を即時通知（state_sync遅延による復活を防止）
       if (window._isOnlineMode && window._isOnlineMode()) {
         if (side === 'ai') {
           window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: slot, reason: 'destroy' });
           if (window._markDestroyed) window._markDestroyed('ai', slot);
-          window._onlineSendCommand({ type: 'fx_ownDestroyReady' });
+          if (!_deferToNonTurn) window._onlineSendCommand({ type: 'fx_ownDestroyReady' });
         } else if (side === 'player') {
           window._onlineSendCommand({ type: 'own_card_removed', slotIdx: slot, reason: 'destroy' });
         }
@@ -8014,6 +8020,18 @@ function checkPendingDestroys(ctx, callback) {
       // 共通の消滅トリガーチェーン。「原因」追跡: DP0等、効果起因の消滅として扱う
       // （どの効果がDPを0まで下げたかまでは追跡していないベストエフォートな近似）
       if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+      if (_deferToNonTurn) {
+        const _cause = ctx.bs._lastDestroyCause;
+        const _prevHook = ctx.bs._pendingNonTurnPlayerBattleTrigger;
+        ctx.bs._pendingNonTurnPlayerBattleTrigger = (proceed) => {
+          if (window._isOnlineMode && window._isOnlineMode() && side === 'ai') { try { window._onlineSendCommand({ type: 'fx_ownDestroyReady' }); } catch (_) {} }
+          ctx.bs._lastDestroyCause = _cause;
+          fireDestroyChain(card, side, ctx.bs, ctx, () => _prevHook(proceed));
+        };
+        ctx.addLog('⏳ 「' + card.name + '」の消滅時の効果は、ターンプレイヤーの効果を全て処理してから発揮する');
+        processNext();
+        return;
+      }
       fireDestroyChain(card, side, ctx.bs, ctx, processNext);
       });
     });

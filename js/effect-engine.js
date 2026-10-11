@@ -57,6 +57,23 @@ function _reactionStillValid(r, bs, recipeKey) {
   return _cardOnField(bs, r.card);
 }
 
+function _entryLimitExhausted(card, block) {
+  try {
+    const bs = (typeof window !== 'undefined' && window._lastBattleState) || null;
+    if (!bs || !bs._usedLimits || !card || !block) return false;
+    const code = block.trigger && block.trigger.code;
+    const src = block._recipeCard || card;
+    const steps = block._grantedSteps || (code ? getRecipeForTrigger(src, code, !!block._recipeCard) : null);
+    if (!Array.isArray(steps) || steps.length === 0) return false;
+    const srcId = _limitCardId(src), carId = _limitCardId(card);
+    return steps.every((st) => {
+      const max = st ? getLimitMaxUses(st) : 0;
+      if (!(max > 0)) return false;
+      return (bs._usedLimits[srcId + '@' + carId + '_recipe_' + _limitStepPart(st)] || 0) >= max;
+    });
+  } catch (_) { return false; }
+}
+
 function addToQueue(card, block, side, priority, actualSide) {
   const triggerCode = block.trigger?.code;
   // 同じカード+同じトリガー+同じ効果テキストが既にキューにあればスキップ
@@ -79,6 +96,10 @@ function addToQueue(card, block, side, priority, actualSide) {
   if (isDuplicate) {
     return;
   }
+  // 【ターンに1回】等の回数制限に全ステップが達している効果は、誘発させない（発揮待ちの表示・順番選択にも出さない）
+  // （モルフォモン BT26-035 等の進化元「【ターンに1回】バトルに勝ったとき」が、同じターン2回目のバトル勝利で
+  // 誘発に入り、発揮時に何もせず終わっていた）
+  if (_entryLimitExhausted(card, block)) return;
   // 誘発した時点で場にいたか（発揮する前に場を離れたら発揮できない判定 _entryStillValid に使う）
   const _bsNow = (typeof window !== 'undefined' && window._lastBattleState) || null;
   const _onField = !!(_bsNow && (_cardOnField(_bsNow, card) || (block._recipeCard && _evoSourceOnField(_bsNow, block._recipeCard))));
@@ -2073,16 +2094,26 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const count = getRefSourceCountDirect(refSource, ctx.card, ctx.bs, ctx.side, action.ref_filter, action.ref_state);
         n = n * Math.floor(count / action.per_count);
       }
-      const trashCard = opponent.security.length > 0 ? opponent.security[0] : null;
       let _discardedCount = 0;
+      const _sttCards = [];
       for (let i = 0; i < n; i++) {
-        if (opponent.security.length > 0) { opponent.trash.push(opponent.security.shift()); ctx.addLog('🛡 セキュリティ破棄'); _discardedCount++; }
+        if (opponent.security.length > 0) { const sc = opponent.security.shift(); opponent.trash.push(sc); _sttCards.push(sc); ctx.addLog('🛡 セキュリティ破棄' + (sc && sc.name ? '（「' + sc.name + '」）' : '')); _discardedCount++; }
       }
       if (ctx.bs) ctx.bs._lastActionCount = _discardedCount;
       _noteSecurityDecrease(ctx, opponent, _discardedCount);
       ctx.renderAll();
-      // 辞書の演出パラメータ1=セキュリティ, パラメータ2=トラッシュ で自動決定
-      playEffect(action.code, { card: trashCard, ctx }, () => { callback(); }, { visualType: action.visualType, frameColor: action.frameColor });
+      // セキュリティ→トラッシュの移動演出。破棄されたカードは公開情報なので、自分・相手どちらの画面も表向き
+      // （オオクワモン BT26-042 進化元「相手のセキュリティを上から1枚破棄する」で演出が無かった）
+      const _sttPre = ctx.side === 'player' ? '相手の' : '';
+      _moveBatchIntro(ctx, _sttCards, _sttPre + 'セキュリティ', _sttPre + 'トラッシュ', () => {
+        let _si = 0;
+        const _sttNext = () => {
+          if (_si >= _sttCards.length) { callback(); return; }
+          const sc = _sttCards[_si++];
+          _fxMoveSync(ctx, sc, _sttPre + 'セキュリティ', _sttPre + 'トラッシュ', _sttNext, { faceUp: true, remoteFrom: 'セキュリティ', remoteTo: 'トラッシュ' });
+        };
+        _sttNext();
+      }, { remoteFrom: 'セキュリティ', remoteTo: 'トラッシュ' });
       break;
     }
     case 'evo_discard':
@@ -15867,8 +15898,12 @@ function executeRecipeStep(step, ctx, store, callback) {
     // 相手の効果処理側でこのバフ（およびsourceType）を参照する判定がまだ無いため、
     // 実際に効果を防ぐ動作はしない（エンジン未実装）
     case 'immune_effects': {
-      const tgt = ctx.card;
-      if (tgt) {
+      // target:'own:all'（+filter）なら条件を満たす自分のデジモン全て（タイラントカブテリモン BT26-047「特徴『昆虫型』
+      // 『タイタン族』を持つレスト状態の自分のデジモン全ては相手のオプションの効果を受けず」）。それ以外はこのカード
+      const _imTgts = /^own:all$/.test(String(step.target || ''))
+        ? (player.battleArea || []).filter(c => c && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)))
+        : (ctx.card ? [ctx.card] : []);
+      _imTgts.forEach((tgt) => {
         const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
         addBuffDirect(tgt, 'keyword_immune', 0, dur, ctx);
         // source_type: 'digimon'/'option' 指定時のみその種別の効果だけを免疫対象にする
@@ -15878,7 +15913,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (lastBuff && srcType) lastBuff.sourceType = srcType;
         const srcLabel = srcType === 'digimon' ? 'デジモンの' : srcType === 'option' ? 'オプションの' : '';
         ctx.addLog('🪄 「' + tgt.name + '」は相手の' + srcLabel + '効果を受けない');
-      }
+      });
+      ctx.renderAll && ctx.renderAll();
       callback();
       break;
     }

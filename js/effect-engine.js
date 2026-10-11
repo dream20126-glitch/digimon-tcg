@@ -3296,8 +3296,8 @@ export function isCardInAnyZone(card, p) {
 // セキュリティをデッキに戻して離れない等）や消滅されない効果で離れなかったときにも消滅演出が出ていた
 function _destroyWithFx(owner, idx, ctx, fxFn, done) {
   const card = owner && owner.battleArea ? owner.battleArea[idx] : null;
-  doDestroy(owner, idx, ctx, () => {
-    const gone = !!card && owner.battleArea.indexOf(card) === -1;
+  doDestroy(owner, idx, ctx, (removed) => {
+    const gone = !!card && removed === true;
     if (gone && typeof fxFn === 'function') {
       try { fxFn(card, () => done && done(true)); return; } catch (_) {}
     }
@@ -3305,6 +3305,12 @@ function _destroyWithFx(owner, idx, ctx, fxFn, done) {
   });
 }
 function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
+  // callback(実際に消滅させたか)。オンラインでは相手のカードが state_sync で別オブジェクトに置き換わるため、
+  // 呼び出し側が「同じオブジェクトがまだその位置にいるか」で判定すると、離れなかったのに消滅扱いになる
+  // （プルートモンの効果で消滅させようとしたホーリーモードが離れなかったのに、消滅演出が出ていた）
+  const _ddCb0 = callback;
+  let _ddRemoved = false;
+  callback = () => { if (_ddCb0) _ddCb0(_ddRemoved); };
   causeType = causeType || 'effect';
   const destroyed = targetSide.battleArea[slotIdx];
   if (!destroyed) { callback && callback(); return; }
@@ -3395,6 +3401,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // 【分離】: リンクカードを1枚破棄して、この消滅自体をキャンセルできる
   tryCancelViaLeaveBattle(destroyed, destroyedSideName, ctx.bs, ctxBase, (canceled) => {
     if (canceled) { callback && callback(); return; }
+    _ddRemoved = true;
     targetSide.battleArea[slotIdx] = null;
     targetSide.trash.push(destroyed);
     if (destroyed.stack) destroyed.stack.forEach(s => targetSide.trash.push(s));
@@ -13748,8 +13755,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (!c) { destroyOneByOne(); return; }
           // 1体消滅: 通常の消滅処理（doDestroy）を通す（消滅できない効果・【分離】等の回避、
           // 消滅時効果・「デジモンが消滅したとき」反応、オンライン同期は doDestroy 側で行う）
-          doDestroy(opponent, t.idx, ctx, () => {
-            if (opponent.battleArea[t.idx] === c) { destroyOneByOne(); return; } // 消滅しなかった
+          doDestroy(opponent, t.idx, ctx, (removed) => {
+            if (removed !== true) { destroyOneByOne(); return; } // 消滅しなかった
             _destroyedCount++;
             // 消滅演出 → 完了後に次の1体
             if (ctx.showDestroyEffect) {
@@ -13816,8 +13823,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           // 1体ずつ通常の消滅処理（doDestroy）を通す（消滅できない効果・【分離】等の回避、
           // 消滅時効果・道連れ・「デジモンが消滅したとき」反応はここで処理される。
           // オンライン同期も doDestroy 側で送る＝ここでは送らない）
-          doDestroy(tgtPlayer, idx, ctx, () => {
-            if (tgtPlayer.battleArea[idx] === c) { destroyMatchingNext(); return; } // 消滅しなかった
+          doDestroy(tgtPlayer, idx, ctx, (removed) => {
+            if (removed !== true) { destroyMatchingNext(); return; } // 消滅しなかった
             _dmCount++;
             if (ctx.showDestroyEffect) {
               ctx.showDestroyEffect(c, () => setTimeout(destroyMatchingNext, 300));

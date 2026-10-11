@@ -8437,7 +8437,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
   const isActivated = ['main'].includes(triggerCode);
   // ソースカード限定のイベント系トリガー（そのカード固有のイベント）
   // これらは盤面全体をスキャンすると関係ない他カードの効果まで誘発してしまう
-  const isSourceOnly = ['on_play', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked', 'on_battle_win', 'on_battle_win_security', 'on_battle_destroy', 'on_active'].includes(triggerCode);
+  const isSourceOnly = ['on_play', 'on_move', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked', 'on_battle_win', 'on_battle_win_security', 'on_battle_destroy', 'on_active'].includes(triggerCode);
   // ターン境界トリガー: 「相手のターン終了時」「自分のターン終了時」等は
   // 一方のサイドのカードのみ発火する（相手ターン終了 = 自陣営カードが反応）。
   // sourceSide で指定された側のみスキャン対象にする。

@@ -12716,6 +12716,20 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
   }
 
+  // post_cost_condition（コストを払ったあとで判定する条件）:「〜することで、〜なら、〜する」の「〜なら」。
+  // condition（発動条件）はコストより前に判定するので、コストを払えるかどうかと関係なく止まってしまう。
+  // こちらはコストを支払い終えた時点（コストが無ければ最初）で判定し、満たさなければ効果本体だけを行わない
+  // （コストは支払ったまま。プルートモン BT26-059「自分の手札1枚を破棄することで、自分のターンなら、〜登場できる」:
+  // 相手のターンでも手札は破棄でき、破棄したことで「手札が破棄されたとき」が誘発する）
+  if (step.post_cost_condition && (step._costsResolved || !(Array.isArray(step.cost) && step.cost.length > 0))) {
+    const _pcc = parseRecipeCondition(step.post_cost_condition);
+    if (_pcc.length > 0 && !checkConditions(_pcc, ctx.card, ctx.bs, ctx.side)) {
+      ctx.addLog && ctx.addLog('💨 条件を満たさないため、「' + (ctx.card ? ctx.card.name : '?') + '」の効果のこの先は行わない');
+      callback && callback();
+      return;
+    }
+  }
+
   // 対象の追加（エディタの「+ 対象を追加」→ step.targets）: 主対象(step.target/step.filter)に
   // 加えて追加の対象グループがあれば、同じアクションを各グループへ順に実行する。
   // これから追加される全アクションを含め、combat以外の全アクション共通の仕組みとする

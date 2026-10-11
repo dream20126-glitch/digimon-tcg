@@ -2002,14 +2002,15 @@ export function startAttack(card, slotIdx, callback) {
   if (!card) { callback && callback(false); return false; }
   if (_attackInProgress) { callback && callback(false); return false; }
   if (chargeAllowed) addLog('⚔ 【進撃】「' + card.name + '」がメモリー相手側でアタック宣言');
-  // suspended チェックは行わない（長押しメニューで既にレスト済み）
+  // アタック宣言でレストする（長押しメニューを開いただけではレストしない）
   // 公式ルール1194: レストさせることができないデジモンはアタック宣言ができない
   if (card.cantAttack || card.cantRest) { callback && callback(false); return false; }
 
   // when_opp_rest の解決待ちの間、別の攻撃宣言で状態が競合しないようロックする
   // （resolveAttackTarget 到達時に改めて true になるが、多重にしても問題ない）
   _attackInProgress = true;
-  card.suspended = true;
+  // 「レストせずアタックできる」（attack options:without_rest）ならレストしない
+  if (!card._attackWithoutRest) card.suspended = true;
   card._attackedOnTurn = bs.turn; // cond_self_attacked 用（このターンにアタックしたか）
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   _atkState = { card, slotIdx };

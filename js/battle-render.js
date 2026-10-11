@@ -425,12 +425,9 @@ function setupLongpress(el, slotIdx, card) {
   function triggerMenu() {
     if (bs.phase !== 'main' || !bs.isPlayerTurn) return;
     const c = bs.player.battleArea[slotIdx]; if (!c) return;
+    // メニューを開いただけではレストさせない（アタック宣言・【トレーニング】等、ボタンを押して
+    // 実際に行動したときにレストする）。元々レスト中かはメニューの表示（アタック不可等）に使う
     _wasAlreadySuspended = c.suspended;
-    if (!c.suspended) {
-      const noRest = !!c._attackWithoutRest;
-      if (!noRest) c.suspended = true;
-      renderAll();
-    }
     _longpressSlotIdx = slotIdx;
     requestAnimationFrame(() => {
       const updatedEl = document.getElementById('pl-battle-row')?.querySelectorAll('.b-slot')[slotIdx];
@@ -653,7 +650,6 @@ function startAttackModeUI(slotIdx, opts) {
     }
     if (!resolved) {
       if (_fromEffect) { renderAll(); if (opts.onCancel) opts.onCancel(); return; }
-      if (!_wasAlreadySuspended) card.suspended = false;
       renderAll();
     }
   }
@@ -689,8 +685,6 @@ window.startAttackMode = startAttackModeUI;
 window.hideLongpressMenu = hideLongpressMenu;
 window.cancelLongpress = function(slotIdx) {
   hideLongpressMenu();
-  const card = bs.player.battleArea[slotIdx];
-  if (card && !_wasAlreadySuspended) card.suspended = false;
   renderAll();
   if (window._tutorialRunner && window._tutorialRunner.active) {
     try { window._tutorialRunner.notifyEvent('action_cancelled', { context: 'longpress' }); } catch (e) {}
@@ -706,9 +700,6 @@ window.activateEffect = function(slotIdx, effectSource) {
     const evoCard = card.stack && card.stack[evoIdx];
     if (evoCard && evoCard.evoSourceEffect) { effectText = evoCard.evoSourceEffect; effectName = evoCard.name + '（' + evoSourceEffectLabel(evoCard) + '）'; }
   }
-  // 効果発動はレストを伴わない（公式ルール: 起動型効果は通常レストを要求しない）
-  // 長押しメニューで仮レストされた状態を解除（元々アクティブだった場合）
-  if (!_wasAlreadySuspended) card.suspended = false;
   renderAll();
   // 任意効果（「〜できる」・コスト持ち）なら効果エンジンが「効果を発動しますか？」を確認するので、
   // ここでの確認は出さない（確認が2回出ていた。ゲコモン BT26-021【メイン】）
@@ -734,9 +725,6 @@ window.activateEffect = function(slotIdx, effectSource) {
   // confirmEffect のコールバックで効果エンジンを呼ぶ
   window._effectConfirmCallback = function(yes) {
     document.getElementById('effect-confirm-overlay').style.display = 'none';
-    // 「いいえ」「はい」どちらでも効果発動はレストを伴わないため、
-    // 元々アクティブだったら解除する（仮レスト状態の戻し）
-    if (!_wasAlreadySuspended) card.suspended = false;
     if (!yes) {
       renderAll();
       return;
@@ -756,8 +744,7 @@ window.activateEffect = function(slotIdx, effectSource) {
   };
 };
 // 【トレーニング】起動: fromIkusei=true なら育成エリアのカード（バトルエリアに出ていない）が対象。
-// 通常の「⚡ 効果」と異なり、レストすること自体がこのキーワードのコストなので、
-// 確定時は suspended=true のまま維持する（キャンセル時のみ元の状態に戻す）
+// レストすること自体がこのキーワードのコスト（doTrainingEffect がレストさせる）
 window.activateTraining = function(slotIdx, fromIkusei) {
   hideLongpressMenu();
   const card = fromIkusei ? bs.player.ikusei : bs.player.battleArea[slotIdx];
@@ -769,13 +756,10 @@ window.activateTraining = function(slotIdx, fromIkusei) {
   window._effectConfirmCallback = function(yes) {
     document.getElementById('effect-confirm-overlay').style.display = 'none';
     if (!yes) {
-      if (!fromIkusei && !_wasAlreadySuspended) card.suspended = false;
       renderAll();
       return;
     }
-    // バトルエリアの長押しメニューはレスト表示のため先に suspended=true にしている。元の状態に戻してから
-    // 【トレーニング】を実行する（そのままだと「既にレスト中」と判定され、デッキのカードが置かれなかった）
-    if (!fromIkusei) card.suspended = !!_wasAlreadySuspended;
+    // レストは【トレーニング】の処理（doTrainingEffect）の中で行う
     if (window._doTrainingEffect) window._doTrainingEffect(card, 'player');
     renderAll();
   };
@@ -786,8 +770,6 @@ window.activateTraining = function(slotIdx, fromIkusei) {
 // （通常はどちらも1択なので即実行される。リンク+1等で候補が増えたときのための選択UI）
 window.startAppGattaiMenu = function(slotIdx) {
   hideLongpressMenu();
-  const card = bs.player.battleArea[slotIdx];
-  if (card && !_wasAlreadySuspended) card.suspended = false;
   renderAll();
   const candidates = (window._getAppGattaiCandidates && window._getAppGattaiCandidates(slotIdx)) || [];
   if (candidates.length === 0) return;
@@ -966,8 +948,7 @@ window.activateTamerEffect = function(tamerIdx) {
 };
 window.cancelTamerLongpress = function(tamerIdx) {
   hideLongpressMenu();
-  const card = bs.player.tamerArea[tamerIdx];
-  if (card) card.suspended = false;
+  // メニューを開いてもレストさせていないので、状態は戻さない（以前はレスト中のテイマーまでアクティブに戻していた）
   renderAll();
 };
 

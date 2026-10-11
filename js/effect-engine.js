@@ -4199,6 +4199,11 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     if (titleEl) titleEl.innerText = (title || '🌟 カードを選択') + `（候補${candidates.length}枚 / 最大${wantCount}枚選択）`;
     const candSet = new Set(candidates);
     const picked = [];
+    // バトル演出中の黒背景（_combat-backdrop, z-index:46999）は trash-modal（z-index:26000）より前面にあるため、
+    // バトルに勝ったときの「手札から進化」等で選ぶ画面が裏に隠れて進めなくなる。選んでいる間だけ黒背景を隠す
+    const _pkBackdrop = document.getElementById('_combat-backdrop');
+    const _pkBackdropWasVisible = !!(_pkBackdrop && _pkBackdrop.style.display !== 'none');
+    if (_pkBackdropWasVisible) _pkBackdrop.style.display = 'none';
     const renderItems = () => {
       if (!grid) return;
       grid.innerHTML = '';
@@ -4267,6 +4272,7 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     if (_onlinePickerActive) window._skipFxEffectClose = true;
     const cleanup = () => {
       modal.style.display = 'none';
+      if (_pkBackdropWasVisible && _pkBackdrop) _pkBackdrop.style.display = 'block';
       if (actionRow && actionRow.parentNode) actionRow.parentNode.removeChild(actionRow);
       // 元の閉じるボタンを元の場所に戻す（次回の通常のトラッシュ閲覧用）
       if (closeBtn && closeBtnHomeParent) {

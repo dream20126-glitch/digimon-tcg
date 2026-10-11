@@ -326,15 +326,18 @@ function _runWhenBattleDestroy(side, card, onDestroy, onCancel) {
 // ≪連携≫の処理: アタック時、他のアクティブデジモン1体をレストさせて
 // そのアタックの終了まで DP+(対象DP) と Sアタック+1 を一時付与する (総合ルール 24-1)。
 // 以前は「このターン」で付与していたうえ付与した側の情報が無く、ターン終了でも消えずに残っていた
-function _tryCombo(atk, ownerSidePlayer) {
+// target 省略時（CPU）は先頭のアクティブなデジモン
+function _tryCombo(atk, ownerSidePlayer, target) {
   if (!atk || !hasCombo(atk) || !ownerSidePlayer) return false;
-  var others = [];
-  for (var i = 0; i < ownerSidePlayer.battleArea.length; i++) {
-    var c = ownerSidePlayer.battleArea[i];
-    if (c && c !== atk && !c.suspended) others.push(c);
+  if (!target) {
+    var others = [];
+    for (var i = 0; i < ownerSidePlayer.battleArea.length; i++) {
+      var c = ownerSidePlayer.battleArea[i];
+      if (c && c !== atk && !c.suspended && !c.cantRest) others.push(c);
+    }
+    if (others.length === 0) return false;
+    target = others[0];
   }
-  if (others.length === 0) return false;
-  var target = others[0];
   target.suspended = true;
   var addedDp = parseInt(target.dp) || 0;
   if (!atk.buffs) atk.buffs = [];
@@ -395,6 +398,32 @@ function hasEvade(c)        { return hasPassiveFlag(c, 'evade', '【回避】');
 function hasBarrier(c)      { return hasPassiveFlag(c, 'barrier', '【防壁】'); }
 function hasArmorBreak(c)   { return hasPassiveFlag(c, 'armor_break', '【アーマー解除】'); }
 function hasIndomitable(c)  { return hasPassiveFlag(c, 'indomitable', '【不屈】'); }
+// プレイヤーの≪連携≫（任意）: アタック宣言のあと「【連携】を使いますか？」を確認し、「はい」なら連携させる
+// デジモン（他のアクティブな自分のデジモン）を盤面で選んでレストさせ、そのDPとSアタック+1をアタック終了まで得る
+function _askCombo(atk, done) {
+  const finish = () => { try { done && done(); } catch (e) { console.error('[askCombo]', e); } };
+  if (!atk || !hasCombo(atk)) { finish(); return; }
+  const cands = [];
+  bs.player.battleArea.forEach((c, i) => { if (c && c !== atk && !c.suspended && !c.cantRest) cands.push(i); });
+  if (cands.length === 0) { finish(); return; }
+  const rule = (window._keywordRuleText && window._keywordRuleText('combo')) || '【連携】このデジモンがアタックしたとき、他の自分のデジモン1体をレストさせることで、そのアタックの終了まで、このデジモンにレストさせたデジモンのDPをプラスし、≪Sアタック+1≫を得る';
+  const ask = window._showEffectConfirm || ((c, t, cb) => cb(true));
+  ask(atk, rule + '\n\n【連携】を使いますか？', (yes) => {
+    if (!yes) { addLog('☓ 【連携】を使わない'); finish(); return; }
+    const pick = (idx) => {
+      const tgt = bs.player.battleArea[idx];
+      if (tgt) _tryCombo(atk, bs.player, tgt);
+      renderAll();
+      if (_onlineMode && typeof window._onlineSendStateSync === 'function') { try { window._onlineSendStateSync(); } catch (_) {} }
+      finish();
+    };
+    if (cands.length === 1) { pick(cands[0]); return; }
+    _showTargetSelection('pl', cands, null, '#00ff88', (idx) => {
+      if (idx === null || idx === undefined) { finish(); return; }
+      pick(idx);
+    }, '（【連携】でレストさせるデジモン）');
+  });
+}
 function hasCombo(c)        { return hasPassiveFlag(c, 'combo', '【連携】'); }
 function hasDecoy(c)        { return hasPassiveFlag(c, 'decoy', '【デコイ】'); }
 function hasScapegoat(c)    { return hasPassiveFlag(c, 'scapegoat', '【スケープゴート】'); }
@@ -1974,15 +2003,16 @@ export function startAttack(card, slotIdx, callback) {
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   _atkState = { card, slotIdx };
   addLog('⚔ 「' + card.name + '」でアタック！');
-  // ≪連携≫: アタック時に他デジモンレストでバフ（自動発動・他に対象なければスキップ）
-  _tryCombo(card, bs.player);
   renderAll();
+  // ≪連携≫（任意）: 使うかを確認し、「はい」なら連携させるデジモンを選んでレストさせる（他に対象がなければ聞かない）
+  _askCombo(card, () => {
   // アタック宣言による自身のレスト → 相手側の when_opp_rest 誘発（ヴェノムヴァンデモン等）。
   // ブロック時のレストと同じ反応経路。ここで発火しなければ「アタックでレスト」は
   // when_opp_rest を一切拾えない
   fireOppRestThen('player', () => {
     if (_onlineMode && _sendCommand) _sendCommand({ type: 'attack_start', atkIdx: slotIdx, atkName: card.name, atkDp: card.dp, atkImg: cardImg(card) });
     callback && callback(true);
+  });
   });
   return true;
 }

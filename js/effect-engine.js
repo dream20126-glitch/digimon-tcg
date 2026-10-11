@@ -8275,6 +8275,8 @@ function _evoSourcePosText(carrier, src) {
   return i === -1 ? '' : '上から' + (i + 1) + '枚目';
 }
 
+// battle-combat.js（≪連携≫を使うかの確認等）からも同じ確認ダイアログを使う
+if (typeof window !== 'undefined') window._showEffectConfirm = (card, text, cb) => showConfirmDialog(card, text, cb);
 function showConfirmDialog(card, effectText, callback, evoSourceCard) {
   const overlay = document.getElementById('effect-confirm-overlay');
   if (!overlay) { callback(false); return; }

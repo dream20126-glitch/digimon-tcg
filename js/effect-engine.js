@@ -9663,7 +9663,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   // 発揮する時点で「〜なら」の条件（step.condition）を満たすステップが1つも無ければ、確認も出さずに終える
   // （誘発の判定 _fireSidedReactionTriggers と同じ基準。プロットモン BT26-066【自分のメインフェイズ開始時】
   // 「手札が5枚以下なら」を、発揮する時点で手札が6枚以上でも確認していた）
-  if (bs && Array.isArray(recipe) && recipe.length > 0 && recipe.every(st => st && st.condition
+  if (bs && Array.isArray(recipe) && recipe.length > 0 && recipe.every(st => st && st.condition && !_isEvoSourceSummonStep(st)
       && !checkConditions(parseRecipeCondition(st.condition), card, bs, side))) {
     ctxBase && ctxBase.addLog && ctxBase.addLog('💨 「' + (sourceCard && sourceCard.name || card.name) + '」の効果は条件を満たさないため発揮しない');
     finish();
@@ -9960,7 +9960,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
   const condOkNow = (r) => {
     if (r.zone === 'hand' && r.card && r.card._handDiscardCond === 'ok') return true;
     const rc = Array.isArray(r.recipe) ? r.recipe : [];
-    return !(rc.length > 0 && rc.every(st => st && st.condition && !checkConditions(parseRecipeCondition(st.condition), r.card, bs, reactSide)));
+    return !(rc.length > 0 && rc.every(st => st && st.condition && !_isEvoSourceSummonStep(st) && !checkConditions(parseRecipeCondition(st.condition), r.card, bs, reactSide)));
   };
   function nextReaction() {
     if (remaining.length === 0) { _hudSetSource(_hudKey, []); finish(); return; }
@@ -11911,6 +11911,18 @@ function recipeWillExecuteAnything(recipe, ctx) {
     // （詳細は _stepLacksHandCandidate。トラッシュを含む指定は判定しない）
     // ≪デコード≫は「バトル以外でバトルエリアを離れるとき」の効果。バトルで負けて離れるときは発揮しない
     if (step._kwFlag === 'decode' && ctx.bs && ctx.bs._leaveByBattle) continue;
+    // 進化元から登場（≪デコード≫等）: condition / from_filter / filter は登場させる進化元カードの条件。
+    // このカード自身では判定せず、条件を満たす進化元があるかで判定する（ゾンビプルートモン BT26-079 の
+    // 【デコード「プルートモン」】が、自身の名前で cond_name:プルートモン を判定して不発になっていた）
+    if (_isEvoSourceSummonStep(step)) {
+      const _esConds = step.condition ? parseRecipeCondition(step.condition) : [];
+      const _esF = step.from_filter || step.filter || null;
+      const _esOk = (ctx.card && Array.isArray(ctx.card.stack) ? ctx.card.stack : []).some(c => c
+        && (!_esF || cardMatchesFilter(c, _esF, ctx.bs, ctx.side, ctx.card))
+        && (_esConds.length === 0 || checkConditions(_esConds, c, ctx.bs, ctx.side)));
+      if (_esOk) return true;
+      continue;
+    }
     // 「このデジモンでアタックできる」（≪ヴォルテクス≫≪急襲≫等）で、アタックできない（レスト中・アタックできない状態、
     // 「相手のデジモンにアタック」でアタックできる相手のデジモンがいない）なら不発なので、誘発の選択にも出さない
     // （グランクワガーモン BT26-045 で【ヴォルテクス】を得たレスト中のタイラントカブテリモンが、ターン終了時に出ていた）

@@ -17640,6 +17640,19 @@ export function hasRecipeTrigger(card, triggerCode) {
   } catch (_) { return false; }
 }
 
+// 「⚡ 効果」ボタンで使う【メイン】があるか。専用ボタンで起動するキーワード（【トレーニング】）の【メイン】しか
+// 無いなら false（キーワード辞書で【メイン】として定義されているため、専用の「🎓 トレーニング」と同じ処理の
+// 「⚡ 効果」ボタンが重複して出ていた）
+const _DEDICATED_BUTTON_KW = new Set(['training']);
+export function hasOwnMainEffect(card) {
+  if (!card) return false;
+  try {
+    if (Array.isArray(card._grantedRecipes) && card._grantedRecipes.some(g => { const st = _grantedStepsFor(g, 'main', card); return Array.isArray(st) && st.some(x => x && !(x._kwFlag && _DEDICATED_BUTTON_KW.has(x._kwFlag))); })) return true;
+    const steps = getRecipeForTrigger(card, 'main');
+    return Array.isArray(steps) && steps.some(x => x && !(x._kwFlag && _DEDICATED_BUTTON_KW.has(x._kwFlag)));
+  } catch (_) { return hasRecipeTrigger(card, 'main'); }
+}
+
 // 【トレーニング】キーワードを持つか（recipe.passive を直接見る）。
 // applyPermanentEffects は bs[side].ikusei（育成エリア）を対象外にしているため、
 // _permEffects.training は育成エリアのカードには絶対に立たない。育成エリアでも

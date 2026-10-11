@@ -8,7 +8,7 @@
 import { bs, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { updateScrollArrows, addLog, showConfirm } from './battle-ui.js';
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
-import { isTargetSelecting, hasRecipeTrigger, evoSourceEffectLabel, hasTrainingKeyword, showHandSelection, canUseZoneMainEffect } from './effect-engine.js';
+import { isTargetSelecting, hasRecipeTrigger, hasOwnMainEffect, evoSourceEffectLabel, hasTrainingKeyword, showHandSelection, canUseZoneMainEffect } from './effect-engine.js';
 
 // ===== カード画像ヘルパー =====
 export const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
@@ -476,7 +476,8 @@ function showLongpressMenu(card, slotIdx, el) {
   // デュアルカードが進化してデジモンになった場合、recipe.mainはオプション使用時の
   // 効果であり進化後に再発動できるものではないため、_noMainAbilityが立っていれば
   // 「⚡ 効果」ボタン自体を出さない
-  if (hasRecipeTrigger(card, 'main') && !card._noMainAbility) {
+  // 【トレーニング】等、専用ボタンで起動するキーワードの【メイン】しか無いカードには出さない（hasOwnMainEffect）
+  if (hasOwnMainEffect(card) && !card._noMainAbility) {
     const used = card._usedEffects.includes('self');
     html += used
       ? '<button class="lp-action-btn lp-effect-btn" disabled style="opacity:0.3;">⚡ 効果（使用済み）</button>'

@@ -200,7 +200,8 @@ function _entryWillExecute(entry, ctx) {
           ? recipeCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')
           : recipeCard.recipe;
         const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        recipe = isEvoSource ? (r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode)) : _lookupTriggerSteps(r, triggerCode);
+        // 常時効果で得たキーワード（グランクワガーモンで得た【ヴォルテクス】等）のステップも含めるためカードを渡す
+        recipe = isEvoSource ? (r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode)) : _lookupTriggerSteps(r, triggerCode, recipeCard);
       }
     } catch(_) {}
   }
@@ -5582,12 +5583,15 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
   } else if (target.code === 'target_all_own') {
     // target.filter（色/タイプ等）と block.conditions（cond_blocker 等）の両方で絞り込み可能
     const _dpAllConds = block.conditions || [];
-    player.battleArea.forEach(c => {
-      if (!c) return;
-      if (target.filter && !cardMatchesFilter(c, target.filter)) return;
-      if (_dpAllConds.length > 0 && !checkConditions(_dpAllConds, c, ctx.bs, ctx.side)) return;
-      addBuffDirect(c, type, val, dur, ctx);
-    });
+    // 期限つきなら継続する全体処理として記録（あとから条件を満たした自分のデジモンにも付く）
+    if (!_registerGlobalEffect(ctx, ctx.side, { type, value: val, duration: dur, filter: target.filter || null, conds: _dpAllConds })) {
+      player.battleArea.forEach(c => {
+        if (!c) return;
+        if (target.filter && !cardMatchesFilter(c, target.filter)) return;
+        if (_dpAllConds.length > 0 && !checkConditions(_dpAllConds, c, ctx.bs, ctx.side)) return;
+        addBuffDirect(c, type, val, dur, ctx);
+      });
+    }
     ctx.addLog(label + '全デジモン DP' + sign + val);
     showDpPopup(isPlus ? val : -val, '自分のデジモン全て');
     ctx.renderAll(); callback && callback();
@@ -5654,6 +5658,73 @@ function _keywordJpName(flag) {
     security_attack_plus:'Sアタック+', attack_at_end_phase:'急襲',
   };
   return map[flag] || flag;
+}
+
+// ===== 継続する全体処理（総合ルール 11-2-2 / 11-2-3） =====
+// 「相手のターン終了まで、〜を持つ自分のデジモン全ては…」のような期限つきの全体処理は、発揮したあとに
+// 条件を満たしたデジモン（新しく登場した・レスト状態になった等）にも影響し、条件を満たさなくなったら外れる。
+// bs._globalEffects に記録し、永続効果の再計算（applyPermanentEffects。描画のたびに呼ばれる）で各カードの
+// バフ（_globalId つき）を付け外しする。期限切れは expireBuffs がカードのバフと同じ規則で記録ごと消す。
+// ※オンラインで相手のデジモンが対象の全体処理は、相手の端末の状態が正なので対象外（従来通り発揮時の1回だけ）
+const _GLOBAL_EFFECT_DURATIONS = new Set(['dur_this_turn', 'dur_next_opp_turn', 'dur_next_own_turn']);
+function _registerGlobalEffect(ctx, targetSide, opts) {
+  const bs = ctx && ctx.bs;
+  if (!bs || !opts || !_GLOBAL_EFFECT_DURATIONS.has(opts.duration)) return false;
+  if (targetSide !== ctx.side && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) return false;
+  if (!Array.isArray(bs._globalEffects)) bs._globalEffects = [];
+  const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+  const g = {
+    id: 'g' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
+    targetSide, ownerSide: ctx.side, filter: opts.filter || null, conds: opts.conds || null,
+    type: opts.type, value: opts.value || 0, duration: opts.duration, sourceType: opts.sourceType || null,
+    source: ctx.card ? ctx.card.cardNo : '', _appliedSide: ctx.side, _appliedDuringOwnTurn: turnSide === ctx.side, _ticks: 0,
+  };
+  bs._globalEffects.push(g);
+  _refreshGlobalEffects(bs, targetSide);
+  return g;
+}
+function _globalEffectMatches(g, c, bs) {
+  try {
+    if (g.filter && !cardMatchesFilter(c, g.filter, bs, g.ownerSide, null)) return false;
+    if (Array.isArray(g.conds) && g.conds.length > 0 && !checkConditions(g.conds, c, bs, g.targetSide)) return false;
+    return true;
+  } catch (_) { return false; }
+}
+function _refreshGlobalEffects(bs, side) {
+  const list = bs && bs._globalEffects;
+  if (!Array.isArray(list) || list.length === 0) return;
+  const area = (bs[side] && bs[side].battleArea) || [];
+  list.forEach((g) => {
+    if (!g || g.targetSide !== side) return;
+    area.forEach((c) => {
+      if (!c) return;
+      if (!Array.isArray(c.buffs)) c.buffs = [];
+      const at = c.buffs.findIndex((b) => b && b._globalId === g.id);
+      const ok = _globalEffectMatches(g, c, bs);
+      if (ok && at === -1) {
+        const b = { type: g.type, value: g.value, duration: g.duration, source: g.source, _appliedSide: g._appliedSide,
+          _appliedDuringOwnTurn: g._appliedDuringOwnTurn, _ticks: g._ticks || 0, _globalId: g.id };
+        if (g.sourceType) b.sourceType = g.sourceType;
+        c.buffs.push(b);
+        recalcDp(c);
+      } else if (!ok && at !== -1) {
+        c.buffs.splice(at, 1);
+        recalcDp(c);
+      }
+    });
+  });
+}
+// 期限切れの判定（expireBuffs のカードのバフと同じ規則）。true なら消す
+function _globalEffectExpires(g, timing, endingSide) {
+  if (g.duration !== timing) return false;
+  if (timing === 'dur_this_turn') return g._appliedDuringOwnTurn === false ? g._appliedSide !== endingSide : g._appliedSide === endingSide;
+  if (timing === 'dur_next_opp_turn') return g._appliedSide !== endingSide;
+  if (timing === 'dur_next_own_turn') {
+    if (g._appliedSide !== endingSide) return false;
+    g._ticks = (g._ticks || 0) + 1;
+    return g._ticks >= (g._appliedDuringOwnTurn === false ? 1 : 2);
+  }
+  return false;
 }
 
 function addBuffDirect(card, type, value, duration, ctx) {
@@ -5831,6 +5902,11 @@ export function expireBuffs(bs, timing, ownerSide, endingSide) {
     });
   });
 
+  // 継続する全体処理の記録の期限切れ除去（カードのバフは上で同じ規則により消えている）
+  if (Array.isArray(bs._globalEffects) && bs._globalEffects.length > 0) {
+    bs._globalEffects = bs._globalEffects.filter((g) => g && !_globalEffectExpires(g, timing, endingSide));
+  }
+
   // 進化コスト軽減の保留分（スマッシュポテト等）の期限切れ除去
   if (Array.isArray(bs._pendingEvoCostReductions) && bs._pendingEvoCostReductions.length > 0) {
     bs._pendingEvoCostReductions = bs._pendingEvoCostReductions.filter(r => {
@@ -5913,7 +5989,11 @@ function _purgeOffFieldGrants(bs) {
 // セキュリティのデジモンへのバフ（bs._securityBuffs）は再計算したいので処理は行い、カードの状態だけ元に戻す
 export function applyPermanentEffects(bs, side, context) {
   const _keepSynced = side === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode();
-  if (!_keepSynced) return _applyPermanentEffectsImpl(bs, side, context);
+  if (!_keepSynced) {
+    const _r = _applyPermanentEffectsImpl(bs, side, context);
+    try { _refreshGlobalEffects(bs, side); } catch (e) { console.error('[refreshGlobalEffects]', e); }
+    return _r;
+  }
   const _cards = [...(bs.ai.battleArea || []), ...(bs.ai.tamerArea || [])].filter(Boolean);
   const _snap = _cards.map(c => ({ c, dp: c.dp, dpModifier: c.dpModifier, buffs: Array.isArray(c.buffs) ? c.buffs.slice() : c.buffs,
     perm: c._permEffects ? Object.assign({}, c._permEffects) : c._permEffects, evoKw: c._evoGrantedKeywords,
@@ -15924,9 +16004,19 @@ function executeRecipeStep(step, ctx, store, callback) {
     case 'immune_effects': {
       // target:'own:all'（+filter）なら条件を満たす自分のデジモン全て（タイラントカブテリモン BT26-047「特徴『昆虫型』
       // 『タイタン族』を持つレスト状態の自分のデジモン全ては相手のオプションの効果を受けず」）。それ以外はこのカード
-      const _imTgts = /^own:all$/.test(String(step.target || ''))
+      const _imAll = /^own:all$/.test(String(step.target || ''));
+      const _imTgts = _imAll
         ? (player.battleArea || []).filter(c => c && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)))
         : (ctx.card ? [ctx.card] : []);
+      // 「自分のデジモン全て」で期限つきなら継続する全体処理（あとから条件を満たしたデジモンにも付く）
+      const _imSrcType = (step.source_type === 'digimon' || step.source_type === 'option') ? step.source_type : undefined;
+      if (_imAll && _registerGlobalEffect(ctx, ctx.side, { type: 'keyword_immune', value: 0, duration: normalizeRecipeDuration(step.duration) || 'dur_this_turn', filter: step.filter || null, sourceType: _imSrcType })) {
+        const _imLbl = _imSrcType === 'digimon' ? 'デジモンの' : _imSrcType === 'option' ? 'オプションの' : '';
+        _imTgts.forEach((tgt) => ctx.addLog('🪄 「' + tgt.name + '」は相手の' + _imLbl + '効果を受けない'));
+        ctx.renderAll && ctx.renderAll();
+        callback();
+        break;
+      }
       _imTgts.forEach((tgt) => {
         const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
         addBuffDirect(tgt, 'keyword_immune', 0, dur, ctx);

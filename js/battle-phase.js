@@ -683,10 +683,12 @@ export function onEndTurn() {
     bs._endingTurn = true;
     bs.memory = -3;
     updateMemGauge();
+    // 相手の端末で処理中の効果（消滅時効果等）が全て終わってから、ターン終了の処理に進む
+    const _waitIdle = (cb) => (window._waitRemoteIdle ? window._waitRemoteIdle(cb) : cb());
     // 【自分のターン終了時】効果（≪急襲≫「自分のターン終了時、このデジモンでアタックできる」等）を
     // 解決してから相手にターンを渡す。以前はオンラインの手動ターン終了だけこの発火が無く、
     // 急襲（クロノモン：ホーリーモード BT26-016）等が発動しなかった
-    _hooks.checkTurnEndEffects(() => {
+    _waitIdle(() => _hooks.checkTurnEndEffects(() => _waitIdle(() => {
     bs._endingTurn = false;
     applyTurnEndMemoryShift();
     if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
@@ -717,7 +719,7 @@ export function onEndTurn() {
         addLog('⏳ 相手のターン（操作待ち）');
       });
     });
-    });
+    })));
     return;
   }
 
@@ -815,9 +817,11 @@ export function checkAutoTurnEnd() {
   // 「ターン終了まで」得た【エグゼキュート】が、メモリーが相手側に移ってのターン終了で発動しなかった。
   // ターン終了ボタン（onEndTurn）と同じ順番）
   bs._autoTurnEnding = true;
+  // オンライン: 相手の端末で処理中の効果（消滅時効果等）が全て終わってから「自分のターン終了」を出す
+  const _waitIdleAuto = (cb) => ((_onlineMode && window._waitRemoteIdle) ? window._waitRemoteIdle(cb) : cb());
   // 「自分のターン終了」の表示を先に出してから【自分のターン終了時】の効果（エグゼキュート等）を処理する
-  showYourTurn('自分のターン終了', '', '#555555', () => {
-  _hooks.checkTurnEndEffects(async () => {
+  _waitIdleAuto(() => showYourTurn('自分のターン終了', '', '#555555', () => {
+  _hooks.checkTurnEndEffects(() => _waitIdleAuto(async () => {
     bs._autoTurnEnding = false;
     bs.isPlayerTurn = false; bs._oppPhase = null;
     // プレイヤーのターン終了
@@ -850,8 +854,8 @@ export function checkAutoTurnEnd() {
       updateMemGauge();
       setTimeout(() => aiTurn(), 500);
     }
-  });
-  });
+  }));
+  }));
   return true;
 }
 

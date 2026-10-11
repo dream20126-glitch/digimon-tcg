@@ -666,6 +666,14 @@ function onRemoteCommand(cmd) {
 
     // --- ターン ---
     case 'endTurn': {
+      // 保険: こちらの効果処理（相手に消滅させられたデジモンの消滅時効果等）の途中なら、終わってからターンを受け取る
+      if (_localBusyForRemote() && !cmd._idleWaited) {
+        const _c = Object.assign({}, cmd, { _idleWaited: true });
+        const _t0 = Date.now();
+        const _retry = () => { if (_localBusyForRemote() && Date.now() - _t0 < 90000) { setTimeout(_retry, 150); return; } onRemoteCommand(_c); };
+        setTimeout(_retry, 150);
+        break;
+      }
       bs.memory = cmd.memory !== undefined ? -cmd.memory : 3;
       bs.isFirstTurn = false;
       updateMemGauge();
@@ -1013,6 +1021,17 @@ function onRemoteCommand(cmd) {
         // （両者消滅のブロックで、自分のユノモンの消滅時効果に3秒以上かかると取りこぼして30秒待っていた）
         if (!_ownDestroyDoneArmed) setTimeout(() => { if (!_ownDestroyDoneArmed) _pendingOwnDestroyDoneResponse = null; }, 3000);
       }
+      break;
+    }
+    case 'fx_idleCheck': {
+      // 相手がターンを終える前の問い合わせ: こちらの効果処理（消滅時効果・演出等）が全て終わってから返事する
+      const _id = cmd.id;
+      const _poll = () => { if (_localBusyForRemote()) { setTimeout(_poll, 150); return; } sendCommand({ type: 'fx_idleAck', id: _id }); };
+      setTimeout(_poll, 100);
+      break;
+    }
+    case 'fx_idleAck': {
+      if (_pendingIdleCheck && _pendingIdleCheck.id === cmd.id) _pendingIdleCheck.finish();
       break;
     }
     case 'fx_ownDestroyReady': {
@@ -2376,6 +2395,44 @@ window._waitForBlockBattleDone = (cb) => {
 };
 // 相手の端末からの返事（ブロック・セキュリティ効果・委譲した反応・離れるとき・保留した【進化時】・手札の破棄・相手の消滅時効果）を
 // 待っている間か。待っている間はメモリーが相手側でもターン終了に進まない（battle-phase.js _isTurnEndBlocked）
+// ===== ターン終了前の待ち合わせ（fx_idleCheck / fx_idleAck） =====
+// こちらのターンを終える前に、相手の端末で処理中の効果（こちらが消滅させた相手のデジモンの消滅時効果等）が
+// 全て終わるのを待つ。以前は待たずに「自分のターン終了」→ 相手のアクティブフェイズへ進み、相手の画面で
+// 消滅時効果の途中にアクティブフェイズ等の演出が流れていた。コマンドは届いた順に処理されるので、
+// fx_idleCheck は直前に送った card_removed 等の後で評価される
+function _localBusyForRemote() {
+  try {
+    return !!(_pendingOwnDestroyFire || _nonTurnPlayerReactionDraining
+      || (bs._pendingNonTurnPlayerReactions && bs._pendingNonTurnPlayerReactions.length > 0)
+      || (window._isEffectProcessing && window._isEffectProcessing())
+      || _fxRunning || _fxQueue.length > 0 || (window._fxAnimActive > 0));
+  } catch (_) { return false; }
+}
+let _pendingIdleCheck = null;
+// 相手の端末の効果処理が全て終わってから cb()。待っている間は「相手の効果処理を待っています」を出す
+window._waitRemoteIdle = (cb) => {
+  if (!_onlineMode || !_onlineRoomId) { cb && cb(); return; }
+  const id = 'idle' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+  let ov = null;
+  const showTimer = setTimeout(() => {
+    ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;top:15%;left:50%;transform:translateX(-50%);z-index:55000;background:rgba(0,0,0,0.9);border:1px solid #ffaa00;border-radius:10px;padding:10px 20px;color:#ffaa00;font-size:13px;font-weight:bold;text-align:center;pointer-events:none;';
+    ov.innerText = '⏳ 相手の効果処理を待っています...';
+    document.body.appendChild(ov);
+  }, 600);
+  let done = false;
+  const finish = () => {
+    if (done) return; done = true;
+    clearTimeout(showTimer); clearTimeout(safety);
+    if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+    if (_pendingIdleCheck && _pendingIdleCheck.id === id) _pendingIdleCheck = null;
+    cb && cb();
+  };
+  // 相手の端末が応答しない（切断等）ときの保険
+  const safety = setTimeout(() => { console.warn('[waitRemoteIdle] 応答なし → 先へ進む'); finish(); }, 90000);
+  _pendingIdleCheck = { id, finish };
+  sendCommand({ type: 'fx_idleCheck', id });
+};
 window._isOnlineWaiting = () => !!(_pendingBlockCallback || _pendingSecEffectCallback || _pendingReactionDelegateCallback
   || _pendingLeaveBattleDelegateCallback || _pendingFlushDeferredEvoCallback || _pendingHandDiscardCallback || _pendingOwnDestroyDoneCallback
   || _pendingBlockBattleDoneCallback);

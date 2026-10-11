@@ -3164,6 +3164,12 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   causeType = causeType || 'effect';
   const destroyed = targetSide.battleArea[slotIdx];
   if (!destroyed) { callback && callback(); return; }
+  // 効果による消滅: その効果を受けないデジモンは消滅しない
+  if (causeType === 'effect' && _isImmuneToEffect(destroyed, ctx)) {
+    ctx.addLog && ctx.addLog('🛡 「' + destroyed.name + '」は効果を受けない');
+    callback && callback();
+    return;
+  }
   // cant_destroy（消滅できない付与）: keyword_prevent_destroyは原因を問わず常にブロック。
   // keyword_prevent_battle_destroyはバトル起因(causeType==='battle')の消滅のみブロックする
   if (destroyed.buffs && destroyed.buffs.some((b) =>
@@ -3412,6 +3418,8 @@ function _boardCardOf(bs, v) {
 // 候補から n 体選ぶ。CPU（effSide==='ai'）は preferOwn に応じて自分側/相手側を優先して先頭から。
 // 候補が n 体以下なら全員。それ以外は showCardListPicker（自分/相手の別をカード名の前に表示）
 function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb) {
+  // 相手の「効果を受けない」カードは候補から外す
+  cands = (cands || []).filter(e => !(e && !e.own && _isImmuneToEffect(e.card, ctx)));
   const want = Math.min(n || 1, cands.length);
   if (want <= 0) { cb([]); return; }
   if (effSide === 'ai') {
@@ -3535,6 +3543,16 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
     }
   }
 
+  // 実行中の効果を受けないカード（相手の「効果を受けない」）は対象に選べない
+  if (Array.isArray(validIndices) && _curEffectCtx && typeof window !== 'undefined' && window._lastBattleState) {
+    const _b = window._lastBattleState;
+    const _cardAt = (v) => targetSide === 'both' ? _boardCardOf(_b, v) : ((targetSide === 'ai' ? _b.ai : _b.player).battleArea || [])[v];
+    const _kept = validIndices.filter(v => !_isImmuneToEffect(_cardAt(v)));
+    if (_kept.length !== validIndices.length) {
+      if (_kept.length === 0) { console.log('[showTargetSelection] 候補が全て効果を受けない'); callback(null); return; }
+      validIndices = _kept;
+    }
+  }
   const _showUI = () => {
   // targetSide==='both'（自分と相手の両方から選ぶ）: validIndices は 自分のスロットi=100+i／相手のスロットi=i で
   // 指定し、選んだ値も同じ形で返す（ドーベルモン BT26-069「Lv.4以下のデジモン1体を消滅させる」）
@@ -4520,6 +4538,21 @@ function hasActiveImmuneEffects(card, effectSide, effectSourceType) {
     return true;
   });
 }
+// ===== 「効果を受けない」の共通判定 =====
+// 実行中の効果（runRecipe / executeRecipeStep が _curEffectCtx に記録）から見て、相手側の場のカードが
+// その効果を受けないか。対象選択（showTargetSelection / showCardListPicker / _pickSideTargets）の候補と、
+// バフの付与・効果による消滅で共通に使う（以前はアクションごとに判定があったり無かったりで、
+// タイラントカブテリモン BT26-047 の「相手のオプションの効果を受けない」が相手のデュアルカードの
+// オプション効果で破られていた）
+let _curEffectCtx = null;
+function _isImmuneToEffect(card, ctx) {
+  ctx = ctx || _curEffectCtx;
+  if (!card || !ctx || !ctx.bs || !ctx.side) return false;
+  const oppSide = ctx.side === 'player' ? 'ai' : 'player';
+  const opp = ctx.bs[oppSide];
+  if (!opp || !((opp.battleArea || []).includes(card) || (opp.tamerArea || []).includes(card))) return false;
+  return hasActiveImmuneEffects(card, ctx.side, _effectSourceTypeOf(ctx));
+}
 // ctx.card（この効果を発動しているカード自身）の種別を immune_effects の source_type
 // 判定用コードへ変換する（デジモン/オプション/テイマー。不明なら undefined）
 function _effectSourceTypeOf(ctx) {
@@ -4527,6 +4560,8 @@ function _effectSourceTypeOf(ctx) {
   if (t === 'デジモン') return 'digimon';
   if (t === 'オプション') return 'option';
   if (t === 'テイマー') return 'tamer';
+  // デュアルカード: 場にいない（手札から使用中・トラッシュへ送られた）ならオプションとしての効果
+  if (t === 'デュアル') return 'option';
   return undefined;
 }
 
@@ -5464,6 +5499,15 @@ function showDeckOpenUI(opened, step, ctx, callback) {
 // callback(pickedCards) — キャンセル不可（wantCount丁度選ぶまでモーダルを閉じない）
 // labelOf(card)（省略可）: カード名の前に付ける表示（「【自分】」「【相手】」等）
 function showCardListPicker(candidates, wantCount, title, callback, labelOf) {
+  // 場のカードのうち、実行中の効果を受けないもの（相手の「効果を受けない」）は候補から外す
+  if (Array.isArray(candidates) && _curEffectCtx) {
+    const _kept = candidates.filter(c => !_isImmuneToEffect(c));
+    if (_kept.length !== candidates.length) {
+      if (_kept.length === 0) { callback([]); return; }
+      candidates = _kept;
+      wantCount = Math.min(wantCount || 1, candidates.length);
+    }
+  }
   // 候補がすべてバトルエリア（盤面に見えている）のデジモンなら、カード一覧ではなく通常の対象選択（盤面のデジモンを
   // タップ→確認）で1体ずつ選ぶ。一覧から選ぶのは、トラッシュ・手札など盤面に見えていない場所から選ぶときだけ
   {
@@ -5587,10 +5631,14 @@ export function showHandSelection(hand, validIndices, borderColor, callback) {
 // ===== バフ管理 =====
 
 function addBuff(card, type, value, ctx) {
+  if (!card) return;
+  if (_isImmuneToEffect(card, ctx)) { ctx && ctx.addLog && ctx.addLog('🛡 「' + card.name + '」は効果を受けない'); return; }
   if (!card.buffs) card.buffs = [];
   const block = ctx.block || {};
   const dur = block.duration ? block.duration.code : 'dur_this_turn';
-  card.buffs.push({ type, value, duration: dur, source: ctx.card ? ctx.card.cardNo : '' });
+  const _turnSide = ctx.bs ? (ctx.bs.isPlayerTurn ? 'player' : 'ai') : null;
+  card.buffs.push({ type, value, duration: dur, source: ctx.card ? ctx.card.cardNo : '',
+    _appliedSide: ctx.side || _turnSide, _appliedDuringOwnTurn: ctx.side ? (_turnSide === ctx.side) : true, _ticks: 0 });
   recalcDp(card);
 }
 
@@ -5806,6 +5854,9 @@ function _globalEffectExpires(g, timing, endingSide) {
 }
 
 function addBuffDirect(card, type, value, duration, ctx) {
+  if (!card) return;
+  // 相手の効果を受けないカードには付けない（自分への付与・常時効果の再計算は ctx.side が同じ側なので対象外）
+  if (ctx && ctx.side && type !== 'keyword_immune' && _isImmuneToEffect(card, ctx)) { ctx.addLog && ctx.addLog('🛡 「' + card.name + '」は効果を受けない'); return; }
   if (!card.buffs) card.buffs = [];
   let appliedSide = null;
   if (ctx && ctx.side) {
@@ -12012,6 +12063,11 @@ function runRecipe(steps, ctx, callback) {
   // 前回のレシピ実行で残った _lastAttemptedTarget（same_targetフォールバック用）を
   // 持ち越さないようここでリセットする（無関係な過去の効果を誤って参照しないため）
   if (ctx.bs) delete ctx.bs._lastAttemptedTarget;
+  // 実行中の効果（「効果を受けない」の判定用）。入れ子のレシピが終わったら外側に戻す
+  const _prevEffectCtx = _curEffectCtx;
+  _curEffectCtx = ctx;
+  const _origCallback = callback;
+  callback = (...a) => { _curEffectCtx = _prevEffectCtx; _origCallback && _origCallback(...a); };
   console.log('[runRecipe]', 'card=' + (ctx.card && ctx.card.name), 'steps.length=' + (steps && steps.length), 'isArray=' + Array.isArray(steps), 'first=', steps && steps[0]);
 
   function nextStep(success) {
@@ -13535,7 +13591,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       for (let i = 0; i < tgtPlayer.battleArea.length; i++) {
         const c = tgtPlayer.battleArea[i];
         // cant_discard: 重ねられているカードは破棄されない（退化は破棄先がトラッシュ固定のため対象外）
-        if (c && c.stack && c.stack.length > 0 && !(c.buffs && c.buffs.some(b => b.type === 'cant_discard'))) valid.push(i);
+        if (c && c.stack && c.stack.length > 0 && !(c.buffs && c.buffs.some(b => b.type === 'cant_discard')) && !_isImmuneToEffect(c, ctx)) valid.push(i);
       }
       if (valid.length === 0) {
         ctx.addLog && ctx.addLog('⚠ 進化元を持つ対象がいません');
@@ -14301,6 +14357,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (!c) return;
         // same_target（alt_actionsで同一対象に別のキーワードを続けて付与する等）用に保存
         if (ctx.bs) ctx.bs._lastPickedCard = c;
+        if (_isImmuneToEffect(c, ctx)) { ctx.addLog && ctx.addLog('🛡 「' + c.name + '」は効果を受けない'); return; }
         if (!c._grantedRecipes) c._grantedRecipes = [];
         // 付与効果の説明文: 付与元カードの効果テキストの「」内（＝付与される効果本体）
         // のみを使う。無ければ全文。
@@ -14326,7 +14383,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const validTargets = [];
         for (let i = 0; i < tgtPlayer.battleArea.length; i++) {
           const _geC = tgtPlayer.battleArea[i];
-          if (_geC && (!step.filter || cardMatchesFilter(_geC, step.filter))) validTargets.push(i);
+          if (_geC && (!step.filter || cardMatchesFilter(_geC, step.filter)) && !_isImmuneToEffect(_geC, ctx)) validTargets.push(i);
         }
         if (validTargets.length === 0) { showEffectFailed(null, callback); return; }
         if (effectiveSide === 'ai' || ctx._forceTargetIdx !== undefined) {
@@ -15840,6 +15897,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (_rdConds.length > 0 && !checkConditions(_rdConds, c, ctx.bs, _rdCondSide)) continue;
           if (step.filter && !cardMatchesFilter(c, step.filter)) continue;
           if (c.buffs && c.buffs.some(b => b.type === 'cant_return_deck')) continue;
+          if (_isImmuneToEffect(c, ctx)) continue;
           _rdCands.push(i);
         }
         if (_rdCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, callback); break; }

@@ -4310,6 +4310,8 @@ function _moveBatchSkipping() {
   return true;
 }
 
+// エンジン外（battle-combat.js の【トレーニング】等）から同じ移動演出を使うための公開口
+if (typeof window !== 'undefined') window._fxMoveSyncSide = (side, card, fromLabel, toLabel, cb, opts) => _fxMoveSync({ side }, card, fromLabel, toLabel, cb, opts);
 function _fxMoveSync(ctx, card, fromLabel, toLabel, cb, opts) {
   opts = opts || {};
   const done = () => { try { cb && cb(); } catch (e) { console.error('[_fxMoveSync]', e); } };
@@ -9939,13 +9941,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       }
       // コスト feasibility チェック: 「自身をレスト」コストがあるが既にレスト中ならスキップ
       // （八神太一(黒) 等が既にレスト状態で再発動できないように）
-      if (Array.isArray(step.cost)) {
-        for (const c of step.cost) {
-          if (c && c.action === 'rest' && (c.target === 'self' || !c.target) && carrier.suspended) {
-            return false;
-          }
-        }
-      }
+      if (_costStepsInfeasible(step.cost, carrier, bs, reactSide)) return false;
       return true;
     });
   };
@@ -11957,6 +11953,28 @@ function _attackStepImpossible(step, card, bs, side) {
   }
   return false;
 }
+// コストを支払えないことが確定しているか（確認/発動ポップアップを出さないための事前判定。共通）
+// - 「このカードをレスト」なのに既にレスト中
+// - 「リンクカードを破棄」（unlink。【分離】等）なのに条件を満たすリンクカードが足りない
+function _costStepsInfeasible(costSteps, carrier, bs, side) {
+  if (!Array.isArray(costSteps) || !carrier) return false;
+  return costSteps.some((c) => {
+    if (!c) return false;
+    if (c.action === 'rest' && (c.target === 'self' || c.target === 'self_card' || !c.target) && carrier.suspended) return true;
+    if (c.action === 'unlink') {
+      const linked = Array.isArray(carrier.linkedCards) ? carrier.linkedCards : [];
+      const conds = [];
+      try {
+        if (c.condition) conds.push(...parseRecipeCondition(c.condition));
+        if (c.when) conds.push(...parseRecipeCondition(c.when));
+        if (Array.isArray(c.extra_conditions)) c.extra_conditions.forEach(cs => conds.push(...parseRecipeCondition(cs)));
+      } catch (_) {}
+      const n = conds.length > 0 ? linked.filter(l => l && checkConditions(conds, l, bs, side)).length : linked.length;
+      return n < Math.max(1, c.value || 1);
+    }
+    return false;
+  });
+}
 function recipeWillExecuteAnything(recipe, ctx) {
   if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return true;
   const _reactor = (ctx && ctx.card && ctx.card.name) || '?';
@@ -11974,12 +11992,8 @@ function recipeWillExecuteAnything(recipe, ctx) {
     // コスト feasibility チェック: 「自身をレスト」コストがあるが既にレスト中ならスキップ
     // （武之内空等「このテイマーをレストさせることで〜」は、既にレスト状態なら
     //   コストを支払えず効果自体が発動しないため、演出ポップアップも出さない）
-    if (Array.isArray(step.cost)) {
-      const _costInfeasible = step.cost.some((c) =>
-        c && c.action === 'rest' && (c.target === 'self' || c.target === 'self_card' || !c.target) && ctx.card && ctx.card.suspended
-      );
-      if (_costInfeasible) continue;
-    }
+    // 「リンクカードを破棄することで」（【分離】等）でリンクカードが無い場合も同様（_costStepsInfeasible）
+    if (_costStepsInfeasible(step.cost, ctx.card, ctx.bs, ctx.side)) continue;
     // summon/evolve（手札から登場/進化）で手札に候補が無ければ不発なので演出ポップアップも出さない
     // （詳細は _stepLacksHandCandidate。トラッシュを含む指定は判定しない）
     // ≪デコード≫は「バトル以外でバトルエリアを離れるとき」の効果。バトルで負けて離れるときは発揮しない
@@ -15740,9 +15754,24 @@ function executeRecipeStep(step, ctx, store, callback) {
         break;
       }
 
+      // 進化元に置く移動演出（自分の画面は表向き、裏向きで置くなら相手の画面は裏向き）
+      const _pudZoneLabel = (c) => (player.hand || []).includes(c) ? '手札' : (player.trash || []).includes(c) ? 'トラッシュ'
+        : (player.battleArea || []).includes(c) ? 'バトルエリア' : (player.tamerArea || []).includes(c) ? 'テイマーエリア' : 'カード';
+      const _pudAnim = (digi, cards, fromLabels, next) => {
+        let i = 0;
+        const to = '「' + (digi.name || '') + '」の進化元';
+        const opts = _pudFaceDown ? (ctx.side === 'player' ? { remoteFaceDown: true } : { faceDown: true }) : {};
+        const one = () => {
+          if (i >= cards.length) { next(); return; }
+          const k = i++;
+          _fxMoveSync(ctx, cards[k], fromLabels[k] || 'カード', to, one, opts);
+        };
+        _moveBatchIntro(ctx, cards, fromLabels[0] || 'カード', to, one, opts);
+      };
       const placeUnderAndFinish = (digi, cardToPlace, removeFromSource) => {
         if (!digi || !cardToPlace) { callback(); return; }
         if (!digi.stack) digi.stack = [];
+        const _pudFrom = _pudZoneLabel(cardToPlace);
         // 置き先のデジモンを「そのデジモン」として後続（evolve の target_trigger_source 等）が参照できるようにする
         // （雷霆の覚醒 BT26-097 / 茨の女王 BT26-098 / セブンコードPAD BT26-102 のコスト→進化）
         if (ctx.bs && !_pudSelf) ctx.bs._lastPickedCard = digi;
@@ -15755,7 +15784,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 「進化元に効果でカードが置かれたとき」(when_deck_increase + zone_increase:"evo_source")
         // をそのデジモン自身の視点で発火（アンドロモン BT26-054等）
         const _pudCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-        fireWhenEvoSourceIncreaseTriggers(digi, ctx.side, ctx.bs, _pudCtxBase, callback, [cardToPlace], { type: 'effect', causerSide: ctx.side, causerCard: ctx.card });
+        _pudAnim(digi, [cardToPlace], [_pudFrom], () => {
+          fireWhenEvoSourceIncreaseTriggers(digi, ctx.side, ctx.bs, _pudCtxBase, callback, [cardToPlace], { type: 'effect', causerSide: ctx.side, causerCard: ctx.card });
+        });
       };
 
       const resolveDigimonThen = (next) => {
@@ -15844,6 +15875,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (!digi.stack) digi.stack = [];
           if (ctx.bs) ctx.bs._lastPickedCard = digi;
           const placed = [];
+          const _pmFrom = picked.map(({ card }) => _pudZoneLabel(card));
           picked.forEach(({ card, remove }) => {
             remove();
             if (_pudFaceDown) card._faceDown = true;
@@ -15854,7 +15886,9 @@ function executeRecipeStep(step, ctx, store, callback) {
           ctx.renderAll();
           if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
           const _ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-          fireWhenEvoSourceIncreaseTriggers(digi, ctx.side, ctx.bs, _ctxBase, () => callback(true), placed, { type: 'effect', causerSide: ctx.side, causerCard: ctx.card });
+          _pudAnim(digi, placed, _pmFrom, () => {
+            fireWhenEvoSourceIncreaseTriggers(digi, ctx.side, ctx.bs, _ctxBase, () => callback(true), placed, { type: 'effect', causerSide: ctx.side, causerCard: ctx.card });
+          });
         };
         const _pudOptionalExt = !!step.optional;
         const _pickSources = (digi) => {
@@ -16256,7 +16290,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (_rdTop) opponent.deck.unshift(c); else opponent.deck.push(c);
             ctx.addLog('🔄 「' + c.name + '」を持ち主のデッキの' + (_rdTop ? '上' : '下') + 'に戻す');
             if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
-              window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'return_deck' });
+              window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: idx, reason: 'return_deck', top: !!_rdTop, cardName: c.name || '', faceDown: !!c._faceDown });
             }
             ctx.renderAll();
             const _fireDeckIncrease = (next) => _deckIncreased(ctx, _rdSideName, next);
@@ -16960,7 +16994,9 @@ function executeRecipeStep(step, ctx, store, callback) {
     // 破棄するか選べるようにする
     case 'unlink': {
       const _ulLinked = (ctx.card && Array.isArray(ctx.card.linkedCards)) ? ctx.card.linkedCards : [];
-      if (_ulLinked.length === 0) { callback(); break; }
+      // コストとして使う場合（【分離】「リンクカードを破棄することで」）は、破棄できなければ支払い失敗
+      const _ulIsCost = _COST_STEP_SET.has(step);
+      if (_ulLinked.length === 0) { callback(_ulIsCost ? false : undefined); break; }
       const _ulCount = step.value || 1;
       const _ulConds = [];
       if (step.condition) _ulConds.push(...parseRecipeCondition(step.condition));
@@ -16979,7 +17015,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.renderAll();
         callback();
       };
-      if (_ulCandidates.length === 0) { callback(); break; }
+      if (_ulCandidates.length === 0 || (_ulIsCost && _ulCandidates.length < _ulCount)) { callback(_ulIsCost ? false : undefined); break; }
       if (_ulCandidates.length <= _ulCount || effectiveSide === 'ai') {
         _ulDoDiscard(_ulCandidates.slice(0, _ulCount));
       } else {
@@ -18034,10 +18070,7 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback) {
           if (!checkConditions(conds, card, bs, side)) continue;
         }
         // コストfeasibility: 自身をレストするコストなのに既にレスト中なら不可
-        if (Array.isArray(step.cost)) {
-          const infeasible = step.cost.some((c) => c && c.action === 'rest' && (c.target === 'self' || !c.target) && card.suspended);
-          if (infeasible) continue;
-        }
+        if (_costStepsInfeasible(step.cost, card, bs, side)) continue;
         found = { card, step };
         break;
       }

@@ -986,9 +986,14 @@ function renderIkusei() {
 
     if (c) {
       const src = cardImg(c);
-      iku.innerHTML = src
-        ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:3px;">`
-        : `<div style="font-size:8px;color:${isPlayer ? '#00ff88' : '#ff00fb'};padding:2px;">${c.name}</div>`;
+      // レスト中（【トレーニング】等）は横向き、進化元があれば枚数バッジ（バトルエリアと同じ表示）
+      const _ikuRot = c.suspended ? 'transform:rotate(90deg) scale(0.73);' : '';
+      iku.innerHTML = (src
+        ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:3px;transition:transform 0.3s;${_ikuRot}">`
+        : `<div style="font-size:8px;color:${isPlayer ? '#00ff88' : '#ff00fb'};padding:2px;${_ikuRot}">${c.name}</div>`)
+        + (c.stack && c.stack.length > 0
+          ? `<div style="position:absolute;top:1px;right:2px;background:rgba(0,0,0,0.8);color:#ffaa00;font-size:6px;padding:1px 2px;border-radius:2px;">${c.stack.length}枚</div>`
+          : '');
       iku.classList.add('occupied');
       if (info) info.innerText = c.name;
 

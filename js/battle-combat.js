@@ -1640,10 +1640,18 @@ export function doTrainingEffect(card, side) {
   }
   // バトルエリアのデジモンなら「進化元にカードが（効果で）置かれたとき」を発火
   // （トレーマニュアル BT26-099「自分のデジモンの進化元に裏向きのカードが置かれたとき」等）
-  if ((p.battleArea || []).includes(card)) {
-    try {
-      _fireWhenEvoSourceIncrease(card, side, bs, { bs, addLog, renderAll, updateMemGauge }, () => renderAll(), [top], { type: 'effect', causerSide: side, causerCard: card });
-    } catch (e) { console.error('[doTrainingEffect] evo source increase trigger', e); }
+  const _afterMove = () => {
+    if ((p.battleArea || []).includes(card)) {
+      try {
+        _fireWhenEvoSourceIncrease(card, side, bs, { bs, addLog, renderAll, updateMemGauge }, () => renderAll(), [top], { type: 'effect', causerSide: side, causerCard: card });
+      } catch (e) { console.error('[doTrainingEffect] evo source increase trigger', e); }
+    }
+  };
+  // デッキ→進化元の移動演出（自分の画面は表向き、相手の画面は裏向き）
+  if (typeof window !== 'undefined' && typeof window._fxMoveSyncSide === 'function') {
+    window._fxMoveSyncSide(side, top, 'デッキ', '「' + card.name + '」の進化元', _afterMove, side === 'player' ? { remoteFaceDown: true } : { faceDown: true });
+  } else {
+    _afterMove();
   }
   return true;
 }

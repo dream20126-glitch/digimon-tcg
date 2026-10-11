@@ -462,13 +462,22 @@ function onRemoteCommand(cmd) {
           bs.player.battleArea[cmd.slotIdx] = null;
           if (cmd.reason === 'bounce') {
             bs.player.hand.push(card);
+          } else if (cmd.reason === 'return_deck') {
+            // デッキに戻す（モジャモン BT26-023 / テラーズクラスター等）: 持ち主のデッキの上/下へ。
+            // 以前はトラッシュに置かれていた（持ち主側の state_sync で相手の画面もトラッシュに戻っていた）
+            if (cmd.faceDown) card._faceDown = true;
+            if (cmd.top) bs.player.deck.unshift(card); else bs.player.deck.push(card);
+            addLog('🔄 「' + card.name + '」がデッキの' + (cmd.top ? '上' : '下') + 'に戻された');
           } else {
             bs.player.trash.push(card);
           }
           if (card.stack) card.stack.forEach(s => bs.player.trash.push(s));
           if (card.linkedCards) card.linkedCards.forEach(s => bs.player.trash.push(s));
+          if (cmd.reason === 'return_deck') { card.stack = []; card.linkedCards = []; card.suspended = false; card.buffs = []; }
           markDestroyed('player', cmd.slotIdx);
           renderAll();
+          // デッキ・トラッシュの枚数を相手の画面にも反映
+          if (cmd.reason === 'return_deck') { try { sendStateSync(); } catch (_) {} }
         }
         // 消滅 (destroy) の場合は on_destroy / on_battle_destroy / when_own_destroyed を
         // 自分側 (player) で発火する。受信側のローカルでカードが見つからないケース (同期ずれ等)

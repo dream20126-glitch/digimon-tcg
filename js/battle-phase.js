@@ -472,8 +472,10 @@ function _hasReboot(c) {
 function execUnsuspend() {
   // 再起動判定の前に永続効果を再評価（直前の付与状態を確実に反映）
   try { _applyPermanent(bs, 'player', { bs, side: 'player' }); _applyPermanent(bs, 'ai', { bs, side: 'ai' }); } catch(_) {}
+  // 育成エリアのデジモンも対象（【トレーニング】は育成エリアでもレストする）
   const hasRested = bs.player.battleArea.some(c => c && c.suspended && !c.cantBeActive)
-    || bs.player.tamerArea.some(c => c && c.suspended);
+    || bs.player.tamerArea.some(c => c && c.suspended)
+    || !!(bs.player.ikusei && bs.player.ikusei.suspended);
 
   // ≪再起動≫: 相手のアクティブフェイズでもアクティブになる
   // 自分(プレイヤー)のアクティブフェイズで、相手(AI)側の再起動持ちカードもアクティブにする
@@ -527,6 +529,8 @@ function execUnsuspend() {
     bs.player.tamerArea.forEach(c => {
       if (c) { if (!c.cantBeActive && !_hasPreventUnsuspend(c) && !_skipAllUnsuspend) c.suspended = false; c._usedEffects = []; }
     });
+    // 育成エリアのデジモンもアクティブにする（【トレーニング】でレストしたもの）
+    { const _ik = bs.player.ikusei; if (_ik) { if (!_ik.cantBeActive && !_hasPreventUnsuspend(_ik) && !_skipAllUnsuspend) _ik.suspended = false; _ik._usedEffects = []; } }
     // prevent_unsuspend バフを本フェーズ（＝このプレイヤーのアクティブフェイズ）で失効。
     // 「次のアクティブフェイズではアクティブにならない」効果は、その対象カードの
     // 持ち主のアクティブフェイズで1回スキップした後に消費される。execUnsuspend は
@@ -894,7 +898,7 @@ function aiPhaseUnsuspend() {
   setOppPhase('unsuspend');
   // 再起動判定の前に永続効果を再評価（直前の付与状態を確実に反映）
   try { _applyPermanent(bs, 'player', { bs, side: 'player' }); _applyPermanent(bs, 'ai', { bs, side: 'ai' }); } catch(_) {}
-  const hasRested = bs.ai.battleArea.some(c => c && c.suspended);
+  const hasRested = bs.ai.battleArea.some(c => c && c.suspended) || !!(bs.ai.ikusei && bs.ai.ikusei.suspended);
   // ≪再起動≫: 相手(AI)のアクティブフェイズで、自分(プレイヤー)側の再起動持ちカードもアクティブにする
   bs.player.battleArea.forEach(c => {
     if (c && c.suspended && _hasReboot(c)) {
@@ -918,6 +922,7 @@ function aiPhaseUnsuspend() {
         c.summonedThisTurn = false; c._usedEffects = [];
         if (Array.isArray(c.buffs)) c.buffs = c.buffs.filter(b => !(b && b.type === 'prevent_unsuspend'));
       });
+      if (bs.ai.ikusei && !bs.ai.ikusei.cantBeActive && !_aiSkipAllUnsuspend) bs.ai.ikusei.suspended = false;
       addLog('🤖 アクティブフェイズ完了');
       renderAll();
       setTimeout(() => aiPhaseDraw(), 500);

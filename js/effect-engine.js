@@ -3315,14 +3315,26 @@ function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb) {
     return;
   }
   if (cands.length <= want) { cb(cands.slice()); return; }
-  // 1体をバトルエリアから選ぶなら、通常の対象選択（盤面のデジモンをタップ→確認）で選ぶ
-  // （自分・相手どちらのデジモンでも選べるレスト等で、カード一覧から選ぶ画面になっていた）
-  if (want === 1 && cands.every(e => e.zone === 'battleArea') && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
-    const enc = cands.map(e => e.own ? 100 + e.idx : e.idx);
-    showTargetSelection('both', enc, null, '#ffcc00', (v) => {
-      const e = cands.find(x => (x.own ? 100 + x.idx : x.idx) === v);
-      cb(e ? [e] : []);
-    }, (() => { const t = String(title || '').replace(/^🎯\s*/, '').replace(/の?対象を選んでください$/, '').trim(); return t ? '（' + t + '・自分/相手のデジモンから）' : '（自分/相手のデジモンから）'; })());
+  // バトルエリア（盤面に見えている）のデジモンから選ぶなら、何体でも通常の対象選択（盤面のデジモンをタップ→確認）で
+  // 1体ずつ選ぶ。カード一覧から選ぶのは、トラッシュ・手札など盤面に見えていない場所から選ぶときだけ
+  if (cands.every(e => e.zone === 'battleArea') && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
+    const what = String(title || '').replace(/^🎯\s*/, '').replace(/の?対象を選んでください$/, '').trim();
+    const picked = [];
+    const pickNext = () => {
+      const rest = cands.filter(e => !picked.includes(e));
+      if (picked.length >= want || rest.length === 0) { window._skipFxEffectClose = false; cb(picked); return; }
+      const enc = rest.map(e => e.own ? 100 + e.idx : e.idx);
+      // 途中の選択では相手画面の「対象選択中」表示を閉じない（最後の1体を選んだら閉じる）
+      window._skipFxEffectClose = picked.length + 1 < want && rest.length > 1;
+      const nth = want > 1 ? (picked.length + 1) + '/' + want + '体目・' : '';
+      showTargetSelection('both', enc, null, '#ffcc00', (v) => {
+        const e = rest.find(x => (x.own ? 100 + x.idx : x.idx) === v);
+        if (!e) { window._skipFxEffectClose = false; cb(picked); return; }
+        picked.push(e);
+        pickNext();
+      }, '（' + (what ? what + '・' : '') + nth + '自分/相手のデジモンから）');
+    };
+    pickNext();
     return;
   }
   const byCard = new Map(cands.map(e => [e.card, e]));
@@ -5289,6 +5301,36 @@ function showDeckOpenUI(opened, step, ctx, callback) {
 // callback(pickedCards) — キャンセル不可（wantCount丁度選ぶまでモーダルを閉じない）
 // labelOf(card)（省略可）: カード名の前に付ける表示（「【自分】」「【相手】」等）
 function showCardListPicker(candidates, wantCount, title, callback, labelOf) {
+  // 候補がすべてバトルエリア（盤面に見えている）のデジモンなら、カード一覧ではなく通常の対象選択（盤面のデジモンを
+  // タップ→確認）で1体ずつ選ぶ。一覧から選ぶのは、トラッシュ・手札など盤面に見えていない場所から選ぶときだけ
+  {
+    const _bs = (typeof window !== 'undefined') && window._lastBattleState;
+    const _slotOf = (c) => {
+      if (!_bs) return -1;
+      const pi = (_bs.player.battleArea || []).indexOf(c); if (pi !== -1) return 100 + pi;
+      const ai = (_bs.ai.battleArea || []).indexOf(c); return ai;
+    };
+    if (_bs && typeof document !== 'undefined' && document.getElementById('pl-battle-row') && candidates.length > 0
+        && candidates.every(c => _slotOf(c) !== -1)) {
+      const want = Math.min(wantCount || 1, candidates.length);
+      const what = String(title || '').replace(/^[^぀-ヿ一-鿿]*\s*/, '').replace(/を選んでください$/, '').replace(/の?対象$/, '').trim();
+      const picked = [];
+      const pickNext = () => {
+        const rest = candidates.filter(c => !picked.includes(c));
+        if (picked.length >= want || rest.length === 0) { window._skipFxEffectClose = false; callback(picked); return; }
+        window._skipFxEffectClose = picked.length + 1 < want && rest.length > 1;
+        const nth = want > 1 ? (picked.length + 1) + '/' + want + '体目' : '';
+        showTargetSelection('both', rest.map(_slotOf), null, '#ffcc00', (v) => {
+          const c = rest.find(x => _slotOf(x) === v);
+          if (!c) { window._skipFxEffectClose = false; callback(picked); return; }
+          picked.push(c);
+          pickNext();
+        }, '（' + [what, nth].filter(Boolean).join('・') + '）');
+      };
+      pickNext();
+      return;
+    }
+  }
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:70000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;';
 

@@ -1693,14 +1693,14 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // 1体をバトルエリアから選ぶなら、他の効果と同じく盤面のデジモンをタップして選ぶ（確認画面つき）。
         // 自分のデジモンも相手のデジモンも、条件を満たすものだけが光る
         const _dbPick = (n, cb) => {
-          if (effectiveSide !== 'ai' && (n || 1) === 1 && _dbCands.every(e => e.zone === 'battleArea')
+          if (effectiveSide !== 'ai' && (n || 1) === 1 && _dbCands.every(e => _boardEnc(e) !== -1)
               && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
-            const enc = _dbCands.map(e => e.own ? 100 + e.idx : e.idx);
+            const enc = _dbCands.map(_boardEnc);
             const ask = () => showTargetSelection('both', enc, null, uiColor, (v) => {
               if (v === null || v === undefined) { ask(); return; } // 強制効果なので選び直す
-              const e = _dbCands.find(x => (x.own ? 100 + x.idx : x.idx) === v);
+              const e = _dbCands.find(x => _boardEnc(x) === v);
               cb(e ? [e] : []);
-            }, '（自分・相手のデジモンから）');
+            }, _dbCands.some(e => e.zone === 'tamerArea') ? '（自分・相手の盤面から）' : '（自分・相手のデジモンから）');
             ask();
             return;
           }
@@ -3304,6 +3304,29 @@ function _collectSideTargets(ctx, opts) {
   }
   return out;
 }
+// 盤面選択（showTargetSelection('both')）の番号: 自分のバトルエリアi=100+i／相手のバトルエリアi=i／
+// 自分のテイマーエリアi=300+i／相手のテイマーエリアi=200+i。盤面に見えていない場所なら -1
+function _boardEnc(e) {
+  if (!e) return -1;
+  if (e.zone === 'battleArea') return e.own ? 100 + e.idx : e.idx;
+  if (e.zone === 'tamerArea') return e.own ? 300 + e.idx : 200 + e.idx;
+  return -1;
+}
+function _boardEncOfCard(bs, c) {
+  if (!bs || !c) return -1;
+  let i = (bs.player.battleArea || []).indexOf(c); if (i !== -1) return 100 + i;
+  i = (bs.ai.battleArea || []).indexOf(c); if (i !== -1) return i;
+  i = (bs.player.tamerArea || []).indexOf(c); if (i !== -1) return 300 + i;
+  i = (bs.ai.tamerArea || []).indexOf(c); if (i !== -1) return 200 + i;
+  return -1;
+}
+function _boardCardOf(bs, v) {
+  if (!bs) return null;
+  if (v >= 300) return (bs.player.tamerArea || [])[v - 300] || null;
+  if (v >= 200) return (bs.ai.tamerArea || [])[v - 200] || null;
+  if (v >= 100) return (bs.player.battleArea || [])[v - 100] || null;
+  return (bs.ai.battleArea || [])[v] || null;
+}
 // 候補から n 体選ぶ。CPU（effSide==='ai'）は preferOwn に応じて自分側/相手側を優先して先頭から。
 // 候補が n 体以下なら全員。それ以外は showCardListPicker（自分/相手の別をカード名の前に表示）
 function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb) {
@@ -3317,22 +3340,23 @@ function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb) {
   if (cands.length <= want) { cb(cands.slice()); return; }
   // バトルエリア（盤面に見えている）のデジモンから選ぶなら、何体でも通常の対象選択（盤面のデジモンをタップ→確認）で
   // 1体ずつ選ぶ。カード一覧から選ぶのは、トラッシュ・手札など盤面に見えていない場所から選ぶときだけ
-  if (cands.every(e => e.zone === 'battleArea') && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
+  if (cands.every(e => _boardEnc(e) !== -1) && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
+    const _hasTamer = cands.some(e => e.zone === 'tamerArea');
     const what = String(title || '').replace(/^🎯\s*/, '').replace(/の?対象を選んでください$/, '').trim();
     const picked = [];
     const pickNext = () => {
       const rest = cands.filter(e => !picked.includes(e));
       if (picked.length >= want || rest.length === 0) { window._skipFxEffectClose = false; cb(picked); return; }
-      const enc = rest.map(e => e.own ? 100 + e.idx : e.idx);
+      const enc = rest.map(_boardEnc);
       // 途中の選択では相手画面の「対象選択中」表示を閉じない（最後の1体を選んだら閉じる）
       window._skipFxEffectClose = picked.length + 1 < want && rest.length > 1;
       const nth = want > 1 ? (picked.length + 1) + '/' + want + '体目・' : '';
       showTargetSelection('both', enc, null, '#ffcc00', (v) => {
-        const e = rest.find(x => (x.own ? 100 + x.idx : x.idx) === v);
+        const e = rest.find(x => _boardEnc(x) === v);
         if (!e) { window._skipFxEffectClose = false; cb(picked); return; }
         picked.push(e);
         pickNext();
-      }, '（' + (what ? what + '・' : '') + nth + '自分/相手のデジモンから）');
+      }, '（' + (what ? what + '・' : '') + nth + (_hasTamer ? '自分/相手の盤面から）' : '自分/相手のデジモンから）'));
     };
     pickNext();
     return;
@@ -3444,7 +3468,21 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
     const _aiRow = document.getElementById('ai-battle-row');
     const _aiSlots = _aiRow ? _aiRow.querySelectorAll('.b-slot') : [];
     slots = {};
-    validIndices.forEach((v) => { slots[v] = v >= 100 ? _plSlots[v - 100] : _aiSlots[v]; });
+    // テイマーエリアは null を飛ばして描画しているので、手前の null でない枚数で要素を探す
+    const _bsT = window._lastBattleState;
+    const _tamerEl = (sideKey, i) => {
+      const tr = document.getElementById((sideKey === 'player' ? 'pl' : 'ai') + '-tamer-row');
+      if (!tr || !_bsT) return null;
+      const area = _bsT[sideKey].tamerArea || [];
+      if (!area[i]) return null;
+      let n = 0; for (let k = 0; k < i; k++) if (area[k]) n++;
+      return tr.querySelectorAll('.tamer-slot')[n] || null;
+    };
+    validIndices.forEach((v) => {
+      slots[v] = v >= 300 ? _tamerEl('player', v - 300)
+        : v >= 200 ? _tamerEl('ai', v - 200)
+        : v >= 100 ? _plSlots[v - 100] : _aiSlots[v];
+    });
   }
   const color = borderColor || '#ff4444';
 
@@ -3509,7 +3547,7 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
       const bs = window._lastBattleState;
       const area = targetSide === 'ai' ? (bs ? bs.ai.battleArea : []) : (bs ? bs.player.battleArea : []);
       const card = _isBoth
-        ? (bs ? (selectedIdx >= 100 ? bs.player.battleArea[selectedIdx - 100] : bs.ai.battleArea[selectedIdx]) : null)
+        ? _boardCardOf(bs, selectedIdx)
         : area[selectedIdx];
       // チュートリアル通知: 対象選択タップ完了（確認ダイアログ表示前）
       if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {
@@ -3596,7 +3634,7 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
       + '<div style="color:#888;font-size:11px;margin-bottom:10px;">' + _stack.length + '枚・上から順</div>'
       + '<div style="text-align:left;max-height:55vh;overflow-y:auto;">' + _stack.map((s, i) => {
         // 裏向きのカードは持ち主（自分）の画面でだけ中身を見られる（相手のデジモンなら伏せる）
-        if (s._faceDown && (targetSide === 'ai' || (_isBoth && idx < 100))) return '<div style="padding:8px 0;border-top:1px solid #222;color:#888;font-size:12px;">' + (i + 1) + '. 裏向きのカード</div>';
+        if (s._faceDown && (targetSide === 'ai' || (_isBoth && (idx < 100 || (idx >= 200 && idx < 300))))) return '<div style="padding:8px 0;border-top:1px solid #222;color:#888;font-size:12px;">' + (i + 1) + '. 裏向きのカード</div>';
         const _sImg = s.imgSrc || getCardImageUrl(s) || s.imageUrl || '';
         const _sEff = (s.evoSourceEffect && s.evoSourceEffect !== 'なし') ? s.evoSourceEffect : '（進化元効果なし）';
         return '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #222;">'
@@ -5305,11 +5343,7 @@ function showCardListPicker(candidates, wantCount, title, callback, labelOf) {
   // タップ→確認）で1体ずつ選ぶ。一覧から選ぶのは、トラッシュ・手札など盤面に見えていない場所から選ぶときだけ
   {
     const _bs = (typeof window !== 'undefined') && window._lastBattleState;
-    const _slotOf = (c) => {
-      if (!_bs) return -1;
-      const pi = (_bs.player.battleArea || []).indexOf(c); if (pi !== -1) return 100 + pi;
-      const ai = (_bs.ai.battleArea || []).indexOf(c); return ai;
-    };
+    const _slotOf = (c) => _boardEncOfCard(_bs, c);
     if (_bs && typeof document !== 'undefined' && document.getElementById('pl-battle-row') && candidates.length > 0
         && candidates.every(c => _slotOf(c) !== -1)) {
       const want = Math.min(wantCount || 1, candidates.length);
@@ -14896,9 +14930,21 @@ function executeRecipeStep(step, ctx, store, callback) {
           callback(_putIsCost ? true : undefined);
         };
         if (tamerIdxs.length === 1 || effectiveSide === 'ai') { finishPlace(tamerIdxs[0]); return; }
-        // showTargetSelection はバトルエリアの行しか扱えないため、テイマーはカード一覧から選ぶ
+        // テイマーが複数いれば選ぶ
         // （コストなら「使わない」でコスト不成立）
         const _putTamers = tamerIdxs.map(i => _putOwner.tamerArea[i]);
+        // コストでなければ、盤面のテイマーをタップして選ぶ（コストは「使わない」を出すため一覧のまま）
+        const _putBs = window._lastBattleState;
+        if (!_putIsCost && typeof document !== 'undefined' && document.getElementById('pl-battle-row')
+            && _putTamers.every(t => _boardEncOfCard(_putBs, t) !== -1)) {
+          const _putAsk = () => showTargetSelection('both', _putTamers.map(t => _boardEncOfCard(_putBs, t)), null, '#ffcc00', (v) => {
+            const t = _putTamers.find(x => _boardEncOfCard(_putBs, x) === v);
+            if (!t) { _putAsk(); return; }
+            finishPlace(_putOwner.tamerArea.indexOf(t));
+          }, '（下に置くテイマー）');
+          _putAsk();
+          return;
+        }
         showTrashCardPicker(_putTamers, 1, _putIsCost, '🃏 下に置くテイマーを選んでください', (picked) => {
           const t = picked && picked[0];
           const ti = t ? _putOwner.tamerArea.indexOf(t) : -1;

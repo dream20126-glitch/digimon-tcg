@@ -4171,6 +4171,9 @@ export async function checkPendingTurnEnd() {
   _attackInProgress = false;
   // 「そのアタックの終了まで」（≪連携≫のDP+・Sアタック+1）のバフをここで外す
   _expireBuffs(bs, 'dur_until_attack_end');
+  // アタックが終わればバトルも終わっている: 「バトル終了まで」（≪プログレス≫の「アタック中、相手の効果を受けない」等）も外す
+  // （セキュリティデジモンとのバトルやバトルの無いアタックでは外れずに残っていた）
+  _expireBuffs(bs, 'dur_until_battle_end');
   hideCombatBackdrop();
   // アタック中に保留していた DP0 の消滅（ルールチェック）を、アタックの処理が全て終わったここで行う
   if (typeof window !== 'undefined' && typeof window._runRuleDestroyCheckNow === 'function') {

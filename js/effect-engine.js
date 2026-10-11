@@ -5965,7 +5965,16 @@ function _scheduleRuleDestroyCheck(bs) {
 }
 // アタックの終了時に、保留していた DP0 の消滅（ルールチェック）を行う（battle-combat.js checkPendingTurnEnd）
 if (typeof window !== 'undefined') {
-  window._runRuleDestroyCheckNow = (cb) => {
+  let _ruleNowRunning = false, _ruleNowAgain = [];
+  window._runRuleDestroyCheckNow = (cb0) => {
+    // 同時に2回走ると同じカードを二重に消滅させるので、実行中なら終わってからもう一度
+    if (_ruleNowRunning) { _ruleNowAgain.push(cb0); return; }
+    _ruleNowRunning = true;
+    const cb = () => {
+      _ruleNowRunning = false;
+      try { cb0 && cb0(); } catch (_) {}
+      if (_ruleNowAgain.length > 0) { const nx = _ruleNowAgain.splice(0); window._runRuleDestroyCheckNow(() => nx.forEach(f => { try { f && f(); } catch (_) {} })); }
+    };
     const b = window._lastBattleState;
     const has = !!(b && ['player', 'ai'].some(sd => (b[sd].battleArea || []).some(c => c && c._pendingDestroy)));
     if (b) b._dp0HeldForAttack = false;
@@ -8085,6 +8094,18 @@ function _drainAfterReaction(bs, ctxBase, cb) {
   }
 }
 
+// 保留中の「〜したとき」の反応（bs._pendingReactions）だけを順に処理する（DP0 の消滅判定はしない。
+// 離れなかったDP0のカードを何度も判定し直してしまわないように checkPendingDestroys の末尾から使う）
+function _drainPendingReactionsOnly(ctx, cb) {
+  const r = ctx && ctx.bs && ctx.bs._pendingReactions;
+  if (!Array.isArray(r) || r.length === 0) { cb && cb(); return; }
+  const i = r.findIndex(x => x && !x.late);
+  const { fn, args } = r.splice(i >= 0 ? i : 0, 1)[0];
+  try { fn(...args, () => _drainPendingReactionsOnly(ctx, cb)); }
+  catch (_) { _drainPendingReactionsOnly(ctx, cb); }
+}
+// 効果の処理外で DP0 になったカード（オンラインで相手の効果の DP- を受け取った等）を、処理が無いときに消滅させる
+if (typeof window !== 'undefined') window._scheduleRuleDestroyCheck = () => { try { _scheduleRuleDestroyCheck(window._lastBattleState); } catch (_) {} };
 function checkPendingDestroys(ctx, callback) {
   // 消滅対象を「演出 → 削除 → on_destroy」の順で逐次処理する
   // ターンプレイヤー側を先に処理するため順序付き
@@ -8100,15 +8121,31 @@ function checkPendingDestroys(ctx, callback) {
   const _holdForAttack = (typeof window !== 'undefined' && typeof window._isAttackInProgress === 'function' && window._isAttackInProgress())
     || !!(ctx.bs && ctx.bs._oppAttackInProgress);
   const pending = [];
+  let _remoteDp0 = false;
   orderedSides.forEach(side => {
     const area = ctx.bs[side].battleArea;
     for (let i = 0; i < area.length; i++) {
       if (area[i] && area[i]._pendingDestroy) {
+        // 消滅の処理中（演出・「離れるとき」の確認中）のカードは、その途中で走った別の判定では扱わない
+        // （【デコード】で登場したプルートモンの【登場時】の前の判定で、ゾンビプルートモンを二重に消滅させていた）
+        if (area[i]._destroyInProgress) continue;
         if (_holdForAttack) { ctx.bs._dp0HeldForAttack = true; continue; }
+        // オンラインで相手のカードの DP0 消滅は、持ち主の端末が行う（こちらでも消滅させると消滅演出・【デコード】等が
+        // 二重になっていた）。消滅させるタイミング（ルールチェックの時点）はこちらが決め、fx_ruleDestroyRequest で頼む
+        if (side === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) {
+          if (!area[i]._dp0RequestSent) { area[i]._dp0RequestSent = true; _remoteDp0 = true; }
+          continue;
+        }
         pending.push({ side, slot: i, card: area[i] });
       }
     }
   });
+  if (_remoteDp0) {
+    const _send = (done) => { try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_ruleDestroyRequest' }); } catch (_) {} done && done(); };
+    // 非ターンプレイヤー側（相手）の消滅なら、ターンプレイヤーの効果が残っている間は後回し（_ntpDeferred）
+    if (_shouldDeferNonTurn(ctx.bs, 'ai')) _deferNonTurn(_send, null, null, null);
+    else _send();
+  }
   if (pending.length === 0) {
     // 「したとき」系の保留中反応（fireDestroyChain/fireWhenEvoDiscardTriggers等、
     // enqueueReaction経由でbs._pendingReactionsに積まれたもの）を1件ずつ処理する。
@@ -8139,8 +8176,11 @@ function checkPendingDestroys(ctx, callback) {
   // 2) 1枚ずつ処理: 演出 → trash 移動 → on_destroy
   let idx = 0;
   function processNext() {
-    if (idx >= pending.length) { callback && callback(); return; }
+    // 消滅の処理中に積まれた「〜したとき」の反応（【デコード】で登場したカードのコストで手札を破棄した→
+    // 「手札が破棄されたとき」等）も、ここで処理してから終える（以前は次の判定まで取り残されていた）
+    if (idx >= pending.length) { _drainPendingReactionsOnly(ctx, callback); return; }
     const { side, slot, card } = pending[idx++];
+    card._destroyInProgress = true;
     // 演出
     showDE(card, () => {
       // 【分離】: リンクカードを1枚破棄して、この消滅自体をキャンセルできる。ただし
@@ -8149,6 +8189,7 @@ function checkPendingDestroys(ctx, callback) {
       // リンクカードが尽きればキャンセルできなくなり、最終的に消滅する
       const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
       tryCancelViaLeaveBattle(card, side, ctx.bs, ctxBase, (canceled) => {
+        delete card._destroyInProgress;
         if (canceled) { processNext(); return; }
       // 削除（演出後に実際に消滅）
       if (ctx.bs[side].battleArea[slot] === card) {

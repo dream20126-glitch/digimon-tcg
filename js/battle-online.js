@@ -1199,6 +1199,11 @@ function onRemoteCommand(cmd) {
     }
 
     // --- 演出コマンド（キュー経由で順次再生、並列起動によるバチバチを防止） ---
+    case 'fx_ruleDestroyRequest': {
+      // 相手の効果で DP0 になったこちらのデジモンを、相手のルールチェックの時点で消滅させる（持ち主として1回だけ）
+      if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => { renderAll(); sendStateSync(); });
+      break;
+    }
     case 'attack_start': {
       // 相手がアタックを開始した。アタックの処理が全て終わるまで、こちらの DP0 の消滅（ルールチェック）は保留する
       bs._oppAttackInProgress = true;
@@ -1256,6 +1261,7 @@ function onRemoteCommand(cmd) {
           myCard.dpModifier = mod;
           myCard.dp = myCard.baseDp + mod;
           // DP0以下なら消滅マーク
+          // DP0 の消滅は持ち主（こちら）が行う。タイミングは相手（効果を処理している側）が fx_ruleDestroyRequest で知らせる
           if (myCard.dp <= 0) myCard._pendingDestroy = true;
         }
         renderAll();

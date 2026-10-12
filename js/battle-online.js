@@ -314,6 +314,8 @@ export function sendStateSync() {
     state: {
       battleArea: bs.player.battleArea.map(serializeCard),
       tamerArea: bs.player.tamerArea.map(serializeCard),
+      // 空の配列は Firebase に保存されず tamerArea ごと消えるので、枚数も送る（0枚になったことを相手に伝える）
+      tamerCount: (bs.player.tamerArea || []).filter(Boolean).length,
       ikusei: serializeCard(bs.player.ikusei),
       handCount: bs.player.hand.length,
       tamaCount: bs.player.tamaDeck.length,
@@ -1185,6 +1187,8 @@ function onRemoteCommand(cmd) {
         bs.ai.battleArea = newArea;
       }
       if (st.tamerArea) bs.ai.tamerArea = toArray(st.tamerArea).map(restoreCard);
+      // テイマーエリアが空になった（最後のテイマー/置かれたオプションが破棄された。トレーマニュアル BT26-099 の【ディレイ】等）
+      else if (st.tamerCount === 0) bs.ai.tamerArea = [];
       bs.ai.ikusei = st.ikusei ? restoreCard(st.ikusei) : bs.ai.ikusei;
       if (st.deckCount !== undefined) adjustArr(bs.ai.deck, st.deckCount);
       if (st.handCount !== undefined) adjustArr(bs.ai.hand, st.handCount);

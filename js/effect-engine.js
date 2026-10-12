@@ -1159,6 +1159,7 @@ function executeQueueEntry(entry, context, callback) {
   // （レシピで no_announce:true が指定されていればアナウンス自体を省略して即実行）
   function executeWithAnnounce() {
     if (hasNoAnnounceOverride(_recipeStepsForLookup)) { runEffectNow(callback); return; }
+    if (_isOptionalLeadRecipe(_recipeStepsForLookup)) { runEffectNow(callback); return; }
     // 「強制 → その後、〇〇することで（任意）」も、強制部分は通常の効果と同じくアナウンス（自分・相手の
     // 両画面）を出してから対象選択へ進む。任意部分に来た時点で確認ダイアログを出す（runRecipe 参照）。
     // （ブテンモン BT26-015 c1: 自分の画面にも効果がわかるように出してほしい）
@@ -8465,7 +8466,8 @@ function _narrowBySentence(blockText, triggerCode) {
   const otherFamilies = _ALL_REACTIVE_FAMILIES.filter(f => f !== family);
   // 「進化元」の「進化」は【進化時】の系統キーワードとして数えない（ピッコロモン BT26-043 の【登場時】【進化時】
   // 「〜レストさせる。その後、〜進化元の下に〜」が、【進化時】では「その後〜」の文だけに絞り込まれていた）
-  const _hasKw = (t, f) => (f === '進化' ? t.replace(/進化元/g, '') : t).includes(f);
+  // 同様に「登場コスト」の「登場」も【登場時】の目印にしない（ギロモン BT26-055 の【登場時】が「その後〜」だけになっていた）
+  const _hasKw = (t, f) => (f === '進化' ? t.replace(/進化元|進化コスト|進化条件/g, '') : f === '登場' ? t.replace(/登場コスト/g, '') : t).includes(f);
   // 他の系統キーワードが実際に混在している場合だけ文単位で絞り込む。混在がなければ
   // （＝同一トリガーの複数文が並んでいるだけ）絞り込まずそのまま全文を返す
   const hasOtherFamilyMix = sentences.some((s, idx) => otherFamilies.some(f => _hasKw(stripLabel(s, idx), f)));
@@ -9039,7 +9041,10 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
   const isActivated = ['main'].includes(triggerCode);
   // ソースカード限定のイベント系トリガー（そのカード固有のイベント）
   // これらは盤面全体をスキャンすると関係ない他カードの効果まで誘発してしまう
-  const isSourceOnly = ['on_play', 'on_move', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked', 'on_battle_win', 'on_battle_win_security', 'on_battle_destroy', 'on_active'].includes(triggerCode);
+  const isSourceOnly = ['on_play', 'on_move', 'on_evolve', 'on_attack', 'on_attack_end', 'security', 'when_blocked', 'on_battle_win', 'on_battle_win_security', 'on_battle_destroy', 'on_active',
+    // 「このデジモンが消滅するとき」（【フラグメント】等の置換効果）も、消滅するカード自身だけ（ギロモン BT26-055 の
+    // 消滅で、場の別のデジモン（ゴクモン）の【フラグメント】まで誘発していた）
+    'when_destroy', 'when_battle_destroy'].includes(triggerCode);
   // ターン境界トリガー: 「相手のターン終了時」「自分のターン終了時」等は
   // 一方のサイドのカードのみ発火する（相手ターン終了 = 自陣営カードが反応）。
   // sourceSide で指定された側のみスキャン対象にする。
@@ -9956,7 +9961,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   }
   // 強制効果: アナウンス演出を挟んでから実行（no_announce:true 指定時は省略）
   logActivated();
-  if (hasNoAnnounceOverride(recipe)) { runNow(); return; }
+  if (hasNoAnnounceOverride(recipe) || _isOptionalLeadRecipe(recipe)) { runNow(); return; }
   showEffectAnnounce(card, effectTextWithKw, side, runNow, evoSourceArg);
 }
 
@@ -12121,6 +12126,15 @@ function _costStepsInfeasible(costSteps, carrier, bs, side) {
       const n = conds.length > 0 ? linked.filter(l => l && checkConditions(conds, l, bs, side)).length : linked.length;
       return n < Math.max(1, c.value || 1);
     }
+    // 「このデジモンの進化元をN枚破棄することで」（【フラグメント】等）なのに進化元が足りない
+    if (/^evo_discard/.test(String(c.action || '')) && !/tamer/.test(String(c.action || ''))
+        && (c.target === 'self' || c.target === 'self_card')) {
+      const conds = [];
+      try { if (c.condition) conds.push(...parseRecipeCondition(c.condition)); } catch (_) {}
+      const st = Array.isArray(carrier.stack) ? carrier.stack : [];
+      const n = conds.length > 0 ? st.filter(x => x && checkConditions(conds, x, bs, side)).length : st.length;
+      return n < Math.max(1, parseInt(c.value, 10) || 1);
+    }
     return false;
   });
 }
@@ -12477,14 +12491,26 @@ function _isInlineConfirmStep(s) {
   if (Array.isArray(s.cost) && s.cost.length > 0) return true;
   return s.optional === true && s.action !== 'attack';
 }
+// 「〜できる（任意）。その後、〜（強制）」の形か（ギロモン BT26-055「手札1枚を進化元の下に裏向きで置ける。その後、
+// 〜消滅させる」）。このときは任意部分だけ「発動しますか？」で確認し、強制の「その後〜」は確認せず効果発動の
+// アナウンスを出して発揮する（任意部分を使わなくても「その後〜」は発揮する）
+function _isOptionalLeadRecipe(steps) {
+  if (!Array.isArray(steps) || steps.length < 2 || !_isInlineConfirmStep(steps[0])) return false;
+  return steps.slice(1).some(s => s && !_isInlineConfirmStep(s) && Array.isArray(s.options) && s.options.includes('continue_on_fail'));
+}
 function _isInlineCostConfirmRecipe(steps) {
   if (!Array.isArray(steps) || steps.length < 2) return false;
   const first = steps[0];
   const firstOptional = !!(first && (first.optional === true || (Array.isArray(first.cost) && first.cost.length > 0)));
-  if (firstOptional) return false;
+  if (firstOptional) return _isOptionalLeadRecipe(steps);
   return steps.slice(1).some(_isInlineConfirmStep);
 }
 // 確認ダイアログに出す「その後〜」部分のテキスト（ステップの display_text があればそれ）
+function _inlineLeadText(fullText) {
+  const t = String(fullText || '');
+  const i = t.indexOf('その後');
+  return i > 0 ? t.slice(0, i).trim() : t;
+}
 function _inlineCostConfirmText(step, fullText) {
   if (step && typeof step.display_text === 'string' && step.display_text.trim()) return step.display_text.trim();
   // 強制部分は効果発動のアナウンスで見せ済みなので、確認では任意の「その後〜」部分だけを出す
@@ -12525,14 +12551,24 @@ function runRecipe(steps, ctx, callback) {
     console.log('[runRecipe] executing step', idx, 'action=' + step.action, 'target=' + step.target);
     // 「強制 → その後、〇〇することで（任意）」: コスト持ちステップに来たらここで発動確認する
     // （_isInlineCostConfirmRecipe。効果の最初では確認していない）
-    if (ctx._inlineCostConfirm && ctx._inlineCostConfirm.steps === steps && idx > 1
+    const _icLead = !!(ctx._inlineCostConfirm && ctx._inlineCostConfirm.steps === steps && _isOptionalLeadRecipe(steps));
+    // 「〜できる。その後、〜（強制）」の強制部分: 確認せず、「その後〜」の効果発動アナウンスを出してから発揮する
+    if (_icLead && idx > 1 && step && !_isInlineConfirmStep(step) && !ctx._inlineCostConfirm._afterShown) {
+      ctx._inlineCostConfirm._afterShown = true;
+      const _afterText = _inlineCostConfirmText(null, ctx._inlineCostConfirm.text);
+      if (!hasNoAnnounceOverride(steps)) {
+        showEffectAnnounce(ctx.card, _afterText, ctx.side, () => executeRecipeStep(step, ctx, store, nextStep), ctx._inlineCostConfirm.evoSourceCard);
+        return;
+      }
+    }
+    if (ctx._inlineCostConfirm && ctx._inlineCostConfirm.steps === steps && (idx > 1 || (_icLead && idx === 1))
         && step && _isInlineConfirmStep(step) && !step._costsResolved) {
-      const _askText = _inlineCostConfirmText(step, ctx._inlineCostConfirm.text);
+      const _askText = (_icLead && idx === 1) ? _inlineLeadText(ctx._inlineCostConfirm.text) : _inlineCostConfirmText(step, ctx._inlineCostConfirm.text);
       const _isCpu = ctx.side === 'ai' && !(window._isOnlineMode && window._isOnlineMode());
       if (ctx.side === 'player') {
         showConfirmDialog(ctx.card, _askText, (accepted) => {
           if (accepted) { executeRecipeStep(step, ctx, store, nextStep); return; }
-          ctx.addLog && ctx.addLog('☓ 「' + (ctx.card ? ctx.card.name : '?') + '」の「その後」以降の効果は発動しなかった');
+          ctx.addLog && ctx.addLog('☓ 「' + (ctx.card ? ctx.card.name : '?') + (_icLead && idx === 1 ? '」の任意の効果は使わなかった' : '」の「その後」以降の効果は発動しなかった'));
           if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
             window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: ctx.card ? ctx.card.name : '' });
           }

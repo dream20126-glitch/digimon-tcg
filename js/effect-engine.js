@@ -129,15 +129,21 @@ if (typeof window !== 'undefined') {
 // 消滅時・離れるとき等、場を離れることで誘発する効果と、誘発した時点で場にいなかったカード
 // （オプション・セキュリティ・トラッシュ等）の効果は対象外
 const _LEAVING_TRIGGER_CODES = new Set(['on_destroy', 'on_battle_destroy', 'when_leave_battle', 'when_destroy', 'when_battle_destroy', 'security', 'main', 'when_return_to_hand']);
+// 効果を持つカードが、場のカードの「進化元」か「リンクカード」か（ログ・発動ポップアップの表示用）
+function _srcRoleLabel(carrier, src) {
+  return (carrier && src && Array.isArray(carrier.linkedCards) && carrier.linkedCards.includes(src)) ? 'リンクカード' : '進化元';
+}
 function _cardOnField(bs, card) {
   if (!bs || !card) return false;
-  return ['player', 'ai'].some(sd => bs[sd] && ((bs[sd].battleArea || []).includes(card) || (bs[sd].tamerArea || []).includes(card)));
+  return ['player', 'ai'].some(sd => bs[sd] && ((bs[sd].battleArea || []).includes(card) || (bs[sd].tamerArea || []).includes(card)
+    // 場のデジモンにリンクしているカードも場にある（メディックモンの【リンク時】が「発揮する前に場を離れた」扱いになっていた）
+    || [...(bs[sd].battleArea || []), ...(bs[sd].tamerArea || [])].some(c => c && Array.isArray(c.linkedCards) && c.linkedCards.includes(card))));
 }
 // 進化元カードが、場のどれかのデジモン（またはテイマー）に重ねられているか
 function _evoSourceOnField(bs, src) {
   if (!bs || !src) return false;
   return ['player', 'ai'].some(sd => bs[sd] && [...(bs[sd].battleArea || []), ...(bs[sd].tamerArea || [])]
-    .some(c => c && Array.isArray(c.stack) && c.stack.includes(src)));
+    .some(c => c && ((Array.isArray(c.stack) && c.stack.includes(src)) || (Array.isArray(c.linkedCards) && c.linkedCards.includes(src)))));
 }
 function _entryStillValid(e, bs) {
   if (!e || !bs || !e._onFieldAtTrigger) return true;
@@ -1126,7 +1132,7 @@ function executeQueueEntry(entry, context, callback) {
     // 進化元由来の効果なら、進化元カードを名指しでログに残す
     const evoSourceCard = block && block._recipeCard;
     if (evoSourceCard) {
-      ctx.addLog('⚡ 「' + evoSourceCard.name + '」（「' + card.name + '」の進化元）の効果発動');
+      ctx.addLog('⚡ 「' + evoSourceCard.name + '」（「' + card.name + '」の' + _srcRoleLabel(card, evoSourceCard) + '）の効果発動');
     } else {
       ctx.addLog('⚡ 「' + card.name + '」の効果発動');
     }
@@ -8736,7 +8742,7 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
   // として誤表示されてしまうので、所有者の機械からだけ送る運用に戻す。
   if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand && side === 'player') {
     try {
-      window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: evoSourceCard ? titleName + '（「' + card.name + '」の進化元' + (_evoPos ? '・' + _evoPos : '') + '）' : titleName, effectText: displayText.substring(0,400) });
+      window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: evoSourceCard ? titleName + '（「' + card.name + '」の' + _srcRoleLabel(card, evoSourceCard) + (_evoPos ? '・' + _evoPos : '') + '）' : titleName, effectText: displayText.substring(0,400) });
     } catch (_) {}
   }
   const sideColor = side === 'player' ? '#00fbff' : '#ff00fb';
@@ -8755,7 +8761,7 @@ export function showEffectAnnounce(card, effectText, side, callback, evoSourceCa
   if (evoSourceCard) {
     const sub = document.createElement('div');
     sub.style.cssText = 'color:#ffaa00;font-size:11px;font-weight:bold;margin-bottom:8px;text-shadow:0 0 4px #ffaa0066;';
-    sub.innerText = '◇ 「' + card.name + '」の' + evoSourceEffectLabel(card) + (_evoPos ? '（' + _evoPos + '）' : '') + ' ◇';
+    sub.innerText = '◇ 「' + card.name + '」の' + (_srcRoleLabel(card, evoSourceCard) === 'リンクカード' ? 'リンクカードのリンク効果' : evoSourceEffectLabel(card)) + (_evoPos ? '（' + _evoPos + '）' : '') + ' ◇';
     box.appendChild(sub);
   }
 
@@ -10039,7 +10045,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   const alwaysConfirm = !!(opts && opts.alwaysConfirm);
   const logActivated = () => {
     ctx.addLog && ctx.addLog(isEvo
-      ? '⚡ 「' + sourceCard.name + '」（「' + (card.name || '?') + '」の進化元）の効果発動'
+      ? '⚡ 「' + sourceCard.name + '」（「' + (card.name || '?') + '」の' + _srcRoleLabel(card, sourceCard) + '）の効果発動'
       : '⚡ 「' + card.name + '」の効果発動');
   };
   // 原因（「自分の効果で」等の判定に使う bs._lastDestroyCause）は、確認ダイアログの返事を待っている間に
@@ -17316,8 +17322,23 @@ function executeRecipeStep(step, ctx, store, callback) {
         ['showDrawEffect', 'showPlayEffect', 'showEvolveEffect', 'showDestroyEffect', 'showSecurityCheck', 'showBattleResult', 'doDraw'].forEach((k) => {
           if (typeof ctx[k] === 'function') _linkCtx[k] = ctx[k];
         });
-        try { _fireLinkTriggersNested(linkers, ctx.side, linkTarget, ctx.side, _linkCtx, () => cb && cb()); }
-        catch (e) { console.error('[link] on_link trigger error', e); cb && cb(); }
+        const _fire = () => {
+          try { _fireLinkTriggersNested(linkers, ctx.side, linkTarget, ctx.side, _linkCtx, () => cb && cb()); }
+          catch (e) { console.error('[link] on_link trigger error', e); cb && cb(); }
+        };
+        // リンク演出（手動リンクと同じ演出。相手の画面にも fx_linkEffect で出す）を出してから【リンク時】へ
+        const _ls = (Array.isArray(linkers) ? linkers : [linkers]).filter(Boolean);
+        let _li = 0;
+        const _nextLinkFx = () => {
+          if (_li >= _ls.length || typeof window === 'undefined' || typeof window._fxLinkEffect !== 'function') { _fire(); return; }
+          const lc = _ls[_li++];
+          if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            const _img = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
+            try { window._onlineSendCommand({ type: 'fx_linkEffect', baseName: linkTarget.name, baseImg: _img(linkTarget), linkName: lc.name, linkImg: _img(lc) }); } catch (_) {}
+          }
+          try { window._fxLinkEffect(linkTarget, lc, _nextLinkFx); } catch (_) { _nextLinkFx(); }
+        };
+        _nextLinkFx();
       };
 
       // 従来パス: store経由で事前に選択済みのカードをそのままリンクする

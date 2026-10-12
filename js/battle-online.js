@@ -1692,6 +1692,17 @@ function onRemoteCommand(cmd) {
       if (m.showDestroyEffect) enqueueFx((done) => m.showDestroyEffect({ name: cmd.cardName, imgSrc: cmd.cardImg, _remoteFx: true }, done));
       break;
     }
+    // 相手がリンクした（手動 link / 効果 fx_linkEffect）→ リンク演出（盤面は state_sync で同期）
+    case 'link':
+    case 'fx_linkEffect': {
+      if (typeof window._fxLinkEffect === 'function') {
+        const _base = { name: cmd.baseName || '?', imgSrc: cmd.baseImg || '' };
+        const _lnk = { name: cmd.linkName || cmd.cardName || '?', imgSrc: cmd.linkImg || cmd.cardImg || '' };
+        addLog('🔗 相手が「' + _base.name + '」に「' + _lnk.name + '」をリンク');
+        enqueueFx((done) => { try { window._fxLinkEffect(_base, _lnk, done); } catch (_) { done(); } });
+      }
+      break;
+    }
     case 'fx_destroyBatch': {
       // 相手の効果で2体以上がまとめて消滅 → 一覧で1回だけ演出
       if (typeof window._showDestroyBatch === 'function') enqueueFx((done) => window._showDestroyBatch(cmd.cards || [], done, { remote: true }));

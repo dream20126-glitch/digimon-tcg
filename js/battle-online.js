@@ -1680,7 +1680,7 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'fx_destroy': {
-      if (m.showDestroyEffect) enqueueFx((done) => m.showDestroyEffect({ name: cmd.cardName, imgSrc: cmd.cardImg }, done));
+      if (m.showDestroyEffect) enqueueFx((done) => m.showDestroyEffect({ name: cmd.cardName, imgSrc: cmd.cardImg, _remoteFx: true }, done));
       break;
     }
     case 'fx_destroyBatch': {

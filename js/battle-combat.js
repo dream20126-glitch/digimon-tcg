@@ -4549,8 +4549,10 @@ export function showBattleResult(text, color, sub, callback, oppText, oppColor) 
 export function showDestroyEffect(card, callback) {
   // 1つの効果でまとめて消滅させている間（window._destroyFxBatch）は1体ずつの演出を出さず、
   // 最後に「以下のN体が消滅」の一括演出（showDestroyBatch）で見せる
+  // まとめるのはこの画面で実際に場から消滅したカードだけ（相手の画面から届いた演出＝_remoteFx の仮カードや、
+  // カードNoを持たない仮カードは含めない。相手の画面の分まで合計して、相手のカードがこちらの一覧に出ていた）
   const _batch = (typeof window !== 'undefined') ? window._destroyFxBatch : null;
-  if (_batch && card) { _batch.gone.push(card); callback && callback(); return; }
+  if (_batch && card && !card._remoteFx && card.cardNo) { _batch.gone.push(card); callback && callback(); return; }
   if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_destroy', cardName: card.name, cardImg: cardImg(card) });
   const overlay = document.getElementById('destroy-overlay');
   if (!overlay) { callback && callback(); return; }

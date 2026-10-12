@@ -12548,21 +12548,35 @@ function _inlineCostConfirmText(step, fullText) {
 
 // 1つのステップ（「〜全てを消滅させる」・targets で複数の対象グループを持つ消滅等）で消滅したカードの演出をまとめる。
 // 実行中は showDestroyEffect が1体ずつの演出を出さずに記録し（window._destroyFxBatch）、終わったら
-// 2体以上なら一括演出（showDestroyBatch）、1体ならいつもの演出を出す。入れ子のときは一番外側でまとめる
+// 2体以上なら一括演出（showDestroyBatch）、1体ならいつもの演出を出す。
+// 入れ子（ステップの処理中に別の効果＝消滅時効果等が始まった）のときは、その効果の消滅は別にまとめる。
+// それまでに外側で消滅した分は先に演出してから始める（ゴクモンの消滅と、その消滅時効果で消滅した
+// ロープレモンが1つの一覧にまとまっていた）
+function _showGoneDestroyFx(gone, fin) {
+  // 演出中は記録しない（showDestroyEffect がまた一覧に積まないように）
+  const keep = window._destroyFxBatch;
+  window._destroyFxBatch = null;
+  const end = () => { window._destroyFxBatch = keep; fin && fin(); };
+  if (gone.length >= 2) { window._showDestroyBatch(gone, end); return; }
+  if (gone.length === 1) {
+    const one = (window._fxAnimFns && window._fxAnimFns.showDestroyEffect) || window.showDestroyEffect;
+    if (typeof one === 'function') { one(gone[0], end); return; }
+  }
+  end();
+}
 function _withDestroyFxBatch(run, done) {
-  if (typeof window === 'undefined' || typeof window._showDestroyBatch !== 'function' || window._destroyFxBatch) { run(done); return; }
-  const batch = { gone: [] };
-  window._destroyFxBatch = batch;
-  run((...a) => {
-    if (window._destroyFxBatch === batch) delete window._destroyFxBatch;
-    const fin = () => done && done(...a);
-    if (batch.gone.length >= 2) { window._showDestroyBatch(batch.gone, fin); return; }
-    if (batch.gone.length === 1) {
-      const one = (window._fxAnimFns && window._fxAnimFns.showDestroyEffect) || window.showDestroyEffect;
-      if (typeof one === 'function') { one(batch.gone[0], fin); return; }
-    }
-    fin();
-  });
+  if (typeof window === 'undefined' || typeof window._showDestroyBatch !== 'function') { run(done); return; }
+  const outer = window._destroyFxBatch || null;
+  const start = () => {
+    const batch = { gone: [] };
+    window._destroyFxBatch = batch;
+    run((...a) => {
+      window._destroyFxBatch = outer;
+      _showGoneDestroyFx(batch.gone.splice(0), () => done && done(...a));
+    });
+  };
+  if (outer && outer.gone.length > 0) { _showGoneDestroyFx(outer.gone.splice(0), start); return; }
+  start();
 }
 if (typeof window !== 'undefined') window._withDestroyFxBatch = _withDestroyFxBatch;
 

@@ -660,14 +660,22 @@ export function fxJogressEvolve(card1, card2, resultCard, callback) {
 //  11. リンク演出（回転しながら横向きに刺さる）
 // =====================================================
 
-export function fxLinkEffect(baseCard, linkCard, callback) {
+// cost: 支払ったリンクコスト（数値なら「〇コストでリンク！」を表示。省略時は表示しない）
+export function fxLinkEffect(baseCard, linkCard, callback, cost) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:55000;display:flex;align-items:center;justify-content:center;flex-direction:column;';
 
   const labelEl = document.createElement('div');
-  labelEl.style.cssText = 'font-size:1rem;font-weight:bold;color:#ffaa00;letter-spacing:3px;text-shadow:0 0 15px #ffaa00;margin-bottom:16px;';
+  labelEl.style.cssText = 'font-size:1rem;font-weight:bold;color:#ffaa00;letter-spacing:3px;text-shadow:0 0 15px #ffaa00;margin-bottom:' + (typeof cost === 'number' ? '6px' : '16px') + ';';
   labelEl.innerText = '⚡ LINK';
   overlay.appendChild(labelEl);
+  if (cost === undefined && linkCard && typeof linkCard._lastLinkCost === 'number') cost = linkCard._lastLinkCost;
+  if (typeof cost === 'number') {
+    const costEl = document.createElement('div');
+    costEl.style.cssText = 'font-size:0.95rem;font-weight:bold;color:#fff;margin-bottom:14px;text-shadow:0 0 10px #ffaa00;';
+    costEl.innerText = cost > 0 ? cost + 'コストでリンク！' : 'コストを支払わずリンク！';
+    overlay.appendChild(costEl);
+  }
 
   const container = document.createElement('div');
   container.style.cssText = 'display:flex;align-items:center;gap:4px;';

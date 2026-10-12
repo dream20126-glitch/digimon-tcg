@@ -17334,9 +17334,9 @@ function executeRecipeStep(step, ctx, store, callback) {
           const lc = _ls[_li++];
           if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
             const _img = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
-            try { window._onlineSendCommand({ type: 'fx_linkEffect', baseName: linkTarget.name, baseImg: _img(linkTarget), linkName: lc.name, linkImg: _img(lc) }); } catch (_) {}
+            try { window._onlineSendCommand({ type: 'fx_linkEffect', baseName: linkTarget.name, baseImg: _img(linkTarget), linkName: lc.name, linkImg: _img(lc), linkCost: lc._lastLinkCost || 0 }); } catch (_) {}
           }
-          try { window._fxLinkEffect(linkTarget, lc, _nextLinkFx); } catch (_) { _nextLinkFx(); }
+          try { window._fxLinkEffect(linkTarget, lc, _nextLinkFx, lc._lastLinkCost || 0); } catch (_) { _nextLinkFx(); }
         };
         _nextLinkFx();
       };
@@ -17407,14 +17407,19 @@ function executeRecipeStep(step, ctx, store, callback) {
           const si = entry.holder.stack.indexOf(c); if (si !== -1) entry.holder.stack.splice(si, 1);
         }
         _linkMakeRoom(() => {
-          // step.value は「💰コスト増減」UIが符号付きで保存する（減=-N/増=+N）ためそのまま加算する
+          // step.value は「💰コスト増減」UIが符号付きで保存する（減=-N/増=+N）ためそのまま加算する。
+          // 支払うのはリンクコスト（以前は登場コストで計算していた。メディックモン: リンクコスト3-2=1 を 5-2=3 払っていた）。
+          // cost_free（「コストを支払わずリンク」）なら払わない
           const _linkDelta = (typeof step.value === 'number' && step.value !== 0) ? step.value : 0;
-          if (_linkDelta !== 0 && ctx.bs) {
-            const _baseCost = parseInt(c.playCost != null ? c.playCost : (c.cost || 0), 10) || 0;
+          c._lastLinkCost = 0;
+          if (!step.cost_free && ctx.bs) {
+            const _lc = c.linkCost != null ? c.linkCost : (c.playCost != null ? c.playCost : (c.cost || 0));
+            const _baseCost = parseInt(_lc, 10) || 0;
             const _payCost = Math.max(0, _baseCost + _linkDelta);
+            c._lastLinkCost = _payCost;
             if (_payCost > 0) {
               if (ctx.side === 'player') ctx.bs.memory -= _payCost; else ctx.bs.memory += _payCost;
-              ctx.addLog('💾 コストを' + (_linkDelta > 0 ? '+' : '') + _linkDelta + '軽減して' + _payCost + '支払う');
+              ctx.addLog('💾 リンクコスト' + _baseCost + (_linkDelta ? (_linkDelta > 0 ? '+' : '') + _linkDelta : '') + ' → ' + _payCost + '支払う');
             } else {
               ctx.addLog('💾 支払いコスト0');
             }

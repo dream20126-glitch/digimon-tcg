@@ -1790,6 +1790,7 @@ export function doLink(card, handIdx, slotIdx) {
     bs.player.hand.splice(handIdx, 1); bs.selHand = null;
     base.linkedCards.push(card);
     addLog('🔗 「' + base.name + '」に「' + card.name + '」をリンク！（コスト ' + cost + '）');
+    card._lastLinkCost = cost; // リンク演出の「〇コストでリンク！」用
     if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
       try { window._tutorialHideInstruction(); } catch (e) {}
     }

@@ -4098,7 +4098,8 @@ function pickUpToNTargets(rowSide, validIndices, maxCount, color, onPicked) {
 // カード詳細を表示し、決定/キャンセルで選択するダイアログ
 function _showCardConfirmDialog(card, onConfirm) {
   const conf = document.createElement('div');
-  conf.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:62500;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.15s ease;';
+  // 各選択画面（進化元の選択 65000 等）より手前に出す
+  conf.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:67500;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.15s ease;';
   const src = card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || card.imageUrl || '';
   const colorBadge = card.color ? `<span style="background:rgba(255,204,0,0.2);color:#ffcc00;border:1px solid #ffcc0066;border-radius:3px;padding:1px 6px;font-size:10px;margin-right:4px;">${card.color}</span>` : '';
   const lvText = card.level ? `Lv.${card.level}` : '';
@@ -4434,10 +4435,14 @@ function showBothTrashPicker(sides, wantCount, title, done) {
       if (isCand) {
         wrap.onclick = () => {
           const pi = picked.findIndex(p => p.card === c);
-          if (pi >= 0) picked.splice(pi, 1);
-          else if (picked.length < wantCount) picked.push({ card: c, side: cur });
-          if (picked.length >= wantCount) { renderConfirm(); return; }
-          renderSelect();
+          if (pi >= 0) { picked.splice(pi, 1); renderSelect(); return; }
+          if (picked.length >= wantCount) return;
+          _showCardConfirmDialog(c, () => {
+            if (picked.findIndex(p => p.card === c) >= 0 || picked.length >= wantCount) return;
+            picked.push({ card: c, side: cur });
+            if (picked.length >= wantCount) { renderConfirm(); return; }
+            renderSelect();
+          });
         };
       }
       grid.appendChild(wrap);
@@ -5802,7 +5807,7 @@ function showCardListPicker(candidates, wantCount, title, callback, labelOf) {
       ? `<img src="${src}" style="width:100%;border-radius:4px;">`
       : `<div style="height:90px;background:#111;display:flex;align-items:center;justify-content:center;font-size:9px;color:#aaa;border-radius:4px;">${c.name || ''}</div>`
     ) + `<div style="color:#fff;font-size:10px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(labelOf ? (labelOf(c) || '') : '') + (c.name || '')}</div>`;
-    wrap.onclick = () => {
+    wrap.onclick = () => _showCardConfirmDialog(c, () => {
       if (picked.includes(c)) return;
       picked.push(c);
       cleanup();
@@ -5810,7 +5815,7 @@ function showCardListPicker(candidates, wantCount, title, callback, labelOf) {
       showCardListPicker(candidates.filter(x => !picked.includes(x)), wantCount - picked.length, title, (more) => {
         callback(picked.concat(more || []));
       }, labelOf);
-    };
+    });
     row.appendChild(wrap);
   });
 
@@ -17879,9 +17884,12 @@ function showEvoSourceSelection(parentCard, evoCards, filter, callback) {
       + (_hide ? '' : '<div style="color:#aaa;font-size:9px;">Lv.' + (evoCard.level || '?') + ' DP:' + (evoCard.dp || '?') + '</div>');
     wrap.onmouseenter = () => { wrap.style.borderColor = '#00fbff'; wrap.style.boxShadow = '0 0 12px #00fbff44'; };
     wrap.onmouseleave = () => { wrap.style.borderColor = '#333'; wrap.style.boxShadow = ''; };
+    // タップ → カード詳細 →「✓ このカードに決定」で確定（共通の選択画面と同じ）
     wrap.onclick = () => {
-      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-      callback(evoCard);
+      _showCardConfirmDialog(evoCard, () => {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        callback(evoCard);
+      });
     };
     row.appendChild(wrap);
   });
@@ -17933,8 +17941,10 @@ function showHandTrashSelection(candidates, remaining, filterName, callback) {
       wrap.onmouseenter = () => { wrap.style.borderColor = '#ffaa00'; };
       wrap.onmouseleave = () => { wrap.style.borderColor = '#333'; };
       wrap.onclick = () => {
-        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-        callback(entry);
+        _showCardConfirmDialog(entry.card || entry, () => {
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+          callback(entry);
+        });
       };
       row.appendChild(wrap);
     });

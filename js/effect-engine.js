@@ -1160,6 +1160,8 @@ function executeQueueEntry(entry, context, callback) {
   function executeWithAnnounce() {
     if (hasNoAnnounceOverride(_recipeStepsForLookup)) { runEffectNow(callback); return; }
     if (_isOptionalLeadRecipe(_recipeStepsForLookup)) { runEffectNow(callback); return; }
+    // 【ディレイ】は「【ディレイ】しますか？」の確認がポップアップの役目（delay アクション内）
+    if (Array.isArray(_recipeStepsForLookup) && _recipeStepsForLookup.some(st => st && st.action === 'delay')) { runEffectNow(callback); return; }
     // 「強制 → その後、〇〇することで（任意）」も、強制部分は通常の効果と同じくアナウンス（自分・相手の
     // 両画面）を出してから対象選択へ進む。任意部分に来た時点で確認ダイアログを出す（runRecipe 参照）。
     // （ブテンモン BT26-015 c1: 自分の画面にも効果がわかるように出してほしい）
@@ -8581,6 +8583,18 @@ export function evoSourceEffectLabel(card) {
   return '進化元効果';
 }
 
+// 【ディレイ】の発動演出（「カード名」「ディレイ効果発動」を短く出す。確認は済んでいるので OK 待ちはしない）
+function _showDelayBanner(card, cb) {
+  if (typeof document === 'undefined' || !document.body || !document.body.appendChild) { cb && cb(); return; }
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:56000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:rgba(0,0,0,0.6);pointer-events:none;animation:fadeIn 0.2s ease;';
+  const src = card && (card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || card.imageUrl || '');
+  ov.innerHTML = (src ? '<img src="' + src + '" style="width:110px;border-radius:6px;border:2px solid #ffaa00;box-shadow:0 0 18px #ffaa0088;">' : '')
+    + '<div style="color:#fff;font-size:14px;font-weight:bold;">「' + String((card && card.name) || '').replace(/[&<>]/g, '') + '」</div>'
+    + '<div style="color:#ffaa00;font-size:18px;font-weight:900;letter-spacing:3px;text-shadow:0 0 14px #ffaa00;">ディレイ効果発動</div>';
+  document.body.appendChild(ov);
+  setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); cb && cb(); }, 1300);
+}
 // 【ディレイ】の効果の段落を「発動のきっかけ（〜とき【ディレイ】）」と「ディレイで発揮する効果（・〜）」に分ける
 // （トレーマニュアル BT26-099）。見つからなければ null
 function _splitDelayParagraph(fullText) {
@@ -10047,7 +10061,8 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
   }
   // 強制効果: アナウンス演出を挟んでから実行（no_announce:true 指定時は省略）
   logActivated();
-  if (hasNoAnnounceOverride(recipe) || _isOptionalLeadRecipe(recipe)) { runNow(); return; }
+  if (hasNoAnnounceOverride(recipe) || _isOptionalLeadRecipe(recipe)
+      || (Array.isArray(recipe) && recipe.some(st => st && st.action === 'delay'))) { runNow(); return; }
   showEffectAnnounce(card, effectTextWithKw, side, runNow, evoSourceArg);
 }
 
@@ -13392,11 +13407,18 @@ function executeRecipeStep(step, ctx, store, callback) {
       };
       if (ctx.side === 'player') {
         if (typeof showConfirmDialog === 'function') {
+          // 「【ディレイ】しますか？」＋その下にディレイの内容。相手の画面にはディレイの段落全体を出す
           const _dp = _splitDelayParagraph(_delayCard.effect);
-          const _dq = (_dp && _dp.body) ? _dp.body : 'このカードを破棄して効果を発動しますか？';
+          const _dq = '【ディレイ】しますか？' + ((_dp && _dp.body) ? '\n\n' + _dp.body : '');
           showConfirmDialog(_delayCard, _dq, (yes) => {
-            if (yes) _doDelay(); else callback(false);
+            if (!yes) { callback(false); return; }
+            // 「カード名」「ディレイ効果発動」の演出（確認は済んでいるので OK 待ちはしない）
+            _showDelayBanner(_delayCard, _doDelay);
           });
+          if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            const _full = _dp ? (_dp.head + (_dp.body ? '\n・' + _dp.body : '')) : (_delayCard.effect || '');
+            try { window._onlineSendCommand({ type: 'fx_effectAnnounce', cardName: _delayCard.name, effectText: _full.substring(0, 400), status: '🤔 相手が【ディレイ】するか選択中...' }); } catch (_) {}
+          }
         } else {
           _doDelay();
         }
@@ -17827,7 +17849,8 @@ function showEvoSourceSelection(parentCard, evoCards, filter, callback) {
     const _bsNow = (typeof window !== 'undefined') ? window._lastBattleState : null;
     const _ownParent = !!(_bsNow && _bsNow.player && (_bsNow.player.battleArea || []).includes(parentCard));
     const _fd = !!evoCard._faceDown;
-    const _hide = _fd && !_ownParent;
+    // 破棄等のために選ぶ（選べば公開される）ので、相手のデジモンの裏向きのカードも表向きで見せる
+    const _hide = false; void _ownParent;
     const _backSrc = (typeof window !== 'undefined' && window._cardBackUrl) || '';
     const _shownSrc = _hide ? _backSrc : imgSrc;
     if (_fd) wrap.style.border = '2px dashed #ffaa00';

@@ -878,6 +878,12 @@ function renderTamerRows() {
         ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:3px;">`
         : `<div style="font-size:7px;color:#ffaa00;padding:2px;">${card.name}</div>`)
         + `<div class="s-name">${card.name}</div>`;
+      // 「次のアクティブフェイズでアクティブにならない」（ピッコロモン BT26-043 等はテイマーにも付く）: デジモンと同じマーク
+      const _tSkip = !!(bs._skipUnsuspend && bs._skipUnsuspend[isPlayer ? 'player' : 'ai']) && card.suspended;
+      if ((Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'prevent_unsuspend')) || _tSkip) {
+        if (!sl.style.position) sl.style.position = 'relative';
+        sl.innerHTML += `<div style="position:absolute;top:1px;right:1px;background:#9933ff;color:#fff;font-size:8px;font-weight:bold;padding:1px 4px;border-radius:3px;border:1px solid #fff;box-shadow:0 0 5px #9933ff;z-index:5;white-space:nowrap;">🔄✖</div>`;
+      }
 
       sl.onclick = () => window.showBCD && window.showBCD(card, isPlayer ? 'plTamer' : 'aiTamer');
 
@@ -1589,16 +1595,25 @@ export function showBCD(idxOrCard, source) {
       // 進化元の画面（対象選択の確認画面 showTargetConfirm と同じ見た目）
       _evoView.innerHTML = '<div style="color:#00fbff;font-weight:bold;font-size:14px;margin-bottom:4px;">「' + _esc(card.name) + '」の進化元</div>'
         + '<div style="color:#888;font-size:11px;margin-bottom:10px;">' + _n + '枚・上から順</div>'
+        + '<div style="color:#666;font-size:10px;margin:-6px 0 8px;">タップで詳細を表示</div>'
+        // 1行ずつ「名前（Lv）」だけを並べ、タップで詳細（画像・進化元効果）を開閉する（進化元が多いと長くなるため）。
+        // 裏向きのカードは裏面で表示し、持ち主（自分）だけタップで中身を確認できる
         + '<div id="bcd-evo-source-stack" style="text-align:left;">' + card.stack.map((s, i) => {
           const idForDom = card.stack.length - 1 - i;
-          if (s._faceDown && !_ownCard) return '<div id="bcd-evo-source-stack-' + idForDom + '" style="padding:8px 0;border-top:1px solid #222;color:#888;font-size:12px;">' + (i + 1) + '. 裏向きのカード</div>';
+          const _back = cardBackUrl ? '<img src="' + cardBackUrl + '" style="width:22px;height:30px;object-fit:cover;border-radius:2px;flex:none;">' : '<span style="flex:none;">🂠</span>';
+          if (s._faceDown && !_ownCard) return '<div id="bcd-evo-source-stack-' + idForDom + '" style="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #222;color:#888;font-size:12px;">' + _back + (i + 1) + '. 裏向きのカード</div>';
           const sImg = cardImg(s);
           const hasEvo = s.evoSourceEffect && s.evoSourceEffect.trim() && s.evoSourceEffect !== 'なし';
-          return '<div id="bcd-evo-source-stack-' + idForDom + '" style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #222;">'
+          const _head = s._faceDown
+            ? _back + '<span style="color:#aaa;">' + (i + 1) + '. 裏向きのカード</span><span style="color:#666;font-size:10px;">（タップで確認）</span>'
+            : '<span style="color:#fff;font-weight:bold;">' + (i + 1) + '. ' + _esc(s.name) + '（Lv.' + _esc(s.level || '?') + '）</span>' + (hasEvo ? '<span style="color:#ffaa00;font-size:10px;">効果あり</span>' : '');
+          return '<div id="bcd-evo-source-stack-' + idForDom + '" style="border-top:1px solid #222;">'
+            + '<div class="bcd-evo-row" style="display:flex;gap:8px;align-items:center;padding:6px 0;font-size:12px;cursor:pointer;">' + _head + '<span class="bcd-evo-caret" style="margin-left:auto;color:#00fbff;font-size:10px;">▼</span></div>'
+            + '<div class="bcd-evo-detail" style="display:none;gap:10px;align-items:flex-start;padding:0 0 8px;">'
             + (sImg ? '<img src="' + sImg + '" style="width:56px;border-radius:4px;flex:none;">' : '')
-            + '<div style="min-width:0;font-size:11px;line-height:1.6;"><div style="color:#fff;font-weight:bold;font-size:12px;">' + (i + 1) + '. ' + _esc(s.name) + '（Lv.' + _esc(s.level || '?') + '）' + (s._faceDown ? _fdTag : '') + '</div>'
+            + '<div style="min-width:0;font-size:11px;line-height:1.6;"><div style="color:#fff;font-weight:bold;font-size:12px;">' + _esc(s.name) + '（Lv.' + _esc(s.level || '?') + '）' + (s._faceDown ? _fdTag : '') + '</div>'
             + '<div style="color:#ffaa00;font-size:10px;">' + evoSourceEffectLabel(s) + '</div>'
-            + '<div style="color:' + (hasEvo ? '#ddd' : '#555') + ';">' + (hasEvo ? s.evoSourceEffect : 'なし') + '</div></div></div>';
+            + '<div style="color:' + (hasEvo ? '#ddd' : '#555') + ';">' + (hasEvo ? s.evoSourceEffect : 'なし') + '</div></div></div></div>';
         }).join('') + '</div>'
         + '<div style="margin:12px 0;"><button type="button" id="bcd-evo-back" style="background:#111;color:#00fbff;border:1px solid #00fbff;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:bold;cursor:pointer;">← 戻る</button></div>';
       evoHtml += '<button type="button" id="bcd-evo-stack-toggle" style="display:block;margin:8px auto 0;background:#111;color:#00fbff;border:1px solid #00fbff;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:bold;cursor:pointer;">進化元を確認する（' + _n + '枚）</button>';
@@ -1632,6 +1647,18 @@ export function showBCD(idxOrCard, source) {
   const _openSubView = (html) => {
     if (!_evoView) return;
     _evoView.innerHTML = html;
+    // 進化元の行をタップしたら詳細を開閉
+    _evoView.querySelectorAll('.bcd-evo-row').forEach((row) => {
+      row.onclick = (e) => {
+        e.stopPropagation();
+        const det = row.nextElementSibling;
+        if (!det) return;
+        const open = det.style.display !== 'none';
+        det.style.display = open ? 'none' : 'flex';
+        const caret = row.querySelector('.bcd-evo-caret');
+        if (caret) caret.textContent = open ? '▼' : '▲';
+      };
+    });
     const _back = document.getElementById('bcd-evo-back');
     if (_back) _back.onclick = (e) => { e.stopPropagation(); _showMainView(); };
     _showEvoView();

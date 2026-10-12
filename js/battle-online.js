@@ -2678,7 +2678,21 @@ function handleRemoteDeckOpenAct(cmd) {
       + '<div style="display:flex;gap:10px;"><button type="button" class="_rdo-detail" style="background:#ff00fb;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;">🔍 詳細を見る</button>'
       + '<button type="button" class="_rdo-close" style="background:#333;color:#fff;border:1px solid #666;padding:8px 18px;border-radius:6px;font-size:12px;cursor:pointer;">閉じる</button></div>';
     let closed = false;
-    const close = () => { if (closed) return; closed = true; if (big.parentNode) big.parentNode.removeChild(big); if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap); };
+    // 大きな表示が閉じたら、画面の左下に小さく残して、あとからでもタップで詳細を開けるようにする
+    // （大きな表示が閉じるのが早くて「詳細を見る」を押せなかった）
+    const showChip = () => {
+      const old = document.getElementById('_remote-reveal-chip'); if (old && old.parentNode) old.parentNode.removeChild(old);
+      const chip = document.createElement('div');
+      chip.id = '_remote-reveal-chip';
+      chip.style.cssText = 'position:fixed;left:10px;bottom:90px;z-index:54000;display:flex;align-items:center;gap:6px;background:rgba(20,0,20,0.92);border:1px solid #ff00fb;border-radius:8px;padding:4px 6px;box-shadow:0 0 10px #ff00fb66;cursor:pointer;max-width:70vw;';
+      chip.innerHTML = (src0 ? '<img src="' + src0 + '" style="width:30px;height:42px;object-fit:cover;border-radius:3px;">' : '')
+        + '<div style="min-width:0;"><div style="color:#ff88ff;font-size:9px;">相手が手札に加えた（タップで詳細）</div><div style="color:#fff;font-size:11px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + String(cmd.name || '?').replace(/[&<>]/g, '') + '</div></div>'
+        + '<button type="button" class="_rrc-x" style="background:none;border:none;color:#aaa;font-size:14px;cursor:pointer;padding:0 2px;">✕</button>';
+      chip.onclick = (e) => { e.stopPropagation(); openDetail(); };
+      const x = chip.querySelector('._rrc-x'); if (x) x.onclick = (e) => { e.stopPropagation(); if (chip.parentNode) chip.parentNode.removeChild(chip); };
+      document.body.appendChild(chip);
+    };
+    const close = (keepChip) => { if (closed) return; closed = true; if (big.parentNode) big.parentNode.removeChild(big); if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap); if (keepChip !== false) showChip(); };
     // 「🔍 詳細を見る」: カード詳細（効果テキスト）を開く。相手の操作は止めない（こちらの画面だけの表示）
     const openDetail = () => {
       const raw = (window.allCards || []).find(c => c && c['カードNo'] === cmd.cardNo);
@@ -2688,7 +2702,7 @@ function handleRemoteDeckOpenAct(cmd) {
         feature: raw['特徴'] || '', effect: raw['効果テキスト'] || raw['効果'] || '', evoSourceEffect: raw['進化元テキスト'] || raw['進化元効果'] || '',
         securityEffect: raw['セキュリティテキスト'] || raw['セキュリティ効果'] || '', evolveCond: raw['進化条件'] || '', stack: [], buffs: [],
       } : { name: cmd.name || '?', cardNo: cmd.cardNo || '', imgSrc: src0, stack: [], buffs: [] };
-      close();
+      close(false);
       if (window.showBCD) { try { window.showBCD(card, 'remoteReveal'); } catch (e) { console.error('[remote reveal detail]', e); } }
     };
     const _db = big.querySelector('._rdo-detail'); if (_db) _db.onclick = (e) => { e.stopPropagation(); openDetail(); };

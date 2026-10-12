@@ -1160,6 +1160,12 @@ function executeQueueEntry(entry, context, callback) {
   function executeWithAnnounce() {
     if (hasNoAnnounceOverride(_recipeStepsForLookup)) { runEffectNow(callback); return; }
     if (_isOptionalLeadRecipe(_recipeStepsForLookup)) { runEffectNow(callback); return; }
+    // 【エグゼキュート】のアタック終了時の消滅: 説明は効果の発揮前に出しているので、「【エグゼキュート】の効果で消滅！」の演出だけ
+    if (Array.isArray(_recipeStepsForLookup) && _recipeStepsForLookup.length > 0
+        && _recipeStepsForLookup.every(st => st && st._kwFlag === 'execute' && st.action === 'destroy')) {
+      _showKeywordFxBanner(card, '【エグゼキュート】の効果で消滅！', '#ff4444', () => runEffectNow(callback), actualSide);
+      return;
+    }
     // 【ディレイ】は「【ディレイ】しますか？」の確認がポップアップの役目（delay アクション内）
     if (Array.isArray(_recipeStepsForLookup) && _recipeStepsForLookup.some(st => st && st.action === 'delay')) { runEffectNow(callback); return; }
     // 「強制 → その後、〇〇することで（任意）」も、強制部分は通常の効果と同じくアナウンス（自分・相手の
@@ -8595,14 +8601,19 @@ export function evoSourceEffectLabel(card) {
 }
 
 // 【ディレイ】の発動演出（「カード名」「ディレイ効果発動」を短く出す。確認は済んでいるので OK 待ちはしない）
-function _showDelayBanner(card, cb) {
+function _showDelayBanner(card, cb) { _showKeywordFxBanner(card, 'ディレイ効果発動', '#ffaa00', cb); }
+// キーワード効果の発動演出（カード画像・「カード名」・ラベルを短く出す。OK 待ちはしない）。オンラインでは相手の画面にも出す
+function _showKeywordFxBanner(card, label, color, cb, side) {
+  if (side !== 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    try { window._onlineSendCommand({ type: 'fx_effectResult', cardName: (card && card.name) || '', cardImg: (card && (card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : ''))) || '', actionLabel: label }); } catch (_) {}
+  }
   if (typeof document === 'undefined' || !document.body || !document.body.appendChild) { cb && cb(); return; }
   const ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;z-index:56000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:rgba(0,0,0,0.6);pointer-events:none;animation:fadeIn 0.2s ease;';
   const src = card && (card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || card.imageUrl || '');
-  ov.innerHTML = (src ? '<img src="' + src + '" style="width:110px;border-radius:6px;border:2px solid #ffaa00;box-shadow:0 0 18px #ffaa0088;">' : '')
+  ov.innerHTML = (src ? '<img src="' + src + '" style="width:110px;border-radius:6px;border:2px solid ' + color + ';box-shadow:0 0 18px ' + color + '88;">' : '')
     + '<div style="color:#fff;font-size:14px;font-weight:bold;">「' + String((card && card.name) || '').replace(/[&<>]/g, '') + '」</div>'
-    + '<div style="color:#ffaa00;font-size:18px;font-weight:900;letter-spacing:3px;text-shadow:0 0 14px #ffaa00;">ディレイ効果発動</div>';
+    + '<div style="color:' + color + ';font-size:18px;font-weight:900;letter-spacing:3px;text-shadow:0 0 14px ' + color + ';">' + label + '</div>';
   document.body.appendChild(ov);
   setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); cb && cb(); }, 1300);
 }

@@ -301,6 +301,9 @@ export function sendStateSync() {
       // 進化条件ごとの進化コスト列（相手のカード詳細でも「特徴「TS」Lv.4から3コスト」等を出すため）
       evolveCostRaw: c.evolveCostRaw || null, evolveCostFeatureRaw: c.evolveCostFeatureRaw || null, evolveCostNameRaw: c.evolveCostNameRaw || null,
       stack: (c.stack || []).map(serializeCard),
+      // リンク（相手のカード詳細でもリンクコスト・リンクしているカードを見られるように）
+      linkCost: c.linkCost != null ? safeNum(c.linkCost) : null, linkCond: c.linkCond || '', linkDp: safeNum(c.linkDp),
+      linkedCards: (c.linkedCards || []).map(serializeCard),
       recipe: c.recipe || null,
       _permEffects: c._permEffects || {}, _usedEffects: c._usedEffects || [],
       _isToken: !!c._isToken,
@@ -1157,7 +1160,7 @@ function onRemoteCommand(cmd) {
           const flipped = b._appliedSide === 'player' ? 'ai' : (b._appliedSide === 'ai' ? 'player' : b._appliedSide);
           return { ...b, _appliedSide: flipped };
         });
-        return { ...data, buffs: flippedBuffs, stack: (data.stack || []).map(restoreCard) };
+        return { ...data, buffs: flippedBuffs, stack: (data.stack || []).map(restoreCard), linkedCards: (data.linkedCards || []).map(restoreCard) };
       };
       const adjustArr = (arr, count) => { while (arr.length > count) arr.pop(); while (arr.length < count) arr.push({ name: '?', type: '不明', dp: 0 }); };
       // Firebaseはnull要素を含む配列をObjectとして保存するため安全に変換
@@ -2725,6 +2728,8 @@ function handleRemoteDeckOpenAct(cmd) {
         type: raw['タイプ'] || '', color: raw['色'] || '', level: String(raw['Lv'] ?? raw['レベル'] ?? ''), dp: parseInt(raw['DP'] || 0) || 0, baseDp: parseInt(raw['DP'] || 0) || 0,
         feature: raw['特徴'] || '', effect: raw['効果テキスト'] || raw['効果'] || '', evoSourceEffect: raw['進化元テキスト'] || raw['進化元効果'] || '',
         securityEffect: raw['セキュリティテキスト'] || raw['セキュリティ効果'] || '', evolveCond: raw['進化条件'] || '', stack: [], buffs: [],
+        linkCost: isNaN(parseInt(raw['リンク\nコスト'] ?? raw['リンクコスト'], 10)) ? null : parseInt(raw['リンク\nコスト'] ?? raw['リンクコスト'], 10),
+        linkCond: (raw['リンク条件'] && raw['リンク条件'] !== 'なし') ? raw['リンク条件'] : '', linkDp: parseInt(raw['リンク\nDP'] ?? raw['リンクDP'], 10) || 0,
       } : { name: cmd.name || '?', cardNo: cmd.cardNo || '', imgSrc: src0, stack: [], buffs: [] };
       // 詳細を開いても左下の表示は残す（閉じたあともう一度開けるように。効果の処理が終わったら消える）
       close();

@@ -4130,6 +4130,10 @@ function _showCardConfirmDialog(card, onConfirm) {
   const evoHtml = (card.evoSourceEffect && card.evoSourceEffect !== 'なし')
     ? `<div style="margin-top:8px;color:#ffaa00;font-size:10px;font-weight:bold;">${evoSourceEffectLabel(card)}</div>${card.evoSourceEffect}`
     : '';
+  // リンクできるカードはリンクコスト（リンク条件・リンクDP）も出す
+  const linkHtml = card.linkCost != null
+    ? `<div style="color:#4ad8ff;font-size:11px;margin-bottom:6px;">リンクコスト：${card.linkCond && card.linkCond !== 'なし' ? card.linkCond + 'を持つデジモンに' : ''}${card.linkCost}${card.linkDp ? '（リンク時DP+' + card.linkDp + '）' : ''}</div>`
+    : '';
   const cardBox = document.createElement('div');
   cardBox.style.cssText = 'background:#0a0a0a;border:2px solid #ffcc00;border-radius:12px;padding:18px;max-width:300px;width:90%;text-align:center;box-shadow:0 0 30px rgba(255,204,0,0.45);max-height:70vh;overflow-y:auto;';
   cardBox.innerHTML = `
@@ -4137,6 +4141,7 @@ function _showCardConfirmDialog(card, onConfirm) {
     <div style="color:#fff;font-size:14px;font-weight:bold;margin-bottom:4px;">${card.name || '?'}</div>
     <div style="color:#888;font-size:10px;font-family:monospace;margin-bottom:6px;">${card.cardNo || ''}</div>
     <div style="margin-bottom:8px;">${colorBadge}<span style="color:#aaa;font-size:11px;">${stats}</span></div>
+    ${linkHtml}
     <div style="color:#ddd;font-size:11px;text-align:left;background:#111;padding:8px;border-radius:6px;line-height:1.5;">${effHtml}${evoHtml}</div>
   `;
   conf.appendChild(cardBox);
@@ -5391,6 +5396,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       + '<div style="color:#fff;font-weight:bold;font-size:14px;margin-top:8px;">' + esc(card.name) + (card.cardNo ? ' <span style="color:#888;font-size:11px;">(' + esc(card.cardNo) + ')</span>' : '') + '</div>'
       + '<div style="color:#aaa;font-size:11px;">' + esc([card.type, card.color, card.level ? 'Lv.' + card.level : '', card.dp ? 'DP ' + card.dp : ''].filter(Boolean).join(' / ')) + '</div>'
       + (card.feature ? '<div style="color:#ffcc66;font-size:11px;">' + esc(card.feature) + '</div>' : '')
+      + (card.linkCost != null ? '<div style="color:#4ad8ff;font-size:11px;">リンクコスト：' + esc(card.linkCond && card.linkCond !== 'なし' ? card.linkCond + 'を持つデジモンに' : '') + card.linkCost + (card.linkDp ? '（リンク時DP+' + card.linkDp + '）' : '') + '</div>' : '')
       + part('効果', eff) + part('進化元効果', evo) + part('セキュリティ効果', sec);
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;gap:10px;justify-content:center;margin-top:14px;';

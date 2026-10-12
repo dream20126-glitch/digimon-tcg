@@ -2660,6 +2660,25 @@ function handleRemoteDeckOpenAct(cmd) {
   if (_remoteDeckOpenState.footer) {
     _remoteDeckOpenState.footer.innerText = '📥 「' + (cmd.name || '?') + '」を ' + toLabel;
   }
+  // 手札に加えたカードは大きく見せる（何を手札に加えたか分かるように。トレーマニュアル BT26-099 の要望）
+  if (cmd.to === 'hand') {
+    const imgEl0 = ent.wrap.querySelector('img');
+    const src0 = imgEl0 ? imgEl0.src : (ent.imgSrc || '');
+    ent.wrap.style.transition = 'opacity 0.15s, transform 0.15s';
+    ent.wrap.style.opacity = '0.25';
+    const big = document.createElement('div');
+    big.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:66000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:pointer;animation:fadeIn 0.2s ease;';
+    big.innerHTML = '<div style="color:#ff00fb;font-size:14px;font-weight:bold;text-shadow:0 0 8px #ff00fb;">📥 相手が手札に加えたカード</div>'
+      + (src0 ? '<img src="' + src0 + '" style="width:200px;max-width:60vw;border-radius:8px;border:2px solid #ff00fb;box-shadow:0 0 20px #ff00fb88;">' : '')
+      + '<div style="color:#fff;font-size:14px;font-weight:bold;">' + String(cmd.name || '?').replace(/[&<>]/g, '') + '</div>'
+      + '<div style="color:#888;font-size:10px;">タップで閉じる</div>';
+    let closed = false;
+    const close = () => { if (closed) return; closed = true; if (big.parentNode) big.parentNode.removeChild(big); if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap); };
+    big.onclick = close;
+    document.body.appendChild(big);
+    setTimeout(close, 2500);
+    return;
+  }
   // 全宛先で fxCardMove を再生（手前で表示されるよう z-index は 66000）
   if (window._fxCardMove) {
     const imgEl = ent.wrap.querySelector('img');

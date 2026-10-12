@@ -5343,6 +5343,45 @@ function showDeckOpenUI(opened, step, ctx, callback) {
     if (entry.wrap.parentNode) entry.wrap.parentNode.removeChild(entry.wrap);
   }
 
+  // オープンしたカードをタップしたときの詳細表示（トレーマニュアル BT26-099 の要望）。
+  // onDecide があれば「✓ 決定」でそのカードを選ぶ。無ければ（選べないカード）見るだけ
+  function _showOpenCardDetail(card, onDecide) {
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:65500;display:flex;align-items:center;justify-content:center;padding:16px;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#0a0a0a;border:2px solid #00fbff;border-radius:12px;padding:16px;max-width:360px;width:100%;max-height:90vh;overflow-y:auto;text-align:center;';
+    const src = getImg(card);
+    const esc = (t) => String(t == null ? '' : t).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+    const eff = String(card.effect || '').trim();
+    const evo = String(card.evoSourceEffect || '').trim();
+    const sec = String(card.securityEffect || '').trim();
+    const part = (label, t) => (t && t !== 'なし') ? '<div style="text-align:left;margin-top:8px;"><div style="color:#ffaa00;font-size:10px;font-weight:bold;">' + label + '</div><div style="color:#ddd;font-size:11px;line-height:1.6;white-space:pre-wrap;">' + esc(t) + '</div></div>' : '';
+    box.innerHTML = (src ? '<img src="' + src + '" style="width:160px;max-width:60%;border-radius:6px;">' : '')
+      + '<div style="color:#fff;font-weight:bold;font-size:14px;margin-top:8px;">' + esc(card.name) + (card.cardNo ? ' <span style="color:#888;font-size:11px;">(' + esc(card.cardNo) + ')</span>' : '') + '</div>'
+      + '<div style="color:#aaa;font-size:11px;">' + esc([card.type, card.color, card.level ? 'Lv.' + card.level : '', card.dp ? 'DP ' + card.dp : ''].filter(Boolean).join(' / ')) + '</div>'
+      + (card.feature ? '<div style="color:#ffcc66;font-size:11px;">' + esc(card.feature) + '</div>' : '')
+      + part('効果', eff) + part('進化元効果', evo) + part('セキュリティ効果', sec);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:10px;justify-content:center;margin-top:14px;';
+    const close = () => { if (modal.parentNode) modal.parentNode.removeChild(modal); };
+    if (onDecide) {
+      const ok = document.createElement('button');
+      ok.innerText = '✓ 決定';
+      ok.style.cssText = 'background:#00ff88;color:#002211;border:none;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
+      ok.onclick = () => { close(); onDecide(); };
+      row.appendChild(ok);
+    }
+    const back = document.createElement('button');
+    back.innerText = onDecide ? '戻る' : '閉じる';
+    back.style.cssText = 'background:#333;color:#fff;border:1px solid #666;padding:10px 22px;border-radius:6px;font-size:13px;cursor:pointer;';
+    back.onclick = close;
+    row.appendChild(back);
+    box.appendChild(row);
+    modal.appendChild(box);
+    modal.onclick = (e) => { if (e.target === modal) close(); };
+    document.body.appendChild(modal);
+  }
+
   function clearButtons() {
     while (buttonArea.firstChild) buttonArea.removeChild(buttonArea.firstChild);
   }
@@ -5402,8 +5441,9 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       // タップリスナー
       cardEls.forEach(entry => {
         if (entry.removed) return;
-        if (!selMatch(entry.card)) { entry.wrap.onclick = null; return; }
-        entry.wrap.onclick = () => {
+        // 選べないカードもタップで詳細を見られる
+        if (!selMatch(entry.card)) { entry.wrap.onclick = () => { if (!entry.removed) _showOpenCardDetail(entry.card, null); }; entry.wrap.style.cursor = 'pointer'; return; }
+        const _pick = () => {
           if (entry.removed) return;
           // 進化選択（ジャガモン等「デッキオープンで選んだカードに進化」）
           if (sel.action === 'evolve') {
@@ -5519,6 +5559,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
             proceed();
           }
         };
+        // タップ → 詳細表示 →「✓ 決定」で選ぶ
+        entry.wrap.onclick = () => { if (!entry.removed) _showOpenCardDetail(entry.card, _pick); };
       });
     }
 
@@ -5575,8 +5617,9 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       sendRemote({ type: 'fx_remoteDeckOpenAct', cardNo: card.cardNo, name: card.name, to: position === 'top' ? 'deck_top' : 'deck_bottom' });
     };
 
-    // deck_bottom（「デッキの下に戻す」明記）: ポップアップ無しで全自動
-    if (returnTo === 'deck_bottom') {
+    // deck_bottom（「デッキの下に戻す」明記）: 1枚なら自動。2枚以上なら戻す順番をプレイヤーが選ぶ
+    // （タップした順にデッキの下へ。トレーマニュアル BT26-099 の要望）
+    if (returnTo === 'deck_bottom' && remaining.length < 2) {
       stepEl.innerText = '残りカードをデッキの下へ戻します...';
       clearButtons();
       let i = 0;
@@ -5609,6 +5652,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       let labelText = '残りカードをデッキに戻す';
       if (returnTo === 'deck_top') labelText += '（タップ順にデッキの上へ積まれます）';
       else if (returnTo === 'deck_choice') labelText += '（好きな順番で：タップした順にデッキの下へ）';
+      else if (returnTo === 'deck_bottom') labelText = '残りカードをデッキの下に戻す順番を選んでください（タップした順にデッキの下へ）';
       else if (returnTo === 'deck_top_or_bottom') labelText += '（タップして上か下を選択）';
       stepEl.innerText = labelText;
       clearButtons();

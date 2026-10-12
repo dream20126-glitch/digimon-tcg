@@ -368,13 +368,6 @@ function renderBattleRows() {
         }
 
         // 付与効果インジケータ（grant_effect で得た効果。ヘブンズリッパー等）
-        // 【ターンに1回】等の効果をこのターン使った（本体・進化元のどれか）→「✅済」（自分のカードのみ。相手のカードの使用状況は相手の端末にある）
-        if (isPlayer && typeof window._getLimitUsage === 'function') {
-          const _lu = [window._getLimitUsage(card)].concat((card.stack || []).map(s => window._getLimitUsage(card, s))).filter(Boolean);
-          if (_lu.some(u => u.used > 0)) {
-            html += '<div title="【ターンに1回】の効果をこのターン使用済み" style="position:absolute;bottom:14px;right:2px;background:rgba(0,120,60,0.92);color:#fff;font-size:7px;font-weight:bold;padding:1px 3px;border-radius:2px;z-index:5;box-shadow:0 0 4px #00ff88;">✅済</div>';
-          }
-        }
         if (Array.isArray(card._grantedRecipes) && card._grantedRecipes.some(g => g && !g.kwFlag)) {
           html += `<div style="position:absolute;top:14px;left:2px;background:rgba(192,132,252,0.92);color:#fff;font-size:6px;font-weight:bold;padding:1px 3px;border-radius:2px;z-index:5;box-shadow:0 0 5px #c084fc;">付与効果</div>`;
         }

@@ -540,6 +540,10 @@ function onRemoteCommand(cmd) {
     // --- カード操作 ---
     case 'play': {
       const cardName = cmd.cardName || '???';
+      // 相手がデジモン/テイマーを新しく登場させた → 消滅したスロットの復活防止（5秒）を解除する。
+      // 消滅直後に同じスロットへ登場したカード（ギロモンで消滅したロープレモンが、セブンコードPADのセキュリティ効果で
+      // 同じ位置に再登場）まで「古い同期での復活」とみなして消していた
+      if (cmd.cardType !== 'オプション') _recentlyDestroyed = _recentlyDestroyed.filter(d => d.side !== 'ai');
       const dummy = { name: cardName, imgSrc: cmd.cardImg || '', type: cmd.cardType || '', playCost: cmd.playCost || 0 };
       addLog('🎮 相手が「' + cardName + '」を' + (cmd.cardType === 'オプション' ? '使用！' : '登場！'));
       if (cmd.cardType === 'オプション' && m.showOptionEffect) m.showOptionEffect(dummy, () => {});

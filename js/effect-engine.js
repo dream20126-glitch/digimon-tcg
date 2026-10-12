@@ -8537,10 +8537,25 @@ export function evoSourceEffectLabel(card) {
   return '進化元効果';
 }
 
+// 【ディレイ】の効果の段落を「発動のきっかけ（〜とき【ディレイ】）」と「ディレイで発揮する効果（・〜）」に分ける
+// （トレーマニュアル BT26-099）。見つからなければ null
+function _splitDelayParagraph(fullText) {
+  const para = String(fullText || '').split(/\n(?=[【《［])/).find(p => p.indexOf('【ディレイ】') !== -1);
+  if (!para) return null;
+  const lines = para.split('\n');
+  const head = [], body = [];
+  lines.forEach((l, i) => { if (i > 0 && /^\s*・/.test(l)) body.push(l.replace(/^\s*・\s*/, '')); else if (body.length === 0) head.push(l); else body.push(l); });
+  return { head: head.join('\n').trim(), body: body.join('\n').trim() };
+}
 export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
   const override = _findDisplayTextOverride(recipeSteps);
   if (override) return override;
   if (!fullText) return fullText || '';
+  // 【ディレイ】の効果: 発動のきっかけの文だけを出す（ディレイで発揮する効果は「発動しますか？」の確認で出す）
+  if (Array.isArray(recipeSteps) && recipeSteps.some(st => st && st.action === 'delay')) {
+    const dp = _splitDelayParagraph(fullText);
+    if (dp && dp.head) return dp.head;
+  }
   // ［トラッシュ］［手札］［セキュリティ］のゾーン効果（全ステップが in_zone 指定）は、その［］で始まる段落を出す
   // （ケルビモン BT26-078 の「［トラッシュ］自分のデジモンが登場したとき」が、同じカードの【登場時】【進化時】の
   // 文章で表示されていた）
@@ -13333,7 +13348,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       };
       if (ctx.side === 'player') {
         if (typeof showConfirmDialog === 'function') {
-          showConfirmDialog(_delayCard, 'このカードを破棄して効果を発動しますか？', (yes) => {
+          const _dp = _splitDelayParagraph(_delayCard.effect);
+          const _dq = (_dp && _dp.body) ? _dp.body : 'このカードを破棄して効果を発動しますか？';
+          showConfirmDialog(_delayCard, _dq, (yes) => {
             if (yes) _doDelay(); else callback(false);
           });
         } else {
@@ -17761,9 +17778,21 @@ function showEvoSourceSelection(parentCard, evoCards, filter, callback) {
     const wrap = document.createElement('div');
     wrap.style.cssText = 'text-align:center;cursor:pointer;border:2px solid #333;border-radius:8px;padding:6px;transition:all 0.2s;';
     const imgSrc = evoCard.imgSrc || evoCard.imageUrl || '';
-    wrap.innerHTML = (imgSrc ? '<img src="' + imgSrc + '" style="width:70px;height:98px;object-fit:cover;border-radius:4px;">' : '')
-      + '<div style="color:#fff;font-size:10px;margin-top:4px;">' + evoCard.name + '</div>'
-      + '<div style="color:#aaa;font-size:9px;">Lv.' + (evoCard.level || '?') + ' DP:' + (evoCard.dp || '?') + '</div>';
+    // 裏向きの進化元は分かるように表示する（ゴクモン BT26-077 の【フラグメント】で選ぶとき）。
+    // 相手のデジモンの裏向きのカードは中身を見せない（裏面で表示）
+    const _bsNow = (typeof window !== 'undefined') ? window._lastBattleState : null;
+    const _ownParent = !!(_bsNow && _bsNow.player && (_bsNow.player.battleArea || []).includes(parentCard));
+    const _fd = !!evoCard._faceDown;
+    const _hide = _fd && !_ownParent;
+    const _backSrc = (typeof window !== 'undefined' && window._cardBackUrl) || '';
+    const _shownSrc = _hide ? _backSrc : imgSrc;
+    if (_fd) wrap.style.border = '2px dashed #ffaa00';
+    wrap.innerHTML = '<div style="position:relative;display:inline-block;">'
+      + (_shownSrc ? '<img src="' + _shownSrc + '" style="width:70px;height:98px;object-fit:cover;border-radius:4px;' + (_fd && !_hide ? 'filter:brightness(0.75);' : '') + '">' : '')
+      + (_fd ? '<div style="position:absolute;left:0;right:0;bottom:4px;text-align:center;"><span style="background:#ffaa00;color:#000;font-size:9px;font-weight:bold;padding:1px 5px;border-radius:3px;">裏向き</span></div>' : '')
+      + '</div>'
+      + '<div style="color:#fff;font-size:10px;margin-top:4px;">' + (_hide ? '裏向きのカード' : evoCard.name) + '</div>'
+      + (_hide ? '' : '<div style="color:#aaa;font-size:9px;">Lv.' + (evoCard.level || '?') + ' DP:' + (evoCard.dp || '?') + '</div>');
     wrap.onmouseenter = () => { wrap.style.borderColor = '#00fbff'; wrap.style.boxShadow = '0 0 12px #00fbff44'; };
     wrap.onmouseleave = () => { wrap.style.borderColor = '#333'; wrap.style.boxShadow = ''; };
     wrap.onclick = () => {

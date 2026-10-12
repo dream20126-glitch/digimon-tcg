@@ -12,6 +12,7 @@ import { isTargetSelecting, hasRecipeTrigger, hasOwnMainEffect, evoSourceEffectL
 
 // ===== カード画像ヘルパー =====
 export const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
+if (typeof window !== 'undefined') window._cardBackUrl = cardBackUrl; // effect-engine.js の選択UIで裏向きのカードを表示する用
 const tamaBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1-Os-ZfmgLlQeYGkTU1uUXrt7iowy0FLD/view');
 
 export function cardImg(card) {

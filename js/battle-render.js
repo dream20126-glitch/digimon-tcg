@@ -1447,6 +1447,8 @@ export function showBCD(idxOrCard, source) {
 
   const bcd = document.getElementById('b-card-detail');
   if (!bcd) return;
+  // 相手のデッキオープンの観戦画面（z-index 65000）の上に出す（相手が手札に加えたカードの詳細を開いたとき、後ろに隠れていた）
+  bcd.style.zIndex = source === 'remoteReveal' ? '67000' : '50000';
 
   document.getElementById('bcd-img').src = cardImg(card);
   document.getElementById('bcd-name').innerText = card.name + ' (' + (card.cardNo || '') + ')';

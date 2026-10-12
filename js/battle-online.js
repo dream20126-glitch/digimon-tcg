@@ -2671,12 +2671,29 @@ function handleRemoteDeckOpenAct(cmd) {
     big.innerHTML = '<div style="color:#ff00fb;font-size:14px;font-weight:bold;text-shadow:0 0 8px #ff00fb;">📥 相手が手札に加えたカード</div>'
       + (src0 ? '<img src="' + src0 + '" style="width:200px;max-width:60vw;border-radius:8px;border:2px solid #ff00fb;box-shadow:0 0 20px #ff00fb88;">' : '')
       + '<div style="color:#fff;font-size:14px;font-weight:bold;">' + String(cmd.name || '?').replace(/[&<>]/g, '') + '</div>'
-      + '<div style="color:#888;font-size:10px;">タップで閉じる</div>';
+      + '<div style="display:flex;gap:10px;"><button type="button" class="_rdo-detail" style="background:#ff00fb;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;">🔍 詳細を見る</button>'
+      + '<button type="button" class="_rdo-close" style="background:#333;color:#fff;border:1px solid #666;padding:8px 18px;border-radius:6px;font-size:12px;cursor:pointer;">閉じる</button></div>';
     let closed = false;
     const close = () => { if (closed) return; closed = true; if (big.parentNode) big.parentNode.removeChild(big); if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap); };
+    // 「🔍 詳細を見る」: カード詳細（効果テキスト）を開く。相手の操作は止めない（こちらの画面だけの表示）
+    const openDetail = () => {
+      const raw = (window.allCards || []).find(c => c && c['カードNo'] === cmd.cardNo);
+      const card = raw ? {
+        name: raw['名前'] || cmd.name, cardNo: cmd.cardNo, imgSrc: src0 || (typeof getCardImageUrl === 'function' ? getCardImageUrl(raw) : ''),
+        type: raw['タイプ'] || '', color: raw['色'] || '', level: String(raw['Lv'] ?? raw['レベル'] ?? ''), dp: parseInt(raw['DP'] || 0) || 0, baseDp: parseInt(raw['DP'] || 0) || 0,
+        feature: raw['特徴'] || '', effect: raw['効果テキスト'] || raw['効果'] || '', evoSourceEffect: raw['進化元テキスト'] || raw['進化元効果'] || '',
+        securityEffect: raw['セキュリティテキスト'] || raw['セキュリティ効果'] || '', evolveCond: raw['進化条件'] || '', stack: [], buffs: [],
+      } : { name: cmd.name || '?', cardNo: cmd.cardNo || '', imgSrc: src0, stack: [], buffs: [] };
+      close();
+      if (window.showBCD) { try { window.showBCD(card, 'remoteReveal'); } catch (e) { console.error('[remote reveal detail]', e); } }
+    };
+    const _db = big.querySelector('._rdo-detail'); if (_db) _db.onclick = (e) => { e.stopPropagation(); openDetail(); };
+    const _cb = big.querySelector('._rdo-close'); if (_cb) _cb.onclick = (e) => { e.stopPropagation(); close(); };
+    const _im = big.querySelector('img'); if (_im) { _im.style.cursor = 'pointer'; _im.onclick = (e) => { e.stopPropagation(); openDetail(); }; }
     big.onclick = close;
     document.body.appendChild(big);
-    setTimeout(close, 2500);
+    // 何もしなければ少し長めに表示して閉じる（詳細はその前にボタンから開ける）
+    setTimeout(close, 6000);
     return;
   }
   // 全宛先で fxCardMove を再生（手前で表示されるよう z-index は 66000）

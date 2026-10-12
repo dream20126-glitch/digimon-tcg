@@ -1761,6 +1761,8 @@ function onRemoteCommand(cmd) {
     }
     case 'fx_effectClose': {
       if (m.fxRemoteEffectClose) m.fxRemoteEffectClose();
+      // 相手が手札に加えたカードの表示（デッキオープン）は、相手の効果の処理が終わったら消す
+      if (typeof window._remoteRevealCleanup === 'function') { try { window._remoteRevealCleanup(); } catch (_) {} }
       break;
     }
     case 'fx_effectResult': {
@@ -2712,6 +2714,12 @@ function handleRemoteDeckOpenAct(cmd) {
     document.body.appendChild(big);
     // 何もしなければ少し長めに表示して閉じる（詳細はその前にボタンから開ける）
     setTimeout(close, 6000);
+    // 相手の効果の処理が全て終わったら（fx_effectClose）、大きな表示も左下の表示も消す（いつまでも残さない）
+    window._remoteRevealCleanup = () => {
+      close(false);
+      const chip = document.getElementById('_remote-reveal-chip'); if (chip && chip.parentNode) chip.parentNode.removeChild(chip);
+      window._remoteRevealCleanup = null;
+    };
     return;
   }
   // 全宛先で fxCardMove を再生（手前で表示されるよう z-index は 66000）

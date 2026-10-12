@@ -5623,7 +5623,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   //   'deck_top'          : タップした順にデッキ上から積まれる
   //   'deck_bottom'       : ポップアップ無しで自動的にデッキ下へ自動送出（短アニメ）
   //   'deck_choice'       : 「好きな順番で」記載 → タップした順にデッキ下へ（ポップアップ無し）
-  //   'deck_top_or_bottom': 「上か下に戻す」記載 → 1枚ずつポップアップで上下選択
+  //   'deck_top_or_bottom': 「上か下だけに戻す」記載 → タップで順番を決め、最後に1回だけ上か下を選ぶ
   let _deckIncreasedByEffect = false;
   // デッキへの戻しが1枚でもあれば when_deck_increase を発火してから終了する（ピョコモン BT26-001用）
   function finishReturnPhase() {
@@ -5683,14 +5683,34 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       return;
     }
 
+    // deck_top_or_bottom（「残りはデッキの上か下だけに戻す」）: 全部同じ側に戻すので、タップで戻す順番を決めてから、
+    // 最後に1回だけ「上に戻す／下に戻す」を選ぶ（テラーモン BT26-063。以前は1枚ごとに上下を選ばせていた）。
+    // 1枚だけなら順番は無いので、そのまま上下を選ぶ
+    const _tobOrder = [];
+    const _tobFinish = () => {
+      if (_tobOrder.length === 0) { finishReturnPhase(); return; }
+      const _label = _tobOrder.length === 1 ? _tobOrder[0] : { name: _tobOrder.length + '枚のカード（選んだ順）' };
+      showTopBottomChoice(_label, (pos) => {
+        // 上: 1枚目が一番上 / 下: 1枚目から順に下へ（最後に選んだカードが一番下）
+        const list = pos === 'top' ? _tobOrder.slice().reverse() : _tobOrder.slice();
+        list.forEach((c) => placeFn(c, pos));
+        ctx.renderAll && ctx.renderAll();
+        finishReturnPhase();
+      });
+    };
     function refreshReturnUI() {
       const left = cardEls.filter(e => !e.removed);
+      if (returnTo === 'deck_top_or_bottom' && left.length <= 1) {
+        if (left.length === 1) { _tobOrder.push(left[0].card); removeEntry(left[0]); }
+        _tobFinish();
+        return;
+      }
       if (left.length === 0) { finishReturnPhase(); return; }
       let labelText = '残りカードをデッキに戻す';
       if (returnTo === 'deck_top') labelText += '（タップ順にデッキの上へ積まれます）';
       else if (returnTo === 'deck_choice') labelText += '（好きな順番で：タップした順にデッキの下へ）';
       else if (returnTo === 'deck_bottom') labelText = '残りカードをデッキの下に戻す順番を選んでください（タップした順にデッキの下へ）';
-      else if (returnTo === 'deck_top_or_bottom') labelText += '（タップして上か下を選択）';
+      else if (returnTo === 'deck_top_or_bottom') labelText = '戻す順番を選んでください（タップした順。最後にデッキの上か下かを選びます）';
       stepEl.innerText = labelText;
       clearButtons();
       cardEls.forEach(entry => {
@@ -5699,12 +5719,9 @@ function showDeckOpenUI(opened, step, ctx, callback) {
         entry.wrap.onclick = () => {
           if (entry.removed) return;
           if (returnTo === 'deck_top_or_bottom') {
-            showTopBottomChoice(entry.card, (pos) => {
-              placeFn(entry.card, pos);
-              removeEntry(entry);
-              ctx.renderAll && ctx.renderAll();
-              refreshReturnUI();
-            });
+            _tobOrder.push(entry.card);
+            removeEntry(entry);
+            refreshReturnUI();
           } else if (returnTo === 'deck_top') {
             placeFn(entry.card, 'top');
             removeEntry(entry);
@@ -17683,6 +17700,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         const c = _ngPool.battleArea[idx];
         if (!c) return;
         addBuffDirect(c, 'negate_trigger', _ngTriggerKey, _ngDur, ctx);
+        // オンラインで相手のデジモンなら、持ち主の端末にも付与する（state_sync は相手のカードを上書きしないため個別に送る）
+        if (_ngIsOpponent && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+          try { window._onlineSendCommand({ type: 'fx_remoteBuff', targetIdx: idx, targetName: c.name, buffType: 'negate_trigger', value: _ngTriggerKey, duration: _ngDur, appliedFromSender: 'player', appliedDuringOwnTurn: !!(ctx.bs && ctx.bs.isPlayerTurn) }); } catch (_) {}
+        }
         // same_target（alt_actionsのdp_minus等が同一対象を再利用する）用に保存
         if (ctx.bs) ctx.bs._lastPickedCard = c;
         ctx.addLog('🚫 「' + c.name + '」の' + _ngLabel + '効果は発揮しない');

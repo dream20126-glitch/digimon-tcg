@@ -206,6 +206,13 @@ function _buildGrantBadges(card) {
   if (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'prevent_unsuspend')) {
     items.push({ label: 'アクティブにならない', color: '#9933ff' });
   }
+  // 「【進化時】効果は発揮しない」等（メディックモン BT26-028 のリンク効果）
+  if (Array.isArray(card.buffs)) {
+    const _ngLbl = { on_evolve: '【進化時】', on_play: '【登場時】', on_attack: '【アタック時】', on_destroy: '【消滅時】' };
+    [...new Set(card.buffs.filter(b => b && b.type === 'negate_trigger').map(b => b.value))].forEach((v) => {
+      items.push({ label: (_ngLbl[v] || v) + '効果を発揮しない', color: '#9933ff' });
+    });
+  }
   if (Array.isArray(card._grantedRecipes) && card._grantedRecipes.length > 0) {
     card._grantedRecipes.forEach((g) => {
       if (g && g.kwFlag) return; // キーワード（上でキーワード名のバッジにしている）
@@ -380,13 +387,16 @@ function renderBattleRows() {
         const _hasPreventUnsuspend = (Array.isArray(card.buffs)
           && card.buffs.some(b => b && b.type === 'prevent_unsuspend'))
           || (_skipFlag && card.suspended);
-        if (card.cantAttack || card.cantBlock || card.cantEvolve || _hasPreventUnsuspend) {
+        // 「【進化時】効果は発揮しない」（negate_trigger）
+        const _hasNegEvo = Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'negate_trigger');
+        if (card.cantAttack || card.cantBlock || card.cantEvolve || _hasPreventUnsuspend || _hasNegEvo) {
           let mark = '';
           if (card.cantAttack && card.cantBlock) mark = '⚔🛡✖';
           else if (card.cantAttack) mark = '⚔✖';
           else if (card.cantBlock) mark = '🛡✖';
           if (card.cantEvolve) mark += '進❌';
           if (_hasPreventUnsuspend) mark += '🔄✖';
+          if (_hasNegEvo) mark += '進時✖';
           html += `<div style="position:absolute;top:1px;right:1px;background:#9933ff;color:#fff;font-size:8px;font-weight:bold;padding:1px 4px;border-radius:3px;border:1px solid #fff;box-shadow:0 0 5px #9933ff;z-index:5;white-space:nowrap;">${mark}</div>`;
         }
 

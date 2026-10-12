@@ -2376,7 +2376,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         }
         // 自分のデジモン/テイマーの進化元・下のカードを破棄したとき（【フラグメント】のコスト等）も、相手の画面に移動演出を出す
         // （盤面は state_sync で同期。以前は相手の画面に何も出ていなかった）
-        else if (edOwner === player && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+        // 3枚以上は下の一覧の演出（_moveBatchIntro → fx_moveBatch）が相手の画面にも出るので、1枚ずつの演出は送らない
+        else if (edOwner === player && discarded.length < 3 && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
           try { window._onlineSendCommand({ type: 'fx_remoteSelfEvoDiscard', targetName: tgt.name, targetCardNo: tgt.cardNo || '', discardedNames: discarded.map(c => c.name || '???') }); } catch (_) {}
         }
         // カード移動演出（1枚ずつ順番に）

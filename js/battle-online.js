@@ -1680,7 +1680,8 @@ function onRemoteCommand(cmd) {
           window._fxCardMove(card, (cmd.targetName || '???') + 'の進化元', 'トラッシュ', showNextFx);
         } else { setTimeout(showNextFx, 500); }
       }
-      if (discardedCards.length > 0) { showNextFx(); }
+      // 3枚以上は相手が一覧の演出（fx_moveBatch）を別に送ってくるので、1枚ずつの演出は出さない
+      if (discardedCards.length > 0 && !((cmd.count || discardedCards.length) >= 3)) { showNextFx(); }
       break;
     }
     case 'fx_battleResult': {

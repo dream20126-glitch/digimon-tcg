@@ -12116,6 +12116,37 @@ function _cardHasDescriptionText(card, text) {
     .some(f => String(f || '').includes(text));
 }
 
+// 回数制限（【ターンに1回】等）のある効果の、このターンの使用状況（盤面のマーク・カード詳細の表示用）。
+// card: 場のカード（一番上）。sourceCard: 進化元のカード（進化元効果を見るとき。省略時は card 自身の効果）。
+// 戻り値: { total: 回数制限のある効果の数, used: 上限まで使った数 } / 回数制限のある効果が無ければ null
+export function getLimitUsage(card, sourceCard) {
+  const src = sourceCard || card;
+  if (!card || !src || !src.recipe) return null;
+  const isEvo = !!sourceCard && sourceCard !== card;
+  if (isEvo && sourceCard._faceDown) return null; // 裏向きの進化元は効果を持たない
+  let r = null;
+  try { r = typeof src.recipe === 'string' ? JSON.parse(src.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : src.recipe; } catch (_) { return null; }
+  const sec = isEvo ? (r && r.evo_source) : r;
+  if (!sec || typeof sec !== 'object') return null;
+  const bs = (typeof window !== 'undefined') ? window._lastBattleState : null;
+  const usedMap = (bs && bs._usedLimits) || {};
+  let total = 0, used = 0;
+  Object.keys(sec).forEach((k) => {
+    if (k === 'evo_source' || k === 'passive') return;
+    const arr = sec[k];
+    if (!Array.isArray(arr)) return;
+    arr.forEach((st) => {
+      const mx = getLimitMaxUses(st);
+      if (!mx) return;
+      total++;
+      const key = isEvo ? _evoSourceLimitKey(sourceCard, st) : _stepLimitKey(card, card, st);
+      if ((usedMap[key] || 0) >= mx) used++;
+    });
+  });
+  return total > 0 ? { total, used } : null;
+}
+if (typeof window !== 'undefined') window._getLimitUsage = getLimitUsage;
+
 function getLimitMaxUses(step) {
   const l = String((step && step.limit) || '');
   if (l === 'once_per_turn' || l === 'limit_once_per_turn') return 1;

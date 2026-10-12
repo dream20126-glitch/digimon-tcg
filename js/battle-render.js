@@ -368,6 +368,13 @@ function renderBattleRows() {
         }
 
         // 付与効果インジケータ（grant_effect で得た効果。ヘブンズリッパー等）
+        // 【ターンに1回】等の効果をこのターン使った（本体・進化元のどれか）→「✅済」（自分のカードのみ。相手のカードの使用状況は相手の端末にある）
+        if (isPlayer && typeof window._getLimitUsage === 'function') {
+          const _lu = [window._getLimitUsage(card)].concat((card.stack || []).map(s => window._getLimitUsage(card, s))).filter(Boolean);
+          if (_lu.some(u => u.used > 0)) {
+            html += '<div title="【ターンに1回】の効果をこのターン使用済み" style="position:absolute;bottom:14px;right:2px;background:rgba(0,120,60,0.92);color:#fff;font-size:7px;font-weight:bold;padding:1px 3px;border-radius:2px;z-index:5;box-shadow:0 0 4px #00ff88;">✅済</div>';
+          }
+        }
         if (Array.isArray(card._grantedRecipes) && card._grantedRecipes.some(g => g && !g.kwFlag)) {
           html += `<div style="position:absolute;top:14px;left:2px;background:rgba(192,132,252,0.92);color:#fff;font-size:6px;font-weight:bold;padding:1px 3px;border-radius:2px;z-index:5;box-shadow:0 0 5px #c084fc;">付与効果</div>`;
         }
@@ -1499,6 +1506,35 @@ export function showBCD(idxOrCard, source) {
     grantEl.style.display = 'flex';
   } else {
     grantEl.style.display = 'none';
+  }
+
+  // 【ターンに1回】等の回数制限がある効果の、このターンの使用状況（自分の場のカードのみ）
+  let limitEl = document.getElementById('bcd-limits');
+  if (!limitEl) {
+    limitEl = document.createElement('div');
+    limitEl.id = 'bcd-limits';
+    limitEl.style.cssText = 'margin:6px 0;display:flex;flex-wrap:wrap;gap:4px;align-items:center;';
+    grantEl.parentNode.insertBefore(limitEl, grantEl.nextSibling);
+  }
+  {
+    const _onMyField = !!(bs.player && ((bs.player.battleArea || []).includes(card) || (bs.player.tamerArea || []).includes(card)));
+    const _items = [];
+    if (_onMyField && typeof window._getLimitUsage === 'function') {
+      const _me = window._getLimitUsage(card);
+      if (_me) _items.push({ name: card.name, evo: false, u: _me });
+      (card.stack || []).forEach((s) => { const u = window._getLimitUsage(card, s); if (u) _items.push({ name: s.name, evo: true, u }); });
+    }
+    if (_items.length > 0) {
+      limitEl.innerHTML = '<div style="width:100%;color:#00ff88;font-size:10px;font-weight:bold;margin-bottom:2px;">🔁 【ターンに1回】の効果（このターン）</div>'
+        + _items.map((it) => {
+          const done = it.u.used >= it.u.total;
+          const label = (done ? '✅ ' : (it.u.used > 0 ? '◐ ' : '⬜ ')) + (it.evo ? '進化元「' : '「') + it.name + '」' + (done ? '使用済み' : (it.u.used > 0 ? '一部使用済み' : 'まだ使える'));
+          return '<span style="background:' + (done ? '#0a5a32' : '#333') + ';color:#fff;font-size:10px;font-weight:bold;padding:2px 6px;border-radius:3px;border:1px solid ' + (done ? '#00ff88' : '#666') + ';white-space:nowrap;">' + label + '</span>';
+        }).join('');
+      limitEl.style.display = 'flex';
+    } else {
+      limitEl.style.display = 'none';
+    }
   }
 
   // リンクコスト（リンク可能なカードのみ表示。カード一覧の「リンク条件」「リンクDP」を反映）

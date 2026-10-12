@@ -8332,6 +8332,10 @@ function checkPendingDestroys(ctx, callback) {
   orderedSides.forEach(side => {
     const area = ctx.bs[side].battleArea;
     for (let i = 0; i < area.length; i++) {
+      // 「消滅予定」の印は DP0 以下になったときに付く。今の DP が 0 より大きければ（DP+ で戻った・一度トラッシュに
+      // 行ってから再登場した等）印を外して消滅させない（セブンコードPAD でトラッシュから再登場したロープレモンが、
+      // 前に DP0 で付いた印のせいでまた消滅していた）
+      if (area[i] && area[i]._pendingDestroy && (parseInt(area[i].dp, 10) || 0) > 0) { area[i]._pendingDestroy = false; delete area[i]._dp0RequestSent; }
       if (area[i] && area[i]._pendingDestroy) {
         // 消滅の処理中（演出・「離れるとき」の確認中）のカードは、その途中で走った別の判定では扱わない
         // （【デコード】で登場したプルートモンの【登場時】の前の判定で、ゾンビプルートモンを二重に消滅させていた）
@@ -12877,6 +12881,9 @@ function _summonCardFromEffect(c, ctx, opts, done) {
   // アルゴモン(BT2-047)「レスト状態で登場できる」等、レスト状態での登場を
   // 指定できるようにする（enterSuspended）。省略時は従来通り活動状態で登場
   c.summonedThisTurn = true; c.suspended = !!opts.enterSuspended; c.buffs = []; c.stack = []; c._grantedRecipes = [];
+  // 前に場にいたときの状態（DP0 の「消滅予定」の印・DP 修正）を持ち越さない（トラッシュから再登場したカード）
+  c._pendingDestroy = false; delete c._dp0RequestSent; delete c._destroyInProgress;
+  c.dpModifier = 0; if (c.baseDp != null) c.dp = c.baseDp;
   // skipOnPlay 指定時は登場時効果を発動しない
   if (opts.skipOnPlay) {
     c._skipOnPlayEffect = true;

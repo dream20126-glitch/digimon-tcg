@@ -15952,8 +15952,13 @@ function executeRecipeStep(step, ctx, store, callback) {
       const applyFlagsTo = (tgt) => {
         if (!tgt) return;
         flags.forEach((f) => addBuffDirect(tgt, 'keyword_' + f, 0, dur, ctx));
-        ctx.addLog('🛡 「' + tgt.name + '」は' + causeJp + '消滅しない');
-        if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, causeJp + '消滅しない'); } catch(_) {}
+        // 「消滅するとき、〜することで消滅しない」（【フラグメント】等の置換効果）は消滅耐性を得るのではなく、この消滅を回避するだけ
+        const _cdTrig2 = ctx.block && ctx.block.trigger && ctx.block.trigger.code;
+        const _cdReplace2 = _cdTrig2 === 'when_destroy' || _cdTrig2 === 'when_battle_destroy' || step._kwFlag === 'fragment';
+        const _cdKw2 = step._kwFlag ? (_keywordJpName(step._kwFlag) || '') : '';
+        const _cdLabel = _cdReplace2 ? '消滅回避' + (_cdKw2 ? '（' + _cdKw2 + '）' : '') : causeJp + '消滅しない';
+        ctx.addLog('🛡 「' + tgt.name + '」は' + _cdLabel);
+        if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, _cdLabel); } catch(_) {}
       };
       const tStr = step.target || '';
       const isOwnSelect = (tStr.startsWith('own:') && !['own:all'].includes(tStr));
@@ -16026,7 +16031,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         addBuffDirect(tgt, 'keyword_prevent_battle_destroy', 0, dur, ctx);
         // 「消滅するとき、〜することで消滅しない」（【フラグメント】等の置換効果）はこの消滅を防ぐだけ
         const _cdTrig = ctx.block && ctx.block.trigger && ctx.block.trigger.code;
-        ctx.addLog(_cdTrig === 'when_destroy' || _cdTrig === 'when_battle_destroy' ? '🛡 「' + tgt.name + '」は消滅しない（この消滅を回避）' : '🛡 「' + tgt.name + '」はバトルでも効果でも消滅しない');
+        // 消滅耐性を得るのではなく、この消滅を回避しただけ →「消滅回避（フラグメント）」
+        const _cdReplace = _cdTrig === 'when_destroy' || _cdTrig === 'when_battle_destroy' || step._kwFlag === 'fragment';
+        const _cdKw = step._kwFlag ? (_keywordJpName(step._kwFlag) || '') : '';
+        ctx.addLog(_cdReplace ? '🛡 「' + tgt.name + '」は消滅回避' + (_cdKw ? '（' + _cdKw + '）' : '') : '🛡 「' + tgt.name + '」はバトルでも効果でも消滅しない');
       }
       callback();
       break;

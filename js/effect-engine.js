@@ -2374,6 +2374,11 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names, targetIdx: tgtIdx, count: discarded.length, fromTop: action.code === 'evo_discard_top' });
           if (window._markEvoModified) window._markEvoModified('ai', tgtIdx);
         }
+        // 自分のデジモン/テイマーの進化元・下のカードを破棄したとき（【フラグメント】のコスト等）も、相手の画面に移動演出を出す
+        // （盤面は state_sync で同期。以前は相手の画面に何も出ていなかった）
+        else if (edOwner === player && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+          try { window._onlineSendCommand({ type: 'fx_remoteSelfEvoDiscard', targetName: tgt.name, targetCardNo: tgt.cardNo || '', discardedNames: discarded.map(c => c.name || '???') }); } catch (_) {}
+        }
         // カード移動演出（1枚ずつ順番に）
         let idx = 0;
         function showNextDiscard() {

@@ -1501,34 +1501,15 @@ export function showBCD(idxOrCard, source) {
     grantEl.style.display = 'none';
   }
 
-  // 【ターンに1回】等の回数制限がある効果の、このターンの使用状況（自分の場のカードのみ）
-  let limitEl = document.getElementById('bcd-limits');
-  if (!limitEl) {
-    limitEl = document.createElement('div');
-    limitEl.id = 'bcd-limits';
-    limitEl.style.cssText = 'margin:6px 0;display:flex;flex-wrap:wrap;gap:4px;align-items:center;';
-    grantEl.parentNode.insertBefore(limitEl, grantEl.nextSibling);
-  }
-  {
-    const _onMyField = !!(bs.player && ((bs.player.battleArea || []).includes(card) || (bs.player.tamerArea || []).includes(card)));
-    const _items = [];
-    if (_onMyField && typeof window._getLimitUsage === 'function') {
-      const _me = window._getLimitUsage(card);
-      if (_me) _items.push({ name: card.name, evo: false, u: _me });
-      (card.stack || []).forEach((s) => { const u = window._getLimitUsage(card, s); if (u) _items.push({ name: s.name, evo: true, u }); });
-    }
-    if (_items.length > 0) {
-      limitEl.innerHTML = '<div style="width:100%;color:#00ff88;font-size:10px;font-weight:bold;margin-bottom:2px;">🔁 【ターンに1回】の効果（このターン）</div>'
-        + _items.map((it) => {
-          const done = it.u.used >= it.u.total;
-          const label = (done ? '✅ ' : (it.u.used > 0 ? '◐ ' : '⬜ ')) + (it.evo ? '進化元「' : '「') + it.name + '」' + (done ? '使用済み' : (it.u.used > 0 ? '一部使用済み' : 'まだ使える'));
-          return '<span style="background:' + (done ? '#0a5a32' : '#333') + ';color:#fff;font-size:10px;font-weight:bold;padding:2px 6px;border-radius:3px;border:1px solid ' + (done ? '#00ff88' : '#666') + ';white-space:nowrap;">' + label + '</span>';
-        }).join('');
-      limitEl.style.display = 'flex';
-    } else {
-      limitEl.style.display = 'none';
-    }
-  }
+  // 【ターンに1回】等の効果をこのターン使っていたら、効果テキストの【ターンに1回】の横に ✅ を付ける（自分の場のカードのみ。
+  // 相手のカードの使用状況は相手の端末にある）
+  const _onMyFieldLm = !!(bs.player && ((bs.player.battleArea || []).includes(card) || (bs.player.tamerArea || []).includes(card)));
+  const _limitUsed = (src) => {
+    if (!_onMyFieldLm || typeof window._getLimitUsage !== 'function') return false;
+    const u = src ? window._getLimitUsage(card, src) : window._getLimitUsage(card);
+    return !!(u && u.used > 0);
+  };
+  const _markLimit = (text, used) => used ? String(text).replace(/【ターンに(\d+)回】/g, '【ターンに$1回】✅') : text;
 
   // リンクコスト（リンク可能なカードのみ表示。カード一覧の「リンク条件」「リンクDP」を反映）
   let linkCostEl = document.getElementById('bcd-link-cost');
@@ -1549,7 +1530,7 @@ export function showBCD(idxOrCard, source) {
   // 効果
   const effectEl = document.getElementById('bcd-effect');
   effectEl.innerHTML = card.effect && card.effect !== 'なし'
-    ? '<div style="color:var(--main-cyan);font-size:10px;margin-bottom:4px;font-weight:bold;">効果</div>' + card.effect
+    ? '<div style="color:var(--main-cyan);font-size:10px;margin-bottom:4px;font-weight:bold;">効果</div>' + _markLimit(card.effect, _limitUsed(null))
     : '<span style="color:#555;">効果なし</span>';
 
   // 進化元効果（タイプにより表示ラベルが変わる: デュアル=オプション効果/リンク=リンク効果）
@@ -1619,7 +1600,7 @@ export function showBCD(idxOrCard, source) {
         const sLabel = evoSourceEffectLabel(s);
         stackHtml += '<div id="bcd-evo-source-stack-' + idForDom + '" style="margin-top:6px;border-top:1px solid #222;padding-top:4px;">'
           + '<div style="color:#ffaa00;font-size:9px;margin-bottom:2px;">' + sLabel + ': ' + s.name + ' (Lv.' + (s.level || '?') + ')</div>'
-          + '<div style="font-size:10px;color:' + (hasEvo ? '#ddd' : '#555') + ';">' + (hasEvo ? s.evoSourceEffect : 'なし') + '</div></div>';
+          + '<div style="font-size:10px;color:' + (hasEvo ? '#ddd' : '#555') + ';">' + (hasEvo ? _markLimit(s.evoSourceEffect, _limitUsed(s)) : 'なし') + '</div></div>';
       });
       stackHtml += '</div>';
       evoHtml += stackHtml;
@@ -1645,7 +1626,7 @@ export function showBCD(idxOrCard, source) {
             + (sImg ? '<img src="' + sImg + '" style="width:56px;border-radius:4px;flex:none;">' : '')
             + '<div style="min-width:0;font-size:11px;line-height:1.6;"><div style="color:#fff;font-weight:bold;font-size:12px;">' + _esc(s.name) + '（Lv.' + _esc(s.level || '?') + '）' + (s._faceDown ? _fdTag : '') + '</div>'
             + '<div style="color:#ffaa00;font-size:10px;">' + evoSourceEffectLabel(s) + '</div>'
-            + '<div style="color:' + (hasEvo ? '#ddd' : '#555') + ';">' + (hasEvo ? s.evoSourceEffect : 'なし') + '</div></div></div></div>';
+            + '<div style="color:' + (hasEvo ? '#ddd' : '#555') + ';">' + (hasEvo ? _markLimit(s.evoSourceEffect, _limitUsed(s)) : 'なし') + '</div></div></div></div>';
         }).join('') + '</div>'
         + '<div style="margin:12px 0;"><button type="button" id="bcd-evo-back" style="background:#111;color:#00fbff;border:1px solid #00fbff;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:bold;cursor:pointer;">← 戻る</button></div>';
       evoHtml += '<button type="button" id="bcd-evo-stack-toggle" style="display:block;margin:8px auto 0;background:#111;color:#00fbff;border:1px solid #00fbff;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:bold;cursor:pointer;">進化元を確認する（' + _n + '枚）</button>';

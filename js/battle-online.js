@@ -867,7 +867,12 @@ function onRemoteCommand(cmd) {
           sendStateSync();
           sendCommand({ type: 'security_effect_done', memory: bs.memory, returnToHand: !!secCard._returnToHand });
         };
-        const hasUseMain = secCard.recipe && typeof secCard.recipe === 'string' && secCard.recipe.includes('use_main_effect');
+        // レシピのセキュリティ効果が use_main_effect（【メイン】を発揮）なら、上の 'security' で既に【メイン】を発揮済み。
+        // レシピは文字列のことも、読み込み済みのオブジェクトのこともある（オブジェクトのとき判定できず、トレーマニュアル
+        // BT26-099 の【メイン】がセキュリティから2回発揮されデッキオープンが2回になっていた）
+        const hasUseMain = !!secCard.recipe && (typeof secCard.recipe === 'string'
+          ? secCard.recipe.includes('use_main_effect')
+          : (() => { try { return JSON.stringify(secCard.recipe).includes('use_main_effect'); } catch (_) { return false; } })());
         if (mentionsMain && originalEffect.includes('【メイン】') && !hasUseMain) {
           secCard.effect = originalEffect;
           if (_modules.checkTurnStartEffects) {

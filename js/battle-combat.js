@@ -4547,6 +4547,10 @@ export function showBattleResult(text, color, sub, callback, oppText, oppColor) 
 // ----- 消滅演出 -----
 
 export function showDestroyEffect(card, callback) {
+  // 1つの効果でまとめて消滅させている間（window._destroyFxBatch）は1体ずつの演出を出さず、
+  // 最後に「以下のN体が消滅」の一括演出（showDestroyBatch）で見せる
+  const _batch = (typeof window !== 'undefined') ? window._destroyFxBatch : null;
+  if (_batch && card) { _batch.gone.push(card); callback && callback(); return; }
   if (_onlineMode && _sendCommand && !window._suppressFxSend) _sendCommand({ type: 'fx_destroy', cardName: card.name, cardImg: cardImg(card) });
   const overlay = document.getElementById('destroy-overlay');
   if (!overlay) { callback && callback(); return; }
@@ -4590,6 +4594,42 @@ export function showDestroyEffect(card, callback) {
     imgEl.style.animation = 'destroyExplode 0.8s ease forwards';
   }, 700);
   setTimeout(() => { overlay.style.display = 'none'; imgEl.style.animation = ''; flashEl.style.animation = ''; callback && callback(); }, 1900);
+}
+
+// ----- 複数体の一括消滅演出 -----
+// 「〜全てを消滅させる」等で2体以上が消滅したとき、1体ずつではなく一覧で1回だけ見せる（時短）。
+// cards: [{name, imgSrc}] / opts.remote: 相手から受信した表示（送り返さない）
+export function showDestroyBatch(cards, callback, opts) {
+  opts = opts || {};
+  const list = (cards || []).filter(Boolean);
+  if (list.length === 0) { callback && callback(); return; }
+  if (!opts.remote && _onlineMode && _sendCommand && !window._suppressFxSend) {
+    _sendCommand({ type: 'fx_destroyBatch', cards: list.map(c => ({ name: c.name || '', imgSrc: cardImg(c) || '' })) });
+  }
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:66000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px;pointer-events:none;';
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#ff4444;font-size:clamp(1rem,4.5vw,1.4rem);font-weight:900;letter-spacing:2px;text-shadow:0 0 16px #ff4444;';
+  title.innerText = '💥 以下の' + list.length + '体が消滅';
+  overlay.appendChild(title);
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:92vw;';
+  const w = list.length > 6 ? 56 : 72;
+  const cells = list.map((c) => {
+    const cell = document.createElement('div');
+    cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;width:' + w + 'px;';
+    const src = c.imgSrc && !/^https?:/.test(String(c.name)) ? (cardImg(c) || c.imgSrc) : cardImg(c);
+    cell.innerHTML = '<div class="_dbimg" style="width:' + w + 'px;height:' + Math.round(w * 1.4) + 'px;border-radius:5px;overflow:hidden;border:2px solid #ff4444;box-shadow:0 0 10px #ff444488;">'
+      + (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#ff4444;font-size:9px;padding:4px;">' + (c.name || '') + '</div>') + '</div>'
+      + '<div style="color:#fff;font-size:9px;text-align:center;line-height:1.2;max-width:' + w + 'px;overflow:hidden;">' + (c.name || '') + '</div>';
+    grid.appendChild(cell);
+    return cell;
+  });
+  overlay.appendChild(grid);
+  document.body.appendChild(overlay);
+  setTimeout(() => { cells.forEach(cell => { const im = cell.querySelector('._dbimg'); if (im) im.style.animation = 'destroyShake 0.6s ease'; }); }, 300);
+  setTimeout(() => { cells.forEach(cell => { const im = cell.querySelector('._dbimg'); if (im) { im.style.transition = 'all 0.5s ease'; im.style.opacity = '0'; im.style.transform = 'scale(1.3)'; im.style.filter = 'brightness(3)'; } }); }, 1000);
+  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 1800);
 }
 
 // ----- ダイレクトアタック演出 -----

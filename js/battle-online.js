@@ -1683,6 +1683,11 @@ function onRemoteCommand(cmd) {
       if (m.showDestroyEffect) enqueueFx((done) => m.showDestroyEffect({ name: cmd.cardName, imgSrc: cmd.cardImg }, done));
       break;
     }
+    case 'fx_destroyBatch': {
+      // 相手の効果で2体以上がまとめて消滅 → 一覧で1回だけ演出
+      if (typeof window._showDestroyBatch === 'function') enqueueFx((done) => window._showDestroyBatch(cmd.cards || [], done, { remote: true }));
+      break;
+    }
     case 'fx_securityCheck': {
       // ブロック待ちオーバーレイがあれば先に消す（BLOCK!演出が見えるように）
       const blockWait = document.getElementById('_block-wait-overlay');

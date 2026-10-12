@@ -8314,11 +8314,32 @@ function checkPendingDestroys(ctx, callback) {
     || ((c, cb) => cb && cb()); // フォールバック: 演出なし
 
   // 2) 1枚ずつ処理: 演出 → trash 移動 → on_destroy
+  // 2体以上が同時に消滅する（「相手のデジモン全てをDP-」でDP0になった等）ときは、全員を場から外してから
+  // 「以下のN体が消滅」の一括演出を1回だけ出し、その後に消滅時効果を順に発揮する（時短）
+  const _pdBatch = (pending.length >= 2 && typeof window !== 'undefined' && typeof window._showDestroyBatch === 'function' && !window._destroyFxBatch)
+    ? { gone: [], chains: [] } : null;
+  const _pdShow = _pdBatch ? ((c, cb) => { _pdBatch.gone.push(c); cb && cb(); }) : showDE;
   let idx = 0;
   function processNext() {
     // 消滅の処理中に積まれた「〜したとき」の反応（【デコード】で登場したカードのコストで手札を破棄した→
     // 「手札が破棄されたとき」等）も、ここで処理してから終える（以前は次の判定まで取り残されていた）
-    if (idx >= pending.length) { _drainPendingReactionsOnly(ctx, callback); return; }
+    if (idx >= pending.length) {
+      if (_pdBatch) {
+        const chains = _pdBatch.chains.splice(0);
+        const runChains = () => {
+          const f = chains.shift();
+          if (!f) { _drainPendingReactionsOnly(ctx, callback); return; }
+          try { f(runChains); } catch (e) { console.error('[destroy batch chain]', e); runChains(); }
+        };
+        const g = _pdBatch.gone.splice(0);
+        if (g.length >= 2) { window._showDestroyBatch(g, runChains); return; }
+        if (g.length === 1) { showDE(g[0], runChains); return; }
+        runChains();
+        return;
+      }
+      _drainPendingReactionsOnly(ctx, callback);
+      return;
+    }
     const { side, slot, card } = pending[idx++];
     card._destroyInProgress = true;
     // 「離れるとき」（離れない置換）を先に確認し、離れることが決まってから消滅演出を出す
@@ -8331,7 +8352,7 @@ function checkPendingDestroys(ctx, callback) {
       tryCancelViaLeaveBattle(card, side, ctx.bs, ctxBase, (canceled) => {
         delete card._destroyInProgress;
         if (canceled) { processNext(); return; }
-      showDE(card, () => {
+      _pdShow(card, () => {
       // 削除（演出後に実際に消滅）
       if (ctx.bs[side].battleArea[slot] === card) {
         ctx.bs[side].battleArea[slot] = null;
@@ -8369,6 +8390,12 @@ function checkPendingDestroys(ctx, callback) {
           ctx.bs._lastDestroyCause = _cause;
           fireDestroyChain(card, side, ctx.bs, ctx, done);
         }, ctx, '「' + card.name + '」の消滅時の効果', { card, side, trigger: 'on_destroy' });
+        processNext();
+        return;
+      }
+      if (_pdBatch) {
+        const _cause2 = ctx.bs._lastDestroyCause;
+        _pdBatch.chains.push((d) => { ctx.bs._lastDestroyCause = _cause2; fireDestroyChain(card, side, ctx.bs, ctx, d); });
         processNext();
         return;
       }
@@ -12519,8 +12546,30 @@ function _inlineCostConfirmText(step, fullText) {
   return i >= 0 ? t.slice(i) : t;
 }
 
+// 1つのステップ（「〜全てを消滅させる」・targets で複数の対象グループを持つ消滅等）で消滅したカードの演出をまとめる。
+// 実行中は showDestroyEffect が1体ずつの演出を出さずに記録し（window._destroyFxBatch）、終わったら
+// 2体以上なら一括演出（showDestroyBatch）、1体ならいつもの演出を出す。入れ子のときは一番外側でまとめる
+function _withDestroyFxBatch(run, done) {
+  if (typeof window === 'undefined' || typeof window._showDestroyBatch !== 'function' || window._destroyFxBatch) { run(done); return; }
+  const batch = { gone: [] };
+  window._destroyFxBatch = batch;
+  run((...a) => {
+    if (window._destroyFxBatch === batch) delete window._destroyFxBatch;
+    const fin = () => done && done(...a);
+    if (batch.gone.length >= 2) { window._showDestroyBatch(batch.gone, fin); return; }
+    if (batch.gone.length === 1) {
+      const one = (window._fxAnimFns && window._fxAnimFns.showDestroyEffect) || window.showDestroyEffect;
+      if (typeof one === 'function') { one(batch.gone[0], fin); return; }
+    }
+    fin();
+  });
+}
+if (typeof window !== 'undefined') window._withDestroyFxBatch = _withDestroyFxBatch;
+
 function runRecipe(steps, ctx, callback) {
   const store = {}; // ステップ間データ受け渡し用
+  // 各ステップの消滅演出をまとめて出す（_withDestroyFxBatch）
+  const _execStep = (st, cb) => _withDestroyFxBatch((k) => executeRecipeStep(st, ctx, store, k), cb);
   let idx = 0;
   // 前回のレシピ実行で残った _lastAttemptedTarget（same_targetフォールバック用）を
   // 持ち越さないようここでリセットする（無関係な過去の効果を誤って参照しないため）
@@ -12557,7 +12606,7 @@ function runRecipe(steps, ctx, callback) {
       ctx._inlineCostConfirm._afterShown = true;
       const _afterText = _inlineCostConfirmText(null, ctx._inlineCostConfirm.text);
       if (!hasNoAnnounceOverride(steps)) {
-        showEffectAnnounce(ctx.card, _afterText, ctx.side, () => executeRecipeStep(step, ctx, store, nextStep), ctx._inlineCostConfirm.evoSourceCard);
+        showEffectAnnounce(ctx.card, _afterText, ctx.side, () => _execStep(step, nextStep), ctx._inlineCostConfirm.evoSourceCard);
         return;
       }
     }
@@ -12567,7 +12616,7 @@ function runRecipe(steps, ctx, callback) {
       const _isCpu = ctx.side === 'ai' && !(window._isOnlineMode && window._isOnlineMode());
       if (ctx.side === 'player') {
         showConfirmDialog(ctx.card, _askText, (accepted) => {
-          if (accepted) { executeRecipeStep(step, ctx, store, nextStep); return; }
+          if (accepted) { _execStep(step, nextStep); return; }
           ctx.addLog && ctx.addLog('☓ 「' + (ctx.card ? ctx.card.name : '?') + (_icLead && idx === 1 ? '」の任意の効果は使わなかった' : '」の「その後」以降の効果は発動しなかった'));
           if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
             window._onlineSendCommand({ type: 'fx_effectDeclined', cardName: ctx.card ? ctx.card.name : '' });
@@ -12576,9 +12625,9 @@ function runRecipe(steps, ctx, callback) {
         }, ctx._inlineCostConfirm.evoSourceCard);
         return;
       }
-      if (_isCpu) { executeRecipeStep(step, ctx, store, nextStep); return; } // CPU の任意効果は自動で使う（従来と同じ慣例）
+      if (_isCpu) { _execStep(step, nextStep); return; } // CPU の任意効果は自動で使う（従来と同じ慣例）
     }
-    executeRecipeStep(step, ctx, store, nextStep);
+    _execStep(step, nextStep);
   }
   nextStep();
 }

@@ -715,7 +715,7 @@ export function onEndTurn() {
     });
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
-      bs.isPlayerTurn = false; bs._oppPhase = null;
+      bs.isPlayerTurn = false; bs._oppPhase = null; bs._usedLimits = {}; // 【ターンに1回】等の使用回数は相手のターンになったらリセット（オンラインでは相手のターン開始で自分の分がリセットされていなかった）
       // ターン中アタック回数のリセット
       bs._currentTurnAttackCount = 0;
       bs._evolveCountThisTurn = 0;
@@ -754,7 +754,7 @@ export function onEndTurn() {
     _processBurstEvolvePendingDiscard(bs, 'player');
     renderAll();
     showYourTurn('自分のターン終了', '', '#555555', () => {
-      bs.isPlayerTurn = false; bs._oppPhase = null;
+      bs.isPlayerTurn = false; bs._oppPhase = null; bs._usedLimits = {}; // 【ターンに1回】等の使用回数は相手のターンになったらリセット（オンラインでは相手のターン開始で自分の分がリセットされていなかった）
       setTimeout(() => aiTurn(), 500);
     });
   });
@@ -827,7 +827,7 @@ export function checkAutoTurnEnd() {
   _waitIdleAuto(() => showYourTurn('自分のターン終了', '', '#555555', () => {
   _hooks.checkTurnEndEffects(() => _waitIdleAuto(async () => {
     bs._autoTurnEnding = false;
-    bs.isPlayerTurn = false; bs._oppPhase = null;
+    bs.isPlayerTurn = false; bs._oppPhase = null; bs._usedLimits = {}; // 【ターンに1回】等の使用回数は相手のターンになったらリセット（オンラインでは相手のターン開始で自分の分がリセットされていなかった）
     // プレイヤーのターン終了
     _hooks.expireBuffs('dur_this_turn', null, 'player');
     _hooks.expireBuffs('dur_next_opp_turn', null, 'player');

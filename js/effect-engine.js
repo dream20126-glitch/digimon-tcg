@@ -3370,10 +3370,16 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // ここでも判定する必要がある＝原因を指定しないレシピは両方の消滅で発動する）
   if (hasRecipeTrigger(destroyed, 'when_destroy')) {
     const gateCtx = { bs: ctx.bs, side: _ddSide, card: destroyed, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+    // 「〜することで、消滅しない」（【フラグメント】等の置換効果）で付いた「消滅しない」は、この消滅を防ぐだけ。
+    // 防いだら外す（以前はターン終了まで残り、ゴクモン BT26-077 が【エグゼキュート】の自壊でも消滅しなかった）
+    const _wdBefore = new Set(Array.isArray(destroyed.buffs) ? destroyed.buffs : []);
     triggerEffect('when_destroy', destroyed, _ddSide, gateCtx, () => {
       const prevented = !!(destroyed.buffs && destroyed.buffs.some((b) =>
         b.type === 'keyword_prevent_destroy' || (b.type === 'keyword_prevent_battle_destroy' && causeType === 'battle')
       ));
+      if (Array.isArray(destroyed.buffs)) {
+        destroyed.buffs = destroyed.buffs.filter(b => _wdBefore.has(b) || !(b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_battle_destroy')));
+      }
       if (prevented) {
         ctx.addLog('🛡 「' + destroyed.name + '」はコストを払い消滅を回避！');
         callback && callback();
@@ -10820,9 +10826,17 @@ function _noteDeckIncrease(ctx, side) {
 //    （オンラインでは相手側のカードはこちらで発動させない＝相手機で起きた配置は相手機が処理する）。
 //    発火元（ctx.block._eventSourceCard）と直前選択カードは「置かれた先のデジモン」にする
 //    （【ディレイ】後の same_target / target_trigger_source で「そのデジモン」を参照できるように）
-export function fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, done, placedCards, cause) {
+export function fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, done, placedCards, cause, _deferred) {
   const finish = () => { try { done && done(); } catch (_) {} };
   if (!digi || !bs) { finish(); return; }
+  // 「〜置かれたとき」は「したとき」の反応。効果の処理中（ピッコロモン BT26-043 の「その後、デッキの上から1枚を
+  // 進化元の下に置くことで〜」のコスト等）なら、その効果を全て処理し終えてから発揮する（保留キュー）
+  // （トレーマニュアル BT26-099 の【ディレイ】が、ピッコロモンの効果の途中で割り込んでいた）
+  if (!_deferred && _queueResolveDepth > 0) {
+    enqueueReaction(bs, (cb) => fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, cb, placedCards, cause, true), []);
+    finish();
+    return;
+  }
   const placed = Array.isArray(placedCards) ? placedCards.filter(Boolean) : null;
   const evoZone = (s) => {
     const zi = s && s.zone_increase;
@@ -15950,7 +15964,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
         addBuffDirect(tgt, 'keyword_prevent_destroy', 0, dur, ctx);
         addBuffDirect(tgt, 'keyword_prevent_battle_destroy', 0, dur, ctx);
-        ctx.addLog('🛡 「' + tgt.name + '」はバトルでも効果でも消滅しない');
+        // 「消滅するとき、〜することで消滅しない」（【フラグメント】等の置換効果）はこの消滅を防ぐだけ
+        const _cdTrig = ctx.block && ctx.block.trigger && ctx.block.trigger.code;
+        ctx.addLog(_cdTrig === 'when_destroy' || _cdTrig === 'when_battle_destroy' ? '🛡 「' + tgt.name + '」は消滅しない（この消滅を回避）' : '🛡 「' + tgt.name + '」はバトルでも効果でも消滅しない');
       }
       callback();
       break;
@@ -17854,9 +17870,10 @@ function showEvoSourceSelection(parentCard, evoCards, filter, callback) {
     const _backSrc = (typeof window !== 'undefined' && window._cardBackUrl) || '';
     const _shownSrc = _hide ? _backSrc : imgSrc;
     if (_fd) wrap.style.border = '2px dashed #ffaa00';
-    wrap.innerHTML = '<div style="position:relative;display:inline-block;">'
-      + (_shownSrc ? '<img src="' + _shownSrc + '" style="width:70px;height:98px;object-fit:cover;border-radius:4px;' + (_fd && !_hide ? 'filter:brightness(0.75);' : '') + '">' : '')
-      + (_fd ? '<div style="position:absolute;left:0;right:0;bottom:4px;text-align:center;"><span style="background:#ffaa00;color:#000;font-size:9px;font-weight:bold;padding:1px 5px;border-radius:3px;">裏向き</span></div>' : '')
+    // 画像が無いカードでも枠の大きさを保つ（「裏向き」の印が縦に潰れていた）
+    wrap.innerHTML = '<div style="position:relative;width:70px;height:98px;margin:0 auto;border-radius:4px;overflow:hidden;background:#1a1a1a;">'
+      + (_shownSrc ? '<img src="' + _shownSrc + '" style="width:70px;height:98px;object-fit:cover;display:block;' + (_fd && !_hide ? 'filter:brightness(0.75);' : '') + '">' : '<div style="color:#777;font-size:9px;padding:6px;line-height:1.3;">' + String(evoCard.name || '').replace(/[&<>]/g, '') + '</div>')
+      + (_fd ? '<div style="position:absolute;left:0;right:0;bottom:4px;text-align:center;"><span style="background:#ffaa00;color:#000;font-size:9px;font-weight:bold;padding:1px 5px;border-radius:3px;white-space:nowrap;">裏向き</span></div>' : '')
       + '</div>'
       + '<div style="color:#fff;font-size:10px;margin-top:4px;">' + (_hide ? '裏向きのカード' : evoCard.name) + '</div>'
       + (_hide ? '' : '<div style="color:#aaa;font-size:9px;">Lv.' + (evoCard.level || '?') + ' DP:' + (evoCard.dp || '?') + '</div>');

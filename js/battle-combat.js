@@ -297,9 +297,17 @@ function _runWhenBattleDestroy(side, card, onDestroy, onCancel) {
   const hasWD = _hasRecipeTrigger(card, 'when_destroy');
   if (!hasWBD && !hasWD) { onDestroy(); return; }
   const ctxWBD = _hooks.makeEffectContext(card, side);
-  const checkPrevented = () => !!(card.buffs && card.buffs.some(b =>
-    b.type === 'keyword_prevent_battle_destroy' || b.type === 'keyword_prevent_destroy'
-  ));
+  // 置換効果（「〜することで、消滅しない」）で付いた「消滅しない」は、この消滅を防ぐだけで外す（ターン終了まで残さない）
+  const _wbBefore = new Set(Array.isArray(card.buffs) ? card.buffs : []);
+  const checkPrevented = () => {
+    const prevented = !!(card.buffs && card.buffs.some(b =>
+      b.type === 'keyword_prevent_battle_destroy' || b.type === 'keyword_prevent_destroy'
+    ));
+    if (Array.isArray(card.buffs)) {
+      card.buffs = card.buffs.filter(b => _wbBefore.has(b) || !(b && (b.type === 'keyword_prevent_destroy' || b.type === 'keyword_prevent_battle_destroy')));
+    }
+    return prevented;
+  };
   const finish = () => {
     if (checkPrevented()) {
       addLog('🛡 「' + card.name + '」はコストを払い消滅を回避！');

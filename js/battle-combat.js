@@ -2017,6 +2017,10 @@ export function startAttack(card, slotIdx, callback) {
   // when_opp_rest の解決待ちの間、別の攻撃宣言で状態が競合しないようロックする
   // （resolveAttackTarget 到達時に改めて true になるが、多重にしても問題ない）
   _attackInProgress = true;
+  // アタック（バトル・セキュリティチェック）の消滅演出は、効果の消滅演出のまとめ（window._destroyFxBatch）に入れず
+  // その場で出す。【エグゼキュート】等の効果でアタックしたとき、セキュリティデジモンの消滅演出が
+  // 効果のステップの終わり（アタック終了時の自壊の後）まで後回しになっていた
+  if (typeof window !== 'undefined') window._destroyFxBatch = null;
   // 「レストせずアタックできる」（attack options:without_rest）ならレストしない
   if (!card._attackWithoutRest) card.suspended = true;
   card._attackedOnTurn = bs.turn; // cond_self_attacked 用（このターンにアタックしたか）

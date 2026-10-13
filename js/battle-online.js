@@ -632,6 +632,35 @@ function onRemoteCommand(cmd) {
       if (m.showYourTurn) m.showYourTurn('⚔ 相手アタック！', '「' + atkName2 + '」→「' + defName2 + '」', '#ff4444', () => { checkOnlineBlock(cmd); });
       break;
     }
+    // 相手の効果でこちらのセキュリティのカードが離れた（effect-engine.js _withOppSecuritySync）。
+    // moves: [{ idx（効果の前の上からの位置）, cardNo, name, to: 'trash'|'deck_top'|'deck_bottom'|'hand' }]
+    case 'fx_oppSecurityMoved': {
+      const sec = bs.player.security;
+      const before = sec.slice();
+      const taken = [];
+      (cmd.moves || []).forEach((mv) => {
+        const same = (c) => c && (c.cardNo || '') === (mv.cardNo || '') && (c.name || '') === (mv.name || '');
+        let c = before[mv.idx];
+        if (!same(c) || taken.includes(c)) c = before.find((x) => same(x) && !taken.includes(x)) || null;
+        if (!c) return;
+        taken.push(c);
+        const i = sec.indexOf(c);
+        if (i !== -1) sec.splice(i, 1);
+        delete c._faceUp;
+        if (mv.to === 'trash') bs.player.trash.push(c);
+        else if (mv.to === 'deck_top') bs.player.deck.unshift(c);
+        else if (mv.to === 'deck_bottom') bs.player.deck.push(c);
+        else if (mv.to === 'hand') bs.player.hand.push(c);
+        const toLabel = { trash: 'トラッシュ', deck_top: 'デッキの上', deck_bottom: 'デッキの下', hand: '手札' }[mv.to] || mv.to;
+        addLog('🛡 相手の効果でセキュリティの「' + (c.name || '?') + '」が' + toLabel + 'へ（残り' + sec.length + '枚）');
+      });
+      if (taken.length > 0) {
+        // 持ち主の正しい中身を相手にも送り直す
+        try { sendCommand({ type: 'security_init', cards: sec.map((c) => (window._serializeSecurityCard ? window._serializeSecurityCard(c) : { name: c.name, cardNo: c.cardNo, type: c.type })) }); } catch (_) {}
+        renderAll();
+      }
+      break;
+    }
     case 'security_remove': {
       if (bs.player.security.length > 0) {
         const removed = bs.player.security.splice(0, 1)[0];

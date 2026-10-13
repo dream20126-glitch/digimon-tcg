@@ -12912,10 +12912,51 @@ function _withDestroyFxBatch(run, done) {
 }
 if (typeof window !== 'undefined') window._withDestroyFxBatch = _withDestroyFxBatch;
 
+// ===== オンライン: 自分の効果で相手のセキュリティから離れたカードを、持ち主の端末に伝える =====
+// セキュリティの中身は持ち主の端末が正（相手から security_init で届く）。こちらの効果で相手のセキュリティを
+// 破棄・デッキに戻す・手札に加える等をしても、以前は持ち主の端末に伝わらず、持ち主の画面では元のカードが
+// セキュリティに残っていた（ダンテモン BT26-086 で上から1枚デッキの下に戻したトレーマニュアルが、相手の
+// ユピテルモン：ラースモードの「セキュリティを上から1枚破棄」で破棄された）。アクションごとに送るのではなく、
+// 効果の1ステップの前後で相手のセキュリティを比べ、離れたカードの位置と行き先を fx_oppSecurityMoved で送る
+let _secSyncDepth = 0;
+function _withOppSecuritySync(ctx, run, done) {
+  const online = typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
+  const opp = ctx && ctx.bs && ctx.bs.ai;
+  if (!online || !opp || ctx.side !== 'player' || _secSyncDepth > 0) { run(done); return; }
+  const before = (opp.security || []).slice();
+  const deckBefore = (opp.deck || []).slice();
+  _secSyncDepth++;
+  run((...a) => {
+    _secSyncDepth = Math.max(0, _secSyncDepth - 1);
+    try {
+      const now = opp.security || [];
+      const moves = [];
+      before.forEach((c, idx) => {
+        if (!c || now.includes(c)) return;
+        let to = null;
+        if ((opp.trash || []).includes(c)) to = 'trash';
+        else if ((opp.deck || []).includes(c)) {
+          // デッキの上か下か: 効果の前のデッキと比べる（前が空なら戻した処理の印 _deckReturnPos。無ければ下）
+          if (deckBefore.length === 0) to = c._deckReturnPos === 'top' ? 'deck_top' : 'deck_bottom';
+          else to = opp.deck[0] === c ? 'deck_top' : 'deck_bottom';
+          delete c._deckReturnPos;
+        }
+        else if ((opp.hand || []).includes(c)) to = 'hand';
+        if (!to) return; // 場に出た等（登場の同期は別の命令で届く）
+        moves.push({ idx, cardNo: c.cardNo || '', name: c.name || '', to });
+      });
+      if (moves.length > 0) window._onlineSendCommand({ type: 'fx_oppSecurityMoved', moves });
+    } catch (e) { console.error('[oppSecuritySync]', e); }
+    done && done(...a);
+  });
+}
+
+if (typeof window !== 'undefined') window._serializeSecurityCard = (c) => _serializeSecurityCard(c);
+
 function runRecipe(steps, ctx, callback) {
   const store = {}; // ステップ間データ受け渡し用
-  // 各ステップの消滅演出をまとめて出す（_withDestroyFxBatch）
-  const _execStep = (st, cb) => _withDestroyFxBatch((k) => executeRecipeStep(st, ctx, store, k), cb);
+  // 各ステップの消滅演出をまとめて出す（_withDestroyFxBatch）。相手のセキュリティから離れたカードは持ち主に伝える
+  const _execStep = (st, cb) => _withOppSecuritySync(ctx, (k1) => _withDestroyFxBatch((k) => executeRecipeStep(st, ctx, store, k), k1), cb);
   let idx = 0;
   // 前回のレシピ実行で残った _lastAttemptedTarget（same_targetフォールバック用）を
   // 持ち越さないようここでリセットする（無関係な過去の効果を誤って参照しないため）
@@ -17180,6 +17221,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           entry.remove();
           if (Array.isArray(step.options) && step.options.includes('face_down')) entry.card._faceDown = true;
           if (_rdTop2) _rdOwnerP.deck.unshift(entry.card); else _rdOwnerP.deck.push(entry.card);
+          entry.card._deckReturnPos = _rdTop2 ? 'top' : 'bottom';
           _rdReturnedCount++;
           ctx.addLog('🔄 「' + entry.card.name + '」をデッキの' + (_rdTop2 ? '上' : '下') + 'に戻す');
           ctx.renderAll();

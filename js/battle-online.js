@@ -39,7 +39,9 @@ let _pendingBlockCallback = null;
 let _pendingBlockResponse = null;
 let _pendingSecEffectCallback = null;
 let _pendingSecEffectResponse = null;
-let _pendingReactionDelegateCallback = null;
+// 反応の委譲の完了待ち。2つ以上重なることがあるので順番待ちの列で持つ（以前は1つしか覚えておらず、
+// 2つ目の待ちで1つ目の完了待ちが上書きされ、「相手が効果を確認中」の表示が消えずに残っていた）
+let _reactionDelegateWaiters = [];
 let _pendingReactionDelegateResponse = null;
 let _pendingLeaveBattleDelegateCallback = null; // fx_leaveBattleDelegate の返事待ち（callback(canceled)）
 let _pendingFlushDeferredEvoCallback = null;    // fx_flushDeferredEvo の返事待ち
@@ -376,7 +378,7 @@ export async function initOnline(roomId, myKey) {
   _pendingBlockResponse = null;
   _pendingSecEffectCallback = null;
   _pendingSecEffectResponse = null;
-  _pendingReactionDelegateCallback = null;
+  _reactionDelegateWaiters = [];
   _pendingReactionDelegateResponse = null;
   _pendingLeaveBattleDelegateCallback = null;
   _pendingHandDiscardCallback = null;
@@ -994,8 +996,8 @@ function onRemoteCommand(cmd) {
       // 委譲先でアタック対象が変更されていれば、こちらのアタック解決で差し替える（_consumeRedirectedAttack）
       if (cmd.redirect) bs._redirectedAttack = cmd.redirect;
       // メモリー等の変動は直前に送られる memory_update/state_sync で既に反映されている
-      if (_pendingReactionDelegateCallback) {
-        const cb = _pendingReactionDelegateCallback; _pendingReactionDelegateCallback = null; cb();
+      if (_reactionDelegateWaiters.length > 0) {
+        const cb = _reactionDelegateWaiters.shift(); cb();
       } else {
         // 誰も待っていない状態で届いたack。短い競合状態のためだけの一時フラグなので、
         // 無関係な将来のwaitForReactionDelegate呼び出しを誤って即完了させないよう自動で消す
@@ -1953,12 +1955,13 @@ export function waitForReactionDelegate(callback) {
   if (_pendingReactionDelegateResponse !== null) {
     _pendingReactionDelegateResponse = null; onDone();
   } else {
-    _pendingReactionDelegateCallback = onDone;
+    _reactionDelegateWaiters.push(onDone);
   }
   // 120秒タイムアウト（相手の切断等でackが来ない場合にゲームが止まらないように）。
   // 委譲先ではコストやアタック対象の選択など相手の操作を待つので、30秒では途中で打ち切られることがある
   setTimeout(() => {
-    if (_pendingReactionDelegateCallback === onDone) { _pendingReactionDelegateCallback = null; onDone(); }
+    const _wi = _reactionDelegateWaiters.indexOf(onDone);
+    if (_wi !== -1) { _reactionDelegateWaiters.splice(_wi, 1); onDone(); }
   }, 120000);
 }
 
@@ -2555,7 +2558,7 @@ window._waitRemoteIdle = (cb) => {
   _pendingIdleCheck = { id, finish };
   sendCommand({ type: 'fx_idleCheck', id });
 };
-window._isOnlineWaiting = () => !!(_pendingBlockCallback || _pendingSecEffectCallback || _pendingReactionDelegateCallback
+window._isOnlineWaiting = () => !!(_pendingBlockCallback || _pendingSecEffectCallback || _reactionDelegateWaiters.length > 0
   || _pendingLeaveBattleDelegateCallback || _pendingFlushDeferredEvoCallback || _pendingHandDiscardCallback || _pendingOwnDestroyDoneCallback
   || _pendingBlockBattleDoneCallback);
 // 相手のデジモンが「バトルエリアを離れるとき」: 持ち主（相手）の端末に置換効果の判定を委譲し、

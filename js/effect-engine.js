@@ -13243,7 +13243,11 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
   const waitResolve = /turn_end$/.test(String(trig || ''));
   const isExecute = !!(step && step._executeAttack);
   const declare = (targetType, targetIdx) => {
-    if (opts.preselect) { finish(true, { type: targetType, card: targetType === 'digimon' ? opponent.battleArea[targetIdx] : null }); return; }
+    if (opts.preselect) {
+      const _tc = targetType === 'digimon' ? opponent.battleArea[targetIdx] : null;
+      finish(true, { type: targetType, card: _tc, slot: targetIdx, cardNo: _tc ? _tc.cardNo : null, name: _tc ? _tc.name : null });
+      return;
+    }
     // ≪エグゼキュート≫でのアタック: アタック終了時の消滅（_adjustExecuteSteps）の判定に使う印
     if (isExecute) atkCard._executeAttacking = true;
     // 【自分のターン終了時】の効果（≪急襲≫≪エグゼキュート≫等）でアタックした時点で「ターン終了時」のタイミングは
@@ -13324,8 +13328,22 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
   if (opts.preTarget) {
     const pt = opts.preTarget;
     if (pt.type === 'security' && (opponent.security || []).length > 0) { declare('security', -1); return; }
-    const ti = pt.type === 'digimon' && pt.card ? opponent.battleArea.indexOf(pt.card) : -1;
-    if (ti !== -1 && (pt.card.suspended || isExecute)) { declare('digimon', ti); return; }
+    // オンラインでは相手のカードは同期（state_sync）のたびに作り直されるので、同じカードが無ければ、選んだ位置の
+    // 同じカード番号・名前のカード → 同じカード番号・名前のカード（1枚だけ）の順に探す（以前は作り直されたカードを
+    // 「いなくなった」と判定し、ダンテモンのアタックで対象を選び直していた）
+    let ti = -1;
+    if (pt.type === 'digimon') {
+      const _same = (c) => !!(c && pt.cardNo && c.cardNo === pt.cardNo && c.name === pt.name);
+      ti = pt.card ? opponent.battleArea.indexOf(pt.card) : -1;
+      if (ti === -1 && pt.slot != null && _same(opponent.battleArea[pt.slot])) ti = pt.slot;
+      if (ti === -1) {
+        const _hits = [];
+        opponent.battleArea.forEach((c, i) => { if (_same(c)) _hits.push(i); });
+        if (_hits.length === 1) ti = _hits[0];
+      }
+    }
+    const _tCard = ti !== -1 ? opponent.battleArea[ti] : null;
+    if (_tCard && (_tCard.suspended || isExecute)) { declare('digimon', ti); return; }
     ctx.addLog && ctx.addLog('⚠ 選んでいたアタック対象がいなくなったので、選び直します');
     chooseAndDeclare();
     return;

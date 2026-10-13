@@ -538,6 +538,23 @@ function _carryDedigiState(oldTop, nc) {
 }
 if (typeof window !== 'undefined') window._carryDedigiState = _carryDedigiState;
 
+// テイマー／デジモンの下にカードを置くときの移動演出（自分・相手の両画面）。entries: [{ card, from（'手札'等） }]
+// 裏向きで置くなら裏向きで見せる。手札・デッキから置くカードは相手には裏向き（非公開）
+function _fxPlaceUnder(ctx, entries, toLabel, faceDown, done) {
+  const list = (entries || []).filter(e => e && e.card);
+  if (list.length === 0 || !ctx || ctx.side !== 'player') { done && done(); return; }
+  let i = 0;
+  const next = () => {
+    if (i >= list.length) { done && done(); return; }
+    const e = list[i++];
+    const hidden = e.from === '手札' || e.from === 'デッキ' || e.from === 'セキュリティ';
+    try {
+      _fxMoveSync(ctx, e.card, e.from || '', toLabel, next, { faceDown: !!faceDown || e.from === 'セキュリティ', remoteFaceDown: !!faceDown || hidden });
+    } catch (_) { next(); }
+  };
+  next();
+}
+
 // 1体から上から n 枚を取り除き、残りの一番上を新しい本体にする。取り除いたカード（上から順）を返す。
 // 自分の端末（effect-engine）と相手の端末（battle-online の fx_stackToDeck 受信）の両方で使う
 function _detachTopCards(area, idx, n) {
@@ -16469,13 +16486,16 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (selectedIdx == null) { callback(_putIsCost ? false : undefined); return; }
           const tamer = _putOwner.tamerArea[selectedIdx];
           if (!tamer.stack) tamer.stack = [];
+          // 移動演出の移動元（取り除く前に判定。レオルモン BT26-025 で演出が無かった）
+          const _putFrom = player.hand.includes(cardToPlace) ? '手札' : player.trash.includes(cardToPlace) ? 'トラッシュ'
+            : ((player.security || []).includes(cardToPlace) || (opponent.security || []).includes(cardToPlace)) ? 'セキュリティ' : '';
           if (removeFromSource) removeFromSource();
           if (_putBottom) tamer.stack.push(cardToPlace); else tamer.stack.unshift(cardToPlace);
           if (_putFaceDown) cardToPlace._faceDown = true;
-          ctx.addLog('🃏 「' + tamer.name + '」の下に「' + cardToPlace.name + '」を' + (_putBottom ? '下から' : '') + '置く' + (_putFaceDown ? '（裏向き）' : ''));
+          ctx.addLog('🃏 「' + tamer.name + '」の下に「' + (_putFaceDown ? '裏向きのカード' : cardToPlace.name) + '」を' + (_putBottom ? '下から' : '') + '置く' + (_putFaceDown ? '（裏向き）' : ''));
           ctx.renderAll();
           if (window._isOnlineMode && window._isOnlineMode()) { try { window._onlineSendStateSync(); } catch(_) {} }
-          callback(_putIsCost ? true : undefined);
+          _fxPlaceUnder(ctx, [{ card: cardToPlace, from: _putFrom }], '「' + tamer.name + '」の下', _putFaceDown, () => callback(_putIsCost ? true : undefined));
         };
         if (tamerIdxs.length === 1 || effectiveSide === 'ai') { finishPlace(tamerIdxs[0]); return; }
         // テイマーが複数いれば選ぶ
@@ -16542,6 +16562,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         };
         if (effectiveSide === 'ai') { _putOnPicked([_putCands[0]]); }
         else if (_putCands.length === 1 && !_putOptional && !_putIsCost) { _putOnPicked([_putCands[0]]); }
+        // セキュリティの上（下）から1枚だけが候補なら選ぶ余地が無いので、選択画面は出さない（使うかは効果の
+        // 「発動しますか？」で確認済み。レオルモン BT26-025）。テイマーが複数いるときのテイマー選びは出す
+        else if (_putCands.length === 1 && _putSecCands.length === 1) { _putOnPicked([_putCands[0]]); }
         else { showTrashCardPicker(_putCands, 1, _putOptional || _putIsCost, '🃏 テイマーの下に置くカードを選んでください', _putOnPicked, _putCands); }
         break;
       }
@@ -16995,7 +17018,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _pusFaceDown = Array.isArray(step.options) && step.options.includes('face_down');
       const _pusZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : ['hand']);
       const _pusFilter = step.from_filter || step.filter || null;
-      const _pusPlace = (cards) => {
+      // fromLabels: 各カードの移動元（演出用。沢城キョウ BT26-089 のデッキからテイマーの下で演出が無かった）
+      const _pusPlace = (cards, fromLabels) => {
         if (!host.stack) host.stack = [];
         cards.forEach(c => {
           if (_pusFaceDown) c._faceDown = true; else delete c._faceDown;
@@ -17006,20 +17030,23 @@ function executeRecipeStep(step, ctx, store, callback) {
         ctx.addLog && ctx.addLog('🃏 「' + host.name + '」の下に' + cards.map(c => '「' + (_pusFaceDown ? '裏向きのカード' : c.name) + '」').join('') + 'を置く' + (_pusFaceDown ? '（裏向き）' : ''));
         ctx.renderAll && ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
-        // デジモンの進化元に置いた場合は「進化元が増えたとき」を発火（place_under_digimon と同じ）
-        if (_pusInBattle) {
-          const _cb = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
-          fireWhenEvoSourceIncreaseTriggers(host, ctx.side, ctx.bs, _cb, () => callback(true), cards, { type: 'effect', causerSide: ctx.side, causerCard: ctx.card });
-          return;
-        }
-        callback(true);
+        const _after = () => {
+          // デジモンの進化元に置いた場合は「進化元が増えたとき」を発火（place_under_digimon と同じ）
+          if (_pusInBattle) {
+            const _cb = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+            fireWhenEvoSourceIncreaseTriggers(host, ctx.side, ctx.bs, _cb, () => callback(true), cards, { type: 'effect', causerSide: ctx.side, causerCard: ctx.card });
+            return;
+          }
+          callback(true);
+        };
+        _fxPlaceUnder(ctx, cards.map((c, i) => ({ card: c, from: (fromLabels && fromLabels[i]) || '' })), '「' + host.name + '」の下', _pusFaceDown, _after);
       };
       // デッキから（上/下から value 枚。中身を選ばない）
       if (_pusZones.includes('deck')) {
         const k = Math.min(_pusN, player.deck.length);
         if (k <= 0) { _pusFail('デッキにカードがありません'); break; }
         const taken = step.deck_source_position === 'bottom' ? player.deck.splice(player.deck.length - k, k) : player.deck.splice(0, k);
-        _pusPlace(taken);
+        _pusPlace(taken, taken.map(() => 'デッキ'));
         break;
       }
       // 手札/トラッシュ/セキュリティから（条件に合うカードを選ぶ）
@@ -17047,8 +17074,9 @@ function executeRecipeStep(step, ctx, store, callback) {
           showEffectFailed('効果を発動できませんでした', callback);
           return;
         }
+        const _froms = list.map(c => player.hand.includes(c) ? '手札' : player.trash.includes(c) ? 'トラッシュ' : player.security.includes(c) ? 'セキュリティ' : '');
         list.forEach(_pusRemove);
-        _pusPlace(list);
+        _pusPlace(list, _froms);
       };
       if (effectiveSide === 'ai') { _pusOnPicked(_pusCands.slice(0, _pusWant)); break; }
       if (_pusCands.length <= _pusWant && !_pusOptional && !_pusIsCost) { _pusOnPicked(_pusCands.slice(0, _pusWant)); break; }

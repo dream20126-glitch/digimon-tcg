@@ -1117,18 +1117,21 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
           const labels = distinctBy.map(attr => ASSEMBLY_DISTINCT_LABEL[attr] || attr).join('・');
           title += '（' + (pickedInGroup.length + 1) + '/' + group.wantCount + '枚目・' + labels + 'が異なるカードのみ）';
         }
-        // 残りの候補がちょうど必要な枚数で、名称等が互いに異なる（＝全部使うしかない）なら「全て選択する」を出す。
-        // 選んだカードは最後の「この順番で進化元に入れますか？」で並べて確認する（ダンテモン BT26-086）
-        const _allOk = remaining.length >= 2 && remaining.length === remainingWant
-          && remaining.every((a, i) => remaining.every((b, j) => i === j || !distinctBy.some(attr => {
-            const field = ASSEMBLY_DISTINCT_FIELD[attr];
-            return field && a[field] === b[field];
-          })));
+        // 使うカードが決まっている（＝全部使うしかない）なら「全て選択する」を出す。名称等が異なる指定なら、同名カードは
+        // 1枚にまとめて数え、種類の数がちょうど必要な枚数のとき（同名カードは先頭の1枚を使う）。指定が無ければ候補が
+        // ちょうど必要な枚数のとき。選んだカードは最後の「この順番で進化元に入れますか？」で並べて確認する（ダンテモン BT26-086）
+        const _sameAttr = (a, b) => distinctBy.some(attr => {
+          const field = ASSEMBLY_DISTINCT_FIELD[attr];
+          return field && a[field] === b[field];
+        });
+        const _onePerKind = [];
+        remaining.forEach((c) => { if (!_onePerKind.some(p => _sameAttr(p, c))) _onePerKind.push(c); });
+        const _allOk = remainingWant >= 2 && _onePerKind.length === remainingWant;
         _showTrashCardPicker(remaining, pickCount, false, title, (picked) => {
           if (!picked || picked.length < pickCount) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
           const nextPicked = [...pickedInGroup, ...picked];
           pickWithinGroup(groupIdx, group, nextPicked, remainingWant - pickCount, onGroupDone);
-        }, remaining, _allOk ? { onSelectAll: () => onGroupDone([...pickedInGroup, ...remaining]) } : undefined);
+        }, remaining, _allOk ? { onSelectAll: () => onGroupDone([...pickedInGroup, ..._onePerKind]) } : undefined);
       };
       const pickNext = (idx) => {
         if (idx >= plan.length) { finish(); return; }

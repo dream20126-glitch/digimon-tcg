@@ -17714,18 +17714,21 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _stop = _canStopAny;
           if (_rc.length === 1 && !_stop) { _take(_rc[0]); return; }
           const _list = _rc.map(e => e.card);
-          // 残りの候補が全て一緒に選べる（枚数が上限以内で、名称等が互いに異なる）なら「全て選択する」を出す。
-          // 押したら並べて確認し、決定なら全部リンクする（ダンテモン BT26-086 c2）
-          const _allOk = _rc.length >= 2 && _rc.length <= _linkCount - _linkedNow.length
-            && _rc.every((e, i) => _rc.every((f, j) => i === j || !_linkSameAttr(e.card, f.card, _distinctBy)));
+          // 残りの候補を全て一緒に選べるなら「全て選択する」を出す。名称等が異なる指定なら同名カードは1枚にまとめて数え
+          // （先頭の1枚を使う）、その種類の数がリンクできる残り枚数以内のとき。押したら並べて確認し、決定なら全部リンクする
+          // （ダンテモン BT26-086 c2）
+          const _onePerKind = [];
+          _rc.forEach((e) => { if (!_onePerKind.some(p => _linkSameAttr(p.card, e.card, _distinctBy))) _onePerKind.push(e); });
+          const _allOk = _onePerKind.length >= 2 && _onePerKind.length <= _linkCount - _linkedNow.length;
           const _pickerOpts = !_allOk ? undefined : {
             onSelectAll: () => {
-              showCardListConfirm(_list, '🔗 この' + _list.length + '枚をリンクしますか？', (yes) => {
+              const _allCards = _onePerKind.map(e => e.card);
+              showCardListConfirm(_allCards, '🔗 この' + _allCards.length + '枚をリンクしますか？', (yes) => {
                 if (!yes) { _multiNext(); return; }
                 let k = 0;
                 const _nextAll = () => {
-                  if (k >= _rc.length) { _multiNext(); return; }
-                  const entry = _rc[k++];
+                  if (k >= _onePerKind.length) { _multiNext(); return; }
+                  const entry = _onePerKind[k++];
                   _linkedNow.push(entry.card);
                   _linkOne(entry, _nextAll, false);
                 };

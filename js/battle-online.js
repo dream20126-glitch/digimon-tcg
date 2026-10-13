@@ -1708,7 +1708,8 @@ function onRemoteCommand(cmd) {
         const _lnk = { name: cmd.linkName || cmd.cardName || '?', imgSrc: cmd.linkImg || cmd.cardImg || '' };
         addLog('🔗 相手が「' + _base.name + '」に「' + _lnk.name + '」をリンク');
         const _lcst = parseInt(cmd.linkCost, 10);
-        enqueueFx((done) => { try { window._fxLinkEffect(_base, _lnk, done, isNaN(_lcst) ? undefined : _lcst); } catch (_) { done(); } });
+        const _rep = cmd.replacedName ? { name: cmd.replacedName, imgSrc: cmd.replacedImg || '' } : undefined;
+        enqueueFx((done) => { try { window._fxLinkEffect(_base, _lnk, done, isNaN(_lcst) ? undefined : _lcst, _rep); } catch (_) { done(); } });
       }
       break;
     }

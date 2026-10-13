@@ -661,58 +661,84 @@ export function fxJogressEvolve(card1, card2, resultCard, callback) {
 // =====================================================
 
 // cost: 支払ったリンクコスト（数値なら「〇コストでリンク！」を表示。省略時は表示しない）
-export function fxLinkEffect(baseCard, linkCard, callback, cost) {
+// replacedCard: リンク上限で差し替えて外すカード（あれば、刺さっていたそのカードが抜けて新しいカードと入れ替わる）
+// リンクカードは実物と同じく、カード全体を横向きにして本体の下に差し込み、半分ほどはみ出して見えるようにする
+export function fxLinkEffect(baseCard, linkCard, callback, cost, replacedCard) {
+  if (cost === undefined && linkCard && typeof linkCard._lastLinkCost === 'number') cost = linkCard._lastLinkCost;
+  if (replacedCard === undefined && linkCard && linkCard._linkReplaced) replacedCard = linkCard._linkReplaced;
+  if (linkCard && linkCard._linkReplaced) delete linkCard._linkReplaced;
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:55000;display:flex;align-items:center;justify-content:center;flex-direction:column;';
 
   const labelEl = document.createElement('div');
-  labelEl.style.cssText = 'font-size:1rem;font-weight:bold;color:#ffaa00;letter-spacing:3px;text-shadow:0 0 15px #ffaa00;margin-bottom:' + (typeof cost === 'number' ? '6px' : '16px') + ';';
-  labelEl.innerText = '⚡ LINK';
+  labelEl.style.cssText = 'font-size:1rem;font-weight:bold;color:#ffaa00;letter-spacing:3px;text-shadow:0 0 15px #ffaa00;margin-bottom:6px;';
+  labelEl.innerText = replacedCard ? '⚡ LINK（差し替え）' : '⚡ LINK';
   overlay.appendChild(labelEl);
-  if (cost === undefined && linkCard && typeof linkCard._lastLinkCost === 'number') cost = linkCard._lastLinkCost;
-  if (typeof cost === 'number') {
-    const costEl = document.createElement('div');
-    costEl.style.cssText = 'font-size:0.95rem;font-weight:bold;color:#fff;margin-bottom:14px;text-shadow:0 0 10px #ffaa00;';
-    costEl.innerText = cost > 0 ? cost + 'コストでリンク！' : 'コストを支払わずリンク！';
-    overlay.appendChild(costEl);
-  }
+  const costEl = document.createElement('div');
+  costEl.style.cssText = 'font-size:0.95rem;font-weight:bold;color:#fff;margin-bottom:14px;text-shadow:0 0 10px #ffaa00;min-height:1.2em;';
+  costEl.innerText = typeof cost === 'number' ? (cost > 0 ? cost + 'コストでリンク！' : 'コストを支払わずリンク！') : '';
+  overlay.appendChild(costEl);
 
-  const container = document.createElement('div');
-  container.style.cssText = 'display:flex;align-items:center;gap:4px;';
-
+  // 本体（縦）とリンクカード（横向き・本体の下に差し込む）
+  const W = 100, H = 140;
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:relative;width:' + (W * 2.6) + 'px;height:' + (H + 20) + 'px;';
+  const baseLeft = 30;
+  const imgHtml = (c, color) => {
+    const src = c ? cardImg(c) : '';
+    return src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block;">` : `<div style="color:${color};padding:6px;font-size:10px;">${(c && c.name) || '?'}</div>`;
+  };
   const baseDiv = document.createElement('div');
-  baseDiv.style.cssText = 'width:100px;height:140px;border-radius:8px;border:2px solid #00fbff;overflow:hidden;box-shadow:0 0 15px #00fbff44;';
-  const baseSrc = baseCard ? cardImg(baseCard) : '';
-  baseDiv.innerHTML = baseSrc ? `<img src="${baseSrc}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#00fbff;padding:8px;">${baseCard?.name || '?'}</div>`;
-
-  const linkDiv = document.createElement('div');
-  linkDiv.style.cssText = 'width:100px;height:70px;border-radius:4px;border:2px solid #ffaa00;overflow:hidden;box-shadow:0 0 15px #ffaa0044;transform:rotate(0deg) translate(120px,0) scale(0.8);opacity:0;';
-  const linkSrc = linkCard ? cardImg(linkCard) : '';
-  linkDiv.innerHTML = linkSrc ? `<img src="${linkSrc}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#ffaa00;padding:4px;font-size:8px;">${linkCard?.name || '?'}</div>`;
-
-  container.appendChild(baseDiv);
-  container.appendChild(linkDiv);
-  overlay.appendChild(container);
+  baseDiv.style.cssText = 'position:absolute;left:' + baseLeft + 'px;top:10px;width:' + W + 'px;height:' + H + 'px;border-radius:8px;border:2px solid #00fbff;overflow:hidden;box-shadow:0 0 15px #00fbff44;z-index:2;background:#111;';
+  baseDiv.innerHTML = imgHtml(baseCard, '#00fbff');
+  // 横向きのリンクカードの中心を本体の右端に置く（左半分は本体の下に隠れ、右半分が見える）
+  const linkLeft = baseLeft + W - W / 2;
+  const mkLink = (c, color) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:absolute;left:' + linkLeft + 'px;top:10px;width:' + W + 'px;height:' + H + 'px;border-radius:6px;border:2px solid ' + color + ';overflow:hidden;box-shadow:0 0 15px ' + color + '66;z-index:1;background:#111;';
+    d.innerHTML = imgHtml(c, color);
+    return d;
+  };
+  const linkDiv = mkLink(linkCard, '#ffaa00');
+  linkDiv.style.transform = 'translateX(' + (W * 1.6) + 'px) rotate(90deg)';
+  linkDiv.style.opacity = '0';
+  let oldDiv = null;
+  if (replacedCard) {
+    oldDiv = mkLink(replacedCard, '#888');
+    oldDiv.style.transform = 'translateX(0) rotate(90deg)';
+    stage.appendChild(oldDiv);
+  }
+  stage.appendChild(linkDiv);
+  stage.appendChild(baseDiv);
+  overlay.appendChild(stage);
   document.body.appendChild(overlay);
 
-  // 回転しながら飛んできて横向きに刺さる
-  setTimeout(() => {
-    linkDiv.style.transition = 'all 0.6s cubic-bezier(0.2,0.8,0.3,1)';
-    linkDiv.style.transform = 'rotate(-90deg) translate(40px,0) scale(0.9)';
-    linkDiv.style.opacity = '1';
-  }, 500);
-  setTimeout(() => {
-    linkDiv.style.transition = 'all 0.4s ease';
-    linkDiv.style.transform = 'rotate(-90deg) translate(0,0) scale(1)';
-  }, 1100);
-  // 刺さった瞬間にフラッシュ
-  setTimeout(() => {
-    baseDiv.style.transition = 'box-shadow 0.15s';
-    baseDiv.style.boxShadow = '0 0 40px #ffaa00, 0 0 80px #ffaa0066';
-    setTimeout(() => { baseDiv.style.boxShadow = '0 0 15px #00fbff44'; }, 300);
-  }, 1500);
-
-  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 3000);
+  const slideIn = (delay) => {
+    setTimeout(() => {
+      linkDiv.style.transition = 'transform 0.6s cubic-bezier(0.2,0.8,0.3,1), opacity 0.3s';
+      linkDiv.style.transform = 'translateX(0) rotate(90deg)';
+      linkDiv.style.opacity = '1';
+    }, delay);
+    // 刺さった瞬間にフラッシュ
+    setTimeout(() => {
+      baseDiv.style.transition = 'box-shadow 0.15s';
+      baseDiv.style.boxShadow = '0 0 40px #ffaa00, 0 0 80px #ffaa0066';
+      setTimeout(() => { baseDiv.style.boxShadow = '0 0 15px #00fbff44'; }, 300);
+    }, delay + 600);
+  };
+  if (oldDiv) {
+    // 差し替え: 刺さっていたカードが抜けて（下へ落ちてトラッシュへ）、新しいカードが差し込まれる
+    setTimeout(() => {
+      oldDiv.style.transition = 'transform 0.6s ease-in, opacity 0.6s ease-in';
+      oldDiv.style.transform = 'translate(' + (W * 0.6) + 'px,' + (H * 1.1) + 'px) rotate(110deg) scale(0.8)';
+      oldDiv.style.opacity = '0';
+    }, 500);
+    slideIn(1100);
+    setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 3200);
+  } else {
+    slideIn(500);
+    setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2600);
+  }
 }
 
 // =====================================================

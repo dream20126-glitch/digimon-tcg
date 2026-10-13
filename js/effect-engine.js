@@ -17320,6 +17320,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (ri !== -1) linkTarget.linkedCards.splice(ri, 1);
           player.trash.push(replaced);
           ctx.addLog('🔄 リンク上限のため「' + replaced.name + '」がリンクから外れてトラッシュへ');
+          linkTarget._pendingLinkReplaced = replaced; // リンク演出で入れ替えるアニメーションにする（_linkOne で新しいカードに渡す）
           ctx.renderAll();
           afterRoom();
         };
@@ -17357,7 +17358,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           const lc = _ls[_li++];
           if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
             const _img = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
-            try { window._onlineSendCommand({ type: 'fx_linkEffect', baseName: linkTarget.name, baseImg: _img(linkTarget), linkName: lc.name, linkImg: _img(lc), linkCost: lc._lastLinkCost || 0 }); } catch (_) {}
+            const _rp = lc._linkReplaced || null;
+            try { window._onlineSendCommand({ type: 'fx_linkEffect', baseName: linkTarget.name, baseImg: _img(linkTarget), linkName: lc.name, linkImg: _img(lc), linkCost: lc._lastLinkCost || 0, replacedName: _rp ? _rp.name : '', replacedImg: _rp ? _img(_rp) : '' }); } catch (_) {}
           }
           try { window._fxLinkEffect(linkTarget, lc, _nextLinkFx, lc._lastLinkCost || 0); } catch (_) { _nextLinkFx(); }
         };
@@ -17451,6 +17453,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           if (!linkTarget.linkedCards) linkTarget.linkedCards = [];
           linkTarget.linkedCards.push(c);
+          if (linkTarget._pendingLinkReplaced) { c._linkReplaced = linkTarget._pendingLinkReplaced; delete linkTarget._pendingLinkReplaced; }
           ctx.addLog('🔗 「' + linkTarget.name + '」に「' + c.name + '」をリンク');
           ctx.renderAll();
           if (fireOnLink) _fireOnLinkThen([c], done); else done();
@@ -17536,14 +17539,24 @@ function executeRecipeStep(step, ctx, store, callback) {
         ? _ulLinked.filter(c => checkConditions(_ulConds, c, ctx.bs, ctx.side))
         : _ulLinked.slice();
       const _ulDoDiscard = (chosen) => {
+        const _gone = [];
         (chosen || []).forEach(c => {
           const idx = ctx.card.linkedCards.indexOf(c);
           if (idx >= 0) ctx.card.linkedCards.splice(idx, 1);
           player.trash.push(c);
+          _gone.push(c);
           ctx.addLog('🔗 リンクカード「' + c.name + '」を破棄');
         });
         ctx.renderAll();
-        callback();
+        if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+        // 「〇〇のリンクカード → トラッシュ」の移動演出（相手の画面にも）
+        const _from = '「' + (ctx.card.name || '') + '」のリンクカード';
+        let _gi = 0;
+        const _nextFx = () => {
+          if (_gi >= _gone.length) { callback(); return; }
+          _fxMoveSync(ctx, _gone[_gi++], _from, 'トラッシュ', _nextFx);
+        };
+        _moveBatchIntro(ctx, _gone, _from, 'トラッシュ', _nextFx);
       };
       if (_ulCandidates.length === 0 || (_ulIsCost && _ulCandidates.length < _ulCount)) { callback(_ulIsCost ? false : undefined); break; }
       if (_ulCandidates.length <= _ulCount || effectiveSide === 'ai') {

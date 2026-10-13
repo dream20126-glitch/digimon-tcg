@@ -1786,7 +1786,9 @@ export function doLink(card, handIdx, slotIdx) {
 
   const proceedLink = () => {
     const cost = card.linkCost;
-    if (_onlineMode && _sendCommand) _sendCommand({ type: 'link', handIdx, slotIdx, cardName: card.name, baseName: base.name, cardImg: card.imgSrc || '', linkCost: cost });
+    const _rp = card._linkReplaced || null; // 差し替えで外したカード（リンク演出で入れ替える）
+    if (_onlineMode && _sendCommand) _sendCommand({ type: 'link', handIdx, slotIdx, cardName: card.name, baseName: base.name, cardImg: card.imgSrc || '', baseImg: cardImg(base) || '', linkCost: cost,
+      replacedName: _rp ? _rp.name : '', replacedImg: _rp ? (cardImg(_rp) || '') : '' });
     bs.player.hand.splice(handIdx, 1); bs.selHand = null;
     base.linkedCards.push(card);
     addLog('🔗 「' + base.name + '」に「' + card.name + '」をリンク！（コスト ' + cost + '）');
@@ -1822,6 +1824,7 @@ export function doLink(card, handIdx, slotIdx) {
       if (ri >= 0) base.linkedCards.splice(ri, 1);
       bs.player.trash.push(replaced);
       addLog('🔄 リンク上限のため「' + replaced.name + '」がリンクから外れてトラッシュへ');
+      card._linkReplaced = replaced; // リンク演出で、刺さっていたカードと入れ替えるアニメーションにする
       renderAll();
       proceedLink();
     };

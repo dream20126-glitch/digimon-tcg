@@ -1785,11 +1785,17 @@ export function meetsLinkCondition(card, base) {
 // リンクありのカードをバトルエリアの既存デジモンにドラッグした際、進化の代わりに
 // 選べる操作。進化コストの代わりにリンクコストを支払い、対象デジモンの横に
 // リンクする（card.linkedCards に追加）。リンク時効果（【リンク時】）があれば発動する。
-export function doLink(card, handIdx, slotIdx) {
+// opts.fromField: バトルエリアのカードをリンクする（公式ルール 6-5-1-4「手札/バトルエリアのカードのリンク」）。
+// handIdx の代わりに opts.fromIdx（リンクするカードのバトルエリアの位置）を使う。リンクするカードの下の
+// 進化元・リンクカードはトラッシュへ（リンクカードは進化元・リンクを持たない）
+export function doLink(card, handIdx, slotIdx, opts) {
+  opts = opts || {};
   if (bs.phase !== 'main') return;
   if (_attackInProgress) return;
   const base = bs.player.battleArea[slotIdx];
   if (!base) return;
+  const _fromField = !!opts.fromField;
+  if (_fromField && (bs.player.battleArea[opts.fromIdx] !== card || opts.fromIdx === slotIdx)) return;
   if (card.linkCost == null) { addLog('🚨 「' + card.name + '」はリンクできません‼'); return; }
   if (!meetsLinkCondition(card, base)) { addLog('🚨 リンク条件を満たしていません‼（' + card.linkCond + '）'); return; }
   if (!base.linkedCards) base.linkedCards = [];
@@ -1798,8 +1804,21 @@ export function doLink(card, handIdx, slotIdx) {
     const cost = card.linkCost;
     const _rp = card._linkReplaced || null; // 差し替えで外したカード（リンク演出で入れ替える）
     if (_onlineMode && _sendCommand) _sendCommand({ type: 'link', handIdx, slotIdx, cardName: card.name, baseName: base.name, cardImg: card.imgSrc || '', baseImg: cardImg(base) || '', linkCost: cost,
-      replacedName: _rp ? _rp.name : '', replacedImg: _rp ? (cardImg(_rp) || '') : '' });
-    bs.player.hand.splice(handIdx, 1); bs.selHand = null;
+      replacedName: _rp ? _rp.name : '', replacedImg: _rp ? (cardImg(_rp) || '') : '', fromField: _fromField });
+    if (_fromField) {
+      // バトルエリアから外し、下にあったカードはトラッシュへ。リンクカードとして状態を初期化する
+      bs.player.battleArea[opts.fromIdx] = null;
+      (card.stack || []).forEach((c) => { if (c) bs.player.trash.push(c); });
+      (card.linkedCards || []).forEach((c) => { if (c) bs.player.trash.push(c); });
+      card.stack = []; card.linkedCards = [];
+      card.suspended = false; card.buffs = []; card._grantedRecipes = []; card._permEffects = {};
+      card.cantAttack = false; card.cantBlock = false; card.cantRest = false;
+      if (card.baseDp != null) card.dp = card.baseDp;
+      card.dpModifier = 0;
+      addLog('🔗 「' + card.name + '」をバトルエリアからリンク');
+    } else {
+      bs.player.hand.splice(handIdx, 1); bs.selHand = null;
+    }
     base.linkedCards.push(card);
     addLog('🔗 「' + base.name + '」に「' + card.name + '」をリンク！（コスト ' + cost + '）');
     card._lastLinkCost = cost; // リンク演出の「〇コストでリンク！」用

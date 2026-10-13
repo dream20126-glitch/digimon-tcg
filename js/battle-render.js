@@ -421,12 +421,124 @@ function renderBattleRows() {
         // プレイヤーのデジモン → 長押し/スワイプでアクションメニュー
         if (isPlayer && card.type === 'デジモン') {
           setupLongpress(sl, i, card);
+          // リンクを持つカードは、ほかの自分のデジモンの上へドラッグしてリンクできる
+          if (card.linkCost != null) setupFieldLinkDrag(sl, i, card);
         }
       }
 
       row.appendChild(sl);
     }
   });
+}
+
+// ===== バトルエリアのカードをリンク（公式ルール 6-5-1-4「手札/バトルエリアのカードのリンク」） =====
+// リンクを持つ自分のデジモンを、ほかの自分のデジモンの上へドラッグして離すとリンクする（確認してから）。
+// タッチの左スワイプ・マウスの長押しはアクションメニューなので、ドラッグは「左以外の方向へ動かし始めた」
+// （マウスは長押しの前に動かした）ときに始める
+let _fieldDragDone = false;
+function setupFieldLinkDrag(el, slotIdx, card) {
+  let sx = 0, sy = 0, dragging = false, ghost = null, active = false;
+  const canStart = () => bs.phase === 'main' && bs.isPlayerTurn && !(window._isAttackInProgress && window._isAttackInProgress())
+    && bs.player.battleArea[slotIdx] === card
+    && bs.player.battleArea.some((c, i) => c && i !== slotIdx);
+  const slotsEls = () => { const row = document.getElementById('pl-battle-row'); return row ? Array.from(row.querySelectorAll('.b-slot')) : []; };
+  const targetAt = (x, y) => {
+    let hit = -1;
+    slotsEls().forEach((s, i) => {
+      if (i === slotIdx || !bs.player.battleArea[i]) return;
+      const r = s.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) hit = i;
+    });
+    return hit;
+  };
+  const mark = (idx) => {
+    slotsEls().forEach((s, i) => {
+      if (i === slotIdx || !bs.player.battleArea[i]) return;
+      s.style.outline = i === idx ? '3px solid #ffaa00' : '2px dashed #ffaa0088';
+      s.style.outlineOffset = '1px';
+    });
+  };
+  const clearMarks = () => slotsEls().forEach((s) => { s.style.outline = ''; s.style.outlineOffset = ''; });
+  const startDrag = (x, y) => {
+    dragging = true;
+    const src = cardImg(card);
+    ghost = document.createElement('div');
+    ghost.style.cssText = 'position:fixed;width:60px;height:84px;border-radius:5px;border:2px solid #ffaa00;overflow:hidden;z-index:99990;pointer-events:none;box-shadow:0 0 14px #ffaa00;opacity:0.9;transform:rotate(90deg);';
+    ghost.innerHTML = src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#ffaa00;font-size:8px;padding:3px;">' + card.name + '</div>';
+    document.body.appendChild(ghost);
+    move(x, y);
+  };
+  const move = (x, y) => {
+    if (!ghost) return;
+    ghost.style.left = (x - 30) + 'px'; ghost.style.top = (y - 42) + 'px';
+    mark(targetAt(x, y));
+  };
+  const end = (x, y) => {
+    const wasDrag = dragging;
+    dragging = false; active = false;
+    if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+    ghost = null;
+    clearMarks();
+    if (!wasDrag) return;
+    _fieldDragDone = true; setTimeout(() => { _fieldDragDone = false; }, 80);
+    const ti = targetAt(x, y);
+    if (ti === -1) return;
+    const base = bs.player.battleArea[ti];
+    if (!base) return;
+    if (window._meetsLinkCondition && !window._meetsLinkCondition(card, base)) { addLog('🚨 リンク条件を満たしていません‼（' + (card.linkCond || '') + '）'); return; }
+    showConfirm({
+      title: '🔗 リンク',
+      message: '「' + card.name + '」をバトルエリアから「' + base.name + '」にリンクしますか？（リンクコスト ' + card.linkCost + '）\n「' + card.name + '」の下のカードはトラッシュに置かれます。',
+      yesText: '🔗 リンクする', noText: 'やめる', color: '#ffaa00',
+    }).then((yes) => {
+      if (!yes) return;
+      const fi = bs.player.battleArea.indexOf(card);
+      if (fi === -1 || window.doLink === undefined) return;
+      window.doLink(card, -1, ti, { fromField: true, fromIdx: fi });
+    });
+  };
+  // タッチ
+  el.addEventListener('touchstart', (e) => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; active = canStart(); }, { passive: true });
+  el.addEventListener('touchmove', (e) => {
+    if (!active) return;
+    const t = e.touches[0];
+    if (!dragging) {
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      if (Math.hypot(dx, dy) < 14) return;
+      if (-dx > 20 && -dx > Math.abs(dy)) { active = false; return; } // 左スワイプ＝アクションメニュー
+      startDrag(t.clientX, t.clientY);
+    }
+    if (e.cancelable) e.preventDefault();
+    move(t.clientX, t.clientY);
+  }, { passive: false });
+  el.addEventListener('touchend', (e) => { const t = e.changedTouches[0]; end(t.clientX, t.clientY); });
+  // マウス（長押し 400ms の前に動かしたらドラッグ）
+  el.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || !canStart()) return;
+    sx = e.clientX; sy = e.clientY; active = true;
+    const t0 = Date.now();
+    const onMove = (ev) => {
+      if (!active) return;
+      if (!dragging) {
+        if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 8) return;
+        if (Date.now() - t0 > 380) { active = false; return; } // 長押しメニューが開く
+        startDrag(ev.clientX, ev.clientY);
+        // 長押しメニューを開かせない
+        el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      }
+      move(ev.clientX, ev.clientY);
+    };
+    const onUp = (ev) => {
+      if (ev.isTrusted === false) return; // 長押しを止めるために送った mouseup
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      end(ev.clientX, ev.clientY);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+  // ドラッグの後のクリック（カード詳細）は出さない
+  el.addEventListener('click', (e) => { if (_fieldDragDone) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
 }
 
 // ===== 長押し/スワイプメニュー（バトルエリアカード） =====

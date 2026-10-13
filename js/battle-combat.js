@@ -1117,11 +1117,18 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
           const labels = distinctBy.map(attr => ASSEMBLY_DISTINCT_LABEL[attr] || attr).join('・');
           title += '（' + (pickedInGroup.length + 1) + '/' + group.wantCount + '枚目・' + labels + 'が異なるカードのみ）';
         }
+        // 残りの候補がちょうど必要な枚数で、名称等が互いに異なる（＝全部使うしかない）なら「全て選択する」を出す。
+        // 選んだカードは最後の「この順番で進化元に入れますか？」で並べて確認する（ダンテモン BT26-086）
+        const _allOk = remaining.length >= 2 && remaining.length === remainingWant
+          && remaining.every((a, i) => remaining.every((b, j) => i === j || !distinctBy.some(attr => {
+            const field = ASSEMBLY_DISTINCT_FIELD[attr];
+            return field && a[field] === b[field];
+          })));
         _showTrashCardPicker(remaining, pickCount, false, title, (picked) => {
           if (!picked || picked.length < pickCount) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
           const nextPicked = [...pickedInGroup, ...picked];
           pickWithinGroup(groupIdx, group, nextPicked, remainingWant - pickCount, onGroupDone);
-        }, remaining);
+        }, remaining, _allOk ? { onSelectAll: () => onGroupDone([...pickedInGroup, ...remaining]) } : undefined);
       };
       const pickNext = (idx) => {
         if (idx >= plan.length) { finish(); return; }

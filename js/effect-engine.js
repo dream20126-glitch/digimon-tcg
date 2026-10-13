@@ -4512,7 +4512,44 @@ function showBothTrashPicker(sides, wantCount, title, done) {
   renderSelect();
 }
 
-export function showTrashCardPicker(candidates, wantCount, optional, title, callback, fullTrash) {
+// 選んだカードを並べて「これでいいですか？」を確認する（「全て選択する」の後など）。cb(true/false)
+export function showCardListConfirm(cards, message, cb) {
+  if (typeof document === 'undefined' || !document.body) { cb && cb(true); return; }
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:65000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:12px;';
+  const t = document.createElement('div');
+  t.style.cssText = 'color:#00fbff;font-size:15px;font-weight:bold;text-shadow:0 0 8px #00fbff;text-align:center;';
+  t.innerText = message || 'このカードでいいですか？';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:100%;max-height:60vh;overflow-y:auto;';
+  (cards || []).forEach((c) => {
+    const cell = document.createElement('div');
+    cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:3px;width:76px;';
+    const src = (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
+    cell.innerHTML = (src ? '<img src="' + src + '" style="width:72px;border-radius:5px;border:2px solid #00ff88;">'
+      : '<div style="width:72px;height:100px;background:#111;border:2px solid #00ff88;border-radius:5px;color:#aaa;font-size:9px;padding:4px;">' + ((c && c.name) || '') + '</div>')
+      + '<div style="color:#fff;font-size:10px;text-align:center;line-height:1.3;">' + ((c && c.name) || '') + '</div>';
+    row.appendChild(cell);
+  });
+  const btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:10px;';
+  const mk = (label, bg, fg, v) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.innerText = label;
+    b.style.cssText = 'font-weight:bold;font-size:13px;padding:9px 20px;border-radius:999px;border:2px solid ' + bg + ';background:' + bg + ';color:' + fg + ';cursor:pointer;';
+    b.onclick = () => { if (ov.parentNode) ov.parentNode.removeChild(ov); cb && cb(v); };
+    return b;
+  };
+  btns.append(mk('✓ これで決定', '#00ff88', '#000', true), mk('↩ 選び直す', '#555', '#fff', false));
+  ov.append(t, row, btns);
+  document.body.appendChild(ov);
+}
+if (typeof window !== 'undefined') window._showCardListConfirm = showCardListConfirm;
+
+// opts.onSelectAll: 指定すると「✅ 全て選択する」ボタンを出す（押したら画面を閉じて onSelectAll() を呼ぶ。
+// 選んだカードの確認は呼び出し側で行う）
+export function showTrashCardPicker(candidates, wantCount, optional, title, callback, fullTrash, opts) {
+  const _selAll = opts && typeof opts.onSelectAll === 'function' ? opts.onSelectAll : null;
   // 既存 trash-modal を使うインプレース版
   const modal = document.getElementById('trash-modal');
   if (modal && Array.isArray(fullTrash) && fullTrash.length > 0) {
@@ -4578,15 +4615,23 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     }
     // optional のときだけ「⏭ 使わない」ボタンを表示。
     // それ以外は各カード詳細ダイアログの「このカードで決定」が確定操作を兼ねる。
-    let actionRow = null, skipBtn = null;
-    if (optional) {
+    let actionRow = null, skipBtn = null, selAllBtn = null;
+    if (optional || _selAll) {
       actionRow = document.createElement('div');
       actionRow.id = '_trash-picker-actions';
-      actionRow.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:10px;';
-      skipBtn = document.createElement('button');
-      skipBtn.innerText = '⏭ 使わない';
-      skipBtn.style.cssText = 'background:#555;color:#fff;border:1px solid #888;padding:10px 22px;border-radius:6px;font-size:13px;cursor:pointer;';
-      actionRow.appendChild(skipBtn);
+      actionRow.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap;';
+      if (_selAll) {
+        selAllBtn = document.createElement('button');
+        selAllBtn.innerText = '✅ 全て選択する';
+        selAllBtn.style.cssText = 'background:#00aa66;color:#fff;border:1px solid #00ff88;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
+        actionRow.appendChild(selAllBtn);
+      }
+      if (optional) {
+        skipBtn = document.createElement('button');
+        skipBtn.innerText = '⏭ 使わない';
+        skipBtn.style.cssText = 'background:#555;color:#fff;border:1px solid #888;padding:10px 22px;border-radius:6px;font-size:13px;cursor:pointer;';
+        actionRow.appendChild(skipBtn);
+      }
       if (closeBtnHomeParent) closeBtnHomeParent.appendChild(actionRow); else modal.appendChild(actionRow);
     }
     // オンライン同期: トラッシュ選択中は相手画面の「効果発動ポップアップ」を閉じない
@@ -4619,6 +4664,7 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
       }
     };
     if (skipBtn) skipBtn.onclick = () => { cleanup(); callback([]); };
+    if (selAllBtn) selAllBtn.onclick = () => { cleanup(); _selAll(); };
     modal.style.display = 'block';
     return;
   }
@@ -4687,6 +4733,13 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     skipBtn.style.cssText = 'background:#555;color:#fff;border:1px solid #888;padding:10px 22px;border-radius:6px;font-size:13px;cursor:pointer;';
     skipBtn.onclick = () => { cleanup(); callback([]); };
     btnRow.appendChild(skipBtn);
+  }
+  if (_selAll) {
+    const allBtn = document.createElement('button');
+    allBtn.innerText = '✅ 全て選択する';
+    allBtn.style.cssText = 'background:#00aa66;color:#fff;border:1px solid #00ff88;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
+    allBtn.onclick = () => { cleanup(); _selAll(); };
+    btnRow.insertBefore(allBtn, btnRow.firstChild);
   }
   document.body.appendChild(overlay);
 }
@@ -9124,7 +9177,22 @@ function _fireLinkTriggersImpl(linkerCard, linkerSide, baseCard, baseSide, ctx, 
   linkerCard = linkers[0];
   if (!linkerCard) { callback && callback(); return; }
   const turnPlayer = ctx.bs.isPlayerTurn ? 'player' : 'ai';
-  const isTargetRole = (s) => !!(s && s.link_role === 'target');
+  // 「その後」（continue_on_fail）で続くステップは、直前のステップと同じ効果の一部なので link_role も引き継ぐ
+  // （ダンテモン BT26-086「このデジモンがリンクしたとき、〜消滅できる。その後、リンクカードが7枚なら〜」の
+  // 「その後」に link_role が無く、リンクされた側の効果から外れて発揮しなかった）
+  const _roleOf = new Map();
+  const _markRoles = (steps) => {
+    let prev;
+    (steps || []).forEach((st) => {
+      if (!st) return;
+      const chained = Array.isArray(st.options) && st.options.includes('continue_on_fail');
+      const role = st.link_role !== undefined ? st.link_role : (chained ? prev : undefined);
+      _roleOf.set(st, role);
+      prev = role;
+    });
+    return steps;
+  };
+  const isTargetRole = (s) => !!(s && (_roleOf.has(s) ? _roleOf.get(s) : s.link_role) === 'target');
   const isSelfSubject = (s) => {
     const subj = _resolveStepSubject(s, 'on_link');
     return !subj || subj === 'self';
@@ -9142,14 +9210,14 @@ function _fireLinkTriggersImpl(linkerCard, linkerSide, baseCard, baseSide, ctx, 
   // card自身のトップレベルon_link + 進化元(stack)由来のon_linkの両方をfilterにかけてqueueする
   // （進化元効果は evo_source ラップ必須の規約に合わせ、getRecipeForTrigger(..., true) で取得）
   const queueOwnLinkSteps = (card, side, filterFn, eventSourceCard) => {
-    const topSteps = getRecipeForTrigger(card, 'on_link') || [];
+    const topSteps = _markRoles(getRecipeForTrigger(card, 'on_link') || []);
     queueBlock(card, side, topSteps.filter(filterFn), null, eventSourceCard);
     // 進化元は場のデジモンのものだけ（リンクしたカードが以前デジモンだったときの古い進化元を見ない。
     // メールモンがダンテモンに進化→進化元からリンクされたとき、メールモンに残っていた古い進化元の【リンク時】が誘発していた）
     if (Array.isArray(card.stack) && _cardIsOnBattleArea(ctx.bs, card)) {
       card.stack.forEach((evoCard) => {
         if (!evoCard) return;
-        const evoSteps = getRecipeForTrigger(evoCard, 'on_link', true) || [];
+        const evoSteps = _markRoles(getRecipeForTrigger(evoCard, 'on_link', true) || []);
         queueBlock(card, side, evoSteps.filter(filterFn), evoCard, eventSourceCard);
       });
     }
@@ -9161,7 +9229,7 @@ function _fireLinkTriggersImpl(linkerCard, linkerSide, baseCard, baseSide, ctx, 
     // 1b. リンクする側の「リンク効果」欄の【リンク時】（recipe.link.on_link）。リンク効果は
     // リンク先のデジモンが得る効果なので、実行主体（「このデジモン」）はリンクされた側（baseCard）、
     // 効果を持つカード（_recipeCard）はリンクしたカードとして積む
-    const linkSteps = _getLinkSectionOnLinkSteps(lc).filter((s) => s && !isTargetRole(s) && isSelfSubject(s));
+    const linkSteps = _markRoles(_getLinkSectionOnLinkSteps(lc)).filter((s) => s && !isTargetRole(s) && isSelfSubject(s));
     if (linkSteps.length > 0) queueBlock(baseCard || lc, baseCard ? baseSide : linkerSide, linkSteps, lc, null);
   });
 
@@ -17597,12 +17665,31 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _stop = _canStopAny;
           if (_rc.length === 1 && !_stop) { _take(_rc[0]); return; }
           const _list = _rc.map(e => e.card);
+          // 残りの候補が全て一緒に選べる（枚数が上限以内で、名称等が互いに異なる）なら「全て選択する」を出す。
+          // 押したら並べて確認し、決定なら全部リンクする（ダンテモン BT26-086 c2）
+          const _allOk = _rc.length >= 2 && _rc.length <= _linkCount - _linkedNow.length
+            && _rc.every((e, i) => _rc.every((f, j) => i === j || !_linkSameAttr(e.card, f.card, _distinctBy)));
+          const _pickerOpts = !_allOk ? undefined : {
+            onSelectAll: () => {
+              showCardListConfirm(_list, '🔗 この' + _list.length + '枚をリンクしますか？', (yes) => {
+                if (!yes) { _multiNext(); return; }
+                let k = 0;
+                const _nextAll = () => {
+                  if (k >= _rc.length) { _multiNext(); return; }
+                  const entry = _rc[k++];
+                  _linkedNow.push(entry.card);
+                  _linkOne(entry, _nextAll, false);
+                };
+                _nextAll();
+              });
+            },
+          };
           showTrashCardPicker(_list, 1, _stop,
             '🔗 リンクするカードを選んでください（' + _linkedNow.length + '/' + _linkCount + (_linkedNow.length > 0 ? '・「使わない」で終了' : '') + '）',
             (picked) => {
               const chosen = picked && picked[0];
               _take(chosen ? (_rc.find(e => e.card === chosen) || null) : null);
-            }, _list);
+            }, _list, _pickerOpts);
         };
         _multiNext();
         break;

@@ -412,10 +412,12 @@ function processQueue(context, onComplete) {
   // === 同レベル(同priority/同side/同optional)のwaiting が複数あり、
   //     かつローカルプレイヤー側なら順序選択UIを出す ===
   const head = waiting[0];
+  // 同時に誘発した効果は、強制・任意に関わらずそのプレイヤーが発動順を選ぶ（公式ルール）。
+  // 以前は任意/強制で分け、さらに対象選択等の入力が無い効果は自動で先に処理していたため、
+  // 強制効果同士（メールモン BT26-019 の【リンク時】とゴミモンの「リンクしたとき」等）は順番を選べなかった
   const sameLevel = waiting.filter(e =>
     e.priority === head.priority &&
-    e.side === head.side &&
-    !!e.block.isOptional === !!head.block.isOptional
+    e.side === head.side
   );
   // ローカルプレイヤー判定: bs.isPlayerTurn と side('turnPlayer'/'nonTurnPlayer') から導出
   const isPlayerTurn = !!(context.bs && context.bs.isPlayerTurn);
@@ -426,10 +428,10 @@ function processQueue(context, onComplete) {
   const sameLevelManuals = sameLevel.filter(e => _entryNeedsUserInput(e, context));
   // 自動が残っていれば自動を優先実行
   let next = null;
-  if (sameLevelAutos.length > 0) {
-    next = sameLevelAutos[0];
-  } else if (sameLevelManuals.length > 1 && isLocalSide) {
-    // 手動が複数残った → 順序選択UI
+  // ローカルプレイヤーの同時誘発が2つ以上なら、強制・任意・入力の有無に関わらず順序選択UI
+  const _orderCands = isLocalSide ? sameLevel : [];
+  if (_orderCands.length > 1) {
+    const sameLevelManuals = _orderCands;
     showQueueOrderSelect(sameLevelManuals, (chosenIdx) => {
       if (chosenIdx < 0) {
         // 「終了する」: 残りの任意効果をすべて使わない
@@ -463,6 +465,8 @@ function processQueue(context, onComplete) {
       });
     });
     return;
+  } else if (sameLevelAutos.length > 0) {
+    next = sameLevelAutos[0];
   } else {
     next = waiting[0]; // 手動1件 or 非ローカル → 通常処理
   }

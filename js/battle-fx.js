@@ -661,8 +661,12 @@ export function fxJogressEvolve(card1, card2, resultCard, callback) {
 // =====================================================
 
 // cost: 支払ったリンクコスト（数値なら「〇コストでリンク！」を表示。省略時は表示しない）
-// replacedCard: リンク上限で差し替えて外すカード（あれば、刺さっていたそのカードが抜けて新しいカードと入れ替わる）
-// リンクカードは実物と同じく、カード全体を横向きにして本体の下に差し込み、半分ほどはみ出して見えるようにする
+// replacedCard: リンク上限で差し替えて外すカード
+// 演出:
+//   通常   … リンク先のカードとリンクするカードを並べて表示 → リンクするカードを回転させながら、リンク先のカードの下に
+//            横向きで差し込む（カード全体を横向きにして、半分ほどはみ出して見える）
+//   差し替え… リンク先（リンクされた状態）とリンクするカードを並べて表示 → リンクされているカードが抜かれる →
+//            リンクするカードを回転させながら差し込む → 抜かれたカードは回転しながらトラッシュへ
 export function fxLinkEffect(baseCard, linkCard, callback, cost, replacedCard) {
   if (cost === undefined && linkCard && typeof linkCard._lastLinkCost === 'number') cost = linkCard._lastLinkCost;
   if (replacedCard === undefined && linkCard && linkCard._linkReplaced) replacedCard = linkCard._linkReplaced;
@@ -679,66 +683,75 @@ export function fxLinkEffect(baseCard, linkCard, callback, cost, replacedCard) {
   costEl.innerText = typeof cost === 'number' ? (cost > 0 ? cost + 'コストでリンク！' : 'コストを支払わずリンク！') : '';
   overlay.appendChild(costEl);
 
-  // 本体（縦）とリンクカード（横向き・本体の下に差し込む）
   const W = 100, H = 140;
+  const baseLeft = 20;
+  const insertLeft = baseLeft + W / 2;          // 横向きのリンクカードの中心が本体の右端に来る位置
+  const standLeft = baseLeft + W + 70;          // 最初にリンクするカードを並べて置く位置（縦）
   const stage = document.createElement('div');
-  stage.style.cssText = 'position:relative;width:' + (W * 2.6) + 'px;height:' + (H + 20) + 'px;';
-  const baseLeft = 30;
+  stage.style.cssText = 'position:relative;width:' + (standLeft + W + 20) + 'px;max-width:94vw;height:' + (H + 60) + 'px;';
   const imgHtml = (c, color) => {
     const src = c ? cardImg(c) : '';
     return src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block;">` : `<div style="color:${color};padding:6px;font-size:10px;">${(c && c.name) || '?'}</div>`;
   };
-  const baseDiv = document.createElement('div');
-  baseDiv.style.cssText = 'position:absolute;left:' + baseLeft + 'px;top:10px;width:' + W + 'px;height:' + H + 'px;border-radius:8px;border:2px solid #00fbff;overflow:hidden;box-shadow:0 0 15px #00fbff44;z-index:2;background:#111;';
-  baseDiv.innerHTML = imgHtml(baseCard, '#00fbff');
-  // 横向きのリンクカードの中心を本体の右端に置く（左半分は本体の下に隠れ、右半分が見える）
-  const linkLeft = baseLeft + W - W / 2;
-  const mkLink = (c, color) => {
+  const mkCard = (c, color, left, z) => {
     const d = document.createElement('div');
-    d.style.cssText = 'position:absolute;left:' + linkLeft + 'px;top:10px;width:' + W + 'px;height:' + H + 'px;border-radius:6px;border:2px solid ' + color + ';overflow:hidden;box-shadow:0 0 15px ' + color + '66;z-index:1;background:#111;';
+    d.style.cssText = 'position:absolute;left:' + left + 'px;top:10px;width:' + W + 'px;height:' + H + 'px;border-radius:7px;border:2px solid ' + color + ';overflow:hidden;box-shadow:0 0 15px ' + color + '66;z-index:' + z + ';background:#111;';
     d.innerHTML = imgHtml(c, color);
     return d;
   };
-  const linkDiv = mkLink(linkCard, '#ffaa00');
-  linkDiv.style.transform = 'translateX(' + (W * 1.6) + 'px) rotate(90deg)';
-  linkDiv.style.opacity = '0';
+  const baseDiv = mkCard(baseCard, '#00fbff', baseLeft, 2);
+  // リンクするカード: 最初は右に縦向きで並べる（位置は insertLeft 基準の translateX で表す）
+  const linkDiv = mkCard(linkCard, '#ffaa00', insertLeft, 3);
+  linkDiv.style.transform = 'translateX(' + (standLeft - insertLeft) + 'px) rotate(0deg)';
   let oldDiv = null;
   if (replacedCard) {
-    oldDiv = mkLink(replacedCard, '#888');
+    oldDiv = mkCard(replacedCard, '#999', insertLeft, 1);
     oldDiv.style.transform = 'translateX(0) rotate(90deg)';
     stage.appendChild(oldDiv);
   }
-  stage.appendChild(linkDiv);
   stage.appendChild(baseDiv);
+  stage.appendChild(linkDiv);
   overlay.appendChild(stage);
   document.body.appendChild(overlay);
 
-  const slideIn = (delay) => {
+  const insert = (at) => {
+    // 回転させながらリンク先の下に横向きで差し込む（差し込み終わったら本体の下へ回り込む）
     setTimeout(() => {
-      linkDiv.style.transition = 'transform 0.6s cubic-bezier(0.2,0.8,0.3,1), opacity 0.3s';
-      linkDiv.style.transform = 'translateX(0) rotate(90deg)';
-      linkDiv.style.opacity = '1';
-    }, delay);
-    // 刺さった瞬間にフラッシュ
+      linkDiv.style.transition = 'transform 0.8s cubic-bezier(0.3,0.7,0.3,1)';
+      linkDiv.style.transform = 'translateX(0) rotate(450deg)';
+    }, at);
+    setTimeout(() => { linkDiv.style.zIndex = '1'; }, at + 600);
     setTimeout(() => {
       baseDiv.style.transition = 'box-shadow 0.15s';
       baseDiv.style.boxShadow = '0 0 40px #ffaa00, 0 0 80px #ffaa0066';
       setTimeout(() => { baseDiv.style.boxShadow = '0 0 15px #00fbff44'; }, 300);
-    }, delay + 600);
+    }, at + 800);
   };
-  if (oldDiv) {
-    // 差し替え: 刺さっていたカードが抜けて（下へ落ちてトラッシュへ）、新しいカードが差し込まれる
-    setTimeout(() => {
-      oldDiv.style.transition = 'transform 0.6s ease-in, opacity 0.6s ease-in';
-      oldDiv.style.transform = 'translate(' + (W * 0.6) + 'px,' + (H * 1.1) + 'px) rotate(110deg) scale(0.8)';
-      oldDiv.style.opacity = '0';
-    }, 500);
-    slideIn(1100);
-    setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 3200);
-  } else {
-    slideIn(500);
-    setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2600);
+  const end = (at) => setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, at);
+
+  if (!oldDiv) {
+    insert(500);
+    end(2400);
+    return;
   }
+  // 差し替え: ①リンクされているカードを抜く → ②新しいカードを回転させながら差し込む → ③抜いたカードは回転しながらトラッシュへ
+  setTimeout(() => {
+    oldDiv.style.transition = 'transform 0.5s ease-out';
+    oldDiv.style.transform = 'translate(' + (W * 0.2) + 'px,' + (H * 0.55) + 'px) rotate(90deg)';
+    oldDiv.style.zIndex = '4';
+  }, 500);
+  insert(1100);
+  const trashLbl = document.createElement('div');
+  trashLbl.style.cssText = 'position:absolute;right:0;bottom:0;color:#aaa;font-size:11px;font-weight:bold;opacity:0;transition:opacity 0.3s;';
+  trashLbl.innerText = '🗑 トラッシュへ';
+  stage.appendChild(trashLbl);
+  setTimeout(() => {
+    trashLbl.style.opacity = '1';
+    oldDiv.style.transition = 'transform 0.8s ease-in, opacity 0.8s ease-in';
+    oldDiv.style.transform = 'translate(' + (standLeft - insertLeft + W * 0.3) + 'px,' + (H * 0.9) + 'px) rotate(450deg) scale(0.45)';
+    oldDiv.style.opacity = '0';
+  }, 2000);
+  end(3300);
 }
 
 // =====================================================

@@ -1191,7 +1191,9 @@ function onRemoteCommand(cmd) {
           const flipped = b._appliedSide === 'player' ? 'ai' : (b._appliedSide === 'ai' ? 'player' : b._appliedSide);
           return { ...b, _appliedSide: flipped };
         });
-        return { ...data, buffs: flippedBuffs, stack: (data.stack || []).map(restoreCard), linkedCards: (data.linkedCards || []).map(restoreCard) };
+        // 「レストできない」は cant_rest バフから（フラグは送られないため。持ち主の端末の状態で表示する）
+        const _cantRest = !!(data.cantRest || flippedBuffs.some(b => b && b.type === 'cant_rest'));
+        return { ...data, buffs: flippedBuffs, cantRest: _cantRest, stack: (data.stack || []).map(restoreCard), linkedCards: (data.linkedCards || []).map(restoreCard) };
       };
       const adjustArr = (arr, count) => { while (arr.length > count) arr.pop(); while (arr.length < count) arr.push({ name: '?', type: '不明', dp: 0 }); };
       // Firebaseはnull要素を含む配列をObjectとして保存するため安全に変換
@@ -1323,6 +1325,11 @@ function onRemoteCommand(cmd) {
         renderAll();
       }
       if (cmd.buffType === 'prevent_unsuspend') { addLog('🔒 相手の効果で「' + (cmd.targetName || '???') + '」はアクティブにならない'); break; }
+      if (cmd.buffType === 'cant_rest') {
+        if (myCard) { myCard.cantRest = true; renderAll(); }
+        addLog('🔒 相手の効果で「' + (cmd.targetName || '???') + '」はレストできない');
+        break;
+      }
       const sign = cmd.buffType === 'dp_minus' ? '-' : '+';
       addLog('⚔ 「' + (cmd.targetName || '???') + '」に' + (cmd.buffType || 'バフ') + sign + (cmd.value || 0) + ' 付与');
       break;

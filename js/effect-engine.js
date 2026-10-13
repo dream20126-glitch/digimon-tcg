@@ -4980,6 +4980,10 @@ function _fireBattleWinQueued(winner, winnerSide, loser, bs, ctxBase, done) {
 // 相手のデジモン/テイマーに付けた「アクティブにならない」（prevent_unsuspend）を相手の端末にも付ける。
 // state_sync は相手のカードを上書きしないため、個別に fx_remoteBuff で送る（アクティブにするのは相手の端末）
 function _sendRemotePreventUnsuspend(ctx, oppPlayer, card, dur) {
+  _sendRemoteStatusBuff(ctx, oppPlayer, card, 'prevent_unsuspend', dur);
+}
+// 相手のデジモン/テイマーに付けた状態のバフ（prevent_unsuspend / cant_rest 等。値を持たないもの）を相手の端末にも付ける
+function _sendRemoteStatusBuff(ctx, oppPlayer, card, buffType, dur) {
   if (!(ctx && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand)) return;
   const bi = (oppPlayer.battleArea || []).indexOf(card);
   const ti = bi === -1 ? (oppPlayer.tamerArea || []).indexOf(card) : -1;
@@ -4987,7 +4991,7 @@ function _sendRemotePreventUnsuspend(ctx, oppPlayer, card, dur) {
   try {
     window._onlineSendCommand({
       type: 'fx_remoteBuff', targetIdx: bi !== -1 ? bi : ti, zone: bi !== -1 ? 'battle' : 'tamer',
-      targetName: card.name, buffType: 'prevent_unsuspend', value: 0, duration: dur,
+      targetName: card.name, buffType, value: 0, duration: dur,
       appliedFromSender: 'player', appliedDuringOwnTurn: !!(ctx.bs && ctx.bs.isPlayerTurn),
     });
   } catch (_) {}
@@ -17939,6 +17943,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         c.cantRest = true;
         addBuffDirect(c, 'cant_rest', 0, _crDur, ctx);
         ctx.addLog('🔒 「' + c.name + '」はレストできない');
+        // 相手のカードなら相手の端末にも付ける（state_sync は持ち主の状態で上書きするため。メールモン BT26-019 の
+        // 【リンク時】で選んだカードに「レスト不可」が付かなかった）
+        if (_crIsOpponent) _sendRemoteStatusBuff(ctx, opponent, c, 'cant_rest', _crDur);
       };
       if (effectiveSide === 'ai' || _crCands.length === 1) {
         _crApply(_crCands[0]);

@@ -1557,6 +1557,8 @@ function onRemoteCommand(cmd) {
         newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
         newCarrier.dp = newCarrier.baseDp;
         newCarrier.dpModifier = 0;
+        // 効果で受けていた状態（DP+・付与効果等）は引き継ぐ（同じデジモンのまま）
+        if (typeof window._carryDedigiState === 'function') window._carryDedigiState(tgt, newCarrier);
       }
       tgtPlayer.battleArea[cmd.targetIdx] = newCarrier;
       removed.forEach(r => tgtPlayer.trash.push(r));
@@ -1652,6 +1654,7 @@ function onRemoteCommand(cmd) {
           newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
           newCarrier.dp = newCarrier.baseDp;
           newCarrier.dpModifier = 0;
+          if (typeof window._carryDedigiState === 'function') window._carryDedigiState(tgt, newCarrier);
         }
       }
       tgtPlayer.battleArea[cmd.targetIdx] = newCarrier;

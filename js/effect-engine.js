@@ -522,6 +522,22 @@ function _stackReturnMax(c) {
   return k;
 }
 
+// 退化・重ねられているカードを戻す等で一番上のカードが外れ、下のカードが新しい一番上になったとき、
+// 効果で受けていた状態（DP+・付与効果・「〜できない」等。永続効果由来＝duration:'permanent' は
+// applyPermanentEffects が付け直すので除く）を新しい一番上へ引き継ぐ。同じデジモンのままなので
+// 効果は消えない（ドリモゲモンで受けた「相手のターン終了までDP+1000」が、ブルムロードモンの退化で消えていた）
+function _carryDedigiState(oldTop, nc) {
+  if (!oldTop || !nc || oldTop === nc) return;
+  const keep = (oldTop.buffs || []).filter((b) => b && b.duration !== 'permanent');
+  nc.buffs = keep.slice();
+  nc._grantedRecipes = Array.isArray(oldTop._grantedRecipes) ? oldTop._grantedRecipes.slice() : [];
+  nc.summonedThisTurn = !!oldTop.summonedThisTurn;
+  if (keep.some((b) => b.type === 'cant_attack_block' || b.type === 'cant_attack')) nc.cantAttack = true;
+  if (keep.some((b) => b.type === 'cant_attack_block' || b.type === 'cant_block')) nc.cantBlock = true;
+  try { recalcDp(nc); } catch (_) {}
+}
+if (typeof window !== 'undefined') window._carryDedigiState = _carryDedigiState;
+
 // 1体から上から n 枚を取り除き、残りの一番上を新しい本体にする。取り除いたカード（上から順）を返す。
 // 自分の端末（effect-engine）と相手の端末（battle-online の fx_stackToDeck 受信）の両方で使う
 function _detachTopCards(area, idx, n) {
@@ -541,6 +557,7 @@ function _detachTopCards(area, idx, n) {
     newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
     newCarrier.dp = newCarrier.baseDp;
     newCarrier.dpModifier = 0;
+    _carryDedigiState(c, newCarrier);
   }
   removed.forEach((r) => { r.stack = []; });
   area[idx] = newCarrier;
@@ -6953,8 +6970,8 @@ function _applyPermanentEffectsImpl(bs, side, context) {
         if (typeof linkCard.recipe === 'string') {
           try { linkCard.recipe = JSON.parse(linkCard.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')); } catch (_) { linkCard.recipe = null; }
         }
-        if (!linkCard.recipe || !linkCard.recipe.link) return;
-        const linkRecipe = linkCard.recipe.link;
+        const linkRecipe = _linkSectionRecipe(linkCard);
+        if (!linkRecipe) return;
         const turnKeys = ['during_own_turn', 'during_opp_turn', 'during_any_turn'];
         turnKeys.forEach(tk => {
           const tkSteps = _lookupTriggerSteps(linkRecipe, tk);
@@ -9132,6 +9149,16 @@ function _matchLinkSubject(subject, actingSide, cardSide) {
 // recipe.link.on_link。メールモン BT26-019 / ゴミモン 051 等）。旧形式として、リンクカード
 // （card.isLink）自身の evo_source.on_link（リンクカードの進化元欄＝リンク効果欄。メディックモン 028 /
 // ウェザドラモン 037 / コピペモン 084）も同じ扱いにする
+// リンクカードの「リンク効果」欄のレシピ（recipe.link。リンク効果を進化元効果欄＝evo_source に書いた形式の
+// リンクカードは evo_source）。ロープレモン BT26-010 の【プログレス】【貫通】は evo_source に書かれていて、
+// リンクしても効果が無かった
+function _linkSectionRecipe(card) {
+  const r = _parseCardRecipe(card);
+  if (!r || typeof r !== 'object') return null;
+  if (r.link && typeof r.link === 'object') return r.link;
+  if ((card.isLink || card.linkCost != null) && r.evo_source && typeof r.evo_source === 'object') return r.evo_source;
+  return null;
+}
 function _getLinkSectionOnLinkSteps(card) {
   const r = _parseCardRecipe(card);
   if (!r) return [];
@@ -9996,14 +10023,31 @@ function _cardStillInZone(bs, side, card, zone) {
 // 完全に切り離し、fireKeywordAttackEffects 側で別の確認ダイアログとして発動させるため。
 // flagsOut を渡すと、実際に on_attack ステップを提供したキーワードの flag 名を積む
 // （確認ダイアログの表示ラベル用。アセンブリ等 on_attack と無関係なキーワードは含めない）
-function _getKeywordOnAttackSteps(card, flagsOut) {
+function _getKeywordOnAttackSteps(card, flagsOut, bs, side) {
+  // カード自身のキーワードに加え、表向きの進化元の進化元効果・リンクカードのリンク効果のキーワードも
+  // （【プログレス】等。以前はカード自身のものしか見ておらず、ダンテモンにリンクしたロープレモンの
+  // 【プログレス】が発揮されなかった）。同じキーワードは1回だけ
   const recipe = _parseCardRecipe(card);
-  if (!recipe || !Array.isArray(recipe.passive)) return [];
+  const passives = [];
+  const _addP = (arr, holder) => { (Array.isArray(arr) ? arr : []).forEach((p) => { if (p && p.flag) passives.push(p); }); };
+  if (recipe) _addP(recipe.passive);
+  (card.stack || []).forEach((ev) => {
+    if (!ev || ev._faceDown) return;
+    const er = _parseCardRecipe(ev);
+    if (er && er.evo_source && typeof er.evo_source === 'object') _addP(er.evo_source.passive);
+  });
+  (card.linkedCards || []).forEach((lc) => { const lr = lc && _linkSectionRecipe(lc); if (lr) _addP(lr.passive); });
+  if (passives.length === 0) return [];
   const dict = getKeywordDict();
   let result = [];
-  for (const p of recipe.passive) {
+  const _seenKw = new Set();
+  for (const p of passives) {
     const kw = p && p.flag && dict[p.flag];
     if (!kw) continue;
+    if (_seenKw.has(p.flag)) continue;
+    // passive の gate（「〜の間」条件）を満たさない間は使わない
+    if (bs && side && typeof _passiveGateOk === 'function' && !_passiveGateOk(p, card, bs, side)) continue;
+    _seenKw.add(p.flag);
     const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, 'on_attack');
     if (!tplSteps) continue;
     let filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common);
@@ -10028,7 +10072,7 @@ export function fireKeywordAttackEffects(card, side, bs, ctxBase, done) {
   const finish = () => { try { done && done(); } catch (_) {} };
   if (!card) { finish(); return; }
   const flags = [];
-  const steps = _getKeywordOnAttackSteps(card, flags);
+  const steps = _getKeywordOnAttackSteps(card, flags, bs, side);
   if (steps.length === 0) { finish(); return; }
   const label = flags.map(f => '【' + _keywordJpName(f) + '】').join('');
   // 【衝突】のように「〜しなければならない」強制のキーワードだけなら「発動しますか？」は出さずに発揮する
@@ -12331,7 +12375,11 @@ function _resolveStepConditionGate(step) {
   const parsed = strs.map(s => parseRecipeCondition(s));
   const all = [];
   parsed.forEach(g => all.push(...g));
-  const hasSubjAttr = !all.some(c => c && c.code === 'cond_exists') && all.some(_isSubjectAttrCond);
+  // 「@self」「@self_card」付きの条件（cond_linked_eq:7@self = このデジモンのリンクカードが7枚）は、このデジモン
+  // 自身の状態なので、対象の絞り込みではなく発動条件として先に判定する（ダンテモン BT26-086 の「その後、このデジモンの
+  // リンクカードが7枚なら、相手のセキュリティを〜デッキの下に戻す」で、セキュリティのカードに当てはめて不発になっていた）
+  const _isSelfC = (c) => !!(c && c.subject && /^self(_card)?$/i.test(String(c.subject)));
+  const hasSubjAttr = (!all.some(c => c && c.code === 'cond_exists') && all.some(_isSubjectAttrCond)) || all.some(_isSelfC);
   if (STEP_GATE_ACTIONS.has(step.action)) {
     if (step.action === 'grant_keyword' || step.action === 'grant_keyword_to') {
       const t = String(step.target || '');
@@ -12345,7 +12393,7 @@ function _resolveStepConditionGate(step) {
   const gateStrs = [];
   const restStrs = [];
   parsed.forEach((g, i) => {
-    if (g.length > 0 && g.every(_isSubjectAttrCond)) gateStrs.push(strs[i]);
+    if (g.length > 0 && g.every((c) => _isSubjectAttrCond(c) || _isSelfC(c))) gateStrs.push(strs[i]);
     else restStrs.push(strs[i]);
   });
   const stripped = strip(step);
@@ -14569,6 +14617,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
             newCarrier.dp = newCarrier.baseDp;
             newCarrier.dpModifier = 0;
+            _carryDedigiState(tgt, newCarrier);
           }
           tgtPlayer.battleArea[idx] = newCarrier;
           removed.forEach(r => tgtPlayer.trash.push(r));

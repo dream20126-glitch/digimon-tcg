@@ -389,13 +389,16 @@ function renderBattleRows() {
           || (_skipFlag && card.suspended);
         // 「【進化時】効果は発揮しない」（negate_trigger）
         const _hasNegEvo = Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'negate_trigger');
-        if (card.cantAttack || card.cantBlock || card.cantEvolve || _hasPreventUnsuspend || _hasNegEvo) {
+        // 「レストできない」（cant_rest。メールモン BT26-019 の【リンク時】等）
+        const _hasCantRest = !!card.cantRest || (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_rest'));
+        if (card.cantAttack || card.cantBlock || card.cantEvolve || _hasPreventUnsuspend || _hasNegEvo || _hasCantRest) {
           let mark = '';
           if (card.cantAttack && card.cantBlock) mark = '⚔🛡✖';
           else if (card.cantAttack) mark = '⚔✖';
           else if (card.cantBlock) mark = '🛡✖';
           if (card.cantEvolve) mark += '進❌';
           if (_hasPreventUnsuspend) mark += '🔄✖';
+          if (_hasCantRest) mark += 'レスト✖';
           if (_hasNegEvo) mark += '進時✖';
           html += `<div style="position:absolute;top:1px;right:1px;background:#9933ff;color:#fff;font-size:8px;font-weight:bold;padding:1px 4px;border-radius:3px;border:1px solid #fff;box-shadow:0 0 5px #9933ff;z-index:5;white-space:nowrap;">${mark}</div>`;
         }
@@ -891,9 +894,12 @@ function renderTamerRows() {
         + `<div class="s-name">${card.name}</div>`;
       // 「次のアクティブフェイズでアクティブにならない」（ピッコロモン BT26-043 等はテイマーにも付く）: デジモンと同じマーク
       const _tSkip = !!(bs._skipUnsuspend && bs._skipUnsuspend[isPlayer ? 'player' : 'ai']) && card.suspended;
-      if ((Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'prevent_unsuspend')) || _tSkip) {
+      const _tPrev = (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'prevent_unsuspend')) || _tSkip;
+      // 「レストできない」（cant_rest）もテイマーに付く（メールモン BT26-019 の【リンク時】は相手のデジモン/テイマー）
+      const _tCantRest = !!card.cantRest || (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_rest'));
+      if (_tPrev || _tCantRest) {
         if (!sl.style.position) sl.style.position = 'relative';
-        sl.innerHTML += `<div style="position:absolute;top:1px;right:1px;background:#9933ff;color:#fff;font-size:8px;font-weight:bold;padding:1px 4px;border-radius:3px;border:1px solid #fff;box-shadow:0 0 5px #9933ff;z-index:5;white-space:nowrap;">🔄✖</div>`;
+        sl.innerHTML += `<div style="position:absolute;top:1px;right:1px;background:#9933ff;color:#fff;font-size:8px;font-weight:bold;padding:1px 4px;border-radius:3px;border:1px solid #fff;box-shadow:0 0 5px #9933ff;z-index:5;white-space:nowrap;">${(_tPrev ? '🔄✖' : '') + (_tCantRest ? 'レスト✖' : '')}</div>`;
       }
 
       sl.onclick = () => window.showBCD && window.showBCD(card, isPlayer ? 'plTamer' : 'aiTamer');

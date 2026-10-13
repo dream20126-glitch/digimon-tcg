@@ -1724,6 +1724,16 @@ function onRemoteCommand(cmd) {
       }
       break;
     }
+    // 相手が3枚以上をまとめてリンク（ダンテモン等）→ 特別演出
+    case 'fx_multiLink': {
+      if (typeof window._fxMultiLinkEffect === 'function') {
+        const _b = { name: cmd.baseName || '?', imgSrc: cmd.baseImg || '' };
+        const _cs = (cmd.cards || []).map((c) => ({ name: c.name || '?', imgSrc: c.imgSrc || '' }));
+        addLog('🔗 相手が「' + _b.name + '」に' + _cs.length + '枚をリンク');
+        enqueueFx((done) => { try { window._fxMultiLinkEffect(_b, _cs, done); } catch (_) { done(); } });
+      }
+      break;
+    }
     case 'fx_destroyBatch': {
       // 相手の効果で2体以上がまとめて消滅 → 一覧で1回だけ演出
       if (typeof window._showDestroyBatch === 'function') enqueueFx((done) => window._showDestroyBatch(cmd.cards || [], done, { remote: true }));

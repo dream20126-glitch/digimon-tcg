@@ -17407,6 +17407,15 @@ function executeRecipeStep(step, ctx, store, callback) {
         };
         // リンク演出（手動リンクと同じ演出。相手の画面にも fx_linkEffect で出す）を出してから【リンク時】へ
         const _ls = (Array.isArray(linkers) ? linkers : [linkers]).filter(Boolean);
+        // 3枚以上をまとめてリンク（ダンテモン BT26-086 等）は特別演出: 並ぶ→クルクル混ざって回転→1枚ずつ吸い込まれて差し込まれる
+        if (_ls.length >= 3 && typeof window !== 'undefined' && typeof window._fxMultiLinkEffect === 'function') {
+          const _img2 = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
+          if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+            try { window._onlineSendCommand({ type: 'fx_multiLink', baseName: linkTarget.name, baseImg: _img2(linkTarget), cards: _ls.map((c) => ({ name: c.name, imgSrc: _img2(c) })) }); } catch (_) {}
+          }
+          try { window._fxMultiLinkEffect(linkTarget, _ls, _fire); } catch (_) { _fire(); }
+          return;
+        }
         let _li = 0;
         const _nextLinkFx = () => {
           if (_li >= _ls.length || typeof window === 'undefined' || typeof window._fxLinkEffect !== 'function') { _fire(); return; }

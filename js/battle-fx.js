@@ -660,6 +660,109 @@ export function fxJogressEvolve(card1, card2, resultCard, callback) {
 //  11. リンク演出（回転しながら横向きに刺さる）
 // =====================================================
 
+// 複数枚をまとめてリンクする特別演出（ダンテモン BT26-086 の【登場時】【進化時】「7枚までをリンク」等、3枚以上）。
+// リンクするカードが並ぶ → クルクル混ざりながら回転（キラキラ） → 1枚ずつリンク先に吸い込まれ、横向きに差し込まれる
+export function fxMultiLinkEffect(baseCard, linkCards, callback) {
+  const list = (linkCards || []).filter(Boolean);
+  if (list.length === 0) { callback && callback(); return; }
+  if (!document.getElementById('fx-multilink-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-multilink-style';
+    st.textContent = '@keyframes mlSpark{0%{transform:translate(0,0) scale(0);opacity:0}20%{opacity:1}100%{transform:translate(var(--dx),var(--dy)) scale(1.2);opacity:0}}'
+      + '@keyframes mlGlow{0%,100%{box-shadow:0 0 18px #ffd84a88,0 0 40px #ffaa0044}50%{box-shadow:0 0 34px #fff3b0,0 0 70px #ffaa0088}}';
+    document.head.appendChild(st);
+  }
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:radial-gradient(circle at 50% 55%, rgba(60,40,0,0.85), rgba(0,0,0,0.92));z-index:55000;display:flex;align-items:center;justify-content:center;flex-direction:column;overflow:hidden;';
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:1.15rem;font-weight:900;color:#ffd84a;letter-spacing:4px;text-shadow:0 0 18px #ffaa00,0 0 30px #fff3b0;margin-bottom:6px;';
+  title.innerText = '⚡ LINK ×' + list.length;
+  overlay.appendChild(title);
+  const W = 70, H = 98;           // リンクするカードの大きさ
+  const BW = 110, BH = 154;       // リンク先（本体）の大きさ
+  const SW = Math.min(360, window.innerWidth - 24), SH = 400;
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:relative;width:' + SW + 'px;height:' + SH + 'px;';
+  overlay.appendChild(stage);
+  const img = (c) => { const src = c ? cardImg(c) : ''; return src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;display:block;">' : '<div style="color:#ffaa00;padding:4px;font-size:9px;">' + ((c && c.name) || '?') + '</div>'; };
+  // 本体（下側中央）
+  const baseLeft = SW / 2 - BW / 2 - 30, baseTop = SH - BH - 20;
+  const base = document.createElement('div');
+  base.style.cssText = 'position:absolute;left:' + baseLeft + 'px;top:' + baseTop + 'px;width:' + BW + 'px;height:' + BH + 'px;border-radius:9px;border:2px solid #00fbff;overflow:hidden;z-index:50;background:#111;animation:mlGlow 1.2s ease-in-out infinite;';
+  base.innerHTML = img(baseCard);
+  stage.appendChild(base);
+  // リンクするカード（上側に1列に並べる）
+  const cx = SW / 2 - W / 2, cy = 110;
+  const els = list.map((c, i) => {
+    const d = document.createElement('div');
+    const x0 = (SW - W) * (list.length === 1 ? 0.5 : i / (list.length - 1));
+    d.style.cssText = 'position:absolute;left:0;top:0;width:' + W + 'px;height:' + H + 'px;border-radius:6px;border:2px solid #ffaa00;overflow:hidden;background:#111;box-shadow:0 0 14px #ffaa0088;z-index:' + (60 + i) + ';opacity:0;transition:opacity 0.3s;';
+    d.style.transform = 'translate(' + x0 + 'px,10px)';
+    d.innerHTML = img(c);
+    stage.appendChild(d);
+    return { d, x0 };
+  });
+  document.body.appendChild(overlay);
+  // キラキラ
+  let sparkTimer = null;
+  const spark = () => {
+    for (let k = 0; k < 6; k++) {
+      const s = document.createElement('div');
+      const size = 3 + Math.random() * 6;
+      const ang = Math.random() * Math.PI * 2, dist = 40 + Math.random() * 140;
+      s.style.cssText = 'position:absolute;left:' + (SW / 2 + (Math.random() - 0.5) * SW * 0.8) + 'px;top:' + (cy + (Math.random() - 0.5) * 200) + 'px;width:' + size + 'px;height:' + size + 'px;border-radius:50%;background:' + (Math.random() > 0.5 ? '#fff3b0' : '#ffd84a') + ';box-shadow:0 0 8px #fff;z-index:90;pointer-events:none;'
+        + '--dx:' + (Math.cos(ang) * dist) + 'px;--dy:' + (Math.sin(ang) * dist) + 'px;animation:mlSpark ' + (0.7 + Math.random() * 0.6) + 's ease-out forwards;';
+      stage.appendChild(s);
+      setTimeout(() => { if (s.parentNode) s.parentNode.removeChild(s); }, 1400);
+    }
+  };
+  sparkTimer = setInterval(spark, 120);
+  setTimeout(() => els.forEach((e) => { e.d.style.opacity = '1'; }), 50);
+  // クルクル混ざりながら回転（楕円の軌道を回る）
+  const SWIRL_START = 600, SWIRL_MS = 1800;
+  let raf = null, t0 = 0;
+  const swirl = (ts) => {
+    if (!t0) t0 = ts;
+    const t = Math.min(1, (ts - t0) / SWIRL_MS);
+    const ease = t < 0.15 ? t / 0.15 : 1;     // 並びから軌道へ移る
+    els.forEach((e, i) => {
+      const ph = (i / els.length) * Math.PI * 2 + t * Math.PI * 4.5 * (i % 2 ? 1 : -1) * 0.6 + t * Math.PI * 3;
+      const ox = cx + Math.cos(ph) * (SW * 0.34), oy = cy + Math.sin(ph) * 70;
+      const x = e.x0 + (ox - e.x0) * ease, y = 10 + (oy - 10) * ease;
+      const rot = t * 720 * (i % 2 ? -1 : 1);
+      e.d.style.zIndex = String(60 + Math.round(Math.sin(ph) * 10) + 10);
+      e.d.style.transform = 'translate(' + x + 'px,' + y + 'px) rotate(' + rot + 'deg)';
+    });
+    if (t < 1) raf = requestAnimationFrame(swirl);
+    else suck();
+  };
+  setTimeout(() => { raf = requestAnimationFrame(swirl); }, SWIRL_START);
+  // 1枚ずつ吸い込まれて、本体の下に横向きで差し込まれる（少しずつずらして重ねる）
+  const suck = () => {
+    const STEP = 330;
+    els.forEach((e, i) => {
+      setTimeout(() => {
+        const fx = baseLeft + BW / 2 + 6 + Math.min(i, 6) * 5;
+        const fy = baseTop + BH / 2 - H / 2 - 40 + i * (80 / Math.max(1, els.length - 1));
+        e.d.style.transition = 'transform 0.45s cubic-bezier(0.5,0,0.3,1)';
+        e.d.style.zIndex = String(40 - i);
+        e.d.style.transform = 'translate(' + fx + 'px,' + fy + 'px) rotate(' + (450 + (i % 2 ? 0 : 360)) + 'deg) scale(0.92)';
+        setTimeout(() => {
+          base.style.boxShadow = '0 0 50px #fff3b0, 0 0 90px #ffaa00';
+          setTimeout(() => { base.style.boxShadow = ''; }, 180);
+          spark();
+        }, 430);
+      }, i * STEP);
+    });
+    setTimeout(() => {
+      clearInterval(sparkTimer);
+      if (raf) cancelAnimationFrame(raf);
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      callback && callback();
+    }, els.length * STEP + 1100);
+  };
+}
+
 // 効果によるバトル（「このデジモンと相手のデジモン1体でバトルする」。アタックではないので VS 演出とは別）。
 // 両方のカードを左右に並べ、ぶつかり合ってから勝敗（DPの高い方が勝ち）を出す。
 // result: 'win'（左が勝ち）/ 'lose'（右が勝ち）/ 'draw'（両者消滅）。opts.leftLabel / opts.rightLabel: カードの下の見出し

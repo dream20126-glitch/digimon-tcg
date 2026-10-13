@@ -9089,6 +9089,14 @@ function _fireLinkTriggersNested(linkerCard, linkerSide, baseCard, baseSide, ctx
   return _fireLinkTriggersImpl(linkerCard, linkerSide, baseCard, baseSide, ctx, callback, true);
 }
 // linkerCard は配列も可（複数枚リンク。ダンテモン BT26-086 等）。リンクされる側の効果は1回だけ
+// 【リンク時】の発動ポップアップに出す文章。リンクカードの【リンク時】は「リンク効果」欄（進化元効果欄）に書かれているので、
+// 本体の効果テキストに【リンク時】が無ければそちらを使う（メールモン BT26-019 で本体の【アタック時】の文章が出ていた）
+function _linkRawText(card, recipeCard) {
+  if (recipeCard) return recipeCard.evoSourceEffect || '';
+  const eff = String((card && card.effect) || ''), evo = String((card && card.evoSourceEffect) || '');
+  if (eff.indexOf('【リンク時】') === -1 && evo.indexOf('【リンク時】') !== -1) return evo;
+  return eff;
+}
 function _fireLinkTriggersImpl(linkerCard, linkerSide, baseCard, baseSide, ctx, callback, nested) {
   const _savedQueue = nested ? _effectQueue : null;
   if (nested) {
@@ -9110,7 +9118,7 @@ function _fireLinkTriggersImpl(linkerCard, linkerSide, baseCard, baseSide, ctx, 
   const queueBlock = (card, side, steps, recipeCard, eventSourceCard) => {
     if (!steps || steps.length === 0) return;
     const block = {
-      raw: (recipeCard ? recipeCard.evoSourceEffect : card.effect) || '',
+      raw: _linkRawText(card, recipeCard),
       trigger: { code: 'on_link' }, actions: [], conditions: [], _grantedSteps: steps,
     };
     if (recipeCard) block._recipeCard = recipeCard;

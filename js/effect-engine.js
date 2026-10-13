@@ -10071,8 +10071,26 @@ function _getKeywordOnAttackSteps(card, flagsOut, bs, side) {
 export function fireKeywordAttackEffects(card, side, bs, ctxBase, done) {
   const finish = () => { try { done && done(); } catch (_) {} };
   if (!card) { finish(); return; }
-  const flags = [];
-  const steps = _getKeywordOnAttackSteps(card, flags, bs, side);
+  const flags0 = [];
+  const steps0 = _getKeywordOnAttackSteps(card, flags0, bs, side);
+  if (steps0.length === 0) { finish(); return; }
+  // 常在型（【プログレス】）は確認せずにその場で適用し、説明だけ出す。効果で宣言したアタックで、宣言時に
+  // 適用済み（_applyDeclaredAttackImmunity）なら付け直さない
+  const contSteps = steps0.filter(st => st && st._kwFlag && _CONTINUOUS_KW_FLAGS.has(st._kwFlag));
+  const steps = steps0.filter(st => !contSteps.includes(st));
+  const flags = flags0.filter(f => !_CONTINUOUS_KW_FLAGS.has(f));
+  if (contSteps.length > 0) {
+    const _already = Array.isArray(card.buffs) && card.buffs.some(b => b && b._preAttack && b.type === 'keyword_immune');
+    if (_already) {
+      card.buffs.forEach(b => { if (b && b._preAttack) delete b._preAttack; });
+    } else {
+      try {
+        const _cctx = Object.assign({}, ctxBase || {}, { bs, card, side, addLog: (ctxBase && ctxBase.addLog) || (() => {}), renderAll: (ctxBase && ctxBase.renderAll) || (() => {}) });
+        runRecipe(contSteps.map(st => Object.assign({}, st)), _cctx, () => {});
+        [...new Set(contSteps.map(st => st._kwFlag))].forEach(fl => { if (typeof window !== 'undefined' && window._showKeywordRuleFlash) window._showKeywordRuleFlash(card, fl); });
+      } catch (e) { console.error('[continuousKeyword attack]', e); }
+    }
+  }
   if (steps.length === 0) { finish(); return; }
   const label = flags.map(f => '【' + _keywordJpName(f) + '】').join('');
   // 【衝突】のように「〜しなければならない」強制のキーワードだけなら「発動しますか？」は出さずに発揮する
@@ -13335,6 +13353,27 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
 // アタック終了時（battle-combat.js の checkPendingTurnEnd）に、アタック中に発揮されて保留していた
 // 「そのデジモンでアタックできる」を1件取り出して実行する。done(started): 新しいアタックを宣言した
 // なら true（そのアタックの終了時に再び checkPendingTurnEnd → ここが呼ばれ、残りを処理する）
+// 効果のアタックは、効果の中で対象を選んだ時点でアタックを宣言したものとして扱う（実際のバトルは同時に誘発した効果の
+// 解決後）。その間もアタック中なので、【プログレス】（アタック中のこのデジモンは相手の効果を受けない）をこの時点で
+// 適用する（ダンテモン BT26-086 の7枚リンク→アタック対象を選んだ後の【リンク時】で相手のセキュリティが減り、相手の
+// ユピテルモン：ラースモードの「DP-15000」でダンテモンを選べていた）。宣言しないまま終わったら外す
+function _applyDeclaredAttackImmunity(card, ctx) {
+  if (!card || !ctx) return;
+  const flags = [];
+  try { _getKeywordOnAttackSteps(card, flags, ctx.bs, ctx.side); } catch (_) { return; }
+  if (!flags.includes('attack_immunity')) return;
+  addBuffDirect(card, 'keyword_immune', 0, 'dur_until_attack_end', ctx);
+  const b = card.buffs && card.buffs[card.buffs.length - 1];
+  if (b && b.type === 'keyword_immune') b._preAttack = true;
+  ctx.addLog && ctx.addLog('🪄 【プログレス】「' + card.name + '」はアタック中、相手の効果を受けない');
+  try { if (typeof window !== 'undefined' && window._showKeywordRuleFlash) window._showKeywordRuleFlash(card, 'attack_immunity'); } catch (_) {}
+  ctx.renderAll && ctx.renderAll();
+  try { if (typeof window !== 'undefined' && window._onlineSendStateSync) window._onlineSendStateSync(); } catch (_) {}
+}
+function _clearDeclaredAttackImmunity(card) {
+  if (card && Array.isArray(card.buffs)) card.buffs = card.buffs.filter((b) => !(b && b._preAttack));
+}
+
 export function runPendingEffectAttack(bs, done) {
   const list = bs && bs._pendingEffectAttacks;
   if (!Array.isArray(list) || list.length === 0) { done && done(false); return; }
@@ -13351,6 +13390,7 @@ export function runPendingEffectAttack(bs, done) {
   if (!cur || cur.suspended) {
     if (e && e.card && e.ctx && e.ctx.addLog) e.ctx.addLog('⚠ 「' + ((cur || e.card).name) + '」はアタックできる状態ではありません');
     if (_wr && e.card) delete e.card._attackWithoutRest;
+    if (e && e.card) _clearDeclaredAttackImmunity(cur || e.card);
     runPendingEffectAttack(bs, done);
     return;
   }
@@ -13359,6 +13399,7 @@ export function runPendingEffectAttack(bs, done) {
   _confirmAndDeclareEffectAttack(cur, e.step, e.ctx, (declared) => {
     if (declared) { done && done(true); return; }
     if (_wr) delete cur._attackWithoutRest;
+    _clearDeclaredAttackImmunity(cur);
     runPendingEffectAttack(bs, done);
   }, e.preTarget ? { preTarget: e.preTarget } : undefined);
 }
@@ -17337,6 +17378,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         _confirmAndDeclareEffectAttack(_atkCard, step, ctx, (ok, pre) => {
           if (!ok || !pre) { _clearWr(); callback(); return; }
           _last.preTarget = pre;
+          _applyDeclaredAttackImmunity(_atkCard, ctx);
           ctx.bs._pendingEffectAttacks.push(_last);
           ctx.addLog('⏳ 「' + _atkCard.name + '」のアタックは、全ての効果の処理が終わった後に行います');
           callback();

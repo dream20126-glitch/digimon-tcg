@@ -5663,71 +5663,66 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       finishReturnPhase();
       return;
     }
-    const placeFn = (card, position) => {
+    // quiet: 相手の画面の1枚ずつの移動演出は出さない（3枚以上で一覧の演出を出すとき）
+    const placeFn = (card, position, quiet) => {
       if (position === 'top') player.deck.unshift(card);
       else player.deck.push(card);
       _deckIncreasedByEffect = true;
       ctx.addLog && ctx.addLog('📥 「' + card.name + '」をデッキの' + (position === 'top' ? '上' : '下') + 'へ');
       // 相手画面にも通知
-      sendRemote({ type: 'fx_remoteDeckOpenAct', cardNo: card.cardNo, name: card.name, to: position === 'top' ? 'deck_top' : 'deck_bottom' });
+      sendRemote({ type: 'fx_remoteDeckOpenAct', cardNo: card.cardNo, name: card.name, to: position === 'top' ? 'deck_top' : 'deck_bottom', noFx: !!quiet });
     };
 
-    // deck_bottom（「デッキの下に戻す」明記）: 1枚なら自動。2枚以上なら戻す順番をプレイヤーが選ぶ
-    // （タップした順にデッキの下へ。トレーマニュアル BT26-099 の要望）
-    if (returnTo === 'deck_bottom' && remaining.length < 2) {
-      stepEl.innerText = '残りカードをデッキの下へ戻します...';
-      clearButtons();
-      let i = 0;
-      const STEP = 220;
-      function autoNext() {
-        const entry = remaining[i++];
-        if (!entry) {
+    // 戻す順番（タップした順）。全部選び終えたら（「上か下だけに戻す」なら上下を選んでから）まとめてデッキに戻し、
+    // 移動演出を出す（3枚以上は一覧でまとめて。コピペモン BT26-084 の要望）
+    const _order = [];
+    const _placeAll = (pos) => {
+      if (_order.length === 0) { finishReturnPhase(); return; }
+      // 置く順: deck_top（タップ順に上へ積む）は選んだ順に上へ＝最後に選んだカードが一番上。
+      // 「上か下だけ」で上を選んだときは1枚目に選んだカードが一番上。下はどちらも選んだ順に下へ
+      const placeList = (returnTo === 'deck_top_or_bottom' && pos === 'top') ? _order.slice().reverse() : _order.slice();
+      const toLabel = 'デッキ' + (pos === 'top' ? '(上)' : '(下)');
+      const many = _order.length >= 3;
+      overlay.style.display = 'none';
+      const done = () => { ctx.renderAll && ctx.renderAll(); finishReturnPhase(); };
+      if (many) {
+        _moveBatchIntro(ctx, _order, 'オープンしたカード', toLabel, () => {
+          placeList.forEach((c) => placeFn(c, pos, true));
           ctx.renderAll && ctx.renderAll();
-          setTimeout(() => { finishReturnPhase(); }, 200);
-          return;
-        }
-        // 軽いフェードアウト → 配置
-        entry.wrap.style.transition = 'opacity 0.18s, transform 0.18s';
-        entry.wrap.style.opacity = '0';
-        entry.wrap.style.transform = 'translateY(20px) scale(0.92)';
-        setTimeout(() => {
-          placeFn(entry.card, 'bottom');
-          removeEntry(entry);
-          ctx.renderAll && ctx.renderAll();
-          autoNext();
-        }, STEP);
+          // 一覧の演出のあとの1枚ずつの演出は省略される（_fxMoveBatchSkip を消費する）
+          let k = 0;
+          const nx = () => { if (k >= _order.length || typeof window._fxCardMove !== 'function') { done(); return; } window._fxCardMove(_order[k++], 'オープンしたカード', toLabel, nx); };
+          nx();
+        });
+        return;
       }
-      autoNext();
-      return;
-    }
-
-    // deck_top_or_bottom（「残りはデッキの上か下だけに戻す」）: 全部同じ側に戻すので、タップで戻す順番を決めてから、
-    // 最後に1回だけ「上に戻す／下に戻す」を選ぶ（テラーモン BT26-063。以前は1枚ごとに上下を選ばせていた）。
-    // 1枚だけなら順番は無いので、そのまま上下を選ぶ
-    const _tobOrder = [];
-    const _tobFinish = () => {
-      if (_tobOrder.length === 0) { finishReturnPhase(); return; }
-      const _label = _tobOrder.length === 1 ? _tobOrder[0] : { name: _tobOrder.length + '枚のカード（選んだ順）' };
-      showTopBottomChoice(_label, (pos) => {
-        // 上: 1枚目が一番上 / 下: 1枚目から順に下へ（最後に選んだカードが一番下）
-        const list = pos === 'top' ? _tobOrder.slice().reverse() : _tobOrder.slice();
-        list.forEach((c) => placeFn(c, pos));
-        ctx.renderAll && ctx.renderAll();
-        finishReturnPhase();
-      });
+      placeList.forEach((c) => placeFn(c, pos, false));
+      ctx.renderAll && ctx.renderAll();
+      let k = 0;
+      const nx = () => { if (k >= _order.length || typeof window._fxCardMove !== 'function') { done(); return; } window._fxCardMove(_order[k++], 'オープンしたカード', toLabel, nx); };
+      nx();
+    };
+    const _finishOrder = () => {
+      if (returnTo === 'deck_top') { _placeAll('top'); return; }
+      if (returnTo === 'deck_top_or_bottom') {
+        if (_order.length === 0) { finishReturnPhase(); return; }
+        const _label = _order.length === 1 ? _order[0] : { name: _order.length + '枚のカード（選んだ順）' };
+        showTopBottomChoice(_label, (pos) => _placeAll(pos));
+        return;
+      }
+      _placeAll('bottom'); // deck_bottom / deck_choice
     };
     function refreshReturnUI() {
       const left = cardEls.filter(e => !e.removed);
-      if (returnTo === 'deck_top_or_bottom' && left.length <= 1) {
-        if (left.length === 1) { _tobOrder.push(left[0].card); removeEntry(left[0]); }
-        _tobFinish();
+      // 残り1枚は順番を選ぶ余地が無いので、そのまま最後に加える
+      if (left.length <= 1) {
+        if (left.length === 1) { _order.push(left[0].card); removeEntry(left[0]); }
+        _finishOrder();
         return;
       }
-      if (left.length === 0) { finishReturnPhase(); return; }
-      let labelText = '残りカードをデッキに戻す';
-      if (returnTo === 'deck_top') labelText += '（タップ順にデッキの上へ積まれます）';
-      else if (returnTo === 'deck_choice') labelText += '（好きな順番で：タップした順にデッキの下へ）';
-      else if (returnTo === 'deck_bottom') labelText = '残りカードをデッキの下に戻す順番を選んでください（タップした順にデッキの下へ）';
+      let labelText = '戻す順番を選んでください（タップした順）';
+      if (returnTo === 'deck_top') labelText = '戻す順番を選んでください（タップした順にデッキの上へ積みます）';
+      else if (returnTo === 'deck_choice' || returnTo === 'deck_bottom') labelText = '戻す順番を選んでください（タップした順にデッキの下へ）';
       else if (returnTo === 'deck_top_or_bottom') labelText = '戻す順番を選んでください（タップした順。最後にデッキの上か下かを選びます）';
       stepEl.innerText = labelText;
       clearButtons();
@@ -5736,22 +5731,9 @@ function showDeckOpenUI(opened, step, ctx, callback) {
         setCardReturnable(entry);
         entry.wrap.onclick = () => {
           if (entry.removed) return;
-          if (returnTo === 'deck_top_or_bottom') {
-            _tobOrder.push(entry.card);
-            removeEntry(entry);
-            refreshReturnUI();
-          } else if (returnTo === 'deck_top') {
-            placeFn(entry.card, 'top');
-            removeEntry(entry);
-            ctx.renderAll && ctx.renderAll();
-            refreshReturnUI();
-          } else {
-            // deck_choice = 「好きな順番で」 → タップ順にデッキ下へ
-            placeFn(entry.card, 'bottom');
-            removeEntry(entry);
-            ctx.renderAll && ctx.renderAll();
-            refreshReturnUI();
-          }
+          _order.push(entry.card);
+          removeEntry(entry);
+          refreshReturnUI();
         };
       });
     }

@@ -2703,6 +2703,8 @@ function handleRemoteDeckOpenAct(cmd) {
   if (_remoteDeckOpenState.footer) {
     _remoteDeckOpenState.footer.innerText = '📥 「' + (cmd.name || '?') + '」を ' + toLabel;
   }
+  // noFx: 3枚以上をまとめて戻すときは一覧の演出（fx_moveBatch）を別に送っているので、1枚ずつの移動演出は出さない
+  if (cmd.noFx) { if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap); return; }
   // 手札に加えたカードは大きく見せる（何を手札に加えたか分かるように。トレーマニュアル BT26-099 の要望）
   if (cmd.to === 'hand') {
     const imgEl0 = ent.wrap.querySelector('img');

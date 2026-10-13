@@ -8145,6 +8145,16 @@ function checkConditions(conditions, card, bs, side) {
         if (dc && dc.type === 'effect' && dc.causerSide === side) return false;
         break;
       }
+      // 「バトルで」（≪防壁≫のテンプレート trigger_conditions:['battle@self']「このデジモンがバトルで消滅するとき」）。
+      // 以前は未実装で、未実装の条件は満たした扱いになるため、効果で消滅するときも≪防壁≫の確認が出ていた
+      // （レイヴモン BT26-082 の効果で消滅したウルヴァモンの進化元クーガモンの【防壁】）。バトルで離れる処理中は
+      // bs._leaveByBattle（battle-combat.js の離れる判定・オンラインの fx_leaveBattleDelegate の byBattle）が立つ
+      case 'battle': case 'cond_battle': {
+        const _bdc = bs && bs._lastDestroyCause;
+        const _byBattle = !!(bs && bs._leaveByBattle) || _bdc === 'battle' || !!(_bdc && _bdc.type === 'battle');
+        if (String(cond.value || '') === 'not' ? _byBattle : !_byBattle) return false;
+        break;
+      }
       case 'cond_effect': {
         // 「効果で」（trigger_conditions に入る原因条件）。トリガー発火元が bs._lastDestroyCause
         // （cause/cause_subject 判定と共通の「今解決中の反応チェーンの原因」）に

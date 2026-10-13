@@ -660,6 +660,54 @@ export function fxJogressEvolve(card1, card2, resultCard, callback) {
 //  11. リンク演出（回転しながら横向きに刺さる）
 // =====================================================
 
+// 効果によるバトル（「このデジモンと相手のデジモン1体でバトルする」。アタックではないので VS 演出とは別）。
+// 両方のカードを左右に並べ、ぶつかり合ってから勝敗（DPの高い方が勝ち）を出す。
+// result: 'win'（左が勝ち）/ 'lose'（右が勝ち）/ 'draw'（両者消滅）。opts.leftLabel / opts.rightLabel: カードの下の見出し
+export function fxEffectBattle(leftCard, rightCard, leftDp, rightDp, result, callback, opts) {
+  opts = opts || {};
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:55000;display:flex;align-items:center;justify-content:center;flex-direction:column;';
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:1.05rem;font-weight:900;color:#ff9900;letter-spacing:3px;text-shadow:0 0 15px #ff9900;margin-bottom:14px;';
+  title.innerText = '⚔ 効果でバトル';
+  overlay.appendChild(title);
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;align-items:center;gap:26px;';
+  const mk = (c, dp, color, label) => {
+    const w = document.createElement('div');
+    w.style.cssText = 'text-align:center;transition:transform 0.25s ease, opacity 0.5s, filter 0.5s;';
+    const src = c ? cardImg(c) : '';
+    w.innerHTML = '<div style="width:100px;height:140px;border-radius:8px;border:2px solid ' + color + ';overflow:hidden;box-shadow:0 0 15px ' + color + '66;background:#111;">'
+      + (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:' + color + ';padding:6px;font-size:10px;">' + ((c && c.name) || '?') + '</div>') + '</div>'
+      + '<div style="color:#fff;font-size:11px;font-weight:bold;margin-top:4px;">' + ((c && c.name) || '?') + '</div>'
+      + '<div style="color:' + color + ';font-size:13px;font-weight:900;">DP ' + dp + '</div>'
+      + (label ? '<div style="color:#888;font-size:9px;">' + label + '</div>' : '');
+    return w;
+  };
+  const L = mk(leftCard, leftDp, '#00fbff', opts.leftLabel);
+  const vs = document.createElement('div');
+  vs.style.cssText = 'font-size:1.6rem;font-weight:900;color:#ff9900;text-shadow:0 0 12px #ff9900;';
+  vs.innerText = '⚔';
+  const Rt = mk(rightCard, rightDp, '#ff00fb', opts.rightLabel);
+  row.appendChild(L); row.appendChild(vs); row.appendChild(Rt);
+  overlay.appendChild(row);
+  const res = document.createElement('div');
+  res.style.cssText = 'margin-top:14px;font-size:1.2rem;font-weight:900;letter-spacing:2px;opacity:0;transition:opacity 0.3s;min-height:1.4em;';
+  overlay.appendChild(res);
+  document.body.appendChild(overlay);
+  // ぶつかり合う
+  setTimeout(() => { L.style.transform = 'translateX(18px)'; Rt.style.transform = 'translateX(-18px)'; }, 400);
+  setTimeout(() => { L.style.transform = ''; Rt.style.transform = ''; }, 700);
+  setTimeout(() => {
+    const lName = (leftCard && leftCard.name) || '?', rName = (rightCard && rightCard.name) || '?';
+    if (result === 'draw') { res.style.color = '#ff4444'; res.innerText = '両者消滅！'; L.style.opacity = '0.4'; Rt.style.opacity = '0.4'; }
+    else if (result === 'win') { res.style.color = '#00ff88'; res.innerText = '「' + lName + '」の勝ち！'; Rt.style.opacity = '0.35'; Rt.style.filter = 'grayscale(1)'; }
+    else { res.style.color = '#ff4444'; res.innerText = '「' + rName + '」の勝ち！'; L.style.opacity = '0.35'; L.style.filter = 'grayscale(1)'; }
+    res.style.opacity = '1';
+  }, 1000);
+  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2300);
+}
+
 // cost: 支払ったリンクコスト（数値なら「〇コストでリンク！」を表示。省略時は表示しない）
 // replacedCard: リンク上限で差し替えて外すカード
 // 演出:

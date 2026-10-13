@@ -4837,14 +4837,32 @@ function _resolveCombatAction(step, ctx, callback) {
     };
     const _oppSideTag = ctx.side === 'player' ? 'ai' : 'player';
     const _defSideTag = tPlayer === player ? ctx.side : _oppSideTag;
-    if (atkDp === defDp) {
-      // 両者敗北 → 両者消滅（それぞれ独立に消滅回避判定はdoDestroy内のデコイ/スケープゴート等で行われる）
-      doDestroy(player, selfIdx, ctx, () => { doDestroy(tPlayer, idx, ctx, finish, 'battle'); }, 'battle');
-    } else if (atkDp > defDp) {
-      doDestroy(tPlayer, idx, ctx, winAfter(selfCard, ctx.side, tPlayer, idx, defCard), 'battle');
-    } else {
-      doDestroy(player, selfIdx, ctx, winAfter(defCard, _defSideTag, player, selfIdx, selfCard), 'battle');
+    // 負けた側は消滅演出を出す（離れなかったら出さない。_destroyWithFx）
+    const _dfx = (c, cb) => {
+      const f = ctx.showDestroyEffect || (window._fxAnimFns && window._fxAnimFns.showDestroyEffect);
+      if (typeof f === 'function') { try { f(c, cb); return; } catch (_) {} }
+      cb && cb();
+    };
+    const _result = atkDp === defDp ? 'draw' : (atkDp > defDp ? 'win' : 'lose');
+    const _resolve = () => {
+      if (_result === 'draw') {
+        // 両者敗北 → 両者消滅（それぞれ独立に消滅回避判定はdoDestroy内のデコイ/スケープゴート等で行われる）
+        _destroyWithFx(player, selfIdx, ctx, _dfx, () => { const di = tPlayer.battleArea.indexOf(defCard); if (di === -1) { finish(); return; } _destroyWithFx(tPlayer, di, ctx, _dfx, finish); });
+      } else if (_result === 'win') {
+        _destroyWithFx(tPlayer, idx, ctx, _dfx, winAfter(selfCard, ctx.side, tPlayer, idx, defCard));
+      } else {
+        _destroyWithFx(player, selfIdx, ctx, _dfx, winAfter(defCard, _defSideTag, player, selfIdx, selfCard));
+      }
+    };
+    // 効果によるバトルの演出（アタックの VS 演出とは別。相手の画面にも fx_effectBattle で出す）
+    if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+      const _img = (c) => (c && (c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl)) || '';
+      try { window._onlineSendCommand({ type: 'fx_effectBattle', atkName: selfCard.name, atkImg: _img(selfCard), atkDp, defName: defCard.name, defImg: _img(defCard), defDp, result: _result }); } catch (_) {}
     }
+    if (typeof window !== 'undefined' && typeof window._fxEffectBattle === 'function') {
+      try { window._fxEffectBattle(selfCard, defCard, atkDp, defDp, _result, _resolve); return; } catch (_) {}
+    }
+    _resolve();
   };
 
   if (candIdxs.length === 1 || ctx.side !== 'player') {

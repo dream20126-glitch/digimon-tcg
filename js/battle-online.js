@@ -1713,6 +1713,17 @@ function onRemoteCommand(cmd) {
       }
       break;
     }
+    // 相手の効果によるバトル（相手視点なので左右と勝敗を入れ替えて表示）
+    case 'fx_effectBattle': {
+      if (typeof window._fxEffectBattle === 'function') {
+        const _a = { name: cmd.atkName || '?', imgSrc: cmd.atkImg || '' };
+        const _d = { name: cmd.defName || '?', imgSrc: cmd.defImg || '' };
+        const _res = cmd.result === 'win' ? 'lose' : cmd.result === 'lose' ? 'win' : 'draw';
+        addLog('⚔ 相手の効果で「' + _a.name + '」(DP ' + cmd.atkDp + ') と「' + _d.name + '」(DP ' + cmd.defDp + ') がバトル');
+        enqueueFx((done) => { try { window._fxEffectBattle(_d, _a, cmd.defDp, cmd.atkDp, _res, done); } catch (_) { done(); } });
+      }
+      break;
+    }
     case 'fx_destroyBatch': {
       // 相手の効果で2体以上がまとめて消滅 → 一覧で1回だけ演出
       if (typeof window._showDestroyBatch === 'function') enqueueFx((done) => window._showDestroyBatch(cmd.cards || [], done, { remote: true }));

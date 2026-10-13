@@ -11,7 +11,7 @@ import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallback
 import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, showDrawEffect } from './battle-phase.js';
 import { doPlay, offerAssemblyThenPlay, doEvolve, doEvolveIku, doEvolveFromEffect, doLink, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showDestroyBatch, showSecurityCheck, showBattleResult, showOptionEffect, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack, doTrainingEffect, getAppGattaiCandidates, doAppGattaiEvolve } from './battle-combat.js';
 import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE, fireOnAttackBothSubjectTriggers as _fireOnAttackBothSubjectEE, fireOnAttackOppSubjectTriggers as _fireOnAttackOppSubjectEE, fireWhenTargetChangedTriggers as _fireWhenTargetChangedEE, fireOnMainPhaseStartTriggers as _fireOnMainPhaseStartEE, fireOnOppMainPhaseStartTriggers as _fireOnOppMainPhaseStartEE, fireDelegatedReactionTriggers as _fireDelegatedReactionEE, runDelegatedHandDiscard as _runDelegatedHandDiscardEE, activateZoneMainEffect as _activateZoneMainEE, getUsableZoneMainEffects as _getUsableZoneMainEE } from './effect-engine.js';
-import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxCardMoveBatch, fxBuffStatus, fxShuffle, fxLinkEffect } from './battle-fx.js';
+import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxCardMoveBatch, fxBuffStatus, fxShuffle, fxLinkEffect, fxEffectBattle } from './battle-fx.js';
 import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js';
 
 // ===== TRIGGER_CODE_MAP =====
@@ -388,7 +388,8 @@ export function setupCommonWindowExports() {
   // 反応系の効果（デッキが増えたとき等）は呼び出し元が演出関数を持っていないことがあるので、共通の演出関数を公開する
   window._fxAnimFns = { doDraw, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, showDrawEffect };
   window._showDestroyBatch = showDestroyBatch;
-  window._fxLinkEffect = fxLinkEffect; // 効果でのリンク・相手のリンクの演出（effect-engine.js / battle-online.js）
+  window._fxLinkEffect = fxLinkEffect;
+  window._fxEffectBattle = fxEffectBattle; // 効果によるバトルの演出（effect-engine.js _resolveCombatAction / battle-online.js） // 効果でのリンク・相手のリンクの演出（effect-engine.js / battle-online.js）
   window._fxBuffStatus = fxBuffStatus;
   window._fxShuffle = fxShuffle;
 

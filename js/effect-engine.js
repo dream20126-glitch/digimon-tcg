@@ -9100,6 +9100,9 @@ function _fireLinkTriggersNested(linkerCard, linkerSide, baseCard, baseSide, ctx
 // 本体の効果テキストに【リンク時】が無ければそちらを使う（メールモン BT26-019 で本体の【アタック時】の文章が出ていた）
 // リンク効果欄を使うのは、リンクする側自身の【リンク時】（link_role:'target' でも、他のカードの反応でもない）だけ。
 // 「このデジモンがリンクしたとき」（リンクされた側。コピペモン BT26-084 等）は本体の効果の文章
+function _cardIsOnBattleArea(bs, card) {
+  return !!(bs && card && ['player', 'ai'].some((sd) => bs[sd] && (bs[sd].battleArea || []).includes(card)));
+}
 function _linkRawText(card, recipeCard, steps) {
   if (recipeCard) return recipeCard.evoSourceEffect || '';
   const _own = Array.isArray(steps) && steps.length > 0 && steps.every((st) => st && st.link_role !== 'target' && (!st.subject || st.subject === 'self'));
@@ -9141,7 +9144,9 @@ function _fireLinkTriggersImpl(linkerCard, linkerSide, baseCard, baseSide, ctx, 
   const queueOwnLinkSteps = (card, side, filterFn, eventSourceCard) => {
     const topSteps = getRecipeForTrigger(card, 'on_link') || [];
     queueBlock(card, side, topSteps.filter(filterFn), null, eventSourceCard);
-    if (Array.isArray(card.stack)) {
+    // 進化元は場のデジモンのものだけ（リンクしたカードが以前デジモンだったときの古い進化元を見ない。
+    // メールモンがダンテモンに進化→進化元からリンクされたとき、メールモンに残っていた古い進化元の【リンク時】が誘発していた）
+    if (Array.isArray(card.stack) && _cardIsOnBattleArea(ctx.bs, card)) {
       card.stack.forEach((evoCard) => {
         if (!evoCard) return;
         const evoSteps = getRecipeForTrigger(evoCard, 'on_link', true) || [];
@@ -17423,6 +17428,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (!linkCard) { callback(); break; }
         _linkMakeRoom(() => {
           if (!linkTarget.linkedCards) linkTarget.linkedCards = [];
+          linkCard.stack = []; linkCard.linkedCards = []; // リンクカードは進化元・リンクを持たない
           linkTarget.linkedCards.push(linkCard);
           ctx.addLog('🔗 「' + linkTarget.name + '」に「' + linkCard.name + '」をリンク');
           ctx.renderAll();
@@ -17502,6 +17508,8 @@ function executeRecipeStep(step, ctx, store, callback) {
             if (window._sendMemoryUpdate) window._sendMemoryUpdate();
           }
           if (!linkTarget.linkedCards) linkTarget.linkedCards = [];
+          // リンクカードは進化元・リンクを持たない（進化元からリンクしたカードに、以前デジモンだったときの情報が残っていた）
+          c.stack = []; c.linkedCards = [];
           linkTarget.linkedCards.push(c);
           if (linkTarget._pendingLinkReplaced) { c._linkReplaced = linkTarget._pendingLinkReplaced; delete linkTarget._pendingLinkReplaced; }
           ctx.addLog('🔗 「' + linkTarget.name + '」に「' + c.name + '」をリンク');

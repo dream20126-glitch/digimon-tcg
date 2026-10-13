@@ -4120,8 +4120,9 @@ function pickUpToNTargets(rowSide, validIndices, maxCount, color, onPicked) {
 // カード詳細を表示し、決定/キャンセルで選択するダイアログ
 function _showCardConfirmDialog(card, onConfirm) {
   const conf = document.createElement('div');
+  conf.setAttribute('data-card-confirm', '1');
   // 各選択画面（進化元の選択 65000 等）より手前に出す
-  conf.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:67500;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.15s ease;';
+  conf.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:71000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.15s ease;';
   const src = card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(card) : '') || card.imageUrl || '';
   const colorBadge = card.color ? `<span style="background:rgba(255,204,0,0.2);color:#ffcc00;border:1px solid #ffcc0066;border-radius:3px;padding:1px 6px;font-size:10px;margin-right:4px;">${card.color}</span>` : '';
   const lvText = card.level ? `Lv.${card.level}` : '';
@@ -16386,6 +16387,37 @@ function executeRecipeStep(step, ctx, store, callback) {
             _placeMany(digi, picked);
           }, cards);
         };
+        // バトルエリア/リンクカードからも取る場合（セブンコードPAD BT26-102）は、置くカードを先に盤面で選んで
+        // （トラッシュはボタンから）、そのあと残っているデジモンから置き先を選ぶ
+        if (effectiveSide !== 'ai' && ctx.side === 'player' && step.linked_owner !== 'self'
+            && (_pudFromZones.includes('battle_area') || _pudFromZones.includes('linked'))
+            && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
+          const _allSrc = _sourcesFor({}).map((sc) => {
+            const c = sc.card;
+            let zone = 'trash', holder = null;
+            if ((player.hand || []).includes(c)) zone = 'hand';
+            else if ((player.battleArea || []).includes(c)) zone = 'battle';
+            else if ((player.tamerArea || []).includes(c)) zone = 'tamer';
+            else { const h = (player.battleArea || []).find((d) => d && Array.isArray(d.linkedCards) && d.linkedCards.includes(c)); if (h) { zone = 'linked'; holder = h; } }
+            return Object.assign({}, sc, { zone, holder });
+          });
+          if (_allSrc.length < _pudWant && _pudIsCost) { _fail(true); break; }
+          _showBoardMultiSourcePicker(_allSrc, Math.min(_pudWant, _allSrc.length), '進化元の下に置くカードを選んでください', _pudOptionalExt || _pudIsCost, (picked) => {
+            if (!picked || picked.length === 0) { if (_pudOptionalExt || _pudIsCost) { callback(_pudIsCost ? false : undefined); } else { _fail(); } return; }
+            // 置き先: 選んだカード以外で条件を満たすデジモン（「他のデジモンのリンクカード」なら、リンクカードを選んだデジモンは不可）
+            const _pickedCards = picked.map((sc) => sc.card);
+            const _okHost = _containers.filter(({ c }) => !_pickedCards.includes(c)
+              && !(step.linked_owner === 'other' && picked.some((sc) => sc.zone === 'linked' && sc.holder === c)));
+            if (_okHost.length === 0) { ctx.addLog('💨 置き先のデジモンがいません'); callback(_pudIsCost ? false : undefined); return; }
+            const _go = (digi) => _placeMany(digi, picked);
+            if (_okHost.length === 1) { _go(_okHost[0].c); return; }
+            showTargetSelection('pl', _okHost.map((u) => u.i), null, '#00ff88', (selectedIdx) => {
+              if (selectedIdx == null) { callback(_pudIsCost ? false : undefined); return; }
+              _go(player.battleArea[selectedIdx]);
+            }, '（どのデジモンの進化元の下に置きますか？）');
+          });
+          break;
+        }
         if (_usable.length === 1 || effectiveSide === 'ai') { _pickSources(_usable[0].c); break; }
         showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', _usable.map(u => u.i), '進化元に置く先のデジモンを選んでください', '#00ff88', (selectedIdx) => {
           if (selectedIdx == null) { if (_pudOptionalExt || _pudIsCost) { callback(_pudIsCost ? false : undefined); } else { _fail(); } return; }
@@ -17990,6 +18022,141 @@ function executeRecipeStep(step, ctx, store, callback) {
 }
 
 // 進化元カード選択UI
+// 自分のバトルエリア／リンクカード／トラッシュから、置くカードを want 枚選ぶ盤面UI（セブンコードPAD BT26-102）。
+// - バトルエリアのデジモンは盤面のカードをタップ（リンクしているカードがあれば、そのデジモンかリンクカードかを選ぶ）
+// - 「🗑 トラッシュから選ぶ」でトラッシュの候補から選ぶ
+// - 1枚ずつカード詳細→「✓ このカードに決定」。want 枚そろったら一覧で「これで確定でいいですか？」
+// - 選んでいる間は他の操作はできない
+// sources: [{ card, remove, zone:'battle'|'linked'|'trash'|'hand'|'tamer', holder? }]
+// done(picked | null)。optional なら「やめる」で null
+function _showBoardMultiSourcePicker(sources, want, title, optional, done) {
+  const bs = (typeof window !== 'undefined') ? window._lastBattleState : null;
+  const row = document.getElementById('pl-battle-row');
+  if (!bs || !row) { done(null); return; }
+  const picked = [];
+  let modalOpen = false;
+  const isPicked = (src) => picked.includes(src);
+  const panel = document.createElement('div');
+  panel.setAttribute('data-mzp', '1');
+  panel.style.cssText = 'position:fixed;top:12%;left:50%;transform:translateX(-50%);z-index:60500;background:rgba(0,0,0,0.92);border:1px solid #00ff88;border-radius:10px;padding:10px 16px;color:#00ff88;font-size:13px;font-weight:bold;text-align:center;box-shadow:0 0 20px #00ff8844;max-width:92vw;';
+  document.body.appendChild(panel);
+  const marks = [];
+  const clearMarks = () => { marks.splice(0).forEach((m) => { if (m.parentNode) m.parentNode.removeChild(m); }); };
+  const slotsAll = () => Array.from(row.querySelectorAll('.b-slot'));
+  // バトルエリアの位置ごとの候補（そのデジモン自身・そのデジモンのリンクカード）
+  const slotCands = (i) => {
+    const holder = bs.player.battleArea[i];
+    if (!holder) return [];
+    return sources.filter((sc) => !isPicked(sc) && ((sc.zone === 'battle' && sc.card === holder) || (sc.zone === 'linked' && sc.holder === holder)));
+  };
+  const trashCands = () => sources.filter((sc) => !isPicked(sc) && (sc.zone === 'trash' || sc.zone === 'hand'));
+  const highlight = () => {
+    clearMarks();
+    slotsAll().forEach((slot, i) => {
+      slot.style.border = ''; slot.style.boxShadow = '';
+      const holder = bs.player.battleArea[i];
+      if (!holder) return;
+      const pickedHere = picked.filter((sc) => (sc.zone === 'battle' && sc.card === holder) || (sc.zone === 'linked' && sc.holder === holder)).length;
+      if (slotCands(i).length > 0) {
+        slot.style.border = '2px solid #00ff88';
+        slot.style.boxShadow = '0 0 15px #00ff88';
+        slot.style.cursor = 'pointer';
+        slot.style.setProperty('pointer-events', 'auto', 'important');
+      }
+      if (pickedHere > 0) {
+        const m = document.createElement('div');
+        m.style.cssText = 'position:absolute;left:0;right:0;top:40%;text-align:center;z-index:9;pointer-events:none;';
+        m.innerHTML = '<span style="background:#00ff88;color:#002211;font-size:9px;font-weight:bold;padding:1px 4px;border-radius:3px;">✓ ' + pickedHere + '枚選択</span>';
+        if (getComputedStyle(slot).position === 'static') slot.style.position = 'relative';
+        slot.appendChild(m); marks.push(m);
+      }
+    });
+  };
+  const renderPanel = () => {
+    const tc = trashCands().length;
+    panel.innerHTML = '<div>🎯 ' + title + '（' + picked.length + '/' + want + '）</div>'
+      + '<div style="color:#aaa;font-size:10px;font-weight:normal;margin:4px 0 8px;">バトルエリアのカードをタップ（リンクカードも選べます）／トラッシュは下のボタン</div>'
+      + '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">'
+      + '<button type="button" data-act="trash" style="background:#333;color:#fff;border:1px solid #888;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;"' + (tc ? '' : ' disabled') + '>🗑 トラッシュから選ぶ（' + tc + '）</button>'
+      + (picked.length ? '<button type="button" data-act="undo" style="background:#333;color:#fff;border:1px solid #888;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;">↩ 1枚戻す</button>' : '')
+      + (optional ? '<button type="button" data-act="cancel" style="background:#552222;color:#fff;border:1px solid #aa4444;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;">やめる</button>' : '')
+      + '</div>';
+    panel.querySelectorAll('button[data-act]').forEach((b) => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const act = b.getAttribute('data-act');
+        if (act === 'trash') openTrash();
+        else if (act === 'undo') { picked.pop(); refresh(); }
+        else if (act === 'cancel') { finish(null); }
+      };
+    });
+  };
+  const refresh = () => {
+    if (picked.length >= want) { confirmAll(); return; }
+    renderPanel(); highlight();
+  };
+  const addPick = (sc) => {
+    modalOpen = true;
+    _showCardConfirmDialog(sc.card, () => { modalOpen = false; if (!isPicked(sc) && picked.length < want) picked.push(sc); refresh(); });
+    // キャンセル（✕）でも戻れるように、ダイアログが閉じたら modalOpen を戻す
+    const iv = setInterval(() => { if (!document.querySelector('[data-card-confirm]')) { clearInterval(iv); if (modalOpen) { modalOpen = false; } } }, 200);
+  };
+  const chooseFrom = (list, head) => {
+    if (list.length === 1) { addPick(list[0]); return; }
+    modalOpen = true;
+    showCardListPicker(list.map((sc) => sc.card), 1, head, (chosen) => {
+      modalOpen = false;
+      const c = chosen && chosen[0];
+      const sc = c ? list.find((x) => x.card === c) : null;
+      // カード一覧の選択は「✓ このカードに決定」の確認つきなので、そのまま加える
+      if (sc && !isPicked(sc) && picked.length < want) picked.push(sc);
+      refresh();
+    }, (c) => { const sc = list.find((x) => x.card === c); return sc && sc.zone === 'linked' ? '[リンク] ' : (sc && sc.zone === 'battle' ? '[本体] ' : ''); });
+  };
+  const openTrash = () => { const list = trashCands(); if (list.length) chooseFrom(list, '🗑 トラッシュから選んでください'); };
+  const confirmAll = () => {
+    modalOpen = true;
+    const ov = document.createElement('div');
+    ov.setAttribute('data-mzp', '1');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:67000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+    const zoneLbl = { battle: 'バトルエリア', linked: 'リンクカード', trash: 'トラッシュ', hand: '手札', tamer: 'テイマー' };
+    ov.innerHTML = '<div style="color:#00ff88;font-size:14px;font-weight:bold;margin-bottom:10px;">これで確定でいいですか？（' + picked.length + '枚）</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:92vw;">'
+      + picked.map((sc) => { const src = sc.card.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(sc.card) : '') || ''; return '<div style="width:64px;text-align:center;">' + (src ? '<img src="' + src + '" style="width:64px;height:90px;object-fit:cover;border-radius:4px;">' : '') + '<div style="color:#fff;font-size:8px;">' + sc.card.name + '</div><div style="color:#888;font-size:8px;">' + (zoneLbl[sc.zone] || '') + '</div></div>'; }).join('')
+      + '</div><div style="display:flex;gap:10px;margin-top:14px;"><button type="button" data-ok style="background:#00ff88;color:#002211;border:none;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;">✓ 確定</button><button type="button" data-redo style="background:#333;color:#fff;border:1px solid #888;padding:10px 22px;border-radius:6px;font-size:13px;cursor:pointer;">↩ 1枚戻す</button></div>';
+    document.body.appendChild(ov);
+    ov.querySelector('[data-ok]').onclick = () => { ov.remove(); finish(picked.slice()); };
+    ov.querySelector('[data-redo]').onclick = () => { ov.remove(); modalOpen = false; picked.pop(); refresh(); };
+  };
+  // 盤面のタップ（選んでいる間は他の操作をさせない）
+  const onTap = (e) => {
+    if (modalOpen) return;
+    if (e.target && e.target.closest && e.target.closest('[data-mzp]')) return;
+    const cx = e.clientX || (e.changedTouches && e.changedTouches[0] && e.changedTouches[0].clientX);
+    const cy = e.clientY || (e.changedTouches && e.changedTouches[0] && e.changedTouches[0].clientY);
+    e.stopPropagation(); e.preventDefault();
+    if (!cx || !cy) return;
+    slotsAll().forEach((slot, i) => {
+      const r = slot.getBoundingClientRect();
+      if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+        const list = slotCands(i);
+        if (list.length) chooseFrom(list, '「' + bs.player.battleArea[i].name + '」から選んでください（本体かリンクカード）');
+      }
+    });
+  };
+  const finish = (res) => {
+    document.removeEventListener('click', onTap, true);
+    _targetSelecting = false;
+    clearMarks();
+    slotsAll().forEach((slot) => { slot.style.border = ''; slot.style.boxShadow = ''; });
+    if (panel.parentNode) panel.parentNode.removeChild(panel);
+    done(res);
+  };
+  _targetSelecting = true;
+  setTimeout(() => document.addEventListener('click', onTap, true), 0);
+  refresh();
+}
+
 function showEvoSourceSelection(parentCard, evoCards, filter, callback) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;';

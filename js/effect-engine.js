@@ -8610,12 +8610,25 @@ const _ALL_TRIGGER_LABELS = Array.from(new Set(Object.values(TRIGGER_LABEL_MAP))
 //     の when_opp_attack では【相手のターン】のセクションだけを出す
 const SECTION_KEYWORDS = {
   when_opp_attack: ['アタックしたとき', 'アタックした時'],
-  on_attack: ['アタックしたとき', 'アタックした時'],
-  when_deck_increase: ['増えたとき', '増えた時'],
+  // 【カウンター】の効果（ギロモン BT26-055・ユピテルモン：ラースモード BT26-103）もアタック時のトリガーで書かれている
+  on_attack: ['アタックしたとき', 'アタックした時', '【カウンター】'],
+  // 「〜が増えたとき」に加え、増えた場所ごとの書き方（zone_increase。アンドロモン BT26-054「進化元に〜置かれたとき」）
+  when_deck_increase: ['増えたとき', '増えた時', '置かれたとき', '置かれた時', '加わったとき', '加わった時', '加えられたとき', '加えられた時'],
+  // 「セキュリティが減ったとき」（沢城キョウ BT26-089・アイギオテュースモン：ホーリー BT26-029 等。【お互いのターン】の段落）
+  on_security_reduced: ['減ったとき', '減った時'],
+  // 「アクティブになったとき」（アルフォースブイドラモン BT2-032）
+  on_active: ['アクティブになったとき', 'アクティブになった時'],
+  // 「〜が登場するとき」（鷺坂ヒロコ BT26-088）
+  when_play: ['登場するとき', '登場する時'],
+  // 「〜に進化するとき」（コスト軽減等。タイガ BT2-088）
+  before_evolve: ['進化するとき', '進化する時'],
+  // 【消滅時】の見出しが無い「デジモンが消滅したとき」（久遠寺マコト BT26-095）
+  on_destroy: ['消滅したとき', '消滅した時'],
   when_hand_discard: ['破棄されたとき', '破棄された時'],
   // 進化元が破棄されたとき（ブルムロードモン BT26-048「【お互いのターン】自分のデジモンの裏向きの進化元が効果で破棄されたとき」）
   when_evo_discard: ['破棄されたとき', '破棄された時'], discard: ['破棄されたとき', '破棄された時'],
-  when_rest: ['レスト'], when_opp_rest: ['レスト'],
+  // 「レスト」だけだと「レストさせる」効果の段落にも一致して全文になる（ライラモン BT26-044 / ロゼモン BT26-049）
+  when_rest: ['レストしたとき', 'レストした時'], when_opp_rest: ['レストしたとき', 'レストした時'],
   when_own_block: ['ブロック'],
   when_return_to_hand: ['手札に戻'],
   when_destroy: ['消滅'], when_battle_destroy: ['消滅'],
@@ -11155,6 +11168,7 @@ export function fireWhenEvoSourceIncreaseTriggers(digi, side, bs, ctxBase, done,
 
 // 手札に戻ったとき → 戻った側が反応
 export function fireWhenReturnToHandTriggers(returnedSide, bs, ctxBase, done) {
+  if (_deferReactionDuringEffect(bs, ctxBase, (c, d) => fireWhenReturnToHandTriggers(returnedSide, bs, c, d), done)) return;
   return _fireSidedReactionTriggers(returnedSide, 'when_return_to_hand', bs, ctxBase, done);
 }
 
@@ -11619,7 +11633,23 @@ export function fireCounterTriggers(attackerSide, bs, ctxBase, done) {
   finish();
 }
 
+// 「レストしたとき」は「〜したとき」なので、効果の処理中にレストしたなら、その効果の処理（「その後〜」まで）が
+// 全て終わってから発揮する（保留反応 bs._pendingReactions。同時に誘発した他の「〜したとき」と発動順を選べる）。
+// ライラモン BT26-044「相手のデジモン1体をレストできる。その後〜アクティブにならない」で、レストに反応した
+// 自身の「相手のデジモン/テイマーがレストしたとき」が「その後」より先に割り込んでいた。
+// 「登場したとき」「手札に戻ったとき」も同じ（効果で登場させたトークン等）
+function _deferReactionDuringEffect(bs, ctxBase, run, done) {
+  if (_queueResolveDepth > 0 && _curEffectCtx && bs && !(ctxBase && ctxBase._restReactionNow)) {
+    const ctxNow = Object.assign({}, ctxBase || {}, { _restReactionNow: true });
+    enqueueReaction(bs, (d) => run(ctxNow, d), [], { collectable: true });
+    try { done && done(); } catch (_) {}
+    return true;
+  }
+  return false;
+}
+
 export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
+  if (_deferReactionDuringEffect(bs, ctxBase, (c, d) => fireWhenOppRestTriggers(restedSide, bs, c, d), done)) return;
   // reactSide（レストしたデジモンの相手側）が発動主体。_fireSidedReactionTriggers に委譲する
   // ことで、evo_source ネストされた反応（ガルルモン等と同種の構造）も自動的に拾えるようになり、
   // アナウンス/確認/close送信の定型処理も他の反応系トリガーと完全に統一される
@@ -11659,6 +11689,7 @@ export function fireWhenOppRestTriggers(restedSide, bs, ctxBase, done) {
 // 現状のアーキテクチャ（レスト元/レスト先で発火関数が分かれている）では未対応
 export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) {
   if (!restedCard) { try { done && done(); } catch(_) {} return; }
+  if (_deferReactionDuringEffect(bs, ctxBase, (c, d) => fireWhenRestTriggers(restedSide, restedCard, bs, c, d), done)) return;
   // subject/trigger_conditions はレストしたカード本体(restedCard)に対して判定する必要があるため
   // stepFilter として _fireSidedReactionTriggers に渡す（carrier=反応するカード自身の判定は
   // 既存の condition/gate/limit チェックに委譲される）
@@ -11685,6 +11716,7 @@ export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) 
 export function fireWhenSummonTriggers(summonedCard, summonedSide, bs, ctxBase, done) {
   const finish = () => { try { done && done(); } catch(_) {} };
   if (!bs || !summonedCard) { finish(); return; }
+  if (_deferReactionDuringEffect(bs, ctxBase, (c, d) => fireWhenSummonTriggers(summonedCard, summonedSide, bs, c, d), done)) return;
   const reactPlayer = bs[summonedSide];
   if (!reactPlayer) { finish(); return; }
   const topCards = [...(reactPlayer.battleArea || []), ...(reactPlayer.tamerArea || [])].filter(c => c);
@@ -12692,7 +12724,7 @@ function runWithAltActions(step, ctx, store, callback) {
 
   // OR: メインと alts のどれか1つを選択
   const choices = [mainOnly].concat(alts);
-  const labels = choices.map((c) => actionLabelOf(c.action));
+  const labels = _altChoiceLabels(choices, ctx);
 
   // 盤面状況で実行可能な選択肢が1つだけなら、選択UIを出さず自動実行する。
   // （太刀川ミミ: 育成エリアが空→孵化 / Lv.3以上デジモンがいる→バトル移動。
@@ -12797,13 +12829,73 @@ function runWithAltActions(step, ctx, store, callback) {
   });
 }
 
-// アクションコードから表示ラベル取得（辞書未登録なら code そのまま）
+// アクションコードから表示ラベル取得。スプレッドシートの辞書（window.keywords の「表示名」。種類 action）→
+// よく使うアクションの日本語 → コードそのまま、の順
+const _ACTION_JA = {
+  cost_discard: '手札を破棄する', discard: '破棄する', hand_discard: '手札を破棄する',
+  place_under_tamer: 'テイマーの下に置く', place_under_self: 'このカードの下に置く', place_under_digimon: 'デジモンの下に置く',
+  rest: 'レストさせる', rest_self: 'このカードをレストさせる', active: 'アクティブにする',
+  destroy: '消滅させる', bounce: '手札に戻す', return_deck: 'デッキに戻す',
+  draw: 'ドローする', memory_plus: 'メモリー+', memory_minus: 'メモリー-', recover: 'リカバリー',
+  dp_plus: 'DP+', dp_minus: 'DP-', summon: '登場させる', summon_appear: '登場させる', evolve: '進化する',
+  evo_discard: '進化元を破棄する', evo_discard_select: '進化元を破棄する', evo_discard_tamer_bottom: 'テイマーの下のカードを破棄する',
+  security_trash: 'セキュリティを破棄する', unlink: 'リンクカードを破棄する', link: 'リンクする',
+};
 function actionLabelOf(code) {
   if (!code) return '(なし)';
-  if (typeof getActionLabel === 'function') {
-    try { return getActionLabel(code) || code; } catch (_) {}
+  try {
+    const kw = (typeof window !== 'undefined' && Array.isArray(window.keywords)) ? window.keywords : [];
+    const row = kw.find((r) => r && String(r['コード'] || '').trim() === code && String(r['種類'] || '').trim() === 'action');
+    if (row && String(row['表示名'] || '').trim()) return String(row['表示名']).trim();
+  } catch (_) {}
+  return _ACTION_JA[code] || code;
+}
+// 「〜するか〜することで」「〜か〜を選ぶ」等、選べる処理の選択肢のボタンの文言。カードの文章から
+// 「Aするか B（することで/する。）」の A・B を取り出して使う（ベックモン BT26-072「自分の手札1枚を破棄するか自分の
+// 「イクト」の下に裏向きで置くことで」で、以前はボタンが cost_discard / place_under_tamer と英語のコードだった）。
+// 取り出せなければアクションの表示名（actionLabelOf）。ステップに display_text があればそれを最優先
+function _altChoiceLabels(choices, ctx) {
+  const _filterNote = (c) => {
+    const f = (c && (c.filter || c.from_filter)) || {};
+    const parts = [];
+    if (f.dp_le != null && typeof f.dp_le !== 'string') parts.push('DP' + f.dp_le + '以下');
+    if (f.dp_ge != null && typeof f.dp_ge !== 'string') parts.push('DP' + f.dp_ge + '以上');
+    if (f.lv_le != null) parts.push('Lv.' + f.lv_le + '以下');
+    if (f.cost_le != null) parts.push('コスト' + f.cost_le + '以下');
+    const cm = String((c && c.condition) || '').match(/cond_(dp|lv|cost)_(le|ge):(\d+)/);
+    if (cm) parts.push(({ dp: 'DP', lv: 'Lv.', cost: 'コスト' })[cm[1]] + cm[3] + (cm[2] === 'le' ? '以下' : '以上'));
+    if (c && typeof c.value === 'number' && c.value < 0 && c.value > -100) parts.push('コスト' + c.value);
+    return parts.join('・');
+  };
+  let fallback = choices.map((c) => (c && typeof c.display_text === 'string' && c.display_text.trim()) ? c.display_text.trim() : actionLabelOf(c && c.action));
+  // 同じ文言が並ぶ（「代わりに〜」の選択肢等）なら、対象の条件（DP〜以下等）を添えて区別する
+  if (new Set(fallback).size < fallback.length) {
+    fallback = fallback.map((l, i) => { const n = _filterNote(choices[i]); return n ? l + '（' + n + '）' : l; });
+    if (new Set(fallback).size < fallback.length) fallback = fallback.map((l, i) => l + '（' + (i + 1) + '）');
   }
-  return code;
+  try {
+    const card = ctx && ((ctx._sourceCard && ctx._sourceCard !== ctx.card) ? ctx._sourceCard : ctx.card);
+    const code = ctx && ctx.block && ctx.block.trigger && ctx.block.trigger.code;
+    let text = (ctx && ctx._inlineCostConfirm && ctx._inlineCostConfirm.text) || (ctx && ctx.block && ctx.block.raw) || (card && card.effect) || '';
+    if (code) { try { text = extractTriggerSectionText(text, code, null) || text; } catch (_) {} }
+    text = String(text);
+    // 「以下の効果から1つを発揮する。・A ・B」（クロスアーツ BT26-101）
+    const bullets = text.split('\n').map(l => l.trim()).filter(l => /^[・●]/.test(l)).map(l => l.replace(/^[・●]s*/, '').replace(/。$/, ''));
+    if (bullets.length === choices.length && bullets.every(Boolean)) return bullets;
+    if (choices.length !== 2) return fallback;
+    const t2 = text.replace(/【[^】]*】/g, '');
+    // 「Aするか(、)Bすることで」「Aさせるか、Bを〜移動する。」「A1枚か、B破棄することで」
+    const m = t2.match(/([^。\n、]*?(?:る|す|く|う|つ|ぬ|む|ぐ|ぶ|枚|体))か、?([^。\n]*?)(?=することで|ことで|。|$)/);
+    if (!m) return fallback;
+    let x = m[1].trim(), y = m[2].trim();
+    if (!x || !y || x.length > 45 || y.length > 45) return fallback;
+    const endsVerb = (t) => /[るくすつぬむうぐぶ]$/.test(t);
+    if (!endsVerb(y)) y += 'する';
+    // 「〜を下から1枚か、〜を上から1枚破棄する」のように前の選択肢に動詞が無ければ、後ろの動詞を補う
+    if (/[枚体]$/.test(x)) { const v = y.match(/([一-龠ァ-ヶー]{1,4}(?:する|させる))$/); x += v ? v[1].replace(/^[枚体]+/, '') : 'する'; }
+    else if (!endsVerb(x)) x += 'する';
+    return [x, y];
+  } catch (_) { return fallback; }
 }
 
 // 代替アクション選択UI（OR時）

@@ -14293,10 +14293,13 @@ function executeRecipeStep(step, ctx, store, callback) {
             ? (player.hand || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card)) : [];
           let _trashCands = _fromZones.includes('trash')
             ? (player.trash || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card)) : [];
-          // デュアルカードは登場コストを持たないので「登場」の候補にはしない（オプションとして「使用」する指定のときだけ）
+          // デュアルカードは登場コストを持たないので「登場」の候補にはしない（オプションとして「使用」する指定のときだけ）。
+          // 種別の指定が無い「カード1枚を登場/使用できる」（ロゼモン BT26-049）はオプションとしての使用も含むので候補にする（summon / summon_use）
+          // （使用コスト＝playCost で cost_le 等を判定し、選んだら _summonCardFromEffect がオプションとして使用する）
           {
             const _ft = [].concat(_filter.type || [], _filter.type_in || []);
-            if (!_ft.includes('オプション')) {
+            // summon_appear は「登場」だけなので、種別の指定が無くてもデュアルは候補にしない
+            if ((_ft.length > 0 || step.action === 'summon_appear') && !_ft.includes('オプション')) {
               _handCands = _handCands.filter(c => String(c.type || '') !== 'デュアル');
               _trashCands = _trashCands.filter(c => String(c.type || '') !== 'デュアル');
             }
@@ -15968,10 +15971,17 @@ function executeRecipeStep(step, ctx, store, callback) {
             const tgt = tgtPlayer2.battleArea[idx]; if (!tgt) return;
             // 連続同一対象用 (same_target): 選んだカードを保存
             ctx.bs._lastPickedCard = tgt;
+            // 相手のカードに付けたバフは相手の端末にも付ける（state_sync は持ち主の状態で上書きするため。沢城キョウ
+            // BT26-089 の「相手のデジモン1体に【Sアタック-1】」で、選んだ相手のデジモンに付かなかった）
+            const _sendOpp = (buffType, value) => {
+              if (isOwnSelect || !(window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand)) return;
+              try { window._onlineSendCommand({ type: 'fx_remoteBuff', targetIdx: idx, targetName: tgt.name, buffType, value, duration: dur, appliedFromSender: 'player', appliedDuringOwnTurn: !!(ctx.bs && ctx.bs.isPlayerTurn) }); } catch (_) {}
+            };
             if (flag === 'security_attack_minus') {
               addBuffDirect(tgt, 'security_attack_minus', val, dur, ctx);
               ctx.addLog('⚔ 「' + tgt.name + '」にSアタック-' + val);
               if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, 'Sアタック-' + val); } catch(_) {}
+              _sendOpp('security_attack_minus', val);
             } else if (flag === 'security_attack_plus') {
               addBuffDirect(tgt, 'security_attack_plus', val, dur, ctx);
               ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
@@ -15990,6 +16000,7 @@ function executeRecipeStep(step, ctx, store, callback) {
               const _kwJp = _keywordJpName(flag);
               ctx.addLog('✨ 「' + tgt.name + '」に【' + _kwJp + '】付与');
               if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, _kwJp); } catch(_) {}
+              _sendOpp('keyword_' + flag, 0);
             }
           });
           ctx.renderAll();

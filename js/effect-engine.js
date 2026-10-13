@@ -8302,13 +8302,52 @@ function _collectPendingReactions(ctx, after) {
   const col = { items: [] };
   bs._reactionCollector = col;
   let i = 0;
+  // 同じ効果が複数のイベントで集まったもの（ヤタガラモン BT26-076 の効果1つで「テイマーの下のカードが破棄された」と
+  // 「相手の手札が破棄された」が同時に起き、「〜たときか〜たとき」のイクト・ヤタガラモンが2つずつ並んでいた）は1つにまとめる
+  // （同じ効果の解決中に同時に起きたイベントでは、同じ効果は1回だけ誘発する）
+  const _itemKey = (it) => {
+    const b = it.block || {};
+    let steps = '';
+    try { steps = JSON.stringify(b._grantedSteps || null); } catch (_) {}
+    return [it.side, b._recipeCard || null, steps];
+  };
+  const _dedupe = () => {
+    const keep = [];
+    col.items.forEach((it) => {
+      const k = _itemKey(it);
+      if (keep.some((o) => { const ok = _itemKey(o); return o.card === it.card && ok[0] === k[0] && ok[1] === k[1] && ok[2] === k[2]; })) return;
+      keep.push(it);
+    });
+    col.items = keep;
+  };
+  // 残りを発揮待ちとして表示する（途中で別の効果（進化した先の【進化時】等）が始まっても、残りが消えて見えないように）
+  const _hudKey = 'collect#' + (++_hudSeq);
+  const _hudUpdate = () => {
+    try {
+      _hudSetSource(_hudKey, col.items.map((it) => {
+        const b = it.block || {};
+        const src = b._recipeCard || null;
+        const code = b.trigger && b.trigger.code;
+        const raw = src ? ((src.evoSourceEffect && src.evoSourceEffect !== 'なし') ? src.evoSourceEffect : src.effect) : (b.raw || (it.card && it.card.effect) || '');
+        let text = raw || '';
+        try { text = extractTriggerSectionText(raw || '', code, b._grantedSteps || null); } catch (_) {}
+        const h = _hudItem(it.side, it.card, src, text);
+        h.group = _hudKey;
+        if (typeof it.alive === 'function') h.alive = it.alive;
+        return h;
+      }));
+    } catch (_) {}
+  };
   const collectNext = () => {
-    if (i >= coll.length) { delete bs._reactionCollector; runPool(); return; }
+    if (i >= coll.length) { delete bs._reactionCollector; _dedupe(); runPool(); return; }
     const { fn, args } = coll[i++];
     try { fn(...args, collectNext); } catch (e) { console.error('[collect reaction]', e); collectNext(); }
   };
   const runPool = () => {
-    if (col.items.length === 0) { after && after(); return; }
+    // 発揮する前に場を離れた等で発揮できなくなったもの（進化してカードが変わった等）は選択肢から外す
+    col.items = col.items.filter((it) => { try { return typeof it.alive !== 'function' || it.alive(); } catch (_) { return true; } });
+    if (col.items.length === 0) { _hudSetSource(_hudKey, []); after && after(); return; }
+    _hudUpdate();
     const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
     let cands = col.items.filter(it => it.side === turnSide);
     if (cands.length === 0) cands = col.items.slice();
@@ -10496,6 +10535,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       bs._reactionCollector.items.push({
         card: r.card, side: reactSide,
         block: { trigger: { code: recipeKey }, raw: r.sourceCard === r.card ? (r.card.effect || '') : '', _recipeCard: r.sourceCard !== r.card ? r.sourceCard : undefined, _grantedSteps: r.recipe },
+        alive: () => (!(r.zone === 'trash' || r.zone === 'security') || _cardStillInZone(bs, reactSide, r.card, r.zone)) && _reactionStillValid(r, bs, recipeKey),
         run: (cb) => {
           if ((r.zone === 'trash' || r.zone === 'security') && !_cardStillInZone(bs, reactSide, r.card, r.zone)) { cb(); return; }
           if (!_reactionStillValid(r, bs, recipeKey)) { cb(); return; }

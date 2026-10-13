@@ -2025,8 +2025,9 @@ export function startAttack(card, slotIdx, callback) {
   // その場で出す。【エグゼキュート】等の効果でアタックしたとき、セキュリティデジモンの消滅演出が
   // 効果のステップの終わり（アタック終了時の自壊の後）まで後回しになっていた
   if (typeof window !== 'undefined') window._destroyFxBatch = null;
-  // 「レストせずアタックできる」（attack options:without_rest）ならレストしない
+  // 「レストせずアタックできる」（attack options:without_rest）ならレストしない（その1回のアタックだけ）
   if (!card._attackWithoutRest) card.suspended = true;
+  delete card._attackWithoutRest;
   card._attackedOnTurn = bs.turn; // cond_self_attacked 用（このターンにアタックしたか）
   bs._currentTurnAttackCount = (bs._currentTurnAttackCount || 0) + 1;
   _atkState = { card, slotIdx };

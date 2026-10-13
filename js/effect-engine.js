@@ -13093,8 +13093,11 @@ function _cardPlayCostOf(c) {
 // 「〜でアタックしますか？」を確認してから、アタック対象（レスト中の相手デジモン／セキュリティ）を
 // 選んで宣言する。done(declared) は宣言した（true）／しなかった（false）で呼ばれる
 // （宣言した場合、バトルの解決は battle-combat.js の通常のアタック処理が続けて行う）
-function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done) {
-  const finish = (v) => { try { done && done(v); } catch (_) {} };
+// opts.preselect: 確認と対象の選択だけ行い、宣言しない（done(true, { type, card }) で選んだ対象を返す）
+// opts.preTarget: 先に選んでおいた対象（{ type, card }）でそのまま宣言する（確認はしない。対象がもう選べなければ選び直す）
+function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
+  opts = opts || {};
+  const finish = (v, pre) => { try { done && done(v, pre); } catch (_) {} };
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
   const slotIdx = atkCard ? player.battleArea.indexOf(atkCard) : -1;
@@ -13106,6 +13109,7 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done) {
   const waitResolve = /turn_end$/.test(String(trig || ''));
   const isExecute = !!(step && step._executeAttack);
   const declare = (targetType, targetIdx) => {
+    if (opts.preselect) { finish(true, { type: targetType, card: targetType === 'digimon' ? opponent.battleArea[targetIdx] : null }); return; }
     // ≪エグゼキュート≫でのアタック: アタック終了時の消滅（_adjustExecuteSteps）の判定に使う印
     if (isExecute) atkCard._executeAttacking = true;
     // 【自分のターン終了時】の効果（≪急襲≫≪エグゼキュート≫等）でアタックした時点で「ターン終了時」のタイミングは
@@ -13183,6 +13187,15 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done) {
       }, hasSecurity ? 'キャンセル＝セキュリティを攻撃' : 'キャンセル＝アタックしない');
     }
   };
+  if (opts.preTarget) {
+    const pt = opts.preTarget;
+    if (pt.type === 'security' && (opponent.security || []).length > 0) { declare('security', -1); return; }
+    const ti = pt.type === 'digimon' && pt.card ? opponent.battleArea.indexOf(pt.card) : -1;
+    if (ti !== -1 && (pt.card.suspended || isExecute)) { declare('digimon', ti); return; }
+    ctx.addLog && ctx.addLog('⚠ 選んでいたアタック対象がいなくなったので、選び直します');
+    chooseAndDeclare();
+    return;
+  }
   if (!step.optional) { chooseAndDeclare(); return; }
   // どの効果でのアタックかを添える。≪急襲≫≪エグゼキュート≫等のキーワード効果なら、キーワード名と
   // その説明（スプレッドシート「キーワード効果」）も出す
@@ -13218,15 +13231,20 @@ export function runPendingEffectAttack(bs, done) {
   // 進化した後、保留していた「アタックできる」が場にいない扱いで捨てられていた）
   const cur = !p ? null : (p.battleArea.includes(e.card) ? e.card
     : (p.battleArea.find(c => c && Array.isArray(c.stack) && c.stack.includes(e.card)) || null));
+  const _wr = Array.isArray(e && e.step && e.step.options) && e.step.options.includes('without_rest');
   if (!cur || cur.suspended) {
     if (e && e.card && e.ctx && e.ctx.addLog) e.ctx.addLog('⚠ 「' + ((cur || e.card).name) + '」はアタックできる状態ではありません');
+    if (_wr && e.card) delete e.card._attackWithoutRest;
     runPendingEffectAttack(bs, done);
     return;
   }
+  // 進化していたら「レストせず」の印を進化後のカードへ移す
+  if (_wr) { if (cur !== e.card) delete e.card._attackWithoutRest; cur._attackWithoutRest = true; }
   _confirmAndDeclareEffectAttack(cur, e.step, e.ctx, (declared) => {
     if (declared) { done && done(true); return; }
+    if (_wr) delete cur._attackWithoutRest;
     runPendingEffectAttack(bs, done);
-  });
+  }, e.preTarget ? { preTarget: e.preTarget } : undefined);
 }
 if (typeof window !== 'undefined') window._runPendingEffectAttack = runPendingEffectAttack;
 
@@ -17159,18 +17177,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       // この修飾子で表現する形に統一）。即時アタック実行パス（下記）はwindow.startAttack等の
       // UI関数がプレイヤー側専用のため ctx.side==='player' 限定だが、こちらは状態フラグの
       // 付与だけなので ctx.side を問わず動作する
-      if (Array.isArray(step.options) && step.options.includes('without_rest')) {
-        let _wrCard = ctx.card;
-        if (ctx._forceTargetIdx !== undefined && (step.target === 'own:1' || step.target === 'same_target' || step.target === 'picked')) {
-          _wrCard = player.battleArea[ctx._forceTargetIdx] || ctx.card;
-        }
-        if (_wrCard) {
-          _wrCard._attackWithoutRest = true;
-          ctx.addLog('⚔ 「' + _wrCard.name + '」はレストせずにアタックできる！');
-        }
-        callback();
-        break;
-      }
+      // 「レストせずアタックできる」は、そのアタックでレストしない印（_attackWithoutRest）を付けてから
+      // 通常と同じようにアタックする（以前は印を付けるだけでアタックせず、ダンテモン BT26-086 /
+      // BT26-080 の「レストせずアタックできる」が発動しなかった）。印は startAttack で使い切る
+      const _withoutRest = Array.isArray(step.options) && step.options.includes('without_rest');
       if (ctx.side !== 'player' || typeof window.startAttack !== 'function' || typeof window.resolveAttackTarget !== 'function') {
         callback();
         break;
@@ -17180,6 +17190,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         _atkCard = player.battleArea[ctx._forceTargetIdx] || ctx.card;
       }
       if (!_atkCard || player.battleArea.indexOf(_atkCard) === -1) { callback(); break; }
+      if (_withoutRest) _atkCard._attackWithoutRest = true;
+      const _clearWr = () => { if (_withoutRest && _atkCard) delete _atkCard._attackWithoutRest; };
       // 別のデジモンのアタック中（アタック時効果やバトル中の誘発で「そのデジモンでアタックできる」
       // が発揮された）なら、今のアタックが終わってから行う（ブテンモン BT26-015。以前は startAttack が
       // アタック中を理由に断り、アタックできないまま終わっていた）。アタック終了時（battle-combat.js の
@@ -17201,11 +17213,20 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (_queueResolveDepth > 0 && !/turn_end$/.test(String(_atkTrig || ''))) {
         if (!Array.isArray(ctx.bs._pendingEffectAttacks)) ctx.bs._pendingEffectAttacks = [];
         ctx.bs._pendingEffectAttacks.push({ card: _atkCard, step, turn: ctx.bs.turn, ctx: { bs: ctx.bs, side: ctx.side, card: ctx.card, addLog: ctx.addLog, renderAll: ctx.renderAll } });
-        ctx.addLog('⏳ 「' + _atkCard.name + '」のアタックは、全ての効果の処理が終わった後に行えます');
-        callback();
+        // アタックするかの確認と対象の選択は、効果の処理の中で（通常のアタックと同じように）行い、
+        // アタックの宣言（バトル）だけを、同時に誘発した効果（【リンク時】等）を解決した後に行う
+        // （ダンテモン BT26-086: 7枚リンク → アタック対象を選ぶ → 【リンク時】等の誘発 → バトル）
+        const _last = ctx.bs._pendingEffectAttacks.pop();
+        _confirmAndDeclareEffectAttack(_atkCard, step, ctx, (ok, pre) => {
+          if (!ok || !pre) { _clearWr(); callback(); return; }
+          _last.preTarget = pre;
+          ctx.bs._pendingEffectAttacks.push(_last);
+          ctx.addLog('⏳ 「' + _atkCard.name + '」のアタックは、全ての効果の処理が終わった後に行います');
+          callback();
+        }, { preselect: true });
         break;
       }
-      _confirmAndDeclareEffectAttack(_atkCard, step, ctx, () => callback());
+      _confirmAndDeclareEffectAttack(_atkCard, step, ctx, (ok) => { if (!ok) _clearWr(); callback(); });
       break;
     }
 
@@ -17401,9 +17422,21 @@ function executeRecipeStep(step, ctx, store, callback) {
         ['showDrawEffect', 'showPlayEffect', 'showEvolveEffect', 'showDestroyEffect', 'showSecurityCheck', 'showBattleResult', 'doDraw'].forEach((k) => {
           if (typeof ctx[k] === 'function') _linkCtx[k] = ctx[k];
         });
+        const _fireNow = (done) => {
+          try { _fireLinkTriggersNested(linkers, ctx.side, linkTarget, ctx.side, _linkCtx, () => done && done()); }
+          catch (e) { console.error('[link] on_link trigger error', e); done && done(); }
+        };
+        // キューの効果の処理中なら、【リンク時】・「リンクしたとき」は誘発させるだけにして、その効果の残りの処理
+        // （「その後、アタックできる」等）を先に行い、効果の処理が全て終わってから解決する（公式ルール: 誘発した効果は
+        // 処理中の効果が終わってから。ダンテモン BT26-086 で7枚リンクの直後に【リンク時】が割り込み、アタックが
+        // その後になっていた）
         const _fire = () => {
-          try { _fireLinkTriggersNested(linkers, ctx.side, linkTarget, ctx.side, _linkCtx, () => cb && cb()); }
-          catch (e) { console.error('[link] on_link trigger error', e); cb && cb(); }
+          if (_queueResolveDepth > 0 && ctx.bs) {
+            enqueueReaction(ctx.bs, (done) => _fireNow(done), []);
+            cb && cb();
+            return;
+          }
+          _fireNow(cb);
         };
         // リンク演出（手動リンクと同じ演出。相手の画面にも fx_linkEffect で出す）を出してから【リンク時】へ
         const _ls = (Array.isArray(linkers) ? linkers : [linkers]).filter(Boolean);

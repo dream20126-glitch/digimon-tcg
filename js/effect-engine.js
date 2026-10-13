@@ -8548,6 +8548,8 @@ const SECTION_KEYWORDS = {
   when_own_destroyed: ['消滅'], when_opp_destroyed: ['消滅'], when_other_destroyed: ['消滅'],
   when_target_changed: ['対象が変更'],
   when_leave_battle: ['離れ'],
+  // 【リンク時】／「このデジモンがリンクしたとき」（コピペモン BT26-084 で【分離】から全文が出ていた）
+  on_link: ['【リンク時】', 'リンクしたとき', 'リンクした時', 'リンクされたとき', 'リンクされた時'],
 };
 function _pickSectionByKeyword(fullText, triggerCode) {
   const kws = SECTION_KEYWORDS[triggerCode];
@@ -9096,8 +9098,12 @@ function _fireLinkTriggersNested(linkerCard, linkerSide, baseCard, baseSide, ctx
 // linkerCard は配列も可（複数枚リンク。ダンテモン BT26-086 等）。リンクされる側の効果は1回だけ
 // 【リンク時】の発動ポップアップに出す文章。リンクカードの【リンク時】は「リンク効果」欄（進化元効果欄）に書かれているので、
 // 本体の効果テキストに【リンク時】が無ければそちらを使う（メールモン BT26-019 で本体の【アタック時】の文章が出ていた）
-function _linkRawText(card, recipeCard) {
+// リンク効果欄を使うのは、リンクする側自身の【リンク時】（link_role:'target' でも、他のカードの反応でもない）だけ。
+// 「このデジモンがリンクしたとき」（リンクされた側。コピペモン BT26-084 等）は本体の効果の文章
+function _linkRawText(card, recipeCard, steps) {
   if (recipeCard) return recipeCard.evoSourceEffect || '';
+  const _own = Array.isArray(steps) && steps.length > 0 && steps.every((st) => st && st.link_role !== 'target' && (!st.subject || st.subject === 'self'));
+  if (!_own) return String((card && card.effect) || '');
   const eff = String((card && card.effect) || ''), evo = String((card && card.evoSourceEffect) || '');
   if (eff.indexOf('【リンク時】') === -1 && evo.indexOf('【リンク時】') !== -1) return evo;
   return eff;
@@ -9123,7 +9129,7 @@ function _fireLinkTriggersImpl(linkerCard, linkerSide, baseCard, baseSide, ctx, 
   const queueBlock = (card, side, steps, recipeCard, eventSourceCard) => {
     if (!steps || steps.length === 0) return;
     const block = {
-      raw: _linkRawText(card, recipeCard),
+      raw: _linkRawText(card, recipeCard, steps),
       trigger: { code: 'on_link' }, actions: [], conditions: [], _grantedSteps: steps,
     };
     if (recipeCard) block._recipeCard = recipeCard;

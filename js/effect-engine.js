@@ -15694,8 +15694,11 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _naPool = _naIsOpp ? opponent : player;
         const _naFilter = step.filter || null;
         const _naCands = [];
+        // テイマーも候補にするのは「デジモン/テイマー」（opponent_card / own_card、または種類の条件にテイマーを含む）のときだけ。
+        // opponent:1（「相手のデジモン1体」。サンフラウモン BT26-039 の進化元効果）でテイマーまで選べていた
+        const _naWantTamer = /_card(:|$)/.test(tStr) || _filterWantsTamer(_naFilter);
         (_naPool.battleArea || []).forEach(c => { if (c && (!_naFilter || cardMatchesFilter(c, _naFilter))) _naCands.push(c); });
-        (_naPool.tamerArea || []).forEach(c => { if (c && (!_naFilter || cardMatchesFilter(c, _naFilter))) _naCands.push(c); });
+        if (_naWantTamer) (_naPool.tamerArea || []).forEach(c => { if (c && (!_naFilter || cardMatchesFilter(c, _naFilter))) _naCands.push(c); });
         if (_naCands.length === 0) { ctx.addLog('⚠ 対象がいません'); callback(); break; }
         // opponent_card:3（ケレスモン＆ファミス BT26-032「相手のデジモン/テイマー3体」）も件数を読む（以前は1体になっていた）
         const _naMatch = /^(?:opponent|own)(?:_card|_digimon|_tamer)?:(\d+)$/.exec(tStr);
@@ -18331,7 +18334,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (_crIsSelf) { if (ctx.card && (_crPool.battleArea.includes(ctx.card) || (_crPool.tamerArea || []).includes(ctx.card))) _crCands.push(ctx.card); }
       else {
         (_crPool.battleArea || []).forEach(c => { if (c && (!_crFilter || cardMatchesFilter(c, _crFilter))) _crCands.push(c); });
-        (_crPool.tamerArea || []).forEach(c => { if (c && (!_crFilter || cardMatchesFilter(c, _crFilter))) _crCands.push(c); });
+        // テイマーも候補にするのは「デジモン/テイマー」（_card の対象、または種類の条件にテイマーを含む）のときだけ
+        if (/_card(:|$)/.test(_crTgtStr) || _filterWantsTamer(_crFilter)) (_crPool.tamerArea || []).forEach(c => { if (c && (!_crFilter || cardMatchesFilter(c, _crFilter))) _crCands.push(c); });
       }
       if (_crCands.length === 0) {
         ctx.addLog('⚠ 対象がいません');

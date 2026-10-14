@@ -8459,6 +8459,27 @@ function _fireWhenSecurityDecreaseQueuedWithCause(cause, decreasedSide, bs, ctxB
 // 黒井翔太 BT26-092 の【自分のメインフェイズ開始時】で手札を破棄しても、プロットモン BT26-066 の進化元効果
 // 「自分の手札が破棄されたとき」が保留されたまま発揮されなかった。キューの解決中（_queueResolveDepth>0）は
 // そちらがまとめて処理するので何もしない
+// 反応（【消滅時】・「〜したとき」等）を1つ発揮し終えたら、その発揮中に新しく誘発した効果（派生誘発）を、
+// 残っている他の発揮待ちより先に解決する（公式ルール 15-4-5-2）。snap: 発揮する前の保留反応（bs._pendingReactions）。
+// それ以前から保留されていた反応はそのまま後に残す。レイヴモン BT26-082 の【消滅時】の同時誘発でピナモンの効果で
+// 登場させたベックモンの【登場時】が、残りの【消滅時】より後に回っていた
+function _snapPendingReactions(bs) { return new Set((bs && Array.isArray(bs._pendingReactions)) ? bs._pendingReactions : []); }
+function _drainDerivedAfterReaction(bs, ctxBase, snap, cb) {
+  const list = bs && bs._pendingReactions;
+  const fresh = Array.isArray(list) ? list.filter((r) => !snap.has(r)) : [];
+  if (fresh.length === 0 || !ctxBase) { _drainAfterReaction(bs, ctxBase, cb); return; }
+  const older = list.filter((r) => snap.has(r));
+  bs._pendingReactions = fresh;
+  _queueResolveDepth++;
+  const fin = () => {
+    _queueResolveDepth = Math.max(0, _queueResolveDepth - 1);
+    const rest = Array.isArray(bs._pendingReactions) ? bs._pendingReactions : [];
+    bs._pendingReactions = older.concat(rest);
+    _drainAfterReaction(bs, ctxBase, cb);
+  };
+  try { checkPendingDestroys(Object.assign({}, ctxBase, { bs }), fin); }
+  catch (e) { console.error('[_drainDerivedAfterReaction]', e); fin(); }
+}
 function _drainAfterReaction(bs, ctxBase, cb) {
   const hasPend = !!bs && ((Array.isArray(bs._pendingReactions) && bs._pendingReactions.length > 0)
     || ['player', 'ai'].some(sd => bs[sd] && (bs[sd].battleArea || []).some(c => c && c._pendingDestroy)));
@@ -10545,7 +10566,8 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
           if ((r.zone === 'trash' || r.zone === 'security') && !_cardStillInZone(bs, reactSide, r.card, r.zone)) { cb(); return; }
           if (!_reactionStillValid(r, bs, recipeKey)) { cb(); return; }
           if (causeAtScan !== undefined) bs._lastDestroyCause = causeAtScan;
-          _runReactionEffect(r, reactSide, bs, ctxBase, () => _drainAfterReaction(bs, ctxBase, cb));
+          const _snap = _snapPendingReactions(bs);
+          _runReactionEffect(r, reactSide, bs, ctxBase, () => _drainDerivedAfterReaction(bs, ctxBase, _snap, cb));
         },
       });
     });
@@ -10580,7 +10602,8 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       return;
     }
     if (causeAtScan !== undefined) bs._lastDestroyCause = causeAtScan;
-    _runReactionEffect(reaction, reactSide, bs, ctxBase, () => _drainAfterReaction(bs, ctxBase, nextReaction));
+    const _snap = _snapPendingReactions(bs);
+    _runReactionEffect(reaction, reactSide, bs, ctxBase, () => _drainDerivedAfterReaction(bs, ctxBase, _snap, nextReaction));
   };
   // 今「〜なら」の条件（step.condition）を満たしているか。満たしていない反応は、同時誘発の中で今は選べない
   // （他の効果の処理で手札の枚数等が変わって満たせば、また選べるようになる）。手札から破棄されたカード自身の
@@ -12054,7 +12077,9 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
     hudUpdate(remaining);
     // 通常の効果ディスパッチ（executeQueueEntry）と同じ判定・同じ確認フローに揃えるため
     // alwaysConfirm:true（任意効果は side を問わず必ず確認ダイアログを出す）
-    _runReactionEffect(reaction, destroyedSide, bs, ctxBase, runOne, { alwaysConfirm: true });
+    // 発揮中に新しく誘発した効果（派生誘発。【消滅時】の効果で登場したデジモンの【登場時】等）は、残りの【消滅時】より先に解決する
+    const _snap = _snapPendingReactions(bs);
+    _runReactionEffect(reaction, destroyedSide, bs, ctxBase, () => _drainDerivedAfterReaction(bs, ctxBase, _snap, runOne), { alwaysConfirm: true });
   };
   function runOne() {
     if (remaining.length === 0) { finish(); return; }

@@ -17499,7 +17499,14 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _rdoCanSkip = _rdoIsCost || !!step.optional || _rdoUpTo;
         if (effectiveSide === 'ai') { _rdoDo(_rdoCands.slice(0, _rdoN)); break; }
         if (_rdoCands.length <= _rdoN && !_rdoCanSkip) { _rdoDo(_rdoCands.slice(0, _rdoN)); break; }
-        showTrashCardPicker(_rdoCands, _rdoN, _rdoCanSkip, '🔄 デッキの' + (_rdoTop ? '上' : '下') + 'に戻す' + (_rdoTamer ? 'テイマー' : (_rdoBoth ? 'デジモン（自分/相手）' : 'デジモン')) + 'を選んでください', _rdoDo, _rdoCands);
+        // 場のカードは一覧ではなく盤面のカードをタップして選ぶ（_pickSideTargets。自分/相手どちらの場からも）
+        const _rdoEntries = _rdoCands.map((c) => {
+          const own = !_rdoIsOpp(c);
+          const zone = _rdoTamer ? 'tamerArea' : 'battleArea';
+          const area = (own ? player : opponent)[zone] || [];
+          return { card: c, own, zone, idx: area.indexOf(c) };
+        });
+        _pickSideTargets(_rdoEntries, _rdoN, ctx, effectiveSide, true, '🎯 デッキの' + (_rdoTop ? '上' : '下') + 'に戻す' + (_rdoTamer ? 'テイマー' : 'デジモン') + 'の対象を選んでください', (picked) => _rdoDo((picked || []).map((e) => e.card)));
         break;
       }
       // 自分（from_owner:'opponent'指定時は相手）のゾーン（手札/トラッシュ/セキュリティ/

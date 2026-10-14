@@ -4475,6 +4475,9 @@ function _fxMoveSync(ctx, card, fromLabel, toLabel, cb, opts) {
   setTimeout(done, 300);
 }
 
+// 効果エンジンの外（battle-combat.js のバースト進化等）から、両画面の移動演出を出す
+if (typeof window !== 'undefined') window._fxMoveSync = (card, fromLabel, toLabel, cb, opts) => _fxMoveSync({ side: 'player' }, card, fromLabel, toLabel, cb, opts);
+
 // 自分・相手どちらのトラッシュからでも合計 wantCount 枚を選ぶUI（クロノモン：ホーリーモード BT26-016
 // 「トラッシュ3枚をデッキの下に戻す」）。「自分のトラッシュ／相手のトラッシュ」ボタンで行き来しながら選び、
 // 合計 wantCount 枚になったら「どちらのトラッシュのどのカードか」の確認画面を出す。

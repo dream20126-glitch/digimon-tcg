@@ -1404,7 +1404,14 @@ function _doBurstEvolve(card, base, handIdx, slotIdx, burstEvo) {
   bs.player.hand.push(chosen);
   addLog('🔥 バースト進化: 「' + chosen.name + '」を手札に戻した');
   renderAll();
-  _finishDoEvolve(card, base, handIdx, slotIdx, burstEvo.cost, { isBurst: true });
+  if (_onlineMode && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+  // バースト進化の条件（テイマーを手札に戻す）を、移動演出（両画面）で見せてから進化する（以前は演出が無く、
+  // すぐ進化演出と【進化時】が出るため、手札に戻していないように見えていた。ロゼモン：バーストモード BT26-050）
+  const _go = () => _finishDoEvolve(card, base, handIdx, slotIdx, burstEvo.cost, { isBurst: true });
+  if (typeof window._fxMoveSync === 'function') {
+    try { window._fxMoveSync(chosen, 'テイマーエリア', '手札', _go, { faceUp: true, remoteFrom: '相手のテイマーエリア', remoteTo: '相手の手札' }); return; } catch (_) {}
+  }
+  _go();
 }
 
 function _finishDoEvolve(card, base, handIdx, slotIdx, cost, opts) {

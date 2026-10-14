@@ -2946,7 +2946,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (hasActiveImmuneEffects(_rc, ctx.side, _effectSourceTypeOf(ctx))) continue;
         restTargets.push(i);
       }
-      if(restTargets.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, callback); break; }
+      // テイマーも対象に含む（デジモン/テイマー）・複数体指定は、下の専用処理で候補を数える（ここでデジモンだけ数えて
+      // 「対象がいません」にすると、相手の場にテイマーしかいないときに不発になっていた。ロゼモン BT26-049）
+      const _restTamerOrMulti = !!(defaultTarget && ((defaultTarget.filter && Array.isArray(defaultTarget.filter.type_in) && defaultTarget.filter.type_in.includes('テイマー')) || (defaultTarget.count || 1) > 1));
+      if(restTargets.length === 0 && !_restTamerOrMulti) { ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, callback); break; }
       const restColor = uiColor;
       // 相手デジモンがレスト → when_opp_rest 発火（restedSide = 相手側。効果によるレストも含む）
       const restedSide = ctx.side === 'player' ? 'ai' : 'player';
@@ -2997,8 +3000,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         });
         if (_restWantsTamer) {
           (opponent.tamerArea || []).forEach(c => {
-            if (!c || c.suspended) return;
+            if (!c || c.suspended || c.cantRest) return;
             if (defaultTarget && defaultTarget.filter && !cardMatchesFilter(c, defaultTarget.filter, ctx.bs, ctx.side, ctx.card)) return;
+            if (hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return;
             _rmCands.push(c);
           });
         }
@@ -15582,7 +15586,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         (_naPool.battleArea || []).forEach(c => { if (c && (!_naFilter || cardMatchesFilter(c, _naFilter))) _naCands.push(c); });
         (_naPool.tamerArea || []).forEach(c => { if (c && (!_naFilter || cardMatchesFilter(c, _naFilter))) _naCands.push(c); });
         if (_naCands.length === 0) { ctx.addLog('⚠ 対象がいません'); callback(); break; }
-        const _naMatch = /^(?:opponent|own):(\d+)$/.exec(tStr);
+        // opponent_card:3（ケレスモン＆ファミス BT26-032「相手のデジモン/テイマー3体」）も件数を読む（以前は1体になっていた）
+        const _naMatch = /^(?:opponent|own)(?:_card|_digimon|_tamer)?:(\d+)$/.exec(tStr);
         const _naCount = Math.min(_naMatch ? parseInt(_naMatch[1], 10) || 1 : 1, _naCands.length);
         const _naDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
         const _naApply = (list) => {
@@ -15665,8 +15670,14 @@ function executeRecipeStep(step, ctx, store, callback) {
         (tgtPlayer.battleArea || []).forEach(applyTo);
       } else if (tStr === 'self') {
         applyTo(ctx.card);
+      } else if (step.card && store && Array.isArray(store[step.card])) {
+        // 複数キーワードを1体に付ける（「〜1体は【衝突】と【ブロッカー】を得る」）とき、1つ目で選んだデジモンに続けて付ける
+        store[step.card].forEach(applyTo);
       } else {
         // own:1 等 → 既存の対象選択 UI に乗せる（簡易: applyDpBuff の target_own と同等）
+        // 選んだデジモンを記録して、同じステップの2つ目以降のキーワード（grant_keyword の _runKwSeq）でも同じ対象に付ける
+        // （咲夜レーナ BT26-093 の【衝突】【ブロッカー】で対象選択が2回出ていた。【衝突】はこのレシピ型の経路を通る）
+        const _gePick = (c) => { if (c && store) store.__kwPicked = [c]; applyTo(c); };
         const validTargets = [];
         for (let i = 0; i < tgtPlayer.battleArea.length; i++) {
           const _geC = tgtPlayer.battleArea[i];
@@ -15675,12 +15686,12 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (validTargets.length === 0) { showEffectFailed(null, callback); return; }
         if (effectiveSide === 'ai' || ctx._forceTargetIdx !== undefined) {
           const fixedIdx = (ctx._forceTargetIdx !== undefined) ? ctx._forceTargetIdx : validTargets[0];
-          applyTo(tgtPlayer.battleArea[fixedIdx]);
+          _gePick(tgtPlayer.battleArea[fixedIdx]);
           ctx.renderAll && ctx.renderAll(); callback();
           return;
         }
         showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', validTargets, null, '#c084fc', (idx) => {
-          if (idx !== null) applyTo(tgtPlayer.battleArea[idx]);
+          if (idx !== null) _gePick(tgtPlayer.battleArea[idx]);
           ctx.renderAll && ctx.renderAll(); callback();
         });
         return;

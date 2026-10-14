@@ -555,6 +555,14 @@ function _fxPlaceUnder(ctx, entries, toLabel, faceDown, done) {
   next();
 }
 
+// 候補に手札・トラッシュのカードがあるか。手札・トラッシュから選ぶ効果は、候補が1枚だけでも自動で決めずに
+// 選ぶ画面を出す（トラッシュに何があるかを見てから選べるように。ユーザー要望）
+function _anyHandOrTrash(list) {
+  const bs = (typeof window !== 'undefined' && window._lastBattleState) || null;
+  if (!bs) return false;
+  return (list || []).some((c) => c && ['player', 'ai'].some((sd) => bs[sd] && ((bs[sd].hand || []).includes(c) || (bs[sd].trash || []).includes(c))));
+}
+
 // 1体から上から n 枚を取り除き、残りの一番上を新しい本体にする。取り除いたカード（上から順）を返す。
 // 自分の端末（effect-engine）と相手の端末（battle-online の fx_stackToDeck 受信）の両方で使う
 function _detachTopCards(area, idx, n) {
@@ -14506,7 +14514,7 @@ function executeRecipeStep(step, ctx, store, callback) {
               }
               // 2枚目以降は常に打ち切れる（「まで」）。1枚目は optional のときだけ「使わない」を出す
               const _canStop = _optional || _budgetPicked > 0;
-              if (_cands.length === 1 && !_canStop) { _onPick(_cands[0]); return; }
+              if (_cands.length === 1 && !_canStop && !_anyHandOrTrash(_cands)) { _onPick(_cands[0]); return; }
               showTrashCardPicker(_cands, 1, _canStop,
                 '🌟 登場させるカードを選んでください（残りコスト' + _budget + (_budgetPicked > 0 ? '・「使わない」で終了' : '') + '）',
                 (picked) => _onPick(picked && picked[0]), _cands);
@@ -14519,7 +14527,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _pickFromZone = (zoneCands, zoneChosen) => {
             if (!zoneCands || zoneCands.length === 0) { callback(); return; }
             // 「手札から/トラッシュから」を選んだ後（＝使うことは決定済み）は、候補が枚数以内ならそのまま登場
-            if (zoneCands.length <= _summonCount && (!_optional || zoneChosen)) { _summonSequential(zoneCands, 0, callback); return; }
+            if (zoneCands.length <= _summonCount && (!_optional || zoneChosen) && !_anyHandOrTrash(zoneCands)) { _summonSequential(zoneCands, 0, callback); return; }
             showTrashCardPicker(zoneCands, _summonCount, _optional, '🌟 登場させるカードを選んでください', (picked) => {
               if (!picked || picked.length === 0) {
                 ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
@@ -14695,7 +14703,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 選んだ進化元に対して進化条件を満たす進化先だけ
         const _cands = _evoCands.filter(c => _evoOk(c, slotIdx));
         if (_cands.length === 0) { _evoFail('進化条件を満たす進化先がありません'); return; }
-        if (ctx.side === 'ai' || (_cands.length === 1 && !_evoOptional)) {
+        if (ctx.side === 'ai' || (_cands.length === 1 && !_evoOptional && !_anyHandOrTrash(_cands))) {
           _doEvolveWith(_cands[0], slotIdx);
           return;
         }
@@ -14711,7 +14719,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           showAltActionChoice(_zl, (zi) => {
             if (zi >= 2) { _doEvolveWith(null, slotIdx); return; }
             const zc = zi === 0 ? _inHand : _inTrash;
-            if (_sameKind(zc)) { _doEvolveWith(zc[0], slotIdx); return; }
+            if (_sameKind(zc) && !_anyHandOrTrash(zc)) { _doEvolveWith(zc[0], slotIdx); return; }
             showTrashCardPicker(zc, 1, false, '⬆ 進化させるカードを選んでください', (picked) => _doEvolveWith(picked && picked[0], slotIdx), zc);
           }, '⬆ 「' + (_sameKind(_cands) ? _cands[0].name : '進化先') + '」にどこから進化させますか？');
           return;
@@ -16725,7 +16733,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           });
         };
         if (effectiveSide === 'ai') { _putOnPicked([_putCands[0]]); }
-        else if (_putCands.length === 1 && !_putOptional && !_putIsCost) { _putOnPicked([_putCands[0]]); }
+        else if (_putCands.length === 1 && !_putOptional && !_putIsCost && !_anyHandOrTrash(_putCands)) { _putOnPicked([_putCands[0]]); }
         // セキュリティの上（下）から1枚だけが候補なら選ぶ余地が無いので、選択画面は出さない（使うかは効果の
         // 「発動しますか？」で確認済み。レオルモン BT26-025）。テイマーが複数いるときのテイマー選びは出す
         else if (_putCands.length === 1 && _putSecCands.length === 1) { _putOnPicked([_putCands[0]]); }
@@ -17016,7 +17024,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           }));
         };
         if (effectiveSide === 'ai') { _pudOnPicked([_pudCands[0]]); }
-        else if (_pudCands.length === 1 && !_pudOptional) { _pudOnPicked([_pudCands[0]]); }
+        else if (_pudCands.length === 1 && !_pudOptional && !_anyHandOrTrash(_pudCands)) { _pudOnPicked([_pudCands[0]]); }
         else { showTrashCardPicker(_pudCands, 1, _pudOptional, '🃏 進化元の下に置くカードを選んでください', _pudOnPicked, _pudCands); }
         break;
       }
@@ -17243,7 +17251,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         _pusPlace(list, _froms);
       };
       if (effectiveSide === 'ai') { _pusOnPicked(_pusCands.slice(0, _pusWant)); break; }
-      if (_pusCands.length <= _pusWant && !_pusOptional && !_pusIsCost) { _pusOnPicked(_pusCands.slice(0, _pusWant)); break; }
+      if (_pusCands.length <= _pusWant && !_pusOptional && !_pusIsCost && !_anyHandOrTrash(_pusCands)) { _pusOnPicked(_pusCands.slice(0, _pusWant)); break; }
       // コストは「使わない」（キャンセル）を選べるようにする（＝コストを払わず効果を使わない）
       showTrashCardPicker(_pusCands, _pusWant, _pusOptional || _pusIsCost, '🃏 「' + host.name + '」の下に置くカードを選んでください', _pusOnPicked, _pusCands);
       break;
@@ -17533,7 +17541,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             const nextPool = pool.filter((e) => e !== entry);
             _doReturn2(entry, () => _rdSequential(remaining - 1, nextPool, doneCb));
           };
-          if (effectiveSide === 'ai' || pool.length === 1) {
+          if (effectiveSide === 'ai' || (pool.length === 1 && !_anyHandOrTrash(pool.map((e) => e.card)))) {
             pick(pool[0]);
           } else {
             showTrashCardPicker(pool.map((e) => e.card), 1, false, '🔄 デッキに戻すカードを選んでください', (picked) => {
@@ -18102,7 +18110,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           };
           if (effectiveSide === 'ai') { _take(_rc[0]); return; }
           const _stop = _canStopAny;
-          if (_rc.length === 1 && !_stop) { _take(_rc[0]); return; }
+          if (_rc.length === 1 && !_stop && !_anyHandOrTrash(_rc.map(e => e.card))) { _take(_rc[0]); return; }
           const _list = _rc.map(e => e.card);
           // 残りの候補を全て一緒に選べるなら「全て選択する」を出す。名称等が異なる指定なら同名カードは1枚にまとめて数え
           // （先頭の1枚を使う）、その種類の数がリンクできる残り枚数以内のとき。押したら並べて確認し、決定なら全部リンクする
@@ -18138,7 +18146,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
 
       if (effectiveSide === 'ai') { _doLink(_linkCands[0]); break; }
-      if (_linkCands.length === 1 && !_linkOptional) { _doLink(_linkCands[0]); break; }
+      if (_linkCands.length === 1 && !_linkOptional && !_anyHandOrTrash(_linkCands.map(e => e.card))) { _doLink(_linkCands[0]); break; }
       const _linkCardList = _linkCands.map(e => e.card);
       showTrashCardPicker(_linkCardList, 1, _linkOptional, '🔗 リンクするカードを選んでください', (picked) => {
         if (_linkOptional && (!picked || picked.length === 0)) { ctx.addLog('☓ 「使わない」を選択'); callback(); return; }

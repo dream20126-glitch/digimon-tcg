@@ -563,6 +563,32 @@ function _anyHandOrTrash(list) {
   return (list || []).some((c) => c && ['player', 'ai'].some((sd) => bs[sd] && ((bs[sd].hand || []).includes(c) || (bs[sd].trash || []).includes(c))));
 }
 
+// 相手の場のデジモン1体を持ち主のデッキの上/下へ戻す（【分離】等の「離れない」を確認し、下のカード・リンクカードは
+// トラッシュ。オンラインでは card_removed で持ち主に伝える）。done()
+function _returnOppFieldCardToDeck(opponent, c, top, ctx, done) {
+  const idx = opponent.battleArea.indexOf(c);
+  if (idx === -1) { done && done(); return; }
+  const sideName = (ctx.bs && opponent === ctx.bs.player) ? 'player' : 'ai';
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  tryCancelViaLeaveBattle(c, sideName, ctx.bs, ctxBase, (canceled) => {
+    if (canceled) { done && done(); return; }
+    const i2 = opponent.battleArea.indexOf(c);
+    if (i2 === -1) { done && done(); return; }
+    opponent.battleArea[i2] = null;
+    if (c.stack) c.stack.forEach(s2 => opponent.trash.push(s2));
+    if (c.linkedCards) c.linkedCards.forEach(s2 => opponent.trash.push(s2));
+    if (top) opponent.deck.unshift(c); else opponent.deck.push(c);
+    ctx.addLog && ctx.addLog('🔄 「' + c.name + '」を持ち主のデッキの' + (top ? '上' : '下') + 'に戻す');
+    if (typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
+      try { window._onlineSendCommand({ type: 'card_removed', zone: 'battle', slotIdx: i2, reason: 'return_deck', top: !!top, cardName: c.name || '', faceDown: false }); } catch (_) {}
+    }
+    ctx.renderAll && ctx.renderAll();
+    const dk = 'デッキ' + (top ? '(上)' : '(下)');
+    _fxMoveSync(ctx, c, '相手のバトルエリア', '相手の' + dk, () => _deckIncreased(ctx, sideName, () => done && done()),
+      { remoteFrom: '自分のバトルエリア', remoteTo: '自分の' + dk });
+  });
+}
+
 // 1体から上から n 枚を取り除き、残りの一番上を新しい本体にする。取り除いたカード（上から順）を返す。
 // 自分の端末（effect-engine）と相手の端末（battle-online の fx_stackToDeck 受信）の両方で使う
 function _detachTopCards(area, idx, n) {
@@ -17415,9 +17441,16 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 条件（condition/when/extra_conditions と filter）を満たすカードを選び、場から自分のデッキの上/下へ戻す。
       // 例: 黒井翔太 BT26-092「特徴『TS』を持つ自分のテイマー1体をデッキの下に戻すことで」（コスト）。
       // 1体なら自動・CPUは自動・プレイヤーは選択UI。候補が無い/選ばない場合、コストなら callback(false)
-      const _rdOwnM = _rdTStr.match(/^(own_tamer|own_digimon|own)(?::(up_to_)?(\d+))?$/);
+      // target_other_own（他の自分のデジモン）・both（自分/相手どちらのデジモンでも。エディタで自分と相手の両方を選んだ形）・
+      // both_other（このデジモン以外の自分/相手のデジモン）も同じ流れで扱う。both をコスト（「〜戻すことで」）で使うときは
+      // このデジモン自身は戻せない（ロゼモン：バーストモード BT26-050「レスト状態の他のデジモン1体をデッキの下に戻すことで」。
+      // 以前は target_other_own に対応しておらず、何も戻さずにコストを払えた扱いで進んでいた）
+      const _rdOwnM = _rdTStr.match(/^(own_tamer|own_digimon|own|target_other_own|other_own|both|both_other)(?::(up_to_)?(\d+))?$/);
       if (_rdOwnM && !step.from) {
         const _rdoIsCost = _COST_STEP_SET.has(step);
+        const _rdoBoth = _rdOwnM[1] === 'both' || _rdOwnM[1] === 'both_other';
+        const _rdoNotSelf = _rdOwnM[1] === 'target_other_own' || _rdOwnM[1] === 'other_own' || _rdOwnM[1] === 'both_other' || (_rdOwnM[1] === 'both' && _rdoIsCost);
+        const _rdoOppTag = ctx.side === 'player' ? 'ai' : 'player';
         const _rdoTamer = _rdOwnM[1] === 'own_tamer';
         const _rdoUpTo = !!_rdOwnM[2];
         const _rdoWant = Math.max(1, parseInt(_rdOwnM[3], 10) || 1);
@@ -17427,11 +17460,14 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (step.when) _rdoConds.push(...parseRecipeCondition(step.when));
         if (Array.isArray(step.extra_conditions)) step.extra_conditions.forEach(cs => _rdoConds.push(...parseRecipeCondition(cs)));
         if (step.condition_op === 'or') _rdoConds._op = 'or';
-        const _rdoPool = _rdoTamer ? (player.tamerArea || []) : player.battleArea;
+        const _rdoPool = _rdoTamer ? (player.tamerArea || []) : (_rdoBoth ? player.battleArea.concat(opponent.battleArea) : player.battleArea);
+        const _rdoIsOpp = (c) => opponent.battleArea.includes(c);
         const _rdoCands = _rdoPool.filter(c => c
+          && !(_rdoNotSelf && c === ctx.card)
           && (_rdoTamer || !c.type || c.type === 'デジモン')
-          && (_rdoConds.length === 0 || checkConditions(_rdoConds, c, ctx.bs, ctx.side))
-          && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)));
+          && (_rdoConds.length === 0 || checkConditions(_rdoConds, c, ctx.bs, _rdoIsOpp(c) ? _rdoOppTag : ctx.side))
+          && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))
+          && !(_rdoIsOpp(c) && (_isImmuneToEffect(c, ctx) || (c.buffs && c.buffs.some(b => b && b.type === 'cant_return_deck')))));
         const _rdoFail = (msg) => {
           if (ctx.bs) ctx.bs._lastActionCount = 0;
           ctx.addLog(msg);
@@ -17454,14 +17490,16 @@ function executeRecipeStep(step, ctx, store, callback) {
           let k = 0;
           const next = () => {
             if (k >= list.length) { if (ctx.bs) ctx.bs._lastActionCount = list.length; callback(true); return; }
-            _returnOwnFieldCardToDeck(player, list[k++], _rdoTop, ctx, next);
+            const c = list[k++];
+            if (_rdoIsOpp(c)) { _returnOppFieldCardToDeck(opponent, c, _rdoTop, ctx, next); return; }
+            _returnOwnFieldCardToDeck(player, c, _rdoTop, ctx, next);
           };
           next();
         };
         const _rdoCanSkip = _rdoIsCost || !!step.optional || _rdoUpTo;
         if (effectiveSide === 'ai') { _rdoDo(_rdoCands.slice(0, _rdoN)); break; }
         if (_rdoCands.length <= _rdoN && !_rdoCanSkip) { _rdoDo(_rdoCands.slice(0, _rdoN)); break; }
-        showTrashCardPicker(_rdoCands, _rdoN, _rdoCanSkip, '🔄 デッキの' + (_rdoTop ? '上' : '下') + 'に戻す' + (_rdoTamer ? 'テイマー' : 'デジモン') + 'を選んでください', _rdoDo, _rdoCands);
+        showTrashCardPicker(_rdoCands, _rdoN, _rdoCanSkip, '🔄 デッキの' + (_rdoTop ? '上' : '下') + 'に戻す' + (_rdoTamer ? 'テイマー' : (_rdoBoth ? 'デジモン（自分/相手）' : 'デジモン')) + 'を選んでください', _rdoDo, _rdoCands);
         break;
       }
       // 自分（from_owner:'opponent'指定時は相手）のゾーン（手札/トラッシュ/セキュリティ/

@@ -310,6 +310,7 @@ export function setupCommonWindowExports() {
   window.closeBCD = closeBCD;
   window.showTrash = showTrash;
   window.renderAll = renderAll;
+  window._addLog = addLog; // 効果エンジン側からバトルログに書く（バースト進化の終了等）
 
   // Phase 3: フェーズ進行
   window.onEndTurn = onEndTurn;

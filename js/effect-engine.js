@@ -19417,18 +19417,54 @@ export function filterBurstEvolveTamerCandidates(bs, side, tamerConditions, tame
 // ターン終了時にデジモンでなくなっていれば破棄しない。
 // side側のバトルエリアを対象に、doEvolve側が付けた _burstEvolvedPendingDiscard フラグを
 // 消費する（1ターンにつき1回だけ処理されるよう、処理後は必ずフラグを削除する）
-export function processBurstEvolvePendingDiscard(bsArg, side) {
+// 破棄するのは一番上のカード（バースト進化したカード自身）。デジモンは重ねられた全てのカードなので「上から1枚」は
+// 一番上のカード（以前は進化元の一番上＝直前の形を破棄していた）。下のカードが新しい一番上になり、効果で受けていた
+// 状態は引き継ぐ（退化と同じ）。オンラインでは状態を送り直す。callback（任意）は演出の後に呼ぶ
+export function processBurstEvolvePendingDiscard(bsArg, side, callback) {
+  const done = () => { try { callback && callback(); } catch (_) {} };
   const p = bsArg && bsArg[side];
-  if (!p) return;
-  (p.battleArea || []).forEach((c) => {
+  if (!p) { done(); return; }
+  const gone = [];
+  (p.battleArea || []).forEach((c, idx) => {
     if (!c || !c._burstEvolvedPendingDiscard) return;
     delete c._burstEvolvedPendingDiscard;
     if (c.type !== 'デジモン') return;
     if (!Array.isArray(c.stack) || c.stack.length === 0) return;
-    // stack[0] = 直前進化形（一番上）
-    const discarded = c.stack.shift();
-    if (discarded) p.trash.push(discarded);
+    const nc = c.stack.shift();
+    nc.stack = c.stack.slice();
+    nc.suspended = !!c.suspended;
+    nc.buffs = [];
+    nc._permEffects = {};
+    nc._usedEffects = [];
+    nc.baseDp = parseInt(nc.dp) || 0;
+    nc.dp = nc.baseDp;
+    nc.dpModifier = 0;
+    _carryDedigiState(c, nc);
+    c.stack = []; c.linkedCards = c.linkedCards || [];
+    // リンクカードは一番上のカードが持っていたもの。新しい一番上に引き継ぐ（デジモンとしては同じ）
+    if (c.linkedCards.length > 0) { nc.linkedCards = (nc.linkedCards || []).concat(c.linkedCards); c.linkedCards = []; }
+    p.battleArea[idx] = nc;
+    p.trash.push(c);
+    gone.push({ top: c, now: nc });
   });
+  if (gone.length === 0) { done(); return; }
+  const bs = bsArg;
+  try { applyPermanentEffects(bs, side); } catch (_) {}
+  const addLog = (m) => { try { (typeof window !== 'undefined' && window._addLog) ? window._addLog(m) : console.log(m); } catch (_) {} };
+  gone.forEach((g) => { try { addLog('🔥 バースト進化の終了: 「' + g.top.name + '」を破棄し、「' + g.now.name + '」に戻った'); } catch (_) {} });
+  try { if (typeof window !== 'undefined' && window.renderAll) window.renderAll(); } catch (_) {}
+  if (side === 'player' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
+    try { window._onlineSendStateSync(); } catch (_) {}
+  }
+  // 移動演出（バースト進化したカード → トラッシュ）
+  let i = 0;
+  const next = () => {
+    if (i >= gone.length || typeof window === 'undefined') { done(); return; }
+    const g = gone[i++];
+    const ctxFx = { side, bs };
+    try { _fxMoveSync(ctxFx, g.top, '「' + g.now.name + '」の上', 'トラッシュ', next); } catch (_) { next(); }
+  };
+  next();
 }
 
 // recipe の app_gattai_evolve（アプ合体）が baseCard に対して成立するか。

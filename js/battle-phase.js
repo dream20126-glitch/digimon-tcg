@@ -692,7 +692,7 @@ export function onEndTurn() {
     // 【自分のターン終了時】効果（≪急襲≫「自分のターン終了時、このデジモンでアタックできる」等）を
     // 解決してから相手にターンを渡す。以前はオンラインの手動ターン終了だけこの発火が無く、
     // 急襲（クロノモン：ホーリーモード BT26-016）等が発動しなかった
-    _waitIdle(() => _hooks.checkTurnEndEffects(() => _waitIdle(() => {
+    _waitIdle(() => _hooks.checkTurnEndEffects(() => _waitIdle(() => _processBurstEvolvePendingDiscard(bs, 'player', () => {
     bs._endingTurn = false;
     applyTurnEndMemoryShift();
     if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
@@ -702,8 +702,7 @@ export function onEndTurn() {
     _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
     _hooks.expireBuffs('dur_next_own_turn', null, 'player');
     _hooks.expireBuffs('permanent', 'player');
-    // バースト進化の保留処理（進化したターンの終了時、重ねられているカードを1枚破棄）
-    _processBurstEvolvePendingDiscard(bs, 'player');
+    // バースト進化の保留処理は、相手にターンを渡す前（上の _processBurstEvolvePendingDiscard）で済ませている
     // ≪再起動≫: 相手のアクティブフェイズで自分の本体側カードをアクティブにする
     // (相手側マシンからは fx_remoteSuspend が来るが、テスト/scripted opp 環境のため
     //  自分側でもローカルに活性化しておく)
@@ -723,7 +722,7 @@ export function onEndTurn() {
         addLog('⏳ 相手のターン（操作待ち）');
       });
     });
-    })));
+    }))));
     return;
   }
 
@@ -849,6 +848,8 @@ export function checkAutoTurnEnd() {
   // 「自分のターン終了」の表示を先に出してから【自分のターン終了時】の効果（エグゼキュート等）を処理する
   _waitIdleAuto(() => showYourTurn('自分のターン終了', '', '#555555', () => {
   _hooks.checkTurnEndEffects(() => _waitIdleAuto(async () => {
+    // バースト進化の保留処理（ターン終了時、バースト進化したカードを破棄）。相手にターンを渡す前に行う
+    await new Promise((res) => { try { _processBurstEvolvePendingDiscard(bs, 'player', res); } catch (_) { res(); } });
     bs._autoTurnEnding = false;
     bs.isPlayerTurn = false; bs._oppPhase = null; bs._usedLimits = {}; // 【ターンに1回】等の使用回数は相手のターンになったらリセット（オンラインでは相手のターン開始で自分の分がリセットされていなかった）
     // プレイヤーのターン終了

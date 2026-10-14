@@ -1324,19 +1324,21 @@ export function doEvolve(card, handIdx, slotIdx) {
   if (card.evolveCost === null) { addLog('🚨 「' + card.name + '」は進化できません‼'); return; }
   if (!canEvolveOnto(card, base)) { addLog('🚨 進化条件を満たしていません‼（' + card.evolveCond + '）'); return; }
 
-  // バースト進化（burst_evolve）: 通常の進化条件・代替進化(alt_evolve)のどちらも
-  // 成立しない場合のみ、バースト進化の成立を確認する（総合ルール8-3-3-1「バースト進化を
-  // 宣言し」は本来プレイヤーの任意選択だが、両方成立する場合に選ばせるUIは未実装のため、
-  // 通常進化が可能ならそちらを優先する）
+  // バースト進化（burst_evolve。総合ルール8-3-3-1「バースト進化を宣言し」＝プレイヤーが選ぶ）:
+  // バースト進化の条件（元のデジモン＋手札に戻すテイマーがいる）がそろっていれば、通常の進化もできるときは
+  // 「通常進化」「バースト進化」を選ばせる（以前は通常進化ができると必ず通常進化になり、ロゼモン：バーストモード
+  // BT26-050 にバースト進化できなかった）。バースト進化しかできないときはそのままバースト進化
   const _normalMatch = _resolveEvolveMatch(card, base) !== null;
   let _altEvoForBurstCheck = null;
   try { _altEvoForBurstCheck = _getAltEvolve(card, base, bs, 'player'); } catch (_) {}
-  if (!_normalMatch && !_altEvoForBurstCheck) {
-    let _burstEvo = null;
-    try { _burstEvo = _getBurstEvolve(card, base, bs, 'player'); } catch (_) {}
-    if (_burstEvo) { _doBurstEvolve(card, base, handIdx, slotIdx, _burstEvo); return; }
-  }
+  let _burstEvo = null;
+  try { _burstEvo = _getBurstEvolve(card, base, bs, 'player'); } catch (_) {}
+  let _burstTamers = [];
+  if (_burstEvo) { try { _burstTamers = _filterBurstEvolveTamerCandidates(bs, 'player', _burstEvo.tamerConditions, _burstEvo.tamerConditionsOp, _burstEvo.tamerConditionsChain); } catch (_) {} }
+  const _burstReady = !!_burstEvo && _burstTamers.length > 0;
+  if (_burstReady && !_normalMatch && !_altEvoForBurstCheck) { _doBurstEvolve(card, base, handIdx, slotIdx, _burstEvo); return; }
 
+  const _normalEvolve = () => {
   // 進化条件が複数(OR)ある場合、成立したclauseに対応するコスト（進化コスト欄の「・」区切り）を選ぶ
   let cost = getEvolveCostFor(card, base);
   // 代替進化（alt_evolve・進化条件を無視）が成立していれば、その指定コストを使う
@@ -1364,6 +1366,25 @@ export function doEvolve(card, handIdx, slotIdx) {
       }
     });
   });
+  };
+
+  if (_burstReady) {
+    const _tn = _burstTamers.map(t => '「' + t.name + '」').join('か');
+    const _normalCost = (() => { try { const a = _altEvoForBurstCheck; return a ? a.cost : getEvolveCostFor(card, base); } catch (_) { return card.evolveCost; } })();
+    showConfirm({
+      title: '⬆ 進化の方法を選んでください',
+      // showConfirm の message は HTML として表示するので改行は <br>
+      message: '「' + base.name + '」→「' + card.name + '」<br><br>'
+        + '🔥 バースト進化：' + _tn + 'を手札に戻して、コスト' + (_burstEvo.cost || 0) + 'で進化（このターンの終了時に「' + card.name + '」を破棄）<br>'
+        + '⬆ 通常進化：進化コスト' + _normalCost + 'で進化',
+      yesText: '🔥 バースト進化', noText: '⬆ 通常進化', color: '#ff6633',
+    }).then((burst) => {
+      if (burst) { _doBurstEvolve(card, base, handIdx, slotIdx, _burstEvo); return; }
+      _normalEvolve();
+    });
+    return;
+  }
+  _normalEvolve();
 }
 
 // バースト進化（総合ルール8-3）: バトルエリアの指定テイマー1体を手札に戻すコストを

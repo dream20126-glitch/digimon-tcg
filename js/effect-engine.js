@@ -6185,9 +6185,12 @@ function _globalEffectMatches(g, c, bs) {
 function _refreshGlobalEffects(bs, side) {
   const list = bs && bs._globalEffects;
   if (!Array.isArray(list) || list.length === 0) return;
-  const area = (bs[side] && bs[side].battleArea) || [];
+  const battle = (bs[side] && bs[side].battleArea) || [];
+  const tamers = (bs[side] && bs[side].tamerArea) || [];
   list.forEach((g) => {
     if (!g || g.targetSide !== side) return;
+    // 対象の条件にテイマーが入っていればテイマーエリアも（「デジモン/テイマー全ては進化できない」等）
+    const area = _filterWantsTamer(g.filter) ? battle.concat(tamers) : battle;
     area.forEach((c) => {
       if (!c) return;
       if (!Array.isArray(c.buffs)) c.buffs = [];
@@ -6206,8 +6209,29 @@ function _refreshGlobalEffects(bs, side) {
         c.buffs.splice(at, 1);
         recalcDp(c);
       }
+      // 行動制限のフラグ（表示・判定に使う）をバフと合わせる
+      if (g.type === 'cant_evolve') c.cantEvolve = c.buffs.some(b => b && b.type === 'cant_evolve');
+      if (g.type === 'cant_attack' || g.type === 'cant_attack_block') c.cantAttack = c.buffs.some(b => b && (b.type === 'cant_attack' || b.type === 'cant_attack_block'));
+      if (g.type === 'cant_block' || g.type === 'cant_attack_block') c.cantBlock = c.buffs.some(b => b && (b.type === 'cant_block' || b.type === 'cant_attack_block'));
     });
   });
+}
+// 状態で絞る「〜全ては（期限つきで）…」を継続する全体処理にする（総合ルール 11-2-2）。発揮したあとに条件を満たした
+// カード（あとからレスト状態になった等）にも付く。自分のカードかオフラインなら自分の端末で記録し、オンラインで相手の
+// カードなら相手の端末に記録してもらう（fx_globalEffect。今いるカードの表示はこちらでも付けておく）。
+// applyNow(c): 今の対象に付ける処理（相手の端末へ個別には送らない）。記録できたら true
+function _registerStateAllEffect(ctx, isOpp, type, duration, filter, conds, applyNowList, applyNow) {
+  if (!filter || !_GLOBAL_EFFECT_DURATIONS.has(duration)) return false;
+  const targetSide = isOpp ? (ctx.side === 'player' ? 'ai' : 'player') : ctx.side;
+  const online = typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode();
+  const opts = { type, value: 0, duration, filter, conds: (conds && conds.length) ? conds : null };
+  if (isOpp && online) {
+    if (ctx.side !== 'player') return false;
+    (applyNowList || []).forEach(applyNow);
+    try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_globalEffect', effect: Object.assign({}, opts, { appliedDuringOwnTurn: !!(ctx.bs && ctx.bs.isPlayerTurn) }) }); } catch (_) {}
+    return true;
+  }
+  return !!_registerGlobalEffect(ctx, targetSide, opts);
 }
 // DP0 等で _pendingDestroy が立ったカードを、効果・アタックの処理が無いときに消滅させる（継続する全体処理で
 // あとから DP が0以下になったデジモン用。効果の処理中なら、その完了時の checkPendingDestroys に任せる）
@@ -15612,6 +15636,13 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _naDurAll = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
         const _naList = [...(_naPoolAll.battleArea || []), ...(_naPoolAll.tamerArea || [])]
           .filter(c => c && cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card));
+        // 期限つきなら、あとからその状態になったカードにも付く継続する全体処理にする
+        if (_registerStateAllEffect(ctx, _naIsOpp, 'prevent_unsuspend', _naDurAll, step.filter, null, _naList, (c) => addBuffDirect(c, 'prevent_unsuspend', 0, _naDurAll, ctx))) {
+          _naList.forEach(c => ctx.addLog('🔒 「' + c.name + '」はアクティブにならない'));
+          ctx.renderAll && ctx.renderAll();
+          callback();
+          break;
+        }
         if (_naList.length === 0) ctx.addLog('⚠ 対象がいません');
         _naList.forEach(c => {
           addBuffDirect(c, 'prevent_unsuspend', 0, _naDurAll, ctx);
@@ -15953,11 +15984,23 @@ function executeRecipeStep(step, ctx, store, callback) {
                                       : (ctx.side === 'player' ? 'ai' : 'player');
         const _conds = step.condition ? parseRecipeCondition(step.condition) : [];
         const _cardPool = _cantTgt.includes('_card:') ? [...(_tgtPlayer.battleArea || []), ...(_tgtPlayer.tamerArea || [])] : (_tgtPlayer.battleArea || []);
+        const _nowList = _cardPool.filter(c => c
+          && !(_conds.length > 0 && !checkConditions(_conds, c, ctx.bs, _tgtSideTag))
+          && !(step.filter && !cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)));
+        // 「レスト状態の相手のデジモン/テイマー全ては、相手のターン終了まで進化できない」のように状態で絞るなら、
+        // あとからその状態になったカードにも付く継続する全体処理にする（以前は発揮した時点のカードにだけ付き、
+        // 相手のターンにレストしたデジモンには付かなかった。ロゼモン：バーストモード BT26-050）
+        const _stateFilter = step.filter ? Object.assign({}, step.filter, _cantTgt.includes('_card:') ? {} : { type_in: step.filter.type_in || ['デジモン'] }) : null;
+        if (_registerStateAllEffect(ctx, !_isOwnAll, step.action, dur, _stateFilter, _conds, _nowList, (c) => _applyCantState(c, false))) {
+          _nowList.forEach(c => ctx.addLog('🔒 「' + c.name + '」' + (step.action === 'cant_evolve' ? '進化不可' : '行動制限')));
+          ctx.addLog('🔒 ' + (_isOwnAll ? '自分' : '相手') + 'の条件を満たすカード全て（あとから条件を満たしたものにも）');
+          ctx.renderAll();
+          _syncStateAfterCant();
+          callback();
+          break;
+        }
         let _applied = 0;
-        _cardPool.forEach(c => {
-          if (!c) return;
-          if (_conds.length > 0 && !checkConditions(_conds, c, ctx.bs, _tgtSideTag)) return;
-          if (step.filter && !cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)) return;
+        _nowList.forEach(c => {
           _applyCantState(c, !_isOwnAll);
           _applied++;
         });

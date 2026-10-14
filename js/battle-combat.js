@@ -807,6 +807,9 @@ function _resolveEvolveMatch(evoCard, baseCard) {
 }
 
 export function canEvolveOnto(evoCard, baseCard) {
+  // 「進化できない」（cant_evolve。ロゼモン：バーストモード BT26-050 のオプション「レスト状態の相手のデジモン/テイマー
+  // 全ては進化できず」等）を持つデジモンは進化させられない（以前は表示だけで、進化は止めていなかった）
+  if (baseCard && (baseCard.cantEvolve || (Array.isArray(baseCard.buffs) && baseCard.buffs.some(b => b && b.type === 'cant_evolve')))) return false;
   // 代替進化（alt_evolve / 進化条件を無視）が成立するなら進化可
   try { if (_getAltEvolve(evoCard, baseCard, bs, 'player')) return true; } catch (_) {}
   // バースト進化（burst_evolve）が成立するなら進化可（通常の進化条件は無視）

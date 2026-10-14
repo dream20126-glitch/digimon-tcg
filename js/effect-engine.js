@@ -8307,8 +8307,13 @@ function _collectPendingReactions(ctx, after) {
   // （同じ効果の解決中に同時に起きたイベントでは、同じ効果は1回だけ誘発する）
   const _itemKey = (it) => {
     const b = it.block || {};
+    // 効果の中身で比べる（誘発した経路によって、発動主体・原因等の付帯情報が付いたコピーになっていることがあるため、
+    // 処理の内容（アクション・対象・取得元・値・回数制限）の並びだけを見る。ヤタガラモンが2つ残っていた）
     let steps = '';
-    try { steps = JSON.stringify(b._grantedSteps || null); } catch (_) {}
+    try {
+      const arr = Array.isArray(b._grantedSteps) ? b._grantedSteps : [];
+      steps = JSON.stringify(arr.map((st) => st ? [st.action, st.target || '', st.from || '', st.value == null ? '' : st.value, st.limit || ''] : null));
+    } catch (_) {}
     return [it.side, b._recipeCard || null, steps];
   };
   const _dedupe = () => {

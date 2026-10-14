@@ -535,9 +535,13 @@ function execUnsuspend() {
     // 「次のアクティブフェイズではアクティブにならない」効果は、その対象カードの
     // 持ち主のアクティブフェイズで1回スキップした後に消費される。execUnsuspend は
     // 自分(player)のアクティブフェイズなので、player 側のカードから除去する。
+    // 「相手のターン終了まで」等の期間つき（dur_next_opp_turn 等）は、このターンの終了まで効果が続くので消さない
+    // （以前は期間に関係なく消していて、相手のターンになると「アクティブにならない」の印が外れていた）。
+    // 期間を持たない「次のアクティブフェイズでアクティブにならない」だけを、ここで使い切る
+    const _turnBound = (d) => /^dur_(this_turn|next_opp_turn|next_own_turn)$/.test(String(d || ''));
     [...bs.player.battleArea, ...(bs.player.tamerArea || [])].forEach(c => {
       if (c && Array.isArray(c.buffs)) {
-        c.buffs = c.buffs.filter(b => !(b && b.type === 'prevent_unsuspend'));
+        c.buffs = c.buffs.filter(b => !(b && b.type === 'prevent_unsuspend' && !_turnBound(b.duration)));
       }
     });
     addLog('🔄 アクティブフェイズ完了');
@@ -944,7 +948,8 @@ function aiPhaseUnsuspend() {
         const _hasPU = Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'prevent_unsuspend');
         if (!c.cantBeActive && !_hasPU && !_aiSkipAllUnsuspend) c.suspended = false;
         c.summonedThisTurn = false; c._usedEffects = [];
-        if (Array.isArray(c.buffs)) c.buffs = c.buffs.filter(b => !(b && b.type === 'prevent_unsuspend'));
+        // 期間つき（相手のターン終了まで等）はこのターンの終了まで残す（自分のアクティブフェイズと同じ）
+        if (Array.isArray(c.buffs)) c.buffs = c.buffs.filter(b => !(b && b.type === 'prevent_unsuspend' && !/^dur_(this_turn|next_opp_turn|next_own_turn)$/.test(String(b.duration || ''))));
       });
       if (bs.ai.ikusei && !bs.ai.ikusei.cantBeActive && !_aiSkipAllUnsuspend) bs.ai.ikusei.suspended = false;
       addLog('🤖 アクティブフェイズ完了');

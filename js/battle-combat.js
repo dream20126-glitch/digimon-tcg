@@ -1407,7 +1407,8 @@ function _doBurstEvolve(card, base, handIdx, slotIdx, burstEvo) {
 function _doBurstEvolveWith(card, base, handIdx, slotIdx, burstEvo, chosen) {
   const idx = bs.player.tamerArea.indexOf(chosen);
   if (idx === -1) return;
-  bs.player.tamerArea[idx] = null;
+  // テイマーエリアに空き（null）を残さない（永続効果の再計算等が null で止まっていた）
+  bs.player.tamerArea.splice(idx, 1);
   // テイマーの下に重ねられていたカード（裏向きのカード等）はトラッシュへ（手札に戻るのはテイマーのカードだけ）
   if (Array.isArray(chosen.stack) && chosen.stack.length > 0) {
     chosen.stack.forEach((c) => { if (c) { delete c._faceDown; bs.player.trash.push(c); } });

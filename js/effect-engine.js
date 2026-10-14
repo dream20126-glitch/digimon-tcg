@@ -12711,6 +12711,25 @@ function _costStepsInfeasible(costSteps, carrier, bs, side) {
       const n = conds.length > 0 ? st.filter(x => x && checkConditions(conds, x, bs, side)).length : st.length;
       return n < Math.max(1, parseInt(c.value, 10) || 1);
     }
+    // 「（レスト状態の他の）デジモンN体をデッキに戻すことで」で、戻せるデジモンが足りない（ロゼモン：バーストモード
+    // BT26-050。発動しますか？を出してからコストを払えないで終わっていた）
+    if (c.action === 'return_deck' && !c.from) {
+      const m = String(c.target || '').match(/^(own_digimon|own|target_other_own|other_own|both|both_other)(?::(up_to_)?(\d+))?$/);
+      if (m && !m[2]) {
+        const want = Math.max(1, parseInt(m[3], 10) || 1);
+        const me = bs && bs[side], opp = bs && bs[side === 'player' ? 'ai' : 'player'];
+        if (!me || !opp) return false;
+        const both = m[1] === 'both' || m[1] === 'both_other';
+        const notSelf = m[1] !== 'own' && m[1] !== 'own_digimon';
+        const conds = [];
+        try { if (c.condition) conds.push(...parseRecipeCondition(c.condition)); if (c.when) conds.push(...parseRecipeCondition(c.when)); } catch (_) {}
+        const oppSide = side === 'player' ? 'ai' : 'player';
+        const pool = (me.battleArea || []).map(x => [x, side]).concat(both ? (opp.battleArea || []).map(x => [x, oppSide]) : []);
+        const n = pool.filter(([x, sd]) => x && !(notSelf && x === carrier) && (!x.type || x.type === 'デジモン')
+          && (conds.length === 0 || checkConditions(conds, x, bs, sd))).length;
+        return n < want;
+      }
+    }
     return false;
   });
 }

@@ -368,14 +368,21 @@ function processQueue(context, onComplete) {
       context.addLog && context.addLog('💨 「' + ((_src && _src !== e.card) ? _src.name : (e.card && e.card.name)) + '」は発揮する前に場を離れた（または効果を持たなくなった）ため、効果を発揮できない');
       return;
     }
-    if (!_entryWillExecute(e, context)) {
-      e.status = 'completed';
-    }
   });
+  // 今の盤面では発揮できない（【ターンに1回】を使い切った・コストを払えない・条件を満たさない等）効果は、今回の選択肢から
+  // 外すだけにして発揮待ちのまま残す。同時に誘発した他の効果を先に解決すると発揮できるようになることがある
+  // （ロゼモン：バーストモード BT26-050 の【進化時】「2体をレストできる」でウルヴァモンをレストした後の、もう1つの【進化時】
+  // 「レスト状態の他のデジモン1体をデッキの下に戻すことで」。以前は誘発した時点で完了扱いにして、発揮されなかった）。
+  // 残った発揮待ちが全て発揮できないなら、それらはまとめて終える
+  const _blockedNow = new Set(_effectQueue.filter(e => e.status === 'waiting' && !_entryWillExecute(e, context)));
+  if (_blockedNow.size > 0 && _effectQueue.filter(e => e.status === 'waiting').every(e => _blockedNow.has(e))) {
+    _blockedNow.forEach((e) => { e.status = 'completed'; });
+    _blockedNow.clear();
+  }
   // 解決の順番（ターンプレイヤー優先・強制効果優先）に並べ替えてから処理する（以前は最初の1件目だけ積んだ順のままで、
   // 後から積んだターンプレイヤーの効果より相手の効果が先になることがあった）
   sortQueue();
-  const waiting = _effectQueue.filter(e => e.status === 'waiting');
+  const waiting = _effectQueue.filter(e => e.status === 'waiting' && !_blockedNow.has(e));
   _hudSyncQueue(context);
   // 継承（≪継承≫）で得た効果が誘発していれば、効果の選択・実行の前に「継承した」演出を出す
   // （クロノモン：デストロイモード BT26-060 → 進化元のホーリーモードの【進化時】）

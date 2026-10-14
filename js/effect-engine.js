@@ -15782,6 +15782,19 @@ function executeRecipeStep(step, ctx, store, callback) {
           granterText: _gQuoted ? _gQuoted[1] : _gFullText,
         });
         ctx.addLog && ctx.addLog('🎁 「' + c.name + '」に効果を付与');
+        // 相手のカードに付けた効果は、相手の端末にも付ける（state_sync は持ち主の状態で上書きし、付けた効果を発揮するのも
+        // 持ち主の端末。ベアキャットモン＆ペネトレイトブロウ BT26-057「相手のデジモン1体に『【自分のメインフェイズ開始時】
+        // このデジモンでアタックする』を与える」）
+        if (tgtPlayer === opponent && ctx.side === 'player' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+          const _bi = opponent.battleArea.indexOf(c);
+          const _ti = _bi === -1 ? (opponent.tamerArea || []).indexOf(c) : -1;
+          if (_bi !== -1 || _ti !== -1) {
+            try {
+              window._onlineSendCommand({ type: 'fx_remoteGrantEffect', targetIdx: _bi !== -1 ? _bi : _ti, zone: _bi !== -1 ? 'battle' : 'tamer', targetName: c.name,
+                recipe: granted, duration: dur, kwFlag: step._grantKw || null, granterName: ctx.card ? ctx.card.name : '', granterText: _gQuoted ? _gQuoted[1] : _gFullText });
+            } catch (_) {}
+          }
+        }
         // キーワードの付与（【エグゼキュート】等のレシピ型キーワード）なら、キーワード付与の演出を出す
         if (step._grantKw && window._showKeywordGrantBanner) {
           try { window._showKeywordGrantBanner(c, _keywordJpName(step._grantKw)); } catch (_) {}
@@ -15811,7 +15824,9 @@ function executeRecipeStep(step, ctx, store, callback) {
           ctx.renderAll && ctx.renderAll(); callback();
           return;
         }
-        showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', validTargets, null, '#c084fc', (idx) => {
+        // 相手のデジモンが対象なら相手の列で選ぶ（以前はいつも自分の列を光らせていた。ベアキャットモン BT26-057）
+        const _geRow = (tgtPlayer === opponent) === (ctx.side === 'player') ? 'ai' : 'pl';
+        showTargetSelection(_geRow, validTargets, null, '#c084fc', (idx) => {
           if (idx !== null) _gePick(tgtPlayer.battleArea[idx]);
           ctx.renderAll && ctx.renderAll(); callback();
         });

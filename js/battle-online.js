@@ -1286,6 +1286,19 @@ function onRemoteCommand(cmd) {
       sendStateSync();
       break;
     }
+    // 相手の効果でこちらのカードに効果が付与された（effect-engine.js grant_effect）。付けた側＝相手（side:'ai'）として記録する
+    case 'fx_remoteGrantEffect': {
+      const _gArea = cmd.zone === 'tamer' ? (bs.player.tamerArea || []) : bs.player.battleArea;
+      const _gc = _gArea[cmd.targetIdx];
+      if (_gc && cmd.recipe) {
+        if (!Array.isArray(_gc._grantedRecipes)) _gc._grantedRecipes = [];
+        _gc._grantedRecipes.push({ recipe: cmd.recipe, duration: cmd.duration || 'dur_this_turn', side: 'ai', kwFlag: cmd.kwFlag || null, granterName: cmd.granterName || '', granterText: cmd.granterText || '' });
+        addLog('🎁 相手の効果で「' + (cmd.targetName || _gc.name) + '」に効果が付与された');
+        renderAll();
+        sendStateSync();
+      }
+      break;
+    }
     case 'fx_remoteBuff': {
       // 相手から汎用バフ付与コマンドを受信 → 対象カードに buff を直接 push
       // state_sync は oppBattleArea を上書きしないため、この個別コマンドで同期する

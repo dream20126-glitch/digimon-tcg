@@ -2757,8 +2757,24 @@ function handleRemoteDeckOpenAct(cmd) {
   }
   // noFx: 3枚以上をまとめて戻すときは一覧の演出（fx_moveBatch）を別に送っているので、1枚ずつの移動演出は出さない
   if (cmd.noFx) { if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap); return; }
-  // 手札に加えたカードは大きく見せる（何を手札に加えたか分かるように。トレーマニュアル BT26-099 の要望）
+  // 移動演出（自分の画面と同じ fxCardMove）。演出の列（enqueueFx）で1枚ずつ順に出す（以前はすぐ再生していたため、
+  // 2枚をデッキに戻すと2つの演出が重なっていた）。移動元は「相手のオープンしたカード」
+  const _fxDest = ({ hand: '相手の手札', trash: '相手のトラッシュ', deck_top: '相手のデッキ(上)', deck_bottom: '相手のデッキ(下)', play: '相手のバトルエリア', evolve: '相手の進化元' })[cmd.to] || '???';
+  const _fxCardObj = () => { const im = ent.wrap.querySelector('img'); return { name: cmd.name, cardNo: cmd.cardNo, imgSrc: im ? im.src : (ent.imgSrc || '') }; };
+  const _playMove = (after) => enqueueFx((done) => {
+    ent.wrap.style.transition = 'opacity 0.15s, transform 0.15s';
+    ent.wrap.style.opacity = '0.25';
+    ent.wrap.style.transform = 'scale(0.92)';
+    const fin = () => { done(); after && after(); };
+    if (!window._fxCardMove) { fin(); return; }
+    try { window._fxCardMove(_fxCardObj(), '相手のオープンしたカード', _fxDest, fin, false); } catch (_) { fin(); }
+  });
+  // 手札に加えたカードは、移動演出のあとで大きく見せる（何を手札に加えたか分かるように。トレーマニュアル BT26-099 の要望）
   if (cmd.to === 'hand') {
+    _playMove(() => _showHandReveal());
+    return;
+  }
+  function _showHandReveal() {
     const imgEl0 = ent.wrap.querySelector('img');
     const src0 = imgEl0 ? imgEl0.src : (ent.imgSrc || '');
     ent.wrap.style.transition = 'opacity 0.15s, transform 0.15s';
@@ -2814,20 +2830,10 @@ function handleRemoteDeckOpenAct(cmd) {
       const chip = document.getElementById('_remote-reveal-chip'); if (chip && chip.parentNode) chip.parentNode.removeChild(chip);
       window._remoteRevealCleanup = null;
     };
-    return;
   }
-  // 全宛先で fxCardMove を再生（手前で表示されるよう z-index は 66000）
-  if (window._fxCardMove) {
-    const imgEl = ent.wrap.querySelector('img');
-    const cardObj = { name: cmd.name, cardNo: cmd.cardNo, imgSrc: imgEl ? imgEl.src : (ent.imgSrc || '') };
-    const dest = labelMap[cmd.to] ? labelMap[cmd.to].replace('へ', '') : '???';
-    // 発動側の操作が見えるよう、対象カードを薄くしてから演出
-    ent.wrap.style.transition = 'opacity 0.15s, transform 0.15s';
-    ent.wrap.style.opacity = '0.25';
-    ent.wrap.style.transform = 'scale(0.92)';
-    window._fxCardMove(cardObj, 'デッキ', dest, () => {
-      if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap);
-    });
+  // 手札以外（デッキの上/下・トラッシュ・登場等）も同じ移動演出を列で順に（手前で表示されるよう z-index は 66000）
+  if (true) {
+    _playMove(() => { if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap); });
   } else {
     setTimeout(() => { if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap); }, 350);
   }

@@ -189,7 +189,7 @@ export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
 
   // z-index は deck_open UI(60000) / 観戦オーバーレイ(65000) の上に重ねる必要がある
   const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:66000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;pointer-events:none;opacity:0;transition:opacity 0.2s;';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:66000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;pointer-events:none;opacity:0;transition:opacity 0.2s;';
 
   // 見出し
   const head = document.createElement('div');

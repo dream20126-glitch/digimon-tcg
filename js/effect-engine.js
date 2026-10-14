@@ -8463,6 +8463,21 @@ function _fireWhenSecurityDecreaseQueuedWithCause(cause, decreasedSide, bs, ctxB
 // 残っている他の発揮待ちより先に解決する（公式ルール 15-4-5-2）。snap: 発揮する前の保留反応（bs._pendingReactions）。
 // それ以前から保留されていた反応はそのまま後に残す。レイヴモン BT26-082 の【消滅時】の同時誘発でピナモンの効果で
 // 登場させたベックモンの【登場時】が、残りの【消滅時】より後に回っていた
+// 反応がまだ発揮できるか: どれかのステップが【ターンに1回】等の回数を使い切っておらず、コストも払えるか
+// （recipeWillExecuteAnything のうち回数制限とコストの判定だけ。発火元カードに対する条件は誘発した時点で判定済みなので見ない）
+function _reactionCanStillRun(r, side, bs, code) {
+  try {
+    if (!r || !Array.isArray(r.recipe) || r.recipe.length === 0 || !bs) return true;
+    const src = r.sourceCard || r.card;
+    return r.recipe.some((step) => {
+      if (!step) return false;
+      const lMax = getLimitMaxUses(step);
+      if (lMax > 0 && bs._usedLimits && (bs._usedLimits[_stepLimitKey(src, r.card, step)] || 0) >= lMax) return false;
+      if (_costStepsInfeasible(step.cost, r.card, bs, side)) return false;
+      return true;
+    });
+  } catch (_) { return true; }
+}
 function _snapPendingReactions(bs) { return new Set((bs && Array.isArray(bs._pendingReactions)) ? bs._pendingReactions : []); }
 function _drainDerivedAfterReaction(bs, ctxBase, snap, cb) {
   const list = bs && bs._pendingReactions;
@@ -10561,7 +10576,10 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       bs._reactionCollector.items.push({
         card: r.card, side: reactSide,
         block: { trigger: { code: recipeKey }, raw: r.sourceCard === r.card ? (r.card.effect || '') : '', _recipeCard: r.sourceCard !== r.card ? r.sourceCard : undefined, _grantedSteps: r.recipe },
-        alive: () => (!(r.zone === 'trash' || r.zone === 'security') || _cardStillInZone(bs, reactSide, r.card, r.zone)) && _reactionStillValid(r, bs, recipeKey),
+        // 同じ効果が派生誘発で先に発揮して【ターンに1回】を使った・コストのレストを済ませた等で、もう発揮できない古い方は外す
+        // （公式ルール 15-4-2-4: 発揮待ちのまま再び誘発した効果は2つになるが、先に発揮した方で使えなくなる）
+        alive: () => (!(r.zone === 'trash' || r.zone === 'security') || _cardStillInZone(bs, reactSide, r.card, r.zone)) && _reactionStillValid(r, bs, recipeKey)
+          && _reactionCanStillRun(r, reactSide, bs, recipeKey),
         run: (cb) => {
           if ((r.zone === 'trash' || r.zone === 'security') && !_cardStillInZone(bs, reactSide, r.card, r.zone)) { cb(); return; }
           if (!_reactionStillValid(r, bs, recipeKey)) { cb(); return; }
@@ -10609,6 +10627,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
   // （他の効果の処理で手札の枚数等が変わって満たせば、また選べるようになる）。手札から破棄されたカード自身の
   // 効果は破棄された時点の判定（_snapshotHandDiscardConds）を使う
   const condOkNow = (r) => {
+    if (!_reactionCanStillRun(r, reactSide, bs, recipeKey)) return false;
     if (r.zone === 'hand' && r.card && r.card._handDiscardCond === 'ok') return true;
     const rc = Array.isArray(r.recipe) ? r.recipe : [];
     return !(rc.length > 0 && rc.every(st => st && st.condition && !_isEvoSourceSummonStep(st) && !checkConditions(parseRecipeCondition(st.condition), r.card, bs, reactSide)));

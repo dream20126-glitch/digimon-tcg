@@ -583,8 +583,14 @@ function _returnOppFieldCardToDeck(opponent, c, top, ctx, done) {
   const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
   tryCancelViaLeaveBattle(c, sideName, ctx.bs, ctxBase, (canceled) => {
     if (canceled) { done && done(false); return; }
-    const i2 = opponent.battleArea.indexOf(c);
+    // 「離れない」の確認（オンラインでは相手の端末に聞く）を待つ間にも、同期で相手のカードが作り直されることがある。
+    // 元の位置の同じカード番号・名前 → 同じカード番号・名前（1枚だけ）の順に探し直す（クーガモンが戻らなかった）
+    const _same = (x) => !!(x && (x.cardNo || '') === (c.cardNo || '') && (x.name || '') === (c.name || ''));
+    let i2 = opponent.battleArea.indexOf(c);
+    if (i2 === -1 && _same(opponent.battleArea[idx])) i2 = idx;
+    if (i2 === -1) { const hits = opponent.battleArea.filter(_same); if (hits.length === 1) i2 = opponent.battleArea.indexOf(hits[0]); }
     if (i2 === -1) { done && done(false); return; }
+    c = opponent.battleArea[i2];
     opponent.battleArea[i2] = null;
     if (c.stack) c.stack.forEach(s2 => opponent.trash.push(s2));
     if (c.linkedCards) c.linkedCards.forEach(s2 => opponent.trash.push(s2));

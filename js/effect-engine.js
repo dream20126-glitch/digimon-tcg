@@ -8704,6 +8704,23 @@ function checkPendingDestroys(ctx, callback) {
     ? { gone: [], chains: [] } : null;
   const _pdShow = _pdBatch ? ((c, cb) => { _pdBatch.gone.push(c); cb && cb(); }) : showDE;
   let idx = 0;
+  // 「離れない」（置換）で場に残ったが DP がまだ0以下のカードは、すぐにもう一度消滅の判定をする（DP0 はルール処理なので、
+  // 0以下である限り何度でも消滅する。「離れない」効果が【ターンに1回】等でもう使えなければ、そのまま消滅する）。
+  // 以前はもう一度判定せず、次に何かの効果が処理されるまでDP0のまま残っていた。同じカードの判定は数回まで
+  const _canceledDp0 = [];
+  const _afterRound = () => {
+    const still = _canceledDp0.filter(c => c && (parseInt(c.dp, 10) || 0) <= 0
+      && ['player', 'ai'].some(sd => (ctx.bs[sd].battleArea || []).includes(c))
+      && ((c._dp0RecheckCount = (c._dp0RecheckCount || 0) + 1) <= 5));
+    if (still.length > 0) {
+      still.forEach(c => { c._pendingDestroy = true; });
+      ctx.addLog && ctx.addLog('⚠ DPが0以下のままなので、もう一度消滅の判定をする');
+      checkPendingDestroys(ctx, callback);
+      return;
+    }
+    _canceledDp0.forEach(c => { if (c) delete c._dp0RecheckCount; });
+    _drainPendingReactionsOnly(ctx, callback);
+  };
   function processNext() {
     // 消滅の処理中に積まれた「〜したとき」の反応（【デコード】で登場したカードのコストで手札を破棄した→
     // 「手札が破棄されたとき」等）も、ここで処理してから終える（以前は次の判定まで取り残されていた）
@@ -8712,7 +8729,7 @@ function checkPendingDestroys(ctx, callback) {
         const chains = _pdBatch.chains.splice(0);
         const runChains = () => {
           const f = chains.shift();
-          if (!f) { _drainPendingReactionsOnly(ctx, callback); return; }
+          if (!f) { _afterRound(); return; }
           try { f(runChains); } catch (e) { console.error('[destroy batch chain]', e); runChains(); }
         };
         const g = _pdBatch.gone.splice(0);
@@ -8721,7 +8738,7 @@ function checkPendingDestroys(ctx, callback) {
         runChains();
         return;
       }
-      _drainPendingReactionsOnly(ctx, callback);
+      _afterRound();
       return;
     }
     const { side, slot, card } = pending[idx++];
@@ -8735,7 +8752,7 @@ function checkPendingDestroys(ctx, callback) {
       const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
       tryCancelViaLeaveBattle(card, side, ctx.bs, ctxBase, (canceled) => {
         delete card._destroyInProgress;
-        if (canceled) { processNext(); return; }
+        if (canceled) { _canceledDp0.push(card); processNext(); return; }
       _pdShow(card, () => {
       // 削除（演出後に実際に消滅）
       if (ctx.bs[side].battleArea[slot] === card) {
@@ -10985,6 +11002,9 @@ function _collectLeaveBattleReplacers(leavingCard, leavingSide, bs) {
 function _tryCancelLeaveByOtherCards(leavingCard, leavingSide, bs, ctxBase, callback) {
   let list = [];
   try { list = _collectLeaveBattleReplacers(leavingCard, leavingSide, bs); } catch (_) { list = []; }
+  // 【ターンに1回】を使い切った・コストを払えない「離れない」は確認を出さない（DP0のままもう一度消滅の判定をしたとき、
+  // 使えない「離れない」の確認が出ていた）
+  list = list.filter((rc) => _reactionCanStillRun({ recipe: rc.recipe, card: rc.card, sourceCard: rc.sourceCard }, rc.side, bs, 'when_leave_battle'));
   // オンラインでは確認ダイアログを出せるのはこの端末の持ち主のカードだけ（相手のカードの置換効果は対象外）
   if (window._isOnlineMode && window._isOnlineMode()) list = list.filter((rc) => rc.side === 'player');
   if (list.length === 0) { callback(false); return; }
@@ -12168,8 +12188,10 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
   // 事前条件チェック: 全ステップが条件で弾かれるレシピは演出ポップアップも出さない
   // 例: ピヨモン「自分のターンのとき、メモリー+1」を相手のターン中に消滅させても
   //     ポップアップだけ出て何も起きない、という見え方を防ぐ
-  const _reactionsToRun = reactions.filter(({ card, recipe }) =>
-    recipeWillExecuteAnything(recipe, { card, bs, side: destroyedSide })
+  // 効果を持つカード（進化元効果なら進化元のカード）も渡す。【ターンに1回】の使用回数は進化元カード基準なので、渡さないと
+  // 使い切ったことが分からず、DP0のままもう一度判定したときに使えない「離れない」の確認が出ていた（ライラモン BT26-044）
+  const _reactionsToRun = reactions.filter(({ card, sourceCard, recipe }) =>
+    recipeWillExecuteAnything(recipe, { card, bs, side: destroyedSide, _sourceCard: sourceCard })
   ).map(({ card, sourceCard, recipe }) => {
     const fullEffText = (sourceCard !== card && sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
       ? sourceCard.evoSourceEffect : (sourceCard.effect || card.effect || '');
@@ -17701,6 +17723,17 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 位置指定（上から/下から）がある場合は自由選択せずその1枚に自動確定する
       // （「セキュリティを上から1枚破棄する」等、位置固定で選択の余地が無いケース用）
       const _stsPos = step.position || step.security_position;
+      // 破棄したセキュリティの移動演出（セキュリティ → トラッシュ。トラッシュは公開なので表向き）と、自分のセキュリティなら
+      // 相手の端末に中身を送り直す（以前はこの処理に演出が無かった）
+      const _stsAfterTop = (c, done) => {
+        if (!c) { done(); return; }
+        if (owner === player && ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+          try { window._onlineSendCommand({ type: 'security_init', cards: player.security.map(_serializeSecurityCard) }); } catch (_) {}
+        }
+        const pre = (owner === player) ? '' : '相手の';
+        const rpre = (owner === player) ? '相手の' : '';
+        _fxMoveSync(ctx, c, pre + 'セキュリティ', pre + 'トラッシュ', done, { faceUp: true, remoteFrom: rpre + 'セキュリティ', remoteTo: rpre + 'トラッシュ' });
+      };
       if (_stsPos === 'top' || _stsPos === 'bottom') {
         const selectedIdx = _stsPos === 'top' ? 0 : owner.security.length - 1;
         const c = owner.security.splice(selectedIdx, 1)[0];
@@ -17708,11 +17741,12 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (ctx.bs) ctx.bs._lastActionCount = c ? 1 : 0;
         ctx.addLog('🗑 セキュリティ（' + (_stsPos === 'top' ? '上から' : '下から') + '）破棄' + (c ? '：' + c.name : ''));
         ctx.renderAll();
-        callback();
+        _stsAfterTop(c, () => callback());
         break;
       }
       const idxs = owner.security.map((_, i) => i);
       const rowId = (owner === player ? (ctx.side === 'player' ? 'pl' : 'ai') : (ctx.side === 'player' ? 'ai' : 'pl')) + '-sec';
+      const _stsAfter = (c, done) => _stsAfterTop(c, done);
       showTargetSelection(rowId, idxs, 'セキュリティから破棄するカードを選択', '#ff4444', (selectedIdx) => {
         if (selectedIdx == null) { if (ctx.bs) ctx.bs._lastActionCount = 0; callback(); return; }
         const c = owner.security.splice(selectedIdx, 1)[0];
@@ -17720,7 +17754,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (ctx.bs) ctx.bs._lastActionCount = c ? 1 : 0;
         ctx.addLog('🗑 セキュリティから「' + (c ? c.name : '?') + '」を破棄');
         ctx.renderAll();
-        callback();
+        _stsAfter(c, () => callback());
       });
       break;
     }

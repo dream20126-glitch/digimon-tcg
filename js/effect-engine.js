@@ -573,14 +573,18 @@ function _anyHandOrTrash(list) {
 // 相手の場のデジモン1体を持ち主のデッキの上/下へ戻す（【分離】等の「離れない」を確認し、下のカード・リンクカードは
 // トラッシュ。オンラインでは card_removed で持ち主に伝える）。done()
 function _returnOppFieldCardToDeck(opponent, c, top, ctx, done) {
-  const idx = opponent.battleArea.indexOf(c);
-  if (idx === -1) { done && done(); return; }
+  let idx = opponent.battleArea.indexOf(c);
+  if (idx === -1 && c) {
+    const hits = opponent.battleArea.filter(x => x && (x.cardNo || '') === (c.cardNo || '') && (x.name || '') === (c.name || ''));
+    if (hits.length === 1) { c = hits[0]; idx = opponent.battleArea.indexOf(c); }
+  }
+  if (idx === -1) { done && done(false); return; }
   const sideName = (ctx.bs && opponent === ctx.bs.player) ? 'player' : 'ai';
   const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
   tryCancelViaLeaveBattle(c, sideName, ctx.bs, ctxBase, (canceled) => {
-    if (canceled) { done && done(); return; }
+    if (canceled) { done && done(false); return; }
     const i2 = opponent.battleArea.indexOf(c);
-    if (i2 === -1) { done && done(); return; }
+    if (i2 === -1) { done && done(false); return; }
     opponent.battleArea[i2] = null;
     if (c.stack) c.stack.forEach(s2 => opponent.trash.push(s2));
     if (c.linkedCards) c.linkedCards.forEach(s2 => opponent.trash.push(s2));
@@ -591,7 +595,7 @@ function _returnOppFieldCardToDeck(opponent, c, top, ctx, done) {
     }
     ctx.renderAll && ctx.renderAll();
     const dk = 'デッキ' + (top ? '(上)' : '(下)');
-    _fxMoveSync(ctx, c, '相手のバトルエリア', '相手の' + dk, () => _deckIncreased(ctx, sideName, () => done && done()),
+    _fxMoveSync(ctx, c, '相手のバトルエリア', '相手の' + dk, () => _deckIncreased(ctx, sideName, () => done && done(true)),
       { remoteFrom: '自分のバトルエリア', remoteTo: '自分の' + dk });
   });
 }
@@ -3706,7 +3710,21 @@ function _boardCardOf(bs, v) {
 }
 // 候補から n 体選ぶ。CPU（effSide==='ai'）は preferOwn に応じて自分側/相手側を優先して先頭から。
 // 候補が n 体以下なら全員。それ以外は showCardListPicker（自分/相手の別をカード名の前に表示）
-function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb) {
+// 選んだ候補のカードを、今の盤面のカードで探し直す。オンラインでは相手のカードは同期（state_sync）のたびに
+// 作り直されるので、選んでいる間に届くと、選んだカードが場にもう無いことになる（ロゼモン：バーストモード BT26-050 で
+// クーガモンを選んだのにデッキに戻らなかった）。選んだ位置の同じカード番号・名前 → 同じカード番号・名前（1枚だけ）の順
+function _refreshSideEntry(e, ctx) {
+  if (!e || !e.card || !ctx || !ctx.bs) return e;
+  const p = e.own ? (ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai) : (ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player);
+  const arr = (p && p[e.zone]) || [];
+  if (arr.includes(e.card)) return e;
+  const same = (c) => !!(c && (c.cardNo || '') === (e.card.cardNo || '') && (c.name || '') === (e.card.name || ''));
+  let c = (e.idx != null && same(arr[e.idx])) ? arr[e.idx] : null;
+  if (!c) { const hits = arr.filter(same); if (hits.length === 1) c = hits[0]; }
+  return c ? Object.assign({}, e, { card: c, idx: arr.indexOf(c) }) : e;
+}
+function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb0) {
+  const cb = (list) => cb0((list || []).map((e) => _refreshSideEntry(e, ctx)));
   // 相手の「効果を受けない」カードは候補から外す
   cands = (cands || []).filter(e => !(e && !e.own && _isImmuneToEffect(e.card, ctx)));
   const want = Math.min(n || 1, cands.length);
@@ -17516,11 +17534,21 @@ function executeRecipeStep(step, ctx, store, callback) {
             callback();
             return;
           }
-          let k = 0;
+          let k = 0, _rdoReturned = 0;
           const next = () => {
-            if (k >= list.length) { if (ctx.bs) ctx.bs._lastActionCount = list.length; callback(true); return; }
+            if (k >= list.length) {
+              if (ctx.bs) ctx.bs._lastActionCount = _rdoReturned;
+              // コストで1枚も戻せなかった（離れない効果で残った・選んだカードが場にもう無い等）なら支払えなかった
+              if (_rdoIsCost && _rdoReturned === 0) { ctx.addLog('💨 デッキに戻せなかったため、コストを支払えません'); callback(false); return; }
+              callback(true);
+              return;
+            }
             const c = list[k++];
-            if (_rdoIsOpp(c)) { _returnOppFieldCardToDeck(opponent, c, _rdoTop, ctx, next); return; }
+            if (_rdoIsOpp(c) || (!player.battleArea.includes(c) && !(player.tamerArea || []).includes(c))) {
+              _returnOppFieldCardToDeck(opponent, c, _rdoTop, ctx, (ok) => { if (ok) _rdoReturned++; next(); });
+              return;
+            }
+            _rdoReturned++;
             _returnOwnFieldCardToDeck(player, c, _rdoTop, ctx, next);
           };
           next();

@@ -140,70 +140,161 @@ export function fxLabelPopup(card, effectName, color, callback) {
 //  5. カード移動演出（移動元→移動先にカードが飛ぶ）
 // =====================================================
 
+// 移動先/移動元のラベルから、ゾーンの種類（アイコン・色）を決める
+function _moveZoneStyle(label) {
+  const t = String(label || '');
+  if (/セキュリティ/.test(t)) return { icon: '🛡', color: '#b47cff' };
+  if (/の下|進化元/.test(t)) return { icon: '🃏', color: '#ff9933' };
+  if (/リンク/.test(t)) return { icon: '🔗', color: '#ffaa00' };
+  if (/トラッシュ/.test(t)) return { icon: '🗑', color: '#ff5566' };
+  if (/手札/.test(t)) return { icon: '✋', color: '#44dd88' };
+  if (/デッキ/.test(t)) return { icon: '📚', color: '#4aa8ff' };
+  if (/育成/.test(t)) return { icon: '🥚', color: '#ffd84a' };
+  if (/バトルエリア|場|テイマー/.test(t)) return { icon: '⚔', color: '#ffd84a' };
+  if (/オープン/.test(t)) return { icon: '📖', color: '#00fbff' };
+  return { icon: '📍', color: '#00fbff' };
+}
+// 見出し（何をしたか）: 「トラッシュに送る」「デッキの下に戻す」「手札に加える」等
+function _moveHeadline(toLabel) {
+  const t = String(toLabel || '');
+  const where = t.replace(/\(上\)/, 'の上').replace(/\(下\)/, 'の下');
+  if (/トラッシュ/.test(t)) return where + 'に送る';
+  if (/手札/.test(t)) return where + 'に加える';
+  if (/セキュリティ/.test(t)) return where + 'に置く';
+  if (/デッキ/.test(t)) return where + 'に戻す';
+  if (/の下|進化元/.test(t)) return where + 'に置く';
+  if (/バトルエリア|場/.test(t)) return where + 'に出す';
+  return where + 'へ移動';
+}
+
+// カードの移動演出（1枚）。見出しで「何をしたか」を出し、移動元と移動先のゾーンを並べて、カードが弧を描いて
+// 移動先へ飛び込み、移動先が光って「+1」が出る（以前は右へ流れて消えるだけで、どこへ移ったか分かりにくかった）
 export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
   // 移動先がセキュリティの場合は秘匿情報なので強制的に裏向き（カード名も隠す）
   // faceDown === false（明示的に表向き）なら、セキュリティへの移動でも表向きで見せる（ダーク・フィールド BT26-100 等の
   // 「セキュリティの下に表向きで置く」）
   const _fd = faceDown === false ? false : (!!faceDown || /セキュリティ/.test(String(toLabel || '')));
-  const overlay = document.createElement('div');
+  const fromSt = _moveZoneStyle(fromLabel);
+  const toSt = _moveZoneStyle(toLabel);
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  if (!document.getElementById('fx-move2-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-move2-style';
+    st.textContent = '@keyframes mv2Pulse{0%{transform:scale(1)}40%{transform:scale(1.12)}100%{transform:scale(1)}}'
+      + '@keyframes mv2Plus{0%{opacity:0;transform:translate(-50%,0)}20%{opacity:1}100%{opacity:0;transform:translate(-50%,-26px)}}'
+      + '@keyframes mv2Trail{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(.3)}}';
+    document.head.appendChild(st);
+  }
+
   // z-index は deck_open UI(60000) / 観戦オーバーレイ(65000) の上に重ねる必要がある
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:66000;display:flex;align-items:center;justify-content:center;pointer-events:none;';
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:66000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;pointer-events:none;opacity:0;transition:opacity 0.2s;';
 
-  const container = document.createElement('div');
-  container.style.cssText = 'display:flex;align-items:center;gap:16px;';
+  // 見出し
+  const head = document.createElement('div');
+  head.style.cssText = 'font-size:16px;font-weight:900;letter-spacing:1px;color:#fff;text-shadow:0 0 10px ' + toSt.color + ',0 0 20px ' + toSt.color + ';text-align:center;padding:0 12px;';
+  const cname = _fd ? '' : ((card && card.name) ? '「' + esc(card.name) + '」を' : '');
+  head.innerHTML = '<span style="font-size:20px;">' + toSt.icon + '</span> ' + cname + esc(_moveHeadline(toLabel));
+  overlay.appendChild(head);
 
-  // 移動元
-  const fromDiv = document.createElement('div');
-  fromDiv.style.cssText = 'text-align:center;';
+  // ステージ: 左に移動元、右に移動先のゾーン
+  const SW = Math.min(320, window.innerWidth - 32), SH = 170;
+  const ZW = 92, ZH = 128, CW = 78, CH = 109;
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:relative;width:' + SW + 'px;height:' + SH + 'px;';
+  const zone = (st, label, left) => {
+    const z = document.createElement('div');
+    z.style.cssText = 'position:absolute;top:0;left:' + left + 'px;width:' + ZW + 'px;height:' + ZH + 'px;border-radius:10px;'
+      + 'border:2px solid ' + st.color + '88;background:' + st.color + '14;box-shadow:inset 0 0 18px ' + st.color + '22;'
+      + 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;';
+    z.innerHTML = '<div style="font-size:30px;opacity:0.85;">' + st.icon + '</div>';
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'position:absolute;top:' + (ZH + 6) + 'px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11px;font-weight:bold;color:' + st.color + ';';
+    lbl.innerText = label || '';
+    z.appendChild(lbl);
+    stage.appendChild(z);
+    return z;
+  };
+  const fromLeft = 0, toLeft = SW - ZW;
+  zone(fromSt, fromLabel || '移動元', fromLeft);
+  const destZone = zone(toSt, toLabel || '移動先', toLeft);
+
+  // 矢印
+  const arrow = document.createElement('div');
+  arrow.style.cssText = 'position:absolute;top:' + (ZH / 2 - 14) + 'px;left:' + (ZW + 6) + 'px;width:' + (SW - ZW * 2 - 12) + 'px;text-align:center;font-size:22px;font-weight:900;color:' + toSt.color + ';opacity:0;transition:opacity 0.3s;letter-spacing:-4px;';
+  arrow.innerText = '›››';
+  stage.appendChild(arrow);
+
+  // カード（移動元のゾーンの上に置く）
   const cardDiv = document.createElement('div');
-  cardDiv.style.cssText = 'width:80px;height:112px;border-radius:6px;border:2px solid #00fbff;overflow:hidden;box-shadow:0 0 15px #00fbff44;';
+  const startX = fromLeft + (ZW - CW) / 2, startY = (ZH - CH) / 2;
+  const endX = toLeft + (ZW - CW) / 2, endY = startY;
+  cardDiv.style.cssText = 'position:absolute;left:0;top:0;width:' + CW + 'px;height:' + CH + 'px;border-radius:6px;overflow:hidden;'
+    + 'border:2px solid ' + toSt.color + ';box-shadow:0 0 16px ' + toSt.color + '88;background:#111;z-index:5;'
+    + 'transform:translate(' + startX + 'px,' + startY + 'px) scale(0.6);opacity:0;transition:transform 0.25s ease-out, opacity 0.25s;';
   // _fd=true: カード内容を見せず裏向き（セキュリティへ加える等、秘匿が必要な移動）
   const src = (card && !_fd) ? cardImg(card) : '';
-  // 裏向きは盤面のセキュリティ・デッキと同じカード裏面の画像で出す（画像が無いときだけ🛡の仮表示）
   cardDiv.innerHTML = (_fd && cardBackUrl)
     ? `<img src="${cardBackUrl}" style="width:100%;height:100%;object-fit:cover;">`
     : _fd
     ? `<div style="width:100%;height:100%;background:linear-gradient(135deg,#1a3a6a,#0a1530);display:flex;align-items:center;justify-content:center;font-size:20px;color:#3a5a9a;">🛡</div>`
-    : (src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#00fbff;padding:8px;font-size:10px;">${(card && card.name) || '?'}</div>`);
-  fromDiv.appendChild(cardDiv);
-  const fromLbl = document.createElement('div');
-  fromLbl.style.cssText = 'font-size:9px;color:#00fbff;margin-top:4px;';
-  fromLbl.innerText = fromLabel || '移動元';
-  fromDiv.appendChild(fromLbl);
-
-  const arrow = document.createElement('div');
-  arrow.style.cssText = 'font-size:18px;color:#00fbff;opacity:0;transition:opacity 0.3s;';
-  arrow.innerText = '→';
-
-  // 移動先
-  const destDiv = document.createElement('div');
-  destDiv.style.cssText = 'text-align:center;';
-  const destBox = document.createElement('div');
-  destBox.style.cssText = 'width:80px;height:112px;border:2px dashed #00fbff44;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#00fbff44;';
-  destBox.innerText = toLabel || '移動先';
-  destDiv.appendChild(destBox);
-
-  container.appendChild(fromDiv);
-  container.appendChild(arrow);
-  container.appendChild(destDiv);
-  overlay.appendChild(container);
+    : (src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#00fbff;padding:8px;font-size:10px;">${esc((card && card.name) || '?')}</div>`);
+  stage.appendChild(cardDiv);
+  overlay.appendChild(stage);
   document.body.appendChild(overlay);
 
-  setTimeout(() => { arrow.style.opacity = '1'; }, 300);
+  const dropTrail = (x, y) => {
+    const t = document.createElement('div');
+    t.style.cssText = 'position:absolute;left:' + (x + CW / 2 - 5) + 'px;top:' + (y + CH / 2 - 5) + 'px;width:10px;height:10px;border-radius:50%;background:' + toSt.color + ';box-shadow:0 0 10px ' + toSt.color + ';animation:mv2Trail 0.5s ease-out forwards;';
+    stage.appendChild(t);
+    setTimeout(() => { if (t.parentNode) t.parentNode.removeChild(t); }, 600);
+  };
+
+  // 1) 表示して移動元にカードが出る
+  setTimeout(() => { overlay.style.opacity = '1'; }, 10);
   setTimeout(() => {
-    cardDiv.style.transition = 'all 0.8s cubic-bezier(0.2,0.8,0.3,1)';
-    cardDiv.style.transform = 'translateX(130px) scale(0.5)';
+    cardDiv.style.opacity = '1';
+    cardDiv.style.transform = 'translate(' + startX + 'px,' + startY + 'px) scale(1)';
+    arrow.style.opacity = '1';
+  }, 120);
+  // 2) 弧を描いて移動先へ（requestAnimationFrame で放物線）
+  const FLY_START = 650, FLY_MS = 700;
+  setTimeout(() => {
+    cardDiv.style.transition = 'none';
+    const t0 = performance.now();
+    let lastTrail = 0;
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / FLY_MS);
+      const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // ease-in-out
+      const x = startX + (endX - startX) * e;
+      const y = startY - Math.sin(Math.PI * e) * 46;
+      const sc = 1 - 0.18 * Math.sin(Math.PI * e);
+      const rot = (endX >= startX ? 1 : -1) * 14 * Math.sin(Math.PI * e);
+      cardDiv.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + sc + ') rotate(' + rot + 'deg)';
+      if (now - lastTrail > 45) { dropTrail(x, y); lastTrail = now; }
+      if (t < 1) requestAnimationFrame(step);
+      else land();
+    };
+    requestAnimationFrame(step);
+  }, FLY_START);
+  // 3) 移動先に吸い込まれて、移動先が光り「+1」
+  const land = () => {
+    cardDiv.style.transition = 'transform 0.3s ease-in, opacity 0.3s ease-in';
+    cardDiv.style.transform = 'translate(' + endX + 'px,' + (endY + 6) + 'px) scale(0.55)';
     cardDiv.style.opacity = '0';
-  }, 800);
-  setTimeout(() => {
-    destBox.style.transition = 'all 0.3s ease';
-    destBox.style.borderColor = '#00fbff';
-    destBox.style.boxShadow = '0 0 15px #00fbff44';
-    destBox.style.color = '#00fbff';
-    // 裏向き移動（セキュリティ等）は移動先でもカード名を出さない
-    destBox.innerText = _fd ? '🛡' : (card ? card.name : '✓');
-  }, 1500);
-  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2500);
+    destZone.style.transition = 'box-shadow 0.2s, border-color 0.2s, background 0.2s';
+    destZone.style.borderColor = toSt.color;
+    destZone.style.background = toSt.color + '33';
+    destZone.style.boxShadow = '0 0 26px ' + toSt.color + ', inset 0 0 22px ' + toSt.color + '55';
+    destZone.style.animation = 'mv2Pulse 0.45s ease-out';
+    const plus = document.createElement('div');
+    plus.style.cssText = 'position:absolute;left:' + (toLeft + ZW / 2) + 'px;top:' + (ZH / 2 - 30) + 'px;font-size:18px;font-weight:900;color:#fff;text-shadow:0 0 8px ' + toSt.color + ';animation:mv2Plus 0.9s ease-out forwards;z-index:6;';
+    plus.innerText = '+1';
+    stage.appendChild(plus);
+  };
+  setTimeout(() => { overlay.style.opacity = '0'; }, 2250);
+  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2450);
 }
 
 // 3枚以上のカードがまとめて動くとき（破棄・デッキに戻す等）に、1枚ずつの移動演出の代わりに出す一覧の演出。

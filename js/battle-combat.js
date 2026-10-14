@@ -1909,9 +1909,17 @@ function _placeArtsEvolve(card, target, side) {
 // （場のカードを直接タップして選ぶ）で選ばせてから進化させる（プレイヤー専用）。
 // onDone(evolved) — 進化した場合は進化後カード、しなかった場合は null/undefined を渡す
 if (typeof window !== 'undefined') window._offerArtsEvolve = (card, onDone) => _offerArtsEvolve(card, onDone);
-function _offerArtsEvolve(card, onDone) {
+function _offerArtsEvolve(card, onDone0) {
   const candidates = _findArtsEvolveCandidates(card, 'player');
-  if (candidates.length === 0) { onDone(); return; }
+  if (candidates.length === 0) { onDone0(); return; }
+  // 「アーツ進化しますか？」の確認から【進化時】の解決が終わるまでは効果の処理中として扱う（メモリーが相手側に
+  // 移っていても、この間にターン終了に進まない。ロゼモン：バーストモード BT26-050 で【進化時】の前にターンが終わっていた）
+  if (typeof window !== 'undefined' && window._effectBusy) window._effectBusy(1);
+  let _busyDone = false;
+  const onDone = (...a) => {
+    if (!_busyDone) { _busyDone = true; if (typeof window !== 'undefined' && window._effectBusy) window._effectBusy(-1); }
+    onDone0(...a);
+  };
 
   const finishWith = (cand) => {
     const evolved = _placeArtsEvolve(card, cand, 'player');

@@ -18827,8 +18827,11 @@ let _effectProcessingDepth = 0;
 // 「処理中」とみなす: キューの解決中・発揮待ち／処理中の効果・保留中の反応・同時誘発をまとめている途中・
 // 対象を選んでいる途中。以前は triggerEffect の入れ子しか数えておらず、
 // 反応の効果の途中でメモリーが相手側に移っていると、対象を選んでいる途中で相手のターンになっていた
+// 効果の処理の外で、効果に続く操作（アーツ進化の確認〜【進化時】等）をしている間の数（window._effectBusy(+1/-1)）
+let _extraBusyDepth = 0;
+if (typeof window !== 'undefined') window._effectBusy = (d) => { _extraBusyDepth = Math.max(0, _extraBusyDepth + (d || 0)); };
 export function isEffectProcessing() {
-  if (_effectProcessingDepth > 0 || _queueResolveDepth > 0) return true;
+  if (_effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0) return true;
   try {
     if (_effectQueue.some(e => e && (e.status === 'waiting' || e.status === 'processing'))) return true;
     const bs = (typeof window !== 'undefined' && window._lastBattleState) || null;
@@ -18843,7 +18846,7 @@ export function hasOwnPendingEffectsShown() {
   try { return _hudAllItems().some(it => it && it.side === 'player'); } catch (_) { return false; }
 }
 // バトル開始時や、処理中のまま解除されなかった場合（完了コールバックが呼ばれない経路の不具合）に戻す
-export function resetEffectProcessing() { _effectProcessingDepth = 0; }
+export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; }
 if (typeof window !== 'undefined') {
   window._isEffectProcessing = isEffectProcessing;
   window._resetEffectProcessing = resetEffectProcessing;

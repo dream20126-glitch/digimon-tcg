@@ -778,7 +778,22 @@ function _isTurnEndBlocked() {
 let _turnEndWaitTimer = null;
 let _turnEndWaitStartedAt = 0;
 const TURN_END_WAIT_INTERVAL = 300;
-const TURN_END_WAIT_MAX_MS = 120000; // 処理中の判定が残り続けた場合の保険（2分で強制的にターン終了）
+const TURN_END_WAIT_MAX_MS = 120000; // 処理中の判定が2分残ったら「ターン終了に進む」ボタンを出す（自動では終えない）
+let _turnEndForceRequested = false;
+function _showTurnEndForceButton() {
+  if (typeof document === 'undefined' || document.getElementById('_turn-end-force-btn')) return;
+  const b = document.createElement('button');
+  b.id = '_turn-end-force-btn';
+  b.type = 'button';
+  b.innerText = '⏭ 効果の処理が終わらない場合はタップしてターン終了に進む';
+  b.style.cssText = 'position:fixed;left:50%;bottom:14%;transform:translateX(-50%);z-index:56000;background:#552200;color:#ffcc88;border:1px solid #ffaa00;border-radius:999px;padding:8px 16px;font-size:12px;font-weight:bold;cursor:pointer;box-shadow:0 0 12px #ffaa0066;';
+  b.onclick = () => { _turnEndForceRequested = true; _hideTurnEndForceButton(); };
+  document.body.appendChild(b);
+}
+function _hideTurnEndForceButton() {
+  const b = typeof document !== 'undefined' && document.getElementById('_turn-end-force-btn');
+  if (b && b.parentNode) b.parentNode.removeChild(b);
+}
 
 export function checkAutoTurnEnd() {
   if (bs.memory >= 0) return false;
@@ -793,18 +808,24 @@ export function checkAutoTurnEnd() {
       _turnEndWaitStartedAt = Date.now();
       const poll = () => {
         _turnEndWaitTimer = null;
-        if (!bs.isPlayerTurn || bs._battleAborted) return; // 既にターンが移っている / バトル中断
-        if (!bs._pendingTurnEnd) return; // 別経路で処理済み
+        if (!bs.isPlayerTurn || bs._battleAborted) { _hideTurnEndForceButton(); _turnEndForceRequested = false; return; } // 既にターンが移っている / バトル中断
+        if (!bs._pendingTurnEnd) { _hideTurnEndForceButton(); _turnEndForceRequested = false; return; } // 別経路で処理済み
         const waited = Date.now() - _turnEndWaitStartedAt;
-        if (_isTurnEndBlocked() && waited < TURN_END_WAIT_MAX_MS) {
+        // 処理中の間は待ち続ける。以前は2分で強制的にターンを終えていたため、効果の対象を選ぶのに時間がかかると
+        // 効果の途中で相手のターンになっていた（ロゼモン：バーストモード BT26-050）。2分たっても処理中のままなら、
+        // 処理中の印が残ってしまった不具合に備えて「ターン終了に進む」ボタンを出し、押されたら進める
+        if (_isTurnEndBlocked() && !_turnEndForceRequested) {
+          if (waited >= TURN_END_WAIT_MAX_MS) _showTurnEndForceButton();
           _turnEndWaitTimer = setTimeout(poll, TURN_END_WAIT_INTERVAL);
           return;
         }
-        if (waited >= TURN_END_WAIT_MAX_MS) {
-          console.warn('[checkAutoTurnEnd] 処理中の判定が解除されないため強制的にターン終了');
+        if (_turnEndForceRequested) {
+          console.warn('[checkAutoTurnEnd] 処理中のままだが、ボタンでターン終了に進む');
           // 処理中の数が残ったままだと以降のターン終了も毎回待たされるので戻す
           try { if (window._resetEffectProcessing) window._resetEffectProcessing(); } catch (_) {}
         }
+        _hideTurnEndForceButton();
+        _turnEndForceRequested = false;
         bs._pendingTurnEnd = false;
         checkAutoTurnEnd();
       };

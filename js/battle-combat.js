@@ -1388,15 +1388,32 @@ export function doEvolve(card, handIdx, slotIdx) {
 }
 
 // バースト進化（総合ルール8-3）: バトルエリアの指定テイマー1体を手札に戻すコストを
-// 払ってから進化を確定する。テイマー候補が複数いる場合、現状は選択UIが無く
-// 先頭の候補を自動選択する（既知の簡略化。多くのカードは特定名称のテイマー1体だけを
-// 指定するため実用上は問題にならない想定）
+// 払ってから進化を確定する。手札に戻せるテイマーが2体以上いるときは、盤面のテイマーをタップして選ぶ
+// （下に裏向きのカードがあるテイマーを残したい場合等。以前は先頭の候補を自動で選んでいた）
 function _doBurstEvolve(card, base, handIdx, slotIdx, burstEvo) {
   const cands = _filterBurstEvolveTamerCandidates(bs, 'player', burstEvo.tamerConditions, burstEvo.tamerConditionsOp, burstEvo.tamerConditionsChain);
   if (cands.length === 0) { addLog('🚨 バースト進化に必要なテイマーがいません‼'); return; }
-  const chosen = cands[0];
+  if (cands.length >= 2) {
+    addLog('🎯 バースト進化で手札に戻すテイマーを選んでください');
+    _showTargetSelection('both', cands.map(c => 300 + bs.player.tamerArea.indexOf(c)), null, '#ff6633', (v) => {
+      const t = (v != null && v >= 300) ? bs.player.tamerArea[v - 300] : null;
+      if (!t || !cands.includes(t)) { addLog('☓ バースト進化をやめた'); renderAll(); return; }
+      _doBurstEvolveWith(card, base, handIdx, slotIdx, burstEvo, t);
+    }, '（バースト進化で手札に戻すテイマー）');
+    return;
+  }
+  _doBurstEvolveWith(card, base, handIdx, slotIdx, burstEvo, cands[0]);
+}
+function _doBurstEvolveWith(card, base, handIdx, slotIdx, burstEvo, chosen) {
   const idx = bs.player.tamerArea.indexOf(chosen);
+  if (idx === -1) return;
   bs.player.tamerArea[idx] = null;
+  // テイマーの下に重ねられていたカード（裏向きのカード等）はトラッシュへ（手札に戻るのはテイマーのカードだけ）
+  if (Array.isArray(chosen.stack) && chosen.stack.length > 0) {
+    chosen.stack.forEach((c) => { if (c) { delete c._faceDown; bs.player.trash.push(c); } });
+    addLog('🗑 「' + chosen.name + '」の下のカード' + chosen.stack.length + '枚をトラッシュへ');
+    chosen.stack = [];
+  }
   // 手札に戻る = 一時的な状態は全てリセット（doBounceと同じ扱い）
   chosen.buffs = [];
   chosen.dpModifier = 0;

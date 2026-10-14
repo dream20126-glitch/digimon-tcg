@@ -18823,12 +18823,31 @@ function showHandTrashSelection(candidates, remaining, filterName, callback) {
 // 効果処理中の数（triggerEffect の入れ子も数える）。メモリーが相手側へ移っても、
 // 効果処理が全て終わるまでターンを終了しないための判定に使う（battle-phase.js checkAutoTurnEnd）
 let _effectProcessingDepth = 0;
-export function isEffectProcessing() { return _effectProcessingDepth > 0; }
+// triggerEffect の外で動く処理（「〜したとき」の反応の連鎖・同時誘発のまとめ・効果で使ったオプションの処理等）も
+// 「処理中」とみなす: キューの解決中・発揮待ち／処理中の効果・保留中の反応・同時誘発をまとめている途中・
+// 対象を選んでいる途中。以前は triggerEffect の入れ子しか数えておらず、
+// 反応の効果の途中でメモリーが相手側に移っていると、対象を選んでいる途中で相手のターンになっていた
+export function isEffectProcessing() {
+  if (_effectProcessingDepth > 0 || _queueResolveDepth > 0) return true;
+  try {
+    if (_effectQueue.some(e => e && (e.status === 'waiting' || e.status === 'processing'))) return true;
+    const bs = (typeof window !== 'undefined' && window._lastBattleState) || null;
+    if (bs && (bs._reactionCollector || (Array.isArray(bs._pendingReactions) && bs._pendingReactions.length > 0))) return true;
+    if (_targetSelecting) return true;
+  } catch (_) {}
+  return false;
+}
+// 自分の効果の「次の効果」（発揮待ち）の表示が残っているか。ターン終了の判定（battle-phase.js _isTurnEndBlocked）でだけ使う
+// （相手の効果を映した表示は数えない。相手の端末への「処理が終わったか」の返事には使わない＝表示の消し忘れで止まらないように）
+export function hasOwnPendingEffectsShown() {
+  try { return _hudAllItems().some(it => it && it.side === 'player'); } catch (_) { return false; }
+}
 // バトル開始時や、処理中のまま解除されなかった場合（完了コールバックが呼ばれない経路の不具合）に戻す
 export function resetEffectProcessing() { _effectProcessingDepth = 0; }
 if (typeof window !== 'undefined') {
   window._isEffectProcessing = isEffectProcessing;
   window._resetEffectProcessing = resetEffectProcessing;
+  window._hasOwnPendingEffectsShown = hasOwnPendingEffectsShown;
 }
 
 // トリガー発生時に呼ぶ

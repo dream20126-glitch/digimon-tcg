@@ -767,6 +767,8 @@ function _isTurnEndBlocked() {
   try {
     if (typeof window === 'undefined') return false;
     if (window._isEffectProcessing && window._isEffectProcessing()) return true;
+    // 自分の効果の「次の効果」（発揮待ち）が残っている間も終了しない
+    if (window._hasOwnPendingEffectsShown && window._hasOwnPendingEffectsShown()) return true;
     if (window._isAttackInProgress && window._isAttackInProgress()) return true;
     // 相手の端末の処理（ブロックの解決・相手の「離れるとき」・相手の消滅時効果等）の返事待ちの間も終了しない
     if (window._isOnlineWaiting && window._isOnlineWaiting()) return true;

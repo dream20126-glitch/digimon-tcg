@@ -3067,6 +3067,8 @@ export function removeBattleBuffs(applied) {
 // 近似にフォールバックする（_destroyCauseMatches参照）
 function _fireDestroyChain(sides, done, destroyedCardsBySide, causerCardsBySide) {
   let i = 0;
+  // この後に誘発する自分の「デジモンが消滅したとき」（久遠寺マコト BT26-095 等）を、消滅時効果の処理中も発揮待ちに表示
+  if (typeof window._hudPreviewSubjectDestroy === 'function') window._hudPreviewSubjectDestroy(sides, true);
   // バトルで同時に消滅した（両者消滅）なら、「デジモンが消滅したとき」は1回だけ誘発する（公式ルール 4-26-5）
   const _grp = sides.length >= 2 && window._newDestroyGroup ? window._newDestroyGroup('battle') : null;
   function next() {

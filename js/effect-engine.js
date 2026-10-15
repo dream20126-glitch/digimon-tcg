@@ -1072,8 +1072,14 @@ function hudPreviewDestroy(card, side) {
 // 久遠寺マコト BT26-095）を、消滅側のデジモンの消滅時効果を処理している間も発揮待ちとして表示する（自分の分だけ。
 // 相手の画面には発揮待ちの表示を送る仕組みで出る）。destroyedSides: この端末から見た消滅した側（'player'/'ai'）の配列。
 // 実際に誘発したとき（fireOnDestroySubjectReactions / 委譲された destroy_subject）に外す
-function hudPreviewSubjectDestroy(destroyedSides, bs) {
+const _subjPreviewStarted = new Set();
+let _subjPreviewSides = [];
+function hudPreviewSubjectDestroy(destroyedSides, bs, add) {
   try {
+    // add: 既に表示している消滅した側に加える（同じ処理の中で別の側も消滅した）
+    if (add) destroyedSides = [...new Set(_subjPreviewSides.concat(destroyedSides || []))];
+    else _subjPreviewStarted.clear();
+    _subjPreviewSides = (destroyedSides || []).filter(Boolean);
     const sides = Array.isArray(destroyedSides) ? destroyedSides.filter(Boolean) : [];
     if (!bs || sides.length === 0) { _hudSetSource('subjDestroyPreview', []); return; }
     const me = bs.player;
@@ -1095,7 +1101,7 @@ function hudPreviewSubjectDestroy(destroyedSides, bs) {
       if (Array.isArray(own) && own.some(st => usable(st, carrier, carrier))) {
         let text = ''; try { text = extractTriggerSectionText(carrier.effect || '', 'on_destroy', own); } catch (_) { text = carrier.effect || ''; }
         const it = _hudItem('player', carrier, null, text);
-        it.alive = () => [...(me.battleArea || []), ...(me.tamerArea || [])].includes(carrier) && own.some(st => usable(st, carrier, carrier));
+        it.alive = () => !_subjPreviewStarted.has(carrier) && [...(me.battleArea || []), ...(me.tamerArea || [])].includes(carrier) && own.some(st => usable(st, carrier, carrier));
         items.push(it);
       }
       (carrier.stack || []).forEach((src) => {
@@ -1103,7 +1109,7 @@ function hudPreviewSubjectDestroy(destroyedSides, bs) {
         const evo = sr && sr.evo_source && sr.evo_source.on_destroy;
         if (Array.isArray(evo) && evo.some(st => usable(st, carrier, src))) {
           const it = _hudItem('player', carrier, src, src.evoSourceEffect || '');
-          it.alive = () => (me.battleArea || []).includes(carrier) && (carrier.stack || []).includes(src);
+          it.alive = () => !_subjPreviewStarted.has(carrier) && (me.battleArea || []).includes(carrier) && (carrier.stack || []).includes(src) && evo.some(st => usable(st, carrier, src));
           items.push(it);
         }
       });
@@ -1132,8 +1138,8 @@ function hudSetDeferredEvo(list) {
 if (typeof window !== 'undefined') {
   window._hudSetDeferredEvo = hudSetDeferredEvo;
   window._hudPreviewDestroy = hudPreviewDestroy;
-  window._hudPreviewSubjectDestroy = (sides) => hudPreviewSubjectDestroy(sides, window._lastBattleState);
-  window._hudClearSubjectDestroy = () => _hudSetSource('subjDestroyPreview', []);
+  window._hudPreviewSubjectDestroy = (sides, add) => hudPreviewSubjectDestroy(sides, window._lastBattleState, add);
+  window._hudClearSubjectDestroy = () => { _subjPreviewSides = []; _hudSetSource('subjDestroyPreview', []); };
   window._hudClearDestroyPreview = _hudClearDestroyPreview;
 }
 
@@ -10465,6 +10471,8 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
 let _reactionRunDepth = 0;
 function _runReactionEffect(reaction, side, bs, ctxBase, done0, opts) {
   _reactionRunDepth++;
+  // 発揮待ちに先に出していた「デジモンが消滅したとき」（hudPreviewSubjectDestroy）は、発揮し始めたら外す
+  if (reaction && reaction.card) { _subjPreviewStarted.add(reaction.card); try { _hudRender(); } catch (_) {} }
   let _rrDone = false;
   const done = () => { if (!_rrDone) { _rrDone = true; _reactionRunDepth = Math.max(0, _reactionRunDepth - 1); } done0 && done0(); };
   const finish = () => { try { done && done(); } catch (_) {} };
@@ -10890,7 +10898,6 @@ export function fireDelegatedReactionTriggers(recipeKey, bs, ctxBase, done, cmd)
     return _runReactionEffect(reaction, 'player', bs, ctxBase, () => _drainAfterReaction(bs, ctxBase, done));
   }
   if (kind === 'destroy_subject') {
-    _hudSetSource('subjDestroyPreview', []);
     // 相手の端末で消滅したデジモンに、こちらのカード（発動主体が自分/相手/両方の消滅時）が反応した
     const fn = cmd.matcher === 'own' ? _isOwnSubjectDestroyStep : cmd.matcher === 'both' ? _isBothSubjectDestroyStep : _isOppSubjectDestroyStep;
     const prev = bs._lastDestroyCause;
@@ -12156,6 +12163,8 @@ export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, call
     try { callback && callback(); } catch(_) {}
   };
   if (!destroyedCard || !bs) { finish(); return; }
+  // この後に誘発する自分の「デジモンが消滅したとき」を、消滅時効果の処理中も発揮待ちに表示（実際に発揮し始めたら外れる）
+  hudPreviewSubjectDestroy([destroyedSide], bs, true);
   const oppSide = destroyedSide === 'player' ? 'ai' : 'player';
   // 【分離】は消滅自体をキャンセルする効果のため、除去より前に呼び出し元
   // （doDestroy/checkPendingDestroys等）が tryCancelViaLeaveBattle で判定済み。
@@ -12187,7 +12196,6 @@ export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, call
 // バトル起因・効果起因どちらの消滅チェーンからも呼ばれる（消滅したカード自身の
 // 発動主体=このデジモンの反応を解決した"後"に呼ぶこと）
 export function fireOnDestroySubjectReactions(destroyedSide, bs, ctxBase, done) {
-  _hudSetSource('subjDestroyPreview', []);
   const oppSide = destroyedSide === 'player' ? 'ai' : 'player';
   _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, () => {
     _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, () => {

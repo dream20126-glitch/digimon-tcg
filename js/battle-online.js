@@ -70,11 +70,10 @@ function _afterRemoteFxIdle(go) {
 // 相手の返事を待つ全面の待ち画面は、こちらの端末で効果を処理している間（委譲された反応・自分の消滅時効果等で
 // カードや対象を選んでいる間）は隠す。待ち画面の方が手前にあり、選ぶ画面を覆って操作できずに止まっていた
 // （ブロックの両者消滅で、相手の消滅時効果を待っている間に久遠寺マコト BT26-095 の「下に置くカード」を選べなかった）
-// 攻撃側: ブロックのバトルで消滅した側（この端末から見て）を集めて、自分の「デジモンが消滅したとき」を発揮待ちに表示
+// 相手の端末で消滅が起きた（card_removed / own_card_removed）: この後に誘発する自分の「デジモンが消滅したとき」を発揮待ちに表示
 let _blkSubjSides = [];
 function _previewSubjDestroySide(side) {
-  if (!_blkSubjSides.includes(side)) _blkSubjSides.push(side);
-  if (typeof window._hudPreviewSubjectDestroy === 'function') window._hudPreviewSubjectDestroy(_blkSubjSides.slice());
+  if (typeof window._hudPreviewSubjectDestroy === 'function') window._hudPreviewSubjectDestroy([side], true);
 }
 function _autoHideWhileLocalEffect(ov) {
   const tick = () => {
@@ -443,7 +442,7 @@ function onRemoteCommand(cmd) {
 
     // --- カード除去 ---
     case 'own_card_removed': {
-      if (cmd.reason === 'destroy' && _pendingBlockBattleDoneCallback) _previewSubjDestroySide('ai');
+      if (cmd.reason === 'destroy') _previewSubjDestroySide('ai');
       if (cmd.slotIdx !== undefined) {
         const card = bs.ai.battleArea[cmd.slotIdx];
         if (card) {
@@ -524,8 +523,8 @@ function onRemoteCommand(cmd) {
         // タイマーによる推測発火はやめ、相手機からの fx_ownDestroyReady（on_battle_win等の
         // 解決完了後に送られる）を受け取ってから発火する。全ての card_removed(destroy) 送信元は
         // 対になる fx_ownDestroyReady も送るように統一済み。
-        // ブロックのバトルで自分のデジモンが消滅した: この後に誘発する自分の「デジモンが消滅したとき」を発揮待ちに表示
-        if (cmd.reason === 'destroy' && _pendingBlockBattleDoneCallback) _previewSubjDestroySide('player');
+        // 自分のデジモンが消滅した: この後に誘発する自分の「デジモンが消滅したとき」を発揮待ちに表示
+        if (cmd.reason === 'destroy') _previewSubjDestroySide('player');
         if (cmd.reason === 'destroy' && window._fireOnlineDestroyChain) {
           const cardForChain = card || cmd.cardData;
           if (cardForChain) {
@@ -1306,6 +1305,7 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'attack_end': {
+      if (typeof window._hudClearSubjectDestroy === 'function') window._hudClearSubjectDestroy();
       // 相手のアタックが全て終わった → 保留していた DP0 の消滅を行う
       bs._oppAttackInProgress = false;
       if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => { renderAll(); sendStateSync(); });

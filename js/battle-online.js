@@ -67,6 +67,18 @@ function _afterRemoteFxIdle(go) {
   };
   tick();
 }
+// 相手の返事を待つ全面の待ち画面は、こちらの端末で効果を処理している間（委譲された反応・自分の消滅時効果等で
+// カードや対象を選んでいる間）は隠す。待ち画面の方が手前にあり、選ぶ画面を覆って操作できずに止まっていた
+// （ブロックの両者消滅で、相手の消滅時効果を待っている間に久遠寺マコト BT26-095 の「下に置くカード」を選べなかった）
+function _autoHideWhileLocalEffect(ov) {
+  const tick = () => {
+    if (!ov.parentNode) return;
+    const busy = !!(window._isEffectRunning && window._isEffectRunning());
+    ov.style.display = busy ? 'none' : 'flex';
+    setTimeout(tick, 200);
+  };
+  tick();
+}
 function _queueOwnDestroyFire(card, fire) {
   _pendingOwnDestroyList.push({ card, fire });
   _pendingOwnDestroyFire = (afterDone) => {
@@ -1964,7 +1976,7 @@ export function waitForBlockResponse(callback) {
   waitOv.id = '_block-wait-overlay';
   waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
   waitOv.innerHTML = '<div style="color:#ff00fb;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ff00fb;">⏳ 相手のブロック確認中...</div>';
-  document.body.appendChild(waitOv);
+  document.body.appendChild(waitOv); _autoHideWhileLocalEffect(waitOv);
 
   function onResponse(resp) {
     if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
@@ -1987,7 +1999,7 @@ export function waitForSecurityEffect(callback) {
   waitOv.id = '_sec-effect-wait-overlay';
   waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
   waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手がセキュリティ効果を処理中...</div>';
-  document.body.appendChild(waitOv);
+  document.body.appendChild(waitOv); _autoHideWhileLocalEffect(waitOv);
 
   function onDone() {
     if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
@@ -2012,7 +2024,7 @@ export function waitForReactionDelegate(callback) {
   waitOv.id = '_reaction-delegate-wait-overlay';
   waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
   waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手が効果を確認中...</div>';
-  document.body.appendChild(waitOv);
+  document.body.appendChild(waitOv); _autoHideWhileLocalEffect(waitOv);
 
   function onDone() {
     if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
@@ -2039,7 +2051,7 @@ export function waitForHandDiscardDelegate(callback) {
   waitOv.id = '_hand-discard-wait-overlay';
   waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
   waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手が破棄する手札を選択中...</div>';
-  document.body.appendChild(waitOv);
+  document.body.appendChild(waitOv); _autoHideWhileLocalEffect(waitOv);
 
   function onDone(res) {
     if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
@@ -2077,7 +2089,7 @@ export function waitForOwnDestroyDone(callback) {
   waitOv.id = '_own-destroy-wait-overlay';
   waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
   waitOv.innerHTML = '<div style="color:#ff4444;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ff4444;">⏳ 相手が消滅時効果を処理中...</div>';
-  document.body.appendChild(waitOv);
+  document.body.appendChild(waitOv); _autoHideWhileLocalEffect(waitOv);
 
   function onDone() {
     if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
@@ -2623,7 +2635,7 @@ window._waitMoveBatchAck = (batchId, cb) => {
   const waitOv = document.createElement('div');
   waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:66500;display:flex;align-items:center;justify-content:center;';
   waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手の確認待ち...</div>';
-  document.body.appendChild(waitOv);
+  document.body.appendChild(waitOv); _autoHideWhileLocalEffect(waitOv);
   _moveBatchAckWaiters[batchId] = () => { if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv); cb(); };
 };
 // 攻撃側: 防御側のブロックのバトル解決の完了（block_battle_done）を待つ
@@ -2687,7 +2699,7 @@ window._flushOppDeferredEvo = (cb) => {
   const waitOv = document.createElement('div');
   waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
   waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手の効果を処理中...</div>';
-  document.body.appendChild(waitOv);
+  document.body.appendChild(waitOv); _autoHideWhileLocalEffect(waitOv);
   let settled = false;
   const finish = () => { if (settled) return; settled = true; if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv); cb && cb(); };
   // 時間切れで先へ進めない（相手の【進化時】は対象選択・順番選択等で2分以上かかることがあり、以前の120秒の
@@ -2700,7 +2712,7 @@ window._requestLeaveBattleDelegate = (slotIdx, cb) => {
   const waitOv = document.createElement('div');
   waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
   waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手が効果を確認中...</div>';
-  document.body.appendChild(waitOv);
+  document.body.appendChild(waitOv); _autoHideWhileLocalEffect(waitOv);
   _pendingLeaveBattleDelegateCallback = (canceled) => {
     if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
     try { cb(canceled); } catch (e) { console.error('[leaveBattleDelegate]', e); }

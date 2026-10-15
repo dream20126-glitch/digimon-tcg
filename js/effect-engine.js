@@ -10415,7 +10415,12 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
 // （メインキュー executeQueueEntry と同じ挙動）。省略/false時は従来の反応系トリガーと同じく
 // AI側は自動スキップする（AI判断ロジック未実装のための暫定挙動）。呼び出し側の既存挙動を
 // 変えないためオプション化している（挙動そのものの統一は別課題）。
-function _runReactionEffect(reaction, side, bs, ctxBase, done, opts) {
+// 「〜したとき」等の反応の効果を処理している数（オンラインの待ち画面を隠す判定用。window._isEffectRunning）
+let _reactionRunDepth = 0;
+function _runReactionEffect(reaction, side, bs, ctxBase, done0, opts) {
+  _reactionRunDepth++;
+  let _rrDone = false;
+  const done = () => { if (!_rrDone) { _rrDone = true; _reactionRunDepth = Math.max(0, _reactionRunDepth - 1); } done0 && done0(); };
   const finish = () => { try { done && done(); } catch (_) {} };
   const card = reaction.card;
   // 手札から破棄されたカード自身の効果で、破棄された時点で「〜なら」を満たしていた（_snapshotHandDiscardConds）なら、
@@ -19129,11 +19134,11 @@ export function hasOwnPendingEffectsShown() {
   try { return _hudAllItems().some(it => it && it.side === 'player'); } catch (_) { return false; }
 }
 // バトル開始時や、処理中のまま解除されなかった場合（完了コールバックが呼ばれない経路の不具合）に戻す
-export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; }
+export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; _reactionRunDepth = 0; }
 if (typeof window !== 'undefined') {
   window._isEffectProcessing = isEffectProcessing;
   // 今まさに効果を処理しているか（保留中の「〜したとき」の反応・発揮待ちは数えない）
-  window._isEffectRunning = () => _effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0 || _targetSelecting;
+  window._isEffectRunning = () => _effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0 || _targetSelecting || _reactionRunDepth > 0;
   window._resetEffectProcessing = resetEffectProcessing;
   window._hasOwnPendingEffectsShown = hasOwnPendingEffectsShown;
 }

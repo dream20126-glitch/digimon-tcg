@@ -1068,6 +1068,50 @@ function hudPreviewDestroy(card, side) {
   _hudDestroyPreviews.set(card, key);
   _hudSetSource(key, items);
 }
+// オンラインのブロックのバトル等で、この後に誘発する「デジモンが消滅したとき」（発動主体が自分/相手/お互いの消滅時。
+// 久遠寺マコト BT26-095）を、消滅側のデジモンの消滅時効果を処理している間も発揮待ちとして表示する（自分の分だけ。
+// 相手の画面には発揮待ちの表示を送る仕組みで出る）。destroyedSides: この端末から見た消滅した側（'player'/'ai'）の配列。
+// 実際に誘発したとき（fireOnDestroySubjectReactions / 委譲された destroy_subject）に外す
+function hudPreviewSubjectDestroy(destroyedSides, bs) {
+  try {
+    const sides = Array.isArray(destroyedSides) ? destroyedSides.filter(Boolean) : [];
+    if (!bs || sides.length === 0) { _hudSetSource('subjDestroyPreview', []); return; }
+    const me = bs.player;
+    const matches = (st) => sides.some((ds) => (ds === 'player' ? _isOwnSubjectDestroyStep(st) : _isOppSubjectDestroyStep(st)) || _isBothSubjectDestroyStep(st));
+    const usable = (st, carrier, src) => {
+      if (!st || !matches(st)) return false;
+      if (st.condition && !checkConditions(parseRecipeCondition(st.condition), carrier, bs, 'player')) return false;
+      if (Array.isArray(st.cost) && _costStepsInfeasible(st.cost, carrier, bs, 'player')) return false;
+      if (st.limit === 'once_per_turn' || st.limit === 'limit_once_per_turn') {
+        if (bs._usedLimits && bs._usedLimits[_stepLimitKey(src, carrier, st)]) return false;
+      }
+      return true;
+    };
+    const items = [];
+    [...(me.battleArea || []), ...(me.tamerArea || [])].forEach((carrier) => {
+      if (!carrier) return;
+      const r = _parseCardRecipe(carrier);
+      const own = r && r.on_destroy;
+      if (Array.isArray(own) && own.some(st => usable(st, carrier, carrier))) {
+        let text = ''; try { text = extractTriggerSectionText(carrier.effect || '', 'on_destroy', own); } catch (_) { text = carrier.effect || ''; }
+        const it = _hudItem('player', carrier, null, text);
+        it.alive = () => [...(me.battleArea || []), ...(me.tamerArea || [])].includes(carrier) && own.some(st => usable(st, carrier, carrier));
+        items.push(it);
+      }
+      (carrier.stack || []).forEach((src) => {
+        const sr = src && !src._faceDown && _parseCardRecipe(src);
+        const evo = sr && sr.evo_source && sr.evo_source.on_destroy;
+        if (Array.isArray(evo) && evo.some(st => usable(st, carrier, src))) {
+          const it = _hudItem('player', carrier, src, src.evoSourceEffect || '');
+          it.alive = () => (me.battleArea || []).includes(carrier) && (carrier.stack || []).includes(src);
+          items.push(it);
+        }
+      });
+    });
+    items.forEach((it) => { it.group = 'subjDestroyPreview'; it.sub = (it.sub ? it.sub + '・' : '') + '消滅の処理の後に発揮'; });
+    _hudSetSource('subjDestroyPreview', items);
+  } catch (e) { console.error('[hudPreviewSubjectDestroy]', e); }
+}
 function _hudClearDestroyPreview(card) {
   const key = card && _hudDestroyPreviews.get(card);
   if (!key) return;
@@ -1088,6 +1132,8 @@ function hudSetDeferredEvo(list) {
 if (typeof window !== 'undefined') {
   window._hudSetDeferredEvo = hudSetDeferredEvo;
   window._hudPreviewDestroy = hudPreviewDestroy;
+  window._hudPreviewSubjectDestroy = (sides) => hudPreviewSubjectDestroy(sides, window._lastBattleState);
+  window._hudClearSubjectDestroy = () => _hudSetSource('subjDestroyPreview', []);
   window._hudClearDestroyPreview = _hudClearDestroyPreview;
 }
 
@@ -10844,6 +10890,7 @@ export function fireDelegatedReactionTriggers(recipeKey, bs, ctxBase, done, cmd)
     return _runReactionEffect(reaction, 'player', bs, ctxBase, () => _drainAfterReaction(bs, ctxBase, done));
   }
   if (kind === 'destroy_subject') {
+    _hudSetSource('subjDestroyPreview', []);
     // 相手の端末で消滅したデジモンに、こちらのカード（発動主体が自分/相手/両方の消滅時）が反応した
     const fn = cmd.matcher === 'own' ? _isOwnSubjectDestroyStep : cmd.matcher === 'both' ? _isBothSubjectDestroyStep : _isOppSubjectDestroyStep;
     const prev = bs._lastDestroyCause;
@@ -12140,6 +12187,7 @@ export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, call
 // バトル起因・効果起因どちらの消滅チェーンからも呼ばれる（消滅したカード自身の
 // 発動主体=このデジモンの反応を解決した"後"に呼ぶこと）
 export function fireOnDestroySubjectReactions(destroyedSide, bs, ctxBase, done) {
+  _hudSetSource('subjDestroyPreview', []);
   const oppSide = destroyedSide === 'player' ? 'ai' : 'player';
   _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, () => {
     _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, () => {

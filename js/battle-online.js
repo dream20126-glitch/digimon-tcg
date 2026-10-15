@@ -2225,7 +2225,7 @@ function _sendBlockBattleDone(extra) {
 }
 function resolveOnlineBlock(blockerIdx, cmd) {
   _clearCollisionBlockerBadges();
-  const blocker = bs.player.battleArea[blockerIdx];
+  let blocker = bs.player.battleArea[blockerIdx];
   const atk = bs.ai.battleArea[cmd.atkIdx];
   if (!blocker || !atk) { sendCommand({ type: 'block_response', blocked: false }); return; }
   // 攻撃側のDPは、攻撃側の端末が（アタック時効果の解決後に）送ってきた値を正とする。こちらの端末は相手のカードの
@@ -2262,7 +2262,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
   // ★ バトル中効果を適用してから勝敗判定（DP+1000等の進化元効果を反映）
   // 画面更新等で相手のカードのDPが計算し直されていても、攻撃側から届いたDPに戻してからバトル中の効果を適用する
   if (cmd.atkDp != null && !isNaN(parseInt(cmd.atkDp, 10))) atk.dp = parseInt(cmd.atkDp, 10);
-  const battleBuffs = applyBattleBuffs(atk, blocker);
+  let battleBuffs = applyBattleBuffs(atk, blocker);
 
   // ★ ブロック決定を通知（攻撃側で「ブロックされた時」効果を先に処理してもらう）
   // バフ適用後のDPで勝敗判定
@@ -2276,6 +2276,17 @@ function resolveOnlineBlock(blockerIdx, cmd) {
 
   // 攻撃側の「ブロックされた時」効果完了を待ってからバトル解決
   function startBattleResolution() {
+    // ブロックしてからバトルまでの間（「アタックの対象が変更されたとき」等の効果）にブロッカーが進化した（アーツ進化等）なら、
+    // 進化後のカードがそのままバトルする（同じデジモン）。以前は進化前のカードのDP・名前でバトルしていた
+    // （ウルヴァモン → ベアキャットモン＆ペネトレイトブロウ BT26-057 にアーツ進化したのに、ウルヴァモンでバトルしていた）
+    const _curBlk = bs.player.battleArea[blockerIdx];
+    if (_curBlk && _curBlk !== blocker && Array.isArray(_curBlk.stack) && _curBlk.stack.indexOf(blocker) >= 0) {
+      addLog('⬆ ブロックした「' + blocker.name + '」が「' + _curBlk.name + '」に進化（そのままバトル）');
+      removeBattleBuffs(battleBuffs);
+      blocker = _curBlk;
+      battleBuffs = applyBattleBuffs(atk, blocker);
+      addLog('⚔ ブロックのバトル: 「' + atk.name + '」DP' + _atkDpFixed + ' vs 「' + blocker.name + '」DP' + blocker.dp);
+    }
     const showSC = _modules.showSecurityCheck || ((a, b, cb) => cb());
     const showBR = _modules.showBattleResult || ((a, b, c, cb) => cb());
     const showDE = _modules.showDestroyEffect || ((a, cb) => cb());

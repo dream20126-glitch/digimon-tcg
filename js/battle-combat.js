@@ -3142,7 +3142,20 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide, causerCardsBySide)
   next();
 }
 
+// バトルの前（ブロックしてからバトルまでの効果等）に、その枠のデジモンが進化した（アーツ進化等）なら、進化後のカードが
+// そのままバトルする（同じデジモン）。以前は進化前のカードのDP・名前でバトルしていた（ウルヴァモン →
+// ベアキャットモン＆ペネトレイトブロウ BT26-057 でブロックしたのに、ウルヴァモンでバトルしていた）
+function _evolvedInSlot(card, side, idx) {
+  const cur = bs[side] && bs[side].battleArea ? bs[side].battleArea[idx] : null;
+  if (cur && card && cur !== card && Array.isArray(cur.stack) && cur.stack.indexOf(card) >= 0) {
+    addLog('⬆ 「' + card.name + '」が「' + cur.name + '」に進化（そのままバトル）');
+    return cur;
+  }
+  return card;
+}
 export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
+  atk = _evolvedInSlot(atk, defSide === 'ai' ? 'player' : 'ai', atkIdx);
+  def = _evolvedInSlot(def, defSide || 'ai', defIdx);
   // 比べるDPは付与中のバフから計算し直した値にする（DP+の永続効果が反映されていないことがあった）
   // オンラインの相手のカード（def）は持ち主の端末の値を正とするので計算し直さない
   try { if (window._recalcDp) { window._recalcDp(atk); if (!_onlineMode) window._recalcDp(def); } } catch (_) {}
@@ -3349,6 +3362,8 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
 // ===== バトル解決（AI → プレイヤー ブロッカー戦） =====
 
 export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
+  atk = _evolvedInSlot(atk, 'ai', atkIdx);
+  def = _evolvedInSlot(def, 'player', defIdx);
   showCombatBackdrop();
   const origCb = callback;
   callback = () => { hideCombatBackdrop(); origCb(); };

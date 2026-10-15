@@ -3049,6 +3049,8 @@ export function removeBattleBuffs(applied) {
 // 近似にフォールバックする（_destroyCauseMatches参照）
 function _fireDestroyChain(sides, done, destroyedCardsBySide, causerCardsBySide) {
   let i = 0;
+  // バトルで同時に消滅した（両者消滅）なら、「デジモンが消滅したとき」は1回だけ誘発する（公式ルール 4-26-5）
+  const _grp = sides.length >= 2 && window._newDestroyGroup ? window._newDestroyGroup('battle') : null;
   function next() {
     if (i >= sides.length) { done && done(); return; }
     const s = sides[i++];
@@ -3104,6 +3106,7 @@ function _fireDestroyChain(sides, done, destroyedCardsBySide, causerCardsBySide)
           type: 'battle',
           causerSide: s === 'player' ? 'ai' : 'player',
           causerCard: (causerCardsBySide && causerCardsBySide[s]) || null,
+          grp: _grp,
         };
         // on_destroy の発動主体=自分/相手/両方 の反応（新設。既存カードは on_destroy に
         // subjectを持たないため影響なし）

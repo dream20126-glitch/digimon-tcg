@@ -3525,7 +3525,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
         // デコイ自身の消滅で on_destroy 発火（「したとき」系のため即時発火せず保留キューへ）。
         // 「原因」追跡: 効果によって消滅した
         enqueueReaction(ctx.bs, _fireDestroyChainQueued, [
-          { type: causeType, causerSide: ctx.side, causerCard: ctx.card }, dc, decoyOwnerSide, ctx.bs, ctx
+          { type: causeType, causerSide: ctx.side, causerCard: ctx.card, grp: ctx._destroyGrp || null }, dc, decoyOwnerSide, ctx.bs, ctx
         ]);
         callback && callback();
       });
@@ -3539,7 +3539,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
       const sgOwnerSide = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
       // 「したとき」系のため即時発火せず保留キューへ。「原因」追跡: 効果によって消滅した
       enqueueReaction(ctx.bs, _fireDestroyChainQueued, [
-        { type: causeType, causerSide: ctx.side, causerCard: ctx.card }, destroyed, sgOwnerSide, ctx.bs, ctx
+        { type: causeType, causerSide: ctx.side, causerCard: ctx.card, grp: ctx._destroyGrp || null }, destroyed, sgOwnerSide, ctx.bs, ctx
       ]);
       callback && callback();
       return;
@@ -3576,7 +3576,7 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
     // 完了後にcheckPendingDestroysのドレインループがまとめて発火させる。
     // 「原因」追跡: 効果/バトルによって消滅した（このactionを実行している効果の持ち主が原因）
     enqueueReaction(ctx.bs, _fireDestroyChainQueued, [
-      { type: causeType, causerSide: ctx.side, causerCard: ctx.card }, destroyed, destroyedSideName, ctx.bs, ctx
+      { type: causeType, causerSide: ctx.side, causerCard: ctx.card, grp: ctx._destroyGrp || null }, destroyed, destroyedSideName, ctx.bs, ctx
     ]);
     callback && callback();
   });
@@ -3641,7 +3641,7 @@ function _doDestroyTamer(targetSide, tamerIdx, ctx, callback) {
   }
   ctx.renderAll && ctx.renderAll();
   enqueueReaction(ctx.bs, _fireDestroyChainQueued, [
-    { type: 'effect', causerSide: ctx.side, causerCard: ctx.card }, destroyed, destroyedSideName, ctx.bs, ctx
+    { type: 'effect', causerSide: ctx.side, causerCard: ctx.card, grp: ctx._destroyGrp || null }, destroyed, destroyedSideName, ctx.bs, ctx
   ]);
   callback && callback();
 }
@@ -8700,6 +8700,7 @@ function checkPendingDestroys(ctx, callback) {
   // 2) 1枚ずつ処理: 演出 → trash 移動 → on_destroy
   // 2体以上が同時に消滅する（「相手のデジモン全てをDP-」でDP0になった等）ときは、全員を場から外してから
   // 「以下のN体が消滅」の一括演出を1回だけ出し、その後に消滅時効果を順に発揮する（時短）
+  const _pdGrp = pending.length >= 2 ? newDestroyGroup('rule') : null;
   const _pdBatch = (pending.length >= 2 && typeof window !== 'undefined' && typeof window._showDestroyBatch === 'function' && !window._destroyFxBatch)
     ? { gone: [], chains: [] } : null;
   const _pdShow = _pdBatch ? ((c, cb) => { _pdBatch.gone.push(c); cb && cb(); }) : showDE;
@@ -8783,7 +8784,7 @@ function checkPendingDestroys(ctx, callback) {
       }
       // 共通の消滅トリガーチェーン。「原因」追跡: DP0等、効果起因の消滅として扱う
       // （どの効果がDPを0まで下げたかまでは追跡していないベストエフォートな近似）
-      if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+      if (ctx.bs) ctx.bs._lastDestroyCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card, grp: _pdGrp };
       if (_deferToNonTurn) {
         const _cause = ctx.bs._lastDestroyCause;
         _deferNonTurn((done) => {
@@ -12070,6 +12071,19 @@ function _destroyCauseMatches(step, bs, carrierSide, carrier, triggerCode) {
   return true;
 }
 
+// 同時に起きた消滅のまとまり。消滅の原因（bs._lastDestroyCause.grp）に載せ、まとまりごとに誘発済みの反応を覚える
+let _destroyGroupSeq = 0;
+export function newDestroyGroup(prefix) { return (prefix || 'g') + '#' + (++_destroyGroupSeq); }
+function _destroyGroupKeys(bs) {
+  const grp = bs && bs._lastDestroyCause && bs._lastDestroyCause.grp;
+  if (!grp) return null;
+  if (!_destroyGroupKeys.map) _destroyGroupKeys.map = new Map();
+  const m = _destroyGroupKeys.map;
+  if (!m.has(grp)) { m.set(grp, new Set()); if (m.size > 40) m.delete(m.keys().next().value); }
+  return m.get(grp);
+}
+if (typeof window !== 'undefined') window._newDestroyGroup = newDestroyGroup;
+
 export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, callback) {
   const finish = () => {
     // 原因追跡は「今まさに解決中の消滅チェーン」限定の一時情報のため、解決完了後は必ずクリアする
@@ -12308,11 +12322,21 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
     }
   });
 
+  // 同時に起きた消滅（バトルの両者消滅・同じ判定の DP0・1つの効果で複数消滅）で「デジモンが消滅したとき」は1回だけ
+  // 誘発する（公式ルール 4-26-5。久遠寺マコト BT26-095 が両者消滅で2回発揮していた）
+  const _sdg = _destroyGroupKeys(bs);
+  const _sdgKey = (r) => {
+    const c = r.carrier;
+    const zi = reactPlayer.battleArea.indexOf(c);
+    const zk = zi !== -1 ? 'b' + zi : 't' + (reactPlayer.tamerArea || []).indexOf(c);
+    return reactSide + '|' + triggerKey + '|' + zk + '|' + (c && c.cardNo) + '|' + (r.sourceCard && r.sourceCard.cardNo);
+  };
+  const _sdgTake = (list) => (!_sdg ? list : list.filter((r) => { const k = _sdgKey(r); if (_sdg.has(k)) return false; _sdg.add(k); return true; }));
   // オンライン対戦: 相手（ai）側のカードの反応は、持ち主の端末に委譲して発揮してもらう（確認・選択は持ち主の画面）。
   // 以前は委譲していなかったため、相手の端末が DP0 で消滅させた（fx_ruleDestroyRequest）こちらのデジモンへの反応が
   // こちらの端末で発揮されなかった（ムラサメモンの DP- で相手のロゼモンが消滅 → 久遠寺マコト BT26-095 が不発）
   if (reactSide === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-    if (reactions.length === 0) { finish(); return; }
+    if (_sdgTake(reactions).length === 0) { finish(); return; }
     const matcher = subjectMatcher === _isOwnSubjectDestroyStep ? 'own' : subjectMatcher === _isBothSubjectDestroyStep ? 'both' : 'opp';
     const dc = bs._lastDestroyCause;
     const cause = dc ? { type: dc.type, causerSide: _flipSide(dc.causerSide) } : null;
@@ -12333,6 +12357,8 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
       }
       // 原因チェック（バトルで/効果で + 原因の対象）
       if (!_destroyCauseMatches(step, bs, reactSide, carrier, triggerKey)) return false;
+      // 今は支払えないコスト（すでにレスト状態のこのテイマーを「レストさせることで」等）なら確認も出さない
+      if (Array.isArray(step.cost) && _costStepsInfeasible(step.cost, carrier, bs, reactSide)) return false;
       // ターンに1回制限チェック
       if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
         const limitKey = _stepLimitKey(sourceCard, carrier, step);
@@ -12342,9 +12368,10 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
     });
   });
 
-  if (filtered.length === 0) { finish(); return; }
+  const _fresh = _sdgTake(filtered);
+  if (_fresh.length === 0) { finish(); return; }
   reactions.length = 0;
-  reactions.push(...filtered);
+  reactions.push(..._fresh);
 
   // 残リアクション配列を消費していく
   const remaining = reactions.slice();
@@ -13324,7 +13351,7 @@ if (typeof window !== 'undefined') window._serializeSecurityCard = (c) => _seria
 function runRecipe(steps, ctx, callback) {
   const store = {}; // ステップ間データ受け渡し用
   // 各ステップの消滅演出をまとめて出す（_withDestroyFxBatch）。相手のセキュリティから離れたカードは持ち主に伝える
-  const _execStep = (st, cb) => _withOppSecuritySync(ctx, (k1) => _withDestroyFxBatch((k) => executeRecipeStep(st, ctx, store, k), k1), cb);
+  const _execStep = (st, cb) => { ctx._destroyGrp = newDestroyGroup('step'); _withOppSecuritySync(ctx, (k1) => _withDestroyFxBatch((k) => executeRecipeStep(st, ctx, store, k), k1), cb); };
   let idx = 0;
   // 前回のレシピ実行で残った _lastAttemptedTarget（same_targetフォールバック用）を
   // 持ち越さないようここでリセットする（無関係な過去の効果を誤って参照しないため）
@@ -14086,6 +14113,14 @@ function executeRecipeStep(step, ctx, store, callback) {
       const costStep = step.cost[i++];
       console.log('[cost] executing cost step', i, 'action=' + costStep.action);
       if (costStep && typeof costStep === 'object') _COST_STEP_SET.add(costStep);
+      // 今の状態で支払えないコスト（すでにレスト状態のこのカードを「レストさせることで」等）は支払わずに失敗にする
+      // （同時に2回誘発した久遠寺マコト BT26-095 が、レスト済みなのに2回目もコストを支払えていた）
+      if (costStep && typeof costStep === 'object' && _costStepsInfeasible([costStep], ctx.card, ctx.bs, ctx.side)) {
+        ctx.addLog && ctx.addLog('💨 「' + (ctx.card ? ctx.card.name : '?') + '」の効果のコストを支払えない');
+        if (ctx.bs && step.target) ctx.bs._lastAttemptedTarget = step.target;
+        callback && callback(false);
+        return;
+      }
       executeRecipeStep(costStep, ctx, store, (success) => {
         if (success === false) {
           console.log('[cost] cost FAILED → aborting main');

@@ -10837,6 +10837,13 @@ export function fireDelegatedReactionTriggers(recipeKey, bs, ctxBase, done, cmd)
     if (!ok) { done && done(); return; }
     return _runReactionEffect(reaction, 'player', bs, ctxBase, () => _drainAfterReaction(bs, ctxBase, done));
   }
+  if (kind === 'destroy_subject') {
+    // 相手の端末で消滅したデジモンに、こちらのカード（発動主体が自分/相手/両方の消滅時）が反応した
+    const fn = cmd.matcher === 'own' ? _isOwnSubjectDestroyStep : cmd.matcher === 'both' ? _isBothSubjectDestroyStep : _isOppSubjectDestroyStep;
+    const prev = bs._lastDestroyCause;
+    bs._lastDestroyCause = cmd.cause || null;
+    return _fireDestroyTriggersImpl(cmd.destroyedSide, bs, ctxBase, () => { bs._lastDestroyCause = prev; _drainAfterReaction(bs, ctxBase, done); }, recipeKey || 'on_destroy', 'player', fn);
+  }
   if (kind === 'on_attack_opp') {
     // 相手のデジモンがアタックした（こちら視点でアタックしたのは ai 側）→ こちらのカードが反応
     return fireOnAttackOppSubjectTriggers('ai', bs, ctxBase, done, { local: true });
@@ -12269,7 +12276,8 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
   //   （例: 攻撃側ピヨモンの消滅で防御側ウィザーモン/プロットモンが反応してしまう）。
   const isOppReactiveStep = subjectMatcher || _isOppSubjectDestroyStep;
   const reactions = [];
-  reactPlayer.battleArea.forEach((carrier) => {
+  // テイマーも反応する（久遠寺マコト BT26-095「【お互いのターン】デジモンが消滅したとき」。以前はバトルエリアだけを見ていた）
+  [...reactPlayer.battleArea, ...(reactPlayer.tamerArea || [])].forEach((carrier) => {
     if (!carrier) return;
     // 1) 進化元カードそれぞれの triggerKey をスキャン
     if (carrier.stack) {
@@ -12300,6 +12308,17 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
     }
   });
 
+  // オンライン対戦: 相手（ai）側のカードの反応は、持ち主の端末に委譲して発揮してもらう（確認・選択は持ち主の画面）。
+  // 以前は委譲していなかったため、相手の端末が DP0 で消滅させた（fx_ruleDestroyRequest）こちらのデジモンへの反応が
+  // こちらの端末で発揮されなかった（ムラサメモンの DP- で相手のロゼモンが消滅 → 久遠寺マコト BT26-095 が不発）
+  if (reactSide === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+    if (reactions.length === 0) { finish(); return; }
+    const matcher = subjectMatcher === _isOwnSubjectDestroyStep ? 'own' : subjectMatcher === _isBothSubjectDestroyStep ? 'both' : 'opp';
+    const dc = bs._lastDestroyCause;
+    const cause = dc ? { type: dc.type, causerSide: _flipSide(dc.causerSide) } : null;
+    _delegateReactionToOpponent({ kind: 'destroy_subject', recipeKey: triggerKey, destroyedSide: _flipSide(destroyedSide), matcher, cause }, finish);
+    return;
+  }
   // ★ 実行されないリアクションを事前に除外
   // - once_per_turn が既に消費済み
   // - 条件（cond_during_own_turn 等）を満たさない
@@ -13341,7 +13360,11 @@ function runRecipe(steps, ctx, callback) {
     if (_icLead && idx > 1 && step && !_isInlineConfirmStep(step) && !ctx._inlineCostConfirm._afterShown) {
       ctx._inlineCostConfirm._afterShown = true;
       const _afterText = _inlineCostConfirmText(null, ctx._inlineCostConfirm.text);
-      if (!hasNoAnnounceOverride(steps)) {
+      // 残りのステップがどれも「〜なら」（step.condition）を満たさないなら、何も起きないのでアナウンスは出さない
+      // （レオルモン BT26-025「その後、自分のセキュリティが0枚なら【リカバリー+1】」がセキュリティが残っていても出ていた）
+      const _afterNoop = steps.slice(idx - 1).every(st => st && st.condition
+        && !checkConditions(parseRecipeCondition(st.condition), ctx.card, ctx.bs, ctx.side));
+      if (!hasNoAnnounceOverride(steps) && !_afterNoop) {
         showEffectAnnounce(ctx.card, _afterText, ctx.side, () => _execStep(step, nextStep), ctx._inlineCostConfirm.evoSourceCard);
         return;
       }
@@ -19791,7 +19814,11 @@ export function checkWhenPlayDiscount(playCard, bs, side, callback, opts) {
 // ダーク・フィールド BT26-100 {"flag":"ignore_evolve_color","gate":["cond_security_faceup_le:0@own_any"]} 等、
 // 手札にあるカードの性質判定（オプションの色条件・進化条件の色クローズの無視）に使う
 export function cardHasActivePassiveFlag(card, flag, bs, side) {
-  if (!card || !card.recipe) return false;
+  if (!card) return false;
+  // 効果で与えられたキーワード（grant_effect の _grantedRecipes[].kwFlag。【衝突】等のレシピ型キーワード）も持っている扱い
+  // （咲夜レーナ BT26-093 でアタック中に【衝突】を得たムラサメモンのアタックがブロック強制にならなかった）
+  if (Array.isArray(card._grantedRecipes) && card._grantedRecipes.some(g => g && g.kwFlag === flag)) return true;
+  if (!card.recipe) return false;
   if (typeof card.recipe === 'string' && card.recipe.indexOf(flag) === -1) return false;
   const r = _parseCardRecipe(card);
   if (!r) return false;

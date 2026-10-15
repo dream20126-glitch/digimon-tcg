@@ -123,6 +123,8 @@ function hasPassiveFlag(c, flagName, kwBracket) {
   // 「【ブロッカー】を持つ間」も【ブロッカー】を含んでしまう）。
   // 構造的な情報（_permEffects / buffs / recipe.passive / stack[].recipe.evo_source.passive）のみで判定する。
   if (c._permEffects && c._permEffects[flagName]) return true;
+  // 効果で与えられたレシピ型のキーワード（grant_effect の _grantedRecipes[].kwFlag。【衝突】等）
+  if (Array.isArray(c._grantedRecipes) && c._grantedRecipes.some(g => g && g.kwFlag === flagName)) return true;
   // 【衝突】で付けたブロッカー（source:'collision'）は、そのアタックのブロック判定（強制）以外では数えない
   if (c.buffs && c.buffs.some(b => b.type === 'keyword_' + flagName && !(flagName === 'blocker' && b.source === 'collision'))) return true;
   // gate（「〜の間」条件）付きのpassiveは、条件判定済みの _permEffects（applyPermanentEffects）に任せ、
@@ -2211,13 +2213,22 @@ function _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, def, targetIdx) {
 
 // ===== アタック解決 =====
 
+// アタック時の効果の間にアタッカーが進化した（アーツ進化等）なら、進化後のカードがアタッカー（同じデジモン）。
+// 以前は進化前のカードのままブロック確認を送っていたため、進化後に得た【衝突】等が伝わらなかった
+// （クーガモン→ムラサメモン＆豪ノ斬・叢時雨で進化→咲夜レーナ BT26-093 で【衝突】）
+function _evolvedAttacker(atk, slotIdx) {
+  const cur = bs.player.battleArea[slotIdx];
+  if (cur && cur !== atk && Array.isArray(cur.stack) && cur.stack.indexOf(atk) >= 0) return cur;
+  return atk;
+}
+
 export function resolveAttackTarget(target, targetIdx) {
   if (!_atkState) { console.warn('[resolveAttackTarget] _atkState is null'); return; }
   _attackInProgress = true;
   console.log('[resolveAttackTarget]', target, targetIdx, '_atkState:', _atkState.card?.name);
   // 前回のブロック応答をクリア
   if (window._clearPendingBlock) window._clearPendingBlock();
-  const atk = _atkState.card;
+  let atk = _atkState.card;
   const atkSlotIdx = _atkState.slotIdx;
   _atkState = null;
 
@@ -2272,7 +2283,7 @@ export function resolveAttackTarget(target, targetIdx) {
         renderAll();
         // AI 側のブロッカーがレストした → プレイヤー側の when_opp_rest + AI 側の when_own_block 発火
         fireBlockReactionThen('ai', () => {
-          afterAtkEffect(atk, atkSlotIdx, () => {
+          afterAtkEffect(atk, atkSlotIdx, () => { atk = _evolvedAttacker(atk, atkSlotIdx);
             afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
               resolveBattle(atk, atkSlotIdx, blocker, blockerIdx, 'ai');
             });
@@ -2285,7 +2296,7 @@ export function resolveAttackTarget(target, targetIdx) {
     if (_onlineMode && _sendCommand) {
       // ★ アタック時効果を先に処理 → 完了後にブロック要求を送信
       // （これでターンプレイヤーが効果処理中に相手の画面にブロック確認が出ない）
-      afterAtkEffect(atk, atkSlotIdx, () => {
+      afterAtkEffect(atk, atkSlotIdx, () => { atk = _evolvedAttacker(atk, atkSlotIdx);
         // 突進等でセキュリティ→デジモンアタックに差し替わっていれば、そちらの経路へ
         const _rt = _consumeRedirectedAttack('security', -1);
         if (_rt.target === 'digimon') { _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, _rt.def, _rt.idx); return; }
@@ -2309,7 +2320,7 @@ export function resolveAttackTarget(target, targetIdx) {
         } else { resolveSecurityCheck(atk, atkSlotIdx); }
       });
     } else {
-      afterAtkEffect(atk, atkSlotIdx, () => {
+      afterAtkEffect(atk, atkSlotIdx, () => { atk = _evolvedAttacker(atk, atkSlotIdx);
         // 突進等でセキュリティ→デジモンアタックに差し替わっていれば、そちらの経路へ
         const _rt = _consumeRedirectedAttack('security', -1);
         if (_rt.target === 'digimon') { resolveBattle(atk, atkSlotIdx, _rt.def, _rt.idx, 'ai'); return; }
@@ -2357,7 +2368,7 @@ export function resolveAttackTarget(target, targetIdx) {
         renderAll();
         // AI 側のブロッカーがレストした → プレイヤー側の when_opp_rest + AI 側の when_own_block 発火
         fireBlockReactionThen('ai', () => {
-          afterAtkEffect(atk, atkSlotIdx, () => {
+          afterAtkEffect(atk, atkSlotIdx, () => { atk = _evolvedAttacker(atk, atkSlotIdx);
             // ブロックされた側 (player) の効果
             afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
               // ブロッカー vs アタッカー のバトル解決 (def を blocker に差し替え)
@@ -2370,13 +2381,13 @@ export function resolveAttackTarget(target, targetIdx) {
     }
     if (_onlineMode && _sendCommand) {
       // ★ アタック時効果を先に処理 → 完了後にブロック要求を送信
-      afterAtkEffect(atk, atkSlotIdx, () => {
+      afterAtkEffect(atk, atkSlotIdx, () => { atk = _evolvedAttacker(atk, atkSlotIdx);
         // 突進等でアタック対象が差し替わっていれば、そちらを対象にする
         const _rt = _consumeRedirectedAttack('digimon', targetIdx);
         _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, _rt.def, _rt.idx);
       });
     } else {
-      afterAtkEffect(atk, atkSlotIdx, () => {
+      afterAtkEffect(atk, atkSlotIdx, () => { atk = _evolvedAttacker(atk, atkSlotIdx);
         const _rt = _consumeRedirectedAttack('digimon', targetIdx);
         resolveBattle(atk, atkSlotIdx, _rt.def, _rt.idx, 'ai');
       });

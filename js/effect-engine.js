@@ -19119,6 +19119,8 @@ export function hasOwnPendingEffectsShown() {
 export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; }
 if (typeof window !== 'undefined') {
   window._isEffectProcessing = isEffectProcessing;
+  // 今まさに効果を処理しているか（保留中の「〜したとき」の反応・発揮待ちは数えない）
+  window._isEffectRunning = () => _effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0 || _targetSelecting;
   window._resetEffectProcessing = resetEffectProcessing;
   window._hasOwnPendingEffectsShown = hasOwnPendingEffectsShown;
 }

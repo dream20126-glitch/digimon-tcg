@@ -2185,7 +2185,18 @@ function _hasCollision(card) {
 // ときは、そのセキュリティチェックの終わりでアタック終了になる
 function _afterOnlineBlockBattle() {
   if (_onlineMode && typeof window._waitForBlockBattleDone === 'function') {
-    window._waitForBlockBattleDone((res) => { renderAll(); if (res && res.penetrate) return; checkPendingTurnEnd(); });
+    window._waitForBlockBattleDone((res) => {
+      renderAll();
+      if (res && res.penetrate) return;
+      // こちらの効果（自分のデジモンの消滅時効果で登場したデジモンの【登場時】等）を処理している途中なら、
+      // それが終わってからアタック終了に進む
+      const _t0 = Date.now();
+      const _go = () => {
+        if (window._isEffectRunning && window._isEffectRunning() && Date.now() - _t0 < 120000) { setTimeout(_go, 300); return; }
+        checkPendingTurnEnd();
+      };
+      _go();
+    });
     return;
   }
   checkPendingTurnEnd();

@@ -2067,9 +2067,13 @@ export function waitForOwnDestroyDone(callback) {
     callback();
   }
   _pendingOwnDestroyDoneCallback = onDone;
-  // 30秒タイムアウト（相手の切断等でackが来ない場合にゲームが止まらないように）
+  // 30秒たっても返事が無ければ、相手の端末の処理が全て終わっているか（fx_idleCheck）を確かめてから進む。
+  // 以前は30秒で打ち切っていたため、相手が消滅時効果（ピナモン BT26-005 → 登場したベックモンの【登場時】）で
+  // 選んでいる途中にバトルの終了を送ってしまい、相手の画面でアタック終了の処理が割り込んでいた
   setTimeout(() => {
-    if (_pendingOwnDestroyDoneCallback === onDone) { _pendingOwnDestroyDoneCallback = null; onDone(); }
+    if (_pendingOwnDestroyDoneCallback !== onDone) return;
+    const _goOn = () => { if (_pendingOwnDestroyDoneCallback === onDone) { _pendingOwnDestroyDoneCallback = null; onDone(); } };
+    if (typeof window._waitRemoteIdle === 'function') window._waitRemoteIdle(_goOn); else _goOn();
   }, 30000);
 }
 

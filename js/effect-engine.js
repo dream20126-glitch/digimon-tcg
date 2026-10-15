@@ -19196,6 +19196,24 @@ if (typeof window !== 'undefined') {
   // 今まさに効果を処理しているか（保留中の「〜したとき」の反応・発揮待ちは数えない）
   window._isEffectRunning = () => _effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0 || _targetSelecting || _reactionRunDepth > 0;
   window._resetEffectProcessing = resetEffectProcessing;
+  // 何も処理していないのに残っている発揮待ち（保留中の「〜したとき」の反応・効果のキュー）の中身（調査用）と、それを処理する入口。
+  // オンラインで相手がターンを終える前の問い合わせ（fx_idleCheck）に、残ったままで返事ができず止まっていた
+  window._diagPending = () => {
+    const b = window._lastBattleState;
+    return {
+      reactions: (b && Array.isArray(b._pendingReactions)) ? b._pendingReactions.length : 0,
+      collector: !!(b && b._reactionCollector),
+      queue: _effectQueue.filter(e => e && (e.status === 'waiting' || e.status === 'processing')).map(e => (e.card && e.card.name) + ':' + e.status),
+    };
+  };
+  window._resolveLeftoverPending = (cb) => {
+    const b = window._lastBattleState;
+    if (!b) { cb && cb(); return; }
+    const ctx = _buildBaseCtx(null, b);
+    const afterQ = () => { try { checkPendingDestroys(ctx, () => cb && cb()); } catch (e) { console.error('[resolveLeftoverPending]', e); cb && cb(); } };
+    if (_effectQueue.some(e => e && e.status === 'waiting')) { try { processQueue(ctx, afterQ); } catch (e) { console.error('[resolveLeftoverPending]', e); afterQ(); } return; }
+    afterQ();
+  };
   window._hasOwnPendingEffectsShown = hasOwnPendingEffectsShown;
 }
 

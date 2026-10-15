@@ -1133,7 +1133,29 @@ function onRemoteCommand(cmd) {
     case 'fx_idleCheck': {
       // 相手がターンを終える前の問い合わせ: こちらの効果処理（消滅時効果・演出等）が全て終わってから返事する
       const _id = cmd.id;
-      const _poll = () => { if (_localBusyForRemote()) { setTimeout(_poll, 150); return; } sendCommand({ type: 'fx_idleAck', id: _id }); };
+      // 何も処理していない（演出・効果の処理・相手の合図待ちが無い）のに発揮待ちだけが残っているなら、それを処理してから返事する
+      // （残ったままだと返事ができず、相手のターン終了が止まっていた）
+      let _leftoverSince = 0, _leftoverTried = false, _lastLog = 0;
+      const _poll = () => {
+        if (!_localBusyForRemote()) { sendCommand({ type: 'fx_idleAck', id: _id }); return; }
+        const running = !!(window._isEffectRunning && window._isEffectRunning());
+        const other = !!(_pendingOwnDestroyFire || _nonTurnPlayerReactionDraining
+          || (bs._pendingNonTurnPlayerReactions && bs._pendingNonTurnPlayerReactions.length > 0)
+          || _fxRunning || _fxQueue.length > 0 || (window._fxAnimActive > 0));
+        if (Date.now() - _lastLog > 3000) {
+          _lastLog = Date.now();
+          try { console.log('[fx_idleCheck] busy', { running, other, pending: window._diagPending && window._diagPending() }); } catch (_) {}
+        }
+        if (!running && !other) {
+          if (!_leftoverSince) _leftoverSince = Date.now();
+          if (!_leftoverTried && Date.now() - _leftoverSince > 1000 && typeof window._resolveLeftoverPending === 'function') {
+            _leftoverTried = true;
+            addLog('⚙ 残っていた発揮待ちの効果を処理します');
+            window._resolveLeftoverPending(() => { renderAll(); sendStateSync(); });
+          }
+        } else { _leftoverSince = 0; }
+        setTimeout(_poll, 150);
+      };
       setTimeout(_poll, 100);
       break;
     }

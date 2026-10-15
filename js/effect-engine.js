@@ -11430,6 +11430,18 @@ function _whenTargetChangedSubjectFilter(attackerSide, scanSide) {
     }
   };
 }
+// オンライン: この端末（player）のカードだけを反応させる（相手のカードは相手の端末がそれぞれ反応させる）
+export function fireWhenTargetChangedLocalTriggers(attackerSide, bs, ctxBase, done) {
+  return _fireSidedReactionTriggers('player', 'when_target_changed', bs, ctxBase, done, _whenTargetChangedSubjectFilter(attackerSide, 'player'));
+}
+if (typeof window !== 'undefined') {
+  window._fireWhenTargetChangedLocal = (attackerSide, cb) => {
+    const b = window._lastBattleState;
+    if (!b) { cb && cb(); return; }
+    try { fireWhenTargetChangedLocalTriggers(attackerSide, b, _buildBaseCtx(null, b), () => cb && cb()); }
+    catch (e) { console.error('[_fireWhenTargetChangedLocal]', e); cb && cb(); }
+  };
+}
 export function fireWhenTargetChangedTriggers(attackerSide, bs, ctxBase, done) {
   return _fireSidedReactionTriggers('player', 'when_target_changed', bs, ctxBase, () => {
     _fireSidedReactionTriggers('ai', 'when_target_changed', bs, ctxBase, done, _whenTargetChangedSubjectFilter(attackerSide, 'ai'));

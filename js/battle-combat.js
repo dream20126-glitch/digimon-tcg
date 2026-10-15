@@ -2201,6 +2201,13 @@ function _afterOnlineBlockBattle() {
   }
   checkPendingTurnEnd();
 }
+// オンライン: ブロックされた（＝アタックの対象がブロッカーに変更された。公式ルール 12-1-1）。こちら（攻撃側）の
+// 「アタックの対象が変更されたとき」を発揮してから「ブロックされたとき」へ。防御側の分は防御側の端末が発揮する
+function _onlineBlockedThen(atk, atkSlotIdx, cb) {
+  const go = () => afterBlockedEffect(atk, atkSlotIdx, 'player', cb);
+  if (typeof window._fireWhenTargetChangedLocal === 'function') window._fireWhenTargetChangedLocal('player', go);
+  else go();
+}
 function _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, def, targetIdx) {
   // 送るDPは付与中のバフから計算し直した値にする（防御側はこの値で勝敗を判定する）
   try { if (window._recalcDp) window._recalcDp(atk); } catch (_) {}
@@ -2210,7 +2217,7 @@ function _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, def, targetIdx) {
       if (!resp.blocked) {
         resolveBattle(atk, atkSlotIdx, def, targetIdx, 'ai');
       } else {
-        afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
+        _onlineBlockedThen(atk, atkSlotIdx, () => {
           if (_onlineMode && _sendCommand) _sendCommand({ type: 'blocked_effect_done' });
           renderAll();
           _afterOnlineBlockBattle();
@@ -2321,7 +2328,7 @@ export function resolveAttackTarget(target, targetIdx) {
               resolveSecurityCheck(atk, atkSlotIdx);
             } else {
               // ブロックされた時効果を発動 → 完了シグナル送信
-              afterBlockedEffect(atk, atkSlotIdx, 'player', () => {
+              _onlineBlockedThen(atk, atkSlotIdx, () => {
                 if (_onlineMode && _sendCommand) _sendCommand({ type: 'blocked_effect_done' });
                 renderAll();
                 _afterOnlineBlockBattle();

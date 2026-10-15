@@ -54,6 +54,19 @@ let _pendingOwnDestroyDoneCallback = null;
 let _ownDestroyWaitCards = []; // 相手の合図待ちの、消滅した自分のカード（発揮待ちの表示用）
 let _pendingOwnDestroyList = []; // 相手の合図待ちの、消滅した自分のカードごとの消滅時チェーン { card, fire }
 // 合図（fx_ownDestroyReady）で、たまっている消滅時チェーンを持ち主（自分）が選んだ順に発揮する
+// 演出の列（enqueueFx）が空になり、続けて届く演出も無くなってから（少し待って空のまま）go()
+function _afterRemoteFxIdle(go) {
+  let idleSince = null;
+  const t0 = Date.now();
+  const tick = () => {
+    const busy = _fxRunning || _fxQueue.length > 0 || (window._fxAnimActive > 0);
+    if (busy && Date.now() - t0 < 20000) { idleSince = null; setTimeout(tick, 150); return; }
+    if (idleSince === null) idleSince = Date.now();
+    if (Date.now() - idleSince < 400 && Date.now() - t0 < 20000) { setTimeout(tick, 100); return; }
+    go();
+  };
+  tick();
+}
 function _queueOwnDestroyFire(card, fire) {
   _pendingOwnDestroyList.push({ card, fire });
   _pendingOwnDestroyFire = (afterDone) => {
@@ -1118,9 +1131,13 @@ function onRemoteCommand(cmd) {
       // 積んで順番を守る（公式ルール15-4-4「発揮待ち」は1つずつ発揮させる）
       if (_pendingOwnDestroyFire) {
         const fn = _pendingOwnDestroyFire; _pendingOwnDestroyFire = null;
-        if (!bs._pendingNonTurnPlayerReactions) bs._pendingNonTurnPlayerReactions = [];
-        bs._pendingNonTurnPlayerReactions.push((next) => fn(next));
-        _drainNonTurnPlayerReactionQueue();
+        // バトルの結果・消滅の演出（相手から続けて届く fx_battleResult / fx_destroy）を見せ終えてから消滅時効果を始める
+        // （ブロックの両者消滅で、消滅時効果の確認の後ろで両者消滅の演出が流れていた）
+        _afterRemoteFxIdle(() => {
+          if (!bs._pendingNonTurnPlayerReactions) bs._pendingNonTurnPlayerReactions = [];
+          bs._pendingNonTurnPlayerReactions.push((next) => fn(next));
+          _drainNonTurnPlayerReactionQueue();
+        });
       }
       break;
     }
@@ -2317,12 +2334,13 @@ function resolveOnlineBlock(blockerIdx, cmd) {
           cardData: serializeCardForCmd(atk),
         });
         armOwnDestroyDone();
-        sendCommand({ type: 'fx_ownDestroyReady' });
         renderAll();
         sendCommand({ type: 'fx_battleResult', text: '両者消滅', color: '#ff4444', sub: '両者消滅！' });
         // 両者の消滅演出を相手機にも明示送信
         sendCommand({ type: 'fx_destroy', cardName: blocker.name, cardImg: cardImg(blocker) });
         sendCommand({ type: 'fx_destroy', cardName: atk.name, cardImg: cardImg(atk) });
+        // 消滅時効果を始めてよい合図は、演出のコマンドの後に送る（相手の画面で演出を見せてから効果に進む）
+        sendCommand({ type: 'fx_ownDestroyReady' });
         showBR('両者消滅', '#ff4444', '両者消滅！', () => {
           showDE(blocker, () => { showDE(atk, () => {
             addLog('💥 両者消滅！');
@@ -2500,7 +2518,12 @@ function resolveOnlineBlock(blockerIdx, cmd) {
     try {
       if (window._fireWhenOwnBlock) {
         const ctxBase = { bs, addLog, renderAll, updateMemGauge: _modules.updateMemGauge };
-        window._fireWhenOwnBlock('player', bs, ctxBase, startFn);
+        // ブロックはアタックの対象をブロッカーに変更するルール（公式ルール 12-1-1）なので、続けてこちらの
+        // 「アタックの対象が変更されたとき」も発揮する（ウルヴァモン BT26-053 がブロックしても発揮しなかった）
+        window._fireWhenOwnBlock('player', bs, ctxBase, () => {
+          if (typeof window._fireWhenTargetChangedLocal === 'function') window._fireWhenTargetChangedLocal('ai', startFn);
+          else startFn();
+        });
         return;
       }
     } catch(_) {}

@@ -2216,7 +2216,35 @@ function _withOppDeferred(fn) {
 // 送る前に、こちら（防御側）で「離れるとき」により進化して保留していた【進化時】（巨神兵器 BT26-085 → デストロイモード
 // BT26-060 等）を発揮する。消滅の処理が終わったここが発揮のタイミングで、攻撃側の【自分のターン終了時】（エグゼキュート等）
 // より先に解決する
+// オンラインのブロックのバトル（防御側＝こちらが解決）で消滅したデジモンへの「デジモンが消滅したとき」等
+// （発動主体が自分/相手/お互いの消滅時。久遠寺マコト BT26-095）。以前はどちらの端末も発揮していなかった。
+// こちらのカードはこちらで、相手のカードは相手の端末に委譲して発揮する（effect-engine.js _fireDestroyTriggersImpl）。
+// 同時に消滅したなら1回だけ誘発する（公式ルール 4-26-5）
+let _blkBattleCards = null;
+function _fireBlockBattleSubjectReactions(cb) {
+  const bc = _blkBattleCards; _blkBattleCards = null;
+  if (!bc || typeof window._fireOnDestroySubjectReactions !== 'function') { cb(); return; }
+  // 場にもういない（相手のカードは状態の同期で作り直されるので、同じカード番号・名前でも探す。進化して残った場合は進化元に入っている）
+  const onField = (c, p) => (p.battleArea || []).some(x => x && (x === c || (x.cardNo === c.cardNo && x.name === c.name) || (Array.isArray(x.stack) && x.stack.includes(c))));
+  const gone = (c, p) => !!c && !onField(c, p);
+  // ターンプレイヤー（攻撃側＝ai）の側から
+  const sides = [];
+  if (gone(bc.atk, bs.ai)) sides.push('ai');
+  if (gone(bc.blocker, bs.player)) sides.push('player');
+  if (sides.length === 0) { cb(); return; }
+  const grp = sides.length >= 2 && window._newDestroyGroup ? window._newDestroyGroup('battle') : null;
+  const ctxBase = { bs, addLog, renderAll, updateMemGauge: _modules.updateMemGauge };
+  let i = 0;
+  const next = () => {
+    if (i >= sides.length) { bs._lastDestroyCause = null; sendMemoryUpdate(); sendStateSync(); cb(); return; }
+    const s = sides[i++];
+    bs._lastDestroyCause = { type: 'battle', causerSide: s === 'player' ? 'ai' : 'player', causerCard: null, grp };
+    try { window._fireOnDestroySubjectReactions(s, bs, ctxBase, next); } catch (e) { console.error('[_fireBlockBattleSubjectReactions]', e); next(); }
+  };
+  next();
+}
 function _sendBlockBattleDone(extra) {
+  if (_blkBattleCards) { _fireBlockBattleSubjectReactions(() => _sendBlockBattleDone(extra)); return; }
   const send = () => sendCommand(Object.assign({ type: 'block_battle_done' }, extra || {}));
   const hasDeferred = Array.isArray(bs._deferredEvoTriggers) && bs._deferredEvoTriggers.length > 0;
   if (!hasDeferred || typeof window._flushDeferredEvoTriggers !== 'function') { send(); return; }
@@ -2287,6 +2315,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
       battleBuffs = applyBattleBuffs(atk, blocker);
       addLog('⚔ ブロックのバトル: 「' + atk.name + '」DP' + _atkDpFixed + ' vs 「' + blocker.name + '」DP' + blocker.dp);
     }
+    _blkBattleCards = { atk, blocker };
     const showSC = _modules.showSecurityCheck || ((a, b, cb) => cb());
     const showBR = _modules.showBattleResult || ((a, b, c, cb) => cb());
     const showDE = _modules.showDestroyEffect || ((a, cb) => cb());

@@ -12095,6 +12095,7 @@ function _destroyGroupKeys(bs) {
   return m.get(grp);
 }
 if (typeof window !== 'undefined') window._newDestroyGroup = newDestroyGroup;
+if (typeof window !== 'undefined') window._fireOnDestroySubjectReactions = (destroyedSide, bs, ctxBase, done) => fireOnDestroySubjectReactions(destroyedSide, bs, ctxBase, done);
 
 export function fireDestroyChain(destroyedCard, destroyedSide, bs, ctxBase, callback) {
   const finish = () => {

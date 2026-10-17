@@ -2192,6 +2192,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const tCode = (defaultTarget && defaultTarget.code) || 'target_self';
       const activateOne = (tgt) => {
         if (!tgt) return;
+        // 「アクティブにならない」状態なら効果でもアクティブにできない（禁止する効果が優先。公式ルール 15-1-3）
+        if (_cannotBeActivated(tgt)) { ctx.addLog('🔒 「' + tgt.name + '」はアクティブにならない状態のため、アクティブにできない'); return; }
         tgt.suspended = false;
         // same_target（ブレイブシールド等: アクティブにしたデジモンにブロッカー付与）用に保存
         if (ctx.bs) ctx.bs._lastPickedCard = tgt;
@@ -2269,7 +2271,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         nextReaction();
       };
       if (tCode === 'target_self') {
-        const _activeSelfWasSuspended = ctx.card && ctx.card.suspended;
+        const _activeSelfWasSuspended = ctx.card && ctx.card.suspended && !_cannotBeActivated(ctx.card);
         if (ctx.card) activateOne(ctx.card);
         ctx.renderAll();
         if (_activeSelfWasSuspended) {
@@ -2287,7 +2289,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       if (tCode === 'target_all_own') {
         const activated = [];
         (player.battleArea || []).forEach(c => {
-          if (c && c.suspended && _activeCondPass(c)) { activated.push(c); activateOne(c); }
+          if (c && c.suspended && !_cannotBeActivated(c) && _activeCondPass(c)) { activated.push(c); activateOne(c); }
         });
         ctx.renderAll();
         _fireOnActiveMainReactions(activated, callback);
@@ -2300,7 +2302,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const _abFilter = defaultTarget && defaultTarget.filter;
         const _abOppTag = ctx.side === 'player' ? 'ai' : 'player';
         const _abCands = _collectSideTargets(ctx, { own: true, opp: true, filter: _abFilter, pred: (c, isOwn) => {
-          if (!c.suspended) return false;
+          if (!c.suspended || _cannotBeActivated(c)) return false;
           if (_activeConds.length > 0 && !checkConditions(_activeConds, c, ctx.bs, isOwn ? ctx.side : _abOppTag)) return false;
           if (_abFilter && !cardMatchesFilter(c, _abFilter, ctx.bs, ctx.side, ctx.card)) return false;
           if (!isOwn && hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return false;
@@ -2327,7 +2329,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const valid = [];
         for (let i = 0; i < player.battleArea.length; i++) {
           const c = player.battleArea[i];
-          if (c && c.suspended && _activeCondPass(c)) valid.push(i);
+          if (c && c.suspended && !_cannotBeActivated(c) && _activeCondPass(c)) valid.push(i);
         }
         if (valid.length === 0) { ctx.addLog && ctx.addLog('💨 アクティブにできるレスト中デジモンがいません'); ctx.renderAll(); callback(); break; }
         if (effectiveSide === 'ai') {
@@ -10699,6 +10701,8 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
     if (!Array.isArray(recipe)) return false;
     return recipe.some(step => {
       if (stepFilter && !stepFilter(step, reactSide, carrier, sourceCard || carrier)) return false;
+      // 「このデジモンをアクティブにできる」で、アクティブにならない状態なら不発（確認も出さない）
+      if (step && step.action === 'active' && (!step.target || /^self/.test(String(step.target))) && _cannotBeActivated(carrier)) return false;
       // イベント対象カードで trigger_conditions を評価（いずれか1枚も満たさなければ不発）
       if (eventCards && !pickEventCard(step)) return false;
       // 手札から破棄されたカード自身の効果は、破棄された時点の判定（_snapshotHandDiscardConds）を使う
@@ -13008,6 +13012,10 @@ function recipeWillExecuteAnything(recipe, ctx) {
     // 「このデジモンでアタックできる」（≪ヴォルテクス≫≪急襲≫等）で、アタックできない（レスト中・アタックできない状態、
     // 「相手のデジモンにアタック」でアタックできる相手のデジモンがいない）なら不発なので、誘発の選択にも出さない
     // （グランクワガーモン BT26-045 で【ヴォルテクス】を得たレスト中のタイラントカブテリモンが、ターン終了時に出ていた）
+    if (step.action === 'active' && (!step.target || /^self/.test(String(step.target))) && ctx.card && _cannotBeActivated(ctx.card)) {
+      console.log('[recipeWillExecute] reactor=' + _reactor + ' cannot be activated → skip');
+      continue;
+    }
     if (_attackStepImpossible(step, ctx.card, ctx.bs, ctx.side)) {
       console.log('[recipeWillExecute] reactor=' + _reactor + ' attack impossible → skip');
       continue;
@@ -14094,6 +14102,13 @@ function _slotsPartialAssignable(cards, slots, matches) {
     return false;
   };
   return dfs(0);
+}
+
+// 「アクティブにならない」（prevent_unsuspend。ロゼモン：バーストモード BT26-050 等）状態か。この状態のカードは
+// 効果でもアクティブにできない（禁止する効果は可能になる効果より優先される。ベアキャットモン＆ペネトレイトブロウ BT26-057 の
+// 「このデジモンをアクティブにできる」でアクティブになっていた）
+function _cannotBeActivated(card) {
+  return !!(card && Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'prevent_unsuspend'));
 }
 
 function executeRecipeStep(step, ctx, store, callback) {

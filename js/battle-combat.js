@@ -2362,7 +2362,9 @@ export function resolveAttackTarget(target, targetIdx) {
     // アクティブ状態のデジモンには宣言できない（公式ルール）。突進は宣言時の対象拡張ではなく
     // 「宣言後、任意でDP最大のアクティブなデジモンへ対象を差し替える」効果のため、ここでの
     // 例外は無い（redirect_attack アクション経由でafterAtkEffect後に差し替わる）
-    if (!def.suspended) {
+    // ≪エグゼキュート≫でのアタック（_executeAttacking）は「アクティブ状態の相手のデジモンにもアタックできる」
+    // （スカージキロプモン＆デスペアブラストでアクティブ状態のデジモンを選んでもアタックが始まらなかった）
+    if (!def.suspended && !atk._executeAttacking) {
       addLog('🚨 アクティブ状態のデジモンにはアタックできません');
       atk.suspended = false; renderAll();
       return;

@@ -194,6 +194,8 @@ function _buildGrantBadges(card) {
   if (Array.isArray(card._grantedRecipes)) {
     card._grantedRecipes.forEach((g) => { if (g && g.kwFlag) kwSet.add(g.kwFlag); });
   }
+  // 相手のカードは state_sync の _grantedKw で受け取る
+  if (Array.isArray(card._grantedKw)) card._grantedKw.forEach((kw) => { if (kw) kwSet.add(kw); });
   kwSet.forEach((code) => {
     items.push({ label: KEYWORD_DISPLAY_NAMES[code] || code, color: _keywordColor(code) });
   });
@@ -216,6 +218,11 @@ function _buildGrantBadges(card) {
   if (Array.isArray(card._grantedRecipes) && card._grantedRecipes.length > 0) {
     card._grantedRecipes.forEach((g) => {
       if (g && g.kwFlag) return; // キーワード（上でキーワード名のバッジにしている）
+      items.push({ label: '付与効果' + (g && g.granterName ? '（' + g.granterName + '）' : ''), color: '#c084fc' });
+    });
+  } else if (Array.isArray(card._grantedOther)) {
+    // 相手のカード（state_sync の _grantedOther。持ち主の端末で付いている付与効果）
+    card._grantedOther.forEach((g) => {
       items.push({ label: '付与効果' + (g && g.granterName ? '（' + g.granterName + '）' : ''), color: '#c084fc' });
     });
   }
@@ -376,7 +383,7 @@ function renderBattleRows() {
 
         // 付与効果インジケータ（grant_effect で得た効果。ヘブンズリッパー等）
         // 相手のカードは state_sync の _grantedOther（キーワード以外の付与効果の数）で受け取る
-        if ((Array.isArray(card._grantedRecipes) && card._grantedRecipes.some(g => g && !g.kwFlag)) || (card._grantedOther > 0)) {
+        if ((Array.isArray(card._grantedRecipes) && card._grantedRecipes.some(g => g && !g.kwFlag)) || (Array.isArray(card._grantedOther) && card._grantedOther.length > 0)) {
           html += `<div style="position:absolute;top:14px;left:2px;background:rgba(192,132,252,0.92);color:#fff;font-size:6px;font-weight:bold;padding:1px 3px;border-radius:2px;z-index:5;box-shadow:0 0 5px #c084fc;">付与効果</div>`;
         }
 

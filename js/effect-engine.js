@@ -6689,7 +6689,7 @@ function _purgeOffFieldGrants(bs) {
         if (!c) return;
         if (Array.isArray(c._grantedRecipes) && c._grantedRecipes.length > 0) c._grantedRecipes = [];
         if (Array.isArray(c._grantedKw) && c._grantedKw.length > 0) c._grantedKw = [];
-        if (c._grantedOther) c._grantedOther = 0;
+        if (c._grantedOther) c._grantedOther = [];
         if (z !== 'hand' && Array.isArray(c.buffs) && c.buffs.length > 0) { c.buffs = []; if (c.dpModifier) { c.dpModifier = 0; if (c.baseDp != null) c.dp = c.baseDp; } }
       });
     });

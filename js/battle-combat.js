@@ -1966,7 +1966,21 @@ function _placeArtsEvolve(card, target, side) {
 if (typeof window !== 'undefined') window._offerArtsEvolve = (card, onDone) => _offerArtsEvolve(card, onDone);
 function _offerArtsEvolve(card, onDone0) {
   const candidates = _findArtsEvolveCandidates(card, 'player');
-  if (candidates.length === 0) { onDone0(); return; }
+  if (candidates.length === 0) {
+    // 進化元にできるデジモンが「進化できない」状態（ロゼモン：バーストモード BT26-050 等）だけなら、理由を出してからトラッシュへ
+    // （以前は何も出さずにトラッシュへ送っていて、アーツ進化の確認が出ないように見えていた）
+    const _blocked = (bs.player.battleArea || []).filter(b => b && b.type === 'デジモン'
+      && (b.cantEvolve || (Array.isArray(b.buffs) && b.buffs.some(x => x && x.type === 'cant_evolve')))
+      && (() => { try { return _resolveEvolveMatch(card, b) !== null || !!_getAltEvolve(card, b, bs, 'player'); } catch (_) { return false; } })());
+    if (_blocked.length > 0) {
+      const _msg = '「' + _blocked.map(b => b.name).join('」「') + '」は進化できない状態のため、「' + card.name + '」にアーツ進化できません';
+      addLog('🔒 ' + _msg);
+      try { _showEffectAnnounce(card, _msg, 'player', () => onDone0()); } catch (_) { onDone0(); }
+      return;
+    }
+    onDone0();
+    return;
+  }
   // 「アーツ進化しますか？」の確認から【進化時】の解決が終わるまでは効果の処理中として扱う（メモリーが相手側に
   // 移っていても、この間にターン終了に進まない。ロゼモン：バーストモード BT26-050 で【進化時】の前にターンが終わっていた）
   if (typeof window !== 'undefined' && window._effectBusy) window._effectBusy(1);

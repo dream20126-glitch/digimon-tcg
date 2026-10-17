@@ -10613,6 +10613,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done0, opts) {
 //   （アンドロモン BT26-054「特徴CSを持つデジモンカードが置かれたとき」・
 //    ブルムロードモン BT26-048「裏向きの進化元が破棄されたとき」等）
 // opts.cause: 原因（{type, causerSide, causerCard}）。指定時は反応チェーンの間だけ bs._lastDestroyCause にセットする
+const _SIDED_GRANTED_KEYS = new Set(['on_main_phase_start', 'on_opp_main_phase_start']);
 function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, stepFilter, opts) {
   opts = opts || {};
   if (opts.cause && bs) {
@@ -10737,6 +10738,19 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
         if (recipe) pushReaction(card, evoCard, recipe);
       });
     }
+    // 効果で与えられた効果（grant_effect の _grantedRecipes）。この経路だけで発揮するトリガー（メインフェイズ開始時）に限る
+    // （ベアキャットモン＆ペネトレイトブロウ BT26-057「『【自分のメインフェイズ開始時】このデジモンでアタックする』を与える」が
+    // 相手のメインフェイズ開始時に出てこなかった。【アタック時】等は別の経路で付与された効果を拾っている）
+    if (_SIDED_GRANTED_KEYS.has(recipeKey) && Array.isArray(card._grantedRecipes)) {
+      card._grantedRecipes.forEach((g) => {
+        const gs = _grantedStepsFor(g, recipeKey, card);
+        if (!Array.isArray(gs) || gs.length === 0) return;
+        const before = reactions.length;
+        pushReaction(card, card, gs);
+        // 確認・発揮待ちには、このカード自身の効果ではなく与えられた効果の文を出す
+        if (reactions.length > before) reactions[reactions.length - 1].effectText = (g.granterName ? '（「' + g.granterName + '」の効果で得た効果）\n' : '') + (g.granterText || '');
+      });
+    }
   });
   // ［トラッシュ］［セキュリティ］のゾーン効果＋opts.zoneCards（[{card, zone}]。手札から破棄された
   // カード自身の「このカードが手札から破棄されたとき」(in_zone:'hand') 等、呼び出し側が指定するカード）
@@ -10759,7 +10773,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
     reactions.forEach((r) => {
       bs._reactionCollector.items.push({
         card: r.card, side: reactSide,
-        block: { trigger: { code: recipeKey }, raw: r.sourceCard === r.card ? (r.card.effect || '') : '', _recipeCard: r.sourceCard !== r.card ? r.sourceCard : undefined, _grantedSteps: r.recipe },
+        block: { trigger: { code: recipeKey }, raw: r.effectText != null ? r.effectText : (r.sourceCard === r.card ? (r.card.effect || '') : ''), _recipeCard: r.sourceCard !== r.card ? r.sourceCard : undefined, _grantedSteps: r.recipe },
         // 同じ効果が派生誘発で先に発揮して【ターンに1回】を使った・コストのレストを済ませた等で、もう発揮できない古い方は外す
         // （公式ルール 15-4-2-4: 発揮待ちのまま再び誘発した効果は2つになるが、先に発揮した方で使えなくなる）
         alive: () => (!(r.zone === 'trash' || r.zone === 'security') || _cardStillInZone(bs, reactSide, r.card, r.zone)) && _reactionStillValid(r, bs, recipeKey)

@@ -8704,6 +8704,10 @@ function checkPendingDestroys(ctx, callback) {
         // （【デコード】で登場したプルートモンの【登場時】の前の判定で、ゾンビプルートモンを二重に消滅させていた）
         if (area[i]._destroyInProgress) continue;
         if (_holdForAttack) { ctx.bs._dp0HeldForAttack = true; continue; }
+        // 効果に続く操作（デュアルカードを使った後のアーツ進化〜【進化時】。window._effectBusy）の途中も保留し、
+        // それが終わったとき（window._effectBusyEnd）に消滅させる（ムラサメモン＆豪ノ斬・叢時雨のオプション側の DP- で DP0 に
+        // なったベックモンが、アーツ進化の対象を選んでいる途中に消滅していた）
+        if (_extraBusyDepth > 0) { ctx.bs._dp0HeldForBusy = true; continue; }
         // オンラインで相手のカードの DP0 消滅は、持ち主の端末が行う（こちらでも消滅させると消滅演出・【デコード】等が
         // 二重になっていた）。消滅させるタイミング（ルールチェックの時点）はこちらが決め、fx_ruleDestroyRequest で頼む
         if (side === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) {
@@ -19177,11 +19181,22 @@ if (typeof window !== 'undefined') window._effectBusy = (d) => { _extraBusyDepth
 // 効果に続く操作を終えた（_effectBusy(-1)）。全ての処理が終わったなら、後回しにしていた非ターンプレイヤー側の効果を発揮してから cb
 if (typeof window !== 'undefined') window._effectBusyEnd = (cb) => {
   _extraBusyDepth = Math.max(0, _extraBusyDepth - 1);
-  if (_extraBusyDepth === 0 && _effectProcessingDepth === 0 && _ntpDeferred.length > 0) {
-    try { _flushNonTurnDeferred(window._lastBattleState, () => cb && cb()); } catch (e) { console.error('[_effectBusyEnd]', e); cb && cb(); }
+  if (_extraBusyDepth > 0 || _effectProcessingDepth > 0) { cb && cb(); return; }
+  const b = window._lastBattleState;
+  const flush = () => {
+    if (_ntpDeferred.length > 0) {
+      try { _flushNonTurnDeferred(b, () => cb && cb()); } catch (e) { console.error('[_effectBusyEnd]', e); cb && cb(); }
+      return;
+    }
+    cb && cb();
+  };
+  // 保留していた DP0 の消滅（ルール処理）を先に行う（相手のデジモンなら持ち主に依頼する）
+  if (b && b._dp0HeldForBusy) {
+    b._dp0HeldForBusy = false;
+    try { checkPendingDestroys(_buildBaseCtx(null, b), flush); } catch (e) { console.error('[_effectBusyEnd dp0]', e); flush(); }
     return;
   }
-  cb && cb();
+  flush();
 };
 export function isEffectProcessing() {
   if (_effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0) return true;

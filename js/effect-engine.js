@@ -10748,7 +10748,7 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
         const before = reactions.length;
         pushReaction(card, card, gs);
         // 確認・発揮待ちには、このカード自身の効果ではなく与えられた効果の文を出す
-        if (reactions.length > before) reactions[reactions.length - 1].effectText = (g.granterName ? '（「' + g.granterName + '」の効果で得た効果）\n' : '') + (g.granterText || '');
+        if (reactions.length > before) reactions[reactions.length - 1].effectText = g.granterText || '';
       });
     }
   });
@@ -16004,8 +16004,15 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (!c._grantedRecipes) c._grantedRecipes = [];
         // 付与効果の説明文: 付与元カードの効果テキストの「」内（＝付与される効果本体）
         // のみを使う。無ければ全文。
+        // デュアルカードのオプション側の効果（進化元テキストの欄）・セキュリティ効果の「」内も探す。「【〜】…」のように
+        // 効果そのものになっている「」を優先する（ベアキャットモン＆ペネトレイトブロウ BT26-057 のオプション側
+        // 「『【自分のメインフェイズ開始時】このデジモンでアタックする』の効果を与える」で、デジモン側の効果の全文が出ていた）
         const _gFullText = ctx.card ? (ctx.card.effect || '') : '';
-        const _gQuoted = /「([^」]+)」/.exec(_gFullText);
+        const _gTexts = ctx.card ? [ctx._sourceCard && ctx._sourceCard !== ctx.card ? ctx._sourceCard.evoSourceEffect : null, ctx.card.effect, ctx.card.evoSourceEffect, ctx.card.securityEffect].filter(t => t && t !== 'なし') : [];
+        const _gAllQ = [];
+        _gTexts.forEach((t) => { const re = /[「『]([^」』]+)[」』]/g; let m; while ((m = re.exec(t))) _gAllQ.push(m[1]); });
+        const _gQ = _gAllQ.find(q => /^【/.test(q)) || _gAllQ[0] || null;
+        const _gQuoted = _gQ ? [null, _gQ] : null;
         c._grantedRecipes.push({
           recipe: granted, duration: dur, side: ctx.side, kwFlag: step._grantKw || null,
           granterName: ctx.card ? ctx.card.name : '',

@@ -6823,6 +6823,9 @@ function _purgeOffFieldGrants(bs) {
         if (Array.isArray(c._grantedRecipes) && c._grantedRecipes.length > 0) c._grantedRecipes = [];
         if (Array.isArray(c._grantedKw) && c._grantedKw.length > 0) c._grantedKw = [];
         if (c._grantedOther) c._grantedOther = [];
+        // トラッシュ・手札は公開/自分のカードとして表向き（テイマーの下で裏向きだったカードの印が残り、進化元に置き直したときも
+        // 裏向きのままになっていた。ロゼモン：バーストモードの下のサンフラウモン）
+        if ((z === 'trash' || z === 'hand') && c._faceDown) delete c._faceDown;
         if (z !== 'hand' && Array.isArray(c.buffs) && c.buffs.length > 0) { c.buffs = []; if (c.dpModifier) { c.dpModifier = 0; if (c.baseDp != null) c.dp = c.baseDp; } }
       });
     });
@@ -13022,6 +13025,15 @@ function _stepLacksHandCandidate(step, card, bs, side) {
   return false;
 }
 
+// 登場したターンのデジモンは、効果でもアタックできない（公式ルール: 登場したデジモンはそのターン中アタックできない。例外は
+// ≪速攻≫と、「登場したターンにもアタックできる」と書かれた効果＝≪ヴォルテクス≫ / options:ignore_summon_turn）
+function _summonSickForEffectAttack(step, card) {
+  if (!card || !card.summonedThisTurn) return false;
+  if (card._permEffects && card._permEffects.rush) return false;
+  if (Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'keyword_rush')) return false;
+  if (step && (step._kwFlag === 'vortex' || (Array.isArray(step.options) && step.options.includes('ignore_summon_turn')))) return false;
+  return true;
+}
 function _attackStepImpossible(step, card, bs, side) {
   if (!step || step.action !== 'attack' || !card || !bs) return false;
   if (Array.isArray(step.options) && step.options.includes('without_rest')) return false;
@@ -13029,6 +13041,8 @@ function _attackStepImpossible(step, card, bs, side) {
   const me = side === 'player' ? bs.player : bs.ai;
   if (!me || !(me.battleArea || []).includes(card)) return false;
   if (card.suspended || card.cantAttack) return true;
+  // 登場したターンのデジモン（≪速攻≫無し）は、≪エグゼキュート≫等の効果でもアタックできない
+  if (_summonSickForEffectAttack(step, card)) return true;
   if (Array.isArray(step.options) && step.options.includes('digimon_only') && !step._executeAttack) {
     const opp = side === 'player' ? bs.ai : bs.player;
     if (!(opp.battleArea || []).some(c => c && c.suspended)) return true;
@@ -13959,6 +13973,11 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
   const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
   const slotIdx = atkCard ? player.battleArea.indexOf(atkCard) : -1;
   if (slotIdx === -1 || atkCard.suspended || atkCard.cantAttack) { finish(false); return; }
+  if (_summonSickForEffectAttack(step, atkCard)) {
+    ctx.addLog && ctx.addLog('⚠ 「' + atkCard.name + '」は登場したターンなのでアタックできない');
+    finish(false);
+    return;
+  }
   // 【自分のターン終了時】の効果（≪急襲≫）でのアタックは、バトルの解決が終わってから効果を完了させる。
   // そうしないとターン終了処理がそのまま進み、バトル中に相手へターンが渡ってしまう。
   // 完了の合図は battle-combat.js の checkPendingTurnEnd（アタック終了）が bs._effectAttackResolveCbs を呼ぶ
@@ -17372,7 +17391,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (ctx.bs && !_pudSelf) ctx.bs._lastPickedCard = digi;
         if (removeFromSource) removeFromSource();
         if (_pudBottom) digi.stack.push(cardToPlace); else digi.stack.unshift(cardToPlace);
-        if (_pudFaceDown) cardToPlace._faceDown = true;
+        // 表向きで置くなら、前に裏向きだった印（テイマーの下からトラッシュへ行ったカード等）を外す
+        if (_pudFaceDown) cardToPlace._faceDown = true; else delete cardToPlace._faceDown;
         ctx.addLog('🃏 「' + digi.name + '」の進化元の' + (_pudBottom ? '下' : '上') + 'に「' + cardToPlace.name + '」を置く' + (_pudFaceDown ? '（裏向き）' : ''));
         ctx.renderAll();
         if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
@@ -17477,7 +17497,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _pmFrom = picked.map(({ card }) => _pudZoneLabel(card));
           picked.forEach(({ card, remove }) => {
             remove();
-            if (_pudFaceDown) card._faceDown = true;
+            if (_pudFaceDown) card._faceDown = true; else delete card._faceDown;
             if (_pudBottom) digi.stack.push(card); else digi.stack.unshift(card);
             placed.push(card);
           });

@@ -2729,7 +2729,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
       }
     }
 
-    showSecurityCheck(sec, atk, () => fireSecurityDecreaseThen('ai', () => {
+    showSecurityCheck(sec, atk, () => fireSecurityDecreaseThen('ai', () => _secDigimonEffectFirst(sec, () => {
       // ----- セキュリティがデジモン -----
       if (sec.type === 'デジモン') {
         if (atk.dp === sec.dp) {
@@ -2984,13 +2984,39 @@ export function resolveSecurityCheck(atk, atkIdx) {
           else { checkAttackEnd(atk, atkIdx); }
         }
       }, 500);
-    }));
+    })));
     }
   }
 }
 // 貫通効果のオンライン処理用: ブロック解決(防御側)から攻撃側へ追加セキュリティチェックを依頼するため公開
 if (typeof window !== 'undefined') window._resolveSecurityCheck = resolveSecurityCheck;
 
+// チェックしたセキュリティがデジモンで【セキュリティ】効果を持つなら、セキュリティデジモンとのバトルの前に発揮する
+// （公式ルール 13-1-8-2: チェックによって誘発した効果を解決してから 13-1-8-3 のバトルへ）。オンラインは持ち主（防御側）の端末で
+// 発揮してもらう（security_effect_request）。以前はセキュリティデジモンの【セキュリティ】効果を発揮せずにバトルしていた
+// （スカージキロプモン＆デスペアブラスト BT26-075）
+function _secDigimonEffectFirst(sec, cont) {
+  let has = false;
+  try { has = !!(sec && sec.type === 'デジモン' && _hasRecipeTrigger(sec, 'security')); } catch (_) { has = false; }
+  if (!has) { cont(); return; }
+  addLog('✦ セキュリティ効果：「' + sec.name + '」（バトルの前に発揮）');
+  if (_onlineMode && _sendCommand && typeof window._waitForSecurityEffect === 'function') {
+    _sendCommand({
+      type: 'security_effect_request',
+      cardName: sec.name, cardNo: sec.cardNo || '', cardType: sec.type || '',
+      effect: sec.effect || '', securityEffect: sec.securityEffect || '',
+      recipe: typeof sec.recipe === 'object' ? JSON.stringify(sec.recipe) : (sec.recipe || ''),
+      cardImg: cardImg(sec), dp: sec.dp || 0, level: sec.level || '',
+      color: sec.color || '', feature: sec.feature || '',
+      cost: sec.cost || 0, playCost: sec.playCost || 0,
+    });
+    addLog('⏳ 相手がセキュリティ効果を処理中...');
+    window._waitForSecurityEffect(() => { _dispatchStateSync(); renderAll(); cont(); });
+    return;
+  }
+  try { _hooks.checkAndTriggerEffect(sec, '【セキュリティ】', () => { renderAll(); cont(); }, 'ai'); }
+  catch (e) { console.error('[secDigimonEffectFirst]', e); cont(); }
+}
 // 「Sアタック-N」の表示（チェック数が0になった理由）。N は Sアタック- の合計
 function _saMinusLabel(card) {
   let n = 0;

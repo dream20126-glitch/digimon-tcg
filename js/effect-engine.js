@@ -1158,7 +1158,12 @@ if (typeof window !== 'undefined') {
 // ===== キュー順序選択UI =====
 // 同レベルで誘発した効果が複数ある時、プレイヤーがどれを先に発動するか選択する
 // 全部が任意効果なら「終了する」ボタンを出し、押されたら callback(-1)（どの効果も使わない）
-function showQueueOrderSelect(entries, callback) {
+function showQueueOrderSelect(entries, callback0) {
+  // 発動順を選んでいる間は効果の処理中として数える（_orderSelectOpen。止めたアタックを続ける見張りが、選んでいる途中で
+  // 続けないように。メインフェイズ開始時の効果のアタックの後、残りのイクト/藤枝淑乃を選んでいる間にアタックが始まっていた）
+  _orderSelectOpen++;
+  let _qosDone = false;
+  const callback = (...a) => { if (!_qosDone) { _qosDone = true; _orderSelectOpen = Math.max(0, _orderSelectOpen - 1); } callback0(...a); };
   let _allOptional = entries.length > 0;
   const overlay = document.createElement('div');
   overlay.id = '_queue-order-overlay';

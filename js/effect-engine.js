@@ -18178,7 +18178,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 効果等）は、アタック宣言のタイミングで解決してから【アタック時】以降に進む。アタック宣言（レスト・対象の決定）まで行い、
       // 【アタック時】の前でアタックを止めておく（battle-combat.js afterAtkEffect の bs._attackDeclHold）。止めたアタックは、
       // 効果の処理が全て終わったとき（runPendingEffectAttack を呼ぶ所）に続ける
-      if (_queueResolveDepth > 0 && !/turn_end$/.test(String(_atkTrig || '')) && typeof window._afterAtkHoldSupported === 'function') {
+      // 反応（メインフェイズ開始時・「〜したとき」等。_runReactionEffect）の処理中も同じ（同時に誘発した他の効果が発揮待ちで残っている）
+      if ((_queueResolveDepth > 0 || _reactionRunDepth > 0) && !/turn_end$/.test(String(_atkTrig || '')) && typeof window._afterAtkHoldSupported === 'function') {
         ctx.bs._attackDeclHold = true;
         _confirmAndDeclareEffectAttack(_atkCard, step, ctx, (ok) => {
           if (!ok) { ctx.bs._attackDeclHold = false; _clearWr(); }

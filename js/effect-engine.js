@@ -37,6 +37,10 @@ const _ntpDeferredHud = [];  // 同じ並びの発揮待ち表示（null なら�
 function _tpResolutionActive(bs) {
   if (!bs) return false;
   if (bs._pendingTurnPlayerBattleTrigger || bs._pendingNonTurnPlayerBattleTrigger || bs._penetrateResume) return true;
+  // ターンプレイヤーの効果に続く操作（デュアルカードを使った後のアーツ進化〜【進化時】等。window._effectBusy）の途中・
+  // 効果でアタック宣言して止めているアタックがある間も、ターンプレイヤー側の解決中（スカージキロプモンのオプション側で消滅させた
+  // 相手のベックモンの【消滅時】が、アーツ進化より先に発揮されていた）
+  if (bs.isPlayerTurn && (_extraBusyDepth > 0 || bs._attackDeclHold || (Array.isArray(bs._heldAttackResumes) && bs._heldAttackResumes.length > 0))) return true;
   return [_effectQueue, ..._queueStack].some(q => Array.isArray(q)
     && q.some(e => e && (e.status === 'waiting' || e.status === 'processing') && e.side === 'turnPlayer'));
 }
@@ -3689,7 +3693,8 @@ function _doDestroyTamer(targetSide, tamerIdx, ctx, callback) {
   ctx.addLog && ctx.addLog('💀 「' + destroyed.name + '」（テイマー）を消滅');
   if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && destroyedSideName === 'ai' && window._onlineSendCommand) {
     window._onlineSendCommand({ type: 'card_removed', zone: 'tamer', tamerIdx: tamerIdx, cardName: destroyed.name, reason: 'destroy' });
-    window._onlineSendCommand({ type: 'fx_ownDestroyReady' });
+    // 消滅時チェーンを始めてよい合図（fx_ownDestroyReady）は、保留キューの _fireDestroyChainQueued が送る
+    // （ターンプレイヤー側の効果が残っていれば、それが全て終わってから。以前はここですぐに送っていた）
   }
   ctx.renderAll && ctx.renderAll();
   enqueueReaction(ctx.bs, _fireDestroyChainQueued, [
@@ -13975,7 +13980,11 @@ export function runPendingEffectAttack(bs, done) {
   // アタック宣言のタイミングで止めていたアタック（効果でアタック宣言した後、発揮待ちの効果を先に解決していた）を続ける
   if (bs && Array.isArray(bs._heldAttackResumes) && bs._heldAttackResumes.length > 0) {
     const r = bs._heldAttackResumes.shift();
-    try { r(); } catch (e) { console.error('[heldAttackResume]', e); }
+    const go = () => { try { r(); } catch (e) { console.error('[heldAttackResume]', e); } };
+    // アタック宣言のタイミングでは、非ターンプレイヤー側の発揮待ち（ターンプレイヤーの効果の後に回した消滅時効果等）も
+    // 解決してからカウンタータイミング以降へ（公式ルール 11-1-4）
+    if (_ntpDeferred.length > 0) { try { _flushNonTurnDeferred(bs, go); } catch (e) { console.error('[heldAttackResume ntp]', e); go(); } }
+    else go();
     done && done(true);
     return;
   }

@@ -2476,8 +2476,13 @@ function _holdAfterAttackEffects(atk, cont, ready) {
       if (busy) { _idleSince = 0; setTimeout(_watch, 300); return; }
       if (!_idleSince) _idleSince = Date.now();
       if (Date.now() - _idleSince < 800) { setTimeout(_watch, 200); return; }
+      // 続ける処理は runPendingEffectAttack に任せる（非ターンプレイヤー側の発揮待ちを先に解決する）
       const k = bs._heldAttackResumes.indexOf(_resume);
-      if (k !== -1) { bs._heldAttackResumes.splice(k, 1); _resume(); }
+      if (k !== -1) {
+        if (k > 0) { bs._heldAttackResumes.splice(k, 1); bs._heldAttackResumes.unshift(_resume); }
+        if (typeof window._runPendingEffectAttack === 'function') window._runPendingEffectAttack(bs, () => {});
+        else { bs._heldAttackResumes.shift(); _resume(); }
+      }
     };
     setTimeout(_watch, 500);
     addLog('⏳ アタック宣言のタイミング: 発揮待ちの効果を解決してから「' + atk.name + '」のアタックを続けます');

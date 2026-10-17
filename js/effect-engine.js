@@ -6480,6 +6480,7 @@ function addBuffDirect(card, type, value, duration, ctx) {
     _appliedSide: appliedSide,
     _appliedDuringOwnTurn: appliedDuringOwnTurn,
     _ticks: 0,
+    _srcType: _effectSourceTypeOf(ctx),
   };
   // 効果を受けないカードには、今は付かない。期間が続く効果は、効果を受けるようになった時点で付く
   // （公式ルール 15-15-5-2。_wakeDormantBuffs が期間切れでなければ付ける）
@@ -6516,6 +6517,24 @@ function _addDormantBuff(card, buff, srcSide, srcType) {
 // 効果を受けるようになったカードに、発揮待ちのバフを付ける
 function _wakeDormantBuffs(bs) {
   if (!bs) return;
+  // 先に、相手の効果で付いていたバフのうち、今は効果を受けないもの（効果耐性を後から得た）を発揮待ちに戻す。
+  // 効果を受けない間はその影響を受けず、受けるようになったら（期間内なら）また効く（公式ルール 15-15-5-1 / 15-15-5-2）。
+  // 全体処理のバフ（_globalId）は _refreshGlobalEffects が付け外しするので対象外。与えた効果の種別が分からないものも対象外
+  ['player', 'ai'].forEach((side) => {
+    [...(bs[side].battleArea || []), ...(bs[side].tamerArea || [])].forEach((card) => {
+      if (!card || !Array.isArray(card.buffs) || card.buffs.length === 0) return;
+      const sleep = card.buffs.filter(b => b && b.type !== 'keyword_immune' && !b._globalId && b._srcType && b._appliedSide && b._appliedSide !== side
+        && hasActiveImmuneEffects(card, b._appliedSide, b._srcType));
+      if (sleep.length === 0) return;
+      card.buffs = card.buffs.filter(b => !sleep.includes(b));
+      if (!Array.isArray(card._dormantBuffs)) card._dormantBuffs = [];
+      sleep.forEach((b) => {
+        card._dormantBuffs.push(Object.assign(b, { _immSide: b._appliedSide, _immType: b._srcType }));
+        (_BUFF_FLAG[b.type] || []).forEach((f) => { if (!card.buffs.some(x => x && x.type === b.type)) card[f] = false; });
+      });
+      try { recalcDp(card); } catch (_) {}
+    });
+  });
   ['player', 'ai'].forEach((side) => {
     [...(bs[side].battleArea || []), ...(bs[side].tamerArea || [])].forEach((card) => {
       if (!card || !Array.isArray(card._dormantBuffs) || card._dormantBuffs.length === 0) return;

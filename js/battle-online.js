@@ -1397,6 +1397,7 @@ function onRemoteCommand(cmd) {
           value: cmd.value || 0,
           duration: cmd.duration || 'dur_this_turn',
           source: 'remote',
+          _srcType: cmd.sourceType || undefined,
           _appliedSide: myAppliedSide,
           _appliedDuringOwnTurn: cmd.appliedDuringOwnTurn !== undefined ? cmd.appliedDuringOwnTurn : true,
           _ticks: 0,

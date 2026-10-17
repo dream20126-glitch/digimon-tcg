@@ -2610,9 +2610,10 @@ export function resolveSecurityCheck(atk, atkIdx) {
 
   function startChecks() {
     if (totalChecks === 0) {
-      // SA- で0回チェック → セキュリティを1枚も捲らずアタック終了
-      hideCombatBackdrop();
-      checkAttackEnd(atk, atkIdx);
+      // SA- で0回チェック → セキュリティを1枚も捲らずアタック終了。理由を両方の画面に出す
+      const _msg = _saMinusLabel(atk) + 'のため、セキュリティチェックできません';
+      if (_onlineMode && _sendCommand) { try { _sendCommand({ type: 'fx_battleResult', text: 'チェックなし', color: '#3399ff', sub: _msg }); } catch (_) {} }
+      showBattleResult('チェックなし', '#3399ff', _msg, () => { hideCombatBackdrop(); checkAttackEnd(atk, atkIdx); });
       return;
     }
     if (bs.ai.security.length > 0) {
@@ -2990,6 +2991,13 @@ export function resolveSecurityCheck(atk, atkIdx) {
 // 貫通効果のオンライン処理用: ブロック解決(防御側)から攻撃側へ追加セキュリティチェックを依頼するため公開
 if (typeof window !== 'undefined') window._resolveSecurityCheck = resolveSecurityCheck;
 
+// 「Sアタック-N」の表示（チェック数が0になった理由）。N は Sアタック- の合計
+function _saMinusLabel(card) {
+  let n = 0;
+  if (card && card._permEffects && card._permEffects.securityAttackMinus) n += parseInt(card._permEffects.securityAttackMinus, 10) || 0;
+  ((card && card.buffs) || []).forEach(b => { if (b && b.type === 'security_attack_minus') n += parseInt(b.value, 10) || 0; });
+  return 'Sアタック-' + (n || 1);
+}
 // Sアタック+計算
 function getSecurityAttackCount(card) {
   let extra = 0;
@@ -3975,8 +3983,10 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
   // Sアタック-Nでチェック数が0になっている場合はセキュリティを捲らずアタック終了
   if (_remainingChecks === 0) {
     addLog('🛡 「' + atk.name + '」のセキュリティチェック数が0のため、セキュリティをチェックしません');
-    hideCombatBackdrop();
-    if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+    showBattleResult('チェックなし', '#3399ff', _saMinusLabel(atk) + 'のため、セキュリティチェックできません', () => {
+      hideCombatBackdrop();
+      if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+    });
     return;
   }
   // _remainingChecks -1 にしてから1枚めくる。0になったら次のアタッカー/callback へ、残があればこの関数を再帰

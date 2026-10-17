@@ -10225,7 +10225,10 @@ function _withKeywordRuleText(text, steps) {
   const flags = [...new Set(steps.filter((st) => st && st._kwFlag).map((st) => st._kwFlag))];
   if (flags.length === 0) return text;
   // 説明が引けないときもキーワード名は出す（カードの効果テキストの関係ない段落を出さないため）
-  const lines = flags.map((f) => keywordRuleText(f) || ('【' + (_keywordJpName(f) || f) + '】')).filter(Boolean);
+  // 既に文に入っている説明は足さない（効果の文を作る途中で一度足した文に、もう一度足して【天昇】が2回出ていた）
+  const _norm = (t) => String(t || '').replace(/\s+/g, '');
+  const lines = flags.map((f) => keywordRuleText(f) || ('【' + (_keywordJpName(f) || f) + '】')).filter(Boolean)
+    .filter((ln) => !_norm(text).includes(_norm(ln)));
   if (lines.length === 0) return text;
   const allKw = steps.every((st) => st && st._kwFlag);
   return allKw ? lines.join('\n') : ((text ? text + '\n' : '') + lines.join('\n'));

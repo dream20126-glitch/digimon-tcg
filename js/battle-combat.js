@@ -2472,7 +2472,7 @@ function _holdAfterAttackEffects(atk, cont, ready) {
     const _watch = () => {
       if (!Array.isArray(bs._heldAttackResumes) || !bs._heldAttackResumes.includes(_resume)) return;
       // 発揮待ちの順番を選んでいる間（効果のキューに発揮待ちが残っている等）も処理中として待つ
-      const busy = !!((window._isEffectRunning && window._isEffectRunning()) || (window._isEffectProcessing && window._isEffectProcessing()));
+      const busy = !!(window._heldAttackBusy && window._heldAttackBusy());
       if (busy) { _idleSince = 0; setTimeout(_watch, 300); return; }
       if (!_idleSince) _idleSince = Date.now();
       if (Date.now() - _idleSince < 800) { setTimeout(_watch, 200); return; }

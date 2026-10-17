@@ -13976,9 +13976,20 @@ function _clearDeclaredAttackImmunity(card) {
   if (card && Array.isArray(card.buffs)) card.buffs = card.buffs.filter((b) => !(b && b._preAttack));
 }
 
+// 止めたアタックを続けられないほど効果の処理が動いているか（効果の処理中・発揮待ちのキュー・発動順の選択中等）
+function _heldAttackBusy(bs) {
+  return _effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0 || _reactionRunDepth > 0
+    || _orderSelectOpen > 0 || _targetSelecting || _effectQueue.some(e => e && (e.status === 'waiting' || e.status === 'processing'))
+    || !!(bs && bs._reactionCollector);
+}
+if (typeof window !== 'undefined') window._heldAttackBusy = () => _heldAttackBusy(window._lastBattleState);
 export function runPendingEffectAttack(bs, done) {
   // アタック宣言のタイミングで止めていたアタック（効果でアタック宣言した後、発揮待ちの効果を先に解決していた）を続ける
   if (bs && Array.isArray(bs._heldAttackResumes) && bs._heldAttackResumes.length > 0) {
+    // まだ効果の処理が残っている（メインフェイズ開始時の他の効果を処理中等）なら続けない。効果の処理が全て終わった
+    // 後の呼び出し（またはアタックを止めたときの見張り）で続ける。続ける予定があるので「アタックを始めた」扱いで返す
+    // （以前は効果の途中の呼び出し＝効果で登場/使用した後の checkPlayerPendingTurnEnd 等でもすぐ続けていた）
+    if (_heldAttackBusy(bs)) { done && done(true); return; }
     const r = bs._heldAttackResumes.shift();
     const go = () => { try { r(); } catch (e) { console.error('[heldAttackResume]', e); } };
     // アタック宣言のタイミングでは、非ターンプレイヤー側の発揮待ち（ターンプレイヤーの効果の後に回した消滅時効果等）も

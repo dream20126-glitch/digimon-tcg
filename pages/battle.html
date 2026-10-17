@@ -243,8 +243,9 @@
 <div id="battle-log" style="display:none; position:fixed; bottom:160px; left:50%; transform:translateX(-50%); width:calc(100% - 24px); max-width:560px; background:rgba(0,0,0,0.8); border:1px solid #333; border-radius:8px; padding:6px 12px; font-size:11px; color:#aaa; pointer-events:none; z-index:1000; text-align:center;"></div>
 
 <!-- カード詳細（拡大画像＋効果＋進化元効果） -->
-<div id="b-card-detail" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:50000; align-items:center; justify-content:center; padding:20px; overflow-y:auto;">
-  <div style="background:#0a0a0a; border:1px solid var(--main-cyan); border-radius:12px; padding:20px; max-width:320px; width:100%; text-align:center;">
+<!-- 縦に長い内容（付与中の効果・進化元効果が多い）でも上下が見切れないよう、上揃え＋中の箱を margin:auto で中央寄せ（収まるときは中央、はみ出すときは上からスクロール） -->
+<div id="b-card-detail" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:50000; align-items:flex-start; justify-content:center; padding:20px; overflow-y:auto; -webkit-overflow-scrolling:touch;">
+  <div style="background:#0a0a0a; border:1px solid var(--main-cyan); border-radius:12px; padding:20px; max-width:320px; width:100%; text-align:center; margin:auto;">
     <img id="bcd-img" src="" style="width:160px; border-radius:8px; margin-bottom:12px; border:1px solid var(--main-cyan);">
     <div id="bcd-name" style="color:#fff; font-weight:bold; font-size:14px; margin-bottom:8px;"></div>
     <div id="bcd-stats" style="font-size:12px; color:var(--main-cyan); margin-bottom:10px;"></div>

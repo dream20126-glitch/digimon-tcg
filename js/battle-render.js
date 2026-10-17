@@ -1834,6 +1834,8 @@ export function showBCD(idxOrCard, source) {
 
   document.body.appendChild(bcd);
   bcd.style.display = 'flex';
+  // 縦に長い内容でも上から見られるように、開くたびに一番上へ
+  bcd.scrollTop = 0;
 
   // チュートリアル: カード詳細を開いた
   if (typeof window !== 'undefined' && window._tutorialRunner && window._tutorialRunner.active) {

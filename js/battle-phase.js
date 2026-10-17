@@ -667,7 +667,8 @@ function execMain() {
       // メインフェイズ開始時の効果で「このデジモンでアタックする」（効果で与えられたものを含む。ベアキャットモン＆
       // ペネトレイトブロウ BT26-057）は、効果の処理が終わってから行う（保留していたアタックをここで宣言する。
       // 以前は対象を選んだあと保留したまま、アタックせずに終わっていた）
-      if (Array.isArray(bs._pendingEffectAttacks) && bs._pendingEffectAttacks.length > 0 && typeof window._runPendingEffectAttack === 'function') {
+      if (((Array.isArray(bs._pendingEffectAttacks) && bs._pendingEffectAttacks.length > 0) || (Array.isArray(bs._heldAttackResumes) && bs._heldAttackResumes.length > 0))
+          && typeof window._runPendingEffectAttack === 'function') {
         window._runPendingEffectAttack(bs, () => { renderAll(); });
       }
     });

@@ -12576,7 +12576,12 @@ function _reactionNeedsUserInput(reaction) {
 
 // ===== リアクション順番選択 UI =====
 // 「どちらから発動しますか？」モーダル。カードと効果テキストを並べ、タップで選択。
-function showReactionOrderSelect(reactions, triggerKey, callback) {
+// 発動順の選択画面を開いている数（window._isEffectRunning に数える。止めたアタックを続ける保険が、選んでいる途中で続けないように）
+let _orderSelectOpen = 0;
+function showReactionOrderSelect(reactions, triggerKey, callback0) {
+  _orderSelectOpen++;
+  let _osDone = false;
+  const callback = (...a) => { if (!_osDone) { _osDone = true; _orderSelectOpen = Math.max(0, _orderSelectOpen - 1); } callback0(...a); };
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;animation:fadeIn 0.2s ease;';
 
@@ -13960,6 +13965,13 @@ function _clearDeclaredAttackImmunity(card) {
 }
 
 export function runPendingEffectAttack(bs, done) {
+  // アタック宣言のタイミングで止めていたアタック（効果でアタック宣言した後、発揮待ちの効果を先に解決していた）を続ける
+  if (bs && Array.isArray(bs._heldAttackResumes) && bs._heldAttackResumes.length > 0) {
+    const r = bs._heldAttackResumes.shift();
+    try { r(); } catch (e) { console.error('[heldAttackResume]', e); }
+    done && done(true);
+    return;
+  }
   const list = bs && bs._pendingEffectAttacks;
   if (!Array.isArray(list) || list.length === 0) { done && done(false); return; }
   const e = list.shift();
@@ -18155,6 +18167,18 @@ function executeRecipeStep(step, ctx, store, callback) {
       // checkPlayerPendingTurnEnd 等）順に行うよう保留する。【自分のターン終了時】（≪急襲≫）のアタックは
       // 効果の完了をバトル解決まで待つ専用処理があるため対象外
       const _atkTrig = ctx.block && ctx.block.trigger && ctx.block.trigger.code;
+      // 公式ルール 11-1-4: アタック宣言はこの効果の処理の中で行い、まだ発揮していない他の効果（同時に誘発したメインフェイズ開始時の
+      // 効果等）は、アタック宣言のタイミングで解決してから【アタック時】以降に進む。アタック宣言（レスト・対象の決定）まで行い、
+      // 【アタック時】の前でアタックを止めておく（battle-combat.js afterAtkEffect の bs._attackDeclHold）。止めたアタックは、
+      // 効果の処理が全て終わったとき（runPendingEffectAttack を呼ぶ所）に続ける
+      if (_queueResolveDepth > 0 && !/turn_end$/.test(String(_atkTrig || '')) && typeof window._afterAtkHoldSupported === 'function') {
+        ctx.bs._attackDeclHold = true;
+        _confirmAndDeclareEffectAttack(_atkCard, step, ctx, (ok) => {
+          if (!ok) { ctx.bs._attackDeclHold = false; _clearWr(); }
+          callback();
+        });
+        break;
+      }
       if (_queueResolveDepth > 0 && !/turn_end$/.test(String(_atkTrig || ''))) {
         if (!Array.isArray(ctx.bs._pendingEffectAttacks)) ctx.bs._pendingEffectAttacks = [];
         ctx.bs._pendingEffectAttacks.push({ card: _atkCard, step, turn: ctx.bs.turn, ctx: { bs: ctx.bs, side: ctx.side, card: ctx.card, addLog: ctx.addLog, renderAll: ctx.renderAll } });
@@ -19349,11 +19373,11 @@ export function hasOwnPendingEffectsShown() {
   try { return _hudAllItems().some(it => it && it.side === 'player'); } catch (_) { return false; }
 }
 // バトル開始時や、処理中のまま解除されなかった場合（完了コールバックが呼ばれない経路の不具合）に戻す
-export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; _reactionRunDepth = 0; }
+export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; _reactionRunDepth = 0; _orderSelectOpen = 0; }
 if (typeof window !== 'undefined') {
   window._isEffectProcessing = isEffectProcessing;
   // 今まさに効果を処理しているか（保留中の「〜したとき」の反応・発揮待ちは数えない）
-  window._isEffectRunning = () => _effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0 || _targetSelecting || _reactionRunDepth > 0;
+  window._isEffectRunning = () => _effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0 || _targetSelecting || _reactionRunDepth > 0 || _orderSelectOpen > 0;
   window._resetEffectProcessing = resetEffectProcessing;
   // 何も処理していないのに残っている発揮待ち（保留中の「〜したとき」の反応・効果のキュー）の中身（調査用）と、それを処理する入口。
   // オンラインで相手がターンを終える前の問い合わせ（fx_idleCheck）に、残ったままで返事ができず止まっていた

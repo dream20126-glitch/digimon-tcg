@@ -2048,10 +2048,12 @@ function playerSpendMemory(cost, defer) {
 function checkPlayerPendingTurnEnd(opts) {
   // 保留中のアタックは、メモリーが相手側に移っていてもターン内に発揮された効果なので先に行い、
   // 全て終わってからターン終了判定をする（2件目以降・最後の判定はアタック終了時の checkPendingTurnEnd が続ける）
-  const hasPendingAttack = Array.isArray(bs._pendingEffectAttacks) && bs._pendingEffectAttacks.length > 0 && typeof window._runPendingEffectAttack === 'function';
+  const _hasHeld = Array.isArray(bs._heldAttackResumes) && bs._heldAttackResumes.length > 0;
+  const hasPendingAttack = ((Array.isArray(bs._pendingEffectAttacks) && bs._pendingEffectAttacks.length > 0) || _hasHeld) && typeof window._runPendingEffectAttack === 'function';
   if (hasPendingAttack) {
     // 外側の効果処理の途中 / 別のアタック中なら、そちらの完了時に改めて処理される
-    if ((opts && opts.noFlush) || _attackInProgress) return;
+    // （アタック宣言のタイミングで止めたアタックは、アタック中でも続ける）
+    if ((opts && opts.noFlush) || (_attackInProgress && !_hasHeld)) return;
     window._runPendingEffectAttack(bs, (started) => { if (!started) checkPendingTurnEndOnly(); });
     return;
   }
@@ -2079,8 +2081,9 @@ let _attackInProgress = false; // アタック処理中フラグ（操作ロッ�
 if (typeof window !== 'undefined') window._isAttackInProgress = () => _attackInProgress;
 // 起動効果（デジモン/テイマーの【メイン】）の完了時用: 保留中の効果アタックだけを行う（ターン終了判定はしない）
 if (typeof window !== 'undefined') window._flushPendingEffectAttacks = () => {
-  if (_attackInProgress || !bs.isPlayerTurn) return;
-  if (Array.isArray(bs._pendingEffectAttacks) && bs._pendingEffectAttacks.length > 0 && typeof window._runPendingEffectAttack === 'function') {
+  const _hasHeld = Array.isArray(bs._heldAttackResumes) && bs._heldAttackResumes.length > 0;
+  if ((_attackInProgress && !_hasHeld) || !bs.isPlayerTurn) return;
+  if (((Array.isArray(bs._pendingEffectAttacks) && bs._pendingEffectAttacks.length > 0) || _hasHeld) && typeof window._runPendingEffectAttack === 'function') {
     // メモリーが相手側に移っていても保留中のアタックを先に行い、その後でターン終了判定
     window._runPendingEffectAttack(bs, (started) => { if (!started) checkPendingTurnEndOnly(); });
   }
@@ -2444,7 +2447,31 @@ export function resolveAttackTarget(target, targetIdx) {
 // カード自身の【アタック時】効果（あれば）を先に解決し、その後に突進等キーワードの
 // on_attack型効果（redirect_attack等）を、カード自身の効果とは独立した確認ダイアログで
 // 発動する（アタック宣言後、最終的にアタックする直前に突進が発動する、という順序）
+if (typeof window !== 'undefined') window._afterAtkHoldSupported = () => true;
 function afterAtkEffect(atk, atkSlotIdx, callback) {
+  // 効果でアタック宣言した（「このデジモンでアタックする」）: まだ発揮していない他の効果を先に解決するため、
+  // 【アタック時】の前で止める（公式ルール 11-1-4）。効果の処理が全て終わったら runPendingEffectAttack が続ける
+  if (bs._attackDeclHold) {
+    bs._attackDeclHold = false;
+    if (!Array.isArray(bs._heldAttackResumes)) bs._heldAttackResumes = [];
+    const _resume = () => afterAtkEffect(atk, atkSlotIdx, callback);
+    bs._heldAttackResumes.push(_resume);
+    // 保険: 続ける呼び出しが無い経路でも止まったままにならないよう、効果の処理が無い状態が少し続いたら続ける
+    let _idleSince = 0;
+    const _watch = () => {
+      if (!Array.isArray(bs._heldAttackResumes) || !bs._heldAttackResumes.includes(_resume)) return;
+      // 発揮待ちの順番を選んでいる間（効果のキューに発揮待ちが残っている等）も処理中として待つ
+      const busy = !!((window._isEffectRunning && window._isEffectRunning()) || (window._isEffectProcessing && window._isEffectProcessing()));
+      if (busy) { _idleSince = 0; setTimeout(_watch, 300); return; }
+      if (!_idleSince) _idleSince = Date.now();
+      if (Date.now() - _idleSince < 800) { setTimeout(_watch, 200); return; }
+      const k = bs._heldAttackResumes.indexOf(_resume);
+      if (k !== -1) { bs._heldAttackResumes.splice(k, 1); _resume(); }
+    };
+    setTimeout(_watch, 500);
+    addLog('⏳ アタック宣言のタイミング: 発揮待ちの効果を解決してから「' + atk.name + '」のアタックを続けます');
+    return;
+  }
   _hooks.checkAndTriggerEffect(atk, '【アタック時】', () => {
     // subject:"both"（お互いのターンでアタック時発動）の進化元効果を相手側で反応させる
     _hooks.fireOnAttackBothSubjectTriggers('player', () => {

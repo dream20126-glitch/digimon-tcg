@@ -296,6 +296,10 @@ function serializeCardForCmd(c) {
 
 export function sendCommand(cmd) {
   if (!_onlineMode || !_onlineRoomId) return;
+  // 相手のカードに付けるバフには、与えた効果の種別（デジモン/オプション/テイマー）を付ける（受け取った側の「効果を受けない」判定用）
+  if (cmd && cmd.type === 'fx_remoteBuff' && !cmd.sourceType && typeof window._curEffectSourceType === 'function') {
+    try { const _st = window._curEffectSourceType(); if (_st) cmd = Object.assign({}, cmd, { sourceType: _st }); } catch (_) {}
+  }
   // 3枚以上のまとめての移動は一覧の演出（fx_moveBatch）を送り済みなので、1枚ずつの移動演出は送らない
   if (cmd && (cmd.type === 'fx_remoteCardMove' || cmd.type === 'fx_remoteSelfEvoDiscard') && window._fxMoveBatchSkip > 0
       && !(window._fxMoveBatchSkipAt && Date.now() - window._fxMoveBatchSkipAt > 20000)) return;
@@ -1369,6 +1373,19 @@ function onRemoteCommand(cmd) {
       const _buffZone = cmd.senderOwn ? 'ai' : 'player';
       // zone:'tamer' ならテイマーエリアのカード（「アクティブにならない」等、テイマーにも付く効果）
       const myCard = (cmd.zone === 'tamer' ? (bs[_buffZone].tamerArea || []) : bs[_buffZone].battleArea)[cmd.targetIdx];
+      // 相手の効果を受けない間に与えられた効果は、今は付けず、効果を受けるようになったときに（まだ期間内なら）付ける
+      // （公式ルール 15-15-5-2。相手のカードに付ける効果＝senderOwn なしのときだけ）
+      if (myCard && !cmd.senderOwn && typeof window._isImmuneFrom === 'function' && window._isImmuneFrom(myCard, 'ai', cmd.sourceType)) {
+        const senderSide0 = cmd.appliedFromSender || 'player';
+        window._addDormantBuff(myCard, {
+          type: cmd.buffType, value: cmd.value || 0, duration: cmd.duration || 'dur_this_turn', source: 'remote',
+          _appliedSide: senderSide0 === 'player' ? 'ai' : 'player',
+          _appliedDuringOwnTurn: cmd.appliedDuringOwnTurn !== undefined ? cmd.appliedDuringOwnTurn : true, _ticks: 0,
+        }, 'ai', cmd.sourceType);
+        addLog('🛡 「' + myCard.name + '」は相手の効果を受けない（効果を受けるようになったときに、まだ期間内なら付く）');
+        renderAll();
+        break;
+      }
       if (myCard) {
         if (!myCard.buffs) myCard.buffs = [];
         // 送信側 _appliedSide を受信側目線に反転

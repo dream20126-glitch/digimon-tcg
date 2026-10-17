@@ -3798,7 +3798,7 @@ function _refreshSideEntry(e, ctx) {
 function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb0) {
   const cb = (list) => cb0((list || []).map((e) => _refreshSideEntry(e, ctx)));
   // 相手の「効果を受けない」カードは候補から外す
-  cands = (cands || []).filter(e => !(e && !e.own && _isImmuneToEffect(e.card, ctx)));
+  if (!_stepAllowsImmunePick) cands = (cands || []).filter(e => !(e && !e.own && _isImmuneToEffect(e.card, ctx)));
   const want = Math.min(n || 1, cands.length);
   if (want <= 0) { cb([]); return; }
   if (effSide === 'ai') {
@@ -3926,7 +3926,7 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
   if (Array.isArray(validIndices) && _curEffectCtx && typeof window !== 'undefined' && window._lastBattleState) {
     const _b = window._lastBattleState;
     const _cardAt = (v) => targetSide === 'both' ? _boardCardOf(_b, v) : ((targetSide === 'ai' ? _b.ai : _b.player).battleArea || [])[v];
-    const _kept = validIndices.filter(v => !_isImmuneToEffect(_cardAt(v)));
+    const _kept = _stepAllowsImmunePick ? validIndices : validIndices.filter(v => !_isImmuneToEffect(_cardAt(v)));
     if (_kept.length !== validIndices.length) {
       if (_kept.length === 0) { console.log('[showTargetSelection] 候補が全て効果を受けない'); callback(null); return; }
       validIndices = _kept;
@@ -6047,7 +6047,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
 function showCardListPicker(candidates, wantCount, title, callback, labelOf) {
   // 場のカードのうち、実行中の効果を受けないもの（相手の「効果を受けない」）は候補から外す
   if (Array.isArray(candidates) && _curEffectCtx) {
-    const _kept = candidates.filter(c => !_isImmuneToEffect(c));
+    const _kept = _stepAllowsImmunePick ? candidates : candidates.filter(c => !_isImmuneToEffect(c));
     if (_kept.length !== candidates.length) {
       if (_kept.length === 0) { callback([]); return; }
       candidates = _kept;
@@ -6457,7 +6457,7 @@ function _globalEffectExpires(g, timing, endingSide) {
 function addBuffDirect(card, type, value, duration, ctx) {
   if (!card) return;
   // 相手の効果を受けないカードには付けない（自分への付与・常時効果の再計算は ctx.side が同じ側なので対象外）
-  if (ctx && ctx.side && type !== 'keyword_immune' && _isImmuneToEffect(card, ctx)) { ctx.addLog && ctx.addLog('🛡 「' + card.name + '」は効果を受けない'); return; }
+  const _immuneNow = !!(ctx && ctx.side && type !== 'keyword_immune' && _isImmuneToEffect(card, ctx));
   if (!card.buffs) card.buffs = [];
   let appliedSide = null;
   if (ctx && ctx.side) {
@@ -6474,13 +6474,21 @@ function addBuffDirect(card, type, value, duration, ctx) {
     const turnSide = ctx.bs.isPlayerTurn ? 'player' : 'ai';
     appliedDuringOwnTurn = (turnSide === appliedSide);
   }
-  card.buffs.push({
+  const _nb = {
     type, value, duration,
     source: ctx && ctx.card ? ctx.card.cardNo : '',
     _appliedSide: appliedSide,
     _appliedDuringOwnTurn: appliedDuringOwnTurn,
     _ticks: 0,
-  });
+  };
+  // 効果を受けないカードには、今は付かない。期間が続く効果は、効果を受けるようになった時点で付く
+  // （公式ルール 15-15-5-2。_wakeDormantBuffs が期間切れでなければ付ける）
+  if (_immuneNow) {
+    _addDormantBuff(card, _nb, ctx.side, _effectSourceTypeOf(ctx));
+    ctx.addLog && ctx.addLog('🛡 「' + card.name + '」は効果を受けない（効果を受けるようになったときに、まだ期間内なら付く）');
+    return false;
+  }
+  card.buffs.push(_nb);
   recalcDp(card);
   // キーワードバフ追加時は cond_self_keyword 等の条件結果が変わるため永続効果を再評価
   if (typeof type === 'string' && type.indexOf('keyword_') === 0 && ctx && ctx.bs && !ctx._inApplyPerm) {
@@ -6494,6 +6502,51 @@ function addBuffDirect(card, type, value, duration, ctx) {
 }
 
 if (typeof window !== 'undefined') window._recalcDp = (c) => { if (c && Array.isArray(c.buffs)) recalcDp(c); };
+// ===== 効果を受けない間に与えられた効果（発揮待ちのバフ。公式ルール 15-15-5-2 / 15-15-5-3） =====
+// card._dormantBuffs: [バフ（_immSide: 与えた側, _immType: 与えた効果の種別）]。期間の判定は通常のバフと同じ（expireBuffs）
+const _BUFF_FLAG = { cant_rest: ['cantRest'], cant_evolve: ['cantEvolve'], cant_attack: ['cantAttack'], cant_block: ['cantBlock'],
+  cant_attack_block: ['cantAttack', 'cantBlock'], cant_redirect_attack: ['cantRedirectAttack'] };
+function _addDormantBuff(card, buff, srcSide, srcType) {
+  if (!card || !buff) return;
+  if (!Array.isArray(card._dormantBuffs)) card._dormantBuffs = [];
+  card._dormantBuffs.push(Object.assign(buff, { _immSide: srcSide, _immType: srcType }));
+  // 与える処理が先に立てた状態の印（cantRest 等）は、実際に付いているバフが無ければ外す
+  (_BUFF_FLAG[buff.type] || []).forEach((f) => { if (!(card.buffs || []).some(b => b && b.type === buff.type)) card[f] = false; });
+}
+// 効果を受けるようになったカードに、発揮待ちのバフを付ける
+function _wakeDormantBuffs(bs) {
+  if (!bs) return;
+  ['player', 'ai'].forEach((side) => {
+    [...(bs[side].battleArea || []), ...(bs[side].tamerArea || [])].forEach((card) => {
+      if (!card || !Array.isArray(card._dormantBuffs) || card._dormantBuffs.length === 0) return;
+      const still = [];
+      card._dormantBuffs.forEach((b) => {
+        if (hasActiveImmuneEffects(card, b._immSide, b._immType)) { still.push(b); return; }
+        delete b._immSide; delete b._immType; delete b._dormant;
+        if (!Array.isArray(card.buffs)) card.buffs = [];
+        card.buffs.push(b);
+        (_BUFF_FLAG[b.type] || []).forEach((f) => { card[f] = true; });
+        try {
+          const _l = typeof window !== 'undefined' && window._addLog;
+          const _lbl = { cant_rest: 'レストできない', cant_evolve: '進化できない', cant_attack: 'アタックできない', cant_block: 'ブロックできない',
+            cant_attack_block: 'アタック・ブロックできない', prevent_unsuspend: 'アクティブにならない', dp_minus: 'DP-' + (b.value || ''), dp_plus: 'DP+' + (b.value || ''),
+            security_attack_minus: 'Sアタック-' + (b.value || ''), security_attack_plus: 'Sアタック+' + (b.value || '') };
+          const _nm = _lbl[b.type] || ((b.type || '').indexOf('keyword_') === 0 ? (_keywordJpName(b.type.slice(8)) || b.type) : b.type);
+          _l && _l('🔓 「' + card.name + '」が効果を受けるようになったので、与えられていた効果（' + _nm + '）が付いた');
+        } catch (_) {}
+      });
+      card._dormantBuffs = still;
+      try { recalcDp(card); } catch (_) {}
+    });
+  });
+}
+if (typeof window !== 'undefined') {
+  window._isImmuneFrom = (card, side, type) => { try { return hasActiveImmuneEffects(card, side, type); } catch (_) { return false; } };
+  window._addDormantBuff = _addDormantBuff;
+  window._wakeDormantBuffs = (b) => _wakeDormantBuffs(b || window._lastBattleState);
+  // 相手に送るバフ（fx_remoteBuff）に、与えた効果の種別を付ける（受け取った側で「効果を受けない」かを判定する）
+  window._curEffectSourceType = () => _effectSourceTypeOf(_curEffectCtx);
+}
 function recalcDp(card) {
   // baseDpは初回のみ設定。以降は変更しない
   if (card.baseDp === undefined || card.baseDp === null) {
@@ -6549,6 +6602,29 @@ if (typeof window !== 'undefined') window._clearCollisionBlockers = (b) => clear
 
 export function expireBuffs(bs, timing, ownerSide, endingSide) {
   if (!endingSide) endingSide = bs.isPlayerTurn ? 'player' : 'ai';
+  // 発揮待ちのバフ（効果を受けない間に与えられたもの）も同じ規則で期限切れにする（一時的に buffs に混ぜ、最後に戻す）
+  ['player', 'ai'].forEach((sd) => {
+    [...(bs[sd].battleArea || []), ...(bs[sd].tamerArea || [])].forEach((c) => {
+      if (!c || !Array.isArray(c._dormantBuffs) || c._dormantBuffs.length === 0) return;
+      if (!Array.isArray(c.buffs)) c.buffs = [];
+      c._dormantBuffs.forEach((b) => { b._dormant = true; c.buffs.push(b); });
+      c._dormantBuffs = [];
+    });
+  });
+  try { return _expireBuffsBody(bs, timing, ownerSide, endingSide); }
+  finally {
+    ['player', 'ai'].forEach((sd) => {
+      [...(bs[sd].battleArea || []), ...(bs[sd].tamerArea || [])].forEach((c) => {
+        if (!c || !Array.isArray(c.buffs) || !c.buffs.some(b => b && b._dormant)) return;
+        c._dormantBuffs = c.buffs.filter(b => b && b._dormant);
+        c.buffs = c.buffs.filter(b => !(b && b._dormant));
+        try { recalcDp(c); } catch (_) {}
+      });
+    });
+    try { _wakeDormantBuffs(bs); } catch (e) { console.error('[wakeDormantBuffs]', e); }
+  }
+}
+function _expireBuffsBody(bs, timing, ownerSide, endingSide) {
   clearCollisionBlockers(bs);
   _purgeOffFieldGrants(bs);
   console.log('[expire]', timing, 'endingSide=' + endingSide);
@@ -6740,6 +6816,7 @@ export function applyPermanentEffects(bs, side, context) {
   if (!_keepSynced) {
     const _r = _applyPermanentEffectsImpl(bs, side, context);
     try { _refreshGlobalEffects(bs, side); } catch (e) { console.error('[refreshGlobalEffects]', e); }
+    try { _wakeDormantBuffs(bs); } catch (_) {}
     return _r;
   }
   const _cards = [...(bs.ai.battleArea || []), ...(bs.ai.tamerArea || [])].filter(Boolean);
@@ -14131,7 +14208,12 @@ function _cannotBeActivated(card) {
   return !!(card && Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'prevent_unsuspend'));
 }
 
+// 今処理している手順が「期間のある効果」か（効果を受けないカードも対象に選べる。公式ルール 15-15-5-3。
+// 選んでも、効果を受けない間は付かない＝発揮待ちのバフになる）。その場で終わる効果（消滅・レスト等）では従来どおり候補から外す
+let _stepAllowsImmunePick = false;
 function executeRecipeStep(step, ctx, store, callback) {
+  _stepAllowsImmunePick = !!(step && step.duration && !_COST_STEP_SET.has(step)
+    && !/until_(battle|attack)_end/.test(String(normalizeRecipeDuration(step.duration) || step.duration)));
   // trigger_conditions ゲート: 発火元カードへのフィルタが NG ならステップスキップ
   if (!checkStepTriggerConditions(step, ctx)) {
     console.log('[executeRecipeStep] trigger_conditions blocked → skip step');
@@ -18762,8 +18844,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _crDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
       const _crApply = (c) => {
         c.cantRest = true;
-        addBuffDirect(c, 'cant_rest', 0, _crDur, ctx);
-        ctx.addLog('🔒 「' + c.name + '」はレストできない');
+        if (addBuffDirect(c, 'cant_rest', 0, _crDur, ctx) !== false) ctx.addLog('🔒 「' + c.name + '」はレストできない');
         // 相手のカードなら相手の端末にも付ける（state_sync は持ち主の状態で上書きするため。メールモン BT26-019 の
         // 【リンク時】で選んだカードに「レスト不可」が付かなかった）
         if (_crIsOpponent) _sendRemoteStatusBuff(ctx, opponent, c, 'cant_rest', _crDur);

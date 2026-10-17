@@ -17862,8 +17862,17 @@ function executeRecipeStep(step, ctx, store, callback) {
     // === セキュリティを選んで破棄 ===
     case 'security_trash_select': {
       const _stsTgtStr = String(step.target || '');
-      // most_security_player: 最もセキュリティ枚数が多いプレイヤー1人。同数の場合は
-      // 効果の発動者（自分）が対象になる（公式ルールの「同数なら効果の発動者が選ぶ」に準拠した簡略化）
+      // most_security_player: 最もセキュリティ枚数が多いプレイヤー1人。同数なら効果の発動者が選ぶ
+      // （ムラサメモン＆豪ノ斬・叢時雨 BT26-031。以前は同数だと必ず自分のセキュリティだった）。CPU は自分のセキュリティ
+      if (_stsTgtStr.startsWith('most_security_player') && player.security.length === opponent.security.length
+          && player.security.length > 0 && ctx.side === 'player') {
+        showAltActionChoice(['自分のセキュリティ', '相手のセキュリティ'], (ci) => {
+          const st2 = Object.assign({}, step, { target: ci === 1 ? 'opponent:1' : 'own:1' });
+          if (_COST_STEP_SET.has(step)) _COST_STEP_SET.add(st2);
+          executeRecipeStep(st2, ctx, store, callback);
+        }, '🛡 セキュリティの枚数が同じです。どちらのセキュリティを破棄しますか？');
+        break;
+      }
       const owner = _stsTgtStr.startsWith('most_security_player')
         ? (opponent.security.length > player.security.length ? opponent : player)
         : (_stsTgtStr.startsWith('own') ? player : opponent);

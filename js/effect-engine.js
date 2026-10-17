@@ -6320,7 +6320,8 @@ function _registerGlobalEffect(ctx, targetSide, opts) {
     id: 'g' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
     targetSide, ownerSide: ctx.side, filter: opts.filter || null, conds: opts.conds || null,
     type: opts.type, value: opts.value || 0, duration: opts.duration, sourceType: opts.sourceType || null,
-    immuneFrom: opts.immuneFrom || null,
+    // 相手のカードへの全体処理は、効果を受けないカードには付かない（効果を受けるようになったら付く。_globalEffectMatches）
+    immuneFrom: opts.immuneFrom || (targetSide !== ctx.side ? (_effectSourceTypeOf(ctx) || 'any') : null),
     source: ctx.card ? ctx.card.cardNo : '', _appliedSide: ctx.side, _appliedDuringOwnTurn: turnSide === ctx.side, _ticks: 0,
   };
   bs._globalEffects.push(g);
@@ -6379,7 +6380,9 @@ function _registerStateAllEffect(ctx, isOpp, type, duration, filter, conds, appl
   if (!filter || !_GLOBAL_EFFECT_DURATIONS.has(duration)) return false;
   const targetSide = isOpp ? (ctx.side === 'player' ? 'ai' : 'player') : ctx.side;
   const online = typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode();
-  const opts = { type, value: 0, duration, filter, conds: (conds && conds.length) ? conds : null };
+  // 相手のカードへの全体処理は、効果を受けないカードには付けない（受けるようになったら付く）。相手の端末にも種別を送る
+  const opts = { type, value: 0, duration, filter, conds: (conds && conds.length) ? conds : null,
+    immuneFrom: isOpp ? (_effectSourceTypeOf(ctx) || 'any') : null };
   if (isOpp && online) {
     if (ctx.side !== 'player') return false;
     (applyNowList || []).forEach(applyNow);
@@ -16191,15 +16194,17 @@ function executeRecipeStep(step, ctx, store, callback) {
           .filter(c => c && cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card));
         // 期限つきなら、あとからその状態になったカードにも付く継続する全体処理にする
         if (_registerStateAllEffect(ctx, _naIsOpp, 'prevent_unsuspend', _naDurAll, step.filter, null, _naList, (c) => addBuffDirect(c, 'prevent_unsuspend', 0, _naDurAll, ctx))) {
-          _naList.forEach(c => ctx.addLog('🔒 「' + c.name + '」はアクティブにならない'));
+          // 効果を受けないカードには付かない（受けるようになったら付く）ので、その旨を出す
+          _naList.forEach(c => ctx.addLog(_isImmuneToEffect(c, ctx)
+            ? '🛡 「' + c.name + '」は効果を受けない（効果を受けるようになったときに、まだ期間内なら付く）'
+            : '🔒 「' + c.name + '」はアクティブにならない'));
           ctx.renderAll && ctx.renderAll();
           callback();
           break;
         }
         if (_naList.length === 0) ctx.addLog('⚠ 対象がいません');
         _naList.forEach(c => {
-          addBuffDirect(c, 'prevent_unsuspend', 0, _naDurAll, ctx);
-          ctx.addLog('🔒 「' + c.name + '」はアクティブにならない');
+          if (addBuffDirect(c, 'prevent_unsuspend', 0, _naDurAll, ctx) !== false) ctx.addLog('🔒 「' + c.name + '」はアクティブにならない');
           if (_naIsOpp) _sendRemotePreventUnsuspend(ctx, opponent, c, _naDurAll);
         });
       } else if (all) {

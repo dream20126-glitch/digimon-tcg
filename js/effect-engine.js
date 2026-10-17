@@ -8698,6 +8698,12 @@ function checkPendingDestroys(ctx, callback) {
       // 「消滅予定」の印は DP0 以下になったときに付く。今の DP が 0 より大きければ（DP+ で戻った・一度トラッシュに
       // 行ってから再登場した等）印を外して消滅させない（セブンコードPAD でトラッシュから再登場したロープレモンが、
       // 前に DP0 で付いた印のせいでまた消滅していた）
+      // オンラインの相手のデジモンは、相手の端末からの状態の同期で作り直されると「消滅予定」の印が消える。DP が0以下なら印を付け直す
+      // （アーツ進化が終わるまで消滅の依頼を保留している間に同期が届き、ムラサメモン＆豪ノ斬・叢時雨で DP0 にしたベックモンが
+      // いつまでも消滅しなかった）
+      if (side === 'ai' && area[i] && !area[i]._pendingDestroy && !['テイマー', 'オプション'].includes(String(area[i].type || '')) && area[i].dp != null && area[i].dp !== ''
+          && !isNaN(parseInt(area[i].dp, 10)) && parseInt(area[i].dp, 10) <= 0
+          && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) area[i]._pendingDestroy = true;
       if (area[i] && area[i]._pendingDestroy && (parseInt(area[i].dp, 10) || 0) > 0) { area[i]._pendingDestroy = false; delete area[i]._dp0RequestSent; }
       if (area[i] && area[i]._pendingDestroy) {
         // 消滅の処理中（演出・「離れるとき」の確認中）のカードは、その途中で走った別の判定では扱わない

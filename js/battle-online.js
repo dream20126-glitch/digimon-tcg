@@ -2194,7 +2194,7 @@ function checkOnlineBlock(cmd) {
   const forced = !!cmd.atkCollision;
   const blockerIndices = [];
   bs.player.battleArea.forEach((c, i) => {
-    if (c && !c.suspended && !c.cantBlock && (forced ? (!c.type || c.type === 'デジモン') : isBlocker(c))) {
+    if (c && _canBlockNow(c) && (forced ? (!c.type || c.type === 'デジモン') : isBlocker(c))) {
       if (cmd.atkCantBeBlocked) return; // アタッカーがブロックされない
       if (cmd.atkCantBeBlockedByNoEvo && (!c.stack || c.stack.length === 0)) return; // 進化元なしブロッカーは不可
       blockerIndices.push(i);
@@ -2316,6 +2316,13 @@ function _sendBlockBattleDone(extra) {
   if (!hasDeferred || typeof window._flushDeferredEvoTriggers !== 'function') { send(); return; }
   window._suppressFxSend = false;
   window._flushDeferredEvoTriggers(() => _waitFxIdle(() => { sendMemoryUpdate(); sendStateSync(); send(); }));
+}
+// ブロックできる状態か（ブロックはデジモンをレストさせて行うので、「レストできない」デジモンはブロックできない。
+// 「ブロックできない」も含む。【衝突】で強制されてもブロックできない）
+function _canBlockNow(c) {
+  if (!c || c.suspended || c.cantBlock || c.cantRest) return false;
+  if (Array.isArray(c.buffs) && c.buffs.some(b => b && (b.type === 'cant_rest' || b.type === 'cant_block' || b.type === 'cant_attack_block'))) return false;
+  return true;
 }
 function resolveOnlineBlock(blockerIdx, cmd) {
   _clearCollisionBlockerBadges();

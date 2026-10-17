@@ -2209,7 +2209,7 @@ function _hasCollision(card) {
 // 合図（block_battle_done）を待ってからアタック終了に進む（以前はすぐ進んでいたため、メモリーが相手側だと
 // バトルの解決中に【自分のターン終了時】のエグゼキュート等が始まっていた）。≪貫通≫でセキュリティチェックに続く
 // ときは、そのセキュリティチェックの終わりでアタック終了になる
-function _afterOnlineBlockBattle() {
+function _afterOnlineBlockBattle(atk, atkIdx) {
   if (_onlineMode && typeof window._waitForBlockBattleDone === 'function') {
     window._waitForBlockBattleDone((res) => {
       renderAll();
@@ -2219,6 +2219,9 @@ function _afterOnlineBlockBattle() {
       const _t0 = Date.now();
       const _go = () => {
         if (window._isEffectRunning && window._isEffectRunning() && Date.now() - _t0 < 120000) { setTimeout(_go, 300); return; }
+        // アタックしたデジモンが残っていれば【アタック終了時】（≪エグゼキュート≫の消滅等）を発揮してから（以前はブロックのバトルの後に
+        // 【アタック終了時】を通らず、エグゼキュートでアタックしたスカージキロプモン＆デスペアブラストが消滅しなかった）
+        if (atk && bs.player.battleArea[atkIdx] === atk) { checkAttackEnd(atk, atkIdx); return; }
         checkPendingTurnEnd();
       };
       _go();
@@ -2246,7 +2249,7 @@ function _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, def, targetIdx) {
         _onlineBlockedThen(atk, atkSlotIdx, () => {
           if (_onlineMode && _sendCommand) _sendCommand({ type: 'blocked_effect_done' });
           renderAll();
-          _afterOnlineBlockBattle();
+          _afterOnlineBlockBattle(atk, atkSlotIdx);
         });
       }
     });
@@ -2357,7 +2360,7 @@ export function resolveAttackTarget(target, targetIdx) {
               _onlineBlockedThen(atk, atkSlotIdx, () => {
                 if (_onlineMode && _sendCommand) _sendCommand({ type: 'blocked_effect_done' });
                 renderAll();
-                _afterOnlineBlockBattle();
+                _afterOnlineBlockBattle(atk, atkSlotIdx);
               });
             }
           });
@@ -2480,6 +2483,13 @@ function afterAtkEffect(atk, atkSlotIdx, callback) {
   _afterAtkEffectBody(atk, atkSlotIdx, callback);
 }
 // 【アタック時】まで解決したアタックを止め、アタックさせた効果を完了させる（ready）。効果の処理が全て終わったら続ける（cont）
+// ブロックできる状態か（ブロックはデジモンをレストさせて行うので、「レストできない」デジモンはブロックできない。
+// 「ブロックできない」も含む）
+function _canBlockNow(c) {
+  if (!c || c.suspended || c.cantBlock || c.cantRest) return false;
+  if (Array.isArray(c.buffs) && c.buffs.some(b => b && (b.type === 'cant_rest' || b.type === 'cant_block' || b.type === 'cant_attack_block'))) return false;
+  return true;
+}
 function _holdAfterAttackEffects(atk, cont, ready) {
   {
     if (!Array.isArray(bs._heldAttackResumes)) bs._heldAttackResumes = [];
@@ -2608,8 +2618,14 @@ function _resumeAfterPenetrate() {
 function checkAttackEnd(atk, atkIdx) {
   if (_resumeAfterPenetrate()) return;
   _consumePendingBattleTriggers(() => {
-    if (hasKeyword(atk, '【アタック終了時】') && bs.player.battleArea[atkIdx]) {
-      _hooks.checkAndTriggerEffect(atk, '【アタック終了時】', () => checkPendingTurnEnd());
+    // 【アタック終了時】は、アタックしたデジモンが場に残っていれば必ず誘発を確かめる（効果の文の【アタック終了時】だけで判定していたため、
+    // キーワード（≪エグゼキュート≫の「アタック終了時、このデジモンを消滅させる」）や与えられた効果の分を見落としていた）。
+    // 誘発するものが無ければ何もせずに終わる
+    // アタック中に進化していれば、進化後のカード（同じデジモン）で確かめる
+    const _cur = _evolvedAttacker(atk, atkIdx);
+    if (_cur && bs.player.battleArea[atkIdx] === _cur) {
+      if (_cur !== atk && atk && atk._executeAttacking) _cur._executeAttacking = true;
+      _hooks.checkAndTriggerEffect(_cur, '【アタック終了時】', () => checkPendingTurnEnd());
     } else { checkPendingTurnEnd(); }
   });
 }
@@ -3930,7 +3946,7 @@ export function aiAttackPhase(callback) {
       // 「進化元を持たないデジモンにはブロックされない」(イッカクモン等)
       const atkCantBeBlockedByNoEvo = atk && atk._permEffects && atk._permEffects.cantBeBlockedByNoEvo;
       bs.player.battleArea.forEach((c, i) => {
-        if (c && !c.suspended && !c.cantBlock && isBlocker(c)) {
+        if (c && _canBlockNow(c) && isBlocker(c)) {
           if (atkCantBeBlocked) return; // ブロックされない: スキップ
           if (atkCantBeBlockedByNoEvo && (!c.stack || c.stack.length === 0)) return; // 進化元なしブロッカーは不可
           blockerIndices.push(i);
@@ -5313,7 +5329,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
         const blockerIndices = [];
         bs.player.battleArea.forEach((c, i) => {
           if (_cantRedirectAttack(atk)) return; // アタック対象を変更されない（ブロックされない）
-          if (c && !c.suspended && !c.cantBlock && isBlocker(c)) {
+          if (c && _canBlockNow(c) && isBlocker(c)) {
             blockerIndices.push(i);
           }
         });

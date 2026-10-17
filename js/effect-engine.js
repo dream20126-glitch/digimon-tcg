@@ -13159,7 +13159,11 @@ function runWithAltActions(step, ctx, store, callback) {
         // 「相手のターン終了まで、A し、B」のように期間がメインにだけ書かれている場合、
         // 続けて行う alt にも同じ期間をかける（巨神兵器 BT26-085「DPをマイナスされず、重ねられている
         // カードは破棄されない」の後半が「このターン」扱いになっていた）
-        const aRun = (a && !a.duration && step.duration) ? Object.assign({}, a, { duration: step.duration }) : a;
+        let aRun = (a && !a.duration && step.duration) ? Object.assign({}, a, { duration: step.duration }) : a;
+        // メインの対象が「このデジモン」なら、続く「そのデジモン」（same_target）もこのデジモン。コストで選んだカード
+        // （テイマーの下のカードを破棄したテイマー等）を「直前に選んだカード」と取り違えないように（ベアキャットモン＆
+        // ペネトレイトブロウ BT26-057【進化時】「このデジモンは相手のデジモンの効果を受けず、DP+3000」の DP+3000 が付かなかった）
+        if (aRun && aRun.target === 'same_target' && /^self(_card)?$/.test(String(step.target || ''))) aRun = Object.assign({}, aRun, { target: step.target });
         executeRecipeStep(aRun, ctx, store, () => nextAlt());
       }
       nextAlt();

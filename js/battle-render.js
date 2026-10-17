@@ -375,7 +375,8 @@ function renderBattleRows() {
         }
 
         // 付与効果インジケータ（grant_effect で得た効果。ヘブンズリッパー等）
-        if (Array.isArray(card._grantedRecipes) && card._grantedRecipes.some(g => g && !g.kwFlag)) {
+        // 相手のカードは state_sync の _grantedOther（キーワード以外の付与効果の数）で受け取る
+        if ((Array.isArray(card._grantedRecipes) && card._grantedRecipes.some(g => g && !g.kwFlag)) || (card._grantedOther > 0)) {
           html += `<div style="position:absolute;top:14px;left:2px;background:rgba(192,132,252,0.92);color:#fff;font-size:6px;font-weight:bold;padding:1px 3px;border-radius:2px;z-index:5;box-shadow:0 0 5px #c084fc;">付与効果</div>`;
         }
 

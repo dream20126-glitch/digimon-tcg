@@ -342,6 +342,8 @@ export function sendStateSync() {
       _faceDown: !!c._faceDown, // 裏向きで重ねられているカード（相手の画面では中身を伏せる）
       // 効果で付与されたレシピ型キーワード（【エグゼキュート】等）。相手の画面のバッジ表示用
       _grantedKw: (Array.isArray(c._grantedRecipes) ? c._grantedRecipes : []).map(g => g && g.kwFlag).filter(Boolean),
+      // キーワード以外の付与効果の数（相手の画面の「付与効果」ラベル用。ベアキャットモン＆ペネトレイトブロウ BT26-057 等）
+      _grantedOther: (Array.isArray(c._grantedRecipes) ? c._grantedRecipes : []).filter(g => g && !g.kwFlag).length,
     };
   };
   sendCommand({

@@ -13842,6 +13842,13 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
         window.resolveAttackTarget(targetType, targetIdx);
         return;
       }
+      // アタック宣言のタイミングで止めるアタック（bs._attackDeclHold）は、【アタック時】を解決して止めた時点で効果を完了させる
+      // （battle-combat.js afterAtkEffect が bs._attackDeclHoldReady を呼ぶ）。【アタック時】と他の発揮待ちの効果が並行しないように
+      if (ctx.bs && ctx.bs._attackDeclHold) {
+        ctx.bs._attackDeclHoldReady = () => finish(true);
+        window.resolveAttackTarget(targetType, targetIdx);
+        return;
+      }
       window.resolveAttackTarget(targetType, targetIdx);
       finish(true);
     });

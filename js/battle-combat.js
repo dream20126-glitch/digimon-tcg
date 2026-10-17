@@ -2449,12 +2449,23 @@ export function resolveAttackTarget(target, targetIdx) {
 // 発動する（アタック宣言後、最終的にアタックする直前に突進が発動する、という順序）
 if (typeof window !== 'undefined') window._afterAtkHoldSupported = () => true;
 function afterAtkEffect(atk, atkSlotIdx, callback) {
-  // 効果でアタック宣言した（「このデジモンでアタックする」）: まだ発揮していない他の効果を先に解決するため、
-  // 【アタック時】の前で止める（公式ルール 11-1-4）。効果の処理が全て終わったら runPendingEffectAttack が続ける
+  // 効果でアタック宣言した（「このデジモンでアタックする」）: 【アタック時】は派生誘発なので先に発揮し（公式ルール 15-4-5-2）、
+  // そのあと、まだ発揮していない他の効果（同時に誘発したメインフェイズ開始時の効果等）をアタック宣言のタイミングで解決してから
+  // カウンタータイミング以降に進む（11-1-4）。【アタック時】の後でアタックを止め、アタックさせた効果を完了させる
+  // （bs._attackDeclHoldReady）。効果の処理が全て終わったら runPendingEffectAttack が続ける
   if (bs._attackDeclHold) {
     bs._attackDeclHold = false;
+    const _ready = bs._attackDeclHoldReady; bs._attackDeclHoldReady = null;
+    afterAtkEffect(atk, atkSlotIdx, () => _holdAfterAttackEffects(atk, callback, _ready));
+    return;
+  }
+  _afterAtkEffectBody(atk, atkSlotIdx, callback);
+}
+// 【アタック時】まで解決したアタックを止め、アタックさせた効果を完了させる（ready）。効果の処理が全て終わったら続ける（cont）
+function _holdAfterAttackEffects(atk, cont, ready) {
+  {
     if (!Array.isArray(bs._heldAttackResumes)) bs._heldAttackResumes = [];
-    const _resume = () => afterAtkEffect(atk, atkSlotIdx, callback);
+    const _resume = () => cont();
     bs._heldAttackResumes.push(_resume);
     // 保険: 続ける呼び出しが無い経路でも止まったままにならないよう、効果の処理が無い状態が少し続いたら続ける
     let _idleSince = 0;
@@ -2470,8 +2481,10 @@ function afterAtkEffect(atk, atkSlotIdx, callback) {
     };
     setTimeout(_watch, 500);
     addLog('⏳ アタック宣言のタイミング: 発揮待ちの効果を解決してから「' + atk.name + '」のアタックを続けます');
-    return;
+    if (typeof ready === 'function') ready();
   }
+}
+function _afterAtkEffectBody(atk, atkSlotIdx, callback) {
   _hooks.checkAndTriggerEffect(atk, '【アタック時】', () => {
     // subject:"both"（お互いのターンでアタック時発動）の進化元効果を相手側で反応させる
     _hooks.fireOnAttackBothSubjectTriggers('player', () => {
@@ -4363,6 +4376,12 @@ function aiPlayAuto(callback) {
 // ===== ターン終了チェック =====
 
 export async function checkPendingTurnEnd() {
+  // 保険: アタック宣言のタイミングで止めるはずだったアタックが、止める前に終わった（アタックが成立しなかった等）なら、
+  // アタックさせた効果をここで完了させる
+  if (bs._attackDeclHoldReady || bs._attackDeclHold) {
+    const _r = bs._attackDeclHoldReady; bs._attackDeclHoldReady = null; bs._attackDeclHold = false;
+    if (typeof _r === 'function') { try { _r(); } catch (e) { console.error('[attackDeclHoldReady]', e); } }
+  }
   // ≪貫通≫のセキュリティチェック中にアタックしたデジモンが消滅した等でここに来たら、キューの残りに戻る
   if (_resumeAfterPenetrate()) return;
   // 保険: 後回しにした非ターンプレイヤー側の効果が残っていれば、アタックを終える前に発揮する

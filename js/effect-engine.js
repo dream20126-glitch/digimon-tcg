@@ -5674,15 +5674,34 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       runReturnPhase();
       return;
     }
-    const sel = selections[selIdx];
+    let sel = selections[selIdx];
     selIdx++;
+    // 行き先が同じ選択が続く（「特徴『グローイングドーン』を持つカード1枚と特徴『ビートブレイク』を持つ紫のカード1枚を手札に加える」
+    // キロプモン BT26-061）なら1つの選択にまとめ、選んだカードをそれぞれの条件に1枚ずつ当てはめる。以前は条件ごとに順に選び、
+    // 両方の条件を満たすカードを先の条件で選ぶと、後の条件に当てはまるカードが無くなって残りをデッキに戻していた
+    const _grpable = (x) => x && !x.action && (x.destination || 'hand') !== 'play' && x.count !== 'all';
+    let _slots = null;
+    if (_grpable(sel)) {
+      const _d0 = sel.destination || 'hand';
+      const _g = [sel];
+      while (selIdx < selections.length && _grpable(selections[selIdx]) && (selections[selIdx].destination || 'hand') === _d0
+          && !!selections[selIdx].optional === !!sel.optional) { _g.push(selections[selIdx]); selIdx++; }
+      if (_g.length > 1) {
+        _slots = _g.map(x => ({ filter: x.filter || {}, count: x.count || 1 }));
+        sel = Object.assign({}, sel, { count: _slots.reduce((a, x) => a + x.count, 0) });
+      }
+    }
+    const _grpPicked = [];
     const filter = sel.filter || {};
     const maxCount = sel.count === 'all' ? 999 : (sel.count || 1);
     const isOptional = !!sel.optional;
     const dest = sel.destination || 'hand';
     // destination:'play' は種別ごとの出し方（play_kinds）も満たすカードだけを候補にする
     // sel.action:'evolve'（このデジモンから進化）は、このデジモンを進化元とする進化条件も満たすカードだけ
-    const selMatch = (c) => cardMatchesFilter(c, filter) && (dest !== 'play' || _deckOpenPlayKinds(c, sel, player).length > 0)
+    const _baseMatch = (c) => _slots
+      ? (_slots.some(sl => cardMatchesFilter(c, sl.filter)) && _slotsPartialAssignable(_grpPicked.concat([c]), _slots, (x, f) => cardMatchesFilter(x, f)))
+      : cardMatchesFilter(c, filter);
+    const selMatch = (c) => _baseMatch(c) && (dest !== 'play' || _deckOpenPlayKinds(c, sel, player).length > 0)
       && (sel.action !== 'evolve' || _effectEvoAllowed(c, ctx.card, _effectEvoIgnoresCondition(sel) || _effectEvoIgnoresCondition(step)));
 
     const matching = cardEls.filter(e => !e.removed && selMatch(e.card));
@@ -5695,7 +5714,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
     let pickedCount = 0;
 
     function refreshSelectUI() {
-      stepEl.innerText = 'ステップ ' + selIdx + '/' + selections.length + ': ' + describeFilter(filter) + ' を ' + maxCount + '枚選択 (' + pickedCount + '/' + maxCount + ')';
+      stepEl.innerText = 'ステップ ' + selIdx + '/' + selections.length + ': '
+        + (_slots ? _slots.map(sl => describeFilter(sl.filter) + ' ' + sl.count + '枚').join(' と ') : describeFilter(filter)) + ' を ' + maxCount + '枚選択 (' + pickedCount + '/' + maxCount + ')';
       cardEls.forEach(e => {
         if (e.removed) return;
         if (selMatch(e.card)) setCardActive(e);
@@ -5805,6 +5825,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
             if (dest === 'hand') { player.hand.push(entry.card); _noteHandIncrease(ctx, player); }
             else if (dest === 'trash') player.trash.push(entry.card);
             ctx.addLog && ctx.addLog('🃏 「' + entry.card.name + '」を' + (dest === 'hand' ? '手札に加えた' : 'トラッシュへ'));
+            _grpPicked.push(entry.card);
             removeEntry(entry);
             pickedCount++;
             ctx.renderAll && ctx.renderAll();
@@ -14006,6 +14027,22 @@ function _slotsAssignable(cards, slots, matches) {
       used.add(c);
       if (dfs(j + 1)) return true;
       used.delete(c);
+    }
+    return false;
+  };
+  return dfs(0);
+}
+
+// cards の各カードを、slots の別々の枠（枚数まで）に当てはめられるか（全ての枠を埋めなくてよい。選んでいる途中の確認用）
+function _slotsPartialAssignable(cards, slots, matches) {
+  const cap = (slots || []).map(sl => sl.count);
+  const dfs = (k) => {
+    if (k >= cards.length) return true;
+    for (let j = 0; j < cap.length; j++) {
+      if (cap[j] <= 0 || !matches(cards[k], slots[j].filter)) continue;
+      cap[j]--;
+      if (dfs(k + 1)) return true;
+      cap[j]++;
     }
     return false;
   };

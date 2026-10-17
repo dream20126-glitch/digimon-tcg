@@ -662,7 +662,15 @@ function execMain() {
     renderAll();
     // 【相手のメインフェイズ開始時】(on_opp_main_phase_start): 自分のターンが始まったので
     // 相手側の盤面（AI）が反応する
-    _hooks.fireOnOppMainPhaseStartTriggers('player', () => { renderAll(); });
+    _hooks.fireOnOppMainPhaseStartTriggers('player', () => {
+      renderAll();
+      // メインフェイズ開始時の効果で「このデジモンでアタックする」（効果で与えられたものを含む。ベアキャットモン＆
+      // ペネトレイトブロウ BT26-057）は、効果の処理が終わってから行う（保留していたアタックをここで宣言する。
+      // 以前は対象を選んだあと保留したまま、アタックせずに終わっていた）
+      if (Array.isArray(bs._pendingEffectAttacks) && bs._pendingEffectAttacks.length > 0 && typeof window._runPendingEffectAttack === 'function') {
+        window._runPendingEffectAttack(bs, () => { renderAll(); });
+      }
+    });
   });
   // プレイヤーの操作を待つ（登場/進化/アタック/ターン終了）
 }

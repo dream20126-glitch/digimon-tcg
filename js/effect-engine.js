@@ -13513,6 +13513,13 @@ function _useOptionCardFromEffect(card, ctx, callback) {
     const _savedQueue = _effectQueue;
     _effectQueue = [];
     const _restoreQueue = () => { _effectQueue = _savedQueue; try { _hudSyncQueue(ctx); } catch (_) {} };
+    // デュアルカードは【メイン】からアーツ進化〜【進化時】までを1続きの処理にする（その間は DP0 の消滅・非ターンプレイヤー側の
+    // 効果を保留し、終わってから。window._effectBusy / _effectBusyEnd）。ムラサメモン＆豪ノ斬・叢時雨のオプション側の DP- で
+    // DP0 になったベックモンが、アーツ進化の対象を選んでいる途中に消滅していた
+    const _dualBusy = isDual && ctx.side === 'player' && typeof window !== 'undefined' && typeof window._effectBusy === 'function';
+    if (_dualBusy) window._effectBusy(1);
+    const _cb0 = callback;
+    callback = (...a) => { if (_dualBusy && typeof window._effectBusyEnd === 'function') window._effectBusyEnd(() => _cb0(...a)); else _cb0(...a); };
     try {
       scanTriggers('main', card, ctx.side, ctx);
       processQueue(ctx, () => {

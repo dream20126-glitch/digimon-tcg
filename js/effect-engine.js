@@ -2430,6 +2430,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       for (let i = 0; i < n; i++) {
         if (opponent.security.length > 0) { const sc = opponent.security.shift(); opponent.trash.push(sc); _sttCards.push(sc); ctx.addLog('🛡 セキュリティ破棄' + (sc && sc.name ? '（「' + sc.name + '」）' : '')); _discardedCount++; }
       }
+      // 相手のセキュリティなら、その場で持ち主の端末に伝える（上からi枚目＝効果の前の位置i）
+      if (ctx.bs && opponent === (ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player)) _sendOppSecurityMovesNow(ctx, _sttCards.map((c, i) => ({ card: c, idx: i, to: 'trash' })));
       if (ctx.bs) ctx.bs._lastActionCount = _discardedCount;
       _noteSecurityDecrease(ctx, opponent, _discardedCount);
       ctx.renderAll();
@@ -13464,6 +13466,18 @@ if (typeof window !== 'undefined') window._withDestroyFxBatch = _withDestroyFxBa
 // ユピテルモン：ラースモードの「セキュリティを上から1枚破棄」で破棄された）。アクションごとに送るのではなく、
 // 効果の1ステップの前後で相手のセキュリティを比べ、離れたカードの位置と行き先を fx_oppSecurityMoved で送る
 let _secSyncDepth = 0;
+// 相手のセキュリティから動かしたカードを、その場で相手（持ち主）の端末に伝える。効果の処理が長く続く間に相手からの同期で
+// 相手のカードが作り直されると、効果の終わりの比較（_withOppSecuritySync）で動いたカードを見つけられず伝わらなかった
+// （ロゼモン：バーストモード＆アギシャンレーヴル BT26-050「相手のセキュリティを上から1枚破棄する」で、両方の画面とも5枚のままだった）。
+// moves: [{ card, idx（効果の前のセキュリティでの位置）, to }]
+function _sendOppSecurityMovesNow(ctx, moves) {
+  if (!ctx || ctx.side !== 'player' || !Array.isArray(moves) || moves.length === 0) return;
+  if (!(typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand)) return;
+  try {
+    window._onlineSendCommand({ type: 'fx_oppSecurityMoved', moves: moves.map(m => ({ idx: m.idx, cardNo: (m.card && m.card.cardNo) || '', name: (m.card && m.card.name) || '', to: m.to })) });
+    moves.forEach(m => { if (m.card) m.card._secMoveSent = true; });
+  } catch (e) { console.error('[sendOppSecurityMovesNow]', e); }
+}
 function _withOppSecuritySync(ctx, run, done) {
   const online = typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
   const opp = ctx && ctx.bs && ctx.bs.ai;
@@ -13478,6 +13492,8 @@ function _withOppSecuritySync(ctx, run, done) {
       const moves = [];
       before.forEach((c, idx) => {
         if (!c || now.includes(c)) return;
+        // その場で伝えた分（_sendOppSecurityMovesNow）は送らない
+        if (c._secMoveSent) { delete c._secMoveSent; return; }
         let to = null;
         if ((opp.trash || []).includes(c)) to = 'trash';
         else if ((opp.deck || []).includes(c)) {
@@ -18074,6 +18090,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (_stsPos === 'top' || _stsPos === 'bottom') {
         const selectedIdx = _stsPos === 'top' ? 0 : owner.security.length - 1;
         const c = owner.security.splice(selectedIdx, 1)[0];
+        if (c && owner !== player) _sendOppSecurityMovesNow(ctx, [{ card: c, idx: selectedIdx, to: 'trash' }]);
         if (c) { owner.trash.push(c); _noteSecurityDecrease(ctx, owner, 1); }
         if (ctx.bs) ctx.bs._lastActionCount = c ? 1 : 0;
         ctx.addLog('🗑 セキュリティ（' + (_stsPos === 'top' ? '上から' : '下から') + '）破棄' + (c ? '：' + c.name : ''));
@@ -18087,6 +18104,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       showTargetSelection(rowId, idxs, 'セキュリティから破棄するカードを選択', '#ff4444', (selectedIdx) => {
         if (selectedIdx == null) { if (ctx.bs) ctx.bs._lastActionCount = 0; callback(); return; }
         const c = owner.security.splice(selectedIdx, 1)[0];
+        if (c && owner !== player) _sendOppSecurityMovesNow(ctx, [{ card: c, idx: selectedIdx, to: 'trash' }]);
         if (c) { owner.trash.push(c); _noteSecurityDecrease(ctx, owner, 1); }
         if (ctx.bs) ctx.bs._lastActionCount = c ? 1 : 0;
         ctx.addLog('🗑 セキュリティから「' + (c ? c.name : '?') + '」を破棄');

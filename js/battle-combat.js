@@ -2995,12 +2995,14 @@ if (typeof window !== 'undefined') window._resolveSecurityCheck = resolveSecurit
 // （公式ルール 13-1-8-2: チェックによって誘発した効果を解決してから 13-1-8-3 のバトルへ）。オンラインは持ち主（防御側）の端末で
 // 発揮してもらう（security_effect_request）。以前はセキュリティデジモンの【セキュリティ】効果を発揮せずにバトルしていた
 // （スカージキロプモン＆デスペアブラスト BT26-075）
-function _secDigimonEffectFirst(sec, cont) {
+// ownerSide: セキュリティの持ち主（プレイヤーのアタック＝'ai' / CPU のアタック＝'player'）
+function _secDigimonEffectFirst(sec, cont, ownerSide) {
+  ownerSide = ownerSide || 'ai';
   let has = false;
   try { has = !!(sec && sec.type === 'デジモン' && _hasRecipeTrigger(sec, 'security')); } catch (_) { has = false; }
   if (!has) { cont(); return; }
   addLog('✦ セキュリティ効果：「' + sec.name + '」（バトルの前に発揮）');
-  if (_onlineMode && _sendCommand && typeof window._waitForSecurityEffect === 'function') {
+  if (ownerSide === 'ai' && _onlineMode && _sendCommand && typeof window._waitForSecurityEffect === 'function') {
     _sendCommand({
       type: 'security_effect_request',
       cardName: sec.name, cardNo: sec.cardNo || '', cardType: sec.type || '',
@@ -3014,7 +3016,7 @@ function _secDigimonEffectFirst(sec, cont) {
     window._waitForSecurityEffect(() => { _dispatchStateSync(); renderAll(); cont(); });
     return;
   }
-  try { _hooks.checkAndTriggerEffect(sec, '【セキュリティ】', () => { renderAll(); cont(); }, 'ai'); }
+  try { _hooks.checkAndTriggerEffect(sec, '【セキュリティ】', () => { renderAll(); cont(); }, ownerSide); }
   catch (e) { console.error('[secDigimonEffectFirst]', e); cont(); }
 }
 // 「Sアタック-N」の表示（チェック数が0になった理由）。N は Sアタック- の合計
@@ -4053,7 +4055,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
     }
     // 「セキュリティが減ったとき」はチェック（公開）のあとに解決する（総合ルール13-1-8）
     {
-    showSecurityCheck(sec, atk, () => fireSecurityDecreaseThen('player', () => {
+    showSecurityCheck(sec, atk, () => fireSecurityDecreaseThen('player', () => _secDigimonEffectFirst(sec, () => {
       if (sec.type === 'デジモン') {
         if (atk.dp === sec.dp) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
@@ -4153,7 +4155,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
           _afterOne();
         }
       }
-    }));
+    }, 'player')));
     }
   } else {
     const aiAtk = bs.ai.battleArea.find(c => c !== null) || { name: 'AI', dp: 0 };

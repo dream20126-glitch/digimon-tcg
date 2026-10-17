@@ -2311,7 +2311,7 @@ export function resolveAttackTarget(target, targetIdx) {
       if (blockerKey) {
         const k = String(blockerKey).trim();
         bs.ai.battleArea.forEach((c, i) => {
-          if (blockerIdx >= 0 || !c || c.suspended) return;
+          if (blockerIdx >= 0 || !c || !_canBlockNow(c)) return;
           if (!isBlocker(c)) return;
           if (String(c.cardNo) === k || String(c.name) === k || String(c.name || '').includes(k)) blockerIdx = i;
         });
@@ -2398,7 +2398,7 @@ export function resolveAttackTarget(target, targetIdx) {
       if (blockerKey) {
         const k = String(blockerKey).trim();
         bs.ai.battleArea.forEach((c, i) => {
-          if (blockerIdx >= 0 || !c || c.suspended) return;
+          if (blockerIdx >= 0 || !c || !_canBlockNow(c)) return;
           if (!isBlocker(c)) return;
           if (String(c.cardNo) === k || String(c.name) === k || String(c.name || '').includes(k)) blockerIdx = i;
         });

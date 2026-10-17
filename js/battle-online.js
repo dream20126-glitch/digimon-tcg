@@ -1684,7 +1684,7 @@ function onRemoteCommand(cmd) {
         newCarrier.suspended = !!tgt.suspended;
         newCarrier.buffs = [];
         newCarrier._permEffects = {};
-        newCarrier.summonedThisTurn = false;
+        newCarrier.summonedThisTurn = !!tgt.summonedThisTurn; // 同じ1体なので「登場したターン」は引き継ぐ
         newCarrier._usedEffects = [];
         newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
         newCarrier.dp = newCarrier.baseDp;
@@ -1781,7 +1781,7 @@ function onRemoteCommand(cmd) {
           newCarrier.suspended = !!tgt.suspended;
           newCarrier.buffs = [];
           newCarrier._permEffects = {};
-          newCarrier.summonedThisTurn = false;
+          newCarrier.summonedThisTurn = !!tgt.summonedThisTurn; // 同じ1体なので「登場したターン」は引き継ぐ
           newCarrier._usedEffects = [];
           newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
           newCarrier.dp = newCarrier.baseDp;

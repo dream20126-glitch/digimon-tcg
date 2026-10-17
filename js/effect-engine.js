@@ -624,7 +624,8 @@ function _detachTopCards(area, idx, n) {
     newCarrier.suspended = !!c.suspended;
     newCarrier.buffs = [];
     newCarrier._permEffects = {};
-    newCarrier.summonedThisTurn = false;
+    // 退化しても同じ1体なので「登場したターン」は引き継ぐ
+    newCarrier.summonedThisTurn = !!c.summonedThisTurn;
     newCarrier._usedEffects = [];
     newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
     newCarrier.dp = newCarrier.baseDp;
@@ -15525,7 +15526,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             newCarrier.suspended = !!tgt.suspended;
             newCarrier.buffs = [];
             newCarrier._permEffects = {};
-            newCarrier.summonedThisTurn = false;
+            newCarrier.summonedThisTurn = !!tgt.summonedThisTurn; // 同じ1体なので「登場したターン」は引き継ぐ
             newCarrier._usedEffects = [];
             newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
             newCarrier.dp = newCarrier.baseDp;
@@ -17663,7 +17664,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             newCarrier.suspended = !!src.suspended;
             newCarrier.buffs = [];
             newCarrier._permEffects = {};
-            newCarrier.summonedThisTurn = false;
+            newCarrier.summonedThisTurn = !!src.summonedThisTurn; // 同じ1体なので「登場したターン」は引き継ぐ
             newCarrier._usedEffects = [];
             newCarrier.baseDp = parseInt(newCarrier.dp) || 0;
             newCarrier.dp = newCarrier.baseDp;

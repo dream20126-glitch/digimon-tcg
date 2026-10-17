@@ -4353,7 +4353,8 @@ function aiPlayAuto(callback) {
       const oldCard = bs.ai.ikusei;
       // stack[0] = 直前の進化形（top）, stack[N-1] = デジタマ（bottom）の規約に統一
       evoCandidate.stack = [oldCard, ...(oldCard.stack || [])];
-      evoCandidate.summonedThisTurn = false;
+      // 進化しても同じ1体なので「登場したターン」は引き継ぐ（公式ルール 5-1-2-1。情報が失われるのはジョグレス進化だけ 8-2-2-1-7）
+      evoCandidate.summonedThisTurn = !!oldCard.summonedThisTurn;
       evoCandidate.suspended = oldCard.suspended;
       evoCandidate.baseDp = parseInt(evoCandidate.dp) || 0;
       evoCandidate.dpModifier = 0; evoCandidate.buffs = [];
@@ -4383,7 +4384,8 @@ function aiPlayAuto(callback) {
       bs.ai.hand.splice(handIdx, 1);
       // stack[0] = 直前の進化形（top）, stack[N-1] = デジタマ（bottom）の規約に統一
       evoCandidate.stack = [base, ...(base.stack || [])];
-      evoCandidate.summonedThisTurn = false;
+      // 進化しても同じ1体なので「登場したターン」は引き継ぐ（公式ルール 5-1-2-1。情報が失われるのはジョグレス進化だけ 8-2-2-1-7）
+      evoCandidate.summonedThisTurn = !!base.summonedThisTurn;
       evoCandidate.suspended = base.suspended;
       evoCandidate.baseDp = parseInt(evoCandidate.dp) || 0;
       evoCandidate.dpModifier = 0; evoCandidate.buffs = [];
@@ -5130,7 +5132,8 @@ export function aiScriptEvolveBattle(sourceKey, targetKey, onDone) {
   bs.ai.hand.splice(handIdx, 1);
   // stack[0] = 直前の進化形（top）, stack[N-1] = デジタマ（bottom）の規約に統一
   evo.stack = [base, ...(base.stack || [])];
-  evo.summonedThisTurn = false;
+  // 進化しても同じ1体なので「登場したターン」は引き継ぐ（公式ルール 5-1-2-1。情報が失われるのはジョグレス進化だけ 8-2-2-1-7）
+  evo.summonedThisTurn = !!base.summonedThisTurn;
   evo.suspended = base.suspended;
   evo.baseDp = parseInt(evo.dp) || 0;
   evo.dpModifier = 0;
@@ -5179,7 +5182,8 @@ export function aiScriptEvolveBreed(targetKey, onDone) {
   bs.ai.hand.splice(handIdx, 1);
   // stack[0] = 直前の進化形（top）, stack[N-1] = デジタマ（bottom）の規約に統一
   evo.stack = [base, ...(base.stack || [])];
-  evo.summonedThisTurn = false;
+  // 進化しても同じ1体なので「登場したターン」は引き継ぐ（公式ルール 5-1-2-1。情報が失われるのはジョグレス進化だけ 8-2-2-1-7）
+  evo.summonedThisTurn = !!base.summonedThisTurn;
   evo.suspended = base.suspended;
   evo.baseDp = parseInt(evo.dp) || 0;
   evo.dpModifier = 0;

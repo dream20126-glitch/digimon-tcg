@@ -728,6 +728,7 @@ function onRemoteCommand(cmd) {
         cost: cmd.cost || 0, playCost: cmd.playCost || 0,
         suspended: false, buffs: [], stack: [],
       };
+      if (window._freshOnFieldEnter) window._freshOnFieldEnter(tamer);
       bs.player.tamerArea.push(tamer);
       addLog('👤 テイマー「' + tamer.name + '」がセキュリティから登場！');
       renderAll();

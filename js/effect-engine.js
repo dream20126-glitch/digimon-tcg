@@ -12722,6 +12722,16 @@ function showReactionOrderSelect(reactions, triggerKey, callback0) {
 // 発動できてしまっていた。進化してもデジモンは同一扱い・進化元カードは同じオブジェクトのまま残るので、
 // 進化元カード基準にすればターンをまたぐまで再発動しない（別のデジモンの進化元にある同名カードとは別に数える）
 let _cardUidCounter = 0;
+// 場に出たカードは新しいカードとして扱う（公式ルール: 場を離れたカードは新しいカード）。【ターンに1回】の使用回数の識別子（_uid）と
+// 【メイン】の使用済み（_usedEffects）を新しくする（ナイトキロプモン BT26-070 が、【メイン】を使ってから進化元になり、
+// トラッシュから再び登場したときに「効果（使用済み）」のままだった）
+function freshOnFieldEnter(card) {
+  if (!card) return;
+  delete card._uid;
+  card._usedEffects = [];
+  delete card._executeAttacking;
+}
+if (typeof window !== 'undefined') window._freshOnFieldEnter = freshOnFieldEnter;
 function _cardUid(card) {
   if (!card) return 'none';
   if (!card._uid) card._uid = 'u' + (++_cardUidCounter);
@@ -13788,6 +13798,7 @@ function _summonCardFromEffect(c, ctx, opts, done) {
   }
   // アルゴモン(BT2-047)「レスト状態で登場できる」等、レスト状態での登場を
   // 指定できるようにする（enterSuspended）。省略時は従来通り活動状態で登場
+  freshOnFieldEnter(c);
   c.summonedThisTurn = true; c.suspended = !!opts.enterSuspended; c.buffs = []; c.stack = []; c._grantedRecipes = [];
   // 前に場にいたときの状態（DP0 の「消滅予定」の印・DP 修正）を持ち越さない（トラッシュから再登場したカード）
   c._pendingDestroy = false; delete c._dp0RequestSent; delete c._destroyInProgress;
@@ -15736,6 +15747,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           // type別に配置先を決定
           const isTamer = String(c.type || '') === 'テイマー';
+          freshOnFieldEnter(c);
           if (isTamer) {
             player.tamerArea.push(c);
           } else {
@@ -15853,6 +15865,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           // battleArea 空きスロットへ配置（テイマーは tamerArea へ。ただし通常はデジモンのみ）
           const isTamer = String(c.type || '') === 'テイマー';
+          freshOnFieldEnter(c);
           if (isTamer) {
             player.tamerArea.push(c);
           } else {

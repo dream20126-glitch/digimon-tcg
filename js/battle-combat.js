@@ -1248,6 +1248,7 @@ export function doPlay(card, handIdx, slotIdx) {
   // ----- テイマー登場 -----
   if (card.type === 'テイマー') {
     bs.player.hand.splice(handIdx, 1); bs.selHand = null;
+    if (window._freshOnFieldEnter) window._freshOnFieldEnter(card);
     bs.player.tamerArea.push(card);
     addLog('▶ 「' + card.name + '」を登場！（コスト ' + _effPlayCost + '）');
     if (window._tutorialRunner && window._tutorialRunner.active && window._tutorialHideInstruction) {
@@ -1282,6 +1283,7 @@ export function doPlay(card, handIdx, slotIdx) {
   }
 
   // ----- デジモン登場 -----
+  if (window._freshOnFieldEnter) window._freshOnFieldEnter(card);
   card.summonedThisTurn = true;
   while (bs.player.battleArea.length <= slotIdx) bs.player.battleArea.push(null);
   bs.player.battleArea[slotIdx] = card;
@@ -4264,6 +4266,7 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
 
   if (c.type === 'テイマー') {
     bs.ai.hand.splice(handIdx, 1);
+    if (window._freshOnFieldEnter) window._freshOnFieldEnter(c);
     bs.ai.tamerArea.push(c);
     addLog('🤖 AIが「' + c.name + '」を登場！（コスト' + _aiBasePay + '）');
     renderAll();
@@ -4282,6 +4285,7 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
     _checkWhenPlayDiscount(c, bs, 'ai', (d) => { _aiWhenPlayDisc = d || 0; }, { addLog, baseCost: _aiBasePay });
   }
   const _aiPayCost = Math.max(0, _aiBasePay - _aiWhenPlayDisc);
+  if (window._freshOnFieldEnter) window._freshOnFieldEnter(c);
   c.summonedThisTurn = true;
   bs.ai.battleArea[empty] = c;
   bs.ai.hand.splice(handIdx, 1);

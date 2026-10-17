@@ -13970,6 +13970,48 @@ export function runPendingEffectAttack(bs, done) {
 if (typeof window !== 'undefined') window._runPendingEffectAttack = runPendingEffectAttack;
 
 // レシピの1ステップを実行
+// 「トラッシュから『サンフラウモン』と『ライラモン』1枚ずつを自分の『ララモン』1体の進化元の下に置くことで」（茨の女王 BT26-098）の
+// ように、同じ置き先（対象・条件・取得元・置く位置が同じ）に置く place_under_digimon が続くなら1つにまとめる。
+// 置くカードの条件（from_filter）は _slotFilters に1枚ずつの枠として持つ（それぞれの枠に1枚ずつ当てはまるように選ぶ）
+function _mergeSameHostPlaceSteps(costs) {
+  if (!Array.isArray(costs) || costs.length < 2) return costs;
+  const key = (c) => (c && c.action === 'place_under_digimon' && !c.card && c.from && c.target
+    && !/^self/.test(String(c.target)) && c.from !== 'stacked_cards')
+    ? JSON.stringify([c.target, c.condition || '', c.when || '', c.filter || null, c.from, c.from_owner || '', c.position || '', c.options || [], !!c.optional, c.linked_owner || ''])
+    : null;
+  const out = [];
+  costs.forEach((c) => {
+    const k = key(c);
+    const last = out[out.length - 1];
+    if (k && last && last._mergeKey === k) {
+      last._slotFilters.push({ filter: c.from_filter || {}, count: Math.max(1, parseInt(c.value, 10) || 1) });
+      last.value = last._slotFilters.reduce((a, sl) => a + sl.count, 0);
+      return;
+    }
+    if (k) out.push(Object.assign({}, c, { _mergeKey: k, _slotFilters: [{ filter: c.from_filter || {}, count: Math.max(1, parseInt(c.value, 10) || 1) }] }));
+    else out.push(c);
+  });
+  // まとめなかった手順は元のまま（_slotFilters が1つだけのものは元の手順に戻す）
+  return out.map((c, idx) => (c && c._slotFilters && c._slotFilters.length === 1) ? costs.find(o => key(o) === c._mergeKey && JSON.stringify(o.from_filter || {}) === JSON.stringify(c._slotFilters[0].filter)) || c : c);
+}
+// cards から、slots（[{filter, count}]）の各枠に1枚ずつ別のカードを当てはめられるか
+function _slotsAssignable(cards, slots, matches) {
+  const need = [];
+  (slots || []).forEach(sl => { for (let k = 0; k < sl.count; k++) need.push(sl.filter); });
+  const used = new Set();
+  const dfs = (j) => {
+    if (j >= need.length) return true;
+    for (const c of cards) {
+      if (used.has(c) || !matches(c, need[j])) continue;
+      used.add(c);
+      if (dfs(j + 1)) return true;
+      used.delete(c);
+    }
+    return false;
+  };
+  return dfs(0);
+}
+
 function executeRecipeStep(step, ctx, store, callback) {
   // trigger_conditions ゲート: 発火元カードへのフィルタが NG ならステップスキップ
   if (!checkStepTriggerConditions(step, ctx)) {
@@ -14209,14 +14251,16 @@ function executeRecipeStep(step, ctx, store, callback) {
   // 失敗時は callback(false) を呼んで後続レシピごとアボートする。
   if (Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved) {
     console.log('[cost] running', step.cost.length, 'cost step(s) before main action=' + step.action);
+    // 同じデジモンの進化元に置く手順が続くなら1つにまとめる（置き先の選択1回・置くカードの選択1回）
+    const _costList = _mergeSameHostPlaceSteps(step.cost);
     let i = 0;
     function runCost() {
-      if (i >= step.cost.length) {
+      if (i >= _costList.length) {
         console.log('[cost] all cost steps succeeded, running main action=' + step.action);
         executeRecipeStep({ ...step, _costsResolved: true }, ctx, store, callback);
         return;
       }
-      const costStep = step.cost[i++];
+      const costStep = _costList[i++];
       console.log('[cost] executing cost step', i, 'action=' + costStep.action);
       if (costStep && typeof costStep === 'object') _COST_STEP_SET.add(costStep);
       // 今の状態で支払えないコスト（すでにレスト状態のこのカードを「レストさせることで」等）は支払わずに失敗にする
@@ -17136,13 +17180,15 @@ function executeRecipeStep(step, ctx, store, callback) {
           showEffectFailed(noTarget ? EFFECT_FAILED_NO_TARGET : '効果を発動できませんでした', callback);
         };
         const _srcFilter = step.from_filter || {};
+        const _slots = Array.isArray(step._slotFilters) && step._slotFilters.length > 1 ? step._slotFilters : null;
+        const _slotMatch = (card, f) => cardMatchesFilter(card, f || {}, ctx.bs, ctx.side, ctx.card);
         const _containers = player.battleArea.map((c, i) => ({ c, i })).filter(({ c }) => c
           && (!_pudContainerFilter || cardMatchesFilter(c, _pudContainerFilter, ctx.bs, ctx.side, ctx.card))
           && (_pudContainerConds.length === 0 || checkConditions(_pudContainerConds, c, ctx.bs, ctx.side)));
         // 置き先ごとに置けるカードの候補（手札/トラッシュ/場のデジモン・テイマー/リンクカード）
         const _sourcesFor = (digi) => {
           const out = [];
-          const add = (card, remove) => { if (card && card !== digi && cardMatchesFilter(card, _srcFilter, ctx.bs, ctx.side, ctx.card)) out.push({ card, remove }); };
+          const add = (card, remove) => { if (card && card !== digi && (_slots ? _slots.some(sl => _slotMatch(card, sl.filter)) : cardMatchesFilter(card, _srcFilter, ctx.bs, ctx.side, ctx.card))) out.push({ card, remove }); };
           if (_pudFromZones.includes('hand')) (player.hand || []).forEach(c => add(c, () => { const k = player.hand.indexOf(c); if (k !== -1) player.hand.splice(k, 1); }));
           if (_pudFromZones.includes('trash')) (player.trash || []).forEach(c => add(c, () => { const k = player.trash.indexOf(c); if (k !== -1) player.trash.splice(k, 1); }));
           if (_pudFromZones.includes('battle_area')) {
@@ -17170,7 +17216,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           return out;
         };
-        const _usable = _containers.filter(({ c }) => _sourcesFor(c).length >= (_pudIsCost ? _pudWant : 1));
+        const _usable = _containers.filter(({ c }) => _sourcesFor(c).length >= (_pudIsCost ? _pudWant : 1)
+          && (!_slots || !_pudIsCost || _slotsAssignable(_sourcesFor(c).map(sc => sc.card), _slots, _slotMatch)));
         if (_usable.length === 0) { _fail(true); break; }
         const _placeMany = (digi, picked) => {
           if (!picked || picked.length === 0) {
@@ -17178,6 +17225,7 @@ function executeRecipeStep(step, ctx, store, callback) {
             _fail(); return;
           }
           if (_pudIsCost && picked.length < _pudWant) { _fail(); return; }
+          if (_slots && !_slotsAssignable(picked.map(x => x.card), _slots, _slotMatch)) { _fail(); return; }
           if (!digi.stack) digi.stack = [];
           if (ctx.bs) ctx.bs._lastPickedCard = digi;
           const placed = [];
@@ -17200,12 +17248,18 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _pickSources = (digi) => {
           const srcs = _sourcesFor(digi);
           const n = Math.min(_pudWant, srcs.length);
-          if (effectiveSide === 'ai' || (srcs.length === n && !_pudOptionalExt)) { _placeMany(digi, srcs.slice(0, n)); return; }
+          // 手札/トラッシュから置くときは、候補がちょうどの枚数でも選ぶ画面を出す（何を置くか確認できるように）
+          const _pudFromHT = _pudFromZones.every(z => z === 'hand' || z === 'trash');
+          if (effectiveSide === 'ai' || (srcs.length === n && !_pudOptionalExt && !_pudFromHT)) { _placeMany(digi, srcs.slice(0, n)); return; }
           const cards = srcs.map(s => s.card);
-          showTrashCardPicker(cards, n, _pudOptionalExt, '🃏 「' + digi.name + '」の進化元の' + (_pudBottom ? '下' : '上') + 'に置くカードを' + n + '枚選んでください', (chosen) => {
+          // 枠ごとの条件があるとき（「〜」と「〜」1枚ずつ）は見出しにも出し、当てはまらない選び方ならもう一度選ぶ
+          const _slotLbl = _slots ? '（' + _slots.map(sl => (sl.filter && sl.filter.name ? '「' + sl.filter.name + '」' : 'カード') + (sl.count > 1 ? sl.count + '枚' : '')).join('と') + 'を1枚ずつ）' : '';
+          const _ask = (retry) => showTrashCardPicker(cards, n, _pudOptionalExt || _pudIsCost, (retry ? '⚠ 選び直してください ' : '') + '🃏 「' + digi.name + '」の進化元の' + (_pudBottom ? '下' : '上') + 'に置くカードを' + n + '枚選んでください' + _slotLbl, (chosen) => {
             const picked = (chosen || []).map(c => srcs.find(s => s.card === c)).filter(Boolean);
+            if (_slots && picked.length > 0 && !_slotsAssignable(picked.map(x => x.card), _slots, _slotMatch)) { _ask(true); return; }
             _placeMany(digi, picked);
           }, cards);
+          _ask(false);
         };
         // バトルエリア/リンクカードからも取る場合（セブンコードPAD BT26-102）は、置くカードを先に盤面で選んで
         // （トラッシュはボタンから）、そのあと残っているデジモンから置き先を選ぶ

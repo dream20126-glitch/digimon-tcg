@@ -1663,10 +1663,22 @@ export function showBCD(idxOrCard, source) {
     linkCostEl.style.display = 'none';
   }
 
+  // 「効果」「進化元効果」は見出しを押して開閉する（縦に長くなってスクロールしないように）。開閉の状態は対戦中は覚えておく。
+  // 最初は「効果」を開き「進化元効果」を閉じる。効果が無いカードは進化元効果を開く。チュートリアル中は全て開く
+  const _hasMainEff = !!(card.effect && card.effect !== 'なし');
+  if (!window._bcdOpen) window._bcdOpen = { effect: true, evo: false };
+  const _tutOpen = !!(window._tutorialRunner && window._tutorialRunner.active);
+  const _secOpen = (key) => _tutOpen || (key === 'evo' && !_hasMainEff) || !!window._bcdOpen[key];
+  const _collapsible = (key, label, color, body) => {
+    const open = _secOpen(key);
+    return '<div class="bcd-sec-head" data-key="' + key + '" style="display:flex;align-items:center;gap:6px;color:' + color + ';font-size:10px;font-weight:bold;cursor:pointer;user-select:none;' + (open ? 'margin-bottom:4px;' : '') + '">'
+      + '<span>' + label + '</span><span class="bcd-sec-caret" style="margin-left:auto;font-size:10px;">' + (open ? '▲ 閉じる' : '▼ 開く') + '</span></div>'
+      + '<div class="bcd-sec-body" style="display:' + (open ? 'block' : 'none') + ';">' + body + '</div>';
+  };
   // 効果
   const effectEl = document.getElementById('bcd-effect');
-  effectEl.innerHTML = card.effect && card.effect !== 'なし'
-    ? '<div style="color:var(--main-cyan);font-size:10px;margin-bottom:4px;font-weight:bold;">効果</div>' + _markLimit(card.effect, _limitUsed(null))
+  effectEl.innerHTML = _hasMainEff
+    ? _collapsible('effect', '効果', 'var(--main-cyan)', _markLimit(card.effect, _limitUsed(null)))
     : '<span style="color:#555;">効果なし</span>';
 
   // 進化元効果（タイプにより表示ラベルが変わる: デュアル=オプション効果/リンク=リンク効果）
@@ -1674,7 +1686,7 @@ export function showBCD(idxOrCard, source) {
   const evoLabel = evoSourceEffectLabel(card);
   let evoHtml = '';
   if (card.evoSourceEffect && card.evoSourceEffect.trim() && card.evoSourceEffect !== 'なし') {
-    evoHtml += '<div style="color:#ffaa00;font-size:10px;margin-bottom:4px;font-weight:bold;">' + evoLabel + '</div>' + card.evoSourceEffect;
+    evoHtml += _collapsible('evo', evoLabel, '#ffaa00', card.evoSourceEffect);
   }
   // スタック内の全進化元カードを表示（効果なしでもカード名+なしと表示）
   // 表示順: 直前の進化形 (stack[0]) → Lv.2 デジタマ (stack[N-1]) ← 物理的な重なり順
@@ -1792,6 +1804,20 @@ export function showBCD(idxOrCard, source) {
   if (!evoHtml) evoHtml = '<div style="color:#555;font-size:10px;">' + evoLabel + 'なし</div>';
   evoEl.innerHTML = evoHtml;
   evoEl.style.display = 'block';
+  // 見出しを押して開閉（状態を覚える）
+  [effectEl, evoEl].forEach((el) => el.querySelectorAll('.bcd-sec-head').forEach((head) => {
+    head.onclick = (e) => {
+      e.stopPropagation();
+      const body = head.nextElementSibling;
+      if (!body) return;
+      const open = body.style.display === 'none';
+      body.style.display = open ? 'block' : 'none';
+      head.style.marginBottom = open ? '4px' : '0';
+      const caret = head.querySelector('.bcd-sec-caret');
+      if (caret) caret.textContent = open ? '▲ 閉じる' : '▼ 開く';
+      window._bcdOpen[head.getAttribute('data-key')] = open;
+    };
+  }));
   // 進化元／リンクカードの画面を切り替えて表示（どちらも同じ別画面の枠を使う）
   const _openSubView = (html) => {
     if (!_evoView) return;

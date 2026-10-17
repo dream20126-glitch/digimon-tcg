@@ -1226,6 +1226,10 @@ export function doPlay(card, handIdx, slotIdx) {
       playerSpendMemory(_effPlayCost, true);
       if (window._tutorialFlushSuccess) await window._tutorialFlushSuccess();
       if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play_cost');
+      // 【メイン】の効果からアーツ進化〜【進化時】までを1続きの処理として扱う（相手の【消滅時】等の非ターンプレイヤー側の効果は
+      // その後。公式ルール 8-19-1: アーツ進化は使用後の保留処理）
+      if (window._effectBusy) window._effectBusy(1);
+      const _endBusy = (cb) => { if (window._effectBusyEnd) window._effectBusyEnd(cb); else cb(); };
       _hooks.checkAndTriggerEffect(card, '【メイン】', () => {
         renderAll();
         _offerArtsEvolve(card, (evolved) => {
@@ -1234,7 +1238,7 @@ export function doPlay(card, handIdx, slotIdx) {
             addLog('✦ 「' + card.name + '」をトラッシュへ');
             renderAll();
           }
-          checkPlayerPendingTurnEnd();
+          _endBusy(() => { renderAll(); checkPlayerPendingTurnEnd(); });
         });
       }, 'player');
     });
@@ -1968,7 +1972,10 @@ function _offerArtsEvolve(card, onDone0) {
   if (typeof window !== 'undefined' && window._effectBusy) window._effectBusy(1);
   let _busyDone = false;
   const onDone = (...a) => {
-    if (!_busyDone) { _busyDone = true; if (typeof window !== 'undefined' && window._effectBusy) window._effectBusy(-1); }
+    if (_busyDone) { onDone0(...a); return; }
+    _busyDone = true;
+    if (typeof window !== 'undefined' && window._effectBusyEnd) { window._effectBusyEnd(() => onDone0(...a)); return; }
+    if (typeof window !== 'undefined' && window._effectBusy) window._effectBusy(-1);
     onDone0(...a);
   };
 

@@ -19174,6 +19174,15 @@ let _effectProcessingDepth = 0;
 // 効果の処理の外で、効果に続く操作（アーツ進化の確認〜【進化時】等）をしている間の数（window._effectBusy(+1/-1)）
 let _extraBusyDepth = 0;
 if (typeof window !== 'undefined') window._effectBusy = (d) => { _extraBusyDepth = Math.max(0, _extraBusyDepth + (d || 0)); };
+// 効果に続く操作を終えた（_effectBusy(-1)）。全ての処理が終わったなら、後回しにしていた非ターンプレイヤー側の効果を発揮してから cb
+if (typeof window !== 'undefined') window._effectBusyEnd = (cb) => {
+  _extraBusyDepth = Math.max(0, _extraBusyDepth - 1);
+  if (_extraBusyDepth === 0 && _effectProcessingDepth === 0 && _ntpDeferred.length > 0) {
+    try { _flushNonTurnDeferred(window._lastBattleState, () => cb && cb()); } catch (e) { console.error('[_effectBusyEnd]', e); cb && cb(); }
+    return;
+  }
+  cb && cb();
+};
 export function isEffectProcessing() {
   if (_effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0) return true;
   try {
@@ -19249,8 +19258,11 @@ export function triggerEffect(triggerCode, sourceCard, sourceSide, context, call
         setTimeout(() => { try { if (_b.isPlayerTurn && _b.memory < 0) window._checkPendingTurnEndOnly(); } catch (e) { console.error('[pendingTurnEnd]', e); } }, 0);
       }
     };
-    // いちばん外側の効果処理が終わったら、後回しにしていた非ターンプレイヤー側の効果を発揮する
-    if (_effectProcessingDepth === 0 && _ntpDeferred.length > 0) {
+    // いちばん外側の効果処理が終わったら、後回しにしていた非ターンプレイヤー側の効果を発揮する。
+    // 効果に続く操作（デュアルカードを使った後のアーツ進化〜【進化時】等。window._effectBusy）の途中なら、それが終わってから
+    // （window._effectBusyEnd）。ムラサメモン＆豪ノ斬・叢時雨のオプション側で消滅させた相手のデジモンの【消滅時】が、
+    // アーツ進化の対象を選んでいる途中に発揮されていた
+    if (_effectProcessingDepth === 0 && _extraBusyDepth === 0 && _ntpDeferred.length > 0) {
       _flushNonTurnDeferred(context && context.bs, _afterAll);
       return;
     }

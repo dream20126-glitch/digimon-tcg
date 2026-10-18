@@ -19640,6 +19640,9 @@ if (typeof window !== 'undefined') window._effectBusyEnd = (cb) => {
 };
 export function isEffectProcessing() {
   if (_effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0) return true;
+  // 「〜したとき」等の反応の効果を処理している間・発動順を選んでいる間も処理中（久遠寺マコト BT26-095 の効果の途中で
+  // ターン終了に進み、相手のターンが始まっていた）。後回しにした非ターンプレイヤー側の効果が残っている間も
+  if (_reactionRunDepth > 0 || _orderSelectOpen > 0 || _ntpDeferred.length > 0) return true;
   try {
     if (_effectQueue.some(e => e && (e.status === 'waiting' || e.status === 'processing'))) return true;
     const bs = (typeof window !== 'undefined' && window._lastBattleState) || null;

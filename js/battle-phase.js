@@ -842,6 +842,12 @@ export function checkAutoTurnEnd() {
         // 効果の途中で相手のターンになっていた（ロゼモン：バーストモード BT26-050）。2分たっても処理中のままなら、
         // 処理中の印が残ってしまった不具合に備えて「ターン終了に進む」ボタンを出し、押されたら進める
         if (_isTurnEndBlocked() && !_turnEndForceRequested) {
+          // 何も処理していないのに後回しにした非ターンプレイヤー側の効果だけが残っていれば、ここで発揮する
+          if (window._hasNonTurnDeferred && window._hasNonTurnDeferred() && !(window._isEffectRunning && window._isEffectRunning())
+              && !poll._flushing && typeof window._flushNonTurnDeferred === 'function') {
+            poll._flushing = true;
+            try { window._flushNonTurnDeferred(() => { poll._flushing = false; }); } catch (_) { poll._flushing = false; }
+          }
           if (waited >= TURN_END_WAIT_MAX_MS) _showTurnEndForceButton();
           // 調査用: 5秒以上止まっていたら、何が止めているかを3秒ごとにコンソールへ出す
           if (waited >= 5000 && (!poll._lastLog || Date.now() - poll._lastLog > 3000)) {

@@ -45,8 +45,11 @@ function _tpResolutionActive(bs) {
   // 効果でアタック宣言して止めているアタックがある間も、ターンプレイヤー側の解決中（スカージキロプモンのオプション側で消滅させた
   // 相手のベックモンの【消滅時】が、アーツ進化より先に発揮されていた）
   if (bs.isPlayerTurn && (_extraBusyDepth > 0 || bs._attackDeclHold || (Array.isArray(bs._heldAttackResumes) && bs._heldAttackResumes.length > 0))) return true;
+  // 派生誘発の解決中（_runDerivedTriggers）は、その効果より前から発揮待ちだった外側の列の効果（_queueStack に退避した列の
+  // waiting）は数えない。派生誘発した非ターンプレイヤーの効果は、それ以前の発揮待ちより先に発揮する（公式ルール 15-4-5-3）
   return [_effectQueue, ..._queueStack].some(q => Array.isArray(q)
-    && q.some(e => e && (e.status === 'waiting' || e.status === 'processing') && e.side === 'turnPlayer'));
+    && q.some(e => e && e.side === 'turnPlayer' && (e.status === 'processing'
+      || (e.status === 'waiting' && !(_derivedOuterQueues.length > 0 && _derivedOuterQueues.includes(q))))));
 }
 // オンライン: こちら（ターンプレイヤー）のいちばん外側の効果が終わったら、相手の端末で後回しになっている効果
 // （こちらの効果で消滅した相手のデジモンの【消滅時】・久遠寺マコト BT26-095「デジモンが消滅したとき」等）を発揮してもらい、
@@ -538,20 +541,38 @@ function processQueue(context, onComplete) {
 // 全て解決する（公式ルール 15-4-5-2 / 15-4-5-3）。以前は同じ列に積んでいたため、ソーサリモン BT26-022 の【自分のターン終了時】で
 // 登場したアイギオテュースモン：ダーク BT26-073 の【登場時】が、同時に誘発していた結城カナン BT26-090 の【自分のターン終了時】と
 // 同時誘発として順番選択に並んでいた
+const _derivedOuterQueues = []; // 派生誘発の解決中に退避している「それ以前からの発揮待ち」の列
 function _runDerivedTriggers(run, cb) {
   const outer = _effectQueue;
   const hasOuter = outer.some(e => e && e.status === 'waiting');
   if (!hasOuter) { run(cb); return; }
   _queueStack.push(outer);
+  _derivedOuterQueues.push(outer);
   _effectQueue = [];
   let _done = false;
-  const fin = () => {
+  const fin0 = () => {
     if (_done) return; _done = true;
+    const di = _derivedOuterQueues.lastIndexOf(outer); if (di !== -1) _derivedOuterQueues.splice(di, 1);
     const left = _effectQueue.filter(e => e && (e.status === 'waiting'));
     const i = _queueStack.lastIndexOf(outer); if (i !== -1) _queueStack.splice(i, 1);
     _effectQueue = outer;
     left.forEach(e => { if (!_effectQueue.includes(e)) _effectQueue.push(e); });
     cb();
+  };
+  // 派生誘発（ターンプレイヤー側）を解決し終えたら、同じ効果で誘発して後回しにしていた非ターンプレイヤー側の効果も
+  // ここで発揮し（相手の端末の分も待つ）、それから以前からの発揮待ちに戻る（ユピテルモン＆ワイドプラズメントで消滅した
+  // 相手のデジモンへの久遠寺マコト BT26-095「デジモンが消滅したとき」が、パンプモン・ウィザーモンの【自分のターン終了時】の
+  // 後まで発揮されなかった）
+  const fin = () => {
+    if (_done) return;
+    const b = typeof window !== 'undefined' ? window._lastBattleState : null;
+    const afterRemote = () => fin0();
+    const afterLocal = () => { try { _flushRemoteNonTurn(b, afterRemote); } catch (e) { console.error('[derivedTriggers remote]', e); afterRemote(); } };
+    if (_ntpDeferred.length > 0 && _extraBusyDepth === 0) {
+      try { _flushNonTurnDeferred(b, afterLocal); } catch (e) { console.error('[derivedTriggers ntp]', e); afterLocal(); }
+      return;
+    }
+    afterLocal();
   };
   try { run(fin); } catch (e) { console.error('[derivedTriggers]', e); fin(); }
 }

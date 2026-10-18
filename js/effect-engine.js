@@ -8854,6 +8854,8 @@ function _fireDestroyChainQueued(cause, destroyedCard, destroyedSide, bs, ctxBas
   };
   if (_shouldDeferNonTurn(bs, destroyedSide)) {
     _deferNonTurn(_go, ctxBase, '「' + (destroyedCard && destroyedCard.name || '?') + '」の消滅時の効果', { card: destroyedCard, side: destroyedSide, trigger: 'on_destroy' });
+    // 後回しにした間も、場の「デジモンが消滅したとき」を発揮待ちに出す
+    try { hudPreviewSubjectDestroy([destroyedSide], bs, true); } catch (_) {}
     callback && callback();
     return;
   }
@@ -9172,6 +9174,8 @@ function checkPendingDestroys(ctx, callback) {
           ctx.bs._lastDestroyCause = _cause;
           fireDestroyChain(card, side, ctx.bs, ctx, done);
         }, ctx, '「' + card.name + '」の消滅時の効果', { card, side, trigger: 'on_destroy' });
+        // 後回しにした間も、この消滅で誘発した場の「デジモンが消滅したとき」（久遠寺マコト BT26-095 等）を発揮待ちに出す
+        try { hudPreviewSubjectDestroy([side], ctx.bs, true); } catch (_) {}
         processNext();
         return;
       }

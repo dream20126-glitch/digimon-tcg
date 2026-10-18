@@ -36,6 +36,10 @@ const _ntpDeferred = [];     // 後回しにした非ターンプレイヤー側
 const _ntpDeferredHud = [];  // 同じ並びの発揮待ち表示（null なら表示しない）
 function _tpResolutionActive(bs) {
   if (!bs) return false;
+  // オンラインの非ターンプレイヤー側: 相手（ターンプレイヤー）の端末に、発揮待ちの効果がまだ残っているという知らせを受けている間
+  // （fx_ruleDestroyRequest の tpBusy → fx_tpIdle で解除）。相手の効果の DP- でこちらのデジモンがルールチェックで消滅したとき、
+  // 相手の【登場時】等がまだ発揮待ちなのに、こちらの久遠寺マコト BT26-095「デジモンが消滅したとき」が先に発揮されていた
+  if (!bs.isPlayerTurn && bs._remoteTpBusy) return true;
   if (bs._pendingTurnPlayerBattleTrigger || bs._pendingNonTurnPlayerBattleTrigger || bs._penetrateResume) return true;
   // ターンプレイヤーの効果に続く操作（デュアルカードを使った後のアーツ進化〜【進化時】等。window._effectBusy）の途中・
   // 効果でアタック宣言して止めているアタックがある間も、ターンプレイヤー側の解決中（スカージキロプモンのオプション側で消滅させた
@@ -43,6 +47,20 @@ function _tpResolutionActive(bs) {
   if (bs.isPlayerTurn && (_extraBusyDepth > 0 || bs._attackDeclHold || (Array.isArray(bs._heldAttackResumes) && bs._heldAttackResumes.length > 0))) return true;
   return [_effectQueue, ..._queueStack].some(q => Array.isArray(q)
     && q.some(e => e && (e.status === 'waiting' || e.status === 'processing') && e.side === 'turnPlayer'));
+}
+// こちら（ターンプレイヤー）の効果の処理・発揮待ちが全て終わったら、相手の端末に fx_tpIdle を送る（1回）
+let _tpIdleWatch = null;
+function _watchTpIdleForRemote() {
+  if (_tpIdleWatch || typeof window === 'undefined') return;
+  const tick = () => {
+    const b = window._lastBattleState;
+    const busy = isEffectProcessing() || (window._isAttackInProgress && window._isAttackInProgress())
+      || (window._hasOwnPendingEffectsShown && window._hasOwnPendingEffectsShown());
+    if (b && b.isPlayerTurn && busy) { _tpIdleWatch = setTimeout(tick, 300); return; }
+    _tpIdleWatch = null;
+    try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_tpIdle' }); } catch (_) {}
+  };
+  _tpIdleWatch = setTimeout(tick, 300);
 }
 function _shouldDeferNonTurn(bs, side) {
   if (!bs || !side) return false;
@@ -9017,7 +9035,15 @@ function checkPendingDestroys(ctx, callback) {
     }
   });
   if (_remoteDp0) {
-    const _send = (done) => { try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_ruleDestroyRequest' }); } catch (_) {} done && done(); };
+    // ターンプレイヤー（こちら）の発揮待ち（保留中の「〜したとき」・効果で登場したデジモンの【登場時】等）が残っているなら、
+    // 相手の端末にそれを伝え（tpBusy）、こちらが全て終わったら fx_tpIdle で知らせる。相手の消滅時の効果等はそれまで発揮待ちになる
+    const _send = (done) => {
+      const _tpBusy = !!(ctx.bs && ctx.bs.isPlayerTurn && ((Array.isArray(ctx.bs._pendingReactions) && ctx.bs._pendingReactions.length > 0)
+        || _effectQueue.some(e => e && e.status === 'waiting') || _effectProcessingDepth > 0 || _effectBodyDepth > 0));
+      try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_ruleDestroyRequest', tpBusy: _tpBusy }); } catch (_) {}
+      if (_tpBusy) _watchTpIdleForRemote();
+      done && done();
+    };
     // 非ターンプレイヤー側（相手）の消滅なら、ターンプレイヤーの効果が残っている間は後回し（_ntpDeferred）
     if (_shouldDeferNonTurn(ctx.bs, 'ai')) _deferNonTurn(_send, null, null, null);
     else _send();

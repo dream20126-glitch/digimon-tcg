@@ -780,6 +780,7 @@ function onRemoteCommand(cmd) {
 
     // --- ターン ---
     case 'endTurn': {
+      bs._remoteTpBusy = false; // 相手のターンが終わったので、相手の発揮待ちの知らせも終わり
       if (bs._oppAttackInProgress) { bs._oppAttackInProgress = false; if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => {}); } // 保険（attack_end を受け取れなかった場合）
       // 保険: 相手の効果で DP0 になったまま、ルールチェックの知らせが来ていないデジモンがいれば、相手のターンが終わるので消滅させる
       else if ((bs.player.battleArea || []).some(c => c && c._remoteDp0Hold) && window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => { renderAll(); sendStateSync(); });
@@ -1371,7 +1372,17 @@ function onRemoteCommand(cmd) {
     }
 
     // --- 演出コマンド（キュー経由で順次再生、並列起動によるバチバチを防止） ---
+    case 'fx_tpIdle': {
+      // 相手（ターンプレイヤー）の発揮待ちが全て終わった → 後回しにしていたこちらの効果（消滅時等）を発揮する
+      bs._remoteTpBusy = false;
+      if (typeof window._flushNonTurnDeferred === 'function' && !(window._isEffectRunning && window._isEffectRunning())) {
+        try { window._flushNonTurnDeferred(() => { renderAll(); sendStateSync(); }); } catch (e) { console.error('[fx_tpIdle]', e); }
+      }
+      break;
+    }
     case 'fx_ruleDestroyRequest': {
+      // 相手の発揮待ちの効果が残っている間は、こちらの消滅時の効果等を後回しにする（fx_tpIdle まで）
+      if (cmd.tpBusy) bs._remoteTpBusy = true;
       // 相手の効果で DP0 になったこちらのデジモンを、相手のルールチェックの時点で消滅させる（持ち主として1回だけ）
       if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => { renderAll(); sendStateSync(); });
       break;

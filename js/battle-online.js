@@ -930,7 +930,8 @@ function onRemoteCommand(cmd) {
       const hasSecField = secCard.securityEffect && secCard.securityEffect.trim() && secCard.securityEffect !== 'なし';
       const originalEffect = secCard.effect || '';
       const afterEffect = () => {
-        const mentionsMain = /このカードの\s*【メイン】\s*効果/.test(secCard.securityEffect || secCard.effect);
+        // セキュリティ効果欄の「なし」は空欄扱い（効果欄の文章を見る）
+        const mentionsMain = /このカードの\s*【メイン】\s*効果/.test((secCard.securityEffect && secCard.securityEffect !== 'なし') ? secCard.securityEffect : secCard.effect);
         const doFinish = () => {
           secCard.effect = originalEffect;
           // ヘブンズゲート/ヘブンズチャーム等: secCard._returnToHand が立っていれば

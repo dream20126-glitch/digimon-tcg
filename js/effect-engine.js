@@ -104,6 +104,12 @@ function _deferNonTurn(fn, ctxForLog, label, hud) {
   if (label && ctxForLog && ctxForLog.addLog) ctxForLog.addLog('⏳ ' + label + 'は、ターンプレイヤーの効果を全て処理してから発揮する');
 }
 function _ntpHudSync() { try { _hudSetSource('ntpDeferred', _ntpDeferredHud.filter(Boolean)); } catch (_) {} }
+// 【セキュリティ】の文章: セキュリティ効果欄（「なし」は空欄扱い）が無ければ効果欄（効果欄に【セキュリティ】がある
+// デジモン。パンプモン BT26-030 の【セキュリティ】の確認に「なし」と出ていた）
+function _securityTextOf(card) {
+  const se = String((card && card.securityEffect) || '').trim();
+  return (se && se !== 'なし') ? se : String((card && card.effect) || '');
+}
 function _cardHasDestroyTrigger(card) {
   try { return !!(card && (hasRecipeTrigger(card, 'on_destroy') || hasEvoStackTrigger(card, 'on_destroy'))); } catch (_) { return false; }
 }
@@ -10059,7 +10065,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
         if (!Array.isArray(steps) || steps.length === 0) return;
         if (steps !== g && g._sectionIdx != null) steps._sectionIdx = g._sectionIdx;
         const blk = {
-          raw: ((triggerCode === 'security' ? (sourceCard.securityEffect || sourceCard.effect) : sourceCard.effect) || ''),
+          raw: ((triggerCode === 'security' ? _securityTextOf(sourceCard) : sourceCard.effect) || ''),
           trigger: { code: triggerCode },
           actions: [], conditions: [], _grantedSteps: steps,
         };
@@ -10075,7 +10081,7 @@ function scanTriggers(triggerCode, sourceCard, sourceSide, ctx) {
         const dummyBlock = {
           // security トリガー（セキュリティからチェックして発動）はセキュリティ効果テキストを、
           // それ以外（main = 手札から発動 等）はメイン効果テキストを効果説明に表示する
-          raw: ((triggerCode === 'security' ? (sourceCard.securityEffect || sourceCard.effect) : sourceCard.effect) || ''),
+          raw: ((triggerCode === 'security' ? _securityTextOf(sourceCard) : sourceCard.effect) || ''),
           trigger: { code: triggerCode },
           actions: [], conditions: [],
         };

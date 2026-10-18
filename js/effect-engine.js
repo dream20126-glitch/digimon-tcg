@@ -469,7 +469,7 @@ function processQueue(context, onComplete) {
         chosen.status = 'completed';
         sortQueue();
         if (window._sendMemoryUpdate) try { window._sendMemoryUpdate(); } catch(_) {}
-        checkPendingDestroys(context, () => {
+        _runDerivedTriggers((d) => checkPendingDestroys(context, d), () => {
           _queueResolveDepth = Math.max(0, _queueResolveDepth - 1);
           processQueue(context, onComplete);
         });
@@ -491,11 +491,34 @@ function processQueue(context, onComplete) {
     // ★ 各効果の完了直後に消滅判定 → on_destroy リアクションを処理
     // 加えてメモリー値が効果でズレている可能性に備え必ずメモリー同期も送る
     if (window._sendMemoryUpdate) try { window._sendMemoryUpdate(); } catch(_) {}
-    checkPendingDestroys(context, () => {
+    _runDerivedTriggers((d) => checkPendingDestroys(context, d), () => {
       _queueResolveDepth = Math.max(0, _queueResolveDepth - 1);
       processQueue(context, onComplete);
     });
   });
+}
+
+// 1つの効果を解決し終えた後の処理（消滅判定・保留していた「〜したとき」の反応＝その効果の解決中に誘発した効果）を、
+// 先に誘発して発揮待ちの効果とは別の列で行う。派生誘発した効果は、それ以前に誘発した他の発揮待ちの効果より先に、
+// 全て解決する（公式ルール 15-4-5-2 / 15-4-5-3）。以前は同じ列に積んでいたため、ソーサリモン BT26-022 の【自分のターン終了時】で
+// 登場したアイギオテュースモン：ダーク BT26-073 の【登場時】が、同時に誘発していた結城カナン BT26-090 の【自分のターン終了時】と
+// 同時誘発として順番選択に並んでいた
+function _runDerivedTriggers(run, cb) {
+  const outer = _effectQueue;
+  const hasOuter = outer.some(e => e && e.status === 'waiting');
+  if (!hasOuter) { run(cb); return; }
+  _queueStack.push(outer);
+  _effectQueue = [];
+  let _done = false;
+  const fin = () => {
+    if (_done) return; _done = true;
+    const left = _effectQueue.filter(e => e && (e.status === 'waiting'));
+    const i = _queueStack.lastIndexOf(outer); if (i !== -1) _queueStack.splice(i, 1);
+    _effectQueue = outer;
+    left.forEach(e => { if (!_effectQueue.includes(e)) _effectQueue.push(e); });
+    cb();
+  };
+  try { run(fin); } catch (e) { console.error('[derivedTriggers]', e); fin(); }
 }
 
 // ≪継承≫の発動演出: 継承元（進化元の指定カード）の名前と、継承のキーワード説明を出す
@@ -913,7 +936,10 @@ function _hudSetSource(key, items) {
 function _hudSyncQueue(context) {
   try {
     const bs = context && context.bs;
-    const items = _effectQueue.filter(e => e && e.status === 'waiting').map((e) => {
+    // 派生誘発の解決中（_runDerivedTriggers）は、先に誘発していた外側の列の発揮待ちも表示し続ける
+    const _outerW = new Set();
+    _queueStack.forEach(q => (q || []).forEach(e => { if (e && e.status === 'waiting') _outerW.add(e); }));
+    const items = _effectQueue.filter(e => e && e.status === 'waiting').concat([..._outerW]).map((e) => {
       const side = e.actualSide || (e.side === 'turnPlayer' ? (bs && bs.isPlayerTurn ? 'player' : 'ai') : (bs && bs.isPlayerTurn ? 'ai' : 'player'));
       const blk = e.block || {};
       const inh = blk._inheritedFrom;
@@ -924,7 +950,7 @@ function _hudSyncQueue(context) {
       try { text = extractTriggerSectionText(raw || '', trig, blk._grantedSteps || null); } catch (_) { text = raw || ''; }
       const it = _hudItem(side, e.card, blk._recipeCard || null, text);
       // 同時誘発のグループ（同じプレイヤー・同じ優先度でまとめて誘発して待っているもの。順番はプレイヤーが選ぶ）
-      it.group = 'queue:' + side + ':' + (e.priority || 'normal');
+      it.group = (_outerW.has(e) ? 'queueOuter:' : 'queue:') + side + ':' + (e.priority || 'normal');
       it.alive = () => e.status === 'waiting' && _entryStillValid(e, bs);
       // 継承した効果はキャリア（継承しているデジモン）名義で表示し、継承元を添える
       if (inh) { it.sub = '🧬 継承：「' + ((src && src.name) || inh.name) + '」の効果'; }

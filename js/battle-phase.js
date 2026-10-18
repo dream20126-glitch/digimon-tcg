@@ -848,6 +848,18 @@ export function checkAutoTurnEnd() {
             poll._flushing = true;
             try { window._flushNonTurnDeferred(() => { poll._flushing = false; }); } catch (_) { poll._flushing = false; }
           }
+          // 何も処理していないのに保留中の「〜したとき」の反応・処理待ちの効果が残っていれば、ここで処理する
+          // （残ったままだと処理中扱いが続き、ターンを終了できなかった）
+          if (waited >= 1500 && !poll._flushing && !poll._resolving && !(window._isEffectRunning && window._isEffectRunning())
+              && typeof window._resolveLeftoverPending === 'function' && window._diagPending) {
+            const d = window._diagPending();
+            if (d && (d.reactions > 0 || (d.queue || []).some(q => /:waiting$/.test(q)))) {
+              poll._resolving = true;
+              console.log('[turnEnd] 残っていた保留中の効果を処理します', d);
+              try { window._resolveLeftoverPending(() => { poll._resolving = false; try { renderAll(); } catch (_) {} }); }
+              catch (e) { console.error('[turnEnd resolveLeftover]', e); poll._resolving = false; }
+            }
+          }
           if (waited >= TURN_END_WAIT_MAX_MS) _showTurnEndForceButton();
           // 調査用: 5秒以上止まっていたら、何が止めているかを3秒ごとにコンソールへ出す
           if (waited >= 5000 && (!poll._lastLog || Date.now() - poll._lastLog > 3000)) {

@@ -12697,7 +12697,23 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
     const effectText = extractTriggerSectionText(fullEffectText, triggerKey, recipe);
     // 通常の効果ディスパッチ（executeQueueEntry）と同じ判定・同じ確認フローに揃えるため
     // alwaysConfirm:true（任意効果は side を問わず必ず確認ダイアログを出す）
-    _runReactionEffect({ card: carrier, sourceCard, recipe, effectText }, reactSide, bs, ctxBase, afterDone, { alwaysConfirm: true, trackLimitBySourceCard: true });
+    // 効果の処理中に保留した「〜したとき」の反応（手札の破棄・進化元の追加 等）を、この効果の後に処理する
+    // （他の反応の経路と同じ。久遠寺マコト BT26-095 の手札破棄の反応が残り続け、ターンを終了できなかった）
+    // DP0 の消滅判定は外側の処理が続けて行うので、ここでは新しく保留した反応だけを処理する（二重に消滅させない）
+    const _snap = _snapPendingReactions(bs);
+    const _afterEff = () => {
+      const list = Array.isArray(bs._pendingReactions) ? bs._pendingReactions : [];
+      const fresh = list.filter((r) => !_snap.has(r));
+      if (fresh.length === 0) { afterDone(); return; }
+      const older = list.filter((r) => _snap.has(r));
+      bs._pendingReactions = fresh;
+      _drainPendingReactionsOnly(Object.assign({}, ctxBase, { bs }), () => {
+        const rest = Array.isArray(bs._pendingReactions) ? bs._pendingReactions : [];
+        bs._pendingReactions = older.concat(rest);
+        afterDone();
+      });
+    };
+    _runReactionEffect({ card: carrier, sourceCard, recipe, effectText }, reactSide, bs, ctxBase, _afterEff, { alwaysConfirm: true, trackLimitBySourceCard: true });
   }
 
   function nextReaction() {

@@ -2517,7 +2517,15 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         if (action._isCost && _edOkCount < n) continue;
         evoTargets.push(i);
       }
-      if (evoTargets.length === 0) {
+      // 「自分のテイマーの下にある裏向きのカード2枚を破棄する」等（テイマー1体と限定していない・2枚以上）は、テイマーが複数いれば
+      // それぞれの下から合わせて選べる（テイマーAの下から1枚・テイマーBの下から1枚 等。ナイトキロプモン BT26-070 / レイヴモン BT26-082）。
+      // コストを払えるかもテイマー全体の合計で判定する。下から/上からの効果は、テイマーごとに選んだ枚数だけその端から破棄する
+      const _edPoolQual = (c) => (edConds.length > 0 ? c.stack.filter(x => checkConditions(edConds, x, ctx.bs, edSide)) : c.stack.slice());
+      const _edPoolTamers = (edAreaKey === 'tamerArea' && !_edSelfOnly && n > 1)
+        ? edArea.filter(c => c && Array.isArray(c.stack) && c.stack.length > 0 && (!edContainerFilter || cardMatchesFilter(c, edContainerFilter, ctx.bs, ctx.side, ctx.card)) && _edPoolQual(c).length > 0)
+        : [];
+      const _edPooled = _edPoolTamers.length >= 2;
+      if (evoTargets.length === 0 && !_edPooled) {
         ctx.addLog('⚠ 進化元を破棄できる対象がいません');
         // コストの場合は支払えない＝本体の効果も実行しない（callback(false)）
         showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(action._isCost ? false : undefined));
@@ -2644,6 +2652,64 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         }
         doneCb && doneCb();
       };
+      if (_edPooled) {
+        const _fromTopP = action.code === 'evo_discard_top' || action.code === 'evo_discard_tamer_top';
+        const _selP = action.code === 'evo_discard_select' || action.code === 'evo_discard_tamer_select';
+        // テイマーごとの候補（下から/上からの順。選んで破棄なら並びのまま）
+        const _ordered = _edPoolTamers.map(t => ({ t, cards: (_fromTopP || _selP) ? _edPoolQual(t) : _edPoolQual(t).slice().reverse() }));
+        const _total = _ordered.reduce((a, o) => a + o.cards.length, 0);
+        if (_total < n && action._isCost) {
+          ctx.addLog('⚠ テイマーの下の破棄できるカードが足りません（' + _total + '/' + n + '枚）');
+          showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(false));
+          break;
+        }
+        const _want = Math.min(n, _total);
+        const _ownerOf = (card) => { const o = _ordered.find(x => x.cards.includes(card)); return o ? o.t : null; };
+        const _doPooled = (picked) => {
+          if (!picked || picked.length === 0) { callback(action._isCost ? false : undefined); return; }
+          if (action._isCost && picked.length < n) { callback(false); return; }
+          // テイマーごとに破棄するカード（選んで破棄＝選んだカード / 下から・上から＝そのテイマーの端から、選んだ枚数）
+          const perTamer = _ordered.map(o => {
+            const k = picked.filter(c => o.cards.includes(c)).length;
+            return { t: o.t, cards: _selP ? picked.filter(c => o.cards.includes(c)) : o.cards.slice(0, k) };
+          }).filter(x => x.cards.length > 0);
+          let i = 0;
+          let any = false;
+          const nextT = () => {
+            if (i >= perTamer.length) {
+              if (ctx.bs) ctx.bs._lastActionCount = picked.length;
+              callback(any ? undefined : (action._isCost ? false : undefined));
+              return;
+            }
+            const { t, cards } = perTamer[i++];
+            _edInfo = null;
+            const discarded = [];
+            cards.forEach((card) => {
+              const si = t.stack.indexOf(card);
+              if (si === -1) return;
+              _edNote(t, card, si);
+              t.stack.splice(si, 1);
+              edOwner.trash.push(card);
+              discarded.push(card);
+            });
+            finalizeDiscard(discarded, t, (did) => { if (did) any = true; afterDiscard(did, nextT); });
+          };
+          nextT();
+        };
+        if (effectiveSide === 'ai') {
+          const auto = [];
+          _ordered.forEach(o => o.cards.forEach(c => { if (auto.length < _want) auto.push(c); }));
+          _doPooled(auto);
+          break;
+        }
+        const _cands = [];
+        _ordered.forEach(o => o.cards.forEach(c => _cands.push(c)));
+        const _pos = _selP ? '' : (_fromTopP ? '上から' : '下から');
+        showTrashCardPicker(_cands, _want, !!action._isCost,
+          '🎯 テイマーの下から破棄するカードを' + _want + '枚選んでください（複数のテイマーから選べます' + (_pos ? '。各テイマーの' + _pos + '選んだ枚数を破棄' : '') + '）',
+          (picked) => _doPooled(picked), _cands, { labelOf: (c) => { const t = _ownerOf(c); return t ? '「' + t.name + '」の下' : ''; } });
+        break;
+      }
       // AIは自動選択、プレイヤーは対象選択UI
       if (effectiveSide === 'ai') {
         discardFromTarget(edArea[ctx._forceTargetIdx ?? evoTargets[0]], (didDiscard) => {
@@ -4754,7 +4820,8 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
         wrap.innerHTML = (src
           ? `<img src="${src}" style="width:100%;border-radius:4px;">`
           : `<div style="height:60px;background:#111;display:flex;align-items:center;justify-content:center;font-size:7px;color:#aaa;">${c.name||''}</div>`
-        ) + `<div style="font-size:7px;color:#888;margin-top:2px;">${c.name||''}</div>`;
+        ) + (opts && typeof opts.labelOf === 'function' && opts.labelOf(c) ? `<div style="font-size:7px;color:#ffaa00;margin-top:2px;">${opts.labelOf(c)}</div>` : '')
+          + `<div style="font-size:7px;color:#888;margin-top:2px;">${c.name||''}</div>`;
         if (isCand) {
           wrap.onclick = () => {
             // 既に選択済みなら確認なしで解除

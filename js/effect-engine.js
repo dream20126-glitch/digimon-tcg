@@ -1272,7 +1272,29 @@ function showQueueOrderSelect(entries, callback0) {
 }
 
 // キューエントリを実行
-function executeQueueEntry(entry, context, callback) {
+// 効果の本体を処理している数（キューの効果・反応の効果。入れ子になる）。0 より大きい間はルールチェック（DP0 の消滅）を
+// 行わない（公式ルール 17-1-2-2「効果の処理中は行われません」）。どの入口（反応の後の保留処理・入れ子の効果の完了・
+// 保留中の効果の処理 等）から checkPendingDestroys が呼ばれても、いちばん外側の効果が終わるまで消滅させない。
+// 以前は効果の途中で走った判定で、DP- で 0 になったデジモンがその効果の残りより先に消滅することがあった
+let _effectBodyDepth = 0;
+function _effectBodyEnter() {
+  _effectBodyDepth++;
+  let closed = false;
+  return () => {
+    if (closed) return;
+    closed = true;
+    _effectBodyDepth = Math.max(0, _effectBodyDepth - 1);
+    // 保留した DP0 の消滅は、いちばん外側の効果の完了時の判定（processQueue 等）が行う。念のため、何も処理していない状態に
+    // なったら行う予約も入れる（判定が呼ばれない経路で DP0 のまま残らないように）
+    try {
+      const b = typeof window !== 'undefined' && window._lastBattleState;
+      if (_effectBodyDepth === 0 && b && b._dp0HeldForEffect) { b._dp0HeldForEffect = false; _scheduleRuleDestroyCheck(b); }
+    } catch (_) {}
+  };
+}
+function executeQueueEntry(entry, context, callback0) {
+  const _ebExit = _effectBodyEnter();
+  const callback = (...a) => { _ebExit(); callback0 && callback0(...a); };
   const { card, block, side } = entry;
   // 相手のカードの反応（_scanReactiveSubjectsForSourceOnly が印を付けたもの）は持ち主の端末で発揮してもらう
   if (block && block._delegate && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
@@ -6546,6 +6568,8 @@ if (typeof window !== 'undefined') {
     const b = window._lastBattleState;
     const has = !!(b && ['player', 'ai'].some(sd => (b[sd].battleArea || []).some(c => c && c._pendingDestroy)));
     if (b) b._dp0HeldForAttack = false;
+    // 相手の効果が終わった知らせなので、相手の効果で DP0 になったデジモンの保留を外す
+    if (b) (b.player.battleArea || []).forEach((c) => { if (c) delete c._remoteDp0Hold; });
     if (!has) { cb && cb(); return; }
     try { checkPendingDestroys(_buildBaseCtx(null, b), () => { cb && cb(); }); }
     catch (e) { console.error('[runRuleDestroyCheckNow]', e); cb && cb(); }
@@ -8978,6 +9002,10 @@ function checkPendingDestroys(ctx, callback) {
         // それが終わったとき（window._effectBusyEnd）に消滅させる（ムラサメモン＆豪ノ斬・叢時雨のオプション側の DP- で DP0 に
         // なったベックモンが、アーツ進化の対象を選んでいる途中に消滅していた）
         if (_extraBusyDepth > 0) { ctx.bs._dp0HeldForBusy = true; continue; }
+        // 効果の本体の処理中（入れ子の効果・反応の後の判定等）なら、その効果が全て終わってから（公式ルール 17-1-2-2）
+        if (_effectBodyDepth > 0) { ctx.bs._dp0HeldForEffect = true; continue; }
+        // オンラインで相手の効果の DP- で 0 になったこちらのデジモンは、相手の効果が終わった知らせ（fx_ruleDestroyRequest）まで待つ
+        if (side === 'player' && area[i]._remoteDp0Hold && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) continue;
         // オンラインで相手のカードの DP0 消滅は、持ち主の端末が行う（こちらでも消滅させると消滅演出・【デコード】等が
         // 二重になっていた）。消滅させるタイミング（ルールチェックの時点）はこちらが決め、fx_ruleDestroyRequest で頼む
         if (side === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) {
@@ -10746,8 +10774,10 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
 // 変えないためオプション化している（挙動そのものの統一は別課題）。
 // 「〜したとき」等の反応の効果を処理している数（オンラインの待ち画面を隠す判定用。window._isEffectRunning）
 let _reactionRunDepth = 0;
-function _runReactionEffect(reaction, side, bs, ctxBase, done0, opts) {
+function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
   _reactionRunDepth++;
+  const _ebExit = _effectBodyEnter();
+  const done0 = () => { _ebExit(); done0x && done0x(); };
   // 発揮待ちに先に出していた「デジモンが消滅したとき」（hudPreviewSubjectDestroy）は、発揮し始めたら外す
   if (reaction && reaction.card) { _subjPreviewStarted.add(reaction.card); try { _hudRender(); } catch (_) {} }
   let _rrDone = false;
@@ -15247,11 +15277,15 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (_costSumLe != null) {
             let _budget = _costSumLe;
             let _budgetPicked = 0;
+            // 「登場コスト」の合計なので、登場コストを持たないデュアルカードは候補にしない（オプションとして使う指定のときだけ）
+            const _budgetDualOk = [].concat(_filter.type || [], _filter.type_in || []).includes('オプション');
+            const _budgetOk = (c) => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card) && _cardPlayCostOf(c) <= _budget
+              && (_budgetDualOk || String(c.type || '') !== 'デュアル');
             const _budgetNext = () => {
               const _cands = [
                 ...(_fromZones.includes('hand') ? player.hand : []),
                 ...(_fromZones.includes('trash') ? player.trash : []),
-              ].filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card) && _cardPlayCostOf(c) <= _budget);
+              ].filter(_budgetOk);
               if (_cands.length === 0) { callback(); return; }
               const _onPick = (c) => {
                 if (!c) {
@@ -15272,9 +15306,25 @@ function executeRecipeStep(step, ctx, store, callback) {
               // 2枚目以降は常に打ち切れる（「まで」）。1枚目は optional のときだけ「使わない」を出す
               const _canStop = _optional || _budgetPicked > 0;
               if (_cands.length === 1 && !_canStop && !_anyHandOrTrash(_cands)) { _onPick(_cands[0]); return; }
-              showTrashCardPicker(_cands, 1, _canStop,
-                '🌟 登場させるカードを選んでください（残りコスト' + _budget + (_budgetPicked > 0 ? '・「使わない」で終了' : '') + '）',
-                (picked) => _onPick(picked && picked[0]), _cands);
+              const _bTitle = (zn) => '🌟 ' + (zn ? zn + 'から' : '') + '登場させるカードを選んでください（残りコスト' + _budget + (_budgetPicked > 0 ? '・「使わない」で終了' : '') + '）';
+              // 「手札/トラッシュから」: 先にどちらからかを選び、そのゾーンの一覧から選ぶ（戻るで選び直し）。1枚ごとに選び直せる
+              if (_fromZones.includes('hand') && _fromZones.includes('trash')) {
+                const _hc = player.hand.filter(_budgetOk);
+                const _tc = player.trash.filter(_budgetOk);
+                const _labels = ['手札から（対象' + _hc.length + '枚）', 'トラッシュから（対象' + _tc.length + '枚）'];
+                if (_canStop) _labels.push(_budgetPicked > 0 ? '終了する' : '使わない');
+                const _choose = () => showAltActionChoice(_labels, (zi) => {
+                  if (zi === 2) { _onPick(null); return; }
+                  const zc = zi === 0 ? _hc : _tc;
+                  const za = zi === 0 ? player.hand : player.trash;
+                  if (za.length === 0) { _choose(); return; }
+                  showTrashCardPicker(zc, 1, _canStop, _bTitle(zi === 0 ? '手札' : 'トラッシュ') + (zc.length === 0 ? '（対象のカードがありません）' : ''),
+                    (picked) => _onPick(picked && picked[0]), za, { onBack: _choose });
+                }, '🌟 どこから登場させますか？（残りコスト' + _budget + '）');
+                _choose();
+                return;
+              }
+              showTrashCardPicker(_cands, 1, _canStop, _bTitle(''), (picked) => _onPick(picked && picked[0]), _cands);
             };
             _budgetNext();
             return;
@@ -15479,16 +15529,21 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 候補が1種類だけならそのまま進化し、複数種類あるときだけカードを選ぶ
         const _inHand = _cands.filter(c => player.hand.includes(c));
         const _inTrash = _cands.filter(c => !player.hand.includes(c));
-        if (_inHand.length > 0 && _inTrash.length > 0) {
-          const _zl = ['✋ 手札から進化', '🗑 トラッシュから進化'];
+        // 「手札/トラッシュから」（from に両方）: 先にどちらからかを選び、そのゾーンの一覧から選ぶ（戻るで選び直し）。
+        // 登場の「手札/トラッシュから」と同じ選び方（メルヴァモン BT26-081 等の指摘で全体に揃えた）
+        if (_evoZones.includes('hand') && _evoZones.includes('trash')) {
+          const _zl = ['✋ 手札から進化（対象' + _inHand.length + '枚）', '🗑 トラッシュから進化（対象' + _inTrash.length + '枚）'];
           if (_evoOptional || _evoIsCost) _zl.push('使わない');
           const _sameKind = (list) => list.every(c => c.cardNo === list[0].cardNo);
-          showAltActionChoice(_zl, (zi) => {
+          const _chooseZ = () => showAltActionChoice(_zl, (zi) => {
             if (zi >= 2) { _doEvolveWith(null, slotIdx); return; }
             const zc = zi === 0 ? _inHand : _inTrash;
-            if (_sameKind(zc) && !_anyHandOrTrash(zc)) { _doEvolveWith(zc[0], slotIdx); return; }
-            showTrashCardPicker(zc, 1, false, '⬆ 進化させるカードを選んでください', (picked) => _doEvolveWith(picked && picked[0], slotIdx), zc);
+            const za = zi === 0 ? player.hand : player.trash;
+            if (za.length === 0) { _chooseZ(); return; }
+            showTrashCardPicker(zc, 1, false, '⬆ ' + (zi === 0 ? '手札' : 'トラッシュ') + 'から進化させるカードを選んでください' + (zc.length === 0 ? '（対象のカードがありません）' : ''),
+              (picked) => _doEvolveWith(picked && picked[0], slotIdx), za, { onBack: _chooseZ });
           }, '⬆ 「' + (_sameKind(_cands) ? _cands[0].name : '進化先') + '」にどこから進化させますか？');
+          _chooseZ();
           return;
         }
         showTrashCardPicker(_cands, 1, _evoOptional, '⬆ 進化させるカードを選んでください', (picked) => {
@@ -19822,7 +19877,7 @@ export function hasOwnPendingEffectsShown() {
   try { return _hudAllItems().some(it => it && it.side === 'player' && it.group !== 'subjDestroyPreview'); } catch (_) { return false; }
 }
 // バトル開始時や、処理中のまま解除されなかった場合（完了コールバックが呼ばれない経路の不具合）に戻す
-export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; _reactionRunDepth = 0; _orderSelectOpen = 0; _effectUiOpen = 0; }
+export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; _reactionRunDepth = 0; _orderSelectOpen = 0; _effectUiOpen = 0; _effectBodyDepth = 0; }
 if (typeof window !== 'undefined') {
   window._isEffectProcessing = isEffectProcessing;
   // 今まさに効果を処理しているか（保留中の「〜したとき」の反応・発揮待ちは数えない）

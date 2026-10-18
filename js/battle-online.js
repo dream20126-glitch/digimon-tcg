@@ -781,6 +781,8 @@ function onRemoteCommand(cmd) {
     // --- ターン ---
     case 'endTurn': {
       if (bs._oppAttackInProgress) { bs._oppAttackInProgress = false; if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => {}); } // 保険（attack_end を受け取れなかった場合）
+      // 保険: 相手の効果で DP0 になったまま、ルールチェックの知らせが来ていないデジモンがいれば、相手のターンが終わるので消滅させる
+      else if ((bs.player.battleArea || []).some(c => c && c._remoteDp0Hold) && window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => { renderAll(); sendStateSync(); });
       // 保険: こちらの効果処理（相手に消滅させられたデジモンの消滅時効果等）の途中なら、終わってからターンを受け取る
       if (_localBusyForRemote() && !cmd._idleWaited) {
         const _c = Object.assign({}, cmd, { _idleWaited: true });
@@ -1460,7 +1462,9 @@ function onRemoteCommand(cmd) {
           myCard.dp = myCard.baseDp + mod;
           // DP0以下なら消滅マーク
           // DP0 の消滅は持ち主（こちら）が行う。タイミングは相手（効果を処理している側）が fx_ruleDestroyRequest で知らせる
-          if (myCard.dp <= 0) myCard._pendingDestroy = true;
+          // 相手の効果がまだ処理中のことがあるので、相手からルールチェックの知らせ（fx_ruleDestroyRequest / attack_end）が
+          // 来るまでは、こちらの他の処理の判定では消滅させない（_remoteDp0Hold）
+          if (myCard.dp <= 0) { myCard._pendingDestroy = true; myCard._remoteDp0Hold = true; }
         }
         renderAll();
       }

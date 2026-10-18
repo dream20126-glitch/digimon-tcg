@@ -48,6 +48,23 @@ function _tpResolutionActive(bs) {
   return [_effectQueue, ..._queueStack].some(q => Array.isArray(q)
     && q.some(e => e && (e.status === 'waiting' || e.status === 'processing') && e.side === 'turnPlayer'));
 }
+// オンライン: こちら（ターンプレイヤー）のいちばん外側の効果が終わったら、相手の端末で後回しになっている効果
+// （こちらの効果で消滅した相手のデジモンの【消滅時】・久遠寺マコト BT26-095「デジモンが消滅したとき」等）を発揮してもらい、
+// それが全て終わるまで待ってから次へ進む（公式ルール 15-4: 発揮待ちは全て解決してから進行）。以前は待たずに次の処理
+// （【自分のターン終了時】等）へ進み、相手の効果が後回しのまま残っていた（ユピテルモン＆ワイドプラズメントで3体消滅させた後）。
+// 相手の端末に何かを依頼・通知した（後回しが起きうる）ときだけ待つ
+let _remoteNtpMaybe = false;
+let _remoteWaitDepth = 0;
+function _flushRemoteNonTurn(bs, next) {
+  const go = () => { try { next && next(); } catch (e) { console.error('[flushRemoteNonTurn]', e); } };
+  const online = typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
+  if (!_remoteNtpMaybe || !online || !bs || !bs.isPlayerTurn || typeof window._waitRemoteIdle !== 'function') { go(); return; }
+  _remoteNtpMaybe = false;
+  _remoteWaitDepth++;
+  try { window._onlineSendCommand({ type: 'fx_tpIdle' }); } catch (_) {}
+  let fin = false;
+  window._waitRemoteIdle(() => { if (fin) return; fin = true; _remoteWaitDepth = Math.max(0, _remoteWaitDepth - 1); go(); });
+}
 // こちら（ターンプレイヤー）の効果の処理・発揮待ちが全て終わったら、相手の端末に fx_tpIdle を送る（1回）
 let _tpIdleWatch = null;
 function _watchTpIdleForRemote() {
@@ -9045,6 +9062,7 @@ function checkPendingDestroys(ctx, callback) {
     const _send = (done) => {
       const _tpBusy = !!(ctx.bs && ctx.bs.isPlayerTurn && ((Array.isArray(ctx.bs._pendingReactions) && ctx.bs._pendingReactions.length > 0)
         || _effectQueue.some(e => e && e.status === 'waiting') || _effectProcessingDepth > 0 || _effectBodyDepth > 0));
+      _remoteNtpMaybe = true;
       try { window._onlineSendCommand && window._onlineSendCommand({ type: 'fx_ruleDestroyRequest', tpBusy: _tpBusy }); } catch (_) {}
       if (_tpBusy) _watchTpIdleForRemote();
       done && done();
@@ -11478,6 +11496,7 @@ function _tryCancelLeaveByOtherCards(leavingCard, leavingSide, bs, ctxBase, call
 // payload の side 系フィールドは送信前に相手視点（player⇔ai）へ反転しておくこと。
 // 相手機では battle-online.js → fireDelegatedReactionTriggers(recipeKey, ..., cmd) が cmd.kind で振り分ける
 function _delegateReactionToOpponent(payload, done) {
+  _remoteNtpMaybe = true;
   const finish = () => { try { done && done(); } catch (_) {} };
   try { window._onlineSendCommand(Object.assign({ type: 'fx_reactionDelegate' }, payload)); }
   catch (_) { finish(); return; }
@@ -19920,12 +19939,14 @@ if (typeof window !== 'undefined') window._effectBusyEnd = (cb) => {
   _extraBusyDepth = Math.max(0, _extraBusyDepth - 1);
   if (_extraBusyDepth > 0 || _effectProcessingDepth > 0) { cb && cb(); return; }
   const b = window._lastBattleState;
+  // 相手の端末で後回しになっている効果も、発揮し終わるまで待ってから続ける（_flushRemoteNonTurn）
+  const _cbR = () => _flushRemoteNonTurn(b, () => cb && cb());
   const flush = () => {
     if (_ntpDeferred.length > 0) {
-      try { _flushNonTurnDeferred(b, () => cb && cb()); } catch (e) { console.error('[_effectBusyEnd]', e); cb && cb(); }
+      try { _flushNonTurnDeferred(b, _cbR); } catch (e) { console.error('[_effectBusyEnd]', e); _cbR(); }
       return;
     }
-    cb && cb();
+    _cbR();
   };
   // 保留していた DP0 の消滅（ルール処理）を先に行う（相手のデジモンなら持ち主に依頼する）
   if (b && b._dp0HeldForBusy) {
@@ -19939,7 +19960,7 @@ export function isEffectProcessing() {
   if (_effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0) return true;
   // 「〜したとき」等の反応の効果を処理している間・発動順を選んでいる間も処理中（久遠寺マコト BT26-095 の効果の途中で
   // ターン終了に進み、相手のターンが始まっていた）。後回しにした非ターンプレイヤー側の効果が残っている間も
-  if (_reactionRunDepth > 0 || _orderSelectOpen > 0 || _ntpDeferred.length > 0 || _effectUiOpen > 0) return true;
+  if (_reactionRunDepth > 0 || _orderSelectOpen > 0 || _ntpDeferred.length > 0 || _effectUiOpen > 0 || _remoteWaitDepth > 0) return true;
   try {
     if (_effectQueue.some(e => e && (e.status === 'waiting' || e.status === 'processing'))) return true;
     const bs = (typeof window !== 'undefined' && window._lastBattleState) || null;
@@ -19956,11 +19977,11 @@ export function hasOwnPendingEffectsShown() {
   try { return _hudAllItems().some(it => it && it.side === 'player' && it.group !== 'subjDestroyPreview'); } catch (_) { return false; }
 }
 // バトル開始時や、処理中のまま解除されなかった場合（完了コールバックが呼ばれない経路の不具合）に戻す
-export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; _reactionRunDepth = 0; _orderSelectOpen = 0; _effectUiOpen = 0; _effectBodyDepth = 0; }
+export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; _reactionRunDepth = 0; _orderSelectOpen = 0; _effectUiOpen = 0; _effectBodyDepth = 0; _remoteWaitDepth = 0; }
 if (typeof window !== 'undefined') {
   window._isEffectProcessing = isEffectProcessing;
   // 今まさに効果を処理しているか（保留中の「〜したとき」の反応・発揮待ちは数えない）
-  window._isEffectRunning = () => _effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0 || _targetSelecting || _reactionRunDepth > 0 || _orderSelectOpen > 0 || _effectUiOpen > 0;
+  window._isEffectRunning = () => _effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0 || _targetSelecting || _reactionRunDepth > 0 || _orderSelectOpen > 0 || _effectUiOpen > 0 || _remoteWaitDepth > 0;
   window._resetEffectProcessing = resetEffectProcessing;
   // 何も処理していないのに残っている発揮待ち（保留中の「〜したとき」の反応・効果のキュー）の中身（調査用）と、それを処理する入口。
   // オンラインで相手がターンを終える前の問い合わせ（fx_idleCheck）に、残ったままで返事ができず止まっていた
@@ -20022,9 +20043,10 @@ export function triggerEffect(triggerCode, sourceCard, sourceSide, context, call
     // （window._effectBusyEnd）。ムラサメモン＆豪ノ斬・叢時雨のオプション側で消滅させた相手のデジモンの【消滅時】が、
     // アーツ進化の対象を選んでいる途中に発揮されていた
     if (_effectProcessingDepth === 0 && _extraBusyDepth === 0 && _ntpDeferred.length > 0) {
-      _flushNonTurnDeferred(context && context.bs, _afterAll);
+      _flushNonTurnDeferred(context && context.bs, () => _flushRemoteNonTurn(context && context.bs, _afterAll));
       return;
     }
+    if (_effectProcessingDepth === 0 && _extraBusyDepth === 0) { _flushRemoteNonTurn(context && context.bs, _afterAll); return; }
     _afterAll();
   };
   try {

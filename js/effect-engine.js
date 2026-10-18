@@ -14050,7 +14050,9 @@ function _summonCardFromEffect(c, ctx, opts, done) {
     const _basePc = parseInt(c.playCost, 10);
     if (!isNaN(_basePc)) {
       const _paid = opts.payCost == null ? 0 : opts.payCost;
-      if (_basePc - _paid > 0) c._costReduction = _basePc - _paid; else delete c._costReduction;
+      // 増えた場合（使用コスト+の効果で元のコストより多く払った）も表示に反映する（負の軽減量。ユピテルモン＆ワイドプラズメント BT26-033
+      // をセキュリティ4枚・カナンの-3で3支払ったのに「2コストで使用」と出ていた）
+      if (_basePc !== _paid) c._costReduction = _basePc - _paid; else delete c._costReduction;
     }
     _useOptionCardFromEffect(c, ctx, done);
     return;

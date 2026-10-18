@@ -788,6 +788,21 @@ function _isTurnEndBlocked() {
   return false;
 }
 let _turnEndWaitTimer = null;
+// 保険: 自分のメインフェイズでメモリーが相手側に移っているのにターン終了の判定が始まっていなければ始める（1秒ごと）。
+// 効果の終わりの判定（triggerEffect の _crossed 等）が呼ばれない経路があっても止まったままにならないように
+// （ナイトキロプモンの【メイン】からスカージキロプモンにアーツ進化してメモリーが相手側に移ったのに、ターン終了にならなかった）。
+// 効果の処理中なら checkAutoTurnEnd が終わるまで待つ（2分たっても処理中なら「ターン終了に進む」ボタン）
+if (typeof window !== 'undefined' && !window._autoTurnEndWatch) {
+  window._autoTurnEndWatch = setInterval(() => {
+    try {
+      if (!bs || bs._battleAborted || !bs.isPlayerTurn || bs.phase !== 'main') return;
+      if (window._tutorialRunner && window._tutorialRunner.active) return; // チュートリアルはシナリオがターンを進める
+      if (!(bs.memory < 0) || bs._autoTurnEnding || bs._endingTurn || _turnEndWaitTimer) return;
+      console.log('[autoTurnEndWatch] メモリーが相手側（' + bs.memory + '）なのでターン終了の判定を始める');
+      checkAutoTurnEnd();
+    } catch (e) { console.error('[autoTurnEndWatch]', e); }
+  }, 1000);
+}
 let _turnEndWaitStartedAt = 0;
 const TURN_END_WAIT_INTERVAL = 300;
 const TURN_END_WAIT_MAX_MS = 120000; // 処理中の判定が2分残ったら「ターン終了に進む」ボタンを出す（自動では終えない）

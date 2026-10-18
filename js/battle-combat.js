@@ -197,7 +197,7 @@ function hasMichizure(c) { return hasPassiveFlag(c, 'michizure', '【道連れ�
 // 公式キーワード（防壁・回避・アーマー解除）は1ターンに何度でも、ただしコスト1回ごとに消費。
 // AI 側はとりあえず防壁/アーマー解除/回避すべて使う（プレイヤー側は将来確認ダイアログ化）。
 // onlyBattle: true なら防壁のみチェック（バトル消滅専用）
-function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle) {
+function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle, skipBarrier) {
   if (!card || !ownerSidePlayer) return null;
   // cant_destroy（消滅できない付与）: keyword_prevent_battle_destroy/keyword_prevent_destroy
   // バフを持つ場合、コスト無しで即座に消滅そのものをキャンセルする（_runWhenBattleDestroyと
@@ -208,7 +208,7 @@ function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle) {
     return { canceled: true, reason: 'prevent_destroy' };
   }
   // 防壁（バトル消滅時、自セキュリティ1枚破棄で回避）
-  if (hasBarrier(card) && ownerSidePlayer.security && ownerSidePlayer.security.length > 0) {
+  if (!skipBarrier && hasBarrier(card) && ownerSidePlayer.security && ownerSidePlayer.security.length > 0) {
     var trashed = ownerSidePlayer.security.shift();
     if (trashed) ownerSidePlayer.trash.push(trashed);
     addLog('🛡 【防壁】「' + card.name + '」がセキュリティ1枚破棄で消滅回避！');
@@ -249,9 +249,50 @@ function _tryCancelDestroy(card, ownerSidePlayer, onlyBattle) {
 // 加えて、【分離】（リンクカードを1枚破棄して回避。確認ダイアログを要するため非同期）も試す。
 // リンクカードが尽きるまで何度でも発動できる（回数制限は無い＝毎回このヘルパーで判定し直す）。
 // callback(result) — result は _tryCancelDestroy と同じ形（{canceled,reason} か null）
-function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callback) {
-  var syncResult = _tryCancelDestroy(card, ownerSidePlayer, onlyBattle);
-  if (syncResult) { callback(syncResult); return; }
+// 消滅を回避したキーワードを大きく表示する（両方の画面）。表示が終わってから cb
+const _CANCEL_FLASH_LABEL = { barrier: '【防壁】', armor_break: '【アーマー解除】', evade: '【回避】', indomitable: '【不屈】', scapegoat: '【スケープゴート】' };
+function _showCancelFlash(card, reason, cb, remote) {
+  const done = () => { try { cb && cb(); } catch (e) { console.error('[cancelFlash]', e); } };
+  const kw = _CANCEL_FLASH_LABEL[reason];
+  if (!kw || typeof document === 'undefined') { done(); return; }
+  if (!remote && _onlineMode && _sendCommand) { try { _sendCommand({ type: 'fx_cancelFlash', cardName: (card && card.name) || '', reason }); } catch (_) {} }
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:70500;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(0,0,0,0.55);pointer-events:none;animation:fadeIn 0.15s ease;';
+  ov.innerHTML = '<div style="font-size:clamp(1.8rem,8vw,3.2rem);font-weight:900;color:#00fbff;text-shadow:0 0 18px #00fbff,0 0 4px #fff;letter-spacing:0.05em;">🛡 ' + kw + 'で回避！</div>'
+    + '<div style="font-size:clamp(0.9rem,3.5vw,1.2rem);color:#fff;text-shadow:0 0 6px #000;">' + (remote ? '相手の' : '') + '「' + ((card && card.name) || '') + '」は消滅しない</div>';
+  document.body.appendChild(ov);
+  setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); done(); }, 1600);
+}
+if (typeof window !== 'undefined') window._showCancelFlash = _showCancelFlash;
+function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callback0) {
+  // キーワードで回避したら「【防壁】で回避！」等を大きく出してから続ける
+  const callback = (r) => {
+    if (r && r.canceled && _CANCEL_FLASH_LABEL[r.reason]) { _showCancelFlash(card, r.reason, () => callback0(r)); return; }
+    callback0(r);
+  };
+  // ≪防壁≫は任意（公式ルール 25-3「自分のセキュリティを上から1枚破棄することで」は任意処理条件）。
+  // プレイヤーのデジモンなら使うかを確認する（以前は確認なしで必ず使っていた）。使ったら「セキュリティが減ったとき」も誘発する
+  const _prevented = !!(card && card.buffs && card.buffs.some(b => b && (b.type === 'keyword_prevent_battle_destroy' || b.type === 'keyword_prevent_destroy')));
+  if (side === 'player' && !_prevented && card && hasBarrier(card) && ownerSidePlayer && Array.isArray(ownerSidePlayer.security)
+      && ownerSidePlayer.security.length > 0 && typeof window !== 'undefined' && typeof window._showEffectConfirm === 'function') {
+    const rule = (window._keywordRuleText && window._keywordRuleText('barrier')) || '【防壁】このデジモンがバトルで消滅するとき、自分のセキュリティを上から1枚破棄することで、消滅しない';
+    window._showEffectConfirm(card, rule + '\n\nセキュリティを上から1枚破棄して【防壁】を使いますか？', (yes) => {
+      if (!yes) { addLog('☓ 【防壁】を使わない'); _proceed(true); return; }
+      const trashed = ownerSidePlayer.security.shift();
+      if (trashed) ownerSidePlayer.trash.push(trashed);
+      addLog('🛡 【防壁】「' + card.name + '」がセキュリティ1枚破棄で消滅回避！（残り' + ownerSidePlayer.security.length + '枚）');
+      renderAll(); _dispatchStateSync();
+      const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+      const cause = { type: 'effect', causerSide: side, causerCard: card };
+      const _fin = () => callback({ canceled: true, reason: 'barrier' });
+      try { _fireWhenSecurityDecrease(side, bs, ctxBase, _fin, { cause }); } catch (e) { console.error('[barrier secDecrease]', e); _fin(); }
+    });
+    return;
+  }
+  _proceed(false);
+  function _proceed(skipBarrier) {
+  var syncResult = _tryCancelDestroy(card, ownerSidePlayer, onlyBattle, skipBarrier);
+  if (syncResult) { if (syncResult.reason === 'barrier') { renderAll(); _dispatchStateSync(); } callback(syncResult); return; }
   const ctxBase = { bs, addLog, renderAll, updateMemGauge };
   // バトルで負けて離れる（≪デコード≫等「バトル以外でバトルエリアを離れるとき」は発揮しない。effect-engine.js が見る）
   bs._leaveByBattle = true;
@@ -263,6 +304,7 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
       callback(canceled ? { canceled: true, reason: 'protection' } : null);
     });
   } catch (_) { bs._leaveByBattle = false; callback(null); }
+  }
 }
 
 // オンラインのブロック解決（battle-online.js の resolveOnlineBlock。防御側の端末でバトルを解決する）から、

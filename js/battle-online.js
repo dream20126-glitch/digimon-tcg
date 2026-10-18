@@ -1375,9 +1375,15 @@ function onRemoteCommand(cmd) {
     case 'fx_tpIdle': {
       // 相手（ターンプレイヤー）の発揮待ちが全て終わった → 後回しにしていたこちらの効果（消滅時等）を発揮する
       bs._remoteTpBusy = false;
-      if (typeof window._flushNonTurnDeferred === 'function' && !(window._isEffectRunning && window._isEffectRunning())) {
+      // こちらが処理中なら、終わるのを待ってから発揮する（以前は処理中だとそのまま残り、相手のアタックが終わるまで
+      // 久遠寺マコト BT26-095 の「デジモンが消滅したとき」がまとめて3回出ていた）
+      const _flushWhenIdle = (tries) => {
+        if (typeof window._flushNonTurnDeferred !== 'function' || !(window._hasNonTurnDeferred && window._hasNonTurnDeferred())) return;
+        if (bs._remoteTpBusy) return; // また相手の発揮待ちが始まった（次の fx_tpIdle で続ける）
+        if ((window._isEffectRunning && window._isEffectRunning()) && tries < 200) { setTimeout(() => _flushWhenIdle(tries + 1), 300); return; }
         try { window._flushNonTurnDeferred(() => { renderAll(); sendStateSync(); }); } catch (e) { console.error('[fx_tpIdle]', e); }
-      }
+      };
+      _flushWhenIdle(0);
       break;
     }
     case 'fx_ruleDestroyRequest': {
@@ -1397,6 +1403,11 @@ function onRemoteCommand(cmd) {
       // 相手のアタックが全て終わった → 保留していた DP0 の消滅を行う
       bs._oppAttackInProgress = false;
       if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => { renderAll(); sendStateSync(); });
+      break;
+    }
+    case 'fx_cancelFlash': {
+      // 相手のデジモンがキーワード（≪防壁≫等）で消滅を回避した
+      if (typeof window._showCancelFlash === 'function') window._showCancelFlash({ name: cmd.cardName || '' }, cmd.reason || '', null, true);
       break;
     }
     case 'fx_kwRule': {

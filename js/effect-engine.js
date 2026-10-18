@@ -11271,6 +11271,14 @@ export function fireDelegatedReactionTriggers(recipeKey, bs, ctxBase, done, cmd)
     return _runReactionEffect(reaction, 'player', bs, ctxBase, () => _drainAfterReaction(bs, ctxBase, done));
   }
   if (kind === 'destroy_subject') {
+    // 同じ消滅（evt）の同じ種類の依頼が重ねて届いたら、2回目以降は処理しない
+    console.log('[delegate destroy_subject]', cmd.matcher, cmd.recipeKey, cmd.evt || '(no evt)');
+    if (cmd.evt) {
+      const k = cmd.evt + '|' + cmd.matcher + '|' + (recipeKey || 'on_destroy');
+      if (_recvSubjDelegations.has(k)) { console.log('[delegate destroy_subject] 同じ消滅の依頼なので処理しない', k); done && done(); return; }
+      _recvSubjDelegations.add(k);
+      if (_recvSubjDelegations.size > 200) _recvSubjDelegations.delete(_recvSubjDelegations.values().next().value);
+    }
     // 相手の端末で消滅したデジモンに、こちらのカード（発動主体が自分/相手/両方の消滅時）が反応した
     const fn = cmd.matcher === 'own' ? _isOwnSubjectDestroyStep : cmd.matcher === 'both' ? _isBothSubjectDestroyStep : _isOppSubjectDestroyStep;
     const prev = bs._lastDestroyCause;
@@ -12517,6 +12525,8 @@ function _destroyCauseMatches(step, bs, carrierSide, carrier, triggerCode) {
 
 // 同時に起きた消滅のまとまり。消滅の原因（bs._lastDestroyCause.grp）に載せ、まとまりごとに誘発済みの反応を覚える
 let _destroyGroupSeq = 0;
+const _sentSubjDelegations = new Set();
+const _recvSubjDelegations = new Set();
 export function newDestroyGroup(prefix) { return (prefix || 'g') + '#' + (++_destroyGroupSeq); }
 function _destroyGroupKeys(bs) {
   const grp = bs && bs._lastDestroyCause && bs._lastDestroyCause.grp;
@@ -12791,7 +12801,15 @@ function _fireDestroyTriggersImpl(destroyedSide, bs, ctxBase, done, triggerKey, 
     const matcher = subjectMatcher === _isOwnSubjectDestroyStep ? 'own' : subjectMatcher === _isBothSubjectDestroyStep ? 'both' : 'opp';
     const dc = bs._lastDestroyCause;
     const cause = dc ? { type: dc.type, causerSide: _flipSide(dc.causerSide) } : null;
-    _delegateReactionToOpponent({ kind: 'destroy_subject', recipeKey: triggerKey, destroyedSide: _flipSide(destroyedSide), matcher, cause }, finish);
+    // 同じ消滅（同じ原因の記録）の依頼は1回だけ送り、相手の端末も同じ番号（evt）の依頼は1回だけ処理する
+    // （1回の消滅で相手の画面に久遠寺マコト BT26-095「デジモンが消滅したとき」の確認が3回出た）
+    const evt = dc ? (dc.grp || dc._evtId || (dc._evtId = newDestroyGroup('ev'))) : null;
+    if (evt) {
+      if (!_sentSubjDelegations.has(evt + '|' + matcher + '|' + triggerKey)) _sentSubjDelegations.add(evt + '|' + matcher + '|' + triggerKey);
+      else { finish(); return; }
+      if (_sentSubjDelegations.size > 200) _sentSubjDelegations.delete(_sentSubjDelegations.values().next().value);
+    }
+    _delegateReactionToOpponent({ kind: 'destroy_subject', recipeKey: triggerKey, destroyedSide: _flipSide(destroyedSide), matcher, cause, evt: evt ? (String(evt) + '@' + (typeof window !== 'undefined' && window._onlineMyKeyForEvt || '')) : null }, finish);
     return;
   }
   // ★ 実行されないリアクションを事前に除外

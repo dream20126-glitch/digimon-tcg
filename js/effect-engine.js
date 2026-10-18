@@ -19687,6 +19687,8 @@ if (typeof window !== 'undefined') {
     const b = window._lastBattleState;
     return {
       reactions: (b && Array.isArray(b._pendingReactions)) ? b._pendingReactions.length : 0,
+      // 保留の種類（どの出来事の「〜したとき」を確かめる待ちか）。調査用
+      reactionKinds: (b && Array.isArray(b._pendingReactions)) ? b._pendingReactions.map(r => (r && r.fn && r.fn.name) || '(無名)') : [],
       collector: !!(b && b._reactionCollector),
       queue: _effectQueue.filter(e => e && (e.status === 'waiting' || e.status === 'processing')).map(e => (e.card && e.card.name) + ':' + e.status),
     };

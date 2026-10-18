@@ -2768,20 +2768,10 @@ export function resolveSecurityCheck(atk, atkIdx) {
     showSecurityCheck(sec, atk, () => fireSecurityDecreaseThen('ai', () => _secDigimonEffectFirst(sec, () => {
       // ----- セキュリティがデジモン -----
       if (_isSecurityDigimonCard(sec)) {
-        if (atk.dp === sec.dp) {
-          bs.ai.trash.push(sec);
-          removeOwnCard(atkIdx, 'destroy');
-          renderAll(); _dispatchStateSync();
-          showBattleResult('両者消滅', '#ff4444', '両者消滅！', () => {
-            showDestroyEffect(sec, () => { showDestroyEffect(atk, () => {
-              addLog('💥 両者消滅！'); _dispatchStateSync();
-              // 演出完了 → 消滅チェーン(on_destroy → on_battle_destroy → when_own_destroyed)完了 → ターンエンド
-              try {
-                _fireDestroyChain(['player'], () => checkPendingTurnEnd(), { player: atk });
-              } catch(_) { checkPendingTurnEnd(); }
-            }); });
-          }, '両者消滅', '#ff4444');
-        } else if (atk.dp > sec.dp) {
+        // 引き分け（DPが同じ）は両方とも負け（公式ルール 14-2-1-3）。セキュリティデジモンは負けても消滅しないので、
+        // 負けたときと同じ処理（≪ジャミング≫・≪防壁≫等の「消滅しない」の確認）を通す（以前は確認せずに消滅していた）
+        const _secTie = atk.dp === sec.dp;
+        if (atk.dp > sec.dp) {
           bs.ai.trash.push(sec); renderAll(); _dispatchStateSync();
           showBattleResult('Win!!', '#00ff88', 'セキュリティ突破！', () => {
             showDestroyEffect(sec, () => {
@@ -2827,7 +2817,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
           removeOwnCard(atkIdx, 'destroy');
           bs.ai.trash.push(sec);
           renderAll(); _dispatchStateSync();
-          showBattleResult('Lost...', '#ff4444', '「' + atk.name + '」が撃破された', () => {
+          showBattleResult(_secTie ? '両者消滅' : 'Lost...', '#ff4444', _secTie ? '両者消滅！' : '「' + atk.name + '」が撃破された', () => {
             showDestroyEffect(atk, () => {
               addLog('✗ セキュリティに敗北'); _dispatchStateSync();
               try {

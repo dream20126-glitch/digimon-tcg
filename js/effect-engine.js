@@ -6988,7 +6988,10 @@ function _purgeOffFieldGrants(bs) {
     ['hand', 'trash', 'deck', 'security'].forEach(z => {
       (p[z] || []).forEach(c => {
         if (!c) return;
-        if (Array.isArray(c._grantedRecipes) && c._grantedRecipes.length > 0) c._grantedRecipes = [];
+        // 場を離れた直後の【消滅時】等は、離れる直前の情報（付与されていた効果）で発揮する。描き直しのたびにここで消えるので、
+        // 消す前に _leftGrantedRecipes に残す（セキュリティバトルで消滅したパンプモン BT26-030 が得ていた【天昇】が、
+        // 【消滅時】の処理の前の描き直しで消え、発動しなかった）。場に出直したら freshOnFieldEnter で消す
+        if (Array.isArray(c._grantedRecipes) && c._grantedRecipes.length > 0) { c._leftGrantedRecipes = c._grantedRecipes; c._grantedRecipes = []; }
         if (Array.isArray(c._grantedKw) && c._grantedKw.length > 0) c._grantedKw = [];
         if (c._grantedOther) c._grantedOther = [];
         // トラッシュ・手札は公開/自分のカードとして表向き（テイマーの下で裏向きだったカードの印が残り、進化元に置き直したときも
@@ -12631,9 +12634,13 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
   }
   // 1.5) grant_effect で一時付与された効果（_grantedRecipes）由来のtriggerKeyも拾う。
   // 例: 【天昇】を grant_keyword で他カードに付与した場合の「消滅したとき」
-  if (Array.isArray(destroyedCard._grantedRecipes)) {
-    destroyedCard._grantedRecipes.forEach(g => {
-      const gSteps = g && g.recipe && _lookupTriggerSteps(g.recipe, triggerKey);
+  const _destroyedGrants = (Array.isArray(destroyedCard._grantedRecipes) && destroyedCard._grantedRecipes.length > 0)
+    ? destroyedCard._grantedRecipes : destroyedCard._leftGrantedRecipes;
+  if (Array.isArray(_destroyedGrants)) {
+    _destroyedGrants.forEach(g => {
+      // キーワードとして得た効果（【天昇】等）は印を付け、確認の本文にキーワードの説明を出す
+      const gSteps0 = g && g.recipe && _lookupTriggerSteps(g.recipe, triggerKey);
+      const gSteps = (g && g.kwFlag && Array.isArray(gSteps0)) ? _tagKeywordSteps(g.kwFlag, gSteps0) : gSteps0;
       if (Array.isArray(gSteps) && gSteps.length > 0) {
         reactions.push({ card: destroyedCard, sourceCard: destroyedCard, recipe: gSteps });
       }
@@ -12975,6 +12982,7 @@ let _cardUidCounter = 0;
 // トラッシュから再び登場したときに「効果（使用済み）」のままだった）
 function freshOnFieldEnter(card) {
   if (!card) return;
+  delete card._leftGrantedRecipes;
   delete card._uid;
   card._usedEffects = [];
   delete card._executeAttacking;

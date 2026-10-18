@@ -692,6 +692,20 @@ function applyTurnEndMemoryShift() {
 
 export function onEndTurn() {
   if (!bs.isPlayerTurn) return;
+  // 効果の処理中（カードの選択画面を開いている間も含む）なら、終わってからターン終了に進む
+  // （効果の途中で【自分のターン終了時】の順番選択等が重なって出ないように）
+  if (window._isEffectRunning && window._isEffectRunning()) {
+    if (onEndTurn._waiting) return;
+    onEndTurn._waiting = true;
+    addLog('⏳ 効果の処理が終わってからターンを終了します');
+    const t = () => {
+      if (window._isEffectRunning && window._isEffectRunning()) { setTimeout(t, 300); return; }
+      onEndTurn._waiting = false;
+      onEndTurn();
+    };
+    setTimeout(t, 300);
+    return;
+  }
   exitBreedPhase();
 
   if (_onlineMode) {

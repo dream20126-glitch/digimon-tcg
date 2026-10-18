@@ -47,7 +47,7 @@ window._showKeywordRuleFlash = function(card, code, remote) {
   if (!remote && _onlineMode && typeof window._onlineSendCommand === 'function' && !window._suppressFxSend) {
     try { window._onlineSendCommand({ type: 'fx_kwRule', cardName: (card && card.name) || '', code: code || '' }); } catch (_) {}
   }
-  const name = KEYWORD_DISPLAY_NAMES[code] || code;
+  const name = _kwDisplayName(code);
   const rule = (window._keywordRuleText && window._keywordRuleText(code)) || '';
   _kwBannerChain = _kwBannerChain.then(() => new Promise((resolve) => {
     const wrap = document.createElement('div');
@@ -145,14 +145,14 @@ function _renderKeywordBadges(card) {
   const codes = _collectActiveKeywords(card);
   // DPの増減はバッジにせず、DPの数字の横に「+3000」と出すだけ（下の s-dp）
   const _dpChip = '';
-  const visible = codes.filter(c => KEYWORD_DISPLAY_NAMES[c]);
+  const visible = codes.filter(c => KEYWORD_DISPLAY_NAMES[c] || _kwDisplayName(c) !== c);
   if (visible.length === 0) return '';
   // 多すぎる場合は3件 + "+N" で省略表示
   const MAX = 3;
   const showItems = visible.slice(0, MAX);
   const overflow = visible.length - MAX;
   let html = _dpChip + showItems.map(code => {
-    const name = KEYWORD_DISPLAY_NAMES[code];
+    const name = _kwDisplayName(code);
     const color = _keywordColor(code);
     return `<span style="background:${color};color:#fff;font-size:7px;font-weight:bold;padding:1px 3px;border-radius:2px;border:1px solid rgba(255,255,255,0.7);white-space:nowrap;line-height:1;box-shadow:0 0 3px rgba(0,0,0,0.6);">${name}</span>`;
   }).join('');
@@ -197,7 +197,7 @@ function _buildGrantBadges(card) {
   // 相手のカードは state_sync の _grantedKw で受け取る
   if (Array.isArray(card._grantedKw)) card._grantedKw.forEach((kw) => { if (kw) kwSet.add(kw); });
   kwSet.forEach((code) => {
-    items.push({ label: KEYWORD_DISPLAY_NAMES[code] || code, color: _keywordColor(code) });
+    items.push({ label: _kwDisplayName(code), color: _keywordColor(code) });
   });
   if (card.cantAttack && card.cantBlock) items.push({ label: 'アタック・ブロック不可', color: '#9933ff' });
   else if (card.cantAttack) items.push({ label: 'アタック不可', color: '#9933ff' });
@@ -1964,3 +1964,11 @@ window.selectTrashCard = function(side, idx) {
     if (card && window.showBCD) window.showBCD(card, 'trash');
   }, 200);
 };
+
+// キーワードの表示名（盤面のバッジ・カード詳細の「付与中の効果」・キーワード説明）。表に無いもの（天昇 ascension 等）は
+// キーワード辞書の表示名から引く（内部コードのまま英語で出ていた）
+function _kwDisplayName(code) {
+  if (KEYWORD_DISPLAY_NAMES[code]) return KEYWORD_DISPLAY_NAMES[code];
+  try { if (typeof window._keywordJpName === 'function') return window._keywordJpName(code) || code; } catch (_) {}
+  return code;
+}

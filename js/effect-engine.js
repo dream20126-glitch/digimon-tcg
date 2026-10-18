@@ -4920,7 +4920,10 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     // （複数枚選択の途中で消えないようフラグで保護し、最終確定時にまとめて閉じる）
     const _onlinePickerActive = !!(window._isOnlineMode && window._isOnlineMode());
     if (_onlinePickerActive) window._skipFxEffectClose = true;
+    _effectUiOpen++;
+    let _uiClosed = false;
     const cleanup = () => {
+      if (!_uiClosed) { _uiClosed = true; _effectUiOpen = Math.max(0, _effectUiOpen - 1); }
       modal.style.display = 'none';
       if (_pkBackdropWasVisible && _pkBackdrop) _pkBackdrop.style.display = 'block';
       if (actionRow && actionRow.parentNode) actionRow.parentNode.removeChild(actionRow);
@@ -6411,8 +6414,18 @@ function _keywordJpName(flag) {
     prevent_battle_destroy:'バトル耐性', immune:'効果耐性',
     security_attack_plus:'Sアタック+', attack_at_end_phase:'急襲',
   };
-  return map[flag] || flag;
+  if (map[flag]) return map[flag];
+  // 表に無いキーワードは、キーワード辞書（cards.json の keywords。種類 keyword の「表示名」）から引く
+  // （「天昇」が内部コードの ascension のままラベルに出ていた。大文字始まりのフラグ Ascension 等も同じ）
+  try {
+    const kws = (typeof window !== 'undefined' && Array.isArray(window.keywords)) ? window.keywords : [];
+    const lc = String(flag || '').toLowerCase();
+    const hit = kws.find(k => k && k['種類'] === 'keyword' && String(k['コード'] || '').toLowerCase() === lc && k['表示名']);
+    if (hit) return String(hit['表示名']).replace(/^【|】$/g, '');
+  } catch (_) {}
+  return flag;
 }
+if (typeof window !== 'undefined') window._keywordJpName = _keywordJpName;
 
 // ===== 継続する全体処理（総合ルール 11-2-2 / 11-2-3） =====
 // 「相手のターン終了まで、〜を持つ自分のデジモン全ては…」のような期限つきの全体処理は、発揮したあとに
@@ -12828,6 +12841,10 @@ function _reactionNeedsUserInput(reaction) {
 // 「どちらから発動しますか？」モーダル。カードと効果テキストを並べ、タップで選択。
 // 発動順の選択画面を開いている数（window._isEffectRunning に数える。止めたアタックを続ける保険が、選んでいる途中で続けないように）
 let _orderSelectOpen = 0;
+// 効果の選択画面（手札/トラッシュのカード選択・選択肢）を開いている数。開いている間は処理中（ターンを終了しない）。
+// メルヴァモン BT26-081【進化時】の「登場コスト合計8まで」でカードを選んでいる途中にターン終了の処理が始まり、
+// 【自分のターン終了時】の順番選択が重なって出ていた
+let _effectUiOpen = 0;
 function showReactionOrderSelect(reactions, triggerKey, callback0) {
   _orderSelectOpen++;
   let _osDone = false;
@@ -13627,10 +13644,13 @@ function showAltActionChoice(labels, callback, titleText) {
     b.onmouseleave = () => { b.style.background = '#9333ea'; };
     b.onclick = () => {
       if (overlay.parentNode) document.body.removeChild(overlay);
+      if (!_altClosed) { _altClosed = true; _effectUiOpen = Math.max(0, _effectUiOpen - 1); }
       callback(i);
     };
     btnArea.appendChild(b);
   });
+  let _altClosed = false;
+  _effectUiOpen++;
   document.body.appendChild(overlay);
 }
 
@@ -19785,7 +19805,7 @@ export function isEffectProcessing() {
   if (_effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0) return true;
   // 「〜したとき」等の反応の効果を処理している間・発動順を選んでいる間も処理中（久遠寺マコト BT26-095 の効果の途中で
   // ターン終了に進み、相手のターンが始まっていた）。後回しにした非ターンプレイヤー側の効果が残っている間も
-  if (_reactionRunDepth > 0 || _orderSelectOpen > 0 || _ntpDeferred.length > 0) return true;
+  if (_reactionRunDepth > 0 || _orderSelectOpen > 0 || _ntpDeferred.length > 0 || _effectUiOpen > 0) return true;
   try {
     if (_effectQueue.some(e => e && (e.status === 'waiting' || e.status === 'processing'))) return true;
     const bs = (typeof window !== 'undefined' && window._lastBattleState) || null;
@@ -19802,11 +19822,11 @@ export function hasOwnPendingEffectsShown() {
   try { return _hudAllItems().some(it => it && it.side === 'player' && it.group !== 'subjDestroyPreview'); } catch (_) { return false; }
 }
 // バトル開始時や、処理中のまま解除されなかった場合（完了コールバックが呼ばれない経路の不具合）に戻す
-export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; _reactionRunDepth = 0; _orderSelectOpen = 0; }
+export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; _reactionRunDepth = 0; _orderSelectOpen = 0; _effectUiOpen = 0; }
 if (typeof window !== 'undefined') {
   window._isEffectProcessing = isEffectProcessing;
   // 今まさに効果を処理しているか（保留中の「〜したとき」の反応・発揮待ちは数えない）
-  window._isEffectRunning = () => _effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0 || _targetSelecting || _reactionRunDepth > 0 || _orderSelectOpen > 0;
+  window._isEffectRunning = () => _effectProcessingDepth > 0 || _queueResolveDepth > 0 || _extraBusyDepth > 0 || _targetSelecting || _reactionRunDepth > 0 || _orderSelectOpen > 0 || _effectUiOpen > 0;
   window._resetEffectProcessing = resetEffectProcessing;
   // 何も処理していないのに残っている発揮待ち（保留中の「〜したとき」の反応・効果のキュー）の中身（調査用）と、それを処理する入口。
   // オンラインで相手がターンを終える前の問い合わせ（fx_idleCheck）に、残ったままで返事ができず止まっていた

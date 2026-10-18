@@ -75,6 +75,14 @@ let _blkSubjSides = [];
 function _previewSubjDestroySide(side) {
   if (typeof window._hudPreviewSubjectDestroy === 'function') window._hudPreviewSubjectDestroy([side], true);
 }
+// 相手の効果でこちらの演出（ドロー・デッキ破棄等）を出す間、相手の発動ポップアップ（前面に出ている）を隠し、終わったら戻す
+function _hideRemoteAnnounceWhile() {
+  const el = document.getElementById('_remote-effect-announce');
+  if (!el) return () => {};
+  const prev = el.style.display;
+  el.style.display = 'none';
+  return () => { if (el.parentNode) el.style.display = prev || 'flex'; };
+}
 function _autoHideWhileLocalEffect(ov) {
   const tick = () => {
     if (!ov.parentNode) return;
@@ -1114,12 +1122,39 @@ function onRemoteCommand(cmd) {
       // 自分のドローと同じ演出を出す（以前はログだけで、引いたことが分からなかった。デビモン BT26-068「お互いは【2ドロー】」）
       if (drawnR.length > 0 && typeof window._showDrawEffect === 'function') {
         let di = 0;
+        const _restorePopup = _hideRemoteAnnounceWhile();
         const showOne = () => {
-          if (di >= drawnR.length) { renderAll(); return; }
+          if (di >= drawnR.length) { _restorePopup(); renderAll(); return; }
           const c = drawnR[di++];
           try { window._showDrawEffect(c, parseInt(c.level) >= 6, showOne); } catch (_) { showOne(); }
         };
         showOne();
+      }
+      break;
+    }
+    // --- デッキの上から破棄の依頼（相手の効果「お互いのデッキの上からN枚破棄する」等の、こちら側の破棄） ---
+    // 依頼した側と同時に、こちらの画面で自分のデッキの上から破棄する演出をする
+    case 'fx_deckTrashRequest': {
+      const n = Math.max(0, parseInt(cmd.count, 10) || 0);
+      const moved = [];
+      for (let i = 0; i < n && bs.player.deck.length > 0; i++) {
+        const c = bs.player.deck.shift();
+        bs.player.trash.push(c);
+        moved.push(c);
+      }
+      if (moved.length > 0) addLog('🗑 デッキ上から「' + moved.map(c => c.name).join('」「') + '」をトラッシュへ（' + (cmd.cardName ? '「' + cmd.cardName + '」の効果' : '相手の効果') + '）');
+      else addLog('⚠ デッキが無いため破棄できません');
+      renderAll();
+      sendStateSync();
+      if (moved.length > 0 && window._fxCardMove) {
+        const _restorePopup = _hideRemoteAnnounceWhile();
+        let q = 0;
+        const nx = () => {
+          if (q >= moved.length) { _restorePopup(); renderAll(); return; }
+          const c = moved[q++];
+          try { window._fxCardMove(c, 'デッキ', 'トラッシュ', nx); } catch (_) { nx(); }
+        };
+        nx();
       }
       break;
     }

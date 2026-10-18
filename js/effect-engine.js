@@ -1788,8 +1788,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // target が both / both_none（「お互いは【2ドロー】」デビモン BT26-068）のときは、
       // 自分が引いた後に相手も同じ枚数引く（_drawForOpponent）
       const _drawBoth = !!(defaultTarget && /^target_both/.test(defaultTarget.code || ''));
+      // オンラインで相手も引くときは、自分が引く前に相手へ依頼を送り、両方の画面で同時にドロー演出する
+      // （以前は自分のドロー演出の後に送っていたため、相手の画面では遅れて出て、次の効果の発動ポップアップに重なっていた）
+      const _drawBothRemote = _drawBoth && _isMutualRemote(ctx);
+      if (_drawBothRemote) _drawForOpponent(n, ctx, () => {});
       const _drawDone = () => {
-        if (_drawBoth) { _drawForOpponent(n, ctx, () => { ctx.renderAll(true); callback(); }); return; }
+        if (_drawBoth && !_drawBothRemote) { _drawForOpponent(n, ctx, () => { ctx.renderAll(true); callback(); }); return; }
         callback();
       };
       const drawn = [];
@@ -3547,6 +3551,10 @@ function runOneAction(action, defaultTarget, ctx, callback) {
 // オンラインで自分の効果の場合、相手のデッキ/手札は中身が同期されていないので、相手機に
 // fx_drawRequest で引いてもらう（相手機が自分のデッキから引いて state_sync で枚数を返す）。
 // こちらの画面では枚数だけ先に動かしておく（デッキ→手札。中身は次の state_sync で正しくなる）
+// 「お互いは〜」の相手側を、相手の端末に依頼して同時に行うか（オンラインで、こちらが効果の持ち主）
+function _isMutualRemote(ctx) {
+  return !!(ctx && ctx.side === 'player' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand);
+}
 function _drawForOpponent(n, ctx, done) {
   const oppSide = ctx.side === 'player' ? 'ai' : 'player';
   const opp = ctx.bs[oppSide];
@@ -17223,6 +17231,34 @@ function executeRecipeStep(step, ctx, store, callback) {
     // === デッキの上からN枚破棄（自分側）1枚ずつ表示+カード移動演出 ===
     case 'deck_trash_top': {
       const n = step.value || 1;
+      // 「お互いのデッキの上からN枚破棄する」（target が both 系）: 相手のデッキも同じ枚数破棄する。
+      // オンラインでは相手の端末に依頼を先に送り、両方の画面で同時に破棄演出する（デッキの中身は持ち主の端末にしかない）
+      const _dtMutual = /^both/.test(String(step.target || ''));
+      const _dtMutualRemote = _dtMutual && _isMutualRemote(ctx);
+      if (_dtMutualRemote) {
+        try { window._onlineSendCommand({ type: 'fx_deckTrashRequest', count: n, cardName: (ctx.card && ctx.card.name) || '' }); } catch (_) {}
+        const _k = Math.min(n, (opponent.deck || []).length);
+        for (let j = 0; j < _k; j++) opponent.deck.shift();
+        ctx.addLog && ctx.addLog('🗑 相手がデッキの上から' + _k + '枚破棄');
+      }
+      // 相手（CPU）側の破棄（オンライン以外）。自分の破棄の後に行う
+      const _dtOppLocal = (done) => {
+        if (!_dtMutual || _dtMutualRemote) { done(); return; }
+        const k = Math.min(n, (opponent.deck || []).length);
+        const moved = [];
+        for (let j = 0; j < k; j++) { const c = opponent.deck.shift(); opponent.trash.push(c); moved.push(c); }
+        if (moved.length > 0) ctx.addLog && ctx.addLog('🗑 ' + (ctx.side === 'player' ? '相手' : '自分') + 'のデッキ上から「' + moved.map(c => c.name || '?').join('」「') + '」をトラッシュへ');
+        ctx.renderAll && ctx.renderAll();
+        let q = 0;
+        const nx = () => {
+          if (q >= moved.length || !window._fxCardMove) { done(); return; }
+          const c = moved[q++];
+          try { window._fxCardMove(c, (ctx.side === 'player' ? '相手の' : '') + 'デッキ', (ctx.side === 'player' ? '相手の' : '') + 'トラッシュ', nx); } catch (_) { nx(); }
+        };
+        nx();
+      };
+      const _dtCallback = callback;
+      callback = (...a) => _dtOppLocal(() => _dtCallback(...a));
       let i = 0;
       const _dtBatch = Math.min(n, (player.deck || []).length) >= 3;
       const trashOne = () => {

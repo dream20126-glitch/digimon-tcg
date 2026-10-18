@@ -6692,6 +6692,8 @@ if (typeof window !== 'undefined') window._clearCollisionBlockers = (b) => clear
 
 export function expireBuffs(bs, timing, ownerSide, endingSide) {
   if (!endingSide) endingSide = bs.isPlayerTurn ? 'player' : 'ai';
+  // ターン・アタックの終わりには「デジモンが消滅したとき」の先出しの表示を消す（誘発しなかったものが残らないように）
+  if (timing === 'dur_this_turn' || timing === 'dur_until_attack_end') { try { _subjPreviewSides = []; _hudSetSource('subjDestroyPreview', []); } catch (_) {} }
   // 発揮待ちのバフ（効果を受けない間に与えられたもの）も同じ規則で期限切れにする（一時的に buffs に混ぜ、最後に戻す）
   ['player', 'ai'].forEach((sd) => {
     [...(bs[sd].battleArea || []), ...(bs[sd].tamerArea || [])].forEach((c) => {
@@ -19649,7 +19651,9 @@ export function isEffectProcessing() {
 // 自分の効果の「次の効果」（発揮待ち）の表示が残っているか。ターン終了の判定（battle-phase.js _isTurnEndBlocked）でだけ使う
 // （相手の効果を映した表示は数えない。相手の端末への「処理が終わったか」の返事には使わない＝表示の消し忘れで止まらないように）
 export function hasOwnPendingEffectsShown() {
-  try { return _hudAllItems().some(it => it && it.side === 'player'); } catch (_) { return false; }
+  // 「デジモンが消滅したとき」の先出しの表示（subjDestroyPreview）は案内だけなので、ターン終了を止めない
+  // （実際に誘発しなかったときに表示が残り、メモリーが相手側に移ってもターンが終わらなくなるのを防ぐ）
+  try { return _hudAllItems().some(it => it && it.side === 'player' && it.group !== 'subjDestroyPreview'); } catch (_) { return false; }
 }
 // バトル開始時や、処理中のまま解除されなかった場合（完了コールバックが呼ばれない経路の不具合）に戻す
 export function resetEffectProcessing() { _effectProcessingDepth = 0; _extraBusyDepth = 0; _reactionRunDepth = 0; _orderSelectOpen = 0; }

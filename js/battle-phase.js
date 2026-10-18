@@ -828,6 +828,20 @@ export function checkAutoTurnEnd() {
         // 処理中の印が残ってしまった不具合に備えて「ターン終了に進む」ボタンを出し、押されたら進める
         if (_isTurnEndBlocked() && !_turnEndForceRequested) {
           if (waited >= TURN_END_WAIT_MAX_MS) _showTurnEndForceButton();
+          // 調査用: 5秒以上止まっていたら、何が止めているかを3秒ごとにコンソールへ出す
+          if (waited >= 5000 && (!poll._lastLog || Date.now() - poll._lastLog > 3000)) {
+            poll._lastLog = Date.now();
+            try {
+              console.log('[turnEnd blocked]', {
+                effectProcessing: !!(window._isEffectProcessing && window._isEffectProcessing()),
+                effectRunning: !!(window._isEffectRunning && window._isEffectRunning()),
+                pendingShown: !!(window._hasOwnPendingEffectsShown && window._hasOwnPendingEffectsShown()),
+                attack: !!(window._isAttackInProgress && window._isAttackInProgress()),
+                onlineWaiting: !!(window._isOnlineWaiting && window._isOnlineWaiting()),
+                pending: window._diagPending && window._diagPending(),
+              });
+            } catch (_) {}
+          }
           _turnEndWaitTimer = setTimeout(poll, TURN_END_WAIT_INTERVAL);
           return;
         }

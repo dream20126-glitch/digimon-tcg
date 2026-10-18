@@ -9368,6 +9368,18 @@ function _splitDelayParagraph(fullText) {
 export function extractTriggerSectionText(fullText, triggerCode, recipeSteps) {
   const override = _findDisplayTextOverride(recipeSteps);
   if (override) return override;
+  // キーワード（≪天昇≫≪エグゼキュート≫等）の効果は、そのキーワードの説明文を出す（効果で得たキーワードはカードの
+  // 文章に段落が無く、パンプモン BT26-030 が得た【天昇】の確認に【セキュリティ】の文章が出ていた）
+  if (Array.isArray(recipeSteps) && recipeSteps.length > 0 && recipeSteps.every(st => st && st._kwFlag)) {
+    const _flags = [...new Set(recipeSteps.map(st => String(st._kwFlag)))];
+    if (_flags.length === 1) {
+      try {
+        const _f = _flags[0];
+        const _rule = keywordRuleText(_f) || keywordRuleText(_f.toLowerCase());
+        if (_rule) return _rule;
+      } catch (_) {}
+    }
+  }
   if (!fullText) return fullText || '';
   // 【ディレイ】の効果: 発動のきっかけの文だけを出す（ディレイで発揮する効果は「発動しますか？」の確認で出す）
   if (Array.isArray(recipeSteps) && recipeSteps.some(st => st && st.action === 'delay')) {
@@ -10176,8 +10188,13 @@ function getKeywordDict() {
     catch (_) { return; }
     if (!recipeTemplate || typeof recipeTemplate !== 'object') return;
     map[code] = { recipeTemplate };
+    // 大文字小文字の違い（レシピ側の "Ascension" と辞書の ascension 等）でも引けるように、小文字のキーも持つ
+    if (!map[code.toLowerCase()]) map[code.toLowerCase()] = map[code];
   });
-  _keywordDictCache = map;
+  // 引くときも大文字小文字を区別しない（パンプモン BT26-030 の【天昇】が "Ascension" で付与され、消滅時の効果が付いていなかった）
+  _keywordDictCache = (typeof Proxy !== "undefined")
+    ? new Proxy(map, { get: (t, k) => (typeof k === "string" ? (t[k] || t[k.toLowerCase()]) : t[k]) })
+    : map;
   _keywordDictCacheSrc = src;
   return map;
 }
@@ -15285,10 +15302,14 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _doSummonHT = (c, done) => {
             done = done || callback;
             if (!c) { done(); return; }
+            // 手札のカードは、手札にある間の登場/使用コストの増減（summon_cost。ユピテルモン＆ワイドプラズメント BT26-033
+            // 「自分のセキュリティ1枚ごとに、このカードの使用コスト+1」等）を反映したコストを元に支払う（手札から抜く前に計算）
+            let _baseCostHT = _cardPlayCostOf(c);
+            if (_summonPays && player.hand.includes(c)) { try { _baseCostHT = getEffectivePlayCost(c, ctx.bs, ctx.side); } catch (_) {} }
             const hi = player.hand.indexOf(c); if (hi !== -1) player.hand.splice(hi, 1);
             const ti = player.trash.indexOf(c); if (ti !== -1) player.trash.splice(ti, 1);
             _summonCardFromEffect(c, ctx, {
-              payCost: _summonPays ? Math.max(0, _cardPlayCostOf(c) + _summonDelta) : null,
+              payCost: _summonPays ? Math.max(0, _baseCostHT + _summonDelta) : null,
               costDelta: _summonDelta,
               enterSuspended: !!step.enter_suspended,
               skipOnPlay: !!step.skip_on_play,
@@ -20127,6 +20148,7 @@ function _parseCardRecipe(card) {
 //    ただし cost[] を伴うエントリ（プレイヤーが任意で選ぶ「支払うことで軽減」タイプ）は
 //    ここでは自動計算せず、実際に支払いを選んだ場合のみ card._assemblyDiscount
 //    （offerAssemblyThenPlay等が事前に設定する）経由で反映する
+if (typeof window !== 'undefined') window._getEffectivePlayCost = (card, bs, side) => getEffectivePlayCost(card, bs, side);
 export function getEffectivePlayCost(card, bs, side) {
   const base = (card && card.playCost != null) ? card.playCost : 0;
   if (base <= 0) return base;

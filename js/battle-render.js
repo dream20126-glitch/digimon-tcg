@@ -1290,12 +1290,18 @@ export function renderHand() {
     el.style.zIndex = i;
     if (i > 0) el.style.marginLeft = '4px';
 
-    // コスト表示
+    // コスト表示（手札にある間の登場/使用コストの増減＝summon_cost を反映。ユピテルモン＆ワイドプラズメント BT26-033
+    // 「自分のセキュリティ1枚ごとに使用コスト+1」等。元のコストと違うときは色を変える）
     let costLabel = '';
+    let _pc = c.playCost;
+    if (_pc !== null && _pc !== undefined && typeof window._getEffectivePlayCost === 'function') {
+      try { const e = window._getEffectivePlayCost(c, bs, 'player'); if (typeof e === 'number' && !isNaN(e)) _pc = e; } catch (_) {}
+    }
+    const _pcColor = (_pc !== c.playCost) ? (_pc > c.playCost ? '#ff6677' : '#66ddff') : '#ffaa00';
     if (c.playCost !== null && c.evolveCost !== null)
-      costLabel = `<span style="color:#ffaa00;">${c.playCost}</span><span style="color:#555;font-size:6px;">/</span><span style="color:#00ff88;font-size:7px;">進${c.evolveCost}</span>`;
+      costLabel = `<span style="color:${_pcColor};">${_pc}</span><span style="color:#555;font-size:6px;">/</span><span style="color:#00ff88;font-size:7px;">進${c.evolveCost}</span>`;
     else if (c.playCost !== null)
-      costLabel = `<span style="color:#ffaa00;">${c.playCost}</span>`;
+      costLabel = `<span style="color:${_pcColor};">${_pc}</span>`;
     else
       costLabel = `<span style="color:#00ff88;">進${c.evolveCost || '?'}</span>`;
 

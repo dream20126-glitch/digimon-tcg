@@ -2767,7 +2767,7 @@ export function resolveSecurityCheck(atk, atkIdx) {
 
     showSecurityCheck(sec, atk, () => fireSecurityDecreaseThen('ai', () => _secDigimonEffectFirst(sec, () => {
       // ----- セキュリティがデジモン -----
-      if (sec.type === 'デジモン') {
+      if (_isSecurityDigimonCard(sec)) {
         if (atk.dp === sec.dp) {
           bs.ai.trash.push(sec);
           removeOwnCard(atkIdx, 'destroy');
@@ -3032,10 +3032,17 @@ if (typeof window !== 'undefined') window._resolveSecurityCheck = resolveSecurit
 // 発揮してもらう（security_effect_request）。以前はセキュリティデジモンの【セキュリティ】効果を発揮せずにバトルしていた
 // （スカージキロプモン＆デスペアブラスト BT26-075）
 // ownerSide: セキュリティの持ち主（プレイヤーのアタック＝'ai' / CPU のアタック＝'player'）
+// セキュリティからチェックされたカードがセキュリティデジモン（バトルする）か。デュアルカードもデジモンカードなので
+// セキュリティデジモンとして扱う（総合ルール 13-1-7 / 4-5-1。ベアキャットモン＆ペネトレイトブロウ BT26-057 がめくれても
+// バトルをせず、エグゼキュートでアタックしたパンプモンが負けず≪防壁≫も出なかった）
+function _isSecurityDigimonCard(c) {
+  const t = String((c && c.type) || '');
+  return t === 'デジモン' || t === 'デュアル';
+}
 function _secDigimonEffectFirst(sec, cont, ownerSide) {
   ownerSide = ownerSide || 'ai';
   let has = false;
-  try { has = !!(sec && sec.type === 'デジモン' && _hasRecipeTrigger(sec, 'security')); } catch (_) { has = false; }
+  try { has = !!(sec && _isSecurityDigimonCard(sec) && _hasRecipeTrigger(sec, 'security')); } catch (_) { has = false; }
   if (!has) { cont(); return; }
   addLog('✦ セキュリティ効果：「' + sec.name + '」（バトルの前に発揮）');
   if (ownerSide === 'ai' && _onlineMode && _sendCommand && typeof window._waitForSecurityEffect === 'function') {
@@ -3110,7 +3117,7 @@ export function formatDpDisplay(card) {
 // セキュリティバフ適用
 function applySecurityBuffs(sec, ownerSide) {
   const buffs = bs._securityBuffs;
-  if (!buffs || buffs.length === 0 || sec.type !== 'デジモン') return;
+  if (!buffs || buffs.length === 0 || !_isSecurityDigimonCard(sec)) return;
   if (sec._origDp === undefined) sec._origDp = parseInt(sec.dp) || 0;
   let bonus = 0;
   buffs.forEach(b => {
@@ -4092,7 +4099,7 @@ export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
     // 「セキュリティが減ったとき」はチェック（公開）のあとに解決する（総合ルール13-1-8）
     {
     showSecurityCheck(sec, atk, () => fireSecurityDecreaseThen('player', () => _secDigimonEffectFirst(sec, () => {
-      if (sec.type === 'デジモン') {
+      if (_isSecurityDigimonCard(sec)) {
         if (atk.dp === sec.dp) {
           bs.ai.battleArea[atkIdx] = null; bs.ai.trash.push(atk);
           if (atk.stack) atk.stack.forEach(s => bs.ai.trash.push(s));
@@ -4778,7 +4785,7 @@ export function showSecurityCheck(secCard, atkCard, callback, customLabel, onOpe
   const src = cardImg(secCard);
   imgEl.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="color:#fff;padding:8px;">${secCard.name}</div>`;
   nameEl.innerText = secCard.name;
-  const isDigimon = secCard.type === 'デジモン';
+  const isDigimon = _isSecurityDigimonCard(secCard);
   const isOption = secCard.type === 'オプション';
   const isTamer = secCard.type === 'テイマー';
   typeEl.innerText = isDigimon ? 'DP: ' + formatDpDisplay(secCard) : isOption ? 'セキュリティ効果' : isTamer ? 'テイマー登場' : '';

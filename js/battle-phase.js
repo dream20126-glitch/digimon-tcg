@@ -789,9 +789,17 @@ export function onEndTurn() {
 // ===== 自動ターン終了（メモリーオーバーフロー時） =====
 
 // 効果処理・アタック処理がまだ途中か（途中ならターンを終了しない）
+// ドロー演出（進化ドロー等）を表示中か
+function _drawOverlayVisible() {
+  try {
+    const el = document.getElementById('draw-overlay');
+    return !!(el && el.style.display && el.style.display !== 'none');
+  } catch (_) { return false; }
+}
 function _isTurnEndBlocked() {
   try {
     if (typeof window === 'undefined') return false;
+    if (_drawOverlayVisible()) return true;
     if (window._isEffectProcessing && window._isEffectProcessing()) return true;
     // 自分の効果の「次の効果」（発揮待ち）が残っている間も終了しない
     if (window._hasOwnPendingEffectsShown && window._hasOwnPendingEffectsShown()) return true;
@@ -806,12 +814,24 @@ let _turnEndWaitTimer = null;
 // 効果の終わりの判定（triggerEffect の _crossed 等）が呼ばれない経路があっても止まったままにならないように
 // （ナイトキロプモンの【メイン】からスカージキロプモンにアーツ進化してメモリーが相手側に移ったのに、ターン終了にならなかった）。
 // 効果の処理中なら checkAutoTurnEnd が終わるまで待つ（2分たっても処理中なら「ターン終了に進む」ボタン）
+let _watchIdleSince = 0;
 if (typeof window !== 'undefined' && !window._autoTurnEndWatch) {
   window._autoTurnEndWatch = setInterval(() => {
     try {
       if (!bs || bs._battleAborted || !bs.isPlayerTurn || bs.phase !== 'main') return;
       if (window._tutorialRunner && window._tutorialRunner.active) return; // チュートリアルはシナリオがターンを進める
       if (!(bs.memory < 0) || bs._autoTurnEnding || bs._endingTurn || _turnEndWaitTimer) return;
+      // 手動の操作（進化・登場等）でメモリーが相手側に移ったときは、その操作の続き（進化ドローの演出 → 【進化時】等）が
+      // 終わってから判定される（checkPlayerPendingTurnEnd）。その間は始めない（進化ドローの演出中に始めてしまい、
+      // メルヴァモン BT26-081 の【進化時】と【自分のターン終了時】が同時に出ていた）。
+      // ただし何も処理していない状態が5秒続いたら、続きの判定が呼ばれなかったものとして始める
+      if (bs._actionDeferTurnEnd) {
+        const busy = _isTurnEndBlocked() || _drawOverlayVisible();
+        if (busy || !_watchIdleSince) { _watchIdleSince = busy ? 0 : Date.now(); return; }
+        if (Date.now() - _watchIdleSince < 5000) return;
+        delete bs._actionDeferTurnEnd;
+      }
+      _watchIdleSince = 0;
       console.log('[autoTurnEndWatch] メモリーが相手側（' + bs.memory + '）なのでターン終了の判定を始める');
       checkAutoTurnEnd();
     } catch (e) { console.error('[autoTurnEndWatch]', e); }

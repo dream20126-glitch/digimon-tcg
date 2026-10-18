@@ -2049,6 +2049,9 @@ function playerSpendMemory(cost, defer) {
   if (bs.memory < 0) {
     if (defer) {
       bs._pendingTurnEnd = true;
+      // 操作（進化・登場等）の続き（進化ドロー → 【進化時】等）が終わってからターン終了を判定する印。
+      // battle-phase.js の見張り（_autoTurnEndWatch）は、この印がある間はターン終了を始めない
+      bs._actionDeferTurnEnd = Date.now();
       return true;
     }
     checkAutoTurnEnd();
@@ -2062,6 +2065,7 @@ function playerSpendMemory(cost, defer) {
 // （全ての効果処理が終わってからアタック。2件目以降はアタック終了時の checkPendingTurnEnd が続ける）。
 // opts.noFlush: 外側の効果処理がまだ残っている途中から呼ぶ場合（効果による進化 doEvolveFromEffect）
 function checkPlayerPendingTurnEnd(opts) {
+  delete bs._actionDeferTurnEnd;
   // 保留中のアタックは、メモリーが相手側に移っていてもターン内に発揮された効果なので先に行い、
   // 全て終わってからターン終了判定をする（2件目以降・最後の判定はアタック終了時の checkPendingTurnEnd が続ける）
   const _hasHeld = Array.isArray(bs._heldAttackResumes) && bs._heldAttackResumes.length > 0;
@@ -4545,6 +4549,7 @@ export async function checkPendingTurnEnd() {
 function checkPendingTurnEndOnly() {
   if (bs._pendingTurnEnd) {
     bs._pendingTurnEnd = false;
+    delete bs._actionDeferTurnEnd;
     checkAutoTurnEnd();
   }
 }

@@ -1100,16 +1100,27 @@ function onRemoteCommand(cmd) {
     // state_sync で枚数を返す（effect-engine.js の _drawForOpponent から送られる）
     case 'fx_drawRequest': {
       const n = Math.max(0, parseInt(cmd.count, 10) || 0);
-      let k = 0;
+      const drawnR = [];
       for (let i = 0; i < n && bs.player.deck.length > 0; i++) {
         const c = bs.player.deck.shift();
         bs.player.hand.push(c);
-        k++;
+        drawnR.push(c);
         addLog('🃏 「' + c.name + '」をドロー（' + (cmd.cardName ? '「' + cmd.cardName + '」の効果' : '相手の効果') + '）');
       }
-      if (k === 0) addLog('⚠ デッキが無いためドローできません');
+      if (drawnR.length === 0) addLog('⚠ デッキが無いためドローできません');
+      console.log('[fx_drawRequest] ' + drawnR.length + '/' + n + '枚ドロー（' + (cmd.cardName || '') + '） 手札' + bs.player.hand.length + '枚');
       renderAll();
       sendStateSync();
+      // 自分のドローと同じ演出を出す（以前はログだけで、引いたことが分からなかった。デビモン BT26-068「お互いは【2ドロー】」）
+      if (drawnR.length > 0 && typeof window._showDrawEffect === 'function') {
+        let di = 0;
+        const showOne = () => {
+          if (di >= drawnR.length) { renderAll(); return; }
+          const c = drawnR[di++];
+          try { window._showDrawEffect(c, parseInt(c.level) >= 6, showOne); } catch (_) { showOne(); }
+        };
+        showOne();
+      }
       break;
     }
     case 'fx_handDiscardDone': {

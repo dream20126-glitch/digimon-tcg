@@ -4815,6 +4815,8 @@ if (typeof window !== 'undefined') window._showCardListConfirm = showCardListCon
 // 選んだカードの確認は呼び出し側で行う）
 export function showTrashCardPicker(candidates, wantCount, optional, title, callback, fullTrash, opts) {
   const _selAll = opts && typeof opts.onSelectAll === 'function' ? opts.onSelectAll : null;
+  // opts.onBack: 「↩ 戻る」ボタンを出す（手札から/トラッシュからを選ぶ画面に戻る等）
+  const _onBack = opts && typeof opts.onBack === 'function' ? opts.onBack : null;
   // 既存 trash-modal を使うインプレース版
   const modal = document.getElementById('trash-modal');
   if (modal && Array.isArray(fullTrash) && fullTrash.length > 0) {
@@ -4881,8 +4883,8 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     }
     // optional のときだけ「⏭ 使わない」ボタンを表示。
     // それ以外は各カード詳細ダイアログの「このカードで決定」が確定操作を兼ねる。
-    let actionRow = null, skipBtn = null, selAllBtn = null;
-    if (optional || _selAll) {
+    let actionRow = null, skipBtn = null, selAllBtn = null, backBtn = null;
+    if (optional || _selAll || _onBack) {
       actionRow = document.createElement('div');
       actionRow.id = '_trash-picker-actions';
       actionRow.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap;';
@@ -4891,6 +4893,12 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
         selAllBtn.innerText = '✅ 全て選択する';
         selAllBtn.style.cssText = 'background:#00aa66;color:#fff;border:1px solid #00ff88;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
         actionRow.appendChild(selAllBtn);
+      }
+      if (_onBack) {
+        backBtn = document.createElement('button');
+        backBtn.innerText = '↩ 戻る';
+        backBtn.style.cssText = 'background:#224466;color:#fff;border:1px solid #66aaff;padding:10px 22px;border-radius:6px;font-size:13px;cursor:pointer;';
+        actionRow.appendChild(backBtn);
       }
       if (optional) {
         skipBtn = document.createElement('button');
@@ -4931,6 +4939,7 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     };
     if (skipBtn) skipBtn.onclick = () => { cleanup(); callback([]); };
     if (selAllBtn) selAllBtn.onclick = () => { cleanup(); _selAll(); };
+    if (backBtn) backBtn.onclick = () => { cleanup(); _onBack(); };
     modal.style.display = 'block';
     return;
   }
@@ -13401,6 +13410,13 @@ function runWithAltActions(step, ctx, store, callback) {
         // （テイマーの下のカードを破棄したテイマー等）を「直前に選んだカード」と取り違えないように（ベアキャットモン＆
         // ペネトレイトブロウ BT26-057【進化時】「このデジモンは相手のデジモンの効果を受けず、DP+3000」の DP+3000 が付かなかった）
         if (aRun && aRun.target === 'same_target' && /^self(_card)?$/.test(String(step.target || ''))) aRun = Object.assign({}, aRun, { target: step.target });
+        // メインの対象が「〜全て」（own:all 等。1体を選ばない）なら、続く same_target も同じ「全て」（同じ絞り込み）。
+        // 直前に選んだカードが無いため対象なしになっていた（クロスアーツ BT26-101「特徴「TS」を持つ自分のデジモン全ては
+        // 【ブロッカー】を得て、DP+3000」の DP+3000 が付かなかった）
+        else if (aRun && (aRun.target === 'same_target' || aRun.target === 'picked') && /(^|:)all$/.test(String(step.target || ''))) {
+          aRun = Object.assign({}, aRun, { target: step.target });
+          if (step.filter && !aRun.filter) aRun.filter = step.filter;
+        }
         executeRecipeStep(aRun, ctx, store, () => nextAlt());
       }
       nextAlt();
@@ -14479,6 +14495,45 @@ function executeRecipeStep(step, ctx, store, callback) {
     return;
   }
 
+  // 「自分のデジモン1体のDP以下の相手のデジモン1体」（filter.dp_le 等が 'own_pick' / 'opp_pick' 等の参照マーカー）:
+  // 先に参照するデジモンを1体選び、そのデジモンの今のDPで対象を絞る（それより高いDPのデジモンは選べない）。
+  // 以前は参照候補の最大DPで絞っていたため、どのデジモンを参照にしたかが分からなかった（クロスアーツ BT26-101）。
+  // 参照候補が1体なら自動、CPU（相手）は最も広く選べるもの（dp_le なら最大DP / dp_ge なら最小DP）。コストの支払い後に行う
+  if (step.filter && typeof step.filter === 'object' && !step._dpRefPicked
+      && !(Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)) {
+    const _drKey = ['dp_le', 'dp_ge', 'dp'].find(k => typeof step.filter[k] === 'string' && /^(own|other|opp)(_pick)?$/.test(step.filter[k]));
+    if (_drKey && ctx.bs) {
+      const _drBase = step.filter[_drKey].replace(/_pick$/, '');
+      const _drRefSide = _drBase === 'opp' ? (ctx.side === 'player' ? 'ai' : 'player') : ctx.side;
+      const _drArea = (ctx.bs[_drRefSide] && ctx.bs[_drRefSide].battleArea) || [];
+      const _drRefFilter = step.filter.dp_ref_filter;
+      const _drIdx = _drArea.map((c, i) => ({ c, i })).filter(({ c }) => c && c.type === 'デジモン'
+        && !(_drBase === 'other' && c === ctx.card)
+        && (!_drRefFilter || cardMatchesFilter(c, _drRefFilter, ctx.bs, ctx.side, ctx.card)));
+      const _drApply = (refCard) => {
+        const f = Object.assign({}, step.filter);
+        delete f.dp_ref_filter;
+        f[_drKey] = refCard ? (parseInt(refCard.dp) || 0) : -1;
+        if (refCard) ctx.addLog && ctx.addLog('📏 「' + refCard.name + '」のDP' + (parseInt(refCard.dp) || 0) + 'を参照');
+        executeRecipeStep(Object.assign({}, step, { filter: f, _dpRefPicked: true }), ctx, store, callback);
+      };
+      const _drIsCpu = ctx._forceTargetIdx !== undefined || ctx.side === 'ai';
+      if (_drIdx.length === 0) { _drApply(null); return; }
+      if (_drIdx.length === 1 || _drIsCpu) {
+        const best = _drIdx.slice().sort((a, b) => (parseInt(b.c.dp) || 0) - (parseInt(a.c.dp) || 0));
+        _drApply((_drKey === 'dp_ge' ? best[best.length - 1] : best[0]).c);
+        return;
+      }
+      ctx.addLog && ctx.addLog('🎯 DPを参照する' + (_drBase === 'opp' ? '相手の' : '自分の') + 'デジモンを選んでください');
+      showTargetSelection(_drRefSide === 'player' ? 'pl' : 'ai', _drIdx.map(x => x.i), null, '#66ccff', (selectedIdx) => {
+        const ref = selectedIdx != null ? _drArea[selectedIdx] : null;
+        if (!ref) { callback && callback(); return; }
+        _drApply(ref);
+      }, 'DPを参照するデジモン');
+      return;
+    }
+  }
+
   // per_count_mode === 'repeat': 値×NでなくアクションをN回繰り返す
   // 例：「黄テイマー1体ごとに相手デジモン1体のDP-4000」→ 2体なら -4000 を2回発動
   // コスト持ちなら、回数はコストを払った後に数える（コスト未解決ならここでは展開せず、下のコスト処理→
@@ -15198,30 +15253,40 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           // 指定ゾーンのカードから最大 _summonCount 枚選んで登場（候補が枚数以内なら即時。
           // ただし「できる」(optional) 指定時は必ずピッカーを経由させ「使わない」を選べるようにする）
-          const _pickFromZone = (zoneCands, zoneChosen) => {
-            if (!zoneCands || zoneCands.length === 0) { callback(); return; }
+          // zoneAll: そのゾーンのカード全て（一覧に出す。候補以外は選べない表示）/ onBack: 「戻る」でゾーン選択に戻る
+          const _pickFromZone = (zoneCands, zoneChosen, zoneAll, zoneName, onBack) => {
+            if ((!zoneCands || zoneCands.length === 0) && !onBack) { callback(); return; }
             // 「手札から/トラッシュから」を選んだ後（＝使うことは決定済み）は、候補が枚数以内ならそのまま登場
-            if (zoneCands.length <= _summonCount && (!_optional || zoneChosen) && !_anyHandOrTrash(zoneCands)) { _summonSequential(zoneCands, 0, callback); return; }
-            showTrashCardPicker(zoneCands, _summonCount, _optional, '🌟 登場させるカードを選んでください', (picked) => {
+            if (!onBack && zoneCands.length <= _summonCount && (!_optional || zoneChosen) && !_anyHandOrTrash(zoneCands)) { _summonSequential(zoneCands, 0, callback); return; }
+            const _all = (Array.isArray(zoneAll) && zoneAll.length > 0) ? zoneAll : zoneCands;
+            if (_all.length === 0) { onBack && onBack(); return; }
+            showTrashCardPicker(zoneCands, _summonCount, _optional,
+              '🌟 ' + (zoneName ? zoneName + 'から' : '') + '登場させるカードを選んでください' + (zoneCands.length === 0 ? '（対象のカードがありません）' : ''), (picked) => {
               if (!picked || picked.length === 0) {
                 ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
                 callback();
                 return;
               }
               _summonSequential(picked, 0, callback);
-            }, zoneCands);
+            }, _all, onBack ? { onBack } : undefined);
           };
           if (effectiveSide === 'ai') {
             const _aiPicks = [..._handCands, ..._trashCands].slice(0, _summonCount);
             _summonSequential(_aiPicks, 0, callback);
-          } else if (_handCands.length > 0 && _trashCands.length > 0) {
-            // 手札・トラッシュ両方に対象がある → どちらから登場するか選択
-            const _zoneLabels = ['手札から', 'トラッシュから'];
+          } else if (_fromZones.includes('hand') && _fromZones.includes('trash')) {
+            // 「手札/トラッシュから」: 先にどちらから登場させるかを選び、そのゾーンの一覧から選ぶ。
+            // 一覧の「戻る」でこの選択に戻れる（アイギオテュースモン：ダーク BT26-073 の【消滅時】等）。
+            // 対象が無いゾーンも選べる（一覧で確認して戻れる）
+            const _zoneLabels = ['手札から（対象' + _handCands.length + '枚）', 'トラッシュから（対象' + _trashCands.length + '枚）'];
             if (_optional) _zoneLabels.push('使わない');
-            showAltActionChoice(_zoneLabels, (zi) => {
-              if (_optional && zi === 2) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
-              _pickFromZone(zi === 0 ? _handCands : _trashCands, true);
-            }, '🌟 どこから登場させますか？');
+            const _chooseZone = () => {
+              showAltActionChoice(_zoneLabels, (zi) => {
+                if (_optional && zi === 2) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
+                if (zi === 0) _pickFromZone(_handCands, true, player.hand, '手札', _chooseZone);
+                else _pickFromZone(_trashCands, true, player.trash, 'トラッシュ', _chooseZone);
+              }, '🌟 どこから登場させますか？');
+            };
+            _chooseZone();
           } else {
             _pickFromZone(_handCands.length > 0 ? _handCands : _trashCands);
           }

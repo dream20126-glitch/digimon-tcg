@@ -4076,6 +4076,35 @@ function doBounce(targetSide, slotIdx, ctx, callback) {
 let _targetSelecting = false; // 対象選択中フラグ（renderAll抑制用）
 export function isTargetSelecting() { return _targetSelecting; }
 
+// 対象選択の表示に出す「何をする対象か」。今処理している効果のステップ（executeRecipeStep が記録）の種類から作る
+let _curStepForLabel = null;
+const _STEP_PURPOSE = {
+  rest: 'レストさせる', active: 'アクティブにする', not_active: 'アクティブにならなくする', prevent_unsuspend: 'アクティブにならなくする',
+  destroy: '消滅させる', bounce: '手札に戻す', return_hand: '手札に戻す', return_deck: 'デッキに戻す',
+  dp_plus: 'DPを+する', dp_minus: 'DPを-する', dedigivolve: '退化させる', evolve: '進化させる', attack: 'アタックする',
+  cant_attack: 'アタックできなくする', cant_block: 'ブロックできなくする', cant_attack_block: 'アタックとブロックをできなくする',
+  cant_evolve: '進化できなくする', cant_rest: 'レストできなくする', immune_effects: '効果を受けなくする',
+  security_attack_plus: 'Sアタック+を与える', security_attack_minus: 'Sアタック-を与える', grant_effect: '効果を与える',
+  evo_discard_top: '進化元を破棄する', evo_discard_bottom: '進化元を破棄する', evo_discard_select: '進化元を破棄する',
+  place_under_digimon: '下にカードを置く', link: 'リンクする', redirect_attack: 'アタック先にする', combat: 'バトルする',
+};
+function _stepPurposeLabel(step) {
+  if (!step || !step.action) return '';
+  const a = step.action;
+  if (a === 'cant_destroy') return step.cause === 'battle' ? 'バトルで消滅しなくする' : step.cause === 'effect' ? '効果で消滅しなくする' : '消滅しなくする';
+  if (a === 'grant_keyword' && step.keyword) {
+    const names = String(step.keyword).split(',').map(k => _keywordJpName(k.trim())).filter(Boolean);
+    return names.length ? '【' + names.join('】【') + '】を得させる' : 'キーワードを得させる';
+  }
+  if ((a === 'dp_plus' || a === 'dp_minus') && step.value) return 'DP' + (a === 'dp_plus' ? '+' : '-') + step.value + 'する';
+  if (_STEP_PURPOSE[a]) return _STEP_PURPOSE[a];
+  // 表に無い種類は効果辞書の表示名
+  try {
+    const row = (window.keywords || []).find(r => r && r['種類'] === 'action' && r['コード'] === a);
+    if (row && row['表示名']) return String(row['表示名']);
+  } catch (_) {}
+  return '';
+}
 export function showTargetSelection(targetSide, validIndices, conditions, borderColor, callback, extraLabel) {
   // ★ チュートリアル AI 対象選択 intent: スクリプトで指定したカードがあれば自動選択
   //   _tutorialAiSelectTarget = カードNo or カード名 (部分一致対応)
@@ -4157,6 +4186,8 @@ export function showTargetSelection(targetSide, validIndices, conditions, border
   const _combatBackdropWasVisible = !!(_combatBackdrop && _combatBackdrop.style.display !== 'none');
   if (_combatBackdropWasVisible) _combatBackdrop.style.display = 'none';
 
+  // 何の対象を選ぶか（extraLabel の指定が無ければ、今処理している効果の種類から作る。「アクティブにならなくする」等）
+  if (!extraLabel && (_effectProcessingDepth > 0 || _queueResolveDepth > 0 || _reactionRunDepth > 0 || _effectBodyDepth > 0)) { try { const _pl = _stepPurposeLabel(_curStepForLabel); if (_pl) extraLabel = '（' + _pl + '）'; } catch (_) {} }
   // オンライン: 相手画面に「対象選択中」専用ポップアップを表示（extraLabelがあれば
   // 「吸収進化-N: 対象選択中」のように具体的な内容を伝える）
   if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
@@ -14571,6 +14602,7 @@ function _cannotBeActivated(card) {
 // 選んでも、効果を受けない間は付かない＝発揮待ちのバフになる）。その場で終わる効果（消滅・レスト等）では従来どおり候補から外す
 let _stepAllowsImmunePick = false;
 function executeRecipeStep(step, ctx, store, callback) {
+  if (step && step.action) _curStepForLabel = step;
   _stepAllowsImmunePick = !!(step && step.duration && !_COST_STEP_SET.has(step)
     && !/until_(battle|attack)_end/.test(String(normalizeRecipeDuration(step.duration) || step.duration)));
   // trigger_conditions ゲート: 発火元カードへのフィルタが NG ならステップスキップ
@@ -16584,8 +16616,13 @@ function executeRecipeStep(step, ctx, store, callback) {
           callback();
         };
         if (effectiveSide === 'ai' || _naCands.length <= _naCount) { _naApply(_naCands.slice(0, _naCount)); break; }
-        showCardListPicker(_naCands, _naCount, '🔒 アクティブにならなくする対象を選んでください', (picked) => {
-          _naApply(picked || []);
+        // 盤面（デジモン・テイマー）から選ぶ（以前はカード一覧から選ぶ画面だった）
+        const _naEntries = _naCands.map((c) => {
+          const inB = (_naPool.battleArea || []).indexOf(c);
+          return { card: c, own: !_naIsOpp, zone: inB !== -1 ? 'battleArea' : 'tamerArea', idx: inB !== -1 ? inB : (_naPool.tamerArea || []).indexOf(c) };
+        });
+        _pickSideTargets(_naEntries, _naCount, ctx, effectiveSide, !_naIsOpp, '🔒 アクティブにならなくする対象を選んでください', (list) => {
+          _naApply((list || []).map(e => e && e.card).filter(Boolean));
         });
         break;
       }

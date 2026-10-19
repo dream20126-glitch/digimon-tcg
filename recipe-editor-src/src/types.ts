@@ -331,7 +331,16 @@ export interface EffectBlock {
   // JSON では単一セグメントならstep.ref_filterのフラット形式、複数セグメントなら
   // {or:[...]}形式で出力する（cardMatchesFilterが再帰的にOR評価・エンジン対応済み）
   perRefFilterChain?: ConditionChainEntry[];
-  perCountMode?: 'repeat'; // 'repeat' = N回発動（1枚ごとに1回効果）, undefined = 値×N（既存動作）
+  // 'repeat' = N回発動（1枚ごとに1回効果）, undefined = 値×N（既存動作）,
+  // 'step' = 基準値(value)はそのままに、1つごとに valueStep を加算する
+  //   （EX12-048 セイテンゴクウモン「DP-8000。進化元のLv.5のカード1枚ごとに、このDPマイナス効果の数値-3000」
+  //    → value:8000, per_count_mode:'step', value_step:-3000）。⚠ エンジン未実装
+  perCountMode?: 'repeat' | 'step';
+  // perCountMode==='step' のときの1つあたりの増減値（符号付き）。JSON では step.value_step
+  valueStep?: number;
+  // 数え方。未指定=枚数（既存動作）、'colors'=数えたカードの色の種類の数。
+  // JSON では step.ref_count:'colors'（EX12-076 スサノオモン「進化元の色1色ごとに」）。⚠ エンジン未実装
+  refCount?: 'colors';
   options?: string[]; // 修飾子コード配列（'ignore_cost' / 'face_down' 等、複数可）
   rules?: MiniStep[]; // ルール = ミニ effect step の配列。serialize 時に main action 毎に翻訳されて step に展開
   // 代替アクション: 「〇〇するか〇〇する」のように複数アクションを OR / AND で結ぶ
@@ -478,7 +487,10 @@ export interface AltAction {
   perCount?: number;
   perRef?: string;
   perRefStateCond?: ConditionPair; // 効果1と同じ意味。JSONではstep.ref_stateに出力
-  perCountMode?: 'repeat';
+  perCountMode?: 'repeat' | 'step';
+  // 効果1と同じ意味（value_step / ref_count）
+  valueStep?: number;
+  refCount?: 'colors';
   perRefFilter?: ConditionPair[];
   // perRefFilterのAND内包OR版条件チェーン（EffectBlock.perRefFilterChainと同じ意味・変換）
   perRefFilterChain?: ConditionChainEntry[];
@@ -754,4 +766,12 @@ export interface VisualTypeEntry {
   label: string;            // '数値ポップアップ' / '消滅演出' 等
   description?: string;     // どういう動きか（実装ガイド）
   defaultColor?: string;    // デフォルト枠色
+}
+
+// カード全体のルール（効果ステップではなくカード自体の性質）。recipe のトップレベルに出力する。
+// 効果ブロック(EffectBlock)には属さないため、RecipeEditor が blocks とは別に保持する
+export interface CardLevelSettings {
+  // ＜ルール：名称「マメモン」としても扱う＞（EX12-041 サンダーボールモン）の追加名称。
+  // JSON では recipe.alias_names（文字列配列）。⚠ エンジン未実装
+  aliasNames?: string[];
 }

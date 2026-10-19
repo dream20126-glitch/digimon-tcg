@@ -58,6 +58,9 @@ export const REF_SUBJECTS = [
   // 直前のアクション（同じ効果ブロック内・代替アクションのその後等）が処理した枚数を参照する。
   // 例:「自分のセキュリティを全て破棄する。この効果で破棄した1枚ごとに、相手のデジモン1体を消滅させる」
   { code: 'last_action_count',  label: '直前の効果で処理した枚数' },
+  // 直前の効果で処理したカードそのもの（枚数ではなくカードを参照する）。ref_count:'colors' と組み合わせて
+  // EX12-047 アマテラスモン「戻したカードの色1色ごとに」を表す。⚠ エンジン未実装
+  { code: 'last_action_cards',  label: '直前の効果で処理したカード' },
   { code: 'opp_hand',        label: '相手の手札' },
   { code: 'opp_trash',       label: '相手のトラッシュ' },
   { code: 'opp_security',    label: '相手のセキュリティ' },
@@ -181,6 +184,8 @@ export const TRIGGERS: DictEntry[] = [
   { code: 'when_attack', kind: 'trigger', label: 'アタックするとき（アタック前・置換効果用・エンジン未実装）' },
   { code: 'on_attack_end', kind: 'trigger', label: 'アタック終了時' },
   { code: 'on_destroy', kind: 'trigger', label: '消滅時' },
+  // 【カウンター】: 相手のアタック時に手札から発揮（エンジンは recipe.counter を拾うスタブのみ）
+  { code: 'counter', kind: 'trigger', label: 'カウンター（相手のアタック時に手札から発揮・エンジン未実装）' },
   { code: 'on_battle_destroy', kind: 'trigger', label: 'バトルで消滅したとき（消滅後）' },
   { code: 'when_battle_destroy', kind: 'trigger', label: 'バトルで消滅するとき（消滅前・置換効果用）' },
   { code: 'on_battle_win', kind: 'trigger', label: 'バトル勝利時' },

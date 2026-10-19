@@ -162,7 +162,7 @@ function MultiButtonGroup({ options, values, onToggle, accentColor }: { options:
 }
 
 // 自由記述の複数タグ入力（特徴など、固定選択肢が無い項目のOR複数指定用）
-function MultiTextTags({ values, onChange, placeholder, accentColor, valueLabel }: { values: string[]; onChange: (v: string[]) => void; placeholder?: string; accentColor?: string; valueLabel?: (v: string) => string }) {
+export function MultiTextTags({ values, onChange, placeholder, accentColor, valueLabel }: { values: string[]; onChange: (v: string[]) => void; placeholder?: string; accentColor?: string; valueLabel?: (v: string) => string }) {
   const [draft, setDraft] = useState('');
   const accent = accentColor || '#d81b60';
   const add = () => {
@@ -532,6 +532,17 @@ function FusionMaterialsEditor({
           />
         </span>
       </div>
+      {/* カードの［ジョグレス進化］表記と見比べられるよう、入力内容を「青/紫Lv.4 ＋ 黒/黄Lv.4」の形で
+          プレビューする（EX12-028 グソクモン「［ジョグレス進化］青/紫Lv.4+黒/黄Lv.4」等） */}
+      {slots.length > 0 && (
+        <div style={{ fontSize: 11, color: '#b76e00', marginTop: 6, fontWeight: 'bold' }}>
+          プレビュー: {slots.map((s) => {
+            if (s.colors && s.colors.length > 0) return s.colors.join('/') + (s.lv !== undefined && s.lv !== '' ? 'Lv.' + s.lv : '');
+            if (s.names && s.names.length > 0) return s.names.map((n) => '「' + n + '」').join('/');
+            return '（未入力）';
+          }).join(' ＋ ')}
+        </div>
+      )}
       <div style={{ fontSize: 10, color: '#8a5300', marginTop: 4 }}>
         素材候補の数 ＝ 使う体数 なら全候補が必須（ジョグレス型）。候補数 ＞ 使う体数 なら「いずれかN体」の組合せ判定になります（アプ合体型）。
       </div>
@@ -2810,6 +2821,10 @@ const COMMON_TRIGGER_FAMILIES: TriggerFamily[] = [
   { code: 'on_attack', label: 'アタック時', kind: 'event' },
   { code: 'on_attack_end', label: 'アタック終了時', kind: 'event' },
   { code: 'on_destroy', label: '消滅時', kind: 'event' },
+  // 【カウンター】（相手のデジモンがアタックしたとき、手札から発揮する。EX12-017 ウォーグレイモン・EX12-055 アンドロモン等）。
+  // エンジンは recipe.counter 配列を手札から拾う fireCounterTriggers を持つが、現状は抽出のみで
+  // 発揮処理が無い（スタブ）ため⚠未実装扱い。JSON上は "counter":[...] のキーで出力される
+  { code: 'counter', label: 'カウンター', kind: 'event' },
   {
     code: 'main', label: 'メイン', kind: 'timing',
     variants: { self: 'main', opp: 'opp_main', any: 'any_main' },
@@ -3122,14 +3137,21 @@ const PERREF_L1 = [
   { code: 'opp', label: '相手' },
   { code: 'both', label: '両方' },
   // 直前の効果（同じ効果ブロック内・代替アクションの直前ステップ）が処理した枚数
-  // （bs._lastActionCount）。L2に相当する下位選択が無く、このボタン単独でrefSubjectが
-  // 'last_action_count' に確定する特殊枠（security_trash_top/bottom/select・deck_trash_top・
-  // destroyのみ実際に値を記録するため、他のアクションではまだ0のまま）
+  // （bs._lastActionCount）。既定はrefSubject='last_action_count'（security_trash_top/bottom/select・
+  // deck_trash_top・destroyのみ実際に値を記録するため、他のアクションではまだ0のまま）。
+  // L2で「処理したカード」(last_action_cards・色の種類を数える用)も選べる（PERREF_L2.last_action）
   { code: 'last_action', label: '直前の効果' },
 ];
 const PERREF_L2: Record<string, { code: string; label: string }[]> = {
   self: [
     { code: 'evo_source', label: '進化元' },
+  ],
+  // 直前の効果: 「処理した枚数」(last_action_count・既存)と「処理したカード」(last_action_cards)。
+  // 後者はカード自体を参照するため、数え方「色の種類の数」と組み合わせて
+  // EX12-047 アマテラスモン「戻したカードの色1色ごとに」を表す。⚠ last_action_cards はエンジン未実装
+  last_action: [
+    { code: 'last_action_count', label: '処理した枚数' },
+    { code: 'last_action_cards', label: '処理したカード' },
   ],
   own: [
     { code: 'own_digimon', label: 'デジモン' },
@@ -3182,7 +3204,7 @@ const PERREF_MEMORY_CODES = new Set(['own_memory', 'opp_memory']);
 // REF_SUBJECTSコード → PERREF_L1 の逆引き
 function perRefToL1(code: string): string {
   if (code === 'evo_source') return 'self';
-  if (code === 'last_action_count') return 'last_action';
+  if (code === 'last_action_count' || code === 'last_action_cards') return 'last_action';
   if (code.startsWith('own_') && PERREF_L2_CODES.has(code)) return 'own';
   if (code.startsWith('opp_') && PERREF_L2_CODES.has(code)) return 'opp';
   if (code.startsWith('both_') && PERREF_L2_CODES.has(code)) return 'both';
@@ -3458,6 +3480,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectPerCount = isEditingAlt ? editingAlt!.perCount : block.perCount;
   const effectPerRef = isEditingAlt ? editingAlt!.perRef : block.perRef;
   const effectPerCountMode = isEditingAlt ? editingAlt!.perCountMode : block.perCountMode;
+  const effectValueStep = isEditingAlt ? editingAlt!.valueStep : block.valueStep;
+  const effectRefCount = isEditingAlt ? editingAlt!.refCount : block.refCount;
   const effectPerRefFilter = isEditingAlt ? (editingAlt!.perRefFilter || []) : (block.perRefFilter || []);
   const effectPerRefFilterChain = isEditingAlt ? editingAlt!.perRefFilterChain : block.perRefFilterChain;
   const effectPerRefStateCond = isEditingAlt ? editingAlt!.perRefStateCond : block.perRefStateCond;
@@ -3524,8 +3548,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // （block.deckPosition/options）を持つため、対象＝セキュリティのときの位置/裏表パネルと
   // 二重表示にならないよう、そちらではこのフラグ付きアクションを除外する
   const effectHasDeckPositionFlag = !!dict.actions.find((a) => a.code === effectAction)?.hasDeckPosition;
+  // 「上か下」(both→JSON position:'select') は発揮するときに上下どちらに置くかを選ぶ
+  // （EX12-018 シリウスモン/EX12-077「進化元の上か下に置ける」）。ラベルで意味を明示する
   const effectPositionOptions: { code: string; label: string }[] = effectIsPlaceActive
-    ? [{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '上か下' }]
+    ? [{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'both', label: '上か下（発揮時に選ぶ）' }]
     : effectIsFlaggedBaseDirect || (effectCurVariant && effectFlaggedBases.has(effectCurVariant.base))
     ? POSITION_VARIANTS.map((v) => ({ code: v.suffix.slice(1), label: v.label }))
     : effectCurVariant && effectAutoGroupBases.has(effectCurVariant.base)
@@ -3699,6 +3725,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     const curPerRef = forEffect ? (effectPerRef || '') : (block.perRef || '');
     const curPerCount = forEffect ? effectPerCount : block.perCount;
     const curPerCountMode = forEffect ? effectPerCountMode : block.perCountMode;
+    const curValueStep = forEffect ? effectValueStep : block.valueStep;
+    const curRefCount = forEffect ? effectRefCount : block.refCount;
     const curPerRefFilter = forEffect ? effectPerRefFilter : (block.perRefFilter || []);
     const curPerRefFilterChain = forEffect ? effectPerRefFilterChain : block.perRefFilterChain;
     const curPerRefStateCond = forEffect ? effectPerRefStateCond : block.perRefStateCond;
@@ -3782,7 +3810,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               if (e.target.checked) {
                 setFields({ perCount: curPerCount || 1, perRef: curPerRef || 'opp_digimon' });
               } else {
-                setFields({ perCount: undefined, perRef: '' });
+                setFields({ perCount: undefined, perRef: '', perCountMode: undefined, valueStep: undefined, refCount: undefined });
               }
             }}
           />
@@ -3802,7 +3830,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   onChange={(e) => setFields({ perCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
                   style={{ width: 50, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
                 />
-                <span style={{ fontSize: 11, color: '#555' }}>{PERREF_MEMORY_CODES.has(refSubject) ? 'ごと、' : '枚ごと、'}</span>
+                <span style={{ fontSize: 11, color: '#555' }}>{PERREF_MEMORY_CODES.has(refSubject) ? 'ごと、' : curRefCount === 'colors' ? '色ごと、' : '枚ごと、'}</span>
               </div>
               {/* 対象（2段ボタン方式: このカード/自分/相手/両方/直前の効果 → 進化元/デジモン/
                   テイマー/手札/トラッシュ/セキュリティ/バトルエリア）。「直前の効果」はL1単独で
@@ -3815,7 +3843,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   const l2Options = PERREF_L2[curL1] || [];
                   const handleL1 = (l1: string) => {
                     if (!l1) { setSubject(''); return; }
-                    if (l1 === 'last_action') { setSubject('last_action_count'); return; }
+                    // 色の種類を数えるときは枚数(last_action_count)では数えられないため「処理したカード」を既定にする
+                    if (l1 === 'last_action') { setSubject(refSubject === 'last_action_cards' || curRefCount === 'colors' ? 'last_action_cards' : 'last_action_count'); return; }
                     const opts = PERREF_L2[l1] || [];
                     if (opts.length === 0) return;
                     const keepCurrent = opts.some((o) => o.code === refSubject);
@@ -3932,6 +3961,38 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 を数える
               </span>
             </div>
+            {/* 数え方: 枚数（既定・既存出力のまま）か、数えたカードの色の種類の数か。
+                メモリーはカードではなく数値そのものを数えるため出さない。
+                例: EX12-076 スサノオモン「このデジモンの進化元の色1色ごとにDP-3000」(このカード→進化元＋色)、
+                EX12-047 アマテラスモン「戻したカードの色1色ごとにDP-5000」(直前の効果→処理したカード＋色) */}
+            {!PERREF_MEMORY_CODES.has(refSubject) && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, fontSize: 11, flexWrap: 'wrap' }}>
+                <span style={{ color: '#1a4f8a', fontWeight: 'bold', whiteSpace: 'nowrap' }}>数え方:</span>
+                <ButtonGroup
+                  options={[
+                    { code: '', label: '枚数' },
+                    { code: 'colors', label: '色の種類の数' },
+                  ]}
+                  value={curRefCount === 'colors' ? 'colors' : ''}
+                  onChange={(v) => {
+                    const next = v === 'colors' ? 'colors' as const : undefined;
+                    // 「直前の効果で処理した枚数」は数値しか持たず色を数えられないため、
+                    // 色を選んだら「処理したカード」へ自動で切り替える
+                    if (next === 'colors' && refSubject === 'last_action_count') setFields({ refCount: next, perRef: 'last_action_cards' });
+                    else setFields({ refCount: next });
+                  }}
+                  accentColor="#1a4f8a"
+                />
+                {curRefCount === 'colors' && (
+                  <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装（保存はできますが動作しません）。同じ色は1色として数えます</span>
+                )}
+              </div>
+            )}
+            {refSubject === 'last_action_cards' && (
+              <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>
+                ⚠ 「直前の効果で処理したカード」はエンジン未実装です（保存はできますが動作しません）
+              </div>
+            )}
             {/* 発動モード: 値×N か N回発動か */}
             <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 8, padding: '6px 8px', background: '#eaf0fb', borderRadius: 4, border: '1px solid #b3c8ff', fontSize: 11 }}>
               <span style={{ color: '#1a4f8a', fontWeight: 'bold', whiteSpace: 'nowrap' }}>発動モード:</span>
@@ -3957,7 +4018,42 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <span style={{ fontWeight: curPerCountMode === 'repeat' ? 'bold' : 'normal', color: curPerCountMode === 'repeat' ? '#1a4f8a' : 'inherit' }}>N 回発動</span>
                 <span style={{ color: '#888', fontSize: 10 }}>例: DP-4000 を2回（対象を毎回選べる）</span>
               </label>
+              {/* 'step': 基準値(value)はそのままに、1つごとに数値を増減する。
+                  EX12-048 セイテンゴクウモン「DP-8000。進化元のLv.5のカード1枚ごとに、このDPマイナス効果の数値-3000」
+                  → value:8000 / per_count_mode:'step' / value_step:-3000 */}
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name={`perCountMode_${index}_${forEffect ? 'alt' : 'main'}`}
+                  checked={curPerCountMode === 'step'}
+                  onChange={() => setFields({ perCountMode: 'step' })}
+                  style={{ margin: 0 }}
+                />
+                <span style={{ fontWeight: curPerCountMode === 'step' ? 'bold' : 'normal', color: curPerCountMode === 'step' ? '#1a4f8a' : 'inherit' }}>1つごとに数値を増減する</span>
+                <span style={{ color: '#888', fontSize: 10 }}>例: DP-8000、1枚ごとに数値-3000</span>
+              </label>
             </div>
+            {curPerCountMode === 'step' && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, padding: '6px 8px', background: '#fff', borderRadius: 4, border: '1px dashed #b3c8ff', fontSize: 11, flexWrap: 'wrap' }}>
+                <span style={{ color: '#1a4f8a', fontWeight: 'bold' }}>1つごとの増減:</span>
+                <input
+                  type="number"
+                  step={1000}
+                  value={curValueStep === undefined || curValueStep === null ? '' : String(curValueStep)}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const n = Number(raw);
+                    setFields({ valueStep: raw === '' || isNaN(n) ? undefined : n });
+                  }}
+                  placeholder="例: -3000"
+                  style={{ width: 90, padding: '3px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                />
+                <span style={{ color: '#666', fontSize: 10 }}>
+                  値欄の数値は基準値のまま（例: 8000）。カードの文言どおりの符号で入力（「数値-3000」→ -3000）
+                </span>
+                <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装（保存はできますが動作しません）</span>
+              </div>
+            )}
             {/* フィルタ: カウント時に追加で絞り込み（発動条件と同じボタン式のConditionsHybridEditorを再利用） */}
             <div style={{ marginTop: 8 }}>
               <ConditionChainField
@@ -4844,6 +4940,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       {unimplementedActive.map(({ fam, axisLabel }) => (
                         <div key={fam.code}>⚠ 「{fam.label}」×「{axisLabel}」はエンジン未実装です（保存はできますが動作しません）</div>
                       ))}
+                    </div>
+                  )}
+                  {/* 【カウンター】はエンジン側がスタブのみ（recipe.counterを拾うだけで発揮しない） */}
+                  {currentTriggers.includes('counter') && (
+                    <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
+                      ⚠ 「カウンター」はエンジン未実装です（保存はできますが動作しません）。相手のアタック時に手札から発揮する効果として "counter" キーで保存されます
                     </div>
                   )}
 

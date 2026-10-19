@@ -1,5 +1,5 @@
 // EffectBlock[] ⇄ recipe JSON 変換
-import type { AltAction, ConditionPair, ConditionChainEntry, CostStep, DictEntry, EffectBlock, ExtraTarget, KeywordEntry, DesignatedGroup } from './types';
+import type { AltAction, CardLevelSettings, ConditionPair, ConditionChainEntry, CostStep, DictEntry, EffectBlock, ExtraTarget, KeywordEntry, DesignatedGroup } from './types';
 import { applyRulesToStep, hasRuleTranslator, rulesFromStep, RULE_OUTPUT_KEYS } from './ruleTranslator';
 
 // 「コスト上限+/-」(効果辞書側で登録するアクションコード)。「直前の効果に適用する」
@@ -362,6 +362,12 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
     out.per_count = a.perCount;
     out.ref = a.perRef;
     if (a.perCountMode === 'repeat') out.per_count_mode = 'repeat';
+    // 'step' = 基準値はそのままで1つごとに value_step を加算（メイン側の serialize と同じ規則）
+    if (a.perCountMode === 'step') {
+      out.per_count_mode = 'step';
+      if (a.valueStep !== undefined && a.valueStep !== null && !isNaN(Number(a.valueStep))) out.value_step = Number(a.valueStep);
+    }
+    if (a.refCount === 'colors') out.ref_count = 'colors';
     if (a.perRefStateCond && a.perRefStateCond.base) {
       out.ref_state = a.perRefStateCond.value
         ? a.perRefStateCond.base + ':' + a.perRefStateCond.value
@@ -1299,7 +1305,15 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.perCount !== undefined && b.perCount !== null && Number(b.perCount) > 0 && b.perRef) {
     step.per_count = Number(b.perCount);
     if (b.perCountMode === 'repeat') step.per_count_mode = 'repeat';
+    // 'step' = 基準値(value)はそのままに、1つごとに value_step（符号付き）を加算する
+    // （EX12-048 セイテンゴクウモン: value:8000 + per_count_mode:'step' + value_step:-3000）
+    if (b.perCountMode === 'step') {
+      step.per_count_mode = 'step';
+      if (b.valueStep !== undefined && b.valueStep !== null && !isNaN(Number(b.valueStep))) step.value_step = Number(b.valueStep);
+    }
     step.ref = b.perRef;
+    // 数え方: 'colors' = 数えたカードの色の種類の数（未指定=枚数。既存出力は変えない）
+    if (b.refCount === 'colors') step.ref_count = 'colors';
     // 状態 cond を ref_state に変換
     if (b.perRefStateCond && b.perRefStateCond.base) {
       step.ref_state = b.perRefStateCond.value
@@ -1352,6 +1366,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
         mod.per_count = Number(a.perCount);
         mod.per_ref = a.perRef;
         if (a.perCountMode === 'repeat') mod.per_count_mode = 'repeat';
+        if (a.perCountMode === 'step') {
+          mod.per_count_mode = 'step';
+          if (a.valueStep !== undefined && a.valueStep !== null && !isNaN(Number(a.valueStep))) mod.value_step = Number(a.valueStep);
+        }
+        if (a.refCount === 'colors') mod.ref_count = 'colors';
         if (a.perRefStateCond && a.perRefStateCond.base) {
           mod.per_ref_state = a.perRefStateCond.value
             ? a.perRefStateCond.base + ':' + a.perRefStateCond.value
@@ -1590,6 +1609,33 @@ function normalizeKeywordAliasesDeep(v: any): any {
 }
 
 // 既存レシピ JSON から EffectBlock[] へ復元
+// カード全体のルール（CardLevelSettings）として recipe のトップレベルに置くキー。
+// 値が配列のため、recipeToBlocks がトリガーキーと誤認して効果ブロックを作らないよう除外する
+export const CARD_LEVEL_KEYS = new Set(['alias_names']);
+
+// recipe トップレベルから CardLevelSettings を取り出す（recipeToBlocks と対で使う）
+export function parseCardLevelSettings(rawRecipe: any): CardLevelSettings {
+  const out: CardLevelSettings = {};
+  if (!rawRecipe || typeof rawRecipe !== 'object') return out;
+  const an = rawRecipe.alias_names;
+  if (Array.isArray(an)) {
+    const names = an.map((n: any) => String(n).trim()).filter(Boolean);
+    if (names.length > 0) out.aliasNames = names;
+  } else if (typeof an === 'string' && an.trim()) {
+    out.aliasNames = [an.trim()];
+  }
+  return out;
+}
+
+// blocksToRecipe の結果に CardLevelSettings を書き足す（blocksToRecipe と対で使う）。
+// 未入力なら何も足さない（既存レシピの出力を一切変えないため）
+export function applyCardLevelSettings(recipe: Record<string, any>, settings: CardLevelSettings | undefined): Record<string, any> {
+  if (!settings) return recipe;
+  const names = (settings.aliasNames || []).map((n) => String(n).trim()).filter(Boolean);
+  if (names.length > 0) recipe.alias_names = names;
+  return recipe;
+}
+
 export function recipeToBlocks(rawRecipe: any): EffectBlock[] {
   if (!rawRecipe || typeof rawRecipe !== 'object') return [];
   const recipe = normalizeKeywordAliasesDeep(rawRecipe);
@@ -1600,9 +1646,11 @@ export function recipeToBlocks(rawRecipe: any): EffectBlock[] {
       blocks.push(passiveToBlock('main', p));
     });
   }
-  const mergedMainKeys = collectMergeGroups(recipe, new Set(['evo_source', 'link', 'passive', 'security']));
+  const mergedMainKeys = collectMergeGroups(recipe, new Set(['evo_source', 'link', 'passive', 'security', ...CARD_LEVEL_KEYS]));
   Object.keys(recipe).forEach((k) => {
     if (k === 'evo_source' || k === 'link' || k === 'passive') return;
+    // カード全体のルール（alias_names 等）は parseCardLevelSettings 側で復元する
+    if (CARD_LEVEL_KEYS.has(k)) return;
     const arr = recipe[k];
     if (!Array.isArray(arr)) return;
     if (k === 'security') {
@@ -1885,7 +1933,9 @@ function stepObjectToAltAction(step: any): AltAction {
     duration: step?.duration || '',
     perCount: step?.per_count != null ? Number(step.per_count) : undefined,
     perRef: step?.ref || '',
-    perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : undefined,
+    perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : step?.per_count_mode === 'step' ? 'step' : undefined,
+    valueStep: step?.per_count_mode === 'step' && step?.value_step != null ? Number(step.value_step) : undefined,
+    refCount: step?.ref_count === 'colors' ? 'colors' : undefined,
     // 「～ごとに」の参照条件・参照状態（「その後」の後続stepでも、開き直して保存したときに
     // 消えないよう復元する。altActionToStepObject の ref_filter / ref_state 出力の逆変換）
     perRefFilter: parseConditionChainFilter(step?.ref_filter).pairs,
@@ -2002,6 +2052,11 @@ function costModToAltAction(mod: any): AltAction {
     alt.perCount = Number(mod.per_count);
     alt.perRef = String(mod.per_ref);
     if (mod.per_count_mode === 'repeat') alt.perCountMode = 'repeat';
+    if (mod.per_count_mode === 'step') {
+      alt.perCountMode = 'step';
+      if (mod.value_step != null) alt.valueStep = Number(mod.value_step);
+    }
+    if (mod.ref_count === 'colors') alt.refCount = 'colors';
     if (mod.per_ref_state) {
       const s = String(mod.per_ref_state);
       const i = s.indexOf(':');
@@ -2124,6 +2179,9 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     // position→deckPosition、per_count_mode→perCountMode へ復元済み（同上の理由で素通しにしない）
     position: true,
     per_count_mode: true,
+    // value_step→valueStep、ref_count→refCount へ復元済み（同上の理由で素通しにしない）
+    value_step: true,
+    ref_count: true,
     designated: true,
     designated_groups: true,
     designated_common: true,
@@ -2302,7 +2360,9 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     zoneIncreaseOp: step?.zone_increase_op === 'and' ? 'and' as const : 'or' as const,
     options: Array.isArray(step?.options) ? step.options.slice() : [],
     perCount: step?.per_count !== undefined && step?.per_count !== null ? Number(step.per_count) : undefined,
-    perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : undefined,
+    perCountMode: step?.per_count_mode === 'repeat' ? 'repeat' : step?.per_count_mode === 'step' ? 'step' : undefined,
+    valueStep: step?.per_count_mode === 'step' && step?.value_step != null ? Number(step.value_step) : undefined,
+    refCount: step?.ref_count === 'colors' ? 'colors' : undefined,
     perRef: step?.ref || '',
     perRefStateCond: (() => {
       const s = step?.ref_state;
@@ -2411,7 +2471,9 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
               const i = s.indexOf(':');
               return i >= 0 ? { base: s.substring(0, i), value: s.substring(i + 1) } : { base: s };
             })(),
-            perCountMode: a?.per_count_mode === 'repeat' ? 'repeat' as const : undefined,
+            perCountMode: a?.per_count_mode === 'repeat' ? 'repeat' as const : a?.per_count_mode === 'step' ? 'step' as const : undefined,
+            valueStep: a?.per_count_mode === 'step' && a?.value_step != null ? Number(a.value_step) : undefined,
+            refCount: a?.ref_count === 'colors' ? 'colors' as const : undefined,
             perRefFilter: parseConditionChainFilter(a?.ref_filter).pairs,
             perRefFilterChain: parseConditionChainFilter(a?.ref_filter).chain,
             costFree: !!a?.cost_free,

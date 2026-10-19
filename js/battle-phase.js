@@ -691,7 +691,7 @@ function applyTurnEndMemoryShift() {
 }
 
 export function onEndTurn() {
-  if (!bs.isPlayerTurn) return;
+  if (!bs.isPlayerTurn || bs._turnPassed) return;
   // メモリーが相手側に移ったことによる自動のターン終了の処理中なら、ボタンでは終了しない（二重に endTurn を送らない）
   if (bs._autoTurnEnding || bs._endingTurn) return;
   // 効果の処理中（カードの選択画面を開いている間も含む）なら、終わってからターン終了に進む
@@ -724,6 +724,9 @@ export function onEndTurn() {
     _waitIdle(() => _hooks.checkTurnEndEffects(() => _waitIdle(() => _processBurstEvolvePendingDiscard(bs, 'player', () => {
     bs._endingTurn = false;
     applyTurnEndMemoryShift();
+    // ターンを相手に渡した印（「相手のターン」表示が終わって isPlayerTurn が false になるまでの間に、メモリーが相手側の
+    // ままなのを見た自動ターン終了の見張り等が、もう一度ターン終了時の効果を始めないように）
+    bs._turnPassed = true;
     if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
     updateMemGauge();
     // プレイヤーのターン終了 → endingSide='player'
@@ -822,7 +825,7 @@ if (typeof window !== 'undefined' && !window._autoTurnEndWatch) {
     try {
       if (!bs || bs._battleAborted || !bs.isPlayerTurn || bs.phase !== 'main') return;
       if (window._tutorialRunner && window._tutorialRunner.active) return; // チュートリアルはシナリオがターンを進める
-      if (!(bs.memory < 0) || bs._autoTurnEnding || bs._endingTurn || _turnEndWaitTimer) return;
+      if (!(bs.memory < 0) || bs._autoTurnEnding || bs._endingTurn || bs._turnPassed || _turnEndWaitTimer) return;
       // 手動の操作（進化・登場等）でメモリーが相手側に移ったときは、その操作の続き（進化ドローの演出 → 【進化時】等）が
       // 終わってから判定される（checkPlayerPendingTurnEnd）。その間は始めない（進化ドローの演出中に始めてしまい、
       // メルヴァモン BT26-081 の【進化時】と【自分のターン終了時】が同時に出ていた）。
@@ -860,6 +863,7 @@ function _hideTurnEndForceButton() {
 
 export function checkAutoTurnEnd() {
   if (bs.memory >= 0) return false;
+  if (bs._turnPassed) return true; // 既にターンを相手に渡した
   // ターン終了時の効果（エグゼキュート等のアタック）を処理中に、その処理の終わりから再び呼ばれても二重に終了しない
   if (bs._autoTurnEnding) return true;
   // ターン終了ボタンでのターン終了の処理中なら、こちらでは終了しない（endTurn を2回送り、相手のターンの始まりが2回動いていた）
@@ -963,6 +967,7 @@ export function checkAutoTurnEnd() {
     }
     if (_onlineMode) {
       applyTurnEndMemoryShift();
+      bs._turnPassed = true;
       if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
       showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {});
     } else {

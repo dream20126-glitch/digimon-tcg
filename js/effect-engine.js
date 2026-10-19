@@ -3687,7 +3687,7 @@ export function isCardInAnyZone(card, p) {
 // 消滅させてから、実際に場を離れたときだけ消滅演出を出す（fxFn(card, cb)）。done(離れたか)。
 // 以前は演出を先に出してから消滅させていたため、「離れるとき」（クロノモン：ホーリーモード BT26-016 の
 // セキュリティをデッキに戻して離れない等）や消滅されない効果で離れなかったときにも消滅演出が出ていた
-function _destroyWithFx(owner, idx, ctx, fxFn, done) {
+function _destroyWithFx(owner, idx, ctx, fxFn, done, causeType) {
   const card = owner && owner.battleArea ? owner.battleArea[idx] : null;
   doDestroy(owner, idx, ctx, (removed) => {
     const gone = !!card && removed === true;
@@ -3695,7 +3695,7 @@ function _destroyWithFx(owner, idx, ctx, fxFn, done) {
       try { fxFn(card, () => done && done(true)); return; } catch (_) {}
     }
     done && done(gone);
-  });
+  }, causeType);
 }
 function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   // callback(実際に消滅させたか)。オンラインでは相手のカードが state_sync で別オブジェクトに置き換わるため、
@@ -5306,11 +5306,12 @@ function _resolveCombatAction(step, ctx, callback) {
     const _resolve = () => {
       if (_result === 'draw') {
         // 両者敗北 → 両者消滅（それぞれ独立に消滅回避判定はdoDestroy内のデコイ/スケープゴート等で行われる）
-        _destroyWithFx(player, selfIdx, ctx, _dfx, () => { const di = tPlayer.battleArea.indexOf(defCard); if (di === -1) { finish(); return; } _destroyWithFx(tPlayer, di, ctx, _dfx, finish); });
+        // 効果の「バトルできる」で負けた側も、バトルによる消滅（「バトルで消滅しない」等が効く。グリフォモン BT26-046）
+        _destroyWithFx(player, selfIdx, ctx, _dfx, () => { const di = tPlayer.battleArea.indexOf(defCard); if (di === -1) { finish(); return; } _destroyWithFx(tPlayer, di, ctx, _dfx, finish, 'battle'); }, 'battle');
       } else if (_result === 'win') {
-        _destroyWithFx(tPlayer, idx, ctx, _dfx, winAfter(selfCard, ctx.side, tPlayer, idx, defCard));
+        _destroyWithFx(tPlayer, idx, ctx, _dfx, winAfter(selfCard, ctx.side, tPlayer, idx, defCard), 'battle');
       } else {
-        _destroyWithFx(player, selfIdx, ctx, _dfx, winAfter(defCard, _defSideTag, player, selfIdx, selfCard));
+        _destroyWithFx(player, selfIdx, ctx, _dfx, winAfter(defCard, _defSideTag, player, selfIdx, selfCard), 'battle');
       }
     };
     // 効果によるバトルの演出（アタックの VS 演出とは別。相手の画面にも fx_effectBattle で出す）

@@ -297,6 +297,119 @@ export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
   setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2450);
 }
 
+// 3枚以上がまとめて動くときの移動演出。1枚のときと同じ「移動元 → 移動先」の画面で、カードが移動元から
+// 短い間隔で次々に弧を描いて移動先へ入る（移動先の「+N」が入るたびに増える）。OK ボタンは無く、全部入ったら閉じる
+export function fxCardMoveMulti(cards, fromLabel, toLabel, callback, faceDown) {
+  const list = (cards || []).filter(Boolean);
+  if (list.length === 0) { callback && callback(); return; }
+  const _fd = faceDown === false ? false : (!!faceDown || /セキュリティ/.test(String(toLabel || '')));
+  const fromSt = _moveZoneStyle(fromLabel);
+  const toSt = _moveZoneStyle(toLabel);
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  if (!document.getElementById('fx-move2-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-move2-style';
+    st.textContent = '@keyframes mv2Pulse{0%{transform:scale(1)}40%{transform:scale(1.12)}100%{transform:scale(1)}}'
+      + '@keyframes mv2Plus{0%{opacity:0;transform:translate(-50%,0)}20%{opacity:1}100%{opacity:0;transform:translate(-50%,-26px)}}'
+      + '@keyframes mv2Trail{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(.3)}}';
+    document.head.appendChild(st);
+  }
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:66000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;pointer-events:none;opacity:0;transition:opacity 0.2s;';
+  const head = document.createElement('div');
+  head.style.cssText = 'font-size:16px;font-weight:900;letter-spacing:1px;color:#fff;text-shadow:0 0 10px ' + toSt.color + ',0 0 20px ' + toSt.color + ';text-align:center;padding:0 12px;';
+  head.innerHTML = '<span style="font-size:20px;">' + toSt.icon + '</span> ' + list.length + '枚を' + esc(_moveHeadline(toLabel));
+  overlay.appendChild(head);
+  const SW = Math.min(320, window.innerWidth - 32), SH = 170;
+  const ZW = 92, ZH = 128, CW = 78, CH = 109;
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:relative;width:' + SW + 'px;height:' + SH + 'px;';
+  const zone = (st, label, left) => {
+    const z = document.createElement('div');
+    z.style.cssText = 'position:absolute;top:0;left:' + left + 'px;width:' + ZW + 'px;height:' + ZH + 'px;border-radius:10px;'
+      + 'border:2px solid ' + st.color + '88;background:' + st.color + '14;box-shadow:inset 0 0 18px ' + st.color + '22;'
+      + 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;';
+    z.innerHTML = '<div style="font-size:30px;opacity:0.85;">' + st.icon + '</div>';
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'position:absolute;top:' + (ZH + 6) + 'px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11px;font-weight:bold;color:' + st.color + ';';
+    lbl.innerText = label || '';
+    z.appendChild(lbl);
+    stage.appendChild(z);
+    return z;
+  };
+  const fromLeft = 0, toLeft = SW - ZW;
+  zone(fromSt, fromLabel || '移動元', fromLeft);
+  const destZone = zone(toSt, toLabel || '移動先', toLeft);
+  const arrow = document.createElement('div');
+  arrow.style.cssText = 'position:absolute;top:' + (ZH / 2 - 14) + 'px;left:' + (ZW + 6) + 'px;width:' + (SW - ZW * 2 - 12) + 'px;text-align:center;font-size:22px;font-weight:900;color:' + toSt.color + ';opacity:0;transition:opacity 0.3s;letter-spacing:-4px;';
+  arrow.innerText = '›››';
+  stage.appendChild(arrow);
+  const plus = document.createElement('div');
+  plus.style.cssText = 'position:absolute;left:' + (toLeft + ZW / 2) + 'px;top:' + (ZH / 2 - 30) + 'px;transform:translate(-50%,0);font-size:18px;font-weight:900;color:#fff;text-shadow:0 0 8px ' + toSt.color + ';z-index:60;opacity:0;';
+  stage.appendChild(plus);
+  const startX = fromLeft + (ZW - CW) / 2, startY = (ZH - CH) / 2;
+  const endX = toLeft + (ZW - CW) / 2, endY = startY;
+  // カード（移動元に少しずつずらして重ねる。最初に飛ぶカードが一番上）
+  const cardDivs = list.map((card, i) => {
+    const d = document.createElement('div');
+    const off = Math.min(i, 6) * 2;
+    d.style.cssText = 'position:absolute;left:0;top:0;width:' + CW + 'px;height:' + CH + 'px;border-radius:6px;overflow:hidden;'
+      + 'border:2px solid ' + toSt.color + ';box-shadow:0 0 12px ' + toSt.color + '88;background:#111;z-index:' + (5 + list.length - i) + ';'
+      + 'transform:translate(' + (startX + off) + 'px,' + (startY - off) + 'px) scale(0.6);opacity:0;transition:transform 0.25s ease-out, opacity 0.25s;';
+    const src = (card && !_fd) ? cardImg(card) : '';
+    d.innerHTML = (_fd && cardBackUrl)
+      ? '<img src="' + cardBackUrl + '" style="width:100%;height:100%;object-fit:cover;">'
+      : _fd
+      ? '<div style="width:100%;height:100%;background:linear-gradient(135deg,#1a3a6a,#0a1530);display:flex;align-items:center;justify-content:center;font-size:20px;color:#3a5a9a;">🛡</div>'
+      : (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#00fbff;padding:8px;font-size:10px;">' + esc((card && card.name) || '?') + '</div>');
+    d._off = off;
+    stage.appendChild(d);
+    return d;
+  });
+  overlay.appendChild(stage);
+  document.body.appendChild(overlay);
+  setTimeout(() => { overlay.style.opacity = '1'; }, 10);
+  setTimeout(() => {
+    cardDivs.forEach(d => { d.style.opacity = '1'; d.style.transform = 'translate(' + (startX + d._off) + 'px,' + (startY - d._off) + 'px) scale(1)'; });
+    arrow.style.opacity = '1';
+  }, 120);
+  // 1枚ずつ次々に飛ばす（前のカードが着く前に次が飛び立つ）
+  const FLY_START = 550, FLY_MS = 480, STAGGER = 170;
+  let landed = 0;
+  const flyOne = (d) => {
+    d.style.transition = 'none';
+    d.style.zIndex = '50';
+    const sx = startX + d._off, sy = startY - d._off;
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / FLY_MS);
+      const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      const x = sx + (endX - sx) * e;
+      const y = sy + (endY - sy) * e - Math.sin(Math.PI * e) * 40;
+      const sc = 1 - 0.18 * Math.sin(Math.PI * e);
+      d.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + sc + ') rotate(' + (14 * Math.sin(Math.PI * e)) + 'deg)';
+      if (t < 1) { requestAnimationFrame(step); return; }
+      d.style.transition = 'transform 0.2s ease-in, opacity 0.2s ease-in';
+      d.style.transform = 'translate(' + endX + 'px,' + (endY + 6) + 'px) scale(0.55)';
+      d.style.opacity = '0';
+      landed++;
+      destZone.style.transition = 'box-shadow 0.15s, border-color 0.15s, background 0.15s';
+      destZone.style.borderColor = toSt.color;
+      destZone.style.background = toSt.color + '33';
+      destZone.style.boxShadow = '0 0 26px ' + toSt.color + ', inset 0 0 22px ' + toSt.color + '55';
+      destZone.style.animation = 'none'; void destZone.offsetWidth; destZone.style.animation = 'mv2Pulse 0.3s ease-out';
+      plus.innerText = '+' + landed;
+      plus.style.opacity = '1';
+      if (landed >= cardDivs.length) {
+        setTimeout(() => { overlay.style.opacity = '0'; }, 500);
+        setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 700);
+      }
+    };
+    requestAnimationFrame(step);
+  };
+  cardDivs.forEach((d, i) => setTimeout(() => flyOne(d), FLY_START + i * STAGGER));
+}
+
 // まとめて動くカードを、並んでいる位置から移動先（画面下の移動先の枠）へ「ポンポンポン」と順番に飛ばす演出。
 // overlay: 演出を出しているオーバーレイ（この上に移動先の枠を出す）/ els: 飛ばすカードの要素（並び順に飛ぶ）。
 // 全部が移動先に入ったら done

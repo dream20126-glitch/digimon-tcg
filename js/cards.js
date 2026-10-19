@@ -140,6 +140,13 @@ export function normalizeRecipeKeywordAliases(recipeStr) {
 }
 
 // Google Drive URL → 直リンク変換（GAS経由Base64不要に）
+// 挙動確認済みのカードか（スプレッドシート「カード情報一覧」の「挙動OK」列＝X列にチェックが入っているもの）。
+// デッキ作成画面などでは、これに当てはまるカードだけを出す
+export function isBehaviorOk(card) {
+  const v = card && card['挙動OK'];
+  return v === true || v === 'TRUE' || v === 'true' || v === '✅' || v === 1;
+}
+
 export function getGoogleDriveDirectLink(url) {
   if (!url || typeof url !== 'string') return '';
   if (url.startsWith('data:')) return url;

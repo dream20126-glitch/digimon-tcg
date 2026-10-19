@@ -1,6 +1,6 @@
 // デッキビルダーロジック（GAS API版）
 import { gasPost } from './firebase-config.js';
-import { loadCardAndKeywordData, getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
+import { loadCardAndKeywordData, getCardImageUrl, getGoogleDriveDirectLink, isBehaviorOk } from './cards.js';
 
 let searchMode = 'name';
 let selectedColors = [];
@@ -93,6 +93,8 @@ window.filterCards = function() {
   const filtered = allCards.filter(c => {
     // トークンはデッキに入れられないので検索結果から除外
     if (String(c["タイプ"]) === 'トークン') return false;
+    // 挙動確認済み（カード情報一覧の「挙動OK」にチェック）のカードだけを出す
+    if (!isBehaviorOk(c)) return false;
     const targetText = (searchMode === 'name')
       ? (String(c["名前"]) + String(c["カードNo"])).toLowerCase()
       : String(c["効果"]).toLowerCase();

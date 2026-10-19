@@ -659,8 +659,10 @@ window.startBattleDemo = async function() {
   // デモは図鑑全体からランダムにデッキを組むため、ここだけは全件読み込みが必要
   await loadCardAndKeywordData();
   // ダミーのデッキデータ（50枚になるよう各カードを複数枚入れる）
-  const mainCards = allCards.filter(c => c["タイプ"] !== 'デジタマ');
-  const tamaCards = allCards.filter(c => c["タイプ"] === 'デジタマ');
+  // 挙動確認済み（カード情報一覧の「挙動OK」にチェック）のカードだけで組む
+  const _okCard = (c) => { const v = c && c['挙動OK']; return v === true || v === 'TRUE' || v === 'true' || v === '✅' || v === 1; };
+  const mainCards = allCards.filter(c => _okCard(c) && c["タイプ"] !== 'デジタマ' && c["タイプ"] !== 'トークン' && c["タイプ"]);
+  const tamaCards = allCards.filter(c => _okCard(c) && c["タイプ"] === 'デジタマ');
 
   // メインデッキ: 50枚になるまでカードを繰り返す
   const mainList = [];

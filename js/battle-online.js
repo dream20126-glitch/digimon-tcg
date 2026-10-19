@@ -47,6 +47,7 @@ let _pendingLeaveBattleDelegateCallback = null; // fx_leaveBattleDelegate の返
 let _pendingFlushDeferredEvoCallback = null;    // fx_flushDeferredEvo の返事待ち
 let _pendingBlockBattleDoneCallback = null;     // block_battle_done（防御側のブロックのバトル解決の完了）待ち
 let _pendingBlockBattleDoneResponse = null;     // 待ち始める前に届いた block_battle_done
+let _pendingBarrierCallback = null; // fx_barrierRequest 送信側の応答待ち（cb(used)）
 let _pendingHandDiscardCallback = null; // fx_handDiscardRequest 送信側の応答待ち（cb(result)）
 let _pendingHandDiscardResponse = null; // 待ち開始前に届いた fx_handDiscardDone の結果
 let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
@@ -1160,6 +1161,32 @@ function onRemoteCommand(cmd) {
         };
         nx();
       }
+      break;
+    }
+    // --- 相手のアタックのバトルで、こちらのデジモンが消滅するとき: ≪防壁≫を使うか（持ち主のこちらが決めて破棄する） ---
+    case 'fx_barrierRequest': {
+      const card = (bs.player.battleArea || [])[cmd.slotIdx];
+      const reply = (used) => {
+        try { sendStateSync(); } catch (_) {}
+        sendCommand({ type: 'fx_barrierDone', used: !!used, remaining: bs.player.security.length });
+      };
+      if (!card || !bs.player.security || bs.player.security.length === 0) { reply(false); break; }
+      const rule = (window._keywordRuleText && window._keywordRuleText('barrier')) || '【防壁】このデジモンがバトルで消滅するとき、自分のセキュリティを上から1枚破棄することで、消滅しない';
+      const ask = window._showEffectConfirm || ((c, t, cb) => cb(true));
+      ask(card, rule + '\n\nセキュリティを上から1枚破棄して【防壁】を使いますか？', (yes) => {
+        if (!yes) { addLog('☓ 【防壁】を使わない'); reply(false); return; }
+        const t = bs.player.security.shift();
+        if (t) bs.player.trash.push(t);
+        addLog('🛡 【防壁】「' + card.name + '」がセキュリティ1枚破棄で消滅回避！（残り' + bs.player.security.length + '枚）');
+        renderAll();
+        // 防壁でセキュリティが減った →「セキュリティが減ったとき」（効果による減少）
+        if (typeof window._fireSecurityDecreaseByEffect === 'function') window._fireSecurityDecreaseByEffect('player', card, () => reply(true));
+        else reply(true);
+      });
+      break;
+    }
+    case 'fx_barrierDone': {
+      if (_pendingBarrierCallback) { const cb = _pendingBarrierCallback; _pendingBarrierCallback = null; cb(cmd.used ? { remaining: cmd.remaining } : false); }
       break;
     }
     case 'fx_handDiscardDone': {
@@ -2824,7 +2851,19 @@ window._waitRemoteIdle = (cb) => {
   _pendingIdleCheck = { id, finish };
   sendCommand({ type: 'fx_idleCheck', id });
 };
-window._isOnlineWaiting = () => !!(_pendingBlockCallback || _pendingSecEffectCallback || _reactionDelegateWaiters.length > 0
+// 相手のデジモンの≪防壁≫を持ち主に確認してもらう（cb(false) 使わない / cb({remaining}) 使った）。待つ間は待機表示
+window._requestRemoteBarrier = (card, slotIdx, cb) => {
+  let ov = null;
+  const t = setTimeout(() => {
+    ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;top:15%;left:50%;transform:translateX(-50%);z-index:55000;background:rgba(0,0,0,0.9);border:1px solid #ffaa00;border-radius:10px;padding:10px 20px;color:#ffaa00;font-size:13px;font-weight:bold;text-align:center;pointer-events:none;';
+    ov.innerText = '⏳ 相手が【防壁】を使うか選んでいます...';
+    document.body.appendChild(ov);
+  }, 300);
+  _pendingBarrierCallback = (r) => { clearTimeout(t); if (ov && ov.parentNode) ov.parentNode.removeChild(ov); cb(r); };
+  sendCommand({ type: 'fx_barrierRequest', slotIdx, cardName: (card && card.name) || '' });
+};
+window._isOnlineWaiting = () => !!(_pendingBlockCallback || _pendingSecEffectCallback || _reactionDelegateWaiters.length > 0 || _pendingBarrierCallback
   || _pendingLeaveBattleDelegateCallback || _pendingFlushDeferredEvoCallback || _pendingHandDiscardCallback || _pendingOwnDestroyDoneCallback
   || _pendingBlockBattleDoneCallback);
 // 相手のデジモンが「バトルエリアを離れるとき」: 持ち主（相手）の端末に置換効果の判定を委譲し、

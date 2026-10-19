@@ -264,6 +264,12 @@ function _showCancelFlash(card, reason, cb, remote) {
   setTimeout(() => { if (ov.parentNode) ov.parentNode.removeChild(ov); done(); }, 1600);
 }
 if (typeof window !== 'undefined') window._showCancelFlash = _showCancelFlash;
+// 効果（≪防壁≫等）で自分のセキュリティが減ったとき →「セキュリティが減ったとき」（battle-online.js の fx_barrierRequest から）
+if (typeof window !== 'undefined') window._fireSecurityDecreaseByEffect = (side, card, cb) => {
+  const ctxBase = { bs, addLog, renderAll, updateMemGauge };
+  try { _fireWhenSecurityDecrease(side, bs, ctxBase, () => cb && cb(), { cause: { type: 'effect', causerSide: side, causerCard: card } }); }
+  catch (e) { console.error('[secDecreaseByEffect]', e); cb && cb(); }
+};
 function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callback0) {
   // キーワードで回避したら「【防壁】で回避！」等を大きく出してから続ける
   const callback = (r) => {
@@ -289,9 +295,27 @@ function _tryCancelDestroyAsync(card, ownerSidePlayer, side, onlyBattle, callbac
     });
     return;
   }
+  // オンラインの相手のデジモンの≪防壁≫: 使うかは持ち主が決め、持ち主の端末が自分のセキュリティを破棄する
+  // （以前はこちらの端末が確認なしで使い、こちらの画面の相手のセキュリティだけを1枚減らしていたため、
+  // 両方の画面でセキュリティの枚数が違っていた。クーガモン BT26-026）
+  if (side === 'ai' && _onlineMode && !_prevented && card && hasBarrier(card) && ownerSidePlayer && Array.isArray(ownerSidePlayer.security)
+      && ownerSidePlayer.security.length > 0 && typeof window._requestRemoteBarrier === 'function') {
+    const slotIdx = (ownerSidePlayer.battleArea || []).indexOf(card);
+    window._requestRemoteBarrier(card, slotIdx, (used) => {
+      if (!used) { addLog('☓ 相手は【防壁】を使わなかった'); _proceed(true); return; }
+      // 相手の端末で破棄済み。こちらの画面の相手のセキュリティも1枚減らす（同期が先に届いていれば減らさない）
+      if (typeof used === 'object' && typeof used.remaining === 'number') {
+        while (ownerSidePlayer.security.length > used.remaining) { const t = ownerSidePlayer.security.shift(); if (t) ownerSidePlayer.trash.push(t); }
+      }
+      addLog('🛡 【防壁】相手の「' + card.name + '」がセキュリティ1枚破棄で消滅回避！');
+      renderAll();
+      callback({ canceled: true, reason: 'barrier' });
+    });
+    return;
+  }
   _proceed(false);
   function _proceed(skipBarrier) {
-  var syncResult = _tryCancelDestroy(card, ownerSidePlayer, onlyBattle, skipBarrier);
+  var syncResult = _tryCancelDestroy(card, ownerSidePlayer, onlyBattle, skipBarrier || (side === 'ai' && _onlineMode));
   if (syncResult) { if (syncResult.reason === 'barrier') { renderAll(); _dispatchStateSync(); } callback(syncResult); return; }
   const ctxBase = { bs, addLog, renderAll, updateMemGauge };
   // バトルで負けて離れる（≪デコード≫等「バトル以外でバトルエリアを離れるとき」は発揮しない。effect-engine.js が見る）

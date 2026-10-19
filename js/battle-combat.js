@@ -4665,7 +4665,7 @@ function cleanupBattle() {
 let _evoOverlayBusy = false;
 const _evoOverlayQueue = [];
 function _evoOverlayRun(fn) {
-  if (_evoOverlayBusy) { _evoOverlayQueue.push(fn); return; }
+  if (_evoOverlayBusy) { console.log('[playFx] 前の演出の終了待ち（順番待ち' + (_evoOverlayQueue.length + 1) + '件目）'); _evoOverlayQueue.push(fn); return; }
   _evoOverlayBusy = true;
   let ended = false;
   const end = () => {
@@ -4706,6 +4706,14 @@ function _showPlayEffectBody(card, onDone) {
   label.style.color = isOption ? '#aa66ff' : '#ffaa00';
   label.innerText = isOption ? 'OPTION ACTIVATE' : 'DIGITAL APPEAR';
   overlay.style.display = 'flex';
+  // 調査用: 登場演出を出した時点で、画面の中央の一番手前にある要素（演出が隠れていないか）
+  setTimeout(() => {
+    try {
+      const top = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+      const z = (el) => { let e = el; while (e && e !== document.body) { const zi = getComputedStyle(e).zIndex; if (zi && zi !== 'auto') return zi; e = e.parentElement; } return 'auto'; };
+      console.log('[playFx] 表示', card.name, { display: overlay.style.display, topElement: top ? (top.id || top.className || top.tagName) : null, topZ: top ? z(top) : null, inOverlay: !!(top && overlay.contains(top)) });
+    } catch (_) {}
+  }, 400);
 
   setTimeout(() => { flash.style.transition = 'opacity 0.1s'; flash.style.opacity = '0.9';
     setTimeout(() => { flash.style.transition = 'opacity 0.3s'; flash.style.opacity = '0'; label.style.opacity = '1'; imgEl.style.opacity = '1'; imgEl.style.transform = 'scale(1)'; nameEl.style.opacity = '1';

@@ -2821,10 +2821,6 @@ const COMMON_TRIGGER_FAMILIES: TriggerFamily[] = [
   { code: 'on_attack', label: 'アタック時', kind: 'event' },
   { code: 'on_attack_end', label: 'アタック終了時', kind: 'event' },
   { code: 'on_destroy', label: '消滅時', kind: 'event' },
-  // 【カウンター】（相手のデジモンがアタックしたとき、手札から発揮する。EX12-017 ウォーグレイモン・EX12-055 アンドロモン等）。
-  // エンジンは recipe.counter 配列を手札から拾う fireCounterTriggers を持つが、現状は抽出のみで
-  // 発揮処理が無い（スタブ）ため⚠未実装扱い。JSON上は "counter":[...] のキーで出力される
-  { code: 'counter', label: 'カウンター', kind: 'event' },
   {
     code: 'main', label: 'メイン', kind: 'timing',
     variants: { self: 'main', opp: 'opp_main', any: 'any_main' },
@@ -4184,6 +4180,27 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
               );
             })()}
+            {/* 【カウンター】: BT26 と同じく「アタック時」(on_attack)+発動主体＝相手 で書き、
+                このstepに counter:true の印を付ける（EX12-017 ウォーグレイモン・EX12-055 アンドロモン等）。
+                アタック時を選んでいるときだけ表示（既にONのレシピはトリガーを変えても外せるよう表示を残す） */}
+            {(((block.triggers && block.triggers.length > 0) ? block.triggers : [block.trigger]).includes('on_attack') || !!block.counter) && (
+              <div style={{ marginTop: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, fontWeight: 'bold' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!block.counter}
+                    onChange={(e) => update('counter', e.target.checked || undefined)}
+                  />
+                  【カウンター】として発揮
+                </label>
+                <div style={{ fontSize: 10, color: '#666', marginLeft: 20 }}>
+                  相手のデジモンのアタックへの【カウンター】効果（1回のアタックに1つだけ・【アタック時】の効果の後に発揮）
+                </div>
+                {block.counter && (
+                  <div style={{ fontSize: 10, color: '#c62828', marginLeft: 20 }}>⚠ エンジン未実装です（保存はできますが【カウンター】としての制約は反映されません）</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         )}
@@ -4940,12 +4957,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       {unimplementedActive.map(({ fam, axisLabel }) => (
                         <div key={fam.code}>⚠ 「{fam.label}」×「{axisLabel}」はエンジン未実装です（保存はできますが動作しません）</div>
                       ))}
-                    </div>
-                  )}
-                  {/* 【カウンター】はエンジン側がスタブのみ（recipe.counterを拾うだけで発揮しない） */}
-                  {currentTriggers.includes('counter') && (
-                    <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
-                      ⚠ 「カウンター」はエンジン未実装です（保存はできますが動作しません）。相手のアタック時に手札から発揮する効果として "counter" キーで保存されます
                     </div>
                   )}
 

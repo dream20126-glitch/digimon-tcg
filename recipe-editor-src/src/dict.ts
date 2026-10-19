@@ -184,8 +184,6 @@ export const TRIGGERS: DictEntry[] = [
   { code: 'when_attack', kind: 'trigger', label: 'アタックするとき（アタック前・置換効果用・エンジン未実装）' },
   { code: 'on_attack_end', kind: 'trigger', label: 'アタック終了時' },
   { code: 'on_destroy', kind: 'trigger', label: '消滅時' },
-  // 【カウンター】: 相手のアタック時に手札から発揮（エンジンは recipe.counter を拾うスタブのみ）
-  { code: 'counter', kind: 'trigger', label: 'カウンター（相手のアタック時に手札から発揮・エンジン未実装）' },
   { code: 'on_battle_destroy', kind: 'trigger', label: 'バトルで消滅したとき（消滅後）' },
   { code: 'when_battle_destroy', kind: 'trigger', label: 'バトルで消滅するとき（消滅前・置換効果用）' },
   { code: 'on_battle_win', kind: 'trigger', label: 'バトル勝利時' },

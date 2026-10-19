@@ -90,6 +90,9 @@ export interface EffectBlock {
   asType?: 'digimon' | 'tamer' | 'option';
   zone?: string; // '' | 'security' | 'trash' | 'hand' | 'breed'
   trigger: string; // code (e.g., 'on_play', 'during_own_turn', 'passive', 'main')。複数選択時はtriggers[0]と一致させる
+  // 【カウンター】効果の印（trigger=on_attack・発動主体=相手 と組み合わせて使う）。
+  // true のとき JSON へ step.counter:true を出力する（EX12-017 等）。⚠ エンジン未実装
+  counter?: boolean;
   // トリガーの複数選択（例: 登場時/進化時どちらでも同じ効果）。2件以上のときのみ意味を持つ。
   // blocksToRecipeで各コードごとに同じstepを複製して出力する。1件以下ならtriggerのみを見る
   triggers?: string[];

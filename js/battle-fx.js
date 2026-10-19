@@ -297,6 +297,59 @@ export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
   setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2450);
 }
 
+// まとめて動くカードを、並んでいる位置から移動先（画面下の移動先の枠）へ「ポンポンポン」と順番に飛ばす演出。
+// overlay: 演出を出しているオーバーレイ（この上に移動先の枠を出す）/ els: 飛ばすカードの要素（並び順に飛ぶ）。
+// 全部が移動先に入ったら done
+export function fxFlyCardsTo(overlay, els, toLabel, done) {
+  const finish = () => { try { done && done(); } catch (e) { console.error('[fxFlyCardsTo]', e); } };
+  const list = (els || []).filter(Boolean);
+  if (!overlay || list.length === 0 || typeof document === 'undefined') { finish(); return; }
+  const st = _moveZoneStyle(toLabel);
+  // 移動先の枠（画面下中央）
+  const dest = document.createElement('div');
+  dest.style.cssText = 'position:fixed;left:50%;bottom:9vh;transform:translateX(-50%);min-width:96px;padding:10px 16px;border-radius:12px;'
+    + 'border:2px solid ' + st.color + ';background:' + st.color + '22;box-shadow:0 0 18px ' + st.color + '66;text-align:center;z-index:66010;'
+    + 'color:#fff;font-weight:bold;font-size:12px;pointer-events:none;transition:box-shadow 0.15s,transform 0.15s;';
+  const cnt = document.createElement('div');
+  cnt.style.cssText = 'font-size:18px;font-weight:900;color:' + st.color + ';text-shadow:0 0 8px ' + st.color + ';';
+  let n = 0;
+  cnt.innerText = st.icon + ' 0';
+  const lbl = document.createElement('div');
+  lbl.innerText = String(toLabel || '').replace(/\(上\)/, 'の上').replace(/\(下\)/, 'の下');
+  dest.appendChild(cnt); dest.appendChild(lbl);
+  overlay.appendChild(dest);
+  const STAGGER = 110, FLY = 420;
+  requestAnimationFrame(() => {
+    const dr = dest.getBoundingClientRect();
+    const dx = dr.left + dr.width / 2, dy = dr.top + dr.height / 2;
+    list.forEach((el, i) => {
+      setTimeout(() => {
+        const r = el.getBoundingClientRect();
+        const clone = el.cloneNode(true);
+        clone.style.cssText = (clone.style.cssText || '') + ';position:fixed;margin:0;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;'
+          + 'z-index:66020;transition:transform ' + FLY + 'ms cubic-bezier(.45,-0.25,.6,1),opacity ' + FLY + 'ms ease-in;opacity:1;transform:none;pointer-events:none;';
+        el.style.visibility = 'hidden';
+        document.body.appendChild(clone);
+        requestAnimationFrame(() => {
+          const tx = dx - (r.left + r.width / 2), ty = dy - (r.top + r.height / 2);
+          clone.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(0.25) rotate(' + (i % 2 ? 12 : -12) + 'deg)';
+          clone.style.opacity = '0.2';
+        });
+        setTimeout(() => {
+          if (clone.parentNode) clone.parentNode.removeChild(clone);
+          n++;
+          cnt.innerText = st.icon + ' ' + n;
+          dest.style.transform = 'translateX(-50%) scale(1.12)';
+          dest.style.boxShadow = '0 0 30px ' + st.color;
+          setTimeout(() => { dest.style.transform = 'translateX(-50%) scale(1)'; dest.style.boxShadow = '0 0 18px ' + st.color + '66'; }, 120);
+          if (n >= list.length) setTimeout(finish, 350);
+        }, FLY);
+      }, i * STAGGER);
+    });
+  });
+}
+if (typeof window !== 'undefined') window._fxFlyCardsTo = fxFlyCardsTo;
+
 // 3枚以上のカードがまとめて動くとき（破棄・デッキに戻す等）に、1枚ずつの移動演出の代わりに出す一覧の演出。
 // 「以下のN枚をデッキの下に戻します」のように、動くカードを並べて1回だけ見せる。
 // cards: カード（{name, imgSrc} 等）の配列。faceDown: 裏向き（非公開）のカードとして見せる
@@ -327,8 +380,10 @@ export function fxCardMoveBatch(cards, fromLabel, toLabel, callback, faceDown) {
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:min(92vw,620px);max-height:60vh;overflow:hidden;';
   const w = list.length > 12 ? 52 : 72;
+  const _flyEls = [];
   list.forEach((c, i) => {
     const d = document.createElement('div');
+    _flyEls.push(d);
     d.style.cssText = 'width:' + w + 'px;text-align:center;opacity:0;transform:translateY(10px);transition:opacity 0.3s,transform 0.3s;';
     const src = (!_fd && c) ? cardImg(c) : '';
     d.style.position = 'relative';
@@ -352,8 +407,13 @@ export function fxCardMoveBatch(cards, fromLabel, toLabel, callback, faceDown) {
     if (e) e.stopPropagation();
     if (_closed) return;
     _closed = true;
-    overlay.style.opacity = '0';
-    setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 200);
+    // OK のあと、並んだカードが移動先へ順番に飛んでいく
+    okBtn.style.visibility = 'hidden';
+    overlay.style.pointerEvents = 'none';
+    fxFlyCardsTo(overlay, _flyEls, toLabel, () => {
+      overlay.style.opacity = '0';
+      setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 200);
+    });
   };
   overlay.appendChild(okBtn);
   document.body.appendChild(overlay);

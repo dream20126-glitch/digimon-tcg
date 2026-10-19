@@ -4659,7 +4659,28 @@ function cleanupBattle() {
 
 // ----- 登場演出 -----
 
-export function showPlayEffect(card, onDone) {
+// 登場・進化の演出は同じ画面部品（evolve-overlay）とタイマーを使うので、重なったら前の演出が終わってから次を再生する。
+// 以前は後から始まった演出が前の演出の終了処理（タイマー）を消し、表示が途中のまま止まって画面が真っ暗になっていた
+// （ユノモン：ヒステリックモードの【デコード】で進化元のパンプモンを登場させたとき）
+let _evoOverlayBusy = false;
+const _evoOverlayQueue = [];
+function _evoOverlayRun(fn) {
+  if (_evoOverlayBusy) { _evoOverlayQueue.push(fn); return; }
+  _evoOverlayBusy = true;
+  let ended = false;
+  const end = () => {
+    if (ended) return; ended = true; clearTimeout(safety);
+    _evoOverlayBusy = false;
+    const nx = _evoOverlayQueue.shift();
+    if (nx) _evoOverlayRun(nx);
+  };
+  const safety = setTimeout(end, 6000);
+  try { fn(end); } catch (e) { console.error('[evoOverlay]', e); end(); }
+}
+export function showPlayEffect(card, onDone0) {
+  _evoOverlayRun((end) => _showPlayEffectBody(card, () => { end(); onDone0 && onDone0(); }));
+}
+function _showPlayEffectBody(card, onDone) {
   const overlay = document.getElementById('evolve-overlay');
   if (!overlay) { onDone && onDone(); return; }
   const flash = document.getElementById('evo-flash'), label = document.getElementById('evo-label'),
@@ -4699,7 +4720,10 @@ export function showPlayEffect(card, onDone) {
 
 // opts.arts: アーツ進化（デュアルカード BT26-056 等）の演出。通常の進化と見分けられるよう、金色で
 // 「ARTS EVOLUTION」と出し、カードを2回転させて光の輪を広げる
-export function showEvolveEffect(cost, baseName, baseCard, evolvedCard, onDone, opts) {
+export function showEvolveEffect(cost, baseName, baseCard, evolvedCard, onDone0, opts) {
+  _evoOverlayRun((end) => _showEvolveEffectBody(cost, baseName, baseCard, evolvedCard, () => { end(); onDone0 && onDone0(); }, opts));
+}
+function _showEvolveEffectBody(cost, baseName, baseCard, evolvedCard, onDone, opts) {
   const _arts = !!(opts && opts.arts);
   const overlay = document.getElementById('evolve-overlay');
   if (!overlay) { onDone && onDone(); return; }
@@ -4984,8 +5008,16 @@ export function showDestroyBatch(cards, callback, opts) {
   overlay.appendChild(grid);
   document.body.appendChild(overlay);
   setTimeout(() => { cells.forEach(cell => { const im = cell.querySelector('._dbimg'); if (im) im.style.animation = 'destroyShake 0.6s ease'; }); }, 300);
-  setTimeout(() => { cells.forEach(cell => { const im = cell.querySelector('._dbimg'); if (im) { im.style.transition = 'all 0.5s ease'; im.style.opacity = '0'; im.style.transform = 'scale(1.3)'; im.style.filter = 'brightness(3)'; } }); }, 1000);
-  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 1800);
+  // 揺れたあと、トラッシュへ順番に飛んでいく（まとめて消滅したことが分かるように）
+  setTimeout(() => {
+    const _end = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); };
+    if (typeof window._fxFlyCardsTo === 'function') {
+      window._fxFlyCardsTo(overlay, cells.map(cell => cell.querySelector('._dbimg') || cell), 'トラッシュ', _end);
+      return;
+    }
+    cells.forEach(cell => { const im = cell.querySelector('._dbimg'); if (im) { im.style.transition = 'all 0.5s ease'; im.style.opacity = '0'; im.style.transform = 'scale(1.3)'; im.style.filter = 'brightness(3)'; } });
+    setTimeout(_end, 800);
+  }, 950);
 }
 
 // ----- ダイレクトアタック演出 -----

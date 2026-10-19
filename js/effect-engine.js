@@ -15223,12 +15223,17 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 登場させる進化元カードの条件として使う（このカード自身の発動条件ではない）
       if (_isEvoSourceSummonStep(step)) {
         const _esHost = ctx.card;
-        const _esConds = step.condition ? parseRecipeCondition(step.condition) : [];
+        // 条件（condition/when/extra_conditions/condition_op/condition_chain）は登場させる進化元カードの条件。
+        // 発動条件と同じ評価（_evalStepConditionGate）で候補1枚ずつに判定する（以前は condition だけを見ていて、
+        // 【デコード】の指定「「ユノモン」/特徴「イリアス」を持つLv.5以下」（condition_chain）が効かず、
+        // ユノモン：ヒステリックモード BT26-083 で Lv.6 のメルヴァモンまで選べていた）
+        const _esGate = (step.condition || step.when || (Array.isArray(step.extra_conditions) && step.extra_conditions.length > 0)
+          || (Array.isArray(step.condition_chain) && step.condition_chain.length > 0)) ? { gateSrc: step } : null;
         const _esFilter = step.from_filter || step.filter || null;
         const _esCands = (_esHost && Array.isArray(_esHost.stack) ? _esHost.stack : []).filter(c => c
           && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type)
           && (!_esFilter || cardMatchesFilter(c, _esFilter, ctx.bs, ctx.side, ctx.card))
-          && (_esConds.length === 0 || checkConditions(_esConds, c, ctx.bs, ctx.side)));
+          && (!_esGate || _evalStepConditionGate(_esGate.gateSrc, c, ctx.bs, ctx.side)));
         if (_esCands.length === 0) { ctx.addLog && ctx.addLog('💨 進化元に登場できるカードがありません'); callback(); break; }
         const _esPay = step.cost_free ? null : Math.max(0, _cardPlayCostOf(_esCands[0]) + _effectPlayCostDelta(step, ctx));
         const _esDo = (chosen) => {
@@ -17225,21 +17230,33 @@ function executeRecipeStep(step, ctx, store, callback) {
 
       const targets = resolveTargets();
       console.log('[grant_keyword_all]', 'action=' + step.action, 'flag=' + flag, 'val=' + val, 'dur=' + dur, 'targets=' + targets.map(t => t.name).join(','), 'ctxSide=' + ctx.side, 'isPlayerTurn=' + ctx.bs.isPlayerTurn);
+      // 相手のデジモン（全て）に付けたものは相手の端末にも付ける（持ち主の端末の状態が正。ユノモン：ヒステリックモード BT26-083 の
+      // 【消滅時】「相手のデジモン全てに【Sアタック-1】」が相手の画面では付いていなかった）
+      const _oppP = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
+      const _sendOppAll = (tgt, buffType, value) => {
+        if (!(window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand)) return;
+        const bi = (_oppP.battleArea || []).indexOf(tgt);
+        if (bi === -1) return;
+        try { window._onlineSendCommand({ type: 'fx_remoteBuff', targetIdx: bi, targetName: tgt.name, buffType, value, duration: dur, appliedFromSender: 'player', appliedDuringOwnTurn: !!(ctx.bs && ctx.bs.isPlayerTurn) }); } catch (_) {}
+      };
       targets.forEach(tgt => {
         if (flag === 'security_attack_minus') {
           addBuffDirect(tgt, 'security_attack_minus', val, dur, ctx);
+          _sendOppAll(tgt, 'security_attack_minus', val);
           ctx.addLog('⚔ 「' + tgt.name + '」にSアタック-' + val);
           if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, 'Sアタック-' + val); } catch(_) {}
         } else if (flag === 'security_attack_plus') {
           // addBuffDirect 経由で _appliedSide / _appliedDuringOwnTurn を正しく設定
           // → expireBuffs の dur_next_own_turn 等のサイド判定が正しく動く
           addBuffDirect(tgt, 'security_attack_plus', val, dur, ctx);
+          _sendOppAll(tgt, 'security_attack_plus', val);
           console.log('[grant_keyword_all] applied buff to', tgt.name, 'buffs.length=' + tgt.buffs.length, 'last=', tgt.buffs[tgt.buffs.length - 1]);
           ctx.addLog('⚔ 「' + tgt.name + '」にSアタック+' + val);
           if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, 'Sアタック+' + val); } catch(_) {}
         } else {
           // 一般キーワードバフ (blocker, piercing 等)
           addBuffDirect(tgt, 'keyword_' + flag, 0, dur, ctx);
+          _sendOppAll(tgt, 'keyword_' + flag, 0);
           const _kwJp = _keywordJpName(flag);
           ctx.addLog('✨ 「' + tgt.name + '」に【' + _kwJp + '】付与');
           if (window._showKeywordGrantBanner) try { window._showKeywordGrantBanner(tgt, _kwJp); } catch(_) {}
@@ -18143,7 +18160,17 @@ function executeRecipeStep(step, ctx, store, callback) {
           } catch (_) {}
         }
         try { applyPermanentEffects(ctx.bs, ctx.side, ctx); } catch (_) {}
-        callback();
+        // 「〇〇に重ねられているカード → セキュリティの下/上」の移動演出（相手の画面にも）。演出が終わってから続ける
+        // （ユピテルモン＆ワイドプラズメント BT26-033 で演出が出ていなかった）
+        const _stkFrom = '「' + (src.name || '') + '」に重ねられているカード';
+        const _stkTo = 'セキュリティの' + (toBottom ? '下' : '上');
+        let _stkI = 0;
+        const _stkNext = () => {
+          if (_stkI >= removed.length) { callback(); return; }
+          const c = removed[_stkI++];
+          _fxMoveSync(ctx, c, _stkFrom, _stkTo, _stkNext, { faceUp: true });
+        };
+        _stkNext();
         break;
       }
 

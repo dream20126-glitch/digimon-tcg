@@ -692,6 +692,8 @@ function applyTurnEndMemoryShift() {
 
 export function onEndTurn() {
   if (!bs.isPlayerTurn) return;
+  // メモリーが相手側に移ったことによる自動のターン終了の処理中なら、ボタンでは終了しない（二重に endTurn を送らない）
+  if (bs._autoTurnEnding || bs._endingTurn) return;
   // 効果の処理中（カードの選択画面を開いている間も含む）なら、終わってからターン終了に進む
   // （効果の途中で【自分のターン終了時】の順番選択等が重なって出ないように）
   if (window._isEffectRunning && window._isEffectRunning()) {
@@ -860,6 +862,8 @@ export function checkAutoTurnEnd() {
   if (bs.memory >= 0) return false;
   // ターン終了時の効果（エグゼキュート等のアタック）を処理中に、その処理の終わりから再び呼ばれても二重に終了しない
   if (bs._autoTurnEnding) return true;
+  // ターン終了ボタンでのターン終了の処理中なら、こちらでは終了しない（endTurn を2回送り、相手のターンの始まりが2回動いていた）
+  if (bs._endingTurn) return true;
   // 公式ルール: メモリーが相手側へ移っても、効果処理とアタック処理が全て終わってからターン終了する。
   // 途中なら終了を保留し、処理が終わるのを待ってから改めて判定する
   // （進化時効果の途中で「相手のアクティブフェイズ」が始まってしまう不具合の対策）

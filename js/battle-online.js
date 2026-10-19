@@ -781,6 +781,9 @@ function onRemoteCommand(cmd) {
 
     // --- ターン ---
     case 'endTurn': {
+      // 相手のターン終了を2回受け取っても、自分のターンの始まりは1回だけ（既に自分のターン・受け取り処理中なら無視）
+      if (!cmd._idleWaited && (bs.isPlayerTurn || bs._receivingTurn)) { console.warn('[endTurn] 重複したターン終了を無視', { isPlayerTurn: bs.isPlayerTurn, receiving: !!bs._receivingTurn }); break; }
+      bs._receivingTurn = true;
       bs._remoteTpBusy = false; // 相手のターンが終わったので、相手の発揮待ちの知らせも終わり
       if (bs._oppAttackInProgress) { bs._oppAttackInProgress = false; if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => {}); } // 保険（attack_end を受け取れなかった場合）
       // 保険: 相手の効果で DP0 になったまま、ルールチェックの知らせが来ていないデジモンがいれば、相手のターンが終わるので消滅させる
@@ -826,6 +829,7 @@ function onRemoteCommand(cmd) {
             bs.isPlayerTurn = true;
             m.showYourTurn('自分のターン開始', '', '#00fbff', () => {
               const afterStart = () => {
+                bs._receivingTurn = false;
                 if (m.applyPermanentEffects) { m.applyPermanentEffects('player'); m.applyPermanentEffects('ai'); }
                 renderAll();
                 if (m.startPhase) setTimeout(() => m.startPhase('unsuspend'), 300);

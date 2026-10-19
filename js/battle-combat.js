@@ -4662,6 +4662,18 @@ function cleanupBattle() {
 // 登場・進化の演出は同じ画面部品（evolve-overlay）とタイマーを使うので、重なったら前の演出が終わってから次を再生する。
 // 以前は後から始まった演出が前の演出の終了処理（タイマー）を消し、表示が途中のまま止まって画面が真っ暗になっていた
 // （ユノモン：ヒステリックモードの【デコード】で進化元のパンプモンを登場させたとき）
+// 演出の部品がページ内の別の箱（重なり順を持つ要素）の中にあると、ページ直下のバトルの黒い背景（_combat-backdrop）より
+// 奥に描かれてしまう（z-index はその箱の中でしか効かない）。表示するときにページ直下へ移す
+// （エグゼキュートのアタック直後、【デコード】で登場したパンプモンの登場演出が黒い背景に隠れていた）
+function _overlayToBody(el) {
+  try { if (el && el.parentNode !== document.body) document.body.appendChild(el); } catch (_) {}
+}
+if (typeof window !== 'undefined') window._overlayToBody = _overlayToBody;
+// ページ内の箱の中に置かれている演出の部品（登場・進化／コスト軽減の演出）は、読み込んだ時点でページ直下へ移す
+if (typeof document !== 'undefined') {
+  const _mvOverlays = () => ['evolve-overlay', 'cost-effect-overlay'].forEach(id => _overlayToBody(document.getElementById(id)));
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _mvOverlays); else _mvOverlays();
+}
 let _evoOverlayBusy = false;
 const _evoOverlayQueue = [];
 function _evoOverlayRun(fn) {
@@ -4683,6 +4695,7 @@ export function showPlayEffect(card, onDone0) {
 function _showPlayEffectBody(card, onDone) {
   const overlay = document.getElementById('evolve-overlay');
   if (!overlay) { onDone && onDone(); return; }
+  _overlayToBody(overlay);
   const flash = document.getElementById('evo-flash'), label = document.getElementById('evo-label'),
     imgEl = document.getElementById('evo-card-img'), nameEl = document.getElementById('evo-card-name'),
     costEl = document.getElementById('evo-cost-text'), effectEl = document.getElementById('evo-effect-text');
@@ -4706,18 +4719,6 @@ function _showPlayEffectBody(card, onDone) {
   label.style.color = isOption ? '#aa66ff' : '#ffaa00';
   label.innerText = isOption ? 'OPTION ACTIVATE' : 'DIGITAL APPEAR';
   overlay.style.display = 'flex';
-  // 調査用: 登場演出を出した時点で、画面の中央の一番手前にある要素（演出が隠れていないか）
-  setTimeout(() => {
-    try {
-      const top = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
-      const z = (el) => { let e = el; while (e && e !== document.body) { const zi = getComputedStyle(e).zIndex; if (zi && zi !== 'auto') return zi; e = e.parentElement; } return 'auto'; };
-      console.log('[playFx] 表示 ' + card.name + ' ' + JSON.stringify({ display: overlay.style.display, topElement: top ? (top.id || String(top.className || '') || top.tagName) : null, topZ: top ? z(top) : null, inOverlay: !!(top && overlay.contains(top)), imgOpacity: imgEl.style.opacity, parentVisible: !!overlay.offsetParent || getComputedStyle(overlay).position === 'fixed' }));
-      setTimeout(() => {
-        const top2 = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
-        console.log('[playFx] 1.2秒後 ' + card.name + ' ' + JSON.stringify({ display: overlay.style.display, imgOpacity: imgEl.style.opacity, topElement: top2 ? (top2.id || String(top2.className || '') || top2.tagName) : null, topZ: top2 ? z(top2) : null, inOverlay: !!(top2 && overlay.contains(top2)) }));
-      }, 800);
-    } catch (_) {}
-  }, 400);
 
   setTimeout(() => { flash.style.transition = 'opacity 0.1s'; flash.style.opacity = '0.9';
     setTimeout(() => { flash.style.transition = 'opacity 0.3s'; flash.style.opacity = '0'; label.style.opacity = '1'; imgEl.style.opacity = '1'; imgEl.style.transform = 'scale(1)'; nameEl.style.opacity = '1';
@@ -4739,6 +4740,7 @@ function _showEvolveEffectBody(cost, baseName, baseCard, evolvedCard, onDone, op
   const _arts = !!(opts && opts.arts);
   const overlay = document.getElementById('evolve-overlay');
   if (!overlay) { onDone && onDone(); return; }
+  _overlayToBody(overlay);
   const flash = document.getElementById('evo-flash'), label = document.getElementById('evo-label'),
     imgEl = document.getElementById('evo-card-img'), nameEl = document.getElementById('evo-card-name'),
     costEl = document.getElementById('evo-cost-text'), effectEl = document.getElementById('evo-effect-text');

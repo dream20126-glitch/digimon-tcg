@@ -297,8 +297,11 @@ export function fxCardMove(card, fromLabel, toLabel, callback, faceDown) {
   setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 2450);
 }
 
-// 3枚以上がまとめて動くときの移動演出。1枚のときと同じ「移動元 → 移動先」の画面で、カードが移動元から
-// 短い間隔で次々に弧を描いて移動先へ入る（移動先の「+N」が入るたびに増える）。OK ボタンは無く、全部入ったら閉じる
+// 3枚以上がまとめて動くときの移動演出。
+// ① 動かすカードを一覧で並べ「以下のN枚を〇〇に送ります（戻します／加えます）」と出す
+// ② 一覧のカードが移動元の枠に集まって1つの束になる
+// ③ 1枚のときと同じ「移動元 → 移動先」の画面で、束から短い間隔で次々に弧を描いて移動先へ入る（「+N」が増える）
+// OK ボタンは無く、全部入ったら閉じる
 export function fxCardMoveMulti(cards, fromLabel, toLabel, callback, faceDown) {
   const list = (cards || []).filter(Boolean);
   if (list.length === 0) { callback && callback(); return; }
@@ -314,16 +317,46 @@ export function fxCardMoveMulti(cards, fromLabel, toLabel, callback, faceDown) {
       + '@keyframes mv2Trail{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(.3)}}';
     document.head.appendChild(st);
   }
+  const to = String(toLabel || '');
+  const where = to.replace(/\(上\)/, 'の上').replace(/\(下\)/, 'の下');
+  const verb = /トラッシュ/.test(to) ? 'に送ります' : /デッキ|セキュリティ/.test(to) ? 'に戻します' : /手札/.test(to) ? 'に加えます' : 'に移動します';
+  const cardFace = (card) => {
+    const src = (card && !_fd) ? cardImg(card) : '';
+    return (_fd && cardBackUrl)
+      ? '<img src="' + cardBackUrl + '" style="width:100%;height:100%;object-fit:cover;">'
+      : _fd
+      ? '<div style="width:100%;height:100%;background:linear-gradient(135deg,#1a3a6a,#0a1530);display:flex;align-items:center;justify-content:center;font-size:20px;color:#3a5a9a;">🛡</div>'
+      : (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#00fbff;padding:8px;font-size:10px;">' + esc((card && card.name) || '?') + '</div>');
+  };
+
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:66000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;pointer-events:none;opacity:0;transition:opacity 0.2s;';
   const head = document.createElement('div');
-  head.style.cssText = 'font-size:16px;font-weight:900;letter-spacing:1px;color:#fff;text-shadow:0 0 10px ' + toSt.color + ',0 0 20px ' + toSt.color + ';text-align:center;padding:0 12px;';
-  head.innerHTML = '<span style="font-size:20px;">' + toSt.icon + '</span> ' + list.length + '枚を' + esc(_moveHeadline(toLabel));
+  head.style.cssText = 'font-size:16px;font-weight:900;letter-spacing:1px;color:#fff;text-shadow:0 0 10px ' + toSt.color + ',0 0 20px ' + toSt.color + ';text-align:center;padding:0 12px;line-height:1.6;';
+  head.innerHTML = (fromLabel ? '<span style="color:#aaa;font-size:12px;">' + esc(fromLabel) + 'から</span><br>' : '')
+    + '<span style="font-size:20px;">' + toSt.icon + '</span> 以下の' + list.length + '枚を' + esc(where) + verb;
   overlay.appendChild(head);
+
+  // ① 一覧
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:min(92vw,620px);';
+  const gw = list.length > 12 ? 52 : 70;
+  const gridItems = list.map((c, i) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'width:' + gw + 'px;height:' + Math.round(gw * 1.4) + 'px;border-radius:5px;overflow:hidden;border:2px solid ' + toSt.color + ';box-shadow:0 0 8px ' + toSt.color + '66;background:#111;'
+      + 'opacity:0;transform:translateY(10px);transition:opacity 0.3s,transform 0.3s;';
+    d.innerHTML = cardFace(c);
+    grid.appendChild(d);
+    setTimeout(() => { d.style.opacity = '1'; d.style.transform = 'translateY(0)'; }, 150 + i * 60);
+    return d;
+  });
+  overlay.appendChild(grid);
+
+  // ③ の画面（最初は隠しておく）
   const SW = Math.min(320, window.innerWidth - 32), SH = 170;
   const ZW = 92, ZH = 128, CW = 78, CH = 109;
   const stage = document.createElement('div');
-  stage.style.cssText = 'position:relative;width:' + SW + 'px;height:' + SH + 'px;';
+  stage.style.cssText = 'position:relative;width:' + SW + 'px;height:' + SH + 'px;display:none;';
   const zone = (st, label, left) => {
     const z = document.createElement('div');
     z.style.cssText = 'position:absolute;top:0;left:' + left + 'px;width:' + ZW + 'px;height:' + ZH + 'px;border-radius:10px;'
@@ -349,19 +382,14 @@ export function fxCardMoveMulti(cards, fromLabel, toLabel, callback, faceDown) {
   stage.appendChild(plus);
   const startX = fromLeft + (ZW - CW) / 2, startY = (ZH - CH) / 2;
   const endX = toLeft + (ZW - CW) / 2, endY = startY;
-  // カード（移動元に少しずつずらして重ねる。最初に飛ぶカードが一番上）
+  // 束（移動元に少しずつずらして重ねる。最初に飛ぶカードが一番上）
   const cardDivs = list.map((card, i) => {
     const d = document.createElement('div');
     const off = Math.min(i, 6) * 2;
     d.style.cssText = 'position:absolute;left:0;top:0;width:' + CW + 'px;height:' + CH + 'px;border-radius:6px;overflow:hidden;'
       + 'border:2px solid ' + toSt.color + ';box-shadow:0 0 12px ' + toSt.color + '88;background:#111;z-index:' + (5 + list.length - i) + ';'
-      + 'transform:translate(' + (startX + off) + 'px,' + (startY - off) + 'px) scale(0.6);opacity:0;transition:transform 0.25s ease-out, opacity 0.25s;';
-    const src = (card && !_fd) ? cardImg(card) : '';
-    d.innerHTML = (_fd && cardBackUrl)
-      ? '<img src="' + cardBackUrl + '" style="width:100%;height:100%;object-fit:cover;">'
-      : _fd
-      ? '<div style="width:100%;height:100%;background:linear-gradient(135deg,#1a3a6a,#0a1530);display:flex;align-items:center;justify-content:center;font-size:20px;color:#3a5a9a;">🛡</div>'
-      : (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#00fbff;padding:8px;font-size:10px;">' + esc((card && card.name) || '?') + '</div>');
+      + 'transform:translate(' + (startX + off) + 'px,' + (startY - off) + 'px);opacity:0;';
+    d.innerHTML = cardFace(card);
     d._off = off;
     stage.appendChild(d);
     return d;
@@ -369,12 +397,41 @@ export function fxCardMoveMulti(cards, fromLabel, toLabel, callback, faceDown) {
   overlay.appendChild(stage);
   document.body.appendChild(overlay);
   setTimeout(() => { overlay.style.opacity = '1'; }, 10);
+
+  // ② 一覧のカードが移動元の枠に集まって束になる
+  const LIST_MS = 1400 + list.length * 60, GATHER_MS = 450;
   setTimeout(() => {
-    cardDivs.forEach(d => { d.style.opacity = '1'; d.style.transform = 'translate(' + (startX + d._off) + 'px,' + (startY - d._off) + 'px) scale(1)'; });
-    arrow.style.opacity = '1';
-  }, 120);
-  // 1枚ずつ次々に飛ばす（前のカードが着く前に次が飛び立つ）
-  const FLY_START = 550, FLY_MS = 480, STAGGER = 170;
+    // 束の位置を測るため、ステージを（見えない状態で）出す
+    stage.style.display = 'block';
+    stage.style.visibility = 'hidden';
+    const sr = stage.getBoundingClientRect();
+    const targetX = sr.left + startX + CW / 2, targetY = sr.top + startY + CH / 2;
+    const clones = gridItems.map((g, i) => {
+      const r = g.getBoundingClientRect();
+      const c = g.cloneNode(true);
+      c.style.cssText += ';position:fixed;margin:0;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;'
+        + 'z-index:66020;opacity:1;transform:none;transition:transform ' + GATHER_MS + 'ms ease-in-out;';
+      document.body.appendChild(c);
+      const sc = CW / r.width;
+      const off = Math.min(i, 6) * 2;
+      requestAnimationFrame(() => {
+        c.style.transform = 'translate(' + (targetX + off - (r.left + r.width / 2)) + 'px,' + (targetY - off - (r.top + r.height / 2)) + 'px) scale(' + sc + ')';
+      });
+      return c;
+    });
+    grid.style.visibility = 'hidden';
+    setTimeout(() => {
+      clones.forEach(c => { if (c.parentNode) c.parentNode.removeChild(c); });
+      grid.style.display = 'none';
+      stage.style.visibility = 'visible';
+      cardDivs.forEach(d => { d.style.opacity = '1'; });
+      arrow.style.opacity = '1';
+      startFly();
+    }, GATHER_MS + 40);
+  }, LIST_MS);
+
+  // ③ 束から1枚ずつ次々に飛ばす（前のカードが着く前に次が飛び立つ）
+  const FLY_MS = 480, STAGGER = 170;
   let landed = 0;
   const flyOne = (d) => {
     d.style.transition = 'none';
@@ -407,7 +464,7 @@ export function fxCardMoveMulti(cards, fromLabel, toLabel, callback, faceDown) {
     };
     requestAnimationFrame(step);
   };
-  cardDivs.forEach((d, i) => setTimeout(() => flyOne(d), FLY_START + i * STAGGER));
+  const startFly = () => { cardDivs.forEach((d, i) => setTimeout(() => flyOne(d), 350 + i * STAGGER)); };
 }
 
 // まとめて動くカードを、並んでいる位置から移動先（画面下の移動先の枠）へ「ポンポンポン」と順番に飛ばす演出。

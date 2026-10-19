@@ -4711,7 +4711,11 @@ function _showPlayEffectBody(card, onDone) {
     try {
       const top = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
       const z = (el) => { let e = el; while (e && e !== document.body) { const zi = getComputedStyle(e).zIndex; if (zi && zi !== 'auto') return zi; e = e.parentElement; } return 'auto'; };
-      console.log('[playFx] 表示', card.name, { display: overlay.style.display, topElement: top ? (top.id || top.className || top.tagName) : null, topZ: top ? z(top) : null, inOverlay: !!(top && overlay.contains(top)) });
+      console.log('[playFx] 表示 ' + card.name + ' ' + JSON.stringify({ display: overlay.style.display, topElement: top ? (top.id || String(top.className || '') || top.tagName) : null, topZ: top ? z(top) : null, inOverlay: !!(top && overlay.contains(top)), imgOpacity: imgEl.style.opacity, parentVisible: !!overlay.offsetParent || getComputedStyle(overlay).position === 'fixed' }));
+      setTimeout(() => {
+        const top2 = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+        console.log('[playFx] 1.2秒後 ' + card.name + ' ' + JSON.stringify({ display: overlay.style.display, imgOpacity: imgEl.style.opacity, topElement: top2 ? (top2.id || String(top2.className || '') || top2.tagName) : null, topZ: top2 ? z(top2) : null, inOverlay: !!(top2 && overlay.contains(top2)) }));
+      }, 800);
     } catch (_) {}
   }, 400);
 

@@ -389,7 +389,12 @@ export function setupCommonWindowExports() {
     try { fxCardMove(card, fromLabel, toLabel, end, faceDown); } catch (_) { end(); }
   };
   // 反応系の効果（デッキが増えたとき等）は呼び出し元が演出関数を持っていないことがあるので、共通の演出関数を公開する
-  window._fxAnimFns = { doDraw, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, showDrawEffect };
+  window._fxAnimFns = { doDraw, showPlayEffect, showEvolveEffect, showDestroyEffect, showSecurityCheck, showBattleResult, showDrawEffect, showOptionEffect };
+  // 効果で登場/使用するとき、処理に演出の関数が渡されていない経路（【デコード】等の「離れるとき」・反応の効果）でも
+  // 登場/使用の演出を出す（effect-engine.js は ctx.showPlayEffect が無ければ window.showPlayEffect を使う。以前は未登録で、
+  // ユノモン：ヒステリックモードの【デコード】で登場したパンプモンの演出が自分の画面に出なかった）
+  window.showPlayEffect = showPlayEffect;
+  window.showOptionEffect = showOptionEffect;
   window._showDestroyBatch = showDestroyBatch;
   window._fxLinkEffect = fxLinkEffect;
   window._fxEffectBattle = fxEffectBattle;

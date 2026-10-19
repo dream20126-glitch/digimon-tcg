@@ -5008,16 +5008,8 @@ export function showDestroyBatch(cards, callback, opts) {
   overlay.appendChild(grid);
   document.body.appendChild(overlay);
   setTimeout(() => { cells.forEach(cell => { const im = cell.querySelector('._dbimg'); if (im) im.style.animation = 'destroyShake 0.6s ease'; }); }, 300);
-  // 揺れたあと、トラッシュへ順番に飛んでいく（まとめて消滅したことが分かるように）
-  setTimeout(() => {
-    const _end = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); };
-    if (typeof window._fxFlyCardsTo === 'function') {
-      window._fxFlyCardsTo(overlay, cells.map(cell => cell.querySelector('._dbimg') || cell), 'トラッシュ', _end);
-      return;
-    }
-    cells.forEach(cell => { const im = cell.querySelector('._dbimg'); if (im) { im.style.transition = 'all 0.5s ease'; im.style.opacity = '0'; im.style.transform = 'scale(1.3)'; im.style.filter = 'brightness(3)'; } });
-    setTimeout(_end, 800);
-  }, 950);
+  setTimeout(() => { cells.forEach(cell => { const im = cell.querySelector('._dbimg'); if (im) { im.style.transition = 'all 0.5s ease'; im.style.opacity = '0'; im.style.transform = 'scale(1.3)'; im.style.filter = 'brightness(3)'; } }); }, 1000);
+  setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); callback && callback(); }, 1800);
 }
 
 // ----- ダイレクトアタック演出 -----

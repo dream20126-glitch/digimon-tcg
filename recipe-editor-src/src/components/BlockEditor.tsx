@@ -3092,7 +3092,9 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
 const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
-const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'summon_appear', 'summon_use', 'evolve', 'link']);
+// jogress_evolve: 効果での「手札の〇〇にジョグレス進化できる」も、進化と同じく取得元（手札等）と取得元カードの条件を指定する
+// （EX12-001 ニャロモン「このデジモンと他の自分のデジモンで、手札の特徴『VB』を持つデジモンカードにジョグレス進化できる」）
+const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'summon_appear', 'summon_use', 'evolve', 'link', 'jogress_evolve']);
 // よく使う期間（対象と同じ2段ボタン式）
 const DURATION_L1 = [
   { code: 'dur_this_turn', label: 'このターン中' },
@@ -5555,7 +5557,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           // コストを支払わず/登場時効果は発揮しない は効果1・代替アクション（その後/OR/AND）とも
           // 対応。裏向きで、は効果1（メインアクション）専用のまま
-          const showCostCheckboxes = effectAction === 'summon' || effectAction === 'summon_appear' || effectAction === 'summon_use' || effectAction === 'summon_from_trash' || effectAction === 'evolve' || effectAction === 'summon_from_evo_source' || effectAction === 'link';
+          const showCostCheckboxes = effectAction === 'summon' || effectAction === 'summon_appear' || effectAction === 'summon_use' || effectAction === 'summon_from_trash' || effectAction === 'evolve' || effectAction === 'summon_from_evo_source' || effectAction === 'link' || effectAction === 'jogress_evolve';
           const showSkipOnPlay = effectAction === 'summon' || effectAction === 'summon_appear' || effectAction === 'summon_use' || effectAction === 'summon_from_trash';
 
           return (
@@ -5997,7 +5999,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   キーワード付与(grant_keyword)のときは、下の「🎁 付与する効果」内の
                   キーワードごとの数値欄で block.value を管理するため、ここでは二重表示を避けて隠す */}
               {(effectAction === 'grant_keyword' || effectAction === 'grant_keyword_to') ? null
-              : (effectAction === 'summon' || effectAction === 'summon_appear' || effectAction === 'summon_use' || effectAction === 'evolve' || effectAction === 'link') ? (
+              : (effectAction === 'summon' || effectAction === 'summon_appear' || effectAction === 'summon_use' || effectAction === 'evolve' || effectAction === 'link' || effectAction === 'jogress_evolve') ? (
                 <div className="field">
                   <label>💰 コスト増減</label>
                   {(() => {

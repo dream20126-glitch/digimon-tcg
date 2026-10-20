@@ -2156,13 +2156,14 @@ const SUBJECT_L1 = [
   { code: 'self', label: 'このカード' },
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
-  { code: 'other_own', label: '他' },
+  { code: 'other_own', label: '自分の他' },
   { code: 'both', label: '両方' },
+  { code: 'both_other', label: '自分/相手の他' },
 ];
 // 「自分」「相手」は複数選択できるトグルボタンにする（両方押すと'both'系に自動で切り替わる。
 // アクションの対象/コストの対象と同じ操作感）。それ以外は従来通り単一選択のまま
-const SUBJECT_OWN_OPP = SUBJECT_L1.filter((o) => o.code === 'own' || o.code === 'opp');
-const SUBJECT_L1_REST = SUBJECT_L1.filter((o) => o.code !== 'own' && o.code !== 'opp' && o.code !== 'both');
+// 発動主体も対象と同じ「自分 / 相手 / 他」トグル（他は自分を選んだときだけ表示）
+const SUBJECT_L1_REST = SUBJECT_L1.filter((o) => !['own', 'opp', 'other_own', 'both', 'both_other'].includes(o.code));
 // 「トリガーごとに発動主体を分ける」専用: このトリガーコードには発動主体を設定しない
 // （subject_by_codeにエントリを作らない＝共有のtriggerSubject/デフォルトにフォールバックさせる）
 // という状態を明示的に選べるようにする
@@ -2180,6 +2181,8 @@ const SUBJECT_L1L2_TO_CODE: Record<string, string> = {
   // 「両方」+デジモン/カード/テイマー/プレイヤー: 自分/相手どちらでも該当する全てが対象
   // （例:「デジモンが登場したとき」を自分/相手どちらでも）。エンジン未実装のプレースホルダー
   'both:digimon': 'both_digimon', 'both:card': 'both_card', 'both:tamer': 'both_tamer', 'both:player': 'both_player',
+  // 自分+相手+他: このカード以外の、自分/相手どちらでも該当する全て（エンジン未実装のプレースホルダー）
+  'both_other:digimon': 'both_other_digimon', 'both_other:card': 'both_other_card', 'both_other:tamer': 'both_other_tamer',
 };
 const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   '': { l1: 'self', l2: '' },
@@ -2200,6 +2203,9 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   both_card: { l1: 'both', l2: 'card' },
   both_tamer: { l1: 'both', l2: 'tamer' },
   both_player: { l1: 'both', l2: 'player' },
+  both_other_digimon: { l1: 'both_other', l2: 'digimon' },
+  both_other_card: { l1: 'both_other', l2: 'card' },
+  both_other_tamer: { l1: 'both_other', l2: 'tamer' },
   // 場所（手札/トラッシュ/セキュリティ）: 辞書側「場所指定」フラグが立っているトリガー
   // （破棄されたとき等）でのみ選択肢に出す。エンジンのsubjectMatchesに対応ケースが無く、
   // 保存はできても発火しない（進化元/テイマー下の破棄のみ対応済みのエンジン未実装枠）
@@ -2455,7 +2461,7 @@ function TriggerSubjectStagedPicker({
       setSubject(l2 ? (SUBJECT_L1L2_TO_CODE['self:' + l2] || 'self') : 'self');
       return;
     }
-    const l2 = cur.l1 === l1 && cur.l2 ? cur.l2 : 'digimon';
+    const l2 = cur.l2 && (cur.l1 === l1 || (TGT_TOGGLE_L1.has(cur.l1) && TGT_TOGGLE_L1.has(l1))) && SUBJECT_L1L2_TO_CODE[l1 + ':' + cur.l2] ? cur.l2 : 'digimon';
     setSubject(SUBJECT_L1L2_TO_CODE[l1 + ':' + l2] || SUBJECT_L1L2_TO_CODE[l1 + ':digimon'] || l1);
   };
   const zoneOptionCodes = new Set([...SUBJECT_L2_FROM_ZONES.map((o) => o.code), ...(extraZoneOptions || []).map((o) => o.code)]);
@@ -2463,9 +2469,9 @@ function TriggerSubjectStagedPicker({
     if (zoneMode && zoneOptionCodes.has(l2)) { setZone(l2); return; }
     setSubject(SUBJECT_L1L2_TO_CODE[cur.l1 + ':' + l2]);
   };
-  const baseL2Options = cur.l1 === 'other_own' ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
+  const baseL2Options = (cur.l1 === 'other_own' || cur.l1 === 'both_other') ? SUBJECT_L2.filter((o) => o.code !== 'player') : SUBJECT_L2;
   const l2Options = hasFromZones ? [...baseL2Options, ...SUBJECT_L2_FROM_ZONES, ...(extraZoneOptions || [])] : baseL2Options;
-  const hasDigimonTamer = !suppressTypeButtons && (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'other_own' || cur.l1 === 'both');
+  const hasDigimonTamer = !suppressTypeButtons && TGT_TOGGLE_L1.has(cur.l1);
   const subjDigimonCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':digimon'];
   const subjTamerCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':tamer'];
   const subjCardCode = SUBJECT_L1L2_TO_CODE[cur.l1 + ':card'];
@@ -2487,20 +2493,14 @@ function TriggerSubjectStagedPicker({
   const showStage4 = hasFromZones && (effectiveL2 === 'tamer' || (showStage3 && raw.family !== ''));
   const setFamily = (family: TriggerStackFamily) => setSubject(joinTriggerSubjectSuffix(raw.base, family, family ? raw.pos : ''));
   const setPos = (pos: TriggerStackPos) => setSubject(joinTriggerSubjectSuffix(raw.base, raw.family || 'stacked', pos));
-  const l1Value = !hasEntry ? '__none__' : (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'both') ? '' : cur.l1;
+  const l1Value = !hasEntry ? '__none__' : TGT_TOGGLE_L1.has(cur.l1) ? '' : cur.l1;
   return (
     <>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <MultiButtonGroup
-          options={SUBJECT_OWN_OPP}
-          values={[...(cur.l1 === 'own' || cur.l1 === 'both' ? ['own'] : []), ...(cur.l1 === 'opp' || cur.l1 === 'both' ? ['opp'] : [])]}
-          onToggle={(code, on) => {
-            const ownOn = cur.l1 === 'own' || cur.l1 === 'both';
-            const oppOn = cur.l1 === 'opp' || cur.l1 === 'both';
-            const nextOwn = code === 'own' ? on : ownOn;
-            const nextOpp = code === 'opp' ? on : oppOn;
-            handleL1(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : 'self');
-          }}
+          options={tgtToggleOptions(cur.l1)}
+          values={hasEntry ? tgtToggleValues(cur.l1) : []}
+          onToggle={(code, on) => handleL1(tgtToggleNextL1(hasEntry ? cur.l1 : '', code, on) || 'self')}
           accentColor={accentColor}
         />
         <ButtonGroup
@@ -2542,7 +2542,7 @@ function TriggerSubjectStagedPicker({
       {/* suppressTypeButtons時でも、場所（手札/トラッシュ/セキュリティ/デッキ）は別軸の情報
           なので種別とは独立して出す（「破棄されたとき」のように、辞書の「種別なし」フラグは
           デジモン/テイマー等の種別だけを隠したい意図で、場所まで隠す意図ではないケース向け） */}
-      {suppressTypeButtons && hasFromZones && (cur.l1 === 'own' || cur.l1 === 'opp' || cur.l1 === 'other_own' || cur.l1 === 'both') && (
+      {suppressTypeButtons && hasFromZones && TGT_TOGGLE_L1.has(cur.l1) && (
         <div style={{ marginTop: 4 }}>
           <ButtonGroup options={SUBJECT_L2_FROM_ZONES} value={effectiveL2} onChange={handleL2} accentColor={accentColor} />
         </div>

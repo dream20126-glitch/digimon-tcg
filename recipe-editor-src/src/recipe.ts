@@ -569,6 +569,7 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
         break;
       }
       case 'cond_lv':       { const n = num(c.value); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
+      case 'cond_cost_in':  { const arr = String(c.value || '').split(',').map((x) => Number(x.trim())).filter((x) => !isNaN(x)); if (arr.length > 0) f.cost_in = arr; break; }
       case 'cond_lv_le':    { const n = num(c.value); if (n !== undefined) f.lv_le = n; break; }
       case 'cond_lv_ge':    { const n = num(c.value); if (n !== undefined) f.lv_ge = n; break; }
       // cond_dp_highest/lowestと同じく候補プール全体との比較が必要（cardMatchesFilterでは
@@ -703,12 +704,16 @@ function parseFilterObject(f: any): ConditionPair[] {
       out.push({ base: quant === 'ge' ? 'cond_has_evo' : `cond_has_evo_${quant}`, value: String(v), subject: f.evo_source_subject === 'opp' ? 'opp' : undefined });
     }
   });
-  if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
+  // filter.lv（Lv完全一致の旧形式。手書きレシピ）は Lv「完全一致」として読む（以前は読み込みで消えていた）
+  if (f.lv !== undefined && f.lv !== null && f.lv_le === undefined && f.lv_ge === undefined) {
+    out.push({ base: 'cond_lv', value: String(f.lv) });
+  } else if (f.lv_le !== undefined && f.lv_ge !== undefined && f.lv_le === f.lv_ge) {
     out.push({ base: 'cond_lv', value: String(f.lv_le) });
   } else {
     if (f.lv_le !== undefined) out.push({ base: 'cond_lv_le', value: String(f.lv_le) });
     if (f.lv_ge !== undefined) out.push({ base: 'cond_lv_ge', value: String(f.lv_ge) });
   }
+  if (Array.isArray(f.cost_in) && f.cost_in.length > 0) out.push({ base: 'cond_cost_in', value: f.cost_in.join(',') });
   if (f.lv_extreme === 'highest') out.push({ base: 'cond_lv_highest' });
   else if (f.lv_extreme === 'lowest') out.push({ base: 'cond_lv_lowest' });
   if (f.lv_sum_le !== undefined) out.push({ base: 'cond_lv_sum_le', value: String(f.lv_sum_le) });
@@ -1120,8 +1125,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   }
   const step: any = {};
 
-  // 「デジモン/テイマー/オプションどちらの効果か」は編集時（このエディタ内）だけのメモ書きで、
-  // エンジンは参照しないため意図的にJSON出力しない（block.asTypeとしてエディタ内では保持され続ける）
+  // 「デジモン/テイマー/オプションどちらの効果か」（エンジンは参照しないメモ書き）。
+  // 読込時に as_type から復元するため、保存でも出力する（以前は保存し直すと消えていた）
+  if (b.asType) step.as_type = b.asType;
 
   // 条件: 1つ目→condition, 2つ目→when, 3つ目以降→extra_conditions[]
   // b.conditions は「共通条件」（chain有無に関わらず常にAND適用）として扱う
@@ -1914,6 +1920,10 @@ function stepObjectToAltAction(step: any): AltAction {
   return {
     action: step?.action || '',
     value: step?.value,
+    // 「その後」で続くステップの表示テキスト・値の数え方（alt_actions側の復元と同じ。以前はここで落ちていた）
+    displayText: step?.display_text ? String(step.display_text) : undefined,
+    displaySame: step?.display_same ? true : undefined,
+    valueMode: parseValueMode(step),
     keyword: String(step?.keyword || '').includes(',') ? '' : (step?.keyword || ''),
     keywordEntries: String(step?.keyword || '').includes(',')
       ? String(step.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))

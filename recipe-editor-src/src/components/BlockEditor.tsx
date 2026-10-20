@@ -4484,7 +4484,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 value={COST_REDUCTION_VARIANTS.find((v) => v.trigger === block.trigger)?.code || 'summon'}
                 onChange={(code) => {
                   const v = COST_REDUCTION_VARIANTS.find((x) => x.code === code)!;
-                  onChange({ ...block, trigger: v.trigger, triggers: [v.trigger], zone: block.zone || 'hand' });
+                  // 登場/使用コストは手札にある間の効果、進化コストはバトルエリアにいるこのデジモンの効果（発動エリア＝バトルエリア）
+                  onChange({ ...block, trigger: v.trigger, triggers: [v.trigger], zone: v.trigger === 'evo_cost' ? (block.zone === 'hand' ? '' : (block.zone || '')) : (block.zone || 'hand') });
                 }}
                 accentColor="#ef6c00"
               />

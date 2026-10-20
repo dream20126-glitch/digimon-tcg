@@ -1862,7 +1862,7 @@ function CostListEditor({
               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                 <MultiButtonGroup
-                  options={TARGET_SEL_OWN_OPP_OTHER}
+                  options={tgtToggleOptions(cCurTgt.l1)}
                   values={tgtToggleValues(cCurTgt.l1)}
                   onToggle={(code, on) => setCostTgt(tgtToggleNextL1(cCurTgt.l1, code, on))}
                   accentColor="#b76e00"
@@ -2642,13 +2642,17 @@ const TARGET_SEL_OWN_OPP = TARGET_SEL_L1.filter((o) => o.code === 'own' || o.cod
 //   自分+他     → target_other_own（他の自分のデジモン）
 //   自分+相手   → both（このカードも含めた、自分/相手どちらでもいいデジモン）
 //   自分+相手+他 → both_other（他のデジモン。自分/相手どちらでもいい）
-//   相手        → opp（相手のカードは常に「他」なので、他を押しても変わらない）
+//   相手        → opp（「他」ボタンは自分を選んだときだけ表示）
 const TARGET_SEL_OWN_OPP_OTHER = [
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
   { code: 'other', label: '他' },
 ];
 const TGT_TOGGLE_L1 = new Set(['own', 'opp', 'other_own', 'both', 'both_other']);
+// 「他」ボタンは「自分」が選ばれているときだけ出す
+function tgtToggleOptions(l1: string) {
+  return tgtToggleValues(l1).includes('own') ? TARGET_SEL_OWN_OPP_OTHER : TARGET_SEL_OWN_OPP_OTHER.filter((o) => o.code !== 'other');
+}
 function tgtToggleValues(l1: string): string[] {
   const v: string[] = [];
   if (l1 === 'own' || l1 === 'other_own' || l1 === 'both' || l1 === 'both_other') v.push('own');
@@ -2661,8 +2665,8 @@ function tgtToggleNextL1(l1: string, code: string, on: boolean): string {
   let own = code === 'own' ? on : cur.includes('own');
   const opp = code === 'opp' ? on : cur.includes('opp');
   let other = code === 'other' ? on : cur.includes('other');
-  // 「他」だけ押したら「自分の他」にする。自分/相手を両方外したら「他」も外す
-  if (other && !own && !opp) { if (code === 'other') own = true; else other = false; }
+  // 「他」は自分を選んでいるときだけ表示する。自分を外したら「他」も外す
+  if (!own) other = false;
   if (own && opp) return other ? 'both_other' : 'both';
   if (own) return other ? 'other_own' : 'own';
   if (opp) return 'opp';
@@ -6530,7 +6534,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 2 }}>
                       <MultiButtonGroup
-                        options={TARGET_SEL_OWN_OPP_OTHER}
+                        options={tgtToggleOptions(etCurL1L2.l1)}
                         values={tgtToggleValues(etCurL1L2.l1)}
                         onToggle={(code, on) => setEtTarget(tgtToggleNextL1(etCurL1L2.l1, code, on))}
                         accentColor="#b76e00"
@@ -6761,7 +6765,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </label>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <MultiButtonGroup
-                      options={TARGET_SEL_OWN_OPP_OTHER}
+                      options={tgtToggleOptions(eCurTgt.l1)}
                       values={tgtToggleValues(eCurTgt.l1)}
                       onToggle={(code, on) => setEffTgt(tgtToggleNextL1(eCurTgt.l1, code, on))}
                       accentColor="#b76e00"
@@ -7148,7 +7152,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   <MultiButtonGroup
-                    options={TARGET_SEL_OWN_OPP_OTHER}
+                    options={tgtToggleOptions(curTgt.l1)}
                     values={tgtToggleValues(curTgt.l1)}
                     onToggle={(code, on) => handleTgtL1(tgtToggleNextL1(curTgt.l1, code, on))}
                     accentColor="#b76e00"

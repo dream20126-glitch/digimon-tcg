@@ -4015,7 +4015,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           )}
                         </div>
                       )}
-                      {!hasDigiTamer && l2Options.length > 1 && (
+                      {/* このカード: 選択肢は「進化元」だけだが、何を数えるか分かるよう常に表示する */}
+                      {!hasDigiTamer && (l2Options.length > 1 || curL1 === 'self') && (
                         <div style={{ marginTop: 4 }}>
                           <ButtonGroup options={l2Options} value={refSubject} onChange={setSubject} accentColor="#1a4f8a" />
                         </div>

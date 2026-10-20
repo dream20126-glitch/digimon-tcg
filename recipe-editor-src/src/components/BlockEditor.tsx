@@ -9479,6 +9479,8 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
 };
 
 // 条件コード → カテゴリ の逆引き（既存レシピ読込時・行の見た目復元用）
+// 名称/記述の値を特徴と同じタグ入力（カンマ区切り・OR）にする条件。⚠ カンマ区切りのOR判定はエンジン未対応
+const OR_TAG_BASES = new Set(['cond_name', 'cond_name_contains', 'cond_name_not', 'cond_description_contains']);
 function baseToCategory(base: string): CondCategory {
   if (!base) return '';
   if (base === 'cond_color' || base === 'cond_color_not' || base === 'cond_color_distinct') return 'color';
@@ -10205,6 +10207,19 @@ function ConditionsHybridEditor({
                         onChange={(e) => updateAt(i, { value: e.target.value })}
                         style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 100, boxSizing: 'border-box' }}
                       />
+                    ) : OR_TAG_BASES.has(c.base) ? (
+                      // 名称/記述: 特徴と同じく複数入れられる（カンマ区切りで保存。完全一致・除外以外は OR＝どれか1つ）
+                      <div style={{ minWidth: 220 }}>
+                        <MultiTextTags
+                          values={String(c.value || '').split(',').map((x) => x.trim()).filter(Boolean)}
+                          onChange={(next) => updateAt(i, { value: next.join(',') })}
+                          placeholder={c.base === 'cond_description_contains' ? '例: ガンマモン' : '例: アグモン'}
+                          accentColor={colors.accent}
+                        />
+                        <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
+                          {c.base === 'cond_name_not' ? '複数入れると、どれにも当てはまらないもの' : '複数入れると OR（どれか1つに当てはまれば OK）'}
+                        </div>
+                      </div>
                     ) : (
                       <input
                         type="text"

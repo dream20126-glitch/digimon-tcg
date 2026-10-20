@@ -1365,15 +1365,15 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   const _tfQuick = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
   const _tfOrChain = (() => {
     if (b.targetFilterChain && b.targetFilterChain.length > 1) return null;
-    const nq = (b.targetFilter || []).filter((p) => p.base && !_tfQuick(p.base));
-    if (!nq.some((p) => p.orGroup)) return null;
+    const nq = (b.targetFilter || []).filter((p) => p.base && !_tfQuick(p.base) && p.orGroup !== -1);
+    if (!nq.some((p) => p.orGroup && p.orGroup > 0)) return null;
     const maxG = Math.max(0, ...nq.map((p) => p.orGroup || 0));
     const groups = new Map<number, ConditionPair[]>();
     nq.forEach((p) => { const g = p.orGroup ?? maxG; if (!groups.has(g)) groups.set(g, []); groups.get(g)!.push(p); });
     return [...groups.keys()].sort((x, y) => x - y).map((g, i) => ({ conditions: groups.get(g)!, op: i === 0 ? undefined : 'or' as const }));
   })();
   const targetFilterObj = (_tfOrChain && _tfOrChain.length > 1)
-    ? buildConditionChainFilter(_tfOrChain, (b.targetFilter || []).filter((p) => _tfQuick(p.base)))
+    ? buildConditionChainFilter(_tfOrChain, (b.targetFilter || []).filter((p) => _tfQuick(p.base) || p.orGroup === -1))
     : buildConditionChainFilter(b.targetFilterChain, b.targetFilter);
   if (targetFilterObj) step.filter = targetFilterObj;
   // === 「コスト上限+/-」を「直前の効果」へ自動適用する ===
@@ -1993,10 +1993,12 @@ function stepObjectToAltAction(step: any): AltAction {
     ...(() => {
       const tf = parseConditionChainFilter(step?.filter);
       const quick = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
-      if (tf.chain && tf.chain.length > 1 && tf.pairs.every((p) => quick(p.base))) {
+      if (tf.chain && tf.chain.length > 1) {
+        // 共通条件（or の外）は orGroup:-1（レスト/アクティブはクイック条件のまま）
         const seen = new Map<string, number>();
+        tf.pairs.filter((p) => !quick(p.base)).forEach((p) => seen.set(p.base, -1));
         const ok = tf.chain.every((e, gi) => e.conditions.every((c) => { const g = seen.get(c.base); if (g !== undefined && g !== gi) return false; seen.set(c.base, gi); return true; }));
-        if (ok) return { targetFilter: [...tf.pairs, ...tf.chain.flatMap((e, gi) => e.conditions.map((c) => ({ ...c, orGroup: gi })))], targetFilterChain: undefined };
+        if (ok) return { targetFilter: [...tf.pairs.map((p) => (quick(p.base) ? p : { ...p, orGroup: -1 })), ...tf.chain.flatMap((e, gi) => e.conditions.map((c) => ({ ...c, orGroup: gi })))], targetFilterChain: undefined };
       }
       return { targetFilter: tf.pairs, targetFilterChain: tf.chain };
     })(),
@@ -2586,10 +2588,12 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     ...(() => {
       const tf = parseConditionChainFilter(step?.filter);
       const quick = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
-      if (tf.chain && tf.chain.length > 1 && tf.pairs.every((p) => quick(p.base))) {
+      if (tf.chain && tf.chain.length > 1) {
+        // 共通条件（or の外）は orGroup:-1（レスト/アクティブはクイック条件のまま）
         const seen = new Map<string, number>();
+        tf.pairs.filter((p) => !quick(p.base)).forEach((p) => seen.set(p.base, -1));
         const ok = tf.chain.every((e, gi) => e.conditions.every((c) => { const g = seen.get(c.base); if (g !== undefined && g !== gi) return false; seen.set(c.base, gi); return true; }));
-        if (ok) return { targetFilter: [...tf.pairs, ...tf.chain.flatMap((e, gi) => e.conditions.map((c) => ({ ...c, orGroup: gi })))], targetFilterChain: undefined };
+        if (ok) return { targetFilter: [...tf.pairs.map((p) => (quick(p.base) ? p : { ...p, orGroup: -1 })), ...tf.chain.flatMap((e, gi) => e.conditions.map((c) => ({ ...c, orGroup: gi })))], targetFilterChain: undefined };
       }
       return { targetFilter: tf.pairs, targetFilterChain: tf.chain };
     })(),

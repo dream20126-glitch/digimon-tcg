@@ -6,7 +6,8 @@ export interface ConditionPair {
   value?: string; // 数値 or サブ条件コード
   subject?: string; // 条件対象: '' = アクション対象 / 'self' / 'own' / 'other_own' / 'opp' / 'opp_blocker' 等
   // 対象の条件を AND/OR で組み合わせるときのグループ番号（同じ番号同士は AND、番号が違えば OR）。
-  // エディタ内部用で、JSONでは filter.or の何番目の選択肢かとして出力する
+  // エディタ内部用で、JSONでは filter.or の何番目の選択肢かとして出力する。
+  // -1 = 全ての選択肢に共通（AND）。JSONでは filter のトップレベル（or の外）に出す
   orGroup?: number;
 }
 

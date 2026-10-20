@@ -9709,15 +9709,29 @@ function ConditionsHybridEditor({
   const groupRowsOf = (code: string) => conditions.map((c, i) => ({ c, i })).filter(({ c }) =>
     c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && !isQuickGroupBase(c.base) && baseToCategory(c.base) === code);
   const maxOrGroup = Math.max(0, ...conditions.map((c) => c.orGroup || 0));
+  // 「全ての選択肢に共通（AND）」にした条件（orGroup:-1）。先頭にまとめて並べ、AND/ORの切替は付けない
+  const isCommonCat = (code: string) => { const rows = groupRowsOf(code); return rows.length > 0 && rows.every((r) => r.c.orGroup === -1); };
   const catGroupOf = (code: string) => Math.min(...groupRowsOf(code).map((r) => r.c.orGroup ?? maxOrGroup));
   const catFirstIdx = (code: string) => Math.min(...groupRowsOf(code).map((r) => r.i));
   const orderedCategoryOptions = !showOpBetweenPanels ? visibleCategoryOptions : [...visibleCategoryOptions].sort((a, b) => {
     const ra = groupRowsOf(a.code).length > 0, rb = groupRowsOf(b.code).length > 0;
     if (ra !== rb) return ra ? -1 : 1;
     if (!ra) return 0;
+    const ca = isCommonCat(a.code), cb = isCommonCat(b.code);
+    if (ca !== cb) return ca ? -1 : 1;
     return (catGroupOf(a.code) - catGroupOf(b.code)) || (catFirstIdx(a.code) - catFirstIdx(b.code));
   });
-  const groupedCats = orderedCategoryOptions.filter((c) => groupRowsOf(c.code).length > 0).map((c) => c.code);
+  const groupedCats = orderedCategoryOptions.filter((c) => groupRowsOf(c.code).length > 0 && !isCommonCat(c.code)).map((c) => c.code);
+  const activeCatCount = orderedCategoryOptions.filter((c) => groupRowsOf(c.code).length > 0).length;
+  const setCatCommon = (code: string, on: boolean) => {
+    const next = conditions.slice();
+    groupRowsOf(code).forEach((r) => {
+      const { orGroup: _og, ...rest } = next[r.i]; void _og;
+      // 外したら最後の選択肢に入る（orGroup 未設定＝最後のグループ）
+      next[r.i] = on ? { ...rest, orGroup: -1 } : rest;
+    });
+    onChange(next);
+  };
   const gapOps = groupedCats.map((code, k) => (k > 0 && catGroupOf(code) !== catGroupOf(groupedCats[k - 1]) ? 'or' : 'and'));
   const setGapOp = (k: number, op: 'and' | 'or') => {
     const ops = gapOps.slice(); ops[k] = op;
@@ -9727,8 +9741,8 @@ function ConditionsHybridEditor({
       if (i > 0 && ops[i] === 'or') g++;
       groupRowsOf(code).forEach((r) => { next[r.i] = { ...next[r.i], orGroup: g }; });
     });
-    // 全部ANDなら番号は付けない（JSONは従来どおりのフラットなAND）
-    onChange(g === 0 ? next.map((c) => { const { orGroup: _og, ...rest } = c; void _og; return rest; }) : next);
+    // 全部ANDなら番号は付けない（JSONは従来どおりのフラットなAND）。共通（-1）は残す
+    onChange(g === 0 ? next.map((c) => { if (c.orGroup === -1) return c; const { orGroup: _og, ...rest } = c; void _og; return rest; }) : next);
   };
   const interleaveOpSep = (nodes: ReactNode[]) => {
     if (!showOpBetweenPanels) return nodes;
@@ -9748,6 +9762,16 @@ function ConditionsHybridEditor({
         </div>
       );
       out.push(n);
+      // 「全ての選択肢に共通（AND）」: 例「（名前グレイモン OR 特徴ME/VB）かつ デジモン」の「デジモン」
+      if (activeCatCount >= 2 && groupRowsOf(cat.code).length > 0) {
+        const common = isCommonCat(cat.code);
+        out.push(
+          <label key={'common' + cat.code} style={{ display: 'flex', alignItems: 'center', gap: 4, margin: '2px 0 4px 4px', fontSize: 11, color: '#555', cursor: 'pointer' }}>
+            <input type="checkbox" checked={common} onChange={(e) => setCatCommon(cat.code, e.target.checked)} />
+            全ての選択肢に共通（AND）
+          </label>
+        );
+      }
     });
     return out;
   };

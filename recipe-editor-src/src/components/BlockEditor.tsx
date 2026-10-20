@@ -1216,14 +1216,16 @@ function CostListEditor({
           // OR選択中に他のL1/L2へ切り替えたら、自動設定していたtype絞り込みは持ち越さない
           const cCleared = cIsOrMode ? { conditions: (c.conditions || []).filter((cc) => cc.base !== 'cond_type') } : {};
           if (!l1) { updateCost(i, { ...c, ...cCleared, target: '' }); return; }
-          if (l1 === 'self') { updateCost(i, { ...c, ...cCleared, target: joinStackSuffix('self_card', cTgtStackPos) + cTgtSuffix }); return; }
+          // 〇〇に置く（進化元）: 対象「このカード」= place_under_self、それ以外のデジモン = place_under_digimon
+          const evoAct = (activePlaceZone === 'evo_source' || activePlaceZone === 'self') ? { action: l1 === 'self' ? 'place_under_self' : 'place_under_digimon' } : {};
+          if (l1 === 'self') { updateCost(i, { ...c, ...cCleared, ...evoAct, target: joinStackSuffix('self_card', cTgtStackPos) + cTgtSuffix }); return; }
           if (l1 === 'same_target') { updateCost(i, { ...c, ...cCleared, target: 'same_target' + cTgtSuffix }); return; }
           const useL2 = l2 || tgtKeepL2(cCurTgt.l1, cCurTgt.l2, l1) || (l1 === 'most' ? 'security' : 'digimon');
           const newBase = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '';
           // 位置は「デジモン/テイマー」を維持したときだけ引き継ぐ（カード/オプション等に
           // 切り替えたら位置指定自体が無意味になるため破棄する）
           const keepPos = useL2 === 'digimon' || useL2 === 'tamer';
-          updateCost(i, { ...c, ...cCleared, target: joinStackSuffix(newBase, keepPos ? cTgtStackPos : '') + cTgtSuffix });
+          updateCost(i, { ...c, ...cCleared, ...evoAct, target: joinStackSuffix(newBase, keepPos ? cTgtStackPos : '') + cTgtSuffix });
         };
         // デジモン/テイマーは複数選択可（対象・対象の条件と同じ操作感。両方選ぶと対象コードを
         // card+cond_typeフィルタに切り替える。「最も多いプレイヤー」等L2にdigimon/tamerが
@@ -1396,7 +1398,7 @@ function CostListEditor({
               {isPlaceActive && (
                 <div style={{ marginTop: 4 }}>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🎯 置き場所（どこに置くか）</div>
-                  {/* 「このカード」は「進化元」→「このカード」で選ぶ（置き場所ボタンには出さない） */}
+                  {/* 「このカード」は置き場所「進化元」＋対象「このカード」で表す（置き場所ボタンには出さない） */}
                   <ButtonGroup
                     options={PLACE_ZONE_MAP.filter((z) => z.code !== 'self').map((z) => ({ code: z.code, label: z.label }))}
                     value={activePlaceZone === 'self' ? 'evo_source' : activePlaceZone}
@@ -1408,22 +1410,6 @@ function CostListEditor({
                     }}
                     accentColor="#b76e00"
                   />
-                  {/* 進化元: どのデジモンの進化元か（このカード＝place_under_self / 自分のデジモン＝place_under_digimon） */}
-                  {(activePlaceZone === 'evo_source' || activePlaceZone === 'self') && (
-                    <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>どのデジモンの進化元か</div>
-                      <ButtonGroup
-                        options={[{ code: 'self', label: 'このカード' }, { code: 'evo_source', label: '自分のデジモン' }]}
-                        value={activePlaceZone}
-                        onChange={(zc) => {
-                          if (zc === activePlaceZone) return;
-                          const z = PLACE_ZONE_MAP.find((zz) => zz.code === zc);
-                          if (z) updateCost(i, { ...c, action: z.action, target: z.target || '' });
-                        }}
-                        accentColor="#b76e00"
-                      />
-                    </div>
-                  )}
                   {(() => {
                     const z = PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone);
                     return z?.warn ? (

@@ -6250,6 +6250,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     }}
                     placeholder={effectAction === 'summon_token' ? 'トークンのカードNo (例: TK-01)' : '数値 (例: 1000)'}
                   />
+                  {/* 「●枚まで」: 値を上限にする（0枚〜値の枚数を選べる） */}
+                  {typeof effectValue === 'number' && (
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 12, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!(isEditingAlt ? editingAlt!.valueUpTo : block.valueUpTo)}
+                        onChange={(e) => updateEffect({ valueUpTo: e.target.checked || undefined })}
+                      />
+                      {effectValue}まで（●枚まで）
+                    </label>
+                  )}
                 </div>
               )}
               {isEditingAlt && COST_LIMIT_MOD_ACTIONS.has(effectAction) && (

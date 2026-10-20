@@ -103,6 +103,8 @@ export interface EffectBlock {
   // コスト軽減（summon_cost等）で「コストで置いた（処理した）カード1枚ごとに軽減」する印（デジクロス）。
   // true のとき JSON へ step.per_cost_card:true を出力する。⚠ エンジン未実装
   perCostCard?: boolean;
+  // アクションの値を「〜まで」（●枚まで）にする。JSONでは step.value_up_to:true。⚠ エンジン未実装
+  valueUpTo?: boolean;
   // トリガーの複数選択（例: 登場時/進化時どちらでも同じ効果）。2件以上のときのみ意味を持つ。
   // blocksToRecipeで各コードごとに同じstepを複製して出力する。1件以下ならtriggerのみを見る
   triggers?: string[];
@@ -446,6 +448,8 @@ export interface AltAction {
   action: string;
   // 効果2以降の効果発動ポップアップの表示テキスト（その効果に進むときに出す）。JSONでは step.display_text
   displayText?: string;
+  // アクションの値を「〜まで」（●枚まで）にする。JSONでは value_up_to:true。⚠ エンジン未実装
+  valueUpTo?: boolean;
   // 「効果1と同じ」: 効果1のポップアップで一緒に表示済みとして、この効果では出さない（テキストも書かない）。JSONでは display_same: true
   displaySame?: boolean;
   value?: number | string;

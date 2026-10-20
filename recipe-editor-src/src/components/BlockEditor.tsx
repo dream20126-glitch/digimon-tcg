@@ -3194,6 +3194,10 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
   },
 ];
 const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));
+// 置き場所ボタンの表示名
+const PLACE_DEST_LABEL: Record<string, string> = {
+  security: 'セキュリティ', tamer: 'テイマーの下', evo_source: 'デジモンの下（進化元）', self: 'このカードの下', battle_area: 'バトルエリア',
+};
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
 // jogress_evolve: 効果での「手札の〇〇にジョグレス進化できる」も、進化と同じく取得元（手札等）と取得元カードの条件を指定する
@@ -5909,6 +5913,30 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     （対象を変えると action が自動でplace_under_tamer/place_under_digimon/
                     place_on_security_top/place_in_battle_areaへ切り替わる。remapPlaceActionForTarget参照）。
                     警告文だけはここに残す */}
+                {/* 📍 置き場所（〇〇に置くの〇〇）: 押すとアクションコードが切り替わる。
+                    置き先のデジモン/テイマー/どちらのセキュリティか等は下の🎯対象で選ぶ
+                    （置き場所に合わない対象なら、その置き場所の既定の対象に合わせる） */}
+                {isPlaceActive && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 置き場所（〇〇に置く の〇〇）</div>
+                    <ButtonGroup
+                      options={PLACE_ZONE_MAP.map((z) => ({ code: z.action, label: PLACE_DEST_LABEL[z.code] || z.label }))}
+                      value={effectAction || ''}
+                      onChange={(act) => {
+                        const z = PLACE_ZONE_MAP.find((zz) => zz.action === act);
+                        if (!z || act === effectAction) return;
+                        const curBase = (effectTarget || '').split(':')[0];
+                        const curSuffix = (effectTarget || '').substring(curBase.length);
+                        const curL2 = (TARGET_SEL_CODE_TO_L1L2[curBase] || { l2: '' }).l2;
+                        const zL1L2 = TARGET_SEL_CODE_TO_L1L2[z.target || ''] || { l1: '', l2: '' };
+                        // 今の対象がその置き場所に合っていれば（例: 進化元で 他の自分のデジモン）対象はそのまま
+                        const fits = zL1L2.l2 ? curL2 === zL1L2.l2 : curBase === z.target;
+                        updateEffect(fits ? { action: act } : { action: act, target: (z.target || '') + (zL1L2.l1 === 'self' ? '' : curSuffix) });
+                      }}
+                      accentColor="#1976d2"
+                    />
+                  </div>
+                )}
                 {isPlaceActive && (() => {
                   const z = PLACE_ZONE_MAP.find((zz) => zz.action === effectAction);
                   return z?.warn ? (
@@ -6756,8 +6784,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const effectActionForZones = CANT_TO_DOABLE_LIVE[effectAction || ''] || effectAction || '';
           const commonActionHasFromZones = !!dict.actions.find(
             (a) => a.code === (getActionVariant(effectActionForZones)?.base || effectActionForZones)
-          )?.hasFromZones || effectActionForZones === 'bounce' || effectActionForZones === 'return_hand';
-          const commonFromZoneExcludeCodes = effectActionForZones === 'add_to_hand' ? new Set(['hand', 'trash', 'battle_area'])
+          )?.hasFromZones || PLACE_ACTION_CODES.has(effectActionForZones) || effectActionForZones === 'bounce' || effectActionForZones === 'return_hand';
+          const commonFromZoneExcludeCodes = PLACE_ACTION_CODES.has(effectActionForZones) ? new Set(['hand', 'trash', 'deck', 'battle_area', 'linked'])
+            : effectActionForZones === 'add_to_hand' ? new Set(['hand', 'trash', 'battle_area'])
             : (effectActionForZones === 'bounce' || effectActionForZones === 'return_hand') ? new Set(['hand', 'deck', 'security'])
             : null;
           // 効果2以降（代替アクション）を編集中は「デジモン+テイマー同時選択(AND)」だけ省略する

@@ -3367,6 +3367,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // デジモン/テイマー/カード（デジモン+テイマー）のいずれかが選択されているとき。
   // トラッシュ/バトルエリアも「手札に戻す」等hasFromZonesアクションの取得元として選択可能な
   // ため、同様に条件で絞り込めるようにする（例:「トラッシュから特徴〇〇のカード1枚を手札に戻す」）
+  // 効果1の対象の条件に OR（〇〇か〇〇）が設定されているか
+  const tgtOrMode = !!(block.targetFilterChain && block.targetFilterChain.length > 1);
   const showTargetFilter =
     curTgt.l1 === 'self' ||
     curTgt.l1 === 'same_target' ||
@@ -7313,6 +7315,27 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         );
                       })}
                     </div>
+                    {tgtOrMode ? (() => {
+                      const isQuickCond = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
+                      const quickConds = targetFilter.filter((cc) => isQuickCond(cc.base));
+                      return (
+                        <ConditionChainField
+                          chain={block.targetFilterChain}
+                          legacyPairs={[]}
+                          onChainChange={(next) => {
+                            // ORが1つだけに戻ったら通常の（左右分割の）表示に戻す
+                            if (next.length <= 1) onChange({ ...block, targetFilterChain: undefined, targetFilter: [...targetFilter, ...((next[0] && next[0].conditions) || [])] });
+                            else onChange({ ...block, targetFilterChain: next, targetFilter: targetFilter });
+                          }}
+                          dict={dict}
+                          titleBase="対象の条件"
+                          theme="action"
+                          extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, targetL2: curTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
+                          commonConditions={targetFilter.filter((cc) => !isQuickCond(cc.base))}
+                          onCommonConditionsChange={(next) => update('targetFilter', [...quickConds, ...next])}
+                        />
+                      );
+                    })() : (
                     <ConditionsHybridEditor
                       conditions={targetFilter}
                       onChange={(next) => update('targetFilter', next)}
@@ -7329,6 +7352,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       onOtherOpenChange={setTargetFilterOtherOpen}
                       targetL2={curTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
                     />
+                    )}
                   </div>
                 )}
               </div>
@@ -7542,7 +7566,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       />
                     </div>
                   )}
-                  {showTargetFilter && (
+                  {showTargetFilter && !tgtOrMode && (
                     <div style={{ marginTop: hideCount ? 0 : 8, border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', padding: 8 }}>
                       <ConditionsHybridEditor
                         conditions={targetFilter}
@@ -7559,6 +7583,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         onOtherOpenChange={setTargetFilterOtherOpen}
                         targetL2={curTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
                       />
+                      {/* 「〇〇か〇〇」: 今の条件を1つ目の選択肢にして、OR の2つ目を追加する（効果2以降と同じ形になる） */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const isQuickCond = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
+                          onChange({ ...block,
+                            targetFilter: targetFilter.filter((cc) => isQuickCond(cc.base)),
+                            targetFilterChain: [{ conditions: targetFilter.filter((cc) => !isQuickCond(cc.base)) }, { conditions: [], op: 'or' }] });
+                        }}
+                        style={{ marginTop: 6, padding: '2px 8px', border: '1px dashed #b76e00', background: 'white', color: '#b76e00', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                      >
+                        + 条件を追加（OR：〇〇か〇〇）
+                      </button>
                     </div>
                   )}
                 </div>

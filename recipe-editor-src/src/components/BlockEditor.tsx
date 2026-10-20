@@ -1912,10 +1912,11 @@ function CostListEditor({
                     accentColor="#b76e00"
                   />
                   {cExclusiveL2Options.length > 0 && (
-                    <ButtonGroup
+                    <TargetL2Group
                       options={cExclusiveL2Options}
                       value={!cDigimonChecked && !cTamerChecked ? cCurTgt.l2 : ''}
                       onChange={(l2) => setCostTgt(cCurTgt.l1, l2)}
+                      l1={cCurTgt.l1}
                       accentColor="#b76e00"
                     />
                   )}
@@ -2837,6 +2838,42 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   both_battle_area: { l1: 'both', l2: 'battle_area' },
   both_linked: { l1: 'both', l2: 'linked' },
 };
+// 対象の「場所」（手札/トラッシュ等）の複数選択。例: 自分+手札+トラッシュ → own_hand_or_trash（L2は 'hand+trash'）。
+// 「自分の手札/トラッシュから〇〇する」を対象欄だけで設定できるようにする（エンジン未対応のコードあり）
+const MULTI_ZONE_L2 = ['hand', 'trash', 'deck', 'security', 'battle_area', 'linked'];
+const isZoneL2 = (l2: string) => !!l2 && l2.split('+').every((z) => MULTI_ZONE_L2.includes(z));
+{
+  const prefixes: Record<string, string> = { own: 'own', opp: 'opponent', both: 'both' };
+  Object.keys(prefixes).forEach((l1) => {
+    for (let mask = 1; mask < (1 << MULTI_ZONE_L2.length); mask++) {
+      const zs = MULTI_ZONE_L2.filter((_, i) => mask & (1 << i));
+      if (zs.length < 2) continue;
+      const code = prefixes[l1] + '_' + zs.join('_or_');
+      TARGET_SEL_L1L2_TO_CODE[l1 + ':' + zs.join('+')] = code;
+      TARGET_SEL_CODE_TO_L1L2[code] = { l1, l2: zs.join('+') };
+    }
+  });
+}
+// 対象欄の単一選択ボタン列（カード/オプション/手札/トラッシュ…）。場所ボタンだけは複数選べる
+function TargetL2Group({ options, value, onChange, l1, accentColor }: { options: { code: string; label: string }[]; value: string; onChange: (l2: string) => void; l1: string; accentColor?: string }) {
+  const cur = isZoneL2(value) ? value.split('+') : (value ? [value] : []);
+  return (
+    <MultiButtonGroup
+      options={options}
+      values={cur}
+      onToggle={(code, on) => {
+        // 選択中のボタンを押しても外さない（外すと対象そのものが消えるため）。場所同士だけ足し引きできる
+        if (!MULTI_ZONE_L2.includes(code) || !isZoneL2(value)) { if (on) onChange(code); return; }
+        const next = MULTI_ZONE_L2.filter((z) => (z === code ? on : cur.includes(z)));
+        const l2 = next.join('+');
+        // その組み合わせのコードが無い（例: プレイヤー系）なら単一選択に戻す
+        if (next.length === 0) return;
+        onChange((next.length === 1 || TARGET_SEL_L1L2_TO_CODE[l1 + ':' + l2]) ? l2 : code);
+      }}
+      accentColor={accentColor}
+    />
+  );
+}
 
 // アクションの対象コード（例:"opponent:1"）→ 対応する発動条件/トリガー条件の「対象」コードに
 // 変換する（「対象と同じ」チェックボックス用）。対象側にしか無い種別（オプション/セキュリティ/
@@ -3375,7 +3412,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const showTargetFilter =
     curTgt.l1 === 'self' ||
     curTgt.l1 === 'same_target' ||
-    ['digimon', 'tamer', 'card', 'trash', 'battle_area'].includes(curTgt.l2);
+    ['digimon', 'tamer', 'card'].includes(curTgt.l2) || isZoneL2(curTgt.l2);
   // 「取得元カードの条件」は進化/登場(BUILTIN_FROM_ZONE_ACTIONS)専用。対象＝このカード自身
   // （進化する側）であっても、実際に絞り込みたいのは取得元エリア（手札等）から選ぶカードの方
   // なので、「対象の条件」とは別枠・別データ（block.fromFilter → step.from_filter）として扱う
@@ -3681,7 +3718,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     let label = base;
     if (l1l2) {
       const l1Label = TARGET_SEL_L1.find((o) => o.code === l1l2.l1)?.label || '';
-      const l2Label = l1l2.l2 ? (TARGET_SEL_L2[l1l2.l1] || []).find((o) => o.code === l1l2.l2)?.label || '' : '';
+      const l2Label = !l1l2.l2 ? '' : l1l2.l2.split('+').map((z) =>
+        [...(TARGET_SEL_L2[l1l2.l1] || []), ...(TARGET_SEL_L2_FROM_ZONES[l1l2.l1] || [])].find((o) => o.code === z)?.label || '').filter(Boolean).join('/');
       label = [l1Label, l2Label].filter(Boolean).join('の');
     }
     const { mode: countMode, num: countNum } = parseTargetCountSuffix(suffix);
@@ -6747,7 +6785,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eShowTargetFilter =
               eCurTgt.l1 === 'self' ||
               eCurTgt.l1 === 'same_target' ||
-              ['digimon', 'tamer', 'card', 'trash', 'battle_area'].includes(eCurTgt.l2);
+              ['digimon', 'tamer', 'card'].includes(eCurTgt.l2) || isZoneL2(eCurTgt.l2);
             const eStackSubCond = effectTargetFilter.find((c) => c.base === 'cond_target_evo_source' || c.base === 'cond_target_stack');
             const setEffTgt = (l1: string, l2?: string) => {
               // OR選択中に他のL1/L2へ切り替えたら、自動設定していたtype絞り込みは持ち越さない
@@ -6842,10 +6880,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         テイマー
                       </button>
                       {eExclusiveL2Options.length > 0 && (
-                        <ButtonGroup
+                        <TargetL2Group
                           options={eExclusiveL2Options}
                           value={!eDigimonChecked && !eTamerChecked ? eCurTgt.l2 : ''}
                           onChange={(l2) => setEffTgt(eCurTgt.l1, l2)}
+                          l1={eCurTgt.l1}
                           accentColor="#b76e00"
                         />
                       )}
@@ -7228,10 +7267,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     {/* デジモンを選択したら、カード/オプション/手札/デッキ等の他のL2選択肢は隠し、
                         進化元/重ねられているカードのサブ選択肢（下記）のみを見せる */}
                     {!digimonChecked && exclusiveL2Options.length > 0 && (
-                      <ButtonGroup
+                      <TargetL2Group
                         options={exclusiveL2Options}
                         value={!digimonChecked && !tamerChecked ? curTgt.l2 : ''}
                         onChange={handleTgtL2}
+                        l1={curTgt.l1}
                         accentColor="#b76e00"
                       />
                     )}
@@ -7611,7 +7651,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             手札の『クロノモン』の記述があるデジモンカードに進化できる」）。「対象の条件」
             （このカード自身に掛かる条件）とは別データ（block.fromFilter/AltAction.fromFilter）
             で持つ。効果1・代替アクション（その後/OR/AND）とも同じ場所を使い回す */}
-        {showRetrievalFilterEffective && (
+        {showRetrievalFilterEffective
+          && !(isZoneL2((TARGET_SEL_CODE_TO_L1L2[(effectTarget || '').split(':')[0]] || { l2: '' }).l2)
+            && !(effectFromFilter && effectFromFilter.length > 0) && !(effectFromFilterChain && effectFromFilterChain.length > 0))
+          && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8, background: '#e0f7f5', border: '1px solid #b2dfdb', borderRadius: 4, padding: 8 }}>
             <ConditionChainField
               chain={effectFromFilterChain}

@@ -1183,7 +1183,7 @@ function CostListEditor({
           if (!l1) { updateCost(i, { ...c, ...cCleared, target: '' }); return; }
           if (l1 === 'self') { updateCost(i, { ...c, ...cCleared, target: joinStackSuffix('self_card', cTgtStackPos) + cTgtSuffix }); return; }
           if (l1 === 'same_target') { updateCost(i, { ...c, ...cCleared, target: 'same_target' + cTgtSuffix }); return; }
-          const useL2 = l2 || (cCurTgt.l1 === l1 && cCurTgt.l2 ? cCurTgt.l2 : (l1 === 'most' ? 'security' : 'digimon'));
+          const useL2 = l2 || tgtKeepL2(cCurTgt.l1, cCurTgt.l2, l1) || (l1 === 'most' ? 'security' : 'digimon');
           const newBase = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '';
           // 位置は「デジモン/テイマー」を維持したときだけ引き継ぐ（カード/オプション等に
           // 切り替えたら位置指定自体が無意味になるため破棄する）
@@ -1862,20 +1862,14 @@ function CostListEditor({
               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                 <MultiButtonGroup
-                  options={TARGET_SEL_OWN_OPP}
-                  values={[...(cCurTgt.l1 === 'own' || cCurTgt.l1 === 'both' ? ['own'] : []), ...(cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'both' ? ['opp'] : [])]}
-                  onToggle={(code, on) => {
-                    const ownOn = cCurTgt.l1 === 'own' || cCurTgt.l1 === 'both';
-                    const oppOn = cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'both';
-                    const nextOwn = code === 'own' ? on : ownOn;
-                    const nextOpp = code === 'opp' ? on : oppOn;
-                    setCostTgt(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : '');
-                  }}
+                  options={TARGET_SEL_OWN_OPP_OTHER}
+                  values={tgtToggleValues(cCurTgt.l1)}
+                  onToggle={(code, on) => setCostTgt(tgtToggleNextL1(cCurTgt.l1, code, on))}
                   accentColor="#b76e00"
                 />
                 <ButtonGroup
                   options={TARGET_SEL_L1_REST}
-                  value={(cCurTgt.l1 === 'own' || cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'both') ? TARGET_SEL_NONE_ACTIVE : cCurTgt.l1}
+                  value={TGT_TOGGLE_L1.has(cCurTgt.l1) ? TARGET_SEL_NONE_ACTIVE : cCurTgt.l1}
                   onChange={(l1) => setCostTgt(l1)}
                   accentColor="#b76e00"
                 />
@@ -2631,7 +2625,7 @@ const TARGET_SEL_L1 = [
   { code: 'self', label: 'このカード' },
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
-  { code: 'other_own', label: '他' },
+  { code: 'other_own', label: '自分の他' }, { code: 'both_other', label: '自分/相手の他' },
   // 自分/相手どちらでも該当する全てが対象（このカードを含む）。例:「デジモン1体をレストできる」
   // ボタン自体は単独では出さず、下の「自分」「相手」を両方トグルすると自動でこのコードになる
   // （登場/使用ボタンと同じ操作感）。describeTarget等のラベル逆引き用にリストには残す
@@ -2643,7 +2637,44 @@ const TARGET_SEL_L1 = [
 // （両方押すと'both'に自動で切り替わる。登場/使用ボタンと同じ操作感）。
 // それ以外（既定/このカード/他/そのデジモン/最も多いプレイヤー）は従来通り単一選択のまま
 const TARGET_SEL_OWN_OPP = TARGET_SEL_L1.filter((o) => o.code === 'own' || o.code === 'opp');
-const TARGET_SEL_L1_REST = TARGET_SEL_L1.filter((o) => o.code !== 'own' && o.code !== 'opp' && o.code !== 'both');
+// 対象の「自分 / 相手 / 他」トグル。「他」=このカード（このデジモン）を含めない。
+//   自分        → own（このカードも含めた自分のデジモン）
+//   自分+他     → target_other_own（他の自分のデジモン）
+//   自分+相手   → both（このカードも含めた、自分/相手どちらでもいいデジモン）
+//   自分+相手+他 → both_other（他のデジモン。自分/相手どちらでもいい）
+//   相手        → opp（相手のカードは常に「他」なので、他を押しても変わらない）
+const TARGET_SEL_OWN_OPP_OTHER = [
+  { code: 'own', label: '自分' },
+  { code: 'opp', label: '相手' },
+  { code: 'other', label: '他' },
+];
+const TGT_TOGGLE_L1 = new Set(['own', 'opp', 'other_own', 'both', 'both_other']);
+function tgtToggleValues(l1: string): string[] {
+  const v: string[] = [];
+  if (l1 === 'own' || l1 === 'other_own' || l1 === 'both' || l1 === 'both_other') v.push('own');
+  if (l1 === 'opp' || l1 === 'both' || l1 === 'both_other') v.push('opp');
+  if (l1 === 'other_own' || l1 === 'both_other') v.push('other');
+  return v;
+}
+function tgtToggleNextL1(l1: string, code: string, on: boolean): string {
+  const cur = tgtToggleValues(l1);
+  let own = code === 'own' ? on : cur.includes('own');
+  const opp = code === 'opp' ? on : cur.includes('opp');
+  let other = code === 'other' ? on : cur.includes('other');
+  // 「他」だけ押したら「自分の他」にする。自分/相手を両方外したら「他」も外す
+  if (other && !own && !opp) { if (code === 'other') own = true; else other = false; }
+  if (own && opp) return other ? 'both_other' : 'both';
+  if (own) return other ? 'other_own' : 'own';
+  if (opp) return 'opp';
+  return '';
+}
+// 自分/相手/他 の切替では、選んでいた「デジモン/カード/テイマー」等を引き継ぐ（新しい組合せに無ければ''）
+function tgtKeepL2(curL1: string, curL2: string, l1: string): string {
+  if (!curL2) return '';
+  if (curL1 !== l1 && !(TGT_TOGGLE_L1.has(curL1) && TGT_TOGGLE_L1.has(l1))) return '';
+  return TARGET_SEL_L1L2_TO_CODE[l1 + ':' + curL2] ? curL2 : '';
+}
+const TARGET_SEL_L1_REST = TARGET_SEL_L1.filter((o) => !TGT_TOGGLE_L1.has(o.code));
 // TARGET_SEL_L1_RESTには code:'' の「なし」が含まれるため、自分/相手/両方選択中に
 // 「REST側は何も選ばれていない」ことを表すのに空文字は使えない（「なし」と誤って
 // 一致してハイライトされてしまう）。どの実コードとも一致しない番兵値を使う
@@ -2673,6 +2704,9 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'digimon', label: 'デジモン' },
     { code: 'card', label: 'カード' },
     { code: 'tamer', label: 'テイマー' },
+  ],
+  both_other: [
+    { code: 'digimon', label: 'デジモン' },
   ],
 };
 // hasFromZonesフラグを持つアクション（破棄する/〇〇に置く/デッキに戻す/手札に加える/
@@ -2711,6 +2745,7 @@ const TARGET_SEL_L1L2_TO_CODE: Record<string, string> = {
   'opp:digimon': 'opponent', 'opp:card': 'opponent_card', 'opp:tamer': 'opponent_tamer', 'opp:option': 'opponent_option', 'opp:player': 'opp_player', 'opp:security': 'opp_security',
   'other_own:digimon': 'target_other_own', 'other_own:card': 'target_other_own_card', 'other_own:tamer': 'target_other_own_tamer',
   'both:digimon': 'both', 'both:card': 'both_card', 'both:tamer': 'both_tamer',
+  'both_other:digimon': 'both_other',
   'most:security': 'most_security_player', 'most:trash': 'most_trash_player', 'most:hand': 'most_hand_player', 'most:evo_source': 'most_evo_source_player',
   // 旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが担っていた場所（手札/トラッシュ/バトルエリア/
   // リンクカード）を対象欄のL2に統合した新規コード（hasFromZonesアクションのときのみ選択可）
@@ -2743,8 +2778,8 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   target_other_own_card: { l1: 'other_own', l2: 'card' },
   target_other_own_tamer: { l1: 'other_own', l2: 'tamer' },
   both: { l1: 'both', l2: 'digimon' },
-  // 「他のデジモン（自分/相手どちらでも。このデジモン以外）」。両方+デジモンの「このカードを含めない」チェックで選ぶ
-  both_other: { l1: 'both', l2: 'digimon' },
+  // 「他のデジモン（自分/相手どちらでも。このデジモン以外）」。自分+相手+他 のトグルで選ぶ
+  both_other: { l1: 'both_other', l2: 'digimon' },
   both_card: { l1: 'both', l2: 'card' },
   both_tamer: { l1: 'both', l2: 'tamer' },
   same_target: { l1: 'same_target', l2: '' },
@@ -6476,7 +6511,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 const setEtTarget = (l1: string, l2?: string) => {
                   if (!l1) { updateExtraTarget(idx, { target: '' }); return; }
                   if (l1 === 'self') { updateExtraTarget(idx, { target: 'self_card' }); return; }
-                  const useL2 = l2 || (etCurL1L2.l1 === l1 && etCurL1L2.l2 ? etCurL1L2.l2 : 'digimon');
+                  const useL2 = l2 || tgtKeepL2(etCurL1L2.l1, etCurL1L2.l2, l1) || 'digimon';
                   updateExtraTarget(idx, { target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '') + etSuffix });
                 };
                 const etL2Options = TARGET_SEL_L2[etCurL1L2.l1] || [];
@@ -6495,20 +6530,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 2 }}>
                       <MultiButtonGroup
-                        options={TARGET_SEL_OWN_OPP}
-                        values={[...(etCurL1L2.l1 === 'own' || etCurL1L2.l1 === 'both' ? ['own'] : []), ...(etCurL1L2.l1 === 'opp' || etCurL1L2.l1 === 'both' ? ['opp'] : [])]}
-                        onToggle={(code, on) => {
-                          const ownOn = etCurL1L2.l1 === 'own' || etCurL1L2.l1 === 'both';
-                          const oppOn = etCurL1L2.l1 === 'opp' || etCurL1L2.l1 === 'both';
-                          const nextOwn = code === 'own' ? on : ownOn;
-                          const nextOpp = code === 'opp' ? on : oppOn;
-                          setEtTarget(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : '');
-                        }}
+                        options={TARGET_SEL_OWN_OPP_OTHER}
+                        values={tgtToggleValues(etCurL1L2.l1)}
+                        onToggle={(code, on) => setEtTarget(tgtToggleNextL1(etCurL1L2.l1, code, on))}
                         accentColor="#b76e00"
                       />
                       <ButtonGroup
                         options={TARGET_SEL_L1_REST}
-                        value={(etCurL1L2.l1 === 'own' || etCurL1L2.l1 === 'opp' || etCurL1L2.l1 === 'both') ? TARGET_SEL_NONE_ACTIVE : etCurL1L2.l1}
+                        value={TGT_TOGGLE_L1.has(etCurL1L2.l1) ? TARGET_SEL_NONE_ACTIVE : etCurL1L2.l1}
                         onChange={(l1) => setEtTarget(l1)}
                         accentColor="#b76e00"
                       />
@@ -6522,16 +6551,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           accentColor="#b76e00"
                         />
                       </div>
-                    )}
-                    {etCurL1L2.l1 === 'both' && etCurL1L2.l2 === 'digimon' && (
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 11, cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={etBase === 'both_other'}
-                          onChange={(e) => updateExtraTarget(idx, { target: (e.target.checked ? 'both_other' : 'both') + etSuffix })}
-                        />
-                        このカードを含めない（このデジモン以外の、自分/相手どちらでもいいデジモン）
-                      </label>
                     )}
                     {!etHideCount && (
                       <div style={{ marginTop: 4 }}>
@@ -6710,7 +6729,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               // 効果2以降では直前の効果が選んだ対象を再利用する(same_target)、という別コードになる
               // （ボタンの見た目・ラベルは共通の「そのデジモン」のまま）
               if (l1 === 'same_target') { updateEffect({ ...cleared, target: isEditingAlt ? 'same_target' : 'target_trigger_source' }); return; }
-              const useL2 = l2 || (eCurTgt.l1 === l1 && eCurTgt.l2 ? eCurTgt.l2 : (l1 === 'most' ? 'security' : 'digimon'));
+              const useL2 = l2 || tgtKeepL2(eCurTgt.l1, eCurTgt.l2, l1) || (l1 === 'most' ? 'security' : 'digimon');
               const newEffBase = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '';
               const remapAction = remapPlaceActionForTarget(newEffBase);
               updateEffect({ ...cleared, target: newEffBase + eSuffix, ...(remapAction ? { action: remapAction } : {}) });
@@ -6742,15 +6761,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </label>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <MultiButtonGroup
-                      options={TARGET_SEL_OWN_OPP}
-                      values={[...(eCurTgt.l1 === 'own' || eCurTgt.l1 === 'both' ? ['own'] : []), ...(eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'both' ? ['opp'] : [])]}
-                      onToggle={(code, on) => {
-                        const ownOn = eCurTgt.l1 === 'own' || eCurTgt.l1 === 'both';
-                        const oppOn = eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'both';
-                        const nextOwn = code === 'own' ? on : ownOn;
-                        const nextOpp = code === 'opp' ? on : oppOn;
-                        setEffTgt(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : '');
-                      }}
+                      options={TARGET_SEL_OWN_OPP_OTHER}
+                      values={tgtToggleValues(eCurTgt.l1)}
+                      onToggle={(code, on) => setEffTgt(tgtToggleNextL1(eCurTgt.l1, code, on))}
                       accentColor="#b76e00"
                     />
                     <ButtonGroup
@@ -6758,7 +6771,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                          （same_target）ため、対象がデジモンとは限らない（テイマー/オプション等も
                          あり得る）。ラベルだけ「そのカード」に変える（コード自体はsame_targetのまま） */
                       options={TARGET_SEL_L1_REST.map((o) => (o.code === 'same_target' ? { ...o, label: 'そのカード' } : o))}
-                      value={(eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'both') ? TARGET_SEL_NONE_ACTIVE : eCurTgt.l1}
+                      value={TGT_TOGGLE_L1.has(eCurTgt.l1) ? TARGET_SEL_NONE_ACTIVE : eCurTgt.l1}
                       onChange={(l1) => setEffTgt(l1)}
                       accentColor="#b76e00"
                     />
@@ -7071,15 +7084,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             // 既に同じL1でL2も選択済みならそれを維持する。新規にL1を選んだ場合は
             // 「デジモン」等を自動選択せず、L2未選択の番兵コード（own_none等）にする
             // （「most」だけは既存の「最も多いセキュリティ」既定を維持）
-            if (curTgt.l1 === l1 && curTgt.l2) {
-              onChange({ ...block, ...cleared, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + curTgt.l2] || '') + tgtSuffix });
+            const keepL2 = (isOrMode || isAndMode) ? (curTgt.l1 === l1 ? curTgt.l2 : '') : tgtKeepL2(curTgt.l1, curTgt.l2, l1);
+            if (keepL2) {
+              onChange({ ...block, ...cleared, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + keepL2] || '') + tgtSuffix });
               return;
             }
             if (l1 === 'most') {
               onChange({ ...block, ...cleared, target: (TARGET_SEL_L1L2_TO_CODE['most:security'] || '') + tgtSuffix });
               return;
             }
-            const noneCode = l1 === 'own' ? 'own_none' : l1 === 'opp' ? 'opponent_none' : l1 === 'other_own' ? 'target_other_own_none' : l1 === 'both' ? 'both_none' : '';
+            const noneCode = l1 === 'own' ? 'own_none' : l1 === 'opp' ? 'opponent_none' : l1 === 'other_own' ? 'target_other_own_none' : l1 === 'both' ? 'both_none' : l1 === 'both_other' ? 'both_other' : '';
             onChange({ ...block, ...cleared, target: noneCode + tgtSuffix });
           };
           const handleTgtL2 = (l2: string) => {
@@ -7134,20 +7148,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   <MultiButtonGroup
-                    options={TARGET_SEL_OWN_OPP}
-                    values={[...(curTgt.l1 === 'own' || curTgt.l1 === 'both' ? ['own'] : []), ...(curTgt.l1 === 'opp' || curTgt.l1 === 'both' ? ['opp'] : [])]}
-                    onToggle={(code, on) => {
-                      const ownOn = curTgt.l1 === 'own' || curTgt.l1 === 'both';
-                      const oppOn = curTgt.l1 === 'opp' || curTgt.l1 === 'both';
-                      const nextOwn = code === 'own' ? on : ownOn;
-                      const nextOpp = code === 'opp' ? on : oppOn;
-                      handleTgtL1(nextOwn && nextOpp ? 'both' : nextOwn ? 'own' : nextOpp ? 'opp' : '');
-                    }}
+                    options={TARGET_SEL_OWN_OPP_OTHER}
+                    values={tgtToggleValues(curTgt.l1)}
+                    onToggle={(code, on) => handleTgtL1(tgtToggleNextL1(curTgt.l1, code, on))}
                     accentColor="#b76e00"
                   />
                   <ButtonGroup
                     options={TARGET_SEL_L1_REST}
-                    value={(curTgt.l1 === 'own' || curTgt.l1 === 'opp' || curTgt.l1 === 'both') ? TARGET_SEL_NONE_ACTIVE : curTgt.l1}
+                    value={TGT_TOGGLE_L1.has(curTgt.l1) ? TARGET_SEL_NONE_ACTIVE : curTgt.l1}
                     onChange={handleTgtL1}
                     accentColor="#b76e00"
                   />
@@ -7198,17 +7206,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   <div style={{ marginTop: 4 }}>
                     <ButtonGroup options={tgtL2Options} value={curTgt.l2} onChange={handleTgtL2} accentColor="#b76e00" />
                   </div>
-                )}
-                {/* 自分+相手（両方）のデジモン: 「このカードを含めない」で「他のデジモン（自分/相手どちらでも）」（both_other）にする */}
-                {curTgt.l1 === 'both' && curTgt.l2 === 'digimon' && !tamerChecked && (
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 11, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={tgtBase === 'both_other'}
-                      onChange={(e) => setTarget(e.target.checked ? 'both_other' : 'both', tgtSuffix)}
-                    />
-                    このカードを含めない（このデジモン以外の、自分/相手どちらでもいいデジモン）
-                  </label>
                 )}
                 {/* デジモン対象、「このカード」対象、または「そのデジモン」対象:
                     「進化元」（スタックのみ）/「重ねられているカード」（スタック＋本体）を

@@ -1534,7 +1534,7 @@ function CostListEditor({
                         chain={c.fromFilterChain}
                         legacyPairs={[]}
                         legacyOp={c.fromFilterOp}
-                        onChainChange={(next) => updateCost(i, { ...c, fromFilterChain: next, fromFilter: [] })}
+                        onChainChange={(next) => updateCost(i, { ...c, fromFilterChain: next })}
                         dict={dict}
                         titleBase="取得元カードの条件"
                         theme="action"
@@ -4584,13 +4584,25 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
             {/* 進化コスト軽減: 進化先のカードの条件（例:「このデジモンが特徴『TB』を持つデジモンカードに進化するとき」）。
                 step.from_filter に出力（進化アクションの取得元カードの条件と同じ形）。⚠ evo_cost はエンジン未対応 */}
+            {/* 進化コスト軽減: どのデジモンが進化するときか（未指定＝このデジモン。subject は 'self' のとき出力しない） */}
+            {block.trigger === 'evo_cost' && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 2 }}>進化するデジモン</div>
+                <ButtonGroup
+                  options={[{ code: 'self', label: 'このデジモン' }, { code: 'own', label: '自分のデジモン' }, { code: 'other_own', label: '他の自分のデジモン' }]}
+                  value={block.triggerSubject || 'self'}
+                  onChange={(v) => update('triggerSubject', v || 'self')}
+                  accentColor="#ef6c00"
+                />
+              </div>
+            )}
             {block.trigger === 'evo_cost' && (
               <div style={{ marginTop: 8, background: '#e0f7f5', border: '1px solid #b2dfdb', borderRadius: 4, padding: 8 }}>
                 <ConditionChainField
                   chain={block.fromFilterChain}
                   legacyPairs={[]}
                   legacyOp={block.fromFilterOp}
-                  onChainChange={(next) => onChange({ ...block, fromFilterChain: next, fromFilter: [] })}
+                  onChainChange={(next) => onChange({ ...block, fromFilterChain: next })}
                   dict={dict}
                   titleBase="進化先のカードの条件"
                   theme="action"
@@ -7731,7 +7743,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               chain={effectFromFilterChain}
               legacyPairs={[]}
               legacyOp={effectFromFilterOp}
-              onChainChange={(next) => updateEffect({ fromFilterChain: next, fromFilter: [] })}
+              onChainChange={(next) => updateEffect({ fromFilterChain: next })}
               dict={dict}
               titleBase="取得元カードの条件"
               theme="action"
@@ -7834,7 +7846,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             chain={effectConditionsChain}
             legacyPairs={[]}
             legacyOp={effectConditionsOp}
-            onChainChange={(next) => updateEffect({ conditionsChain: next, conditions: [] })}
+            /* 条件欄（chain）を編集しても共通条件（conditions）は消さない。以前は conditions: [] で上書きしており、
+               レシピを開き直して条件を足すと、読込で共通条件側に入った既存の条件が消えていた */
+            onChainChange={(next) => updateEffect({ conditionsChain: next })}
             dict={dict}
             titleBase={isEditingAlt ? `発動条件（効果${editingEffect + 1}）` : '発動条件'}
             theme="action"
@@ -8115,7 +8129,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <ConditionChainField
                   chain={grantedStep.conditionsChain}
                   legacyPairs={[]}
-                  onChainChange={(next) => updateGrantedStep({ conditionsChain: next, conditions: [] })}
+                  onChainChange={(next) => updateGrantedStep({ conditionsChain: next })}
                   dict={dict}
                   titleBase="付与効果の発動条件"
                   theme="action"

@@ -337,11 +337,17 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   if (validGate.length >= 1) out.gate = pairToString(validGate[0]);
   if (validGate.length >= 2) out.gate_when = pairToString(validGate[1]);
   if (validGate.length >= 3) out.gate_extra_conditions = validGate.slice(2).map(pairToString);
+  // 発動条件（〜なら）: 効果1と同じく「共通条件」(conditions)＋エディタの条件欄(conditionsChain)の両方を出す。
+  // 以前は conditionsChain を出力しておらず、効果2以降の条件欄に入れた条件が保存で消えていた
   const validC = expandRefExistsAttributeFilters(stripDpRefFilterMarker((a.conditions || []).filter((p) => p.base)));
-  if (validC.length >= 1) out.condition = pairToString(validC[0]);
-  if (validC.length >= 2) out.when = pairToString(validC[1]);
-  if (validC.length >= 3) out.extra_conditions = validC.slice(2).map(pairToString);
-  if (validC.length >= 2 && a.conditionsOp === 'or') out.condition_op = 'or';
+  if (a.conditionsChain && a.conditionsChain.length > 0) {
+    Object.assign(out, resolveCommonPlusChainTriple(validC, a.conditionsChain));
+  } else {
+    if (validC.length >= 1) out.condition = pairToString(validC[0]);
+    if (validC.length >= 2) out.when = pairToString(validC[1]);
+    if (validC.length >= 3) out.extra_conditions = validC.slice(2).map(pairToString);
+    if (validC.length >= 2 && a.conditionsOp === 'or') out.condition_op = 'or';
+  }
   if (Array.isArray(a.fromZones) && a.fromZones.length > 0) {
     const az = a.fromZones.filter((z) => !!z);
     if (az.length === 1) out.from = az[0];
@@ -2021,6 +2027,9 @@ function stepObjectToAltAction(step: any): AltAction {
       || step.from_filter.exclude_same_name_zone === 'own_digimon' || step.from_filter.exclude_same_name_zone === 'own_any'))
       ? step.from_filter.exclude_same_name_zone : undefined,
     costs: parseCostArray(step?.cost),
+    // 取得元の枚数（grant_keyword の count はアセンブリ等の枚数なので除く。以前は読込で消えていた）
+    fromCount: !_isAltGrantKeyword && step?.count !== undefined ? step.count : undefined,
+    fromCountQuant: !_isAltGrantKeyword && step?.count_quant === 'le' ? 'le' as const : undefined,
     optional: !!step?.optional,
   };
 }
@@ -2269,6 +2278,11 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
   const _isGrantKeywordStep = step?.action === 'grant_keyword' || step?.action === 'grant_keyword_to';
   const _stepCount = _isGrantKeywordStep && extras.count !== undefined ? extras.count : undefined;
   if (_isGrantKeywordStep && extras.count !== undefined) delete extras.count;
+  // 取得元（from）があるステップの count/count_quant は「取得元の枚数」欄（fromCount）として復元する
+  // （以前は extras に残るだけで、枚数欄が空に見えていた）
+  const _stepFromCount = !_isGrantKeywordStep && step?.from && extras.count !== undefined ? extras.count : undefined;
+  const _stepFromCountQuant = _stepFromCount !== undefined && extras.count_quant === 'le' ? 'le' as const : undefined;
+  if (_stepFromCount !== undefined) { delete extras.count; delete extras.count_quant; }
   // デッキオープン等のルール（selections/return_to）を逆変換して復元。再翻訳で元と一致した
   // 場合だけ採用し、そのキーは素通し(extras)から外す（不一致なら従来通り素通しのまま）
   const _restoredRules = rulesFromStep(step?.action, step);
@@ -2566,6 +2580,9 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
               || a.from_filter.exclude_same_name_zone === 'own_digimon' || a.from_filter.exclude_same_name_zone === 'own_any'))
               ? a.from_filter.exclude_same_name_zone : undefined,
             costs: parseCostArray(a?.cost),
+            // 取得元の枚数（以前は読込で消えていた）
+            fromCount: a?.action !== 'grant_keyword' && a?.action !== 'grant_keyword_to' && a?.count !== undefined ? a.count : undefined,
+            fromCountQuant: a?.action !== 'grant_keyword' && a?.action !== 'grant_keyword_to' && a?.count_quant === 'le' ? 'le' as const : undefined,
             optional: !!a?.optional,
           };
         })
@@ -2620,6 +2637,8 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     fromExcludeSameNameZone: (step?.from_filter && (step.from_filter.exclude_same_name_zone === 'own_tamer'
       || step.from_filter.exclude_same_name_zone === 'own_digimon' || step.from_filter.exclude_same_name_zone === 'own_any'))
       ? step.from_filter.exclude_same_name_zone : undefined,
+    fromCount: _stepFromCount,
+    fromCountQuant: _stepFromCountQuant,
     extras: Object.keys(extras).length > 0 ? JSON.stringify(extras) : '',
   };
 }

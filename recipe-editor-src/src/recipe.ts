@@ -1456,6 +1456,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.limit) step.limit = b.limit;
   // 【カウンター】の印（未チェックなら出力しない＝既存レシピの出力は不変）
   if (b.counter) step.counter = true;
+  if (b.perCostCard) step.per_cost_card = true;
   // subject='self' はデフォルトなのでJSONに含めない（既存レシピと互換）。
   // トリガーごとに発動主体が異なる場合（groupTriggersByTimingが1stepへ統合した場合）は
   // subject_by_code（{トリガーコード: subject}）を出力する。エンジン側は各トリガーの
@@ -2181,6 +2182,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     options: true,
     limit: true,
     counter: true,
+    per_cost_card: true,
     in_zone: true,
     subject: true,
     subject_by_code: true,
@@ -2295,6 +2297,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
       ? { ...step.cause_subject_by_code } : undefined,
     limit: step?.limit || '',
     counter: step?.counter === true ? true : undefined,
+    perCostCard: step?.per_cost_card === true ? true : undefined,
     triggerConditions,
     triggerConditionsOp: step?.trigger_conditions_op === 'or' ? 'or' : 'and',
     triggerConditionsChain: parseConditionChainStrings(step?.trigger_conditions_chain),

@@ -100,6 +100,9 @@ export interface EffectBlock {
   // 【カウンター】効果の印（trigger=on_attack・発動主体=相手 と組み合わせて使う）。
   // true のとき JSON へ step.counter:true を出力する（EX12-017 等）。⚠ エンジン未実装
   counter?: boolean;
+  // コスト軽減（summon_cost等）で「コストで置いた（処理した）カード1枚ごとに軽減」する印（デジクロス）。
+  // true のとき JSON へ step.per_cost_card:true を出力する。⚠ エンジン未実装
+  perCostCard?: boolean;
   // トリガーの複数選択（例: 登場時/進化時どちらでも同じ効果）。2件以上のときのみ意味を持つ。
   // blocksToRecipeで各コードごとに同じstepを複製して出力する。1件以下ならtriggerのみを見る
   triggers?: string[];

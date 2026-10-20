@@ -4552,6 +4552,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 noCostLabel="コストなし（常に軽減）"
                 labelSuffix="（外側）"
               />
+              {/* デジクロス: 置いたカード1枚ごとに軽減（アセンブリは全部置いて一度だけ軽減＝チェックなし） */}
+              {costs.length > 0 && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 12, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!block.perCostCard} onChange={(e) => update('perCostCard', e.target.checked || undefined)} />
+                  コストで置いた（処理した）カード1枚ごとに軽減する（デジクロス等）
+                  <span style={{ fontSize: 10, color: '#888' }}>※未チェック＝一度だけ軽減（アセンブリ等）</span>
+                </label>
+              )}
             </div>
             <div style={{ marginTop: 8 }}>
               <ConditionChainField

@@ -4582,6 +4582,24 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 複合条件（AND内包OR）はエンジン未対応です（保存はできますが動作しません）</div>
               )}
             </div>
+            {/* 進化コスト軽減: 進化先のカードの条件（例:「このデジモンが特徴『TB』を持つデジモンカードに進化するとき」）。
+                step.from_filter に出力（進化アクションの取得元カードの条件と同じ形）。⚠ evo_cost はエンジン未対応 */}
+            {block.trigger === 'evo_cost' && (
+              <div style={{ marginTop: 8, background: '#e0f7f5', border: '1px solid #b2dfdb', borderRadius: 4, padding: 8 }}>
+                <ConditionChainField
+                  chain={block.fromFilterChain}
+                  legacyPairs={[]}
+                  legacyOp={block.fromFilterOp}
+                  onChainChange={(next) => onChange({ ...block, fromFilterChain: next, fromFilter: [] })}
+                  dict={dict}
+                  titleBase="進化先のカードの条件"
+                  theme="action"
+                  extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, showTypeInTargetFilter: true }}
+                  commonConditions={block.fromFilter || []}
+                  onCommonConditionsChange={(next) => onChange({ ...block, fromFilter: next })}
+                />
+              </div>
+            )}
             {renderPerCountEditor()}
           </div>
         ) : block.trigger === 'passive' ? (

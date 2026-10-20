@@ -4998,7 +4998,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             <div style={{ color: '#333', fontWeight: 'bold', marginBottom: 3 }}>{label}:</div>
                             <CauseToggle value={curCause} onChange={setThisCause} allowEmpty accentColor="#1a5a1a" />
                             {!curCause && <span style={{ fontSize: 10, color: '#888', marginLeft: 4 }}>（未選択＝原因を問わない）</span>}
-                            {curCause && !curCause.startsWith('not_') && (
+                            {curCause && (
                               <div style={{ marginTop: 3 }}>
                                 <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>原因の対象:</span>
                                 <ButtonGroup
@@ -5243,8 +5243,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           {block.destroyCause && (
             <div style={{ marginTop: 6 }}>
               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>原因</div>
-              <CauseToggle value={block.destroyCause} onChange={(v) => { if (v) onChange({ ...block, destroyCause: v, ...(v.startsWith('not_') ? { destroyCauseSubject: undefined } : {}) }); }} accentColor="#1a5a1a" />
-              {!block.destroyCause.startsWith('not_') && (
+              <CauseToggle value={block.destroyCause} onChange={(v) => { if (v) update('destroyCause', v); }} accentColor="#1a5a1a" />
               <div style={{ marginTop: 4 }}>
                 <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>
                   原因の対象
@@ -5257,7 +5256,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   accentColor="#1a5a1a"
                 />
               </div>
-              )}
             </div>
           )}
           </>

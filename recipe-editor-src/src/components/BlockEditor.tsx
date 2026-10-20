@@ -7335,8 +7335,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       supportsMultiValue={true}
                       allowDistinctVariants={true}
                       // 条件を2つ以上選んだら AND/OR を選べる（レスト/アクティブのチェックは常にAND）
-                      conditionsOp={block.targetFilterOp || 'and'}
-                      onConditionsOpChange={(op) => update('targetFilterOp', op === 'or' ? 'or' : undefined)}
+                      onConditionsOpChange={() => {}}
                       part="buttons"
                       otherOpen={targetFilterOtherOpen}
                       onOtherOpenChange={setTargetFilterOtherOpen}
@@ -7594,8 +7593,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         showSubjectSelector={false}
                         supportsMultiValue={true}
                         part="panels"
-                        conditionsOp={block.targetFilterOp || 'and'}
-                        onConditionsOpChange={tgtCondCount >= 2 ? ((op) => update('targetFilterOp', op === 'or' ? 'or' : undefined)) : undefined}
+                        onConditionsOpChange={tgtCondCount >= 2 ? (() => {}) : undefined}
                         otherOpen={targetFilterOtherOpen}
                         onOtherOpenChange={setTargetFilterOtherOpen}
                         targetL2={curTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
@@ -9593,17 +9591,47 @@ function ConditionsHybridEditor({
 
   // part='panels'（対象の条件の右側パネル）では、AND/OR の切替を詳細パネルの「間」に出す
   // （2つ目の条件を選んだときに、1つ目と2つ目の間で AND か OR かを選べるようにする）
+  // 条件の間ごとに AND/OR を選べる（各条件の orGroup で表す。同じ番号=AND、番号が変わる所=OR）。
+  // パネルは「グループ順→追加順」に並べる。レスト/アクティブのクイック条件は対象外（常にAND）
   const showOpBetweenPanels = part === 'panels' && !!onConditionsOpChange;
+  const isQuickGroupBase = (b: string) => b === 'cond_self_rest' || b === 'cond_self_active';
+  const groupRowsOf = (code: string) => conditions.map((c, i) => ({ c, i })).filter(({ c }) =>
+    c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && !isQuickGroupBase(c.base) && baseToCategory(c.base) === code);
+  const maxOrGroup = Math.max(0, ...conditions.map((c) => c.orGroup || 0));
+  const catGroupOf = (code: string) => Math.min(...groupRowsOf(code).map((r) => r.c.orGroup ?? maxOrGroup));
+  const catFirstIdx = (code: string) => Math.min(...groupRowsOf(code).map((r) => r.i));
+  const orderedCategoryOptions = !showOpBetweenPanels ? visibleCategoryOptions : [...visibleCategoryOptions].sort((a, b) => {
+    const ra = groupRowsOf(a.code).length > 0, rb = groupRowsOf(b.code).length > 0;
+    if (ra !== rb) return ra ? -1 : 1;
+    if (!ra) return 0;
+    return (catGroupOf(a.code) - catGroupOf(b.code)) || (catFirstIdx(a.code) - catFirstIdx(b.code));
+  });
+  const groupedCats = orderedCategoryOptions.filter((c) => groupRowsOf(c.code).length > 0).map((c) => c.code);
+  const gapOps = groupedCats.map((code, k) => (k > 0 && catGroupOf(code) !== catGroupOf(groupedCats[k - 1]) ? 'or' : 'and'));
+  const setGapOp = (k: number, op: 'and' | 'or') => {
+    const ops = gapOps.slice(); ops[k] = op;
+    const next = conditions.slice();
+    let g = 0;
+    groupedCats.forEach((code, i) => {
+      if (i > 0 && ops[i] === 'or') g++;
+      groupRowsOf(code).forEach((r) => { next[r.i] = { ...next[r.i], orGroup: g }; });
+    });
+    // 全部ANDなら番号は付けない（JSONは従来どおりのフラットなAND）
+    onChange(g === 0 ? next.map((c) => { const { orGroup: _og, ...rest } = c; void _og; return rest; }) : next);
+  };
   const interleaveOpSep = (nodes: ReactNode[]) => {
     if (!showOpBetweenPanels) return nodes;
     const out: ReactNode[] = [];
-    nodes.filter(Boolean).forEach((n, k) => {
+    orderedCategoryOptions.forEach((cat, idx) => {
+      const n = nodes[idx];
+      if (!n) return;
+      const k = groupedCats.indexOf(cat.code);
       if (k > 0) out.push(
-        <div key={'opsep' + k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, margin: '4px 0' }}>
+        <div key={'opsep' + cat.code} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, margin: '4px 0' }}>
           <ButtonGroup
-            options={[{ code: 'and', label: 'AND（全部満たす）' }, { code: 'or', label: 'OR（いずれか満たす）' }]}
-            value={conditionsOp || 'and'}
-            onChange={(v) => onConditionsOpChange!((v || 'and') as 'and' | 'or')}
+            options={[{ code: 'and', label: 'AND（両方満たす）' }, { code: 'or', label: 'OR（どちらか満たす）' }]}
+            value={gapOps[k]}
+            onChange={(v) => setGapOp(k, (v || 'and') as 'and' | 'or')}
             accentColor={colors.accent}
           />
         </div>
@@ -9615,7 +9643,7 @@ function ConditionsHybridEditor({
   const panelsNode = (
     <>
       {/* アクティブなカテゴリごとの詳細設定（値・対象） */}
-      {interleaveOpSep(visibleCategoryOptions.map((cat) => {
+      {interleaveOpSep(orderedCategoryOptions.map((cat) => {
         const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && baseToCategory(c.base) === cat.code);
         if (rows.length === 0) return null;
         // 特徴（含む/完全一致）: 別々の行に分けず、1行に両モードのタグをまとめて表示する

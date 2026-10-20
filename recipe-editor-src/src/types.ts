@@ -5,6 +5,9 @@ export interface ConditionPair {
   base: string; // condition code (cond_xxx)
   value?: string; // 数値 or サブ条件コード
   subject?: string; // 条件対象: '' = アクション対象 / 'self' / 'own' / 'other_own' / 'opp' / 'opp_blocker' 等
+  // 対象の条件を AND/OR で組み合わせるときのグループ番号（同じ番号同士は AND、番号が違えば OR）。
+  // エディタ内部用で、JSONでは filter.or の何番目の選択肢かとして出力する
+  orGroup?: number;
 }
 
 // 「対象」の絞り込み条件＋枚数を1組にしたもの。アセンブリのように「TBかつLv3を1枚、

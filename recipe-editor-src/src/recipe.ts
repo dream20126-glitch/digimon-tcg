@@ -1352,11 +1352,18 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     step.alt_actions_op = b.altActionsOp === 'and' ? 'and' : 'or';
   }
   // === targetFilter → step.filter（対象自身の絞り込み。例:レスト状態のこのデジモン） ===
-  // 対象の条件を OR で結合（targetFilterOp='or'）: 各条件を1つずつの選択肢にする（クイック条件は共通AND）
+  // 対象の条件を AND/OR で組み合わせる（各条件の orGroup: 同じ番号同士はAND、番号が違えばOR）。
+  // レスト/アクティブのクイック条件は常に共通AND。orGroup未設定の条件は最後のグループに入る
   const _tfQuick = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
-  const _tfOrChain = (!(b.targetFilterChain && b.targetFilterChain.length > 1) && b.targetFilterOp === 'or')
-    ? (b.targetFilter || []).filter((p) => p.base && !_tfQuick(p.base)).map((p, i) => ({ conditions: [p], op: i === 0 ? undefined : 'or' as const }))
-    : null;
+  const _tfOrChain = (() => {
+    if (b.targetFilterChain && b.targetFilterChain.length > 1) return null;
+    const nq = (b.targetFilter || []).filter((p) => p.base && !_tfQuick(p.base));
+    if (!nq.some((p) => p.orGroup)) return null;
+    const maxG = Math.max(0, ...nq.map((p) => p.orGroup || 0));
+    const groups = new Map<number, ConditionPair[]>();
+    nq.forEach((p) => { const g = p.orGroup ?? maxG; if (!groups.has(g)) groups.set(g, []); groups.get(g)!.push(p); });
+    return [...groups.keys()].sort((x, y) => x - y).map((g, i) => ({ conditions: groups.get(g)!, op: i === 0 ? undefined : 'or' as const }));
+  })();
   const targetFilterObj = (_tfOrChain && _tfOrChain.length > 1)
     ? buildConditionChainFilter(_tfOrChain, (b.targetFilter || []).filter((p) => _tfQuick(p.base)))
     : buildConditionChainFilter(b.targetFilterChain, b.targetFilter);
@@ -1970,13 +1977,16 @@ function stepObjectToAltAction(step: any): AltAction {
     skipOnPlay: !!step?.skip_on_play,
     negateTargetTrigger: step?.target_trigger === 'on_play' || step?.target_trigger === 'on_evolve' ? step.target_trigger : undefined,
     negateDeny: !!step?.deny,
-    // {or:[...]} の各選択肢が条件1つずつ（＋共通はレスト/アクティブのみ）なら、エディタでは
-    // 「対象の条件を OR で結合」として通常の表示に戻す。それ以外の複雑なORはチェーンのまま
+    // {or:[...]}（共通はレスト/アクティブのみ・同じ条件種別が複数の選択肢にまたがらない）なら、
+    // エディタでは各条件に orGroup（何番目の選択肢か）を付けた通常の表示に戻す（条件の間で AND/OR を選ぶUI）。
+    // それ以外の複雑なORはチェーンのまま
     ...(() => {
       const tf = parseConditionChainFilter(step?.filter);
       const quick = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
-      if (tf.chain && tf.chain.length > 1 && tf.chain.every((e) => e.conditions.length === 1) && tf.pairs.every((p) => quick(p.base))) {
-        return { targetFilter: [...tf.pairs, ...tf.chain.map((e) => e.conditions[0])], targetFilterOp: 'or' as const, targetFilterChain: undefined };
+      if (tf.chain && tf.chain.length > 1 && tf.pairs.every((p) => quick(p.base))) {
+        const seen = new Map<string, number>();
+        const ok = tf.chain.every((e, gi) => e.conditions.every((c) => { const g = seen.get(c.base); if (g !== undefined && g !== gi) return false; seen.set(c.base, gi); return true; }));
+        if (ok) return { targetFilter: [...tf.pairs, ...tf.chain.flatMap((e, gi) => e.conditions.map((c) => ({ ...c, orGroup: gi })))], targetFilterChain: undefined };
       }
       return { targetFilter: tf.pairs, targetFilterChain: tf.chain };
     })(),
@@ -2553,13 +2563,16 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
         options: Array.isArray(inner?.options) ? inner.options.slice() : [],
       };
     })(),
-    // {or:[...]} の各選択肢が条件1つずつ（＋共通はレスト/アクティブのみ）なら、エディタでは
-    // 「対象の条件を OR で結合」として通常の表示に戻す。それ以外の複雑なORはチェーンのまま
+    // {or:[...]}（共通はレスト/アクティブのみ・同じ条件種別が複数の選択肢にまたがらない）なら、
+    // エディタでは各条件に orGroup（何番目の選択肢か）を付けた通常の表示に戻す（条件の間で AND/OR を選ぶUI）。
+    // それ以外の複雑なORはチェーンのまま
     ...(() => {
       const tf = parseConditionChainFilter(step?.filter);
       const quick = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
-      if (tf.chain && tf.chain.length > 1 && tf.chain.every((e) => e.conditions.length === 1) && tf.pairs.every((p) => quick(p.base))) {
-        return { targetFilter: [...tf.pairs, ...tf.chain.map((e) => e.conditions[0])], targetFilterOp: 'or' as const, targetFilterChain: undefined };
+      if (tf.chain && tf.chain.length > 1 && tf.pairs.every((p) => quick(p.base))) {
+        const seen = new Map<string, number>();
+        const ok = tf.chain.every((e, gi) => e.conditions.every((c) => { const g = seen.get(c.base); if (g !== undefined && g !== gi) return false; seen.set(c.base, gi); return true; }));
+        if (ok) return { targetFilter: [...tf.pairs, ...tf.chain.flatMap((e, gi) => e.conditions.map((c) => ({ ...c, orGroup: gi })))], targetFilterChain: undefined };
       }
       return { targetFilter: tf.pairs, targetFilterChain: tf.chain };
     })(),

@@ -1352,7 +1352,14 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     step.alt_actions_op = b.altActionsOp === 'and' ? 'and' : 'or';
   }
   // === targetFilter → step.filter（対象自身の絞り込み。例:レスト状態のこのデジモン） ===
-  const targetFilterObj = buildConditionChainFilter(b.targetFilterChain, b.targetFilter);
+  // 対象の条件を OR で結合（targetFilterOp='or'）: 各条件を1つずつの選択肢にする（クイック条件は共通AND）
+  const _tfQuick = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
+  const _tfOrChain = (!(b.targetFilterChain && b.targetFilterChain.length > 1) && b.targetFilterOp === 'or')
+    ? (b.targetFilter || []).filter((p) => p.base && !_tfQuick(p.base)).map((p, i) => ({ conditions: [p], op: i === 0 ? undefined : 'or' as const }))
+    : null;
+  const targetFilterObj = (_tfOrChain && _tfOrChain.length > 1)
+    ? buildConditionChainFilter(_tfOrChain, (b.targetFilter || []).filter((p) => _tfQuick(p.base)))
+    : buildConditionChainFilter(b.targetFilterChain, b.targetFilter);
   if (targetFilterObj) step.filter = targetFilterObj;
   // === 「コスト上限+/-」を「直前の効果」へ自動適用する ===
   // action:'cost_limit_plus'/'cost_limit_minus' かつ applyCostModToPrev:true のAltActionは、
@@ -1963,8 +1970,16 @@ function stepObjectToAltAction(step: any): AltAction {
     skipOnPlay: !!step?.skip_on_play,
     negateTargetTrigger: step?.target_trigger === 'on_play' || step?.target_trigger === 'on_evolve' ? step.target_trigger : undefined,
     negateDeny: !!step?.deny,
-    targetFilter: parseConditionChainFilter(step?.filter).pairs,
-    targetFilterChain: parseConditionChainFilter(step?.filter).chain,
+    // {or:[...]} の各選択肢が条件1つずつ（＋共通はレスト/アクティブのみ）なら、エディタでは
+    // 「対象の条件を OR で結合」として通常の表示に戻す。それ以外の複雑なORはチェーンのまま
+    ...(() => {
+      const tf = parseConditionChainFilter(step?.filter);
+      const quick = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
+      if (tf.chain && tf.chain.length > 1 && tf.chain.every((e) => e.conditions.length === 1) && tf.pairs.every((p) => quick(p.base))) {
+        return { targetFilter: [...tf.pairs, ...tf.chain.map((e) => e.conditions[0])], targetFilterOp: 'or' as const, targetFilterChain: undefined };
+      }
+      return { targetFilter: tf.pairs, targetFilterChain: tf.chain };
+    })(),
     fromFilter: parseConditionChainFilter(step?.from_filter).pairs,
     fromFilterOp: parseFilterObjectWithOp(step?.from_filter).op,
     fromFilterChain: parseConditionChainFilter(step?.from_filter).chain,
@@ -2538,8 +2553,16 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
         options: Array.isArray(inner?.options) ? inner.options.slice() : [],
       };
     })(),
-    targetFilter: parseConditionChainFilter(step?.filter).pairs,
-    targetFilterChain: parseConditionChainFilter(step?.filter).chain,
+    // {or:[...]} の各選択肢が条件1つずつ（＋共通はレスト/アクティブのみ）なら、エディタでは
+    // 「対象の条件を OR で結合」として通常の表示に戻す。それ以外の複雑なORはチェーンのまま
+    ...(() => {
+      const tf = parseConditionChainFilter(step?.filter);
+      const quick = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
+      if (tf.chain && tf.chain.length > 1 && tf.chain.every((e) => e.conditions.length === 1) && tf.pairs.every((p) => quick(p.base))) {
+        return { targetFilter: [...tf.pairs, ...tf.chain.map((e) => e.conditions[0])], targetFilterOp: 'or' as const, targetFilterChain: undefined };
+      }
+      return { targetFilter: tf.pairs, targetFilterChain: tf.chain };
+    })(),
     fromFilter: parseConditionChainFilter(step?.from_filter).pairs,
     fromFilterOp: parseFilterObjectWithOp(step?.from_filter).op,
     fromFilterChain: parseConditionChainFilter(step?.from_filter).chain,

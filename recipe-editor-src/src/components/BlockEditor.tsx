@@ -3369,6 +3369,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // ため、同様に条件で絞り込めるようにする（例:「トラッシュから特徴〇〇のカード1枚を手札に戻す」）
   // 効果1の対象の条件に OR（〇〇か〇〇）が設定されているか
   const tgtOrMode = !!(block.targetFilterChain && block.targetFilterChain.length > 1);
+  // 対象の条件の数（レスト/アクティブのクイック条件は除く）。2つ以上で AND/OR を選べる
+  const tgtCondCount = (block.targetFilter || []).filter((c) => c.base && c.base !== 'cond_self_rest' && c.base !== 'cond_self_active').length;
   const showTargetFilter =
     curTgt.l1 === 'self' ||
     curTgt.l1 === 'same_target' ||
@@ -7325,12 +7327,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       onChange={(next) => update('targetFilter', next)}
                       dict={dict}
                       title="対象の条件"
-                      hint="（対象カードの絞り込み条件・複数 AND）"
+                      hint={tgtCondCount >= 2 ? '（対象カードの絞り込み条件）' : '（対象カードの絞り込み条件・2つ以上選ぶと AND/OR を選べる）'}
                       theme="action"
                       defaultSubject=""
                       showSubjectSelector={false}
                       supportsMultiValue={true}
                       allowDistinctVariants={true}
+                      // 条件を2つ以上選んだら AND/OR を選べる（レスト/アクティブのチェックは常にAND）
+                      conditionsOp={block.targetFilterOp || 'and'}
+                      onConditionsOpChange={tgtCondCount >= 2 ? ((op) => update('targetFilterOp', op === 'or' ? 'or' : undefined)) : undefined}
                       part="buttons"
                       otherOpen={targetFilterOtherOpen}
                       onOtherOpenChange={setTargetFilterOtherOpen}
@@ -7592,19 +7597,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         onOtherOpenChange={setTargetFilterOtherOpen}
                         targetL2={curTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
                       />
-                      {/* 「〇〇か〇〇」: 今の条件を1つ目の選択肢にして、OR の2つ目を追加する（効果2以降と同じ形になる） */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const isQuickCond = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
-                          onChange({ ...block,
-                            targetFilter: targetFilter.filter((cc) => isQuickCond(cc.base)),
-                            targetFilterChain: [{ conditions: targetFilter.filter((cc) => !isQuickCond(cc.base)) }, { conditions: [], op: 'or' }] });
-                        }}
-                        style={{ marginTop: 6, padding: '2px 8px', border: '1px dashed #b76e00', background: 'white', color: '#b76e00', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
-                      >
-                        + 条件を追加（OR：〇〇か〇〇）
-                      </button>
                     </div>
                   )}
                 </div>

@@ -363,6 +363,9 @@ export interface EffectBlock {
   // フラット形式、複数セグメントなら{or:[...]}形式で出力する（cardMatchesFilterが
   // 再帰的にOR評価・エンジン対応済み）
   targetFilterChain?: ConditionChainEntry[];
+  // 効果1の対象の条件を2つ以上選んだときの結合（AND/OR）。'or' なら各条件を { or: [...] } で出力する
+  // （レスト状態/アクティブ状態のクイック条件は常にAND＝共通条件として扱う）
+  targetFilterOp?: 'and' | 'or';
   // 進化/登場アクション専用。対象＝このカード自身であっても、取得元エリア（手札等）から
   // 選ぶカードの絞り込みは別物（例:「手札の『クロノモン』の記述があるデジモンカード」）
   // なので targetFilter とは別データとして持つ → step.from_filter に serialize

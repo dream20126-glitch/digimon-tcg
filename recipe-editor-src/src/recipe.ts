@@ -1069,7 +1069,9 @@ function applyDesignatedGroupsTo(target: any, entry: KeywordEntry, kwEntry?: Dic
     // 別出力（⚠エンジン未対応・保存のみ）。1セグメントに収束する場合は従来通り
     // designated_common（condition/when/extra_conditions）へ畳み込む
     const { flatPairs: validCommon, chainOut: commonChain } = resolveChainField(entry.commonConditions, entry.commonConditionsChain);
-    const common = buildDesignatedConditionFields(validCommon, entry.commonConditionsOp || 'and');
+    // OR（複数セグメント）のときは designated_common に1つ目の選択肢を書かない
+    // （書くと「1つ目の選択肢 AND …」として全グループに掛かり、2つ目以降の選択肢が選べなくなる）
+    const common = commonChain ? {} : buildDesignatedConditionFields(validCommon, entry.commonConditionsOp || 'and');
     if (Object.keys(common).length > 0) target.designated_common = common;
     if (commonChain) target.designated_common_chain = commonChain;
   }

@@ -911,9 +911,18 @@ function KeywordEntriesEditor({
                     {gi > 0 && (
                       <div style={{ margin: '4px 0' }}>
                         <ButtonGroup
-                          options={[{ code: 'and', label: 'AND（両方必要・別々の候補から複数枚）' }, { code: 'or', label: 'OR（いずれか1枚を選ぶ）' }]}
+                          options={[
+                            { code: 'and', label: 'AND（両方必要・別々の候補から複数枚）' },
+                            { code: 'or', label: 'OR（いずれか1枚を選ぶ）' },
+                            { code: 'any', label: '好きな枚数（1枚以上・デジクロス等）' },
+                          ]}
                           value={g.op || 'and'}
-                          onChange={(v) => updateGroup(gi, { op: (v || 'and') as 'and' | 'or' })}
+                          onChange={(v) => {
+                            const op = (v || 'and') as 'and' | 'or' | 'any';
+                            // 「好きな枚数」は全グループ共通の選び方なので、全ての間をそろえる（外すときもそろえて戻す）
+                            if (op === 'any' || g.op === 'any') setGroups(groupList.map((gg, idx) => (idx === 0 ? gg : { ...gg, op })));
+                            else updateGroup(gi, { op });
+                          }}
                           accentColor={accentBorder}
                         />
                       </div>

@@ -1014,6 +1014,8 @@ function applyDesignatedGroupsTo(target: any, entry: KeywordEntry, kwEntry?: Dic
   if (!kwEntry?.hasNamedParam) return;
   const groups = getDesignatedGroups(entry);
   const isOrGroups = groups.length > 1 && groups.some((g) => g.op === 'or');
+  // 「好きな枚数（1枚以上）」（デジクロス）: designated_groups はAND時と同じ形で、designated_mode:'any' を付ける
+  const isAnyGroups = !isOrGroups && groups.length > 1 && groups.some((g) => g.op === 'any');
   if (isOrGroups) {
     // グループ間に「OR」（例:「Lv4以下のクロノモン、または特徴TS」）が1つでも指定されていれば、
     // 複数カード要求(designated_groups=AND/別々の候補)ではなく、1枚を選ぶ単一designatedとして
@@ -1025,7 +1027,7 @@ function applyDesignatedGroupsTo(target: any, entry: KeywordEntry, kwEntry?: Dic
     const distinctAttrs = Array.from(new Set(groups.flatMap((g) => (g.conditions || [])
       .filter((c) => DISTINCT_MARKER_TO_ATTR[c.base]).map((c) => DISTINCT_MARKER_TO_ATTR[c.base]))));
     const chain: ConditionChainEntry[] = groups.map((g) => ({
-      conditions: (g.conditions || []).filter((c) => !DISTINCT_MARKER_TO_ATTR[c.base]), op: g.op,
+      conditions: (g.conditions || []).filter((c) => !DISTINCT_MARKER_TO_ATTR[c.base]), op: g.op === 'any' ? 'and' : g.op,
     }));
     const { flatPairs, chainOut } = resolveChainField([], chain);
     const commonPairs = (entry.commonConditions || []).filter((c) => c.base);
@@ -1052,6 +1054,7 @@ function applyDesignatedGroupsTo(target: any, entry: KeywordEntry, kwEntry?: Dic
     if (gCount !== undefined) target.count = gCount;
   } else if (groups.length > 1) {
     target.designated_groups = buildDesignatedGroupsFields(groups);
+    if (isAnyGroups) target.designated_mode = 'any';
     // commonConditionsChainが複数セグメントに収束する場合のみdesignated_common_chainとして
     // 別出力（⚠エンジン未対応・保存のみ）。1セグメントに収束する場合は従来通り
     // designated_common（condition/when/extra_conditions）へ畳み込む
@@ -2031,7 +2034,7 @@ function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
     return raw.designated_groups.map((g: any) => {
       const { conds, op, conditionChain } = parseDesignatedFields(g);
       return { conditions: [...conds, ...distinctByToConditions(g?.distinct_by)], conditionsOp: op, conditionChain, count: g?.count };
-    });
+    }).map((g: DesignatedGroup, idx: number) => (idx > 0 && raw?.designated_mode === 'any' ? { ...g, op: 'any' as const } : g));
   }
   if (raw?.designated || raw?.count !== undefined) {
     const { conds, op } = raw?.designated ? parseDesignatedFields(raw.designated) : { conds: [], op: 'and' as const };
@@ -2045,7 +2048,7 @@ function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
 function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): EffectBlock {
   const extras: any = {};
   Object.keys(p || {}).forEach((k) => {
-    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'designated_common' && k !== 'count'
+    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'designated_common' && k !== 'designated_mode' && k !== 'count'
       && k !== 'gate' && k !== 'gate_op' && k !== 'gate_chain') extras[k] = p[k];
   });
   const groups = parseDesignatedGroupsField(p);
@@ -2220,6 +2223,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     designated: true,
     designated_groups: true,
     designated_common: true,
+    designated_mode: true,
     materials: true,
     pick_count: true,
     names: true,

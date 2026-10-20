@@ -29,7 +29,9 @@ export interface DesignatedGroup {
   // 1件でも'or'があれば、このentry全体を単一のdesignated（condition_chainのセグメント配列）
   // として出力する（designated_groups＝複数カード要求とは異なるJSON形状になる）。
   // エンジン対応済み（filterAssemblyCandidatesのcondition_chain評価を流用）
-  op?: 'and' | 'or';
+  // 'any' = 「好きな枚数（1枚以上）」: 各グループから枚数まで、合計1枚以上を自由に選ぶ（デジクロス）。
+  // 1件でも'any'があれば designated_groups ＋ designated_mode:'any' で出力する（⚠エンジン未対応）
+  op?: 'and' | 'or' | 'any';
 }
 
 // アプ合体/ジョグレス進化（app_gattai_evolve/jogress_evolve）専用: 素材候補スロット1つ分。

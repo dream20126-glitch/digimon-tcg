@@ -3,6 +3,10 @@ import type { AltAction, CardLevelSettings, ConditionPair, ConditionChainEntry, 
 import { applyRulesToStep, hasRuleTranslator, rulesFromStep, RULE_OUTPUT_KEYS } from './ruleTranslator';
 
 // 原因コード（バトルで/効果で/バトル以外で/効果以外で）
+// アクションの値の数え方（value_mode。旧 value_up_to:true は「〜まで」）
+const parseValueMode = (s: any): 'all' | 'exact' | 'up_to' | 'until' | undefined =>
+  (s?.value_mode === 'all' || s?.value_mode === 'exact' || s?.value_mode === 'up_to' || s?.value_mode === 'until') ? s.value_mode
+    : s?.value_up_to === true ? 'up_to' : undefined;
 const isCauseCode = (v: unknown): v is 'battle' | 'effect' | 'not_battle' | 'not_effect' =>
   v === 'battle' || v === 'effect' || v === 'not_battle' || v === 'not_effect';
 
@@ -357,7 +361,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   }
   if (Array.isArray(a.options) && a.options.length > 0) out.options = a.options.slice();
   // 効果2以降の効果発動ポップアップの表示テキスト（効果1とは別に、その効果に進むときに出す）
-  if (a.valueUpTo) out.value_up_to = true;
+  if (a.valueMode) out.value_mode = a.valueMode;
   if (a.displaySame) out.display_same = true;
   else if (a.displayText && a.displayText.trim()) out.display_text = a.displayText.trim();
   // 上/下（デッキに戻す位置等・hasDeckPosition用）。'both'（どちらか選んで）はエンジン未対応の
@@ -1458,7 +1462,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // 【カウンター】の印（未チェックなら出力しない＝既存レシピの出力は不変）
   if (b.counter) step.counter = true;
   if (b.perCostCard) step.per_cost_card = true;
-  if (b.valueUpTo) step.value_up_to = true;
+  if (b.valueMode) step.value_mode = b.valueMode;
   // subject='self' はデフォルトなのでJSONに含めない（既存レシピと互換）。
   // トリガーごとに発動主体が異なる場合（groupTriggersByTimingが1stepへ統合した場合）は
   // subject_by_code（{トリガーコード: subject}）を出力する。エンジン側は各トリガーの
@@ -2186,6 +2190,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     counter: true,
     per_cost_card: true,
     value_up_to: true,
+    value_mode: true,
     in_zone: true,
     subject: true,
     subject_by_code: true,
@@ -2301,7 +2306,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     limit: step?.limit || '',
     counter: step?.counter === true ? true : undefined,
     perCostCard: step?.per_cost_card === true ? true : undefined,
-    valueUpTo: step?.value_up_to === true ? true : undefined,
+    valueMode: parseValueMode(step),
     triggerConditions,
     triggerConditionsOp: step?.trigger_conditions_op === 'or' ? 'or' : 'and',
     triggerConditionsChain: parseConditionChainStrings(step?.trigger_conditions_chain),
@@ -2459,7 +2464,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             action: a?.action || '',
             displayText: a?.display_text ? String(a.display_text) : undefined,
             displaySame: a?.display_same ? true : undefined,
-            valueUpTo: a?.value_up_to === true ? true : undefined,
+            valueMode: parseValueMode(a),
             keyword: String(a?.keyword || '').includes(',') ? '' : (a?.keyword || ''),
             keywordEntries: String(a?.keyword || '').includes(',')
               ? String(a.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))

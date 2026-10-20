@@ -6250,17 +6250,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     }}
                     placeholder={effectAction === 'summon_token' ? 'トークンのカードNo (例: TK-01)' : '数値 (例: 1000)'}
                   />
-                  {/* 「●枚まで」: 値を上限にする（0枚〜値の枚数を選べる） */}
-                  {typeof effectValue === 'number' && (
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 12, cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={!!(isEditingAlt ? editingAlt!.valueUpTo : block.valueUpTo)}
-                        onChange={(e) => updateEffect({ valueUpTo: e.target.checked || undefined })}
-                      />
-                      {effectValue}まで（●枚まで）
-                    </label>
-                  )}
+                  {/* 値の数え方（対象数と同じボタン）: 指定なし / 全て / 完全一致 / 〜まで / 〜なるまで */}
+                  <div style={{ marginTop: 4 }}>
+                    <ButtonGroup
+                      options={[{ code: '', label: '指定なし' }, { code: 'all', label: '全て' }, { code: 'exact', label: '完全一致' }, { code: 'up_to', label: '〜まで' }, { code: 'until', label: '〜なるまで' }]}
+                      value={(isEditingAlt ? editingAlt!.valueMode : block.valueMode) || ''}
+                      onChange={(v) => updateEffect({ valueMode: (v || undefined) as 'all' | 'exact' | 'up_to' | 'until' | undefined })}
+                      accentColor="#1976d2"
+                    />
+                  </div>
                 </div>
               )}
               {isEditingAlt && COST_LIMIT_MOD_ACTIONS.has(effectAction) && (

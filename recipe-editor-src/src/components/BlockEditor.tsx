@@ -7315,27 +7315,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         );
                       })}
                     </div>
-                    {tgtOrMode ? (() => {
-                      const isQuickCond = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
-                      const quickConds = targetFilter.filter((cc) => isQuickCond(cc.base));
-                      return (
-                        <ConditionChainField
-                          chain={block.targetFilterChain}
-                          legacyPairs={[]}
-                          onChainChange={(next) => {
-                            // ORが1つだけに戻ったら通常の（左右分割の）表示に戻す
-                            if (next.length <= 1) onChange({ ...block, targetFilterChain: undefined, targetFilter: [...targetFilter, ...((next[0] && next[0].conditions) || [])] });
-                            else onChange({ ...block, targetFilterChain: next, targetFilter: targetFilter });
-                          }}
-                          dict={dict}
-                          titleBase="対象の条件"
-                          theme="action"
-                          extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, targetL2: curTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
-                          commonConditions={targetFilter.filter((cc) => !isQuickCond(cc.base))}
-                          onCommonConditionsChange={(next) => update('targetFilter', [...quickConds, ...next])}
-                        />
-                      );
-                    })() : (
+                    {tgtOrMode ? (
+                      <div style={{ fontSize: 11, color: '#b76e00', fontWeight: 'bold' }}>
+                        🎯 対象の条件：OR（〇〇か〇〇）設定中 → 右側で編集
+                      </div>
+                    ) : (
                     <ConditionsHybridEditor
                       conditions={targetFilter}
                       onChange={(next) => update('targetFilter', next)}
@@ -7564,6 +7548,31 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         onChange={(v) => setEffectFace(v as 'face_down' | 'face_up')}
                         accentColor="#b76e00"
                       />
+                    </div>
+                  )}
+                  {showTargetFilter && tgtOrMode && (
+                    <div style={{ marginTop: hideCount ? 0 : 8, border: '1px solid #b2dfdb', borderRadius: 4, background: '#e0f7f5', padding: 8 }}>
+                      {(() => {
+                      const isQuickCond = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
+                      const quickConds = targetFilter.filter((cc) => isQuickCond(cc.base));
+                      return (
+                        <ConditionChainField
+                          chain={block.targetFilterChain}
+                          legacyPairs={[]}
+                          onChainChange={(next) => {
+                            // ORが1つだけに戻ったら通常の（左右分割の）表示に戻す
+                            if (next.length <= 1) onChange({ ...block, targetFilterChain: undefined, targetFilter: [...targetFilter, ...((next[0] && next[0].conditions) || [])] });
+                            else onChange({ ...block, targetFilterChain: next, targetFilter: targetFilter });
+                          }}
+                          dict={dict}
+                          titleBase="対象の条件"
+                          theme="action"
+                          extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, targetL2: curTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
+                          commonConditions={targetFilter.filter((cc) => !isQuickCond(cc.base))}
+                          onCommonConditionsChange={(next) => update('targetFilter', [...quickConds, ...next])}
+                        />
+                      );
+                    })()}
                     </div>
                   )}
                   {showTargetFilter && !tgtOrMode && (

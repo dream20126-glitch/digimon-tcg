@@ -13625,6 +13625,14 @@ function runWithAltActions(step, ctx, store, callback) {
           aRun = Object.assign({}, aRun, { target: step.target });
           if (step.filter && !aRun.filter) aRun.filter = step.filter;
         }
+        // 効果2以降に表示テキストがあれば、その効果に進むときに効果発動ポップアップで出す（効果1とは別の文章。
+        // エディタの効果2以降の「効果発動ポップアップの表示テキスト」）。「〜なら」を満たさないときは出さない
+        if (aRun && typeof aRun.display_text === 'string' && aRun.display_text.trim() && !aRun.no_announce
+            && !(aRun.condition && !checkConditions(parseRecipeCondition(aRun.condition), ctx.card, ctx.bs, ctx.side))) {
+          const _evoSrcA = (ctx._sourceCard && ctx._sourceCard !== ctx.card) ? ctx._sourceCard : undefined;
+          showEffectAnnounce(ctx.card, aRun.display_text.trim(), ctx.side, () => executeRecipeStep(aRun, ctx, store, () => nextAlt()), _evoSrcA);
+          return;
+        }
         executeRecipeStep(aRun, ctx, store, () => nextAlt());
       }
       nextAlt();

@@ -5349,7 +5349,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           {block.trigger !== 'alt_evolve' && block.trigger !== BURST_EVOLVE_TRIGGER && !FUSION_EVOLVE_TRIGGERS.has(block.trigger) && (
             <div className="field" style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <label>💬 効果発動ポップアップの表示テキスト（空欄なら効果テキストから自動抽出）</label>
+                <label>💬 効果発動ポップアップの表示テキスト{isEditingAlt ? '（効果' + (editingEffect + 1) + '：この効果に進むときに表示。空欄なら表示しない）' : '（空欄なら効果テキストから自動抽出）'}</label>
                 {!block.optional && (
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, color: '#666' }}>
                     <input
@@ -5363,8 +5363,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               </div>
               {!block.noAnnounce && (
                 <textarea
-                  value={block.displayText || ''}
-                  onChange={(e) => update('displayText', e.target.value)}
+                  // 効果2以降を編集中ならその効果の表示テキスト（効果1とは別に持つ）
+                  value={(isEditingAlt ? editingAlt!.displayText : block.displayText) || ''}
+                  onChange={(e) => { if (isEditingAlt) updateEffect({ displayText: e.target.value }); else update('displayText', e.target.value); }}
                   rows={2}
                   placeholder="例: このデジモンは、進化元を持たない相手のデジモンにはブロックされない。"
                 />

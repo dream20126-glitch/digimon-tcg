@@ -431,6 +431,8 @@ export interface GrantedStep {
 // 代替アクション（メインアクションと OR / AND で結合される簡易 step）
 export interface AltAction {
   action: string;
+  // 効果2以降の効果発動ポップアップの表示テキスト（その効果に進むときに出す）。JSONでは step.display_text
+  displayText?: string;
   value?: number | string;
   target?: string;
   // EffectBlock.extraTargetsと同じ（対象1に加えて自由に追加できる2体目以降の当事者）

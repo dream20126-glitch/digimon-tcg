@@ -7026,7 +7026,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             dict={dict}
                             titleBase="対象の条件"
                             theme="action"
-                            extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, targetL2: eCurTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
+                            extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, showTypeInTargetFilter: commonActionHasFromZones, targetL2: eCurTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
                             commonConditions={effectTargetFilter.filter((cc) => !isQuickCond(cc.base))}
                             onCommonConditionsChange={(next) => updateEffect({ targetFilter: [...quickConds, ...next] })}
                           />
@@ -7441,6 +7441,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       showSubjectSelector={false}
                       supportsMultiValue={true}
                       allowDistinctVariants={true}
+                      // 手札/トラッシュ等から選ぶアクション（手札に戻す等）は「デジモンカード」等の種別も条件にできる
+                      showTypeInTargetFilter={actionHasFromZones}
                       // 条件を2つ以上選んだら AND/OR を選べる（レスト/アクティブのチェックは常にAND）
                       onConditionsOpChange={() => {}}
                       part="buttons"
@@ -7700,6 +7702,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         showSubjectSelector={false}
                         supportsMultiValue={true}
                         part="panels"
+                        showTypeInTargetFilter={actionHasFromZones}
                         onConditionsOpChange={tgtCondCount >= 2 ? (() => {}) : undefined}
                         otherOpen={targetFilterOtherOpen}
                         onOtherOpenChange={setTargetFilterOtherOpen}

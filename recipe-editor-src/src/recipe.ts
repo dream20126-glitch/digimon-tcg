@@ -1921,7 +1921,7 @@ function stepObjectToAltAction(step: any): AltAction {
     keywordCount: _altSingleGroup ? _altSingleGroup.count : undefined,
     keywordParamConditions: _altSingleGroup && _altSingleGroup.conditions.length > 0 ? _altSingleGroup.conditions : undefined,
     keywordParamConditionsOp: _altSingleGroup && _altSingleGroup.conditions.length > 0 ? _altSingleGroup.conditionsOp : undefined,
-    keywordDesignatedGroups: _altDesignatedGroups.length > 1 ? _altDesignatedGroups : undefined,
+    keywordDesignatedGroups: (_altDesignatedGroups.length > 1 || (_altDesignatedGroups.length === 1 && !!_altDesignatedGroups[0].conditionChain)) ? _altDesignatedGroups : undefined /* 1組でもOR選択肢(conditionChain)があればグループとして保持 */,
     keywordCommonConditions: _altCommonPairs && _altCommonPairs.conds.length > 0 ? _altCommonPairs.conds : undefined,
     keywordCommonConditionsOp: _altCommonPairs && _altCommonPairs.conds.length > 0 ? _altCommonPairs.op : undefined,
     grantedStep: (() => {
@@ -2033,11 +2033,16 @@ function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
     const commonConds = parseDesignatedFields(raw.designated).conds;
     // OR経路のdistinct_by（全グループ共通の「異なる」指定）は先頭グループのプレースホルダーとして戻す
     const distinctConds = distinctByToConditions(raw.designated.distinct_by);
-    return chain.map((entry, idx) => ({
-      conditions: idx === 0 ? [...commonConds, ...entry.conditions, ...distinctConds] : entry.conditions,
-      op: entry.op,
-      count: idx === 0 ? raw?.count : undefined,
-    }));
+    // 1つの対象として復元する: designated 直下の条件（Lv.4以下 等）は「共通条件」、
+    // condition_chain の各セグメントはその対象の中の OR 選択肢（エディタの対象欄と同じ見た目）。
+    // 以前は各セグメントを別グループにして共通条件を先頭グループへ混ぜていたため、
+    // 開き直すと「共通条件」に1つ目の選択肢まで入って見え、保存し直すと共通条件が
+    // 1つ目の選択肢だけに掛かるレシピに変わってしまっていた
+    return [{
+      conditions: [...commonConds, ...distinctConds],
+      conditionChain: chain,
+      count: raw?.count,
+    }];
   }
   if (Array.isArray(raw?.designated_groups) && raw.designated_groups.length > 0) {
     return raw.designated_groups.map((g: any) => {
@@ -2075,7 +2080,7 @@ function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): Effect
     keywordParamConditions: single && single.conditions.length > 0 ? single.conditions : undefined,
     keywordParamConditionsOp: single && single.conditions.length > 0 ? single.conditionsOp : undefined,
     keywordCount: single ? single.count : undefined,
-    keywordDesignatedGroups: groups.length > 1 ? groups : undefined,
+    keywordDesignatedGroups: (groups.length > 1 || (groups.length === 1 && !!groups[0].conditionChain)) ? groups : undefined /* 1組でもOR選択肢(conditionChain)があればグループとして保持 */,
     keywordCommonConditions: commonPairs && commonPairs.conds.length > 0 ? commonPairs.conds : undefined,
     keywordCommonConditionsOp: commonPairs && commonPairs.conds.length > 0 ? commonPairs.op : undefined,
     passiveGate: passiveGate.length > 0 ? passiveGate : undefined,
@@ -2361,7 +2366,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     keywordCount: _stepSingleGroup ? _stepSingleGroup.count : _stepCount,
     keywordParamConditions: _stepSingleGroup && _stepSingleGroup.conditions.length > 0 ? _stepSingleGroup.conditions : undefined,
     keywordParamConditionsOp: _stepSingleGroup && _stepSingleGroup.conditions.length > 0 ? _stepSingleGroup.conditionsOp : undefined,
-    keywordDesignatedGroups: _stepDesignatedGroups.length > 1 ? _stepDesignatedGroups : undefined,
+    keywordDesignatedGroups: (_stepDesignatedGroups.length > 1 || (_stepDesignatedGroups.length === 1 && !!_stepDesignatedGroups[0].conditionChain)) ? _stepDesignatedGroups : undefined /* 1組でもOR選択肢(conditionChain)があればグループとして保持 */,
     keywordCommonConditions: _stepCommonPairs && _stepCommonPairs.conds.length > 0 ? _stepCommonPairs.conds : undefined,
     keywordCommonConditionsOp: _stepCommonPairs && _stepCommonPairs.conds.length > 0 ? _stepCommonPairs.op : undefined,
     revertAtTurnEnd: !!step?.revert_at_turn_end,
@@ -2474,7 +2479,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             keywordCount: _aaSingleGroup ? _aaSingleGroup.count : undefined,
             keywordParamConditions: _aaSingleGroup && _aaSingleGroup.conditions.length > 0 ? _aaSingleGroup.conditions : undefined,
             keywordParamConditionsOp: _aaSingleGroup && _aaSingleGroup.conditions.length > 0 ? _aaSingleGroup.conditionsOp : undefined,
-            keywordDesignatedGroups: _aaDesignatedGroups.length > 1 ? _aaDesignatedGroups : undefined,
+            keywordDesignatedGroups: (_aaDesignatedGroups.length > 1 || (_aaDesignatedGroups.length === 1 && !!_aaDesignatedGroups[0].conditionChain)) ? _aaDesignatedGroups : undefined /* 1組でもOR選択肢(conditionChain)があればグループとして保持 */,
             keywordCommonConditions: _aaCommonPairs && _aaCommonPairs.conds.length > 0 ? _aaCommonPairs.conds : undefined,
             keywordCommonConditionsOp: _aaCommonPairs && _aaCommonPairs.conds.length > 0 ? _aaCommonPairs.op : undefined,
             grantedStep: (() => {

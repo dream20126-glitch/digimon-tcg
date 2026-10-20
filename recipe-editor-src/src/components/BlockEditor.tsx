@@ -858,6 +858,25 @@ function KeywordEntriesEditor({
             options={toOpts(dict.keywords)}
             allowFreeText
           />
+          {/* 数値はキーワード名のすぐ下（対象の絞り込み欄の下だと見落とすため） */}
+          {!(primaryValueElsewhere && i === 0) && (tplAnalysis.usesValue || !!dict.keywords.find((k) => k.code === entry.keyword)?.hasNamedParam) && (
+            <div style={{ marginTop: 6 }}>
+              <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
+                数値（【セキュリティアタック+2】の 2、アセンブリ-N／デジクロス-N の N 等。数値がある場合のみ）
+                {!tplAnalysis.hasTemplate && <span style={{ color: '#999' }}>（テンプレート未登録のため念のため表示）</span>}
+              </label>
+              <input
+                type="number"
+                value={entry.value === undefined ? '' : String(entry.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  updateEntry(i, { value: v === '' ? undefined : Number(v) });
+                }}
+                placeholder="例: 2"
+                style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
+              />
+            </div>
+          )}
           {!!dict.keywords.find((k) => k.code === entry.keyword)?.hasNamedParam && (() => {
             const groups = getDesignatedGroups(entry);
             const groupList: DesignatedGroup[] = groups.length > 0 ? groups : [{ conditions: [], conditionsOp: 'and' }];
@@ -1009,24 +1028,6 @@ function KeywordEntriesEditor({
               </div>
             );
           })()}
-          {!(primaryValueElsewhere && i === 0) && tplAnalysis.usesValue && (
-            <div style={{ marginTop: 6 }}>
-              <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
-                数値（【セキュリティアタック+2】等の数値がある場合のみ）
-                {!tplAnalysis.hasTemplate && <span style={{ color: '#999' }}>（テンプレート未登録のため念のため表示）</span>}
-              </label>
-              <input
-                type="number"
-                value={entry.value === undefined ? '' : String(entry.value)}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  updateEntry(i, { value: v === '' ? undefined : Number(v) });
-                }}
-                placeholder="例: 2"
-                style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 120 }}
-              />
-            </div>
-          )}
           {/* 対象の絞り込み（hasNamedParam）を持たないキーワードのための枚数欄。
               テンプレート側のcostにcount未指定の項目があれば、そこへ自動で差し込まれる
               （例: 【フラグメント《3》】→コスト「進化元を選んで破棄」のcountに3が入る）。

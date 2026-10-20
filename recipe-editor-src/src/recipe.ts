@@ -941,6 +941,7 @@ export function getKeywordEntries(b: {
   keywordDesignatedGroups?: DesignatedGroup[];
   keywordCommonConditions?: ConditionPair[];
   keywordCommonConditionsOp?: 'and' | 'or';
+  keywordCommonConditionsChain?: ConditionChainEntry[];
   keywordEntries?: KeywordEntry[];
 }): KeywordEntry[] {
   if (Array.isArray(b.keywordEntries) && b.keywordEntries.length > 0) return b.keywordEntries;
@@ -954,6 +955,7 @@ export function getKeywordEntries(b: {
       designatedGroups: b.keywordDesignatedGroups,
       commonConditions: b.keywordCommonConditions,
       commonConditionsOp: b.keywordCommonConditionsOp,
+      commonConditionsChain: b.keywordCommonConditionsChain,
     }];
   }
   return [];
@@ -1006,10 +1008,13 @@ function buildDesignatedGroupsFields(groups: DesignatedGroup[]): Array<{
       .map((c) => DISTINCT_MARKER_TO_ATTR[c.base]);
     // 実際に2セグメント以上のOR連結を組んだ場合だけチェーン経路を使う。チェーン未使用の
     // 既存データ（conditionsOpによる単純AND/OR）は従来通りの出力のまま維持する
-    const hasRealChain = Array.isArray(g.conditionChain)
-      && buildConditionChainSegments(g.conditionChain).map((seg) => seg.filter((p) => p.base)).filter((seg) => seg.length > 0).length > 1;
-    const fields = hasRealChain
-      ? resolveCommonPlusChainTriple(realConds, g.conditionChain)
+    // 条件欄（conditionChain）に入れた条件は、ORが無い（1つだけ）でも共通条件と合わせて出力する。
+    // 以前は2つ以上のときだけ見ていたため、各グループに「Lv完全一致5」等を1つだけ入れると保存で消えていた
+    const chainSegCount = Array.isArray(g.conditionChain)
+      ? buildConditionChainSegments(g.conditionChain).map((seg) => seg.filter((p) => p.base && !DISTINCT_MARKER_TO_ATTR[p.base])).filter((seg) => seg.length > 0).length
+      : 0;
+    const fields = chainSegCount > 0
+      ? resolveCommonPlusChainTriple(realConds, (g.conditionChain || []).map((e) => ({ ...e, conditions: (e.conditions || []).filter((p) => !DISTINCT_MARKER_TO_ATTR[p.base]) })))
       : buildDesignatedConditionFields(realConds, g.conditionsOp || 'and');
     const out: any = { ...fields };
     if (g.count !== undefined && g.count !== '' && g.count !== null) {
@@ -1922,7 +1927,8 @@ function stepObjectToAltAction(step: any): AltAction {
   const _isAltGrantKeyword = step?.action === 'grant_keyword' || step?.action === 'grant_keyword_to';
   const _altDesignatedGroups = _isAltGrantKeyword ? parseDesignatedGroupsField(step) : [];
   const _altSingleGroup = _altDesignatedGroups.length === 1 ? _altDesignatedGroups[0] : undefined;
-  const _altCommonPairs = _isAltGrantKeyword && _altDesignatedGroups.length > 1 && step?.designated_common
+  const _altCommonChain = _isAltGrantKeyword && _altDesignatedGroups.length > 1 ? parseConditionChainStrings(step?.designated_common_chain) : undefined;
+  const _altCommonPairs = _isAltGrantKeyword && _altDesignatedGroups.length > 1 && !_altCommonChain && step?.designated_common
     ? parseDesignatedFields(step.designated_common)
     : undefined;
   return {
@@ -1941,6 +1947,7 @@ function stepObjectToAltAction(step: any): AltAction {
     keywordParamConditionsOp: _altSingleGroup && _altSingleGroup.conditions.length > 0 ? _altSingleGroup.conditionsOp : undefined,
     keywordDesignatedGroups: (_altDesignatedGroups.length > 1 || (_altDesignatedGroups.length === 1 && !!_altDesignatedGroups[0].conditionChain)) ? _altDesignatedGroups : undefined /* 1組でもOR選択肢(conditionChain)があればグループとして保持 */,
     keywordCommonConditions: _altCommonPairs && _altCommonPairs.conds.length > 0 ? _altCommonPairs.conds : undefined,
+    keywordCommonConditionsChain: _altCommonChain,
     keywordCommonConditionsOp: _altCommonPairs && _altCommonPairs.conds.length > 0 ? _altCommonPairs.op : undefined,
     grantedStep: (() => {
       const gr = step?.granted_recipe;
@@ -2083,12 +2090,13 @@ function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
 function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): EffectBlock {
   const extras: any = {};
   Object.keys(p || {}).forEach((k) => {
-    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'designated_common' && k !== 'designated_mode' && k !== 'count'
+    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'designated_common' && k !== 'designated_common_chain' && k !== 'designated_mode' && k !== 'count'
       && k !== 'gate' && k !== 'gate_op' && k !== 'gate_chain') extras[k] = p[k];
   });
   const groups = parseDesignatedGroupsField(p);
   const single = groups.length === 1 ? groups[0] : undefined;
-  const commonPairs = groups.length > 1 && p?.designated_common ? parseDesignatedFields(p.designated_common) : undefined;
+  const commonChain = groups.length > 1 ? parseConditionChainStrings(p?.designated_common_chain) : undefined;
+  const commonPairs = groups.length > 1 && p?.designated_common && !commonChain ? parseDesignatedFields(p.designated_common) : undefined;
   // 条件（〜の間）復元: trigger_conditionsと同じ「文字列配列(AND) + 任意でchain」の形
   const passiveGate: ConditionPair[] = [];
   if (Array.isArray(p?.gate)) p.gate.forEach((s: string) => passiveGate.push(stringToPair(String(s))));
@@ -2104,6 +2112,7 @@ function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): Effect
     keywordDesignatedGroups: (groups.length > 1 || (groups.length === 1 && !!groups[0].conditionChain)) ? groups : undefined /* 1組でもOR選択肢(conditionChain)があればグループとして保持 */,
     keywordCommonConditions: commonPairs && commonPairs.conds.length > 0 ? commonPairs.conds : undefined,
     keywordCommonConditionsOp: commonPairs && commonPairs.conds.length > 0 ? commonPairs.op : undefined,
+    keywordCommonConditionsChain: commonChain,
     passiveGate: passiveGate.length > 0 ? passiveGate : undefined,
     passiveGateOp: p?.gate_op === 'or' ? 'or' : 'and',
     passiveGateChain: parseConditionChainStrings(p?.gate_chain),
@@ -2261,6 +2270,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     designated: true,
     designated_groups: true,
     designated_common: true,
+    designated_common_chain: true,
     designated_mode: true,
     materials: true,
     pick_count: true,
@@ -2289,7 +2299,8 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
   if (_restoredRules) _restoredRules.keys.forEach((k) => { delete extras[k]; });
   const _stepDesignatedGroups = _isGrantKeywordStep ? parseDesignatedGroupsField(step) : [];
   const _stepSingleGroup = _stepDesignatedGroups.length === 1 ? _stepDesignatedGroups[0] : undefined;
-  const _stepCommonPairs = _isGrantKeywordStep && _stepDesignatedGroups.length > 1 && step?.designated_common
+  const _stepCommonChain = _isGrantKeywordStep && _stepDesignatedGroups.length > 1 ? parseConditionChainStrings(step?.designated_common_chain) : undefined;
+  const _stepCommonPairs = _isGrantKeywordStep && _stepDesignatedGroups.length > 1 && !_stepCommonChain && step?.designated_common
     ? parseDesignatedFields(step.designated_common)
     : undefined;
   // 条件復元
@@ -2394,6 +2405,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     keywordParamConditionsOp: _stepSingleGroup && _stepSingleGroup.conditions.length > 0 ? _stepSingleGroup.conditionsOp : undefined,
     keywordDesignatedGroups: (_stepDesignatedGroups.length > 1 || (_stepDesignatedGroups.length === 1 && !!_stepDesignatedGroups[0].conditionChain)) ? _stepDesignatedGroups : undefined /* 1組でもOR選択肢(conditionChain)があればグループとして保持 */,
     keywordCommonConditions: _stepCommonPairs && _stepCommonPairs.conds.length > 0 ? _stepCommonPairs.conds : undefined,
+    keywordCommonConditionsChain: _stepCommonChain,
     keywordCommonConditionsOp: _stepCommonPairs && _stepCommonPairs.conds.length > 0 ? _stepCommonPairs.op : undefined,
     revertAtTurnEnd: !!step?.revert_at_turn_end,
     immuneCardType: step?.source_type === 'digimon' ? 'digimon' : step?.source_type === 'option' ? 'option' : undefined,
@@ -2490,7 +2502,8 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
           const _isAAGrantKeyword = a?.action === 'grant_keyword' || a?.action === 'grant_keyword_to';
           const _aaDesignatedGroups = _isAAGrantKeyword ? parseDesignatedGroupsField(a) : [];
           const _aaSingleGroup = _aaDesignatedGroups.length === 1 ? _aaDesignatedGroups[0] : undefined;
-          const _aaCommonPairs = _isAAGrantKeyword && _aaDesignatedGroups.length > 1 && a?.designated_common
+          const _aaCommonChain = _isAAGrantKeyword && _aaDesignatedGroups.length > 1 ? parseConditionChainStrings(a?.designated_common_chain) : undefined;
+          const _aaCommonPairs = _isAAGrantKeyword && _aaDesignatedGroups.length > 1 && !_aaCommonChain && a?.designated_common
             ? parseDesignatedFields(a.designated_common)
             : undefined;
           return {
@@ -2507,6 +2520,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             keywordParamConditionsOp: _aaSingleGroup && _aaSingleGroup.conditions.length > 0 ? _aaSingleGroup.conditionsOp : undefined,
             keywordDesignatedGroups: (_aaDesignatedGroups.length > 1 || (_aaDesignatedGroups.length === 1 && !!_aaDesignatedGroups[0].conditionChain)) ? _aaDesignatedGroups : undefined /* 1組でもOR選択肢(conditionChain)があればグループとして保持 */,
             keywordCommonConditions: _aaCommonPairs && _aaCommonPairs.conds.length > 0 ? _aaCommonPairs.conds : undefined,
+            keywordCommonConditionsChain: _aaCommonChain,
             keywordCommonConditionsOp: _aaCommonPairs && _aaCommonPairs.conds.length > 0 ? _aaCommonPairs.op : undefined,
             grantedStep: (() => {
               const gr = a?.granted_recipe;

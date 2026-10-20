@@ -472,6 +472,8 @@ export interface AltAction {
   keywordDesignatedGroups?: DesignatedGroup[];
   keywordCommonConditions?: ConditionPair[];
   keywordCommonConditionsOp?: 'and' | 'or';
+  // 共通の絞り込み条件のOR設定（EffectBlock.keywordCommonConditionsChain と同じ）
+  keywordCommonConditionsChain?: ConditionChainEntry[];
   keywordEntries?: KeywordEntry[];
   grantedStep?: GrantedStep;
   // 発動可否のみを判定する条件（対象選択のフィルタには使わない・複数指定でAND）。

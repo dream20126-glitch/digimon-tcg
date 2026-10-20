@@ -2743,6 +2743,8 @@ const TARGET_SEL_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   target_other_own_card: { l1: 'other_own', l2: 'card' },
   target_other_own_tamer: { l1: 'other_own', l2: 'tamer' },
   both: { l1: 'both', l2: 'digimon' },
+  // 「他のデジモン（自分/相手どちらでも。このデジモン以外）」。両方+デジモンの「このカードを含めない」チェックで選ぶ
+  both_other: { l1: 'both', l2: 'digimon' },
   both_card: { l1: 'both', l2: 'card' },
   both_tamer: { l1: 'both', l2: 'tamer' },
   same_target: { l1: 'same_target', l2: '' },
@@ -6521,6 +6523,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         />
                       </div>
                     )}
+                    {etCurL1L2.l1 === 'both' && etCurL1L2.l2 === 'digimon' && (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 11, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={etBase === 'both_other'}
+                          onChange={(e) => updateExtraTarget(idx, { target: (e.target.checked ? 'both_other' : 'both') + etSuffix })}
+                        />
+                        このカードを含めない（このデジモン以外の、自分/相手どちらでもいいデジモン）
+                      </label>
+                    )}
                     {!etHideCount && (
                       <div style={{ marginTop: 4 }}>
                         <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🎯 対象数</div>
@@ -7186,6 +7198,17 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   <div style={{ marginTop: 4 }}>
                     <ButtonGroup options={tgtL2Options} value={curTgt.l2} onChange={handleTgtL2} accentColor="#b76e00" />
                   </div>
+                )}
+                {/* 自分+相手（両方）のデジモン: 「このカードを含めない」で「他のデジモン（自分/相手どちらでも）」（both_other）にする */}
+                {curTgt.l1 === 'both' && curTgt.l2 === 'digimon' && !tamerChecked && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 11, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={tgtBase === 'both_other'}
+                      onChange={(e) => setTarget(e.target.checked ? 'both_other' : 'both', tgtSuffix)}
+                    />
+                    このカードを含めない（このデジモン以外の、自分/相手どちらでもいいデジモン）
+                  </label>
                 )}
                 {/* デジモン対象、「このカード」対象、または「そのデジモン」対象:
                     「進化元」（スタックのみ）/「重ねられているカード」（スタック＋本体）を

@@ -3196,7 +3196,7 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
 const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));
 // 置き場所ボタンの表示名
 const PLACE_DEST_LABEL: Record<string, string> = {
-  security: 'セキュリティ', tamer: 'テイマーの下', evo_source: 'デジモンの下（進化元）', self: 'このカードの下', battle_area: 'バトルエリア',
+  security: 'セキュリティ', tamer: 'テイマーの下', evo_source: '進化元（デジモンの下）', self: 'このカードの下', battle_area: 'バトルエリア',
 };
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
@@ -3699,6 +3699,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // action が自動で place_on_security_top になる）
   function remapPlaceActionForTarget(newTargetBase: string): string | undefined {
     if (!effectIsPlaceActive || !newTargetBase) return undefined;
+    // バトルエリア（このカード自身を置く）は対象で置き場所が変わらない
+    if (effectAction === 'place_in_battle_area') return undefined;
     const l1l2 = TARGET_SEL_CODE_TO_L1L2[newTargetBase] || { l1: '', l2: '' };
     const zone = PLACE_ZONE_MAP.find((z) => {
       const zl = TARGET_SEL_CODE_TO_L1L2[z.target || ''] || { l1: '', l2: '' };
@@ -5920,12 +5922,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   <div style={{ marginTop: 4 }}>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 置き場所（〇〇に置く の〇〇）</div>
                     <ButtonGroup
-                      options={PLACE_ZONE_MAP.map((z) => ({ code: z.action, label: PLACE_DEST_LABEL[z.code] || z.label }))}
-                      value={effectAction || ''}
+                      // 「このカードの下」は「デジモンの下（進化元）」＋対象「このカード」として扱う（内部コードは place_under_self のまま）
+                      options={PLACE_ZONE_MAP.filter((z) => z.code !== 'self').map((z) => ({ code: z.action, label: PLACE_DEST_LABEL[z.code] || z.label }))}
+                      value={effectAction === 'place_under_self' ? 'place_under_digimon' : (effectAction || '')}
                       onChange={(act) => {
                         const z = PLACE_ZONE_MAP.find((zz) => zz.action === act);
-                        if (!z || act === effectAction) return;
+                        if (!z || act === effectAction || (act === 'place_under_digimon' && effectAction === 'place_under_self')) return;
                         const curBase = (effectTarget || '').split(':')[0];
+                        if (act === 'place_under_digimon' && curBase === 'self_card') { updateEffect({ action: 'place_under_self' }); return; }
                         const curSuffix = (effectTarget || '').substring(curBase.length);
                         const curL2 = (TARGET_SEL_CODE_TO_L1L2[curBase] || { l2: '' }).l2;
                         const zL1L2 = TARGET_SEL_CODE_TO_L1L2[z.target || ''] || { l1: '', l2: '' };

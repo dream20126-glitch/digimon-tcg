@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup, RuleActionKind, ConditionChainEntry, FusionMaterialSlot, ExtraTarget } from '../types';
 import {
   SECTIONS,
@@ -7327,7 +7328,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       onChange={(next) => update('targetFilter', next)}
                       dict={dict}
                       title="対象の条件"
-                      hint={tgtCondCount >= 2 ? '（対象カードの絞り込み条件）' : '（対象カードの絞り込み条件・2つ以上選ぶと AND/OR を選べる）'}
+                      hint="（対象カードの絞り込み条件・2つ以上選ぶと右側で AND/OR を選べる）"
                       theme="action"
                       defaultSubject=""
                       showSubjectSelector={false}
@@ -7335,7 +7336,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       allowDistinctVariants={true}
                       // 条件を2つ以上選んだら AND/OR を選べる（レスト/アクティブのチェックは常にAND）
                       conditionsOp={block.targetFilterOp || 'and'}
-                      onConditionsOpChange={tgtCondCount >= 2 ? ((op) => update('targetFilterOp', op === 'or' ? 'or' : undefined)) : undefined}
+                      onConditionsOpChange={(op) => update('targetFilterOp', op === 'or' ? 'or' : undefined)}
                       part="buttons"
                       otherOpen={targetFilterOtherOpen}
                       onOtherOpenChange={setTargetFilterOtherOpen}
@@ -7593,6 +7594,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         showSubjectSelector={false}
                         supportsMultiValue={true}
                         part="panels"
+                        conditionsOp={block.targetFilterOp || 'and'}
+                        onConditionsOpChange={tgtCondCount >= 2 ? ((op) => update('targetFilterOp', op === 'or' ? 'or' : undefined)) : undefined}
                         otherOpen={targetFilterOtherOpen}
                         onOtherOpenChange={setTargetFilterOtherOpen}
                         targetL2={curTgt.l2 as 'digimon' | 'tamer' | 'card' | ''}
@@ -9533,7 +9536,11 @@ function ConditionsHybridEditor({
         {colors.icon} {title}
         <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>{hint}</span>
       </label>
-      {onConditionsOpChange ? (
+      {onConditionsOpChange && part === 'buttons' ? (
+        <div style={{ fontSize: 10, color: '#666', margin: '2px 0 6px' }}>
+          複数指定した場合の結合方法（AND/OR）は右側の条件の間で選べます。
+        </div>
+      ) : onConditionsOpChange ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0 6px' }}>
           <span style={{ fontSize: 10, color: '#666' }}>複数指定した場合の結合方法:</span>
           <ButtonGroup
@@ -9584,10 +9591,31 @@ function ConditionsHybridEditor({
     </>
   );
 
+  // part='panels'（対象の条件の右側パネル）では、AND/OR の切替を詳細パネルの「間」に出す
+  // （2つ目の条件を選んだときに、1つ目と2つ目の間で AND か OR かを選べるようにする）
+  const showOpBetweenPanels = part === 'panels' && !!onConditionsOpChange;
+  const interleaveOpSep = (nodes: ReactNode[]) => {
+    if (!showOpBetweenPanels) return nodes;
+    const out: ReactNode[] = [];
+    nodes.filter(Boolean).forEach((n, k) => {
+      if (k > 0) out.push(
+        <div key={'opsep' + k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, margin: '4px 0' }}>
+          <ButtonGroup
+            options={[{ code: 'and', label: 'AND（全部満たす）' }, { code: 'or', label: 'OR（いずれか満たす）' }]}
+            value={conditionsOp || 'and'}
+            onChange={(v) => onConditionsOpChange!((v || 'and') as 'and' | 'or')}
+            accentColor={colors.accent}
+          />
+        </div>
+      );
+      out.push(n);
+    });
+    return out;
+  };
   const panelsNode = (
     <>
       {/* アクティブなカテゴリごとの詳細設定（値・対象） */}
-      {visibleCategoryOptions.map((cat) => {
+      {interleaveOpSep(visibleCategoryOptions.map((cat) => {
         const rows = conditions.map((c, i) => ({ c, i })).filter(({ c }) => c.subject !== REF_EXISTS_FILTER_MARKER && c.subject !== COST_TYPE_SCOPE_SUBJECT && baseToCategory(c.base) === cat.code);
         if (rows.length === 0) return null;
         // 特徴（含む/完全一致）: 別々の行に分けず、1行に両モードのタグをまとめて表示する
@@ -10197,7 +10225,7 @@ function ConditionsHybridEditor({
             )}
           </div>
         );
-      })}
+      }))}
 
       {/* その他の条件（トリガー発火元カードへのフィルタ）: チェックボックス自体はbuttonsNode側にあり、
           ここでは実際のピッカー/行のみを表示する */}

@@ -9390,10 +9390,12 @@ function _narrowBySentence(blockText, triggerCode) {
 // レシピの各ステップに display_text（表示テキスト明示指定）があれば最優先で使う。
 // テキスト解析（括弧/文単位の抜粋）はあくまで display_text 未設定時のフォールバック。
 // recipeSteps: そのトリガーで実行されるレシピステップ配列（省略可）
+// 効果発動ポップアップの本文に使う表示テキスト（1つ目の効果＝ステップのもの）。2つ目以降の効果の表示テキストは、
+// その効果に進むときに別のポップアップで出す（runRecipe）。以前はどのステップのものでも最初のポップアップに使っていた
 function _findDisplayTextOverride(recipeSteps) {
   if (!Array.isArray(recipeSteps)) return null;
-  const withText = recipeSteps.find(s => s && typeof s.display_text === 'string' && s.display_text.trim());
-  return withText ? withText.display_text.trim() : null;
+  const first = recipeSteps.find(s => s);
+  return (first && typeof first.display_text === 'string' && first.display_text.trim()) ? first.display_text.trim() : null;
 }
 
 // レシピのいずれかのステップに no_announce:true があるか（＝表示なし指定）
@@ -14012,7 +14014,7 @@ function runRecipe(steps, ctx, callback) {
     // 「〜できる。その後、〜（強制）」の強制部分: 確認せず、「その後〜」の効果発動アナウンスを出してから発揮する
     if (_icLead && idx > 1 && step && !_isInlineConfirmStep(step) && !ctx._inlineCostConfirm._afterShown) {
       ctx._inlineCostConfirm._afterShown = true;
-      const _afterText = _inlineCostConfirmText(null, ctx._inlineCostConfirm.text);
+      const _afterText = _inlineCostConfirmText(step, ctx._inlineCostConfirm.text);
       // 残りのステップがどれも「〜なら」（step.condition）を満たさないなら、何も起きないのでアナウンスは出さない
       // （レオルモン BT26-025「その後、自分のセキュリティが0枚なら【リカバリー+1】」がセキュリティが残っていても出ていた）
       const _afterNoop = steps.slice(idx - 1).every(st => st && st.condition
@@ -14038,6 +14040,14 @@ function runRecipe(steps, ctx, callback) {
         return;
       }
       if (_isCpu) { _execStep(step, nextStep); return; } // CPU の任意効果は自動で使う（従来と同じ慣例）
+    }
+    // 2つ目以降の効果（その後の効果等）に表示テキストがあれば、その効果に進むときに効果発動ポップアップで出す
+    // （効果1と効果2で表示を分けたい。「〜なら」を満たさず何も起きない効果では出さない）
+    if (idx > 1 && step && typeof step.display_text === 'string' && step.display_text.trim() && !step.no_announce
+        && !(step.condition && !checkConditions(parseRecipeCondition(step.condition), ctx.card, ctx.bs, ctx.side))) {
+      const _evoSrc = (ctx._sourceCard && ctx._sourceCard !== ctx.card) ? ctx._sourceCard : undefined;
+      showEffectAnnounce(ctx.card, step.display_text.trim(), ctx.side, () => _execStep(step, nextStep), _evoSrc);
+      return;
     }
     _execStep(step, nextStep);
   }

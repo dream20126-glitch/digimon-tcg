@@ -1606,7 +1606,7 @@ function CostListEditor({
                         // 従来通りの置き方をするため。セキュリティに表向きで置く等で使う）
                         options={[{ code: 'face_up', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
                         value={(c.options || []).includes('face_down') ? 'face_down' : 'face_up'}
-                        onChange={(v) => updateCost(i, { ...c, options: v ? [v] : [] })}
+                        onChange={(v) => updateCost(i, { ...c, options: swapOpts(c.options, FACE_OPTS, v) })}
                         accentColor="#b76e00"
                       />
                     </div>
@@ -1797,7 +1797,7 @@ function CostListEditor({
                     <ButtonGroup
                       options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
                       value={isFaceDown ? 'face_down' : ''}
-                      onChange={(v) => updateCost(i, { ...c, options: v ? [v] : [] })}
+                      onChange={(v) => updateCost(i, { ...c, options: swapOpts(c.options, FACE_OPTS, v) })}
                       accentColor="#b76e00"
                     />
                   </div>
@@ -5861,7 +5861,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           <ButtonGroup
                             options={[{ code: 'digimon', label: 'デジモン' }, { code: 'player', label: 'プレイヤー' }, { code: '', label: '指定なし' }]}
                             value={effectOptions.includes('digimon_only') ? 'digimon' : effectOptions.includes('player_only') ? 'player' : ''}
-                            onChange={(v) => updateEffect({ options: v === 'digimon' ? ['digimon_only'] : v === 'player' ? ['player_only'] : [] })}
+                            onChange={(v) => updateEffect({ options: swapOpts(effectOptions, ['digimon_only', 'player_only'], v === 'digimon' ? 'digimon_only' : v === 'player' ? 'player_only' : '') })}
                             accentColor="#1976d2"
                           />
                         </div>
@@ -8643,7 +8643,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                       <ButtonGroup
                         options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
                         value={(step.options || []).includes('face_down') ? 'face_down' : ''}
-                        onChange={(v) => onChange({ options: v ? [v] : [] })}
+                        onChange={(v) => onChange({ options: swapOpts(step.options, FACE_OPTS, v) })}
                         accentColor="#1976d2"
                       />
                     </div>
@@ -8988,7 +8988,7 @@ function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, i
                                   <ButtonGroup
                                     options={[{ code: '', label: '表向き' }, { code: 'face_down', label: '裏向き' }]}
                                     value={(g.options || []).includes('face_down') ? 'face_down' : ''}
-                                    onChange={(v) => updateGroup(gi, { options: v ? [v] : [] })}
+                                    onChange={(v) => updateGroup(gi, { options: swapOpts(g.options, FACE_OPTS, v) })}
                                     accentColor="#946200"
                                   />
                                 </div>
@@ -9512,6 +9512,12 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
 // 条件コード → カテゴリ の逆引き（既存レシピ読込時・行の見た目復元用）
 // 名称/記述の値を特徴と同じタグ入力（カンマ区切り・OR）にする条件。⚠ カンマ区切りのOR判定はエンジン未対応
 const OR_TAG_BASES = new Set(['cond_name', 'cond_name_contains', 'cond_name_not', 'cond_description_contains']);
+// options（複数のフラグを持つ配列）のうち、指定したグループのフラグだけを入れ替える
+// （以前は options を丸ごと [v] で上書きしており、同じ options に入っている他の設定が消えていた）
+const FACE_OPTS = ['face_up', 'face_down'];
+function swapOpts(cur: string[] | undefined, group: string[], v: string): string[] {
+  return [...(cur || []).filter((o) => !group.includes(o)), ...(v ? [v] : [])];
+}
 function baseToCategory(base: string): CondCategory {
   if (!base) return '';
   if (base === 'cond_color' || base === 'cond_color_not' || base === 'cond_color_distinct') return 'color';

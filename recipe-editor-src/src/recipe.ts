@@ -2012,21 +2012,10 @@ function stepObjectToAltAction(step: any): AltAction {
     skipOnPlay: !!step?.skip_on_play,
     negateTargetTrigger: step?.target_trigger === 'on_play' || step?.target_trigger === 'on_evolve' ? step.target_trigger : undefined,
     negateDeny: !!step?.deny,
-    // {or:[...]}（共通はレスト/アクティブのみ・同じ条件種別が複数の選択肢にまたがらない）なら、
-    // エディタでは各条件に orGroup（何番目の選択肢か）を付けた通常の表示に戻す（条件の間で AND/OR を選ぶUI）。
-    // それ以外の複雑なORはチェーンのまま
-    ...(() => {
-      const tf = parseConditionChainFilter(step?.filter);
-      const quick = (base: string) => base === 'cond_self_rest' || base === 'cond_self_active';
-      if (tf.chain && tf.chain.length > 1) {
-        // 共通条件（or の外）は orGroup:-1（レスト/アクティブはクイック条件のまま）
-        const seen = new Map<string, number>();
-        tf.pairs.filter((p) => !quick(p.base)).forEach((p) => seen.set(p.base, -1));
-        const ok = tf.chain.every((e, gi) => e.conditions.every((c) => { const g = seen.get(c.base); if (g !== undefined && g !== gi) return false; seen.set(c.base, gi); return true; }));
-        if (ok) return { targetFilter: [...tf.pairs.map((p) => (quick(p.base) ? p : { ...p, orGroup: -1 })), ...tf.chain.flatMap((e, gi) => e.conditions.map((c) => ({ ...c, orGroup: gi })))], targetFilterChain: undefined };
-      }
-      return { targetFilter: tf.pairs, targetFilterChain: tf.chain };
-    })(),
+    // 「その後」の効果の対象の条件は、効果2以降と同じ「+ 条件を追加（OR）」の画面（チェーン）で編集するので、
+    // 効果1用の orGroup 形式には変換しない（変換すると保存時に OR が AND に変わっていた）
+    targetFilter: parseConditionChainFilter(step?.filter).pairs,
+    targetFilterChain: parseConditionChainFilter(step?.filter).chain,
     fromFilter: parseConditionChainFilter(step?.from_filter).pairs,
     fromFilterOp: parseFilterObjectWithOp(step?.from_filter).op,
     fromFilterChain: parseConditionChainFilter(step?.from_filter).chain,

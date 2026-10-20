@@ -1396,17 +1396,34 @@ function CostListEditor({
               {isPlaceActive && (
                 <div style={{ marginTop: 4 }}>
                   <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🎯 置き場所（どこに置くか）</div>
+                  {/* 「このカード」は「進化元」→「このカード」で選ぶ（置き場所ボタンには出さない） */}
                   <ButtonGroup
-                    options={PLACE_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
-                    value={activePlaceZone}
+                    options={PLACE_ZONE_MAP.filter((z) => z.code !== 'self').map((z) => ({ code: z.code, label: z.label }))}
+                    value={activePlaceZone === 'self' ? 'evo_source' : activePlaceZone}
                     onChange={(zoneCode) => {
-                      if (zoneCode === activePlaceZone) return; // 選び直し済みの位置/裏表/場所を巻き戻さない
+                      if (zoneCode === activePlaceZone || (zoneCode === 'evo_source' && activePlaceZone === 'self')) return; // 選び直し済みの位置/裏表/場所を巻き戻さない
                       const z = PLACE_ZONE_MAP.find((zz) => zz.code === zoneCode);
                       if (!z) return;
                       updateCost(i, { ...c, action: z.action, target: z.target || '', deckPosition: undefined, options: [], fromZones: [] });
                     }}
                     accentColor="#b76e00"
                   />
+                  {/* 進化元: どのデジモンの進化元か（このカード＝place_under_self / 自分のデジモン＝place_under_digimon） */}
+                  {(activePlaceZone === 'evo_source' || activePlaceZone === 'self') && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>どのデジモンの進化元か</div>
+                      <ButtonGroup
+                        options={[{ code: 'self', label: 'このカード' }, { code: 'evo_source', label: '自分のデジモン' }]}
+                        value={activePlaceZone}
+                        onChange={(zc) => {
+                          if (zc === activePlaceZone) return;
+                          const z = PLACE_ZONE_MAP.find((zz) => zz.code === zc);
+                          if (z) updateCost(i, { ...c, action: z.action, target: z.target || '' });
+                        }}
+                        accentColor="#b76e00"
+                      />
+                    </div>
+                  )}
                   {(() => {
                     const z = PLACE_ZONE_MAP.find((zz) => zz.code === activePlaceZone);
                     return z?.warn ? (

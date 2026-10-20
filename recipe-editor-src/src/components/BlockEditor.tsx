@@ -3171,6 +3171,12 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
     warn: '⚠ エンジン未対応: 現状「上」固定・常に表向きで動作します（position/options未反映）',
   },
   {
+    // 自分+デッキ（上/下は右の位置）。例:「手札1枚を自分のデッキの上に置く」
+    code: 'deck', label: 'デッキ', action: 'place_on_deck', target: 'own_deck',
+    hasPosition: true, hasFace: true, hasFromZones: true,
+    warn: '⚠ エンジン未対応: デッキに置く（該当カードが来たら追加実装）',
+  },
+  {
     code: 'tamer', label: 'テイマー', action: 'place_under_tamer', target: 'own_tamer',
     hasPosition: true, hasFace: true, hasFromZones: true,
     warn: '⚠ エンジン未対応: target/位置/裏表/場所のいずれも反映されません（該当カードが来たら追加実装）',
@@ -3194,10 +3200,6 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
   },
 ];
 const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));
-// 置き場所ボタンの表示名
-const PLACE_DEST_LABEL: Record<string, string> = {
-  security: 'セキュリティ', tamer: 'テイマーの下', evo_source: '進化元（デジモンの下）', self: 'このカードの下', battle_area: 'バトルエリア',
-};
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
 // jogress_evolve: 効果での「手札の〇〇にジョグレス進化できる」も、進化と同じく取得元（手札等）と取得元カードの条件を指定する
@@ -3416,7 +3418,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const showTargetFilter =
     curTgt.l1 === 'self' ||
     curTgt.l1 === 'same_target' ||
-    ['digimon', 'tamer', 'card'].includes(curTgt.l2) || isZoneL2(curTgt.l2);
+    ['digimon', 'tamer', 'card'].includes(curTgt.l2)
+    // 〇〇に置くの置き先（セキュリティ/デッキ）には条件が無い（置くカードの条件は取得元カードの条件）
+    || (isZoneL2(curTgt.l2) && !PLACE_ACTION_CODES.has(block.action || ''));
   // 「取得元カードの条件」は進化/登場(BUILTIN_FROM_ZONE_ACTIONS)専用。対象＝このカード自身
   // （進化する側）であっても、実際に絞り込みたいのは取得元エリア（手札等）から選ぶカードの方
   // なので、「対象の条件」とは別枠・別データ（block.fromFilter → step.from_filter）として扱う
@@ -3699,8 +3703,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // action が自動で place_on_security_top になる）
   function remapPlaceActionForTarget(newTargetBase: string): string | undefined {
     if (!effectIsPlaceActive || !newTargetBase) return undefined;
-    // バトルエリア（このカード自身を置く）は対象で置き場所が変わらない
-    if (effectAction === 'place_in_battle_area') return undefined;
+    // バトルエリア（このカード自身を置く）は「このカード」のまま。それ以外の対象を選んだら切り替える
+    if (effectAction === 'place_in_battle_area' && newTargetBase === 'self_card') return undefined;
     const l1l2 = TARGET_SEL_CODE_TO_L1L2[newTargetBase] || { l1: '', l2: '' };
     const zone = PLACE_ZONE_MAP.find((z) => {
       const zl = TARGET_SEL_CODE_TO_L1L2[z.target || ''] || { l1: '', l2: '' };
@@ -5915,32 +5919,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     （対象を変えると action が自動でplace_under_tamer/place_under_digimon/
                     place_on_security_top/place_in_battle_areaへ切り替わる。remapPlaceActionForTarget参照）。
                     警告文だけはここに残す */}
-                {/* 📍 置き場所（〇〇に置くの〇〇）: 押すとアクションコードが切り替わる。
-                    置き先のデジモン/テイマー/どちらのセキュリティか等は下の🎯対象で選ぶ
-                    （置き場所に合わない対象なら、その置き場所の既定の対象に合わせる） */}
-                {isPlaceActive && (
-                  <div style={{ marginTop: 4 }}>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 置き場所（〇〇に置く の〇〇）</div>
-                    <ButtonGroup
-                      // 「このカードの下」は「デジモンの下（進化元）」＋対象「このカード」として扱う（内部コードは place_under_self のまま）
-                      options={PLACE_ZONE_MAP.filter((z) => z.code !== 'self').map((z) => ({ code: z.action, label: PLACE_DEST_LABEL[z.code] || z.label }))}
-                      value={effectAction === 'place_under_self' ? 'place_under_digimon' : (effectAction || '')}
-                      onChange={(act) => {
-                        const z = PLACE_ZONE_MAP.find((zz) => zz.action === act);
-                        if (!z || act === effectAction || (act === 'place_under_digimon' && effectAction === 'place_under_self')) return;
-                        const curBase = (effectTarget || '').split(':')[0];
-                        if (act === 'place_under_digimon' && curBase === 'self_card') { updateEffect({ action: 'place_under_self' }); return; }
-                        const curSuffix = (effectTarget || '').substring(curBase.length);
-                        const curL2 = (TARGET_SEL_CODE_TO_L1L2[curBase] || { l2: '' }).l2;
-                        const zL1L2 = TARGET_SEL_CODE_TO_L1L2[z.target || ''] || { l1: '', l2: '' };
-                        // 今の対象がその置き場所に合っていれば（例: 進化元で 他の自分のデジモン）対象はそのまま
-                        const fits = zL1L2.l2 ? curL2 === zL1L2.l2 : curBase === z.target;
-                        updateEffect(fits ? { action: act } : { action: act, target: (z.target || '') + (zL1L2.l1 === 'self' ? '' : curSuffix) });
-                      }}
-                      accentColor="#1976d2"
-                    />
-                  </div>
-                )}
                 {isPlaceActive && (() => {
                   const z = PLACE_ZONE_MAP.find((zz) => zz.action === effectAction);
                   return z?.warn ? (
@@ -6789,7 +6767,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const commonActionHasFromZones = !!dict.actions.find(
             (a) => a.code === (getActionVariant(effectActionForZones)?.base || effectActionForZones)
           )?.hasFromZones || PLACE_ACTION_CODES.has(effectActionForZones) || effectActionForZones === 'bounce' || effectActionForZones === 'return_hand';
-          const commonFromZoneExcludeCodes = PLACE_ACTION_CODES.has(effectActionForZones) ? new Set(['hand', 'trash', 'deck', 'battle_area', 'linked'])
+          const commonFromZoneExcludeCodes = PLACE_ACTION_CODES.has(effectActionForZones) ? new Set(['hand', 'trash', 'battle_area', 'linked'])
             : effectActionForZones === 'add_to_hand' ? new Set(['hand', 'trash', 'battle_area'])
             : (effectActionForZones === 'bounce' || effectActionForZones === 'return_hand') ? new Set(['hand', 'deck', 'security'])
             : null;
@@ -6818,7 +6796,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eShowTargetFilter =
               eCurTgt.l1 === 'self' ||
               eCurTgt.l1 === 'same_target' ||
-              ['digimon', 'tamer', 'card'].includes(eCurTgt.l2) || isZoneL2(eCurTgt.l2);
+              ['digimon', 'tamer', 'card'].includes(eCurTgt.l2) || (isZoneL2(eCurTgt.l2) && !PLACE_ACTION_CODES.has(effectAction || ''));
             const eStackSubCond = effectTargetFilter.find((c) => c.base === 'cond_target_evo_source' || c.base === 'cond_target_stack');
             const setEffTgt = (l1: string, l2?: string) => {
               // OR選択中に他のL1/L2へ切り替えたら、自動設定していたtype絞り込みは持ち越さない
@@ -6935,11 +6913,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     const eIsPlaceAction = PLACE_ACTION_CODES.has(effectAction || '');
                     const eEvoCond = effectTargetFilter.find((c) => c.base === 'cond_target_evo_source');
                     const eStackCond = effectTargetFilter.find((c) => c.base === 'cond_target_stack');
-                    const eActiveSub: '' | 'evo_source' | 'stacked' = eEvoCond ? 'evo_source' : eStackCond ? 'stacked' : '';
-                    const setESub = (next: '' | 'evo_source' | 'stacked') => {
+                    const eActiveSub: '' | 'evo_source' | 'stacked' | 'battle_area' = effectAction === 'place_in_battle_area' ? 'battle_area' : eEvoCond ? 'evo_source' : eStackCond ? 'stacked' : '';
+                    const setESub = (next: '' | 'evo_source' | 'stacked' | 'battle_area') => {
                       const cleared = effectTargetFilter.filter((c) => c.base !== 'cond_target_evo_source' && c.base !== 'cond_target_stack');
-                      if (!next) { updateEffect({ targetFilter: cleared }); return; }
-                      updateEffect({ targetFilter: [...cleared, { base: next === 'evo_source' ? 'cond_target_evo_source' : 'cond_target_stack', value: '' }] });
+                      if (next === 'battle_area') { updateEffect({ action: 'place_in_battle_area', target: 'self_card', targetFilter: cleared }); return; }
+                      const act = eIsPlaceAction && eCurTgt.l1 === 'self' && effectAction === 'place_in_battle_area' ? { action: 'place_under_self' } : {};
+                      if (!next) { updateEffect({ ...act, targetFilter: cleared }); return; }
+                      updateEffect({ ...act, targetFilter: [...cleared, { base: next === 'evo_source' ? 'cond_target_evo_source' : 'cond_target_stack', value: '' }] });
                     };
                     return (
                       <div style={{ marginTop: 4 }}>
@@ -6948,9 +6928,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             ...(eIsPlaceAction ? [] : [{ code: '', label: '指定なし' }]),
                             { code: 'evo_source', label: '進化元' },
                             { code: 'stacked', label: '重ねられているカード' },
+                            ...(eIsPlaceAction && eCurTgt.l1 === 'self' ? [{ code: 'battle_area', label: 'バトルエリア' }] : []),
                           ]}
                           value={eActiveSub}
-                          onChange={(v) => setESub(v as '' | 'evo_source' | 'stacked')}
+                          onChange={(v) => setESub(v as '' | 'evo_source' | 'stacked' | 'battle_area')}
                           accentColor="#b76e00"
                         />
                       </div>
@@ -7326,11 +7307,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   const isPlaceAction = PLACE_ACTION_CODES.has(block.action || '');
                   const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                   const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
-                  const activeSub: '' | 'evo_source' | 'stacked' = evoCond ? 'evo_source' : stackCond ? 'stacked' : '';
-                  const setSub = (next: '' | 'evo_source' | 'stacked') => {
+                  const activeSub: '' | 'evo_source' | 'stacked' | 'battle_area' = block.action === 'place_in_battle_area' ? 'battle_area' : evoCond ? 'evo_source' : stackCond ? 'stacked' : '';
+                  const setSub = (next: '' | 'evo_source' | 'stacked' | 'battle_area') => {
                     const cleared = targetFilter.filter((c) => c.base !== 'cond_target_evo_source' && c.base !== 'cond_target_stack');
-                    if (!next) { update('targetFilter', cleared); return; }
-                    update('targetFilter', [...cleared, { base: next === 'evo_source' ? 'cond_target_evo_source' : 'cond_target_stack', value: '' }]);
+                    // このカード: バトルエリア ⇔ このカードの下（進化元/重ねられているカード）でアクションも切り替える
+                    if (next === 'battle_area') { onChange({ ...block, action: 'place_in_battle_area', target: 'self_card', targetFilter: cleared }); return; }
+                    const act = isPlaceAction && curTgt.l1 === 'self' && block.action === 'place_in_battle_area' ? { action: 'place_under_self' } : {};
+                    if (!next) { onChange({ ...block, ...act, targetFilter: cleared }); return; }
+                    onChange({ ...block, ...act, targetFilter: [...cleared, { base: next === 'evo_source' ? 'cond_target_evo_source' : 'cond_target_stack', value: '' }] });
                   };
                   return (
                     <div style={{ marginTop: 4 }}>
@@ -7339,9 +7323,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           ...(isPlaceAction ? [] : [{ code: '', label: '指定なし' }]),
                           { code: 'evo_source', label: '進化元' },
                           { code: 'stacked', label: '重ねられているカード' },
+                          ...(isPlaceAction && curTgt.l1 === 'self' ? [{ code: 'battle_area', label: 'バトルエリア' }] : []),
                         ]}
                         value={activeSub}
-                        onChange={(v) => setSub(v as '' | 'evo_source' | 'stacked')}
+                        onChange={(v) => setSub(v as '' | 'evo_source' | 'stacked' | 'battle_area')}
                         accentColor="#b76e00"
                       />
                     </div>

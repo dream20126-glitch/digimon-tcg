@@ -1,3 +1,5 @@
+// 原因: バトルで / 効果で / バトル以外で / 効果以外で
+export type CauseCode = 'battle' | 'effect' | 'not_battle' | 'not_effect';
 // 効果ブロックで使う条件1個のペア
 export interface ConditionPair {
   base: string; // condition code (cond_xxx)
@@ -151,7 +153,7 @@ export interface EffectBlock {
   // when_opp_rest等その他の反応系トリガーも、_fireSidedReactionTriggers経由のものは
   // 同じ仕組みで判定されるが、原因情報（bs._lastDestroyCause）は現状destroy/discard系の
   // アクション実行時にしかセットされないため、それ以外のイベントでは常に「原因なし」扱いになる
-  destroyCause?: 'battle' | 'effect';
+  destroyCause?: CauseCode;
   destroyCauseSubject?: string;
   // トリガーごとに発動ターン（自分/相手/お互い）を個別設定したい場合に使う
   // （例:「登場時」は無条件、「相手のメインフェイズ開始時」だけ相手ターン限定、
@@ -184,7 +186,7 @@ export interface EffectBlock {
   // エントリが無いトリガーは原因チェックなし（destroyCause共有フィールドは使わず、
   // このフィールドを使うブロックではdestroyCauseは無視される）。
   // JSONでは step.cause_by_code として出力する
-  triggerCauseByCode?: Record<string, 'battle' | 'effect'>;
+  triggerCauseByCode?: Record<string, CauseCode>;
   triggerCauseSubjectByCode?: Record<string, string>;
   conditions?: ConditionPair[]; // 0〜N個の条件（self や全体状況に対するゲート）
   // 複数条件の結合方法。既定'and'=全部満たす／'or'=いずれか1つ満たす。
@@ -515,7 +517,7 @@ export interface AltAction {
   negateDeny?: boolean;
   // 原因（バトルで/効果で）: cant_destroy等で使う。効果1のdestroyCause/destroyCauseSubjectと
   // 同じ意味。JSONでは対応するstepのcause/cause_subjectとして出力する
-  destroyCause?: 'battle' | 'effect';
+  destroyCause?: CauseCode;
   destroyCauseSubject?: string;
   // 対象自身の絞り込み（→ step.filter）・取得元エリアから選ぶカードの絞り込み
   // （→ step.from_filter）。効果1のtargetFilter/fromFilterと同じ意味・同じ変換ルール

@@ -2,6 +2,10 @@
 import type { AltAction, CardLevelSettings, ConditionPair, ConditionChainEntry, CostStep, DictEntry, EffectBlock, ExtraTarget, KeywordEntry, DesignatedGroup } from './types';
 import { applyRulesToStep, hasRuleTranslator, rulesFromStep, RULE_OUTPUT_KEYS } from './ruleTranslator';
 
+// 原因コード（バトルで/効果で/バトル以外で/効果以外で）
+const isCauseCode = (v: unknown): v is 'battle' | 'effect' | 'not_battle' | 'not_effect' =>
+  v === 'battle' || v === 'effect' || v === 'not_battle' || v === 'not_effect';
+
 // 「コスト上限+/-」(効果辞書側で登録するアクションコード)。「直前の効果に適用する」
 // チェックがONのとき、独立したstepにはせず直前の効果のfilter.cost_le_modへ埋め込む
 // （appendStep内・blocksToRecipe参照）
@@ -1951,7 +1955,7 @@ function stepObjectToAltAction(step: any): AltAction {
       return i >= 0 ? { base: s.substring(0, i), value: s.substring(i + 1) } : { base: s };
     })(),
     // 原因（バトルで/効果で・誰の効果か）
-    destroyCause: step?.cause === 'battle' || step?.cause === 'effect' ? step.cause : undefined,
+    destroyCause: isCauseCode(step?.cause) ? step.cause : undefined,
     destroyCauseSubject: step?.cause_subject || undefined,
     costFree: !!step?.cost_free,
     ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
@@ -2253,7 +2257,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     triggerSubjectByCode: (step?.subject_by_code && typeof step.subject_by_code === 'object')
       ? { ...step.subject_by_code } : undefined,
     linkRole: step?.link_role === 'target' ? 'target' : 'linker',
-    destroyCause: step?.cause === 'battle' || step?.cause === 'effect' ? step.cause : undefined,
+    destroyCause: isCauseCode(step?.cause) ? step.cause : undefined,
     destroyCauseSubject: step?.cause_subject || undefined,
     triggerCauseByCode: (step?.cause_by_code && typeof step.cause_by_code === 'object')
       ? { ...step.cause_by_code } : undefined,
@@ -2488,7 +2492,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             skipOnPlay: !!a?.skip_on_play,
             negateTargetTrigger: a?.target_trigger === 'on_play' || a?.target_trigger === 'on_evolve' ? a.target_trigger : undefined,
             negateDeny: !!a?.deny,
-            destroyCause: a?.cause === 'battle' || a?.cause === 'effect' ? a.cause : undefined,
+            destroyCause: isCauseCode(a?.cause) ? a.cause : undefined,
             destroyCauseSubject: a?.cause_subject || undefined,
             targetFilter: parseConditionChainFilter(a?.filter).pairs,
             targetFilterChain: parseConditionChainFilter(a?.filter).chain,

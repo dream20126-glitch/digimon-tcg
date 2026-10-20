@@ -129,6 +129,31 @@ function ButtonGroup({ options, value, onChange, accentColor }: { options: { cod
 }
 
 // ボタン式の複数選択グループ（色・タイプなど、複数トグルしてOR条件を作る項目用）
+// 原因の選択（バトルで / 効果で ＋「以外」）。「以外」はバトル/効果を選んだときだけ表示する
+//   効果で → effect、効果+以外 → not_effect（効果以外で）、バトル+以外 → not_battle（バトル以外で）
+// allowEmpty: 全部外して「原因を問わない」にできる（トリガーごとの原因欄）
+type CauseCodeT = 'battle' | 'effect' | 'not_battle' | 'not_effect';
+function CauseToggle({ value, onChange, allowEmpty, accentColor }: { value?: string; onChange: (v: CauseCodeT | '') => void; allowEmpty?: boolean; accentColor?: string }) {
+  const v = value || '';
+  const not = v.startsWith('not_');
+  const base = v.replace(/^not_/, '');
+  const opts = [{ code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }, ...(base ? [{ code: 'not', label: '以外' }] : [])];
+  const values = [...(base ? [base] : []), ...(not ? ['not'] : [])];
+  return (
+    <MultiButtonGroup
+      options={opts}
+      values={values}
+      onToggle={(code, on) => {
+        let nb = base, nn = not;
+        if (code === 'not') nn = on;
+        else nb = on ? code : '';
+        if (!nb) { if (allowEmpty) onChange(''); return; }
+        onChange(((nn ? 'not_' : '') + nb) as CauseCodeT);
+      }}
+      accentColor={accentColor}
+    />
+  );
+}
 function MultiButtonGroup({ options, values, onToggle, accentColor }: { options: { code: string; label: string }[]; values: string[]; onToggle: (code: string, on: boolean) => void; accentColor?: string }) {
   const accent = accentColor || '#d81b60';
   return (
@@ -4858,7 +4883,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             const on = e.target.checked;
                             setPerTriggerCauseOpen(on);
                             if (on) {
-                              const nextMap: Record<string, 'battle' | 'effect'> = { ...(block.triggerCauseByCode || {}) };
+                              const nextMap: Record<string, CauseCodeT> = { ...(block.triggerCauseByCode || {}) };
                               currentTriggers.forEach((code) => {
                                 if (nextMap[code] === undefined && block.destroyCause) nextMap[code] = block.destroyCause;
                               });
@@ -4959,7 +4984,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           || code;
                         const curCause = (block.triggerCauseByCode || {})[code];
                         const curCauseSubj = (block.triggerCauseSubjectByCode || {})[code] || 'self';
-                        const setThisCause = (v: '' | 'battle' | 'effect') => {
+                        const setThisCause = (v: '' | CauseCodeT) => {
                           const nextMap = { ...(block.triggerCauseByCode || {}) };
                           if (!v) delete nextMap[code]; else nextMap[code] = v;
                           onChange({ ...block, triggerCauseByCode: nextMap });
@@ -4971,13 +4996,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         return (
                           <div key={code} style={{ fontSize: 11, border: '1px solid #c5e0c5', borderRadius: 4, padding: 6 }}>
                             <div style={{ color: '#333', fontWeight: 'bold', marginBottom: 3 }}>{label}:</div>
-                            <ButtonGroup
-                              options={[{ code: '', label: '原因を問わない' }, { code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }]}
-                              value={curCause || ''}
-                              onChange={(v) => setThisCause(v as '' | 'battle' | 'effect')}
-                              accentColor="#1a5a1a"
-                            />
-                            {curCause && (
+                            <CauseToggle value={curCause} onChange={setThisCause} allowEmpty accentColor="#1a5a1a" />
+                            {!curCause && <span style={{ fontSize: 10, color: '#888', marginLeft: 4 }}>（未選択＝原因を問わない）</span>}
+                            {curCause && !curCause.startsWith('not_') && (
                               <div style={{ marginTop: 3 }}>
                                 <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>原因の対象:</span>
                                 <ButtonGroup
@@ -5217,17 +5238,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 else onChange({ ...block, destroyCause: undefined, destroyCauseSubject: undefined });
               }}
             />
-            ☑ 原因選択（バトルで/効果で・トリガーが発生した原因を絞り込む）
+            ☑ 原因選択（バトルで/効果で/〜以外で・トリガーが発生した原因を絞り込む）
           </label>
           {block.destroyCause && (
             <div style={{ marginTop: 6 }}>
               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>原因</div>
-              <ButtonGroup
-                options={[{ code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }]}
-                value={block.destroyCause}
-                onChange={(v) => update('destroyCause', v as 'battle' | 'effect')}
-                accentColor="#1a5a1a"
-              />
+              <CauseToggle value={block.destroyCause} onChange={(v) => { if (v) onChange({ ...block, destroyCause: v, ...(v.startsWith('not_') ? { destroyCauseSubject: undefined } : {}) }); }} accentColor="#1a5a1a" />
+              {!block.destroyCause.startsWith('not_') && (
               <div style={{ marginTop: 4 }}>
                 <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>
                   原因の対象
@@ -5240,6 +5257,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   accentColor="#1a5a1a"
                 />
               </div>
+              )}
             </div>
           )}
           </>
@@ -5822,16 +5840,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           else updateEffect({ destroyCause: undefined, destroyCauseSubject: undefined });
                         }}
                       />
-                      ☑ 原因選択（バトルで/効果で・未選択なら両方防ぐ）
+                      ☑ 原因選択（バトルで/効果で/〜以外で・未選択なら両方防ぐ）
                     </label>
                     {effectDestroyCause && (
                       <div style={{ marginTop: 4 }}>
-                        <ButtonGroup
-                          options={[{ code: 'battle', label: 'バトルで' }, { code: 'effect', label: '効果で' }]}
-                          value={effectDestroyCause}
-                          onChange={(v) => updateEffect({ destroyCause: v as 'battle' | 'effect' })}
-                          accentColor="#1a5a1a"
-                        />
+                        <CauseToggle value={effectDestroyCause} onChange={(v) => { if (v) updateEffect({ destroyCause: v }); }} accentColor="#1a5a1a" />
                       </div>
                     )}
                   </div>

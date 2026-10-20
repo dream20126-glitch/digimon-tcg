@@ -6756,7 +6756,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const effectActionForZones = CANT_TO_DOABLE_LIVE[effectAction || ''] || effectAction || '';
           const commonActionHasFromZones = !!dict.actions.find(
             (a) => a.code === (getActionVariant(effectActionForZones)?.base || effectActionForZones)
-          )?.hasFromZones || PLACE_ACTION_CODES.has(effectActionForZones) || effectActionForZones === 'bounce' || effectActionForZones === 'return_hand';
+          )?.hasFromZones || effectActionForZones === 'bounce' || effectActionForZones === 'return_hand';
           const commonFromZoneExcludeCodes = effectActionForZones === 'add_to_hand' ? new Set(['hand', 'trash', 'battle_area'])
             : (effectActionForZones === 'bounce' || effectActionForZones === 'return_hand') ? new Set(['hand', 'deck', 'security'])
             : null;
@@ -7652,8 +7652,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             （このカード自身に掛かる条件）とは別データ（block.fromFilter/AltAction.fromFilter）
             で持つ。効果1・代替アクション（その後/OR/AND）とも同じ場所を使い回す */}
         {showRetrievalFilterEffective
-          && !(isZoneL2((TARGET_SEL_CODE_TO_L1L2[(effectTarget || '').split(':')[0]] || { l2: '' }).l2)
-            && !(effectFromFilter && effectFromFilter.length > 0) && !(effectFromFilterChain && effectFromFilterChain.length > 0))
+          // 〇〇に置くは取得元をアクション欄の「📥 場所（取得元）」で選ぶので、取得元カードの条件は常に出す
+          && (effectIsPlaceActive || !(isZoneL2((TARGET_SEL_CODE_TO_L1L2[(effectTarget || '').split(':')[0]] || { l2: '' }).l2)
+            && !(effectFromFilter && effectFromFilter.length > 0) && !(effectFromFilterChain && effectFromFilterChain.length > 0)))
           && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8, background: '#e0f7f5', border: '1px solid #b2dfdb', borderRadius: 4, padding: 8 }}>
             <ConditionChainField

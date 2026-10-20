@@ -5417,8 +5417,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     表示しない
                   </label>
                 )}
+                {isEditingAlt && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, color: '#666' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!editingAlt!.displaySame}
+                      onChange={(e) => updateEffect(e.target.checked ? { displaySame: true, displayText: undefined } : { displaySame: undefined })}
+                    />
+                    効果1と同じ（ポップアップは効果1の1回だけ）
+                  </label>
+                )}
               </div>
-              {!block.noAnnounce && (
+              {!block.noAnnounce && isEditingAlt && editingAlt!.displaySame && (
+                <div style={{ fontSize: 12, color: '#888', background: '#f5f5f5', border: '1px dashed #ccc', borderRadius: 4, padding: '6px 8px', whiteSpace: 'pre-wrap' }}>
+                  {block.displayText ? '効果1の表示テキスト: ' + block.displayText : '効果1の表示テキスト（空欄＝効果テキストから自動抽出）'}
+                </div>
+              )}
+              {!block.noAnnounce && !(isEditingAlt && editingAlt!.displaySame) && (
                 <textarea
                   // 効果2以降を編集中ならその効果の表示テキスト（効果1とは別に持つ）
                   value={(isEditingAlt ? editingAlt!.displayText : block.displayText) || ''}

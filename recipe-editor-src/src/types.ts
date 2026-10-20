@@ -435,6 +435,8 @@ export interface AltAction {
   action: string;
   // 効果2以降の効果発動ポップアップの表示テキスト（その効果に進むときに出す）。JSONでは step.display_text
   displayText?: string;
+  // 「効果1と同じ」: 効果1のポップアップで一緒に表示済みとして、この効果では出さない（テキストも書かない）。JSONでは display_same: true
+  displaySame?: boolean;
   value?: number | string;
   target?: string;
   // EffectBlock.extraTargetsと同じ（対象1に加えて自由に追加できる2体目以降の当事者）

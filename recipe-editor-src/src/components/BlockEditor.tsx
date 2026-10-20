@@ -4544,6 +4544,22 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 ⚠ 進化コスト軽減はエンジン未実装です（保存はできますが動作しません）
               </div>
             )}
+            {/* 発動ターン（自分/相手/お互い）: trigger_conditions の cond_during_own_turn / cond_during_opp_turn として保存 */}
+            {(() => {
+              const cur = triggerConditions.some((c) => c.base === 'cond_during_own_turn') ? 'self'
+                : triggerConditions.some((c) => c.base === 'cond_during_opp_turn') ? 'opp' : 'any';
+              const setTiming = (v: string) => {
+                const rest = triggerConditions.filter((c) => !isTriggerTimingCond(c.base));
+                const add = v === 'self' ? [{ base: 'cond_during_own_turn' }] : v === 'opp' ? [{ base: 'cond_during_opp_turn' }] : [];
+                onChange({ ...block, triggerConditions: [...add, ...rest] });
+              };
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <b style={{ fontSize: 12 }}>発動ターン</b>
+                  <ButtonGroup options={[{ code: 'self', label: '自分のターン' }, { code: 'opp', label: '相手のターン' }, { code: 'any', label: 'お互いのターン' }]} value={cur} onChange={setTiming} accentColor="#ef6c00" />
+                </div>
+              );
+            })()}
             常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。
             下の「コスト」を設定すると、アセンブリ等の「〇〇することで軽減」という任意効果になります。
             <div style={{ marginTop: 8 }}>

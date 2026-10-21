@@ -1789,3 +1789,128 @@ export function fxJogressFusion(left, right, result, cost, callback) {
     setTimeout(() => { overlay.remove(); done(); }, 2650);
   };
 }
+
+
+// =====================================================
+//  デジクロス演出 — 素材のカードが並び、X字に交差しながら中心へ集まって1体のデジモンになる
+// =====================================================
+// mats: 素材（[{name, imgSrc}]。上に重なる順） / result: 登場するデジモン / cost: 支払う登場コスト（null なら表示しない）
+export function fxDigixrossFusion(mats, result, cost, callback) {
+  const done = () => { try { callback && callback(); } catch (_) {} };
+  if (typeof document === 'undefined' || !document.body) { done(); return; }
+  if (!document.getElementById('fx-digixross-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-digixross-style';
+    st.textContent = [
+      '@keyframes dxFlash{0%{opacity:0}12%{opacity:1}100%{opacity:0}}',
+      '@keyframes dxRing{0%{transform:translate(-50%,-50%) scale(0.1) rotate(0deg);opacity:1}100%{transform:translate(-50%,-50%) scale(4.5) rotate(90deg);opacity:0}}',
+      '@keyframes dxX{0%{transform:translate(-50%,-50%) scale(0.2) rotate(-30deg);opacity:0}25%{opacity:1}70%{transform:translate(-50%,-50%) scale(1.25) rotate(0deg);opacity:1}100%{transform:translate(-50%,-50%) scale(1.5) rotate(8deg);opacity:0}}',
+      '@keyframes dxRise{0%{transform:translate(-50%,-50%) scale(0.3) rotate(-12deg);opacity:0;filter:brightness(3)}60%{transform:translate(-50%,-50%) scale(1.12) rotate(2deg);opacity:1;filter:brightness(1.5)}100%{transform:translate(-50%,-50%) scale(1) rotate(0deg);opacity:1;filter:brightness(1)}}',
+      '@keyframes dxTitle{0%{transform:translateX(-50%) scale(2.2) skewX(-14deg);opacity:0}50%{opacity:1}100%{transform:translateX(-50%) scale(1) skewX(-14deg);opacity:1}}',
+      '@keyframes dxGlow{0%,100%{box-shadow:0 0 26px #ff3b3b,0 0 54px #ffb000}50%{box-shadow:0 0 44px #ffffff,0 0 80px #ff3b3b}}',
+      '@keyframes dxShake{0%,100%{transform:translate(0,0)}25%{transform:translate(-7px,3px)}50%{transform:translate(6px,-4px)}75%{transform:translate(-4px,4px)}}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+  const list = (mats || []).filter(Boolean);
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:56000;pointer-events:none;overflow:hidden;background:radial-gradient(ellipse at center,rgba(50,0,0,0.9) 0%,rgba(0,0,0,0.95) 70%);opacity:0;transition:opacity 0.3s;';
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:absolute;inset:0;';
+  overlay.appendChild(stage);
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => { overlay.style.opacity = '1'; });
+  const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H / 2;
+  const n = Math.max(1, list.length);
+  const CW = Math.min(92, (W * 0.8) / Math.max(3, n + 1)), CH = CW * 1.4;
+  const face = (card, color, w, h) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:absolute;width:' + w + 'px;height:' + h + 'px;border-radius:7px;overflow:hidden;border:2px solid ' + color + ';box-shadow:0 0 16px ' + color + ';background:#111;';
+    const src = card ? (card.imgSrc || cardImg(card)) : '';
+    d.innerHTML = (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;padding:6px;font-size:10px;">' + ((card && card.name) || '?') + '</div>')
+      + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);padding:2px;font-size:8px;text-align:center;color:#fff;">' + ((card && card.name) || '') + '</div>';
+    return d;
+  };
+  const colors = ['#ff3b3b', '#ffb000', '#3bd1ff', '#7dff5a', '#ff5ad8', '#ffffff'];
+  // ① 素材が扇状に並ぶ
+  const els = list.map((c, i) => {
+    const col = colors[i % colors.length];
+    const el = face(c, col, CW, CH);
+    const x = cx + (i - (n - 1) / 2) * (CW * 1.15), y = cy + Math.abs(i - (n - 1) / 2) * 10;
+    el.style.left = (x - CW / 2) + 'px'; el.style.top = (y - CH / 2) + 'px';
+    el.style.opacity = '0'; el.style.transform = 'translateY(30px) rotate(' + ((i - (n - 1) / 2) * 8) + 'deg)';
+    el.style.transition = 'opacity 0.35s ease, transform 0.35s ease';
+    el._x = x; el._y = y; el._col = col;
+    stage.appendChild(el);
+    setTimeout(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0) rotate(' + ((i - (n - 1) / 2) * 8) + 'deg)'; }, 120 + i * 140);
+    return el;
+  });
+  // ② X字に交差しながら中心へ（左右の素材が反対側をかすめてから中心に集まる）
+  const t0 = performance.now() + 450 + n * 140;
+  const DUR = 1100;
+  const step = (now) => {
+    const t = now - t0;
+    if (t < 0) { requestAnimationFrame(step); return; }
+    const u = Math.min(1, t / DUR);
+    els.forEach((el, i) => {
+      const dir = (i - (n - 1) / 2) === 0 ? (i % 2 ? 1 : -1) : Math.sign(i - (n - 1) / 2);
+      // 曲線: 反対側へ少し振ってから中心へ（X字の交差）
+      const e = u < 0.55 ? u / 0.55 : 1;
+      const sweepX = el._x + (cx - el._x) * e - dir * Math.sin(Math.PI * e) * W * 0.12;
+      const sweepY = el._y + (cy - el._y) * e - Math.sin(Math.PI * e) * 70 * (i % 2 ? 1 : -1);
+      const fin = u < 0.55 ? 0 : (u - 0.55) / 0.45;
+      const x = sweepX + (cx - sweepX) * fin, y = sweepY + (cy - sweepY) * fin;
+      el.style.transition = 'none';
+      el.style.left = (x - CW / 2) + 'px'; el.style.top = (y - CH / 2) + 'px';
+      el.style.transform = 'rotate(' + (dir * 540 * u) + 'deg) scale(' + (1 - 0.6 * u) + ')';
+      el.style.opacity = String(1 - Math.max(0, u - 0.8) * 5);
+      if (Math.random() < 0.6) {
+        const tr = document.createElement('div');
+        tr.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + (6 + Math.random() * 6) + 'px;height:' + (6 + Math.random() * 6) + 'px;margin:-4px;border-radius:2px;background:' + el._col + ';box-shadow:0 0 12px ' + el._col + ';transform:rotate(45deg);transition:all 0.45s ease-out;';
+        stage.appendChild(tr);
+        requestAnimationFrame(() => { tr.style.opacity = '0'; tr.style.transform = 'rotate(45deg) scale(0.1)'; });
+        setTimeout(() => tr.remove(), 480);
+      }
+    });
+    if (u < 1) { requestAnimationFrame(step); return; }
+    burst();
+  };
+  requestAnimationFrame(step);
+  // ③ 合体: X の光・閃光・衝撃波・揺れ
+  const burst = () => {
+    els.forEach(el => el.remove());
+    const flash = document.createElement('div');
+    flash.style.cssText = 'position:absolute;inset:0;background:#fff;animation:dxFlash 0.55s ease-out forwards;';
+    stage.appendChild(flash);
+    stage.style.animation = 'dxShake 0.4s linear';
+    const X = document.createElement('div');
+    X.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;font-size:' + Math.min(220, W * 0.45) + 'px;font-weight:900;color:#fff;text-shadow:0 0 20px #ff3b3b,0 0 50px #ffb000,0 0 90px #ff3b3b;animation:dxX 1s ease-out forwards;line-height:1;';
+    X.innerText = '✖';
+    stage.appendChild(X);
+    ['#ffffff', '#ff3b3b', '#ffb000'].forEach((c, i) => {
+      const ring = document.createElement('div');
+      ring.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:100px;height:100px;border:4px solid ' + c + ';box-shadow:0 0 22px ' + c + ';transform:translate(-50%,-50%) rotate(45deg);animation:dxRing 0.9s ease-out ' + (i * 0.1) + 's forwards;opacity:0;';
+      stage.appendChild(ring);
+    });
+    setTimeout(reveal, 650);
+  };
+  // ④ 1体のデジモンが現れる
+  const reveal = () => {
+    const RW = Math.min(140, W * 0.32), RH = RW * 1.4;
+    const res = face(result, '#ffb000', RW, RH);
+    res.style.left = cx + 'px'; res.style.top = cy + 'px';
+    res.style.animation = 'dxRise 0.8s cubic-bezier(.2,.9,.3,1.2) forwards, dxGlow 1.1s ease-in-out 0.8s infinite';
+    stage.appendChild(res);
+    const title = document.createElement('div');
+    title.style.cssText = 'position:absolute;left:50%;top:' + Math.max(14, cy - RH / 2 - 66) + 'px;white-space:nowrap;font-size:' + Math.min(40, W * 0.09) + 'px;font-weight:900;font-style:italic;color:#fff;text-shadow:0 0 10px #ff3b3b,0 0 26px #ffb000,0 0 46px #ff3b3b;animation:dxTitle 0.7s ease-out forwards;';
+    title.innerText = 'DIGIXROS!';
+    stage.appendChild(title);
+    const sub = document.createElement('div');
+    sub.style.cssText = 'position:absolute;left:50%;top:' + (cy + RH / 2 + 16) + 'px;transform:translateX(-50%);max-width:92vw;text-align:center;font-size:12px;font-weight:bold;color:#ffd9a0;text-shadow:0 0 8px #ff3b3b;opacity:0;transition:opacity 0.4s 0.4s;';
+    sub.innerText = list.map(c => '「' + (c.name || '?') + '」').join('×') + ' →「' + ((result && result.name) || '?') + '」' + (cost != null ? '（コスト' + cost + '）' : '');
+    stage.appendChild(sub);
+    requestAnimationFrame(() => { sub.style.opacity = '1'; });
+    setTimeout(() => { overlay.style.opacity = '0'; }, 2100);
+    setTimeout(() => { overlay.remove(); done(); }, 2450);
+  };
+}

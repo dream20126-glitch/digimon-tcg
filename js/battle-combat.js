@@ -8,7 +8,7 @@
 import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
-import { fxLinkEffect, fxAppGattai, fxJogressFusion } from './battle-fx.js';
+import { fxLinkEffect, fxAppGattai, fxJogressFusion, fxDigixrossFusion } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
 import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged, getStaticEvoCostReduction as _getStaticEvoCostReduction, getJogressConditions as _getJogressConditions, jogressSlotMatches as _jogressSlotMatches } from './effect-engine.js';
@@ -1226,6 +1226,22 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
   _offerWhenPlayThenPlay(card, handIdx, slotIdx);
 }
 
+// デジクロスの素材にできる追加の場所（カード側の digixros_from、効果で増えた場所）
+function _digixrossExtraZones(card) {
+  const out = [];
+  try {
+    const r = typeof card.recipe === 'string' ? JSON.parse(card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : card.recipe;
+    (r && Array.isArray(r.passive) ? r.passive : []).forEach((p) => {
+      if (p && p.flag === 'digixros' && p.digixros_from) String(p.digixros_from).split(',').map(x => x.trim()).filter(Boolean).forEach(z => out.push(z));
+    });
+  } catch (_) {}
+  (bs.player._digixrossExtraZones || []).forEach((e) => {
+    if (!e) return;
+    (e.zones || []).forEach(z => out.push(z));
+  });
+  return out;
+}
+
 // 《デジクロス》の確認と、置くカードの選択（公式ルール 7-2）。置ける指定カードが1枚も無ければ false（確認しない）
 // - 置けるのは手札とバトルエリアの自分のカード（7-2-1）。指定カード（cost item＝グループ）ごとに最大 count 枚（7-2-2-5）
 // - 1枚以上選ぶ（7-2-2-4）。選び終わったら「決定」。重なり順は条件の左側（グループの順）が上（7-2-2-8）
@@ -1233,16 +1249,39 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
 // - 置いた枚数 × N だけ登場コストを軽減（card._assemblyDiscount）。card._digicrossed で「デジクロスしていたなら」を判定（7-2-2-9）
 function _offerDigixros(card, opt, costItems, handIdx, slotIdx) {
   const per = parseInt(opt.value, 10) || 0;
-  const zonesOf = (ci) => (Array.isArray(ci.from) ? ci.from : (ci.from ? [ci.from] : ['hand', 'battle_area']));
+  // 素材にできる場所: キーワードレシピの from（通常は手札・バトルエリア）＋ 効果で増えた場所
+  //  - カード側のデジクロスの設定の digixros_from（例 "trash,tamer_stack"）
+  //  - 効果（action:'digixros_zone_plus'）で一時的に増えた場所（bs.player._digixrossExtraZones）
+  //  場所のコード: hand / battle_area / trash / tamer_stack（テイマーの下）/ evo_source（デジモンの進化元）
+  const extraZones = _digixrossExtraZones(card);
+  const zonesOf = (ci) => {
+    const base = Array.isArray(ci.from) ? ci.from : (ci.from ? [ci.from] : ['hand', 'battle_area']);
+    return Array.from(new Set([...base, ...extraZones]));
+  };
+  // 素材 → 取り除く処理（どこから置いたか）
+  const srcOf = new Map();
   const slots = costItems.map((ci) => {
     const zones = zonesOf(ci);
     const pool = [];
-    if (zones.includes('hand')) bs.player.hand.forEach(c => { if (c && c !== card) pool.push(c); });
+    const add = (c, label, remove) => { if (!c || c === card) return; pool.push(c); if (!srcOf.has(c)) srcOf.set(c, { label, remove }); };
+    if (zones.includes('hand')) bs.player.hand.forEach(c => add(c, '手札', () => { const i = bs.player.hand.indexOf(c); if (i !== -1) bs.player.hand.splice(i, 1); }));
     if (zones.includes('battle_area')) {
-      bs.player.battleArea.forEach(c => { if (c) pool.push(c); });
-      (bs.player.tamerArea || []).forEach(c => { if (c) pool.push(c); });
+      bs.player.battleArea.forEach(c => add(c, 'バトルエリア', () => {
+        const i = bs.player.battleArea.indexOf(c); if (i === -1) return;
+        bs.player.battleArea[i] = null;
+        // バトルエリアから置くカードの進化元・リンクカードは破棄（公式ルール 7-2-2-7）
+        (c.stack || []).forEach(s2 => bs.player.trash.push(s2)); c.stack = [];
+        (c.linkedCards || []).forEach(s2 => bs.player.trash.push(s2)); c.linkedCards = [];
+      }));
+      (bs.player.tamerArea || []).forEach(c => add(c, 'バトルエリア', () => {
+        const i = bs.player.tamerArea.indexOf(c); if (i === -1) return;
+        bs.player.tamerArea.splice(i, 1);
+        (c.stack || []).forEach(s2 => bs.player.trash.push(s2)); c.stack = [];
+      }));
     }
-    if (zones.includes('trash')) bs.player.trash.forEach(c => { if (c) pool.push(c); });
+    if (zones.includes('trash')) bs.player.trash.forEach(c => add(c, 'トラッシュ', () => { const i = bs.player.trash.indexOf(c); if (i !== -1) bs.player.trash.splice(i, 1); }));
+    if (zones.includes('tamer_stack')) (bs.player.tamerArea || []).forEach(t => (t && t.stack || []).forEach(c => add(c, '「' + t.name + '」の下', () => { const i = t.stack.indexOf(c); if (i !== -1) t.stack.splice(i, 1); })));
+    if (zones.includes('evo_source')) bs.player.battleArea.forEach(d => (d && d.stack || []).forEach(c => add(c, '「' + d.name + '」の進化元', () => { const i = d.stack.indexOf(c); if (i !== -1) d.stack.splice(i, 1); })));
     return { max: Math.max(1, parseInt(ci.count, 10) || 1), cands: _filterAssemblyCandidates(ci, pool, bs, 'player') };
   });
   const allCands = [];
@@ -1287,36 +1326,22 @@ function _offerDigixros(card, opt, costItems, handIdx, slotIdx) {
           }
           picked.push(c);
           pickMore();
-        }, remaining);
+        }, remaining, { labelOf: (c) => (srcOf.get(c) || {}).label || '' });
     };
     const commit = () => {
       const map = assign(picked);
       if (!map || picked.length === 0) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
       // 条件の左側（グループの順）が上。同じグループ内は選んだ順
       const ordered = picked.slice().sort((a, b) => map.get(a) - map.get(b));
-      ordered.forEach((c) => {
-        const hi = bs.player.hand.indexOf(c); if (hi !== -1) { bs.player.hand.splice(hi, 1); return; }
-        const bi = bs.player.battleArea.indexOf(c);
-        if (bi !== -1) {
-          bs.player.battleArea[bi] = null;
-          (c.stack || []).forEach(s2 => bs.player.trash.push(s2)); c.stack = [];
-          (c.linkedCards || []).forEach(s2 => bs.player.trash.push(s2)); c.linkedCards = [];
-          return;
-        }
-        const ti = (bs.player.tamerArea || []).indexOf(c);
-        if (ti !== -1) {
-          bs.player.tamerArea.splice(ti, 1);
-          (c.stack || []).forEach(s2 => bs.player.trash.push(s2)); c.stack = [];
-          return;
-        }
-        const tr = bs.player.trash.indexOf(c); if (tr !== -1) bs.player.trash.splice(tr, 1);
-      });
+      ordered.forEach((c) => { const src = srcOf.get(c); if (src) src.remove(); });
       ordered.forEach(c => { delete c._faceDown; c.suspended = false; c.buffs = []; });
       if (!card.stack) card.stack = [];
       card.stack = [...ordered, ...card.stack];
       const disc = per * ordered.length;
       card._assemblyDiscount = (parseInt(card._assemblyDiscount, 10) || 0) + disc;
       card._digicrossed = ordered.length;
+      // 登場の演出をデジクロス（素材が交差して1体になる）演出にする（showPlayEffect が見る。オンラインは play コマンドで相手へ）
+      card._digixrossMats = ordered.map(c => ({ name: c.name, imgSrc: cardImg(c) || '' }));
       addLog('✖ 「' + card.name + '」のデジクロス（' + ordered.map(c => '「' + c.name + '」').join('') + 'を下に置く・登場コスト-' + disc + '）');
       renderAll();
       _offerWhenPlayThenPlay(card, handIdx, slotIdx);
@@ -1349,7 +1374,8 @@ export function doPlay(card, handIdx, slotIdx) {
     // showPlayEffect/showOptionEffect の演出表示（自分側画面）にも軽減後コストを反映
     card._costReduction = card.playCost - _effPlayCost;
   }
-  if (_onlineMode && _sendCommand) _sendCommand({ type: 'play', handIdx, slotIdx, cardName: card.name, cardType: card.type, cardImg: card.imgSrc || '', playCost: _effPlayCost });
+  if (_onlineMode && _sendCommand) _sendCommand({ type: 'play', handIdx, slotIdx, cardName: card.name, cardType: card.type, cardImg: card.imgSrc || '', playCost: _effPlayCost,
+    digixrossMats: Array.isArray(card._digixrossMats) ? card._digixrossMats : undefined });
 
   // ----- オプションカード -----
   if (card.type === 'オプション') {
@@ -4932,6 +4958,16 @@ function _evoOverlayRun(fn) {
   try { fn(end); } catch (e) { console.error('[evoOverlay]', e); end(); }
 }
 export function showPlayEffect(card, onDone0) {
+  // デジクロスで登場: 素材が交差して1体になる演出（_offerDigixros が card._digixrossMats を付ける。相手の画面は play コマンドの digixrossMats）
+  if (card && Array.isArray(card._digixrossMats) && card._digixrossMats.length > 0) {
+    const mats = card._digixrossMats;
+    delete card._digixrossMats;
+    _evoOverlayRun((end) => {
+      try { fxDigixrossFusion(mats, card, card._costReduction != null ? (card.playCost - card._costReduction) : null, () => { end(); onDone0 && onDone0(); }); }
+      catch (_) { end(); onDone0 && onDone0(); }
+    });
+    return;
+  }
   _evoOverlayRun((end) => _showPlayEffectBody(card, () => { end(); onDone0 && onDone0(); }));
 }
 function _showPlayEffectBody(card, onDone) {

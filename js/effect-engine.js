@@ -15858,6 +15858,23 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === デジクロスの素材にできる場所を増やす（「このターン、デジクロスでトラッシュのカードも下に置ける」等） ===
+    // step: { action:'digixros_zone_plus', value:'trash,tamer_stack' または from:[...], duration?:'dur_this_turn' }
+    // 場所のコード: trash / tamer_stack（テイマーの下）/ evo_source（デジモンの進化元）/ hand / battle_area
+    case 'digixros_zone_plus': {
+      const zones = (Array.isArray(step.from) ? step.from : String(step.value || step.from || '').split(',')).map(x => String(x).trim()).filter(Boolean);
+      if (zones.length > 0) {
+        if (!Array.isArray(player._digixrossExtraZones)) player._digixrossExtraZones = [];
+        const dur = normalizeRecipeDuration(step.duration);
+        // 「このターン」の分はターンの切り替わりで消える（clearTurnLimitedDigixrossZones）
+        player._digixrossExtraZones.push({ zones, thisTurn: dur === 'dur_this_turn' });
+        const jp = { trash: 'トラッシュ', tamer_stack: 'テイマーの下', evo_source: 'デジモンの進化元', hand: '手札', battle_area: 'バトルエリア' };
+        ctx.addLog && ctx.addLog('✖ デジクロスで' + zones.map(z => jp[z] || z).join('・') + 'のカードも下に置ける' + (dur === 'dur_this_turn' ? '（このターン）' : ''));
+      }
+      callback();
+      break;
+    }
+
     // === 効果によるジョグレス進化（公式ルール 8-2。EX12-001 ニャロモン / EX12-003 カプリモン / EX12-017 ウォーグレイモン） ===
     // step: { action:'jogress_evolve', target: 'self_card'|'target_trigger_source'(own:1+_forceTargetIdx)|'own:2',
     //         targets:[{ target:'target_other_own:1', filter? }], from:'hand', from_filter, cost_free?, value?(コスト増減) }
@@ -21227,3 +21244,14 @@ export function jogressSlotMatches(card, slot, bs, side) {
   if (slot.names && slot.names.length > 0 && !slot.names.some(n => cardHasName(card, n, true))) return false;
   return true;
 }
+
+
+// ターンの切り替わりで、「このターン」だけデジクロスの素材にできる場所（digixros_zone_plus）を消す（battle-phase.js / battle-online.js から呼ぶ）
+export function clearTurnLimitedDigixrossZones(bs) {
+  if (!bs) return;
+  ['player', 'ai'].forEach((sd) => {
+    const p = bs[sd];
+    if (p && Array.isArray(p._digixrossExtraZones)) p._digixrossExtraZones = p._digixrossExtraZones.filter(z => z && !z.thisTurn);
+  });
+}
+if (typeof window !== 'undefined') window._clearTurnLimitedDigixrossZones = clearTurnLimitedDigixrossZones;

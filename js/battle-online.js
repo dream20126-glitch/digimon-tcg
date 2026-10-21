@@ -598,6 +598,8 @@ function onRemoteCommand(cmd) {
       // 同じ位置に再登場）まで「古い同期での復活」とみなして消していた
       if (cmd.cardType !== 'オプション') _recentlyDestroyed = _recentlyDestroyed.filter(d => d.side !== 'ai');
       const dummy = { name: cardName, imgSrc: cmd.cardImg || '', type: cmd.cardType || '', playCost: cmd.playCost || 0 };
+      // デジクロスで登場: 素材が交差する演出（showPlayEffect が _digixrossMats を見る）
+      if (Array.isArray(cmd.digixrossMats) && cmd.digixrossMats.length > 0) dummy._digixrossMats = cmd.digixrossMats;
       addLog('🎮 相手が「' + cardName + '」を' + (cmd.cardType === 'オプション' ? '使用！' : '登場！'));
       if (cmd.cardType === 'オプション' && m.showOptionEffect) m.showOptionEffect(dummy, () => {});
       else if (m.showPlayEffect) m.showPlayEffect(dummy, () => {});
@@ -836,7 +838,7 @@ function onRemoteCommand(cmd) {
       fireOppTurnEnd(() => {
         if (m.showYourTurn) {
           m.showYourTurn('相手のターン終了', '', '#555555', () => {
-            bs.isPlayerTurn = true;
+            bs.isPlayerTurn = true; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs);
             m.showYourTurn('自分のターン開始', '', '#00fbff', () => {
               const afterStart = () => {
                 bs._receivingTurn = false;

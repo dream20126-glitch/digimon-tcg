@@ -9335,6 +9335,8 @@ const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'security_faceup:ge': 'cond_security_faceup_ge', 'security_faceup:le': 'cond_security_faceup_le', 'security_faceup:eq': 'cond_security_faceup_eq', 'security_faceup:gt': 'cond_security_faceup_gt', 'security_faceup:lt': 'cond_security_faceup_lt',
   'security_facedown:ge': 'cond_security_facedown_ge', 'security_facedown:le': 'cond_security_facedown_le', 'security_facedown:eq': 'cond_security_facedown_eq', 'security_facedown:gt': 'cond_security_facedown_gt', 'security_facedown:lt': 'cond_security_facedown_lt',
   'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le', 'evo_source:eq': 'cond_has_evo_eq', 'evo_source:gt': 'cond_has_evo_gt', 'evo_source:lt': 'cond_has_evo_lt',
+  // 「進化元」ゾーン+数え方トグル（「Lvが同じカード」）専用の内部参照キー。ゾーンボタンとしては出さない
+  'evo_source_same_lv:ge': 'cond_has_evo_same_lv', 'evo_source_same_lv:le': 'cond_has_evo_same_lv_le', 'evo_source_same_lv:eq': 'cond_has_evo_same_lv_eq', 'evo_source_same_lv:gt': 'cond_has_evo_same_lv_gt', 'evo_source_same_lv:lt': 'cond_has_evo_same_lv_lt',
   'linked:ge': 'cond_linked_ge', 'linked:le': 'cond_linked_le', 'linked:eq': 'cond_linked_eq', 'linked:gt': 'cond_linked_gt', 'linked:lt': 'cond_linked_lt',
   'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq', 'battle_area:gt': 'cond_battle_area_gt', 'battle_area:lt': 'cond_battle_area_lt',
   'state_rest:ge': 'cond_state_rest_ge', 'state_rest:le': 'cond_state_rest_le', 'state_rest:eq': 'cond_state_rest_eq', 'state_rest:gt': 'cond_state_rest_gt', 'state_rest:lt': 'cond_state_rest_lt',
@@ -9360,6 +9362,8 @@ const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> 
   cond_security_faceup_ge: { zone: 'security', quant: 'ge' }, cond_security_faceup_le: { zone: 'security', quant: 'le' }, cond_security_faceup_eq: { zone: 'security', quant: 'eq' }, cond_security_faceup_gt: { zone: 'security', quant: 'gt' }, cond_security_faceup_lt: { zone: 'security', quant: 'lt' },
   cond_security_facedown_ge: { zone: 'security', quant: 'ge' }, cond_security_facedown_le: { zone: 'security', quant: 'le' }, cond_security_facedown_eq: { zone: 'security', quant: 'eq' }, cond_security_facedown_gt: { zone: 'security', quant: 'gt' }, cond_security_facedown_lt: { zone: 'security', quant: 'lt' },
   cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_eq: { zone: 'evo_source', quant: 'eq' }, cond_has_evo_gt: { zone: 'evo_source', quant: 'gt' }, cond_has_evo_lt: { zone: 'evo_source', quant: 'lt' },
+  // 数え方トグル「Lvが同じカード」が付いていても「進化元」ゾーン自体は変わらない（refEvoCountModeOf参照）
+  cond_has_evo_same_lv: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_same_lv_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_same_lv_eq: { zone: 'evo_source', quant: 'eq' }, cond_has_evo_same_lv_gt: { zone: 'evo_source', quant: 'gt' }, cond_has_evo_same_lv_lt: { zone: 'evo_source', quant: 'lt' },
   cond_linked_ge: { zone: 'linked', quant: 'ge' }, cond_linked_le: { zone: 'linked', quant: 'le' }, cond_linked_eq: { zone: 'linked', quant: 'eq' }, cond_linked_gt: { zone: 'linked', quant: 'gt' }, cond_linked_lt: { zone: 'linked', quant: 'lt' },
   cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' }, cond_battle_area_gt: { zone: 'battle_area', quant: 'gt' }, cond_battle_area_lt: { zone: 'battle_area', quant: 'lt' },
   cond_state_rest_ge: { zone: 'state_rest', quant: 'ge' }, cond_state_rest_le: { zone: 'state_rest', quant: 'le' }, cond_state_rest_eq: { zone: 'state_rest', quant: 'eq' }, cond_state_rest_gt: { zone: 'state_rest', quant: 'gt' }, cond_state_rest_lt: { zone: 'state_rest', quant: 'lt' },
@@ -9406,6 +9410,15 @@ function refSecurityFaceOf(base: string): '' | 'down' | 'up' {
 function refSecurityZoneKey(face: '' | 'down' | 'up'): string {
   return face === 'down' ? 'security_facedown' : face === 'up' ? 'security_faceup' : 'security';
 }
+// 進化元ゾーン専用: 枚数(ge/le/eq/gt/lt)と独立した「数え方」トグル。
+// 「Lvが同じカード」= 重なっているカードをLvごとに数え、最も多いLvの枚数で比較する
+// （例:「このデジモンにLv.の同じカードが2枚以上重ねられているなら」）
+const REF_EVO_COUNT_MODE_OPTIONS: { code: '' | 'same_lv'; label: string }[] = [
+  { code: '', label: '全部' }, { code: 'same_lv', label: 'Lvが同じカード' },
+];
+function refEvoCountModeOf(base: string): '' | 'same_lv' {
+  return base.startsWith('cond_has_evo_same_lv') ? 'same_lv' : '';
+}
 // ゾーンを変更する（値バリアントは可能な限り維持。裏向き/表向きは対応ゾーンでのみ維持できる）
 function refApplyZone(zone: string, quant: RefQuant, value: string | undefined): { base: string; value?: string } {
   if (zone === 'state') return { base: 'cond_same_state', value: DP_REF_CODES.has(value || '') ? value : 'self' };
@@ -9420,11 +9433,13 @@ function refApplyZone(zone: string, quant: RefQuant, value: string | undefined):
 // 以上/以下/完全一致の切替では、入力済みの枚数や「参照」(value:'opp')はそのまま維持する
 // ―― 以上/以下ボタンの切替のたびに「参照」選択が数値入力に巻き戻る不具合があったため）。
 // securityFace: セキュリティゾーンの裏表トグルの現在値を、切替後も保持するために渡す
-function refApplyQuant(zone: string, quant: RefQuant, currentValue?: string, securityFace?: '' | 'down' | 'up'): { base: string; value?: string } {
+function refApplyQuant(zone: string, quant: RefQuant, currentValue?: string, securityFace?: '' | 'down' | 'up', evoCountMode?: '' | 'same_lv'): { base: string; value?: string } {
   if (quant === 'face_down' || quant === 'face_up') {
     return { base: quant === 'face_down' ? 'cond_face_down' : 'cond_face_up', value: zone };
   }
-  const key = (zone === 'security' && securityFace) ? refSecurityZoneKey(securityFace) : zone;
+  const key = (zone === 'security' && securityFace) ? refSecurityZoneKey(securityFace)
+    : (zone === 'evo_source' && evoCountMode === 'same_lv') ? 'evo_source_same_lv'
+    : zone;
   return { base: REF_ZONE_QUANT_TO_CODE[key + ':' + quant], value: currentValue };
 }
 const REF_QUANT_OPTIONS_BY_ZONE: Record<string, { code: RefQuant; label: string }[]> = {
@@ -9633,6 +9648,7 @@ function ConditionsHybridEditor({
     // 「参照」カテゴリで扱う手札/トラッシュ/セキュリティ/進化元の枚数条件
     'cond_hand_ge', 'cond_hand_le', 'cond_trash_ge', 'cond_trash_le',
     'cond_security_ge', 'cond_security_le', 'cond_has_evo', 'cond_has_evo_le',
+    'cond_has_evo_same_lv', 'cond_has_evo_same_lv_le', 'cond_has_evo_same_lv_eq', 'cond_has_evo_same_lv_gt', 'cond_has_evo_same_lv_lt',
     // 「効果で」(cond_effect等)は専用カテゴリボタンを設けず「その他条件」内に留める
     // ため、ここでは除外しない（isByEffectCondでその行だけ専用UIを重ねて表示する）
     // 「指定」カテゴリで扱うプレースホルダー
@@ -9989,6 +10005,7 @@ function ConditionsHybridEditor({
                         const refQuantOptions = REF_QUANT_OPTIONS_BY_ZONE[refZone] || REF_QUANT_OPTIONS_DEFAULT;
                         const refNoValue = REF_QUANT_NO_VALUE.has(refQuant);
                         const refSecurityFace = refSecurityFaceOf(c.base);
+                        const refEvoCountMode = refEvoCountModeOf(c.base);
                         return (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -10000,6 +10017,7 @@ function ConditionsHybridEditor({
                                 quant as RefQuant,
                                 (refQuant === 'face_down' || refQuant === 'face_up') ? undefined : c.value,
                                 refSecurityFace,
+                                refEvoCountMode,
                               ))}
                               accentColor={colors.accent}
                             />
@@ -10041,6 +10059,22 @@ function ConditionsHybridEditor({
                           {/* セキュリティのみ: 枚数条件に重ねて「裏向きのみ/表向きのみ」に絞り込める
                               （例:「裏向きのセキュリティが2枚以上」）。⚠エンジン未実装
                               （セキュリティカード個々の裏表状態自体をエンジンが未保持） */}
+                          {refZone === 'evo_source' && !refNoValue && (
+                            <div>
+                              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🔢 数え方</div>
+                              <ButtonGroup
+                                options={REF_EVO_COUNT_MODE_OPTIONS}
+                                value={refEvoCountMode}
+                                onChange={(mode) => updateAt(i, {
+                                  base: REF_ZONE_QUANT_TO_CODE[(mode === 'same_lv' ? 'evo_source_same_lv' : 'evo_source') + ':' + refQuant],
+                                })}
+                                accentColor={colors.accent}
+                              />
+                              {refEvoCountMode === 'same_lv' && (
+                                <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>重なっているカードをLvごとに数え、一番多いLvの枚数で判定します（Lvの無いカードは数えません）</div>
+                              )}
+                            </div>
+                          )}
                           {refZone === 'security' && (
                             <div>
                               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>

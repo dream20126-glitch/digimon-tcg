@@ -348,6 +348,11 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_security_lt', kind: 'condition', label: 'セキュリティがN枚より少ない' },
   { code: 'cond_has_evo_gt', kind: 'condition', label: '進化元がN枚より多い' },
   { code: 'cond_has_evo_lt', kind: 'condition', label: '進化元がN枚より少ない' },
+  { code: 'cond_has_evo_same_lv', kind: 'condition', label: '進化元にLvが同じカードがN枚以上' },
+  { code: 'cond_has_evo_same_lv_le', kind: 'condition', label: '進化元にLvが同じカードがN枚以下' },
+  { code: 'cond_has_evo_same_lv_eq', kind: 'condition', label: '進化元にLvが同じカードがちょうどN枚' },
+  { code: 'cond_has_evo_same_lv_gt', kind: 'condition', label: '進化元にLvが同じカードがN枚より多い' },
+  { code: 'cond_has_evo_same_lv_lt', kind: 'condition', label: '進化元にLvが同じカードがN枚より少ない' },
   { code: 'cond_battle_area_gt', kind: 'condition', label: 'バトルエリアがN枚より多い' },
   { code: 'cond_battle_area_lt', kind: 'condition', label: 'バトルエリアがN枚より少ない' },
   // 状態（レスト/アクティブ状態のデジモンの体数）。対象(subject)で自分/相手/両方を指定でき、

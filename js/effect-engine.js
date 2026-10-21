@@ -7982,6 +7982,26 @@ function checkConditions(conditions, card, bs, side) {
     switch (cond.code) {
       case 'cond_has_evo': if (!card.stack || card.stack.length < (cond.value || 0)) return false; break;
       case 'cond_no_evo': if (card.stack && card.stack.length > 0) return false; break;
+      // 「このデジモンにLv.の同じカードがN枚以上重ねられているなら」:
+      // 進化元（stack＝一番上のカードを除いた重なっているカード）を Lv ごとに数え、
+      // 最も多い Lv の枚数を N と比較する。Lv を持たないカード（テイマー・オプション等）は数えない
+      case 'cond_has_evo_same_lv': case 'cond_has_evo_same_lv_le': case 'cond_has_evo_same_lv_eq':
+      case 'cond_has_evo_same_lv_gt': case 'cond_has_evo_same_lv_lt': {
+        const byLv = {};
+        for (const s of (card.stack || [])) {
+          const lv = s ? parseInt(s.level, 10) : NaN;
+          if (!Number.isFinite(lv)) continue;
+          byLv[lv] = (byLv[lv] || 0) + 1;
+        }
+        const n = Object.values(byLv).reduce((m, v) => Math.max(m, v), 0);
+        const v = Number(cond.value || 0);
+        const ok = cond.code === 'cond_has_evo_same_lv' ? n >= v
+          : cond.code.endsWith('_le') ? n <= v
+          : cond.code.endsWith('_eq') ? n === v
+          : cond.code.endsWith('_gt') ? n > v : n < v;
+        if (!ok) return false;
+        break;
+      }
       // リンクカード枚数（参照カテゴリ「リンクカード」。card.linkedCardsの枚数を比較）
       case 'cond_linked_ge': if ((card.linkedCards ? card.linkedCards.length : 0) < (cond.value || 0)) return false; break;
       case 'cond_linked_le': if ((card.linkedCards ? card.linkedCards.length : 0) > (cond.value || 0)) return false; break;

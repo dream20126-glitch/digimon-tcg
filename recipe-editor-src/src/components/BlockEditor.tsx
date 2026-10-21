@@ -466,16 +466,22 @@ const FUSION_COLOR_OPTS = [
 // app_gattai_evolve / jogress_evolve（アプ合体/ジョグレス進化）専用: 素材候補スロットのリスト編集。
 // 1スロット=名称OR、または色OR+Lvのどちらか。候補数>使う体数なら「いずれかN体」判定になる
 function FusionMaterialsEditor({
-  slots,
+  slots: slots0,
   pickCount,
   onSlotsChange,
   onPickCountChange,
+  jogress,
 }: {
   slots: FusionMaterialSlot[];
   pickCount: number;
   onSlotsChange: (v: FusionMaterialSlot[]) => void;
   onPickCountChange: (v: number) => void;
+  // ジョグレス進化: 素材は「左（上に重なる方）」「右（その下）」の2つ固定。体数は常に2
+  jogress?: boolean;
 }) {
+  const slots: FusionMaterialSlot[] = jogress
+    ? [slots0[0] || { colors: [] }, slots0[1] || { colors: [] }]
+    : slots0;
   const updateSlot = (i: number, next: FusionMaterialSlot) => {
     const copy = slots.slice();
     copy[i] = next;
@@ -490,7 +496,7 @@ function FusionMaterialsEditor({
         return (
           <div key={i} style={{ border: '1px solid #ffb74d', borderRadius: 4, padding: 8, marginBottom: 6, background: 'white' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 6 }}>
-              <span style={{ fontSize: 11, fontWeight: 'bold', color: '#b76e00' }}>素材候補 {i + 1}</span>
+              <span style={{ fontSize: 11, fontWeight: 'bold', color: '#b76e00' }}>{jogress ? (i === 0 ? '左（上に重なる方）' : '右（その下）') : '素材候補 ' + (i + 1)}</span>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <ButtonGroup
                   options={[{ code: 'name', label: '名称' }, { code: 'color', label: '色+Lv' }]}
@@ -498,6 +504,7 @@ function FusionMaterialsEditor({
                   onChange={(v) => updateSlot(i, v === 'color' ? { colors: [], lv: s.lv } : { names: s.names || [] })}
                   accentColor="#b76e00"
                 />
+                {!jogress && (
                 <button
                   type="button"
                   onClick={() => removeSlot(i)}
@@ -505,6 +512,7 @@ function FusionMaterialsEditor({
                 >
                   ✕ 削除
                 </button>
+                )}
               </div>
             </div>
             {mode === 'name' ? (
@@ -539,6 +547,7 @@ function FusionMaterialsEditor({
           </div>
         );
       })}
+      {!jogress && (
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
         <button
           type="button"
@@ -558,6 +567,7 @@ function FusionMaterialsEditor({
           />
         </span>
       </div>
+      )}
       {/* カードの［ジョグレス進化］表記と見比べられるよう、入力内容を「青/紫Lv.4 ＋ 黒/黄Lv.4」の形で
           プレビューする（EX12-028 グソクモン「［ジョグレス進化］青/紫Lv.4+黒/黄Lv.4」等） */}
       {slots.length > 0 && (
@@ -4438,21 +4448,28 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 戻る
               </button>
             </div>
-            <div style={{ marginBottom: 6, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
-              ⚠ {block.trigger === 'app_gattai_evolve' ? 'アプ合体' : 'ジョグレス進化'}はエンジン未実装です（保存はできますが動作しません）
-            </div>
-            🧬 <b>{block.trigger === 'app_gattai_evolve' ? 'アプ合体' : 'ジョグレス進化'}（複数体の素材を同時に使って進化）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。演出が異なるため、アプ合体とジョグレス進化は別々のトリガーとして保存されます。
-            <br />・素材候補が2つで使う体数も2 → 2つとも必須（ジョグレス型。例:「紫/青Lv5」＋「赤/黄Lv5」）
-            <br />・素材候補が3つで使う体数が2 → いずれか2つを満たせばOK（アプ合体型。例:「エイドモン/サブリモン/スバモン」のいずれか2体）
+            {block.trigger === 'jogress_evolve' ? (
+              <>
+                🧬 <b>ジョグレス進化の条件</b>（「［ジョグレス進化］青/黄Lv.6+赤/黒Lv.6」）。アクション/対象は不要です。
+                <br />・<b>効果テキストに「［ジョグレス進化］…」の表記があれば、ここを設定しなくても自動で読み取ります。</b>テキストと違う条件にしたいときだけ設定してください（設定するとこちらが優先）。
+                <br />・左の条件のデジモンが上に重なります（公式ルール 8-2-2-2）。条件が複数あるカードは、ブロックを追加して1つずつ設定します。
+              </>
+            ) : (
+              <>
+                🧬 <b>アプ合体（複数体の素材を同時に使って進化）</b>は常時判定される特殊トリガーです。アクション/対象は不要（空のままでOK）。
+                <br />・素材候補が3つで使う体数が2 → いずれか2つを満たせばOK（例:「エイドモン/サブリモン/スバモン」のいずれか2体）
+              </>
+            )}
             <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #ffb74d' }}>
               <label style={{ display: 'block', fontWeight: 'bold', color: '#b76e00', marginBottom: 6 }}>
-                🧩 素材候補
+                🧩 {block.trigger === 'jogress_evolve' ? 'ジョグレス進化する2体の条件' : '素材候補'}
               </label>
               <FusionMaterialsEditor
                 slots={block.fusionMaterials || []}
-                pickCount={block.fusionPickCount || 2}
+                pickCount={block.trigger === 'jogress_evolve' ? 2 : (block.fusionPickCount || 2)}
                 onSlotsChange={(v) => update('fusionMaterials', v)}
                 onPickCountChange={(v) => update('fusionPickCount', v)}
+                jogress={block.trigger === 'jogress_evolve'}
               />
             </div>
             <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #ffb74d' }}>

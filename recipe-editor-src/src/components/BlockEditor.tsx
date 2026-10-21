@@ -1547,7 +1547,7 @@ function CostListEditor({
                         titleBase="取得元カードの条件"
                         theme="action"
                         accentColor="#b76e00"
-                        extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true }}
+                        extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, showTypeInTargetFilter: true }}
                         commonConditions={c.fromFilter}
                         onCommonConditionsChange={(next) => updateCost(i, { ...c, fromFilter: next })}
                       />
@@ -2119,7 +2119,7 @@ function CostListEditor({
                     titleBase="進化元を持つデジモン/テイマーの条件"
                     theme="action"
                     accentColor="#b76e00"
-                    extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true }}
+                    extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, showTypeInTargetFilter: true }}
                     commonConditions={c.containerFilter}
                     onCommonConditionsChange={(next) => updateCost(i, { ...c, containerFilter: next })}
                   />

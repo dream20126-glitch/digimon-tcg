@@ -492,7 +492,8 @@ function FusionMaterialsEditor({
   return (
     <div>
       {slots.map((s, i) => {
-        const mode: 'name' | 'color' = s.colors && s.colors.length > 0 ? 'color' : 'name';
+        // colors 配列を持っていれば「色+Lv」（色がまだ1つも選ばれていなくても）。以前は色が空だと「名称」に戻っていた
+        const mode: 'name' | 'color' = Array.isArray(s.colors) ? 'color' : 'name';
         return (
           <div key={i} style={{ border: '1px solid #ffb74d', borderRadius: 4, padding: 8, marginBottom: 6, background: 'white' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 6 }}>
@@ -533,15 +534,12 @@ function FusionMaterialsEditor({
                   }}
                   accentColor="#b76e00"
                 />
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ fontSize: 11 }}>Lv.</span>
-                  <input
-                    type="number"
-                    value={s.lv === undefined ? '' : String(s.lv)}
-                    onChange={(e) => updateSlot(i, { ...s, lv: e.target.value === '' ? undefined : Number(e.target.value) })}
-                    style={{ padding: '3px 5px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 55 }}
-                  />
-                </span>
+                <ButtonGroup
+                  options={[{ code: '', label: 'Lv指定なし' }, ...[2, 3, 4, 5, 6, 7].map((n) => ({ code: String(n), label: 'Lv.' + n }))]}
+                  value={s.lv === undefined || s.lv === '' ? '' : String(s.lv)}
+                  onChange={(v) => updateSlot(i, { ...s, lv: v === '' ? undefined : Number(v) })}
+                  accentColor="#b76e00"
+                />
               </div>
             )}
           </div>

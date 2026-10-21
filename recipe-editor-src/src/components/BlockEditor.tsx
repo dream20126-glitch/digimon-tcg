@@ -7653,7 +7653,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       重ねられているカードのサブ選択肢（左の対象ボックス側）を選んでいるときだけ、
                       その位置（本体/上/下/選んで）をここに表示する。
                       裏表指定は「本体」以外（上/下/選んで）のときのみ表示する（block.conditionsへ保存） */}
-                  {(curTgt.l2 === 'digimon' || curTgt.l1 === 'self' || curTgt.l1 === 'same_target') && !effectIsPlaceActive && (() => {
+                  {(curTgt.l2 === 'digimon' || isOrMode || curTgt.l1 === 'self' || curTgt.l1 === 'same_target') && !effectIsPlaceActive && (() => {
                     const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                     const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
                     const activeCond = evoCond || stackCond;

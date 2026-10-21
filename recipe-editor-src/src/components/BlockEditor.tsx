@@ -6326,8 +6326,28 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       else if (/^\d+$/.test(v)) updateEffect({ value: Number(v) });
                       else updateEffect({ value: v });
                     }}
-                    placeholder={effectAction === 'summon_token' ? 'トークンのカードNo (例: TK-01)' : '数値 (例: 1000)'}
+                    placeholder={effectAction === 'summon_token' ? 'トークンのカードNo (例: TK_017)' : '数値 (例: 1000)'}
                   />
+                  {/* トークンを登場させる体数（token_count。1体なら省略して保存） */}
+                  {effectAction === 'summon_token' && (() => {
+                    const curCount = (isEditingAlt ? editingAlt!.tokenCount : block.tokenCount) || 1;
+                    return (
+                      <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 11, color: '#555' }}>体数</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={curCount}
+                          onChange={(e) => {
+                            const n = Math.max(1, parseInt(e.target.value, 10) || 1);
+                            updateEffect({ tokenCount: n > 1 ? n : undefined });
+                          }}
+                          style={{ width: 60 }}
+                        />
+                        <span style={{ fontSize: 11, color: '#555' }}>体</span>
+                      </div>
+                    );
+                  })()}
                   {/* 値の数え方（対象数と同じボタン）: 指定なし / 全て / 完全一致 / 〜まで / 〜なるまで */}
                   <div style={{ marginTop: 4 }}>
                     <ButtonGroup

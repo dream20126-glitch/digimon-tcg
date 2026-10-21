@@ -108,6 +108,8 @@ export interface EffectBlock {
   // アクションの値の数え方（対象数と同じ）: 'all'=全て / 'exact'=完全一致 / 'up_to'=〜まで / 'until'=〜になるまで。
   // 未指定=指定なし。JSONでは step.value_mode（旧 value_up_to:true は 'up_to' として読む）。⚠ エンジン未実装
   valueMode?: 'all' | 'exact' | 'up_to' | 'until';
+  // トークンを登場させる体数（summon_token 用。JSONでは token_count。1体なら省略）
+  tokenCount?: number;
   // トリガーの複数選択（例: 登場時/進化時どちらでも同じ効果）。2件以上のときのみ意味を持つ。
   // blocksToRecipeで各コードごとに同じstepを複製して出力する。1件以下ならtriggerのみを見る
   triggers?: string[];
@@ -453,6 +455,8 @@ export interface AltAction {
   displayText?: string;
   // アクションの値の数え方（EffectBlock.valueMode と同じ）。JSONでは value_mode。⚠ エンジン未実装
   valueMode?: 'all' | 'exact' | 'up_to' | 'until';
+  // トークンを登場させる体数（EffectBlock.tokenCount と同じ）。JSONでは token_count
+  tokenCount?: number;
   // 「効果1と同じ」: 効果1のポップアップで一緒に表示済みとして、この効果では出さない（テキストも書かない）。JSONでは display_same: true
   displaySame?: boolean;
   value?: number | string;

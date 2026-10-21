@@ -481,6 +481,8 @@ function applyRefZoneCond(f: Record<string, any>, c: ConditionPair): boolean {
   else return false;
   const n = parseInt(String(c.value), 10);
   if (!isNaN(n)) f[`${zone}_${quant}`] = n;
+  // 数値の代わりに比べる先（'self_card'=このカードの同じ場所の枚数 / 'opp'=相手の同じ場所の枚数）
+  else if (c.value === 'self_card' || c.value === 'opp') f[`${zone}_${quant}`] = c.value;
   if (c.subject === 'opp') f[`${zone}_subject`] = 'opp';
   return true;
 }

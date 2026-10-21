@@ -4340,7 +4340,22 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   相手のデジモンのアタックへの【カウンター】効果（1回のアタックに1つだけ・【アタック時】の効果の後に発揮）
                 </div>
                 {block.counter && (
-                  <div style={{ fontSize: 10, color: '#c62828', marginLeft: 20 }}>⚠ エンジン未実装です（保存はできますが【カウンター】としての制約は反映されません）</div>
+                  <div style={{ marginLeft: 20, marginTop: 4 }}>
+                    <ButtonGroup
+                      options={[
+                        { code: 'only', label: '【カウンター】のみ' },
+                        { code: 'also', label: '【アタック時】と【カウンター】の両方' },
+                      ]}
+                      value={block.counter === 'also' ? 'also' : 'only'}
+                      onChange={(v) => update('counter', v === 'also' ? 'also' : true)}
+                      accentColor="#d6336c"
+                    />
+                    <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
+                      {block.counter === 'also'
+                        ? '発動主体は「自分」のまま。自分のアタックでは【アタック時】、相手のデジモンのアタックでは【カウンター】として発揮します'
+                        : '発動主体を「相手」にしてください（相手のデジモンがアタックしたとき）'}
+                    </div>
+                  </div>
                 )}
               </div>
             )}

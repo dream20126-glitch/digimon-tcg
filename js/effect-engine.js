@@ -12097,6 +12097,13 @@ function _isOppOrBothAttackStep(step) {
   const subj = _resolveStepSubject(step, 'on_attack');
   return subj === 'opp' || subj === 'both' || subj === 'both_digimon';
 }
+// 【カウンター】として発揮するステップ:
+// - counter:true …「相手のデジモンがアタックしたとき」専用の【カウンター】（発動主体＝相手）
+// - also_counter:true …【アタック時】【カウンター】を1つの効果で持つカード用。自分のアタックでは通常の
+//   【アタック時】として、相手のデジモンのアタックでは【カウンター】として発揮する（発動主体は自分のまま）
+function _isCounterStep(step) {
+  return !!step && ((step.counter === true && _isOppOrBothAttackStep(step)) || step.also_counter === true);
+}
 export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, opts) {
   if (bs) bs._currentAttackerSide = attackerSide;
   const reactSide = attackerSide === 'player' ? 'ai' : 'player';
@@ -12105,7 +12112,7 @@ export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, 
   // 相手のカードとして処理していたため、確認がアタックした側に出て、持ち主は何も操作できなかった
   // （黒井翔太 BT26-092）。変更されたアタック対象は fx_reactionDelegateDone で返ってくる
   if (reactSide === 'ai' && !(opts && opts.local) && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-    if (!_anyBoardCardHasStep(bs, 'on_attack', _isOppOrBothAttackStep)) { done && done(); return; }
+    if (!_anyBoardCardHasStep(bs, 'on_attack', (s) => _isOppOrBothAttackStep(s) || _isCounterStep(s))) { done && done(); return; }
     _delegateReactionToOpponent({ recipeKey: 'on_attack', kind: 'on_attack_opp' }, done);
     return;
   }
@@ -12113,8 +12120,10 @@ export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, 
   // カウンタータイミングで発揮する。1回のアタックで使える【カウンター】は1つだけ（executeRecipeStep が _counterUsedSeq で弾く）
   if (bs) bs._attackSeq = (bs._attackSeq || 0) + 1;
   return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, () => {
-    if (!bs || !_anyBoardCardHasStep(bs, 'on_attack', (s) => !!s && s.counter === true)) { done && done(); return; }
-    _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && step.counter === true && _isOppOrBothAttackStep(step));
+    if (!bs || !_anyBoardCardHasStep(bs, 'on_attack', _isCounterStep)) { done && done(); return; }
+    // also_counter のステップを【カウンター】として扱う（1回のアタックに1つ）ための印
+    bs._inCounterPass = true;
+    _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, () => { bs._inCounterPass = false; done && done(); }, _isCounterStep);
   }, (step) => !!step && step.counter !== true && _isOppOrBothAttackStep(step));
 }
 
@@ -15014,7 +15023,7 @@ function executeRecipeStep(step, ctx, store, callback) {
   const effectiveSide = (ctx._forceTargetIdx !== undefined) ? 'ai' : ctx.side;
 
   // 【カウンター】は1回のアタックに1つだけ（公式ルール 16-14）
-  if (step && step.counter === true && ctx.bs && !step._counterChecked) {
+  if (step && ctx.bs && !step._counterChecked && (step.counter === true || (step.also_counter === true && ctx.bs._inCounterPass))) {
     if (ctx.bs._attackSeq && ctx.bs._counterUsedSeq === ctx.bs._attackSeq) {
       ctx.addLog && ctx.addLog('💨 このアタックではもう【カウンター】を使っています');
       callback && callback();

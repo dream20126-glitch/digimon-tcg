@@ -1479,7 +1479,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.zone) step.in_zone = b.zone;
   if (b.limit) step.limit = b.limit;
   // 【カウンター】の印（未チェックなら出力しない＝既存レシピの出力は不変）
-  if (b.counter) step.counter = true;
+  if (b.counter === 'also') step.also_counter = true;
+  else if (b.counter) step.counter = true;
   if (b.perCostCard) step.per_cost_card = true;
   if (b.valueMode) step.value_mode = b.valueMode;
   // subject='self' はデフォルトなのでJSONに含めない（既存レシピと互換）。
@@ -2214,6 +2215,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     options: true,
     limit: true,
     counter: true,
+    also_counter: true,
     per_cost_card: true,
     value_up_to: true,
     value_mode: true,
@@ -2337,7 +2339,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     triggerCauseSubjectByCode: (step?.cause_subject_by_code && typeof step.cause_subject_by_code === 'object')
       ? { ...step.cause_subject_by_code } : undefined,
     limit: step?.limit || '',
-    counter: step?.counter === true ? true : undefined,
+    counter: step?.counter === true ? true : step?.also_counter === true ? 'also' : undefined,
     perCostCard: step?.per_cost_card === true ? true : undefined,
     valueMode: parseValueMode(step),
     triggerConditions,

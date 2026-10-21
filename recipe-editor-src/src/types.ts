@@ -98,9 +98,10 @@ export interface EffectBlock {
   asType?: 'digimon' | 'tamer' | 'option';
   zone?: string; // '' | 'security' | 'trash' | 'hand' | 'breed'
   trigger: string; // code (e.g., 'on_play', 'during_own_turn', 'passive', 'main')。複数選択時はtriggers[0]と一致させる
-  // 【カウンター】効果の印（trigger=on_attack・発動主体=相手 と組み合わせて使う）。
-  // true のとき JSON へ step.counter:true を出力する（EX12-017 等）。⚠ エンジン未実装
-  counter?: boolean;
+  // 【カウンター】効果の印。
+  // true …【カウンター】のみ（trigger=on_attack・発動主体=相手 と組み合わせる）→ step.counter:true（EX12-017 等）
+  // 'also' …【アタック時】【カウンター】の両方を1つの効果で持つ（発動主体=自分のまま）→ step.also_counter:true
+  counter?: boolean | 'also';
   // コスト軽減（summon_cost等）で「コストで置いた（処理した）カード1枚ごとに軽減」する印（デジクロス）。
   // true のとき JSON へ step.per_cost_card:true を出力する。⚠ エンジン未実装
   perCostCard?: boolean;

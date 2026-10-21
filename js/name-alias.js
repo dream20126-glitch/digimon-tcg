@@ -26,6 +26,11 @@ export function getNameAliases(card) {
 // exact=true: 完全一致 / exact=false(またはundefined): 部分一致（includes）
 export function cardHasName(card, reqName, exact) {
   if (!card || !reqName) return false;
+  // カンマ区切り（レシピエディタの名称タグ入力）: どれか1つに当てはまれば一致（特徴のカンマ区切りと同じ）。
+  // 除外（name_not）側で使うと「どれにも当てはまらない」になる
+  if (String(reqName).includes(',')) {
+    return String(reqName).split(',').map(s => s.trim()).filter(Boolean).some(n => cardHasName(card, n, exact));
+  }
   const test = exact ? (n => n === reqName) : (n => n.includes(reqName));
   if (test(String(card.name || ''))) return true;
   return getNameAliases(card).some(test);

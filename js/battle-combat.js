@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect, fxAppGattai } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged, getStaticEvoCostReduction as _getStaticEvoCostReduction } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -1116,6 +1116,8 @@ function _offerWhenPlayThenPlayInner(card, handIdx, slotIdx) {
 }
 
 export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
+  // 前回の登場時のデジクロスの印は消しておく（「デジクロスしていたなら」は今回の登場だけを見る）
+  if (card) delete card._digicrossed;
   if (bs.phase !== 'main' || _attackInProgress) { doPlay(card, handIdx, slotIdx); return; }
   const options = card ? _getAssemblyOptions(card) : [];
   for (const opt of options) {
@@ -1123,6 +1125,12 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
     if (opt.in_zone && opt.in_zone !== 'hand') continue;
     const costItems = Array.isArray(opt.cost) ? opt.cost.filter(c => c) : [];
     if (costItems.length === 0) continue;
+    // 《デジクロス》（キーワードレシピの per_cost_card / 指定グループの「好きな枚数」）: 手札・バトルエリアの指定カードを
+    // 1枚以上好きな枚数だけ下に置き、置いた1枚ごとに登場コスト-N（公式ルール 7-2）。置けるカードが無ければ次の候補へ
+    if (opt.per_cost_card || costItems.some(ci => ci && ci._designatedAny)) {
+      if (_offerDigixros(card, opt, costItems, handIdx, slotIdx)) return;
+      continue;
+    }
     // 複数条件グループ（例: TB+Lv3を1枚・TB+Lv4を1枚・TB+Lv5を1枚）に対応するため、
     // cost[] の各アイテムごとに候補・必要枚数を事前計算する。1つでも満たせなければ
     // このオプションは発動不可（次の候補オプションへ）
@@ -1216,6 +1224,106 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
     return;
   }
   _offerWhenPlayThenPlay(card, handIdx, slotIdx);
+}
+
+// 《デジクロス》の確認と、置くカードの選択（公式ルール 7-2）。置ける指定カードが1枚も無ければ false（確認しない）
+// - 置けるのは手札とバトルエリアの自分のカード（7-2-1）。指定カード（cost item＝グループ）ごとに最大 count 枚（7-2-2-5）
+// - 1枚以上選ぶ（7-2-2-4）。選び終わったら「決定」。重なり順は条件の左側（グループの順）が上（7-2-2-8）
+// - バトルエリアから置くカードの進化元・リンクカードは破棄（7-2-2-7）
+// - 置いた枚数 × N だけ登場コストを軽減（card._assemblyDiscount）。card._digicrossed で「デジクロスしていたなら」を判定（7-2-2-9）
+function _offerDigixros(card, opt, costItems, handIdx, slotIdx) {
+  const per = parseInt(opt.value, 10) || 0;
+  const zonesOf = (ci) => (Array.isArray(ci.from) ? ci.from : (ci.from ? [ci.from] : ['hand', 'battle_area']));
+  const slots = costItems.map((ci) => {
+    const zones = zonesOf(ci);
+    const pool = [];
+    if (zones.includes('hand')) bs.player.hand.forEach(c => { if (c && c !== card) pool.push(c); });
+    if (zones.includes('battle_area')) {
+      bs.player.battleArea.forEach(c => { if (c) pool.push(c); });
+      (bs.player.tamerArea || []).forEach(c => { if (c) pool.push(c); });
+    }
+    if (zones.includes('trash')) bs.player.trash.forEach(c => { if (c) pool.push(c); });
+    return { max: Math.max(1, parseInt(ci.count, 10) || 1), cands: _filterAssemblyCandidates(ci, pool, bs, 'player') };
+  });
+  const allCands = [];
+  slots.forEach(sl => sl.cands.forEach(c => { if (!allCands.includes(c)) allCands.push(c); }));
+  if (allCands.length === 0) return false;
+  const maxTotal = slots.reduce((n, sl) => n + sl.max, 0);
+  showConfirm({
+    title: '✖ デジクロス',
+    message: '「' + card.name + '」をデジクロスで登場させますか？\n（指定のカードを1枚置くごとに登場コスト-' + per + '。最大' + maxTotal + '枚）',
+    yesText: 'デジクロスする', noText: 'しない',
+  }).then((yes) => {
+    if (!yes) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
+    // 選んだカードをグループに割り当てられるか（各グループ最大 max 枚）。割り当て結果（カード→グループ番号）を返す
+    const assign = (cards) => {
+      const res = new Map();
+      const used = slots.map(() => 0);
+      const tryAt = (k) => {
+        if (k >= cards.length) return true;
+        for (let g = 0; g < slots.length; g++) {
+          if (used[g] >= slots[g].max || !slots[g].cands.includes(cards[k])) continue;
+          used[g]++; res.set(cards[k], g);
+          if (tryAt(k + 1)) return true;
+          used[g]--; res.delete(cards[k]);
+        }
+        return false;
+      };
+      return tryAt(0) ? res : null;
+    };
+    const picked = [];
+    const pickMore = () => {
+      // まだ足せるカード（足しても全体がグループに割り当てられるもの）
+      const remaining = allCands.filter(c => !picked.includes(c) && assign([...picked, c]));
+      if (remaining.length === 0) { commit(); return; }
+      _showTrashCardPicker(remaining, 1, picked.length > 0,
+        '✖ デジクロス: 下に置くカードを選んでください（' + picked.length + '枚選択中。' + (picked.length > 0 ? '「使わない」で選び終わる' : '1枚以上') + '）',
+        (sel) => {
+          const c = sel && sel[0];
+          if (!c) {
+            if (picked.length === 0) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
+            commit();
+            return;
+          }
+          picked.push(c);
+          pickMore();
+        }, remaining);
+    };
+    const commit = () => {
+      const map = assign(picked);
+      if (!map || picked.length === 0) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
+      // 条件の左側（グループの順）が上。同じグループ内は選んだ順
+      const ordered = picked.slice().sort((a, b) => map.get(a) - map.get(b));
+      ordered.forEach((c) => {
+        const hi = bs.player.hand.indexOf(c); if (hi !== -1) { bs.player.hand.splice(hi, 1); return; }
+        const bi = bs.player.battleArea.indexOf(c);
+        if (bi !== -1) {
+          bs.player.battleArea[bi] = null;
+          (c.stack || []).forEach(s2 => bs.player.trash.push(s2)); c.stack = [];
+          (c.linkedCards || []).forEach(s2 => bs.player.trash.push(s2)); c.linkedCards = [];
+          return;
+        }
+        const ti = (bs.player.tamerArea || []).indexOf(c);
+        if (ti !== -1) {
+          bs.player.tamerArea.splice(ti, 1);
+          (c.stack || []).forEach(s2 => bs.player.trash.push(s2)); c.stack = [];
+          return;
+        }
+        const tr = bs.player.trash.indexOf(c); if (tr !== -1) bs.player.trash.splice(tr, 1);
+      });
+      ordered.forEach(c => { delete c._faceDown; c.suspended = false; c.buffs = []; });
+      if (!card.stack) card.stack = [];
+      card.stack = [...ordered, ...card.stack];
+      const disc = per * ordered.length;
+      card._assemblyDiscount = (parseInt(card._assemblyDiscount, 10) || 0) + disc;
+      card._digicrossed = ordered.length;
+      addLog('✖ 「' + card.name + '」のデジクロス（' + ordered.map(c => '「' + c.name + '」').join('') + 'を下に置く・登場コスト-' + disc + '）');
+      renderAll();
+      _offerWhenPlayThenPlay(card, handIdx, slotIdx);
+    };
+    pickMore();
+  });
+  return true;
 }
 
 export function doPlay(card, handIdx, slotIdx) {
@@ -1420,6 +1528,10 @@ export function doEvolve(card, handIdx, slotIdx) {
   if (_altEvo) { cost = _altEvo.cost; addLog('⬆ 代替進化（進化条件を無視）コスト' + cost); }
   const _evoDisc = _consumePendingEvoCostReduction(card, base);
   if (_evoDisc > 0) { cost = Math.max(0, cost - _evoDisc); addLog('💠 進化コスト-' + _evoDisc + '（コスト' + cost + 'で進化）'); }
+  // 進化コストの常在の増減（evo_cost。ガサモン EX12-020「このデジモンが特徴TBを持つデジモンカードに進化するとき-1」）
+  let _staticEvo = 0;
+  try { _staticEvo = _getStaticEvoCostReduction(card, base, bs, 'player'); } catch (_) {}
+  if (_staticEvo !== 0) { cost = Math.max(0, cost - _staticEvo); addLog('💠 進化コスト' + (_staticEvo > 0 ? '-' + _staticEvo : '+' + (-_staticEvo)) + '（コスト' + cost + 'で進化）'); }
   // before_evolve: 「〜のとき、このテイマーをレストさせることでコストを-N」のような
   // 進化コスト確定前の割り込み確認（タイガ BT2-088 等）。コスト確定後に本処理へ進む。
   _checkBeforeEvolveDiscount(card, bs, 'player', (discount) => {
@@ -1741,6 +1853,68 @@ export function doEvolveFromEffect(card, handIdx, slotIdx, cost, side, callback)
       };
       // 「離れるとき」等の置き換えの処理中の進化なら、【進化時】は保留して元の処理の後に発揮する
       // （flushDeferredEvoTriggers。effect-engine.js の _tryCancelLeaveLocal 参照）
+      if (hasKeyword(evolved, '【進化時】') && (bs._deferEvoTriggerDepth || 0) > 0) {
+        if (!Array.isArray(bs._deferredEvoTriggers)) bs._deferredEvoTriggers = [];
+        bs._deferredEvoTriggers.push({ card: evolved, side });
+        addLog('⏳ 「' + evolved.name + '」の【進化時】は、消滅等の処理が終わってから発揮します');
+        if (typeof window._hudSetDeferredEvo === 'function') window._hudSetDeferredEvo(bs._deferredEvoTriggers);
+        renderAll(true);
+        finish();
+      } else if (hasKeyword(evolved, '【進化時】')) {
+        _hooks.checkAndTriggerEffect(evolved, '【進化時】', () => { renderAll(true); finish(); }, side);
+      } else {
+        finish();
+      }
+    }, { deferDismiss: false });
+  });
+}
+
+// ===== 効果によるジョグレス進化（公式ルール 8-2） =====
+// left: 上に重ねる進化元（ジョグレスの条件の左側） / right: その下。それぞれの進化元ごと重ねる（8-2-2-3）。
+// 進化したデジモンは別の1体（新しいカード。8-2-2-1）: アクティブ・登場したターンの情報なし・付与された効果は失われる・
+// 【ターンに1回】はリセット。リンクカードは重ねる前に破棄（8-2-2-1-2）。コスト支払い → 1枚ドロー → 【進化時】
+// callback(evolved | false)
+export function doJogressFromEffect(card, left, right, cost, side, callback) {
+  const p = side === 'player' ? bs.player : bs.ai;
+  const li = p.battleArea.indexOf(left), ri = p.battleArea.indexOf(right);
+  if (!card || li === -1 || ri === -1 || left === right) { callback && callback(false); return; }
+  [left, right].forEach((m) => {
+    (m.linkedCards || []).forEach(lc => p.trash.push(lc));
+    m.linkedCards = [];
+  });
+  const evolved = Object.assign({}, card, {
+    type: card.type === 'デュアル' ? 'デジモン' : card.type,
+    _noMainAbility: card.type === 'デュアル',
+    suspended: false,
+    summonedThisTurn: false,
+    buffs: [], _grantedRecipes: undefined,
+    dpModifier: 0,
+    linkedCards: [],
+    stack: [left].concat(left.stack || [], [right], right.stack || []),
+    _jogressEvolved: true,
+  });
+  evolved.dp = evolved.baseDp;
+  p.battleArea[li] = evolved;
+  p.battleArea[ri] = null;
+  const _hi = p.hand.indexOf(card);
+  if (_hi !== -1) p.hand.splice(_hi, 1);
+  else { const _ti = p.trash.indexOf(card); if (_ti !== -1) p.trash.splice(_ti, 1); }
+  if (side === 'player') bs.selHand = null;
+  bs._evolveCountThisTurn = (bs._evolveCountThisTurn || 0) + 1;
+  addLog('🔀 「' + left.name + '」＋「' + right.name + '」→「' + evolved.name + '」ジョグレス進化！（コスト ' + cost + '）');
+  if (side === 'player' && _onlineMode && _sendCommand) {
+    try { _sendCommand({ type: 'evolve', cardName: evolved.name, baseName: left.name + '＋' + right.name, cardImg: evolved.imgSrc || '', evolveCost: cost }); } catch (_) {}
+  }
+  renderAll();
+  showEvolveEffect(cost, left.name + '＋' + right.name, left, evolved, () => {
+    if (side === 'player') playerSpendMemory(cost, true);
+    else aiSpendMemory(cost);
+    doDraw(side, 'ジョグレス進化ドロー', () => {
+      const finish = () => {
+        if (side === 'player') checkPlayerPendingTurnEnd({ noFlush: true });
+        if (side === 'player' && _onlineMode) _dispatchStateSync();
+        callback && callback(evolved);
+      };
       if (hasKeyword(evolved, '【進化時】') && (bs._deferEvoTriggerDepth || 0) > 0) {
         if (!Array.isArray(bs._deferredEvoTriggers)) bs._deferredEvoTriggers = [];
         bs._deferredEvoTriggers.push({ card: evolved, side });

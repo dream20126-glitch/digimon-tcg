@@ -2974,7 +2974,9 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // 対象の絞り込み条件（cond_feature_contains等）。指定があれば手札全体ではなく
       // 条件を満たすカードだけがピッカーの選択候補になる（他のcost系アクションと同じ規約）
       const _cdConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
-      const _cdHandPool = _cdConds.length > 0 ? player.hand.filter(c => c && checkConditions(_cdConds, c, ctx.bs, ctx.side)) : player.hand;
+      const _cdGate = action && action._gateSrc;
+      const _cdHandPool = _cdGate ? player.hand.filter(c => c && _evalStepConditionGate(_cdGate, c, ctx.bs, ctx.side))
+        : _cdConds.length > 0 ? player.hand.filter(c => c && checkConditions(_cdConds, c, ctx.bs, ctx.side)) : player.hand;
       if (_cdHandPool.length < n) { callback(false); return; }
       const isPlayerSide = ctx.side === 'player';
       const canShowPicker = isPlayerSide && typeof showHandDiscardPicker === 'function';
@@ -3797,8 +3799,12 @@ function doDestroy(targetSide, slotIdx, ctx, callback, causeType) {
   }
   const destroyedSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
   const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  // 離れる置換効果の「原因」判定用（_destroyCauseMatches が見る）。判定が終わったら外す
+  const _ddPrevLeaveCause = ctx.bs ? ctx.bs._leaveCause : undefined;
+  if (ctx.bs && causeType !== 'battle') ctx.bs._leaveCause = { type: causeType, causerSide: ctx.side, causerCard: ctx.card };
   // 【分離】: リンクカードを1枚破棄して、この消滅自体をキャンセルできる
   tryCancelViaLeaveBattle(destroyed, destroyedSideName, ctx.bs, ctxBase, (canceled) => {
+    if (ctx.bs) ctx.bs._leaveCause = _ddPrevLeaveCause;
     if (canceled) { callback && callback(); return; }
     _ddRemoved = true;
     targetSide.battleArea[slotIdx] = null;
@@ -4940,6 +4946,8 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
   const _selAll = opts && typeof opts.onSelectAll === 'function' ? opts.onSelectAll : null;
   // opts.onBack: 「↩ 戻る」ボタンを出す（手札から/トラッシュからを選ぶ画面に戻る等）
   const _onBack = opts && typeof opts.onBack === 'function' ? opts.onBack : null;
+  // opts.upTo: 最大枚数まで好きな枚数（1枚以上）選んで「決定」できる（デジクロス・「2枚まで置ける」等）
+  const _upTo = !!(opts && opts.upTo);
   // 既存 trash-modal を使うインプレース版
   const modal = document.getElementById('trash-modal');
   if (modal && Array.isArray(fullTrash) && fullTrash.length > 0) {
@@ -5006,8 +5014,8 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     }
     // optional のときだけ「⏭ 使わない」ボタンを表示。
     // それ以外は各カード詳細ダイアログの「このカードで決定」が確定操作を兼ねる。
-    let actionRow = null, skipBtn = null, selAllBtn = null, backBtn = null;
-    if (optional || _selAll || _onBack) {
+    let actionRow = null, skipBtn = null, selAllBtn = null, backBtn = null, upToBtn = null;
+    if (optional || _selAll || _onBack || _upTo) {
       actionRow = document.createElement('div');
       actionRow.id = '_trash-picker-actions';
       actionRow.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap;';
@@ -5016,6 +5024,12 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
         selAllBtn.innerText = '✅ 全て選択する';
         selAllBtn.style.cssText = 'background:#00aa66;color:#fff;border:1px solid #00ff88;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
         actionRow.appendChild(selAllBtn);
+      }
+      if (_upTo) {
+        upToBtn = document.createElement('button');
+        upToBtn.innerText = '✅ 選んだカードで決定';
+        upToBtn.style.cssText = 'background:#00aa66;color:#fff;border:1px solid #00ff88;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
+        actionRow.appendChild(upToBtn);
       }
       if (_onBack) {
         backBtn = document.createElement('button');
@@ -5064,6 +5078,7 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
       }
     };
     if (skipBtn) skipBtn.onclick = () => { cleanup(); callback([]); };
+    if (upToBtn) upToBtn.onclick = () => { if (picked.length === 0) return; cleanup(); callback(picked.slice()); };
     if (selAllBtn) selAllBtn.onclick = () => { cleanup(); _selAll(); };
     if (backBtn) backBtn.onclick = () => { cleanup(); _onBack(); };
     modal.style.display = 'block';
@@ -5562,6 +5577,20 @@ function _effectEvoAllowed(evoCard, baseCard, ignoreCond) {
 // 進化元に合う進化条件のコスト（getEvolveCostFor。色/特徴/名称クローズごとのコスト列。複数成立時は
 // 手動進化と同じ優先順＝名称・特徴を色より先）を基準にし、代替進化（alt_evolve）が成立すればその
 // コストを使う。進化元が分からない／判定関数が無い環境（Node テスト等）は evolveCost
+// 対象欄の種別から、手札/トラッシュ等から選ぶカードの種類を補う（共通ルール）。
+// 対象が「自分のデジモン」（own / target_other_own / own_digimon / opponent / both 等）ならデジモン、
+// *_tamer ならテイマー、*_option ならオプション。*_card（カード）や場所（own_hand 等）は種類を問わない。
+// 絞り込み条件に種類の指定（type / type_in）があればそちらを優先する
+function _withImpliedTargetType(step, filter) {
+  const f = filter || {};
+  if (f.type || f.type_in) return f;
+  const tb = String((step && step.target) || '').replace(/:.*$/, '');
+  let t = null;
+  if (/_option$/.test(tb)) t = 'オプション';
+  else if (/_tamer$/.test(tb)) t = 'テイマー';
+  else if (['own', 'own_digimon', 'target_other_own', 'other_own', 'opponent', 'opp', 'opponent_digimon', 'both', 'both_other', 'both_digimon'].includes(tb)) t = 'デジモン';
+  return t ? Object.assign({}, f, { type: t }) : f;
+}
 function _effectEvolveBaseCost(evoCard, baseCard, bs, side) {
   const fallback = parseInt(evoCard && evoCard.evolveCost, 10) || 0;
   if (!evoCard || !baseCard) return fallback;
@@ -5574,7 +5603,49 @@ function _effectEvolveBaseCost(evoCard, baseCard, bs, side) {
     const alt = getAltEvolve(evoCard, baseCard, bs, side);
     if (alt) cost = alt.cost;
   } catch (_) {}
+  // 進化に影響を及ぼす常在の効果（evo_cost。効果による進化にも及ぶ）
+  try { cost = Math.max(0, cost - getStaticEvoCostReduction(evoCard, baseCard, bs, side)); } catch (_) {}
   return cost;
+}
+
+// ===== 進化コストの常在の増減（レシピの evo_cost。エディタの「💰 コスト軽減 → 進化」） =====
+// 例: ガサモン EX12-020「【自分のターン】このデジモンが特徴『TB』を持つデジモンカードに進化するとき、支払うコスト-1」
+//   {"evo_cost":[{"trigger_conditions":["cond_during_own_turn"],"value":1,"from_filter":{"type":"デジモン","feature":"TB"}}]}
+// - 効果を持つのはバトルエリアのカード（本体のレシピ、および進化元の evo_source.evo_cost）
+// - subject: 進化するデジモン。未指定/self＝このデジモン、own＝自分のデジモン、other_own＝他の自分のデジモン
+// - trigger_conditions / condition: 効果を持つカードで判定（発動ターン等）。from_filter: 進化先のカードの条件
+// - value: 軽減量（正＝軽減・負＝増加）。戻り値は軽減量の合計
+export function getStaticEvoCostReduction(evoCard, baseCard, bs, side) {
+  if (!evoCard || !baseCard || !bs) return 0;
+  const pl = side === 'player' ? bs.player : bs.ai;
+  if (!pl || !(pl.battleArea || []).includes(baseCard)) return 0;
+  let total = 0;
+  const scan = (carrier, steps) => {
+    if (!Array.isArray(steps)) return;
+    steps.forEach((st) => {
+      if (!st || (st.in_zone && st.in_zone !== 'battle_area' && st.in_zone !== 'field')) return;
+      const subj = String(st.subject || 'self');
+      if ((subj === 'self' || subj === 'self_card') && baseCard !== carrier) return;
+      if ((subj === 'other_own' || /^other_own/.test(subj)) && baseCard === carrier) return;
+      if (/^opp/.test(subj)) return;
+      if (Array.isArray(st.trigger_conditions) && st.trigger_conditions.length > 0
+          && !_evalTriggerConditionsArray(st.trigger_conditions, st.trigger_conditions_op, carrier, bs, side, st.trigger_conditions_chain)) return;
+      if (st.condition && !checkConditions(parseRecipeCondition(st.condition), carrier, bs, side)) return;
+      if (st.from_filter && !cardMatchesFilter(evoCard, st.from_filter, bs, side, carrier)) return;
+      total += parseInt(st.value, 10) || 0;
+    });
+  };
+  [...(pl.battleArea || []), ...(pl.tamerArea || [])].forEach((c) => {
+    if (!c) return;
+    const r = _parseCardRecipe(c);
+    if (r) scan(c, _lookupTriggerSteps(r, 'evo_cost', c));
+    (c.stack || []).forEach((ec) => {
+      if (!ec || ec._faceDown) return;
+      const er = _parseCardRecipe(ec);
+      if (er && er.evo_source) scan(c, _lookupTriggerSteps(er.evo_source, 'evo_cost'));
+    });
+  });
+  return total;
 }
 
 // === deck_open の selections[].destination:'play'（オープンしたカードを登場/使用/進化） ===
@@ -10331,7 +10402,7 @@ function _mergeDesignatedCommonJS(item, common) {
   return out;
 }
 
-function _expandDesignatedGroupsJS(step, groups, common) {
+function _expandDesignatedGroupsJS(step, groups, common, commonChain, mode) {
   if (!step || typeof step !== 'object') return step;
   const out = Object.assign({}, step);
   if (Array.isArray(out.cost)) {
@@ -10343,8 +10414,12 @@ function _expandDesignatedGroupsJS(step, groups, common) {
       if (hasMarker) {
         groups.forEach(g => {
           const replaced = Object.assign({}, c);
-          delete replaced.condition; delete replaced.when; delete replaced.extra_conditions; delete replaced.condition_op; delete replaced.count; delete replaced.distinct_by;
+          delete replaced.condition; delete replaced.when; delete replaced.extra_conditions; delete replaced.condition_op; delete replaced.count; delete replaced.distinct_by; delete replaced.condition_chain;
           if (g.condition !== undefined) replaced.condition = g.condition;
+          if (Array.isArray(g.condition_chain) && g.condition_chain.length > 0) replaced.condition_chain = g.condition_chain;
+          if (Array.isArray(commonChain) && commonChain.length > 0) replaced.common_chain = commonChain;
+          // designated_mode:'any'（デジクロス「1枚以上・好きな枚数」）: 各グループは「最大 count 枚」の枠
+          if (mode === 'any') replaced._designatedAny = true;
           if (g.when !== undefined) replaced.when = g.when;
           if (g.extra_conditions !== undefined) replaced.extra_conditions = g.extra_conditions;
           if (g.condition_op !== undefined) replaced.condition_op = g.condition_op;
@@ -10369,7 +10444,7 @@ function _expandDesignatedGroupsJS(step, groups, common) {
 // recipe-editor-src の「共通条件」欄）が指定されていれば、複製した各cost itemの条件に
 // AND合成する（カードのJSON上は各グループへ展開せず designated_common として1回だけ
 // 保存されているが、実行時にここで初めて各グループの条件へ合成される）
-function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGroups, designatedCommon) {
+function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGroups, designatedCommon, designatedCommonChain, designatedMode) {
   return (steps || []).map(s => {
     let out = s;
     if (value !== undefined && value !== '' && value !== null && out && out.value === undefined) {
@@ -10382,7 +10457,7 @@ function _fillKeywordTemplateSteps(steps, value, designated, count, designatedGr
       out = Object.assign({}, out, { cost: out.cost.map(c => (c && c.value === undefined && /^evo_discard/.test(String(c.action || ''))) ? Object.assign({}, c, { value }) : c) });
     }
     if (Array.isArray(designatedGroups) && designatedGroups.length > 0) {
-      out = _expandDesignatedGroupsJS(out, designatedGroups, designatedCommon);
+      out = _expandDesignatedGroupsJS(out, designatedGroups, designatedCommon, designatedCommonChain, designatedMode);
     } else {
       if (designated) out = _substituteDesignatedNameJS(out, designated);
       if (count !== undefined && count !== '' && count !== null && Array.isArray(out.cost)) {
@@ -10654,7 +10729,7 @@ function _lookupTriggerSteps(recipeObj, triggerCode, card) {
       if (!kw) continue;
       const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, triggerCode);
       if (!tplSteps) continue;
-      const filled = _tagKeywordSteps(p.flag, _adjustExecuteSteps(p.flag, triggerCode, _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common), card));
+      const filled = _tagKeywordSteps(p.flag, _adjustExecuteSteps(p.flag, triggerCode, _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common, p.designated_common_chain, p.designated_mode), card));
       if (filled.length === 0) continue;
       result = result ? result.concat(filled) : filled;
     }
@@ -10774,7 +10849,7 @@ function _getKeywordOnAttackSteps(card, flagsOut, bs, side) {
     _seenKw.add(p.flag);
     const tplSteps = _lookupTriggerStepsBase(kw.recipeTemplate, 'on_attack');
     if (!tplSteps) continue;
-    let filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common);
+    let filled = _fillKeywordTemplateSteps(tplSteps, p.value, p.designated, p.count, p.designated_groups, p.designated_common, p.designated_common_chain, p.designated_mode);
     // ≪突進≫は「最もDPの高い“アクティブ状態の”相手のデジモン1体に変更“できる”」（公式説明）。
     // 辞書のテンプレートに任意・アクティブ条件が無くても、任意効果（はい/いいえの確認）として扱い、
     // レスト状態のデジモンは候補から外す（ブライモン BT26-011: 「OK」しか押せなかった）
@@ -11494,6 +11569,8 @@ function _collectLeaveBattleReplacers(leavingCard, leavingSide, bs) {
       if (!step || !subjOk(step)) return false;
       if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, leavingCard, bs, sd, step.trigger_conditions_chain)) return false;
       if (step.condition && !checkConditions(parseRecipeCondition(step.condition), carrier, bs, sd)) return false;
+      // 原因（「自分の効果以外で」等）
+      if (!_destroyCauseMatches(step, bs, sd, carrier, 'when_leave_battle')) return false;
       const lmax = getLimitMaxUses(step);
       if (lmax > 0 && bs._usedLimits) {
         const cid = _limitCardId(carrier);
@@ -12012,7 +12089,13 @@ export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, 
     _delegateReactionToOpponent({ recipeKey: 'on_attack', kind: 'on_attack_opp' }, done);
     return;
   }
-  return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && _isOppOrBothAttackStep(step));
+  // 【カウンター】（step.counter。公式ルール 11-3 / 16-14）: 「相手のデジモンがアタックしたとき」の通常の効果を解決してから、
+  // カウンタータイミングで発揮する。1回のアタックで使える【カウンター】は1つだけ（executeRecipeStep が _counterUsedSeq で弾く）
+  if (bs) bs._attackSeq = (bs._attackSeq || 0) + 1;
+  return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, () => {
+    if (!bs || !_anyBoardCardHasStep(bs, 'on_attack', (s) => !!s && s.counter === true)) { done && done(); return; }
+    _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && step.counter === true && _isOppOrBothAttackStep(step));
+  }, (step) => !!step && step.counter !== true && _isOppOrBothAttackStep(step));
 }
 
 // 手札のカードが（進化元/テイマー下ではなく）効果で破棄されたとき → 発動主体(subject)で
@@ -12591,16 +12674,26 @@ function _destroyCauseMatches(step, bs, carrierSide, carrier, triggerCode) {
     ? byCode(step.cause_by_code)
     : (step && step.cause);
   if (!cause) return true;
-  const dc = bs && bs._lastDestroyCause;
-  if (!dc || dc.type !== cause) return false;
+  // 離れる置換効果（when_leave_battle）の判定中は、まだ消滅チェーン前なので _lastDestroyCause が無い。
+  // 効果で消滅させようとしているときは doDestroy が _leaveCause を、バトルで負けたときは battle-combat.js が
+  // _leaveByBattle を立てているので、それを原因として使う（EX12-003 カプリモン「自分の効果以外で離れるとき」）
+  const dc = bs && (bs._lastDestroyCause || bs._leaveCause || (bs._leaveByBattle ? { type: 'battle' } : null));
   const cs = (triggerCode && step && step.cause_subject_by_code)
     ? byCode(step.cause_subject_by_code)
     : (step && step.cause_subject);
-  if (!cs || cs === 'both') return true;
-  if (cs === 'self') return dc.causerCard ? dc.causerCard === carrier : dc.causerSide === carrierSide;
-  if (cs === 'own') return dc.causerSide === carrierSide;
-  if (cs === 'opp') return dc.causerSide !== carrierSide;
-  return true;
+  // 「原因がこれ（＋原因の主体がこれ）」に当てはまるか
+  const matches = (type) => {
+    if (!dc || dc.type !== type) return false;
+    if (!cs || cs === 'both') return true;
+    if (cs === 'self') return dc.causerCard ? dc.causerCard === carrier : dc.causerSide === carrierSide;
+    if (cs === 'own') return dc.causerSide === carrierSide;
+    if (cs === 'opp') return dc.causerSide !== carrierSide;
+    return true;
+  };
+  // not_effect / not_battle（「〜以外で」）: 原因がそれに当てはまらなければ成立。原因の主体と組み合わせると
+  // 「自分の効果以外で」＝自分の効果で…ではない（バトル・ルール・相手の効果）になる（EX12-003 カプリモン）
+  if (/^not_/.test(String(cause))) return !matches(String(cause).slice(4));
+  return matches(cause);
 }
 
 // 同時に起きた消滅のまとまり。消滅の原因（bs._lastDestroyCause.grp）に載せ、まとまりごとに誘発済みの反応を覚える
@@ -12752,8 +12845,14 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
   //     ポップアップだけ出て何も起きない、という見え方を防ぐ
   // 効果を持つカード（進化元効果なら進化元のカード）も渡す。【ターンに1回】の使用回数は進化元カード基準なので、渡さないと
   // 使い切ったことが分からず、DP0のままもう一度判定したときに使えない「離れない」の確認が出ていた（ライラモン BT26-044）
+  // 原因（cause/cause_subject。「自分の効果以外で離れるとき」等）に合わないステップは外す
+  reactions.forEach((r) => {
+    if (Array.isArray(r.recipe) && r.recipe.some(s => s && (s.cause || s.cause_by_code))) {
+      r.recipe = _filterStepChains(r.recipe, (s) => _destroyCauseMatches(s, bs, destroyedSide, r.card, triggerKey));
+    }
+  });
   const _reactionsToRun = reactions.filter(({ card, sourceCard, recipe }) =>
-    recipeWillExecuteAnything(recipe, { card, bs, side: destroyedSide, _sourceCard: sourceCard })
+    Array.isArray(recipe) && recipe.length > 0 && recipeWillExecuteAnything(recipe, { card, bs, side: destroyedSide, _sourceCard: sourceCard })
   ).map(({ card, sourceCard, recipe }) => {
     const fullEffText = (sourceCard !== card && sourceCard.evoSourceEffect && sourceCard.evoSourceEffect !== 'なし')
       ? sourceCard.evoSourceEffect : (sourceCard.effect || card.effect || '');
@@ -12778,6 +12877,8 @@ function _fireSelfDestroyEffects(destroyedCard, destroyedSide, bs, ctxBase, done
     // alwaysConfirm:true（任意効果は side を問わず必ず確認ダイアログを出す）
     // 発揮中に新しく誘発した効果（派生誘発。【消滅時】の効果で登場したデジモンの【登場時】等）は、残りの【消滅時】より先に解決する
     const _snap = _snapPendingReactions(bs);
+    // 「そのデジモン」（target_trigger_source）＝消滅する/離れるカード自身（EX12-003 カプリモン「そのデジモン1体と他の自分のデジモンで」）
+    if (!reaction.eventSourceCard) reaction = Object.assign({}, reaction, { eventSourceCard: destroyedCard });
     _runReactionEffect(reaction, destroyedSide, bs, ctxBase, () => _drainDerivedAfterReaction(bs, ctxBase, _snap, runOne), { alwaysConfirm: true });
   };
   function runOne() {
@@ -13196,6 +13297,8 @@ function checkStepTriggerConditions(step, ctx) {
 // 進化先候補から漏れていた
 function _cardHasDescriptionText(card, text) {
   if (!card || !text) return false;
+  // カンマ区切り: どれか1つの記述があれば一致（名称と同じ）
+  if (String(text).includes(',')) return String(text).split(',').map(s => s.trim()).filter(Boolean).some(t => _cardHasDescriptionText(card, t));
   return [card.name, card.feature, card.effect, card.evoSourceEffect, card.securityEffect]
     .some(f => String(f || '').includes(text));
 }
@@ -13455,11 +13558,11 @@ function recipeWillExecuteAnything(recipe, ctx) {
     // このカード自身では判定せず、条件を満たす進化元があるかで判定する（ゾンビプルートモン BT26-079 の
     // 【デコード「プルートモン」】が、自身の名前で cond_name:プルートモン を判定して不発になっていた）
     if (_isEvoSourceSummonStep(step)) {
-      const _esConds = step.condition ? parseRecipeCondition(step.condition) : [];
       const _esF = step.from_filter || step.filter || null;
       const _esOk = (ctx.card && Array.isArray(ctx.card.stack) ? ctx.card.stack : []).some(c => c
+        && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type)
         && (!_esF || cardMatchesFilter(c, _esF, ctx.bs, ctx.side, ctx.card))
-        && (_esConds.length === 0 || checkConditions(_esConds, c, ctx.bs, ctx.side)));
+        && _evalStepConditionGate(step, c, ctx.bs, ctx.side));
       if (_esOk) return true;
       continue;
     }
@@ -14702,7 +14805,8 @@ function executeRecipeStep(step, ctx, store, callback) {
   // （combatだけは targets[0] を「バトルする相手」という別の意味で使う専用実装のため対象外）。
   // 制限(limit)・発火元フィルタ(trigger_conditions)は既にこの呼び出しで1回分確認・消費済み
   // なので、各グループの再実行では取り除く（グループごとに個別カウントされてしまうのを防ぐ）
-  if (Array.isArray(step.targets) && step.targets.length > 0 && step.action !== 'combat') {
+  // jogress_evolve も targets[0] を「もう1体の進化元」という別の意味で使うため対象外
+  if (Array.isArray(step.targets) && step.targets.length > 0 && step.action !== 'combat' && step.action !== 'jogress_evolve') {
     const _tgGroups = [{ target: step.target, filter: step.filter }, ...step.targets];
     const _tgBaseStep = Object.assign({}, step);
     delete _tgBaseStep.targets;
@@ -14889,6 +14993,16 @@ function executeRecipeStep(step, ctx, store, callback) {
   // _forceTargetIdx で対象が確定済みなら 'ai' 扱い（自動選択パス）
   const effectiveSide = (ctx._forceTargetIdx !== undefined) ? 'ai' : ctx.side;
 
+  // 【カウンター】は1回のアタックに1つだけ（公式ルール 16-14）
+  if (step && step.counter === true && ctx.bs && !step._counterChecked) {
+    if (ctx.bs._attackSeq && ctx.bs._counterUsedSeq === ctx.bs._attackSeq) {
+      ctx.addLog && ctx.addLog('💨 このアタックではもう【カウンター】を使っています');
+      callback && callback();
+      return;
+    }
+    ctx.bs._counterUsedSeq = ctx.bs._attackSeq;
+    step = Object.assign({}, step, { _counterChecked: true });
+  }
   // separator ステップ（「その後、」区切り用のマーカー）は何も実行せず次へ
   if (step.separator !== undefined && !step.action) {
     callback && callback();
@@ -15382,11 +15496,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           // 対象欄の種別（own=自分のデジモン / own_tamer=テイマー / own_option=オプション）で候補を
           // 絞る。取得元の条件に種別の指定がある場合はそちらを優先（例:「オプションカード1枚を使用」で
           // 同じ特徴のデジモン/テイマーまで選べてしまうのを防ぐ）
-          {
-            const _tb = String(step.target || '').replace(/:.*$/, '');
-            const _impliedType = _tb === 'own_option' ? 'オプション' : _tb === 'own_tamer' ? 'テイマー' : _tb === 'own' ? 'デジモン' : null;
-            if (_impliedType && !_filter.type && !_filter.type_in) _filter = Object.assign({}, _filter, { type: _impliedType });
-          }
+          _filter = _withImpliedTargetType(step, _filter);
           const _optional = !!step.optional;
           let _handCands = _fromZones.includes('hand')
             ? (player.hand || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card)) : [];
@@ -15748,6 +15858,119 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === 効果によるジョグレス進化（公式ルール 8-2。EX12-001 ニャロモン / EX12-003 カプリモン / EX12-017 ウォーグレイモン） ===
+    // step: { action:'jogress_evolve', target: 'self_card'|'target_trigger_source'(own:1+_forceTargetIdx)|'own:2',
+    //         targets:[{ target:'target_other_own:1', filter? }], from:'hand', from_filter, cost_free?, value?(コスト増減) }
+    // 進化先（手札のカード）の「［ジョグレス進化］A+B」の条件を満たす自分のデジモン2体を進化元にする。
+    // 1体目が決まっている（このデジモン／そのデジモン）なら、もう1体を選ぶ。own:2 なら2体とも選ぶ
+    case 'jogress_evolve': {
+      const _jgIsCost = _COST_STEP_SET.has(step);
+      const _jgOptional = !!step.optional;
+      const _jgFail = (msg) => {
+        ctx.addLog && ctx.addLog('💨 ' + msg);
+        if (_jgIsCost) { callback(false); return; }
+        if (_jgOptional) { callback(); return; }
+        showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
+      };
+      const _jgTgtBase = String(step.target || '').split(':')[0];
+      let _jgFixed = null;
+      if (_jgTgtBase === 'self' || _jgTgtBase === 'self_card') _jgFixed = ctx.card;
+      else if (ctx._forceTargetIdx !== undefined) _jgFixed = player.battleArea[ctx._forceTargetIdx] || null;
+      if ((_jgTgtBase === 'self' || _jgTgtBase === 'self_card' || ctx._forceTargetIdx !== undefined)
+          && (!_jgFixed || !player.battleArea.includes(_jgFixed))) { _jgFail('ジョグレス進化させるデジモンがいません'); break; }
+      // もう1体（targets[0]）の絞り込み
+      const _jgOther = Array.isArray(step.targets) && step.targets[0] ? step.targets[0] : null;
+      const _jgOtherFilter = _jgOther && _jgOther.filter ? _jgOther.filter : null;
+      const _jgOtherOk = (c) => !!c && (c.type === 'デジモン' || !c.type)
+        && (!_jgOtherFilter || cardMatchesFilter(c, _jgOtherFilter, ctx.bs, ctx.side, ctx.card));
+      const _jgMats = player.battleArea.filter(c => c && (c.type === 'デジモン' || !c.type));
+      // 進化先の候補: 手札（from）の、条件に合う ［ジョグレス進化］ を持つデジモンカード
+      const _jgZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : ['hand']);
+      const _jgFilter = step.from_filter || {};
+      const _jgPool = [];
+      if (_jgZones.includes('hand')) (player.hand || []).forEach(c => { if (c) _jgPool.push(c); });
+      if (_jgZones.includes('trash')) (player.trash || []).forEach(c => { if (c) _jgPool.push(c); });
+      // 各進化先について、条件を満たす進化元の組み合わせ（[左, 右]）を列挙する
+      const _jgPairsFor = (card) => {
+        const conds = getJogressConditions(card);
+        const pairs = [];
+        conds.forEach((jc) => {
+          _jgMats.forEach((a) => {
+            _jgMats.forEach((b) => {
+              if (a === b) return;
+              if (!jogressSlotMatches(a, jc.slots[0], ctx.bs, ctx.side) || !jogressSlotMatches(b, jc.slots[1], ctx.bs, ctx.side)) return;
+              // 1体目が決まっているなら、そのデジモンを含み、もう1体は「もう1体」の条件に合うこと
+              if (_jgFixed) {
+                if (a !== _jgFixed && b !== _jgFixed) return;
+                const other = a === _jgFixed ? b : a;
+                if (!_jgOtherOk(other)) return;
+              }
+              if (!pairs.some(p => p.left === a && p.right === b)) pairs.push({ left: a, right: b, cost: jc.cost });
+            });
+          });
+        });
+        return pairs;
+      };
+      const _jgCands = _jgPool.filter(c => (c.type === 'デジモン' || c.type === 'デュアル')
+        && cardMatchesFilter(c, _jgFilter, ctx.bs, ctx.side, ctx.card) && _jgPairsFor(c).length > 0);
+      if (_jgCands.length === 0) { _jgFail('ジョグレス進化できる組み合わせがありません'); break; }
+      const _jgDo = (card, pair) => {
+        if (!card || !pair) {
+          if (_jgOptional || _jgIsCost) ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
+          callback(_jgIsCost ? false : undefined);
+          return;
+        }
+        const _cost = step.cost_free ? 0 : Math.max(0, (pair.cost || 0) + (parseInt(step.value, 10) || 0));
+        // 「離れるとき」の置換効果の中でジョグレス進化した（EX12-003 カプリモン）: 離れるデジモンは進化元になったので、
+        // 元の消滅等は行わない（離れなかった扱い。巨神兵器が離れるときに進化して離れなかったのと同じ）
+        if (ctx.bs && (ctx.bs._deferEvoTriggerDepth || 0) > 0) {
+          [ctx.card, pair.left, pair.right].forEach(c => { if (c) c._stayedInBattleArea = true; });
+        }
+        if (typeof window !== 'undefined' && typeof window.doJogressFromEffect === 'function') {
+          window.doJogressFromEffect(card, pair.left, pair.right, _cost, ctx.side, (evolved) => {
+            // 「その後、ジョグレス進化したそのデジモンでアタックできる」（same_target）用
+            if (ctx.bs && evolved && typeof evolved === 'object') ctx.bs._lastPickedCard = evolved;
+            callback(evolved ? true : undefined);
+          });
+        } else { callback(); }
+      };
+      const _jgChoosePair = (card) => {
+        const pairs = _jgPairsFor(card);
+        if (pairs.length === 0) { _jgFail('ジョグレス進化できる組み合わせがありません'); return; }
+        // 進化元の2体の組み合わせが1通り、または CPU なら自動
+        const uniq = [];
+        pairs.forEach(p => { if (!uniq.some(u => (u.left === p.left && u.right === p.right) || (u.left === p.right && u.right === p.left))) uniq.push(p); });
+        if (uniq.length === 1 || effectiveSide === 'ai') { _jgDo(card, uniq[0]); return; }
+        const rowId = ctx.side === 'player' ? 'pl' : 'ai';
+        const idxOf = (c) => player.battleArea.indexOf(c);
+        // 1体目が決まっていればもう1体を、決まっていなければ1体目→2体目の順に選ぶ
+        const pickSecond = (first) => {
+          const opts = uniq.filter(p => p.left === first || p.right === first);
+          const others = opts.map(p => (p.left === first ? p.right : p.left));
+          if (others.length === 1) { _jgDo(card, opts[0]); return; }
+          showTargetSelection(rowId, others.map(idxOf), null, '#ffd54f', (idx) => {
+            if (idx === null || idx === undefined) { _jgDo(null, null); return; }
+            const sec = player.battleArea[idx];
+            _jgDo(card, opts.find(p => (p.left === first && p.right === sec) || (p.right === first && p.left === sec)));
+          }, '（「' + card.name + '」にジョグレス進化する、もう1体のデジモン）');
+        };
+        if (_jgFixed) { pickSecond(_jgFixed); return; }
+        const firsts = [];
+        uniq.forEach(p => { [p.left, p.right].forEach(c => { if (!firsts.includes(c)) firsts.push(c); }); });
+        showTargetSelection(rowId, firsts.map(idxOf), null, '#ffd54f', (idx) => {
+          if (idx === null || idx === undefined) { _jgDo(null, null); return; }
+          pickSecond(player.battleArea[idx]);
+        }, '（「' + card.name + '」にジョグレス進化するデジモン・1体目）');
+      };
+      if (effectiveSide === 'ai' || ctx.side === 'ai') { _jgChoosePair(_jgCands[0]); break; }
+      showTrashCardPicker(_jgCands, 1, _jgOptional || _jgIsCost, '🔀 ジョグレス進化させるカードを選んでください', (picked) => {
+        const c = picked && picked[0];
+        if (!c) { _jgDo(null, null); return; }
+        _jgChoosePair(c);
+      }, _jgCands);
+      break;
+    }
+
     // === 消滅（1体ずつ選択→演出） ===
     case 'destroy': {
       const targetData = step.card ? store[step.card] : null;
@@ -16091,7 +16314,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         break;
       }
       // 自分のトラッシュ → 手札（trash_to_handと同じロジック。targetのN指定もcountとして受ける）
-      const _rhFilter = step.filter || {};
+      // 対象欄の種別（own＝自分のデジモン等）で候補を絞る（EX12-010 グレイモン「…を持つデジモンカード1枚を手札に戻せる」）
+      const _rhFilter = _withImpliedTargetType(step, step.filter || {});
       const _rhT = String(step.target || '');
       const _rhCountFromTarget = _rhT.includes(':') ? parseInt(_rhT.split(':')[1]) : NaN;
       const _rhWantCount = step.count || (isNaN(_rhCountFromTarget) ? 1 : _rhCountFromTarget);
@@ -17085,7 +17309,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 対象を選ぶ形（own:1 等）の場合、1つ目のキーワードで選んだデジモンに2つ目以降も付与する
         // （「そのデジモン1体は【衝突】と【ブロッカー】を得る」で選択が2回出ないように）
         const _kwStore = store || {};
-        const _kwIsSelect = /^(own|opponent):/.test(step.target || '') && !/:all$/.test(step.target || '') && !step.card;
+        const _kwIsSelect = /^(own|opponent|target_other_own|other_own):/.test(step.target || '') && !/:all$/.test(step.target || '') && !step.card;
         delete _kwStore.__kwPicked;
         const _runKwSeq = (idx) => {
           if (idx >= _kwList.length) { callback(); return; }
@@ -17111,7 +17335,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _filledTemplate = {};
           Object.keys(_kwEntry.recipeTemplate).forEach(k => {
             const tplSteps = _kwEntry.recipeTemplate[k];
-            if (Array.isArray(tplSteps)) _filledTemplate[k] = _fillKeywordTemplateSteps(tplSteps, _cv, step.designated, step.count, step.designated_groups, step.designated_common);
+            if (Array.isArray(tplSteps)) _filledTemplate[k] = _fillKeywordTemplateSteps(tplSteps, _cv, step.designated, step.count, step.designated_groups, step.designated_common, step.designated_common_chain, step.designated_mode);
           });
           // どのキーワードを付与したかを残す（付与された【エグゼキュート】の発揮条件・説明文に使う。_grantedStepsFor）
           const _grantStep = Object.assign({}, step, { action: 'grant_effect', granted_recipe: _filledTemplate, _grantKw: _kwCode });
@@ -17142,7 +17366,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
 
       // own:N / own:up_to_N の場合は非同期に対象選択UIを出してから付与
-      const tStr = step.target || '';
+      // 「他の自分のデジモン」（target_other_own:N / other_own:N）は、このカード以外の自分のデジモンから選ぶ
+      // （EX12-015 ゴクウモン「特徴『SW』を持つ他の自分のデジモン1体は【連携】を得て」。以前はこのカード自身に付いていた）
+      const _kwOtherOwn = /^(target_other_own|other_own):/.test(String(step.target || ''));
+      const tStr = _kwOtherOwn ? String(step.target).replace(/^(target_other_own|other_own):/, 'own:') : (step.target || '');
       const isOwnSelect = (tStr.startsWith('own:') && !['own:all'].includes(tStr));
       const isOpponentSelect = (tStr.startsWith('opponent:') && !['opponent:all'].includes(tStr));
       if ((isOwnSelect || isOpponentSelect) && !step.card) {
@@ -17156,6 +17383,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _kwCands = [];
         for (let i = 0; i < tgtPlayer2.battleArea.length; i++) {
           const _c = tgtPlayer2.battleArea[i];
+          if (_kwOtherOwn && _c === ctx.card) continue;
           if (_c && (!step.filter || cardMatchesFilter(_c, step.filter, ctx.bs, ctx.side, ctx.card))) _kwCands.push(_c);
         }
         const validIdxs = applyExtremeFilter(_kwCands, step.filter).map(c => tgtPlayer2.battleArea.indexOf(c));
@@ -18284,12 +18512,16 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _pusInBattle = !!host && player.battleArea.includes(host);
       if (!host || (!_pusInBattle && !(player.tamerArea || []).includes(host))) { _pusFail('置き先のカードが場にいません'); break; }
       const _pusN = Math.max(1, parseInt(step.value, 10) || 1);
-      const _pusBottom = step.position === 'bottom';
+      // value_mode:'up_to'（「2枚まで置ける」）: 1枚〜N枚を選べる
+      const _pusUpTo = step.value_mode === 'up_to';
+      let _pusBottom = step.position === 'bottom';
+      // position:'select'（「進化元の上か下だけに置ける」）: 置くときに上か下かを選ぶ
+      const _pusSelectPos = step.position === 'select';
       const _pusFaceDown = Array.isArray(step.options) && step.options.includes('face_down');
       const _pusZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : ['hand']);
       const _pusFilter = step.from_filter || step.filter || null;
       // fromLabels: 各カードの移動元（演出用。沢城キョウ BT26-089 のデッキからテイマーの下で演出が無かった）
-      const _pusPlace = (cards, fromLabels) => {
+      const _pusPlace0 = (cards, fromLabels) => {
         if (!host.stack) host.stack = [];
         cards.forEach(c => {
           if (_pusFaceDown) c._faceDown = true; else delete c._faceDown;
@@ -18310,6 +18542,13 @@ function executeRecipeStep(step, ctx, store, callback) {
           callback(true);
         };
         _fxPlaceUnder(ctx, cards.map((c, i) => ({ card: c, from: (fromLabels && fromLabels[i]) || '' })), '「' + host.name + '」の下', _pusFaceDown, _after);
+      };
+      const _pusPlace = (cards, fromLabels) => {
+        if (!_pusSelectPos || effectiveSide === 'ai') { _pusPlace0(cards, fromLabels); return; }
+        showAltActionChoice(['⬆ 進化元の上に置く', '⬇ 進化元の下に置く'], (k) => {
+          _pusBottom = k === 1;
+          _pusPlace0(cards, fromLabels);
+        }, '🃏 「' + host.name + '」の進化元の上と下、どちらに置きますか？');
       };
       // デッキから（上/下から value 枚。中身を選ばない）
       if (_pusZones.includes('deck')) {
@@ -18340,6 +18579,8 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _pusOnPicked = (picked) => {
         const list = (picked || []).filter(Boolean);
         if (list.length === 0) {
+          // 置かなかった: 「この効果で置いたなら」（直前の効果で処理した枚数）が前の効果の枚数で成立しないようにする
+          if (ctx.bs) ctx.bs._lastActionCount = 0;
           if (_pusOptional || _pusIsCost) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(_pusIsCost ? false : undefined); return; }
           showEffectFailed('効果を発動できませんでした', callback);
           return;
@@ -18351,7 +18592,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (effectiveSide === 'ai') { _pusOnPicked(_pusCands.slice(0, _pusWant)); break; }
       if (_pusCands.length <= _pusWant && !_pusOptional && !_pusIsCost && !_anyHandOrTrash(_pusCands)) { _pusOnPicked(_pusCands.slice(0, _pusWant)); break; }
       // コストは「使わない」（キャンセル）を選べるようにする（＝コストを払わず効果を使わない）
-      showTrashCardPicker(_pusCands, _pusWant, _pusOptional || _pusIsCost, '🃏 「' + host.name + '」の下に置くカードを選んでください', _pusOnPicked, _pusCands);
+      showTrashCardPicker(_pusCands, _pusWant, _pusOptional || _pusIsCost, '🃏 「' + host.name + '」の下に置くカードを選んでください' + (_pusUpTo ? '（' + _pusWant + '枚まで）' : ''), _pusOnPicked, _pusCands, _pusUpTo ? { upTo: true } : undefined);
       break;
     }
 
@@ -19714,6 +19955,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (!ctx.block) ctx.block = {};
         ctx.block.duration = { code: normalizeRecipeDuration(step.duration) };
       }
+      // 手札を破棄するコストの OR 条件（condition_chain）: 破棄するカードの条件として使う（_evalStepConditionGate）。
+      // 以前は condition/when だけを見ていて、「名称に『グレイモン』を含むか特徴『VB』を持つカード1枚を破棄することで」
+      // で関係ないカードも捨てられていた（EX12-005 アグモン）
+      if (actionCode === 'cost_discard' && Array.isArray(step.condition_chain) && step.condition_chain.length > 0) action._gateSrc = step;
       // 条件
       // evo_discard系: condition/when/extra_conditions を全て結合し、対象コンテナ
       // （進化元/テイマーの下を持つカード自身）の絞り込み条件として常に転送する。
@@ -20491,12 +20736,17 @@ export function checkCostedSummonDiscount(card, bs, side, context, callback, opt
 // AND評価した上でセグメント間はOR評価する（あればcondition/when/extra_conditionsより優先）
 export function filterAssemblyCandidates(costItem, cards, bs, side) {
   if (!costItem) return [];
-  if (Array.isArray(costItem.condition_chain) && costItem.condition_chain.length > 0) {
-    return (cards || []).filter(c => c && costItem.condition_chain.some(seg => {
-      const segConds = [];
-      (seg && seg.conditions || []).forEach(cs => segConds.push(...parseRecipeCondition(cs)));
-      return segConds.length === 0 || checkConditions(segConds, c, bs, side);
-    }));
+  // 条件（condition/when/extra_conditions）と OR 条件（condition_chain）は AND（_evalStepConditionGate と同じ）。
+  // 以前は condition_chain があると condition（Lv.4以下 等）を見ておらず、「Lv.4以下の『アグモン』『グレイモン』を
+  // 含むか特徴『ME』『VB』」の Lv 条件が効いていなかった（EX12-016 メタルグレイモン）。
+  // common_chain: キーワード対象の「共通の絞り込み条件」を OR で組んだもの（designated_common_chain。全グループに AND）
+  const _segOk = (segs, c) => !Array.isArray(segs) || segs.length === 0 || segs.some(seg => {
+    const segConds = [];
+    (seg && seg.conditions || []).forEach(cs => segConds.push(...parseRecipeCondition(cs)));
+    return segConds.length === 0 || checkConditions(segConds, c, bs, side);
+  });
+  if ((Array.isArray(costItem.condition_chain) && costItem.condition_chain.length > 0) || (Array.isArray(costItem.common_chain) && costItem.common_chain.length > 0)) {
+    return (cards || []).filter(c => c && _evalStepConditionGate(costItem, c, bs, side) && _segOk(costItem.common_chain, c));
   }
   const conds = [];
   if (costItem.condition) conds.push(...parseRecipeCondition(costItem.condition));
@@ -20917,4 +21167,62 @@ export function hasEvoStackTrigger(card, triggerCode) {
       return !!(!(s && s._faceDown) && r.evo_source && _lookupTriggerSteps(r.evo_source, triggerCode));
     } catch (_) { return false; }
   });
+}
+
+
+// ===== ジョグレスの進化条件（公式ルール 8-2） =====
+// 進化先カードの「［ジョグレス進化］青/黄Lv.6+赤/黒Lv.6」（効果テキスト。「〔ジョグレス〕青Lv.4+緑Lv.4:コスト0」の書き方も可）、
+// またはレシピの jogress_evolve（エディタの🧬バナー。materials:[{name,color,lv}] + value=コスト）から読む。
+// 戻り値: [{ slots:[{colors:[],lv,names:[]}, {…}], cost }]（左の条件＝上に重ねるカード）
+export function getJogressConditions(card) {
+  if (!card) return [];
+  const out = [];
+  try {
+    const r = typeof card.recipe === 'string' ? JSON.parse(card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '')) : card.recipe;
+    const js = r && Array.isArray(r.jogress_evolve) ? r.jogress_evolve : null;
+    if (js) js.forEach((st) => {
+      const mats = Array.isArray(st && st.materials) ? st.materials : [];
+      if (mats.length >= 2) out.push({
+        slots: mats.slice(0, 2).map(m => ({
+          colors: m.color ? String(m.color).split(/[,\/]/).map(x => x.trim()).filter(Boolean) : [],
+          lv: m.lv !== undefined && m.lv !== '' ? parseInt(m.lv, 10) : undefined,
+          names: m.name ? String(m.name).split(',').map(x => x.trim()).filter(Boolean) : [],
+        })),
+        cost: parseInt(st.value, 10) || 0,
+      });
+    });
+  } catch (_) {}
+  if (out.length > 0) return out;
+  const text = String(card.effect || '');
+  const re = /[［〔\[]ジョグレス(?:進化)?[］〕\]]\s*([^\n]+)/g;
+  let m;
+  while ((m = re.exec(text))) {
+    let body = m[1];
+    let cost = 0;
+    const cm = body.match(/[:：]\s*コスト\s*(\d+)/);
+    if (cm) { cost = parseInt(cm[1], 10) || 0; body = body.slice(0, cm.index); }
+    const parts = body.split(/[+＋]/).map(x => x.trim()).filter(Boolean);
+    if (parts.length < 2) continue;
+    const slot = (p) => {
+      const names = [];
+      p.replace(/「([^」]+)」/g, (_, n) => { names.push(n); return ''; });
+      const lvm = p.match(/Lv\.?\s*(\d+)/i);
+      const colorPart = p.replace(/「[^」]*」/g, '').replace(/Lv\.?\s*\d+/i, '');
+      const colors = colorPart.split(/[\/／]/).map(x => x.trim()).filter(x => /^(赤|青|黄|緑|黒|紫|白)$/.test(x));
+      return { colors, lv: lvm ? parseInt(lvm[1], 10) : undefined, names };
+    };
+    out.push({ slots: [slot(parts[0]), slot(parts[1])], cost });
+  }
+  return out;
+}
+// ジョグレスの進化条件の1つ分（色/Lv/名称）に、自分のデジモンが当てはまるか
+export function jogressSlotMatches(card, slot, bs, side) {
+  if (!card || !slot) return false;
+  if (slot.lv !== undefined && parseInt(card.level, 10) !== slot.lv) return false;
+  if (slot.colors && slot.colors.length > 0) {
+    const cc = String(card.color || '').split(/[\/,、]/).map(x => x.trim());
+    if (!slot.colors.some(col => cc.includes(col))) return false;
+  }
+  if (slot.names && slot.names.length > 0 && !slot.names.some(n => cardHasName(card, n, true))) return false;
+  return true;
 }

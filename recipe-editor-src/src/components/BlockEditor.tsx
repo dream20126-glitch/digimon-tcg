@@ -9405,9 +9405,11 @@ const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> 
   cond_state_active_ge: { zone: 'state_active', quant: 'ge' }, cond_state_active_le: { zone: 'state_active', quant: 'le' }, cond_state_active_eq: { zone: 'state_active', quant: 'eq' }, cond_state_active_gt: { zone: 'state_active', quant: 'gt' }, cond_state_active_lt: { zone: 'state_active', quant: 'lt' },
   cond_last_action_ge: { zone: 'last_action', quant: 'ge' }, cond_last_action_le: { zone: 'last_action', quant: 'le' }, cond_last_action_eq: { zone: 'last_action', quant: 'eq' }, cond_last_action_gt: { zone: 'last_action', quant: 'gt' }, cond_last_action_lt: { zone: 'last_action', quant: 'lt' },
 };
-// 「このカードの枚数」（value:'self_card'）と比べられる場所＝カード自身に付いている枚数
-const REF_SELF_CARD_ZONES = new Set(['evo_source', 'linked']);
-const REF_ZONE_LABEL_BY_CODE: Record<string, string> = { evo_source: '進化元', linked: 'リンクカード' };
+// 「参照」で数値の代わりに比べる先（'opp'=相手のこのゾーン / 'self_card'=このカード / own_*=自分のデジモン等）
+const REF_COMPARE_VALUES = new Set(['opp', 'self_card', 'own_digimon', 'own_tamer', 'own_card']);
+function isRefCompareValue(v: string | undefined): boolean { return !!v && REF_COMPARE_VALUES.has(v); }
+const REF_OWN_LABEL: Record<string, string> = { own_digimon: 'デジモン', own_tamer: 'テイマー', own_card: 'カード' };
+const REF_ZONE_LABEL_BY_CODE: Record<string, string> = { hand: '手札', trash: 'トラッシュ', security: 'セキュリティ', evo_source: '進化元', linked: 'リンクカード', battle_area: 'バトルエリア' };
 function isRefFaceCond(base: string): boolean {
   return base === 'cond_face_down' || base === 'cond_face_up';
 }
@@ -10061,29 +10063,58 @@ function ConditionsHybridEditor({
                             />
                             {refNoValue ? (
                               <span style={{ fontSize: 10, color: '#666' }}>（値なし・カードの裏表で判定）</span>
-                            ) : c.value === 'opp' ? (
-                              <>
-                                <span style={{ fontSize: 11, color: colors.accent }}>相手のこのゾーンの{REF_ZONE_UNIT_COUNT.has(refZone) ? '体数' : '枚数'}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => updateAt(i, { value: '' })}
-                                  style={{ padding: '2px 8px', border: '1px solid #bbb', background: '#f5f5f5', color: '#333', borderRadius: 4, cursor: 'pointer', fontSize: 10 }}
-                                >
-                                  数値入力に戻す
-                                </button>
-                              </>
-                            ) : c.value === 'self_card' ? (
-                              <>
-                                <span style={{ fontSize: 11, color: colors.accent }}>このカードの{REF_ZONE_LABEL_BY_CODE[refZone] || 'このゾーン'}の{REF_ZONE_UNIT_COUNT.has(refZone) ? '体数' : '枚数'}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => updateAt(i, { value: '' })}
-                                  style={{ padding: '2px 8px', border: '1px solid #bbb', background: '#f5f5f5', color: '#333', borderRadius: 4, cursor: 'pointer', fontSize: 10 }}
-                                >
-                                  数値入力に戻す
-                                </button>
-                                <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装</span>
-                              </>
+                            ) : isRefCompareValue(c.value) ? (
+                              /* 「参照」: 数値の代わりに、別の場所の枚数と比べる */
+                              (() => {
+                                const cmp = c.value || 'opp';
+                                const unit = REF_ZONE_UNIT_COUNT.has(refZone) ? '体数' : '枚数';
+                                const zoneLabel = REF_ZONE_LABEL_BY_CODE[refZone] || 'このゾーン';
+                                const ownSub = cmp.startsWith('own_') ? cmp : '';
+                                return (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                      <span style={{ fontSize: 10, color: '#555' }}>比べる先:</span>
+                                      <ButtonGroup
+                                        options={[
+                                          { code: 'opp', label: '相手のこのゾーン' },
+                                          { code: 'self_card', label: 'このカード' },
+                                          { code: 'own', label: '自分' },
+                                        ]}
+                                        value={ownSub ? 'own' : cmp}
+                                        onChange={(v) => updateAt(i, { value: v === 'own' ? (ownSub || 'own_digimon') : v })}
+                                        accentColor={colors.accent}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => updateAt(i, { value: '' })}
+                                        style={{ padding: '2px 8px', border: '1px solid #bbb', background: '#f5f5f5', color: '#333', borderRadius: 4, cursor: 'pointer', fontSize: 10 }}
+                                      >
+                                        数値入力に戻す
+                                      </button>
+                                    </div>
+                                    {ownSub && (
+                                      <div style={{ marginLeft: 52 }}>
+                                        <ButtonGroup
+                                          options={[
+                                            { code: 'own_digimon', label: 'デジモン' },
+                                            { code: 'own_tamer', label: 'テイマー' },
+                                            { code: 'own_card', label: 'カード' },
+                                          ]}
+                                          value={ownSub}
+                                          onChange={(v) => updateAt(i, { value: v })}
+                                          accentColor={colors.accent}
+                                        />
+                                      </div>
+                                    )}
+                                    <span style={{ fontSize: 11, color: colors.accent }}>
+                                      {cmp === 'opp' ? '相手のこのゾーンの' + unit
+                                        : cmp === 'self_card' ? 'このカードの' + zoneLabel + 'の' + unit
+                                        : '自分の' + (REF_OWN_LABEL[cmp] || '') + 'の' + zoneLabel + 'の' + unit}
+                                      {cmp !== 'opp' && <span style={{ fontSize: 10, color: '#c62828', marginLeft: 6 }}>⚠ エンジン未実装</span>}
+                                    </span>
+                                  </div>
+                                );
+                              })()
                             ) : (
                               <>
                                 <input
@@ -10099,20 +10130,10 @@ function ConditionsHybridEditor({
                                   type="button"
                                   onClick={() => updateAt(i, { value: 'opp' })}
                                   style={{ padding: '4px 8px', border: '1px solid #bbb', background: '#f5f5f5', color: '#333', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
-                                  title="相手側の同じゾーンの枚数と動的に比較する（例:自分の手札が相手の手札以上）"
+                                  title="数値の代わりに、相手のこのゾーン／このカード／自分のデジモン等の枚数と比べる"
                                 >
                                   参照
                                 </button>
-                                {REF_SELF_CARD_ZONES.has(refZone) && (
-                                  <button
-                                    type="button"
-                                    onClick={() => updateAt(i, { value: 'self_card' })}
-                                    style={{ padding: '4px 8px', border: '1px solid #bbb', background: '#f5f5f5', color: '#333', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
-                                    title="このカード（効果を持つデジモン）の同じ場所の枚数と比較する（例:このデジモンの進化元の枚数以下の進化元を持つデジモン）"
-                                  >
-                                    このカードの枚数
-                                  </button>
-                                )}
                               </>
                             )}
                           </div>

@@ -12084,7 +12084,9 @@ const _BOTH_SUBJECTS = new Set(['both', 'both_any', 'both_card', 'both_digimon']
 export function fireOnAttackBothSubjectTriggers(attackerSide, bs, ctxBase, done) {
   if (bs) bs._currentAttackerSide = attackerSide;
   const reactSide = attackerSide === 'player' ? 'ai' : 'player';
-  return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, done, (step) => !!step && _BOTH_SUBJECTS.has(_resolveStepSubject(step, 'on_attack')));
+  // 相手のアタックへの反応は fireOnAttackOppSubjectTriggers（_isOppOrBothAttackStep）が発動主体「両方」も含めて
+  // 拾う（オンラインでは持ち主の端末へ委譲）。ここでも発動すると同じ効果が2回発動するため何もしない
+  void reactSide; done && done();
 }
 
 // on_attack ステップに subject:"opp" が付いている場合（例: アンドロモン進化元「相手の

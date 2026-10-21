@@ -8,10 +8,10 @@
 import { bs, spendMemory, addMemory, isMemoryOverflow, drawCards, placeOnBattleArea, removeFromBattleArea, destroyCard, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { addLog, showOverlay, removeOverlay, showConfirm, showToast, showScreen } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
-import { fxLinkEffect, fxAppGattai } from './battle-fx.js';
+import { fxLinkEffect, fxAppGattai, fxJogressFusion } from './battle-fx.js';
 import { getNameAliases } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged, getStaticEvoCostReduction as _getStaticEvoCostReduction } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged, getStaticEvoCostReduction as _getStaticEvoCostReduction, getJogressConditions as _getJogressConditions, jogressSlotMatches as _jogressSlotMatches } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -1496,13 +1496,31 @@ export function doPlay(card, handIdx, slotIdx) {
 
 // ===== 進化 =====
 
-export function doEvolve(card, handIdx, slotIdx) {
+export function doEvolve(card, handIdx, slotIdx, opts) {
   if (bs.phase !== 'main') return;
   if (_attackInProgress) return;
   // ★ オンライン通知は最終コスト確定後（_finishDoEvolve内）で送る。ここで送ると
   // 吸収進化等の軽減が確定する前の生コストが相手画面に表示されてしまうため
   const base = bs.player.battleArea[slotIdx];
   if (!base) return;
+  // ジョグレス進化（［ジョグレス進化］を持つカードを、条件に合う自分のデジモンに重ねた）。
+  // 通常の進化もできるなら「進化」「ジョグレス進化」を選ぶ（公式ルール 5-1-2-2）
+  if (!(opts && opts.skipJogress)) {
+    const _jgPairs = _handJogressPairs(card, base);
+    if (_jgPairs.length > 0) {
+      const _normalOk = card.evolveCost !== null && canEvolveOnto(card, base);
+      if (!_normalOk) { _doHandJogress(card, base, _jgPairs); return; }
+      showConfirm({
+        title: '進化 or ジョグレス進化',
+        message: '「' + card.name + '」をどうしますか？',
+        yesText: '⬆ 進化', noText: '🔀 ジョグレス進化', color: '#ffd54f',
+      }).then((normal) => {
+        if (normal) doEvolve(card, handIdx, slotIdx, { skipJogress: true });
+        else _doHandJogress(card, base, _jgPairs);
+      });
+      return;
+    }
+  }
   if (card.evolveCost === null) { addLog('🚨 「' + card.name + '」は進化できません‼'); return; }
   if (!canEvolveOnto(card, base)) { addLog('🚨 進化条件を満たしていません‼（' + card.evolveCond + '）'); return; }
 
@@ -1874,7 +1892,8 @@ export function doEvolveFromEffect(card, handIdx, slotIdx, cost, side, callback)
 // 進化したデジモンは別の1体（新しいカード。8-2-2-1）: アクティブ・登場したターンの情報なし・付与された効果は失われる・
 // 【ターンに1回】はリセット。リンクカードは重ねる前に破棄（8-2-2-1-2）。コスト支払い → 1枚ドロー → 【進化時】
 // callback(evolved | false)
-export function doJogressFromEffect(card, left, right, cost, side, callback) {
+export function doJogressFromEffect(card, left, right, cost, side, callback, opts) {
+  opts = opts || {};
   const p = side === 'player' ? bs.player : bs.ai;
   const li = p.battleArea.indexOf(left), ri = p.battleArea.indexOf(right);
   if (!card || li === -1 || ri === -1 || left === right) { callback && callback(false); return; }
@@ -1892,6 +1911,9 @@ export function doJogressFromEffect(card, left, right, cost, side, callback) {
     linkedCards: [],
     stack: [left].concat(left.stack || [], [right], right.stack || []),
     _jogressEvolved: true,
+    // 別の1体（新しいカード）: 【ターンに1回】等の回数は進化元とは別に数え直す（公式ルール 8-2-2-1-6）
+    _uid: undefined,
+    cantAttack: false, _attackWithoutRest: undefined, _digicrossed: undefined,
   });
   evolved.dp = evolved.baseDp;
   p.battleArea[li] = evolved;
@@ -1903,15 +1925,21 @@ export function doJogressFromEffect(card, left, right, cost, side, callback) {
   bs._evolveCountThisTurn = (bs._evolveCountThisTurn || 0) + 1;
   addLog('🔀 「' + left.name + '」＋「' + right.name + '」→「' + evolved.name + '」ジョグレス進化！（コスト ' + cost + '）');
   if (side === 'player' && _onlineMode && _sendCommand) {
-    try { _sendCommand({ type: 'evolve', cardName: evolved.name, baseName: left.name + '＋' + right.name, cardImg: evolved.imgSrc || '', evolveCost: cost }); } catch (_) {}
+    // 相手の画面にもジョグレス（融合）演出を出す（盤面は完了後の state_sync で同期）
+    try {
+      _sendCommand({ type: 'jogress', cardName: evolved.name, cardImg: evolved.imgSrc || '', evolveCost: cost,
+        leftName: left.name, leftImg: left.imgSrc || '', rightName: right.name, rightImg: right.imgSrc || '' });
+    } catch (_) {}
   }
   renderAll();
-  showEvolveEffect(cost, left.name + '＋' + right.name, left, evolved, () => {
+  const _jgFx = (next) => { try { fxJogressFusion(left, right, evolved, cost, next); } catch (_) { next(); } };
+  _jgFx(() => {
     if (side === 'player') playerSpendMemory(cost, true);
     else aiSpendMemory(cost);
     doDraw(side, 'ジョグレス進化ドロー', () => {
       const finish = () => {
-        if (side === 'player') checkPlayerPendingTurnEnd({ noFlush: true });
+        // 手札からの通常のジョグレス進化はプレイヤーの行動なので、ターン終了の判定もそのまま行う
+        if (side === 'player') checkPlayerPendingTurnEnd(opts.fromHand ? undefined : { noFlush: true });
         if (side === 'player' && _onlineMode) _dispatchStateSync();
         callback && callback(evolved);
       };
@@ -1929,6 +1957,46 @@ export function doJogressFromEffect(card, left, right, cost, side, callback) {
       }
     }, { deferDismiss: false });
   });
+}
+
+// ===== 手札からの通常のジョグレス進化（公式ルール 5-1-2-2 / 8-2-3） =====
+// base（重ねた先の自分のデジモン）を進化元の1体として使える組み合わせ [{left,right,cost}] を返す
+function _handJogressPairs(card, base) {
+  if (!card || !base || (card.type !== 'デジモン' && card.type !== 'デュアル')) return [];
+  let conds = [];
+  try { conds = _getJogressConditions(card) || []; } catch (_) { conds = []; }
+  if (conds.length === 0) return [];
+  const mats = bs.player.battleArea.filter(c => c && c !== base && (c.type === 'デジモン' || !c.type));
+  const out = [];
+  conds.forEach((jc) => {
+    mats.forEach((o) => {
+      if (_jogressSlotMatches(base, jc.slots[0], bs, 'player') && _jogressSlotMatches(o, jc.slots[1], bs, 'player')) out.push({ left: base, right: o, cost: jc.cost });
+      if (_jogressSlotMatches(o, jc.slots[0], bs, 'player') && _jogressSlotMatches(base, jc.slots[1], bs, 'player')) out.push({ left: o, right: base, cost: jc.cost });
+    });
+  });
+  return out;
+}
+// もう1体を選んでジョグレス進化する（候補が1体ならそのまま）
+function _doHandJogress(card, base, pairs) {
+  const others = [];
+  pairs.forEach(p => { const o = p.left === base ? p.right : p.left; if (!others.includes(o)) others.push(o); });
+  const go = (other) => {
+    const pair = pairs.find(p => (p.left === base && p.right === other) || (p.right === base && p.left === other));
+    if (!pair) return;
+    let cost = pair.cost || 0;
+    // 進化に影響を及ぼす効果はジョグレス進化にも及ぶ（公式ルール 8-2-2-5）
+    try { cost = Math.max(0, cost - _getStaticEvoCostReduction(card, base, bs, 'player')); } catch (_) {}
+    const _ed = _consumePendingEvoCostReduction(card, base);
+    if (_ed > 0) cost = Math.max(0, cost - _ed);
+    addLog('🔀 ジョグレス進化を宣言: 「' + card.name + '」（「' + pair.left.name + '」＋「' + pair.right.name + '」）');
+    doJogressFromEffect(card, pair.left, pair.right, cost, 'player', () => { renderAll(); }, { fromHand: true });
+  };
+  if (others.length === 1) { go(others[0]); return; }
+  const idxs = others.map(o => bs.player.battleArea.indexOf(o)).filter(i => i >= 0);
+  _showTargetSelection('pl', idxs, null, '#ffd54f', (idx) => {
+    if (idx === null || idx === undefined) { addLog('☓ ジョグレス進化をやめた'); return; }
+    go(bs.player.battleArea[idx]);
+  }, '（「' + card.name + '」にジョグレス進化する、もう1体のデジモン）');
 }
 
 // ===== 【トレーニング】キーワード起動効果 =====

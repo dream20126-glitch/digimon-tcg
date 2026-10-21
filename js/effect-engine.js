@@ -15963,11 +15963,12 @@ function executeRecipeStep(step, ctx, store, callback) {
         }, '（「' + card.name + '」にジョグレス進化するデジモン・1体目）');
       };
       if (effectiveSide === 'ai' || ctx.side === 'ai') { _jgChoosePair(_jgCands[0]); break; }
-      showTrashCardPicker(_jgCands, 1, _jgOptional || _jgIsCost, '🔀 ジョグレス進化させるカードを選んでください', (picked) => {
+      const _jgBoth = _jgZones.includes('hand') && _jgZones.includes('trash');
+      showTrashCardPicker(_jgCands, 1, _jgOptional || _jgIsCost, '🔀 ジョグレス進化させるカードを選んでください' + (_jgBoth ? '（手札/トラッシュ）' : _jgZones.includes('trash') ? '（トラッシュ）' : ''), (picked) => {
         const c = picked && picked[0];
         if (!c) { _jgDo(null, null); return; }
         _jgChoosePair(c);
-      }, _jgCands);
+      }, _jgCands, _jgBoth ? { labelOf: (c) => (player.hand.includes(c) ? '手札' : 'トラッシュ') } : undefined);
       break;
     }
 

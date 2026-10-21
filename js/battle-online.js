@@ -616,6 +616,15 @@ function onRemoteCommand(cmd) {
       }
       break;
     }
+    case 'jogress': {
+      // 相手のジョグレス進化: 融合演出だけ出す（盤面は state_sync で同期）
+      const dl = { name: cmd.leftName || '???', imgSrc: cmd.leftImg || '' };
+      const dr = { name: cmd.rightName || '???', imgSrc: cmd.rightImg || '' };
+      const dv = { name: cmd.cardName || '???', imgSrc: cmd.cardImg || '' };
+      addLog('🎮 相手が「' + dl.name + '」＋「' + dr.name + '」→「' + dv.name + '」にジョグレス進化！');
+      if (typeof window !== 'undefined' && typeof window._fxJogressFusion === 'function') window._fxJogressFusion(dl, dr, dv, cmd.evolveCost != null ? cmd.evolveCost : null, () => {});
+      break;
+    }
     case 'hatch': {
       if (bs.ai.tamaDeck && bs.ai.tamaDeck.length > 0) {
         bs.ai.ikusei = bs.ai.tamaDeck.splice(0, 1)[0];

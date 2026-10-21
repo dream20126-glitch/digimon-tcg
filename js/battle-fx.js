@@ -1658,3 +1658,134 @@ export function getFxRunners() {
     },
   };
 }
+
+
+// =====================================================
+//  ジョグレス進化（融合）演出 — 2体が左右から飛び込み、回転しながら衝突して融合 → 光の柱から進化後のカード
+// =====================================================
+// left / right: 進化元の2体（左＝上に重なる方） / result: 進化後のカード / cost: 進化コスト（null なら表示しない）
+export function fxJogressFusion(left, right, result, cost, callback) {
+  const done = () => { try { callback && callback(); } catch (_) {} };
+  if (typeof document === 'undefined' || !document.body) { done(); return; }
+  if (!document.getElementById('fx-jogress-fusion-style')) {
+    const st = document.createElement('style');
+    st.id = 'fx-jogress-fusion-style';
+    st.textContent = [
+      '@keyframes jfShake{0%,100%{transform:translate(0,0)}20%{transform:translate(-8px,4px)}40%{transform:translate(7px,-5px)}60%{transform:translate(-5px,-3px)}80%{transform:translate(4px,5px)}}',
+      '@keyframes jfRing{0%{transform:translate(-50%,-50%) scale(0.1);opacity:1}100%{transform:translate(-50%,-50%) scale(5);opacity:0}}',
+      '@keyframes jfFlash{0%{opacity:0}15%{opacity:1}100%{opacity:0}}',
+      '@keyframes jfOrb{0%{transform:translate(-50%,-50%) scale(0.2);opacity:0}30%{opacity:1}70%{transform:translate(-50%,-50%) scale(1.25)}100%{transform:translate(-50%,-50%) scale(0.9);opacity:0}}',
+      '@keyframes jfPillar{0%{transform:translateX(-50%) scaleY(0);opacity:0}25%{opacity:0.95}100%{transform:translateX(-50%) scaleY(1);opacity:0}}',
+      '@keyframes jfRise{0%{transform:translate(-50%,-30%) scale(0.4);opacity:0;filter:brightness(3)}60%{transform:translate(-50%,-55%) scale(1.12);opacity:1;filter:brightness(1.6)}100%{transform:translate(-50%,-50%) scale(1);opacity:1;filter:brightness(1)}}',
+      '@keyframes jfTitle{0%{letter-spacing:22px;opacity:0;transform:translateX(-50%) scale(1.4)}60%{opacity:1}100%{letter-spacing:6px;opacity:1;transform:translateX(-50%) scale(1)}}',
+      '@keyframes jfGlow{0%,100%{box-shadow:0 0 30px #ffdd00,0 0 60px #ff8800}50%{box-shadow:0 0 50px #ffffff,0 0 90px #ffdd00}}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:56000;pointer-events:none;overflow:hidden;background:radial-gradient(ellipse at center,rgba(40,20,0,0.92) 0%,rgba(0,0,0,0.95) 70%);opacity:0;transition:opacity 0.3s;';
+  const stage = document.createElement('div');
+  stage.style.cssText = 'position:absolute;inset:0;';
+  overlay.appendChild(stage);
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => { overlay.style.opacity = '1'; });
+  const W = window.innerWidth, H = window.innerHeight, cx = W / 2, cy = H / 2;
+  const CW = Math.min(110, W * 0.26), CH = CW * 1.4;
+  const face = (card, color) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:absolute;width:' + CW + 'px;height:' + CH + 'px;border-radius:8px;overflow:hidden;border:2px solid ' + color + ';box-shadow:0 0 18px ' + color + ',0 0 36px ' + color + '66;background:#111;';
+    const src = card ? (card.imgSrc || cardImg(card)) : '';
+    d.innerHTML = (src ? '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;">' : '<div style="color:#fff;padding:8px;font-size:11px;">' + ((card && card.name) || '?') + '</div>')
+      + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);padding:2px;font-size:9px;text-align:center;color:#fff;">' + ((card && card.name) || '') + '</div>';
+    return d;
+  };
+  const a = face(left, '#00e5ff'), b = face(right, '#ff8a00');
+  stage.appendChild(a); stage.appendChild(b);
+  // 光の尾
+  const trail = (x, y, color) => {
+    const t = document.createElement('div');
+    t.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:' + color + ';box-shadow:0 0 14px ' + color + ';opacity:0.8;transition:all 0.5s ease-out;';
+    stage.appendChild(t);
+    requestAnimationFrame(() => { t.style.opacity = '0'; t.style.transform = 'scale(0.2)'; });
+    setTimeout(() => t.remove(), 550);
+  };
+  const place = (el, x, y, rot, sc, op) => {
+    el.style.left = (x - CW / 2) + 'px'; el.style.top = (y - CH / 2) + 'px';
+    el.style.transform = 'rotate(' + rot + 'deg) scale(' + sc + ')'; el.style.opacity = op;
+  };
+  // ① 左右から飛び込み（0〜0.7s）→ ② 中心を回りながら近づく（0.7〜2.2s）
+  const t0 = performance.now();
+  const ENTER = 700, SPIN = 1500;
+  let lastTrail = 0;
+  const step = (now) => {
+    const t = now - t0;
+    if (t < ENTER) {
+      const e = 1 - Math.pow(1 - t / ENTER, 3);
+      place(a, -CW + (cx - W * 0.22 + CW) * e, cy, -20 * (1 - e), 1, e);
+      place(b, W + CW - (W + CW - (cx + W * 0.22)) * e, cy, 20 * (1 - e), 1, e);
+    } else if (t < ENTER + SPIN) {
+      const u = (t - ENTER) / SPIN, e = u * u;
+      const r = W * 0.22 * (1 - e), ang = Math.PI * 4 * e;
+      place(a, cx - Math.cos(ang) * r, cy - Math.sin(ang) * r * 0.45, ang * 57.3 * 0.5, 1 - 0.5 * e, 1);
+      place(b, cx + Math.cos(ang) * r, cy + Math.sin(ang) * r * 0.45, -ang * 57.3 * 0.5, 1 - 0.5 * e, 1);
+      if (now - lastTrail > 35) {
+        lastTrail = now;
+        trail(cx - Math.cos(ang) * r, cy - Math.sin(ang) * r * 0.45, '#00e5ff');
+        trail(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r * 0.45, '#ff8a00');
+      }
+    } else { collide(); return; }
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  // ③ 衝突: 閃光・衝撃波・揺れ・火花（2.2s〜）
+  let collided = false;
+  const collide = () => {
+    if (collided) return; collided = true;
+    a.remove(); b.remove();
+    const flash = document.createElement('div');
+    flash.style.cssText = 'position:absolute;inset:0;background:#fff;animation:jfFlash 0.6s ease-out forwards;';
+    stage.appendChild(flash);
+    stage.style.animation = 'jfShake 0.45s linear';
+    ['#ffffff', '#ffdd00', '#ff8a00'].forEach((c, i) => {
+      const ring = document.createElement('div');
+      ring.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:90px;height:90px;border-radius:50%;border:4px solid ' + c + ';box-shadow:0 0 20px ' + c + ';animation:jfRing 0.9s ease-out ' + (i * 0.12) + 's forwards;opacity:0;';
+      stage.appendChild(ring);
+    });
+    const colors = ['#ffdd00', '#ffffff', '#00e5ff', '#ff8a00', '#ff4fd8'];
+    for (let i = 0; i < 46; i++) {
+      const sp = document.createElement('div');
+      const ang = Math.random() * Math.PI * 2, dist = 80 + Math.random() * Math.min(W, H) * 0.42, sz = 3 + Math.random() * 9;
+      const c = colors[i % colors.length];
+      sp.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:' + sz + 'px;height:' + sz + 'px;margin:-' + (sz / 2) + 'px;border-radius:50%;background:' + c + ';box-shadow:0 0 ' + (sz * 2) + 'px ' + c + ';transition:transform ' + (0.7 + Math.random() * 0.6) + 's cubic-bezier(.1,.8,.3,1),opacity 1.1s ease-out;';
+      stage.appendChild(sp);
+      requestAnimationFrame(() => { sp.style.transform = 'translate(' + (Math.cos(ang) * dist) + 'px,' + (Math.sin(ang) * dist) + 'px)'; sp.style.opacity = '0'; });
+    }
+    // 融合の光の球
+    const orb = document.createElement('div');
+    orb.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,#ffffff 0%,#ffe680 35%,#ff9a00 65%,rgba(255,120,0,0) 72%);animation:jfOrb 1.1s ease-in-out forwards;';
+    stage.appendChild(orb);
+    setTimeout(reveal, 900);
+  };
+  // ④ 光の柱 → 進化後のカード、タイトル
+  const reveal = () => {
+    const pillar = document.createElement('div');
+    pillar.style.cssText = 'position:absolute;left:' + cx + 'px;top:0;bottom:0;width:' + (CW * 1.6) + 'px;transform-origin:center bottom;background:linear-gradient(to top,rgba(255,220,0,0) 0%,rgba(255,240,170,0.9) 45%,rgba(255,255,255,0.95) 55%,rgba(255,220,0,0) 100%);animation:jfPillar 1.2s ease-out forwards;';
+    stage.appendChild(pillar);
+    const res = face(result, '#ffdd00');
+    res.style.width = (CW * 1.35) + 'px'; res.style.height = (CH * 1.35) + 'px';
+    res.style.left = cx + 'px'; res.style.top = cy + 'px';
+    res.style.animation = 'jfRise 0.9s cubic-bezier(.2,.9,.3,1.2) forwards, jfGlow 1.2s ease-in-out 0.9s infinite';
+    stage.appendChild(res);
+    const title = document.createElement('div');
+    title.style.cssText = 'position:absolute;left:50%;top:' + Math.max(16, cy - CH * 1.35 / 2 - 64) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:' + Math.min(30, W * 0.065) + 'px;font-weight:900;color:#fff4b0;text-shadow:0 0 12px #ffdd00,0 0 28px #ff8a00,0 0 50px #ff4400;animation:jfTitle 0.9s ease-out forwards;';
+    title.innerText = 'JOGRESS EVOLUTION';
+    stage.appendChild(title);
+    const sub = document.createElement('div');
+    sub.style.cssText = 'position:absolute;left:50%;top:' + (cy + CH * 1.35 / 2 + 18) + 'px;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:bold;color:#ffe9a0;text-shadow:0 0 8px #ff8a00;opacity:0;transition:opacity 0.4s 0.5s;';
+    sub.innerText = '「' + ((left && left.name) || '?') + '」＋「' + ((right && right.name) || '?') + '」→「' + ((result && result.name) || '?') + '」' + (cost != null ? '（コスト' + cost + '）' : '');
+    stage.appendChild(sub);
+    requestAnimationFrame(() => { sub.style.opacity = '1'; });
+    setTimeout(() => { overlay.style.opacity = '0'; }, 2300);
+    setTimeout(() => { overlay.remove(); done(); }, 2650);
+  };
+}

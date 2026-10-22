@@ -5455,6 +5455,10 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   if (Array.isArray(filter.or) && filter.or.length > 0) {
     if (!filter.or.some((sub) => cardMatchesFilter(card, sub, bs, side, sourceCard))) return false;
   }
+  // filter.and: サブフィルタの配列。全て満たす（取得元カードの条件と対象の条件を両方掛けるときに使う。_srcCardFilterOf）
+  if (Array.isArray(filter.and) && filter.and.length > 0) {
+    if (!filter.and.every((sub) => cardMatchesFilter(card, sub, bs, side, sourceCard))) return false;
+  }
   // 進化元の枚数（filter.evo_source_ge/le/eq/gt/lt）。エディタの対象の条件「参照 → 進化元」。
   // 値は数値か、比べる先: 'self_card'＝このカード（効果を持つカード）の進化元の枚数 /
   // 'opp'＝相手のデジモン / 'own_digimon'・'own_tamer'・'own_card'＝自分のデジモン等（いずれか1体と比べて成り立てばOK）。
@@ -5615,6 +5619,29 @@ function applyExtremeFilterIdxs(idxs, area, filter) {
 // 判定は手動進化と同じ canEvolveOnto（battle-combat.js。代替進化 alt_evolve 等も含む）を使う。
 // 判定関数が無い環境（テストのNode等）は従来通り判定しない
 // 進化元から登場させるステップか（summon 系 + from に evo_source）
+// 取得元（手札・トラッシュ・デッキ・進化元等）から選ぶカードの条件。エディタは「取得元カードの条件」(from_filter)と
+// 「対象の条件」(filter)のどちらに入れたレシピもあるため、両方あれば両方を満たすカード（AND）にする。
+// 対象の条件のうち、進化元/セキュリティの位置指定（target_stack*・target_evo_source*）はカードの条件ではないので除く。
+// 進化・ジョグレス・リンク・〇〇に置く（filter が対象＝進化元/置き先のデジモンの条件）には使わない
+function _srcCardFilterOf(step) {
+  const ff = step && step.from_filter && typeof step.from_filter === 'object' ? step.from_filter : null;
+  let tf = step && step.filter && typeof step.filter === 'object' ? step.filter : null;
+  if (tf) {
+    const rest = Object.assign({}, tf);
+    ['target_stack', 'target_stack_position', 'target_evo_source', 'target_evo_source_position'].forEach((k) => delete rest[k]);
+    tf = Object.keys(rest).length > 0 ? rest : null;
+  }
+  if (!ff || !tf) return ff || tf || null;
+  // 重ならない項目はそのまま並べ（type 等を後続の処理が読めるように）、同じ項目で値が違うものだけ and で両方掛ける
+  const out = Object.assign({}, ff);
+  const extra = {};
+  Object.keys(tf).forEach((k) => {
+    if (!(k in out)) out[k] = tf[k];
+    else if (JSON.stringify(out[k]) !== JSON.stringify(tf[k])) extra[k] = tf[k];
+  });
+  if (Object.keys(extra).length > 0) out.and = (Array.isArray(out.and) ? out.and : []).concat([extra]);
+  return out;
+}
 function _isEvoSourceSummonStep(step) {
   if (!step || !(step.action === 'summon' || step.action === 'summon_appear' || step.action === 'summon_use')) return false;
   const f = step.from;
@@ -13587,7 +13614,7 @@ function _stepLacksHandCandidate(step, card, bs, side) {
   if (!p) return false;
   if ((step.action === 'summon' || step.action === 'summon_appear' || step.action === 'summon_use') && !step.card) {
     if (!zones.includes('hand')) return false;
-    const filter = step.from_filter || step.filter || {};
+    const filter = _srcCardFilterOf(step) || {};
     return !(p.hand || []).some(c => c && cardMatchesFilter(c, filter, bs, side, card));
   }
   if (step.action === 'evolve') {
@@ -13701,7 +13728,7 @@ function recipeWillExecuteAnything(recipe, ctx) {
     // このカード自身では判定せず、条件を満たす進化元があるかで判定する（ゾンビプルートモン BT26-079 の
     // 【デコード「プルートモン」】が、自身の名前で cond_name:プルートモン を判定して不発になっていた）
     if (_isEvoSourceSummonStep(step)) {
-      const _esF = step.from_filter || step.filter || null;
+      const _esF = _srcCardFilterOf(step);
       const _esOk = (ctx.card && Array.isArray(ctx.card.stack) ? ctx.card.stack : []).some(c => c
         && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type)
         && (!_esF || cardMatchesFilter(c, _esF, ctx.bs, ctx.side, ctx.card))
@@ -15508,7 +15535,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         // ユノモン：ヒステリックモード BT26-083 で Lv.6 のメルヴァモンまで選べていた）
         const _esGate = (step.condition || step.when || (Array.isArray(step.extra_conditions) && step.extra_conditions.length > 0)
           || (Array.isArray(step.condition_chain) && step.condition_chain.length > 0)) ? { gateSrc: step } : null;
-        const _esFilter = step.from_filter || step.filter || null;
+        const _esFilter = _srcCardFilterOf(step);
         const _esCands = (_esHost && Array.isArray(_esHost.stack) ? _esHost.stack : []).filter(c => c
           && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type)
           && (!_esFilter || cardMatchesFilter(c, _esFilter, ctx.bs, ctx.side, ctx.card))
@@ -15663,7 +15690,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           // 取得元カードの条件(from_filter)を優先し、対象の条件(filter)はフォールバック
           // （linkアクションの読み順と統一。取得元＝手札/トラッシュから選ぶカード自体の
           // 絞り込みなので、本来こちらが正）
-          let _filter = step.from_filter || step.filter || {};
+          let _filter = _srcCardFilterOf(step) || {};
           // 対象欄の種別（own=自分のデジモン / own_tamer=テイマー / own_option=オプション）で候補を
           // 絞る。取得元の条件に種別の指定がある場合はそちらを優先（例:「オプションカード1枚を使用」で
           // 同じ特徴のデジモン/テイマーまで選べてしまうのを防ぐ）
@@ -16460,7 +16487,7 @@ function executeRecipeStep(step, ctx, store, callback) {
     case 'return_hand': {
       // target:"opponent_trash:N"（相手のトラッシュのカードを、その持ち主＝相手の手札に戻す）
       if (String(step.target || '').split(':')[0] === 'opponent_trash') {
-        const _rhoFilter = step.filter || {};
+        const _rhoFilter = _srcCardFilterOf(step) || {};
         const _rhoWant = parseInt(String(step.target).split(':')[1], 10) || step.count || 1;
         const _rhoCands = (opponent.trash || []).filter(c => c && cardMatchesFilter(c, _rhoFilter, ctx.bs, ctx.side, ctx.card));
         if (_rhoCands.length === 0) {
@@ -16544,7 +16571,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       }
       // 自分のトラッシュ → 手札（trash_to_handと同じロジック。targetのN指定もcountとして受ける）
       // 対象欄の種別（own＝自分のデジモン等）で候補を絞る（EX12-010 グレイモン「…を持つデジモンカード1枚を手札に戻せる」）
-      const _rhFilter = _withImpliedTargetType(step, step.filter || {});
+      const _rhFilter = _withImpliedTargetType(step, _srcCardFilterOf(step) || {});
       const _rhT = String(step.target || '');
       const _rhCountFromTarget = _rhT.includes(':') ? parseInt(_rhT.split(':')[1]) : NaN;
       const _rhWantCount = step.count || (isNaN(_rhCountFromTarget) ? 1 : _rhCountFromTarget);
@@ -19109,7 +19136,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 戻すカードの条件: condition_chain（「ジェリーモンの記述があるか特徴DS」の OR）があれば condition 等と合わせて判定し、
         // from_filter（取得元カードの条件）も見る（以前は condition/when/extra_conditions だけで、OR 条件が無視されていた）
         const _rdHasChain = Array.isArray(step.condition_chain) && step.condition_chain.length > 0;
-        const _rdFromFilter = step.from_filter ? resolveDpFilterMarkers(step.from_filter, ctx.card, ctx.bs, ctx.side) : null;
+        const _rdSrcF = _srcCardFilterOf(step);
+        const _rdFromFilter = _rdSrcF ? resolveDpFilterMarkers(_rdSrcF, ctx.card, ctx.bs, ctx.side) : null;
         const _rdFiltered = _rdCandList.filter(({ card: c }) =>
           (_rdHasChain ? _evalStepConditionGate(step, c, ctx.bs, _rdOwnerSideTag) : (_rdConds2.length === 0 || checkConditions(_rdConds2, c, ctx.bs, _rdOwnerSideTag)))
           && (!_rdFromFilter || cardMatchesFilter(c, _rdFromFilter, ctx.bs, ctx.side, ctx.card)));
@@ -20099,7 +20127,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         callback && callback();
         break;
       }
-      const _dFilterRaw = step.filter || step.from_filter || null;
+      const _dFilterRaw = _srcCardFilterOf(step);
       _dSpec.filter = _dFilterRaw ? resolveDpFilterMarkers(_dFilterRaw, ctx.card, ctx.bs, ctx.side) : null;
       _dSpec.optional = !!step.optional || _dSpec.upTo;
       const _dOwnSide = ctx.side;

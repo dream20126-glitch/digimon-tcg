@@ -1770,6 +1770,49 @@ export function applyCardLevelSettings(recipe: Record<string, any>, settings: Ca
   return recipe;
 }
 
+// 「手札に戻す」「デッキに戻す」「破棄する」で、手札・トラッシュ・デッキのカードを選ぶ効果かどうか。
+// これらは選ぶカードの条件を「取得元カードの条件」(fromFilter → step.from_filter)に入れる（エディタの欄を1つに統一。
+// 以前は「対象の条件」(targetFilter → step.filter)に入れていたため、読み込み時に移す。エンジンはどちらも読む）
+export const ZONE_SOURCE_ACTIONS = new Set(['return_hand', 'return_deck', 'discard']);
+const ZONE_SOURCE_ZONES = new Set(['hand', 'trash', 'deck']);
+const ZONE_SOURCE_TARGET_BASES = new Set(['own_hand', 'opp_hand', 'opponent_hand', 'both_hand', 'own_trash', 'opp_trash', 'own_deck', 'opp_deck']);
+// 選ぶカードの条件ではなく、位置・状態の指定なので「対象の条件」側に残すもの
+const ZONE_SOURCE_KEEP_IN_TARGET = new Set(['cond_target_stack', 'cond_target_evo_source', 'cond_self_rest', 'cond_self_active', 'cond_face_down', 'cond_face_up']);
+export function isZoneSourceEffect(action: string | undefined, target: string | undefined, fromZones: string[] | undefined, targetFilter?: ConditionPair[]): boolean {
+  if (!action || !ZONE_SOURCE_ACTIONS.has(action)) return false;
+  if ((targetFilter || []).some((p) => p && (p.base === 'cond_target_evo_source' || p.base === 'cond_target_stack'))) return false;
+  if ((fromZones || []).some((z) => ZONE_SOURCE_ZONES.has(z))) return true;
+  return ZONE_SOURCE_TARGET_BASES.has(String(target || '').split(':')[0]);
+}
+// 対象の条件に、まだ移していない「カードの条件」が残っているか（残っていれば対象の条件の欄も出して隠さない）
+export function zoneSourceHasTargetCardConds(targetFilter?: ConditionPair[]): boolean {
+  return (targetFilter || []).some((p) => p && p.base && !ZONE_SOURCE_KEEP_IN_TARGET.has(p.base));
+}
+function migrateZoneSourceFilter<T extends { action?: string; target?: string; fromZones?: string[]; targetFilter?: ConditionPair[]; targetFilterChain?: ConditionChainEntry[]; fromFilter?: ConditionPair[]; fromFilterChain?: ConditionChainEntry[] }>(o: T): T {
+  if (!o || !isZoneSourceEffect(o.action, o.target, o.fromZones, o.targetFilter)) return o;
+  if ((o.fromFilter && o.fromFilter.length > 0) || (o.fromFilterChain && o.fromFilterChain.length > 0)) return o;
+  const tf = o.targetFilter || [];
+  const move = tf.filter((p) => p && p.base && !ZONE_SOURCE_KEEP_IN_TARGET.has(p.base));
+  const keep = tf.filter((p) => !(p && p.base && !ZONE_SOURCE_KEEP_IN_TARGET.has(p.base)));
+  let chain = o.targetFilterChain && o.targetFilterChain.length > 0 ? o.targetFilterChain : undefined;
+  if (move.length === 0 && !chain) return o;
+  // 対象の条件の OR（各条件の orGroup。同じ番号同士は AND、番号が違えば OR。-1 は全選択肢に共通）は、
+  // 取得元カードの条件では OR の選択肢（chain）として持つので、ここで並べ替える（そのまま移すと全部 AND になる）
+  let common = move;
+  if (!chain && move.some((p) => p.orGroup && p.orGroup > 0)) {
+    const groups = new Map<number, ConditionPair[]>();
+    const maxG = Math.max(0, ...move.map((p) => p.orGroup || 0));
+    move.filter((p) => p.orGroup !== -1).forEach((p) => {
+      const g = p.orGroup ?? maxG;
+      const { orGroup, ...rest } = p; void orGroup;
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g)!.push(rest as ConditionPair);
+    });
+    chain = [...groups.keys()].sort((x, y) => x - y).map((g, i) => ({ conditions: groups.get(g)!, op: i === 0 ? undefined : 'or' as const }));
+    common = move.filter((p) => p.orGroup === -1).map((p) => { const { orGroup, ...rest } = p; void orGroup; return rest as ConditionPair; });
+  }
+  return { ...o, fromFilter: common, fromFilterChain: chain, targetFilter: keep, targetFilterChain: undefined };
+}
 export function recipeToBlocks(rawRecipe: any): EffectBlock[] {
   if (!rawRecipe || typeof rawRecipe !== 'object') return [];
   const recipe = normalizeKeywordAliasesDeep(rawRecipe);
@@ -1877,7 +1920,10 @@ export function recipeToBlocks(rawRecipe: any): EffectBlock[] {
       }
     });
   }
-  return blocks;
+  return blocks.map((b) => {
+    const nb = migrateZoneSourceFilter(b);
+    return Array.isArray(nb.altActions) ? { ...nb, altActions: nb.altActions.map((a) => migrateZoneSourceFilter(a)) } : nb;
+  });
 }
 
 // blocksToRecipe側のgroupTriggersByTimingで「発動ターンが異なる」ために分割出力された

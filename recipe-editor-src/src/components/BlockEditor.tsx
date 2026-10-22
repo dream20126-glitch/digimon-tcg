@@ -13,7 +13,7 @@ import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOp
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
-import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER } from '../recipe';
+import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER, isZoneSourceEffect, zoneSourceHasTargetCardConds } from '../recipe';
 
 interface Props {
   block: EffectBlock;
@@ -3451,12 +3451,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const tgtOrMode = !!(block.targetFilterChain && block.targetFilterChain.length > 1);
   // 対象の条件の数（レスト/アクティブのクイック条件は除く）。2つ以上で AND/OR を選べる
   const tgtCondCount = (block.targetFilter || []).filter((c) => c.base && c.base !== 'cond_self_rest' && c.base !== 'cond_self_active').length;
-  const showTargetFilter =
+  const showTargetFilter0 =
     curTgt.l1 === 'self' ||
     curTgt.l1 === 'same_target' ||
     ['digimon', 'tamer', 'card'].includes(curTgt.l2)
     // 〇〇に置くの置き先（セキュリティ/デッキ）には条件が無い（置くカードの条件は取得元カードの条件）
     || (isZoneL2(curTgt.l2) && !PLACE_ACTION_CODES.has(block.action || ''));
+  // 手札・トラッシュ・デッキから選ぶ「手札に戻す/デッキに戻す/破棄する」は、選ぶカードの条件を「取得元カードの条件」に
+  // 一本化する（対象の条件は出さない。recipe.ts isZoneSourceEffect）
+  const block1ZoneSrc = isZoneSourceEffect(block.action, block.target, block.fromZones, block.targetFilter);
+  const showTargetFilter = showTargetFilter0 && !(block1ZoneSrc && !zoneSourceHasTargetCardConds(block.targetFilter) && !(block.targetFilterChain && block.targetFilterChain.length > 0));
   // 「取得元カードの条件」は進化/登場(BUILTIN_FROM_ZONE_ACTIONS)専用。対象＝このカード自身
   // （進化する側）であっても、実際に絞り込みたいのは取得元エリア（手札等）から選ぶカードの方
   // なので、「対象の条件」とは別枠・別データ（block.fromFilter → step.from_filter）として扱う
@@ -3657,7 +3661,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectTargetFilterChain = isEditingAlt ? editingAlt!.targetFilterChain : block.targetFilterChain;
   // 「〇〇に置く」(PLACE_ACTION_CODES)も📥場所（どこから置くか）で取得元エリアを選ぶ以上、
   // 「どんなカードを」取得するかの絞り込み（取得元カードの条件）が同様に必要なため対象に含める
-  const showRetrievalFilterEffective = !!effectAction && (BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || PLACE_ACTION_CODES.has(effectAction));
+  // 手札・トラッシュ・デッキから選ぶ「手札に戻す/デッキに戻す/破棄する」も取得元カードの条件で絞る（対象の条件の代わり）
+  const effZoneSrc = isZoneSourceEffect(effectAction, effectTarget, effectFromZones, effectTargetFilter);
+  const showRetrievalFilterEffective = !!effectAction && (BUILTIN_FROM_ZONE_ACTIONS.has(effectAction) || PLACE_ACTION_CODES.has(effectAction) || effZoneSrc);
   function updateEffect(patch: Record<string, any>) {
     if (isEditingAlt) updateAltAction(editingEffect - 1, patch);
     else onChange({ ...block, ...patch });
@@ -7060,10 +7066,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eExclusiveL2Options = eL2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer');
             const eHideCount = eBase === 'self' || eBase === 'self_card' || eBase === 'same_target' || eBase === 'target_trigger_source';
             const eIsUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(eBase) || eIsOrMode;
-            const eShowTargetFilter =
+            const eShowTargetFilter = !(effZoneSrc && !zoneSourceHasTargetCardConds(effectTargetFilter) && !(effectTargetFilterChain && effectTargetFilterChain.length > 0)) && (
               eCurTgt.l1 === 'self' ||
               eCurTgt.l1 === 'same_target' ||
-              ['digimon', 'tamer', 'card'].includes(eCurTgt.l2) || (isZoneL2(eCurTgt.l2) && !PLACE_ACTION_CODES.has(effectAction || ''));
+              ['digimon', 'tamer', 'card'].includes(eCurTgt.l2) || (isZoneL2(eCurTgt.l2) && !PLACE_ACTION_CODES.has(effectAction || '')));
             const eStackSubCond = effectTargetFilter.find((c) => c.base === 'cond_target_evo_source' || c.base === 'cond_target_stack');
             const setEffTgt = (l1: string, l2?: string) => {
               // OR選択中に他のL1/L2へ切り替えたら、自動設定していたtype絞り込みは持ち越さない
@@ -7942,7 +7948,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             で持つ。効果1・代替アクション（その後/OR/AND）とも同じ場所を使い回す */}
         {showRetrievalFilterEffective
           // 〇〇に置くは取得元をアクション欄の「📥 場所（取得元）」で選ぶので、取得元カードの条件は常に出す
-          && (effectIsPlaceActive || !(isZoneL2((TARGET_SEL_CODE_TO_L1L2[(effectTarget || '').split(':')[0]] || { l2: '' }).l2)
+          && (effectIsPlaceActive || effZoneSrc || !(isZoneL2((TARGET_SEL_CODE_TO_L1L2[(effectTarget || '').split(':')[0]] || { l2: '' }).l2)
             && !(effectFromFilter && effectFromFilter.length > 0) && !(effectFromFilterChain && effectFromFilterChain.length > 0)))
           && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8, background: '#e0f7f5', border: '1px solid #b2dfdb', borderRadius: 4, padding: 8 }}>

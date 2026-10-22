@@ -7324,7 +7324,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         </>
                       );
                     })()}
-                    {eStackSubCond && !effectIsPlaceActive && (() => {
+                    {/* 対象＝セキュリティのときは上のセキュリティ用の位置/裏表で設定済み（cond_target_stack を共用するため二重表示しない） */}
+                    {eStackSubCond && !effectIsPlaceActive && eCurTgt.l2 !== 'security' && (() => {
                       const currentPos = eStackSubCond.value || '';
                       const setSubPosition = (v: string) => {
                         updateEffect({ targetFilter: effectTargetFilter.map((c) => (c === eStackSubCond ? { ...c, value: v } : c)) });

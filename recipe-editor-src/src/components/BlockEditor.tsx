@@ -3084,7 +3084,24 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'attack', label: 'アタック' },
   { code: 'force_block', label: 'ブロック' },
   { code: 'delay', label: 'ディレイ' },
+  // 「以下の効果から1つを発揮する」: この後の効果（次の「その後」まで）が選択肢になる（recipe.ts CHOOSE_EFFECT_ACTION）
+  { code: 'choose_effect', label: '効果を発揮する' },
 ];
+// 効果一覧の各効果（効果2以降）が「効果を発揮する」の何番目の選択肢か（選択肢でなければ null）。
+// 区間（効果1〜／「その後」〜）の先頭が choose_effect のとき、その後ろの効果が選択肢。
+// 「効果Nの続き」(chainPrev) の効果は直前の選択肢に含まれる
+function choiceLabelsOf(block: EffectBlock): (string | null)[] {
+  const alts = block.altActions || [];
+  let headIsChoose = block.action === 'choose_effect';
+  let n = 0;
+  return alts.map((a) => {
+    if (a.thenBreak) { headIsChoose = a.action === 'choose_effect'; n = 0; return null; }
+    if (!headIsChoose) return null;
+    if (a.chainPrev && n > 0) return '選択肢' + n + 'の続き';
+    n += 1;
+    return '選択肢' + n;
+  });
+}
 // 「ディレイ」選択時: このカードを破棄して効果2以降（alt_actions, AND）を発動する設計のため、
 // 効果2以降は必ずAND（同時発動）で組む必要がある旨をヒント表示する
 const DELAY_ACTION_CODES = new Set(['delay']);
@@ -3545,9 +3562,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // 直近のthenBreak付き効果を探し、そのthenBreakOp（省略時はblock.altActionsOp）を返す。
   // thenBreakが1つも無ければ区間は1つだけ＝block.altActionsOpがそのまま区間の結合方法
   function currentSegmentOp(): 'and' | 'or' {
+    // 区間の先頭が「効果を発揮する」(choose_effect)なら、選択肢は「＋ ORで追加」で増やすため常に OR 扱い
     for (let i = altActions.length - 1; i >= 0; i--) {
-      if (altActions[i].thenBreak) return altActions[i].thenBreakOp === 'and' ? 'and' : 'or';
+      if (altActions[i].thenBreak) {
+        if (altActions[i].action === 'choose_effect') return 'or';
+        return altActions[i].thenBreakOp === 'and' ? 'and' : 'or';
+      }
     }
+    if (block.action === 'choose_effect') return 'or';
     return block.altActionsOp === 'and' ? 'and' : 'or';
   }
   // 条件チェーンの「＋条件を追加」と同じ発想: 効果を追加する時点でAND/ORを直接選ぶ。
@@ -5843,7 +5865,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       AND/OR。省略時（指定なし）はブロック全体の「🔀複数アクション」設定を
                       引き継ぐ（後方互換）。これで「効果1・2はAND、その後の効果3・4はOR」のように
                       区切り前後で異なる結合方法を設定できる */}
-                  {isEditingAlt && editingAlt?.thenBreak && (
+                  {isEditingAlt && editingAlt?.thenBreak && effectAction !== 'choose_effect' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       <span style={{ fontSize: 10, color: '#666' }}>この「その後」区間の結合:</span>
                       <ButtonGroup
@@ -6337,7 +6359,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               ) : CANT_TO_DOABLE_LIVE[effectAction] ? null /* 「できない」(cant_X)系は値入力自体が不要なため非表示 */ : (
                 <div className="field">
                   <label>
-                    値
+                    {effectAction === 'choose_effect' ? '選ぶ数' : '値'}
+                    {effectAction === 'choose_effect' && <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>（空欄なら1つ）</span>}
                     {effectAction === 'memory' && <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>（自分側のメモリー数。マイナスなら相手側のメモリー数）</span>}
                   </label>
                   <input
@@ -6372,6 +6395,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     );
                   })()}
                   {/* 値の数え方（対象数と同じボタン）: 指定なし / 全て / 完全一致 / 〜まで / 〜なるまで */}
+                  {effectAction === 'choose_effect' ? (
+                    <div style={{ marginTop: 4, fontSize: 11, color: '#0f766e', lineHeight: 1.6 }}>
+                      🔀 この効果の後ろの効果（次の「その後」まで）が選択肢になります。<br />
+                      ・選択肢は「＋ ORで追加」で増やします。<br />
+                      ・選択肢の中で「その後」続く効果は、その効果で「効果Nの続き（その後）」にチェック。<br />
+                      ・「〜ごとに、以下から1つ」は、この効果に「〜ごとに」（N回発動）を設定。<br />
+                      <span style={{ color: '#c62828' }}>⚠ エンジン未実装</span>
+                    </div>
+                  ) : (
                   <div style={{ marginTop: 4 }}>
                     <ButtonGroup
                       options={[{ code: '', label: '指定なし' }, { code: 'all', label: '全て' }, { code: 'exact', label: '完全一致' }, { code: 'up_to', label: '〜まで' }, { code: 'until', label: '〜なるまで' }]}
@@ -6380,6 +6412,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       accentColor="#1976d2"
                     />
                   </div>
+                  )}
                 </div>
               )}
               {isEditingAlt && COST_LIMIT_MOD_ACTIONS.has(effectAction) && (
@@ -6528,11 +6561,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <div style={{ fontSize: 11, color: '#9333ea', fontWeight: 'bold', marginBottom: 4 }}>📋 設定内容</div>
               <div style={{ fontSize: 12, color: '#333', lineHeight: 1.8 }}>
                 <div>効果1：{describeEffect(block.action, block.value, block.target, block.conditions) || '(未設定)'}（{(block.altActionsOp === 'and') ? 'AND' : 'OR'}区間開始）</div>
-                {altActions.map((a, i) => (
+                {(() => { const choiceLabels = choiceLabelsOf(block); return altActions.map((a, i) => (
                   <div key={i}>
-                    効果{i + 2}{a.thenBreak ? `（その後・${(a.thenBreakOp === 'and') ? 'AND' : 'OR'}区間開始）` : ''}{a.chainPrev ? '（↳ 直前の選択肢の続き・その後）' : ''}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}
+                    {choiceLabels[i] ? <span style={{ marginLeft: choiceLabels[i]!.endsWith('の続き') ? 32 : 16 }} /> : null}効果{i + 2}{a.thenBreak ? (a.action === 'choose_effect' ? '（その後・以下から選ぶ）' : `（その後・${(a.thenBreakOp === 'and') ? 'AND' : 'OR'}区間開始）`) : ''}{choiceLabels[i] ? `【${choiceLabels[i]}】` : (a.chainPrev ? '（↳ 直前の選択肢の続き・その後）' : '')}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}
                   </div>
-                ))}
+                )); })()}
               </div>
             </div>
           </div>

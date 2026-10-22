@@ -315,6 +315,24 @@ function parseCostArray(rawCost: any): CostStep[] {
 
 // AltAction 1件を JSON のステップオブジェクトに変換する（alt_actions[] の各要素、
 // および 'then'（その後）モードで独立した後続stepとして出力する場合の両方で共用）
+// 「以下の効果から1つを発揮する」= action:'choose_effect'。この効果の後ろ（次の「その後」まで）の
+// 効果が選択肢になり、JSON では step.choices[]（各選択肢の「その後」の続きは入れ子の alt_actions AND）に
+// 保存する。value＝選ぶ数（省略時1）。⚠ エンジン未実装
+export const CHOOSE_EFFECT_ACTION = 'choose_effect';
+// 読込用: choices[] を alt_actions（OR）として扱える形に直す（以降は通常の効果2以降と同じ復元処理）
+function normalizeChoiceStep(step: any): any {
+  if (!step || step.action !== CHOOSE_EFFECT_ACTION || !Array.isArray(step.choices)) return step;
+  const { choices, ...rest } = step;
+  return { ...rest, alt_actions: choices, alt_actions_op: 'or' };
+}
+// 保存用: choose_effect の step の alt_actions を choices[] へ移す
+function moveAltsToChoices(step: any): void {
+  if (!step || step.action !== CHOOSE_EFFECT_ACTION) return;
+  if (step.value === undefined) step.value = 1;
+  if (Array.isArray(step.alt_actions) && step.alt_actions.length > 0) step.choices = step.alt_actions;
+  delete step.alt_actions;
+  delete step.alt_actions_op;
+}
 // chainPrev（直前の選択肢の続き）の効果を、直前の要素の alt_actions（AND＝続けて実行）へ入れ子にする
 function nestChainedAltObjs(arr: any[]): any[] {
   const out: any[] = [];
@@ -1489,6 +1507,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     step.alt_actions = nestChainedAltObjs(step.alt_actions);
     if (step.alt_actions.length === 0) { delete step.alt_actions; delete step.alt_actions_op; }
   }
+  moveAltsToChoices(step);
   // === fromFilter → step.from_filter（進化/登場アクション専用。取得元エリアから選ぶ
   // カードの絞り込み。対象＝このカード自身の条件(filter)とは別データ） ===
   const fromFilterObj = (b.fromFilterChain && b.fromFilterChain.length > 0)
@@ -1660,6 +1679,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       // 省略時は従来通りblock.altActionsOpを引き継ぐ（後方互換）
       thenStep.alt_actions_op = head.thenBreakOp ? head.thenBreakOp : (b.altActionsOp === 'and' ? 'and' : 'or');
     }
+    moveAltsToChoices(thenStep);
     container[b.trigger].push(thenStep);
   });
 }
@@ -1920,7 +1940,8 @@ function stepToBlockWithTiming(
 // 同じセグメントの後続項目（thenBreakなし）としてそのまま続けて吸収する
 function stepsArrayToBlocks(section: 'main' | 'evo_source' | 'security' | 'link', triggerKey: string, arr: any[]): EffectBlock[] {
   const blocks: EffectBlock[] = [];
-  arr.forEach((step: any) => {
+  arr.forEach((step0: any) => {
+    const step = normalizeChoiceStep(step0);
     const isChainStep = Array.isArray(step?.options) && step.options.includes('continue_on_fail');
     if (isChainStep && blocks.length > 0) {
       const prev = blocks[blocks.length - 1];
@@ -2212,7 +2233,8 @@ function restoreCostModAltActions(block: EffectBlock, step: any): EffectBlock {
   return block;
 }
 
-function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigger: string, step: any): EffectBlock {
+function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigger: string, step0: any): EffectBlock {
+  const step = normalizeChoiceStep(step0);
   const core = stepToBlockCore(section, trigger, step);
   // 入れ子の続きの効果（直前の選択肢の「その後」）を、コスト上限±の復元より前に一時データとして付ける
   // （restoreCostModAltActions は step.alt_actions[i] ↔ altActions[i] の対応で挿入するため、展開は最後に行う）

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { ReactNode } from 'react';
 import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup, RuleActionKind, ConditionChainEntry, FusionMaterialSlot, ExtraTarget } from '../types';
 import {
@@ -10936,13 +10936,26 @@ function ConditionChainField({
   onCommonConditionsChange?: (next: ConditionPair[]) => void;
   commonTitleBase?: string;
 }) {
-  const effectiveChain: ConditionChainEntry[] = (chain && chain.length > 0) ? chain : deriveDefaultConditionChain(legacyPairs, legacyOp);
-  // 「共通条件を設定する」チェックボックス: 既に保存済みの共通条件があれば最初から開いておく
-  const [commonOpenState, setCommonOpen] = useState<boolean>(!!(commonConditions && commonConditions.length > 0));
-  // 保存済みの共通条件があれば常に開いて見せる（useState の初期値は最初の表示時だけなので、効果1→効果2のように
-  // 編集中の効果を切り替えたときに、効果2の条件が入っているのにチェックが外れたまま隠れていた）
-  const commonOpen = commonOpenState || !!(commonConditions && commonConditions.length > 0);
+  const commonList = (commonConditions || []).filter((p) => p && p.base);
+  // OR の条件欄（chain）に実際の条件が入っているか
+  const hasRealChain = Array.isArray(chain) && chain.some((e) => (e.conditions || []).some((p) => p && p.base));
+  // 「共通条件を設定する」は、OR（2つ以上の選択肢）があるときに全選択肢へ共通で掛ける条件の欄。
+  // ユーザーが自分でチェックを入れたときだけ開く
+  const [commonOpenState, setCommonOpen] = useState<boolean>(false);
+  // 読み込んだレシピの条件は（OR が無ければ）共通条件側に入るが、画面では入力したときと同じく
+  // 通常の条件欄（1つ目）に出す。この表示中の編集は共通条件側へそのまま書き戻す（データの持ち方は変えない）
+  const virtualFirst = !!onCommonConditionsChange && !hasRealChain && commonList.length > 0 && !commonOpenState;
+  // OR がある（chain に条件が入っている）状態で共通条件もあれば、チェックを入れて見せる
+  const commonOpen = commonOpenState || (hasRealChain && commonList.length > 0);
+  const effectiveChain: ConditionChainEntry[] = virtualFirst
+    ? [{ conditions: commonConditions || [] }]
+    : (chain && chain.length > 0) ? chain : deriveDefaultConditionChain(legacyPairs, legacyOp);
+  // 共通条件のクリアを、親が新しいデータで描き直した後に行う（同じ操作の中で2回続けて親を更新すると、
+  // 2回目が古いデータを元にして1回目の変更を上書きしてしまうため、最新の props を参照して後から呼ぶ）
+  const latestCommonChange = useRef(onCommonConditionsChange);
+  latestCommonChange.current = onCommonConditionsChange;
   const updateEntry = (ei: number, patch: Partial<ConditionChainEntry>) => {
+    if (virtualFirst && ei === 0) { onCommonConditionsChange!(patch.conditions || []); return; }
     const next = effectiveChain.slice();
     next[ei] = { ...next[ei], ...patch };
     onChainChange(next);
@@ -10954,7 +10967,15 @@ function ConditionChainField({
   // セグメント内で複数条件を組み合わせたい場合は、各セグメントのConditionsHybridEditor
   // 自体が複数条件（AND）に対応しているため、「＋条件を追加」は常に新しいセグメント（OR）を
   // 追加する（AND/OR選択のボタンは廃止。ANDにしたい場合は既存セグメントに条件を追加すればよい）
-  const addEntry = () => onChainChange([...effectiveChain, { conditions: [], op: 'or' }]);
+  const addEntry = () => {
+    if (virtualFirst) {
+      // 1つ目に表示していた（共通条件側の）条件を、OR の1つ目の選択肢として移す
+      onChainChange([{ conditions: (commonConditions || []).slice() }, { conditions: [], op: 'or' }]);
+      setTimeout(() => { try { latestCommonChange.current && latestCommonChange.current([]); } catch (_) {} }, 30);
+      return;
+    }
+    onChainChange([...effectiveChain, { conditions: [], op: 'or' }]);
+  };
   return (
     <div>
       {onCommonConditionsChange && (

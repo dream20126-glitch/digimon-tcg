@@ -2597,11 +2597,16 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       // target:'self_card'（「このデジモンの進化元を破棄する」。【フラグメント】のコスト等）: このカード自身だけ
       // （以前は既定の「相手のデジモン」になり、ギロモン BT26-055 の【フラグメント】で相手の進化元を破棄していた）
       let _edSelfOnly = null;
-      if ((_edBaseCode === 'target_self' || _edBaseCode === 'target_self_card') && ctx.card) {
-        _edSelfOnly = ctx.card;
-        const _inOpp = (opponent.battleArea || []).includes(ctx.card) || (opponent.tamerArea || []).includes(ctx.card);
+      // 「相手のデジモン/テイマーの下」等で、先にどのデジモン/テイマーかを選んである（executeRecipeStep の discard が
+      // ctx._edContainer に入れる）なら、そのカードの下から破棄する（デジモン/テイマーどちらでも）
+      const _edPre = ctx._edContainer || null;
+      if (_edPre) delete ctx._edContainer;
+      const _edHost = _edPre || (((_edBaseCode === 'target_self' || _edBaseCode === 'target_self_card') && ctx.card) ? ctx.card : null);
+      if (_edHost) {
+        _edSelfOnly = _edHost;
+        const _inOpp = (opponent.battleArea || []).includes(_edHost) || (opponent.tamerArea || []).includes(_edHost);
         edOwner = _inOpp ? opponent : player;
-        edAreaKey = (edOwner.tamerArea || []).includes(ctx.card) ? 'tamerArea' : 'battleArea';
+        edAreaKey = (edOwner.tamerArea || []).includes(_edHost) ? 'tamerArea' : 'battleArea';
         edSide = _inOpp ? (ctx.side === 'player' ? 'ai' : 'player') : ctx.side;
       }
       const edArea = edOwner[edAreaKey] || [];
@@ -4048,6 +4053,36 @@ function _syncOppSuspend(ctx, entry, suspended) {
 // callback は省略可（従来呼び出し元は fire-and-forget のまま動く）。
 // 【分離】等でバウンス自体がキャンセルされる可能性があるため、
 // 完了を待ちたい呼び出し元は callback を渡すこと
+// テイマーを手札に戻す（「相手のデジモン/テイマー1体を手札に戻す」のテイマー側。doBounce のテイマー版）。
+// 下のカードはトラッシュ。オンラインでは持ち主の端末へ card_removed(zone:'tamer', reason:'bounce') を送る
+function _doBounceTamer(targetSide, tamer, ctx, callback) {
+  const finish = () => { try { callback && callback(); } catch (_) {} };
+  const ta = targetSide.tamerArea || [];
+  if (!tamer || ta.indexOf(tamer) === -1) { finish(); return; }
+  const targetSideName = (ctx.bs && targetSide === ctx.bs.player) ? 'player' : 'ai';
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  tryCancelViaLeaveBattle(tamer, targetSideName, ctx.bs, ctxBase, (canceled) => {
+    if (canceled) { finish(); return; }
+    const tIdx = ta.indexOf(tamer);
+    if (tIdx === -1) { finish(); return; }
+    ta.splice(tIdx, 1);
+    tamer.buffs = [];
+    tamer._permEffects = {};
+    tamer.suspended = false;
+    tamer.summonedThisTurn = false;
+    targetSide.hand.push(tamer); _noteHandIncrease(ctx, targetSide);
+    if (tamer.stack) tamer.stack.forEach(s => targetSide.trash.push(s));
+    if (tamer.linkedCards) tamer.linkedCards.forEach(s => targetSide.trash.push(s));
+    tamer.stack = [];
+    tamer.linkedCards = [];
+    ctx.addLog('↩ 「' + tamer.name + '」（テイマー）を手札に戻した');
+    if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && targetSideName === 'ai' && window._onlineSendCommand) {
+      window._onlineSendCommand({ type: 'card_removed', zone: 'tamer', tamerIdx: tIdx, cardName: tamer.name, reason: 'bounce' });
+    }
+    ctx.renderAll();
+    finish();
+  });
+}
 function doBounce(targetSide, slotIdx, ctx, callback) {
   const finish = () => { try { callback && callback(); } catch (_) {} };
   const bounced = targetSide.battleArea[slotIdx];
@@ -16466,7 +16501,43 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 「相手のデジモン/テイマー1体」（opponent_card:N）も対象の条件を効かせる（以前は対象指定が無い扱いで、
         // 条件なしの相手のデジモン全員が候補になっていた。アンフィモン EX12-033「下にカードがない相手のデジモン/テイマー」）。
         // ⚠ 戻す処理（bounce）はバトルエリアのデジモンだけが対象で、テイマーは未対応
-        else if (_rht.startsWith('opponent_card:')) _rhTarget = { code: 'target_opponent', count: parseInt(_rht.split(':')[1]) || 1 };
+        else if (_rht.startsWith('opponent_card:')) {
+          // 「相手のデジモン/テイマー1体を手札に戻す」: デジモンとテイマーの両方から選ぶ（アンフィモン EX12-033）
+          const _rcN = parseInt(_rht.split(':')[1]) || 1;
+          const _rcF = step.filter ? resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side) : null;
+          const _rcConds = (_rhAction.conditions || []);
+          const _rcCondSide = ctx.side === 'player' ? 'ai' : 'player';
+          const _rcEntries = [];
+          ['battleArea', 'tamerArea'].forEach((zone) => (opponent[zone] || []).forEach((c, idx) => {
+            if (!c) return;
+            if (_rcF && !cardMatchesFilter(c, _rcF, ctx.bs, ctx.side, ctx.card)) return;
+            if (_rcConds.length > 0 && !checkConditions(_rcConds, c, ctx.bs, _rcCondSide)) return;
+            if (c.buffs && c.buffs.some(b => b.type === 'cant_return_hand')) return;
+            _rcEntries.push({ card: c, own: false, zone, idx });
+          }));
+          if (_rcEntries.length === 0) {
+            ctx.addLog('⚠ 対象がいません');
+            if (step.optional) { callback(); break; }
+            showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
+            break;
+          }
+          const _rcDo = (picked) => {
+            const list = (picked || []).filter(Boolean);
+            let k = 0;
+            const next = () => {
+              if (k >= list.length) { ctx.renderAll(); callback(); return; }
+              const e = list[k++];
+              if ((opponent.tamerArea || []).includes(e.card)) { _doBounceTamer(opponent, e.card, ctx, next); return; }
+              const bi = opponent.battleArea.indexOf(e.card);
+              if (bi === -1) { next(); return; }
+              sendEffectResult(e.card, 'bounce', ctx);
+              doBounce(opponent, bi, ctx, next);
+            };
+            next();
+          };
+          _pickSideTargets(_rcEntries, _rcN, ctx, effectiveSide, false, '🎯 手札に戻すデジモン/テイマーを選んでください', _rcDo);
+          break;
+        }
         if (_rhTarget && step.filter) _rhTarget.filter = resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side);
         runOneAction(_rhAction, _rhTarget, ctx, callback);
         break;
@@ -19991,6 +20062,33 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _dLegacy = _discardToLegacyStep(step);
       if (_dLegacy) {
         if (_COST_STEP_SET.has(step)) _COST_STEP_SET.add(_dLegacy);
+        // 「相手のデジモン/テイマーの下から〜破棄」（target: opponent_card / own_card）: テイマーの下も候補にするため、
+        // どのデジモン/テイマーの下から破棄するかを先に選ぶ（アンフィモン＆クリスタルフリーザー EX12-033）
+        const _dCardM = /^evo_discard/.test(_dLegacy.action) && /^(opponent|own)_card(:|$)/.exec(String(step.target || ''));
+        if (_dCardM) {
+          const _dOwn = _dCardM[1] === 'own';
+          const _dP = _dOwn ? player : opponent;
+          const _dCf = _dLegacy.filter ? resolveDpFilterMarkers(_dLegacy.filter, ctx.card, ctx.bs, ctx.side) : null;
+          const _dEntries = [];
+          ['battleArea', 'tamerArea'].forEach((zone) => (_dP[zone] || []).forEach((c, idx) => {
+            if (!c || !Array.isArray(c.stack) || c.stack.length === 0) return;
+            if (!_dOwn && _hasCantDiscard(c)) return;
+            if (_dCf && !cardMatchesFilter(c, _dCf, ctx.bs, ctx.side, ctx.card)) return;
+            _dEntries.push({ card: c, own: _dOwn, zone, idx });
+          }));
+          if (_dEntries.some((e) => e.zone === 'tamerArea')) {
+            if (_dEntries.length === 0) { callback && callback(); break; }
+            const _dRun = (picked) => {
+              const e = picked && picked[0];
+              if (!e) { callback && callback(_COST_STEP_SET.has(step) ? false : undefined); return; }
+              ctx._edContainer = e.card;
+              executeRecipeStep(_dLegacy, ctx, store, (r) => { delete ctx._edContainer; callback && callback(r); });
+            };
+            if (_dEntries.length === 1) { _dRun(_dEntries); break; }
+            _pickSideTargets(_dEntries, 1, ctx, effectiveSide, _dOwn, '🎯 下のカードを破棄するデジモン/テイマーを選んでください', _dRun);
+            break;
+          }
+        }
         executeRecipeStep(_dLegacy, ctx, store, callback);
         break;
       }

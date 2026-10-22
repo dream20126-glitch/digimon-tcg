@@ -483,6 +483,19 @@ function onRemoteCommand(cmd) {
           if (_byName !== -1) _tIdx = _byName;
         }
         const tamer = _ta[_tIdx];
+        // 相手の効果でテイマーを手札に戻された（「相手のデジモン/テイマー1体を手札に戻す」）: テイマーは手札へ、下のカードはトラッシュへ
+        if (tamer && cmd.reason === 'bounce') {
+          _ta.splice(_tIdx, 1);
+          tamer.buffs = []; tamer._permEffects = {}; tamer.suspended = false;
+          bs.player.hand.push(tamer);
+          if (tamer.stack) tamer.stack.forEach(s => bs.player.trash.push(s));
+          if (tamer.linkedCards) tamer.linkedCards.forEach(s => bs.player.trash.push(s));
+          tamer.stack = []; tamer.linkedCards = [];
+          addLog('↩ 「' + tamer.name + '」（テイマー）が手札に戻された');
+          renderAll();
+          sendStateSync();
+          break;
+        }
         if (tamer) {
           _ta.splice(_tIdx, 1);
           bs.player.trash.push(tamer);

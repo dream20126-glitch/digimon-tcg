@@ -12185,6 +12185,57 @@ export function fireWhenHandDiscardTriggers(discardedSide, bs, ctxBase, done, on
 //   own_security:all|N  自分のセキュリティを（上から）全て/N枚破棄
 // 旧レシピの both_none:until_N（L2未選択の番兵値が混入したもの）は both_hand と同じ扱い。
 // 戻り値: { zone, count, all, until, upTo }（解釈できない形は null）
+// 「破棄する」（discard）のうち、手札・自分のセキュリティ以外の場所から破棄するものを、
+// 同じ動きをする既存のアクションへ引き渡すためのステップに変換する（変換しないものは null）。
+// レシピエディタの「破棄する」＞場所／位置で作ったレシピを、昔からある専用アクション
+// （進化元を破棄・セキュリティを破棄・デッキの上から破棄）と同じ処理で動かすため。
+//  - 進化元: filter.target_evo_source(+_position: top/bottom/select/all) → evo_discard(_top/_bottom/_select/_all)
+//    枚数は value（無ければ target の :N）。target はそのまま（どのデジモンの進化元か）
+//  - 相手のセキュリティ: target opp_security/opponent_security(:N)、位置 filter.target_stack_position
+//    → security_trash_top/bottom/select（枚数 = value か :N）
+//  - デッキ: target own_deck/both_deck(:N) → deck_trash_top（相手のデッキだけは対応する処理が無いため変換しない）
+function _discardToLegacyStep(step) {
+  if (!step || step.action !== 'discard') return null;
+  const f = (step.filter && typeof step.filter === 'object') ? step.filter : null;
+  const tgt = String(step.target || '');
+  const tm = /^([a-z_]+?)(?::(all|up_to_\d+|until_\d+|\d+))?$/.exec(tgt);
+  const zone = tm ? tm[1] : '';
+  const suf = tm ? (tm[2] || '') : '';
+  const sufN = /^\d+$/.test(suf) ? parseInt(suf, 10) : null;
+  const hasVal = step.value !== undefined && step.value !== null && step.value !== '';
+  const base = Object.assign({}, step);
+  delete base.cost; delete base.limit; delete base.alt_actions; delete base.alt_actions_op;
+  base._costsResolved = true;
+  if (f && f.target_evo_source) {
+    const pos = f.target_evo_source_position;
+    const rest = Object.assign({}, f);
+    delete rest.target_evo_source; delete rest.target_evo_source_position;
+    const out = Object.assign(base, {
+      action: pos === 'top' ? 'evo_discard_top' : pos === 'bottom' ? 'evo_discard_bottom' : pos === 'select' ? 'evo_discard_select' : pos === 'all' ? 'evo_discard_all' : 'evo_discard',
+      // 「相手のデジモン/テイマーの下から選んで4枚」（target: opponent_card:4・value 無し）は :N を枚数として扱い、対象は1体
+      value: hasVal ? step.value : (sufN || 1),
+      target: (!hasVal && sufN) ? zone + ':1' : tgt,
+    });
+    if (Object.keys(rest).length > 0) out.filter = rest; else delete out.filter;
+    return out;
+  }
+  if (zone === 'opp_security' || zone === 'opponent_security') {
+    const pos = f && f.target_stack_position;
+    const n = suf === 'all' ? 99 : (hasVal ? step.value : (sufN || 1));
+    const out = Object.assign(base, {
+      action: pos === 'bottom' ? 'security_trash_bottom' : pos === 'select' ? 'security_trash_select' : 'security_trash_top',
+      value: n, target: 'opponent:1',
+    });
+    delete out.filter;
+    return out;
+  }
+  if (zone === 'own_deck' || zone === 'both_deck') {
+    const out = Object.assign(base, { action: 'deck_trash_top', value: hasVal ? step.value : (sufN || 1), target: zone === 'both_deck' ? 'both' : 'own' });
+    delete out.filter;
+    return out;
+  }
+  return null;
+}
 function _parseDiscardTarget(target) {
   const m = /^([a-z_]+?)(?::(all|up_to_\d+|until_\d+|\d+))?$/.exec(String(target || ''));
   if (!m) return null;
@@ -19837,6 +19888,13 @@ function executeRecipeStep(step, ctx, store, callback) {
     // コスト（cost 配列）として使われた場合は、規定枚数を払えない／「破棄しない」を選んだら
     // callback(false) で本体ごと中止する
     case 'discard': {
+      // 進化元・相手のセキュリティ・デッキからの破棄は、既存の専用アクションへ引き渡す
+      const _dLegacy = _discardToLegacyStep(step);
+      if (_dLegacy) {
+        if (_COST_STEP_SET.has(step)) _COST_STEP_SET.add(_dLegacy);
+        executeRecipeStep(_dLegacy, ctx, store, callback);
+        break;
+      }
       const _dSpec = _parseDiscardTarget(step.target);
       const _dIsCost = _COST_STEP_SET.has(step);
       if (!_dSpec || !['own_hand', 'opponent_hand', 'both_hand', 'own_security'].includes(_dSpec.zone)) {

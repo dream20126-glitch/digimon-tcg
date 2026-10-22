@@ -3702,7 +3702,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   // デッキに戻す（hasDeckPosition）は、対象に関わらず常にアクション欄側で独自の位置/裏表
   // （block.deckPosition/options）を持つため、対象＝セキュリティのときの位置/裏表パネルと
   // 二重表示にならないよう、そちらではこのフラグ付きアクションを除外する
-  const effectHasDeckPositionFlag = !!dict.actions.find((a) => a.code === effectAction)?.hasDeckPosition;
+  // 「破棄する」は辞書上は上下指定ありだが、アクション欄側の上/下は出さず（対象欄側と重複するため）、
+  // 対象＝セキュリティのときは対象欄側で位置を出す。そのため「アクション欄が位置を持つ」扱いから除く
+  const effectHasDeckPositionFlag = effectAction !== 'discard' && !!dict.actions.find((a) => a.code === effectAction)?.hasDeckPosition;
   // 「上か下」(both→JSON position:'select') は発揮するときに上下どちらに置くかを選ぶ
   // （EX12-018 シリウスモン/EX12-077「進化元の上か下に置ける」）。ラベルで意味を明示する
   const effectPositionOptions: { code: string; label: string }[] = effectIsPlaceActive

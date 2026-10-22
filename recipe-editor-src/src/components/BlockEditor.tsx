@@ -10938,7 +10938,10 @@ function ConditionChainField({
 }) {
   const effectiveChain: ConditionChainEntry[] = (chain && chain.length > 0) ? chain : deriveDefaultConditionChain(legacyPairs, legacyOp);
   // 「共通条件を設定する」チェックボックス: 既に保存済みの共通条件があれば最初から開いておく
-  const [commonOpen, setCommonOpen] = useState<boolean>(!!(commonConditions && commonConditions.length > 0));
+  const [commonOpenState, setCommonOpen] = useState<boolean>(!!(commonConditions && commonConditions.length > 0));
+  // 保存済みの共通条件があれば常に開いて見せる（useState の初期値は最初の表示時だけなので、効果1→効果2のように
+  // 編集中の効果を切り替えたときに、効果2の条件が入っているのにチェックが外れたまま隠れていた）
+  const commonOpen = commonOpenState || !!(commonConditions && commonConditions.length > 0);
   const updateEntry = (ei: number, patch: Partial<ConditionChainEntry>) => {
     const next = effectiveChain.slice();
     next[ei] = { ...next[ei], ...patch };

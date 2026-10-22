@@ -5816,6 +5816,29 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       その後
                     </label>
                   )}
+                  {/* 直前の選択肢の続き（OR の選択肢の中の「その後」）。例:「・セキュリティを1枚破棄する。
+                      その後【リカバリー+1】」の【リカバリー+1】。直前が選択肢（効果1や「その後」区間の
+                      先頭ではない効果）のときだけ出す */}
+                  {isEditingAlt && (() => {
+                    let k = editingEffect - 2;
+                    while (k >= 0 && altActions[k] && altActions[k].chainPrev) k--;
+                    const canChain = k >= 0 && !!altActions[k] && !altActions[k].thenBreak && !editingAlt?.thenBreak;
+                    if (!canChain && !editingAlt?.chainPrev) return null;
+                    return (
+                      <label
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', color: editingAlt?.chainPrev ? '#0f766e' : '#666', fontWeight: editingAlt?.chainPrev ? 'bold' : 'normal' }}
+                        title={`直前の選択肢（効果${k + 2}）を選んだときに、その後続けて実行する効果にする`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!editingAlt?.chainPrev}
+                          onChange={(e) => updateEffect({ chainPrev: e.target.checked || undefined, ...(e.target.checked ? { thenBreak: undefined, thenBreakOp: undefined } : {}) })}
+                        />
+                        効果{k + 2}の続き（その後）
+                        {editingAlt?.chainPrev && <span style={{ fontSize: 10, color: '#c62828', fontWeight: 'normal' }}>⚠ エンジン未実装</span>}
+                      </label>
+                    );
+                  })()}
                   {/* 「その後」区間（この効果から始まる、次の「その後」までのグループ）独自の
                       AND/OR。省略時（指定なし）はブロック全体の「🔀複数アクション」設定を
                       引き継ぐ（後方互換）。これで「効果1・2はAND、その後の効果3・4はOR」のように
@@ -6507,7 +6530,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <div>効果1：{describeEffect(block.action, block.value, block.target, block.conditions) || '(未設定)'}（{(block.altActionsOp === 'and') ? 'AND' : 'OR'}区間開始）</div>
                 {altActions.map((a, i) => (
                   <div key={i}>
-                    効果{i + 2}{a.thenBreak ? `（その後・${(a.thenBreakOp === 'and') ? 'AND' : 'OR'}区間開始）` : ''}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}
+                    効果{i + 2}{a.thenBreak ? `（その後・${(a.thenBreakOp === 'and') ? 'AND' : 'OR'}区間開始）` : ''}{a.chainPrev ? '（↳ 直前の選択肢の続き・その後）' : ''}：{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}
                   </div>
                 ))}
               </div>

@@ -315,6 +315,40 @@ function parseCostArray(rawCost: any): CostStep[] {
 
 // AltAction 1件を JSON のステップオブジェクトに変換する（alt_actions[] の各要素、
 // および 'then'（その後）モードで独立した後続stepとして出力する場合の両方で共用）
+// chainPrev（直前の選択肢の続き）の効果を、直前の要素の alt_actions（AND＝続けて実行）へ入れ子にする
+function nestChainedAltObjs(arr: any[]): any[] {
+  const out: any[] = [];
+  arr.forEach((o) => {
+    if (o && o.__chain_prev) {
+      delete o.__chain_prev;
+      const prev = out[out.length - 1];
+      if (prev) {
+        prev.alt_actions = [...(Array.isArray(prev.alt_actions) ? prev.alt_actions : []), o];
+        prev.alt_actions_op = 'and';
+        return;
+      }
+    }
+    out.push(o);
+  });
+  return out;
+}
+// 読込: 入れ子の続きの効果（_chainNext）を chainPrev 付きの効果として後ろに展開する
+function flattenChainedAlts(alts: AltAction[] | undefined): AltAction[] | undefined {
+  if (!Array.isArray(alts) || !alts.some((a) => a && a._chainNext)) return alts;
+  const out: AltAction[] = [];
+  alts.forEach((a) => {
+    const next = a._chainNext;
+    const { _chainNext, ...rest } = a;
+    void _chainNext;
+    out.push(rest as AltAction);
+    (next || []).forEach((n) => out.push({ ...n, chainPrev: true }));
+  });
+  return out;
+}
+function chainNextOf(a: any): AltAction[] | undefined {
+  return (Array.isArray(a?.alt_actions) && a.alt_actions.length > 0 && a.alt_actions_op === 'and')
+    ? a.alt_actions.map((c: any) => stepObjectToAltAction(c)) : undefined;
+}
 function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   const out: any = { action: a.action };
   if (a.value !== undefined && a.value !== '' && a.value !== null) {
@@ -418,6 +452,8 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   // 「その後」等でこの効果だけ独立して任意にする（確認ダイアログをブロック全体から
   // 切り離して個別に出す対応はエンジン側で別途必要。JSON上は正しく区別して保存する）
   if (a.optional) out.optional = true;
+  // 直前の選択肢の続き（nestChainedAltObjs が直前の要素の中へ移す）
+  if (a.chainPrev) out.__chain_prev = true;
   // grant_keyword(_to)/grant_effect: 効果1(appendStep)と同じ意味のフィールドを持つ。
   // 対象の絞り込み(designated)の組み立ても同じロジックを使う。ただし複数キーワードを
   // 「対象を絞り込んだ別ステップ」として追加する分割（appendStep側の複雑なケース）は
@@ -1449,6 +1485,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       if (step.alt_actions.length === 0) { delete step.alt_actions; delete step.alt_actions_op; }
     }
   }
+  if (Array.isArray(step.alt_actions)) {
+    step.alt_actions = nestChainedAltObjs(step.alt_actions);
+    if (step.alt_actions.length === 0) { delete step.alt_actions; delete step.alt_actions_op; }
+  }
   // === fromFilter → step.from_filter（進化/登場アクション専用。取得元エリアから選ぶ
   // カードの絞り込み。対象＝このカード自身の条件(filter)とは別データ） ===
   const fromFilterObj = (b.fromFilterChain && b.fromFilterChain.length > 0)
@@ -1609,12 +1649,13 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     if (seg.length === 0) return;
     const [head, ...rest] = seg;
     const thenStep = altActionToStepObject(head, keywordDict);
+    delete thenStep.__chain_prev;
     const opts: string[] = Array.isArray(thenStep.options) ? thenStep.options.slice() : [];
     if (!opts.includes('continue_on_fail')) opts.push('continue_on_fail');
     thenStep.options = opts;
     if (thenStep.limit === undefined && b.limit) thenStep.limit = b.limit;
     if (rest.length > 0) {
-      thenStep.alt_actions = rest.map((a) => altActionToStepObject(a, keywordDict));
+      thenStep.alt_actions = nestChainedAltObjs(rest.map((a) => altActionToStepObject(a, keywordDict)));
       // thenBreakOpが明示されていればそちらを優先（「その後」区間だけ独自のAND/ORにできる）。
       // 省略時は従来通りblock.altActionsOpを引き継ぐ（後方互換）
       thenStep.alt_actions_op = head.thenBreakOp ? head.thenBreakOp : (b.altActionsOp === 'and' ? 'and' : 'or');
@@ -1890,8 +1931,8 @@ function stepsArrayToBlocks(section: 'main' | 'evo_source' | 'security' | 'link'
       if (Array.isArray(step?.alt_actions) && step.alt_actions.length > 0) {
         head.thenBreakOp = step.alt_actions_op === 'and' ? 'and' : 'or';
       }
-      const nested = Array.isArray(step?.alt_actions) ? step.alt_actions.map((a: any) => stepObjectToAltAction(a)) : [];
-      prev.altActions = [...(prev.altActions || []), head, ...nested];
+      const nested = Array.isArray(step?.alt_actions) ? step.alt_actions.map((a: any) => ({ ...stepObjectToAltAction(a), _chainNext: chainNextOf(a) })) : [];
+      prev.altActions = flattenChainedAlts([...(prev.altActions || []), head, ...nested]);
       return;
     }
     blocks.push(stepToBlock(section, triggerKey, step));
@@ -2172,7 +2213,18 @@ function restoreCostModAltActions(block: EffectBlock, step: any): EffectBlock {
 }
 
 function stepToBlock(section: 'main' | 'evo_source' | 'security' | 'link', trigger: string, step: any): EffectBlock {
-  return restoreCostModAltActions(stepToBlockCore(section, trigger, step), step);
+  const core = stepToBlockCore(section, trigger, step);
+  // 入れ子の続きの効果（直前の選択肢の「その後」）を、コスト上限±の復元より前に一時データとして付ける
+  // （restoreCostModAltActions は step.alt_actions[i] ↔ altActions[i] の対応で挿入するため、展開は最後に行う）
+  if (Array.isArray(core.altActions) && Array.isArray(step?.alt_actions)) {
+    core.altActions = core.altActions.map((a, i) => {
+      const next = chainNextOf(step.alt_actions[i]);
+      return next ? { ...a, _chainNext: next } : a;
+    });
+  }
+  const block = restoreCostModAltActions(core, step);
+  block.altActions = flattenChainedAlts(block.altActions);
+  return block;
 }
 
 function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', trigger: string, step: any): EffectBlock {

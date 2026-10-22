@@ -573,6 +573,12 @@ export interface AltAction {
   // 省略時はblock.altActionsOpを引き継ぐ（後方互換）。これにより「効果1・2はAND、
   // その後の効果3・4はOR」のように、区切り前後で異なる結合方法を設定できる
   thenBreakOp?: 'and' | 'or';
+  // 直前の効果（OR の選択肢）の続きとして「その後」実行する（例:「・セキュリティを1枚破棄する。
+  // その後【リカバリー+1】」の【リカバリー+1】）。JSON では直前の選択肢の中に
+  // alt_actions（alt_actions_op:'and'）として入れ子で保存する。⚠ エンジン未実装
+  chainPrev?: boolean;
+  // 読込時の一時データ（入れ子の続きの効果。stepToBlock の最後で chainPrev の効果として展開する）
+  _chainNext?: AltAction[];
 }
 
 // グループ内条件の1エントリ。1エントリの中に複数条件を入れるとその中はAND。

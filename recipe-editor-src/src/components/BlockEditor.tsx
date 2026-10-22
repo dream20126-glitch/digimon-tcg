@@ -9914,7 +9914,7 @@ function ConditionsHybridEditor({
         </div>
       ) : (
         <div style={{ fontSize: 10, color: '#666', margin: '2px 0 6px' }}>
-          複数指定した場合はすべて AND（全部を満たしたときだけ発動）。
+          複数指定した場合はすべて AND（全部を満たしたときだけ発動）。ただし「特徴（完全一致）」と「特徴に〜を含む」の組み合わせは自動で OR になります。
         </div>
       )}
 

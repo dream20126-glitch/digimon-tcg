@@ -702,6 +702,13 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       case 'cond_self_active': f.suspended = false; break;
     }
   });
+  // 「特徴（完全一致）」と「特徴に〜を含む」が両方ある場合は OR（「特徴に『水棲』を含むか特徴『TB』を持つ」）。
+  // カードの特徴について両方を同時に要求する書き方は無いため、自動で or にまとめる
+  if (f.feature !== undefined && f.feature_includes !== undefined && f.or === undefined) {
+    f.or = [{ feature: f.feature }, { feature_includes: f.feature_includes }];
+    delete f.feature;
+    delete f.feature_includes;
+  }
   return Object.keys(f).length > 0 ? f : null;
 }
 
@@ -960,10 +967,19 @@ function groupTriggersByTiming(triggerList: string[], b: EffectBlock): { codes: 
 
 // ConditionPair[]（+AND/OR）から、条件一式のJSONフィールド（condition/when/
 // extra_conditions/condition_op）を組み立てる（appendStepの発動条件serializeと同じ規則）
+const FEATURE_OR_CODES = new Set(['cond_feature', 'cond_feature_contains']);
 function buildDesignatedConditionFields(conds: ConditionPair[], op: 'and' | 'or'): {
-  condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or';
+  condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; condition_chain?: { conditions: string[] }[];
 } {
-  const valid = (conds || []).filter((p) => p.base);
+  const valid0 = (conds || []).filter((p) => p.base);
+  // 「特徴（完全一致）」と「特徴に〜を含む」が両方ある場合は OR（condition_chain の別々の選択肢）にする。
+  // それ以外の条件（Lv等）は共通条件として condition/when に残す
+  if (op === 'and' && valid0.some((p) => p.base === 'cond_feature') && valid0.some((p) => p.base === 'cond_feature_contains')) {
+    const feats = valid0.filter((p) => FEATURE_OR_CODES.has(p.base));
+    const rest = valid0.filter((p) => !FEATURE_OR_CODES.has(p.base));
+    return { ...buildDesignatedConditionFields(rest, 'and'), condition_chain: feats.map((p) => ({ conditions: [pairToString(p)] })) };
+  }
+  const valid = valid0;
   const out: { condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or' } = {};
   if (valid.length >= 1) out.condition = pairToString(valid[0]);
   if (valid.length >= 2) out.when = pairToString(valid[1]);

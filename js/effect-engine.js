@@ -1854,6 +1854,10 @@ function getUIColor(actionCode, fallback, override) {
 }
 
 
+// runOneAction の対象候補に、レシピの対象の条件（action.filter）を適用する
+function _actionFilterOk(action, c, ctx) {
+  return !(action && action.filter) || cardMatchesFilter(c, action.filter, ctx.bs, ctx.side, ctx.card);
+}
 function runOneAction(action, defaultTarget, ctx, callback) {
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   const opponent = ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player;
@@ -2874,6 +2878,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         const c = opponent.battleArea[i];
         if (!c) continue;
         if (cabHasNoEvoCond && c.stack && c.stack.length > 0) continue; // 進化元を持つカードは除外
+        if (!_actionFilterOk(action, c, ctx)) continue;
         cabTargets.push(i);
       }
       if (cabTargets.length === 0) {
@@ -3357,7 +3362,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     // === アタック不可（単体） ===
     case 'cant_attack': {
       const caTargets = [];
-      for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) caTargets.push(i); }
+      for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i] && _actionFilterOk(action, opponent.battleArea[i], ctx)) caTargets.push(i); }
       if(caTargets.length === 0) { callback(); break; }
       if(effectiveSide === 'ai') {
         const cai = ctx._forceTargetIdx ?? caTargets[0];
@@ -3411,7 +3416,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
     case 'cant_block': {
       const cbTargets = [];
-      for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) cbTargets.push(i); }
+      for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i] && _actionFilterOk(action, opponent.battleArea[i], ctx)) cbTargets.push(i); }
       if(cbTargets.length === 0) { callback(); break; }
       if(effectiveSide === 'ai') {
         const cbi = ctx._forceTargetIdx ?? cbTargets[0];
@@ -3435,7 +3440,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     // === 進化不可 ===
     case 'cant_evolve': {
       const ceTargets = [];
-      for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i]) ceTargets.push(i); }
+      for(let i=0;i<opponent.battleArea.length;i++) { if(opponent.battleArea[i] && _actionFilterOk(action, opponent.battleArea[i], ctx)) ceTargets.push(i); }
       if(ceTargets.length === 0) { callback(); break; }
       if(effectiveSide === 'ai') {
         const cei = ctx._forceTargetIdx ?? ceTargets[0];
@@ -5414,6 +5419,27 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   // = { color:"紫", or:[{name_contains:"レイヴモン"},{feature_contains:"鳥"}] }
   if (Array.isArray(filter.or) && filter.or.length > 0) {
     if (!filter.or.some((sub) => cardMatchesFilter(card, sub, bs, side, sourceCard))) return false;
+  }
+  // 進化元の枚数（filter.evo_source_ge/le/eq/gt/lt）。エディタの対象の条件「参照 → 進化元」。
+  // 値は数値か、比べる先: 'self_card'＝このカード（効果を持つカード）の進化元の枚数 /
+  // 'opp'＝相手のデジモン / 'own_digimon'・'own_tamer'・'own_card'＝自分のデジモン等（いずれか1体と比べて成り立てばOK）。
+  // 例: シェルモン EX12-026「進化元が1枚以下の相手のデジモン」/ メタルガルルモン EX12-035「このデジモンの進化元枚数以下の相手のデジモン」
+  for (const _q of ['ge', 'le', 'eq', 'gt', 'lt']) {
+    const _v = filter['evo_source_' + _q];
+    if (_v === undefined || _v === null || _v === '') continue;
+    const _n = Array.isArray(card.stack) ? card.stack.length : 0;
+    const _cmp = (m) => _q === 'ge' ? _n >= m : _q === 'le' ? _n <= m : _q === 'eq' ? _n === m : _q === 'gt' ? _n > m : _n < m;
+    let _refs;
+    if (typeof _v === 'number' || /^\d+$/.test(String(_v))) _refs = [Number(_v)];
+    else if (_v === 'self_card') _refs = sourceCard ? [Array.isArray(sourceCard.stack) ? sourceCard.stack.length : 0] : [];
+    else if (bs && (_v === 'opp' || /^own_/.test(String(_v)))) {
+      const _ownP = side === 'ai' ? bs.ai : bs.player;
+      const _oppP = side === 'ai' ? bs.player : bs.ai;
+      const _p = _v === 'opp' ? _oppP : _ownP;
+      const _area = _v === 'own_tamer' ? (_p.tamerArea || []) : _v === 'own_card' ? [...(_p.battleArea || []), ...(_p.tamerArea || [])] : (_p.battleArea || []);
+      _refs = _area.filter((x) => x && x !== card).map((x) => (Array.isArray(x.stack) ? x.stack.length : 0));
+    } else _refs = [];
+    if (!_refs.some(_cmp)) return false;
   }
   // 種別「カード」はレシピエディタで「種別を問わない」を表す（checkConditionsのcond_typeと同じ扱い）
   const _isAnyType = (t) => t === 'カード' || t === 'card';
@@ -14962,6 +14988,9 @@ function executeRecipeStep(step, ctx, store, callback) {
     const _rN = Math.floor(_rCount / step.per_count);
     if (_rN <= 0) { callback && callback(); return; }
     const _rStep = Object.assign({}, step);
+    // 【ターンに1回】はこの呼び出しで1回分確認・消費済み。繰り返しの2回目以降が「使用済み」で止まらないように外す
+    // （オメガモン EX12-037「進化元5枚ごとに、以下の効果から1つ」が1回しか発揮されなかった）
+    delete _rStep.limit;
     delete _rStep.per_count_mode;
     delete _rStep.per_count;
     delete _rStep.ref;
@@ -15449,23 +15478,48 @@ function executeRecipeStep(step, ctx, store, callback) {
           && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type)
           && (!_esFilter || cardMatchesFilter(c, _esFilter, ctx.bs, ctx.side, ctx.card))
           && (!_esGate || _evalStepConditionGate(_esGate.gateSrc, c, ctx.bs, ctx.side)));
-        if (_esCands.length === 0) { ctx.addLog && ctx.addLog('💨 進化元に登場できるカードがありません'); callback(); break; }
+        // 「自分の手札かこのデジモンの進化元から〜を登場」（from: ['hand','evo_source']。イーランモン EX12-034）:
+        // 手札・トラッシュのカードも同じ条件で候補に加える（以前は進化元だけが候補だった）
+        const _esFromList = Array.isArray(step.from) ? step.from : [step.from];
+        const _esOwnP = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+        const _esZoneOf = new Map();
+        _esCands.forEach((c) => _esZoneOf.set(c, 'evo_source'));
+        ['hand', 'trash'].forEach((z) => {
+          if (!_esFromList.includes(z)) return;
+          (_esOwnP[z] || []).forEach((c) => {
+            if (!c || !(c.type === 'デジモン' || c.type === 'テイマー' || c.type === 'デュアル' || !c.type)) return;
+            if (_esFilter && !cardMatchesFilter(c, _esFilter, ctx.bs, ctx.side, ctx.card)) return;
+            if (_esGate && !_evalStepConditionGate(_esGate.gateSrc, c, ctx.bs, ctx.side)) return;
+            _esCands.push(c); _esZoneOf.set(c, z);
+          });
+        });
+        if (_esCands.length === 0) { ctx.addLog && ctx.addLog('💨 登場できるカードがありません'); callback(); break; }
         const _esPay = step.cost_free ? null : Math.max(0, _cardPlayCostOf(_esCands[0]) + _effectPlayCostDelta(step, ctx));
         const _esDo = (chosen) => {
           if (!chosen) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
-          const _si = _esHost.stack.indexOf(chosen);
-          if (_si === -1) { callback(); return; }
-          _esHost.stack.splice(_si, 1);
-          ctx.addLog && ctx.addLog('🌟 「' + _esHost.name + '」の進化元から「' + chosen.name + '」を登場');
+          const _esZ = _esZoneOf.get(chosen) || 'evo_source';
+          if (_esZ === 'evo_source') {
+            const _si = _esHost.stack.indexOf(chosen);
+            if (_si === -1) { callback(); return; }
+            _esHost.stack.splice(_si, 1);
+            ctx.addLog && ctx.addLog('🌟 「' + _esHost.name + '」の進化元から「' + chosen.name + '」を登場');
+          } else {
+            const _zi = (_esOwnP[_esZ] || []).indexOf(chosen);
+            if (_zi === -1) { callback(); return; }
+            _esOwnP[_esZ].splice(_zi, 1);
+            ctx.addLog && ctx.addLog('🌟 ' + (_esZ === 'hand' ? '手札' : 'トラッシュ') + 'から「' + chosen.name + '」を登場');
+          }
           _summonCardFromEffect(chosen, ctx, { payCost: step.cost_free ? null : Math.max(0, _cardPlayCostOf(chosen) + _effectPlayCostDelta(step, ctx)),
             enterSuspended: !!step.enter_suspended, skipOnPlay: !!step.skip_on_play }, () => {
             if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
             callback();
           });
         };
-        if (ctx.side === 'ai' || (_esCands.length === 1 && !step.optional)) { _esDo(_esCands[0]); break; }
+        const _esAllEvo = _esCands.every((c) => _esZoneOf.get(c) === 'evo_source');
+        if (ctx.side === 'ai' || (_esCands.length === 1 && !step.optional && _esAllEvo)) { _esDo(_esCands[0]); break; }
         void _esPay;
-        showTrashCardPicker(_esCands, 1, !!step.optional, '🌟 進化元から登場させるカードを選んでください', (picked) => _esDo(picked && picked[0]), _esCands);
+        showTrashCardPicker(_esCands, 1, !!step.optional, _esAllEvo ? '🌟 進化元から登場させるカードを選んでください' : '🌟 登場させるカードを選んでください', (picked) => _esDo(picked && picked[0]), _esCands,
+          _esAllEvo ? undefined : { labelOf: (c) => ({ hand: '手札', trash: 'トラッシュ', evo_source: '進化元' })[_esZoneOf.get(c)] || '' });
         break;
       }
       // Security effect: summon self (tamer/digimon) to field at no cost
@@ -16409,6 +16463,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (_rht.startsWith('opponent_suspended:')) _rhTarget = { code: 'target_opponent_suspended', count: parseInt(_rht.split(':')[1]) || 1 };
         else if (_rht.startsWith('opponent:up_to_')) _rhTarget = { code: 'target_opponent', count: parseInt(_rht.split('opponent:up_to_')[1]) || 1, upTo: true };
         else if (_rht.startsWith('opponent:')) _rhTarget = { code: 'target_opponent', count: parseInt(_rht.split(':')[1]) || 1 };
+        // 「相手のデジモン/テイマー1体」（opponent_card:N）も対象の条件を効かせる（以前は対象指定が無い扱いで、
+        // 条件なしの相手のデジモン全員が候補になっていた。アンフィモン EX12-033「下にカードがない相手のデジモン/テイマー」）。
+        // ⚠ 戻す処理（bounce）はバトルエリアのデジモンだけが対象で、テイマーは未対応
+        else if (_rht.startsWith('opponent_card:')) _rhTarget = { code: 'target_opponent', count: parseInt(_rht.split(':')[1]) || 1 };
         if (_rhTarget && step.filter) _rhTarget.filter = resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side);
         runOneAction(_rhAction, _rhTarget, ctx, callback);
         break;
@@ -17379,8 +17437,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         callback();
         break;
       }
-      // 単体選択など → 既存エンジンに委譲
-      const action = { code: step.action, value: step.value || null };
+      // 単体選択など → 既存エンジンに委譲（対象の条件 step.filter も渡す。シェルモン EX12-026「進化元が1枚以下の相手のデジモン」）
+      const action = { code: step.action, value: step.value || null, filter: step.filter ? resolveDpFilterMarkers(step.filter, ctx.card, ctx.bs, ctx.side) : null };
       if (!ctx.block) ctx.block = {};
       if (step.duration) {
         ctx.block.duration = { code: normalizeRecipeDuration(step.duration) };
@@ -18800,11 +18858,13 @@ function executeRecipeStep(step, ctx, store, callback) {
           const c = opponent.battleArea[i];
           if (!c) continue;
           if (_rdConds.length > 0 && !checkConditions(_rdConds, c, ctx.bs, _rdCondSide)) continue;
-          if (step.filter && !cardMatchesFilter(c, step.filter)) continue;
+          if (step.filter && !cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)) continue;
           if (c.buffs && c.buffs.some(b => b.type === 'cant_return_deck')) continue;
           if (_isImmuneToEffect(c, ctx)) continue;
           _rdCands.push(i);
         }
+        // 「最もLvの低い相手のデジモン」等（filter.lv_extreme 等）は候補がそろってから絞る（イーランモン EX12-034）
+        if (step.filter) { const _rdExt = applyExtremeFilterIdxs(_rdCands, opponent.battleArea, step.filter); _rdCands.length = 0; _rdCands.push(..._rdExt); }
         if (_rdCands.length === 0) { ctx.addLog('⚠ 対象がいません'); showEffectFailed(EFFECT_FAILED_NO_TARGET, callback); break; }
         const _rdTop = step.position === 'top' || step.deck_top;
         // executeRecipeStep では opponentRowSide / uiColor が未定義のため、ここで構築する
@@ -18972,9 +19032,19 @@ function executeRecipeStep(step, ctx, store, callback) {
             pool.forEach((c) => { if (c) _rdCandList.push({ card: c, remove: () => { if (ctx.card && ctx.card.stack) { const i = ctx.card.stack.indexOf(c); if (i !== -1) ctx.card.stack.splice(i, 1); } } }); });
           }
         });
-        const _rdWantCount = Math.max(1, parseInt(step.value, 10) || 1);
-        const _rdFiltered = _rdCandList.filter(({ card: c }) => _rdConds2.length === 0 || checkConditions(_rdConds2, c, ctx.bs, _rdOwnerSideTag));
+        // 枚数: value、無ければ target の「:N」（「自分のトラッシュ3枚をデッキの下に戻すことで」= target own_card:3。テティスモン EX12-030）
+        const _rdTgtN = /:(\d+)$/.exec(String(step.target || ''));
+        const _rdWantCount = Math.max(1, parseInt(step.value, 10) || (_rdTgtN ? parseInt(_rdTgtN[1], 10) : 0) || 1);
+        // 戻すカードの条件: condition_chain（「ジェリーモンの記述があるか特徴DS」の OR）があれば condition 等と合わせて判定し、
+        // from_filter（取得元カードの条件）も見る（以前は condition/when/extra_conditions だけで、OR 条件が無視されていた）
+        const _rdHasChain = Array.isArray(step.condition_chain) && step.condition_chain.length > 0;
+        const _rdFromFilter = step.from_filter ? resolveDpFilterMarkers(step.from_filter, ctx.card, ctx.bs, ctx.side) : null;
+        const _rdFiltered = _rdCandList.filter(({ card: c }) =>
+          (_rdHasChain ? _evalStepConditionGate(step, c, ctx.bs, _rdOwnerSideTag) : (_rdConds2.length === 0 || checkConditions(_rdConds2, c, ctx.bs, _rdOwnerSideTag)))
+          && (!_rdFromFilter || cardMatchesFilter(c, _rdFromFilter, ctx.bs, ctx.side, ctx.card)));
         if (_rdFiltered.length === 0) { callback(false); break; }
+        // コストは枚数がそろわなければ支払えない
+        if (_COST_STEP_SET.has(step) && _rdFiltered.length < _rdWantCount) { ctx.addLog('💨 デッキに戻すカードが足りないため、コストを支払えません'); callback(false); break; }
         let _rdReturnedCount = 0;
         const _doReturn2 = (entry, doneCb) => {
           if (!entry) { doneCb(false); return; }
@@ -19887,6 +19957,35 @@ function executeRecipeStep(step, ctx, store, callback) {
     // ユノモン「セキュリティを全て破棄し、破棄した1枚ごとに〜」等）。
     // コスト（cost 配列）として使われた場合は、規定枚数を払えない／「破棄しない」を選んだら
     // callback(false) で本体ごと中止する
+    // === 「以下の効果から1つを発揮する」（エディタ: 効果を発揮＞選択） ===
+    // step.choices[] から value 個（省略時1）を選んで順に発揮する。各選択肢の「その後」の続きは、その選択肢の
+    // alt_actions（AND）として入っているので、選択肢を executeRecipeStep に渡せば続けて実行される。
+    // 「進化元5枚ごとに、以下の効果から1つ」（per_count_mode:'repeat'）は、この step 自体が前段で N 回に展開されるので、
+    // 選択も毎回やり直しになる（オメガモン EX12-037）
+    case 'choose_effect': {
+      const _ceChoices = Array.isArray(step.choices) ? step.choices.filter((c) => c && c.action) : [];
+      if (_ceChoices.length === 0) { callback && callback(); break; }
+      const _ceWant = Math.max(1, Math.min(_ceChoices.length, parseInt(step.value, 10) || 1));
+      const _ceRound = ctx._repeatTotal > 1 ? '（' + ctx._repeatIndex + '/' + ctx._repeatTotal + '回目）' : '';
+      const _ceRun = (remaining, pool) => {
+        if (remaining <= 0 || pool.length === 0) { callback && callback(); return; }
+        const _ceDo = (idx) => {
+          const chosen = pool[idx];
+          if (!chosen) { callback && callback(); return; }
+          const rest = pool.filter((_, i) => i !== idx);
+          // 選択肢の期間が無ければ選択の効果自体の期間を引き継ぐ
+          const run = (!chosen.duration && step.duration) ? Object.assign({}, chosen, { duration: step.duration }) : chosen;
+          executeRecipeStep(run, ctx, store, () => _ceRun(remaining - 1, rest));
+        };
+        if (pool.length === 1) { _ceDo(0); return; }
+        // CPU は先頭の選択肢を選ぶ
+        if (ctx.side !== 'player') { _ceDo(0); return; }
+        const labels = _altChoiceLabels(pool, ctx);
+        showAltActionChoice(labels, (ci) => _ceDo(typeof ci === 'number' ? ci : 0), '🔀 発揮する効果を選んでください' + _ceRound);
+      };
+      _ceRun(_ceWant, _ceChoices);
+      break;
+    }
     case 'discard': {
       // 進化元・相手のセキュリティ・デッキからの破棄は、既存の専用アクションへ引き渡す
       const _dLegacy = _discardToLegacyStep(step);

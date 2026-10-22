@@ -3084,8 +3084,6 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'attack', label: 'アタック' },
   { code: 'force_block', label: 'ブロック' },
   { code: 'delay', label: 'ディレイ' },
-  // 「以下の効果から1つを発揮する」: この後の効果（次の「その後」まで）が選択肢になる（recipe.ts CHOOSE_EFFECT_ACTION）
-  { code: 'choose_effect', label: '効果を発揮する' },
 ];
 // 効果一覧の各効果（効果2以降）が「効果を発揮する」の何番目の選択肢か（選択肢でなければ null）。
 // 区間（効果1〜／「その後」〜）の先頭が choose_effect のとき、その後ろの効果が選択肢。
@@ -5665,6 +5663,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // - フラグ付き base 直: そのまま
           // - suffix 付き: 自動グループ化なら代表 code（autoGroupBases）、フラグ付き base なら base コード
           const normalizedActionValue = (() => {
+            if (effectAction === 'choose_effect') return 'negate';
             if (isFlaggedBaseDirect) return effectAction;
             if (curVariant && flaggedBases.has(curVariant.base)) return curVariant.base;
             if (curVariant && autoGroupBases.has(curVariant.base)) return curVariant.base + '_top'; // 代表
@@ -5823,6 +5822,20 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         : <span style={{ color: '#e65100', fontSize: 10, marginLeft: 6 }} title="エンジン未実装">⚠未実装</span>
                     )}
                   </label>
+                  {isEditingAlt && (() => {
+                    const lab = choiceLabelsOf(block)[editingEffect - 1];
+                    if (!lab) return null;
+                    let h = editingEffect - 2;
+                    while (h >= 0 && !altActions[h].thenBreak) h--;
+                    return (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 'bold', color: '#0f766e', background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: 4, padding: '2px 8px' }}>
+                        🔀 効果を発揮＞選択の【{lab}】を編集中
+                        <button type="button" onClick={() => setEditingEffect(h + 1)} style={{ padding: '1px 6px', borderRadius: 3, border: '1px solid #0f766e', background: 'white', color: '#0f766e', cursor: 'pointer', fontSize: 10 }}>
+                          ← 選択の設定へ
+                        </button>
+                      </span>
+                    );
+                  })()}
                   {/* 「その後」: 効果2以降（代替アクション）のみ表示。この効果からAND/OR区間を
                       切り離し、独立した後続step（前段が不発でも必ず発動する）にする */}
                   {isEditingAlt && (
@@ -5945,23 +5958,94 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   )}
                   {/* negate（「効果を発揮」）専用: どのトリガー効果を対象にするか + する/しない
                       （例:「登場時」＋「発揮しない」＝対象の登場時効果を発揮しない） */}
-                  {effectAction === 'negate' && (
+                  {(effectAction === 'negate' || effectAction === 'choose_effect') && (
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 11, color: '#666' }}>対象のタイミング:</span>
                       <ButtonGroup
-                        options={[{ code: 'on_play', label: '登場時' }, { code: 'on_evolve', label: '進化時' }]}
-                        value={effectNegateTargetTrigger || ''}
-                        onChange={(v) => updateEffect({ negateTargetTrigger: (v || undefined) as 'on_play' | 'on_evolve' | undefined })}
+                        options={[{ code: 'on_play', label: '登場時' }, { code: 'on_evolve', label: '進化時' }, { code: 'choose', label: '選択' }]}
+                        value={effectAction === 'choose_effect' ? 'choose' : (effectNegateTargetTrigger || '')}
+                        onChange={(v) => {
+                          if (v === 'choose') {
+                            // 「以下の効果から1つを発揮する」。効果2以降なら、選択肢の範囲をはっきりさせるため「その後」区間の先頭にする
+                            updateEffect({ action: 'choose_effect', negateTargetTrigger: undefined, negateDeny: undefined, ...(isEditingAlt ? { thenBreak: true, chainPrev: undefined } : {}) });
+                            return;
+                          }
+                          updateEffect({ action: 'negate', negateTargetTrigger: (v || undefined) as 'on_play' | 'on_evolve' | undefined });
+                        }}
                         accentColor="#1976d2"
                       />
-                      <ButtonGroup
-                        options={[{ code: 'enable', label: '発揮する' }, { code: 'deny', label: '発揮しない' }]}
-                        value={effectNegateDeny ? 'deny' : 'enable'}
-                        onChange={(v) => updateEffect({ negateDeny: v === 'deny' })}
-                        accentColor="#1976d2"
-                      />
+                      {effectAction === 'negate' && (
+                        <ButtonGroup
+                          options={[{ code: 'enable', label: '発揮する' }, { code: 'deny', label: '発揮しない' }]}
+                          value={effectNegateDeny ? 'deny' : 'enable'}
+                          onChange={(v) => updateEffect({ negateDeny: v === 'deny' })}
+                          accentColor="#1976d2"
+                        />
+                      )}
                     </div>
                   )}
+                  {/* 「効果を発揮」＞「選択」: 選択肢の一覧と追加ボタン。選択肢の中身（アクション/条件/コスト等）は
+                      各選択肢のボタンを押すと、この編集欄でふつうの効果と同じように設定できる */}
+                  {effectAction === 'choose_effect' && (() => {
+                    const headIdx = isEditingAlt ? editingEffect - 1 : -1; // altActions 上の位置（効果1なら -1）
+                    let segEnd = headIdx + 1;
+                    while (segEnd < altActions.length && !altActions[segEnd].thenBreak) segEnd++;
+                    // 選択肢ごとに altActions の添字をまとめる（chainPrev＝直前の選択肢の続き）
+                    const groups: number[][] = [];
+                    for (let k = headIdx + 1; k < segEnd; k++) {
+                      if (altActions[k].chainPrev && groups.length > 0) groups[groups.length - 1].push(k);
+                      else groups.push([k]);
+                    }
+                    const insertAlt = (at: number, chain: boolean) => {
+                      const entry: AltAction = { action: '', value: '', target: '', conditions: [], options: [], fromZones: [], ...(chain ? { chainPrev: true } : {}) };
+                      const next = [...altActions];
+                      next.splice(at, 0, entry);
+                      onChange({ ...block, altActions: next, ...(headIdx === -1 ? { altActionsOp: 'or' as const } : {}) });
+                      setEditingEffect(at + 1);
+                    };
+                    const chipStyle = (k: number) => ({
+                      padding: '3px 9px', borderRadius: 5, cursor: 'pointer', fontSize: 11,
+                      border: '1px solid #0f766e', background: '#f0fdfa', color: '#0f766e',
+                    });
+                    return (
+                      <div style={{ marginTop: 6, padding: 8, border: '1px solid #99f6e4', borderRadius: 6, background: '#f0fdfa', width: '100%', boxSizing: 'border-box' }}>
+                        <div style={{ fontSize: 12, fontWeight: 'bold', color: '#0f766e', marginBottom: 4 }}>🔀 選択肢（この中から「選ぶ数」だけ発揮）</div>
+                        {groups.length === 0 && <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>まだ選択肢がありません。「＋ ORで選択肢を追加」で追加してください。</div>}
+                        {groups.map((g, gi) => (
+                          <div key={gi} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
+                            <span style={{ fontSize: 11, fontWeight: 'bold', color: '#0f766e', minWidth: 56 }}>選択肢{gi + 1}</span>
+                            {g.map((k, j) => (
+                              <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                {j > 0 && <span style={{ fontSize: 10, color: '#666' }}>→ その後</span>}
+                                <button type="button" onClick={() => setEditingEffect(k + 1)} style={chipStyle(k)} title={'効果' + (k + 2) + 'として編集'}>
+                                  {describeEffect(altActions[k].action, altActions[k].value, altActions[k].target, altActions[k].conditions) || '(未設定)'}
+                                </button>
+                              </span>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => insertAlt(g[g.length - 1] + 1, true)}
+                              style={{ padding: '2px 8px', borderRadius: 4, border: '1px dashed #0f766e', background: 'white', color: '#0f766e', cursor: 'pointer', fontSize: 10 }}
+                              title="この選択肢を選んだときに、その後続けて行う効果を追加"
+                            >
+                              ＋ ANDで続けて追加
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => insertAlt(segEnd, false)}
+                          style={{ padding: '3px 10px', borderRadius: 4, border: '1px dashed #0f766e', background: 'white', color: '#0f766e', cursor: 'pointer', fontSize: 11 }}
+                        >
+                          ＋ ORで選択肢を追加
+                        </button>
+                        <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>
+                          選択肢のボタンを押すと、その中身（アクション・対象・条件・コスト等）をこの欄で設定できます。
+                          「〜ごとに、以下から1つ」は、この効果に「〜ごとに」（N回発動）を設定します。
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {/* 登場/使用: トリガーの複数選択と同じ操作感の独立2ボタン。両方押すと
@@ -6397,10 +6481,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {/* 値の数え方（対象数と同じボタン）: 指定なし / 全て / 完全一致 / 〜まで / 〜なるまで */}
                   {effectAction === 'choose_effect' ? (
                     <div style={{ marginTop: 4, fontSize: 11, color: '#0f766e', lineHeight: 1.6 }}>
-                      🔀 この効果の後ろの効果（次の「その後」まで）が選択肢になります。<br />
-                      ・選択肢は「＋ ORで追加」で増やします。<br />
-                      ・選択肢の中で「その後」続く効果は、その効果で「効果Nの続き（その後）」にチェック。<br />
-                      ・「〜ごとに、以下から1つ」は、この効果に「〜ごとに」（N回発動）を設定。<br />
+                      🔀 選択肢は「効果を発揮」欄の「🔀 選択肢」で追加・編集します。<br />
                       <span style={{ color: '#c62828' }}>⚠ エンジン未実装</span>
                     </div>
                   ) : (

@@ -1014,8 +1014,19 @@ function parseDesignatedFields(d: any): { conds: ConditionPair[]; op: 'and' | 'o
 // ブロックが持つキーワードの一覧を返す（パッシブ/キーワード付与 共通）。
 // keywordEntries（複数選択UI）があればそちらを優先し、無ければ従来の単一
 // keyword/value/keywordParamConditions* から1件だけのリストを合成する（後方互換）
+// モードを持つキーワード。withTarget のモードだけ「対象」（designated）を入力・保存する
+// （「ブラスト〇〇」: 進化＝ブラスト進化 / ジョグレス＝ブラストジョグレス《「A」+「B」》）
+export const KEYWORD_MODES: Record<string, { code: string; label: string; withTarget?: boolean }[]> = {
+  blast: [{ code: 'evolve', label: '進化' }, { code: 'jogress', label: 'ジョグレス', withTarget: true }],
+};
+export function keywordModeAllowsTarget(keyword: string | undefined, mode: string | undefined): boolean {
+  const modes = keyword ? KEYWORD_MODES[keyword] : undefined;
+  if (!modes) return true;
+  return !!modes.find((m) => m.code === mode && m.withTarget);
+}
 export function getKeywordEntries(b: {
   keyword?: string;
+  keywordMode?: string;
   value?: number | string;
   keywordParamConditions?: ConditionPair[];
   keywordParamConditionsOp?: 'and' | 'or';
@@ -1030,6 +1041,7 @@ export function getKeywordEntries(b: {
   if (b.keyword) {
     return [{
       keyword: b.keyword,
+      mode: b.keywordMode,
       value: b.value,
       keywordParamConditions: b.keywordParamConditions,
       keywordParamConditionsOp: b.keywordParamConditionsOp,
@@ -1196,6 +1208,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     getKeywordEntries(b).filter((entry) => entry.keyword).forEach((entry) => {
       const kwEntry = keywordDict && entry.keyword ? keywordDict.find((k) => k.code === entry.keyword) : undefined;
       const p: any = { flag: entry.keyword };
+      if (entry.mode) p.keyword_mode = entry.mode;
       Object.assign(p, gateFields);
       // 値 (例: 【Sアタック+2】 の "2"): 数値化できれば number、そうでなければそのまま
       if (entry.value !== undefined && entry.value !== '' && entry.value !== null) {
@@ -1206,7 +1219,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       // プレースホルダーをエンジン側が実行時に置き換えるための材料。ここでは組み立てた
       // 条件一式を designated（1組）/designated_groups（2組以上）として保存するだけで、
       // 置き換え自体は行わない
-      applyDesignatedGroupsTo(p, entry, kwEntry);
+      if (keywordModeAllowsTarget(entry.keyword, entry.mode)) applyDesignatedGroupsTo(p, entry, kwEntry);
       if (b.zone) p.in_zone = b.zone;
       if (b.extras) {
         try {
@@ -2221,7 +2234,7 @@ function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
 function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): EffectBlock {
   const extras: any = {};
   Object.keys(p || {}).forEach((k) => {
-    if (k !== 'flag' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'designated_common' && k !== 'designated_common_chain' && k !== 'designated_mode' && k !== 'count'
+    if (k !== 'flag' && k !== 'keyword_mode' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'designated_common' && k !== 'designated_common_chain' && k !== 'designated_mode' && k !== 'count'
       && k !== 'gate' && k !== 'gate_op' && k !== 'gate_chain') extras[k] = p[k];
   });
   const groups = parseDesignatedGroupsField(p);
@@ -2236,6 +2249,7 @@ function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): Effect
     zone: p?.in_zone || '',
     trigger: 'passive',
     keyword: (p && p.flag) || '',
+    keywordMode: p?.keyword_mode ? String(p.keyword_mode) : undefined,
     value: p?.value,
     keywordParamConditions: single && single.conditions.length > 0 ? single.conditions : undefined,
     keywordParamConditionsOp: single && single.conditions.length > 0 ? single.conditionsOp : undefined,

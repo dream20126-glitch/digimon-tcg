@@ -52,6 +52,8 @@ export interface FusionMaterialSlot {
 export interface KeywordEntry {
   keyword: string;
   value?: number | string;
+  // キーワードのモード（「ブラスト〇〇」の 'evolve'＝ブラスト進化 / 'jogress'＝ブラストジョグレス 等）。JSON では p.keyword_mode
+  mode?: string;
   // 「対象」の絞り込み条件＋枚数の組。複数指定可（例: アセンブリでLv違いの条件を
   // 複数並べる場合）。1組だけの場合は後方互換のため keywordParamConditions/count
   // （下記）と同じJSON出力になる
@@ -276,6 +278,8 @@ export interface EffectBlock {
   // grant_keyword(_to)は1件目を通常のstepに、2件目以降は「同じ対象に付与」するため
   // target:'same_target'（single-target選択時のみ）の独立stepとして同じtrigger配列に積む
   keywordEntries?: KeywordEntry[];
+  // 単一キーワード時のモード（KeywordEntry.mode と同じ。JSON では p.keyword_mode）
+  keywordMode?: string;
   // trigger==='passive' 専用:「〇〇の間、[キーワード]を得る」のような条件付きパッシブ用。
   // ブロック内の全keywordEntriesに共通で適用され、JSONへは各passiveエントリの
   // p.gate（条件文字列配列・AND）/p.gate_op/p.gate_chainとして出力する。

@@ -348,6 +348,7 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_security_lt', kind: 'condition', label: 'セキュリティがN枚より少ない' },
   { code: 'cond_has_evo_gt', kind: 'condition', label: '進化元がN枚より多い' },
   { code: 'cond_has_evo_lt', kind: 'condition', label: '進化元がN枚より少ない' },
+  { code: 'cond_keyword_mode', kind: 'condition', label: 'キーワードの種類が〇〇なら（ブラスト〇〇の evolve/jogress 等。キーワードレシピ用）' },
   { code: 'cond_has_evo_same_lv', kind: 'condition', label: '進化元にLvが同じカードがN枚以上' },
   { code: 'cond_has_evo_same_lv_le', kind: 'condition', label: '進化元にLvが同じカードがN枚以下' },
   { code: 'cond_has_evo_same_lv_eq', kind: 'condition', label: '進化元にLvが同じカードがちょうどN枚' },

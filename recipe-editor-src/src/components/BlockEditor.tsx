@@ -13,6 +13,7 @@ import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOp
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
+import { KEYWORD_MODES, keywordModeAllowsTarget } from '../recipe';
 import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER, isZoneSourceEffect, zoneSourceHasTargetCardConds } from '../recipe';
 
 interface Props {
@@ -814,6 +815,7 @@ function KeywordEntriesEditor({
       ...block,
       keywordEntries: next,
       keyword: next[0]?.keyword || '',
+      keywordMode: next[0]?.mode,
       value: next[0]?.value,
       keywordParamConditions: next[0]?.keywordParamConditions,
       keywordParamConditionsOp: next[0]?.keywordParamConditionsOp,
@@ -862,12 +864,24 @@ function KeywordEntriesEditor({
           </div>
           <SearchSelect
             value={entry.keyword || ''}
-            onChange={(v) => updateEntry(i, { keyword: v })}
+            onChange={(v) => updateEntry(i, { keyword: v, mode: KEYWORD_MODES[v] ? KEYWORD_MODES[v][0].code : undefined })}
             options={toOpts(dict.keywords)}
             allowFreeText
           />
+          {/* モードを持つキーワード（「ブラスト〇〇」の 進化/ジョグレス 等）。対象の入力はモードによって出し分ける */}
+          {KEYWORD_MODES[entry.keyword] && (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 11, color: '#555', marginBottom: 2 }}>種類</div>
+              <ButtonGroup
+                options={KEYWORD_MODES[entry.keyword].map((m) => ({ code: m.code, label: m.label }))}
+                value={entry.mode || KEYWORD_MODES[entry.keyword][0].code}
+                onChange={(v) => updateEntry(i, { mode: v })}
+                accentColor="#7b1fa2"
+              />
+            </div>
+          )}
           {/* 数値はキーワード名のすぐ下（対象の絞り込み欄の下だと見落とすため） */}
-          {!(primaryValueElsewhere && i === 0) && (tplAnalysis.usesValue || !!dict.keywords.find((k) => k.code === entry.keyword)?.hasNamedParam) && (
+          {!(primaryValueElsewhere && i === 0) && (tplAnalysis.usesValue || (!!dict.keywords.find((k) => k.code === entry.keyword)?.hasNamedParam && !KEYWORD_MODES[entry.keyword])) && (
             <div style={{ marginTop: 6 }}>
               <label style={{ display: 'block', fontSize: 11, marginBottom: 2 }}>
                 数値（【セキュリティアタック+2】の 2、アセンブリ-N／デジクロス-N の N 等。数値がある場合のみ）
@@ -885,7 +899,7 @@ function KeywordEntriesEditor({
               />
             </div>
           )}
-          {!!dict.keywords.find((k) => k.code === entry.keyword)?.hasNamedParam && (() => {
+          {!!dict.keywords.find((k) => k.code === entry.keyword)?.hasNamedParam && keywordModeAllowsTarget(entry.keyword, entry.mode || (KEYWORD_MODES[entry.keyword] ? KEYWORD_MODES[entry.keyword][0].code : undefined)) && (() => {
             const groups = getDesignatedGroups(entry);
             const groupList: DesignatedGroup[] = groups.length > 0 ? groups : [{ conditions: [], conditionsOp: 'and' }];
             const setGroups = (next: DesignatedGroup[]) => updateEntry(i, { designatedGroups: next });

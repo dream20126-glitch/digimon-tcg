@@ -602,6 +602,13 @@ function parseConditionChainFilter(f: any): { pairs: ConditionPair[]; chain?: Co
   }
   return { pairs: parseFilterObject(f) };
 }
+// コストの条件の値に使える参照（数値の代わり）。'self_evo_count'＝このカード（効果を持つカード）の進化元の枚数
+export const COST_REF_MARKERS: Record<string, string> = { self_evo_count: 'このカードの進化元の枚数' };
+function costVal(v: any): number | string | undefined {
+  if (typeof v === 'string' && COST_REF_MARKERS[v]) return v;
+  const n = parseInt(String(v ?? ''), 10);
+  return isNaN(n) ? undefined : n;
+}
 function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, any> | null {
   if (!Array.isArray(pairs) || pairs.length === 0) return null;
   const f: Record<string, any> = {};
@@ -648,9 +655,10 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       // 判定できず、対象選択処理側で別途「合計が閾値以下になる組合せ」を絞り込む実装が必要）
       case 'cond_lv_sum_le': { const n = num(c.value); if (n !== undefined) f.lv_sum_le = n; break; }
       // 登場/使用コスト（cardMatchesFilterがfilter.cost/cost_le/cost_geを読む）
-      case 'cond_cost':     { const n = num(c.value); if (n !== undefined) { f.cost_le = n; f.cost_ge = n; } break; }
-      case 'cond_cost_le':  { const n = num(c.value); if (n !== undefined) f.cost_le = n; break; }
-      case 'cond_cost_ge':  { const n = num(c.value); if (n !== undefined) f.cost_ge = n; break; }
+      // 値は数値か参照マーカー（COST_REF_MARKERS。'self_evo_count'＝このカード（効果を持つカード）の進化元の枚数）
+      case 'cond_cost':     { const n = costVal(c.value); if (n !== undefined) { f.cost_le = n; f.cost_ge = n; } break; }
+      case 'cond_cost_le':  { const n = costVal(c.value); if (n !== undefined) f.cost_le = n; break; }
+      case 'cond_cost_ge':  { const n = costVal(c.value); if (n !== undefined) f.cost_ge = n; break; }
       // cond_dp_highest/lowestと同じく候補プール全体との比較が必要（cardMatchesFilterでは
       // 判定できず、対象選択処理側で別途絞り込む実装が必要）
       case 'cond_cost_highest': f.cost_extreme = 'highest'; break;

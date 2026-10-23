@@ -5525,9 +5525,13 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   if (filter.dp != null && typeof filter.dp === 'number' && (card.dp || 0) !== filter.dp) return false;
   // コスト系: cost (登場/使用コスト) のフィルタ
   const cardCost = (card.playCost != null ? card.playCost : (card.cost || 0));
-  if (filter.cost != null && cardCost !== filter.cost) return false;
-  if (filter.cost_le != null) {
-    let effectiveCostLe = filter.cost_le;
+  // コストの値の参照: 'self_evo_count'＝このカード（効果を持つカード）の進化元の枚数（「登場コストがこのデジモンの進化元枚数以下」）。
+  // 参照先が分からないとき（sourceCard 無し）は絞り込まない
+  const _costRef = (v) => (v === 'self_evo_count') ? (sourceCard ? (Array.isArray(sourceCard.stack) ? sourceCard.stack.length : 0) : null) : v;
+  const _fCost = _costRef(filter.cost), _fCostLe = _costRef(filter.cost_le), _fCostGe = _costRef(filter.cost_ge);
+  if (_fCost != null && cardCost !== _fCost) return false;
+  if (_fCostLe != null) {
+    let effectiveCostLe = _fCostLe;
     // cost_le_mod: 「レスト状態のデジモン/テイマー1体ごとにコスト上限+1」等、
     // 直前の効果（AltActionの「直前の効果に適用する」）から埋め込まれた動的な閾値修正
     if (filter.cost_le_mod && bs && side) {
@@ -5541,7 +5545,7 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
     }
     if (cardCost > effectiveCostLe) return false;
   }
-  if (filter.cost_ge != null && cardCost < filter.cost_ge) return false;
+  if (_fCostGe != null && cardCost < _fCostGe) return false;
   if (Array.isArray(filter.cost_in) && !filter.cost_in.includes(cardCost)) return false;
   // 特徴: 「竜人型/四大竜」のようにスラッシュ区切り
   const cardFeatures = (card.feature || '').split(/[\/、,]/).map(s => s.trim()).filter(s => s);

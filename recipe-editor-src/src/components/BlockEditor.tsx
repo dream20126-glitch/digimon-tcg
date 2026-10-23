@@ -13,7 +13,7 @@ import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOp
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
-import { KEYWORD_MODES, keywordModeAllowsTarget, recipeToBlocks } from '../recipe';
+import { KEYWORD_MODES, keywordModeAllowsTarget, recipeToBlocks, COST_REF_MARKERS } from '../recipe';
 import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER, isZoneSourceEffect, zoneSourceHasTargetCardConds } from '../recipe';
 
 interface Props {
@@ -10311,6 +10311,20 @@ function ConditionsHybridEditor({
                   )}
                   {/* コストのみ: 登場コスト（デジモン/テイマー）・使用コスト（オプション）。両方押す＝両方（指定なし）。
                       ConditionPair.costKind（filter では cost_kind、条件の文字列では cond_play_cost_le 等） */}
+                  {/* コスト以上/以下/完全一致: 比べる値を数値の代わりに「このカードの進化元の枚数」にできる
+                      （「登場コストがこのデジモンの進化元枚数以下」）。値は COST_REF_MARKERS のマーカー文字列 */}
+                  {cat.code === 'cost' && ['cond_cost', 'cond_cost_le', 'cond_cost_ge'].includes(c.base) && (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>比べる値</div>
+                      <ButtonGroup
+                        options={[{ code: '', label: '数値' }, ...Object.entries(COST_REF_MARKERS).map(([code, label]) => ({ code, label }))]}
+                        value={COST_REF_MARKERS[c.value || ''] ? (c.value as string) : ''}
+                        onChange={(v) => updateAt(i, { value: v || '' })}
+                        accentColor={colors.accent}
+                      />
+                      {COST_REF_MARKERS[c.value || ''] && <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>（右の「値」欄は使いません）</div>}
+                    </div>
+                  )}
                   {cat.code === 'cost' && (
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>コストの種類</div>

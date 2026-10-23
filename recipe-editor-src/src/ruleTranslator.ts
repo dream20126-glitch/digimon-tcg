@@ -29,9 +29,10 @@ function condsToFilter(conds?: ConditionPair[]): Record<string, any> {
       case 'cond_dp':               { const n = num(v); if (n !== undefined) { f.dp_le = n; f.dp_ge = n; } break; }
       case 'cond_dp_le':            { const n = num(v); if (n !== undefined) f.dp_le = n; break; }
       case 'cond_dp_ge':            { const n = num(v); if (n !== undefined) f.dp_ge = n; break; }
-      case 'cond_cost':             { const n = num(v); if (n !== undefined) { f.cost_le = n; f.cost_ge = n; } break; }
-      case 'cond_cost_le':          { const n = num(v); if (n !== undefined) f.cost_le = n; break; }
-      case 'cond_cost_ge':          { const n = num(v); if (n !== undefined) f.cost_ge = n; break; }
+      // 値は数値か参照マーカー（'self_evo_count'＝このカードの進化元の枚数。recipe.ts COST_REF_MARKERS）
+      case 'cond_cost':             { const n = v === 'self_evo_count' ? v : num(v); if (n !== undefined) { f.cost_le = n; f.cost_ge = n; } break; }
+      case 'cond_cost_le':          { const n = v === 'self_evo_count' ? v : num(v); if (n !== undefined) f.cost_le = n; break; }
+      case 'cond_cost_ge':          { const n = v === 'self_evo_count' ? v : num(v); if (n !== undefined) f.cost_ge = n; break; }
       case 'cond_feature_contains': if (v) f.feature_contains = String(v); break;
       case 'cond_name_contains':    if (v) f.name_contains = String(v); break;
       // 名前（完全一致）/除外・記述・色以外（FILTER_COND_CODESに入っているのに変換が無く、

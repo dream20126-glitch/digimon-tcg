@@ -4345,6 +4345,30 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           </div>
         </div>
 
+        {/* キーワード効果のテンプレート編集でも「区分」だけは選べるようにする（オーバーフローのように、バトルエリアにいるときと
+            進化元にあるときの両方で発揮するキーワードがあるため。タイプ/限定はカード固有なので出さない） */}
+        {isKeywordMode && (() => {
+          const sectionsList: string[] = (block.sections && block.sections.length > 0) ? block.sections : [block.section];
+          const toggleSection = (code: string) => {
+            const has = sectionsList.includes(code);
+            let next = has ? sectionsList.filter((s) => s !== code) : [...sectionsList, code];
+            if (next.length === 0) next = [code];
+            const nonSecurity = next.filter((s) => s !== 'security');
+            const primary = (nonSecurity.length > 0 ? nonSecurity[0] : next[0]) as EffectBlock['section'];
+            onChange({ ...block, section: primary, sections: next.length > 1 ? (next as EffectBlock['section'][]) : undefined });
+          };
+          return (
+            <div style={{ gridColumn: '1 / span 2', padding: 10, background: '#fdeef2', border: '1px solid #f3b8ce', borderRadius: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ fontSize: 12, fontWeight: 'bold', minWidth: 56 }}>区分 *</label>
+                <MultiButtonGroup options={SECTIONS} values={sectionsList} onToggle={(code) => toggleSection(code)} accentColor="#d6336c" />
+              </div>
+              <div style={{ fontSize: 10, color: '#666', marginTop: 2, marginLeft: 64 }}>
+                このキーワードを持つカードが、どこにあるときに発揮するか（メイン＝そのカード自身・進化元＝他のカードの下にあるとき）。両方押せます。
+              </div>
+            </div>
+          );
+        })()}
         {/* === ＜前提＞ブロック: 区分 / タイプ / 限定 をボタン式で選択 ===
             キーワード効果のテンプレート編集(isKeywordMode)では、カード固有の概念（区分/
             ターン制限）は不要なため非表示にする */}

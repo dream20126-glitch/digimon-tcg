@@ -424,6 +424,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   if (a.valueMode) out.value_mode = a.valueMode;
   if (a.tokenCount && a.tokenCount > 1) out.token_count = a.tokenCount;
   if (a.evolveInto === 'self_card') out.evolve_into = 'self_card';
+  if (a.byCause) { out.by_cause = a.byCause; if (a.byCauseSubject) out.by_cause_subject = a.byCauseSubject; }
   if (a.displaySame) out.display_same = true;
   else if (a.displayText && a.displayText.trim()) out.display_text = a.displayText.trim();
   // 上/下（デッキに戻す位置等・hasDeckPosition用）。'both'（どちらか選んで）はエンジン未対応の
@@ -1586,6 +1587,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.valueMode) step.value_mode = b.valueMode;
   if (b.tokenCount && b.tokenCount > 1) step.token_count = b.tokenCount;
   if (b.evolveInto === 'self_card') step.evolve_into = 'self_card';
+  if (b.byCause) { step.by_cause = b.byCause; if (b.byCauseSubject) step.by_cause_subject = b.byCauseSubject; }
   // subject='self' はデフォルトなのでJSONに含めない（既存レシピと互換）。
   // トリガーごとに発動主体が異なる場合（groupTriggersByTimingが1stepへ統合した場合）は
   // subject_by_code（{トリガーコード: subject}）を出力する。エンジン側は各トリガーの
@@ -2096,6 +2098,8 @@ function stepObjectToAltAction(step: any): AltAction {
     valueMode: parseValueMode(step),
     tokenCount: Number(step?.token_count) > 1 ? Number(step.token_count) : undefined,
     evolveInto: step?.evolve_into === 'self_card' ? 'self_card' as const : undefined,
+    byCause: step?.by_cause ? String(step.by_cause) : undefined,
+    byCauseSubject: step?.by_cause_subject ? String(step.by_cause_subject) : undefined,
     keyword: String(step?.keyword || '').includes(',') ? '' : (step?.keyword || ''),
     keywordEntries: String(step?.keyword || '').includes(',')
       ? String(step.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))
@@ -2391,6 +2395,8 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     value_mode: true,
     token_count: true,
     evolve_into: true,
+    by_cause: true,
+    by_cause_subject: true,
     in_zone: true,
     subject: true,
     subject_by_code: true,
@@ -2516,6 +2522,8 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     valueMode: parseValueMode(step),
     tokenCount: Number(step?.token_count) > 1 ? Number(step.token_count) : undefined,
     evolveInto: step?.evolve_into === 'self_card' ? 'self_card' as const : undefined,
+    byCause: step?.by_cause ? String(step.by_cause) : undefined,
+    byCauseSubject: step?.by_cause_subject ? String(step.by_cause_subject) : undefined,
     triggerConditions,
     triggerConditionsOp: step?.trigger_conditions_op === 'or' ? 'or' : 'and',
     triggerConditionsChain: parseConditionChainStrings(step?.trigger_conditions_chain),
@@ -2678,6 +2686,8 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             valueMode: parseValueMode(a),
             tokenCount: Number(a?.token_count) > 1 ? Number(a.token_count) : undefined,
             evolveInto: a?.evolve_into === 'self_card' ? 'self_card' as const : undefined,
+            byCause: a?.by_cause ? String(a.by_cause) : undefined,
+            byCauseSubject: a?.by_cause_subject ? String(a.by_cause_subject) : undefined,
             keyword: String(a?.keyword || '').includes(',') ? '' : (a?.keyword || ''),
             keywordEntries: String(a?.keyword || '').includes(',')
               ? String(a.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))

@@ -6246,6 +6246,45 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     )}
                   </div>
                 )}
+                {/* 「〜できない／〜されない」の原因（例:「相手の効果で破棄されない」）。トリガーの「☑ 原因選択」と同じボタン。
+                    消滅できない(cant_destroy)は上の専用欄（destroyCause）を使う。JSON は by_cause / by_cause_subject */}
+                {/^cant_/.test(effectAction || '') && effectAction !== 'cant_destroy' && (() => {
+                  const bc = isEditingAlt ? editingAlt!.byCause : block.byCause;
+                  const bcs = isEditingAlt ? editingAlt!.byCauseSubject : block.byCauseSubject;
+                  return (
+                    <div style={{ marginTop: 4 }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#1a5a1a' }}>
+                        <input
+                          type="checkbox"
+                          checked={!!bc}
+                          onChange={(e) => {
+                            if (e.target.checked) updateEffect({ byCause: 'effect', byCauseSubject: 'opp' });
+                            else updateEffect({ byCause: undefined, byCauseSubject: undefined });
+                          }}
+                        />
+                        ☑ 原因選択（〜の効果で／バトルで〜されない。未選択なら原因を問わない）
+                      </label>
+                      {bc && (
+                        <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <div>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>原因</div>
+                            <CauseToggle value={bc} onChange={(v) => { if (v) updateEffect({ byCause: v }); }} accentColor="#1a5a1a" />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>原因の対象（誰の効果／バトルか）</div>
+                            <ButtonGroup
+                              options={[{ code: 'opp', label: '相手' }, { code: 'own', label: '自分' }, { code: 'both', label: '両方' }]}
+                              value={bcs || 'both'}
+                              onChange={(v) => updateEffect({ byCauseSubject: v === 'both' ? undefined : v })}
+                              accentColor="#1a5a1a"
+                            />
+                          </div>
+                          <div style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装（保存はできますが、原因の絞り込みはまだ反映されません）</div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* 置き場所は対象欄（🎯アクションの対象/対象数の隣）の選択だけで決まる
                     （対象を変えると action が自動でplace_under_tamer/place_under_digimon/
                     place_on_security_top/place_in_battle_areaへ切り替わる。remapPlaceActionForTarget参照）。

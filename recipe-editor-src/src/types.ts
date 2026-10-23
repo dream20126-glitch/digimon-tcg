@@ -117,6 +117,10 @@ export interface EffectBlock {
   tokenCount?: number;
   // 進化/ジョグレス進化の「進化先」を手札のこのカードにする（ブラスト〇〇等。JSONでは evolve_into:'self_card'）
   evolveInto?: 'self_card';
+  // 「〜できない／〜されない」の原因（例:「相手の効果で破棄されない」= effect + opp）。トリガーの原因（destroyCause）とは別。
+  // JSON では by_cause（battle/effect/not_battle/not_effect）・by_cause_subject（own/opp/both）
+  byCause?: string;
+  byCauseSubject?: string;
   // トリガーの複数選択（例: 登場時/進化時どちらでも同じ効果）。2件以上のときのみ意味を持つ。
   // blocksToRecipeで各コードごとに同じstepを複製して出力する。1件以下ならtriggerのみを見る
   triggers?: string[];
@@ -468,6 +472,10 @@ export interface AltAction {
   tokenCount?: number;
   // 進化先＝このカード（EffectBlock.evolveInto と同じ）。JSONでは evolve_into
   evolveInto?: 'self_card';
+  // 「〜できない／〜されない」の原因（例:「相手の効果で破棄されない」= effect + opp）。トリガーの原因（destroyCause）とは別。
+  // JSON では by_cause（battle/effect/not_battle/not_effect）・by_cause_subject（own/opp/both）
+  byCause?: string;
+  byCauseSubject?: string;
   // 「効果1と同じ」: 効果1のポップアップで一緒に表示済みとして、この効果では出さない（テキストも書かない）。JSONでは display_same: true
   displaySame?: boolean;
   value?: number | string;

@@ -10151,17 +10151,20 @@ function ConditionsHybridEditor({
                       accentColor={colors.accent}
                     />
                   )}
-                  {/* コストのみ: 登場(デジモン/テイマー)/使用(オプション)/両方でカード種別を絞り込む。
-                      対象の条件（supportsMultiValue）でのみ有効（cond_typeの複数値がtype_inとして
-                      解釈されるのはこの文脈だけのため）。書き込む行はCOST_TYPE_SCOPE_SUBJECTで
-                      目印を付け、「タイプ」カテゴリ側の表示・点灯には出さない */}
-                  {cat.code === 'cost' && supportsMultiValue && (
+                  {/* コストのみ: 登場コスト（デジモン/テイマー）・使用コスト（オプション）。両方押す＝両方（指定なし）。
+                      ConditionPair.costKind（filter では cost_kind、条件の文字列では cond_play_cost_le 等） */}
+                  {cat.code === 'cost' && (
                     <div>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>カード種別</div>
-                      <ButtonGroup
-                        options={[{ code: 'summon', label: '登場' }, { code: 'use', label: '使用' }, { code: 'both', label: '両方' }]}
-                        value={getCostTypeScope()}
-                        onChange={(v) => setCostTypeScope(v as 'summon' | 'use' | 'both')}
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>コストの種類</div>
+                      <MultiButtonGroup
+                        options={[{ code: 'play', label: '登場' }, { code: 'use', label: '使用' }]}
+                        values={c.costKind ? [c.costKind] : ['play', 'use']}
+                        onToggle={(code, on) => {
+                          const set = new Set<string>(c.costKind ? [c.costKind] : ['play', 'use']);
+                          if (on) set.add(code); else set.delete(code);
+                          const next = set.size === 1 ? ([...set][0] as 'play' | 'use') : undefined;
+                          updateAt(i, { costKind: next });
+                        }}
                         accentColor={colors.accent}
                       />
                     </div>

@@ -52,6 +52,8 @@ function condsToFilter(conds?: ConditionPair[]): Record<string, any> {
       }
       // 知らない条件は無視（filter に出さない）
     }
+    // 登場コスト/使用コストの指定
+    if (c.costKind && /^cond_cost/.test(base)) f.cost_kind = c.costKind;
   }
   return f;
 }
@@ -403,6 +405,10 @@ function filterToConds(f: any): ConditionPair[] | null {
   if (f.name_not !== undefined) out.push({ base: 'cond_name_not', value: String(take('name_not')) });
   if (f.description_contains !== undefined) out.push({ base: 'cond_description_contains', value: String(take('description_contains')) });
   if (f.color_not !== undefined) out.push({ base: 'cond_color_not', value: String(take('color_not')) });
+  if (f.cost_kind === 'play' || f.cost_kind === 'use') {
+    const ck = take('cost_kind');
+    out.forEach((p) => { if (/^cond_cost/.test(p.base)) p.costKind = ck; });
+  }
   if (Object.keys(f).some((k) => !used.has(k))) return null;
   return out;
 }

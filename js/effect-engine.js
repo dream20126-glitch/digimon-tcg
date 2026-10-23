@@ -5455,6 +5455,8 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   if (Array.isArray(filter.or) && filter.or.length > 0) {
     if (!filter.or.some((sub) => cardMatchesFilter(card, sub, bs, side, sourceCard))) return false;
   }
+  // filter.cost_kind: 'play'＝登場コストを持つカード（デジモン/テイマー）/ 'use'＝使用コストを持つカード（オプション）
+  if ((filter.cost_kind === 'play' || filter.cost_kind === 'use') && !_costKindMatches(card, filter.cost_kind)) return false;
   // filter.and: サブフィルタの配列。全て満たす（取得元カードの条件と対象の条件を両方掛けるときに使う。_srcCardFilterOf）
   if (Array.isArray(filter.and) && filter.and.length > 0) {
     if (!filter.and.every((sub) => cardMatchesFilter(card, sub, bs, side, sourceCard))) return false;
@@ -8049,6 +8051,12 @@ function _passiveGateOk(p, card, bs, side) {
 
 // ===== 条件チェック =====
 
+// 登場コスト＝デジモン/テイマー（デュアルはデジモン側）、使用コスト＝オプション（デュアルはオプション側）
+function _costKindMatches(card, kind) {
+  const t = String((card && card.type) || '');
+  if (t === 'デュアル') return true;
+  return kind === 'play' ? (t === 'デジモン' || t === 'テイマー') : t === 'オプション';
+}
 function checkConditions(conditions, card, bs, side) {
   if (!conditions || conditions.length === 0) return true;
   // OR結合（conditions._op==='or'）: 各条件を独立に(1件ずつ)評価し、いずれか1つでも
@@ -8119,6 +8127,14 @@ function checkConditions(conditions, card, bs, side) {
       case 'cond_cost_le': if ((card.playCost || card.cost || 0) > (cond.value || 0)) return false; break;
       case 'cond_cost_ge': if ((card.playCost || card.cost || 0) < (cond.value || 0)) return false; break;
       case 'cond_cost':    if ((card.playCost || card.cost || 0) !== (cond.value || 0)) return false; break;
+      // 登場コスト（デジモン/テイマー）・使用コスト（オプション）に限ったコストの条件（エディタのコストの「登場」「使用」ボタン）
+      case 'cond_play_cost': case 'cond_play_cost_le': case 'cond_play_cost_ge':
+      case 'cond_use_cost': case 'cond_use_cost_le': case 'cond_use_cost_ge': {
+        if (!_costKindMatches(card, /^cond_play/.test(cond.code) ? 'play' : 'use')) return false;
+        const _cv = card.playCost || card.cost || 0, _cw = cond.value || 0;
+        if (/_le$/.test(cond.code) ? _cv > _cw : /_ge$/.test(cond.code) ? _cv < _cw : _cv !== _cw) return false;
+        break;
+      }
       case 'cond_own_security_le': if (bs && bs[side] && bs[side].security && bs[side].security.length > (cond.value || 0)) return false; break;
       case 'cond_own_security_ge': if (bs && bs[side] && bs[side].security && bs[side].security.length < (cond.value || 0)) return false; break;
       // === 「直前の効果」ゾーン: bs._lastActionCount（security_trash_top/bottom/select・
@@ -13518,6 +13534,7 @@ function getLimitMaxUses(step) {
 const TARGET_FILTER_COND_CODES = new Set([
   'cond_color', 'cond_type', 'cond_lv', 'cond_lv_le', 'cond_lv_ge',
   'cond_dp', 'cond_dp_le', 'cond_dp_ge', 'cond_cost', 'cond_cost_le', 'cond_cost_ge',
+  'cond_play_cost', 'cond_play_cost_le', 'cond_play_cost_ge', 'cond_use_cost', 'cond_use_cost_le', 'cond_use_cost_ge',
   'cond_feature', 'cond_feature_contains', 'cond_name', 'cond_name_contains',
   'cond_description', 'cond_description_contains',
   'cond_keyword', 'cond_self_active', 'cond_self_rest', 'cond_self_suspended',

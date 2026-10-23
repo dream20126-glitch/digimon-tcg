@@ -19,7 +19,9 @@ export const COST_LIMIT_MOD_ACTIONS = new Set(['cost_limit_plus', 'cost_limit_mi
 // subjectが空なら省略（互換性維持）
 function pairToString(p: ConditionPair): string {
   if (!p.base) return '';
-  let s = p.value ? p.base + ':' + p.value : p.base;
+  // 登場コスト/使用コストの指定は条件コード自体で表す（cond_cost_le → cond_play_cost_le / cond_use_cost_le）
+  const base = (p.costKind && /^cond_cost(_le|_ge)?$/.test(p.base)) ? p.base.replace(/^cond_cost/, p.costKind === 'play' ? 'cond_play_cost' : 'cond_use_cost') : p.base;
+  let s = p.value ? base + ':' + p.value : base;
   if (p.subject) s += '@' + p.subject;
   return s;
 }
@@ -709,6 +711,9 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
     delete f.feature;
     delete f.feature_includes;
   }
+  // 登場コスト/使用コストの指定（コストの条件のどれかに付いていれば filter.cost_kind）
+  const _ck = pairs.find((c) => c && c.costKind && /^cond_cost/.test(c.base));
+  if (_ck) f.cost_kind = _ck.costKind;
   return Object.keys(f).length > 0 ? f : null;
 }
 
@@ -811,6 +816,10 @@ function parseFilterObject(f: any): ConditionPair[] {
   // 「属性で絞り込む」パネルの表示を復元する
   if (f.dp_ref_filter && typeof f.dp_ref_filter === 'object') {
     parseFilterObject(f.dp_ref_filter).forEach((p) => out.push({ ...p, subject: DP_REF_FILTER_MARKER }));
+  }
+  // filter.cost_kind（登場コスト/使用コスト）はコストの条件の行に付ける
+  if (f.cost_kind === 'play' || f.cost_kind === 'use') {
+    out.forEach((p) => { if (/^cond_cost/.test(p.base) && p.subject !== DP_REF_FILTER_MARKER) p.costKind = f.cost_kind; });
   }
   return out;
 }
@@ -1715,6 +1724,9 @@ function stringToPair(s: string): ConditionPair {
     ? { base: main }
     : { base: main.substring(0, i), value: main.substring(i + 1) };
   if (subject) pair.subject = subject;
+  // cond_play_cost_le / cond_use_cost_le 等 → コストの条件＋登場/使用の指定
+  const ck = /^cond_(play|use)_cost(_le|_ge)?$/.exec(pair.base);
+  if (ck) { pair.base = 'cond_cost' + (ck[2] || ''); pair.costKind = ck[1] as 'play' | 'use'; }
   return pair;
 }
 

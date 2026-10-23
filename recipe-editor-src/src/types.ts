@@ -9,6 +9,9 @@ export interface ConditionPair {
   // エディタ内部用で、JSONでは filter.or の何番目の選択肢かとして出力する。
   // -1 = 全ての選択肢に共通（AND）。JSONでは filter のトップレベル（or の外）に出す
   orGroup?: number;
+  // コストの条件（cond_cost / _le / _ge / _highest / _lowest / _sum_le）だけ: 'play'＝登場コスト（デジモン/テイマー）、
+  // 'use'＝使用コスト（オプション）。未指定＝両方。filter では cost_kind、条件の文字列では cond_play_cost_le / cond_use_cost_le 等
+  costKind?: 'play' | 'use';
 }
 
 // 「対象」の絞り込み条件＋枚数を1組にしたもの。アセンブリのように「TBかつLv3を1枚、

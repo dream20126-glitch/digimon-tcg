@@ -13,7 +13,7 @@ import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOp
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
-import { KEYWORD_MODES, keywordModeAllowsTarget } from '../recipe';
+import { KEYWORD_MODES, keywordModeAllowsTarget, recipeToBlocks } from '../recipe';
 import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER, isZoneSourceEffect, zoneSourceHasTargetCardConds } from '../recipe';
 
 interface Props {
@@ -743,6 +743,70 @@ function InlineDictAdd({ kind, dict, onRegistered }: { kind: DictKind; dict: Dic
       {msg && (
         <div style={{ fontSize: 11, marginTop: 4, color: msg.startsWith('✅') ? '#2e7d32' : '#c62828' }}>{msg}</div>
       )}
+    </div>
+  );
+}
+
+// 登録済みキーワードの「実際の効果（レシピ）」を開いて編集・保存するパネル（辞書管理の「🔑 レシピ」ボタンから開く）。
+// 新規登録時の「このキーワードの実際の効果」欄と同じ BlockEditor（isKeywordMode）で組み立て、
+// スプシの「キーワードレシピ」列（recipeTemplate）と「対象」列（hasNamedParam）を更新する
+export function KeywordTemplateEditor({ dict, entry, onClose, onSaved }: {
+  dict: DictAPI; entry: DictEntry; onClose: () => void; onSaved?: (msg: string) => void;
+}) {
+  const [blocks, setBlocks] = useState<EffectBlock[]>(() => {
+    try { return entry.recipeTemplate ? recipeToBlocks(JSON.parse(entry.recipeTemplate)) : []; } catch (_) { return []; }
+  });
+  const [hasNamedParam, setHasNamedParam] = useState<boolean>(!!entry.hasNamedParam);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const parseError = (() => { try { if (entry.recipeTemplate) JSON.parse(entry.recipeTemplate); return ''; } catch (e) { return String(e); } })();
+  async function save() {
+    setSaving(true); setMsg('');
+    const recipe = blocks.length > 0 ? blocksToRecipe(blocks) : {};
+    const json = Object.keys(recipe).length > 0 ? JSON.stringify(recipe) : '';
+    const r = await dict.updateEntry('keywords', entry.code, { recipeTemplate: json, hasNamedParam } as Partial<DictEntry>);
+    setSaving(false);
+    const m = r.ok ? '✅ 「' + entry.label + '」のレシピを保存しました' : '❌ 保存に失敗: ' + r.msg;
+    setMsg(m);
+    if (r.ok && onSaved) onSaved(m);
+  }
+  return (
+    <div style={{ margin: '8px 0', padding: 8, background: 'white', border: '2px solid #e0c847', borderRadius: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <b style={{ color: '#8a6d00' }}>🔑 「{entry.label}」（{entry.code}）の実際の効果（キーワードレシピ）</b>
+        <button type="button" onClick={onClose} style={{ marginLeft: 'auto', padding: '2px 8px', border: '1px solid #999', background: 'white', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}>閉じる</button>
+      </div>
+      {parseError && <div style={{ fontSize: 11, color: '#c62828', marginBottom: 6 }}>⚠ 登録済みのレシピが JSON として読めません（{parseError}）。保存すると、ここで組んだ内容で上書きされます</div>}
+      <div style={{ fontSize: 10, color: '#666', marginBottom: 6 }}>
+        カードのレシピと同じ画面で、このキーワードの効果を組み立てます。カードごとに変わる数値は空欄、
+        カードごとに変わる対象は「指定」ボタン（cond_designated_name）を使ってください。
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#8a6d00', marginBottom: 6 }}>
+        <input type="checkbox" checked={hasNamedParam} onChange={(e) => setHasNamedParam(e.target.checked)} />
+        対象（カード側でこのキーワードを選ぶと「対象」の絞り込み条件欄が出る）
+      </label>
+      {blocks.map((b, i) => (
+        <BlockEditor
+          key={i}
+          block={b}
+          index={i}
+          dict={dict}
+          onChange={(nb) => { const next = blocks.slice(); next[i] = nb; setBlocks(next); }}
+          onRemove={() => setBlocks(blocks.filter((_, idx) => idx !== i))}
+          isKeywordMode
+        />
+      ))}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+        <button type="button" onClick={() => setBlocks([...blocks, { section: 'main', trigger: '', triggerSubject: 'self', conditions: [] }])}
+          style={{ padding: '4px 8px', border: '1px dashed #8a6d00', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#8a6d00' }}>
+          ＋ 効果ステップを追加
+        </button>
+        <button type="button" disabled={saving} onClick={save}
+          style={{ padding: '4px 12px', border: 'none', background: '#8a6d00', color: 'white', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 'bold' }}>
+          {saving ? '保存中…' : '💾 レシピを保存'}
+        </button>
+        {msg && <span style={{ fontSize: 11, color: msg.startsWith('✅') ? '#2e7d32' : '#c62828' }}>{msg}</span>}
+      </div>
     </div>
   );
 }
@@ -5978,6 +6042,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       )}
                     </div>
                   )}
+                  {/* 進化/ジョグレス進化: 進化先を「手札のこのカード」にする（ブラスト〇〇等。step.evolve_into:'self_card'）。
+                      対象（自分のデジモン）を、このカードに進化させる向きになる */}
+                  {(effectAction === 'evolve' || effectAction === 'jogress_evolve') && (() => {
+                    const into = isEditingAlt ? editingAlt!.evolveInto : block.evolveInto;
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: '#666' }}>進化先:</span>
+                        <ButtonGroup
+                          options={[{ code: '', label: '取得元から選ぶ' }, { code: 'self_card', label: 'このカード（手札のこのカード）' }]}
+                          value={into || ''}
+                          onChange={(v) => updateEffect({ evolveInto: v === 'self_card' ? 'self_card' : undefined })}
+                          accentColor="#1976d2"
+                        />
+                        {into === 'self_card' && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装</span>}
+                      </div>
+                    );
+                  })()}
                   {/* negate（「効果を発揮」）専用: どのトリガー効果を対象にするか + する/しない
                       （例:「登場時」＋「発揮しない」＝対象の登場時効果を発揮しない） */}
                   {(effectAction === 'negate' || effectAction === 'choose_effect') && (

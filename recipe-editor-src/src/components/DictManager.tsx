@@ -3,6 +3,7 @@ import type { DictAPI } from '../useDict';
 import type { DictEntry, VisualTypeEntry } from '../types';
 import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOptionImplemented } from '../implemented';
 import { SearchSelect } from './SearchSelect';
+import { KeywordTemplateEditor } from './BlockEditor';
 
 export type DictKind = 'triggers' | 'conditions' | 'actions' | 'keywords' | 'options';
 export type Tab = DictKind | 'visualTypes';
@@ -393,6 +394,9 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
   const [submitting, setSubmitting] = useState(false);
   const [filter, setFilter] = useState<'all' | 'implemented' | 'unimplemented'>('all');
   const [searchQ, setSearchQ] = useState('');
+  // キーワードのレシピ編集パネルを開いているキーワードのコード
+  const [tplCode, setTplCode] = useState<string>('');
+  const tplEntry = kind === 'keywords' && tplCode ? dict.keywords.find((k) => k.code === tplCode) : undefined;
 
   function checkImpl(e: DictEntry): boolean {
     if (kind === 'actions') return isActionImplemented(e.code, e.logicCode);
@@ -821,6 +825,9 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
             )}
           </div>
         </div>
+        {tplEntry && (
+          <KeywordTemplateEditor key={tplEntry.code} dict={dict} entry={tplEntry} onClose={() => setTplCode('')} onSaved={setMsg} />
+        )}
         <div style={{ maxHeight: 400, overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
@@ -899,6 +906,12 @@ function KindPanel({ dict, kind, setMsg }: { dict: DictAPI; kind: DictKind; setM
                   {hasImplBadge && <td style={td()}><ImplBadgeSmall kind={kind} code={e.code} logicCode={e.logicCode} hasRecipeTemplate={!!e.recipeTemplate} /></td>}
                   <td style={td()}>
                     <button onClick={() => handleEditLabel(e)} style={{ ...btn(), fontSize: 11, marginRight: 4 }}>✏ 編集</button>
+                    {kind === 'keywords' && (
+                      <button onClick={() => setTplCode(tplCode === e.code ? '' : e.code)} title="このキーワードの実際の効果（キーワードレシピ）を開いて編集"
+                        style={{ ...btn(), fontSize: 11, marginRight: 4, borderColor: '#e0c847', color: '#8a6d00', background: tplCode === e.code ? '#fff8d6' : 'white' }}>
+                        🔑 レシピ{e.recipeTemplate ? '' : '（未登録）'}
+                      </button>
+                    )}
                     <button onClick={() => handleRemove(e.code)} style={{ ...btn(), borderColor: '#d33', color: '#d33', fontSize: 11 }}>削除</button>
                   </td>
                 </tr>

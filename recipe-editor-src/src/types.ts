@@ -115,6 +115,8 @@ export interface EffectBlock {
   valueMode?: 'all' | 'exact' | 'up_to' | 'until';
   // トークンを登場させる体数（summon_token 用。JSONでは token_count。1体なら省略）
   tokenCount?: number;
+  // 進化/ジョグレス進化の「進化先」を手札のこのカードにする（ブラスト〇〇等。JSONでは evolve_into:'self_card'）
+  evolveInto?: 'self_card';
   // トリガーの複数選択（例: 登場時/進化時どちらでも同じ効果）。2件以上のときのみ意味を持つ。
   // blocksToRecipeで各コードごとに同じstepを複製して出力する。1件以下ならtriggerのみを見る
   triggers?: string[];
@@ -464,6 +466,8 @@ export interface AltAction {
   valueMode?: 'all' | 'exact' | 'up_to' | 'until';
   // トークンを登場させる体数（EffectBlock.tokenCount と同じ）。JSONでは token_count
   tokenCount?: number;
+  // 進化先＝このカード（EffectBlock.evolveInto と同じ）。JSONでは evolve_into
+  evolveInto?: 'self_card';
   // 「効果1と同じ」: 効果1のポップアップで一緒に表示済みとして、この効果では出さない（テキストも書かない）。JSONでは display_same: true
   displaySame?: boolean;
   value?: number | string;

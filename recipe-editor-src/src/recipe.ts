@@ -423,6 +423,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   // 効果2以降の効果発動ポップアップの表示テキスト（効果1とは別に、その効果に進むときに出す）
   if (a.valueMode) out.value_mode = a.valueMode;
   if (a.tokenCount && a.tokenCount > 1) out.token_count = a.tokenCount;
+  if (a.evolveInto === 'self_card') out.evolve_into = 'self_card';
   if (a.displaySame) out.display_same = true;
   else if (a.displayText && a.displayText.trim()) out.display_text = a.displayText.trim();
   // 上/下（デッキに戻す位置等・hasDeckPosition用）。'both'（どちらか選んで）はエンジン未対応の
@@ -1584,6 +1585,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.perCostCard) step.per_cost_card = true;
   if (b.valueMode) step.value_mode = b.valueMode;
   if (b.tokenCount && b.tokenCount > 1) step.token_count = b.tokenCount;
+  if (b.evolveInto === 'self_card') step.evolve_into = 'self_card';
   // subject='self' はデフォルトなのでJSONに含めない（既存レシピと互換）。
   // トリガーごとに発動主体が異なる場合（groupTriggersByTimingが1stepへ統合した場合）は
   // subject_by_code（{トリガーコード: subject}）を出力する。エンジン側は各トリガーの
@@ -2093,6 +2095,7 @@ function stepObjectToAltAction(step: any): AltAction {
     displaySame: step?.display_same ? true : undefined,
     valueMode: parseValueMode(step),
     tokenCount: Number(step?.token_count) > 1 ? Number(step.token_count) : undefined,
+    evolveInto: step?.evolve_into === 'self_card' ? 'self_card' as const : undefined,
     keyword: String(step?.keyword || '').includes(',') ? '' : (step?.keyword || ''),
     keywordEntries: String(step?.keyword || '').includes(',')
       ? String(step.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))
@@ -2387,6 +2390,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     value_up_to: true,
     value_mode: true,
     token_count: true,
+    evolve_into: true,
     in_zone: true,
     subject: true,
     subject_by_code: true,
@@ -2511,6 +2515,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     perCostCard: step?.per_cost_card === true ? true : undefined,
     valueMode: parseValueMode(step),
     tokenCount: Number(step?.token_count) > 1 ? Number(step.token_count) : undefined,
+    evolveInto: step?.evolve_into === 'self_card' ? 'self_card' as const : undefined,
     triggerConditions,
     triggerConditionsOp: step?.trigger_conditions_op === 'or' ? 'or' : 'and',
     triggerConditionsChain: parseConditionChainStrings(step?.trigger_conditions_chain),
@@ -2672,6 +2677,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             displaySame: a?.display_same ? true : undefined,
             valueMode: parseValueMode(a),
             tokenCount: Number(a?.token_count) > 1 ? Number(a.token_count) : undefined,
+            evolveInto: a?.evolve_into === 'self_card' ? 'self_card' as const : undefined,
             keyword: String(a?.keyword || '').includes(',') ? '' : (a?.keyword || ''),
             keywordEntries: String(a?.keyword || '').includes(',')
               ? String(a.keyword).split(',').map((k: string) => k.trim()).filter(Boolean).map((k: string) => ({ keyword: k }))

@@ -22,10 +22,10 @@ function condsToFilter(conds?: ConditionPair[]): Record<string, any> {
     switch (base) {
       case 'cond_color':            if (v) f.color = String(v); break;
       case 'cond_type':             if (v) f.type = String(v); break;
-      // 完全一致は le + ge の両方を同時にセットして AND 評価
-      case 'cond_lv':               { const n = num(v); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
-      case 'cond_lv_le':            { const n = num(v); if (n !== undefined) f.lv_le = n; break; }
-      case 'cond_lv_ge':            { const n = num(v); if (n !== undefined) f.lv_ge = n; break; }
+      // 完全一致は le + ge の両方を同時にセットして AND 評価。Lvの値は数値か参照マーカー（recipe.ts LV_REF_MARKERS）
+      case 'cond_lv':               { const n = (v === 'trigger_source_lv' || v === 'self_lv') ? v : num(v); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
+      case 'cond_lv_le':            { const n = (v === 'trigger_source_lv' || v === 'self_lv') ? v : num(v); if (n !== undefined) f.lv_le = n; break; }
+      case 'cond_lv_ge':            { const n = (v === 'trigger_source_lv' || v === 'self_lv') ? v : num(v); if (n !== undefined) f.lv_ge = n; break; }
       case 'cond_dp':               { const n = num(v); if (n !== undefined) { f.dp_le = n; f.dp_ge = n; } break; }
       case 'cond_dp_le':            { const n = num(v); if (n !== undefined) f.dp_le = n; break; }
       case 'cond_dp_ge':            { const n = num(v); if (n !== undefined) f.dp_ge = n; break; }

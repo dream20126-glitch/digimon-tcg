@@ -13,7 +13,7 @@ import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOp
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
-import { KEYWORD_MODES, keywordModeAllowsTarget, recipeToBlocks, COST_REF_MARKERS } from '../recipe';
+import { KEYWORD_MODES, keywordModeAllowsTarget, recipeToBlocks, COST_REF_MARKERS, LV_REF_MARKERS } from '../recipe';
 import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER, isZoneSourceEffect, zoneSourceHasTargetCardConds } from '../recipe';
 
 interface Props {
@@ -10349,6 +10349,20 @@ function ConditionsHybridEditor({
                         accentColor={colors.accent}
                       />
                       {COST_REF_MARKERS[c.value || ''] && <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>（右の「値」欄は使いません）</div>}
+                    </div>
+                  )}
+                  {/* Lv以上/以下/完全一致: 比べる値を数値の代わりに「そのデジモンのLv」「このカードのLv」にできる
+                      （「アタックしたそのデジモンと同じLvの〜」）。値は LV_REF_MARKERS のマーカー文字列 */}
+                  {cat.code === 'lv' && ['cond_lv', 'cond_lv_le', 'cond_lv_ge'].includes(c.base) && (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>比べる値</div>
+                      <ButtonGroup
+                        options={[{ code: '', label: '数値' }, ...Object.entries(LV_REF_MARKERS).map(([code, label]) => ({ code, label }))]}
+                        value={LV_REF_MARKERS[c.value || ''] ? (c.value as string) : ''}
+                        onChange={(v) => updateAt(i, { value: v || '' })}
+                        accentColor={colors.accent}
+                      />
+                      {LV_REF_MARKERS[c.value || ''] && <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>（右の「値」欄は使いません）<span style={{ color: '#c62828', marginLeft: 4 }}>⚠ エンジン未実装</span></div>}
                     </div>
                   )}
                   {cat.code === 'cost' && (

@@ -608,6 +608,14 @@ function parseConditionChainFilter(f: any): { pairs: ConditionPair[]; chain?: Co
 }
 // コストの条件の値に使える参照（数値の代わり）。'self_evo_count'＝このカード（効果を持つカード）の進化元の枚数
 export const COST_REF_MARKERS: Record<string, string> = { self_evo_count: 'このカードの進化元の枚数' };
+// Lvの条件の値に使える参照（数値の代わり）。
+// 'trigger_source_lv'＝そのデジモン（トリガーの発生元。「アタックしたそのデジモン」等）のLv / 'self_lv'＝このカード（効果を持つカード）のLv
+export const LV_REF_MARKERS: Record<string, string> = { trigger_source_lv: 'そのデジモンのLv', self_lv: 'このカードのLv' };
+function lvVal(v: any): number | string | undefined {
+  if (typeof v === 'string' && LV_REF_MARKERS[v]) return v;
+  const n = parseInt(String(v ?? ''), 10);
+  return isNaN(n) ? undefined : n;
+}
 function costVal(v: any): number | string | undefined {
   if (typeof v === 'string' && COST_REF_MARKERS[v]) return v;
   const n = parseInt(String(v ?? ''), 10);
@@ -646,10 +654,10 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
         if (types.length > 1) f.type_in = types; else f.type = types[0];
         break;
       }
-      case 'cond_lv':       { const n = num(c.value); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
+      case 'cond_lv':       { const n = lvVal(c.value); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
       case 'cond_cost_in':  { const arr = String(c.value || '').split(',').map((x) => Number(x.trim())).filter((x) => !isNaN(x)); if (arr.length > 0) f.cost_in = arr; break; }
-      case 'cond_lv_le':    { const n = num(c.value); if (n !== undefined) f.lv_le = n; break; }
-      case 'cond_lv_ge':    { const n = num(c.value); if (n !== undefined) f.lv_ge = n; break; }
+      case 'cond_lv_le':    { const n = lvVal(c.value); if (n !== undefined) f.lv_le = n; break; }
+      case 'cond_lv_ge':    { const n = lvVal(c.value); if (n !== undefined) f.lv_ge = n; break; }
       // cond_dp_highest/lowestと同じく候補プール全体との比較が必要（cardMatchesFilterでは
       // 判定できず、対象選択処理側で別途絞り込む実装が必要）
       case 'cond_lv_highest': f.lv_extreme = 'highest'; break;

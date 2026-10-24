@@ -15188,7 +15188,9 @@ function executeRecipeStep(step, ctx, store, callback) {
   const effectiveSide = (ctx._forceTargetIdx !== undefined) ? 'ai' : ctx.side;
 
   // 【カウンター】は1回のアタックに1つだけ（公式ルール 16-14）
-  if (step && ctx.bs && !step._counterChecked && (step.counter === true || (step.also_counter === true && ctx.bs._inCounterPass))) {
+  // 【カウンター】の「1回のアタックに1つ」は、相手のアタックへの【カウンター】として発揮するとき（_inCounterPass）だけ掛ける。
+  // 「【登場時】【進化時】【カウンター】」を1つのステップで書いた場合（タクトウモン EX12-057）、登場時・進化時の発揮には掛けない
+  if (step && ctx.bs && !step._counterChecked && (step.counter === true || step.also_counter === true) && ctx.bs._inCounterPass) {
     if (ctx.bs._attackSeq && ctx.bs._counterUsedSeq === ctx.bs._attackSeq) {
       ctx.addLog && ctx.addLog('💨 このアタックではもう【カウンター】を使っています');
       callback && callback();

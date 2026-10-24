@@ -1107,9 +1107,11 @@ function buildDesignatedGroupsFields(groups: DesignatedGroup[]): Array<{
   return groups.map((g) => {
     const conds = g.conditions || [];
     const realConds = conds.filter((c) => !DISTINCT_MARKER_TO_ATTR[c.base]);
-    const distinctAttrs = conds
-      .filter((c) => DISTINCT_MARKER_TO_ATTR[c.base])
-      .map((c) => DISTINCT_MARKER_TO_ATTR[c.base]);
+    // 「異なる」は、条件欄のどこ（共通の欄・OR の選択肢の欄）に入れても拾う（以前は OR の欄＝conditionChain に入れると保存で消えていた）
+    const chainConds = Array.isArray(g.conditionChain) ? g.conditionChain.flatMap((e) => e.conditions || []) : [];
+    const distinctAttrs = Array.from(new Set([...conds, ...chainConds]
+      .filter((c) => c && DISTINCT_MARKER_TO_ATTR[c.base])
+      .map((c) => DISTINCT_MARKER_TO_ATTR[c.base])));
     // 実際に2セグメント以上のOR連結を組んだ場合だけチェーン経路を使う。チェーン未使用の
     // 既存データ（conditionsOpによる単純AND/OR）は従来通りの出力のまま維持する
     // 条件欄（conditionChain）に入れた条件は、ORが無い（1つだけ）でも共通条件と合わせて出力する。
@@ -1230,6 +1232,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       // 条件一式を designated（1組）/designated_groups（2組以上）として保存するだけで、
       // 置き換え自体は行わない
       if (keywordModeAllowsTarget(entry.keyword, entry.mode)) applyDesignatedGroupsTo(p, entry, kwEntry);
+      // 対象を持たないキーワードの「枚数」（count）も保存する（以前は対象ありのキーワードしか count を出さず、消えていた）
+      if (!kwEntry?.hasNamedParam && entry.count !== undefined && entry.count !== '' && entry.count !== null) {
+        const cn = Number(entry.count);
+        p.count = isNaN(cn) ? entry.count : cn;
+      }
       if (b.zone) p.in_zone = b.zone;
       if (b.extras) {
         try {

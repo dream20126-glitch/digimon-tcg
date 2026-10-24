@@ -842,7 +842,12 @@ function analyzeKeywordTemplate(tplStr: string | undefined): { usesValue: boolea
       if (!s || typeof s !== 'object') return;
       if (s.value === undefined && !VALUE_IRRELEVANT_ACTIONS.has(s.action)) usesValue = true;
       if (Array.isArray(s.cost)) {
-        s.cost.forEach((c: any) => { if (c && typeof c === 'object' && c.count === undefined) usesCount = true; });
+        s.cost.forEach((c: any) => {
+          if (!c || typeof c !== 'object') return;
+          // 進化元を破棄するコスト（【フラグメント（N）】等）は、カード側の「数値」がそのコストの枚数（value）に入る（エンジンの _fillKeywordTemplateSteps）
+          if (/^evo_discard/.test(String(c.action || ''))) { if (c.value === undefined) usesValue = true; return; }
+          if (c.count === undefined) usesCount = true;
+        });
       }
       if (Array.isArray(s.alt_actions)) walkSteps(s.alt_actions);
     });

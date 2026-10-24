@@ -530,6 +530,13 @@ function onRemoteCommand(cmd) {
           bs.player.battleArea[cmd.slotIdx] = null;
           if (cmd.reason === 'bounce') {
             bs.player.hand.push(card);
+          } else if (cmd.reason === 'to_security') {
+            // 相手の効果でセキュリティに置かれた（スサノオモン EX12-076「相手のデジモン1体をセキュリティの上に置く」）:
+            // 持ち主のセキュリティの上/下へ。重ねられているカードは下でトラッシュへ（return_deck と同じ）
+            card.suspended = false; card.buffs = [];
+            if (cmd.faceUp) { card._faceUp = true; delete card._faceDown; } else delete card._faceUp;
+            if (cmd.top) bs.player.security.unshift(card); else bs.player.security.push(card);
+            addLog('🛡 「' + card.name + '」がセキュリティの' + (cmd.top ? '上' : '下') + 'に置かれた');
           } else if (cmd.reason === 'return_deck') {
             // デッキに戻す（モジャモン BT26-023 / テラーズクラスター等）: 持ち主のデッキの上/下へ。
             // 以前はトラッシュに置かれていた（持ち主側の state_sync で相手の画面もトラッシュに戻っていた）
@@ -541,11 +548,16 @@ function onRemoteCommand(cmd) {
           }
           if (card.stack) card.stack.forEach(s => bs.player.trash.push(s));
           if (card.linkedCards) card.linkedCards.forEach(s => bs.player.trash.push(s));
-          if (cmd.reason === 'return_deck') { card.stack = []; card.linkedCards = []; card.suspended = false; card.buffs = []; }
+          if (cmd.reason === 'return_deck' || cmd.reason === 'to_security') { card.stack = []; card.linkedCards = []; card.suspended = false; card.buffs = []; }
           markDestroyed('player', cmd.slotIdx);
           renderAll();
           // デッキ・トラッシュの枚数を相手の画面にも反映
           if (cmd.reason === 'return_deck') { try { sendStateSync(); } catch (_) {} }
+          // セキュリティが変わったので相手の画面のセキュリティも同期する
+          if (cmd.reason === 'to_security') {
+            try { sendCommand({ type: 'security_init', cards: bs.player.security.map((c) => (window._serializeSecurityCard ? window._serializeSecurityCard(c) : { name: c.name, cardNo: c.cardNo, type: c.type })) }); } catch (_) {}
+            try { sendStateSync(); } catch (_) {}
+          }
         }
         // 消滅 (destroy) の場合は on_destroy / on_battle_destroy / when_own_destroyed を
         // 自分側 (player) で発火する。受信側のローカルでカードが見つからないケース (同期ずれ等)

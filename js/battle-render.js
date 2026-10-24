@@ -8,7 +8,7 @@
 import { bs, MEM_MIN, MEM_MAX } from './battle-state.js';
 import { updateScrollArrows, addLog, showConfirm } from './battle-ui.js';
 import { getCardImageUrl, getGoogleDriveDirectLink } from './cards.js';
-import { isTargetSelecting, hasRecipeTrigger, hasOwnMainEffect, evoSourceEffectLabel, hasTrainingKeyword, showHandSelection, canUseZoneMainEffect } from './effect-engine.js';
+import { isTargetSelecting, hasRecipeTrigger, hasOwnMainEffect, evoSourceEffectLabel, hasTrainingKeyword, showHandSelection, canUseZoneMainEffect, placedOptionMainUsable } from './effect-engine.js';
 
 // ===== カード画像ヘルパー =====
 export const cardBackUrl = getGoogleDriveDirectLink('https://drive.google.com/file/d/1NKWqHuWnKpBbfMY9OPPpuYDtJcsVy9i9/view');
@@ -1028,7 +1028,8 @@ function renderTamerRows() {
 
       // プレイヤーテイマー → 長押し/スワイプで効果発動メニュー
       // （効果でバトルエリアに置かれたオプション（place_in_battle_area）は【メイン】を再使用できないので出さない）
-      if (isPlayer && card.type !== 'オプション' && card.effect && card.effect.trim() && card.effect !== 'なし') {
+      // バトルエリアに置かれたオプションでも、【メイン】【ディレイ】（巨大肉 EX12-073 等）は置かれた次のターンから使える
+      if (isPlayer && ((card.type !== 'オプション' && card.effect && card.effect.trim() && card.effect !== 'なし') || placedOptionMainUsable(card, bs))) {
         let touchSX = 0, swiped = false;
         sl.addEventListener('touchstart', e => { touchSX = e.touches[0].clientX; swiped = false; }, { passive: true });
         sl.addEventListener('touchmove', e => {

@@ -33,3 +33,14 @@ NODE_PATH=$(pwd)/node_modules node /tmp/fuzz.js /tmp/fuzz.txt
 ```
 
 `LOST` が0件であること。
+
+## 3. 前提をそろえた往復（roundtrip-context.ts）
+アクション専用の項目など、roundtrip-fields.ts では前提不足（NOSAVE）になる設定を、前提をそろえて「保存→開き直し」し、
+開き直した画面の項目が入力どおりに戻るかを確かめる。新しい設定を足したらケースを追加する。
+
+```sh
+npx esbuild scripts/roundtrip-context.ts --bundle --platform=node --outfile=/tmp/ctx.js
+node /tmp/ctx.js /tmp/dict.json
+```
+
+`NG 0` であること。

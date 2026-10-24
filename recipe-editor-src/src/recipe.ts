@@ -1850,6 +1850,27 @@ function migrateZoneSourceFilter<T extends { action?: string; target?: string; f
   }
   return { ...o, fromFilter: common, fromFilterChain: chain, targetFilter: keep, targetFilterChain: undefined };
 }
+// 区分を複数選んだ効果（「メイン」＋「進化元」等）は、保存時に区分ごとに同じ内容を書き出すため、読み込むと区分の数だけ
+// ブロックに分かれてしまう。区分以外がまったく同じブロックは1つに戻し、sections（複数選択）にする
+// （オーバーフローのキーワードレシピ等で、開き直すと「メイン」「進化元」が別々になっていた）
+function mergeSameContentSections(blocks: EffectBlock[]): EffectBlock[] {
+  const keyOf = (b: EffectBlock) => { const { section, sections, ...rest } = b; void section; void sections; return JSON.stringify(rest); };
+  const out: EffectBlock[] = [];
+  blocks.forEach((b) => {
+    if ((b.section === 'evo_source' || b.section === 'link') && !(b.sections && b.sections.length > 1)) {
+      const k = keyOf(b);
+      const host = out.find((o) => o.section === 'main' && keyOf(o) === k && !(o.sections || []).includes(b.section));
+      if (host) {
+        const list = (host.sections && host.sections.length > 0 ? host.sections : [host.section]).slice();
+        list.push(b.section);
+        host.sections = list;
+        return;
+      }
+    }
+    out.push(b);
+  });
+  return out;
+}
 export function recipeToBlocks(rawRecipe: any): EffectBlock[] {
   if (!rawRecipe || typeof rawRecipe !== 'object') return [];
   const recipe = normalizeKeywordAliasesDeep(rawRecipe);
@@ -1957,10 +1978,11 @@ export function recipeToBlocks(rawRecipe: any): EffectBlock[] {
       }
     });
   }
-  return blocks.map((b) => {
+  const migrated = blocks.map((b) => {
     const nb = migrateZoneSourceFilter(b);
     return Array.isArray(nb.altActions) ? { ...nb, altActions: nb.altActions.map((a) => migrateZoneSourceFilter(a)) } : nb;
   });
+  return mergeSameContentSections(migrated);
 }
 
 // blocksToRecipe側のgroupTriggersByTimingで「発動ターンが異なる」ために分割出力された
@@ -2028,7 +2050,16 @@ function stepToBlockWithTiming(
   timingByCode?: Record<string, 'self' | 'opp' | 'any'>
 ): EffectBlock {
   const block = stepToBlock(section, trigger, step);
-  if (timingByCode) block.triggerTimingByCode = timingByCode;
+  if (timingByCode) {
+    // トリガーごとの発動ターンがあるときは、ブロック共通の発動ターン（cond_during_own_turn/opp_turn）は持たない。
+    // 「どちらでも」(any) は、エディタで指定しなかったトリガー（共通に従う＝発動ターンなし）と同じ意味なので、
+    // 開き直したときに入力どおり「指定なし」で表示されるよう外す（保存される内容は同じ）
+    const isTiming = (b: string) => b === 'cond_during_own_turn' || b === 'cond_during_opp_turn';
+    if (Array.isArray(block.triggerConditions)) block.triggerConditions = block.triggerConditions.filter((c) => !isTiming(c.base));
+    const t: Record<string, 'self' | 'opp' | 'any'> = {};
+    Object.keys(timingByCode).forEach((k) => { if (timingByCode[k] !== 'any') t[k] = timingByCode[k]; });
+    block.triggerTimingByCode = Object.keys(t).length > 0 ? t : timingByCode;
+  }
   return block;
 }
 
@@ -2457,7 +2488,8 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
   };
   const extras: any = {};
   Object.keys(step || {}).forEach((k) => {
-    if (!KNOWN[k]) extras[k] = step[k];
+    // filter が文字列の旧形式（"filter":"デジモン"。select_evo_source 等）は条件欄で表せないので、そのまま素通しで残す（以前は保存で消えていた。ST2-15）
+    if (!KNOWN[k] || (k === 'filter' && typeof step[k] === 'string')) extras[k] = step[k];
   });
   // grant_keyword(_to) の count（アセンブリ等の枚数）だけ専用フィールドへ復元する。
   // count は他の複数アクション（N枚引く/選ぶ等）でも使われる汎用フィールドのため、

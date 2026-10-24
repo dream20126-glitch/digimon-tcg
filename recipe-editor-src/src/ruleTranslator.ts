@@ -219,7 +219,12 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
       applyOneSelection(step, effectiveRule, combinedFilter, count);
       return;
     }
-    // 'and'（既定・従来通り）: 各グループが別々にその枚数分の選択肢を積む（加算）
+    // 'and'（既定・従来通り）: 各グループが別々にその枚数分の選択肢を積む（加算）。
+    // 1つのルールから出た選択肢には同じ group 番号を付け、読込時に1つのルール（条件ごとに枚数を分ける）へ戻す
+    // （以前は印が無く、開き直すとグループの数だけ別々のルールに分かれていた。アンゴラモン EX12-049）
+    const _gid = rule.designatedGroups.length > 1
+      ? 1 + Math.max(0, ...((Array.isArray(step.selections) ? step.selections : []).map((x: any) => (typeof x?.group === 'number' ? x.group : 0))))
+      : 0;
     rule.designatedGroups.forEach((g) => {
       const gFilter = buildGroupFilter(g);
       const gCount = asNumberOrPass(g.count) ?? 1;
@@ -233,6 +238,7 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
             options: g.options ?? rule.options,
           };
       applyOneSelection(step, effectiveRule, gFilter, gCount);
+      if (_gid > 0 && Array.isArray(step.selections) && step.selections.length > 0) step.selections[step.selections.length - 1].group = _gid;
     });
     return;
   }
@@ -482,6 +488,40 @@ export function rulesFromStep(mainAction: string | undefined, step: any): { rule
   const rules: MiniStep[] = [];
   const sels: any[] = hasSel ? step.selections : [];
   for (let i = 0; i < sels.length; i++) {
+    // 同じ group 番号が続く選択肢は、1つのルールの「条件ごとに枚数を分ける」（designatedGroups）に戻す
+    const gid = typeof sels[i]?.group === 'number' ? sels[i].group : undefined;
+    if (gid !== undefined) {
+      const parts: MiniStep[] = [];
+      let j = i;
+      while (j < sels.length && sels[j]?.group === gid) {
+        const { group, ...plain } = sels[j]; void group;
+        const r = selectionToRule(plain, Array.isArray(legacyKindsList[j]) ? legacyKindsList[j] : null);
+        if (!r) return null;
+        parts.push(r);
+        j++;
+      }
+      const first = parts[0];
+      const sameAction = parts.every((x) => x.action === first.action && x.deckPosition === first.deckPosition && JSON.stringify(x.options || []) === JSON.stringify(first.options || []));
+      const merged: MiniStep = {
+        action: first.action,
+        ...(first.deckPosition ? { deckPosition: first.deckPosition } : {}),
+        ...(first.options ? { options: first.options } : {}),
+        ...(first.optional ? { optional: true } : {}),
+        ...(first.actionKinds ? { actionKinds: first.actionKinds } : {}),
+        ...(first.costFree ? { costFree: true } : {}),
+        ...(first.costDelta !== undefined ? { costDelta: first.costDelta } : {}),
+        designatedGroups: parts.map((x) => ({
+          conditions: x.conditions || [],
+          conditionsOp: 'and' as const,
+          count: x.value,
+          ...(sameAction ? {} : { action: x.action, deckPosition: x.deckPosition, options: x.options }),
+        })),
+        ...(sameAction ? { groupsShareAction: true } : {}),
+      };
+      rules.push(merged);
+      i = j - 1;
+      continue;
+    }
     const r = selectionToRule(sels[i], Array.isArray(legacyKindsList[i]) ? legacyKindsList[i] : null);
     if (!r) return null;
     rules.push(r);

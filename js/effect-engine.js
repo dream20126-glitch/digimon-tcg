@@ -2058,7 +2058,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           } else {
             ctx.renderAll(); callback();
           }
-        }, _dpmRepeatLabel);
+        }, (action._perCountNote ? '（' + action._perCountNote + '）' : '') + _dpmRepeatLabel);
       };
       pickDpNext();
       break;
@@ -5029,7 +5029,8 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
   // 候補が手札とトラッシュの両方にある1枚選び（「自分の手札/トラッシュから〜1枚」）は、先に「手札から／トラッシュから」を
   // 選んでから、そのゾーンの一覧で選ぶ（進化・登場と同じ選び方。カノーヴァイスモン EX12-014 の進化元の下に置く等で
   // 一覧に混ざっていた）。一覧の「↩ 戻る」で選び直せる
-  if (!(opts && (opts._zoneSplitDone || opts.noZoneSplit)) && Array.isArray(candidates) && candidates.length > 1 && wantCount === 1
+  // （「↩ 戻る」付き＝呼び出し側で既にゾーンを選ばせている一覧は対象外）
+  if (!(opts && (opts._zoneSplitDone || opts.noZoneSplit || opts.onBack)) && Array.isArray(candidates) && candidates.length > 1 && wantCount >= 1
       && typeof window !== 'undefined' && window._lastBattleState) {
     const _b = window._lastBattleState;
     const _zoneOf = (c) => {
@@ -5039,12 +5040,22 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     const _inH = candidates.filter(c => _zoneOf(c) === 'hand');
     const _inT = candidates.filter(c => _zoneOf(c) === 'trash');
     if (_inH.length > 0 && _inT.length > 0 && _inH.length + _inT.length === candidates.length) {
+      // 2枚以上選ぶ（「2枚まで」等）ときは「手札とトラッシュの両方から」も選べる（両方から合わせて選ぶ。シリウスモン EX12-018）
+      const _multi = wantCount > 1;
       const _labels = ['✋ 手札から（' + _inH.length + '枚）', '🗑 トラッシュから（' + _inT.length + '枚）'];
+      if (_multi) _labels.push('✋🗑 手札とトラッシュの両方から（' + candidates.length + '枚）');
       if (optional) _labels.push('使わない');
       const _choose = () => showAltActionChoice(_labels, (zi) => {
+        if (zi === 2 && _multi) {
+          const _lab = (c) => (_zoneOf(c) === 'hand' ? '手札' : 'トラッシュ');
+          const _o = Object.assign({}, opts || {}, { _zoneSplitDone: true, onBack: _choose });
+          if (!_o.labelOf) _o.labelOf = _lab;
+          showTrashCardPicker(candidates, wantCount, optional, title, callback, candidates, _o);
+          return;
+        }
         if (zi >= 2) { callback([]); return; }
         const sub = zi === 0 ? _inH : _inT;
-        showTrashCardPicker(sub, wantCount, optional, title, callback, sub, Object.assign({}, opts || {}, { _zoneSplitDone: true, onBack: _choose }));
+        showTrashCardPicker(sub, Math.min(wantCount, sub.length), optional, title, callback, sub, Object.assign({}, opts || {}, { _zoneSplitDone: true, onBack: _choose }));
       }, (title || '').replace(/選んでください.*$/, '') + 'どこから選びますか？');
       _choose();
       return;
@@ -16235,10 +16246,14 @@ function executeRecipeStep(step, ctx, store, callback) {
             // 一覧の「戻る」でこの選択に戻れる（アイギオテュースモン：ダーク BT26-073 の【消滅時】等）。
             // 対象が無いゾーンも選べる（一覧で確認して戻れる）
             const _zoneLabels = ['手札から（対象' + _handCands.length + '枚）', 'トラッシュから（対象' + _trashCands.length + '枚）'];
+            // 2枚以上登場させるときは、手札とトラッシュの両方から合わせて選ぶこともできる
+            const _bothZ = _summonCount > 1 && _handCands.length > 0 && _trashCands.length > 0;
+            if (_bothZ) _zoneLabels.push('手札とトラッシュの両方から（対象' + (_handCands.length + _trashCands.length) + '枚）');
             if (_optional) _zoneLabels.push('使わない');
             const _chooseZone = () => {
               showAltActionChoice(_zoneLabels, (zi) => {
-                if (_optional && zi === 2) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
+                if (_bothZ && zi === 2) { const _both = [..._handCands, ..._trashCands]; _pickFromZone(_both, true, _both, '手札/トラッシュ', _chooseZone); return; }
+                if (_optional && zi === (_bothZ ? 3 : 2)) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
                 if (zi === 0) _pickFromZone(_handCands, true, player.hand, '手札', _chooseZone);
                 else _pickFromZone(_trashCands, true, player.trash, 'トラッシュ', _chooseZone);
               }, '🌟 どこから登場させますか？');
@@ -19894,9 +19909,19 @@ function executeRecipeStep(step, ctx, store, callback) {
       // checkPendingTurnEnd）に runPendingEffectAttack が取り出して確認・宣言する
       if (typeof window._isAttackInProgress === 'function' && window._isAttackInProgress()) {
         if (!Array.isArray(ctx.bs._pendingEffectAttacks)) ctx.bs._pendingEffectAttacks = [];
-        ctx.bs._pendingEffectAttacks.push({ card: _atkCard, step, turn: ctx.bs.turn, ctx: { bs: ctx.bs, side: ctx.side, card: ctx.card, addLog: ctx.addLog, renderAll: ctx.renderAll } });
-        ctx.addLog('⏳ 「' + _atkCard.name + '」のアタックは、今のアタックが終わった後に行えます');
-        callback();
+        // アタックするか（アタックするデジモン）とアタック対象の選択＝アタック宣言は、この効果の処理の中で行い、
+        // 実際のアタック（バトル）だけを今のアタックが終わった後に行う（宣言済みなので確認は出さない）。
+        // ワーガルルモンのアタック中に天ノ河宙→シリウスモン＆プラネイトナックル EX12-018 のオプション側「その後、
+        // 自分のデジモンでアタックできる」で、対象を選ぶ前に元のアタックが進み、後から発動確認が出ていた
+        const _pend = { card: _atkCard, step, turn: ctx.bs.turn, ctx: { bs: ctx.bs, side: ctx.side, card: ctx.card, addLog: ctx.addLog, renderAll: ctx.renderAll } };
+        _confirmAndDeclareEffectAttack(_atkCard, step, ctx, (ok, pre) => {
+          if (!ok || !pre) { _clearWr(); callback(); return; }
+          _pend.preTarget = pre;
+          _applyDeclaredAttackImmunity(_atkCard, ctx);
+          ctx.bs._pendingEffectAttacks.push(_pend);
+          ctx.addLog('⏳ 「' + _atkCard.name + '」のアタックは、今のアタックが終わった後に行います');
+          callback();
+        }, { preselect: true });
         break;
       }
       // キューの効果を解決中（同時誘発した他の効果や保留中の「〜したとき」反応がまだ残っている）なら、
@@ -20802,14 +20827,21 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (step.action === 'dp_plus' || step.action === 'dp_minus') {
           _dpPerCount = { unit: effectiveValue, per: step.per_count, ref: refSource, refFilter: step.ref_filter || null, refState: step.ref_state || null, refCard: ctx.card, side: ctx.side };
         }
+        const _pcUnit = effectiveValue;
         effectiveValue = effectiveValue * Math.floor(count / step.per_count);
+        // 「〜1枚ごとに」の数えた枚数を見せる（シリウスモン EX12-018「このデジモンの進化元1枚ごとにDP-2000」で
+        // 何枚と数えたか分からなかった）
+        const _pcRefLabel = ({ evo_source: 'このデジモンの進化元', evo_source_colors: 'このデジモンの進化元の色', last_action_count: 'この効果で処理した枚数',
+          hand: '自分の手札', trash: '自分のトラッシュ', security: '自分のセキュリティ', opp_hand: '相手の手札', opp_trash: '相手のトラッシュ', opp_security: '相手のセキュリティ' })[refSource] || '数えた数';
+        step = Object.assign({}, step, { _perCountNote: _pcRefLabel + ' ' + count + (/colors$/.test(refSource) ? '色' : '') + ' → ' + _pcUnit + '×' + Math.floor(count / step.per_count) + ' = ' + effectiveValue });
+        ctx.addLog && ctx.addLog('📊 ' + step._perCountNote);
       }
       // レシピのアクション名を既存エンジンのアクション名にマッピング
       let actionCode = step.action;
       if (actionCode === 'active_self') { actionCode = 'active'; }
       if (actionCode === 'trash_evo_bottom') { actionCode = 'evo_discard_bottom'; }
       // レシピのtarget形式 → runOneAction形式に変換
-      const action = { code: actionCode, value: effectiveValue };
+      const action = { code: actionCode, value: effectiveValue, _perCountNote: step._perCountNote };
       // コストとして実行されている（step.cost の要素）ことを runOneAction 側に伝える
       // （evo_discard 系で、支払えないときに callback(false) を返すため）
       if (_COST_STEP_SET.has(step)) action._isCost = true;

@@ -2859,7 +2859,29 @@ function afterAtkEffect(atk, atkSlotIdx, callback) {
     // オプション側の効果の後のアーツ進化〜【進化時】等）を全て処理してから、【アタック時】・「アタックしたとき」
     // （派生誘発）を発揮してアタックを続ける（シリウスモン＆プラネイトナックル EX12-018 のオプション側で、アタック対象を
     // 選んだ直後に天ノ河宙 EX12-066 の「アタックしたとき」が割り込んでいた）
-    _holdAfterAttackEffects(atk, () => _afterAtkEffectBody(_evolvedAttacker(atk, atkSlotIdx) || atk, atkSlotIdx, callback), _ready);
+    // 【アタック時】は、アタックさせた効果の処理が終わった時点で（それ以前からの発揮待ちより先に）発揮する（effect-engine.js
+    // _runHeldAttackDerived）。アタックの続き（カウンタータイミング以降）は、発揮待ちが全て解決してから（runPendingEffectAttack）
+    const _owner = bs._attackDeclOwner; bs._attackDeclOwner = null;
+    let _p1State = 0; let _p1Waiters = [];
+    const _phase1 = (done) => {
+      if (_p1State === 2) { done && done(); return; }
+      if (done) _p1Waiters.push(done);
+      if (_p1State === 1) return;
+      _p1State = 1;
+      _afterAtkEffectBody(_evolvedAttacker(atk, atkSlotIdx) || atk, atkSlotIdx, () => {
+        _p1State = 2;
+        const ws = _p1Waiters; _p1Waiters = [];
+        ws.forEach((w) => { try { w(); } catch (e) { console.error('[heldAttackDerived]', e); } });
+      });
+    };
+    if (!Array.isArray(window._heldAttackDerived)) window._heldAttackDerived = [];
+    window._heldAttackDerived.push({ owner: _owner, run: _phase1 });
+    _holdAfterAttackEffects(atk, () => {
+      // 派生誘発として発揮されないまま続けることになった（保険）なら、ここで発揮してから続ける
+      const _i = window._heldAttackDerived.findIndex(r => r && r.run === _phase1);
+      if (_i !== -1) window._heldAttackDerived.splice(_i, 1);
+      _phase1(callback);
+    }, _ready);
     return;
   }
   _afterAtkEffectBody(atk, atkSlotIdx, callback);

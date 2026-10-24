@@ -513,7 +513,7 @@ function processQueue(context, onComplete) {
         chosen.status = 'completed';
         sortQueue();
         if (window._sendMemoryUpdate) try { window._sendMemoryUpdate(); } catch(_) {}
-        _runDerivedTriggers((d) => checkPendingDestroys(context, d), () => {
+        _runDerivedTriggers((d) => checkPendingDestroys(context, () => _runHeldAttackDerived(chosen.block, d)), () => {
           _queueResolveDepth = Math.max(0, _queueResolveDepth - 1);
           processQueue(context, onComplete);
         });
@@ -535,11 +535,27 @@ function processQueue(context, onComplete) {
     // ★ 各効果の完了直後に消滅判定 → on_destroy リアクションを処理
     // 加えてメモリー値が効果でズレている可能性に備え必ずメモリー同期も送る
     if (window._sendMemoryUpdate) try { window._sendMemoryUpdate(); } catch(_) {}
-    _runDerivedTriggers((d) => checkPendingDestroys(context, d), () => {
+    _runDerivedTriggers((d) => checkPendingDestroys(context, () => _runHeldAttackDerived(next.block, d)), () => {
       _queueResolveDepth = Math.max(0, _queueResolveDepth - 1);
       processQueue(context, onComplete);
     });
   });
+}
+
+// 効果の中でアタック宣言して止めたアタック（bs._attackDeclHold）の【アタック時】・「アタックしたとき」（派生誘発）を、
+// アタックさせた効果（owner: そのキューの効果の block／反応）の処理が全て終わった時点で、それ以前から発揮待ちだった
+// 効果より先に発揮する（公式ルール 15-4-5-2）。battle-combat.js afterAtkEffect が window._heldAttackDerived に積む。
+// owner が null なら全て。効果に続く操作（デュアルカードのアーツ進化〜【進化時】。_extraBusyDepth）の途中なら、それが
+// 終わったとき（window._effectBusyEnd）に発揮する
+function _runHeldAttackDerived(owner, done) {
+  const w = typeof window !== 'undefined' ? window : null;
+  const list = w && Array.isArray(w._heldAttackDerived) ? w._heldAttackDerived : null;
+  if (!list || list.length === 0 || _extraBusyDepth > 0) { done && done(); return; }
+  const k = list.findIndex(r => r && (owner === null || r.owner === owner || r.owner == null));
+  if (k === -1) { done && done(); return; }
+  const rec = list.splice(k, 1)[0];
+  try { rec.run(() => _runHeldAttackDerived(owner, done)); }
+  catch (e) { console.error('[_runHeldAttackDerived]', e); _runHeldAttackDerived(owner, done); }
 }
 
 // 1つの効果を解決し終えた後の処理（消滅判定・保留していた「〜したとき」の反応＝その効果の解決中に誘発した効果）を、
@@ -11223,7 +11239,8 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
   // 発揮待ちに先に出していた「デジモンが消滅したとき」（hudPreviewSubjectDestroy）は、発揮し始めたら外す
   if (reaction && reaction.card) { _subjPreviewStarted.add(reaction.card); try { _hudRender(); } catch (_) {} }
   let _rrDone = false;
-  const done = () => { if (!_rrDone) { _rrDone = true; _reactionRunDepth = Math.max(0, _reactionRunDepth - 1); } done0 && done0(); };
+  // この反応の中でアタック宣言して止めたアタックの【アタック時】は、この反応の処理が全て終わったら発揮する（派生誘発）
+  const done = () => { if (!_rrDone) { _rrDone = true; _reactionRunDepth = Math.max(0, _reactionRunDepth - 1); } _runHeldAttackDerived(reaction, () => { done0 && done0(); }); };
   const finish = () => { try { done && done(); } catch (_) {} };
   const card = reaction.card;
   // 手札から破棄されたカード自身の効果で、破棄された時点で「〜なら」を満たしていた（_snapshotHandDiscardConds）なら、
@@ -11242,7 +11259,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
     finish();
     return;
   }
-  const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side };
+  const ctx = { ..._buildBaseCtx(ctxBase, bs), card, side, _reactionToken: reaction };
   // 発火元カード（反応の元になったイベントのカード）があれば、trigger_conditions の評価・
   // target_trigger_source（「そのデジモン」）で参照できるよう ctx.block に載せる
   if (reaction.eventSourceCard) {
@@ -19896,6 +19913,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 反応（メインフェイズ開始時・「〜したとき」等。_runReactionEffect）の処理中も同じ（同時に誘発した他の効果が発揮待ちで残っている）
       if ((_queueResolveDepth > 0 || _reactionRunDepth > 0) && !/turn_end$/.test(String(_atkTrig || '')) && typeof window._afterAtkHoldSupported === 'function') {
         ctx.bs._attackDeclHold = true;
+        ctx.bs._attackDeclOwner = ctx._reactionToken || ctx.block || null; // アタックさせた効果（派生誘発の発揮タイミング用）
         _confirmAndDeclareEffectAttack(_atkCard, step, ctx, (ok) => {
           if (!ok) { ctx.bs._attackDeclHold = false; _clearWr(); }
           callback();
@@ -21181,13 +21199,15 @@ if (typeof window !== 'undefined') window._effectBusyEnd = (cb) => {
   const b = window._lastBattleState;
   // 相手の端末で後回しになっている効果も、発揮し終わるまで待ってから続ける（_flushRemoteNonTurn）
   const _cbR = () => _flushRemoteNonTurn(b, () => cb && cb());
-  const flush = () => {
+  const flush0 = () => {
     if (_ntpDeferred.length > 0) {
       try { _flushNonTurnDeferred(b, _cbR); } catch (e) { console.error('[_effectBusyEnd]', e); _cbR(); }
       return;
     }
     _cbR();
   };
+  // 止めたアタックの【アタック時】（派生誘発）を、後回しにしていた非ターンプレイヤー側の効果より先に発揮する
+  const flush = () => _runHeldAttackDerived(null, flush0);
   // 保留していた DP0 の消滅（ルール処理）を先に行う（相手のデジモンなら持ち主に依頼する）
   if (b && b._dp0HeldForBusy) {
     b._dp0HeldForBusy = false;

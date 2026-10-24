@@ -14909,7 +14909,8 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
         window.resolveAttackTarget(targetType, targetIdx);
         return;
       }
-      // アタック宣言のタイミングで止めるアタック（bs._attackDeclHold）は、【アタック時】を解決して止めた時点で効果を完了させる
+      // アタック宣言のタイミングで止めるアタック（bs._attackDeclHold）は、アタック宣言（対象の決定）まで行った時点で効果を完了させ、
+      // 【アタック時】は効果の処理が全て終わってから発揮する（battle-combat.js afterAtkEffect）
       // （battle-combat.js afterAtkEffect が bs._attackDeclHoldReady を呼ぶ）。【アタック時】と他の発揮待ちの効果が並行しないように
       if (ctx.bs && ctx.bs._attackDeclHold) {
         ctx.bs._attackDeclHoldReady = () => finish(true);

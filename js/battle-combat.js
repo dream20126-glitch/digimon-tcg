@@ -2855,7 +2855,11 @@ function afterAtkEffect(atk, atkSlotIdx, callback) {
   if (bs._attackDeclHold) {
     bs._attackDeclHold = false;
     const _ready = bs._attackDeclHoldReady; bs._attackDeclHoldReady = null;
-    afterAtkEffect(atk, atkSlotIdx, () => _holdAfterAttackEffects(atk, callback, _ready));
+    // 効果の処理中は割り込まない: アタック宣言（対象の決定）までで止め、アタックさせた効果の残り（デュアルカードの
+    // オプション側の効果の後のアーツ進化〜【進化時】等）を全て処理してから、【アタック時】・「アタックしたとき」
+    // （派生誘発）を発揮してアタックを続ける（シリウスモン＆プラネイトナックル EX12-018 のオプション側で、アタック対象を
+    // 選んだ直後に天ノ河宙 EX12-066 の「アタックしたとき」が割り込んでいた）
+    _holdAfterAttackEffects(atk, () => _afterAtkEffectBody(_evolvedAttacker(atk, atkSlotIdx) || atk, atkSlotIdx, callback), _ready);
     return;
   }
   _afterAtkEffectBody(atk, atkSlotIdx, callback);

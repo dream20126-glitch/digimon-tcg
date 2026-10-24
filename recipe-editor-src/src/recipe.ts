@@ -461,6 +461,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   if (a.action === 'negate') {
     if (a.negateTargetTrigger) out.target_trigger = a.negateTargetTrigger;
     if (a.negateDeny) out.deny = true;
+    if (a.negateTargetTrigger === 'main' && a.negateTargetAsType) out.target_as_type = a.negateTargetAsType;
   }
   const targetFilterObj = buildConditionChainFilter(a.targetFilterChain, a.targetFilter);
   if (targetFilterObj) out.filter = targetFilterObj;
@@ -1391,6 +1392,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.action === 'negate') {
     if (b.negateTargetTrigger) step.target_trigger = b.negateTargetTrigger;
     if (b.negateDeny) step.deny = true;
+    if (b.negateTargetTrigger === 'main' && b.negateTargetAsType) step.target_as_type = b.negateTargetAsType;
   }
   // summon の「コストを支払わずに登場」フラグ
   if (b.costFree) step.cost_free = true;
@@ -2223,6 +2225,7 @@ function stepObjectToAltAction(step: any): AltAction {
     skipOnPlay: !!step?.skip_on_play,
     negateTargetTrigger: (NEGATE_TRIGGERS.includes(step?.target_trigger) ? step.target_trigger : undefined),
     negateDeny: !!step?.deny,
+    negateTargetAsType: step?.target_as_type === 'digimon' || step?.target_as_type === 'option' ? step.target_as_type : undefined,
     // 「その後」の効果の対象の条件は、効果2以降と同じ「+ 条件を追加（OR）」の画面（チェーン）で編集するので、
     // 効果1用の orGroup 形式には変換しない（変換すると保存時に OR が AND に変わっていた）
     targetFilter: parseConditionChainFilter(step?.filter).pairs,
@@ -2495,6 +2498,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     names: true,
     target_trigger: true,
     deny: true,
+    target_as_type: true,
   };
   const extras: any = {};
   Object.keys(step || {}).forEach((k) => {
@@ -2634,6 +2638,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     immuneCardType: step?.source_type === 'digimon' ? 'digimon' : step?.source_type === 'option' ? 'option' : undefined,
     negateTargetTrigger: (NEGATE_TRIGGERS.includes(step?.target_trigger) ? step.target_trigger : undefined),
     negateDeny: !!step?.deny,
+    negateTargetAsType: step?.target_as_type === 'digimon' || step?.target_as_type === 'option' ? step.target_as_type : undefined,
     costFree: !!step?.cost_free,
     ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
     skipOnPlay: !!step?.skip_on_play,
@@ -2810,6 +2815,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             skipOnPlay: !!a?.skip_on_play,
             negateTargetTrigger: (NEGATE_TRIGGERS.includes(a?.target_trigger) ? a.target_trigger : undefined),
             negateDeny: !!a?.deny,
+            negateTargetAsType: a?.target_as_type === 'digimon' || a?.target_as_type === 'option' ? a.target_as_type : undefined,
             destroyCause: isCauseCode(a?.cause) ? a.cause : undefined,
             destroyCauseSubject: a?.cause_subject || undefined,
             targetFilter: parseConditionChainFilter(a?.filter).pairs,

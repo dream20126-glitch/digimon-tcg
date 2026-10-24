@@ -419,6 +419,8 @@ export interface EffectBlock {
   // negate 専用:「発揮する」/「発揮しない（＝無効化）」のどちらか。
   // true のとき JSON へ step.deny:true を出力する（未指定/falseは「発揮する」の意味）
   negateDeny?: boolean;
+  // negate で タイミング「メイン」のとき、デュアルカードのどちら側の【メイン】か（JSON: target_as_type）
+  negateTargetAsType?: 'digimon' | 'option';
   // app_gattai_evolve / jogress_evolve 専用（trigger がそのどちらかの時のみ意味を持つ）:
   // アプ合体/ジョグレス進化の素材候補スロット一覧。1スロット=1つの必要な個体（名称OR、または色OR+Lv）。
   // 演出が異なるためトリガーコード自体は2つに分けているが、素材の指定形式・UIは共通
@@ -561,6 +563,8 @@ export interface AltAction {
   // negate 専用（効果1と同じ意味）
   negateTargetTrigger?: NegateTrigger;
   negateDeny?: boolean;
+  // negate で タイミング「メイン」のとき、デュアルカードのどちら側の【メイン】か（JSON: target_as_type）
+  negateTargetAsType?: 'digimon' | 'option';
   // 原因（バトルで/効果で）: cant_destroy等で使う。効果1のdestroyCause/destroyCauseSubjectと
   // 同じ意味。JSONでは対応するstepのcause/cause_subjectとして出力する
   destroyCause?: CauseCode;

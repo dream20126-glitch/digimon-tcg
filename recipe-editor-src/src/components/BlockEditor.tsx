@@ -3230,6 +3230,7 @@ const CANT_TO_DOABLE: Record<string, string> = Object.fromEntries(
 // 第二ボタン（場所・位置）付きで個別にレンダリングするため、ここには含めない
 const COMMON_COST_ACTIONS: { code: string; label: string }[] = [
   { code: 'rest', label: 'レストさせる' },
+  { code: 'active', label: 'アクティブにする' },
   { code: 'cost_destroy_other', label: '消滅させる' },
   { code: 'evolve', label: '進化させる' },
 ];
@@ -3733,6 +3734,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectSkipOnPlay = isEditingAlt ? !!editingAlt!.skipOnPlay : !!block.skipOnPlay;
   const effectNegateTargetTrigger = isEditingAlt ? editingAlt!.negateTargetTrigger : block.negateTargetTrigger;
   const effectNegateDeny = isEditingAlt ? !!editingAlt!.negateDeny : !!block.negateDeny;
+  const effectNegateTargetAsType = isEditingAlt ? editingAlt!.negateTargetAsType : block.negateTargetAsType;
   const effectDestroyCause = isEditingAlt ? editingAlt!.destroyCause : block.destroyCause;
   const effectDestroyCauseSubject = isEditingAlt ? editingAlt!.destroyCauseSubject : block.destroyCauseSubject;
   const effectOptions = isEditingAlt ? (editingAlt!.options || []) : (block.options || []);
@@ -6106,10 +6108,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             updateEffect({ action: 'choose_effect', negateTargetTrigger: undefined, negateDeny: undefined, ...(isEditingAlt ? { thenBreak: true, chainPrev: undefined } : {}) });
                             return;
                           }
-                          updateEffect({ action: 'negate', negateTargetTrigger: (v || undefined) as NegateTrigger | undefined });
+                          updateEffect({ action: 'negate', negateTargetTrigger: (v || undefined) as NegateTrigger | undefined, ...(v !== 'main' ? { negateTargetAsType: undefined } : {}) });
                         }}
                         accentColor="#1976d2"
                       />
+                      {/* メイン: デュアルカードのデジモン側/オプション側のどちらの【メイン】か（未選択=区別しない） */}
+                      {effectAction === 'negate' && effectNegateTargetTrigger === 'main' && (
+                        <ButtonGroup
+                          options={[{ code: 'digimon', label: 'デジモン側' }, { code: 'option', label: 'オプション側' }]}
+                          value={effectNegateTargetAsType || ''}
+                          onChange={(v) => updateEffect({ negateTargetAsType: (v || undefined) as 'digimon' | 'option' | undefined })}
+                          accentColor="#1976d2"
+                        />
+                      )}
                       {effectAction === 'negate' && (
                         <ButtonGroup
                           options={[{ code: 'enable', label: 'できる' }, { code: 'deny', label: 'できない' }]}

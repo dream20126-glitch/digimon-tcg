@@ -342,6 +342,8 @@ export interface EffectBlock {
   // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし（絞り込まない）
   // JSON では step.evo_source_owner に serialize
   evoSourceOwner?: 'self' | 'other';
+  // 進化元の対象が自分/相手/他のとき、デジモンかテイマー（テイマーの下）か。JSON: evo_source_card_type（未指定=区別しない）
+  evoSourceCardType?: 'digimon' | 'tamer';
   // 取得元エリアに「リンクカード」を含む場合のみ有効: どのデジモンのリンクカードから探すか。
   // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし。
   // JSON では step.linked_owner に serialize
@@ -526,6 +528,8 @@ export interface AltAction {
   // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし。
   // JSON では evo_source_owner に serialize
   evoSourceOwner?: 'self' | 'other';
+  // 進化元の対象が自分/相手/他のとき、デジモンかテイマー（テイマーの下）か。JSON: evo_source_card_type（未指定=区別しない）
+  evoSourceCardType?: 'digimon' | 'tamer';
   // 取得元エリアに「リンクカード」を含む場合のみ有効: どのデジモンのリンクカードから探すか。
   // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし。
   // JSON では linked_owner に serialize
@@ -781,6 +785,8 @@ export interface CostStep {
   // 進化元から探すか。'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし。
   // JSON では step.cost[].evo_source_owner に serialize
   evoSourceOwner?: 'self' | 'other';
+  // 進化元の対象が自分/相手/他のとき、デジモンかテイマー（テイマーの下）か。JSON: evo_source_card_type（未指定=区別しない）
+  evoSourceCardType?: 'digimon' | 'tamer';
   // 取得元エリアに「リンクカード」を含む場合のみ有効: どのデジモンのリンクカードから探すか。
   // 'self'=このデジモン / 'other'=他のデジモン / 未指定=指定なし。
   // JSON では step.cost[].linked_owner に serialize

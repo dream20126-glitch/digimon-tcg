@@ -208,6 +208,7 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
       if (cz.includes('deck') && c.deckSourcePosition) cs.deck_source_position = c.deckSourcePosition;
       // 進化元/重ねられているカード/リンクカードを取得元に含む場合のみ: どのデジモンのものか
       if ((cz.includes('evo_source') || cz.includes('stacked_cards')) && (c.evoSourceOwner === 'self' || c.evoSourceOwner === 'other')) cs.evo_source_owner = c.evoSourceOwner;
+      if ((cz.includes('evo_source') || cz.includes('stacked_cards')) && c.evoSourceOwner !== 'self' && c.evoSourceCardType) cs.evo_source_card_type = c.evoSourceCardType;
       if (cz.includes('linked') && (c.linkedOwner === 'self' || c.linkedOwner === 'other')) cs.linked_owner = c.linkedOwner;
       // 取得元エリアがどちらのプレイヤーのものか（未指定=自分/相手どちらでも）
       if (c.fromZoneOwner === 'self' || c.fromZoneOwner === 'opponent') cs.from_owner = c.fromZoneOwner;
@@ -309,6 +310,7 @@ function parseCostArray(rawCost: any): CostStep[] {
       containerFilter: parseConditionChainFilter(c?.filter).pairs,
       containerFilterChain: parseConditionChainFilter(c?.filter).chain,
       evoSourceOwner: c?.evo_source_owner === 'self' || c?.evo_source_owner === 'other' ? c.evo_source_owner : undefined,
+      evoSourceCardType: c?.evo_source_card_type === 'digimon' || c?.evo_source_card_type === 'tamer' ? c.evo_source_card_type : undefined,
       linkedOwner: c?.linked_owner === 'self' || c?.linked_owner === 'other' ? c.linked_owner : undefined,
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,
       altCosts: Array.isArray(c?.alt_actions) && c.alt_actions.length > 0 ? parseCostArray(c.alt_actions) : undefined,
@@ -418,6 +420,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
     if (az.includes('deck') && a.deckSourcePosition) out.deck_source_position = a.deckSourcePosition;
     // 進化元/重ねられているカード/リンクカードを取得元に含む場合のみ: どのデジモンのものか
     if ((az.includes('evo_source') || az.includes('stacked_cards')) && (a.evoSourceOwner === 'self' || a.evoSourceOwner === 'other')) out.evo_source_owner = a.evoSourceOwner;
+    if ((az.includes('evo_source') || az.includes('stacked_cards')) && a.evoSourceOwner !== 'self' && a.evoSourceCardType) out.evo_source_card_type = a.evoSourceCardType;
     if (az.includes('linked') && (a.linkedOwner === 'self' || a.linkedOwner === 'other')) out.linked_owner = a.linkedOwner;
     // 取得元エリアがどちらのプレイヤーのものか（未指定=自分/相手どちらでも）
     if (a.fromZoneOwner === 'self' || a.fromZoneOwner === 'opponent') out.from_owner = a.fromZoneOwner;
@@ -1462,6 +1465,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     if ((zones.includes('evo_source') || zones.includes('stacked_cards')) && (b.evoSourceOwner === 'self' || b.evoSourceOwner === 'other')) {
       step.evo_source_owner = b.evoSourceOwner;
     }
+    // 進化元の対象が自分/相手/他のとき: デジモンかテイマー（テイマーの下）か
+    if ((zones.includes('evo_source') || zones.includes('stacked_cards')) && b.evoSourceOwner !== 'self' && b.evoSourceCardType) {
+      step.evo_source_card_type = b.evoSourceCardType;
+    }
     // 場所に「リンクカード」を含む場合のみ: どのデジモンのリンクカードから探すか
     if (zones.includes('linked') && (b.linkedOwner === 'self' || b.linkedOwner === 'other')) {
       step.linked_owner = b.linkedOwner;
@@ -2233,6 +2240,7 @@ function stepObjectToAltAction(step: any): AltAction {
     evoSourcePosition: step?.evo_source_position === 'top' || step?.evo_source_position === 'bottom' || step?.evo_source_position === 'select' ? step.evo_source_position : undefined,
     deckSourcePosition: step?.deck_source_position === 'top' || step?.deck_source_position === 'bottom' ? step.deck_source_position : undefined,
     evoSourceOwner: step?.evo_source_owner === 'self' || step?.evo_source_owner === 'other' ? step.evo_source_owner : undefined,
+    evoSourceCardType: step?.evo_source_card_type === 'digimon' || step?.evo_source_card_type === 'tamer' ? step.evo_source_card_type : undefined,
     linkedOwner: step?.linked_owner === 'self' || step?.linked_owner === 'other' ? step.linked_owner : undefined,
     duration: step?.duration || '',
     perCount: step?.per_count != null ? Number(step.per_count) : undefined,
@@ -2530,6 +2538,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     pick_count: true,
     names: true,
     target_trigger: true,
+    evo_source_card_type: true,
     deny: true,
     target_as_type: true,
   };
@@ -2703,6 +2712,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
       return 'or' as const;
     })(),
     evoSourceOwner: step?.evo_source_owner === 'self' || step?.evo_source_owner === 'other' ? step.evo_source_owner : undefined,
+    evoSourceCardType: step?.evo_source_card_type === 'digimon' || step?.evo_source_card_type === 'tamer' ? step.evo_source_card_type : undefined,
     linkedOwner: step?.linked_owner === 'self' || step?.linked_owner === 'other' ? step.linked_owner : undefined,
     fromZoneOwner: step?.from_owner === 'self' || step?.from_owner === 'opponent' ? step.from_owner : undefined,
     securityPosition: step?.security_position === 'top' || step?.security_position === 'bottom' ? step.security_position : undefined,
@@ -2828,6 +2838,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             evoSourcePosition: a?.evo_source_position === 'top' || a?.evo_source_position === 'bottom' || a?.evo_source_position === 'select' ? a.evo_source_position : undefined,
             deckSourcePosition: a?.deck_source_position === 'top' || a?.deck_source_position === 'bottom' ? a.deck_source_position : undefined,
             evoSourceOwner: a?.evo_source_owner === 'self' || a?.evo_source_owner === 'other' ? a.evo_source_owner : undefined,
+            evoSourceCardType: a?.evo_source_card_type === 'digimon' || a?.evo_source_card_type === 'tamer' ? a.evo_source_card_type : undefined,
             linkedOwner: a?.linked_owner === 'self' || a?.linked_owner === 'other' ? a.linked_owner : undefined,
             duration: a?.duration || '',
             perCount: a?.per_count != null ? Number(a.per_count) : undefined,

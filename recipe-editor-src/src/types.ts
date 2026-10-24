@@ -412,9 +412,10 @@ export interface EffectBlock {
   // JSON では step.position ('top'/'bottom') に serialize。'both' はエンジン未対応
   // （'top' 以外は全て下扱いになるため、選ぶと実際は「下」と同じ動作になる）
   deckPosition?: 'top' | 'bottom' | 'both';
-  // negate（「効果を発揮」）専用: 対象のどのトリガー効果を発揮する/しないにするかの指定。
+  // negate（「効果を発揮」）専用: 対象のどのトリガー効果を発揮できる/できないにするかの指定。
+  // 'on_attack'=アタック時 / 'main'=メイン も選べる（「このデジモンの【進化時】効果1つを発揮できる」等）
   // JSON では step.target_trigger に serialize（例: 'on_play'=登場時 / 'on_evolve'=進化時）
-  negateTargetTrigger?: 'on_play' | 'on_evolve';
+  negateTargetTrigger?: NegateTrigger;
   // negate 専用:「発揮する」/「発揮しない（＝無効化）」のどちらか。
   // true のとき JSON へ step.deny:true を出力する（未指定/falseは「発揮する」の意味）
   negateDeny?: boolean;
@@ -558,7 +559,7 @@ export interface AltAction {
   // evolve 専用（効果1と同じ）: 進化条件を無視して進化させる → ignore_evolve_condition:true
   ignoreEvolveCondition?: boolean;
   // negate 専用（効果1と同じ意味）
-  negateTargetTrigger?: 'on_play' | 'on_evolve';
+  negateTargetTrigger?: NegateTrigger;
   negateDeny?: boolean;
   // 原因（バトルで/効果で）: cant_destroy等で使う。効果1のdestroyCause/destroyCauseSubjectと
   // 同じ意味。JSONでは対応するstepのcause/cause_subjectとして出力する
@@ -833,3 +834,6 @@ export interface CardLevelSettings {
   // JSON では recipe.alias_names（文字列配列）。⚠ エンジン未実装
   aliasNames?: string[];
 }
+
+// 「効果を発揮」(negate) で対象にできるタイミング
+export type NegateTrigger = 'on_play' | 'on_evolve' | 'on_attack' | 'main';

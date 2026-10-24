@@ -2,6 +2,9 @@
 import type { AltAction, CardLevelSettings, ConditionPair, ConditionChainEntry, CostStep, DictEntry, EffectBlock, ExtraTarget, KeywordEntry, DesignatedGroup } from './types';
 import { applyRulesToStep, hasRuleTranslator, rulesFromStep, RULE_OUTPUT_KEYS } from './ruleTranslator';
 
+// 「効果を発揮」(negate) の対象タイミング（target_trigger）として読み込むもの
+const NEGATE_TRIGGERS: unknown[] = ['on_play', 'on_evolve', 'on_attack', 'main'];
+
 // 原因コード（バトルで/効果で/バトル以外で/効果以外で）
 // アクションの値の数え方（value_mode。旧 value_up_to:true は「〜まで」）
 const parseValueMode = (s: any): 'all' | 'exact' | 'up_to' | 'until' | undefined =>
@@ -2218,7 +2221,7 @@ function stepObjectToAltAction(step: any): AltAction {
     costFree: !!step?.cost_free,
     ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
     skipOnPlay: !!step?.skip_on_play,
-    negateTargetTrigger: step?.target_trigger === 'on_play' || step?.target_trigger === 'on_evolve' ? step.target_trigger : undefined,
+    negateTargetTrigger: (NEGATE_TRIGGERS.includes(step?.target_trigger) ? step.target_trigger : undefined),
     negateDeny: !!step?.deny,
     // 「その後」の効果の対象の条件は、効果2以降と同じ「+ 条件を追加（OR）」の画面（チェーン）で編集するので、
     // 効果1用の orGroup 形式には変換しない（変換すると保存時に OR が AND に変わっていた）
@@ -2629,7 +2632,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     keywordCommonConditionsOp: _stepCommonPairs && _stepCommonPairs.conds.length > 0 ? _stepCommonPairs.op : undefined,
     revertAtTurnEnd: !!step?.revert_at_turn_end,
     immuneCardType: step?.source_type === 'digimon' ? 'digimon' : step?.source_type === 'option' ? 'option' : undefined,
-    negateTargetTrigger: step?.target_trigger === 'on_play' || step?.target_trigger === 'on_evolve' ? step.target_trigger : undefined,
+    negateTargetTrigger: (NEGATE_TRIGGERS.includes(step?.target_trigger) ? step.target_trigger : undefined),
     negateDeny: !!step?.deny,
     costFree: !!step?.cost_free,
     ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
@@ -2805,7 +2808,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             costFree: !!a?.cost_free,
             ignoreEvolveCondition: !!a?.ignore_evolve_condition || undefined,
             skipOnPlay: !!a?.skip_on_play,
-            negateTargetTrigger: a?.target_trigger === 'on_play' || a?.target_trigger === 'on_evolve' ? a.target_trigger : undefined,
+            negateTargetTrigger: (NEGATE_TRIGGERS.includes(a?.target_trigger) ? a.target_trigger : undefined),
             negateDeny: !!a?.deny,
             destroyCause: isCauseCode(a?.cause) ? a.cause : undefined,
             destroyCauseSubject: a?.cause_subject || undefined,

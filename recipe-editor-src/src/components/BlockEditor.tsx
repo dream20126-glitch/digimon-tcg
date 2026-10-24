@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import type { ReactNode } from 'react';
-import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup, RuleActionKind, ConditionChainEntry, FusionMaterialSlot, ExtraTarget } from '../types';
+import type { EffectBlock, ConditionPair, CostStep, MiniStep, DictEntry, AltAction, GrantedStep, KeywordEntry, DesignatedGroup, RuleGroup, RuleActionKind, ConditionChainEntry, FusionMaterialSlot, ExtraTarget, NegateTrigger } from '../types';
 import {
   SECTIONS,
   DURATIONS,
@@ -6098,7 +6098,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 11, color: '#666' }}>対象のタイミング:</span>
                       <ButtonGroup
-                        options={[{ code: 'on_play', label: '登場時' }, { code: 'on_evolve', label: '進化時' }, { code: 'choose', label: '選択' }]}
+                        options={[{ code: 'on_evolve', label: '進化時' }, { code: 'on_play', label: '登場時' }, { code: 'on_attack', label: 'アタック時' }, { code: 'main', label: 'メイン' }, { code: 'choose', label: '選択' }]}
                         value={effectAction === 'choose_effect' ? 'choose' : (effectNegateTargetTrigger || '')}
                         onChange={(v) => {
                           if (v === 'choose') {
@@ -6106,15 +6106,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             updateEffect({ action: 'choose_effect', negateTargetTrigger: undefined, negateDeny: undefined, ...(isEditingAlt ? { thenBreak: true, chainPrev: undefined } : {}) });
                             return;
                           }
-                          updateEffect({ action: 'negate', negateTargetTrigger: (v || undefined) as 'on_play' | 'on_evolve' | undefined });
+                          updateEffect({ action: 'negate', negateTargetTrigger: (v || undefined) as NegateTrigger | undefined });
                         }}
                         accentColor="#1976d2"
                       />
                       {effectAction === 'negate' && (
                         <ButtonGroup
-                          options={[{ code: 'enable', label: '発揮する' }, { code: 'deny', label: '発揮しない' }]}
+                          options={[{ code: 'enable', label: 'できる' }, { code: 'deny', label: 'できない' }]}
                           value={effectNegateDeny ? 'deny' : 'enable'}
-                          onChange={(v) => updateEffect({ negateDeny: v === 'deny' })}
+                          // 「できない」は発揮する数を使わないので値を消す
+                          onChange={(v) => updateEffect(v === 'deny' ? { negateDeny: true, value: undefined } : { negateDeny: false })}
                           accentColor="#1976d2"
                         />
                       )}
@@ -6618,8 +6619,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               ) : CANT_TO_DOABLE_LIVE[effectAction] ? null /* 「できない」(cant_X)系は値入力自体が不要なため非表示 */ : (
                 <div className="field">
                   <label>
-                    {effectAction === 'choose_effect' ? '選ぶ数' : '値'}
-                    {effectAction === 'choose_effect' && <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>（空欄なら1つ）</span>}
+                    {effectAction === 'choose_effect' ? '選ぶ数' : effectAction === 'negate' && !effectNegateDeny ? '発揮できる数' : '値'}
+                    {(effectAction === 'choose_effect' || (effectAction === 'negate' && !effectNegateDeny)) && <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>（空欄なら1つ）</span>}
                     {effectAction === 'memory' && <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>（自分側のメモリー数。マイナスなら相手側のメモリー数）</span>}
                   </label>
                   <input

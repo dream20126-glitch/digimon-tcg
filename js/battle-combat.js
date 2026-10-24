@@ -2002,6 +2002,33 @@ function _handJogressPairs(card, base) {
   });
   return out;
 }
+// 手札の［ジョグレス進化］を持つカードをバトルエリアの空いている所に置いたとき: 場の2体でジョグレス進化できるなら
+// 「ジョグレス進化しますか？」を聞く（グソクモン EX12-028。以前は確認なしで普通に登場していた）。
+// ジョグレスするなら1体目を選んでからもう1体を選ぶ。しないなら elsePlay（通常の登場）。ジョグレスできる組み合わせが
+// 無ければ false を返す（呼び出し側がそのまま登場させる）
+export function offerHandJogressOnEmpty(card, handIdx, slotIdx, elsePlay) {
+  if (!card || bs.phase !== 'main' || _attackInProgress) return false;
+  const bases = bs.player.battleArea.filter(c => c && (c.type === 'デジモン' || !c.type));
+  const byBase = new Map();
+  bases.forEach((b) => { const ps = _handJogressPairs(card, b); if (ps.length > 0) byBase.set(b, ps); });
+  if (byBase.size === 0) return false;
+  showConfirm({
+    title: 'ジョグレス進化',
+    message: '「' + card.name + '」を場のデジモン2体でジョグレス進化しますか？',
+    yesText: '🔀 ジョグレス進化', noText: (card.playCost === null || card.playCost === undefined) ? 'やめる' : '⬇ 登場させる', color: '#ffd54f',
+  }).then((yes) => {
+    if (!yes) { if (card.playCost === null || card.playCost === undefined) { addLog('☓ ジョグレス進化をやめた'); return; } elsePlay && elsePlay(); return; }
+    const firsts = [...byBase.keys()];
+    if (firsts.length <= 2) { const b = firsts[0]; _doHandJogress(card, b, byBase.get(b)); return; }
+    const idxs = firsts.map(b => bs.player.battleArea.indexOf(b)).filter(i => i >= 0);
+    _showTargetSelection('pl', idxs, null, '#ffd54f', (idx) => {
+      if (idx === null || idx === undefined) { addLog('☓ ジョグレス進化をやめた'); return; }
+      const b = bs.player.battleArea[idx];
+      _doHandJogress(card, b, byBase.get(b) || []);
+    }, '（「' + card.name + '」にジョグレス進化するデジモン・1体目）');
+  });
+  return true;
+}
 // もう1体を選んでジョグレス進化する（候補が1体ならそのまま）
 function _doHandJogress(card, base, pairs) {
   const others = [];

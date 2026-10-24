@@ -1400,6 +1400,9 @@ export function renderHand() {
                   else { if (window.doLink) window.doLink(card, idx, si); }
                 });
               } else if (occupied) { if (window.doEvolve) window.doEvolve(card, idx, si); }
+              // 空いている所に［ジョグレス進化］を持つカード: 場の2体でジョグレス進化できるなら先に確認する
+              else if (window.offerHandJogressOnEmpty && window.offerHandJogressOnEmpty(card, idx, si,
+                () => { if (window.offerAssemblyThenPlay) window.offerAssemblyThenPlay(card, idx, si); else if (window.doPlay) window.doPlay(card, idx, si); })) { /* 確認中 */ }
               else if (window.offerAssemblyThenPlay) window.offerAssemblyThenPlay(card, idx, si);
               else if (window.doPlay) window.doPlay(card, idx, si);
               dropped = true;

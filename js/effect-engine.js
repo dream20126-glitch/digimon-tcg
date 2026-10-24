@@ -1502,6 +1502,7 @@ function executeQueueEntry(entry, context, callback0) {
   }
 
   // 強制効果 or 既に確認済み → 即実行
+  if (context.alreadyConfirmed && block.isOptional) ctx._effectConfirmed = true;
   if (!block.isOptional || context.alreadyConfirmed) {
     executeWithAnnounce();
     return;
@@ -1521,6 +1522,9 @@ function executeQueueEntry(entry, context, callback0) {
   //                        → Aが「いいえ」→ fx_confirmClose(accepted:false) → 「発動しませんでした」
   showConfirmDialog(card, displayEffText, (accepted) => {
     if (accepted) {
+      // 効果全体で「はい」を選んだので、効果の中の「〜しますか？」（トラッシュから手札に戻すか・アタックするか・
+      // 【ディレイ】するか）は出さない（グレイモン EX12-010 で2回確認していた）
+      ctx._effectConfirmed = true;
       runEffectNow(callback);
     } else {
       // 【メイン】を使わなかったら「⚡ 効果」ボタンの使用済み表示を戻す（battle-render.js activateEffect）
@@ -5004,6 +5008,30 @@ if (typeof window !== 'undefined') window._showCardListConfirm = showCardListCon
 // opts.onSelectAll: 指定すると「✅ 全て選択する」ボタンを出す（押したら画面を閉じて onSelectAll() を呼ぶ。
 // 選んだカードの確認は呼び出し側で行う）
 export function showTrashCardPicker(candidates, wantCount, optional, title, callback, fullTrash, opts) {
+  // 候補が手札とトラッシュの両方にある1枚選び（「自分の手札/トラッシュから〜1枚」）は、先に「手札から／トラッシュから」を
+  // 選んでから、そのゾーンの一覧で選ぶ（進化・登場と同じ選び方。カノーヴァイスモン EX12-014 の進化元の下に置く等で
+  // 一覧に混ざっていた）。一覧の「↩ 戻る」で選び直せる
+  if (!(opts && (opts._zoneSplitDone || opts.noZoneSplit)) && Array.isArray(candidates) && candidates.length > 1 && wantCount === 1
+      && typeof window !== 'undefined' && window._lastBattleState) {
+    const _b = window._lastBattleState;
+    const _zoneOf = (c) => {
+      for (const sd of ['player', 'ai']) { const p = _b[sd]; if (!p) continue; if ((p.hand || []).includes(c)) return 'hand'; if ((p.trash || []).includes(c)) return 'trash'; }
+      return 'other';
+    };
+    const _inH = candidates.filter(c => _zoneOf(c) === 'hand');
+    const _inT = candidates.filter(c => _zoneOf(c) === 'trash');
+    if (_inH.length > 0 && _inT.length > 0 && _inH.length + _inT.length === candidates.length) {
+      const _labels = ['✋ 手札から（' + _inH.length + '枚）', '🗑 トラッシュから（' + _inT.length + '枚）'];
+      if (optional) _labels.push('使わない');
+      const _choose = () => showAltActionChoice(_labels, (zi) => {
+        if (zi >= 2) { callback([]); return; }
+        const sub = zi === 0 ? _inH : _inT;
+        showTrashCardPicker(sub, wantCount, optional, title, callback, sub, Object.assign({}, opts || {}, { _zoneSplitDone: true, onBack: _choose }));
+      }, (title || '').replace(/選んでください.*$/, '') + 'どこから選びますか？');
+      _choose();
+      return;
+    }
+  }
   const _selAll = opts && typeof opts.onSelectAll === 'function' ? opts.onSelectAll : null;
   // opts.onBack: 「↩ 戻る」ボタンを出す（手札から/トラッシュからを選ぶ画面に戻る等）
   const _onBack = opts && typeof opts.onBack === 'function' ? opts.onBack : null;
@@ -9880,6 +9908,14 @@ const EFFECT_FAILED_NO_CARD = '対象がありませんでした';
 function _confirmOptionalTrashToHand(ctx, filter, candidates, want, onPicked, onDecline) {
   const label = filter && filter.name ? '「' + filter.name + '」' : 'カード';
   const n = Math.min(want || 1, candidates.length);
+  // 効果全体の確認で「はい」を選んでいれば、ここでは聞き直さずに選ぶ画面を出す（使わないも選べる）
+  if (ctx && ctx._effectConfirmed) {
+    showTrashCardPicker(candidates, n, true, '🃏 手札に戻すカードを選んでください', (picked) => {
+      if (!picked || picked.length === 0) { ctx.addLog && ctx.addLog('☓ 手札に戻さなかった'); onDecline(); return; }
+      onPicked(picked);
+    }, candidates);
+    return;
+  }
   showConfirmDialog(ctx.card, 'トラッシュの' + label + (n > 1 ? n + '枚' : '') + 'を手札に戻しますか？', (yes) => {
     if (!yes) { ctx.addLog && ctx.addLog('☓ 手札に戻さなかった'); onDecline(); return; }
     if (candidates.length <= n) { onPicked(candidates.slice(0, n)); return; }
@@ -11266,6 +11302,7 @@ function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
         if (accepted) {
           // 確認ダイアログでカード名・効果テキストは既に見せているので、承諾後に
           // 同じ内容のアナウンス演出を重ねて出さずそのまま実行する
+          ctx._effectConfirmed = true; // 効果の中の「〜しますか？」は出さない（二重確認の防止）
           logActivated();
           runNow();
           return;
@@ -14037,9 +14074,16 @@ function runWithAltActions(step, ctx, store, callback) {
     // （任意コストが支払われなかった扱い。executeCostAndActionsのcost失敗時と同じ考え方）
     executeRecipeStep(mainOnly, ctx, store, (success) => {
       if (success === false) { callback && callback(false); return; }
+      // 直前の効果で処理した枚数／カード（「この効果で破棄した1枚ごとに」テティスモン EX12-030）は、効果1が終わった時点の
+      // 値を効果2以降に引き継ぐ（その間に発揮された別の効果に上書きされて -2000 しかされなかった）
+      const _snapLA = () => (ctx.bs ? { n: ctx.bs._lastActionCount, cards: ctx.bs._lastActionCards } : null);
+      let _laSnap = _snapLA();
+      const _restoreLA = () => { if (ctx.bs && _laSnap) { ctx.bs._lastActionCount = _laSnap.n; ctx.bs._lastActionCards = _laSnap.cards; } };
       let i = 0;
       function nextAlt() {
+        if (i > 0) _laSnap = _snapLA();
         if (i >= alts.length) { callback && callback(); return; }
+        _restoreLA();
         const a = alts[i++];
         // alt 側の gate（「さらに、効果で減っていたなら」沢城キョウ BT26-089 の gate:'cond_effect' 等）は
         // AND（順次実行）でも、満たさないときはその alt だけを実行しない
@@ -14258,6 +14302,44 @@ function _altChoiceLabels(choices, ctx) {
     else if (!endsVerb(x)) x += 'する';
     return [x, y];
   } catch (_) { return fallback; }
+}
+
+// 「以下の効果から1つ」の選択UI: 選択肢を横並びのパネルにして、それぞれの効果の全文を表示する
+// （同時誘発の順番を選ぶ画面と同じ見せ方。天ノ河宙 EX12-066 で選択肢の文章が途中で切れていた）
+function showEffectChoicePanels(labels, callback, titleText, card) {
+  if (typeof document === 'undefined' || !document.body) { callback(0); return; }
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:60000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px;box-sizing:border-box;animation:fadeIn 0.2s ease;';
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#e9d5ff;font-size:15px;font-weight:bold;text-shadow:0 0 8px #c084fc;text-align:center;';
+  title.innerText = (titleText || '🔀 発揮する効果を選んでください') + (card && card.name ? '\n「' + card.name + '」' : '');
+  overlay.appendChild(title);
+  const area = document.createElement('div');
+  area.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;justify-content:center;align-items:stretch;max-width:min(960px,96vw);max-height:70vh;overflow-y:auto;';
+  overlay.appendChild(area);
+  let closed = false;
+  _effectUiOpen++;
+  labels.forEach((lbl, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.cssText = 'flex:1 1 240px;max-width:360px;text-align:left;padding:12px 14px;background:rgba(40,16,70,0.95);color:#fff;border:2px solid #c084fc;border-radius:12px;cursor:pointer;box-shadow:0 0 12px rgba(192,132,252,0.45);display:flex;flex-direction:column;gap:6px;';
+    const head = document.createElement('div');
+    head.style.cssText = 'font-size:12px;font-weight:bold;color:#f0abfc;';
+    head.innerText = '選択肢' + (i + 1);
+    const body = document.createElement('div');
+    body.style.cssText = 'font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word;';
+    body.innerText = lbl || ('選択肢' + (i + 1));
+    b.appendChild(head); b.appendChild(body);
+    b.onmouseenter = () => { b.style.borderColor = '#f0abfc'; b.style.background = 'rgba(70,24,110,0.95)'; };
+    b.onmouseleave = () => { b.style.borderColor = '#c084fc'; b.style.background = 'rgba(40,16,70,0.95)'; };
+    b.onclick = () => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (!closed) { closed = true; _effectUiOpen = Math.max(0, _effectUiOpen - 1); }
+      callback(i);
+    };
+    area.appendChild(b);
+  });
+  document.body.appendChild(overlay);
 }
 
 // 代替アクション選択UI（OR時）
@@ -14899,6 +14981,9 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
     return;
   }
   if (!step.optional) { chooseAndDeclare(); return; }
+  // アタックするデジモンを選んだ（自分のデジモン1体でアタックできる）か、効果全体の確認で「はい」を選んでいれば、
+  // 「〜でアタックしますか？」は出さずに対象を選ぶ（対象を選ばずに離せばアタックしない）
+  if (ctx._attackerChosen || ctx._effectConfirmed) { chooseAndDeclare(); return; }
   // どの効果でのアタックかを添える。≪急襲≫≪エグゼキュート≫等のキーワード効果なら、キーワード名と
   // その説明（スプレッドシート「キーワード効果」）も出す
   const _kw = (step && step._kwFlag) || (isExecute ? 'execute' : null);
@@ -15518,6 +15603,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           // 「【ディレイ】しますか？」＋その下にディレイの内容。相手の画面にはディレイの段落全体を出す
           const _dp = _splitDelayParagraph(_delayCard.effect);
           const _dq = '【ディレイ】しますか？' + ((_dp && _dp.body) ? '\n\n' + _dp.body : '');
+          // 効果全体の確認（「〜したとき【ディレイ】」の発揮確認）で「はい」を選んでいれば聞き直さない
+          if (ctx._effectConfirmed) { _doDelay(); break; }
           showConfirmDialog(_delayCard, _dq, (yes) => {
             if (!yes) { callback(false); return; }
             // 「カード名」「ディレイ効果発動」の演出（確認は済んでいるので OK 待ちはしない）
@@ -19749,6 +19836,19 @@ function executeRecipeStep(step, ctx, store, callback) {
         callback();
         break;
       }
+      // 「自分のデジモン1体でアタックできる」（target own / own:N。カノーヴァイスモン EX12-014）: アタックするデジモンを選ぶ
+      // （以前はこのデジモンでのアタック確認になっていた）。選んだら「〜でアタックしますか？」は出さない
+      if (ctx._forceTargetIdx === undefined && /^own(:\d+)?$/.test(String(step.target || ''))) {
+        const _acands = [];
+        (player.battleArea || []).forEach((c, i) => { if (c && (c.type === 'デジモン' || !c.type) && !c.suspended && !c.cantAttack && !_summonSickForEffectAttack(step, c)) _acands.push(i); });
+        if (_acands.length === 0) { ctx.addLog('💨 アタックできるデジモンがいません'); callback(); break; }
+        const _goAtk = (idx) => executeRecipeStep(Object.assign({}, step, { target: 'own:1' }), Object.assign({}, ctx, { _forceTargetIdx: idx, _attackerChosen: true }), store, callback);
+        showTargetSelection('pl', _acands, null, '#ffd54f', (idx) => {
+          if (idx === null || idx === undefined) { ctx.addLog('☓ アタックしなかった'); callback(); return; }
+          _goAtk(idx);
+        }, '（アタックするデジモンを選んでください）');
+        break;
+      }
       let _atkCard = ctx.card;
       if (ctx._forceTargetIdx !== undefined && (step.target === 'own:1' || step.target === 'same_target' || step.target === 'picked')) {
         _atkCard = player.battleArea[ctx._forceTargetIdx] || ctx.card;
@@ -20514,8 +20614,11 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (pool.length === 1) { _ceDo(0); return; }
         // CPU は先頭の選択肢を選ぶ
         if (ctx.side !== 'player') { _ceDo(0); return; }
-        const labels = _altChoiceLabels(pool, ctx);
-        showAltActionChoice(labels, (ci) => _ceDo(typeof ci === 'number' ? ci : 0), '🔀 発揮する効果を選んでください' + _ceRound);
+        // 選択肢の文章: この効果の表示テキストの「・」の行（選択肢の数と同じなら）。無ければ従来の推定
+        const _ceBullets = String(step.display_text || '').split('\n').map(l => l.trim()).filter(l => /^[・●]/.test(l)).map(l => l.replace(/^[・●]\s*/, ''));
+        const _ceAllLabels = _ceBullets.length === _ceChoices.length ? _ceBullets : null;
+        const labels = _ceAllLabels ? pool.map((c) => _ceAllLabels[_ceChoices.indexOf(c)] || '') : _altChoiceLabels(pool, ctx);
+        showEffectChoicePanels(labels, (ci) => _ceDo(typeof ci === 'number' ? ci : 0), '🔀 発揮する効果を選んでください' + _ceRound, ctx.card);
       };
       _ceRun(_ceWant, _ceChoices);
       break;

@@ -146,7 +146,8 @@ export function checkTurnStartEffects(side, cb) {
   // （辞書のレシピテンプレート）から解決されるトリガーも拾う（例: 急襲のon_own_turn_end）。
   // 文字列プロパティの有無だけを見る素朴なチェックだと、キーワード由来のトリガーを
   // 持つカードが対象カード一覧から漏れてしまう
-  const cardsWithEffect = area.filter(c => c && _hasRecipeTriggerEE(c, triggerCode));
+  // 重なっている進化元の効果（進化元効果の【自分のターン開始時】等）を持つカードも拾う
+  const cardsWithEffect = area.filter(c => c && (_hasRecipeTriggerEE(c, triggerCode) || _hasEvoStackTriggerEE(c, triggerCode)));
   if (cardsWithEffect.length === 0) { cb(); return; }
   let idx = 0;
   function next() {
@@ -165,7 +166,9 @@ export function checkTurnEndEffects(cb) {
   const allCards = [...bs.player.battleArea, ...(bs.player.tamerArea || [])];
   // _hasRecipeTriggerEE はキーワード（passive配列のレシピテンプレート）由来のトリガーも
   // 拾う（急襲＝attack_at_end_phaseのon_own_turn_end等。checkTurnStartEffectsと同じ理由）
-  const cardsWithEffect = allCards.filter(c => c && _hasRecipeTriggerEE(c, 'on_own_turn_end'));
+  // 重なっている進化元の【自分のターン終了時】（ニャロモン EX12-001「特徴VBを持つこのデジモンと他の自分のデジモンで
+  // ジョグレス進化できる」）を持つカードも拾う（以前はカード自身のレシピだけを見ていて発動しなかった）
+  const cardsWithEffect = allCards.filter(c => c && (_hasRecipeTriggerEE(c, 'on_own_turn_end') || _hasEvoStackTriggerEE(c, 'on_own_turn_end')));
   if (cardsWithEffect.length === 0) { cb(); return; }
   // 【自分のターン終了時】は盤面全体（自分側）をまとめてスキャンして同時誘発として処理する（scanTriggers）ので、
   // 1回だけ呼ぶ（カードごとに呼ぶと、2枚目以降の呼び出しで同じ効果が二重に積まれる）

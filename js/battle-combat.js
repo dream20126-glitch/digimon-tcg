@@ -656,9 +656,20 @@ function hasMatchingColorInPlay(optionCard, side) {
 
 // 「使用条件」欄（基本形）から特徴名を取り出す。"特徴：〇〇" / "特徴:〇〇" / "特徴「〇〇」" に対応
 function parseUseCondFeature(useCond) {
-  if (!useCond) return null;
-  const m = String(useCond).match(/特徴[:：「]\s*(.+?)」?\s*$/);
-  return m ? m[1].trim() : null;
+  const list = parseUseCondFeatures(useCond);
+  return list.length > 0 ? list[0] : null;
+}
+// 「使用条件」の特徴（複数可）。「特徴「NSp」「DS」「NSo」…」（巨大肉 EX12-073）/「特徴：A/B」/「特徴「A」」
+function parseUseCondFeatures(useCond) {
+  if (!useCond) return [];
+  const s = String(useCond);
+  const at = s.search(/特徴/);
+  if (at < 0) return [];
+  const rest = s.slice(at + 2);
+  const quoted = [...rest.matchAll(/「([^」]+)」/g)].map(m => m[1].trim()).filter(Boolean);
+  if (quoted.length > 0) return quoted;
+  const m = rest.match(/^[:：]\s*(.+?)\s*$/);
+  return m ? m[1].split(/[\/／、,]/).map(x => x.trim()).filter(Boolean) : [];
 }
 
 // 「このカードは色条件を無視できる」（passive flag 'ignore_evolve_color'。gate 成立中のみ）。
@@ -678,13 +689,14 @@ function _ownerSideOfCard(card) {
 
 // 使用条件（特徴：〇〇）を満たすか＝場に該当特徴を持つカードがあれば色条件を無視できる
 function meetsUseCondition(optionCard, side) {
-  const feature = parseUseCondFeature(optionCard.useCond);
-  if (!feature) return false;
+  const features = parseUseCondFeatures(optionCard.useCond);
+  if (features.length === 0) return false;
   const p = side === 'player' ? bs.player : bs.ai;
   if (!p) return false;
   const areaCards = [...(p.battleArea || []), ...(p.tamerArea || [])].filter(Boolean);
   if (p.ikusei) areaCards.push(p.ikusei);
-  return areaCards.some(c => String(c.feature || '').includes(feature));
+  // 特徴は「/」区切りで1つずつ比べる（「ME」が「MEW」等に部分一致しないように）
+  return areaCards.some(c => { const fs = String(c.feature || '').split(/[\/／]/).map(x => x.trim()); return features.some(f => fs.includes(f)); });
 }
 
 // ===== 進化条件チェック =====
@@ -2019,7 +2031,8 @@ export function offerHandJogressOnEmpty(card, handIdx, slotIdx, elsePlay) {
   }).then((yes) => {
     if (!yes) { if (card.playCost === null || card.playCost === undefined) { addLog('☓ ジョグレス進化をやめた'); return; } elsePlay && elsePlay(); return; }
     const firsts = [...byBase.keys()];
-    if (firsts.length <= 2) { const b = firsts[0]; _doHandJogress(card, b, byBase.get(b)); return; }
+    // 素材にできるデジモンが1体だけ（他は無い）ことは無いので、常に1体目を選んでもらう（自動で決めない）
+    if (firsts.length <= 1) { const b = firsts[0]; _doHandJogress(card, b, byBase.get(b)); return; }
     const idxs = firsts.map(b => bs.player.battleArea.indexOf(b)).filter(i => i >= 0);
     _showTargetSelection('pl', idxs, null, '#ffd54f', (idx) => {
       if (idx === null || idx === undefined) { addLog('☓ ジョグレス進化をやめた'); return; }

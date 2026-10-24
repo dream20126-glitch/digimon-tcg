@@ -1013,7 +1013,9 @@ function _hudSyncQueue(context) {
       const it = _hudItem(side, e.card, blk._recipeCard || null, text);
       // 同時誘発のグループ（同じプレイヤー・同じ優先度でまとめて誘発して待っているもの。順番はプレイヤーが選ぶ）
       it.group = (_outerW.has(e) ? 'queueOuter:' : 'queue:') + side + ':' + (e.priority || 'normal');
-      it.alive = () => e.status === 'waiting' && _entryStillValid(e, bs);
+      // 発揮できない（レスト中のテイマーの「このテイマーをレストさせることで」等、コストを払えない・条件を満たさない）
+      // 効果は発揮待ちに出さない（東御手洗清司郎 EX12-067）
+      it.alive = () => e.status === 'waiting' && _entryStillValid(e, bs) && _entryWillExecute(e, context);
       // 継承した効果はキャリア（継承しているデジモン）名義で表示し、継承元を添える
       if (inh) { it.sub = '🧬 継承：「' + ((src && src.name) || inh.name) + '」の効果'; }
       return it;
@@ -13867,6 +13869,8 @@ function _costStepsInfeasible(costSteps, carrier, bs, side) {
   return costSteps.some((c) => {
     if (!c) return false;
     if (c.action === 'rest' && (c.target === 'self' || c.target === 'self_card' || !c.target) && carrier.suspended) return true;
+    // 「このデジモンをアクティブにすることで」は、レスト状態でないと払えない（メガドラモン EX12-064 の進化元効果）
+    if (c.action === 'active' && (c.target === 'self' || c.target === 'self_card' || !c.target) && !carrier.suspended) return true;
     if (c.action === 'unlink') {
       const linked = Array.isArray(carrier.linkedCards) ? carrier.linkedCards : [];
       const conds = [];
@@ -14413,12 +14417,22 @@ function _inlineLeadText(fullText) {
   const i = t.indexOf('その後');
   return i > 0 ? t.slice(0, i).trim() : t;
 }
-function _inlineCostConfirmText(step, fullText) {
+function _inlineCostConfirmText(step, fullText, card) {
   if (step && typeof step.display_text === 'string' && step.display_text.trim()) return step.display_text.trim();
   // 強制部分は効果発動のアナウンスで見せ済みなので、確認では任意の「その後〜」部分だけを出す
   const t = String(fullText || '');
   const i = t.indexOf('その後');
-  return i >= 0 ? t.slice(i) : t;
+  if (i >= 0) return t.slice(i);
+  // 効果1の表示テキストだけで「その後」が無い（効果2に表示テキストが無い）: カードの効果テキストで、効果1の文章を
+  // 含む段落から「その後〜」を取る（アンフィモン＆クリスタルフリーザー EX12-033 で、その後の効果のポップアップに
+  // その後の前の効果の文章が出ていた）
+  if (card) {
+    const key = t.replace(/【[^】]*】/g, '').replace(/[\s。]/g, '').slice(0, 12);
+    const paras = [card.effect, card.evoSourceEffect, card.securityEffect].filter(Boolean).join('\n').split('\n');
+    const hit = paras.find(p => p.indexOf('その後') >= 0 && (!key || p.replace(/【[^】]*】/g, '').replace(/[\s。]/g, '').indexOf(key) >= 0));
+    if (hit) return hit.slice(hit.indexOf('その後'));
+  }
+  return t;
 }
 
 // 1つのステップ（「〜全てを消滅させる」・targets で複数の対象グループを持つ消滅等）で消滅したカードの演出をまとめる。
@@ -14548,7 +14562,7 @@ function runRecipe(steps, ctx, callback) {
     // 「〜できる。その後、〜（強制）」の強制部分: 確認せず、「その後〜」の効果発動アナウンスを出してから発揮する
     if (_icLead && idx > 1 && step && !_isInlineConfirmStep(step) && !ctx._inlineCostConfirm._afterShown) {
       ctx._inlineCostConfirm._afterShown = true;
-      const _afterText = _inlineCostConfirmText(step, ctx._inlineCostConfirm.text);
+      const _afterText = _inlineCostConfirmText(step, ctx._inlineCostConfirm.text, ctx._inlineCostConfirm.evoSourceCard || ctx.card);
       // 残りのステップがどれも「〜なら」（step.condition）を満たさないなら、何も起きないのでアナウンスは出さない
       // （レオルモン BT26-025「その後、自分のセキュリティが0枚なら【リカバリー+1】」がセキュリティが残っていても出ていた）
       const _afterNoop = steps.slice(idx - 1).every(st => st && st.condition
@@ -14560,7 +14574,7 @@ function runRecipe(steps, ctx, callback) {
     }
     if (ctx._inlineCostConfirm && ctx._inlineCostConfirm.steps === steps && (idx > 1 || (_icLead && idx === 1))
         && step && _isInlineConfirmStep(step) && !step._costsResolved) {
-      const _askText = (_icLead && idx === 1) ? _inlineLeadText(ctx._inlineCostConfirm.text) : _inlineCostConfirmText(step, ctx._inlineCostConfirm.text);
+      const _askText = (_icLead && idx === 1) ? _inlineLeadText(ctx._inlineCostConfirm.text) : _inlineCostConfirmText(step, ctx._inlineCostConfirm.text, ctx._inlineCostConfirm.evoSourceCard || ctx.card);
       const _isCpu = ctx.side === 'ai' && !(window._isOnlineMode && window._isOnlineMode());
       if (ctx.side === 'player') {
         showConfirmDialog(ctx.card, _askText, (accepted) => {

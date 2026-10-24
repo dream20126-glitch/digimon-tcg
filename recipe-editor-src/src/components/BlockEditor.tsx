@@ -9702,6 +9702,27 @@ const REF_ZONE_QUANT_TO_CODE: Record<string, string> = {
   'evo_source:ge': 'cond_has_evo', 'evo_source:le': 'cond_has_evo_le', 'evo_source:eq': 'cond_has_evo_eq', 'evo_source:gt': 'cond_has_evo_gt', 'evo_source:lt': 'cond_has_evo_lt',
   // 「進化元」ゾーン+数え方トグル（「Lvが同じカード」）専用の内部参照キー。ゾーンボタンとしては出さない
   'evo_source_same_lv:ge': 'cond_has_evo_same_lv', 'evo_source_same_lv:le': 'cond_has_evo_same_lv_le', 'evo_source_same_lv:eq': 'cond_has_evo_same_lv_eq', 'evo_source_same_lv:gt': 'cond_has_evo_same_lv_gt', 'evo_source_same_lv:lt': 'cond_has_evo_same_lv_lt',
+  // 数え方トグル「色の種類」（重なっている/そのゾーンのカードの色の種類の数。「進化元の色が4色以上なら」）専用の内部参照キー
+  'evo_source_colors:ge': 'cond_evo_colors_ge',
+  'evo_source_colors:le': 'cond_evo_colors_le',
+  'evo_source_colors:eq': 'cond_evo_colors_eq',
+  'evo_source_colors:gt': 'cond_evo_colors_gt',
+  'evo_source_colors:lt': 'cond_evo_colors_lt',
+  'hand_colors:ge': 'cond_hand_colors_ge',
+  'hand_colors:le': 'cond_hand_colors_le',
+  'hand_colors:eq': 'cond_hand_colors_eq',
+  'hand_colors:gt': 'cond_hand_colors_gt',
+  'hand_colors:lt': 'cond_hand_colors_lt',
+  'trash_colors:ge': 'cond_trash_colors_ge',
+  'trash_colors:le': 'cond_trash_colors_le',
+  'trash_colors:eq': 'cond_trash_colors_eq',
+  'trash_colors:gt': 'cond_trash_colors_gt',
+  'trash_colors:lt': 'cond_trash_colors_lt',
+  'battle_area_colors:ge': 'cond_battle_area_colors_ge',
+  'battle_area_colors:le': 'cond_battle_area_colors_le',
+  'battle_area_colors:eq': 'cond_battle_area_colors_eq',
+  'battle_area_colors:gt': 'cond_battle_area_colors_gt',
+  'battle_area_colors:lt': 'cond_battle_area_colors_lt',
   'linked:ge': 'cond_linked_ge', 'linked:le': 'cond_linked_le', 'linked:eq': 'cond_linked_eq', 'linked:gt': 'cond_linked_gt', 'linked:lt': 'cond_linked_lt',
   'battle_area:ge': 'cond_battle_area_ge', 'battle_area:le': 'cond_battle_area_le', 'battle_area:eq': 'cond_battle_area_eq', 'battle_area:gt': 'cond_battle_area_gt', 'battle_area:lt': 'cond_battle_area_lt',
   'state_rest:ge': 'cond_state_rest_ge', 'state_rest:le': 'cond_state_rest_le', 'state_rest:eq': 'cond_state_rest_eq', 'state_rest:gt': 'cond_state_rest_gt', 'state_rest:lt': 'cond_state_rest_lt',
@@ -9729,6 +9750,27 @@ const REF_CODE_TO_ZONE_QUANT: Record<string, { zone: string; quant: RefQuant }> 
   cond_has_evo: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_eq: { zone: 'evo_source', quant: 'eq' }, cond_has_evo_gt: { zone: 'evo_source', quant: 'gt' }, cond_has_evo_lt: { zone: 'evo_source', quant: 'lt' },
   // 数え方トグル「Lvが同じカード」が付いていても「進化元」ゾーン自体は変わらない（refEvoCountModeOf参照）
   cond_has_evo_same_lv: { zone: 'evo_source', quant: 'ge' }, cond_has_evo_same_lv_le: { zone: 'evo_source', quant: 'le' }, cond_has_evo_same_lv_eq: { zone: 'evo_source', quant: 'eq' }, cond_has_evo_same_lv_gt: { zone: 'evo_source', quant: 'gt' }, cond_has_evo_same_lv_lt: { zone: 'evo_source', quant: 'lt' },
+  // 数え方トグル「色の種類」が付いていてもゾーン自体は変わらない（refEvoCountModeOf参照）
+  cond_evo_colors_ge: { zone: 'evo_source', quant: 'ge' },
+  cond_evo_colors_le: { zone: 'evo_source', quant: 'le' },
+  cond_evo_colors_eq: { zone: 'evo_source', quant: 'eq' },
+  cond_evo_colors_gt: { zone: 'evo_source', quant: 'gt' },
+  cond_evo_colors_lt: { zone: 'evo_source', quant: 'lt' },
+  cond_hand_colors_ge: { zone: 'hand', quant: 'ge' },
+  cond_hand_colors_le: { zone: 'hand', quant: 'le' },
+  cond_hand_colors_eq: { zone: 'hand', quant: 'eq' },
+  cond_hand_colors_gt: { zone: 'hand', quant: 'gt' },
+  cond_hand_colors_lt: { zone: 'hand', quant: 'lt' },
+  cond_trash_colors_ge: { zone: 'trash', quant: 'ge' },
+  cond_trash_colors_le: { zone: 'trash', quant: 'le' },
+  cond_trash_colors_eq: { zone: 'trash', quant: 'eq' },
+  cond_trash_colors_gt: { zone: 'trash', quant: 'gt' },
+  cond_trash_colors_lt: { zone: 'trash', quant: 'lt' },
+  cond_battle_area_colors_ge: { zone: 'battle_area', quant: 'ge' },
+  cond_battle_area_colors_le: { zone: 'battle_area', quant: 'le' },
+  cond_battle_area_colors_eq: { zone: 'battle_area', quant: 'eq' },
+  cond_battle_area_colors_gt: { zone: 'battle_area', quant: 'gt' },
+  cond_battle_area_colors_lt: { zone: 'battle_area', quant: 'lt' },
   cond_linked_ge: { zone: 'linked', quant: 'ge' }, cond_linked_le: { zone: 'linked', quant: 'le' }, cond_linked_eq: { zone: 'linked', quant: 'eq' }, cond_linked_gt: { zone: 'linked', quant: 'gt' }, cond_linked_lt: { zone: 'linked', quant: 'lt' },
   cond_battle_area_ge: { zone: 'battle_area', quant: 'ge' }, cond_battle_area_le: { zone: 'battle_area', quant: 'le' }, cond_battle_area_eq: { zone: 'battle_area', quant: 'eq' }, cond_battle_area_gt: { zone: 'battle_area', quant: 'gt' }, cond_battle_area_lt: { zone: 'battle_area', quant: 'lt' },
   cond_state_rest_ge: { zone: 'state_rest', quant: 'ge' }, cond_state_rest_le: { zone: 'state_rest', quant: 'le' }, cond_state_rest_eq: { zone: 'state_rest', quant: 'eq' }, cond_state_rest_gt: { zone: 'state_rest', quant: 'gt' }, cond_state_rest_lt: { zone: 'state_rest', quant: 'lt' },
@@ -9783,11 +9825,24 @@ function refSecurityZoneKey(face: '' | 'down' | 'up'): string {
 // 進化元ゾーン専用: 枚数(ge/le/eq/gt/lt)と独立した「数え方」トグル。
 // 「Lvが同じカード」= 重なっているカードをLvごとに数え、最も多いLvの枚数で比較する
 // （例:「このデジモンにLv.の同じカードが2枚以上重ねられているなら」）
-const REF_EVO_COUNT_MODE_OPTIONS: { code: '' | 'same_lv'; label: string }[] = [
-  { code: '', label: '全部' }, { code: 'same_lv', label: 'Lvが同じカード' },
+// 「色の種類」= そのゾーンのカードの色の種類の数で比較する（多色カードはそれぞれの色を数える。
+// 例:「このデジモンの進化元の色が4色以上なら」）。進化元・手札・トラッシュ・バトルエリアで選べる
+type RefCountMode = '' | 'same_lv' | 'colors';
+const REF_EVO_COUNT_MODE_OPTIONS: { code: RefCountMode; label: string }[] = [
+  { code: '', label: '全部' }, { code: 'same_lv', label: 'Lvが同じカード' }, { code: 'colors', label: '色の種類' },
 ];
-function refEvoCountModeOf(base: string): '' | 'same_lv' {
+const REF_COLOR_COUNT_ZONES = new Set(['evo_source', 'hand', 'trash', 'battle_area']);
+const REF_ZONE_COUNT_MODE_OPTIONS: { code: RefCountMode; label: string }[] = [
+  { code: '', label: '全部' }, { code: 'colors', label: '色の種類' },
+];
+function refEvoCountModeOf(base: string): RefCountMode {
+  if (/_colors_(ge|le|eq|gt|lt)$/.test(base)) return 'colors';
   return base.startsWith('cond_has_evo_same_lv') ? 'same_lv' : '';
+}
+function refCountModeKey(zone: string, mode: RefCountMode): string {
+  if (mode === 'colors' && REF_COLOR_COUNT_ZONES.has(zone)) return zone + '_colors';
+  if (mode === 'same_lv' && zone === 'evo_source') return 'evo_source_same_lv';
+  return zone;
 }
 // ゾーンを変更する（値バリアントは可能な限り維持。裏向き/表向きは対応ゾーンでのみ維持できる）
 function refApplyZone(zone: string, quant: RefQuant, value: string | undefined): { base: string; value?: string } {
@@ -9803,13 +9858,12 @@ function refApplyZone(zone: string, quant: RefQuant, value: string | undefined):
 // 以上/以下/完全一致の切替では、入力済みの枚数や「参照」(value:'opp')はそのまま維持する
 // ―― 以上/以下ボタンの切替のたびに「参照」選択が数値入力に巻き戻る不具合があったため）。
 // securityFace: セキュリティゾーンの裏表トグルの現在値を、切替後も保持するために渡す
-function refApplyQuant(zone: string, quant: RefQuant, currentValue?: string, securityFace?: '' | 'down' | 'up', evoCountMode?: '' | 'same_lv'): { base: string; value?: string } {
+function refApplyQuant(zone: string, quant: RefQuant, currentValue?: string, securityFace?: '' | 'down' | 'up', evoCountMode?: RefCountMode): { base: string; value?: string } {
   if (quant === 'face_down' || quant === 'face_up') {
     return { base: quant === 'face_down' ? 'cond_face_down' : 'cond_face_up', value: zone };
   }
   const key = (zone === 'security' && securityFace) ? refSecurityZoneKey(securityFace)
-    : (zone === 'evo_source' && evoCountMode === 'same_lv') ? 'evo_source_same_lv'
-    : zone;
+    : refCountModeKey(zone, evoCountMode || '');
   return { base: REF_ZONE_QUANT_TO_CODE[key + ':' + quant], value: currentValue };
 }
 const REF_QUANT_OPTIONS_BY_ZONE: Record<string, { code: RefQuant; label: string }[]> = {
@@ -10019,6 +10073,7 @@ function ConditionsHybridEditor({
     'cond_hand_ge', 'cond_hand_le', 'cond_trash_ge', 'cond_trash_le',
     'cond_security_ge', 'cond_security_le', 'cond_has_evo', 'cond_has_evo_le',
     'cond_has_evo_same_lv', 'cond_has_evo_same_lv_le', 'cond_has_evo_same_lv_eq', 'cond_has_evo_same_lv_gt', 'cond_has_evo_same_lv_lt',
+    'cond_evo_colors_ge', 'cond_evo_colors_le', 'cond_evo_colors_eq', 'cond_evo_colors_gt', 'cond_evo_colors_lt', 'cond_hand_colors_ge', 'cond_hand_colors_le', 'cond_hand_colors_eq', 'cond_hand_colors_gt', 'cond_hand_colors_lt', 'cond_trash_colors_ge', 'cond_trash_colors_le', 'cond_trash_colors_eq', 'cond_trash_colors_gt', 'cond_trash_colors_lt', 'cond_battle_area_colors_ge', 'cond_battle_area_colors_le', 'cond_battle_area_colors_eq', 'cond_battle_area_colors_gt', 'cond_battle_area_colors_lt',
     // 「効果で」(cond_effect等)は専用カテゴリボタンを設けず「その他条件」内に留める
     // ため、ここでは除外しない（isByEffectCondでその行だけ専用UIを重ねて表示する）
     // 「指定」カテゴリで扱うプレースホルダー
@@ -10483,10 +10538,10 @@ function ConditionsHybridEditor({
                                   min={0}
                                   value={c.value || ''}
                                   onChange={(e) => updateAt(i, { value: e.target.value })}
-                                  placeholder={REF_ZONE_UNIT_COUNT.has(refZone) ? '体数' : '枚数'}
+                                  placeholder={refEvoCountMode === 'colors' ? '色数' : REF_ZONE_UNIT_COUNT.has(refZone) ? '体数' : '枚数'}
                                   style={{ width: 70, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
                                 />
-                                <span style={{ fontSize: 10, color: '#555' }}>{REF_ZONE_UNIT_COUNT.has(refZone) ? '体' : '枚'}</span>
+                                <span style={{ fontSize: 10, color: '#555' }}>{refEvoCountMode === 'colors' ? '色' : REF_ZONE_UNIT_COUNT.has(refZone) ? '体' : '枚'}</span>
                                 <button
                                   type="button"
                                   onClick={() => updateAt(i, { value: 'opp' })}
@@ -10501,17 +10556,20 @@ function ConditionsHybridEditor({
                           {/* セキュリティのみ: 枚数条件に重ねて「裏向きのみ/表向きのみ」に絞り込める
                               （例:「裏向きのセキュリティが2枚以上」）。⚠エンジン未実装
                               （セキュリティカード個々の裏表状態自体をエンジンが未保持） */}
-                          {refZone === 'evo_source' && !refNoValue && (
+                          {REF_COLOR_COUNT_ZONES.has(refZone) && !refNoValue && (
                             <div>
                               <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🔢 数え方</div>
                               <ButtonGroup
-                                options={REF_EVO_COUNT_MODE_OPTIONS}
+                                options={refZone === 'evo_source' ? REF_EVO_COUNT_MODE_OPTIONS : REF_ZONE_COUNT_MODE_OPTIONS}
                                 value={refEvoCountMode}
                                 onChange={(mode) => updateAt(i, {
-                                  base: REF_ZONE_QUANT_TO_CODE[(mode === 'same_lv' ? 'evo_source_same_lv' : 'evo_source') + ':' + refQuant],
+                                  base: REF_ZONE_QUANT_TO_CODE[refCountModeKey(refZone, mode as RefCountMode) + ':' + refQuant],
                                 })}
                                 accentColor={colors.accent}
                               />
+                              {refEvoCountMode === 'colors' && (
+                                <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>カードの色の種類の数で判定します（多色カードはそれぞれの色を数える。値は「色数」）<span style={{ color: '#c62828', marginLeft: 4 }}>⚠ エンジン未実装</span></div>
+                              )}
                               {refEvoCountMode === 'same_lv' && (
                                 <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>重なっているカードをLvごとに数え、一番多いLvの枚数で判定します（Lvの無いカードは数えません）</div>
                               )}

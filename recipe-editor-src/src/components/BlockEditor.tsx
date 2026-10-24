@@ -5874,18 +5874,22 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               updateEffect({ action: nextMode === 'cant' ? DOABLE_TO_CANT_LIVE[last] : last, value: nextMode === 'cant' ? undefined : editingAlt!.value });
               return;
             }
+            // この複数選択が自動で作った効果2以降（同じ対象への「できない」）だけを外し、ユーザーが作った効果2以降は残す
+            // （以前はアクションを選び直すと効果2以降が全部消えていた）
+            const _userAlts = altActions.filter((a) => !(a.target === 'same_target' && CANT_TO_DOABLE_LIVE[a.action || ''] && !a.thenBreak));
+            const _keepAlts = _userAlts.length > 0 ? { altActions: _userAlts, altActionsOp: block.altActionsOp } : { altActions: [] as AltAction[], altActionsOp: undefined };
             if (nextSet.length === 0) {
-              onChange({ ...block, action: '', altActions: [], altActionsOp: undefined });
+              onChange({ ...block, action: '', ..._keepAlts });
               return;
             }
             if (nextSet.length === 1) {
               const code = nextMode === 'cant' ? DOABLE_TO_CANT_LIVE[nextSet[0]] : nextSet[0];
-              onChange({ ...block, action: code, value: nextMode === 'cant' ? undefined : block.value, altActions: [], altActionsOp: undefined });
+              onChange({ ...block, action: code, value: nextMode === 'cant' ? undefined : block.value, ..._keepAlts });
               return;
             }
             // 2件以上は常に「できない」
             if (nextSet.length === 2 && nextSet.includes('attack') && nextSet.includes('force_block')) {
-              onChange({ ...block, action: 'cant_attack_block', value: undefined, altActions: [], altActionsOp: undefined });
+              onChange({ ...block, action: 'cant_attack_block', value: undefined, ..._keepAlts });
               return;
             }
             const [first, ...rest] = nextSet;
@@ -5893,7 +5897,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               ...block,
               action: DOABLE_TO_CANT_LIVE[first],
               value: undefined,
-              altActions: rest.map((k) => ({ action: DOABLE_TO_CANT_LIVE[k], target: 'same_target' } as AltAction)),
+              altActions: [...rest.map((k) => ({ action: DOABLE_TO_CANT_LIVE[k], target: 'same_target' } as AltAction)), ..._userAlts],
               altActionsOp: 'and',
             });
           }
@@ -7590,11 +7594,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const hideCount = tgtBase === 'self' || tgtBase === 'self_card' || tgtBase === 'same_target' || tgtBase === 'target_trigger_source';
           const isUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(tgtBase) || isOrMode || isAndMode;
 
+          // デジモン＋テイマー(AND)で自動で作った効果2（テイマーへの同じアクション）だけを外した効果2以降。
+          // ユーザーが作った効果2以降（その後 等）は対象を変えても消さない（以前は「デジモン」ボタン等で全部消えていた。EX12-056）
+          const keepUserAlts = isAndMode
+            ? { altActions: altActions.slice(1), altActionsOp: altActions.length > 1 ? block.altActionsOp : undefined }
+            : { altActions: block.altActions, altActionsOp: block.altActionsOp };
           const handleTgtL1 = (l1: string) => {
             // OR/ANDで自動設定していたフィルタ/代替アクションはL1切替時に一旦クリアする
-            const cleared = (isOrMode || isAndMode)
-              ? { altActions: [], altActionsOp: undefined, targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') }
-              : {};
+            const cleared = isAndMode
+              ? { ...keepUserAlts, targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') }
+              : isOrMode ? { targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') } : {};
             if (!l1) { onChange({ ...block, ...cleared, target: '' }); return; }
             // self/self_card・same_target は「対象数」UI自体を表示しない（hideCount）ため、
             // 直前に他の対象で付いていた数指定(例: ":1")を持ち越さないようここで破棄する
@@ -7625,7 +7634,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const next = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':' + l2] || '';
             if (isAndMode) {
               // デジモン+テイマー(AND)で自動設定した代替アクションを解除してから切り替える
-              onChange({ ...block, target: next + tgtSuffix, altActions: [], altActionsOp: undefined });
+              onChange({ ...block, target: next + tgtSuffix, ...keepUserAlts });
             } else {
               setTarget(next, tgtSuffix);
             }
@@ -7634,23 +7643,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const applyDigiTamerSelection = (nextDigimon: boolean, nextTamer: boolean, mode: 'or' | 'and') => {
             if (nextDigimon && nextTamer) {
               if (mode === 'or') {
-                onChange({ ...block, target: cardCode + tgtSuffix, altActions: [], altActionsOp: undefined,
+                onChange({ ...block, target: cardCode + tgtSuffix, ...keepUserAlts,
                   targetFilter: [...targetFilter.filter((c) => c.base !== 'cond_type'), { base: 'cond_type', value: 'デジモン,テイマー' }] });
               } else {
                 onChange({ ...block, target: digimonCode + tgtSuffix,
                   targetFilter: targetFilter.filter((c) => c.base !== 'cond_type'),
-                  altActions: [{ action: block.action || '', value: block.value, target: tamerCode }], altActionsOp: 'and' });
+                  altActions: [{ action: block.action || '', value: block.value, target: tamerCode }, ...(keepUserAlts.altActions || [])], altActionsOp: 'and' });
               }
             } else if (nextDigimon) {
               const remapAction = remapPlaceActionForTarget(digimonCode);
-              onChange({ ...block, target: digimonCode + tgtSuffix, altActions: [], altActionsOp: undefined,
+              onChange({ ...block, target: digimonCode + tgtSuffix, ...keepUserAlts,
                 targetFilter: targetFilter.filter((c) => c.base !== 'cond_type'), ...(remapAction ? { action: remapAction } : {}) });
             } else if (nextTamer) {
               const remapAction = remapPlaceActionForTarget(tamerCode);
-              onChange({ ...block, target: tamerCode + tgtSuffix, altActions: [], altActionsOp: undefined,
+              onChange({ ...block, target: tamerCode + tgtSuffix, ...keepUserAlts,
                 targetFilter: targetFilter.filter((c) => c.base !== 'cond_type'), ...(remapAction ? { action: remapAction } : {}) });
             } else {
-              onChange({ ...block, target: '', altActions: [], altActionsOp: undefined,
+              onChange({ ...block, target: '', ...keepUserAlts,
                 targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') });
             }
           };

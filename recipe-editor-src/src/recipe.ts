@@ -890,7 +890,32 @@ function stripEmptyValuePairs<T>(v: T): T {
   return v;
 }
 
+// 「【メイン】効果を発揮」(use_main_effect) は、エディタでは「効果を発揮」＞メイン＞できる と同じ画面で編集する。
+// レシピ（エンジン）側は従来どおり use_main_effect のまま（セキュリティ効果の二重発動防止等が action 名を見ているため）。
+// 読込: use_main_effect → negate + target_trigger:'main' / 保存: このカード自身の「メイン効果を発揮できる」→ use_main_effect
+const _isSelfOrNone = (t: any) => t === undefined || t === '' || t === 'self' || t === 'self_card';
+function mapActionsDeep(v: any, fn: (o: any) => any): any {
+  if (Array.isArray(v)) return v.map((x) => mapActionsDeep(x, fn));
+  if (!v || typeof v !== 'object') return v;
+  const out: any = {};
+  Object.keys(v).forEach((k) => { out[k] = mapActionsDeep(v[k], fn); });
+  return typeof out.action === 'string' ? fn(out) : out;
+}
+function useMainEffectToNegate(o: any): any {
+  if (o.action !== 'use_main_effect') return o;
+  return { ...o, action: 'negate', target_trigger: 'main' };
+}
+function negateMainToUseMainEffect(o: any): any {
+  if (o.action !== 'negate' || o.target_trigger !== 'main' || o.deny || !_isSelfOrNone(o.target)) return o;
+  const { target_trigger: _tt, ...rest } = o;
+  void _tt;
+  return { ...rest, action: 'use_main_effect' };
+}
+
 export function blocksToRecipe(rawBlocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
+  return mapActionsDeep(_blocksToRecipeRaw(rawBlocks, keywordDict), negateMainToUseMainEffect);
+}
+function _blocksToRecipeRaw(rawBlocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
   const blocks = stripEmptyValuePairs(rawBlocks);
   const recipe: Record<string, any> = {};
   blocks.forEach((b) => {
@@ -1885,7 +1910,7 @@ function mergeSameContentSections(blocks: EffectBlock[]): EffectBlock[] {
 }
 export function recipeToBlocks(rawRecipe: any): EffectBlock[] {
   if (!rawRecipe || typeof rawRecipe !== 'object') return [];
-  const recipe = normalizeKeywordAliasesDeep(rawRecipe);
+  const recipe = mapActionsDeep(normalizeKeywordAliasesDeep(rawRecipe), useMainEffectToNegate);
   const blocks: EffectBlock[] = [];
 
   if (Array.isArray(recipe.passive)) {

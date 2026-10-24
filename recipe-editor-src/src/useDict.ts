@@ -114,7 +114,9 @@ function categorize(rows: any[]): { triggers: DictEntry[]; conditions: DictEntry
     };
     if (kind === 'trigger' || kind === 'continuous') triggers.push(entry);
     else if (kind === 'condition') conditions.push(entry);
-    else if (kind === 'action') actions.push(entry);
+    // 「【メイン】効果を発揮」(use_main_effect) は「効果を発揮」＞メイン に統一したので、アクションの一覧には出さない
+    // （既存レシピの use_main_effect は読込時に「効果を発揮」＞メイン として開く。recipe.ts useMainEffectToNegate）
+    else if (kind === 'action') { if (entry.code !== 'use_main_effect') actions.push(entry); }
     else if (kind === 'keyword') keywords.push(entry);
     else if (kind === 'option') options.push(entry);
   }

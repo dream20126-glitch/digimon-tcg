@@ -1568,7 +1568,7 @@ function CostListEditor({
                     };
                     return (
                       <div style={{ marginTop: 4 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（取得元）</div>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 置くカード（どこから持ってきて置くか）</div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           {FROM_ZONES.map((z) => {
                             const active = zones.includes(z.code);
@@ -3332,6 +3332,9 @@ const PLACE_ZONE_MAP: { code: string; label: string; action: string; target?: st
   },
 ];
 const PLACE_ACTION_CODES = new Set(PLACE_ZONE_MAP.map((z) => z.action));
+// 「〜の下に置く」（進化元/テイマー/このカードの下）: 🎯対象＝置き先（どのデジモン/テイマーの下か）、📥取得元＝置くカード。
+// それ以外（セキュリティ/デッキ/バトルエリア）: 📍置き場所で置き先を選び、🎯対象＝置くカード（このカード・相手のデジモン等）
+const UNDER_PLACE_ACTIONS = new Set(['place_under_digimon', 'place_under_tamer', 'place_under_self']);
 // COMMON_ACTIONS の一部（登場/使用・進化）は辞書に登録せず常時使えるビルトインのため、
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
 // jogress_evolve: 効果での「手札の〇〇にジョグレス進化できる」も、進化と同じく取得元（手札等）と取得元カードの条件を指定する
@@ -3852,12 +3855,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     if (!effectIsPlaceActive || !newTargetBase) return undefined;
     // バトルエリア（このカード自身を置く）は「このカード」のまま。それ以外の対象を選んだら切り替える
     if (effectAction === 'place_in_battle_area' && newTargetBase === 'self_card') return undefined;
+    // セキュリティ/デッキ/バトルエリアに置くときの対象は「置くカード」なので、対象を選んでも置き先は変えない
+    // （置き先は📍置き場所ボタンで選ぶ）。進化元/テイマー/このカードの下の間だけ、対象（置き先）に合わせて切り替える
+    if (!UNDER_PLACE_ACTIONS.has(effectAction || '')) return undefined;
     const l1l2 = TARGET_SEL_CODE_TO_L1L2[newTargetBase] || { l1: '', l2: '' };
     const zone = PLACE_ZONE_MAP.find((z) => {
       const zl = TARGET_SEL_CODE_TO_L1L2[z.target || ''] || { l1: '', l2: '' };
       return zl.l2 ? zl.l2 === l1l2.l2 : (zl.l1 === 'self' && l1l2.l1 === 'self');
     });
-    return zone && zone.action !== effectAction ? zone.action : undefined;
+    return zone && UNDER_PLACE_ACTIONS.has(zone.action) && zone.action !== effectAction ? zone.action : undefined;
   }
 
   const summarizeAction = (act?: string, val?: number | string) => {
@@ -6349,16 +6355,44 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     警告文だけはここに残す */}
                 {isPlaceActive && (() => {
                   const z = PLACE_ZONE_MAP.find((zz) => zz.action === effectAction);
-                  return z?.warn ? (
-                    <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>{z.warn}</div>
-                  ) : null;
+                  const curZone = z ? (z.code === 'self' ? 'evo_source' : z.code) : '';
+                  return (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 置き場所（〇〇に置く の〇〇）</div>
+                      {/* 「このカードの下」は置き場所「進化元」＋置き先「このカード」で表す（コスト欄と同じ） */}
+                      <ButtonGroup
+                        options={PLACE_ZONE_MAP.filter((zz) => zz.code !== 'self').map((zz) => ({ code: zz.code, label: zz.label }))}
+                        value={curZone}
+                        onChange={(zoneCode) => {
+                          if (zoneCode === curZone) return;
+                          const nz = PLACE_ZONE_MAP.find((zz) => zz.code === zoneCode);
+                          if (!nz) return;
+                          const under = UNDER_PLACE_ACTIONS.has(nz.action);
+                          // セキュリティ/デッキ/バトルエリア: 対象＝置くカード（既定は「このカード」）。進化元/テイマー: 対象＝置き先
+                          const nextTarget = !under ? 'self_card' : nz.code === 'tamer' ? 'own_tamer' : 'own:1';
+                          updateEffect({
+                            action: nz.action, target: nextTarget, deckPosition: undefined, options: [],
+                            ...(under ? {} : { fromZones: [] }),
+                            targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_target_evo_source' && c.base !== 'cond_target_stack'),
+                          });
+                        }}
+                        accentColor="#1976d2"
+                      />
+                      <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
+                        {z && UNDER_PLACE_ACTIONS.has(z.action)
+                          ? '🎯対象で「どのデジモン／テイマーの下に置くか」、📥で「置くカードをどこから持ってくるか」を選びます'
+                          : '🎯対象で「置くカード」（このカード・相手のデジモン等）を選びます'}
+                      </div>
+                      {z?.warn && <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>}
+                    </div>
+                  );
                 })()}
                 {/* 📥 場所（どこから置くか）: 「〇〇に置く」でPLACE_ZONE_MAP側のhasFromZonesが
                     立っている置き場所（セキュリティ/テイマー/進化元/このカード）のときだけ、
                     置くカードの取得元をここ（アクション欄・警告文の下）に表示する。
                     CostListEditorの同名パネルと見た目・データ（effectFromZones等）を揃えている。
                     バトルエリアは「このカード自身」が置かれるだけなので取得元の概念が無い */}
-                {isPlaceActive && effectActivePlaceZone?.hasFromZones && (() => {
+                {isPlaceActive && effectActivePlaceZone?.hasFromZones && (UNDER_PLACE_ACTIONS.has(effectAction || '') || effectFromZones.length > 0) && (() => {
                   const zones = effectFromZones;
                   const op = effectFromZonesOp;
                   const toggleZone = (code: string) => {
@@ -6367,7 +6401,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   };
                   return (
                     <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（取得元）</div>
+                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 置くカード（どこから持ってきて置くか）</div>
+                      {!UNDER_PLACE_ACTIONS.has(effectAction || '') && (
+                        <div style={{ fontSize: 10, color: '#c62828', marginBottom: 2 }}>⚠ 置き場所がセキュリティ/デッキ/バトルエリアのときは使いません（置くカードは🎯対象で選ぶ）。外してください</div>
+                      )}
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {FROM_ZONES.map((z) => {
                           const active = zones.includes(z.code);
@@ -7353,10 +7390,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       <div style={{ marginTop: 4 }}>
                         <ButtonGroup
                           options={[
-                            ...(eIsPlaceAction ? [] : [{ code: '', label: '指定なし' }]),
+                            ...(eIsPlaceAction && UNDER_PLACE_ACTIONS.has(effectAction || '') ? [] : [{ code: '', label: '指定なし' }]),
                             { code: 'evo_source', label: '進化元' },
                             { code: 'stacked', label: '重ねられているカード' },
-                            ...(eIsPlaceAction && eCurTgt.l1 === 'self' ? [{ code: 'battle_area', label: 'バトルエリア' }, { code: 'security', label: 'セキュリティ' }] : []),
+
                           ]}
                           value={eActiveSub}
                           onChange={(v) => setESub(v as '' | 'evo_source' | 'stacked' | 'battle_area' | 'security')}
@@ -7659,9 +7696,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <div style={{ display: 'grid', gridTemplateColumns: showSecondColumn ? '1fr 1fr' : '1fr', gap: 8, marginTop: 8 }}>
               <div className="field" style={{ background: '#fff8e6', padding: 6, borderRadius: 4, border: '1px solid #ffd591' }}>
                 <label style={{ fontWeight: 'bold', color: '#b76e00', display: 'flex', alignItems: 'center' }}>
-                  🎯 アクションの対象{hasExtraTargets ? '1' : ''}
+                  {effectIsPlaceActive
+                    ? (UNDER_PLACE_ACTIONS.has(effectAction || '') ? '🎯 置き先' : '🎯 置くカード')
+                    : <>🎯 アクションの対象{hasExtraTargets ? '1' : ''}</>}
                   <span style={{ fontSize: 10, fontWeight: 'normal', color: '#666', marginLeft: 6 }}>
-                    （このアクションが効果を与えるカード／デジモン）
+                    {effectIsPlaceActive
+                      ? (UNDER_PLACE_ACTIONS.has(effectAction || '') ? '（どのデジモン／テイマーの下に置くか）' : '（何を置くか。例: このカード／相手のデジモン1体）')
+                      : '（このアクションが効果を与えるカード／デジモン）'}
                   </span>
                   <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 'normal', color: '#666', cursor: 'pointer' }}>
                     <input type="checkbox" checked={hasExtraTargets} onChange={(e) => setHasExtraTargets(e.target.checked)} style={{ margin: 0 }} />
@@ -7756,10 +7797,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <div style={{ marginTop: 4 }}>
                       <ButtonGroup
                         options={[
-                          ...(isPlaceAction ? [] : [{ code: '', label: '指定なし' }]),
+                          ...(isPlaceAction && UNDER_PLACE_ACTIONS.has(block.action || '') ? [] : [{ code: '', label: '指定なし' }]),
                           { code: 'evo_source', label: '進化元' },
                           { code: 'stacked', label: '重ねられているカード' },
-                          ...(isPlaceAction && curTgt.l1 === 'self' ? [{ code: 'battle_area', label: 'バトルエリア' }, { code: 'security', label: 'セキュリティ' }] : []),
+
                         ]}
                         value={activeSub}
                         onChange={(v) => setSub(v as '' | 'evo_source' | 'stacked' | 'battle_area' | 'security')}
@@ -8110,7 +8151,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             で持つ。効果1・代替アクション（その後/OR/AND）とも同じ場所を使い回す */}
         {showRetrievalFilterEffective
           // 〇〇に置くは取得元をアクション欄の「📥 場所（取得元）」で選ぶので、取得元カードの条件は常に出す
-          && (effectIsPlaceActive || effZoneSrc || !(isZoneL2((TARGET_SEL_CODE_TO_L1L2[(effectTarget || '').split(':')[0]] || { l2: '' }).l2)
+          && ((effectIsPlaceActive && (UNDER_PLACE_ACTIONS.has(effectAction || '') || effectFromZones.length > 0 || !!(effectFromFilter && effectFromFilter.length > 0))) || effZoneSrc || !(isZoneL2((TARGET_SEL_CODE_TO_L1L2[(effectTarget || '').split(':')[0]] || { l2: '' }).l2)
             && !(effectFromFilter && effectFromFilter.length > 0) && !(effectFromFilterChain && effectFromFilterChain.length > 0)))
           && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8, background: '#e0f7f5', border: '1px solid #b2dfdb', borderRadius: 4, padding: 8 }}>

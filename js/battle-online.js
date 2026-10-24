@@ -368,6 +368,8 @@ export function sendStateSync() {
       tamerCount: (bs.player.tamerArea || []).filter(Boolean).length,
       ikusei: serializeCard(bs.player.ikusei),
       handCount: bs.player.hand.length,
+      // 手札に今使える［手札］【カウンター】（ブラスト進化等）があるか。相手のアタック時にこちらへ反応を委譲するかの判断用
+      handBlast: !!(window._handHasBlastCounter && window._handHasBlastCounter(bs.player)),
       tamaCount: bs.player.tamaDeck.length,
       deckCount: bs.player.deck.length,
       trashCount: bs.player.trash.length,
@@ -1409,6 +1411,7 @@ function onRemoteCommand(cmd) {
       bs.ai.ikusei = st.ikusei ? restoreCard(st.ikusei) : bs.ai.ikusei;
       if (st.deckCount !== undefined) adjustArr(bs.ai.deck, st.deckCount);
       if (st.handCount !== undefined) adjustArr(bs.ai.hand, st.handCount);
+      bs.ai._handBlast = !!st.handBlast;
       if (st.tamaCount !== undefined) adjustArr(bs.ai.tamaDeck, st.tamaCount);
       if (st.trashCards) bs.ai.trash = toArray(st.trashCards).map(restoreCard);
       else if (st.trashCount !== undefined) adjustArr(bs.ai.trash, st.trashCount);

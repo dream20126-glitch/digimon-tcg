@@ -19,7 +19,23 @@ export function getNameAliases(card) {
   let m;
   ALIAS_RE.lastIndex = 0;
   while ((m = ALIAS_RE.exec(text))) aliases.push(m[1]);
+  // レシピの alias_names（エディタの「名称としても扱う」。＜ルール：名称「マメモン」としても扱う＞ サンダーボールモン EX12-041）
+  aliases.push(...recipeAliasNames(card));
   return aliases;
+}
+const _aliasCache = new Map();
+function recipeAliasNames(card) {
+  const raw = card && card.recipe;
+  if (!raw) return [];
+  if (typeof raw === 'object') return Array.isArray(raw.alias_names) ? raw.alias_names.map(String) : [];
+  const key = String(raw);
+  if (_aliasCache.has(key)) return _aliasCache.get(key);
+  let out = [];
+  if (key.includes('alias_names')) {
+    try { const r = JSON.parse(key); if (r && Array.isArray(r.alias_names)) out = r.alias_names.map(String).filter(Boolean); } catch (_) {}
+  }
+  _aliasCache.set(key, out);
+  return out;
 }
 
 // カードの名前（またはルールによるエイリアス名）が reqName に一致するか判定する。

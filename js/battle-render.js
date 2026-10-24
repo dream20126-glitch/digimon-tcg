@@ -250,6 +250,8 @@ export function renderAll(force) {
   if (!force && isTargetSelecting()) return;
   // トークンが場を離れていたら消滅させる
   _purgeTokens();
+  // 《オーバーフロー》: 場や下のカードから他の場所へ移ったカードのメモリー処理（どの経路で移っても拾うよう描画前に確認）
+  if (window._checkOverflow) { try { window._checkOverflow(); } catch(_) {} }
   // 永続効果を再計算（SA+/DP+等が最新の進化元状態を反映するように）
   if (window._applyPermanentEffects) { try { window._applyPermanentEffects(); } catch(_) {} }
   renderSecurity();

@@ -10,7 +10,7 @@ import { addLog } from './battle-ui.js';
 import { renderAll, showBCD, closeBCD, showTrash, updateMemGauge, setIkuCallbacks, doIkuMove } from './battle-render.js';
 import { onEndTurn, skipBreedPhase, breedActionDone, showYourTurn, showPhaseAnnounce, showSkipAnnounce, doDraw, aiTurn, setPhaseHooks, showDrawEffect } from './battle-phase.js';
 import { doPlay, offerAssemblyThenPlay, doEvolve, doEvolveIku, doEvolveFromEffect, doJogressFromEffect, doLink, meetsLinkCondition, canEvolveOnto, startAttack, cancelAttack, resolveAttackTarget, battleVictory, battleDefeat, showPlayEffect, showEvolveEffect, showDestroyEffect, showDestroyBatch, showSecurityCheck, showBattleResult, showOptionEffect, setCombatHooks, aiScriptPlayCard, aiScriptEvolveBattle, aiScriptEvolveBreed, aiScriptMoveToBattle, aiScriptAttack, doTrainingEffect, getAppGattaiCandidates, doAppGattaiEvolve } from './battle-combat.js';
-import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE, fireOnAttackBothSubjectTriggers as _fireOnAttackBothSubjectEE, fireOnAttackOppSubjectTriggers as _fireOnAttackOppSubjectEE, fireWhenTargetChangedTriggers as _fireWhenTargetChangedEE, fireOnMainPhaseStartTriggers as _fireOnMainPhaseStartEE, fireOnOppMainPhaseStartTriggers as _fireOnOppMainPhaseStartEE, fireDelegatedReactionTriggers as _fireDelegatedReactionEE, runDelegatedHandDiscard as _runDelegatedHandDiscardEE, activateZoneMainEffect as _activateZoneMainEE, getUsableZoneMainEffects as _getUsableZoneMainEE } from './effect-engine.js';
+import { expireBuffs as _expireBuffsEE, applyPermanentEffects as _applyPermanentEE, triggerEffect as _triggerEffectEE, registerFxRunners, fireWhenOwnBlockTriggers as _fireWhenOwnBlockEE, hasRecipeTrigger as _hasRecipeTriggerEE, hasEvoStackTrigger as _hasEvoStackTriggerEE, fireOnDestroyTriggers as _fireOnDestroyEE, fireOnBattleDestroyTriggers as _fireOnBattleDestroyEE, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyedEE, fireWhenOppAttackTriggers as _fireWhenOppAttackEE, fireOnAttackBothSubjectTriggers as _fireOnAttackBothSubjectEE, fireOnAttackOppSubjectTriggers as _fireOnAttackOppSubjectEE, checkOverflow as _checkOverflowEE, handHasBlastCounter as _handHasBlastCounterEE, fireWhenTargetChangedTriggers as _fireWhenTargetChangedEE, fireOnMainPhaseStartTriggers as _fireOnMainPhaseStartEE, fireOnOppMainPhaseStartTriggers as _fireOnOppMainPhaseStartEE, fireDelegatedReactionTriggers as _fireDelegatedReactionEE, runDelegatedHandDiscard as _runDelegatedHandDiscardEE, activateZoneMainEffect as _activateZoneMainEE, getUsableZoneMainEffects as _getUsableZoneMainEE } from './effect-engine.js';
 import { getFxRunners, fxSAttackPlus, fxHatchEffect, fxRemoteEffect, fxRemoteEffectClose, fxCardMove, fxCardMoveBatch, fxCardMoveMulti, fxBuffStatus, fxShuffle, fxLinkEffect, fxEffectBattle, fxMultiLinkEffect, fxJogressFusion } from './battle-fx.js';
 import { sendCommand, sendStateSync, isOnlineMode } from './battle-online.js';
 
@@ -404,6 +404,14 @@ export function setupCommonWindowExports() {
   window._fxBuffStatus = fxBuffStatus;
   window._fxShuffle = fxShuffle;
 
+  // 《オーバーフロー》: 描画前に場と下のカードから居なくなったオーバーフロー持ちのカードを処理する（effect-engine.js checkOverflow）
+  window._checkOverflow = function() {
+    try { _checkOverflowEE(bs, makeEffectContext(null, 'player')); } catch(e) { console.error('[overflow]', e.message); }
+  };
+  // 手札に今使える［手札］【カウンター】【ブラスト進化】等があるか（state_sync の handBlast。effect-engine.js handHasBlastCounter）
+  window._handHasBlastCounter = function(p) {
+    try { return _handHasBlastCounterEE(p); } catch(e) { return false; }
+  };
   window._applyPermanentEffects = function() {
     try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch(e) { console.error('[applyPerm player]', e.message); }
     try { _applyPermanentEE(bs, 'ai', makeEffectContext(null, 'ai')); } catch(e) { console.error('[applyPerm ai]', e.message); }

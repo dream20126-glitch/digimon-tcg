@@ -1701,6 +1701,14 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     // 1体を消滅させる」。一部のアクション（security_trash_top/bottom/select・deck_trash_top・
     // destroy）のみ対応（該当箇所で bs._lastActionCount を更新）
     case 'last_action_count':    return (bs && bs._lastActionCount != null) ? bs._lastActionCount : 0;
+    // 直前の効果で処理したカード（bs._lastActionCards）。_colors は色の種類の数（「戻したカードの色1色ごとに」アマテラスモン EX12-047）
+    case 'last_action_cards':    return countWith((bs && bs._lastActionCards) || []);
+    case 'last_action_cards_colors': {
+      const cols = new Set();
+      ((bs && bs._lastActionCards) || []).filter(c => c && passesState(c) && (!hasFilter || cardMatchesFilter(c, refFilter, bs, side, card)))
+        .forEach(c => String(c.color || '').split(/[/、,]/).map(x => x.trim()).filter(Boolean).forEach(x => cols.add(x)));
+      return cols.size;
+    }
     // --- 両方（自分+相手を合算してカウント） ---
     case 'both_digimon':
       return countWith(player.battleArea.filter(c => c && c.type === 'デジモン'))
@@ -12214,6 +12222,77 @@ function _isOppOrBothAttackStep(step) {
 function _isCounterStep(step) {
   return !!step && ((step.counter === true && _isOppOrBothAttackStep(step)) || step.also_counter === true);
 }
+// ===== ［手札］【カウンター】【ブラスト進化】/【ブラストジョグレス】（公式ルール 16-26 / 16-31） =====
+// レシピ: passive に { flag:'blast', keyword_mode:'evolve'|'jogress' }（エディタの「ブラスト〇〇」。
+// 旧形式の flag:'blast_evolve' / 'blast_jogress' も同じ扱い）。
+// - 進化: 進化条件を満たす自分のデジモン1体を、手札のこのカードにコストを支払わずに進化できる（任意）
+// - ジョグレス: このカードのジョグレスの進化条件を満たす自分のデジモン2体で、コストを支払ってジョグレス進化できる（任意）
+// 【カウンター】なので1回のアタックに1つだけ（場の【カウンター】と共通の _counterUsedSeq）
+export function getBlastModes(card) {
+  const modes = [];
+  const r = card && _parseCardRecipe(card);
+  const passive = r && Array.isArray(r.passive) ? r.passive : [];
+  passive.forEach((pv) => {
+    if (!pv) return;
+    const add = (m) => { if ((m === 'evolve' || m === 'jogress') && !modes.includes(m)) modes.push(m); };
+    if (pv.flag === 'blast') {
+      const km = Array.isArray(pv.keyword_mode) ? pv.keyword_mode : String(pv.keyword_mode || 'evolve').split(/[,、/]/);
+      km.forEach(m => add(String(m).trim()));
+    } else if (pv.flag === 'blast_evolve') add('evolve');
+    else if (pv.flag === 'blast_jogress') add('jogress');
+  });
+  return modes;
+}
+// 手札のどれかが今ブラスト〇〇できるか（相手機への state_sync の handBlast 用。持ち主側の判定）
+export function handHasBlastCounter(p) {
+  return !!p && (p.hand || []).some(c => c && _blastStepsFor(c, p).length > 0);
+}
+function _blastStepsFor(card, p) {
+  const steps = [];
+  const digimons = (p.battleArea || []).filter(c => c && (c.type === 'デジモン' || !c.type));
+  getBlastModes(card).forEach((m) => {
+    if (m === 'evolve') {
+      if (!digimons.some(b => _effectEvoAllowed(card, b, false))) return;
+      steps.push({ action: 'evolve', target: 'own:1', cost_free: true, optional: true, from: 'hand', evolve_into: 'self_card',
+        display_text: '［手札］【カウンター】【ブラスト進化】自分のデジモン1体を、手札のこのカードにコストを支払わずに進化できる' });
+    } else if (m === 'jogress') {
+      let ok = false;
+      try {
+        getJogressConditions(card).forEach((jc) => {
+          digimons.forEach(a => digimons.forEach(b => {
+            if (a !== b && jogressSlotMatches(a, jc.slots[0]) && jogressSlotMatches(b, jc.slots[1])) ok = true;
+          }));
+        });
+      } catch (_) {}
+      if (!ok) return;
+      steps.push({ action: 'jogress_evolve', target: 'own:2', optional: true, from: 'hand', evolve_into: 'self_card',
+        display_text: '［手札］【カウンター】【ブラストジョグレス】自分のデジモン2体で、手札のこのカードにコストを支払ってジョグレス進化できる' });
+    }
+  });
+  return steps;
+}
+function _fireBlastCounters(reactSide, bs, ctxBase, done) {
+  const finish = () => { try { done && done(); } catch (_) {} };
+  if (!bs || (bs._attackSeq && bs._counterUsedSeq === bs._attackSeq)) { finish(); return; }
+  const p = bs[reactSide];
+  if (!p) { finish(); return; }
+  const cands = [];
+  (p.hand || []).forEach((c) => { if (c) _blastStepsFor(c, p).forEach(st => cands.push({ card: c, step: st })); });
+  if (cands.length === 0) { finish(); return; }
+  const kwOf = (st) => st.action === 'jogress_evolve' ? '【ブラストジョグレス】' : '【ブラスト進化】';
+  const run = (cand) => {
+    if (!cand) { finish(); return; }
+    bs._counterUsedSeq = bs._attackSeq;
+    _runReactionEffect({ card: cand.card, sourceCard: cand.card, recipe: [cand.step], zone: 'hand', triggerCode: 'on_attack',
+      effectText: '［手札］【カウンター】' + kwOf(cand.step) }, reactSide, bs, ctxBase, () => _drainAfterReaction(bs, ctxBase, finish));
+  };
+  // CPU は最初の候補を使う。プレイヤーは候補が複数なら選ぶ（1つなら発揮確認は _runReactionEffect の確認で行う）
+  if (reactSide === 'ai' || cands.length === 1) { run(cands[0]); return; }
+  const labels = cands.map(c => '「' + c.card.name + '」' + kwOf(c.step));
+  labels.push('使わない');
+  showAltActionChoice(labels, (i) => run(i != null && i < cands.length ? cands[i] : null), '［手札］【カウンター】を使いますか？');
+}
+
 export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, opts) {
   if (bs) bs._currentAttackerSide = attackerSide;
   const reactSide = attackerSide === 'player' ? 'ai' : 'player';
@@ -12222,7 +12301,9 @@ export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, 
   // 相手のカードとして処理していたため、確認がアタックした側に出て、持ち主は何も操作できなかった
   // （黒井翔太 BT26-092）。変更されたアタック対象は fx_reactionDelegateDone で返ってくる
   if (reactSide === 'ai' && !(opts && opts.local) && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
-    if (!_anyBoardCardHasStep(bs, 'on_attack', (s) => _isOppOrBothAttackStep(s) || _isCounterStep(s))) { done && done(); return; }
+    // 相手の手札は見えないので、手札に【ブラスト進化】等があるかは相手の state_sync の handBlast で判断する
+    if (!_anyBoardCardHasStep(bs, 'on_attack', (s) => _isOppOrBothAttackStep(s) || _isCounterStep(s))
+        && !(bs && bs.ai && bs.ai._handBlast)) { done && done(); return; }
     _delegateReactionToOpponent({ recipeKey: 'on_attack', kind: 'on_attack_opp' }, done);
     return;
   }
@@ -12230,10 +12311,12 @@ export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, 
   // カウンタータイミングで発揮する。1回のアタックで使える【カウンター】は1つだけ（executeRecipeStep が _counterUsedSeq で弾く）
   if (bs) bs._attackSeq = (bs._attackSeq || 0) + 1;
   return _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, () => {
-    if (!bs || !_anyBoardCardHasStep(bs, 'on_attack', _isCounterStep)) { done && done(); return; }
+    // 場の【カウンター】の後に、手札の［手札］【カウンター】【ブラスト進化】/【ブラストジョグレス】
+    const afterBoard = () => _fireBlastCounters(reactSide, bs, ctxBase, done);
+    if (!bs || !_anyBoardCardHasStep(bs, 'on_attack', _isCounterStep)) { afterBoard(); return; }
     // also_counter のステップを【カウンター】として扱う（1回のアタックに1つ）ための印
     bs._inCounterPass = true;
-    _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, () => { bs._inCounterPass = false; done && done(); }, _isCounterStep);
+    _fireSidedReactionTriggers(reactSide, 'on_attack', bs, ctxBase, () => { bs._inCounterPass = false; afterBoard(); }, _isCounterStep);
   }, (step) => !!step && step.counter !== true && _isOppOrBothAttackStep(step));
 }
 
@@ -15096,6 +15179,25 @@ function executeRecipeStep(step, ctx, store, callback) {
     return;
   }
 
+  // ref_count:'colors'（数え方「色の種類の数」）: 処理したカードの色の種類で数える
+  if (step.ref === 'last_action_cards' && step.ref_count === 'colors') step = Object.assign({}, step, { ref: 'last_action_cards_colors' });
+
+  // per_count_mode === 'step': 「〜1枚ごとに、この効果の数値±N」。値×N ではなく、元の数値に N×段階を足し引きする。
+  // 段階（value_step）はテキストの「数値-3000」の符号のまま。DP-（dp_minus）は表示上の数値がマイナスなので、
+  // 「数値-3000」は下げ幅が3000増える（DP-8000 → DP-11000）。それ以外は value + value_step×N
+  // （セイテンゴクウモン EX12-048「DP-8000。進化元のLv.5のカード1枚ごとに、このDPマイナス効果の数値-3000」）
+  if (step.per_count_mode === 'step' && step.per_count
+      && !(Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)) {
+    const _sCount = getRefSourceCountDirect(step.ref || 'evo_source', ctx.card, ctx.bs, ctx.side, step.ref_filter, step.ref_state);
+    const _sN = Math.floor(_sCount / step.per_count);
+    const _sBase = Number(step.value) || 0;
+    const _sStep = Number(step.value_step) || 0;
+    const _sVal = step.action === 'dp_minus' ? _sBase - _sStep * _sN : _sBase + _sStep * _sN;
+    const _sStepObj = Object.assign({}, step, { value: Math.max(0, _sVal) });
+    ['per_count', 'per_count_mode', 'value_step', 'ref', 'ref_filter', 'ref_state'].forEach((k) => delete _sStepObj[k]);
+    step = _sStepObj;
+  }
+
   // 'same_target' / 'picked' = 直前選択カード (bs._lastPickedCard) を対象に再利用
   // 「DPを+2000し、そのデジモンはSアタック+1を得る」のような同一対象連続適用で使用
   if (step.target === 'same_target' || step.target === 'picked') {
@@ -15258,6 +15360,26 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
   }
 
+  // 「自分のセキュリティを上から1枚手札に加える」をエディタは target: own_security:1 ＋ 位置（filter.target_stack_position）で
+  // 書く。既存の処理（from:'security'・security_position）へ引き渡す（テイルモン EX12-042 / サンゾモン EX12-045）
+  if (step.action === 'add_to_hand' && !step.from) {
+    const _ahM = /^(own|opp|opponent)_security(?::(\d+))?$/.exec(String(step.target || ''));
+    if (_ahM) {
+      const f = (step.filter && typeof step.filter === 'object') ? Object.assign({}, step.filter) : {};
+      const pos = f.target_stack_position === 'bottom' ? 'bottom' : 'top';
+      ['target_stack', 'target_stack_position'].forEach((k) => delete f[k]);
+      const n = Math.max(1, parseInt(step.value, 10) || (_ahM[2] ? parseInt(_ahM[2], 10) : 1));
+      const conv = Object.assign({}, step, { from: 'security', from_owner: _ahM[1] === 'own' ? 'self' : 'opponent', security_position: pos, value: 1, _costsResolved: true });
+      delete conv.target; delete conv.cost; delete conv.limit;
+      if (Object.keys(f).length > 0) conv.filter = f; else delete conv.filter;
+      if (_COST_STEP_SET.has(step)) _COST_STEP_SET.add(conv);
+      // 既存の処理は1回に1枚なので、枚数分くり返す
+      let _ahI = 0;
+      const _ahNext = () => { if (_ahI++ >= n) { callback && callback(); return; } executeRecipeStep(Object.assign({}, conv), ctx, store, _ahNext); };
+      _ahNext();
+      return;
+    }
+  }
   switch (step.action) {
 
     // === ディレイ（バトルエリアのこのカードを破棄すると効果2以降を発動） ===
@@ -15967,7 +16089,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (Array.isArray(step.extra_conditions)) step.extra_conditions.forEach(ec => { if (ec) _evoCostConds.push(...parseRecipeCondition(ec)); });
         if (step.condition_op === 'or') _evoCostConds._op = 'or';
       }
-      const _evoCandOk = (c) => cardMatchesFilter(c, _evoFilterObj, ctx.bs, ctx.side, ctx.card)
+      // evolve_into:'self_card'（ブラスト進化「手札のこのカードに進化」）: 進化先はこのカードだけ
+      const _evoCandOk = (c) => (step.evolve_into !== 'self_card' || c === ctx.card)
+        && cardMatchesFilter(c, _evoFilterObj, ctx.bs, ctx.side, ctx.card)
         && (_evoCostConds.length === 0 || checkConditions(_evoCostConds, c, ctx.bs, ctx.side));
       const _evoFail = (msg) => {
         ctx.addLog && ctx.addLog('💨 ' + msg);
@@ -16032,6 +16156,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         // 選んだ進化元に対して進化条件を満たす進化先だけ
         const _cands = _evoCands.filter(c => _evoOk(c, slotIdx));
         if (_cands.length === 0) { _evoFail('進化条件を満たす進化先がありません'); return; }
+        // 進化先が「このカード」に決まっている（ブラスト進化）なら選ぶ画面は出さない（発揮の確認で使うかは選んでいる）
+        if (step.evolve_into === 'self_card') { _doEvolveWith(_cands[0], slotIdx); return; }
         if (ctx.side === 'ai' || (_cands.length === 1 && !_evoOptional && !_anyHandOrTrash(_cands))) {
           _doEvolveWith(_cands[0], slotIdx);
           return;
@@ -16149,7 +16275,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         });
         return pairs;
       };
-      const _jgCands = _jgPool.filter(c => (c.type === 'デジモン' || c.type === 'デュアル')
+      const _jgCands = _jgPool.filter(c => (step.evolve_into !== 'self_card' || c === ctx.card) && (c.type === 'デジモン' || c.type === 'デュアル')
         && cardMatchesFilter(c, _jgFilter, ctx.bs, ctx.side, ctx.card) && _jgPairsFor(c).length > 0);
       if (_jgCands.length === 0) { _jgFail('ジョグレス進化できる組み合わせがありません'); break; }
       const _jgDo = (card, pair) => {
@@ -16200,7 +16326,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           pickSecond(player.battleArea[idx]);
         }, '（「' + card.name + '」にジョグレス進化するデジモン・1体目）');
       };
-      if (effectiveSide === 'ai' || ctx.side === 'ai') { _jgChoosePair(_jgCands[0]); break; }
+      if (effectiveSide === 'ai' || ctx.side === 'ai' || step.evolve_into === 'self_card') { // 進化先がこのカードに決まっている（ブラストジョグレス）なら選ぶ画面は出さない
+        _jgChoosePair(_jgCands[0]); break; }
       const _jgBoth = _jgZones.includes('hand') && _jgZones.includes('trash');
       showTrashCardPicker(_jgCands, 1, _jgOptional || _jgIsCost, '🔀 ジョグレス進化させるカードを選んでください' + (_jgBoth ? '（手札/トラッシュ）' : _jgZones.includes('trash') ? '（トラッシュ）' : ''), (picked) => {
         const c = picked && picked[0];
@@ -16237,6 +16364,24 @@ function executeRecipeStep(step, ctx, store, callback) {
         }
         destroyOneByOne();
         return;
+      }
+      // 「相手のデジモン2体を消滅させる」（opponent:N / own:N、N≧2）: 1体ずつの消滅を N 回くり返す
+      // （以前は1体だけ消滅していた。カオスドラモン EX12-060）。対象がいなくなったらそこで終わる
+      {
+        const _dnM = /^(opponent|own):(\d+)$/.exec(String(step.target || ''));
+        if (_dnM && parseInt(_dnM[2], 10) > 1 && !step.per_count) {
+          const _dnTimes = parseInt(_dnM[2], 10);
+          const _dnOne = Object.assign({}, step, { target: _dnM[1] + ':1', _costsResolved: true });
+          ['limit', 'cost', 'trigger_conditions'].forEach((k) => delete _dnOne[k]);
+          let _dnK = 0, _dnTotal = 0;
+          const _dnNext = (ok) => {
+            if (ok === false || _dnK >= _dnTimes) { if (ctx.bs) ctx.bs._lastActionCount = _dnTotal; callback && callback(); return; }
+            _dnK++;
+            executeRecipeStep(_dnOne, ctx, store, (r) => { if (r !== false) _dnTotal++; _dnNext(r); });
+          };
+          _dnNext();
+          return;
+        }
       }
       // === target=opponent:all + step.condition: per-target フィルタとして条件を評価し、
       //     一致するカード全てを消滅（filter.dp_extreme:'lowest'/'highest' 指定時は
@@ -19168,6 +19313,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         // コストは枚数がそろわなければ支払えない
         if (_COST_STEP_SET.has(step) && _rdFiltered.length < _rdWantCount) { ctx.addLog('💨 デッキに戻すカードが足りないため、コストを支払えません'); callback(false); break; }
         let _rdReturnedCount = 0;
+        const _rdReturnedCards = [];
         const _doReturn2 = (entry, doneCb) => {
           if (!entry) { doneCb(false); return; }
           // 移動演出の移動元ラベル（取り除く前に判定）
@@ -19179,6 +19325,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           if (_rdTop2) _rdOwnerP.deck.unshift(entry.card); else _rdOwnerP.deck.push(entry.card);
           entry.card._deckReturnPos = _rdTop2 ? 'top' : 'bottom';
           _rdReturnedCount++;
+          _rdReturnedCards.push(entry.card);
           ctx.addLog('🔄 「' + entry.card.name + '」をデッキの' + (_rdTop2 ? '上' : '下') + 'に戻す');
           ctx.renderAll();
           // デッキへ戻る演出（ブテンモン BT26-015 の要望: 戻す→演出→次の処理の順に見せる）。
@@ -19213,6 +19360,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
         };
         _rdSequential(Math.min(_rdWantCount, _rdFiltered.length), _rdFiltered, () => {
+          // 戻した枚数・カード（「戻したカードの色1色ごとに」等の参照用。last_action_count / last_action_cards）
+          if (ctx.bs) { ctx.bs._lastActionCount = _rdReturnedCount; ctx.bs._lastActionCards = _rdReturnedCards.slice(); }
           if (_rdReturnedCount === 0) { callback(false); return; }
           _deckIncreased(ctx, _rdOwnerSideTag, () => callback(true));
         });
@@ -20004,6 +20153,22 @@ function executeRecipeStep(step, ctx, store, callback) {
     // enforcement は dedigivolve（退化）の対象絞り込みで参照済み
     case 'cant_discard': {
       const _cxTgtStr = String(step.target || 'own_card');
+      // own:all / opponent:all（「自分のデジモン全てに重ねられているカードは相手の効果で破棄されない」ムゲンドラモンACE EX12-059）:
+      // 条件（filter のうち位置指定以外）を満たすデジモン全てに付ける。以前はこのカード1体だけに付いていた
+      if (/^(own|opponent)(_card)?:all$/.test(_cxTgtStr)) {
+        const _cxAllPool = _cxTgtStr.startsWith('own') ? player : opponent;
+        const _cxF = (step.filter && typeof step.filter === 'object') ? Object.assign({}, step.filter) : null;
+        if (_cxF) ['target_stack', 'target_stack_position', 'target_evo_source', 'target_evo_source_position'].forEach((k) => delete _cxF[k]);
+        const _cxList = [...(_cxAllPool.battleArea || []), ...(/_card:/.test(_cxTgtStr) ? (_cxAllPool.tamerArea || []) : [])]
+          .filter((c) => c && (!_cxF || Object.keys(_cxF).length === 0 || cardMatchesFilter(c, _cxF, ctx.bs, ctx.side, ctx.card)));
+        const _cxAllDur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
+        _cxList.forEach((c) => addBuffDirect(c, step.action, 0, _cxAllDur, ctx));
+        ctx.addLog('🛡 ' + (_cxTgtStr.startsWith('own') ? '自分' : '相手') + 'のデジモン全て（' + _cxList.length + '体）に重ねられているカードは'
+          + (step.action === 'cant_return_hand' ? '手札に戻らない' : step.action === 'cant_return_deck' ? 'デッキに戻らない' : '破棄されない'));
+        ctx.renderAll();
+        callback();
+        break;
+      }
       // same_target: 直前のアクション（cant_dp_minus 等）で選んだ対象をそのまま使う。
       // self / self_card: このデジモン自身（巨神兵器 BT26-085。以前は same_target が相手側扱いになり不発だった）
       const _cxPicked = ctx.bs && ctx.bs._lastPickedCard;
@@ -21592,3 +21757,53 @@ export function clearTurnLimitedDigixrossZones(bs) {
   });
 }
 if (typeof window !== 'undefined') window._clearTurnLimitedDigixrossZones = clearTurnLimitedDigixrossZones;
+
+// ===== 《オーバーフロー（-N）》（総合ルール 4-18） =====
+// オーバーフローを持つカードが、エリア（バトルエリア/テイマーエリア/育成エリア）か重ねられているカードの下から、
+// それ以外の場所（手札/トラッシュ/デッキ/セキュリティ等）に置かれたとき、その持ち主のメモリーを N 動かす。
+// 効果ではなくルールなので「効果を受けない」でも止まらない。エリアへ／他のカードの下へ移った場合は処理しない（4-18-3/4）。
+// 移動の経路（消滅・手札に戻す・デッキに戻す・進化元の破棄・下のカードのトラッシュ行き…）が多いため、
+// 描画前（renderAll）に「エリアと下のカードに居るオーバーフロー持ちのカード」を前回と比べ、居なくなったものを処理する。
+// オンライン対戦では自分のカードだけを処理する（相手のカードは相手の端末が処理し、メモリーは同期で届く）。
+function _overflowValueOf(card) {
+  const r = card ? _parseCardRecipe(card) : null;
+  const p = r && Array.isArray(r.passive) ? r.passive.find(x => x && String(x.flag || '').toLowerCase() === 'overflow') : null;
+  if (!p) return 0;
+  return Math.abs(parseInt(p.value, 10) || 0);
+}
+function _overflowCardsInArea(bs, side) {
+  const p = bs && bs[side];
+  const out = [];
+  if (!p) return out;
+  const visit = (c) => {
+    if (!c) return;
+    if (_overflowValueOf(c) > 0) out.push(c);
+    (c.stack || []).forEach(visit);
+  };
+  (p.battleArea || []).forEach(visit);
+  (p.tamerArea || []).forEach(visit);
+  if (p.ikusei) visit(p.ikusei);
+  return out;
+}
+export function checkOverflow(bs, ctxBase) {
+  if (!bs || !bs.player || !bs.ai) return;
+  const online = typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode();
+  const prev = bs._ovfInArea || null;
+  const now = new Map();
+  ['player', 'ai'].forEach((side) => _overflowCardsInArea(bs, side).forEach((c) => now.set(c, side)));
+  bs._ovfInArea = now;
+  if (!prev) return; // 初回は記録だけ
+  prev.forEach((side, card) => {
+    if (now.has(card)) return; // まだエリアか下のカードに居る
+    if (online && side !== 'player') return; // 相手のカードは相手の端末で処理
+    const n = _overflowValueOf(card);
+    if (n <= 0) return;
+    if (side === 'player') bs.memory -= n; else bs.memory += n;
+    const msg = '💧 《オーバーフロー（-' + n + '）》「' + (card.name || '?') + '」が場を離れたため、' + (side === 'player' ? '自分' : '相手') + 'のメモリー-' + n;
+    try { (ctxBase && ctxBase.addLog) ? ctxBase.addLog(msg) : console.log(msg); } catch (_) {}
+    // 自分のターン中にメモリーが相手側へ行ったらターン終了（メモリー-と同じ扱い）
+    if (side === 'player' && bs.memory < 0 && bs.isPlayerTurn) bs._pendingTurnEnd = true;
+    if (side === 'ai' && bs.memory > 0 && !bs.isPlayerTurn) bs._pendingTurnEnd = true;
+    try { if (typeof window !== 'undefined' && window._sendMemoryUpdate) window._sendMemoryUpdate(); } catch (_) {}
+  });
+}

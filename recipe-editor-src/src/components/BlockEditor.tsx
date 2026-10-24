@@ -7338,11 +7338,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     const eIsPlaceAction = PLACE_ACTION_CODES.has(effectAction || '');
                     const eEvoCond = effectTargetFilter.find((c) => c.base === 'cond_target_evo_source');
                     const eStackCond = effectTargetFilter.find((c) => c.base === 'cond_target_stack');
-                    const eActiveSub: '' | 'evo_source' | 'stacked' | 'battle_area' = effectAction === 'place_in_battle_area' ? 'battle_area' : eEvoCond ? 'evo_source' : eStackCond ? 'stacked' : '';
-                    const setESub = (next: '' | 'evo_source' | 'stacked' | 'battle_area') => {
+                    const eActiveSub: '' | 'evo_source' | 'stacked' | 'battle_area' | 'security' = effectAction === 'place_in_battle_area' ? 'battle_area'
+                      : (effectAction === 'place_on_security_top' && eCurTgt.l1 === 'self') ? 'security' : eEvoCond ? 'evo_source' : eStackCond ? 'stacked' : '';
+                    const setESub = (next: '' | 'evo_source' | 'stacked' | 'battle_area' | 'security') => {
                       const cleared = effectTargetFilter.filter((c) => c.base !== 'cond_target_evo_source' && c.base !== 'cond_target_stack');
                       if (next === 'battle_area') { updateEffect({ action: 'place_in_battle_area', target: 'self_card', targetFilter: cleared }); return; }
-                      const act = eIsPlaceAction && eCurTgt.l1 === 'self' && effectAction === 'place_in_battle_area' ? { action: 'place_under_self' } : {};
+                      // このカード自身をセキュリティに置く（「このカードをセキュリティの下に表向きで置く」EX12-069等）。位置/裏表は下の欄で選ぶ
+                      if (next === 'security') { updateEffect({ action: 'place_on_security_top', target: 'self_card', targetFilter: cleared, fromZones: [] }); return; }
+                      const act = eIsPlaceAction && eCurTgt.l1 === 'self' && (effectAction === 'place_in_battle_area' || effectAction === 'place_on_security_top') ? { action: 'place_under_self' } : {};
                       if (!next) { updateEffect({ ...act, targetFilter: cleared }); return; }
                       updateEffect({ ...act, targetFilter: [...cleared, { base: next === 'evo_source' ? 'cond_target_evo_source' : 'cond_target_stack', value: '' }] });
                     };
@@ -7353,10 +7356,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             ...(eIsPlaceAction ? [] : [{ code: '', label: '指定なし' }]),
                             { code: 'evo_source', label: '進化元' },
                             { code: 'stacked', label: '重ねられているカード' },
-                            ...(eIsPlaceAction && eCurTgt.l1 === 'self' ? [{ code: 'battle_area', label: 'バトルエリア' }] : []),
+                            ...(eIsPlaceAction && eCurTgt.l1 === 'self' ? [{ code: 'battle_area', label: 'バトルエリア' }, { code: 'security', label: 'セキュリティ' }] : []),
                           ]}
                           value={eActiveSub}
-                          onChange={(v) => setESub(v as '' | 'evo_source' | 'stacked' | 'battle_area')}
+                          onChange={(v) => setESub(v as '' | 'evo_source' | 'stacked' | 'battle_area' | 'security')}
                           accentColor="#b76e00"
                         />
                       </div>
@@ -7738,12 +7741,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   const isPlaceAction = PLACE_ACTION_CODES.has(block.action || '');
                   const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                   const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
-                  const activeSub: '' | 'evo_source' | 'stacked' | 'battle_area' = block.action === 'place_in_battle_area' ? 'battle_area' : evoCond ? 'evo_source' : stackCond ? 'stacked' : '';
-                  const setSub = (next: '' | 'evo_source' | 'stacked' | 'battle_area') => {
+                  const activeSub: '' | 'evo_source' | 'stacked' | 'battle_area' | 'security' = block.action === 'place_in_battle_area' ? 'battle_area'
+                    : (block.action === 'place_on_security_top' && curTgt.l1 === 'self') ? 'security' : evoCond ? 'evo_source' : stackCond ? 'stacked' : '';
+                  const setSub = (next: '' | 'evo_source' | 'stacked' | 'battle_area' | 'security') => {
                     const cleared = targetFilter.filter((c) => c.base !== 'cond_target_evo_source' && c.base !== 'cond_target_stack');
-                    // このカード: バトルエリア ⇔ このカードの下（進化元/重ねられているカード）でアクションも切り替える
+                    // このカード: バトルエリア／セキュリティ ⇔ このカードの下（進化元/重ねられているカード）でアクションも切り替える
                     if (next === 'battle_area') { onChange({ ...block, action: 'place_in_battle_area', target: 'self_card', targetFilter: cleared }); return; }
-                    const act = isPlaceAction && curTgt.l1 === 'self' && block.action === 'place_in_battle_area' ? { action: 'place_under_self' } : {};
+                    if (next === 'security') { onChange({ ...block, action: 'place_on_security_top', target: 'self_card', targetFilter: cleared, fromZones: [] }); return; }
+                    const act = isPlaceAction && curTgt.l1 === 'self' && (block.action === 'place_in_battle_area' || block.action === 'place_on_security_top') ? { action: 'place_under_self' } : {};
                     if (!next) { onChange({ ...block, ...act, targetFilter: cleared }); return; }
                     onChange({ ...block, ...act, targetFilter: [...cleared, { base: next === 'evo_source' ? 'cond_target_evo_source' : 'cond_target_stack', value: '' }] });
                   };
@@ -7754,10 +7759,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           ...(isPlaceAction ? [] : [{ code: '', label: '指定なし' }]),
                           { code: 'evo_source', label: '進化元' },
                           { code: 'stacked', label: '重ねられているカード' },
-                          ...(isPlaceAction && curTgt.l1 === 'self' ? [{ code: 'battle_area', label: 'バトルエリア' }] : []),
+                          ...(isPlaceAction && curTgt.l1 === 'self' ? [{ code: 'battle_area', label: 'バトルエリア' }, { code: 'security', label: 'セキュリティ' }] : []),
                         ]}
                         value={activeSub}
-                        onChange={(v) => setSub(v as '' | 'evo_source' | 'stacked' | 'battle_area')}
+                        onChange={(v) => setSub(v as '' | 'evo_source' | 'stacked' | 'battle_area' | 'security')}
                         accentColor="#b76e00"
                       />
                     </div>

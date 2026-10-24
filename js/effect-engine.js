@@ -18922,12 +18922,37 @@ function executeRecipeStep(step, ctx, store, callback) {
           const _psFaceUp = Array.isArray(step.options) && step.options.includes('face_up');
           const _psToBottom = step.position === 'bottom';
           const _psMove = (list) => {
-            list.forEach((e) => {
+            let _psMoved = 0;
+            const _psSideName = (ctx.bs && _psP === ctx.bs.player) ? 'player' : 'ai';
+            const _psCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+            // 1体ずつ: セキュリティに置かれるのも「バトルエリアを離れる」ので、離れるときの置換効果（【分離】【守護】
+            // 「離れるとき〜離れない」等）を先に判定する（デッキに戻す・手札に戻すと同じ tryCancelViaLeaveBattle）
+            const _psNext = (k) => {
+              if (k >= list.length) {
+                if (ctx.bs) ctx.bs._lastActionCount = _psMoved;
+                ctx.renderAll && ctx.renderAll();
+                try { applyPermanentEffects(ctx.bs, ctx.side, ctx); } catch (_) {}
+                callback();
+                return;
+              }
+              const e = list[k];
               const c = e.card;
-              if (_psOpp && _isImmuneToEffect(c, ctx)) { ctx.addLog && ctx.addLog('🛡 「' + c.name + '」は効果を受けない'); return; }
+              if (_psOpp && _isImmuneToEffect(c, ctx)) { ctx.addLog && ctx.addLog('🛡 「' + c.name + '」は効果を受けない'); _psNext(k + 1); return; }
+              const _prevLeaveCause = ctx.bs ? ctx.bs._leaveCause : undefined;
+              if (ctx.bs) ctx.bs._leaveCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+              tryCancelViaLeaveBattle(c, _psSideName, ctx.bs, _psCtxBase, (canceled) => {
+                if (ctx.bs) ctx.bs._leaveCause = _prevLeaveCause;
+                if (canceled) { ctx.addLog && ctx.addLog('🛡 「' + c.name + '」はバトルエリアを離れなかった'); _psNext(k + 1); return; }
+                _psPlace(e);
+                _psNext(k + 1);
+              });
+            };
+            const _psPlace = (e) => {
+              const c = e.card;
               const zArr = _psP[e.zone] || [];
               const zi = zArr.indexOf(c);
               if (zi === -1) return;
+              _psMoved++;
               if (e.zone === 'battleArea') zArr[zi] = null; else zArr.splice(zi, 1);
               (c.stack || []).forEach(x => _psP.trash.push(x));
               (c.linkedCards || []).forEach(x => _psP.trash.push(x));
@@ -18945,11 +18970,8 @@ function executeRecipeStep(step, ctx, store, callback) {
                   }
                 } catch (_) {}
               }
-            });
-            if (ctx.bs) ctx.bs._lastActionCount = list.length;
-            ctx.renderAll && ctx.renderAll();
-            try { applyPermanentEffects(ctx.bs, ctx.side, ctx); } catch (_) {}
-            callback();
+            };
+            _psNext(0);
           };
           if (effectiveSide === 'ai' || _psEntries.length <= _psCount) { _psMove(_psEntries.slice(0, _psCount)); break; }
           _pickSideTargets(_psEntries.map(e => Object.assign({}, e, { own: !_psOpp })), _psCount, ctx, effectiveSide, !_psOpp,
@@ -19030,6 +19052,18 @@ function executeRecipeStep(step, ctx, store, callback) {
       const sd = !isSelf && step.card ? store[step.card] : null;
       const cardToPlace = isSelf ? ctx.card : (sd && (sd.card || sd));
       if (!cardToPlace) { callback(); break; }
+      // バトルエリアにいるこのカードをセキュリティに置く: 「バトルエリアを離れるとき」の置換効果を先に判定する
+      if (isSelf && !step._leaveChecked && (player.battleArea.includes(cardToPlace) || (player.tamerArea || []).includes(cardToPlace))) {
+        const _pslSide = (ctx.bs && player === ctx.bs.player) ? 'player' : 'ai';
+        const _pslPrev = ctx.bs ? ctx.bs._leaveCause : undefined;
+        if (ctx.bs) ctx.bs._leaveCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+        tryCancelViaLeaveBattle(cardToPlace, _pslSide, ctx.bs, { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge }, (canceled) => {
+          if (ctx.bs) ctx.bs._leaveCause = _pslPrev;
+          if (canceled) { ctx.addLog && ctx.addLog('🛡 「' + cardToPlace.name + '」はバトルエリアを離れなかった'); callback(); return; }
+          executeRecipeStep(Object.assign({}, step, { _leaveChecked: true }), ctx, store, callback);
+        });
+        break;
+      }
       const _posFromZone = player.trash.includes(cardToPlace) ? 'トラッシュ' : player.hand.includes(cardToPlace) ? '手札'
         : player.battleArea.includes(cardToPlace) ? 'バトルエリア' : '';
       // self指定時は消滅演出で既にトラッシュ行き済みのはずなので、二重登録されないよう除去してから積む

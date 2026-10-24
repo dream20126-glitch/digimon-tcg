@@ -3852,18 +3852,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     if (!effectIsPlaceActive || !newTargetBase) return undefined;
     // バトルエリア（このカード自身を置く）は「このカード」のまま。それ以外の対象を選んだら切り替える
     if (effectAction === 'place_in_battle_area' && newTargetBase === 'self_card') return undefined;
-    // 置き先が対象で決まるのは「〜の下に置く」（進化元/テイマー/このカード）だけ。セキュリティ/デッキ/バトルエリアに
-    // 置くときの対象は「置くカード」（このカード・相手のデジモン等）なので、対象を選んでも置き先を変えない
-    // （以前は「このカードをセキュリティの下に置く」が「このカードの下に置く」に、「相手のデジモンをセキュリティの上に
-    // 置く」が「進化元に置く」に書き換わっていた。EX12-069/072/074/076）
-    const UNDER_ACTIONS = ['place_under_digimon', 'place_under_tamer', 'place_under_self'];
-    if (!UNDER_ACTIONS.includes(effectAction || '')) return undefined;
     const l1l2 = TARGET_SEL_CODE_TO_L1L2[newTargetBase] || { l1: '', l2: '' };
     const zone = PLACE_ZONE_MAP.find((z) => {
       const zl = TARGET_SEL_CODE_TO_L1L2[z.target || ''] || { l1: '', l2: '' };
       return zl.l2 ? zl.l2 === l1l2.l2 : (zl.l1 === 'self' && l1l2.l1 === 'self');
     });
-    return zone && UNDER_ACTIONS.includes(zone.action) && zone.action !== effectAction ? zone.action : undefined;
+    return zone && zone.action !== effectAction ? zone.action : undefined;
   }
 
   const summarizeAction = (act?: string, val?: number | string) => {

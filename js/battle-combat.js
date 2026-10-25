@@ -2623,7 +2623,7 @@ function _afterOnlineBlockBattle(atk, atkIdx) {
       // それが終わってからアタック終了に進む
       const _t0 = Date.now();
       const _go = () => {
-        if (window._isEffectRunning && window._isEffectRunning() && Date.now() - _t0 < 120000) { setTimeout(_go, 300); return; }
+        if (window._isEffectRunning && window._isEffectRunning()) { setTimeout(_go, 300); return; }
         // アタックしたデジモンが残っていれば【アタック終了時】（≪エグゼキュート≫の消滅等）を発揮してから（以前はブロックのバトルの後に
         // 【アタック終了時】を通らず、エグゼキュートでアタックしたスカージキロプモン＆デスペアブラストが消滅しなかった）
         if (atk && bs.player.battleArea[atkIdx] === atk) { checkAttackEnd(atk, atkIdx); return; }

@@ -10070,6 +10070,8 @@ function showConfirmDialog(card, effectText, callback, evoSourceCard) {
   const _show = () => {
     document.getElementById('effect-confirm-name').innerText = ownerName;
     document.getElementById('effect-confirm-text').innerText = effectText;
+    // ブロックの確認（showBlockConfirm）が残した「ブロックしますか？」を戻す（セキュリティ効果の確認に出ていた）
+    { const _q = document.getElementById('effect-confirm-question'); if (_q) _q.innerText = '効果を発動しますか？'; }
     document.body.appendChild(overlay);
     overlay.style.display = 'flex';
     window._effectConfirmCallback = callback;

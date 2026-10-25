@@ -124,7 +124,8 @@ function _drainNonTurnPlayerReactionQueue() {
     // フェイルセーフ: active:false受信の見逃し等でここが永久にブロックされないよう、
     // 一定時間後に強制的に保留を解除して排出する（本来は fx_deferOppNonTurnPlayerTriggers
     // の active:false 受信で解除されるのが正常系）
-    if (!_deferStuckWatchdog) {
+    // 時間切れでの強制解除はしない（相手がバトルに勝ったとき等の効果を選んでいる途中で解除されてしまうため。2026-10-25）
+    if (false && !_deferStuckWatchdog) {
       _deferStuckWatchdog = setTimeout(() => {
         _deferStuckWatchdog = null;
         if (bs._deferNonTurnPlayerTriggers) {
@@ -837,7 +838,7 @@ function onRemoteCommand(cmd) {
       if ((_localBusyForRemote() || _pendingOwnDestroyFire) && !cmd._idleWaited) {
         const _c = Object.assign({}, cmd, { _idleWaited: true });
         const _t0 = Date.now();
-        const _retry = () => { if ((_localBusyForRemote() || _pendingOwnDestroyFire) && Date.now() - _t0 < 90000) { setTimeout(_retry, 150); return; } onRemoteCommand(_c); };
+        const _retry = () => { if (_localBusyForRemote() || _pendingOwnDestroyFire) { setTimeout(_retry, 150); return; } onRemoteCommand(_c); };
         setTimeout(_retry, 150);
         break;
       }
@@ -2224,9 +2225,7 @@ export function waitForBlockResponse(callback) {
   } else {
     _pendingBlockCallback = onResponse;
   }
-  setTimeout(() => {
-    if (_pendingBlockCallback === onResponse) { _pendingBlockCallback = null; onResponse({ blocked: false }); }
-  }, 30000);
+  // 時間切れは設けない（相手が選んでいる途中で先へ進んでしまうため。ユーザー決定事項 2026-10-25）
 }
 
 // ===== セキュリティ効果待機（アタック側が防御側の処理完了を待つ） =====
@@ -2247,10 +2246,7 @@ export function waitForSecurityEffect(callback) {
   } else {
     _pendingSecEffectCallback = onDone;
   }
-  // 30秒タイムアウト
-  setTimeout(() => {
-    if (_pendingSecEffectCallback === onDone) { _pendingSecEffectCallback = null; onDone(); }
-  }, 30000);
+  // 時間切れは設けない（相手が選んでいる途中で先へ進んでしまうため。ユーザー決定事項 2026-10-25）
 }
 
 // ===== 反応系トリガー委譲待機（相手のカードの効果を相手機に委譲した側が完了を待つ） =====
@@ -2272,12 +2268,7 @@ export function waitForReactionDelegate(callback) {
   } else {
     _reactionDelegateWaiters.push(onDone);
   }
-  // 120秒タイムアウト（相手の切断等でackが来ない場合にゲームが止まらないように）。
-  // 委譲先ではコストやアタック対象の選択など相手の操作を待つので、30秒では途中で打ち切られることがある
-  setTimeout(() => {
-    const _wi = _reactionDelegateWaiters.indexOf(onDone);
-    if (_wi !== -1) { _reactionDelegateWaiters.splice(_wi, 1); onDone(); }
-  }, 120000);
+  // 時間切れは設けない（相手が選んでいる途中で先へ進んでしまうため。ユーザー決定事項 2026-10-25）
 }
 
 // ===== 手札破棄の依頼の完了待ち（fx_handDiscardRequest 送信側） =====
@@ -2299,11 +2290,7 @@ export function waitForHandDiscardDelegate(callback) {
   } else {
     _pendingHandDiscardCallback = onDone;
   }
-  // 60秒タイムアウト（相手の切断等で応答が来ない場合にゲームが止まらないように。
-  // 相手が手札を選ぶ操作を含むため、反応系トリガー委譲の30秒より長めにとる）
-  setTimeout(() => {
-    if (_pendingHandDiscardCallback === onDone) { _pendingHandDiscardCallback = null; onDone({ count: 0, names: [], timeout: true }); }
-  }, 60000);
+  // 時間切れは設けない（相手が選んでいる途中で先へ進んでしまうため。ユーザー決定事項 2026-10-25）
 }
 
 // ===== 相手（カードの本当の持ち主）機の消滅時チェーン完了待ち =====
@@ -2844,8 +2831,7 @@ function resolveOnlineBlock(blockerIdx, cmd) {
       .some(c => c && c.type === 'blocked_effect_done' && c.from !== _onlineMyKey);
     if (found) goResolution();
   });
-  // タイムアウト: 10秒待っても来なければバトル開始
-  setTimeout(() => { goResolution(); }, 10000);
+  // 時間切れは設けない（相手が「ブロックされたとき」の効果を選んでいる途中でバトルが始まってしまうため。2026-10-25）
 }
 
 // ===== クリーンアップ =====
@@ -2939,8 +2925,8 @@ window._waitRemoteIdle = (cb) => {
     if (_pendingIdleCheck && _pendingIdleCheck.id === id) _pendingIdleCheck = null;
     cb && cb();
   };
-  // 相手の端末が応答しない（切断等）ときの保険
-  const safety = setTimeout(() => { console.warn('[waitRemoteIdle] 応答なし → 先へ進む'); finish(); }, 90000);
+  // 時間切れは設けない（相手が効果を選んでいる途中で先へ進んでしまうため。ユーザー決定事項 2026-10-25）
+  const safety = null;
   _pendingIdleCheck = { id, finish };
   sendCommand({ type: 'fx_idleCheck', id });
 };

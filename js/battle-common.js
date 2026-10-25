@@ -191,7 +191,7 @@ function _waitTurnEndIdle(cb) {
     return false;
   };
   const tick = () => {
-    if (busy() && Date.now() - t0 < 120000) { setTimeout(tick, 300); return; }
+    if (busy()) { setTimeout(tick, 300); return; }
     cb && cb();
   };
   // 効果の処理の終わり（コールバックの直後）に始まるアタックの続きがあるので、少し待ってから判定する

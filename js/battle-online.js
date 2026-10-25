@@ -1092,7 +1092,7 @@ function onRemoteCommand(cmd) {
         sendStateSync();
         const ra = bs._redirectedAttack;
         bs._redirectedAttack = null;
-        const redirect = ra ? { side: ra.side === 'player' ? 'ai' : 'player', idx: ra.idx, cardNo: ra.cardNo || '' } : null;
+        const redirect = ra ? { side: ra.side === 'player' ? 'ai' : 'player', idx: ra.idx, cardNo: ra.cardNo || '', byDefender: !!ra.byDefender } : null;
         sendCommand(redirect ? { type: 'fx_reactionDelegateDone', redirect } : { type: 'fx_reactionDelegateDone' });
       };
       try {

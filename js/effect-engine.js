@@ -20209,7 +20209,10 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (selectedIdx == null) { callback(); return; }
         const newTarget = _raPool.battleArea[selectedIdx];
         if (!newTarget) { callback(); return; }
-        ctx.bs._redirectedAttack = { side: _raPoolSide, idx: selectedIdx, cardNo: newTarget.cardNo };
+        // byDefender: アタックされている側の効果で変更した（ウォーグレイモン EX12-017【カウンター】「アタックの対象を自分のデジモン
+        // 1体に変更できる」）。このときは変更先にそのまま決まるので「ブロックしますか？」は出さない（ユーザー決定事項）
+        const _raByDef = !!(ctx.bs._currentAttackerSide && ctx.side !== ctx.bs._currentAttackerSide);
+        ctx.bs._redirectedAttack = { side: _raPoolSide, idx: selectedIdx, cardNo: newTarget.cardNo, byDefender: _raByDef };
         ctx.addLog('🎯 アタックの対象を「' + newTarget.name + '」に変更');
         ctx.renderAll();
         // 「アタックの対象が変更されたとき」(when_target_changed) 発火。attackerSideは

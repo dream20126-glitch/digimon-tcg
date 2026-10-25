@@ -2596,7 +2596,7 @@ function _consumeRedirectedAttack(defaultTarget, defaultIdx) {
   if (fallback.def && fallback.def.cantRedirectAttack) return fallback;
   const def = bs.ai.battleArea[ra.idx];
   if (!def) return fallback;
-  return { target: 'digimon', idx: ra.idx, def, byDefender: !!ra.byDefender };
+  return { target: 'digimon', idx: ra.idx, def, redirected: true, byDefender: !!ra.byDefender };
 }
 
 // 【衝突】を持つか（このデジモンのアタック中、相手のデジモン全ては【ブロッカー】を得て、可能ならブロックしなければならない）。
@@ -2642,8 +2642,9 @@ function _onlineBlockedThen(atk, atkSlotIdx, cb) {
   if (typeof window._fireWhenTargetChangedLocal === 'function') window._fireWhenTargetChangedLocal('player', go);
   else go();
 }
-// noBlock: 相手（アタックされている側）の効果でアタックの対象を変更した後。変更先にそのまま決まるので、
-// 相手の画面に「ブロックしますか？」を出さない（ユーザー決定事項。ウォーグレイモン EX12-017【カウンター】）
+// noBlock: 効果でアタックの対象を変更した後（どちらの効果でも）。変更先はもう選ばれているので、相手の画面に
+// 「ブロックしますか？」を出さない（ブロックの確認は、ブロックする側が選べるときだけ出す。ユーザー決定事項。
+// ウォーグレイモン EX12-017【カウンター】・【突進】等）
 function _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, def, targetIdx, noBlock) {
   // 送るDPは付与中のバフから計算し直した値にする（防御側はこの値で勝敗を判定する）
   try { if (window._recalcDp) window._recalcDp(atk); } catch (_) {}
@@ -2765,7 +2766,7 @@ export function resolveAttackTarget(target, targetIdx) {
       afterAtkEffect(atk, atkSlotIdx, () => { if (_attackerLeftField(atk, atkSlotIdx)) return; atk = _evolvedAttacker(atk, atkSlotIdx);
         // 突進等でセキュリティ→デジモンアタックに差し替わっていれば、そちらの経路へ
         const _rt = _consumeRedirectedAttack('security', -1);
-        if (_rt.target === 'digimon') { _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, _rt.def, _rt.idx, _rt.byDefender); return; }
+        if (_rt.target === 'digimon') { _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, _rt.def, _rt.idx, !!_rt.redirected); return; }
         // 効果処理完了 → このタイミングで attack_security を送る
         // 送るDPは付与中のバフから計算し直した値にする（防御側はこの値でブロックの勝敗を判定する）
         try { if (window._recalcDp) window._recalcDp(atk); } catch (_) {}
@@ -2852,7 +2853,7 @@ export function resolveAttackTarget(target, targetIdx) {
       afterAtkEffect(atk, atkSlotIdx, () => { if (_attackerLeftField(atk, atkSlotIdx)) return; atk = _evolvedAttacker(atk, atkSlotIdx);
         // 突進等でアタック対象が差し替わっていれば、そちらを対象にする
         const _rt = _consumeRedirectedAttack('digimon', targetIdx);
-        _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, _rt.def, _rt.idx, _rt.byDefender);
+        _sendAndResolveOnlineDigimonAttack(atk, atkSlotIdx, _rt.def, _rt.idx, !!_rt.redirected);
       });
     } else {
       afterAtkEffect(atk, atkSlotIdx, () => { if (_attackerLeftField(atk, atkSlotIdx)) return; atk = _evolvedAttacker(atk, atkSlotIdx);
@@ -4377,6 +4378,19 @@ export function aiAttackPhase(callback) {
         renderAll();
         if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
         return;
+      }
+      // こちらの効果（【カウンター】の「アタックの対象を自分のデジモン1体に変更できる」等）でアタックの対象が変わっていれば、
+      // ブロックの確認は出さずに変更先とバトルする（変更先はもう選んでいる。ユーザー決定事項）
+      {
+        const _ra = bs._redirectedAttack;
+        bs._redirectedAttack = null;
+        const _raDef = _ra && _ra.side === 'player' ? bs.player.battleArea[_ra.idx] : null;
+        if (_raDef) {
+          resolveBattleAI(atk, atkIdx, _raDef, _ra.idx, () => {
+            if (bs._aiScriptInProgress) { callback && callback(); } else { setTimeout(() => aiAttackPhase(callback), 800); }
+          });
+          return;
+        }
       }
       // ブロッカーチェック（cantBlockのカードは除外）
       // デバッグ: 各カードの判定結果をログ出力（カブテリモン等のブロック発動不具合調査用）

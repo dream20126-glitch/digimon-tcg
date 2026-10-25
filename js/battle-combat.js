@@ -2031,7 +2031,7 @@ function _handJogressPairs(card, base) {
   let conds = [];
   try { conds = _getJogressConditions(card) || []; } catch (_) { conds = []; }
   if (conds.length === 0) return [];
-  const mats = bs.player.battleArea.filter(c => c && c !== base && (c.type === 'デジモン' || !c.type));
+  const mats = bs.player.battleArea.filter(c => c && c !== base && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type));
   const out = [];
   conds.forEach((jc) => {
     mats.forEach((o) => {
@@ -2047,7 +2047,7 @@ function _handJogressPairs(card, base) {
 // 無ければ false を返す（呼び出し側がそのまま登場させる）
 export function offerHandJogressOnEmpty(card, handIdx, slotIdx, elsePlay) {
   if (!card || bs.phase !== 'main' || _attackInProgress) return false;
-  const bases = bs.player.battleArea.filter(c => c && (c.type === 'デジモン' || !c.type));
+  const bases = bs.player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type));
   const byBase = new Map();
   bases.forEach((b) => { const ps = _handJogressPairs(card, b); if (ps.length > 0) byBase.set(b, ps); });
   if (byBase.size === 0) return false;

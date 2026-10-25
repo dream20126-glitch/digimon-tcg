@@ -12490,7 +12490,7 @@ export function handHasBlastCounter(p) {
 }
 function _blastStepsFor(card, p) {
   const steps = [];
-  const digimons = (p.battleArea || []).filter(c => c && (c.type === 'デジモン' || !c.type));
+  const digimons = (p.battleArea || []).filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type));
   getBlastModes(card).forEach((m) => {
     if (m === 'evolve') {
       if (!digimons.some(b => _effectEvoAllowed(card, b, false))) return;
@@ -16707,9 +16707,9 @@ function executeRecipeStep(step, ctx, store, callback) {
       // もう1体（targets[0]）の絞り込み
       const _jgOther = Array.isArray(step.targets) && step.targets[0] ? step.targets[0] : null;
       const _jgOtherFilter = _jgOther && _jgOther.filter ? _jgOther.filter : null;
-      const _jgOtherOk = (c) => !!c && (c.type === 'デジモン' || !c.type)
+      const _jgOtherOk = (c) => !!c && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type)
         && (!_jgOtherFilter || cardMatchesFilter(c, _jgOtherFilter, ctx.bs, ctx.side, ctx.card));
-      const _jgMats = player.battleArea.filter(c => c && (c.type === 'デジモン' || !c.type));
+      const _jgMats = player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type));
       // 進化先の候補: 手札（from）の、条件に合う ［ジョグレス進化］ を持つデジモンカード
       const _jgZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : ['hand']);
       const _jgFilter = step.from_filter || {};
@@ -20089,7 +20089,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       // （以前はこのデジモンでのアタック確認になっていた）。選んだら「〜でアタックしますか？」は出さない
       if (ctx._forceTargetIdx === undefined && /^own(:\d+)?$/.test(String(step.target || ''))) {
         const _acands = [];
-        (player.battleArea || []).forEach((c, i) => { if (c && (c.type === 'デジモン' || !c.type) && !c.suspended && !c.cantAttack && !_summonSickForEffectAttack(step, c)) _acands.push(i); });
+        (player.battleArea || []).forEach((c, i) => { if (c && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type) && !c.suspended && !c.cantAttack && !_summonSickForEffectAttack(step, c)) _acands.push(i); });
         if (_acands.length === 0) { ctx.addLog('💨 アタックできるデジモンがいません'); callback(); break; }
         const _goAtk = (idx) => executeRecipeStep(Object.assign({}, step, { target: 'own:1' }), Object.assign({}, ctx, { _forceTargetIdx: idx, _attackerChosen: true }), store, callback);
         showTargetSelection('pl', _acands, null, '#ffd54f', (idx) => {

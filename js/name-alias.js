@@ -8,20 +8,37 @@
  * 通りの文言を書くだけで、他のカードにも同じ仕組みがそのまま適用される）。
  */
 
-const ALIAS_RE = /各名称「(.+?)」を含むものとしても扱う/g;
+// 「（各）名称「A」（「B」…）を含むものとしても扱う」。「各」の有無・複数名称の両方に対応
+// （P-183 ガイオウモンは「名称「グレイモン」を含むものとしても扱う」で「各」が無い）
+const ALIAS_RE = /各?名称((?:「[^」]+」[、，]?)+)を含むものとしても扱う/g;
 
-// カードのメイン効果（効果テキスト）から、このカードが「XXXとしても扱う」対象名を
-// 全て抽出する（該当ルールが無ければ空配列）。
-export function getNameAliases(card) {
-  if (!card) return [];
-  const text = String(card.effect || '');
-  const aliases = [];
+// 効果テキストの「〜を含むものとしても扱う」由来の名称（部分一致の判定にだけ使う）。
+// 公式ルール 2-3-4-4-1: 「名称「X」を含むものとしても扱う」カードは、名称が「X」であるカードとしては扱わない
+function textIncludeAliases(card) {
+  const text = String((card && card.effect) || '');
+  const out = [];
   let m;
   ALIAS_RE.lastIndex = 0;
-  while ((m = ALIAS_RE.exec(text))) aliases.push(m[1]);
+  while ((m = ALIAS_RE.exec(text))) {
+    for (const q of m[1].matchAll(/「([^」]+)」/g)) out.push(q[1]);
+  }
+  return out;
+}
+
+// このカードが「としても扱う」名称を全て返す（該当ルールが無ければ空配列）。
+// 「〜を含むものとしても扱う」由来とレシピの alias_names の両方。完全一致の判定には cardAliasHasName を使う
+export function getNameAliases(card) {
+  if (!card) return [];
   // レシピの alias_names（エディタの「名称としても扱う」。＜ルール：名称「マメモン」としても扱う＞ サンダーボールモン EX12-041）
-  aliases.push(...recipeAliasNames(card));
-  return aliases;
+  return [...textIncludeAliases(card), ...recipeAliasNames(card)];
+}
+
+// エイリアス名称が reqName に一致するか。exact=true（完全一致）はレシピの「としても扱う」名称だけを見る
+// （「〜を含むものとしても扱う」は部分一致のときだけ一致する）
+export function cardAliasHasName(card, reqName, exact) {
+  if (!card || !reqName) return false;
+  if (exact) return recipeAliasNames(card).some(n => n === reqName);
+  return getNameAliases(card).some(n => n.includes(reqName));
 }
 const _aliasCache = new Map();
 function recipeAliasNames(card) {
@@ -49,5 +66,5 @@ export function cardHasName(card, reqName, exact) {
   }
   const test = exact ? (n => n === reqName) : (n => n.includes(reqName));
   if (test(String(card.name || ''))) return true;
-  return getNameAliases(card).some(test);
+  return cardAliasHasName(card, reqName, exact);
 }

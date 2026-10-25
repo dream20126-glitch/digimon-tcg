@@ -1001,6 +1001,9 @@ function onRemoteCommand(cmd) {
           // メモリー変動を相手に通知 + 状態同期 + 処理完了通知
           sendMemoryUpdate();
           sendStateSync();
+          // 最初に送った「効果発動！」の表示を閉じてもらう（効果が何もしなかった＝登場できるカードが無い等のときも。
+          // ウィルスバスターズ EX12-069 で相手の画面に「相手が効果を確認中…」が残ったままになっていた）
+          sendCommand({ type: 'fx_effectClose' });
           sendCommand({ type: 'security_effect_done', memory: bs.memory, returnToHand: !!secCard._returnToHand });
         };
         // レシピのセキュリティ効果が use_main_effect（【メイン】を発揮）なら、上の 'security' で既に【メイン】を発揮済み。
@@ -1036,6 +1039,8 @@ function onRemoteCommand(cmd) {
     }
     case 'security_effect_done': {
       // アタック側：防御側のセキュリティ効果処理が完了した
+      // 相手の「効果発動！（相手が効果を確認中…）」の表示が残っていれば閉じる
+      if (m.fxRemoteEffectClose) { try { m.fxRemoteEffectClose(); } catch (_) {} }
       // メモリー反映（セキュリティ効果でメモリーが変動した場合）
       if (cmd.memory !== undefined) {
         bs.memory = -cmd.memory; // 相手のメモリーを反転して自分の値に

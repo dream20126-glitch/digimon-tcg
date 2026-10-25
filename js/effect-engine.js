@@ -12021,6 +12021,9 @@ function _tryCancelLeaveByOtherCards(leavingCard, leavingSide, bs, ctxBase, call
   // 【ターンに1回】を使い切った・コストを払えない「離れない」は確認を出さない（DP0のままもう一度消滅の判定をしたとき、
   // 使えない「離れない」の確認が出ていた）
   list = list.filter((rc) => _reactionCanStillRun({ recipe: rc.recipe, card: rc.card, sourceCard: rc.sourceCard }, rc.side, bs, 'when_leave_battle'));
+  // 実行できる処理が何も無い（ジョグレス進化の組み合わせが無い等）置換効果は確認を出さない
+  list = list.filter((rc) => !(Array.isArray(rc.recipe) && rc.recipe.length > 0
+    && rc.recipe.every((st) => _stepNothingToDo(st, { card: rc.card, bs, side: rc.side, block: { _eventSourceCard: leavingCard } }))));
   // オンラインでは確認ダイアログを出せるのはこの端末の持ち主のカードだけ（相手のカードの置換効果は対象外）
   if (window._isOnlineMode && window._isOnlineMode()) list = list.filter((rc) => rc.side === 'player');
   if (list.length === 0) { callback(false); return; }
@@ -14053,6 +14056,35 @@ function _resolveLvMarkersInFilter(f, card, block, bs) {
   ['or', 'and'].forEach(k => { if (Array.isArray(o[k])) o[k] = o[k].map(x => _resolveLvMarkersInFilter(x, card, block, bs)); });
   return o;
 }
+// ジョグレス進化（jogress_evolve ステップ）ができる組み合わせが1つでもあるか（実行時の判定と同じ考え方の簡易版）
+function _jogressFeasible(st, ctx, me) {
+  try {
+    const bs = ctx.bs;
+    const tb = String(st.target || '').split(':')[0];
+    let fixed = null;
+    if (tb === 'self' || tb === 'self_card') fixed = ctx.card;
+    // 発火元が分からない（このカード自身が離れるとき等）ときは、効果を持つカード（ctx.card）を発火元とみなす
+    else if (tb === 'target_trigger_source') fixed = _currentFormOf((ctx.block && ctx.block._eventSourceCard) || ctx.card, bs);
+    if ((tb === 'self' || tb === 'self_card' || tb === 'target_trigger_source') && (!fixed || !(me.battleArea || []).includes(fixed))) return false;
+    const other = Array.isArray(st.targets) && st.targets[0] ? st.targets[0] : null;
+    const otherOk = (c) => !!c && (!other || !other.filter || cardMatchesFilter(c, other.filter, bs, ctx.side, ctx.card));
+    const mats = (me.battleArea || []).filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル' || !c.type));
+    const zs = Array.isArray(st.from) ? st.from : (st.from ? [st.from] : ['hand']);
+    const pool = [...(zs.includes('hand') ? (me.hand || []) : []), ...(zs.includes('trash') ? (me.trash || []) : [])];
+    const f = _srcCardFilterOf(st) || {};
+    return pool.some((card) => {
+      if (!card || !(card.type === 'デジモン' || card.type === 'デュアル')) return false;
+      if (st.evolve_into === 'self_card' && card !== ctx.card) return false;
+      if (!cardMatchesFilter(card, f, bs, ctx.side, ctx.card)) return false;
+      return (getJogressConditions(card) || []).some((jc) => mats.some((a) => mats.some((b) => {
+        if (a === b) return false;
+        if (!jogressSlotMatches(a, jc.slots[0], bs, ctx.side) || !jogressSlotMatches(b, jc.slots[1], bs, ctx.side)) return false;
+        if (fixed) { if (a !== fixed && b !== fixed) return false; if (!otherOk(a === fixed ? b : a)) return false; }
+        return true;
+      })));
+    });
+  } catch (_) { return true; }
+}
 function _stepCandidatesEmpty(st, ctx) {
   try {
     if (!st || !ctx || !ctx.bs || !ctx.side) return false;
@@ -14063,6 +14095,10 @@ function _stepCandidatesEmpty(st, ctx) {
     const opp = side === 'player' ? bs.ai : bs.player;
     if (!me || !opp) return false;
     const zones = Array.isArray(st.from) ? st.from : (st.from ? [st.from] : []);
+    // ジョグレス進化: 進化先の候補と、条件に合う進化元2体の組み合わせが1つも無ければ実行できない
+    // （カプリモン EX12-003 の「離れるとき、そのデジモンと他の自分のデジモンでジョグレス進化できる」で、素材が
+    // そろっていないのに確認が出ていた）
+    if (st.action === 'jogress_evolve') return !_jogressFeasible(st, ctx, me);
     // 取得元から選ぶ処理（登場・置く・手札に加える・リンク）
     if (_NC_ZONE_ACTIONS.has(st.action) && zones.length > 0 && !st.card) {
       if (zones.some(z => !['hand', 'trash', 'evo_source'].includes(z))) return false;
@@ -20088,6 +20124,24 @@ function executeRecipeStep(step, ctx, store, callback) {
       // target:'own:all'（+filter）なら条件を満たす自分のデジモン全て（タイラントカブテリモン BT26-047「特徴『昆虫型』
       // 『タイタン族』を持つレスト状態の自分のデジモン全ては相手のオプションの効果を受けず」）。それ以外はこのカード
       const _imAll = /^own:all$/.test(String(step.target || ''));
+      // 「自分のデジモン1体は〜効果を受けない」（target own:1 / own_digimon:1）: 対象を選ぶ（ディルビットモン＆トラスゲイン EX12-052
+      // 【進化時】で、選ぶ画面が出ずにこのデジモンに付いていた）。選んだら同じステップを選んだデジモンに対して行う
+      const _imOneM = /^own(?:_digimon)?:(\d+)$/.exec(String(step.target || ''));
+      if (_imOneM && !step._imPicked) {
+        const _imCands = [];
+        (player.battleArea || []).forEach((c, i) => { if (c && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))) _imCands.push(i); });
+        if (_imCands.length === 0) { ctx.addLog && ctx.addLog('⚠ 対象にできるデジモンがいません'); callback(); break; }
+        const _imApply = (idx) => {
+          const tgt = idx != null ? player.battleArea[idx] : null;
+          if (!tgt) { callback(); return; }
+          if (ctx.bs) ctx.bs._lastPickedCard = tgt;
+          executeRecipeStep(Object.assign({}, step, { target: 'self', _imPicked: true }), Object.assign({}, ctx, { card: tgt, _imOrigCard: ctx.card }), store, callback);
+        };
+        if (ctx._forceTargetIdx !== undefined && _imCands.includes(ctx._forceTargetIdx)) { _imApply(ctx._forceTargetIdx); break; }
+        if (ctx.side === 'ai') { const _self = player.battleArea.indexOf(ctx.card); _imApply(_imCands.includes(_self) ? _self : _imCands[0]); break; }
+        showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', _imCands, null, '#aa66ff', (idx) => _imApply(idx), '（効果を受けなくするデジモン）');
+        break;
+      }
       const _imTgts = _imAll
         ? (player.battleArea || []).filter(c => c && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)))
         : (ctx.card ? [ctx.card] : []);

@@ -649,7 +649,8 @@ function _carryDedigiState(oldTop, nc) {
   try { recalcDp(nc); } catch (_) {}
   // 退化で元の DP が下がり、受けていた DP- で0以下になったら、ルールチェックで消滅させる（サンダーボールモン EX12-041 →
   // コクワモン EX12-038）
-  if (nc.dp != null && nc.dp !== '' && !isNaN(parseInt(nc.dp, 10)) && parseInt(nc.dp, 10) <= 0) {
+  if ((nc.buffs || []).some((b) => b && b.type === 'dp_minus') && (parseInt(nc.baseDp, 10) || 0) > 0
+      && nc.dp != null && nc.dp !== '' && !isNaN(parseInt(nc.dp, 10)) && parseInt(nc.dp, 10) <= 0) {
     nc._pendingDestroy = true;
     try { _scheduleRuleDestroyCheck(window._lastBattleState); } catch (_) {}
   }
@@ -9489,12 +9490,9 @@ function checkPendingDestroys(ctx, callback) {
       // オンラインの相手のデジモンは、相手の端末からの状態の同期で作り直されると「消滅予定」の印が消える。DP が0以下なら印を付け直す
       // （アーツ進化が終わるまで消滅の依頼を保留している間に同期が届き、ムラサメモン＆豪ノ斬・叢時雨で DP0 にしたベックモンが
       // いつまでも消滅しなかった）
-      // DP- 以外の理由（DP- を受けたまま退化して元の DP が下がった等）で DP が0以下になったデジモンも印を付ける
-      // （サンダーボールモン EX12-041 が DP-4000 を受けたまま退化1でコクワモン DP2000 になったのに消滅しなかった）。
-      // オンラインの自分のデジモンは、相手の効果の知らせ（_remoteDp0Hold）の仕組みに任せる
-      const _online = typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode();
-      if ((side === 'ai' || !_online) && area[i] && !area[i]._pendingDestroy && !['テイマー', 'オプション'].includes(String(area[i].type || '')) && area[i].dp != null && area[i].dp !== ''
-          && !isNaN(parseInt(area[i].dp, 10)) && parseInt(area[i].dp, 10) <= 0) area[i]._pendingDestroy = true;
+      if (side === 'ai' && area[i] && !area[i]._pendingDestroy && !['テイマー', 'オプション'].includes(String(area[i].type || '')) && area[i].dp != null && area[i].dp !== ''
+          && !isNaN(parseInt(area[i].dp, 10)) && parseInt(area[i].dp, 10) <= 0
+          && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) area[i]._pendingDestroy = true;
       if (area[i] && area[i]._pendingDestroy && (parseInt(area[i].dp, 10) || 0) > 0) { area[i]._pendingDestroy = false; delete area[i]._dp0RequestSent; }
       if (area[i] && area[i]._pendingDestroy) {
         // 消滅の処理中（演出・「離れるとき」の確認中）のカードは、その途中で走った別の判定では扱わない

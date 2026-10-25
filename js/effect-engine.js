@@ -13942,7 +13942,7 @@ const _NC_ZONE_ACTIONS = new Set(['summon', 'summon_appear', 'summon_use', 'plac
 const _NC_BOARD_ACTIONS = new Set(['destroy', 'rest', 'bounce', 'return_hand', 'return_deck', 'dp_minus', 'dp_plus', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'active', 'place_on_security_top', 'not_active', 'prevent_unsuspend']);
 function _resolveLvMarkersInFilter(f, card, block, bs) {
   if (!f || typeof f !== 'object') return f;
-  const src = _currentFormOf(block && block._eventSourceCard, bs);
+  const src = block && block._eventSourceCard; // 誘発した時点のカード（公式ルール 15-8-3-8）
   const lvOf = (m) => { const c = m === 'self_lv' ? card : src; const n = c ? parseInt(c.level, 10) : NaN; return Number.isFinite(n) ? n : -1; };
   const o = Object.assign({}, f);
   ['lv_le', 'lv_ge', 'lv'].forEach(k => { if (o[k] === 'trigger_source_lv' || o[k] === 'self_lv') o[k] = lvOf(o[k]); });
@@ -15532,9 +15532,10 @@ function executeRecipeStep(step, ctx, store, callback) {
   // Lvの条件の比べる値（エディタ「比べる値」: 'trigger_source_lv'＝そのデジモン（トリガーの発生元）のLv /
   // 'self_lv'＝このカードのLv）を数値に置き換える（ウィルスバスターズ EX12-069「そのデジモンと同じLvの〜」）
   if ((step.filter && typeof step.filter === 'object') || (step.from_filter && typeof step.from_filter === 'object')) {
-    // 「そのデジモン」が効果の発揮までに進化していれば、進化後のデジモンのLv（ウィルスバスターズ EX12-069。
-    // ワーガルルモンのアタック時効果でメタルガルルモンに進化した後に発揮 → Lv.6 で判定）
-    const _lvSrc = _currentFormOf(ctx.block && ctx.block._eventSourceCard, ctx.bs);
+    // 「そのデジモン」のLvは、効果が誘発した時点のLvで参照する（公式ルール 15-8-3-8: 誘発条件と同じ状況の参照は、
+    // 誘発した時点の状況。発揮までに進化していても進化前のLv。ウィルスバスターズ EX12-069: Lv.5 のワーガルルモンが
+    // アタック時効果でメタルガルルモンに進化した後に発揮しても Lv.5 で判定）。誘発時のカード（進化前）をそのまま見る
+    const _lvSrc = ctx.block && ctx.block._eventSourceCard;
     const _lvOf = (m) => {
       const c = m === 'self_lv' ? ctx.card : _lvSrc;
       const n = c ? parseInt(c.level, 10) : NaN;

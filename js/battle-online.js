@@ -1140,8 +1140,13 @@ function onRemoteCommand(cmd) {
       const ctx = { bs, addLog, renderAll, updateMemGauge };
       // バトルで負けて離れるのか（≪デコード≫等「バトル以外で」の判定用）
       bs._leaveByBattle = !!cmd.byBattle;
-      try { window._tryCancelLeaveLocal(card, 'player', bs, ctx, (c) => { bs._leaveByBattle = false; reply(c); }); }
-      catch (_) { bs._leaveByBattle = false; reply(false); }
+      // 離れる原因（相手の効果で離れるのか。メタルエンパイア EX12-072 で得た【守護】「相手の効果で他の自分のデジモンが
+      // 離れるとき」が、オンラインで相手の効果で消滅させられたときに発動しなかった）。こちら視点の側に直して入れる
+      const _prevLC = bs._leaveCause;
+      if (cmd.cause && !cmd.byBattle) bs._leaveCause = { type: cmd.cause.type || 'effect', causerSide: cmd.cause.causerSide || 'ai', causerCard: null };
+      const _restore = () => { bs._leaveByBattle = false; bs._leaveCause = _prevLC; };
+      try { window._tryCancelLeaveLocal(card, 'player', bs, ctx, (c) => { _restore(); reply(c); }); }
+      catch (_) { _restore(); reply(false); }
       break;
     }
     case 'fx_leaveBattleDelegateDone': {
@@ -2996,7 +3001,10 @@ window._requestLeaveBattleDelegate = (slotIdx, cb) => {
     if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
     try { cb(canceled); } catch (e) { console.error('[leaveBattleDelegate]', e); }
   };
-  sendCommand({ type: 'fx_leaveBattleDelegate', slotIdx, byBattle: !!bs._leaveByBattle });
+  // 離れる原因（効果かバトルか・誰の効果か）も送る。持ち主の端末の「相手の効果で離れるとき」（【守護】等）の判定に使う
+  const _lc = bs._leaveCause || bs._lastDestroyCause || null;
+  const cause = _lc ? { type: _lc.type || 'effect', causerSide: _lc.causerSide === 'player' ? 'ai' : _lc.causerSide === 'ai' ? 'player' : null } : null;
+  sendCommand({ type: 'fx_leaveBattleDelegate', slotIdx, byBattle: !!bs._leaveByBattle, cause });
 };
 window._waitForHandDiscardDelegate = (cb) => waitForHandDiscardDelegate(cb);
 window._waitForOwnDestroyDone = (cb) => waitForOwnDestroyDone(cb);

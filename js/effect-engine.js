@@ -6454,14 +6454,26 @@ function showDeckOpenUI(opened, step, ctx, callback) {
     const remaining = cardEls.filter(e => !e.removed);
     if (remaining.length === 0) { finishReturnPhase(); return; }
     if (returnTo === 'trash') {
+      // 残りをトラッシュへ送る移動演出（3枚以上は一覧で1回）が終わってから次へ進む（登場させたデジモンの【登場時】等は
+      // この後。アンドロモン EX12-055 で、移動演出に重なって【登場時】の効果発動が出ていた）
+      const cards = remaining.map(e => e.card);
+      const many = cards.length >= 3;
       remaining.forEach(e => {
-        sendRemote({ type: 'fx_remoteDeckOpenAct', cardNo: e.card.cardNo, name: e.card.name, to: 'trash' });
+        sendRemote({ type: 'fx_remoteDeckOpenAct', cardNo: e.card.cardNo, name: e.card.name, to: 'trash', noFx: many });
         player.trash.push(e.card);
         ctx.addLog && ctx.addLog('🗑 「' + e.card.name + '」をトラッシュへ');
         removeEntry(e);
       });
       ctx.renderAll && ctx.renderAll();
-      finishReturnPhase();
+      if (typeof window === 'undefined' || typeof window._fxCardMove !== 'function') { finishReturnPhase(); return; }
+      overlay.style.display = 'none';
+      const runMoves = () => {
+        let k = 0;
+        const nx = () => { if (k >= cards.length) { finishReturnPhase(); return; } window._fxCardMove(cards[k++], 'オープンしたカード', 'トラッシュ', nx); };
+        nx();
+      };
+      if (many) _moveBatchIntro(ctx, cards, 'オープンしたカード', 'トラッシュ', runMoves);
+      else runMoves();
       return;
     }
     // quiet: 相手の画面の1枚ずつの移動演出は出さない（3枚以上で一覧の演出を出すとき）

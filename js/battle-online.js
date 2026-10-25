@@ -1948,10 +1948,31 @@ function onRemoteCommand(cmd) {
       if (cmd.targetIdx !== undefined && cmd.count) {
         const myCard = bs.player.battleArea[cmd.targetIdx];
         if (myCard && myCard.stack && myCard.stack.length > 0) {
-          for (let i = 0; i < cmd.count && myCard.stack.length > 0; i++) {
-            const removed = cmd.fromTop ? myCard.stack.shift() : myCard.stack.pop();
-            bs.player.trash.push(removed);
-            discardedCards.push(removed);
+          // 相手が選んだカード（破棄する前の位置 stackIdxs）を破棄する。位置のカードが違う（カードNoが合わない）ときは
+          // 同じカードNoのカードを探す。位置の情報が無い（古い版の相手）ときだけ上か下から順に破棄する
+          const idxs = Array.isArray(cmd.stackIdxs) ? cmd.stackIdxs : null;
+          if (idxs) {
+            const before = myCard.stack.slice();
+            const nos = Array.isArray(cmd.cardNos) ? cmd.cardNos : [];
+            const picked = [];
+            idxs.forEach((si, k) => {
+              const no = nos[k] || '';
+              let c = before[si];
+              if (!c || picked.includes(c) || (no && (c.cardNo || '') !== no)) c = before.find(x => x && !picked.includes(x) && (!no || (x.cardNo || '') === no)) || null;
+              if (c) picked.push(c);
+            });
+            picked.forEach((c) => {
+              const i = myCard.stack.indexOf(c);
+              if (i !== -1) myCard.stack.splice(i, 1);
+              bs.player.trash.push(c);
+              discardedCards.push(c);
+            });
+          } else {
+            for (let i = 0; i < cmd.count && myCard.stack.length > 0; i++) {
+              const removed = cmd.fromTop ? myCard.stack.shift() : myCard.stack.pop();
+              bs.player.trash.push(removed);
+              discardedCards.push(removed);
+            }
           }
           renderAll();
         }

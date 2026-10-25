@@ -2697,6 +2697,8 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback(action._isCost ? false : undefined));
         break;
       }
+      // 破棄する前の進化元（オンラインの相手に「どの位置のカードを破棄したか」を送るため）
+      const _edBefore = new Map();
       // 破棄確定後の共通後処理（演出 + ログ + オンライン同期）
       const finalizeDiscard = (discarded, tgt, onDone) => {
         if (discarded.length === 0) { onDone && onDone(false); return; }
@@ -2706,7 +2708,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
         // 従来ケースのみ。自分側対象は state_sync 側の通常同期に任せる）
         if (edOwner === opponent && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
           const tgtIdx = edArea.indexOf(tgt);
-          window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names, targetIdx: tgtIdx, count: discarded.length, fromTop: action.code === 'evo_discard_top' });
+          // 破棄したカードの、破棄する前の進化元での位置（[0]＝一番上）。「選んで破棄」で相手の画面では
+          // 上か下から順に消していて、選んだのと違うカードが残っていた（メタルガルルモン EX12-035 → グソクモン）
+          const _bef = _edBefore.get(tgt) || [];
+          const stackIdxs = discarded.map(c => _bef.indexOf(c));
+          window._onlineSendCommand({ type: 'fx_evoDiscard', targetName: tgt.name, discardedNames: names, targetIdx: tgtIdx, count: discarded.length, fromTop: action.code === 'evo_discard_top',
+            stackIdxs: stackIdxs.every(x => x >= 0) ? stackIdxs : null, cardNos: discarded.map(c => c.cardNo || '') });
           if (window._markEvoModified) window._markEvoModified('ai', tgtIdx);
         }
         // 自分のデジモン/テイマーの進化元・下のカードを破棄したとき（【フラグメント】のコスト等）も、相手の画面に移動演出を出す
@@ -2741,6 +2748,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
       const discardFromTarget = (tgt, onDone) => {
         const edTrash = edOwner.trash;
         _edInfo = null;
+        _edBefore.set(tgt, Array.isArray(tgt.stack) ? tgt.stack.slice() : []);
         // 「選んで破棄」: 進化元カード選択UIをN回繰り返す（AIは先頭を自動選択）
         if (action.code === 'evo_discard_select' || action.code === 'evo_discard_tamer_select') {
           const discarded = [];
@@ -2849,6 +2857,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
             }
             const { t, cards } = perTamer[i++];
             _edInfo = null;
+            _edBefore.set(t, Array.isArray(t.stack) ? t.stack.slice() : []);
             const discarded = [];
             cards.forEach((card) => {
               const si = t.stack.indexOf(card);

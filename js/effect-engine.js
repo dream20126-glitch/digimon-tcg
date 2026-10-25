@@ -9466,8 +9466,12 @@ function checkPendingDestroys(ctx, callback) {
   // （セキュリティチェック中の効果で DP0 にしたムシャモンが、セキュリティバトルの終了を待たずに消滅していた）
   // オンラインで相手がアタック中（bs._oppAttackInProgress。battle-online.js が attack_start / attack_end で管理）も同じく保留する
   // （相手のアタック中のセキュリティ効果等で DP0 になった自分のデジモンが、相手のアタックの途中で消滅していた）
-  const _holdForAttack = (typeof window !== 'undefined' && typeof window._isAttackInProgress === 'function' && window._isAttackInProgress())
-    || !!(ctx.bs && ctx.bs._oppAttackInProgress);
+  // 公式ルール 17-1-2: ルールチェックが行われないのは「ルールの処理中」「効果の処理中」だけ。アタックの途中でも、
+  // アタック時効果の後（カウンタータイミングの前）等、効果と効果の間ではルールチェックで消滅する（11-1-4）。
+  // 保留するのはセキュリティチェック・バトルの解決中（ルールの処理中。bs._attackResolving。相手の端末では
+  // bs._oppAttackInProgress）だけ（以前はアタックの間ずっと保留していて、DP0 にしたデジモンがカウンターの
+  // ジョグレス進化の素材になっていた）
+  const _holdForAttack = !!(ctx.bs && (ctx.bs._attackResolving || ctx.bs._oppAttackInProgress));
   const pending = [];
   let _remoteDp0 = false;
   orderedSides.forEach(side => {

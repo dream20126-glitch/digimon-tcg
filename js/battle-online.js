@@ -1104,10 +1104,26 @@ function onRemoteCommand(cmd) {
         const redirect = ra ? { side: ra.side === 'player' ? 'ai' : 'player', idx: ra.idx, cardNo: ra.cardNo || '', byDefender: !!ra.byDefender } : null;
         sendCommand(redirect ? { type: 'fx_reactionDelegateDone', redirect } : { type: 'fx_reactionDelegateDone' });
       };
-      try {
-        if (window._fireDelegatedReactionTriggers) window._fireDelegatedReactionTriggers(cmd.recipeKey, bs, ctx, done, cmd);
-        else done();
-      } catch (_) { done(); }
+      const _fireDelegated = () => {
+        try {
+          if (window._fireDelegatedReactionTriggers) window._fireDelegatedReactionTriggers(cmd.recipeKey, bs, ctx, done, cmd);
+          else done();
+        } catch (_) { done(); }
+      };
+      // 相手のアタック宣言の効果が全て終わった後（カウンタータイミング等）: 先にルールチェックで DP0 のデジモンを消滅させる
+      // （公式ルール 11-1-4 / 17-1-2。アンフィモンの【アタック時】で DP0 にしたメタルガルルモンが、ウォーグレイモンの
+      // 【カウンター】のジョグレス進化の素材になっていた）
+      if (cmd.kind === 'on_attack_opp' && typeof window._runRuleDestroyCheckNow === 'function') {
+        window._runRuleDestroyCheckNow(() => {
+          renderAll(); sendStateSync();
+          // ルールチェックで消滅したデジモンの【消滅時】等（後回しにしていたこちらの効果）も、カウンタータイミングより先に発揮する
+          // （相手の効果は全て終わっている。15-4-3-3）
+          bs._remoteTpBusy = false;
+          if (typeof window._hasNonTurnDeferred === 'function' && window._hasNonTurnDeferred() && typeof window._flushNonTurnDeferred === 'function') {
+            try { window._flushNonTurnDeferred(() => { renderAll(); sendStateSync(); _fireDelegated(); }); } catch (_) { _fireDelegated(); }
+          } else _fireDelegated();
+        });
+      } else _fireDelegated();
       break;
     }
     // --- 「バトルエリアを離れるとき」の置換効果の委譲（相手が、こちらのデジモンを消滅等させようとしている） ---
@@ -1485,7 +1501,12 @@ function onRemoteCommand(cmd) {
       break;
     }
     case 'attack_start': {
-      // 相手がアタックを開始した。アタックの処理が全て終わるまで、こちらの DP0 の消滅（ルールチェック）は保留する
+      // 相手がアタックを開始した。DP0 の消滅（ルールチェック）はアタック中も効果と効果の間で行う（公式ルール 17-1-2）。
+      // 保留するのは相手のセキュリティチェック・バトルの解決中だけ（rule_proc_start 〜 attack_end）
+      break;
+    }
+    case 'rule_proc_start': {
+      // 相手のアタックがセキュリティチェック・バトルの解決（ルールの処理）に入った: アタックの終了まで DP0 の消滅を保留する
       bs._oppAttackInProgress = true;
       break;
     }
@@ -2501,6 +2522,8 @@ function _canBlockNow(c) {
   return true;
 }
 function resolveOnlineBlock(blockerIdx, cmd) {
+  // ブロックのバトルの解決（ルールの処理）の間は、DP0 の消滅を保留する（相手のアタックの終了 attack_end で解除）
+  bs._oppAttackInProgress = true;
   _clearCollisionBlockerBadges();
   let blocker = bs.player.battleArea[blockerIdx];
   const atk = bs.ai.battleArea[cmd.atkIdx];

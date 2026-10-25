@@ -2655,6 +2655,7 @@ function _afterOnlineBlockBattle(atk, atkIdx) {
 // オンライン: ブロックされた（＝アタックの対象がブロッカーに変更された。公式ルール 12-1-1）。こちら（攻撃側）の
 // 「アタックの対象が変更されたとき」を発揮してから「ブロックされたとき」へ。防御側の分は防御側の端末が発揮する
 function _onlineBlockedThen(atk, atkSlotIdx, cb) {
+  _beginAttackResolution();
   const go = () => afterBlockedEffect(atk, atkSlotIdx, 'player', cb);
   if (typeof window._fireWhenTargetChangedLocal === 'function') window._fireWhenTargetChangedLocal('player', go);
   else go();
@@ -3095,7 +3096,16 @@ function checkAttackEnd(atk, atkIdx) {
 
 // ===== セキュリティチェック =====
 
+// セキュリティチェック・バトルの解決（ルールの処理）に入った: この間は DP0 の消滅（ルールチェック）を保留する（公式ルール 17-1-2-1）。
+// アタックの終了で解除して、保留したルールチェックを行う。オンラインでは相手の端末にも知らせる
+function _beginAttackResolution() {
+  if (bs._attackResolving) return;
+  bs._attackResolving = true;
+  if (_onlineMode && _sendCommand) { try { _sendCommand({ type: 'rule_proc_start' }); } catch (_) {} }
+}
+if (typeof window !== 'undefined') window._beginAttackResolution = _beginAttackResolution;
 export function resolveSecurityCheck(atk, atkIdx) {
+  _beginAttackResolution();
   showCombatBackdrop();
   const totalChecks = getSecurityAttackCount(atk);
   let checksRemaining = totalChecks;
@@ -3738,6 +3748,7 @@ function _evolvedInSlot(card, side, idx) {
   return card;
 }
 export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
+  _beginAttackResolution();
   atk = _evolvedInSlot(atk, defSide === 'ai' ? 'player' : 'ai', atkIdx);
   def = _evolvedInSlot(def, defSide || 'ai', defIdx);
   // 比べるDPは付与中のバフから計算し直した値にする（DP+の永続効果が反映されていないことがあった）
@@ -3946,6 +3957,7 @@ export function resolveBattle(atk, atkIdx, def, defIdx, defSide) {
 // ===== バトル解決（AI → プレイヤー ブロッカー戦） =====
 
 export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
+  _beginAttackResolution();
   atk = _evolvedInSlot(atk, 'ai', atkIdx);
   def = _evolvedInSlot(def, 'player', defIdx);
   showCombatBackdrop();
@@ -4378,6 +4390,14 @@ export function aiAttackPhase(callback) {
   hideCombatBackdrop();
   if (bs._battleAborted) return;
   if (_onlineMode) { callback && callback(); return; }
+  // 前のアタックのセキュリティチェック・バトルの解決が終わった: 保留していた DP0 の消滅（ルールチェック）を行ってから次へ
+  if (bs._attackResolving) {
+    bs._attackResolving = false;
+    if (typeof window !== 'undefined' && typeof window._runRuleDestroyCheckNow === 'function') {
+      window._runRuleDestroyCheckNow(() => aiAttackPhase(callback));
+      return;
+    }
+  }
 
   const atkIdx = bs.ai.battleArea.findIndex(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && !c.suspended && !c.summonedThisTurn);
   if (atkIdx === -1) { callback(); return; }
@@ -4537,6 +4557,7 @@ export function aiAttackPhase(callback) {
 // ===== AIセキュリティチェック =====
 
 export function doAiSecurityCheck(atk, atkIdx, callback, _remainingChecks) {
+  _beginAttackResolution();
   showCombatBackdrop();
   // Sアタック+Nのチェック枚数は最初の呼び出し時にセットし、各チェックで -1
   if (_remainingChecks === undefined) {
@@ -4980,6 +5001,7 @@ export async function checkPendingTurnEnd() {
     await new Promise((resolve) => window._flushNonTurnDeferred(resolve));
   }
   _attackInProgress = false;
+  bs._attackResolving = false;
   // 「そのアタックの終了まで」（≪連携≫のDP+・Sアタック+1）のバフをここで外す
   _expireBuffs(bs, 'dur_until_attack_end');
   // アタックが終わればバトルも終わっている: 「バトル終了まで」（≪プログレス≫の「アタック中、相手の効果を受けない」等）も外す

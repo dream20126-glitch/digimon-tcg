@@ -15764,7 +15764,11 @@ function executeRecipeStep(step, ctx, store, callback) {
         callback && callback(false);
         return;
       }
-      executeRecipeStep(costStep, ctx, store, (success) => {
+      // 本体の対象が先に決まっている（_forceTargetIdx。「離れるとき」のそのデジモン等）ことは、コストには引き継がない。
+      // 引き継ぐと選択が自動になり、アンフィモン＆クリスタルフリーザー EX12-033「トラッシュ3枚をデッキの下に戻すことで
+      // 離れない」で、戻す3枚を選ぶ画面が出ずに自動で戻されていた
+      const _costCtx = ctx._forceTargetIdx !== undefined ? Object.assign({}, ctx, { _forceTargetIdx: undefined }) : ctx;
+      executeRecipeStep(costStep, _costCtx, store, (success) => {
         if (success === false) {
           console.log('[cost] cost FAILED → aborting main');
           // このステップ自身は対象選択まで到達しなかったため、後続の「その後」ステップが
@@ -20250,7 +20254,9 @@ function executeRecipeStep(step, ctx, store, callback) {
         const _wtcCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
         fireWhenTargetChangedTriggers(_wtcAttackerSide, ctx.bs, _wtcCtxBase, callback);
       };
-      if (_raCands.length === 1 || effectiveSide === 'ai') { _raFinish(_raCands[0]); break; }
+      // 変更先は候補が1体でも選ぶ画面を出す（自動で決めない。グソクモン EX12-028 進化元「アタックの対象を特徴『DS』を持つ
+      // 自分のデジモン1体に変更できる」で、選ぶ画面が出ずにグソクモンに決まっていた）。任意なら選ぶ画面で「使わない」も選べる
+      if (effectiveSide === 'ai') { _raFinish(_raCands[0]); break; }
       showTargetSelection(_raRowId, _raCands, 'アタック対象にするデジモンを選んでください', '#ff4444', _raFinish);
       break;
     }

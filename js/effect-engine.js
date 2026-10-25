@@ -1380,6 +1380,7 @@ function _effectBodyEnter() {
   };
 }
 function executeQueueEntry(entry, context, callback0) {
+  _resetEffectPicks(context && context.bs);
   const _ebExit = _effectBodyEnter();
   const callback = (...a) => { _ebExit(); callback0 && callback0(...a); };
   const { card, block, side } = entry;
@@ -11384,8 +11385,17 @@ function getRecipeForTrigger(card, triggerCode, inEvoSource = false) {
 // 変えないためオプション化している（挙動そのものの統一は別課題）。
 // 「〜したとき」等の反応の効果を処理している数（オンラインの待ち画面を隠す判定用。window._isEffectRunning）
 let _reactionRunDepth = 0;
+// 効果を1つ発揮し始めるとき、前の効果で選んだカード（「そのデジモン」same_target の参照先）を忘れる
+// （月夜野瑠璃 EX12-068「〜がアタックしたとき…そのデジモンを〜に進化できる」の「そのデジモン」が、前の効果
+// （ディルビットモン＆トラスゲインの DP+3000）で選んだデジモンを指し、アタックしたテイルモンを進化できなかった）
+function _resetEffectPicks(bs) {
+  if (!bs) return;
+  bs._lastPickedCard = null;
+  delete bs._lastAttemptedTarget;
+}
 function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
   _reactionRunDepth++;
+  _resetEffectPicks(bs);
   const _ebExit = _effectBodyEnter();
   const done0 = () => { _ebExit(); done0x && done0x(); };
   // 発揮待ちに先に出していた「デジモンが消滅したとき」（hudPreviewSubjectDestroy）は、発揮し始めたら外す

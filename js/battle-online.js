@@ -2414,6 +2414,7 @@ function checkOnlineBlock(cmd) {
     return;
   }
   if (_modules.showBlockConfirm) {
+    window._blockConfirmCands = blockerIndices;
     _modules.showBlockConfirm(bs.player.battleArea[blockerIndices[0]], attacker, (doBlock) => {
       if (!doBlock) { sendCommand({ type: 'block_response', blocked: false }); return; }
       if (blockerIndices.length === 1) {

@@ -9386,6 +9386,9 @@ function _reactionCanStillRun(r, side, bs, code) {
     const src = r.sourceCard || r.card;
     return r.recipe.some((step) => {
       if (!step) return false;
+      // 【カウンター】は1回のアタックに1つだけ（公式ルール 16-14）。このアタックでもう使っていれば、他の【カウンター】は
+      // 発揮できないので、確認のポップアップも出さない（ウォーグレイモンの【カウンター】の後にプロキシマモンのが出ていた）
+      if ((step.counter === true || step.also_counter === true) && bs._inCounterPass && bs._attackSeq && bs._counterUsedSeq === bs._attackSeq) return false;
       const lMax = getLimitMaxUses(step);
       if (lMax > 0 && bs._usedLimits && (bs._usedLimits[_stepLimitKey(src, r.card, step)] || 0) >= lMax) return false;
       if (_costStepsInfeasible(step.cost, r.card, bs, side)) return false;
@@ -11146,20 +11149,22 @@ function _cardStillInZone(bs, side, card, zone) {
 // 完全に切り離し、fireKeywordAttackEffects 側で別の確認ダイアログとして発動させるため。
 // flagsOut を渡すと、実際に on_attack ステップを提供したキーワードの flag 名を積む
 // （確認ダイアログの表示ラベル用。アセンブリ等 on_attack と無関係なキーワードは含めない）
-function _getKeywordOnAttackSteps(card, flagsOut, bs, side) {
+// holdersOut（省略可）を渡すと、キーワードごとに、それを持つカード（このカード自身／進化元／リンクカード）を積む
+function _getKeywordOnAttackSteps(card, flagsOut, bs, side, holdersOut) {
   // カード自身のキーワードに加え、表向きの進化元の進化元効果・リンクカードのリンク効果のキーワードも
   // （【プログレス】等。以前はカード自身のものしか見ておらず、ダンテモンにリンクしたロープレモンの
   // 【プログレス】が発揮されなかった）。同じキーワードは1回だけ
   const recipe = _parseCardRecipe(card);
   const passives = [];
-  const _addP = (arr, holder) => { (Array.isArray(arr) ? arr : []).forEach((p) => { if (p && p.flag) passives.push(p); }); };
-  if (recipe) _addP(recipe.passive);
+  const holderOf = new Map();
+  const _addP = (arr, holder) => { (Array.isArray(arr) ? arr : []).forEach((p) => { if (p && p.flag) { passives.push(p); holderOf.set(p, holder); } }); };
+  if (recipe) _addP(recipe.passive, card);
   (card.stack || []).forEach((ev) => {
     if (!ev || ev._faceDown) return;
     const er = _parseCardRecipe(ev);
-    if (er && er.evo_source && typeof er.evo_source === 'object') _addP(er.evo_source.passive);
+    if (er && er.evo_source && typeof er.evo_source === 'object') _addP(er.evo_source.passive, ev);
   });
-  (card.linkedCards || []).forEach((lc) => { const lr = lc && _linkSectionRecipe(lc); if (lr) _addP(lr.passive); });
+  (card.linkedCards || []).forEach((lc) => { const lr = lc && _linkSectionRecipe(lc); if (lr) _addP(lr.passive, lc); });
   if (passives.length === 0) return [];
   const dict = getKeywordDict();
   let result = [];
@@ -11184,6 +11189,7 @@ function _getKeywordOnAttackSteps(card, flagsOut, bs, side) {
     }
     result = result.concat(_tagKeywordSteps(p.flag, filled));
     if (flagsOut) flagsOut.push(p.flag);
+    if (holdersOut) holdersOut.push(holderOf.get(p) || card);
   }
   return result;
 }
@@ -11195,7 +11201,8 @@ export function fireKeywordAttackEffects(card, side, bs, ctxBase, done) {
   const finish = () => { try { done && done(); } catch (_) {} };
   if (!card) { finish(); return; }
   const flags0 = [];
-  const steps0 = _getKeywordOnAttackSteps(card, flags0, bs, side);
+  const holders0 = [];
+  const steps0 = _getKeywordOnAttackSteps(card, flags0, bs, side, holders0);
   if (steps0.length === 0) { finish(); return; }
   // 常在型（【プログレス】）は確認せずにその場で適用し、説明だけ出す。効果で宣言したアタックで、宣言時に
   // 適用済み（_applyDeclaredAttackImmunity）なら付け直さない
@@ -11215,7 +11222,27 @@ export function fireKeywordAttackEffects(card, side, bs, ctxBase, done) {
     }
   }
   if (steps.length === 0) { finish(); return; }
-  const label = flags.map(f => '【' + _keywordJpName(f) + '】').join('');
+  // 進化元・リンクカードが持つキーワード（ウォーグレイモンの進化元のグレイモンの【突進】等）は、それを持つカードの効果として
+  // 確認する（「グレイモン（ウォーグレイモンの進化元）の効果」）。持っているカードごとに分けて順に確認する
+  const _holderOfFlag = (f) => holders0[flags0.indexOf(f)] || card;
+  const _holders = [];
+  flags.forEach((f) => { const h = _holderOfFlag(f); if (!_holders.includes(h)) _holders.push(h); });
+  if (_holders.length > 1 || (_holders.length === 1 && _holders[0] !== card)) {
+    let _hi = 0;
+    const _nextHolder = () => {
+      if (_hi >= _holders.length) { finish(); return; }
+      const h = _holders[_hi++];
+      const hFlags = flags.filter(f => _holderOfFlag(f) === h);
+      const hSteps = steps.filter(st => st && hFlags.includes(st._kwFlag));
+      _fireKeywordAttackGroup(card, h, hFlags, hSteps, side, bs, ctxBase, _nextHolder);
+    };
+    _nextHolder();
+    return;
+  }
+  _fireKeywordAttackGroup(card, card, flags, steps, side, bs, ctxBase, finish);
+}
+function _fireKeywordAttackGroup(card, holder, flags, steps, side, bs, ctxBase, finish) {
+  if (steps.length === 0) { finish(); return; }
   // 【衝突】のように「〜しなければならない」強制のキーワードだけなら「発動しますか？」は出さずに発揮する
   // （巨神兵器 BT26-085）。任意のキーワードが混ざる場合は従来通り確認する
   const MANDATORY_ATTACK_KEYWORDS = ['collision'];
@@ -11226,7 +11253,7 @@ export function fireKeywordAttackEffects(card, side, bs, ctxBase, done) {
   const allMandatory = flags.length > 0 && flags.every(f => MANDATORY_ATTACK_KEYWORDS.includes(f));
   const ruleText = flags.map(f => keywordRuleText(f) || KEYWORD_RULE_TEXT[f] || ('【' + _keywordJpName(f) + '】')).join('\n');
   // _runReactionEffect が _kwFlag から説明を足し直さないよう、ここで完成した文を渡す（印は外したコピーを使う）
-  const reaction = { card, sourceCard: card, recipe: steps.map(st => (st && st._kwFlag) ? Object.assign({}, st, { _kwFlag: undefined }) : st), effectText: allMandatory ? ruleText : ruleText + '\nの効果を発動しますか？' };
+  const reaction = { card, sourceCard: holder || card, recipe: steps.map(st => (st && st._kwFlag) ? Object.assign({}, st, { _kwFlag: undefined }) : st), effectText: allMandatory ? ruleText : ruleText + '\nの効果を発動しますか？' };
   try { _runReactionEffect(reaction, side, bs, ctxBase, finish, { alwaysConfirm: !allMandatory }); }
   catch (_) { finish(); }
 }

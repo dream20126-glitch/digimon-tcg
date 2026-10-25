@@ -4144,6 +4144,24 @@ export function resolveBattleAI(atk, atkIdx, def, defIdx, callback) {
 
 // ===== ブロック確認UI =====
 
+// 【ブロッカー】を持っているカード（このデジモン自身／表向きの進化元／リンクカード）。分からなければこのデジモン自身
+function _blockerHolder(c) {
+  const parse = (r) => { try { return typeof r === 'string' ? JSON.parse(r.replace(/[\x00-\x1F\x7F]\s*/g, '')) : r; } catch (_) { return null; } };
+  const hasBk = (arr) => Array.isArray(arr) && arr.some(p => p && (p.flag === 'blocker' || p === 'blocker'));
+  const own = parse(c && c.recipe);
+  if (own && hasBk(own.passive)) return c;
+  if (Array.isArray(c.buffs) && c.buffs.some(b => b && b.type === 'keyword_blocker')) return c;
+  for (const ev of (c.stack || [])) {
+    if (!ev || ev._faceDown) continue;
+    const er = parse(ev.recipe);
+    if (er && er.evo_source && hasBk(er.evo_source.passive)) return ev;
+  }
+  for (const lc of (c.linkedCards || [])) {
+    const lr = parse(lc && lc.recipe);
+    if (lr && lr.link && hasBk(lr.link.passive)) return lc;
+  }
+  return c;
+}
 export function showBlockConfirm(blocker, attacker, callback, targetInfo) {
   // 旧コード準拠: effect-confirm-overlay を使用
   const overlay = document.getElementById('effect-confirm-overlay');
@@ -4163,6 +4181,16 @@ export function showBlockConfirm(blocker, attacker, callback, targetInfo) {
     else if (targetInfo.type === 'digimon') targetText = '\n→「' + (targetInfo.name || '???') + '」へアタック';
   }
   textEl.innerText = '相手の「' + (attacker ? attacker.name : '???') + '」(DP:' + (attacker ? formatDpDisplay(attacker) : '?') + ')がアタックしてきました！' + targetText;
+  // ブロックできるデジモンと、その【ブロッカー】を持っているカード（進化元のカードの効果なら「「グレイモン」の効果」）を出す
+  try {
+    const _cands = Array.isArray(window._blockConfirmCands) ? window._blockConfirmCands.map(i => bs.player.battleArea[i]).filter(Boolean) : (blocker ? [blocker] : []);
+    window._blockConfirmCands = null;
+    const _lines = _cands.map((c) => {
+      const h = _blockerHolder(c);
+      return '・「' + c.name + '」' + (h && h !== c ? '（「' + h.name + '」の効果【ブロッカー】）' : '');
+    });
+    if (_lines.length > 0) textEl.innerText += '\n\nブロックできるデジモン:\n' + _lines.join('\n');
+  } catch (_) {}
   if (questionEl) questionEl.innerText = 'ブロックしますか？';
   if (imgEl) imgEl.style.display = 'none';
   overlay.style.display = 'flex';
@@ -4421,7 +4449,7 @@ export function aiAttackPhase(callback) {
       if (blockerIndices.length > 0) {
         // チュートリアル: ブロック確認画面の前に割り込み
         // aiAttackPhase: 常にセキュリティアタック
-        const _showBlock = () => showBlockConfirm(bs.player.battleArea[blockerIndices[0]], atk, (doBlock) => {
+        const _showBlock = () => { window._blockConfirmCands = blockerIndices; return showBlockConfirm(bs.player.battleArea[blockerIndices[0]], atk, (doBlock) => {
           if (doBlock) {
             if (blockerIndices.length === 1) {
               const blockerIdx = blockerIndices[0];
@@ -4465,7 +4493,7 @@ export function aiAttackPhase(callback) {
           } else {
             doAiSecurityCheck(atk, atkIdx, callback);
           }
-        }, { type: 'security' });
+        }, { type: 'security' }); };
         _showBlock();
         return;
       }
@@ -5853,7 +5881,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
         });
 
         if (blockerIndices.length > 0) {
-          const _showBlock = () => showBlockConfirm(bs.player.battleArea[blockerIndices[0]], atk, (doBlock) => {
+          const _showBlock = () => { window._blockConfirmCands = blockerIndices; return showBlockConfirm(bs.player.battleArea[blockerIndices[0]], atk, (doBlock) => {
             if (doBlock) {
               if (blockerIndices.length === 1) {
                 const blockerIdx = blockerIndices[0];
@@ -5898,7 +5926,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
             } else {
               doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); _wrappedDone(); });
             }
-          }, { type: 'security' });
+          }, { type: 'security' }); };
           _showBlock();
         } else {
           doAiSecurityCheck(atk, atkIdx, () => { checkPendingTurnEnd(); _wrappedDone(); });

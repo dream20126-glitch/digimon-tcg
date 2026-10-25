@@ -2349,7 +2349,7 @@ function _findArtsEvolveCandidates(card, side) {
   const p = side === 'ai' ? bs.ai : bs.player;
   const candidates = [];
   (p.battleArea || []).forEach((base, i) => {
-    if (base && base.type === 'デジモン' && canEvolveOnto(card, base)) {
+    if (base && (base.type === 'デジモン' || base.type === 'デュアル') && canEvolveOnto(card, base)) {
       candidates.push({ base, area: 'battle', idx: i });
     }
   });
@@ -2389,7 +2389,7 @@ function _offerArtsEvolve(card, onDone0) {
   if (candidates.length === 0) {
     // 進化元にできるデジモンが「進化できない」状態（ロゼモン：バーストモード BT26-050 等）だけなら、理由を出してからトラッシュへ
     // （以前は何も出さずにトラッシュへ送っていて、アーツ進化の確認が出ないように見えていた）
-    const _blocked = (bs.player.battleArea || []).filter(b => b && b.type === 'デジモン'
+    const _blocked = (bs.player.battleArea || []).filter(b => b && (b.type === 'デジモン' || b.type === 'デュアル')
       && (b.cantEvolve || (Array.isArray(b.buffs) && b.buffs.some(x => x && x.type === 'cant_evolve')))
       && (() => { try { return _resolveEvolveMatch(card, b) !== null || !!_getAltEvolve(card, b, bs, 'player'); } catch (_) { return false; } })());
     if (_blocked.length > 0) {
@@ -4379,7 +4379,7 @@ export function aiAttackPhase(callback) {
   if (bs._battleAborted) return;
   if (_onlineMode) { callback && callback(); return; }
 
-  const atkIdx = bs.ai.battleArea.findIndex(c => c && c.type === 'デジモン' && !c.suspended && !c.summonedThisTurn);
+  const atkIdx = bs.ai.battleArea.findIndex(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && !c.suspended && !c.summonedThisTurn);
   if (atkIdx === -1) { callback(); return; }
 
   const atk = bs.ai.battleArea[atkIdx];
@@ -4883,7 +4883,7 @@ function aiPlayAuto(callback) {
   // ② バトルエリアで進化
   for (let i = 0; i < bs.ai.battleArea.length; i++) {
     const base = bs.ai.battleArea[i];
-    if (!base || base.type !== 'デジモン') continue;
+    if (!base || (base.type !== 'デジモン' && base.type !== 'デュアル')) continue;
     const baseLv = parseInt(base.level) || 0;
     const evoCandidate = bs.ai.hand.find(c =>
       c.type === 'デジモン' && parseInt(c.level) === baseLv + 1 &&

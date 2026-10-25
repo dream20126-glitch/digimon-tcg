@@ -429,7 +429,7 @@ function renderBattleRows() {
         })();
 
         // プレイヤーのデジモン → 長押し/スワイプでアクションメニュー
-        if (isPlayer && card.type === 'デジモン') {
+        if (isPlayer && (card.type === 'デジモン' || card.type === 'デュアル')) {
           setupLongpress(sl, i, card);
           // リンクを持つカードは、ほかの自分のデジモンの上へドラッグしてリンクできる
           if (card.linkCost != null) setupFieldLinkDrag(sl, i, card);
@@ -589,7 +589,7 @@ function showLongpressMenu(card, slotIdx, el) {
   if (!menu || !btns) return;
 
   let html = '';
-  const canAtk = card.type === 'デジモン';
+  const canAtk = card.type === 'デジモン' || card.type === 'デュアル'; // バトルエリアのデュアルカードもデジモン
   // 速攻判定: _permEffects.rush（applyPermanentEffects が recipe.passive から構築）/ buffs[keyword_rush]
   const hasRushFlag = !!(
     (card._permEffects && card._permEffects.rush)
@@ -691,7 +691,7 @@ function startAttackModeUI(slotIdx, opts) {
   const aiRow = document.getElementById('ai-battle-row');
   if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, i) => {
     const def = bs.ai.battleArea[i]; if (!def) return;
-    if (def.suspended || (canHitActive && (!def.type || def.type === 'デジモン'))) {
+    if (def.suspended || (canHitActive && (!def.type || def.type === 'デジモン' || def.type === 'デュアル'))) {
       s.style.boxShadow = '0 0 10px #ff444488'; s.style.cursor = 'pointer';
     } else {
       // アクティブ状態＝アタック不可 → 🚫マーク表示
@@ -759,7 +759,7 @@ function startAttackModeUI(slotIdx, opts) {
       const r = s.getBoundingClientRect();
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
         // 効果によるアタックでは、選べない対象（アクティブ等）を離しても宣言しない
-        if (_fromEffect && !(def.suspended || (canHitActive && (!def.type || def.type === 'デジモン')))) return;
+        if (_fromEffect && !(def.suspended || (canHitActive && (!def.type || def.type === 'デジモン' || def.type === 'デュアル')))) return;
         resolved = true;
         _declare('digimon', di);
       }

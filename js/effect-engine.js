@@ -1692,14 +1692,14 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     case 'own_trash':          return countWith(player.trash);
     case 'own_security':       return countWith(player.security);
     case 'own_battle_area':    return countWith(player.battleArea.filter(c => c !== null));
-    case 'own_digimon':        return countWith(player.battleArea.filter(c => c && c.type === 'デジモン'));
-    case 'own_rest_digimon':   return countWith(player.battleArea.filter(c => c && c.type === 'デジモン' && c.suspended));
-    case 'own_active_digimon': return countWith(player.battleArea.filter(c => c && c.type === 'デジモン' && !c.suspended));
+    case 'own_digimon':        return countWith(player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')));
+    case 'own_rest_digimon':   return countWith(player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && c.suspended));
+    case 'own_active_digimon': return countWith(player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && !c.suspended));
     case 'own_tamer':          return countWith((player.tamerArea || []).filter(c => c !== null));
     // 自分のデジモン/テイマー（バトルエリアのデジモン＋テイマーエリア）。
     // 例: メルヴァモン(BT26-081)「特徴イリアス/TSを持つ自分のデジモン/テイマー1体ごとにDP-4000」
     case 'own_digimon_tamer':
-      return countWith(player.battleArea.filter(c => c && c.type === 'デジモン'))
+      return countWith(player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')))
            + countWith((player.tamerArea || []).filter(c => c !== null));
     // own_card: 「カード」＝デジモン+テイマー(+オプション)全種別。オプションはプレイ後トラッシュへ
     // 移動し場に残らないため、実質バトルエリア(デジモン)+テイマーエリアの合算になる
@@ -1713,14 +1713,14 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     case 'opp_trash':          return countWith(opponent.trash);
     case 'opp_security':       return countWith(opponent.security);
     case 'opp_battle_area':    return countWith(opponent.battleArea.filter(c => c !== null));
-    case 'opp_digimon':          return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン'));
-    case 'opp_rest_digimon':     return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && c.suspended));
-    case 'opp_active_digimon':   return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && !c.suspended));
-    case 'opp_no_evo_digimon':   return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン' && (!c.stack || c.stack.length === 0)));
+    case 'opp_digimon':          return countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')));
+    case 'opp_rest_digimon':     return countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && c.suspended));
+    case 'opp_active_digimon':   return countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && !c.suspended));
+    case 'opp_no_evo_digimon':   return countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル') && (!c.stack || c.stack.length === 0)));
     case 'opp_tamer':            return countWith((opponent.tamerArea || []).filter(c => c !== null));
     // 相手のデジモン/テイマー（own_digimon_tamer の相手側版）
     case 'opp_digimon_tamer':
-      return countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン'))
+      return countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')))
            + countWith((opponent.tamerArea || []).filter(c => c !== null));
     case 'opp_card':
       return countWith(opponent.battleArea.filter(c => c !== null))
@@ -1744,14 +1744,14 @@ function getRefSourceCountDirect(refSource, card, bs, side, refFilter, refStateS
     }
     // --- 両方（自分+相手を合算してカウント） ---
     case 'both_digimon':
-      return countWith(player.battleArea.filter(c => c && c.type === 'デジモン'))
-           + countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン'));
+      return countWith(player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')))
+           + countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')));
     case 'both_tamer':
       return countWith((player.tamerArea || []).filter(c => c !== null))
            + countWith((opponent.tamerArea || []).filter(c => c !== null));
     case 'both_digimon_tamer':
-      return countWith(player.battleArea.filter(c => c && c.type === 'デジモン'))
-           + countWith(opponent.battleArea.filter(c => c && c.type === 'デジモン'))
+      return countWith(player.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')))
+           + countWith(opponent.battleArea.filter(c => c && (c.type === 'デジモン' || c.type === 'デュアル')))
            + countWith((player.tamerArea || []).filter(c => c !== null))
            + countWith((opponent.tamerArea || []).filter(c => c !== null));
     case 'both_card':
@@ -5900,7 +5900,7 @@ function _deckOpenPlayKinds(card, sel, player) {
   if ((t === 'デジモン' || t === 'テイマー') && kinds.includes('summon')) out.push('summon');
   if (t === 'オプション' && kinds.includes('use')) out.push('use');
   // 進化は、進化条件を満たす自分のデジモンがいるときだけ（進化条件を無視する指定が無ければ）
-  if (t === 'デジモン' && kinds.includes('evolve') && player && (player.battleArea || []).some(c => c && (!c.type || c.type === 'デジモン') && _effectEvoAllowed(card, c, _effectEvoIgnoresCondition(sel)))) out.push('evolve');
+  if (t === 'デジモン' && kinds.includes('evolve') && player && (player.battleArea || []).some(c => c && (!c.type || (c.type === 'デジモン' || c.type === 'デュアル')) && _effectEvoAllowed(card, c, _effectEvoIgnoresCondition(sel)))) out.push('evolve');
   return out;
 }
 // 支払うコスト: 基本コスト（登場/使用=登場コスト、進化=進化コスト）＋cost_delta。cost_free なら0
@@ -5915,7 +5915,7 @@ function _deckOpenPlayCost(card, sel, kind, baseCard, bs, side) {
 function _deckOpenChooseEvoBase(ctx, player, cb, evoCard, sel) {
   const idxs = [];
   const _ign = _effectEvoIgnoresCondition(sel);
-  (player.battleArea || []).forEach((c, i) => { if (c && (!c.type || c.type === 'デジモン') && (!evoCard || _effectEvoAllowed(evoCard, c, _ign))) idxs.push(i); });
+  (player.battleArea || []).forEach((c, i) => { if (c && (!c.type || (c.type === 'デジモン' || c.type === 'デュアル')) && (!evoCard || _effectEvoAllowed(evoCard, c, _ign))) idxs.push(i); });
   if (idxs.length === 0) { cb(null); return; }
   if (ctx.side === 'ai' || idxs.length === 1) { cb(idxs[0]); return; }
   showTargetSelection(ctx.side === 'player' ? 'pl' : 'ai', idxs, null, '#00fbff', (i) => cb(i == null ? null : i), '（進化させるデジモン）');
@@ -6001,7 +6001,7 @@ function _deckOpenAuto(opened, step, ctx, callback) {
       }
       if (dest === 'play') {
         const kind = _deckOpenPlayKinds(c, sel, player)[0];
-        const slot = kind === 'evolve' ? player.battleArea.findIndex(x => x && (!x.type || x.type === 'デジモン') && _effectEvoAllowed(c, x, _effectEvoIgnoresCondition(sel))) : -1;
+        const slot = kind === 'evolve' ? player.battleArea.findIndex(x => x && (!x.type || (x.type === 'デジモン' || x.type === 'デュアル')) && _effectEvoAllowed(c, x, _effectEvoIgnoresCondition(sel))) : -1;
         _deckOpenPlayCard(c, sel, kind, slot, ctx, pickNext);
         return;
       }
@@ -15199,7 +15199,7 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
     // ≪エグゼキュート≫はアクティブ状態の相手のデジモンも選べる。対象を選ばずに離したら、アタックするか確認し直す
     if (ctx.side === 'player' && typeof window !== 'undefined' && typeof window.startAttackMode === 'function'
         && typeof document !== 'undefined' && document.getElementById('pl-battle-row')) {
-      const _anyDigi = (opponent.battleArea || []).some(c => c && (c.suspended || isExecute) && (!c.type || c.type === 'デジモン'));
+      const _anyDigi = (opponent.battleArea || []).some(c => c && (c.suspended || isExecute) && (!c.type || (c.type === 'デジモン' || c.type === 'デュアル')));
       const _anySec = !digimonOnly && (opponent.security || []).length > 0;
       if (!_anyDigi && !_anySec) { finish(false); return; }
       window.startAttackMode(slotIdx, {
@@ -15217,7 +15217,7 @@ function _confirmAndDeclareEffectAttack(atkCard, step, ctx, done, opts) {
     }
     // ≪エグゼキュート≫は「アクティブ状態の相手のデジモンにもアタックできる」
     const restTargets = [];
-    (opponent.battleArea || []).forEach((c, i) => { if (c && (c.suspended || isExecute) && (!c.type || c.type === 'デジモン')) restTargets.push(i); });
+    (opponent.battleArea || []).forEach((c, i) => { if (c && (c.suspended || isExecute) && (!c.type || (c.type === 'デジモン' || c.type === 'デュアル'))) restTargets.push(i); });
     const hasSecurity = !digimonOnly && (opponent.security || []).length > 0;
     if (restTargets.length === 0) {
       if (!hasSecurity) { finish(false); return; }

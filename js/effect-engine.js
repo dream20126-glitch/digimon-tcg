@@ -13063,10 +13063,14 @@ export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) 
   // subject/trigger_conditions はレストしたカード本体(restedCard)に対して判定する必要があるため
   // stepFilter として _fireSidedReactionTriggers に渡す（carrier=反応するカード自身の判定は
   // 既存の condition/gate/limit チェックに委譲される）
-  const stepFilter = (step) => {
+  const stepFilter = (step, _rs, carrier) => {
     if (!step) return false;
     const subj = _resolveStepSubject(step, 'when_rest');
-    const base = String(subj || 'own').replace(/(_evo)?_stack(_top|_bottom)?$/, '');
+    // 発動主体が無い・self は「このデジモン（このカード）がレストしたとき」: レストしたのが効果を持つカード（進化元の効果なら
+    // それを進化元に持つデジモン）のときだけ（テティスモン EX12-030 進化元）
+    if (!subj || subj === 'self' || subj === 'self_card') return !!carrier && carrier === restedCard
+      && _evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, restedCard, bs, restedSide, step.trigger_conditions_chain);
+    const base = String(subj).replace(/(_evo)?_stack(_top|_bottom)?$/, '');
     if (base === 'opp' || base.indexOf('opp_') === 0) return false;
     if (base.indexOf('tamer') >= 0 && restedCard.type !== 'テイマー') return false;
     if (base.indexOf('digimon') >= 0 && restedCard.type !== 'デジモン') return false;
@@ -19902,8 +19906,29 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           doneCb(true);
         };
+        // 2枚以上戻すときは、まとめて選んでから（選ぶ画面1回）、3枚以上なら一覧の演出1回で戻す
+        // （アンフィモン＆クリスタルフリーザー EX12-033「トラッシュ3枚をデッキの下に戻すことで」で、1枚選ぶ→演出→1枚選ぶ…と
+        // 繰り返していた。デッキに戻す効果は全て同じ）
+        const _rdBatch = (want, pool, doneCb) => {
+          showTrashCardPicker(pool.map((e) => e.card), want, false, '🔄 デッキに戻すカードを' + want + '枚選んでください', (picked) => {
+            const entries = (Array.isArray(picked) ? picked : []).map((pc) => pool.find((e) => e.card === pc)).filter(Boolean);
+            if (entries.length === 0) { doneCb(); return; }
+            const first = entries[0].card;
+            const fromLabel = (_rdOwnerP.trash || []).includes(first) ? 'トラッシュ' : (_rdOwnerP.hand || []).includes(first) ? '手札'
+              : (_rdOwnerP.security || []).includes(first) ? 'セキュリティ' : '進化元';
+            const _rdOpp = _rdOwnerP === opponent;
+            const dk = 'デッキ' + (_rdTop2 ? '(上)' : '(下)');
+            _moveBatchIntro(ctx, entries.map((e) => e.card), (_rdOpp ? '相手の' : '') + fromLabel, (_rdOpp ? '相手の' : '') + dk, () => {
+              let k = 0;
+              const nx = () => { if (k >= entries.length) { doneCb(); return; } _doReturn2(entries[k++], nx); };
+              nx();
+            }, Object.assign({ faceDown: fromLabel === 'セキュリティ', remoteFaceDown: fromLabel === '手札' },
+              _rdOpp ? { remoteFrom: '自分の' + fromLabel, remoteTo: '自分の' + dk } : {}));
+          }, pool.map((e) => e.card));
+        };
         const _rdSequential = (remaining, pool, doneCb) => {
           if (remaining <= 0 || pool.length === 0) { doneCb(); return; }
+          if (effectiveSide !== 'ai' && remaining >= 2) { _rdBatch(Math.min(remaining, pool.length), pool, doneCb); return; }
           const pick = (entry) => {
             const nextPool = pool.filter((e) => e !== entry);
             _doReturn2(entry, () => _rdSequential(remaining - 1, nextPool, doneCb));
@@ -20258,8 +20283,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       };
       // 変更先は候補が1体でも選ぶ画面を出す（自動で決めない。グソクモン EX12-028 進化元「アタックの対象を特徴『DS』を持つ
       // 自分のデジモン1体に変更できる」で、選ぶ画面が出ずにグソクモンに決まっていた）。任意なら選ぶ画面で「使わない」も選べる
-      if (effectiveSide === 'ai') { _raFinish(_raCands[0]); break; }
-      showTargetSelection(_raRowId, _raCands, 'アタック対象にするデジモンを選んでください', '#ff4444', _raFinish);
+      // CPU だけ自動。前の手順で決まった対象（_forceTargetIdx）があっても、変更先は自分で選ぶ
+      // （ウォーグレイモン EX12-017【カウンター】でジョグレス進化した後、変更先がオメガモンに自動で決まっていた）
+      if (ctx.side === 'ai') { _raFinish(_raCands[0]); break; }
+      showTargetSelection(_raRowId, _raCands, null, '#ff4444', _raFinish, '（アタックの対象にするデジモン）');
       break;
     }
 

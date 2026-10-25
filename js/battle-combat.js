@@ -11,7 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect, fxAppGattai, fxJogressFusion, fxDigixrossFusion } from './battle-fx.js';
 import { cardAliasHasName } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged, getStaticEvoCostReduction as _getStaticEvoCostReduction, getJogressConditions as _getJogressConditions, jogressSlotMatches as _jogressSlotMatches } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenRestTriggers as _fireWhenRest, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged, getStaticEvoCostReduction as _getStaticEvoCostReduction, getJogressConditions as _getJogressConditions, jogressSlotMatches as _jogressSlotMatches } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -71,10 +71,19 @@ if (typeof window !== 'undefined') {
 // レスト発生時に when_opp_rest トリガーを発火する共通ヘルパー
 // restedOwnerSide: 'player' | 'ai' — レストしたカードの所有者
 // cb はトリガー処理（効果使用ダイアログ等）の完了後に呼ばれる
-function fireOppRestThen(restedOwnerSide, cb) {
+// restedCard（省略可）: レストしたカード。渡すと、そのカードの側の「レストしたとき」（when_rest。テティスモン EX12-030
+// 進化元「このデジモンがレストしたとき」等）も続けて発火する（以前は効果でレストしたときだけ発火し、アタックでレストしても発動しなかった）
+// アタック宣言でレストした: 相手側の「相手がレストしたとき」→ 自分側の「レストしたとき」（このデジモン等）
+function _fireAttackRestThen(side, card, cb) { fireOppRestThen(side, cb, card); }
+function fireOppRestThen(restedOwnerSide, cb, restedCard) {
   const ctxBase = { bs, addLog, renderAll, updateMemGauge };
-  try { _fireWhenOppRest(restedOwnerSide, bs, ctxBase, () => cb && cb()); }
-  catch (e) { console.error('[fireOppRestThen]', restedOwnerSide, e); cb && cb(); }
+  const own = () => {
+    if (!restedCard) { cb && cb(); return; }
+    try { _fireWhenRest(restedOwnerSide, restedCard, bs, ctxBase, () => cb && cb()); }
+    catch (e) { console.error('[fireOppRestThen/own]', e); cb && cb(); }
+  };
+  try { _fireWhenOppRest(restedOwnerSide, bs, ctxBase, own); }
+  catch (e) { console.error('[fireOppRestThen]', restedOwnerSide, e); own(); }
 }
 
 // ブロック専用: blocker のオーナー側のテイマー/デジモンを反応させる
@@ -2557,7 +2566,7 @@ export function startAttack(card, slotIdx, callback) {
   // アタック宣言による自身のレスト → 相手側の when_opp_rest 誘発（ヴェノムヴァンデモン等）。
   // ブロック時のレストと同じ反応経路。ここで発火しなければ「アタックでレスト」は
   // when_opp_rest を一切拾えない
-  fireOppRestThen('player', () => {
+  _fireAttackRestThen('player', card, () => {
     if (_onlineMode && _sendCommand) _sendCommand({ type: 'attack_start', atkIdx: slotIdx, atkName: card.name, atkDp: card.dp, atkImg: cardImg(card) });
     callback && callback(true);
   });
@@ -4375,7 +4384,7 @@ export function aiAttackPhase(callback) {
   renderAll();
   // アタック宣言による自身のレスト → プレイヤー側の when_opp_rest 誘発（ヴェノムヴァンデモン等）。
   // この誘発（効果発動ポップアップのOK待ち）が解決するまでアタック演出・バトル進行に進めない
-  fireOppRestThen('ai', () => {
+  _fireAttackRestThen('ai', atk, () => {
 
   showPhaseAnnounce('⚔ AIアタック！', '#ff4444', () => {
     const doAfterAtkEffect = (cb) => {
@@ -5826,7 +5835,7 @@ export function aiScriptAttack(attackerKey, target, onDone) {
   renderAll();
   // アタック宣言による自身のレスト → プレイヤー側の when_opp_rest 誘発（ヴェノムヴァンデモン等）。
   // この誘発（効果発動ポップアップのOK待ち）が解決するまでアタック演出・バトル進行に進めない
-  fireOppRestThen('ai', () => {
+  _fireAttackRestThen('ai', atk, () => {
 
   const _aiIsDirect = targetMode === 'security' && (bs.player.battleArea || []).filter(c => c).length === 0;
   bs._lastAttackIsDirect = _aiIsDirect;

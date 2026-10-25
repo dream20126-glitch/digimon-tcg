@@ -64,9 +64,17 @@ function _flushRemoteNonTurn(bs, next) {
   if (!_remoteNtpMaybe || !online || !bs || !bs.isPlayerTurn || typeof window._waitRemoteIdle !== 'function') { go(); return; }
   _remoteNtpMaybe = false;
   _remoteWaitDepth++;
-  try { window._onlineSendCommand({ type: 'fx_tpIdle' }); } catch (_) {}
-  let fin = false;
-  window._waitRemoteIdle(() => { if (fin) return; fin = true; _remoteWaitDepth = Math.max(0, _remoteWaitDepth - 1); go(); });
+  const _waitIdle = () => {
+    try { window._onlineSendCommand({ type: 'fx_tpIdle' }); } catch (_) {}
+    let fin = false;
+    window._waitRemoteIdle(() => { if (fin) return; fin = true; _remoteWaitDepth = Math.max(0, _remoteWaitDepth - 1); go(); });
+  };
+  // 相手の端末で「離れるとき」により進化して保留した【進化時】を、こちらの効果が終わったここで発揮してもらう
+  if (bs._oppDeferredEvoPending && typeof window._flushOppDeferredEvo === 'function' && !(window._isAttackInProgress && window._isAttackInProgress())) {
+    window._flushOppDeferredEvo(_waitIdle);
+    return;
+  }
+  _waitIdle();
 }
 // こちら（ターンプレイヤー）の効果の処理・発揮待ちが全て終わったら、相手の端末に fx_tpIdle を送る（1回）
 let _tpIdleWatch = null;
@@ -11930,7 +11938,13 @@ export function tryCancelViaLeaveBattle(card, side, bs, ctxBase, callback) {
     let slotIdx = _area.indexOf(card);
     if (slotIdx === -1) slotIdx = _area.findIndex(c => c && c.cardNo === card.cardNo && c.name === card.name);
     if (slotIdx === -1 || typeof window._requestLeaveBattleDelegate !== 'function') { callback(false); return; }
-    window._requestLeaveBattleDelegate(slotIdx, (canceled) => callback(!!canceled));
+    window._requestLeaveBattleDelegate(slotIdx, (canceled) => {
+      // 相手の端末で「離れるとき」により進化していれば、相手側に【進化時】の保留が残っている。こちらの効果が終わったら
+      // 発揮してもらう（_flushRemoteNonTurn → _flushOppDeferredEvo。以前はバトルのときだけで、効果で消滅させようとした
+      // ときはハイアンドロモンの【進化時】が保留のまま発揮されなかった）
+      if (canceled && bs) { bs._oppDeferredEvoPending = true; _remoteNtpMaybe = true; }
+      callback(!!canceled);
+    });
     return;
   }
   _tryCancelLeaveLocal(card, side, bs, ctxBase, callback);
@@ -11953,17 +11967,64 @@ function _tryCancelLeaveLocal(card, side, bs, ctxBase, callback0) {
     callback0(canceled);
   };
   card._stayedInBattleArea = false;
+  const runSelf = (after) => {
+    try {
+      fireWhenLeaveBattleTriggers(card, side, bs, ctxBase, () => {
+        const canceled = card._stayedInBattleArea === true;
+        delete card._stayedInBattleArea;
+        if (canceled) { callback(true); return; }
+        after();
+      });
+    } catch (_) { after(); }
+  };
+  // 離れるカード自身の「離れるとき」と、他のカードの「離れるとき」（【守護】等）が両方あるなら、同時に誘発した効果として
+  // どれから使うかを選ぶ（カプリモン EX12-003 の進化元効果と、メタルエンパイアで得た【守護】。以前はカプリモンの効果が
+  // 先に自動で発動していた）。CPU は従来通り自身の効果から
+  const _selfSrcs = side === 'player' ? _selfLeaveSources(card, side, bs) : [];
+  const _others = (side === 'player' && _selfSrcs.length > 0) ? _leaveReplacerList(card, side, bs) : [];
+  if (_selfSrcs.length > 0 && _others.length > 0 && typeof showAltActionChoice === 'function') {
+    const lbl = (src, holder) => '「' + src.name + '」' + (src !== holder ? '（「' + holder.name + '」の進化元）' : '') + 'の効果';
+    const labels = _selfSrcs.map((s) => lbl(s, card)).concat(_others.map((rc) => lbl(rc.sourceCard || rc.card, rc.card)));
+    showAltActionChoice(labels, (idx) => {
+      if (idx != null && idx >= _selfSrcs.length) {
+        // 他のカードの効果から: 使わなかった・離れない効果にならなかったら、このカード自身の効果へ
+        _tryCancelLeaveByOtherCards(card, side, bs, ctxBase, (canceled) => { if (canceled) { callback(true); return; } runSelf(() => callback(false)); });
+      } else {
+        runSelf(() => _tryCancelLeaveByOtherCards(card, side, bs, ctxBase, callback));
+      }
+    }, '「' + card.name + '」がバトルエリアを離れるときの効果が同時に誘発しました。どれから使いますか？');
+    return;
+  }
+  // 離れるカード自身で置換できなければ、同じ側の他のカード（バトルエリアのデジモン・テイマー）の
+  // 「自分のデジモンがバトルエリアを離れるとき、〜することで、離れない」を試す
+  // （ハイアンドロモン BT26-058「特徴CSを持つ自分のデジモンが離れるとき」）
+  runSelf(() => _tryCancelLeaveByOtherCards(card, side, bs, ctxBase, callback));
+}
+
+// 離れるカード自身（自分の効果・進化元の効果）の「離れるとき」で、今実行できるものの発動元カード（表示用）
+function _selfLeaveSources(card, side, bs) {
+  const out = [];
   try {
-    fireWhenLeaveBattleTriggers(card, side, bs, ctxBase, () => {
-      const canceled = card._stayedInBattleArea === true;
-      delete card._stayedInBattleArea;
-      if (canceled) { callback(true); return; }
-      // 離れるカード自身で置換できなければ、同じ側の他のカード（バトルエリアのデジモン・テイマー）の
-      // 「自分のデジモンがバトルエリアを離れるとき、〜することで、離れない」を試す
-      // （ハイアンドロモン BT26-058「特徴CSを持つ自分のデジモンが離れるとき」）
-      _tryCancelLeaveByOtherCards(card, side, bs, ctxBase, callback);
+    // 実行できるか（【デコード】の登場できる進化元・ジョグレス進化の組み合わせ・回数制限等）は発動判定と同じ recipeWillExecuteAnything で見る
+    const okSteps = (steps, src) => {
+      if (!Array.isArray(steps)) return false;
+      const live = steps.filter((st) => st
+        // 「他の自分のデジモンが離れるとき」（【守護】等）・相手側の反応は、このカード自身が離れるときには発揮しない
+        && !/^(other_own|opp)/.test(String(_resolveStepSubject(st, 'when_leave_battle') || ''))
+        && _evalTriggerConditionsArray(st.trigger_conditions, st.trigger_conditions_op, card, bs, side, st.trigger_conditions_chain)
+        && !_stepNothingToDo(st, { card, bs, side, block: { _eventSourceCard: card } })
+        && _reactionCanStillRun({ recipe: [st], card, sourceCard: src }, side, bs, 'when_leave_battle'));
+      if (live.length === 0) return false;
+      try { return !!recipeWillExecuteAnything(live, { card, bs, side, block: { _eventSourceCard: card }, _sourceCard: src }); } catch (_) { return true; }
+    };
+    const r = _parseCardRecipe(card);
+    if (r && okSteps(_lookupTriggerSteps(r, 'when_leave_battle', card), card)) out.push(card);
+    (card.stack || []).forEach((ev) => {
+      const er = ev && !ev._faceDown && _parseCardRecipe(ev);
+      if (er && er.evo_source && okSteps(_lookupTriggerSteps(er.evo_source, 'when_leave_battle'), ev)) out.push(ev);
     });
-  } catch (_) { callback(false); }
+  } catch (_) {}
+  return out;
 }
 
 // 他のカードの when_leave_battle（離れる置換効果）の候補を集める。
@@ -12025,7 +12086,7 @@ function _collectLeaveBattleReplacers(leavingCard, leavingSide, bs) {
 
 // 他のカードの離れる置換効果を順に試し、どれか1つで「離れない」（action:'battle_area'）まで
 // 到達したら callback(true)。反応するカード側の ctx.card に _stayedInBattleArea が立つので、それで判定する
-function _tryCancelLeaveByOtherCards(leavingCard, leavingSide, bs, ctxBase, callback) {
+function _leaveReplacerList(leavingCard, leavingSide, bs) {
   let list = [];
   try { list = _collectLeaveBattleReplacers(leavingCard, leavingSide, bs); } catch (_) { list = []; }
   // 【ターンに1回】を使い切った・コストを払えない「離れない」は確認を出さない（DP0のままもう一度消滅の判定をしたとき、
@@ -12036,6 +12097,10 @@ function _tryCancelLeaveByOtherCards(leavingCard, leavingSide, bs, ctxBase, call
     && rc.recipe.every((st) => _stepNothingToDo(st, { card: rc.card, bs, side: rc.side, block: { _eventSourceCard: leavingCard } }))));
   // オンラインでは確認ダイアログを出せるのはこの端末の持ち主のカードだけ（相手のカードの置換効果は対象外）
   if (window._isOnlineMode && window._isOnlineMode()) list = list.filter((rc) => rc.side === 'player');
+  return list;
+}
+function _tryCancelLeaveByOtherCards(leavingCard, leavingSide, bs, ctxBase, callback) {
+  const list = _leaveReplacerList(leavingCard, leavingSide, bs);
   if (list.length === 0) { callback(false); return; }
   let i = 0;
   const next = () => {

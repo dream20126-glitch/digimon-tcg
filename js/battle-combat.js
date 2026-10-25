@@ -1127,6 +1127,113 @@ function _offerWhenPlayThenPlayInner(card, handIdx, slotIdx) {
   }, { addLog, baseCost: _pay });
 }
 
+// アセンブリの候補計画（cost[] の各グループごとの候補・必要枚数）。トラッシュに必要枚数が無いグループがあれば null
+function _assemblyPlan(card, costItems) {
+  let eligible = true;
+  const plan = costItems.map((costItem) => {
+    const fromZones = Array.isArray(costItem.from) ? costItem.from : (costItem.from ? [costItem.from] : []);
+    if (!fromZones.includes('trash')) { eligible = false; return null; } // 現状トラッシュ由来のみ対応
+    const wantCount = parseInt(costItem.count, 10) || 1;
+    const candidates = _filterAssemblyCandidates(costItem, bs.player.trash, bs, 'player');
+    if (candidates.length < wantCount) { eligible = false; return null; }
+    return { wantCount, candidates, distinctBy: Array.isArray(costItem.distinct_by) ? costItem.distinct_by : [] };
+  });
+  return eligible ? plan : null;
+}
+
+// アセンブリの確認 → トラッシュから使うカードを選ぶ → 重ね順の確認 → トラッシュから取り除く（公式ルール 7-3）。
+// 完了で done(下に置くカードの配列。[0]＝一番上)。使わない/やめた場合は done(null)。カードを下に置くのは呼び出し側
+function _runTrashAssembly(card, opt, costItems, done) {
+  const plan = _assemblyPlan(card, costItems);
+  if (!plan) { done(null); return; }
+  const totalWant = plan.reduce((sum, p) => sum + p.wantCount, 0);
+  showConfirm({
+    title: '💠 アセンブリ',
+    message: '「' + card.name + '」をアセンブリで登場させますか？（トラッシュのカードを' + totalWant + '枚使用・支払うコスト-' + (parseInt(opt.value, 10) || 0) + '）',
+    yesText: '発動する', noText: '発動しない',
+  }).then((yes) => {
+    if (!yes) { done(null); return; }
+    const allPicked = [];
+    // 全グループ分の選択が完了 → 進化元に入れる順番を確認（並べ替え可）してから確定する。
+    // 「やめる」ならアセンブリを使わず通常の登場へ（他の選択キャンセル時と同じ）
+    const finish = () => {
+      _confirmAssemblyOrder(allPicked, (ordered) => {
+        if (!ordered) { done(null); return; }
+        // 画面は左＝一番下、進化元(stack)は [0]＝一番上 なので逆順にする
+        const top = ordered.slice().reverse();
+        top.forEach((p) => {
+          const ti = bs.player.trash.indexOf(p);
+          if (ti !== -1) bs.player.trash.splice(ti, 1);
+        });
+        addLog('💠 「' + card.name + '」のアセンブリを発動（トラッシュから' + top.length + '枚使用）');
+        done(top);
+      });
+    };
+    // グループ内で1枚ずつ順番に選ばせる（distinctBy指定時は、同グループ内で既に選んだ
+    // カードと指定属性（名前/Lv/記述/色）が同じ候補を都度除外して重複を防ぐ）
+    const pickWithinGroup = (groupIdx, group, pickedInGroup, remainingWant, onGroupDone) => {
+      if (remainingWant <= 0) { onGroupDone(pickedInGroup); return; }
+      const distinctBy = group.distinctBy || [];
+      const remaining = group.candidates.filter(c => {
+        if (allPicked.includes(c) || pickedInGroup.includes(c)) return false;
+        if (distinctBy.length === 0) return true;
+        return !pickedInGroup.some(p => distinctBy.some(attr => {
+          const field = ASSEMBLY_DISTINCT_FIELD[attr];
+          return field && p[field] === c[field];
+        }));
+      });
+      if (remaining.length < remainingWant) { done(null); return; } // 念のための保険
+      const pickCount = distinctBy.length > 0 ? 1 : remainingWant;
+      let title = '💠 アセンブリ: 使うカードを選んでください';
+      if (plan.length > 1) title += '（グループ' + (groupIdx + 1) + '/' + plan.length + '）';
+      if (distinctBy.length > 0 && group.wantCount > 1) {
+        const labels = distinctBy.map(attr => ASSEMBLY_DISTINCT_LABEL[attr] || attr).join('・');
+        title += '（' + (pickedInGroup.length + 1) + '/' + group.wantCount + '枚目・' + labels + 'が異なるカードのみ）';
+      }
+      // 使うカードが決まっている（＝全部使うしかない）なら「全て選択する」を出す。名称等が異なる指定なら、同名カードは
+      // 1枚にまとめて数え、種類の数がちょうど必要な枚数のとき（同名カードは先頭の1枚を使う）。指定が無ければ候補が
+      // ちょうど必要な枚数のとき。選んだカードは最後の「この順番で進化元に入れますか？」で並べて確認する（ダンテモン BT26-086）
+      const _sameAttr = (a, b) => distinctBy.some(attr => {
+        const field = ASSEMBLY_DISTINCT_FIELD[attr];
+        return field && a[field] === b[field];
+      });
+      const _onePerKind = [];
+      remaining.forEach((c) => { if (!_onePerKind.some(p => _sameAttr(p, c))) _onePerKind.push(c); });
+      const _allOk = remainingWant >= 2 && _onePerKind.length === remainingWant;
+      _showTrashCardPicker(remaining, pickCount, false, title, (picked) => {
+        if (!picked || picked.length < pickCount) { done(null); return; }
+        const nextPicked = [...pickedInGroup, ...picked];
+        pickWithinGroup(groupIdx, group, nextPicked, remainingWant - pickCount, onGroupDone);
+      }, remaining, _allOk ? { onSelectAll: () => onGroupDone([...pickedInGroup, ..._onePerKind]) } : undefined);
+    };
+    const pickNext = (idx) => {
+      if (idx >= plan.length) { finish(); return; }
+      pickWithinGroup(idx, plan[idx], [], plan[idx].wantCount, (groupPicked) => {
+        allPicked.push(...groupPicked);
+        pickNext(idx + 1);
+      });
+    };
+    pickNext(0);
+  });
+}
+
+// 効果で「支払うコスト-Nで登場」させるときのアセンブリ（公式ルール 7-3-2-10「効果でアセンブリ条件を持つデジモンカードを
+// 登場させるときも、アセンブリできます」。ウィルスバスターズ EX12-069 の-3 にアセンブリの-6 を合わせて登場）。
+// effect-engine.js の _summonCardFromEffect が支払いの直前に呼ぶ。done(下に置くカードの配列 or null, 軽減量)
+function offerAssemblyForEffectPlay(card, done) {
+  const options = card ? _getAssemblyOptions(card) : [];
+  for (const opt of options) {
+    if (opt.per_cost_card) continue; // デジクロスは対象外（手札からの登場のみ）
+    const costItems = Array.isArray(opt.cost) ? opt.cost.filter(c => c) : [];
+    if (costItems.length === 0 || costItems.some(ci => ci && ci._designatedAny)) continue;
+    if (!_assemblyPlan(card, costItems)) continue;
+    _runTrashAssembly(card, opt, costItems, (picked) => done(picked, picked ? (parseInt(opt.value, 10) || 0) : 0));
+    return;
+  }
+  done(null, 0);
+}
+if (typeof window !== 'undefined') window._offerAssemblyForEffectPlay = offerAssemblyForEffectPlay;
+
 export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
   // 前回の登場時のデジクロスの印は消しておく（「デジクロスしていたなら」は今回の登場だけを見る）
   if (card) delete card._digicrossed;
@@ -1143,95 +1250,15 @@ export function offerAssemblyThenPlay(card, handIdx, slotIdx) {
       if (_offerDigixros(card, opt, costItems, handIdx, slotIdx)) return;
       continue;
     }
-    // 複数条件グループ（例: TB+Lv3を1枚・TB+Lv4を1枚・TB+Lv5を1枚）に対応するため、
-    // cost[] の各アイテムごとに候補・必要枚数を事前計算する。1つでも満たせなければ
-    // このオプションは発動不可（次の候補オプションへ）
-    let eligible = true;
-    const plan = costItems.map((costItem) => {
-      const fromZones = Array.isArray(costItem.from) ? costItem.from : (costItem.from ? [costItem.from] : []);
-      if (!fromZones.includes('trash')) { eligible = false; return null; } // 現状トラッシュ由来のみ対応
-      const wantCount = parseInt(costItem.count, 10) || 1;
-      const candidates = _filterAssemblyCandidates(costItem, bs.player.trash, bs, 'player');
-      if (candidates.length < wantCount) { eligible = false; return null; }
-      return { wantCount, candidates, distinctBy: Array.isArray(costItem.distinct_by) ? costItem.distinct_by : [] };
-    });
-    if (!eligible) continue;
-    const totalWant = plan.reduce((sum, p) => sum + p.wantCount, 0);
-
-    showConfirm({
-      title: '💠 アセンブリ',
-      message: '「' + card.name + '」をアセンブリで登場させますか？（トラッシュのカードを' + totalWant + '枚使用）',
-      yesText: '発動する', noText: '発動しない',
-    }).then((yes) => {
-      if (!yes) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
-      const allPicked = [];
-      // 全グループ分の選択が完了 → 進化元に入れる順番を確認（並べ替え可）してから確定する。
-      // 「やめる」ならアセンブリを使わず通常の登場へ（他の選択キャンセル時と同じ）
-      const finish = () => {
-        _confirmAssemblyOrder(allPicked, (ordered) => {
-          if (!ordered) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
-          // 画面は左＝一番下、進化元(stack)は [0]＝一番上 なので逆順にして入れる
-          allPicked.splice(0, allPicked.length, ...ordered.slice().reverse());
-          commitAssembly();
-        });
-      };
-      const commitAssembly = () => {
-        // まとめてトラッシュから外し、このカードの下に置く（allPicked[0] が一番上）
-        allPicked.forEach((p) => {
-          const ti = bs.player.trash.indexOf(p);
-          if (ti !== -1) bs.player.trash.splice(ti, 1);
-        });
+    if (!_assemblyPlan(card, costItems)) continue;
+    _runTrashAssembly(card, opt, costItems, (picked) => {
+      if (picked) {
+        // このカードの下に置く（picked[0] が一番上）
         if (!card.stack) card.stack = [];
-        card.stack = [...allPicked, ...card.stack];
+        card.stack = [...picked, ...card.stack];
         card._assemblyDiscount = (parseInt(card._assemblyDiscount, 10) || 0) + (parseInt(opt.value, 10) || 0);
-        addLog('💠 「' + card.name + '」のアセンブリを発動（トラッシュから' + allPicked.length + '枚使用）');
-        _offerWhenPlayThenPlay(card, handIdx, slotIdx);
-      };
-      // グループ内で1枚ずつ順番に選ばせる（distinctBy指定時は、同グループ内で既に選んだ
-      // カードと指定属性（名前/Lv/記述/色）が同じ候補を都度除外して重複を防ぐ）
-      const pickWithinGroup = (groupIdx, group, pickedInGroup, remainingWant, onGroupDone) => {
-        if (remainingWant <= 0) { onGroupDone(pickedInGroup); return; }
-        const distinctBy = group.distinctBy || [];
-        const remaining = group.candidates.filter(c => {
-          if (allPicked.includes(c) || pickedInGroup.includes(c)) return false;
-          if (distinctBy.length === 0) return true;
-          return !pickedInGroup.some(p => distinctBy.some(attr => {
-            const field = ASSEMBLY_DISTINCT_FIELD[attr];
-            return field && p[field] === c[field];
-          }));
-        });
-        if (remaining.length < remainingWant) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; } // 念のための保険
-        const pickCount = distinctBy.length > 0 ? 1 : remainingWant;
-        let title = '💠 アセンブリ: 使うカードを選んでください';
-        if (plan.length > 1) title += '（グループ' + (groupIdx + 1) + '/' + plan.length + '）';
-        if (distinctBy.length > 0 && group.wantCount > 1) {
-          const labels = distinctBy.map(attr => ASSEMBLY_DISTINCT_LABEL[attr] || attr).join('・');
-          title += '（' + (pickedInGroup.length + 1) + '/' + group.wantCount + '枚目・' + labels + 'が異なるカードのみ）';
-        }
-        // 使うカードが決まっている（＝全部使うしかない）なら「全て選択する」を出す。名称等が異なる指定なら、同名カードは
-        // 1枚にまとめて数え、種類の数がちょうど必要な枚数のとき（同名カードは先頭の1枚を使う）。指定が無ければ候補が
-        // ちょうど必要な枚数のとき。選んだカードは最後の「この順番で進化元に入れますか？」で並べて確認する（ダンテモン BT26-086）
-        const _sameAttr = (a, b) => distinctBy.some(attr => {
-          const field = ASSEMBLY_DISTINCT_FIELD[attr];
-          return field && a[field] === b[field];
-        });
-        const _onePerKind = [];
-        remaining.forEach((c) => { if (!_onePerKind.some(p => _sameAttr(p, c))) _onePerKind.push(c); });
-        const _allOk = remainingWant >= 2 && _onePerKind.length === remainingWant;
-        _showTrashCardPicker(remaining, pickCount, false, title, (picked) => {
-          if (!picked || picked.length < pickCount) { _offerWhenPlayThenPlay(card, handIdx, slotIdx); return; }
-          const nextPicked = [...pickedInGroup, ...picked];
-          pickWithinGroup(groupIdx, group, nextPicked, remainingWant - pickCount, onGroupDone);
-        }, remaining, _allOk ? { onSelectAll: () => onGroupDone([...pickedInGroup, ..._onePerKind]) } : undefined);
-      };
-      const pickNext = (idx) => {
-        if (idx >= plan.length) { finish(); return; }
-        pickWithinGroup(idx, plan[idx], [], plan[idx].wantCount, (groupPicked) => {
-          allPicked.push(...groupPicked);
-          pickNext(idx + 1);
-        });
-      };
-      pickNext(0);
+      }
+      _offerWhenPlayThenPlay(card, handIdx, slotIdx);
     });
     return;
   }

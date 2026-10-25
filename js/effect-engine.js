@@ -14864,6 +14864,21 @@ function _summonCardFromEffect(c, ctx, opts, done) {
     }, { addLog: ctx.addLog, baseCost: opts.payCost });
     return;
   }
+  // アセンブリ（公式ルール 7-3-2-10: 効果で登場させるときもアセンブリできる。宣言は支払いの直前＝「登場するとき」の
+  // 軽減の後 7-3-2-2）。下に置くカードは登場処理で進化元を初期化した後に入れる（opts._assemblyStack）
+  if (opts.payCost != null && opts.payCost > 0 && !opts._assemblyChecked && String(c.type || '') === 'デジモン'
+      && ctx && ctx.bs && ctx.side === 'player' && typeof window !== 'undefined' && window._offerAssemblyForEffectPlay) {
+    window._offerAssemblyForEffectPlay(c, (picked, disc) => {
+      const o2 = Object.assign({}, opts, { _assemblyChecked: true });
+      if (picked && picked.length > 0) {
+        o2._assemblyStack = picked;
+        o2.payCost = Math.max(0, opts.payCost - disc);
+        o2.costDelta = (parseInt(opts.costDelta, 10) || 0) - disc;
+      }
+      _summonCardFromEffect(c, ctx, o2, done);
+    });
+    return;
+  }
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
   _payEffectPlayCost(opts.payCost, opts.costDelta, ctx);
   // オプションカードは「登場」ではなく「使用」として解決する。デュアルカードは登場コストを持たないので
@@ -14895,6 +14910,7 @@ function _summonCardFromEffect(c, ctx, opts, done) {
   // 指定できるようにする（enterSuspended）。省略時は従来通り活動状態で登場
   freshOnFieldEnter(c);
   c.summonedThisTurn = true; c.suspended = !!opts.enterSuspended; c.buffs = []; c.stack = []; c._grantedRecipes = [];
+  if (Array.isArray(opts._assemblyStack)) c.stack = opts._assemblyStack.slice();
   // 前に場にいたときの状態（DP0 の「消滅予定」の印・DP 修正）を持ち越さない（トラッシュから再登場したカード）
   c._pendingDestroy = false; delete c._dp0RequestSent; delete c._destroyInProgress;
   c.dpModifier = 0; if (c.baseDp != null) c.dp = c.baseDp;

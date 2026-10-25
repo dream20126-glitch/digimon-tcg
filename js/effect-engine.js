@@ -4664,7 +4664,7 @@ function showHandDiscardPicker(hand, wantCount, callback, opts) {
   overlay.appendChild(titleEl);
   const sub = document.createElement('div');
   sub.style.cssText = 'color:#ffaa00;font-size:11px;margin-bottom:12px;';
-  sub.innerText = '0/' + wantCount + ' 選択';
+  sub.innerText = '0/' + wantCount + ' 選択' + (opts && opts.upTo ? '（' + wantCount + '枚まで）' : '');
   overlay.appendChild(sub);
   const cardArea = document.createElement('div');
   cardArea.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:90%;max-height:60vh;overflow-y:auto;background:rgba(0,15,25,0.8);border:1px solid #ff990044;border-radius:12px;padding:12px;margin-bottom:12px;';
@@ -4710,6 +4710,14 @@ function showHandDiscardPicker(hand, wantCount, callback, opts) {
     };
     cardArea.appendChild(wrap);
   });
+  // opts.upTo:「N枚まで」。1枚以上選べば「選んだカードで決定」で確定できる（N枚選んだら自動で確定）
+  if (opts && opts.upTo) {
+    const decideBtn = document.createElement('button');
+    decideBtn.innerText = '選んだカードで決定';
+    decideBtn.style.cssText = 'background:#ff9900;color:#000;border:none;padding:8px 18px;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;';
+    decideBtn.onclick = () => { if (picked.length === 0) return; cleanup(); callback(picked.slice()); };
+    btnRow.appendChild(decideBtn);
+  }
   if (opts && opts.optional) {
     const skipBtn = document.createElement('button');
     skipBtn.innerText = '破棄しない';
@@ -12698,7 +12706,7 @@ function _handDiscardWantCount(handLen, poolLen, spec) {
 //  - ai 側（CPU）: ランダム（ユーザー決定事項: CPUが自分の手札から選ぶ場面はランダム）
 //  - player 側: 任意でなく候補が want 枚以下なら選択の余地が無いため自動、それ以外は手札ピッカー
 // done(picked[] | null)  null = 「破棄しない」を選んだ（optional 時のみ）
-function _pickHandDiscards(handSide, pool, want, optional, done, title) {
+function _pickHandDiscards(handSide, pool, want, optional, done, title, upTo) {
   if (want <= 0) { done([]); return; }
   if (handSide !== 'player') {
     const rest = pool.slice();
@@ -12707,8 +12715,10 @@ function _pickHandDiscards(handSide, pool, want, optional, done, title) {
     done(picked);
     return;
   }
-  if (!optional && pool.length <= want) { done(pool.slice(0, want)); return; }
-  showHandDiscardPicker(pool.slice(), want, (picked) => done(picked && picked.length > 0 ? picked : null), { optional, title });
+  if (!optional && !upTo && pool.length <= want) { done(pool.slice(0, want)); return; }
+  // 「N枚まで」は好きな枚数（1枚以上。0枚は「破棄しない」）を選べる（アンフィモン＆クリスタルフリーザー EX12-033「手札3枚までを破棄できる」で、
+  // 3枚選ばないと決定できなかった）
+  showHandDiscardPicker(pool.slice(), want, (picked) => done(picked && picked.length > 0 ? picked : null), { optional: optional || upTo, title, upTo: !!upTo });
 }
 
 // 選んだ手札を1枚ずつトラッシュへ送る（演出つき。player 側の破棄はオンライン相手にも演出を送る）
@@ -12812,7 +12822,7 @@ function _runHandDiscardForSide(handSide, spec, ctx, done) {
       if (picked.length > 0) _enqueueHandDiscardTriggers(ctx, handSide, null, picked);
       done({ count: picked.length });
     });
-  }, title);
+  }, title, !!spec.upTo && handSide === ctx.side);
 }
 
 // security_init（自分のセキュリティの実カードを相手へ再同期）用のシリアライズ。

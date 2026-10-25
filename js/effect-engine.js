@@ -11526,6 +11526,8 @@ function _fireSidedReactionTriggers(reactSide, recipeKey, bs, ctxBase, done, ste
       }
       // 手札に登場/進化の候補が無ければ不発確定なので、確認/発動ポップアップを出さない（ピョコモン BT26-001）
       if (_stepLacksHandCandidate(step, carrier, bs, reactSide)) return false;
+      // 取得元・対象に候補が1つも無い（コスト付きはコスト側だけ見る）なら、確認/発動ポップアップを出さない
+      if (_stepNothingToDo(step, { card: carrier, bs, side: reactSide, block: { _eventSourceCard: pickEventCard(step) } })) return false;
       if (step.limit === 'once_per_turn' || step.limit === 'limit_once_per_turn') {
         const sourceId = _limitCardId(carrier);
         // 進化元効果は進化元カード基準（進化してキャリアが変わっても使用済みのまま。_evoSourceLimitKey 参照）
@@ -13929,6 +13931,70 @@ function _stepLacksHandCandidate(step, card, bs, side) {
   return false;
 }
 
+// ===== 効果の候補が1つも無いか（確認/発動ポップアップを出さないための事前判定。全カード共通） =====
+// 誘発しても、実行できる処理が何も無い（取得元（手札/トラッシュ/進化元）に条件を満たすカードが無い・対象にできる
+// デジモン/テイマーがいない）なら、確認も発動ポップアップも出さない（ウィルスバスターズ EX12-069 で、登場できる
+// カードが無いのに確認が出ていた）。公式ルール 3-2「不可能なことは実行されない」。
+// 「〜することで、〜する」（任意処理条件）は、後ろの処理ができなくても条件の内容（前の処理）を実行することを選べる
+// （公式ルール 15-7-5）ので、コスト側だけを見る（後ろは実行時に「対象がいません」）。
+// 判定できない形（デッキ・セキュリティからの取得、対象の条件が無い・進化元を対象にする等）は「候補あり」として扱う
+const _NC_ZONE_ACTIONS = new Set(['summon', 'summon_appear', 'summon_use', 'place_under_self', 'place_under_digimon', 'place_under_tamer', 'add_to_hand', 'link']);
+const _NC_BOARD_ACTIONS = new Set(['destroy', 'rest', 'bounce', 'return_hand', 'return_deck', 'dp_minus', 'dp_plus', 'cant_attack', 'cant_block', 'cant_attack_block', 'cant_evolve', 'active', 'place_on_security_top', 'not_active', 'prevent_unsuspend']);
+function _resolveLvMarkersInFilter(f, card, block, bs) {
+  if (!f || typeof f !== 'object') return f;
+  const src = _currentFormOf(block && block._eventSourceCard, bs);
+  const lvOf = (m) => { const c = m === 'self_lv' ? card : src; const n = c ? parseInt(c.level, 10) : NaN; return Number.isFinite(n) ? n : -1; };
+  const o = Object.assign({}, f);
+  ['lv_le', 'lv_ge', 'lv'].forEach(k => { if (o[k] === 'trigger_source_lv' || o[k] === 'self_lv') o[k] = lvOf(o[k]); });
+  ['or', 'and'].forEach(k => { if (Array.isArray(o[k])) o[k] = o[k].map(x => _resolveLvMarkersInFilter(x, card, block, bs)); });
+  return o;
+}
+function _stepCandidatesEmpty(st, ctx) {
+  try {
+    if (!st || !ctx || !ctx.bs || !ctx.side) return false;
+    // オンラインの相手側（手札等が見えない）は判定しない
+    if (ctx.side !== 'player' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) return false;
+    const bs = ctx.bs, side = ctx.side, card = ctx.card;
+    const me = side === 'player' ? bs.player : bs.ai;
+    const opp = side === 'player' ? bs.ai : bs.player;
+    if (!me || !opp) return false;
+    const zones = Array.isArray(st.from) ? st.from : (st.from ? [st.from] : []);
+    // 取得元から選ぶ処理（登場・置く・手札に加える・リンク）
+    if (_NC_ZONE_ACTIONS.has(st.action) && zones.length > 0 && !st.card) {
+      if (zones.some(z => !['hand', 'trash', 'evo_source'].includes(z))) return false;
+      if (_isEvoSourceSummonStep(st)) return false; // 進化元からの登場は既存の判定
+      const owner = st.from_owner === 'opponent' ? opp : me;
+      let f = _resolveLvMarkersInFilter(_srcCardFilterOf(st) || {}, card, ctx.block, bs);
+      if (/^summon/.test(st.action)) f = _withImpliedTargetType(st, f);
+      const pool = [
+        ...(zones.includes('hand') ? (owner.hand || []) : []),
+        ...(zones.includes('trash') ? (owner.trash || []) : []),
+        ...(zones.includes('evo_source') ? ((card && card.stack) || []) : []),
+      ];
+      return !pool.some(c => c && c !== card && cardMatchesFilter(c, f, bs, side, card));
+    }
+    // 盤面のデジモン/テイマーを対象にする処理（対象の条件があるとき）
+    const m = /^(opponent|own)(_card|_tamer|_digimon)?(?::(\d+|all|up_to_\d+))?$/.exec(String(st.target || ''));
+    if (m && _NC_BOARD_ACTIONS.has(st.action) && zones.length === 0 && st.filter && typeof st.filter === 'object' && Object.keys(st.filter).length > 0) {
+      if (st.filter.target_evo_source || st.filter.target_stack || st.filter.target_evo_source_position) return false;
+      const P = m[1] === 'own' ? me : opp;
+      const withTamer = m[2] === '_card' || m[2] === '_tamer';
+      const pool = [...(m[2] !== '_tamer' ? (P.battleArea || []) : []), ...(withTamer ? (P.tamerArea || []) : [])].filter(Boolean);
+      let f = _resolveLvMarkersInFilter(resolveDpFilterMarkers(st.filter, card, bs, side), card, ctx.block, bs);
+      return !pool.some(c => cardMatchesFilter(c, f, bs, side, card));
+    }
+    return false;
+  } catch (_) { return false; }
+}
+// ステップ全体として実行できる処理が何も無いか（コストあり＝コストの候補だけ / コスト無し＝本体と効果2以降のどれも候補なし）
+function _stepNothingToDo(step, ctx) {
+  if (!step) return false;
+  if (Array.isArray(step.cost) && step.cost.length > 0) return step.cost.some(cs => _stepCandidatesEmpty(cs, ctx));
+  if (!_stepCandidatesEmpty(step, ctx)) return false;
+  const alts = Array.isArray(step.alt_actions) ? step.alt_actions : [];
+  return alts.every(a => _stepCandidatesEmpty(a, ctx));
+}
+
 // 登場したターンのデジモンは、効果でもアタックできない（公式ルール: 登場したデジモンはそのターン中アタックできない。例外は
 // ≪速攻≫と、「登場したターンにもアタックできる」と書かれた効果＝≪ヴォルテクス≫ / options:ignore_summon_turn）
 function _summonSickForEffectAttack(step, card) {
@@ -14053,6 +14119,10 @@ function recipeWillExecuteAnything(recipe, ctx) {
     }
     if (_stepLacksHandCandidate(step, ctx.card, ctx.bs, ctx.side)) {
       console.log('[recipeWillExecute] reactor=' + _reactor + ' hand candidate none → skip', 'action=' + step.action);
+      continue;
+    }
+    if (_stepNothingToDo(step, ctx)) {
+      console.log('[recipeWillExecute] reactor=' + _reactor + ' no candidate → skip', 'action=' + step.action);
       continue;
     }
     // 条件なし → 必ず実行される

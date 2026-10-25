@@ -12518,7 +12518,8 @@ export function fireOnAttackOppSubjectTriggers(attackerSide, bs, ctxBase, done, 
     // 相手の手札は見えないので、手札に【ブラスト進化】等があるかは相手の state_sync の handBlast で判断する
     if (!_anyBoardCardHasStep(bs, 'on_attack', (s) => _isOppOrBothAttackStep(s) || _isCounterStep(s))
         && !(bs && bs.ai && bs.ai._handBlast)) { done && done(); return; }
-    _delegateReactionToOpponent({ recipeKey: 'on_attack', kind: 'on_attack_opp' }, done);
+    const _dAtkIdx = bs && bs._attackingCard && bs.player ? bs.player.battleArea.indexOf(bs._attackingCard) : -1;
+    _delegateReactionToOpponent({ recipeKey: 'on_attack', kind: 'on_attack_opp', atkIdx: _dAtkIdx }, done);
     return;
   }
   // 【カウンター】（step.counter。公式ルール 11-3 / 16-14）: 「相手のデジモンがアタックしたとき」の通常の効果を解決してから、
@@ -20183,6 +20184,17 @@ function executeRecipeStep(step, ctx, store, callback) {
         const lvs = _raCands.map(i => parseInt(_raPool.battleArea[i].level) || 0);
         const extreme = _raFilter.lv_extreme === 'lowest' ? Math.min(...lvs) : Math.max(...lvs);
         _raCands = _raCands.filter(i => (parseInt(_raPool.battleArea[i].level) || 0) === extreme);
+      }
+      // アタック中のデジモンがバトルエリアにいなければ、アタックの対象は変更できない（公式ルール 11-2-7-4）
+      {
+        const _raAtk = ctx.bs && ctx.bs._attackingCard;
+        const _raAtkSide = ctx.bs && ctx.bs._currentAttackerSide;
+        const _raAtkP = _raAtkSide && ctx.bs[_raAtkSide];
+        if (_raAtk && _raAtkP && !(_raAtkP.battleArea || []).some(x => x && (x === _raAtk || (Array.isArray(x.stack) && x.stack.includes(_raAtk))))) {
+          ctx.addLog('⚠ アタック中のデジモンがいないので、アタックの対象は変更できない');
+          callback();
+          return;
+        }
       }
       if (_raCands.length === 0) {
         ctx.addLog('⚠ 対象にできるデジモンがいません');

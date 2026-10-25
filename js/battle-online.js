@@ -728,7 +728,10 @@ function onRemoteCommand(cmd) {
         const same = (c) => c && (c.cardNo || '') === (mv.cardNo || '') && (c.name || '') === (mv.name || '');
         let c = before[mv.idx];
         if (!same(c) || taken.includes(c)) c = before.find((x) => same(x) && !taken.includes(x)) || null;
-        if (!c) return;
+        // カードNo・名前で見つからない（表示用の情報がずれている）ときは、効果の前の位置のカードを使う
+        // （セキュリティの枚数が相手の画面とずれていた）
+        if (!c && before[mv.idx] && !taken.includes(before[mv.idx])) c = before[mv.idx];
+        if (!c) { console.warn('[fx_oppSecurityMoved] 該当カードなし', mv, before.map(x => x && x.name)); return; }
         taken.push(c);
         const i = sec.indexOf(c);
         if (i !== -1) sec.splice(i, 1);
@@ -1079,6 +1082,11 @@ function onRemoteCommand(cmd) {
       // 委譲された反応の中でアタック対象が変更されたら（黒井翔太 BT26-092 等の redirect_attack）、
       // 相手（アタックしている側）の視点に反転して返す。こちらの bs には残さない
       bs._redirectedAttack = null;
+      // 相手のアタックへの反応なら、アタック中のデジモン（こちら視点では ai 側）を記録する（対象の変更ができるかの判定用）
+      if (cmd.kind === 'on_attack_opp') {
+        bs._currentAttackerSide = 'ai';
+        bs._attackingCard = (cmd.atkIdx != null && cmd.atkIdx >= 0) ? (bs.ai.battleArea[cmd.atkIdx] || null) : null;
+      }
       const done = () => {
         sendMemoryUpdate();
         sendStateSync();
@@ -2326,6 +2334,11 @@ export function waitForOwnDestroyDone(callback) {
 }
 
 function checkOnlineBlock(cmd) {
+  // アタック中のデジモンがもういなければ、ブロックの確認は出さない（アタックは成立しない。公式ルール 11-5-1-4）
+  if (cmd.atkIdx != null && !bs.ai.battleArea[cmd.atkIdx]) {
+    sendCommand({ type: 'block_response', blocked: false });
+    return;
+  }
   // ブロッカー判定: テキスト一致は「【ブロッカー】を得る」「【ブロッカー】を持つ間」等の
   // 言及にも誤マッチするため、構造的な情報（_permEffects / buffs / recipe.passive /
   // stack[].recipe.evo_source.passive）のみで判定する

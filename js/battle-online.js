@@ -52,6 +52,7 @@ let _pendingHandDiscardCallback = null; // fx_handDiscardRequest 送信側の応
 let _pendingHandDiscardResponse = null; // 待ち開始前に届いた fx_handDiscardDone の結果
 let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
 let _pendingOwnDestroyDoneCallback = null;
+let _ownDestroyStarting = 0; // 合図を受けて、消滅時チェーンを始めるまで（演出の終わり待ち）の間
 let _ownDestroyWaitCards = []; // 相手の合図待ちの、消滅した自分のカード（発揮待ちの表示用）
 let _pendingOwnDestroyList = []; // 相手の合図待ちの、消滅した自分のカードごとの消滅時チェーン { card, fire }
 // 合図（fx_ownDestroyReady）で、たまっている消滅時チェーンを持ち主（自分）が選んだ順に発揮する
@@ -830,11 +831,13 @@ function onRemoteCommand(cmd) {
       if (bs._oppAttackInProgress) { bs._oppAttackInProgress = false; if (window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => {}); } // 保険（attack_end を受け取れなかった場合）
       // 保険: 相手の効果で DP0 になったまま、ルールチェックの知らせが来ていないデジモンがいれば、相手のターンが終わるので消滅させる
       else if ((bs.player.battleArea || []).some(c => c && c._remoteDp0Hold) && window._runRuleDestroyCheckNow) window._runRuleDestroyCheckNow(() => { renderAll(); sendStateSync(); });
+      // 保険: 消滅時効果が相手の合図（fx_ownDestroyReady）を待ったまま相手のターンが終わったら、ここで発揮する
+      if (_pendingOwnDestroyFire && !cmd._idleWaited) onRemoteCommand({ type: 'fx_ownDestroyReady' });
       // 保険: こちらの効果処理（相手に消滅させられたデジモンの消滅時効果等）の途中なら、終わってからターンを受け取る
-      if (_localBusyForRemote() && !cmd._idleWaited) {
+      if ((_localBusyForRemote() || _pendingOwnDestroyFire) && !cmd._idleWaited) {
         const _c = Object.assign({}, cmd, { _idleWaited: true });
         const _t0 = Date.now();
-        const _retry = () => { if (_localBusyForRemote() && Date.now() - _t0 < 90000) { setTimeout(_retry, 150); return; } onRemoteCommand(_c); };
+        const _retry = () => { if ((_localBusyForRemote() || _pendingOwnDestroyFire) && Date.now() - _t0 < 90000) { setTimeout(_retry, 150); return; } onRemoteCommand(_c); };
         setTimeout(_retry, 150);
         break;
       }
@@ -1274,7 +1277,7 @@ function onRemoteCommand(cmd) {
       const _poll = () => {
         if (!_localBusyForRemote()) { sendCommand({ type: 'fx_idleAck', id: _id }); return; }
         const running = !!(window._isEffectRunning && window._isEffectRunning());
-        const other = !!(_pendingOwnDestroyFire || _nonTurnPlayerReactionDraining
+        const other = !!(_nonTurnPlayerReactionDraining
           || (bs._pendingNonTurnPlayerReactions && bs._pendingNonTurnPlayerReactions.length > 0)
           || _fxRunning || _fxQueue.length > 0 || (window._fxAnimActive > 0));
         if (Date.now() - _lastLog > 3000) {
@@ -1308,9 +1311,11 @@ function onRemoteCommand(cmd) {
       // 積んで順番を守る（公式ルール15-4-4「発揮待ち」は1つずつ発揮させる）
       if (_pendingOwnDestroyFire) {
         const fn = _pendingOwnDestroyFire; _pendingOwnDestroyFire = null;
+        _ownDestroyStarting++;
         // バトルの結果・消滅の演出（相手から続けて届く fx_battleResult / fx_destroy）を見せ終えてから消滅時効果を始める
         // （ブロックの両者消滅で、消滅時効果の確認の後ろで両者消滅の演出が流れていた）
         _afterRemoteFxIdle(() => {
+          _ownDestroyStarting = Math.max(0, _ownDestroyStarting - 1);
           if (!bs._pendingNonTurnPlayerReactions) bs._pendingNonTurnPlayerReactions = [];
           bs._pendingNonTurnPlayerReactions.push((next) => fn(next));
           _drainNonTurnPlayerReactionQueue();
@@ -2896,9 +2901,13 @@ window._waitForBlockBattleDone = (cb) => {
 // 全て終わるのを待つ。以前は待たずに「自分のターン終了」→ 相手のアクティブフェイズへ進み、相手の画面で
 // 消滅時効果の途中にアクティブフェイズ等の演出が流れていた。コマンドは届いた順に処理されるので、
 // fx_idleCheck は直前に送った card_removed 等の後で評価される
+// 消滅した自分のデジモンの消滅時効果が、相手の合図（fx_ownDestroyReady）待ちで止まっているだけ（_pendingOwnDestroyFire）なら、
+// 処理中には数えない。問い合わせてきた相手こそが合図を送る側なので、待つとお互いに待ち合って止まっていた
+// （メタルガルルモンがテスラジェリーモンをバトルで消滅させた後、相手の画面が「相手の効果処理を待っています」のまま止まった）。
+// 合図が届いて消滅時効果を処理している間（_nonTurnPlayerReactionDraining 等）は処理中として待つ
 function _localBusyForRemote() {
   try {
-    return !!(_pendingOwnDestroyFire || _nonTurnPlayerReactionDraining
+    return !!(_ownDestroyStarting > 0 || _nonTurnPlayerReactionDraining
       || (bs._pendingNonTurnPlayerReactions && bs._pendingNonTurnPlayerReactions.length > 0)
       || (window._isEffectProcessing && window._isEffectProcessing())
       || _fxRunning || _fxQueue.length > 0 || (window._fxAnimActive > 0));

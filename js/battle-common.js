@@ -172,7 +172,30 @@ export function checkTurnEndEffects(cb) {
   if (cardsWithEffect.length === 0) { cb(); return; }
   // 【自分のターン終了時】は盤面全体（自分側）をまとめてスキャンして同時誘発として処理する（scanTriggers）ので、
   // 1回だけ呼ぶ（カードごとに呼ぶと、2枚目以降の呼び出しで同じ効果が二重に積まれる）
-  checkAndTriggerEffect(cardsWithEffect[0], '【自分のターン終了時】', cb);
+  // 効果の中で始めたアタック（「その後、〜でアタックできる」）・その【アタック時】等が全て終わってからターンを渡す
+  // （ニャロモン EX12-001 → プロキシマモン → カノーヴァイスモンの【登場時】でメタルガルルモンがアタック中に、残りの
+  // 効果を「使わない」にすると、アタックの途中で相手のターンに移っていた）
+  checkAndTriggerEffect(cardsWithEffect[0], '【自分のターン終了時】', () => _waitTurnEndIdle(cb));
+}
+// こちらの効果・アタック（効果で宣言して止めているアタックも）・相手の端末の返事待ちが全て終わるまで待ってから cb()
+function _waitTurnEndIdle(cb) {
+  const t0 = Date.now();
+  const busy = () => {
+    try {
+      if (window._isEffectProcessing && window._isEffectProcessing()) return true;
+      if (window._isAttackInProgress && window._isAttackInProgress()) return true;
+      if (window._hasOwnPendingEffectsShown && window._hasOwnPendingEffectsShown()) return true;
+      if (bs._attackDeclHold || (Array.isArray(bs._heldAttackResumes) && bs._heldAttackResumes.length > 0)) return true;
+      if (window._isOnlineWaiting && window._isOnlineWaiting()) return true;
+    } catch (_) {}
+    return false;
+  };
+  const tick = () => {
+    if (busy() && Date.now() - t0 < 120000) { setTimeout(tick, 300); return; }
+    cb && cb();
+  };
+  // 効果の処理の終わり（コールバックの直後）に始まるアタックの続きがあるので、少し待ってから判定する
+  setTimeout(tick, 300);
 }
 
 // ===== applyPermanentEffects (wrapper) =====

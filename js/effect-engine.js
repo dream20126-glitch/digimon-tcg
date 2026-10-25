@@ -8885,16 +8885,24 @@ function checkConditions(conditions, card, bs, side) {
         if (!cond.value) break;
         const kw = String(cond.value);
         let has = false;
-        if (card && card._permEffects && card._permEffects[kw]) has = true;
-        if (!has && card && Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'keyword_' + kw)) has = true;
+        // 場（バトルエリア・テイマーエリア・育成エリア）に無いカード（手札・トラッシュ・デッキ・セキュリティ等の
+        // 「カードの情報」）は、そのキーワードを常に持つカードだけが当てはまる（公式ルール 2-3-3-3。効果で得たもの・
+        // 条件付きで得るものは含めない）。場のデジモンは効果で得たキーワードも含める（Q&A A885）
+        const _kwOnField = !!card && (_cardOnField(bs, card)
+          || ['player', 'ai'].some(sd => bs && bs[sd] && (Array.isArray(bs[sd].ikusei) ? bs[sd].ikusei.includes(card) : bs[sd].ikusei === card)));
+        if (_kwOnField && card._permEffects && card._permEffects[kw]) has = true;
+        if (!has && _kwOnField && Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'keyword_' + kw)) has = true;
         if (!has && card && card.recipe) {
           try {
             const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]/g, '') : card.recipe;
             const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
             const passives = r.passive;
-            if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw) && _passiveGateOk(p, card, bs, side))) has = true;
+            const _always = (p) => typeof p !== 'object' || !(p.gate || (Array.isArray(p.gate_chain) && p.gate_chain.length > 0) || p.condition || p.when);
+            if (Array.isArray(passives) && passives.some(p => p && (p.flag === kw || p === kw)
+              && (_kwOnField ? _passiveGateOk(p, card, bs, side) : _always(p)))) has = true;
           } catch(_) {}
         }
+        if (!_kwOnField) { if (!has) return false; break; }
         if (!has && card && Array.isArray(card.stack)) {
           for (const s of card.stack) {
             if (!s || !s.recipe) continue;

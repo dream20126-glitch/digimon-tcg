@@ -14582,7 +14582,9 @@ function _isInlineConfirmStep(s) {
 // アナウンスを出して発揮する（任意部分を使わなくても「その後〜」は発揮する）
 function _isOptionalLeadRecipe(steps) {
   if (!Array.isArray(steps) || steps.length < 2 || !_isInlineConfirmStep(steps[0])) return false;
-  return steps.slice(1).some(s => s && !_isInlineConfirmStep(s) && Array.isArray(s.options) && s.options.includes('continue_on_fail'));
+  // 「その後、〜できる」（任意のアタック等。ニャロモン EX12-001「その後、ジョグレス進化したそのデジモンでアタックできる」）は
+  // 強制の「その後」ではない（任意の効果として扱い、同時誘発の選択画面に「終了する（効果を使わない）」を出す）
+  return steps.slice(1).some(s => s && !_isInlineConfirmStep(s) && s.optional !== true && Array.isArray(s.options) && s.options.includes('continue_on_fail'));
 }
 function _isInlineCostConfirmRecipe(steps) {
   if (!Array.isArray(steps) || steps.length < 2) return false;

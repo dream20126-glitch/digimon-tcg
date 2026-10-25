@@ -5040,22 +5040,26 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     const _inH = candidates.filter(c => _zoneOf(c) === 'hand');
     const _inT = candidates.filter(c => _zoneOf(c) === 'trash');
     if (_inH.length > 0 && _inT.length > 0 && _inH.length + _inT.length === candidates.length) {
-      // 2枚以上選ぶ（「2枚まで」等）ときは「手札とトラッシュの両方から」も選べる（両方から合わせて選ぶ。シリウスモン EX12-018）
+      // 2枚以上選ぶ（「2枚まで」等）ときは、選んだゾーンの一覧の下に「もう一方の一覧へ」のボタンを出し、両方から合わせて選べる
+      // （選んだカードは保持。シリウスモン EX12-018）
       const _multi = wantCount > 1;
       const _labels = ['✋ 手札から（' + _inH.length + '枚）', '🗑 トラッシュから（' + _inT.length + '枚）'];
-      if (_multi) _labels.push('✋🗑 手札とトラッシュの両方から（' + candidates.length + '枚）');
       if (optional) _labels.push('使わない');
+      const _b0 = _b.player && ((_b.player.hand || []).includes(_inH[0]) || (_b.player.trash || []).includes(_inT[0])) ? _b.player : _b.ai;
       const _choose = () => showAltActionChoice(_labels, (zi) => {
-        if (zi === 2 && _multi) {
-          const _lab = (c) => (_zoneOf(c) === 'hand' ? '手札' : 'トラッシュ');
-          const _o = Object.assign({}, opts || {}, { _zoneSplitDone: true, onBack: _choose });
-          if (!_o.labelOf) _o.labelOf = _lab;
-          showTrashCardPicker(candidates, wantCount, optional, title, callback, candidates, _o);
-          return;
-        }
         if (zi >= 2) { callback([]); return; }
         const sub = zi === 0 ? _inH : _inT;
-        showTrashCardPicker(sub, Math.min(wantCount, sub.length), optional, title, callback, sub, Object.assign({}, opts || {}, { _zoneSplitDone: true, onBack: _choose }));
+        const _o = Object.assign({}, opts || {}, { _zoneSplitDone: true, onBack: _choose });
+        if (_multi) {
+          _o.zoneTabs = [
+            { label: '手札', icon: '✋', all: (_b0 && _b0.hand && _b0.hand.length) ? _b0.hand : _inH, cands: _inH },
+            { label: 'トラッシュ', icon: '🗑', all: (_b0 && _b0.trash && _b0.trash.length) ? _b0.trash : _inT, cands: _inT },
+          ];
+          _o.zoneTab = zi;
+          showTrashCardPicker(candidates, wantCount, optional, title, callback, _o.zoneTabs[zi].all, _o);
+          return;
+        }
+        showTrashCardPicker(sub, Math.min(wantCount, sub.length), optional, title, callback, sub, _o);
       }, (title || '').replace(/選んでください.*$/, '') + 'どこから選びますか？');
       _choose();
       return;
@@ -5066,15 +5070,25 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
   const _onBack = opts && typeof opts.onBack === 'function' ? opts.onBack : null;
   // opts.upTo: 最大枚数まで好きな枚数（1枚以上）選んで「決定」できる（デジクロス・「2枚まで置ける」等）
   const _upTo = !!(opts && opts.upTo);
+  // opts.zoneTabs: [{ label, all, cands }]（「手札」「トラッシュ」等）。一覧の下の切り替えボタンで別のゾーンの一覧に移れる。
+  // 選んだカードはゾーンを移っても保持し、合わせて wantCount 枚まで選べる（「手札/トラッシュから2枚」等）
+  const _zTabs = (opts && Array.isArray(opts.zoneTabs) && opts.zoneTabs.length > 1) ? opts.zoneTabs : null;
+  let _zTab = _zTabs ? Math.max(0, Math.min(_zTabs.length - 1, (opts && opts.zoneTab) || 0)) : 0;
   // 既存 trash-modal を使うインプレース版
   const modal = document.getElementById('trash-modal');
   if (modal && Array.isArray(fullTrash) && fullTrash.length > 0) {
     const titleEl = document.getElementById('trash-modal-title');
     const grid = document.getElementById('trash-modal-grid');
     const closeBtn = document.getElementById('trash-close-btn');
-    if (titleEl) titleEl.innerText = (title || '🌟 カードを選択') + `（候補${candidates.length}枚 / 最大${wantCount}枚選択）`;
-    const candSet = new Set(candidates);
+    const _setTitle = () => {
+      if (!titleEl) return;
+      const zl = _zTabs ? '【' + _zTabs[_zTab].label + '】' : '';
+      titleEl.innerText = zl + (title || '🌟 カードを選択') + `（候補${_zTabs ? _zTabs.reduce((a, t) => a + t.cands.length, 0) : candidates.length}枚 / 最大${wantCount}枚選択${_zTabs ? '・選択中' + picked.length + '枚' : ''}）`;
+    };
+    let candSet = new Set(_zTabs ? _zTabs[_zTab].cands : candidates);
+    if (_zTabs) fullTrash = _zTabs[_zTab].all;
     const picked = [];
+    _setTitle();
     // バトル演出中の黒背景（_combat-backdrop, z-index:46999）は trash-modal（z-index:26000）より前面にあるため、
     // バトルに勝ったときの「手札から進化」等で選ぶ画面が裏に隠れて進めなくなる。選んでいる間だけ黒背景を隠す
     const _pkBackdrop = document.getElementById('_combat-backdrop');
@@ -5116,6 +5130,7 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
                 return;
               }
               renderItems();
+              if (_zTabs) { _setTitle(); _renderZoneTabs && _renderZoneTabs(); }
             });
           };
         }
@@ -5133,10 +5148,44 @@ export function showTrashCardPicker(candidates, wantCount, optional, title, call
     // optional のときだけ「⏭ 使わない」ボタンを表示。
     // それ以外は各カード詳細ダイアログの「このカードで決定」が確定操作を兼ねる。
     let actionRow = null, skipBtn = null, selAllBtn = null, backBtn = null, upToBtn = null;
-    if (optional || _selAll || _onBack || _upTo) {
+    let _renderZoneTabs = null;
+    if (optional || _selAll || _onBack || _upTo || _zTabs) {
       actionRow = document.createElement('div');
       actionRow.id = '_trash-picker-actions';
       actionRow.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap;';
+      if (_zTabs) {
+        // 別のゾーンの一覧へ移るボタン（「🗑 トラッシュの一覧へ」等）。選んだカードは保持する
+        const zoneRow = document.createElement('div');
+        zoneRow.style.cssText = 'display:flex;gap:8px;justify-content:center;flex-basis:100%;';
+        actionRow.appendChild(zoneRow);
+        _renderZoneTabs = () => {
+          zoneRow.innerHTML = '';
+          _zTabs.forEach((t, ti) => {
+            if (ti === _zTab) return;
+            const b = document.createElement('button');
+            const nPicked = picked.filter(c => t.all.includes(c)).length;
+            b.innerText = (t.icon || '↔') + ' ' + t.label + 'の一覧へ（対象' + t.cands.length + '枚' + (nPicked ? '・選択中' + nPicked + '枚' : '') + '）';
+            b.style.cssText = 'background:#1f3b57;color:#fff;border:1px solid #66aaff;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
+            b.onclick = () => {
+              _zTab = ti;
+              candSet = new Set(_zTabs[_zTab].cands);
+              fullTrash = _zTabs[_zTab].all;
+              _setTitle();
+              renderItems();
+              _renderZoneTabs();
+            };
+            zoneRow.appendChild(b);
+          });
+        };
+        _renderZoneTabs();
+        // 枚数に満たなくても決定できるボタン（ゾーンをまたいで選んだ後に決定する用）
+        if (!_upTo) {
+          upToBtn = document.createElement('button');
+          upToBtn.innerText = '✅ 選んだカードで決定';
+          upToBtn.style.cssText = 'background:#00aa66;color:#fff;border:1px solid #00ff88;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;';
+          actionRow.appendChild(upToBtn);
+        }
+      }
       if (_selAll) {
         selAllBtn = document.createElement('button');
         selAllBtn.innerText = '✅ 全て選択する';
@@ -11182,6 +11231,21 @@ function _distinctColorCount(cards) {
   return cols.size;
 }
 
+// 場のデジモンが進化していたら、今の姿（進化元にそのカードを持つ場のデジモン）を返す（同じ1体として扱う）。
+// 場にいなければそのまま返す
+function _currentFormOf(card, bs) {
+  if (!card || !bs) return card || null;
+  for (const sd of ['player', 'ai']) {
+    const p = bs[sd]; if (!p) continue;
+    for (const c of [...(p.battleArea || []), ...(p.tamerArea || [])]) {
+      if (!c) continue;
+      if (c === card) return c;
+      if (Array.isArray(c.stack) && c.stack.includes(card)) return c;
+    }
+  }
+  return card;
+}
+
 // カードからトリガーに対応するレシピを取得
 //
 // 引数:
@@ -15398,7 +15462,9 @@ function executeRecipeStep(step, ctx, store, callback) {
   // Lvの条件の比べる値（エディタ「比べる値」: 'trigger_source_lv'＝そのデジモン（トリガーの発生元）のLv /
   // 'self_lv'＝このカードのLv）を数値に置き換える（ウィルスバスターズ EX12-069「そのデジモンと同じLvの〜」）
   if ((step.filter && typeof step.filter === 'object') || (step.from_filter && typeof step.from_filter === 'object')) {
-    const _lvSrc = ctx.block && ctx.block._eventSourceCard;
+    // 「そのデジモン」が効果の発揮までに進化していれば、進化後のデジモンのLv（ウィルスバスターズ EX12-069。
+    // ワーガルルモンのアタック時効果でメタルガルルモンに進化した後に発揮 → Lv.6 で判定）
+    const _lvSrc = _currentFormOf(ctx.block && ctx.block._eventSourceCard, ctx.bs);
     const _lvOf = (m) => {
       const c = m === 'self_lv' ? ctx.card : _lvSrc;
       const n = c ? parseInt(c.level, 10) : NaN;
@@ -15482,7 +15548,8 @@ function executeRecipeStep(step, ctx, store, callback) {
   let _tsDefer = false;
   let _tsSrc = null;
   if (step.target === 'target_trigger_source') {
-    _tsSrc = ctx.block && ctx.block._eventSourceCard;
+    // 発揮までに進化していれば、進化後のデジモン（同じ1体）を「そのデジモン」とする
+    _tsSrc = _currentFormOf(ctx.block && ctx.block._eventSourceCard, ctx.bs);
     if (!_tsSrc && step.action === 'evolve') {
       if (Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved) _tsDefer = true;
       else _tsSrc = (ctx.bs && ctx.bs._lastPickedCard) || null;
@@ -16222,21 +16289,23 @@ function executeRecipeStep(step, ctx, store, callback) {
           // 指定ゾーンのカードから最大 _summonCount 枚選んで登場（候補が枚数以内なら即時。
           // ただし「できる」(optional) 指定時は必ずピッカーを経由させ「使わない」を選べるようにする）
           // zoneAll: そのゾーンのカード全て（一覧に出す。候補以外は選べない表示）/ onBack: 「戻る」でゾーン選択に戻る
+          let _zoneTabsForSummon = null;
           const _pickFromZone = (zoneCands, zoneChosen, zoneAll, zoneName, onBack) => {
             if ((!zoneCands || zoneCands.length === 0) && !onBack) { callback(); return; }
             // 「手札から/トラッシュから」を選んだ後（＝使うことは決定済み）は、候補が枚数以内ならそのまま登場
             if (!onBack && zoneCands.length <= _summonCount && (!_optional || zoneChosen) && !_anyHandOrTrash(zoneCands)) { _summonSequential(zoneCands, 0, callback); return; }
             const _all = (Array.isArray(zoneAll) && zoneAll.length > 0) ? zoneAll : zoneCands;
             if (_all.length === 0) { onBack && onBack(); return; }
-            showTrashCardPicker(zoneCands, _summonCount, _optional,
-              '🌟 ' + (zoneName ? zoneName + 'から' : '') + '登場させるカードを選んでください' + (zoneCands.length === 0 ? '（対象のカードがありません）' : ''), (picked) => {
+            const _zt = _zoneTabsForSummon ? Object.assign({ zoneTabs: _zoneTabsForSummon, zoneTab: zoneName === 'トラッシュ' ? 1 : 0 }) : null;
+            showTrashCardPicker(_zt ? [..._handCands, ..._trashCands] : zoneCands, _summonCount, _optional,
+              '🌟 ' + (zoneName && !_zt ? zoneName + 'から' : '') + '登場させるカードを選んでください' + (zoneCands.length === 0 ? '（対象のカードがありません）' : ''), (picked) => {
               if (!picked || picked.length === 0) {
                 ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
                 callback();
                 return;
               }
               _summonSequential(picked, 0, callback);
-            }, _all, onBack ? { onBack } : undefined);
+            }, _all, onBack ? Object.assign({ onBack }, _zt || {}) : (_zt || undefined));
           };
           if (effectiveSide === 'ai') {
             const _aiPicks = [..._handCands, ..._trashCands].slice(0, _summonCount);
@@ -16246,14 +16315,13 @@ function executeRecipeStep(step, ctx, store, callback) {
             // 一覧の「戻る」でこの選択に戻れる（アイギオテュースモン：ダーク BT26-073 の【消滅時】等）。
             // 対象が無いゾーンも選べる（一覧で確認して戻れる）
             const _zoneLabels = ['手札から（対象' + _handCands.length + '枚）', 'トラッシュから（対象' + _trashCands.length + '枚）'];
-            // 2枚以上登場させるときは、手札とトラッシュの両方から合わせて選ぶこともできる
-            const _bothZ = _summonCount > 1 && _handCands.length > 0 && _trashCands.length > 0;
-            if (_bothZ) _zoneLabels.push('手札とトラッシュの両方から（対象' + (_handCands.length + _trashCands.length) + '枚）');
+            // 2枚以上登場させるときは、一覧の下の「もう一方の一覧へ」で手札とトラッシュの両方から合わせて選べる
+            _zoneTabsForSummon = (_summonCount > 1 && _handCands.length > 0 && _trashCands.length > 0)
+              ? [{ label: '手札', icon: '✋', all: player.hand, cands: _handCands }, { label: 'トラッシュ', icon: '🗑', all: player.trash, cands: _trashCands }] : null;
             if (_optional) _zoneLabels.push('使わない');
             const _chooseZone = () => {
               showAltActionChoice(_zoneLabels, (zi) => {
-                if (_bothZ && zi === 2) { const _both = [..._handCands, ..._trashCands]; _pickFromZone(_both, true, _both, '手札/トラッシュ', _chooseZone); return; }
-                if (_optional && zi === (_bothZ ? 3 : 2)) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
+                if (_optional && zi === 2) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); callback(); return; }
                 if (zi === 0) _pickFromZone(_handCands, true, player.hand, '手札', _chooseZone);
                 else _pickFromZone(_trashCands, true, player.trash, 'トラッシュ', _chooseZone);
               }, '🌟 どこから登場させますか？');

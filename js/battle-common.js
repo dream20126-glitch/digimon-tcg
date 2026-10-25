@@ -120,7 +120,15 @@ export function checkAndTriggerEffect(card, triggerType, callback, side, already
   // when_target_changed（アタックの対象が変更されたとき）用: 現在アタック中のカードの
   // 所属側を記録しておく。redirect_attackアクション実行時（subject:opp/both の反応中で
   // ctx.sideが反応元カードの所有者になっている場合も含む）に、本当の攻撃側を参照するため
-  if (triggerCode === 'on_attack') { bs._currentAttackerSide = side; bs._attackingCard = card; }
+  if (triggerCode === 'on_attack') {
+    bs._currentAttackerSide = side; bs._attackingCard = card;
+    // アタック宣言のレストで誘発した自分側の「レストしたとき」を、【アタック時】と同じ同時誘発の列に入れる
+    const ex = bs._attackRestExtras;
+    if (ex && Array.isArray(ex.entries) && (ex.card === card || (Array.isArray(card.stack) && card.stack.includes(ex.card)))) {
+      bs._attackRestExtras = null;
+      window._nextTriggerExtras = (Array.isArray(window._nextTriggerExtras) ? window._nextTriggerExtras : []).concat(ex.entries);
+    }
+  }
   // チュートリアル通知（既存の動作には影響なし、active=falseなら何もしない）
   _notifyTutorial(triggerCode, card, side);
   const context = makeEffectContext(card, side);

@@ -11952,25 +11952,27 @@ function _collectLeaveBattleReplacers(leavingCard, leavingSide, bs) {
       if (s === 'own' || /^own_/.test(s) || s === 'other_own' || /^other_own/.test(s)) return sd === leavingSide;
       return false;
     };
-    const stepOk = (step, carrier) => {
+    const stepOk = (step, carrier, src) => {
       if (!step || !subjOk(step)) return false;
       if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, leavingCard, bs, sd, step.trigger_conditions_chain)) return false;
       if (step.condition && !checkConditions(parseRecipeCondition(step.condition), carrier, bs, sd)) return false;
       // 原因（「自分の効果以外で」等）
       if (!_destroyCauseMatches(step, bs, sd, carrier, 'when_leave_battle')) return false;
+      // 【ターンに1回】等: 実行時に記録するのと同じキー（_stepLimitKey）で見る（以前は進化元の効果のキーの形が違い、
+      // 実行時は trigger_conditions を外したコピーで記録していたため一致せず、アンフィモン＆クリスタルフリーザー EX12-033 が
+      // 同じターンの2回目も確認を出し、コストを払ってから「ターンに1回」で止まっていた）
       const lmax = getLimitMaxUses(step);
-      if (lmax > 0 && bs._usedLimits) {
-        const cid = _limitCardId(carrier);
-        if ((bs._usedLimits[cid + '@' + cid + '_recipe_' + _limitStepPart(step)] || 0) >= lmax) return false;
-      }
+      if (lmax > 0 && bs._usedLimits && (bs._usedLimits[_stepLimitKey(src || carrier, carrier, step)] || 0) >= lmax) return false;
       return true;
     };
     const add = (carrier, srcCard, steps) => {
       if (!Array.isArray(steps) || steps.length === 0) return;
-      const chosen = _filterStepChains(steps, (s) => stepOk(s, carrier)).map((s) => {
-        // trigger_conditions は離れるカードでここで判定済み（実行時に反応するカード側で再評価しない）
-        if (!s || !s.trigger_conditions) return s;
+      const chosen = _filterStepChains(steps, (s) => stepOk(s, carrier, srcCard)).map((s) => {
+        // trigger_conditions は離れるカードでここで判定済み（実行時に反応するカード側で再評価しない）。
+        // 【ターンに1回】のキーは元のステップのものを使う（実行時は条件を外したコピーになるため。_limitPart）
+        if (!s) return s;
         const o = Object.assign({}, s); delete o.trigger_conditions; delete o.trigger_conditions_op; delete o.trigger_conditions_chain;
+        o._limitPart = _limitStepPart(s);
         return o;
       });
       if (chosen.length > 0) out.push({ card: carrier, sourceCard: srcCard, recipe: chosen, side: sd });
@@ -13090,6 +13092,22 @@ export function fireWhenRestTriggers(restedSide, restedCard, bs, ctxBase, done) 
   return _fireSidedReactionTriggers(restedSide, 'when_rest', bs, ctxBase, done, stepFilter);
 }
 
+// アタック宣言でレストしたカードの「レストしたとき」（自分側）を、実行せずに発揮待ちの候補として集める。
+// 【アタック時】と同時に誘発したものとして同じ列に入れ、発動順を選べるようにする（アタック宣言のレストで誘発する効果と
+// 【アタック時】は同時誘発。テティスモン EX12-030 進化元「このデジモンがレストしたとき」とアンフィモンの【アタック時】）
+// 戻り値: triggerEffect の追加分（window._nextTriggerExtras）の形 [{ card, block, side, actualSide }]
+export function collectOwnRestReactions(restedSide, restedCard, bs, ctxBase) {
+  if (!bs || !restedCard) return [];
+  const col = { items: [] };
+  const prev = bs._reactionCollector;
+  bs._reactionCollector = col;
+  try { fireWhenRestTriggers(restedSide, restedCard, bs, Object.assign({}, ctxBase || {}, { _restReactionNow: true }), () => {}); }
+  catch (e) { console.error('[collectOwnRestReactions]', e); }
+  finally { bs._reactionCollector = prev; }
+  const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+  return col.items.map(it => ({ card: it.card, block: it.block, side: it.side === turnSide ? 'turnPlayer' : 'nonTurnPlayer', actualSide: it.side }));
+}
+
 // ===== when_summon グローバル発火 =====
 // 自分側にデジモンが登場（トークン等）したとき、同じ側のトップレベルカード自身、
 // および他カードの進化元(evo_source)のwhen_summonが反応する。
@@ -13734,6 +13752,8 @@ function _cardUid(card) {
 // 同じ効果が複数のトリガー（【登場時】【進化時】【アタック時】）に書かれている場合は内容が同じなので共通の1回になる
 function _limitStepPart(step) {
   if (!step || typeof step !== 'object') return String(step && step.action);
+  // 判定のために一部を外したコピー（_collectLeaveBattleReplacers の trigger_conditions を外したもの等）は、元のステップの値を使う
+  if (typeof step._limitPart === 'string') return step._limitPart;
   const stable = {};
   Object.keys(step).sort().forEach((k) => {
     if (k.charAt(0) === '_' || k === 'alt_actions' || k === 'alt_actions_op' || k === 'limit') return;
@@ -21096,6 +21116,9 @@ function executeRecipeStep(step, ctx, store, callback) {
           hand: '自分の手札', trash: '自分のトラッシュ', security: '自分のセキュリティ', opp_hand: '相手の手札', opp_trash: '相手のトラッシュ', opp_security: '相手のセキュリティ' })[refSource] || '数えた数';
         step = Object.assign({}, step, { _perCountNote: _pcRefLabel + ' ' + count + (/colors$/.test(refSource) ? '色' : '') + ' → ' + _pcUnit + '×' + Math.floor(count / step.per_count) + ' = ' + effectiveValue });
         ctx.addLog && ctx.addLog('📊 ' + step._perCountNote);
+        // 「この効果で〜した1枚ごとに」で0枚なら何もしない（対象も選ばない。アンフィモン＆クリスタルフリーザー EX12-033 で
+        // 手札を破棄しなかったのに「DP-0の対象を選んでください」が出ていた）。後から増えない数（この効果で処理した枚数）だけ
+        if (effectiveValue === 0 && refSource === 'last_action_count') { callback(); return; }
       }
       // レシピのアクション名を既存エンジンのアクション名にマッピング
       let actionCode = step.action;

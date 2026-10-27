@@ -470,10 +470,13 @@ function RefExistsAttributeFilterPanel({
   const featureVal = getAttr('cond_feature');
   const feats = (featureVal?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
   const colorVal = getAttr('cond_color');
+  // 進化元の枚数（以上）。値は数値か 'self'＝このデジモンの進化元の枚数以上（LM-040「進化元枚数がこのデジモン以上の〜」）
+  const evoVal = getAttr('cond_has_evo');
 
   const [activeSub, setActiveSub] = useState<Set<string>>(() => {
     const s = new Set<string>();
     if (colorVal) s.add('color');
+    if (evoVal) s.add('evo');
     if (lvGe || lvLe) s.add('lv');
     if (costGe || costLe) s.add('cost');
     if (featureVal) s.add('feature');
@@ -485,6 +488,7 @@ function RefExistsAttributeFilterPanel({
       else if (key === 'lv') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le'))));
       else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le'))));
       else if (key === 'feature') setAttr('cond_feature', undefined);
+      else if (key === 'evo') setAttr('cond_has_evo', undefined);
       setActiveSub((prev) => { const next = new Set(prev); next.delete(key); return next; });
     } else {
       setActiveSub((prev) => new Set(prev).add(key));
@@ -492,6 +496,7 @@ function RefExistsAttributeFilterPanel({
   };
   const subButtons: { key: string; label: string }[] = [
     { key: 'color', label: '色' }, { key: 'lv', label: 'Lv' }, { key: 'cost', label: 'コスト' }, { key: 'feature', label: '特徴' },
+    ...(marker === REF_EXISTS_FILTER_MARKER ? [{ key: 'evo', label: '進化元枚数' }] : []),
   ];
 
   return (
@@ -508,7 +513,7 @@ function RefExistsAttributeFilterPanel({
             }
           }}
         />
-        {title || '属性で絞り込む（この参照行専用・「1体以上」の存在チェックのみ対応）'}
+        {title || '属性で絞り込む（この参照行専用・「1体以上（いる）」「0体（いない）」で使える）'}
       </label>
       {open && (
         <div style={{ marginTop: 4, padding: 6, background: '#fffaf0', border: '1px dashed #f0d9a8', borderRadius: 4 }}>
@@ -592,6 +597,29 @@ function RefExistsAttributeFilterPanel({
                 />
               )}
               {costMode && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ コストはエンジン未対応です（保存はできますが動作しません）</span>}
+            </div>
+          )}
+          {activeSub.has('evo') && (
+            <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10, color: '#666' }}>進化元の枚数:</span>
+              <ButtonGroup
+                options={[{ code: '', label: '数値' }, { code: 'self', label: 'このデジモン以上' }]}
+                value={evoVal?.value === 'self' ? 'self' : ''}
+                onChange={(v) => setAttr('cond_has_evo', v || '1')}
+                accentColor="#946200"
+              />
+              {evoVal?.value !== 'self' && (
+                <>
+                  <input
+                    type="number" min={0}
+                    value={evoVal?.value || ''}
+                    onChange={(e) => setAttr('cond_has_evo', e.target.value)}
+                    style={{ width: 60, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                  />
+                  <span style={{ fontSize: 10, color: '#666' }}>枚以上</span>
+                </>
+              )}
+              {evoVal?.value === 'self' && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ 「このデジモン以上」はエンジン未対応です（保存はできますが動作しません）</span>}
             </div>
           )}
           {activeSub.has('feature') && (
@@ -2945,12 +2973,16 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'card', label: 'カード' },
     { code: 'tamer', label: 'テイマー' },
     { code: 'option', label: 'オプション' },
+    // セキュリティデジモン（「自分のセキュリティデジモン全てをDP+」等。own_security）。
+    // 破棄する等の場所ボタン「セキュリティ」と同じコードなので、そちらがあるときは重複させない（tgtL2Uniq）
+    { code: 'security', label: 'セキュリティデジモン' },
   ],
   opp: [
     { code: 'digimon', label: 'デジモン' },
     { code: 'card', label: 'カード' },
     { code: 'tamer', label: 'テイマー' },
     { code: 'option', label: 'オプション' },
+    { code: 'security', label: 'セキュリティデジモン' },
     { code: 'player', label: 'プレイヤー' },
   ],
   other_own: [
@@ -2967,6 +2999,10 @@ const TARGET_SEL_L2: Record<string, { code: string; label: string }[]> = {
     { code: 'digimon', label: 'デジモン' },
   ],
 };
+// 対象の種類ボタンと場所ボタンを並べたとき、同じコード（セキュリティ）が2つ出ないようにする（後の場所ボタン側を残す）
+function tgtL2Uniq(opts: { code: string; label: string }[]): { code: string; label: string }[] {
+  return opts.filter((o, i) => !opts.some((x, j) => j > i && x.code === o.code));
+}
 // hasFromZonesフラグを持つアクション（破棄する/〇〇に置く/デッキに戻す/手札に加える/
 // 手札に戻す等、場所/位置/裏表の表示が必要なアクション）を選択中のときだけ、通常のL2一覧に
 // 追加で表示するゾーン系オプション（＝「場所」）。旧DISCARD_ZONE_MAP/PLACE_ZONE_MAPが
@@ -4031,7 +4067,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     if (l1l2) {
       const l1Label = TARGET_SEL_L1.find((o) => o.code === l1l2.l1)?.label || '';
       const l2Label = !l1l2.l2 ? '' : l1l2.l2.split('+').map((z) =>
-        [...(TARGET_SEL_L2[l1l2.l1] || []), ...(TARGET_SEL_L2_FROM_ZONES[l1l2.l1] || [])].find((o) => o.code === z)?.label || '').filter(Boolean).join('/');
+        [...(TARGET_SEL_L2_FROM_ZONES[l1l2.l1] || []), ...(TARGET_SEL_L2[l1l2.l1] || [])].find((o) => o.code === z)?.label || '').filter(Boolean).join('/');
       label = [l1Label, l2Label].filter(Boolean).join('の');
     }
     const { mode: countMode, num: countNum } = parseTargetCountSuffix(suffix);
@@ -6726,7 +6762,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   キーワード付与(grant_keyword)のときは、下の「🎁 付与する効果」内の
                   キーワードごとの数値欄で block.value を管理するため、ここでは二重表示を避けて隠す */}
               {(effectAction === 'grant_keyword' || effectAction === 'grant_keyword_to') ? null
-              : (effectAction === 'summon' || effectAction === 'summon_appear' || effectAction === 'summon_use' || effectAction === 'evolve' || effectAction === 'link' || effectAction === 'jogress_evolve') ? (
+              : (effectAction === 'summon' || effectAction === 'summon_appear' || effectAction === 'summon_use' || effectAction === 'evolve' || effectAction === 'link' || effectAction === 'jogress_evolve' || effectAction === 'appear_or_evolve') ? (
                 <div className="field">
                   <label>💰 コスト増減</label>
                   {(() => {
@@ -7426,10 +7462,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const eBase = (effectTarget || '').split(':')[0];
             const eSuffix = (effectTarget || '').substring(eBase.length);
             const eCurTgt = TARGET_SEL_CODE_TO_L1L2[eBase] || { l1: '', l2: '' };
-            const eL2Options = eCurTgt.l1 === 'most' ? MOST_PLAYER_METRICS : [
+            const eL2Options = eCurTgt.l1 === 'most' ? MOST_PLAYER_METRICS : tgtL2Uniq([
               ...(TARGET_SEL_L2[eCurTgt.l1] || []),
               ...(commonActionHasFromZones ? (TARGET_SEL_L2_FROM_ZONES[eCurTgt.l1] || []).filter((o) => !commonFromZoneExcludeCodes?.has(o.code)) : []),
-            ];
+            ]);
             const eHasDigimonTamer = (eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'other_own' || eCurTgt.l1 === 'both');
             const eIsOrMode = !!typeSelMulti(eCurTgt.l2, effectTargetFilter);
             const eTypeChecked = eHasDigimonTamer ? typeSelOf(eCurTgt.l2, effectTargetFilter) : [];
@@ -7748,10 +7784,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // effectAction===block.actionなので同じ結果になる）
           const actionHasFromZones = commonActionHasFromZones;
           const fromZoneExcludeCodes = commonFromZoneExcludeCodes;
-          const tgtL2Options = curTgt.l1 === 'most' ? MOST_PLAYER_METRICS : [
+          const tgtL2Options = curTgt.l1 === 'most' ? MOST_PLAYER_METRICS : tgtL2Uniq([
             ...(TARGET_SEL_L2[curTgt.l1] || []),
             ...(actionHasFromZones ? (TARGET_SEL_L2_FROM_ZONES[curTgt.l1] || []).filter((o) => !fromZoneExcludeCodes?.has(o.code)) : []),
-          ];
+          ]);
           // デジモン/テイマーだけは複数選択可（例:「相手のデジモン/テイマーを1体消滅させる」）。
           // カード/セキュリティ/プレイヤーは従来通り単一選択（デジモン/テイマーの複数選択とは排他）
           const exclusiveL2Options = tgtL2Options.filter((o) => !TYPE_SEL_CODES.includes(o.code));
@@ -11057,7 +11093,7 @@ function ConditionsHybridEditor({
                           </div>
                         );
                       })()}
-                      {cat.code === 'ref' && refZoneOf(c) === 'battle_area' && refQuantOf(c) === 'ge' && (
+                      {cat.code === 'ref' && refZoneOf(c) === 'battle_area' && (refQuantOf(c) === 'ge' || ((refQuantOf(c) === 'eq' || refQuantOf(c) === 'le') && String(c.value) === '0')) && (
                         <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} />
                       )}
                       {sameAsTargetSubject && (

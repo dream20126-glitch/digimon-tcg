@@ -110,7 +110,9 @@ function buildConditionChainSegments(chain: ConditionChainEntry[]): ConditionPai
 // 自分のフィルタとして消費してしまう（他の無関係な条件と併用不可）という制約があるため、
 // 「参照+属性フィルタ」は単独使用前提の特殊なグループとして識別・展開する
 export const REF_EXISTS_FILTER_MARKER = '__ref_exists_filter__';
-export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_feature', 'cond_cost_le', 'cond_cost_ge']);
+export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_feature', 'cond_cost_le', 'cond_cost_ge', 'cond_has_evo']);
+// 参照「バトルエリア 0体（完全一致/以下）」＋属性＝「〜な相手のデジモンがいないなら」→ cond_not_exists（⚠ エンジン未実装）
+const isRefNoneRow = (p: ConditionPair) => !!p && (p.base === 'cond_battle_area_eq' || p.base === 'cond_battle_area_le') && String(p.value) === '0';
 
 // 参照(cond_battle_area_ge, 以上/1)の行に属性フィルタ(REF_EXISTS_FILTER_MARKER付き)が
 // 添付されていれば、その行を cond_exists に差し替え、属性フィルタはsubjectを外した
@@ -120,11 +122,11 @@ function expandRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[
   if (!Array.isArray(pairs) || pairs.length === 0) return pairs;
   const hasAttrs = pairs.some((p) => p && p.subject === REF_EXISTS_FILTER_MARKER && REF_EXISTS_FILTER_CODES.has(p.base));
   if (!hasAttrs) return pairs;
-  const refIdx = pairs.findIndex((p) => p && p.base === 'cond_battle_area_ge' && p.subject !== REF_EXISTS_FILTER_MARKER);
+  const refIdx = pairs.findIndex((p) => p && (p.base === 'cond_battle_area_ge' || isRefNoneRow(p)) && p.subject !== REF_EXISTS_FILTER_MARKER);
   if (refIdx === -1) return pairs;
   const refPair = pairs[refIdx];
   return pairs.map((p, i) => {
-    if (i === refIdx) return { base: 'cond_exists', subject: refPair.subject };
+    if (i === refIdx) return { base: isRefNoneRow(refPair) ? 'cond_not_exists' : 'cond_exists', subject: refPair.subject };
     if (p.subject === REF_EXISTS_FILTER_MARKER && REF_EXISTS_FILTER_CODES.has(p.base)) {
       return { base: p.base, value: p.value };
     }
@@ -137,6 +139,14 @@ function expandRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[
 // REF_EXISTS_FILTER_MARKERを付け直して「参照行に添付」の表示に復元する
 function collapseRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[] {
   if (!Array.isArray(pairs) || pairs.length === 0) return pairs;
+  const notIdx = pairs.findIndex((p) => p && p.base === 'cond_not_exists');
+  if (notIdx !== -1) {
+    return pairs.map((p, i) => {
+      if (i === notIdx) return { base: 'cond_battle_area_eq', value: '0', subject: p.subject };
+      if (REF_EXISTS_FILTER_CODES.has(p.base)) return { ...p, subject: REF_EXISTS_FILTER_MARKER };
+      return p;
+    });
+  }
   const existsIdx = pairs.findIndex((p) => p && p.base === 'cond_exists');
   if (existsIdx === -1) return pairs;
   // 入れ子形式「cond_exists:cond_color:赤,紫@own」（＝赤/紫の自分のデジモンがいる）:

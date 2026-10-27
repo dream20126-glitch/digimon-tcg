@@ -478,6 +478,8 @@ export interface AltAction {
   action: string;
   // 新しいアクション専用の項目（ACTION_PARAM_KEYS。cost_kinds / cap_kind 等）。JSON では step のトップレベルにそのまま出す
   actionParams?: Record<string, any>;
+  // デッキオープン等のルール（EffectBlock.rules と同じ。効果2以降でも使える。LM-020）
+  rules?: MiniStep[];
   // 効果2以降の効果発動ポップアップの表示テキスト（その効果に進むときに出す）。JSONでは step.display_text
   displayText?: string;
   // アクションの値の数え方（EffectBlock.valueMode と同じ）。JSONでは value_mode。⚠ エンジン未実装

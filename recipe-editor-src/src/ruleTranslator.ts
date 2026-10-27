@@ -11,6 +11,10 @@ import type { MiniStep, ConditionPair, RuleGroup, RuleActionKind } from './types
 
 // 条件 (cond_xxx:value) の配列を filter オブジェクトへ変換
 // recipe-editor-src 側のフィルタ仕様: { color, type, lv_le, lv_ge, dp_le, dp_ge, feature_contains, name_contains }
+// 数値の代わりに使える参照（recipe.ts の LV_REF_MARKERS / COST_REF_MARKERS / DP_REF_MARKERS と同じ値）
+const LV_REF = new Set(['trigger_source_lv', 'self_lv', 'last_action_lv', 'cost_card_lv']);
+const COST_REF = new Set(['self_evo_count', 'last_action_cost', 'cost_card_cost']);
+const DP_REF = new Set(['self', 'own', 'opp', 'other', 'last_action', 'cost_card']);
 function condsToFilter(conds?: ConditionPair[]): Record<string, any> {
   const f: Record<string, any> = {};
   if (!Array.isArray(conds)) return f;
@@ -23,16 +27,16 @@ function condsToFilter(conds?: ConditionPair[]): Record<string, any> {
       case 'cond_color':            if (v) f.color = String(v); break;
       case 'cond_type':             if (v) f.type = String(v); break;
       // 完全一致は le + ge の両方を同時にセットして AND 評価。Lvの値は数値か参照マーカー（recipe.ts LV_REF_MARKERS）
-      case 'cond_lv':               { const n = (v === 'trigger_source_lv' || v === 'self_lv') ? v : num(v); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
-      case 'cond_lv_le':            { const n = (v === 'trigger_source_lv' || v === 'self_lv') ? v : num(v); if (n !== undefined) f.lv_le = n; break; }
-      case 'cond_lv_ge':            { const n = (v === 'trigger_source_lv' || v === 'self_lv') ? v : num(v); if (n !== undefined) f.lv_ge = n; break; }
-      case 'cond_dp':               { const n = num(v); if (n !== undefined) { f.dp_le = n; f.dp_ge = n; } break; }
-      case 'cond_dp_le':            { const n = num(v); if (n !== undefined) f.dp_le = n; break; }
-      case 'cond_dp_ge':            { const n = num(v); if (n !== undefined) f.dp_ge = n; break; }
+      case 'cond_lv':               { const n = LV_REF.has(String(v)) ? v : num(v); if (n !== undefined) { f.lv_le = n; f.lv_ge = n; } break; }
+      case 'cond_lv_le':            { const n = LV_REF.has(String(v)) ? v : num(v); if (n !== undefined) f.lv_le = n; break; }
+      case 'cond_lv_ge':            { const n = LV_REF.has(String(v)) ? v : num(v); if (n !== undefined) f.lv_ge = n; break; }
+      case 'cond_dp':               { const n = DP_REF.has(String(v)) ? v : num(v); if (n !== undefined) { f.dp_le = n; f.dp_ge = n; } break; }
+      case 'cond_dp_le':            { const n = DP_REF.has(String(v)) ? v : num(v); if (n !== undefined) f.dp_le = n; break; }
+      case 'cond_dp_ge':            { const n = DP_REF.has(String(v)) ? v : num(v); if (n !== undefined) f.dp_ge = n; break; }
       // 値は数値か参照マーカー（'self_evo_count'＝このカードの進化元の枚数。recipe.ts COST_REF_MARKERS）
-      case 'cond_cost':             { const n = v === 'self_evo_count' ? v : num(v); if (n !== undefined) { f.cost_le = n; f.cost_ge = n; } break; }
-      case 'cond_cost_le':          { const n = v === 'self_evo_count' ? v : num(v); if (n !== undefined) f.cost_le = n; break; }
-      case 'cond_cost_ge':          { const n = v === 'self_evo_count' ? v : num(v); if (n !== undefined) f.cost_ge = n; break; }
+      case 'cond_cost':             { const n = COST_REF.has(String(v)) ? v : num(v); if (n !== undefined) { f.cost_le = n; f.cost_ge = n; } break; }
+      case 'cond_cost_le':          { const n = COST_REF.has(String(v)) ? v : num(v); if (n !== undefined) f.cost_le = n; break; }
+      case 'cond_cost_ge':          { const n = COST_REF.has(String(v)) ? v : num(v); if (n !== undefined) f.cost_ge = n; break; }
       case 'cond_feature_contains': if (v) f.feature_contains = String(v); break;
       case 'cond_name_contains':    if (v) f.name_contains = String(v); break;
       // 名前（完全一致）/除外・記述・色以外（FILTER_COND_CODESに入っているのに変換が無く、

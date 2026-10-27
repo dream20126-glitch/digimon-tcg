@@ -509,6 +509,8 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
     Object.assign(inner, resolveCommonPlusChainTriple(gs.conditions, gs.conditionsChain));
     out.granted_recipe = { [gs.trigger]: [inner] };
   }
+  // 効果2以降のデッキオープン等のルール（selections / return_to 等に翻訳）
+  if (a.action && Array.isArray(a.rules) && a.rules.length > 0) applyRulesToStep(a.action, a.rules, out);
   if (a.actionParams) Object.assign(out, a.actionParams);
   return out;
 }
@@ -522,7 +524,8 @@ const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'con
 // 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する。
 // own_pick/opp_pick = 複数該当する場合にプレイヤーが任意で1体選ぶ版（BlockEditor.tsx の
 // dpRefBaseOf/dpRefIsPickと対応）
-const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other', 'own_pick', 'opp_pick']);
+// last_action＝直前の効果で処理したカード / cost_card＝コストで処理したカード（「戻したカードのDP以下の〜」等）
+const DP_REF_MARKERS = new Set<string | undefined>(['self', 'own', 'opp', 'other', 'own_pick', 'opp_pick', 'last_action', 'cost_card']);
 // DP参照（自分/相手）に「属性で絞り込む」（色/Lv/コスト/特徴）を添付する際のマーカー。
 // REF_EXISTS_FILTER_MARKERと同様にconditions配列内でsubjectに付けて目印にするが、
 // cond_existsへの変換は行わず、buildFilterObjectWithDpRefFilterで dp_ref_filter という
@@ -611,10 +614,18 @@ function parseConditionChainFilter(f: any): { pairs: ConditionPair[]; chain?: Co
   return { pairs: parseFilterObject(f) };
 }
 // コストの条件の値に使える参照（数値の代わり）。'self_evo_count'＝このカード（効果を持つカード）の進化元の枚数
-export const COST_REF_MARKERS: Record<string, string> = { self_evo_count: 'このカードの進化元の枚数' };
+export const COST_REF_MARKERS: Record<string, string> = {
+  self_evo_count: 'このカードの進化元の枚数',
+  // 「戻したカードのコスト以下の〜」等: 直前の効果／コストで処理したカードのコスト
+  last_action_cost: '直前の効果で処理したカードのコスト',
+  cost_card_cost: 'コストで処理したカードのコスト',
+};
 // Lvの条件の値に使える参照（数値の代わり）。
 // 'trigger_source_lv'＝そのデジモン（トリガーの発生元。「アタックしたそのデジモン」等）のLv / 'self_lv'＝このカード（効果を持つカード）のLv
-export const LV_REF_MARKERS: Record<string, string> = { trigger_source_lv: 'そのデジモンのLv', self_lv: 'このカードのLv' };
+export const LV_REF_MARKERS: Record<string, string> = {
+  trigger_source_lv: 'そのデジモンのLv', self_lv: 'このカードのLv',
+  last_action_lv: '直前の効果で処理したカードのLv', cost_card_lv: 'コストで処理したカードのLv',
+};
 function lvVal(v: any): number | string | undefined {
   if (typeof v === 'string' && LV_REF_MARKERS[v]) return v;
   const n = parseInt(String(v ?? ''), 10);
@@ -958,19 +969,26 @@ function returnDeckFromToZoneTarget(o: any): any {
 }
 
 // 新しいアクション専用の項目（エディタでは EffectBlock/AltAction.actionParams、JSON では step のトップレベル）
-//   cost_kinds: 支払うコスト-（pay_cost_minus）の対象 ['play','evolve']
-//   value_from: 値の参照元（'cost_card_play_cost'＝コストで処理したカードの登場コスト分マイナス）
-//   cap_kind / cap_scope: 効果の上限を修正（effect_cap_modify）
+//   value_from: 値を参照で決める { ref:'last_action'|'cost_card', attr:'cost'|'dp'|'lv', sign?:'minus' }（旧 'cost_card_play_cost' は読込時に変換）
+//   cap_action / cap_attr / cap_scope: 効果の上限を修正（effect_cap_modify）。cap_action＝どのアクションか（destroy/dp_minus 等）、
+//     cap_attr＝対象を絞る上限の基準（dp/cost/lv。消滅等のときだけ）。旧 cap_kind（dp_destroy_max 等）は読込時に変換
 //   categories: カードカテゴリーを宣言（declare_category）の選択肢
 //   deck_owner / security_owner: 相手のデッキ・セキュリティを扱う（deck_open / security_open）
 //   pick_to / rest_to: security_open で選んだカードの置き先・残りの戻し先
-export const ACTION_PARAM_KEYS = ['cost_kinds', 'value_from', 'cap_kind', 'cap_scope', 'categories', 'deck_owner', 'security_owner', 'pick_to', 'rest_to'];
+export const ACTION_PARAM_KEYS = ['value_from', 'cap_action', 'cap_attr', 'cap_scope', 'categories', 'deck_owner', 'security_owner', 'pick_to', 'rest_to'];
 // 効果2以降（alt_actions）には効果1の専用欄（immuneCardType 等）が無いので、その分も actionParams で持つ
 const ALT_ONLY_PARAM_KEYS = ['source_type'];
 function pickActionParams(step: any, extraKeys: string[] = []): Record<string, any> | undefined {
   if (!step || typeof step !== 'object') return undefined;
   const out: Record<string, any> = {};
   [...ACTION_PARAM_KEYS, ...extraKeys].forEach((k) => { if (step[k] !== undefined) out[k] = step[k]; });
+  if (out.value_from === 'cost_card_play_cost') out.value_from = { ref: 'cost_card', attr: 'cost', sign: 'minus' };
+  // 旧 cap_kind（2026-10-27 の初版）→ cap_action + cap_attr
+  const OLD_CAP: Record<string, [string, string?]> = { dp_destroy_max: ['destroy', 'dp'], cost_destroy_max: ['destroy', 'cost'], lv_max: ['destroy', 'lv'], dp_minus_amount: ['dp_minus'], dp_plus_amount: ['dp_plus'] };
+  if (step.cap_kind && OLD_CAP[step.cap_kind] && !out.cap_action) {
+    out.cap_action = OLD_CAP[step.cap_kind][0];
+    if (OLD_CAP[step.cap_kind][1]) out.cap_attr = OLD_CAP[step.cap_kind][1];
+  }
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -2291,6 +2309,7 @@ function stepObjectToAltAction(step: any): AltAction {
     fromZonesOp: step?.from_op === 'and' ? 'and' : 'or',
     fromZoneOwner: step?.from_owner === 'self' || step?.from_owner === 'opponent' ? step.from_owner : undefined,
     actionParams: pickActionParams(step, ALT_ONLY_PARAM_KEYS),
+    rules: rulesFromStep(step?.action, step)?.rules,
     deckPosition: step?.position === 'top' ? 'top'
       : step?.position === 'bottom' ? 'bottom'
       : step?.position === 'select' ? 'both'
@@ -2504,6 +2523,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
   const primaryTrigger = triggerParts[0] || trigger;
   const KNOWN: Record<string, boolean> = {
     ...Object.fromEntries(ACTION_PARAM_KEYS.map((k) => [k, true])),
+    cap_kind: true, // 旧形式（pickActionParams で cap_action/cap_attr に変換）
     as_type: true,
     action: true,
     condition: true,
@@ -2893,6 +2913,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             fromZonesOp: a?.from_op === 'and' ? 'and' as const : 'or' as const,
             fromZoneOwner: a?.from_owner === 'self' || a?.from_owner === 'opponent' ? a.from_owner : undefined,
             actionParams: pickActionParams(a, ALT_ONLY_PARAM_KEYS),
+            rules: rulesFromStep(a?.action, a)?.rules,
             deckPosition: a?.position === 'top' ? 'top' as const
               : a?.position === 'bottom' ? 'bottom' as const
               : a?.position === 'select' ? 'both' as const

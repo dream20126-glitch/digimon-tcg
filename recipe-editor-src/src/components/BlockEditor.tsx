@@ -148,22 +148,22 @@ function EvoSourceOwnerPicker({ label, owner, zoneOwner, cardType, accent, onCha
 
 // 新しいアクション専用の項目（recipe.ts ACTION_PARAM_KEYS）。効果1・効果2以降どちらでも使う。
 // 各項目は step のトップレベル（cost_kinds 等）にそのまま保存する。⚠ どれもエンジン未実装
-type ActionParamDef = { key: string; label: string; multi?: boolean; options: { code: string; label: string }[]; hint?: string };
+type ActionParamDef = { key: string; label: string; multi?: boolean; options: { code: string; label: string }[]; hint?: string; showIf?: (p: Record<string, any>) => boolean };
+// 効果の上限を修正: 対象を絞る上限があるアクション（「DP〜以下を消滅」等）は基準（DP/コスト/Lv）も選ぶ。
+// それ以外（DP-/DP+/メモリー+ 等）は数値そのもの（量）を修正する
+const CAP_TARGET_ACTIONS = new Set(['destroy', 'bounce', 'return_deck', 'rest', 'summon', 'evo_discard']);
 const ACTION_PARAM_DEFS: Record<string, ActionParamDef[]> = {
-  pay_cost_minus: [
-    { key: 'cost_kinds', label: 'どのコストを減らすか（両方押す＝登場/進化どちらでも）', multi: true,
-      options: [{ code: 'play', label: '登場' }, { code: 'evolve', label: '進化' }],
-      hint: 'トリガーは「登場時」「進化時」の「するとき」（when_play / before_evolve）と組み合わせる' },
-  ],
   effect_cap_modify: [
-    { key: 'cap_kind', label: '何の上限/数値か',
+    { key: 'cap_action', label: 'どのアクションの上限/数値か',
       options: [
-        { code: 'dp_destroy_max', label: 'DP消滅効果の上限（DP〜以下を消滅）' },
-        { code: 'cost_destroy_max', label: 'コスト消滅効果の上限（コスト〜以下を消滅）' },
-        { code: 'lv_max', label: 'Lv上限（Lv〜以下を対象）' },
-        { code: 'dp_minus_amount', label: 'DP-の量' },
-        { code: 'dp_plus_amount', label: 'DP+の量' },
-      ] },
+        { code: 'destroy', label: '消滅' }, { code: 'bounce', label: '手札に戻す' }, { code: 'return_deck', label: 'デッキに戻す' },
+        { code: 'rest', label: 'レスト' }, { code: 'summon', label: '登場' }, { code: 'evo_discard', label: '進化元破棄' },
+        { code: 'dp_minus', label: 'DP-' }, { code: 'dp_plus', label: 'DP+' }, { code: 'memory_plus', label: 'メモリー+' },
+        { code: 'draw', label: 'ドロー' }, { code: 'recover', label: 'リカバリー' }, { code: 'security_attack_plus', label: 'Sアタック+' },
+      ],
+      hint: '消滅・手札に戻す等は「DP〜以下を」等の上限、DP-・メモリー+等は数値そのもの（量）を増減する' },
+    { key: 'cap_attr', label: '何の上限か', showIf: (p) => CAP_TARGET_ACTIONS.has(p.cap_action),
+      options: [{ code: 'dp', label: 'DP' }, { code: 'cost', label: 'コスト' }, { code: 'lv', label: 'Lv' }] },
     { key: 'cap_scope', label: 'どの効果に掛かるか',
       options: [{ code: 'self', label: 'このデジモンの効果' }, { code: 'own', label: '自分の効果全て' }] },
   ],
@@ -180,25 +180,57 @@ const ACTION_PARAM_DEFS: Record<string, ActionParamDef[]> = {
   deck_open: [
     { key: 'deck_owner', label: '誰のデッキか', options: [{ code: '', label: '自分' }, { code: 'opp', label: '相手' }] },
   ],
-  summon_appear: [
-    { key: 'value_from', label: '支払うコストの軽減（値の欄の代わり）',
-      options: [{ code: '', label: 'なし（値の欄）' }, { code: 'cost_card_play_cost', label: 'コストで処理したカードの登場コスト分マイナス' }],
-      hint: '「テイマー1体をデッキの下に戻すことで、戻したテイマーの登場コスト分マイナスして登場させる」等' },
-  ],
 };
-ACTION_PARAM_DEFS.summon = ACTION_PARAM_DEFS.summon_appear;
+// 「値」を数値の代わりに、直前の効果／コストで処理したカードのコスト・DP・Lvから決める（全アクション共通）。
+// JSON: value_from:{ ref:'last_action'|'cost_card', attr:'cost'|'dp'|'lv', sign?:'minus' }
+//   例: LM-006「戻したテイマーの登場コスト分、支払う登場コストをマイナス」= { ref:'cost_card', attr:'cost', sign:'minus' }
+const VALUE_REF_SOURCES = [{ code: 'last_action', label: '直前の効果で処理したカード' }, { code: 'cost_card', label: 'コストで処理したカード' }];
+const VALUE_REF_ATTRS = [{ code: 'cost', label: 'コスト' }, { code: 'dp', label: 'DP' }, { code: 'lv', label: 'Lv' }];
+function ValueRefPanel({ params, onChange }: { params?: Record<string, any>; onChange: (next: Record<string, any> | undefined) => void }) {
+  const cur = params || {};
+  const vf = cur.value_from && typeof cur.value_from === 'object' ? cur.value_from : undefined;
+  const setVf = (next: Record<string, any> | undefined) => {
+    const p = { ...cur };
+    if (next) p.value_from = next; else delete p.value_from;
+    onChange(Object.keys(p).length > 0 ? p : undefined);
+  };
+  return (
+    <div className="field" style={{ marginTop: 8, background: '#fff7ed', padding: 8, borderRadius: 4, border: '1px solid #fdba74' }}>
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 'bold', color: '#9a3412', cursor: 'pointer' }}>
+        <input type="checkbox" checked={!!vf} onChange={(e) => setVf(e.target.checked ? { ref: 'last_action', attr: 'cost' } : undefined)} style={{ margin: 0 }} />
+        🔗 値を参照で決める（「戻したカードのコスト分」「破棄したカードのDP分」等）
+      </label>
+      {vf && (
+        <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <ButtonGroup options={VALUE_REF_SOURCES} value={vf.ref || ''} onChange={(v) => setVf({ ...vf, ref: v })} accentColor="#9a3412" />
+          <ButtonGroup options={VALUE_REF_ATTRS} value={vf.attr || ''} onChange={(v) => setVf({ ...vf, attr: v })} accentColor="#9a3412" />
+          <ButtonGroup
+            options={[{ code: '', label: 'そのまま（＋）' }, { code: 'minus', label: 'マイナス（コスト軽減・DP-等）' }]}
+            value={vf.sign || ''}
+            onChange={(v) => { const n = { ...vf }; if (v) n.sign = v; else delete n.sign; setVf(n); }}
+            accentColor="#9a3412"
+          />
+          <div style={{ fontSize: 10, color: '#666' }}>値の欄は使いません。⚠ エンジン未実装（保存はできますが動作しません）</div>
+        </div>
+      )}
+    </div>
+  );
+}
 function ActionParamsPanel({ action, params, onChange }: { action: string; params?: Record<string, any>; onChange: (next: Record<string, any> | undefined) => void }) {
+  if (!action || action.startsWith('cant_')) return null;
   const defs = ACTION_PARAM_DEFS[action];
-  if (!defs) return null;
+  if (!defs) return <ValueRefPanel params={params} onChange={onChange} />;
   const cur = params || {};
   const set = (key: string, v: any) => {
     const next = { ...cur };
     if (v === undefined || v === '' || (Array.isArray(v) && v.length === 0)) delete next[key]; else next[key] = v;
+    // 表示されなくなった項目（例: 消滅→DP- に変えたときの「何の上限か」）は消す
+    defs.forEach((d) => { if (d.showIf && !d.showIf(next)) delete next[d.key]; });
     onChange(Object.keys(next).length > 0 ? next : undefined);
   };
   return (
     <div className="field" style={{ marginTop: 8, background: '#f3e8ff', padding: 8, borderRadius: 4, border: '1px solid #d8b4fe' }}>
-      {defs.map((d) => (
+      {defs.filter((d) => !d.showIf || d.showIf(cur)).map((d) => (
         <div key={d.key} style={{ marginBottom: 6 }}>
           <div style={{ fontWeight: 'bold', color: '#6b21a8', marginBottom: 4, fontSize: 12 }}>{d.label}</div>
           {d.multi ? (
@@ -218,6 +250,7 @@ function ActionParamsPanel({ action, params, onChange }: { action: string; param
         </div>
       ))}
       <div style={{ fontSize: 10, color: '#c62828' }}>⚠ この項目はエンジン未実装です（保存はできますが動作しません）</div>
+      <ValueRefPanel params={params} onChange={onChange} />
     </div>
   );
 }
@@ -3448,7 +3481,8 @@ const UNDER_PLACE_ACTIONS = new Set(['place_under_digimon', 'place_under_tamer',
 // 辞書のhasFromZonesフラグに頼らず「場所」ボタンを常に表示する
 // jogress_evolve: 効果での「手札の〇〇にジョグレス進化できる」も、進化と同じく取得元（手札等）と取得元カードの条件を指定する
 // （EX12-001 ニャロモン「このデジモンと他の自分のデジモンで、手札の特徴『VB』を持つデジモンカードにジョグレス進化できる」）
-const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'summon_appear', 'summon_use', 'evolve', 'link', 'jogress_evolve']);
+// appear_or_evolve: 「登場」「進化」ボタンを両方押したもの（登場か進化。「するとき」なら支払う登場/進化コスト-N）
+const BUILTIN_FROM_ZONE_ACTIONS = new Set(['summon', 'summon_appear', 'summon_use', 'evolve', 'link', 'jogress_evolve', 'appear_or_evolve']);
 // よく使う期間（対象と同じ2段ボタン式）
 const DURATION_L1 = [
   { code: 'dur_this_turn', label: 'このターン中' },
@@ -3878,6 +3912,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     if (isEditingAlt) updateAltAction(editingEffect - 1, patch);
     else onChange({ ...block, ...patch });
   }
+  // ルール（デッキオープン等）は編集中の効果のものを出す（効果2以降のデッキオープンでもルールを付けられる。LM-020）
+  const effRuleSteps: MiniStep[] = isEditingAlt ? (editingAlt!.rules || []) : ruleSteps;
+  const effActionAllowsRules = isEditingAlt
+    ? (!!findActionEntry(effectAction)?.allowsRules || hasRuleTranslator(effectAction))
+    : actionAllowsRules;
+  function setEffRuleSteps(next: MiniStep[]) { if (isEditingAlt) updateEffect({ rules: next }); else setRuleSteps(next); }
   // アクション変更（ルールクリア判定は効果1=block自身のときのみ。代替アクションにルールは無い）
   function changeEffectAction(newAction: string) {
     if (isEditingAlt) { updateEffect({ action: newAction }); return; }
@@ -6040,7 +6080,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           // よく使うアクション（トリガー家族ボタンと同じ操作感）: 該当すればボタン1つで即選択、
           // 無ければ「その他のアクション」を開いて既存のプルダウン(+位置バリアント)から選ぶ
-          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || isDiscardActive || isPlaceActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block' || SUMMON_KIND_CODES.has(effectAction);
+          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || effectAction === 'appear_or_evolve' || isDiscardActive || isPlaceActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block' || SUMMON_KIND_CODES.has(effectAction);
           function selectCommonAction(code: string) {
             if (isEditingAlt) { updateEffect({ action: code, value: '' }); return; }
             const dictEntry = findActionEntry(code);
@@ -6328,9 +6368,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       action:'summon'（従来通りどちらも対象）、片方だけだとsummon_appear/
                       summon_use（デジモン/テイマー限定・オプション限定）になる */}
                   {(() => {
-                    const appearOn = effectAction === 'summon' || effectAction === 'summon_appear';
+                    const appearOn = effectAction === 'summon' || effectAction === 'summon_appear' || effectAction === 'appear_or_evolve';
                     const useOn = effectAction === 'summon' || effectAction === 'summon_use';
                     const toggleSummonKind = (kind: 'appear' | 'use', on: boolean) => {
+                      // 登場＋進化（appear_or_evolve）⇔ 進化 の切り替え。値（「するとき」の -2 等）は残す
+                      if (kind === 'appear' && on && effectAction === 'evolve') { updateEffect({ action: 'appear_or_evolve' }); return; }
+                      if (kind === 'appear' && !on && effectAction === 'appear_or_evolve') { updateEffect({ action: 'evolve' }); return; }
                       const nextAppear = kind === 'appear' ? on : appearOn;
                       const nextUse = kind === 'use' ? on : useOn;
                       const nextAction = nextAppear && nextUse ? 'summon' : nextAppear ? 'summon_appear' : nextUse ? 'summon_use' : '';
@@ -6350,12 +6393,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     // レスト/アクティブ/進化/アタック/ブロックは複数選択できるトグル式ボタン
                     // （選んでいても「できない」形（cant_X等）になっていることがあるため、
                     // selectedSetでの判定にする。それ以外のボタンは従来通り単一選択）
-                    const active = isCantToggleGroup ? selectedSet.includes(a.code) : effectAction === a.code;
+                    const active = (isCantToggleGroup ? selectedSet.includes(a.code) : effectAction === a.code)
+                      || (a.code === 'evolve' && effectAction === 'appear_or_evolve');
                     return (
                       <button
                         key={a.code}
                         type="button"
-                        onClick={() => (isCantToggleGroup ? toggleCantAction(a.code) : selectCommonAction(a.code))}
+                        onClick={() => {
+                          // 「登場」と「進化」は両方押せる（appear_or_evolve＝登場/進化。「するとき」なら値-2で「支払う登場/進化コスト-2」）
+                          if (a.code === 'evolve' && effectAction === 'summon_appear') { updateEffect({ action: 'appear_or_evolve' }); return; }
+                          if (a.code === 'evolve' && effectAction === 'appear_or_evolve') { updateEffect({ action: 'summon_appear' }); return; }
+                          if (isCantToggleGroup) toggleCantAction(a.code); else selectCommonAction(a.code);
+                        }}
                         style={{
                           padding: '3px 9px', borderRadius: 5,
                           border: active ? '2px solid #1976d2' : '1px solid #bbb',
@@ -6515,7 +6564,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         <div style={{ fontSize: 10, color: '#c62828', marginBottom: 2 }}>⚠ 置き場所がセキュリティ/デッキ/バトルエリアのときは使いません（置くカードは🎯対象で選ぶ）。外してください</div>
                       )}
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {FROM_ZONES.map((z) => {
+                        {/* 〜の下に置く: 置くカードを「このカード（このデジモン）」にもできる（LM-026「このデジモンを登場したデジモンの進化元の下に置く」）。JSON は from:'self_card' */}
+                        {[...(UNDER_PLACE_ACTIONS.has(effectAction || '') ? [{ code: 'self_card', label: 'このカード（このデジモン自身）' }] : []), ...FROM_ZONES].map((z) => {
                           const active = zones.includes(z.code);
                           return (
                             <button
@@ -6847,7 +6897,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         {/* === 📐 ルール（アクション欄＝「その他のアクション」欄のすぐ下に配置。
             メインアクションが対応している場合のみ。block.action（効果1）に紐づく設定のため、
             効果2以降を編集中は非表示にする（効果1を選び直せば再表示される） === */}
-        {actionAllowsRules && !isEditingAlt && (
+        {effActionAllowsRules && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
             <label>📐 ルール（メインアクションに紐づく追加処理）</label>
             <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
@@ -6855,24 +6905,31 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               例（デッキオープン）: ルール「アクション=手札に加える / 値=1 / 条件: 色=緑, タイプ=デジモン」
             </div>
             <div style={{ border: '1px solid #d8e0f0', borderRadius: 4, padding: 8, background: '#f3f6fc' }}>
-              {ruleSteps.length === 0 && (
+              {effRuleSteps.length === 0 && (
                 <div style={{ color: '#888', fontSize: 11, padding: '4px 0' }}>（ルール未追加）</div>
               )}
-              {ruleSteps.map((rs, i) => (
-                <RuleStepEditor
-                  key={i}
-                  index={i}
-                  step={rs}
-                  dict={dict}
-                  onChange={(patch) => updateRuleStep(i, patch)}
-                  onRemove={() => removeRuleStep(i)}
-                  onUp={i > 0 ? () => moveRuleStep(i, -1) : undefined}
-                  onDown={i < ruleSteps.length - 1 ? () => moveRuleStep(i, 1) : undefined}
-                  isAttackTrigger={isAttackTrigger}
-                />
-              ))}
+              {effRuleSteps.map((rs, i) => {
+                const move = (dir: -1 | 1) => {
+                  const next = effRuleSteps.slice();
+                  [next[i], next[i + dir]] = [next[i + dir], next[i]];
+                  setEffRuleSteps(next);
+                };
+                return (
+                  <RuleStepEditor
+                    key={i}
+                    index={i}
+                    step={rs}
+                    dict={dict}
+                    onChange={(patch) => setEffRuleSteps(effRuleSteps.map((x, j) => (j === i ? { ...x, ...patch } : x)))}
+                    onRemove={() => setEffRuleSteps(effRuleSteps.filter((_, j) => j !== i))}
+                    onUp={i > 0 ? () => move(-1) : undefined}
+                    onDown={i < effRuleSteps.length - 1 ? () => move(1) : undefined}
+                    isAttackTrigger={isAttackTrigger}
+                  />
+                );
+              })}
               <button
-                onClick={addRuleStep}
+                onClick={() => setEffRuleSteps([...effRuleSteps, { action: '' }])}
                 style={{
                   padding: '4px 10px', border: '1px dashed #88a', background: 'white',
                   borderRadius: 3, cursor: 'pointer', fontSize: 12, color: '#3b6cd1', marginTop: 4,
@@ -9694,6 +9751,8 @@ const DP_REF_SUBJECTS: { code: string; label: string }[] = [
   { code: 'own', label: '自分' },
   { code: 'opp', label: '相手' },
   { code: 'other', label: '他' },
+  { code: 'last_action', label: '直前の効果で処理したカード' },
+  { code: 'cost_card', label: 'コストで処理したカード' },
 ];
 // DP参照（自分/相手/他）に「属性で絞り込む」（色/Lv/コスト/特徴）を添付する際のマーカー
 // （DP_REF_FILTER_MARKER）は recipe.ts からimport（buildFilterObjectWithDpRefFilterと

@@ -54,6 +54,8 @@ export interface KeywordEntry {
   value?: number | string;
   // キーワードのモード（「ブラスト〇〇」の 'evolve'＝ブラスト進化 / 'jogress'＝ブラストジョグレス 等）。JSON では p.keyword_mode
   mode?: string;
+  // 色の指定（「このカードは黒でも色条件を満たせる」alt_use_color の色。複数可）。JSON では p.colors
+  colors?: string[];
   // 「対象」の絞り込み条件＋枚数の組。複数指定可（例: アセンブリでLv違いの条件を
   // 複数並べる場合）。1組だけの場合は後方互換のため keywordParamConditions/count
   // （下記）と同じJSON出力になる
@@ -286,6 +288,8 @@ export interface EffectBlock {
   keywordEntries?: KeywordEntry[];
   // 単一キーワード時のモード（KeywordEntry.mode と同じ。JSON では p.keyword_mode）
   keywordMode?: string;
+  // 単一キーワード時の色（KeywordEntry.colors と同じ。JSON では p.colors）
+  keywordColors?: string[];
   // trigger==='passive' 専用:「〇〇の間、[キーワード]を得る」のような条件付きパッシブ用。
   // ブロック内の全keywordEntriesに共通で適用され、JSONへは各passiveエントリの
   // p.gate（条件文字列配列・AND）/p.gate_op/p.gate_chainとして出力する。
@@ -302,7 +306,8 @@ export interface EffectBlock {
   // JSONへは指定時のみ step.source_type:'digimon'|'option' として出力する。
   // ⚠ 現状どちらもエンジン未対応（hasActiveImmuneEffectsの呼び出し元がeffectSourceTypeを
   // 渡していないため、保存はできるが絞り込みは機能せず常に相手の効果全てをブロックする）
-  immuneCardType?: 'digimon' | 'option' | '';
+  // 'tamer'＝テイマーの効果のみ / 'declared'＝declare_category で宣言したカテゴリーの効果（LM-020）
+  immuneCardType?: 'digimon' | 'tamer' | 'option' | 'declared' | '';
   // summon 専用:「このカードをコストを支払わずに登場させる」（テイマーのセキュリティ効果等）
   // true のとき JSON へ step.cost_free:true を出力する。対象は 'self' / 'self_card' のとき有効
   costFree?: boolean;
@@ -387,6 +392,8 @@ export interface EffectBlock {
   // 例: 「自分のデジモン全ては『【アタック時】相手DP-2000』を得る」
   grantedStep?: GrantedStep;
   extras?: string; // フリー入力 JSON 文字列
+  // 新しいアクション専用の項目（ACTION_PARAM_KEYS。cost_kinds / cap_kind 等）。JSON では step のトップレベルにそのまま出す
+  actionParams?: Record<string, any>;
   targetFilter?: ConditionPair[]; // アクション対象自身の絞り込み（例:レスト状態のこのデジモン）→ step.filter に serialize
   // targetFilterのAND内包OR版条件チェーン（「Lv4以下のクロノモン、または特徴TS」等）。
   // 設定されていればtargetFilterより優先。JSON では単一セグメントならstep.filterの
@@ -469,6 +476,8 @@ export interface GrantedStep {
 // 代替アクション（メインアクションと OR / AND で結合される簡易 step）
 export interface AltAction {
   action: string;
+  // 新しいアクション専用の項目（ACTION_PARAM_KEYS。cost_kinds / cap_kind 等）。JSON では step のトップレベルにそのまま出す
+  actionParams?: Record<string, any>;
   // 効果2以降の効果発動ポップアップの表示テキスト（その効果に進むときに出す）。JSONでは step.display_text
   displayText?: string;
   // アクションの値の数え方（EffectBlock.valueMode と同じ）。JSONでは value_mode。⚠ エンジン未実装

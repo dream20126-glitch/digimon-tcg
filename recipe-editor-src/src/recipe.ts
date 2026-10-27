@@ -509,6 +509,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
     Object.assign(inner, resolveCommonPlusChainTriple(gs.conditions, gs.conditionsChain));
     out.granted_recipe = { [gs.trigger]: [inner] };
   }
+  if (a.actionParams) Object.assign(out, a.actionParams);
   return out;
 }
 
@@ -643,6 +644,16 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
     switch (c.base) {
       case 'cond_color':            f.color = c.value; break;
       case 'cond_color_not':        f.color_not = c.value; break;
+      // 「1色の〜」: カードの色の数（LM-023）
+      case 'cond_color_count':      { const n = num(c.value); if (n !== undefined) f.color_count = n; break; }
+      // 【ブロッカー】等のキーワードを持つ（複数はOR。LM-014）。値はキーワードコード
+      case 'cond_has_keyword': {
+        const kws = String(c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
+        if (kws.length === 1) f.keyword = kws[0]; else if (kws.length > 1) f.keyword = kws;
+        break;
+      }
+      // 「DP合計〜まで」: 選ぶ複数対象のDPの合計がN以下。値は数値か DP 参照（'self'＝このデジモンのDP）。LM-021
+      case 'cond_dp_sum_le': { if (DP_REF_MARKERS.has(c.value)) { f.dp_sum_le = c.value; } else { const n = num(c.value); if (n !== undefined) f.dp_sum_le = n; } break; }
       case 'cond_dp':       { if (DP_REF_MARKERS.has(c.value)) { f.dp_le = c.value; f.dp_ge = c.value; } else { const n = num(c.value); if (n !== undefined) { f.dp_le = n; f.dp_ge = n; } } break; }
       case 'cond_dp_le':    { if (DP_REF_MARKERS.has(c.value)) { f.dp_le = c.value; } else { const n = num(c.value); if (n !== undefined) f.dp_le = n; } break; }
       case 'cond_dp_ge':    { if (DP_REF_MARKERS.has(c.value)) { f.dp_ge = c.value; } else { const n = num(c.value); if (n !== undefined) f.dp_ge = n; } break; }
@@ -763,6 +774,9 @@ function parseFilterObject(f: any): ConditionPair[] {
   const out: ConditionPair[] = [];
   if (f.color)            out.push({ base: 'cond_color',            value: String(f.color) });
   if (f.color_not)        out.push({ base: 'cond_color_not',        value: String(f.color_not) });
+  if (f.color_count !== undefined) out.push({ base: 'cond_color_count', value: String(f.color_count) });
+  if (f.keyword) out.push({ base: 'cond_has_keyword', value: Array.isArray(f.keyword) ? f.keyword.join(',') : String(f.keyword) });
+  if (f.dp_sum_le !== undefined) out.push({ base: 'cond_dp_sum_le', value: String(f.dp_sum_le) });
   if (Array.isArray(f.type_in) && f.type_in.length > 0) {
     out.push({ base: 'cond_type', value: f.type_in.join(',') });
   } else if (f.type) {
@@ -923,8 +937,45 @@ function negateMainToUseMainEffect(o: any): any {
   return { ...rest, action: 'use_main_effect' };
 }
 
+// 「デッキに戻す」で🎯対象を「自分のトラッシュ」等にしたもの（エディタ）⇔ own_card + from:'trash' + from_owner（エンジン）。
+// エンジンの return_deck は step.from から取るので、保存時に変換する。読込時は逆にして対象欄に「トラッシュ」を出す
+const RETURN_DECK_ZONE_TARGET = /^(own|opponent)_(hand|trash)$/;
+function returnDeckZoneTargetToFrom(o: any): any {
+  if (o.action !== 'return_deck' || typeof o.target !== 'string') return o;
+  const base = o.target.split(':')[0];
+  const m = base.match(RETURN_DECK_ZONE_TARGET);
+  if (!m) return o;
+  return { ...o, target: (m[1] === 'own' ? 'own_card' : 'opponent_card') + o.target.substring(base.length), from: m[2], from_owner: m[1] === 'own' ? 'self' : 'opponent' };
+}
+function returnDeckFromToZoneTarget(o: any): any {
+  if (o.action !== 'return_deck' || typeof o.target !== 'string' || (o.from !== 'hand' && o.from !== 'trash')) return o;
+  const base = o.target.split(':')[0];
+  const owner = base === 'own_card' ? 'self' : base === 'opponent_card' ? 'opponent' : '';
+  if (!owner || (o.from_owner && o.from_owner !== owner)) return o;
+  const { from: _f, from_owner: _fo, ...rest } = o;
+  void _f; void _fo;
+  return { ...rest, target: (owner === 'self' ? 'own_' : 'opponent_') + o.from + o.target.substring(base.length) };
+}
+
+// 新しいアクション専用の項目（エディタでは EffectBlock/AltAction.actionParams、JSON では step のトップレベル）
+//   cost_kinds: 支払うコスト-（pay_cost_minus）の対象 ['play','evolve']
+//   value_from: 値の参照元（'cost_card_play_cost'＝コストで処理したカードの登場コスト分マイナス）
+//   cap_kind / cap_scope: 効果の上限を修正（effect_cap_modify）
+//   categories: カードカテゴリーを宣言（declare_category）の選択肢
+//   deck_owner / security_owner: 相手のデッキ・セキュリティを扱う（deck_open / security_open）
+//   pick_to / rest_to: security_open で選んだカードの置き先・残りの戻し先
+export const ACTION_PARAM_KEYS = ['cost_kinds', 'value_from', 'cap_kind', 'cap_scope', 'categories', 'deck_owner', 'security_owner', 'pick_to', 'rest_to'];
+// 効果2以降（alt_actions）には効果1の専用欄（immuneCardType 等）が無いので、その分も actionParams で持つ
+const ALT_ONLY_PARAM_KEYS = ['source_type'];
+function pickActionParams(step: any, extraKeys: string[] = []): Record<string, any> | undefined {
+  if (!step || typeof step !== 'object') return undefined;
+  const out: Record<string, any> = {};
+  [...ACTION_PARAM_KEYS, ...extraKeys].forEach((k) => { if (step[k] !== undefined) out[k] = step[k]; });
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 export function blocksToRecipe(rawBlocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
-  return mapActionsDeep(_blocksToRecipeRaw(rawBlocks, keywordDict), negateMainToUseMainEffect);
+  return mapActionsDeep(mapActionsDeep(_blocksToRecipeRaw(rawBlocks, keywordDict), negateMainToUseMainEffect), returnDeckZoneTargetToFrom);
 }
 function _blocksToRecipeRaw(rawBlocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
   const blocks = stripEmptyValuePairs(rawBlocks);
@@ -1066,6 +1117,8 @@ function parseDesignatedFields(d: any): { conds: ConditionPair[]; op: 'and' | 'o
 // keyword/value/keywordParamConditions* から1件だけのリストを合成する（後方互換）
 // モードを持つキーワード。withTarget のモードだけ「対象」（designated）を入力・保存する
 // （「ブラスト〇〇」: 進化＝ブラスト進化 / ジョグレス＝ブラストジョグレス《「A」+「B」》）
+// 色を選ぶキーワード（「このカードは黒でも色条件を満たせる」→ alt_use_color + colors:['黒']）
+export const KEYWORD_COLOR_PARAM = new Set(['alt_use_color']);
 export const KEYWORD_MODES: Record<string, { code: string; label: string; withTarget?: boolean }[]> = {
   blast: [{ code: 'evolve', label: '進化' }, { code: 'jogress', label: 'ジョグレス', withTarget: true }],
 };
@@ -1077,6 +1130,7 @@ export function keywordModeAllowsTarget(keyword: string | undefined, mode: strin
 export function getKeywordEntries(b: {
   keyword?: string;
   keywordMode?: string;
+  keywordColors?: string[];
   value?: number | string;
   keywordParamConditions?: ConditionPair[];
   keywordParamConditionsOp?: 'and' | 'or';
@@ -1092,6 +1146,7 @@ export function getKeywordEntries(b: {
     return [{
       keyword: b.keyword,
       mode: b.keywordMode,
+      colors: b.keywordColors,
       value: b.value,
       keywordParamConditions: b.keywordParamConditions,
       keywordParamConditionsOp: b.keywordParamConditionsOp,
@@ -1261,6 +1316,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       const kwEntry = keywordDict && entry.keyword ? keywordDict.find((k) => k.code === entry.keyword) : undefined;
       const p: any = { flag: entry.keyword };
       if (entry.mode) p.keyword_mode = entry.mode;
+      if (entry.colors && entry.colors.length > 0) p.colors = entry.colors;
       Object.assign(p, gateFields);
       // 値 (例: 【Sアタック+2】 の "2"): 数値化できれば number、そうでなければそのまま
       if (entry.value !== undefined && entry.value !== '' && entry.value !== null) {
@@ -1421,7 +1477,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // immune_effects 専用:「相手の効果を受けない」の対象範囲。
   // 省略(既定) = 相手の効果全て（デジモン/テイマー/オプション問わず）
   // 'digimon' = 相手の「デジモン」の効果のみ / 'option' = 相手の「オプション」の効果のみ
-  if (b.action === 'immune_effects' && (b.immuneCardType === 'digimon' || b.immuneCardType === 'option')) {
+  if (b.action === 'immune_effects' && b.immuneCardType) {
     step.source_type = b.immuneCardType;
   }
   // negate（「効果を発揮」）専用: 対象トリガー種別 + する/しない
@@ -1677,6 +1733,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     step.cause = b.destroyCause;
     if (b.destroyCauseSubject) step.cause_subject = b.destroyCauseSubject;
   }
+  if (b.actionParams) Object.assign(step, b.actionParams);
   if (b.extras) {
     try {
       const ex = JSON.parse(b.extras);
@@ -1862,7 +1919,8 @@ export function applyCardLevelSettings(recipe: Record<string, any>, settings: Ca
 // 「手札に戻す」「デッキに戻す」「破棄する」で、手札・トラッシュ・デッキのカードを選ぶ効果かどうか。
 // これらは選ぶカードの条件を「取得元カードの条件」(fromFilter → step.from_filter)に入れる（エディタの欄を1つに統一。
 // 以前は「対象の条件」(targetFilter → step.filter)に入れていたため、読み込み時に移す。エンジンはどちらも読む）
-export const ZONE_SOURCE_ACTIONS = new Set(['return_hand', 'return_deck', 'discard']);
+// セキュリティ/デッキに置く（🎯置くカード＝手札・トラッシュのカード。LM-023「手札の〜をセキュリティの上に置ける」）も同じ扱い
+export const ZONE_SOURCE_ACTIONS = new Set(['return_hand', 'return_deck', 'discard', 'place_on_security_top', 'place_on_deck']);
 const ZONE_SOURCE_ZONES = new Set(['hand', 'trash', 'deck']);
 const ZONE_SOURCE_TARGET_BASES = new Set(['own_hand', 'opp_hand', 'opponent_hand', 'both_hand', 'own_trash', 'opp_trash', 'own_deck', 'opp_deck']);
 // 選ぶカードの条件ではなく、位置・状態の指定なので「対象の条件」側に残すもの
@@ -1925,7 +1983,7 @@ function mergeSameContentSections(blocks: EffectBlock[]): EffectBlock[] {
 }
 export function recipeToBlocks(rawRecipe: any): EffectBlock[] {
   if (!rawRecipe || typeof rawRecipe !== 'object') return [];
-  const recipe = mapActionsDeep(normalizeKeywordAliasesDeep(rawRecipe), useMainEffectToNegate);
+  const recipe = mapActionsDeep(mapActionsDeep(normalizeKeywordAliasesDeep(rawRecipe), useMainEffectToNegate), returnDeckFromToZoneTarget);
   const blocks: EffectBlock[] = [];
 
   if (Array.isArray(recipe.passive)) {
@@ -2232,6 +2290,7 @@ function stepObjectToAltAction(step: any): AltAction {
     fromZones,
     fromZonesOp: step?.from_op === 'and' ? 'and' : 'or',
     fromZoneOwner: step?.from_owner === 'self' || step?.from_owner === 'opponent' ? step.from_owner : undefined,
+    actionParams: pickActionParams(step, ALT_ONLY_PARAM_KEYS),
     deckPosition: step?.position === 'top' ? 'top'
       : step?.position === 'bottom' ? 'bottom'
       : step?.position === 'select' ? 'both'
@@ -2334,7 +2393,7 @@ function parseDesignatedGroupsField(raw: any): DesignatedGroup[] {
 function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): EffectBlock {
   const extras: any = {};
   Object.keys(p || {}).forEach((k) => {
-    if (k !== 'flag' && k !== 'keyword_mode' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'designated_common' && k !== 'designated_common_chain' && k !== 'designated_mode' && k !== 'count'
+    if (k !== 'flag' && k !== 'keyword_mode' && k !== 'colors' && k !== 'in_zone' && k !== 'value' && k !== 'designated' && k !== 'designated_groups' && k !== 'designated_common' && k !== 'designated_common_chain' && k !== 'designated_mode' && k !== 'count'
       && k !== 'gate' && k !== 'gate_op' && k !== 'gate_chain') extras[k] = p[k];
   });
   const groups = parseDesignatedGroupsField(p);
@@ -2350,6 +2409,7 @@ function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): Effect
     trigger: 'passive',
     keyword: (p && p.flag) || '',
     keywordMode: p?.keyword_mode ? String(p.keyword_mode) : undefined,
+    keywordColors: Array.isArray(p?.colors) && p.colors.length > 0 ? p.colors.map(String) : undefined,
     value: p?.value,
     keywordParamConditions: single && single.conditions.length > 0 ? single.conditions : undefined,
     keywordParamConditionsOp: single && single.conditions.length > 0 ? single.conditionsOp : undefined,
@@ -2443,6 +2503,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
   const triggerParts = trigger.split(',').map((t) => t.trim()).filter(Boolean);
   const primaryTrigger = triggerParts[0] || trigger;
   const KNOWN: Record<string, boolean> = {
+    ...Object.fromEntries(ACTION_PARAM_KEYS.map((k) => [k, true])),
     as_type: true,
     action: true,
     condition: true,
@@ -2677,7 +2738,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     keywordCommonConditionsChain: _stepCommonChain,
     keywordCommonConditionsOp: _stepCommonPairs && _stepCommonPairs.conds.length > 0 ? _stepCommonPairs.op : undefined,
     revertAtTurnEnd: !!step?.revert_at_turn_end,
-    immuneCardType: step?.source_type === 'digimon' ? 'digimon' : step?.source_type === 'option' ? 'option' : undefined,
+    immuneCardType: ['digimon', 'tamer', 'option', 'declared'].includes(step?.source_type) ? step.source_type : undefined,
     negateTargetTrigger: (NEGATE_TRIGGERS.includes(step?.target_trigger) ? step.target_trigger : undefined),
     negateDeny: !!step?.deny,
     negateTargetAsType: step?.target_as_type === 'digimon' || step?.target_as_type === 'option' ? step.target_as_type : undefined,
@@ -2715,6 +2776,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     evoSourceCardType: step?.evo_source_card_type === 'digimon' || step?.evo_source_card_type === 'tamer' ? step.evo_source_card_type : undefined,
     linkedOwner: step?.linked_owner === 'self' || step?.linked_owner === 'other' ? step.linked_owner : undefined,
     fromZoneOwner: step?.from_owner === 'self' || step?.from_owner === 'opponent' ? step.from_owner : undefined,
+    actionParams: pickActionParams(step),
     securityPosition: step?.security_position === 'top' || step?.security_position === 'bottom' ? step.security_position : undefined,
     evoSourcePosition: step?.evo_source_position === 'top' || step?.evo_source_position === 'bottom' || step?.evo_source_position === 'select' ? step.evo_source_position : undefined,
     deckSourcePosition: step?.deck_source_position === 'top' || step?.deck_source_position === 'bottom' ? step.deck_source_position : undefined,
@@ -2830,6 +2892,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             fromZones: fromZ,
             fromZonesOp: a?.from_op === 'and' ? 'and' as const : 'or' as const,
             fromZoneOwner: a?.from_owner === 'self' || a?.from_owner === 'opponent' ? a.from_owner : undefined,
+            actionParams: pickActionParams(a, ALT_ONLY_PARAM_KEYS),
             deckPosition: a?.position === 'top' ? 'top' as const
               : a?.position === 'bottom' ? 'bottom' as const
               : a?.position === 'select' ? 'both' as const

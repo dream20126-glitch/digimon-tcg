@@ -178,7 +178,7 @@ export const TRIGGERS: DictEntry[] = [
   { code: 'on_play', kind: 'trigger', label: '登場時' },
   { code: 'when_play', kind: 'trigger', label: '登場するとき（登場前・置換効果用。エンジンは「このテイマーをレストさせることで支払うコスト-N」のみ対応）' },
   { code: 'on_evolve', kind: 'trigger', label: '進化時' },
-  { code: 'when_evolve', kind: 'trigger', label: '進化するとき（進化前・置換効果用・エンジン未実装）' },
+  { code: 'before_evolve', kind: 'trigger', label: '進化するとき（進化前・コスト軽減等。エンジンのキーは before_evolve）' },
   { code: 'on_move', kind: 'trigger', label: '移動時' },
   { code: 'on_attack', kind: 'trigger', label: 'アタック時' },
   { code: 'when_attack', kind: 'trigger', label: 'アタックするとき（アタック前・置換効果用・エンジン未実装）' },

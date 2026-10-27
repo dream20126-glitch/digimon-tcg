@@ -13,7 +13,7 @@ import { isActionImplemented, isKeywordImplemented, isConditionImplemented, isOp
 import { SearchSelect, type SelectOption } from './SearchSelect';
 import { hasRuleTranslator } from '../ruleTranslator';
 import { suggestCode, suggestVisualType, kindToSingular, type DictKind } from './DictManager';
-import { KEYWORD_MODES, keywordModeAllowsTarget, recipeToBlocks, COST_REF_MARKERS, LV_REF_MARKERS } from '../recipe';
+import { KEYWORD_MODES, KEYWORD_COLOR_PARAM, keywordModeAllowsTarget, recipeToBlocks, COST_REF_MARKERS, LV_REF_MARKERS } from '../recipe';
 import { blocksToRecipe, getKeywordEntries, getDesignatedGroups, COST_LIMIT_MOD_ACTIONS, REF_EXISTS_FILTER_MARKER, DP_REF_FILTER_MARKER, isZoneSourceEffect, zoneSourceHasTargetCardConds } from '../recipe';
 
 interface Props {
@@ -142,6 +142,82 @@ function EvoSourceOwnerPicker({ label, owner, zoneOwner, cardType, accent, onCha
       {owner === 'other' && !zoneOwner && (
         <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>（旧設定: 自分/相手どちらでも「他のデジモン」）</div>
       )}
+    </div>
+  );
+}
+
+// 新しいアクション専用の項目（recipe.ts ACTION_PARAM_KEYS）。効果1・効果2以降どちらでも使う。
+// 各項目は step のトップレベル（cost_kinds 等）にそのまま保存する。⚠ どれもエンジン未実装
+type ActionParamDef = { key: string; label: string; multi?: boolean; options: { code: string; label: string }[]; hint?: string };
+const ACTION_PARAM_DEFS: Record<string, ActionParamDef[]> = {
+  pay_cost_minus: [
+    { key: 'cost_kinds', label: 'どのコストを減らすか（両方押す＝登場/進化どちらでも）', multi: true,
+      options: [{ code: 'play', label: '登場' }, { code: 'evolve', label: '進化' }],
+      hint: 'トリガーは「登場時」「進化時」の「するとき」（when_play / before_evolve）と組み合わせる' },
+  ],
+  effect_cap_modify: [
+    { key: 'cap_kind', label: '何の上限/数値か',
+      options: [
+        { code: 'dp_destroy_max', label: 'DP消滅効果の上限（DP〜以下を消滅）' },
+        { code: 'cost_destroy_max', label: 'コスト消滅効果の上限（コスト〜以下を消滅）' },
+        { code: 'lv_max', label: 'Lv上限（Lv〜以下を対象）' },
+        { code: 'dp_minus_amount', label: 'DP-の量' },
+        { code: 'dp_plus_amount', label: 'DP+の量' },
+      ] },
+    { key: 'cap_scope', label: 'どの効果に掛かるか',
+      options: [{ code: 'self', label: 'このデジモンの効果' }, { code: 'own', label: '自分の効果全て' }] },
+  ],
+  declare_category: [
+    { key: 'categories', label: '宣言できるカテゴリー（空＝全て）', multi: true,
+      options: [{ code: 'デジモン', label: 'デジモン' }, { code: 'テイマー', label: 'テイマー' }, { code: 'オプション', label: 'オプション' }, { code: 'デジタマ', label: 'デジタマ' }] },
+  ],
+  security_open: [
+    { key: 'security_owner', label: '誰のセキュリティか', options: [{ code: '', label: '自分' }, { code: 'opp', label: '相手' }] },
+    { key: 'pick_to', label: '選んだ1枚の置き先',
+      options: [{ code: '', label: '（ルール等で指定）' }, { code: 'opp_deck_top', label: '相手のデッキの上' }, { code: 'own_hand', label: '自分の手札' }, { code: 'trash', label: 'トラッシュ' }] },
+    { key: 'rest_to', label: '残りのカード', options: [{ code: '', label: 'そのまま戻す' }, { code: 'shuffle_security', label: 'シャッフルしてセキュリティに戻す' }] },
+  ],
+  deck_open: [
+    { key: 'deck_owner', label: '誰のデッキか', options: [{ code: '', label: '自分' }, { code: 'opp', label: '相手' }] },
+  ],
+  summon_appear: [
+    { key: 'value_from', label: '支払うコストの軽減（値の欄の代わり）',
+      options: [{ code: '', label: 'なし（値の欄）' }, { code: 'cost_card_play_cost', label: 'コストで処理したカードの登場コスト分マイナス' }],
+      hint: '「テイマー1体をデッキの下に戻すことで、戻したテイマーの登場コスト分マイナスして登場させる」等' },
+  ],
+};
+ACTION_PARAM_DEFS.summon = ACTION_PARAM_DEFS.summon_appear;
+function ActionParamsPanel({ action, params, onChange }: { action: string; params?: Record<string, any>; onChange: (next: Record<string, any> | undefined) => void }) {
+  const defs = ACTION_PARAM_DEFS[action];
+  if (!defs) return null;
+  const cur = params || {};
+  const set = (key: string, v: any) => {
+    const next = { ...cur };
+    if (v === undefined || v === '' || (Array.isArray(v) && v.length === 0)) delete next[key]; else next[key] = v;
+    onChange(Object.keys(next).length > 0 ? next : undefined);
+  };
+  return (
+    <div className="field" style={{ marginTop: 8, background: '#f3e8ff', padding: 8, borderRadius: 4, border: '1px solid #d8b4fe' }}>
+      {defs.map((d) => (
+        <div key={d.key} style={{ marginBottom: 6 }}>
+          <div style={{ fontWeight: 'bold', color: '#6b21a8', marginBottom: 4, fontSize: 12 }}>{d.label}</div>
+          {d.multi ? (
+            <MultiButtonGroup
+              options={d.options}
+              values={Array.isArray(cur[d.key]) ? cur[d.key] : []}
+              onToggle={(code, on) => {
+                const arr: string[] = Array.isArray(cur[d.key]) ? cur[d.key] : [];
+                set(d.key, on ? d.options.map((o) => o.code).filter((c) => c === code || arr.includes(c)) : arr.filter((c) => c !== code));
+              }}
+              accentColor="#6b21a8"
+            />
+          ) : (
+            <ButtonGroup options={d.options} value={cur[d.key] || ''} onChange={(v) => set(d.key, v)} accentColor="#6b21a8" />
+          )}
+          {d.hint && <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>{d.hint}</div>}
+        </div>
+      ))}
+      <div style={{ fontSize: 10, color: '#c62828' }}>⚠ この項目はエンジン未実装です（保存はできますが動作しません）</div>
     </div>
   );
 }
@@ -933,6 +1009,7 @@ function KeywordEntriesEditor({
       keywordEntries: next,
       keyword: next[0]?.keyword || '',
       keywordMode: next[0]?.mode,
+      keywordColors: next[0]?.colors,
       value: next[0]?.value,
       keywordParamConditions: next[0]?.keywordParamConditions,
       keywordParamConditionsOp: next[0]?.keywordParamConditionsOp,
@@ -985,6 +1062,22 @@ function KeywordEntriesEditor({
             options={toOpts(dict.keywords)}
             allowFreeText
           />
+          {/* 色を選ぶキーワード（「このカードは黒でも色条件を満たせる」等。複数選べる） */}
+          {KEYWORD_COLOR_PARAM.has(entry.keyword) && (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 11, color: '#555', marginBottom: 2 }}>色（このカードの色に加えて、色条件を満たせる色。複数可）</div>
+              <MultiButtonGroup
+                options={['赤', '青', '黄', '緑', '黒', '紫', '白'].map((c) => ({ code: c, label: c }))}
+                values={entry.colors || []}
+                onToggle={(code, on) => {
+                  const cur = entry.colors || [];
+                  const next = on ? [...cur, code] : cur.filter((c) => c !== code);
+                  updateEntry(i, { colors: next.length > 0 ? next : undefined });
+                }}
+                accentColor="#7b1fa2"
+              />
+            </div>
+          )}
           {/* モードを持つキーワード（「ブラスト〇〇」の 進化/ジョグレス 等）。対象の入力はモードによって出し分ける */}
           {KEYWORD_MODES[entry.keyword] && (
             <div style={{ marginTop: 6 }}>
@@ -1371,24 +1464,12 @@ function CostListEditor({
         // card+cond_typeフィルタに切り替える。「最も多いプレイヤー」等L2にdigimon/tamerが
         // 無いカテゴリでは常にfalseになるだけで無害）
         const cHasDigimonTamer = (cCurTgt.l1 === 'own' || cCurTgt.l1 === 'opp' || cCurTgt.l1 === 'other_own' || cCurTgt.l1 === 'both');
-        const cDigimonCode = TARGET_SEL_L1L2_TO_CODE[cCurTgt.l1 + ':digimon'];
-        const cTamerCode = TARGET_SEL_L1L2_TO_CODE[cCurTgt.l1 + ':tamer'];
-        const cCardCode = TARGET_SEL_L1L2_TO_CODE[cCurTgt.l1 + ':card'];
-        const cIsOrMode = cCurTgt.l2 === 'card' && (c.conditions || []).some((cc) => cc.base === 'cond_type' && /デジモン/.test(cc.value || '') && /テイマー/.test(cc.value || ''));
-        const cDigimonChecked = cHasDigimonTamer && (cCurTgt.l2 === 'digimon' || cIsOrMode);
-        const cTamerChecked = cHasDigimonTamer && (cCurTgt.l2 === 'tamer' || cIsOrMode);
-        const cExclusiveL2Options = cTgtL2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer');
-        const applyCostDigiTamerSelection = (nextDigimon: boolean, nextTamer: boolean) => {
-          const restConds = (c.conditions || []).filter((cc) => cc.base !== 'cond_type');
-          if (nextDigimon && nextTamer) {
-            updateCost(i, { ...c, target: cCardCode + cTgtSuffix, conditions: [...restConds, { base: 'cond_type', value: 'デジモン,テイマー' }] });
-          } else if (nextDigimon) {
-            updateCost(i, { ...c, target: cDigimonCode + cTgtSuffix, conditions: restConds });
-          } else if (nextTamer) {
-            updateCost(i, { ...c, target: cTamerCode + cTgtSuffix, conditions: restConds });
-          } else {
-            updateCost(i, { ...c, target: '', conditions: restConds });
-          }
+        const cIsOrMode = !!typeSelMulti(cCurTgt.l2, c.conditions || []);
+        const cTypeChecked = cHasDigimonTamer ? typeSelOf(cCurTgt.l2, c.conditions || []) : [];
+        const cExclusiveL2Options = cTgtL2Options.filter((o) => !TYPE_SEL_CODES.includes(o.code));
+        const applyCostTypeSelection = (types: string[]) => {
+          const r = typeSelApply(cCurTgt.l1, types, c.conditions || []);
+          updateCost(i, { ...c, target: r.base ? r.base + cTgtSuffix : '', conditions: r.conds });
         };
         // 「下/一番下」を選んだときだけ、積まれているカードの裏表・種別で絞り込める
         // （例:「テイマーの下にある裏向きのカードを破棄する」コスト）。
@@ -2019,18 +2100,15 @@ function CostListEditor({
               {cHasDigimonTamer && (
                 <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   <MultiButtonGroup
-                    options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }]}
-                    values={[...(cDigimonChecked ? ['digimon'] : []), ...(cTamerChecked ? ['tamer'] : [])]}
-                    onToggle={(code, on) => applyCostDigiTamerSelection(
-                      code === 'digimon' ? on : cDigimonChecked,
-                      code === 'tamer' ? on : cTamerChecked
-                    )}
+                    options={typeSelOptions(cCurTgt.l1).filter((o) => cTgtL2Options.some((x) => x.code === o.code))}
+                    values={cTypeChecked}
+                    onToggle={(code, on) => applyCostTypeSelection(on ? [...cTypeChecked, code] : cTypeChecked.filter((t) => t !== code))}
                     accentColor="#b76e00"
                   />
                   {cExclusiveL2Options.length > 0 && (
                     <TargetL2Group
                       options={cExclusiveL2Options}
-                      value={!cDigimonChecked && !cTamerChecked ? cCurTgt.l2 : ''}
+                      value={cTypeChecked.length === 0 ? cCurTgt.l2 : ''}
                       onChange={(l2) => setCostTgt(cCurTgt.l1, l2)}
                       l1={cCurTgt.l1}
                       accentColor="#b76e00"
@@ -2970,6 +3048,37 @@ const isZoneL2 = (l2: string) => !!l2 && l2.split('+').every((z) => MULTI_ZONE_L
     }
   });
 }
+// 対象の種類（デジモン/テイマー/オプション）の複数選択。1種類なら従来の対象コード（own / own_tamer 等）、
+// 2種類以上なら「カード」の対象コード＋cond_type「デジモン,テイマー」等（JSONでは filter.type_in）で保存する
+const TYPE_SEL_JA: Record<string, string> = { digimon: 'デジモン', tamer: 'テイマー', option: 'オプション' };
+const TYPE_SEL_CODES = Object.keys(TYPE_SEL_JA);
+// 対象コード（L2）と条件から、選ばれている種類を逆算する
+function typeSelOf(l2: string, conds: ConditionPair[]): string[] {
+  if (TYPE_SEL_CODES.includes(l2)) return [l2];
+  return typeSelMulti(l2, conds) || [];
+}
+// 2種類以上の複数選択中なら、その種類一覧（そうでなければ null）
+function typeSelMulti(l2: string, conds: ConditionPair[]): string[] | null {
+  if (l2 !== 'card') return null;
+  const tc = conds.find((c) => c.base === 'cond_type');
+  if (!tc) return null;
+  const vals = (tc.value || '').split(',').map((s) => s.trim());
+  const types = TYPE_SEL_CODES.filter((t) => vals.includes(TYPE_SEL_JA[t]));
+  return types.length >= 2 ? types : null;
+}
+// その「自分/相手/他/両方」で選べる種類ボタン
+function typeSelOptions(l1: string): { code: string; label: string }[] {
+  return TYPE_SEL_CODES.filter((t) => TARGET_SEL_L1L2_TO_CODE[l1 + ':' + t]).map((t) => ({ code: t, label: TYPE_SEL_JA[t] }));
+}
+// 種類の選択結果 → { 対象コード（数の指定なし）, cond_type を除いた条件に足す cond_type }
+function typeSelApply(l1: string, types: string[], conds: ConditionPair[]): { base: string; conds: ConditionPair[] } {
+  const rest = conds.filter((c) => c.base !== 'cond_type');
+  const ordered = TYPE_SEL_CODES.filter((t) => types.includes(t));
+  if (ordered.length === 0) return { base: '', conds: rest };
+  if (ordered.length === 1) return { base: TARGET_SEL_L1L2_TO_CODE[l1 + ':' + ordered[0]] || '', conds: rest };
+  return { base: TARGET_SEL_L1L2_TO_CODE[l1 + ':card'] || '', conds: [...rest, { base: 'cond_type', value: ordered.map((t) => TYPE_SEL_JA[t]).join(',') }] };
+}
+
 // 対象欄の単一選択ボタン列（カード/オプション/手札/トラッシュ…）。場所ボタンだけは複数選べる
 function TargetL2Group({ options, value, onChange, l1, accentColor }: { options: { code: string; label: string }[]; value: string; onChange: (l2: string) => void; l1: string; accentColor?: string }) {
   const cur = isZoneL2(value) ? value.split('+') : (value ? [value] : []);
@@ -3085,11 +3194,11 @@ const LINK_TRIGGER_CODES = ['on_link'];
 // event種別のトリガーファミリーのうち、「〜するとき（事前・置換効果用）」の対になる
 // コードを持つもの。該当ファミリーボタンがアクティブな間だけ、ボタンの隣に小さく
 // 「するとき」チェックボックスを出し、チェックで通常コード⇔するときコードを切り替える。
-// when_play/when_evolve/when_attackはエディタ側のみでエンジン未実装（レシピは書けるが
-// 現状は発火しない）。when_destroyのみエンジン実装済み
+// 進化するときはエンジンのキー before_evolve（BT2-062 等。以前のエディタは when_evolve で保存しており、エンジンが読まなかった）。
+// when_play（「このテイマーをレストさせることで支払うコスト-N」等）・before_evolve・when_destroy はエンジン対応あり、when_attack は未実装
 const PRE_EVENT_TRIGGER_PAIR: Record<string, string> = {
   on_play: 'when_play',
-  on_evolve: 'when_evolve',
+  on_evolve: 'before_evolve',
   on_attack: 'when_attack',
   on_destroy: 'when_destroy',
 };
@@ -7170,9 +7279,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           );
         })()}
 
+        {/* 新しいアクション専用の項目（支払うコスト-の登場/進化、効果の上限の種類 等）。効果1・効果2以降共通 */}
+        <ActionParamsPanel
+          action={effectAction}
+          params={isEditingAlt ? editingAlt!.actionParams : block.actionParams}
+          onChange={(next) => updateEffect({ actionParams: next })}
+        />
+
         {/* immune_effects 専用:「相手の効果を受けない」の対象範囲
             （デジモン/テイマー/オプション全て なのか、デジモンの効果のみ なのか） */}
-        {block.action === 'immune_effects' && (
+        {effectAction === 'immune_effects' && (
           <div className="field" style={{ marginTop: 8, background: '#fdf2f8', padding: 8, borderRadius: 4, border: '1px solid #f5b8d8' }}>
             <div style={{ fontWeight: 'bold', color: '#9d174d', marginBottom: 4, fontSize: 12 }}>
               🛡 相手のどの効果を受けないか
@@ -7181,10 +7297,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               options={[
                 { code: '', label: 'カード（デジモン/テイマー/オプション問わず）' },
                 { code: 'digimon', label: 'デジモンの効果のみ' },
+                { code: 'tamer', label: 'テイマーの効果のみ' },
                 { code: 'option', label: 'オプションの効果のみ' },
+                { code: 'declared', label: '宣言したカテゴリーの効果（カードカテゴリーを宣言する と組み合わせる）' },
               ]}
-              value={block.immuneCardType || ''}
-              onChange={(v) => update('immuneCardType', (v || '') as 'digimon' | 'option' | '')}
+              value={(isEditingAlt ? editingAlt!.actionParams?.source_type : block.immuneCardType) || ''}
+              onChange={(v) => {
+                // 効果2以降は専用欄が無いので actionParams.source_type に持つ（JSON は同じ step.source_type）
+                if (isEditingAlt) {
+                  const ap = { ...(editingAlt!.actionParams || {}) };
+                  if (v) ap.source_type = v; else delete ap.source_type;
+                  updateEffect({ actionParams: Object.keys(ap).length > 0 ? ap : undefined });
+                } else update('immuneCardType', (v || '') as 'digimon' | 'tamer' | 'option' | 'declared' | '');
+              }}
               accentColor="#9d174d"
             />
             <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
@@ -7229,7 +7354,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const commonActionHasFromZones = !!dict.actions.find(
             (a) => a.code === (getActionVariant(effectActionForZones)?.base || effectActionForZones)
           )?.hasFromZones || PLACE_ACTION_CODES.has(effectActionForZones) || effectActionForZones === 'bounce' || effectActionForZones === 'return_hand';
-          const commonFromZoneExcludeCodes = PLACE_ACTION_CODES.has(effectActionForZones) ? new Set(['hand', 'trash', 'battle_area', 'linked'])
+          // 〜の下に置く: 🎯対象＝置き先（デジモン/テイマー）なので場所は出さない（置くカードは📥で選ぶ）。
+          // セキュリティ/デッキ/バトルエリアに置く: 🎯対象＝置くカードなので、手札・トラッシュのカードも選べる（LM-023）
+          const commonFromZoneExcludeCodes = UNDER_PLACE_ACTIONS.has(effectActionForZones) ? new Set(['hand', 'trash', 'battle_area', 'linked'])
+            : PLACE_ACTION_CODES.has(effectActionForZones) ? new Set(['battle_area', 'linked'])
             : effectActionForZones === 'add_to_hand' ? new Set(['hand', 'trash', 'battle_area'])
             : (effectActionForZones === 'bounce' || effectActionForZones === 'return_hand') ? new Set(['hand', 'deck', 'security'])
             : null;
@@ -7246,13 +7374,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               ...(commonActionHasFromZones ? (TARGET_SEL_L2_FROM_ZONES[eCurTgt.l1] || []).filter((o) => !commonFromZoneExcludeCodes?.has(o.code)) : []),
             ];
             const eHasDigimonTamer = (eCurTgt.l1 === 'own' || eCurTgt.l1 === 'opp' || eCurTgt.l1 === 'other_own' || eCurTgt.l1 === 'both');
-            const eDigimonCode = TARGET_SEL_L1L2_TO_CODE[eCurTgt.l1 + ':digimon'];
-            const eTamerCode = TARGET_SEL_L1L2_TO_CODE[eCurTgt.l1 + ':tamer'];
-            const eCardCode = TARGET_SEL_L1L2_TO_CODE[eCurTgt.l1 + ':card'];
-            const eIsOrMode = eCurTgt.l2 === 'card' && effectTargetFilter.some((c) => c.base === 'cond_type' && /デジモン/.test(c.value || '') && /テイマー/.test(c.value || ''));
-            const eDigimonChecked = eHasDigimonTamer && (eCurTgt.l2 === 'digimon' || eIsOrMode);
-            const eTamerChecked = eHasDigimonTamer && (eCurTgt.l2 === 'tamer' || eIsOrMode);
-            const eExclusiveL2Options = eL2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer');
+            const eIsOrMode = !!typeSelMulti(eCurTgt.l2, effectTargetFilter);
+            const eTypeChecked = eHasDigimonTamer ? typeSelOf(eCurTgt.l2, effectTargetFilter) : [];
+            const eExclusiveL2Options = eL2Options.filter((o) => !TYPE_SEL_CODES.includes(o.code));
             const eHideCount = eBase === 'self' || eBase === 'self_card' || eBase === 'same_target' || eBase === 'target_trigger_source';
             const eIsUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(eBase) || eIsOrMode;
             const eShowTargetFilter = !(effZoneSrc && !zoneSourceHasTargetCardConds(effectTargetFilter) && !(effectTargetFilterChain && effectTargetFilterChain.length > 0)) && (
@@ -7280,20 +7404,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               const remapAction = remapPlaceActionForTarget(newEffBase);
               updateEffect({ ...cleared, target: newEffBase + eSuffix, ...(remapAction ? { action: remapAction } : {}) });
             };
-            // デジモン/テイマーのOR複数選択（対象コード=card + cond_typeフィルタ）を反映
-            const applyEffDigiTamerSelection = (nextDigimon: boolean, nextTamer: boolean) => {
-              if (nextDigimon && nextTamer) {
-                updateEffect({ target: eCardCode + eSuffix,
-                  targetFilter: [...effectTargetFilter.filter((c) => c.base !== 'cond_type'), { base: 'cond_type', value: 'デジモン,テイマー' }] });
-              } else if (nextDigimon) {
-                const remapAction = remapPlaceActionForTarget(eDigimonCode);
-                updateEffect({ target: eDigimonCode + eSuffix, targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type'), ...(remapAction ? { action: remapAction } : {}) });
-              } else if (nextTamer) {
-                const remapAction = remapPlaceActionForTarget(eTamerCode);
-                updateEffect({ target: eTamerCode + eSuffix, targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type'), ...(remapAction ? { action: remapAction } : {}) });
-              } else {
-                updateEffect({ target: '', targetFilter: effectTargetFilter.filter((c) => c.base !== 'cond_type') });
-              }
+            // 種類（デジモン/テイマー/オプション）の複数選択を反映（2種類以上=対象コードcard + cond_typeフィルタ）
+            const applyEffTypeSelection = (types: string[]) => {
+              const r = typeSelApply(eCurTgt.l1, types, effectTargetFilter);
+              const remapAction = types.length === 1 ? remapPlaceActionForTarget(r.base) : '';
+              updateEffect({ target: r.base ? r.base + eSuffix : '', targetFilter: r.conds, ...(remapAction ? { action: remapAction } : {}) });
             };
             return (
               <div style={{ display: 'grid', gridTemplateColumns: eHideCount ? '1fr' : '1fr 1fr', gap: 8, marginTop: 8 }}>
@@ -7324,38 +7439,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </div>
                   {eHasDigimonTamer && (
                     <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <button
-                        type="button"
-                        onClick={() => applyEffDigiTamerSelection(!eDigimonChecked, eTamerChecked)}
-                        style={{
-                          padding: '3px 9px', borderRadius: 5,
-                          border: eDigimonChecked ? '2px solid #b76e00' : '1px solid #bbb',
-                          background: eDigimonChecked ? '#b76e00' : '#f5f5f5',
-                          color: eDigimonChecked ? '#fff' : '#333',
-                          fontWeight: eDigimonChecked ? 'bold' : 'normal',
-                          cursor: 'pointer', fontSize: 11,
-                        }}
-                      >
-                        デジモン
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyEffDigiTamerSelection(eDigimonChecked, !eTamerChecked)}
-                        style={{
-                          padding: '3px 9px', borderRadius: 5,
-                          border: eTamerChecked ? '2px solid #b76e00' : '1px solid #bbb',
-                          background: eTamerChecked ? '#b76e00' : '#f5f5f5',
-                          color: eTamerChecked ? '#fff' : '#333',
-                          fontWeight: eTamerChecked ? 'bold' : 'normal',
-                          cursor: 'pointer', fontSize: 11,
-                        }}
-                      >
-                        テイマー
-                      </button>
+                      <MultiButtonGroup
+                        options={typeSelOptions(eCurTgt.l1)}
+                        values={eTypeChecked}
+                        onToggle={(code, on) => applyEffTypeSelection(on ? [...eTypeChecked, code] : eTypeChecked.filter((t) => t !== code))}
+                        accentColor="#b76e00"
+                      />
                       {eExclusiveL2Options.length > 0 && (
                         <TargetL2Group
                           options={eExclusiveL2Options}
-                          value={!eDigimonChecked && !eTamerChecked ? eCurTgt.l2 : ''}
+                          value={eTypeChecked.length === 0 ? eCurTgt.l2 : ''}
                           onChange={(l2) => setEffTgt(eCurTgt.l1, l2)}
                           l1={eCurTgt.l1}
                           accentColor="#b76e00"
@@ -7371,7 +7464,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {/* デジモン対象、「このカード」対象、または「そのデジモン」対象:
                       「進化元」/「重ねられているカード」をサブ選択肢として表示する
                       （位置は右の対象数ボックス側に表示）。メインの対象欄と同じ仕組み */}
-                  {commonActionHasFromZones && (eCurTgt.l2 === 'digimon' || eCurTgt.l1 === 'self' || eCurTgt.l1 === 'same_target') && (() => {
+                  {commonActionHasFromZones && (eCurTgt.l2 === 'digimon' || eCurTgt.l2 === 'tamer' || eIsOrMode || eCurTgt.l1 === 'self' || eCurTgt.l1 === 'same_target') && (() => {
                     const eIsPlaceAction = PLACE_ACTION_CODES.has(effectAction || '');
                     const eEvoCond = effectTargetFilter.find((c) => c.base === 'cond_target_evo_source');
                     const eStackCond = effectTargetFilter.find((c) => c.base === 'cond_target_stack');
@@ -7604,17 +7697,20 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           ];
           // デジモン/テイマーだけは複数選択可（例:「相手のデジモン/テイマーを1体消滅させる」）。
           // カード/セキュリティ/プレイヤーは従来通り単一選択（デジモン/テイマーの複数選択とは排他）
-          const exclusiveL2Options = tgtL2Options.filter((o) => o.code !== 'digimon' && o.code !== 'tamer');
+          const exclusiveL2Options = tgtL2Options.filter((o) => !TYPE_SEL_CODES.includes(o.code));
           const hasDigimonTamer = (curTgt.l1 === 'own' || curTgt.l1 === 'opp' || curTgt.l1 === 'other_own' || curTgt.l1 === 'both');
+          const typeOptions = typeSelOptions(curTgt.l1);
           const digimonCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':digimon'];
           const tamerCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':tamer'];
           const cardCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':card'];
           // 現在の複数選択状態を、target(+targetFilter/altActions)から逆算する
-          const isOrMode = curTgt.l2 === 'card' && targetFilter.some((c) => c.base === 'cond_type' && /デジモン/.test(c.value || '') && /テイマー/.test(c.value || ''));
+          const isOrMode = !!typeSelMulti(curTgt.l2, targetFilter);
           const isAndMode = curTgt.l2 === 'digimon' && block.altActionsOp === 'and'
             && (block.altActions || []).length === 1 && block.altActions![0].target === tamerCode;
           const digimonChecked = hasDigimonTamer && (curTgt.l2 === 'digimon' || isOrMode || isAndMode);
           const tamerChecked = hasDigimonTamer && (curTgt.l2 === 'tamer' || isOrMode || isAndMode);
+          // 選択中の種類（デジモン/テイマー/オプション。AND はデジモン＋テイマーのときだけ）
+          const typeChecked = isAndMode ? ['digimon', 'tamer'] : typeSelOf(curTgt.l2, targetFilter);
           const combineMode: 'or' | 'and' = isAndMode ? 'and' : 'or';
           const hideCount = tgtBase === 'self' || tgtBase === 'self_card' || tgtBase === 'same_target' || tgtBase === 'target_trigger_source';
           const isUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(tgtBase) || isOrMode || isAndMode;
@@ -7665,6 +7761,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             }
           };
           // デジモン/テイマーの複数選択（OR=同一対象コード+タイプフィルタ／AND=代替アクションで2体別々に指定）を反映
+          // 種類の複数選択（デジモン/テイマー/オプション）。AND はデジモン＋テイマーの2つだけのときに使える
+          const applyTypeSelection = (types: string[], mode: 'or' | 'and') => {
+            if (mode === 'and' && types.length === 2 && types.includes('digimon') && types.includes('tamer')) {
+              applyDigiTamerSelection(true, true, 'and');
+              return;
+            }
+            const r = typeSelApply(curTgt.l1, types, targetFilter);
+            const remapAction = types.length === 1 ? remapPlaceActionForTarget(r.base) : '';
+            onChange({ ...block, target: r.base ? r.base + tgtSuffix : '', ...keepUserAlts, targetFilter: r.conds, ...(remapAction ? { action: remapAction } : {}) });
+          };
           const applyDigiTamerSelection = (nextDigimon: boolean, nextTamer: boolean, mode: 'or' | 'and') => {
             if (nextDigimon && nextTamer) {
               if (mode === 'or') {
@@ -7725,40 +7831,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
                 {hasDigimonTamer && (
                   <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <button
-                      type="button"
-                      onClick={() => applyDigiTamerSelection(!digimonChecked, tamerChecked, combineMode)}
-                      style={{
-                        padding: '3px 9px', borderRadius: 5,
-                        border: digimonChecked ? '2px solid #b76e00' : '1px solid #bbb',
-                        background: digimonChecked ? '#b76e00' : '#f5f5f5',
-                        color: digimonChecked ? '#fff' : '#333',
-                        fontWeight: digimonChecked ? 'bold' : 'normal',
-                        cursor: 'pointer', fontSize: 11,
-                      }}
-                    >
-                      デジモン
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => applyDigiTamerSelection(digimonChecked, !tamerChecked, combineMode)}
-                      style={{
-                        padding: '3px 9px', borderRadius: 5,
-                        border: tamerChecked ? '2px solid #b76e00' : '1px solid #bbb',
-                        background: tamerChecked ? '#b76e00' : '#f5f5f5',
-                        color: tamerChecked ? '#fff' : '#333',
-                        fontWeight: tamerChecked ? 'bold' : 'normal',
-                        cursor: 'pointer', fontSize: 11,
-                      }}
-                    >
-                      テイマー
-                    </button>
+                    <MultiButtonGroup
+                      options={typeOptions}
+                      values={typeChecked}
+                      onToggle={(code, on) => applyTypeSelection(on ? [...typeChecked, code] : typeChecked.filter((t) => t !== code), combineMode)}
+                      accentColor="#b76e00"
+                    />
                     {/* デジモンを選択したら、カード/オプション/手札/デッキ等の他のL2選択肢は隠し、
                         進化元/重ねられているカードのサブ選択肢（下記）のみを見せる */}
                     {!digimonChecked && exclusiveL2Options.length > 0 && (
                       <TargetL2Group
                         options={exclusiveL2Options}
-                        value={!digimonChecked && !tamerChecked ? curTgt.l2 : ''}
+                        value={typeChecked.length === 0 ? curTgt.l2 : ''}
                         onChange={handleTgtL2}
                         l1={curTgt.l1}
                         accentColor="#b76e00"
@@ -7778,7 +7862,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     場所/位置/裏表の表示が必要なアクション（hasFromZones）のときのみ表示する。
                     「〇〇に置く」では「指定なし」を選べず、進化元/重ねられているカードの
                     いずれかを必ず選ぶ（置く先が必ずどちらかのスタックになるため） */}
-                {actionHasFromZones && (curTgt.l2 === 'digimon' || isOrMode || curTgt.l1 === 'self' || curTgt.l1 === 'same_target') && (() => {
+                {actionHasFromZones && (curTgt.l2 === 'digimon' || curTgt.l2 === 'tamer' || isOrMode || curTgt.l1 === 'self' || curTgt.l1 === 'same_target') && (() => {
                   const isPlaceAction = PLACE_ACTION_CODES.has(block.action || '');
                   const evoCond = targetFilter.find((c) => c.base === 'cond_target_evo_source');
                   const stackCond = targetFilter.find((c) => c.base === 'cond_target_stack');
@@ -7809,7 +7893,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     </div>
                   );
                 })()}
-                {digimonChecked && tamerChecked && (
+                {digimonChecked && tamerChecked && typeChecked.length === 2 && (
                   <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 11, color: '#666' }}>対象の結合:</span>
                     <ButtonGroup
@@ -8161,7 +8245,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               legacyOp={effectFromFilterOp}
               onChainChange={(next) => updateEffect({ fromFilterChain: next })}
               dict={dict}
-              titleBase="取得元カードの条件"
+              /* 手札・トラッシュから選ぶ「手札に戻す/デッキに戻す/破棄する」は🎯対象で場所を選ぶので、
+                 見出しも「対象の条件」にそろえる（保存先は取得元カードの条件＝from_filter のまま） */
+              titleBase={effZoneSrc ? '対象の条件（選ぶカード）' : '取得元カードの条件'}
               theme="action"
               extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, showTypeInTargetFilter: true }}
               commonConditions={effectFromFilter}
@@ -8759,6 +8845,11 @@ const COMMON_CONDS: CommonCondDef[] = [
   // 対象カードの所在エリア（例:「手札の」「デッキの」）。対象の条件（対象フィルタ）専用。
   // 発動条件/トリガー条件の文脈ではエンジンが評価対象を特定できないため意味を持たない
   { code: 'cond_zone',                 label: '場所',         input: 'select', options: RULE_ZONE_OPTS },
+  // 直前に選んだ／オープンしたカードのカテゴリー（エンジン cond_picked_type）。'declared'＝「カードカテゴリーを宣言する」で宣言したもの（LM-020）
+  { code: 'cond_picked_type', label: '選んだ/オープンしたカードのカテゴリー', input: 'select', options: [
+    { value: 'デジモン', label: 'デジモン' }, { value: 'テイマー', label: 'テイマー' }, { value: 'オプション', label: 'オプション' },
+    { value: 'デジタマ', label: 'デジタマ' }, { value: 'declared', label: '宣言したカテゴリー' },
+  ] },
 ];
 function RuleStepEditor({ index, step, dict, onChange, onRemove, onUp, onDown, isAttackTrigger }: RuleStepEditorProps) {
   // 「条件ごとに枚数を分ける」がONか（1つのルール内に条件+枚数の組を複数持つモード）
@@ -9637,7 +9728,7 @@ const NO_VALUE_CONDS = new Set([
 // 色/タイプ/特徴/場所は 1カテゴリ=1コードの直接対応。
 // Lv/DP/名前は複数コードがあるため、カテゴリ選択後に「以上/以下」等の
 // バリアントプルダウンが追加で現れる。その他はカテゴリに無い全条件を選べる逃し弁。
-type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'state' | 'zone' | 'ref' | 'decrease' | 'designated' | 'evo_source' | 'stacked' | 'other' | '';
+type CondCategory = 'color' | 'type' | 'feature' | 'lv' | 'dp' | 'cost' | 'cost_mod' | 'memory' | 'name' | 'keyword' | 'state' | 'zone' | 'ref' | 'decrease' | 'designated' | 'evo_source' | 'stacked' | 'other' | '';
 
 const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'color', label: '色' },
@@ -9649,6 +9740,8 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: 'cost_mod', label: 'コスト増減' },
   { value: 'memory', label: 'メモリー' },
   { value: 'name', label: '名前/記述' },
+  // 【ブロッカー】等のキーワードを持つカード（対象の条件・取得元カードの条件・デッキオープンの条件。filter.keyword）
+  { value: 'keyword', label: 'キーワード' },
   // レスト状態/アクティブ状態（対象の条件ではstep.filter.suspended=true/falseとして出力。
   // 例:「レスト状態の相手のデジモン全て」「最もDPの低いアクティブ状態の相手のデジモン」）
   { value: 'state', label: '状態' },
@@ -9914,6 +10007,7 @@ const CATEGORY_DEFAULT_BASE: Record<string, string> = {
   memory: 'cond_memory_ge',
   cost_mod: 'cond_cost_mod',
   name: 'cond_name',
+  keyword: 'cond_has_keyword',
   state: 'cond_self_rest',
   zone: 'cond_zone',
   ref: 'cond_hand_ge',
@@ -9928,6 +10022,8 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
   color: [
     { value: 'cond_color', label: '含む' },
     { value: 'cond_color_not', label: '以外' },
+    // 「1色の〜」: カードの色の数（filter.color_count）
+    { value: 'cond_color_count', label: '色の数' },
   ],
   // 「〇〇が減った」: 効果2以降の発動条件に付けて「Aするか、Xが減っているなら代わりにBする」
   // 的な効果を組みたいときに使う汎用条件。原因（バトルで/効果で/指定なし）はc.valueに保存する。
@@ -9951,6 +10047,8 @@ const CATEGORY_VARIANTS: Partial<Record<CondCategory, { value: string; label: st
     { value: 'cond_dp', label: '完全一致' },
     { value: 'cond_dp_highest', label: '最も高い' },
     { value: 'cond_dp_lowest', label: '最も低い' },
+    // 「DP合計〜まで」: 選ぶ複数対象のDPの合計がN以下（値は数値か「このデジモン」等のDP参照。filter.dp_sum_le）
+    { value: 'cond_dp_sum_le', label: '合計〜まで' },
     { value: 'cond_attack_target_highest_dp', label: '最も高い（アタック対象専用）' },
     { value: 'cond_attack_target_lowest_dp', label: '最も低い（アタック対象専用）' },
   ],
@@ -9993,12 +10091,13 @@ function swapOpts(cur: string[] | undefined, group: string[], v: string): string
 }
 function baseToCategory(base: string): CondCategory {
   if (!base) return '';
-  if (base === 'cond_color' || base === 'cond_color_not' || base === 'cond_color_distinct') return 'color';
+  if (base === 'cond_color' || base === 'cond_color_not' || base === 'cond_color_distinct' || base === 'cond_color_count') return 'color';
+  if (base === 'cond_has_keyword') return 'keyword';
   if (base === 'cond_type') return 'type';
   if (base === 'cond_feature_contains' || base === 'cond_feature') return 'feature';
   if (base === 'cond_lv_ge' || base === 'cond_lv_le' || base === 'cond_lv' || base === 'cond_lv_distinct'
     || base === 'cond_lv_highest' || base === 'cond_lv_lowest' || base === 'cond_lv_sum_le') return 'lv';
-  if (base === 'cond_dp_ge' || base === 'cond_dp_le' || base === 'cond_dp'
+  if (base === 'cond_dp_ge' || base === 'cond_dp_le' || base === 'cond_dp' || base === 'cond_dp_sum_le'
     || base === 'cond_dp_highest' || base === 'cond_dp_lowest'
     || base === 'cond_attack_target_highest_dp' || base === 'cond_attack_target_lowest_dp') return 'dp';
   if (base === 'cond_cost_ge' || base === 'cond_cost_le' || base === 'cond_cost'
@@ -10071,6 +10170,9 @@ function ConditionsHybridEditor({
     // 「場所」は対象の条件（対象フィルタ・supportsMultiValue）専用。トリガー条件/発動条件
     // ではエンジンが「どのカードの場所を見るか」を特定できないため意味を持たない
     if (c.code === 'zone' && !supportsMultiValue) return false;
+    // 「キーワード」もカードを絞り込む条件（対象の条件・取得元カードの条件・デッキオープン等のルールの条件）専用。
+    // 発動条件の「このデジモンが〜を持つ」は従来どおり「その他」の cond_keyword を使う
+    if (c.code === 'keyword' && !supportsMultiValue && showSubjectSelector) return false;
     return true;
   });
 
@@ -10078,7 +10180,7 @@ function ConditionsHybridEditor({
   const CATEGORIZED_CODES = new Set<string>([
     'cond_color', 'cond_color_not', 'cond_type', 'cond_feature_contains', 'cond_feature',
     'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_lv_highest', 'cond_lv_lowest', 'cond_lv_sum_le',
-    'cond_dp_ge', 'cond_dp_le', 'cond_dp',
+    'cond_dp_ge', 'cond_dp_le', 'cond_dp', 'cond_dp_sum_le', 'cond_color_count', 'cond_has_keyword',
     'cond_dp_highest', 'cond_dp_lowest',
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
     'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod', 'cond_cost_highest', 'cond_cost_lowest', 'cond_cost_sum_le',
@@ -10457,7 +10559,34 @@ function ConditionsHybridEditor({
                   )}
                   <div>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                    {cat.code === 'ref' && refZoneOf(c) === 'state' ? (
+                    {c.base === 'cond_has_keyword' ? (() => {
+                      /* キーワード（複数入れると OR＝どれか1つを持つ）。値はキーワードコードのカンマ区切り */
+                      const kws = String(c.value || '').split(',').map((x) => x.trim()).filter(Boolean);
+                      const kwLabel = (code: string) => dict.keywords.find((k) => k.code === code)?.label || code;
+                      return (
+                        <div style={{ minWidth: 220 }}>
+                          <MultiTextTags values={kws} onChange={(next) => updateAt(i, { value: next.join(',') })} accentColor={colors.accent} valueLabel={kwLabel} placeholder="下から選ぶ" />
+                          <SearchSelect
+                            value=""
+                            onChange={(v) => { if (v && !kws.includes(v)) updateAt(i, { value: [...kws, v].join(',') }); }}
+                            options={dict.keywords.map((k) => ({ value: k.code, label: `${k.label}（${k.code}）` }))}
+                            placeholder="--キーワードを追加--"
+                          />
+                          <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>複数入れると OR（どれか1つを持っていれば OK）</div>
+                        </div>
+                      );
+                    })() : c.base === 'cond_color_count' ? (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <input
+                          type="number"
+                          min={1}
+                          value={c.value || ''}
+                          onChange={(e) => updateAt(i, { value: e.target.value })}
+                          style={{ padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, width: 60, boxSizing: 'border-box' }}
+                        />
+                        <span style={{ fontSize: 11, color: '#555' }}>色のカード（例: 1 = 1色）</span>
+                      </div>
+                    ) : cat.code === 'ref' && refZoneOf(c) === 'state' ? (
                       /* 状態: 対数（枚数/体数）ではなく「参照対象と表示形式(レスト/アクティブ)が
                          一致するか」を見る。DP参照(cond_dp_le/ge:self等)と同じ考え方で、
                          参照対象(このデジモン/自分/相手/他)を選ぶだけで済むため以上/以下等の
@@ -10732,7 +10861,7 @@ function ConditionsHybridEditor({
                           </>
                         );
                       })()
-                    ) : (c.base === 'cond_dp_le' || c.base === 'cond_dp_ge') ? (
+                    ) : (c.base === 'cond_dp_le' || c.base === 'cond_dp_ge' || c.base === 'cond_dp_sum_le') ? (
                       DP_REF_CODES.has(c.value || '') ? (() => {
                         const dpRefBase = dpRefBaseOf(c.value || '');
                         const dpRefPick = dpRefIsPick(c.value || '');

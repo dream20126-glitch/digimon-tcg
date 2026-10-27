@@ -34,6 +34,29 @@ const REQUIRED_TRIGGERS: DictEntry[] = [
   { code: 'main', kind: 'trigger', label: 'メインフェイズ中' },
 ];
 
+// スプシに無くても必ず表示するアクション（2026-10 LM弾の対応で追加。項目は recipe.ts ACTION_PARAM_KEYS）
+const REQUIRED_ACTIONS: DictEntry[] = [
+  // 「支払う登場/進化コスト-N」（LM-009 エアドラモン）。どのコストかは actionParams.cost_kinds（登場/進化を複数選べる）
+  { code: 'pay_cost_minus', kind: 'action', label: '支払うコスト-（登場/進化）', valueLabel: '減らす値' },
+  // 「このデジモンのDP消滅効果の上限+5000」等（LM-026 メギドラモンACE）。種類は actionParams.cap_kind
+  { code: 'effect_cap_modify', kind: 'action', label: '効果の上限/数値を修正', valueLabel: '増減値（+5000 等）' },
+  // 「カードカテゴリー1つを宣言する」（LM-020 クオンタモン）。宣言した値は「宣言したカテゴリー」として後の効果・条件で使う
+  { code: 'declare_category', kind: 'action', label: 'カードカテゴリーを宣言する' },
+  // 「セキュリティ全てをオープンし、その中から1枚を〜」（LM-020）。相手側は actionParams.security_owner
+  { code: 'security_open', kind: 'action', label: 'セキュリティをオープン', valueLabel: 'オープンする枚数（空＝全て）' },
+];
+// スプシに無くても必ず表示する条件
+const REQUIRED_CONDITIONS: DictEntry[] = [
+  { code: 'cond_picked_type', kind: 'condition', label: '選んだ/オープンしたカードのカテゴリー（宣言したカテゴリー含む）' },
+];
+// スプシに無くても必ず表示するキーワード
+const REQUIRED_KEYWORDS: DictEntry[] = [
+  // 【氷装】（エンジン実装済み・バトルで進化元の枚数を比べる）
+  { code: 'ice_armor', kind: 'keyword', label: '氷装' },
+  // 「このカードは黒でも色条件を満たせる」（メモリーブースト等）。色は KeywordEntry.colors
+  { code: 'alt_use_color', kind: 'keyword', label: '〇色でも色条件を満たせる' },
+];
+
 function ensureRequired(list: DictEntry[], required: DictEntry[]): DictEntry[] {
   const codes = new Set(list.map((e) => e.code));
   const missing = required.filter((r) => !codes.has(r.code));
@@ -406,9 +429,9 @@ export function useDict(password: string): DictAPI {
   });
   return {
     triggers: ensureRequired(triggers, REQUIRED_TRIGGERS),
-    conditions,
-    actions: enhancedActions,
-    keywords,
+    conditions: ensureRequired(conditions, REQUIRED_CONDITIONS),
+    actions: ensureRequired(enhancedActions, REQUIRED_ACTIONS),
+    keywords: ensureRequired(keywords, REQUIRED_KEYWORDS),
     options: mergedOptions,
     visualTypes: [...DEFAULT_VISUAL_TYPES, ...customVT],
     customVisualTypes: customVT,

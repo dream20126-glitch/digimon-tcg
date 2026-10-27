@@ -47,6 +47,18 @@ const cases: Case[] = [
   { name: 'コスト 登場/参照', blocks: [base({ action: 'destroy', target: 'opponent:1', targetFilter: [{ base: 'cond_cost_le', value: 'self_evo_count', costKind: 'play' }] })], check: ['0.targetFilter'] },
   { name: '取得元カードの条件（手札に戻す）', blocks: [base({ action: 'return_hand', target: 'own_card:1', fromZones: ['trash'], fromFilter: [{ base: 'cond_feature', value: 'ME' }] })], check: ['0.fromFilter'] },
   { name: 'カウンター（両方）', blocks: [base({ trigger: 'on_attack', triggers: ['on_attack'], counter: 'also' })], check: ['0.counter'] },
+  // 2026-10-27 LM弾の対応で追加した設定
+  { name: '対象の種類 デジモン/テイマー/オプション', blocks: [base({ action: 'destroy', target: 'opponent_card:1', targetFilter: [{ base: 'cond_type', value: 'デジモン,テイマー,オプション' }] })], check: ['0.target', '0.targetFilter'] },
+  { name: 'デッキに戻す（対象=自分のトラッシュ）', blocks: [base({ action: 'return_deck', target: 'own_trash:1', deckPosition: 'top', fromFilter: [{ base: 'cond_color', value: '赤' }] })], check: ['0.target', '0.fromFilter'] },
+  { name: 'セキュリティに置く（対象=自分の手札）', blocks: [base({ action: 'place_on_security_top', target: 'own_hand:1', fromFilter: [{ base: 'cond_color_count', value: '1' }] })], check: ['0.target', '0.fromFilter'] },
+  { name: 'キーワードを持つ（対象の条件）', blocks: [base({ action: 'destroy', target: 'opponent:1', targetFilter: [{ base: 'cond_has_keyword', value: 'blocker,rush' }] })], check: ['0.targetFilter'] },
+  { name: 'DP合計このデジモンのDPまで', blocks: [base({ action: 'destroy', target: 'opponent:all', targetFilter: [{ base: 'cond_dp_sum_le', value: 'self' }] })], check: ['0.targetFilter'] },
+  { name: '〇色でも色条件を満たせる', blocks: [base({ trigger: 'passive', triggers: ['passive'], action: '', value: undefined, keyword: 'alt_use_color', keywordColors: ['黒', '紫'], keywordEntries: [{ keyword: 'alt_use_color', colors: ['黒', '紫'] }] })], check: ['0.keywordColors'] },
+  { name: '支払うコスト-（登場/進化）', blocks: [base({ trigger: 'when_play', triggers: ['when_play', 'before_evolve'], action: 'pay_cost_minus', value: 2, actionParams: { cost_kinds: ['play', 'evolve'] } })], check: ['0.actionParams', '0.triggers'] },
+  { name: '効果の上限を修正', blocks: [base({ section: 'evo_source', trigger: 'during_any_turn', triggers: ['during_any_turn'], action: 'effect_cap_modify', value: 5000, actionParams: { cap_kind: 'dp_destroy_max', cap_scope: 'self' } })], check: ['0.actionParams'] },
+  { name: '登場コストをコストのカード分マイナス', blocks: [base({ trigger: 'main', triggers: ['main'], zone: 'trash', action: 'summon_appear', target: 'self_card', actionParams: { value_from: 'cost_card_play_cost' } })], check: ['0.actionParams'] },
+  { name: '効果2: 相手のデッキをオープン・宣言・効果を受けない', blocks: [base({ action: 'declare_category', value: undefined, altActionsOp: 'and', altActions: [alt({ action: 'deck_open', value: 1, actionParams: { deck_owner: 'opp' }, thenBreak: true }), alt({ action: 'immune_effects', target: 'self', value: undefined, actionParams: { source_type: 'declared' }, conditions: [{ base: 'cond_picked_type', value: 'declared' }] })] })], check: ['0.altActions.0.actionParams', '0.altActions.1.actionParams'] },
+  { name: 'セキュリティをオープン（相手・選んだ1枚を相手デッキの上）', blocks: [base({ action: 'security_open', value: undefined, actionParams: { security_owner: 'opp', pick_to: 'opp_deck_top', rest_to: 'shuffle_security' } })], check: ['0.actionParams'] },
 ];
 
 let ng = 0;

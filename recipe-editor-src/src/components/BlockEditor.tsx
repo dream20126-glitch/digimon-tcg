@@ -11365,6 +11365,14 @@ function ConditionsHybridEditor({
                     />
                     以外
                   </label>
+                ) : COMMON_CONDS.find((d) => d.code === c.base && d.input === 'select') ? (
+                  /* 選択肢が決まっている条件（「選んだ/オープンしたカードのカテゴリー」→ デジモン/…/宣言したカテゴリー 等）はボタンで選ぶ */
+                  <ButtonGroup
+                    options={(COMMON_CONDS.find((d) => d.code === c.base)!.options || []).filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))}
+                    value={c.value || ''}
+                    onChange={(v) => updateAt(i, { value: v })}
+                    accentColor={colors.accent}
+                  />
                 ) : (
                   <input
                     type="text"

@@ -472,11 +472,15 @@ function RefExistsAttributeFilterPanel({
   const colorVal = getAttr('cond_color');
   // 進化元の枚数（以上）。値は数値か 'self'＝このデジモンの進化元の枚数以上（LM-040「進化元枚数がこのデジモン以上の〜」）
   const evoVal = getAttr('cond_has_evo');
+  // 名称（完全一致・複数はOR。「自分の『トレッドミル・トレーニング』がない間」等）
+  const nameVal = getAttr('cond_name');
+  const names = (nameVal?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
 
   const [activeSub, setActiveSub] = useState<Set<string>>(() => {
     const s = new Set<string>();
     if (colorVal) s.add('color');
     if (evoVal) s.add('evo');
+    if (nameVal) s.add('name');
     if (lvGe || lvLe) s.add('lv');
     if (costGe || costLe) s.add('cost');
     if (featureVal) s.add('feature');
@@ -489,6 +493,7 @@ function RefExistsAttributeFilterPanel({
       else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le'))));
       else if (key === 'feature') setAttr('cond_feature', undefined);
       else if (key === 'evo') setAttr('cond_has_evo', undefined);
+      else if (key === 'name') setAttr('cond_name', undefined);
       setActiveSub((prev) => { const next = new Set(prev); next.delete(key); return next; });
     } else {
       setActiveSub((prev) => new Set(prev).add(key));
@@ -496,7 +501,7 @@ function RefExistsAttributeFilterPanel({
   };
   const subButtons: { key: string; label: string }[] = [
     { key: 'color', label: '色' }, { key: 'lv', label: 'Lv' }, { key: 'cost', label: 'コスト' }, { key: 'feature', label: '特徴' },
-    ...(marker === REF_EXISTS_FILTER_MARKER ? [{ key: 'evo', label: '進化元枚数' }] : []),
+    ...(marker === REF_EXISTS_FILTER_MARKER ? [{ key: 'name', label: '名称' }, { key: 'evo', label: '進化元枚数' }] : []),
   ];
 
   return (
@@ -597,6 +602,17 @@ function RefExistsAttributeFilterPanel({
                 />
               )}
               {costMode && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ コストはエンジン未対応です（保存はできますが動作しません）</span>}
+            </div>
+          )}
+          {activeSub.has('name') && (
+            <div style={{ marginBottom: 4 }}>
+              <span style={{ fontSize: 10, color: '#666' }}>名称（完全一致・複数はOR）:</span>
+              <MultiTextTags
+                values={names}
+                onChange={(next) => setAttr('cond_name', next.join(','))}
+                placeholder="例: トレッドミル・トレーニング"
+                accentColor="#946200"
+              />
             </div>
           )}
           {activeSub.has('evo') && (

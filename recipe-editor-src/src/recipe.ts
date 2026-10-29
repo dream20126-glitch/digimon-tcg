@@ -110,7 +110,7 @@ function buildConditionChainSegments(chain: ConditionChainEntry[]): ConditionPai
 // 自分のフィルタとして消費してしまう（他の無関係な条件と併用不可）という制約があるため、
 // 「参照+属性フィルタ」は単独使用前提の特殊なグループとして識別・展開する
 export const REF_EXISTS_FILTER_MARKER = '__ref_exists_filter__';
-export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_feature', 'cond_cost_le', 'cond_cost_ge', 'cond_has_evo']);
+export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_feature', 'cond_cost_le', 'cond_cost_ge', 'cond_has_evo', 'cond_name']);
 // 参照「バトルエリア 0体（完全一致/以下）」＋属性＝「〜な相手のデジモンがいないなら」→ cond_not_exists（⚠ エンジン未実装）
 const isRefNoneRow = (p: ConditionPair) => !!p && (p.base === 'cond_battle_area_eq' || p.base === 'cond_battle_area_le') && String(p.value) === '0';
 
@@ -1331,7 +1331,13 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     // 条件（〜の間）: 省略時は常時有効（従来通り、gate自体を出力しない）。指定時のみ
     // 各passiveエントリにp.gate（AND配列）/p.gate_op/p.gate_chainを付与する。
     // ⚠ エンジン未実装（保存のみ。gateを評価するコードはまだ無い）
-    const { flatPairs: gateFlat, chainOut: gateChainOut } = resolveChainField(b.passiveGate, b.passiveGateChain);
+    const { flatPairs: gateFlatRaw, chainOut: gateChainOutRaw } = resolveChainField(b.passiveGate, b.passiveGateChain);
+    // 参照行の「属性で絞り込む」（「自分の『〇〇』がない間」等）は cond_exists / cond_not_exists＋兄弟条件に展開する（発動条件と同じ）
+    const gateFlat = expandRefExistsAttributeFilters(gateFlatRaw);
+    const gateChainOut = gateChainOutRaw && Array.isArray(b.passiveGateChain)
+      ? buildConditionChainSegments(b.passiveGateChain).map((seg) => seg.filter((p) => p.base)).filter((seg) => seg.length > 0)
+        .map((seg) => ({ conditions: expandRefExistsAttributeFilters(seg).map(pairToString) }))
+      : gateChainOutRaw;
     const gateFields: any = {};
     if (gateChainOut) {
       if (gateFlat.length > 0) gateFields.gate = gateFlat.map(pairToString);
@@ -2431,7 +2437,7 @@ function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): Effect
   const commonPairs = groups.length > 1 && p?.designated_common && !commonChain ? parseDesignatedFields(p.designated_common) : undefined;
   // 条件（〜の間）復元: trigger_conditionsと同じ「文字列配列(AND) + 任意でchain」の形
   const passiveGate: ConditionPair[] = [];
-  if (Array.isArray(p?.gate)) p.gate.forEach((s: string) => passiveGate.push(stringToPair(String(s))));
+  if (Array.isArray(p?.gate)) collapseRefExistsAttributeFilters(p.gate.map((s: string) => stringToPair(String(s)))).forEach((q) => passiveGate.push(q));
   return {
     section,
     zone: p?.in_zone || '',
@@ -2449,7 +2455,7 @@ function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): Effect
     keywordCommonConditionsChain: commonChain,
     passiveGate: passiveGate.length > 0 ? passiveGate : undefined,
     passiveGateOp: p?.gate_op === 'or' ? 'or' : 'and',
-    passiveGateChain: parseConditionChainStrings(p?.gate_chain),
+    passiveGateChain: parseConditionChainStrings(p?.gate_chain)?.map((e) => ({ ...e, conditions: collapseRefExistsAttributeFilters(e.conditions) })),
     extras: Object.keys(extras).length > 0 ? JSON.stringify(extras) : '',
   };
 }

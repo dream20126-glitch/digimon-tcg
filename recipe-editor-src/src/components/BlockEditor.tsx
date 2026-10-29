@@ -255,6 +255,18 @@ function ActionParamsPanel({ action, params, onChange }: { action: string; param
   );
 }
 
+// 「エリアの〜」: 通常は効果の対象にならない育成エリアのデジモンも対象に含める（step.options に 'include_breed'）。⚠ エンジン未実装
+function BreedAreaToggle({ options, onChange }: { options: string[]; onChange: (next: string[]) => void }) {
+  const on = options.includes('include_breed');
+  return (
+    <label style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#555', cursor: 'pointer' }}>
+      <input type="checkbox" checked={on} onChange={(e) => onChange(e.target.checked ? [...options, 'include_breed'] : options.filter((o) => o !== 'include_breed'))} style={{ margin: 0 }} />
+      育成エリアも対象に含める（「エリアの〜」）
+      {on && <span style={{ color: '#c62828', marginLeft: 4 }}>⚠ エンジン未実装</span>}
+    </label>
+  );
+}
+
 function ButtonGroup({ options, value, onChange, accentColor }: { options: { code: string; label: string }[]; value: string; onChange: (v: string) => void; accentColor?: string }) {
   const accent = accentColor || '#d81b60';
   return (
@@ -7604,6 +7616,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </div>
                     );
                   })()}
+                  {['own', 'opp', 'other_own', 'both', 'both_other'].includes(eCurTgt.l1) && ['digimon', 'card', 'tamer'].includes(eCurTgt.l2) && (
+                    <BreedAreaToggle options={effectOptions} onChange={(next) => updateEffect({ options: next })} />
+                  )}
                   {eIsUnimplemented && (
                     <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
                       ⚠ {eIsOrMode ? '複数対象（OR）は' : 'この対象は'}エンジン未実装です（保存はできますが動作しません）
@@ -8012,6 +8027,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       accentColor="#b76e00"
                     />
                   </div>
+                )}
+                {['own', 'opp', 'other_own', 'both', 'both_other'].includes(curTgt.l1) && ['digimon', 'card', 'tamer'].includes(curTgt.l2) && (
+                  <BreedAreaToggle options={effectOptions} onChange={(next) => updateEffect({ options: next })} />
                 )}
                 {isUnimplemented && (
                   <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>

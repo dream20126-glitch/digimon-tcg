@@ -634,6 +634,9 @@ export const COST_REF_MARKERS: Record<string, string> = {
 // 'trigger_source_lv'＝そのデジモン（トリガーの発生元。「アタックしたそのデジモン」等）のLv / 'self_lv'＝このカード（効果を持つカード）のLv
 export const LV_REF_MARKERS: Record<string, string> = {
   trigger_source_lv: 'そのデジモンのLv', self_lv: 'このカードのLv',
+  // 「自分の手札の枚数以上のLv.の〜」等: 枚数を比べる値にする
+  own_hand_count: '自分の手札の枚数', opp_hand_count: '相手の手札の枚数',
+  own_security_count: '自分のセキュリティの枚数', opp_security_count: '相手のセキュリティの枚数',
   last_action_lv: '直前の効果で処理したカードのLv', cost_card_lv: 'コストで処理したカードのLv',
 };
 function lvVal(v: any): number | string | undefined {

@@ -12,7 +12,7 @@ import type { MiniStep, ConditionPair, RuleGroup, RuleActionKind } from './types
 // 条件 (cond_xxx:value) の配列を filter オブジェクトへ変換
 // recipe-editor-src 側のフィルタ仕様: { color, type, lv_le, lv_ge, dp_le, dp_ge, feature_contains, name_contains }
 // 数値の代わりに使える参照（recipe.ts の LV_REF_MARKERS / COST_REF_MARKERS / DP_REF_MARKERS と同じ値）
-const LV_REF = new Set(['trigger_source_lv', 'self_lv', 'last_action_lv', 'cost_card_lv']);
+const LV_REF = new Set(['trigger_source_lv', 'self_lv', 'last_action_lv', 'cost_card_lv', 'own_hand_count', 'opp_hand_count', 'own_security_count', 'opp_security_count']);
 const COST_REF = new Set(['self_evo_count', 'last_action_cost', 'cost_card_cost']);
 const DP_REF = new Set(['self', 'own', 'opp', 'other', 'last_action', 'cost_card']);
 function condsToFilter(conds?: ConditionPair[]): Record<string, any> {

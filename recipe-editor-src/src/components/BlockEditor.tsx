@@ -6938,7 +6938,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   )}
                 </div>
               )}
-              {isEditingAlt && COST_LIMIT_MOD_ACTIONS.has(effectAction) && (
+              {isEditingAlt && (COST_LIMIT_MOD_ACTIONS.has(effectAction)
+                || (effectAction === 'effect_cap_modify' && ['dp', 'cost', 'lv'].includes(editingAlt!.actionParams?.cap_attr))) && (
                 <div className="field" style={{ marginTop: 8 }}>
                   <label>
                     <input
@@ -6950,7 +6951,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </label>
                   <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
                     ONの場合、この効果は独立したステップにはならず、直前の効果（効果{editingEffect}）の
-                    「登場/使用コスト◯以下」の閾値を、上の「値」「～ごとに（倍率設定）」の設定に応じて動的に増減させます。
+                    {effectAction === 'effect_cap_modify'
+                      ? `「${({ dp: 'DP', cost: 'コスト', lv: 'Lv' } as Record<string, string>)[editingAlt!.actionParams?.cap_attr] || ''}◯以下」の上限を`
+                      : '「登場/使用コスト◯以下」の閾値を'}、上の「値」「～ごとに（倍率設定）」の設定に応じて動的に増減させます。
+                    {effectAction === 'effect_cap_modify' && <span style={{ color: '#c62828' }}>（DP/Lvはエンジン未実装）</span>}
                   </div>
                 </div>
               )}

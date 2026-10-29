@@ -17,6 +17,17 @@ const isCauseCode = (v: unknown): v is 'battle' | 'effect' | 'not_battle' | 'not
 // チェックがONのとき、独立したstepにはせず直前の効果のfilter.cost_le_modへ埋め込む
 // （appendStep内・blocksToRecipe参照）
 export const COST_LIMIT_MOD_ACTIONS = new Set(['cost_limit_plus', 'cost_limit_minus']);
+// 「効果の上限/数値を修正」(effect_cap_modify) も、基準が DP/コスト/Lv（cap_attr）のときは「直前の効果に適用」できる。
+// 埋め込み先は直前の効果の filter.<基準>_le_mod（例: LM-001「進化元の色1色ごとに、このDP消滅効果の上限+1000」→ dp_le_mod）
+const CAP_MOD_ATTRS = new Set(['dp', 'cost', 'lv']);
+// 直前の効果へ埋め込める修正か。埋め込み先キー（cost_le_mod / dp_le_mod / lv_le_mod）を返す
+function prevModKeyOf(a: AltAction): string | null {
+  if (!a.applyCostModToPrev) return null;
+  if (COST_LIMIT_MOD_ACTIONS.has(a.action || '')) return 'cost_le_mod';
+  const attr = a.action === 'effect_cap_modify' ? a.actionParams?.cap_attr : undefined;
+  return attr && CAP_MOD_ATTRS.has(attr) ? attr + '_le_mod' : null;
+}
+const PREV_MOD_KEYS = ['cost_le_mod', 'dp_le_mod', 'lv_le_mod'];
 
 // 条件pairを「base:value@subject」形式の文字列に変換
 // subjectが空なら省略（互換性維持）
@@ -1320,6 +1331,54 @@ function applyDesignatedGroupsTo(target: any, entry: KeywordEntry, kwEntry?: Dic
   }
 }
 
+// 「直前の効果に適用」の修正（コスト上限+/- ・効果の上限/数値を修正）を、同じ区間の直前の効果（無ければ区間の先頭 headObj）の
+// filter.<cost|dp|lv>_le_mod に埋め込み、その修正自体は alt_actions から外す。「その後」の各区間にも使う
+function embedPrevMods(headObj: any, seg: AltAction[], altObjs: any[]): any[] {
+  const removeIdx: number[] = [];
+  seg.forEach((a, i) => {
+    const modKey = prevModKeyOf(a);
+    if (!modKey) return;
+    const amountRaw = a.value !== undefined && a.value !== '' && a.value !== null ? Number(a.value) : 1;
+    const amountNum = isNaN(amountRaw) ? 1 : amountRaw;
+    const mod: any = {
+      sign: a.action === 'cost_limit_minus' || amountNum < 0 ? '-' : '+',
+      amount: Math.abs(amountNum),
+    };
+    if (a.perCount && Number(a.perCount) > 0 && a.perRef) {
+      mod.per_count = Number(a.perCount);
+      mod.per_ref = a.perRef;
+      if (a.perCountMode === 'repeat') mod.per_count_mode = 'repeat';
+      if (a.perCountMode === 'step') {
+        mod.per_count_mode = 'step';
+        if (a.valueStep !== undefined && a.valueStep !== null && !isNaN(Number(a.valueStep))) mod.value_step = Number(a.valueStep);
+      }
+      if (a.refCount === 'colors') mod.ref_count = 'colors';
+      if (a.perRefStateCond && a.perRefStateCond.base) {
+        mod.per_ref_state = a.perRefStateCond.value
+          ? a.perRefStateCond.base + ':' + a.perRefStateCond.value
+          : a.perRefStateCond.base;
+      }
+    }
+    // 直前の（まだ除去されていない）効果を探す
+    let prevIdx = -1;
+    for (let k = i - 1; k >= 0; k--) { if (!removeIdx.includes(k)) { prevIdx = k; break; } }
+    // 埋め込み先: 取得元エリアから選ぶ効果（登場/使用/手札に加える等）は、エンジンが
+    // from_filter を優先して候補判定する（step.from_filter || step.filter）ため、
+    // cost_le を持つ側（無ければ from_filter があればそちら）へ入れる。filterへ入れると
+    // from_filter側のcost_leに加算されず「◯枚ごとにコスト上限+1」が効かない
+    const leKey = modKey.replace(/_mod$/, '');
+    const embed = (obj: any) => {
+      const useFrom = obj.from_filter && (obj.from_filter[leKey] !== undefined || !(obj.filter && obj.filter[leKey] !== undefined));
+      if (useFrom) obj.from_filter[modKey] = mod;
+      else { obj.filter = obj.filter || {}; obj.filter[modKey] = mod; }
+    };
+    if (prevIdx === -1) embed(headObj);
+    else if (altObjs[prevIdx]) embed(altObjs[prevIdx]);
+    removeIdx.push(i);
+  });
+  return altObjs.filter((_: any, i: number) => !removeIdx.includes(i));
+}
+
 function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?: DictEntry[]) {
   if (b.trigger === 'passive') {
     // キーワードのレシピテンプレートはカードのJSONにはベタ展開しない（コード参照のみ保存）。
@@ -1651,50 +1710,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // 先頭なら効果1=step自身のfilter、それ以外なら直前のalt_actionsエントリのfilter）の
   // filter.cost_le_mod として埋め込む（エンジン側がcost_le判定時にこれを見て動的に加減算する）
   if (Array.isArray(altSegments[0]) && altSegments[0].length > 0 && Array.isArray(step.alt_actions)) {
-    const seg = altSegments[0];
-    const removeIdx: number[] = [];
-    seg.forEach((a, i) => {
-      if (!COST_LIMIT_MOD_ACTIONS.has(a.action || '') || !a.applyCostModToPrev) return;
-      const amountRaw = a.value !== undefined && a.value !== '' && a.value !== null ? Number(a.value) : 1;
-      const mod: any = {
-        sign: a.action === 'cost_limit_minus' ? '-' : '+',
-        amount: isNaN(amountRaw) ? 1 : amountRaw,
-      };
-      if (a.perCount && Number(a.perCount) > 0 && a.perRef) {
-        mod.per_count = Number(a.perCount);
-        mod.per_ref = a.perRef;
-        if (a.perCountMode === 'repeat') mod.per_count_mode = 'repeat';
-        if (a.perCountMode === 'step') {
-          mod.per_count_mode = 'step';
-          if (a.valueStep !== undefined && a.valueStep !== null && !isNaN(Number(a.valueStep))) mod.value_step = Number(a.valueStep);
-        }
-        if (a.refCount === 'colors') mod.ref_count = 'colors';
-        if (a.perRefStateCond && a.perRefStateCond.base) {
-          mod.per_ref_state = a.perRefStateCond.value
-            ? a.perRefStateCond.base + ':' + a.perRefStateCond.value
-            : a.perRefStateCond.base;
-        }
-      }
-      // 直前の（まだ除去されていない）効果を探す
-      let prevIdx = -1;
-      for (let k = i - 1; k >= 0; k--) { if (!removeIdx.includes(k)) { prevIdx = k; break; } }
-      // 埋め込み先: 取得元エリアから選ぶ効果（登場/使用/手札に加える等）は、エンジンが
-      // from_filter を優先して候補判定する（step.from_filter || step.filter）ため、
-      // cost_le を持つ側（無ければ from_filter があればそちら）へ入れる。filterへ入れると
-      // from_filter側のcost_leに加算されず「◯枚ごとにコスト上限+1」が効かない
-      const embed = (obj: any) => {
-        const useFrom = obj.from_filter && (obj.from_filter.cost_le !== undefined || !(obj.filter && obj.filter.cost_le !== undefined));
-        if (useFrom) obj.from_filter.cost_le_mod = mod;
-        else { obj.filter = obj.filter || {}; obj.filter.cost_le_mod = mod; }
-      };
-      if (prevIdx === -1) embed(step);
-      else if (step.alt_actions[prevIdx]) embed(step.alt_actions[prevIdx]);
-      removeIdx.push(i);
-    });
-    if (removeIdx.length > 0) {
-      step.alt_actions = step.alt_actions.filter((_: any, i: number) => !removeIdx.includes(i));
-      if (step.alt_actions.length === 0) { delete step.alt_actions; delete step.alt_actions_op; }
-    }
+    step.alt_actions = embedPrevMods(step, altSegments[0], step.alt_actions);
+    if (step.alt_actions.length === 0) { delete step.alt_actions; delete step.alt_actions_op; }
   }
   if (Array.isArray(step.alt_actions)) {
     step.alt_actions = nestChainedAltObjs(step.alt_actions);
@@ -1869,8 +1886,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     if (!opts.includes('continue_on_fail')) opts.push('continue_on_fail');
     thenStep.options = opts;
     if (thenStep.limit === undefined && b.limit) thenStep.limit = b.limit;
-    if (rest.length > 0) {
-      thenStep.alt_actions = nestChainedAltObjs(rest.map((a) => altActionToStepObject(a, keywordDict)));
+    const restObjs = rest.length > 0 ? embedPrevMods(thenStep, rest, rest.map((a) => altActionToStepObject(a, keywordDict))) : [];
+    if (restObjs.length > 0) {
+      thenStep.alt_actions = nestChainedAltObjs(restObjs);
       // thenBreakOpが明示されていればそちらを優先（「その後」区間だけ独自のAND/ORにできる）。
       // 省略時は従来通りblock.altActionsOpを引き継ぐ（後方互換）
       thenStep.alt_actions_op = head.thenBreakOp ? head.thenBreakOp : (b.altActionsOp === 'and' ? 'and' : 'or');
@@ -2229,8 +2247,10 @@ function stepsArrayToBlocks(section: 'main' | 'evo_source' | 'security' | 'link'
       if (Array.isArray(step?.alt_actions) && step.alt_actions.length > 0) {
         head.thenBreakOp = step.alt_actions_op === 'and' ? 'and' : 'or';
       }
-      const nested = Array.isArray(step?.alt_actions) ? step.alt_actions.map((a: any) => ({ ...stepObjectToAltAction(a), _chainNext: chainNextOf(a) })) : [];
-      prev.altActions = flattenChainedAlts([...(prev.altActions || []), head, ...nested]);
+      const nestedRaw: any[] = Array.isArray(step?.alt_actions) ? step.alt_actions : [];
+      // 「その後」区間に埋め込まれた「直前の効果に適用」の修正（LM-001 の DP上限+ 等）も、それぞれの効果の直後に戻す
+      const nested = nestedRaw.flatMap((a: any) => [{ ...stepObjectToAltAction(a), _chainNext: chainNextOf(a) }, ...prevModAltsOf(a)]);
+      prev.altActions = flattenChainedAlts([...(prev.altActions || []), head, ...prevModAltsOf(step), ...nested]);
       return;
     }
     blocks.push(stepToBlock(section, triggerKey, step));
@@ -2466,12 +2486,13 @@ function passiveToBlock(section: 'main' | 'evo_source' | 'link', p: any): Effect
 // filter/from_filter.cost_le_mod（「コスト上限+/-」を直前の効果へ適用した結果）を、
 // 元の「コスト上限+/-」AltAction（applyCostModToPrev:true）へ戻す（blocksToRecipeの逆変換）。
 // これが無いと、エディタで開き直して保存しただけで cost_le_mod が消える
-function costModToAltAction(mod: any): AltAction {
-  const alt: AltAction = {
-    action: mod?.sign === '-' ? 'cost_limit_minus' : 'cost_limit_plus',
-    value: mod?.amount !== undefined ? mod.amount : 1,
-    applyCostModToPrev: true,
-  };
+function costModToAltAction(mod: any, key = 'cost_le_mod', prevAction = ''): AltAction {
+  const amount = mod?.amount !== undefined ? mod.amount : 1;
+  const alt: AltAction = key === 'cost_le_mod'
+    ? { action: mod?.sign === '-' ? 'cost_limit_minus' : 'cost_limit_plus', value: amount, applyCostModToPrev: true }
+    // dp_le_mod / lv_le_mod は「効果の上限/数値を修正」として戻す（どのアクションか＝直前の効果のアクション）
+    : { action: 'effect_cap_modify', value: mod?.sign === '-' ? -Number(amount) : amount, applyCostModToPrev: true,
+      actionParams: { ...(prevAction ? { cap_action: prevAction } : {}), cap_attr: key.replace(/_le_mod$/, '') } };
   if (mod?.per_count && mod?.per_ref) {
     alt.perCount = Number(mod.per_count);
     alt.perRef = String(mod.per_ref);
@@ -2489,19 +2510,26 @@ function costModToAltAction(mod: any): AltAction {
   }
   return alt;
 }
+// step に埋め込まれた「直前の効果に適用」の修正（cost/dp/lv_le_mod）を、元の効果（AltAction）に戻したもの。複数あればその順
+function prevModAltsOf(o: any): AltAction[] {
+  return PREV_MOD_KEYS.flatMap((k) => {
+    const m = (o?.from_filter && o.from_filter[k]) || (o?.filter && o.filter[k]);
+    return m ? [costModToAltAction(m, k, String(o?.action || ''))] : [];
+  });
+}
 function restoreCostModAltActions(block: EffectBlock, step: any): EffectBlock {
-  const pick = (o: any) => (o?.from_filter && o.from_filter.cost_le_mod) || (o?.filter && o.filter.cost_le_mod);
+  const pickAll = prevModAltsOf;
   const stepAlts: any[] = Array.isArray(step?.alt_actions) ? step.alt_actions : [];
-  const hasAny = !!pick(step) || stepAlts.some((a) => !!pick(a));
+  const hasAny = pickAll(step).length > 0 || stepAlts.some((a) => pickAll(a).length > 0);
   if (!hasAny) return block;
   const alts: AltAction[] = [...(block.altActions || [])];
   // 後ろから挿入して、先頭側（step.alt_actions[i] ↔ altActions[i]）の対応を崩さない
   for (let i = stepAlts.length - 1; i >= 0; i--) {
-    const mod = pick(stepAlts[i]);
-    if (mod) alts.splice(i + 1, 0, costModToAltAction(mod));
+    const mods = pickAll(stepAlts[i]);
+    if (mods.length > 0) alts.splice(i + 1, 0, ...mods);
   }
-  const mod0 = pick(step);
-  if (mod0) alts.splice(0, 0, costModToAltAction(mod0));
+  const mods0 = pickAll(step);
+  if (mods0.length > 0) alts.splice(0, 0, ...mods0);
   block.altActions = alts;
   // 素通し(extras)側に残ったcost_le_modは除く（UIでコスト上限+/-を消しても復活しないように）
   if (block.extras) {
@@ -2509,7 +2537,7 @@ function restoreCostModAltActions(block: EffectBlock, step: any): EffectBlock {
       const ex = JSON.parse(block.extras);
       ['filter', 'from_filter'].forEach((k) => {
         if (ex[k] && typeof ex[k] === 'object') {
-          delete ex[k].cost_le_mod;
+          PREV_MOD_KEYS.forEach((mk) => { delete ex[k][mk]; });
           if (Object.keys(ex[k]).length === 0) delete ex[k];
         }
       });

@@ -6938,8 +6938,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   )}
                 </div>
               )}
-              {isEditingAlt && (COST_LIMIT_MOD_ACTIONS.has(effectAction)
-                || (effectAction === 'effect_cap_modify' && ['dp', 'cost', 'lv'].includes(editingAlt!.actionParams?.cap_attr))) && (
+              {isEditingAlt && COST_LIMIT_MOD_ACTIONS.has(effectAction) && (
                 <div className="field" style={{ marginTop: 8 }}>
                   <label>
                     <input
@@ -6951,10 +6950,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </label>
                   <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
                     ONの場合、この効果は独立したステップにはならず、直前の効果（効果{editingEffect}）の
-                    {effectAction === 'effect_cap_modify'
-                      ? `「${({ dp: 'DP', cost: 'コスト', lv: 'Lv' } as Record<string, string>)[editingAlt!.actionParams?.cap_attr] || ''}◯以下」の上限を`
-                      : '「登場/使用コスト◯以下」の閾値を'}、上の「値」「～ごとに（倍率設定）」の設定に応じて動的に増減させます。
-                    {effectAction === 'effect_cap_modify' && <span style={{ color: '#c62828' }}>（DP/Lvはエンジン未実装）</span>}
+                    「登場/使用コスト◯以下」の閾値を、上の「値」「～ごとに（倍率設定）」の設定に応じて動的に増減させます。
                   </div>
                 </div>
               )}
@@ -7410,6 +7406,33 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           params={isEditingAlt ? editingAlt!.actionParams : block.actionParams}
           onChange={(next) => updateEffect({ actionParams: next })}
         />
+        {/* 効果の上限/数値を修正: 「直前の効果に適用する」（LM-001「このDP消滅効果の上限+1000」）。紫の枠のすぐ下に出す */}
+        {effectAction === 'effect_cap_modify' && (() => {
+          const attr = (isEditingAlt ? editingAlt!.actionParams : block.actionParams)?.cap_attr;
+          const attrLabel = ({ dp: 'DP', cost: 'コスト', lv: 'Lv' } as Record<string, string>)[attr || ''];
+          return (
+            <div className="field" style={{ marginTop: 4, background: '#f3e8ff', padding: 8, borderRadius: 4, border: '1px solid #d8b4fe' }}>
+              {!isEditingAlt ? (
+                <div style={{ fontSize: 11, color: '#6b21a8' }}>
+                  💡「直前の効果に適用する」（この効果の消滅等だけ上限を変える）は効果2以降で使えます。消滅などの効果の後ろに、この効果を追加してください。
+                </div>
+              ) : !attrLabel ? (
+                <div style={{ fontSize: 11, color: '#6b21a8' }}>💡 上の「何の上限か」（DP／コスト／Lv）を選ぶと「直前の効果に適用する」を選べます。</div>
+              ) : (
+                <>
+                  <label style={{ fontSize: 12, fontWeight: 'bold', color: '#6b21a8', display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!editingAlt!.applyCostModToPrev} onChange={(e) => updateEffect({ applyCostModToPrev: e.target.checked })} style={{ margin: 0 }} />
+                    ☑ 直前の効果に適用する
+                  </label>
+                  <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
+                    ONの場合、この効果は独立した効果にはならず、直前の効果（効果{editingEffect}）の「{attrLabel}◯以下」の上限を、
+                    「値」「～ごとに（倍率設定）」の設定に応じて増減させます。<span style={{ color: '#c62828' }}>⚠ エンジン未実装</span>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {/* immune_effects 専用:「相手の効果を受けない」の対象範囲
             （デジモン/テイマー/オプション全て なのか、デジモンの効果のみ なのか） */}

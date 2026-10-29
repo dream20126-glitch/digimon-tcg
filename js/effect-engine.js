@@ -14100,7 +14100,8 @@ function _stepLacksHandCandidate(step, card, bs, side) {
   if (!p) return false;
   if ((step.action === 'summon' || step.action === 'summon_appear' || step.action === 'summon_use') && !step.card) {
     if (!zones.includes('hand')) return false;
-    const filter = _srcCardFilterOf(step) || {};
+    // 対象欄の種別（own=デジモン / own_tamer=テイマー / own_option=オプション）も候補の絞り込みに使う（実際の登場処理と同じ）
+    const filter = _withImpliedTargetType(step, _srcCardFilterOf(step) || {});
     return !(p.hand || []).some(c => c && cardMatchesFilter(c, filter, bs, side, card));
   }
   if (step.action === 'evolve') {
@@ -16293,7 +16294,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         // ユノモン：ヒステリックモード BT26-083 で Lv.6 のメルヴァモンまで選べていた）
         const _esGate = (step.condition || step.when || (Array.isArray(step.extra_conditions) && step.extra_conditions.length > 0)
           || (Array.isArray(step.condition_chain) && step.condition_chain.length > 0)) ? { gateSrc: step } : null;
-        const _esFilter = _srcCardFilterOf(step);
+        // 手札/トラッシュからの登場と同じく、対象欄の種別（own=デジモン等）でも絞る（取得元の条件に種別があればそちら優先）
+        const _esFilter = _withImpliedTargetType(step, _srcCardFilterOf(step) || {});
         // どのカードの進化元から探すか（エディタ「進化元の対象」）: 'self'＝このデジモン（既定）/
         // 未指定＋from_owner＝その側のデジモン/テイマー全て / 'other'＝他のデジモン。evo_source_card_type で
         // デジモンだけ/テイマー（の下）だけに絞る（プロキシマモン EX12-077「自分のデジモンの進化元から」）

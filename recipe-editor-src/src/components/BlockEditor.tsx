@@ -10633,12 +10633,23 @@ function ConditionsHybridEditor({
                   )}
                   {/* Lv/DP/名前: 「以上/以下/完全一致」等のバリアントボタン（コンテンツ幅のみ使用・空なら詰める） */}
                   {variantOptionsFor(cat.code as CondCategory) && (
-                    <ButtonGroup
-                      options={variantOptionsFor(cat.code as CondCategory)!.map((v) => ({ code: v.value, label: v.label }))}
-                      value={c.base}
-                      onChange={(v) => updateAt(i, { base: v })}
-                      accentColor={colors.accent}
-                    />
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                      <ButtonGroup
+                        options={variantOptionsFor(cat.code as CondCategory)!.map((v) => ({ code: v.value, label: v.label }))}
+                        value={c.base}
+                        onChange={(v) => updateAt(i, { base: v })}
+                        accentColor={colors.accent}
+                      />
+                      {/* Lv: 「参照」＝数値の代わりに Lv（そのデジモン/このカード）・手札/セキュリティの枚数・直前の効果/コストで処理したカードと比べる */}
+                      {cat.code === 'lv' && ['cond_lv', 'cond_lv_le', 'cond_lv_ge'].includes(c.base) && (
+                        <MultiButtonGroup
+                          options={[{ code: 'ref', label: '参照' }]}
+                          values={LV_REF_MARKERS[c.value || ''] ? ['ref'] : []}
+                          onToggle={(_, on) => updateAt(i, { value: on ? 'trigger_source_lv' : '' })}
+                          accentColor={colors.accent}
+                        />
+                      )}
+                    </div>
                   )}
                   {/* コストのみ: 登場コスト（デジモン/テイマー）・使用コスト（オプション）。両方押す＝両方（指定なし）。
                       ConditionPair.costKind（filter では cost_kind、条件の文字列では cond_play_cost_le 等） */}
@@ -10656,20 +10667,39 @@ function ConditionsHybridEditor({
                       {COST_REF_MARKERS[c.value || ''] && <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>（右の「値」欄は使いません）</div>}
                     </div>
                   )}
-                  {/* Lv以上/以下/完全一致: 比べる値を数値の代わりに「そのデジモンのLv」「このカードのLv」にできる
-                      （「アタックしたそのデジモンと同じLvの〜」）。値は LV_REF_MARKERS のマーカー文字列 */}
-                  {cat.code === 'lv' && ['cond_lv', 'cond_lv_le', 'cond_lv_ge'].includes(c.base) && (
-                    <div>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>比べる値</div>
-                      <ButtonGroup
-                        options={[{ code: '', label: '数値' }, ...Object.entries(LV_REF_MARKERS).map(([code, label]) => ({ code, label }))]}
-                        value={LV_REF_MARKERS[c.value || ''] ? (c.value as string) : ''}
-                        onChange={(v) => updateAt(i, { value: v || '' })}
-                        accentColor={colors.accent}
-                      />
-                      {LV_REF_MARKERS[c.value || ''] && <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>（右の「値」欄は使いません）<span style={{ color: '#c62828', marginLeft: 4 }}>⚠ エンジン未実装</span></div>}
-                    </div>
-                  )}
+                  {/* Lv「参照」: 参照先（Lv/手札/セキュリティ/直前の効果/コストで処理）→ 自分/相手 等。値は LV_REF_MARKERS のマーカー文字列 */}
+                  {cat.code === 'lv' && ['cond_lv', 'cond_lv_le', 'cond_lv_ge'].includes(c.base) && LV_REF_MARKERS[c.value || ''] && (() => {
+                    const LV_REF_TREE: { code: string; label: string; subs?: { code: string; label: string; marker: string }[]; marker?: string }[] = [
+                      { code: 'lv', label: 'Lv', subs: [{ code: 'trigger', label: 'そのデジモン', marker: 'trigger_source_lv' }, { code: 'self', label: 'このカード', marker: 'self_lv' }] },
+                      { code: 'hand', label: '手札', subs: [{ code: 'own', label: '自分', marker: 'own_hand_count' }, { code: 'opp', label: '相手', marker: 'opp_hand_count' }] },
+                      { code: 'security', label: 'セキュリティ', subs: [{ code: 'own', label: '自分', marker: 'own_security_count' }, { code: 'opp', label: '相手', marker: 'opp_security_count' }] },
+                      { code: 'last_action', label: '直前の効果', marker: 'last_action_lv' },
+                      { code: 'cost_card', label: 'コストで処理', marker: 'cost_card_lv' },
+                    ];
+                    const curGroup = LV_REF_TREE.find((g) => g.marker === c.value || (g.subs || []).some((x) => x.marker === c.value));
+                    return (
+                      <div>
+                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>参照先</div>
+                        <ButtonGroup
+                          options={LV_REF_TREE.map((g) => ({ code: g.code, label: g.label }))}
+                          value={curGroup?.code || ''}
+                          onChange={(v) => { const g = LV_REF_TREE.find((x) => x.code === v); if (g) updateAt(i, { value: g.marker || g.subs![0].marker }); }}
+                          accentColor={colors.accent}
+                        />
+                        {curGroup?.subs && (
+                          <div style={{ marginTop: 4, marginLeft: 12 }}>
+                            <ButtonGroup
+                              options={curGroup.subs.map((x) => ({ code: x.marker, label: x.label }))}
+                              value={c.value || ''}
+                              onChange={(v) => updateAt(i, { value: v })}
+                              accentColor={colors.accent}
+                            />
+                          </div>
+                        )}
+                        <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>（右の「値」欄は使いません）<span style={{ color: '#c62828', marginLeft: 4 }}>⚠ エンジン未実装</span></div>
+                      </div>
+                    );
+                  })()}
                   {cat.code === 'cost' && (
                     <div>
                       <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>コストの種類</div>

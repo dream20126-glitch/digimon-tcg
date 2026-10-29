@@ -3910,6 +3910,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const [showSpecialEvolveMenu, setShowSpecialEvolveMenu] = useState(false);
   const isEditingAlt = editingEffect > 0 && !!altActions[editingEffect - 1];
   const editingAlt = isEditingAlt ? altActions[editingEffect - 1] : undefined;
+  // ディレイ（効果1＝ディレイ）: 最初の「その後」までの効果2以降が「ディレイで発動する効果」。
+  // ディレイ効果どうしは前の効果が空振りしても順番に実行される（＝テキストの「その後」と同じ）ので、中では「その後」を使わない
+  const isDelayBlock = DELAY_ACTION_CODES.has(block.action || '');
+  const delayEnd = (() => { const k = altActions.findIndex((a) => a.thenBreak); return k === -1 ? altActions.length : k; })();
+  const isDelayInner = (altIdx: number) => isDelayBlock && altIdx < delayEnd;
+  // ディレイ効果を追加（最初の「その後」より前＝ディレイの中に入れる）
+  function addDelayEffect() {
+    const base: AltAction = { action: '', value: '', target: '', conditions: [], options: [], fromZones: [] };
+    const next = [...altActions.slice(0, delayEnd), base, ...altActions.slice(delayEnd)];
+    onChange({ ...block, altActions: next, altActionsOp: 'and' });
+    setEditingEffect(delayEnd + 1);
+  }
+  const effectTabLabel = (altIdx: number) => {
+    if (!isDelayBlock) return '効果' + (altIdx + 2);
+    if (altIdx < delayEnd) return 'ディレイ効果' + (altIdx + 1);
+    return 'その後' + (altIdx - delayEnd + 1);
+  };
   // alt_evolve/burst_evolve/アプ合体/ジョグレス進化は常時判定される特殊トリガーで、
   // アクション/対象/複数アクション(OR/AND)/期間のいずれも意味を持たない（専用バナー内で完結する）
   const isSpecialEvolveTrigger = block.trigger === 'alt_evolve' || block.trigger === BURST_EVOLVE_TRIGGER || FUSION_EVOLVE_TRIGGERS.has(block.trigger);
@@ -6191,7 +6208,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   })()}
                   {/* 「その後」: 効果2以降（代替アクション）のみ表示。この効果からAND/OR区間を
                       切り離し、独立した後続step（前段が不発でも必ず発動する）にする */}
-                  {isEditingAlt && (
+                  {isEditingAlt && isDelayInner(editingEffect - 1) && (
+                    <span style={{ fontSize: 10, color: '#9333ea', whiteSpace: 'nowrap' }} title="ディレイ効果は、前の効果が実行できなくても順番に実行されます">
+                      ⏳ ディレイ効果{editingEffect}（テキストの「その後」もそのままここに入れる）
+                    </span>
+                  )}
+                  {isEditingAlt && !isDelayInner(editingEffect - 1) && (
                     <label
                       style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', color: editingAlt?.thenBreak ? '#9333ea' : '#666', fontWeight: editingAlt?.thenBreak ? 'bold' : 'normal' }}
                       title="この効果から「その後」として独立させる（前の効果群が不発でもこの効果以降は必ず発動する）"
@@ -7009,11 +7031,51 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             （その他のアクションとは別の設定なので、混同しないよう枠と背景色で視覚的に分ける）。
             「その後」は各効果タブの「アクション」欄の隣にあるチェックボックスで個別に指定する。
             alt_evolve/burst_evolve/アプ合体/ジョグレス進化はアクション自体が無いため丸ごと非表示 */}
-        {!isSpecialEvolveTrigger && DELAY_ACTION_CODES.has(block.action || '') && (
+        {/* ⏳ ディレイ: 汎用の「複数アクション」の代わりに、ディレイで発動する効果の欄を出す */}
+        {!isSpecialEvolveTrigger && isDelayBlock && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
-            <div style={{ fontSize: 11, color: '#9333ea', background: '#f5eefc', border: '1px solid #d8b4fe', borderRadius: 4, padding: '6px 10px' }}>
-              ⏳ 「ディレイ」は、このカードを破棄した後に効果2以降をまとめて発動する設計です。
-              下で必ず<strong>「+ ANDで追加」</strong>を使って、効果2以降に発動したい効果を追加してください（OR不可）。
+            <div style={{ padding: 10, background: '#f5eefc', border: '2px solid #9333ea', borderRadius: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <b style={{ color: '#6b21a8' }}>⏳ ディレイで発動する効果</b>
+                <button
+                  type="button"
+                  onClick={addDelayEffect}
+                  style={{ padding: '4px 10px', border: '1px dashed #9333ea', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#9333ea' }}
+                >
+                  ＋ ディレイ効果を追加
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>
+                このカードを破棄したときに、上から順番に発動します（ディレイを使わなかったときは発動しません）。
+                前の効果が実行できなくても次の効果は実行されるので、テキストの「その後、〜なら…」もそのまま次のディレイ効果として追加し、「〜なら」は発動条件に入れてください。
+              </div>
+              {delayEnd === 0 ? (
+                <div style={{ fontSize: 11, color: '#c62828', marginTop: 6 }}>（ディレイ効果が未設定です。「＋ ディレイ効果を追加」で追加してください）</div>
+              ) : (
+                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {altActions.slice(0, delayEnd).map((a, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button type="button" onClick={() => setEditingEffect(i + 1)} style={altBtnStyle(editingEffect === i + 1)}>
+                        ディレイ効果{i + 1}
+                      </button>
+                      <span style={{ fontSize: 12, color: '#333' }}>{describeEffect(a.action, a.value, a.target, a.conditions) || '(未設定)'}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeAltAction(i)}
+                        title="このディレイ効果を削除"
+                        style={{ marginLeft: 'auto', padding: '2px 6px', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 10 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {editingEffect > 0 && (
+                <button type="button" onClick={() => setEditingEffect(0)} style={{ ...altBtnStyle(false), marginTop: 6 }}>
+                  ← ディレイ本体（効果1）の設定に戻る
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -7022,7 +7084,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             追加、違えば自動的に「その後」区切りで新しい区間を開始する（addAltActionWithOp）。
             既存の効果の結合方法を後から変えたい場合は、各効果タブの「アクション」欄の隣にある
             「その後」チェック＋区間の結合ボタンで個別に調整できる */}
-        {!isSpecialEvolveTrigger && (
+        {!isSpecialEvolveTrigger && !isDelayBlock && (
         <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
@@ -7058,8 +7120,13 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         )}
 
         {/* 「編集中」の効果切替 + 設定内容一覧 */}
-        {!isSpecialEvolveTrigger && altActions.length > 0 && (
+        {!isSpecialEvolveTrigger && altActions.length > 0 && !(isDelayBlock && delayEnd === altActions.length) && (
           <div className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }}>
+            {isDelayBlock && (
+              <div style={{ fontSize: 11, color: '#c62828', marginBottom: 4 }}>
+                ⚠ ディレイの外（「その後」）に効果があります。ディレイを使わなくても発動してしまうので、テキストがディレイの中の効果なら、その効果の「その後」のチェックを外してディレイ効果にしてください。
+              </div>
+            )}
             <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>
               💡 編集中の効果を選んでください。上のアクション/対象/対象数/発動条件/場所/期間は選んだ効果に反映されます。
               「+ ANDで追加」「+ ORで追加」は直前の区間と結合方法が違えば自動的に「その後」で区切ります。
@@ -7072,7 +7139,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               {altActions.map((a, i) => (
                 <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                   <button type="button" onClick={() => setEditingEffect(i + 1)} style={altBtnStyle(editingEffect === i + 1)}>
-                    効果{i + 2}
+                    {effectTabLabel(i)}
                   </button>
                   <button
                     type="button"

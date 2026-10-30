@@ -34,6 +34,17 @@ export default function App() {
   const [selectedNo, setSelectedNo] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState<View>('editor');
+  // 開いているカードに保存していない変更があるか。カード／画面を切り替える前に確認する
+  // （以前は確認なしで変更が消え、「直して保存したはずが反映されていない」原因になり得た）
+  const [dirty, setDirty] = useState(false);
+  const leaveOk = () => !dirty || window.confirm('保存していない変更があります。破棄して移動しますか？');
+  // カードを選ぶたびにスプシから取り直す（キャッシュの古いレシピを開いて上書きしないように）
+  const selectCard = (no: string) => {
+    if (no === selectedNo || !leaveOk()) return;
+    setDirty(false);
+    setDetails((prev) => { const n = { ...prev }; delete n[no]; return n; });
+    setSelectedNo(no);
+  };
   const dict = useDict(pw);
 
   useEffect(() => {
@@ -82,20 +93,20 @@ export default function App() {
           <button onClick={() => setView('editor')} style={view === 'editor' ? { background: '#1976d2', color: 'white', borderColor: '#1976d2' } : {}}>
             📝 エディタ
           </button>
-          <button onClick={() => setView('dict')} style={view === 'dict' ? { background: '#1976d2', color: 'white', borderColor: '#1976d2' } : {}}>
+          <button onClick={() => { if (view !== 'dict' && leaveOk()) { setDirty(false); setView('dict'); } }} style={view === 'dict' ? { background: '#1976d2', color: 'white', borderColor: '#1976d2' } : {}}>
             📚 辞書管理
           </button>
-          <button onClick={logout}>ログアウト</button>
+          <button onClick={() => { if (leaveOk()) logout(); }}>ログアウト</button>
         </div>
       </div>
       {loading && <div className="placeholder">カード読込中...</div>}
       {!loading && cards.length === 0 && <div className="placeholder">カードが取得できませんでした</div>}
       {!loading && cards.length > 0 && view === 'editor' && (
         <div className="split">
-          <CardList cards={cards} selectedNo={selectedNo} onSelect={setSelectedNo} />
+          <CardList cards={cards} selectedNo={selectedNo} onSelect={selectCard} />
           <div className="right">
             {selectedCard ? (
-              <RecipeEditor key={selectedNo} card={selectedCard} password={pw} dict={dict} onSaved={handleSaved} />
+              <RecipeEditor key={selectedNo} card={selectedCard} password={pw} dict={dict} onSaved={handleSaved} onDirtyChange={setDirty} />
             ) : selectedNo && detailLoading ? (
               <div className="placeholder">カード詳細読込中...</div>
             ) : (

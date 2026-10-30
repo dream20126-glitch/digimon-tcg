@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CardData, CardLevelSettings, EffectBlock } from '../types';
 import { BlockEditor, MultiTextTags } from './BlockEditor';
 import { applyCardLevelSettings, blocksToRecipe, parseCardLevelSettings, recipeToBlocks } from '../recipe';
-import { saveRecipe } from '../api';
+import { saveRecipe, loadCardDetail } from '../api';
 import type { DictAPI } from '../useDict';
 
 function isMeaningfulText(s?: string): boolean {
@@ -16,11 +16,14 @@ export function RecipeEditor({
   password,
   dict,
   onSaved,
+  onDirtyChange,
 }: {
   card: CardData;
   password: string;
   dict: DictAPI;
   onSaved: (cardNo: string, recipe: string) => void;
+  // 保存していない変更があるか（カードの切り替え時に確認を出すため App に伝える）
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [blocks, setBlocks] = useState<EffectBlock[]>([]);
   // カード全体のルール（＜ルール：名称「〇〇」としても扱う＞ 等）。効果ステップとは別に保持し、
@@ -29,26 +32,32 @@ export function RecipeEditor({
   const [showCardLevel, setShowCardLevel] = useState(false);
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
+  // 開いた時点（または最後に保存できた時点）のレシピ。これと違えば「未保存の変更あり」
+  const [initial, setInitial] = useState<{ blocks: EffectBlock[]; cl: CardLevelSettings } | null>(null);
 
   useEffect(() => {
     setStatus('');
     if (card.recipe && card.recipe !== '""') {
       try {
         const parsed = JSON.parse(card.recipe);
-        setBlocks(recipeToBlocks(parsed));
+        const bl = recipeToBlocks(parsed);
+        setBlocks(bl);
         const cl = parseCardLevelSettings(parsed);
         setCardLevel(cl);
+        setInitial({ blocks: bl, cl });
         setShowCardLevel(!!(cl.aliasNames && cl.aliasNames.length > 0));
       } catch (e) {
         setBlocks([]);
         setCardLevel({});
         setShowCardLevel(false);
+        setInitial({ blocks: [], cl: {} });
         setStatus('既存レシピのパースに失敗: ' + (e as Error).message);
       }
     } else {
       setBlocks([]);
       setCardLevel({});
       setShowCardLevel(false);
+      setInitial({ blocks: [], cl: {} });
     }
   }, [card.cardNo]);
 
@@ -56,6 +65,22 @@ export function RecipeEditor({
     const recipe = applyCardLevelSettings(blocksToRecipe(blocks, dict.keywords), cardLevel);
     return Object.keys(recipe).length > 0 ? JSON.stringify(recipe) : '';
   }, [blocks, dict.keywords, cardLevel]);
+
+  // 開いた時点（または最後に保存できた時点）の内容を、今と同じ辞書で JSON にしたもの
+  const baseline = useMemo(() => {
+    if (!initial) return null;
+    const r0 = applyCardLevelSettings(blocksToRecipe(initial.blocks, dict.keywords), initial.cl);
+    return Object.keys(r0).length > 0 ? JSON.stringify(r0) : '';
+  }, [initial, dict.keywords]);
+  const dirty = baseline !== null && recipeJson !== baseline;
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty]);
+  // ページを閉じる・再読み込みするときも、未保存の変更があれば確認を出す
+  useEffect(() => {
+    if (!dirty) return;
+    const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', h);
+    return () => window.removeEventListener('beforeunload', h);
+  }, [dirty]);
 
   function addBlock() {
     setBlocks([...blocks, { section: 'main', trigger: '', triggerSubject: 'self', conditions: [] }]);
@@ -90,8 +115,22 @@ export function RecipeEditor({
     try {
       const r = await saveRecipe(card.cardNo, recipeJson, password);
       if (r.ok) {
-        setStatus('✅ 保存完了 (行 ' + r.row + ')');
         onSaved(card.cardNo, recipeJson);
+        // 保存したレシピがスプシに入ったかを読み直して確かめる（保存したのに反映されていない、を見逃さないため）
+        setStatus('保存しました。スプシを確認中...');
+        try {
+          const d = await loadCardDetail(card.cardNo);
+          const got = String((d && d.card && (d.card['レシピ'] || d.card['効果レシピ'])) || '');
+          if (got === recipeJson) {
+            setInitial({ blocks, cl: cardLevel });
+            setStatus('✅ 保存完了（スプシで確認済み・行 ' + r.row + '）');
+          } else {
+            setStatus('⚠ 保存の応答はありましたが、スプシのレシピが今の内容と一致しません。もう一度保存してください');
+          }
+        } catch (_) {
+          setInitial({ blocks, cl: cardLevel });
+          setStatus('✅ 保存完了 (行 ' + r.row + ')（スプシの確認はできませんでした）');
+        }
       } else {
         setStatus('❌ ' + (r.error || '保存失敗'));
       }
@@ -223,6 +262,7 @@ export function RecipeEditor({
         >
           ↩ リセット
         </button>
+        {dirty && <span className="status" style={{ color: '#c62828', fontWeight: 'bold' }}>● 未保存の変更があります</span>}
         <span className="status">{status}</span>
       </div>
     </div>

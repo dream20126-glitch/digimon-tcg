@@ -1030,8 +1030,21 @@ function dropStaleStackFilter(o: any): any {
   return out;
 }
 
+// 「このカードの下に置く」(place_under_self) は置き先を見ず常にこのカードの下に置く。置き先に「このカード」以外
+// （そのデジモン・自分のデジモン等）が入っていたら「進化元の下に置く」(place_under_digimon) で保存する。
+// 置き先を「そのデジモン」に変えてもアクションが切り替わらず、このデジモン自身の下に置くレシピになっていた（LM-026）
+const PLACE_DEST_TARGETS = new Set(['same_target', 'target_trigger_source', 'own', 'target_other_own', 'opponent', 'own_tamer', 'target_other_own_tamer', 'opponent_tamer']);
+function placeUnderSelfToDigimon(o: any): any {
+  if (o.action !== 'place_under_self') return o;
+  // own_card 等（カード）は旧来の「置くカード」の指定（BT26-089 等のテイマーのコスト）なので変えない。置き先としか読めないものだけ
+  const base = String(o.target || '').split(':')[0];
+  if (!PLACE_DEST_TARGETS.has(base)) return o;
+  return { ...o, action: /tamer/.test(base) ? 'place_under_tamer' : 'place_under_digimon' };
+}
+
 export function blocksToRecipe(rawBlocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
-  return mapActionsDeep(mapActionsDeep(mapActionsDeep(_blocksToRecipeRaw(rawBlocks, keywordDict), negateMainToUseMainEffect), returnDeckZoneTargetToFrom), dropStaleStackFilter);
+  return [negateMainToUseMainEffect, returnDeckZoneTargetToFrom, dropStaleStackFilter, placeUnderSelfToDigimon]
+    .reduce((r, fn) => mapActionsDeep(r, fn), _blocksToRecipeRaw(rawBlocks, keywordDict));
 }
 function _blocksToRecipeRaw(rawBlocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
   const blocks = stripEmptyValuePairs(rawBlocks);

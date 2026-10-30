@@ -4089,6 +4089,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     // （置き先は📍置き場所ボタンで選ぶ）。進化元/テイマー/このカードの下の間だけ、対象（置き先）に合わせて切り替える
     if (!UNDER_PLACE_ACTIONS.has(effectAction || '')) return undefined;
     const l1l2 = TARGET_SEL_CODE_TO_L1L2[newTargetBase] || { l1: '', l2: '' };
+    // 「そのデジモン」の下に置く: このカードの下（place_under_self）のままだと置き先を見ないので、進化元（place_under_digimon）にする（LM-026）
+    if (l1l2.l1 === 'same_target') return effectAction === 'place_under_self' ? 'place_under_digimon' : undefined;
     const zone = PLACE_ZONE_MAP.find((z) => {
       const zl = TARGET_SEL_CODE_TO_L1L2[z.target || ''] || { l1: '', l2: '' };
       return zl.l2 ? zl.l2 === l1l2.l2 : (zl.l1 === 'self' && l1l2.l1 === 'self');

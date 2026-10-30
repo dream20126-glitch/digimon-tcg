@@ -1016,8 +1016,22 @@ function pickActionParams(step: any, extraKeys: string[] = []): Record<string, a
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+// 対象が手札/トラッシュ/デッキ（own_hand 等）なのに「進化元」「重ねられているカード」の指定が残っていたら外す。
+// 対象をデジモン→手札に切り替えると進化元ボタンが表示されなくなり、画面から消せないまま保存されていた（LM-005）
+const ZONE_TARGET_RE = /^(own|opponent|opp|both)_(hand|trash|deck)(_or_|$)/;
+function dropStaleStackFilter(o: any): any {
+  if (typeof o.target !== 'string' || !ZONE_TARGET_RE.test(o.target.split(':')[0]) || !o.filter || typeof o.filter !== 'object') return o;
+  const keys = ['target_evo_source', 'target_evo_source_position', 'target_stack', 'target_stack_position'];
+  if (!keys.some((k) => k in o.filter)) return o;
+  const f = { ...o.filter };
+  keys.forEach((k) => delete f[k]);
+  const out = { ...o };
+  if (Object.keys(f).length > 0) out.filter = f; else delete out.filter;
+  return out;
+}
+
 export function blocksToRecipe(rawBlocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
-  return mapActionsDeep(mapActionsDeep(_blocksToRecipeRaw(rawBlocks, keywordDict), negateMainToUseMainEffect), returnDeckZoneTargetToFrom);
+  return mapActionsDeep(mapActionsDeep(mapActionsDeep(_blocksToRecipeRaw(rawBlocks, keywordDict), negateMainToUseMainEffect), returnDeckZoneTargetToFrom), dropStaleStackFilter);
 }
 function _blocksToRecipeRaw(rawBlocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
   const blocks = stripEmptyValuePairs(rawBlocks);

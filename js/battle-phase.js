@@ -729,6 +729,9 @@ export function onEndTurn() {
     bs._turnPassed = true;
     if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
     updateMemGauge();
+    // オンライン: 相手のターンが始まるので、自分のカードの【相手のターン開始時】をここで発揮する（相手の端末は
+    // 相手のカードの【自分のターン開始時】だけを発揮する。クオンタモン LM-020）
+    if (_onlineMode && window._fireOppTurnStart) window._fireOppTurnStart('player', () => {});
     // プレイヤーのターン終了 → endingSide='player'
     _hooks.expireBuffs('dur_this_turn', null, 'player');
     _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
@@ -974,7 +977,10 @@ export function checkAutoTurnEnd() {
       applyTurnEndMemoryShift();
       bs._turnPassed = true;
       if (_sendCommand) _sendCommand({ type: 'endTurn', memory: bs.memory });
-      showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {});
+      showYourTurn('相手のターン', '🎮 相手の操作を待っています...', '#ff00fb', () => {
+        // 自分のカードの【相手のターン開始時】（手動ターン終了と同じ。クオンタモン LM-020）
+        if (window._fireOppTurnStart) window._fireOppTurnStart('player', () => {});
+      });
     } else {
       // CPU のカードの「相手のターン終了時」効果（onEndTurn の AI対戦分岐と同じ）
       if (!(window._tutorialRunner && window._tutorialRunner.active)) {

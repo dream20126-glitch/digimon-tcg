@@ -154,8 +154,16 @@ export function checkTurnStartEffects(side, cb) {
   bs._usedLimits = {};
   const p = side === 'player' ? bs.player : bs.ai;
   const area = [...p.battleArea, ...(p.tamerArea || [])];
-  const trigger = side === 'player' ? '【自分のターン開始時】' : '【相手のターン開始時】';
-  const triggerCode = side === 'player' ? 'on_own_turn_start' : 'on_opp_turn_start';
+  // ターンを始めた側のカードは【自分のターン開始時】。以前は CPU のターン開始で CPU のカードの【相手のターン開始時】を
+  // 発揮していた（逆）。もう一方の側の【相手のターン開始時】は、自分の効果の後に fireOppTurnStart で発揮する
+  // （クオンタモン LM-020「【相手のターン開始時】カードカテゴリー1つを宣言する」がプレイヤー側では発動しなかった）
+  const trigger = '【自分のターン開始時】';
+  const triggerCode = 'on_own_turn_start';
+  const other = side === 'player' ? 'ai' : 'player';
+  // オンラインでは相手のカードの効果は相手の端末が発揮する（相手側の【相手のターン開始時】は、相手が自分のターンを
+  // 終えたときに相手の端末で発揮する。battle-phase.js のターン終了処理）
+  const _cbOrig = cb;
+  cb = () => (isOnlineMode() ? _cbOrig() : fireOppTurnStart(other, _cbOrig));
   // _hasRecipeTriggerEE はカード自身の recipe だけでなく、passive配列のキーワード
   // （辞書のレシピテンプレート）から解決されるトリガーも拾う（例: 急襲のon_own_turn_end）。
   // 文字列プロパティの有無だけを見る素朴なチェックだと、キーワード由来のトリガーを
@@ -169,6 +177,19 @@ export function checkTurnStartEffects(side, cb) {
     checkAndTriggerEffect(cardsWithEffect[idx++], trigger, next);
   }
   next();
+}
+
+// ===== fireOppTurnStart =====
+// side のカード（ターンプレイヤーではない側）の【相手のターン開始時】を発揮する。盤面全体（本体・進化元・付与された効果）を
+// 走査するので、その側の任意のカード1枚（無ければ null）を起点に1回だけ呼ぶ（【相手のターン終了時】と同じ呼び方）
+export function fireOppTurnStart(side, cb) {
+  try {
+    const te = window._triggerEffectFn;
+    const p = side === 'player' ? bs.player : bs.ai;
+    const any = (p.battleArea || []).find(c => c) || (p.tamerArea || []).find(c => c) || null;
+    if (te) { te('on_opp_turn_start', any, side, null, () => cb && cb()); return; }
+  } catch (e) { console.error('[fireOppTurnStart]', e); }
+  cb && cb();
 }
 
 // ===== checkTurnEndEffects =====
@@ -457,6 +478,9 @@ export function setupCommonWindowExports() {
     try { _applyPermanentEE(bs, 'player', makeEffectContext(null, 'player')); } catch(e) { console.error('[applyPerm player]', e.message); }
     try { _applyPermanentEE(bs, 'ai', makeEffectContext(null, 'ai')); } catch(e) { console.error('[applyPerm ai]', e.message); }
   };
+
+  // battle-phase.js（オンラインのターン終了）から自分のカードの【相手のターン開始時】を発揮するための入口
+  window._fireOppTurnStart = fireOppTurnStart;
 
   window._triggerEffectFn = function(triggerCode, card, side, ctx, callback) {
     const fullCtx = makeEffectContext(card, side);

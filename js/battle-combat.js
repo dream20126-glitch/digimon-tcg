@@ -11,6 +11,7 @@ import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from
 import { fxLinkEffect, fxAppGattai, fxJogressFusion, fxDigixrossFusion } from './battle-fx.js';
 import { cardAliasHasName } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
+import { fireOptionUsedTriggers as _fireOptionUsed } from './effect-engine.js';
 import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenRestTriggers as _fireWhenRest, collectOwnRestReactions as _collectOwnRestReactions, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged, getStaticEvoCostReduction as _getStaticEvoCostReduction, getJogressConditions as _getJogressConditions, jogressSlotMatches as _jogressSlotMatches, hasCostRestPending as _hasCostRestPending, getAltUseColors as _getAltUseColors } from './effect-engine.js';
 
 // ===== 戦闘フック =====
@@ -651,6 +652,13 @@ function removeOwnCard(slotIdx, reason) {
 function _dumpLinkedCardsUnlessDeferred(card, trashArr) {
   if (!card || !Array.isArray(card.linkedCards) || card.linkedCards.length === 0) return;
   card.linkedCards.forEach(s => trashArr.push(s));
+}
+
+// オプションカード（デュアルのオプションとしての使用を含む）を使用し、その【メイン】を解決した後の
+// 「オプションカードを使用したとき」（on_option_used。サクヤモン：巫女モードACE LM-023）
+function _afterOptionUsed(side, cb) {
+  try { _fireOptionUsed(side, bs, { bs, addLog, renderAll, updateMemGauge }, () => cb && cb()); }
+  catch (e) { console.error('[on_option_used]', e); cb && cb(); }
 }
 
 // ===== オプション使用の色条件チェック =====
@@ -1460,6 +1468,7 @@ export function doPlay(card, handIdx, slotIdx) {
           addLog('✦ 「' + card.name + '」をトラッシュへ');
         }
         renderAll();
+        await new Promise((res) => _afterOptionUsed('player', res));
         // 割り込み2: 効果完了後（after_play / after_use_effect 両方発火）
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('play');
         if (window._tutorialInterruptAfter) await window._tutorialInterruptAfter('use_effect');
@@ -1490,14 +1499,14 @@ export function doPlay(card, handIdx, slotIdx) {
       const _endBusy = (cb) => { if (window._effectBusyEnd) window._effectBusyEnd(cb); else cb(); };
       _hooks.checkAndTriggerEffect(card, '【メイン】', () => {
         renderAll();
-        _offerArtsEvolve(card, (evolved) => {
+        _afterOptionUsed('player', () => _offerArtsEvolve(card, (evolved) => {
           if (!evolved) {
             bs.player.trash.push(card);
             addLog('✦ 「' + card.name + '」をトラッシュへ');
             renderAll();
           }
           _endBusy(() => { renderAll(); checkPlayerPendingTurnEnd(); });
-        });
+        }));
       }, 'player');
     });
     return;
@@ -4782,7 +4791,7 @@ function _aiPlayCardMain(c, handIdx, onDone, costedDisc) {
         // 公式9-1-5: どの領域にも属していなければ破棄（バトルエリア等に置かれたら残す）
         if (!_isCardInAnyZone(c, bs.ai)) bs.ai.trash.push(c);
         renderAll(true);
-        onDone(turnEnded);
+        _afterOptionUsed('ai', () => onDone(turnEnded));
       }, 'ai');
     });
     return;

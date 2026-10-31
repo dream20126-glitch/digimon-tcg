@@ -2549,6 +2549,7 @@ function runOneAction(action, defaultTarget, ctx, callback) {
           player.security.push(rc);
           recoveredCards.push(rc);
           ctx.addLog('🛡 セキュリティ+1');
+          _noteSecurityIncrease(ctx, player);
         }
       }
       ctx.renderAll();
@@ -12188,6 +12189,12 @@ export function fireDelegatedReactionTriggers(recipeKey, bs, ctxBase, done, cmd)
   if (kind === 'hand_increase') {
     return fireWhenHandIncreaseTriggers(cmd.increasedSide, bs, ctxBase, done, { cause: cmd.cause || null, onlySide: 'player' });
   }
+  if (kind === 'security_increase') {
+    return fireWhenSecurityIncreaseTriggers(cmd.increasedSide, bs, ctxBase, done, { cause: cmd.cause || null, onlySide: 'player' });
+  }
+  if (kind === 'option_used') {
+    return fireOptionUsedTriggers(cmd.usedSide, bs, ctxBase, done, { onlySide: 'player' });
+  }
   if (kind === 'subject_source') {
     // 相手のデジモンの登場/進化等で、こちらのカードが反応した（ゾンビプルートモン BT26-079 等）。
     // 相手機がスキャンしたステップ（cmd.steps）を、こちらのカードとして発揮する
@@ -12638,6 +12645,93 @@ function _noteHandIncrease(ctx, owner) {
   const cause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
   const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
   enqueueReaction(ctx.bs, _fireWhenHandIncreaseQueued, [cause, side, ctx.bs, ctxBase]);
+}
+
+// セキュリティが効果で増えたとき（when_deck_increase + zone_increase:'security'。サクヤモン：巫女モードACE LM-023
+// 「セキュリティが増えたとき」）。手札が増えたとき（_noteHandIncrease 系）と同じ仕組みで、発動主体は
+// 未指定/self/own系=増えた側のカード、opp系=反対側、both系=両陣営。効果の解決後にまとめて1回誘発する
+function _securityIncreaseSubjectFilter(increasedSide) {
+  return (step, reactSide) => {
+    const zi = step && step.zone_increase;
+    if (!(Array.isArray(zi) ? zi : (zi ? [zi] : [])).includes('security')) return false;
+    const list = _resolveStepSubjectList(step, 'when_deck_increase');
+    const subs = list.length > 0 ? list : [undefined];
+    return subs.some((subj) => {
+      const s = String(subj || '');
+      if (/^both/.test(s)) return true;
+      if (s === 'opp' || /^opp_/.test(s) || s === 'opponent') return reactSide !== increasedSide;
+      return reactSide === increasedSide;
+    });
+  };
+}
+export function fireWhenSecurityIncreaseTriggers(increasedSide, bs, ctxBase, done, opts) {
+  opts = opts || {};
+  const finish = () => { try { done && done(); } catch (_) {} };
+  if (!bs) { finish(); return; }
+  const cause = opts.cause || { type: 'effect', causerSide: increasedSide, causerCard: null };
+  const filter = _securityIncreaseSubjectFilter(increasedSide);
+  const isOnline = !!(window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand);
+  const scanSide = (sd, next) => {
+    if (opts.onlySide && opts.onlySide !== sd) { next(); return; }
+    if (sd === 'ai' && isOnline && !opts.onlySide) {
+      _delegateReactionToOpponent({ recipeKey: 'when_deck_increase', kind: 'security_increase', increasedSide: _flipSide(increasedSide), cause: _causeForOpponent(cause) }, next);
+      return;
+    }
+    _fireSidedReactionTriggers(sd, 'when_deck_increase', bs, ctxBase, next, filter, { cause });
+  };
+  const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+  scanSide(turnSide, () => scanSide(_flipSide(turnSide), finish));
+}
+function _fireWhenSecurityIncreaseQueued(cause, increasedSide, bs, ctxBase, callback) {
+  fireWhenSecurityIncreaseTriggers(increasedSide, bs, ctxBase, callback, { cause });
+}
+// 効果の処理中にセキュリティが増えたときに呼ぶ（owner = 増えた側の bs.player/bs.ai か 'player'/'ai'）
+function _noteSecurityIncrease(ctx, owner) {
+  if (!ctx || !ctx.bs) return;
+  if (!_anyBoardCardHasStep(ctx.bs, 'when_deck_increase', (s) => {
+    const zi = s && s.zone_increase;
+    return (Array.isArray(zi) ? zi : (zi ? [zi] : [])).includes('security');
+  })) return;
+  const side = typeof owner === 'string' ? owner : (owner === ctx.bs.player ? 'player' : (owner === ctx.bs.ai ? 'ai' : null));
+  if (!side) return;
+  const pend = ctx.bs._pendingReactions || [];
+  if (pend.some(r => r && r.fn === _fireWhenSecurityIncreaseQueued && r.args[1] === side && r.args[0] && r.args[0].causerCard === ctx.card)) return;
+  const cause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
+  const ctxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
+  enqueueReaction(ctx.bs, _fireWhenSecurityIncreaseQueued, [cause, side, ctx.bs, ctxBase]);
+}
+
+// オプションカードを使用したとき（on_option_used。サクヤモン：巫女モードACE LM-023）。usedSide = 使用した側。
+// 発動主体は 未指定/both系=どちらが使ってもよい（テキストに「自分の」「相手の」が無い）、own/self系=自分が使ったとき、
+// opp系=相手が使ったとき。オプションの【メイン】の解決後に呼ぶ。オンラインでは相手のカードの反応は相手機へ委譲する
+function _optionUsedSubjectFilter(usedSide) {
+  return (step, reactSide) => {
+    const list = _resolveStepSubjectList(step, 'on_option_used');
+    const subs = list.length > 0 ? list : [undefined];
+    return subs.some((subj) => {
+      const s = String(subj || '');
+      if (!s || /^both/.test(s)) return true;
+      if (s === 'opp' || /^opp_/.test(s) || s === 'opponent') return reactSide !== usedSide;
+      return reactSide === usedSide;
+    });
+  };
+}
+export function fireOptionUsedTriggers(usedSide, bs, ctxBase, done, opts) {
+  opts = opts || {};
+  const finish = () => { try { done && done(); } catch (_) {} };
+  if (!bs || !_anyBoardCardHasStep(bs, 'on_option_used', () => true)) { finish(); return; }
+  const filter = _optionUsedSubjectFilter(usedSide);
+  const isOnline = !!(window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand);
+  const scanSide = (sd, next) => {
+    if (opts.onlySide && opts.onlySide !== sd) { next(); return; }
+    if (sd === 'ai' && isOnline && !opts.onlySide) {
+      _delegateReactionToOpponent({ recipeKey: 'on_option_used', kind: 'option_used', usedSide: _flipSide(usedSide) }, next);
+      return;
+    }
+    _fireSidedReactionTriggers(sd, 'on_option_used', bs, ctxBase, next, filter, {});
+  };
+  const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+  scanSide(turnSide, () => scanSide(_flipSide(turnSide), finish));
 }
 
 // デッキが自分の効果で増えたとき（見た後に戻す／デッキに戻す等）→ 増えた側の自分側が反応
@@ -20263,6 +20357,7 @@ function executeRecipeStep(step, ctx, store, callback) {
               c.stack = []; c.linkedCards = []; c.buffs = []; c.suspended = false;
               if (_psFaceUp) { c._faceUp = true; delete c._faceDown; } else delete c._faceUp;
               if (_psToBottom) _psP.security.push(c); else _psP.security.unshift(c);
+              _noteSecurityIncrease(ctx, _psP);
               ctx.addLog && ctx.addLog('🛡 「' + c.name + '」を' + (_psOpp ? '相手の' : '') + 'セキュリティの' + (_psToBottom ? '下' : '上') + 'に置く' + (_psFaceUp ? '（表向き）' : ''));
               // オンライン: 相手のカードは持ち主の端末で移動してもらう（state_sync は相手のカードを上書きしないため）
               if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
@@ -20370,6 +20465,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         if (idx !== -1) player.battleArea[idx] = newCarrier;
         const toBottom = step.position === 'bottom';
         removed.forEach((c) => { if (toBottom) player.security.push(c); else player.security.unshift(c); });
+        if (removed.length > 0) _noteSecurityIncrease(ctx, player);
         ctx.addLog && ctx.addLog('🛡 「' + src.name + '」に重ねられているカードを' + removed.length + '枚、セキュリティの' + (toBottom ? '下' : '上') + 'に置く' + (newCarrier && newCarrier !== src ? '（新形態: ' + newCarrier.name + '）' : (!newCarrier ? '（完全に離れる）' : '')));
         ctx.renderAll();
         if (idx !== -1 && window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player' && window._onlineSendCommand) {
@@ -20463,6 +20559,7 @@ function executeRecipeStep(step, ctx, store, callback) {
         player.security.unshift(cardToPlace);
         ctx.addLog('🛡 「' + cardToPlace.name + '」をセキュリティの上に置く' + _posFaceLabel);
       }
+      _noteSecurityIncrease(ctx, player);
       ctx.renderAll();
       // オンライン: 自分のセキュリティ（実カード・表向きフラグ込み）を相手へ再同期
       if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {

@@ -210,7 +210,7 @@ function ValueRefPanel({ params, onChange }: { params?: Record<string, any>; onC
             onChange={(v) => { const n = { ...vf }; if (v) n.sign = v; else delete n.sign; setVf(n); }}
             accentColor="#9a3412"
           />
-          <div style={{ fontSize: 10, color: '#666' }}>値の欄は使いません。⚠ エンジン未実装（保存はできますが動作しません）</div>
+          <div style={{ fontSize: 10, color: '#666' }}>値の欄は使いません。</div>
         </div>
       )}
     </div>
@@ -249,20 +249,20 @@ function ActionParamsPanel({ action, params, onChange }: { action: string; param
           {d.hint && <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>{d.hint}</div>}
         </div>
       ))}
-      <div style={{ fontSize: 10, color: '#c62828' }}>⚠ この項目はエンジン未実装です（保存はできますが動作しません）</div>
       <ValueRefPanel params={params} onChange={onChange} />
     </div>
   );
 }
 
-// 「エリアの〜」: 通常は効果の対象にならない育成エリアのデジモンも対象に含める（step.options に 'include_breed'）。⚠ エンジン未実装
+// 「エリアの〜」: 通常は効果の対象にならない育成エリアも含める（step.options に 'include_breed'）。
+// エンジンは「エリアに登場」（育成エリアが空いていれば置き先を選べる）だけ対応。育成エリアのデジモンを効果の対象にするのは未対応
 function BreedAreaToggle({ options, onChange }: { options: string[]; onChange: (next: string[]) => void }) {
   const on = options.includes('include_breed');
   return (
     <label style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#555', cursor: 'pointer' }}>
       <input type="checkbox" checked={on} onChange={(e) => onChange(e.target.checked ? [...options, 'include_breed'] : options.filter((o) => o !== 'include_breed'))} style={{ margin: 0 }} />
       育成エリアも対象に含める（「エリアの〜」）
-      {on && <span style={{ color: '#c62828', marginLeft: 4 }}>⚠ エンジン未実装</span>}
+      {on && <span style={{ color: '#666', marginLeft: 4 }}>（エンジンは登場の置き先のみ対応）</span>}
     </label>
   );
 }
@@ -647,7 +647,6 @@ function RefExistsAttributeFilterPanel({
                   <span style={{ fontSize: 10, color: '#666' }}>枚以上</span>
                 </>
               )}
-              {evoVal?.value === 'self' && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ 「このデジモン以上」はエンジン未対応です（保存はできますが動作しません）</span>}
             </div>
           )}
           {activeSub.has('feature') && (
@@ -7499,7 +7498,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   </label>
                   <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
                     ONの場合、この効果は独立した効果にはならず、直前の効果（効果{editingEffect}）の「{attrLabel}◯以下」の上限を、
-                    「値」「～ごとに（倍率設定）」の設定に応じて増減させます。<span style={{ color: '#c62828' }}>⚠ エンジン未実装</span>
+                    「値」「～ごとに（倍率設定）」の設定に応じて増減させます。
                   </div>
                 </>
               )}
@@ -10799,7 +10798,7 @@ function ConditionsHybridEditor({
                             />
                           </div>
                         )}
-                        <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>（右の「値」欄は使いません）<span style={{ color: '#c62828', marginLeft: 4 }}>⚠ エンジン未実装</span></div>
+                        <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>（右の「値」欄は使いません）</div>
                       </div>
                     );
                   })()}

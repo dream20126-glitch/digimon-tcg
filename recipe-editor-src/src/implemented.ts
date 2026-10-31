@@ -5,6 +5,8 @@
 // 更新方法: js/effect-engine.js の switch case を grep して反映:
 // grep -E "^\s*case '[a-z_]+'" effect-engine.js | grep -v "cond_"
 export const IMPLEMENTED_ACTIONS = new Set<string>([
+  // 2026-10-31 LM弾の対応
+  'appear_or_evolve', 'effect_cap_modify', 'declare_category', 'security_open',
   'active', 'add_to_hand',
   'bounce', 'cant_attack', 'cant_attack_block', 'cant_block', 'cant_destroy', 'cant_evolve',
   'change_attack_target', 'cost_digiburst', 'cost_discard',
@@ -76,6 +78,7 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
 // 新キーワードを passive として追加 → 既存と同じ動作なら flag 名を一致させる
 // 完全新規キーワード = Claude に実装依頼
 export const IMPLEMENTED_KEYWORDS = new Set<string>([
+  'alt_use_color', 'ice_armor',
   'blocker', 'penetrate', 'piercing', 'rush', 'jamming', 'reboot',
   'michizure', 'armor_break', 'evade', 'barrier', 'indomitable',
   'combo', 'collision', 'charge', 'security_attack_plus',
@@ -97,6 +100,7 @@ export const IMPLEMENTED_KEYWORDS = new Set<string>([
 // エンジンで実装済の条件コード
 // 更新方法: grep -E "case 'cond_[a-z_]+'" effect-engine.js
 export const IMPLEMENTED_CONDITIONS = new Set<string>([
+  'cond_picked_type', 'cond_not_exists', 'cond_has_keyword', 'cond_color_count', 'cond_dp_sum_le', 'cond_lv_sum_le', 'cond_cost_sum_le',
   'cond_assembly_eligible', 'cond_attack_target_digimon', 'cond_battle_win',
   'cond_color', 'cond_color_not', 'cond_cost_ge', 'cond_cost_le',
   'cond_digicross', 'cond_dp_ge', 'cond_dp_le',

@@ -326,6 +326,7 @@ var MANUAL_INPUT_ACTIONS = {
   'draw': 1, 'deck_trash_top': 1, 'security_trash_top': 1,
   'security_trash_bottom': 1, 'security_open': 1,
   'summon_from_evo_source': 1,
+  'declare_category': 1, // カードカテゴリーの宣言（プレイヤーが選ぶ。クオンタモン LM-020）
   'hatch': 1,
 };
 
@@ -5421,7 +5422,12 @@ function hasActiveImmuneEffects(card, effectSide, effectSourceType) {
   if (!card || !Array.isArray(card.buffs)) return false;
   return card.buffs.some((b) => {
     if (!b || b.type !== 'keyword_immune') return false;
-    if (!b._appliedSide || b._appliedSide === effectSide) return false;
+    if (!b._appliedSide) return false;
+    if (b._appliedSide === effectSide) {
+      // 「相手の」と書かれていない免疫（b.anySide。クオンタモン LM-020「宣言したカードカテゴリーの効果を受けない」）は
+      // 自分の効果も受けない。ただし自分側は発生元の種別が分かる効果だけ防ぐ（種別不明の内部処理まで止めないため）
+      if (!b.anySide || !effectSourceType) return false;
+    }
     // sourceType指定の免疫（デジモンの効果のみ/オプションの効果のみ）は、実際に発動している
     // 効果の発生元種別(effectSourceType)と一致する場合のみブロックする。呼び出し元が
     // effectSourceTypeを渡さない(=不明)場合は、従来通り種別を問わず全てブロックする
@@ -5442,7 +5448,13 @@ function _isImmuneToEffect(card, ctx) {
   if (!card || !ctx || !ctx.bs || !ctx.side) return false;
   const oppSide = ctx.side === 'player' ? 'ai' : 'player';
   const opp = ctx.bs[oppSide];
-  if (!opp || !((opp.battleArea || []).includes(card) || (opp.tamerArea || []).includes(card))) return false;
+  const onOpp = !!(opp && ((opp.battleArea || []).includes(card) || (opp.tamerArea || []).includes(card)));
+  if (!onOpp) {
+    // 自分側のカードは「相手の」と限らない免疫（anySide。クオンタモン LM-020）を持つときだけ判定する
+    const own = ctx.bs[ctx.side];
+    const onOwn = !!(own && ((own.battleArea || []).includes(card) || (own.tamerArea || []).includes(card)));
+    if (!onOwn || !(card.buffs || []).some(b => b && b.type === 'keyword_immune' && b.anySide)) return false;
+  }
   return hasActiveImmuneEffects(card, ctx.side, _effectSourceTypeOf(ctx));
 }
 // ctx.card（この効果を発動しているカード自身）の種別を immune_effects の source_type
@@ -5452,6 +5464,7 @@ function _effectSourceTypeOf(ctx) {
   if (t === 'デジモン') return 'digimon';
   if (t === 'オプション') return 'option';
   if (t === 'テイマー') return 'tamer';
+  if (t === 'デジタマ') return 'digitama';
   // デュアルカード: 場にデジモンとしているならデジモンの効果、場にいない（手札から使用中・トラッシュへ送られた）なら
   // オプションとしての効果（タイラントカブテリモン BT26-047「相手のオプションの効果を受けない」はデジモンの効果は受ける）
   if (t === 'デュアル') {
@@ -5460,6 +5473,21 @@ function _effectSourceTypeOf(ctx) {
     return onField ? 'digimon' : 'option';
   }
   return undefined;
+}
+
+// declare_category（カードカテゴリーを1つ宣言する）で宣言した値（デジモン/テイマー/オプション/デジタマ）。
+// 同じ効果の後のステップ（cond_picked_type:declared・immune_effects source_type:'declared'）が読む。
+// 宣言したカード（ctx.card）ごとに bs._declaredCategory[カードの id] に置き、カードの id が無ければ最後の宣言を使う
+function _declCatKey(card) {
+  return card ? String(card._uid || card.uid || card.instanceId || card.id || card.cardNo || '') : '';
+}
+function _declaredCategoryOf(ctx) {
+  const bs = ctx && ctx.bs;
+  if (!bs) return '';
+  const map = bs._declaredCategory || {};
+  const k = _declCatKey(ctx.card);
+  if (ctx.card && ctx.card._declaredCategory) return ctx.card._declaredCategory;
+  return (k && map[k]) || bs._lastDeclaredCategory || '';
 }
 
 // combat（バトルする）: 通常のアタックとは別に、指定した自分1体(ctx.card)と相手1体だけで
@@ -5963,17 +5991,26 @@ function _deckOpenAuto(opened, step, ctx, callback) {
   const returnTo = step.return_to || 'deck_bottom';
   const left = opened.slice();
   let si = 0;
+  // 戻し先はデッキの持ち主（deck_open deck_owner:'opp' なら相手。クオンタモン LM-020）
+  const deckSide = step._deckOwnerSide || ctx.side;
+  const deckOwner = ctx.bs[deckSide] || player;
+  const ownLbl = deckSide !== ctx.side ? '相手の' : '';
   const returnPhase = () => {
     let deckInc = false;
     left.forEach(c => {
-      if (returnTo === 'trash') { player.trash.push(c); ctx.addLog && ctx.addLog('🗑 「' + c.name + '」をトラッシュへ'); return; }
-      if (returnTo === 'deck_top') player.deck.unshift(c); else player.deck.push(c);
+      if (returnTo === 'trash') {
+        deckOwner.trash.push(c); ctx.addLog && ctx.addLog('🗑 「' + c.name + '」を' + ownLbl + 'トラッシュへ');
+        if (typeof step._onReturnPlaced === 'function') step._onReturnPlaced(c, 'trash');
+        return;
+      }
+      if (returnTo === 'deck_top') deckOwner.deck.unshift(c); else deckOwner.deck.push(c);
       deckInc = true;
-      ctx.addLog && ctx.addLog('📥 「' + c.name + '」をデッキの' + (returnTo === 'deck_top' ? '上' : '下') + 'へ');
+      if (typeof step._onReturnPlaced === 'function') step._onReturnPlaced(c, returnTo === 'deck_top' ? 'deck_top' : 'deck_bottom');
+      ctx.addLog && ctx.addLog('📥 「' + c.name + '」を' + ownLbl + 'デッキの' + (returnTo === 'deck_top' ? '上' : '下') + 'へ');
     });
     left.length = 0;
     ctx.renderAll && ctx.renderAll();
-    if (deckInc) { _deckIncreased(ctx, ctx.side, () => callback()); return; }
+    if (deckInc) { _deckIncreased(ctx, deckSide, () => callback()); return; }
     callback();
   };
   const nextSel = () => {
@@ -6039,6 +6076,11 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   const getImg = (c) => c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '';
   const selections = Array.isArray(step.selections) ? step.selections : [];
   const returnTo = step.return_to || 'deck_bottom';
+  // 戻し先はデッキの持ち主（deck_open deck_owner:'opp' なら相手。クオンタモン LM-020）
+  const deckSide = step._deckOwnerSide || ctx.side;
+  const deckOwner = ctx.bs[deckSide] || player;
+  const oppDeck = deckSide !== ctx.side;
+  const ownLbl = oppDeck ? '相手の' : '';
 
   // 「オープン」効果は両プレイヤーに公開されるため、自分側プレイヤー操作時は相手画面にも観戦UIを送る
   const isOnlineSelf = () => ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
@@ -6051,6 +6093,8 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       return;
     }
     console.log('[deckOpen sendRemote] sending', cmd.type, cmd);
+    // 相手（受信側）のデッキをオープンしているなら、受信側の画面では「自分のデッキ」として表示する
+    if (oppDeck) cmd = Object.assign({}, cmd, { receiverZone: true });
     try { window._onlineSendCommand(cmd); } catch (e) { console.error('[deckOpen sendRemote] error', e); }
   };
   // 開始通知: 全 opened カードを表向きで相手に公開
@@ -6069,7 +6113,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   titleEl.style.cssText = 'color:#00fbff;font-size:14px;font-weight:bold;margin-bottom:8px;text-shadow:0 0 8px #00fbff;';
   titleEl.innerText = step.private
     ? '🛡 セキュリティを確認 (' + opened.length + '枚) — 相手には非公開'
-    : '📖 デッキオープン (' + opened.length + '枚)';
+    : '📖 ' + ownLbl + 'デッキオープン (' + opened.length + '枚)';
   overlay.appendChild(titleEl);
 
   const stepEl = document.createElement('div');
@@ -6456,7 +6500,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
   // デッキへの戻しが1枚でもあれば when_deck_increase を発火してから終了する（ピョコモン BT26-001用）
   function finishReturnPhase() {
     cleanup();
-    if (_deckIncreasedByEffect) { _deckIncreased(ctx, ctx.side, () => callback()); return; }
+    if (_deckIncreasedByEffect) { _deckIncreased(ctx, deckSide, () => callback()); return; }
     callback();
   }
   function runReturnPhase() {
@@ -6469,8 +6513,9 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       const many = cards.length >= 3;
       remaining.forEach(e => {
         sendRemote({ type: 'fx_remoteDeckOpenAct', cardNo: e.card.cardNo, name: e.card.name, to: 'trash', noFx: many });
-        player.trash.push(e.card);
-        ctx.addLog && ctx.addLog('🗑 「' + e.card.name + '」をトラッシュへ');
+        deckOwner.trash.push(e.card);
+        if (typeof step._onReturnPlaced === 'function') step._onReturnPlaced(e.card, 'trash');
+        ctx.addLog && ctx.addLog('🗑 「' + e.card.name + '」を' + ownLbl + 'トラッシュへ');
         removeEntry(e);
       });
       ctx.renderAll && ctx.renderAll();
@@ -6478,19 +6523,20 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       overlay.style.display = 'none';
       const runMoves = () => {
         let k = 0;
-        const nx = () => { if (k >= cards.length) { finishReturnPhase(); return; } window._fxCardMove(cards[k++], 'オープンしたカード', 'トラッシュ', nx); };
+        const nx = () => { if (k >= cards.length) { finishReturnPhase(); return; } window._fxCardMove(cards[k++], 'オープンしたカード', ownLbl + 'トラッシュ', nx); };
         nx();
       };
-      if (many) _moveBatchIntro(ctx, cards, 'オープンしたカード', 'トラッシュ', runMoves);
+      if (many) _moveBatchIntro(ctx, cards, 'オープンしたカード', ownLbl + 'トラッシュ', runMoves);
       else runMoves();
       return;
     }
     // quiet: 相手の画面の1枚ずつの移動演出は出さない（3枚以上で一覧の演出を出すとき）
     const placeFn = (card, position, quiet) => {
-      if (position === 'top') player.deck.unshift(card);
-      else player.deck.push(card);
+      if (position === 'top') deckOwner.deck.unshift(card);
+      else deckOwner.deck.push(card);
       _deckIncreasedByEffect = true;
-      ctx.addLog && ctx.addLog('📥 「' + card.name + '」をデッキの' + (position === 'top' ? '上' : '下') + 'へ');
+      if (typeof step._onReturnPlaced === 'function') step._onReturnPlaced(card, position === 'top' ? 'deck_top' : 'deck_bottom');
+      ctx.addLog && ctx.addLog('📥 「' + card.name + '」を' + ownLbl + 'デッキの' + (position === 'top' ? '上' : '下') + 'へ');
       // 相手画面にも通知
       sendRemote({ type: 'fx_remoteDeckOpenAct', cardNo: card.cardNo, name: card.name, to: position === 'top' ? 'deck_top' : 'deck_bottom', noFx: !!quiet });
     };
@@ -6503,7 +6549,7 @@ function showDeckOpenUI(opened, step, ctx, callback) {
       // 置く順: deck_top（タップ順に上へ積む）は選んだ順に上へ＝最後に選んだカードが一番上。
       // 「上か下だけ」で上を選んだときは1枚目に選んだカードが一番上。下はどちらも選んだ順に下へ
       const placeList = (returnTo === 'deck_top_or_bottom' && pos === 'top') ? _order.slice().reverse() : _order.slice();
-      const toLabel = 'デッキ' + (pos === 'top' ? '(上)' : '(下)');
+      const toLabel = ownLbl + 'デッキ' + (pos === 'top' ? '(上)' : '(下)');
       const many = _order.length >= 3;
       overlay.style.display = 'none';
       const done = () => { ctx.renderAll && ctx.renderAll(); finishReturnPhase(); };
@@ -8591,8 +8637,14 @@ function checkConditions(conditions, card, bs, side) {
         };
         // cond.code で参照（parseRecipeCondition は base ではなく code を設定する）
         const attr = attrMap[cond.code];
-        const want = String(cond.value || '');
+        let want = String(cond.value || '');
         if (want === '') break; // 値未指定は no-op (true)
+        // cond_picked_type:declared = 直前の declare_category で宣言したカテゴリーと同じか（クオンタモン LM-020
+        // 「そのカードが宣言したカードカテゴリーなら」）。宣言が無ければ満たさない
+        if (cond.code === 'cond_picked_type' && want === 'declared') {
+          want = _declaredCategoryOf({ bs, card });
+          if (!want) return false;
+        }
         const got = picked[attr];
         if (attr === 'lv' || attr === 'dp' || attr === 'playCost') {
           // 数値比較（lv/dp/cost は完全一致）
@@ -14056,7 +14108,10 @@ function _resolveStepConditionGate(step) {
   const _isSelfC = (c) => !!(c && c.subject && /^self(_card)?$/i.test(String(c.subject)));
   // 「直前の効果で処理した枚数」（cond_last_action_*。「この効果で消滅しなかったなら」メガドラモン EX12-064）は
   // 対象の性質ではないので、対象の絞り込みではなく発動条件として先に判定する
-  const _isLastActC = (c) => !!(c && /^cond_last_action_/.test(String(c.code || '')));
+  // 「直前に選んだ／オープンしたカードが〜なら」（cond_picked_*）も対象の性質ではないので発動条件として先に判定する
+  // （クオンタモン LM-020 の効果2「そのカードが宣言したカードカテゴリーなら〜効果を受けない」が、immune_effects が
+  // condition を読まないため無条件で付いていた）
+  const _isLastActC = (c) => !!(c && /^cond_(last_action_|picked_)/.test(String(c.code || '')));
   const hasSubjAttr = (!all.some(c => c && c.code === 'cond_exists') && all.some(_isSubjectAttrCond)) || all.some(_isSelfC) || all.some(_isLastActC);
   if (STEP_GATE_ACTIONS.has(step.action)) {
     if (step.action === 'grant_keyword' || step.action === 'grant_keyword_to') {
@@ -14867,6 +14922,108 @@ function _sendOppSecurityMovesNow(ctx, moves) {
     window._onlineSendCommand({ type: 'fx_oppSecurityMoved', moves: moves.map(m => ({ idx: m.idx, cardNo: (m.card && m.card.cardNo) || '', name: (m.card && m.card.name) || '', to: m.to })) });
     moves.forEach(m => { if (m.card) m.card._secMoveSent = true; });
   } catch (e) { console.error('[sendOppSecurityMovesNow]', e); }
+}
+// ===== セキュリティを公開でオープンし、1枚を選んで移す（security_open の security_owner / pick_to） =====
+// クオンタモン LM-020【進化時】「相手のセキュリティ全てをオープンし、その中から1枚を相手のデッキの上に置く。残りはシャッフルして
+// セキュリティに戻す」。step.security_owner:'opp' で相手のセキュリティ（未指定は自分）。value 空/'all' で全て、数値で上からN枚。
+// pick_to（選んだ1枚の行き先。どれもセキュリティの持ち主の領域）: 'opp_deck_top'/'deck_top'=デッキの上・'deck_bottom'=デッキの下・
+// 'own_hand'/'hand'=手札・'trash'=トラッシュ。未指定ならオープンして戻すだけ。rest_to:'shuffle_security' で残りを戻してシャッフル
+// （未指定は元の順のまま上に戻す）。post_actions は選んだカード（bs._lastPickedCard）を見て続けて行う。
+// オンライン: セキュリティの中身は持ち主の端末が正。相手のセキュリティなら選んだ1枚の移動を fx_oppSecurityMoved で、
+// 戻した後の並びを fx_oppSecurityOrder で持ち主に送る（持ち主が security_init で送り返す）。自分のセキュリティは security_init で送る
+function _securityOpenPick(step, ctx, callback) {
+  const bs = ctx.bs;
+  const isOpp = step.security_owner === 'opp' || step.security_owner === 'opponent';
+  const ownerSide = isOpp ? (ctx.side === 'player' ? 'ai' : 'player') : ctx.side;
+  const owner = bs[ownerSide];
+  const lbl = ownerSide === 'ai' ? '相手の' : '';
+  const online = !!(ctx.side === 'player' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand);
+  const send = (cmd) => { if (online) { try { window._onlineSendCommand(cmd); } catch (e) { console.error('[securityOpenPick]', e); } } };
+  if (!owner || !owner.security || owner.security.length === 0) {
+    ctx.addLog && ctx.addLog('⚠ ' + lbl + 'セキュリティが空です');
+    callback && callback();
+    return;
+  }
+  const all = step.value === 'all' || step.value == null || step.value === '';
+  const openN = all ? owner.security.length : Math.min(owner.security.length, parseInt(step.value, 10) || 1);
+  const seqBefore = bs._aiSecurityInitSeq || 0;
+  const opened = owner.security.splice(0, openN);
+  ctx.addLog && ctx.addLog('🛡 ' + lbl + 'セキュリティ' + opened.length + '枚をオープン：' + opened.map(c => '「' + ((c && c.name) || '?') + '」').join(''));
+  ctx.renderAll && ctx.renderAll();
+  const getImg = (c) => c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || c.imageUrl || '';
+  // 相手の画面にもオープンしたカードを見せる（デッキオープンの観戦表示を流用。受信側のセキュリティなら receiverZone）
+  send({ type: 'fx_remoteDeckOpenStart', sourceCardName: ctx.card ? ctx.card.name : '', zoneName: 'セキュリティ', receiverZone: ownerSide === 'ai',
+    cards: opened.map(c => ({ cardNo: c.cardNo, name: c.name, imgSrc: getImg(c) })) });
+  const pickTo = String(step.pick_to || '');
+  const dest = !pickTo ? null
+    : /deck_bottom$/.test(pickTo) ? 'deck_bottom'
+    : /deck(_top)?$/.test(pickTo) ? 'deck_top'
+    : /hand$/.test(pickTo) ? 'hand'
+    : /trash$/.test(pickTo) ? 'trash' : 'deck_top';
+  const destLbl = { deck_top: 'デッキの上', deck_bottom: 'デッキの下', hand: '手札', trash: 'トラッシュ' }[dest] || '';
+  const choose = (cb) => {
+    if (!dest) { cb(null); return; }
+    if (opened.length === 1) { cb(opened[0]); return; }
+    if (ctx.side === 'ai') {
+      // CPU: 相手のセキュリティからはDPが一番高いデジモン（セキュリティチェックで一番困るカード）、自分のなら登場コストが一番高いカード
+      const score = (c) => isOpp ? ((c.type === 'デジモン' ? 100000 : 0) + (parseInt(c.dp, 10) || 0)) : (parseInt(c.playCost, 10) || 0);
+      cb(opened.slice().sort((a, b) => score(b) - score(a))[0]);
+      return;
+    }
+    showCardListPicker(opened.slice(), 1, '🛡 ' + lbl + destLbl + 'に置くカードを1枚選んでください', (picked) => cb((picked && picked[0]) || opened[0]));
+  };
+  choose((pick) => {
+    if (pick) {
+      delete pick._faceUp;
+      if (dest === 'deck_top') owner.deck.unshift(pick);
+      else if (dest === 'deck_bottom') owner.deck.push(pick);
+      else if (dest === 'hand') owner.hand.push(pick);
+      else owner.trash.push(pick);
+      ctx.addLog && ctx.addLog('🛡 「' + pick.name + '」を' + lbl + destLbl + 'に置く');
+      if (ownerSide === 'ai') _sendOppSecurityMovesNow(ctx, [{ card: pick, idx: opened.indexOf(pick), to: dest }]);
+      send({ type: 'fx_remoteDeckOpenAct', cardNo: pick.cardNo, name: pick.name, to: dest, receiverZone: ownerSide === 'ai' });
+      bs._lastPickedCard = pick;
+    }
+    const rest = opened.filter(c => c !== pick);
+    // オープン中に持ち主から security_init が届いてセキュリティが作り直されていたら（コストで置いたカードの同期等）、
+    // 作り直された方の上 openN 枚がオープン中のカードにあたるので除いてから戻す
+    if (ownerSide === 'ai' && (bs._aiSecurityInitSeq || 0) !== seqBefore) owner.security = (owner.security || []).slice(openN);
+    owner.security = rest.concat(owner.security || []);
+    const shuffle = step.rest_to === 'shuffle_security' || step.rest_to === 'shuffle';
+    if (shuffle) {
+      const sec = owner.security;
+      for (let i = sec.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const t = sec[i]; sec[i] = sec[j]; sec[j] = t;
+      }
+      ctx.addLog && ctx.addLog('🔀 ' + lbl + 'セキュリティをシャッフル');
+    }
+    // オープンしただけ（戻した分）は減ったことにならない（公式ルール 15-3-1）。移した1枚だけ「セキュリティが減ったとき」
+    if (pick) _noteSecurityDecrease(ctx, owner, 1);
+    if (pick && dest === 'hand') _noteHandIncrease(ctx, owner);
+    ctx.renderAll && ctx.renderAll();
+    if (online) {
+      if (ownerSide === 'player') send({ type: 'security_init', cards: owner.security.map(_serializeSecurityCard) });
+      else send({ type: 'fx_oppSecurityOrder', cards: owner.security.map(c => ({ cardNo: (c && c.cardNo) || '', name: (c && c.name) || '' })) });
+      if (shuffle) send({ type: 'fx_shuffle', label: (ownerSide === 'ai' ? '' : '相手の') + 'セキュリティをシャッフル' });
+      send({ type: 'fx_remoteDeckOpenEnd' });
+      if (window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+    }
+    const finish = () => runPostActions(step.post_actions, ctx, () => callback && callback());
+    const afterShuffle = () => {
+      if (pick && (dest === 'deck_top' || dest === 'deck_bottom')) { _deckIncreased(ctx, ownerSide, finish); return; }
+      finish();
+    };
+    const doShuffleFx = () => {
+      const fx = shuffle && typeof window !== 'undefined' && window._fxShuffle;
+      if (fx) { try { fx(lbl + 'セキュリティをシャッフル', afterShuffle); return; } catch (_) {} }
+      afterShuffle();
+    };
+    if (pick && typeof window !== 'undefined' && window._fxCardMove) {
+      try { window._fxCardMove(pick, lbl + 'セキュリティ', lbl + ({ deck_top: 'デッキ(上)', deck_bottom: 'デッキ(下)', hand: '手札', trash: 'トラッシュ' }[dest]), doShuffleFx, false); return; } catch (_) {}
+    }
+    doShuffleFx();
+  });
 }
 function _withOppSecuritySync(ctx, run, done) {
   const online = typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand;
@@ -17689,30 +17846,93 @@ function executeRecipeStep(step, ctx, store, callback) {
       break;
     }
 
+    // === カードカテゴリーを1つ宣言する ===
+    // クオンタモン LM-020【相手のターン開始時】「カードカテゴリー1つを宣言する。その後、〜そのカードが宣言したカードカテゴリーなら」。
+    // step.categories で候補を絞れる（未指定はデジモン/テイマー/オプション/デジタマ）。宣言した値は _declaredCategoryOf で
+    // 同じ効果の後のステップ（cond_picked_type:declared / immune_effects source_type:'declared'）が読む。
+    // オンラインは宣言する本人の端末で選び、相手には宣言内容の表示だけ送る（状態の同期は不要）
+    case 'declare_category': {
+      const _dcAll = ['デジモン', 'テイマー', 'オプション', 'デジタマ'];
+      const _dcCats = (Array.isArray(step.categories) && step.categories.length > 0)
+        ? step.categories.filter(c => _dcAll.includes(c)) : _dcAll;
+      const _dcList = _dcCats.length > 0 ? _dcCats : _dcAll;
+      const _dcSet = (v) => {
+        if (!ctx.bs._declaredCategory) ctx.bs._declaredCategory = {};
+        const _k = _declCatKey(ctx.card);
+        if (_k) ctx.bs._declaredCategory[_k] = v;
+        ctx.bs._lastDeclaredCategory = v;
+        if (ctx.card) ctx.card._declaredCategory = v;
+        ctx.addLog && ctx.addLog('📢 ' + (ctx.side === 'player' ? '' : '相手が') + 'カードカテゴリー「' + v + '」を宣言' + (ctx.card ? '（「' + ctx.card.name + '」）' : ''));
+        if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand) {
+          try { window._onlineSendCommand({ type: 'fx_effectResult', cardName: ctx.card ? ctx.card.name : '', actionLabel: '「' + v + '」を宣言！' }); } catch (_) {}
+        }
+        callback();
+      };
+      // CPU: 相手のデッキで一番多いのはデジモンなので、デジモンを宣言する（候補に無ければ先頭）
+      if (ctx.side === 'ai') { _dcSet(_dcList.includes('デジモン') ? 'デジモン' : _dcList[0]); break; }
+      if (_dcList.length === 1) { _dcSet(_dcList[0]); break; }
+      showAltActionChoice(_dcList, (i) => _dcSet(_dcList[i] || _dcList[0]), '📢 カードカテゴリーを1つ宣言してください' + (ctx.card ? '（「' + ctx.card.name + '」）' : ''));
+      break;
+    }
+
     // === デッキオープン (新仕様) ===
-    // step: { value, selections, return_to, optional }
+    // step: { value, selections, return_to, optional, deck_owner }
+    // deck_owner:'opp' は相手のデッキの上からオープンする（クオンタモン LM-020【相手のターン開始時】「相手のデッキの上から1枚
+    // オープンし〜オープンしたカードは相手のデッキの上か下に戻す」）。戻し先・トラッシュはデッキの持ち主の領域。
+    // 相手のデッキから手札に加える等の選択（selections）は持ち主が分からなくなるので行わない。
+    // オンラインでこちらの効果なら、相手のデッキの中身は持ち主の端末にしか無いので、上からN枚を見せてもらい
+    // （_requestOppDeckPeek）、戻した位置を fx_oppDeckReturn で持ち主に送る
     case 'deck_open': {
       const openN = step.value || 1;
-      const opened = [];
-      for (let i = 0; i < openN && player.deck.length > 0; i++) {
-        opened.push(player.deck.splice(0, 1)[0]);
+      const _doOpp = step.deck_owner === 'opp' || step.deck_owner === 'opponent';
+      const _doOwner = _doOpp ? opponent : player;
+      const _doOwnerSide = _doOwner === ctx.bs.player ? 'player' : 'ai';
+      let _doStep = step;
+      if (_doOpp) {
+        if (Array.isArray(step.selections) && step.selections.length > 0) console.warn('[deck_open] deck_owner:opp では selections を使いません', step.selections);
+        _doStep = Object.assign({}, step, { selections: [], _deckOwnerSide: _doOwnerSide });
       }
-      if (opened.length === 0) {
-        ctx.addLog && ctx.addLog('⚠ デッキにカードがありません');
-        callback && callback();
+      const _doRemote = _doOpp && _doOwnerSide === 'ai' && ctx.side === 'player'
+        && window._isOnlineMode && window._isOnlineMode() && window._onlineSendCommand && typeof window._requestOppDeckPeek === 'function';
+      const _doRun = (opened, afterReturn) => {
+        if (opened.length === 0) {
+          ctx.addLog && ctx.addLog('⚠ ' + (_doOpp ? '相手の' : '') + 'デッキにカードがありません');
+          callback && callback();
+          return;
+        }
+        ctx.addLog && ctx.addLog('📖 ' + (_doOpp ? '相手の' : '') + 'デッキの上から' + opened.length + '枚オープン：' + opened.map(c => '「' + (c.name || '?') + '」').join(''));
+        // 「そのカードが〜なら」: 1枚だけオープンして選ぶもの（selections）が無いなら、そのカードを直前のカードにする
+        if (opened.length === 1 && !(Array.isArray(_doStep.selections) && _doStep.selections.length > 0)) ctx.bs._lastPickedCard = opened[0];
+        ctx.renderAll && ctx.renderAll();
+        // 新 UI を呼ぶ
+        const handBeforeDO = player.hand.slice();
+        showDeckOpenUI(opened, _doStep, ctx, () => {
+          // 直前選択カードを保存（post_actions の cond_picked_* で参照可能に）
+          const newPicked = player.hand.filter(c => !handBeforeDO.includes(c));
+          if (newPicked.length > 0) ctx.bs._lastPickedCard = newPicked[newPicked.length - 1];
+          if (afterReturn) afterReturn();
+          ctx.renderAll && ctx.renderAll();
+          runPostActions(step.post_actions, ctx, () => callback && callback());
+        });
+      };
+      if (_doRemote) {
+        window._requestOppDeckPeek(openN, (ctx.card && ctx.card.name) || '', (cards) => {
+          // こちらの画面の相手のデッキは枚数だけ（中身は state_sync で届かない）。上から同じ枚数を抜き、届いたカードで扱う
+          const list = (Array.isArray(cards) ? cards : []).map(c => Object.assign({ buffs: [], stack: [] }, c));
+          opponent.deck.splice(0, Math.min(list.length, opponent.deck.length));
+          const moves = [];
+          _doStep = Object.assign({}, _doStep, { _onReturnPlaced: (card, to) => moves.push({ idx: list.indexOf(card), to }) });
+          _doRun(list, () => {
+            try { window._onlineSendCommand({ type: 'fx_oppDeckReturn', count: list.length, moves }); } catch (e) { console.error('[deck_open opp]', e); }
+          });
+        });
         break;
       }
-      ctx.addLog && ctx.addLog('📖 デッキの上から' + opened.length + '枚オープン');
-      ctx.renderAll && ctx.renderAll();
-      // 新 UI を呼ぶ
-      const handBeforeDO = player.hand.slice();
-      showDeckOpenUI(opened, step, ctx, () => {
-        // 直前選択カードを保存（post_actions の cond_picked_* で参照可能に）
-        const newPicked = player.hand.filter(c => !handBeforeDO.includes(c));
-        if (newPicked.length > 0) ctx.bs._lastPickedCard = newPicked[newPicked.length - 1];
-        ctx.renderAll && ctx.renderAll();
-        runPostActions(step.post_actions, ctx, () => callback && callback());
-      });
+      const opened = [];
+      for (let i = 0; i < openN && _doOwner.deck.length > 0; i++) {
+        opened.push(_doOwner.deck.splice(0, 1)[0]);
+      }
+      _doRun(opened, null);
       break;
     }
 
@@ -18076,6 +18296,8 @@ function executeRecipeStep(step, ctx, store, callback) {
     // 中身は相手に見せない（private）。選択したカードのみ相手に公開して手札に加える。
     // post_actions（黄ならリカバリー等）を処理してから、セキュリティを全てシャッフル。
     case 'security_open': {
+      // 相手のセキュリティ（security_owner:'opp'）や、選んだ1枚の行き先指定（pick_to）は公開オープンの汎用版で行う
+      if (step.security_owner === 'opp' || step.security_owner === 'opponent' || step.pick_to) { _securityOpenPick(step, ctx, callback); break; }
       let openN;
       if (step.value === 'all' || step.value === undefined || step.value === null || step.value === '') {
         openN = player.security.length;
@@ -19419,23 +19641,29 @@ function executeRecipeStep(step, ctx, store, callback) {
     case 'place_on_security_top': {
       // 相手/自分のデジモン（テイマー）N体を持ち主のセキュリティに置く（スサノオモン EX12-076「相手のデジモン1体を
       // セキュリティの上に置く」）。重ねられているカード・リンクカードはトラッシュへ。裏表は options（未指定は裏向き）
+      // both:N は「デジモン1体を持ち主のセキュリティの上に置く」（クオンタモン LM-020【進化時】のコスト）: 自分/相手どちらの
+      // デジモンも選べ、選んだカードの持ち主のセキュリティに置く（候補ごとに own で持ち主を持つ）
       {
-        const _psM = /^(opponent|own)(_card|_tamer)?:(\d+|all)$/.exec(String(step.target || ''));
+        const _psM = /^(opponent|own|both)(_card|_tamer)?:(\d+|all)$/.exec(String(step.target || ''));
         if (_psM) {
-          const _psOpp = _psM[1] === 'opponent';
-          const _psP = _psOpp ? opponent : player;
+          const _psBoth = _psM[1] === 'both';
           const _psWantTamer = _psM[2] === '_card' || _psM[2] === '_tamer' || _filterWantsTamer(step.filter || null);
           const _psWantDigi = _psM[2] !== '_tamer';
           const _psEntries = [];
-          if (_psWantDigi) (_psP.battleArea || []).forEach((c, i) => { if (c && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))) _psEntries.push({ card: c, zone: 'battleArea', idx: i }); });
-          if (_psWantTamer) (_psP.tamerArea || []).forEach((c, i) => { if (c && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))) _psEntries.push({ card: c, zone: 'tamerArea', idx: i }); });
-          if (_psEntries.length === 0) { ctx.addLog && ctx.addLog('⚠ 対象がいません'); callback(); break; }
+          const _psCollect = (P, isOpp) => {
+            if (_psWantDigi) (P.battleArea || []).forEach((c, i) => { if (c && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))) _psEntries.push({ card: c, zone: 'battleArea', idx: i, own: !isOpp }); });
+            if (_psWantTamer) (P.tamerArea || []).forEach((c, i) => { if (c && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card))) _psEntries.push({ card: c, zone: 'tamerArea', idx: i, own: !isOpp }); });
+          };
+          if (_psBoth || _psM[1] === 'own') _psCollect(player, false);
+          if (_psBoth || _psM[1] === 'opponent') _psCollect(opponent, true);
+          // コスト（「〜をセキュリティの上に置くことで」）で1体も置けなければ支払えなかった扱い（本体を実行しない）
+          const _psIsCost = _COST_STEP_SET.has(step);
+          if (_psEntries.length === 0) { ctx.addLog && ctx.addLog('⚠ 対象がいません'); callback(_psIsCost ? false : undefined); break; }
           const _psCount = _psM[3] === 'all' ? _psEntries.length : Math.min(parseInt(_psM[3], 10) || 1, _psEntries.length);
           const _psFaceUp = Array.isArray(step.options) && step.options.includes('face_up');
           const _psToBottom = step.position === 'bottom';
           const _psMove = (list) => {
             let _psMoved = 0;
-            const _psSideName = (ctx.bs && _psP === ctx.bs.player) ? 'player' : 'ai';
             const _psCtxBase = { bs: ctx.bs, addLog: ctx.addLog, renderAll: ctx.renderAll, updateMemGauge: ctx.updateMemGauge };
             // 1体ずつ: セキュリティに置かれるのも「バトルエリアを離れる」ので、離れるときの置換効果（【分離】【守護】
             // 「離れるとき〜離れない」等）を先に判定する（デッキに戻す・手札に戻すと同じ tryCancelViaLeaveBattle）
@@ -19444,11 +19672,14 @@ function executeRecipeStep(step, ctx, store, callback) {
                 if (ctx.bs) ctx.bs._lastActionCount = _psMoved;
                 ctx.renderAll && ctx.renderAll();
                 try { applyPermanentEffects(ctx.bs, ctx.side, ctx); } catch (_) {}
-                callback();
+                callback(_psIsCost && _psMoved === 0 ? false : undefined);
                 return;
               }
               const e = list[k];
               const c = e.card;
+              const _psOpp = !e.own;
+              const _psP = _psOpp ? opponent : player;
+              const _psSideName = (ctx.bs && _psP === ctx.bs.player) ? 'player' : 'ai';
               if (_psOpp && _isImmuneToEffect(c, ctx)) { ctx.addLog && ctx.addLog('🛡 「' + c.name + '」は効果を受けない'); _psNext(k + 1); return; }
               const _prevLeaveCause = ctx.bs ? ctx.bs._leaveCause : undefined;
               if (ctx.bs) ctx.bs._leaveCause = { type: 'effect', causerSide: ctx.side, causerCard: ctx.card };
@@ -19461,6 +19692,8 @@ function executeRecipeStep(step, ctx, store, callback) {
             };
             const _psPlace = (e) => {
               const c = e.card;
+              const _psOpp = !e.own;
+              const _psP = _psOpp ? opponent : player;
               const zArr = _psP[e.zone] || [];
               const zi = zArr.indexOf(c);
               if (zi === -1) return;
@@ -19485,8 +19718,9 @@ function executeRecipeStep(step, ctx, store, callback) {
             };
             _psNext(0);
           };
-          if (effectiveSide === 'ai' || _psEntries.length <= _psCount) { _psMove(_psEntries.slice(0, _psCount)); break; }
-          _pickSideTargets(_psEntries.map(e => Object.assign({}, e, { own: !_psOpp })), _psCount, ctx, effectiveSide, !_psOpp,
+          // both は CPU なら相手のデジモンを優先して選ぶ（_pickSideTargets の preferOwn=false）。相手の「効果を受けない」も外す
+          if (!_psBoth && (effectiveSide === 'ai' || _psEntries.length <= _psCount)) { _psMove(_psEntries.slice(0, _psCount)); break; }
+          _pickSideTargets(_psEntries, _psCount, ctx, effectiveSide, _psM[1] === 'own',
             '🛡 セキュリティに置く対象を選んでください', (list) => _psMove((list || []).filter(Boolean)));
           break;
         }
@@ -20222,10 +20456,25 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _imTgts = _imAll
         ? (player.battleArea || []).filter(c => c && (!step.filter || cardMatchesFilter(c, step.filter, ctx.bs, ctx.side, ctx.card)))
         : (ctx.card ? [ctx.card] : []);
+      // source_type: 'digimon'/'option'/'tamer'/'digitama' 指定時はその種別の効果だけを免疫対象にする
+      // （hasActiveImmuneEffectsのeffectSourceTypeと突き合わせて判定。未指定なら全て免疫）。
+      // 'declared' は直前の declare_category で宣言したカテゴリー（クオンタモン LM-020「宣言したカードカテゴリーの効果を
+      // 受けない」）。付けた時点の具体的な種別をバフに残す（あとで別の宣言をしても変わらない）
+      const _IM_TYPE_OF_CAT = { 'デジモン': 'digimon', 'テイマー': 'tamer', 'オプション': 'option', 'デジタマ': 'digitama' };
+      const _IM_LBL = { digimon: 'デジモンの', tamer: 'テイマーの', option: 'オプションの', digitama: 'デジタマの' };
+      let _imSrcType = _IM_LBL[step.source_type] ? step.source_type : undefined;
+      if (step.source_type === 'declared') {
+        const _imDecl = _declaredCategoryOf(ctx);
+        _imSrcType = _IM_TYPE_OF_CAT[_imDecl];
+        if (!_imSrcType) { ctx.addLog && ctx.addLog('⚠ 宣言したカードカテゴリーがありません'); callback(); break; }
+      }
+      // 「相手の」と限らない免疫（自分の効果も受けない）: 宣言カテゴリー（LM-020 は「相手の」と書かれていない）か、
+      // immune_from:'any'/'both' 指定。未指定の既存レシピは従来通り「相手の効果」だけ
+      const _imAnySide = step.source_type === 'declared' || step.immune_from === 'any' || step.immune_from === 'both';
+      const _imWho = _imAnySide ? '' : '相手の';
       // 「自分のデジモン全て」で期限つきなら継続する全体処理（あとから条件を満たしたデジモンにも付く）
-      const _imSrcType = (step.source_type === 'digimon' || step.source_type === 'option') ? step.source_type : undefined;
-      if (_imAll && _registerGlobalEffect(ctx, ctx.side, { type: 'keyword_immune', value: 0, duration: normalizeRecipeDuration(step.duration) || 'dur_this_turn', filter: step.filter || null, sourceType: _imSrcType })) {
-        const _imLbl = _imSrcType === 'digimon' ? 'デジモンの' : _imSrcType === 'option' ? 'オプションの' : '';
+      if (_imAll && !_imAnySide && _registerGlobalEffect(ctx, ctx.side, { type: 'keyword_immune', value: 0, duration: normalizeRecipeDuration(step.duration) || 'dur_this_turn', filter: step.filter || null, sourceType: _imSrcType })) {
+        const _imLbl = _IM_LBL[_imSrcType] || '';
         _imTgts.forEach((tgt) => ctx.addLog('🪄 「' + tgt.name + '」は相手の' + _imLbl + '効果を受けない'));
         ctx.renderAll && ctx.renderAll();
         callback();
@@ -20234,13 +20483,12 @@ function executeRecipeStep(step, ctx, store, callback) {
       _imTgts.forEach((tgt) => {
         const dur = normalizeRecipeDuration(step.duration) || 'dur_this_turn';
         addBuffDirect(tgt, 'keyword_immune', 0, dur, ctx);
-        // source_type: 'digimon'/'option' 指定時のみその種別の効果だけを免疫対象にする
-        // （hasActiveImmuneEffectsのeffectSourceTypeと突き合わせて判定。未指定なら全て免疫）
-        const srcType = (step.source_type === 'digimon' || step.source_type === 'option') ? step.source_type : undefined;
         const lastBuff = tgt.buffs[tgt.buffs.length - 1];
-        if (lastBuff && srcType) lastBuff.sourceType = srcType;
-        const srcLabel = srcType === 'digimon' ? 'デジモンの' : srcType === 'option' ? 'オプションの' : '';
-        ctx.addLog('🪄 「' + tgt.name + '」は相手の' + srcLabel + '効果を受けない');
+        if (lastBuff && lastBuff.type === 'keyword_immune') {
+          if (_imSrcType) lastBuff.sourceType = _imSrcType;
+          if (_imAnySide) lastBuff.anySide = true;
+        }
+        ctx.addLog('🪄 「' + tgt.name + '」は' + _imWho + (_IM_LBL[_imSrcType] || '') + '効果を受けない');
       });
       ctx.renderAll && ctx.renderAll();
       callback();

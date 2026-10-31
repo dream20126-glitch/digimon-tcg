@@ -48,6 +48,7 @@ let _pendingFlushDeferredEvoCallback = null;    // fx_flushDeferredEvo の返事
 let _pendingBlockBattleDoneCallback = null;     // block_battle_done（防御側のブロックのバトル解決の完了）待ち
 let _pendingBlockBattleDoneResponse = null;     // 待ち始める前に届いた block_battle_done
 let _pendingBarrierCallback = null; // fx_barrierRequest 送信側の応答待ち（cb(used)）
+let _pendingOppDeckPeekCallback = null; // fx_oppDeckPeekRequest 送信側の応答待ち（cb(cards)）
 let _pendingHandDiscardCallback = null; // fx_handDiscardRequest 送信側の応答待ち（cb(result)）
 let _pendingHandDiscardResponse = null; // 待ち開始前に届いた fx_handDiscardDone の結果
 let _pendingOwnDestroyFire = null; // card_removed受信済みだがon_destroy発火待ちのカード（1件分）
@@ -432,6 +433,7 @@ export async function initOnline(roomId, myKey) {
   _pendingLeaveBattleDelegateCallback = null;
   _pendingHandDiscardCallback = null;
   _pendingHandDiscardResponse = null;
+  _pendingOppDeckPeekCallback = null;
   _recentlyDestroyed = [];
   _fxQueue = [];
   _fxRunning = false;
@@ -750,6 +752,57 @@ function onRemoteCommand(cmd) {
         try { sendCommand({ type: 'security_init', cards: sec.map((c) => (window._serializeSecurityCard ? window._serializeSecurityCard(c) : { name: c.name, cardNo: c.cardNo, type: c.type })) }); } catch (_) {}
         renderAll();
       }
+      break;
+    }
+    // 相手の効果でこちらのセキュリティを並べ直した（オープンして戻した後のシャッフル等。effect-engine.js _securityOpenPick、
+    // クオンタモン LM-020）。cards: 上からの並び（cardNo・名前）。同じカードを順に探して並べ、見つからないものは下に残す。
+    // 中身はこちらが正なので、並べ直した結果を security_init で送り返す
+    case 'fx_oppSecurityOrder': {
+      const sec = bs.player.security;
+      const left = sec.slice();
+      const ordered = [];
+      (cmd.cards || []).forEach((ref) => {
+        const i = left.findIndex((c) => c && (c.cardNo || '') === (ref.cardNo || '') && (c.name || '') === (ref.name || ''));
+        if (i === -1) return;
+        ordered.push(left.splice(i, 1)[0]);
+      });
+      bs.player.security = ordered.concat(left);
+      addLog('🔀 相手の効果でセキュリティが並べ直された（' + bs.player.security.length + '枚）');
+      try { sendCommand({ type: 'security_init', cards: bs.player.security.map((c) => (window._serializeSecurityCard ? window._serializeSecurityCard(c) : { name: c.name, cardNo: c.cardNo, type: c.type })) }); } catch (_) {}
+      renderAll();
+      break;
+    }
+    // 相手の効果でこちらのデッキの上からオープンする（クオンタモン LM-020「相手のデッキの上から1枚オープンし」）。
+    // デッキの中身はこちらにしか無いので、上から count 枚の中身を返す（まだ動かさない。戻す位置は fx_oppDeckReturn で届く）
+    case 'fx_oppDeckPeekRequest': {
+      const n = Math.max(0, parseInt(cmd.count, 10) || 0);
+      const cards = bs.player.deck.slice(0, n).map((c) => (window._serializeSecurityCard ? window._serializeSecurityCard(c) : { name: c.name, cardNo: c.cardNo, type: c.type }));
+      sendCommand({ type: 'fx_oppDeckPeekReply', cards });
+      break;
+    }
+    case 'fx_oppDeckPeekReply': {
+      if (_pendingOppDeckPeekCallback) { const cb = _pendingOppDeckPeekCallback; _pendingOppDeckPeekCallback = null; cb(cmd.cards || []); }
+      break;
+    }
+    // 相手がオープンしたこちらのデッキの上 count 枚の戻し先。moves: [{ idx（オープンした中の順番）, to: 'deck_top'|'deck_bottom'|'trash' }]
+    // を置いた順に行う。指示の無いカードは元の順のまま上に戻す
+    case 'fx_oppDeckReturn': {
+      const n = Math.max(0, parseInt(cmd.count, 10) || 0);
+      const taken = bs.player.deck.splice(0, n);
+      const done = new Set();
+      (cmd.moves || []).forEach((mv) => {
+        const c = taken[mv.idx];
+        if (!c || done.has(c)) return;
+        done.add(c);
+        if (mv.to === 'trash') bs.player.trash.push(c);
+        else if (mv.to === 'deck_top') bs.player.deck.unshift(c);
+        else bs.player.deck.push(c);
+        addLog('📥 相手の効果で「' + (c.name || '?') + '」が' + ({ trash: 'トラッシュ', deck_top: 'デッキの上', deck_bottom: 'デッキの下' }[mv.to] || 'デッキの下') + 'へ');
+      });
+      const restBack = taken.filter((c) => !done.has(c));
+      if (restBack.length > 0) bs.player.deck = restBack.concat(bs.player.deck);
+      renderAll();
+      sendStateSync();
       break;
     }
     case 'security_remove': {
@@ -2972,7 +3025,20 @@ window._requestRemoteBarrier = (card, slotIdx, cb) => {
 };
 window._isOnlineWaiting = () => !!(_pendingBlockCallback || _pendingSecEffectCallback || _reactionDelegateWaiters.length > 0 || _pendingBarrierCallback
   || _pendingLeaveBattleDelegateCallback || _pendingFlushDeferredEvoCallback || _pendingHandDiscardCallback || _pendingOwnDestroyDoneCallback
-  || _pendingBlockBattleDoneCallback);
+  || _pendingBlockBattleDoneCallback || _pendingOppDeckPeekCallback);
+// 相手のデッキの上から count 枚の中身を見せてもらう（effect-engine.js deck_open deck_owner:'opp'。クオンタモン LM-020）。
+// 中身は持ち主の端末にしか無いので依頼して待つ。時間切れは設けない（ユーザー決定事項 2026-10-25）。cb(cards)
+window._requestOppDeckPeek = (count, cardName, cb) => {
+  const waitOv = document.createElement('div');
+  waitOv.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:55000;display:flex;align-items:center;justify-content:center;';
+  waitOv.innerHTML = '<div style="color:#ffaa00;font-size:14px;font-weight:bold;text-align:center;text-shadow:0 0 10px #ffaa00;">⏳ 相手のデッキをオープン中...</div>';
+  document.body.appendChild(waitOv); _autoHideWhileLocalEffect(waitOv);
+  _pendingOppDeckPeekCallback = (cards) => {
+    if (waitOv.parentNode) waitOv.parentNode.removeChild(waitOv);
+    try { cb(cards || []); } catch (e) { console.error('[oppDeckPeek]', e); }
+  };
+  sendCommand({ type: 'fx_oppDeckPeekRequest', count, cardName: cardName || '' });
+};
 // 相手のデジモンが「バトルエリアを離れるとき」: 持ち主（相手）の端末に置換効果の判定を委譲し、
 // 離れなかったかどうか（canceled）を待つ。待っている間は待機オーバーレイを出す
 // 相手の端末で「離れるとき」により進化して保留された【進化時】を、こちらの消滅処理が終わった時点で発揮してもらう
@@ -3053,7 +3119,10 @@ function showRemoteDeckOpenOverlay(cmd) {
 
   const title = document.createElement('div');
   title.style.cssText = 'color:#ff00fb;font-size:14px;font-weight:bold;margin-bottom:4px;text-shadow:0 0 8px #ff00fb;';
-  title.innerText = '👁 相手のデッキオープン (' + cards.length + '枚)';
+  // receiverZone: こちら（受信側）のデッキ/セキュリティを相手の効果でオープンしている（クオンタモン LM-020）
+  title.innerText = cmd.receiverZone
+    ? '👁 相手の効果で自分の' + (cmd.zoneName || 'デッキ') + 'をオープン (' + cards.length + '枚)'
+    : '👁 相手の' + (cmd.zoneName || 'デッキ') + 'オープン (' + cards.length + '枚)';
   overlay.appendChild(title);
 
   const subtitle = document.createElement('div');
@@ -3138,7 +3207,9 @@ function handleRemoteDeckOpenAct(cmd) {
   if (cmd.noFx) { if (ent.wrap.parentNode) ent.wrap.parentNode.removeChild(ent.wrap); return; }
   // 移動演出（自分の画面と同じ fxCardMove）。演出の列（enqueueFx）で1枚ずつ順に出す（以前はすぐ再生していたため、
   // 2枚をデッキに戻すと2つの演出が重なっていた）。移動元は「相手のオープンしたカード」
-  const _fxDest = ({ hand: '相手の手札', trash: '相手のトラッシュ', deck_top: '相手のデッキ(上)', deck_bottom: '相手のデッキ(下)', play: '相手のバトルエリア', evolve: '相手の進化元' })[cmd.to] || '???';
+  // receiverZone: こちらのデッキ/セキュリティのカードなので、行き先もこちらの領域（「相手の」を付けない）
+  const _fxPre = cmd.receiverZone ? '' : '相手の';
+  const _fxDest = _fxPre + (({ hand: '手札', trash: 'トラッシュ', deck_top: 'デッキ(上)', deck_bottom: 'デッキ(下)', play: 'バトルエリア', evolve: '進化元' })[cmd.to] || '???');
   const _fxCardObj = () => { const im = ent.wrap.querySelector('img'); return { name: cmd.name, cardNo: cmd.cardNo, imgSrc: im ? im.src : (ent.imgSrc || '') }; };
   const _playMove = (after) => enqueueFx((done) => {
     ent.wrap.style.transition = 'opacity 0.15s, transform 0.15s';
@@ -3149,7 +3220,7 @@ function handleRemoteDeckOpenAct(cmd) {
     try { window._fxCardMove(_fxCardObj(), '相手のオープンしたカード', _fxDest, fin, false); } catch (_) { fin(); }
   });
   // 手札に加えたカードは、移動演出のあとで大きく見せる（何を手札に加えたか分かるように。トレーマニュアル BT26-099 の要望）
-  if (cmd.to === 'hand') {
+  if (cmd.to === 'hand' && !cmd.receiverZone) {
     _playMove(() => _showHandReveal());
     return;
   }

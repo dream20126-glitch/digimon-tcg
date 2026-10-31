@@ -452,8 +452,10 @@ function FeatureTagsCombined({
 // （よく使う条件のカテゴリボタンと同じ操作感）。ローカルstate(開閉・どのボタンを
 // 表示中か)を持つため、独立したコンポーネントとして切り出している
 function RefExistsAttributeFilterPanel({
-  conditions, onChange, marker = REF_EXISTS_FILTER_MARKER, title, warnConflict = true,
+  conditions, onChange, marker = REF_EXISTS_FILTER_MARKER, title, warnConflict = true, forEvo = false,
 }: {
+  // 参照「進化元」の行に付けるとき（「このデジモンの進化元に『ガルルモン』があるとき」）。進化元枚数の属性は出さない
+  forEvo?: boolean;
   conditions: ConditionPair[]; onChange: (next: ConditionPair[]) => void;
   // 呼び出し元ごとに別々のマーカー文字列を使うことで、同じ発動条件欄に複数の
   // 「参照行専用フィルタ」（例: バトルエリア参照用・DP参照用）が混在しても互いに
@@ -513,7 +515,7 @@ function RefExistsAttributeFilterPanel({
   };
   const subButtons: { key: string; label: string }[] = [
     { key: 'color', label: '色' }, { key: 'lv', label: 'Lv' }, { key: 'cost', label: 'コスト' }, { key: 'feature', label: '特徴' },
-    ...(marker === REF_EXISTS_FILTER_MARKER ? [{ key: 'name', label: '名称' }, { key: 'evo', label: '進化元枚数' }] : []),
+    ...(marker === REF_EXISTS_FILTER_MARKER ? [{ key: 'name', label: '名称' }, ...(forEvo ? [] : [{ key: 'evo', label: '進化元枚数' }])] : []),
   ];
 
   return (
@@ -530,7 +532,9 @@ function RefExistsAttributeFilterPanel({
             }
           }}
         />
-        {title || '属性で絞り込む（この参照行専用・「1体以上（いる）」「0体（いない）」で使える）'}
+        {title || (forEvo
+          ? '属性で絞り込む（進化元のうち、この条件に合うカードの枚数で判定）'
+          : '属性で絞り込む（この参照行専用・「1体以上（いる）」「0体（いない）」で使える）')}
       </label>
       {open && (
         <div style={{ marginTop: 4, padding: 6, background: '#fffaf0', border: '1px dashed #f0d9a8', borderRadius: 4 }}>
@@ -658,6 +662,11 @@ function RefExistsAttributeFilterPanel({
                 placeholder="例: サイボーグ型"
                 accentColor="#946200"
               />
+            </div>
+          )}
+          {forEvo && (
+            <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
+              ⚠ エンジン未実装です（保存はできますが、実機ではまだ判定されません）
             </div>
           )}
           {hasAnyAttr && warnConflict && (
@@ -11305,6 +11314,11 @@ function ConditionsHybridEditor({
                       })()}
                       {cat.code === 'ref' && refZoneOf(c) === 'battle_area' && (refQuantOf(c) === 'ge' || ((refQuantOf(c) === 'eq' || refQuantOf(c) === 'le') && String(c.value) === '0')) && (
                         <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} />
+                      )}
+                      {/* 「このデジモンの進化元に『ガルルモン』がある（4枚以上ある）とき」: 参照「進化元」以上N に属性（名称/記述/特徴/色/Lv）を付ける。
+                          保存は cond_evo_exists:N ＋兄弟の属性条件（バトルエリアの cond_exists と同じ形） */}
+                      {cat.code === 'ref' && c.base === 'cond_has_evo' && refZoneOf(c) === 'evo_source' && !conditions.some((x) => x.base.startsWith('cond_battle_area_') && x.subject !== REF_EXISTS_FILTER_MARKER) && (
+                        <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} forEvo />
                       )}
                       {sameAsTargetSubject && (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#555', marginBottom: 4 }}>

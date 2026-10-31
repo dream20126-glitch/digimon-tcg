@@ -133,10 +133,15 @@ function expandRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[
   if (!Array.isArray(pairs) || pairs.length === 0) return pairs;
   const hasAttrs = pairs.some((p) => p && p.subject === REF_EXISTS_FILTER_MARKER && REF_EXISTS_FILTER_CODES.has(p.base));
   if (!hasAttrs) return pairs;
-  const refIdx = pairs.findIndex((p) => p && (p.base === 'cond_battle_area_ge' || isRefNoneRow(p)) && p.subject !== REF_EXISTS_FILTER_MARKER);
-  if (refIdx === -1) return pairs;
+  let refIdx = pairs.findIndex((p) => p && (p.base === 'cond_battle_area_ge' || isRefNoneRow(p)) && p.subject !== REF_EXISTS_FILTER_MARKER);
+  // バトルエリアの参照行が無ければ、進化元の参照行（cond_has_evo 以上N）に付いた属性とみなす
+  // →「このデジモンの進化元に『ガルルモン』があるとき」= cond_evo_exists:1@self ＋ cond_name:ガルルモン（⚠ エンジン未実装）
+  const evoIdx = refIdx === -1 ? pairs.findIndex((p) => p && p.base === 'cond_has_evo' && p.subject !== REF_EXISTS_FILTER_MARKER) : -1;
+  if (refIdx === -1 && evoIdx === -1) return pairs;
+  if (refIdx === -1) refIdx = evoIdx;
   const refPair = pairs[refIdx];
   return pairs.map((p, i) => {
+    if (i === refIdx && evoIdx !== -1) return { base: 'cond_evo_exists', value: refPair.value || '1', subject: refPair.subject };
     if (i === refIdx) return { base: isRefNoneRow(refPair) ? 'cond_not_exists' : 'cond_exists', subject: refPair.subject };
     if (p.subject === REF_EXISTS_FILTER_MARKER && REF_EXISTS_FILTER_CODES.has(p.base)) {
       return { base: p.base, value: p.value };
@@ -150,6 +155,15 @@ function expandRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[
 // REF_EXISTS_FILTER_MARKERを付け直して「参照行に添付」の表示に復元する
 function collapseRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[] {
   if (!Array.isArray(pairs) || pairs.length === 0) return pairs;
+  // 進化元に〜があるとき（cond_evo_exists:N）→ 参照「進化元」以上N の行＋属性の行に戻す
+  const evoExIdx = pairs.findIndex((p) => p && p.base === 'cond_evo_exists');
+  if (evoExIdx !== -1) {
+    return pairs.map((p, i) => {
+      if (i === evoExIdx) return { base: 'cond_has_evo', value: p.value || '1', subject: p.subject };
+      if (REF_EXISTS_FILTER_CODES.has(p.base) && p.base !== 'cond_has_evo') return { ...p, subject: REF_EXISTS_FILTER_MARKER };
+      return p;
+    });
+  }
   const notIdx = pairs.findIndex((p) => p && p.base === 'cond_not_exists');
   if (notIdx !== -1) {
     return pairs.map((p, i) => {

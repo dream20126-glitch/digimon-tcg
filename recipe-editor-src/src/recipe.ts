@@ -1063,8 +1063,19 @@ function stripRedundantTurnConds(container: Record<string, any>): void {
   });
 }
 
+// ディレイ本体は「このカードを破棄する」だけで、対象・取得元（📥）・取得元カードの条件を持たない（それらはディレイ効果側の設定）。
+// アクションをディレイに変える前の設定が残ると、ディレイの画面には欄が出ないので消せなかった（LM-058 / LM-065）
+function dropDelayLeftovers(o: any): any {
+  if (o.action !== 'delay') return o;
+  const keys = ['target', 'from', 'from_owner', 'from_filter'];
+  if (!keys.some((k) => k in o)) return o;
+  const out = { ...o };
+  keys.forEach((k) => delete out[k]);
+  return out;
+}
+
 export function blocksToRecipe(rawBlocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
-  const r = [negateMainToUseMainEffect, returnDeckZoneTargetToFrom, dropStaleStackFilter, placeUnderSelfToDigimon]
+  const r = [negateMainToUseMainEffect, returnDeckZoneTargetToFrom, dropStaleStackFilter, placeUnderSelfToDigimon, dropDelayLeftovers]
     .reduce((acc, fn) => mapActionsDeep(acc, fn), _blocksToRecipeRaw(rawBlocks, keywordDict));
   stripRedundantTurnConds(r);
   return r;

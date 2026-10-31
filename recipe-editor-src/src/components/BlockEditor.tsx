@@ -1444,7 +1444,11 @@ function CostListEditor({
         // （target が無い場所=手札/デッキはアクションのみで一意に決まる）
         // 対象セクション側で「下/一番下」(_stack/_stack_bottom サフィックス)を付けても
         // 場所の判定が巻き戻らないよう、target 比較はサフィックスを剥がしたベースで行う
-        const activeDiscardZone = DISCARD_ZONE_MAP.find((z) => {
+        // 「破棄」で対象を場所（自分の手札/デッキ等）にしたもの（action:'discard' + target own_deck:1 等）も
+        // 📥場所のボタンを点灯させる（エンジンは _discardToLegacyStep / 手札破棄でそのまま処理する）
+        const discardZoneFromTarget = c.action === 'discard'
+          ? (COST_DISCARD_ZONE_OF_TARGET[splitStackSuffix((c.target || '').split(':')[0]).base] || '') : '';
+        const activeDiscardZone = discardZoneFromTarget || DISCARD_ZONE_MAP.find((z) => {
           if ((getActionVariant(z.action)?.base || z.action) !== cActionBase) return false;
           if (z.target !== undefined && splitStackSuffix((c.target || '').split(':')[0]).base !== z.target) return false;
           return true;
@@ -1527,7 +1531,11 @@ function CostListEditor({
         // 「最も多いプレイヤー」は専用の「何が多いか」選択肢(MOST_PLAYER_METRICS)を使う
         const cTgtL2Options = cCurTgt.l1 === 'most'
           ? MOST_PLAYER_METRICS
-          : (TARGET_SEL_L2[cCurTgt.l1] || []).filter((o) => !['option', 'player', 'security'].includes(o.code));
+          : [
+            ...(TARGET_SEL_L2[cCurTgt.l1] || []).filter((o) => !['option', 'player', 'security'].includes(o.code)),
+            // 破棄: 「自分のデッキを1枚破棄することで」等、場所そのものを対象にする（手札/デッキ）
+            ...(isDiscardActive ? (TARGET_SEL_L2_FROM_ZONES[cCurTgt.l1] || []).filter((o) => (COST_DISCARD_TGT_ZONES[cCurTgt.l1] || []).includes(o.code)) : []),
+          ];
         const cHideCount = cTgtBase === 'self' || cTgtBase === 'self_card' || cTgtBase === 'same_target';
         // デジモン/テイマー本体のときだけ「本体/下/一番下」を選べる（進化元／テイマーの
         // 下の"既存の"カードを指す。self=このカード自身の下も含む）。
@@ -1552,6 +1560,12 @@ function CostListEditor({
           if (l1 === 'same_target') { updateCost(i, { ...c, ...cCleared, target: 'same_target' + cTgtSuffix }); return; }
           const useL2 = l2 || tgtKeepL2(cCurTgt.l1, cCurTgt.l2, l1) || (l1 === 'most' ? 'security' : 'digimon');
           const newBase = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '';
+          // 破棄の対象に場所（手札/デッキ）を選んだら、汎用の「破棄する」＋場所の対象で保存する
+          // （例: 自分のデッキを1枚破棄 → action:'discard', target:'own_deck:1'）。枚数は対象の :N
+          if (isDiscardActive && (COST_DISCARD_TGT_ZONES[l1] || []).includes(useL2) && newBase) {
+            updateCost(i, { ...c, ...cCleared, action: 'discard', target: newBase + (cTgtSuffix || ':1'), fromZones: undefined });
+            return;
+          }
           // 位置は「デジモン/テイマー」を維持したときだけ引き継ぐ（カード/オプション等に
           // 切り替えたら位置指定自体が無意味になるため破棄する）
           const keepPos = useL2 === 'digimon' || useL2 === 'tamer';
@@ -2231,11 +2245,21 @@ function CostListEditor({
                       if (zoneCode === activeDiscardZone) return; // 選び直し済みの位置指定を巻き戻さない
                       const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
                       if (!z) return;
+                      // 手札/デッキ: 対象を「自分の手札/デッキ」（相手/お互いを選んでいればその人の）にして汎用の破棄で保存する。
+                      // 枚数は対象の :N（以前の deck_trash_top は value しか読まず、対象欄の枚数が効かなかった）
+                      if (zoneCode === 'hand' || zoneCode === 'deck') {
+                        const l1 = (COST_DISCARD_TGT_ZONES[cCurTgt.l1] || []).includes(zoneCode) ? cCurTgt.l1 : 'own';
+                        const base = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + zoneCode];
+                        updateCost(i, { ...c, action: 'discard', target: base + (cTgtSuffix || ':1'), fromZones: undefined });
+                        return;
+                      }
                       // z.targetが無い場所（進化元/テイマー/手札/デッキ/リンクカード）では既存のtargetを
                       // そのまま維持する（「対象」欄で選んだ自分/相手を場所切替で巻き戻さないため）。
                       // fromZones は設定しない（📍位置ボタンで既に場所+位置を action コードへ
                       // エンコード済みのため、汎用の「セキュリティ/進化元の位置」パネルと二重表示になるのを防ぐ）
-                      updateCost(i, { ...c, action: z.action, target: z.target || c.target, fromZones: undefined });
+                      // 手札/デッキを対象にしていた場合、その対象は進化元/セキュリティ等では意味が無いので外す
+                      const keepTgt = discardZoneFromTarget ? '' : c.target;
+                      updateCost(i, { ...c, action: z.action, target: z.target || keepTgt, fromZones: undefined });
                     }}
                     accentColor="#b76e00"
                   />
@@ -3500,6 +3524,11 @@ const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: 
   // リンクカード: このカード自身がリンクしているカードを破棄する（unlinkアクションを流用）
   { code: 'linked', label: 'リンクカード', action: 'unlink', warn: '⚠ エンジン未対応: 現状は対象を選べず、リンクしている先頭のカードから自動で破棄されます（指定/絞り込みは未反映）' },
 ];
+// コストの「破棄」で🎯対象に出す場所（エンジンの汎用 discard が扱えるもの: own/opponent/both_hand・own/both_deck）
+const COST_DISCARD_TGT_ZONES: Record<string, string[]> = { own: ['hand', 'deck'], opp: ['hand'], both: ['hand', 'deck'] };
+const COST_DISCARD_ZONE_OF_TARGET: Record<string, string> = {
+  own_hand: 'hand', opponent_hand: 'hand', both_hand: 'hand', own_deck: 'deck', both_deck: 'deck',
+};
 const DISCARD_ACTION_CODES = new Set(DISCARD_ZONE_MAP.map((z) => z.action));
 // 「デッキに戻す」: 押すと「下/上/下か上」の位置ボタンが現れる（CostStep.deckPosition）。
 const DECKPOS_COST_ACTIONS: { code: string; label: string }[] = [

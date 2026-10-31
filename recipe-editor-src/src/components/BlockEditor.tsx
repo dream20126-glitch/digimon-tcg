@@ -487,9 +487,13 @@ function RefExistsAttributeFilterPanel({
   // 進化元の枚数（以上）。値は数値か 'self'＝このデジモンの進化元の枚数以上（LM-040「進化元枚数がこのデジモン以上の〜」）
   const evoVal = getAttr('cond_has_evo');
   // 名称（完全一致・複数はOR。「自分の『トレッドミル・トレーニング』がない間」等）
-  const nameVal = getAttr('cond_name');
+  // 「含む」= cond_name_contains（「名称に『〇〇』を含む」）。どちらか一方だけを持つ
+  const nameVal = getAttr('cond_name') || getAttr('cond_name_contains');
+  const nameMode = nameVal?.base === 'cond_name_contains' ? 'cond_name_contains' : 'cond_name';
   const names = (nameVal?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
 
+  // 名称をまだ入れていないときに選んだ「含む/完全一致」（入力した時点でその条件で保存する）
+  const [nameModePending, setNameModePending] = useState<string>('cond_name');
   const [activeSub, setActiveSub] = useState<Set<string>>(() => {
     const s = new Set<string>();
     if (colorVal) s.add('color');
@@ -507,7 +511,7 @@ function RefExistsAttributeFilterPanel({
       else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le'))));
       else if (key === 'feature') setAttr('cond_feature', undefined);
       else if (key === 'evo') setAttr('cond_has_evo', undefined);
-      else if (key === 'name') setAttr('cond_name', undefined);
+      else if (key === 'name') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains'))));
       setActiveSub((prev) => { const next = new Set(prev); next.delete(key); return next; });
     } else {
       setActiveSub((prev) => new Set(prev).add(key));
@@ -622,10 +626,23 @@ function RefExistsAttributeFilterPanel({
           )}
           {activeSub.has('name') && (
             <div style={{ marginBottom: 4 }}>
-              <span style={{ fontSize: 10, color: '#666' }}>名称（完全一致・複数はOR）:</span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
+                <span style={{ fontSize: 10, color: '#666' }}>名称（複数はOR）:</span>
+                <ButtonGroup
+                  options={[{ code: 'cond_name_contains', label: '含む' }, { code: 'cond_name', label: '完全一致' }]}
+                  value={nameVal ? nameMode : nameModePending}
+                  onChange={(v) => {
+                    if (!v || v === (nameVal ? nameMode : nameModePending)) return;
+                    const rest = conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains')));
+                    onChange(names.length > 0 ? [...rest, { base: v, value: names.join(','), subject: marker }] : rest);
+                    setNameModePending(v);
+                  }}
+                  accentColor="#946200"
+                />
+              </div>
               <MultiTextTags
                 values={names}
-                onChange={(next) => setAttr('cond_name', next.join(','))}
+                onChange={(next) => setAttr(nameVal ? nameMode : nameModePending, next.join(','))}
                 placeholder="例: トレッドミル・トレーニング"
                 accentColor="#946200"
               />

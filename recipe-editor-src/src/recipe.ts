@@ -121,7 +121,7 @@ function buildConditionChainSegments(chain: ConditionChainEntry[]): ConditionPai
 // 自分のフィルタとして消費してしまう（他の無関係な条件と併用不可）という制約があるため、
 // 「参照+属性フィルタ」は単独使用前提の特殊なグループとして識別・展開する
 export const REF_EXISTS_FILTER_MARKER = '__ref_exists_filter__';
-export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_feature', 'cond_cost_le', 'cond_cost_ge', 'cond_has_evo', 'cond_name']);
+export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_feature', 'cond_cost_le', 'cond_cost_ge', 'cond_has_evo', 'cond_name', 'cond_name_contains']);
 // 参照「バトルエリア 0体（完全一致/以下）」＋属性＝「〜な相手のデジモンがいないなら」→ cond_not_exists（⚠ エンジン未実装）
 const isRefNoneRow = (p: ConditionPair) => !!p && (p.base === 'cond_battle_area_eq' || p.base === 'cond_battle_area_le') && String(p.value) === '0';
 

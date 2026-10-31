@@ -845,12 +845,16 @@ function onRemoteCommand(cmd) {
       bs.memory = cmd.memory !== undefined ? -cmd.memory : 3;
       bs.isFirstTurn = false;
       updateMemGauge();
-      // 相手(ai)のターンが終わった → endingSide='ai'を明示
-      if (m.expireBuffs) {
-        m.expireBuffs('dur_this_turn', null, 'ai');
-        m.expireBuffs('dur_next_opp_turn', null, 'ai');
-        m.expireBuffs('dur_next_own_turn', null, 'ai');
-      }
+      // 相手(ai)のターンが終わった → endingSide='ai'を明示。期間を切るのは「相手のターン終了時」の効果を
+      // 解決した後（公式ルール6-6-3。「次の相手のターン終了まで」与えた『【相手のターン終了時】このデジモンを
+      // 手札に戻す』が先に消えて発揮しなかった。ディルビットモンACE LM-013）
+      const expireAiTurn = () => {
+        if (m.expireBuffs) {
+          m.expireBuffs('dur_this_turn', null, 'ai');
+          m.expireBuffs('dur_next_opp_turn', null, 'ai');
+          m.expireBuffs('dur_next_own_turn', null, 'ai');
+        }
+      };
       // 自分のカードの「相手のターン終了時」効果を発火
       // scanTriggers が盤面全体（本体 + 進化元レシピ）をスキャンするので、
       // 任意の自分カードを source として triggerEffect を 1 度だけ呼ぶ
@@ -870,6 +874,8 @@ function onRemoteCommand(cmd) {
       renderAll();
       // 効果処理完了 → 「相手のターン終了」演出 → 自分のターン開始
       fireOppTurnEnd(() => {
+        expireAiTurn();
+        renderAll();
         if (m.showYourTurn) {
           m.showYourTurn('相手のターン終了', '', '#555555', () => {
             bs.isPlayerTurn = true; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs);

@@ -9080,9 +9080,14 @@ function checkConditions(conditions, card, bs, side) {
         // 「指定タイプ」: card.type が cond.value と一致する時 true
         // 完全一致。'カード' の場合は全タイプ許可（type フィルタ無効化マーカー）
         if (!cond.value) break;
-        const want = String(cond.value);
-        if (want === 'カード' || want === 'card') break; // 全カード許可
-        if (!card || String(card.type || '') !== want) return false;
+        // カンマ区切りは「どれか」（エディタの複数選択・「デジタマ以外」= デジモン,テイマー,オプション）。
+        // デュアルカードはデジモン・オプション両方のカテゴリーを持つ（cardMatchesFilter の type_in と同じ扱い。公式 2-5-5-1）
+        const wants = String(cond.value).split(',').map(s => s.trim()).filter(Boolean);
+        if (wants.some(w => w === 'カード' || w === 'card')) break; // 全カード許可
+        if (!card) return false;
+        const _ct = String(card.type || '');
+        const _isDualT = _ct === 'デュアル';
+        if (!wants.some(w => _ct === w || (wants.length > 1 && _isDualT && (w === 'デジモン' || w === 'オプション')))) return false;
         break;
       }
       // 裏向き/表向きで置かれているカードか（place_under_tamer/place_under_digimon/

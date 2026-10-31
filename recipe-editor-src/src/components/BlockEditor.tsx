@@ -2394,7 +2394,7 @@ function CostListEditor({
                     dict={dict}
                     titleBase="コスト対象の絞り込み"
                     theme="action"
-                    extraProps={{ defaultSubject: '', showSubjectSelector: false, targetL2: cCurTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
+                    extraProps={{ defaultSubject: '', showSubjectSelector: false, multiType: true, targetL2: cCurTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
                     commonConditions={commonConds.filter((cc) => !isRefFaceCond(cc.base))}
                     onCommonConditionsChange={(next) => updateCost(i, { ...c, conditions: [...commonConds.filter((cc) => isRefFaceCond(cc.base)), ...next] })}
                   />
@@ -9967,6 +9967,9 @@ interface ConditionsHybridEditorProps {
   // 進化/登場アクション（対象=このカード）のように対象ボタンが取得元カードの種別を
   // 決めていないケースでは、「クロノモンの記述がある【何の】カードか」を明示するために必要
   showTypeInTargetFilter?: boolean;
+  // タイプ（cond_type）だけ複数選択＋「デジタマ以外」を使えるようにする（コスト対象の絞り込み。
+  // 条件文字列 cond_type:デジモン,テイマー,オプション をエンジンの checkConditions がOR判定する）
+  multiType?: boolean;
   // 複数条件の結合方法をAND/ORで選べるようにする（未指定時は常にAND・従来通りの固定表記）。
   // 呼び出し元が保持するデータ（block.conditionsOp / cost.conditionsOp 等）と結び付けるため
   // 両方セットで渡す。現状は発動条件・コスト対象の絞り込みでのみ有効化している
@@ -10456,7 +10459,7 @@ function ConditionsHybridEditor({
   sameAsTargetSubject,
   supportsMultiValue = false, attackContextActive = false,
   part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false,
-  showTypeInTargetFilter = false, conditionsOp, onConditionsOpChange, allowDistinctVariants = true,
+  showTypeInTargetFilter = false, multiType = false, conditionsOp, onConditionsOpChange, allowDistinctVariants = true,
   targetL2 = '', showLastActionRef = false,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
@@ -11151,7 +11154,7 @@ function ConditionsHybridEditor({
                         （対象で種別を指定済みのため不要）
                       </div>
                     ) : c.base === 'cond_same_as_picked'
-                      || (supportsMultiValue && c.base === 'cond_type')
+                      || ((supportsMultiValue || multiType) && c.base === 'cond_type')
                       || c.base === 'cond_color'
                       || c.base === 'cond_color_not'
                       || c.base === 'cond_feature_contains'
@@ -11736,7 +11739,7 @@ function ConditionChainField({
   extraProps?: Partial<Pick<ConditionsHybridEditorProps,
     'defaultSubject' | 'showSubjectSelector' | 'sameAsTargetSubject' | 'supportsMultiValue' |
     'attackContextActive' | 'allowDistinctVariants' | 'showCostMod' | 'showTypeInTargetFilter' | 'targetL2' |
-    'showLastActionRef'>>;
+    'showLastActionRef' | 'multiType'>>;
   // 共通条件（任意）: 下のOR設定（chain）がある場合、その全選択肢に共通でAND適用される条件。
   // onCommonConditionsChangeを渡した呼び出し元でのみ「共通条件」セクションを表示する
   // （例:「登場コスト12以下」AND（「クロノモンの記述がある」OR「特徴タイタン族」））

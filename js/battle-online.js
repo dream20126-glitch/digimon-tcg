@@ -1475,7 +1475,10 @@ function onRemoteCommand(cmd) {
       // カード除去は own_card_removed / card_removed コマンドで個別に同期する
       if (st.securityBuffs) {
         const myBuffs = (bs._securityBuffs || []).filter(b => b.owner === 'player');
-        const oppBuffs = st.securityBuffs.map(b => ({ ...b, owner: 'ai' }));
+        // secSide（どちらのセキュリティに効くか。相手のセキュリティへのバフ ヴァイクモン LM-040）も視点を反転する
+        const oppBuffs = st.securityBuffs.map(b => (b.secSide
+          ? { ...b, owner: 'ai', secSide: b.secSide === 'player' ? 'ai' : 'player' }
+          : { ...b, owner: 'ai' }));
         bs._securityBuffs = [...myBuffs, ...oppBuffs];
       }
       // メモリーはmemory_update/endTurnで個別同期する（state_syncは古い値で上書きするリスクがあるため除外）

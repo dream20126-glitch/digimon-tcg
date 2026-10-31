@@ -15132,6 +15132,13 @@ function _summonCardFromEffect(c, ctx, opts, done) {
   // 前に場にいたときの状態（DP0 の「消滅予定」の印・DP 修正）を持ち越さない（トラッシュから再登場したカード）
   c._pendingDestroy = false; delete c._dp0RequestSent; delete c._destroyInProgress;
   c.dpModifier = 0; if (c.baseDp != null) c.dp = c.baseDp;
+  // 登場させたカードを「直前に選んだカード」（続く効果の「そのデジモン」same_target）にし、処理した枚数を1にする
+  // （ディルビットモンACE LM-013「〜を登場できる。次の相手のターン終了時、そのデジモンを手札に戻す」/
+  // メギドラモンACE LM-026「この効果で登場したなら、このデジモンを登場したデジモンの進化元の下に置く」）。
+  // 登場時効果の解決中に別のカードを選び直すことがあるので、終わったときにもう一度設定し直す
+  const _markSummoned = () => { if (ctx.bs) { ctx.bs._lastPickedCard = c; ctx.bs._lastActionCount = 1; } };
+  _markSummoned();
+  { const _d0 = done; done = () => { _markSummoned(); _d0 && _d0(); }; }
   // skipOnPlay 指定時は登場時効果を発動しない
   if (opts.skipOnPlay) {
     c._skipOnPlayEffect = true;
@@ -15577,6 +15584,82 @@ function _cannotBeActivated(card) {
   return !!(card && Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'prevent_unsuspend'));
 }
 
+// 「効果の上限・量の変更」（effect_cap_modify）。メギドラモンACE LM-026 の進化元効果「【お互いのターン】このデジモンの
+// DP消滅効果の上限+5000」= { action:'effect_cap_modify', value:5000, cap_action:'destroy', cap_attr:'dp', cap_scope:'self' }。
+// 自分の場のカード（本体の during_* / 進化元の evo_source.during_*）にある有効なものを集め、これから実行する手順に足し込む:
+//  - 上限を持つ処理（cap_action: destroy/bounce/return_hand/return_deck/rest/summon/evo_discard 等）→ 対象の条件
+//    （filter / from_filter の <cap_attr>_le、condition の cond_<cap_attr>_le:N）を +value
+//  - 量を持つ処理（dp_minus/dp_plus/memory_plus/draw/recover/security_attack_plus 等）→ value を +value
+// cap_scope: 'self'＝そのカード（デジモン）の効果だけ（効果を持つカード ctx.card が持ち主のデジモン。進化元効果も含む）/
+// 'own'＝自分の効果全て。手順ごとに1回だけ（_capModApplied）。カードごと・場面ごとではなくここ1か所で扱う
+const _CAP_AMOUNT_ACTIONS = new Set(['dp_minus', 'dp_plus', 'memory_plus', 'memory_minus', 'draw', 'recover', 'security_attack_plus', 'security_attack_minus']);
+function _collectEffectCapMods(ctx) {
+  const out = [];
+  const bs = ctx && ctx.bs;
+  if (!bs || !ctx.side || !bs[ctx.side]) return out;
+  const side = ctx.side;
+  const turnSide = bs.isPlayerTurn ? 'player' : 'ai';
+  const tks = ['during_any_turn', side === turnSide ? 'during_own_turn' : 'during_opp_turn'];
+  const take = (steps, carrier) => {
+    (Array.isArray(steps) ? steps : (steps ? [steps] : [])).forEach((st) => {
+      if (!st || st.action !== 'effect_cap_modify') return;
+      if (st.condition && !checkConditions(parseRecipeCondition(String(st.condition)), carrier, bs, side)) return;
+      out.push({ step: st, carrier });
+    });
+  };
+  const p = bs[side];
+  [...(p.battleArea || []), ...(p.tamerArea || [])].forEach((c) => {
+    if (!c) return;
+    const r = _parseCardRecipe(c);
+    if (r) tks.forEach((tk) => { try { take(_lookupTriggerSteps(r, tk, c), c); } catch (_) {} });
+    (Array.isArray(c.stack) ? c.stack : []).forEach((ev) => {
+      if (!ev || ev._faceDown) return;
+      const er = _parseCardRecipe(ev);
+      if (er && er.evo_source) tks.forEach((tk) => { try { take(_lookupTriggerSteps(er.evo_source, tk), c); } catch (_) {} });
+    });
+  });
+  return out;
+}
+function _applyEffectCapMods(step, ctx) {
+  if (!step || step._capModApplied || !step.action || step.action === 'effect_cap_modify' || !ctx || !ctx.bs) return step;
+  const mods = _collectEffectCapMods(ctx).filter(({ step: m, carrier }) => {
+    const acts = [].concat(m.cap_action || []).map(String);
+    if (acts.length > 0 && !acts.includes(step.action)) return false;
+    const scope = String(m.cap_scope || 'self');
+    if (scope === 'self') return carrier === ctx.card;
+    return true; // 'own': 自分の効果全て（ここに来るのは ctx.side の場のカードだけ）
+  });
+  if (mods.length === 0) return step;
+  let out = Object.assign({}, step, { _capModApplied: true });
+  mods.forEach(({ step: m }) => {
+    const v = parseInt(m.value, 10) || 0;
+    if (!v) return;
+    if (_CAP_AMOUNT_ACTIONS.has(step.action)) {
+      if (typeof out.value === 'number') out = Object.assign(out, { value: out.value + v });
+      else if (out.value != null && Number.isFinite(parseInt(out.value, 10))) out = Object.assign(out, { value: parseInt(out.value, 10) + v });
+      return;
+    }
+    const attr = String(m.cap_attr || 'dp');
+    const key = attr + '_le';
+    const bump = (f) => {
+      if (!f || typeof f !== 'object') return f;
+      const o = Object.assign({}, f);
+      if (typeof o[key] === 'number' || (typeof o[key] === 'string' && /^\d+$/.test(o[key]))) o[key] = (parseInt(o[key], 10) || 0) + v;
+      ['or', 'and'].forEach((k) => { if (Array.isArray(o[k])) o[k] = o[k].map(bump); });
+      return o;
+    };
+    if (out.filter) out.filter = bump(out.filter);
+    if (out.from_filter) out.from_filter = bump(out.from_filter);
+    const re = new RegExp('(cond_' + attr + '_le:)(\\d+)', 'g');
+    const bumpStr = (sv) => (typeof sv === 'string' ? sv.replace(re, (_m, a, n) => a + ((parseInt(n, 10) || 0) + v)) : sv);
+    if (out.condition) out.condition = Array.isArray(out.condition) ? out.condition.map(bumpStr) : bumpStr(out.condition);
+    if (out.when) out.when = bumpStr(out.when);
+    if (Array.isArray(out.extra_conditions)) out.extra_conditions = out.extra_conditions.map(bumpStr);
+  });
+  if (ctx.addLog && ctx.card) ctx.addLog('📈 「' + ctx.card.name + '」の効果の上限/量が変更されている');
+  return out;
+}
+
 // 今処理している手順が「期間のある効果」か（効果を受けないカードも対象に選べる。公式ルール 15-15-5-3。
 // 選んでも、効果を受けない間は付かない＝発揮待ちのバフになる）。その場で終わる効果（消滅・レスト等）では従来どおり候補から外す
 let _stepAllowsImmunePick = false;
@@ -15809,6 +15892,12 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (step.filter) step.filter = _resolveLv(step.filter);
       if (step.from_filter) step.from_filter = _resolveLv(step.from_filter);
     }
+  }
+
+  // 効果の上限・量の変更（effect_cap_modify。メギドラモンACE LM-026 の進化元「このデジモンのDP消滅効果の上限+5000」）を
+  // この手順に反映する（コスト解決後の再実行・alt のメイン再実行で二重に足さないよう _capModApplied で1回だけ）
+  if (!(Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved) && !_COST_STEP_SET.has(step)) {
+    try { step = _applyEffectCapMods(step, ctx); } catch (e) { console.error('[effect_cap_modify]', e); }
   }
 
   // 「そのデジモン」(same_target) で直前に選んだカードが無いとき、トリガーの発生元がいればそれを指す
@@ -16327,6 +16416,10 @@ function executeRecipeStep(step, ctx, store, callback) {
     case 'summon':
     case 'summon_appear':
     case 'summon_use': {
+      // 登場させなかった（「使わない」・候補なし）ときに、続く効果の「そのデジモン」（same_target）や
+      // 「この効果で登場したなら」（cond_last_action_ge:1）が前の効果の値を使わないように、先に空にする。
+      // 登場させたら _summonCardFromEffect が登場したカードと枚数1を入れ直す（LM-013 / LM-026）
+      if (ctx.bs) { ctx.bs._lastPickedCard = null; ctx.bs._lastActionCount = 0; delete ctx.bs._lastAttemptedTarget; }
       // 進化元から登場（≪デコード≫「バトル以外でバトルエリアを離れるとき、このデジモンの進化元から『〇〇』を
       // コストを支払わずに登場できる」。ゾンビプルートモン BT26-079 等）。condition / from_filter / filter は
       // 登場させる進化元カードの条件として使う（このカード自身の発動条件ではない）
@@ -16460,6 +16553,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           ctx.addLog('🌟 「' + cardToSummon.name + '」をバトルエリアに登場');
         }
+        // 続く効果の「そのデジモン」（same_target）＝登場したこのカード（_summonCardFromEffect と同じ）
+        if (ctx.bs) { ctx.bs._lastPickedCard = cardToSummon; ctx.bs._lastActionCount = 1; }
         if (_selfFromZone) {
           cardToSummon.summonedThisTurn = true; cardToSummon.suspended = false;
           if (!Array.isArray(cardToSummon.buffs)) cardToSummon.buffs = [];
@@ -19228,10 +19323,18 @@ function executeRecipeStep(step, ctx, store, callback) {
         });
       };
 
-      const resolveDigimonThen = (next) => {
+      // exclude: 置き先にできないカード（置くカード自身。「このデジモンを〜の進化元の下に置く」）
+      const resolveDigimonThen = (next, exclude) => {
         if (_pudSelf) { next(ctx.card); return; }
+        // 置き先が決まっている（「登場したデジモンの進化元の下に」same_target → own:1 + _forceTargetIdx）なら、そのデジモン
+        // （以前は先頭のデジモンに置いていた。メギドラモンACE LM-026）
+        if (ctx._forceTargetIdx !== undefined) {
+          const _fd = player.battleArea[ctx._forceTargetIdx];
+          next(_fd && _fd !== exclude ? _fd : null);
+          return;
+        }
         const valid = [];
-        player.battleArea.forEach((c, i) => { if (c) valid.push(i); });
+        player.battleArea.forEach((c, i) => { if (c && c !== exclude) valid.push(i); });
         if (valid.length === 0) { next(null); return; }
         const rowId = ctx.side === 'player' ? 'pl' : 'ai';
         if (valid.length === 1 || effectiveSide === 'ai') { next(player.battleArea[valid[0]]); return; }
@@ -19249,6 +19352,33 @@ function executeRecipeStep(step, ctx, store, callback) {
         break;
       }
       const _pudFromZones = Array.isArray(step.from) ? step.from : (step.from ? [step.from] : []);
+      // from:'self_card'（このデジモン自身を、他のデジモンの進化元の下に置く。メギドラモンACE LM-026「このデジモンが
+      // バトルエリアを離れるとき、〜「ギルモン」1枚を登場させる。この効果で登場したなら、このデジモンを登場したデジモンの
+      // 進化元の下に置く」）: 動くのはこのカード1枚だけ。重ねられていたカード・リンクカードは同時に破棄（公式ルール4-7-7/4-7-8。
+      // 下に置かれたカードはエリアを離れる）。下のカードへの移動なので《オーバーフロー》は処理しない（4-19-4。checkOverflow は
+      // 下のカードに居る間は処理しない）。「離れるとき」の中で置いたなら、元の離れる処理（消滅・手札に戻す等）は行わない
+      // （_stayedInBattleArea＝離れる処理が置き換わった印。これが無いと、置いた後に消滅処理でトラッシュにも置かれてしまう）
+      if (_pudFromZones.length === 1 && _pudFromZones[0] === 'self_card') {
+        const _scCard = ctx.card;
+        const _scArea = _scCard ? player.battleArea : null;
+        if (!_scCard || !_scArea || _scArea.indexOf(_scCard) === -1) { ctx.addLog('💨 このデジモンが場にいません'); callback(); break; }
+        resolveDigimonThen((digi) => {
+          if (!digi) { ctx.addLog('💨 置き先のデジモンがいません'); callback(); return; }
+          placeUnderAndFinish(digi, _scCard, () => {
+            const k = _scArea.indexOf(_scCard);
+            if (k !== -1) _scArea[k] = null;
+            (_scCard.stack || []).forEach((sc) => { if (sc) { delete sc._faceDown; player.trash.push(sc); } });
+            (_scCard.linkedCards || []).forEach((lc) => { if (lc) player.trash.push(lc); });
+            _scCard.stack = []; _scCard.linkedCards = [];
+            // 場を離れたので一時的な状態は引き継がない（進化元になったカードとして扱う）
+            _scCard.buffs = []; _scCard.dpModifier = 0; _scCard._permEffects = {}; _scCard.suspended = false;
+            if (_scCard.baseDp != null) _scCard.dp = _scCard.baseDp;
+            if (Array.isArray(_scCard._grantedRecipes)) _scCard._grantedRecipes = [];
+            _scCard._stayedInBattleArea = true;
+          });
+        }, _scCard);
+        break;
+      }
       // --- 拡張: 置き先（コンテナ）の条件・場/リンクカードからの取得・複数枚 ---
       // 例: 雷霆の覚醒 BT26-097「名称に『結城ダン』『結城カナン』を含む自分のテイマー1体を、自分の
       //   『アイギオモン』の進化元の下に置くことで」（cost: from:'battle_area', condition=置き先の名前）
@@ -19534,6 +19664,55 @@ function executeRecipeStep(step, ctx, store, callback) {
             '🛡 セキュリティに置く対象を選んでください', (list) => _psMove((list || []).filter(Boolean)));
           break;
         }
+      }
+      // 手札から置く（サクヤモン：巫女モードACE LM-023「自分の手札から、黄のテイマーカードか1色の使用コスト5以下の
+      // オプションカード1枚を自分のセキュリティの上に置ける」= target:'own_hand:1' + from_filter）。取得元カードの条件
+      // （_srcCardFilterOf）に合う手札から選び（候補1枚でも必ず選択画面を出す）、取り除いてから下の「store 経由」の
+      // 置き方（裏表・移動演出・オンラインのセキュリティ再同期）にそのまま渡す
+      if (!step.card && (/^own_hand(:|$)/.test(String(step.target || '')) || (step.from === 'hand' && !/^self/.test(String(step.target || ''))))) {
+        const _phM = /:(\d+)$/.exec(String(step.target || ''));
+        const _phWant = Math.max(1, parseInt(step.count || step.value || (_phM ? _phM[1] : 1), 10) || 1);
+        const _phFilter = _srcCardFilterOf(step) || {};
+        const _phCands = (player.hand || []).filter(c => c && cardMatchesFilter(c, _phFilter, ctx.bs, ctx.side, ctx.card));
+        if (_phCands.length === 0) {
+          if (ctx.bs) ctx.bs._lastActionCount = 0;
+          ctx.addLog && ctx.addLog('💨 条件を満たすカードが手札にありません');
+          if (step.optional) { callback(); break; }
+          showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback());
+          break;
+        }
+        const _phBase = Object.assign({}, step);
+        ['target', 'from', 'from_filter', 'filter', 'limit', 'trigger_conditions', 'alt_actions', 'alt_actions_op', 'condition', 'when',
+          'extra_conditions', 'condition_op', 'condition_chain', 'post_cost_condition', 'cost', 'count', 'value', 'targets'].forEach(k => delete _phBase[k]);
+        const _phPlace = (picked) => {
+          const list = (picked || []).filter(c => c && player.hand.includes(c));
+          if (list.length === 0) {
+            if (ctx.bs) ctx.bs._lastActionCount = 0;
+            ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
+            callback();
+            return;
+          }
+          if (ctx.bs) ctx.bs._lastPickedCard = list[list.length - 1];
+          let i = 0;
+          const next = () => {
+            if (i >= list.length) {
+              if (ctx.bs) ctx.bs._lastActionCount = list.length;
+              if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+              callback();
+              return;
+            }
+            const c = list[i++];
+            const hi = player.hand.indexOf(c);
+            if (hi === -1) { next(); return; }
+            player.hand.splice(hi, 1);
+            executeRecipeStep(Object.assign({}, _phBase, { card: '__posHandCard' }), ctx, { __posHandCard: c }, () => next());
+          };
+          next();
+        };
+        if (effectiveSide === 'ai') { _phPlace(_phCands.slice(0, _phWant)); break; }
+        showTrashCardPicker(_phCands, Math.min(_phWant, _phCands.length), !!step.optional,
+          '🛡 セキュリティの' + (step.position === 'bottom' ? '下' : '上') + 'に置く手札のカードを選んでください', (picked) => _phPlace(picked), _phCands);
+        break;
       }
       // target:"self"/"self_card"（例: オファニモン【消滅時】「このカードを自分のセキュリティの上に置く」）
       // 指定時は ctx.card（消滅したカード自身）を対象にする。それ以外は従来通り store 経由。

@@ -954,11 +954,16 @@ export function checkAutoTurnEnd() {
     await new Promise((res) => { try { _processBurstEvolvePendingDiscard(bs, 'player', res); } catch (_) { res(); } });
     bs._autoTurnEnding = false;
     bs.isPlayerTurn = false; if (window._clearTurnLimitedDigixrossZones) window._clearTurnLimitedDigixrossZones(bs); bs._oppPhase = null; bs._usedLimits = {}; // 【ターンに1回】等の使用回数は相手のターンになったらリセット（オンラインでは相手のターン開始で自分の分がリセットされていなかった）
-    // プレイヤーのターン終了
-    _hooks.expireBuffs('dur_this_turn', null, 'player');
-    _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
-    _hooks.expireBuffs('dur_next_own_turn', null, 'player');
-    _hooks.expireBuffs('permanent', 'player');
+    // プレイヤーのターン終了。AI対戦では CPU のカードの「相手のターン終了時」効果を解決してから期間を切る
+    // （公式ルール6-6-3。CPU が「次の相手のターン終了まで」与えた『【相手のターン終了時】〜』が先に消えないように。
+    // ディルビットモンACE LM-013）
+    const _expirePlayerTurn = () => {
+      _hooks.expireBuffs('dur_this_turn', null, 'player');
+      _hooks.expireBuffs('dur_next_opp_turn', null, 'player');
+      _hooks.expireBuffs('dur_next_own_turn', null, 'player');
+      _hooks.expireBuffs('permanent', 'player');
+    };
+    if (_onlineMode) _expirePlayerTurn();
     renderAll(true);
     // チュートリアル割り込み: メモリー相手側到達
     if (window._tutorialRunner && window._tutorialRunner.active) {
@@ -979,6 +984,8 @@ export function checkAutoTurnEnd() {
           if (te) await new Promise(res => te('on_opp_turn_end', anyAi, 'ai', null, res));
         } catch (_) {}
       }
+      _expirePlayerTurn();
+      renderAll(true);
       // AI対戦: 相手メモリーは超過した絶対値（AI側なので負の値）
       bs.memory = -over;
       applyTurnEndMemoryShift();
@@ -1202,12 +1209,10 @@ function aiPhaseMain() {
 // ----- AI ターン終了 -----
 
 async function endAiTurn() {
-  // AIのターン終了 → endingSide='ai'
-  _hooks.expireBuffs('dur_this_turn', null, 'ai');
-  _hooks.expireBuffs('dur_next_opp_turn', null, 'ai');
-  _hooks.expireBuffs('dur_next_own_turn', null, 'ai');
-  _hooks.expireBuffs('permanent', 'ai');
   // 自分(プレイヤー)のカードの「相手のターン終了時」効果を発火
+  // 「次の相手のターン終了まで」等の期間は、ターン終了時の効果を解決し終えてターンが終わるときに切れる
+  // （公式ルール6-6-3）ので、期限切れ除去より先に発火する（ディルビットモンACE LM-013 で与えた
+  // 『【相手のターン終了時】このデジモンを手札に戻す』が、付与の期限切れで先に消えて発揮しなかった）
   // scanTriggersが盤面全体（本体 + 進化元レシピ）を走査するので
   // 任意の自分カード1枚を source として triggerEffect を1度だけ呼ぶ。
   // 場にカードが無くても、表向きのセキュリティ/トラッシュのゾーン効果（レイヴモン BT26-082
@@ -1220,6 +1225,11 @@ async function endAiTurn() {
       await new Promise(res => te('on_opp_turn_end', anyOwn, 'player', null, res));
     }
   } catch(_) {}
+  // AIのターン終了 → endingSide='ai'
+  _hooks.expireBuffs('dur_this_turn', null, 'ai');
+  _hooks.expireBuffs('dur_next_opp_turn', null, 'ai');
+  _hooks.expireBuffs('dur_next_own_turn', null, 'ai');
+  _hooks.expireBuffs('permanent', 'ai');
   renderAll();
 
   // チュートリアル割り込み: 相手ターン終了（自分ターン開始前）

@@ -8982,6 +8982,8 @@ const RULE_COLOR_OPTS: SelectOption[] = [
   { value: '赤', label: '赤' }, { value: '青', label: '青' }, { value: '黄', label: '黄' },
   { value: '緑', label: '緑' }, { value: '黒', label: '黒' }, { value: '紫', label: '紫' }, { value: '白', label: '白' },
 ];
+// 「デジタマ以外」= デジモン/テイマー/オプション（デュアルカードはエンジンがデジモン・オプション両方として扱うので含まれる）
+const NON_DIGITAMA_TYPES = ['デジモン', 'テイマー', 'オプション'];
 const RULE_TYPE_OPTS: SelectOption[] = [
   { value: '', label: '（選択）' },
   { value: 'デジモン', label: 'デジモン' },
@@ -11187,7 +11189,20 @@ function ConditionsHybridEditor({
                           : (c.base === 'cond_color' || c.base === 'cond_color_not') ? RULE_COLOR_OPTS.filter((o) => o.value).map((o) => ({ code: o.value, label: o.label }))
                           : SAME_AS_PICKED_FIELDS;
                         const sel = (c.value || '').split(',').map((s) => s.trim()).filter(Boolean);
+                        // タイプ: 「全カード」＋☑デジタマ以外 = デジモン/テイマー/オプション（type_in）で保存する。
+                        // 3つを選んだ状態も同じ意味なので「全カード＋☑デジタマ以外」と表示する
+                        const isType = c.base === 'cond_type';
+                        const nonEgg = isType && NON_DIGITAMA_TYPES.every((t) => sel.includes(t)) && sel.length === NON_DIGITAMA_TYPES.length;
+                        const shownSel = nonEgg ? ['カード'] : sel;
                         const toggleAttr = (code: string, on: boolean) => {
+                          if (isType) {
+                            // 「全カード」は他のタイプと同時に選ぶ意味が無いので、どちらかを選んだらもう一方を外す
+                            if (code === 'カード') { updateAt(i, { value: on ? 'カード' : '' }); return; }
+                            const base = nonEgg ? [] : sel.filter((s) => s !== 'カード');
+                            const next = on ? Array.from(new Set([...base, code])) : base.filter((s) => s !== code);
+                            updateAt(i, { value: next.join(',') });
+                            return;
+                          }
                           const next = on
                             ? Array.from(new Set([...sel, code]))
                             : sel.filter((s) => s !== code);
@@ -11195,7 +11210,17 @@ function ConditionsHybridEditor({
                         };
                         return (
                           <>
-                            <MultiButtonGroup options={optList} values={sel} onToggle={toggleAttr} accentColor={colors.accent} />
+                            <MultiButtonGroup options={optList} values={shownSel} onToggle={toggleAttr} accentColor={colors.accent} />
+                            {isType && (
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#555', marginTop: 4 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={nonEgg}
+                                  onChange={(e) => updateAt(i, { value: e.target.checked ? NON_DIGITAMA_TYPES.join(',') : 'カード' })}
+                                />
+                                デジタマ以外（全カードからデジタマカードを除く）
+                              </label>
+                            )}
                             {c.base === 'cond_color' && sel.length > 1 && (
                               <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
                                 ⚠ 2色以上の選択はエンジン未対応です（保存はできますが動作しません）

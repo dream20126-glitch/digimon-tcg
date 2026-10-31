@@ -5401,6 +5401,13 @@ function resolveDpFilterMarkers(filter, selfCard, bs, side) {
       if (selfCard) out[k] = selfCard.dp || 0; else delete out[k];
       return;
     }
+    // 'last_action'＝直前の効果で処理したカードのDP / 'cost_card'＝この効果のコストで処理したカードのDP（_filterRefCard）。
+    // 参照先が無ければ対象なし（ここで消すと絞り込まれなくなるため）
+    if (out[k] === 'last_action' || out[k] === 'cost_card') {
+      const v = _filterRefMarkerValue(k, out[k], bs, side, selfCard, false);
+      out[k] = v != null ? v : (k === 'dp_ge' ? Number.MAX_SAFE_INTEGER : -1);
+      return;
+    }
     const dps = refDps(out[k]);
     if (!dps) { delete out[k]; return; }
     if (k === 'dp_le') out[k] = dps.length > 0 ? Math.max(...dps) : -1;
@@ -5602,6 +5609,127 @@ function _hasCantDiscard(card) {
   return !!(card && Array.isArray(card.buffs) && card.buffs.some(b => b && b.type === 'cant_discard'));
 }
 
+// ===== コストで処理したカードの記録 =====
+// 両プレイヤーの各領域（手札・デッキ・セキュリティ・トラッシュ・バトル/テイマー/育成エリア・その下のカード）の
+// カード → 置き場所とレスト状態。コストの支払い前後で比べ、置き場所か状態が変わったカードを「コストで処理したカード」とする。
+// オンラインの相手のカードは同期で別オブジェクトに作り直されるため、前後の両方にあるカードだけを比べる
+function _cardZoneSnapshot(bs) {
+  const m = new Map();
+  if (!bs) return m;
+  ['player', 'ai'].forEach((sd) => {
+    const p = bs[sd];
+    if (!p) return;
+    const put = (c, z) => { if (c && typeof c === 'object' && !m.has(c)) m.set(c, sd + ':' + z + ':' + (c.suspended ? 1 : 0)); };
+    ['hand', 'deck', 'security', 'trash'].forEach((z) => (p[z] || []).forEach((c) => put(c, z)));
+    const fieldCards = [...(p.battleArea || []), ...(p.tamerArea || []), p.ikusei].filter(Boolean);
+    fieldCards.forEach((c) => {
+      put(c, 'field');
+      (c.stack || []).forEach((s) => put(s, 'under'));
+      (c.linkedCards || []).forEach((s) => put(s, 'link'));
+    });
+  });
+  return m;
+}
+function _cardsMovedSince(before, bs) {
+  const after = _cardZoneSnapshot(bs);
+  const out = [];
+  before.forEach((v, c) => { if (after.has(c) && after.get(c) !== v) out.push(c); });
+  return out;
+}
+
+// ===== 対象の条件の「比べる値」の参照 =====
+// 'last_action'＝直前の効果で処理したカード（その効果で選んだカード bs._lastPickedCard。無ければ処理したカード
+// bs._lastActionCards の先頭）/ 'cost_card'＝この効果のコストで動かした/処理したカード（bs._lastCostCards。
+// executeRecipeStep のコスト支払いで記録）。複数あるときは先頭の1枚
+function _filterRefCard(kind, bs) {
+  if (!bs) return null;
+  if (kind === 'cost_card') { const a = bs._lastCostCards; return Array.isArray(a) && a.length > 0 ? a[0] : null; }
+  if (kind === 'last_action') {
+    if (bs._lastPickedCard) return bs._lastPickedCard;
+    const a = bs._lastActionCards; return Array.isArray(a) && a.length > 0 ? a[0] : null;
+  }
+  return null;
+}
+const _numOrNull = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
+// Lv/コスト/DP の比べる値マーカーを数値にする。対応しないマーカーは undefined（そのまま残す）、
+// 参照先が無い・値を持たないときは null（どのカードも当てはまらない値にする）
+// snapshotOnly: 直前の効果/コストのカードの参照だけを置き換える（executeRecipeStep が効果の開始時点の値で固定するため。
+// 効果の途中で対象を選ぶと _lastPickedCard が書き換わり、2体目以降の候補の判定がずれる）
+const _LV_REF_KEYS = ['lv_le', 'lv_ge', 'lv'];
+const _COST_REF_KEYS = ['cost_le', 'cost_ge', 'cost'];
+const _DP_REF_KEYS = ['dp_le', 'dp_ge', 'dp'];
+function _filterRefMarkerValue(key, marker, bs, side, src, snapshotOnly) {
+  const m = String(marker);
+  const own = bs && side ? bs[side] : null;
+  const opp = bs && side ? bs[side === 'player' ? 'ai' : 'player'] : null;
+  const costOf = (c) => c ? _numOrNull(c.playCost != null ? c.playCost : c.cost) : null;
+  if (_LV_REF_KEYS.includes(key)) {
+    if (m === 'last_action_lv' || m === 'cost_card_lv') return _numOrNull((_filterRefCard(m.replace(/_lv$/, ''), bs) || {}).level);
+    if (snapshotOnly) return undefined;
+    // 手札・セキュリティの枚数（ヘヴィーメタルドラモン＆ブラックサバス LM-068「自分の手札枚数以上のLv.の〜」）
+    if (m === 'own_hand_count') return own ? (own.hand || []).length : undefined;
+    if (m === 'opp_hand_count') return opp ? (opp.hand || []).length : undefined;
+    if (m === 'own_security_count') return own ? (own.security || []).length : undefined;
+    if (m === 'opp_security_count') return opp ? (opp.security || []).length : undefined;
+    if (m === 'self_lv') return src ? _numOrNull(src.level) : undefined;
+    return undefined;
+  }
+  if (_COST_REF_KEYS.includes(key)) {
+    if (m === 'last_action_cost' || m === 'cost_card_cost') return costOf(_filterRefCard(m.replace(/_cost$/, ''), bs));
+    return undefined;
+  }
+  if (_DP_REF_KEYS.includes(key)) {
+    if (m === 'last_action' || m === 'cost_card') { const c = _filterRefCard(m, bs); return c ? (parseInt(c.dp, 10) || 0) : null; }
+    return undefined;
+  }
+  return undefined;
+}
+// filter の比べる値マーカーを数値に置き換えた新しい filter を返す（元の filter は変えない。マーカーが無ければそのまま）。
+// deep: or/and の中も置き換える（cardMatchesFilter は or/and を自分で再帰するので不要）
+function _resolveFilterRefMarkers(filter, bs, side, src, snapshotOnly, deep) {
+  if (!filter || typeof filter !== 'object') return filter;
+  let out = null;
+  const keys = _LV_REF_KEYS.concat(_COST_REF_KEYS, _DP_REF_KEYS);
+  for (const k of keys) {
+    if (typeof filter[k] !== 'string' || /^\d+$/.test(filter[k])) continue;
+    const v = _filterRefMarkerValue(k, filter[k], bs, side, src, snapshotOnly);
+    if (v === undefined) continue;
+    if (!out) out = Object.assign({}, filter);
+    // 参照先が無いとき: 以下/ちょうど は -1、以上 は最大値（どのカードも当てはまらない）
+    out[k] = v !== null ? v : (/_ge$/.test(k) ? Number.MAX_SAFE_INTEGER : -1);
+  }
+  if (deep) {
+    ['or', 'and'].forEach((k) => {
+      if (!Array.isArray(filter[k])) return;
+      const sub = filter[k].map(x => _resolveFilterRefMarkers(x, bs, side, src, snapshotOnly, true));
+      if (sub.some((x, i) => x !== filter[k][i])) { if (!out) out = Object.assign({}, filter); out[k] = sub; }
+    });
+  }
+  // DP の 'self'/'own'/'opp'/'other' は resolveDpFilterMarkers で（呼び出し元が事前に解決していない場合）
+  const cur = out || filter;
+  if (!snapshotOnly && _DP_REF_KEYS.some(k => typeof cur[k] === 'string')) return resolveDpFilterMarkers(cur, src, bs, side);
+  return cur;
+}
+// 上限の修正（filter.cost_le_mod / dp_le_mod / lv_le_mod。エディタの「直前の効果に適用」で埋め込まれる）を base に掛けた値。
+// mod: { sign:'+'|'-', amount, per_count, per_ref, ref_count:'colors', per_count_mode:'step', value_step, per_ref_state }
+// 例: シリウスモンACE LM-001「このデジモンの進化元の色1色ごとに、このDP消滅効果の上限+1000」
+//   = dp_le:8000, dp_le_mod:{sign:'+',amount:1000,per_count:1,per_ref:'evo_source',ref_count:'colors'}
+// refCard: 数える元（「このデジモンの〜」＝発揮元のカード）。盤面が分からなければ修正しない
+function _applyLeMod(base, mod, bs, side, refCard) {
+  if (!mod || typeof mod !== 'object' || !bs || !side || typeof base !== 'number') return base;
+  let ref = mod.per_ref ? String(mod.per_ref) : '';
+  // 数え方「色の種類の数」は「<参照>_colors」（getRefSourceCountDirect が色の種類で数える）
+  if (ref && mod.ref_count === 'colors' && !/_colors$/.test(ref)) ref = ref + '_colors';
+  const refCount = ref ? (getRefSourceCountDirect(ref, refCard, bs, side, null, mod.per_ref_state) || 0) : 0;
+  const perCount = Number(mod.per_count) || 1;
+  const times = (ref && perCount > 0) ? Math.floor(refCount / perCount) : 1;
+  const amount = Number(mod.amount) || 0;
+  const signed = mod.sign === '-' ? -amount : amount;
+  // per_count_mode:'step'＝「上限±amount。さらに〜1つごとに value_step」（効果本体の 'step' と同じく元の数値に段階×N を足す）
+  if (mod.per_count_mode === 'step' && ref) return base + signed + (Number(mod.value_step) || 0) * times;
+  return base + signed * times;
+}
+
 // bs/side は cost_le_mod（「レスト状態のデジモン/テイマー1体ごとにコスト上限+1」等、
 // 直前の効果へ動的にかかるコスト上限修正）の評価にのみ使用。省略時はcost_le_modを無視する
 // （既存の呼び出し元を壊さないためのフェイルセーフ。呼び出し元にbs/sideがある場合は渡すこと）
@@ -5609,6 +5737,12 @@ function _hasCantDiscard(card) {
 // 等、参照元が候補カードではなく発揮元のカードであるものの集計に使う（省略時は候補カードで代用）
 function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   if (!filter) return true;
+  // 盤面(bs/side)・発揮元(sourceCard)を渡さない呼び出し元（デッキオープンの選択等）でも、比べる値の参照
+  // （手札の枚数等）や上限の修正（dp_le_mod 等）を評価できるよう、実行中の効果（_curEffectCtx）から補う
+  if (!bs && _curEffectCtx && _curEffectCtx.bs) { bs = _curEffectCtx.bs; side = side || _curEffectCtx.side; sourceCard = sourceCard || _curEffectCtx.card; }
+  else if (bs && _curEffectCtx && _curEffectCtx.bs === bs) { side = side || _curEffectCtx.side; sourceCard = sourceCard || _curEffectCtx.card; }
+  // 比べる値の参照（'own_hand_count'・'last_action_lv'・'cost_card' 等）を、いまの盤面の数値に置き換える
+  filter = _resolveFilterRefMarkers(filter, bs, side, sourceCard, false);
   // filter.or: サブフィルタの配列。いずれか1つでも一致すればOK（他のトップレベル条件とは
   // AND）。例: 色=紫（AND）かつ（名称に「レイヴモン」を含む OR 特徴に「鳥」を含む）
   // = { color:"紫", or:[{name_contains:"レイヴモン"},{feature_contains:"鳥"}] }
@@ -5661,6 +5795,23 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
     const excludedColors = String(filter.color_not).split(',').map(s => s.trim()).filter(Boolean);
     if (excludedColors.some(w => String(card.color || '').indexOf(w) >= 0)) return false;
   }
+  // 色の数（filter.color_count）: カードの色の数がちょうど N（「1色の〜オプションカード」サクヤモン：巫女モードACE LM-023）。
+  // 多色は「紫/赤」のようにスラッシュ区切り
+  if (filter.color_count != null && filter.color_count !== '') {
+    const _cc = String(card.color || '').split(/[/／]/).map(s => s.trim()).filter(Boolean).length;
+    if (_cc !== Number(filter.color_count)) return false;
+  }
+  // キーワード（filter.keyword。文字列か配列＝いずれかを持つ）: 条件 cond_keyword と同じ判定を使う
+  // （場に無い手札・デッキ等のカードはレシピの passive で常に持つキーワードだけ。エスピモン LM-014「≪ブロッカー≫を持つカード」）
+  if (filter.keyword != null && filter.keyword !== '') {
+    const _kws = (Array.isArray(filter.keyword) ? filter.keyword : [filter.keyword]).map(k => String(k || '').trim()).filter(Boolean);
+    if (_kws.length > 0) {
+      // 場のカードは持ち主側で評価する（「自分の〜がいる間、≪ブロッカー≫を得る」等の条件は持ち主から見るため）
+      let _kwSide = side;
+      if (bs) ['player', 'ai'].forEach(sd => { const p = bs[sd]; if (p && ((p.battleArea || []).includes(card) || (p.tamerArea || []).includes(card) || p.ikusei === card)) _kwSide = sd; });
+      if (!_kws.some(kw => checkConditions([{ code: 'cond_keyword', value: kw }], card, bs, _kwSide))) return false;
+    }
+  }
   if (filter.cardno && card.cardNo !== filter.cardno) return false;
   if (filter.cardno_includes && !(card.cardNo || '').includes(filter.cardno_includes)) return false;
   if (filter.name && !cardHasName(card, filter.name, true)) return false;
@@ -5674,14 +5825,16 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   }
   // Lvを持たないカード（巨神兵器 BT26-085 等）は「Lv.N以下／以上」に当てはまらない（Lv.0 扱いにしない）
   if (filter.lv_ge != null && (isNaN(parseInt(card.level)) || parseInt(card.level) < filter.lv_ge)) return false;
-  if (filter.lv_le != null && (isNaN(parseInt(card.level)) || parseInt(card.level) > filter.lv_le)) return false;
+  // lv_le_mod: 「〜1枚ごとに、この効果のLv上限+1」等（cost_le_mod と同じ形。_applyLeMod）
+  if (filter.lv_le != null && (isNaN(parseInt(card.level)) || parseInt(card.level) > _applyLeMod(filter.lv_le, filter.lv_le_mod, bs, side, sourceCard || card))) return false;
   if (filter.lv != null && (isNaN(parseInt(card.level)) || parseInt(card.level) !== filter.lv)) return false;
   // DP系: dp_le/dp_ge/dp（対象の条件エディタの「DP」カテゴリが出力する形式）。
   // 値が数値でなく DP参照マーカー文字列（'self'/'own'/'opp'/'other'）の場合は、
   // 呼び出し側が事前に resolveDpFilterMarkers() で数値化してから渡すこと
   // （ここでは非数値は判定不能として無視＝絞り込まない、フェイルセーフ）
   if (filter.dp_ge != null && typeof filter.dp_ge === 'number' && (card.dp || 0) < filter.dp_ge) return false;
-  if (filter.dp_le != null && typeof filter.dp_le === 'number' && (card.dp || 0) > filter.dp_le) return false;
+  // dp_le_mod: 「進化元の色1色ごとに、このDP消滅効果の上限+1000」（シリウスモンACE LM-001）等
+  if (filter.dp_le != null && typeof filter.dp_le === 'number' && (card.dp || 0) > _applyLeMod(filter.dp_le, filter.dp_le_mod, bs, side, sourceCard || card)) return false;
   if (filter.dp != null && typeof filter.dp === 'number' && (card.dp || 0) !== filter.dp) return false;
   // コスト系: cost (登場/使用コスト) のフィルタ
   const cardCost = (card.playCost != null ? card.playCost : (card.cost || 0));
@@ -5691,19 +5844,10 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   const _fCost = _costRef(filter.cost), _fCostLe = _costRef(filter.cost_le), _fCostGe = _costRef(filter.cost_ge);
   if (_fCost != null && cardCost !== _fCost) return false;
   if (_fCostLe != null) {
-    let effectiveCostLe = _fCostLe;
     // cost_le_mod: 「レスト状態のデジモン/テイマー1体ごとにコスト上限+1」等、
-    // 直前の効果（AltActionの「直前の効果に適用する」）から埋め込まれた動的な閾値修正
-    if (filter.cost_le_mod && bs && side) {
-      const mod = filter.cost_le_mod;
-      // 「このデジモンの裏向きの進化元1枚ごとに」等は発揮元カード（sourceCard）を数える
-      const refCount = mod.per_ref ? getRefSourceCountDirect(mod.per_ref, sourceCard || card, bs, side, null, mod.per_ref_state) : 0;
-      const perCount = mod.per_count || 1;
-      const times = (mod.per_ref && perCount > 0) ? Math.floor(refCount / perCount) : 1;
-      const amount = (mod.amount || 0) * times;
-      effectiveCostLe += (mod.sign === '-' ? -amount : amount);
-    }
-    if (cardCost > effectiveCostLe) return false;
+    // 直前の効果（AltActionの「直前の効果に適用する」）から埋め込まれた動的な閾値修正。
+    // 「このデジモンの裏向きの進化元1枚ごとに」等は発揮元カード（sourceCard）を数える
+    if (cardCost > _applyLeMod(_fCostLe, filter.cost_le_mod, bs, side, sourceCard || card)) return false;
   }
   if (_fCostGe != null && cardCost < _fCostGe) return false;
   if (Array.isArray(filter.cost_in) && !filter.cost_in.includes(cardCost)) return false;
@@ -11400,6 +11544,8 @@ function _resetEffectPicks(bs) {
   if (!bs) return;
   bs._lastPickedCard = null;
   delete bs._lastAttemptedTarget;
+  // 前の効果のコストで処理したカード（比べる値 'cost_card'）も持ち越さない
+  bs._lastCostCards = null;
 }
 function _runReactionEffect(reaction, side, bs, ctxBase, done0x, opts) {
   _reactionRunDepth++;
@@ -15098,7 +15244,41 @@ function _summonCardFromEffect(c, ctx, opts, done) {
     return;
   }
   const player = ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai;
+  // 「エリアに登場」（step.options に 'include_breed'。ヘヴィーメタルドラモン＆ブラックサバス LM-068）: 育成エリアが
+  // 空いていれば（育成エリアは1体だけ。公式ルール 3-4-7-2）バトルエリアか育成エリアかを選ぶ。CPU はバトルエリア。
+  // 呼び出し元が opts.includeBreed を渡さなければ、いま処理している登場の手順（_curStepForLabel）の options を見る
+  if (opts.toBreed === undefined && String(c.type || '') === 'デジモン' && ctx && ctx.bs && !player.ikusei) {
+    const _brStep = _curStepForLabel;
+    const _brOn = opts.includeBreed !== undefined ? !!opts.includeBreed
+      : !!(_brStep && /^summon/.test(String(_brStep.action || '')) && Array.isArray(_brStep.options) && _brStep.options.includes('include_breed'));
+    if (_brOn && ctx.side === 'player') {
+      showEffectChoicePanels(['バトルエリアに登場', '育成エリアに登場'], (ci) => {
+        _summonCardFromEffect(c, ctx, Object.assign({}, opts, { toBreed: ci === 1 }), done);
+      }, '🌟 「' + c.name + '」を登場させるエリアを選んでください', c);
+      return;
+    }
+  }
   _payEffectPlayCost(opts.payCost, opts.costDelta, ctx);
+  // 育成エリアに登場: 育成エリアのカードの効果は（育成エリアを指定していない限り）誘発しない（公式ルール 3-4-7-4）ので
+  // 【登場時】は発揮しない。自分の育成エリアは state_sync で相手へ同期される
+  if (opts.toBreed && !player.ikusei && String(c.type || '') === 'デジモン') {
+    player.ikusei = c;
+    freshOnFieldEnter(c);
+    c.summonedThisTurn = true; c.suspended = false; c.buffs = []; c.stack = []; c._grantedRecipes = [];
+    if (Array.isArray(opts._assemblyStack)) c.stack = opts._assemblyStack.slice();
+    c._pendingDestroy = false; delete c._dp0RequestSent; delete c._destroyInProgress;
+    c.dpModifier = 0; if (c.baseDp != null) c.dp = c.baseDp;
+    ctx.addLog && ctx.addLog('🌟 「' + c.name + '」を育成エリアに登場');
+    ctx.renderAll && ctx.renderAll();
+    if (window._isOnlineMode && window._isOnlineMode() && ctx.side === 'player') {
+      try { window._onlineSendCommand && window._onlineSendCommand({ type: 'play', cardName: c.name, cardImg: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '', cardType: c.type, playCost: opts.payCost || 0 }); } catch (_) {}
+      try { window._onlineSendStateSync && window._onlineSendStateSync(); } catch (_) {}
+    }
+    const _brShow = (ctx && ctx.showPlayEffect) || (typeof window !== 'undefined' && window.showPlayEffect);
+    if (_brShow) _brShow({ name: c.name, imgSrc: c.imgSrc || (typeof getCardImageUrl === 'function' ? getCardImageUrl(c) : '') || '', type: c.type, playCost: opts.payCost || 0 }, () => done && done());
+    else done && done();
+    return;
+  }
   // オプションカードは「登場」ではなく「使用」として解決する。デュアルカードは登場コストを持たないので
   // 効果で登場/使用するときはオプション側の使用になる
   if (String(c.type || '') === 'オプション' || String(c.type || '') === 'デュアル') {
@@ -15892,6 +16072,19 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (step.filter) step.filter = _resolveLv(step.filter);
       if (step.from_filter) step.from_filter = _resolveLv(step.from_filter);
     }
+    // 「直前の効果で処理したカード」「コストで処理したカード」のLv/コスト/DPを比べる値にする参照（'last_action_lv'・
+    // 'cost_card' 等）は、この効果を処理し始めた時点の値で固定する（対象を1体選ぶたびに _lastPickedCard が
+    // 書き換わるため）。コストがまだなら、支払った後の再実行（_costsResolved）で固定する。
+    // 手札の枚数等の他の参照は cardMatchesFilter が判定のたびに読む
+    if (ctx.bs && !(Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)) {
+      const _snF = step.filter && typeof step.filter === 'object' ? _resolveFilterRefMarkers(step.filter, ctx.bs, ctx.side, ctx.card, true, true) : step.filter;
+      const _snFF = step.from_filter && typeof step.from_filter === 'object' ? _resolveFilterRefMarkers(step.from_filter, ctx.bs, ctx.side, ctx.card, true, true) : step.from_filter;
+      if (_snF !== step.filter || _snFF !== step.from_filter) {
+        step = Object.assign({}, step);
+        if (_snF) step.filter = _snF;
+        if (_snFF) step.from_filter = _snFF;
+      }
+    }
   }
 
   // 効果の上限・量の変更（effect_cap_modify。メギドラモンACE LM-026 の進化元「このデジモンのDP消滅効果の上限+5000」）を
@@ -16027,9 +16220,21 @@ function executeRecipeStep(step, ctx, store, callback) {
     // 同じデジモンの進化元に置く手順が続くなら1つにまとめる（置き先の選択1回・置くカードの選択1回）
     const _costList = _mergeSameHostPlaceSteps(step.cost);
     let i = 0;
+    // コストで処理したカード（比べる値の参照 'cost_card'・'cost_card_lv'・'cost_card_cost'）を記録するため、
+    // 支払い前の各カードの置き場所を控える（コストのアクションごとに記録するのではなく、前後の差で拾う）
+    const _costZoneBefore = _cardZoneSnapshot(ctx.bs);
+    const _costPickedBefore = ctx.bs ? ctx.bs._lastPickedCard : null;
+    if (ctx.bs) ctx.bs._lastCostCards = [];
     function runCost() {
       if (i >= _costList.length) {
         console.log('[cost] all cost steps succeeded, running main action=' + step.action);
+        if (ctx.bs) {
+          const _cc = _cardsMovedSince(_costZoneBefore, ctx.bs);
+          // 動いたカードが無い（「このデジモンをレストさせることで」等の状態の変化だけ）なら、コストで選んだカード
+          if (_cc.length === 0 && ctx.bs._lastPickedCard && ctx.bs._lastPickedCard !== _costPickedBefore) _cc.push(ctx.bs._lastPickedCard);
+          ctx.bs._lastCostCards = _cc;
+          ctx._costCards = _cc;
+        }
         executeRecipeStep({ ...step, _costsResolved: true }, ctx, store, callback);
         return;
       }

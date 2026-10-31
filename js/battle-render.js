@@ -310,13 +310,17 @@ function renderSecurity() {
     const buffs = bs._securityBuffs;
     if (buffs && buffs.length > 0 && sec.length > 0) {
       let totalPlus = 0;
+      // secSide＝相手のセキュリティへのバフ（ヴァイクモン LM-040 の DP-6000）。無ければ付与本人(owner)のセキュリティ
       buffs.forEach(b => {
-        if (b.type === 'dp_plus' && b.owner === buffOwner) totalPlus += (parseInt(b.value) || 0);
+        if ((b.secSide || b.owner) !== buffOwner) return;
+        if (b.type === 'dp_plus') totalPlus += (parseInt(b.value) || 0);
+        if (b.type === 'dp_minus') totalPlus -= (parseInt(b.value) || 0);
       });
-      if (totalPlus > 0) {
+      if (totalPlus !== 0) {
         const badge = document.createElement('div');
-        badge.style.cssText = 'position:absolute;bottom:-2px;left:50%;transform:translateX(-50%);background:rgba(0,255,136,0.9);color:#000;font-size:7px;font-weight:900;padding:1px 4px;border-radius:3px;white-space:nowrap;z-index:1;box-shadow:0 0 6px rgba(0,255,136,0.5);';
-        badge.innerText = 'DP+' + totalPlus;
+        const _neg = totalPlus < 0;
+        badge.style.cssText = 'position:absolute;bottom:-2px;left:50%;transform:translateX(-50%);background:' + (_neg ? 'rgba(255,68,68,0.9)' : 'rgba(0,255,136,0.9)') + ';color:#000;font-size:7px;font-weight:900;padding:1px 4px;border-radius:3px;white-space:nowrap;z-index:1;box-shadow:0 0 6px ' + (_neg ? 'rgba(255,68,68,0.5)' : 'rgba(0,255,136,0.5)') + ';';
+        badge.innerText = 'DP' + (_neg ? '' : '+') + totalPlus;
         el.style.position = 'relative';
         el.appendChild(badge);
       }

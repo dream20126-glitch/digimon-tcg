@@ -1975,6 +1975,12 @@ function runOneAction(action, defaultTarget, ctx, callback) {
     }
     case 'dp_minus': {
       const val = action.value || 0;
+      // セキュリティのデジモン全て（own_security:all / opp_security:all）: バトルエリアではなく
+      // セキュリティバフとして記録する（ヴァイクモン LM-040「相手のセキュリティデジモン全てをDP-6000」）
+      if (defaultTarget && (defaultTarget.code === 'target_all_opp_security' || defaultTarget.code === 'target_all_own_security')) {
+        applyDpBuff(val, false, defaultTarget, ctx, callback);
+        break;
+      }
       // 対象フィルタ（Lv/色等）。rest 等と同じく action.conditions / ctx.block.conditions を見る
       const _dpmConds = (action && action.conditions) || (ctx.block && ctx.block.conditions) || [];
       const _dpmCondSide = ctx.side === 'player' ? 'ai' : 'player';
@@ -4107,6 +4113,141 @@ function _pickSideTargets(cands, n, ctx, effSide, preferOwn, title, cb0) {
     return e ? (e.own ? '【自分】' : '【相手】') : '';
   });
 }
+
+// ===== 合計予算つきの対象選択（filter.dp_sum_le / lv_sum_le / cost_sum_le） =====
+// 「DP合計このデジモンのDPまで、相手のデジモンを消滅させる」（アグモン-勇気の絆-ACE LM-021
+// {"action":"destroy","target":"opponent:all","filter":{"dp_sum_le":"self"}}）等。対象を1体ずつ選び、
+// 選んだ対象のDP/Lv/登場コストの合計が予算以下に収まる間だけ次の対象を選べる（いつでも「決定」で終われる）。
+// 値は数値か 'self'（＝このデジモン ctx.card の今のDP/Lv/登場コスト）。
+// destroy/bounce/rest 等、盤面の対象を選ぶ全アクション共通で executeRecipeStep の入口から呼ぶ。
+// 選び終えたら、選んだ対象1体ずつに同じアクションを target:'<own|opponent>:1' + _forceTargetIdx で実行する。
+// （手札/トラッシュから登場させる from_filter.cost_sum_le（メルヴァモン BT26-081）は summon 側の専用ループ）
+const _SUM_BUDGET_KEYS = { dp_sum_le: 'dp', lv_sum_le: 'lv', cost_sum_le: 'cost' };
+function _sumBudgetKeysOf(filter) {
+  if (!filter || typeof filter !== 'object') return [];
+  return Object.keys(_SUM_BUDGET_KEYS).filter(k => filter[k] !== undefined && filter[k] !== null && filter[k] !== '');
+}
+// カードの合計に足す値。Lv を持たないカード（テイマー等）は Lv 合計の対象にならない（null）
+function _sumAttrOf(card, attr) {
+  if (!card) return null;
+  if (attr === 'dp') return parseInt(card.dp, 10) || 0;
+  if (attr === 'lv') { const lv = parseInt(card.level, 10); return isNaN(lv) ? null : lv; }
+  const pc = card.playCost != null ? card.playCost : card.cost;
+  const n = parseInt(pc, 10);
+  return isNaN(n) ? 0 : n;
+}
+function _resolveSumBudget(v, attr, selfCard) {
+  if (v === 'self') return selfCard ? (_sumAttrOf(selfCard, attr) || 0) : 0;
+  const n = parseInt(v, 10);
+  return isNaN(n) ? 0 : n;
+}
+// 盤面の対象を選ぶ target か（own/opponent/both/other_own の :all / :N / :up_to_N / 無指定）
+const _SUM_BUDGET_TARGET_RE = /^(opponent|own|both|other_own)(?::(all|up_to_(\d+)|(\d+)))?$/;
+function _stepWantsSumBudget(step) {
+  if (!step || step._sumBudgetResolved || step.from) return false;
+  if (_sumBudgetKeysOf(step.filter).length === 0) return false;
+  return _SUM_BUDGET_TARGET_RE.test(String(step.target || ''));
+}
+// 「もう1体選ぶ／決定」の確認（予算に収まる候補が残っているときだけ出す）
+function _askSumBudgetMore(msgText, color, onMore, onDecide) {
+  const overlay = document.createElement('div');
+  overlay.id = '_sum-budget-confirm-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:65000;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#0a0a0a;border:1px solid ' + color + ';border-radius:12px;padding:24px;max-width:320px;width:100%;text-align:center;';
+  box.innerHTML = '<div style="color:' + color + ';font-size:14px;font-weight:bold;margin-bottom:16px;">' + msgText + '</div>'
+    + '<div style="display:flex;gap:10px;justify-content:center;">'
+    + '<button data-sb="more" style="background:' + color + ';color:#000;border:none;padding:10px 22px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;">もう1体選ぶ</button>'
+    + '<button data-sb="done" style="background:#333;color:#fff;border:1px solid #666;padding:10px 22px;border-radius:8px;font-size:14px;cursor:pointer;">決定</button>'
+    + '</div>';
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  const close = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+  box.querySelector('[data-sb="more"]').onclick = () => { close(); onMore(); };
+  box.querySelector('[data-sb="done"]').onclick = () => { close(); onDecide(); };
+}
+function _runSumBudgetSelection(step, ctx, store, callback) {
+  const m = _SUM_BUDGET_TARGET_RE.exec(String(step.target || ''));
+  const base = m[1];
+  const maxCount = m[3] ? parseInt(m[3], 10) : m[4] ? parseInt(m[4], 10) : Infinity;
+  const keys = _sumBudgetKeysOf(step.filter);
+  const budgets = keys.map(k => ({ key: k, attr: _SUM_BUDGET_KEYS[k], left: _resolveSumBudget(step.filter[k], _SUM_BUDGET_KEYS[k], ctx.card) }));
+  const rawFilter = Object.assign({}, step.filter);
+  keys.forEach(k => delete rawFilter[k]);
+  const baseFilter = resolveDpFilterMarkers(rawFilter, ctx.card, ctx.bs, ctx.side);
+  // 対象ごとの条件（発動条件ゲートは入口で評価・除去済み。残った condition/when は対象の絞り込み）
+  const conds = [];
+  _collectStepCondGroups(step).forEach(g => conds.push(...g));
+  if (step.condition_op === 'or') conds._op = 'or';
+  const oppTag = ctx.side === 'player' ? 'ai' : 'player';
+  const all = _collectSideTargets(ctx, {
+    own: base === 'own' || base === 'both' || base === 'other_own',
+    opp: base === 'opponent' || base === 'both',
+    filter: baseFilter,
+    pred: (c, isOwn) => {
+      if (base === 'other_own' && c === ctx.card) return false;
+      if (baseFilter && !cardMatchesFilter(c, baseFilter, ctx.bs, ctx.side, ctx.card)) return false;
+      if (conds.length > 0 && !checkConditions(conds, c, ctx.bs, isOwn ? ctx.side : oppTag)) return false;
+      if (!isOwn && !_stepAllowsImmunePick && hasActiveImmuneEffects(c, ctx.side, _effectSourceTypeOf(ctx))) return false;
+      return budgets.every(b => _sumAttrOf(c, b.attr) !== null);
+    },
+  }).filter(e => e.zone === 'battleArea');
+  const picked = [];
+  const fits = (e) => budgets.every(b => _sumAttrOf(e.card, b.attr) <= b.left);
+  const remaining = () => picked.length >= maxCount ? [] : all.filter(e => !picked.includes(e) && fits(e));
+  const budgetLabel = () => budgets.map(b => ({ dp: 'DP', lv: 'Lv.', cost: '登場コスト' })[b.attr] + '合計 残り' + b.left).join('・');
+  const take = (e) => { picked.push(e); budgets.forEach(b => { b.left -= _sumAttrOf(e.card, b.attr); }); };
+  const apply = () => {
+    if (picked.length === 0) {
+      if (ctx.bs) ctx.bs._lastActionCount = 0;
+      ctx.addLog && ctx.addLog('⚠ 合計の範囲内で選べる対象がいません');
+      showEffectFailed(EFFECT_FAILED_NO_TARGET, () => callback && callback());
+      return;
+    }
+    const one = Object.assign({}, step, { filter: rawFilter, _sumBudgetResolved: true, _costsResolved: true });
+    ['condition', 'when', 'extra_conditions', 'condition_op', 'condition_chain', 'cost', 'limit', 'trigger_conditions', 'targets', 'per_count', 'per_count_mode']
+      .forEach(k => delete one[k]);
+    let i = 0, done = 0;
+    const next = () => {
+      if (i >= picked.length) { if (ctx.bs) ctx.bs._lastActionCount = done; callback && callback(); return; }
+      const e = _refreshSideEntry(picked[i++], ctx);
+      const owner = e.own ? (ctx.side === 'player' ? ctx.bs.player : ctx.bs.ai) : (ctx.side === 'player' ? ctx.bs.ai : ctx.bs.player);
+      const idx = owner.battleArea.indexOf(e.card);
+      if (idx === -1) { next(); return; } // 先に処理した対象の効果（消滅時効果等）で場を離れた
+      const s1 = Object.assign({}, one, { target: (e.own ? 'own' : 'opponent') + ':1' });
+      executeRecipeStep(s1, Object.assign({}, ctx, { _forceTargetIdx: idx }), store, (r) => { if (r !== false) done++; next(); });
+    };
+    ctx.addLog && ctx.addLog('🎯 合計の範囲内で ' + picked.map(e => '「' + e.card.name + '」').join('') + ' を選んだ');
+    next();
+  };
+  if (remaining().length === 0) { apply(); return; }
+  // CPU（相手）/ 対象が事前に決まっている呼び出し: 予算に収まる中で値の大きいものから貪欲に選ぶ（相手側を優先）
+  if (ctx.side === 'ai' || ctx._forceTargetIdx !== undefined || typeof document === 'undefined' || !document.getElementById('pl-battle-row')) {
+    const key = budgets[0].attr;
+    let r;
+    while ((r = remaining()).length > 0) {
+      r.sort((a, b) => (a.own === b.own ? 0 : (a.own ? 1 : -1)) || (_sumAttrOf(b.card, key) - _sumAttrOf(a.card, key)));
+      take(r[0]);
+    }
+    apply();
+    return;
+  }
+  // プレイヤー: 盤面のデジモンをタップして1体ずつ選ぶ（オンラインの「対象選択中」表示は showTargetSelection が送る）
+  const color = getUIColor(step.action, '#ffcc00', step.frame_color);
+  const pickNext = () => {
+    const rest = remaining();
+    if (rest.length === 0) { apply(); return; }
+    showTargetSelection('both', rest.map(_boardEnc), null, color, (v) => {
+      const e = rest.find(x => _boardEnc(x) === v);
+      if (!e) { apply(); return; }
+      take(e);
+      if (remaining().length === 0) { apply(); return; }
+      _askSumBudgetMore('もう1体選びますか？（' + budgetLabel() + '）', color, pickNext, apply);
+    }, '（' + budgetLabel() + '・' + (picked.length + 1) + '体目）');
+  };
+  pickNext();
+}
+
 // 相手のカードのレスト/アクティブをオンラインで同期する（自分のカードは state_sync で同期される）
 function _syncOppSuspend(ctx, entry, suspended) {
   if (ctx.side !== 'player' || entry.own) return;
@@ -6949,16 +7090,22 @@ function applyDpBuff(val, isPlus, target, ctx, callback) {
     ctx.addLog(label + '全デジモン DP' + sign + val);
     showDpPopup(isPlus ? val : -val, '自分のデジモン全て');
     ctx.renderAll(); callback && callback();
-  } else if (target.code === 'target_all_own_security') {
+  } else if (target.code === 'target_all_own_security' || target.code === 'target_all_opp_security') {
     // セキュリティバフを記録（セキュリティチェック時に参照）
     if (!ctx.bs._securityBuffs) ctx.bs._securityBuffs = [];
     // 付与時のターン保持者と付与本人(owner)が同じか判定（dur_this_turn のセキュリティ発動時の判定用）
     const turnSide = ctx.bs.isPlayerTurn ? 'player' : 'ai';
     const appliedDuringOwnTurn = (turnSide === ctx.side);
-    ctx.bs._securityBuffs.push({ type, value: val, duration: dur, source: ctx.card ? ctx.card.cardNo : '', owner: ctx.side, _appliedDuringOwnTurn: appliedDuringOwnTurn });
-    console.log('[security_buff added]', 'type=' + type, 'val=' + val, 'dur=' + dur, 'owner=' + ctx.side, 'appliedDuringOwnTurn=' + appliedDuringOwnTurn);
-    ctx.addLog(label + 'セキュリティデジモン全体 DP' + sign + val + '（' + dur + '）');
-    showDpPopup(isPlus ? val : -val, 'セキュリティ全て');
+    // 相手のセキュリティ（ヴァイクモン LM-040）: owner は付与本人のまま（期限切れの判定・state_sync の送信元は
+    // 付与した側）にし、どちらのセキュリティに効くかを secSide で持つ。セキュリティのカードは非公開で、
+    // バトルはアタック側の端末で解決されるため、付与した側が持つバフをそのまま使う（相手の端末へは state_sync で届く）
+    const _isOppSec = target.code === 'target_all_opp_security';
+    const _secBuff = { type, value: val, duration: dur, source: ctx.card ? ctx.card.cardNo : '', owner: ctx.side, _appliedDuringOwnTurn: appliedDuringOwnTurn };
+    if (_isOppSec) _secBuff.secSide = ctx.side === 'player' ? 'ai' : 'player';
+    ctx.bs._securityBuffs.push(_secBuff);
+    console.log('[security_buff added]', 'type=' + type, 'val=' + val, 'dur=' + dur, 'owner=' + ctx.side, 'secSide=' + (_secBuff.secSide || ctx.side), 'appliedDuringOwnTurn=' + appliedDuringOwnTurn);
+    ctx.addLog(label + (_isOppSec ? '相手の' : '') + 'セキュリティデジモン全体 DP' + sign + val + '（' + dur + '）');
+    showDpPopup(isPlus ? val : -val, _isOppSec ? '相手のセキュリティ全て' : 'セキュリティ全て');
     ctx.renderAll();
     // オンライン: セキュリティバフを即時同期（debounce待ちで相手側の表示が遅れるのを防ぐ）
     if (window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) {
@@ -8157,10 +8304,10 @@ function parseRecipeCondition(condStr) {
   }
   const parts = condStr.split(':');
   let result;
-  if (parts[0] === 'cond_exists') {
+  if (parts[0] === 'cond_exists' || parts[0] === 'cond_not_exists') {
     // "cond_exists:cond_no_evo" → [{code:'cond_exists'}, {code:'cond_no_evo'}]
     // "cond_exists:cond_has_evo:4" → [{code:'cond_exists'}, {code:'cond_has_evo', value:4}]
-    result = [{code: 'cond_exists'}];
+    result = [{code: parts[0]}];
     if (parts.length >= 2) {
       const nested = parts.slice(1).join(':');
       if (!nested.startsWith('cond_')) {
@@ -8270,6 +8417,8 @@ function _battleAreaCount(bs, sideKey, type) {
 // 発動条件（ゲート）の文脈では「その陣営に該当するカードが存在するか」として評価する
 // （trigger_conditions の @own 等は発火元カードの陣営指定なので、この変換は使わない）
 const _SUBJECT_EXISTS_RE = /^(own|opp|opponent)(_tamer|_card|_digimon|_any)?$/;
+// 兄弟条件を「候補カードのフィルタ」として消費するメタ条件（～がいる／～がいない）
+const _EXISTS_META_CODES = new Set(['cond_exists', 'cond_not_exists']);
 function _isSubjectAttrCond(c) {
   return !!(c && c.subject && TARGET_FILTER_COND_CODES.has(c.code)
     && _SUBJECT_EXISTS_RE.test(String(c.subject).toLowerCase()));
@@ -8280,7 +8429,7 @@ function _isSubjectAttrCond(c) {
 function _checkCondsSubjectAware(conds, card, bs, side) {
   if (!conds || conds.length === 0) return true;
   if (conds._op === 'or') return conds.some(c => _checkCondsSubjectAware([c], card, bs, side));
-  if (conds.some(c => c && c.code === 'cond_exists') || !conds.some(_isSubjectAttrCond)) {
+  if (conds.some(c => c && _EXISTS_META_CODES.has(c.code)) || !conds.some(_isSubjectAttrCond)) {
     return checkConditions(conds, card, bs, side);
   }
   const bySubj = {};
@@ -8387,10 +8536,10 @@ function checkConditions(conditions, card, bs, side) {
   }
   // cond_exists / cond_has_evo_digimon (メタ条件) があれば先に評価し、
   // 他の条件はその候補集合に対して適用する
-  const hasExists = conditions.some(c => c.code === 'cond_exists');
+  const hasExists = conditions.some(c => _EXISTS_META_CODES.has(c.code));
   const hasEvoDigimon = !hasExists && conditions.some(c => c.code === 'cond_has_evo_digimon');
   const orderedConds = hasExists
-    ? [conditions.find(c => c.code === 'cond_exists'), ...conditions.filter(c => c.code !== 'cond_exists')]
+    ? [conditions.find(c => _EXISTS_META_CODES.has(c.code)), ...conditions.filter(c => !_EXISTS_META_CODES.has(c.code))]
     : hasEvoDigimon
       ? [conditions.find(c => c.code === 'cond_has_evo_digimon'), ...conditions.filter(c => c.code !== 'cond_has_evo_digimon')]
       : conditions;
@@ -8922,27 +9071,42 @@ function checkConditions(conditions, card, bs, side) {
         if (trashLen < (cond.value || 0)) return false;
         break;
       }
-      case 'cond_exists': {
+      case 'cond_exists':
+      // cond_not_exists:「～がいないなら」「～がない間」= cond_exists の否定（兄弟条件の扱い・subject は同じ）。
+      // ヴァイクモン LM-040「進化元枚数がこのデジモン以上の相手のデジモンがいないなら」
+      // = cond_not_exists@opp + cond_has_evo:self、
+      // トレッドミル・トレーニング LM-054「バトルエリアに自分の『トレッドミル・トレーニング』がない間」
+      // = cond_not_exists@own_any + cond_name:トレッドミル・トレーニング
+      case 'cond_not_exists': {
         // 「～がいるとき」「～がいる間」→ デフォルトは相手バトルエリアに条件を満たす
         // カードがいるか（subject 未指定時の既定動作、既存カード互換のため維持）。
         // subject:"own"/"own_any" 指定時のみ自分側を見る
         // （例: ウィザーモン「黄の自分のデジモンがいる間」= cond_exists@own）。
         if (!bs) break; // bsがない場合はスキップ（後方互換）
+        const _existsNeg = cond.code === 'cond_not_exists';
         const _existsSubj = String(cond.subject || 'opp').toLowerCase();
         const _existsOwn = _existsSubj === 'own' || _existsSubj === 'own_any' || _existsSubj === 'own_card' || _existsSubj.startsWith('own_');
         const _existsWantTamer = _existsSubj.includes('tamer');
         const oppSide = _existsOwn ? side : (side === 'player' ? 'ai' : 'player');
-        const oppArea = _existsWantTamer ? (bs[oppSide].tamerArea || []) : bs[oppSide].battleArea;
         // 同じconditions内の他の条件（cond_no_evo, cond_dp_le等）を相手カードに適用
-        const otherConds = conditions.filter(c => c.code !== 'cond_exists' && c.code !== 'per_count');
+        const otherConds = conditions.filter(c => !_EXISTS_META_CODES.has(c.code) && c.code !== 'per_count');
+        // 名称で探すとき（cond_name / cond_name_contains）は、バトルエリアに置かれたオプション・テイマー
+        // （tamerArea）も候補にする（LM-054「バトルエリアに自分の『トレッドミル・トレーニング』がない間」は
+        // place_in_battle_area で tamerArea に置かれたオプションを探す）
+        const _existsByName = !_existsWantTamer && otherConds.some(oc => oc.code === 'cond_name' || oc.code === 'cond_name_contains');
+        const oppArea = _existsWantTamer ? (bs[oppSide].tamerArea || [])
+          : _existsByName ? [...(bs[oppSide].battleArea || []), ...(bs[oppSide].tamerArea || [])]
+          : bs[oppSide].battleArea;
+        // cond_has_evo:self =「進化元枚数がこのデジモン以上」（このデジモン＝card の進化元枚数と比べる）
+        const _selfEvoN = (card && Array.isArray(card.stack)) ? card.stack.length : 0;
         const hasMatch = oppArea.some(c => {
           if (!c) return false;
-          if (!_existsWantTamer && c.type !== 'デジモン') return false; // デジモンのみ対象（テイマー参照時は除く）
+          if (!_existsWantTamer && !_existsByName && c.type !== 'デジモン') return false; // デジモンのみ対象（テイマー参照・名称指定時は除く）
           if (otherConds.length === 0) return true; // 条件なし＝相手デジモンがいればOK
           return otherConds.every(oc => {
             switch (oc.code) {
               case 'cond_no_evo': return !c.stack || c.stack.length === 0;
-              case 'cond_has_evo': return c.stack && c.stack.length >= (oc.value || 0);
+              case 'cond_has_evo': return !!c.stack && c.stack.length >= (oc.value === 'self' ? _selfEvoN : (oc.value || 0));
               case 'cond_dp_le': return c.dp <= (oc.value || 0);
               case 'cond_dp_ge': return c.dp >= (oc.value || 0);
               case 'cond_lv_le': return parseInt(c.level) <= (oc.value || 0);
@@ -8969,8 +9133,8 @@ function checkConditions(conditions, card, bs, side) {
             }
           });
         });
-        console.log('[cond_exists] hasMatch=', hasMatch);
-        if (!hasMatch) return false;
+        console.log('[' + cond.code + '] hasMatch=', hasMatch);
+        if (_existsNeg ? hasMatch : !hasMatch) return false;
         // cond_existsで使った他の条件はスキップ（二重チェック防止）
         return true;
       }
@@ -14203,7 +14367,11 @@ function _resolveStepConditionGate(step) {
   // 「直前の効果で処理した枚数」（cond_last_action_*。「この効果で消滅しなかったなら」メガドラモン EX12-064）は
   // 対象の性質ではないので、対象の絞り込みではなく発動条件として先に判定する
   const _isLastActC = (c) => !!(c && /^cond_last_action_/.test(String(c.code || '')));
-  const hasSubjAttr = (!all.some(c => c && c.code === 'cond_exists') && all.some(_isSubjectAttrCond)) || all.some(_isSelfC) || all.some(_isLastActC);
+  const hasSubjAttr = (!all.some(c => c && _EXISTS_META_CODES.has(c.code)) && all.some(_isSubjectAttrCond)) || all.some(_isSelfC) || all.some(_isLastActC);
+  // cond_not_exists（「～がいないなら」）は盤面全体を見る発動条件で、兄弟条件（when の cond_has_evo:self 等）は
+  // その候補の絞り込み。各 case が when を対象フィルタとして誤用しないよう、全体をゲートとして先に評価する
+  // （ヴァイクモン LM-040 condition:"cond_not_exists@opp" + when:"cond_has_evo:self" の active）
+  if (all.some(c => c && c.code === 'cond_not_exists')) return { gateSrc: step, stripped: strip(step) };
   if (STEP_GATE_ACTIONS.has(step.action)) {
     if (step.action === 'grant_keyword' || step.action === 'grant_keyword_to') {
       const t = String(step.target || '');
@@ -14498,7 +14666,7 @@ function recipeWillExecuteAnything(recipe, ctx) {
     _collectStepCondGroups(step).forEach(g => _allConds.push(...g));
     const _hasChain = Array.isArray(step.condition_chain) && step.condition_chain.length > 0;
     const _gateInfo = _resolveStepConditionGate(step);
-    const _useFullGate = !!_gateInfo || _allConds.some(c => c && c.code === 'cond_exists');
+    const _useFullGate = !!_gateInfo || _allConds.some(c => c && _EXISTS_META_CODES.has(c.code));
     if (_useFullGate ? !_stepHasGateConditions(step) : !step.condition) {
       console.log('[recipeWillExecute] reactor=' + _reactor + ' step has no condition → true', 'action=' + step.action);
       return true;
@@ -15986,6 +16154,15 @@ function executeRecipeStep(step, ctx, store, callback) {
       }, 'DPを参照するデジモン');
       return;
     }
+  }
+
+  // 合計予算つきの対象選択（filter.dp_sum_le / lv_sum_le / cost_sum_le。アグモン-勇気の絆-ACE LM-021
+  // 「DP合計このデジモンのDPまで、相手のデジモンを消滅させる」）: 全アクション共通でここで対象を選び切ってから
+  // 1体ずつ実行する。コストを払った後に行う（コストで盤面やDPが変わるため）
+  if (_stepWantsSumBudget(step) && ctx.bs
+      && !(Array.isArray(step.cost) && step.cost.length > 0 && !step._costsResolved)) {
+    _runSumBudgetSelection(step, ctx, store, callback);
+    return;
   }
 
   // per_count_mode === 'repeat': 値×NでなくアクションをN回繰り返す
@@ -21740,6 +21917,8 @@ function executeRecipeStep(step, ctx, store, callback) {
         else if (t === 'own:all') target = { code: 'target_all_own' };
         else if (t === 'opponent:all') target = { code: 'target_all_opponent' };
         else if (t === 'own_security:all') target = { code: 'target_all_own_security' };
+        // 相手のセキュリティのデジモン全て（ヴァイクモン LM-040「相手のセキュリティデジモン全てをDP-6000」）
+        else if (t === 'opp_security:all' || t === 'opponent_security:all') target = { code: 'target_all_opp_security' };
         else if (t.startsWith('opponent_suspended:')) target = { code: 'target_opponent_suspended', count: parseInt(t.split(':')[1]) || 1 };
         else if (t.startsWith('opponent_active:')) target = { code: 'target_opponent_active', count: parseInt(t.split(':')[1]) || 1 };
         else if (t.startsWith('own:up_to_')) target = { code: 'target_own', count: parseInt(t.split('own:up_to_')[1]) || 1, upTo: true };

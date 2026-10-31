@@ -3584,12 +3584,14 @@ function applySecurityBuffs(sec, ownerSide) {
   if (sec._origDp === undefined) sec._origDp = parseInt(sec.dp) || 0;
   let bonus = 0;
   buffs.forEach(b => {
-    if (b.owner && b.owner !== ownerSide) return;
+    // どちらのセキュリティに効くか: secSide（相手のセキュリティへのバフ。ヴァイクモン LM-040）、無ければ付与本人(owner)
+    const _tgtSide = b.secSide || b.owner;
+    if (_tgtSide && _tgtSide !== ownerSide) return;
     if (b.type === 'dp_plus') bonus += (parseInt(b.value) || 0);
     if (b.type === 'dp_minus') bonus -= (parseInt(b.value) || 0);
   });
   if (bonus !== 0) {
-    sec.dp = sec._origDp + bonus;
+    sec.dp = Math.max(0, sec._origDp + bonus); // DP-（相手のセキュリティへのバフ）で負にならないように
     addLog('🛡 セキュリティバフ適用: 「' + sec.name + '」DP ' + formatDpDisplay(sec));
   }
 }

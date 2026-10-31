@@ -4190,7 +4190,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   }
 
   // === 折りたたみ state ===
-  const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>((block.triggerConditions || []).length > 0);
+  // 「条件を設定する（トリガー条件）」は、専用ボタンで入れる条件（発動ターン・レスト/アクティブ・アタック対象・裏/表）
+  // しか無いときは閉じたまま（以前は発動ターン「自分」等だけでも✅が入っていた）
+  const [triggerCondsOpen, setTriggerCondsOpen] = useState<boolean>(
+    (block.triggerConditions || []).some((c) => c.base && !TRIGGER_DEDICATED_CONDS.has(c.base))
+    || (Array.isArray(block.triggerConditionsChain) && block.triggerConditionsChain.length > 0));
   // 発動ターンをトリガーごとに個別設定するモード（既にtriggerTimingByCodeが
   // 入っているデータを開いた場合は最初から展開しておく）
   const [perTriggerTimingOpen, setPerTriggerTimingOpen] = useState<boolean>(
@@ -10125,6 +10129,9 @@ function isRefFaceCond(base: string): boolean {
 // 発動ターン（「発動ターン」欄・setTimingが書き込む）を表す条件かどうか。
 // トリガー条件チェーン（ユーザーが編集するOR条件）とは別枠で常に保持する必要があるため、
 // チェーンのlegacyPairs/onChainChangeの両方でこれらだけ除外・保護する
+// トリガー条件のうち、条件欄ではなく専用のボタンで設定するもの（発動ターン・レスト/アクティブ・アタック対象・裏/表）
+const TRIGGER_DEDICATED_CONDS = new Set(['cond_during_own_turn', 'cond_during_opp_turn', 'cond_rest', 'cond_self_active',
+  'cond_attack_target_player', 'cond_attack_target_digimon', 'cond_face_down', 'cond_face_up']);
 function isTriggerTimingCond(base: string): boolean {
   return base === 'cond_during_own_turn' || base === 'cond_during_opp_turn';
 }

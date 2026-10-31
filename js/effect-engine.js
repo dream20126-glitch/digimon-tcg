@@ -16229,7 +16229,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (i >= _costList.length) {
         console.log('[cost] all cost steps succeeded, running main action=' + step.action);
         if (ctx.bs) {
-          const _cc = _cardsMovedSince(_costZoneBefore, ctx.bs);
+          // コストのアクション自身が記録した処理カード（下の各コスト実行時に ctx._costCards へ積んだもの）を優先する。
+          // 置き場所の差で拾うと、戻したテイマーの下にあったカード（トラッシュへ）まで混ざり、
+          // クティーラモン LM-006 の「戻したテイマーの登場コスト分」が合計でずれるため。記録が無いときだけ差で拾う
+          const _cc = (Array.isArray(ctx._costCards) && ctx._costCards.length > 0) ? ctx._costCards.slice() : _cardsMovedSince(_costZoneBefore, ctx.bs);
           // 動いたカードが無い（「このデジモンをレストさせることで」等の状態の変化だけ）なら、コストで選んだカード
           if (_cc.length === 0 && ctx.bs._lastPickedCard && ctx.bs._lastPickedCard !== _costPickedBefore) _cc.push(ctx.bs._lastPickedCard);
           ctx.bs._lastCostCards = _cc;

@@ -1042,9 +1042,32 @@ function placeUnderSelfToDigimon(o: any): any {
   return { ...o, action: /tamer/.test(base) ? 'place_under_tamer' : 'place_under_digimon' };
 }
 
+// トリガー自体が自分（相手）のターンに限られる（継続効果【自分のターン】・自分のターン開始/終了時・【メイン】等）のに、
+// トリガー条件に同じ「発動ターン：自分（相手）」が重ねて入っていたら外す（古いエディタで作ったレシピの名残。LM-011 等）
+const OWN_TURN_TRIGGERS = new Set(['during_own_turn', 'on_own_turn_start', 'on_own_turn_end', 'on_main_phase_start', 'main']);
+const OPP_TURN_TRIGGERS = new Set(['during_opp_turn', 'on_opp_turn_start', 'on_opp_turn_end', 'on_opp_main_phase_start']);
+function stripRedundantTurnConds(container: Record<string, any>): void {
+  Object.keys(container).forEach((key) => {
+    const v = container[key];
+    if (v && !Array.isArray(v) && typeof v === 'object' && (key === 'evo_source' || key === 'link')) { stripRedundantTurnConds(v); return; }
+    if (!Array.isArray(v)) return;
+    const codes = key.split(',');
+    const drop = codes.every((c) => OWN_TURN_TRIGGERS.has(c)) ? 'cond_during_own_turn'
+      : codes.every((c) => OPP_TURN_TRIGGERS.has(c)) ? 'cond_during_opp_turn' : '';
+    if (!drop) return;
+    v.forEach((st: any) => {
+      if (!st || !Array.isArray(st.trigger_conditions) || !st.trigger_conditions.includes(drop)) return;
+      st.trigger_conditions = st.trigger_conditions.filter((c: string) => c !== drop);
+      if (st.trigger_conditions.length === 0) delete st.trigger_conditions;
+    });
+  });
+}
+
 export function blocksToRecipe(rawBlocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
-  return [negateMainToUseMainEffect, returnDeckZoneTargetToFrom, dropStaleStackFilter, placeUnderSelfToDigimon]
-    .reduce((r, fn) => mapActionsDeep(r, fn), _blocksToRecipeRaw(rawBlocks, keywordDict));
+  const r = [negateMainToUseMainEffect, returnDeckZoneTargetToFrom, dropStaleStackFilter, placeUnderSelfToDigimon]
+    .reduce((acc, fn) => mapActionsDeep(acc, fn), _blocksToRecipeRaw(rawBlocks, keywordDict));
+  stripRedundantTurnConds(r);
+  return r;
 }
 function _blocksToRecipeRaw(rawBlocks: EffectBlock[], keywordDict?: DictEntry[]): Record<string, any> {
   const blocks = stripEmptyValuePairs(rawBlocks);

@@ -3246,6 +3246,8 @@ const COMMON_TRIGGER_FAMILIES: TriggerFamily[] = [
   { code: 'on_attack', label: 'アタック時', kind: 'event' },
   { code: 'on_attack_end', label: 'アタック終了時', kind: 'event' },
   { code: 'on_destroy', label: '消滅時', kind: 'event' },
+  // 破棄（トリガーコード discard。辞書の「破棄されたとき」）。押すと［する］［される］を選べる（DISCARD_TRIGGER_CODE 参照）
+  { code: 'discard', label: '破棄', kind: 'event' },
   {
     code: 'main', label: 'メイン', kind: 'timing',
     variants: { self: 'main', opp: 'opp_main', any: 'any_main' },
@@ -3287,6 +3289,10 @@ const KEYWORD_ONLY_TRIGGER_FAMILIES: TriggerFamily[] = [
 const ATTACK_TRIGGER_CODES = ['on_attack', 'when_opp_attack', 'on_any_attack', 'on_attack_end', 'when_opp_attack_end', 'on_any_attack_end'];
 // 【リンク時】のときだけ、リンクする側/される側を選べるUIを出す判定に使う
 const LINK_TRIGGER_CODES = ['on_link'];
+// 「破棄」トリガー: ［する］＝（発動主体の側が）効果で破棄したとき＝原因「効果で」＋原因の対象「自分」（このデジモンの効果なら「このデジモン」）。
+// ［される］＝カードが破棄されたとき（原因の指定なし。「効果で破棄されたとき」等は下の原因選択で足す）。
+// 「自分の手札が自分の効果で破棄されたとき」と「自分が手札を破棄したとき」は同じデータになる
+const DISCARD_TRIGGER_CODE = 'discard';
 // event種別のトリガーファミリーのうち、「〜するとき（事前・置換効果用）」の対になる
 // コードを持つもの。該当ファミリーボタンがアクティブな間だけ、ボタンの隣に小さく
 // 「するとき」チェックボックスを出し、チェックで通常コード⇔するときコードを切り替える。
@@ -5590,6 +5596,44 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       />
                     </div>
                   )}
+
+                  {/* 「破棄」のときだけ［する］［される］を選ぶ（原因「効果で」＋原因の対象「自分」で保存。トリガーごとに原因を分けているときはそちらへ） */}
+                  {currentTriggers.includes(DISCARD_TRIGGER_CODE) && (() => {
+                    const byCode = perTriggerCauseOpen;
+                    const cause = byCode ? (block.triggerCauseByCode || {})[DISCARD_TRIGGER_CODE] : block.destroyCause;
+                    const causeSubj = byCode ? (block.triggerCauseSubjectByCode || {})[DISCARD_TRIGGER_CODE] : block.destroyCauseSubject;
+                    const isDo = cause === 'effect' && (causeSubj === 'own' || causeSubj === 'self');
+                    const setDo = (doIt: boolean) => {
+                      const subj = doIt ? (causeSubj === 'self' ? 'self' : 'own') : undefined;
+                      if (byCode) {
+                        const cm: Record<string, CauseCodeT> = { ...(block.triggerCauseByCode || {}) };
+                        const sm: Record<string, string> = { ...(block.triggerCauseSubjectByCode || {}) };
+                        if (doIt) { cm[DISCARD_TRIGGER_CODE] = 'effect'; sm[DISCARD_TRIGGER_CODE] = subj!; }
+                        else { delete cm[DISCARD_TRIGGER_CODE]; delete sm[DISCARD_TRIGGER_CODE]; }
+                        onChange({ ...block, triggerCauseByCode: cm, triggerCauseSubjectByCode: sm });
+                      } else {
+                        onChange({ ...block, destroyCause: doIt ? 'effect' : undefined, destroyCauseSubject: subj });
+                      }
+                    };
+                    return (
+                      <div style={{ marginTop: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 11, color: '#666' }}>破棄:</span>
+                          <ButtonGroup
+                            options={[{ code: 'do', label: 'する（破棄したとき）' }, { code: 'done', label: 'される（破棄されたとき）' }]}
+                            value={isDo ? 'do' : 'done'}
+                            onChange={(v) => setDo(v === 'do')}
+                            accentColor="#2e7d32"
+                          />
+                        </div>
+                        <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
+                          {isDo
+                            ? '発動主体の側が効果で破棄したとき（原因：効果で・原因の対象：自分 で保存。「このデジモンの効果で」なら下の原因の対象を「このデジモン」に）。何を破棄したかは発動主体（相手の手札・相手のデジモンの進化元 等）で選ぶ'
+                            : 'カードが破棄されたとき。「効果で破棄されたとき」等は下の「原因選択」で足す'}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* 【リンク時】のときだけ、このカードが「リンクする側」か「リンクされる側」かを選べる。
                       「される側」は発動主体（own/other_own/opp）と組み合わせて「他の自分のデジモンが

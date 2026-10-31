@@ -15253,6 +15253,26 @@ function _cardPlayCostOf(c) {
   return parseInt(c && c.playCost != null ? c.playCost : ((c && c.cost) || 0), 10) || 0;
 }
 
+// step.value_from（値をカードから求める）: { ref, attr, sign }
+// - ref: 'cost_card'＝このステップのコストで処理したカード（ctx._costCards）／'last_action'＝直前の効果で処理したカード（bs._lastActionCards）
+// - attr: 'cost'（登場/使用コスト）／'dp'／'lv'。複数枚なら合計
+// - sign: 'minus' で負にする（「戻したテイマーの登場コスト分、支払う登場コストをマイナス」クティーラモン LM-006 → value:-N）
+// 参照するカードが無ければ 0。ref が分からなければ null（value をそのまま使う）
+function _resolveValueFrom(vf, ctx) {
+  if (!vf || typeof vf !== 'object') return null;
+  let cards;
+  if (vf.ref === 'cost_card') cards = (ctx && Array.isArray(ctx._costCards)) ? ctx._costCards : [];
+  else if (vf.ref === 'last_action') cards = (ctx && ctx.bs && Array.isArray(ctx.bs._lastActionCards)) ? ctx.bs._lastActionCards : [];
+  else return null;
+  const attrOf = (c) => {
+    if (vf.attr === 'dp') return parseInt(c.dp, 10) || 0;
+    if (vf.attr === 'lv' || vf.attr === 'level') return parseInt(c.level, 10) || 0;
+    return _cardPlayCostOf(c);
+  };
+  const sum = cards.filter(Boolean).reduce((t, c) => t + attrOf(c), 0);
+  return vf.sign === 'minus' ? -sum : sum;
+}
+
 // 効果による「このデジモン（そのデジモン）でアタックできる」の実行本体。任意（step.optional）なら
 // 「〜でアタックしますか？」を確認してから、アタック対象（レスト中の相手デジモン／セキュリティ）を
 // 選んで宣言する。done(declared) は宣言した（true）／しなかった（false）で呼ばれる
@@ -15939,7 +15959,18 @@ function executeRecipeStep(step, ctx, store, callback) {
       // 引き継ぐと選択が自動になり、アンフィモン＆クリスタルフリーザー EX12-033「トラッシュ3枚をデッキの下に戻すことで
       // 離れない」で、戻す3枚を選ぶ画面が出ずに自動で戻されていた
       const _costCtx = ctx._forceTargetIdx !== undefined ? Object.assign({}, ctx, { _forceTargetIdx: undefined }) : ctx;
+      // コストで処理したカード（ctx._costCards）を記録する。コストのアクションが bs._lastActionCards（無ければ
+      // bs._lastPickedCard）を更新していればそのカード。value_from:{ref:'cost_card'}（クティーラモン LM-006
+      // 「戻したテイマーの登場コスト分、支払う登場コストをマイナス」）等が参照する
+      const _laBefore = ctx.bs ? ctx.bs._lastActionCards : undefined;
+      const _lpBefore = ctx.bs ? ctx.bs._lastPickedCard : undefined;
       executeRecipeStep(costStep, _costCtx, store, (success) => {
+        if (success !== false && ctx.bs) {
+          if (!Array.isArray(ctx._costCards)) ctx._costCards = [];
+          const _la = ctx.bs._lastActionCards;
+          if (_la !== _laBefore && Array.isArray(_la)) ctx._costCards.push(..._la.filter(Boolean));
+          else if (ctx.bs._lastPickedCard && ctx.bs._lastPickedCard !== _lpBefore) ctx._costCards.push(ctx.bs._lastPickedCard);
+        }
         if (success === false) {
           console.log('[cost] cost FAILED → aborting main');
           // このステップ自身は対象選択まで到達しなかったため、後続の「その後」ステップが
@@ -15953,8 +15984,21 @@ function executeRecipeStep(step, ctx, store, callback) {
         runCost();
       });
     }
+    ctx._costCards = [];
     runCost();
     return;
+  }
+
+  // 値の参照（value_from）: 数値をコストで処理したカード・直前の効果で処理したカードから求める
+  // （クティーラモン LM-006 value_from:{ref:'cost_card',attr:'cost',sign:'minus'}）。value を置き換えたコピーで続ける
+  if (step.value_from && typeof step.value_from === 'object') {
+    const _vf = _resolveValueFrom(step.value_from, ctx);
+    if (_vf !== null) {
+      const _vStep = Object.assign({}, step, { value: _vf });
+      delete _vStep.value_from;
+      if (_COST_STEP_SET.has(step)) _COST_STEP_SET.add(_vStep);
+      step = _vStep;
+    }
   }
 
   // 条件チェック（stepにconditionがあれば事前判定）
@@ -19915,7 +19959,10 @@ function executeRecipeStep(step, ctx, store, callback) {
       // このデジモン自身は戻せない（ロゼモン：バーストモード BT26-050「レスト状態の他のデジモン1体をデッキの下に戻すことで」。
       // 以前は target_other_own に対応しておらず、何も戻さずにコストを払えた扱いで進んでいた）
       const _rdOwnM = _rdTStr.match(/^(own_tamer|own_digimon|own|target_other_own|other_own|both|both_other)(?::(up_to_)?(\d+))?$/);
-      if (_rdOwnM && !step.from) {
+      // 取得元に場（from:'battle_area'・from_owner:'self'。エディタの「自分のバトルエリアから」）を書いたものも同じ扱い
+      // （クティーラモン LM-006 コスト「自分のテイマー1体をデッキの下に戻す」が取得元ゾーンの経路に入り戻せなかった）
+      const _rdFromField = !step.from || ((step.from === 'battle_area' || step.from === 'field') && (!step.from_owner || step.from_owner === 'self'));
+      if (_rdOwnM && _rdFromField) {
         const _rdoIsCost = _COST_STEP_SET.has(step);
         const _rdoBoth = _rdOwnM[1] === 'both' || _rdOwnM[1] === 'both_other';
         const _rdoNotSelf = _rdOwnM[1] === 'target_other_own' || _rdOwnM[1] === 'other_own' || _rdOwnM[1] === 'both_other' || (_rdOwnM[1] === 'both' && _rdoIsCost);
@@ -19957,9 +20004,11 @@ function executeRecipeStep(step, ctx, store, callback) {
             return;
           }
           let k = 0, _rdoReturned = 0;
+          const _rdoReturnedCards = [];
           const next = () => {
             if (k >= list.length) {
-              if (ctx.bs) ctx.bs._lastActionCount = _rdoReturned;
+              // 戻したカード（bs._lastActionCards）も記録する（「戻したテイマーの登場コスト分」クティーラモン LM-006 の value_from）
+              if (ctx.bs) { ctx.bs._lastActionCount = _rdoReturned; ctx.bs._lastActionCards = _rdoReturnedCards.slice(); }
               // コストで1枚も戻せなかった（離れない効果で残った・選んだカードが場にもう無い等）なら支払えなかった
               if (_rdoIsCost && _rdoReturned === 0) { ctx.addLog('💨 デッキに戻せなかったため、コストを支払えません'); callback(false); return; }
               callback(true);
@@ -19967,10 +20016,11 @@ function executeRecipeStep(step, ctx, store, callback) {
             }
             const c = list[k++];
             if (_rdoIsOpp(c) || (!player.battleArea.includes(c) && !(player.tamerArea || []).includes(c))) {
-              _returnOppFieldCardToDeck(opponent, c, _rdoTop, ctx, (ok) => { if (ok) _rdoReturned++; next(); });
+              _returnOppFieldCardToDeck(opponent, c, _rdoTop, ctx, (ok) => { if (ok) { _rdoReturned++; _rdoReturnedCards.push(c); } next(); });
               return;
             }
             _rdoReturned++;
+            _rdoReturnedCards.push(c);
             _returnOwnFieldCardToDeck(player, c, _rdoTop, ctx, next);
           };
           next();
@@ -22297,29 +22347,76 @@ export function getAppGattaiEvolve(evoCard, baseCard, bs, side) {
   return null;
 }
 
+// コストとして「このカードをレストさせる」を支払う共通処理。登場/進化コストの軽減（when_play / before_evolve）で
+// 直接 suspended=true にしていたため、エアドラモン LM-009 の2つ目の効果「このデジモンがレストしたとき」が
+// 誘発しなかった。レストしたときの誘発は効果の「レスト」と同じ fireWhenRestTriggers に合流させる:
+// - 効果の処理中（効果で登場させるとき）は fireWhenRestTriggers が保留反応として効果の後に回す
+// - 手札からの登場/進化の支払い中は、登場/進化の手順が終わってから【登場時】【進化時】と同時に誘発したものとして
+//   発揮する（bs._costRestPending → takeCostRestExtras。登場したアンゴラモンを【速攻】の対象に選べるように）
+// done は同期で呼ぶ（CPU の登場処理は checkWhenPlayDiscount のコールバックが同期で返る前提）
+function _restSelfAsCost(card, side, bs, done) {
+  if (!card || !bs) { done && done(); return; }
+  card.suspended = true;
+  if (_queueResolveDepth > 0 && _curEffectCtx && _curEffectCtx.bs === bs) {
+    try { fireWhenRestTriggers(side, card, bs, _curEffectCtx, done); } catch (e) { console.error('[restSelfAsCost]', e); done && done(); }
+    return;
+  }
+  if (!Array.isArray(bs._costRestPending)) bs._costRestPending = [];
+  bs._costRestPending.push({ side, card });
+  done && done();
+}
+// 登場/進化のコスト支払いでレストしたカードの「レストしたとき」が保留中か
+export function hasCostRestPending(bs) {
+  return !!(bs && Array.isArray(bs._costRestPending) && bs._costRestPending.length > 0);
+}
+// 保留中の「レストしたとき」を、【登場時】【進化時】の誘発に足す候補（triggerEffect の window._nextTriggerExtras の形）として取り出す
+export function takeCostRestExtras(bs, ctxBase) {
+  if (!hasCostRestPending(bs)) return [];
+  const list = bs._costRestPending;
+  bs._costRestPending = null;
+  let out = [];
+  list.forEach((p) => {
+    try { out = out.concat(collectOwnRestReactions(p.side, p.card, bs, ctxBase || { bs })); }
+    catch (e) { console.error('[takeCostRestExtras]', e); }
+  });
+  return out;
+}
+
+// 「支払うコスト-N」系のアクション（軽減量は value の絶対値。appear_or_evolve＝「支払う登場/進化コスト-N」
+// エアドラモン LM-009 は value:-2、evo_cost_minus＝インフェルモン BT2-062 は value:1 の正の値）
+const _COST_DISCOUNT_ACTIONS = new Set(['appear_or_evolve', 'evo_cost_minus', 'summon_appear', 'summon_cost_minus']);
+
 // 進化コスト確定前に「〜するとき、このテイマーをレストさせることでコストを-N」のような
 // テイマー反応を確認する（before_evolve トリガー）。
 // before_evolve: [{ trigger_conditions?, condition?, cost?, value }]
+// 結合キー（"when_play,before_evolve" エアドラモン LM-009）も読めるよう _lookupTriggerSteps で取得する。
 // trigger_conditions は進化先カード(evoCard=手札のカード)に対して評価する
 // （タイガ BT2-088「手札の名称に『ティラノモン』を含むデジモンカードに進化するとき」等）。
 // condition はテイマー自身の発動条件（during_own_turn 等）。
+// 発動主体は subject_by_code.before_evolve（_resolveStepSubject）。opp 系は対象外、self 系は
+// 「このデジモンが進化するとき」なので進化元のデジモン(opts.base)が効果を持つカード自身のときだけ。
 // callback(discountAmount) — 0 なら適用なし。プレイヤー確認はUIで行う（AIは自動承諾）。
-export function checkBeforeEvolveDiscount(evoCard, bs, side, callback) {
-  const finish = (amount) => { try { callback(amount || 0); } catch (_) {} };
+export function checkBeforeEvolveDiscount(evoCard, bs, side, callback, opts) {
+  opts = opts || {};
+  const finish = (amount) => { try { callback(amount || 0); } catch (e) { console.error('[before_evolve]', e); } };
   if (!bs || !evoCard) { finish(0); return; }
   const sidePl = bs[side];
   if (!sidePl) { finish(0); return; }
   const cards = [...(sidePl.battleArea || []), ...(sidePl.tamerArea || [])].filter(c => c);
   let found = null;
   for (const card of cards) {
-    if (!card.recipe) continue;
+    const r = _parseCardRecipe(card);
+    if (!r) continue;
     try {
-      const raw = typeof card.recipe === 'string' ? card.recipe.replace(/[\x00-\x1F\x7F]\s*/g, '') : card.recipe;
-      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      const list = r.before_evolve;
+      const list = _lookupTriggerSteps(r, 'before_evolve', card);
       if (!Array.isArray(list)) continue;
       for (const step of list) {
-        if (!step) continue;
+        if (!step || typeof step !== 'object') continue;
+        if (step.action && !_COST_DISCOUNT_ACTIONS.has(step.action)) continue;
+        const subj = String(_resolveStepSubject(step, 'before_evolve') || '');
+        if (subj === 'opp' || subj.indexOf('opp_') === 0 || subj === 'opponent') continue;
+        if ((subj === 'self' || subj === 'self_card') && opts.base && opts.base !== card) continue;
+        if (_whenPlayAmountOf(step) <= 0) continue;
         if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, evoCard, bs, side, step.trigger_conditions_chain)) continue;
         if (step.condition) {
           const conds = parseRecipeCondition(step.condition);
@@ -22330,18 +22427,24 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback) {
         found = { card, step };
         break;
       }
-    } catch (_) {}
+    } catch (e) { console.error('[before_evolve]', e); }
     if (found) break;
   }
   if (!found) { finish(0); return; }
   const { card, step } = found;
-  const amount = parseInt(step.value, 10) || 0;
+  // 軽減量は value の絶対値（appear_or_evolve は value:-2 のように負で持つ。以前は parseInt のままで
+  // 進化コストが増えていた）
+  const amount = _whenPlayAmountOf(step);
   const hasCost = Array.isArray(step.cost) && step.cost.length > 0;
+  const online = side === 'player' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode();
   const applyDiscount = () => {
-    if (hasCost) {
-      step.cost.forEach((c) => { if (c && c.action === 'rest') card.suspended = true; });
-    }
-    finish(amount);
+    const rests = hasCost ? step.cost.filter(c => c && c.action === 'rest') : [];
+    if (rests.length === 0) { finish(amount); return; }
+    _restSelfAsCost(card, side, bs, () => {
+      // 自分のカードのレストは state_sync で相手へ同期する（checkWhenPlayDiscount と同じ）
+      if (online && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+      finish(amount);
+    });
   };
   if (side !== 'player') {
     // AI: 自動的にコスト軽減を採用
@@ -22354,9 +22457,15 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback) {
     applyDiscount();
     return;
   }
-  const msg = 'このテイマーをレストさせることで、進化コストを-' + amount + 'しますか？';
+  const msg = '「' + card.name + '」をレストさせることで、「' + evoCard.name + '」の進化コストを-' + amount + 'しますか？';
   if (typeof showConfirmDialog === 'function') {
-    showConfirmDialog(card, msg, (yes) => { if (yes) applyDiscount(); else finish(0); });
+    showConfirmDialog(card, msg, (yes) => {
+      // showConfirmDialog は相手画面に fx_confirmShow を送る。「はい」なら「効果を発動中」表示を閉じる（checkWhenPlayDiscount と同じ）
+      if (yes && online && window._onlineSendCommand) {
+        try { window._onlineSendCommand({ type: 'fx_effectClose' }); } catch (_) {}
+      }
+      if (yes) applyDiscount(); else finish(0);
+    });
   } else {
     applyDiscount();
   }
@@ -22391,8 +22500,10 @@ export function getWhenPlayDiscountOptions(playCard, bs, side) {
     if (!Array.isArray(list)) continue;
     for (const step of list) {
       if (!step || typeof step !== 'object') continue;
-      // 相手のカードの登場に反応するもの（subject:'opp'）はこの経路では扱わない
-      const subj = String(step.subject || 'own').toLowerCase();
+      // 相手のカードの登場に反応するもの（subject:'opp'）はこの経路では扱わない。
+      // 結合キーの発動主体は subject_by_code.when_play（エアドラモン LM-009 "when_play,before_evolve"）
+      const subj = String(_resolveStepSubject(step, 'when_play') || 'own').toLowerCase();
+      if (subj.indexOf('opp_') === 0) continue;
       if (subj === 'opp' || subj === 'opponent') continue;
       const _isTypeCond = (cs) => /^cond_type(:|@|$)/.test(String(cs));
       const hasTypeCond = (Array.isArray(step.trigger_conditions) && step.trigger_conditions.some(_isTypeCond))
@@ -22454,9 +22565,10 @@ export function checkWhenPlayDiscount(playCard, bs, side, callback, opts) {
     // 先の候補の処理でレストされた等、もう使えない場合は飛ばす
     if (o.restSelf && o.card.suspended) { next(); return; }
     const apply = () => {
-      if (o.restSelf) { o.card.suspended = true; rested = true; }
       total += o.amount;
       opts.addLog && opts.addLog('💠 「' + o.card.name + '」の効果' + (o.restSelf ? '（レスト）' : '') + 'で「' + playCard.name + '」の支払うコスト-' + o.amount);
+      // 自身のレストは「レストしたとき」を誘発させる共通の支払い処理で（エアドラモン LM-009）
+      if (o.restSelf) { rested = true; _restSelfAsCost(o.card, side, bs, next); return; }
       next();
     };
     if (side !== 'player' || !o.restSelf) { apply(); return; }
@@ -22473,6 +22585,26 @@ export function checkWhenPlayDiscount(playCard, bs, side, callback, opts) {
     });
   };
   next();
+}
+
+// 「このカードは黒でも色条件を満たせる」（メモリーブースト LM-033〜053 passive {flag:'alt_use_color', colors:['黒'], in_zone:'hand'}）:
+// オプションの使用の色条件で、このカードが追加で持つ色の一覧。手札のカードの性質なのでカード自身のレシピから読む
+// （in_zone は省略可。指定があっても使用するカードは手札にあるので判定しない）。
+// gate（〜の間）があれば _passiveGateOk で判定する（フラグの gate 条件の共通対応が入ればここも同じ入口で効く）
+export function getAltUseColors(card, bs, side) {
+  if (!card || !card.recipe) return [];
+  if (typeof card.recipe === 'string' && card.recipe.indexOf('alt_use_color') === -1) return [];
+  const r = _parseCardRecipe(card);
+  if (!r) return [];
+  const passives = Array.isArray(r.passive) ? r.passive : (r.passive ? [r.passive] : []);
+  const out = [];
+  passives.forEach((p) => {
+    if (!p || typeof p !== 'object' || p.flag !== 'alt_use_color') return;
+    if (!_passiveGateOk(p, card, bs, side)) return;
+    const cols = Array.isArray(p.colors) ? p.colors : (p.colors ? String(p.colors).split(/[\/,、]/) : []);
+    cols.forEach((c) => { const s = String(c || '').trim(); if (s && !out.includes(s)) out.push(s); });
+  });
+  return out;
 }
 
 // 指定カードが passive の flag を、gate（〜の間）成立中の状態で持っているか（本体の recipe.passive）。

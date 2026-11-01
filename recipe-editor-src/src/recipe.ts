@@ -205,6 +205,15 @@ function stripDpRefFilterMarker(pairs: ConditionPair[]): ConditionPair[] {
   return pairs.filter((p) => !(p && p.subject === DP_REF_FILTER_MARKER));
 }
 
+// 原因の「どの効果で」（cause_effect: { keyword?, trigger? }）
+function parseCauseEffect(v: any): { keyword?: string; trigger?: string } | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const out: { keyword?: string; trigger?: string } = {};
+  if (v.keyword) out.keyword = String(v.keyword);
+  if (v.trigger) out.trigger = String(v.trigger);
+  return out.keyword || out.trigger ? out : undefined;
+}
+
 // 「進化コストNで」（fixed_cost）。'' は「指定」を選んで数値が未入力の状態なので出力しない
 function fixedCostOut(v: number | string | undefined): number | undefined {
   if (v === undefined || v === null || v === '') return undefined;
@@ -1894,7 +1903,13 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   } else if (b.destroyCause) {
     step.cause = b.destroyCause;
     if (b.destroyCauseSubject) step.cause_subject = b.destroyCauseSubject;
+    // 原因の「どの効果で」（キーワード／タイミング）
+    const ce = b.destroyCauseEffect;
+    if (ce && (ce.keyword || ce.trigger)) {
+      step.cause_effect = { ...(ce.keyword ? { keyword: ce.keyword } : {}), ...(ce.trigger ? { trigger: ce.trigger } : {}) };
+    }
   }
+  if (b.triggerSelfCardOnly) step.trigger_self_card = true;
   if (b.actionParams) Object.assign(step, b.actionParams);
   if (b.extras) {
     try {
@@ -2737,6 +2752,8 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     cause_subject: true,
     cause_by_code: true,
     cause_subject_by_code: true,
+    cause_effect: true,
+    trigger_self_card: true,
     cost: true,
     post_cost_condition: true,
     from: true,
@@ -2851,6 +2868,8 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     linkRole: step?.link_role === 'target' ? 'target' : 'linker',
     destroyCause: isCauseCode(step?.cause) ? step.cause : undefined,
     destroyCauseSubject: step?.cause_subject || undefined,
+    destroyCauseEffect: parseCauseEffect(step?.cause_effect),
+    triggerSelfCardOnly: !!step?.trigger_self_card || undefined,
     triggerCauseByCode: (step?.cause_by_code && typeof step.cause_by_code === 'object')
       ? { ...step.cause_by_code } : undefined,
     triggerCauseSubjectByCode: (step?.cause_subject_by_code && typeof step.cause_subject_by_code === 'object')

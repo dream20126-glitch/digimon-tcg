@@ -183,6 +183,14 @@ export interface EffectBlock {
   // アクション実行時にしかセットされないため、それ以外のイベントでは常に「原因なし」扱いになる
   destroyCause?: CauseCode;
   destroyCauseSubject?: string;
+  // 原因の「どの効果で」（destroyCause が効果で のときだけ意味を持つ）。キーワード（≪デジバースト≫等）や
+  // タイミング（【メイン】【進化時】等）で、原因になった効果を絞り込む。両方指定したら両方満たすとき。
+  // 例: P-032「このデジモンが発揮した【デジバースト】で」→ destroyCause='effect' + destroyCauseSubject='self'
+  //   + destroyCauseEffect={ keyword: 'digiburst' }。JSON では step.cause_effect（エンジン未対応）
+  destroyCauseEffect?: { keyword?: string; trigger?: string };
+  // 「このカードが（進化元から）破棄されたとき」: 発動主体「このカード＞進化元」のうち、このカード自身が
+  // 破棄されたときだけ反応する（進化元効果のカード自身。P-032）。JSON では step.trigger_self_card:true（エンジン未対応）
+  triggerSelfCardOnly?: boolean;
   // トリガーごとに発動ターン（自分/相手/お互い）を個別設定したい場合に使う
   // （例:「登場時」は無条件、「相手のメインフェイズ開始時」だけ相手ターン限定、
   // のように同じブロック内で異なる発動ターンを混在させたいケース）。

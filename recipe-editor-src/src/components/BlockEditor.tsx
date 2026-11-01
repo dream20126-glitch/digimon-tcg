@@ -3448,6 +3448,11 @@ const LINK_TRIGGER_CODES = ['on_link'];
 // ［される］＝カードが破棄されたとき（原因の指定なし。「効果で破棄されたとき」等は下の原因選択で足す）。
 // 「自分の手札が自分の効果で破棄されたとき」と「自分が手札を破棄したとき」は同じデータになる
 const DISCARD_TRIGGER_CODE = 'discard';
+// 原因の「どの効果で」のキーワード候補のうち、キーワード辞書に無いもの（コスト等で表すキーワード）
+const CAUSE_EFFECT_EXTRA_KEYWORDS = [
+  { code: 'digiburst', label: 'デジバースト' },
+  { code: 'delay', label: 'ディレイ' },
+];
 // event種別のトリガーファミリーのうち、「〜するとき（事前・置換効果用）」の対になる
 // コードを持つもの。該当ファミリーボタンがアクティブな間だけ、ボタンの隣に小さく
 // 「するとき」チェックボックスを出し、チェックで通常コード⇔するときコードを切り替える。
@@ -5980,6 +5985,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             );
           })()}
 
+          {/* 「このカードが（進化元から）破棄されたとき」: 発動主体「このカード＞進化元」のうち、
+              このカード自身が破棄されたときだけ反応する（P-032 の進化元効果）。trigger_self_card */}
+          {((block.triggers && block.triggers.length > 0) ? block.triggers : [block.trigger]).includes(DISCARD_TRIGGER_CODE) && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 8, fontSize: 12, color: '#1a5a1a' }}>
+              <input
+                type="checkbox"
+                checked={!!block.triggerSelfCardOnly}
+                onChange={(e) => update('triggerSelfCardOnly', e.target.checked || undefined)}
+              />
+              このカード自身が破棄されたときだけ（発動主体「このカード＞進化元」で、進化元効果のこのカードが破棄されたとき）
+              {block.triggerSelfCardOnly && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未対応</span>}
+            </label>
+          )}
           {/* ☑ 原因選択: どのトリガーでも使える汎用の「原因」（バトルで/効果で + 原因の対象）。
               「誰が（消滅/破棄等）したか」は発動主体(triggerSubject/triggerSubjectByCode)で
               表現するので、こちらは「何が原因で（誰によって）発生したか」を表す。
@@ -6021,6 +6039,45 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   accentColor="#1a5a1a"
                 />
               </div>
+              {/* 原因の「どの効果で」: キーワード（≪デジバースト≫等）／タイミング（【メイン】等）で原因の効果を絞り込む。
+                  例: P-032「このデジモンが発揮した【デジバースト】で」= 効果で＋このデジモン＋キーワード「デジバースト」 */}
+              {block.destroyCause.replace(/^not_/, '') === 'effect' && (() => {
+                const ce = block.destroyCauseEffect || {};
+                const setCe = (patch: { keyword?: string; trigger?: string }) => {
+                  const next = { ...ce, ...patch };
+                  if (!next.keyword) delete next.keyword;
+                  if (!next.trigger) delete next.trigger;
+                  update('destroyCauseEffect', next.keyword || next.trigger ? next : undefined);
+                };
+                return (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>どの効果で（指定なし＝どの効果でも）</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: '#666' }}>キーワード:</span>
+                      <div style={{ width: 200 }}>
+                        <SearchSelect
+                          value={ce.keyword || ''}
+                          onChange={(v) => setCe({ keyword: v || undefined })}
+                          options={[{ value: '', label: '指定なし' }, ...CAUSE_EFFECT_EXTRA_KEYWORDS.map((k) => ({ value: k.code, label: '≪' + k.label + '≫' })), ...dict.keywords.map((k) => ({ value: k.code, label: '≪' + k.label + '≫' }))]}
+                          placeholder="指定なし"
+                        />
+                      </div>
+                      <span style={{ fontSize: 10, color: '#666' }}>タイミング:</span>
+                      <div style={{ width: 200 }}>
+                        <SearchSelect
+                          value={ce.trigger || ''}
+                          onChange={(v) => setCe({ trigger: v || undefined })}
+                          options={[{ value: '', label: '指定なし' }, ...dict.triggers.map((t) => ({ value: t.code, label: t.label }))]}
+                          placeholder="指定なし"
+                        />
+                      </div>
+                    </div>
+                    {(ce.keyword || ce.trigger) && (
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 「どの効果で」はエンジン未対応です（保存はできますが動作しません）</div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
           </>

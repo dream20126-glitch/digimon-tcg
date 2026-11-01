@@ -3522,6 +3522,8 @@ const LINK_TRIGGER_CODES = ['on_link'];
 const BLOCK_TRIGGER_CODE = 'block';
 // 効果1の「＋ 一緒に行う」で、対象を持たず数値だけで済むアクション（それ以外は「同じ対象」にする）
 const BUNDLE_VALUE_ONLY = new Set(['draw', 'memory_plus', 'memory_minus', 'memory', 'recover', 'deck_open', 'delay']);
+// 複数選んだときに値の箱を出すアクション（辞書の「数値の意味」があるものも出す）
+const BUNDLE_NEEDS_VALUE = new Set(['draw', 'memory_plus', 'memory_minus', 'memory', 'recover', 'dp_plus', 'dp_minus', 'deck_open', 'dedigivolve']);
 // 「カードが戻ったとき」(辞書のトリガー deck_bounce) のときだけ、戻った先（手札/デッキ）を選べるUIを出す（step.returned_to）
 const RETURNED_TRIGGER_CODE = 'deck_bounce';
 // 「破棄」トリガー: ［する］＝（発動主体の側が）効果で破棄したとき＝原因「効果で」＋原因の対象「自分」（このデジモンの効果なら「このデジモン」）。
@@ -6471,6 +6473,20 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             return effectAction;
           })();
 
+          // その他のアクションのプルダウン: 既にアクションがあれば追加（下にチップで並ぶ）、無ければ効果1のアクションにする
+          function onOtherActionPick(newCode: string) {
+            if (!newCode) return;
+            const code = flaggedBases.has(newCode) ? newCode + '_top' : newCode;
+            if (!isEditingAlt && block.action && block.action !== code) {
+              const d = CANT_TO_DOABLE_LIVE[code] || code;
+              if (DOABLE_TO_CANT_LIVE[d] && selectedSet.length > 0 && bundleAlts.length === 0) {
+                if (!selectedSet.includes(d)) toggleCantAction(d);
+                return;
+              }
+              if (toggleMultiAction(code)) return;
+            }
+            onActionPulldownChange(newCode);
+          }
           function onActionPulldownChange(newCode: string) {
             const newIsFlaggedBase = flaggedBases.has(newCode);
             const newV = getActionVariant(newCode);
@@ -6597,6 +6613,37 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               altActions: [...rest.map((k) => ({ action: DOABLE_TO_CANT_LIVE[k], target: 'same_target' } as AltAction)), ..._userAlts],
               altActionsOp: 'and',
             });
+          }
+          // ===== 効果1の複数選択（ボタンを複数押す／その他のアクションで追加する） =====
+          // 1つめ＝効果1のアクション、2つめ以降＝効果1にまとめる効果（bundle。AND の alt_actions）。
+          // 「できない」にできるアクションだけを選んでいるときは従来どおり「できない」の複数選択
+          const bundleAlts = isEditingAlt ? [] : altActions.map((a, i) => ({ a, i })).filter(({ a, i }) => i < leadBundleCount && a.bundle);
+          const bundleBlocked = !isEditingAlt && altActions.length > leadBundleCount && (block.altActionsOp || 'or') !== 'and';
+          function addBundleAction(code: string) {
+            const na: AltAction = { action: code, value: '', target: BUNDLE_VALUE_ONLY.has(code) ? '' : 'same_target', conditions: [], options: [], fromZones: [], bundle: true };
+            const next = [...altActions.slice(0, leadBundleCount), na, ...altActions.slice(leadBundleCount)];
+            onChange({ ...block, altActions: next, altActionsOp: 'and' });
+          }
+          // 処理したら true（false なら従来の単一選択/できないの処理に任せる）
+          function toggleMultiAction(code: string): boolean {
+            if (isEditingAlt || !block.action) return false;
+            const inB = bundleAlts.find((x) => x.a.action === code);
+            if (inB) { removeAltAction(inB.i); return true; }
+            if (block.action === code) {
+              if (bundleAlts.length > 0) {
+                const f = bundleAlts[0];
+                const next = altActions.filter((_, k) => k !== f.i);
+                onChange({ ...block, action: f.a.action || '', value: f.a.value, altActions: next, altActionsOp: next.length > 0 ? block.altActionsOp : undefined });
+                return true;
+              }
+              if (!DOABLE_TO_CANT_LIVE[code]) { changeEffectAction(''); return true; }
+              return false;
+            }
+            // 「できない」にできるものだけを選んでいる → 従来の「できない」の複数選択
+            if (DOABLE_TO_CANT_LIVE[code] && selectedSet.length > 0 && bundleAlts.length === 0) return false;
+            if (bundleBlocked) return false;
+            addBundleAction(code);
+            return true;
           }
           function toggleCantAction(code: string) {
             const isSelected = selectedSet.includes(code);
@@ -6944,7 +6991,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     // （選んでいても「できない」形（cant_X等）になっていることがあるため、
                     // selectedSetでの判定にする。それ以外のボタンは従来通り単一選択）
                     const active = (isCantToggleGroup ? selectedSet.includes(a.code) : effectAction === a.code)
-                      || (a.code === 'evolve' && effectAction === 'appear_or_evolve');
+                      || (a.code === 'evolve' && effectAction === 'appear_or_evolve')
+                      || bundleAlts.some((x) => x.a.action === a.code);
                     return (
                       <button
                         key={a.code}
@@ -6953,6 +7001,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           // 「登場」と「進化」は両方押せる（appear_or_evolve＝登場/進化。「するとき」なら値-2で「支払う登場/進化コスト-2」）
                           if (a.code === 'evolve' && effectAction === 'summon_appear') { updateEffect({ action: 'appear_or_evolve' }); return; }
                           if (a.code === 'evolve' && effectAction === 'appear_or_evolve') { updateEffect({ action: 'summon_appear' }); return; }
+                          if (toggleMultiAction(a.code)) return;
                           if (isCantToggleGroup) toggleCantAction(a.code); else selectCommonAction(a.code);
                         }}
                         style={{
@@ -7255,96 +7304,67 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#666' }}>
                     <input
                       type="checkbox"
-                      checked={otherActionOpen || (!!effectAction && !isCommonAction)}
+                      checked={otherActionOpen || (!!effectAction && !isCommonAction) || bundleAlts.some((x) => !COMMON_ACTIONS.some((c) => c.code === x.a.action))}
                       onChange={(e) => setOtherActionOpen(e.target.checked)}
                     />
                     その他のアクション
                   </label>
                 </div>
-                {(otherActionOpen || (!!effectAction && !isCommonAction)) && (
+                {(otherActionOpen || (!!effectAction && !isCommonAction) || bundleAlts.some((x) => !COMMON_ACTIONS.some((c) => c.code === x.a.action))) && (
                   <div style={{ marginTop: 4 }}>
                     <SearchSelect
-                      value={normalizedActionValue}
-                      onChange={onActionPulldownChange}
+                      value={(bundleAlts.length > 0 || selectedSet.length >= 2) ? '' : normalizedActionValue}
+                      onChange={onOtherActionPick}
                       options={actionDisplayOptions}
                       allowFreeText
                     />
-                    <InlineDictAdd kind="actions" dict={dict} onRegistered={onActionPulldownChange} />
+                    <InlineDictAdd kind="actions" dict={dict} onRegistered={onOtherActionPick} />
                   </div>
                 )}
-                {/* その他のアクションでも、「できない」にできるアクション（辞書の「できないコード」あり。手札に戻す/デッキに戻す等）は
-                    トリガーと同じく複数選べる（レスト・消滅等のボタンと組み合わせ可。2つ以上選ぶと「できない」）。
-                    例:「消滅せず、手札/デッキに戻らない」＝〔消滅〕＋その他で「手札に戻す」「デッキに戻す」 */}
-                {/* ＋ 一緒に行う（効果1の中で複数のアクションを続けて行う。「1ドローし、メモリー+1」）。保存は AND の効果2以降と
-                    同じ alt_actions（bundle:true の印付き）で、効果2のタブには出さず効果1の行として表示する。
-                    数値だけで済むアクションは対象なし、それ以外は「同じ対象」（効果1と同じ対象）にする */}
-                {!isEditingAlt && !!block.action && (() => {
-                  const labelOf = (code: string) => findActionEntry(code)?.label || COMMON_ACTIONS.find((x) => x.code === code)?.label || code;
-                  const hasOtherOr = altActions.length > leadBundleCount && (block.altActionsOp || 'or') !== 'and';
-                  const rows = altActions.map((a, i) => ({ a, i })).filter(({ a, i }) => i < leadBundleCount && a.bundle);
-                  const addBundle = (code: string) => {
-                    if (!code) return;
-                    const na: AltAction = { action: code, value: '', target: BUNDLE_VALUE_ONLY.has(code) ? '' : 'same_target', conditions: [], options: [], fromZones: [], bundle: true };
-                    const next = [...altActions.slice(0, leadBundleCount), na, ...altActions.slice(leadBundleCount)];
-                    onChange({ ...block, altActions: next, altActionsOp: 'and' });
-                  };
-                  const opts = [...COMMON_ACTIONS.map((x) => ({ value: x.code, label: x.label })), ...actionDisplayOptions]
-                    .filter((o, k, arr) => arr.findIndex((x) => x.value === o.value) === k);
-                  return (
-                    <div style={{ marginTop: 6 }}>
-                      {rows.map(({ a, i }) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, padding: '3px 6px', background: '#f1f6fd', border: '1px solid #c7dbf5', borderRadius: 4 }}>
-                          <span style={{ fontSize: 11, color: '#1976d2', fontWeight: 'bold', whiteSpace: 'nowrap' }}>＋ {labelOf(a.action || '')}</span>
-                          <input
-                            type="text"
-                            value={a.value === undefined || a.value === null ? '' : String(a.value)}
-                            onChange={(e) => { const v = e.target.value; updateAltAction(i, { value: v === '' ? '' : (/^-?\d+$/.test(v) ? Number(v) : v) }); }}
-                            placeholder="値"
-                            style={{ width: 70, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
-                          />
-                          {a.target === 'same_target' && <span style={{ fontSize: 10, color: '#666' }}>対象：効果1と同じ</span>}
-                          <button type="button" onClick={() => removeAltAction(i)} title="外す" style={{ marginLeft: 'auto', border: 'none', background: 'none', cursor: 'pointer', color: '#c62828', fontWeight: 'bold', fontSize: 13 }}>×</button>
-                        </div>
-                      ))}
-                      {hasOtherOr ? (
-                        <div style={{ fontSize: 10, color: '#946200' }}>効果2以降を OR でつないでいるため「＋ 一緒に行う」は使えません</div>
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 10, color: '#555', whiteSpace: 'nowrap' }}>＋ 一緒に行う</span>
-                          <div style={{ flex: 1 }}>
-                            <SearchSelect value="" onChange={addBundle} options={opts} placeholder="続けて行うアクション（例: メモリー+）" />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-                {selectedSet.length >= 1 && (() => {
+                {/* 複数選んでいるとき: その他のアクションで選んだ分はチップ（×で外す）、値が要るものは押した分だけ値の箱 */}
+                {(() => {
                   const labelOf = (code: string) => findActionEntry(code)?.label || COMMON_ACTIONS.find((x) => x.code === code)?.label || code;
                   const buttonCodes = new Set(COMMON_ACTIONS.map((x) => x.code));
-                  const chips = selectedSet.filter((c) => !buttonCodes.has(c));
-                  const addOpts = Object.keys(DOABLE_TO_CANT_LIVE)
-                    .filter((c) => !selectedSet.includes(c) && !buttonCodes.has(c) && (findActionEntry(c) || findActionEntry(DOABLE_TO_CANT_LIVE[c])))
-                    .map((c) => ({ value: c, label: labelOf(c) }));
+                  const isCantMulti = selectedSet.length >= 2;
+                  const doCodes = (!isEditingAlt && block.action && bundleAlts.length > 0) ? [block.action, ...bundleAlts.map((x) => x.a.action || '')] : [];
+                  const chipCodes = isCantMulti ? selectedSet.filter((c) => !buttonCodes.has(c)) : doCodes.filter((c) => !buttonCodes.has(c));
+                  const removeChip = (c: string) => { if (isCantMulti) toggleCantAction(c); else if (!toggleMultiAction(c)) changeEffectAction(''); };
+                  const needsValue = (c: string) => BUNDLE_NEEDS_VALUE.has(c) || !!findActionEntry(c)?.valueLabel;
+                  const valueRows = doCodes.length >= 2 ? [
+                    ...(needsValue(block.action || '') ? [{ key: 'main', code: block.action || '', value: block.value, set: (v: any) => updateEffect({ value: v }) }] : []),
+                    ...bundleAlts.filter((x) => needsValue(x.a.action || '')).map((x) => ({ key: 'b' + x.i, code: x.a.action || '', value: x.a.value, set: (v: any) => updateAltAction(x.i, { value: v }) })),
+                  ] : [];
+                  if (chipCodes.length === 0 && valueRows.length === 0 && !(bundleBlocked && block.action)) return null;
                   return (
-                    <div style={{ marginTop: 4 }}>
-                      {addOpts.length > 0 && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 10, color: '#555', whiteSpace: 'nowrap' }}>＋ 一緒に選ぶ（2つ以上で「できない」）</span>
-                          <div style={{ flex: 1 }}>
-                            <SearchSelect value="" onChange={(v) => { const d = CANT_TO_DOABLE_LIVE[v] || v; if (DOABLE_TO_CANT_LIVE[d]) toggleCantAction(d); }} options={addOpts} placeholder="その他のアクションから追加" />
-                          </div>
-                        </div>
-                      )}
-                      {chips.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-                          {chips.map((c) => (
+                    <div style={{ marginTop: 6 }}>
+                      {chipCodes.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
+                          {chipCodes.map((c) => (
                             <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#e3f0fd', border: '1px solid #93b5e5', borderRadius: 12, fontSize: 11 }}>
-                              {labelOf(c)}{mode === 'cant' || selectedSet.length >= 2 ? '（できない）' : ''}
-                              <button type="button" onClick={() => toggleCantAction(c)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#c62828', fontWeight: 'bold', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
+                              {labelOf(c)}{isCantMulti ? '（できない）' : ''}
+                              <button type="button" onClick={() => removeChip(c)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#c62828', fontWeight: 'bold', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
                             </span>
                           ))}
                         </div>
+                      )}
+                      {valueRows.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {valueRows.map((r) => (
+                            <label key={r.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#1976d2', fontWeight: 'bold' }}>
+                              {labelOf(r.code)}
+                              <input
+                                type="text"
+                                value={r.value === undefined || r.value === null ? '' : String(r.value)}
+                                onChange={(e) => { const v = e.target.value; r.set(v === '' ? '' : (/^-?\d+$/.test(v) ? Number(v) : v)); }}
+                                placeholder="値"
+                                style={{ width: 60, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      {bundleBlocked && block.action && (
+                        <div style={{ fontSize: 10, color: '#946200', marginTop: 2 }}>効果2以降を OR でつないでいるため、アクションを複数選ぶことはできません</div>
                       )}
                     </div>
                   );

@@ -145,6 +145,9 @@ export interface EffectBlock {
   // 「ブロック」(block) 専用: 'blocker'＝ブロックしたとき（する）/ 'blocked'＝ブロックされたとき（される）。
   // 発動主体と組み合わせて「自分のデジモンがブロックしたとき」等を表す。JSONへは step.block_role（エンジン未対応）
   blockRole?: 'blocker' | 'blocked';
+  // 「カードが戻ったとき」(deck_bounce) 専用: どこに戻ったか（hand＝手札 / deck＝デッキ。両方なら両方）。
+  // どこから戻ったかは発動主体の場所（自分のトラッシュ等）。JSONへは step.returned_to（配列・エンジン未対応）
+  returnedTo?: ('hand' | 'deck')[];
   limit?: string; // '' | 'once_per_turn'
   // トリガー条件: トリガー発火元のカード（登場/消滅したカード等）に対するフィルタ
   // 「黄のLv.3デジモンが登場したとき」等の "このトリガーが発火する条件" を表現。

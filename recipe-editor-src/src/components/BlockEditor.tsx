@@ -3620,10 +3620,6 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'draw', label: 'ドロー' },
   { code: 'grant_keyword', label: 'キーワード付与' },
   { code: 'destroy', label: '消滅' },
-  // 手札に戻す/デッキに戻す: 辞書の「できないコード」（cant_return_hand/cant_return_deck）があるので、
-  // 消滅などと同じく複数選んで「できない」にできる（「消滅せず、手札/デッキに戻らない」を効果1のまま）
-  { code: 'return_hand', label: '手札に戻す' },
-  { code: 'return_deck', label: 'デッキに戻す' },
   { code: 'deck_open', label: 'デッキオープン' },
   { code: 'recover', label: 'リカバリー' },
   { code: 'evolve', label: '進化' },
@@ -7261,6 +7257,39 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <InlineDictAdd kind="actions" dict={dict} onRegistered={onActionPulldownChange} />
                   </div>
                 )}
+                {/* その他のアクションでも、「できない」にできるアクション（辞書の「できないコード」あり。手札に戻す/デッキに戻す等）は
+                    トリガーと同じく複数選べる（レスト・消滅等のボタンと組み合わせ可。2つ以上選ぶと「できない」）。
+                    例:「消滅せず、手札/デッキに戻らない」＝〔消滅〕＋その他で「手札に戻す」「デッキに戻す」 */}
+                {selectedSet.length >= 1 && (() => {
+                  const labelOf = (code: string) => findActionEntry(code)?.label || COMMON_ACTIONS.find((x) => x.code === code)?.label || code;
+                  const buttonCodes = new Set(COMMON_ACTIONS.map((x) => x.code));
+                  const chips = selectedSet.filter((c) => !buttonCodes.has(c));
+                  const addOpts = Object.keys(DOABLE_TO_CANT_LIVE)
+                    .filter((c) => !selectedSet.includes(c) && !buttonCodes.has(c) && (findActionEntry(c) || findActionEntry(DOABLE_TO_CANT_LIVE[c])))
+                    .map((c) => ({ value: c, label: labelOf(c) }));
+                  return (
+                    <div style={{ marginTop: 4 }}>
+                      {addOpts.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 10, color: '#555', whiteSpace: 'nowrap' }}>＋ 一緒に選ぶ（2つ以上で「できない」）</span>
+                          <div style={{ flex: 1 }}>
+                            <SearchSelect value="" onChange={(v) => { const d = CANT_TO_DOABLE_LIVE[v] || v; if (DOABLE_TO_CANT_LIVE[d]) toggleCantAction(d); }} options={addOpts} placeholder="その他のアクションから追加" />
+                          </div>
+                        </div>
+                      )}
+                      {chips.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                          {chips.map((c) => (
+                            <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#e3f0fd', border: '1px solid #93b5e5', borderRadius: 12, fontSize: 11 }}>
+                              {labelOf(c)}{mode === 'cant' || selectedSet.length >= 2 ? '（できない）' : ''}
+                              <button type="button" onClick={() => toggleCantAction(c)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#c62828', fontWeight: 'bold', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
               {/* 位置（上/下/選んで）・裏表は対象欄の右側（🎯アクションの対象数の隣）に統合済み */}
               {/* 登場/使用・進化・リンクのときだけ「💰 コスト増減」を出し、通常の「値」入力は隠す

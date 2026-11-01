@@ -3620,6 +3620,10 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'draw', label: 'ドロー' },
   { code: 'grant_keyword', label: 'キーワード付与' },
   { code: 'destroy', label: '消滅' },
+  // 手札に戻す/デッキに戻す: 辞書の「できないコード」（cant_return_hand/cant_return_deck）があるので、
+  // 消滅などと同じく複数選んで「できない」にできる（「消滅せず、手札/デッキに戻らない」を効果1のまま）
+  { code: 'return_hand', label: '手札に戻す' },
+  { code: 'return_deck', label: 'デッキに戻す' },
   { code: 'deck_open', label: 'デッキオープン' },
   { code: 'recover', label: 'リカバリー' },
   { code: 'evolve', label: '進化' },

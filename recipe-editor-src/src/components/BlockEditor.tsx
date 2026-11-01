@@ -2171,40 +2171,55 @@ function CostListEditor({
               <div style={{ marginTop: 4 }}>
                 <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>💰 コスト増減</div>
                 {(() => {
+                  const isFixed = c.fixedCost !== undefined;
                   const raw = c.value;
                   const isPlaceholder = raw === '-' || raw === '+';
                   const num = raw === undefined || raw === '' || isPlaceholder ? undefined : Number(raw);
                   const sign: 'plus' | 'minus' | '' = isPlaceholder
                     ? (raw === '-' ? 'minus' : 'plus')
                     : (num === undefined || isNaN(num) || num === 0 ? '' : (num > 0 ? 'plus' : 'minus'));
-                  const magnitude = num === undefined || isNaN(num) ? '' : String(Math.abs(num));
-                  const applyValue = (nextSign: 'plus' | 'minus', nextMagnitudeStr: string) => {
-                    const m = nextMagnitudeStr === '' ? undefined : Number(nextMagnitudeStr);
-                    if (m === undefined || isNaN(m) || m === 0) {
-                      updateCost(i, { ...c, value: nextSign === 'minus' ? '-' : '+' });
+                  const magnitude = isFixed
+                    ? String(c.fixedCost)
+                    : (num === undefined || isNaN(num) ? '' : String(Math.abs(num)));
+                  const applyValue = (nextSign: 'plus' | 'minus' | 'fixed', nextMagnitudeStr: string) => {
+                    if (nextSign === 'fixed') {
+                      updateCost(i, { ...c, fixedCost: nextMagnitudeStr === '' ? '' : Number(nextMagnitudeStr), value: undefined });
                       return;
                     }
-                    updateCost(i, { ...c, value: nextSign === 'minus' ? -m : m });
+                    const m = nextMagnitudeStr === '' ? undefined : Number(nextMagnitudeStr);
+                    if (m === undefined || isNaN(m) || m === 0) {
+                      updateCost(i, { ...c, value: nextSign === 'minus' ? '-' : '+', fixedCost: undefined });
+                      return;
+                    }
+                    updateCost(i, { ...c, value: nextSign === 'minus' ? -m : m, fixedCost: undefined });
                   };
+                  const mode: 'plus' | 'minus' | 'fixed' | '' = isFixed ? 'fixed' : sign;
                   return (
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <ButtonGroup
-                        options={[{ code: 'minus', label: '減' }, { code: 'plus', label: '増' }]}
-                        value={sign}
-                        onChange={(v) => applyValue((v || 'minus') as 'plus' | 'minus', magnitude)}
-                        accentColor="#b76e00"
-                      />
-                      <input
-                        type="text"
-                        value={magnitude}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v !== '' && !/^\d+$/.test(v)) return;
-                          applyValue(sign === 'plus' ? 'plus' : 'minus', v);
-                        }}
-                        placeholder="空欄可"
-                        style={{ width: 150 }}
-                      />
+                    <div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <ButtonGroup
+                          options={[{ code: 'minus', label: '減' }, { code: 'plus', label: '増' }, { code: 'fixed', label: '指定（完全一致）' }]}
+                          value={mode}
+                          onChange={(v) => applyValue((v || 'minus') as 'plus' | 'minus' | 'fixed', magnitude)}
+                          accentColor="#b76e00"
+                        />
+                        <input
+                          type="text"
+                          value={magnitude}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v !== '' && !/^\d+$/.test(v)) return;
+                            applyValue(mode === 'fixed' ? 'fixed' : (sign === 'plus' ? 'plus' : 'minus'), v);
+                          }}
+                          placeholder={isFixed ? 'コスト（例: 2）' : '空欄可'}
+                          style={{ width: 150 }}
+                        />
+                      </div>
+                      {isFixed && (
+                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
+                          「進化コスト{magnitude || 'N'}で進化できる」。⚠ エンジン未対応です（保存はできますが動作しません）
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -7056,6 +7071,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 <div className="field">
                   <label>💰 コスト増減</label>
                   {(() => {
+                    // 「指定（完全一致）」＝「進化コストNで進化できる」。fixed_cost:N として保存し、増減の value は消す
+                    const fixedRaw = isEditingAlt ? editingAlt!.fixedCost : block.fixedCost;
+                    const isFixed = fixedRaw !== undefined;
                     const raw = effectValue;
                     // '-'/'+' は「符号だけ決まっていて数値は未定」のプレースホルダー
                     // （キーワードのレシピテンプレート登録時、実際の数値はカードごとに保存された
@@ -7066,35 +7084,49 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     const sign: 'plus' | 'minus' | '' = isPlaceholder
                       ? (raw === '-' ? 'minus' : 'plus')
                       : (num === undefined || isNaN(num) || num === 0 ? '' : (num > 0 ? 'plus' : 'minus'));
-                    const magnitude = num === undefined || isNaN(num) ? '' : String(Math.abs(num));
-                    const applyValue = (nextSign: 'plus' | 'minus', nextMagnitudeStr: string) => {
+                    const magnitude = isFixed
+                      ? String(fixedRaw)
+                      : (num === undefined || isNaN(num) ? '' : String(Math.abs(num)));
+                    const applyValue = (nextSign: 'plus' | 'minus' | 'fixed', nextMagnitudeStr: string) => {
+                      if (nextSign === 'fixed') {
+                        updateEffect({ fixedCost: nextMagnitudeStr === '' ? '' : Number(nextMagnitudeStr), value: undefined });
+                        return;
+                      }
                       const m = nextMagnitudeStr === '' ? undefined : Number(nextMagnitudeStr);
                       if (m === undefined || isNaN(m) || m === 0) {
                         // 数値未入力でも符号の選択だけは保持する（テンプレート用プレースホルダー）
-                        updateEffect({ value: nextSign === 'minus' ? '-' : '+' });
+                        updateEffect({ value: nextSign === 'minus' ? '-' : '+', fixedCost: undefined });
                         return;
                       }
-                      updateEffect({ value: nextSign === 'minus' ? -m : m });
+                      updateEffect({ value: nextSign === 'minus' ? -m : m, fixedCost: undefined });
                     };
+                    const mode: 'plus' | 'minus' | 'fixed' | '' = isFixed ? 'fixed' : sign;
                     return (
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <ButtonGroup
-                          options={[{ code: 'minus', label: '減' }, { code: 'plus', label: '増' }]}
-                          value={sign}
-                          onChange={(v) => applyValue((v || 'minus') as 'plus' | 'minus', magnitude)}
-                          accentColor="#1976d2"
-                        />
-                        <input
-                          type="text"
-                          value={magnitude}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            if (v !== '' && !/^\d+$/.test(v)) return;
-                            applyValue(sign === 'plus' ? 'plus' : 'minus', v);
-                          }}
-                          placeholder="空欄可（キーワード登録時等）"
-                          style={{ width: 150 }}
-                        />
+                      <div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <ButtonGroup
+                            options={[{ code: 'minus', label: '減' }, { code: 'plus', label: '増' }, { code: 'fixed', label: '指定（完全一致）' }]}
+                            value={mode}
+                            onChange={(v) => applyValue((v || 'minus') as 'plus' | 'minus' | 'fixed', magnitude)}
+                            accentColor="#1976d2"
+                          />
+                          <input
+                            type="text"
+                            value={magnitude}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (v !== '' && !/^\d+$/.test(v)) return;
+                              applyValue(mode === 'fixed' ? 'fixed' : (sign === 'plus' ? 'plus' : 'minus'), v);
+                            }}
+                            placeholder={isFixed ? 'コスト（例: 2）' : '空欄可（キーワード登録時等）'}
+                            style={{ width: 150 }}
+                          />
+                        </div>
+                        {isFixed && (
+                          <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
+                            「コスト{magnitude || 'N'}で進化/登場できる」（元のコストに関係なくこの値を支払う）。⚠ エンジン未対応です（保存はできますが動作しません）
+                          </div>
+                        )}
                       </div>
                     );
                   })()}

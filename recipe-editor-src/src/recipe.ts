@@ -205,6 +205,18 @@ function stripDpRefFilterMarker(pairs: ConditionPair[]): ConditionPair[] {
   return pairs.filter((p) => !(p && p.subject === DP_REF_FILTER_MARKER));
 }
 
+// 「進化コストNで」（fixed_cost）。'' は「指定」を選んで数値が未入力の状態なので出力しない
+function fixedCostOut(v: number | string | undefined): number | undefined {
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = Number(v);
+  return isNaN(n) ? undefined : n;
+}
+function fixedCostIn(v: any): number | undefined {
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = Number(v);
+  return isNaN(n) ? undefined : n;
+}
+
 // CostStep[] → step.cost[] 形式。効果1(EffectBlock.costs)・代替アクション(AltAction.costs)
 // の両方で共用する（同じUI=CostListEditorを使い回すため、変換ルールも1本化する）
 function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
@@ -227,6 +239,8 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
     if (Array.isArray(c.options) && c.options.length > 0) cs.options = c.options.slice();
     // action:'evolve' 専用: コストを支払わずに進化させる
     if (c.costFree) cs.cost_free = true;
+    const cFixed = fixedCostOut(c.fixedCost);
+    if (cFixed !== undefined) { cs.fixed_cost = cFixed; delete cs.value; }
     // 条件ごとに枚数を分ける（エクスブイモン1枚・スティングモン1枚）。条件の入っていないグループは出力しない
     const dg = (c.designatedGroups || []).filter((g) => (g.conditions || []).some((p) => p.base) || (g.conditionChain || []).length > 0);
     if (dg.length > 0) cs.designated_groups = buildDesignatedGroupsFields(dg);
@@ -353,6 +367,7 @@ function parseCostArray(rawCost: any): CostStep[] {
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,
       altCosts: Array.isArray(c?.alt_actions) && c.alt_actions.length > 0 ? parseCostArray(c.alt_actions) : undefined,
       costFree: !!c?.cost_free,
+      fixedCost: fixedCostIn(c?.fixed_cost),
       designatedGroups: Array.isArray(c?.designated_groups) && c.designated_groups.length > 0
         ? parseDesignatedGroupsField({ designated_groups: c.designated_groups }) : undefined,
       ignoreEvolveCondition: !!c?.ignore_evolve_condition || undefined,
@@ -500,6 +515,8 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   if (a.duration) out.duration = a.duration;
   if (a.costFree) out.cost_free = true;
   if (a.ignoreEvolveCondition) out.ignore_evolve_condition = true;
+  const aFixed = fixedCostOut(a.fixedCost);
+  if (aFixed !== undefined) { out.fixed_cost = aFixed; delete out.value; }
   if (a.skipOnPlay) out.skip_on_play = true;
   if (a.action === 'negate') {
     if (a.negateTargetTrigger) out.target_trigger = a.negateTargetTrigger;
@@ -1671,6 +1688,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.costFree) step.cost_free = true;
   // evolve の「進化条件を無視して」
   if (b.ignoreEvolveCondition) step.ignore_evolve_condition = true;
+  // 「進化コストNで」（コストそのものを指定）。指定中は増減の value は出さない
+  const bFixed = fixedCostOut(b.fixedCost);
+  if (bFixed !== undefined) { step.fixed_cost = bFixed; delete step.value; }
   // summon_from_trash の「登場したデジモンの【登場時】効果は発揮しない」フラグ
   if (b.skipOnPlay) step.skip_on_play = true;
   // 上/下（デッキに戻す位置等・hasDeckPosition用）。'both'（どちらか選んで）はエンジン未対応の
@@ -2465,6 +2485,7 @@ function stepObjectToAltAction(step: any): AltAction {
     destroyCauseSubject: step?.cause_subject || undefined,
     costFree: !!step?.cost_free,
     ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
+    fixedCost: fixedCostIn(step?.fixed_cost),
     skipOnPlay: !!step?.skip_on_play,
     negateTargetTrigger: (NEGATE_TRIGGERS.includes(step?.target_trigger) ? step.target_trigger : undefined),
     negateDeny: !!step?.deny,
@@ -2902,6 +2923,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     negateTargetAsType: step?.target_as_type === 'digimon' || step?.target_as_type === 'option' ? step.target_as_type : undefined,
     costFree: !!step?.cost_free,
     ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
+    fixedCost: fixedCostIn(step?.fixed_cost),
     skipOnPlay: !!step?.skip_on_play,
     deckPosition: step?.position === 'top' ? 'top'
       : step?.position === 'bottom' ? 'bottom'
@@ -3078,6 +3100,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             perRefFilterChain: parseConditionChainFilter(a?.ref_filter).chain,
             costFree: !!a?.cost_free,
             ignoreEvolveCondition: !!a?.ignore_evolve_condition || undefined,
+            fixedCost: fixedCostIn(a?.fixed_cost),
             skipOnPlay: !!a?.skip_on_play,
             negateTargetTrigger: (NEGATE_TRIGGERS.includes(a?.target_trigger) ? a.target_trigger : undefined),
             negateDeny: !!a?.deny,

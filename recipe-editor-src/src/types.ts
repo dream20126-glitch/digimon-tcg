@@ -315,6 +315,9 @@ export interface EffectBlock {
   // summon 専用:「このカードをコストを支払わずに登場させる」（テイマーのセキュリティ効果等）
   // true のとき JSON へ step.cost_free:true を出力する。対象は 'self' / 'self_card' のとき有効
   costFree?: boolean;
+  // 登場/進化等の「進化コストNで進化できる」（増減ではなくコストそのものを指定）。JSON では fixed_cost:N。
+  // 指定中は value（増減）は出力しない。'' は「指定」を選んで数値が未入力の状態（エディタ内のみ）
+  fixedCost?: number | string;
   // evolve 専用:「進化条件を無視して進化させる」（公式8-1-2-2）。JSON では step.ignore_evolve_condition:true
   // （例: 雷霆の覚醒 BT26-097「そのデジモンを…『ユピテルモン』に進化条件を無視して進化できる」）
   ignoreEvolveCondition?: boolean;
@@ -579,6 +582,9 @@ export interface AltAction {
   skipOnPlay?: boolean;
   // evolve 専用（効果1と同じ）: 進化条件を無視して進化させる → ignore_evolve_condition:true
   ignoreEvolveCondition?: boolean;
+  // 登場/進化等の「進化コストNで進化できる」（増減ではなくコストそのものを指定）。JSON では fixed_cost:N。
+  // 指定中は value（増減）は出力しない。'' は「指定」を選んで数値が未入力の状態（エディタ内のみ）
+  fixedCost?: number | string;
   // negate 専用（効果1と同じ意味）
   negateTargetTrigger?: NegateTrigger;
   negateDeny?: boolean;
@@ -845,6 +851,9 @@ export interface CostStep {
   costFree?: boolean;
   // action:'evolve' 専用:「進化条件を無視して進化させる」。JSON では step.cost[].ignore_evolve_condition
   ignoreEvolveCondition?: boolean;
+  // 登場/進化等の「進化コストNで進化できる」（増減ではなくコストそのものを指定）。JSON では fixed_cost:N。
+  // 指定中は value（増減）は出力しない。'' は「指定」を選んで数値が未入力の状態（エディタ内のみ）
+  fixedCost?: number | string;
 }
 
 // 演出タイプ自体の定義（小辞書）

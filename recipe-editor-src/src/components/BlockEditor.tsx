@@ -3853,7 +3853,9 @@ const PERREF_L1 = [
   { code: 'last_action', label: '直前の効果' },
 ];
 const PERREF_L2: Record<string, { code: string; label: string }[]> = {
+  // 本体＝このデジモン自身（「このデジモンの色1色ごとに」＝本体＋数え方「色の種類の数」。self_card・⚠ エンジン未対応）
   self: [
+    { code: 'self_card', label: '本体（このデジモン）' },
     { code: 'evo_source', label: '進化元' },
   ],
   // 直前の効果: 「処理した枚数」(last_action_count・既存)と「処理したカード」(last_action_cards)。
@@ -3913,7 +3915,7 @@ const PERREF_STATE_ELIGIBLE_SUBJECTS = new Set([
 const PERREF_MEMORY_CODES = new Set(['own_memory', 'opp_memory']);
 // REF_SUBJECTSコード → PERREF_L1 の逆引き
 function perRefToL1(code: string): string {
-  if (code === 'evo_source') return 'self';
+  if (code === 'evo_source' || code === 'self_card') return 'self';
   if (code === 'last_action_count' || code === 'last_action_cards') return 'last_action';
   if (code.startsWith('own_') && PERREF_L2_CODES.has(code)) return 'own';
   if (code.startsWith('opp_') && PERREF_L2_CODES.has(code)) return 'opp';
@@ -4667,10 +4669,15 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           )}
                         </div>
                       )}
-                      {/* このカード: 選択肢は「進化元」だけだが、何を数えるか分かるよう常に表示する */}
+                      {/* このカード: 本体／進化元。何を数えるか分かるよう常に表示する */}
                       {!hasDigiTamer && (l2Options.length > 1 || curL1 === 'self') && (
                         <div style={{ marginTop: 4 }}>
                           <ButtonGroup options={l2Options} value={refSubject} onChange={setSubject} accentColor="#1a4f8a" />
+                        </div>
+                      )}
+                      {refSubject === 'self_card' && (
+                        <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>
+                          このデジモン自身を数えます（数え方「色の種類の数」で「このデジモンの色1色ごとに」）。⚠ エンジン未対応です（保存はできますが動作しません）
                         </div>
                       )}
                       {PERREF_COMBO_CODES.has(refSubject) && (

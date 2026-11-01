@@ -318,6 +318,9 @@ export interface EffectBlock {
   // 登場/進化等の「進化コストNで進化できる」（増減ではなくコストそのものを指定）。JSON では fixed_cost:N。
   // 指定中は value（増減）は出力しない。'' は「指定」を選んで数値が未入力の状態（エディタ内のみ）
   fixedCost?: number | string;
+  // 「このターン終了時、〜する」（例: P-029「そうしたとき、このターン終了時このデジモンを消滅させる」）。
+  // この効果をすぐには実行せず、このターンの終了時に実行する。JSON では at_turn_end:true（エンジン未対応）
+  atTurnEnd?: boolean;
   // evolve 専用:「進化条件を無視して進化させる」（公式8-1-2-2）。JSON では step.ignore_evolve_condition:true
   // （例: 雷霆の覚醒 BT26-097「そのデジモンを…『ユピテルモン』に進化条件を無視して進化できる」）
   ignoreEvolveCondition?: boolean;
@@ -582,6 +585,9 @@ export interface AltAction {
   skipOnPlay?: boolean;
   // evolve 専用（効果1と同じ）: 進化条件を無視して進化させる → ignore_evolve_condition:true
   ignoreEvolveCondition?: boolean;
+  // 「このターン終了時、〜する」（例: P-029「そうしたとき、このターン終了時このデジモンを消滅させる」）。
+  // この効果をすぐには実行せず、このターンの終了時に実行する。JSON では at_turn_end:true（エンジン未対応）
+  atTurnEnd?: boolean;
   // 登場/進化等の「進化コストNで進化できる」（増減ではなくコストそのものを指定）。JSON では fixed_cost:N。
   // 指定中は value（増減）は出力しない。'' は「指定」を選んで数値が未入力の状態（エディタ内のみ）
   fixedCost?: number | string;

@@ -6481,6 +6481,25 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       その後
                     </label>
                   )}
+                  {/* 「このターン終了時、〜する」: この効果をすぐ実行せず、このターンの終了時に実行する（at_turn_end）。
+                      例: P-029「進化できる。そうしたとき、このターン終了時このデジモンを消滅させる」の消滅 */}
+                  {(() => {
+                    const on = isEditingAlt ? !!editingAlt?.atTurnEnd : !!block.atTurnEnd;
+                    return (
+                      <label
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', color: on ? '#9333ea' : '#666', fontWeight: on ? 'bold' : 'normal' }}
+                        title="この効果をすぐには実行せず、このターンの終了時に実行する（テキストの「このターン終了時、〜する」）"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={(e) => updateEffect({ atTurnEnd: e.target.checked || undefined })}
+                        />
+                        🌙 このターン終了時に実行
+                        {on && <span style={{ color: '#c62828', fontWeight: 'normal' }}>⚠ エンジン未対応</span>}
+                      </label>
+                    );
+                  })()}
                   {/* 直前の選択肢の続き（OR の選択肢の中の「その後」）。例:「・セキュリティを1枚破棄する。
                       その後【リカバリー+1】」の【リカバリー+1】。直前が選択肢（効果1や「その後」区間の
                       先頭ではない効果）のときだけ出す */}

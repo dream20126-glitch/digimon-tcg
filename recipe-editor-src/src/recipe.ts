@@ -515,6 +515,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   if (a.duration) out.duration = a.duration;
   if (a.costFree) out.cost_free = true;
   if (a.ignoreEvolveCondition) out.ignore_evolve_condition = true;
+  if (a.atTurnEnd) out.at_turn_end = true;
   const aFixed = fixedCostOut(a.fixedCost);
   if (aFixed !== undefined) { out.fixed_cost = aFixed; delete out.value; }
   if (a.skipOnPlay) out.skip_on_play = true;
@@ -1688,6 +1689,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.costFree) step.cost_free = true;
   // evolve の「進化条件を無視して」
   if (b.ignoreEvolveCondition) step.ignore_evolve_condition = true;
+  // 「このターン終了時、〜する」
+  if (b.atTurnEnd) step.at_turn_end = true;
   // 「進化コストNで」（コストそのものを指定）。指定中は増減の value は出さない
   const bFixed = fixedCostOut(b.fixedCost);
   if (bFixed !== undefined) { step.fixed_cost = bFixed; delete step.value; }
@@ -2486,6 +2489,7 @@ function stepObjectToAltAction(step: any): AltAction {
     costFree: !!step?.cost_free,
     ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
     fixedCost: fixedCostIn(step?.fixed_cost),
+    atTurnEnd: !!step?.at_turn_end || undefined,
     skipOnPlay: !!step?.skip_on_play,
     negateTargetTrigger: (NEGATE_TRIGGERS.includes(step?.target_trigger) ? step.target_trigger : undefined),
     negateDeny: !!step?.deny,
@@ -2924,6 +2928,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     costFree: !!step?.cost_free,
     ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
     fixedCost: fixedCostIn(step?.fixed_cost),
+    atTurnEnd: !!step?.at_turn_end || undefined,
     skipOnPlay: !!step?.skip_on_play,
     deckPosition: step?.position === 'top' ? 'top'
       : step?.position === 'bottom' ? 'bottom'
@@ -3101,6 +3106,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             costFree: !!a?.cost_free,
             ignoreEvolveCondition: !!a?.ignore_evolve_condition || undefined,
             fixedCost: fixedCostIn(a?.fixed_cost),
+            atTurnEnd: !!a?.at_turn_end || undefined,
             skipOnPlay: !!a?.skip_on_play,
             negateTargetTrigger: (NEGATE_TRIGGERS.includes(a?.target_trigger) ? a.target_trigger : undefined),
             negateDeny: !!a?.deny,

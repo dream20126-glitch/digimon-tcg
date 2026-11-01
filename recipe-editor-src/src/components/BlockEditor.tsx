@@ -3518,6 +3518,8 @@ const KEYWORD_ONLY_TRIGGER_FAMILIES: TriggerFamily[] = [
 const ATTACK_TRIGGER_CODES = ['on_attack', 'when_opp_attack', 'on_any_attack', 'on_attack_end', 'when_opp_attack_end', 'on_any_attack_end'];
 // 【リンク時】のときだけ、リンクする側/される側を選べるUIを出す判定に使う
 const LINK_TRIGGER_CODES = ['on_link'];
+// 「ブロック」(辞書のトリガー block) のときだけ、［する］［される］を選べるUIを出す（step.block_role）
+const BLOCK_TRIGGER_CODE = 'block';
 // 「破棄」トリガー: ［する］＝（発動主体の側が）効果で破棄したとき＝原因「効果で」＋原因の対象「自分」（このデジモンの効果なら「このデジモン」）。
 // ［される］＝カードが破棄されたとき（原因の指定なし。「効果で破棄されたとき」等は下の原因選択で足す）。
 // 「自分の手札が自分の効果で破棄されたとき」と「自分が手札を破棄したとき」は同じデータになる
@@ -5896,6 +5898,22 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {/* 【リンク時】のときだけ、このカードが「リンクする側」か「リンクされる側」かを選べる。
                       「される側」は発動主体（own/other_own/opp）と組み合わせて「他の自分のデジモンが
                       リンクされたとき」等も表現できる（発動主体パネルは下にそのまま表示される） */}
+                  {currentTriggers.some((t) => String(t || '').trim() === BLOCK_TRIGGER_CODE) && (
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 11, color: '#666' }}>ブロック:</span>
+                        <ButtonGroup
+                          options={[{ code: 'blocker', label: 'する（ブロックしたとき）' }, { code: 'blocked', label: 'される（ブロックされたとき）' }]}
+                          value={block.blockRole || 'blocker'}
+                          onChange={(v) => update('blockRole', v === 'blocked' ? 'blocked' : 'blocker')}
+                          accentColor="#2e7d32"
+                        />
+                      </div>
+                      <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
+                        誰が（自分/相手/このデジモン等）は下の発動主体で選びます。⚠ エンジン未対応です（保存はできますが動作しません）
+                      </div>
+                    </div>
+                  )}
                   {currentTriggers.some((t) => LINK_TRIGGER_CODES.includes(t)) && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                       <span style={{ fontSize: 11, color: '#666' }}>リンク:</span>

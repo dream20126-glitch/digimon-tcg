@@ -1923,6 +1923,9 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.linkRole === 'target') {
     step.link_role = 'target';
   }
+  // 「ブロック」(block) 専用: する（blocker・既定）/ される（blocked）。どちらも JSON に出す
+  const _bTrigs = (b.triggers && b.triggers.length > 0) ? b.triggers : [b.trigger];
+  if (_bTrigs.includes('block')) step.block_role = b.blockRole === 'blocked' ? 'blocked' : 'blocker';
   // 「原因」（バトルで/効果で・原因の対象）: どのトリガーでも設定可能な汎用フィールド
   // （詳細は types.ts 参照）。トリガーごとに原因を個別設定したい場合は
   // triggerCauseByCode（cause_by_code）を優先し、共有のdestroyCauseは無視する
@@ -2778,6 +2781,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     subject_by_code: true,
     subject_or: true,
     link_role: true,
+    block_role: true,
     cause: true,
     cause_subject: true,
     cause_by_code: true,
@@ -2895,6 +2899,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     triggerSubjectByCode: (step?.subject_by_code && typeof step.subject_by_code === 'object')
       ? { ...step.subject_by_code } : undefined,
     linkRole: step?.link_role === 'target' ? 'target' : 'linker',
+    blockRole: step?.block_role === 'blocked' ? 'blocked' : step?.block_role === 'blocker' ? 'blocker' : undefined,
     destroyCause: isCauseCode(step?.cause) ? step.cause : undefined,
     destroyCauseSubject: step?.cause_subject || undefined,
     destroyCauseEffect: parseCauseEffect(step?.cause_effect),

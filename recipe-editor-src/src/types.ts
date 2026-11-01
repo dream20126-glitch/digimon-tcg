@@ -142,6 +142,9 @@ export interface EffectBlock {
   // （他のデジモンが"このデジモン"にリンクしたとき）。triggerSubjectと組み合わせて
   // 「他の自分のデジモンがリンクされたとき」等も表現できる。JSONへはstep.link_roleとして出力
   linkRole?: 'linker' | 'target';
+  // 「ブロック」(block) 専用: 'blocker'＝ブロックしたとき（する）/ 'blocked'＝ブロックされたとき（される）。
+  // 発動主体と組み合わせて「自分のデジモンがブロックしたとき」等を表す。JSONへは step.block_role（エンジン未対応）
+  blockRole?: 'blocker' | 'blocked';
   limit?: string; // '' | 'once_per_turn'
   // トリガー条件: トリガー発火元のカード（登場/消滅したカード等）に対するフィルタ
   // 「黄のLv.3デジモンが登場したとき」等の "このトリガーが発火する条件" を表現。

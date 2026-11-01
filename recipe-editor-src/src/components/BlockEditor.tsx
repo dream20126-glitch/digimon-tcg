@@ -2846,14 +2846,20 @@ function joinStackSuffix(base: string, pos: StackPos): string {
 // 後方互換のため「_evo_」プレフィックスが無い_stack系は「重ねられているカード」として読む。
 // 新設: _stack_top（重ねられているカード×上）/ _evo_stack, _evo_stack_top, _evo_stack_bottom（進化元系）
 type TriggerStackFamily = '' | 'evo' | 'stacked';
-// 発動主体の「進化元」（破棄されたとき専用）。self_card_evo＝進化元にあるこのカード（進化元効果のカード自身）
-const EVO_SELF_CARD_SUBJECT = 'self_card_evo';
-const EVO_OWNER_BASES = new Set(['self', 'own', 'opp']);
-const EVO_OWNER_OPTIONS = [
-  { code: 'self_card', label: 'このカード（進化元にあるこのカード）' },
-  { code: 'self', label: 'このデジモンの進化元' },
-  { code: 'own', label: '自分のデジモンの進化元' },
-  { code: 'opp', label: '相手のデジモンの進化元' },
+// 発動主体の「進化元」（破棄されたとき専用）＝進化元にあるカードそのもの（「このデジモンの進化元」等は 自分＞進化元 側）。
+// self_evo_card＝進化元にあるこのカード（進化元効果のカード自身。P-032）／own_evo_card・opp_evo_card＝進化元にある
+// 自分/相手のカード。カードの種類は _digimon/_tamer/_option を付ける（例: own_evo_card_tamer＝進化元にある自分のテイマーカード）
+const EVO_CARD_SUBJECT_RE = /^(self|own|opp)_evo_card(?:_(digimon|tamer|option))?$/;
+const EVO_CARD_OWNER_OPTIONS = [
+  { code: 'self', label: 'このカード' },
+  { code: 'own', label: '自分' },
+  { code: 'opp', label: '相手' },
+];
+const EVO_CARD_TYPE_OPTIONS = [
+  { code: '', label: '指定なし' },
+  { code: 'digimon', label: 'デジモン' },
+  { code: 'tamer', label: 'テイマー' },
+  { code: 'option', label: 'オプション' },
 ];
 type TriggerStackPos = '' | 'top' | 'bottom';
 function splitTriggerSubjectSuffix(code: string): { base: string; family: TriggerStackFamily; pos: TriggerStackPos } {
@@ -2968,13 +2974,13 @@ function TriggerSubjectStagedPicker({
   const showStage4 = hasFromZones && (effectiveL2 === 'tamer' || (showStage3 && raw.family !== ''));
   const setFamily = (family: TriggerStackFamily) => setSubject(joinTriggerSubjectSuffix(raw.base, family, family ? raw.pos : ''));
   const setPos = (pos: TriggerStackPos) => setSubject(joinTriggerSubjectSuffix(raw.base, raw.family || 'stacked', pos));
-  // 「進化元」モード（破棄されたとき専用）: 進化元にあるこのカード(self_card_evo)／このデジモンの進化元(self_evo_stack)／
-  // 自分のデジモンの進化元(own_evo_stack)／相手のデジモンの進化元(opp_evo_stack)。位置（上/下）は _top/_bottom
-  const evoMode = showEvoSourceL1 && hasEntry && (raw.base === EVO_SELF_CARD_SUBJECT || (raw.family === 'evo' && EVO_OWNER_BASES.has(raw.base)));
-  const evoOwner = !evoMode ? '' : raw.base === EVO_SELF_CARD_SUBJECT ? 'self_card' : raw.base;
-  const setEvoOwner = (owner: string) => {
-    if (owner === 'self_card') setSubject(EVO_SELF_CARD_SUBJECT);
-    else setSubject(joinTriggerSubjectSuffix(owner, 'evo', evoOwner && evoOwner !== 'self_card' ? raw.pos : ''));
+  // 「進化元」モード（破棄されたとき専用）: 進化元にある このカード／自分のカード／相手のカード（＋種類）
+  const evoMatch = showEvoSourceL1 && hasEntry ? EVO_CARD_SUBJECT_RE.exec(subject || '') : null;
+  const evoMode = !!evoMatch;
+  const evoOwner = evoMatch ? evoMatch[1] : '';
+  const evoType = evoMatch ? (evoMatch[2] || '') : '';
+  const setEvoCard = (owner: string, type: string) => {
+    setSubject(owner + '_evo_card' + (owner !== 'self' && type ? '_' + type : ''));
   };
   const l1Value = !hasEntry ? '__none__' : evoMode ? '__evo__' : TGT_TOGGLE_L1.has(cur.l1) ? '' : cur.l1;
   const l1RestOptions = [...(allowNone ? SUBJECT_L1_REST_WITH_NONE : SUBJECT_L1_REST), ...(showEvoSourceL1 ? [{ code: '__evo__', label: '進化元' }] : [])];
@@ -2992,7 +2998,7 @@ function TriggerSubjectStagedPicker({
           value={l1Value}
           onChange={(v) => {
             if (v === '__none__') { onClear && onClear(); }
-            else if (v === '__evo__') { if (!evoMode) setEvoOwner('self_card'); }
+            else if (v === '__evo__') { if (!evoMode) setEvoCard('self', ''); }
             else { handleL1(v); }
           }}
           accentColor={accentColor}
@@ -3001,27 +3007,27 @@ function TriggerSubjectStagedPicker({
       {evoMode && (
         <div style={{ marginTop: 4 }}>
           <ButtonGroup
-            options={EVO_OWNER_OPTIONS}
+            options={EVO_CARD_OWNER_OPTIONS}
             value={evoOwner}
-            onChange={(v) => setEvoOwner(v || 'self_card')}
+            onChange={(v) => setEvoCard(v || 'self', evoType)}
             accentColor={accentColor}
           />
-          {evoOwner !== 'self_card' && (
+          {evoOwner !== 'self' && (
             <div style={{ marginTop: 4 }}>
-              <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
               <ButtonGroup
-                options={[{ code: '', label: '選んで' }, { code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
-                value={raw.pos}
-                onChange={(v) => setSubject(joinTriggerSubjectSuffix(raw.base, 'evo', (v || '') as TriggerStackPos))}
+                options={EVO_CARD_TYPE_OPTIONS}
+                value={evoType}
+                onChange={(v) => setEvoCard(evoOwner, v || '')}
                 accentColor={accentColor}
               />
             </div>
           )}
-          {evoOwner === 'self_card' && (
-            <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
-              進化元効果のこのカード自身が、進化元から破棄されたとき（P-032 等）。⚠ エンジン未対応です（保存はできますが動作しません）
-            </div>
-          )}
+          <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
+            {evoOwner === 'self'
+              ? '進化元にあるこのカード（進化元効果のカード自身）が破棄されたとき（P-032 等）。'
+              : '進化元にある' + (evoOwner === 'own' ? '自分' : '相手') + 'の' + (evoType ? EVO_CARD_TYPE_OPTIONS.find((o) => o.code === evoType)!.label : '') + 'カードが破棄されたとき。'}
+            「このデジモンの進化元」等は 自分/このカード＞進化元 で選んでください。⚠ エンジン未対応です（保存はできますが動作しません）
+          </div>
         </div>
       )}
       {!evoMode && hasDigimonTamer && (

@@ -643,6 +643,9 @@ export interface AltAction {
   // その後【リカバリー+1】」の【リカバリー+1】）。JSON では直前の選択肢の中に
   // alt_actions（alt_actions_op:'and'）として入れ子で保存する。⚠ エンジン未実装
   chainPrev?: boolean;
+  // 効果1の「＋ 一緒に行う」で選んだ効果（「1ドローし、メモリー+1」のメモリー+1）。動作は AND の効果2と同じで、
+  // エディタでは効果2のタブに出さず効果1の中の行として表示する。JSON では alt_actions[].bundle:true（エンジンは読まない）
+  bundle?: boolean;
   // 読込時の一時データ（入れ子の続きの効果。stepToBlock の最後で chainPrev の効果として展開する）
   _chainNext?: AltAction[];
 }

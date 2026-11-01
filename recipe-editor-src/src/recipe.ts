@@ -578,6 +578,8 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   if (a.optional) out.optional = true;
   // 直前の選択肢の続き（nestChainedAltObjs が直前の要素の中へ移す）
   if (a.chainPrev) out.__chain_prev = true;
+  // 効果1の「＋ 一緒に行う」（エディタで効果1の行として表示するための印）
+  if (a.bundle) out.bundle = true;
   // grant_keyword(_to)/grant_effect: 効果1(appendStep)と同じ意味のフィールドを持つ。
   // 対象の絞り込み(designated)の組み立ても同じロジックを使う。ただし複数キーワードを
   // 「対象を絞り込んだ別ステップ」として追加する分割（appendStep側の複雑なケース）は
@@ -2559,6 +2561,7 @@ function stepObjectToAltAction(step: any): AltAction {
     fromCount: !_isAltGrantKeyword && step?.count !== undefined ? step.count : undefined,
     fromCountQuant: !_isAltGrantKeyword && step?.count_quant === 'le' ? 'le' as const : undefined,
     optional: !!step?.optional,
+    bundle: !!step?.bundle || undefined,
   };
 }
 
@@ -3182,6 +3185,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             fromCount: a?.action !== 'grant_keyword' && a?.action !== 'grant_keyword_to' && a?.count !== undefined ? a.count : undefined,
             fromCountQuant: a?.action !== 'grant_keyword' && a?.action !== 'grant_keyword_to' && a?.count_quant === 'le' ? 'le' as const : undefined,
             optional: !!a?.optional,
+            bundle: !!a?.bundle || undefined,
           };
         })
       : [],

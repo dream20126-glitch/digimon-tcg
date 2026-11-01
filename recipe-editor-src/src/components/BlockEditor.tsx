@@ -3520,6 +3520,8 @@ const ATTACK_TRIGGER_CODES = ['on_attack', 'when_opp_attack', 'on_any_attack', '
 const LINK_TRIGGER_CODES = ['on_link'];
 // 「ブロック」(辞書のトリガー block) のときだけ、［する］［される］を選べるUIを出す（step.block_role）
 const BLOCK_TRIGGER_CODE = 'block';
+// 効果1の「＋ 一緒に行う」で、対象を持たず数値だけで済むアクション（それ以外は「同じ対象」にする）
+const BUNDLE_VALUE_ONLY = new Set(['draw', 'memory_plus', 'memory_minus', 'memory', 'recover', 'deck_open', 'delay']);
 // 「カードが戻ったとき」(辞書のトリガー deck_bounce) のときだけ、戻った先（手札/デッキ）を選べるUIを出す（step.returned_to）
 const RETURNED_TRIGGER_CODE = 'deck_bounce';
 // 「破棄」トリガー: ［する］＝（発動主体の側が）効果で破棄したとき＝原因「効果で」＋原因の対象「自分」（このデジモンの効果なら「このデジモン」）。
@@ -4109,6 +4111,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
   // 代替アクション操作（OR / AND 結合）
   const altActions = block.altActions || [];
+  // 効果1にまとめて表示する効果2以降（先頭から続く分だけ）: 「＋ 一緒に行う」（bundle）と、
+  // 「できない」の複数選択で自動で作った同じ対象の「できない」。効果2以降のタブには出さない
+  const leadBundleCount = (() => {
+    if ((block.altActionsOp || 'or') !== 'and') return 0;
+    let k = 0;
+    while (k < altActions.length) {
+      const a = altActions[k];
+      const autoCant = !!a && a.target === 'same_target' && !a.thenBreak && !!CANT_TO_DOABLE_LIVE[a.action || ''];
+      if (!a || a.thenBreak || !(a.bundle || autoCant)) break;
+      k++;
+    }
+    return k;
+  })();
   function updateAltAction(i: number, patch: Partial<AltAction>) {
     const next = altActions.slice();
     next[i] = { ...next[i], ...patch };
@@ -7260,6 +7275,50 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 {/* その他のアクションでも、「できない」にできるアクション（辞書の「できないコード」あり。手札に戻す/デッキに戻す等）は
                     トリガーと同じく複数選べる（レスト・消滅等のボタンと組み合わせ可。2つ以上選ぶと「できない」）。
                     例:「消滅せず、手札/デッキに戻らない」＝〔消滅〕＋その他で「手札に戻す」「デッキに戻す」 */}
+                {/* ＋ 一緒に行う（効果1の中で複数のアクションを続けて行う。「1ドローし、メモリー+1」）。保存は AND の効果2以降と
+                    同じ alt_actions（bundle:true の印付き）で、効果2のタブには出さず効果1の行として表示する。
+                    数値だけで済むアクションは対象なし、それ以外は「同じ対象」（効果1と同じ対象）にする */}
+                {!isEditingAlt && !!block.action && (() => {
+                  const labelOf = (code: string) => findActionEntry(code)?.label || COMMON_ACTIONS.find((x) => x.code === code)?.label || code;
+                  const hasOtherOr = altActions.length > leadBundleCount && (block.altActionsOp || 'or') !== 'and';
+                  const rows = altActions.map((a, i) => ({ a, i })).filter(({ a, i }) => i < leadBundleCount && a.bundle);
+                  const addBundle = (code: string) => {
+                    if (!code) return;
+                    const na: AltAction = { action: code, value: '', target: BUNDLE_VALUE_ONLY.has(code) ? '' : 'same_target', conditions: [], options: [], fromZones: [], bundle: true };
+                    const next = [...altActions.slice(0, leadBundleCount), na, ...altActions.slice(leadBundleCount)];
+                    onChange({ ...block, altActions: next, altActionsOp: 'and' });
+                  };
+                  const opts = [...COMMON_ACTIONS.map((x) => ({ value: x.code, label: x.label })), ...actionDisplayOptions]
+                    .filter((o, k, arr) => arr.findIndex((x) => x.value === o.value) === k);
+                  return (
+                    <div style={{ marginTop: 6 }}>
+                      {rows.map(({ a, i }) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, padding: '3px 6px', background: '#f1f6fd', border: '1px solid #c7dbf5', borderRadius: 4 }}>
+                          <span style={{ fontSize: 11, color: '#1976d2', fontWeight: 'bold', whiteSpace: 'nowrap' }}>＋ {labelOf(a.action || '')}</span>
+                          <input
+                            type="text"
+                            value={a.value === undefined || a.value === null ? '' : String(a.value)}
+                            onChange={(e) => { const v = e.target.value; updateAltAction(i, { value: v === '' ? '' : (/^-?\d+$/.test(v) ? Number(v) : v) }); }}
+                            placeholder="値"
+                            style={{ width: 70, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                          />
+                          {a.target === 'same_target' && <span style={{ fontSize: 10, color: '#666' }}>対象：効果1と同じ</span>}
+                          <button type="button" onClick={() => removeAltAction(i)} title="外す" style={{ marginLeft: 'auto', border: 'none', background: 'none', cursor: 'pointer', color: '#c62828', fontWeight: 'bold', fontSize: 13 }}>×</button>
+                        </div>
+                      ))}
+                      {hasOtherOr ? (
+                        <div style={{ fontSize: 10, color: '#946200' }}>効果2以降を OR でつないでいるため「＋ 一緒に行う」は使えません</div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 10, color: '#555', whiteSpace: 'nowrap' }}>＋ 一緒に行う</span>
+                          <div style={{ flex: 1 }}>
+                            <SearchSelect value="" onChange={addBundle} options={opts} placeholder="続けて行うアクション（例: メモリー+）" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 {selectedSet.length >= 1 && (() => {
                   const labelOf = (code: string) => findActionEntry(code)?.label || COMMON_ACTIONS.find((x) => x.code === code)?.label || code;
                   const buttonCodes = new Set(COMMON_ACTIONS.map((x) => x.code));
@@ -7641,7 +7700,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <button type="button" onClick={() => setEditingEffect(0)} style={altBtnStyle(editingEffect === 0)}>
                 効果1
               </button>
-              {altActions.map((a, i) => (
+              {altActions.map((a, i) => i < leadBundleCount ? null : (
                 <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                   <button type="button" onClick={() => setEditingEffect(i + 1)} style={altBtnStyle(editingEffect === i + 1)}>
                     {effectTabLabel(i)}

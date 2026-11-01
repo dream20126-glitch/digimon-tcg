@@ -188,9 +188,6 @@ export interface EffectBlock {
   // 例: P-032「このデジモンが発揮した【デジバースト】で」→ destroyCause='effect' + destroyCauseSubject='self'
   //   + destroyCauseEffect={ keyword: 'digiburst' }。JSON では step.cause_effect（エンジン未対応）
   destroyCauseEffect?: { keyword?: string; trigger?: string };
-  // 「このカードが（進化元から）破棄されたとき」: 発動主体「このカード＞進化元」のうち、このカード自身が
-  // 破棄されたときだけ反応する（進化元効果のカード自身。P-032）。JSON では step.trigger_self_card:true（エンジン未対応）
-  triggerSelfCardOnly?: boolean;
   // トリガーごとに発動ターン（自分/相手/お互い）を個別設定したい場合に使う
   // （例:「登場時」は無条件、「相手のメインフェイズ開始時」だけ相手ターン限定、
   // のように同じブロック内で異なる発動ターンを混在させたいケース）。

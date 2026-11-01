@@ -1909,7 +1909,6 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
       step.cause_effect = { ...(ce.keyword ? { keyword: ce.keyword } : {}), ...(ce.trigger ? { trigger: ce.trigger } : {}) };
     }
   }
-  if (b.triggerSelfCardOnly) step.trigger_self_card = true;
   if (b.actionParams) Object.assign(step, b.actionParams);
   if (b.extras) {
     try {
@@ -2753,7 +2752,6 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     cause_by_code: true,
     cause_subject_by_code: true,
     cause_effect: true,
-    trigger_self_card: true,
     cost: true,
     post_cost_condition: true,
     from: true,
@@ -2869,7 +2867,6 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     destroyCause: isCauseCode(step?.cause) ? step.cause : undefined,
     destroyCauseSubject: step?.cause_subject || undefined,
     destroyCauseEffect: parseCauseEffect(step?.cause_effect),
-    triggerSelfCardOnly: !!step?.trigger_self_card || undefined,
     triggerCauseByCode: (step?.cause_by_code && typeof step.cause_by_code === 'object')
       ? { ...step.cause_by_code } : undefined,
     triggerCauseSubjectByCode: (step?.cause_subject_by_code && typeof step.cause_subject_by_code === 'object')

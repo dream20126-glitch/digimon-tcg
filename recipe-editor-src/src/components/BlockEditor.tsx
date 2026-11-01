@@ -2846,6 +2846,15 @@ function joinStackSuffix(base: string, pos: StackPos): string {
 // 後方互換のため「_evo_」プレフィックスが無い_stack系は「重ねられているカード」として読む。
 // 新設: _stack_top（重ねられているカード×上）/ _evo_stack, _evo_stack_top, _evo_stack_bottom（進化元系）
 type TriggerStackFamily = '' | 'evo' | 'stacked';
+// 発動主体の「進化元」（破棄されたとき専用）。self_card_evo＝進化元にあるこのカード（進化元効果のカード自身）
+const EVO_SELF_CARD_SUBJECT = 'self_card_evo';
+const EVO_OWNER_BASES = new Set(['self', 'own', 'opp']);
+const EVO_OWNER_OPTIONS = [
+  { code: 'self_card', label: 'このカード（進化元にあるこのカード）' },
+  { code: 'self', label: 'このデジモンの進化元' },
+  { code: 'own', label: '自分のデジモンの進化元' },
+  { code: 'opp', label: '相手のデジモンの進化元' },
+];
 type TriggerStackPos = '' | 'top' | 'bottom';
 function splitTriggerSubjectSuffix(code: string): { base: string; family: TriggerStackFamily; pos: TriggerStackPos } {
   if (code.endsWith('_evo_stack_top')) return { base: code.slice(0, -'_evo_stack_top'.length), family: 'evo', pos: 'top' };
@@ -2871,7 +2880,7 @@ function joinTriggerSubjectSuffix(base: string, family: TriggerStackFamily, pos:
 function TriggerSubjectStagedPicker({
   subject, onChange, hasFromZones, allowNone = false, hasEntry = true, onClear,
   accentColor = '#2e7d32', suppressTypeButtons = false,
-  zoneIncreaseValue, onZoneAndSubjectChange, extraZoneOptions,
+  zoneIncreaseValue, onZoneAndSubjectChange, extraZoneOptions, showEvoSourceL1 = false,
 }: {
   subject: string;
   onChange: (next: string) => void;
@@ -2890,6 +2899,8 @@ function TriggerSubjectStagedPicker({
   zoneIncreaseValue?: string[];
   onZoneAndSubjectChange?: (nextSubject: string, nextZone: string[]) => void;
   extraZoneOptions?: { code: string; label: string }[];
+  // 「破棄されたとき」専用: 1段目に「進化元」を出す（進化元にあるこのカード／このデジモンの進化元／自分・相手のデジモンの進化元）
+  showEvoSourceL1?: boolean;
 }) {
   // 「このカード」+セキュリティの位置（上/下）。self_security_top/self_security_bottom
   // サフィックス（evo/stacked家系のjoinTriggerSubjectSuffixとは別体系。セキュリティ以外の
@@ -2957,24 +2968,63 @@ function TriggerSubjectStagedPicker({
   const showStage4 = hasFromZones && (effectiveL2 === 'tamer' || (showStage3 && raw.family !== ''));
   const setFamily = (family: TriggerStackFamily) => setSubject(joinTriggerSubjectSuffix(raw.base, family, family ? raw.pos : ''));
   const setPos = (pos: TriggerStackPos) => setSubject(joinTriggerSubjectSuffix(raw.base, raw.family || 'stacked', pos));
-  const l1Value = !hasEntry ? '__none__' : TGT_TOGGLE_L1.has(cur.l1) ? '' : cur.l1;
+  // 「進化元」モード（破棄されたとき専用）: 進化元にあるこのカード(self_card_evo)／このデジモンの進化元(self_evo_stack)／
+  // 自分のデジモンの進化元(own_evo_stack)／相手のデジモンの進化元(opp_evo_stack)。位置（上/下）は _top/_bottom
+  const evoMode = showEvoSourceL1 && hasEntry && (raw.base === EVO_SELF_CARD_SUBJECT || (raw.family === 'evo' && EVO_OWNER_BASES.has(raw.base)));
+  const evoOwner = !evoMode ? '' : raw.base === EVO_SELF_CARD_SUBJECT ? 'self_card' : raw.base;
+  const setEvoOwner = (owner: string) => {
+    if (owner === 'self_card') setSubject(EVO_SELF_CARD_SUBJECT);
+    else setSubject(joinTriggerSubjectSuffix(owner, 'evo', evoOwner && evoOwner !== 'self_card' ? raw.pos : ''));
+  };
+  const l1Value = !hasEntry ? '__none__' : evoMode ? '__evo__' : TGT_TOGGLE_L1.has(cur.l1) ? '' : cur.l1;
+  const l1RestOptions = [...(allowNone ? SUBJECT_L1_REST_WITH_NONE : SUBJECT_L1_REST), ...(showEvoSourceL1 ? [{ code: '__evo__', label: '進化元' }] : [])];
   return (
     <>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <MultiButtonGroup
           options={tgtToggleOptions(cur.l1)}
-          values={hasEntry ? tgtToggleValues(cur.l1) : []}
-          onToggle={(code, on) => handleL1(tgtToggleNextL1(hasEntry ? cur.l1 : '', code, on) || 'self')}
+          values={hasEntry && !evoMode ? tgtToggleValues(cur.l1) : []}
+          onToggle={(code, on) => handleL1(tgtToggleNextL1(hasEntry && !evoMode ? cur.l1 : '', code, on) || 'self')}
           accentColor={accentColor}
         />
         <ButtonGroup
-          options={allowNone ? SUBJECT_L1_REST_WITH_NONE : SUBJECT_L1_REST}
+          options={l1RestOptions}
           value={l1Value}
-          onChange={(v) => { if (v === '__none__') { onClear && onClear(); } else { handleL1(v); } }}
+          onChange={(v) => {
+            if (v === '__none__') { onClear && onClear(); }
+            else if (v === '__evo__') { if (!evoMode) setEvoOwner('self_card'); }
+            else { handleL1(v); }
+          }}
           accentColor={accentColor}
         />
       </div>
-      {hasDigimonTamer && (
+      {evoMode && (
+        <div style={{ marginTop: 4 }}>
+          <ButtonGroup
+            options={EVO_OWNER_OPTIONS}
+            value={evoOwner}
+            onChange={(v) => setEvoOwner(v || 'self_card')}
+            accentColor={accentColor}
+          />
+          {evoOwner !== 'self_card' && (
+            <div style={{ marginTop: 4 }}>
+              <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
+              <ButtonGroup
+                options={[{ code: '', label: '選んで' }, { code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
+                value={raw.pos}
+                onChange={(v) => setSubject(joinTriggerSubjectSuffix(raw.base, 'evo', (v || '') as TriggerStackPos))}
+                accentColor={accentColor}
+              />
+            </div>
+          )}
+          {evoOwner === 'self_card' && (
+            <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
+              進化元効果のこのカード自身が、進化元から破棄されたとき（P-032 等）。⚠ エンジン未対応です（保存はできますが動作しません）
+            </div>
+          )}
+        </div>
+      )}
+      {!evoMode && hasDigimonTamer && (
         <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <MultiButtonGroup
             options={[{ code: 'digimon', label: 'デジモン' }, { code: 'tamer', label: 'テイマー' }]}
@@ -3041,7 +3091,7 @@ function TriggerSubjectStagedPicker({
       {zoneMode && currentZone && ZONE_INCREASE_UNIMPLEMENTED.has(currentZone) && (
         <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>⚠ デッキ/進化元以外は保存はできますがエンジンが現状対応していないため発火しません</div>
       )}
-      {showStage3 && (
+      {!evoMode && showStage3 && (
         <div style={{ marginTop: 4 }}>
           <ButtonGroup
             options={[{ code: '', label: '指定なし' }, { code: 'evo', label: '進化元' }, { code: 'stacked', label: '重ねられているカード' }]}
@@ -3051,7 +3101,7 @@ function TriggerSubjectStagedPicker({
           />
         </div>
       )}
-      {showStage4 && (
+      {!evoMode && showStage4 && (
         <div style={{ marginTop: 4 }}>
           <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
           <ButtonGroup
@@ -5700,6 +5750,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                               zoneIncreaseValue={thisIsZoneIncrease ? (block.zoneIncrease || []) : undefined}
                               onZoneAndSubjectChange={thisIsZoneIncrease ? setThisSubjectAndZone : undefined}
                               extraZoneOptions={thisIsZoneIncrease ? ZONE_INCREASE_EXTRA_OPTIONS : undefined}
+                              showEvoSourceL1={code === DISCARD_TRIGGER_CODE}
                             />
                           </div>
                         );
@@ -5909,6 +5960,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                                   zoneIncreaseValue={si === 0 && isZoneIncreaseTrigger ? (block.zoneIncrease || []) : undefined}
                                   onZoneAndSubjectChange={si === 0 && isZoneIncreaseTrigger ? (nextSubject, nextZone) => onChange({ ...block, triggerSubject: nextSubject, zoneIncrease: nextZone, triggerSubjects: undefined }) : undefined}
                                   extraZoneOptions={isZoneIncreaseTrigger ? ZONE_INCREASE_EXTRA_OPTIONS : undefined}
+                                  showEvoSourceL1={currentTriggers.includes(DISCARD_TRIGGER_CODE)}
                                 />
                               </div>
                               {subjList.length > 1 && (
@@ -5985,19 +6037,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             );
           })()}
 
-          {/* 「このカードが（進化元から）破棄されたとき」: 発動主体「このカード＞進化元」のうち、
-              このカード自身が破棄されたときだけ反応する（P-032 の進化元効果）。trigger_self_card */}
-          {((block.triggers && block.triggers.length > 0) ? block.triggers : [block.trigger]).includes(DISCARD_TRIGGER_CODE) && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 8, fontSize: 12, color: '#1a5a1a' }}>
-              <input
-                type="checkbox"
-                checked={!!block.triggerSelfCardOnly}
-                onChange={(e) => update('triggerSelfCardOnly', e.target.checked || undefined)}
-              />
-              このカード自身が破棄されたときだけ（発動主体「このカード＞進化元」で、進化元効果のこのカードが破棄されたとき）
-              {block.triggerSelfCardOnly && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未対応</span>}
-            </label>
-          )}
           {/* ☑ 原因選択: どのトリガーでも使える汎用の「原因」（バトルで/効果で + 原因の対象）。
               「誰が（消滅/破棄等）したか」は発動主体(triggerSubject/triggerSubjectByCode)で
               表現するので、こちらは「何が原因で（誰によって）発生したか」を表す。

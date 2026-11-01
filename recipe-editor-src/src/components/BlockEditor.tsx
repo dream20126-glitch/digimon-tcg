@@ -6086,7 +6086,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               type="checkbox"
               checked={!!block.destroyCause}
               onChange={(e) => {
-                if (e.target.checked) update('destroyCause', 'effect');
+                // 原因の対象は画面の初期表示（このデジモン）と同じ値を保存する（未設定はエンジンでは「誰の原因でも」になるため）
+                if (e.target.checked) onChange({ ...block, destroyCause: 'effect', destroyCauseSubject: block.destroyCauseSubject || 'self' });
                 else onChange({ ...block, destroyCause: undefined, destroyCauseSubject: undefined });
               }}
             />
@@ -6103,7 +6104,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 </div>
                 <ButtonGroup
                   options={[{ code: 'self', label: 'このデジモン' }, { code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'both', label: '両方' }]}
-                  value={block.destroyCauseSubject || 'self'}
+                  value={block.destroyCauseSubject || 'both'}
                   onChange={(v) => update('destroyCauseSubject', v)}
                   accentColor="#1a5a1a"
                 />

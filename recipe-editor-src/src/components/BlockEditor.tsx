@@ -31,6 +31,9 @@ interface Props {
   // 持たないカード）であることを示す。区分=進化元 が選ばれているのに true な場合、
   // 「効果テキスト（メイン）由来の効果を誤って進化元区分にしていないか」の注意書きを出す
   hasNoEvoText?: boolean;
+  // true のとき、トリガーとアクションの欄だけを出す（発動領域・区分/タイプ/限定・デジバースト・コストを隠す）。
+  // 「独自の効果を付与」の付与する効果の編集で使う
+  compact?: boolean;
 }
 
 // 共通ヘルパ: code/label の配列 → SelectOption[]
@@ -3963,7 +3966,7 @@ function combineLimit(type: string, count: number): string {
   return type;
 }
 
-export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, onMoveDown, isKeywordMode, hasNoEvoText }: Props) {
+export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, onMoveDown, isKeywordMode, hasNoEvoText, compact }: Props) {
   const effectiveTriggerFamilies = isKeywordMode ? [...COMMON_TRIGGER_FAMILIES, ...KEYWORD_ONLY_TRIGGER_FAMILIES] : COMMON_TRIGGER_FAMILIES;
   // 「する/できない」トグルのペア表を辞書（dict.actions[].cantActionCode）駆動で構築。
   // 辞書に未登録のコードはモジュール直書きの DOABLE_TO_CANT をフォールバックとして使う
@@ -4870,6 +4873,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             「セキュリティにある間、常に発動」のようにキーワード自体の定義（テンプレート）に
             発動領域の指定が必要になるケースがあるため、isKeywordModeでも常に表示する
             （区分/タイプ/限定はカード固有の概念のため、そちらは従来通り非表示のまま） */}
+        {!compact && (
         <div style={{
           gridColumn: '1 / span 2', padding: 10, background: '#fdeef2',
           border: '1px solid #f3b8ce', borderRadius: 6, marginBottom: isKeywordMode ? 8 : 0,
@@ -4879,10 +4883,11 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <ButtonGroup options={ZONE_BUTTONS} value={block.zone || ''} onChange={(v) => update('zone', v)} accentColor="#d6336c" />
           </div>
         </div>
+        )}
 
         {/* キーワード効果のテンプレート編集でも「区分」だけは選べるようにする（オーバーフローのように、バトルエリアにいるときと
             進化元にあるときの両方で発揮するキーワードがあるため。タイプ/限定はカード固有なので出さない） */}
-        {isKeywordMode && (() => {
+        {isKeywordMode && !compact && (() => {
           const sectionsList: string[] = (block.sections && block.sections.length > 0) ? block.sections : [block.section];
           const toggleSection = (code: string) => {
             const has = sectionsList.includes(code);
@@ -4907,7 +4912,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         {/* === ＜前提＞ブロック: 区分 / タイプ / 限定 をボタン式で選択 ===
             キーワード効果のテンプレート編集(isKeywordMode)では、カード固有の概念（区分/
             ターン制限）は不要なため非表示にする */}
-        {!isKeywordMode && (
+        {!isKeywordMode && !compact && (
         <div style={{
           gridColumn: '1 / span 2', padding: 10, background: '#fdeef2',
           border: '1px solid #f3b8ce', borderRadius: 6,
@@ -6253,7 +6258,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
         {/* === ≪デジバーストN≫（キーワード効果欄の「≪デジバースト≫」で付けたもの）。
             「以下の効果」はこのブロックのアクション欄。保存時に cost の先頭へ cost_digiburst を置く === */}
-        {block.digiburst !== undefined && block.trigger !== 'passive' && (
+        {!compact && block.digiburst !== undefined && block.trigger !== 'passive' && (
           <div style={{ gridColumn: '1 / span 2', marginTop: 8, padding: 8, background: '#f3e8fd', border: '2px solid #c39bf0', borderRadius: 6, fontSize: 12, color: '#5e2a8a' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <b>🔑 ≪デジバースト</b>
@@ -6282,7 +6287,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
         {/* === 💰 コスト（トリガー/アクションの間に独立配置。コストを伴う効果が多いため
             折りたたみトグルで表示/非表示できるようにする。効果1・代替アクション（その後/
             OR/AND）とも同じCostListEditorを使い回す） === */}
-        {!COST_REDUCTION_TRIGGERS.has(block.trigger) && block.trigger !== 'passive' && (
+        {!compact && !COST_REDUCTION_TRIGGERS.has(block.trigger) && block.trigger !== 'passive' && (
         <details className="field" style={{ gridColumn: '1 / span 2', marginTop: 8 }} open={costs.length > 0}>
           <summary style={{ cursor: 'pointer', fontWeight: 'bold', padding: '4px 0', color: '#b76e00' }}>
             💰 コスト（「〇〇することで」発動）{costs.length > 0 ? ` (${costs.length})` : ''}
@@ -9273,7 +9278,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               <>
                 <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
                   💡 対象に一時的に効果を付与する。例: 「『【アタック時】相手のデジモン1体をDP-2000』を得る」。
-                  付与する効果は、カードの効果と同じ画面（トリガー・発動主体・アクション・コスト・効果2以降等）で組みます。
+                  付与する効果のトリガー（発動主体を含む）とアクションを、カードの効果と同じ画面で組みます。
                   付与する期間はこの効果（外側）の「期間」で決めます
                 </div>
                 {grantedBlocksNow.map((gb, gi) => (
@@ -9286,6 +9291,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       onChange={(nb) => { const next = grantedBlocksNow.slice(); next[gi] = nb; updateEffect({ grantedBlocks: next }); }}
                       onRemove={() => updateEffect({ grantedBlocks: grantedBlocksNow.filter((_, k) => k !== gi) })}
                       isKeywordMode={isKeywordMode}
+                      compact
                     />
                   </div>
                 ))}

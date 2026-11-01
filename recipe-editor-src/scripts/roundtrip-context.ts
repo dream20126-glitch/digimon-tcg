@@ -68,6 +68,7 @@ const cases: Case[] = [
   { name: '進化元に「ガルルモン」がある（このデジモン）', blocks: [base({ action: 'dp_plus', value: 2000, target: 'self', conditions: [{ base: 'cond_has_evo', value: '1', subject: 'self' }, { base: 'cond_name', value: 'ガルルモン', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'] },
   { name: '自分の「本宮大輔」と「一条寺賢」がいる（全員いる）', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_battle_area_ge', value: '1', subject: 'own_any' }, { base: 'cond_name', value: '本宮大輔,一条寺賢', subject: '__ref_exists_filter__' }, { base: 'cond_name_each', value: '1', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'] },
   { name: '自分のトラッシュに名称に「デビモン」を含むデジモンカードが7枚以上', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_trash_ge', value: '7', subject: 'own_any' }, { base: 'cond_name_contains', value: 'デビモン', subject: '__ref_exists_filter__' }, { base: 'cond_type', value: 'デジモン', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'] },
+  { name: '条件チェーン側の参照＋属性（目印のまま保存されない）', blocks: [base({ action: 'draw', conditions: [], conditionsChain: [{ conditions: [{ base: 'cond_battle_area_ge', value: '1', subject: 'own' }, { base: 'cond_name_contains', value: 'ブイドラモン', subject: '__ref_exists_filter__' }] }] })], check: [], raw: (r: any) => !JSON.stringify(r).includes('__ref_exists_filter__') },
   { name: '名称を含む（参照の属性）', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_battle_area_ge', value: '1', subject: 'own_any' }, { base: 'cond_name_contains', value: 'ガルルモン', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'] },
   { name: '≪デジバースト2≫ 以下の効果（相手のデジモン1体をレスト）', blocks: [base({ trigger: 'main', triggers: ['main'], action: 'rest', target: 'opponent:1', value: undefined, digiburst: 2 })], check: ['0.digiburst'] },
   { name: '進化元に「ベムモン」が4枚以上', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_has_evo', value: '4', subject: 'self' }, { base: 'cond_name', value: 'ベムモン', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'] },
@@ -92,6 +93,7 @@ for (const c of cases) {
     const r2 = blocksToRecipe(b2, kd as any);
     const stable = J(r1) === J(r2);
     const bad = c.check.filter((p) => J(get(c.blocks, p)) !== J(get(b2, p)));
+    if ((c as any).raw && !(c as any).raw(r1)) bad.push('(保存の形)');
     const ok = stable && bad.length === 0;
     if (!ok) ng++;
     console.log((ok ? 'OK  ' : 'NG  ') + c.name + (stable ? '' : ' [保存し直すと変わる]') + (bad.length ? ' [戻らない: ' + bad.map((p) => p + ' ' + J(get(c.blocks, p)) + '→' + J(get(b2, p))).join(', ') + ']' : ''));

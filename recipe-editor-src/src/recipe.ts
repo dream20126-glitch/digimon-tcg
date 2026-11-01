@@ -63,8 +63,10 @@ function resolveCommonPlusChainTriple(commonPairs: ConditionPair[] | undefined, 
   condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; condition_chain?: { conditions: string[] }[];
 } {
   const common = (commonPairs || []).filter((p) => p.base);
+  // チェーン側の条件にも参照行の「属性で絞り込む」（REF_EXISTS_FILTER_MARKER）やDP参照の目印が付くので、
+  // 共通条件と同じく保存用の形（cond_exists＋兄弟条件 等）に直してから出力する（目印のまま保存される事故。P-008 等）
   const chainSegs = Array.isArray(chain) && chain.length > 0
-    ? buildConditionChainSegments(chain).map((seg) => seg.filter((p) => p.base)).filter((seg) => seg.length > 0)
+    ? buildConditionChainSegments(chain).map((seg) => expandRefExistsAttributeFilters(stripDpRefFilterMarker(seg.filter((p) => p.base)))).filter((seg) => seg.length > 0)
     : [];
   const out: { condition?: string; when?: string; extra_conditions?: string[]; condition_op?: 'or'; condition_chain?: { conditions: string[] }[] } = {};
   if (chainSegs.length > 1) {
@@ -73,7 +75,7 @@ function resolveCommonPlusChainTriple(commonPairs: ConditionPair[] | undefined, 
     if (common.length >= 3) out.extra_conditions = common.slice(2).map(pairToString);
     out.condition_chain = chainSegs.map((seg) => ({ conditions: seg.map(pairToString) }));
   } else {
-    const merged = [...common, ...(chainSegs[0] || [])];
+    const merged = expandRefExistsAttributeFilters([...common, ...(chainSegs[0] || [])]);
     if (merged.length >= 1) out.condition = pairToString(merged[0]);
     if (merged.length >= 2) out.when = pairToString(merged[1]);
     if (merged.length >= 3) out.extra_conditions = merged.slice(2).map(pairToString);

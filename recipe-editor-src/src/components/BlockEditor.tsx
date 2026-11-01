@@ -3533,6 +3533,12 @@ const RETURNED_TRIGGER_CODE = 'deck_bounce';
 // ［される］＝カードが破棄されたとき（原因の指定なし。「効果で破棄されたとき」等は下の原因選択で足す）。
 // 「自分の手札が自分の効果で破棄されたとき」と「自分が手札を破棄したとき」は同じデータになる
 const DISCARD_TRIGGER_CODE = 'discard';
+// 「破棄」トリガーの「どこから」（破棄元のゾーン。step.trigger_from。エンジンの fireWhenEvoDiscardTriggers / 手札の破棄が読む）
+const DISCARD_TRIGGER_FROM_OPTIONS = [
+  { code: 'hand', label: '手札' },
+  { code: 'evo_source', label: '進化元' },
+  { code: 'tamer', label: 'テイマーの下' },
+];
 // 原因の「どの効果で」のキーワード候補のうち、キーワード辞書に無いもの（コスト等で表すキーワード）
 const CAUSE_EFFECT_EXTRA_KEYWORDS = [
   { code: 'digiburst', label: 'デジバースト' },
@@ -5927,6 +5933,26 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             ? '発動主体の側が効果で破棄したとき（原因：効果で・原因の対象：自分 で保存。「このデジモンの効果で」なら下の原因の対象を「このデジモン」に）。何を破棄したかは発動主体（相手の手札・相手のデジモンの進化元 等）で選ぶ'
                             : 'カードが破棄されたとき。「効果で破棄されたとき」等は下の「原因選択」で足す'}
                         </div>
+                        {/* どこから（場所）: 破棄元のゾーン（trigger_from）。複数選ぶとどれか（OR）。未選択＝場所を問わない */}
+                        {(() => {
+                          const tf = block.triggerFromZones || [];
+                          return (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                              <span style={{ fontSize: 11, color: '#666' }}>どこから:</span>
+                              <MultiButtonGroup
+                                options={DISCARD_TRIGGER_FROM_OPTIONS}
+                                values={tf}
+                                onToggle={(code, on) => {
+                                  const next = on ? [...tf.filter((z) => z !== code), code] : tf.filter((z) => z !== code);
+                                  const ordered = DISCARD_TRIGGER_FROM_OPTIONS.map((o) => o.code).filter((z) => next.includes(z));
+                                  onChange({ ...block, triggerFromZones: ordered.length > 0 ? ordered : undefined, triggerFromZonesOp: undefined });
+                                }}
+                                accentColor="#2e7d32"
+                              />
+                              <span style={{ fontSize: 10, color: '#888' }}>未選択＝どこからでも／複数はどれか</span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   })()}

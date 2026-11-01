@@ -30,6 +30,7 @@ export const bs = {
   _usedLimits: {},
   _securityBuffs: [],
   _turnEndMemoryShift: 0,
+  _turnEndDelayed: [], // 「このターン終了時、〜する」（at_turn_end）の予約
 };
 
 // デバッグ用 window 公開（コンソールから bs を直接インスペクト可能に）
@@ -69,6 +70,7 @@ export function resetBattleState(playerFirst) {
   bs._usedLimits = {};
   bs._securityBuffs = [];
   bs._turnEndMemoryShift = 0;
+  bs._turnEndDelayed = [];
   // 効果処理中の数を戻す（前のバトルで解除されずに残っていても持ち越さない）
   try { if (typeof window !== 'undefined' && window._resetEffectProcessing) window._resetEffectProcessing(); } catch (_) {}
   bs._oppPhase = null;

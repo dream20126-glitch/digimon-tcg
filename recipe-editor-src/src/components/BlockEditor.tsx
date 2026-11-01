@@ -671,7 +671,6 @@ function RefExistsAttributeFilterPanel({
                     onChange={(v) => setAttr('cond_name_each', v === 'each' ? '1' : undefined)}
                     accentColor="#946200"
                   />
-                  {getAttr('cond_name_each') && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装（保存はできますが、今は「どれか」として判定されます）</span>}
                 </div>
               )}
             </div>
@@ -710,7 +709,7 @@ function RefExistsAttributeFilterPanel({
             </div>
           )}
           {forZone && open && (
-            <div style={{ fontSize: 10, color: '#c62828', marginBottom: 4 }}>⚠ 手札/トラッシュの属性の絞り込みはエンジン未対応です（保存はできますが動作しません）</div>
+            <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>このゾーンのうち、下の条件に合うカードの枚数で判定します</div>
           )}
           {activeSub.has('feature') && (
             <div>
@@ -721,11 +720,6 @@ function RefExistsAttributeFilterPanel({
                 placeholder="例: サイボーグ型"
                 accentColor="#946200"
               />
-            </div>
-          )}
-          {forEvo && (
-            <div style={{ fontSize: 10, color: '#c62828', marginTop: 4 }}>
-              ⚠ エンジン未実装です（保存はできますが、実機ではまだ判定されません）
             </div>
           )}
           {hasAnyAttr && warnConflict && (
@@ -2241,7 +2235,7 @@ function CostListEditor({
                       </div>
                       {isFixed && (
                         <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
-                          「進化コスト{magnitude || 'N'}で進化できる」。⚠ エンジン未対応です（保存はできますが動作しません）
+                          「進化コスト{magnitude || 'N'}で進化できる」（元の進化コストに関係なくこの値を支払う）
                         </div>
                       )}
                     </div>
@@ -2496,7 +2490,7 @@ function CostListEditor({
                     {on && (
                       <div style={{ marginTop: 6 }}>
                         <div style={{ fontSize: 10, color: '#c62828', marginBottom: 4 }}>
-                          ⚠ エンジン未対応（保存はできますが動作しません）。ONの間は、各グループの条件と枚数で選びます（上の「コスト対象の絞り込み」は全グループ共通の条件、対象の枚数は使いません）
+                          ⚠ エンジンが対応しているのはアクション「デッキに戻す」（手札/トラッシュから）だけです。ONの間は、各グループの条件と枚数で選びます（上の「コスト対象の絞り込み」は全グループ共通の条件、対象の枚数は使いません）
                         </div>
                         {groups.map((g, gi) => (
                           <div key={gi} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: gi < groups.length - 1 ? '1px dashed #f0d9a8' : 'none' }}>
@@ -3050,7 +3044,7 @@ function TriggerSubjectStagedPicker({
             {evoOwner === 'self'
               ? '進化元にあるこのカード（進化元効果のカード自身）が破棄されたとき（P-032 等）。'
               : '進化元にある' + (evoOwner === 'own' ? '自分' : '相手') + 'の' + (evoType ? EVO_CARD_TYPE_OPTIONS.find((o) => o.code === evoType)!.label : '') + 'カードが破棄されたとき。'}
-            「このデジモンの進化元」等は 自分/このカード＞進化元 で選んでください。⚠ エンジン未対応です（保存はできますが動作しません）
+            「このデジモンの進化元」等は 自分/このカード＞進化元 で選んでください。
           </div>
         </div>
       )}
@@ -6143,7 +6137,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </div>
                     </div>
                     {(ce.keyword || ce.trigger) && (
-                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 「どの効果で」はエンジン未対応です（保存はできますが動作しません）</div>
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ エンジンが「どの効果で」を記録しているのは、≪デジバースト≫で進化元を破棄したときだけです</div>
                     )}
                   </div>
                 );
@@ -6623,7 +6617,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           onChange={(e) => updateEffect({ atTurnEnd: e.target.checked || undefined })}
                         />
                         🌙 このターン終了時に実行
-                        {on && <span style={{ color: '#c62828', fontWeight: 'normal' }}>⚠ エンジン未対応</span>}
                       </label>
                     );
                   })()}
@@ -7270,7 +7263,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         </div>
                         {isFixed && (
                           <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
-                            「コスト{magnitude || 'N'}で進化/登場できる」（元のコストに関係なくこの値を支払う）。⚠ エンジン未対応です（保存はできますが動作しません）
+                            「コスト{magnitude || 'N'}で進化/登場できる」（元のコストに関係なくこの値を支払う）。⚠ エンジンが対応しているのは「進化」だけです
                           </div>
                         )}
                       </div>

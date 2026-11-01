@@ -130,6 +130,10 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   // 状態（レスト/アクティブ状態のデジモンの体数。subject駆動、bothは自分+相手の合計）
   'cond_state_rest_ge', 'cond_state_rest_le', 'cond_state_rest_eq', 'cond_state_rest_gt', 'cond_state_rest_lt',
   'cond_state_active_ge', 'cond_state_active_le', 'cond_state_active_eq', 'cond_state_active_gt', 'cond_state_active_lt',
+  // 2026-11-01: 進化元に〜がN枚以上（P-008）・AとBが両方いる（P-022）・手札/トラッシュの条件に合う枚数（P-034）
+  'cond_evo_exists', 'cond_name_each',
+  'cond_hand_match_ge', 'cond_hand_match_le', 'cond_hand_match_eq', 'cond_hand_match_gt', 'cond_hand_match_lt',
+  'cond_trash_match_ge', 'cond_trash_match_le', 'cond_trash_match_eq', 'cond_trash_match_gt', 'cond_trash_match_lt',
   // 進化元メタ条件（cond_exists の進化元版）
   'cond_has_evo_digimon',
   // 完全一致系

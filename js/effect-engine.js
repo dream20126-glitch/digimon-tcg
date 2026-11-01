@@ -8465,7 +8465,24 @@ function _battleAreaCount(bs, sideKey, type) {
 // （trigger_conditions の @own 等は発火元カードの陣営指定なので、この変換は使わない）
 const _SUBJECT_EXISTS_RE = /^(own|opp|opponent)(_tamer|_card|_digimon|_any)?$/;
 // 兄弟条件を「候補カードのフィルタ」として消費するメタ条件（～がいる／～がいない）
-const _EXISTS_META_CODES = new Set(['cond_exists', 'cond_not_exists']);
+// 兄弟の属性条件（cond_name 等）を候補のフィルタとして消費するメタ条件。
+// cond_evo_exists:N@self＝「このデジモンの進化元に『〇〇』がN枚以上ある」（P-008/P-010）、
+// cond_{hand|trash}_match_{ge|le|eq|gt|lt}:N@subject＝「トラッシュに〜なカードがN枚以上ある」（P-034）
+const _ZONE_MATCH_RE = /^cond_(hand|trash)_match_(ge|le|eq|gt|lt)$/;
+const _EXISTS_META_CODES = new Set(['cond_exists', 'cond_not_exists', 'cond_evo_exists',
+  'cond_hand_match_ge', 'cond_hand_match_le', 'cond_hand_match_eq', 'cond_hand_match_gt', 'cond_hand_match_lt',
+  'cond_trash_match_ge', 'cond_trash_match_le', 'cond_trash_match_eq', 'cond_trash_match_gt', 'cond_trash_match_lt']);
+// 兄弟の属性条件をカード c に当てはめる（cond_evo_exists / cond_*_match 用。陣営の subject は外して評価）
+function _cardMatchesSiblingConds(c, otherConds, bs, cardSide) {
+  if (!c) return false;
+  return otherConds.every((oc) => {
+    if (!TARGET_FILTER_COND_CODES.has(oc.code)) return true;
+    return checkConditions([{ code: oc.code, value: oc.value }], c, bs, cardSide);
+  });
+}
+function _cmpCount(n, q, v) {
+  return q === 'ge' ? n >= v : q === 'le' ? n <= v : q === 'eq' ? n === v : q === 'gt' ? n > v : n < v;
+}
 function _isSubjectAttrCond(c) {
   return !!(c && c.subject && TARGET_FILTER_COND_CODES.has(c.code)
     && _SUBJECT_EXISTS_RE.test(String(c.subject).toLowerCase()));
@@ -9129,6 +9146,26 @@ function checkConditions(conditions, card, bs, side) {
         if (trashLen < (cond.value || 0)) return false;
         break;
       }
+      // 「このデジモンの進化元に『ガルルモン』がある（N枚以上ある）とき」: 進化元（裏向きを除く）のうち
+      // 兄弟の属性条件に合うカードを数える（P-008/P-010）。subject は self（このデジモン）のみ
+      case 'cond_evo_exists': {
+        const _oc = conditions.filter(c => !_EXISTS_META_CODES.has(c.code) && c.code !== 'per_count');
+        const _stack = (card && Array.isArray(card.stack)) ? card.stack.filter(x => x && !x._faceDown) : [];
+        const _n = _stack.filter(x => _cardMatchesSiblingConds(x, _oc, bs, side)).length;
+        return _n >= Number(cond.value || 1);
+      }
+      // 「自分のトラッシュに名称に『デビモン』を含むデジモンカードが7枚以上あるとき」: subject 側の
+      // 手札/トラッシュのうち兄弟の属性条件（cond_type 等）に合うカードを数えて比べる（P-034）
+      case 'cond_hand_match_ge': case 'cond_hand_match_le': case 'cond_hand_match_eq': case 'cond_hand_match_gt': case 'cond_hand_match_lt':
+      case 'cond_trash_match_ge': case 'cond_trash_match_le': case 'cond_trash_match_eq': case 'cond_trash_match_gt': case 'cond_trash_match_lt': {
+        if (!bs) return true;
+        const _m = _ZONE_MATCH_RE.exec(cond.code);
+        const _ts = resolveSubjectSide(cond.subject, side);
+        const _zone = (bs[_ts] && bs[_ts][_m[1]]) || [];
+        const _oc = conditions.filter(c => !_EXISTS_META_CODES.has(c.code) && c.code !== 'per_count');
+        const _n = _zone.filter(x => _cardMatchesSiblingConds(x, _oc, bs, _ts)).length;
+        return _cmpCount(_n, _m[2], Number(cond.value || 0));
+      }
       case 'cond_exists':
       // cond_not_exists:「～がいないなら」「～がない間」= cond_exists の否定（兄弟条件の扱い・subject は同じ）。
       // ヴァイクモン LM-040「進化元枚数がこのデジモン以上の相手のデジモンがいないなら」
@@ -9157,7 +9194,7 @@ function checkConditions(conditions, card, bs, side) {
           : bs[oppSide].battleArea;
         // cond_has_evo:self =「進化元枚数がこのデジモン以上」（このデジモン＝card の進化元枚数と比べる）
         const _selfEvoN = (card && Array.isArray(card.stack)) ? card.stack.length : 0;
-        const hasMatch = oppArea.some(c => {
+        const _matchOne = (otherConds) => oppArea.some(c => {
           if (!c) return false;
           if (!_existsWantTamer && !_existsByName && c.type !== 'デジモン') return false; // デジモンのみ対象（テイマー参照・名称指定時は除く）
           if (otherConds.length === 0) return true; // 条件なし＝相手デジモンがいればOK
@@ -9191,6 +9228,16 @@ function checkConditions(conditions, card, bs, side) {
             }
           });
         });
+        // cond_name_each:「自分の『本宮大輔』と『一条寺賢』がいるとき」（P-022）＝名称1つずつについて「いる」
+        let hasMatch;
+        const _eachName = otherConds.some(oc => oc.code === 'cond_name_each');
+        const _nameCond = otherConds.find(oc => oc.code === 'cond_name' || oc.code === 'cond_name_contains');
+        if (_eachName && _nameCond) {
+          const _names = String(_nameCond.value || '').split(',').map(x => x.trim()).filter(Boolean);
+          hasMatch = _names.length > 0 && _names.every(nm => _matchOne(otherConds.map(oc => oc === _nameCond ? { code: oc.code, value: nm } : oc)));
+        } else {
+          hasMatch = _matchOne(otherConds);
+        }
         console.log('[' + cond.code + '] hasMatch=', hasMatch);
         if (_existsNeg ? hasMatch : !hasMatch) return false;
         // cond_existsで使った他の条件はスキップ（二重チェック防止）
@@ -13498,6 +13545,16 @@ export function fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, done, con
   if (!containerType && container) containerType = String(container.type || '') === 'テイマー' ? 'tamer' : 'digimon';
   const matchesOne = (subj, cardSide, carrier) => {
     const raw = String(subj || '');
+    // 「進化元にある自分の（テイマー）カードが破棄されたとき」: 破棄されたカードそのもので判定（デジモンの進化元のみ）
+    const _ec = /^(self|own|opp)_evo_card(?:_(digimon|tamer|option))?$/.exec(raw);
+    if (_ec) {
+      if (_ec[1] === 'self') return false; // 進化元にあるこのカード: 破棄されたカード自身の効果として別に発揮する
+      if (containerType === 'tamer') return false;
+      if ((_ec[1] === 'own') !== (discardedSide === cardSide)) return false;
+      if (!_ec[2]) return true;
+      const _tj = { digimon: 'デジモン', tamer: 'テイマー', option: 'オプション' }[_ec[2]];
+      return !!(info && Array.isArray(info.cards) && info.cards.some((c) => c && String(c.type || '') === _tj));
+    }
     const base = raw.replace(/(_evo)?_stack(_top|_bottom)?$/, '');
     let sideMatch, typeReq = null;
     switch (base) {
@@ -13537,8 +13594,35 @@ export function fireWhenEvoDiscardTriggers(discardedSide, bs, ctxBase, done, con
   // 一番下/一番上の指定があるステップは、その位置のカードを trigger_conditions の判定対象にする
   // （ここでは単純化して、破棄されたカード全体を判定対象として渡す）
   const opts = (info && Array.isArray(info.cards) && info.cards.length > 0) ? { eventCards: info.cards } : undefined;
+  // 「進化元にあるこのカードが破棄されたとき」（self_evo_card。パルモン P-032 の進化元効果）: 破棄されたカードは
+  // もうトラッシュにあるので場の走査では拾えない。破棄されたカードの evo_source を見て、破棄元のデジモン（container）の
+  // 効果として発揮する（このデジモン＝container。原因の対象「このデジモン」も container と照合）
+  const _causeSnap = bs ? bs._lastDestroyCause : null;
+  const runSelfEvoCards = (next) => {
+    const disc = (info && Array.isArray(info.cards)) ? info.cards.filter(Boolean) : [];
+    if (!container || containerType === 'tamer' || disc.length === 0) { next(); return; }
+    // オンラインでは相手のカードの反応は相手の端末が発揮する
+    if (discardedSide === 'ai' && typeof window !== 'undefined' && window._isOnlineMode && window._isOnlineMode()) { next(); return; }
+    if (bs) bs._lastDestroyCause = _causeSnap;
+    const jobs = [];
+    disc.forEach((d) => {
+      const r = _parseCardRecipe(d);
+      const es = r && r.evo_source ? (_lookupTriggerSteps(r.evo_source, 'when_evo_discard') || []) : [];
+      const steps = es.filter((st) => st && _resolveStepSubjectList(st, 'when_evo_discard').some((x) => String(x || '') === 'self_evo_card')
+        && _destroyCauseMatches(st, bs, discardedSide, container, 'when_evo_discard')
+        && _evalTriggerConditionsArray(st.trigger_conditions, st.trigger_conditions_op, d, bs, discardedSide, st.trigger_conditions_chain));
+      if (steps.length > 0) jobs.push({ d, steps });
+    });
+    let k = 0;
+    const go = () => {
+      if (k >= jobs.length) { next(); return; }
+      const j = jobs[k++];
+      _runReactionEffect({ card: container, sourceCard: j.d, recipe: j.steps, triggerCode: 'when_evo_discard', eventSourceCard: j.d }, discardedSide, bs, ctxBase, go, { alwaysConfirm: true });
+    };
+    go();
+  };
   _fireSidedReactionTriggers('player', 'when_evo_discard', bs, ctxBase, () => {
-    _fireSidedReactionTriggers('ai', 'when_evo_discard', bs, ctxBase, finish, subjectMatches, opts);
+    _fireSidedReactionTriggers('ai', 'when_evo_discard', bs, ctxBase, () => runSelfEvoCards(finish), subjectMatches, opts);
   }, subjectMatches, opts);
 }
 
@@ -13804,7 +13888,15 @@ function _destroyCauseMatches(step, bs, carrierSide, carrier, triggerCode) {
   // not_effect / not_battle（「〜以外で」）: 原因がそれに当てはまらなければ成立。原因の主体と組み合わせると
   // 「自分の効果以外で」＝自分の効果で…ではない（バトル・ルール・相手の効果）になる（EX12-003 カプリモン）
   if (/^not_/.test(String(cause))) return !matches(String(cause).slice(4));
-  return matches(cause);
+  if (!matches(cause)) return false;
+  // 原因の「どの効果で」（cause_effect: { keyword?, trigger? }）。原因の記録にその情報が無ければ不成立
+  // （パルモン P-032「このデジモンが発揮した【デジバースト】で」= keyword:'digiburst'）
+  const ce = step && step.cause_effect;
+  if (ce && typeof ce === 'object') {
+    if (ce.keyword && (!dc || dc.keyword !== ce.keyword)) return false;
+    if (ce.trigger && (!dc || dc.trigger !== ce.trigger)) return false;
+  }
+  return true;
 }
 
 // 同時に起きた消滅のまとまり。消滅の原因（bs._lastDestroyCause.grp）に載せ、まとまりごとに誘発済みの反応を覚える
@@ -14711,10 +14803,45 @@ function _stepHasCondGate(st) {
   return !!(st && (st.condition || st.when || (Array.isArray(st.extra_conditions) && st.extra_conditions.length > 0)
     || (Array.isArray(st.condition_chain) && st.condition_chain.length > 0)));
 }
+// ===== 「条件ごとに枚数を分ける」（cost / step の designated_groups） =====
+// 例: ジョグレス進化 今、心をひとつに P-022「自分の手札の『エクスブイモン』と『スティングモン』1枚ずつを
+// 好きな順番でデッキの下に戻すことで」= return_deck + from:hand + designated_groups:[{condition,count:1}×2]。
+// グループごとに条件に合うカードを count 枚ずつ選ぶ（同じカードを2つのグループで使わない）。
+// step 自身の condition/when/extra_conditions は全グループ共通の絞り込み
+function _dgZoneCards(step, pl) {
+  const zones = Array.isArray(step.from) ? step.from : [step.from || 'hand'];
+  const out = [];
+  zones.forEach((z) => { if ((z === 'hand' || z === 'trash') && Array.isArray(pl[z])) pl[z].forEach((c) => { if (c) out.push(c); }); });
+  return out;
+}
+function _dgCommonOk(step, c, bs, side) {
+  if (!step.condition && !step.when && !(Array.isArray(step.extra_conditions) && step.extra_conditions.length)) return true;
+  return _evalStepConditionGate({ condition: step.condition, when: step.when, extra_conditions: step.extra_conditions, condition_op: step.condition_op }, c, bs, side);
+}
+// 全グループをそろえられるか（貪欲に割り当て。条件の狭いグループから）
+function _dgFeasible(step, pl, bs, side) {
+  const groups = (step.designated_groups || []).filter(Boolean);
+  const pool = _dgZoneCards(step, pl).filter((c) => _dgCommonOk(step, c, bs, side));
+  const used = new Set();
+  const cands = groups.map((g) => pool.filter((c) => _evalStepConditionGate(g, c, bs, side)));
+  const order = groups.map((g, i) => i).sort((a, b) => cands[a].length - cands[b].length);
+  for (const i of order) {
+    const need = Math.max(1, parseInt(groups[i].count, 10) || 1);
+    const free = cands[i].filter((c) => !used.has(c));
+    if (free.length < need) return false;
+    free.slice(0, need).forEach((c) => used.add(c));
+  }
+  return true;
+}
+
 function _costStepsInfeasible(costSteps, carrier, bs, side) {
   if (!Array.isArray(costSteps) || !carrier) return false;
   return costSteps.some((c) => {
     if (!c) return false;
+    // 「AとB1枚ずつを〜することで」: グループごとにそろわなければ払えない（発動の確認も出さない）
+    if (Array.isArray(c.designated_groups) && c.designated_groups.length > 0 && bs && bs[side]) {
+      if (!_dgFeasible(c, bs[side], bs, side)) return true;
+    }
     if (c.action === 'rest' && (c.target === 'self' || c.target === 'self_card' || !c.target) && carrier.suspended) return true;
     // 「このデジモンをアクティブにすることで」は、レスト状態でないと払えない（メガドラモン EX12-064 の進化元効果）
     if (c.action === 'active' && (c.target === 'self' || c.target === 'self_card' || !c.target) && !carrier.suspended) return true;
@@ -14938,6 +15065,8 @@ function runWithAltActions(step, ctx, store, callback) {
     // メイン → alt 順次。メインがcallback(false)（例: 'delay'でプレイヤーが破棄を
     // 辞退した）で終わった場合は、alt（効果2以降）を一切実行せずそのまま終了する
     // （任意コストが支払われなかった扱い。executeCostAndActionsのcost失敗時と同じ考え方）
+    // AND の先頭の印: 任意の進化を選ばなかった・できなかったときは callback(false) で続き（「そうしたとき」）を止める
+    mainOnly._andHead = true;
     executeRecipeStep(mainOnly, ctx, store, (success) => {
       if (success === false) { callback && callback(false); return; }
       // 直前の効果で処理した枚数／カード（「この効果で破棄した1枚ごとに」テティスモン EX12-030）は、効果1が終わった時点の
@@ -16359,6 +16488,18 @@ function executeRecipeStep(step, ctx, store, callback) {
     }
   }
 
+  // at_turn_end:「このターン終了時、〜する」（アグニモン P-029「そうしたとき、このターン終了時このデジモンを消滅させる」）。
+  // 今は実行せず予約し、このターンの終了時（runTurnEndDelayedEffects）に実行する。発動条件・回数制限はここまでで判定済み
+  if (step.at_turn_end && ctx.bs && !_COST_STEP_SET.has(step)) {
+    const _delayed = Object.assign({}, step);
+    delete _delayed.at_turn_end; delete _delayed.limit; delete _delayed.display_text; delete _delayed.display_same;
+    if (!Array.isArray(ctx.bs._turnEndDelayed)) ctx.bs._turnEndDelayed = [];
+    ctx.bs._turnEndDelayed.push({ side: ctx.side, step: _delayed, anchor: ctx.card, ctx });
+    ctx.addLog && ctx.addLog('⏳ このターン終了時に「' + (ctx.card ? ctx.card.name : '?') + '」の効果を行う');
+    callback && callback();
+    return;
+  }
+
   // 対象の追加（エディタの「+ 対象を追加」→ step.targets）: 主対象(step.target/step.filter)に
   // 加えて追加の対象グループがあれば、同じアクションを各グループへ順に実行する。
   // これから追加される全アクションを含め、combat以外の全アクション共通の仕組みとする
@@ -17539,7 +17680,7 @@ function executeRecipeStep(step, ctx, store, callback) {
       const _evoFail = (msg) => {
         ctx.addLog && ctx.addLog('💨 ' + msg);
         if (_evoIsCost) { ctx.addLog && ctx.addLog('💨 コストを支払えません'); callback(false); return; }
-        if (_evoOptional) { callback(); return; }
+        if (_evoOptional) { callback(step._andHead ? false : undefined); return; }
         showEffectFailed(EFFECT_FAILED_NO_TARGET, callback);
       };
       // --- 進化元の候補（battleArea の添字） ---
@@ -17574,11 +17715,15 @@ function executeRecipeStep(step, ctx, store, callback) {
       if (_evoBaseIdxs.length === 0 || _evoCands.length === 0) { _evoFail('進化条件を満たす進化先がありません'); break; }
       // 公式ルール8-1-3-2: 進化元に合う進化条件のコスト（手動進化と同じ getEvolveCostFor / alt_evolve）に
       // step.value（増減）を加える。cost_free なら0
-      const _evoCostFor = (c, slot) => step.cost_free ? 0 : Math.max(0, _effectEvolveBaseCost(c, player.battleArea[slot], ctx.bs, ctx.side) + (parseInt(step.value, 10) || 0));
+      // fixed_cost:「進化コスト2で進化できる」（アグニモン P-029）＝元の進化コストに関係なくこの値
+      const _evoFixed = (step.fixed_cost !== undefined && step.fixed_cost !== null && step.fixed_cost !== '') ? parseInt(step.fixed_cost, 10) : NaN;
+      const _evoCostFor = (c, slot) => step.cost_free ? 0
+        : !isNaN(_evoFixed) ? Math.max(0, _evoFixed)
+        : Math.max(0, _effectEvolveBaseCost(c, player.battleArea[slot], ctx.bs, ctx.side) + (parseInt(step.value, 10) || 0));
       const _doEvolveWith = (chosen, slotIdx) => {
         if (!chosen) {
           if (_evoOptional || _evoIsCost) ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
-          callback(_evoIsCost ? false : undefined);
+          callback((_evoIsCost || step._andHead) ? false : undefined);
           return;
         }
         // 進化先を取り出す（トラッシュから進化する場合はここで除去。手札は doEvolveFromEffect が除去する）
@@ -19066,6 +19211,14 @@ function executeRecipeStep(step, ctx, store, callback) {
         function discardNext() {
           if (i >= selectedCards.length) {
             ctx.renderAll();
+            // 「進化元が破棄されたとき」を誘発する（保留キュー）。原因に「≪デジバースト≫で」と発揮した効果のタイミングを
+            // 記録する（パルモン P-032「このデジモンが発揮した【デジバースト】でこのカードが破棄されたとき」の cause_effect）
+            try {
+              enqueueReaction(ctx.bs, _fireWhenEvoDiscardTriggersQueued, [
+                { type: 'effect', causerSide: ctx.side, causerCard: carrier, keyword: 'digiburst', trigger: (ctx.block && ctx.block.trigger && ctx.block.trigger.code) || null },
+                ctx.side, ctx.bs, ctx, 'digimon', { container: carrier, cards: selectedCards.slice() }
+              ]);
+            } catch (_) {}
             // cost 解決完了 → 相手画面の効果発動ポップアップを閉じる
             // （後続の対象選択フェーズで「相手が対象選択中」専用ポップアップに切り替えるため）
             if (isOnlineSelf()) {
@@ -20754,6 +20907,67 @@ function executeRecipeStep(step, ctx, store, callback) {
 
     // === デッキに戻す（上下選択） ===
     case 'return_deck': {
+      // 「手札の『エクスブイモン』と『スティングモン』1枚ずつを好きな順番でデッキの下に戻す」（designated_groups。P-022）
+      if (Array.isArray(step.designated_groups) && step.designated_groups.length > 0) {
+        const _dgIsCost = _COST_STEP_SET.has(step);
+        const _dgGroups = step.designated_groups.filter(Boolean);
+        const _dgTop = step.position === 'top' || step.deck_top;
+        const _dgFailCb = () => callback(_dgIsCost ? false : undefined);
+        if (!_dgFeasible(step, player, ctx.bs, ctx.side)) {
+          ctx.addLog && ctx.addLog('💨 条件ごとのカードがそろっていません');
+          if (_dgIsCost) ctx.addLog && ctx.addLog('💨 コストを支払えません');
+          _dgFailCb();
+          break;
+        }
+        const _dgPool = _dgZoneCards(step, player).filter((c) => _dgCommonOk(step, c, ctx.bs, ctx.side));
+        const _dgPicked = [];
+        let _dgI = 0;
+        const _dgCondLabel = (g) => String(g.condition || '').replace(/^cond_name(_contains)?:/, '').replace(/^cond_[a-z_]+:/, '') || '条件';
+        const _dgFinish = (ordered) => {
+          ordered.forEach((c) => {
+            const z = player.hand.includes(c) ? 'hand' : player.trash.includes(c) ? 'trash' : null;
+            if (!z) return;
+            player[z].splice(player[z].indexOf(c), 1);
+            if (_dgTop) player.deck.unshift(c); else player.deck.push(c);
+            ctx.addLog && ctx.addLog('🔄 「' + c.name + '」を' + (z === 'hand' ? '手札' : 'トラッシュ') + 'からデッキの' + (_dgTop ? '上' : '下') + 'に戻す');
+          });
+          if (ctx.bs) { ctx.bs._lastCostCards = ordered.slice(); }
+          ctx.renderAll && ctx.renderAll();
+          if (ctx.side === 'player' && window._isOnlineMode && window._isOnlineMode() && window._onlineSendStateSync) { try { window._onlineSendStateSync(); } catch (_) {} }
+          _deckIncreased(ctx, ctx.side, () => callback(_dgIsCost ? true : undefined));
+        };
+        // 「好きな順番で」: 2枚以上なら、先に置くカードから順に選ぶ（CPU は選んだ順）
+        const _dgOrder = () => {
+          if (_dgPicked.length < 2 || effectiveSide === 'ai' || ctx.side !== 'player') { _dgFinish(_dgPicked.slice()); return; }
+          const rest = _dgPicked.slice();
+          const ordered = [];
+          const askNext = () => {
+            if (rest.length === 1) { ordered.push(rest[0]); _dgFinish(ordered); return; }
+            showAltActionChoice(rest.map((c) => '「' + c.name + '」'), (k) => {
+              const c = rest[k] || rest[0];
+              rest.splice(rest.indexOf(c), 1);
+              ordered.push(c);
+              askNext();
+            }, '🔄 デッキの' + (_dgTop ? '上' : '下') + 'に' + (ordered.length + 1) + '番目に置くカードを選んでください');
+          };
+          askNext();
+        };
+        const _dgNext = () => {
+          if (_dgI >= _dgGroups.length) { _dgOrder(); return; }
+          const g = _dgGroups[_dgI++];
+          const need = Math.max(1, parseInt(g.count, 10) || 1);
+          const cands = _dgPool.filter((c) => !_dgPicked.includes(c) && _evalStepConditionGate(g, c, ctx.bs, ctx.side));
+          if (cands.length < need) { ctx.addLog && ctx.addLog('💨 「' + _dgCondLabel(g) + '」のカードが足りません'); _dgFailCb(); return; }
+          if (effectiveSide === 'ai' || ctx.side !== 'player') { cands.slice(0, need).forEach((c) => _dgPicked.push(c)); _dgNext(); return; }
+          showTrashCardPicker(cands, need, _dgIsCost || !!step.optional, '🔄 「' + _dgCondLabel(g) + '」を' + need + '枚選んでください', (picked) => {
+            if (!picked || picked.length < need) { ctx.addLog && ctx.addLog('☓ 「使わない」を選択'); _dgFailCb(); return; }
+            picked.forEach((c) => _dgPicked.push(c));
+            _dgNext();
+          }, cands);
+        };
+        _dgNext();
+        break;
+      }
       // target:'self_card'（「このカードをデッキの下に戻す」）: このカードが手札/トラッシュ/セキュリティに
       // ある場合（ケルビモン BT26-078 の［トラッシュ］効果のコスト等）はそのゾーンから、テイマーエリア/
       // バトルエリアにある場合（御園公介 BT26-096「このテイマーをデッキの下に戻すことで」）は場から
@@ -23215,7 +23429,37 @@ export function filterBurstEvolveTamerCandidates(bs, side, tamerConditions, tame
 // 破棄するのは一番上のカード（バースト進化したカード自身）。デジモンは重ねられた全てのカードなので「上から1枚」は
 // 一番上のカード（以前は進化元の一番上＝直前の形を破棄していた）。下のカードが新しい一番上になり、効果で受けていた
 // 状態は引き継ぐ（退化と同じ）。オンラインでは状態を送り直す。callback（任意）は演出の後に呼ぶ
+// 「このターン終了時、〜する」（at_turn_end）で予約した効果を、side のターン終了時に順に実行する。
+// 「このデジモン」は予約したときのカード（anchor）。進化して一番上が変わっていても、anchor を重ねている
+// デジモンを「このデジモン」とする（P-029 アグニモン → エンシェントグレイモン）。場を離れていたら行わない
+export function runTurnEndDelayedEffects(bsArg, side, callback) {
+  const done = () => { try { callback && callback(); } catch (_) {} };
+  const list = bsArg && Array.isArray(bsArg._turnEndDelayed) ? bsArg._turnEndDelayed : [];
+  const mine = list.filter((e) => e && e.side === side);
+  if (mine.length === 0) { done(); return; }
+  bsArg._turnEndDelayed = list.filter((e) => !mine.includes(e));
+  let i = 0;
+  const next = () => {
+    if (i >= mine.length) { try { if (typeof window !== 'undefined' && window.renderAll) window.renderAll(); } catch (_) {} done(); return; }
+    const e = mine[i++];
+    const pl = bsArg[side] || {};
+    const area = [...(pl.battleArea || []), ...(pl.tamerArea || [])];
+    const now = area.find((c) => c && (c === e.anchor || (Array.isArray(c.stack) && c.stack.includes(e.anchor))));
+    const selfTarget = /^self(_card)?$/.test(String(e.step.target || ''));
+    if (!now && selfTarget) { next(); return; }
+    const ctx = Object.assign({}, e.ctx, { card: now || e.anchor, _forceTargetIdx: undefined });
+    try { ctx.addLog && ctx.addLog('⏳ ターン終了時: 「' + (ctx.card ? ctx.card.name : '?') + '」の予約した効果'); } catch (_) {}
+    try { executeRecipeStep(e.step, ctx, {}, () => next()); } catch (err) { console.error('[turn_end_delayed]', err); next(); }
+  };
+  next();
+}
+
 export function processBurstEvolvePendingDiscard(bsArg, side, callback) {
+  // 「このターン終了時、〜する」の予約を先に実行する（プレイヤーのターン終了の各経路はここを通る）
+  if (bsArg && Array.isArray(bsArg._turnEndDelayed) && bsArg._turnEndDelayed.some((e) => e && e.side === side)) {
+    runTurnEndDelayedEffects(bsArg, side, () => processBurstEvolvePendingDiscard(bsArg, side, callback));
+    return;
+  }
   const done = () => { try { callback && callback(); } catch (_) {} };
   const p = bsArg && bsArg[side];
   if (!p) { done(); return; }
@@ -23347,17 +23591,34 @@ export function checkBeforeEvolveDiscount(evoCard, bs, side, callback, opts) {
   let found = null;
   for (const card of cards) {
     const r = _parseCardRecipe(card);
-    if (!r) continue;
     try {
-      const list = _lookupTriggerSteps(r, 'before_evolve', card);
-      if (!Array.isArray(list)) continue;
+      const list = r ? (_lookupTriggerSteps(r, 'before_evolve', card) || []).slice() : [];
+      // 進化元効果の「このデジモンが手札の『〇〇』に進化するとき、支払う進化コストを-2」（アグニモン P-029 /
+      // ヴォルフモン P-030）: 重なっている表向きのカードの evo_source.before_evolve も見る
+      (Array.isArray(card.stack) ? card.stack : []).forEach((sc) => {
+        if (!sc || sc._faceDown) return;
+        const sr = _parseCardRecipe(sc);
+        const es = sr && sr.evo_source && _lookupTriggerSteps(sr.evo_source, 'before_evolve');
+        if (Array.isArray(es)) es.forEach((x) => list.push(x));
+      });
+      if (list.length === 0) continue;
       for (const step of list) {
         if (!step || typeof step !== 'object') continue;
-        if (step.action && !_COST_DISCOUNT_ACTIONS.has(step.action)) continue;
+        // アクション「進化」＋コスト減（value:-N）も軽減として読む（エディタの「進化するとき → 進化 コスト減N」）
+        if (step.action && !_COST_DISCOUNT_ACTIONS.has(step.action) && step.action !== 'evolve') continue;
         const subj = String(_resolveStepSubject(step, 'before_evolve') || '');
         if (subj === 'opp' || subj.indexOf('opp_') === 0 || subj === 'opponent') continue;
         if ((subj === 'self' || subj === 'self_card') && opts.base && opts.base !== card) continue;
+        // 🎯対象「このカード」＝このデジモンが進化するとき（発動主体の self と同じ扱い）
+        if (/^self(_card)?$/.test(String(step.target || '')) && opts.base && opts.base !== card) continue;
         if (_whenPlayAmountOf(step) <= 0) continue;
+        // 取得元カードの条件＝進化先（手札のカード）の条件。取得元が手札/トラッシュなら、進化先がそこにあること
+        if (step.from_filter && !cardMatchesFilter(evoCard, step.from_filter, bs, side, card)) continue;
+        if (step.from) {
+          const _fz = Array.isArray(step.from) ? step.from : [step.from];
+          const _inZ = _fz.some((z) => (z === 'hand' || z === 'trash') && Array.isArray(sidePl[z]) && sidePl[z].includes(evoCard));
+          if (_fz.some((z) => z === 'hand' || z === 'trash') && !_inZ) continue;
+        }
         if (!_evalTriggerConditionsArray(step.trigger_conditions, step.trigger_conditions_op, evoCard, bs, side, step.trigger_conditions_chain)) continue;
         if (step.condition) {
           const conds = parseRecipeCondition(step.condition);

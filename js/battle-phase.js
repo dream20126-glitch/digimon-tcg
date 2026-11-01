@@ -9,7 +9,7 @@ console.log('[LOADED] battle-phase.js version=player_pre_diagnostic_v2');
 import { bs, spendMemory, addMemory, endTurnManual, isMemoryOverflow, drawCards, isDeckEmpty } from './battle-state.js';
 import { addLog, showOverlay, removeOverlay } from './battle-ui.js';
 import { renderAll, renderHand, updateMemGauge, updatePhaseBadge, cardImg } from './battle-render.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, hasRecipeTrigger as _hasRecipeTrigger, processBurstEvolvePendingDiscard as _processBurstEvolvePendingDiscard } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, hasRecipeTrigger as _hasRecipeTrigger, processBurstEvolvePendingDiscard as _processBurstEvolvePendingDiscard, runTurnEndDelayedEffects as _runTurnEndDelayedEffects } from './effect-engine.js';
 
 // ===== 定数 =====
 
@@ -1215,6 +1215,8 @@ function aiPhaseMain() {
 // ----- AI ターン終了 -----
 
 async function endAiTurn() {
+  // CPU の「このターン終了時、〜する」（at_turn_end）の予約を実行する
+  try { await new Promise((res) => _runTurnEndDelayedEffects(bs, 'ai', res)); } catch (_) {}
   // 自分(プレイヤー)のカードの「相手のターン終了時」効果を発火
   // 「次の相手のターン終了まで」等の期間は、ターン終了時の効果を解決し終えてターンが終わるときに切れる
   // （公式ルール6-6-3）ので、期限切れ除去より先に発火する（ディルビットモンACE LM-013 で与えた

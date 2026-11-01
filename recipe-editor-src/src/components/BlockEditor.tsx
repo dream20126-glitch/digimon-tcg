@@ -3672,6 +3672,8 @@ const SUMMON_KIND_OPTIONS: { code: 'appear' | 'use'; label: string }[] = [
 // case 'cant_destroy'）。ただし付与されるバフ(keyword_prevent_battle_destroy/
 // keyword_prevent_destroy)自体は、消滅処理の中核（_tryCancelDestroy/doDestroy）では
 // まだ未チェック（prevent_destroy系と同じ既知の制約。中核チェックの追加は別対応）
+// アタックの［されない］＝「アタックされない」（対象は相手のデジモンのアタック対象に選ばれない）
+const CANT_BE_ATTACKED = 'cant_be_attacked';
 const DOABLE_TO_CANT: Record<string, string> = {
   rest: 'cant_rest',
   active: 'not_active',
@@ -6480,6 +6482,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // 複数のcant_Xが積まれている状態から復元する。altActionsはブロック単位の概念のため、
           // 代替アクション編集中は自分の1件のみを見る）
           const { selectedSet, mode } = (() => {
+            // 「アタックされない」（cant_be_attacked）＝アタックボタンの［されない］
+            if (effectAction === CANT_BE_ATTACKED) return { selectedSet: ['attack'], mode: 'notbe' as const };
             if (isEditingAlt) {
               if (DOABLE_TO_CANT_LIVE[effectAction]) return { selectedSet: [effectAction], mode: 'do' as const };
               if (effectAction === 'cant_attack_block') return { selectedSet: ['attack', 'force_block'], mode: 'cant' as const };
@@ -6504,7 +6508,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           // selectedSet/modeをblockへ書き戻す（1件なら単一アクション（する/できない）、
           // attack+blockの2件だけなら既存のcant_attack_blockに集約、それ以外の2件以上は
           // 常に「できない」として AND altActions（same_target）で表現）
-          function applyCantSelection(nextSet: string[], nextMode: 'do' | 'cant') {
+          function applyCantSelection(nextSet: string[], nextModeIn: 'do' | 'cant' | 'notbe') {
+            // ［されない］はアタック1つだけを選んでいるときの選択肢（それ以外は「できない」扱い）
+            const _notBe = nextModeIn === 'notbe' && nextSet.length === 1 && nextSet[0] === 'attack';
+            const nextMode: 'do' | 'cant' = nextModeIn === 'notbe' ? 'cant' : nextModeIn;
+            if (_notBe) {
+              if (isEditingAlt) { updateEffect({ action: CANT_BE_ATTACKED, value: undefined }); return; }
+              const _ua = altActions.filter((a) => !(a.target === 'same_target' && CANT_TO_DOABLE_LIVE[a.action || ''] && !a.thenBreak));
+              onChange({ ...block, action: CANT_BE_ATTACKED, value: undefined, ...(_ua.length > 0 ? { altActions: _ua, altActionsOp: block.altActionsOp } : { altActions: [] as AltAction[], altActionsOp: undefined }) });
+              return;
+            }
             if (isEditingAlt) {
               if (nextSet.length === 0) return;
               // 代替アクション（効果2以降）はaltActionsを持たないため、複数選択は
@@ -6555,7 +6568,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           // よく使うアクション（トリガー家族ボタンと同じ操作感）: 該当すればボタン1つで即選択、
           // 無ければ「その他のアクション」を開いて既存のプルダウン(+位置バリアント)から選ぶ
-          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || effectAction === 'appear_or_evolve' || isDiscardActive || isPlaceActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block' || SUMMON_KIND_CODES.has(effectAction);
+          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || effectAction === 'appear_or_evolve' || isDiscardActive || isPlaceActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block' || effectAction === CANT_BE_ATTACKED || SUMMON_KIND_CODES.has(effectAction);
           function selectCommonAction(code: string) {
             if (isEditingAlt) { updateEffect({ action: code, value: '' }); return; }
             const dictEntry = findActionEntry(code);
@@ -7179,13 +7192,19 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     「する」が成立しないため、「できない」固定（選択不要）になる */}
                 {selectedSet.length === 1 && (
                   <div style={{ marginTop: 4 }}>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>する/できない</div>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{selectedSet[0] === 'attack' ? 'する/できない/されない' : 'する/できない'}</div>
                     <ButtonGroup
-                      options={[{ code: 'do', label: 'する' }, { code: 'cant', label: 'できない' }]}
-                      value={mode === 'cant' ? 'cant' : 'do'}
-                      onChange={(v) => applyCantSelection(selectedSet, v === 'cant' ? 'cant' : 'do')}
+                      options={[{ code: 'do', label: 'する' }, { code: 'cant', label: 'できない' },
+                        ...(selectedSet[0] === 'attack' ? [{ code: 'notbe', label: 'されない' }] : [])]}
+                      value={mode}
+                      onChange={(v) => applyCantSelection(selectedSet, v === 'cant' ? 'cant' : v === 'notbe' ? 'notbe' : 'do')}
                       accentColor="#1976d2"
                     />
+                    {mode === 'notbe' && (
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
+                        「対象（このデジモン等）は相手にアタックされない」（cant_be_attacked）。⚠ エンジン未対応です（保存はできますが動作しません）
+                      </div>
+                    )}
                   </div>
                 )}
                 {selectedSet.length >= 2 && (

@@ -122,6 +122,11 @@ function buildConditionChainSegments(chain: ConditionChainEntry[]): ConditionPai
 // 「参照+属性フィルタ」は単独使用前提の特殊なグループとして識別・展開する
 export const REF_EXISTS_FILTER_MARKER = '__ref_exists_filter__';
 export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_feature', 'cond_cost_le', 'cond_cost_ge', 'cond_has_evo', 'cond_name', 'cond_name_contains', 'cond_name_each']);
+// 参照「手札/トラッシュ」の枚数＋属性＝「自分のトラッシュに名称に『デビモン』を含むデジモンカードが7枚以上あるとき」。
+// 保存は cond_{zone}_match_{quant}:N@subject ＋兄弟の属性条件（cond_exists と同じ形・⚠ エンジン未実装）。タイプ（cond_type）も使える
+const REF_ZONE_COUNT_RE = /^cond_(hand|trash)_(ge|le|eq|gt|lt)$/;
+const REF_ZONE_MATCH_RE = /^cond_(hand|trash)_match_(ge|le|eq|gt|lt)$/;
+export const REF_ZONE_FILTER_CODES = new Set([...REF_EXISTS_FILTER_CODES, 'cond_type']);
 // 参照「バトルエリア 0体（完全一致/以下）」＋属性＝「〜な相手のデジモンがいないなら」→ cond_not_exists（⚠ エンジン未実装）
 const isRefNoneRow = (p: ConditionPair) => !!p && (p.base === 'cond_battle_area_eq' || p.base === 'cond_battle_area_le') && String(p.value) === '0';
 
@@ -131,8 +136,19 @@ const isRefNoneRow = (p: ConditionPair) => !!p && (p.base === 'cond_battle_area_
 // なる）。添付が無ければ何も変えずそのまま返す
 function expandRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[] {
   if (!Array.isArray(pairs) || pairs.length === 0) return pairs;
-  const hasAttrs = pairs.some((p) => p && p.subject === REF_EXISTS_FILTER_MARKER && REF_EXISTS_FILTER_CODES.has(p.base));
+  const hasAttrs = pairs.some((p) => p && p.subject === REF_EXISTS_FILTER_MARKER && REF_ZONE_FILTER_CODES.has(p.base));
   if (!hasAttrs) return pairs;
+  // 手札/トラッシュの枚数の参照行に付いた属性（バトルエリア・進化元の参照行が無いときだけ）
+  const hasBattleOrEvo = pairs.some((p) => p && p.subject !== REF_EXISTS_FILTER_MARKER && (p.base === 'cond_battle_area_ge' || isRefNoneRow(p) || p.base === 'cond_has_evo'));
+  const zoneIdx = hasBattleOrEvo ? -1 : pairs.findIndex((p) => p && p.subject !== REF_EXISTS_FILTER_MARKER && REF_ZONE_COUNT_RE.test(p.base));
+  if (zoneIdx !== -1) {
+    const m = REF_ZONE_COUNT_RE.exec(pairs[zoneIdx].base)!;
+    return pairs.map((p, i) => {
+      if (i === zoneIdx) return { base: 'cond_' + m[1] + '_match_' + m[2], value: p.value, subject: p.subject };
+      if (p.subject === REF_EXISTS_FILTER_MARKER && REF_ZONE_FILTER_CODES.has(p.base)) return { base: p.base, value: p.value };
+      return p;
+    });
+  }
   let refIdx = pairs.findIndex((p) => p && (p.base === 'cond_battle_area_ge' || isRefNoneRow(p)) && p.subject !== REF_EXISTS_FILTER_MARKER);
   // バトルエリアの参照行が無ければ、進化元の参照行（cond_has_evo 以上N）に付いた属性とみなす
   // →「このデジモンの進化元に『ガルルモン』があるとき」= cond_evo_exists:1@self ＋ cond_name:ガルルモン（⚠ エンジン未実装）
@@ -155,6 +171,16 @@ function expandRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[
 // REF_EXISTS_FILTER_MARKERを付け直して「参照行に添付」の表示に復元する
 function collapseRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[] {
   if (!Array.isArray(pairs) || pairs.length === 0) return pairs;
+  // 手札/トラッシュに〜がN枚以上あるとき（cond_trash_match_ge:N 等）→ 参照「トラッシュ」以上N の行＋属性の行に戻す
+  const zoneMatchIdx = pairs.findIndex((p) => p && REF_ZONE_MATCH_RE.test(p.base));
+  if (zoneMatchIdx !== -1) {
+    const m = REF_ZONE_MATCH_RE.exec(pairs[zoneMatchIdx].base)!;
+    return pairs.map((p, i) => {
+      if (i === zoneMatchIdx) return { base: 'cond_' + m[1] + '_' + m[2], value: p.value, subject: p.subject };
+      if (!p.subject && REF_ZONE_FILTER_CODES.has(p.base)) return { ...p, subject: REF_EXISTS_FILTER_MARKER };
+      return p;
+    });
+  }
   // 進化元に〜があるとき（cond_evo_exists:N）→ 参照「進化元」以上N の行＋属性の行に戻す
   const evoExIdx = pairs.findIndex((p) => p && p.base === 'cond_evo_exists');
   if (evoExIdx !== -1) {

@@ -69,6 +69,7 @@ const cases: Case[] = [
   { name: '進化元に「ベムモン」が4枚以上', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_has_evo', value: '4', subject: 'self' }, { base: 'cond_name', value: 'ベムモン', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'] },
   { name: 'コスト以下（直前の効果のカード）', blocks: [base({ action: 'summon_appear', target: 'own_card:1', fromZones: ['hand'], fromFilter: [{ base: 'cond_cost_le', value: 'last_action_cost' }, { base: 'cond_dp_le', value: 'last_action' }] })], check: ['0.fromFilter'] },
   { name: '効果2: 相手のデッキをオープン・宣言・効果を受けない', blocks: [base({ action: 'declare_category', value: undefined, altActionsOp: 'and', altActions: [alt({ action: 'deck_open', value: 1, actionParams: { deck_owner: 'opp' }, thenBreak: true }), alt({ action: 'immune_effects', target: 'self', value: undefined, actionParams: { source_type: 'declared' }, conditions: [{ base: 'cond_picked_type', value: 'declared' }] })] })], check: ['0.altActions.0.actionParams', '0.altActions.1.actionParams'] },
+  { name: 'コスト: 条件ごとに枚数を分ける（エクスブイモン・スティングモン1枚ずつ）', blocks: [base({ costs: [{ action: 'return_deck', target: 'own_card:2', fromZones: ['hand'], fromZoneOwner: 'self', deckPosition: 'bottom', designatedGroups: [{ conditions: [{ base: 'cond_name', value: 'エクスブイモン' }], conditionsOp: 'and', count: 1 }, { conditions: [{ base: 'cond_name', value: 'スティングモン' }], conditionsOp: 'and', count: 1 }] }] })], check: ['0.costs.0.designatedGroups'] },
   { name: 'セキュリティをオープン（相手・選んだ1枚を相手デッキの上）', blocks: [base({ action: 'security_open', value: undefined, actionParams: { security_owner: 'opp', pick_to: 'opp_deck_top', rest_to: 'shuffle_security' } })], check: ['0.actionParams'] },
 ];
 
@@ -84,6 +85,7 @@ for (const c of cases) {
     if (!ok) ng++;
     console.log((ok ? 'OK  ' : 'NG  ') + c.name + (stable ? '' : ' [保存し直すと変わる]') + (bad.length ? ' [戻らない: ' + bad.map((p) => p + ' ' + J(get(c.blocks, p)) + '→' + J(get(b2, p))).join(', ') + ']' : ''));
     if (!ok) console.log('      ' + J(r1).slice(0, 400));
+    if (!stable) console.log("   r2 " + J(r2).slice(0, 400));
   } catch (e) { ng++; console.log('ERR ' + c.name + ' ' + e); }
 }
 console.log('NG ' + ng + ' / ' + cases.length);

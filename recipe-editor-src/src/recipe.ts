@@ -227,6 +227,9 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
     if (Array.isArray(c.options) && c.options.length > 0) cs.options = c.options.slice();
     // action:'evolve' 専用: コストを支払わずに進化させる
     if (c.costFree) cs.cost_free = true;
+    // 条件ごとに枚数を分ける（エクスブイモン1枚・スティングモン1枚）。条件の入っていないグループは出力しない
+    const dg = (c.designatedGroups || []).filter((g) => (g.conditions || []).some((p) => p.base) || (g.conditionChain || []).length > 0);
+    if (dg.length > 0) cs.designated_groups = buildDesignatedGroupsFields(dg);
     if (c.ignoreEvolveCondition) cs.ignore_evolve_condition = true;
     // コスト対象の取得元エリア (1件→string / 2件以上→array + from_op)
     if (Array.isArray(c.fromZones) && c.fromZones.length > 0) {
@@ -350,6 +353,8 @@ function parseCostArray(rawCost: any): CostStep[] {
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,
       altCosts: Array.isArray(c?.alt_actions) && c.alt_actions.length > 0 ? parseCostArray(c.alt_actions) : undefined,
       costFree: !!c?.cost_free,
+      designatedGroups: Array.isArray(c?.designated_groups) && c.designated_groups.length > 0
+        ? parseDesignatedGroupsField({ designated_groups: c.designated_groups }) : undefined,
       ignoreEvolveCondition: !!c?.ignore_evolve_condition || undefined,
     };
   });

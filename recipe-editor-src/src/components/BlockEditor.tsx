@@ -2417,6 +2417,78 @@ function CostListEditor({
                   />
                 );
               })()}
+              {/* 条件ごとに枚数を分ける（ルールの「条件ごとに枚数を分ける」と同じ。cost[].designated_groups）
+                  例:「自分の手札の『エクスブイモン』と『スティングモン』1枚ずつをデッキの下に戻すことで」 */}
+              {(() => {
+                const groups = c.designatedGroups || [];
+                const on = groups.length > 0;
+                const setGroups = (next: DesignatedGroup[] | undefined) => updateCost(i, { ...c, designatedGroups: next && next.length > 0 ? next : undefined });
+                const updGroup = (gi: number, patch: Partial<DesignatedGroup>) => setGroups(groups.map((g, k) => (k === gi ? { ...g, ...patch } : g)));
+                return (
+                  <div style={{ marginTop: 6, padding: 6, background: '#fdf6ec', border: '1px solid #f0d9a8', borderRadius: 4 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#946200' }}>
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={(e) => setGroups(e.target.checked
+                          ? [{ conditions: [], conditionsOp: 'and', count: 1 }, { conditions: [], conditionsOp: 'and', count: 1 }]
+                          : undefined)}
+                      />
+                      条件ごとに枚数を分ける（例:「エクスブイモン」と「スティングモン」1枚ずつ）
+                    </label>
+                    {on && (
+                      <div style={{ marginTop: 6 }}>
+                        <div style={{ fontSize: 10, color: '#c62828', marginBottom: 4 }}>
+                          ⚠ エンジン未対応（保存はできますが動作しません）。ONの間は、各グループの条件と枚数で選びます（上の「コスト対象の絞り込み」は全グループ共通の条件、対象の枚数は使いません）
+                        </div>
+                        {groups.map((g, gi) => (
+                          <div key={gi} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: gi < groups.length - 1 ? '1px dashed #f0d9a8' : 'none' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                              <span style={{ fontSize: 11, fontWeight: 'bold', color: '#666' }}>グループ（{gi + 1}）</span>
+                              <span style={{ fontSize: 10, color: '#666' }}>枚数:</span>
+                              <input
+                                type="number" min={1}
+                                value={g.count === undefined || g.count === null ? '' : String(g.count)}
+                                onChange={(e) => updGroup(gi, { count: e.target.value === '' ? undefined : Number(e.target.value) })}
+                                style={{ width: 50, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                              />
+                              {groups.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setGroups(groups.filter((_, k) => k !== gi))}
+                                  style={{ marginLeft: 'auto', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '1px 7px', cursor: 'pointer', fontSize: 11 }}
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                            <ConditionsHybridEditor
+                              conditions={g.conditions || []}
+                              onChange={(next) => updGroup(gi, { conditions: next })}
+                              dict={dict}
+                              title="このグループの条件"
+                              hint="（例: 名称＝エクスブイモン）"
+                              theme="action"
+                              defaultSubject=""
+                              showSubjectSelector={false}
+                              multiType={true}
+                              conditionsOp={g.conditionsOp || 'and'}
+                              onConditionsOpChange={(op) => updGroup(gi, { conditionsOp: op })}
+                            />
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setGroups([...groups, { conditions: [], conditionsOp: 'and', count: 1 }])}
+                          style={{ border: '1px dashed #946200', color: '#946200', background: 'white', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 11 }}
+                        >
+                          ＋ グループを追加
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               {/* 進化元/テイマーの下から破棄するコスト専用: 上の「コスト対象の絞り込み」は
                   破棄されるカード自体（裏向き・Lv等）の条件。こちらは「どのデジモン/テイマーの
                   進化元（下のカード）から破棄するか」というコンテナ側の条件 → cost[].filter */}

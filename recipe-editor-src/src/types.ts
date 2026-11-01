@@ -771,6 +771,9 @@ export interface DictEntry {
 // コスト1ステップ（〇〇することで...の "〇〇する" 部分）
 export interface CostStep {
   action: string;
+  // 条件ごとに枚数を分ける（「自分の手札の『エクスブイモン』と『スティングモン』1枚ずつをデッキの下に戻すことで」）。
+  // ルールの designatedGroups と同じ形。JSON では step.cost[].designated_groups（⚠ エンジン未対応）
+  designatedGroups?: DesignatedGroup[];
   value?: number | string;
   target?: string;
   // コスト対象の絞り込み条件（例: 進化元のLv.6のデジモンを手札に戻す → cond_lv:6）

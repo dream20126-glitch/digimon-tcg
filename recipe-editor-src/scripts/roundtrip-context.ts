@@ -73,6 +73,7 @@ const cases: Case[] = [
   { name: 'このデジモンはアタックされない（次の相手のターン終了まで）', blocks: [base({ action: 'cant_be_attacked', target: 'self', value: undefined, duration: 'dur_next_opp_turn' })], check: ['0.action', '0.target', '0.duration'] },
   { name: '自分のトラッシュから手札/デッキにカードが戻ったとき', blocks: [base({ trigger: 'deck_bounce', triggers: ['deck_bounce'], triggerSubject: 'own_trash', returnedTo: ['hand', 'deck'] })], check: ['0.returnedTo', '0.triggerSubject'] },
   { name: 'デッキにだけ戻ったとき', blocks: [base({ trigger: 'deck_bounce', triggers: ['deck_bounce'], triggerSubject: 'own_trash', returnedTo: ['deck'] })], check: ['0.returnedTo'] },
+  { name: 'コスト: 進化元からLvの同じカード2枚を破棄', blocks: [base({ costs: [{ action: 'discard', target: 'self', value: 2, fromZones: ['evo_source'], conditions: [{ base: 'cond_lv_same' }] }] })], check: ['0.costs.0.conditions'], raw: (r: any) => JSON.stringify(r).includes('cond_lv_same') },
   { name: 'ブロック（される）', blocks: [base({ trigger: 'block', triggers: ['block'], blockRole: 'blocked', triggerSubject: 'self' })], check: ['0.blockRole'] },
   { name: 'ブロック（する）', blocks: [base({ trigger: 'block', triggers: ['block'], blockRole: 'blocker', triggerSubject: 'own' })], check: ['0.blockRole', '0.triggerSubject'] },
   { name: '名称を含む（参照の属性）', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_battle_area_ge', value: '1', subject: 'own_any' }, { base: 'cond_name_contains', value: 'ガルルモン', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'] },

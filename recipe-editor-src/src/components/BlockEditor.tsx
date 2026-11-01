@@ -2462,7 +2462,7 @@ function CostListEditor({
                     dict={dict}
                     titleBase="コスト対象の絞り込み"
                     theme="action"
-                    extraProps={{ defaultSubject: '', showSubjectSelector: false, multiType: true, targetL2: cCurTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
+                    extraProps={{ defaultSubject: '', showSubjectSelector: false, multiType: true, allowSameLv: true, targetL2: cCurTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
                     commonConditions={commonConds.filter((cc) => !isRefFaceCond(cc.base))}
                     onCommonConditionsChange={(next) => updateCost(i, { ...c, conditions: [...commonConds.filter((cc) => isRefFaceCond(cc.base)), ...next] })}
                   />
@@ -10355,6 +10355,9 @@ interface ConditionsHybridEditorProps {
   // タイプ（cond_type）だけ複数選択＋「デジタマ以外」を使えるようにする（コスト対象の絞り込み。
   // 条件文字列 cond_type:デジモン,テイマー,オプション をエンジンの checkConditions がOR判定する）
   multiType?: boolean;
+  // Lv に「同じ」（選ぶカード同士のLvがそろう。cond_lv_same）を出す（コスト対象の絞り込み。
+  // 「このデジモンの進化元からLvの同じカード2枚を破棄することで」）
+  allowSameLv?: boolean;
   // 複数条件の結合方法をAND/ORで選べるようにする（未指定時は常にAND・従来通りの固定表記）。
   // 呼び出し元が保持するデータ（block.conditionsOp / cost.conditionsOp 等）と結び付けるため
   // 両方セットで渡す。現状は発動条件・コスト対象の絞り込みでのみ有効化している
@@ -10412,7 +10415,7 @@ const DP_REF_CODES = new Set([
 
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
-  'cond_name_same_self',
+  'cond_name_same_self', 'cond_lv_same',
   'cond_attack_target_player', 'cond_attack_target_digimon', 'cond_no_evo',
   'cond_jogress', 'cond_in_battle', 'cond_during_own_turn', 'cond_during_opp_turn',
   'cond_during_any_turn', 'cond_self_active', 'cond_self_rest', 'cond_opp_no_attack_this_turn',
@@ -10799,7 +10802,7 @@ function baseToCategory(base: string): CondCategory {
   if (base === 'cond_has_keyword') return 'keyword';
   if (base === 'cond_type') return 'type';
   if (base === 'cond_feature_contains' || base === 'cond_feature') return 'feature';
-  if (base === 'cond_lv_ge' || base === 'cond_lv_le' || base === 'cond_lv' || base === 'cond_lv_distinct'
+  if (base === 'cond_lv_ge' || base === 'cond_lv_le' || base === 'cond_lv' || base === 'cond_lv_distinct' || base === 'cond_lv_same'
     || base === 'cond_lv_highest' || base === 'cond_lv_lowest' || base === 'cond_lv_sum_le') return 'lv';
   if (base === 'cond_dp_ge' || base === 'cond_dp_le' || base === 'cond_dp' || base === 'cond_dp_sum_le'
     || base === 'cond_dp_highest' || base === 'cond_dp_lowest'
@@ -10845,7 +10848,7 @@ function ConditionsHybridEditor({
   sameAsTargetSubject,
   supportsMultiValue = false, attackContextActive = false,
   part = 'full', otherOpen: otherOpenProp, onOtherOpenChange, showCostMod = false,
-  showTypeInTargetFilter = false, multiType = false, conditionsOp, onConditionsOpChange, allowDistinctVariants = true,
+  showTypeInTargetFilter = false, multiType = false, allowSameLv = false, conditionsOp, onConditionsOpChange, allowDistinctVariants = true,
   targetL2 = '', showLastActionRef = false,
 }: ConditionsHybridEditorProps) {
   const colors = theme === 'trigger'
@@ -10862,6 +10865,7 @@ function ConditionsHybridEditor({
     // 対象の条件（supportsMultiValue）だけ、名前に「このカードと同じ」（このカードと同じ名称の〜）を出す
     const base = catCode === 'dp' ? dpVariantOptions
       : (catCode === 'name' && supportsMultiValue) ? [...(CATEGORY_VARIANTS.name || []), { value: 'cond_name_same_self', label: 'このカードと同じ' }]
+      : (catCode === 'lv' && allowSameLv) ? [...(CATEGORY_VARIANTS.lv || []), { value: 'cond_lv_same', label: '同じ（選ぶカード同士）' }]
       : CATEGORY_VARIANTS[catCode];
     const distinct = allowDistinctVariants ? DISTINCT_VARIANT_BY_CATEGORY[catCode] : undefined;
     if (!base && !distinct) return undefined;
@@ -10886,7 +10890,7 @@ function ConditionsHybridEditor({
   // 「その他」用: 色/タイプ/特徴/Lv/DP/名前として直接選べるコード群を除いた残り
   const CATEGORIZED_CODES = new Set<string>([
     'cond_color', 'cond_color_not', 'cond_type', 'cond_feature_contains', 'cond_feature',
-    'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_lv_highest', 'cond_lv_lowest', 'cond_lv_sum_le',
+    'cond_lv_ge', 'cond_lv_le', 'cond_lv', 'cond_lv_highest', 'cond_lv_lowest', 'cond_lv_sum_le', 'cond_lv_same',
     'cond_dp_ge', 'cond_dp_le', 'cond_dp', 'cond_dp_sum_le', 'cond_color_count', 'cond_has_keyword',
     'cond_dp_highest', 'cond_dp_lowest',
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
@@ -11724,6 +11728,9 @@ function ConditionsHybridEditor({
                         style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
                       />
                     )}
+                    {c.base === 'cond_lv_same' && (
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>選ぶカードを全て同じLvにする（Lvの同じカード2枚 等）。⚠ エンジン未対応です（保存はできますが動作しません）</div>
+                    )}
                   </div>
                   {showSubjectSelector && cat.code !== 'memory' && (
                     <div>
@@ -12133,7 +12140,7 @@ function ConditionChainField({
   extraProps?: Partial<Pick<ConditionsHybridEditorProps,
     'defaultSubject' | 'showSubjectSelector' | 'sameAsTargetSubject' | 'supportsMultiValue' |
     'attackContextActive' | 'allowDistinctVariants' | 'showCostMod' | 'showTypeInTargetFilter' | 'targetL2' |
-    'showLastActionRef' | 'multiType'>>;
+    'showLastActionRef' | 'multiType' | 'allowSameLv'>>;
   // 共通条件（任意）: 下のOR設定（chain）がある場合、その全選択肢に共通でAND適用される条件。
   // onCommonConditionsChangeを渡した呼び出し元でのみ「共通条件」セクションを表示する
   // （例:「登場コスト12以下」AND（「クロノモンの記述がある」OR「特徴タイタン族」））

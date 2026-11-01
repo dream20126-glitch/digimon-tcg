@@ -511,7 +511,7 @@ function RefExistsAttributeFilterPanel({
       else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le'))));
       else if (key === 'feature') setAttr('cond_feature', undefined);
       else if (key === 'evo') setAttr('cond_has_evo', undefined);
-      else if (key === 'name') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains'))));
+      else if (key === 'name') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains' || cc.base === 'cond_name_each'))));
       setActiveSub((prev) => { const next = new Set(prev); next.delete(key); return next; });
     } else {
       setActiveSub((prev) => new Set(prev).add(key));
@@ -627,7 +627,7 @@ function RefExistsAttributeFilterPanel({
           {activeSub.has('name') && (
             <div style={{ marginBottom: 4 }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2 }}>
-                <span style={{ fontSize: 10, color: '#666' }}>名称（複数はOR）:</span>
+                <span style={{ fontSize: 10, color: '#666' }}>名称:</span>
                 <ButtonGroup
                   options={[{ code: 'cond_name_contains', label: '含む' }, { code: 'cond_name', label: '完全一致' }]}
                   value={nameVal ? nameMode : nameModePending}
@@ -642,10 +642,28 @@ function RefExistsAttributeFilterPanel({
               </div>
               <MultiTextTags
                 values={names}
-                onChange={(next) => setAttr(nameVal ? nameMode : nameModePending, next.join(','))}
+                onChange={(next) => {
+                  // 名称が1つになったら「全員いる」は意味が無いので外す
+                  const mode = nameVal ? nameMode : nameModePending;
+                  const rest = conditions.filter((cc) => !(cc.subject === marker && (cc.base === mode || (next.length < 2 && cc.base === 'cond_name_each'))));
+                  onChange(next.length > 0 ? [...rest, { base: mode, value: next.join(','), subject: marker }] : rest);
+                }}
                 placeholder="例: トレッドミル・トレーニング"
                 accentColor="#946200"
               />
+              {/* 名称が2つ以上: どれか1つ（OR）か、全員いる（AND。「自分の『本宮大輔』と『一条寺賢』がいるとき」）か。
+                  全員いる = cond_name_each（値なしの印。名称ごとに「いる」を判定する。⚠ エンジン未実装） */}
+              {names.length >= 2 && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
+                  <ButtonGroup
+                    options={[{ code: '', label: 'どれか（OR）' }, { code: 'each', label: '全員いる（AND）' }]}
+                    value={getAttr('cond_name_each') ? 'each' : ''}
+                    onChange={(v) => setAttr('cond_name_each', v === 'each' ? '1' : undefined)}
+                    accentColor="#946200"
+                  />
+                  {getAttr('cond_name_each') && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未実装（保存はできますが、今は「どれか」として判定されます）</span>}
+                </div>
+              )}
             </div>
           )}
           {activeSub.has('evo') && (

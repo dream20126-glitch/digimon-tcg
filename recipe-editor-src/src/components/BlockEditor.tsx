@@ -10351,6 +10351,7 @@ const DP_REF_CODES = new Set([
 
 // 値入力が不要な条件（チェック的な意味だけを持つ cond_xxx）。UIでプレースホルダを変える程度に使用
 const NO_VALUE_CONDS = new Set([
+  'cond_name_same_self',
   'cond_attack_target_player', 'cond_attack_target_digimon', 'cond_no_evo',
   'cond_jogress', 'cond_in_battle', 'cond_during_own_turn', 'cond_during_opp_turn',
   'cond_during_any_turn', 'cond_self_active', 'cond_self_rest', 'cond_opp_no_attack_this_turn',
@@ -10746,7 +10747,7 @@ function baseToCategory(base: string): CondCategory {
     || base === 'cond_cost_highest' || base === 'cond_cost_lowest' || base === 'cond_cost_sum_le') return 'cost';
   if (base === 'cond_memory_ge' || base === 'cond_memory_le') return 'memory';
   if (base === 'cond_cost_mod') return 'cost_mod';
-  if (base === 'cond_name' || base === 'cond_name_not' || base === 'cond_name_contains' || base === 'cond_name_distinct') return 'name';
+  if (base === 'cond_name' || base === 'cond_name_not' || base === 'cond_name_contains' || base === 'cond_name_distinct' || base === 'cond_name_same_self') return 'name';
   if (base === 'cond_description' || base === 'cond_description_contains' || base === 'cond_description_distinct') return 'name';
   if (base === 'cond_zone') return 'zone';
   if (base === 'cond_self_rest' || base === 'cond_self_active') return 'state';
@@ -10797,7 +10798,10 @@ function ConditionsHybridEditor({
   // カテゴリごとのバリアント選択肢（以上/以下/完全一致 等）。allowDistinctVariants時のみ、
   // 名前/Lv/記述/色に「異なる」（複数枚選択時の集合レベルの制約）を追加する
   const variantOptionsFor = (catCode: CondCategory): { value: string; label: string }[] | undefined => {
-    const base = catCode === 'dp' ? dpVariantOptions : CATEGORY_VARIANTS[catCode];
+    // 対象の条件（supportsMultiValue）だけ、名前に「このカードと同じ」（このカードと同じ名称の〜）を出す
+    const base = catCode === 'dp' ? dpVariantOptions
+      : (catCode === 'name' && supportsMultiValue) ? [...(CATEGORY_VARIANTS.name || []), { value: 'cond_name_same_self', label: 'このカードと同じ' }]
+      : CATEGORY_VARIANTS[catCode];
     const distinct = allowDistinctVariants ? DISTINCT_VARIANT_BY_CATEGORY[catCode] : undefined;
     if (!base && !distinct) return undefined;
     return distinct ? [...(base || []), distinct] : base;
@@ -10827,7 +10831,7 @@ function ConditionsHybridEditor({
     'cond_attack_target_highest_dp', 'cond_attack_target_lowest_dp',
     'cond_cost_ge', 'cond_cost_le', 'cond_cost', 'cond_cost_mod', 'cond_cost_highest', 'cond_cost_lowest', 'cond_cost_sum_le',
     'cond_memory_ge', 'cond_memory_le',
-    'cond_name', 'cond_name_not', 'cond_name_contains', 'cond_description', 'cond_description_contains', 'cond_zone',
+    'cond_name', 'cond_name_not', 'cond_name_contains', 'cond_description', 'cond_description_contains', 'cond_zone', 'cond_name_same_self',
     'cond_self_rest', 'cond_self_active',
     'cond_name_distinct', 'cond_lv_distinct', 'cond_description_distinct', 'cond_color_distinct',
     // トリガーボックス側の専用「アタック対象」ボタンで管理するため、その他の追加候補にも出さない

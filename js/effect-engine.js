@@ -5919,6 +5919,11 @@ function cardMatchesFilter(card, filter, bs, side, sourceCard) {
   if (Array.isArray(filter.or) && filter.or.length > 0) {
     if (!filter.or.some((sub) => cardMatchesFilter(card, sub, bs, side, sourceCard))) return false;
   }
+  // filter.same_name_as_self:「このカードと同じ名称の〜」＝発揮元のカード（このカード）と同じ名称を持つ
+  if (filter.same_name_as_self) {
+    if (!card || !sourceCard || !sourceCard.name) return false;
+    if (card.name !== sourceCard.name && !cardHasName(card, sourceCard.name, true)) return false;
+  }
   // filter.cost_kind: 'play'＝登場コストを持つカード（デジモン/テイマー）/ 'use'＝使用コストを持つカード（オプション）
   if ((filter.cost_kind === 'play' || filter.cost_kind === 'use') && !_costKindMatches(card, filter.cost_kind)) return false;
   // filter.and: サブフィルタの配列。全て満たす（取得元カードの条件と対象の条件を両方掛けるときに使う。_srcCardFilterOf）

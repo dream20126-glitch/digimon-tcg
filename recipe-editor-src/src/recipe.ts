@@ -614,7 +614,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
 // targetFilter（アクション対象自身の絞り込み）・fromFilter（進化/登場アクションの取得元
 // エリアから選ぶカードの絞り込み）の両方で同じ形を使うため共通化している
 // 値を持たない（チェックのみの）条件コード。buildFilterObject の value 必須ガードを迂回する
-const NO_VALUE_FILTER_CONDS = new Set(['cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest', 'cond_lv_highest', 'cond_lv_lowest', 'cond_target_stack', 'cond_target_evo_source', 'cond_face_down', 'cond_face_up', 'cond_self_rest', 'cond_self_active']);
+const NO_VALUE_FILTER_CONDS = new Set(['cond_name_same_self', 'cond_dp_highest', 'cond_dp_lowest', 'cond_cost_highest', 'cond_cost_lowest', 'cond_lv_highest', 'cond_lv_lowest', 'cond_target_stack', 'cond_target_evo_source', 'cond_face_down', 'cond_face_up', 'cond_self_rest', 'cond_self_active']);
 // DP参照マーカー（cond_dp_le/ge の値が固定数値ではなく「このデジモン/自分/相手/他」のDPを
 // 動的参照する指定であることを示す）。数値パースをバイパスしてそのまま文字列で保持する。
 // own_pick/opp_pick = 複数該当する場合にプレイヤーが任意で1体選ぶ版（BlockEditor.tsx の
@@ -819,6 +819,8 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       case 'cond_name':             f.name = c.value; break;
       case 'cond_name_not':         f.name_not = c.value; break;
       case 'cond_name_contains':    f.name_contains = c.value; break;
+      // 「このカードと同じ名称の〜」（対象の条件 → 名前/記述 → このカードと同じ）
+      case 'cond_name_same_self':   f.same_name_as_self = true; break;
       // 重ねられているカード（対象デジモンの進化元スタック）を対象に含める。
       // target_stack_position未指定=スタック全体/'top'/'bottom'=その一端の1枚/'select'=都度選択
       // （エンジン未対応・保存のみ可）
@@ -904,6 +906,7 @@ function parseFilterObject(f: any): ConditionPair[] {
   if (f.name)             out.push({ base: 'cond_name',             value: String(f.name) });
   if (f.name_not)         out.push({ base: 'cond_name_not',         value: String(f.name_not) });
   if (f.name_contains)    out.push({ base: 'cond_name_contains',    value: String(f.name_contains) });
+  if (f.same_name_as_self) out.push({ base: 'cond_name_same_self' });
   if (f.description)          out.push({ base: 'cond_description',          value: String(f.description) });
   if (f.description_contains) out.push({ base: 'cond_description_contains', value: String(f.description_contains) });
   if (f.zone)                 out.push({ base: 'cond_zone',                 value: String(f.zone) });

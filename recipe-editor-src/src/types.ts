@@ -229,6 +229,10 @@ export interface EffectBlock {
   // 無いため。保存はできるが複数セグメント使用時は動作しない）
   conditionsChain?: ConditionChainEntry[];
   costs?: CostStep[]; // 0〜N個のコスト（〜することで）
+  // ≪デジバーストN≫（このデジモンの進化元をN枚破棄することで、以下の効果を発揮する）。
+  // 「以下の効果」はこのブロックのアクション欄で設定する。JSON では step.cost の先頭に
+  // {action:'cost_digiburst', value:N} として保存する（エンジンは既存の cost_digiburst で処理）
+  digiburst?: number | string;
   // コストを払ったあとで判定する条件（「〜することで、〜なら、〜する」の「〜なら」）。
   // 発動条件（conditions）はコストより前に判定されるのに対し、こちらはコストを支払い終えた時点で判定し、
   // 満たさなければ効果本体だけ行わない（コストは支払ったまま）。複数指定はAND。

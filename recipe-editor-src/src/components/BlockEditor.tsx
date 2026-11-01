@@ -5227,6 +5227,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #d8b4fe' }}>
               <KeywordEntriesEditor block={block} onChange={onChange} dict={dict} accentBorder="#d8b4fe" />
             </div>
+            {/* ≪デジバースト≫は「以下の効果」を持つキーワード。押すと通常の効果欄に切り替わり、
+                上に ≪デジバーストN≫ の枠が付く（以下の効果はそのままアクション欄で設定する） */}
+            {!isKeywordMode && (
+              <div style={{ marginTop: 8, padding: 8, background: 'white', borderRadius: 4, border: '2px solid #d8b4fe' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: 4 }}>「以下の効果」を持つキーワード</div>
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...block, trigger: 'main', triggers: ['main'], digiburst: block.digiburst || 1, keyword: undefined, keywordEntries: undefined })}
+                  style={{ padding: '3px 9px', borderRadius: 5, border: '1px solid #c39bf0', background: '#f5f5f5', color: '#5e2a8a', cursor: 'pointer', fontSize: 11 }}
+                >
+                  ≪デジバースト≫
+                </button>
+                <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>押すと、タイミング（初期値【メイン】）と「以下の効果」を設定する画面になります。</div>
+              </div>
+            )}
             {/* 条件（〜の間）: 省略時は常時有効（従来通り）。指定すると、ここで組み立てた条件を
                 満たしている間だけ上のキーワード群が有効、という条件付きパッシブになる
                 （例:「自分の表向きのセキュリティがない間、色条件を無視できる」）。
@@ -6034,6 +6049,34 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             </div>
           )}
         </div>
+        )}
+
+        {/* === ≪デジバーストN≫（キーワード効果欄の「≪デジバースト≫」で付けたもの）。
+            「以下の効果」はこのブロックのアクション欄。保存時に cost の先頭へ cost_digiburst を置く === */}
+        {block.digiburst !== undefined && block.trigger !== 'passive' && (
+          <div style={{ gridColumn: '1 / span 2', marginTop: 8, padding: 8, background: '#f3e8fd', border: '2px solid #c39bf0', borderRadius: 6, fontSize: 12, color: '#5e2a8a' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <b>🔑 ≪デジバースト</b>
+              <input
+                type="number" min={1}
+                value={String(block.digiburst)}
+                onChange={(e) => onChange({ ...block, digiburst: e.target.value === '' ? '' : Number(e.target.value) })}
+                style={{ width: 50, padding: '2px 4px', border: '1px solid #c39bf0', borderRadius: 3, fontSize: 12 }}
+              />
+              <b>≫</b>
+              <button
+                type="button"
+                onClick={() => onChange({ ...block, digiburst: undefined })}
+                style={{ marginLeft: 'auto', padding: '2px 8px', borderRadius: 5, border: '1px solid #d33', background: 'white', color: '#d33', cursor: 'pointer', fontSize: 11 }}
+              >
+                デジバーストを外す
+              </button>
+            </div>
+            <div style={{ fontSize: 11, marginTop: 4 }}>
+              このデジモンの進化元を{String(block.digiburst || 'N')}枚破棄することで、<b>以下の効果</b>を発揮する。
+              「以下の効果」は、下のアクション欄（対象・値など）でそのまま設定してください。タイミング（【メイン】等）は上のトリガーで選びます。
+            </div>
+          </div>
         )}
 
         {/* === 💰 コスト（トリガー/アクションの間に独立配置。コストを伴う効果が多いため

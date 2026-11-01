@@ -1595,6 +1595,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // コスト
   const stepCost = buildCostArray(b.costs);
   if (stepCost) step.cost = stepCost;
+  // ≪デジバーストN≫: コストの先頭に「進化元N枚を破棄」を置く（キーワード効果欄で設定したもの）
+  if (b.digiburst !== undefined && b.digiburst !== '' && b.digiburst !== null) {
+    const n = Number(b.digiburst);
+    step.cost = [{ action: 'cost_digiburst', value: isNaN(n) ? b.digiburst : n }, ...(step.cost || [])];
+  }
   // コストを払ったあとで判定する条件（1件なら文字列、2件以上なら配列＝AND）
   const pccPairs = (b.postCostConditions || []).filter((p) => p.base);
   if (pccPairs.length === 1) step.post_cost_condition = pairToString(pccPairs[0]);
@@ -2799,7 +2804,12 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     step.tamer_conditions.forEach((s: string) => burstTamerFilter.push(stringToPair(String(s))));
   }
   // コスト復元 (condition / when / extra_conditions を ConditionPair[] へ統合)
-  const costs = parseCostArray(step?.cost);
+  // 先頭のコストが ≪デジバーストN≫（cost_digiburst と値だけ）なら、キーワード効果として表示する
+  const rawCost0 = Array.isArray(step?.cost) ? step.cost[0] : undefined;
+  const isDigiburst0 = !!rawCost0 && rawCost0.action === 'cost_digiburst'
+    && Object.keys(rawCost0).every((k) => k === 'action' || k === 'value');
+  const digiburst = isDigiburst0 ? (rawCost0.value ?? 1) : undefined;
+  const costs = parseCostArray(isDigiburst0 ? step.cost.slice(1) : step?.cost);
   return {
     section,
     asType: step?.as_type === 'digimon' || step?.as_type === 'tamer' || step?.as_type === 'option' ? step.as_type : undefined,
@@ -2844,6 +2854,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     conditionsOp: step?.condition_op === 'or' ? 'or' : 'and',
     conditionsChain: parseConditionChainStrings(step?.condition_chain),
     costs,
+    digiburst,
     postCostConditions: (() => {
       const raw = step?.post_cost_condition;
       const arr = Array.isArray(raw) ? raw : (raw ? [raw] : []);

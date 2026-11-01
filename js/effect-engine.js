@@ -14706,6 +14706,11 @@ function _attackStepImpossible(step, card, bs, side) {
 // コストを支払えないことが確定しているか（確認/発動ポップアップを出さないための事前判定。共通）
 // - 「このカードをレスト」なのに既にレスト中
 // - 「リンクカードを破棄」（unlink。【分離】等）なのに条件を満たすリンクカードが足りない
+// ステップに条件（condition/when/extra_conditions/condition_chain）があるか
+function _stepHasCondGate(st) {
+  return !!(st && (st.condition || st.when || (Array.isArray(st.extra_conditions) && st.extra_conditions.length > 0)
+    || (Array.isArray(st.condition_chain) && st.condition_chain.length > 0)));
+}
 function _costStepsInfeasible(costSteps, carrier, bs, side) {
   if (!Array.isArray(costSteps) || !carrier) return false;
   return costSteps.some((c) => {
@@ -14732,6 +14737,17 @@ function _costStepsInfeasible(costSteps, carrier, bs, side) {
       const st = Array.isArray(carrier.stack) ? carrier.stack : [];
       const n = conds.length > 0 ? st.filter(x => x && checkConditions(conds, x, bs, side)).length : st.length;
       return n < Math.max(1, parseInt(c.value, 10) || 1);
+    }
+    // 「自分の手札から『パルモン』1枚を登場させることで」で、手札/トラッシュに登場できるカードが無い
+    if ((c.action === 'summon' || c.action === 'summon_appear') && c.from && !c.card) {
+      const zs = Array.isArray(c.from) ? c.from : [c.from];
+      if (!zs.includes('hand') && !zs.includes('trash')) return false;
+      const me = bs && bs[side];
+      if (!me) return false;
+      const f = _withImpliedTargetType(c, _srcCardFilterOf(c) || {});
+      const gate = _stepHasCondGate(c);
+      const pool = [...(zs.includes('hand') ? (me.hand || []) : []), ...(zs.includes('trash') ? (me.trash || []) : [])];
+      return !pool.some(x => x && cardMatchesFilter(x, f, bs, side, carrier) && (!gate || _evalStepConditionGate(c, x, bs, side)));
     }
     // 「（レスト状態の他の）デジモンN体をデッキに戻すことで」で、戻せるデジモンが足りない（ロゼモン：バーストモード
     // BT26-050。発動しますか？を出してからコストを払えないで終わっていた）
@@ -17258,6 +17274,14 @@ function executeRecipeStep(step, ctx, store, callback) {
             ? (player.hand || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card)) : [];
           let _trashCands = _fromZones.includes('trash')
             ? (player.trash || []).filter(c => c && cardMatchesFilter(c, _filter, ctx.bs, ctx.side, ctx.card)) : [];
+          // コストの「登場させる」（「自分の手札から『パルモン』1枚をコストを支払わずに登場させることで」）:
+          // エディタの「コスト対象の絞り込み」は条件（condition 等）で保存されるので、登場させるカードの条件として
+          // 候補1枚ずつに判定する（コストのステップは発動条件ゲートを通らない）。候補が無ければコストを払えない
+          const _sumIsCost = _COST_STEP_SET.has(step);
+          if (_sumIsCost && _stepHasCondGate(step)) {
+            _handCands = _handCands.filter(c => _evalStepConditionGate(step, c, ctx.bs, ctx.side));
+            _trashCands = _trashCands.filter(c => _evalStepConditionGate(step, c, ctx.bs, ctx.side));
+          }
           // デュアルカードは登場コストを持たないので「登場」の候補にはしない（オプションとして「使用」する指定のときだけ）。
           // 種別の指定が無い「カード1枚を登場/使用できる」（ロゼモン BT26-049）はオプションとしての使用も含むので候補にする（summon / summon_use）
           // （使用コスト＝playCost で cost_le 等を判定し、選んだら _summonCardFromEffect がオプションとして使用する）
@@ -17278,7 +17302,7 @@ function executeRecipeStep(step, ctx, store, callback) {
           }
           if (_handCands.length === 0 && _trashCands.length === 0) {
             ctx.addLog('💨 条件を満たすカードが手札・トラッシュにありません');
-            showEffectFailed(null, () => callback());
+            showEffectFailed(null, () => callback(_sumIsCost ? false : undefined));
             return;
           }
           // step.value が指定されている場合は「コストを支払わず」ではなく「支払うコストを
@@ -17287,7 +17311,8 @@ function executeRecipeStep(step, ctx, store, callback) {
           // （減=-N・増=+N）ため、ここでは value をそのままコストの増減量として扱う。
           // per_count があれば value × floor(参照数/per_count)（結城カナン BT26-090
           // 「相手側のメモリー1ごとにコスト-1」）。参照数0で増減0になってもコストは支払う
-          const _summonPays = (typeof step.value === 'number' && step.value !== 0);
+          // コストの「登場させる」は「コストを支払わずに」（cost_free）が無ければ登場コストを支払う
+          const _summonPays = (typeof step.value === 'number' && step.value !== 0) || (_sumIsCost && !step.cost_free);
           const _summonDelta = _summonPays ? _effectPlayCostDelta(step, ctx) : 0;
           // 何枚登場させるか: step.count（対象欄が空/self系のときエディタの「枚数」欄が
           // 出力する値）を優先し、無ければ対象欄の末尾数値サフィックス（例: "own_card:2"）
@@ -17391,7 +17416,7 @@ function executeRecipeStep(step, ctx, store, callback) {
               '🌟 ' + (zoneName && !_zt ? zoneName + 'から' : '') + '登場させるカードを選んでください' + (zoneCands.length === 0 ? '（対象のカードがありません）' : ''), (picked) => {
               if (!picked || picked.length === 0) {
                 ctx.addLog && ctx.addLog('☓ 「使わない」を選択');
-                callback();
+                callback(_sumIsCost ? false : undefined);
                 return;
               }
               _summonSequential(picked, 0, callback);

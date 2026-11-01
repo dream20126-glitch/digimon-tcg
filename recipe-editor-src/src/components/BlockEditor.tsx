@@ -1640,8 +1640,8 @@ function CostListEditor({
             <div style={{ marginTop: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 2 }}>
                 <div style={{ fontSize: 10, color: '#555' }}>アクション</div>
-                {/* action:'evolve' 専用: コストを支払わずに進化させる */}
-                {c.action === 'evolve' && (
+                {/* action:'evolve' / 'summon': コストを支払わずに進化/登場させる */}
+                {(c.action === 'evolve' || c.action === 'summon') && (
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
                     <input
                       type="checkbox"
@@ -1966,7 +1966,7 @@ function CostListEditor({
                   両方満たされるアクション（place_on_security_top等）では二重表示になって
                   しまうため、isPlaceActive中はこちらを出さない */}
               {(() => {
-                if (isPlaceActive || (!costActionHasFlag('hasFromZones') && c.action !== 'evolve')) return null;
+                if (isPlaceActive || (!costActionHasFlag('hasFromZones') && c.action !== 'evolve' && c.action !== 'summon')) return null;
                 const zones = c.fromZones || [];
                 const op = c.fromZonesOp || 'or';
                 const toggleZone = (code: string) => {
@@ -3506,6 +3506,9 @@ const COMMON_COST_ACTIONS: { code: string; label: string }[] = [
   { code: 'active', label: 'アクティブにする' },
   { code: 'cost_destroy_other', label: '消滅させる' },
   { code: 'evolve', label: '進化させる' },
+  // 「自分の手札から『パルモン』1枚をコストを支払わずに登場させることで」: 📥場所＝手札、
+  // 登場させるカードの条件は「コスト対象の絞り込み」（エンジンは候補1枚ずつに判定。候補が無ければ払えない）
+  { code: 'summon', label: '登場させる' },
 ];
 // 「破棄」ボタン: 押すと「どこから破棄するか」の第二ボタン（場所）が現れ、選んだ場所に応じて
 // 実際のアクションコードに切り替える（エンジンには「破棄+場所」の汎用実装が無く、手札/進化元/

@@ -4425,6 +4425,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
     cursor: 'pointer', fontSize: 12,
   });
 
+  // 「独自の効果を付与」の中身（カードの効果と同じ編集画面で組む効果ブロック）。効果1・効果2以降とも updateEffect 経由
+  const grantedBlocksNow: EffectBlock[] = (isEditingAlt ? editingAlt!.grantedBlocks : block.grantedBlocks) || [];
+  const newGrantedBlock = (): EffectBlock => ({ section: 'main', trigger: 'on_attack', triggers: ['on_attack'], triggerSubject: 'self', conditions: [] });
   // 付与効果操作（grantedStep）。効果1・効果2以降とも同じ場所（updateEffect経由）を使い回す
   const grantedStep: GrantedStep = (isEditingAlt ? editingAlt!.grantedStep : block.grantedStep) || { trigger: '', action: '', conditions: [], options: [] };
   function updateGrantedStep(patch: Partial<GrantedStep>) {
@@ -9234,12 +9237,12 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 value={effectAction === 'grant_effect' ? 'custom' : 'keyword'}
                 onChange={(v) => {
                   if (v === 'keyword') {
-                    updateEffect({ action: 'grant_keyword', grantedStep: undefined });
+                    updateEffect({ action: 'grant_keyword', grantedStep: undefined, grantedBlocks: undefined });
                   } else {
                     updateEffect({
                       action: 'grant_effect',
                       keyword: undefined,
-                      grantedStep: grantedStep || { trigger: 'on_attack', action: '', conditions: [], options: [] },
+                      grantedBlocks: (grantedBlocksNow.length > 0 ? grantedBlocksNow : [newGrantedBlock()]),
                     });
                   }
                 }}
@@ -9269,184 +9272,27 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             ) : (
               <>
                 <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>
-                  💡 対象に一時的なトリガー効果を付与する。例: 「【アタック時】相手DP-2000」
+                  💡 対象に一時的に効果を付与する。例: 「『【アタック時】相手のデジモン1体をDP-2000』を得る」。
+                  付与する効果は、カードの効果と同じ画面（トリガー・発動主体・アクション・コスト・効果2以降等）で組みます。
+                  付与する期間はこの効果（外側）の「期間」で決めます
                 </div>
-                {/* 内側トリガー / アクション / 値 / 対象 / 期間 */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
-                  <div>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>付与効果のトリガー</div>
-                    {(() => {
-                      // 効果1のトリガーファミリーボタン（自分/相手/お互いのタイミング切替含む）を
-                      // そのまま流用する。grantedStepはtrigger配列を持たない単発の文字列のため
-                      // [grantedStep.trigger]にラップしてinferTiming等の既存ロジックに合わせる
-                      const gTiming = inferTiming([grantedStep.trigger], grantedStep.conditions || []);
-                      const gIsFamilyActive = (fam: TriggerFamily): boolean =>
-                        fam.kind === 'event' ? grantedStep.trigger === fam.code
-                          : !!fam.variants && Object.values(fam.variants).includes(grantedStep.trigger);
-                      const gToggleFamily = (fam: TriggerFamily) => {
-                        if (fam.kind === 'event') {
-                          updateGrantedStep({ trigger: grantedStep.trigger === fam.code ? '' : fam.code });
-                          return;
-                        }
-                        const variant = fam.variants![gTiming];
-                        updateGrantedStep({ trigger: grantedStep.trigger === variant ? '' : variant });
-                      };
-                      const gActiveTimingFamily = COMMON_TRIGGER_FAMILIES.find(
-                        (fam) => fam.kind === 'timing' && !!fam.variants && Object.values(fam.variants).includes(grantedStep.trigger)
-                      );
-                      const gSetTiming = (newTiming: TimingKey) => {
-                        if (!gActiveTimingFamily || !gActiveTimingFamily.variants) return;
-                        updateGrantedStep({ trigger: gActiveTimingFamily.variants[newTiming] });
-                      };
-                      return (
-                        <>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
-                            {COMMON_TRIGGER_FAMILIES.map((fam) => {
-                              const active = gIsFamilyActive(fam);
-                              return (
-                                <button
-                                  key={fam.code}
-                                  type="button"
-                                  onClick={() => gToggleFamily(fam)}
-                                  style={{
-                                    padding: '2px 7px', borderRadius: 5, fontSize: 10, cursor: 'pointer',
-                                    border: active ? '2px solid #0d9488' : '1px solid #99f6e4',
-                                    background: active ? '#0d9488' : 'white',
-                                    color: active ? '#fff' : '#333',
-                                  }}
-                                >
-                                  {fam.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          {gActiveTimingFamily && (
-                            <div style={{ marginBottom: 4 }}>
-                              <ButtonGroup options={TIMING_OPTIONS.map((t) => ({ code: t.code, label: t.label }))} value={gTiming} onChange={(v) => gSetTiming(v as TimingKey)} accentColor="#0d9488" />
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
-                    <SearchSelect
-                      value={grantedStep.trigger}
-                      onChange={(v) => updateGrantedStep({ trigger: v })}
-                      options={toOpts(dict.triggers)}
-                      allowFreeText
+                {grantedBlocksNow.map((gb, gi) => (
+                  <div key={gi} style={{ marginBottom: 6, padding: 4, border: '1px dashed #5eead4', borderRadius: 4, background: 'white' }}>
+                    <div style={{ fontSize: 11, fontWeight: 'bold', color: '#0d9488', marginBottom: 2 }}>🎁 付与する効果 {gi + 1}</div>
+                    <BlockEditor
+                      block={gb}
+                      index={gi}
+                      dict={dict}
+                      onChange={(nb) => { const next = grantedBlocksNow.slice(); next[gi] = nb; updateEffect({ grantedBlocks: next }); }}
+                      onRemove={() => updateEffect({ grantedBlocks: grantedBlocksNow.filter((_, k) => k !== gi) })}
+                      isKeywordMode={isKeywordMode}
                     />
                   </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>付与効果のアクション</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
-                      {COMMON_ACTIONS.map((o) => (
-                        <button
-                          key={o.code}
-                          type="button"
-                          onClick={() => updateGrantedStep({ action: o.code })}
-                          style={{
-                            padding: '2px 7px', borderRadius: 5, fontSize: 10, cursor: 'pointer',
-                            border: grantedStep.action === o.code ? '2px solid #0d9488' : '1px solid #99f6e4',
-                            background: grantedStep.action === o.code ? '#0d9488' : 'white',
-                            color: grantedStep.action === o.code ? '#fff' : '#333',
-                          }}
-                        >
-                          {o.label}
-                        </button>
-                      ))}
-                    </div>
-                    <SearchSelect
-                      value={grantedStep.action}
-                      onChange={(v) => updateGrantedStep({ action: v })}
-                      options={toOpts(dict.actions)}
-                      allowFreeText
-                    />
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 6 }}>
-                  <div>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>値</div>
-                    <input
-                      type="text"
-                      value={grantedStep.value === undefined ? '' : String(grantedStep.value)}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === '') updateGrantedStep({ value: undefined });
-                        else if (/^\d+$/.test(v)) updateGrantedStep({ value: Number(v) });
-                        else updateGrantedStep({ value: v });
-                      }}
-                      placeholder="例: 2000"
-                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
-                    />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-                    <SearchSelect
-                      value={(grantedStep.target || '').split(':')[0]}
-                      onChange={(v) => {
-                        const suffix = (grantedStep.target || '').substring((grantedStep.target || '').split(':')[0].length);
-                        updateGrantedStep({ target: v + (suffix || '') });
-                      }}
-                      options={toOpts(TARGETS)}
-                      allowFreeText
-                    />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象数</div>
-                    <TargetCountField
-                      suffix={(grantedStep.target || '').substring((grantedStep.target || '').split(':')[0].length)}
-                      onChange={(v) => {
-                        const base = (grantedStep.target || '').split(':')[0];
-                        updateGrantedStep({ target: base + v });
-                      }}
-                    />
-                  </div>
-                </div>
-                <div style={{ marginBottom: 6 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>付与効果の期間</div>
-                  <SearchSelect
-                    value={grantedStep.duration || ''}
-                    onChange={(v) => updateGrantedStep({ duration: v })}
-                    options={toOpts(DURATIONS)}
-                  />
-                </div>
-                {/* 修飾子（簡易） */}
-                {dict.options.length > 0 && (
-                  <details style={{ marginBottom: 6 }} open={(grantedStep.options || []).length > 0}>
-                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#0d9488', padding: '2px 0' }}>
-                      🛡 修飾子{(grantedStep.options || []).length > 0 ? ` (${(grantedStep.options || []).length})` : ''}
-                    </summary>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: 4, marginTop: 2, background: '#f0fdfa', borderRadius: 3, border: '1px solid #99f6e4' }}>
-                      {dict.options.map((o) => {
-                        const arr = grantedStep.options || [];
-                        const checked = arr.includes(o.code);
-                        return (
-                          <label key={o.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, padding: '1px 4px', border: checked ? '1px solid #0d9488' : '1px solid #99f6e4', borderRadius: 8, background: checked ? '#ccfbf1' : 'white', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={checked} onChange={() => {
-                              const next = checked ? arr.filter((x) => x !== o.code) : [...arr, o.code];
-                              updateGrantedStep({ options: next });
-                            }} style={{ margin: 0 }} />
-                            {o.label}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </details>
-                )}
-                {/* 内側条件 */}
-                <ConditionChainField
-                  chain={grantedStep.conditionsChain}
-                  legacyPairs={[]}
-                  onChainChange={(next) => updateGrantedStep({ conditionsChain: next })}
-                  dict={dict}
-                  titleBase="付与効果の発動条件"
-                  theme="action"
-                  extraProps={{ defaultSubject: '', showSubjectSelector: false, attackContextActive: ATTACK_TRIGGER_CODES.includes(grantedStep.trigger) }}
-                  commonConditions={grantedStep.conditions}
-                  onCommonConditionsChange={(next) => updateGrantedStep({ conditions: next })}
-                />
-                {Array.isArray(grantedStep.conditionsChain) && grantedStep.conditionsChain.length > 1 && (
-                  <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 複合条件（AND内包OR）はエンジン未対応です（保存はできますが動作しません）</div>
-                )}
+                ))}
+                <button type="button" onClick={() => updateEffect({ grantedBlocks: [...grantedBlocksNow, newGrantedBlock()] })}
+                  style={{ padding: '4px 8px', border: '1px dashed #0d9488', background: 'white', borderRadius: 3, cursor: 'pointer', fontSize: 11, color: '#0d9488' }}>
+                  ＋ 付与する効果を追加
+                </button>
               </>
             )}
           </div>

@@ -593,6 +593,10 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
       applyDesignatedGroupsTo(out, entries[0], kwEntry);
       out.keyword = entries.map((entry) => entry.keyword).join(',');
     }
+  } else if (out.action === 'grant_effect' && Array.isArray(a.grantedBlocks) && a.grantedBlocks.length > 0) {
+    // 独自の効果を付与（カードの効果と同じ画面で組んだ効果ブロック）
+    const gr = blocksToRecipe(a.grantedBlocks, keywordDict);
+    if (Object.keys(gr).length > 0) out.granted_recipe = gr;
   } else if (out.action === 'grant_effect' && a.grantedStep && a.grantedStep.trigger && a.grantedStep.action) {
     const gs = a.grantedStep;
     const inner: any = { action: gs.action };
@@ -1882,7 +1886,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   }
   // === 付与効果 (granted_recipe) ===
   // 対象に一時的にトリガー効果を付与（grant_effect 等で使用）
-  if (b.grantedStep && b.grantedStep.trigger && b.grantedStep.action) {
+  if (Array.isArray(b.grantedBlocks) && b.grantedBlocks.length > 0) {
+    // 独自の効果を付与（カードの効果と同じ画面で組んだ効果ブロック）
+    const gr = blocksToRecipe(b.grantedBlocks, keywordDict);
+    if (Object.keys(gr).length > 0) step.granted_recipe = gr;
+  } else if (b.grantedStep && b.grantedStep.trigger && b.grantedStep.action) {
     const gs = b.grantedStep;
     const inner: any = { action: gs.action };
     if (gs.value !== undefined && gs.value !== '' && gs.value !== null) {
@@ -2477,6 +2485,7 @@ function stepObjectToAltAction(step: any): AltAction {
     keywordCommonConditions: _altCommonPairs && _altCommonPairs.conds.length > 0 ? _altCommonPairs.conds : undefined,
     keywordCommonConditionsChain: _altCommonChain,
     keywordCommonConditionsOp: _altCommonPairs && _altCommonPairs.conds.length > 0 ? _altCommonPairs.op : undefined,
+    grantedBlocks: (step?.granted_recipe && typeof step.granted_recipe === 'object') ? recipeToBlocks(step.granted_recipe) : undefined,
     grantedStep: (() => {
       const gr = step?.granted_recipe;
       if (!gr || typeof gr !== 'object') return undefined;
@@ -3103,6 +3112,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             keywordCommonConditions: _aaCommonPairs && _aaCommonPairs.conds.length > 0 ? _aaCommonPairs.conds : undefined,
             keywordCommonConditionsChain: _aaCommonChain,
             keywordCommonConditionsOp: _aaCommonPairs && _aaCommonPairs.conds.length > 0 ? _aaCommonPairs.op : undefined,
+            grantedBlocks: (a?.granted_recipe && typeof a.granted_recipe === 'object') ? recipeToBlocks(a.granted_recipe) : undefined,
             grantedStep: (() => {
               const gr = a?.granted_recipe;
               if (!gr || typeof gr !== 'object') return undefined;
@@ -3191,6 +3201,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
       : [],
     altActionsOp: (step?.alt_actions_op === 'and' ? 'and' : 'or') as 'or' | 'and',
     // 付与効果復元: granted_recipe から先頭トリガー＋先頭ステップを GrantedStep に
+    grantedBlocks: (step?.granted_recipe && typeof step.granted_recipe === 'object') ? recipeToBlocks(step.granted_recipe) : undefined,
     grantedStep: (() => {
       const gr = step?.granted_recipe;
       if (!gr || typeof gr !== 'object') return undefined;

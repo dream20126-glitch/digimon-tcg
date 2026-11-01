@@ -412,6 +412,9 @@ export interface EffectBlock {
   // 付与効果: grant_effect 等で「対象に一時的にトリガー効果を付与する」ためのネスト効果
   // 例: 「自分のデジモン全ては『【アタック時】相手DP-2000』を得る」
   grantedStep?: GrantedStep;
+  // 「独自の効果を付与」の中身（カードの効果と同じ編集画面で組む効果ブロック）。JSON では granted_recipe
+  // （カードのレシピと同じ形 { トリガー: [step...] }）。あれば grantedStep より優先する
+  grantedBlocks?: EffectBlock[];
   extras?: string; // フリー入力 JSON 文字列
   // 新しいアクション専用の項目（ACTION_PARAM_KEYS。cost_kinds / cap_kind 等）。JSON では step のトップレベルにそのまま出す
   actionParams?: Record<string, any>;
@@ -537,6 +540,9 @@ export interface AltAction {
   keywordCommonConditionsChain?: ConditionChainEntry[];
   keywordEntries?: KeywordEntry[];
   grantedStep?: GrantedStep;
+  // 「独自の効果を付与」の中身（カードの効果と同じ編集画面で組む効果ブロック）。JSON では granted_recipe
+  // （カードのレシピと同じ形 { トリガー: [step...] }）。あれば grantedStep より優先する
+  grantedBlocks?: EffectBlock[];
   // 発動可否のみを判定する条件（対象選択のフィルタには使わない・複数指定でAND）。
   // 「〜のとき、代わりに〜する」のように、この代替アクションが自動選択される
   // 条件を表す。メイン側にgateが無く、alt側にgateがあって条件成立していれば、

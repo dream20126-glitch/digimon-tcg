@@ -5944,21 +5944,23 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         {(() => {
                           const tf = block.triggerFromZones || [];
                           return (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                              <span style={{ fontSize: 11, color: '#666' }}>どこから:</span>
-                              <MultiButtonGroup
-                                options={DISCARD_TRIGGER_FROM_OPTIONS}
-                                values={tf}
-                                onToggle={(code, on) => {
-                                  const next = on ? [...tf.filter((z) => z !== code), code] : tf.filter((z) => z !== code);
-                                  const ordered = DISCARD_TRIGGER_FROM_OPTIONS.map((o) => o.code).filter((z) => next.includes(z));
-                                  onChange({ ...block, triggerFromZones: ordered.length > 0 ? ordered : undefined, triggerFromZonesOp: undefined });
-                                }}
-                                accentColor="#2e7d32"
-                              />
-                              <span style={{ fontSize: 10, color: '#888' }}>未選択＝どこからでも／複数はどれか</span>
+                            <div style={{ marginTop: 4 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap' }}>
+                                <span style={{ fontSize: 11, color: '#666', whiteSpace: 'nowrap' }}>どこから:</span>
+                                <MultiButtonGroup
+                                  options={DISCARD_TRIGGER_FROM_OPTIONS}
+                                  values={tf}
+                                  onToggle={(code, on) => {
+                                    const next = on ? [...tf.filter((z) => z !== code), code] : tf.filter((z) => z !== code);
+                                    const ordered = DISCARD_TRIGGER_FROM_OPTIONS.map((o) => o.code).filter((z) => next.includes(z));
+                                    onChange({ ...block, triggerFromZones: ordered.length > 0 ? ordered : undefined, triggerFromZonesOp: undefined });
+                                  }}
+                                  accentColor="#2e7d32"
+                                />
+                              </div>
+                              <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>未選択＝どこからでも／複数選ぶとどれか</div>
                               {tf.some((z) => DISCARD_TRIGGER_FROM_UNIMPLEMENTED.has(z)) && (
-                                <span style={{ fontSize: 10, color: '#c62828' }}>⚠ デッキ/セキュリティからの破棄はエンジン未対応です（保存はできますが動作しません）</span>
+                                <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ デッキ/セキュリティからの破棄はエンジン未対応です（保存はできますが動作しません）</div>
                               )}
                             </div>
                           );

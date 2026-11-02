@@ -155,8 +155,10 @@ function applyDeckOpenRule(step: any, rule: MiniStep): void {
       case 'discard':
       case 'return_trash':
         step.return_to = 'trash'; return;
+      // 「残ったカードは手札に加える」（ドルモン P-070）。以前はデッキ（deck_choice）として保存されていた。⚠ エンジン未対応
+      case 'add_to_hand':
+        step.return_to = 'hand'; return;
       case 'return_deck':
-      case 'add_to_hand': // 「残りを手札へ」は珍しいが許可
       default: {
         // 「デッキに戻す」ボタン（📍位置: 上/下/上か下）が指定されていればそちらを優先
         if (rule.deckPosition) {

@@ -338,6 +338,9 @@ export interface EffectBlock {
   // summon_from_trash 専用:「この効果で登場したデジモンの【登場時】効果は発揮しない」
   // true のとき JSON へ step.skip_on_play:true を出力する
   skipOnPlay?: boolean;
+  // 「〜をオープンしてデッキの上に戻す」等の「オープンして」（相手に見せてから行う）。JSON では step.reveal:true
+  // （手札/デッキ等の見えないカードを公開する演出。⚠ エンジン未対応＝戻す等の処理自体は動く）
+  reveal?: boolean;
   // 「〜できる」= 任意効果。true のとき JSON へ step.optional:true を出力する。
   // エンジンは発動前に「発動しますか？」の確認ダイアログを挟む（未指定/falseは強制効果）
   optional?: boolean;
@@ -600,6 +603,9 @@ export interface AltAction {
   // true のとき JSON へ cost_free:true / skip_on_play:true を出力する
   costFree?: boolean;
   skipOnPlay?: boolean;
+  // 「〜をオープンしてデッキの上に戻す」等の「オープンして」（相手に見せてから行う）。JSON では step.reveal:true
+  // （手札/デッキ等の見えないカードを公開する演出。⚠ エンジン未対応＝戻す等の処理自体は動く）
+  reveal?: boolean;
   // evolve 専用（効果1と同じ）: 進化条件を無視して進化させる → ignore_evolve_condition:true
   ignoreEvolveCondition?: boolean;
   // 「このターン終了時、〜する」（例: P-029「そうしたとき、このターン終了時このデジモンを消滅させる」）。

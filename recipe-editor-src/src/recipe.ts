@@ -556,6 +556,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   const aFixed = fixedCostOut(a.fixedCost);
   if (aFixed !== undefined) { out.fixed_cost = aFixed; delete out.value; }
   if (a.skipOnPlay) out.skip_on_play = true;
+  if (a.reveal) out.reveal = true;
   if (a.action === 'negate') {
     if (a.negateTargetTrigger) out.target_trigger = a.negateTargetTrigger;
     if (a.negateDeny) out.deny = true;
@@ -1742,6 +1743,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (bFixed !== undefined) { step.fixed_cost = bFixed; delete step.value; }
   // summon_from_trash の「登場したデジモンの【登場時】効果は発揮しない」フラグ
   if (b.skipOnPlay) step.skip_on_play = true;
+  // 「オープンして」
+  if (b.reveal) step.reveal = true;
   // 上/下（デッキに戻す位置等・hasDeckPosition用）。'both'（どちらか選んで）はエンジン未対応の
   // ため 'select' として出力する（エンジンは 'top' 以外を全て「下」として扱うので注意）
   if (b.deckPosition === 'top') step.position = 'top';
@@ -2552,6 +2555,7 @@ function stepObjectToAltAction(step: any): AltAction {
     fixedCost: fixedCostIn(step?.fixed_cost),
     atTurnEnd: !!step?.at_turn_end || undefined,
     skipOnPlay: !!step?.skip_on_play,
+    reveal: !!step?.reveal || undefined,
     negateTargetTrigger: (NEGATE_TRIGGERS.includes(step?.target_trigger) ? step.target_trigger : undefined),
     negateDeny: !!step?.deny,
     negateTargetAsType: step?.target_as_type === 'digimon' || step?.target_as_type === 'option' ? step.target_as_type : undefined,
@@ -2774,6 +2778,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     cost_free: true,
     ignore_evolve_condition: true,
     skip_on_play: true,
+    reveal: true,
     optional: true,
     display_text: true,
     no_announce: true,
@@ -2998,6 +3003,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     fixedCost: fixedCostIn(step?.fixed_cost),
     atTurnEnd: !!step?.at_turn_end || undefined,
     skipOnPlay: !!step?.skip_on_play,
+    reveal: !!step?.reveal || undefined,
     deckPosition: step?.position === 'top' ? 'top'
       : step?.position === 'bottom' ? 'bottom'
       : step?.position === 'select' ? 'both'
@@ -3177,6 +3183,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             fixedCost: fixedCostIn(a?.fixed_cost),
             atTurnEnd: !!a?.at_turn_end || undefined,
             skipOnPlay: !!a?.skip_on_play,
+            reveal: !!a?.reveal || undefined,
             negateTargetTrigger: (NEGATE_TRIGGERS.includes(a?.target_trigger) ? a.target_trigger : undefined),
             negateDeny: !!a?.deny,
             negateTargetAsType: a?.target_as_type === 'digimon' || a?.target_as_type === 'option' ? a.target_as_type : undefined,

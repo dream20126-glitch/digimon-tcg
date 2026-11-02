@@ -6828,6 +6828,22 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       />
                     </div>
                   )}
+                  {/* 「オープンして」: 手札/デッキ等の見えないカードを公開してから行う（「手札の紫のカード1枚をオープンしてデッキの上に戻す」）。
+                      取得元（📥場所）か🎯対象が手札/デッキ/セキュリティのときだけ出す */}
+                  {(() => {
+                    const _rz = (isEditingAlt ? editingAlt!.fromZones : block.fromZones) || [];
+                    // 手札から戻す等は🎯対象が own_hand 等（取得元ではなく対象側のゾーン）になるので、対象も見る
+                    const _tz = String(effectTarget || '').split(':')[0];
+                    if (!_rz.some((z) => z === 'hand' || z === 'deck' || z === 'security') && !/(^|_)(hand|deck|security)$/.test(_tz)) return null;
+                    const _on = isEditingAlt ? !!editingAlt!.reveal : !!block.reveal;
+                    return (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
+                        <input type="checkbox" checked={_on} onChange={(e) => updateEffect({ reveal: e.target.checked || undefined })} />
+                        オープンして（相手に見せて）
+                        {_on && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ 公開の演出はエンジン未対応（戻す等の処理は動きます）</span>}
+                      </label>
+                    );
+                  })()}
                   {/* summon / summon_from_trash / evolve / summon_from_evo_source 専用:
                       コストを支払わず / 登場時効果は発揮しない
                       （裏向きで、は対象欄の右側「🂠裏表」に統合済み） */}

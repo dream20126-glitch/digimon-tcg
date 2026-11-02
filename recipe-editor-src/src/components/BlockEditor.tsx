@@ -8928,14 +8928,21 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 )}
                 {/* 効果1の「そのデジモン」: 〜したときのカード（target_trigger_source）か、直前に対象にしたカード（コストで選んだカード。same_target）か */}
                 {(tgtBase === 'same_target' || tgtBase === 'target_trigger_source') && (
-                  <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                     <span style={{ fontSize: 10, color: '#666' }}>どの「その」:</span>
-                    <ButtonGroup
-                      options={[{ code: 'target_trigger_source', label: '〜したときのカード' }, { code: 'same_target', label: '直前に対象にしたカード（コスト等）' }]}
-                      value={tgtBase}
-                      onChange={(v) => { if (v) onChange({ ...block, target: v }); }}
-                      accentColor="#b76e00"
-                    />
+                    {[{ code: 'target_trigger_source', label: '〜したときのカード' }, { code: 'same_target', label: '直前に対象にしたカード（コスト等）' }].map((o) => {
+                      const on = tgtBase === o.code;
+                      return (
+                        <button
+                          key={o.code}
+                          type="button"
+                          onClick={() => { if (!on) onChange({ ...block, target: o.code }); }}
+                          style={{ padding: '1px 7px', borderRadius: 10, fontSize: 10, cursor: 'pointer', lineHeight: 1.5, border: on ? '1px solid #b76e00' : '1px solid #ccc', background: on ? '#b76e00' : '#fff', color: on ? '#fff' : '#555', fontWeight: on ? 'bold' : 'normal' }}
+                        >
+                          {o.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
                 {/* デジモン対象、「このカード」対象、または「そのデジモン」対象:

@@ -42,6 +42,8 @@ const REQUIRED_ACTIONS: DictEntry[] = [
   { code: 'declare_category', kind: 'action', label: 'カードカテゴリーを宣言する' },
   // 「セキュリティ全てをオープンし、その中から1枚を〜」（LM-020）。相手側は actionParams.security_owner
   { code: 'security_open', kind: 'action', label: 'セキュリティをオープン', valueLabel: 'オープンする枚数（空＝全て）' },
+  // ≪セーブ≫「自分のテイマー1体の下にこのカードを置ける」（ディレイと同じくキーワードをそのままアクションにする）
+  { code: 'save', kind: 'action', label: 'セーブ（このカードを自分のテイマー1体の下に置ける）' },
 ];
 // スプシに無くても必ず表示する条件
 const REQUIRED_CONDITIONS: DictEntry[] = [

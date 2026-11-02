@@ -3768,6 +3768,8 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'attack', label: 'アタック' },
   { code: 'force_block', label: 'ブロック' },
   { code: 'delay', label: 'ディレイ' },
+  // ≪セーブ≫（このカードを自分のテイマー1体の下に置ける）。対象・値は持たない
+  { code: 'save', label: 'セーブ' },
 ];
 // 効果一覧の各効果（効果2以降）が「効果を発揮する」の何番目の選択肢か（選択肢でなければ null）。
 // 区間（効果1〜／「その後」〜）の先頭が choose_effect のとき、その後ろの効果が選択肢。

@@ -1169,8 +1169,9 @@ function stripRedundantTurnConds(container: Record<string, any>): void {
 
 // ディレイ本体は「このカードを破棄する」だけで、対象・取得元（📥）・取得元カードの条件を持たない（それらはディレイ効果側の設定）。
 // アクションをディレイに変える前の設定が残ると、ディレイの画面には欄が出ないので消せなかった（LM-058 / LM-065）
+// セーブ（このカードを自分のテイマー1体の下に置く）も同じく、置くカード・置き先が決まっているので持たない
 function dropDelayLeftovers(o: any): any {
-  if (o.action !== 'delay') return o;
+  if (o.action !== 'delay' && o.action !== 'save') return o;
   const keys = ['target', 'from', 'from_owner', 'from_filter'];
   if (!keys.some((k) => k in o)) return o;
   const out = { ...o };

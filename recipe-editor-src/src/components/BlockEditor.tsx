@@ -2607,6 +2607,15 @@ function CostListEditor({
                   placeholder="値（枚数等）"
                   style={{ width: 160, padding: '4px 6px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12, boxSizing: 'border-box' }}
                 />
+                {/* 値の数え方（効果の値と同じボタン）: 指定なし / 全て / 完全一致 / 〜まで / 〜なるまで */}
+                <div style={{ marginTop: 4 }}>
+                  <ButtonGroup
+                    options={[{ code: '', label: '指定なし' }, { code: 'all', label: '全て' }, { code: 'exact', label: '完全一致' }, { code: 'up_to', label: '〜まで' }, { code: 'until', label: '〜なるまで' }]}
+                    value={c.valueMode || ''}
+                    onChange={(v) => updateCost(i, { ...c, valueMode: (v || undefined) as 'all' | 'exact' | 'up_to' | 'until' | undefined })}
+                    accentColor="#b76e00"
+                  />
+                </div>
               </div>
             )}
             {!placeEvo && costTargetJsx}

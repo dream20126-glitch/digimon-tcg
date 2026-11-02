@@ -848,6 +848,8 @@ export interface CostStep {
   // JSON では step.cost[].evo_source_owner に serialize
   evoSourceOwner?: 'self' | 'other';
   // 進化元の対象が自分/相手/他のとき、デジモンかテイマー（テイマーの下）か。JSON: evo_source_card_type（未指定=区別しない）
+  // 値の数え方（EffectBlock.valueMode と同じ。「2枚までを〜することで」＝'up_to'）。JSON: cost[].value_mode
+  valueMode?: 'all' | 'exact' | 'up_to' | 'until';
   evoSourceCardType?: 'digimon' | 'tamer';
   // 進化元の対象が「このデジモン」以外のとき: どのカードの進化元か（「自分の『ラグナモン』の進化元」等）。JSON: evo_holder_filter
   evoHolderFilter?: ConditionPair[];

@@ -282,6 +282,8 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
     const dg = (c.designatedGroups || []).filter((g) => (g.conditions || []).some((p) => p.base) || (g.conditionChain || []).length > 0);
     if (dg.length > 0) cs.designated_groups = buildDesignatedGroupsFields(dg);
     if (c.ignoreEvolveCondition) cs.ignore_evolve_condition = true;
+    // 値の数え方（「2枚までを〜することで」＝up_to）
+    if (c.valueMode) cs.value_mode = c.valueMode;
     // コスト対象の取得元エリア (1件→string / 2件以上→array + from_op)
     if (Array.isArray(c.fromZones) && c.fromZones.length > 0) {
       const cz = c.fromZones.filter((z) => !!z);
@@ -404,6 +406,7 @@ function parseCostArray(rawCost: any): CostStep[] {
       containerFilterChain: parseConditionChainFilter(c?.filter).chain,
       evoSourceOwner: c?.evo_source_owner === 'self' || c?.evo_source_owner === 'other' ? c.evo_source_owner : undefined,
       evoSourceCardType: c?.evo_source_card_type === 'digimon' || c?.evo_source_card_type === 'tamer' ? c.evo_source_card_type : undefined,
+      valueMode: parseValueMode(c),
       ...evoHolderFieldsOf(c),
       linkedOwner: c?.linked_owner === 'self' || c?.linked_owner === 'other' ? c.linked_owner : undefined,
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,

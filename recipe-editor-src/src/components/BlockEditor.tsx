@@ -2182,7 +2182,8 @@ function CostListEditor({
                       <div style={{ marginTop: 4 }}>
                         <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 置くカード（どこから持ってきて置くか）</div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          {FROM_ZONES.map((z) => {
+                          {/* 〜の下に置く: 置くカードを「このデジモン」自身にもできる（効果側と同じ。JSON は from:'self_card'） */}
+                          {[...(UNDER_PLACE_ACTIONS.has(c.action || '') ? [{ code: 'self_card', label: 'このデジモン' }] : []), ...FROM_ZONES].map((z) => {
                             const active = zones.includes(z.code);
                             return (
                               <button
@@ -2218,7 +2219,7 @@ function CostListEditor({
                         )}
                         {/* 進化元/重ねられているカード/リンクカード以外の場所を含む場合のみ表示。
                             それらは専用の「〜の対象」欄（下記）で「誰の場所か」を表せるため省略する */}
-                        {zones.some((z) => z !== 'evo_source' && z !== 'stacked_cards' && z !== 'linked') && (
+                        {zones.some((z) => z !== 'evo_source' && z !== 'stacked_cards' && z !== 'linked' && z !== 'self_card') && (
                           <div style={{ marginTop: 4 }}>
                             <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>👤 誰の場所か</div>
                             <ButtonGroup

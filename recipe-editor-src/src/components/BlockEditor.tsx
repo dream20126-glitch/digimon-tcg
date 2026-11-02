@@ -8464,7 +8464,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
               // 「そのデジモン」: 効果1ではトリガー発火元カードを指す(target_trigger_source)、
               // 効果2以降では直前の効果が選んだ対象を再利用する(same_target)、という別コードになる
               // （ボタンの見た目・ラベルは共通の「そのデジモン」のまま）
-              if (l1 === 'same_target') { updateEffect({ ...cleared, target: isEditingAlt ? 'same_target' : 'target_trigger_source' }); return; }
+              // 効果1でも、トリガーの元が無い【メイン】等は「直前に対象にしたカード」（コストで選んだカード。same_target）にする
+              // （プリズムギャレット P-096「〜をデジモン1体の進化元の下に置くことで、そのデジモンをDP+1000」）。下の小さいボタンで切り替えられる
+              if (l1 === 'same_target') { updateEffect({ ...cleared, target: isEditingAlt || (block.trigger === 'main' && (block.costs || []).length > 0) ? 'same_target' : 'target_trigger_source' }); return; }
               const useL2 = l2 || tgtKeepL2(eCurTgt.l1, eCurTgt.l2, l1) || (l1 === 'most' ? 'security' : 'digimon');
               const newEffBase = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + useL2] || '';
               const remapAction = remapPlaceActionForTarget(newEffBase);
@@ -8525,6 +8527,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {!eHasDigimonTamer && eL2Options.length > 0 && (
                     <div style={{ marginTop: 4 }}>
                       <ButtonGroup options={eL2Options} value={eCurTgt.l2} onChange={(l2) => setEffTgt(eCurTgt.l1, l2)} accentColor="#b76e00" />
+                    </div>
+                  )}
+                  {/* 効果1の「そのデジモン」: 〜したときのカード（target_trigger_source）か、直前に対象にしたカード（コストで選んだカード。same_target）か */}
+                  {!isEditingAlt && (eBase === 'same_target' || eBase === 'target_trigger_source') && (
+                    <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: '#666' }}>どの「その」:</span>
+                      <ButtonGroup
+                        options={[{ code: 'target_trigger_source', label: '〜したときのカード' }, { code: 'same_target', label: '直前に対象にしたカード（コスト等）' }]}
+                        value={eBase}
+                        onChange={(v) => { if (v) updateEffect({ target: v }); }}
+                        accentColor="#b76e00"
+                      />
                     </div>
                   )}
                   {/* デジモン対象、「このカード」対象、または「そのデジモン」対象:

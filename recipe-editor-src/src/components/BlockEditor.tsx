@@ -3538,7 +3538,11 @@ const DISCARD_TRIGGER_FROM_OPTIONS = [
   { code: 'hand', label: '手札' },
   { code: 'evo_source', label: '進化元' },
   { code: 'tamer', label: 'テイマーの下' },
+  // デッキ（上から破棄等）・セキュリティからの破棄は ⚠ エンジン未対応（破棄されたときのトリガーを誘発していない）
+  { code: 'deck', label: 'デッキ' },
+  { code: 'security', label: 'セキュリティ' },
 ];
+const DISCARD_TRIGGER_FROM_UNIMPLEMENTED = new Set(['deck', 'security']);
 // 原因の「どの効果で」のキーワード候補のうち、キーワード辞書に無いもの（コスト等で表すキーワード）
 const CAUSE_EFFECT_EXTRA_KEYWORDS = [
   { code: 'digiburst', label: 'デジバースト' },
@@ -5950,6 +5954,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                                 accentColor="#2e7d32"
                               />
                               <span style={{ fontSize: 10, color: '#888' }}>未選択＝どこからでも／複数はどれか</span>
+                              {tf.some((z) => DISCARD_TRIGGER_FROM_UNIMPLEMENTED.has(z)) && (
+                                <span style={{ fontSize: 10, color: '#c62828' }}>⚠ デッキ/セキュリティからの破棄はエンジン未対応です（保存はできますが動作しません）</span>
+                              )}
                             </div>
                           );
                         })()}

@@ -194,6 +194,9 @@ export interface EffectBlock {
   // 例: P-032「このデジモンが発揮した【デジバースト】で」→ destroyCause='effect' + destroyCauseSubject='self'
   //   + destroyCauseEffect={ keyword: 'digiburst' }。JSON では step.cause_effect（エンジン未対応）
   destroyCauseEffect?: { keyword?: string; trigger?: string };
+  // 原因〔バトルで〕のとき「相打ちは除く」（バトルの相手＝原因のデジモンが残ったときだけ。P-090「自分のデジモンが
+  // バトルで相手のデジモンだけを消滅させたとき」）。JSON では step.cause_survived:true（⚠ エンジン未対応）
+  destroyCauseSurvived?: boolean;
   // トリガーごとに発動ターン（自分/相手/お互い）を個別設定したい場合に使う
   // （例:「登場時」は無条件、「相手のメインフェイズ開始時」だけ相手ターン限定、
   // のように同じブロック内で異なる発動ターンを混在させたいケース）。

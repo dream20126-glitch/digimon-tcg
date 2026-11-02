@@ -6344,6 +6344,18 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   accentColor="#1a5a1a"
                 />
               </div>
+              {/* 原因〔バトルで〕: 相打ちは除く（cause_survived。P-090「バトルで相手のデジモンだけを消滅させたとき」） */}
+              {block.destroyCause === 'battle' && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, cursor: 'pointer', fontSize: 11, color: block.destroyCauseSurvived ? '#1a5a1a' : '#555', fontWeight: block.destroyCauseSurvived ? 'bold' : 'normal' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!block.destroyCauseSurvived}
+                    onChange={(e) => update('destroyCauseSurvived', e.target.checked || undefined)}
+                  />
+                  ☑ 相打ちは除く（相手のデジモンだけが消滅したとき）
+                  {block.destroyCauseSurvived && <span style={{ fontSize: 10, color: '#c62828', fontWeight: 'normal' }}>⚠ エンジン未対応（保存はできます）</span>}
+                </label>
+              )}
               {/* 原因の「どの効果で」: キーワード（≪デジバースト≫等）／タイミング（【メイン】等）で原因の効果を絞り込む。
                   例: P-032「このデジモンが発揮した【デジバースト】で」= 効果で＋このデジモン＋キーワード「デジバースト」 */}
               {block.destroyCause.replace(/^not_/, '') === 'effect' && (() => {

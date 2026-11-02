@@ -1987,6 +1987,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   } else if (b.destroyCause) {
     step.cause = b.destroyCause;
     if (b.destroyCauseSubject) step.cause_subject = b.destroyCauseSubject;
+    // 相打ちは除く（原因〔バトルで〕のときだけ）
+    if (b.destroyCauseSurvived && b.destroyCause === 'battle') step.cause_survived = true;
     // 原因の「どの効果で」（キーワード／タイミング）
     const ce = b.destroyCauseEffect;
     if (ce && (ce.keyword || ce.trigger)) {
@@ -2851,6 +2853,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     cause_by_code: true,
     cause_subject_by_code: true,
     cause_effect: true,
+    cause_survived: true,
     cost: true,
     post_cost_condition: true,
     requires_prev_cost: true,
@@ -2973,6 +2976,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     destroyCause: isCauseCode(step?.cause) ? step.cause : undefined,
     destroyCauseSubject: step?.cause_subject || undefined,
     destroyCauseEffect: parseCauseEffect(step?.cause_effect),
+    destroyCauseSurvived: !!step?.cause_survived || undefined,
     triggerCauseByCode: (step?.cause_by_code && typeof step.cause_by_code === 'object')
       ? { ...step.cause_by_code } : undefined,
     triggerCauseSubjectByCode: (step?.cause_subject_by_code && typeof step.cause_subject_by_code === 'object')

@@ -644,7 +644,6 @@ function RefExistsAttributeFilterPanel({
                 {attrOr ? 'OR' : 'AND'}
               </button>
               <span style={{ fontSize: 10, color: '#888' }}>{attrOr ? 'どれか1つに合えばよい' : '全部に合う'}</span>
-              {attrOr && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未対応です（保存はできます）</span>}
             </div>
           )}
           {activeSub.has('color') && (
@@ -685,7 +684,6 @@ function RefExistsAttributeFilterPanel({
                   accentColor="#946200"
                 />
               )}
-              {lvMode === 'cond_lv' && (lvEq?.value || '').includes(',') && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ 2つ以上入れたときはエンジン未対応です</span>}
               {lvMode && lvMode !== 'cond_lv' && (
                 <input
                   type="number" min={1}
@@ -719,7 +717,6 @@ function RefExistsAttributeFilterPanel({
                   accentColor="#946200"
                 />
               )}
-              {costMode === 'cond_cost' && (costEq?.value || '').includes(',') && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ 2つ以上入れたときはエンジン未対応です</span>}
               {costMode && costMode !== 'cond_cost' && (
                 <input
                   type="number" min={0}
@@ -759,7 +756,7 @@ function RefExistsAttributeFilterPanel({
                 accentColor="#946200"
               />
               {/* 名称が2つ以上: どれか1つ（OR）か、全員いる（AND。「自分の『本宮大輔』と『一条寺賢』がいるとき」）か。
-                  全員いる = cond_name_each（値なしの印。名称ごとに「いる」を判定する。⚠ エンジン未実装） */}
+                  全員いる = cond_name_each（値なしの印。名称ごとに「いる」を判定する） */}
               {names.length >= 2 && (
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
                   <ButtonGroup
@@ -6353,7 +6350,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     onChange={(e) => update('destroyCauseSurvived', e.target.checked || undefined)}
                   />
                   ☑ 相打ちは除く（相手のデジモンだけが消滅したとき）
-                  {block.destroyCauseSurvived && <span style={{ fontSize: 10, color: '#c62828', fontWeight: 'normal' }}>⚠ エンジン未対応（保存はできます）</span>}
                 </label>
               )}
               {/* 原因の「どの効果で」: キーワード（≪デジバースト≫等）／タイミング（【メイン】等）で原因の効果を絞り込む。
@@ -6945,7 +6941,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           onChange={(e) => updateEffect({ requiresPrevCost: e.target.checked || undefined })}
                         />
                         💰 効果1のコストを支払ったときだけ
-                        {on && <span style={{ fontSize: 10, color: '#c62828', fontWeight: 'normal' }}>⚠ エンジン未対応（保存はできます）</span>}
                       </label>
                     );
                   })()}

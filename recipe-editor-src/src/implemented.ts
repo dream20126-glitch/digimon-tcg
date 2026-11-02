@@ -74,6 +74,8 @@ export const IMPLEMENTED_ACTIONS = new Set<string>([
   // BT26 エンジン対応（2026-10）: 手札/セキュリティの破棄（own_hand/opponent_hand/both_hand:until_N/
   // own_security）、このカードの下に置く、オプションをバトルエリアに置く
   'discard', 'place_under_self', 'place_in_battle_area',
+  // ≪セーブ≫（このカードを自分のテイマー1体の下に置ける。2026-11-02）
+  'save',
 ]);
 
 // エンジンで実装済の passive flag (キーワード)

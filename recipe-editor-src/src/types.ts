@@ -195,7 +195,7 @@ export interface EffectBlock {
   //   + destroyCauseEffect={ keyword: 'digiburst' }。JSON では step.cause_effect（エンジン未対応）
   destroyCauseEffect?: { keyword?: string; trigger?: string };
   // 原因〔バトルで〕のとき「相打ちは除く」（バトルの相手＝原因のデジモンが残ったときだけ。P-090「自分のデジモンが
-  // バトルで相手のデジモンだけを消滅させたとき」）。JSON では step.cause_survived:true（⚠ エンジン未対応）
+  // バトルで相手のデジモンだけを消滅させたとき」）。JSON では step.cause_survived:true
   destroyCauseSurvived?: boolean;
   // トリガーごとに発動ターン（自分/相手/お互い）を個別設定したい場合に使う
   // （例:「登場時」は無条件、「相手のメインフェイズ開始時」だけ相手ターン限定、
@@ -336,7 +336,7 @@ export interface EffectBlock {
   // この効果をすぐには実行せず、このターンの終了時に実行する。JSON では at_turn_end:true（エンジン未対応）
   atTurnEnd?: boolean;
   // 「その後」の効果を、効果1のコストを支払ったときだけ行う（例: P-087「このテイマーをレストさせることで、
-  // Aなら〜。Bなら〜」の「Bなら〜」）。JSON では requires_prev_cost:true（⚠ エンジン未対応）
+  // Aなら〜。Bなら〜」の「Bなら〜」）。JSON では requires_prev_cost:true
   requiresPrevCost?: boolean;
   // evolve 専用:「進化条件を無視して進化させる」（公式8-1-2-2）。JSON では step.ignore_evolve_condition:true
   // （例: 雷霆の覚醒 BT26-097「そのデジモンを…『ユピテルモン』に進化条件を無視して進化できる」）
@@ -627,7 +627,7 @@ export interface AltAction {
   // この効果をすぐには実行せず、このターンの終了時に実行する。JSON では at_turn_end:true（エンジン未対応）
   atTurnEnd?: boolean;
   // 「その後」の効果を、効果1のコストを支払ったときだけ行う（例: P-087「このテイマーをレストさせることで、
-  // Aなら〜。Bなら〜」の「Bなら〜」）。JSON では requires_prev_cost:true（⚠ エンジン未対応）
+  // Aなら〜。Bなら〜」の「Bなら〜」）。JSON では requires_prev_cost:true
   requiresPrevCost?: boolean;
   // 登場/進化等の「進化コストNで進化できる」（増減ではなくコストそのものを指定）。JSON では fixed_cost:N。
   // 指定中は value（増減）は出力しない。'' は「指定」を選んで数値が未入力の状態（エディタ内のみ）

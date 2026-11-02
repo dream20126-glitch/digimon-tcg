@@ -626,15 +626,24 @@ function RefExistsAttributeFilterPanel({
           {marker === REF_EXISTS_FILTER_MARKER && activeSub.size >= 2 && (
             <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: 10, color: '#666' }}>属性どうし:</span>
-              <ButtonGroup
-                options={[{ code: '', label: '全部に合う（AND）' }, { code: 'or', label: 'どれか1つに合う（OR）' }]}
-                value={attrOr ? 'or' : ''}
-                onChange={(v) => {
+              {/* 小さいボタン: 押すたびに AND ⇔ OR を切り替える */}
+              <button
+                type="button"
+                title={attrOr ? 'どれか1つに合えばよい（押すと AND）' : '全部に合う（押すと OR）'}
+                onClick={() => {
                   const rest = conditions.filter((cc) => !(cc.subject === marker && cc.base === 'cond_attr_or'));
-                  onChange(v === 'or' ? [...rest, { base: 'cond_attr_or', subject: marker }] : rest);
+                  onChange(attrOr ? rest : [...rest, { base: 'cond_attr_or', subject: marker }]);
                 }}
-                accentColor="#946200"
-              />
+                style={{
+                  padding: '0 8px', height: 18, borderRadius: 9, cursor: 'pointer', fontSize: 10, fontWeight: 'bold',
+                  border: '1px solid ' + (attrOr ? '#e65100' : '#946200'),
+                  background: attrOr ? '#fff3e0' : '#fffaf0',
+                  color: attrOr ? '#e65100' : '#946200',
+                }}
+              >
+                {attrOr ? 'OR' : 'AND'}
+              </button>
+              <span style={{ fontSize: 10, color: '#888' }}>{attrOr ? 'どれか1つに合えばよい' : '全部に合う'}</span>
               {attrOr && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未対応です（保存はできます）</span>}
             </div>
           )}

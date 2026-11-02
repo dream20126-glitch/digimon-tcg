@@ -111,11 +111,16 @@ function evoOwnerL1Of(owner: 'self' | 'other' | undefined, zoneOwner: 'self' | '
   if (owner === 'other') return zoneOwner === 'opponent' ? 'opp' : 'other';
   return zoneOwner === 'self' ? 'own' : zoneOwner === 'opponent' ? 'opp' : '';
 }
+// 「進化元」を選んだときにまとめて出す紫の枠
+const EVO_BOX_STYLE: React.CSSProperties = { marginTop: 6, padding: 6, border: '2px solid #8e24aa', borderRadius: 6, background: '#f8f0fb' };
+const EVO_BOX_TITLE_STYLE: React.CSSProperties = { fontSize: 11, fontWeight: 'bold', color: '#6a1b9a', marginBottom: 4 };
 // holder: 「どのカードの進化元か」（evoHolderFilter）。進化元の対象が「このデジモン」以外のとき、アクションに関係なく出す
 type EvoHolderPatch = { evoHolderFilter?: ConditionPair[]; evoHolderFilterChain?: ConditionChainEntry[] };
-function EvoSourceOwnerPicker({ label, owner, zoneOwner, cardType, accent, onChange, holder }: {
+function EvoSourceOwnerPicker({ label, owner, zoneOwner, cardType, accent, onChange, holder, position }: {
   label: string; owner?: 'self' | 'other'; zoneOwner?: 'self' | 'opponent'; cardType?: 'digimon' | 'tamer'; accent: string; onChange: (p: EvoOwnerPatch) => void;
   holder?: { pairs?: ConditionPair[]; chain?: ConditionChainEntry[]; dict: any; onChange: (p: EvoHolderPatch) => void };
+  // 進化元（重ねられているカード）の位置（上/下/選んで）。渡されたときは枠の中に出す
+  position?: { label: string; value?: string; onChange: (v: 'top' | 'bottom' | 'select' | undefined) => void };
 }) {
   const l1 = evoOwnerL1Of(owner, zoneOwner);
   const setL1 = (v: string) => {
@@ -127,8 +132,9 @@ function EvoSourceOwnerPicker({ label, owner, zoneOwner, cardType, accent, onCha
     else onChange({ evoSourceOwner: undefined, fromZoneOwner: undefined, evoSourceCardType: undefined });
   };
   return (
-    <div style={{ marginTop: 4 }}>
-      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{label}</div>
+    <div style={EVO_BOX_STYLE}>
+      <div style={EVO_BOX_TITLE_STYLE}>🟪 {label.replace(/の対象$/, '')}</div>
+      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{label.startsWith('進化元') ? 'どのカードの進化元か' : '誰の重ねられているカードか'}</div>
       <ButtonGroup
         options={[{ code: '', label: '指定なし' }, { code: 'own', label: '自分' }, { code: 'opp', label: '相手' }, { code: 'other', label: '他' }, { code: 'self', label: 'このデジモン' }]}
         value={l1}
@@ -163,6 +169,17 @@ function EvoSourceOwnerPicker({ label, owner, zoneOwner, cardType, accent, onCha
             onCommonConditionsChange={(next) => holder.onChange({ evoHolderFilter: next })}
           />
           <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>例:「自分の『ラグナモン』の進化元から」の“ラグナモン”はここに入れる（取り出すカードの条件は取得元カードの条件へ）</div>
+        </div>
+      )}
+      {position && (
+        <div style={{ marginTop: 4 }}>
+          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 {position.label}</div>
+          <ButtonGroup
+            options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }]}
+            value={position.value || ''}
+            onChange={(v) => position.onChange((v || undefined) as 'top' | 'bottom' | 'select' | undefined)}
+            accentColor={accent}
+          />
         </div>
       )}
     </div>
@@ -1687,6 +1704,319 @@ function CostListEditor({
           updateCost(i, { ...c, conditions: next });
         };
 
+        // 置き場所「進化元」（このカードの下を含む）: 対象（置き先）と条件を紫の枠の中に出す
+        const placeEvo = isPlaceActive && (activePlaceZone === 'evo_source' || activePlaceZone === 'self');
+        const costTargetJsx = (
+          <>
+              {/* 対象（ボタン方式） */}
+              <div style={{ marginTop: 4 }}>
+                <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <MultiButtonGroup
+                    options={tgtToggleOptions(cCurTgt.l1)}
+                    values={tgtToggleValues(cCurTgt.l1)}
+                    onToggle={(code, on) => setCostTgt(tgtToggleNextL1(cCurTgt.l1, code, on))}
+                    accentColor="#b76e00"
+                  />
+                  <ButtonGroup
+                    options={TARGET_SEL_L1_REST}
+                    value={TGT_TOGGLE_L1.has(cCurTgt.l1) ? TARGET_SEL_NONE_ACTIVE : cCurTgt.l1}
+                    onChange={(l1) => setCostTgt(l1)}
+                    accentColor="#b76e00"
+                  />
+                </div>
+                {cHasDigimonTamer && (
+                  <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <MultiButtonGroup
+                      options={typeSelOptions(cCurTgt.l1).filter((o) => cTgtL2Options.some((x) => x.code === o.code))}
+                      values={cTypeChecked}
+                      onToggle={(code, on) => applyCostTypeSelection(on ? [...cTypeChecked, code] : cTypeChecked.filter((t) => t !== code))}
+                      accentColor="#b76e00"
+                    />
+                    {cExclusiveL2Options.length > 0 && (
+                      <TargetL2Group
+                        options={cExclusiveL2Options}
+                        value={cTypeChecked.length === 0 ? cCurTgt.l2 : ''}
+                        onChange={(l2) => setCostTgt(cCurTgt.l1, l2)}
+                        l1={cCurTgt.l1}
+                        accentColor="#b76e00"
+                      />
+                    )}
+                  </div>
+                )}
+                {!cHasDigimonTamer && cTgtL2Options.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <ButtonGroup options={cTgtL2Options} value={cCurTgt.l2} onChange={(l2) => setCostTgt(cCurTgt.l1, l2)} accentColor="#b76e00" />
+                  </div>
+                )}
+                {/* 破棄: 場所/位置/裏表（対象欄に統合。以前はアクション欄側にあったが、
+                    「対象」で全て設定できるようにするため、対象の絞り込み系コントロールと
+                    ここへまとめた。選んだ場所に応じて実アクションコードを切り替える */}
+                {isDiscardActive && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから破棄するか）</div>
+                    <ButtonGroup
+                      options={DISCARD_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
+                      value={activeDiscardZone}
+                      onChange={(zoneCode) => {
+                        if (zoneCode === activeDiscardZone) return; // 選び直し済みの位置指定を巻き戻さない
+                        const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
+                        if (!z) return;
+                        // 手札/デッキ: 対象を「自分の手札/デッキ」（相手/お互いを選んでいればその人の）にして汎用の破棄で保存する。
+                        // 枚数は対象の :N（以前の deck_trash_top は value しか読まず、対象欄の枚数が効かなかった）
+                        if (zoneCode === 'hand' || zoneCode === 'deck') {
+                          const l1 = (COST_DISCARD_TGT_ZONES[cCurTgt.l1] || []).includes(zoneCode) ? cCurTgt.l1 : 'own';
+                          const base = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + zoneCode];
+                          updateCost(i, { ...c, action: 'discard', target: base + (cTgtSuffix || ':1'), fromZones: undefined });
+                          return;
+                        }
+                        // z.targetが無い場所（進化元/テイマー/手札/デッキ/リンクカード）では既存のtargetを
+                        // そのまま維持する（「対象」欄で選んだ自分/相手を場所切替で巻き戻さないため）。
+                        // fromZones は設定しない（📍位置ボタンで既に場所+位置を action コードへ
+                        // エンコード済みのため、汎用の「セキュリティ/進化元の位置」パネルと二重表示になるのを防ぐ）
+                        // 手札/デッキを対象にしていた場合、その対象は進化元/セキュリティ等では意味が無いので外す
+                        const keepTgt = discardZoneFromTarget ? '' : c.target;
+                        updateCost(i, { ...c, action: z.action, target: z.target || keepTgt, fromZones: undefined });
+                      }}
+                      accentColor="#b76e00"
+                    />
+                    {(() => {
+                      const z = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                      return z?.warn ? (
+                        <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
+                      ) : null;
+                    })()}
+                    {/* 進化元/テイマー/セキュリティのときだけ、積まれたカードのどこから破棄するか選べる。
+                        ※ 辞書側の hasPositionVariant フラグ（costIsPositional等）には依存しない。
+                        DISCARD_ZONE_MAP はこのエディタ内で完結したハードコード機構であり、
+                        辞書の設定状態に関わらず常に POSITION_VARIANTS 4種を出す。
+                        これがevo_discard系の「上から/下から/選んで/全て」を決める唯一の実体
+                        （エンジンはaction.codeのサフィックスだけを見る） */}
+                    {(() => {
+                      const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                      if (!zone?.hasPosition) return null;
+                      const zoneBase = getActionVariant(zone.action)?.base || zone.action;
+                      const curSuffix = getActionVariant(c.action || '')?.suffix || '';
+                      return (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
+                          <ButtonGroup
+                            options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
+                            value={curSuffix}
+                            onChange={(suffix) => { if (!suffix) return; updateCost(i, { ...c, action: zoneBase + suffix }); }}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                      );
+                    })()}
+                    {/* 進化元/テイマー: 積まれたカードのうち裏向き/表向きのものだけを対象にするか
+                        （place_under_tamer/place_under_digimon/deck_to_evo_bottomで裏向きに置かれた
+                        カードを区別して破棄したい場合。cond_face_down/cond_face_up を conditions に
+                        反映する */}
+                    {(() => {
+                      const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
+                      if (!zone?.hasFace) return null;
+                      const faceConds = c.conditions || [];
+                      const faceIdx = faceConds.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
+                      const faceVal = faceIdx !== -1 ? (faceConds[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
+                      return (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
+                          <ButtonGroup
+                            options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
+                            value={faceVal}
+                            onChange={(v) => {
+                              const next = faceConds.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
+                              if (v === 'down') next.push({ base: 'cond_face_down' });
+                              else if (v === 'up') next.push({ base: 'cond_face_up' });
+                              updateCost(i, { ...c, conditions: next });
+                            }}
+                            accentColor="#b76e00"
+                          />
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+                {/* デジモン/テイマー本体のときだけ「本体/下/一番下」を選べる（進化元／テイマーの下のカードを指す） */}
+                {showCostStackPos && (
+                  <div style={{ marginTop: 4 }}>
+                    <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
+                    <ButtonGroup options={STACK_POS_OPTIONS} value={cTgtStackPos} onChange={(v) => setCostStackPos(v as StackPos)} accentColor="#b76e00" />
+                  </div>
+                )}
+                {/* 「下/一番下」のときだけ、積まれているカードの裏表・種別で絞り込める */}
+                {showCostStackPos && cTgtStackPos !== '' && (
+                  <div style={{ marginTop: 4 }}>
+                    <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>裏表/種別:</span>
+                    <MultiButtonGroup options={COST_STACK_FACE_TYPE_OPTS} values={costFaceTypeActive} onToggle={toggleCostFaceType} accentColor="#b76e00" />
+                  </div>
+                )}
+                {!cHideCount && cCurTgt.l1 && (
+                  <div style={{ marginTop: 4 }}>
+                    <TargetCountField
+                      suffix={cTgtSuffix}
+                      onChange={(v) => updateCost(i, { ...c, target: joinStackSuffix(cTgtBase, cTgtStackPos) + v })}
+                    />
+                  </div>
+                )}
+              </div>
+          </>
+        );
+        const costCondsJsx = (
+          <>
+              {/* === コスト対象の絞り込み条件（発動条件と同じConditionsHybridEditorを再利用） ===
+                  裏向き/表向き(cond_face_down/up)は上の「対象」欄の🂠裏表クイックトグルで管理する
+                  ため、ここには表示しない（同じconditions配列に書き込まれるが、このパネルの
+                  表示・編集対象からは除外し、他の条件を編集してもそのまま保持する） */}
+              <div style={{ marginTop: 6 }}>
+                {/* よく使う状態（クイックチェックボックス）: アクションの対象の条件と同じパターン */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 6, padding: '4px 6px', background: 'white', borderRadius: 3, border: '1px solid #b2dfdb' }}>
+                  {[
+                    { code: 'cond_self_rest',   label: 'レスト状態' },
+                    { code: 'cond_self_active', label: 'アクティブ状態' },
+                  ].map((f) => {
+                    const checked = (c.conditions || []).some((cc) => cc.base === f.code);
+                    return (
+                      <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const cur = c.conditions || [];
+                            if (e.target.checked) { if (!checked) updateCost(i, { ...c, conditions: [...cur, { base: f.code, value: '' }] }); }
+                            else updateCost(i, { ...c, conditions: cur.filter((cc) => cc.base !== f.code) });
+                          }}
+                          style={{ margin: 0 }}
+                        />
+                        {f.label}
+                      </label>
+                    );
+                  })}
+                </div>
+                {/* コスト対象の絞り込み条件チェーン: 1条件ずつ追加し、2個目以降は直前との関係を
+                    AND/ORで選ぶ（デッキ検索等のグループ条件チェーンと同じ「ANDがORより優先」＝
+                    OR区切りでAND区間をまとめる積和評価）。例:「Lv4以下」→[AND]→「名前クロノモン」
+                    →[OR]→「特徴TS」 = (Lv4以下 AND 名前クロノモン) OR 特徴TS
+                    レスト状態/裏表（cond_self_rest等・isRefFaceCond）はc.conditionsに残し、
+                    このチェーンには含めない（上のクイックチェックボックス/🂠裏表で管理） */}
+                {(() => {
+                  const isCommonCostCond = (base: string) => isRefFaceCond(base) || base === 'cond_self_rest' || base === 'cond_self_active';
+                  const commonConds = (c.conditions || []).filter((cc) => isCommonCostCond(cc.base));
+                  const legacyPairs = (c.conditions || []).filter((cc) => !isCommonCostCond(cc.base));
+                  return (
+                    <ConditionChainField
+                      chain={c.conditionChain}
+                      legacyPairs={legacyPairs}
+                      legacyOp={c.conditionsOp}
+                      onChainChange={(next) => updateCost(i, { ...c, conditionChain: next, conditions: commonConds })}
+                      dict={dict}
+                      titleBase="コスト対象の絞り込み"
+                      theme="action"
+                      extraProps={{ defaultSubject: '', showSubjectSelector: false, multiType: true, allowSameLv: true, targetL2: cCurTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
+                      commonConditions={commonConds.filter((cc) => !isRefFaceCond(cc.base))}
+                      onCommonConditionsChange={(next) => updateCost(i, { ...c, conditions: [...commonConds.filter((cc) => isRefFaceCond(cc.base)), ...next] })}
+                    />
+                  );
+                })()}
+                {/* 条件ごとに枚数を分ける（ルールの「条件ごとに枚数を分ける」と同じ。cost[].designated_groups）
+                    例:「自分の手札の『エクスブイモン』と『スティングモン』1枚ずつをデッキの下に戻すことで」 */}
+                {(() => {
+                  const groups = c.designatedGroups || [];
+                  const on = groups.length > 0;
+                  const setGroups = (next: DesignatedGroup[] | undefined) => updateCost(i, { ...c, designatedGroups: next && next.length > 0 ? next : undefined });
+                  const updGroup = (gi: number, patch: Partial<DesignatedGroup>) => setGroups(groups.map((g, k) => (k === gi ? { ...g, ...patch } : g)));
+                  return (
+                    <div style={{ marginTop: 6, padding: 6, background: '#fdf6ec', border: '1px solid #f0d9a8', borderRadius: 4 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#946200' }}>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={(e) => setGroups(e.target.checked
+                            ? [{ conditions: [], conditionsOp: 'and', count: 1 }, { conditions: [], conditionsOp: 'and', count: 1 }]
+                            : undefined)}
+                        />
+                        条件ごとに枚数を分ける（例:「エクスブイモン」と「スティングモン」1枚ずつ）
+                      </label>
+                      {on && (
+                        <div style={{ marginTop: 6 }}>
+                          <div style={{ fontSize: 10, color: '#c62828', marginBottom: 4 }}>
+                            ⚠ エンジンが対応しているのはアクション「デッキに戻す」（手札/トラッシュから）だけです。ONの間は、各グループの条件と枚数で選びます（上の「コスト対象の絞り込み」は全グループ共通の条件、対象の枚数は使いません）
+                          </div>
+                          {groups.map((g, gi) => (
+                            <div key={gi} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: gi < groups.length - 1 ? '1px dashed #f0d9a8' : 'none' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                <span style={{ fontSize: 11, fontWeight: 'bold', color: '#666' }}>グループ（{gi + 1}）</span>
+                                <span style={{ fontSize: 10, color: '#666' }}>枚数:</span>
+                                <input
+                                  type="number" min={1}
+                                  value={g.count === undefined || g.count === null ? '' : String(g.count)}
+                                  onChange={(e) => updGroup(gi, { count: e.target.value === '' ? undefined : Number(e.target.value) })}
+                                  style={{ width: 50, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
+                                />
+                                {groups.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setGroups(groups.filter((_, k) => k !== gi))}
+                                    style={{ marginLeft: 'auto', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '1px 7px', cursor: 'pointer', fontSize: 11 }}
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
+                              <ConditionsHybridEditor
+                                conditions={g.conditions || []}
+                                onChange={(next) => updGroup(gi, { conditions: next })}
+                                dict={dict}
+                                title="このグループの条件"
+                                hint="（例: 名称＝エクスブイモン）"
+                                theme="action"
+                                defaultSubject=""
+                                showSubjectSelector={false}
+                                multiType={true}
+                                conditionsOp={g.conditionsOp || 'and'}
+                                onConditionsOpChange={(op) => updGroup(gi, { conditionsOp: op })}
+                              />
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setGroups([...groups, { conditions: [], conditionsOp: 'and', count: 1 }])}
+                            style={{ border: '1px dashed #946200', color: '#946200', background: 'white', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 11 }}
+                          >
+                            ＋ グループを追加
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+                {/* 進化元/テイマーの下から破棄するコスト専用: 上の「コスト対象の絞り込み」は
+                    破棄されるカード自体（裏向き・Lv等）の条件。こちらは「どのデジモン/テイマーの
+                    進化元（下のカード）から破棄するか」というコンテナ側の条件 → cost[].filter */}
+                {costActionIsEvoDiscardFamily && cCurTgt.l1 !== 'self' && cCurTgt.l1 !== 'same_target' && (
+                  <div style={{ marginTop: 6 }}>
+                    <ConditionChainField
+                      chain={c.containerFilterChain}
+                      legacyPairs={[]}
+                      onChainChange={(next) => updateCost(i, { ...c, containerFilterChain: next })}
+                      dict={dict}
+                      titleBase="進化元を持つデジモン/テイマーの条件"
+                      theme="action"
+                      accentColor="#b76e00"
+                      extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, showTypeInTargetFilter: true }}
+                      commonConditions={c.containerFilter}
+                      onCommonConditionsChange={(next) => updateCost(i, { ...c, containerFilter: next })}
+                    />
+                    <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
+                      例:「特徴『バグラ軍』を持つ自分のデジモンの進化元を2枚破棄」の“バグラ軍”はここに入れる
+                      （上の「コスト対象の絞り込み」は破棄されるカード側の条件になる）
+                    </div>
+                  </div>
+                )}
+              </div>
+          </>
+        );
         return (
           <div key={i} style={{ marginBottom: 6, padding: 6, border: '1px solid #ffe0b2', borderRadius: 4, background: '#fffbe6' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1827,6 +2157,17 @@ function CostListEditor({
                       <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
                     ) : null;
                   })()}
+                  {/* 置き場所「進化元」（このカード含む）: 紫の枠に「どのカードの進化元の下か（対象＋条件）」と「どこから置くか」をまとめる */}
+                  <div style={placeEvo ? EVO_BOX_STYLE : undefined}>
+                  {placeEvo && (
+                    <>
+                      <div style={EVO_BOX_TITLE_STYLE}>🟪 進化元の下に置く</div>
+                      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#6a1b9a' }}>① どのカードの進化元の下に置くか</div>
+                      {costTargetJsx}
+                      {costCondsJsx}
+                      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#6a1b9a', marginTop: 8 }}>② どこから置くか</div>
+                    </>
+                  )}
                   {/* セキュリティ/テイマー/進化元のときだけ、置くカードの取得元（手札等）を選べる。
                       辞書のhasFromZonesフラグには頼らずPLACE_ZONE_MAP側で直接持たせている
                       （このボタン自体が辞書未登録のハードコードのため） */}
@@ -1891,7 +2232,8 @@ function CostListEditor({
                         {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
                           <EvoSourceOwnerPicker label={zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの対象' : '進化元の対象'} owner={c.evoSourceOwner} zoneOwner={c.fromZoneOwner} cardType={c.evoSourceCardType} accent="#b76e00"
                             onChange={(p) => updateCost(i, { ...c, ...p })}
-                            holder={{ pairs: c.evoHolderFilter, chain: c.evoHolderFilterChain, dict, onChange: (p) => updateCost(i, { ...c, ...p }) }} />
+                            holder={{ pairs: c.evoHolderFilter, chain: c.evoHolderFilterChain, dict, onChange: (p) => updateCost(i, { ...c, ...p }) }}
+                            position={{ label: zones.includes('stacked_cards') ? '重ねられているカードの位置' : '進化元の位置', value: c.evoSourcePosition, onChange: (v) => updateCost(i, { ...c, evoSourcePosition: v }) }} />
                         )}
                         {zones.includes('linked') && (
                           <div style={{ marginTop: 4 }}>
@@ -1965,17 +2307,6 @@ function CostListEditor({
                           />
                         </div>
                       )}
-                      {((c.fromZones || []).includes('evo_source') || (c.fromZones || []).includes('stacked_cards')) && (
-                        <div>
-                          <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 {(c.fromZones || []).includes('stacked_cards') ? '重ねられているカードの位置' : '進化元の位置'}</div>
-                          <ButtonGroup
-                            options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }]}
-                            value={c.evoSourcePosition || ''}
-                            onChange={(v) => updateCost(i, { ...c, evoSourcePosition: (v || undefined) as 'top' | 'bottom' | 'select' | undefined })}
-                            accentColor="#b76e00"
-                          />
-                        </div>
-                      )}
                     </div>
                   )}
                   {/* セキュリティ/テイマーのときだけ「上/下/下か上」を選べる */}
@@ -2004,6 +2335,7 @@ function CostListEditor({
                       />
                     </div>
                   )}
+                  </div>
                 </div>
               )}
               {/* デッキに戻す: 位置ボタン（下/上/下か上） */}
@@ -2094,7 +2426,8 @@ function CostListEditor({
                     {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
                       <EvoSourceOwnerPicker label={zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの対象' : '進化元の対象'} owner={c.evoSourceOwner} zoneOwner={c.fromZoneOwner} cardType={c.evoSourceCardType} accent="#1a4f8a"
                         onChange={(p) => updateCost(i, { ...c, ...p })}
-                        holder={{ pairs: c.evoHolderFilter, chain: c.evoHolderFilterChain, dict, onChange: (p) => updateCost(i, { ...c, ...p }) }} />
+                        holder={{ pairs: c.evoHolderFilter, chain: c.evoHolderFilterChain, dict, onChange: (p) => updateCost(i, { ...c, ...p }) }}
+                        position={{ label: zones.includes('stacked_cards') ? '重ねられているカードの位置' : '進化元の位置', value: c.evoSourcePosition, onChange: (v) => updateCost(i, { ...c, evoSourcePosition: v }) }} />
                     )}
                     {zones.includes('linked') && (
                       <div style={{ marginTop: 4 }}>
@@ -2144,17 +2477,6 @@ function CostListEditor({
                         options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }]}
                         value={c.securityPosition || ''}
                         onChange={(v) => updateCost(i, { ...c, securityPosition: (v || undefined) as 'top' | 'bottom' | undefined })}
-                        accentColor="#1a4f8a"
-                      />
-                    </div>
-                  )}
-                  {((c.fromZones || []).includes('evo_source') || (c.fromZones || []).includes('stacked_cards')) && (
-                    <div>
-                      <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 {(c.fromZones || []).includes('stacked_cards') ? '重ねられているカードの位置' : '進化元の位置'}</div>
-                      <ButtonGroup
-                        options={[{ code: 'top', label: '上' }, { code: 'bottom', label: '下' }, { code: 'select', label: '選んで' }]}
-                        value={c.evoSourcePosition || ''}
-                        onChange={(v) => updateCost(i, { ...c, evoSourcePosition: (v || undefined) as 'top' | 'bottom' | 'select' | undefined })}
                         accentColor="#1a4f8a"
                       />
                     </div>
@@ -2287,311 +2609,10 @@ function CostListEditor({
                 />
               </div>
             )}
-            {/* 対象（ボタン方式） */}
-            <div style={{ marginTop: 4 }}>
-              <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>対象</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                <MultiButtonGroup
-                  options={tgtToggleOptions(cCurTgt.l1)}
-                  values={tgtToggleValues(cCurTgt.l1)}
-                  onToggle={(code, on) => setCostTgt(tgtToggleNextL1(cCurTgt.l1, code, on))}
-                  accentColor="#b76e00"
-                />
-                <ButtonGroup
-                  options={TARGET_SEL_L1_REST}
-                  value={TGT_TOGGLE_L1.has(cCurTgt.l1) ? TARGET_SEL_NONE_ACTIVE : cCurTgt.l1}
-                  onChange={(l1) => setCostTgt(l1)}
-                  accentColor="#b76e00"
-                />
-              </div>
-              {cHasDigimonTamer && (
-                <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <MultiButtonGroup
-                    options={typeSelOptions(cCurTgt.l1).filter((o) => cTgtL2Options.some((x) => x.code === o.code))}
-                    values={cTypeChecked}
-                    onToggle={(code, on) => applyCostTypeSelection(on ? [...cTypeChecked, code] : cTypeChecked.filter((t) => t !== code))}
-                    accentColor="#b76e00"
-                  />
-                  {cExclusiveL2Options.length > 0 && (
-                    <TargetL2Group
-                      options={cExclusiveL2Options}
-                      value={cTypeChecked.length === 0 ? cCurTgt.l2 : ''}
-                      onChange={(l2) => setCostTgt(cCurTgt.l1, l2)}
-                      l1={cCurTgt.l1}
-                      accentColor="#b76e00"
-                    />
-                  )}
-                </div>
-              )}
-              {!cHasDigimonTamer && cTgtL2Options.length > 0 && (
-                <div style={{ marginTop: 4 }}>
-                  <ButtonGroup options={cTgtL2Options} value={cCurTgt.l2} onChange={(l2) => setCostTgt(cCurTgt.l1, l2)} accentColor="#b76e00" />
-                </div>
-              )}
-              {/* 破棄: 場所/位置/裏表（対象欄に統合。以前はアクション欄側にあったが、
-                  「対象」で全て設定できるようにするため、対象の絞り込み系コントロールと
-                  ここへまとめた。選んだ場所に応じて実アクションコードを切り替える */}
-              {isDiscardActive && (
-                <div style={{ marginTop: 4 }}>
-                  <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📥 場所（どこから破棄するか）</div>
-                  <ButtonGroup
-                    options={DISCARD_ZONE_MAP.map((z) => ({ code: z.code, label: z.label }))}
-                    value={activeDiscardZone}
-                    onChange={(zoneCode) => {
-                      if (zoneCode === activeDiscardZone) return; // 選び直し済みの位置指定を巻き戻さない
-                      const z = DISCARD_ZONE_MAP.find((zz) => zz.code === zoneCode);
-                      if (!z) return;
-                      // 手札/デッキ: 対象を「自分の手札/デッキ」（相手/お互いを選んでいればその人の）にして汎用の破棄で保存する。
-                      // 枚数は対象の :N（以前の deck_trash_top は value しか読まず、対象欄の枚数が効かなかった）
-                      if (zoneCode === 'hand' || zoneCode === 'deck') {
-                        const l1 = (COST_DISCARD_TGT_ZONES[cCurTgt.l1] || []).includes(zoneCode) ? cCurTgt.l1 : 'own';
-                        const base = TARGET_SEL_L1L2_TO_CODE[l1 + ':' + zoneCode];
-                        updateCost(i, { ...c, action: 'discard', target: base + (cTgtSuffix || ':1'), fromZones: undefined });
-                        return;
-                      }
-                      // z.targetが無い場所（進化元/テイマー/手札/デッキ/リンクカード）では既存のtargetを
-                      // そのまま維持する（「対象」欄で選んだ自分/相手を場所切替で巻き戻さないため）。
-                      // fromZones は設定しない（📍位置ボタンで既に場所+位置を action コードへ
-                      // エンコード済みのため、汎用の「セキュリティ/進化元の位置」パネルと二重表示になるのを防ぐ）
-                      // 手札/デッキを対象にしていた場合、その対象は進化元/セキュリティ等では意味が無いので外す
-                      const keepTgt = discardZoneFromTarget ? '' : c.target;
-                      updateCost(i, { ...c, action: z.action, target: z.target || keepTgt, fromZones: undefined });
-                    }}
-                    accentColor="#b76e00"
-                  />
-                  {(() => {
-                    const z = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                    return z?.warn ? (
-                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>{z.warn}</div>
-                    ) : null;
-                  })()}
-                  {/* 進化元/テイマー/セキュリティのときだけ、積まれたカードのどこから破棄するか選べる。
-                      ※ 辞書側の hasPositionVariant フラグ（costIsPositional等）には依存しない。
-                      DISCARD_ZONE_MAP はこのエディタ内で完結したハードコード機構であり、
-                      辞書の設定状態に関わらず常に POSITION_VARIANTS 4種を出す。
-                      これがevo_discard系の「上から/下から/選んで/全て」を決める唯一の実体
-                      （エンジンはaction.codeのサフィックスだけを見る） */}
-                  {(() => {
-                    const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                    if (!zone?.hasPosition) return null;
-                    const zoneBase = getActionVariant(zone.action)?.base || zone.action;
-                    const curSuffix = getActionVariant(c.action || '')?.suffix || '';
-                    return (
-                      <div style={{ marginTop: 4 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>📍 アクションにかかる位置</div>
-                        <ButtonGroup
-                          options={POSITION_VARIANTS.map((v) => ({ code: v.suffix, label: v.label }))}
-                          value={curSuffix}
-                          onChange={(suffix) => { if (!suffix) return; updateCost(i, { ...c, action: zoneBase + suffix }); }}
-                          accentColor="#b76e00"
-                        />
-                      </div>
-                    );
-                  })()}
-                  {/* 進化元/テイマー: 積まれたカードのうち裏向き/表向きのものだけを対象にするか
-                      （place_under_tamer/place_under_digimon/deck_to_evo_bottomで裏向きに置かれた
-                      カードを区別して破棄したい場合。cond_face_down/cond_face_up を conditions に
-                      反映する */}
-                  {(() => {
-                    const zone = DISCARD_ZONE_MAP.find((zz) => zz.code === activeDiscardZone);
-                    if (!zone?.hasFace) return null;
-                    const faceConds = c.conditions || [];
-                    const faceIdx = faceConds.findIndex((p) => p.base === 'cond_face_down' || p.base === 'cond_face_up');
-                    const faceVal = faceIdx !== -1 ? (faceConds[faceIdx].base === 'cond_face_down' ? 'down' : 'up') : '';
-                    return (
-                      <div style={{ marginTop: 4 }}>
-                        <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>🂠 裏表</div>
-                        <ButtonGroup
-                          options={[{ code: '', label: '指定なし' }, { code: 'down', label: '裏向きのみ' }, { code: 'up', label: '表向きのみ' }]}
-                          value={faceVal}
-                          onChange={(v) => {
-                            const next = faceConds.filter((p) => p.base !== 'cond_face_down' && p.base !== 'cond_face_up');
-                            if (v === 'down') next.push({ base: 'cond_face_down' });
-                            else if (v === 'up') next.push({ base: 'cond_face_up' });
-                            updateCost(i, { ...c, conditions: next });
-                          }}
-                          accentColor="#b76e00"
-                        />
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-              {/* デジモン/テイマー本体のときだけ「本体/下/一番下」を選べる（進化元／テイマーの下のカードを指す） */}
-              {showCostStackPos && (
-                <div style={{ marginTop: 4 }}>
-                  <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>位置:</span>
-                  <ButtonGroup options={STACK_POS_OPTIONS} value={cTgtStackPos} onChange={(v) => setCostStackPos(v as StackPos)} accentColor="#b76e00" />
-                </div>
-              )}
-              {/* 「下/一番下」のときだけ、積まれているカードの裏表・種別で絞り込める */}
-              {showCostStackPos && cTgtStackPos !== '' && (
-                <div style={{ marginTop: 4 }}>
-                  <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>裏表/種別:</span>
-                  <MultiButtonGroup options={COST_STACK_FACE_TYPE_OPTS} values={costFaceTypeActive} onToggle={toggleCostFaceType} accentColor="#b76e00" />
-                </div>
-              )}
-              {!cHideCount && cCurTgt.l1 && (
-                <div style={{ marginTop: 4 }}>
-                  <TargetCountField
-                    suffix={cTgtSuffix}
-                    onChange={(v) => updateCost(i, { ...c, target: joinStackSuffix(cTgtBase, cTgtStackPos) + v })}
-                  />
-                </div>
-              )}
-            </div>
+            {!placeEvo && costTargetJsx}
 
 
-            {/* === コスト対象の絞り込み条件（発動条件と同じConditionsHybridEditorを再利用） ===
-                裏向き/表向き(cond_face_down/up)は上の「対象」欄の🂠裏表クイックトグルで管理する
-                ため、ここには表示しない（同じconditions配列に書き込まれるが、このパネルの
-                表示・編集対象からは除外し、他の条件を編集してもそのまま保持する） */}
-            <div style={{ marginTop: 6 }}>
-              {/* よく使う状態（クイックチェックボックス）: アクションの対象の条件と同じパターン */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 6, padding: '4px 6px', background: 'white', borderRadius: 3, border: '1px solid #b2dfdb' }}>
-                {[
-                  { code: 'cond_self_rest',   label: 'レスト状態' },
-                  { code: 'cond_self_active', label: 'アクティブ状態' },
-                ].map((f) => {
-                  const checked = (c.conditions || []).some((cc) => cc.base === f.code);
-                  return (
-                    <label key={f.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => {
-                          const cur = c.conditions || [];
-                          if (e.target.checked) { if (!checked) updateCost(i, { ...c, conditions: [...cur, { base: f.code, value: '' }] }); }
-                          else updateCost(i, { ...c, conditions: cur.filter((cc) => cc.base !== f.code) });
-                        }}
-                        style={{ margin: 0 }}
-                      />
-                      {f.label}
-                    </label>
-                  );
-                })}
-              </div>
-              {/* コスト対象の絞り込み条件チェーン: 1条件ずつ追加し、2個目以降は直前との関係を
-                  AND/ORで選ぶ（デッキ検索等のグループ条件チェーンと同じ「ANDがORより優先」＝
-                  OR区切りでAND区間をまとめる積和評価）。例:「Lv4以下」→[AND]→「名前クロノモン」
-                  →[OR]→「特徴TS」 = (Lv4以下 AND 名前クロノモン) OR 特徴TS
-                  レスト状態/裏表（cond_self_rest等・isRefFaceCond）はc.conditionsに残し、
-                  このチェーンには含めない（上のクイックチェックボックス/🂠裏表で管理） */}
-              {(() => {
-                const isCommonCostCond = (base: string) => isRefFaceCond(base) || base === 'cond_self_rest' || base === 'cond_self_active';
-                const commonConds = (c.conditions || []).filter((cc) => isCommonCostCond(cc.base));
-                const legacyPairs = (c.conditions || []).filter((cc) => !isCommonCostCond(cc.base));
-                return (
-                  <ConditionChainField
-                    chain={c.conditionChain}
-                    legacyPairs={legacyPairs}
-                    legacyOp={c.conditionsOp}
-                    onChainChange={(next) => updateCost(i, { ...c, conditionChain: next, conditions: commonConds })}
-                    dict={dict}
-                    titleBase="コスト対象の絞り込み"
-                    theme="action"
-                    extraProps={{ defaultSubject: '', showSubjectSelector: false, multiType: true, allowSameLv: true, targetL2: cCurTgt.l2 as 'digimon' | 'tamer' | 'card' | '' }}
-                    commonConditions={commonConds.filter((cc) => !isRefFaceCond(cc.base))}
-                    onCommonConditionsChange={(next) => updateCost(i, { ...c, conditions: [...commonConds.filter((cc) => isRefFaceCond(cc.base)), ...next] })}
-                  />
-                );
-              })()}
-              {/* 条件ごとに枚数を分ける（ルールの「条件ごとに枚数を分ける」と同じ。cost[].designated_groups）
-                  例:「自分の手札の『エクスブイモン』と『スティングモン』1枚ずつをデッキの下に戻すことで」 */}
-              {(() => {
-                const groups = c.designatedGroups || [];
-                const on = groups.length > 0;
-                const setGroups = (next: DesignatedGroup[] | undefined) => updateCost(i, { ...c, designatedGroups: next && next.length > 0 ? next : undefined });
-                const updGroup = (gi: number, patch: Partial<DesignatedGroup>) => setGroups(groups.map((g, k) => (k === gi ? { ...g, ...patch } : g)));
-                return (
-                  <div style={{ marginTop: 6, padding: 6, background: '#fdf6ec', border: '1px solid #f0d9a8', borderRadius: 4 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, fontWeight: 'bold', color: '#946200' }}>
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={(e) => setGroups(e.target.checked
-                          ? [{ conditions: [], conditionsOp: 'and', count: 1 }, { conditions: [], conditionsOp: 'and', count: 1 }]
-                          : undefined)}
-                      />
-                      条件ごとに枚数を分ける（例:「エクスブイモン」と「スティングモン」1枚ずつ）
-                    </label>
-                    {on && (
-                      <div style={{ marginTop: 6 }}>
-                        <div style={{ fontSize: 10, color: '#c62828', marginBottom: 4 }}>
-                          ⚠ エンジンが対応しているのはアクション「デッキに戻す」（手札/トラッシュから）だけです。ONの間は、各グループの条件と枚数で選びます（上の「コスト対象の絞り込み」は全グループ共通の条件、対象の枚数は使いません）
-                        </div>
-                        {groups.map((g, gi) => (
-                          <div key={gi} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: gi < groups.length - 1 ? '1px dashed #f0d9a8' : 'none' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                              <span style={{ fontSize: 11, fontWeight: 'bold', color: '#666' }}>グループ（{gi + 1}）</span>
-                              <span style={{ fontSize: 10, color: '#666' }}>枚数:</span>
-                              <input
-                                type="number" min={1}
-                                value={g.count === undefined || g.count === null ? '' : String(g.count)}
-                                onChange={(e) => updGroup(gi, { count: e.target.value === '' ? undefined : Number(e.target.value) })}
-                                style={{ width: 50, padding: '2px 4px', border: '1px solid #ccc', borderRadius: 3, fontSize: 12 }}
-                              />
-                              {groups.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setGroups(groups.filter((_, k) => k !== gi))}
-                                  style={{ marginLeft: 'auto', border: '1px solid #d33', color: '#d33', background: 'white', borderRadius: 4, padding: '1px 7px', cursor: 'pointer', fontSize: 11 }}
-                                >
-                                  ✕
-                                </button>
-                              )}
-                            </div>
-                            <ConditionsHybridEditor
-                              conditions={g.conditions || []}
-                              onChange={(next) => updGroup(gi, { conditions: next })}
-                              dict={dict}
-                              title="このグループの条件"
-                              hint="（例: 名称＝エクスブイモン）"
-                              theme="action"
-                              defaultSubject=""
-                              showSubjectSelector={false}
-                              multiType={true}
-                              conditionsOp={g.conditionsOp || 'and'}
-                              onConditionsOpChange={(op) => updGroup(gi, { conditionsOp: op })}
-                            />
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => setGroups([...groups, { conditions: [], conditionsOp: 'and', count: 1 }])}
-                          style={{ border: '1px dashed #946200', color: '#946200', background: 'white', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 11 }}
-                        >
-                          ＋ グループを追加
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-              {/* 進化元/テイマーの下から破棄するコスト専用: 上の「コスト対象の絞り込み」は
-                  破棄されるカード自体（裏向き・Lv等）の条件。こちらは「どのデジモン/テイマーの
-                  進化元（下のカード）から破棄するか」というコンテナ側の条件 → cost[].filter */}
-              {costActionIsEvoDiscardFamily && cCurTgt.l1 !== 'self' && cCurTgt.l1 !== 'same_target' && (
-                <div style={{ marginTop: 6 }}>
-                  <ConditionChainField
-                    chain={c.containerFilterChain}
-                    legacyPairs={[]}
-                    onChainChange={(next) => updateCost(i, { ...c, containerFilterChain: next })}
-                    dict={dict}
-                    titleBase="進化元を持つデジモン/テイマーの条件"
-                    theme="action"
-                    accentColor="#b76e00"
-                    extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, showTypeInTargetFilter: true }}
-                    commonConditions={c.containerFilter}
-                    onCommonConditionsChange={(next) => updateCost(i, { ...c, containerFilter: next })}
-                  />
-                  <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
-                    例:「特徴『バグラ軍』を持つ自分のデジモンの進化元を2枚破棄」の“バグラ軍”はここに入れる
-                    （上の「コスト対象の絞り込み」は破棄されるカード側の条件になる）
-                  </div>
-                </div>
-              )}
-            </div>
+            {!placeEvo && costCondsJsx}
 
             {/* === 代替コスト:「〇〇するか、〇〇することで」。効果1の代替アクション(altActions)
                 と全く同じ仕組み（executeRecipeStep→runWithAltActions選択UI）をコストにも

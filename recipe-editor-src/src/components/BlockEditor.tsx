@@ -635,6 +635,7 @@ function RefExistsAttributeFilterPanel({
                 }}
                 accentColor="#946200"
               />
+              {attrOr && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ エンジン未対応です（保存はできます）</span>}
             </div>
           )}
           {activeSub.has('color') && (
@@ -675,6 +676,7 @@ function RefExistsAttributeFilterPanel({
                   accentColor="#946200"
                 />
               )}
+              {lvMode === 'cond_lv' && (lvEq?.value || '').includes(',') && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ 2つ以上入れたときはエンジン未対応です</span>}
               {lvMode && lvMode !== 'cond_lv' && (
                 <input
                   type="number" min={1}
@@ -708,6 +710,7 @@ function RefExistsAttributeFilterPanel({
                   accentColor="#946200"
                 />
               )}
+              {costMode === 'cond_cost' && (costEq?.value || '').includes(',') && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ 2つ以上入れたときはエンジン未対応です</span>}
               {costMode && costMode !== 'cond_cost' && (
                 <input
                   type="number" min={0}

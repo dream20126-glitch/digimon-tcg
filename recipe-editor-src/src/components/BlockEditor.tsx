@@ -8926,21 +8926,25 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     <ButtonGroup options={tgtL2Options} value={curTgt.l2} onChange={handleTgtL2} accentColor="#b76e00" />
                   </div>
                 )}
-                {/* 効果1の「そのデジモン」: 〜したときのカード（target_trigger_source）か、直前に対象にしたカード（コストで選んだカード。same_target）か */}
+                {/* 効果1の「そのデジモン」: 〜したときのカード（target_trigger_source）か、直前に対象にしたカード（コストで選んだカード。same_target）か。
+                    他のボタンと見分けやすいよう、点線の枠の中にラジオ（◉/○）の文字で並べる */}
                 {(tgtBase === 'same_target' || tgtBase === 'target_trigger_source') && (
-                  <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ fontSize: 10, color: '#666' }}>どの「その」:</span>
+                  <div style={{ marginTop: 4, display: 'inline-flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', padding: '2px 8px', border: '1px dashed #b76e00', borderRadius: 4, background: '#fffaf0' }}>
+                    <span style={{ fontSize: 10, color: '#8a5300', fontWeight: 'bold' }}>どの「その」</span>
                     {[{ code: 'target_trigger_source', label: '〜したときのカード' }, { code: 'same_target', label: '直前に対象にしたカード（コスト等）' }].map((o) => {
                       const on = tgtBase === o.code;
                       return (
-                        <button
+                        <span
                           key={o.code}
-                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          tabIndex={0}
                           onClick={() => { if (!on) onChange({ ...block, target: o.code }); }}
-                          style={{ padding: '1px 7px', borderRadius: 10, fontSize: 10, cursor: 'pointer', lineHeight: 1.5, border: on ? '1px solid #b76e00' : '1px solid #ccc', background: on ? '#b76e00' : '#fff', color: on ? '#fff' : '#555', fontWeight: on ? 'bold' : 'normal' }}
+                          onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !on) { e.preventDefault(); onChange({ ...block, target: o.code }); } }}
+                          style={{ fontSize: 10, cursor: 'pointer', color: on ? '#b76e00' : '#777', fontWeight: on ? 'bold' : 'normal', textDecoration: on ? 'underline' : 'none', whiteSpace: 'nowrap' }}
                         >
-                          {o.label}
-                        </button>
+                          {on ? '◉' : '○'} {o.label}
+                        </span>
                       );
                     })}
                   </div>

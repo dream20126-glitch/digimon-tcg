@@ -1940,7 +1940,7 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   const _bTrigs = (b.triggers && b.triggers.length > 0) ? b.triggers : [b.trigger];
   if (_bTrigs.includes('block')) step.block_role = b.blockRole === 'blocked' ? 'blocked' : 'blocker';
   // 「カードが戻ったとき」(deck_bounce) 専用: 戻った先（手札/デッキ。両方なら両方）
-  if (_bTrigs.includes('deck_bounce') && Array.isArray(b.returnedTo) && b.returnedTo.length > 0) step.returned_to = b.returnedTo.slice();
+  if ((_bTrigs.includes('deck_bounce') || _bTrigs.includes('when_deck_bounce')) && Array.isArray(b.returnedTo) && b.returnedTo.length > 0) step.returned_to = b.returnedTo.slice();
   // 「原因」（バトルで/効果で・原因の対象）: どのトリガーでも設定可能な汎用フィールド
   // （詳細は types.ts 参照）。トリガーごとに原因を個別設定したい場合は
   // triggerCauseByCode（cause_by_code）を優先し、共有のdestroyCauseは無視する

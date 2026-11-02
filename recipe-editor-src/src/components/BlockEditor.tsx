@@ -3571,6 +3571,8 @@ const PRE_EVENT_TRIGGER_PAIR: Record<string, string> = {
   on_evolve: 'before_evolve',
   on_attack: 'when_attack',
   on_destroy: 'when_destroy',
+  // 「カードが戻ったとき」（辞書のトリガー deck_bounce）⇔「手札/デッキに戻るとき」（戻る前・置換効果用。⚠ エンジン未対応）
+  deck_bounce: 'when_deck_bounce',
 };
 const TIMING_OPTIONS: { code: TimingKey; label: string }[] = [
   { code: 'self', label: '自分' },
@@ -3964,7 +3966,7 @@ function inferTiming(currentTriggers: string[], triggerConditions: ConditionPair
   return 'any';
 }
 // 辞書に存在しない可能性がある新規プレースホルダーコード（メイン+相手 等）の表示名フォールバック
-const FAMILY_VARIANT_FALLBACK_LABELS: Record<string, string> = {};
+const FAMILY_VARIANT_FALLBACK_LABELS: Record<string, string> = { when_deck_bounce: 'カードが戻るとき' };
 [...COMMON_TRIGGER_FAMILIES, ...KEYWORD_ONLY_TRIGGER_FAMILIES].forEach((fam) => {
   if (fam.kind !== 'timing' || !fam.variants) return;
   (Object.keys(fam.variants) as TimingKey[]).forEach((k) => {
@@ -5516,7 +5518,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const allTriggersTypeless = currentTriggers.length > 0
               && currentTriggers.every((t) => isNoSubjectTypeTriggerCode(t) || dict.triggers.find((d) => d.code === t)?.noSubjectType);
             const isZoneIncreaseTrigger = currentTriggers.includes(ZONE_INCREASE_TRIGGER);
-            const triggerHasFromZones = isZoneIncreaseTrigger || currentTriggers.some((t) => dict.triggers.find((d) => d.code === t)?.hasFromZones);
+            const triggerHasFromZones = isZoneIncreaseTrigger || currentTriggers.some((t) => dict.triggers.find((d) => d.code === (t === 'when_deck_bounce' ? 'deck_bounce' : t))?.hasFromZones);
             // レスト/アクティブ状態フィルタは「このカード/デジモン/テイマー」のときだけ意味を持つ
             // （「カード」全般やプレイヤーにはレスト/アクティブの概念が無い）
             const showRestActive = cur.l1 === 'self' || cur.l2 === 'digimon' || cur.l2 === 'tamer';
@@ -5536,7 +5538,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             const activePreEventFamilyCodes = Object.keys(PRE_EVENT_TRIGGER_PAIR).filter(
               (code) => currentTriggers.includes(code) || currentTriggers.includes(PRE_EVENT_TRIGGER_PAIR[code])
             );
-            const isPreEventCheckedAny = activePreEventFamilyCodes.some((code) => currentTriggers.includes(PRE_EVENT_TRIGGER_PAIR[code]));
+            const isPreEventCheckedAny = activePreEventFamilyCodes.length > 0 && activePreEventFamilyCodes.every((code) => currentTriggers.includes(PRE_EVENT_TRIGGER_PAIR[code]));
             const togglePreEventAll = () => {
               const wantPre = !isPreEventCheckedAny;
               let next = [...currentTriggers];
@@ -5816,7 +5818,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           onChange({ ...block, triggerSubjectByCode: nextMap });
                         };
                         const thisIsZoneIncrease = code === ZONE_INCREASE_TRIGGER;
-                        const thisHasFromZones = thisIsZoneIncrease || !!dict.triggers.find((d) => d.code === code)?.hasFromZones;
+                        const thisHasFromZones = thisIsZoneIncrease || !!dict.triggers.find((d) => d.code === (code === 'when_deck_bounce' ? 'deck_bounce' : code))?.hasFromZones;
                         const thisNoSubjectType = isNoSubjectTypeTriggerCode(code) || !!dict.triggers.find((d) => d.code === code)?.noSubjectType;
                         const setThisSubjectAndZone = (nextSubject: string, nextZone: string[]) => {
                           const nextMap = { ...(block.triggerSubjectByCode || {}), [code]: nextSubject };
@@ -5983,7 +5985,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {/* 【リンク時】のときだけ、このカードが「リンクする側」か「リンクされる側」かを選べる。
                       「される側」は発動主体（own/other_own/opp）と組み合わせて「他の自分のデジモンが
                       リンクされたとき」等も表現できる（発動主体パネルは下にそのまま表示される） */}
-                  {currentTriggers.some((t) => String(t || '').trim() === RETURNED_TRIGGER_CODE) && (() => {
+                  {currentTriggers.some((t) => String(t || '').trim() === RETURNED_TRIGGER_CODE || String(t || '').trim() === 'when_deck_bounce') && (() => {
                     const rt = block.returnedTo || [];
                     return (
                       <div style={{ marginTop: 6 }}>
@@ -6058,7 +6060,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   {currentTriggers.some((t) => !allFamilyCodes.has(t)) && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                       {currentTriggers.filter((t) => !allFamilyCodes.has(t)).map((t) => {
-                        const label = dict.triggers.find((d) => d.code === t)?.label || t;
+                        const label = dict.triggers.find((d) => d.code === t)?.label || FAMILY_VARIANT_FALLBACK_LABELS[t] || t;
                         return (
                           <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#e0f7f1', border: '1px solid #93c693', borderRadius: 12, fontSize: 11 }}>
                             {label}

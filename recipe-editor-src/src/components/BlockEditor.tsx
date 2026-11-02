@@ -3526,6 +3526,13 @@ const ATTACK_TRIGGER_CODES = ['on_attack', 'when_opp_attack', 'on_any_attack', '
 const LINK_TRIGGER_CODES = ['on_link'];
 // 「ブロック」(辞書のトリガー block) のときだけ、［する］［される］を選べるUIを出す（step.block_role）
 const BLOCK_TRIGGER_CODE = 'block';
+// アクション「オープン」の場所 → 実際のアクションコード（hand_open＝手札をオープン は ⚠ エンジン未対応）
+const OPEN_ZONE_ACTIONS: { code: string; label: string; action: string }[] = [
+  { code: 'deck', label: 'デッキ', action: 'deck_open' },
+  { code: 'security', label: 'セキュリティ', action: 'security_open' },
+  { code: 'hand', label: '手札', action: 'hand_open' },
+];
+const OPEN_ACTION_CODES = new Set(OPEN_ZONE_ACTIONS.map((z) => z.action));
 // 効果1の「＋ 一緒に行う」で、対象を持たず数値だけで済むアクション（それ以外は「同じ対象」にする）
 const BUNDLE_VALUE_ONLY = new Set(['draw', 'memory_plus', 'memory_minus', 'memory', 'recover', 'deck_open', 'delay']);
 // 複数選んだときに値の箱を出すアクション（辞書の「数値の意味」があるものも出す）
@@ -3640,7 +3647,8 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   { code: 'draw', label: 'ドロー' },
   { code: 'grant_keyword', label: 'キーワード付与' },
   { code: 'destroy', label: '消滅' },
-  { code: 'deck_open', label: 'デッキオープン' },
+  // 「オープン」: 押すと場所（デッキ/セキュリティ/手札）を選ぶ（OPEN_ZONE_ACTIONS。deck_open/security_open/hand_open）
+  { code: 'deck_open', label: 'オープン' },
   { code: 'recover', label: 'リカバリー' },
   { code: 'evolve', label: '進化' },
   { code: 'dedigivolve', label: '退化' },
@@ -6505,6 +6513,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
             ..._cantButtonDoableCodes,
             ..._cantButtonDoableCodes.map((c) => DOABLE_TO_CANT_LIVE[c]),
             'cant_attack_block',
+            ...OPEN_ACTION_CODES,
             ...DISCARD_ACTION_CODES,
             ...PLACE_ACTION_CODES,
             ...SUMMON_KIND_CODES,
@@ -6707,7 +6716,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           // よく使うアクション（トリガー家族ボタンと同じ操作感）: 該当すればボタン1つで即選択、
           // 無ければ「その他のアクション」を開いて既存のプルダウン(+位置バリアント)から選ぶ
-          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || effectAction === 'appear_or_evolve' || isDiscardActive || isPlaceActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block' || effectAction === CANT_BE_ATTACKED || SUMMON_KIND_CODES.has(effectAction);
+          const isCommonAction = COMMON_ACTIONS.some((a) => a.code === effectAction) || effectAction === 'appear_or_evolve' || isDiscardActive || isPlaceActive || _cantButtonCantCodes.has(effectAction) || effectAction === 'cant_attack_block' || effectAction === CANT_BE_ATTACKED || OPEN_ACTION_CODES.has(effectAction) || SUMMON_KIND_CODES.has(effectAction);
           function selectCommonAction(code: string) {
             if (isEditingAlt) { updateEffect({ action: code, value: '' }); return; }
             const dictEntry = findActionEntry(code);
@@ -7061,6 +7070,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                     // selectedSetでの判定にする。それ以外のボタンは従来通り単一選択）
                     const active = (isCantToggleGroup ? selectedSet.includes(a.code) : effectAction === a.code)
                       || (a.code === 'evolve' && effectAction === 'appear_or_evolve')
+                      || (a.code === 'deck_open' && OPEN_ACTION_CODES.has(effectAction))
                       || bundleAlts.some((x) => x.a.action === a.code);
                     return (
                       <button
@@ -7070,6 +7080,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           // 「登場」と「進化」は両方押せる（appear_or_evolve＝登場/進化。「するとき」なら値-2で「支払う登場/進化コスト-2」）
                           if (a.code === 'evolve' && effectAction === 'summon_appear') { updateEffect({ action: 'appear_or_evolve' }); return; }
                           if (a.code === 'evolve' && effectAction === 'appear_or_evolve') { updateEffect({ action: 'summon_appear' }); return; }
+                          // 「オープン」（セキュリティ/手札のオープンも含む）が選ばれているときに押したら外す
+                          if (a.code === 'deck_open' && OPEN_ACTION_CODES.has(effectAction) && bundleAlts.length === 0) { changeEffectAction(''); return; }
                           if (toggleMultiAction(a.code)) return;
                           if (isCantToggleGroup) toggleCantAction(a.code); else selectCommonAction(a.code);
                         }}
@@ -7347,6 +7359,20 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 {/* レスト/アクティブ/進化/アタック/ブロック: 「する」（通常）/「できない」（封じる）の
                     切り替え。上のボタンで2つ以上選んでいる場合は複数の行動を同時に強制する
                     「する」が成立しないため、「できない」固定（選択不要）になる */}
+                {OPEN_ACTION_CODES.has(effectAction) && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>オープンする場所</div>
+                    <ButtonGroup
+                      options={OPEN_ZONE_ACTIONS.map((z) => ({ code: z.action, label: z.label }))}
+                      value={effectAction}
+                      onChange={(v) => { if (v && v !== effectAction) changeEffectAction(v); }}
+                      accentColor="#1976d2"
+                    />
+                    {effectAction === 'hand_open' && (
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 手札のオープンはエンジン未対応です（保存はできますが動作しません）</div>
+                    )}
+                  </div>
+                )}
                 {selectedSet.length === 1 && (
                   <div style={{ marginTop: 4 }}>
                     <div style={{ fontSize: 10, color: '#555', marginBottom: 2 }}>{selectedSet[0] === 'attack' ? 'する/できない/されない' : 'する/できない'}</div>

@@ -566,6 +566,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   if (a.costFree) out.cost_free = true;
   if (a.ignoreEvolveCondition) out.ignore_evolve_condition = true;
   if (a.atTurnEnd) out.at_turn_end = true;
+  if (a.requiresPrevCost) out.requires_prev_cost = true;
   const aFixed = fixedCostOut(a.fixedCost);
   if (aFixed !== undefined) { out.fixed_cost = aFixed; delete out.value; }
   if (a.skipOnPlay) out.skip_on_play = true;
@@ -1763,6 +1764,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (b.ignoreEvolveCondition) step.ignore_evolve_condition = true;
   // 「このターン終了時、〜する」
   if (b.atTurnEnd) step.at_turn_end = true;
+  // 「効果1のコストを支払ったときだけ」
+  if (b.requiresPrevCost) step.requires_prev_cost = true;
   // 「進化コストNで」（コストそのものを指定）。指定中は増減の value は出さない
   const bFixed = fixedCostOut(b.fixedCost);
   if (bFixed !== undefined) { step.fixed_cost = bFixed; delete step.value; }
@@ -2587,6 +2590,7 @@ function stepObjectToAltAction(step: any): AltAction {
     ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
     fixedCost: fixedCostIn(step?.fixed_cost),
     atTurnEnd: !!step?.at_turn_end || undefined,
+    requiresPrevCost: !!step?.requires_prev_cost || undefined,
     skipOnPlay: !!step?.skip_on_play,
     enterSuspended: !!step?.enter_suspended || undefined,
     reveal: !!step?.reveal || undefined,
@@ -2849,6 +2853,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     cause_effect: true,
     cost: true,
     post_cost_condition: true,
+    requires_prev_cost: true,
     from: true,
     from_op: true,
     evo_source_owner: true,
@@ -3046,6 +3051,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     ignoreEvolveCondition: !!step?.ignore_evolve_condition || undefined,
     fixedCost: fixedCostIn(step?.fixed_cost),
     atTurnEnd: !!step?.at_turn_end || undefined,
+    requiresPrevCost: !!step?.requires_prev_cost || undefined,
     skipOnPlay: !!step?.skip_on_play,
     enterSuspended: !!step?.enter_suspended || undefined,
     reveal: !!step?.reveal || undefined,
@@ -3229,6 +3235,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             ignoreEvolveCondition: !!a?.ignore_evolve_condition || undefined,
             fixedCost: fixedCostIn(a?.fixed_cost),
             atTurnEnd: !!a?.at_turn_end || undefined,
+            requiresPrevCost: !!a?.requires_prev_cost || undefined,
             skipOnPlay: !!a?.skip_on_play,
             enterSuspended: !!a?.enter_suspended || undefined,
             reveal: !!a?.reveal || undefined,

@@ -6918,6 +6918,25 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       </label>
                     );
                   })()}
+                  {/* 「その後」の効果を、効果1のコストを支払ったときだけ行う（requires_prev_cost）。
+                      例: P-087「このテイマーをレストさせることで、Aなら〜。Bなら〜」の「Bなら〜」。効果1にコストがあるときだけ出す */}
+                  {isEditingAlt && (editingAlt?.thenBreak || !!editingAlt?.requiresPrevCost) && ((block.costs || []).length > 0 || !!editingAlt?.requiresPrevCost) && (() => {
+                    const on = !!editingAlt?.requiresPrevCost;
+                    return (
+                      <label
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', color: on ? '#9333ea' : '#666', fontWeight: on ? 'bold' : 'normal' }}
+                        title="効果1のコストを支払わなかったとき（使わないを選んだ・払えなかった）は、この効果を行わない"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={(e) => updateEffect({ requiresPrevCost: e.target.checked || undefined })}
+                        />
+                        💰 効果1のコストを支払ったときだけ
+                        {on && <span style={{ fontSize: 10, color: '#c62828', fontWeight: 'normal' }}>⚠ エンジン未対応（保存はできます）</span>}
+                      </label>
+                    );
+                  })()}
                   {/* 直前の選択肢の続き（OR の選択肢の中の「その後」）。例:「・セキュリティを1枚破棄する。
                       その後【リカバリー+1】」の【リカバリー+1】。直前が選択肢（効果1や「その後」区間の
                       先頭ではない効果）のときだけ出す */}

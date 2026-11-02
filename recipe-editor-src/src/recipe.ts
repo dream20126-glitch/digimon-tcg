@@ -1503,6 +1503,9 @@ function embedPrevMods(headObj: any, seg: AltAction[], altObjs: any[]): any[] {
           ? a.perRefStateCond.base + ':' + a.perRefStateCond.value
           : a.perRefStateCond.base;
       }
+      // 数える条件（「進化元の『ベムモン』1枚ごとに」の名称等）
+      const refFilter = buildConditionChainFilter(a.perRefFilterChain, a.perRefFilter);
+      if (refFilter) mod.ref_filter = refFilter;
     }
     // 直前の（まだ除去されていない）効果を探す
     let prevIdx = -1;
@@ -2683,6 +2686,11 @@ function costModToAltAction(mod: any, key = 'cost_le_mod', prevAction = ''): Alt
       const s = String(mod.per_ref_state);
       const i = s.indexOf(':');
       alt.perRefStateCond = i >= 0 ? { base: s.substring(0, i), value: s.substring(i + 1) } : { base: s };
+    }
+    if (mod.ref_filter) {
+      const rf = parseConditionChainFilter(mod.ref_filter);
+      alt.perRefFilter = rf.pairs;
+      if (rf.chain) alt.perRefFilterChain = rf.chain;
     }
   }
   return alt;

@@ -99,6 +99,7 @@ const cases: Case[] = [
   { name: '効果1をこのターン終了時に実行', blocks: [base({ action: 'destroy', target: 'self', value: undefined, atTurnEnd: true })], check: ['0.atTurnEnd'] },
   { name: 'コスト: 進化コスト3で進化することで', blocks: [base({ costs: [{ action: 'evolve', target: 'self', fixedCost: 3 }] })], check: ['0.costs.0.fixedCost', '0.costs.0.value'] },
   { name: 'セキュリティをオープン（相手・選んだ1枚を相手デッキの上）', blocks: [base({ action: 'security_open', value: undefined, actionParams: { security_owner: 'opp', pick_to: 'opp_deck_top', rest_to: 'shuffle_security' } })], check: ['0.actionParams'] },
+  { name: '登場コスト合計3以下。進化元の「ベムモン」1枚ごとに上限+1', blocks: [base({ action: 'destroy', target: 'opponent:all', value: undefined, targetFilter: [{ base: 'cond_cost_sum_le', value: '3' }], altActions: [alt({ action: 'cost_limit_plus', value: 1, applyCostModToPrev: true, perCount: 1, perRef: 'evo_source', perRefFilter: [{ base: 'cond_name', value: 'ベムモン' }] })] })], check: ['0.altActions.0.perRefFilter', '0.altActions.0.perRef'], raw: (r: any) => J(r).includes('"ref_filter":{"name":"ベムモン"}') },
 ];
 
 let ng = 0;

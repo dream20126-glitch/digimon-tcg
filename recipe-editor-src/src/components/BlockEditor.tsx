@@ -2627,6 +2627,8 @@ const ZONE_BUTTONS = [
   { code: 'hand', label: '手札' },
   { code: 'trash', label: 'トラッシュ' },
   { code: 'security', label: 'セキュリティ' },
+  // デッキ: 「このカードがデッキから破棄されたとき」等（デッキにある間の効果。⚠ エンジン未対応）
+  { code: 'deck', label: 'デッキ' },
   { code: 'breed', label: '育成エリア' },
   { code: '', label: 'バトルエリア' },
 ];
@@ -2708,11 +2710,12 @@ const SUBJECT_CODE_TO_L1L2: Record<string, { l1: string; l2: string }> = {
   self_hand: { l1: 'self', l2: 'hand' },
   self_trash: { l1: 'self', l2: 'trash' },
   self_security: { l1: 'self', l2: 'security' },
+  self_deck: { l1: 'self', l2: 'deck' },
 };
 Object.assign(SUBJECT_L1L2_TO_CODE, {
   'own:hand': 'own_hand', 'own:trash': 'own_trash', 'own:security': 'own_security', 'own:deck': 'own_deck',
   'opp:hand': 'opp_hand', 'opp:trash': 'opp_trash', 'opp:security': 'opp_security', 'opp:deck': 'opp_deck',
-  'self:hand': 'self_hand', 'self:trash': 'self_trash', 'self:security': 'self_security',
+  'self:hand': 'self_hand', 'self:trash': 'self_trash', 'self:security': 'self_security', 'self:deck': 'self_deck',
 });
 // 「場所指定」フラグが立っているトリガー（破棄されたとき等）でのみ、通常のL2一覧に
 // 手札/トラッシュ/セキュリティ/デッキを追加する（アクション対象欄のTARGET_SEL_L2_FROM_ZONESと

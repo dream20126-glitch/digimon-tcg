@@ -111,8 +111,11 @@ function evoOwnerL1Of(owner: 'self' | 'other' | undefined, zoneOwner: 'self' | '
   if (owner === 'other') return zoneOwner === 'opponent' ? 'opp' : 'other';
   return zoneOwner === 'self' ? 'own' : zoneOwner === 'opponent' ? 'opp' : '';
 }
-function EvoSourceOwnerPicker({ label, owner, zoneOwner, cardType, accent, onChange }: {
+// holder: 「どのカードの進化元か」（evoHolderFilter）。進化元の対象が「このデジモン」以外のとき、アクションに関係なく出す
+type EvoHolderPatch = { evoHolderFilter?: ConditionPair[]; evoHolderFilterChain?: ConditionChainEntry[] };
+function EvoSourceOwnerPicker({ label, owner, zoneOwner, cardType, accent, onChange, holder }: {
   label: string; owner?: 'self' | 'other'; zoneOwner?: 'self' | 'opponent'; cardType?: 'digimon' | 'tamer'; accent: string; onChange: (p: EvoOwnerPatch) => void;
+  holder?: { pairs?: ConditionPair[]; chain?: ConditionChainEntry[]; dict: any; onChange: (p: EvoHolderPatch) => void };
 }) {
   const l1 = evoOwnerL1Of(owner, zoneOwner);
   const setL1 = (v: string) => {
@@ -144,6 +147,23 @@ function EvoSourceOwnerPicker({ label, owner, zoneOwner, cardType, accent, onCha
       )}
       {owner === 'other' && !zoneOwner && (
         <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>（旧設定: 自分/相手どちらでも「他のデジモン」）</div>
+      )}
+      {holder && l1 !== 'self' && (
+        <div style={{ marginTop: 4, marginLeft: 12 }}>
+          <ConditionChainField
+            chain={holder.chain}
+            legacyPairs={[]}
+            onChainChange={(next) => holder.onChange({ evoHolderFilterChain: next })}
+            dict={holder.dict}
+            titleBase="どのカードの進化元か"
+            theme="action"
+            accentColor={accent}
+            extraProps={{ defaultSubject: '', showSubjectSelector: false, supportsMultiValue: true, showTypeInTargetFilter: true }}
+            commonConditions={holder.pairs}
+            onCommonConditionsChange={(next) => holder.onChange({ evoHolderFilter: next })}
+          />
+          <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>例:「自分の『ラグナモン』の進化元から」の“ラグナモン”はここに入れる（取り出すカードの条件は取得元カードの条件へ）</div>
+        </div>
       )}
     </div>
   );
@@ -1870,7 +1890,8 @@ function CostListEditor({
                         )}
                         {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
                           <EvoSourceOwnerPicker label={zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの対象' : '進化元の対象'} owner={c.evoSourceOwner} zoneOwner={c.fromZoneOwner} cardType={c.evoSourceCardType} accent="#b76e00"
-                            onChange={(p) => updateCost(i, { ...c, ...p })} />
+                            onChange={(p) => updateCost(i, { ...c, ...p })}
+                            holder={{ pairs: c.evoHolderFilter, chain: c.evoHolderFilterChain, dict, onChange: (p) => updateCost(i, { ...c, ...p }) }} />
                         )}
                         {zones.includes('linked') && (
                           <div style={{ marginTop: 4 }}>
@@ -2072,7 +2093,8 @@ function CostListEditor({
                     )}
                     {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
                       <EvoSourceOwnerPicker label={zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの対象' : '進化元の対象'} owner={c.evoSourceOwner} zoneOwner={c.fromZoneOwner} cardType={c.evoSourceCardType} accent="#1a4f8a"
-                        onChange={(p) => updateCost(i, { ...c, ...p })} />
+                        onChange={(p) => updateCost(i, { ...c, ...p })}
+                        holder={{ pairs: c.evoHolderFilter, chain: c.evoHolderFilterChain, dict, onChange: (p) => updateCost(i, { ...c, ...p }) }} />
                     )}
                     {zones.includes('linked') && (
                       <div style={{ marginTop: 4 }}>
@@ -4259,6 +4281,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectDeckSourcePosition = isEditingAlt ? editingAlt!.deckSourcePosition : block.deckSourcePosition;
   const effectEvoSourceOwner = isEditingAlt ? editingAlt!.evoSourceOwner : block.evoSourceOwner;
   const effectEvoSourceCardType = isEditingAlt ? editingAlt!.evoSourceCardType : block.evoSourceCardType;
+  const effectEvoHolderFilter = isEditingAlt ? editingAlt!.evoHolderFilter : block.evoHolderFilter;
+  const effectEvoHolderFilterChain = isEditingAlt ? editingAlt!.evoHolderFilterChain : block.evoHolderFilterChain;
   const effectLinkedOwner = isEditingAlt ? editingAlt!.linkedOwner : block.linkedOwner;
   const effectDuration = isEditingAlt ? editingAlt!.duration : block.duration;
   const effectPerCount = isEditingAlt ? editingAlt!.perCount : block.perCount;
@@ -7297,7 +7321,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       )}
                       {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
                         <EvoSourceOwnerPicker label={zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの対象' : '進化元の対象'} owner={effectEvoSourceOwner} zoneOwner={effectFromZoneOwner} cardType={effectEvoSourceCardType} accent="#1976d2"
-                          onChange={(p) => updateEffect(p)} />
+                          onChange={(p) => updateEffect(p)}
+                          holder={{ pairs: effectEvoHolderFilter, chain: effectEvoHolderFilterChain, dict, onChange: (p) => updateEffect(p) }} />
                       )}
                       {zones.includes('linked') && (
                         <div style={{ marginTop: 4 }}>
@@ -7932,7 +7957,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   「他のデジモン」のときだけ「自分/相手」を追加表示する */}
               {(zones.includes('evo_source') || zones.includes('stacked_cards')) && (
                 <EvoSourceOwnerPicker label={zones.includes('stacked_cards') && !zones.includes('evo_source') ? '重ねられているカードの対象' : '進化元の対象'} owner={effectEvoSourceOwner} zoneOwner={effectFromZoneOwner} cardType={effectEvoSourceCardType} accent="#1a4f8a"
-                  onChange={(p) => updateEffect(p)} />
+                  onChange={(p) => updateEffect(p)}
+                  holder={{ pairs: effectEvoHolderFilter, chain: effectEvoHolderFilterChain, dict, onChange: (p) => updateEffect(p) }} />
               )}
               {/* 場所に「リンクカード」を含む場合のみ: どのデジモンのリンクカードから探すか */}
               {zones.includes('linked') && (

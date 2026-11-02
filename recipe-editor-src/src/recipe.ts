@@ -298,6 +298,10 @@ function buildCostArray(costs: CostStep[] | undefined): any[] | undefined {
       // 進化元/重ねられているカード/リンクカードを取得元に含む場合のみ: どのデジモンのものか
       if ((cz.includes('evo_source') || cz.includes('stacked_cards')) && (c.evoSourceOwner === 'self' || c.evoSourceOwner === 'other')) cs.evo_source_owner = c.evoSourceOwner;
       if ((cz.includes('evo_source') || cz.includes('stacked_cards')) && c.evoSourceOwner !== 'self' && c.evoSourceCardType) cs.evo_source_card_type = c.evoSourceCardType;
+      if ((cz.includes('evo_source') || cz.includes('stacked_cards')) && c.evoSourceOwner !== 'self') {
+        const hf = buildConditionChainFilter(c.evoHolderFilterChain, c.evoHolderFilter);
+        if (hf) cs.evo_holder_filter = hf;
+      }
       if (cz.includes('linked') && (c.linkedOwner === 'self' || c.linkedOwner === 'other')) cs.linked_owner = c.linkedOwner;
       // 取得元エリアがどちらのプレイヤーのものか（未指定=自分/相手どちらでも）
       if (c.fromZoneOwner === 'self' || c.fromZoneOwner === 'opponent') cs.from_owner = c.fromZoneOwner;
@@ -400,6 +404,7 @@ function parseCostArray(rawCost: any): CostStep[] {
       containerFilterChain: parseConditionChainFilter(c?.filter).chain,
       evoSourceOwner: c?.evo_source_owner === 'self' || c?.evo_source_owner === 'other' ? c.evo_source_owner : undefined,
       evoSourceCardType: c?.evo_source_card_type === 'digimon' || c?.evo_source_card_type === 'tamer' ? c.evo_source_card_type : undefined,
+      ...evoHolderFieldsOf(c),
       linkedOwner: c?.linked_owner === 'self' || c?.linked_owner === 'other' ? c.linked_owner : undefined,
       options: Array.isArray(c?.options) ? c.options.slice() : undefined,
       altCosts: Array.isArray(c?.alt_actions) && c.alt_actions.length > 0 ? parseCostArray(c.alt_actions) : undefined,
@@ -513,6 +518,10 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
     // 進化元/重ねられているカード/リンクカードを取得元に含む場合のみ: どのデジモンのものか
     if ((az.includes('evo_source') || az.includes('stacked_cards')) && (a.evoSourceOwner === 'self' || a.evoSourceOwner === 'other')) out.evo_source_owner = a.evoSourceOwner;
     if ((az.includes('evo_source') || az.includes('stacked_cards')) && a.evoSourceOwner !== 'self' && a.evoSourceCardType) out.evo_source_card_type = a.evoSourceCardType;
+    if ((az.includes('evo_source') || az.includes('stacked_cards')) && a.evoSourceOwner !== 'self') {
+      const hf = buildConditionChainFilter(a.evoHolderFilterChain, a.evoHolderFilter);
+      if (hf) out.evo_holder_filter = hf;
+    }
     if (az.includes('linked') && (a.linkedOwner === 'self' || a.linkedOwner === 'other')) out.linked_owner = a.linkedOwner;
     // 取得元エリアがどちらのプレイヤーのものか（未指定=自分/相手どちらでも）
     if (a.fromZoneOwner === 'self' || a.fromZoneOwner === 'opponent') out.from_owner = a.fromZoneOwner;
@@ -699,6 +708,12 @@ function buildConditionChainFilter(chain: ConditionChainEntry[] | undefined, leg
 }
 // buildConditionChainFilterの逆変換。f.orが2件以上ならchainを復元し（f.or以外のトップレベル
 // キーは「共通条件」としてpairsに入れる）、1件以下ならchainなし
+// evo_holder_filter（どのカードの進化元か）→ 画面の項目
+function evoHolderFieldsOf(o: any): { evoHolderFilter?: ConditionPair[]; evoHolderFilterChain?: ConditionChainEntry[] } {
+  if (!o || !o.evo_holder_filter || typeof o.evo_holder_filter !== 'object') return {};
+  const r = parseConditionChainFilter(o.evo_holder_filter);
+  return { evoHolderFilter: r.pairs, ...(r.chain ? { evoHolderFilterChain: r.chain } : {}) };
+}
 function parseConditionChainFilter(f: any): { pairs: ConditionPair[]; chain?: ConditionChainEntry[] } {
   if (f && Array.isArray(f.or) && f.or.length > 0) {
     const { or, ...common } = f;
@@ -1782,6 +1797,11 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
     if ((zones.includes('evo_source') || zones.includes('stacked_cards')) && b.evoSourceOwner !== 'self' && b.evoSourceCardType) {
       step.evo_source_card_type = b.evoSourceCardType;
     }
+    // 進化元の対象が「このデジモン」以外のとき: どのカードの進化元か（「自分の『ラグナモン』の進化元」等）
+    if ((zones.includes('evo_source') || zones.includes('stacked_cards')) && b.evoSourceOwner !== 'self') {
+      const hf = buildConditionChainFilter(b.evoHolderFilterChain, b.evoHolderFilter);
+      if (hf) step.evo_holder_filter = hf;
+    }
     // 場所に「リンクカード」を含む場合のみ: どのデジモンのリンクカードから探すか
     if (zones.includes('linked') && (b.linkedOwner === 'self' || b.linkedOwner === 'other')) {
       step.linked_owner = b.linkedOwner;
@@ -2534,6 +2554,7 @@ function stepObjectToAltAction(step: any): AltAction {
     deckSourcePosition: step?.deck_source_position === 'top' || step?.deck_source_position === 'bottom' ? step.deck_source_position : undefined,
     evoSourceOwner: step?.evo_source_owner === 'self' || step?.evo_source_owner === 'other' ? step.evo_source_owner : undefined,
     evoSourceCardType: step?.evo_source_card_type === 'digimon' || step?.evo_source_card_type === 'tamer' ? step.evo_source_card_type : undefined,
+    ...evoHolderFieldsOf(step),
     linkedOwner: step?.linked_owner === 'self' || step?.linked_owner === 'other' ? step.linked_owner : undefined,
     duration: step?.duration || '',
     perCount: step?.per_count != null ? Number(step.per_count) : undefined,
@@ -2821,6 +2842,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     from: true,
     from_op: true,
     evo_source_owner: true,
+    evo_holder_filter: true,
     linked_owner: true,
     from_owner: true,
     security_position: true,
@@ -3045,6 +3067,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     })(),
     evoSourceOwner: step?.evo_source_owner === 'self' || step?.evo_source_owner === 'other' ? step.evo_source_owner : undefined,
     evoSourceCardType: step?.evo_source_card_type === 'digimon' || step?.evo_source_card_type === 'tamer' ? step.evo_source_card_type : undefined,
+    ...evoHolderFieldsOf(step),
     linkedOwner: step?.linked_owner === 'self' || step?.linked_owner === 'other' ? step.linked_owner : undefined,
     fromZoneOwner: step?.from_owner === 'self' || step?.from_owner === 'opponent' ? step.from_owner : undefined,
     actionParams: pickActionParams(step),
@@ -3175,6 +3198,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             deckSourcePosition: a?.deck_source_position === 'top' || a?.deck_source_position === 'bottom' ? a.deck_source_position : undefined,
             evoSourceOwner: a?.evo_source_owner === 'self' || a?.evo_source_owner === 'other' ? a.evo_source_owner : undefined,
             evoSourceCardType: a?.evo_source_card_type === 'digimon' || a?.evo_source_card_type === 'tamer' ? a.evo_source_card_type : undefined,
+            ...evoHolderFieldsOf(a),
             linkedOwner: a?.linked_owner === 'self' || a?.linked_owner === 'other' ? a.linked_owner : undefined,
             duration: a?.duration || '',
             perCount: a?.per_count != null ? Number(a.per_count) : undefined,

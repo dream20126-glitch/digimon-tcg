@@ -8769,8 +8769,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const cardCode = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':card'];
           // 現在の複数選択状態を、target(+targetFilter/altActions)から逆算する
           const isOrMode = !!typeSelMulti(curTgt.l2, targetFilter);
-          const isAndMode = curTgt.l2 === 'digimon' && block.altActionsOp === 'and'
-            && (block.altActions || []).length === 1 && block.altActions![0].target === tamerCode;
+          // デジモン＋テイマー(AND)で自動で作った効果2（テイマーへの同じアクション）が先頭に何個あるか。
+          // 以前は効果2以降が1つだけのときしか AND と判定せず、ユーザーの効果（「上限+1」等）があると見落として、
+          // OR に切り替えても自動の効果2が残っていた（デストロモン P-094 で「相手のテイマーを消滅」が2つ残り、
+          // 上限+1 がそちらに付いていた）
+          const _isAutoTamerAlt = (a?: AltAction) => !!a && a.target === tamerCode && a.action === block.action && !a.thenBreak && !a.chainPrev;
+          let _autoTamerN = 0;
+          if (block.altActionsOp === 'and') { while (_autoTamerN < altActions.length && _isAutoTamerAlt(altActions[_autoTamerN])) _autoTamerN++; }
+          const isAndMode = curTgt.l2 === 'digimon' && _autoTamerN >= 1;
           const digimonChecked = hasDigimonTamer && (curTgt.l2 === 'digimon' || isOrMode || isAndMode);
           const tamerChecked = hasDigimonTamer && (curTgt.l2 === 'tamer' || isOrMode || isAndMode);
           // 選択中の種類（デジモン/テイマー/オプション。AND はデジモン＋テイマーのときだけ）
@@ -8781,8 +8787,9 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
 
           // デジモン＋テイマー(AND)で自動で作った効果2（テイマーへの同じアクション）だけを外した効果2以降。
           // ユーザーが作った効果2以降（その後 等）は対象を変えても消さない（以前は「デジモン」ボタン等で全部消えていた。EX12-056）
-          const keepUserAlts = isAndMode
-            ? { altActions: altActions.slice(1), altActionsOp: altActions.length > 1 ? block.altActionsOp : undefined }
+          // （OR の対象〔デジモン/テイマー〕のときに残っている自動の効果2も外す）
+          const keepUserAlts = _autoTamerN > 0 && (isAndMode || isOrMode)
+            ? { altActions: altActions.slice(_autoTamerN), altActionsOp: altActions.length > _autoTamerN ? block.altActionsOp : undefined }
             : { altActions: block.altActions, altActionsOp: block.altActionsOp };
           const handleTgtL1 = (l1: string) => {
             // OR/ANDで自動設定していたフィルタ/代替アクションはL1切替時に一旦クリアする

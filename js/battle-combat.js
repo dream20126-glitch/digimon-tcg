@@ -12,7 +12,7 @@ import { fxLinkEffect, fxAppGattai, fxJogressFusion, fxDigixrossFusion } from '.
 import { cardAliasHasName } from './name-alias.js';
 import { showYourTurn, showPhaseAnnounce, doDraw, showDrawEffect, aiTurn, exitBreedPhase, checkAutoTurnEnd, setPhaseHooks } from './battle-phase.js';
 import { fireOptionUsedTriggers as _fireOptionUsed } from './effect-engine.js';
-import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenRestTriggers as _fireWhenRest, collectOwnRestReactions as _collectOwnRestReactions, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged, getStaticEvoCostReduction as _getStaticEvoCostReduction, getJogressConditions as _getJogressConditions, jogressSlotMatches as _jogressSlotMatches, hasCostRestPending as _hasCostRestPending, getAltUseColors as _getAltUseColors } from './effect-engine.js';
+import { expireBuffs as _expireBuffs, applyPermanentEffects as _applyPermanent, triggerEffect as _triggerEffect, fireOnDestroyTriggers as _fireOnDestroy, fireOnDestroySubjectReactions as _fireOnDestroySubjectReactions, fireOnBattleDestroyTriggers as _fireOnBattleDestroy, fireWhenBattleDestroyTriggers as _fireWhenBattleDestroy, fireWhenOppRestTriggers as _fireWhenOppRest, fireWhenRestTriggers as _fireWhenRest, collectOwnRestReactions as _collectOwnRestReactions, fireWhenOwnBlockTriggers as _fireWhenOwnBlock, fireWhenOwnDestroyedTriggers as _fireWhenOwnDestroyed, hasRecipeTrigger as _hasRecipeTrigger, hasEvoStackTrigger as _hasEvoStackTrigger, getEffectivePlayCost as _getEffectivePlayCost, getAltEvolve as _getAltEvolve, getBurstEvolve as _getBurstEvolve, filterBurstEvolveTamerCandidates as _filterBurstEvolveTamerCandidates, getAppGattaiEvolve as _getAppGattaiEvolve, checkBeforeEvolveDiscount as _checkBeforeEvolveDiscount, fireBeforeEvolveEffects as _fireBeforeEvolveEffects, checkAbsorbEvolveDiscount as _checkAbsorbEvolveDiscount, showEffectAnnounce as _showEffectAnnounce, extractTriggerSectionText as _extractTriggerSectionText, hasNoAnnounceOverride as _hasNoAnnounceOverride, evoSourceEffectLabel as _evoSourceEffectLabel, showTargetSelection as _showTargetSelection, getAssemblyOptions as _getAssemblyOptions, filterAssemblyCandidates as _filterAssemblyCandidates, showTrashCardPicker as _showTrashCardPicker, fireKeywordAttackEffects as _fireKeywordAttackEffects, tryCancelViaLeaveBattle as _tryCancelViaLeaveBattle, hasTrainingKeyword as _hasTrainingKeyword, fireWhenSecurityDecreaseTriggers as _fireWhenSecurityDecrease, fireLinkTriggers as _fireLinkTriggers, isCardInAnyZone as _isCardInAnyZone, fireWhenEvoSourceIncreaseTriggers as _fireWhenEvoSourceIncrease, checkWhenPlayDiscount as _checkWhenPlayDiscount, checkCostedSummonDiscount as _checkCostedSummonDiscount, cardHasActivePassiveFlag as _cardHasActivePassiveFlag, fireWhenTargetChangedTriggers as _fireWhenTargetChanged, getStaticEvoCostReduction as _getStaticEvoCostReduction, getJogressConditions as _getJogressConditions, jogressSlotMatches as _jogressSlotMatches, hasCostRestPending as _hasCostRestPending, getAltUseColors as _getAltUseColors } from './effect-engine.js';
 
 // ===== 戦闘フック =====
 // 効果エンジンとの連携。Phase後半で差し替え可能
@@ -1645,6 +1645,9 @@ export function doEvolve(card, handIdx, slotIdx, opts) {
   if (_staticEvo !== 0) { cost = Math.max(0, cost - _staticEvo); addLog('💠 進化コスト' + (_staticEvo > 0 ? '-' + _staticEvo : '+' + (-_staticEvo)) + '（コスト' + cost + 'で進化）'); }
   // before_evolve: 「〜のとき、このテイマーをレストさせることでコストを-N」のような
   // 進化コスト確定前の割り込み確認（タイガ BT2-088 等）。コスト確定後に本処理へ進む。
+  // 「進化するとき」のコスト軽減ではない効果（P-074/P-075）を先に発揮する。その中の「〜1枚ごとに進化コスト-1」は軽減量で返る
+  _fireBeforeEvolveEffects(card, bs, 'player', { base }, (_preDisc) => {
+  if (_preDisc > 0) { cost = Math.max(0, cost - _preDisc); addLog('💠 効果で進化コスト-' + _preDisc + '（コスト' + cost + 'で進化）'); }
   _checkBeforeEvolveDiscount(card, bs, 'player', (discount) => {
     if (discount > 0) {
       cost = Math.max(0, cost - discount);
@@ -1663,6 +1666,7 @@ export function doEvolve(card, handIdx, slotIdx, opts) {
       }
     });
   }, { base }); // 進化元のデジモン（「このデジモンが進化するとき」の判定用）
+  });
   };
 
   if (_burstReady) {
@@ -2834,8 +2838,9 @@ export function resolveAttackTarget(target, targetIdx) {
     // 例外は無い（redirect_attack アクション経由でafterAtkEffect後に差し替わる）
     // ≪エグゼキュート≫でのアタック（_executeAttacking）は「アクティブ状態の相手のデジモンにもアタックできる」
     // （スカージキロプモン＆デスペアブラストでアクティブ状態のデジモンを選んでもアタックが始まらなかった）
-    if (!def.suspended && !atk._executeAttacking) {
-      addLog('🚨 アクティブ状態のデジモンにはアタックできません');
+    // 「アタックされない」・継続効果の「アクティブ状態の相手にもアタックできる」（P-051 / P-058）もここで判定する
+    if (!(window._canAttackDigimonTarget ? window._canAttackDigimonTarget(atk, def, bs, 'player') : (def.suspended || atk._executeAttacking))) {
+      addLog(def.suspended ? '🚨 このデジモンにはアタックできません' : '🚨 アクティブ状態のデジモンにはアタックできません');
       atk.suspended = false; renderAll();
       return;
     }

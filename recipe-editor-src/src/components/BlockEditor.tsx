@@ -176,9 +176,9 @@ const ACTION_PARAM_DEFS: Record<string, ActionParamDef[]> = {
   ],
   security_open: [
     { key: 'security_owner', label: '誰のセキュリティか', options: [{ code: '', label: '自分' }, { code: 'opp', label: '相手' }] },
-    // どこからオープンするか（open_position。未指定＝上から。下から/選んで は ⚠ エンジン未対応）
+    // どこからオープンするか（open_position。未指定＝上から / bottom / select / all）
     { key: 'open_position', label: 'どこから', options: [{ code: '', label: '上から' }, { code: 'bottom', label: '下から' }, { code: 'select', label: '選んで' }, { code: 'all', label: '全て' }],
-      hint: '「全て」は値（枚数）を空欄にしたときと同じく全部オープンします。「下から」「選んで」「全て」の指定自体はエンジン未対応です（全てを動かすには値を空欄に。下から/選んでは上からオープンします）' },
+      hint: '「選んで」は上から何枚目かを選んでオープンします（残りは元の位置へ戻る）。オンラインの相手のセキュリティを「選んで」は未確認' },
     { key: 'pick_to', label: '選んだ1枚の置き先',
       options: [{ code: '', label: '（ルール等で指定）' }, { code: 'opp_deck_top', label: '相手のデッキの上' }, { code: 'own_hand', label: '自分の手札' }, { code: 'trash', label: 'トラッシュ' }] },
     { key: 'rest_to', label: '残りのカード', options: [{ code: '', label: 'そのまま戻す' }, { code: 'shuffle_security', label: 'シャッフルしてセキュリティに戻す' }] },
@@ -2630,7 +2630,7 @@ const ZONE_BUTTONS = [
   { code: 'hand', label: '手札' },
   { code: 'trash', label: 'トラッシュ' },
   { code: 'security', label: 'セキュリティ' },
-  // デッキ: 「このカードがデッキから破棄されたとき」等（デッキにある間の効果。⚠ エンジン未対応）
+  // デッキ: 「このカードがデッキから破棄されたとき」等（デッキにある間の効果）
   { code: 'deck', label: 'デッキ' },
   { code: 'breed', label: '育成エリア' },
   { code: '', label: 'バトルエリア' },
@@ -4703,7 +4703,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       )}
                       {refSubject === 'self_card' && (
                         <div style={{ marginTop: 4, fontSize: 10, color: '#c62828' }}>
-                          このデジモン自身を数えます（数え方「色の種類の数」で「このデジモンの色1色ごとに」）。⚠ エンジン未対応です（保存はできますが動作しません）
+                          このデジモン自身を数えます（数え方「色の種類の数」で「このデジモンの色1色ごとに」）
                         </div>
                       )}
                       {PERREF_COMBO_CODES.has(refSubject) && (
@@ -5973,7 +5973,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                               </div>
                               <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>未選択＝どこからでも／複数選ぶとどれか</div>
                               {tf.some((z) => DISCARD_TRIGGER_FROM_UNIMPLEMENTED.has(z)) && (
-                                <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ デッキ/セキュリティからの破棄はエンジン未対応です（保存はできますが動作しません）</div>
+                                <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ エンジンが対応しているのは「このカードがデッキから破棄されたとき」（デッキの上から破棄）だけです。セキュリティからの破棄・他のカードのデッキからの破棄には反応しません</div>
                               )}
                             </div>
                           );
@@ -6002,7 +6002,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                           />
                         </div>
                         <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
-                          両方なら手札とデッキを両方選ぶ。どこから戻ったか（自分のトラッシュ等）は下の発動主体の場所で選びます。⚠ エンジン未対応です（保存はできますが動作しません）
+                          両方なら手札とデッキを両方選ぶ。どこから戻ったか（自分のトラッシュ等）は下の発動主体の場所で選びます。エンジンは効果で手札/トラッシュ/セキュリティからデッキに戻したときに対応（手札に戻ったとき・オンラインの相手のカードは未対応）
                         </div>
                       </div>
                     );
@@ -6019,7 +6019,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         />
                       </div>
                       <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
-                        誰が（自分/相手/このデジモン等）は下の発動主体で選びます。⚠ エンジン未対応です（保存はできますが動作しません）
+                        誰が（自分/相手/このデジモン等）は下の発動主体で選びます
                       </div>
                     </div>
                   )}
@@ -6854,7 +6854,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
                         <input type="checkbox" checked={_on} onChange={(e) => updateEffect({ reveal: e.target.checked || undefined })} />
                         オープンして（相手に見せて）
-                        {_on && <span style={{ fontSize: 10, color: '#c62828' }}>⚠ 公開の演出はエンジン未対応（戻す等の処理は動きます）</span>}
+                        {_on && <span style={{ fontSize: 10, color: '#666' }}>相手の画面でも表向きで見せます（エンジンは手札からデッキに戻すときに対応）</span>}
                       </label>
                     );
                   })()}
@@ -7373,9 +7373,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       onChange={(v) => { if (v && v !== effectAction) changeEffectAction(v); }}
                       accentColor="#1976d2"
                     />
-                    {effectAction === 'hand_open' && (
-                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>⚠ 手札のオープンはエンジン未対応です（保存はできますが動作しません）</div>
-                    )}
                   </div>
                 )}
                 {selectedSet.length === 1 && (
@@ -7389,8 +7386,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       accentColor="#1976d2"
                     />
                     {mode === 'notbe' && (
-                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>
-                        「対象（このデジモン等）は相手にアタックされない」（cant_be_attacked）。⚠ エンジン未対応です（保存はできますが動作しません）
+                      <div style={{ fontSize: 10, color: '#666', marginTop: 2 }}>
+                        「対象（このデジモン等）は相手にアタックされない」（cant_be_attacked）
                       </div>
                     )}
                   </div>
@@ -11785,7 +11782,7 @@ function ConditionsHybridEditor({
                       />
                     )}
                     {c.base === 'cond_lv_same' && (
-                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>選ぶカードを全て同じLvにする（Lvの同じカード2枚 等）。⚠ エンジン未対応です（保存はできますが動作しません）</div>
+                      <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>選ぶカードを全て同じLvにする（Lvの同じカード2枚 等。エンジンは進化元の破棄で対応）</div>
                     )}
                   </div>
                   {showSubjectSelector && cat.code !== 'memory' && (

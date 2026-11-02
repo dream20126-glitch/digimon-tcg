@@ -1618,9 +1618,10 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   // 収束しない場合（chain無し・単一セグメント）は全て1つのtrigger_conditionsへ
   // まとめる（従来互換）
   {
-    const timingConds = (b.triggerConditions || []).filter((p) => p.base);
+    // 「参照→進化元＋属性で絞り込む」（「進化元に『ガンマモン』を持つ自分のデジモンがアタックしたとき」P-062）の目印も直す
+    const timingConds = expandRefExistsAttributeFilters((b.triggerConditions || []).filter((p) => p.base));
     const chainSegs = Array.isArray(b.triggerConditionsChain) && b.triggerConditionsChain.length > 0
-      ? buildConditionChainSegments(b.triggerConditionsChain).map((seg) => seg.filter((p) => p.base)).filter((seg) => seg.length > 0)
+      ? buildConditionChainSegments(b.triggerConditionsChain).map((seg) => expandRefExistsAttributeFilters(seg.filter((p) => p.base))).filter((seg) => seg.length > 0)
       : [];
     if (chainSegs.length > 1) {
       if (timingConds.length > 0) step.trigger_conditions = timingConds.map(pairToString);
@@ -2885,10 +2886,13 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
   }
   const conditions: ConditionPair[] = collapseRefExistsAttributeFilters(conditionsRaw);
   // トリガー条件復元
-  const triggerConditions: ConditionPair[] = [];
+  const _triggerConditionsRaw: ConditionPair[] = [];
   if (Array.isArray(step?.trigger_conditions)) {
-    step.trigger_conditions.forEach((s: string) => triggerConditions.push(stringToPair(String(s))));
+    step.trigger_conditions.forEach((s: string) => _triggerConditionsRaw.push(stringToPair(String(s))));
   }
+  // 「進化元に〇〇がある」（cond_evo_exists ＋兄弟の属性条件）は参照＋属性で絞り込むの表示に戻す
+  const triggerConditions: ConditionPair[] = _triggerConditionsRaw.some((p) => p.base === 'cond_evo_exists' || /^cond_(hand|trash)_match_/.test(p.base))
+    ? collapseRefExistsAttributeFilters(_triggerConditionsRaw) : _triggerConditionsRaw;
   // burst_evolve専用条件復元
   const burstBaseFilter: ConditionPair[] = [];
   if (Array.isArray(step?.base_conditions)) {

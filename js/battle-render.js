@@ -663,6 +663,15 @@ function startAttackModeUI(slotIdx, opts) {
   const _noSec = !!opts.noSecurity;
   hideLongpressMenu();
   const card = bs.player.battleArea[slotIdx]; if (!card) { if (_fromEffect && opts.onCancel) opts.onCancel(); return; }
+  // アタックできる相手か（効果のアタックでアクティブも可＝canHitActive／「アタックされない」／継続効果の「アクティブ状態にもアタックできる」）
+  const _atkTargetOk = (def) => {
+    if (!def) return false;
+    if (window._canAttackDigimonTarget) {
+      if (window._canAttackDigimonTarget(card, def, bs, 'player')) return true;
+      if (def.suspended) return false; // アタックされない
+    } else if (def.suspended) return true;
+    return canHitActive && (!def.type || def.type === 'デジモン' || def.type === 'デュアル');
+  };
   addLog('⚔ 「' + card.name + '」でアタック！ → 対象を選んでください');
 
   // チュートリアル通知: アタックボタン押下時点で attack_declared を発火
@@ -695,7 +704,7 @@ function startAttackModeUI(slotIdx, opts) {
   const aiRow = document.getElementById('ai-battle-row');
   if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, i) => {
     const def = bs.ai.battleArea[i]; if (!def) return;
-    if (def.suspended || (canHitActive && (!def.type || def.type === 'デジモン' || def.type === 'デュアル'))) {
+    if (_atkTargetOk(def)) {
       s.style.boxShadow = '0 0 10px #ff444488'; s.style.cursor = 'pointer';
     } else {
       // アクティブ状態＝アタック不可 → 🚫マーク表示
@@ -723,7 +732,7 @@ function startAttackModeUI(slotIdx, opts) {
     // ホバー効果（アタック可能な対象のみ浮かせる）
     if (aiRow) aiRow.querySelectorAll('.b-slot').forEach((s, i) => {
       const def = bs.ai.battleArea[i]; if (!def) return;
-      const canTarget = def.suspended || canHitActive;
+      const canTarget = _atkTargetOk(def);
       if (!canTarget) return; // アタック不可は浮かせない
       const r = s.getBoundingClientRect();
       const hit = t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
@@ -763,7 +772,7 @@ function startAttackModeUI(slotIdx, opts) {
       const r = s.getBoundingClientRect();
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
         // 効果によるアタックでは、選べない対象（アクティブ等）を離しても宣言しない
-        if (_fromEffect && !(def.suspended || (canHitActive && (!def.type || def.type === 'デジモン' || def.type === 'デュアル')))) return;
+        if (_fromEffect && !_atkTargetOk(def)) return;
         resolved = true;
         _declare('digimon', di);
       }

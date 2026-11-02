@@ -5,6 +5,8 @@
 // 更新方法: js/effect-engine.js の switch case を grep して反映:
 // grep -E "^\s*case '[a-z_]+'" effect-engine.js | grep -v "cond_"
 export const IMPLEMENTED_ACTIONS = new Set<string>([
+  // 2026-11-02: アタックされない（P-051）・手札のオープン
+  'cant_be_attacked', 'hand_open',
   // 2026-10-31 LM弾の対応
   'appear_or_evolve', 'effect_cap_modify', 'declare_category', 'security_open',
   'active', 'add_to_hand',
@@ -132,6 +134,8 @@ export const IMPLEMENTED_CONDITIONS = new Set<string>([
   'cond_state_active_ge', 'cond_state_active_le', 'cond_state_active_eq', 'cond_state_active_gt', 'cond_state_active_lt',
   // 2026-11-01: 進化元に〜がN枚以上（P-008）・AとBが両方いる（P-022）・手札/トラッシュの条件に合う枚数（P-034）
   'cond_evo_exists', 'cond_name_each',
+  // 2026-11-02: 色の数（「2色のカード」P-076）・Lvの同じカード（コスト P-072/P-073）
+  'cond_color_count', 'cond_lv_same',
   'cond_hand_match_ge', 'cond_hand_match_le', 'cond_hand_match_eq', 'cond_hand_match_gt', 'cond_hand_match_lt',
   'cond_trash_match_ge', 'cond_trash_match_le', 'cond_trash_match_eq', 'cond_trash_match_gt', 'cond_trash_match_lt',
   // 進化元メタ条件（cond_exists の進化元版）

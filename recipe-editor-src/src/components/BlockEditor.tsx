@@ -3771,6 +3771,8 @@ const COMMON_ACTIONS: { code: string; label: string }[] = [
   // ≪セーブ≫（このカードを自分のテイマー1体の下に置ける）。対象・値は持たない
   { code: 'save', label: 'セーブ' },
 ];
+// ディレイ/セーブ: キーワードをそのままアクションにしたもの（ふつうのアクションと毛色が違うので、ボタンを別枠にまとめる）
+const KEYWORD_ACTION_CODES = new Set(['delay', 'save']);
 // 効果一覧の各効果（効果2以降）が「効果を発揮する」の何番目の選択肢か（選択肢でなければ null）。
 // 区間（効果1〜／「その後」〜）の先頭が choose_effect のとき、その後ろの効果が選択肢。
 // 「効果Nの続き」(chainPrev) の効果は直前の選択肢に含まれる
@@ -7191,7 +7193,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       />
                     );
                   })()}
-                  {COMMON_ACTIONS.map((a) => {
+                  {(() => {
+                  const renderCommonActionBtn = (a: { code: string; label: string }) => {
                     const isCantToggleGroup = !!DOABLE_TO_CANT_LIVE[a.code];
                     // レスト/アクティブ/進化/アタック/ブロックは複数選択できるトグル式ボタン
                     // （選んでいても「できない」形（cant_X等）になっていることがあるため、
@@ -7225,7 +7228,10 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                         {a.label}
                       </button>
                     );
-                  })}
+                  };
+                  return (
+                  <>
+                  {COMMON_ACTIONS.filter((a) => !KEYWORD_ACTION_CODES.has(a.code)).map(renderCommonActionBtn)}
                   {/* 〇〇に置く: コスト側(CostListEditor)と同じ「置き場所ごとに実アクション
                       コード・対象を切り替える」ボタン */}
                   <button
@@ -7246,6 +7252,14 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   >
                     〇〇に置く
                   </button>
+                  {/* キーワード効果（ディレイ/セーブ）: 別枠 */}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', padding: '2px 6px', border: '1px dashed #9333ea', borderRadius: 6, background: '#faf5ff' }}>
+                    <span style={{ fontSize: 10, fontWeight: 'bold', color: '#6b21a8', whiteSpace: 'nowrap' }}>キーワード効果</span>
+                    {COMMON_ACTIONS.filter((a) => KEYWORD_ACTION_CODES.has(a.code)).map(renderCommonActionBtn)}
+                  </span>
+                  </>
+                  );
+                  })()}
                 </div>
                 {/* 消滅「できない」(cant_destroy): 上の🎯対象欄で誰を守るか選べる。
                     原因（バトルで/効果で）はdestroyCause/destroyCauseSubject（トリガー側の

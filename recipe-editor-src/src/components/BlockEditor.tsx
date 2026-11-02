@@ -4382,6 +4382,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
   const effectCostFree = isEditingAlt ? !!editingAlt!.costFree : !!block.costFree;
   const effectIgnoreEvolveCondition = isEditingAlt ? !!editingAlt!.ignoreEvolveCondition : !!block.ignoreEvolveCondition;
   const effectSkipOnPlay = isEditingAlt ? !!editingAlt!.skipOnPlay : !!block.skipOnPlay;
+  const effectEnterSuspended = isEditingAlt ? !!editingAlt!.enterSuspended : !!block.enterSuspended;
   const effectNegateTargetTrigger = isEditingAlt ? editingAlt!.negateTargetTrigger : block.negateTargetTrigger;
   const effectNegateDeny = isEditingAlt ? !!editingAlt!.negateDeny : !!block.negateDeny;
   const effectNegateTargetAsType = isEditingAlt ? editingAlt!.negateTargetAsType : block.negateTargetAsType;
@@ -6998,6 +6999,16 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                             onChange={(e) => updateEffect({ skipOnPlay: e.target.checked })}
                           />
                           登場時効果は発揮しない
+                        </label>
+                      )}
+                      {showSkipOnPlay && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
+                          <input
+                            type="checkbox"
+                            checked={effectEnterSuspended}
+                            onChange={(e) => updateEffect({ enterSuspended: e.target.checked || undefined })}
+                          />
+                          レスト状態で登場
                         </label>
                       )}
                     </div>

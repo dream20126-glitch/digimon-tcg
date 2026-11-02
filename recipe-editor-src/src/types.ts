@@ -338,6 +338,8 @@ export interface EffectBlock {
   // summon_from_trash 専用:「この効果で登場したデジモンの【登場時】効果は発揮しない」
   // true のとき JSON へ step.skip_on_play:true を出力する
   skipOnPlay?: boolean;
+  // 登場系アクション:「レスト状態で登場させる」。JSON では step.enter_suspended:true
+  enterSuspended?: boolean;
   // 「〜をオープンしてデッキの上に戻す」等の「オープンして」（相手に見せてから行う）。JSON では step.reveal:true
   // （手札/デッキ等の見えないカードを公開する演出。⚠ エンジン未対応＝戻す等の処理自体は動く）
   reveal?: boolean;
@@ -609,6 +611,7 @@ export interface AltAction {
   // true のとき JSON へ cost_free:true / skip_on_play:true を出力する
   costFree?: boolean;
   skipOnPlay?: boolean;
+  enterSuspended?: boolean;
   // 「〜をオープンしてデッキの上に戻す」等の「オープンして」（相手に見せてから行う）。JSON では step.reveal:true
   // （手札/デッキ等の見えないカードを公開する演出。⚠ エンジン未対応＝戻す等の処理自体は動く）
   reveal?: boolean;

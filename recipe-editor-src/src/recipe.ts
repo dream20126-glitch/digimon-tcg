@@ -569,6 +569,7 @@ function altActionToStepObject(a: AltAction, keywordDict?: DictEntry[]): any {
   const aFixed = fixedCostOut(a.fixedCost);
   if (aFixed !== undefined) { out.fixed_cost = aFixed; delete out.value; }
   if (a.skipOnPlay) out.skip_on_play = true;
+  if (a.enterSuspended) out.enter_suspended = true;
   if (a.reveal) out.reveal = true;
   if (a.action === 'negate') {
     if (a.negateTargetTrigger) out.target_trigger = a.negateTargetTrigger;
@@ -1766,6 +1767,8 @@ function appendStep(container: Record<string, any>, b: EffectBlock, keywordDict?
   if (bFixed !== undefined) { step.fixed_cost = bFixed; delete step.value; }
   // summon_from_trash の「登場したデジモンの【登場時】効果は発揮しない」フラグ
   if (b.skipOnPlay) step.skip_on_play = true;
+  // 「レスト状態で登場させる」
+  if (b.enterSuspended) step.enter_suspended = true;
   // 「オープンして」
   if (b.reveal) step.reveal = true;
   // 上/下（デッキに戻す位置等・hasDeckPosition用）。'both'（どちらか選んで）はエンジン未対応の
@@ -2584,6 +2587,7 @@ function stepObjectToAltAction(step: any): AltAction {
     fixedCost: fixedCostIn(step?.fixed_cost),
     atTurnEnd: !!step?.at_turn_end || undefined,
     skipOnPlay: !!step?.skip_on_play,
+    enterSuspended: !!step?.enter_suspended || undefined,
     reveal: !!step?.reveal || undefined,
     negateTargetTrigger: (NEGATE_TRIGGERS.includes(step?.target_trigger) ? step.target_trigger : undefined),
     negateDeny: !!step?.deny,
@@ -2812,6 +2816,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     cost_free: true,
     ignore_evolve_condition: true,
     skip_on_play: true,
+    enter_suspended: true,
     reveal: true,
     optional: true,
     display_text: true,
@@ -3041,6 +3046,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     fixedCost: fixedCostIn(step?.fixed_cost),
     atTurnEnd: !!step?.at_turn_end || undefined,
     skipOnPlay: !!step?.skip_on_play,
+    enterSuspended: !!step?.enter_suspended || undefined,
     reveal: !!step?.reveal || undefined,
     deckPosition: step?.position === 'top' ? 'top'
       : step?.position === 'bottom' ? 'bottom'
@@ -3223,6 +3229,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
             fixedCost: fixedCostIn(a?.fixed_cost),
             atTurnEnd: !!a?.at_turn_end || undefined,
             skipOnPlay: !!a?.skip_on_play,
+            enterSuspended: !!a?.enter_suspended || undefined,
             reveal: !!a?.reveal || undefined,
             negateTargetTrigger: (NEGATE_TRIGGERS.includes(a?.target_trigger) ? a.target_trigger : undefined),
             negateDeny: !!a?.deny,

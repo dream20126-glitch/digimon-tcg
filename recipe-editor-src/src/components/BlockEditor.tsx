@@ -6972,7 +6972,8 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                       コストを支払わず / 登場時効果は発揮しない
                       （裏向きで、は対象欄の右側「🂠裏表」に統合済み） */}
                   {showCostCheckboxes && (
-                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginTop: 4, padding: '6px 8px', border: '1px solid #c9d3e0', borderRadius: 6, background: '#f5f8fc' }}>
+                      <span style={{ fontSize: 10, fontWeight: 'bold', color: '#555', whiteSpace: 'nowrap' }}>⚙ {effectAction === 'evolve' ? '進化のしかた' : '登場のしかた'}</span>
                       <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap', fontWeight: 'normal' }}>
                         <input
                           type="checkbox"

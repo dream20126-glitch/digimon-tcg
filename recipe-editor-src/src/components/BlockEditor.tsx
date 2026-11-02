@@ -522,10 +522,15 @@ function RefExistsAttributeFilterPanel({
   };
   const lvGe = getAttr('cond_lv_ge');
   const lvLe = getAttr('cond_lv_le');
-  const lvMode = lvGe ? 'cond_lv_ge' : lvLe ? 'cond_lv_le' : '';
+  // 一致（cond_lv。複数はOR＝「Lv4かLv5」）
+  const lvEq = getAttr('cond_lv');
+  const lvMode = lvGe ? 'cond_lv_ge' : lvLe ? 'cond_lv_le' : lvEq ? 'cond_lv' : '';
   const costGe = getAttr('cond_cost_ge');
   const costLe = getAttr('cond_cost_le');
-  const costMode = costGe ? 'cond_cost_ge' : costLe ? 'cond_cost_le' : '';
+  const costEq = getAttr('cond_cost');
+  const costMode = costGe ? 'cond_cost_ge' : costLe ? 'cond_cost_le' : costEq ? 'cond_cost' : '';
+  // 属性どうしの結合（cond_attr_or があれば OR＝どれか1つに合えばよい）
+  const attrOr = !!getAttr('cond_attr_or');
   const featureVal = getAttr('cond_feature');
   const feats = (featureVal?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
   const colorVal = getAttr('cond_color');
@@ -548,8 +553,8 @@ function RefExistsAttributeFilterPanel({
     if (typeVal) s.add('type');
     if (evoVal) s.add('evo');
     if (nameVal) s.add('name');
-    if (lvGe || lvLe) s.add('lv');
-    if (costGe || costLe) s.add('cost');
+    if (lvGe || lvLe || lvEq) s.add('lv');
+    if (costGe || costLe || costEq) s.add('cost');
     if (featureVal) s.add('feature');
     return s;
   });
@@ -557,8 +562,8 @@ function RefExistsAttributeFilterPanel({
     if (activeSub.has(key)) {
       if (key === 'color') setAttr('cond_color', undefined);
       else if (key === 'type') setAttr('cond_type', undefined);
-      else if (key === 'lv') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le'))));
-      else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le'))));
+      else if (key === 'lv') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le' || cc.base === 'cond_lv'))));
+      else if (key === 'cost') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le' || cc.base === 'cond_cost'))));
       else if (key === 'feature') setAttr('cond_feature', undefined);
       else if (key === 'evo') setAttr('cond_has_evo', undefined);
       else if (key === 'name') onChange(conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_name' || cc.base === 'cond_name_contains' || cc.base === 'cond_name_each'))));
@@ -617,6 +622,21 @@ function RefExistsAttributeFilterPanel({
               );
             })}
           </div>
+          {/* 属性を2つ以上選んだとき: 全部に合う（AND）か、どれか1つに合えばよい（OR。「名称に『〇〇』を含むか、特徴『〇〇』を持つ」）か */}
+          {marker === REF_EXISTS_FILTER_MARKER && activeSub.size >= 2 && (
+            <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10, color: '#666' }}>属性どうし:</span>
+              <ButtonGroup
+                options={[{ code: '', label: '全部に合う（AND）' }, { code: 'or', label: 'どれか1つに合う（OR）' }]}
+                value={attrOr ? 'or' : ''}
+                onChange={(v) => {
+                  const rest = conditions.filter((cc) => !(cc.subject === marker && cc.base === 'cond_attr_or'));
+                  onChange(v === 'or' ? [...rest, { base: 'cond_attr_or', subject: marker }] : rest);
+                }}
+                accentColor="#946200"
+              />
+            </div>
+          )}
           {activeSub.has('color') && (
             <div style={{ marginBottom: 4 }}>
               <span style={{ fontSize: 10, color: '#666', marginRight: 4 }}>色:</span>
@@ -636,15 +656,26 @@ function RefExistsAttributeFilterPanel({
             <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: 10, color: '#666' }}>Lv:</span>
               <ButtonGroup
-                options={[{ code: '', label: '指定なし' }, { code: 'cond_lv_ge', label: '以上' }, { code: 'cond_lv_le', label: '以下' }]}
+                options={[{ code: '', label: '指定なし' }, { code: 'cond_lv_ge', label: '以上' }, { code: 'cond_lv_le', label: '以下' }, ...(marker === REF_EXISTS_FILTER_MARKER ? [{ code: 'cond_lv', label: '一致' }] : [])]}
                 value={lvMode}
                 onChange={(v) => {
-                  const rest = conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le')));
-                  onChange(v ? [...rest, { base: v, value: '1', subject: marker }] : rest);
+                  const rest = conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_lv_ge' || cc.base === 'cond_lv_le' || cc.base === 'cond_lv')));
+                  onChange(v ? [...rest, { base: v, value: v === 'cond_lv' ? '' : '1', subject: marker }] : rest);
                 }}
                 accentColor="#946200"
               />
-              {lvMode && (
+              {lvMode === 'cond_lv' && (
+                <MultiTextTags
+                  values={(lvEq?.value || '').split(',').map((x) => x.trim()).filter(Boolean)}
+                  onChange={(next) => {
+                    const rest = conditions.filter((cc) => !(cc.subject === marker && cc.base === 'cond_lv'));
+                    onChange([...rest, { base: 'cond_lv', value: next.filter((x) => /^\d+$/.test(x)).join(','), subject: marker }]);
+                  }}
+                  placeholder="例: 4（複数入れると「Lv4かLv5」）"
+                  accentColor="#946200"
+                />
+              )}
+              {lvMode && lvMode !== 'cond_lv' && (
                 <input
                   type="number" min={1}
                   value={(lvMode === 'cond_lv_ge' ? lvGe?.value : lvLe?.value) || ''}
@@ -658,15 +689,26 @@ function RefExistsAttributeFilterPanel({
             <div style={{ marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: 10, color: '#666' }}>コスト:</span>
               <ButtonGroup
-                options={[{ code: '', label: '指定なし' }, { code: 'cond_cost_ge', label: '以上' }, { code: 'cond_cost_le', label: '以下' }]}
+                options={[{ code: '', label: '指定なし' }, { code: 'cond_cost_ge', label: '以上' }, { code: 'cond_cost_le', label: '以下' }, ...(marker === REF_EXISTS_FILTER_MARKER ? [{ code: 'cond_cost', label: '一致' }] : [])]}
                 value={costMode}
                 onChange={(v) => {
-                  const rest = conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le')));
-                  onChange(v ? [...rest, { base: v, value: '1', subject: marker }] : rest);
+                  const rest = conditions.filter((cc) => !(cc.subject === marker && (cc.base === 'cond_cost_ge' || cc.base === 'cond_cost_le' || cc.base === 'cond_cost')));
+                  onChange(v ? [...rest, { base: v, value: v === 'cond_cost' ? '' : '1', subject: marker }] : rest);
                 }}
                 accentColor="#946200"
               />
-              {costMode && (
+              {costMode === 'cond_cost' && (
+                <MultiTextTags
+                  values={(costEq?.value || '').split(',').map((x) => x.trim()).filter(Boolean)}
+                  onChange={(next) => {
+                    const rest = conditions.filter((cc) => !(cc.subject === marker && cc.base === 'cond_cost'));
+                    onChange([...rest, { base: 'cond_cost', value: next.filter((x) => /^\d+$/.test(x)).join(','), subject: marker }]);
+                  }}
+                  placeholder="例: 3（複数入れると「コスト3か5」）"
+                  accentColor="#946200"
+                />
+              )}
+              {costMode && costMode !== 'cond_cost' && (
                 <input
                   type="number" min={0}
                   value={(costMode === 'cond_cost_ge' ? costGe?.value : costLe?.value) || ''}

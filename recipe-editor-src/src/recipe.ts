@@ -123,7 +123,8 @@ function buildConditionChainSegments(chain: ConditionChainEntry[]): ConditionPai
 // 自分のフィルタとして消費してしまう（他の無関係な条件と併用不可）という制約があるため、
 // 「参照+属性フィルタ」は単独使用前提の特殊なグループとして識別・展開する
 export const REF_EXISTS_FILTER_MARKER = '__ref_exists_filter__';
-export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_feature', 'cond_cost_le', 'cond_cost_ge', 'cond_has_evo', 'cond_name', 'cond_name_contains', 'cond_name_each']);
+// cond_lv / cond_cost: 一致（「Lv4かLv5」= cond_lv:4,5）。cond_attr_or: 値なしの印。属性どうしを「どれか1つに合えばよい」（OR）にする
+export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'cond_lv_ge', 'cond_lv', 'cond_feature', 'cond_cost_le', 'cond_cost_ge', 'cond_cost', 'cond_has_evo', 'cond_name', 'cond_name_contains', 'cond_name_each', 'cond_attr_or']);
 // 参照「手札/トラッシュ」の枚数＋属性＝「自分のトラッシュに名称に『デビモン』を含むデジモンカードが7枚以上あるとき」。
 // 保存は cond_{zone}_match_{quant}:N@subject ＋兄弟の属性条件（cond_exists と同じ形・⚠ エンジン未実装）。タイプ（cond_type）も使える
 const REF_ZONE_COUNT_RE = /^cond_(hand|trash)_(ge|le|eq|gt|lt)$/;

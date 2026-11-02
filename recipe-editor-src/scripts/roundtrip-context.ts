@@ -81,6 +81,7 @@ const cases: Case[] = [
   { name: '破棄されたとき（手札かテイマーの下から）', blocks: [base({ trigger: 'discard', triggers: ['discard'], triggerSubject: 'own', triggerFromZones: ['hand', 'tamer'] })], check: ['0.triggerFromZones'] },
   { name: 'このカードがデッキから破棄されたとき、メモリー+1', blocks: [base({ trigger: 'discard', triggers: ['discard'], zone: 'deck', triggerSubject: 'self_deck', triggerFromZones: ['deck'], action: 'memory_plus', value: 1 })], check: ['0.zone', '0.triggerSubject', '0.triggerFromZones'] },
   { name: '手札の紫のカード1枚をオープンしてデッキの上に戻せる', blocks: [base({ trigger: 'on_attack', triggers: ['on_attack'], action: 'return_deck', target: 'own_hand:1', value: undefined, deckPosition: 'top', optional: true, reveal: true, fromFilter: [{ base: 'cond_color', value: '紫' }] })], check: ['0.reveal', '0.deckPosition', '0.target'] },
+  { name: '相手のセキュリティを下から1枚オープン', blocks: [base({ action: 'security_open', value: 1, actionParams: { security_owner: 'opp', open_position: 'bottom' } })], check: ['0.actionParams'] },
   { name: 'ブロック（される）', blocks: [base({ trigger: 'block', triggers: ['block'], blockRole: 'blocked', triggerSubject: 'self' })], check: ['0.blockRole'] },
   { name: 'ブロック（する）', blocks: [base({ trigger: 'block', triggers: ['block'], blockRole: 'blocker', triggerSubject: 'own' })], check: ['0.blockRole', '0.triggerSubject'] },
   { name: '名称を含む（参照の属性）', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_battle_area_ge', value: '1', subject: 'own_any' }, { base: 'cond_name_contains', value: 'ガルルモン', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'] },

@@ -176,6 +176,9 @@ const ACTION_PARAM_DEFS: Record<string, ActionParamDef[]> = {
   ],
   security_open: [
     { key: 'security_owner', label: '誰のセキュリティか', options: [{ code: '', label: '自分' }, { code: 'opp', label: '相手' }] },
+    // どこからオープンするか（open_position。未指定＝上から。下から/選んで は ⚠ エンジン未対応）
+    { key: 'open_position', label: 'どこから', options: [{ code: '', label: '上から' }, { code: 'bottom', label: '下から' }, { code: 'select', label: '選んで' }, { code: 'all', label: '全て' }],
+      hint: '「全て」は値（枚数）を空欄にしたときと同じく全部オープンします。「下から」「選んで」「全て」の指定自体はエンジン未対応です（全てを動かすには値を空欄に。下から/選んでは上からオープンします）' },
     { key: 'pick_to', label: '選んだ1枚の置き先',
       options: [{ code: '', label: '（ルール等で指定）' }, { code: 'opp_deck_top', label: '相手のデッキの上' }, { code: 'own_hand', label: '自分の手札' }, { code: 'trash', label: 'トラッシュ' }] },
     { key: 'rest_to', label: '残りのカード', options: [{ code: '', label: 'そのまま戻す' }, { code: 'shuffle_security', label: 'シャッフルしてセキュリティに戻す' }] },

@@ -1083,7 +1083,7 @@ function returnDeckFromToZoneTarget(o: any): any {
 //   categories: カードカテゴリーを宣言（declare_category）の選択肢
 //   deck_owner / security_owner: 相手のデッキ・セキュリティを扱う（deck_open / security_open）
 //   pick_to / rest_to: security_open で選んだカードの置き先・残りの戻し先
-export const ACTION_PARAM_KEYS = ['value_from', 'cap_action', 'cap_attr', 'cap_scope', 'categories', 'deck_owner', 'security_owner', 'pick_to', 'rest_to'];
+export const ACTION_PARAM_KEYS = ['value_from', 'cap_action', 'cap_attr', 'cap_scope', 'categories', 'deck_owner', 'security_owner', 'pick_to', 'rest_to', 'open_position'];
 // 効果2以降（alt_actions）には効果1の専用欄（immuneCardType 等）が無いので、その分も actionParams で持つ
 const ALT_ONLY_PARAM_KEYS = ['source_type'];
 function pickActionParams(step: any, extraKeys: string[] = []): Record<string, any> | undefined {

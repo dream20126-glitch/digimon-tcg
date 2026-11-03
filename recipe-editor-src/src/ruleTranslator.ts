@@ -352,6 +352,9 @@ function applyOneSelection(step: any, rule: MiniStep, filter: Record<string, any
 const TRANSLATORS: Record<string, (step: any, rule: MiniStep) => void> = {
   deck_open: applyDeckOpenRule,
   deck_search: applyDeckOpenRule, // 同型
+  // 自分のセキュリティの確認（「自分のセキュリティを全て確認する。その中の〜1枚を手札に加えられる」）も
+  // エンジンはデッキオープンと同じ selections で処理する（残りはセキュリティに戻してシャッフル）
+  security_open: applyDeckOpenRule,
 };
 
 export function hasRuleTranslator(mainAction: string | undefined): boolean {

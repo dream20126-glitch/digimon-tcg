@@ -1598,6 +1598,8 @@ function CostListEditor({
         const activeDiscardZone = discardZoneFromTarget || DISCARD_ZONE_MAP.find((z) => {
           if ((getActionVariant(z.action)?.base || z.action) !== cActionBase) return false;
           if (z.target !== undefined && splitStackSuffix((c.target || '').split(':')[0]).base !== z.target) return false;
+          // 進化元と重ねられているカードは同じアクションなので、from（fromZones）で見分ける
+          if (z.fromZone ? !(c.fromZones || []).includes(z.fromZone) : (c.fromZones || []).includes('stacked_cards')) return false;
           return true;
         })?.code || '';
         // 「〇〇に置く」: PLACE_ZONE_MAP は各ゾーンのアクションコードが全て異なる
@@ -1827,7 +1829,7 @@ function CostListEditor({
                         // エンコード済みのため、汎用の「セキュリティ/進化元の位置」パネルと二重表示になるのを防ぐ）
                         // 手札/デッキを対象にしていた場合、その対象は進化元/セキュリティ等では意味が無いので外す
                         const keepTgt = discardZoneFromTarget ? '' : c.target;
-                        updateCost(i, { ...c, action: z.action, target: z.target || keepTgt, fromZones: undefined });
+                        updateCost(i, { ...c, action: z.action, target: z.target || keepTgt, fromZones: z.fromZone ? [z.fromZone] : undefined });
                       }}
                       accentColor="#b76e00"
                     />
@@ -3865,8 +3867,12 @@ const COMMON_COST_ACTIONS: { code: string; label: string }[] = [
 // （実体は POSITION_VARIANTS と同じ仕組みでアクションコードのsuffixを切り替える。
 // costIsPositional/costVariantOptions/onCostVariantChange を流用）。
 // 手札/デッキには順序の概念が無い（デッキは上からのみ固定）ため出さない。
-const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: string; warn?: string; hasPosition?: boolean; hasFace?: boolean }[] = [
+// fromZone: 同じアクションコードを使う場所どうしを、保存の from（c.fromZones）で区別する
+const DISCARD_ZONE_MAP: { code: string; label: string; action: string; target?: string; fromZone?: string; warn?: string; hasPosition?: boolean; hasFace?: boolean }[] = [
   { code: 'evo_source', label: '進化元／テイマーの下', action: 'evo_discard_top', hasPosition: true, hasFace: true },
+  // 重ねられているカード: 一番上のカード（デジモン本体）も含めた積み重ね全体から破棄する
+  // （「このデジモンに重ねられているカードを上から1枚破棄することで」）。進化元と同じ evo_discard 系＋from:"stacked_cards"
+  { code: 'stacked_cards', label: '重ねられているカード', action: 'evo_discard_top', fromZone: 'stacked_cards', hasPosition: true },
   { code: 'hand', label: '手札', action: 'cost_discard' },
   // 位置（上/下/選んで）と「誰の」セキュリティかは、このパネルではなく🎯対象パネル側
   // （対象＝自分/相手→セキュリティを選んだときに表示される位置ボタン）で設定する

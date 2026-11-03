@@ -113,6 +113,7 @@ const cases: Case[] = [
   { name: 'P-096: 効果1の「そのデジモン」＝コストで対象にしたデジモン（same_target）', blocks: [base({ trigger: 'main', action: 'dp_plus', value: 1000, target: 'same_target', costs: [{ action: 'place_under_digimon', target: 'own:1', fromZones: ['trash'] }] })], check: ['0.target'], raw: (r: any) => J(r).includes('"target":"same_target"') },
   { name: '自分のセキュリティを全て確認し、黄/黒を含む2色以上のカード1枚を手札に加えられる（ルール）', blocks: [base({ action: 'security_open', value: undefined, rules: [{ action: 'add_to_hand', value: 1, optional: true, conditions: [{ base: 'cond_color', value: '黄,黒' }, { base: 'cond_color_count', value: '2' }] }] })], check: ['0.rules'], raw: (r: any) => J(r).includes('"selections"') && J(r).includes('"color_count":2') },
   { name: '進化元にコスト3か5のカード、または黒（属性どうしOR）', blocks: [base({ action: 'draw', conditions: [{ base: 'cond_has_evo', value: '1', subject: 'self' }, { base: 'cond_cost', value: '3,5', subject: '__ref_exists_filter__' }, { base: 'cond_color', value: '黒', subject: '__ref_exists_filter__' }, { base: 'cond_attr_or', subject: '__ref_exists_filter__' }] })], check: ['0.conditions'] },
+  { name: 'コスト: このデジモンに重ねられているカードを上から1枚破棄', blocks: [base({ action: 'draw', value: 1, costs: [{ action: 'evo_discard_top', target: 'self', value: 1, fromZones: ['stacked_cards'] }] })], check: ['0.costs.0.fromZones', '0.costs.0.action'], raw: (r: any) => J(r).includes('"from":"stacked_cards"') },
 ];
 
 let ng = 0;

@@ -12051,13 +12051,14 @@ function ConditionsHybridEditor({
                         <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} />
                       )}
                       {/* 「このデジモンの進化元に『ガルルモン』がある（4枚以上ある）とき」: 参照「進化元」以上N に属性（名称/記述/特徴/色/Lv）を付ける。
-                          保存は cond_evo_exists:N ＋兄弟の属性条件（バトルエリアの cond_exists と同じ形） */}
-                      {cat.code === 'ref' && c.base === 'cond_has_evo' && refZoneOf(c) === 'evo_source' && !conditions.some((x) => x.base.startsWith('cond_battle_area_') && x.subject !== REF_EXISTS_FILTER_MARKER) && (
+                          保存は cond_evo_exists:N ＋兄弟の属性条件（バトルエリアの cond_exists と同じ形）。
+                          以上以外（「進化元に『ゴツモン』『X抗体』がない」＝完全一致0 等）は cond_evo_match_{eq|le|gt|lt}:N */}
+                      {cat.code === 'ref' && /^cond_has_evo(_(le|eq|gt|lt))?$/.test(c.base) && refZoneOf(c) === 'evo_source' && !conditions.some((x) => x.base.startsWith('cond_battle_area_') && x.subject !== REF_EXISTS_FILTER_MARKER) && (
                         <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} forEvo />
                       )}
                       {/* 「自分のトラッシュに名称に『デビモン』を含むデジモンカードが7枚以上あるとき」: 参照「手札/トラッシュ」の枚数に属性（タイプ/名称/特徴/色/Lv/コスト）を付ける。
                           保存は cond_trash_match_ge:7 ＋兄弟の属性条件（バトルエリア・進化元の参照行がある欄では出さない） */}
-                      {cat.code === 'ref' && /^cond_(hand|trash)_(ge|le|eq|gt|lt)$/.test(c.base) && !conditions.some((x) => x.subject !== REF_EXISTS_FILTER_MARKER && (x.base.startsWith('cond_battle_area_') || x.base === 'cond_has_evo')) && (
+                      {cat.code === 'ref' && /^cond_(hand|trash)_(ge|le|eq|gt|lt)$/.test(c.base) && !conditions.some((x) => x.subject !== REF_EXISTS_FILTER_MARKER && (x.base.startsWith('cond_battle_area_') || /^cond_has_evo(_(le|eq|gt|lt))?$/.test(x.base))) && (
                         <RefExistsAttributeFilterPanel conditions={conditions} onChange={onChange} forZone />
                       )}
                       {sameAsTargetSubject && (

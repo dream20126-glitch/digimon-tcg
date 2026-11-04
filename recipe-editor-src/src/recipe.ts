@@ -129,6 +129,11 @@ export const REF_EXISTS_FILTER_CODES = new Set(['cond_color', 'cond_lv_le', 'con
 // 保存は cond_{zone}_match_{quant}:N@subject ＋兄弟の属性条件（cond_exists と同じ形・⚠ エンジン未実装）。タイプ（cond_type）も使える
 const REF_ZONE_COUNT_RE = /^cond_(hand|trash)_(ge|le|eq|gt|lt)$/;
 const REF_ZONE_MATCH_RE = /^cond_(hand|trash)_match_(ge|le|eq|gt|lt)$/;
+// 参照「進化元」以下/完全一致/より多い/より少ない N ＋属性＝「進化元に『ゴツモン』『X抗体』がない」（完全一致0）。
+// 保存は cond_evo_match_{quant}:N@subject ＋兄弟の属性条件（以上N は従来どおり cond_evo_exists:N）
+const REF_EVO_COUNT_RE = /^cond_has_evo_(le|eq|gt|lt)$/;
+const REF_EVO_MATCH_RE = /^cond_evo_match_(le|eq|gt|lt)$/;
+const isRefEvoRow = (p: ConditionPair) => !!p && (p.base === 'cond_has_evo' || REF_EVO_COUNT_RE.test(p.base));
 export const REF_ZONE_FILTER_CODES = new Set([...REF_EXISTS_FILTER_CODES, 'cond_type']);
 // 参照「バトルエリア 0体（完全一致/以下）」＋属性＝「〜な相手のデジモンがいないなら」→ cond_not_exists（⚠ エンジン未実装）
 const isRefNoneRow = (p: ConditionPair) => !!p && (p.base === 'cond_battle_area_eq' || p.base === 'cond_battle_area_le') && String(p.value) === '0';
@@ -142,7 +147,7 @@ function expandRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[
   const hasAttrs = pairs.some((p) => p && p.subject === REF_EXISTS_FILTER_MARKER && REF_ZONE_FILTER_CODES.has(p.base));
   if (!hasAttrs) return pairs;
   // 手札/トラッシュの枚数の参照行に付いた属性（バトルエリア・進化元の参照行が無いときだけ）
-  const hasBattleOrEvo = pairs.some((p) => p && p.subject !== REF_EXISTS_FILTER_MARKER && (p.base === 'cond_battle_area_ge' || isRefNoneRow(p) || p.base === 'cond_has_evo'));
+  const hasBattleOrEvo = pairs.some((p) => p && p.subject !== REF_EXISTS_FILTER_MARKER && (p.base === 'cond_battle_area_ge' || isRefNoneRow(p) || isRefEvoRow(p)));
   const zoneIdx = hasBattleOrEvo ? -1 : pairs.findIndex((p) => p && p.subject !== REF_EXISTS_FILTER_MARKER && REF_ZONE_COUNT_RE.test(p.base));
   if (zoneIdx !== -1) {
     const m = REF_ZONE_COUNT_RE.exec(pairs[zoneIdx].base)!;
@@ -155,12 +160,16 @@ function expandRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPair[
   let refIdx = pairs.findIndex((p) => p && (p.base === 'cond_battle_area_ge' || isRefNoneRow(p)) && p.subject !== REF_EXISTS_FILTER_MARKER);
   // バトルエリアの参照行が無ければ、進化元の参照行（cond_has_evo 以上N）に付いた属性とみなす
   // →「このデジモンの進化元に『ガルルモン』があるとき」= cond_evo_exists:1@self ＋ cond_name:ガルルモン（⚠ エンジン未実装）
-  const evoIdx = refIdx === -1 ? pairs.findIndex((p) => p && p.base === 'cond_has_evo' && p.subject !== REF_EXISTS_FILTER_MARKER) : -1;
+  const evoIdx = refIdx === -1 ? pairs.findIndex((p) => p && isRefEvoRow(p) && p.subject !== REF_EXISTS_FILTER_MARKER) : -1;
   if (refIdx === -1 && evoIdx === -1) return pairs;
   if (refIdx === -1) refIdx = evoIdx;
   const refPair = pairs[refIdx];
   return pairs.map((p, i) => {
-    if (i === refIdx && evoIdx !== -1) return { base: 'cond_evo_exists', value: refPair.value || '1', subject: refPair.subject };
+    if (i === refIdx && evoIdx !== -1) {
+      const em = REF_EVO_COUNT_RE.exec(refPair.base);
+      if (em) return { base: 'cond_evo_match_' + em[1], value: String(refPair.value ?? '0'), subject: refPair.subject };
+      return { base: 'cond_evo_exists', value: refPair.value || '1', subject: refPair.subject };
+    }
     if (i === refIdx) return { base: isRefNoneRow(refPair) ? 'cond_not_exists' : 'cond_exists', subject: refPair.subject };
     if (p.subject === REF_EXISTS_FILTER_MARKER && REF_EXISTS_FILTER_CODES.has(p.base)) {
       return { base: p.base, value: p.value };
@@ -185,10 +194,15 @@ function collapseRefExistsAttributeFilters(pairs: ConditionPair[]): ConditionPai
     });
   }
   // 進化元に〜があるとき（cond_evo_exists:N）→ 参照「進化元」以上N の行＋属性の行に戻す
-  const evoExIdx = pairs.findIndex((p) => p && p.base === 'cond_evo_exists');
+  // （cond_evo_match_eq:0 等＝「進化元に〜がない」は 参照「進化元」完全一致0 等の行に戻す）
+  const evoExIdx = pairs.findIndex((p) => p && (p.base === 'cond_evo_exists' || REF_EVO_MATCH_RE.test(p.base)));
   if (evoExIdx !== -1) {
     return pairs.map((p, i) => {
-      if (i === evoExIdx) return { base: 'cond_has_evo', value: p.value || '1', subject: p.subject };
+      if (i === evoExIdx) {
+        const em = REF_EVO_MATCH_RE.exec(p.base);
+        if (em) return { base: 'cond_has_evo_' + em[1], value: p.value ?? '0', subject: p.subject };
+        return { base: 'cond_has_evo', value: p.value || '1', subject: p.subject };
+      }
       if (REF_EXISTS_FILTER_CODES.has(p.base) && p.base !== 'cond_has_evo') return { ...p, subject: REF_EXISTS_FILTER_MARKER };
       return p;
     });
@@ -2943,7 +2957,7 @@ function stepToBlockCore(section: 'main' | 'evo_source' | 'security' | 'link', t
     step.trigger_conditions.forEach((s: string) => _triggerConditionsRaw.push(stringToPair(String(s))));
   }
   // 「進化元に〇〇がある」（cond_evo_exists ＋兄弟の属性条件）は参照＋属性で絞り込むの表示に戻す
-  const triggerConditions: ConditionPair[] = _triggerConditionsRaw.some((p) => p.base === 'cond_evo_exists' || /^cond_(hand|trash)_match_/.test(p.base))
+  const triggerConditions: ConditionPair[] = _triggerConditionsRaw.some((p) => p.base === 'cond_evo_exists' || /^cond_(hand|trash|evo)_match_/.test(p.base))
     ? collapseRefExistsAttributeFilters(_triggerConditionsRaw) : _triggerConditionsRaw;
   // burst_evolve専用条件復元
   const burstBaseFilter: ConditionPair[] = [];

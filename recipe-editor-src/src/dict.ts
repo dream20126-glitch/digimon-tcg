@@ -306,7 +306,7 @@ export const CONDITIONS: DictEntry[] = [
   { code: 'cond_own_security_ge', kind: 'condition', label: '自分のセキュリティN以上' },
   { code: 'cond_attack_target_digimon', kind: 'condition', label: '相手のデジモンにアタックしたとき' },
   { code: 'cond_attack_target_player', kind: 'condition', label: 'プレイヤーにアタックしたとき' },
-  { code: 'cond_same_as_picked', kind: 'condition', label: '選んだデジモンと同じ（属性指定）' },
+  { code: 'cond_same_as_picked', kind: 'condition', label: '選んだカードと同じ（属性指定）' },
   { code: 'cond_during_own_turn', kind: 'condition', label: '自分のターン中' },
   { code: 'cond_during_opp_turn', kind: 'condition', label: '相手のターン中' },
   { code: 'cond_during_any_turn', kind: 'condition', label: 'お互いのターン中' },

@@ -840,6 +840,9 @@ function buildFilterObject(pairs: ConditionPair[] | undefined): Record<string, a
       case 'cond_cost':     { const n = costVal(c.value); if (n !== undefined) { f.cost_le = n; f.cost_ge = n; } break; }
       case 'cond_cost_le':  { const n = costVal(c.value); if (n !== undefined) f.cost_le = n; break; }
       case 'cond_cost_ge':  { const n = costVal(c.value); if (n !== undefined) f.cost_ge = n; break; }
+      // 「選んだカードと同じ」（直前に選んだカードと指定の属性が同じ。値は 'color' / 'name,color' 等）。
+      // 例:「選んだテイマーと同じ色のデジモンカード」→ from_filter.same_as_picked:"color"。⚠ エンジン未実装（filter側）
+      case 'cond_same_as_picked': { const v = String(c.value || '').trim(); if (v) f.same_as_picked = v; break; }
       // cond_dp_highest/lowestと同じく候補プール全体との比較が必要（cardMatchesFilterでは
       // 判定できず、対象選択処理側で別途絞り込む実装が必要）
       case 'cond_cost_highest': f.cost_extreme = 'highest'; break;
@@ -1010,6 +1013,7 @@ function parseFilterObject(f: any): ConditionPair[] {
   if (f.cost_sum_le !== undefined) out.push({ base: 'cond_cost_sum_le', value: String(f.cost_sum_le) });
   if (f.face_down) out.push({ base: 'cond_face_down', value: f.face_zone ? String(f.face_zone) : undefined });
   if (f.face_up)   out.push({ base: 'cond_face_up',   value: f.face_zone ? String(f.face_zone) : undefined });
+  if (f.same_as_picked) out.push({ base: 'cond_same_as_picked', value: String(f.same_as_picked) });
   // DP参照先（自分/相手）を絞り込む属性フィルタ（buildFilterObjectWithDpRefFilterの逆変換）。
   // 入れ子のdp_ref_filterを、DP_REF_FILTER_MARKER付きのConditionPairへ戻して
   // 「属性で絞り込む」パネルの表示を復元する

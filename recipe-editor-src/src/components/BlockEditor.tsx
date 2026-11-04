@@ -8815,7 +8815,7 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const typeChecked = isAndMode ? ['digimon', 'tamer'] : typeSelOf(curTgt.l2, targetFilter);
           const combineMode: 'or' | 'and' = isAndMode ? 'and' : 'or';
           const hideCount = tgtBase === 'self' || tgtBase === 'self_card' || tgtBase === 'same_target' || tgtBase === 'target_trigger_source';
-          const isUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(tgtBase) || isOrMode || isAndMode;
+          const isUnimplemented = TARGET_SEL_UNIMPLEMENTED.has(tgtBase) || isOrMode || isAndMode || !!block.orSelf;
 
           // デジモン＋テイマー(AND)で自動で作った効果2（テイマーへの同じアクション）だけを外した効果2以降。
           // ユーザーが作った効果2以降（その後 等）は対象を変えても消さない（以前は「デジモン」ボタン等で全部消えていた。EX12-056）
@@ -8823,38 +8823,41 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
           const keepUserAlts = _autoTamerN > 0 && (isAndMode || isOrMode)
             ? { altActions: altActions.slice(_autoTamerN), altActionsOp: altActions.length > _autoTamerN ? block.altActionsOp : undefined }
             : { altActions: block.altActions, altActionsOp: block.altActionsOp };
-          const handleTgtL1 = (l1: string) => {
+          // extra: 一緒に変える項目（〔このカード〕と〔自分〕等を同時に選んだときの orSelf）
+          const handleTgtL1 = (l1: string, extra: Partial<EffectBlock> = {}) => {
+            // 〔このカード〕を〔自分〕〔相手〕と一緒に選ぶ（orSelf）のは自分/相手/他/両方のときだけ。それ以外に切り替えたら外す
+            const ex: Partial<EffectBlock> = { ...(TGT_TOGGLE_L1.has(l1) ? {} : { orSelf: undefined }), ...extra };
             // OR/ANDで自動設定していたフィルタ/代替アクションはL1切替時に一旦クリアする
             const cleared = isAndMode
               ? { ...keepUserAlts, targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') }
               : isOrMode ? { targetFilter: targetFilter.filter((c) => c.base !== 'cond_type') } : {};
-            if (!l1) { onChange({ ...block, ...cleared, target: '' }); return; }
+            if (!l1) { onChange({ ...block, ...cleared, ...ex, target: '' }); return; }
             // self/self_card・same_target は「対象数」UI自体を表示しない（hideCount）ため、
             // 直前に他の対象で付いていた数指定(例: ":1")を持ち越さないようここで破棄する
             if (l1 === 'self') {
               const remapAction = remapPlaceActionForTarget('self_card');
-              onChange({ ...block, ...cleared, target: 'self_card', ...(remapAction ? { action: remapAction } : {}) });
+              onChange({ ...block, ...cleared, ...ex, target: 'self_card', ...(remapAction ? { action: remapAction } : {}) });
               return;
             }
             // 「そのデジモン」: このパネルは常に効果1（block直下）なので、トリガー発火元カードを
             // 指すtarget_trigger_sourceを使う。ただしトリガーの元が無い【メイン】＋コストありは「直前に対象にしたカード」
             // （コストで選んだカード。same_target。プリズムギャレット P-096「〜をデジモン1体の進化元の下に置くことで、
             // そのデジモンをDP+1000」）。下の〔どの「その」〕で切り替えられる
-            if (l1 === 'same_target') { onChange({ ...block, ...cleared, target: block.trigger === 'main' && (block.costs || []).length > 0 ? 'same_target' : 'target_trigger_source' }); return; }
+            if (l1 === 'same_target') { onChange({ ...block, ...cleared, ...ex, target: block.trigger === 'main' && (block.costs || []).length > 0 ? 'same_target' : 'target_trigger_source' }); return; }
             // 既に同じL1でL2も選択済みならそれを維持する。新規にL1を選んだ場合は
             // 「デジモン」等を自動選択せず、L2未選択の番兵コード（own_none等）にする
             // （「most」だけは既存の「最も多いセキュリティ」既定を維持）
             const keepL2 = (isOrMode || isAndMode) ? (curTgt.l1 === l1 ? curTgt.l2 : '') : tgtKeepL2(curTgt.l1, curTgt.l2, l1);
             if (keepL2) {
-              onChange({ ...block, ...cleared, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + keepL2] || '') + tgtSuffix });
+              onChange({ ...block, ...cleared, ...ex, target: (TARGET_SEL_L1L2_TO_CODE[l1 + ':' + keepL2] || '') + tgtSuffix });
               return;
             }
             if (l1 === 'most') {
-              onChange({ ...block, ...cleared, target: (TARGET_SEL_L1L2_TO_CODE['most:security'] || '') + tgtSuffix });
+              onChange({ ...block, ...cleared, ...ex, target: (TARGET_SEL_L1L2_TO_CODE['most:security'] || '') + tgtSuffix });
               return;
             }
             const noneCode = l1 === 'own' ? 'own_none' : l1 === 'opp' ? 'opponent_none' : l1 === 'other_own' ? 'target_other_own_none' : l1 === 'both' ? 'both_none' : l1 === 'both_other' ? 'both_other' : '';
-            onChange({ ...block, ...cleared, target: noneCode + tgtSuffix });
+            onChange({ ...block, ...cleared, ...ex, target: noneCode + tgtSuffix });
           };
           const handleTgtL2 = (l2: string) => {
             const next = TARGET_SEL_L1L2_TO_CODE[curTgt.l1 + ':' + l2] || '';
@@ -8924,13 +8927,24 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                   <MultiButtonGroup
                     options={tgtToggleOptions(curTgt.l1)}
                     values={tgtToggleValues(curTgt.l1)}
-                    onToggle={(code, on) => handleTgtL1(tgtToggleNextL1(curTgt.l1, code, on))}
+                    onToggle={(code, on) => {
+                      const next = tgtToggleNextL1(curTgt.l1, code, on);
+                      // 〔このカード〕を選んだまま〔自分〕等を押したら、両方選んだ状態（orSelf）にする
+                      if (curTgt.l1 === 'self' && next) { handleTgtL1(next, { orSelf: true }); return; }
+                      // 〔自分〕等を全部外して〔このカード〕だけ残ったら、対象＝このカード
+                      if (!next && block.orSelf) { handleTgtL1('self'); return; }
+                      handleTgtL1(next);
+                    }}
                     accentColor="#b76e00"
                   />
+                  {/* 〔このカード〕は〔自分〕〔相手〕と一緒に選べる（「このデジモン/テイマー」＝このデジモンか自分のテイマー。P-153。JSON: or_self） */}
                   <ButtonGroup
                     options={TARGET_SEL_L1_REST}
-                    value={TGT_TOGGLE_L1.has(curTgt.l1) ? TARGET_SEL_NONE_ACTIVE : curTgt.l1}
-                    onChange={handleTgtL1}
+                    value={TGT_TOGGLE_L1.has(curTgt.l1) ? (block.orSelf ? 'self' : TARGET_SEL_NONE_ACTIVE) : curTgt.l1}
+                    onChange={(code) => {
+                      if (code === 'self' && TGT_TOGGLE_L1.has(curTgt.l1)) { onChange({ ...block, orSelf: block.orSelf ? undefined : true }); return; }
+                      handleTgtL1(code);
+                    }}
                     accentColor="#b76e00"
                   />
                 </div>
@@ -9034,14 +9048,6 @@ export function BlockEditor({ block, index, dict, onChange, onRemove, onMoveUp, 
                 )}
                 {['own', 'opp', 'other_own', 'both', 'both_other'].includes(curTgt.l1) && ['digimon', 'card', 'tamer'].includes(curTgt.l2) && (
                   <BreedAreaToggle options={effectOptions} onChange={(next) => updateEffect({ options: next })} />
-                )}
-                {/* 「このデジモン/テイマー」＝このデジモンか（自分の）テイマー（P-153）。自分＞テイマー1体 ＋ このチェックで設定する */}
-                {['own', 'opp', 'other_own', 'both'].includes(curTgt.l1) && ['digimon', 'card', 'tamer'].includes(curTgt.l2) && (
-                  <label style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, cursor: 'pointer', userSelect: 'none' }}>
-                    <input type="checkbox" checked={!!block.orSelf} onChange={(e) => onChange({ ...block, orSelf: e.target.checked || undefined })} style={{ margin: 0 }} />
-                    このデジモンも選べる（例:「このデジモン/テイマー」）
-                    {block.orSelf && <span style={{ color: '#c62828' }}>⚠ エンジン未実装</span>}
-                  </label>
                 )}
                 {isUnimplemented && (
                   <div style={{ marginTop: 4, fontSize: 11, color: '#c62828', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 4, padding: '4px 8px' }}>
